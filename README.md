@@ -147,6 +147,10 @@ Authorization: Bearer YOUR_API_KEY
 - **MCP:** @modelcontextprotocol/sdk
 - **部署:** Docker Compose
 
+## Contributors
+
+- Vin (miou1107)
+
 ## License
 
 MIT
