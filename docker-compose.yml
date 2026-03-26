@@ -4,7 +4,7 @@ services:
     container_name: ownmind-api
     restart: unless-stopped
     ports:
-      - "3100:3000"
+      - "127.0.0.1:3100:3000"
     env_file:
       - .env
     depends_on:
@@ -21,8 +21,8 @@ services:
     volumes:
       - ownmind_data:/var/lib/postgresql/data
       - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
-    ports:
-      - "5433:5432"
+    expose:
+      - "5432"
 
 volumes:
   ownmind_data:
