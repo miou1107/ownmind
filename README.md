@@ -1,3 +1,5 @@
+AI個人化永久記憶解決方案
+
 # OwnMind — 跨平台 AI 個人記憶系統
 
 讓你的 AI 工具共享記憶。不管用 Claude Code、Codex、Cursor、Copilot、Antigravity 還是線上 AI，OwnMind 讓所有工具都能讀寫你的偏好、鐵律、專案 context。
