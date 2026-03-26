@@ -1,14 +1,22 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import logger from './utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 
 // 安全性與基本中介層
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
+
+// 靜態檔案（Admin 後台）
+app.use('/admin', express.static(join(__dirname, 'public')));
 
 // 請求日誌
 app.use((req, res, next) => {
