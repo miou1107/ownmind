@@ -149,6 +149,33 @@ mkdir -p "$SKILL_DIR"
 cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$SKILL_DIR/SKILL.md"
 echo "   安裝 ownmind-memory skill"
 
+# --- 4b. 安裝 Hook Script ---
+HOOK_DIR="$HOME/.claude/hooks"
+mkdir -p "$HOOK_DIR"
+cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
+chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
+echo "   安裝 ownmind-iron-rule-check hook"
+
+# --- 4c. 加入 PreToolUse hook 設定 ---
+node -e "
+  const fs = require('fs');
+  const path = '$CLAUDE_SETTINGS';
+  const s = JSON.parse(fs.readFileSync(path, 'utf8'));
+  if (!s.hooks) s.hooks = {};
+  if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
+  const exists = s.hooks.PreToolUse.some(h =>
+    h.hooks?.some(hh => hh.command?.includes('ownmind-iron-rule-check'))
+  );
+  if (!exists) {
+    s.hooks.PreToolUse.push({
+      matcher: 'Bash',
+      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }]
+    });
+    fs.writeFileSync(path, JSON.stringify(s, null, 2));
+    console.log('   加入 PreToolUse hook 設定');
+  }
+" 2>/dev/null
+
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"

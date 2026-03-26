@@ -1,5 +1,18 @@
 # OwnMind 更新紀錄
 
+## 2026-03-27 — v1.7.0 Hook 自動安裝與跨用戶 Auto-Update
+
+### 新功能
+1. **`hooks/ownmind-iron-rule-check.sh`** — hook script 移入 repo，安裝與更新時自動同步，修正 API key 從 `settings.json` 動態讀取（不再需要手動設定 env var）
+2. **`scripts/update.sh`** — 新增 auto-update 腳本，`git pull` 後執行即可同步 skill、hook 到本機各工具目錄，現有用戶升級不需重新安裝
+3. **`install.sh` / `install.ps1`** — 新增 hook script 安裝步驟與 `settings.json` PreToolUse hook 自動設定
+4. **`configs/CLAUDE.md`** — 啟動流程更新：有新版本時改執行 `git pull && bash ~/.ownmind/scripts/update.sh`，確保 skill 和 hook 自動同步
+
+### 修正
+- 移除暫存腳本 `scripts/patch-configs.cjs`、`scripts/patch-configs-v2.cjs`
+
+---
+
 ## 2026-03-26 — v1.6.0 五層鐵律防護強化
 
 ### 新功能

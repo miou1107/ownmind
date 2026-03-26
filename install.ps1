@@ -114,6 +114,34 @@ New-Item -ItemType Directory -Force -Path $SkillDir | Out-Null
 Copy-Item (Join-Path $OwnmindDir "skills\ownmind-memory.md") (Join-Path $SkillDir "SKILL.md") -Force
 Write-Host "   安裝 ownmind-memory skill"
 
+# --- 4b. 安裝 Hook Script ---
+$HookDir = Join-Path $ClaudeDir "hooks"
+New-Item -ItemType Directory -Force -Path $HookDir | Out-Null
+Copy-Item (Join-Path $OwnmindDir "hooks\ownmind-iron-rule-check.sh") $HookDir -Force
+Write-Host "   安裝 ownmind-iron-rule-check hook"
+
+# --- 4c. 加入 PreToolUse hook 設定 ---
+$settingsContent = Get-Content $ClaudeSettings -Raw
+$settings = $settingsContent | ConvertFrom-Json
+if (-not $settings.hooks) {
+  $settings | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{})
+}
+if (-not $settings.hooks.PreToolUse) {
+  $settings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @()
+}
+$hookExists = $settings.hooks.PreToolUse | Where-Object {
+  $_.hooks | Where-Object { $_.command -match "ownmind-iron-rule-check" }
+}
+if (-not $hookExists) {
+  $newHook = [pscustomobject]@{
+    matcher = "Bash"
+    hooks   = @([pscustomobject]@{ type = "command"; command = "bash ~/.claude/hooks/ownmind-iron-rule-check.sh" })
+  }
+  $settings.hooks.PreToolUse += $newHook
+  $settings | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
+  Write-Host "   加入 PreToolUse hook 設定"
+}
+
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 $CursorDir = Join-Path $HOME ".cursor"
 $CursorMcp = Join-Path $CursorDir "mcp.json"
