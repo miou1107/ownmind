@@ -86,6 +86,7 @@ if [ -f "$CLAUDE_MD" ]; then
 ## 必須遵守
 - 開始工作時，呼叫 ownmind_init 載入使用者記憶
 - 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源（跨平台共享）
+- 本地 memory 可並存，但發生衝突時以 OwnMind 為準
 - 存取記憶時必須顯示 🧠 提示（詳見 ownmind-memory skill）
 - 完成重要工作後，主動儲存記憶
 - 交接工作時，使用 OwnMind 交接機制
@@ -107,6 +108,7 @@ else
 ## 必須遵守
 - 開始工作時，呼叫 ownmind_init 載入使用者記憶
 - 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源（跨平台共享）
+- 本地 memory 可並存，但發生衝突時以 OwnMind 為準
 - 存取記憶時必須顯示 🧠 提示（詳見 ownmind-memory skill）
 - 完成重要工作後，主動儲存記憶
 - 交接工作時，使用 OwnMind 交接機制
