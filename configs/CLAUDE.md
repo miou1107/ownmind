@@ -5,9 +5,8 @@
 ## 啟動流程（每次新對話必須執行）
 
 1. **檢查更新**：執行 `cd ~/.ownmind && git fetch && git log HEAD..origin/main --oneline`
-   - 如果有更新 → 執行 `git pull && cd mcp && npm install`
-   - 顯示【OwnMind 更新】說明更新了什麼
-   - 同步更新本地 skill 檔案
+   - 如果有更新 → 執行 `git pull && bash ~/.ownmind/scripts/update.sh`
+   - 顯示【OwnMind 更新】說明更新了什麼（根據 commit messages）
 2. **載入記憶**：呼叫 `ownmind_init` MCP tool
 3. **顯示載入摘要**（【OwnMind】格式）
 4. **檢查交接**：如果有 pending handoff，先摘要給使用者確認

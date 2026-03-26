@@ -41,9 +41,11 @@ OwnMind/
 │   ├── start.cmd                    # Windows 啟動器（動態找 node，供 cmd.exe 呼叫）
 │   └── package.json                 # MCP Server 依賴
 │
+├── hooks/                           # Claude Code PreToolUse hook scripts
+│   └── ownmind-iron-rule-check.sh  # 高風險指令前自動顯示相關鐵律（安裝時複製到 ~/.claude/hooks/）
+│
 ├── scripts/                         # 維護工具腳本
-│   ├── patch-configs.cjs            # 批次更新 configs/ 內容的腳本
-│   └── patch-configs-v2.cjs        # 加入 Trigger 機制和 Periodic Re-check
+│   └── update.sh                    # Auto-update：git pull 後同步 skill、hook 到本機各工具目錄
 │
 ├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）
 │   ├── CLAUDE.md                    # Claude Code → ~/.claude/CLAUDE.md
