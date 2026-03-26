@@ -151,6 +151,18 @@ user_invocable: true
 | portfolio | 完成的作品 |
 | env | 環境資訊 |
 
+### 更新記憶（有時間演變的規則）
+規則改變時，用 `ownmind_update` 並**必須填寫 `update_reason`**，舊版本會自動保留在歷史紀錄。
+
+```
+【OwnMind】已更新「檔案命名規則」
+   舊版：檔案名稱要大寫
+   新版：檔案名稱要小寫
+   原因：統一 Linux 路徑規範
+```
+
+**不要 disable 再重建**，直接 update 才能保留完整時間序列。
+
 ### 鐵律格式
 ```markdown
 ## IR-XXX：標題

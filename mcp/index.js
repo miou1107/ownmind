@@ -110,18 +110,19 @@ const TOOLS = [
   },
   {
     name: "ownmind_update",
-    description: "更新一筆既有記憶的內容。需提供記憶 ID。",
+    description: "更新一筆既有記憶的內容。需提供記憶 ID 和更新原因（update_reason），舊內容會自動保存到歷史紀錄。",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "number", description: "記憶 ID" },
         content: { type: "string", description: "更新後的內容" },
+        update_reason: { type: "string", description: "更新原因（必填，例如：規則調整、需求改變）" },
         metadata: {
           type: "object",
           description: "更新後的 metadata（選填）",
         },
       },
-      required: ["id", "content"],
+      required: ["id", "content", "update_reason"],
     },
   },
   {
@@ -245,7 +246,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_update": {
-      const body = { content: args.content };
+      const body = { content: args.content, update_reason: args.update_reason };
       if (args.metadata !== undefined) body.metadata = args.metadata;
       return await callApi("PUT", `/api/memory/${args.id}`, body);
     }
