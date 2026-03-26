@@ -6,65 +6,79 @@
   <title>OwnMind Admin</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; }
-    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-    h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; }
+    .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
     h1 span { color: #7c3aed; }
-    .subtitle { color: #888; margin-bottom: 30px; font-size: 14px; }
+    .subtitle { color: #86868b; margin-bottom: 28px; font-size: 13px; }
 
     /* Login */
-    .login-box { max-width: 400px; margin: 100px auto; }
-    .login-box h2 { margin-bottom: 20px; color: #fff; }
-    input, select { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 8px; background: #1a1a1a; color: #e0e0e0; font-size: 14px; margin-bottom: 12px; }
-    input:focus, select:focus { outline: none; border-color: #7c3aed; }
-    button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .login-box { max-width: 380px; margin: 120px auto; background: #fff; padding: 32px; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .login-box h2 { margin-bottom: 24px; font-size: 20px; text-align: center; }
+    .login-box h2 span { color: #7c3aed; }
+    input, select {
+      width: 100%; padding: 10px 14px; border: 1px solid #d2d2d7; border-radius: 10px;
+      background: #fff; color: #1d1d1f; font-size: 14px; margin-bottom: 12px;
+    }
+    input:focus, select:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,0.1); }
+    input::placeholder { color: #86868b; }
+    button { padding: 10px 20px; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s; }
     .btn-primary { background: #7c3aed; color: #fff; width: 100%; }
     .btn-primary:hover { background: #6d28d9; }
-    .btn-sm { padding: 6px 14px; font-size: 12px; }
-    .btn-danger { background: #dc2626; color: #fff; }
-    .btn-danger:hover { background: #b91c1c; }
-    .btn-copy { background: #374151; color: #e0e0e0; }
-    .btn-copy:hover { background: #4b5563; }
+    .btn-sm { padding: 6px 14px; font-size: 12px; width: auto; }
+    .btn-danger { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
+    .btn-danger:hover { background: #fef2f2; }
+    .btn-copy { background: #f5f5f7; color: #1d1d1f; border: 1px solid #d2d2d7; }
+    .btn-copy:hover { background: #e8e8ed; }
+    .btn-success { background: #7c3aed; color: #fff; }
+    .btn-success:hover { background: #6d28d9; }
+
+    /* Card */
+    .card { background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 16px; }
+    .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
 
     /* Table */
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #333; color: #999; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
-    td { padding: 10px 12px; border-bottom: 1px solid #222; font-size: 14px; }
-    tr:hover td { background: #1a1a1a; }
-    .api-key { font-family: monospace; font-size: 12px; color: #7c3aed; }
-    .role-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-    .role-admin { background: #7c3aed22; color: #a78bfa; }
-    .role-user { background: #065f4622; color: #6ee7b7; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e8e8ed; color: #86868b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+    td { padding: 12px; border-bottom: 1px solid #f0f0f2; font-size: 14px; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+    .api-key { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #7c3aed; background: #f5f3ff; padding: 2px 6px; border-radius: 4px; }
+    .role-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+    .role-admin { background: #f5f3ff; color: #7c3aed; }
+    .role-user { background: #ecfdf5; color: #059669; }
 
-    /* Add user form */
-    .add-form { background: #1a1a1a; padding: 20px; border-radius: 12px; margin-top: 24px; border: 1px solid #333; }
-    .add-form h3 { margin-bottom: 16px; font-size: 16px; }
-    .form-row { display: flex; gap: 12px; }
-    .form-row input, .form-row select { flex: 1; }
-    .form-row button { flex-shrink: 0; align-self: flex-end; margin-bottom: 12px; }
+    /* Form row */
+    .form-row { display: flex; gap: 10px; align-items: flex-end; }
+    .form-row .field { flex: 1; }
+    .form-row .field label { display: block; font-size: 12px; color: #86868b; margin-bottom: 4px; font-weight: 500; }
+    .form-row button { margin-bottom: 12px; }
 
     /* Stats */
-    .stats { display: flex; gap: 16px; margin-bottom: 24px; }
-    .stat-card { flex: 1; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 16px; }
-    .stat-card .number { font-size: 28px; font-weight: 700; color: #7c3aed; }
-    .stat-card .label { font-size: 12px; color: #888; margin-top: 4px; }
+    .stats { display: flex; gap: 12px; margin-bottom: 20px; }
+    .stat-card { flex: 1; background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .stat-card .number { font-size: 32px; font-weight: 700; color: #7c3aed; }
+    .stat-card .label { font-size: 12px; color: #86868b; margin-top: 2px; }
+
+    /* Install prompt */
+    .install-prompt { background: #f5f5f7; border: 1px solid #e8e8ed; border-radius: 12px; padding: 16px; margin-top: 10px; }
+    .install-prompt pre { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: #1d1d1f; margin: 0; }
 
     /* Toast */
-    .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 100; }
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1d1d1f; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     .toast.error { background: #dc2626; }
 
     .hidden { display: none; }
 
-    /* Install prompt */
-    .install-prompt { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 16px; margin-top: 12px; }
-    .install-prompt pre { background: #0f0f0f; padding: 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #a78bfa; margin-top: 8px; overflow-x: auto; }
+    /* Actions cell */
+    .actions { display: flex; gap: 6px; }
   </style>
 </head>
 <body>
 
 <!-- Login -->
 <div id="loginView" class="login-box">
-  <h2>【OwnMind】Admin</h2>
+  <h2>【<span>OwnMind</span>】</h2>
   <input type="email" id="loginEmail" placeholder="Email">
   <input type="password" id="loginPassword" placeholder="密碼">
   <button class="btn-primary" onclick="login()">登入</button>
@@ -86,45 +100,60 @@
     </div>
   </div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Email</th>
-        <th>名稱</th>
-        <th>角色</th>
-        <th>API Key</th>
-        <th>操作</th>
-      </tr>
-    </thead>
-    <tbody id="usersTable"></tbody>
-  </table>
+  <!-- Users Table -->
+  <div class="card">
+    <h3>使用者列表</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Email</th>
+          <th>名稱</th>
+          <th>角色</th>
+          <th>API Key</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="usersTable"></tbody>
+    </table>
+  </div>
 
   <!-- Add User -->
-  <div class="add-form">
+  <div class="card">
     <h3>新增使用者</h3>
     <div class="form-row">
-      <input type="email" id="newEmail" placeholder="Email">
-      <input type="text" id="newName" placeholder="名稱">
-      <select id="newRole">
-        <option value="user">User</option>
-        <option value="admin">Admin</option>
-      </select>
-      <button class="btn-primary btn-sm" onclick="addUser()">新增</button>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="newEmail" placeholder="user@example.com">
+      </div>
+      <div class="field">
+        <label>名稱</label>
+        <input type="text" id="newName" placeholder="使用者名稱">
+      </div>
+      <div class="field" style="max-width: 120px;">
+        <label>角色</label>
+        <select id="newRole">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button class="btn-success btn-sm" onclick="addUser()">新增</button>
     </div>
   </div>
 
   <!-- Install Prompt Template -->
-  <div class="add-form" style="margin-top: 16px;">
-    <h3>安裝 Prompt（複製給使用者）</h3>
-    <p style="color: #888; font-size: 13px; margin-bottom: 8px;">選擇使用者後，會自動帶入 API Key</p>
-    <select id="promptUser" onchange="updatePrompt()" style="margin-bottom: 8px;">
+  <div class="card">
+    <h3>安裝 Prompt</h3>
+    <p style="color: #86868b; font-size: 13px; margin-bottom: 10px;">選擇使用者後自動帶入 API Key，複製給使用者貼到 AI 工具即可完成安裝</p>
+    <select id="promptUser" onchange="updatePrompt()">
       <option value="">-- 選擇使用者 --</option>
     </select>
     <div class="install-prompt">
       <pre id="installPrompt">請先選擇使用者</pre>
     </div>
-    <button class="btn-copy btn-sm" style="margin-top: 8px;" onclick="copyPrompt()">複製 Prompt</button>
+    <div style="margin-top: 10px;">
+      <button class="btn-copy btn-sm" onclick="copyPrompt()">複製 Prompt</button>
+    </div>
   </div>
 </div>
 
@@ -180,14 +209,17 @@
         <td>${u.name || '-'}</td>
         <td><span class="role-badge role-${u.role}">${u.role}</span></td>
         <td>
-          <span class="api-key">${u.api_key.slice(0, 8)}...</span>
+          <span class="api-key">${u.api_key.slice(0, 12)}...</span>
           <button class="btn-copy btn-sm" onclick="copyKey('${u.api_key}')">複製</button>
         </td>
-        <td>
+        <td class="actions">
           <button class="btn-danger btn-sm" onclick="deleteUser(${u.id}, '${u.email}')">刪除</button>
         </td>
       </tr>
     `).join('');
+
+    // Update stats
+    document.getElementById('totalUsers').textContent = usersData.length;
 
     // Update prompt user select
     const sel = document.getElementById('promptUser');
@@ -196,9 +228,6 @@
   }
 
   async function loadStats() {
-    // Count users
-    document.getElementById('totalUsers').textContent = usersData.length || '-';
-    // Count memories (use first user or admin)
     try {
       const res = await fetch(`${API}/export`, { headers: headers() });
       const data = await res.json();
@@ -220,7 +249,7 @@
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
       const user = await res.json();
-      showToast(`已建立使用者 ${email}，API Key: ${user.api_key}`);
+      showToast(`已建立 ${email}`);
       document.getElementById('newEmail').value = '';
       document.getElementById('newName').value = '';
       loadUsers();
@@ -277,7 +306,6 @@
     showToast('安裝 Prompt 已複製');
   }
 
-  // Enter key login
   document.getElementById('loginPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') login();
   });
