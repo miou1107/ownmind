@@ -229,9 +229,9 @@ router.post('/', async (req, res) => {
     const memory = result.rows[0];
 
     await query(
-      `INSERT INTO memory_history (memory_id, user_id, change_type, content, metadata)
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'create', $3, $4)`,
-      [memory.id, req.user.id, content, metadata || null]
+      [memory.id, metadata?.tool || 'api', content, metadata || null]
     );
 
     res.status(201).json(memory);
@@ -273,9 +273,9 @@ router.put('/:id', async (req, res) => {
     const memory = result.rows[0];
 
     await query(
-      `INSERT INTO memory_history (memory_id, user_id, change_type, content, metadata)
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'update', $3, $4)`,
-      [memory.id, req.user.id, memory.content, memory.metadata]
+      [memory.id, metadata?.tool || 'api', memory.content, memory.metadata]
     );
 
     res.json(memory);
@@ -312,9 +312,9 @@ router.put('/:id/disable', async (req, res) => {
     }
 
     await query(
-      `INSERT INTO memory_history (memory_id, user_id, change_type, content, metadata)
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'disable', $3, $4)`,
-      [req.params.id, req.user.id, result.rows[0].content, JSON.stringify({ reason })]
+      [req.params.id, 'api', result.rows[0].content, JSON.stringify({ reason })]
     );
 
     res.json(result.rows[0]);
@@ -345,9 +345,9 @@ router.put('/:id/enable', async (req, res) => {
     }
 
     await query(
-      `INSERT INTO memory_history (memory_id, user_id, change_type, content, metadata)
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'enable', $3, NULL)`,
-      [req.params.id, req.user.id, result.rows[0].content]
+      [req.params.id, 'api', result.rows[0].content]
     );
 
     res.json(result.rows[0]);
@@ -392,9 +392,9 @@ router.put('/:id/revert', async (req, res) => {
 
     // 記錄還原操作
     await query(
-      `INSERT INTO memory_history (memory_id, user_id, change_type, content, metadata)
+      `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'revert', $3, $4)`,
-      [req.params.id, req.user.id, historyContent, JSON.stringify({ reverted_from: history_id })]
+      [req.params.id, 'api', historyContent, JSON.stringify({ reverted_from: history_id })]
     );
 
     res.json(result.rows[0]);
