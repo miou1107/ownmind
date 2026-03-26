@@ -15,22 +15,54 @@
 ## 快速開始
 
 ### 1. 取得 API Key
+
 聯繫管理員取得你的 API key。
 
-### 2. 設定你的 AI 工具
+### 2. 安裝
 
-**Claude Code（MCP 方式）：**
-在 `~/.claude/settings.json` 加入：
-(see MCP config below)
+複製以下 prompt，貼到你的 AI 工具（Claude Code、Codex、Cursor 等），把 `YOUR_API_KEY` 換成你的 API key：
 
-**Cursor（MCP 方式）：**
-在 `.cursor/mcp.json` 加入同樣的 MCP 設定。
+```
+幫我安裝 OwnMind 個人記憶系統。
 
-**其他工具：**
-參考 `docs/` 目錄下的各工具設定範例。
+我的 API Key 是：YOUR_API_KEY
+
+請執行以下步驟：
+1. 把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/（如果已存在就 git pull 更新）
+2. 到 ~/.ownmind/mcp/ 執行 npm install
+3. 在 ~/.claude/settings.json 的 mcpServers 加入 ownmind MCP（如果檔案不存在就建立）：
+   - command: "node"
+   - args: ["~/.ownmind/mcp/index.js"]（展開為完整路徑）
+   - env: { "OWNMIND_API_URL": "https://kkvin.com/ownmind", "OWNMIND_API_KEY": "我的key" }
+4. 在 ~/.claude/CLAUDE.md 加入以下內容（如果還沒有 OwnMind 區塊的話）：
+   # OwnMind 個人記憶系統
+   你已連接 OwnMind 跨平台 AI 個人記憶系統。
+   - 開始工作時，呼叫 ownmind_init 載入使用者記憶
+   - 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源
+   - 本地 memory 可並存，但發生衝突時以 OwnMind 為準
+   - 存取記憶時必須顯示 🧠 提示
+   - 完成重要工作後，主動儲存記憶
+   - 交接工作時，使用 OwnMind 交接機制
+5. 把 ~/.ownmind/skills/ownmind-memory.md 複製到 ~/.claude/skills/ownmind-memory/SKILL.md
+6. 如果本機有安裝 Cursor（~/.cursor/ 目錄存在），也在 ~/.cursor/mcp.json 加入同樣的 MCP 設定
+7. 完成後呼叫 ownmind_init 測試連線，確認能載入記憶
+```
 
 ### 3. 開始使用
-在任何 AI 工具裡說：「載入我的 OwnMind」
+
+安裝完成後，在任何新的對話裡說「載入我的 OwnMind」即可。AI 會自動載入你的記憶。
+
+## 日常使用
+
+| 你說 | OwnMind 做什麼 |
+|------|----------------|
+| 載入我的 OwnMind | 🧠 載入你的個人記憶 |
+| 記起來 / 學起來 | 🧠 儲存新記憶 |
+| 新增鐵律 | 🧠 建立新的 iron rule（含背景脈絡） |
+| 交接給 Codex | 🔄 建立交接文件 |
+| 整理記憶 | 🧠 彙整本次工作的記憶候選項 |
+| 我有哪些記憶 | 🧠 列出所有記憶摘要 |
+| 不要遵守這條鐵律 | 🧠 先問原因，確認後停用（不刪除） |
 
 ## API 文件
 
