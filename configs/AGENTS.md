@@ -9,7 +9,7 @@
    - 顯示【OwnMind 更新】說明更新了什麼（根據 commit message 摘要）
    - 同步更新本地 skill 檔案
 2. **載入記憶**：呼叫 OwnMind API 載入個人記憶
-   - API URL：https://kkvin.com/ownmind
+   - API URL：YOUR_OWNMIND_URL
    - Header：`Authorization: Bearer <OWNMIND_API_KEY>`
    - Endpoint：`GET /api/memory/init`
 3. **顯示載入摘要**：

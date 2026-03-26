@@ -11,7 +11,7 @@
       "command": "node",
       "args": ["/path/to/ownmind/mcp/index.js"],
       "env": {
-        "OWNMIND_API_URL": "http://kkvin.com:3100",
+        "OWNMIND_API_URL": "YOUR_OWNMIND_URL",
         "OWNMIND_API_KEY": "YOUR_API_KEY"
       }
     }

@@ -270,14 +270,20 @@
     showToast('API Key 已複製');
   }
 
+  function getApiUrl() {
+    const loc = window.location;
+    return loc.origin + loc.pathname.replace(/\/admin\.html$/, '').replace(/\/$/, '');
+  }
+
   function updatePrompt() {
     const key = document.getElementById('promptUser').value;
     const el = document.getElementById('installPrompt');
     if (!key) { el.textContent = '請先選擇使用者'; return; }
+    const apiUrl = getApiUrl();
     el.textContent = `幫我安裝 OwnMind 個人記憶系統。
 
 我的 API Key 是：${key}
-API URL 是：https://kkvin.com/ownmind
+API URL 是：${apiUrl}
 
 請根據你目前所在的工具環境，自動完成以下安裝：
 
@@ -300,7 +306,7 @@ MCP 設定內容（~ 展開為完整路徑）：
     "command": "node",
     "args": ["~/.ownmind/mcp/index.js"],
     "env": {
-      "OWNMIND_API_URL": "https://kkvin.com/ownmind",
+      "OWNMIND_API_URL": "${apiUrl}",
       "OWNMIND_API_KEY": "${key}"
     }
   }

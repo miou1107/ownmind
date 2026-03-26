@@ -55,7 +55,7 @@ curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | ba
 幫我安裝 OwnMind 個人記憶系統。
 
 我的 API Key 是：YOUR_API_KEY
-API URL 是：https://kkvin.com/ownmind
+API URL 是：YOUR_OWNMIND_URL
 
 請根據你目前所在的工具環境，自動完成以下安裝：
 

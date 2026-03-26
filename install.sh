@@ -1,14 +1,23 @@
 #!/bin/bash
 # OwnMind 一鍵安裝腳本
-# 用法: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
+# 用法: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
 set -e
 
 API_KEY="${1:-}"
+API_URL="${2:-}"
 
 if [ -z "$API_KEY" ]; then
-  echo "❌ 請提供 API Key"
-  echo "用法: bash install.sh YOUR_API_KEY"
+  echo "❌ 請提供 API Key 和 API URL"
+  echo "用法: bash install.sh YOUR_API_KEY YOUR_API_URL"
+  echo "範例: bash install.sh abc123 https://your-server.com/ownmind"
+  exit 1
+fi
+
+if [ -z "$API_URL" ]; then
+  echo "❌ 請提供 API URL"
+  echo "用法: bash install.sh YOUR_API_KEY YOUR_API_URL"
+  echo "範例: bash install.sh abc123 https://your-server.com/ownmind"
   exit 1
 fi
 
@@ -65,7 +74,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       settings.mcpServers.ownmind = {
         ...entry,
         env: {
-          OWNMIND_API_URL: 'https://kkvin.com/ownmind',
+          OWNMIND_API_URL: '$API_URL',
           OWNMIND_API_KEY: '$API_KEY'
         }
       };
@@ -83,7 +92,7 @@ else
         ownmind: {
           ...entry,
           env: {
-            OWNMIND_API_URL: 'https://kkvin.com/ownmind',
+            OWNMIND_API_URL: '$API_URL',
             OWNMIND_API_KEY: '$API_KEY'
           }
         }
@@ -192,7 +201,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
         settings.mcpServers.ownmind = {
           ...entry,
           env: {
-            OWNMIND_API_URL: 'https://kkvin.com/ownmind',
+            OWNMIND_API_URL: '$API_URL',
             OWNMIND_API_KEY: '$API_KEY'
           }
         };
@@ -208,7 +217,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
             ownmind: {
               ...entry,
               env: {
-                OWNMIND_API_URL: 'https://kkvin.com/ownmind',
+                OWNMIND_API_URL: '$API_URL',
                 OWNMIND_API_KEY: '$API_KEY'
               }
             }
@@ -224,7 +233,7 @@ echo ""
 echo "✅ OwnMind 安裝完成！"
 echo ""
 echo "   MCP Server: $OWNMIND_DIR/mcp/index.js"
-echo "   API URL:    https://kkvin.com/ownmind"
+echo "   API URL:    $API_URL"
 echo "   API Key:    $API_KEY"
 if [ "$IS_WINDOWS" = true ]; then
 echo "   Windows:    使用 cmd.exe + start.cmd 啟動 MCP"

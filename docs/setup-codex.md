@@ -9,7 +9,7 @@
 
 你可以透過 OwnMind API 存取使用者的個人記憶。
 
-API Base URL: http://kkvin.com:3100
+API Base URL: YOUR_OWNMIND_URL
 API Key: 在環境變數 OWNMIND_API_KEY 中
 
 ### 開始工作時

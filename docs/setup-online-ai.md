@@ -7,7 +7,7 @@
 在對話開頭貼入你的記憶內容。你可以透過 API 匯出：
 
 ```bash
-curl -H "Authorization: Bearer YOUR_API_KEY" http://kkvin.com:3100/api/export
+curl -H "Authorization: Bearer YOUR_API_KEY" YOUR_OWNMIND_URL/api/export
 ```
 
 ## 方法二：ChatGPT GPTs（推薦）
