@@ -130,6 +130,16 @@ const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
 AI 要主動分類每個發現屬於什麼記憶類型，使用者確認後才寫入。
 注意：只列出**還沒寫進 OwnMind 的**，已經記過的不要重複列。
 
+## 自動更新檢查
+
+每次 ownmind_init 載入記憶時，順便檢查 ~/.ownmind/ 是否為最新版本：
+1. 執行 \`cd ~/.ownmind && git fetch --dry-run 2>&1\` 看有沒有新 commit
+2. 如果有更新，自動執行 \`cd ~/.ownmind && git pull && cd mcp && npm install\`
+3. 如果 skill 檔案有變更，同步更新到本地 skill 目錄
+4. 顯示：【OwnMind】已自動更新到最新版本
+
+這確保使用者永遠用最新的 MCP Server 和 Skill，不需要手動更新。
+
 ## 主動彙整觸發條件
 
 以下情境觸發時，應主動整理並提出彙整建議（列出候選項讓使用者確認）：
