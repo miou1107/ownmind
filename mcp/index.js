@@ -9,7 +9,7 @@ import {
 import fetch from "node-fetch";
 
 // --- Config from env ---
-const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3000").replace(
+const API_URL = (process.env.OWNMIND_API_URL || "https://kkvin.com/ownmind").replace(
   /\/$/,
   ""
 );

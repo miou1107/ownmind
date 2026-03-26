@@ -1,12 +1,20 @@
 {
   "name": "ownmind-mcp",
   "version": "1.0.0",
+  "description": "OwnMind MCP Server — 跨平台 AI 個人記憶系統",
   "type": "module",
   "bin": {
     "ownmind-mcp": "./index.js"
   },
+  "keywords": ["mcp", "ai", "memory", "claude", "cursor"],
+  "author": "miou1107",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miou1107/ownmind"
+  },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
-    "node-fetch": "latest"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "node-fetch": "^3.3.0"
   }
 }
