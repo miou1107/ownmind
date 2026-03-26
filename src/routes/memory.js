@@ -51,9 +51,12 @@ const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
 **載入記憶時：**
 【OwnMind】已載入你的個人記憶：
    - 個人偏好：[摘要]
-   - 鐵律：X 條啟用中
+   - 鐵律：X 條啟用中（已全部載入，防護啟動）
    - 專案：X 個專案 context
    - 待接手交接：有/無
+
+載入完成後，**必須立即將所有鐵律內化為工作準則**，在整個 session 中主動防護。
+不需要列出所有鐵律給使用者看，但必須在即將違反時主動攔截。
 
 **讀取特定記憶時：**
 【OwnMind】已調閱「XXX」記憶
@@ -224,7 +227,7 @@ router.get('/init', async (req, res) => {
     const memoriesResult = await query(
       `SELECT * FROM memories
        WHERE user_id = $1
-         AND type IN ('profile', 'principle')
+         AND type IN ('profile', 'principle', 'iron_rule')
          AND status = 'active'
        ORDER BY type, created_at`,
       [req.user.id]
@@ -241,12 +244,14 @@ router.get('/init', async (req, res) => {
     const memories = memoriesResult.rows;
     const profile = memories.find(m => m.type === 'profile') || null;
     const principles = memories.filter(m => m.type === 'principle');
+    const ironRules = memories.filter(m => m.type === 'iron_rule');
     const activeHandoff = handoffResult.rows[0] || null;
 
     res.json({
       instructions: INSTRUCTIONS_SOP,
       profile,
       principles,
+      iron_rules: ironRules,
       active_handoff: activeHandoff
     });
   } catch (err) {

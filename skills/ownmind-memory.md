@@ -19,9 +19,10 @@ user_invocable: true
       - 修正 xxx 問題
    ```
    （根據 commit message 摘要，用使用者看得懂的語言）
-3. 呼叫 `ownmind_init` 載入使用者記憶
+3. 呼叫 `ownmind_init` 載入使用者記憶（包含 profile、principles、**iron_rules**、active_handoff）
 4. 顯示【OwnMind】載入摘要
-5. 如果有待接手的交接（active_handoff），先摘要給使用者確認
+5. **將所有 iron_rules 內化為工作準則**，在整個 session 中主動防護（不需列出給使用者，但即將違反時必須攔截）
+6. 如果有待接手的交接（active_handoff），先摘要給使用者確認
 
 ## 存取提示（非常重要）
 
