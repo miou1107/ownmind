@@ -81,9 +81,9 @@ user_invocable: true
 ### 彙整時
 ```
 【OwnMind】 彙整建議（本次 session 有以下值得記錄的事項）：
-   1. [iron_rule] Docker build 要指定 platform
-   2. [project] ring-linebot 完成 webhook 重構
-   3. [coding_standard] 新增 ESLint 規則
+   1. [鐵律] Docker build 要指定 platform
+   2. [專案] ring-linebot 完成 webhook 重構
+   3. [技術標準] 新增 ESLint 規則
    要記錄哪些？（輸入編號，或「全部」）
 ```
 
@@ -114,10 +114,10 @@ user_invocable: true
 當使用者問「你今天學到什麼」「這次學到什麼」「有什麼新發現」時：
 ```
 【OwnMind 學習回顧】本次 session 學到以下新東西：
-   1. [iron_rule] 標題 — 簡述原因
-   2. [coding_standard] 標題 — 簡述
-   3. [project] 標題 — 新發現或進展
-   4. [profile] 標題 — 觀察到的使用者偏好
+   1. [鐵律] 標題 — 簡述原因
+   2. [技術標準] 標題 — 簡述
+   3. [專案] 標題 — 新發現或進展
+   4. [個人偏好] 標題 — 觀察到的使用者偏好
    以上哪些要記下來？（輸入編號、「全部」、或「跳過」）
 ```
 只列出**還沒寫進 OwnMind 的**，已經記過的不要重複。
