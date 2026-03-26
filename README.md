@@ -30,48 +30,30 @@ API URL 是：https://kkvin.com/ownmind
 
 請根據你目前所在的工具環境，自動完成以下安裝：
 
-1. 把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/（如果已存在就 git pull 更新）
-2. 到 ~/.ownmind/mcp/ 執行 npm install
+Step 1：下載 OwnMind
+把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/（如果已存在就 git pull 更新）
+到 ~/.ownmind/mcp/ 執行 npm install
 
-3. 根據你是什麼工具，設定 MCP Server：
-   - Claude Code → ~/.claude/settings.json 的 mcpServers
-   - Cursor → ~/.cursor/mcp.json 的 mcpServers
-   - Windsurf → ~/.codeium/windsurf/mcp_config.json
-   - 其他支援 MCP 的工具 → 找到該工具的 MCP 設定檔
-   MCP 設定內容：
-   {
-     "ownmind": {
-       "command": "node",
-       "args": ["~/.ownmind/mcp/index.js"],
-       "env": {
-         "OWNMIND_API_URL": "https://kkvin.com/ownmind",
-         "OWNMIND_API_KEY": "YOUR_API_KEY"
-       }
-     }
-   }
-   （args 裡的 ~ 要展開為完整路徑）
+Step 2：設定 MCP Server（如果工具支援）
+找到當前工具的 MCP 設定檔，加入 ownmind MCP（~ 展開為完整路徑）：
+- Claude Code → ~/.claude/settings.json
+- Cursor → ~/.cursor/mcp.json
+- Windsurf → ~/.codeium/windsurf/mcp_config.json
 
-4. 根據你是什麼工具，在對應的指令檔加入 OwnMind 設定：
-   - Claude Code → ~/.claude/CLAUDE.md
-   - Codex → 專案根目錄的 AGENTS.md
-   - Cursor → .cursorrules 或 .cursor/rules
-   - Copilot → .github/copilot-instructions.md
-   - 其他工具 → 該工具的系統指令設定檔
-   加入以下內容（如果還沒有 OwnMind 區塊的話）：
-   # OwnMind 個人記憶系統
-   你已連接 OwnMind 跨平台 AI 個人記憶系統。
-   - 開始工作時，呼叫 ownmind_init 載入使用者記憶
-   - 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源
-   - 本地 memory 可並存，但發生衝突時以 OwnMind 為準
-   - 存取記憶時必須顯示【OwnMind】提示
-   - 完成重要工作後，主動儲存記憶
-   - 交接工作時，使用 OwnMind 交接機制
+Step 3：安裝全域強制規則
+掃描本機所有已安裝的 AI 工具，把 ~/.ownmind/configs/ 中對應的設定檔
+追加到各工具的全域指令檔（不覆蓋原有內容）：
+- Claude Code → ~/.claude/CLAUDE.md（追加 configs/CLAUDE.md）
+- Codex → ~/.codex/AGENTS.md（追加 configs/AGENTS.md）
+- Gemini CLI → ~/.gemini/GEMINI.md（追加 configs/GEMINI.md）
+- Windsurf → ~/.codeium/windsurf/memories/global_rules.md（追加 configs/global_rules.md）
+- OpenCode → ~/.config/opencode/opencode.json（合併 configs/opencode.json 的 instructions）
 
-5. 如果你的工具支援 skill，把 ~/.ownmind/skills/ownmind-memory.md 安裝到對應的 skill 目錄
+Step 4：安裝 Skill
+把 ~/.ownmind/skills/ownmind-memory.md 安裝到工具的 skill 目錄
 
-6. 檢查本機還有哪些 AI 工具已安裝（檢查 ~/.claude、~/.cursor、~/.codeium 等目錄），一併設定
-
-7. 完成後呼叫 ownmind_init 測試連線，確認能載入記憶
+Step 5：驗證
+完成後呼叫 ownmind_init 測試連線，確認能載入記憶並顯示【OwnMind】摘要
 ```
 
 ### 3. 開始使用

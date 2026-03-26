@@ -39,6 +39,13 @@ OwnMind/
 │   ├── index.js                     # MCP Server 入口（12 個 tools）
 │   └── package.json                 # MCP Server 依賴
 │
+├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）
+│   ├── CLAUDE.md                    # Claude Code → ~/.claude/CLAUDE.md
+│   ├── AGENTS.md                    # Codex → ~/.codex/AGENTS.md
+│   ├── GEMINI.md                    # Gemini CLI → ~/.gemini/GEMINI.md
+│   ├── global_rules.md              # Windsurf → ~/.codeium/windsurf/memories/global_rules.md
+│   └── opencode.json                # OpenCode → ~/.config/opencode/opencode.json
+│
 ├── skills/
 │   └── ownmind-memory.md            # OwnMind 記憶管理 Skill
 │

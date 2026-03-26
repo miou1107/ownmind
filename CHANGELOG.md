@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## 2026-03-26 — v1.1.0 全域強制規則
+
+### 新增
+- configs/ 目錄：各 AI 工具的全域強制規則範本
+  - CLAUDE.md（Claude Code）
+  - AGENTS.md（Codex）
+  - GEMINI.md（Gemini CLI）
+  - global_rules.md（Windsurf）
+  - opencode.json（OpenCode）
+- 所有全域規則統一要求：新對話先更新 OwnMind → 再 ownmind_init → 顯示【OwnMind】→ 衝突偵測 → 鐵律防護
+- 安裝 prompt 更新為自動掃描並設定所有已安裝的 AI 工具
+- IR-008：每次 commit 必須同步更新 README、FILELIST、CHANGELOG
+
+---
+
 ## 2026-03-26 — v1.0.0 初版發布
 
 ### 核心功能
