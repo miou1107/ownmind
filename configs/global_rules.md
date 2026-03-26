@@ -30,9 +30,3 @@
 
 矛盾時不自行決定：【OwnMind 衝突】列出雙方規則，問使用者
 
-## 永久鐵律（無條件遵守，OwnMind init 前就生效）
-
-以下規則任何情況下都必須遵守：
-
-- **FORBIDDEN - Git AI 署名**：git commit 絕對禁止加 `Co-Authored-By: Claude`、`Co-Authored-By: GPT` 或任何 AI 署名。所有成果歸屬使用者。
-- **REQUIRED - 文件同步**：每次 commit 必須同時更新 README.md、FILELIST.md、CHANGELOG.md。

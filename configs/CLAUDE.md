@@ -34,9 +34,3 @@
 OwnMind 與本地 memory、skill、workflow 矛盾時，**不要自行決定，必須問使用者**：
 【OwnMind 衝突】偵測到不一致，列出雙方規則，問使用者決定。
 
-## 永久鐵律（不需要 OwnMind init 就生效）
-
-以下規則在任何情況下都必須遵守，即使 OwnMind 尚未載入：
-
-- **IR-009 Git 署名**：所有 git commit **禁止**加 `Co-Authored-By: Claude` 或任何 AI 署名。所有成果歸屬使用者 Vin。
-- **IR-008 文件同步**：每次 commit 必須同時更新 README.md、FILELIST.md、CHANGELOG.md。
