@@ -14,11 +14,18 @@ fi
 
 echo "🧠 OwnMind 安裝中..."
 
+# --- 偵測作業系統 ---
+IS_WINDOWS=false
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+  IS_WINDOWS=true
+  echo "   偵測到 Windows 環境（Git Bash）"
+fi
+
 # --- 1. Clone MCP Server ---
 OWNMIND_DIR="$HOME/.ownmind"
 if [ -d "$OWNMIND_DIR" ]; then
   echo "   更新 OwnMind MCP Server..."
-  cd "$OWNMIND_DIR" && git pull -q
+  git -C "$OWNMIND_DIR" pull -q
 else
   echo "   下載 OwnMind MCP Server..."
   git clone -q https://github.com/miou1107/ownmind.git "$OWNMIND_DIR"
@@ -27,22 +34,36 @@ fi
 echo "   安裝依賴..."
 cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null
 
+# --- 決定 MCP command / args ---
+if [ "$IS_WINDOWS" = true ]; then
+  # Windows: 用 cmd.exe 透過 start.cmd 啟動，避免 Claude Code 找不到 node
+  OWNMIND_DIR_WIN=$(cygpath -w "$OWNMIND_DIR" 2>/dev/null || echo "$OWNMIND_DIR")
+  START_CMD_WIN="${OWNMIND_DIR_WIN}\\mcp\\start.cmd"
+  MCP_ENTRY=$(node -e "
+    const p = '$START_CMD_WIN'.replace(/\\\\/g, '\\\\\\\\');
+    console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', p] }));
+  ")
+else
+  MCP_ENTRY=$(node -e "
+    const p = '$OWNMIND_DIR/mcp/index.js';
+    console.log(JSON.stringify({ command: 'node', args: [p] }));
+  ")
+fi
+
 # --- 2. Claude Code MCP 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 if [ -f "$CLAUDE_SETTINGS" ]; then
-  # 檢查是否已有 ownmind 設定
   if grep -q '"ownmind"' "$CLAUDE_SETTINGS" 2>/dev/null; then
     echo "   Claude Code MCP 已設定，跳過"
   else
     echo "   設定 Claude Code MCP..."
-    # 用 node 來安全地修改 JSON
     node -e "
       const fs = require('fs');
+      const entry = $MCP_ENTRY;
       const settings = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS', 'utf8'));
       if (!settings.mcpServers) settings.mcpServers = {};
       settings.mcpServers.ownmind = {
-        command: 'node',
-        args: ['$OWNMIND_DIR/mcp/index.js'],
+        ...entry,
         env: {
           OWNMIND_API_URL: 'https://kkvin.com/ownmind',
           OWNMIND_API_KEY: '$API_KEY'
@@ -54,20 +75,22 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
 else
   echo "   建立 Claude Code MCP 設定..."
   mkdir -p "$HOME/.claude"
-  cat > "$CLAUDE_SETTINGS" << SETTINGS_EOF
-{
-  "mcpServers": {
-    "ownmind": {
-      "command": "node",
-      "args": ["$OWNMIND_DIR/mcp/index.js"],
-      "env": {
-        "OWNMIND_API_URL": "https://kkvin.com/ownmind",
-        "OWNMIND_API_KEY": "$API_KEY"
+  node -e "
+    const fs = require('fs');
+    const entry = $MCP_ENTRY;
+    const settings = {
+      mcpServers: {
+        ownmind: {
+          ...entry,
+          env: {
+            OWNMIND_API_URL: 'https://kkvin.com/ownmind',
+            OWNMIND_API_KEY: '$API_KEY'
+          }
+        }
       }
-    }
-  }
-}
-SETTINGS_EOF
+    };
+    fs.writeFileSync('$CLAUDE_SETTINGS', JSON.stringify(settings, null, 2));
+  "
 fi
 
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
@@ -136,11 +159,11 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
     if [ -f "$CURSOR_MCP" ]; then
       node -e "
         const fs = require('fs');
+        const entry = $MCP_ENTRY;
         const settings = JSON.parse(fs.readFileSync('$CURSOR_MCP', 'utf8'));
         if (!settings.mcpServers) settings.mcpServers = {};
         settings.mcpServers.ownmind = {
-          command: 'node',
-          args: ['$OWNMIND_DIR/mcp/index.js'],
+          ...entry,
           env: {
             OWNMIND_API_URL: 'https://kkvin.com/ownmind',
             OWNMIND_API_KEY: '$API_KEY'
@@ -150,20 +173,22 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
       "
     else
       mkdir -p "$HOME/.cursor"
-      cat > "$CURSOR_MCP" << CURSOR_EOF
-{
-  "mcpServers": {
-    "ownmind": {
-      "command": "node",
-      "args": ["$OWNMIND_DIR/mcp/index.js"],
-      "env": {
-        "OWNMIND_API_URL": "https://kkvin.com/ownmind",
-        "OWNMIND_API_KEY": "$API_KEY"
-      }
-    }
-  }
-}
-CURSOR_EOF
+      node -e "
+        const fs = require('fs');
+        const entry = $MCP_ENTRY;
+        const settings = {
+          mcpServers: {
+            ownmind: {
+              ...entry,
+              env: {
+                OWNMIND_API_URL: 'https://kkvin.com/ownmind',
+                OWNMIND_API_KEY: '$API_KEY'
+              }
+            }
+          }
+        };
+        fs.writeFileSync('$HOME/.cursor/mcp.json', JSON.stringify(settings, null, 2));
+      "
     fi
   fi
 fi
@@ -174,6 +199,9 @@ echo ""
 echo "   MCP Server: $OWNMIND_DIR/mcp/index.js"
 echo "   API URL:    https://kkvin.com/ownmind"
 echo "   API Key:    $API_KEY"
+if [ "$IS_WINDOWS" = true ]; then
+echo "   Windows:    使用 cmd.exe + start.cmd 啟動 MCP"
+fi
 echo ""
 echo "   現在開一個新的 Claude Code 對話，說「載入我的 OwnMind」即可開始！"
 echo ""
