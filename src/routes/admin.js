@@ -1,10 +1,49 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
+import bcrypt from 'bcrypt';
 import { query } from '../utils/db.js';
 import adminAuth from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
+
+/**
+ * POST /login - Admin 帳密登入（不需要 auth middleware）
+ */
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: '請輸入 Email 和密碼' });
+    }
+
+    const result = await query(
+      `SELECT id, email, name, role, api_key, password_hash FROM users WHERE email = $1 AND role = 'admin'`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: '帳號或密碼錯誤' });
+    }
+
+    const user = result.rows[0];
+    if (!user.password_hash) {
+      return res.status(401).json({ error: '此帳號尚未設定密碼' });
+    }
+
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: '帳號或密碼錯誤' });
+    }
+
+    res.json({ api_key: user.api_key, name: user.name, email: user.email });
+  } catch (err) {
+    logger.error('登入失敗', { error: err.message });
+    res.status(500).json({ error: '登入失敗' });
+  }
+});
+
+// 以下路由需要 admin 認證
 router.use(adminAuth);
 
 /**
@@ -13,7 +52,7 @@ router.use(adminAuth);
 router.get('/users', async (req, res) => {
   try {
     const result = await query(
-      'SELECT id, username, email, role, created_at, updated_at FROM users ORDER BY created_at DESC'
+      'SELECT id, name, email, role, api_key, created_at, updated_at FROM users ORDER BY created_at DESC'
     );
     res.json(result.rows);
   } catch (err) {
@@ -29,17 +68,17 @@ router.post('/users', async (req, res) => {
   try {
     const { email, name, role } = req.body;
 
-    if (!email || !name) {
-      return res.status(400).json({ error: '必填欄位：email, name' });
+    if (!email) {
+      return res.status(400).json({ error: '必填欄位：email' });
     }
 
     const apiKey = randomUUID();
 
     const result = await query(
-      `INSERT INTO users (username, email, role, api_key)
+      `INSERT INTO users (name, email, role, api_key)
        VALUES ($1, $2, $3, $4)
-       RETURNING id, username, email, role, api_key, created_at`,
-      [name, email, role || 'user', apiKey]
+       RETURNING id, name, email, role, api_key, created_at`,
+      [name || null, email, role || 'user', apiKey]
     );
 
     res.status(201).json(result.rows[0]);
@@ -58,12 +97,12 @@ router.put('/users/:id', async (req, res) => {
 
     const result = await query(
       `UPDATE users
-       SET username = COALESCE($1, username),
+       SET name = COALESCE($1, name),
            email = COALESCE($2, email),
            role = COALESCE($3, role),
            updated_at = NOW()
        WHERE id = $4
-       RETURNING id, username, email, role, created_at, updated_at`,
+       RETURNING id, name, email, role, created_at, updated_at`,
       [name || null, email || null, role || null, req.params.id]
     );
 
@@ -79,12 +118,12 @@ router.put('/users/:id', async (req, res) => {
 });
 
 /**
- * DELETE /users/:id - 停用使用者（軟刪除）
+ * DELETE /users/:id - 刪除使用者
  */
 router.delete('/users/:id', async (req, res) => {
   try {
     const result = await query(
-      `DELETE FROM users WHERE id = $1 RETURNING id, username, email`,
+      `DELETE FROM users WHERE id = $1 RETURNING id, name, email`,
       [req.params.id]
     );
 

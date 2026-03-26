@@ -65,7 +65,8 @@
 <!-- Login -->
 <div id="loginView" class="login-box">
   <h2>【OwnMind】Admin</h2>
-  <input type="password" id="apiKeyInput" placeholder="輸入 Admin API Key">
+  <input type="email" id="loginEmail" placeholder="Email">
+  <input type="password" id="loginPassword" placeholder="密碼">
   <button class="btn-primary" onclick="login()">登入</button>
 </div>
 
@@ -147,11 +148,18 @@
   }
 
   async function login() {
-    API_KEY = document.getElementById('apiKeyInput').value.trim();
-    if (!API_KEY) return;
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    if (!email || !password) return showToast('請輸入 Email 和密碼', true);
     try {
-      const res = await fetch(`${API}/admin/users`, { headers: headers() });
-      if (!res.ok) throw new Error('無效的 API Key');
+      const res = await fetch(`${API}/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      API_KEY = data.api_key;
       document.getElementById('loginView').classList.add('hidden');
       document.getElementById('dashboard').classList.remove('hidden');
       loadUsers();
@@ -270,7 +278,7 @@
   }
 
   // Enter key login
-  document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+  document.getElementById('loginPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') login();
   });
 </script>
