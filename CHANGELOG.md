@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## 2026-03-26 — v1.6.0 五層鐵律防護強化
+
+### 新功能
+1. **Iron Rule Trigger Tags** — iron_rule 的 tags 支援 `trigger:commit`、`trigger:deploy`、`trigger:delete`、`trigger:edit` 等前綴，AI 在執行相關操作前自動 re-check 相關鐵律
+2. **Claude Code PreToolUse Hook** — 新增 `~/.claude/hooks/ownmind-iron-rule-check.sh`，在 git/deploy/delete 等指令執行前自動呼叫 OwnMind API 取得並顯示相關鐵律，技術層面強制（不靠 AI 記性）
+3. **Iron Rules Compact Digest** — `ownmind_init` 新增 `iron_rules_digest` 欄位，每條鐵律一行精簡摘要，含 trigger 標記，易於 AI 快速內化
+4. **Context 提醒** — 對話超過 20 輪或 context 消耗大時，AI 主動刷新鐵律記憶
+5. **Periodic Re-check** — 即將執行不可逆操作前強制 re-check，所有 configs 和 skill 同步更新
+
+### 其他
+- `ownmind_update` 新增 `tags` 參數，可單獨更新標籤不動內容
+- `ownmind_update` 的 `content` 改為選填（不填則保留原值）
+- 新增 `scripts/patch-configs-v2.cjs` 批次更新腳本
+
+---
+
 ## 2026-03-26 — v1.5.3 強化：configs 加入鐵律強制執行指令
 
 ### 修正

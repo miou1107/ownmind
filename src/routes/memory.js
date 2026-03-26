@@ -51,12 +51,15 @@ const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
 **載入記憶時：**
 【OwnMind】已載入你的個人記憶：
    - 個人偏好：[摘要]
-   - 鐵律：X 條啟用中（已全部載入，防護啟動）
-   - 專案：X 個專案 context
+   - 鐵律：X 條啟用中 ↓
+     [iron_rules_digest 每條一行]
    - 待接手交接：有/無
 
 載入完成後，**必須立即將所有鐵律內化為工作準則**，在整個 session 中主動防護。
-不需要列出所有鐵律給使用者看，但必須在即將違反時主動攔截。
+每條鐵律如有 [觸發: xxx] 標記，代表執行該類操作前必須主動 re-check 並遵守。
+
+**Context 提醒：** 當對話超過 20 輪，或感覺 context 已消耗大量時，主動呼叫 ownmind_get('iron_rule') 刷新鐵律記憶，並顯示：
+【OwnMind】重新確認鐵律，防護持續中。
 
 **讀取特定記憶時：**
 【OwnMind】已調閱「XXX」記憶
@@ -247,11 +250,19 @@ router.get('/init', async (req, res) => {
     const ironRules = memories.filter(m => m.type === 'iron_rule');
     const activeHandoff = handoffResult.rows[0] || null;
 
+    // 精簡摘要：每條鐵律一行，供 AI 快速內化
+    const ironRulesDigest = ironRules.map(r => {
+      const code = r.code || 'IR-?';
+      const triggers = (r.tags || []).filter(t => t.startsWith('trigger:')).map(t => t.replace('trigger:', '')).join('/');
+      return `${code}: ${r.title}${triggers ? ` [觸發: ${triggers}]` : ''}`;
+    }).join('\n');
+
     res.json({
       instructions: INSTRUCTIONS_SOP,
       profile,
       principles,
       iron_rules: ironRules,
+      iron_rules_digest: ironRulesDigest,
       active_handoff: activeHandoff
     });
   } catch (err) {

@@ -18,6 +18,8 @@ AI個人化永久記憶解決方案
 - **鐵律管理** — 踩過的坑不會再犯，含完整背景脈絡
 - **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程和原因
 - **鐵律即時防護** — session 開始時自動載入所有鐵律，AI 在整個工作過程中主動攔截違規
+- **Trigger Tags** — 鐵律可標記觸發時機（`trigger:commit`、`trigger:deploy` 等），AI 在該操作前自動 re-check
+- **Claude Code Hook** — PreToolUse hook 在 git/deploy/delete 前自動提示相關鐵律，技術層面強制
 - **交接機制** — 在不同工具間無縫交接工作
 - **密鑰管理** — 安全儲存 API keys 和密碼
 - **語意搜尋** — pgvector 驅動，找到相關記憶

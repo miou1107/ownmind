@@ -56,7 +56,7 @@ const TOOLS = [
   {
     name: "ownmind_init",
     description:
-      "載入初始記憶（instructions、profile、principles、active_handoff）。每次新對話開始時應呼叫此工具。",
+      "載入初始記憶（instructions、profile、principles、iron_rules、iron_rules_digest、active_handoff）。每次新對話開始時必須呼叫。iron_rules_digest 為精簡摘要，須立即內化為工作準則。",
     inputSchema: {
       type: "object",
       properties: {},
@@ -98,7 +98,7 @@ const TOOLS = [
         tags: {
           type: "array",
           items: { type: "string" },
-          description: "標籤列表（選填）",
+          description: "標籤列表（選填）。iron_rule 可加 trigger: 前綴標記觸發時機，例如 trigger:git、trigger:commit、trigger:deploy、trigger:delete",
         },
         metadata: {
           type: "object",
@@ -115,14 +115,19 @@ const TOOLS = [
       type: "object",
       properties: {
         id: { type: "number", description: "記憶 ID" },
-        content: { type: "string", description: "更新後的內容" },
-        update_reason: { type: "string", description: "更新原因（必填，例如：規則調整、需求改變）" },
+        content: { type: "string", description: "更新後的內容（選填，不填則保留原內容）" },
+        update_reason: { type: "string", description: "更新原因（必填）" },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "更新後的標籤（選填）。iron_rule 可用 trigger: 前綴，例如 trigger:commit、trigger:deploy",
+        },
         metadata: {
           type: "object",
           description: "更新後的 metadata（選填）",
         },
       },
-      required: ["id", "content", "update_reason"],
+      required: ["id", "update_reason"],
     },
   },
   {
@@ -246,7 +251,9 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_update": {
-      const body = { content: args.content, update_reason: args.update_reason };
+      const body = { update_reason: args.update_reason };
+      if (args.content !== undefined) body.content = args.content;
+      if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
       return await callApi("PUT", `/api/memory/${args.id}`, body);
     }
