@@ -7,7 +7,7 @@
     "ownmind-mcp": "./index.js"
   },
   "keywords": ["mcp", "ai", "memory", "claude", "cursor"],
-  "author": "miou1107",
+  "author": "Vin (miou1107)",
   "license": "MIT",
   "repository": {
     "type": "git",

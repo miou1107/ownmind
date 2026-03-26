@@ -2,6 +2,8 @@
 
 ## 2026-03-26 — v1.1.1 README 更新
 - README.md 最上方加上「AI個人化永久記憶解決方案」
+- 更新 package.json 的 author 為「Vin (miou1107)」
+- README.md 新增 Contributors 區塊：Vin (miou1107)
 
 ## 2026-03-26 — v1.1.0 全域強制規則
 
