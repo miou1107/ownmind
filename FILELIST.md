@@ -9,7 +9,8 @@ OwnMind/
 ├── .gitignore                       # Git 忽略規則
 ├── Dockerfile                       # API Server Docker image
 ├── docker-compose.yml               # Docker Compose 部署設定
-├── install.sh                       # 一鍵安裝腳本（備用）
+├── install.sh                       # 一鍵安裝腳本（Mac / Linux / Git Bash）
+├── install.ps1                      # 一鍵安裝腳本（Windows PowerShell 原生）
 ├── package.json                     # API Server 依賴
 │
 ├── db/
@@ -37,6 +38,7 @@ OwnMind/
 │
 ├── mcp/                             # MCP Server（供 Claude Code、Cursor 等工具使用）
 │   ├── index.js                     # MCP Server 入口（12 個 tools）
+│   ├── start.cmd                    # Windows 啟動器（動態找 node，供 cmd.exe 呼叫）
 │   └── package.json                 # MCP Server 依賴
 │
 ├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）

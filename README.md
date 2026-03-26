@@ -15,12 +15,14 @@ AI個人化永久記憶解決方案
 ## 核心功能
 
 - **跨平台記憶** — 一個 API，所有 AI 工具共用
-- **鐵律管理** — 踩過的坑不會再踩，含完整背景脈絡
+- **鐵律管理** — 踩過的坑不會再犯，含完整背景脈絡
+- **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程和原因
 - **交接機制** — 在不同工具間無縫交接工作
 - **密鑰管理** — 安全儲存 API keys 和密碼
 - **語意搜尋** — pgvector 驅動，找到相關記憶
 - **分層壓縮** — 短期記憶自動壓縮，長期記憶永久保留
 - **持續進化** — AI 主動優化你的工作方法
+- **Windows 原生支援** — 提供 `install.ps1` 和 `start.cmd`，不需要 Git Bash
 
 ## 快速開始
 
@@ -30,7 +32,18 @@ AI個人化永久記憶解決方案
 
 ### 2. 安裝
 
-複製以下 prompt，貼到你的 AI 工具（Claude Code、Codex、Cursor 等），把 `YOUR_API_KEY` 換成你的 API key：
+**Windows 用戶**可以用 PowerShell 直接安裝：
+```powershell
+irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 -OutFile install.ps1
+.\install.ps1 YOUR_API_KEY
+```
+
+**Mac / Linux / Git Bash** 用戶：
+```bash
+curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
+```
+
+或者複製以下 prompt，貼到你的 AI 工具（Claude Code、Codex、Cursor 等），把 `YOUR_API_KEY` 換成你的 API key：
 
 ```
 幫我安裝 OwnMind 個人記憶系統。
