@@ -66,6 +66,9 @@ const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
 
 **更新記憶時：**
 【OwnMind】已更新「XXX」
+   舊版：[舊內容摘要]
+   新版：[新內容摘要]
+   原因：[update_reason]
 
 **停用記憶時：**
 【OwnMind】已停用 [編號]（原因：XXX）
@@ -382,9 +385,9 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { title, content, tags, metadata } = req.body;
+    const { title, content, tags, metadata, update_reason } = req.body;
 
-    // 先確認記憶存在且屬於該使用者
+    // 先確認記憶存在且屬於該使用者，並取得舊內容
     const existing = await query(
       'SELECT * FROM memories WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
@@ -393,6 +396,8 @@ router.put('/:id', async (req, res) => {
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: '找不到該記憶' });
     }
+
+    const oldMemory = existing.rows[0];
 
     const result = await query(
       `UPDATE memories
@@ -408,10 +413,16 @@ router.put('/:id', async (req, res) => {
 
     const memory = result.rows[0];
 
+    // 存舊內容到歷史，並記錄更新原因
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'update', $3, $4)`,
-      [memory.id, metadata?.tool || 'api', memory.content, memory.metadata]
+      [
+        memory.id,
+        metadata?.tool || oldMemory.metadata?.tool || 'api',
+        oldMemory.content,
+        JSON.stringify({ ...oldMemory.metadata, update_reason: update_reason || null })
+      ]
     );
 
     res.json(memory);
@@ -504,11 +515,18 @@ router.put('/:id/revert', async (req, res) => {
       return res.status(400).json({ error: '必須提供 history_id' });
     }
 
-    // 取得歷史版本的內容
+    // 先確認記憶屬於該使用者，再取得歷史版本
+    const memCheck = await query(
+      'SELECT id FROM memories WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (memCheck.rows.length === 0) {
+      return res.status(404).json({ error: '找不到該記憶' });
+    }
+
     const historyResult = await query(
-      `SELECT * FROM memory_history
-       WHERE id = $1 AND memory_id = $2 AND user_id = $3`,
-      [history_id, req.params.id, req.user.id]
+      `SELECT * FROM memory_history WHERE id = $1 AND memory_id = $2`,
+      [history_id, req.params.id]
     );
 
     if (historyResult.rows.length === 0) {
@@ -545,9 +563,18 @@ router.put('/:id/revert', async (req, res) => {
  */
 router.get('/:id/history', async (req, res) => {
   try {
+    // 先確認記憶屬於該使用者
+    const memCheck = await query(
+      'SELECT id FROM memories WHERE id = $1 AND user_id = $2',
+      [req.params.id, req.user.id]
+    );
+    if (memCheck.rows.length === 0) {
+      return res.status(404).json({ error: '找不到該記憶' });
+    }
+
     const result = await query(
       `SELECT * FROM memory_history
-       WHERE memory_id = $1 AND user_id = $2
+       WHERE memory_id = $1
        ORDER BY created_at DESC`,
       [req.params.id, req.user.id]
     );
