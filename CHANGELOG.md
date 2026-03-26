@@ -1,5 +1,16 @@
 # OwnMind 更新紀錄
 
+## 2026-03-26 — v1.5.0 全工具永久鐵律覆蓋
+
+### 新增
+- `configs/antigravity.md`：Google Antigravity 全域強制規則
+- `configs/copilot-instructions.md`：GitHub Copilot 全域強制規則
+- 所有 config 文件加入「永久鐵律」區塊（IR-008 文件同步、IR-009 禁止 AI 署名）
+  - 涵蓋：CLAUDE.md、AGENTS.md、GEMINI.md、global_rules.md、antigravity.md、copilot-instructions.md
+- Antigravity 額外加入 IR-010（禁止修改 ownmind 專案）
+
+---
+
 ## 2026-03-26 — v1.4.0 鐵律防護修正
 
 ### 修正
