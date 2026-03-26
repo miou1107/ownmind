@@ -11,10 +11,17 @@ user_invocable: true
 ## 啟動流程
 
 每次開始新的工作 session 時：
-1. 檢查 ~/.ownmind/ 是否有更新（`cd ~/.ownmind && git fetch --dry-run`），有的話自動 pull 並更新 skill
-2. 呼叫 `ownmind_init` 載入使用者記憶
-3. 顯示【OwnMind】載入摘要
-4. 如果有待接手的交接（active_handoff），先摘要給使用者確認
+1. 檢查 ~/.ownmind/ 是否有更新（`cd ~/.ownmind && git fetch && git log HEAD..origin/main --oneline`）
+2. 如果有更新 → 自動 pull + 更新 skill → 顯示更新了什麼：
+   ```
+   【OwnMind 更新】偵測到新版本，已自動更新：
+      - 新增 xxx 功能
+      - 修正 xxx 問題
+   ```
+   （根據 commit message 摘要，用使用者看得懂的語言）
+3. 呼叫 `ownmind_init` 載入使用者記憶
+4. 顯示【OwnMind】載入摘要
+5. 如果有待接手的交接（active_handoff），先摘要給使用者確認
 
 ## 存取提示（非常重要）
 
