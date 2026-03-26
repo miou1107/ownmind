@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OwnMind Admin</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f0f0f; color: #e0e0e0; }
+    .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
+    h1 span { color: #7c3aed; }
+    .subtitle { color: #888; margin-bottom: 30px; font-size: 14px; }
+
+    /* Login */
+    .login-box { max-width: 400px; margin: 100px auto; }
+    .login-box h2 { margin-bottom: 20px; color: #fff; }
+    input, select { width: 100%; padding: 10px 14px; border: 1px solid #333; border-radius: 8px; background: #1a1a1a; color: #e0e0e0; font-size: 14px; margin-bottom: 12px; }
+    input:focus, select:focus { outline: none; border-color: #7c3aed; }
+    button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+    .btn-primary { background: #7c3aed; color: #fff; width: 100%; }
+    .btn-primary:hover { background: #6d28d9; }
+    .btn-sm { padding: 6px 14px; font-size: 12px; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+    .btn-copy { background: #374151; color: #e0e0e0; }
+    .btn-copy:hover { background: #4b5563; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th { text-align: left; padding: 10px 12px; border-bottom: 2px solid #333; color: #999; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+    td { padding: 10px 12px; border-bottom: 1px solid #222; font-size: 14px; }
+    tr:hover td { background: #1a1a1a; }
+    .api-key { font-family: monospace; font-size: 12px; color: #7c3aed; }
+    .role-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .role-admin { background: #7c3aed22; color: #a78bfa; }
+    .role-user { background: #065f4622; color: #6ee7b7; }
+
+    /* Add user form */
+    .add-form { background: #1a1a1a; padding: 20px; border-radius: 12px; margin-top: 24px; border: 1px solid #333; }
+    .add-form h3 { margin-bottom: 16px; font-size: 16px; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row input, .form-row select { flex: 1; }
+    .form-row button { flex-shrink: 0; align-self: flex-end; margin-bottom: 12px; }
+
+    /* Stats */
+    .stats { display: flex; gap: 16px; margin-bottom: 24px; }
+    .stat-card { flex: 1; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 16px; }
+    .stat-card .number { font-size: 28px; font-weight: 700; color: #7c3aed; }
+    .stat-card .label { font-size: 12px; color: #888; margin-top: 4px; }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: #fff; padding: 12px 20px; border-radius: 8px; font-size: 14px; display: none; z-index: 100; }
+    .toast.error { background: #dc2626; }
+
+    .hidden { display: none; }
+
+    /* Install prompt */
+    .install-prompt { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 16px; margin-top: 12px; }
+    .install-prompt pre { background: #0f0f0f; padding: 12px; border-radius: 8px; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #a78bfa; margin-top: 8px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="loginView" class="login-box">
+  <h2>【OwnMind】Admin</h2>
+  <input type="password" id="apiKeyInput" placeholder="輸入 Admin API Key">
+  <button class="btn-primary" onclick="login()">登入</button>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="container hidden">
+  <h1>【<span>OwnMind</span>】Admin</h1>
+  <p class="subtitle">使用者管理後台</p>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="number" id="totalUsers">-</div>
+      <div class="label">使用者總數</div>
+    </div>
+    <div class="stat-card">
+      <div class="number" id="totalMemories">-</div>
+      <div class="label">記憶總數</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Email</th>
+        <th>名稱</th>
+        <th>角色</th>
+        <th>API Key</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="usersTable"></tbody>
+  </table>
+
+  <!-- Add User -->
+  <div class="add-form">
+    <h3>新增使用者</h3>
+    <div class="form-row">
+      <input type="email" id="newEmail" placeholder="Email">
+      <input type="text" id="newName" placeholder="名稱">
+      <select id="newRole">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button class="btn-primary btn-sm" onclick="addUser()">新增</button>
+    </div>
+  </div>
+
+  <!-- Install Prompt Template -->
+  <div class="add-form" style="margin-top: 16px;">
+    <h3>安裝 Prompt（複製給使用者）</h3>
+    <p style="color: #888; font-size: 13px; margin-bottom: 8px;">選擇使用者後，會自動帶入 API Key</p>
+    <select id="promptUser" onchange="updatePrompt()" style="margin-bottom: 8px;">
+      <option value="">-- 選擇使用者 --</option>
+    </select>
+    <div class="install-prompt">
+      <pre id="installPrompt">請先選擇使用者</pre>
+    </div>
+    <button class="btn-copy btn-sm" style="margin-top: 8px;" onclick="copyPrompt()">複製 Prompt</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let API_KEY = '';
+  const API = '/ownmind/api';
+  let usersData = [];
+
+  function headers() {
+    return { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' };
+  }
+
+  function showToast(msg, isError = false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = isError ? 'toast error' : 'toast';
+    t.style.display = 'block';
+    setTimeout(() => t.style.display = 'none', 3000);
+  }
+
+  async function login() {
+    API_KEY = document.getElementById('apiKeyInput').value.trim();
+    if (!API_KEY) return;
+    try {
+      const res = await fetch(`${API}/admin/users`, { headers: headers() });
+      if (!res.ok) throw new Error('無效的 API Key');
+      document.getElementById('loginView').classList.add('hidden');
+      document.getElementById('dashboard').classList.remove('hidden');
+      loadUsers();
+      loadStats();
+    } catch (e) {
+      showToast(e.message, true);
+    }
+  }
+
+  async function loadUsers() {
+    const res = await fetch(`${API}/admin/users`, { headers: headers() });
+    usersData = await res.json();
+    const tbody = document.getElementById('usersTable');
+    tbody.innerHTML = usersData.map(u => `
+      <tr>
+        <td>${u.id}</td>
+        <td>${u.email}</td>
+        <td>${u.name || '-'}</td>
+        <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+        <td>
+          <span class="api-key">${u.api_key.slice(0, 8)}...</span>
+          <button class="btn-copy btn-sm" onclick="copyKey('${u.api_key}')">複製</button>
+        </td>
+        <td>
+          <button class="btn-danger btn-sm" onclick="deleteUser(${u.id}, '${u.email}')">刪除</button>
+        </td>
+      </tr>
+    `).join('');
+
+    // Update prompt user select
+    const sel = document.getElementById('promptUser');
+    sel.innerHTML = '<option value="">-- 選擇使用者 --</option>' +
+      usersData.map(u => `<option value="${u.api_key}">${u.name || u.email}</option>`).join('');
+  }
+
+  async function loadStats() {
+    // Count users
+    document.getElementById('totalUsers').textContent = usersData.length || '-';
+    // Count memories (use first user or admin)
+    try {
+      const res = await fetch(`${API}/export`, { headers: headers() });
+      const data = await res.json();
+      let count = 0;
+      Object.values(data).forEach(arr => { if (Array.isArray(arr)) count += arr.length; });
+      document.getElementById('totalMemories').textContent = count;
+    } catch { document.getElementById('totalMemories').textContent = '-'; }
+  }
+
+  async function addUser() {
+    const email = document.getElementById('newEmail').value.trim();
+    const name = document.getElementById('newName').value.trim();
+    const role = document.getElementById('newRole').value;
+    if (!email) return showToast('請輸入 Email', true);
+    try {
+      const res = await fetch(`${API}/admin/users`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify({ email, name, role })
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      const user = await res.json();
+      showToast(`已建立使用者 ${email}，API Key: ${user.api_key}`);
+      document.getElementById('newEmail').value = '';
+      document.getElementById('newName').value = '';
+      loadUsers();
+    } catch (e) { showToast(e.message, true); }
+  }
+
+  async function deleteUser(id, email) {
+    if (!confirm(`確定要刪除 ${email}？`)) return;
+    try {
+      await fetch(`${API}/admin/users/${id}`, { method: 'DELETE', headers: headers() });
+      showToast(`已刪除 ${email}`);
+      loadUsers();
+    } catch (e) { showToast(e.message, true); }
+  }
+
+  function copyKey(key) {
+    navigator.clipboard.writeText(key);
+    showToast('API Key 已複製');
+  }
+
+  function updatePrompt() {
+    const key = document.getElementById('promptUser').value;
+    const el = document.getElementById('installPrompt');
+    if (!key) { el.textContent = '請先選擇使用者'; return; }
+    el.textContent = `幫我安裝 OwnMind 個人記憶系統。
+
+我的 API Key 是：${key}
+
+請執行以下步驟：
+1. 把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/（如果已存在就 git pull 更新）
+2. 到 ~/.ownmind/mcp/ 執行 npm install
+3. 在 ~/.claude/settings.json 的 mcpServers 加入 ownmind MCP（如果檔案不存在就建立）：
+   - command: "node"
+   - args: ["~/.ownmind/mcp/index.js"]（展開為完整路徑）
+   - env: { "OWNMIND_API_URL": "https://kkvin.com/ownmind", "OWNMIND_API_KEY": "${key}" }
+4. 在 ~/.claude/CLAUDE.md 加入以下內容（如果還沒有 OwnMind 區塊的話）：
+   # OwnMind 個人記憶系統
+   你已連接 OwnMind 跨平台 AI 個人記憶系統。
+   - 開始工作時，呼叫 ownmind_init 載入使用者記憶
+   - 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源
+   - 本地 memory 可並存，但發生衝突時以 OwnMind 為準
+   - 存取記憶時必須顯示【OwnMind】提示
+   - 完成重要工作後，主動儲存記憶
+   - 交接工作時，使用 OwnMind 交接機制
+5. 把 ~/.ownmind/skills/ownmind-memory.md 複製到 ~/.claude/skills/ownmind-memory/SKILL.md
+6. 如果本機有安裝 Cursor（~/.cursor/ 目錄存在），也在 ~/.cursor/mcp.json 加入同樣的 MCP 設定
+7. 完成後呼叫 ownmind_init 測試連線，確認能載入記憶`;
+  }
+
+  function copyPrompt() {
+    const text = document.getElementById('installPrompt').textContent;
+    if (text === '請先選擇使用者') return showToast('請先選擇使用者', true);
+    navigator.clipboard.writeText(text);
+    showToast('安裝 Prompt 已複製');
+  }
+
+  // Enter key login
+  document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') login();
+  });
+</script>
+</body>
+</html>
