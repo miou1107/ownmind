@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## 2026-03-26 — v1.3.0 規則時間序列 + Windows 相容性
+
+### 新功能
+- `ownmind_update` 新增必填 `update_reason` 欄位，更新規則時必須說明原因
+- 舊內容自動保存到 `memory_history`，可追溯完整時間序列（規則演變過程）
+- 更新記憶時 AI 會顯示「舊版 → 新版 + 原因」，讓變更一目了然
+- 記憶類型標籤改為繁體中文（`[鐵律]`、`[專案]`、`[技術標準]` 等），符合中文使用者習慣
+
+### Windows 相容性
+- 新增 `mcp/start.cmd`：Windows MCP 啟動器，動態用 `where node` 找 node，不 hardcode 路徑
+- `install.sh` 新增 Windows (Git Bash/MSYS/Cygwin) 偵測，自動改用 `cmd.exe + start.cmd`
+- 新增 `install.ps1`：PowerShell 原生安裝腳本，Windows 用戶可直接使用，不需要 Git Bash
+
+### Bug 修正
+- 修正 `memory_history` 存的是新內容而非舊內容（現在正確儲存更新前的舊版本）
+- 修正 `GET /:id/history` 和 `PUT /:id/revert` 查詢用了不存在的 `user_id` 欄位
+
+---
+
 ## 2026-03-26 — v1.1.1 README 更新
 - README.md 最上方加上「AI個人化永久記憶解決方案」
 - 更新 package.json 的 author 為「Vin (miou1107)」
