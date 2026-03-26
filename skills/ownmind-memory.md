@@ -15,12 +15,76 @@ user_invocable: true
 2. 顯示 `📥 OwnMind 載入：profile, principles, [pending handoff if any]`
 3. 如果有待接手的交接（active_handoff），先摘要給使用者確認
 
-## 存取指示器
+## 存取提示（非常重要）
 
-每次存取 OwnMind 時，**必須**在回應中顯示：
-- 📥 讀取記憶（init, get, search）
-- 📤 寫入記憶（save, update, disable）
-- 🔄 交接操作（handoff_create, handoff_accept）
+每次 OwnMind 有任何操作，**必須**顯示醒目的提示訊息，讓使用者清楚知道 OwnMind 一直在工作。
+
+### 載入時
+```
+🧠 OwnMind 已載入你的個人記憶：
+   - 個人偏好：繁體中文、Docker Compose 部署
+   - 鐵律：7 條啟用中
+   - 專案：6 個專案 context
+   - 待接手交接：無
+```
+
+### 讀取特定記憶時
+```
+🧠 OwnMind 已調閱「ring-linebot」專案記憶
+```
+
+### 搜尋時
+```
+🧠 OwnMind 搜尋「SSH 相關規則」→ 找到 2 筆相關記憶
+```
+
+### 寫入時
+```
+🧠 OwnMind 已儲存新鐵律 IR-008：部署前必須檢查環境變數
+```
+
+### 更新時
+```
+🧠 OwnMind 已更新「ring-linebot」專案進度
+```
+
+### 停用時
+```
+🧠 OwnMind 已停用 IR-003（原因：改用其他測試策略）
+```
+
+### 交接時
+```
+🧠 OwnMind 交接已建立 → 目標：Codex
+   - 狀態：webhook handler 重構做到一半
+   - 待完成：error handling、測試
+   - 注意：parser 的 signature 驗證不要動
+```
+
+### 接手交接時
+```
+🧠 OwnMind 交接接手 ← 來源：Claude Code @ MacBook Pro
+   - 狀態：webhook handler 重構做到一半
+   - 待完成：error handling、測試
+   - 注意：parser 的 signature 驗證不要動
+   確認接手嗎？
+```
+
+### 彙整時
+```
+🧠 OwnMind 彙整建議（本次 session 有以下值得記錄的事項）：
+   1. [iron_rule] Docker build 要指定 platform
+   2. [project] ring-linebot 完成 webhook 重構
+   3. [coding_standard] 新增 ESLint 規則
+   要記錄哪些？（輸入編號，或「全部」）
+```
+
+### 密鑰存取時
+```
+🔐 OwnMind 正在取得密鑰「line-channel-secret」...
+```
+
+**規則：永遠用 🧠 開頭（密鑰用 🔐），讓使用者一眼就知道這是 OwnMind 的操作。**
 
 ## 什麼時候該記
 
