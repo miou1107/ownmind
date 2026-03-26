@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
 router.get('/:key', async (req, res) => {
   try {
     const result = await query(
-      `SELECT id, key, value, description FROM secrets
+      `SELECT id, key, encrypted_value, description FROM secrets
        WHERE key = $1 AND user_id = $2`,
       [req.params.key, req.user.id]
     );
@@ -41,7 +41,7 @@ router.get('/:key', async (req, res) => {
     }
 
     const secret = result.rows[0];
-    const decryptedValue = decrypt(secret.value);
+    const decryptedValue = decrypt(secret.encrypted_value);
 
     logger.info('Secret 被存取', { key: req.params.key, user_id: req.user.id });
 
@@ -71,7 +71,7 @@ router.post('/', async (req, res) => {
     const encryptedValue = encrypt(value);
 
     const result = await query(
-      `INSERT INTO secrets (user_id, key, value, description)
+      `INSERT INTO secrets (user_id, key, encrypted_value, description)
        VALUES ($1, $2, $3, $4)
        RETURNING id, key, description`,
       [req.user.id, key, encryptedValue, description || null]
@@ -96,7 +96,7 @@ router.put('/:key', async (req, res) => {
     let paramIndex = 1;
 
     if (value) {
-      updates.push(`value = $${paramIndex++}`);
+      updates.push(`encrypted_value = $${paramIndex++}`);
       params.push(encrypt(value));
     }
     if (description !== undefined) {
