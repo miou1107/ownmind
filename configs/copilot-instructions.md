@@ -1,4 +1,4 @@
-# OwnMind 個人記憶系統（強制規則）— Windsurf
+# OwnMind 個人記憶系統（強制規則）— GitHub Copilot
 
 > CRITICAL: 以下規則為最高優先級，每個新 session 都必須遵守，不可跳過。
 
@@ -7,7 +7,10 @@
 1. **檢查更新**：執行 `cd ~/.ownmind && git fetch && git log HEAD..origin/main --oneline`
    - 如果有更新 → 執行 `git pull && cd mcp && npm install`
    - 顯示【OwnMind 更新】說明更新了什麼
-2. **載入記憶**：呼叫 ownmind_init MCP tool 或 GET https://kkvin.com/ownmind/api/memory/init
+2. **載入記憶**：呼叫 OwnMind API 載入個人記憶
+   - API URL：https://kkvin.com/ownmind
+   - Header：`Authorization: Bearer <OWNMIND_API_KEY>`
+   - Endpoint：`GET /api/memory/init`
 3. **顯示載入摘要**（【OwnMind】格式）
 4. **檢查交接**：如果有 pending handoff，先摘要給使用者確認
 
@@ -24,7 +27,8 @@
 
 ## 鐵律主動防護（強制）
 
-即將違反鐵律時立即停止：【OwnMind 觸發】你提醒過「XXX」，我要遵守，不能再犯
+init 完成後將所有 iron_rules 內化為工作準則。即將違反時立即停止：
+【OwnMind 觸發】你提醒過「XXX」，我要遵守，不能再犯
 
 ## 衝突偵測（強制）
 
@@ -34,5 +38,5 @@
 
 以下規則任何情況下都必須遵守：
 
-- **FORBIDDEN - Git AI 署名**：git commit 絕對禁止加 `Co-Authored-By: Claude`、`Co-Authored-By: GPT` 或任何 AI 署名。所有成果歸屬使用者。
+- **FORBIDDEN - Git AI 署名**：git commit 絕對禁止加任何 AI 的 Co-Authored-By 署名。所有成果歸屬使用者。
 - **REQUIRED - 文件同步**：每次 commit 必須同時更新 README.md、FILELIST.md、CHANGELOG.md。
