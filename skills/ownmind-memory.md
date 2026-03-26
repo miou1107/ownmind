@@ -199,6 +199,28 @@ user_invocable: true
 3. 不刪除，只標記 disabled
 4. `📤 OwnMind 更新：IR-XXX 已停用（原因：...）`
 
+## 衝突偵測（非常重要）
+
+當 OwnMind 的記憶與以下來源發生矛盾或衝突時，**不要自行決定，必須主動問使用者**：
+
+- **本地 memory**（~/.claude/memory/ 等）與 OwnMind 記憶不一致
+- **本地 skill / workflow**（如 superpowers、openspec、其他已安裝的 skill）與 OwnMind 鐵律或偏好衝突
+- **專案級設定檔**（CLAUDE.md、AGENTS.md、.cursorrules）與 OwnMind 記憶矛盾
+
+偵測到衝突時的格式：
+```
+【OwnMind 衝突】偵測到以下不一致：
+   - OwnMind 鐵律 IR-003 說「修 bug 前先寫 reproduction test」
+   - 但本地 superpowers:test-driven-development skill 要求「先寫 unit test 再實作」
+   這兩條規則在此情境下有衝突。
+   你希望遵循哪一個？還是兩者都適用、各有不同場景？
+```
+
+**原則：**
+- 不要默默忽略衝突，使用者有權知道並決定
+- 如果使用者做出決定，把結論記回 OwnMind（更新鐵律或新增一條澄清規則）
+- 如果是本地設定過時了，建議使用者更新本地設定以保持一致
+
 ## 持續進化
 
 工作中主動反思：
