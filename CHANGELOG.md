@@ -1,5 +1,13 @@
 # OwnMind 更新紀錄
 
+## 2026-03-26 — v1.5.1 新增 OpenClaw 支援
+
+### 新增
+- `configs/openclaw-bootstrap.md`：OpenClaw bootstrap 注入檔，包含完整 OwnMind 強制規則
+- `configs/openclaw.json`：OpenClaw 設定片段，安裝時合併到 `~/.openclaw/openclaw.json`
+
+---
+
 ## 2026-03-26 — v1.5.0 全工具永久鐵律覆蓋
 
 ### 新增

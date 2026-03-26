@@ -48,7 +48,9 @@ OwnMind/
 │   ├── global_rules.md              # Windsurf → ~/.codeium/windsurf/memories/global_rules.md
 │   ├── opencode.json                # OpenCode → ~/.config/opencode/opencode.json
 │   ├── antigravity.md               # Google Antigravity → 全域指令設定
-│   └── copilot-instructions.md      # GitHub Copilot → .github/copilot-instructions.md
+│   ├── copilot-instructions.md      # GitHub Copilot → .github/copilot-instructions.md
+│   ├── openclaw.json                # OpenClaw → 合併到 ~/.openclaw/openclaw.json
+│   └── openclaw-bootstrap.md       # OpenClaw bootstrap 注入檔（OwnMind 強制規則）
 │
 ├── skills/
 │   └── ownmind-memory.md            # OwnMind 記憶管理 Skill
