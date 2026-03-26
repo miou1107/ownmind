@@ -1,5 +1,15 @@
 # OwnMind 更新紀錄
 
+## 2026-03-26 — v1.4.0 鐵律防護修正
+
+### 修正
+- `ownmind_init` 現在一併回傳 `iron_rules`，AI 在 session 開始即載入所有鐵律並啟動防護
+- `configs/CLAUDE.md` 新增「永久鐵律」區塊：IR-008（文件同步）和 IR-009（禁止 AI 署名）在 OwnMind init 前就生效
+- 更新 skill 啟動流程，明確要求 init 後必須內化鐵律
+- 更新 INSTRUCTIONS_SOP，載入摘要顯示「鐵律防護已啟動」
+
+---
+
 ## 2026-03-26 — v1.3.0 規則時間序列 + Windows 相容性
 
 ### 新功能
