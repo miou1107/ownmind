@@ -290,7 +290,11 @@ team_standard 記憶（init 載入 — 輕量）:
 ├── title: "Git 治理規範"
 ├── content: "團隊 Git 操作必須遵守統一流程"     ← 一行摘要
 ├── tags: ["trigger:git", "trigger:commit"]       ← 觸發條件
-├── metadata: { "rule_id": 42 }                   ← 指向詳細規則的記憶 ID
+├── metadata: {
+│     "rule_id": 42,                              ← 指向詳細規則的記憶 ID
+│     "version": "2026-03-27T14:30:00",             ← 規範版本（datetime，無時區）
+│     "changelog": "新增 squash merge 規則"       ← 本次更新摘要
+│   }
 └── status: active
 ```
 
@@ -308,24 +312,52 @@ team_standard 記憶（init 載入 — 輕量）:
 │     ## PR Review
 │     - 至少一人 approve
 │     ...（可以很長很細）
-└── tags: ["rule_detail"]
+├── tags: ["rule_detail"]
+└── metadata: { "version": "2026-03-27T14:30:00" }        ← 與摘要版本同步
 ```
+
+**版本管理（強制）：**
+
+每條團隊規範帶有 `metadata.version`（datetime 格式 `YYYY-MM-DDTHH:mm:ss`，無時區），用於追蹤規範更新：
+
+- Admin 更新規範時，**必須同時更新 version 日期**
+- Init 載入時，API 回傳每條規範的 version
+- AI 在 session 中記錄已套用的版本
+
+**強制更新機制：**
+
+1. **Init 時檢查**：比對 init 回傳的 version 與上次 session 記錄的版本
+2. 如果有規範版本更新 → 強制顯示更新通知：
+   ```
+   【OwnMind v1.7.1】行為觸發：📋 團隊規範有更新，已強制套用最新版
+      - Git 治理規範：2026-03-20T10:00 → 2026-03-27T14:30（新增 squash merge 規則）
+      - Code Review 規範：未變更
+   ```
+3. **觸發時檢查**：動態載入詳細規則時，比對快取版本與 API 版本
+4. 如果版本不一致 → 清除快取，重新載入最新版，並顯示：
+   ```
+   【OwnMind v1.7.1】行為觸發：⚠️ 團隊規範「{title}」已更新至 {version}，重新載入最新版
+      更新內容：{changelog}
+   ```
+5. **不允許使用舊版** — AI 不可快取過期規則，必須每次比對版本號
 
 **觸發流程：**
 1. 使用者下 git 指令
 2. AI 偵測到 `trigger:git` 標籤
 3. 從 team_standard 的 `metadata.rule_id` 取得詳細規則 ID
 4. 呼叫 `ownmind_get` 或 API 讀取完整規則內容
-5. 按規則執行，並顯示：
+5. 比對版本號 — 若與快取不同則更新快取
+6. 按規則執行，並顯示：
    ```
-   【OwnMind v1.7.1】行為觸發：已載入團隊規範「Git 治理規範」，按規範執行
+   【OwnMind v1.7.1】行為觸發：已載入團隊規範「Git 治理規範」(v2026-03-27T14:30)，按規範執行
    ```
 
 **規則：**
 - init 時**不載入** `rule_detail` 標籤的記憶，節省 context
 - 只有當對應的 trigger 被觸發時才動態載入
-- 載入後在當次 session 中快取，同一規則不重複讀取
+- 載入後在當次 session 中快取，但每次觸發需比對版本號
 - Admin 建立團隊規範時，如果規則很長，應拆成「摘要記憶 + 詳細規則記憶」兩筆，透過 `metadata.rule_id` 關聯
+- Admin 更新規範時，摘要和詳細規則的 `metadata.version` 必須同步更新
 
 **優先級規則（強制）：**
 ```
