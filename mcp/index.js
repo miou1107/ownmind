@@ -15,7 +15,8 @@ const API_URL = (process.env.OWNMIND_API_URL || "https://kkvin.com/ownmind").rep
 );
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
-// --- Sync Token (in-memory, per session) ---
+// --- Version & Sync Token (in-memory, per session) ---
+const CLIENT_VERSION = '1.8.0';
 let currentSyncToken = null;
 
 // --- Helper ---
@@ -235,6 +236,11 @@ async function handleTool(name, args) {
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
       }
+      // Version check: compare client vs server
+      if (data.server_version && data.server_version !== CLIENT_VERSION) {
+        data._update_notice = `⚠️ OwnMind 版本不一致：MCP client ${CLIENT_VERSION}、Server ${data.server_version}。請更新：cd ~/.ownmind && git pull && cd mcp && npm install`;
+      }
+      data._client_version = CLIENT_VERSION;
       return data;
     }
 
@@ -339,7 +345,7 @@ async function handleTool(name, args) {
 
 // --- Server setup ---
 const server = new Server(
-  { name: "ownmind-mcp", version: "1.0.0" },
+  { name: "ownmind-mcp", version: CLIENT_VERSION },
   { capabilities: { tools: {} } }
 );
 
