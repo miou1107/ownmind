@@ -283,12 +283,21 @@ cp ~/.ownmind/skills/ownmind-memory.md ~/.claude/commands/ownmind-memory.md
 
 **優先級規則（強制）：**
 ```
-team_standard > iron_rule > principle > coding_standard > profile
+team_standard（已開啟）> iron_rule > principle > coding_standard > profile
 ```
-- 團隊規範與個人鐵律衝突時，**團隊規範優先**
-- 顯示衝突時標明：
+
+**團隊規範為最高準則（開啟狀態下）：**
+- 當任何規則（iron_rule、principle、coding_standard、個人偏好等）與團隊規範衝突時，**一律以團隊規範為主**
+- AI 必須主動偵測衝突並發出提醒，不可靜默覆蓋：
   ```
-  【OwnMind v1.7.1】衝突偵測：團隊規範「{title}」與你的個人鐵律 IR-{XXX} 衝突，依規定團隊規範優先
+  【OwnMind v1.7.1】衝突偵測：團隊規範「{title}」與你的個人鐵律 IR-{XXX} 衝突
+     → 依規定：團隊規範為最高準則，已按團隊規範執行
+     → 你的個人規則「{rule_title}」在此情境下被覆蓋
+  ```
+- 即使使用者指示違反團隊規範，AI 也必須先提醒：
+  ```
+  【OwnMind v1.7.1】行為觸發：⚠️ 你的操作違反團隊規範「{title}」，此為組織最高準則，無法直接跳過
+     如需例外處理，請關閉此團隊規範（需輸入「我確認關閉團隊規範」）
   ```
 
 **使用者關閉團隊規範（雙重確認，強制）：**
