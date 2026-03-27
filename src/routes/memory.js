@@ -236,11 +236,12 @@ router.get('/init', async (req, res) => {
       [req.user.id]
     );
 
-    // team_standard: 跨使用者共享，載入所有 admin 建立的（排除此使用者已 opt-out 的）
+    // team_standard: 跨使用者共享，載入摘要（排除 rule_detail 和使用者已 opt-out 的）
     const teamStandardsResult = await query(
       `SELECT m.* FROM memories m
        WHERE m.type = 'team_standard'
          AND m.status = 'active'
+         AND NOT (m.tags @> ARRAY['rule_detail'])
          AND m.id NOT IN (
            SELECT (metadata->>'team_standard_id')::int
            FROM memories

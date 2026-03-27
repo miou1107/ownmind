@@ -281,6 +281,52 @@ cp ~/.ownmind/skills/ownmind-memory.md ~/.claude/commands/ownmind-memory.md
 - **讀取**：所有人（init 時自動載入，不需額外操作）
 - **個人關閉（opt-out）**：任何使用者都可以關閉某條團隊規範（僅影響自己，不影響他人）
 
+**動態加載設計（Lazy Loading）：**
+
+團隊規範採用「摘要 + 詳細規則」兩層結構，init 時只載入摘要，觸發時才動態讀取詳細規則：
+
+```
+team_standard 記憶（init 載入 — 輕量）:
+├── title: "Git 治理規範"
+├── content: "團隊 Git 操作必須遵守統一流程"     ← 一行摘要
+├── tags: ["trigger:git", "trigger:commit"]       ← 觸發條件
+├── metadata: { "rule_id": 42 }                   ← 指向詳細規則的記憶 ID
+└── status: active
+```
+
+```
+詳細規則記憶（觸發時才載入 — 完整內容）:
+├── id: 42
+├── type: "team_standard"
+├── title: "Git 治理規範 - 詳細規則"
+├── content: |
+│     ## Branch Naming
+│     - feature/{ticket}-{description}
+│     - fix/{ticket}-{description}
+│     ## Commit Message
+│     - feat/fix/refactor: 開頭
+│     ## PR Review
+│     - 至少一人 approve
+│     ...（可以很長很細）
+└── tags: ["rule_detail"]
+```
+
+**觸發流程：**
+1. 使用者下 git 指令
+2. AI 偵測到 `trigger:git` 標籤
+3. 從 team_standard 的 `metadata.rule_id` 取得詳細規則 ID
+4. 呼叫 `ownmind_get` 或 API 讀取完整規則內容
+5. 按規則執行，並顯示：
+   ```
+   【OwnMind v1.7.1】行為觸發：已載入團隊規範「Git 治理規範」，按規範執行
+   ```
+
+**規則：**
+- init 時**不載入** `rule_detail` 標籤的記憶，節省 context
+- 只有當對應的 trigger 被觸發時才動態載入
+- 載入後在當次 session 中快取，同一規則不重複讀取
+- Admin 建立團隊規範時，如果規則很長，應拆成「摘要記憶 + 詳細規則記憶」兩筆，透過 `metadata.rule_id` 關聯
+
 **優先級規則（強制）：**
 ```
 team_standard（已開啟）> iron_rule > principle > coding_standard > profile
