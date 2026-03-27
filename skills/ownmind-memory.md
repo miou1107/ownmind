@@ -42,9 +42,32 @@ user_invocable: true
    【OwnMind 更新提醒】遠端有新版本（{N} 個 commit），建議更新：
       - {commit message 1}
       - {commit message 2}
-   執行 `cd ~/.ownmind && git pull` 即可更新。要我幫你更新嗎？
+   要我幫你更新嗎？
    ```
 7. 如果沒有新 commit → 不顯示任何訊息，靜默繼續
+
+**使用者同意更新時（說「好」「更新」「update」等），執行完整更新流程：**
+```bash
+# Step 1: pull 最新程式碼
+cd ~/.ownmind && git pull
+
+# Step 2: 更新 MCP 依賴（如果 package.json 有變動）
+cd ~/.ownmind/mcp && npm install
+
+# Step 3: 同步 skill 到本地 Claude commands
+cp ~/.ownmind/skills/ownmind-memory.md ~/.claude/commands/ownmind-memory.md
+
+# Step 4: 同步各 AI client config（如果 configs/ 有變動）
+# Claude Code: ~/.claude/CLAUDE.md 的 OwnMind 區塊
+# 其他 client 的 config 由各自的 bootstrap 機制處理
+```
+更新完成後顯示：
+```
+【OwnMind 更新完成】已更新至最新版本：
+   - 程式碼：✅ git pull 完成
+   - MCP 依賴：✅ npm install 完成
+   - Skill 同步：✅ 已同步到本地
+```
 
 **規則：**
 - marker 檔案路徑固定為 `~/.ownmind/.last-update-check`
