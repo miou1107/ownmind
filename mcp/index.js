@@ -15,6 +15,9 @@ const API_URL = (process.env.OWNMIND_API_URL || "https://kkvin.com/ownmind").rep
 );
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
+// --- Sync Token (in-memory, per session) ---
+let currentSyncToken = null;
+
 // --- Helper ---
 async function callApi(method, path, body) {
   const url = `${API_URL}${path}`;
@@ -226,63 +229,95 @@ const TOOLS = [
 // --- Tool handlers ---
 async function handleTool(name, args) {
   switch (name) {
-    case "ownmind_init":
-      return await callApi("GET", "/api/memory/init");
+    case "ownmind_init": {
+      const data = await callApi("GET", "/api/memory/init");
+      // Store sync token for subsequent write operations
+      if (data.sync_token) {
+        currentSyncToken = data.sync_token;
+      }
+      return data;
+    }
 
-    case "ownmind_get":
-      return await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}`);
+    case "ownmind_get": {
+      const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
+      const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}`);
+      // Update token if server returns a new one
+      if (data.new_token) currentSyncToken = data.new_token;
+      return data;
+    }
 
-    case "ownmind_search":
-      return await callApi(
+    case "ownmind_search": {
+      const searchTokenParam = currentSyncToken ? `&sync_token=${currentSyncToken}` : '';
+      const data = await callApi(
         "GET",
-        `/api/memory/search?q=${encodeURIComponent(args.query)}`
+        `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`
       );
+      if (data.new_token) currentSyncToken = data.new_token;
+      return data;
+    }
 
     case "ownmind_save": {
       const body = {
         type: args.type,
         title: args.title,
         content: args.content,
+        sync_token: currentSyncToken,
       };
       if (args.code !== undefined) body.code = args.code;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
-      return await callApi("POST", "/api/memory", body);
+      const data = await callApi("POST", "/api/memory", body);
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      return data;
     }
 
     case "ownmind_update": {
-      const body = { update_reason: args.update_reason };
+      const body = { update_reason: args.update_reason, sync_token: currentSyncToken };
       if (args.content !== undefined) body.content = args.content;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
-      return await callApi("PUT", `/api/memory/${args.id}`, body);
+      const data = await callApi("PUT", `/api/memory/${args.id}`, body);
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      return data;
     }
 
-    case "ownmind_disable":
-      return await callApi("PUT", `/api/memory/${args.id}/disable`, {
+    case "ownmind_disable": {
+      const data = await callApi("PUT", `/api/memory/${args.id}/disable`, {
         reason: args.reason,
+        sync_token: currentSyncToken,
       });
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      return data;
+    }
 
     case "ownmind_handoff_create": {
-      const body = { project: args.project, content: args.content };
+      const body = { project: args.project, content: args.content, sync_token: currentSyncToken };
       if (args.from_tool !== undefined) body.from_tool = args.from_tool;
       if (args.from_model !== undefined) body.from_model = args.from_model;
       if (args.from_machine !== undefined) body.from_machine = args.from_machine;
-      return await callApi("POST", "/api/handoff", body);
+      const data = await callApi("POST", "/api/handoff", body);
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      return data;
     }
 
-    case "ownmind_handoff_accept":
-      return await callApi("PUT", `/api/handoff/${args.id}/accept`, {
+    case "ownmind_handoff_accept": {
+      const data = await callApi("PUT", `/api/handoff/${args.id}/accept`, {
         accepted_by: args.accepted_by,
+        sync_token: currentSyncToken,
       });
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      return data;
+    }
 
     case "ownmind_log_session": {
-      const body = { summary: args.summary };
+      const body = { summary: args.summary, sync_token: currentSyncToken };
       if (args.tool !== undefined) body.tool = args.tool;
       if (args.model !== undefined) body.model = args.model;
       if (args.machine !== undefined) body.machine = args.machine;
       if (args.details !== undefined) body.details = args.details;
-      return await callApi("POST", "/api/session", body);
+      const data = await callApi("POST", "/api/session", body);
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      return data;
     }
 
     case "ownmind_get_secret":

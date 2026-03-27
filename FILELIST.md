@@ -32,7 +32,8 @@ OwnMind/
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
-│   │   └── crypto.js                # AES-256 加解密工具
+│   │   ├── crypto.js                # AES-256 加解密工具
+│   │   └── syncToken.js             # Sync token 生成與驗證（SHA-256）
 │   └── public/
 │       └── admin.html               # Admin 管理後台（單頁應用）
 │
