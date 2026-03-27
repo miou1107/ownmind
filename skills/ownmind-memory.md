@@ -24,6 +24,33 @@ user_invocable: true
 5. **將所有 iron_rules 內化為工作準則**，在整個 session 中主動防護（不需列出給使用者，但即將違反時必須攔截）
 6. 如果有待接手的交接（active_handoff），先摘要給使用者確認
 
+## 每日更新檢查（強制）
+
+每次 OwnMind 被觸發（任何操作：讀取、寫入、搜尋、彙整等），**必須先執行更新檢查**，但每天最多提醒一次：
+
+**檢查流程：**
+1. 讀取 marker 檔案：`cat ~/.ownmind/.last-update-check 2>/dev/null`
+2. 比較 marker 日期與今天日期（格式 `YYYY-MM-DD`）
+3. 如果 marker 日期 = 今天 → **跳過檢查**，直接執行操作
+4. 如果 marker 日期 ≠ 今天（或檔案不存在）→ 執行以下步驟：
+   ```bash
+   cd ~/.ownmind && git fetch 2>/dev/null && git log HEAD..origin/main --oneline
+   ```
+5. 更新 marker：`date +%Y-%m-%d > ~/.ownmind/.last-update-check`
+6. 如果有新 commit → 顯示提醒：
+   ```
+   【OwnMind 更新提醒】遠端有新版本（{N} 個 commit），建議更新：
+      - {commit message 1}
+      - {commit message 2}
+   執行 `cd ~/.ownmind && git pull` 即可更新。要我幫你更新嗎？
+   ```
+7. 如果沒有新 commit → 不顯示任何訊息，靜默繼續
+
+**規則：**
+- marker 檔案路徑固定為 `~/.ownmind/.last-update-check`
+- 即使 git fetch 失敗（離線等），也要更新 marker，避免重複嘗試
+- 此檢查不阻塞操作 — 提醒完畢後繼續執行使用者要求的操作
+
 ## 存取提示（非常重要）
 
 每次 OwnMind 有任何操作，**必須**顯示醒目的提示訊息，讓使用者清楚知道 OwnMind 一直在工作。
