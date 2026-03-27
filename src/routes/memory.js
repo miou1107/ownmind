@@ -6,6 +6,35 @@ import logger from '../utils/logger.js';
 
 const SERVER_VERSION = '1.8.0';
 
+const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
+
+/**
+ * Sync token 驗證（graceful fallback）
+ * - 有 token 且 valid → 通過
+ * - 有 token 但 stale → 409 要求 re-init
+ * - 沒 token（舊 client）→ 放行但附 warning，敦促更新
+ * 回傳: { ok: boolean, warning?: string, errorResponse?: object }
+ */
+async function checkSyncToken(userId, syncToken) {
+  if (!syncToken) {
+    // 舊 client 沒帶 token → graceful fallback，放行但警告
+    logger.warn('寫入操作未帶 sync_token（舊版 client）', { userId });
+    return { ok: true, warning: UPDATE_PROMPT };
+  }
+  const check = await validateSyncToken(userId, syncToken);
+  if (!check.valid) {
+    return {
+      ok: false,
+      errorResponse: {
+        error: '狀態已變更，請先 re-init 取得最新記憶',
+        stale: true,
+        new_token: check.new_token
+      }
+    };
+  }
+  return { ok: true };
+}
+
 const router = Router();
 router.use(auth);
 
@@ -432,20 +461,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: '必填欄位：type, title, content' });
     }
 
-    // Sync token 驗證（寫入操作強制）
-    if (!sync_token) {
-      return res.status(409).json({
-        error: '請先呼叫 init 取得 sync token',
-        needs_init: true
-      });
-    }
-    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
-    if (!tokenCheck.valid) {
-      return res.status(409).json({
-        error: '狀態已變更，請先 re-init 取得最新記憶',
-        stale: true,
-        new_token: tokenCheck.new_token
-      });
+    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    const tokenResult = await checkSyncToken(req.user.id, sync_token);
+    if (!tokenResult.ok) {
+      return res.status(409).json(tokenResult.errorResponse);
     }
 
     // team_standard 僅限 admin 寫入
@@ -494,7 +513,9 @@ router.post('/', async (req, res) => {
 
     // 回傳新的 sync token（寫入後狀態變了）
     const newToken = await generateSyncToken(req.user.id);
-    res.status(201).json({ ...memory, sync_token: newToken });
+    const response = { ...memory, sync_token: newToken };
+    if (tokenResult.warning) response.update_warning = tokenResult.warning;
+    res.status(201).json(response);
   } catch (err) {
     logger.error('建立記憶失敗', { error: err.message });
     res.status(500).json({ error: '建立記憶失敗' });
@@ -508,17 +529,10 @@ router.put('/:id', async (req, res) => {
   try {
     const { title, content, tags, metadata, update_reason, sync_token, rule_stats } = req.body;
 
-    // Sync token 驗證（寫入操作強制）
-    if (!sync_token) {
-      return res.status(409).json({ error: '請先呼叫 init 取得 sync token', needs_init: true });
-    }
-    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
-    if (!tokenCheck.valid) {
-      return res.status(409).json({
-        error: '狀態已變更，請先 re-init 取得最新記憶',
-        stale: true,
-        new_token: tokenCheck.new_token
-      });
+    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    const tokenResult = await checkSyncToken(req.user.id, sync_token);
+    if (!tokenResult.ok) {
+      return res.status(409).json(tokenResult.errorResponse);
     }
 
     // 先確認記憶存在且屬於該使用者，並取得舊內容
@@ -589,7 +603,9 @@ router.put('/:id', async (req, res) => {
     }
 
     const newToken = await generateSyncToken(req.user.id);
-    res.json({ ...memory, sync_token: newToken });
+    const response = { ...memory, sync_token: newToken };
+    if (tokenResult.warning) response.update_warning = tokenResult.warning;
+    res.json(response);
   } catch (err) {
     logger.error('更新記憶失敗', { error: err.message });
     res.status(500).json({ error: '更新記憶失敗' });
@@ -607,17 +623,10 @@ router.put('/:id/disable', async (req, res) => {
       return res.status(400).json({ error: '必須提供停用原因' });
     }
 
-    // Sync token 驗證
-    if (!sync_token) {
-      return res.status(409).json({ error: '請先呼叫 init 取得 sync token', needs_init: true });
-    }
-    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
-    if (!tokenCheck.valid) {
-      return res.status(409).json({
-        error: '狀態已變更，請先 re-init 取得最新記憶',
-        stale: true,
-        new_token: tokenCheck.new_token
-      });
+    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    const tokenResult = await checkSyncToken(req.user.id, sync_token);
+    if (!tokenResult.ok) {
+      return res.status(409).json(tokenResult.errorResponse);
     }
 
     // team_standard 僅限 admin 停用
@@ -648,7 +657,9 @@ router.put('/:id/disable', async (req, res) => {
     );
 
     const newToken = await generateSyncToken(req.user.id);
-    res.json({ ...result.rows[0], sync_token: newToken });
+    const response = { ...result.rows[0], sync_token: newToken };
+    if (tokenResult.warning) response.update_warning = tokenResult.warning;
+    res.json(response);
   } catch (err) {
     logger.error('停用記憶失敗', { error: err.message });
     res.status(500).json({ error: '停用記憶失敗' });
@@ -662,17 +673,10 @@ router.put('/:id/enable', async (req, res) => {
   try {
     const { sync_token } = req.body || {};
 
-    // Sync token 驗證
-    if (!sync_token) {
-      return res.status(409).json({ error: '請先呼叫 init 取得 sync token', needs_init: true });
-    }
-    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
-    if (!tokenCheck.valid) {
-      return res.status(409).json({
-        error: '狀態已變更，請先 re-init 取得最新記憶',
-        stale: true,
-        new_token: tokenCheck.new_token
-      });
+    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    const tokenResult = await checkSyncToken(req.user.id, sync_token);
+    if (!tokenResult.ok) {
+      return res.status(409).json(tokenResult.errorResponse);
     }
 
     const result = await query(
@@ -697,7 +701,9 @@ router.put('/:id/enable', async (req, res) => {
     );
 
     const newToken = await generateSyncToken(req.user.id);
-    res.json({ ...result.rows[0], sync_token: newToken });
+    const response = { ...result.rows[0], sync_token: newToken };
+    if (tokenResult.warning) response.update_warning = tokenResult.warning;
+    res.json(response);
   } catch (err) {
     logger.error('啟用記憶失敗', { error: err.message });
     res.status(500).json({ error: '啟用記憶失敗' });
