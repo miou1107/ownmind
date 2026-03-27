@@ -81,11 +81,15 @@ user_invocable: true
 
 ### 彙整時
 ```
-【OwnMind】 彙整建議（本次 session 有以下值得記錄的事項）：
-   1. [鐵律] Docker build 要指定 platform
-   2. [專案] ring-linebot 完成 webhook 重構
-   3. [技術標準] 新增 ESLint 規則
-   要記錄哪些？（輸入編號，或「全部」）
+【OwnMind 彙整建議】本次 session 有以下值得記錄的事項：
+
+   | # | 分類 | 標題 | 說明 |
+   |---|------|------|------|
+   | 1 | 🚫 鐵律 (iron_rule) | Docker build 要指定 platform | 跨架構部署踩坑 |
+   | 2 | 📁 專案 (project) | ring-linebot 完成 webhook 重構 | 進度更新 |
+   | 3 | 🔧 技術標準 (coding_standard) | 新增 ESLint 規則 | 統一 import 排序 |
+
+   要記錄哪些？（輸入編號、「全部」、或「跳過」）
 ```
 
 ### 密鑰存取時
@@ -112,16 +116,38 @@ user_invocable: true
 - 使用者說「不要遵守這條」→ 先問原因，確認後 disable（不刪除）
 
 ### 「今天學到什麼」（使用者主動問）
-當使用者問「你今天學到什麼」「這次學到什麼」「有什麼新發現」時：
+當使用者問「你今天學到什麼」「這次學到什麼」「有什麼新發現」「學到哪些」時：
+
+**必須使用中文分類名 + OwnMind type 對照格式**，讓使用者一眼看出會記到哪個分類：
 ```
 【OwnMind 學習回顧】本次 session 學到以下新東西：
-   1. [鐵律] 標題 — 簡述原因
-   2. [技術標準] 標題 — 簡述
-   3. [專案] 標題 — 新發現或進展
-   4. [個人偏好] 標題 — 觀察到的使用者偏好
+
+   | # | 分類 | 標題 | 說明 |
+   |---|------|------|------|
+   | 1 | 🚫 鐵律 (iron_rule) | SSH 連線規則 | 踩到被 ban 的坑 |
+   | 2 | 🔧 技術標準 (coding_standard) | ESLint 新規則 | 統一 import 排序 |
+   | 3 | 📁 專案 (project) | RING v2.3 進度 | 完成對話測試模組 |
+   | 4 | 👤 個人偏好 (profile) | 報告語言偏好 | 圖表英文、文字中文 |
+   | 5 | 💡 原則 (principle) | 數據先行 | 先看數字再下結論 |
+   | 6 | 🖥️ 環境 (env) | MCP worktree 問題 | OwnMind 在 worktree 不載入 |
+
    以上哪些要記下來？（輸入編號、「全部」、或「跳過」）
 ```
-只列出**還沒寫進 OwnMind 的**，已經記過的不要重複。
+
+**中文分類對照表（強制使用）：**
+
+| 中文分類 | OwnMind type | emoji |
+|----------|-------------|-------|
+| 鐵律 | iron_rule | 🚫 |
+| 原則 | principle | 💡 |
+| 技術標準 | coding_standard | 🔧 |
+| 專案 | project | 📁 |
+| 個人偏好 | profile | 👤 |
+| 作品集 | portfolio | 🏆 |
+| 環境 | env | 🖥️ |
+| Session 紀錄 | session_log | 📝 |
+
+只列出**還沒寫進 OwnMind 的**，已經記過的不要重複。已經記過的可附註「✅ 已記錄」。
 
 ### 主動彙整觸發（列出候選項讓使用者確認）
 1. 完成一個 feature 或 milestone
@@ -131,12 +157,16 @@ user_invocable: true
 5. Context window 使用超過 50%
 6. 使用者要開新對話或清空對話前
 
-彙整時：
+彙整時（同樣使用中文分類 + type 對照）：
 ```
-🔄 OwnMind 彙整建議：
-1. [類型] 標題 — 簡述
-2. [類型] 標題 — 簡述
-要記錄哪些？
+【OwnMind 彙整建議】本次 session 有以下值得記錄的事項：
+
+   | # | 分類 | 標題 | 說明 |
+   |---|------|------|------|
+   | 1 | 🚫 鐵律 (iron_rule) | Docker build 要指定 platform | 跨架構部署踩坑 |
+   | 2 | 📁 專案 (project) | ring-linebot 完成 webhook 重構 | 進度更新 |
+
+   要記錄哪些？（輸入編號、「全部」、或「跳過」）
 ```
 
 ## 怎麼記
