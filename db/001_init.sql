@@ -29,7 +29,7 @@ CREATE TABLE memories (
     user_id         INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     type            VARCHAR(50) NOT NULL CHECK (type IN (
                         'profile', 'principle', 'iron_rule', 'coding_standard',
-                        'project', 'portfolio', 'env', 'session_log'
+                        'team_standard', 'project', 'portfolio', 'env', 'session_log'
                     )),
     title           VARCHAR(500) NOT NULL,
     content         TEXT NOT NULL,
