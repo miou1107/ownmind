@@ -229,6 +229,7 @@ cp ~/.ownmind/skills/ownmind-memory.md ~/.claude/commands/ownmind-memory.md
 | 鐵律 | iron_rule | 🚫 |
 | 原則 | principle | 💡 |
 | 技術標準 | coding_standard | 🔧 |
+| 團隊規範 | team_standard | 📋 |
 | 專案 | project | 📁 |
 | 個人偏好 | profile | 👤 |
 | 作品集 | portfolio | 🏆 |
@@ -265,10 +266,44 @@ cp ~/.ownmind/skills/ownmind-memory.md ~/.claude/commands/ownmind-memory.md
 | iron_rule | 踩坑後的教訓、不可違反的規則 |
 | principle | 核心信念、工作方法論 |
 | coding_standard | 技術偏好、編碼風格 |
+| team_standard | 公司/團隊協作規範：code review 規則、git 治理、目錄結構、開發流程、引用框架、命名慣例等（⚠️ 僅管理員可新增/修改） |
 | project | 專案進度、架構、待辦 |
 | profile | 個人偏好、溝通方式 |
 | portfolio | 完成的作品 |
 | env | 環境資訊 |
+
+### 團隊規範（team_standard）設計
+
+**核心概念：** 組織層級的規範，由 admin 建立，自動套用到所有成員。優先級高於個人規則。
+
+**權限控制：**
+- **新增/修改/停用**：僅限 `admin` role（後端 API 強制檢查，非 admin 會收到 403）
+- **讀取**：所有人（init 時自動載入，不需額外操作）
+- **個人關閉（opt-out）**：任何使用者都可以關閉某條團隊規範（僅影響自己，不影響他人）
+
+**優先級規則（強制）：**
+```
+team_standard > iron_rule > principle > coding_standard > profile
+```
+- 團隊規範與個人鐵律衝突時，**團隊規範優先**
+- 顯示衝突時標明：
+  ```
+  【OwnMind v1.7.1】衝突偵測：團隊規範「{title}」與你的個人鐵律 IR-{XXX} 衝突，依規定團隊規範優先
+  ```
+
+**使用者關閉團隊規範：**
+當使用者說「關閉這條團隊規範」「不要套用這條」時：
+1. 告知使用者：「這是團隊規範，關閉後只影響你自己，不影響其他人。確定嗎？」
+2. 確認後，透過 API 建立個人 opt-out 記錄
+3. 顯示：
+   ```
+   【OwnMind v1.7.1】記憶操作：已關閉團隊規範「{title}」（僅限你個人，團隊其他人不受影響）
+   ```
+
+**非 admin 嘗試寫入時：**
+```
+【OwnMind v1.7.1】記憶操作：無法新增團隊規範，此類型僅限管理員操作
+```
 
 ### 更新記憶（有時間演變的規則）
 規則改變時，用 `ownmind_update` 並**必須填寫 `update_reason`**，舊版本會自動保留在歷史紀錄。

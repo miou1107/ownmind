@@ -236,6 +236,23 @@ router.get('/init', async (req, res) => {
       [req.user.id]
     );
 
+    // team_standard: 跨使用者共享，載入所有 admin 建立的（排除此使用者已 opt-out 的）
+    const teamStandardsResult = await query(
+      `SELECT m.* FROM memories m
+       WHERE m.type = 'team_standard'
+         AND m.status = 'active'
+         AND m.id NOT IN (
+           SELECT (metadata->>'team_standard_id')::int
+           FROM memories
+           WHERE user_id = $1
+             AND type = 'profile'
+             AND tags @> ARRAY['team_standard_optout']
+             AND status = 'active'
+         )
+       ORDER BY m.created_at`,
+      [req.user.id]
+    );
+
     const handoffResult = await query(
       `SELECT * FROM handoffs
        WHERE user_id = $1 AND status = 'pending'
@@ -248,6 +265,7 @@ router.get('/init', async (req, res) => {
     const profile = memories.find(m => m.type === 'profile') || null;
     const principles = memories.filter(m => m.type === 'principle');
     const ironRules = memories.filter(m => m.type === 'iron_rule');
+    const teamStandards = teamStandardsResult.rows;
     const activeHandoff = handoffResult.rows[0] || null;
 
     // 精簡摘要：每條鐵律一行，供 AI 快速內化
@@ -257,12 +275,17 @@ router.get('/init', async (req, res) => {
       return `${code}: ${r.title}${triggers ? ` [觸發: ${triggers}]` : ''}`;
     }).join('\n');
 
+    // 團隊規範摘要
+    const teamStandardsDigest = teamStandards.map(r => `[團隊] ${r.title}`).join('\n');
+
     res.json({
       instructions: INSTRUCTIONS_SOP,
       profile,
       principles,
       iron_rules: ironRules,
       iron_rules_digest: ironRulesDigest,
+      team_standards: teamStandards,
+      team_standards_digest: teamStandardsDigest,
       active_handoff: activeHandoff
     });
   } catch (err) {
@@ -276,12 +299,14 @@ router.get('/init', async (req, res) => {
  */
 router.get('/type/:type', async (req, res) => {
   try {
-    const result = await query(
-      `SELECT * FROM memories
-       WHERE type = $1 AND user_id = $2 AND status = 'active'
-       ORDER BY updated_at DESC`,
-      [req.params.type, req.user.id]
-    );
+    // team_standard 跨使用者共享，回傳所有人的
+    const sql = req.params.type === 'team_standard'
+      ? `SELECT * FROM memories WHERE type = 'team_standard' AND status = 'active' ORDER BY updated_at DESC`
+      : `SELECT * FROM memories WHERE type = $1 AND user_id = $2 AND status = 'active' ORDER BY updated_at DESC`;
+    const params = req.params.type === 'team_standard'
+      ? []
+      : [req.params.type, req.user.id];
+    const result = await query(sql, params);
     res.json(result.rows);
   } catch (err) {
     logger.error('依類型查詢記憶失敗', { error: err.message });
@@ -374,6 +399,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: '必填欄位：type, title, content' });
     }
 
+    // team_standard 僅限 admin 寫入
+    if (type === 'team_standard' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: '團隊規範僅限管理員新增' });
+    }
+
     const result = await query(
       `INSERT INTO memories (user_id, type, title, content, code, tags, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -414,6 +444,11 @@ router.put('/:id', async (req, res) => {
     }
 
     const oldMemory = existing.rows[0];
+
+    // team_standard 僅限 admin 修改
+    if (oldMemory.type === 'team_standard' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: '團隊規範僅限管理員修改' });
+    }
 
     const result = await query(
       `UPDATE memories
@@ -457,6 +492,12 @@ router.put('/:id/disable', async (req, res) => {
 
     if (!reason) {
       return res.status(400).json({ error: '必須提供停用原因' });
+    }
+
+    // team_standard 僅限 admin 停用
+    const check = await query('SELECT type FROM memories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+    if (check.rows.length > 0 && check.rows[0].type === 'team_standard' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: '團隊規範僅限管理員停用' });
     }
 
     const result = await query(
