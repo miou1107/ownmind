@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { query } from '../utils/db.js';
+import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+
+const SERVER_VERSION = '1.8.0';
 
 const router = Router();
 router.use(auth);
@@ -279,7 +282,25 @@ router.get('/init', async (req, res) => {
     // 團隊規範摘要
     const teamStandardsDigest = teamStandards.map(r => `[團隊] ${r.title}`).join('\n');
 
+    // Sync token
+    const syncToken = await generateSyncToken(req.user.id);
+
+    // Team standards hash (for version comparison)
+    const teamStandardsHash = teamStandards.length > 0
+      ? teamStandards.map(r => `${r.id}:${r.updated_at}`).join(',')
+      : '';
+
+    // Last team standard update
+    const lastTeamUpdate = teamStandards.length > 0
+      ? teamStandards.reduce((max, r) => r.updated_at > max ? r.updated_at : max, teamStandards[0].updated_at)
+      : null;
+
     res.json({
+      sync_token: syncToken,
+      server_version: SERVER_VERSION,
+      team_standards_hash: teamStandardsHash,
+      last_team_standard_update: lastTeamUpdate,
+      iron_rules_count: ironRules.length,
       instructions: INSTRUCTIONS_SOP,
       profile,
       principles,
@@ -308,7 +329,18 @@ router.get('/type/:type', async (req, res) => {
       ? []
       : [req.params.type, req.user.id];
     const result = await query(sql, params);
-    res.json(result.rows);
+
+    // 讀取操作：只有帶 token 且 invalid 才標 stale
+    const clientToken = req.query.sync_token;
+    const response = { data: result.rows };
+    if (clientToken) {
+      const tokenCheck = await validateSyncToken(req.user.id, clientToken);
+      if (!tokenCheck.valid) {
+        response.stale = true;
+        response.new_token = tokenCheck.new_token;
+      }
+    }
+    res.json(response);
   } catch (err) {
     logger.error('依類型查詢記憶失敗', { error: err.message });
     res.status(500).json({ error: '查詢失敗' });
@@ -394,10 +426,26 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { type, title, content, code, tags, metadata } = req.body;
+    const { type, title, content, code, tags, metadata, sync_token, rule_stats } = req.body;
 
     if (!type || !title || !content) {
       return res.status(400).json({ error: '必填欄位：type, title, content' });
+    }
+
+    // Sync token 驗證（寫入操作強制）
+    if (!sync_token) {
+      return res.status(409).json({
+        error: '請先呼叫 init 取得 sync token',
+        needs_init: true
+      });
+    }
+    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
+    if (!tokenCheck.valid) {
+      return res.status(409).json({
+        error: '狀態已變更，請先 re-init 取得最新記憶',
+        stale: true,
+        new_token: tokenCheck.new_token
+      });
     }
 
     // team_standard 僅限 admin 寫入
@@ -420,7 +468,33 @@ router.post('/', async (req, res) => {
       [memory.id, metadata?.tool || 'api', content, metadata || null]
     );
 
-    res.status(201).json(memory);
+    // 搭便車：合併 rule_stats（主寫入後才更新，避免提前改變 sync token）
+    if (rule_stats && typeof rule_stats === 'object') {
+      for (const [ruleKey, stats] of Object.entries(rule_stats)) {
+        try {
+          await query(
+            `UPDATE memories
+             SET metadata = jsonb_set(
+               COALESCE(metadata, '{}'::jsonb),
+               '{stats}',
+               jsonb_build_object(
+                 'enforced', COALESCE((metadata->'stats'->>'enforced')::int, 0) + COALESCE(($1::jsonb->>'enforced')::int, 0),
+                 'missed', COALESCE((metadata->'stats'->>'missed')::int, 0) + COALESCE(($1::jsonb->>'missed')::int, 0),
+                 'triggered', COALESCE((metadata->'stats'->>'triggered')::int, 0) + COALESCE(($1::jsonb->>'triggered')::int, 0)
+               )
+             )
+             WHERE code = $2 AND user_id = $3 AND status = 'active'`,
+            [JSON.stringify(stats), ruleKey, req.user.id]
+          );
+        } catch (e) {
+          logger.warn('rule_stats 合併失敗', { ruleKey, error: e.message });
+        }
+      }
+    }
+
+    // 回傳新的 sync token（寫入後狀態變了）
+    const newToken = await generateSyncToken(req.user.id);
+    res.status(201).json({ ...memory, sync_token: newToken });
   } catch (err) {
     logger.error('建立記憶失敗', { error: err.message });
     res.status(500).json({ error: '建立記憶失敗' });
@@ -432,7 +506,20 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { title, content, tags, metadata, update_reason } = req.body;
+    const { title, content, tags, metadata, update_reason, sync_token, rule_stats } = req.body;
+
+    // Sync token 驗證（寫入操作強制）
+    if (!sync_token) {
+      return res.status(409).json({ error: '請先呼叫 init 取得 sync token', needs_init: true });
+    }
+    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
+    if (!tokenCheck.valid) {
+      return res.status(409).json({
+        error: '狀態已變更，請先 re-init 取得最新記憶',
+        stale: true,
+        new_token: tokenCheck.new_token
+      });
+    }
 
     // 先確認記憶存在且屬於該使用者，並取得舊內容
     const existing = await query(
@@ -477,7 +564,32 @@ router.put('/:id', async (req, res) => {
       ]
     );
 
-    res.json(memory);
+    // 搭便車：合併 rule_stats（主寫入後才更新，避免提前改變 sync token）
+    if (rule_stats && typeof rule_stats === 'object') {
+      for (const [ruleKey, stats] of Object.entries(rule_stats)) {
+        try {
+          await query(
+            `UPDATE memories
+             SET metadata = jsonb_set(
+               COALESCE(metadata, '{}'::jsonb),
+               '{stats}',
+               jsonb_build_object(
+                 'enforced', COALESCE((metadata->'stats'->>'enforced')::int, 0) + COALESCE(($1::jsonb->>'enforced')::int, 0),
+                 'missed', COALESCE((metadata->'stats'->>'missed')::int, 0) + COALESCE(($1::jsonb->>'missed')::int, 0),
+                 'triggered', COALESCE((metadata->'stats'->>'triggered')::int, 0) + COALESCE(($1::jsonb->>'triggered')::int, 0)
+               )
+             )
+             WHERE code = $2 AND user_id = $3 AND status = 'active'`,
+            [JSON.stringify(stats), ruleKey, req.user.id]
+          );
+        } catch (e) {
+          logger.warn('rule_stats 合併失敗', { ruleKey, error: e.message });
+        }
+      }
+    }
+
+    const newToken = await generateSyncToken(req.user.id);
+    res.json({ ...memory, sync_token: newToken });
   } catch (err) {
     logger.error('更新記憶失敗', { error: err.message });
     res.status(500).json({ error: '更新記憶失敗' });
@@ -489,10 +601,23 @@ router.put('/:id', async (req, res) => {
  */
 router.put('/:id/disable', async (req, res) => {
   try {
-    const { reason } = req.body;
+    const { reason, sync_token } = req.body;
 
     if (!reason) {
       return res.status(400).json({ error: '必須提供停用原因' });
+    }
+
+    // Sync token 驗證
+    if (!sync_token) {
+      return res.status(409).json({ error: '請先呼叫 init 取得 sync token', needs_init: true });
+    }
+    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
+    if (!tokenCheck.valid) {
+      return res.status(409).json({
+        error: '狀態已變更，請先 re-init 取得最新記憶',
+        stale: true,
+        new_token: tokenCheck.new_token
+      });
     }
 
     // team_standard 僅限 admin 停用
@@ -522,7 +647,8 @@ router.put('/:id/disable', async (req, res) => {
       [req.params.id, 'api', result.rows[0].content, JSON.stringify({ reason })]
     );
 
-    res.json(result.rows[0]);
+    const newToken = await generateSyncToken(req.user.id);
+    res.json({ ...result.rows[0], sync_token: newToken });
   } catch (err) {
     logger.error('停用記憶失敗', { error: err.message });
     res.status(500).json({ error: '停用記憶失敗' });
@@ -534,6 +660,21 @@ router.put('/:id/disable', async (req, res) => {
  */
 router.put('/:id/enable', async (req, res) => {
   try {
+    const { sync_token } = req.body || {};
+
+    // Sync token 驗證
+    if (!sync_token) {
+      return res.status(409).json({ error: '請先呼叫 init 取得 sync token', needs_init: true });
+    }
+    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
+    if (!tokenCheck.valid) {
+      return res.status(409).json({
+        error: '狀態已變更，請先 re-init 取得最新記憶',
+        stale: true,
+        new_token: tokenCheck.new_token
+      });
+    }
+
     const result = await query(
       `UPDATE memories
        SET status = 'active',
@@ -555,7 +696,8 @@ router.put('/:id/enable', async (req, res) => {
       [req.params.id, 'api', result.rows[0].content]
     );
 
-    res.json(result.rows[0]);
+    const newToken = await generateSyncToken(req.user.id);
+    res.json({ ...result.rows[0], sync_token: newToken });
   } catch (err) {
     logger.error('啟用記憶失敗', { error: err.message });
     res.status(500).json({ error: '啟用記憶失敗' });

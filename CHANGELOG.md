@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## 2026-03-27 — v1.8.0 Sync Token + 規則品質追蹤 + 團隊規範強化
+
+### 新功能
+1. **Sync Token** — 跨工具狀態一致性驗證，寫入前檢查 token 是否 stale，避免多工具並發覆蓋
+2. **規則落地率追蹤** — rule_stats 搭便車回填 API，累加 enforced/missed/triggered 計數
+3. **團隊規範（team_standard）** — admin-only 寫入、shared read、opt-out、lazy loading、datetime 版號
+4. **規則自評機制** — session 結束時自評遵守狀況
+5. **Context 40% 合併觸發** — context 超過 40% 時自動建議交接 + 暫存
+6. **跨 session 學習回顧** — 智慧過濾重複記憶
+7. **Admin 寫入雙重確認** — 團隊規範新增/修改需「我確認」
+
+### 修正
+- rule_stats SQL 改為數值累加（原 jsonb `||` 是覆蓋）
+- rule_stats 處理移到主寫入之後（避免提前改變 sync token）
+- rule_stats 匹配改為只用 code 欄位（原 code OR title 太脆弱）
+- GET 讀取操作只在帶 token 時檢查 stale（原無 token 也標 stale）
+- MCP client 所有寫入操作補上 sync_token 傳遞與回收
+
+### 檔案變更
+- 新增 `src/utils/syncToken.js`
+- 修改 `src/routes/memory.js`、`mcp/index.js`、`skills/ownmind-memory.md`
+
+---
+
 ## 2026-03-27 — v1.7.0 Hook 自動安裝與跨用戶 Auto-Update
 
 ### 新功能
