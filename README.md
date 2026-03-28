@@ -1,37 +1,39 @@
-AI個人化永久記憶解決方案
+Personalized persistent memory for AI
 
-# OwnMind — 跨平台 AI 個人記憶系統
+[English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-讓你的 AI 工具共享記憶。不管用 Claude Code、Codex、Cursor、Copilot、OpenCode 還是線上 AI，OwnMind 讓所有工具都能讀寫你的偏好、鐵律、專案 context。
+# OwnMind — Cross-platform AI Memory System
 
-## 為什麼需要 OwnMind？
+Let your AI tools share memory. Whether you use Claude Code, Codex, Cursor, Copilot, OpenCode, or any online AI, OwnMind lets all of them read and write your preferences, iron rules, and project context.
 
-### 現在的 AI 工具有三個根本問題
+## Why OwnMind?
+
+### Three fundamental problems with today's AI tools
 
 ```mermaid
 graph LR
-    subgraph "😤 沒有 OwnMind"
-        A["開新對話"] --> B["重新解釋偏好"]
-        B --> C["重新說明專案"]
-        C --> D["踩同一個坑"]
+    subgraph "😤 Without OwnMind"
+        A["Start new chat"] --> B["Re-explain preferences"]
+        B --> C["Re-describe project"]
+        C --> D["Repeat same mistake"]
         D --> A
     end
 ```
 
-**1. 每次對話都從零開始**
-你跟 AI 說過一百次「不要用 var」「部署前檢查環境變數」，但下一次對話它全忘了。你花大量時間在重複教 AI 相同的事。
+**1. Every conversation starts from zero**
+You've told your AI a hundred times "don't use var" or "check env vars before deploying," but next conversation it forgets everything. You waste time re-teaching the same things.
 
-**2. 換工具就失憶**
-早上用 Claude Code 寫了半天，下午切到 Cursor 繼續，AI 完全不知道你早上做了什麼。你的經驗被鎖在單一工具裡。
+**2. Switch tools, lose memory**
+You spent the morning coding with Claude Code, then switch to Cursor in the afternoon — it has no idea what you did. Your experience is locked inside a single tool.
 
-**3. 踩過的坑會再踩**
-上週部署炸了是因為忘記改環境變數，你自己記住了，但 AI 不知道。下次它還是會犯同樣的錯。
+**3. Past mistakes will happen again**
+Last week's deployment crashed because of a missed env var. You remember, but the AI doesn't. Next time, it'll make the same mistake.
 
-### OwnMind 怎麼解決
+### How OwnMind solves this
 
 ```mermaid
 graph TB
-    subgraph "🧠 有 OwnMind"
+    subgraph "🧠 With OwnMind"
         CC["Claude Code"] --> OM["OwnMind API"]
         CX["Codex"] --> OM
         CR["Cursor"] --> OM
@@ -45,39 +47,46 @@ graph TB
     style DB fill:#2D3436,stroke:#fff,color:#fff
 ```
 
-**一個 API，所有工具共用同一份記憶。** 你只要教一次，所有 AI 都知道。
+**One API, shared memory across all tools.** Teach once, every AI knows.
 
-## 最常用的三句話
+## Who is OwnMind for?
 
-| 你說 | AI 做什麼 |
-|------|----------|
-| **「記住了」** | 把經驗寫進鐵律，跨平台永久保存，永不再犯 |
-| **「你學到什麼」** | 回顧這次對話，列出值得記下的新知識 |
-| **「我最近做了什麼？哪些還沒做？」** | 從所有專案的進度和待辦中回答 |
+- **Developers using multiple AI tools daily** — Stop re-explaining your preferences to each tool
+- **People working across projects and devices** — Your memory follows you everywhere
+- **Tech leads with team AI standards** — Push rules once, enforce everywhere
+- **Power users who want AI that evolves** — Let your AI accumulate experience over time
 
-## 核心功能
+## Top 3 phrases you'll use
 
-### 記憶與防護
+| You say | AI does |
+|---------|---------|
+| **"Remember this"** | Saves it as an iron rule — persisted across all tools, never forgotten |
+| **"What did you learn?"** | Reviews the conversation, lists new knowledge worth saving |
+| **"What's left to do on this project?"** | Pulls up progress and TODOs from all projects |
+
+## Core Features
+
+### Memory & Protection
 
 ```mermaid
 graph LR
-    A["你踩坑"] --> B["說「記住了」"]
-    B --> C["AI 建立鐵律"]
-    C --> D["所有工具載入"]
-    D --> E["下次自動攔截"]
-    E --> F["不再犯"]
+    A["You hit a bug"] --> B["Say 'Remember this'"]
+    B --> C["AI creates iron rule"]
+    C --> D["All tools load it"]
+    D --> E["Auto-intercept next time"]
+    E --> F["Never again"]
 
     style C fill:#E17055,stroke:#fff,color:#fff
     style E fill:#00B894,stroke:#fff,color:#fff
 ```
 
-- **跨平台記憶** — 一個 API，所有 AI 工具共用
-- **鐵律管理** — 踩過的坑不會再犯，含完整背景脈絡
-- **鐵律即時防護** — session 開始時自動載入，AI 主動攔截違規
-- **Trigger Tags** — 鐵律標記觸發時機（`trigger:commit`、`trigger:deploy`），AI 在操作前自動 re-check
-- **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程
+- **Cross-platform memory** — One API, all AI tools share it
+- **Iron rule management** — Lessons learned are never forgotten, with full context
+- **Real-time rule enforcement** — Rules auto-load at session start, AI proactively blocks violations
+- **Trigger tags** — Rules tagged with triggers (`trigger:commit`, `trigger:deploy`), AI auto-checks before those actions
+- **Rule version history** — Old versions preserved automatically, full evolution traceable
 
-### 協作與同步
+### Collaboration & Sync
 
 ```mermaid
 sequenceDiagram
@@ -85,182 +94,181 @@ sequenceDiagram
     participant OM as OwnMind
     participant CR as Cursor
 
-    CC->>OM: 寫入記憶 (sync_token=A)
-    CR->>OM: 寫入記憶 (sync_token=A)
-    OM-->>CR: ⚠️ token 過期，先同步
-    CR->>OM: re-init (取得最新)
-    CR->>OM: 寫入記憶 (sync_token=B) ✅
+    CC->>OM: Write memory (sync_token=A)
+    CR->>OM: Write memory (sync_token=A)
+    OM-->>CR: ⚠️ Token expired, sync first
+    CR->>OM: re-init (get latest)
+    CR->>OM: Write memory (sync_token=B) ✅
 ```
 
-- **Sync Token** — 多工具同時使用時自動偵測衝突，確保記憶一致性 `v1.8.0`
-- **交接機制** — 在不同工具間無縫交接工作
-- **團隊規範** — 管理員統一下發規則，成員自動載入 `v1.8.0`
-- **規則品質追蹤** — 自動記錄遵守/違反/觸發次數，落地率低時主動預警 `v1.8.0`
+- **Sync Token** — Auto-detect conflicts when multiple tools write simultaneously `v1.8.0`
+- **Handoff** — Seamlessly hand off work between different tools
+- **Team standards** — Admins push rules, members auto-load them `v1.8.0`
+- **Rule quality tracking** — Auto-track enforced/missed/triggered counts, alert on low compliance `v1.8.0`
 
-### 基礎設施
+### Infrastructure
 
-- **密鑰管理** — 安全儲存 API keys 和密碼
-- **語意搜尋** — pgvector 驅動，找到相關記憶
-- **分層壓縮** — 短期記憶自動壓縮，長期記憶永久保留
-- **Windows 原生支援** — 提供 `install.ps1` 和 `start.cmd`
+- **Secret management** — Securely store API keys and passwords
+- **Semantic search** — Powered by pgvector
+- **Tiered compression** — Short-term memory auto-compresses, long-term persists forever
+- **Windows native support** — `install.ps1` and `start.cmd` included
 
-## 快速開始
+## Quick Start
 
-### 1. 取得 API Key
+### 1. Get an API Key
 
-聯繫管理員取得你的 API key。
+Contact the admin to get your API key.
 
-### 2. 安裝
+### 2. Install
 
-**Windows 用戶**可以用 PowerShell 直接安裝：
+**Windows** users can install with PowerShell:
 ```powershell
 irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 -OutFile install.ps1
 .\install.ps1 YOUR_API_KEY
 ```
 
-**Mac / Linux / Git Bash** 用戶：
+**Mac / Linux / Git Bash** users:
 ```bash
 curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
 ```
 
-或者複製以下 prompt，貼到你的 AI 工具（Claude Code、Codex、Cursor 等），把 `YOUR_API_KEY` 換成你的 API key：
+Or copy the following prompt and paste it into your AI tool (Claude Code, Codex, Cursor, etc.), replacing `YOUR_API_KEY` with your key:
 
 ```
-幫我安裝 OwnMind 個人記憶系統。
+Install OwnMind personal memory system.
 
-我的 API Key 是：YOUR_API_KEY
-API URL 是：YOUR_OWNMIND_URL
+My API Key is: YOUR_API_KEY
+API URL is: YOUR_OWNMIND_URL
 
-請根據你目前所在的工具環境，自動完成以下安裝：
+Based on your current tool environment, complete the following:
 
-Step 1：下載 OwnMind
-把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/（如果已存在就 git pull 更新）
-到 ~/.ownmind/mcp/ 執行 npm install
+Step 1: Download OwnMind
+Clone https://github.com/miou1107/ownmind to ~/.ownmind/ (git pull if exists)
+Run npm install in ~/.ownmind/mcp/
 
-Step 2：設定 MCP Server（如果工具支援）
-找到當前工具的 MCP 設定檔，加入 ownmind MCP（~ 展開為完整路徑）：
+Step 2: Configure MCP Server (if supported)
+Add ownmind MCP to your tool's config (expand ~ to full path):
 - Claude Code → ~/.claude/settings.json
 - Cursor → ~/.cursor/mcp.json
 - Windsurf → ~/.codeium/windsurf/mcp_config.json
 
-Step 3：安裝全域強制規則
-掃描本機所有已安裝的 AI 工具，把 ~/.ownmind/configs/ 中對應的設定檔
-追加到各工具的全域指令檔（不覆蓋原有內容）：
-- Claude Code → ~/.claude/CLAUDE.md（追加 configs/CLAUDE.md）
-- Codex → ~/.codex/AGENTS.md（追加 configs/AGENTS.md）
-- Gemini CLI → ~/.gemini/GEMINI.md（追加 configs/GEMINI.md）
-- Windsurf → ~/.codeium/windsurf/memories/global_rules.md（追加 configs/global_rules.md）
-- OpenCode → ~/.config/opencode/opencode.json（合併 configs/opencode.json 的 instructions）
+Step 3: Install global rules
+Scan installed AI tools, append configs from ~/.ownmind/configs/:
+- Claude Code → ~/.claude/CLAUDE.md (append configs/CLAUDE.md)
+- Codex → ~/.codex/AGENTS.md (append configs/AGENTS.md)
+- Gemini CLI → ~/.gemini/GEMINI.md (append configs/GEMINI.md)
+- Windsurf → ~/.codeium/windsurf/memories/global_rules.md (append configs/global_rules.md)
+- OpenCode → ~/.config/opencode/opencode.json (merge configs/opencode.json instructions)
 
-Step 4：安裝 Skill
-把 ~/.ownmind/skills/ownmind-memory.md 安裝到工具的 skill 目錄
+Step 4: Install Skill
+Copy ~/.ownmind/skills/ownmind-memory.md to the tool's skill directory
 
-Step 5：驗證
-完成後呼叫 ownmind_init 測試連線，確認能載入記憶並顯示【OwnMind】摘要
+Step 5: Verify
+Call ownmind_init to test connection, confirm memory loads with【OwnMind】summary
 ```
 
-### 3. 開始使用
+### 3. Start Using
 
-安裝完成後，在任何新的對話裡說「載入我的 OwnMind」即可。AI 會自動載入你的記憶。
+After installation, just say "load my OwnMind" in any new conversation. The AI will auto-load your memory.
 
-## 應用情境
+## Use Cases
 
-### 1. 踩坑後讓 AI 永遠記住
-> 你：「記住了，部署前一定要檢查環境變數」
+### 1. Make AI remember your lessons forever
+> You: "Remember this — always check env vars before deploying"
 
-AI 會自動建立一條鐵律，記錄你踩坑的背景和規則。下次不管用哪個工具、哪個 AI，都不會再犯同樣的錯。
+AI creates an iron rule with full context. Next time, no matter which tool or AI, it won't repeat the mistake.
 
-### 2. 問 AI 還有什麼事沒做
-> 你：「ring 這個專案還有什麼沒做？」
+### 2. Ask what's left to do
+> You: "What's left on the ring project?"
 
-AI 從 OwnMind 調出專案的待辦清單和進度，告訴你哪些做了、哪些還沒。
+AI pulls up the project's TODO list and progress from OwnMind.
 
-### 3. 在不同工具間無縫交接
-> 你（在 Claude Code）：「整理一下，交接給 Codex」
+### 3. Seamless handoff between tools
+> You (in Claude Code): "Wrap up and hand off to Codex"
 
-AI 把目前進度、待辦、注意事項整理好存到 OwnMind。你切到 Codex 開新對話，AI 自動讀取交接內容，無縫接手。
+AI packages progress, TODOs, and notes into OwnMind. Switch to Codex, start a new chat, and AI picks up right where you left off.
 
-### 4. 讓 AI 自我回顧學到什麼
-> 你：「你今天學到什麼？」
+### 4. AI self-review
+> You: "What did you learn today?"
 
-AI 回顧整個對話，列出所有還沒記下來的新知識和發現，問你哪些要存進 OwnMind。
+AI reviews the entire conversation, lists undocumented knowledge, and asks which to save.
 
-### 5. AI 主動攔截你踩過的坑
-> AI 正準備用多次 SSH 連線部署...
+### 5. Proactive rule enforcement
+> AI is about to deploy with multiple SSH sessions...
 >
-> 【OwnMind 觸發】你提醒過「SSH 不要頻繁登入登出」，我要遵守，不能再犯
+> 【OwnMind Triggered】You reminded me: "Don't open multiple SSH sessions" — I must follow this rule.
 
-AI 在即將違反鐵律的那一刻主動停下來，不用你提醒。
+AI stops itself the moment it's about to violate a rule. No reminder needed.
 
-### 6. 多工具同時用，記憶不打架
-> 你同時在 Claude Code 和 Cursor 工作，兩邊都在寫記憶...
+### 6. Multi-tool, no conflicts
+> You're working in Claude Code and Cursor simultaneously, both writing memory...
 >
-> 【OwnMind】偵測到狀態已變更，正在 re-init 取得最新記憶...
+> 【OwnMind】State change detected, re-initializing to get latest memory...
 
-Sync Token 機制自動偵測衝突。寫入前驗證 token，過期就先同步再寫，不會互相覆蓋。
+Sync Token auto-detects conflicts. Validates before write, syncs if expired. No overwrites.
 
-### 7. 團隊共用規範，一人設定全員生效
-> 管理員：「新增團隊規範：所有 API 回傳必須包含 request_id」
+### 7. Team standards, set once for everyone
+> Admin: "New team rule: all API responses must include request_id"
 >
-> 【OwnMind】⚠️ 你即將新增團隊規範，此規範將套用到所有成員。請輸入「我確認」。
+> 【OwnMind】⚠️ You're about to add a team standard. This will apply to all members. Type "I confirm".
 
-團隊規範由管理員統一下發，成員開新對話自動載入，違反時強制提醒。個人可 opt-out 但會持續提醒。
+Team rules pushed by admins, auto-loaded by members, enforced with reminders. Individual opt-out available but persistent reminders continue.
 
-### 8. 規則有沒有在遵守？數據說話
-> 你：「我的鐵律遵守狀況如何？」
+### 8. Rule compliance with data
+> You: "How am I doing on my iron rules?"
 >
-> 【OwnMind】規則自評：IR-001 SSH 規則 — 遵守 12 次，觸發 3 次，遺漏 0 次（落地率 100%）
+> 【OwnMind】Rule stats: IR-001 SSH Rule — enforced 12 times, triggered 3 times, missed 0 (compliance: 100%)
 
-每條鐵律自動追蹤 enforced/missed/triggered 計數，落地率低的規則會主動預警。
+Every rule auto-tracks enforced/missed/triggered counts. Low compliance rules trigger proactive alerts.
 
-### 9. 換一台電腦，記憶跟著走
-> 你（在新電腦）：「幫我安裝 OwnMind，API Key 是 xxx」
+### 9. New machine, memory follows
+> You (on a new computer): "Install OwnMind, API Key is xxx"
 
-AI 自動完成安裝設定，你的所有偏好、鐵律、專案 context 立刻可用，不用重新教。
+AI completes setup automatically. All your preferences, rules, and project context are instantly available.
 
-## API 文件
+## API Reference
 
-### 認證
-所有 API 請求需要在 header 加入：
+### Authentication
+All API requests require the header:
 ```
 Authorization: Bearer YOUR_API_KEY
 ```
 
-### 主要 Endpoints
+### Main Endpoints
 
-| Endpoint | 說明 |
-|----------|------|
-| `GET /api/memory/init` | 載入記憶（profile + principles + instructions） |
-| `GET /api/memory/type/:type` | 取得特定類型記憶 |
-| `GET /api/memory/search?q=` | 語意搜尋 |
-| `POST /api/memory` | 新增記憶 |
-| `PUT /api/memory/:id` | 更新記憶 |
-| `PUT /api/memory/:id/disable` | 停用記憶 |
-| `POST /api/handoff` | 建立交接 |
-| `GET /api/handoff/pending` | 取得待接手的交接 |
-| `POST /api/session` | 記錄 session |
-| `GET /api/export` | 匯出所有記憶 |
-| `GET /health` | 健康檢查 |
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/memory/init` | Load memory (profile + principles + instructions) |
+| `GET /api/memory/type/:type` | Get memories by type |
+| `GET /api/memory/search?q=` | Semantic search |
+| `POST /api/memory` | Create memory |
+| `PUT /api/memory/:id` | Update memory |
+| `PUT /api/memory/:id/disable` | Disable memory |
+| `POST /api/handoff` | Create handoff |
+| `GET /api/handoff/pending` | Get pending handoffs |
+| `POST /api/session` | Log session |
+| `GET /api/export` | Export all memories |
+| `GET /health` | Health check |
 
-### 記憶類型
+### Memory Types
 
-| 類型 | 說明 |
-|------|------|
-| `profile` | 個人檔案：身份、溝通偏好、工作風格 |
-| `principle` | 核心原則與願景 |
-| `iron_rule` | 鐵律：踩坑後訂下的不可違反規則 |
-| `coding_standard` | 技術偏好與編碼標準 |
-| `team_standard` | 團隊規範：管理員下發，全員共享 |
-| `project` | 專案 context：架構、環境、進度 |
-| `portfolio` | 作品集 |
-| `env` | 開發環境資訊 |
+| Type | Description |
+|------|-------------|
+| `profile` | Identity, communication preferences, work style |
+| `principle` | Core principles and vision |
+| `iron_rule` | Iron rules: inviolable rules created from past mistakes |
+| `coding_standard` | Technical preferences and coding standards |
+| `team_standard` | Team standards: admin-pushed, shared across members |
+| `project` | Project context: architecture, environment, progress |
+| `portfolio` | Portfolio |
+| `env` | Development environment info |
 
-## 技術棧
+## Tech Stack
 
 - **Runtime:** Node.js + Express
 - **Database:** PostgreSQL + pgvector
 - **MCP:** @modelcontextprotocol/sdk
-- **部署:** Docker Compose
+- **Deploy:** Docker Compose
 
 ## Contributors
 
