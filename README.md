@@ -2,7 +2,50 @@ AI個人化永久記憶解決方案
 
 # OwnMind — 跨平台 AI 個人記憶系統
 
-讓你的 AI 工具共享記憶。不管用 Claude Code、Codex、Cursor、Copilot、Antigravity 還是線上 AI，OwnMind 讓所有工具都能讀寫你的偏好、鐵律、專案 context。
+讓你的 AI 工具共享記憶。不管用 Claude Code、Codex、Cursor、Copilot、OpenCode 還是線上 AI，OwnMind 讓所有工具都能讀寫你的偏好、鐵律、專案 context。
+
+## 為什麼需要 OwnMind？
+
+### 現在的 AI 工具有三個根本問題
+
+```mermaid
+graph LR
+    subgraph "😤 沒有 OwnMind"
+        A["開新對話"] --> B["重新解釋偏好"]
+        B --> C["重新說明專案"]
+        C --> D["踩同一個坑"]
+        D --> A
+    end
+```
+
+**1. 每次對話都從零開始**
+你跟 AI 說過一百次「不要用 var」「部署前檢查環境變數」，但下一次對話它全忘了。你花大量時間在重複教 AI 相同的事。
+
+**2. 換工具就失憶**
+早上用 Claude Code 寫了半天，下午切到 Cursor 繼續，AI 完全不知道你早上做了什麼。你的經驗被鎖在單一工具裡。
+
+**3. 踩過的坑會再踩**
+上週部署炸了是因為忘記改環境變數，你自己記住了，但 AI 不知道。下次它還是會犯同樣的錯。
+
+### OwnMind 怎麼解決
+
+```mermaid
+graph TB
+    subgraph "🧠 有 OwnMind"
+        CC["Claude Code"] --> OM["OwnMind API"]
+        CX["Codex"] --> OM
+        CR["Cursor"] --> OM
+        OC["OpenCode"] --> OM
+        WS["Windsurf"] --> OM
+        GM["Gemini CLI"] --> OM
+        OM --> DB[("PostgreSQL\n+ pgvector")]
+    end
+
+    style OM fill:#6C5CE7,stroke:#fff,color:#fff
+    style DB fill:#2D3436,stroke:#fff,color:#fff
+```
+
+**一個 API，所有工具共用同一份記憶。** 你只要教一次，所有 AI 都知道。
 
 ## 最常用的三句話
 
@@ -14,21 +57,52 @@ AI個人化永久記憶解決方案
 
 ## 核心功能
 
+### 記憶與防護
+
+```mermaid
+graph LR
+    A["你踩坑"] --> B["說「記住了」"]
+    B --> C["AI 建立鐵律"]
+    C --> D["所有工具載入"]
+    D --> E["下次自動攔截"]
+    E --> F["不再犯"]
+
+    style C fill:#E17055,stroke:#fff,color:#fff
+    style E fill:#00B894,stroke:#fff,color:#fff
+```
+
 - **跨平台記憶** — 一個 API，所有 AI 工具共用
 - **鐵律管理** — 踩過的坑不會再犯，含完整背景脈絡
-- **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程和原因
-- **鐵律即時防護** — session 開始時自動載入所有鐵律，AI 在整個工作過程中主動攔截違規
-- **Trigger Tags** — 鐵律可標記觸發時機（`trigger:commit`、`trigger:deploy` 等），AI 在該操作前自動 re-check
-- **Claude Code Hook** — PreToolUse hook 在 git/deploy/delete 前自動提示相關鐵律，技術層面強制
-- **Sync Token** — 多工具同時使用時自動偵測狀態衝突，確保記憶一致性 `v1.8.0`
-- **團隊規範** — 管理員統一下發規則，成員自動載入、強制遵守、可 opt-out `v1.8.0`
-- **規則品質追蹤** — 自動記錄每條鐵律的遵守/違反/觸發次數，落地率低時主動預警 `v1.8.0`
+- **鐵律即時防護** — session 開始時自動載入，AI 主動攔截違規
+- **Trigger Tags** — 鐵律標記觸發時機（`trigger:commit`、`trigger:deploy`），AI 在操作前自動 re-check
+- **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程
+
+### 協作與同步
+
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant OM as OwnMind
+    participant CR as Cursor
+
+    CC->>OM: 寫入記憶 (sync_token=A)
+    CR->>OM: 寫入記憶 (sync_token=A)
+    OM-->>CR: ⚠️ token 過期，先同步
+    CR->>OM: re-init (取得最新)
+    CR->>OM: 寫入記憶 (sync_token=B) ✅
+```
+
+- **Sync Token** — 多工具同時使用時自動偵測衝突，確保記憶一致性 `v1.8.0`
 - **交接機制** — 在不同工具間無縫交接工作
+- **團隊規範** — 管理員統一下發規則，成員自動載入 `v1.8.0`
+- **規則品質追蹤** — 自動記錄遵守/違反/觸發次數，落地率低時主動預警 `v1.8.0`
+
+### 基礎設施
+
 - **密鑰管理** — 安全儲存 API keys 和密碼
 - **語意搜尋** — pgvector 驅動，找到相關記憶
 - **分層壓縮** — 短期記憶自動壓縮，長期記憶永久保留
-- **持續進化** — AI 主動優化你的工作方法
-- **Windows 原生支援** — 提供 `install.ps1` 和 `start.cmd`，不需要 Git Bash
+- **Windows 原生支援** — 提供 `install.ps1` 和 `start.cmd`
 
 ## 快速開始
 
