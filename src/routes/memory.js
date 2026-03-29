@@ -817,7 +817,7 @@ router.get('/:id/history', async (req, res) => {
       `SELECT * FROM memory_history
        WHERE memory_id = $1
        ORDER BY created_at DESC`,
-      [req.params.id, req.user.id]
+      [req.params.id]
     );
 
     res.json(result.rows);

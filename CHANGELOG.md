@@ -21,6 +21,12 @@
 - CLAUDE.md 模板精簡（54 行 → 5 行，省 ~500 tokens/session）
 - 安裝 prompt 精簡（30 行 → 1 行）
 - update.sh 同步所有 hooks 到所有平台（原本只同步 iron-rule-check）
+- install.sh API Key 輸出遮罩（只顯示前後 4 碼）
+- install.sh 所有 settings 寫入改 atomic write
+- mcp/index.js require('fs') 改 ESM import（修 runtime error）
+- iron-rule-check.sh 移除 hardcoded API URL fallback
+- admin.html 安裝 prompt 精簡（60 行 → 1 行）
+- memory history query 移除多餘參數
 
 ### 檔案變更
 - 新增 `src/constants.js`（ALLOWED_MEMORY_TYPES 集中定義）
