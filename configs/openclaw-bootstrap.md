@@ -2,20 +2,16 @@
 
 > CRITICAL: 以下規則為最高優先級，每個新 session 都必須遵守，不可跳過。
 
-## 啟動流程（每次新對話必須執行）
+## 啟動流程（每次新對話的第一個動作）
 
-1. **檢查更新**：執行 `cd ~/.ownmind && git fetch && git log HEAD..origin/main --oneline`
-   - 如果有更新 → 執行 `git pull && cd mcp && npm install`
-   - 顯示【OwnMind 更新】說明更新了什麼
-2. **載入記憶**：呼叫 OwnMind API 載入個人記憶
-   - API URL：https://kkvin.com/ownmind
-   - Header：`Authorization: Bearer <OWNMIND_API_KEY>`
-   - Endpoint：`GET /api/memory/init`（回傳 profile、principles、iron_rules）
-3. **顯示載入摘要**（【OwnMind】格式）
-4. **將所有 iron_rules 內化為工作準則**，整個 session 中主動防護
-5. **檢查交接**：如果有 pending handoff，先摘要給使用者確認
+> CRITICAL: 在回應使用者任何問題之前，你必須先執行以下命令載入記憶：
+> `bash ~/.claude/hooks/ownmind-session-start.sh`
+> 如果 shell 不可用，呼叫 OwnMind API: `GET /api/memory/init`（Header: `Authorization: Bearer <OWNMIND_API_KEY>`）
 
-**未完成啟動流程前，不要開始任何工作。**
+載入後：
+1. 顯示摘要（【OwnMind】格式）
+2. 將所有 iron_rules 內化為工作準則
+3. 如有待接手交接，先摘要給使用者確認
 
 ## 鐵律強制執行（最高優先級）
 
