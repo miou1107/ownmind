@@ -158,31 +158,48 @@ mkdir -p "$SKILL_DIR"
 cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$SKILL_DIR/SKILL.md"
 echo "   安裝 ownmind-memory skill"
 
-# --- 4b. 安裝 Hook Script ---
+# --- 4b. 安裝 Hook Scripts ---
 HOOK_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOK_DIR"
 cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
+cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
 chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
-echo "   安裝 ownmind-iron-rule-check hook"
+chmod +x "$HOOK_DIR/ownmind-session-start.sh"
+echo "   安裝 hook scripts (session-start + iron-rule-check)"
 
-# --- 4c. 加入 PreToolUse hook 設定 ---
+# --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "
   const fs = require('fs');
   const path = '$CLAUDE_SETTINGS';
   const s = JSON.parse(fs.readFileSync(path, 'utf8'));
   if (!s.hooks) s.hooks = {};
+
+  // SessionStart hook — 自動載入記憶
+  if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
+  const sessionExists = s.hooks.SessionStart.some(h =>
+    h.hooks?.some(hh => hh.command?.includes('ownmind-session-start'))
+  );
+  if (!sessionExists) {
+    s.hooks.SessionStart.push({
+      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-session-start.sh', timeout: 10 }]
+    });
+    console.log('   加入 SessionStart hook（自動載入記憶）');
+  }
+
+  // PreToolUse hook — 鐵律檢查
   if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
-  const exists = s.hooks.PreToolUse.some(h =>
+  const preExists = s.hooks.PreToolUse.some(h =>
     h.hooks?.some(hh => hh.command?.includes('ownmind-iron-rule-check'))
   );
-  if (!exists) {
+  if (!preExists) {
     s.hooks.PreToolUse.push({
       matcher: 'Bash',
       hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }]
     });
-    fs.writeFileSync(path, JSON.stringify(s, null, 2));
-    console.log('   加入 PreToolUse hook 設定');
+    console.log('   加入 PreToolUse hook（鐵律檢查）');
   }
+
+  fs.writeFileSync(path, JSON.stringify(s, null, 2));
 " 2>/dev/null
 
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
@@ -239,5 +256,5 @@ if [ "$IS_WINDOWS" = true ]; then
 echo "   Windows:    使用 cmd.exe + start.cmd 啟動 MCP"
 fi
 echo ""
-echo "   現在開一個新的 Claude Code 對話，說「載入我的 OwnMind」即可開始！"
+echo "   現在開一個新的 Claude Code 對話，OwnMind 會自動載入你的記憶！"
 echo ""
