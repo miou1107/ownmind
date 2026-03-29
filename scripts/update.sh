@@ -141,4 +141,7 @@ if [ -d "$HOME/.cursor" ]; then
   " 2>/dev/null
 fi
 
+# --- 標記 SessionStart hook 已安裝（避免 iron-rule-check 重複升級）---
+touch "$HOME/.ownmind/.session-hook-installed"
+
 echo "✅ OwnMind 同步完成"
