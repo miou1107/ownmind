@@ -65,7 +65,10 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     }
 
     if (changed) {
-      fs.writeFileSync('$CLAUDE_SETTINGS', JSON.stringify(s, null, 2));
+      // Atomic write: write to temp file then rename to prevent corruption
+      const tmp = '$CLAUDE_SETTINGS' + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, '$CLAUDE_SETTINGS');
     }
   " 2>/dev/null
 fi
@@ -91,7 +94,9 @@ if [ -d "$HOME/.gemini" ]; then
         type: 'command',
         command: 'bash ~/.claude/hooks/ownmind-session-start.sh'
       });
-      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+      const tmp = path + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, path);
       console.log('   ✅ Gemini CLI SessionStart hook 已加入');
     }
   " 2>/dev/null
@@ -114,7 +119,9 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
     const exists = s.hooks.sessionStart.some(h => (h.command || '').includes('ownmind'));
     if (!exists) {
       s.hooks.sessionStart.push({ command: 'bash ~/.claude/hooks/ownmind-session-start.sh' });
-      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+      const tmp = path + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, path);
       console.log('   ✅ GitHub Copilot sessionStart hook 已加入');
     }
   " 2>/dev/null
@@ -135,7 +142,9 @@ if [ -d "$HOME/.cursor" ]; then
     const exists = s.hooks['session-start'].some(h => (h.command || '').includes('ownmind'));
     if (!exists) {
       s.hooks['session-start'].push({ command: 'bash ~/.claude/hooks/ownmind-session-start.sh' });
-      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+      const tmp = path + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, path);
       console.log('   ✅ Cursor session-start hook 已加入');
     }
   " 2>/dev/null
