@@ -97,14 +97,7 @@ node -e "
     lines.push('');
   }
 
-  if (data.upgrade_action?.required) {
-    lines.push('## ⚠️ 需要更新');
-    lines.push(data.upgrade_action.message);
-    lines.push('執行：' + data.upgrade_action.command);
-    lines.push('');
-  }
-
-  lines.push('使用 ownmind_* MCP tools 操作記憶。需要鐵律完整內容時呼叫 ownmind_get(\"iron_rule\")。');
+  lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get(\"iron_rule\")。');
 
   console.log(JSON.stringify({
     hookSpecificOutput: {
