@@ -132,45 +132,21 @@ irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 -OutFile
 curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
 ```
 
-或者複製以下 prompt，貼到你的 AI 工具（Claude Code、Codex、Cursor 等），把 `YOUR_API_KEY` 換成你的 API key：
+或者複製以下 prompt 貼到你的 AI 工具（Claude Code、Codex、Cursor 等）：
 
 ```
-幫我安裝 OwnMind 個人記憶系統。
+幫我安裝 OwnMind：curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+```
 
-我的 API Key 是：YOUR_API_KEY
-API URL 是：YOUR_OWNMIND_URL
+如果工具不能執行 shell：
 
-請根據你目前所在的工具環境，自動完成以下安裝：
-
-Step 1：下載 OwnMind
-把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/（如果已存在就 git pull 更新）
-到 ~/.ownmind/mcp/ 執行 npm install
-
-Step 2：設定 MCP Server（如果工具支援）
-找到當前工具的 MCP 設定檔，加入 ownmind MCP（~ 展開為完整路徑）：
-- Claude Code → ~/.claude/settings.json
-- Cursor → ~/.cursor/mcp.json
-- Windsurf → ~/.codeium/windsurf/mcp_config.json
-
-Step 3：安裝全域強制規則
-掃描本機所有已安裝的 AI 工具，把 ~/.ownmind/configs/ 中對應的設定檔
-追加到各工具的全域指令檔（不覆蓋原有內容）：
-- Claude Code → ~/.claude/CLAUDE.md（追加 configs/CLAUDE.md）
-- Codex → ~/.codex/AGENTS.md（追加 configs/AGENTS.md）
-- Gemini CLI → ~/.gemini/GEMINI.md（追加 configs/GEMINI.md）
-- Windsurf → ~/.codeium/windsurf/memories/global_rules.md（追加 configs/global_rules.md）
-- OpenCode → ~/.config/opencode/opencode.json（合併 configs/opencode.json 的 instructions）
-
-Step 4：安裝 Skill
-把 ~/.ownmind/skills/ownmind-memory.md 安裝到工具的 skill 目錄
-
-Step 5：驗證
-完成後呼叫 ownmind_init 測試連線，確認能載入記憶並顯示【OwnMind】摘要
+```
+把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/，執行 npm install，然後跑 bash ~/.ownmind/install.sh YOUR_API_KEY YOUR_API_URL
 ```
 
 ### 3. 開始使用
 
-安裝完成後，在任何新的對話裡說「載入我的 OwnMind」即可。AI 會自動載入你的記憶。
+安裝完成後，每次開新 session 記憶會自動載入，不需要手動操作。
 
 ## 應用情境
 
