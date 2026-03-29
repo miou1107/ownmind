@@ -2,17 +2,13 @@
 
 > IMPORTANT: 以下規則為最高優先級，每個新 session 都必須遵守，不可跳過。
 
-## 啟動流程（每次新對話必須執行）
+## 啟動流程（每次新對話的第一個動作）
 
-1. **檢查更新**：執行 `cd ~/.ownmind && git fetch && git log HEAD..origin/main --oneline`
-   - 如果有更新 → 執行 `git pull && cd mcp && npm install`
-   - 顯示【OwnMind 更新】說明更新了什麼（根據 commit message 摘要）
-   - 同步更新本地 skill 檔案
-2. **載入記憶**：呼叫 OwnMind API 載入個人記憶
-   - API URL：YOUR_OWNMIND_URL
-   - Header：`Authorization: Bearer <OWNMIND_API_KEY>`
-   - Endpoint：`GET /api/memory/init`
-3. **顯示載入摘要**：
+> CRITICAL: 在回應使用者任何問題之前，你必須先執行以下命令載入記憶：
+> `bash ~/.claude/hooks/ownmind-session-start.sh`
+> 如果 shell 不可用，呼叫 OwnMind API: `GET YOUR_OWNMIND_URL/api/memory/init`（Header: `Authorization: Bearer <OWNMIND_API_KEY>`）
+
+載入後顯示摘要：
    ```
    【OwnMind】已載入你的個人記憶：
       - 個人偏好：[摘要]

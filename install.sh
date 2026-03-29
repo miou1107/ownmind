@@ -244,6 +244,196 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
       "
     fi
   fi
+
+  # Cursor hooks（beforeShellExecution 作為 session-start workaround）
+  CURSOR_HOOKS="$HOME/.cursor/hooks.json"
+  if [ -f "$CURSOR_HOOKS" ] && grep -q 'ownmind' "$CURSOR_HOOKS" 2>/dev/null; then
+    echo "   Cursor hooks 已設定，跳過"
+  else
+    echo "   設定 Cursor hooks..."
+    node -e "
+      const fs = require('fs');
+      const path = '$CURSOR_HOOKS';
+      let s = { version: 1, hooks: {} };
+      if (fs.existsSync(path)) {
+        try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+      }
+      if (!s.hooks) s.hooks = {};
+      // Use beforeShellExecution as session-start workaround
+      if (!s.hooks['session-start']) s.hooks['session-start'] = [];
+      const exists = s.hooks['session-start'].some(h => h.command?.includes('ownmind'));
+      if (!exists) {
+        s.hooks['session-start'].push({
+          command: 'bash ~/.claude/hooks/ownmind-session-start.sh'
+        });
+      }
+      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+    " 2>/dev/null
+  fi
+fi
+
+# --- 6. Gemini CLI 設定（如果有 .gemini 目錄或 gemini 命令）---
+if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
+  echo "   設定 Gemini CLI..."
+  GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+  mkdir -p "$HOME/.gemini"
+
+  node -e "
+    const fs = require('fs');
+    const path = '$GEMINI_SETTINGS';
+    let s = {};
+    if (fs.existsSync(path)) {
+      try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+    }
+    if (!s.hooks) s.hooks = {};
+
+    // SessionStart hook
+    if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
+    const exists = s.hooks.SessionStart.some(h =>
+      (h.command || '').includes('ownmind') ||
+      (h.hooks && h.hooks.some(hh => (hh.command || '').includes('ownmind')))
+    );
+    if (!exists) {
+      s.hooks.SessionStart.push({
+        type: 'command',
+        command: 'bash ~/.claude/hooks/ownmind-session-start.sh'
+      });
+      console.log('   加入 Gemini CLI SessionStart hook');
+    }
+    fs.writeFileSync(path, JSON.stringify(s, null, 2));
+  " 2>/dev/null
+
+  # Gemini GEMINI.md
+  GEMINI_MD="$HOME/.gemini/GEMINI.md"
+  if [ -f "$GEMINI_MD" ] && grep -q "OwnMind" "$GEMINI_MD" 2>/dev/null; then
+    echo "   GEMINI.md 已包含 OwnMind，跳過"
+  else
+    echo "   更新 GEMINI.md..."
+    cat >> "$GEMINI_MD" << 'GEMINI_EOF'
+
+# OwnMind 個人記憶系統（強制規則）
+
+OwnMind 透過 SessionStart hook 自動載入記憶。如果沒有看到【OwnMind】標記，
+手動呼叫 OwnMind API: GET YOUR_OWNMIND_URL/api/memory/init (Authorization: Bearer <key>)
+
+- 存取記憶時必須顯示【OwnMind】品牌標記
+- 鐵律必須在整個 session 中嚴格遵守
+- 衝突時以 OwnMind 為準
+GEMINI_EOF
+  fi
+fi
+
+# --- 7. GitHub Copilot hooks（如果有 .github 目錄）---
+if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
+  echo "   設定 GitHub Copilot hooks..."
+  GH_HOOKS_DIR="$HOME/.github/hooks"
+  GH_HOOKS_FILE="$GH_HOOKS_DIR/hooks.json"
+  mkdir -p "$GH_HOOKS_DIR"
+
+  node -e "
+    const fs = require('fs');
+    const path = '$GH_HOOKS_FILE';
+    let s = { version: 1, hooks: {} };
+    if (fs.existsSync(path)) {
+      try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+    }
+    if (!s.hooks) s.hooks = {};
+    if (!s.hooks.sessionStart) s.hooks.sessionStart = [];
+    const exists = s.hooks.sessionStart.some(h => (h.command || '').includes('ownmind'));
+    if (!exists) {
+      s.hooks.sessionStart.push({
+        command: 'bash ~/.claude/hooks/ownmind-session-start.sh'
+      });
+      console.log('   加入 GitHub Copilot sessionStart hook');
+    }
+    fs.writeFileSync(path, JSON.stringify(s, null, 2));
+  " 2>/dev/null
+fi
+
+# --- 8. Windsurf 設定（如果有 .windsurf 目錄）---
+if [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; then
+  echo "   設定 Windsurf rules..."
+  WINDSURF_RULES="$HOME/.windsurf/rules"
+  mkdir -p "$WINDSURF_RULES"
+
+  if [ -f "$WINDSURF_RULES/ownmind.md" ] 2>/dev/null; then
+    echo "   Windsurf rules 已設定，跳過"
+  else
+    cp "$OWNMIND_DIR/configs/global_rules.md" "$WINDSURF_RULES/ownmind.md"
+    echo "   安裝 Windsurf OwnMind rules"
+  fi
+fi
+
+# --- 9. OpenCode 設定 ---
+OPENCODE_CONFIG="$HOME/.opencode.json"
+if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
+  echo "   設定 OpenCode..."
+  if [ -f "$OPENCODE_CONFIG" ] && grep -q 'ownmind' "$OPENCODE_CONFIG" 2>/dev/null; then
+    echo "   OpenCode 已設定，跳過"
+  else
+    node -e "
+      const fs = require('fs');
+      const path = '$OPENCODE_CONFIG';
+      let s = {};
+      if (fs.existsSync(path)) {
+        try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+      }
+      if (!s.instructions) s.instructions = [];
+      if (!s.instructions.includes('~/.ownmind/configs/AGENTS.md')) {
+        s.instructions.push('~/.ownmind/configs/AGENTS.md');
+      }
+      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+    " 2>/dev/null
+    echo "   加入 OpenCode instructions"
+  fi
+fi
+
+# --- 10. OpenClaw 設定 ---
+OPENCLAW_CONFIG="$HOME/.openclaw.json"
+if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
+  echo "   設定 OpenClaw..."
+  if [ -f "$OPENCLAW_CONFIG" ] && grep -q 'ownmind' "$OPENCLAW_CONFIG" 2>/dev/null; then
+    echo "   OpenClaw 已設定，跳過"
+  else
+    node -e "
+      const fs = require('fs');
+      const path = '$OPENCLAW_CONFIG';
+      let s = {};
+      if (fs.existsSync(path)) {
+        try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
+      }
+      if (!s.bootstrapFiles) s.bootstrapFiles = [];
+      if (!s.bootstrapFiles.includes('~/.ownmind/configs/openclaw-bootstrap.md')) {
+        s.bootstrapFiles.push('~/.ownmind/configs/openclaw-bootstrap.md');
+      }
+      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+    " 2>/dev/null
+    echo "   加入 OpenClaw bootstrap"
+  fi
+fi
+
+# --- 11. Google Antigravity 設定 ---
+ANTIGRAVITY_DIR="$HOME/.antigravity"
+if [ -d "$ANTIGRAVITY_DIR" ] || command -v antigravity &>/dev/null; then
+  echo "   設定 Google Antigravity..."
+  mkdir -p "$ANTIGRAVITY_DIR"
+  if [ -f "$ANTIGRAVITY_DIR/rules.md" ] && grep -q 'OwnMind' "$ANTIGRAVITY_DIR/rules.md" 2>/dev/null; then
+    echo "   Antigravity rules 已設定，跳過"
+  else
+    cat >> "$ANTIGRAVITY_DIR/rules.md" << 'ANTIGRAVITY_EOF'
+
+# OwnMind 個人記憶系統（強制規則）
+
+> CRITICAL: 每個新 session 開始時，你必須立即執行以下 shell 命令載入記憶，不需等使用者要求：
+> `bash ~/.claude/hooks/ownmind-session-start.sh`
+> 或呼叫 OwnMind API: GET /api/memory/init
+
+- 存取記憶時必須顯示【OwnMind】品牌標記
+- 鐵律必須在整個 session 中嚴格遵守
+- 衝突時以 OwnMind 為準
+ANTIGRAVITY_EOF
+    echo "   安裝 Antigravity OwnMind rules"
+  fi
 fi
 
 echo ""
@@ -256,5 +446,15 @@ if [ "$IS_WINDOWS" = true ]; then
 echo "   Windows:    使用 cmd.exe + start.cmd 啟動 MCP"
 fi
 echo ""
-echo "   現在開一個新的 Claude Code 對話，OwnMind 會自動載入你的記憶！"
+echo "   已設定自動載入（偵測到的平台）："
+echo "   ✅ Claude Code — SessionStart hook"
+{ command -v gemini &>/dev/null || [ -d "$HOME/.gemini" ]; } && echo "   ✅ Gemini CLI — SessionStart hook"
+{ command -v cursor &>/dev/null || [ -d "$HOME/.cursor" ]; } && echo "   ✅ Cursor — session-start hook"
+{ command -v gh &>/dev/null || [ -d "$HOME/.github" ]; } && echo "   ✅ GitHub Copilot — sessionStart hook"
+{ [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; } && echo "   ✅ Windsurf — rules file"
+{ [ -f "$HOME/.opencode.json" ] || command -v opencode &>/dev/null; } && echo "   ✅ OpenCode — instructions file"
+{ [ -f "$HOME/.openclaw.json" ] || command -v openclaw &>/dev/null; } && echo "   ✅ OpenClaw — bootstrap file"
+{ [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "   ✅ Antigravity — rules file"
+echo ""
+echo "   開一個新對話，OwnMind 會自動載入你的記憶！"
 echo ""
