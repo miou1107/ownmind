@@ -56,7 +56,7 @@ if [ -z "$TRIGGER" ]; then exit 0; fi
 
 # 從 Claude Code settings.json 取得 API key
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
-API_URL="https://kkvin.com/ownmind"
+API_URL=""
 API_KEY=""
 
 if [ -f "$CLAUDE_SETTINGS" ]; then
@@ -74,7 +74,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
   " 2>/dev/null)
 fi
 
-if [ -z "$API_KEY" ]; then exit 0; fi
+if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then exit 0; fi
 
 # 從 OwnMind 取得相關鐵律
 RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \

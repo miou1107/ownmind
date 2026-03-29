@@ -78,7 +78,9 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
           OWNMIND_API_KEY: '$API_KEY'
         }
       };
-      fs.writeFileSync('$CLAUDE_SETTINGS', JSON.stringify(settings, null, 2));
+      const _tmp = '$CLAUDE_SETTINGS' + '.tmp';
+      fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
+      fs.renameSync(_tmp, '$CLAUDE_SETTINGS');
     "
   fi
 else
@@ -220,7 +222,9 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
             }
           }
         };
-        fs.writeFileSync('$HOME/.cursor/mcp.json', JSON.stringify(settings, null, 2));
+        const _t2 = '$HOME/.cursor/mcp.json.tmp';
+        fs.writeFileSync(_t2, JSON.stringify(settings, null, 2));
+        fs.renameSync(_t2, '$HOME/.cursor/mcp.json');
       "
     fi
   fi
@@ -247,7 +251,9 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
           command: 'bash ~/.claude/hooks/ownmind-session-start.sh'
         });
       }
-      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+      const _t = path + '.tmp';
+      fs.writeFileSync(_t, JSON.stringify(s, null, 2));
+      fs.renameSync(_t, path);
     " 2>/dev/null
   fi
 fi
@@ -362,7 +368,9 @@ if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
       if (!s.instructions.includes('~/.ownmind/configs/AGENTS.md')) {
         s.instructions.push('~/.ownmind/configs/AGENTS.md');
       }
-      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+      const _t = path + '.tmp';
+      fs.writeFileSync(_t, JSON.stringify(s, null, 2));
+      fs.renameSync(_t, path);
     " 2>/dev/null
     echo "   加入 OpenCode instructions"
   fi
@@ -386,7 +394,9 @@ if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
       if (!s.bootstrapFiles.includes('~/.ownmind/configs/openclaw-bootstrap.md')) {
         s.bootstrapFiles.push('~/.ownmind/configs/openclaw-bootstrap.md');
       }
-      fs.writeFileSync(path, JSON.stringify(s, null, 2));
+      const _t = path + '.tmp';
+      fs.writeFileSync(_t, JSON.stringify(s, null, 2));
+      fs.renameSync(_t, path);
     " 2>/dev/null
     echo "   加入 OpenClaw bootstrap"
   fi
@@ -421,7 +431,7 @@ echo "✅ OwnMind 安裝完成！"
 echo ""
 echo "   MCP Server: $OWNMIND_DIR/mcp/index.js"
 echo "   API URL:    $API_URL"
-echo "   API Key:    $API_KEY"
+echo "   API Key:    ${API_KEY:0:4}****${API_KEY: -4}"
 if [ "$IS_WINDOWS" = true ]; then
 echo "   Windows:    使用 cmd.exe + start.cmd 啟動 MCP"
 fi
