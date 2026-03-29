@@ -71,7 +71,7 @@ fi
 # 呼叫 OwnMind init API
 INIT_DATA=$(curl -sf --max-time 5 \
   -H "Authorization: Bearer $API_KEY" \
-  "${API_URL}/api/memory/init" 2>/dev/null)
+  "${API_URL}/api/memory/init?compact=true" 2>/dev/null)
 
 if [ -z "$INIT_DATA" ]; then
   exit 0

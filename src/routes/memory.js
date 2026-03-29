@@ -341,20 +341,29 @@ router.get('/init', async (req, res) => {
       };
     }
 
+    // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
+    const compact = req.query.compact === 'true';
+
+    // Principles: compact mode only sends titles
+    const principlesOut = compact
+      ? principles.map(p => ({ id: p.id, title: p.title, code: p.code }))
+      : principles;
+
     res.json({
       sync_token: syncToken,
       server_version: SERVER_VERSION,
       allowed_types: ALLOWED_MEMORY_TYPES,
+      compact,
       upgrade_action: upgradeAction,
       team_standards_hash: teamStandardsHash,
       last_team_standard_update: lastTeamUpdate,
       iron_rules_count: ironRules.length,
-      instructions: INSTRUCTIONS_SOP,
+      ...(!compact && { instructions: INSTRUCTIONS_SOP }),
       profile,
-      principles,
-      iron_rules: ironRules,
+      principles: principlesOut,
+      ...(!compact && { iron_rules: ironRules }),
       iron_rules_digest: ironRulesDigest,
-      team_standards: teamStandards,
+      ...(!compact && { team_standards: teamStandards }),
       team_standards_digest: teamStandardsDigest,
       active_handoff: activeHandoff
     });
