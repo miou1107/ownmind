@@ -27,6 +27,7 @@ fi
 
 # --- 自動更新（背景執行，不阻塞 session 啟動）---
 # Stale lock: 超過 5 分鐘自動清除
+# stat -f %m = macOS, stat -c %Y = Linux, echo 0 = fallback（epoch 0 → age 極大 → 必定清除，fail-open）
 if [ -f "$LOCK_FILE" ]; then
   LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0) ))
   [ "$LOCK_AGE" -gt 300 ] && rm -f "$LOCK_FILE"
