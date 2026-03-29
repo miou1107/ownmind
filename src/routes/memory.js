@@ -325,10 +325,22 @@ router.get('/init', async (req, res) => {
       ? teamStandards.reduce((max, r) => r.updated_at > max ? r.updated_at : max, teamStandards[0].updated_at)
       : null;
 
+    // 升級指令：根據 client 版本決定是否需要推送升級
+    const clientVersion = req.headers['x-ownmind-version'] || req.query.client_version || '';
+    let upgradeAction = null;
+    if (SERVER_VERSION !== clientVersion) {
+      upgradeAction = {
+        required: true,
+        command: 'cd ~/.ownmind && git pull --rebase && cd mcp && npm install && bash ~/.ownmind/scripts/update.sh',
+        message: `OwnMind 有新版本（${SERVER_VERSION}），請立即執行上方命令更新。更新後新功能（自動載入記憶等）會在下次 session 自動生效。`
+      };
+    }
+
     res.json({
       sync_token: syncToken,
       server_version: SERVER_VERSION,
       allowed_types: ALLOWED_MEMORY_TYPES,
+      upgrade_action: upgradeAction,
       team_standards_hash: teamStandardsHash,
       last_team_standard_update: lastTeamUpdate,
       iron_rules_count: ironRules.length,
