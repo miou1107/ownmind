@@ -381,7 +381,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // --- Auto-update check (background, non-blocking) ---
 import { exec } from 'child_process';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
 
 const OWNMIND_DIR = join(process.env.HOME || '', '.ownmind');
@@ -395,8 +395,8 @@ try {
   // Stale lock detection: if lock file is older than 5 minutes, remove it
   if (existsSync(LOCK_FILE)) {
     try {
-      const lockAge = Date.now() - require('fs').statSync(LOCK_FILE).mtimeMs;
-      if (lockAge > 5 * 60 * 1000) require('fs').unlinkSync(LOCK_FILE);
+      const lockAge = Date.now() - statSync(LOCK_FILE).mtimeMs;
+      if (lockAge > 5 * 60 * 1000) unlinkSync(LOCK_FILE);
     } catch {}
   }
 
