@@ -18,6 +18,7 @@ OwnMind/
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
+│   ├── constants.js                 # 共用常數（ALLOWED_MEMORY_TYPES）
 │   ├── index.js                     # Server 啟動入口
 │   ├── middleware/
 │   │   ├── auth.js                  # API Key 認證中介層
@@ -38,15 +39,16 @@ OwnMind/
 │       └── admin.html               # Admin 管理後台（單頁應用）
 │
 ├── mcp/                             # MCP Server（供 Claude Code、Cursor 等工具使用）
-│   ├── index.js                     # MCP Server 入口（12 個 tools）
+│   ├── index.js                     # MCP Server 入口（12 個 tools）+ 啟動時自動更新
 │   ├── start.cmd                    # Windows 啟動器（動態找 node，供 cmd.exe 呼叫）
 │   └── package.json                 # MCP Server 依賴
 │
-├── hooks/                           # Claude Code PreToolUse hook scripts
-│   └── ownmind-iron-rule-check.sh  # 高風險指令前自動顯示相關鐵律（安裝時複製到 ~/.claude/hooks/）
+├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
+│   ├── ownmind-session-start.sh    # SessionStart hook：自動載入記憶 + 每日自動更新
+│   └── ownmind-iron-rule-check.sh  # PreToolUse hook：高風險指令前自動顯示相關鐵律
 │
 ├── scripts/                         # 維護工具腳本
-│   └── update.sh                    # Auto-update：git pull 後同步 skill、hook 到本機各工具目錄
+│   └── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
 │
 ├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）
 │   ├── CLAUDE.md                    # Claude Code → ~/.claude/CLAUDE.md

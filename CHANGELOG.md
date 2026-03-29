@@ -1,5 +1,41 @@
 # OwnMind 更新紀錄
 
+## 2026-03-30 — v1.9.0 自動載入 + 跨平台 hooks + Token 優化
+
+### 新功能
+1. **SessionStart hook** — 每個新 session 自動載入記憶，不需手動呼叫 ownmind_init。支援 Claude Code、Gemini CLI、GitHub Copilot、Cursor
+2. **跨平台自動觸發** — install.sh 自動偵測已安裝的 AI 工具，一鍵設定所有 hooks。Windsurf、OpenCode、OpenClaw、Antigravity 改用 rules/instruction 方式
+3. **自動更新** — SessionStart hook + MCP server 每天自動 git pull + update.sh，使用者完全不用管
+4. **Server 端升級推送** — init API 回傳 `upgrade_action`，舊版 client 呼叫時自動收到升級指令
+5. **Compact mode** — init API 加 `?compact=true`，跳過 SOP + 完整 iron_rules，只傳 digest。~9800 → ~770 tokens（省 92%）
+6. **Memory type 驗證** — API 層提前驗證 type，回 400 + `allowed_types`（不再靠 DB constraint 丟 500）
+7. **MCP tool type enum** — ownmind_save/ownmind_get 的 type 欄位加 enum 限制
+
+### 修正
+- MCP auto-update 改 async exec（不阻塞啟動）
+- Lock file 防止 SessionStart hook 和 MCP 同時更新
+- Stale lock 5 分鐘自動清除（防止 crash 後永久卡死）
+- settings.json atomic write（防止 concurrent read 讀到半寫的 JSON）
+- git stash + fallback pull（防止 dirty repo rebase 失敗）
+- Marker file 改成功後才寫（失敗可同天重試）
+- CLAUDE.md 模板精簡（54 行 → 5 行，省 ~500 tokens/session）
+- 安裝 prompt 精簡（30 行 → 1 行）
+- update.sh 同步所有 hooks 到所有平台（原本只同步 iron-rule-check）
+
+### 檔案變更
+- 新增 `src/constants.js`（ALLOWED_MEMORY_TYPES 集中定義）
+- 新增 `hooks/ownmind-session-start.sh`（SessionStart hook）
+- 修改 `src/routes/memory.js`（type 驗證 + compact mode + upgrade_action）
+- 修改 `mcp/index.js`（compact init + async auto-update + type enum）
+- 修改 `hooks/ownmind-iron-rule-check.sh`（piggyback upgrade 邏輯）
+- 修改 `scripts/update.sh`（同步所有平台 hooks + atomic write）
+- 修改 `install.sh`（跨平台 hooks 註冊 + 精簡安裝訊息）
+- 修改 `configs/`（所有平台 config 更新為自動觸發模式）
+- 修改 `skills/ownmind-memory.md`（版本號 → 1.9.0）
+- 修改 `README.md`、`docs/README.zh-TW.md`、`docs/README.ja.md`（安裝 prompt 精簡）
+
+---
+
 ## 2026-03-27 — v1.8.0 Sync Token + 規則品質追蹤 + 團隊規範強化
 
 ### 新功能
