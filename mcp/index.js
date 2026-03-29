@@ -231,7 +231,7 @@ const TOOLS = [
 async function handleTool(name, args) {
   switch (name) {
     case "ownmind_init": {
-      const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}`);
+      const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
       // Store sync token for subsequent write operations
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
