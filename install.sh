@@ -113,20 +113,10 @@ if [ -f "$CLAUDE_MD" ]; then
 
 # OwnMind 個人記憶系統
 
-你已連接 OwnMind 跨平台 AI 個人記憶系統。
-
-## 必須遵守
-- 開始工作時，呼叫 ownmind_init 載入使用者記憶
-- 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源（跨平台共享）
-- 本地 memory 可並存，但發生衝突時以 OwnMind 為準
-- 存取記憶時必須顯示【OwnMind】提示（詳見 ownmind-memory skill）
-- 完成重要工作後，主動儲存記憶
-- 交接工作時，使用 OwnMind 交接機制
-
-## 觸發詞
-- 「記起來」「學起來」「新增鐵律」→ 儲存記憶
-- 「交接給 XXX」→ 建立交接
-- 「整理記憶」「我有哪些記憶」→ 查詢記憶
+OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。
+如果 context 中沒有看到【OwnMind】標記，手動呼叫 ownmind_init MCP tool。
+鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind】標記。
+觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。
 CLAUDE_EOF
   fi
 else
@@ -135,20 +125,10 @@ else
   cat > "$CLAUDE_MD" << 'CLAUDE_EOF'
 # OwnMind 個人記憶系統
 
-你已連接 OwnMind 跨平台 AI 個人記憶系統。
-
-## 必須遵守
-- 開始工作時，呼叫 ownmind_init 載入使用者記憶
-- 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源（跨平台共享）
-- 本地 memory 可並存，但發生衝突時以 OwnMind 為準
-- 存取記憶時必須顯示【OwnMind】提示（詳見 ownmind-memory skill）
-- 完成重要工作後，主動儲存記憶
-- 交接工作時，使用 OwnMind 交接機制
-
-## 觸發詞
-- 「記起來」「學起來」「新增鐵律」→ 儲存記憶
-- 「交接給 XXX」→ 建立交接
-- 「整理記憶」「我有哪些記憶」→ 查詢記憶
+OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。
+如果 context 中沒有看到【OwnMind】標記，手動呼叫 ownmind_init MCP tool。
+鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind】標記。
+觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。
 CLAUDE_EOF
 fi
 

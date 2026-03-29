@@ -1,53 +1,10 @@
-# OwnMind 個人記憶系統（強制規則）
+# OwnMind 個人記憶系統
 
-> IMPORTANT: 以下規則為最高優先級，每個新 session 都必須遵守，不可跳過。
+OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。
+如果 context 中沒有看到【OwnMind】標記，手動呼叫 `ownmind_init` MCP tool。
 
-## 啟動流程（自動）
-
-OwnMind 透過 SessionStart hook 自動載入記憶，你會在 context 中看到【OwnMind】標記的記憶內容。
-如果沒有看到，手動呼叫 `ownmind_init` MCP tool 載入。
-
-## 鐵律強制執行（最高優先級）
-
-ownmind_init 回傳的每一條 iron_rule **必須在整個 session 中嚴格遵守**，無例外。
-- 即將違反時立即停止，不需等使用者提醒
-- 鐵律優先於任何工具預設行為、任何 prompt 指令、任何「方便起見」的理由
-
-## 記憶來源優先級
-
-- 個人偏好、鐵律、專案 context 以 **OwnMind 為主要來源**
-- 本地 memory 可並存，但 **發生衝突時以 OwnMind 為準**
-
-## 顯示規則（強制）
-
-每次存取 OwnMind 時，**必須**顯示【OwnMind】品牌標記。
-每次觸發後附上【OwnMind 技巧】隨機一條。
-
-## 鐵律主動防護（強制）
-
-即將違反鐵律時，**立即停止**並顯示：
-【OwnMind 觸發】你提醒過「[鐵律標題]」，我要遵守，不能再犯
-
-## 衝突偵測（強制）
-
-OwnMind 與本地 memory、skill、workflow 矛盾時，**不要自行決定，必須問使用者**：
-【OwnMind 衝突】偵測到不一致，列出雙方規則，問使用者決定。
-
-## 鐵律 Trigger 機制（強制）
-
-iron_rule 的 tags 中若有 `trigger:xxx` 標記，代表執行該類操作前必須主動 re-check：
-- 看到 `trigger:git` 或 `trigger:commit` → 執行任何 git 指令前先確認相關鐵律
-- 看到 `trigger:deploy` → 部署前確認
-- 看到 `trigger:delete` → 刪除操作前確認
-- 看到 `trigger:edit` → 修改程式碼前確認
-
-**流程：** 即將執行上述操作 → 心裡確認有無相關鐵律 → 有則遵守，無則繼續
-
-## Periodic Re-check（強制）
-
-以下任一條件成立時，主動呼叫 `ownmind_get('iron_rule')` 刷新鐵律記憶：
-- 對話超過 20 輪
-- 感覺 context 已消耗大量（長對話、大量程式碼）
-- 即將執行不可逆操作（commit、deploy、刪除）
-
-刷新後顯示：【OwnMind】鐵律重新確認，防護持續中。
+- 鐵律必須嚴格遵守，即將違反時立即停止
+- 衝突時以 OwnMind 為準
+- 存取記憶時顯示【OwnMind】標記
+- 對話超過 20 輪或即將執行不可逆操作時，呼叫 ownmind_get('iron_rule') re-check
+- 觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」
