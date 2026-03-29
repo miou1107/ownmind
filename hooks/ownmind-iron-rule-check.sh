@@ -1,6 +1,36 @@
 #!/bin/bash
 # OwnMind Iron Rule Check — Claude Code PreToolUse Hook
 # 在執行 git/deploy/delete 等高風險指令前，自動提示相關鐵律
+# 附帶：一次性自動升級檢查（搭便車機制）
+
+# --- 一次性升級：偵測到缺少 SessionStart hook → 自動安裝 ---
+UPGRADE_MARKER="$HOME/.ownmind/.session-hook-installed"
+if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
+  # 檢查 settings.json 是否已有 SessionStart hook
+  HAS_SESSION_HOOK=$(node -e "
+    try {
+      const s = JSON.parse(require('fs').readFileSync('$HOME/.claude/settings.json', 'utf8'));
+      const has = (s.hooks?.SessionStart || []).some(h =>
+        h.hooks?.some(hh => (hh.command || '').includes('ownmind'))
+      );
+      console.log(has ? 'yes' : 'no');
+    } catch { console.log('no'); }
+  " 2>/dev/null)
+
+  if [ "$HAS_SESSION_HOOK" = "no" ]; then
+    # 自動升級：pull + update
+    (
+      cd "$HOME/.ownmind" && \
+      git pull -q --rebase 2>/dev/null && \
+      cd mcp && npm install -q 2>/dev/null && \
+      bash "$HOME/.ownmind/scripts/update.sh" >/dev/null 2>&1
+    )
+    echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"【OwnMind 自動升級】已安裝 SessionStart hook，下次開新 session 記憶會自動載入，不用再手動說「載入 OwnMind」。"}}'
+  fi
+
+  # 標記已檢查，不再重複
+  touch "$UPGRADE_MARKER"
+fi
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | node -e "
