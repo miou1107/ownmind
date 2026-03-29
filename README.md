@@ -132,44 +132,21 @@ irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 -OutFile
 curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
 ```
 
-Or copy the following prompt and paste it into your AI tool (Claude Code, Codex, Cursor, etc.), replacing `YOUR_API_KEY` with your key:
+Or paste this prompt into your AI tool (Claude Code, Codex, Cursor, etc.):
 
 ```
-Install OwnMind personal memory system.
+Install OwnMind: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+```
 
-My API Key is: YOUR_API_KEY
-API URL is: YOUR_OWNMIND_URL
+If your tool can't run shell commands, use this prompt instead:
 
-Based on your current tool environment, complete the following:
-
-Step 1: Download OwnMind
-Clone https://github.com/miou1107/ownmind to ~/.ownmind/ (git pull if exists)
-Run npm install in ~/.ownmind/mcp/
-
-Step 2: Configure MCP Server (if supported)
-Add ownmind MCP to your tool's config (expand ~ to full path):
-- Claude Code → ~/.claude/settings.json
-- Cursor → ~/.cursor/mcp.json
-- Windsurf → ~/.codeium/windsurf/mcp_config.json
-
-Step 3: Install global rules
-Scan installed AI tools, append configs from ~/.ownmind/configs/:
-- Claude Code → ~/.claude/CLAUDE.md (append configs/CLAUDE.md)
-- Codex → ~/.codex/AGENTS.md (append configs/AGENTS.md)
-- Gemini CLI → ~/.gemini/GEMINI.md (append configs/GEMINI.md)
-- Windsurf → ~/.codeium/windsurf/memories/global_rules.md (append configs/global_rules.md)
-- OpenCode → ~/.config/opencode/opencode.json (merge configs/opencode.json instructions)
-
-Step 4: Install Skill
-Copy ~/.ownmind/skills/ownmind-memory.md to the tool's skill directory
-
-Step 5: Verify
-Call ownmind_init to test connection, confirm memory loads with【OwnMind】summary
+```
+Clone https://github.com/miou1107/ownmind to ~/.ownmind/, run npm install in ~/.ownmind/mcp/, then run bash ~/.ownmind/install.sh YOUR_API_KEY YOUR_API_URL
 ```
 
 ### 3. Start Using
 
-After installation, just say "load my OwnMind" in any new conversation. The AI will auto-load your memory.
+After installation, OwnMind auto-loads your memory at every new session. No manual steps needed.
 
 ## Use Cases
 

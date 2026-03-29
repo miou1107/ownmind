@@ -132,44 +132,21 @@ irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 -OutFile
 curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
 ```
 
-または以下のプロンプトをAIツール（Claude Code、Codex、Cursorなど）にコピー＆ペーストし、`YOUR_API_KEY`を実際のキーに置き換えてください：
+またはこのプロンプトをAIツールにペースト：
 
 ```
-OwnMindパーソナルメモリシステムをインストールしてください。
+OwnMindをインストール：curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+```
 
-APIキー：YOUR_API_KEY
-API URL：YOUR_OWNMIND_URL
+シェルを実行できないツールの場合：
 
-現在のツール環境に基づいて、以下を自動完了してください：
-
-Step 1：OwnMindをダウンロード
-https://github.com/miou1107/ownmind を ~/.ownmind/ にclone（既存の場合はgit pull）
-~/.ownmind/mcp/ で npm install を実行
-
-Step 2：MCP Serverを設定（ツールが対応している場合）
-ツールのMCP設定ファイルにownmind MCPを追加（~をフルパスに展開）：
-- Claude Code → ~/.claude/settings.json
-- Cursor → ~/.cursor/mcp.json
-- Windsurf → ~/.codeium/windsurf/mcp_config.json
-
-Step 3：グローバルルールをインストール
-インストール済みのAIツールをスキャンし、~/.ownmind/configs/ の設定を追記：
-- Claude Code → ~/.claude/CLAUDE.md（configs/CLAUDE.mdを追記）
-- Codex → ~/.codex/AGENTS.md（configs/AGENTS.mdを追記）
-- Gemini CLI → ~/.gemini/GEMINI.md（configs/GEMINI.mdを追記）
-- Windsurf → ~/.codeium/windsurf/memories/global_rules.md（configs/global_rules.mdを追記）
-- OpenCode → ~/.config/opencode/opencode.json（configs/opencode.jsonのinstructionsをマージ）
-
-Step 4：Skillをインストール
-~/.ownmind/skills/ownmind-memory.md をツールのskillディレクトリにコピー
-
-Step 5：検証
-ownmind_init を呼び出して接続テスト、メモリが読み込まれ【OwnMind】サマリーが表示されることを確認
+```
+https://github.com/miou1107/ownmind を ~/.ownmind/ にclone、npm installを実行、bash ~/.ownmind/install.sh YOUR_API_KEY YOUR_API_URL を実行
 ```
 
 ### 3. 使い始める
 
-インストール完了後、新しい会話で「OwnMindを読み込んで」と言うだけ。AIが自動的にメモリを読み込みます。
+インストール完了後、毎セッション自動的にメモリが読み込まれます。手動操作は不要です。
 
 ## ユースケース
 
