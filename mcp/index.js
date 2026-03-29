@@ -380,24 +380,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // --- Auto-update check (background, non-blocking) ---
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 const OWNMIND_DIR = join(process.env.HOME || '', '.ownmind');
 const MARKER_FILE = join(OWNMIND_DIR, '.last-mcp-update-check');
+const LOCK_FILE = join(OWNMIND_DIR, '.update-lock');
 
 try {
   const today = new Date().toISOString().slice(0, 10);
   const lastCheck = existsSync(MARKER_FILE) ? readFileSync(MARKER_FILE, 'utf8').trim() : '';
 
-  if (lastCheck !== today && existsSync(join(OWNMIND_DIR, '.git'))) {
+  if (lastCheck !== today && existsSync(join(OWNMIND_DIR, '.git')) && !existsSync(LOCK_FILE)) {
     writeFileSync(MARKER_FILE, today);
-    // Background: fetch + check + pull if needed
-    const updates = execSync('cd ~/.ownmind && git fetch -q 2>/dev/null && git log HEAD..origin/main --oneline 2>/dev/null', { timeout: 5000, encoding: 'utf8' }).trim();
-    if (updates) {
-      execSync('cd ~/.ownmind && git pull -q --rebase 2>/dev/null && cd mcp && npm install -q 2>/dev/null && bash ~/.ownmind/scripts/update.sh 2>/dev/null', { timeout: 30000 });
-    }
+    // Fully async — never blocks MCP startup
+    // Lock file prevents race with SessionStart hook
+    exec(`
+      touch "${LOCK_FILE}" &&
+      cd ~/.ownmind &&
+      git stash -q 2>/dev/null;
+      git pull -q --rebase 2>/dev/null ||
+      git pull -q 2>/dev/null;
+      cd mcp && npm install -q 2>/dev/null;
+      bash ~/.ownmind/scripts/update.sh 2>/dev/null;
+      rm -f "${LOCK_FILE}"
+    `, { timeout: 60000 });
   }
 } catch {
   // Silent fail — never block MCP startup
