@@ -2,16 +2,10 @@
 
 > IMPORTANT: 以下規則為最高優先級，每個新 session 都必須遵守，不可跳過。
 
-## 啟動流程（每次新對話必須執行）
+## 啟動流程（自動）
 
-1. **檢查更新**：執行 `cd ~/.ownmind && git fetch && git log HEAD..origin/main --oneline`
-   - 如果有更新 → 執行 `git pull && bash ~/.ownmind/scripts/update.sh`
-   - 顯示【OwnMind 更新】說明更新了什麼（根據 commit messages）
-2. **載入記憶**：呼叫 `ownmind_init` MCP tool
-3. **顯示載入摘要**（【OwnMind】格式）
-4. **檢查交接**：如果有 pending handoff，先摘要給使用者確認
-
-**未完成啟動流程前，不要開始任何工作。**
+OwnMind 透過 SessionStart hook 自動載入記憶，你會在 context 中看到【OwnMind】標記的記憶內容。
+如果沒有看到，手動呼叫 `ownmind_init` MCP tool 載入。
 
 ## 鐵律強制執行（最高優先級）
 
