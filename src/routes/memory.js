@@ -5,7 +5,7 @@ import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 
-const SERVER_VERSION = '1.8.0';
+const SERVER_VERSION = '1.9.0';
 
 const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
 

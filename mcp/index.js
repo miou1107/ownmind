@@ -16,7 +16,7 @@ const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
 // --- Version & Sync Token (in-memory, per session) ---
-const CLIENT_VERSION = '1.8.0';
+const CLIENT_VERSION = '1.9.0';
 let currentSyncToken = null;
 
 // --- Helper ---
@@ -392,18 +392,31 @@ try {
   const today = new Date().toISOString().slice(0, 10);
   const lastCheck = existsSync(MARKER_FILE) ? readFileSync(MARKER_FILE, 'utf8').trim() : '';
 
+  // Stale lock detection: if lock file is older than 5 minutes, remove it
+  if (existsSync(LOCK_FILE)) {
+    try {
+      const lockAge = Date.now() - require('fs').statSync(LOCK_FILE).mtimeMs;
+      if (lockAge > 5 * 60 * 1000) require('fs').unlinkSync(LOCK_FILE);
+    } catch {}
+  }
+
   if (lastCheck !== today && existsSync(join(OWNMIND_DIR, '.git')) && !existsSync(LOCK_FILE)) {
-    writeFileSync(MARKER_FILE, today);
     // Fully async — never blocks MCP startup
     // Lock file prevents race with SessionStart hook
+    // Marker written AFTER success (not before) to allow retry on failure
     exec(`
       touch "${LOCK_FILE}" &&
       cd ~/.ownmind &&
-      git stash -q 2>/dev/null;
-      git pull -q --rebase 2>/dev/null ||
-      git pull -q 2>/dev/null;
-      cd mcp && npm install -q 2>/dev/null;
-      bash ~/.ownmind/scripts/update.sh 2>/dev/null;
+      git fetch -q 2>/dev/null &&
+      UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null) &&
+      if [ -n "$UPDATES" ]; then
+        git stash -q 2>/dev/null;
+        git pull -q --rebase 2>/dev/null ||
+        git pull -q 2>/dev/null;
+        cd mcp && npm install -q 2>/dev/null;
+        bash ~/.ownmind/scripts/update.sh 2>/dev/null;
+      fi &&
+      echo "${today}" > "${MARKER_FILE}";
       rm -f "${LOCK_FILE}"
     `, { timeout: 60000 });
   }

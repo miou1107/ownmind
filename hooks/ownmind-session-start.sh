@@ -32,12 +32,19 @@ fi
 # --- 自動更新檢查（每天最多一次，有 lock 機制防止跟 MCP 同時跑）---
 LOCK_FILE="$OWNMIND_DIR/.update-lock"
 
+# Stale lock detection: if lock file is older than 5 minutes, remove it
+if [ -f "$LOCK_FILE" ]; then
+  LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0) ))
+  if [ "$LOCK_AGE" -gt 300 ]; then
+    rm -f "$LOCK_FILE"
+  fi
+fi
+
 if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
   TODAY=$(date +%Y-%m-%d)
   LAST_CHECK=$(cat "$MARKER_FILE" 2>/dev/null || echo "")
 
   if [ "$LAST_CHECK" != "$TODAY" ]; then
-    echo "$TODAY" > "$MARKER_FILE"
     touch "$LOCK_FILE"
 
     cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; exit 0; }
@@ -47,7 +54,6 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
 
     if [ -n "$UPDATES" ]; then
       UPDATE_COUNT=$(echo "$UPDATES" | wc -l | tr -d ' ')
-      # stash local changes to prevent rebase failure
       git stash -q 2>/dev/null
       git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null
       cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null
@@ -55,6 +61,8 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
       UPDATE_MSG="【OwnMind 自動更新】已更新 ${UPDATE_COUNT} 個 commit"
     fi
 
+    # Marker written AFTER success to allow retry on failure
+    echo "$TODAY" > "$MARKER_FILE"
     rm -f "$LOCK_FILE"
     cd - >/dev/null 2>&1 || true
   fi
