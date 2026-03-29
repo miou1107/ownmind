@@ -3,6 +3,7 @@ import { query } from '../utils/db.js';
 import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 
 const SERVER_VERSION = '1.8.0';
 
@@ -327,6 +328,7 @@ router.get('/init', async (req, res) => {
     res.json({
       sync_token: syncToken,
       server_version: SERVER_VERSION,
+      allowed_types: ALLOWED_MEMORY_TYPES,
       team_standards_hash: teamStandardsHash,
       last_team_standard_update: lastTeamUpdate,
       iron_rules_count: ironRules.length,
@@ -459,6 +461,13 @@ router.post('/', async (req, res) => {
 
     if (!type || !title || !content) {
       return res.status(400).json({ error: '必填欄位：type, title, content' });
+    }
+
+    if (!ALLOWED_MEMORY_TYPES.includes(type)) {
+      return res.status(400).json({
+        error: `無效的記憶類型: "${type}"`,
+        allowed_types: ALLOWED_MEMORY_TYPES
+      });
     }
 
     // Sync token 驗證（舊 client 無 token 時 graceful fallback）

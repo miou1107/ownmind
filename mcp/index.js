@@ -69,11 +69,11 @@ const TOOLS = [
   },
   {
     name: "ownmind_get",
-    description: "依類型取得記憶列表。例如 type=iron_rule、preference、note 等。",
+    description: "依類型取得記憶列表。",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", description: "記憶類型，如 iron_rule、preference、note" },
+        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "記憶類型" },
       },
       required: ["type"],
     },
@@ -95,7 +95,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", description: "記憶類型，如 iron_rule、preference、note" },
+        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "記憶類型" },
         title: { type: "string", description: "記憶標題" },
         content: { type: "string", description: "記憶內容" },
         code: { type: "string", description: "相關程式碼（選填）" },
