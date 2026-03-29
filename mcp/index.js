@@ -231,14 +231,14 @@ const TOOLS = [
 async function handleTool(name, args) {
   switch (name) {
     case "ownmind_init": {
-      const data = await callApi("GET", "/api/memory/init");
+      const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}`);
       // Store sync token for subsequent write operations
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
       }
-      // Version check: compare client vs server
-      if (data.server_version && data.server_version !== CLIENT_VERSION) {
-        data._update_notice = `⚠️ OwnMind 版本不一致：MCP client ${CLIENT_VERSION}、Server ${data.server_version}。請更新：cd ~/.ownmind && git pull && cd mcp && npm install`;
+      // Upgrade action from server
+      if (data.upgrade_action?.required) {
+        data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\n執行：${data.upgrade_action.command}`;
       }
       data._client_version = CLIENT_VERSION;
       return data;
