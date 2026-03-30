@@ -7,6 +7,55 @@ import logger from '../utils/logger.js';
 const router = Router();
 
 /**
+ * 從 session_logs.details 分析情境報告
+ */
+async function getContextAnalysis(userId, fromDate) {
+  try {
+    const sessions = await query(
+      `SELECT tool, model, details FROM session_logs
+       WHERE user_id = $1 AND created_at >= $2 AND details IS NOT NULL AND details != '{}'::jsonb
+       ORDER BY created_at DESC LIMIT 100`,
+      [userId, fromDate]
+    );
+
+    if (sessions.rows.length === 0) return null;
+
+    const actionCounts = {};
+    const projectCounts = {};
+    const frictionPoints = [];
+    const suggestions = [];
+    let totalTurns = 0;
+    let sessionsWithTurns = 0;
+
+    for (const s of sessions.rows) {
+      const d = s.details;
+      // Actions
+      if (Array.isArray(d.actions)) {
+        for (const a of d.actions) actionCounts[a] = (actionCounts[a] || 0) + 1;
+      }
+      // Projects
+      if (d.project) projectCounts[d.project] = (projectCounts[d.project] || 0) + 1;
+      // Turns
+      if (d.duration_turns) { totalTurns += d.duration_turns; sessionsWithTurns++; }
+      // Friction & suggestions
+      if (d.friction_points) frictionPoints.push({ tool: s.tool, text: d.friction_points });
+      if (d.suggestions) suggestions.push({ tool: s.tool, text: d.suggestions });
+    }
+
+    return {
+      sessions_with_context: sessions.rows.length,
+      avg_turns: sessionsWithTurns > 0 ? Math.round(totalTurns / sessionsWithTurns) : null,
+      top_actions: Object.entries(actionCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
+      top_projects: Object.entries(projectCounts).sort((a, b) => b[1] - a[1]).slice(0, 10),
+      friction_points: frictionPoints.slice(0, 10),
+      suggestions: suggestions.slice(0, 10),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * POST /batch — 批次上傳 activity log events
  * Body: { events: [{ ts, event, tool, source, details }, ...] }
  * 需要一般 auth（用自己的 API key）
@@ -239,7 +288,8 @@ router.get('/stats', adminAuth, async (req, res) => {
         init_success_rate: parseFloat(initRate),
         sync_conflicts: parseInt(syncConflicts.rows[0]?.count || 0),
         updates_applied: parseInt(updatesApplied.rows[0]?.count || 0)
-      }
+      },
+      context: await getContextAnalysis(userId, fromDate)
     });
   } catch (err) {
     logger.error('取得統計失敗', { error: err.message });
