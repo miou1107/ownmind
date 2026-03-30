@@ -197,6 +197,19 @@ cp ~/.ownmind/skills/ownmind-memory.md ~/.claude/commands/ownmind-memory.md
 
 這是 OwnMind 最核心的價值 — AI 要在**即將違反鐵律的那一刻**主動攔截自己。
 
+## Enforcement Alerts（強制 — 不可忽略）
+
+init 回傳的 enforcement_alerts 是使用者最常違反的鐵律，根據歷史數據自動計算。
+這是 OwnMind 的自動進化機制：違反越多的鐵律，提醒越強烈。
+
+行為要求：
+- 收到 enforcement_alerts 時，**必須**用【OwnMind 強制注意】格式完整顯示所有 alerts
+- 🚨 critical 級別：每次觸發時必須停下來逐字確認，不確認就執行 = 再次違反
+- ⚠️ warning 級別：觸發時必須明確說出確認語句
+- 📌 notice 級別：內部確認，不准忽略
+- 再次違反時，**必須立即**呼叫 ownmind_report_compliance 回報 violate，不可隱瞞
+- 不可省略、不可簡化、不可跳過顯示
+
 ## 什麼時候該記
 
 ### 立即儲存（不用問使用者）
