@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## 2026-03-30 — v1.10.0 越用越聰明 + 數據驅動進化
+
+### 新功能
+1. **週/月報 API** — `GET /api/session/report?period=week|month&offset=N`，即時計算或讀取快照
+2. **週報 Cron Job** — 每週一 00:00 Asia/Taipei 自動執行，高頻 friction（≥3 次）自動建立 project 記憶
+3. **月報 Cron Job** — 每月 2 號 00:00 Asia/Taipei 聚合月度數據
+4. **Init API 擴充** — 每週第一次 init 回傳 `weekly_summary`（跨裝置共用 marker）
+5. **Dashboard 週/月報頁籤** — friction 列表 + suggestions 列表，日期切換
+6. **AI Skill 模式偵測** — 重複問題主動詢問、自動暫存 pending_review、SessionStart 週摘要
+
+### 技術細節
+- `src/utils/report.js`：純函式 computePeriodRange / groupFrictions / computeReportData
+- `src/jobs/weeklyReport.js`：cron job（node-cron）
+- `db/004_weekly_summary_marker.sql`：users.weekly_summary_sent_at
+- `tests/report.test.js`：node:test 單元測試（12 cases）
+
+---
+
 ## 2026-03-30 — v1.9.1 Activity Log + Dashboard + Compliance
 
 ### 新功能

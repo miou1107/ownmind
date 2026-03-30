@@ -126,6 +126,7 @@
   <div class="tabs">
     <div class="tab active" onclick="switchTab('users')">使用者管理</div>
     <div class="tab" onclick="switchTab('stats')">統計儀表板</div>
+    <div class="tab" onclick="switchTab('reports')">週/月報</div>
   </div>
 
   <!-- ===== TAB: 使用者管理 ===== -->
@@ -339,6 +340,47 @@
     </div>
 
   </div><!-- end tab-stats -->
+
+  <!-- ===== TAB: 週/月報 ===== -->
+  <div id="tab-reports" class="tab-content">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;">
+      <select id="report-period" style="padding:6px 12px;border:1px solid #d2d2d7;border-radius:6px;font-size:14px;">
+        <option value="week">週報</option>
+        <option value="month">月報</option>
+      </select>
+      <select id="report-offset" style="padding:6px 12px;border:1px solid #d2d2d7;border-radius:6px;font-size:14px;">
+        <option value="0">本期</option>
+        <option value="1">上一期</option>
+        <option value="2">兩期前</option>
+        <option value="3">三期前</option>
+      </select>
+      <button onclick="loadReport()" style="padding:6px 16px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">載入</button>
+    </div>
+
+    <div id="report-period-label" style="color:#86868b;font-size:13px;margin-bottom:16px;">—</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+      <div class="card">
+        <div style="font-size:13px;color:#86868b;margin-bottom:4px;">新增記憶</div>
+        <div id="report-new-memories" style="font-size:32px;font-weight:700;color:#1d1d1f;">—</div>
+      </div>
+      <div class="card">
+        <div style="font-size:13px;color:#86868b;margin-bottom:4px;">自動建立 Friction Issue</div>
+        <div id="report-friction-issues" style="font-size:32px;font-weight:700;color:#1d1d1f;">—</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div>
+        <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">⚠️ Top Frictions</h3>
+        <div id="report-frictions-list" style="font-size:14px;color:#3a3a3c;"></div>
+      </div>
+      <div>
+        <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">💡 Top Suggestions</h3>
+        <div id="report-suggestions-list" style="font-size:14px;color:#3a3a3c;"></div>
+      </div>
+    </div>
+  </div><!-- end tab-reports -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -510,6 +552,52 @@
           usersData.map(u => `<option value="${u.id}">${u.name || u.email}</option>`).join('');
       }
       loadUserStats();
+    }
+  }
+
+  // ===== Reports =====
+  async function loadReport() {
+    const period = document.getElementById('report-period').value;
+    const offset = document.getElementById('report-offset').value;
+
+    try {
+      const res = await fetch(`${API}/session/report?period=${period}&offset=${offset}`, {
+        headers: headers()
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      document.getElementById('report-period-label').textContent = data.period || '—';
+      document.getElementById('report-new-memories').textContent = data.new_memories ?? '—';
+      document.getElementById('report-friction-issues').textContent = data.friction_issues_created ?? '—';
+
+      // Frictions
+      const frictionEl = document.getElementById('report-frictions-list');
+      if (data.top_frictions && data.top_frictions.length > 0) {
+        frictionEl.innerHTML = data.top_frictions.map(f => {
+          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">
+            <span style="font-weight:600;color:#e65c00;">${f.count}x</span>
+            <span style="margin-left:8px;">${esc(f.text)}</span>
+          </div>`;
+        }).join('');
+      } else {
+        frictionEl.innerHTML = '<div style="color:#86868b;">本期無 friction 資料</div>';
+      }
+
+      // Suggestions
+      const suggestEl = document.getElementById('report-suggestions-list');
+      if (data.top_suggestions && data.top_suggestions.length > 0) {
+        suggestEl.innerHTML = data.top_suggestions.map(s => {
+          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">
+            <span style="font-weight:600;color:#7c3aed;">${s.count}x</span>
+            <span style="margin-left:8px;">${esc(s.text)}</span>
+          </div>`;
+        }).join('');
+      } else {
+        suggestEl.innerHTML = '<div style="color:#86868b;">本期無 suggestion 資料</div>';
+      }
+    } catch (err) {
+      alert('載入報表失敗：' + err.message);
     }
   }
 

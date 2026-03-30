@@ -16,7 +16,8 @@ OwnMind/
 ├── db/
 │   ├── 001_init.sql                 # PostgreSQL schema（users, memories, handoffs 等 6 張表）
 │   ├── 002_add_team_standard.sql    # 團隊規範相關 migration
-│   └── 003_activity_logs.sql        # Activity logs 表（事件追蹤）
+│   ├── 003_activity_logs.sql        # Activity logs 表（事件追蹤）
+│   └── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -37,7 +38,10 @@ OwnMind/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
 │   │   ├── crypto.js                # AES-256 加解密工具
-│   │   └── syncToken.js             # Sync token 生成與驗證（SHA-256）
+│   │   ├── syncToken.js             # Sync token 生成與驗證（SHA-256）
+│   │   └── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
+│   ├── jobs/
+│   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   └── public/
 │       └── admin.html               # Admin 管理後台（單頁應用）
 │
@@ -67,6 +71,9 @@ OwnMind/
 │
 ├── skills/
 │   └── ownmind-memory.md            # OwnMind 記憶管理 Skill
+│
+├── tests/
+│   └── report.test.js               # report.js 單元測試（node:test）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
