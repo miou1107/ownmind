@@ -541,20 +541,24 @@ router.get('/init', async (req, res) => {
         [req.user.id, thirtyDaysAgo]
       );
 
-      // 跨 session 記憶：取上一個 session 的違反記錄
+      // 跨 session 記憶：從最近 session 的 compliance 記錄中取出實際違反的鐵律
+      // 注意：不用 rules_triggered（包含遵守的），要用 activity_logs 的 violate 記錄
       const lastSessionResult = await query(
-        `SELECT details->'rules_triggered' as triggered
-         FROM session_logs
-         WHERE user_id = $1 AND tool != 'system'
-           AND details IS NOT NULL AND details != '{}'::jsonb
-         ORDER BY created_at DESC LIMIT 1`,
+        `SELECT DISTINCT details->>'rule_code' as rule_code
+         FROM activity_logs
+         WHERE user_id = $1 AND event = 'iron_rule_compliance'
+           AND details->>'action' = 'violate'
+           AND ts >= (
+             SELECT COALESCE(MAX(created_at) - INTERVAL '24 hours', NOW() - INTERVAL '7 days')
+             FROM session_logs
+             WHERE user_id = $1 AND tool != 'system'
+           )
+         LIMIT 20`,
         [req.user.id]
       );
-      const lastViolations = [];
-      if (lastSessionResult.rows.length > 0) {
-        const triggered = lastSessionResult.rows[0].triggered;
-        if (Array.isArray(triggered)) lastViolations.push(...triggered);
-      }
+      const lastViolations = lastSessionResult.rows
+        .map(r => r.rule_code)
+        .filter(Boolean);
 
       const alerts = computeEnforcementAlerts(complianceResult.rows, lastViolations);
       if (alerts.length > 0) enforcementAlerts = alerts;
