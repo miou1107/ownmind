@@ -296,6 +296,8 @@
   const API = '/ownmind/api';
   let usersData = [];
 
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
   function headers() {
     return { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' };
   }
@@ -337,15 +339,15 @@
     tbody.innerHTML = usersData.map(u => `
       <tr>
         <td>${u.id}</td>
-        <td>${u.email}</td>
-        <td>${u.name || '-'}</td>
-        <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+        <td>${esc(u.email)}</td>
+        <td>${esc(u.name || '-')}</td>
+        <td><span class="role-badge role-${esc(u.role)}">${esc(u.role)}</span></td>
         <td>
-          <span class="api-key">${u.api_key.slice(0, 12)}...</span>
-          <button class="btn-copy btn-sm" onclick="copyKey('${u.api_key}')">複製</button>
+          <span class="api-key">${esc(u.api_key.slice(0, 12))}...</span>
+          <button class="btn-copy btn-sm" data-key="${esc(u.api_key)}" onclick="copyKey(this.dataset.key)">複製</button>
         </td>
         <td class="actions">
-          <button class="btn-danger btn-sm" onclick="deleteUser(${u.id}, '${u.email}')">刪除</button>
+          <button class="btn-danger btn-sm" data-id="${u.id}" data-email="${esc(u.email)}" onclick="deleteUser(this.dataset.id, this.dataset.email)">刪除</button>
         </td>
       </tr>
     `).join('');
@@ -470,7 +472,7 @@
         const isActive = u.last_active && (Date.now() - new Date(u.last_active).getTime()) < 7 * 86400000;
         return `<tr>
           <td><span class="activity-dot ${isActive ? 'dot-active' : 'dot-inactive'}"></span></td>
-          <td>${u.name || u.email}</td>
+          <td>${esc(u.name || u.email)}</td>
           <td>${u.memory_count || 0}</td>
           <td>${u.session_count || 0}</td>
           <td>${u.activity_count || 0}</td>
@@ -548,7 +550,7 @@
       .sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `
         <div class="bar-row">
-          <div class="bar-label" title="${k}">${k}</div>
+          <div class="bar-label" title="${esc(k)}">${esc(k)}</div>
           <div class="bar-track"><div class="bar-fill" style="width:${(v / max * 100).toFixed(1)}%"></div></div>
           <div class="bar-count">${v}</div>
         </div>

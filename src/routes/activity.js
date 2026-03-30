@@ -26,8 +26,7 @@ router.post('/batch', auth, async (req, res) => {
       if (!e.ts || !e.event) continue;
       await query(
         `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT DO NOTHING`,
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [req.user.id, e.ts, e.event, e.tool || null, e.source || null, e.details || {}]
       );
       inserted++;
@@ -45,10 +44,10 @@ router.post('/batch', auth, async (req, res) => {
  */
 router.get('/stats', adminAuth, async (req, res) => {
   try {
-    const userId = parseInt(req.query.user_id);
-    const days = parseInt(req.query.days) || 30;
+    const userId = Number(req.query.user_id);
+    const days = Math.min(Number(req.query.days) || 30, 365);
 
-    if (!userId) return res.status(400).json({ error: '需要 user_id' });
+    if (!userId || isNaN(userId)) return res.status(400).json({ error: '需要有效的 user_id' });
 
     // 用戶資訊
     const userResult = await query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [userId]);
@@ -95,12 +94,12 @@ router.get('/stats', adminAuth, async (req, res) => {
     // Activity 統計
     const activityByEvent = await query(
       `SELECT event, COUNT(*) as count FROM activity_logs
-       WHERE user_id = $1 AND ts >= $2 GROUP BY event ORDER BY count DESC`,
+       WHERE user_id = $1 AND ts >= $2 GROUP BY event ORDER BY count DESC LIMIT 20`,
       [userId, fromDate]
     );
     const activityByTool = await query(
       `SELECT tool, COUNT(*) as count FROM activity_logs
-       WHERE user_id = $1 AND ts >= $2 GROUP BY tool ORDER BY count DESC`,
+       WHERE user_id = $1 AND ts >= $2 GROUP BY tool ORDER BY count DESC LIMIT 20`,
       [userId, fromDate]
     );
     const activityDaily = await query(
