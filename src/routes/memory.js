@@ -6,6 +6,7 @@ import logger from '../utils/logger.js';
 import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
+import { computeEnforcementAlerts } from '../utils/enforcement.js';
 
 const SERVER_VERSION = '1.10.0';
 
@@ -511,6 +512,42 @@ router.get('/init', async (req, res) => {
       logger.warn('pending_review 查詢失敗（不影響 init）', { error: prErr.message });
     }
 
+    // --- Enforcement Alerts：分析違反歷史，動態調整提醒強度 ---
+    let enforcementAlerts = null;
+    try {
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600000).toISOString();
+      const complianceResult = await query(
+        `SELECT details->>'rule_title' as rule_title,
+                details->>'rule_code' as rule_code,
+                details->>'action' as action,
+                COUNT(*) as count
+         FROM activity_logs
+         WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
+         GROUP BY rule_title, rule_code, action`,
+        [req.user.id, thirtyDaysAgo]
+      );
+
+      // 跨 session 記憶：取上一個 session 的違反記錄
+      const lastSessionResult = await query(
+        `SELECT details->'rules_triggered' as triggered
+         FROM session_logs
+         WHERE user_id = $1 AND tool != 'system'
+           AND details IS NOT NULL AND details != '{}'::jsonb
+         ORDER BY created_at DESC LIMIT 1`,
+        [req.user.id]
+      );
+      const lastViolations = [];
+      if (lastSessionResult.rows.length > 0) {
+        const triggered = lastSessionResult.rows[0].triggered;
+        if (Array.isArray(triggered)) lastViolations.push(...triggered);
+      }
+
+      const alerts = computeEnforcementAlerts(complianceResult.rows, lastViolations);
+      if (alerts.length > 0) enforcementAlerts = alerts;
+    } catch (err) {
+      logger.error('Enforcement alerts 計算失敗', { error: err.message });
+    }
+
     // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
     const compact = req.query.compact === 'true';
 
@@ -538,7 +575,8 @@ router.get('/init', async (req, res) => {
       active_handoff: activeHandoff,
       weekly_summary: weeklySummary,
       memory_health: memoryHealth,
-      pending_review: pendingReview
+      pending_review: pendingReview,
+      enforcement_alerts: enforcementAlerts,
     });
 
     // 背景壓縮舊 session logs（不阻塞回應）
