@@ -10,7 +10,11 @@ log_event() {
   local ts=$(date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([0-9][0-9]\)$/:\1/')
   local date_str=$(date +%Y-%m-%d)
   local extra=""
-  while [ $# -gt 0 ]; do extra="$extra,\"$1\":\"$2\""; shift 2; done
+  while [ $# -gt 0 ]; do
+    local val=$(echo "$2" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    extra="$extra,\"$1\":\"$val\""
+    shift 2
+  done
   local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}"
   echo "$entry" >> "$LOG_DIR/$date_str.jsonl"
   # Server upload (background)

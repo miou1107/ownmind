@@ -101,25 +101,35 @@ export async function compressOldSessions(userId) {
     }
 
     for (const [month, sessions] of Object.entries(byMonth)) {
-      // 產生月摘要
       const lines = sessions.map(s => `- [${s.tool}] ${s.summary}`);
       const summary = `月摘要 — ${month}（${sessions.length} sessions）\n\n${lines.join('\n')}`;
-
-      // 插入壓縮後的月摘要
-      await query(
-        `INSERT INTO session_logs (user_id, tool, model, summary, compressed, compressed_at, created_at)
-         VALUES ($1, 'summary', 'compressed', $2, true, NOW(), $3)`,
-        [userId, summary, `${month}-01T00:00:00Z`]
-      );
-
-      // 刪除原始記錄
       const ids = sessions.map(s => s.id);
-      await query(
-        `DELETE FROM session_logs WHERE id = ANY($1)`,
-        [ids]
-      );
 
-      logger.info(`壓縮 session logs: ${month}, ${sessions.length} 筆 → 1 筆月摘要`, { userId });
+      // 用 transaction 防止 race condition
+      await query('BEGIN');
+      try {
+        // 鎖定要刪除的 rows，防止並發壓縮
+        const locked = await query(
+          `SELECT id FROM session_logs WHERE id = ANY($1) FOR UPDATE SKIP LOCKED`,
+          [ids]
+        );
+        if (locked.rows.length === 0) {
+          await query('ROLLBACK');
+          continue; // 已被其他 process 處理
+        }
+
+        await query(
+          `INSERT INTO session_logs (user_id, tool, model, summary, compressed, compressed_at, created_at)
+           VALUES ($1, 'summary', 'compressed', $2, true, NOW(), $3)`,
+          [userId, summary, `${month}-01T00:00:00Z`]
+        );
+        await query(`DELETE FROM session_logs WHERE id = ANY($1)`, [ids]);
+        await query('COMMIT');
+        logger.info(`壓縮 session logs: ${month}, ${sessions.length} 筆 → 1 筆月摘要`, { userId });
+      } catch (txErr) {
+        await query('ROLLBACK');
+        logger.error(`壓縮 transaction 失敗: ${month}`, { error: txErr.message, userId });
+      }
     }
   } catch (err) {
     logger.error('壓縮 session logs 失敗', { error: err.message, userId });

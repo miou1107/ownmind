@@ -39,6 +39,8 @@ function scheduleFlush() {
     flushTimer = null;
     flushToServer();
   }, 30000);
+  // Don't prevent Node.js from exiting — local JSONL is the source of truth
+  flushTimer.unref();
 }
 
 /**
@@ -67,7 +69,8 @@ export function logEvent(event, details = {}) {
 
     const tool = details.tool || TOOL_NAME;
     const source = details.source || 'mcp';
-    const entry = { ts, event, tool, source, ...details };
+    const { tool: _t, source: _s, ...rest } = details;
+    const entry = { ts, event, tool, source, details: rest };
 
     // Write local
     appendFileSync(filePath, JSON.stringify(entry) + '\n');
