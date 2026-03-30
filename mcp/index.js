@@ -275,6 +275,14 @@ async function handleTool(name, args) {
         data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\n執行：${data.upgrade_action.command}`;
       }
       data._client_version = CLIENT_VERSION;
+      // Enforcement Alerts：顯示高風險鐵律
+      if (data.enforcement_alerts && data.enforcement_alerts.length > 0) {
+        const alertLines = ['', '【OwnMind 強制注意】以下鐵律你過去經常違反：'];
+        for (const a of data.enforcement_alerts) {
+          alertLines.push(a.reinforcement_message);
+        }
+        data._enforcement_notice = alertLines.join('\n');
+      }
       logEvent('init', { status: 'ok', details: { rules: data.iron_rules?.length || 0, profile: !!data.profile, handoff: !!data.active_handoff, version: data.server_version } });
       return data;
     }
