@@ -5,8 +5,9 @@ import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 import { compressOldSessions } from './session.js';
+import { computePeriodRange, groupFrictions } from '../utils/report.js';
 
-const SERVER_VERSION = '1.9.0';
+const SERVER_VERSION = '1.10.0';
 
 const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
 
@@ -375,6 +376,85 @@ router.get('/init', async (req, res) => {
       };
     }
 
+    // weekly_summary：每週第一次 init 才回傳，其他靜默
+    let weeklySummary = null;
+    try {
+      const now = new Date();
+      const weekStart = (() => {
+        const d = new Date(now.getTime() + 8 * 3600000);
+        const day = d.getUTCDay();
+        const daysFromMonday = day === 0 ? 6 : day - 1;
+        const monday = new Date(d);
+        monday.setUTCDate(d.getUTCDate() - daysFromMonday);
+        monday.setUTCHours(0, 0, 0, 0);
+        return new Date(monday.getTime() - 8 * 3600000); // 轉回 UTC
+      })();
+
+      const markerResult = await query(
+        `SELECT weekly_summary_sent_at FROM users WHERE id = $1`,
+        [req.user.id]
+      );
+      const lastSent = markerResult.rows[0]?.weekly_summary_sent_at;
+      const shouldSend = !lastSent || new Date(lastSent) < weekStart;
+
+      if (shouldSend) {
+        const { start, end, label } = computePeriodRange('week', 1);
+
+        // 優先找週報快照
+        const snapshotResult = await query(
+          `SELECT details FROM session_logs
+           WHERE user_id = $1 AND tool = 'system'
+             AND summary LIKE '週報%'
+             AND created_at >= $2
+           ORDER BY created_at DESC LIMIT 1`,
+          [req.user.id, start]
+        );
+
+        if (snapshotResult.rows.length > 0) {
+          const d = snapshotResult.rows[0].details;
+          weeklySummary = {
+            period: d.period || label,
+            new_memories: d.new_memories || 0,
+            friction_issues_created: d.friction_issues_created || 0,
+            top_frictions: (d.top_frictions || []).slice(0, 3).map(f => f.text || f),
+          };
+        } else {
+          // 即時計算（job 還沒跑時的 fallback）
+          const sessions = await query(
+            `SELECT details FROM session_logs
+             WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
+               AND details IS NOT NULL AND details != '{}'::jsonb
+               AND compressed = false`,
+            [req.user.id, start, end]
+          );
+          const frictions = sessions.rows.map(r => r.details?.friction_points).filter(Boolean);
+          const topFrictions = groupFrictions(frictions).slice(0, 3).map(f => f.text);
+
+          const memCount = await query(
+            `SELECT COUNT(*) as cnt FROM memories
+             WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
+               AND status = 'active' AND NOT (tags @> ARRAY['pending_review'])`,
+            [req.user.id, start, end]
+          );
+
+          weeklySummary = {
+            period: label,
+            new_memories: parseInt(memCount.rows[0].cnt, 10),
+            friction_issues_created: 0,
+            top_frictions: topFrictions,
+          };
+        }
+
+        // 更新 marker
+        await query(
+          `UPDATE users SET weekly_summary_sent_at = NOW() WHERE id = $1`,
+          [req.user.id]
+        );
+      }
+    } catch (wsErr) {
+      logger.warn('weekly_summary 計算失敗（不影響 init）', { error: wsErr.message });
+    }
+
     // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
     const compact = req.query.compact === 'true';
 
@@ -399,7 +479,8 @@ router.get('/init', async (req, res) => {
       iron_rules_digest: ironRulesDigest,
       ...(!compact && { team_standards: teamStandards }),
       team_standards_digest: teamStandardsDigest,
-      active_handoff: activeHandoff
+      active_handoff: activeHandoff,
+      weekly_summary: weeklySummary
     });
 
     // 背景壓縮舊 session logs（不阻塞回應）

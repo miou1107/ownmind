@@ -3,6 +3,7 @@ import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { SESSION_RETENTION_DAYS } from '../constants.js';
+import { computePeriodRange, computeReportData } from '../utils/report.js';
 
 const router = Router();
 router.use(auth);
@@ -177,5 +178,67 @@ export async function compressOldSessions(userId) {
     logger.error('壓縮 session logs 失敗', { error: err.message, userId });
   }
 }
+
+/**
+ * GET /report - 取週/月報
+ * Query: period=week|month, offset=0,1,2...
+ */
+router.get('/report', async (req, res) => {
+  try {
+    const period = req.query.period;
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    if (!['week', 'month'].includes(period)) {
+      return res.status(400).json({ error: 'period 必須是 week 或 month' });
+    }
+    if (offset < 0 || offset > 52) {
+      return res.status(400).json({ error: 'offset 範圍 0~52' });
+    }
+
+    const { start, end, label } = computePeriodRange(period, offset);
+
+    // 查詢該 period 的 session logs（含 friction/suggestions）
+    const sessions = await query(
+      `SELECT tool, model, details FROM session_logs
+       WHERE user_id = $1
+         AND created_at >= $2
+         AND created_at <= $3
+         AND details IS NOT NULL AND details != '{}'::jsonb
+         AND compressed = false`,
+      [req.user.id, start, end]
+    );
+
+    // 查詢新增記憶數（排除 pending_review）
+    const memoriesResult = await query(
+      `SELECT COUNT(*) as cnt FROM memories
+       WHERE user_id = $1
+         AND created_at >= $2
+         AND created_at <= $3
+         AND status = 'active'
+         AND NOT (tags @> ARRAY['pending_review'])`,
+      [req.user.id, start, end]
+    );
+    const newMemoriesCount = parseInt(memoriesResult.rows[0].cnt, 10);
+
+    // 查詢該 period 自動建立的 friction issue 數
+    const frictionIssuesResult = await query(
+      `SELECT COUNT(*) as cnt FROM memories
+       WHERE user_id = $1
+         AND created_at >= $2
+         AND created_at <= $3
+         AND tags @> ARRAY['friction-issue', 'auto-generated']`,
+      [req.user.id, start, end]
+    );
+    const frictionIssuesCreated = parseInt(frictionIssuesResult.rows[0].cnt, 10);
+
+    const report = computeReportData(sessions.rows, newMemoriesCount, label);
+    report.friction_issues_created = frictionIssuesCreated;
+
+    res.json(report);
+  } catch (err) {
+    logger.error('取週/月報失敗', { error: err.message });
+    res.status(500).json({ error: '查詢失敗' });
+  }
+});
 
 export default router;
