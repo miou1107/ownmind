@@ -492,6 +492,25 @@ router.get('/init', async (req, res) => {
       logger.warn('記憶健康檢查失敗（不影響 init）', { error: mhErr.message });
     }
 
+    // 待確認暫存記憶
+    let pendingReview = null;
+    try {
+      const prResult = await query(
+        `SELECT id, type, title, created_at FROM memories
+         WHERE user_id = $1 AND status = 'active' AND tags @> ARRAY['pending_review']
+         ORDER BY created_at DESC LIMIT 10`,
+        [req.user.id]
+      );
+      if (prResult.rows.length > 0) {
+        pendingReview = {
+          count: prResult.rows.length,
+          items: prResult.rows.map(r => ({ id: r.id, type: r.type, title: r.title, days_ago: Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86400000) })),
+        };
+      }
+    } catch (prErr) {
+      logger.warn('pending_review 查詢失敗（不影響 init）', { error: prErr.message });
+    }
+
     // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
     const compact = req.query.compact === 'true';
 
@@ -518,7 +537,8 @@ router.get('/init', async (req, res) => {
       team_standards_digest: teamStandardsDigest,
       active_handoff: activeHandoff,
       weekly_summary: weeklySummary,
-      memory_health: memoryHealth
+      memory_health: memoryHealth,
+      pending_review: pendingReview
     });
 
     // 背景壓縮舊 session logs（不阻塞回應）
@@ -710,6 +730,15 @@ router.post('/', async (req, res) => {
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...memory, sync_token: newToken };
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
+
+    // 附帶 pending_review 計數（提醒 AI 有待確認記憶）
+    const prCount = await query(
+      `SELECT COUNT(*) as cnt FROM memories WHERE user_id = $1 AND status = 'active' AND tags @> ARRAY['pending_review']`,
+      [req.user.id]
+    );
+    const pendingCount = parseInt(prCount.rows[0].cnt, 10);
+    if (pendingCount > 0) response.pending_review_count = pendingCount;
+
     res.status(201).json(response);
   } catch (err) {
     logger.error('建立記憶失敗', { error: err.message });
@@ -800,6 +829,15 @@ router.put('/:id', async (req, res) => {
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...memory, sync_token: newToken };
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
+
+    // 附帶 pending_review 計數
+    const prCount = await query(
+      `SELECT COUNT(*) as cnt FROM memories WHERE user_id = $1 AND status = 'active' AND tags @> ARRAY['pending_review']`,
+      [req.user.id]
+    );
+    const pendingCount = parseInt(prCount.rows[0].cnt, 10);
+    if (pendingCount > 0) response.pending_review_count = pendingCount;
+
     res.json(response);
   } catch (err) {
     logger.error('更新記憶失敗', { error: err.message });
