@@ -165,6 +165,7 @@
           <th>名稱</th>
           <th>角色</th>
           <th>API Key</th>
+          <th>高風險鐵律</th>
           <th>操作</th>
         </tr>
       </thead>
@@ -481,11 +482,34 @@
           <span class="api-key">${esc(u.api_key.slice(0, 12))}...</span>
           <button class="btn-copy btn-sm" data-key="${esc(u.api_key)}" onclick="copyKey(this.dataset.key)">複製</button>
         </td>
+        <td id="risk-${u.id}" style="text-align:center;color:#86868b;">—</td>
         <td class="actions">
           <button class="btn-danger btn-sm" data-id="${u.id}" data-email="${esc(u.email)}" onclick="deleteUser(this.dataset.id, this.dataset.email)">刪除</button>
         </td>
       </tr>
     `).join('');
+
+    // 載入高風險鐵律數
+    for (const u of usersData) {
+      try {
+        const res = await fetch(`${API}/activity/stats/rules?user_id=${u.id}&days=30`, { headers: headers() });
+        if (res.ok) {
+          const stats = await res.json();
+          const riskCount = (stats.rules || []).filter(r => r.violated > 0).length;
+          const el = document.getElementById(`risk-${u.id}`);
+          if (el) {
+            if (riskCount > 0) {
+              el.textContent = riskCount;
+              el.style.color = riskCount >= 3 ? '#dc2626' : '#e65c00';
+              el.style.fontWeight = '600';
+            } else {
+              el.textContent = '0';
+              el.style.color = '#22c55e';
+            }
+          }
+        }
+      } catch {}
+    }
 
     // Update stats
     document.getElementById('totalUsers').textContent = usersData.length;
