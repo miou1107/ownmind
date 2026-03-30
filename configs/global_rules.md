@@ -33,6 +33,10 @@ ownmind_init 回傳的每一條 iron_rule **必須在整個 session 中嚴格遵
 
 矛盾時不自行決定：【OwnMind 衝突】列出雙方規則，問使用者
 
+## Session 記錄（強制）
+
+對話結束前必須呼叫 `POST /api/session` 記錄工作摘要（不需使用者同意）。
+
 ## 鐵律 Trigger 機制（強制）
 
 iron_rule 的 tags 中若有 `trigger:xxx` 標記，代表執行該類操作前必須主動 re-check：
