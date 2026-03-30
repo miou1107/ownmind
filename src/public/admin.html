@@ -229,7 +229,7 @@
         <h3>用戶活躍度</h3>
         <table class="user-overview">
           <thead>
-            <tr><th>狀態</th><th>用戶</th><th>記憶數</th><th>Session</th><th>活動</th><th>落地率</th><th>最後活躍</th></tr>
+            <tr><th>狀態</th><th>用戶</th><th>記憶</th><th>Session</th><th>使用工具</th><th>使用模型</th><th>落地率</th><th>各 AI 落地率</th><th>最後活躍</th></tr>
           </thead>
           <tbody id="overviewTable"></tbody>
         </table>
@@ -282,6 +282,16 @@
           <h3>各工具落地率</h3>
           <div id="toolComplianceChart"></div>
         </div>
+      </div>
+
+      <!-- 鐵律詳細落地率 -->
+      <div class="card">
+        <h3>每條鐵律落地率</h3>
+        <table id="ruleStatsTable" style="margin-top:8px;">
+          <thead><tr><th>編號</th><th>鐵律</th><th>遵守</th><th>跳過</th><th>違反</th><th>落地率</th></tr></thead>
+          <tbody id="ruleStatsBody"></tbody>
+        </table>
+        <div id="neverTestedRules" style="margin-top:12px;font-size:12px;color:#86868b;"></div>
       </div>
 
       <!-- 鐵律 & 健康 -->
@@ -339,6 +349,23 @@
   let usersData = [];
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  const ZH = {
+    iron_rule: '鐵律', project: '專案', profile: '個人檔案', env: '開發環境',
+    principle: '核心原則', session_log: '工作紀錄', coding_standard: '編碼標準',
+    team_standard: '團隊規範', portfolio: '作品集',
+    code_edit: '編輯程式', git_commit: '提交', git_push: '推送', deploy: '部署',
+    debug: '除錯', research: '研究', refactor: '重構', test: '測試',
+    review: '審查', install: '安裝', config: '設定',
+    comply: '遵守', skip: '跳過', violate: '違反',
+    init: '初始化', memory_save: '儲存記憶', memory_get: '讀取記憶',
+    memory_update: '更新記憶', memory_search: '搜尋記憶', memory_disable: '停用記憶',
+    iron_rule_trigger: '鐵律觸發', iron_rule_compliance: '合規回報',
+    sync_conflict: '同步衝突', update_check: '檢查更新', update_applied: '已更新',
+    error: '錯誤', handoff_create: '建立交接', handoff_accept: '接受交接',
+    session_log: '記錄 Session', test_event: '測試事件',
+  };
+  function zh(key) { return ZH[key] || key; }
 
   function headers() {
     return { 'Authorization': `Bearer ${API_KEY}`, 'Content-Type': 'application/json' };
@@ -512,13 +539,21 @@
       }
       tbody.innerHTML = data.users.map(u => {
         const isActive = u.last_active && (Date.now() - new Date(u.last_active).getTime()) < 7 * 86400000;
+        const tools = u.tools ? Object.entries(u.tools).sort((a,b)=>b[1]-a[1]).map(([t,c])=>`${esc(t)}(${c})`).join(', ') : '-';
+        const models = u.models ? Object.entries(u.models).sort((a,b)=>b[1]-a[1]).map(([m,c])=>`${esc(m)}(${c})`).join(', ') : '-';
+        const toolComp = (u.tool_compliance || []).map(tc => {
+          const color = tc.rate >= 90 ? '#00b894' : tc.rate >= 70 ? '#f39c12' : tc.rate !== null ? '#dc2626' : '#86868b';
+          return `<span style="font-size:11px;">${esc(tc.tool)} <strong style="color:${color}">${tc.rate !== null ? tc.rate+'%' : '-'}</strong></span>`;
+        }).join(' · ') || '-';
         return `<tr>
           <td><span class="activity-dot ${isActive ? 'dot-active' : 'dot-inactive'}"></span></td>
           <td>${esc(u.name || u.email)}</td>
           <td>${u.memory_count || 0}</td>
           <td>${u.session_count || 0}</td>
-          <td>${u.activity_count || 0}</td>
+          <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${tools}</td>
+          <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${models}</td>
           <td>${u.compliance_rate ? `<span style="color:${parseFloat(u.compliance_rate) >= 90 ? '#00b894' : parseFloat(u.compliance_rate) >= 70 ? '#f39c12' : '#dc2626'};font-weight:700;">${u.compliance_rate}%</span>` : '<span style="color:#86868b">-</span>'}</td>
+          <td style="font-size:11px;">${toolComp}</td>
           <td style="font-size:12px;color:#86868b;">${u.last_active ? new Date(u.last_active).toLocaleDateString('zh-TW') : '從未'}</td>
         </tr>`;
       }).join('');
@@ -605,6 +640,34 @@
         }).join('');
       } else { tcEl.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>'; }
 
+      // Rule stats detail table
+      try {
+        const ruleRes = await fetch(`${API}/activity/stats/rules?user_id=${userId}&days=${days}`, { headers: headers() });
+        if (ruleRes.ok) {
+          const rd = await ruleRes.json();
+          const tbody = document.getElementById('ruleStatsBody');
+          if (rd.rules && rd.rules.length > 0) {
+            tbody.innerHTML = rd.rules.map(r => {
+              const rate = r.compliance_rate !== null ? r.compliance_rate + '%' : '-';
+              const color = r.compliance_rate >= 90 ? '#00b894' : r.compliance_rate >= 70 ? '#f39c12' : r.compliance_rate !== null ? '#dc2626' : '#86868b';
+              return `<tr>
+                <td style="font-size:12px;color:#7c3aed;">${esc(r.code || '-')}</td>
+                <td style="font-size:13px;">${esc(r.title)}</td>
+                <td style="color:#00b894;font-weight:600;">${r.enforced}</td>
+                <td style="color:#f39c12;font-weight:600;">${r.skipped}</td>
+                <td style="color:#dc2626;font-weight:600;">${r.violated}</td>
+                <td style="color:${color};font-weight:700;">${rate}</td>
+              </tr>`;
+            }).join('');
+          } else { tbody.innerHTML = '<tr><td colspan="6" style="color:#86868b;text-align:center;">尚無數據</td></tr>'; }
+
+          const neverEl = document.getElementById('neverTestedRules');
+          if (rd.summary?.rules_never_tested?.length > 0) {
+            neverEl.innerHTML = '從未觸發的鐵律：' + rd.summary.rules_never_tested.map(t => esc(t)).join('、');
+          } else { neverEl.textContent = ''; }
+        }
+      } catch {}
+
       // Context analysis
       const ctx = d.context;
       if (ctx && ctx.sessions_with_context > 0) {
@@ -658,7 +721,7 @@
       .sort((a, b) => b[1] - a[1])
       .map(([k, v]) => `
         <div class="bar-row">
-          <div class="bar-label" title="${esc(k)}">${esc(k)}</div>
+          <div class="bar-label" title="${esc(k)}">${esc(zh(k))}</div>
           <div class="bar-track"><div class="bar-fill" style="width:${(v / max * 100).toFixed(1)}%"></div></div>
           <div class="bar-count">${v}</div>
         </div>

@@ -8,21 +8,63 @@ const router = Router();
 router.use(auth);
 
 /**
+ * 過濾敏感資訊 — 遮蔽密碼、API key、token 等
+ */
+const SENSITIVE_PATTERNS = [
+  // API keys & tokens (長度 >= 16 的英數混合)
+  /\b[A-Za-z0-9_\-]{20,}\b/g,
+  // 密碼欄位值 (password=xxx, pwd:xxx, secret:xxx)
+  /(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi,
+  // IP:port 組合
+  /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g,
+  // Bearer tokens
+  /Bearer\s+\S+/gi,
+];
+
+function sanitize(text) {
+  if (!text || typeof text !== 'string') return text;
+  let result = text;
+  // 密碼/token 欄位整體遮蔽
+  result = result.replace(/(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi, (match) => {
+    const sep = match.includes('=') ? '=' : ':';
+    const key = match.split(/[:=]/)[0];
+    return `${key}${sep}[REDACTED]`;
+  });
+  // Bearer token
+  result = result.replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]');
+  return result;
+}
+
+function sanitizeDetails(details) {
+  if (!details || typeof details !== 'object') return details;
+  const clean = { ...details };
+  // 過濾 friction_points 和 suggestions（可能包含敏感指令）
+  if (clean.friction_points) clean.friction_points = sanitize(clean.friction_points);
+  if (clean.suggestions) clean.suggestions = sanitize(clean.suggestions);
+  return clean;
+}
+
+/**
  * POST / - 記錄 session
  */
 router.post('/', async (req, res) => {
   try {
-    const { session_id, tool, model, machine, summary, details } = req.body;
+    const { session_id, tool, model, machine, details } = req.body;
+    let { summary } = req.body;
 
     if (!tool || !model || !summary) {
       return res.status(400).json({ error: '必填欄位：tool, model, summary' });
     }
 
+    // 過濾敏感資訊
+    summary = sanitize(summary);
+    const cleanDetails = sanitizeDetails(details);
+
     const result = await query(
       `INSERT INTO session_logs (user_id, session_id, tool, model, machine, summary, details)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user.id, session_id || null, tool, model, machine || null, summary, details || null]
+      [req.user.id, session_id || null, tool, model, machine || null, summary, cleanDetails || null]
     );
 
     res.status(201).json(result.rows[0]);
