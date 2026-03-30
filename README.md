@@ -106,6 +106,16 @@ sequenceDiagram
 - **Team standards** — Admins push rules, members auto-load them `v1.8.0`
 - **Rule quality tracking** — Auto-track enforced/missed/triggered counts, alert on low compliance `v1.8.0`
 
+### Observability & Analytics `v1.9.0`
+
+- **Activity logging** — All OwnMind events tracked locally + uploaded to server
+- **Compliance reporting** — AI auto-reports whether iron rules were followed, skipped, or violated
+- **Admin dashboard** — User stats, tool/model distribution, daily activity, compliance rates
+- **Cross-dimensional analysis** — Compliance by tool, by model, by rule, by user
+- **Context reporting** — AI reports friction points and improvement suggestions each session
+- **Session auto-logging** — AI auto-logs work summary with structured context at end of each conversation
+- **3-month compression** — Old session logs auto-compress into monthly summaries
+
 ### Infrastructure
 
 - **Secret management** — Securely store API keys and passwords

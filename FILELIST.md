@@ -14,7 +14,9 @@ OwnMind/
 ├── package.json                     # API Server 依賴
 │
 ├── db/
-│   └── 001_init.sql                 # PostgreSQL schema（users, memories, handoffs 等 6 張表）
+│   ├── 001_init.sql                 # PostgreSQL schema（users, memories, handoffs 等 6 張表）
+│   ├── 002_add_team_standard.sql    # 團隊規範相關 migration
+│   └── 003_activity_logs.sql        # Activity logs 表（事件追蹤）
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -29,7 +31,8 @@ OwnMind/
 │   │   ├── handoff.js               # 交接機制
 │   │   ├── admin.js                 # 使用者管理 + 帳密登入
 │   │   ├── secret.js                # 密鑰管理（AES-256 加密）
-│   │   └── export.js                # 記憶匯出
+│   │   ├── export.js                # 記憶匯出
+│   │   └── activity.js              # Activity log batch upload + 統計 API
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -39,7 +42,8 @@ OwnMind/
 │       └── admin.html               # Admin 管理後台（單頁應用）
 │
 ├── mcp/                             # MCP Server（供 Claude Code、Cursor 等工具使用）
-│   ├── index.js                     # MCP Server 入口（12 個 tools）+ 啟動時自動更新
+│   ├── index.js                     # MCP Server 入口（13 個 tools）+ 啟動時自動更新
+│   ├── ownmind-log.js               # Activity log 模組（本地 JSONL + server batch upload）
 │   ├── start.cmd                    # Windows 啟動器（動態找 node，供 cmd.exe 呼叫）
 │   └── package.json                 # MCP Server 依賴
 │
@@ -64,7 +68,9 @@ OwnMind/
 ├── skills/
 │   └── ownmind-memory.md            # OwnMind 記憶管理 Skill
 │
-└── docs/                            # 各工具設定指南
+└── docs/                            # 文件 + 多語系 README
+    ├── README.zh-TW.md              # 繁體中文 README
+    ├── README.ja.md                 # 日文 README
     ├── setup-claude-code.md
     ├── setup-codex.md
     ├── setup-cursor.md
