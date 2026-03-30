@@ -517,7 +517,7 @@
 
   function getApiUrl() {
     const loc = window.location;
-    return loc.origin + loc.pathname.replace(/\/admin\.html$/, '').replace(/\/$/, '');
+    return loc.origin + loc.pathname.replace(/\/admin(\.html)?$/, '').replace(/\/$/, '');
   }
 
   function updatePrompt() {
