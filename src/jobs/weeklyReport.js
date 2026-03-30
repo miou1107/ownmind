@@ -49,6 +49,47 @@ async function createFrictionIssues(userId, topFrictions, periodLabel) {
 }
 
 /**
+ * 建立高頻 suggestion 的 principle 記憶（去重）
+ */
+async function createSuggestionActions(userId, topSuggestions, periodLabel) {
+  let created = 0;
+  for (const s of topSuggestions) {
+    if (s.count < FRICTION_THRESHOLD) continue;
+
+    const key = s.text.toLowerCase().trim().slice(0, 20);
+    const escapedKey = key.replace(/%/g, '\\%').replace(/_/g, '\\_');
+    const titlePrefix = `💡 高頻建議：`;
+    const titleSnippet = s.text.slice(0, 50);
+
+    // 檢查是否已存在（避免重複）
+    const existing = await query(
+      `SELECT id FROM memories
+       WHERE user_id = $1
+         AND tags @> ARRAY['suggestion-action']
+         AND LOWER(title) LIKE $2 ESCAPE '\\'
+         AND status = 'active'
+       LIMIT 1`,
+      [userId, `%${escapedKey}%`]
+    );
+
+    if (existing.rows.length > 0) continue;
+
+    await query(
+      `INSERT INTO memories (user_id, type, title, content, tags, status)
+       VALUES ($1, 'principle', $2, $3, $4, 'active')`,
+      [
+        userId,
+        `${titlePrefix}${titleSnippet}`,
+        `${periodLabel} 期間被 AI 建議 ${s.count} 次。`,
+        ['suggestion-action', 'auto-generated'],
+      ]
+    );
+    created++;
+  }
+  return created;
+}
+
+/**
  * 執行週報 job（可傳入 userId 做單使用者處理，預設處理全部）
  */
 export async function runWeeklyReport(targetUserId = null) {
@@ -87,8 +128,9 @@ export async function runWeeklyReport(targetUserId = null) {
       const topFrictions = groupFrictions(frictions).slice(0, 10);
       const topSuggestions = groupFrictions(suggestions).slice(0, 10);
 
-      // 建立高頻 friction issues
+      // 建立高頻 friction issues + suggestion actions
       const frictionIssuesCreated = await createFrictionIssues(userId, topFrictions, label);
+      const suggestionActionsCreated = await createSuggestionActions(userId, topSuggestions, label);
 
       // 統計新增記憶數
       const memoriesResult = await query(
@@ -123,12 +165,13 @@ export async function runWeeklyReport(targetUserId = null) {
               period: label,
               new_memories: newMemories,
               friction_issues_created: frictionIssuesCreated,
+              suggestion_actions_created: suggestionActionsCreated,
               top_frictions: topFrictions.slice(0, 5),
               top_suggestions: topSuggestions.slice(0, 5),
             }),
           ]
         );
-        logger.info(`週報建立完成: ${title}`, { userId, frictionIssuesCreated, newMemories });
+        logger.info(`週報建立完成: ${title}`, { userId, frictionIssuesCreated, suggestionActionsCreated, newMemories });
       }
     }
   } catch (err) {
@@ -175,6 +218,7 @@ export async function runMonthlyReport(targetUserId = null) {
 
       let newMemories = 0;
       let frictionIssuesCreated = 0;
+      let suggestionActionsCreated = 0;
       const allFrictions = [];
       const allSuggestions = [];
 
@@ -183,6 +227,7 @@ export async function runMonthlyReport(targetUserId = null) {
         if (!d) continue;
         newMemories += d.new_memories || 0;
         frictionIssuesCreated += d.friction_issues_created || 0;
+        suggestionActionsCreated += d.suggestion_actions_created || 0;
         // 保留 count：將 text 重複 count 次再 group，以正確加總
         if (Array.isArray(d.top_frictions)) {
           for (const f of d.top_frictions) {
@@ -206,6 +251,7 @@ export async function runMonthlyReport(targetUserId = null) {
             period: label,
             new_memories: newMemories,
             friction_issues_created: frictionIssuesCreated,
+            suggestion_actions_created: suggestionActionsCreated,
             top_frictions: groupFrictions(allFrictions).slice(0, 5),
             top_suggestions: groupFrictions(allSuggestions).slice(0, 5),
           }),
@@ -227,20 +273,20 @@ function getWeekNumber(date) {
 }
 
 /**
- * 啟動定時 job
- * 週報：每週一 00:00 Asia/Taipei = UTC Sunday 16:00
- * 月報：每月 2 號 00:00 Asia/Taipei = UTC 1 號 16:00
+ * 啟動定時 job（統一使用 Asia/Taipei 時區）
+ * 週報：每週一 00:00
+ * 月報：每月 1 號 00:00
  */
 export function startJobs() {
-  // 週報：UTC 週日 16:00 = Asia/Taipei 週一 00:00
-  cron.schedule('0 16 * * 0', () => {
+  // 週報：每週一 00:00 Asia/Taipei
+  cron.schedule('0 0 * * 1', () => {
     runWeeklyReport().catch(err => logger.error('週報 cron 失敗', { error: err.message }));
-  }, { timezone: 'UTC' });
+  }, { timezone: 'Asia/Taipei' });
 
-  // 月報：UTC 每月 1 號 16:00 = Asia/Taipei 每月 2 號 00:00
-  cron.schedule('0 16 1 * *', () => {
+  // 月報：每月 1 號 00:00 Asia/Taipei
+  cron.schedule('0 0 1 * *', () => {
     runMonthlyReport().catch(err => logger.error('月報 cron 失敗', { error: err.message }));
-  }, { timezone: 'UTC' });
+  }, { timezone: 'Asia/Taipei' });
 
   logger.info('週/月報 job 已啟動');
 }
