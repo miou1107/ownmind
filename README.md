@@ -140,6 +140,7 @@ sequenceDiagram
 - **Semantic search** — Powered by pgvector
 - **Tiered compression** — Short-term memory auto-compresses, long-term persists forever
 - **Windows native support** — `install.ps1` and `start.cmd` included
+- **Adaptive Iron Rule Reinforcement** — automatically strengthens reminders for frequently violated rules based on compliance history
 
 ## Quick Start
 

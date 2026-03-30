@@ -13,6 +13,12 @@
 - **Suggestions 自動執行** — 高頻建議（≥3 次）自動建立 principle 記憶（tags: suggestion-action），模式同 friction auto-create
 - **Dashboard friction/suggestion 可點擊** — 點擊後搜尋相關記憶，顯示在 modal 中
 
+### Adaptive Iron Rule Reinforcement（鐵律智慧強化）
+- **enforcement_alerts** — init 時自動分析使用者 30 天內的違反歷史，產生分級提醒（critical/warning/notice）
+- **跨 session 違反記憶** — 上一個 session 違反的鐵律，下一個 session 自動升級為 critical
+- **漸進升級** — 同一條鐵律違反率越高，提醒語氣越強烈（數據驅動，所有使用者通用）
+- **全端同步** — Server init + INSTRUCTIONS_SOP + MCP + SessionStart hooks + Skill + Dashboard + 週報
+
 ### 新功能
 1. **週/月報 API** — `GET /api/session/report?period=week|month&offset=N`，即時計算或讀取快照
 2. **週報 Cron Job** — 每週一 00:00 Asia/Taipei 自動執行，高頻 friction（≥3 次）自動建立 project 記憶
