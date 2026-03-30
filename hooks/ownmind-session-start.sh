@@ -6,7 +6,19 @@ OWNMIND_DIR="$HOME/.ownmind"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 MARKER_FILE="$OWNMIND_DIR/.last-update-check"
 LOCK_FILE="$OWNMIND_DIR/.update-lock"
+LOG_DIR="$OWNMIND_DIR/logs"
 UPDATE_MSG=""
+
+# --- Log function ---
+log_event() {
+  local event="$1"; shift
+  mkdir -p "$LOG_DIR"
+  local ts=$(date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([0-9][0-9]\)$/:\1/')
+  local date_str=$(date +%Y-%m-%d)
+  local extra=""
+  while [ $# -gt 0 ]; do extra="$extra,\"$1\":\"$2\""; shift 2; done
+  echo "{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}" >> "$LOG_DIR/$date_str.jsonl"
+}
 
 # --- 讀取設定（一次 node 呼叫取 KEY + URL）---
 if [ -f "$CLAUDE_SETTINGS" ]; then
@@ -38,6 +50,7 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
   LAST_CHECK=$(cat "$MARKER_FILE" 2>/dev/null || echo "")
 
   if [ "$LAST_CHECK" != "$TODAY" ]; then
+    log_event "update_check"
     # 背景執行更新，不阻塞記憶載入
     (
       touch "$LOCK_FILE"
@@ -49,6 +62,7 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
         git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null
         cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null
         bash "$OWNMIND_DIR/scripts/update.sh" >/dev/null 2>&1
+        log_event "update_applied"
       fi
       echo "$TODAY" > "$MARKER_FILE"
       rm -f "$LOCK_FILE"
@@ -62,8 +76,11 @@ INIT_DATA=$(curl -sf --max-time 5 \
   "${API_URL}/api/memory/init?compact=true" 2>/dev/null)
 
 if [ -z "$INIT_DATA" ]; then
+  log_event "init_fail" "status" "api_timeout"
   exit 0
 fi
+
+log_event "init" "status" "ok"
 
 # --- 解析記憶 + 輸出 JSON（單次 node 呼叫）---
 node -e "

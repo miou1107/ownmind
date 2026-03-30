@@ -75,7 +75,8 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
         ...entry,
         env: {
           OWNMIND_API_URL: '$API_URL',
-          OWNMIND_API_KEY: '$API_KEY'
+          OWNMIND_API_KEY: '$API_KEY',
+          OWNMIND_TOOL: 'claude-code'
         }
       };
       const _tmp = '$CLAUDE_SETTINGS' + '.tmp';
@@ -95,7 +96,8 @@ else
           ...entry,
           env: {
             OWNMIND_API_URL: '$API_URL',
-            OWNMIND_API_KEY: '$API_KEY'
+            OWNMIND_API_KEY: '$API_KEY',
+            OWNMIND_TOOL: 'claude-code'
           }
         }
       }
@@ -201,7 +203,8 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
           ...entry,
           env: {
             OWNMIND_API_URL: '$API_URL',
-            OWNMIND_API_KEY: '$API_KEY'
+            OWNMIND_API_KEY: '$API_KEY',
+            OWNMIND_TOOL: 'cursor'
           }
         };
         fs.writeFileSync('$CURSOR_MCP', JSON.stringify(settings, null, 2));
@@ -217,7 +220,8 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
               ...entry,
               env: {
                 OWNMIND_API_URL: '$API_URL',
-                OWNMIND_API_KEY: '$API_KEY'
+                OWNMIND_API_KEY: '$API_KEY',
+                OWNMIND_TOOL: 'cursor'
               }
             }
           }
