@@ -229,7 +229,7 @@
         <h3>用戶活躍度</h3>
         <table class="user-overview">
           <thead>
-            <tr><th>狀態</th><th>用戶</th><th>記憶數</th><th>Session</th><th>活動</th><th>最後活躍</th></tr>
+            <tr><th>狀態</th><th>用戶</th><th>記憶數</th><th>Session</th><th>活動</th><th>落地率</th><th>最後活躍</th></tr>
           </thead>
           <tbody id="overviewTable"></tbody>
         </table>
@@ -264,6 +264,24 @@
       <div class="card">
         <h3>每日活動量</h3>
         <div class="daily-chart" id="dailyChart"></div>
+      </div>
+
+      <!-- 合規分析 -->
+      <div class="card">
+        <h3>鐵律合規率</h3>
+        <div class="stats-grid" id="complianceCards"></div>
+      </div>
+
+      <!-- 按規則 × 合規 -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="card">
+          <h3>各規則落地率</h3>
+          <div id="ruleComplianceChart"></div>
+        </div>
+        <div class="card">
+          <h3>各工具落地率</h3>
+          <div id="toolComplianceChart"></div>
+        </div>
       </div>
 
       <!-- 鐵律 & 健康 -->
@@ -476,6 +494,7 @@
           <td>${u.memory_count || 0}</td>
           <td>${u.session_count || 0}</td>
           <td>${u.activity_count || 0}</td>
+          <td>${u.compliance_rate ? `<span style="color:${parseFloat(u.compliance_rate) >= 90 ? '#00b894' : parseFloat(u.compliance_rate) >= 70 ? '#f39c12' : '#dc2626'};font-weight:700;">${u.compliance_rate}%</span>` : '<span style="color:#86868b">-</span>'}</td>
           <td style="font-size:12px;color:#86868b;">${u.last_active ? new Date(u.last_active).toLocaleDateString('zh-TW') : '從未'}</td>
         </tr>`;
       }).join('');
@@ -516,6 +535,51 @@
       renderBarChart('ruleChart', ruleData);
       document.getElementById('ruleStats').textContent =
         `活躍鐵律 ${d.iron_rules.total_active} 條，本期觸發 ${d.iron_rules.total_triggers} 次`;
+
+      // Compliance
+      const comp = d.compliance || {};
+      const compRate = comp.rate !== null ? comp.rate + '%' : '尚無數據';
+      const compColor = comp.rate >= 90 ? '#00b894' : comp.rate >= 70 ? '#f39c12' : '#dc2626';
+      document.getElementById('complianceCards').innerHTML = `
+        <div class="stat-mini"><div class="value" style="color:${comp.rate !== null ? compColor : '#86868b'}">${compRate}</div><div class="desc">整體落地率</div></div>
+        <div class="stat-mini"><div class="value">${comp.by_action?.comply || 0}</div><div class="desc">遵守</div></div>
+        <div class="stat-mini"><div class="value" style="color:#f39c12">${comp.by_action?.skip || 0}</div><div class="desc">跳過</div></div>
+        <div class="stat-mini"><div class="value" style="color:#dc2626">${comp.by_action?.violate || 0}</div><div class="desc">違反</div></div>
+      `;
+
+      // Per-rule compliance
+      const rcEl = document.getElementById('ruleComplianceChart');
+      if (comp.by_rule && Object.keys(comp.by_rule).length > 0) {
+        rcEl.innerHTML = Object.entries(comp.by_rule).map(([rule, acts]) => {
+          const t = (acts.comply||0) + (acts.skip||0) + (acts.violate||0);
+          const rate = t > 0 ? ((acts.comply||0)/t*100).toFixed(0) : 0;
+          const color = rate >= 90 ? '#00b894' : rate >= 70 ? '#f39c12' : '#dc2626';
+          return `<div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;">
+              <span>${esc(rule)}</span>
+              <span style="color:${color};font-weight:700;">${rate}%</span>
+            </div>
+            <div class="bar-track"><div class="bar-fill" style="width:${rate}%;background:${color}"></div></div>
+          </div>`;
+        }).join('');
+      } else { rcEl.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>'; }
+
+      // Per-tool compliance
+      const tcEl = document.getElementById('toolComplianceChart');
+      if (comp.by_tool && Object.keys(comp.by_tool).length > 0) {
+        tcEl.innerHTML = Object.entries(comp.by_tool).map(([tool, acts]) => {
+          const t = (acts.comply||0) + (acts.skip||0) + (acts.violate||0);
+          const rate = t > 0 ? ((acts.comply||0)/t*100).toFixed(0) : 0;
+          const color = rate >= 90 ? '#00b894' : rate >= 70 ? '#f39c12' : '#dc2626';
+          return `<div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;">
+              <span>${esc(tool)}</span>
+              <span style="color:${color};font-weight:700;">${rate}% <span style="color:#86868b;font-weight:400;">(${t})</span></span>
+            </div>
+            <div class="bar-track"><div class="bar-fill" style="width:${rate}%;background:${color}"></div></div>
+          </div>`;
+        }).join('');
+      } else { tcEl.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>'; }
 
       // Health
       document.getElementById('healthStats').innerHTML = `

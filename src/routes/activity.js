@@ -164,6 +164,47 @@ router.get('/stats', adminAuth, async (req, res) => {
     const initF = parseInt(initSuccess.rows[0]?.fail || 0);
     const initRate = (initS + initF) > 0 ? ((initS / (initS + initF)) * 100).toFixed(1) : 100;
 
+    // 合規統計（iron_rule_compliance events）
+    const complianceResult = await query(
+      `SELECT details->>'action' as action, COUNT(*) as count
+       FROM activity_logs WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
+       GROUP BY action LIMIT 10`,
+      [userId, fromDate]
+    );
+    const complianceByRule = await query(
+      `SELECT details->>'rule_title' as rule, details->>'action' as action, COUNT(*) as count
+       FROM activity_logs WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
+       GROUP BY rule, action ORDER BY count DESC LIMIT 30`,
+      [userId, fromDate]
+    );
+    // 按工具 × 合規
+    const complianceByTool = await query(
+      `SELECT tool, details->>'action' as action, COUNT(*) as count
+       FROM activity_logs WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
+       GROUP BY tool, action ORDER BY tool, count DESC LIMIT 30`,
+      [userId, fromDate]
+    );
+
+    // 計算合規率
+    const compActions = {};
+    for (const r of complianceResult.rows) compActions[r.action] = parseInt(r.count);
+    const totalComp = (compActions.comply || 0) + (compActions.skip || 0) + (compActions.violate || 0);
+    const complianceRate = totalComp > 0 ? (((compActions.comply || 0) / totalComp) * 100).toFixed(1) : null;
+
+    // 按規則彙整合規
+    const ruleCompliance = {};
+    for (const r of complianceByRule.rows) {
+      if (!ruleCompliance[r.rule]) ruleCompliance[r.rule] = { comply: 0, skip: 0, violate: 0 };
+      ruleCompliance[r.rule][r.action] = parseInt(r.count);
+    }
+
+    // 按工具彙整合規
+    const toolCompliance = {};
+    for (const r of complianceByTool.rows) {
+      if (!toolCompliance[r.tool]) toolCompliance[r.tool] = { comply: 0, skip: 0, violate: 0 };
+      toolCompliance[r.tool][r.action] = parseInt(r.count);
+    }
+
     res.json({
       user,
       period: { days, from: fromDate.toISOString().slice(0, 10), to: new Date().toISOString().slice(0, 10) },
@@ -185,6 +226,13 @@ router.get('/stats', adminAuth, async (req, res) => {
         total_active: ironRulesResult.rows.length,
         total_triggers: parseInt(totalTriggers.rows[0]?.count || 0),
         top_triggered: triggerCounts.rows.map(r => ({ trigger: r.trigger_type, count: parseInt(r.count) }))
+      },
+      compliance: {
+        total: totalComp,
+        rate: complianceRate ? parseFloat(complianceRate) : null,
+        by_action: compActions,
+        by_rule: ruleCompliance,
+        by_tool: toolCompliance
       },
       handoffs: { total: handoffsTotal, completed: handoffsCompleted, pending: handoffsPending },
       health: {
@@ -213,11 +261,20 @@ router.get('/stats/all', adminAuth, async (req, res) => {
         (SELECT COUNT(*) FROM memories WHERE user_id = u.id AND status = 'active') as memory_count,
         (SELECT COUNT(*) FROM session_logs WHERE user_id = u.id) as session_count,
         (SELECT COUNT(*) FROM activity_logs WHERE user_id = u.id AND ts >= $1) as activity_count,
+        (SELECT COUNT(*) FROM activity_logs WHERE user_id = u.id AND event = 'iron_rule_compliance' AND details->>'action' = 'comply' AND ts >= $1) as comply_count,
+        (SELECT COUNT(*) FROM activity_logs WHERE user_id = u.id AND event = 'iron_rule_compliance' AND ts >= $1) as compliance_total,
         (SELECT MAX(ts) FROM activity_logs WHERE user_id = u.id) as last_active
       FROM users u ORDER BY last_active DESC NULLS LAST
     `, [fromDate]);
 
-    res.json({ period: { days }, users: result.rows });
+    const users = result.rows.map(u => ({
+      ...u,
+      compliance_rate: parseInt(u.compliance_total) > 0
+        ? ((parseInt(u.comply_count) / parseInt(u.compliance_total)) * 100).toFixed(1)
+        : null
+    }));
+
+    res.json({ period: { days }, users });
   } catch (err) {
     logger.error('取得跨用戶統計失敗', { error: err.message });
     res.status(500).json({ error: '取得統計失敗' });
