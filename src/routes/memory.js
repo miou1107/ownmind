@@ -456,6 +456,42 @@ router.get('/init', async (req, res) => {
       logger.warn('weekly_summary 計算失敗（不影響 init）', { error: wsErr.message });
     }
 
+    // 記憶健康檢查：偵測重複和過時記憶
+    let memoryHealth = null;
+    try {
+      // 重複 title 偵測（同 type + 同 title，active）
+      const dupes = await query(
+        `SELECT type, title, COUNT(*) as cnt, array_agg(id) as ids
+         FROM memories
+         WHERE user_id = $1 AND status = 'active'
+         GROUP BY type, title
+         HAVING COUNT(*) > 1
+         LIMIT 10`,
+        [req.user.id]
+      );
+
+      // 過時記憶（90 天未更新，排除 iron_rule 和 session_log）
+      const stale = await query(
+        `SELECT id, type, title, updated_at
+         FROM memories
+         WHERE user_id = $1 AND status = 'active'
+           AND type NOT IN ('iron_rule', 'session_log')
+           AND updated_at < NOW() - INTERVAL '90 days'
+         ORDER BY updated_at ASC
+         LIMIT 10`,
+        [req.user.id]
+      );
+
+      if (dupes.rows.length > 0 || stale.rows.length > 0) {
+        memoryHealth = {
+          duplicates: dupes.rows.map(r => ({ type: r.type, title: r.title, count: parseInt(r.cnt), ids: r.ids })),
+          stale: stale.rows.map(r => ({ id: r.id, type: r.type, title: r.title, days_since_update: Math.floor((Date.now() - new Date(r.updated_at).getTime()) / 86400000) })),
+        };
+      }
+    } catch (mhErr) {
+      logger.warn('記憶健康檢查失敗（不影響 init）', { error: mhErr.message });
+    }
+
     // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
     const compact = req.query.compact === 'true';
 
@@ -481,7 +517,8 @@ router.get('/init', async (req, res) => {
       ...(!compact && { team_standards: teamStandards }),
       team_standards_digest: teamStandardsDigest,
       active_handoff: activeHandoff,
-      weekly_summary: weeklySummary
+      weekly_summary: weeklySummary,
+      memory_health: memoryHealth
     });
 
     // 背景壓縮舊 session logs（不阻塞回應）

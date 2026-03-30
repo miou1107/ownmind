@@ -34,6 +34,26 @@ describe('computePeriodRange', () => {
   it('unknown period 拋錯', () => {
     assert.throws(() => computePeriodRange('quarter', 0), /Unknown period/);
   });
+
+  it('month offset=1 跨年（1月看12月）', () => {
+    const now = new Date('2026-01-15T12:00:00+08:00');
+    const { label } = computePeriodRange('month', 1, now);
+    assert.equal(label, '2025-12-01 ~ 2025-12-31');
+  });
+
+  it('week 跨年（1月第一週看上週）', () => {
+    // 2026-01-01 是週四
+    const now = new Date('2026-01-01T12:00:00+08:00');
+    const { label } = computePeriodRange('week', 1, now);
+    // 上週是 2025-12-22 ~ 2025-12-28
+    assert.equal(label, '2025-12-22 ~ 2025-12-28');
+  });
+
+  it('month offset=2 回傳兩個月前', () => {
+    const now = new Date('2026-03-15T12:00:00+08:00');
+    const { label } = computePeriodRange('month', 2, now);
+    assert.equal(label, '2026-01-01 ~ 2026-01-31');
+  });
 });
 
 describe('groupFrictions', () => {
