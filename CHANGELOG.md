@@ -1,5 +1,36 @@
 # OwnMind 更新紀錄
 
+## 2026-03-30 — v1.9.1 Activity Log + Dashboard + Compliance
+
+### 新功能
+1. **Activity Log** — 所有 OwnMind 事件記錄到本地 JSONL + 批次上傳到 server
+2. **Admin Dashboard 統計頁** — 記憶概覽、工具/模型分佈、每日活動量、鐵律觸發 Top 5
+3. **合規回報** — 新增 `ownmind_report_compliance` MCP tool，AI 觸發鐵律後自動回報遵守/跳過/違反
+4. **交叉分析** — 落地率可按工具、模型、規則、使用者交叉查詢
+5. **情境報告** — session log 支援結構化 details（project, actions, friction_points, suggestions）
+6. **自動 Session Log** — instructions 指示 AI 對話結束前必須記錄摘要（所有工具通用）
+7. **3 個月壓縮** — 超過 90 天的 session logs 自動合併成月摘要
+8. **OWNMIND_TOOL 環境變數** — 各工具 MCP config 自帶工具識別
+9. **i18n README** — 英文（預設）、繁體中文、日文三語切換
+
+### 修正
+- XSS 防護 — admin.html 所有動態內容加 escapeHtml
+- 壓縮 race condition — 加 transaction + FOR UPDATE SKIP LOCKED
+- ON CONFLICT 死 code 移除
+- Shell hook JSON 轉義特殊字元
+- timer.unref() 防止 Node.js 退出被阻塞
+- details 展開覆蓋問題修正
+- Stats query 加 LIMIT 防止大量數據
+
+### 新增檔案
+- `db/003_activity_logs.sql` — activity_logs 表
+- `src/routes/activity.js` — batch upload + stats API
+- `mcp/ownmind-log.js` — 本地 + server 雙寫 log 模組
+- `docs/README.zh-TW.md` — 繁體中文 README
+- `docs/README.ja.md` — 日文 README
+
+---
+
 ## 2026-03-30 — v1.9.0 自動載入 + 跨平台 hooks + Token 優化
 
 ### 新功能
