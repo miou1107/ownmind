@@ -64,6 +64,19 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       console.log('   ✅ 加入 PreToolUse hook（鐵律檢查）');
     }
 
+    // WorktreeCreate hook — 自動注入 .mcp.json 到新 worktree
+    if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
+    const worktreeExists = s.hooks.WorktreeCreate.some(h =>
+      h.hooks?.some(hh => (hh.command || '').includes('ownmind-worktree-setup'))
+    );
+    if (!worktreeExists) {
+      s.hooks.WorktreeCreate.push({
+        hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-worktree-setup.sh', timeout: 10 }]
+      });
+      changed = true;
+      console.log('   ✅ 加入 WorktreeCreate hook（worktree MCP 自動注入）');
+    }
+
     if (changed) {
       // Atomic write: write to temp file then rename to prevent corruption
       const tmp = '$CLAUDE_SETTINGS' + '.tmp';

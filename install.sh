@@ -147,9 +147,11 @@ HOOK_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOK_DIR"
 cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
+cp "$OWNMIND_DIR/hooks/ownmind-worktree-setup.sh" "$HOOK_DIR/"
 chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
 chmod +x "$HOOK_DIR/ownmind-session-start.sh"
-echo "   安裝 hook scripts (session-start + iron-rule-check)"
+chmod +x "$HOOK_DIR/ownmind-worktree-setup.sh"
+echo "   安裝 hook scripts (session-start + iron-rule-check + worktree-setup)"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "
@@ -181,6 +183,18 @@ node -e "
       hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }]
     });
     console.log('   加入 PreToolUse hook（鐵律檢查）');
+  }
+
+  // WorktreeCreate hook — 自動注入 .mcp.json 到新 worktree
+  if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
+  const worktreeExists = s.hooks.WorktreeCreate.some(h =>
+    h.hooks?.some(hh => hh.command?.includes('ownmind-worktree-setup'))
+  );
+  if (!worktreeExists) {
+    s.hooks.WorktreeCreate.push({
+      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-worktree-setup.sh', timeout: 10 }]
+    });
+    console.log('   加入 WorktreeCreate hook（worktree MCP 自動注入）');
   }
 
   fs.writeFileSync(path, JSON.stringify(s, null, 2));

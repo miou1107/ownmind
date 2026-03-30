@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ownmind": {
+      "command": "node",
+      "args": [
+        "/Users/vincentkao/.ownmind/mcp/index.js"
+      ],
+      "env": {
+        "OWNMIND_API_URL": "https://kkvin.com/ownmind",
+        "OWNMIND_API_KEY": "vin-ownmind-admin-2026",
+        "OWNMIND_TOOL": "claude-code"
+      }
+    }
+  }
+}
