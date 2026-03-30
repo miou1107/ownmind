@@ -7,6 +7,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
+import { logEvent } from "./ownmind-log.js";
 
 // --- Config from env ---
 const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace(
@@ -232,23 +233,22 @@ async function handleTool(name, args) {
   switch (name) {
     case "ownmind_init": {
       const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
-      // Store sync token for subsequent write operations
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
       }
-      // Upgrade action from server
       if (data.upgrade_action?.required) {
         data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\n執行：${data.upgrade_action.command}`;
       }
       data._client_version = CLIENT_VERSION;
+      logEvent('init', { status: 'ok', details: { rules: data.iron_rules?.length || 0, profile: !!data.profile, handoff: !!data.active_handoff, version: data.server_version } });
       return data;
     }
 
     case "ownmind_get": {
       const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
       const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}`);
-      // Update token if server returns a new one
       if (data.new_token) currentSyncToken = data.new_token;
+      logEvent('memory_get', { type: args.type });
       return data;
     }
 
@@ -259,6 +259,7 @@ async function handleTool(name, args) {
         `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`
       );
       if (data.new_token) currentSyncToken = data.new_token;
+      logEvent('memory_search', { query: args.query });
       return data;
     }
 
@@ -274,6 +275,7 @@ async function handleTool(name, args) {
       if (args.metadata !== undefined) body.metadata = args.metadata;
       const data = await callApi("POST", "/api/memory", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent('memory_save', { type: args.type, title: args.title });
       return data;
     }
 
@@ -284,6 +286,7 @@ async function handleTool(name, args) {
       if (args.metadata !== undefined) body.metadata = args.metadata;
       const data = await callApi("PUT", `/api/memory/${args.id}`, body);
       if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent('memory_update', { id: args.id, reason: args.update_reason });
       return data;
     }
 
@@ -293,6 +296,7 @@ async function handleTool(name, args) {
         sync_token: currentSyncToken,
       });
       if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent('memory_disable', { id: args.id, reason: args.reason });
       return data;
     }
 
@@ -303,6 +307,7 @@ async function handleTool(name, args) {
       if (args.from_machine !== undefined) body.from_machine = args.from_machine;
       const data = await callApi("POST", "/api/handoff", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent('handoff_create', { project: args.project });
       return data;
     }
 
@@ -312,6 +317,7 @@ async function handleTool(name, args) {
         sync_token: currentSyncToken,
       });
       if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent('handoff_accept', { id: args.id, accepted_by: args.accepted_by });
       return data;
     }
 
@@ -323,6 +329,7 @@ async function handleTool(name, args) {
       if (args.details !== undefined) body.details = args.details;
       const data = await callApi("POST", "/api/session", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
+      logEvent('session_log', { summary: args.summary });
       return data;
     }
 
@@ -367,6 +374,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ],
     };
   } catch (error) {
+    logEvent('error', { tool_name: name, error: error.message });
     return {
       content: [
         {
@@ -401,9 +409,7 @@ try {
   }
 
   if (lastCheck !== today && existsSync(join(OWNMIND_DIR, '.git')) && !existsSync(LOCK_FILE)) {
-    // Fully async — never blocks MCP startup
-    // Lock file prevents race with SessionStart hook
-    // Marker written AFTER success (not before) to allow retry on failure
+    logEvent('update_check', { source: 'mcp' });
     exec(`
       touch "${LOCK_FILE}" &&
       cd ~/.ownmind &&
@@ -418,7 +424,10 @@ try {
       fi &&
       echo "${today}" > "${MARKER_FILE}";
       rm -f "${LOCK_FILE}"
-    `, { timeout: 60000 });
+    `, { timeout: 60000, cwd: OWNMIND_DIR }, (err) => {
+      if (err) logEvent('update_fail', { source: 'mcp', error: err.message });
+      else logEvent('update_applied', { source: 'mcp' });
+    });
   }
 } catch {
   // Silent fail — never block MCP startup

@@ -3,6 +3,17 @@
 # 在執行 git/deploy/delete 等高風險指令前，自動提示相關鐵律
 # 附帶：一次性自動升級檢查（搭便車機制）
 
+LOG_DIR="$HOME/.ownmind/logs"
+log_event() {
+  local event="$1"; shift
+  mkdir -p "$LOG_DIR"
+  local ts=$(date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([0-9][0-9]\)$/:\1/')
+  local date_str=$(date +%Y-%m-%d)
+  local extra=""
+  while [ $# -gt 0 ]; do extra="$extra,\"$1\":\"$2\""; shift 2; done
+  echo "{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}" >> "$LOG_DIR/$date_str.jsonl"
+}
+
 # --- 一次性升級：偵測到缺少 SessionStart hook → 自動安裝 ---
 UPGRADE_MARKER="$HOME/.ownmind/.session-hook-installed"
 if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
@@ -98,6 +109,7 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
   " 2>/dev/null)
 
 if [ -n "$RULES" ]; then
+  log_event "iron_rule_trigger" "trigger" "$TRIGGER"
   echo "$RULES"
 fi
 
