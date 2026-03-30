@@ -132,6 +132,33 @@ export async function runWeeklyReport(targetUserId = null) {
       const frictionIssuesCreated = await createFrictionIssues(userId, topFrictions, label);
       const suggestionActionsCreated = await createSuggestionActions(userId, topSuggestions, label);
 
+      // Compliance 統計
+      const complianceResult = await query(
+        `SELECT details->>'rule_title' as rule_title,
+                details->>'action' as action,
+                COUNT(*) as count
+         FROM activity_logs
+         WHERE user_id = $1 AND event = 'iron_rule_compliance'
+           AND ts >= $2 AND ts <= $3
+         GROUP BY rule_title, action`,
+        [userId, start, end]
+      );
+      const complianceByRule = {};
+      for (const row of complianceResult.rows) {
+        const key = row.rule_title;
+        if (!complianceByRule[key]) complianceByRule[key] = { comply: 0, violate: 0, skip: 0 };
+        complianceByRule[key][row.action] = parseInt(row.count, 10);
+      }
+      const totalComply = Object.values(complianceByRule).reduce((s, r) => s + r.comply, 0);
+      const totalViolate = Object.values(complianceByRule).reduce((s, r) => s + r.violate, 0);
+      const totalAll = totalComply + totalViolate + Object.values(complianceByRule).reduce((s, r) => s + r.skip, 0);
+      const complianceRate = totalAll > 0 ? Math.round((totalComply / totalAll) * 100) : null;
+      const topViolated = Object.entries(complianceByRule)
+        .filter(([, v]) => v.violate > 0)
+        .sort((a, b) => b[1].violate - a[1].violate)
+        .slice(0, 3)
+        .map(([title, v]) => ({ title, violate: v.violate, comply: v.comply }));
+
       // 統計新增記憶數
       const memoriesResult = await query(
         `SELECT COUNT(*) as cnt FROM memories
@@ -168,6 +195,11 @@ export async function runWeeklyReport(targetUserId = null) {
               suggestion_actions_created: suggestionActionsCreated,
               top_frictions: topFrictions.slice(0, 5),
               top_suggestions: topSuggestions.slice(0, 5),
+              compliance_summary: {
+                compliance_rate: complianceRate,
+                total_events: totalAll,
+                top_violated: topViolated,
+              },
             }),
           ]
         );
