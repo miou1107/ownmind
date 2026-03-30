@@ -35,6 +35,7 @@ import handoffRoutes from './routes/handoff.js';
 import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
 import exportRoutes from './routes/export.js';
+import activityRoutes from './routes/activity.js';
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
@@ -42,6 +43,7 @@ app.use('/api/handoff', handoffRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
+app.use('/api/activity', activityRoutes);
 
 // 健康檢查
 app.get('/health', (req, res) => {

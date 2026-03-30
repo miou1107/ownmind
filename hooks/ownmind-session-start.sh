@@ -9,7 +9,7 @@ LOCK_FILE="$OWNMIND_DIR/.update-lock"
 LOG_DIR="$OWNMIND_DIR/logs"
 UPDATE_MSG=""
 
-# --- Log function ---
+# --- Log function (local + server) ---
 log_event() {
   local event="$1"; shift
   mkdir -p "$LOG_DIR"
@@ -17,7 +17,16 @@ log_event() {
   local date_str=$(date +%Y-%m-%d)
   local extra=""
   while [ $# -gt 0 ]; do extra="$extra,\"$1\":\"$2\""; shift 2; done
-  echo "{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}" >> "$LOG_DIR/$date_str.jsonl"
+  local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}"
+  # Local log
+  echo "$entry" >> "$LOG_DIR/$date_str.jsonl"
+  # Server upload (background, non-blocking)
+  if [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
+    curl -sf --max-time 3 -X POST \
+      -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+      -d "{\"events\":[$entry]}" \
+      "${API_URL}/api/activity/batch" >/dev/null 2>&1 &
+  fi
 }
 
 # --- 讀取設定（一次 node 呼叫取 KEY + URL）---

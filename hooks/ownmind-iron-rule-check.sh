@@ -11,7 +11,15 @@ log_event() {
   local date_str=$(date +%Y-%m-%d)
   local extra=""
   while [ $# -gt 0 ]; do extra="$extra,\"$1\":\"$2\""; shift 2; done
-  echo "{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}" >> "$LOG_DIR/$date_str.jsonl"
+  local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}"
+  echo "$entry" >> "$LOG_DIR/$date_str.jsonl"
+  # Server upload (background)
+  if [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
+    curl -sf --max-time 3 -X POST \
+      -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
+      -d "{\"events\":[$entry]}" \
+      "${API_URL}/api/activity/batch" >/dev/null 2>&1 &
+  fi
 }
 
 # --- 一次性升級：偵測到缺少 SessionStart hook → 自動安裝 ---
