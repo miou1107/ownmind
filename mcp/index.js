@@ -226,6 +226,20 @@ const TOOLS = [
       required: ["key", "value"],
     },
   },
+  {
+    name: "ownmind_report_compliance",
+    description: "回報鐵律遵守狀況。當鐵律被觸發時，AI 必須呼叫此 tool 回報是否遵守。action: 'comply'（遵守）、'skip'（使用者要求跳過）、'violate'（違反）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        rule_title: { type: "string", description: "鐵律標題" },
+        rule_code: { type: "string", description: "鐵律編號（如 IR-001）" },
+        action: { type: "string", enum: ["comply", "skip", "violate"], description: "comply=遵守, skip=使用者要求跳過, violate=違反" },
+        context: { type: "string", description: "觸發的操作情境（選填）" },
+      },
+      required: ["rule_title", "action"],
+    },
+  },
 ];
 
 // --- Tool handlers ---
@@ -343,6 +357,16 @@ async function handleTool(name, args) {
       const body = { key: args.key, value: args.value };
       if (args.description !== undefined) body.description = args.description;
       return await callApi("POST", "/api/secret", body);
+    }
+
+    case "ownmind_report_compliance": {
+      logEvent('iron_rule_compliance', {
+        rule_title: args.rule_title,
+        rule_code: args.rule_code || null,
+        action: args.action,
+        context: args.context || null,
+      });
+      return { status: 'ok', action: args.action, rule: args.rule_title };
     }
 
     default:

@@ -152,6 +152,12 @@ const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
 
 這是 OwnMind 最核心的價值 — 讓使用者踩過的坑不會再踩。AI 要在**即將違反鐵律的那一刻**主動攔截自己，而不是事後才發現。
 
+**合規回報（強制）：** 每次鐵律被觸發後，必須呼叫 ownmind_report_compliance 回報結果：
+- 遵守了 → action: 'comply'
+- 使用者要求跳過 → action: 'skip'
+- 不小心違反了 → action: 'violate'
+這些數據用於追蹤鐵律落地率，不需要使用者確認，直接回報。
+
 ## 何時該儲存記憶
 
 遇到以下情境時，**必須立即儲存**：
