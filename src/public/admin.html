@@ -68,6 +68,17 @@
     .toast { position: fixed; bottom: 24px; right: 24px; background: #1d1d1f; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     .toast.error { background: #dc2626; }
 
+    /* Memory search modal */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; z-index: 200; justify-content: center; align-items: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-content { background: #fff; border-radius: 16px; padding: 24px; max-width: 560px; width: 90%; max-height: 70vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .modal-content h3 { margin: 0 0 16px; font-size: 16px; }
+    .modal-item { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+    .modal-item .type-badge { display: inline-block; font-size: 11px; background: #f0f0f0; color: #666; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+    .modal-item .title { font-weight: 600; }
+    .modal-item .date { font-size: 12px; color: #86868b; margin-top: 2px; }
+    .modal-close { float: right; cursor: pointer; font-size: 18px; color: #86868b; border: none; background: none; }
+
     .hidden { display: none; }
 
     /* Actions cell */
@@ -368,6 +379,10 @@
         <div style="font-size:13px;color:#86868b;margin-bottom:4px;">自動建立 Friction Issue</div>
         <div id="report-friction-issues" style="font-size:32px;font-weight:700;color:#1d1d1f;">—</div>
       </div>
+      <div class="card">
+        <div style="font-size:13px;color:#86868b;margin-bottom:4px;">自動建立 Suggestion Action</div>
+        <div id="report-suggestion-actions" style="font-size:32px;font-weight:700;color:#7c3aed;">—</div>
+      </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
@@ -384,6 +399,15 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Memory search modal -->
+<div class="modal-overlay" id="memoryModal" onclick="if(event.target===this)closeMemoryModal()">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeMemoryModal()">&times;</button>
+    <h3 id="modalTitle">相關記憶</h3>
+    <div id="modalBody"></div>
+  </div>
+</div>
 
 <script>
   let API_KEY = '';
@@ -541,6 +565,53 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     showToast('安裝 Prompt 已複製');
   }
 
+  // ===== Memory Search Modal =====
+  async function searchMemory(text, type) {
+    const modal = document.getElementById('memoryModal');
+    const body = document.getElementById('modalBody');
+    const title = document.getElementById('modalTitle');
+    title.textContent = type === 'friction' ? '相關記憶（friction）' : '相關記憶（suggestion）';
+    body.innerHTML = '<div style="color:#86868b;">搜尋中...</div>';
+    modal.classList.add('active');
+
+    try {
+      const q = text.slice(0, 30);
+      const res = await fetch(`${API}/memory/search?q=${encodeURIComponent(q)}`, { headers: headers() });
+      if (!res.ok) throw new Error(await res.text());
+      const memories = await res.json();
+
+      if (memories.length === 0) {
+        body.innerHTML = '<div style="color:#86868b;padding:16px 0;">尚無相關記憶</div>';
+        return;
+      }
+      body.innerHTML = memories.slice(0, 10).map(m => {
+        const d = new Date(m.created_at).toLocaleDateString('zh-TW');
+        return `<div class="modal-item">
+          <span class="type-badge">${m.type}</span>
+          <span class="title">${esc(m.title)}</span>
+          <div class="date">${d}</div>
+        </div>`;
+      }).join('');
+    } catch (err) {
+      body.innerHTML = `<div style="color:#dc2626;">搜尋失敗：${esc(err.message)}</div>`;
+    }
+  }
+
+  function closeMemoryModal() {
+    document.getElementById('memoryModal').classList.remove('active');
+  }
+
+  // Event delegation for clickable friction/suggestion items (avoids inline onclick XSS)
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-search-text]');
+    if (el) searchMemory(el.dataset.searchText, el.dataset.searchType);
+  });
+
+  // Close modal on Escape
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeMemoryModal();
+  });
+
   document.getElementById('loginPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') login();
   });
@@ -576,27 +647,30 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       document.getElementById('report-period-label').textContent = data.period || '—';
       document.getElementById('report-new-memories').textContent = data.new_memories ?? '—';
       document.getElementById('report-friction-issues').textContent = data.friction_issues_created ?? '—';
+      document.getElementById('report-suggestion-actions').textContent = data.suggestion_actions_created ?? '—';
 
-      // Frictions
+      // Frictions (clickable via data attributes)
       const frictionEl = document.getElementById('report-frictions-list');
       if (data.top_frictions && data.top_frictions.length > 0) {
         frictionEl.innerHTML = data.top_frictions.map(f => {
-          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">
+          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-search-text="${esc(f.text)}" data-search-type="friction" title="點擊搜尋相關記憶">
             <span style="font-weight:600;color:#e65c00;">${f.count}x</span>
             <span style="margin-left:8px;">${esc(f.text)}</span>
+            <span style="float:right;color:#ccc;font-size:12px;">🔍</span>
           </div>`;
         }).join('');
       } else {
         frictionEl.innerHTML = '<div style="color:#86868b;">本期無 friction 資料</div>';
       }
 
-      // Suggestions
+      // Suggestions (clickable via data attributes)
       const suggestEl = document.getElementById('report-suggestions-list');
       if (data.top_suggestions && data.top_suggestions.length > 0) {
         suggestEl.innerHTML = data.top_suggestions.map(s => {
-          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">
+          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-search-text="${esc(s.text)}" data-search-type="suggestion" title="點擊搜尋相關記憶">
             <span style="font-weight:600;color:#7c3aed;">${s.count}x</span>
             <span style="margin-left:8px;">${esc(s.text)}</span>
+            <span style="float:right;color:#ccc;font-size:12px;">🔍</span>
           </div>`;
         }).join('');
       } else {
