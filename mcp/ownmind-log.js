@@ -1,8 +1,11 @@
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import fetch from 'node-fetch';
 
 const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
 const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
+const API_URL = (process.env.OWNMIND_API_URL || '').replace(/\/$/, '');
+const API_KEY = process.env.OWNMIND_API_KEY || '';
 
 // Ensure logs directory exists (once per process)
 let dirReady = false;
@@ -12,12 +15,36 @@ function ensureDir() {
   dirReady = true;
 }
 
+// Buffer for batch upload (flush every 10 events or 30 seconds)
+const buffer = [];
+let flushTimer = null;
+
+async function flushToServer() {
+  if (buffer.length === 0 || !API_URL || !API_KEY) return;
+  const events = buffer.splice(0, buffer.length);
+  try {
+    await fetch(`${API_URL}/api/activity/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}` },
+      body: JSON.stringify({ events }),
+    });
+  } catch {
+    // Silent fail — server might be unreachable
+  }
+}
+
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    flushToServer();
+  }, 30000);
+}
+
 /**
  * Write a structured log event to ~/.ownmind/logs/YYYY-MM-DD.jsonl
+ * and buffer for batch upload to server.
  * Never throws — silent fail to avoid disrupting main flow.
- *
- * @param {string} event - Event name (init, memory_save, iron_rule_trigger, etc.)
- * @param {object} details - Additional fields merged into the log entry
  */
 export function logEvent(event, details = {}) {
   try {
@@ -38,11 +65,20 @@ export function logEvent(event, details = {}) {
     const dateStr = ts.slice(0, 10);
     const filePath = join(LOGS_DIR, `${dateStr}.jsonl`);
 
-    const entry = { ts, event, tool: details.tool || TOOL_NAME, ...details };
-    delete entry.tool; // remove from details to avoid duplicate
-    const line = JSON.stringify({ ts, event, tool: details.tool || TOOL_NAME, source: details.source || 'mcp', ...details });
+    const tool = details.tool || TOOL_NAME;
+    const source = details.source || 'mcp';
+    const entry = { ts, event, tool, source, ...details };
 
-    appendFileSync(filePath, line + '\n');
+    // Write local
+    appendFileSync(filePath, JSON.stringify(entry) + '\n');
+
+    // Buffer for server upload
+    buffer.push(entry);
+    if (buffer.length >= 10) {
+      flushToServer();
+    } else {
+      scheduleFlush();
+    }
   } catch {
     // Silent fail — never disrupt main flow
   }

@@ -72,6 +72,40 @@
 
     /* Actions cell */
     .actions { display: flex; gap: 6px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e8e8ed; }
+    .tab { padding: 10px 20px; cursor: pointer; font-size: 14px; font-weight: 600; color: #86868b; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+    .tab:hover { color: #1d1d1f; }
+    .tab.active { color: #7c3aed; border-bottom-color: #7c3aed; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Stats dashboard */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat-mini { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .stat-mini .value { font-size: 24px; font-weight: 700; color: #7c3aed; }
+    .stat-mini .desc { font-size: 11px; color: #86868b; margin-top: 2px; }
+
+    /* Bar chart */
+    .bar-chart { margin: 12px 0; }
+    .bar-row { display: flex; align-items: center; margin-bottom: 6px; }
+    .bar-label { width: 120px; font-size: 12px; color: #1d1d1f; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; height: 20px; background: #f0f0f2; border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; background: #7c3aed; border-radius: 4px; transition: width 0.3s; min-width: 1px; }
+    .bar-count { width: 40px; text-align: right; font-size: 12px; color: #86868b; margin-left: 8px; }
+
+    /* Daily chart */
+    .daily-chart { display: flex; align-items: flex-end; gap: 2px; height: 80px; margin: 12px 0; }
+    .daily-bar { flex: 1; background: #7c3aed; border-radius: 2px 2px 0 0; min-height: 2px; transition: height 0.3s; position: relative; }
+    .daily-bar:hover { background: #6d28d9; }
+    .daily-bar:hover::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1d1d1f; color: #fff; padding: 2px 6px; border-radius: 4px; font-size: 10px; white-space: nowrap; }
+
+    /* User overview table */
+    .user-overview td { font-size: 13px; }
+    .activity-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot-active { background: #00b894; }
+    .dot-inactive { background: #d2d2d7; }
   </style>
 </head>
 <body>
@@ -88,6 +122,14 @@
 <div id="dashboard" class="container hidden">
   <h1>【<span>OwnMind</span>】Admin</h1>
   <p class="subtitle">使用者管理後台</p>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('users')">使用者管理</div>
+    <div class="tab" onclick="switchTab('stats')">統計儀表板</div>
+  </div>
+
+  <!-- ===== TAB: 使用者管理 ===== -->
+  <div id="tab-users" class="tab-content active">
 
   <div class="stats">
     <div class="stat-card">
@@ -155,6 +197,96 @@
       <button class="btn-copy btn-sm" onclick="copyPrompt()">複製 Prompt</button>
     </div>
   </div>
+
+  </div><!-- end tab-users -->
+
+  <!-- ===== TAB: 統計儀表板 ===== -->
+  <div id="tab-stats" class="tab-content">
+
+    <!-- 用戶選擇 + 時間範圍 -->
+    <div class="card">
+      <div class="form-row">
+        <div class="field">
+          <label>選擇使用者</label>
+          <select id="statsUser" onchange="loadUserStats()">
+            <option value="">-- 全部用戶總覽 --</option>
+          </select>
+        </div>
+        <div class="field" style="max-width: 140px;">
+          <label>時間範圍</label>
+          <select id="statsDays" onchange="loadUserStats()">
+            <option value="7">最近 7 天</option>
+            <option value="30" selected>最近 30 天</option>
+            <option value="90">最近 90 天</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 全部用戶總覽 -->
+    <div id="statsOverview">
+      <div class="card">
+        <h3>用戶活躍度</h3>
+        <table class="user-overview">
+          <thead>
+            <tr><th>狀態</th><th>用戶</th><th>記憶數</th><th>Session</th><th>活動</th><th>最後活躍</th></tr>
+          </thead>
+          <tbody id="overviewTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 單一用戶統計 -->
+    <div id="statsDetail" class="hidden">
+
+      <!-- 記憶概覽 -->
+      <div class="stats-grid" id="memoryCards"></div>
+
+      <!-- 記憶分佈 -->
+      <div class="card">
+        <h3>記憶類型分佈</h3>
+        <div class="bar-chart" id="memoryTypeChart"></div>
+      </div>
+
+      <!-- 工具 & 模型分佈 -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="card">
+          <h3>工具使用分佈</h3>
+          <div class="bar-chart" id="toolChart"></div>
+        </div>
+        <div class="card">
+          <h3>模型使用分佈</h3>
+          <div class="bar-chart" id="modelChart"></div>
+        </div>
+      </div>
+
+      <!-- 每日活躍度 -->
+      <div class="card">
+        <h3>每日活動量</h3>
+        <div class="daily-chart" id="dailyChart"></div>
+      </div>
+
+      <!-- 鐵律 & 健康 -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div class="card">
+          <h3>鐵律觸發 Top 5</h3>
+          <div class="bar-chart" id="ruleChart"></div>
+          <div id="ruleStats" style="margin-top: 12px; font-size: 13px; color: #86868b;"></div>
+        </div>
+        <div class="card">
+          <h3>系統健康</h3>
+          <div id="healthStats"></div>
+        </div>
+      </div>
+
+      <!-- 交接 -->
+      <div class="card">
+        <h3>交接統計</h3>
+        <div id="handoffStats"></div>
+      </div>
+    </div>
+
+  </div><!-- end tab-stats -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -293,6 +425,148 @@
   document.getElementById('loginPassword').addEventListener('keydown', e => {
     if (e.key === 'Enter') login();
   });
+
+  // ===== Tabs =====
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.tab[onclick*="${tab}"]`).classList.add('active');
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    if (tab === 'stats') {
+      const sel = document.getElementById('statsUser');
+      if (sel.options.length <= 1) {
+        sel.innerHTML = '<option value="">-- 全部用戶總覽 --</option>' +
+          usersData.map(u => `<option value="${u.id}">${u.name || u.email}</option>`).join('');
+      }
+      loadUserStats();
+    }
+  }
+
+  // ===== Stats =====
+  async function loadUserStats() {
+    const userId = document.getElementById('statsUser').value;
+    const days = document.getElementById('statsDays').value;
+    if (!userId) {
+      document.getElementById('statsOverview').classList.remove('hidden');
+      document.getElementById('statsDetail').classList.add('hidden');
+      loadOverview(days);
+    } else {
+      document.getElementById('statsOverview').classList.add('hidden');
+      document.getElementById('statsDetail').classList.remove('hidden');
+      loadDetail(userId, days);
+    }
+  }
+
+  async function loadOverview(days) {
+    try {
+      const res = await fetch(`${API}/activity/stats/all?days=${days}`, { headers: headers() });
+      const data = await res.json();
+      const tbody = document.getElementById('overviewTable');
+      if (!data.users || data.users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:#86868b;text-align:center;">尚無數據</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.users.map(u => {
+        const isActive = u.last_active && (Date.now() - new Date(u.last_active).getTime()) < 7 * 86400000;
+        return `<tr>
+          <td><span class="activity-dot ${isActive ? 'dot-active' : 'dot-inactive'}"></span></td>
+          <td>${u.name || u.email}</td>
+          <td>${u.memory_count || 0}</td>
+          <td>${u.session_count || 0}</td>
+          <td>${u.activity_count || 0}</td>
+          <td style="font-size:12px;color:#86868b;">${u.last_active ? new Date(u.last_active).toLocaleDateString('zh-TW') : '從未'}</td>
+        </tr>`;
+      }).join('');
+    } catch { document.getElementById('overviewTable').innerHTML = '<tr><td colspan="6">載入失敗</td></tr>'; }
+  }
+
+  async function loadDetail(userId, days) {
+    try {
+      const res = await fetch(`${API}/activity/stats?user_id=${userId}&days=${days}`, { headers: headers() });
+      if (!res.ok) throw new Error('API error');
+      const d = await res.json();
+
+      // Memory cards
+      document.getElementById('memoryCards').innerHTML = `
+        <div class="stat-mini"><div class="value">${d.memory.total}</div><div class="desc">記憶總數</div></div>
+        <div class="stat-mini"><div class="value">${d.memory.active}</div><div class="desc">活躍</div></div>
+        <div class="stat-mini"><div class="value">${d.memory.disabled}</div><div class="desc">停用</div></div>
+        <div class="stat-mini"><div class="value">${d.memory.created_this_period}</div><div class="desc">本期新增</div></div>
+        <div class="stat-mini"><div class="value">${d.sessions.total}</div><div class="desc">Session 總數</div></div>
+        <div class="stat-mini"><div class="value">${d.activity.total_events}</div><div class="desc">活動事件</div></div>
+        <div class="stat-mini"><div class="value">${d.iron_rules.total_active}</div><div class="desc">活躍鐵律</div></div>
+        <div class="stat-mini"><div class="value">${d.iron_rules.total_triggers}</div><div class="desc">鐵律觸發</div></div>
+      `;
+
+      // Memory type chart
+      renderBarChart('memoryTypeChart', d.memory.by_type);
+
+      // Tool & model charts
+      renderBarChart('toolChart', d.sessions.by_tool);
+      renderBarChart('modelChart', d.sessions.by_model);
+
+      // Daily chart
+      renderDailyChart('dailyChart', d.activity.daily);
+
+      // Iron rules
+      const ruleData = {};
+      (d.iron_rules.top_triggered || []).forEach(r => { ruleData[r.trigger || '?'] = r.count; });
+      renderBarChart('ruleChart', ruleData);
+      document.getElementById('ruleStats').textContent =
+        `活躍鐵律 ${d.iron_rules.total_active} 條，本期觸發 ${d.iron_rules.total_triggers} 次`;
+
+      // Health
+      document.getElementById('healthStats').innerHTML = `
+        <div style="font-size:14px;line-height:2;">
+          <div>Init 成功率：<strong style="color:${d.health.init_success_rate >= 95 ? '#00b894' : '#dc2626'}">${d.health.init_success_rate}%</strong></div>
+          <div>Sync 衝突：<strong>${d.health.sync_conflicts}</strong> 次</div>
+          <div>自動更新：<strong>${d.health.updates_applied}</strong> 次</div>
+        </div>
+      `;
+
+      // Handoffs
+      document.getElementById('handoffStats').innerHTML = `
+        <div style="font-size:14px;line-height:2;">
+          <div>交接總數：<strong>${d.handoffs.total}</strong></div>
+          <div>已完成：<strong style="color:#00b894;">${d.handoffs.completed}</strong></div>
+          <div>待處理：<strong style="color:#f39c12;">${d.handoffs.pending}</strong></div>
+        </div>
+      `;
+    } catch (e) {
+      document.getElementById('memoryCards').innerHTML = '<div class="stat-mini"><div class="desc">載入失敗</div></div>';
+    }
+  }
+
+  function renderBarChart(containerId, data) {
+    const el = document.getElementById(containerId);
+    if (!data || Object.keys(data).length === 0) {
+      el.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>';
+      return;
+    }
+    const max = Math.max(...Object.values(data), 1);
+    el.innerHTML = Object.entries(data)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `
+        <div class="bar-row">
+          <div class="bar-label" title="${k}">${k}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:${(v / max * 100).toFixed(1)}%"></div></div>
+          <div class="bar-count">${v}</div>
+        </div>
+      `).join('');
+  }
+
+  function renderDailyChart(containerId, daily) {
+    const el = document.getElementById(containerId);
+    if (!daily || daily.length === 0) {
+      el.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>';
+      return;
+    }
+    const max = Math.max(...daily.map(d => d.count), 1);
+    el.innerHTML = daily.map(d => {
+      const pct = (d.count / max * 100).toFixed(1);
+      return `<div class="daily-bar" style="height:${pct}%" data-tip="${d.date}: ${d.count}"></div>`;
+    }).join('');
+  }
 </script>
 </body>
 </html>
