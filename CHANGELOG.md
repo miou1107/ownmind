@@ -2,6 +2,14 @@
 
 ## 2026-03-30 — v1.10.0 越用越聰明 + 數據驅動進化
 
+### Windows 安裝修復（Eric 回報）
+- **install.ps1 ParserError** — 移除 `param()` block 和 here-string `@"..."@`（`irm | iex` pipeline 不支援），改用 `$args` + array join
+- **ENOENT 目錄不存在** — 提前用 `foreach` 建立 `~/.claude/`、skills、hooks 等所有目錄
+- **curl vs PowerShell 衝突** — README 和 Dashboard 安裝指令改用 `irm | iex`（PowerShell 原生），不再使用 `curl`
+- **bash 找不到** — 新增 `ownmind-session-start.js` + `ownmind-iron-rule-check.js`（純 Node.js hook），install.ps1 自動偵測 bash 並 fallback
+- install.ps1 新增 `API_URL` 參數（與 install.sh 一致，不再 hardcode）
+- **IR-008 智慧檢查** — PreToolUse hook 在 commit 時自動檢查 `git diff --cached`，如果有程式碼變更但缺少 README/FILELIST/CHANGELOG，直接列出缺失清單
+
 ### 新功能
 1. **週/月報 API** — `GET /api/session/report?period=week|month&offset=N`，即時計算或讀取快照
 2. **週報 Cron Job** — 每週一 00:00 Asia/Taipei 自動執行，高頻 friction（≥3 次）自動建立 project 記憶

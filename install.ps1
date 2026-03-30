@@ -1,31 +1,45 @@
 # OwnMind 一鍵安裝腳本（Windows PowerShell 原生版）
-# 用法: .\install.ps1 YOUR_API_KEY
-# 或: irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex  (需先設定 API_KEY 環境變數)
+# 用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL
+# 或: $env:OWNMIND_API_KEY='xxx'; $env:OWNMIND_API_URL='https://your-server.com/ownmind'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
 
-param(
-  [Parameter(Position=0)]
-  [string]$ApiKey = $env:OWNMIND_API_KEY
-)
+# --- 參數處理（同時支援 param 和環境變數，irm | iex 不支援 param）---
+if ($args.Count -ge 1) { $ApiKey = $args[0] } else { $ApiKey = $env:OWNMIND_API_KEY }
+if ($args.Count -ge 2) { $ApiUrl = $args[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
 
 if (-not $ApiKey) {
-  Write-Error "❌ 請提供 API Key`n用法: .\install.ps1 YOUR_API_KEY"
+  Write-Error "請提供 API Key`n用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL`n或設定環境變數: `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
+  exit 1
+}
+if (-not $ApiUrl) {
+  Write-Error "請提供 API URL`n用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL"
   exit 1
 }
 
-Write-Host "🧠 OwnMind 安裝中..." -ForegroundColor Cyan
+Write-Host "OwnMind 安裝中..." -ForegroundColor Cyan
 
 # --- 檢查必要工具 ---
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  Write-Error "❌ 找不到 git，請先安裝 Git for Windows"
+  Write-Error "找不到 git，請先安裝 Git for Windows: https://git-scm.com/download/win"
   exit 1
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Error "❌ 找不到 node，請先安裝 Node.js"
+  Write-Error "找不到 node，請先安裝 Node.js: https://nodejs.org/"
   exit 1
 }
 
+# --- 提前建立所有需要的目錄 ---
+$OwnmindDir     = Join-Path $HOME ".ownmind"
+$ClaudeDir       = Join-Path $HOME ".claude"
+$ClaudeSettings  = Join-Path $ClaudeDir "settings.json"
+$ClaudeMd        = Join-Path $ClaudeDir "CLAUDE.md"
+$SkillDir        = Join-Path $ClaudeDir "skills\ownmind-memory"
+$HookDir         = Join-Path $ClaudeDir "hooks"
+
+foreach ($dir in @($ClaudeDir, $SkillDir, $HookDir)) {
+  New-Item -ItemType Directory -Force -Path $dir -ErrorAction SilentlyContinue | Out-Null
+}
+
 # --- 1. Clone MCP Server ---
-$OwnmindDir = Join-Path $HOME ".ownmind"
 if (Test-Path $OwnmindDir) {
   Write-Host "   更新 OwnMind MCP Server..."
   git -C $OwnmindDir pull -q
@@ -45,16 +59,13 @@ $McpConfig = @{
   command = "cmd.exe"
   args    = @("/c", $StartCmd)
   env     = @{
-    OWNMIND_API_URL = "https://kkvin.com/ownmind"
+    OWNMIND_API_URL = $ApiUrl
     OWNMIND_API_KEY = $ApiKey
+    OWNMIND_TOOL    = "claude-code"
   }
 }
 
 # --- 2. Claude Code MCP 設定 ---
-$ClaudeDir      = Join-Path $HOME ".claude"
-$ClaudeSettings = Join-Path $ClaudeDir "settings.json"
-New-Item -ItemType Directory -Force -Path $ClaudeDir | Out-Null
-
 if (Test-Path $ClaudeSettings) {
   $content = Get-Content $ClaudeSettings -Raw
   if ($content -match '"ownmind"') {
@@ -74,26 +85,15 @@ if (Test-Path $ClaudeSettings) {
 }
 
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
-$ClaudeMd = Join-Path $ClaudeDir "CLAUDE.md"
-$OwnmindBlock = @"
-
-# OwnMind 個人記憶系統
-
-你已連接 OwnMind 跨平台 AI 個人記憶系統。
-
-## 必須遵守
-- 開始工作時，呼叫 ownmind_init 載入使用者記憶
-- 個人偏好、鐵律、專案 context 以 OwnMind 為主要來源（跨平台共享）
-- 本地 memory 可並存，但發生衝突時以 OwnMind 為準
-- 存取記憶時必須顯示【OwnMind】提示（詳見 ownmind-memory skill）
-- 完成重要工作後，主動儲存記憶
-- 交接工作時，使用 OwnMind 交接機制
-
-## 觸發詞
-- 「記起來」「學起來」「新增鐵律」→ 儲存記憶
-- 「交接給 XXX」→ 建立交接
-- 「整理記憶」「我有哪些記憶」→ 查詢記憶
-"@
+$OwnmindBlock = @(
+  "",
+  "# OwnMind 個人記憶系統",
+  "",
+  "OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。",
+  "如果 context 中沒有看到【OwnMind】標記，手動呼叫 ownmind_init MCP tool。",
+  "鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind】標記。",
+  "觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。"
+) -join "`n"
 
 if (Test-Path $ClaudeMd) {
   $existing = Get-Content $ClaudeMd -Raw
@@ -109,38 +109,75 @@ if (Test-Path $ClaudeMd) {
 }
 
 # --- 4. 安裝 Skill ---
-$SkillDir = Join-Path $ClaudeDir "skills\ownmind-memory"
-New-Item -ItemType Directory -Force -Path $SkillDir | Out-Null
 Copy-Item (Join-Path $OwnmindDir "skills\ownmind-memory.md") (Join-Path $SkillDir "SKILL.md") -Force
 Write-Host "   安裝 ownmind-memory skill"
 
-# --- 4b. 安裝 Hook Script ---
-$HookDir = Join-Path $ClaudeDir "hooks"
-New-Item -ItemType Directory -Force -Path $HookDir | Out-Null
-Copy-Item (Join-Path $OwnmindDir "hooks\ownmind-iron-rule-check.sh") $HookDir -Force
-Write-Host "   安裝 ownmind-iron-rule-check hook"
+# --- 4b. 安裝 Hook Scripts（bash + node fallback）---
+$BashHooks = @("ownmind-iron-rule-check.sh", "ownmind-session-start.sh", "ownmind-worktree-setup.sh")
+foreach ($hook in $BashHooks) {
+  $src = Join-Path $OwnmindDir "hooks\$hook"
+  if (Test-Path $src) { Copy-Item $src $HookDir -Force }
+}
+# Node.js hooks for Windows (no bash/WSL required)
+$NodeHooks = @("ownmind-iron-rule-check.js", "ownmind-session-start.js")
+foreach ($hook in $NodeHooks) {
+  $src = Join-Path $OwnmindDir "hooks\$hook"
+  if (Test-Path $src) { Copy-Item $src $HookDir -Force }
+}
+Write-Host "   安裝 hook scripts"
 
-# --- 4c. 加入 PreToolUse hook 設定 ---
+# --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
+# 偵測是否有 bash（WSL / Git Bash）
+$HasBash = $null -ne (Get-Command bash -ErrorAction SilentlyContinue)
+
 $settingsContent = Get-Content $ClaudeSettings -Raw
-$settings = $settingsContent | ConvertFrom-Json
-if (-not $settings.hooks) {
-  $settings | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{})
+$hookSettings = $settingsContent | ConvertFrom-Json
+if (-not $hookSettings.hooks) {
+  $hookSettings | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{})
 }
-if (-not $settings.hooks.PreToolUse) {
-  $settings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @()
+
+# SessionStart hook
+if (-not $hookSettings.hooks.SessionStart) {
+  $hookSettings.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue @()
 }
-$hookExists = $settings.hooks.PreToolUse | Where-Object {
-  $_.hooks | Where-Object { $_.command -match "ownmind-iron-rule-check" }
+$sessionExists = $hookSettings.hooks.SessionStart | Where-Object {
+  $_.hooks | Where-Object { $_.command -match "ownmind" }
 }
-if (-not $hookExists) {
-  $newHook = [pscustomobject]@{
-    matcher = "Bash"
-    hooks   = @([pscustomobject]@{ type = "command"; command = "bash ~/.claude/hooks/ownmind-iron-rule-check.sh" })
+if (-not $sessionExists) {
+  if ($HasBash) {
+    $sessionCmd = "bash ~/.claude/hooks/ownmind-session-start.sh"
+  } else {
+    $sessionCmd = "node `"$($HookDir -replace '\\','/')/ownmind-session-start.js`""
   }
-  $settings.hooks.PreToolUse += $newHook
-  $settings | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
-  Write-Host "   加入 PreToolUse hook 設定"
+  $newSessionHook = [pscustomobject]@{
+    hooks = @([pscustomobject]@{ type = "command"; command = $sessionCmd; timeout = 10 })
+  }
+  $hookSettings.hooks.SessionStart += $newSessionHook
+  Write-Host "   加入 SessionStart hook"
 }
+
+# PreToolUse hook
+if (-not $hookSettings.hooks.PreToolUse) {
+  $hookSettings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @()
+}
+$preExists = $hookSettings.hooks.PreToolUse | Where-Object {
+  $_.hooks | Where-Object { $_.command -match "ownmind" }
+}
+if (-not $preExists) {
+  if ($HasBash) {
+    $preCmd = "bash ~/.claude/hooks/ownmind-iron-rule-check.sh"
+  } else {
+    $preCmd = "node `"$($HookDir -replace '\\','/')/ownmind-iron-rule-check.js`""
+  }
+  $newPreHook = [pscustomobject]@{
+    matcher = "Bash"
+    hooks   = @([pscustomobject]@{ type = "command"; command = $preCmd })
+  }
+  $hookSettings.hooks.PreToolUse += $newPreHook
+  Write-Host "   加入 PreToolUse hook"
+}
+
+$hookSettings | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
 
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 $CursorDir = Join-Path $HOME ".cursor"
@@ -153,12 +190,12 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
       Write-Host "   Cursor MCP 已設定，跳過"
     } else {
       Write-Host "   設定 Cursor MCP..."
-      $settings = $content | ConvertFrom-Json
-      if (-not $settings.mcpServers) {
-        $settings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
+      $cursorSettings = $content | ConvertFrom-Json
+      if (-not $cursorSettings.mcpServers) {
+        $cursorSettings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
       }
-      $settings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$McpConfig) -Force
-      $settings | ConvertTo-Json -Depth 10 | Set-Content $CursorMcp -Encoding UTF8
+      $cursorSettings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$McpConfig) -Force
+      $cursorSettings | ConvertTo-Json -Depth 10 | Set-Content $CursorMcp -Encoding UTF8
     }
   } else {
     Write-Host "   設定 Cursor MCP..."
@@ -167,12 +204,15 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
 }
 
 Write-Host ""
-Write-Host "✅ OwnMind 安裝完成！" -ForegroundColor Green
+Write-Host "OwnMind 安裝完成！" -ForegroundColor Green
 Write-Host ""
 Write-Host "   MCP Server: $OwnmindDir\mcp\index.js"
-Write-Host "   API URL:    https://kkvin.com/ownmind"
-Write-Host "   API Key:    $ApiKey"
+Write-Host "   API URL:    $ApiUrl"
+Write-Host "   API Key:    $($ApiKey.Substring(0,4))****$($ApiKey.Substring($ApiKey.Length-4))"
 Write-Host "   啟動方式:   cmd.exe + start.cmd（Windows 相容）"
+if (-not $HasBash) {
+  Write-Host "   Hooks:      使用 Node.js 執行（未偵測到 bash）" -ForegroundColor Yellow
+}
 Write-Host ""
-Write-Host "   現在開一個新的 Claude Code 對話，說「載入我的 OwnMind」即可開始！"
+Write-Host "   開一個新的 Claude Code 對話，OwnMind 會自動載入你的記憶！"
 Write-Host ""

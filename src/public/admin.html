@@ -525,7 +525,13 @@
     const el = document.getElementById('installPrompt');
     if (!key) { el.textContent = '請先選擇使用者'; return; }
     const apiUrl = getApiUrl();
-    el.textContent = `幫我安裝 OwnMind：curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- ${key} ${apiUrl}`;
+    el.textContent = `幫我安裝 OwnMind：
+
+macOS / Linux:
+curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- ${key} ${apiUrl}
+
+Windows (PowerShell):
+$env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex`;
   }
 
   function copyPrompt() {
