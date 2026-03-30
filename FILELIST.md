@@ -39,7 +39,8 @@ OwnMind/
 │   │   ├── logger.js                # Winston logger
 │   │   ├── crypto.js                # AES-256 加解密工具
 │   │   ├── syncToken.js             # Sync token 生成與驗證（SHA-256）
-│   │   └── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
+│   │   ├── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
+│   │   └── enforcement.js          # Enforcement alerts 計算純函式
 │   ├── jobs/
 │   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   └── public/
@@ -76,7 +77,8 @@ OwnMind/
 │   └── ownmind-memory.md            # OwnMind 記憶管理 Skill
 │
 ├── tests/
-│   └── report.test.js               # report.js 單元測試（node:test）
+│   ├── report.test.js               # report.js 單元測試（node:test）
+│   └── enforcement.test.js          # enforcement.js 單元測試
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
