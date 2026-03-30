@@ -43,6 +43,17 @@ function scheduleFlush() {
   flushTimer.unref();
 }
 
+// Exit hook: flush remaining buffer before process exits
+process.on('beforeExit', () => {
+  flushToServer();
+});
+
+// 重要事件類型：立即 flush，不等 buffer 滿
+const IMMEDIATE_FLUSH_EVENTS = new Set([
+  'iron_rule_compliance',
+  'session_log',
+]);
+
 /**
  * Write a structured log event to ~/.ownmind/logs/YYYY-MM-DD.jsonl
  * and buffer for batch upload to server.
@@ -77,7 +88,7 @@ export function logEvent(event, details = {}) {
 
     // Buffer for server upload
     buffer.push(entry);
-    if (buffer.length >= 10) {
+    if (buffer.length >= 10 || IMMEDIATE_FLUSH_EVENTS.has(event)) {
       flushToServer();
     } else {
       scheduleFlush();
