@@ -17,8 +17,15 @@ const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
 // --- Version & Sync Token (in-memory, per session) ---
-const CLIENT_VERSION = '1.9.0';
+const CLIENT_VERSION = '1.10.0';
 let currentSyncToken = null;
+
+// --- Session tracking (for emergency shutdown log) ---
+const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
+let sessionStartTime = null;
+const toolCallCounts = {};
+const complianceEvents = [];
+let sessionLogged = false;
 
 // --- Helper ---
 async function callApi(method, path, body) {
@@ -254,6 +261,10 @@ const TOOLS = [
 
 // --- Tool handlers ---
 async function handleTool(name, args) {
+  // Session tracking
+  if (!sessionStartTime) sessionStartTime = Date.now();
+  toolCallCounts[name] = (toolCallCounts[name] || 0) + 1;
+
   switch (name) {
     case "ownmind_init": {
       const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
@@ -353,6 +364,7 @@ async function handleTool(name, args) {
       if (args.details !== undefined) body.details = args.details;
       const data = await callApi("POST", "/api/session", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
+      sessionLogged = true;
       logEvent('session_log', { summary: args.summary });
       return data;
     }
@@ -370,6 +382,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_report_compliance": {
+      complianceEvents.push({ rule: args.rule_title, action: args.action });
       logEvent('iron_rule_compliance', {
         rule_title: args.rule_title,
         rule_code: args.rule_code || null,
@@ -465,6 +478,46 @@ try {
   }
 } catch {
   // Silent fail — never block MCP startup
+}
+
+// --- Emergency shutdown: 搶救 session log ---
+async function emergencySessionLog() {
+  if (sessionLogged || !sessionStartTime) return;
+  const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);
+  if (totalCalls <= 1) return; // 只有 init，沒做事
+
+  const summary = `[emergency] ${Object.entries(toolCallCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
+  const details = {
+    _recovery: 'mcp_shutdown',
+    duration_ms: Date.now() - sessionStartTime,
+    tool_calls: { ...toolCallCounts },
+    compliance: [...complianceEvents],
+  };
+
+  // 1. 同步寫本地 JSONL（保證存活）
+  logEvent('session_log_emergency', { summary, ...details });
+
+  // 2. best-effort POST to server（3 秒 timeout）
+  try {
+    await Promise.race([
+      callApi('POST', '/api/session', {
+        summary,
+        tool: TOOL_NAME,
+        model: 'unknown',
+        details,
+        sync_token: currentSyncToken,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ]);
+  } catch {
+    // Silent fail — local JSONL is the safety net
+  }
+
+  process.exit(0);
+}
+
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => emergencySessionLog());
 }
 
 // --- Start ---

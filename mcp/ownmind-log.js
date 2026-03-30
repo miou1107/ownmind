@@ -48,6 +48,14 @@ process.on('beforeExit', () => {
   flushToServer();
 });
 
+// Signal hooks: best-effort flush before process is killed
+// 不呼叫 process.exit()，讓 index.js 的 shutdown handler 接手
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => {
+    flushToServer();
+  });
+}
+
 // 重要事件類型：立即 flush，不等 buffer 滿
 const IMMEDIATE_FLUSH_EVENTS = new Set([
   'iron_rule_compliance',
