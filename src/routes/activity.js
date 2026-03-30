@@ -298,6 +298,105 @@ router.get('/stats', adminAuth, async (req, res) => {
 });
 
 /**
+ * GET /stats/rules?user_id=1&days=30 — 每條鐵律的 enforced/skipped/violated stats（admin only）
+ */
+router.get('/stats/rules', adminAuth, async (req, res) => {
+  try {
+    const userId = Number(req.query.user_id);
+    const days = Math.min(Number(req.query.days) || 30, 365);
+    if (!userId || isNaN(userId)) return res.status(400).json({ error: '需要有效的 user_id' });
+
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - days);
+
+    // 取得所有活躍鐵律
+    const rules = await query(
+      `SELECT id, code, title, tags, metadata FROM memories
+       WHERE user_id = $1 AND type = 'iron_rule' AND status = 'active'
+       ORDER BY code, created_at`,
+      [userId]
+    );
+
+    // 取得所有 compliance events
+    const events = await query(
+      `SELECT details->>'rule_title' as rule_title,
+              details->>'rule_code' as rule_code,
+              details->>'action' as action,
+              tool,
+              COUNT(*) as count
+       FROM activity_logs
+       WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
+       GROUP BY rule_title, rule_code, action, tool
+       ORDER BY count DESC LIMIT 200`,
+      [userId, fromDate]
+    );
+
+    // 取得 trigger events（hook 層的觸發）
+    const triggers = await query(
+      `SELECT details->>'trigger' as trigger_type, COUNT(*) as count
+       FROM activity_logs
+       WHERE user_id = $1 AND event = 'iron_rule_trigger' AND ts >= $2
+       GROUP BY trigger_type ORDER BY count DESC`,
+      [userId, fromDate]
+    );
+
+    // 按規則彙整
+    const ruleStats = {};
+    for (const r of rules.rows) {
+      const key = r.code || r.title;
+      ruleStats[key] = {
+        id: r.id, code: r.code, title: r.title, tags: r.tags,
+        enforced: 0, skipped: 0, violated: 0, triggered: 0,
+        by_tool: {}
+      };
+    }
+
+    for (const e of events.rows) {
+      const key = e.rule_code || e.rule_title;
+      if (!ruleStats[key]) {
+        ruleStats[key] = { code: e.rule_code, title: e.rule_title, enforced: 0, skipped: 0, violated: 0, triggered: 0, by_tool: {} };
+      }
+      const count = parseInt(e.count);
+      if (e.action === 'comply') ruleStats[key].enforced += count;
+      else if (e.action === 'skip') ruleStats[key].skipped += count;
+      else if (e.action === 'violate') ruleStats[key].violated += count;
+
+      // by tool
+      if (!ruleStats[key].by_tool[e.tool]) ruleStats[key].by_tool[e.tool] = { enforced: 0, skipped: 0, violated: 0 };
+      if (e.action === 'comply') ruleStats[key].by_tool[e.tool].enforced += count;
+      else if (e.action === 'skip') ruleStats[key].by_tool[e.tool].skipped += count;
+      else if (e.action === 'violate') ruleStats[key].by_tool[e.tool].violated += count;
+    }
+
+    // 計算落地率
+    const result = Object.values(ruleStats).map(r => {
+      const total = r.enforced + r.skipped + r.violated;
+      return {
+        ...r,
+        total,
+        compliance_rate: total > 0 ? parseFloat(((r.enforced / total) * 100).toFixed(1)) : null
+      };
+    }).sort((a, b) => (b.total || 0) - (a.total || 0));
+
+    const triggersByType = Object.fromEntries(triggers.rows.map(r => [r.trigger_type, parseInt(r.count)]));
+
+    res.json({
+      period: { days },
+      rules: result,
+      triggers: triggersByType,
+      summary: {
+        total_rules: rules.rows.length,
+        rules_with_data: result.filter(r => r.total > 0).length,
+        rules_never_tested: result.filter(r => r.total === 0).map(r => r.title),
+      }
+    });
+  } catch (err) {
+    logger.error('取得鐵律統計失敗', { error: err.message });
+    res.status(500).json({ error: '取得統計失敗' });
+  }
+});
+
+/**
  * GET /stats/all — 跨用戶總覽（admin only）
  */
 router.get('/stats/all', adminAuth, async (req, res) => {
@@ -317,12 +416,55 @@ router.get('/stats/all', adminAuth, async (req, res) => {
       FROM users u ORDER BY last_active DESC NULLS LAST
     `, [fromDate]);
 
-    const users = result.rows.map(u => ({
-      ...u,
-      compliance_rate: parseInt(u.compliance_total) > 0
-        ? ((parseInt(u.comply_count) / parseInt(u.compliance_total)) * 100).toFixed(1)
-        : null
-    }));
+    // 每用戶的工具/模型分佈
+    const toolModelResult = await query(
+      `SELECT user_id, tool, model, COUNT(*) as count
+       FROM session_logs WHERE created_at >= $1
+       GROUP BY user_id, tool, model ORDER BY count DESC`,
+      [fromDate]
+    );
+    // 每用戶的 AI 合規率（按工具）
+    const toolCompResult = await query(
+      `SELECT user_id, tool, details->>'action' as action, COUNT(*) as count
+       FROM activity_logs WHERE event = 'iron_rule_compliance' AND ts >= $1
+       GROUP BY user_id, tool, action`,
+      [fromDate]
+    );
+
+    // 彙整
+    const userToolModels = {};
+    for (const r of toolModelResult.rows) {
+      if (!userToolModels[r.user_id]) userToolModels[r.user_id] = { tools: {}, models: {} };
+      userToolModels[r.user_id].tools[r.tool] = (userToolModels[r.user_id].tools[r.tool] || 0) + parseInt(r.count);
+      userToolModels[r.user_id].models[r.model] = (userToolModels[r.user_id].models[r.model] || 0) + parseInt(r.count);
+    }
+
+    const userToolComp = {};
+    for (const r of toolCompResult.rows) {
+      if (!userToolComp[r.user_id]) userToolComp[r.user_id] = {};
+      if (!userToolComp[r.user_id][r.tool]) userToolComp[r.user_id][r.tool] = { comply: 0, skip: 0, violate: 0 };
+      userToolComp[r.user_id][r.tool][r.action] = parseInt(r.count);
+    }
+
+    const users = result.rows.map(u => {
+      const tm = userToolModels[u.id] || { tools: {}, models: {} };
+      const tc = userToolComp[u.id] || {};
+      // 每工具的落地率
+      const toolStats = Object.entries(tc).map(([tool, acts]) => {
+        const total = (acts.comply||0) + (acts.skip||0) + (acts.violate||0);
+        return { tool, ...acts, total, rate: total > 0 ? parseFloat(((acts.comply||0)/total*100).toFixed(1)) : null };
+      });
+
+      return {
+        ...u,
+        compliance_rate: parseInt(u.compliance_total) > 0
+          ? ((parseInt(u.comply_count) / parseInt(u.compliance_total)) * 100).toFixed(1)
+          : null,
+        tools: tm.tools,
+        models: tm.models,
+        tool_compliance: toolStats
+      };
+    });
 
     res.json({ period: { days }, users });
   } catch (err) {
