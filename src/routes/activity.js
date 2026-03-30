@@ -140,6 +140,14 @@ router.get('/stats', adminAuth, async (req, res) => {
       sessionsByModel[row.model] = (sessionsByModel[row.model] || 0) + parseInt(row.count);
     }
 
+    // Recovery session 統計
+    const recoveredSessions = await query(
+      `SELECT COUNT(*) as count FROM session_logs
+       WHERE user_id = $1 AND (details->>'_recovery') IS NOT NULL`,
+      [userId]
+    );
+    const sessionsRecovered = parseInt(recoveredSessions.rows[0]?.count || 0);
+
     // Activity 統計
     const activityByEvent = await query(
       `SELECT event, COUNT(*) as count FROM activity_logs
@@ -263,7 +271,7 @@ router.get('/stats', adminAuth, async (req, res) => {
       },
       sessions: {
         total: sessionsTotal, by_tool: sessionsByTool, by_model: sessionsByModel,
-        compressed: sessionsCompressed
+        compressed: sessionsCompressed, recovered: sessionsRecovered
       },
       activity: {
         total_events: parseInt(activityTotal.rows[0]?.count || 0),

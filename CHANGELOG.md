@@ -10,11 +10,24 @@
 5. **Dashboard 週/月報頁籤** — friction 列表 + suggestions 列表，日期切換
 6. **AI Skill 模式偵測** — 重複問題主動詢問、自動暫存 pending_review、SessionStart 週摘要
 
+### Session 資料零丟失（三層防護）
+7. **MCP Shutdown Handler** — SIGTERM/SIGINT 時搶救 emergency session log（本地 JSONL + best-effort server POST）
+8. **Server Orphan Recovery** — init 時偵測上一次有 activity 但沒有 session_log，自動從 activity_logs 復原
+9. **pending_review 自動確認** — 超過 7 天未確認的暫存記憶自動移除 pending 標記
+10. **即時記錄原則** — Skill + INSTRUCTIONS_SOP 強化：不等 session 結束，每完成一段工作就記錄
+
+### Bug 修復
+- **team_standard 建立 500** — 生產 DB 缺少 `memories_type_check` constraint 中的 team_standard
+- **Install prompt URL 暴露 /admin** — `getApiUrl()` regex 未處理 `/admin` 路徑
+- **Compliance 回報延遲** — 改為即時 flush，不進 buffer；統一用 `report_compliance` 取代 rule_stats 搭便車
+
 ### 技術細節
 - `src/utils/report.js`：純函式 computePeriodRange / groupFrictions / computeReportData
 - `src/jobs/weeklyReport.js`：cron job（node-cron）
 - `db/004_weekly_summary_marker.sql`：users.weekly_summary_sent_at
 - `tests/report.test.js`：node:test 單元測試（12 cases）
+- `mcp/index.js`：session 追蹤 + SIGTERM shutdown handler
+- `mcp/ownmind-log.js`：signal flush + IMMEDIATE_FLUSH_EVENTS
 
 ---
 

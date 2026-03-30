@@ -661,6 +661,7 @@
         <div class="stat-mini"><div class="value">${d.memory.disabled}</div><div class="desc">停用</div></div>
         <div class="stat-mini"><div class="value">${d.memory.created_this_period}</div><div class="desc">本期新增</div></div>
         <div class="stat-mini"><div class="value">${d.sessions.total}</div><div class="desc">Session 總數</div></div>
+        ${d.sessions.recovered > 0 ? `<div class="stat-mini"><div class="value" style="color:#e65c00;">${d.sessions.recovered}</div><div class="desc">⚠️ 自動復原</div></div>` : ''}
         <div class="stat-mini"><div class="value">${d.activity.total_events}</div><div class="desc">活動事件</div></div>
         <div class="stat-mini"><div class="value">${d.iron_rules.total_active}</div><div class="desc">活躍鐵律</div></div>
         <div class="stat-mini"><div class="value">${d.iron_rules.total_triggers}</div><div class="desc">鐵律觸發</div></div>
