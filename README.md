@@ -116,6 +116,14 @@ sequenceDiagram
 - **Team standards** — Admins push rules, members auto-load them `v1.8.0`
 - **Rule quality tracking** — Auto-track enforced/missed/triggered counts, alert on low compliance `v1.8.0`
 
+### Smart Learning & Data-Driven Evolution `v1.10.0`
+
+- **Weekly/monthly reports** — Auto-generated friction analysis and improvement suggestions
+- **Pattern detection** — AI detects repeated issues and prompts to save as rules
+- **Auto-staging** — Valuable learnings auto-saved to pending review queue
+- **Weekly summary** — First init of the week shows last week's recap
+- **Friction auto-issue** — High-frequency frictions (3+) auto-create project memories
+
 ### Observability & Analytics `v1.9.0`
 
 - **Activity logging** — All OwnMind events tracked locally + uploaded to server
