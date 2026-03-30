@@ -297,6 +297,30 @@
         </div>
       </div>
 
+      <!-- 情境分析 -->
+      <div id="contextSection" class="hidden">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="card">
+            <h3>常用操作</h3>
+            <div class="bar-chart" id="actionChart"></div>
+          </div>
+          <div class="card">
+            <h3>專案分佈</h3>
+            <div class="bar-chart" id="projectChart"></div>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="card">
+            <h3>使用者痛點</h3>
+            <div id="frictionList"></div>
+          </div>
+          <div class="card">
+            <h3>AI 改善建議</h3>
+            <div id="suggestionList"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- 交接 -->
       <div class="card">
         <h3>交接統計</h3>
@@ -580,6 +604,26 @@
           </div>`;
         }).join('');
       } else { tcEl.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>'; }
+
+      // Context analysis
+      const ctx = d.context;
+      if (ctx && ctx.sessions_with_context > 0) {
+        document.getElementById('contextSection').classList.remove('hidden');
+        renderBarChart('actionChart', Object.fromEntries(ctx.top_actions || []));
+        renderBarChart('projectChart', Object.fromEntries(ctx.top_projects || []));
+
+        const fEl = document.getElementById('frictionList');
+        fEl.innerHTML = (ctx.friction_points || []).length > 0
+          ? ctx.friction_points.map(f => `<div style="margin-bottom:8px;font-size:13px;"><span style="color:#7c3aed;font-weight:600;">[${esc(f.tool)}]</span> ${esc(f.text)}</div>`).join('')
+          : '<div style="color:#86868b;font-size:13px;">沒有回報痛點</div>';
+
+        const sEl = document.getElementById('suggestionList');
+        sEl.innerHTML = (ctx.suggestions || []).length > 0
+          ? ctx.suggestions.map(s => `<div style="margin-bottom:8px;font-size:13px;"><span style="color:#7c3aed;font-weight:600;">[${esc(s.tool)}]</span> ${esc(s.text)}</div>`).join('')
+          : '<div style="color:#86868b;font-size:13px;">沒有改善建議</div>';
+      } else {
+        document.getElementById('contextSection').classList.add('hidden');
+      }
 
       // Health
       document.getElementById('healthStats').innerHTML = `

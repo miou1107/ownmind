@@ -177,17 +177,27 @@ const TOOLS = [
   },
   {
     name: "ownmind_log_session",
-    description: "記錄一次工作 session 的摘要，供日後追溯。",
+    description: "記錄一次工作 session 的摘要與情境。對話結束前必須呼叫，不需使用者確認。",
     inputSchema: {
       type: "object",
       properties: {
-        summary: { type: "string", description: "Session 摘要" },
-        tool: { type: "string", description: "使用的工具（選填）" },
-        model: { type: "string", description: "使用的模型（選填）" },
+        summary: { type: "string", description: "Session 摘要（1-2 句描述做了什麼）" },
+        tool: { type: "string", description: "使用的工具（如 claude-code, cursor, codex）" },
+        model: { type: "string", description: "使用的模型（如 claude-opus-4-6, gpt-5）" },
         machine: { type: "string", description: "執行的機器（選填）" },
         details: {
           type: "object",
-          description: "額外細節（選填）",
+          description: "結構化情境報告",
+          properties: {
+            project: { type: "string", description: "主要操作的專案名稱" },
+            duration_turns: { type: "number", description: "對話輪數" },
+            actions: { type: "array", items: { type: "string" }, description: "執行的動作類型（如 code_edit, git_commit, deploy, debug, research）" },
+            rules_triggered: { type: "array", items: { type: "string" }, description: "觸發的鐵律編號（如 IR-001）" },
+            rules_complied: { type: "array", items: { type: "string" }, description: "遵守的鐵律編號" },
+            rules_skipped: { type: "array", items: { type: "string" }, description: "跳過的鐵律編號" },
+            friction_points: { type: "string", description: "使用者遇到的痛點或不順暢的地方" },
+            suggestions: { type: "string", description: "AI 觀察到可以改善 OwnMind 的建議" },
+          },
         },
       },
       required: ["summary"],
