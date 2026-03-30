@@ -160,6 +160,20 @@ const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
 - 不小心違反了 → action: 'violate'
 這些數據用於追蹤鐵律落地率，不需要使用者確認，直接回報。
 
+## Enforcement Alerts（強制執行 — 不可忽略）
+
+init 回傳的 enforcement_alerts 是根據你的歷史違反數據自動計算的高風險鐵律清單。
+這不是建議，不是參考，是基於你過去的失敗記錄產生的強制要求。
+
+處理方式：
+- 🚨 critical：本 session 每次涉及相關操作時，必須完整停下來，逐字確認「我是否正在違反這條鐵律」。
+  確認後才能繼續。跳過確認 = 違反。
+- ⚠️ warning：觸發時必須說出「我確認沒有違反 {rule_code}」。不說 = 不確認 = 高風險。
+- 📌 notice：觸發時在內部確認，不需要顯示但不准忽略。
+
+如果你在 session 中再次違反任何 enforcement_alerts 中的鐵律，
+你必須立即呼叫 ownmind_report_compliance 回報 violate，不可隱瞞。
+
 ## 何時該儲存記憶
 
 遇到以下情境時，**必須立即儲存**：
