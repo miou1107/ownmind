@@ -143,13 +143,12 @@ sequenceDiagram
 
 **Windows**ユーザーはPowerShellでインストール：
 ```powershell
-irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 -OutFile install.ps1
-.\install.ps1 YOUR_API_KEY
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
 ```
 
 **Mac / Linux / Git Bash**ユーザー：
 ```bash
-curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY
+curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 ```
 
 またはこのプロンプトをAIツールにペースト：

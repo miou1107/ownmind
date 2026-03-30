@@ -52,8 +52,11 @@ OwnMind/
 │   └── package.json                 # MCP Server 依賴
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
-│   ├── ownmind-session-start.sh    # SessionStart hook：自動載入記憶 + 每日自動更新
-│   └── ownmind-iron-rule-check.sh  # PreToolUse hook：高風險指令前自動顯示相關鐵律
+│   ├── ownmind-session-start.sh    # SessionStart hook：自動載入記憶 + 每日自動更新（bash 版）
+│   ├── ownmind-session-start.js    # SessionStart hook：Node.js 版（Windows 無 bash 時使用）
+│   ├── ownmind-iron-rule-check.sh  # PreToolUse hook：高風險指令前自動顯示相關鐵律（bash 版）
+│   ├── ownmind-iron-rule-check.js  # PreToolUse hook：Node.js 版（Windows 無 bash 時使用）
+│   └── ownmind-worktree-setup.sh   # WorktreeCreate hook：worktree 自動注入 .mcp.json
 │
 ├── scripts/                         # 維護工具腳本
 │   └── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具

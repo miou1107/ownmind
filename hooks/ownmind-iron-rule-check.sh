@@ -120,9 +120,26 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
     } catch { process.exit(0); }
   " 2>/dev/null)
 
-if [ -n "$RULES" ]; then
+# --- IR-008 智慧檢查：程式碼有改但文件沒同步 ---
+IR008_WARNING=""
+if [ "$TRIGGER" = "commit" ]; then
+  STAGED=$(git diff --cached --name-only 2>/dev/null)
+  HAS_CODE=$(echo "$STAGED" | grep -E '^(src/|mcp/|hooks/|install\.|skills/|configs/)' | head -1)
+  if [ -n "$HAS_CODE" ]; then
+    MISSING=""
+    echo "$STAGED" | grep -q '^README\.md$'    || MISSING="${MISSING}\n  ❌ README.md 未修改"
+    echo "$STAGED" | grep -q '^FILELIST\.md$'   || MISSING="${MISSING}\n  ❌ FILELIST.md 未修改"
+    echo "$STAGED" | grep -q '^CHANGELOG\.md$'  || MISSING="${MISSING}\n  ❌ CHANGELOG.md 未修改"
+    if [ -n "$MISSING" ]; then
+      IR008_WARNING="\n【OwnMind IR-008 檢查】偵測到程式碼變更但以下文件未同步：${MISSING}\n請先更新這些文件再 commit。"
+    fi
+  fi
+fi
+
+if [ -n "$RULES" ] || [ -n "$IR008_WARNING" ]; then
   log_event "iron_rule_trigger" "trigger" "$TRIGGER"
-  echo "$RULES"
+  [ -n "$RULES" ] && echo "$RULES"
+  [ -n "$IR008_WARNING" ] && echo -e "$IR008_WARNING"
 fi
 
 exit 0
