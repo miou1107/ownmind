@@ -71,9 +71,16 @@
     .role-super_admin { background: #fef3c7; color: #d97706; }
     .role-user { background: #ecfdf5; color: #059669; }
 
-    /* Actions — 改密碼和刪除要分開（IR-013） */
-    .actions { display: flex; gap: 8px; align-items: center; }
-    .actions-spacer { flex: 1; min-width: 16px; }
+    /* Actions dropdown */
+    .action-menu { position: relative; display: inline-block; }
+    .action-menu-btn { padding: 5px 12px; font-size: 13px; background: #f5f5f7; border: 1px solid #d2d2d7; border-radius: 8px; cursor: pointer; color: #1d1d1f; white-space: nowrap; }
+    .action-menu-btn:hover { background: #e8e8ed; }
+    .action-dropdown { display: none; position: absolute; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid #e8e8ed; border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); min-width: 140px; z-index: 100; overflow: hidden; }
+    .action-dropdown.open { display: block; }
+    .action-dropdown button { display: block; width: 100%; padding: 10px 16px; text-align: left; background: none; border: none; font-size: 13px; cursor: pointer; color: #1d1d1f; }
+    .action-dropdown button:hover { background: #f5f5f7; }
+    .action-dropdown .action-danger { color: #dc2626; margin-top: 4px; border-top: 1px solid #f0f0f2; }
+    .action-dropdown .action-danger:hover { background: #fff5f5; }
 
     /* Stats cards */
     .stats { display: flex; gap: 12px; margin-bottom: 20px; }
@@ -642,14 +649,19 @@
       const isSelf = currentUserId === u.id;
 
       const canDelete = isSuperAdmin && !isSelf && u.id !== 1;
-      const deleteBtn = canDelete
-        ? `<button class="btn-outline-danger btn-sm" onclick="openDeleteModal(${u.id}, '${esc(u.name || u.email)}', '${esc(u.email)}')">刪除</button>`
-        : '';
-
       const canChangePassword = isSelf || (isSuperAdmin && u.role !== 'user');
-      const pwBtn = canChangePassword
-        ? `<button class="btn-icon" title="改密碼" onclick="openPasswordModal(${u.id}, ${isSelf})">&#128273;</button>`
-        : '';
+      const hasActions = canDelete || canChangePassword;
+
+      const dropdownItems = [
+        canChangePassword ? `<button onclick="closeActionMenu();openPasswordModal(${u.id}, ${isSelf})">&#128273; 修改密碼</button>` : '',
+        canDelete ? `<button class="action-danger" onclick="closeActionMenu();openDeleteModal(${u.id}, '${esc(u.name || u.email)}', '${esc(u.email)}')">&#128465; 刪除帳戶</button>` : '',
+      ].join('');
+
+      const actionBtn = hasActions ? `
+        <div class="action-menu">
+          <button class="action-menu-btn" onclick="toggleActionMenu(this)">操作 &#9660;</button>
+          <div class="action-dropdown">${dropdownItems}</div>
+        </div>` : '';
 
       return `<tr>
         <td>${esc(u.email)}</td>
@@ -659,13 +671,7 @@
           <span class="api-key">${esc(u.api_key.slice(0, 12))}...</span>
           <button class="btn-icon" title="複製 API Key" onclick="copyKey('${esc(u.api_key)}')">&#128203;</button>
         </td>
-        <td style="text-align:right;">
-          <div class="actions" style="justify-content:flex-end;">
-            ${pwBtn}
-            ${canDelete ? '<span class="actions-spacer"></span>' : ''}
-            ${deleteBtn}
-          </div>
-        </td>
+        <td style="text-align:right;">${actionBtn}</td>
       </tr>`;
     }).join('');
 
@@ -675,6 +681,20 @@
     sel.innerHTML = '<option value="">-- 選擇使用者 --</option>' +
       usersData.map(u => `<option value="${u.api_key}">${u.name || u.email}</option>`).join('');
   }
+
+  // ===== Action dropdown =====
+  function toggleActionMenu(btn) {
+    const dropdown = btn.nextElementSibling;
+    const isOpen = dropdown.classList.contains('open');
+    closeActionMenu();
+    if (!isOpen) dropdown.classList.add('open');
+  }
+  function closeActionMenu() {
+    document.querySelectorAll('.action-dropdown.open').forEach(d => d.classList.remove('open'));
+  }
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.action-menu')) closeActionMenu();
+  });
 
   async function loadStats() {
     try {
