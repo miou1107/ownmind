@@ -51,6 +51,7 @@ OwnMind/
 │
 ├── mcp/                             # MCP Server（供 Claude Code、Cursor 等工具使用）
 │   ├── index.js                     # MCP Server 入口（13 個 tools）+ 啟動時自動更新
+│   ├── offline.js                   # Offline resilience helpers（local cache read/write, write queue, local search）
 │   ├── ownmind-log.js               # Activity log 模組（本地 JSONL + server batch upload）
 │   ├── start.cmd                    # Windows 啟動器（動態找 node，供 cmd.exe 呼叫）
 │   └── package.json                 # MCP Server 依賴
