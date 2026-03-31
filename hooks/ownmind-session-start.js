@@ -1,26 +1,19 @@
 #!/usr/bin/env node
-// OwnMind SessionStart Hook (Node.js version for Windows)
-// Equivalent to ownmind-session-start.sh but without bash/curl dependency
+/**
+ * OwnMind SessionStart Hook (L4)
+ *
+ * 載入初始記憶並顯示鐵律摘要。
+ */
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const http = require('http');
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import http from 'http';
+import os from 'os';
+import { readCredentials, getClientVersion } from '../shared/helpers.js';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
-const OWNMIND_DIR = path.join(HOME, '.ownmind');
-const CLAUDE_SETTINGS = path.join(HOME, '.claude', 'settings.json');
-const LOG_DIR = path.join(OWNMIND_DIR, 'logs');
-
-function readCredentials() {
-  try {
-    const s = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8'));
-    const env = s.mcpServers?.ownmind?.env || {};
-    return { apiKey: env.OWNMIND_API_KEY || '', apiUrl: env.OWNMIND_API_URL || '' };
-  } catch {
-    return { apiKey: '', apiUrl: '' };
-  }
-}
+const HOME = os.homedir();
+const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
 
 function logEvent(event, extra = {}) {
   try {
@@ -92,8 +85,6 @@ async function main() {
     lines.push(`專案: ${initData.active_handoff.project || '?'}`);
     lines.push('');
   }
-
-  // Enforcement Alerts 已由 server 端嵌入 iron_rules_digest，不需 client 重複解析
 
   lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get("iron_rule")。');
 
