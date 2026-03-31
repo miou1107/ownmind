@@ -8,6 +8,7 @@ import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
 import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
+import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 
 const SERVER_VERSION = '1.12.0';
 
@@ -768,11 +769,21 @@ router.post('/', async (req, res) => {
       return res.status(403).json({ error: '團隊規範僅限管理員新增' });
     }
 
+    // iron_rule 自動編號
+    let finalCode = code || null;
+    if (type === 'iron_rule' && !finalCode) {
+      const codeResult = await query(
+        `SELECT code FROM memories WHERE user_id = $1 AND type = 'iron_rule' AND code LIKE 'IR-%'`,
+        [req.user.id]
+      );
+      finalCode = generateNextIronRuleCode(codeResult.rows.map(r => r.code));
+    }
+
     const result = await query(
       `INSERT INTO memories (user_id, type, title, content, code, tags, metadata)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.user.id, type, title, content, code || null, tags || null, metadata || null]
+      [req.user.id, type, title, content, finalCode, tags || null, metadata || null]
     );
 
     const memory = result.rows[0];
