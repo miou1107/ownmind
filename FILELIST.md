@@ -46,7 +46,7 @@ OwnMind/
 │   ├── jobs/
 │   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   └── public/
-│       └── admin.html               # Admin 管理後台（單頁應用）
+│       └── index.html               # Admin 管理後台（單頁應用）
 │
 ├── mcp/                             # MCP Server（供 Claude Code、Cursor 等工具使用）
 │   ├── index.js                     # MCP Server 入口（13 個 tools）+ 啟動時自動更新

@@ -9,7 +9,7 @@ import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
 import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 
-const SERVER_VERSION = '1.10.0';
+const SERVER_VERSION = '1.12.0';
 
 const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
 
