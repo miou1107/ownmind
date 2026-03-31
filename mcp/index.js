@@ -13,9 +13,8 @@ import os from 'os';
 import { execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
-
-// --- Compliance JSONL log ---
-const COMPLIANCE_LOG = path.join(os.homedir(), '.ownmind/logs/compliance.jsonl');
+import { appendCompliance } from '../shared/compliance.js';
+import { detectTriggerFromContext } from '../shared/helpers.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
@@ -32,24 +31,6 @@ function getCachedVerifiableRules() {
   return cachedVerifiableRules;
 }
 
-function deriveEvent(rule_title, rule_code) {
-  const rules = getCachedVerifiableRules();
-  const rule = rules.find(r => r.code === rule_code || r.title === rule_title);
-  if (rule?.metadata?.verification?.compliance_event) {
-    return rule.metadata.verification.compliance_event;
-  }
-  return rule_code || rule_title;
-}
-
-function detectTriggerFromContext(context) {
-  if (!context) return null;
-  const lower = context.toLowerCase();
-  if (lower.includes('commit')) return 'commit';
-  if (lower.includes('deploy') || lower.includes('部署')) return 'deploy';
-  if (lower.includes('delete') || lower.includes('刪除')) return 'delete';
-  return null;
-}
-
 // --- Lazy-loaded verification engine ---
 let evaluateConditions = null;
 async function getEvaluateConditions() {
@@ -61,6 +42,23 @@ async function getEvaluateConditions() {
   } catch {
     return null;
   }
+}
+
+// --- Cache refresh (called after iron_rule mutations) ---
+const CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
+
+async function refreshIronRulesCache() {
+  try {
+    const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
+    const rules = await callApi('GET', `/api/memory/type/iron_rule${tokenParam}`);
+    if (rules.new_token) currentSyncToken = rules.new_token;
+    const allRules = Array.isArray(rules) ? rules : (rules.data || []);
+    const verifiable = allRules.filter(r => r.metadata?.verification);
+    cachedVerifiableRules = verifiable;
+    const cacheDir = path.dirname(CACHE_PATH);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(CACHE_PATH, JSON.stringify(verifiable, null, 2));
+  } catch { /* silent fail — don't block the caller */ }
 }
 
 // --- Session audit helpers ---
@@ -78,7 +76,7 @@ function extractSessionChecks(conditions) {
  * git context 類的檢查（staged_files、commit_message）由 L1 git pre-commit hook 在動作前負責，
  * 此處不重複檢查——如果 commit 已完成代表 L1 通過了（或被 --no-verify 跳過）。
  */
-function auditSession() {
+async function auditSession() {
   try {
     if (!sessionStartTime) return { commits_checked: 0, violations_found: 0, violations: [] };
     const since = new Date(sessionStartTime).toISOString();
@@ -90,7 +88,8 @@ function auditSession() {
       r.metadata?.verification?.trigger?.includes('commit')
     );
 
-    if (rules.length === 0 || !evaluateConditions) {
+    const evalFn = await getEvaluateConditions();
+    if (rules.length === 0 || !evalFn) {
       return { commits_checked: commitHashes.length, violations_found: 0, violations: [] };
     }
 
@@ -101,7 +100,7 @@ function auditSession() {
         if (sessionChecks.length === 0) continue;
 
         const ctx = { complianceEvents };
-        const result = evaluateConditions({ operator: 'AND', checks: sessionChecks }, ctx);
+        const result = evalFn({ operator: 'AND', checks: sessionChecks }, ctx);
         if (!result.pass) {
           violations.push({
             rule_code: rule.code,
@@ -113,20 +112,17 @@ function auditSession() {
       }
     }
 
-    // Record violations to JSONL
-    const logDir = path.dirname(COMPLIANCE_LOG);
-    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    // Record violations using shared compliance module
     for (const v of violations) {
-      const entry = JSON.stringify({
-        event: 'session_audit_violation',
+      appendCompliance({
+        event: v.rule_code,
         action: 'violate',
         rule_code: v.rule_code,
         rule_title: v.rule_title,
+        source: 'session_audit',
         commit_hash: v.commit_hash,
         failures: v.failures,
-        ts: new Date().toISOString()
       });
-      fs.appendFileSync(COMPLIANCE_LOG, entry + '\n');
     }
 
     return {
@@ -609,6 +605,10 @@ async function handleTool(name, args) {
         const data = await callApi("POST", "/api/memory", body);
         if (data.sync_token) currentSyncToken = data.sync_token;
         logEvent('memory_save', { type: args.type, title: args.title });
+        // Refresh cache if iron_rule was saved
+        if (args.type === 'iron_rule') {
+          refreshIronRulesCache().catch(() => {});
+        }
         return data;
       } catch (err) {
         if (isNetworkError(err)) {
@@ -630,6 +630,10 @@ async function handleTool(name, args) {
         const data = await callApi("PUT", `/api/memory/${args.id}`, body);
         if (data.sync_token) currentSyncToken = data.sync_token;
         logEvent('memory_update', { id: args.id, reason: args.update_reason });
+        // Refresh cache if iron_rule was updated
+        if (data.type === 'iron_rule' || data.memory?.type === 'iron_rule') {
+          refreshIronRulesCache().catch(() => {});
+        }
         return data;
       } catch (err) {
         if (isNetworkError(err)) {
@@ -648,6 +652,10 @@ async function handleTool(name, args) {
         const data = await callApi("PUT", `/api/memory/${args.id}/disable`, disableBody);
         if (data.sync_token) currentSyncToken = data.sync_token;
         logEvent('memory_disable', { id: args.id, reason: args.reason });
+        // Refresh cache if iron_rule was disabled
+        if (data.type === 'iron_rule' || data.memory?.type === 'iron_rule') {
+          refreshIronRulesCache().catch(() => {});
+        }
         return data;
       } catch (err) {
         if (isNetworkError(err)) {
@@ -690,7 +698,7 @@ async function handleTool(name, args) {
 
       // E5: Session audit (L6) — check commits against compliance events
       try {
-        const auditResult = auditSession();
+        const auditResult = await auditSession();
         if (auditResult.violations_found > 0 || auditResult.commits_checked > 0) {
           if (!body.details) body.details = {};
           body.details.session_audit = auditResult;
@@ -717,7 +725,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_report_compliance": {
-      complianceEvents.push({ rule: args.rule_title, action: args.action, rule_code: args.rule_code || '', ts: new Date().toISOString() });
+      complianceEvents.push({ rule_title: args.rule_title, action: args.action, rule_code: args.rule_code || '', ts: new Date().toISOString() });
       logEvent('iron_rule_compliance', {
         rule_title: args.rule_title,
         rule_code: args.rule_code || null,
@@ -725,20 +733,15 @@ async function handleTool(name, args) {
         context: args.context || null,
       });
 
-      // E1: Write to compliance JSONL
-      try {
-        const logDir = path.dirname(COMPLIANCE_LOG);
-        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
-        const logEntry = JSON.stringify({
-          event: deriveEvent(args.rule_title, args.rule_code),
-          action: args.action,
-          rule_code: args.rule_code || '',
-          rule_title: args.rule_title,
-          ts: new Date().toISOString(),
-          session_id: sessionStartTime ? String(sessionStartTime) : ''
-        });
-        fs.appendFileSync(COMPLIANCE_LOG, logEntry + '\n');
-      } catch { /* silent fail — don't block compliance reporting */ }
+      // E1: Write to compliance JSONL using shared module
+      appendCompliance({
+        event: args.rule_code || args.rule_title,
+        action: args.action,
+        rule_code: args.rule_code || '',
+        rule_title: args.rule_title,
+        source: 'mcp',
+        session_id: sessionStartTime ? String(sessionStartTime) : '',
+      });
 
       // E3: Auto-verify on trigger detection
       const trigger = detectTriggerFromContext(args.context);
