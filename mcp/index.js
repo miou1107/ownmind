@@ -492,6 +492,9 @@ async function handleTool(name, args) {
               profile: (cache.data.profile || [])[0] || null,
               coding_standards: cache.data.coding_standard || [],
               team_standards: cache.data.team_standard || [],
+              projects: cache.data.project || [],
+              envs: cache.data.env || [],
+              portfolios: cache.data.portfolio || [],
             };
           }
         }
@@ -540,7 +543,8 @@ async function handleTool(name, args) {
         let replayed = 0;
         for (const op of queue) {
           try {
-            await callApi(op.method, op.path, op.body);
+            const replayBody = op.body ? { ...op.body, sync_token: currentSyncToken } : undefined;
+            await callApi(op.method, op.path, replayBody);
             replayed++;
           } catch (replayErr) {
             // Stop on first failure, keep remaining queue
