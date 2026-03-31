@@ -81,6 +81,9 @@
 
     .hidden { display: none; }
 
+    /* Verification badge */
+    .badge-auto-verify { display: inline-block; font-size: 10px; font-weight: 600; color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 1px 6px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+
     /* Actions cell */
     .actions { display: flex; gap: 6px; }
 
@@ -843,9 +846,12 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
             tbody.innerHTML = rd.rules.map(r => {
               const rate = r.compliance_rate !== null ? r.compliance_rate + '%' : '-';
               const color = r.compliance_rate >= 90 ? '#00b894' : r.compliance_rate >= 70 ? '#f39c12' : r.compliance_rate !== null ? '#dc2626' : '#86868b';
+              const verifyBadge = r.metadata?.verification
+                ? `<span class="badge-auto-verify">[自動驗證: ${esc((r.metadata.verification.trigger || []).join(', '))}]</span>`
+                : '';
               return `<tr>
                 <td style="font-size:12px;color:#7c3aed;">${esc(r.code || '-')}</td>
-                <td style="font-size:13px;">${esc(r.title)}</td>
+                <td style="font-size:13px;">${esc(r.title)}${verifyBadge}</td>
                 <td style="color:#00b894;font-weight:600;">${r.enforced}</td>
                 <td style="color:#f39c12;font-weight:600;">${r.skipped}</td>
                 <td style="color:#dc2626;font-weight:600;">${r.violated}</td>

@@ -1,0 +1,17 @@
+#!/bin/sh
+# OwnMind Git Post-Commit Hook — Shell Wrapper
+# Runs the Node.js post-commit verification, then chains existing hooks if present.
+
+node "$HOME/.ownmind/hooks/ownmind-git-post-commit.js"
+
+# Chain existing hooks
+if [ -x "$(git rev-parse --git-dir 2>/dev/null)/hooks/post-commit" ]; then
+  "$(git rev-parse --git-dir)/hooks/post-commit"
+  exit $?
+fi
+if [ -x .git/hooks/post-commit.local ]; then
+  .git/hooks/post-commit.local
+  exit $?
+fi
+
+exit 0

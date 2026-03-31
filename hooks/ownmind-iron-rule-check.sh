@@ -120,26 +120,61 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
     } catch { process.exit(0); }
   " 2>/dev/null)
 
-# --- IR-008 智慧檢查：程式碼有改但文件沒同步 ---
-IR008_WARNING=""
-if [ "$TRIGGER" = "commit" ]; then
-  STAGED=$(git diff --cached --name-only 2>/dev/null)
-  HAS_CODE=$(echo "$STAGED" | grep -E '^(src/|mcp/|hooks/|install\.|skills/|configs/)' | head -1)
-  if [ -n "$HAS_CODE" ]; then
-    MISSING=""
-    echo "$STAGED" | grep -q '^README\.md$'    || MISSING="${MISSING}\n  ❌ README.md 未修改"
-    echo "$STAGED" | grep -q '^FILELIST\.md$'   || MISSING="${MISSING}\n  ❌ FILELIST.md 未修改"
-    echo "$STAGED" | grep -q '^CHANGELOG\.md$'  || MISSING="${MISSING}\n  ❌ CHANGELOG.md 未修改"
-    if [ -n "$MISSING" ]; then
-      IR008_WARNING="\n【OwnMind IR-008 檢查】偵測到程式碼變更但以下文件未同步：${MISSING}\n請先更新這些文件再 commit。"
+if [ -z "$RULES" ]; then
+  # No relevant rules for deploy/delete: still run verification
+  if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
+    RULES=""
+  else
+    exit 0
+  fi
+fi
+
+if [ -n "$RULES" ]; then
+  log_event "iron_rule_trigger" "trigger" "$TRIGGER"
+fi
+
+# For deploy/delete operations: run verification engine
+if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
+  VERIFY_RESULT=$(node "$HOME/.ownmind/hooks/ownmind-verify-trigger.js" "$TRIGGER" 2>/dev/null)
+  if [ -n "$VERIFY_RESULT" ]; then
+    VERIFY_PASS=$(echo "$VERIFY_RESULT" | node -e "
+      const d = require('fs').readFileSync('/dev/stdin','utf8');
+      try { console.log(JSON.parse(d).pass ? 'true' : 'false'); } catch { console.log('true'); }
+    " 2>/dev/null)
+    if [ "$VERIFY_PASS" = "false" ]; then
+      BLOCK_CONTEXT=$(echo "$VERIFY_RESULT" | node -e "
+        const d = require('fs').readFileSync('/dev/stdin','utf8');
+        const trigger = '$TRIGGER';
+        const rules = process.argv[1] || '';
+        try {
+          const r = JSON.parse(d);
+          const lines = [];
+          if (rules) lines.push(rules);
+          lines.push('【OwnMind 鐵律檢查】' + trigger + ' 操作被擋下：');
+          (r.failures || []).forEach(f => lines.push('  ❌ ' + f));
+          lines.push('請先完成上述步驟再執行 ' + trigger + '。');
+          const output = {
+            decision: 'block',
+            reason: 'Iron rule verification failed for ' + trigger + ' operation',
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              additionalContext: lines.join('\n')
+            }
+          };
+          console.log(JSON.stringify(output));
+        } catch {
+          console.log(JSON.stringify({decision:'block',reason:'Iron rule verification failed'}));
+        }
+      " "$RULES" 2>/dev/null)
+      echo "$BLOCK_CONTEXT"
+      exit 0
     fi
   fi
 fi
 
-if [ -n "$RULES" ] || [ -n "$IR008_WARNING" ]; then
-  log_event "iron_rule_trigger" "trigger" "$TRIGGER"
-  [ -n "$RULES" ] && echo "$RULES"
-  [ -n "$IR008_WARNING" ] && echo -e "$IR008_WARNING"
+# Output reminder text (commit: always allow; deploy/delete: verification passed)
+if [ -n "$RULES" ]; then
+  echo "$RULES"
 fi
 
 exit 0

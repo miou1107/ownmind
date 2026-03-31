@@ -134,6 +134,13 @@ sequenceDiagram
 - **Session auto-logging** — AI auto-logs work summary with structured context at end of each conversation
 - **3-month compression** — Old session logs auto-compress into monthly summaries
 
+### Iron Rule Enforcement Engine `v1.11.0`
+
+- **7-layer defense** — git pre-commit hook (L1), PreToolUse hook (L2), MCP auto-verify (L3), Init reminder (L4), post-commit audit (L5), Session audit (L6), escalation warning (L7)
+- **Automatic template matching** — Server auto-matches verification templates when creating iron rules, no manual config needed
+- **Verifiable conditions** — AND/OR/when-then condition combinator engine, rules become machine-checkable
+- **Git hook enforcement** — pre-commit hook reads local JSONL compliance records and blocks commits that violate rules
+
 ### Infrastructure
 
 - **Secret management** — Securely store API keys and passwords
