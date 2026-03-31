@@ -413,7 +413,7 @@ const TOOLS = [
           },
         },
       },
-      required: ["summary"],
+      required: ["summary", "tool", "model"],
     },
   },
   {
