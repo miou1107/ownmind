@@ -85,7 +85,37 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     } catch { /* silent fail */ }
   }
 
-  return { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue };
+  async function replayQueue(callApi, currentSyncToken) {
+    const ops = readQueue();
+    if (ops.length === 0) return { replayed: 0, remaining: 0, message: null };
+
+    let replayed = 0;
+    for (const op of ops) {
+      try {
+        const replayBody = op.body ? { ...op.body, sync_token: currentSyncToken } : undefined;
+        await callApi(op.method, op.path, replayBody);
+        replayed++;
+      } catch {
+        const remaining = ops.slice(replayed);
+        clearQueue();
+        for (const r of remaining) enqueueOperation(r);
+        return {
+          replayed,
+          remaining: remaining.length,
+          message: `【OwnMind】佇列重送部分失敗，已重送 ${replayed} 筆，還剩 ${remaining.length} 筆待送`,
+        };
+      }
+    }
+
+    clearQueue();
+    return {
+      replayed,
+      remaining: 0,
+      message: `【OwnMind】佇列重送完成，${replayed} 筆操作已同步`,
+    };
+  }
+
+  return { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue, replayQueue };
 }
 
 // Default export: pre-built instance with production paths
@@ -97,4 +127,5 @@ export const {
   enqueueOperation,
   readQueue,
   clearQueue,
+  replayQueue,
 } = makeOfflineHelpers();

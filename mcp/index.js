@@ -12,7 +12,7 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
-import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue } from './offline.js';
+import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 
 // --- Compliance JSONL log ---
 const COMPLIANCE_LOG = path.join(os.homedir(), '.ownmind/logs/compliance.jsonl');
@@ -538,28 +538,8 @@ async function handleTool(name, args) {
       } catch { /* silent fail */ }
 
       // Queue replay: send any queued operations now that server is online
-      const queue = readQueue();
-      if (queue.length > 0) {
-        let replayed = 0;
-        for (const op of queue) {
-          try {
-            const replayBody = op.body ? { ...op.body, sync_token: currentSyncToken } : undefined;
-            await callApi(op.method, op.path, replayBody);
-            replayed++;
-          } catch (replayErr) {
-            // Stop on first failure, keep remaining queue
-            const remaining = queue.slice(replayed);
-            clearQueue();
-            for (const r of remaining) enqueueOperation(r);
-            data._queue_replay = `【OwnMind】佇列重送部分失敗，已重送 ${replayed} 筆，還剩 ${remaining.length} 筆待送`;
-            break;
-          }
-        }
-        if (replayed === queue.length) {
-          clearQueue();
-          data._queue_replay = `【OwnMind】佇列重送完成，${replayed} 筆操作已同步`;
-        }
-      }
+      const replayResult = await replayQueue(callApi, currentSyncToken);
+      if (replayResult.message) data._queue_replay = replayResult.message;
 
       // Eagerly load verification engine
       getEvaluateConditions().catch(() => {});
