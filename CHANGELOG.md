@@ -1,5 +1,18 @@
 # OwnMind 更新紀錄
 
+## v1.13.0 - Iron Rule Auto-Numbering
+
+### 改善
+- Server 端自動編號：新增 iron_rule 時若未帶 code，自動查最大編號 +1（格式 IR-XXX）
+- 補齊 12 條既有缺編號的鐵律（IR-014 ~ IR-025）
+
+### 新增檔案
+- `src/utils/auto-numbering.js` — 自動編號 helper
+- `tests/auto-numbering.test.js` — 自動編號測試
+- `db/backfill-iron-rule-codes.sql` — 一次性補齊 SQL
+
+---
+
 ## v1.12.0 - 多管理者管理介面
 
 ### 新增
