@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.14.0 - Offline Resilience
+
+### 新增
+- `mcp/offline.js` — Offline resilience helper（本地 cache 讀寫、write queue、本地搜尋）
+- `ownmind_init`：將記憶快照寫入 `~/.ownmind/cache/memories.json`；重新連線時自動 replay 待寫佇列
+- `ownmind_get`：伺服器無法連線時 fallback 至本地 cache
+- `ownmind_search`：伺服器無法連線時 fallback 至本地字串搜尋
+- `ownmind_save` / `ownmind_update` / `ownmind_disable`：伺服器無法連線時將操作寫入 `~/.ownmind/queue.jsonl`，下次成功 init 時自動 replay
+- Offline 模式訊息：從 cache 或 queue 運作時顯示提示給 AI
+
+### 測試
+- 22 tests passing（17 offline helpers + 5 auto-numbering）
+
+---
+
 ## v1.13.0 - Iron Rule Auto-Numbering
 
 ### 改善
