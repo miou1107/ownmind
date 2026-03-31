@@ -42,7 +42,8 @@ OwnMind/
 │   │   ├── syncToken.js             # Sync token 生成與驗證（SHA-256）
 │   │   ├── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
 │   │   ├── enforcement.js          # Enforcement alerts 計算純函式
-│   │   └── templates.js            # 規則模板庫 + 自動匹配
+│   │   ├── templates.js            # 規則模板庫 + 自動匹配
+│   │   └── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
 │   ├── jobs/
 │   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   └── public/
