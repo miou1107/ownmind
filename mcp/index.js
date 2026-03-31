@@ -625,10 +625,20 @@ async function handleTool(name, args) {
       if (args.code !== undefined) body.code = args.code;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
-      const data = await callApi("POST", "/api/memory", body);
-      if (data.sync_token) currentSyncToken = data.sync_token;
-      logEvent('memory_save', { type: args.type, title: args.title });
-      return data;
+      try {
+        const data = await callApi("POST", "/api/memory", body);
+        if (data.sync_token) currentSyncToken = data.sync_token;
+        logEvent('memory_save', { type: args.type, title: args.title });
+        return data;
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const queueLen = readQueue().length;
+          enqueueOperation({ method: 'POST', path: '/api/memory', body });
+          logEvent('memory_save', { type: args.type, title: args.title, queued: true });
+          return { _queued: true, _queue_notice: `【OwnMind 離線模式】操作已排入佇列，上線後自動送出（目前佇列 ${queueLen + 1} 筆）` };
+        }
+        throw err;
+      }
     }
 
     case "ownmind_update": {
@@ -636,20 +646,38 @@ async function handleTool(name, args) {
       if (args.content !== undefined) body.content = args.content;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
-      const data = await callApi("PUT", `/api/memory/${args.id}`, body);
-      if (data.sync_token) currentSyncToken = data.sync_token;
-      logEvent('memory_update', { id: args.id, reason: args.update_reason });
-      return data;
+      try {
+        const data = await callApi("PUT", `/api/memory/${args.id}`, body);
+        if (data.sync_token) currentSyncToken = data.sync_token;
+        logEvent('memory_update', { id: args.id, reason: args.update_reason });
+        return data;
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const queueLen = readQueue().length;
+          enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}`, body });
+          logEvent('memory_update', { id: args.id, queued: true });
+          return { _queued: true, _queue_notice: `【OwnMind 離線模式】操作已排入佇列，上線後自動送出（目前佇列 ${queueLen + 1} 筆）` };
+        }
+        throw err;
+      }
     }
 
     case "ownmind_disable": {
-      const data = await callApi("PUT", `/api/memory/${args.id}/disable`, {
-        reason: args.reason,
-        sync_token: currentSyncToken,
-      });
-      if (data.sync_token) currentSyncToken = data.sync_token;
-      logEvent('memory_disable', { id: args.id, reason: args.reason });
-      return data;
+      const disableBody = { reason: args.reason, sync_token: currentSyncToken };
+      try {
+        const data = await callApi("PUT", `/api/memory/${args.id}/disable`, disableBody);
+        if (data.sync_token) currentSyncToken = data.sync_token;
+        logEvent('memory_disable', { id: args.id, reason: args.reason });
+        return data;
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const queueLen = readQueue().length;
+          enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}/disable`, body: disableBody });
+          logEvent('memory_disable', { id: args.id, queued: true });
+          return { _queued: true, _queue_notice: `【OwnMind 離線模式】操作已排入佇列，上線後自動送出（目前佇列 ${queueLen + 1} 筆）` };
+        }
+        throw err;
+      }
     }
 
     case "ownmind_handoff_create": {
