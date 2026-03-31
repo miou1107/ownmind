@@ -3,43 +3,29 @@
  * OwnMind Git Pre-Commit Hook (L1)
  *
  * 在 commit 前自動檢查鐵律，若 block_on_fail 規則違反則阻止 commit。
- * 零網路依賴：所有資料從本地快取讀取。
- *
- * 安裝位置：~/.ownmind/hooks/ownmind-git-pre-commit.js
- * 快取來源：~/.ownmind/cache/iron_rules.json
- * 合規記錄：~/.ownmind/logs/compliance.jsonl
+ * 快取為空時嘗試從 API 同步（fail-closed）。
+ * 零網路依賴（有快取時）：所有資料從本地快取讀取。
  */
 
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
+import https from 'https';
+import http from 'http';
 import os from 'os';
+import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials } from '../shared/helpers.js';
+import { readComplianceEvents } from '../shared/compliance.js';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
-const COMPLIANCE_LOG = path.join(HOME, '.ownmind', 'logs', 'compliance.jsonl');
 const COMMIT_MSG_FILE = path.join(process.cwd(), '.git', 'COMMIT_EDITMSG');
+const VERSION = getClientVersion();
 
-const SOURCE_PATTERNS = [/^src\//, /^mcp\//, /^hooks\//, /^shared\//];
-
-const VERSION = (() => {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
-    return pkg.version || '?';
-  } catch { return '?'; }
-})();
+const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // ============================================================
 // Helpers
 // ============================================================
-
-function readJsonSafe(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
 
 function getStagedFiles() {
   try {
@@ -51,44 +37,49 @@ function getStagedFiles() {
 }
 
 function getCommitMessage() {
-  // Try COMMIT_EDITMSG first
   try {
     return fs.readFileSync(COMMIT_MSG_FILE, 'utf8').trim();
   } catch {
-    // Fallback: env variable (some workflows set GIT_COMMIT_MSG)
     return process.env.GIT_COMMIT_MSG || '';
   }
 }
 
-function getChangedSourceFiles(stagedFiles) {
-  return stagedFiles.filter(f =>
-    SOURCE_PATTERNS.some(p => p.test(f))
-  );
+function httpGet(url, headers) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers, timeout: 3000 }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+  });
 }
 
-function readComplianceEvents() {
+/**
+ * 嘗試從 API 同步 iron rules 到本地快取
+ * @returns {Array|null} — 成功回傳 rules array，失敗回傳 null
+ */
+async function fetchAndCacheRules() {
+  const { apiKey, apiUrl } = readCredentials();
+  if (!apiKey || !apiUrl) return null;
+
   try {
-    const raw = fs.readFileSync(COMPLIANCE_LOG, 'utf8').trim();
-    if (!raw) return [];
+    const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
+      'Authorization': `Bearer ${apiKey}`
+    });
+    const allRules = JSON.parse(raw);
+    const verifiable = (Array.isArray(allRules) ? allRules : []).filter(r => r.metadata?.verification);
 
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000; // last 24 hours
-    const events = [];
+    // Write to cache
+    const cacheDir = path.dirname(CACHE_FILE);
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(verifiable, null, 2));
 
-    for (const line of raw.split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line);
-        const entryTime = new Date(entry.ts).getTime();
-        if (entryTime >= cutoff) {
-          events.push(entry);
-        }
-      } catch {
-        // skip malformed lines
-      }
-    }
-    return events;
+    return verifiable;
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -111,14 +102,39 @@ function formatPassMessage(checkedCount) {
 // ============================================================
 
 async function main() {
-  // 1. Load iron rules from local cache
-  const rules = readJsonSafe(CACHE_FILE);
-  if (!rules || !Array.isArray(rules) || rules.length === 0) {
-    // No cache = no rules to check = pass
-    process.exit(0);
+  // 1. Load iron rules from local cache (with staleness check)
+  let rules = readJsonSafe(CACHE_FILE);
+  let cacheStale = false;
+
+  if (rules && Array.isArray(rules) && rules.length > 0) {
+    // Check staleness
+    try {
+      const mtime = fs.statSync(CACHE_FILE).mtimeMs;
+      if (Date.now() - mtime > CACHE_MAX_AGE_MS) {
+        cacheStale = true;
+      }
+    } catch {}
   }
 
-  // 2. Filter rules with commit trigger
+  // 2. If cache empty or stale, try API fetch (fail-closed for empty, best-effort for stale)
+  if (!rules || !Array.isArray(rules) || rules.length === 0) {
+    // Cache empty — try to fetch from API
+    const fetched = await fetchAndCacheRules();
+    if (!fetched || fetched.length === 0) {
+      // Truly no rules available — pass
+      process.exit(0);
+    }
+    rules = fetched;
+  } else if (cacheStale) {
+    // Cache stale — best-effort refresh, fall back to old cache
+    const fetched = await fetchAndCacheRules();
+    if (fetched && fetched.length > 0) {
+      rules = fetched;
+    }
+    // If fetch failed, continue with old cache
+  }
+
+  // 3. Filter rules with commit trigger
   const commitRules = rules.filter(r => {
     const triggers = r.metadata?.verification?.trigger;
     return Array.isArray(triggers) && triggers.includes('commit');
@@ -128,10 +144,9 @@ async function main() {
     process.exit(0);
   }
 
-  // 3. Collect git context
+  // 4. Collect git context
   const stagedFiles = getStagedFiles();
   if (stagedFiles.length === 0) {
-    // Nothing staged, nothing to check
     process.exit(0);
   }
 
@@ -146,18 +161,19 @@ async function main() {
     complianceEvents,
   };
 
-  // 4. Import verification module (ESM)
+  // 5. Import verification module (ESM)
   let evaluateConditions;
   try {
     const verificationPath = path.join(HOME, '.ownmind', 'shared', 'verification.js');
     const mod = await import(verificationPath);
     evaluateConditions = mod.evaluateConditions;
   } catch {
-    // verification.js not found or import error = can't check = pass gracefully
+    // Fail-open but not silent
+    console.warn(`【OwnMind v${VERSION}】⚠️ 驗證引擎不可用，跳過 pre-commit 檢查`);
     process.exit(0);
   }
 
-  // 5. Evaluate each rule
+  // 6. Evaluate each rule
   const blockFailures = [];
   let checkedCount = 0;
 
@@ -183,7 +199,7 @@ async function main() {
     }
   }
 
-  // 6. Output results
+  // 7. Output results
   if (blockFailures.length > 0) {
     console.error(formatBlockMessage(blockFailures));
     process.exit(1);
@@ -198,7 +214,6 @@ async function main() {
 }
 
 main().catch(err => {
-  // Any unhandled error = don't block the commit
   console.error(`【OwnMind v${VERSION}】錯誤回報：pre-commit 非預期錯誤，跳過檢查: ${err.message}`);
   process.exit(0);
 });
