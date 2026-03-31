@@ -200,6 +200,51 @@ node -e "
   fs.writeFileSync(path, JSON.stringify(s, null, 2));
 " 2>/dev/null
 
+# --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
+echo "   安裝 Git Hooks（Iron Rule Verification Engine）..."
+
+# 建立所需目錄
+mkdir -p "$HOME/.ownmind/shared"
+mkdir -p "$HOME/.ownmind/cache"
+mkdir -p "$HOME/.ownmind/logs"
+mkdir -p "$HOME/.ownmind/hooks"
+mkdir -p "$HOME/.ownmind/git-hooks"
+
+# 複製 verification engine
+if [ -f "$OWNMIND_DIR/shared/verification.js" ]; then
+  cp "$OWNMIND_DIR/shared/verification.js" "$HOME/.ownmind/shared/"
+  echo "   複製 verification engine"
+fi
+
+# 複製 git hook JS 檔案
+HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
+for js_file in "${HOOK_JS_FILES[@]}"; do
+  if [ -f "$OWNMIND_DIR/hooks/$js_file" ]; then
+    cp "$OWNMIND_DIR/hooks/$js_file" "$HOME/.ownmind/hooks/"
+    echo "   複製 $js_file"
+  fi
+done
+
+# 複製 shell wrapper 並設定可執行
+if [ -f "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" ]; then
+  cp "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" "$HOME/.ownmind/git-hooks/pre-commit"
+  chmod +x "$HOME/.ownmind/git-hooks/pre-commit"
+  echo "   安裝 git pre-commit hook"
+fi
+if [ -f "$OWNMIND_DIR/hooks/ownmind-git-post-commit" ]; then
+  cp "$OWNMIND_DIR/hooks/ownmind-git-post-commit" "$HOME/.ownmind/git-hooks/post-commit"
+  chmod +x "$HOME/.ownmind/git-hooks/post-commit"
+  echo "   安裝 git post-commit hook"
+fi
+
+# 設定 global git hooks path（需要 git 可用）
+if command -v git &>/dev/null; then
+  git config --global core.hooksPath "$HOME/.ownmind/git-hooks"
+  echo "   設定 git global hooks path: $HOME/.ownmind/git-hooks"
+else
+  echo "   ⚠️ 找不到 git，跳過 global hooks path 設定"
+fi
+
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"
@@ -463,6 +508,7 @@ echo "   ✅ Claude Code — SessionStart hook"
 { [ -f "$HOME/.opencode.json" ] || command -v opencode &>/dev/null; } && echo "   ✅ OpenCode — instructions file"
 { [ -f "$HOME/.openclaw.json" ] || command -v openclaw &>/dev/null; } && echo "   ✅ OpenClaw — bootstrap file"
 { [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "   ✅ Antigravity — rules file"
+echo "   ✅ Git Hooks — pre-commit + post-commit（Iron Rule Verification）"
 echo ""
 echo "   開一個新對話，OwnMind 會自動載入你的記憶！"
 echo ""

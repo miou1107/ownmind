@@ -7,6 +7,7 @@ import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
+import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 
 const SERVER_VERSION = '1.10.0';
 
@@ -536,7 +537,7 @@ router.get('/init', async (req, res) => {
                 details->>'action' as action,
                 COUNT(*) as count
          FROM activity_logs
-         WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
+         WHERE user_id = $1 AND event IN ('iron_rule_compliance', 'session_audit_violation') AND ts >= $2
          GROUP BY rule_title, rule_code, action`,
         [req.user.id, thirtyDaysAgo]
       );
@@ -546,7 +547,7 @@ router.get('/init', async (req, res) => {
       const lastSessionResult = await query(
         `SELECT DISTINCT details->>'rule_code' as rule_code
          FROM activity_logs
-         WHERE user_id = $1 AND event = 'iron_rule_compliance'
+         WHERE user_id = $1 AND event IN ('iron_rule_compliance', 'session_audit_violation')
            AND details->>'action' = 'violate'
            AND ts >= (
              SELECT COALESCE(MAX(created_at) - INTERVAL '24 hours', NOW() - INTERVAL '7 days')
@@ -758,6 +759,23 @@ router.post('/', async (req, res) => {
       [memory.id, metadata?.tool || 'api', content, metadata || null]
     );
 
+    // iron_rule 自動匹配 verification template
+    let matched_template = null;
+    if (type === 'iron_rule' && !memory.metadata?.verification) {
+      const templateId = matchTemplate({ title, content, tags });
+      if (templateId) {
+        matched_template = templateId;
+        const verification = RULE_TEMPLATES[templateId].verification;
+        const updatedMetadata = { ...(memory.metadata || {}), verification };
+        await query(
+          `UPDATE memories SET metadata = $1 WHERE id = $2`,
+          [JSON.stringify(updatedMetadata), memory.id]
+        );
+        memory.metadata = updatedMetadata;
+        logger.info('鐵律自動匹配 verification template', { memory_id: memory.id, template: templateId });
+      }
+    }
+
     // 搭便車：合併 rule_stats（主寫入後才更新，避免提前改變 sync token）
     if (rule_stats && typeof rule_stats === 'object') {
       for (const [ruleKey, stats] of Object.entries(rule_stats)) {
@@ -785,6 +803,7 @@ router.post('/', async (req, res) => {
     // 回傳新的 sync token（寫入後狀態變了）
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...memory, sync_token: newToken };
+    if (matched_template) response.matched_template = matched_template;
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
 
     // 附帶 pending_review 計數（提醒 AI 有待確認記憶）

@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.11.0 - Iron Rule Enforcement Engine P2+P3
+
+### 新增
+- Verification Engine：可驗證條件引擎，支援 AND/OR/when-then 條件組合
+- 七層防禦架構：git pre-commit hook (L1)、PreToolUse hook (L2)、MCP 自動驗證 (L3)、Init 提醒 (L4)、post-commit 稽核 (L5)、Session 稽核 (L6)、升級警告 (L7)
+- 規則模板庫：Server 端自動匹配，建立鐵律時自動填入驗證條件
+- Session compliance tracking：合規事件寫入本地 JSONL，git hook 讀取驗證
+- Dashboard 鐵律標記：可驗證鐵律顯示 [自動驗證] 標籤
+
+### 改進
+- IR-008 從硬編碼改為引擎驅動
+- enforcement_alerts 查詢擴充，納入 session 稽核違規
+- 安裝腳本自動設定 git hooks
+
+### 遷移
+- IR-008、IR-002、IR-012、IR-009 自動加上 verification 條件
+
+---
+
 ## 2026-03-30 — v1.10.0 越用越聰明 + 數據驅動進化
 
 ### Windows 安裝修復（Eric 回報）

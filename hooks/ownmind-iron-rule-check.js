@@ -95,40 +95,91 @@ async function main() {
     );
   });
 
-  // IR-008 smart check: code changed but docs not synced
-  let ir008Warning = '';
-  if (trigger === 'commit') {
-    try {
-      const { execSync } = require('child_process');
-      const staged = execSync('git diff --cached --name-only', { encoding: 'utf8' }).trim();
-      const stagedFiles = staged.split('\n').filter(Boolean);
-      const hasCode = stagedFiles.some(f =>
-        /^(src\/|mcp\/|hooks\/|install\.|skills\/|configs\/)/.test(f)
-      );
-      if (hasCode) {
-        const missing = [];
-        if (!stagedFiles.includes('README.md'))    missing.push('  ❌ README.md 未修改');
-        if (!stagedFiles.includes('FILELIST.md'))   missing.push('  ❌ FILELIST.md 未修改');
-        if (!stagedFiles.includes('CHANGELOG.md'))  missing.push('  ❌ CHANGELOG.md 未修改');
-        if (missing.length > 0) {
-          ir008Warning = '\n【OwnMind IR-008 檢查】偵測到程式碼變更但以下文件未同步：\n' +
-            missing.join('\n') + '\n請先更新這些文件再 commit。';
-        }
-      }
-    } catch {}
-  }
-
-  if (relevant.length === 0 && !ir008Warning) process.exit(0);
+  if (relevant.length === 0) process.exit(0);
 
   logEvent('iron_rule_trigger', { trigger });
 
   const lines = [];
-  if (relevant.length > 0) {
-    lines.push(`【OwnMind 鐵律提醒】即將執行 ${trigger} 操作，請確認以下鐵律：`);
-    relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
-  }
-  if (ir008Warning) lines.push(ir008Warning);
+  lines.push(`【OwnMind 鐵律提醒】即將執行 ${trigger} 操作，請確認以下鐵律：`);
+  relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
 
+  // For deploy/delete: run verification engine
+  if (trigger === 'deploy' || trigger === 'delete') {
+    try {
+      const os = require('os');
+      const verificationPath = path.join(os.homedir(), '.ownmind', 'shared', 'verification.js');
+      const { evaluateConditions } = await import(verificationPath);
+
+      const cacheFile = path.join(os.homedir(), '.ownmind', 'cache', 'iron_rules.json');
+      const complianceLog = path.join(os.homedir(), '.ownmind', 'logs', 'compliance.jsonl');
+
+      let cachedRules = [];
+      try { cachedRules = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch {}
+
+      const triggerRules = cachedRules.filter(r => {
+        const triggers = r.metadata?.verification?.trigger;
+        return Array.isArray(triggers) && triggers.includes(trigger);
+      });
+
+      if (triggerRules.length > 0) {
+        // Read compliance events (last 24h)
+        let complianceEvents = [];
+        try {
+          const raw = fs.readFileSync(complianceLog, 'utf8').trim();
+          if (raw) {
+            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+            for (const line of raw.split('\n')) {
+              if (!line.trim()) continue;
+              try {
+                const entry = JSON.parse(line);
+                if (new Date(entry.ts).getTime() >= cutoff) complianceEvents.push(entry);
+              } catch {}
+            }
+          }
+        } catch {}
+
+        const context = { complianceEvents };
+        const blockFailures = [];
+
+        for (const rule of triggerRules) {
+          const verification = rule.metadata?.verification;
+          if (!verification?.conditions) continue;
+
+          const result = evaluateConditions(verification.conditions, context);
+          if (!result.pass && verification.block_on_fail) {
+            const code = rule.code || rule.metadata?.code || 'IR-???';
+            const title = rule.title || '未命名規則';
+            blockFailures.push(`${code}: ${title}`);
+            for (const f of result.failures) {
+              blockFailures.push(`    → ${f}`);
+            }
+          }
+        }
+
+        if (blockFailures.length > 0) {
+          lines.push('');
+          lines.push(`【OwnMind 鐵律檢查】${trigger} 操作被擋下：`);
+          blockFailures.forEach(f => lines.push(`  ❌ ${f}`));
+          lines.push(`請先完成上述步驟再執行 ${trigger}。`);
+
+          console.log(JSON.stringify({
+            decision: 'block',
+            reason: `Iron rule verification failed for ${trigger} operation`,
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              additionalContext: lines.join('\n')
+            }
+          }));
+          return;
+        }
+      }
+    } catch {
+      // Verification engine not available, continue with reminder only
+    }
+  }
+
+  // For commit: always allow (L1 handles blocking), just show reminders
+  // For deploy/delete: all verifications passed, allow
   console.log(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',

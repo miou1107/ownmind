@@ -7,7 +7,136 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
+
+// --- Compliance JSONL log ---
+const COMPLIANCE_LOG = path.join(os.homedir(), '.ownmind/logs/compliance.jsonl');
+
+// --- Verifiable rules cache (in-memory, loaded at init) ---
+let cachedVerifiableRules = [];
+
+function getCachedVerifiableRules() {
+  if (cachedVerifiableRules.length > 0) return cachedVerifiableRules;
+  // Fallback: try loading from local file cache
+  try {
+    const cachePath = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
+    if (fs.existsSync(cachePath)) {
+      cachedVerifiableRules = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    }
+  } catch { /* ignore */ }
+  return cachedVerifiableRules;
+}
+
+function deriveEvent(rule_title, rule_code) {
+  const rules = getCachedVerifiableRules();
+  const rule = rules.find(r => r.code === rule_code || r.title === rule_title);
+  if (rule?.metadata?.verification?.compliance_event) {
+    return rule.metadata.verification.compliance_event;
+  }
+  return rule_code || rule_title;
+}
+
+function detectTriggerFromContext(context) {
+  if (!context) return null;
+  const lower = context.toLowerCase();
+  if (lower.includes('commit')) return 'commit';
+  if (lower.includes('deploy') || lower.includes('部署')) return 'deploy';
+  if (lower.includes('delete') || lower.includes('刪除')) return 'delete';
+  return null;
+}
+
+// --- Lazy-loaded verification engine ---
+let evaluateConditions = null;
+async function getEvaluateConditions() {
+  if (evaluateConditions) return evaluateConditions;
+  try {
+    const mod = await import(path.join(os.homedir(), '.ownmind/shared/verification.js'));
+    evaluateConditions = mod.evaluateConditions;
+    return evaluateConditions;
+  } catch {
+    return null;
+  }
+}
+
+// --- Session audit helpers ---
+function extractSessionChecks(conditions) {
+  if (!conditions) return [];
+  if (conditions.type === 'recent_event_exists') return [conditions];
+  if (conditions.when) return extractSessionChecks(conditions.then);
+  if (conditions.checks) return conditions.checks.flatMap(c => extractSessionChecks(c));
+  return [];
+}
+
+/**
+ * Session 結束稽核（L6）
+ * 只檢查 recent_event_exists 類型的前置依賴條件。
+ * git context 類的檢查（staged_files、commit_message）由 L1 git pre-commit hook 在動作前負責，
+ * 此處不重複檢查——如果 commit 已完成代表 L1 通過了（或被 --no-verify 跳過）。
+ */
+function auditSession() {
+  try {
+    if (!sessionStartTime) return { commits_checked: 0, violations_found: 0, violations: [] };
+    const since = new Date(sessionStartTime).toISOString();
+    const gitLog = execSync(`git log --since="${since}" --format="%H" 2>/dev/null`, { encoding: 'utf8' }).trim();
+    if (!gitLog) return { commits_checked: 0, violations_found: 0, violations: [] };
+
+    const commitHashes = gitLog.split('\n').filter(Boolean);
+    const rules = getCachedVerifiableRules().filter(r =>
+      r.metadata?.verification?.trigger?.includes('commit')
+    );
+
+    if (rules.length === 0 || !evaluateConditions) {
+      return { commits_checked: commitHashes.length, violations_found: 0, violations: [] };
+    }
+
+    const violations = [];
+    for (const hash of commitHashes) {
+      for (const rule of rules) {
+        const sessionChecks = extractSessionChecks(rule.metadata.verification.conditions);
+        if (sessionChecks.length === 0) continue;
+
+        const ctx = { complianceEvents };
+        const result = evaluateConditions({ operator: 'AND', checks: sessionChecks }, ctx);
+        if (!result.pass) {
+          violations.push({
+            rule_code: rule.code,
+            rule_title: rule.title,
+            commit_hash: hash.substring(0, 7),
+            failures: result.failures
+          });
+        }
+      }
+    }
+
+    // Record violations to JSONL
+    const logDir = path.dirname(COMPLIANCE_LOG);
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    for (const v of violations) {
+      const entry = JSON.stringify({
+        event: 'session_audit_violation',
+        action: 'violate',
+        rule_code: v.rule_code,
+        rule_title: v.rule_title,
+        commit_hash: v.commit_hash,
+        failures: v.failures,
+        ts: new Date().toISOString()
+      });
+      fs.appendFileSync(COMPLIANCE_LOG, entry + '\n');
+    }
+
+    return {
+      commits_checked: commitHashes.length,
+      violations_found: violations.length,
+      violations
+    };
+  } catch (e) {
+    return { commits_checked: 0, violations_found: 0, violations: [], error: e.message };
+  }
+}
 
 // --- Config from env ---
 const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace(
@@ -24,7 +153,7 @@ let currentSyncToken = null;
 const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
 let sessionStartTime = null;
 const toolCallCounts = {};
-const complianceEvents = [];
+let complianceEvents = [];
 let sessionLogged = false;
 
 // --- Helper ---
@@ -267,6 +396,8 @@ async function handleTool(name, args) {
 
   switch (name) {
     case "ownmind_init": {
+      // Reset session state（MCP 進程可能跨 session 存活）
+      complianceEvents = [];
       const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
@@ -283,6 +414,19 @@ async function handleTool(name, args) {
         }
         data._enforcement_notice = alertLines.join('\n');
       }
+      // E4: Sync verifiable rules to local cache
+      try {
+        const verifiableRules = (data.iron_rules || []).filter(r => r.metadata?.verification);
+        cachedVerifiableRules = verifiableRules;
+        const cachePath = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
+        const cacheDir = path.dirname(cachePath);
+        if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+        fs.writeFileSync(cachePath, JSON.stringify(verifiableRules, null, 2));
+      } catch { /* silent fail */ }
+
+      // Eagerly load verification engine
+      getEvaluateConditions().catch(() => {});
+
       logEvent('init', { status: 'ok', details: { rules: data.iron_rules?.length || 0, profile: !!data.profile, handoff: !!data.active_handoff, version: data.server_version } });
       return data;
     }
@@ -370,6 +514,16 @@ async function handleTool(name, args) {
       if (args.model !== undefined) body.model = args.model;
       if (args.machine !== undefined) body.machine = args.machine;
       if (args.details !== undefined) body.details = args.details;
+
+      // E5: Session audit (L6) — check commits against compliance events
+      try {
+        const auditResult = auditSession();
+        if (auditResult.violations_found > 0 || auditResult.commits_checked > 0) {
+          if (!body.details) body.details = {};
+          body.details.session_audit = auditResult;
+        }
+      } catch { /* audit failure should not block session log */ }
+
       const data = await callApi("POST", "/api/session", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
       sessionLogged = true;
@@ -390,13 +544,70 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_report_compliance": {
-      complianceEvents.push({ rule: args.rule_title, action: args.action });
+      complianceEvents.push({ rule: args.rule_title, action: args.action, rule_code: args.rule_code || '', ts: new Date().toISOString() });
       logEvent('iron_rule_compliance', {
         rule_title: args.rule_title,
         rule_code: args.rule_code || null,
         action: args.action,
         context: args.context || null,
       });
+
+      // E1: Write to compliance JSONL
+      try {
+        const logDir = path.dirname(COMPLIANCE_LOG);
+        if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+        const logEntry = JSON.stringify({
+          event: deriveEvent(args.rule_title, args.rule_code),
+          action: args.action,
+          rule_code: args.rule_code || '',
+          rule_title: args.rule_title,
+          ts: new Date().toISOString(),
+          session_id: sessionStartTime ? String(sessionStartTime) : ''
+        });
+        fs.appendFileSync(COMPLIANCE_LOG, logEntry + '\n');
+      } catch { /* silent fail — don't block compliance reporting */ }
+
+      // E3: Auto-verify on trigger detection
+      const trigger = detectTriggerFromContext(args.context);
+      if (trigger) {
+        try {
+          const evalFn = await getEvaluateConditions();
+          if (evalFn) {
+            const rules = getCachedVerifiableRules().filter(r =>
+              r.metadata?.verification?.trigger?.includes(trigger)
+            );
+            const failures = [];
+            for (const rule of rules) {
+              const conditions = rule.metadata?.verification?.conditions;
+              if (!conditions) continue;
+              const sessionChecks = extractSessionChecks(conditions);
+              if (sessionChecks.length === 0) continue;
+              const ctx = { complianceEvents };
+              const result = evalFn({ operator: 'AND', checks: sessionChecks }, ctx);
+              if (!result.pass) {
+                const shouldBlock = rule.metadata?.verification?.block_on_fail;
+                failures.push({
+                  rule_code: rule.code,
+                  rule_title: rule.title,
+                  block: !!shouldBlock,
+                  failures: result.failures
+                });
+              }
+            }
+            const blockingFailures = failures.filter(f => f.block);
+            if (blockingFailures.length > 0) {
+              return {
+                status: 'blocked',
+                action: args.action,
+                rule: args.rule_title,
+                verification_failures: blockingFailures,
+                message: `Blocked by verification: ${blockingFailures.map(f => f.rule_code || f.rule_title).join(', ')}`
+              };
+            }
+          }
+        } catch { /* verification engine not available, skip */ }
+      }
+
       return { status: 'ok', action: args.action, rule: args.rule_title };
     }
 
@@ -444,26 +655,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // --- Auto-update check (background, non-blocking) ---
 import { exec } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, statSync, unlinkSync } from 'fs';
-import { join } from 'path';
 
-const OWNMIND_DIR = join(process.env.HOME || '', '.ownmind');
-const MARKER_FILE = join(OWNMIND_DIR, '.last-mcp-update-check');
-const LOCK_FILE = join(OWNMIND_DIR, '.update-lock');
+const OWNMIND_DIR = path.join(process.env.HOME || '', '.ownmind');
+const MARKER_FILE = path.join(OWNMIND_DIR, '.last-mcp-update-check');
+const LOCK_FILE = path.join(OWNMIND_DIR, '.update-lock');
 
 try {
   const today = new Date().toISOString().slice(0, 10);
-  const lastCheck = existsSync(MARKER_FILE) ? readFileSync(MARKER_FILE, 'utf8').trim() : '';
+  const lastCheck = fs.existsSync(MARKER_FILE) ? fs.readFileSync(MARKER_FILE, 'utf8').trim() : '';
 
   // Stale lock detection: if lock file is older than 5 minutes, remove it
-  if (existsSync(LOCK_FILE)) {
+  if (fs.existsSync(LOCK_FILE)) {
     try {
-      const lockAge = Date.now() - statSync(LOCK_FILE).mtimeMs;
-      if (lockAge > 5 * 60 * 1000) unlinkSync(LOCK_FILE);
+      const lockAge = Date.now() - fs.statSync(LOCK_FILE).mtimeMs;
+      if (lockAge > 5 * 60 * 1000) fs.unlinkSync(LOCK_FILE);
     } catch {}
   }
 
-  if (lastCheck !== today && existsSync(join(OWNMIND_DIR, '.git')) && !existsSync(LOCK_FILE)) {
+  if (lastCheck !== today && fs.existsSync(path.join(OWNMIND_DIR, '.git')) && !fs.existsSync(LOCK_FILE)) {
     logEvent('update_check', { source: 'mcp' });
     exec(`
       touch "${LOCK_FILE}" &&

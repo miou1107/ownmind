@@ -40,7 +40,8 @@ OwnMind/
 │   │   ├── crypto.js                # AES-256 加解密工具
 │   │   ├── syncToken.js             # Sync token 生成與驗證（SHA-256）
 │   │   ├── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
-│   │   └── enforcement.js          # Enforcement alerts 計算純函式
+│   │   ├── enforcement.js          # Enforcement alerts 計算純函式
+│   │   └── templates.js            # 規則模板庫 + 自動匹配
 │   ├── jobs/
 │   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   └── public/
@@ -52,15 +53,24 @@ OwnMind/
 │   ├── start.cmd                    # Windows 啟動器（動態找 node，供 cmd.exe 呼叫）
 │   └── package.json                 # MCP Server 依賴
 │
+├── shared/
+│   └── verification.js              # Verification Engine 核心（純函式）
+│
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
 │   ├── ownmind-session-start.sh    # SessionStart hook：自動載入記憶 + 每日自動更新（bash 版）
 │   ├── ownmind-session-start.js    # SessionStart hook：Node.js 版（Windows 無 bash 時使用）
 │   ├── ownmind-iron-rule-check.sh  # PreToolUse hook：高風險指令前自動顯示相關鐵律（bash 版）
 │   ├── ownmind-iron-rule-check.js  # PreToolUse hook：Node.js 版（Windows 無 bash 時使用）
-│   └── ownmind-worktree-setup.sh   # WorktreeCreate hook：worktree 自動注入 .mcp.json
+│   ├── ownmind-worktree-setup.sh   # WorktreeCreate hook：worktree 自動注入 .mcp.json
+│   ├── ownmind-git-pre-commit.js   # git pre-commit hook (L1)
+│   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
+│   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
+│   ├── ownmind-git-post-commit     # post-commit shell wrapper
+│   └── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
 │
 ├── scripts/                         # 維護工具腳本
-│   └── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
+│   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
+│   └── migrate-verification.js      # 鐵律 verification 一次性遷移
 │
 ├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）
 │   ├── CLAUDE.md                    # Claude Code → ~/.claude/CLAUDE.md
@@ -78,7 +88,9 @@ OwnMind/
 │
 ├── tests/
 │   ├── report.test.js               # report.js 單元測試（node:test）
-│   └── enforcement.test.js          # enforcement.js 單元測試
+│   ├── enforcement.test.js          # enforcement.js 單元測試
+│   ├── verification.test.js         # Verification Engine 測試
+│   └── templates.test.js            # 模板匹配測試
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

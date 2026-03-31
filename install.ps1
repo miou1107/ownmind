@@ -179,6 +179,70 @@ if (-not $preExists) {
 
 $hookSettings | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
 
+# --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
+Write-Host "   安裝 Git Hooks（Iron Rule Verification Engine）..."
+
+# 建立所需目錄
+$GitHookDirs = @(
+  (Join-Path $HOME ".ownmind\shared"),
+  (Join-Path $HOME ".ownmind\cache"),
+  (Join-Path $HOME ".ownmind\logs"),
+  (Join-Path $HOME ".ownmind\git-hooks"),
+  (Join-Path $HOME ".ownmind\hooks")
+)
+foreach ($dir in $GitHookDirs) {
+  New-Item -ItemType Directory -Force -Path $dir -ErrorAction SilentlyContinue | Out-Null
+}
+
+# 複製 verification engine
+$VerificationSrc = Join-Path $OwnmindDir "shared\verification.js"
+if (Test-Path $VerificationSrc) {
+  Copy-Item $VerificationSrc (Join-Path $HOME ".ownmind\shared\") -Force
+  Write-Host "   複製 verification engine"
+}
+
+# 複製 git hook JS 檔案
+$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
+foreach ($jsFile in $GitHookJsFiles) {
+  $src = Join-Path $OwnmindDir "hooks\$jsFile"
+  if (Test-Path $src) {
+    Copy-Item $src (Join-Path $HOME ".ownmind\hooks\") -Force
+    Write-Host "   複製 $jsFile"
+  }
+}
+
+# Windows: 建立 bat wrapper 呼叫 node 執行 JS hooks
+$PreCommitBat = Join-Path $HOME ".ownmind\git-hooks\pre-commit"
+$PostCommitBat = Join-Path $HOME ".ownmind\git-hooks\post-commit"
+
+$PreCommitJs = Join-Path $HOME ".ownmind\hooks\ownmind-git-pre-commit.js"
+$PostCommitJs = Join-Path $HOME ".ownmind\hooks\ownmind-git-post-commit.js"
+
+if (Test-Path (Join-Path $OwnmindDir "hooks\ownmind-git-pre-commit.js")) {
+  @"
+#!/bin/sh
+node "$HOME/.ownmind/hooks/ownmind-git-pre-commit.js"
+"@ | Set-Content $PreCommitBat -Encoding UTF8 -NoNewline
+  Write-Host "   安裝 git pre-commit hook"
+}
+
+if (Test-Path (Join-Path $OwnmindDir "hooks\ownmind-git-post-commit.js")) {
+  @"
+#!/bin/sh
+node "$HOME/.ownmind/hooks/ownmind-git-post-commit.js"
+"@ | Set-Content $PostCommitBat -Encoding UTF8 -NoNewline
+  Write-Host "   安裝 git post-commit hook"
+}
+
+# 設定 global git hooks path
+if (Get-Command git -ErrorAction SilentlyContinue) {
+  $gitHooksPath = Join-Path $HOME ".ownmind\git-hooks"
+  git config --global core.hooksPath $gitHooksPath
+  Write-Host "   設定 git global hooks path: $gitHooksPath"
+} else {
+  Write-Host "   找不到 git，跳過 global hooks path 設定" -ForegroundColor Yellow
+}
+
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 $CursorDir = Join-Path $HOME ".cursor"
 $CursorMcp = Join-Path $CursorDir "mcp.json"
@@ -213,6 +277,7 @@ Write-Host "   啟動方式:   cmd.exe + start.cmd（Windows 相容）"
 if (-not $HasBash) {
   Write-Host "   Hooks:      使用 Node.js 執行（未偵測到 bash）" -ForegroundColor Yellow
 }
+Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
 Write-Host "   開一個新的 Claude Code 對話，OwnMind 會自動載入你的記憶！"
 Write-Host ""
