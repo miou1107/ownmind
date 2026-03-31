@@ -12,6 +12,7 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
+import { isNetworkError, readMemoryCache, writeMemoryCache, enqueueOperation, readQueue, clearQueue } from './offline.js';
 
 // --- Compliance JSONL log ---
 const COMPLIANCE_LOG = path.join(os.homedir(), '.ownmind/logs/compliance.jsonl');
@@ -475,7 +476,27 @@ async function handleTool(name, args) {
     case "ownmind_init": {
       // Reset session state（MCP 進程可能跨 session 存活）
       complianceEvents = [];
-      const data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
+      let data;
+      try {
+        data = await callApi("GET", `/api/memory/init?client_version=${CLIENT_VERSION}&compact=true`);
+      } catch (initErr) {
+        if (isNetworkError(initErr)) {
+          const cache = readMemoryCache();
+          if (cache) {
+            logEvent('init', { status: 'offline', details: { saved_at: cache.saved_at } });
+            return {
+              _offline: true,
+              _offline_notice: `【OwnMind 離線模式】無法連線 server，資料來自本地 cache（${cache.saved_at}），可能不是最新`,
+              iron_rules: cache.data.iron_rule || [],
+              principles: cache.data.principle || [],
+              profile: (cache.data.profile || [])[0] || null,
+              coding_standards: cache.data.coding_standard || [],
+              team_standards: cache.data.team_standard || [],
+            };
+          }
+        }
+        throw initErr;
+      }
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
       }
@@ -494,6 +515,47 @@ async function handleTool(name, args) {
         if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
         fs.writeFileSync(cachePath, JSON.stringify(verifiableRules, null, 2));
       } catch { /* silent fail */ }
+
+      // Write full memory cache for offline fallback
+      try {
+        writeMemoryCache({
+          saved_at: new Date().toISOString(),
+          sync_token: data.sync_token || null,
+          data: {
+            profile: data.profile ? [data.profile] : [],
+            principle: data.principles || [],
+            iron_rule: data.iron_rules || [],
+            coding_standard: data.coding_standards || [],
+            team_standard: data.team_standards || [],
+            project: data.projects || [],
+            env: data.envs || [],
+            portfolio: data.portfolios || [],
+          }
+        });
+      } catch { /* silent fail */ }
+
+      // Queue replay: send any queued operations now that server is online
+      const queue = readQueue();
+      if (queue.length > 0) {
+        let replayed = 0;
+        for (const op of queue) {
+          try {
+            await callApi(op.method, op.path, op.body);
+            replayed++;
+          } catch (replayErr) {
+            // Stop on first failure, keep remaining queue
+            const remaining = queue.slice(replayed);
+            clearQueue();
+            for (const r of remaining) enqueueOperation(r);
+            data._queue_replay = `【OwnMind】佇列重送部分失敗，已重送 ${replayed} 筆，還剩 ${remaining.length} 筆待送`;
+            break;
+          }
+        }
+        if (replayed === queue.length) {
+          clearQueue();
+          data._queue_replay = `【OwnMind】佇列重送完成，${replayed} 筆操作已同步`;
+        }
+      }
 
       // Eagerly load verification engine
       getEvaluateConditions().catch(() => {});
