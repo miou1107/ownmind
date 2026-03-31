@@ -66,3 +66,31 @@ export function readCredentials(settingsPath = DEFAULT_SETTINGS_PATH) {
     return { apiKey: '', apiUrl: '' };
   }
 }
+
+/**
+ * 從 PreToolUse hook 的 command 偵測觸發類型
+ * @param {string} command — bash command
+ * @returns {'commit' | 'deploy' | 'delete' | null}
+ */
+export function detectCommandTrigger(command) {
+  if (!command) return null;
+  if (/\bgit\s+(commit|reset|rebase|merge)\b/i.test(command)) return 'commit';
+  if (/\bgit\s+tag\b/i.test(command)) return 'commit';
+  if (/\bgit\s+push\b/i.test(command)) return 'deploy';
+  if (/\b(docker\s+compose\s+(up|build|push)|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
+  if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(command)) return 'delete';
+  return null;
+}
+
+/**
+ * 從 MCP report_compliance 的 context 偵測觸發類型
+ * @param {string} context — free-form text
+ * @returns {'commit' | 'deploy' | 'delete' | null}
+ */
+export function detectTriggerFromContext(context) {
+  if (!context) return null;
+  if (/\bcommit\b/i.test(context)) return 'commit';
+  if (/\bdeploy\b|部署/i.test(context)) return 'deploy';
+  if (/\bdelete\b|刪除/i.test(context)) return 'delete';
+  return null;
+}
