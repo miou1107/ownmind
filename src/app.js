@@ -47,7 +47,7 @@ app.use('/api/activity', activityRoutes);
 
 // 根路徑導向 Admin
 app.get('/', (req, res) => {
-  res.redirect('/admin/');
+  res.redirect('/ownmind/admin/');
 });
 
 // 健康檢查
