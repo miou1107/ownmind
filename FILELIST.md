@@ -17,7 +17,8 @@ OwnMind/
 │   ├── 001_init.sql                 # PostgreSQL schema（users, memories, handoffs 等 6 張表）
 │   ├── 002_add_team_standard.sql    # 團隊規範相關 migration
 │   ├── 003_activity_logs.sql        # Activity logs 表（事件追蹤）
-│   └── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
+│   ├── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
+│   └── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -25,12 +26,12 @@ OwnMind/
 │   ├── index.js                     # Server 啟動入口
 │   ├── middleware/
 │   │   ├── auth.js                  # API Key 認證中介層
-│   │   └── adminAuth.js             # Admin 權限中介層
+│   │   └── adminAuth.js             # Admin 權限中介層（含 superAdminAuth + isAtLeast）
 │   ├── routes/
 │   │   ├── memory.js                # 記憶 CRUD + init（含 instructions SOP）
 │   │   ├── session.js               # Session log 紀錄
 │   │   ├── handoff.js               # 交接機制
-│   │   ├── admin.js                 # 使用者管理 + 帳密登入
+│   │   ├── admin.js                 # 使用者管理 + 帳密登入 + 角色控管 + 稽核
 │   │   ├── secret.js                # 密鑰管理（AES-256 加密）
 │   │   ├── export.js                # 記憶匯出
 │   │   └── activity.js              # Activity log batch upload + 統計 API

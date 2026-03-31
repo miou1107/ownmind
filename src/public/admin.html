@@ -46,6 +46,7 @@
     .api-key { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #7c3aed; background: #f5f3ff; padding: 2px 6px; border-radius: 4px; }
     .role-badge { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
     .role-admin { background: #f5f3ff; color: #7c3aed; }
+    .role-super_admin { background: #fef3c7; color: #d97706; }
     .role-user { background: #ecfdf5; color: #059669; }
 
     /* Form row */
@@ -127,9 +128,19 @@
 <!-- Login -->
 <div id="loginView" class="login-box">
   <h2>【<span>OwnMind</span>】</h2>
-  <input type="email" id="loginEmail" placeholder="Email">
-  <input type="password" id="loginPassword" placeholder="密碼">
-  <button class="btn-primary" onclick="login()">登入</button>
+  <div id="loginForm">
+    <input type="email" id="loginEmail" placeholder="Email">
+    <input type="password" id="loginPassword" placeholder="密碼">
+    <button class="btn-primary" onclick="login()">登入</button>
+  </div>
+  <!-- 首次設定密碼 -->
+  <div id="setupForm" class="hidden">
+    <p style="color:#86868b;font-size:13px;margin-bottom:16px;">首次登入，請設定您的管理員密碼</p>
+    <input type="password" id="setupPassword" placeholder="新密碼（至少 8 字元）">
+    <input type="password" id="setupPasswordConfirm" placeholder="確認密碼">
+    <button class="btn-primary" onclick="setupPassword()">設定密碼並登入</button>
+    <button style="width:100%;margin-top:8px;background:none;color:#86868b;border:none;cursor:pointer;font-size:13px;" onclick="showLoginForm()">返回登入</button>
+  </div>
 </div>
 
 <!-- Dashboard -->
@@ -190,10 +201,15 @@
       </div>
       <div class="field" style="max-width: 120px;">
         <label>角色</label>
-        <select id="newRole">
+        <select id="newRole" onchange="toggleNewPasswordField()">
           <option value="user">User</option>
           <option value="admin">Admin</option>
+          <option value="super_admin" class="super-admin-only hidden">Super Admin</option>
         </select>
+      </div>
+      <div class="field" id="newPasswordField" style="display:none;">
+        <label>密碼</label>
+        <input type="password" id="newPassword" placeholder="至少 8 字元">
       </div>
       <button class="btn-success btn-sm" onclick="addUser()">新增</button>
     </div>
@@ -404,6 +420,23 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Change Password Modal -->
+<div class="modal-overlay" id="passwordModal" onclick="if(event.target===this)closePasswordModal()">
+  <div class="modal-content" style="max-width:400px;">
+    <button class="modal-close" onclick="closePasswordModal()">&times;</button>
+    <h3 id="passwordModalTitle">修改密碼</h3>
+    <div id="oldPasswordField">
+      <label style="display:block;font-size:12px;color:#86868b;margin-bottom:4px;">舊密碼</label>
+      <input type="password" id="modalOldPassword" placeholder="舊密碼" style="margin-bottom:12px;">
+    </div>
+    <label style="display:block;font-size:12px;color:#86868b;margin-bottom:4px;">新密碼</label>
+    <input type="password" id="modalNewPassword" placeholder="新密碼（至少 8 字元）" style="margin-bottom:12px;">
+    <label style="display:block;font-size:12px;color:#86868b;margin-bottom:4px;">確認新密碼</label>
+    <input type="password" id="modalNewPasswordConfirm" placeholder="確認新密碼" style="margin-bottom:16px;">
+    <button class="btn-primary" onclick="submitChangePassword()">確認修改</button>
+  </div>
+</div>
+
 <!-- Memory search modal -->
 <div class="modal-overlay" id="memoryModal" onclick="if(event.target===this)closeMemoryModal()">
   <div class="modal-content">
@@ -417,6 +450,9 @@
   let API_KEY = '';
   const API = '/ownmind/api';
   let usersData = [];
+  let currentUserRole = '';
+  let currentUserId = null;
+  let passwordModalTargetId = null;
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -449,6 +485,11 @@
     setTimeout(() => t.style.display = 'none', 3000);
   }
 
+  function showLoginForm() {
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('setupForm').classList.add('hidden');
+  }
+
   async function login() {
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
@@ -461,22 +502,83 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      API_KEY = data.api_key;
-      document.getElementById('loginView').classList.add('hidden');
-      document.getElementById('dashboard').classList.remove('hidden');
-      loadUsers();
-      loadStats();
+
+      if (data.requiresSetup) {
+        // 首次設定密碼流程
+        document.getElementById('loginForm').classList.add('hidden');
+        document.getElementById('setupForm').classList.remove('hidden');
+        document.getElementById('setupForm').dataset.email = email;
+        return;
+      }
+
+      enterDashboard(data);
     } catch (e) {
       showToast(e.message, true);
     }
   }
 
+  async function setupPassword() {
+    const email = document.getElementById('setupForm').dataset.email;
+    const password = document.getElementById('setupPassword').value;
+    const confirm = document.getElementById('setupPasswordConfirm').value;
+    if (!password || password.length < 8) return showToast('密碼至少 8 個字元', true);
+    if (password !== confirm) return showToast('兩次密碼不一致', true);
+    try {
+      const res = await fetch(`${API}/admin/setup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      enterDashboard(data);
+    } catch (e) {
+      showToast(e.message, true);
+    }
+  }
+
+  function enterDashboard(data) {
+    API_KEY = data.api_key;
+    currentUserRole = data.role;
+    currentUserId = data.id || null;
+
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+
+    // 角色感知：super_admin 才顯示 super_admin 選項
+    if (currentUserRole === 'super_admin') {
+      document.querySelectorAll('.super-admin-only').forEach(el => {
+        el.classList.remove('hidden');
+        el.style.display = '';
+      });
+    }
+
+    loadUsers();
+    loadStats();
+  }
+
   async function loadUsers() {
     const res = await fetch(`${API}/admin/users`, { headers: headers() });
     usersData = await res.json();
+
     const tbody = document.getElementById('usersTable');
-    tbody.innerHTML = usersData.map(u => `
-      <tr>
+    tbody.innerHTML = usersData.map(u => {
+      const isSuperAdmin = currentUserRole === 'super_admin';
+      const isSelf = currentUserId === u.id;
+
+      // 刪除按鈕：只有 super_admin 看到，且不能刪自己和 ID=1
+      const canDelete = isSuperAdmin && !isSelf && u.id !== 1;
+      const deleteBtn = canDelete
+        ? `<button class="btn-danger btn-sm" data-id="${u.id}" data-email="${esc(u.email)}" onclick="deleteUser(this.dataset.id, this.dataset.email)">刪除</button>`
+        : '';
+
+      // 改密碼按鈕：super_admin 看所有 admin 的 + 自己；admin 只看自己的
+      const canChangePassword = isSelf || (isSuperAdmin && u.role !== 'user');
+      const pwBtn = canChangePassword
+        ? `<button class="btn-copy btn-sm" data-id="${u.id}" data-self="${isSelf}" onclick="openPasswordModal(${u.id}, ${isSelf})">改密碼</button>`
+        : '';
+
+      return `<tr>
         <td>${u.id}</td>
         <td>${esc(u.email)}</td>
         <td>${esc(u.name || '-')}</td>
@@ -486,11 +588,9 @@
           <button class="btn-copy btn-sm" data-key="${esc(u.api_key)}" onclick="copyKey(this.dataset.key)">複製</button>
         </td>
         <td id="risk-${u.id}" style="text-align:center;color:#86868b;">—</td>
-        <td class="actions">
-          <button class="btn-danger btn-sm" data-id="${u.id}" data-email="${esc(u.email)}" onclick="deleteUser(this.dataset.id, this.dataset.email)">刪除</button>
-        </td>
-      </tr>
-    `).join('');
+        <td class="actions">${pwBtn}${deleteBtn}</td>
+      </tr>`;
+    }).join('');
 
     // 載入高風險鐵律數
     for (const u of usersData) {
@@ -533,21 +633,32 @@
     } catch { document.getElementById('totalMemories').textContent = '-'; }
   }
 
+  function toggleNewPasswordField() {
+    const role = document.getElementById('newRole').value;
+    const field = document.getElementById('newPasswordField');
+    field.style.display = (role === 'admin' || role === 'super_admin') ? '' : 'none';
+  }
+
   async function addUser() {
     const email = document.getElementById('newEmail').value.trim();
     const name = document.getElementById('newName').value.trim();
     const role = document.getElementById('newRole').value;
+    const password = document.getElementById('newPassword').value;
     if (!email) return showToast('請輸入 Email', true);
     try {
+      const body = { email, name, role };
+      if (password) body.password = password;
       const res = await fetch(`${API}/admin/users`, {
         method: 'POST', headers: headers(),
-        body: JSON.stringify({ email, name, role })
+        body: JSON.stringify(body)
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
-      const user = await res.json();
       showToast(`已建立 ${email}`);
       document.getElementById('newEmail').value = '';
       document.getElementById('newName').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('newRole').value = 'user';
+      toggleNewPasswordField();
       loadUsers();
     } catch (e) { showToast(e.message, true); }
   }
@@ -555,9 +666,48 @@
   async function deleteUser(id, email) {
     if (!confirm(`確定要刪除 ${email}？`)) return;
     try {
-      await fetch(`${API}/admin/users/${id}`, { method: 'DELETE', headers: headers() });
+      const res = await fetch(`${API}/admin/users/${id}`, { method: 'DELETE', headers: headers() });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
       showToast(`已刪除 ${email}`);
       loadUsers();
+    } catch (e) { showToast(e.message, true); }
+  }
+
+  function openPasswordModal(userId, isSelf) {
+    passwordModalTargetId = userId;
+    document.getElementById('modalOldPassword').value = '';
+    document.getElementById('modalNewPassword').value = '';
+    document.getElementById('modalNewPasswordConfirm').value = '';
+    // 只有改自己的才需要舊密碼
+    const needOld = isSelf || currentUserRole !== 'super_admin';
+    document.getElementById('oldPasswordField').style.display = needOld ? '' : 'none';
+    document.getElementById('passwordModalTitle').textContent = isSelf ? '修改我的密碼' : '重設使用者密碼';
+    document.getElementById('passwordModal').classList.add('active');
+  }
+
+  function closePasswordModal() {
+    document.getElementById('passwordModal').classList.remove('active');
+    passwordModalTargetId = null;
+  }
+
+  async function submitChangePassword() {
+    const oldPassword = document.getElementById('modalOldPassword').value;
+    const newPassword = document.getElementById('modalNewPassword').value;
+    const confirm = document.getElementById('modalNewPasswordConfirm').value;
+    if (!newPassword || newPassword.length < 8) return showToast('新密碼至少 8 個字元', true);
+    if (newPassword !== confirm) return showToast('兩次密碼不一致', true);
+    try {
+      const body = { newPassword };
+      if (document.getElementById('oldPasswordField').style.display !== 'none') {
+        body.oldPassword = oldPassword;
+      }
+      const res = await fetch(`${API}/admin/users/${passwordModalTargetId}/password`, {
+        method: 'POST', headers: headers(),
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      showToast('密碼已更新');
+      closePasswordModal();
     } catch (e) { showToast(e.message, true); }
   }
 
@@ -636,7 +786,10 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
 
   // Close modal on Escape
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeMemoryModal();
+    if (e.key === 'Escape') {
+      closeMemoryModal();
+      closePasswordModal();
+    }
   });
 
   document.getElementById('loginPassword').addEventListener('keydown', e => {
