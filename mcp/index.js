@@ -570,21 +570,49 @@ async function handleTool(name, args) {
 
     case "ownmind_get": {
       const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
-      const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}`);
-      if (data.new_token) currentSyncToken = data.new_token;
-      logEvent('memory_get', { type: args.type });
-      return data;
+      try {
+        const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}`);
+        if (data.new_token) currentSyncToken = data.new_token;
+        logEvent('memory_get', { type: args.type });
+        return data;
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const cache = readMemoryCache();
+          const items = cache?.data?.[args.type] || [];
+          logEvent('memory_get', { type: args.type, offline: true });
+          return {
+            data: items,
+            _offline: true,
+            _offline_notice: `【OwnMind 離線模式】資料來自本地 cache（${cache?.saved_at || '未知'}）`,
+          };
+        }
+        throw err;
+      }
     }
 
     case "ownmind_search": {
       const searchTokenParam = currentSyncToken ? `&sync_token=${currentSyncToken}` : '';
-      const data = await callApi(
-        "GET",
-        `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`
-      );
-      if (data.new_token) currentSyncToken = data.new_token;
-      logEvent('memory_search', { query: args.query });
-      return data;
+      try {
+        const data = await callApi(
+          "GET",
+          `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`
+        );
+        if (data.new_token) currentSyncToken = data.new_token;
+        logEvent('memory_search', { query: args.query });
+        return data;
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const cache = readMemoryCache();
+          const results = localSearch(cache, args.query);
+          logEvent('memory_search', { query: args.query, offline: true });
+          return {
+            data: results,
+            _offline: true,
+            _offline_notice: `【OwnMind 離線模式】本地關鍵字搜尋（${results.length} 筆），不支援語意搜尋`,
+          };
+        }
+        throw err;
+      }
     }
 
     case "ownmind_save": {
