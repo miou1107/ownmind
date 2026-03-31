@@ -208,28 +208,28 @@ AI reviews the entire conversation, lists undocumented knowledge, and asks which
 ### 5. Proactive rule enforcement
 > AI is about to deploy with multiple SSH sessions...
 >
-> 【OwnMind Triggered】You reminded me: "Don't open multiple SSH sessions" — I must follow this rule.
+> 【OwnMind vX.X.X】鐵律觸發：You reminded me: "Don't open multiple SSH sessions" — I must follow this rule.
 
 AI stops itself the moment it's about to violate a rule. No reminder needed.
 
 ### 6. Multi-tool, no conflicts
 > You're working in Claude Code and Cursor simultaneously, both writing memory...
 >
-> 【OwnMind】State change detected, re-initializing to get latest memory...
+> 【OwnMind vX.X.X】行為觸發：State change detected, re-initializing to get latest memory...
 
 Sync Token auto-detects conflicts. Validates before write, syncs if expired. No overwrites.
 
 ### 7. Team standards, set once for everyone
 > Admin: "New team rule: all API responses must include request_id"
 >
-> 【OwnMind】⚠️ You're about to add a team standard. This will apply to all members. Type "I confirm".
+> 【OwnMind vX.X.X】行為觸發：⚠️ You're about to add a team standard. This will apply to all members. Type "I confirm".
 
 Team rules pushed by admins, auto-loaded by members, enforced with reminders. Individual opt-out available but persistent reminders continue.
 
 ### 8. Rule compliance with data
 > You: "How am I doing on my iron rules?"
 >
-> 【OwnMind】Rule stats: IR-001 SSH Rule — enforced 12 times, triggered 3 times, missed 0 (compliance: 100%)
+> 【OwnMind vX.X.X】規則自評：IR-001 SSH Rule — enforced 12 times, triggered 3 times, missed 0 (compliance: 100%)
 
 Every rule auto-tracks enforced/missed/triggered counts. Low compliance rules trigger proactive alerts.
 

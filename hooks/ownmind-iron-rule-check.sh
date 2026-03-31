@@ -4,6 +4,7 @@
 # 附帶：一次性自動升級檢查（搭便車機制）
 
 LOG_DIR="$HOME/.ownmind/logs"
+VERSION=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.ownmind/mcp/package.json','utf8')).version)}catch{console.log('?')}" 2>/dev/null || echo '?')
 log_event() {
   local event="$1"; shift
   mkdir -p "$LOG_DIR"
@@ -48,7 +49,7 @@ if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
       cd mcp && npm install -q 2>/dev/null && \
       bash "$HOME/.ownmind/scripts/update.sh" >/dev/null 2>&1
     )
-    echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"【OwnMind 自動升級】已安裝 SessionStart hook，下次開新 session 記憶會自動載入，不用再手動說「載入 OwnMind」。"}}'
+    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"【OwnMind v${VERSION}】自動升級：已安裝 SessionStart hook，下次開新 session 記憶會自動載入，不用再手動說「載入 OwnMind」。\"}}"
   fi
 
   # 標記已檢查，不再重複
@@ -105,6 +106,7 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
   node -e "
     const d = require('fs').readFileSync('/dev/stdin','utf8');
     const trigger = '$TRIGGER';
+    const version = '$VERSION';
     try {
       const rules = JSON.parse(d);
       const relevant = rules.filter(r => {
@@ -115,7 +117,7 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
         );
       });
       if (relevant.length === 0) process.exit(0);
-      console.log('【OwnMind 鐵律提醒】即將執行 ' + trigger + ' 操作，請確認以下鐵律：');
+      console.log('【OwnMind v' + version + '】鐵律提醒：即將執行 ' + trigger + ' 操作，請確認以下鐵律');
       relevant.forEach(r => console.log('  ⚠️  ' + (r.code || 'IR-?') + ': ' + r.title));
     } catch { process.exit(0); }
   " 2>/dev/null)
@@ -145,12 +147,13 @@ if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
       BLOCK_CONTEXT=$(echo "$VERIFY_RESULT" | node -e "
         const d = require('fs').readFileSync('/dev/stdin','utf8');
         const trigger = '$TRIGGER';
+        const version = '$VERSION';
         const rules = process.argv[1] || '';
         try {
           const r = JSON.parse(d);
           const lines = [];
           if (rules) lines.push(rules);
-          lines.push('【OwnMind 鐵律檢查】' + trigger + ' 操作被擋下：');
+          lines.push('【OwnMind v' + version + '】鐵律攔截：' + trigger + ' 操作被擋下');
           (r.failures || []).forEach(f => lines.push('  ❌ ' + f));
           lines.push('請先完成上述步驟再執行 ' + trigger + '。');
           const output = {
