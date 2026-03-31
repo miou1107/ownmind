@@ -12,6 +12,8 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     const msg = err.message || '';
     const code = err.code || '';
     return (
+      code === 'EHOSTUNREACH' ||
+      code === 'ENETUNREACH' ||
       code === 'ECONNREFUSED' ||
       code === 'ETIMEDOUT' ||
       code === 'ENOTFOUND' ||
@@ -70,7 +72,8 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
       return fs.readFileSync(queuePath, 'utf8')
         .split('\n')
         .filter(Boolean)
-        .map(line => JSON.parse(line));
+        .map(line => { try { return JSON.parse(line); } catch { return null; } })
+        .filter(Boolean);
     } catch {
       return [];
     }
