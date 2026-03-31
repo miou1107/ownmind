@@ -1,42 +1,22 @@
 #!/usr/bin/env node
-// OwnMind Iron Rule Check — Claude Code PreToolUse Hook (Node.js version for Windows)
-// Equivalent to ownmind-iron-rule-check.sh but without bash/curl dependency
+/**
+ * OwnMind Iron Rule Check — Claude Code PreToolUse Hook (L2)
+ *
+ * 偵測高風險操作（commit/deploy/delete），顯示鐵律提醒。
+ * 對所有 trigger 類型都跑 verification engine，block_on_fail 規則會擋下操作。
+ */
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const http = require('http');
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import http from 'http';
+import os from 'os';
+import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger } from '../shared/helpers.js';
+import { readComplianceEvents } from '../shared/compliance.js';
 
-const HOME = process.env.HOME || process.env.USERPROFILE;
-const CLAUDE_SETTINGS = path.join(HOME, '.claude', 'settings.json');
-const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
-const VERSION = (() => {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
-    return pkg.version || '?';
-  } catch { return '?'; }
-})();
-
-function readCredentials() {
-  try {
-    const s = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, 'utf8'));
-    const env = s.mcpServers?.ownmind?.env || {};
-    return { apiKey: env.OWNMIND_API_KEY || '', apiUrl: env.OWNMIND_API_URL || '' };
-  } catch {
-    return { apiKey: '', apiUrl: '' };
-  }
-}
-
-function logEvent(event, extra = {}) {
-  try {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-    const now = new Date();
-    const ts = now.toISOString().replace('Z', '+00:00');
-    const dateStr = now.toISOString().slice(0, 10);
-    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', ...extra });
-    fs.appendFileSync(path.join(LOG_DIR, `${dateStr}.jsonl`), entry + '\n');
-  } catch {}
-}
+const HOME = os.homedir();
+const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
+const VERSION = getClientVersion();
 
 function httpGet(url, headers) {
   return new Promise((resolve, reject) => {
@@ -52,7 +32,6 @@ function httpGet(url, headers) {
 }
 
 async function main() {
-  // Read stdin (hook input)
   let input = '';
   try {
     input = fs.readFileSync(0, 'utf8');
@@ -65,24 +44,12 @@ async function main() {
 
   if (!command) process.exit(0);
 
-  // Detect trigger keywords
-  let trigger = '';
-  if (/git (commit|reset|rebase|merge)/i.test(command)) {
-    trigger = 'commit';
-  } else if (/git push/i.test(command)) {
-    trigger = 'deploy';
-  } else if (/(rm -rf|rmdir|del |drop table|DELETE FROM)/i.test(command)) {
-    trigger = 'delete';
-  } else if (/(docker.*deploy|docker.*up|kubectl apply|npm run deploy)/i.test(command)) {
-    trigger = 'deploy';
-  }
-
+  const trigger = detectCommandTrigger(command);
   if (!trigger) process.exit(0);
 
   const { apiKey, apiUrl } = readCredentials();
   if (!apiKey || !apiUrl) process.exit(0);
 
-  // Fetch iron rules
   let rules;
   try {
     const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
@@ -103,89 +70,63 @@ async function main() {
 
   if (relevant.length === 0) process.exit(0);
 
-  logEvent('iron_rule_trigger', { trigger });
-
   const lines = [];
   lines.push(`【OwnMind v${VERSION}】鐵律提醒：即將執行 ${trigger} 操作，請確認以下鐵律`);
   relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
 
-  // For deploy/delete: run verification engine
-  if (trigger === 'deploy' || trigger === 'delete') {
-    try {
-      const os = require('os');
-      const verificationPath = path.join(os.homedir(), '.ownmind', 'shared', 'verification.js');
-      const { evaluateConditions } = await import(verificationPath);
+  // Run verification engine for ALL triggers (commit/deploy/delete)
+  try {
+    const verificationPath = path.join(HOME, '.ownmind', 'shared', 'verification.js');
+    const { evaluateConditions } = await import(verificationPath);
 
-      const cacheFile = path.join(os.homedir(), '.ownmind', 'cache', 'iron_rules.json');
-      const complianceLog = path.join(os.homedir(), '.ownmind', 'logs', 'compliance.jsonl');
+    const cachedRules = readJsonSafe(CACHE_FILE) || [];
 
-      let cachedRules = [];
-      try { cachedRules = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch {}
+    const triggerRules = cachedRules.filter(r => {
+      const triggers = r.metadata?.verification?.trigger;
+      return Array.isArray(triggers) && triggers.includes(trigger);
+    });
 
-      const triggerRules = cachedRules.filter(r => {
-        const triggers = r.metadata?.verification?.trigger;
-        return Array.isArray(triggers) && triggers.includes(trigger);
-      });
+    if (triggerRules.length > 0) {
+      const complianceEvents = readComplianceEvents();
+      const context = { complianceEvents };
+      const blockFailures = [];
 
-      if (triggerRules.length > 0) {
-        // Read compliance events (last 24h)
-        let complianceEvents = [];
-        try {
-          const raw = fs.readFileSync(complianceLog, 'utf8').trim();
-          if (raw) {
-            const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-            for (const line of raw.split('\n')) {
-              if (!line.trim()) continue;
-              try {
-                const entry = JSON.parse(line);
-                if (new Date(entry.ts).getTime() >= cutoff) complianceEvents.push(entry);
-              } catch {}
-            }
+      for (const rule of triggerRules) {
+        const verification = rule.metadata?.verification;
+        if (!verification?.conditions) continue;
+
+        const result = evaluateConditions(verification.conditions, context);
+        if (!result.pass && verification.block_on_fail) {
+          const code = rule.code || rule.metadata?.code || 'IR-???';
+          const title = rule.title || '未命名規則';
+          blockFailures.push(`${code}: ${title}`);
+          for (const f of result.failures) {
+            blockFailures.push(`    → ${f}`);
           }
-        } catch {}
-
-        const context = { complianceEvents };
-        const blockFailures = [];
-
-        for (const rule of triggerRules) {
-          const verification = rule.metadata?.verification;
-          if (!verification?.conditions) continue;
-
-          const result = evaluateConditions(verification.conditions, context);
-          if (!result.pass && verification.block_on_fail) {
-            const code = rule.code || rule.metadata?.code || 'IR-???';
-            const title = rule.title || '未命名規則';
-            blockFailures.push(`${code}: ${title}`);
-            for (const f of result.failures) {
-              blockFailures.push(`    → ${f}`);
-            }
-          }
-        }
-
-        if (blockFailures.length > 0) {
-          lines.push('');
-          lines.push(`【OwnMind v${VERSION}】鐵律攔截：${trigger} 操作被擋下`);
-          blockFailures.forEach(f => lines.push(`  ❌ ${f}`));
-          lines.push(`請先完成上述步驟再執行 ${trigger}。`);
-
-          console.log(JSON.stringify({
-            decision: 'block',
-            reason: `Iron rule verification failed for ${trigger} operation`,
-            hookSpecificOutput: {
-              hookEventName: 'PreToolUse',
-              additionalContext: lines.join('\n')
-            }
-          }));
-          return;
         }
       }
-    } catch {
-      // Verification engine not available, continue with reminder only
+
+      if (blockFailures.length > 0) {
+        lines.push('');
+        lines.push(`【OwnMind v${VERSION}】鐵律攔截：${trigger} 操作被擋下`);
+        blockFailures.forEach(f => lines.push(`  ❌ ${f}`));
+        lines.push(`請先完成上述步驟再執行 ${trigger}。`);
+
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: `Iron rule verification failed for ${trigger} operation`,
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            additionalContext: lines.join('\n')
+          }
+        }));
+        return;
+      }
     }
+  } catch {
+    // Verification engine not available, continue with reminder only
   }
 
-  // For commit: always allow (L1 handles blocking), just show reminders
-  // For deploy/delete: all verifications passed, allow
   console.log(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
