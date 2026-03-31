@@ -45,6 +45,11 @@ app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
 
+// 根路徑導向 Admin
+app.get('/', (req, res) => {
+  res.redirect('/admin/');
+});
+
 // 健康檢查
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
