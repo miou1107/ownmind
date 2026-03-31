@@ -90,8 +90,8 @@ $OwnmindBlock = @(
   "# OwnMind 個人記憶系統",
   "",
   "OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。",
-  "如果 context 中沒有看到【OwnMind】標記，手動呼叫 ownmind_init MCP tool。",
-  "鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind】標記。",
+  "如果 context 中沒有看到【OwnMind vX.X.X】標記，手動呼叫 ownmind_init MCP tool。",
+  "鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind vX.X.X】{類型}：{內容} 格式標記。",
   "觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。"
 ) -join "`n"
 

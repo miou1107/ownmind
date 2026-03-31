@@ -100,7 +100,7 @@ node -e "
   const data = JSON.parse(process.argv[1]);
   const lines = [];
 
-  lines.push('【OwnMind v' + (data.server_version || '?') + '】記憶已自動載入');
+  lines.push('【OwnMind v' + (data.server_version || '?') + '】記憶載入：已載入你的個人記憶');
   lines.push('');
 
   if (data.profile) {
