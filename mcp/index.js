@@ -146,8 +146,85 @@ const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
 // --- Version & Sync Token (in-memory, per session) ---
-const CLIENT_VERSION = '1.10.0';
+const CLIENT_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+    return pkg.version || '0.0.0';
+  } catch { return '0.0.0'; }
+})();
+let serverVersion = null;
 let currentSyncToken = null;
+
+// --- 統一版本標記 ---
+const TYPE_MAP = {
+  ownmind_init: '記憶載入',
+  ownmind_get: {
+    profile: '個人偏好', principle: '工作原則', iron_rule: '鐵律提醒',
+    coding_standard: '編碼標準', team_standard: '團隊規範', project: '專案記憶',
+    env: '環境設定', portfolio: '作品集', session_log: '進度紀錄',
+  },
+  ownmind_search: '記憶搜尋',
+  ownmind_save: '記憶寫入',
+  ownmind_update: '記憶寫入',
+  ownmind_disable: '記憶寫入',
+  ownmind_handoff_create: '建立交接',
+  ownmind_handoff_accept: '接受交接',
+  ownmind_log_session: '進度紀錄',
+  ownmind_get_secret: '密鑰管理',
+  ownmind_list_secrets: '密鑰管理',
+  ownmind_set_secret: '密鑰管理',
+  ownmind_report_compliance: '合規回報',
+};
+
+function getVersion() { return serverVersion || CLIENT_VERSION; }
+function formatTag(type) { return `【OwnMind v${getVersion()}】${type}`; }
+
+function resolveType(name, args) {
+  const entry = TYPE_MAP[name];
+  if (!entry) return name;
+  if (typeof entry === 'string') return entry;
+  // entry is object (ownmind_get)
+  return entry[args?.type] || '記憶載入';
+}
+
+// --- 技巧提示 ---
+const TIPS = [
+  '你說「記起來」，我就會把重要經驗寫進記憶，跨平台永久保存',
+  '你說「新增鐵律」，我會記錄完整的踩坑背景，確保同樣的錯不再犯',
+  '你說「交接給 Codex」，我會整理好工作進度，讓另一個工具無縫接手',
+  '你說「我有哪些記憶」，我會列出你所有的偏好、鐵律和專案 context',
+  '你說「整理記憶」，我會回顧這次對話，找出值得保存的經驗',
+  '你可以問「你學到什麼」「今天有什麼新知識」，讓 AI 回顧並記下學習成果',
+  '不管你用 Claude、Cursor 還是 Codex，OwnMind 讓你的 AI 都共享同一份記憶',
+  '鐵律不會被刪除，只會被停用並記錄原因，方便日後回顧',
+  '每條鐵律都記錄了踩坑的背景，讓你（和 AI）知道為什麼有這條規則',
+  '你可以問「最近做了什麼」，我會從工作紀錄中幫你回顧',
+  'OwnMind 會在你工作超過 2 小時或 context 超過 50% 時，主動提醒你整理記憶',
+  '交接時雙方都會看到摘要，確保沒有資訊遺漏',
+  '你的記憶可以隨時匯出成 markdown，資料永遠屬於你',
+  '你說「不要遵守這條」，我會先問你原因，然後停用但不刪除，留下完整紀錄',
+  '你可以搜尋記憶，例如「跟部署有關的鐵律」，我會用語意搜尋幫你找',
+  'OwnMind 會自動記錄你使用的機器、工具和 AI 模型，方便追溯',
+  '換一台電腦？只要安裝 OwnMind，所有記憶立刻同步，不用重新教 AI',
+  '你可以問「ring 專案還有什麼沒做」，我會從專案記憶中回答',
+  '鐵律有編號（IR-001），方便你直接引用：「參考 IR-003」',
+  '每次交接都會記錄來源工具和模型，你可以追溯是哪個 AI 做的決策',
+  '你可以隨時問「這條鐵律是怎麼來的」，我會告訴你當初踩坑的完整背景',
+  'OwnMind 支援密鑰管理，你的 API key 和密碼可以安全儲存，需要時才取用',
+  '你可以說「更新 ring 的進度」，我會幫你更新專案狀態和待辦事項',
+  '即使在線上 AI（claude.ai、ChatGPT）也能匯出記憶來使用',
+  '記憶分短期和長期：session log 會自動壓縮，鐵律和決策永久保留',
+  '你可以問「哪些鐵律被停用了」，回顧過去的決策變更',
+  'OwnMind 會持續進化 — AI 會主動建議改進你的工作流程和規則',
+  '你說「這個專案做完了」，我會把它歸檔到作品集，記錄技術選型和心得',
+];
+let lastTipIndex = -1;
+function getRandomTip() {
+  let idx;
+  do { idx = Math.floor(Math.random() * TIPS.length); } while (idx === lastTipIndex && TIPS.length > 1);
+  lastTipIndex = idx;
+  return TIPS[idx];
+}
 
 // --- Session tracking (for emergency shutdown log) ---
 const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
@@ -402,6 +479,7 @@ async function handleTool(name, args) {
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
       }
+      if (data.server_version) serverVersion = data.server_version;
       if (data.upgrade_action?.required) {
         data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\n執行：${data.upgrade_action.command}`;
       }
@@ -624,21 +702,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     const result = await handleTool(name, args || {});
+    const typeName = resolveType(name, args);
+    const tag = formatTag(typeName);
+    const body = typeof result === "string" ? result : JSON.stringify(result, null, 2);
     return {
       content: [
-        {
-          type: "text",
-          text: typeof result === "string" ? result : JSON.stringify(result, null, 2),
-        },
+        { type: "text", text: `${tag}：` },
+        { type: "text", text: body },
+        { type: "text", text: `${formatTag('技巧提示')}：${getRandomTip()}` },
       ],
     };
   } catch (error) {
     logEvent('error', { tool_name: name, error: error.message });
+    const tag = formatTag('錯誤回報');
     return {
       content: [
         {
           type: "text",
-          text: `Error: ${error.message}`,
+          text: `${tag}：${error.message}`,
         },
       ],
       isError: true,

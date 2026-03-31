@@ -23,6 +23,13 @@ const COMPLIANCE_LOG = path.join(LOG_DIR, 'compliance.jsonl');
 
 const SOURCE_PATTERNS = [/^src\//, /^mcp\//, /^hooks\//, /^shared\//];
 
+const VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
+    return pkg.version || '?';
+  } catch { return '?'; }
+})();
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -179,7 +186,7 @@ async function main() {
   // 6. Output warnings (don't exit 1 — commit is already done)
   if (violations.length > 0) {
     console.warn('');
-    console.warn('【OwnMind 鐵律警告】此 commit 有以下違規：');
+    console.warn(`【OwnMind v${VERSION}】Commit 後稽核：此 commit 有以下違規`);
     for (const v of violations) {
       console.warn(`  ⚠️  ${v.ruleCode}: ${v.ruleTitle}`);
       for (const f of v.failures) {
@@ -195,6 +202,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(`【OwnMind post-commit】非預期錯誤: ${err.message}`);
+  console.error(`【OwnMind v${VERSION}】錯誤回報：post-commit 非預期錯誤: ${err.message}`);
   process.exit(0);
 });
