@@ -22,6 +22,13 @@ const COMMIT_MSG_FILE = path.join(process.cwd(), '.git', 'COMMIT_EDITMSG');
 
 const SOURCE_PATTERNS = [/^src\//, /^mcp\//, /^hooks\//, /^shared\//];
 
+const VERSION = (() => {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
+    return pkg.version || '?';
+  } catch { return '?'; }
+})();
+
 // ============================================================
 // Helpers
 // ============================================================
@@ -86,7 +93,7 @@ function readComplianceEvents() {
 }
 
 function formatBlockMessage(failures) {
-  const lines = ['', '【OwnMind 鐵律檢查】commit 被擋下：'];
+  const lines = ['', `【OwnMind v${VERSION}】Commit 前檢查：commit 被擋下`];
   for (const f of failures) {
     lines.push(`  ❌ ${f}`);
   }
@@ -96,7 +103,7 @@ function formatBlockMessage(failures) {
 
 function formatPassMessage(checkedCount) {
   if (checkedCount === 0) return '';
-  return `【OwnMind 鐵律檢查】${checkedCount} 條規則全部通過 ✓`;
+  return `【OwnMind v${VERSION}】Commit 前檢查：${checkedCount} 條規則全部通過 ✓`;
 }
 
 // ============================================================
@@ -192,6 +199,6 @@ async function main() {
 
 main().catch(err => {
   // Any unhandled error = don't block the commit
-  console.error(`【OwnMind pre-commit】非預期錯誤，跳過檢查: ${err.message}`);
+  console.error(`【OwnMind v${VERSION}】錯誤回報：pre-commit 非預期錯誤，跳過檢查: ${err.message}`);
   process.exit(0);
 });

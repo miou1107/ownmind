@@ -66,7 +66,7 @@ async function main() {
   logEvent('init', { status: 'ok' });
 
   const lines = [];
-  lines.push(`【OwnMind v${initData.server_version || '?'}】記憶已自動載入`);
+  lines.push(`【OwnMind v${initData.server_version || '?'}】記憶載入：已載入你的個人記憶`);
   lines.push('');
 
   if (initData.profile) {
