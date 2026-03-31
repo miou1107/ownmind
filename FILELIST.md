@@ -57,13 +57,16 @@ OwnMind/
 │   └── package.json                 # MCP Server 依賴
 │
 ├── shared/
-│   └── verification.js              # Verification Engine 核心（純函式）
+│   ├── verification.js              # Verification Engine 核心（純函式）
+│   ├── helpers.js                   # 共用工具函式（readJsonSafe、getChangedSourceFiles、readCredentials、trigger detection）
+│   └── compliance.js                # 統一 compliance log schema 讀寫
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
+│   ├── package.json                 # ESM module declaration（type: module）
 │   ├── ownmind-session-start.sh    # SessionStart hook：自動載入記憶 + 每日自動更新（bash 版）
-│   ├── ownmind-session-start.js    # SessionStart hook：Node.js 版（Windows 無 bash 時使用）
+│   ├── ownmind-session-start.js    # SessionStart hook（L4）：ESM，載入初始記憶並顯示鐵律摘要
 │   ├── ownmind-iron-rule-check.sh  # PreToolUse hook：高風險指令前自動顯示相關鐵律（bash 版）
-│   ├── ownmind-iron-rule-check.js  # PreToolUse hook：Node.js 版（Windows 無 bash 時使用）
+│   ├── ownmind-iron-rule-check.js  # PreToolUse hook（L2）：ESM，commit/deploy/delete 都跑 verification blocking
 │   ├── ownmind-worktree-setup.sh   # WorktreeCreate hook：worktree 自動注入 .mcp.json
 │   ├── ownmind-git-pre-commit.js   # git pre-commit hook (L1)
 │   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
@@ -93,7 +96,10 @@ OwnMind/
 │   ├── report.test.js               # report.js 單元測試（node:test）
 │   ├── enforcement.test.js          # enforcement.js 單元測試
 │   ├── verification.test.js         # Verification Engine 測試
-│   └── templates.test.js            # 模板匹配測試
+│   ├── templates.test.js            # 模板匹配測試
+│   ├── helpers.test.js              # shared/helpers.js 單元測試
+│   ├── compliance.test.js           # shared/compliance.js 單元測試
+│   └── trigger-detection.test.js    # 觸發檢測精準度測試
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

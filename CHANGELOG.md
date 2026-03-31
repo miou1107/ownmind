@@ -1,5 +1,19 @@
 # OwnMind 更新紀錄
 
+## v1.15.0 - Harness Engineering 審計修復
+
+### Refactor
+- **shared/helpers.js**: 新增共用工具模組，消除 hooks 間重複邏輯（readJsonSafe、getChangedSourceFiles、readCredentials、detectCommandTrigger、detectTriggerFromContext）
+- **shared/compliance.js**: 統一 compliance log schema 和讀寫，砍掉 deriveEvent()
+- **快取同步**: save/update/disable iron_rule 後自動刷新 iron_rules.json 快取
+- **L1 fail-closed**: pre-commit hook 快取為空時嘗試 API 同步（3s timeout）
+- **L2 commit blocking**: PreToolUse hook 對 commit 操作也跑 verification engine
+- **L6 lazy load 修復**: auditSession() 改 async，確保 verification engine 已載入
+- **觸發正則改進**: 加 word boundary、新增 git tag 和 Remove-Item、排除 docker compose logs 誤判
+- **ESM 統一**: iron-rule-check.js 和 session-start.js 從 CJS 改為 ESM
+
+---
+
 ## v1.14.0 - Offline Resilience
 
 ### 新增
