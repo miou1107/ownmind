@@ -1,4 +1,4 @@
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -109,5 +109,72 @@ describe('enqueueOperation / readQueue / clearQueue', () => {
     clearQueue();
     const queue = readQueue();
     assert.equal(queue.length, 0);
+  });
+});
+
+describe('replayQueue', () => {
+  let helpers;
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-replay-'));
+    helpers = makeOfflineHelpers(
+      path.join(tmpDir, 'memories.json'),
+      path.join(tmpDir, 'queue.jsonl')
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('empty queue → returns replayed:0, message:null', async () => {
+    const result = await helpers.replayQueue(async () => {}, 'tok');
+    assert.equal(result.replayed, 0);
+    assert.equal(result.remaining, 0);
+    assert.equal(result.message, null);
+  });
+
+  it('all succeed → clears queue, returns done message', async () => {
+    helpers.enqueueOperation({ method: 'POST', path: '/api/memory', body: { title: 'a' } });
+    helpers.enqueueOperation({ method: 'POST', path: '/api/memory', body: { title: 'b' } });
+
+    const calls = [];
+    const result = await helpers.replayQueue(async (method, path, body) => {
+      calls.push({ method, path, body });
+    }, 'new-token');
+
+    assert.equal(result.replayed, 2);
+    assert.equal(result.remaining, 0);
+    assert.ok(result.message.includes('完成'));
+    assert.equal(helpers.readQueue().length, 0);
+  });
+
+  it('replayed body uses currentSyncToken, not stale queued token', async () => {
+    helpers.enqueueOperation({ method: 'POST', path: '/api/memory', body: { title: 'x', sync_token: 'old-token' } });
+
+    const captured = [];
+    await helpers.replayQueue(async (method, path, body) => {
+      captured.push(body);
+    }, 'fresh-token');
+
+    assert.equal(captured[0].sync_token, 'fresh-token');
+  });
+
+  it('partial failure → keeps remaining in queue, returns partial message', async () => {
+    helpers.enqueueOperation({ method: 'POST', path: '/api/memory', body: { title: 'ok' } });
+    helpers.enqueueOperation({ method: 'POST', path: '/api/memory', body: { title: 'fail' } });
+    helpers.enqueueOperation({ method: 'POST', path: '/api/memory', body: { title: 'never' } });
+
+    let callCount = 0;
+    const result = await helpers.replayQueue(async () => {
+      callCount++;
+      if (callCount === 2) throw new Error('network error');
+    }, 'tok');
+
+    assert.equal(result.replayed, 1);
+    assert.equal(result.remaining, 2);
+    assert.ok(result.message.includes('部分失敗'));
+    assert.equal(helpers.readQueue().length, 2);
   });
 });
