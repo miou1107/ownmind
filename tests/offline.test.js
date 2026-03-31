@@ -30,6 +30,16 @@ describe('isNetworkError', () => {
   it('fetch failed is network error', () => {
     assert.equal(isNetworkError(new Error('fetch failed')), true);
   });
+  it('EHOSTUNREACH is network error', () => {
+    const err = new Error('no route to host');
+    err.code = 'EHOSTUNREACH';
+    assert.equal(isNetworkError(err), true);
+  });
+  it('ENETUNREACH is network error', () => {
+    const err = new Error('network unreachable');
+    err.code = 'ENETUNREACH';
+    assert.equal(isNetworkError(err), true);
+  });
   it('API 400 is NOT network error', () => {
     assert.equal(isNetworkError(new Error('API 400: bad request')), false);
   });
