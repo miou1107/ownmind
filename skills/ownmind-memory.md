@@ -784,7 +784,7 @@ OwnMind 使用 sync token 確保多工具環境下的記憶一致性。
 | `ownmind_disable(id, reason)` | 停用記憶 |
 | `ownmind_handoff_create(...)` | 建立交接 |
 | `ownmind_handoff_accept(id, accepted_by)` | 接受交接 |
-| `ownmind_log_session(summary, ...)` | 記錄 session |
+| `ownmind_log_session(summary, tool, model, ...)` | 記錄 session（**summary/tool/model 必填**）|
 | `ownmind_get_secret(key)` | 取得密鑰 |
 | `ownmind_list_secrets` | 列出密鑰 |
 | `ownmind_set_secret(key, value, ...)` | 儲存密鑰 |
