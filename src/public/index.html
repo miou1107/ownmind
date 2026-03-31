@@ -7,39 +7,61 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; }
-    .container { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
-    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-    h1 span { color: #7c3aed; }
-    .subtitle { color: #86868b; margin-bottom: 28px; font-size: 13px; }
+
+    /* Header */
+    .header { background: #fff; border-bottom: 1px solid #e8e8ed; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 50; }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .header-left h1 { font-size: 18px; font-weight: 700; }
+    .header-left h1 span { color: #7c3aed; }
+    .header-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #86868b; }
+    .header-right .user-info { display: flex; align-items: center; gap: 8px; }
+    .header-right .role-badge-sm { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+    .btn-logout { background: none; border: 1px solid #d2d2d7; color: #86868b; padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    .btn-logout:hover { background: #f5f5f7; color: #1d1d1f; }
+
+    .container { max-width: 1080px; margin: 0 auto; padding: 24px; }
 
     /* Login */
     .login-box { max-width: 380px; margin: 120px auto; background: #fff; padding: 32px; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
     .login-box h2 { margin-bottom: 24px; font-size: 20px; text-align: center; }
     .login-box h2 span { color: #7c3aed; }
+
+    /* Form */
     input, select {
       width: 100%; padding: 10px 14px; border: 1px solid #d2d2d7; border-radius: 10px;
       background: #fff; color: #1d1d1f; font-size: 14px; margin-bottom: 12px;
     }
     input:focus, select:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,0.1); }
     input::placeholder { color: #86868b; }
+    label.field-label { display: block; font-size: 12px; color: #86868b; margin-bottom: 4px; font-weight: 500; }
+    .required::after { content: ' *'; color: #dc2626; }
+
+    /* Buttons */
     button { padding: 10px 20px; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.15s; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #7c3aed; color: #fff; width: 100%; }
-    .btn-primary:hover { background: #6d28d9; }
+    .btn-primary:hover:not(:disabled) { background: #6d28d9; }
     .btn-sm { padding: 6px 14px; font-size: 12px; width: auto; }
-    .btn-danger { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
-    .btn-danger:hover { background: #fef2f2; }
-    .btn-copy { background: #f5f5f7; color: #1d1d1f; border: 1px solid #d2d2d7; }
-    .btn-copy:hover { background: #e8e8ed; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+    .btn-outline-danger { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
+    .btn-outline-danger:hover:not(:disabled) { background: #fef2f2; }
+    .btn-ghost { background: #f5f5f7; color: #1d1d1f; border: 1px solid #d2d2d7; }
+    .btn-ghost:hover:not(:disabled) { background: #e8e8ed; }
     .btn-success { background: #7c3aed; color: #fff; }
-    .btn-success:hover { background: #6d28d9; }
+    .btn-success:hover:not(:disabled) { background: #6d28d9; }
+    .btn-icon { padding: 6px 10px; font-size: 14px; background: none; border: 1px solid #d2d2d7; border-radius: 8px; color: #86868b; }
+    .btn-icon:hover { background: #f5f5f7; color: #1d1d1f; }
 
     /* Card */
     .card { background: #fff; padding: 24px; border-radius: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 16px; }
-    .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .card-header h3 { font-size: 15px; font-weight: 600; }
 
     /* Table */
+    .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
-    th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e8e8ed; color: #86868b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+    th { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e8e8ed; color: #86868b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; position: sticky; top: 0; background: #fff; z-index: 1; }
     td { padding: 12px; border-bottom: 1px solid #f0f0f2; font-size: 14px; vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #fafafa; }
@@ -49,44 +71,56 @@
     .role-super_admin { background: #fef3c7; color: #d97706; }
     .role-user { background: #ecfdf5; color: #059669; }
 
-    /* Form row */
-    .form-row { display: flex; gap: 10px; align-items: flex-end; }
-    .form-row .field { flex: 1; }
-    .form-row .field label { display: block; font-size: 12px; color: #86868b; margin-bottom: 4px; font-weight: 500; }
-    .form-row button { margin-bottom: 12px; }
+    /* Actions — 改密碼和刪除要分開（IR-013） */
+    .actions { display: flex; gap: 8px; align-items: center; }
+    .actions-spacer { flex: 1; min-width: 16px; }
 
-    /* Stats */
+    /* Stats cards */
     .stats { display: flex; gap: 12px; margin-bottom: 20px; }
     .stat-card { flex: 1; background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
     .stat-card .number { font-size: 32px; font-weight: 700; color: #7c3aed; }
     .stat-card .label { font-size: 12px; color: #86868b; margin-top: 2px; }
 
+    /* Tag pills for stats overview */
+    .tag-pills { display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px; }
+    .tag-pill { display: inline-block; font-size: 11px; padding: 2px 6px; border-radius: 4px; background: #f5f5f7; color: #1d1d1f; white-space: nowrap; }
+    .tag-pill .count { color: #86868b; margin-left: 2px; }
+
     /* Install prompt */
     .install-prompt { background: #f5f5f7; border: 1px solid #e8e8ed; border-radius: 12px; padding: 16px; margin-top: 10px; }
     .install-prompt pre { font-family: 'SF Mono', Monaco, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: #1d1d1f; margin: 0; }
 
+    /* Collapsible */
+    .collapsible-header { cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+    .collapsible-header::after { content: '\u25B6'; font-size: 10px; color: #86868b; transition: transform 0.2s; }
+    .collapsible-header.open::after { transform: rotate(90deg); }
+    .collapsible-body { display: none; }
+    .collapsible-body.open { display: block; margin-top: 12px; }
+
     /* Toast */
-    .toast { position: fixed; bottom: 24px; right: 24px; background: #1d1d1f; color: #fff; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.15); color: #fff; }
+    .toast.success { background: #059669; }
     .toast.error { background: #dc2626; }
 
-    /* Memory search modal */
+    /* Modal */
     .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); display: none; z-index: 200; justify-content: center; align-items: center; }
     .modal-overlay.active { display: flex; }
-    .modal-content { background: #fff; border-radius: 16px; padding: 24px; max-width: 560px; width: 90%; max-height: 70vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
-    .modal-content h3 { margin: 0 0 16px; font-size: 16px; }
+    .modal-content { background: #fff; border-radius: 16px; padding: 24px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+    .modal-content h3 { margin: 0 0 20px; font-size: 16px; }
+    .modal-close { float: right; cursor: pointer; font-size: 22px; color: #86868b; border: none; background: none; padding: 0 4px; line-height: 1; }
+    .modal-close:hover { color: #1d1d1f; }
+    .modal-footer { display: flex; gap: 12px; margin-top: 20px; }
+    .modal-footer .btn-cancel { flex: 1; }
+    .modal-footer .btn-confirm { flex: 1; }
     .modal-item { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
     .modal-item .type-badge { display: inline-block; font-size: 11px; background: #f0f0f0; color: #666; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
     .modal-item .title { font-weight: 600; }
     .modal-item .date { font-size: 12px; color: #86868b; margin-top: 2px; }
-    .modal-close { float: right; cursor: pointer; font-size: 18px; color: #86868b; border: none; background: none; }
 
     .hidden { display: none; }
 
     /* Verification badge */
     .badge-auto-verify { display: inline-block; font-size: 10px; font-weight: 600; color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; padding: 1px 6px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
-
-    /* Actions cell */
-    .actions { display: flex; gap: 6px; }
 
     /* Tabs */
     .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e8e8ed; }
@@ -121,6 +155,19 @@
     .activity-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
     .dot-active { background: #00b894; }
     .dot-inactive { background: #d2d2d7; }
+
+    /* Reports */
+    .report-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 20px; }
+    .report-controls select { width: auto; margin-bottom: 0; padding: 8px 12px; }
+    .report-controls button { margin-bottom: 0; padding: 8px 20px; }
+    .report-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+    .report-card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .report-card .report-label { font-size: 13px; color: #86868b; margin-bottom: 4px; }
+    .report-card .report-value { font-size: 32px; font-weight: 700; color: #1d1d1f; }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
   </style>
 </head>
 <body>
@@ -131,9 +178,8 @@
   <div id="loginForm">
     <input type="email" id="loginEmail" placeholder="Email">
     <input type="password" id="loginPassword" placeholder="密碼">
-    <button class="btn-primary" onclick="login()">登入</button>
+    <button class="btn-primary" id="loginBtn" onclick="login()">登入</button>
   </div>
-  <!-- 首次設定密碼 -->
   <div id="setupForm" class="hidden">
     <p style="color:#86868b;font-size:13px;margin-bottom:16px;">首次登入，請設定您的管理員密碼</p>
     <input type="password" id="setupPassword" placeholder="新密碼（至少 8 字元）">
@@ -143,15 +189,27 @@
   </div>
 </div>
 
+<!-- Header (hidden until login) -->
+<div id="appHeader" class="header hidden">
+  <div class="header-left">
+    <h1>【<span>OwnMind</span>】Admin</h1>
+  </div>
+  <div class="header-right">
+    <div class="user-info">
+      <span id="headerUserName"></span>
+      <span id="headerUserRole" class="role-badge-sm"></span>
+    </div>
+    <button class="btn-logout" onclick="logout()">登出</button>
+  </div>
+</div>
+
 <!-- Dashboard -->
 <div id="dashboard" class="container hidden">
-  <h1>【<span>OwnMind</span>】Admin</h1>
-  <p class="subtitle">使用者管理後台</p>
 
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('users')">使用者管理</div>
-    <div class="tab" onclick="switchTab('stats')">統計儀表板</div>
-    <div class="tab" onclick="switchTab('reports')">週/月報</div>
+    <div class="tab active" data-tab="users" onclick="switchTab('users')">使用者管理</div>
+    <div class="tab" data-tab="stats" onclick="switchTab('stats')">統計儀表板</div>
+    <div class="tab" data-tab="reports" onclick="switchTab('reports')">週/月報</div>
   </div>
 
   <!-- ===== TAB: 使用者管理 ===== -->
@@ -170,63 +228,42 @@
 
   <!-- Users Table -->
   <div class="card">
-    <h3>使用者列表</h3>
+    <div class="card-header">
+      <h3>使用者列表</h3>
+      <button class="btn-success btn-sm" onclick="openAddUserModal()">+ 新增使用者</button>
+    </div>
+    <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>ID</th>
           <th>Email</th>
           <th>名稱</th>
           <th>角色</th>
           <th>API Key</th>
-          <th>高風險鐵律</th>
-          <th>操作</th>
+          <th style="text-align:right;">操作</th>
         </tr>
       </thead>
       <tbody id="usersTable"></tbody>
     </table>
-  </div>
-
-  <!-- Add User -->
-  <div class="card">
-    <h3>新增使用者</h3>
-    <div class="form-row">
-      <div class="field">
-        <label>Email</label>
-        <input type="email" id="newEmail" placeholder="user@example.com">
-      </div>
-      <div class="field">
-        <label>名稱</label>
-        <input type="text" id="newName" placeholder="使用者名稱">
-      </div>
-      <div class="field" style="max-width: 120px;">
-        <label>角色</label>
-        <select id="newRole" onchange="toggleNewPasswordField()">
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
-          <option value="super_admin" class="super-admin-only hidden">Super Admin</option>
-        </select>
-      </div>
-      <div class="field" id="newPasswordField" style="display:none;">
-        <label>密碼</label>
-        <input type="password" id="newPassword" placeholder="至少 8 字元">
-      </div>
-      <button class="btn-success btn-sm" onclick="addUser()">新增</button>
     </div>
   </div>
 
-  <!-- Install Prompt Template -->
+  <!-- Install Prompt (collapsible) -->
   <div class="card">
-    <h3>安裝 Prompt</h3>
-    <p style="color: #86868b; font-size: 13px; margin-bottom: 10px;">選擇使用者後自動帶入 API Key，複製給使用者貼到 AI 工具即可完成安裝</p>
-    <select id="promptUser" onchange="updatePrompt()">
-      <option value="">-- 選擇使用者 --</option>
-    </select>
-    <div class="install-prompt">
-      <pre id="installPrompt">請先選擇使用者</pre>
+    <div class="collapsible-header" id="promptToggle" onclick="toggleCollapsible('promptToggle','promptBody')">
+      <h3>安裝 Prompt</h3>
     </div>
-    <div style="margin-top: 10px;">
-      <button class="btn-copy btn-sm" onclick="copyPrompt()">複製 Prompt</button>
+    <div class="collapsible-body" id="promptBody">
+      <p style="color: #86868b; font-size: 13px; margin-bottom: 10px;">選擇使用者後自動帶入 API Key，複製給使用者貼到 AI 工具即可完成安裝</p>
+      <select id="promptUser" onchange="updatePrompt()">
+        <option value="">-- 選擇使用者 --</option>
+      </select>
+      <div class="install-prompt">
+        <pre id="installPrompt">請先選擇使用者</pre>
+      </div>
+      <div style="margin-top: 10px;">
+        <button class="btn-ghost btn-sm" onclick="copyPrompt()">複製 Prompt</button>
+      </div>
     </div>
   </div>
 
@@ -235,17 +272,16 @@
   <!-- ===== TAB: 統計儀表板 ===== -->
   <div id="tab-stats" class="tab-content">
 
-    <!-- 用戶選擇 + 時間範圍 -->
     <div class="card">
-      <div class="form-row">
-        <div class="field">
-          <label>選擇使用者</label>
+      <div style="display:flex;gap:12px;align-items:flex-end;">
+        <div style="flex:1;">
+          <label class="field-label">選擇使用者</label>
           <select id="statsUser" onchange="loadUserStats()">
             <option value="">-- 全部用戶總覽 --</option>
           </select>
         </div>
-        <div class="field" style="max-width: 140px;">
-          <label>時間範圍</label>
+        <div style="max-width:140px;">
+          <label class="field-label">時間範圍</label>
           <select id="statsDays" onchange="loadUserStats()">
             <option value="7">最近 7 天</option>
             <option value="30" selected>最近 30 天</option>
@@ -258,160 +294,101 @@
     <!-- 全部用戶總覽 -->
     <div id="statsOverview">
       <div class="card">
-        <h3>用戶活躍度</h3>
+        <h3 style="margin-bottom:16px;">用戶活躍度</h3>
+        <div class="table-wrap">
         <table class="user-overview">
           <thead>
-            <tr><th>狀態</th><th>用戶</th><th>記憶</th><th>Session</th><th>使用工具</th><th>使用模型</th><th>落地率</th><th>各 AI 落地率</th><th>最後活躍</th></tr>
+            <tr><th>狀態</th><th>用戶</th><th>記憶</th><th>Session</th><th>使用工具</th><th>使用模型</th><th>落地率</th><th>最後活躍</th></tr>
           </thead>
           <tbody id="overviewTable"></tbody>
         </table>
+        </div>
       </div>
     </div>
 
     <!-- 單一用戶統計 -->
     <div id="statsDetail" class="hidden">
-
-      <!-- 記憶概覽 -->
       <div class="stats-grid" id="memoryCards"></div>
-
-      <!-- 記憶分佈 -->
-      <div class="card">
-        <h3>記憶類型分佈</h3>
-        <div class="bar-chart" id="memoryTypeChart"></div>
+      <div class="card"><h3>記憶類型分佈</h3><div class="bar-chart" id="memoryTypeChart"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card"><h3>工具使用分佈</h3><div class="bar-chart" id="toolChart"></div></div>
+        <div class="card"><h3>模型使用分佈</h3><div class="bar-chart" id="modelChart"></div></div>
       </div>
-
-      <!-- 工具 & 模型分佈 -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div class="card">
-          <h3>工具使用分佈</h3>
-          <div class="bar-chart" id="toolChart"></div>
-        </div>
-        <div class="card">
-          <h3>模型使用分佈</h3>
-          <div class="bar-chart" id="modelChart"></div>
-        </div>
+      <div class="card"><h3>每日活動量</h3><div class="daily-chart" id="dailyChart"></div></div>
+      <div class="card"><h3>鐵律合規率</h3><div class="stats-grid" id="complianceCards"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card"><h3>各規則落地率</h3><div id="ruleComplianceChart"></div></div>
+        <div class="card"><h3>各工具落地率</h3><div id="toolComplianceChart"></div></div>
       </div>
-
-      <!-- 每日活躍度 -->
-      <div class="card">
-        <h3>每日活動量</h3>
-        <div class="daily-chart" id="dailyChart"></div>
-      </div>
-
-      <!-- 合規分析 -->
-      <div class="card">
-        <h3>鐵律合規率</h3>
-        <div class="stats-grid" id="complianceCards"></div>
-      </div>
-
-      <!-- 按規則 × 合規 -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div class="card">
-          <h3>各規則落地率</h3>
-          <div id="ruleComplianceChart"></div>
-        </div>
-        <div class="card">
-          <h3>各工具落地率</h3>
-          <div id="toolComplianceChart"></div>
-        </div>
-      </div>
-
-      <!-- 鐵律詳細落地率 -->
       <div class="card">
         <h3>每條鐵律落地率</h3>
+        <div class="table-wrap">
         <table id="ruleStatsTable" style="margin-top:8px;">
           <thead><tr><th>編號</th><th>鐵律</th><th>遵守</th><th>跳過</th><th>違反</th><th>落地率</th></tr></thead>
           <tbody id="ruleStatsBody"></tbody>
         </table>
+        </div>
         <div id="neverTestedRules" style="margin-top:12px;font-size:12px;color:#86868b;"></div>
       </div>
-
-      <!-- 鐵律 & 健康 -->
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-        <div class="card">
-          <h3>鐵律觸發 Top 5</h3>
-          <div class="bar-chart" id="ruleChart"></div>
-          <div id="ruleStats" style="margin-top: 12px; font-size: 13px; color: #86868b;"></div>
-        </div>
-        <div class="card">
-          <h3>系統健康</h3>
-          <div id="healthStats"></div>
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div class="card"><h3>鐵律觸發 Top 5</h3><div class="bar-chart" id="ruleChart"></div><div id="ruleStats" style="margin-top:12px;font-size:13px;color:#86868b;"></div></div>
+        <div class="card"><h3>系統健康</h3><div id="healthStats"></div></div>
       </div>
-
-      <!-- 情境分析 -->
       <div id="contextSection" class="hidden">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div class="card">
-            <h3>常用操作</h3>
-            <div class="bar-chart" id="actionChart"></div>
-          </div>
-          <div class="card">
-            <h3>專案分佈</h3>
-            <div class="bar-chart" id="projectChart"></div>
-          </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="card"><h3>常用操作</h3><div class="bar-chart" id="actionChart"></div></div>
+          <div class="card"><h3>專案分佈</h3><div class="bar-chart" id="projectChart"></div></div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
-          <div class="card">
-            <h3>使用者痛點</h3>
-            <div id="frictionList"></div>
-          </div>
-          <div class="card">
-            <h3>AI 改善建議</h3>
-            <div id="suggestionList"></div>
-          </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="card"><h3>使用者痛點</h3><div id="frictionList"></div></div>
+          <div class="card"><h3>AI 改善建議</h3><div id="suggestionList"></div></div>
         </div>
       </div>
-
-      <!-- 交接 -->
-      <div class="card">
-        <h3>交接統計</h3>
-        <div id="handoffStats"></div>
-      </div>
+      <div class="card"><h3>交接統計</h3><div id="handoffStats"></div></div>
     </div>
 
   </div><!-- end tab-stats -->
 
   <!-- ===== TAB: 週/月報 ===== -->
   <div id="tab-reports" class="tab-content">
-    <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px;">
-      <select id="report-period" style="padding:6px 12px;border:1px solid #d2d2d7;border-radius:6px;font-size:14px;">
+    <div class="report-controls">
+      <select id="report-period">
         <option value="week">週報</option>
         <option value="month">月報</option>
       </select>
-      <select id="report-offset" style="padding:6px 12px;border:1px solid #d2d2d7;border-radius:6px;font-size:14px;">
+      <select id="report-offset">
         <option value="0">本期</option>
         <option value="1">上一期</option>
         <option value="2">兩期前</option>
         <option value="3">三期前</option>
       </select>
-      <button onclick="loadReport()" style="padding:6px 16px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">載入</button>
+      <button class="btn-success btn-sm" onclick="loadReport()" id="reportLoadBtn">載入報表</button>
     </div>
 
     <div id="report-period-label" style="color:#86868b;font-size:13px;margin-bottom:16px;">—</div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
-      <div class="card">
-        <div style="font-size:13px;color:#86868b;margin-bottom:4px;">新增記憶</div>
-        <div id="report-new-memories" style="font-size:32px;font-weight:700;color:#1d1d1f;">—</div>
+    <div class="report-grid">
+      <div class="report-card">
+        <div class="report-label">新增記憶</div>
+        <div class="report-value" id="report-new-memories">—</div>
       </div>
-      <div class="card">
-        <div style="font-size:13px;color:#86868b;margin-bottom:4px;">自動建立 Friction Issue</div>
-        <div id="report-friction-issues" style="font-size:32px;font-weight:700;color:#1d1d1f;">—</div>
+      <div class="report-card">
+        <div class="report-label">自動建立 Friction Issue</div>
+        <div class="report-value" id="report-friction-issues">—</div>
       </div>
-      <div class="card">
-        <div style="font-size:13px;color:#86868b;margin-bottom:4px;">自動建立 Suggestion Action</div>
-        <div id="report-suggestion-actions" style="font-size:32px;font-weight:700;color:#7c3aed;">—</div>
+      <div class="report-card">
+        <div class="report-label">自動建立 Suggestion Action</div>
+        <div class="report-value" id="report-suggestion-actions" style="color:#7c3aed;">—</div>
       </div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
-      <div>
-        <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">⚠️ Top Frictions</h3>
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Top Frictions</h3>
         <div id="report-frictions-list" style="font-size:14px;color:#3a3a3c;"></div>
       </div>
-      <div>
-        <h3 style="font-size:15px;font-weight:600;margin-bottom:12px;">💡 Top Suggestions</h3>
+      <div class="card">
+        <h3 style="margin-bottom:12px;">Top Suggestions</h3>
         <div id="report-suggestions-list" style="font-size:14px;color:#3a3a3c;"></div>
       </div>
     </div>
@@ -420,20 +397,66 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Add User Modal -->
+<div class="modal-overlay" id="addUserModal" onclick="if(event.target===this)closeAddUserModal()">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeAddUserModal()">&times;</button>
+    <h3>新增使用者</h3>
+    <label class="field-label required">Email</label>
+    <input type="email" id="newEmail" placeholder="user@example.com">
+    <label class="field-label">名稱</label>
+    <input type="text" id="newName" placeholder="使用者名稱">
+    <label class="field-label">角色</label>
+    <select id="newRole" onchange="toggleNewPasswordField()">
+      <option value="user">User</option>
+      <option value="admin">Admin</option>
+      <option value="super_admin" class="super-admin-only hidden">Super Admin</option>
+    </select>
+    <div id="newPasswordField" style="display:none;">
+      <label class="field-label required">密碼</label>
+      <input type="password" id="newPassword" placeholder="至少 8 字元">
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost btn-cancel" onclick="closeAddUserModal()">取消</button>
+      <button class="btn-success btn-confirm" id="addUserBtn" onclick="addUser()">新增使用者</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay" id="deleteModal" onclick="if(event.target===this)closeDeleteModal()">
+  <div class="modal-content" style="max-width:400px;">
+    <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+    <h3 style="color:#dc2626;">確認刪除使用者</h3>
+    <p style="margin-bottom:8px;font-size:14px;">你確定要刪除以下使用者？此操作無法復原。</p>
+    <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin-bottom:16px;">
+      <div style="font-weight:600;" id="deleteUserName"></div>
+      <div style="font-size:13px;color:#86868b;" id="deleteUserEmail"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost btn-cancel" onclick="closeDeleteModal()">取消</button>
+      <button class="btn-danger btn-confirm" id="deleteConfirmBtn" onclick="confirmDelete()">確認刪除</button>
+    </div>
+  </div>
+</div>
+
 <!-- Change Password Modal -->
 <div class="modal-overlay" id="passwordModal" onclick="if(event.target===this)closePasswordModal()">
   <div class="modal-content" style="max-width:400px;">
     <button class="modal-close" onclick="closePasswordModal()">&times;</button>
     <h3 id="passwordModalTitle">修改密碼</h3>
     <div id="oldPasswordField">
-      <label style="display:block;font-size:12px;color:#86868b;margin-bottom:4px;">舊密碼</label>
-      <input type="password" id="modalOldPassword" placeholder="舊密碼" style="margin-bottom:12px;">
+      <label class="field-label">舊密碼</label>
+      <input type="password" id="modalOldPassword" placeholder="舊密碼">
     </div>
-    <label style="display:block;font-size:12px;color:#86868b;margin-bottom:4px;">新密碼</label>
-    <input type="password" id="modalNewPassword" placeholder="新密碼（至少 8 字元）" style="margin-bottom:12px;">
-    <label style="display:block;font-size:12px;color:#86868b;margin-bottom:4px;">確認新密碼</label>
-    <input type="password" id="modalNewPasswordConfirm" placeholder="確認新密碼" style="margin-bottom:16px;">
-    <button class="btn-primary" onclick="submitChangePassword()">確認修改</button>
+    <label class="field-label required">新密碼</label>
+    <input type="password" id="modalNewPassword" placeholder="至少 8 字元">
+    <label class="field-label required">確認新密碼</label>
+    <input type="password" id="modalNewPasswordConfirm" placeholder="確認新密碼">
+    <div class="modal-footer">
+      <button class="btn-ghost btn-cancel" onclick="closePasswordModal()">取消</button>
+      <button class="btn-primary btn-confirm" id="pwSubmitBtn" onclick="submitChangePassword()">確認修改</button>
+    </div>
   </div>
 </div>
 
@@ -452,7 +475,10 @@
   let usersData = [];
   let currentUserRole = '';
   let currentUserId = null;
+  let currentUserName = '';
   let passwordModalTargetId = null;
+  let deleteTargetId = null;
+  let deleteTargetEmail = '';
 
   function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
@@ -480,11 +506,31 @@
   function showToast(msg, isError = false) {
     const t = document.getElementById('toast');
     t.textContent = msg;
-    t.className = isError ? 'toast error' : 'toast';
+    t.className = isError ? 'toast error' : 'toast success';
     t.style.display = 'block';
     setTimeout(() => t.style.display = 'none', 3000);
   }
 
+  function setLoading(btnId, loading) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (loading) {
+      btn.disabled = true;
+      btn._origText = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner"></span>' + btn._origText;
+    } else {
+      btn.disabled = false;
+      if (btn._origText) btn.innerHTML = btn._origText;
+    }
+  }
+
+  // ===== Collapsible =====
+  function toggleCollapsible(headerId, bodyId) {
+    document.getElementById(headerId).classList.toggle('open');
+    document.getElementById(bodyId).classList.toggle('open');
+  }
+
+  // ===== Login =====
   function showLoginForm() {
     document.getElementById('loginForm').classList.remove('hidden');
     document.getElementById('setupForm').classList.add('hidden');
@@ -494,6 +540,7 @@
     const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
     if (!email || !password) return showToast('請輸入 Email 和密碼', true);
+    setLoading('loginBtn', true);
     try {
       const res = await fetch(`${API}/admin/login`, {
         method: 'POST',
@@ -502,18 +549,17 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-
       if (data.requiresSetup) {
-        // 首次設定密碼流程
         document.getElementById('loginForm').classList.add('hidden');
         document.getElementById('setupForm').classList.remove('hidden');
         document.getElementById('setupForm').dataset.email = email;
         return;
       }
-
       enterDashboard(data);
     } catch (e) {
       showToast(e.message, true);
+    } finally {
+      setLoading('loginBtn', false);
     }
   }
 
@@ -541,11 +587,19 @@
     API_KEY = data.api_key;
     currentUserRole = data.role;
     currentUserId = data.id || null;
+    currentUserName = data.name || data.email;
 
     document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('appHeader').classList.remove('hidden');
     document.getElementById('dashboard').classList.remove('hidden');
 
-    // 角色感知：super_admin 才顯示 super_admin 選項
+    // Header user info
+    document.getElementById('headerUserName').textContent = currentUserName;
+    const roleEl = document.getElementById('headerUserRole');
+    roleEl.textContent = currentUserRole;
+    roleEl.className = `role-badge-sm role-badge role-${currentUserRole}`;
+
+    // super_admin 才顯示 super_admin 選項
     if (currentUserRole === 'super_admin') {
       document.querySelectorAll('.super-admin-only').forEach(el => {
         el.classList.remove('hidden');
@@ -557,6 +611,18 @@
     loadStats();
   }
 
+  function logout() {
+    API_KEY = '';
+    currentUserRole = '';
+    currentUserId = null;
+    document.getElementById('loginView').classList.remove('hidden');
+    document.getElementById('appHeader').classList.add('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('loginEmail').value = '';
+    document.getElementById('loginPassword').value = '';
+  }
+
+  // ===== Users =====
   async function loadUsers() {
     const res = await fetch(`${API}/admin/users`, { headers: headers() });
     usersData = await res.json();
@@ -566,58 +632,36 @@
       const isSuperAdmin = currentUserRole === 'super_admin';
       const isSelf = currentUserId === u.id;
 
-      // 刪除按鈕：只有 super_admin 看到，且不能刪自己和 ID=1
       const canDelete = isSuperAdmin && !isSelf && u.id !== 1;
       const deleteBtn = canDelete
-        ? `<button class="btn-danger btn-sm" data-id="${u.id}" data-email="${esc(u.email)}" onclick="deleteUser(this.dataset.id, this.dataset.email)">刪除</button>`
+        ? `<button class="btn-outline-danger btn-sm" onclick="openDeleteModal(${u.id}, '${esc(u.name || u.email)}', '${esc(u.email)}')">刪除</button>`
         : '';
 
-      // 改密碼按鈕：super_admin 看所有 admin 的 + 自己；admin 只看自己的
       const canChangePassword = isSelf || (isSuperAdmin && u.role !== 'user');
       const pwBtn = canChangePassword
-        ? `<button class="btn-copy btn-sm" data-id="${u.id}" data-self="${isSelf}" onclick="openPasswordModal(${u.id}, ${isSelf})">改密碼</button>`
+        ? `<button class="btn-icon" title="改密碼" onclick="openPasswordModal(${u.id}, ${isSelf})">&#128273;</button>`
         : '';
 
       return `<tr>
-        <td>${u.id}</td>
         <td>${esc(u.email)}</td>
         <td>${esc(u.name || '-')}</td>
         <td><span class="role-badge role-${esc(u.role)}">${esc(u.role)}</span></td>
         <td>
           <span class="api-key">${esc(u.api_key.slice(0, 12))}...</span>
-          <button class="btn-copy btn-sm" data-key="${esc(u.api_key)}" onclick="copyKey(this.dataset.key)">複製</button>
+          <button class="btn-icon" title="複製 API Key" onclick="copyKey('${esc(u.api_key)}')">&#128203;</button>
         </td>
-        <td id="risk-${u.id}" style="text-align:center;color:#86868b;">—</td>
-        <td class="actions">${pwBtn}${deleteBtn}</td>
+        <td style="text-align:right;">
+          <div class="actions" style="justify-content:flex-end;">
+            ${pwBtn}
+            ${canDelete ? '<span class="actions-spacer"></span>' : ''}
+            ${deleteBtn}
+          </div>
+        </td>
       </tr>`;
     }).join('');
 
-    // 載入高風險鐵律數
-    for (const u of usersData) {
-      try {
-        const res = await fetch(`${API}/activity/stats/rules?user_id=${u.id}&days=30`, { headers: headers() });
-        if (res.ok) {
-          const stats = await res.json();
-          const riskCount = (stats.rules || []).filter(r => r.violated > 0).length;
-          const el = document.getElementById(`risk-${u.id}`);
-          if (el) {
-            if (riskCount > 0) {
-              el.textContent = riskCount;
-              el.style.color = riskCount >= 3 ? '#dc2626' : '#e65c00';
-              el.style.fontWeight = '600';
-            } else {
-              el.textContent = '0';
-              el.style.color = '#22c55e';
-            }
-          }
-        }
-      } catch {}
-    }
-
-    // Update stats
     document.getElementById('totalUsers').textContent = usersData.length;
 
-    // Update prompt user select
     const sel = document.getElementById('promptUser');
     sel.innerHTML = '<option value="">-- 選擇使用者 --</option>' +
       usersData.map(u => `<option value="${u.api_key}">${u.name || u.email}</option>`).join('');
@@ -633,6 +677,20 @@
     } catch { document.getElementById('totalMemories').textContent = '-'; }
   }
 
+  // ===== Add User Modal =====
+  function openAddUserModal() {
+    document.getElementById('newEmail').value = '';
+    document.getElementById('newName').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('newRole').value = 'user';
+    toggleNewPasswordField();
+    document.getElementById('addUserModal').classList.add('active');
+  }
+
+  function closeAddUserModal() {
+    document.getElementById('addUserModal').classList.remove('active');
+  }
+
   function toggleNewPasswordField() {
     const role = document.getElementById('newRole').value;
     const field = document.getElementById('newPasswordField');
@@ -645,6 +703,10 @@
     const role = document.getElementById('newRole').value;
     const password = document.getElementById('newPassword').value;
     if (!email) return showToast('請輸入 Email', true);
+    if ((role === 'admin' || role === 'super_admin') && (!password || password.length < 8)) {
+      return showToast('Admin 角色必須設定密碼（至少 8 字元）', true);
+    }
+    setLoading('addUserBtn', true);
     try {
       const body = { email, name, role };
       if (password) body.password = password;
@@ -654,31 +716,45 @@
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
       showToast(`已建立 ${email}`);
-      document.getElementById('newEmail').value = '';
-      document.getElementById('newName').value = '';
-      document.getElementById('newPassword').value = '';
-      document.getElementById('newRole').value = 'user';
-      toggleNewPasswordField();
+      closeAddUserModal();
       loadUsers();
     } catch (e) { showToast(e.message, true); }
+    finally { setLoading('addUserBtn', false); }
   }
 
-  async function deleteUser(id, email) {
-    if (!confirm(`確定要刪除 ${email}？`)) return;
+  // ===== Delete Modal =====
+  function openDeleteModal(id, name, email) {
+    deleteTargetId = id;
+    deleteTargetEmail = email;
+    document.getElementById('deleteUserName').textContent = name;
+    document.getElementById('deleteUserEmail').textContent = email;
+    document.getElementById('deleteModal').classList.add('active');
+  }
+
+  function closeDeleteModal() {
+    document.getElementById('deleteModal').classList.remove('active');
+    deleteTargetId = null;
+  }
+
+  async function confirmDelete() {
+    if (!deleteTargetId) return;
+    setLoading('deleteConfirmBtn', true);
     try {
-      const res = await fetch(`${API}/admin/users/${id}`, { method: 'DELETE', headers: headers() });
+      const res = await fetch(`${API}/admin/users/${deleteTargetId}`, { method: 'DELETE', headers: headers() });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
-      showToast(`已刪除 ${email}`);
+      showToast(`已刪除 ${deleteTargetEmail}`);
+      closeDeleteModal();
       loadUsers();
     } catch (e) { showToast(e.message, true); }
+    finally { setLoading('deleteConfirmBtn', false); }
   }
 
+  // ===== Password Modal =====
   function openPasswordModal(userId, isSelf) {
     passwordModalTargetId = userId;
     document.getElementById('modalOldPassword').value = '';
     document.getElementById('modalNewPassword').value = '';
     document.getElementById('modalNewPasswordConfirm').value = '';
-    // 只有改自己的才需要舊密碼
     const needOld = isSelf || currentUserRole !== 'super_admin';
     document.getElementById('oldPasswordField').style.display = needOld ? '' : 'none';
     document.getElementById('passwordModalTitle').textContent = isSelf ? '修改我的密碼' : '重設使用者密碼';
@@ -696,6 +772,7 @@
     const confirm = document.getElementById('modalNewPasswordConfirm').value;
     if (!newPassword || newPassword.length < 8) return showToast('新密碼至少 8 個字元', true);
     if (newPassword !== confirm) return showToast('兩次密碼不一致', true);
+    setLoading('pwSubmitBtn', true);
     try {
       const body = { newPassword };
       if (document.getElementById('oldPasswordField').style.display !== 'none') {
@@ -709,8 +786,10 @@
       showToast('密碼已更新');
       closePasswordModal();
     } catch (e) { showToast(e.message, true); }
+    finally { setLoading('pwSubmitBtn', false); }
   }
 
+  // ===== Utilities =====
   function copyKey(key) {
     navigator.clipboard.writeText(key);
     showToast('API Key 已複製');
@@ -718,7 +797,7 @@
 
   function getApiUrl() {
     const loc = window.location;
-    return loc.origin + loc.pathname.replace(/\/admin(\.html)?$/, '').replace(/\/$/, '');
+    return loc.origin + loc.pathname.replace(/\/admin(\/.*)?$/, '').replace(/\/$/, '');
   }
 
   function updatePrompt() {
@@ -750,13 +829,11 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     title.textContent = type === 'friction' ? '相關記憶（friction）' : '相關記憶（suggestion）';
     body.innerHTML = '<div style="color:#86868b;">搜尋中...</div>';
     modal.classList.add('active');
-
     try {
       const q = text.slice(0, 30);
       const res = await fetch(`${API}/memory/search?q=${encodeURIComponent(q)}`, { headers: headers() });
       if (!res.ok) throw new Error(await res.text());
       const memories = await res.json();
-
       if (memories.length === 0) {
         body.innerHTML = '<div style="color:#86868b;padding:16px 0;">尚無相關記憶</div>';
         return;
@@ -778,17 +855,18 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     document.getElementById('memoryModal').classList.remove('active');
   }
 
-  // Event delegation for clickable friction/suggestion items (avoids inline onclick XSS)
+  // Event delegation
   document.addEventListener('click', e => {
     const el = e.target.closest('[data-search-text]');
     if (el) searchMemory(el.dataset.searchText, el.dataset.searchType);
   });
 
-  // Close modal on Escape
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       closeMemoryModal();
       closePasswordModal();
+      closeAddUserModal();
+      closeDeleteModal();
     }
   });
 
@@ -800,7 +878,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
   function switchTab(tab) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.tab[onclick*="${tab}"]`).classList.add('active');
+    document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
     document.getElementById(`tab-${tab}`).classList.add('active');
     if (tab === 'stats') {
       const sel = document.getElementById('statsUser');
@@ -816,11 +894,9 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
   async function loadReport() {
     const period = document.getElementById('report-period').value;
     const offset = document.getElementById('report-offset').value;
-
+    setLoading('reportLoadBtn', true);
     try {
-      const res = await fetch(`${API}/session/report?period=${period}&offset=${offset}`, {
-        headers: headers()
-      });
+      const res = await fetch(`${API}/session/report?period=${period}&offset=${offset}`, { headers: headers() });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
 
@@ -829,35 +905,31 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       document.getElementById('report-friction-issues').textContent = data.friction_issues_created ?? '—';
       document.getElementById('report-suggestion-actions').textContent = data.suggestion_actions_created ?? '—';
 
-      // Frictions (clickable via data attributes)
       const frictionEl = document.getElementById('report-frictions-list');
       if (data.top_frictions && data.top_frictions.length > 0) {
-        frictionEl.innerHTML = data.top_frictions.map(f => {
-          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-search-text="${esc(f.text)}" data-search-type="friction" title="點擊搜尋相關記憶">
+        frictionEl.innerHTML = data.top_frictions.map(f =>
+          `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-search-text="${esc(f.text)}" data-search-type="friction" title="點擊搜尋相關記憶">
             <span style="font-weight:600;color:#e65c00;">${f.count}x</span>
             <span style="margin-left:8px;">${esc(f.text)}</span>
-            <span style="float:right;color:#ccc;font-size:12px;">🔍</span>
-          </div>`;
-        }).join('');
+          </div>`).join('');
       } else {
         frictionEl.innerHTML = '<div style="color:#86868b;">本期無 friction 資料</div>';
       }
 
-      // Suggestions (clickable via data attributes)
       const suggestEl = document.getElementById('report-suggestions-list');
       if (data.top_suggestions && data.top_suggestions.length > 0) {
-        suggestEl.innerHTML = data.top_suggestions.map(s => {
-          return `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-search-text="${esc(s.text)}" data-search-type="suggestion" title="點擊搜尋相關記憶">
+        suggestEl.innerHTML = data.top_suggestions.map(s =>
+          `<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;cursor:pointer;" data-search-text="${esc(s.text)}" data-search-type="suggestion" title="點擊搜尋相關記憶">
             <span style="font-weight:600;color:#7c3aed;">${s.count}x</span>
             <span style="margin-left:8px;">${esc(s.text)}</span>
-            <span style="float:right;color:#ccc;font-size:12px;">🔍</span>
-          </div>`;
-        }).join('');
+          </div>`).join('');
       } else {
         suggestEl.innerHTML = '<div style="color:#86868b;">本期無 suggestion 資料</div>';
       }
     } catch (err) {
-      alert('載入報表失敗：' + err.message);
+      showToast('載入報表失敗：' + err.message, true);
+    } finally {
+      setLoading('reportLoadBtn', false);
     }
   }
 
@@ -876,36 +948,38 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     }
   }
 
+  function renderTagPills(obj) {
+    if (!obj || Object.keys(obj).length === 0) return '-';
+    return '<div class="tag-pills">' +
+      Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,v]) =>
+        `<span class="tag-pill">${esc(k)}<span class="count">${v}</span></span>`
+      ).join('') + '</div>';
+  }
+
   async function loadOverview(days) {
     try {
       const res = await fetch(`${API}/activity/stats/all?days=${days}`, { headers: headers() });
       const data = await res.json();
       const tbody = document.getElementById('overviewTable');
       if (!data.users || data.users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:#86868b;text-align:center;">尚無數據</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="color:#86868b;text-align:center;">尚無數據</td></tr>';
         return;
       }
       tbody.innerHTML = data.users.map(u => {
         const isActive = u.last_active && (Date.now() - new Date(u.last_active).getTime()) < 7 * 86400000;
-        const tools = u.tools ? Object.entries(u.tools).sort((a,b)=>b[1]-a[1]).map(([t,c])=>`${esc(t)}(${c})`).join(', ') : '-';
-        const models = u.models ? Object.entries(u.models).sort((a,b)=>b[1]-a[1]).map(([m,c])=>`${esc(m)}(${c})`).join(', ') : '-';
-        const toolComp = (u.tool_compliance || []).map(tc => {
-          const color = tc.rate >= 90 ? '#00b894' : tc.rate >= 70 ? '#f39c12' : tc.rate !== null ? '#dc2626' : '#86868b';
-          return `<span style="font-size:11px;">${esc(tc.tool)} <strong style="color:${color}">${tc.rate !== null ? tc.rate+'%' : '-'}</strong></span>`;
-        }).join(' · ') || '-';
+        const compColor = u.compliance_rate ? (parseFloat(u.compliance_rate) >= 90 ? '#00b894' : parseFloat(u.compliance_rate) >= 70 ? '#f39c12' : '#dc2626') : '#86868b';
         return `<tr>
           <td><span class="activity-dot ${isActive ? 'dot-active' : 'dot-inactive'}"></span></td>
           <td>${esc(u.name || u.email)}</td>
           <td>${u.memory_count || 0}</td>
           <td>${u.session_count || 0}</td>
-          <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${tools}</td>
-          <td style="font-size:12px;max-width:160px;overflow:hidden;text-overflow:ellipsis;">${models}</td>
-          <td>${u.compliance_rate ? `<span style="color:${parseFloat(u.compliance_rate) >= 90 ? '#00b894' : parseFloat(u.compliance_rate) >= 70 ? '#f39c12' : '#dc2626'};font-weight:700;">${u.compliance_rate}%</span>` : '<span style="color:#86868b">-</span>'}</td>
-          <td style="font-size:11px;">${toolComp}</td>
+          <td>${renderTagPills(u.tools)}</td>
+          <td>${renderTagPills(u.models)}</td>
+          <td>${u.compliance_rate ? `<span style="color:${compColor};font-weight:700;">${u.compliance_rate}%</span>` : '<span style="color:#86868b">-</span>'}</td>
           <td style="font-size:12px;color:#86868b;">${u.last_active ? new Date(u.last_active).toLocaleDateString('zh-TW') : '從未'}</td>
         </tr>`;
       }).join('');
-    } catch { document.getElementById('overviewTable').innerHTML = '<tr><td colspan="6">載入失敗</td></tr>'; }
+    } catch { document.getElementById('overviewTable').innerHTML = '<tr><td colspan="8">載入失敗</td></tr>'; }
   }
 
   async function loadDetail(userId, days) {
@@ -914,37 +988,29 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       if (!res.ok) throw new Error('API error');
       const d = await res.json();
 
-      // Memory cards
       document.getElementById('memoryCards').innerHTML = `
         <div class="stat-mini"><div class="value">${d.memory.total}</div><div class="desc">記憶總數</div></div>
         <div class="stat-mini"><div class="value">${d.memory.active}</div><div class="desc">活躍</div></div>
         <div class="stat-mini"><div class="value">${d.memory.disabled}</div><div class="desc">停用</div></div>
         <div class="stat-mini"><div class="value">${d.memory.created_this_period}</div><div class="desc">本期新增</div></div>
         <div class="stat-mini"><div class="value">${d.sessions.total}</div><div class="desc">Session 總數</div></div>
-        ${d.sessions.recovered > 0 ? `<div class="stat-mini"><div class="value" style="color:#e65c00;">${d.sessions.recovered}</div><div class="desc">⚠️ 自動復原</div></div>` : ''}
+        ${d.sessions.recovered > 0 ? `<div class="stat-mini"><div class="value" style="color:#e65c00;">${d.sessions.recovered}</div><div class="desc">自動復原</div></div>` : ''}
         <div class="stat-mini"><div class="value">${d.activity.total_events}</div><div class="desc">活動事件</div></div>
         <div class="stat-mini"><div class="value">${d.iron_rules.total_active}</div><div class="desc">活躍鐵律</div></div>
         <div class="stat-mini"><div class="value">${d.iron_rules.total_triggers}</div><div class="desc">鐵律觸發</div></div>
       `;
 
-      // Memory type chart
       renderBarChart('memoryTypeChart', d.memory.by_type);
-
-      // Tool & model charts
       renderBarChart('toolChart', d.sessions.by_tool);
       renderBarChart('modelChart', d.sessions.by_model);
-
-      // Daily chart
       renderDailyChart('dailyChart', d.activity.daily);
 
-      // Iron rules
       const ruleData = {};
       (d.iron_rules.top_triggered || []).forEach(r => { ruleData[r.trigger || '?'] = r.count; });
       renderBarChart('ruleChart', ruleData);
       document.getElementById('ruleStats').textContent =
         `活躍鐵律 ${d.iron_rules.total_active} 條，本期觸發 ${d.iron_rules.total_triggers} 次`;
 
-      // Compliance
       const comp = d.compliance || {};
       const compRate = comp.rate !== null ? comp.rate + '%' : '尚無數據';
       const compColor = comp.rate >= 90 ? '#00b894' : comp.rate >= 70 ? '#f39c12' : '#dc2626';
@@ -955,7 +1021,6 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         <div class="stat-mini"><div class="value" style="color:#dc2626">${comp.by_action?.violate || 0}</div><div class="desc">違反</div></div>
       `;
 
-      // Per-rule compliance
       const rcEl = document.getElementById('ruleComplianceChart');
       if (comp.by_rule && Object.keys(comp.by_rule).length > 0) {
         rcEl.innerHTML = Object.entries(comp.by_rule).map(([rule, acts]) => {
@@ -963,16 +1028,12 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
           const rate = t > 0 ? ((acts.comply||0)/t*100).toFixed(0) : 0;
           const color = rate >= 90 ? '#00b894' : rate >= 70 ? '#f39c12' : '#dc2626';
           return `<div style="margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;">
-              <span>${esc(rule)}</span>
-              <span style="color:${color};font-weight:700;">${rate}%</span>
-            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;"><span>${esc(rule)}</span><span style="color:${color};font-weight:700;">${rate}%</span></div>
             <div class="bar-track"><div class="bar-fill" style="width:${rate}%;background:${color}"></div></div>
           </div>`;
         }).join('');
       } else { rcEl.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>'; }
 
-      // Per-tool compliance
       const tcEl = document.getElementById('toolComplianceChart');
       if (comp.by_tool && Object.keys(comp.by_tool).length > 0) {
         tcEl.innerHTML = Object.entries(comp.by_tool).map(([tool, acts]) => {
@@ -980,16 +1041,12 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
           const rate = t > 0 ? ((acts.comply||0)/t*100).toFixed(0) : 0;
           const color = rate >= 90 ? '#00b894' : rate >= 70 ? '#f39c12' : '#dc2626';
           return `<div style="margin-bottom:8px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;">
-              <span>${esc(tool)}</span>
-              <span style="color:${color};font-weight:700;">${rate}% <span style="color:#86868b;font-weight:400;">(${t})</span></span>
-            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;"><span>${esc(tool)}</span><span style="color:${color};font-weight:700;">${rate}% <span style="color:#86868b;font-weight:400;">(${t})</span></span></div>
             <div class="bar-track"><div class="bar-fill" style="width:${rate}%;background:${color}"></div></div>
           </div>`;
         }).join('');
       } else { tcEl.innerHTML = '<div style="color:#86868b;font-size:13px;">尚無數據</div>'; }
 
-      // Rule stats detail table
       try {
         const ruleRes = await fetch(`${API}/activity/stats/rules?user_id=${userId}&days=${days}`, { headers: headers() });
         if (ruleRes.ok) {
@@ -1020,18 +1077,15 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         }
       } catch {}
 
-      // Context analysis
       const ctx = d.context;
       if (ctx && ctx.sessions_with_context > 0) {
         document.getElementById('contextSection').classList.remove('hidden');
         renderBarChart('actionChart', Object.fromEntries(ctx.top_actions || []));
         renderBarChart('projectChart', Object.fromEntries(ctx.top_projects || []));
-
         const fEl = document.getElementById('frictionList');
         fEl.innerHTML = (ctx.friction_points || []).length > 0
           ? ctx.friction_points.map(f => `<div style="margin-bottom:8px;font-size:13px;"><span style="color:#7c3aed;font-weight:600;">[${esc(f.tool)}]</span> ${esc(f.text)}</div>`).join('')
           : '<div style="color:#86868b;font-size:13px;">沒有回報痛點</div>';
-
         const sEl = document.getElementById('suggestionList');
         sEl.innerHTML = (ctx.suggestions || []).length > 0
           ? ctx.suggestions.map(s => `<div style="margin-bottom:8px;font-size:13px;"><span style="color:#7c3aed;font-weight:600;">[${esc(s.tool)}]</span> ${esc(s.text)}</div>`).join('')
@@ -1040,7 +1094,6 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         document.getElementById('contextSection').classList.add('hidden');
       }
 
-      // Health
       document.getElementById('healthStats').innerHTML = `
         <div style="font-size:14px;line-height:2;">
           <div>Init 成功率：<strong style="color:${d.health.init_success_rate >= 95 ? '#00b894' : '#dc2626'}">${d.health.init_success_rate}%</strong></div>
@@ -1049,7 +1102,6 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         </div>
       `;
 
-      // Handoffs
       document.getElementById('handoffStats').innerHTML = `
         <div style="font-size:14px;line-height:2;">
           <div>交接總數：<strong>${d.handoffs.total}</strong></div>
