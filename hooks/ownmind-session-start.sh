@@ -128,11 +128,7 @@ node -e "
     lines.push('');
   }
 
-  if (data.enforcement_alerts && data.enforcement_alerts.length > 0) {
-    lines.push('## 強制注意（歷史違反）');
-    data.enforcement_alerts.forEach(a => lines.push(a.reinforcement_message));
-    lines.push('');
-  }
+  // Enforcement Alerts 已由 server 端嵌入 iron_rules_digest，不需 client 重複解析
 
   lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get(\"iron_rule\")。');
 
