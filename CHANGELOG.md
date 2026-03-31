@@ -1,5 +1,28 @@
 # OwnMind 更新紀錄
 
+## v1.12.0 - 多管理者管理介面
+
+### 新增
+- 三級角色階層：super_admin > admin > user
+- super_admin 可新增/刪除 admin 帳號（含密碼）
+- 操作稽核：所有 login/create/update/delete/password 操作寫入 audit_logs
+- 改密碼功能：super_admin 可直接重設他人密碼；admin 需驗舊密碼
+- 首次設定密碼流程：初始 super_admin 透過 `/setup` 完成設定後自動登入
+
+### DB Migration
+- `db/005_admin_roles_password.sql`：新增 password_hash、role 擴展至 super_admin、created_by/updated_by、audit_logs 表
+
+### API 新增
+- `POST /admin/setup` — 首次設定 super_admin 密碼（一次性，無需 auth）
+- `POST /admin/users/:id/password` — 修改使用者密碼
+
+### UI 改進
+- 角色感知：super_admin 才看到刪除按鈕和 super_admin 角色選項
+- 改密碼 Modal：super_admin 不需舊密碼，admin 需要
+- 首次登入自動導向設定密碼流程
+
+---
+
 ## v1.11.0 - Iron Rule Enforcement Engine P2+P3
 
 ### 新增
