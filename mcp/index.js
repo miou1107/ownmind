@@ -406,14 +406,7 @@ async function handleTool(name, args) {
         data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\n執行：${data.upgrade_action.command}`;
       }
       data._client_version = CLIENT_VERSION;
-      // Enforcement Alerts：顯示高風險鐵律
-      if (data.enforcement_alerts && data.enforcement_alerts.length > 0) {
-        const alertLines = ['', '【OwnMind 強制注意】以下鐵律你過去經常違反：'];
-        for (const a of data.enforcement_alerts) {
-          alertLines.push(a.reinforcement_message);
-        }
-        data._enforcement_notice = alertLines.join('\n');
-      }
+      // Enforcement Alerts 已由 server 端嵌入 iron_rules_digest，不需 client 重複格式化
       // E4: Sync verifiable rules to local cache
       try {
         const verifiableRules = (data.iron_rules || []).filter(r => r.metadata?.verification);

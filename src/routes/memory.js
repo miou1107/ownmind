@@ -570,6 +570,15 @@ router.get('/init', async (req, res) => {
     // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
     const compact = req.query.compact === 'true';
 
+    // Server-side 渲染：將 enforcement_alerts 嵌入 iron_rules_digest
+    // 保證所有 client（MCP、hooks、未來新 client）都會顯示，不依賴 client 各自解析
+    let ironRulesDigestFinal = ironRulesDigest;
+    if (enforcementAlerts && enforcementAlerts.length > 0) {
+      const alertText = '\n\n## 強制注意（歷史違反）\n' +
+        enforcementAlerts.map(a => a.reinforcement_message).join('\n');
+      ironRulesDigestFinal = ironRulesDigest + alertText;
+    }
+
     // Principles: compact mode only sends titles
     const principlesOut = compact
       ? principles.map(p => ({ id: p.id, title: p.title, code: p.code }))
@@ -588,7 +597,7 @@ router.get('/init', async (req, res) => {
       profile,
       principles: principlesOut,
       ...(!compact && { iron_rules: ironRules }),
-      iron_rules_digest: ironRulesDigest,
+      iron_rules_digest: ironRulesDigestFinal,
       ...(!compact && { team_standards: teamStandards }),
       team_standards_digest: teamStandardsDigest,
       active_handoff: activeHandoff,
