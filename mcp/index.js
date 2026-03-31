@@ -12,7 +12,7 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
-import { isNetworkError, readMemoryCache, writeMemoryCache, enqueueOperation, readQueue, clearQueue } from './offline.js';
+import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue } from './offline.js';
 
 // --- Compliance JSONL log ---
 const COMPLIANCE_LOG = path.join(os.homedir(), '.ownmind/logs/compliance.jsonl');
