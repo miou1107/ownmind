@@ -71,8 +71,13 @@ async function main() {
   if (relevant.length === 0) process.exit(0);
 
   const lines = [];
-  lines.push(`【OwnMind v${VERSION}】鐵律提醒：即將執行 ${trigger} 操作，請確認以下鐵律`);
-  relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
+
+  // commit trigger: 精簡模式（頻率高，只顯示結果）
+  // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則）
+  if (trigger !== 'commit') {
+    lines.push(`【OwnMind v${VERSION}】鐵律提醒：即將執行 ${trigger} 操作，請確認以下鐵律`);
+    relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
+  }
 
   // Run verification engine for ALL triggers (commit/deploy/delete)
   try {
@@ -125,6 +130,11 @@ async function main() {
     }
   } catch {
     // Verification engine not available, continue with reminder only
+  }
+
+  // commit trigger 且無 block：顯示精簡通過訊息
+  if (trigger === 'commit' && lines.length === 0) {
+    lines.push(`【OwnMind v${VERSION}】鐵律檢查：commit 操作，${relevant.length} 條規則已確認 ✓`);
   }
 
   console.log(JSON.stringify({

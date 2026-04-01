@@ -118,7 +118,7 @@ async function main() {
       }
     }
     console.warn(`  commit: ${commitHash}`);
-    console.warn('  已記錄至 compliance.jsonl，建議儘快修正。');
+    console.warn(`  違規已記錄。修正方式：修正後重新提交，或 git revert ${commitHash} 還原。`);
     console.warn('');
   }
 

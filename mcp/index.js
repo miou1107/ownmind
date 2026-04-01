@@ -216,6 +216,7 @@ const TIPS = [
   '你說「這個專案做完了」，我會把它歸檔到作品集，記錄技術選型和心得',
 ];
 let lastTipIndex = -1;
+let tipCallCount = 0;
 function getRandomTip() {
   let idx;
   do { idx = Math.floor(Math.random() * TIPS.length); } while (idx === lastTipIndex && TIPS.length > 1);
@@ -814,7 +815,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         { type: "text", text: `${tag}：` },
         { type: "text", text: body },
-        { type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` },
+        ...(++tipCallCount % 10 === 1 ? [{ type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` }] : []),
       ],
     };
   } catch (error) {

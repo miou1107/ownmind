@@ -104,6 +104,30 @@ const CHECK_HANDLERS = {
 };
 
 // ============================================================
+// FIX_HINTS — 每種檢查類型的修復指引
+// ============================================================
+
+const FIX_HINTS = {
+  staged_files_include: (params, ctx) => {
+    if (!ctx.stagedFiles) return '';
+    const missing = params.patterns.filter(p =>
+      !ctx.stagedFiles.some(f => globMatch(f, p))
+    );
+    return missing.length > 0 ? `，請 git add ${missing.join(' ')} 後重試` : '';
+  },
+  staged_files_exclude: (params, ctx) => {
+    if (!ctx.stagedFiles) return '';
+    const found = params.patterns.filter(p =>
+      ctx.stagedFiles.some(f => globMatch(f, p))
+    );
+    return found.length > 0 ? `，請 git reset HEAD ${found.join(' ')} 移除` : '';
+  },
+  commit_message_contains: () => '，請修改 commit message',
+  commit_message_not_contains: () => '，請修改後重試',
+  recent_event_exists: (params) => `，請先完成「${params.event}」對應步驟`,
+};
+
+// ============================================================
 // evaluateConditions — 遞迴評估條件樹
 // ============================================================
 
@@ -136,7 +160,11 @@ function evaluateConditions(conditions, context) {
     const handler = CHECK_HANDLERS[conditions.type];
     if (!handler) return { pass: true, failures: [] }; // 未知類型安全跳過
     const pass = handler(conditions.params, context);
-    return { pass, failures: pass ? [] : [conditions.message || conditions.type] };
+    if (pass) return { pass: true, failures: [] };
+    const baseMsg = conditions.message || conditions.type;
+    const hintFn = FIX_HINTS[conditions.type];
+    const hint = hintFn ? hintFn(conditions.params, context) : '';
+    return { pass: false, failures: [baseMsg + hint] };
   }
 
   // 組合節點：AND / OR
