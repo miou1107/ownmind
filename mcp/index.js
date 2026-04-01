@@ -10,11 +10,12 @@ import fetch from "node-fetch";
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execSync } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance } from '../shared/compliance.js';
 import { detectTriggerFromContext } from '../shared/helpers.js';
+import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
@@ -134,6 +135,8 @@ async function auditSession() {
     return { commits_checked: 0, violations_found: 0, violations: [], error: e.message };
   }
 }
+
+const pendingUploads = new Map();
 
 // --- Config from env ---
 const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace(
@@ -459,6 +462,29 @@ const TOOLS = [
         context: { type: "string", description: "觸發的操作情境（選填）" },
       },
       required: ["rule_title", "action"],
+    },
+  },
+  {
+    name: "ownmind_upload_standard",
+    description: "讀取本地 Markdown 規範檔案並進行切分預覽。會回傳切分後的標題與變動統計。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_path: { type: "string", description: "Markdown 檔案的絕對路徑" },
+        title: { type: "string", description: "規範標題（選填，預設為檔名）" },
+      },
+      required: ["file_path"],
+    },
+  },
+  {
+    name: "ownmind_confirm_upload",
+    description: "確認並正式提交規範上傳。需提供 upload_standard 回傳的 session_id。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        session_id: { type: "string", description: "上傳階段回傳的 session_id" },
+      },
+      required: ["session_id"],
     },
   },
 ];
@@ -788,6 +814,58 @@ async function handleTool(name, args) {
       return { status: 'ok', action: args.action, rule: args.rule_title };
     }
 
+    case "ownmind_upload_standard": {
+      const { file_path, title } = args;
+      if (!fs.existsSync(file_path)) {
+        throw new Error(`找不到檔案：${file_path}`);
+      }
+      const rawContent = fs.readFileSync(file_path, 'utf8');
+      const standardTitle = title || path.basename(file_path, '.md');
+      const chunks = parseStandardMarkdown(rawContent, 3);
+      
+      const sessionId = Math.random().toString(36).substring(2, 10);
+      pendingUploads.set(sessionId, { 
+        parent_title: standardTitle, 
+        chunks, 
+        created_at: Date.now() 
+      });
+      
+      return {
+        session_id: sessionId,
+        parent_title: standardTitle,
+        chunk_count: chunks.length,
+        preview: chunks.map(c => ({ title: c.title, level: c.level })),
+        notice: "【OwnMind】預覽已生成。請檢閱區塊內容，並分析是否有任一區塊應存為鐵律 (iron_rule)。若沒問題，請呼叫 ownmind_confirm_upload 並帶入 session_id。"
+      };
+    }
+
+    case "ownmind_confirm_upload": {
+      const pending = pendingUploads.get(args.session_id);
+      if (!pending) {
+        throw new Error(`找不到暫存的上傳工作 (Session ID: ${args.session_id})`);
+      }
+      
+      // TTL 檢查 (10 分鐘)
+      if (Date.now() - pending.created_at > 10 * 60 * 1000) {
+        pendingUploads.delete(args.session_id);
+        throw new Error(`上傳工作已過期 (Session ID: ${args.session_id})。請重新呼叫 ownmind_upload_standard。`);
+      }
+      
+      const body = {
+        parent_title: pending.parent_title,
+        chunks: pending.chunks,
+        sync_token: currentSyncToken,
+      };
+      
+      const data = await callApi("POST", "/api/memory/batch-sync-standard", body);
+      if (data.sync_token) currentSyncToken = data.sync_token;
+      
+      pendingUploads.delete(args.session_id);
+      logEvent('memory_sync_standard', { title: pending.parent_title, stats: data.stats });
+      
+      return data;
+    }
+
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -834,8 +912,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // --- Auto-update check (background, non-blocking) ---
-import { exec } from 'child_process';
-
 const OWNMIND_DIR = path.join(process.env.HOME || '', '.ownmind');
 const MARKER_FILE = path.join(OWNMIND_DIR, '.last-mcp-update-check');
 const LOCK_FILE = path.join(OWNMIND_DIR, '.update-lock');
@@ -866,22 +942,26 @@ try {
         cd mcp && npm install -q 2>/dev/null;
         bash ~/.ownmind/scripts/update.sh 2>/dev/null;
       fi &&
-      echo "${today}" > "${MARKER_FILE}";
-      rm -f "${LOCK_FILE}"
+      rm -f "${LOCK_FILE}" &&
+      echo "${today}" > "${MARKER_FILE}"
     `, { timeout: 60000, cwd: OWNMIND_DIR }, (err) => {
-      if (err) logEvent('update_fail', { source: 'mcp', error: err.message });
-      else logEvent('update_applied', { source: 'mcp' });
+      if (err) {
+        logEvent('update_failed', { source: 'mcp', error: err.message });
+        try { fs.unlinkSync(LOCK_FILE); } catch {}
+      } else {
+        logEvent('update_ok', { source: 'mcp' });
+      }
     });
   }
-} catch {
-  // Silent fail — never block MCP startup
+} catch (e) {
+  // Silent fail for background check
 }
 
-// --- Emergency shutdown: 搶救 session log ---
+// --- Emergency shutdown: 保存 session log ---
 async function emergencySessionLog() {
   if (sessionLogged || !sessionStartTime) return;
   const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);
-  if (totalCalls <= 1) return; // 只有 init，沒做事
+  if (totalCalls <= 1) return; // 只有 init，不記錄
 
   const summary = `[emergency] ${Object.entries(toolCallCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
   const details = {
@@ -891,10 +971,10 @@ async function emergencySessionLog() {
     compliance: [...complianceEvents],
   };
 
-  // 1. 同步寫本地 JSONL（保證存活）
+  // 1. 寫入本地日誌 JSONL（防斷電、網路中斷）
   logEvent('session_log_emergency', { summary, ...details });
 
-  // 2. best-effort POST to server（3 秒 timeout）
+  // 2. best-effort POST to server，加逾時
   try {
     await Promise.race([
       callApi('POST', '/api/session', {
@@ -917,6 +997,5 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => emergencySessionLog());
 }
 
-// --- Start ---
 const transport = new StdioServerTransport();
 await server.connect(transport);

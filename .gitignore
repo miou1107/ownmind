@@ -4,3 +4,6 @@ node_modules/
 .last-update-check
 logs/
 .claude/worktrees/
+.claude/commands
+.claude/skills
+.claude/*.json

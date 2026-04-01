@@ -114,6 +114,7 @@ sequenceDiagram
 - **Sync Token** — Auto-detect conflicts when multiple tools write simultaneously `v1.8.0`
 - **Handoff** — Seamlessly hand off work between different tools
 - **Team standards** — Admins push rules, members auto-load them `v1.8.0`
+- **Team Standard RAG** — Hierarchical Markdown chunking (H1-H3) for precise semantic retrieval of complex standards `v1.14.0`
 - **Rule quality tracking** — Auto-track enforced/missed/triggered counts, alert on low compliance `v1.8.0`
 
 ### Smart Learning & Data-Driven Evolution `v1.10.0`
