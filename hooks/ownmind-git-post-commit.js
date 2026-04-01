@@ -108,6 +108,22 @@ async function main() {
     }
   }
 
+  // Version-tag sync check: 版號有無對應 tag
+  try {
+    const pkgVersion = VERSION !== '?' ? VERSION : null;
+    if (pkgVersion) {
+      const expectedTag = `v${pkgVersion}`;
+      const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
+      if (!tagOutput) {
+        console.warn('');
+        console.warn(`【OwnMind v${VERSION}】版號提醒：package.json 版號為 ${pkgVersion}，但尚未建立 git tag`);
+        console.warn(`  → 請執行：git tag ${expectedTag}`);
+        console.warn('');
+      }
+    }
+  } catch { /* ignore version check errors */ }
+
+
   if (violations.length > 0) {
     console.warn('');
     console.warn(`【OwnMind v${VERSION}】Commit 後稽核：此 commit 有以下違規`);
