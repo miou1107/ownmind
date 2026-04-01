@@ -814,7 +814,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         { type: "text", text: `${tag}：` },
         { type: "text", text: body },
-        { type: "text", text: `${formatTag('技巧提示')}：${getRandomTip()}` },
+        { type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` },
       ],
     };
   } catch (error) {
