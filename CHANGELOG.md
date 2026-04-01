@@ -1,5 +1,14 @@
 # OwnMind 更新紀錄
 
+## v1.15.1 - README 補齊 + 版號統一
+
+### 改善
+- README 補齊 v1.12.0~v1.15.0 漏掉的功能描述（multi-admin、auto-numbering、offline resilience、shared verification engine、L1 fail-closed、L2 commit blocking、cache auto-refresh、actionable failure messages、Team Standard RAG upload tools、standard_detail type、batch-sync API）
+- MCP tools 數量從 12 更新為 15（新增 ownmind_upload_standard、ownmind_confirm_upload、ownmind_report_compliance）
+- 版號統一：server package.json、mcp/package.json、git tag 三處同步
+
+---
+
 ## v1.15.0 - Harness Engineering 審計修復
 
 ### Refactor

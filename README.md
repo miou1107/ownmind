@@ -15,6 +15,7 @@ OwnMind enables you to move freely across any LLM, editor, machine, project, or 
 - **Data-driven evolution** — OwnMind collects usage data, friction points, and AI behavior metrics. This data feeds back into improving the product itself — better features, smarter defaults, continuous upgrades.
 - **Seamless cross-platform** — One API for all tools. Switch from Claude Code to Cursor to Codex — your memory follows. Switch machines — your memory follows. No re-teaching.
 - **Team standards enforcement** — Admins push company rules (git flow, coding standards, review policies) once. Every team member's AI auto-loads and enforces them. New hire? Standards apply from day one.
+- **Multi-admin management** — Three-tier role hierarchy (super_admin > admin > user), password management, full audit trail `v1.12.0`
 
 ## Why OwnMind?
 
@@ -114,7 +115,7 @@ sequenceDiagram
 - **Sync Token** — Auto-detect conflicts when multiple tools write simultaneously `v1.8.0`
 - **Handoff** — Seamlessly hand off work between different tools
 - **Team standards** — Admins push rules, members auto-load them `v1.8.0`
-- **Team Standard RAG** — Hierarchical Markdown chunking (H1-H3) for precise semantic retrieval of complex standards `v1.14.0`
+- **Team Standard RAG** — Hierarchical Markdown chunking (H1-H3) for precise semantic retrieval of complex standards. Upload via `ownmind_upload_standard`, confirm via `ownmind_confirm_upload` `v1.15.0`
 - **Rule quality tracking** — Auto-track enforced/missed/triggered counts, alert on low compliance `v1.8.0`
 
 ### Smart Learning & Data-Driven Evolution `v1.10.0`
@@ -139,8 +140,14 @@ sequenceDiagram
 
 - **7-layer defense** — git pre-commit hook (L1), PreToolUse hook (L2), MCP auto-verify (L3), Init reminder (L4), post-commit audit (L5), Session audit (L6), escalation warning (L7)
 - **Automatic template matching** — Server auto-matches verification templates when creating iron rules, no manual config needed
+- **Auto-numbering** — Iron rules automatically assigned sequential codes (IR-001, IR-002, ...) on creation `v1.13.0`
 - **Verifiable conditions** — AND/OR/when-then condition combinator engine, rules become machine-checkable
 - **Git hook enforcement** — pre-commit hook reads local JSONL compliance records and blocks commits that violate rules
+- **Shared verification engine** — `shared/verification.js`, `shared/helpers.js`, `shared/compliance.js` — one codebase shared across all layers `v1.15.0`
+- **L1 fail-closed** — pre-commit hook attempts API sync when cache is empty, with 3s timeout `v1.15.0`
+- **L2 commit blocking** — PreToolUse hook runs verification engine for all triggers including commit, blocks on failure `v1.15.0`
+- **Cache auto-refresh** — iron_rules.json cache refreshes automatically after save/update/disable operations `v1.15.0`
+- **Actionable failure messages** — verification failures include fix hints (e.g., "please git add X") `v1.15.0`
 
 ### Infrastructure
 
@@ -149,6 +156,7 @@ sequenceDiagram
 - **Tiered compression** — Short-term memory auto-compresses, long-term persists forever
 - **Windows native support** — `install.ps1` and `start.cmd` included
 - **Adaptive Iron Rule Reinforcement** — automatically strengthens reminders for frequently violated rules based on compliance history
+- **Offline resilience** — Local cache fallback + write queue for offline operations, auto-replay on reconnect `v1.14.0`
 
 ## Quick Start
 
@@ -261,6 +269,7 @@ Authorization: Bearer YOUR_API_KEY
 | `GET /api/handoff/pending` | Get pending handoffs |
 | `POST /api/session` | Log session |
 | `GET /api/export` | Export all memories |
+| `POST /api/memory/batch-sync-standard` | Batch sync team standard chunks (RAG) |
 | `GET /health` | Health check |
 
 ### Memory Types
@@ -275,6 +284,7 @@ Authorization: Bearer YOUR_API_KEY
 | `project` | Project context: architecture, environment, progress |
 | `portfolio` | Portfolio |
 | `env` | Development environment info |
+| `standard_detail` | Team standard chunks (RAG): hierarchical sections for semantic retrieval |
 
 ## Tech Stack
 
