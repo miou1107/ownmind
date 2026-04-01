@@ -1244,4 +1244,119 @@ async function autoConfirmPendingReview(userId) {
   }
 }
 
+/**
+ * POST /batch-sync-standard - 批次同步團隊規範細項 (RAG)
+ */
+router.post('/batch-sync-standard', async (req, res) => {
+  try {
+    const { parent_title, chunks, sync_token } = req.body;
+
+    if (!parent_title || !Array.isArray(chunks)) {
+      return res.status(400).json({ error: '必填欄位：parent_title, chunks (array)' });
+    }
+
+    // Sync token 驗證
+    const tokenResult = await checkSyncToken(req.user.id, sync_token);
+    if (!tokenResult.ok) {
+      return res.status(409).json(tokenResult.errorResponse);
+    }
+
+    // 1. 確保 parent (team_standard) 存在，僅 admin 可操作
+    let parent = await query(
+      `SELECT id FROM memories WHERE type = 'team_standard' AND title = $1 AND status = 'active'`,
+      [parent_title]
+    );
+
+    if (parent.rows.length === 0) {
+      if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: '找不到該團隊規範，且非管理員無法建立' });
+      }
+      // 自動建立 parent
+      const parentResult = await query(
+        `INSERT INTO memories (user_id, type, title, content, tags)
+         VALUES ($1, 'team_standard', $2, $3, $4)
+         RETURNING id`,
+        [req.user.id, parent_title, `由 ownmind-upload 自動建立的規範摘要: ${parent_title}`, ['auto_created']]
+      );
+      parent = parentResult;
+    } else {
+       if (req.user.role !== 'admin') {
+         return res.status(403).json({ error: '批次同步規範細項僅限管理員' });
+       }
+    }
+
+    const parentId = parent.rows[0].id;
+
+    // 2. 取得現有的細項
+    const existingResult = await query(
+      `SELECT id, title, metadata->>'hash' as hash FROM memories
+       WHERE type = 'standard_detail'
+         AND metadata->>'parent_id' = $1
+         AND status = 'active'`,
+      [parentId.toString()]
+    );
+    const existingMap = new Map(existingResult.rows.map(r => [r.title, r]));
+
+    const stats = { added: 0, updated: 0, deleted: 0, unchanged: 0 };
+    const processedTitles = new Set();
+
+    // 3. 處理傳入的 chunks
+    for (const chunk of chunks) {
+      const { title, content, hash, level } = chunk;
+      processedTitles.add(title);
+
+      const existing = existingMap.get(title);
+      if (!existing) {
+        // 新增
+        await query(
+          `INSERT INTO memories (user_id, type, title, content, tags, metadata)
+           VALUES ($1, 'standard_detail', $2, $3, $4, $5)`,
+          [
+            req.user.id,
+            'standard_detail',
+            title,
+            content,
+            ['rule_detail'],
+            { parent_id: parentId, hash, level }
+          ]
+        );
+        stats.added++;
+      } else if (existing.hash !== hash) {
+        // 更新
+        await query(
+          `UPDATE memories
+           SET content = $1, metadata = $2, updated_at = NOW()
+           WHERE id = $3`,
+          [content, { parent_id: parentId, hash, level }, existing.id]
+        );
+        stats.updated++;
+      } else {
+        stats.unchanged++;
+      }
+    }
+
+    // 4. 刪除消失的細項 (標記為 disabled)
+    for (const [title, existing] of existingMap) {
+      if (!processedTitles.has(title)) {
+        await query(
+          `UPDATE memories SET status = 'disabled', disabled_reason = 'sync_removal', updated_at = NOW() WHERE id = $1`,
+          [existing.id]
+        );
+        stats.deleted++;
+      }
+    }
+
+    const newToken = await generateSyncToken(req.user.id);
+    res.json({
+      status: 'ok',
+      parent_id: parentId,
+      stats,
+      sync_token: newToken
+    });
+  } catch (err) {
+    logger.error('批次同步規範失敗', { error: err.message });
+    res.status(500).json({ error: '同步失敗' });
+  }
+});
+
 export default router;
