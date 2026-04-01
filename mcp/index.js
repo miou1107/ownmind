@@ -295,7 +295,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_search",
-    description: "以關鍵字搜尋記憶. 回傳符合條件的記憶列表。",
+    description: "以關鍵字搜尋記憶。回傳符合條件的記憶列表。",
     inputSchema: {
       type: "object",
       properties: {
@@ -452,7 +452,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_report_compliance",
-    description: "回報鐵律遵守狀況。當鐵律被觸發時，AI 必須呼叫此 tool 回報是否遵守. action: 'comply'（遵守）、'skip'（使用者要求跳過）、'violate'（違反）。",
+    description: "回報鐵律遵守狀況。當鐵律被觸發時，AI 必須呼叫此 tool 回報是否遵守。action: 'comply'（遵守）、'skip'（使用者要求跳過）、'violate'（違反）。",
     inputSchema: {
       type: "object",
       properties: {
