@@ -1,12 +1,16 @@
 # OwnMind 更新紀錄
 
-## v1.14.0 - Offline Resilience
+## v1.15.2 - Version Unification
 
 ### 改善
 - 版號統一為單一來源：所有元件從根目錄 `package.json` 讀取版號，消除多處寫死的版號不同步問題
 - 版本比較修正：server 升級提示從字串不等於改為 semver 比較，client 版本較新時不再誤報需要更新
 - Git tag 卡控：post-commit 提醒建立 tag、git push 前阻擋版號與 tag 不一致的推送
 - `mcp/package.json` 版號改為 placeholder 並標記 `private: true`，防止誤發佈
+
+---
+
+## v1.14.0 - Offline Resilience
 
 ### 新增
 - `mcp/offline.js` — Offline resilience helper（本地 cache 讀寫、write queue、本地搜尋）
