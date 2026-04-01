@@ -24,7 +24,8 @@ const SOURCE_PATTERNS = [/^src\//, /^mcp\//, /^hooks\//, /^shared\//];
 
 const VERSION = (() => {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
+    // 統一從根目錄 package.json 讀取版號（單一來源）
+    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'package.json'), 'utf8'));
     return pkg.version || '?';
   } catch { return '?'; }
 })();

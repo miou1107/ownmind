@@ -1,6 +1,7 @@
 {
   "name": "ownmind-mcp",
-  "version": "1.14.0",
+  "version": "0.0.0-see-root-package-json",
+  "private": true,
   "description": "OwnMind MCP Server — 跨平台 AI 個人記憶系統",
   "type": "module",
   "bin": {

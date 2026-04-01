@@ -25,7 +25,8 @@ const SOURCE_PATTERNS = [/^src\//, /^mcp\//, /^hooks\//, /^shared\//];
 
 const VERSION = (() => {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
+    // 統一從根目錄 package.json 讀取版號（單一來源）
+    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'package.json'), 'utf8'));
     return pkg.version || '?';
   } catch { return '?'; }
 })();
@@ -183,7 +184,22 @@ async function main() {
     }
   }
 
-  // 6. Output warnings (don't exit 1 — commit is already done)
+  // 6. Version-tag sync check: 版號有無對應 tag
+  try {
+    const pkgVersion = VERSION !== '?' ? VERSION : null;
+    if (pkgVersion) {
+      const expectedTag = `v${pkgVersion}`;
+      const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
+      if (!tagOutput) {
+        console.warn('');
+        console.warn(`【OwnMind v${VERSION}】版號提醒：package.json 版號為 ${pkgVersion}，但尚未建立 git tag`);
+        console.warn(`  → 請執行：git tag ${expectedTag}`);
+        console.warn('');
+      }
+    }
+  } catch { /* ignore version check errors */ }
+
+  // 7. Output warnings (don't exit 1 — commit is already done)
   if (violations.length > 0) {
     console.warn('');
     console.warn(`【OwnMind v${VERSION}】Commit 後稽核：此 commit 有以下違規`);
