@@ -7,8 +7,8 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
-import fs, { readFileSync, existsSync, writeFileSync, statSync, unlinkSync } from 'fs';
-import path, { join, basename } from 'path';
+import fs from 'fs';
+import path from 'path';
 import os from 'os';
 import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
@@ -816,15 +816,19 @@ async function handleTool(name, args) {
 
     case "ownmind_upload_standard": {
       const { file_path, title } = args;
-      if (!existsSync(file_path)) {
+      if (!fs.existsSync(file_path)) {
         throw new Error(`找不到檔案：${file_path}`);
       }
-      const rawContent = readFileSync(file_path, 'utf8');
-      const standardTitle = title || basename(file_path, '.md');
+      const rawContent = fs.readFileSync(file_path, 'utf8');
+      const standardTitle = title || path.basename(file_path, '.md');
       const chunks = parseStandardMarkdown(rawContent, 3);
       
       const sessionId = Math.random().toString(36).substring(2, 10);
-      pendingUploads.set(sessionId, { parent_title: standardTitle, chunks });
+      pendingUploads.set(sessionId, { 
+        parent_title: standardTitle, 
+        chunks, 
+        created_at: Date.now() 
+      });
       
       return {
         session_id: sessionId,
@@ -839,6 +843,12 @@ async function handleTool(name, args) {
       const pending = pendingUploads.get(args.session_id);
       if (!pending) {
         throw new Error(`找不到暫存的上傳工作 (Session ID: ${args.session_id})`);
+      }
+      
+      // TTL 檢查 (10 分鐘)
+      if (Date.now() - pending.created_at > 10 * 60 * 1000) {
+        pendingUploads.delete(args.session_id);
+        throw new Error(`上傳工作已過期 (Session ID: ${args.session_id})。請重新呼叫 ownmind_upload_standard。`);
       }
       
       const body = {
@@ -934,7 +944,7 @@ try {
       fi &&
       rm -f "${LOCK_FILE}" &&
       echo "${today}" > "${MARKER_FILE}"
-    `, (err) => {
+    `, { timeout: 60000, cwd: OWNMIND_DIR }, (err) => {
       if (err) {
         logEvent('update_failed', { source: 'mcp', error: err.message });
         try { fs.unlinkSync(LOCK_FILE); } catch {}
@@ -945,6 +955,46 @@ try {
   }
 } catch (e) {
   // Silent fail for background check
+}
+
+// --- Emergency shutdown: 保存 session log ---
+async function emergencySessionLog() {
+  if (sessionLogged || !sessionStartTime) return;
+  const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);
+  if (totalCalls <= 1) return; // 只有 init，不記錄
+
+  const summary = `[emergency] ${Object.entries(toolCallCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
+  const details = {
+    _recovery: 'mcp_shutdown',
+    duration_ms: Date.now() - sessionStartTime,
+    tool_calls: { ...toolCallCounts },
+    compliance: [...complianceEvents],
+  };
+
+  // 1. 寫入本地日誌 JSONL（防斷電、網路中斷）
+  logEvent('session_log_emergency', { summary, ...details });
+
+  // 2. best-effort POST to server，加逾時
+  try {
+    await Promise.race([
+      callApi('POST', '/api/session', {
+        summary,
+        tool: TOOL_NAME,
+        model: 'unknown',
+        details,
+        sync_token: currentSyncToken,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+    ]);
+  } catch {
+    // Silent fail — local JSONL is the safety net
+  }
+
+  process.exit(0);
+}
+
+for (const sig of ['SIGTERM', 'SIGINT']) {
+  process.on(sig, () => emergencySessionLog());
 }
 
 const transport = new StdioServerTransport();
