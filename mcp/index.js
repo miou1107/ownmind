@@ -148,7 +148,9 @@ const API_KEY = process.env.OWNMIND_API_KEY || "";
 // --- Version & Sync Token (in-memory, per session) ---
 const CLIENT_VERSION = (() => {
   try {
-    const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
+    // 統一從根目錄 package.json 讀取版號（單一來源）
+    const rootPkg = new URL('../package.json', import.meta.url);
+    const pkg = JSON.parse(fs.readFileSync(rootPkg, 'utf8'));
     return pkg.version || '0.0.0';
   } catch { return '0.0.0'; }
 })();

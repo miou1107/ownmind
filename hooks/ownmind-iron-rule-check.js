@@ -11,6 +11,7 @@ import path from 'path';
 import https from 'https';
 import http from 'http';
 import os from 'os';
+import { execSync } from 'child_process';
 import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger } from '../shared/helpers.js';
 import { readComplianceEvents } from '../shared/compliance.js';
 
@@ -71,6 +72,34 @@ async function main() {
   if (relevant.length === 0) process.exit(0);
 
   const lines = [];
+
+  // For git push: check that git tag matches package.json version
+  if (/git push/i.test(command)) {
+    try {
+      const pkgVersion = VERSION !== '?' ? VERSION : null;
+      if (pkgVersion) {
+        const expectedTag = `v${pkgVersion}`;
+        const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
+        if (!tagOutput) {
+          // Tag doesn't exist — block push
+          const blockLines = [
+            `【OwnMind v${VERSION}】版號卡控：package.json 版號為 ${pkgVersion}，但沒有對應的 git tag ${expectedTag}`,
+            `  ❌ 請先執行：git tag ${expectedTag}`,
+            `  然後再 git push --tags`,
+          ];
+          console.log(JSON.stringify({
+            decision: 'block',
+            reason: `Missing git tag for version ${pkgVersion}`,
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              additionalContext: blockLines.join('\n')
+            }
+          }));
+          process.exit(0);
+        }
+      }
+    } catch { /* ignore version check errors */ }
+  }
 
   // commit trigger: 精簡模式（頻率高，只顯示結果）
   // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則）
