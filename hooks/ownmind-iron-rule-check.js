@@ -6,13 +6,15 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { execSync } = require('child_process');
 
 const HOME = process.env.HOME || process.env.USERPROFILE;
 const CLAUDE_SETTINGS = path.join(HOME, '.claude', 'settings.json');
 const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
 const VERSION = (() => {
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'mcp', 'package.json'), 'utf8'));
+    // 統一從根目錄 package.json 讀取版號（單一來源）
+    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'package.json'), 'utf8'));
     return pkg.version || '?';
   } catch { return '?'; }
 })();
@@ -108,6 +110,34 @@ async function main() {
   const lines = [];
   lines.push(`【OwnMind v${VERSION}】鐵律提醒：即將執行 ${trigger} 操作，請確認以下鐵律`);
   relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
+
+  // For git push: check that git tag matches package.json version
+  if (/git push/i.test(command)) {
+    try {
+      const pkgVersion = VERSION !== '?' ? VERSION : null;
+      if (pkgVersion) {
+        const expectedTag = `v${pkgVersion}`;
+        const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
+        if (!tagOutput) {
+          // Tag doesn't exist — block push
+          const blockLines = [
+            `【OwnMind v${VERSION}】版號卡控：package.json 版號為 ${pkgVersion}，但沒有對應的 git tag ${expectedTag}`,
+            `  ❌ 請先執行：git tag ${expectedTag}`,
+            `  然後再 git push --tags`,
+          ];
+          console.log(JSON.stringify({
+            decision: 'block',
+            reason: `Missing git tag for version ${pkgVersion}`,
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              additionalContext: blockLines.join('\n')
+            }
+          }));
+          process.exit(0);
+        }
+      }
+    } catch { /* ignore version check errors */ }
+  }
 
   // For deploy/delete: run verification engine
   if (trigger === 'deploy' || trigger === 'delete') {

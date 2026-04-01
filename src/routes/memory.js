@@ -9,8 +9,19 @@ import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
 import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
+import { createRequire } from 'module';
 
-const SERVER_VERSION = '1.14.0';
+const SERVER_VERSION = (() => {
+  try {
+    const require = createRequire(import.meta.url);
+    return require('../../package.json').version || '0.0.0';
+  } catch { return '0.0.0'; }
+})();
+
+function parseSemver(v) {
+  const parts = (v || '0.0.0').split('.').map(s => parseInt(s, 10));
+  return parts.length >= 3 && parts.every(n => !isNaN(n)) ? parts : [0, 0, 0];
+}
 
 const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
 
@@ -398,10 +409,15 @@ router.get('/init', async (req, res) => {
       ? teamStandards.reduce((max, r) => r.updated_at > max ? r.updated_at : max, teamStandards[0].updated_at)
       : null;
 
-    // 升級指令：根據 client 版本決定是否需要推送升級
+    // 升級指令：只在 server 版本比 client 新時才推送升級
     const clientVersion = req.headers['x-ownmind-version'] || req.query.client_version || '';
     let upgradeAction = null;
-    if (SERVER_VERSION !== clientVersion) {
+    const serverParts = parseSemver(SERVER_VERSION);
+    const clientParts = parseSemver(clientVersion);
+    const serverNewer = serverParts[0] > clientParts[0]
+      || (serverParts[0] === clientParts[0] && serverParts[1] > clientParts[1])
+      || (serverParts[0] === clientParts[0] && serverParts[1] === clientParts[1] && serverParts[2] > clientParts[2]);
+    if (serverNewer) {
       upgradeAction = {
         required: true,
         command: 'cd ~/.ownmind && git pull --rebase && cd mcp && npm install && bash ~/.ownmind/scripts/update.sh',

@@ -4,7 +4,8 @@
 # 附帶：一次性自動升級檢查（搭便車機制）
 
 LOG_DIR="$HOME/.ownmind/logs"
-VERSION=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.ownmind/mcp/package.json','utf8')).version)}catch{console.log('?')}" 2>/dev/null || echo '?')
+# 統一從根目錄 package.json 讀取版號（單一來源）
+VERSION=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.ownmind/package.json','utf8')).version)}catch{console.log('?')}" 2>/dev/null || echo '?')
 log_event() {
   local event="$1"; shift
   mkdir -p "$LOG_DIR"
@@ -133,6 +134,22 @@ fi
 
 if [ -n "$RULES" ]; then
   log_event "iron_rule_trigger" "trigger" "$TRIGGER"
+fi
+
+# For git push: check that git tag matches package.json version
+if echo "$COMMAND" | grep -qiE "git push"; then
+  PKG_VER=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.ownmind/package.json','utf8')).version)}catch{console.log('')}" 2>/dev/null)
+  if [ -n "$PKG_VER" ]; then
+    TAG_EXISTS=$(git tag -l "v${PKG_VER}")
+    if [ -z "$TAG_EXISTS" ]; then
+      node -e "
+        const v = '$VERSION', pv = '$PKG_VER';
+        const msg = '【OwnMind v' + v + '】版號卡控：package.json 版號為 ' + pv + '，但沒有對應的 git tag v' + pv + '\n  ❌ 請先執行：git tag v' + pv + '\n  然後再 git push --tags';
+        console.log(JSON.stringify({decision:'block',reason:'Missing git tag for version ' + pv,hookSpecificOutput:{hookEventName:'PreToolUse',additionalContext:msg}}));
+      "
+      exit 0
+    fi
+  fi
 fi
 
 # For deploy/delete operations: run verification engine
