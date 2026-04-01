@@ -14,4 +14,5 @@ export const ALLOWED_MEMORY_TYPES = [
   'portfolio',
   'env',
   'session_log',
+  'standard_detail',
 ];
