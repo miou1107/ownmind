@@ -240,7 +240,7 @@ describe('evaluateConditions', () => {
       const ctx = { stagedFiles: ['src/index.js'] };
       const result = evaluateConditions(conditions, ctx);
       assert.equal(result.pass, false);
-      assert.deepEqual(result.failures, ['缺少 README']);
+      assert.deepEqual(result.failures, ['缺少 README，請 git add README.md 後重試']);
     });
 
     it('未知 check type → pass: true（安全跳過）', () => {
@@ -280,7 +280,7 @@ describe('evaluateConditions', () => {
       const ctx = { stagedFiles: ['README.md'] };
       const result = evaluateConditions(conditions, ctx);
       assert.equal(result.pass, false);
-      assert.deepEqual(result.failures, ['缺 CHANGELOG']);
+      assert.deepEqual(result.failures, ['缺 CHANGELOG，請 git add CHANGELOG.md 後重試']);
     });
 
     it('全部失敗 → fail，回傳所有 message', () => {
@@ -365,8 +365,8 @@ describe('evaluateConditions', () => {
       const ctx = { stagedFiles: ['README.md'], commitMessage: 'update something' };
       const result = evaluateConditions(conditions, ctx);
       assert.equal(result.pass, false);
-      assert.ok(result.failures.includes('需要 feat:'));
-      assert.ok(result.failures.includes('需要 fix:'));
+      assert.ok(result.failures.some(f => f.startsWith('需要 feat:')));
+      assert.ok(result.failures.some(f => f.startsWith('需要 fix:')));
     });
   });
 
@@ -400,7 +400,7 @@ describe('evaluateConditions', () => {
       const ctx = { changedSourceFiles: ['src/index.js'], stagedFiles: ['src/index.js'] };
       const result = evaluateConditions(conditions, ctx);
       assert.equal(result.pass, false);
-      assert.deepEqual(result.failures, ['缺 README']);
+      assert.deepEqual(result.failures, ['缺 README，請 git add README.md 後重試']);
     });
   });
 
@@ -415,7 +415,7 @@ describe('evaluateConditions', () => {
       const ctx = { stagedFiles: ['README.md'] };
       const result = evaluateConditions(conditions, ctx);
       assert.equal(result.pass, false);
-      assert.deepEqual(result.failures, ['B']);
+      assert.deepEqual(result.failures, ['B，請 git add CHANGELOG.md 後重試']);
     });
   });
 });
@@ -520,7 +520,7 @@ describe('IR-012 品管三步驟場景', () => {
     };
     const result = evaluateConditions(ir012Conditions, ctx);
     assert.equal(result.pass, false);
-    assert.deepEqual(result.failures, ['還沒做 code review']);
+    assert.deepEqual(result.failures, ['還沒做 code review，請先完成「code-review」對應步驟']);
   });
 
   it('兩個都沒做 → fail，回傳兩個 message', () => {
@@ -539,7 +539,7 @@ describe('IR-012 品管三步驟場景', () => {
     };
     const result = evaluateConditions(ir012Conditions, ctx);
     assert.equal(result.pass, false);
-    assert.deepEqual(result.failures, ['還沒做 code review']);
+    assert.deepEqual(result.failures, ['還沒做 code review，請先完成「code-review」對應步驟']);
   });
 });
 
@@ -645,7 +645,7 @@ describe('context 互補行為', () => {
     };
     const result = evaluateConditions(mixedConditions, ctx);
     assert.equal(result.pass, false);
-    assert.deepEqual(result.failures, ['缺 README']);
+    assert.deepEqual(result.failures, ['缺 README，請 git add README.md 後重試']);
   });
 
   it('空 context → 全部跳過 → pass', () => {

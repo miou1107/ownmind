@@ -92,9 +92,10 @@ function formatBlockMessage(failures) {
   return lines.join('\n');
 }
 
-function formatPassMessage(checkedCount) {
+function formatPassMessage(checkedCount, cacheAgeHours = 0) {
   if (checkedCount === 0) return '';
-  return `【OwnMind v${VERSION}】Commit 前檢查：${checkedCount} 條規則全部通過 ✓`;
+  const ageNote = cacheAgeHours > 1 ? ` (快取 ${Math.round(cacheAgeHours)} 小時前更新)` : '';
+  return `【OwnMind v${VERSION}】Commit 前檢查：${checkedCount} 條規則全部通過 ✓${ageNote}`;
 }
 
 // ============================================================
@@ -105,11 +106,13 @@ async function main() {
   // 1. Load iron rules from local cache (with staleness check)
   let rules = readJsonSafe(CACHE_FILE);
   let cacheStale = false;
+  let cacheAgeHours = 0;
 
   if (rules && Array.isArray(rules) && rules.length > 0) {
     // Check staleness
     try {
       const mtime = fs.statSync(CACHE_FILE).mtimeMs;
+      cacheAgeHours = (Date.now() - mtime) / (60 * 60 * 1000);
       if (Date.now() - mtime > CACHE_MAX_AGE_MS) {
         cacheStale = true;
       }
@@ -205,7 +208,7 @@ async function main() {
     process.exit(1);
   }
 
-  const passMsg = formatPassMessage(checkedCount);
+  const passMsg = formatPassMessage(checkedCount, cacheAgeHours);
   if (passMsg) {
     console.log(passMsg);
   }
