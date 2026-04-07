@@ -1,9 +1,10 @@
 # OwnMind 更新紀錄
 
-## v1.15.3 - team_standard 權限修正
+## v1.15.3 - 權限與 batch sync 修正
 
 ### 修復
 - `team_standard` 權限檢查從 `role !== 'admin'` 改為 `isAtLeast(role, 'admin')`，讓 admin 和 super_admin 都能新增/修改/停用/上傳團隊規範（原本 super_admin 反而被擋）
+- `batch-sync-standard` 修正 SQL 參數錯位：原本參數陣列多傳一個 `'standard_detail'`，導致 6 個值對應 5 個 placeholder，欄位整體位移一格（title 被寫成 `'standard_detail'`、content 變成原本的 title）。同步寫入的 standard_detail 資料全部錯位 (#3)
 
 ---
 
