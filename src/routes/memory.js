@@ -4,6 +4,7 @@ import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { ALLOWED_MEMORY_TYPES } from '../constants.js';
+import { isAtLeast } from '../middleware/adminAuth.js';
 import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
@@ -788,7 +789,7 @@ router.post('/', async (req, res) => {
     }
 
     // team_standard 僅限 admin 寫入
-    if (type === 'team_standard' && req.user.role !== 'admin') {
+    if (type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: '團隊規範僅限管理員新增' });
     }
 
@@ -905,7 +906,7 @@ router.put('/:id', async (req, res) => {
     const oldMemory = existing.rows[0];
 
     // team_standard 僅限 admin 修改
-    if (oldMemory.type === 'team_standard' && req.user.role !== 'admin') {
+    if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: '團隊規範僅限管理員修改' });
     }
 
@@ -997,7 +998,7 @@ router.put('/:id/disable', async (req, res) => {
 
     // team_standard 僅限 admin 停用
     const check = await query('SELECT type FROM memories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-    if (check.rows.length > 0 && check.rows[0].type === 'team_standard' && req.user.role !== 'admin') {
+    if (check.rows.length > 0 && check.rows[0].type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: '團隊規範僅限管理員停用' });
     }
 
@@ -1291,7 +1292,7 @@ router.post('/batch-sync-standard', async (req, res) => {
     );
 
     if (parent.rows.length === 0) {
-      if (req.user.role !== 'admin') {
+      if (!isAtLeast(req.user.role, 'admin')) {
         return res.status(403).json({ error: '找不到該團隊規範，且非管理員無法建立' });
       }
       // 自動建立 parent
@@ -1303,7 +1304,7 @@ router.post('/batch-sync-standard', async (req, res) => {
       );
       parent = parentResult;
     } else {
-       if (req.user.role !== 'admin') {
+       if (!isAtLeast(req.user.role, 'admin')) {
          return res.status(403).json({ error: '批次同步規範細項僅限管理員' });
        }
     }
