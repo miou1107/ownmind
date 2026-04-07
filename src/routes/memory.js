@@ -1337,7 +1337,6 @@ router.post('/batch-sync-standard', async (req, res) => {
            VALUES ($1, 'standard_detail', $2, $3, $4, $5)`,
           [
             req.user.id,
-            'standard_detail',
             title,
             content,
             ['rule_detail'],
