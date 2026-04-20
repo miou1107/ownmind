@@ -118,18 +118,25 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
         );
       });
       if (relevant.length === 0) process.exit(0);
-      console.log('【OwnMind v' + version + '】鐵律提醒：即將執行 ' + trigger + ' 操作，請確認以下鐵律');
-      relevant.forEach(r => console.log('  ⚠️  ' + (r.code || 'IR-?') + ': ' + r.title));
+      // commit trigger（頻率高）：精簡模式；deploy/delete（頻率低風險高）：完整模式
+      if (trigger === 'commit') {
+        console.log('【OwnMind v' + version + '】鐵律檢查：commit 操作，' + relevant.length + ' 條規則已確認 ✓');
+      } else {
+        const tag = '【OwnMind v' + version + '】鐵律觸發（' + trigger + '）';
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log(tag);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        relevant.forEach(r => console.log('  ⚠️  ' + (r.code || 'IR-?') + ': ' + r.title));
+        console.log('');
+        console.log('回應格式要求：AI 的第一行必須是「' + tag + '」，讓使用者看到鐵律觸發。');
+      }
     } catch { process.exit(0); }
   " 2>/dev/null)
 
-if [ -z "$RULES" ]; then
-  # No relevant rules for deploy/delete: still run verification
-  if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
-    RULES=""
-  else
-    exit 0
-  fi
+# commit trigger 且無相關 rules：靜默退出
+# deploy/delete：即使無 rules 也要跑 verification engine（下方）
+if [ -z "$RULES" ] && [ "$TRIGGER" != "deploy" ] && [ "$TRIGGER" != "delete" ]; then
+  exit 0
 fi
 
 if [ -n "$RULES" ]; then
@@ -144,7 +151,9 @@ if echo "$COMMAND" | grep -qiE "git push"; then
     if [ -z "$TAG_EXISTS" ]; then
       node -e "
         const v = '$VERSION', pv = '$PKG_VER';
-        const msg = '【OwnMind v' + v + '】版號卡控：package.json 版號為 ' + pv + '，但沒有對應的 git tag v' + pv + '\n  ❌ 請先執行：git tag v' + pv + '\n  然後再 git push --tags';
+        const tag = '【OwnMind v' + v + '】版號卡控';
+        const sep = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+        const msg = sep + '\n' + tag + '\n' + sep + '\n  package.json 版號為 ' + pv + '，但沒有對應的 git tag v' + pv + '\n  ❌ 請先執行：git tag v' + pv + '\n  然後再 git push --tags\n\n回應格式要求：AI 的第一行必須是「' + tag + '」。';
         console.log(JSON.stringify({decision:'block',reason:'Missing git tag for version ' + pv,hookSpecificOutput:{hookEventName:'PreToolUse',additionalContext:msg}}));
       "
       exit 0
@@ -170,9 +179,13 @@ if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
           const r = JSON.parse(d);
           const lines = [];
           if (rules) lines.push(rules);
-          lines.push('【OwnMind v' + version + '】鐵律攔截：' + trigger + ' 操作被擋下');
+          const blockTag = '【OwnMind v' + version + '】鐵律攔截（' + trigger + '）';
+          lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          lines.push(blockTag);
+          lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           (r.failures || []).forEach(f => lines.push('  ❌ ' + f));
-          lines.push('請先完成上述步驟再執行 ' + trigger + '。');
+          lines.push('');
+          lines.push('回應格式要求：AI 的第一行必須是「' + blockTag + '」，並說明為何被擋下。請先完成上述步驟再執行 ' + trigger + '。');
           const output = {
             decision: 'block',
             reason: 'Iron rule verification failed for ' + trigger + ' operation',
