@@ -30,24 +30,50 @@ fi
 
 # --- 3. 確保 Claude Code settings.json 有所有 hook 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+ERR_LOG="$HOME/.ownmind/logs/update-errors.log"
+mkdir -p "$(dirname "$ERR_LOG")"
+# 用戶 opt-out sentinel：touch ~/.ownmind/.no-session-hook 停用自動安裝 SessionStart
+NO_SESSION_HOOK_FLAG="$HOME/.ownmind/.no-session-hook"
 if [ -f "$CLAUDE_SETTINGS" ]; then
   node -e "
     const fs = require('fs');
     const s = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+    const noSessionHook = fs.existsSync('$NO_SESSION_HOOK_FLAG');
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
 
-    // SessionStart hook — 自動載入記憶
-    if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-    const sessionExists = s.hooks.SessionStart.some(h =>
-      h.hooks?.some(hh => (hh.command || '').includes('ownmind-session-start'))
-    );
-    if (!sessionExists) {
-      s.hooks.SessionStart.push({
-        hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-session-start.sh', timeout: 10 }]
-      });
-      changed = true;
-      console.log('   ✅ 加入 SessionStart hook（自動載入記憶）');
+    // SessionStart hook — 自動載入記憶（startup/resume/clear/compact 四種情境都要載入）
+    // 尊重用戶 opt-out：如果 ~/.ownmind/.no-session-hook 存在，跳過整個區塊
+    if (!noSessionHook) {
+      if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
+      const ownmindCmd = 'bash ~/.claude/hooks/ownmind-session-start.sh';
+      const isOwnmindEntry = h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-session-start'));
+      const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
+      const expectedMatchers = ['startup', 'resume', 'clear', 'compact'];
+      const hasAllMatchers = expectedMatchers.every(m =>
+        existing.some(h => h.matcher === m)
+      );
+      // 只有兩種情況會寫入：
+      // 1. 完全沒有 ownmind SessionStart entry（新安裝）
+      // 2. 有 entry 但 matcher 不完整（舊版 migration）
+      // 若用戶有 4 個完整 matcher，不再改動；若用戶手動移除後留白，視為 opt-out
+      if (existing.length > 0 && !hasAllMatchers) {
+        // Migration：移除舊 entries，重建 4 個完整 matchers
+        s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !isOwnmindEntry(h));
+        for (const matcher of expectedMatchers) {
+          s.hooks.SessionStart.push({ matcher, hooks: [{ type: 'command', command: ownmindCmd, timeout: 10 }] });
+        }
+        changed = true;
+        console.log('   ✅ SessionStart hook 已升級為 4 個完整 matcher（startup/resume/clear/compact）');
+      } else if (existing.length === 0 && s.hooks.SessionStart.length === 0) {
+        // 新安裝：settings 裡完全沒 SessionStart，加入 4 個 matcher
+        for (const matcher of expectedMatchers) {
+          s.hooks.SessionStart.push({ matcher, hooks: [{ type: 'command', command: ownmindCmd, timeout: 10 }] });
+        }
+        changed = true;
+        console.log('   ✅ SessionStart hook 已安裝（4 個 matcher）');
+      }
+      // 其他情況（已完整 或 用戶移除但保留其他 SessionStart）：不動
     }
 
     // PreToolUse hook — 鐵律檢查
@@ -83,7 +109,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
       fs.renameSync(tmp, '$CLAUDE_SETTINGS');
     }
-  " 2>/dev/null
+  " 2>>"$ERR_LOG"
 fi
 
 # --- 4. Gemini CLI hooks ---
@@ -112,7 +138,7 @@ if [ -d "$HOME/.gemini" ]; then
       fs.renameSync(tmp, path);
       console.log('   ✅ Gemini CLI SessionStart hook 已加入');
     }
-  " 2>/dev/null
+  " 2>>"$ERR_LOG"
 fi
 
 # --- 5. GitHub Copilot hooks ---
@@ -137,7 +163,7 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
       fs.renameSync(tmp, path);
       console.log('   ✅ GitHub Copilot sessionStart hook 已加入');
     }
-  " 2>/dev/null
+  " 2>>"$ERR_LOG"
 fi
 
 # --- 6. Cursor hooks ---
@@ -160,7 +186,7 @@ if [ -d "$HOME/.cursor" ]; then
       fs.renameSync(tmp, path);
       console.log('   ✅ Cursor session-start hook 已加入');
     }
-  " 2>/dev/null
+  " 2>>"$ERR_LOG"
 fi
 
 # --- 標記 SessionStart hook 已安裝（避免 iron-rule-check 重複升級）---

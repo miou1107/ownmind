@@ -82,10 +82,16 @@ async function main() {
         const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
         if (!tagOutput) {
           // Tag doesn't exist — block push
+          const versionTag = `【OwnMind v${VERSION}】版號卡控`;
           const blockLines = [
-            `【OwnMind v${VERSION}】版號卡控：package.json 版號為 ${pkgVersion}，但沒有對應的 git tag ${expectedTag}`,
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            versionTag,
+            '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+            `  package.json 版號為 ${pkgVersion}，但沒有對應的 git tag ${expectedTag}`,
             `  ❌ 請先執行：git tag ${expectedTag}`,
             `  然後再 git push --tags`,
+            '',
+            `回應格式要求：AI 的第一行必須是「${versionTag}」。`,
           ];
           console.log(JSON.stringify({
             decision: 'block',
@@ -102,10 +108,15 @@ async function main() {
   }
 
   // commit trigger: 精簡模式（頻率高，只顯示結果）
-  // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則）
+  // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則 + 醒目標記）
   if (trigger !== 'commit') {
-    lines.push(`【OwnMind v${VERSION}】鐵律提醒：即將執行 ${trigger} 操作，請確認以下鐵律`);
+    const triggerTag = `【OwnMind v${VERSION}】鐵律觸發（${trigger}）`;
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push(triggerTag);
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
+    lines.push('');
+    lines.push(`回應格式要求：AI 的第一行必須是「${triggerTag}」，讓使用者看到鐵律觸發。`);
   }
 
   // Run verification engine for ALL triggers (commit/deploy/delete)
@@ -141,10 +152,14 @@ async function main() {
       }
 
       if (blockFailures.length > 0) {
+        const blockTag = `【OwnMind v${VERSION}】鐵律攔截（${trigger}）`;
         lines.push('');
-        lines.push(`【OwnMind v${VERSION}】鐵律攔截：${trigger} 操作被擋下`);
+        lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        lines.push(blockTag);
+        lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         blockFailures.forEach(f => lines.push(`  ❌ ${f}`));
-        lines.push(`請先完成上述步驟再執行 ${trigger}。`);
+        lines.push('');
+        lines.push(`回應格式要求：AI 的第一行必須是「${blockTag}」，並說明為何被擋下。請先完成上述步驟再執行 ${trigger}。`);
 
         console.log(JSON.stringify({
           decision: 'block',
