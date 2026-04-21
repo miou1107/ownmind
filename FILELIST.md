@@ -75,7 +75,9 @@ OwnMind/
 │   └── scanners/
 │       ├── id-helper.js             # Codex 專用 fingerprint（canonicalize + sha256 message_id；client+server 共用）
 │       ├── base.js                  # Scanner orchestrator：runScan / atomic offsets / batching（P4）
-│       └── claude-code.js           # Claude Code JSONL adapter（session cumulative running total、byte_offset cursor）
+│       ├── claude-code.js           # Claude Code JSONL adapter（session cumulative running total、byte_offset cursor）
+│       ├── codex.js                 # Codex JSONL adapter（event_msg/token_count → canonical material → message_id）
+│       └── opencode.js              # OpenCode SQLite adapter（sqlite3 CLI、composite (time_created, id) cursor）
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
 │   ├── package.json                 # ESM module declaration（type: module）
@@ -124,7 +126,9 @@ OwnMind/
 │   ├── exemptions.test.js           # exemptions route CRUD + audit
 │   ├── scanner-base.test.js         # base.js：chunk / mergeState / atomic offsets / runScan
 │   ├── scanner-claude-code.test.js  # claude-code adapter：fixture parse / cumulative / crash-resume / replay safety
-│   └── scanner-lock.test.js         # acquireLock：live PID / stale PID / 6h mtime 接手
+│   ├── scanner-lock.test.js         # acquireLock：live PID / stale PID / 6h mtime 接手
+│   ├── scanner-codex.test.js        # codex adapter：token_count → material → message_id / compact / byte_offset cursor
+│   └── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

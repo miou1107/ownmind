@@ -1,5 +1,25 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P5：Codex + OpenCode scanner）
+
+### 新增
+- `shared/scanners/codex.js`：Codex JSONL adapter
+  - 掃 `~/.codex/sessions/**` 與 `~/.codex/archived_sessions/**`（yyyy/mm/dd 遞迴）
+  - 只讀 `event_msg/token_count`（**不讀** response_item — 後者無 usage 欄位）
+  - 用 `info.last_token_usage` 當該 event 的增量（不是 cumulative）
+  - 透過 `turn_context.payload.model` 維護 `currentModel` 狀態
+  - session_id 從檔名 UUID 擷取（`rollout-<ts>-<uuid>.jsonl`）
+  - message_id = `codexMessageId(session_id, canonicalizeCodexMaterial(...))`（共用 P3 id-helper）
+  - Codex token schema → OwnMind：input = input − cached_input、cache_creation = 0（Codex 無此概念）、cache_read = cached_input、reasoning = reasoning_output
+  - 只用 byte_offset cursor（禁用 line_offset，因檔案可能 compact/rewrite 破壞 dedupe）
+- `shared/scanners/opencode.js`：OpenCode SQLite adapter
+  - 透過 `sqlite3 -json -readonly` CLI（零新 deps，plan P5 要求）
+  - **實作偏離原 plan**：發現 `message.id` schema 實際是 TEXT 而非 INTEGER，改採 composite cursor `(time_created, id)`，ORDER BY 與 WHERE 同鍵順序，避免 ms-tie 遺漏/重送
+  - 每 session 獨立累加：`new = prev + input + output + reasoning + cache_read + cache_write`，按 global (time_created, id) 讀取時不因 session 切換 reset
+  - SQL injection defense：high_water_id 透過 sqlQuote 做 `'` → `''` escape
+- Wire codex + opencode 進 `hooks/ownmind-usage-scanner.js`（與 claude-code 並列）
+- `tests/scanner-codex.test.js`（16 tests）、`tests/scanner-opencode.test.js`（14 tests）
+
 ## v1.16.0（開發中）- Token 用量追蹤（P4：Claude Code scanner）
 
 ### 新增

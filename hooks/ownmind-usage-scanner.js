@@ -15,6 +15,8 @@ import { fileURLToPath } from 'url';
 import { readCredentials, getClientVersion } from '../shared/helpers.js';
 import { runScan } from '../shared/scanners/base.js';
 import { createClaudeCodeAdapter } from '../shared/scanners/claude-code.js';
+import { createCodexAdapter } from '../shared/scanners/codex.js';
+import { createOpenCodeAdapter } from '../shared/scanners/opencode.js';
 
 const HOME = os.homedir();
 const LOG_PATH = path.join(HOME, '.ownmind', 'logs', 'scanner.log');
@@ -100,8 +102,9 @@ async function main() {
     const machine = os.hostname();
 
     const adapters = [
-      createClaudeCodeAdapter({ scannerVersion, machine })
-      // P5：createCodexAdapter(...), createOpenCodeAdapter(...)
+      createClaudeCodeAdapter({ scannerVersion, machine }),
+      createCodexAdapter({ scannerVersion, machine }),
+      createOpenCodeAdapter({ scannerVersion, machine })
     ];
 
     for (const adapter of adapters) {
