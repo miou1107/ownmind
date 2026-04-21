@@ -73,7 +73,9 @@ OwnMind/
 │   ├── helpers.js                   # 共用工具函式（readJsonSafe、getChangedSourceFiles、readCredentials、trigger detection）
 │   ├── compliance.js                # 統一 compliance log schema 讀寫
 │   └── scanners/
-│       └── id-helper.js             # Codex 專用 fingerprint（canonicalize + sha256 message_id；client+server 共用）
+│       ├── id-helper.js             # Codex 專用 fingerprint（canonicalize + sha256 message_id；client+server 共用）
+│       ├── base.js                  # Scanner orchestrator：runScan / atomic offsets / batching（P4）
+│       └── claude-code.js           # Claude Code JSONL adapter（session cumulative running total、byte_offset cursor）
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
 │   ├── package.json                 # ESM module declaration（type: module）
@@ -86,7 +88,8 @@ OwnMind/
 │   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
 │   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
 │   ├── ownmind-git-post-commit     # post-commit shell wrapper
-│   └── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
+│   ├── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
+│   └── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
@@ -118,7 +121,10 @@ OwnMind/
 │   ├── aggregation.test.js          # usage-aggregation.js 單元 + recomputeDaily integration
 │   ├── ingestion.test.js            # events.js validation / dedupe / audit / codex / heartbeat / exempt
 │   ├── fingerprint.test.js          # shared/scanners/id-helper.js（canonicalize + sha256 deterministic）
-│   └── exemptions.test.js           # exemptions route CRUD + audit
+│   ├── exemptions.test.js           # exemptions route CRUD + audit
+│   ├── scanner-base.test.js         # base.js：chunk / mergeState / atomic offsets / runScan
+│   ├── scanner-claude-code.test.js  # claude-code adapter：fixture parse / cumulative / crash-resume / replay safety
+│   └── scanner-lock.test.js         # acquireLock：live PID / stale PID / 6h mtime 接手
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

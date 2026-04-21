@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P4：Claude Code scanner）
+
+### 新增
+- `shared/scanners/base.js`：scanner orchestrator 共用骨架
+  - `runScan({ adapter, apiUrl, apiKey, cachePath, fetchFn })`：單一流程（spec D11）— 讀 offset → adapter.readSince → 分批 POST /api/usage/events → 全部成功才原子寫回 offset
+  - 500 events/批次；最後一批附 heartbeat；空 scan 也送 heartbeat
+  - `writeOffsetsAtomic` 用 temp + rename 確保無半寫狀態
+  - `mergeState` 純函式 merge offset patch + session cumulative patch
+- `shared/scanners/claude-code.js`：Claude Code JSONL adapter
+  - 掃 `~/.claude/projects/<project>/<session>.jsonl`
+  - 只處理 `type='assistant'` 且 `message.usage` 非空；message_id=uuid、session_id=sessionId
+  - 維護 per-session 累加 map：`new = prev + input + output + cache_creation + cache_read`
+  - byte_offset cursor；檔案被截斷/輪轉自動重置為 0；partial line 保留到下次 scan
+- `hooks/ownmind-usage-scanner.js`：主 entry
+  - 自我 lock（`~/.ownmind/cache/scanner.lock`）防多實例同跑
+  - 讀 `~/.claude/settings.json` 的 credentials → 跑 adapter → log 到 `~/.ownmind/logs/scanner.log`
+  - `export { main }` + `isDirectRun` guard，import 時不觸發
+- `tests/scanner-base.test.js`（15 tests）、`tests/scanner-claude-code.test.js`（15 tests）
+
+### 改善
+- `src/routes/usage/events.js`：允許 `events=[]` 當 heartbeat 存在時，支援空 scan 仍送心跳（避免 coverage panel 誤判失蹤）
+- `src/app.js`：JSON body limit 從 100kb 提升到 10mb，容納 500-event batch
+- `scripts/update.sh`：usage scanner 入口加可執行權限
+
 ## v1.16.0（開發中）- Token 用量追蹤（P3：heartbeat + exemption + Codex fingerprint）
 
 ### 新增

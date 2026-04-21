@@ -37,12 +37,20 @@ export function createEventsRouter(deps = {}) {
       const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: '未認證' });
 
-      const { events, heartbeat } = req.body || {};
-      if (!Array.isArray(events) || events.length === 0) {
-        return res.status(400).json({ error: 'events 必須是非空 array' });
+      const { events = [], heartbeat } = req.body || {};
+      if (!Array.isArray(events)) {
+        return res.status(400).json({ error: 'events 必須是 array' });
+      }
+      // 允許 heartbeat-only 呼叫（scanner 空 scan 仍要報心跳，避免 coverage panel 誤判失蹤）
+      if (events.length === 0 && !heartbeat) {
+        return res.status(400).json({ error: 'events 為空時需附 heartbeat' });
       }
       if (events.length > 5000) {
         return res.status(413).json({ error: '單次最多 5000 筆 events' });
+      }
+      if (events.length === 0) {
+        await writeHeartbeatIfPresent({ query }, userId, heartbeat);
+        return res.json({ accepted: 0, duplicated: 0, rejected: [] });
       }
 
       // ── 0. Exemption check（最早處理） ─────────────────────

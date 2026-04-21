@@ -13,7 +13,8 @@ const app = express();
 // 安全性與基本中介層
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
-app.use(express.json());
+// JSON body limit 10MB 以容納 scanner 500-event batch（單 event 可達 ~2KB）
+app.use(express.json({ limit: '10mb' }));
 
 // 靜態檔案（Admin 後台）
 app.use('/admin', express.static(join(__dirname, 'public')));
