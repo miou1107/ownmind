@@ -1,5 +1,27 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P2：ingestion + aggregation + stats）
+
+### 新增
+- `src/routes/usage/events.js`：`POST /api/usage/events` — raw event ingestion
+  - 必填欄位驗證（message_id / cumulative_total_tokens / ts）
+  - Model allowlist：不在 `model_pricing` 的 model → `usage_audit_log.event_type='unknown_model'`，event 仍接收
+  - D7 token_regression：新 event 的 cumulative < 同 session 歷史 MAX → 寫入 audit log（仍接收）
+  - Dedupe：`INSERT ... ON CONFLICT (user_id, tool, session_id, message_id) DO NOTHING`
+  - Response：`{ accepted, duplicated, rejected: [...] }`
+  - TODO(P3)：Codex fingerprint override + heartbeat + exemption
+- `src/jobs/usage-aggregation.js`：
+  - 純函式 `computeTimeSpans` / `groupByModel` / `buildDailyRow` / `deriveTouchedCombos`
+  - DB 版 `recomputeDaily({ query }, keys)` — 從 `token_events` 重算 UPSERT `token_usage_daily`
+  - 冪等：重跑不 double count；wall / active seconds 以 Asia/Taipei 切日、600s gap 判離線
+- `src/routes/usage/stats.js`：`GET /api/usage/stats?from=&to=&group_by=day|tool|model|session`
+- `src/jobs/nightly-recompute.js`：每日 03:00 Asia/Taipei 跑近 7 天完整 recompute（處理 pricing 變更）
+- `tests/aggregation.test.js`（13 tests）+ `tests/ingestion.test.js`（11 tests）
+
+### 改善
+- `src/routes/usage/index.js` 掛載 events / stats 子路由
+- `src/index.js` 啟動 nightly recompute cron
+
 ## v1.16.0（開發中）- Token 用量追蹤（P1：DB schema + pricing API）
 
 > 跨 IDE 團隊用量追蹤系統的第一階段後端骨架。

@@ -39,7 +39,9 @@ OwnMind/
 │   │   ├── activity.js              # Activity log batch upload + 統計 API
 │   │   └── usage/                   # Token 用量追蹤 API（P1 起）
 │   │       ├── index.js             # 掛載 /api/usage/* 子路由
-│   │       └── pricing.js           # GET 所有 model pricing；POST 新增（super_admin only, append-only）
+│   │       ├── pricing.js           # GET 所有 model pricing；POST 新增（super_admin only, append-only）
+│   │       ├── events.js            # POST raw events 進 DB（validation / D7 regression / dedupe / trigger aggregation）
+│   │       └── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -51,7 +53,9 @@ OwnMind/
 │   │   ├── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
 │   │   └── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
 │   ├── jobs/
-│   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
+│   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
+│   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
+│   │   └── nightly-recompute.js     # 每日 03:00 Asia/Taipei 跑近 7 天完整 recompute
 │   └── public/
 │       └── index.html               # Admin 管理後台（單頁應用）
 │
@@ -106,7 +110,9 @@ OwnMind/
 │   ├── helpers.test.js              # shared/helpers.js 單元測試
 │   ├── compliance.test.js           # shared/compliance.js 單元測試
 │   ├── trigger-detection.test.js    # 觸發檢測精準度測試
-│   └── pricing.test.js              # pricing-lookup.js 單元測試（effective_date / cost 計算）
+│   ├── pricing.test.js              # pricing-lookup.js 單元測試（effective_date / cost 計算）
+│   ├── aggregation.test.js          # usage-aggregation.js 單元 + recomputeDaily integration
+│   └── ingestion.test.js            # events.js validation + dedupe + audit log
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
