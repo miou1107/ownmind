@@ -18,7 +18,9 @@ OwnMind/
 │   ├── 002_add_team_standard.sql    # 團隊規範相關 migration
 │   ├── 003_activity_logs.sql        # Activity logs 表（事件追蹤）
 │   ├── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
-│   └── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
+│   ├── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
+│   ├── 006_add_standard_detail.sql   # memories type 加上 standard_detail
+│   └── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -34,7 +36,10 @@ OwnMind/
 │   │   ├── admin.js                 # 使用者管理 + 帳密登入 + 角色控管 + 稽核
 │   │   ├── secret.js                # 密鑰管理（AES-256 加密）
 │   │   ├── export.js                # 記憶匯出
-│   │   └── activity.js              # Activity log batch upload + 統計 API
+│   │   ├── activity.js              # Activity log batch upload + 統計 API
+│   │   └── usage/                   # Token 用量追蹤 API（P1 起）
+│   │       ├── index.js             # 掛載 /api/usage/* 子路由
+│   │       └── pricing.js           # GET 所有 model pricing；POST 新增（super_admin only, append-only）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -43,7 +48,8 @@ OwnMind/
 │   │   ├── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
 │   │   ├── enforcement.js          # Enforcement alerts 計算純函式
 │   │   ├── templates.js            # 規則模板庫 + 自動匹配
-│   │   └── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
+│   │   ├── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
+│   │   └── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
 │   ├── jobs/
 │   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   └── public/
@@ -99,7 +105,8 @@ OwnMind/
 │   ├── templates.test.js            # 模板匹配測試
 │   ├── helpers.test.js              # shared/helpers.js 單元測試
 │   ├── compliance.test.js           # shared/compliance.js 單元測試
-│   └── trigger-detection.test.js    # 觸發檢測精準度測試
+│   ├── trigger-detection.test.js    # 觸發檢測精準度測試
+│   └── pricing.test.js              # pricing-lookup.js 單元測試（effective_date / cost 計算）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

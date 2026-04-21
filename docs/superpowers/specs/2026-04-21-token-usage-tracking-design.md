@@ -318,10 +318,19 @@ GET 所有 user 可呼叫，PUT 僅 super_admin。
 每次 /api/usage/events 成功 ingest 後：
   1. 找出該批次涉及的 (user_id, tool, session_id, date) 組合
   2. 對每個組合，從 token_events 重新 SUM / COUNT / MIN / MAX
-  3. 計算 cost:
+  3. 計算 cost（公式 C-1）:
      - 查 model_pricing WHERE tool=? AND model=? AND effective_date <= date
-       ORDER BY effective_date DESC LIMIT 1
-     - cost = input/1M * input_per_1m + output/1M * output_per_1m + ...
+       ORDER BY effective_date DESC, id DESC LIMIT 1
+     - cost_usd =
+         ( input_tokens           * input_per_1m
+         + output_tokens          * output_per_1m
+         + cache_creation_tokens  * cache_write_per_1m
+         + cache_read_tokens      * cache_read_per_1m
+         + reasoning_tokens       * output_per_1m ) / 1_000_000
+     - 規則：reasoning_tokens 按 output_per_1m 計價
+       - 對齊 OpenAI GPT-5 實際 billing（reasoning 計入 output billing）
+       - Claude / OpenCode 本來就沒 reasoning_tokens 欄位，該項恆為 0
+       - model_pricing 不設獨立 reasoning_per_1m 欄位（避免 schema 膨脹）
   4. 計算 wall_seconds = EXTRACT(EPOCH FROM (last_ts - first_ts))
   5. 計算 active_seconds:
      SELECT ts FROM token_events WHERE session_id=? ORDER BY ts

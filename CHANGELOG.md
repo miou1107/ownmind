@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P1：DB schema + pricing API）
+
+> 跨 IDE 團隊用量追蹤系統的第一階段後端骨架。
+> Spec / Plan：`docs/superpowers/specs/2026-04-21-token-usage-tracking-design.md`、`docs/superpowers/plans/2026-04-21-token-usage-tracking.md`
+
+### 新增
+- `db/007_token_usage.sql` migration：新增 7 張表 — `model_pricing`、`token_events`（含 `cumulative_total_tokens NOT NULL` + `codex_fingerprint_material JSONB`）、`token_usage_daily`、`collector_heartbeat`、`session_count`、`usage_tracking_exemption`、`usage_audit_log`，並插入 claude-code / codex 初始定價
+- `src/utils/pricing-lookup.js`：純函式 `pickPricing(rows, tool, model, date)` + `computeCost(pricing, tokens)`，搭配 DB 版 `lookupPricing()` 供 aggregation 使用（`effective_date <= date` 規則）
+- `src/routes/usage/pricing.js`：`GET /api/usage/pricing`（所有登入 user）+ `POST /api/usage/pricing`（super_admin only，append-only；格式 / 非負價格驗證）
+- `tests/pricing.test.js`：12 個單元測試涵蓋 effective_date 挑選、null 欄位、reasoning_tokens 計價、真實 sample
+
+### 已知待辦（P2+）
+- `/api/usage/events` ingestion、server-side aggregation、heartbeat、exemption、scanner 將在 P2–P6 交付，詳見 plan。
+
+---
+
 ## v1.15.4 - SessionStart 可靠觸發 + 鐵律顯著標記
 
 ### 修復

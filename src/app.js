@@ -36,6 +36,7 @@ import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
 import exportRoutes from './routes/export.js';
 import activityRoutes from './routes/activity.js';
+import usageRoutes from './routes/usage/index.js';
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
@@ -44,6 +45,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/usage', usageRoutes);
 
 // 根路徑導向 Admin
 app.get('/', (req, res) => {
