@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P3：heartbeat + exemption + Codex fingerprint）
+
+### 新增
+- `shared/scanners/id-helper.js`（client + server 共用）：
+  - `canonicalizeCodexMaterial(raw)` — ts_iso ISO 8601 毫秒精度、null→0、非 finite throw
+  - `codexMessageId(sessionId, canonical)` — 完整 sha256（64 hex 不截斷）
+  - `materialsEqual(a, b)` — server canonical material 比對用
+  - 8 個必填欄位：ts_iso / total_cumulative / last_total / input / output / cache_creation / cache_read / reasoning
+- `src/routes/usage/exemptions.js`：super_admin CRUD usage_tracking_exemption
+  - POST 要填 reason（空白也 reject）；DELETE 寫 `exemption_revoked` audit
+  - UPSERT 時 granted_at 更新，避免被舊 row 擋住
+- `src/routes/usage/admin-audit.js`：admin+ 查詢 usage_audit_log（可 filter event_type / user_id / limit）
+- Ingestion handler（`events.js`）升級：
+  - Exemption 最優先檢查：exempt user → 寫 `ingestion_suppressed_exempt` audit、回 `exempted: true`、不進 DB、heartbeat 仍更新
+  - Codex 專用流程（D13）：material 必填 → server canonicalize → 自己算 expectedId → 一律用 expectedId 蓋掉 client message_id → client id 錯誤寫 `fingerprint_mismatch` → ON CONFLICT 時比 material 寫 `fingerprint_collision`
+  - Heartbeat UPSERT：`body.heartbeat { tool, scanner_version, machine }` 一併處理
+
+### 測試
+- `tests/fingerprint.test.js`（18 tests）：canonicalize 正規化 / 不同欄位導致不同 id / ts 不同格式同瞬間 id 相同 / 完整 sha256 64 hex
+- `tests/exemptions.test.js`（9 tests）：CRUD + auth + audit 寫入
+- `tests/ingestion.test.js` 擴充 11 個：Codex 5 個（missing material / partial material / override mismatch / dedupe by expectedId / collision audit）、heartbeat 3 個、exemption 2 個
+
+### Audit log event_types 清單
+`unknown_model` / `token_regression` / `fingerprint_collision` / `fingerprint_mismatch` /
+`codex_missing_material` / `ingestion_suppressed_exempt` /
+`exemption_granted` / `exemption_revoked` / `rate_anomaly`（保留）
+
 ## v1.16.0（開發中）- Token 用量追蹤（P2：ingestion + aggregation + stats）
 
 ### 新增

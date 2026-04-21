@@ -40,8 +40,10 @@ OwnMind/
 │   │   └── usage/                   # Token 用量追蹤 API（P1 起）
 │   │       ├── index.js             # 掛載 /api/usage/* 子路由
 │   │       ├── pricing.js           # GET 所有 model pricing；POST 新增（super_admin only, append-only）
-│   │       ├── events.js            # POST raw events 進 DB（validation / D7 regression / dedupe / trigger aggregation）
-│   │       └── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
+│   │       ├── events.js            # POST raw events（exempt check / codex fingerprint / heartbeat / D7 / dedupe / trigger aggregation）
+│   │       ├── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
+│   │       ├── exemptions.js        # GET / POST / DELETE usage_tracking_exemption（super_admin only）
+│   │       └── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -69,7 +71,9 @@ OwnMind/
 ├── shared/
 │   ├── verification.js              # Verification Engine 核心（純函式）
 │   ├── helpers.js                   # 共用工具函式（readJsonSafe、getChangedSourceFiles、readCredentials、trigger detection）
-│   └── compliance.js                # 統一 compliance log schema 讀寫
+│   ├── compliance.js                # 統一 compliance log schema 讀寫
+│   └── scanners/
+│       └── id-helper.js             # Codex 專用 fingerprint（canonicalize + sha256 message_id；client+server 共用）
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
 │   ├── package.json                 # ESM module declaration（type: module）
@@ -112,7 +116,9 @@ OwnMind/
 │   ├── trigger-detection.test.js    # 觸發檢測精準度測試
 │   ├── pricing.test.js              # pricing-lookup.js 單元測試（effective_date / cost 計算）
 │   ├── aggregation.test.js          # usage-aggregation.js 單元 + recomputeDaily integration
-│   └── ingestion.test.js            # events.js validation + dedupe + audit log
+│   ├── ingestion.test.js            # events.js validation / dedupe / audit / codex / heartbeat / exempt
+│   ├── fingerprint.test.js          # shared/scanners/id-helper.js（canonicalize + sha256 deterministic）
+│   └── exemptions.test.js           # exemptions route CRUD + audit
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

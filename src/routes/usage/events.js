@@ -6,22 +6,24 @@ import {
   recomputeDaily as defaultRecompute,
   deriveTouchedCombos
 } from '../../jobs/usage-aggregation.js';
+import {
+  canonicalizeCodexMaterial,
+  codexMessageId,
+  materialsEqual
+} from '../../../shared/scanners/id-helper.js';
 
 /**
  * POST /api/usage/events — Client scanner 轉發 raw events
  *
- * Flow（per spec S2）：
- *   1. Auth（Bearer token）
- *   2. 驗證必填欄位：tool / session_id / message_id / cumulative_total_tokens / ts
- *   3. Model allowlist：查 model_pricing，未知 → audit log，event 仍接收
- *   4. D7 token_regression：同 (user, tool, session_id) 的 MAX(cumulative_total_tokens)
- *      若新 event < 此值 → audit log，event 仍接收
- *   5. INSERT ... ON CONFLICT DO NOTHING（dedupe by (user, tool, session, message_id)）
- *   6. 對批次涉及的 (tool, session_id, date) 組合執行 recomputeDaily
- *   7. Response: { accepted, duplicated, rejected: [...] }
+ * P3 新增：
+ *   - Exemption check：exempt user 的資料不入 token_events，只寫 audit
+ *   - Codex fingerprint flow（D13）：material 必填 → canonicalize → expectedId override
+ *     → collision / mismatch audit（仍接收，只做觀測）
+ *   - Heartbeat：body.heartbeat { tool, scanner_version, machine } → UPSERT collector_heartbeat
  *
- * TODO(P3)：Codex 專用 fingerprint override + material canonicalize
- * TODO(P3)：Heartbeat + exemption 處理
+ * 已知限制（P2 既有）：
+ *   - insert/audit/aggregation 無 transaction；若 aggregation throw 靠 nightly recompute 修復
+ *   - 並發兩批同 session 可能造成 token_regression 誤報（audit 屬 advisory）
  */
 export function createEventsRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -35,85 +37,148 @@ export function createEventsRouter(deps = {}) {
       const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: '未認證' });
 
-      const { events } = req.body || {};
+      const { events, heartbeat } = req.body || {};
       if (!Array.isArray(events) || events.length === 0) {
         return res.status(400).json({ error: 'events 必須是非空 array' });
       }
-
       if (events.length > 5000) {
         return res.status(413).json({ error: '單次最多 5000 筆 events' });
       }
 
-      // ── 1. 驗證必填 ─────────────────────────────────────────
-      const rejected = [];
-      const valid = [];
-      events.forEach((e, i) => {
-        const err = validateEvent(e);
-        if (err) rejected.push({ index: i, reason: err });
-        else valid.push(e);
-      });
+      // ── 0. Exemption check（最早處理） ─────────────────────
+      // 備註：isExempt → INSERT 有微小 race（grant exemption 過程中到達的批次
+      //      可能仍入 DB）。可接受：下一批就會被擋，coverage 資料僅錯一批。
+      const exempt = await isExempt({ query }, userId);
+      if (exempt) {
+        const tools = [...new Set(events.map((e) => e?.tool).filter(Boolean))];
+        await writeAudit({ query }, userId, null, 'ingestion_suppressed_exempt', {
+          event_count: events.length, tools, reason: exempt.reason
+        });
+        await writeHeartbeatIfPresent({ query }, userId, heartbeat);
+        return res.json({ accepted: 0, duplicated: 0, rejected: [], exempted: true });
+      }
 
-      if (valid.length === 0) {
+      // ── 1. 驗證必填 + Codex canonicalize ──────────────────
+      const rejected = [];
+      const processed = []; // { event, originalMessageId, canonicalMaterial, isCodex }
+      for (let i = 0; i < events.length; i += 1) {
+        const e = events[i];
+        const basicErr = validateEvent(e);
+        if (basicErr) { rejected.push({ index: i, reason: basicErr }); continue; }
+
+        if (e.tool === 'codex') {
+          try {
+            const canonical = canonicalizeCodexMaterial(e.codex_fingerprint_material);
+            const expectedId = codexMessageId(e.session_id, canonical);
+            processed.push({
+              event: e, originalMessageId: e.message_id,
+              canonicalMaterial: canonical, expectedId, isCodex: true
+            });
+          } catch (err) {
+            rejected.push({ index: i, reason: `codex material: ${err.message}` });
+            await writeAudit({ query }, userId, 'codex', 'codex_missing_material', {
+              session_id: e.session_id, message_id: e.message_id,
+              error: err.message
+            });
+          }
+        } else {
+          processed.push({ event: e, isCodex: false });
+        }
+      }
+
+      if (processed.length === 0) {
+        await writeHeartbeatIfPresent({ query }, userId, heartbeat);
         return res.status(400).json({ accepted: 0, duplicated: 0, rejected });
       }
 
       // ── 2. Model allowlist（batch 查） ─────────────────────
       const modelKeys = [...new Set(
-        valid.map((e) => `${e.tool}::${e.model ?? ''}`).filter((k) => !k.endsWith('::'))
+        processed.map((p) => `${p.event.tool}::${p.event.model ?? ''}`)
+          .filter((k) => !k.endsWith('::'))
       )];
       const knownModels = await lookupKnownModels({ query }, modelKeys);
-      const unknownEvents = [];
-      for (const e of valid) {
-        if (!e.model) continue;
-        if (!knownModels.has(`${e.tool}::${e.model}`)) unknownEvents.push(e);
+      const unknownMessageIds = new Set();
+      for (const p of processed) {
+        if (!p.event.model) continue;
+        if (!knownModels.has(`${p.event.tool}::${p.event.model}`)) {
+          unknownMessageIds.add(effectiveMessageId(p));
+        }
       }
 
       // ── 3. D7 token_regression（batch 查每 (tool, session_id) max） ──
-      const sessionKeys = [...new Set(valid.map((e) => `${e.tool}::${e.session_id}`))];
+      const sessionKeys = [...new Set(
+        processed.map((p) => `${p.event.tool}::${p.event.session_id}`)
+      )];
       const sessionMax = await loadSessionMaxCumulative({ query }, userId, sessionKeys);
-      const regressionEvents = [];
-      for (const e of valid) {
-        const max = sessionMax.get(`${e.tool}::${e.session_id}`) ?? 0;
-        if (Number(e.cumulative_total_tokens) < Number(max)) {
-          regressionEvents.push({ event: e, expected_min: Number(max) });
+      const regressionMap = new Map(); // effectiveId → expected_min
+      for (const p of processed) {
+        const max = sessionMax.get(`${p.event.tool}::${p.event.session_id}`) ?? 0;
+        if (Number(p.event.cumulative_total_tokens) < Number(max)) {
+          regressionMap.set(effectiveMessageId(p), Number(max));
         }
       }
 
-      // ── 4. INSERT + 同筆 audit ── ────────────────────────────
-      // 交錯寫入避免「insert 失敗但 audit 已進 DB」或相反（I1 fix）
-      // 已知限制（P2）：
-      //   - 無 transaction 包覆 insert/audit/aggregation。若 aggregation 失敗，
-      //     DB 仍有 raw event，靠 nightly recompute 自我修復（7 天窗口）。
-      //   - 並發兩批同 session 可能造成 token_regression 誤報（audit 屬 advisory，
-      //     非 enforcement，可接受）。確認篡改前需比對 cumulative 順序。
-      const unknownSet = new Set(unknownEvents.map((e) => e.message_id));
-      const regressionMap = new Map(
-        regressionEvents.map(({ event, expected_min }) => [event.message_id, expected_min])
-      );
-
+      // ── 4. INSERT + per-event audit（交錯，避免 insert 失敗卻 audit 已 commit） ──
       let accepted = 0;
       let duplicated = 0;
-      for (const e of valid) {
-        const inserted = await insertEvent({ query }, userId, e);
-        if (!inserted) { duplicated += 1; continue; }
-        accepted += 1;
+      for (const p of processed) {
+        const { event: e, isCodex, canonicalMaterial, expectedId, originalMessageId } = p;
+        const messageId = isCodex ? expectedId : e.message_id;
 
-        if (unknownSet.has(e.message_id)) {
-          await writeAudit({ query }, userId, e.tool, 'unknown_model', {
-            model: e.model, message_id: e.message_id, session_id: e.session_id
+        // Codex：client 送的 id ≠ server 算的 → 寫 mismatch（接收後 insert 仍用 expectedId）
+        if (isCodex && originalMessageId !== expectedId) {
+          await writeAudit({ query }, userId, 'codex', 'fingerprint_mismatch', {
+            session_id: e.session_id,
+            client_message_id: originalMessageId,
+            expected_message_id: expectedId
           });
         }
-        if (regressionMap.has(e.message_id)) {
-          await writeAudit({ query }, userId, e.tool, 'token_regression', {
-            session_id: e.session_id, message_id: e.message_id,
-            expected_min: regressionMap.get(e.message_id),
-            actual: Number(e.cumulative_total_tokens)
-          });
+
+        const insertRes = await insertEvent({ query }, userId, e, messageId, canonicalMaterial);
+        if (insertRes.inserted) {
+          accepted += 1;
+        } else {
+          duplicated += 1;
+          // Codex collision detection：讀既存 row 的 material 跟本次比對
+          if (isCodex) {
+            const existing = await query(
+              `SELECT codex_fingerprint_material
+                 FROM token_events
+                WHERE user_id = $1 AND tool = 'codex'
+                  AND session_id = $2 AND message_id = $3`,
+              [userId, e.session_id, expectedId]
+            );
+            const existingMaterial = existing.rows[0]?.codex_fingerprint_material;
+            if (existingMaterial && !materialsEqual(existingMaterial, canonicalMaterial)) {
+              await writeAudit({ query }, userId, 'codex', 'fingerprint_collision', {
+                session_id: e.session_id, message_id: expectedId,
+                existing: existingMaterial, incoming: canonicalMaterial
+              });
+            }
+          }
+        }
+
+        if (insertRes.inserted) {
+          if (unknownMessageIds.has(messageId)) {
+            await writeAudit({ query }, userId, e.tool, 'unknown_model', {
+              model: e.model, message_id: messageId, session_id: e.session_id
+            });
+          }
+          if (regressionMap.has(messageId)) {
+            await writeAudit({ query }, userId, e.tool, 'token_regression', {
+              session_id: e.session_id, message_id: messageId,
+              expected_min: regressionMap.get(messageId),
+              actual: Number(e.cumulative_total_tokens)
+            });
+          }
         }
       }
 
-      // ── 6. Trigger aggregation（同步，小 batch） ─────────────
-      const touched = deriveTouchedCombos(valid);
+      // ── 5. Heartbeat ──────────────────────────────────────
+      await writeHeartbeatIfPresent({ query }, userId, heartbeat);
+
+      // ── 6. Trigger aggregation ────────────────────────────
+      const touched = deriveTouchedCombos(processed.map((p) => p.event));
       for (const t of touched) {
         try {
           await recomputeDaily({ query }, {
@@ -146,18 +211,41 @@ export function validateEvent(e) {
   if (!e || typeof e !== 'object') return 'event 必須是物件';
   if (!e.tool || typeof e.tool !== 'string') return 'tool 必填';
   if (!e.session_id || typeof e.session_id !== 'string') return 'session_id 必填';
-  if (!e.message_id || typeof e.message_id !== 'string') return 'message_id 必填';
+  // Codex: message_id 由 server 覆寫，這裡不強制（但欄位仍須存在，避免錯字 bug）
+  if (e.tool !== 'codex') {
+    if (!e.message_id || typeof e.message_id !== 'string') return 'message_id 必填';
+  }
   if (!e.ts) return 'ts 必填';
   if (Number.isNaN(new Date(e.ts).getTime())) return 'ts 格式錯誤';
-
-  // Tier 1 必須有 cumulative_total_tokens（D7）
+  // Tier 1 含 codex：spec P5 line 237 要求 scanner 同時設定 top-level
+  // cumulative_total_tokens（= material.total_cumulative），因為 D7 regression
+  // 查詢是 top-level 欄位，不解析 JSONB material。兩處冗餘是 by-design。
   if (TIER1_TOOLS.has(e.tool)) {
     if (e.cumulative_total_tokens == null) return 'cumulative_total_tokens 必填（Tier 1）';
     if (!Number.isFinite(Number(e.cumulative_total_tokens))) {
       return 'cumulative_total_tokens 必須為數字';
     }
   }
+  // Codex: material 必填欄位由 canonicalize 檢查；這邊只攔非物件
+  if (e.tool === 'codex' && (!e.codex_fingerprint_material || typeof e.codex_fingerprint_material !== 'object')) {
+    return 'codex event 缺 codex_fingerprint_material';
+  }
   return null;
+}
+
+function effectiveMessageId(p) {
+  return p.isCodex ? p.expectedId : p.event.message_id;
+}
+
+async function isExempt({ query }, userId) {
+  const res = await query(
+    `SELECT reason, expires_at FROM usage_tracking_exemption
+      WHERE user_id = $1
+        AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1`,
+    [userId]
+  );
+  return res.rows[0] || null;
 }
 
 async function lookupKnownModels({ query }, keys) {
@@ -193,7 +281,7 @@ async function loadSessionMaxCumulative({ query }, userId, sessionKeys) {
   return map;
 }
 
-async function insertEvent({ query }, userId, e) {
+async function insertEvent({ query }, userId, e, messageId, canonicalMaterial) {
   const res = await query(
     `INSERT INTO token_events
        (user_id, tool, session_id, message_id, model, ts,
@@ -205,15 +293,35 @@ async function insertEvent({ query }, userId, e) {
      ON CONFLICT (user_id, tool, session_id, message_id) DO NOTHING
      RETURNING id`,
     [
-      userId, e.tool, e.session_id, e.message_id, e.model ?? null, e.ts,
+      userId, e.tool, e.session_id, messageId, e.model ?? null, e.ts,
       numOr0(e.input_tokens), numOr0(e.output_tokens),
       numOr0(e.cache_creation_tokens), numOr0(e.cache_read_tokens), numOr0(e.reasoning_tokens),
       e.native_cost_usd ?? null, e.source_file ?? null,
       Number(e.cumulative_total_tokens),
-      e.codex_fingerprint_material ? JSON.stringify(e.codex_fingerprint_material) : null
+      canonicalMaterial ? JSON.stringify(canonicalMaterial) : null
     ]
   );
-  return res.rowCount > 0;
+  return { inserted: res.rowCount > 0 };
+}
+
+async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
+  if (!heartbeat || typeof heartbeat !== 'object' || !heartbeat.tool) return;
+  try {
+    await query(
+      `INSERT INTO collector_heartbeat
+         (user_id, tool, last_reported_at, scanner_version, machine, status)
+       VALUES ($1, $2, NOW(), $3, $4, 'active')
+       ON CONFLICT (user_id, tool) DO UPDATE SET
+         last_reported_at = NOW(),
+         scanner_version  = EXCLUDED.scanner_version,
+         machine          = EXCLUDED.machine,
+         status           = 'active'`,
+      [userId, heartbeat.tool,
+       heartbeat.scanner_version ?? null, heartbeat.machine ?? null]
+    );
+  } catch (err) {
+    logger.error('heartbeat 更新失敗', { error: err.message });
+  }
 }
 
 async function writeAudit({ query }, userId, tool, eventType, details) {
