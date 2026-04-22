@@ -103,15 +103,26 @@ async function main() {
     const scannerVersion = getClientVersion() || 'unknown';
     const machine = os.hostname();
 
-    const adapters = [
+    // OWNMIND_SKIP_TOOLS=tool1,tool2 可跳過指定 adapter（backfill / debug 用）
+    const skip = new Set(
+      (process.env.OWNMIND_SKIP_TOOLS || '')
+        .split(',').map((s) => s.trim()).filter(Boolean)
+    );
+    if (skip.size > 0) {
+      await log(`[scanner] OWNMIND_SKIP_TOOLS active: skipping ${[...skip].join(',')}`);
+    }
+    const adapterSpecs = [
       // Tier 1 — raw token events
-      createClaudeCodeAdapter({ scannerVersion, machine }),
-      createCodexAdapter({ scannerVersion, machine }),
-      createOpenCodeAdapter({ scannerVersion, machine }),
+      { tool: 'claude-code', factory: createClaudeCodeAdapter },
+      { tool: 'codex',       factory: createCodexAdapter },
+      { tool: 'opencode',    factory: createOpenCodeAdapter },
       // Tier 2 — session_count only
-      createCursorAdapter({ scannerVersion, machine }),
-      createAntigravityAdapter({ scannerVersion, machine })
+      { tool: 'cursor',      factory: createCursorAdapter },
+      { tool: 'antigravity', factory: createAntigravityAdapter }
     ];
+    const adapters = adapterSpecs
+      .filter((spec) => !skip.has(spec.tool))
+      .map((spec) => spec.factory({ scannerVersion, machine }));
 
     for (const adapter of adapters) {
       try {
