@@ -6,4 +6,5 @@ logs/
 .claude/worktrees/
 .claude/commands
 .claude/skills
-.claude/*.json.claude/scheduled_tasks.lock
+.claude/*.json
+.claude/*.lock
