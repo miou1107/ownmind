@@ -32,8 +32,13 @@ async function request(app, { method = 'GET', path }) {
 /**
  * Handy factory for the 4 SQL patterns stats.js now fires.
  */
-function makeFakeStatsQuery({ tier1Totals, tier2Totals, tier1Series = [], tier2Series = [], isExempt = false } = {}) {
-  return async (sql) => {
+function makeFakeStatsQuery({ tier1Totals, tier2Totals, tier1Series = [], tier2Series = [],
+                              isExempt = false, userBasics } = {}) {
+  return async (sql, params) => {
+    // user basics (when querying other user)
+    if (/SELECT id, name, email FROM users WHERE id/.test(sql)) {
+      return { rows: userBasics ? [userBasics] : [] };
+    }
     // exemption check
     if (/FROM usage_tracking_exemption/.test(sql)) {
       return { rows: isExempt ? [{ '?column?': 1 }] : [] };
@@ -211,6 +216,68 @@ describe('GET /api/usage/stats totals', () => {
       'codex tool 該期間有 unknown pricing → cost_usd 應為 null');
     const cc = res.body.series.find((s) => s.key === 'claude-code');
     assert.equal(cc.cost_usd, 1.0, 'claude-code pricing 已知 → cost_usd 照常');
+  });
+
+  it('admin can query another user via ?user_id=N', async () => {
+    const app = buildApp({
+      queryFn: makeFakeStatsQuery({
+        userBasics: { id: 5, name: 'Sunny', email: 's@x.com' }
+      }),
+      user: { id: 9, role: 'admin', name: 'Admin', email: 'a@x.com' }
+    });
+    const res = await request(app, { path: '/api/usage/stats?user_id=5' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.user.id, 5);
+    assert.equal(res.body.user.name, 'Sunny');
+  });
+
+  it('super_admin can query another user', async () => {
+    const app = buildApp({
+      queryFn: makeFakeStatsQuery({
+        userBasics: { id: 5, name: 'Sunny', email: 's@x.com' }
+      }),
+      user: { id: 1, role: 'super_admin', name: 'Vin', email: 'v@x.com' }
+    });
+    const res = await request(app, { path: '/api/usage/stats?user_id=5' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.user.id, 5);
+  });
+
+  it('non-admin cannot query another user (403)', async () => {
+    const app = buildApp({
+      queryFn: makeFakeStatsQuery({}),
+      user: { id: 3, role: 'user', name: 'Bob', email: 'b@x.com' }
+    });
+    const res = await request(app, { path: '/api/usage/stats?user_id=5' });
+    assert.equal(res.status, 403);
+  });
+
+  it('non-admin can query self via ?user_id=self', async () => {
+    const app = buildApp({
+      queryFn: makeFakeStatsQuery({}),
+      user: { id: 3, role: 'user', name: 'Bob', email: 'b@x.com' }
+    });
+    const res = await request(app, { path: '/api/usage/stats?user_id=3' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.user.id, 3);
+  });
+
+  it('returns 404 when target user_id not found', async () => {
+    const app = buildApp({
+      queryFn: makeFakeStatsQuery({ userBasics: null }),
+      user: { id: 1, role: 'super_admin', name: 'Vin', email: 'v@x.com' }
+    });
+    const res = await request(app, { path: '/api/usage/stats?user_id=999' });
+    assert.equal(res.status, 404);
+  });
+
+  it('rejects non-integer user_id with 400', async () => {
+    const app = buildApp({
+      queryFn: makeFakeStatsQuery({}),
+      user: { id: 1, role: 'super_admin', name: 'Vin', email: 'v@x.com' }
+    });
+    const res = await request(app, { path: '/api/usage/stats?user_id=abc' });
+    assert.equal(res.status, 400);
   });
 
   it('includes is_exempt flag in response', async () => {

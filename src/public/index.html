@@ -217,7 +217,6 @@
     <div class="tab active" data-tab="users" onclick="switchTab('users')">使用者管理</div>
     <div class="tab" data-tab="stats" onclick="switchTab('stats')">統計儀表板</div>
     <div class="tab" data-tab="reports" onclick="switchTab('reports')">週/月報</div>
-    <div class="tab" data-tab="usage" onclick="switchTab('usage')">我的用量</div>
     <div class="tab hidden" id="tabBtn-team-usage" data-tab="team-usage" onclick="switchTab('team-usage')">團隊用量</div>
     <div class="tab hidden" id="tabBtn-settings" data-tab="settings" onclick="switchTab('settings')">設定</div>
   </div>
@@ -404,37 +403,6 @@
     </div>
   </div><!-- end tab-reports -->
 
-  <!-- ===== TAB: 我的用量 (P8) ===== -->
-  <div id="tab-usage" class="tab-content">
-    <div style="margin-bottom:12px;padding:10px 14px;background:#f5f3ff;border-left:3px solid #7c3aed;border-radius:6px;font-size:12px;color:#6d28d9;line-height:1.6;">
-      💡 <b>Notional 成本</b> = 按 Anthropic / OpenAI API rate card 換算的「若走 API 要付多少」；訂閱用戶（Claude Pro/Max、ChatGPT Plus/Pro 等）實際支出以訂閱方案為準，通常遠低於此。此數字主要用於 workload 規模比較與判斷訂閱划算度。
-    </div>
-    <div class="card" style="margin-bottom:12px;">
-      <div class="card-header"><h3>我的 Token 用量</h3>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="date" id="usageFrom" style="width:auto;margin:0;">
-          <span style="color:#86868b;font-size:13px;">至</span>
-          <input type="date" id="usageTo" style="width:auto;margin:0;">
-          <select id="usageGroupBy" style="width:auto;margin:0;">
-            <option value="day">按日</option>
-            <option value="tool">按工具</option>
-            <option value="model">按 Model</option>
-            <option value="session">按 Session</option>
-          </select>
-          <button class="btn-sm btn-success" onclick="loadPersonalUsage()">套用</button>
-        </div>
-      </div>
-      <div id="usageTrackingStatus" style="margin-bottom:12px;"></div>
-    </div>
-
-    <div class="stats-grid" id="usageTotals"></div>
-
-    <div class="card">
-      <h3 style="margin-bottom:12px;">用量分佈</h3>
-      <div class="bar-chart" id="usageBars"></div>
-    </div>
-  </div><!-- end tab-usage -->
-
   <!-- ===== TAB: 團隊用量 (P9，admin+) ===== -->
   <div id="tab-team-usage" class="tab-content">
     <div style="margin-bottom:12px;padding:10px 14px;background:#f5f3ff;border-left:3px solid #7c3aed;border-radius:6px;font-size:12px;color:#6d28d9;line-height:1.6;">
@@ -475,6 +443,32 @@
           </tr></thead>
           <tbody id="teamUsersTable"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- 成員詳情（點 team 排行榜中的姓名展開，合併原「我的用量」內容）-->
+    <div class="card hidden" id="memberDetailCard">
+      <div class="card-header">
+        <h3 id="memberDetailTitle">成員詳情</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="date" id="detailFrom" style="width:auto;margin:0;">
+          <span style="color:#86868b;font-size:13px;">至</span>
+          <input type="date" id="detailTo" style="width:auto;margin:0;">
+          <select id="detailGroupBy" style="width:auto;margin:0;">
+            <option value="day">按日</option>
+            <option value="tool">按工具</option>
+            <option value="model">按 Model</option>
+            <option value="session">按 Session</option>
+          </select>
+          <button class="btn-sm btn-success" onclick="reloadMemberDetail()">套用</button>
+          <button class="btn-sm btn-ghost" onclick="closeMemberDetail()">收起</button>
+        </div>
+      </div>
+      <div id="memberDetailStatus" style="margin-bottom:12px;"></div>
+      <div class="stats-grid" id="memberDetailTotals"></div>
+      <div style="margin-top:16px;">
+        <h4 style="font-size:13px;color:#86868b;margin-bottom:10px;">用量分佈</h4>
+        <div class="bar-chart" id="memberDetailBars"></div>
       </div>
     </div>
 
@@ -1088,12 +1082,11 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       }
       loadUserStats();
     }
-    if (tab === 'usage')      loadPersonalUsage();
     if (tab === 'team-usage') { loadTeamUsage(); loadAuditLog(); }
     if (tab === 'settings')   { loadPricingList(); }
   }
 
-  // ===== P8: Personal Usage =====
+  // ===== Formatters =====
   function fmtUsd(n)  { return n == null ? '—' : '$' + Number(n).toFixed(4); }
   function fmtInt(n)  { return n == null ? '—' : Number(n).toLocaleString(); }
   function fmtHours(s){ if (s == null) return '—'; const h = s / 3600; return h.toFixed(h < 1 ? 2 : 1) + 'h'; }
@@ -1105,33 +1098,50 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     return { from: fmt(start), to: fmt(end) };
   }
 
-  async function loadPersonalUsage() {
-    const fromEl = document.getElementById('usageFrom');
-    const toEl = document.getElementById('usageTo');
+  // ===== 成員詳情（點 team 排行榜展開；替代原「我的用量」tab）=====
+  let currentDetailUserId = null;
+
+  async function openMemberDetail(userId, userName) {
+    currentDetailUserId = userId;
+    document.getElementById('memberDetailCard').classList.remove('hidden');
+    document.getElementById('memberDetailTitle').textContent = `成員詳情：${userName || '#' + userId}`;
+    const fromEl = document.getElementById('detailFrom');
+    const toEl = document.getElementById('detailTo');
     if (!fromEl.value) { const d = defaultDateRange(); fromEl.value = d.from; toEl.value = d.to; }
-    const groupBy = document.getElementById('usageGroupBy').value;
-    const qs = `?from=${fromEl.value}&to=${toEl.value}&group_by=${groupBy}`;
+    await reloadMemberDetail();
+    // 捲動到 detail
+    document.getElementById('memberDetailCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function closeMemberDetail() {
+    currentDetailUserId = null;
+    document.getElementById('memberDetailCard').classList.add('hidden');
+  }
+
+  async function reloadMemberDetail() {
+    if (!currentDetailUserId) return;
+    const from = document.getElementById('detailFrom').value;
+    const to = document.getElementById('detailTo').value;
+    const groupBy = document.getElementById('detailGroupBy').value;
+    const qs = `?user_id=${currentDetailUserId}&from=${from}&to=${to}&group_by=${groupBy}`;
     try {
       const res = await fetch(`${API}/usage/stats${qs}`, { headers: headers() });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      renderUsageTotals(data.totals);
-      renderUsageBars(data.series, groupBy);
-      // 以 server 回傳的 is_exempt 判斷追蹤狀態（不靠 403，因 stats 只讀不會 403）
-      if (data.is_exempt) {
-        document.getElementById('usageTrackingStatus').innerHTML =
-          '<span style="font-size:13px;color:#d97706;">⚠ 您目前被豁免追蹤 — 新資料不會進入系統；顯示的數字為豁免前的歷史資料</span>';
-      } else {
-        document.getElementById('usageTrackingStatus').innerHTML =
-          '<span style="font-size:13px;color:#059669;">● 追蹤已啟用</span>';
-      }
+      renderDetailTotals(data.totals);
+      renderDetailBars(data.series, groupBy);
+      document.getElementById('memberDetailTitle').textContent =
+        `成員詳情：${data.user.name || data.user.email}`;
+      document.getElementById('memberDetailStatus').innerHTML = data.is_exempt
+        ? '<span style="font-size:13px;color:#d97706;">⚠ 該成員目前被豁免追蹤 — 新資料不會進入系統；顯示的數字為豁免前的歷史資料</span>'
+        : '<span style="font-size:13px;color:#059669;">● 追蹤已啟用</span>';
     } catch (err) {
-      showToast('載入用量失敗：' + err.message, true);
+      showToast('載入成員詳情失敗：' + err.message, true);
     }
   }
 
-  function renderUsageTotals(t) {
-    if (!t) { document.getElementById('usageTotals').innerHTML = ''; return; }
+  function renderDetailTotals(t) {
+    if (!t) { document.getElementById('memberDetailTotals').innerHTML = ''; return; }
     const cards = [
       { label: 'Notional 成本 (API 等價)', value: fmtUsd(t.cost_usd) },
       { label: 'Input tokens', value: fmtInt(t.input_tokens) },
@@ -1144,22 +1154,21 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       { label: '活躍時長 (active)', value: fmtHours(t.active_seconds) },
       { label: 'Session 數', value: fmtInt(t.session_count) }
     ];
-    document.getElementById('usageTotals').innerHTML =
+    document.getElementById('memberDetailTotals').innerHTML =
       cards.map(c => `<div class="stat-mini"><div class="value">${c.value}</div><div class="desc">${c.label}</div></div>`).join('');
   }
 
-  function renderUsageBars(series, groupBy) {
+  function renderDetailBars(series, groupBy) {
     if (!series || series.length === 0) {
-      document.getElementById('usageBars').innerHTML = '<div style="color:#86868b;font-size:13px;">期間內無資料</div>';
+      document.getElementById('memberDetailBars').innerHTML = '<div style="color:#86868b;font-size:13px;">期間內無資料</div>';
       return;
     }
-    // cost_usd 可能為 null（部分期間 pricing 缺漏 → 不可偽裝成 $0）
     const max = Math.max(...series.map(r => r.cost_usd == null ? 0 : Number(r.cost_usd)));
     const rows = series.map(r => {
       const costNull = r.cost_usd == null;
       const cost = costNull ? 0 : Number(r.cost_usd);
       const pct = max > 0 ? (cost / max * 100) : 0;
-      const barBg = costNull ? '#d1d5db' : '#7c3aed';   // 灰色 = 無法計算
+      const barBg = costNull ? '#d1d5db' : '#7c3aed';
       const costText = costNull ? '<span title="部分期間 pricing 未設定，無法計算成本">—</span>' : fmtUsd(cost);
       return `<div class="bar-row">
         <div class="bar-label" title="${escapeHtml(String(r.key))}">${escapeHtml(String(r.key))}</div>
@@ -1167,7 +1176,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         <div style="margin-left:10px;min-width:80px;text-align:right;font-size:12px;color:#86868b;">${costText}</div>
       </div>`;
     }).join('');
-    document.getElementById('usageBars').innerHTML = rows;
+    document.getElementById('memberDetailBars').innerHTML = rows;
   }
 
   function escapeHtml(s) {
@@ -1218,8 +1227,9 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
                       + Number(u.totals.reasoning_tokens || 0);
       const cacheIn   = Number(u.totals.cache_creation_tokens || 0);
       const cacheOut  = Number(u.totals.cache_read_tokens || 0);
-      return `<tr>
-      <td>${escapeHtml(u.user.name || u.user.email)}</td>
+      const displayName = u.user.name || u.user.email;
+      return `<tr style="cursor:pointer;" onclick="openMemberDetail(${u.user.id}, ${JSON.stringify(displayName)})" title="點擊查看詳情">
+      <td><span style="color:#7c3aed;text-decoration:underline;">${escapeHtml(displayName)}</span></td>
       <td style="text-align:right;">${fmtUsd(u.totals.cost_usd)}</td>
       <td style="text-align:right;">${fmtInt(input)}</td>
       <td style="text-align:right;">${fmtInt(output)}</td>
