@@ -128,6 +128,17 @@ sequenceDiagram
 - **自動 Session 記錄** — 對話結束時自動存摘要 + 結構化情境
 - **3 個月壓縮** — 舊 session 自動合併成月摘要
 
+### Token 用量追蹤 `v1.16.0`
+
+- **跨 IDE 用量擷取** — Tier 1 工具（Claude Code、Codex、OpenCode）自動逐訊息記錄 tokens + 成本
+- **Tier 2 活躍度標記** — Cursor / Antigravity 因 API 無 token 資料，以每日 `session_count` 記錄活動
+- **成本完全由 server 算** — Pricing 採 `effective_date` 歷史版本管理，client 的 `native_cost_usd` 只當參考，無法左右數字
+- **Always-on collector** — macOS launchd / Linux systemd / Windows Task Scheduler 每 30 分鐘自動跑，不依賴使用者主動開啟 IDE
+- **Codex fingerprint 稽核** — Codex JSONL 無 native message_id，server 重新 canonicalize 完整 token breakdown 並自算 SHA-256 `expectedId`；client 送的 id 只當「實作正確性 witness」，碰撞 / 不一致 / 缺材料全進 audit log
+- **個人 + 團隊 dashboard** — 個人頁顯示今日 / 本週 / 本月 cost、tokens、工時（wall vs active）；團隊頁（admin+）頂部強制顯示 coverage panel，< 80% 自動加「資料不完整」浮水印，並提供排行榜
+- **Super_admin 定價管理** — 定價採 append-only 新 `effective_date` row，永不覆寫；夜間 03:00 Asia/Taipei 重算套用到歷史成本
+- **透明豁免機制** — Super_admin 可於 dashboard 核准個別 user 豁免；被豁免用戶看到「已豁免追蹤」狀態而非靜默欺騙；豁免期間進入的資料寫入 `usage_audit_log` 註明原因
+
 ### 鐵律執行引擎 `v1.11.0`
 
 - **七層防護** — git pre-commit hook (L1)、PreToolUse hook (L2)、MCP 自動驗證 (L3)、Init 提醒 (L4)、post-commit 稽核 (L5)、Session 稽核 (L6)、升級警告 (L7)

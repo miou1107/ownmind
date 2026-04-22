@@ -128,6 +128,17 @@ sequenceDiagram
 - **自動セッションログ** — 会話終了時に構造化コンテキスト付き要約を自動保存
 - **3ヶ月圧縮** — 古いセッションログを月別サマリーに自動圧縮
 
+### Token 使用量トラッキング `v1.16.0`
+
+- **IDE 横断の使用量収集** — Tier 1 ツール（Claude Code、Codex、OpenCode）からメッセージ単位の tokens + コストを自動収集
+- **Tier 2 アクティビティマーカー** — Cursor / Antigravity は API に token データが無いため、日次 `session_count` で活動を記録
+- **コスト計算は完全サーバーサイド** — Pricing は `effective_date` による履歴管理、client の `native_cost_usd` は参考値のみで数値を歪められない
+- **常時稼働コレクター** — macOS launchd / Linux systemd / Windows Task Scheduler が 30 分おきに自動実行、IDE を開いていなくても動作
+- **Codex fingerprint 監査** — Codex JSONL はネイティブ message_id を持たないため、サーバーが token breakdown を canonicalize し SHA-256 `expectedId` を自算；client の id は「実装正確性の証人」扱いで、衝突 / 不一致 / 材料欠損はすべて audit log に記録
+- **個人 + チーム dashboard** — 個人ページで日次 / 週次 / 月次 cost、tokens、勤務時間（wall vs active）を表示；チームページ（admin+）は coverage panel を必ず表示、80% 未満で「データ不完全」透かしを自動追加、ランキングも提供
+- **Super_admin による定価管理** — 価格更新は append-only で新 `effective_date` row を追加、既存 row は絶対に上書きしない；毎日 03:00 Asia/Taipei の再計算で過去のコストにも新価格を反映
+- **透明な opt-out** — Super_admin が dashboard で個別 user を豁免；該当 user は「追跡除外中」と表示され、静かに嘘をつかない；豁免中に届いたデータは `usage_audit_log` に理由付きで記録
+
 ### 鉄則実行エンジン `v1.11.0`
 
 - **7層防御** — git pre-commit hook (L1)、PreToolUse hook (L2)、MCP自動検証 (L3)、Init通知 (L4)、post-commit監査 (L5)、Session監査 (L6)、エスカレーション警告 (L7)

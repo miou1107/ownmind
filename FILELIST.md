@@ -18,7 +18,9 @@ OwnMind/
 │   ├── 002_add_team_standard.sql    # 團隊規範相關 migration
 │   ├── 003_activity_logs.sql        # Activity logs 表（事件追蹤）
 │   ├── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
-│   └── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
+│   ├── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
+│   ├── 006_add_standard_detail.sql   # memories type 加上 standard_detail
+│   └── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -34,7 +36,15 @@ OwnMind/
 │   │   ├── admin.js                 # 使用者管理 + 帳密登入 + 角色控管 + 稽核
 │   │   ├── secret.js                # 密鑰管理（AES-256 加密）
 │   │   ├── export.js                # 記憶匯出
-│   │   └── activity.js              # Activity log batch upload + 統計 API
+│   │   ├── activity.js              # Activity log batch upload + 統計 API
+│   │   └── usage/                   # Token 用量追蹤 API（P1 起）
+│   │       ├── index.js             # 掛載 /api/usage/* 子路由
+│   │       ├── pricing.js           # GET 所有 model pricing；POST 新增（super_admin only, append-only）
+│   │       ├── events.js            # POST raw events（exempt check / codex fingerprint / heartbeat / D7 / dedupe / trigger aggregation）
+│   │       ├── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
+│   │       ├── exemptions.js        # GET / POST / DELETE usage_tracking_exemption（super_admin only）
+│   │       ├── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
+│   │       └── team-stats.js        # GET 團隊 coverage + 逐 user 總計（admin+，spec D5）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -43,9 +53,12 @@ OwnMind/
 │   │   ├── report.js               # 週/月報計算純函式（computePeriodRange, groupFrictions）
 │   │   ├── enforcement.js          # Enforcement alerts 計算純函式
 │   │   ├── templates.js            # 規則模板庫 + 自動匹配
-│   │   └── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
+│   │   ├── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
+│   │   └── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
 │   ├── jobs/
-│   │   └── weeklyReport.js          # 週/月報 cron job（node-cron）
+│   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
+│   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
+│   │   └── nightly-recompute.js     # 每日 03:00 Asia/Taipei 跑近 7 天完整 recompute
 │   └── public/
 │       └── index.html               # Admin 管理後台（單頁應用）
 │
@@ -59,7 +72,16 @@ OwnMind/
 ├── shared/
 │   ├── verification.js              # Verification Engine 核心（純函式）
 │   ├── helpers.js                   # 共用工具函式（readJsonSafe、getChangedSourceFiles、readCredentials、trigger detection）
-│   └── compliance.js                # 統一 compliance log schema 讀寫
+│   ├── compliance.js                # 統一 compliance log schema 讀寫
+│   └── scanners/
+│       ├── id-helper.js             # Codex 專用 fingerprint（canonicalize + sha256 message_id；client+server 共用）
+│       ├── base.js                  # Scanner orchestrator：runScan / atomic offsets / batching（P4）
+│       ├── claude-code.js           # Claude Code JSONL adapter（session cumulative running total、byte_offset cursor）
+│       ├── codex.js                 # Codex JSONL adapter（event_msg/token_count → canonical material → message_id）
+│       ├── opencode.js              # OpenCode SQLite adapter（sqlite3 CLI、composite (time_created, id) cursor）
+│       ├── vscode-telemetry.js      # Cursor/Antigravity 共用 helper（state.vscdb 讀取 + Taipei Ymd + 通用 adapter 工廠）
+│       ├── cursor.js                # Cursor Tier 2 adapter（session_count only）
+│       └── antigravity.js           # Antigravity Tier 2 adapter（session_count only）
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
 │   ├── package.json                 # ESM module declaration（type: module）
@@ -72,11 +94,21 @@ OwnMind/
 │   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
 │   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
 │   ├── ownmind-git-post-commit     # post-commit shell wrapper
-│   └── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
+│   ├── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
+│   └── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
-│   └── migrate-verification.js      # 鐵律 verification 一次性遷移
+│   ├── migrate-verification.js      # 鐵律 verification 一次性遷移
+│   ├── install-helpers/
+│   │   └── run-scanner.sh           # Usage scanner wrapper：動態找 node + v20+ 驗證（D12）
+│   ├── launchd/
+│   │   └── com.ownmind.usage-scanner.plist  # macOS launchd agent（30 分鐘 + RunAtLoad）
+│   ├── systemd/
+│   │   ├── ownmind-usage-scanner.service    # Linux user service（oneshot）
+│   │   └── ownmind-usage-scanner.timer      # Linux user timer（開機 5 分鐘 + 每 30 分鐘）
+│   └── windows/
+│       └── register-scanner-task.ps1        # Windows Task Scheduler 註冊腳本
 │
 ├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）
 │   ├── CLAUDE.md                    # Claude Code → ~/.claude/CLAUDE.md
@@ -99,7 +131,21 @@ OwnMind/
 │   ├── templates.test.js            # 模板匹配測試
 │   ├── helpers.test.js              # shared/helpers.js 單元測試
 │   ├── compliance.test.js           # shared/compliance.js 單元測試
-│   └── trigger-detection.test.js    # 觸發檢測精準度測試
+│   ├── trigger-detection.test.js    # 觸發檢測精準度測試
+│   ├── pricing.test.js              # pricing-lookup.js 單元測試（effective_date / cost 計算）
+│   ├── aggregation.test.js          # usage-aggregation.js 單元 + recomputeDaily integration
+│   ├── ingestion.test.js            # events.js validation / dedupe / audit / codex / heartbeat / exempt
+│   ├── fingerprint.test.js          # shared/scanners/id-helper.js（canonicalize + sha256 deterministic）
+│   ├── exemptions.test.js           # exemptions route CRUD + audit
+│   ├── scanner-base.test.js         # base.js：chunk / mergeState / atomic offsets / runScan
+│   ├── scanner-claude-code.test.js  # claude-code adapter：fixture parse / cumulative / crash-resume / replay safety
+│   ├── scanner-lock.test.js         # acquireLock：live PID / stale PID / 6h mtime 接手
+│   ├── scanner-codex.test.js        # codex adapter：token_count → material → message_id / compact / byte_offset cursor
+│   ├── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
+│   ├── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
+│   ├── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
+│   ├── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
+│   └── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
