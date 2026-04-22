@@ -38,6 +38,9 @@ export function createStatsRouter(deps = {}) {
 
       const totals = await loadTotals({ query }, userId, from, to);
       const series = await loadSeries({ query }, userId, from, to, groupBy);
+      // is_exempt：用於 dashboard 追蹤狀態指示燈（D3 對齊 — 豁免 user 可能有歷史
+      // 資料，但目前 ingestion 被 suppressed；UI 必須如實告知狀態）
+      const isExempt = await isUserExempt({ query }, userId);
 
       res.json({
         user: {
@@ -47,7 +50,8 @@ export function createStatsRouter(deps = {}) {
         },
         period: { from, to },
         totals,
-        series
+        series,
+        is_exempt: isExempt
       });
     } catch (err) {
       logger.error('usage stats 查詢失敗', { error: err.message });
@@ -84,6 +88,16 @@ function toYmd(date) {
     year: 'numeric', month: '2-digit', day: '2-digit'
   });
   return fmt.format(date);
+}
+
+async function isUserExempt({ query }, userId) {
+  const r = await query(
+    `SELECT 1 FROM usage_tracking_exemption
+      WHERE user_id = $1 AND (expires_at IS NULL OR expires_at > NOW())
+      LIMIT 1`,
+    [userId]
+  );
+  return r.rows.length > 0;
 }
 
 async function loadTotals({ query }, userId, from, to) {

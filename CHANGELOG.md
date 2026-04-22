@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P8 + P9：個人 / 團隊 dashboard）
+
+> **Token usage tracking 全 9 phases 實作完成**，等待部署測試。
+
+### 新增
+- `src/routes/usage/team-stats.js` — GET `/api/usage/team-stats`（admin+）
+  - `coverage` 包含 total_users / reporting_today / stale（48h+）/ opted_out，以及逐 user 的 stale_users + exempt_users 清單供 dashboard 直接渲染
+  - `per_tool` 逐 tool 的 reporting / stale 統計
+  - `users` array：逐 user 的 tokens / cost / wall_seconds / active_seconds / message_count / session_count 總計（LEFT JOIN token_usage_daily 確保沒資料的 user 也出現）
+  - `tests/team-stats.test.js` — 5 tests（parseParams、403、coverage 計算、period defaults）
+- `src/public/index.html` 新增兩個 dashboard tab：
+  - **「我的用量」（P8，所有 user）**：日期區間篩選、group_by（day/tool/model/session）、10 張 stat-mini 卡片（成本 / input / output / cache / reasoning / 訊息 / wall / active / session）、bar chart、追蹤狀態指示燈（正常 / 豁免）
+  - **「團隊用量」（P9，admin+ 可見）**：覆蓋率 panel（D5，<80% 浮水印警示）、列出失蹤 / 豁免成員姓名、團隊排行榜（可依 cost / 訊息 / 活躍時長排序）、Model 定價管理（super_admin 可新增 effective_date row）、Audit log 子頁（admin+ 可依 event_type filter）
+- `src/public/index.html` 的角色 gating：super_admin 看得到 Pricing panel；admin+ 看得到「團隊用量」tab；一般 user 只看得到「我的用量」
+- Pricing modal：Tool / Model / Input / Output / Cache Write / Cache Read / Effective Date / Notes 表單，POST /api/usage/pricing（append-only）
+
 ## v1.16.0（開發中）- Token 用量追蹤（P7：Cursor + Antigravity Tier 2）
 
 ### 新增

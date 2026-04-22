@@ -43,7 +43,8 @@ OwnMind/
 │   │       ├── events.js            # POST raw events（exempt check / codex fingerprint / heartbeat / D7 / dedupe / trigger aggregation）
 │   │       ├── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
 │   │       ├── exemptions.js        # GET / POST / DELETE usage_tracking_exemption（super_admin only）
-│   │       └── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
+│   │       ├── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
+│   │       └── team-stats.js        # GET 團隊 coverage + 逐 user 總計（admin+，spec D5）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -142,7 +143,8 @@ OwnMind/
 │   ├── scanner-codex.test.js        # codex adapter：token_count → material → message_id / compact / byte_offset cursor
 │   ├── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
 │   ├── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
-│   └── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
+│   ├── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
+│   └── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
