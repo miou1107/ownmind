@@ -144,7 +144,8 @@ OwnMind/
 │   ├── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
 │   ├── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
 │   ├── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
-│   └── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
+│   ├── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
+│   └── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

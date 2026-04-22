@@ -1132,14 +1132,18 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       document.getElementById('usageBars').innerHTML = '<div style="color:#86868b;font-size:13px;">期間內無資料</div>';
       return;
     }
-    const max = Math.max(...series.map(r => Number(r.cost_usd) || 0));
+    // cost_usd 可能為 null（部分期間 pricing 缺漏 → 不可偽裝成 $0）
+    const max = Math.max(...series.map(r => r.cost_usd == null ? 0 : Number(r.cost_usd)));
     const rows = series.map(r => {
-      const cost = Number(r.cost_usd) || 0;
+      const costNull = r.cost_usd == null;
+      const cost = costNull ? 0 : Number(r.cost_usd);
       const pct = max > 0 ? (cost / max * 100) : 0;
+      const barBg = costNull ? '#d1d5db' : '#7c3aed';   // 灰色 = 無法計算
+      const costText = costNull ? '<span title="部分期間 pricing 未設定，無法計算成本">—</span>' : fmtUsd(cost);
       return `<div class="bar-row">
-        <div class="bar-label" title="${r.key}">${escapeHtml(String(r.key))}</div>
-        <div class="bar-track"><div style="width:${pct}%;height:100%;background:#7c3aed;"></div></div>
-        <div style="margin-left:10px;min-width:80px;text-align:right;font-size:12px;color:#86868b;">${fmtUsd(cost)}</div>
+        <div class="bar-label" title="${escapeHtml(String(r.key))}">${escapeHtml(String(r.key))}</div>
+        <div class="bar-track"><div style="width:${pct}%;height:100%;background:${barBg};"></div></div>
+        <div style="margin-left:10px;min-width:80px;text-align:right;font-size:12px;color:#86868b;">${costText}</div>
       </div>`;
     }).join('');
     document.getElementById('usageBars').innerHTML = rows;

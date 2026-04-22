@@ -1,5 +1,38 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- 修正 codex review 4 個 dashboard 資料完整性 bug
+
+套用 /codex:review 在全 branch diff 跑出來的 2 × P1 + 2 × P2 問題：
+
+### 修復
+- **[P1] 個人 stats 納入 Tier-2 session**：`/api/usage/stats` 原本只讀
+  `token_usage_daily`，Cursor/Antigravity 只寫 `session_count` → Tier-2-only
+  user 會看到 `session_count=0`。改用雙查詢合併：
+  - `totals.session_count += SUM(session_count.count)`
+  - `totals.wall_seconds += SUM(session_count.wall_seconds)`
+  - `series` group_by=day/tool 時 merge Tier-2 rows；model/session 不適用
+- **[P1] 團隊 stats 納入 Tier-2 session**：`/api/usage/team-stats` 同樣修；
+  原本 Tier-2-only user 在排行榜看起來是零 sessions。per-user LEFT JOIN
+  session_count 加總到 totals 後排序
+- **[P2] stats totals null-cost 保留**：原本 `COALESCE(SUM(cost_usd), 0)`
+  會把「部分日有 NULL cost」偽裝成完整數字。改用
+  `bool_or(cost_usd IS NULL)` 偵測，有任一 NULL → 整筆 `cost_usd` 回 null
+  （與 `buildDailyRow` 的 policy 對齊）
+- **[P2] stats series + team-stats 同樣修**：每個 group 獨立判斷
+- Dashboard bar chart：`cost_usd=null` 時渲染為灰色 bar + `—`（原本偽裝成
+  `$0.0000`），hover 提示「部分期間 pricing 未設定」
+
+### 新增測試
+- `tests/stats.test.js`（9 tests）
+  - P1 regression：Tier-2-only user 看到 session_count
+  - P2 regression：totals / group_by=tool 的 cost_usd=null 傳遞
+  - series merge Tier-2 tool / day 的 overlap 行為
+  - is_exempt flag
+  - buildGrouping
+- `tests/team-stats.test.js` 擴充 2 個：P1 Tier-2 merge、P2 null-cost
+
+驗證：361/361 tests pass（+11：stats 9、team-stats +2）
+
 ## v1.16.0（開發中）- Token 用量追蹤（P8 + P9：個人 / 團隊 dashboard）
 
 > **Token usage tracking 全 9 phases 實作完成**，等待部署測試。

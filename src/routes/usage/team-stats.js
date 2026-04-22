@@ -129,9 +129,11 @@ async function loadCoverage({ query }) {
 }
 
 async function loadUsersAggregate({ query }, from, to) {
-  const res = await query(
+  // Tier 1 per-user aggregate（含 null-cost policy）
+  const tier1 = await query(
     `SELECT u.id, u.name, u.email,
-            COALESCE(SUM(d.cost_usd), 0)::float           AS cost_usd,
+            CASE WHEN bool_or(d.cost_usd IS NULL) THEN NULL
+                 ELSE COALESCE(SUM(d.cost_usd), 0)::float END AS cost_usd,
             COALESCE(SUM(d.input_tokens), 0)::bigint      AS input_tokens,
             COALESCE(SUM(d.output_tokens), 0)::bigint     AS output_tokens,
             COALESCE(SUM(d.cache_creation_tokens), 0)::bigint AS cache_creation_tokens,
@@ -144,25 +146,50 @@ async function loadUsersAggregate({ query }, from, to) {
        FROM users u
        LEFT JOIN token_usage_daily d
          ON d.user_id = u.id AND d.date >= $1 AND d.date <= $2
-      GROUP BY u.id, u.name, u.email
-      ORDER BY cost_usd DESC, u.id ASC`,
+      GROUP BY u.id, u.name, u.email`,
     [from, to]
   );
-  return res.rows.map((r) => ({
-    user: { id: r.id, name: r.name, email: r.email },
-    totals: {
-      cost_usd: r.cost_usd,
-      input_tokens: r.input_tokens,
-      output_tokens: r.output_tokens,
-      cache_creation_tokens: r.cache_creation_tokens,
-      cache_read_tokens: r.cache_read_tokens,
-      reasoning_tokens: r.reasoning_tokens,
-      message_count: r.message_count,
-      wall_seconds: r.wall_seconds,
-      active_seconds: r.active_seconds,
-      session_count: r.session_count
-    }
-  }));
+  // Tier 2 per-user aggregate（Cursor / Antigravity）
+  const tier2 = await query(
+    `SELECT user_id,
+            COALESCE(SUM(count), 0)::int AS tier2_sessions,
+            COALESCE(SUM(wall_seconds), 0)::int AS tier2_wall_seconds
+       FROM session_count
+      WHERE date >= $1 AND date <= $2
+      GROUP BY user_id`,
+    [from, to]
+  );
+  const t2Map = new Map(tier2.rows.map((r) => [r.user_id, r]));
+
+  const merged = tier1.rows.map((r) => {
+    const t2 = t2Map.get(r.id);
+    const t2Sessions = t2 ? Number(t2.tier2_sessions) : 0;
+    const t2Wall = t2 ? Number(t2.tier2_wall_seconds) : 0;
+    return {
+      user: { id: r.id, name: r.name, email: r.email },
+      totals: {
+        cost_usd: r.cost_usd,   // 可能為 null（policy）
+        input_tokens: r.input_tokens,
+        output_tokens: r.output_tokens,
+        cache_creation_tokens: r.cache_creation_tokens,
+        cache_read_tokens: r.cache_read_tokens,
+        reasoning_tokens: r.reasoning_tokens,
+        message_count: r.message_count,
+        wall_seconds: Number(r.wall_seconds) + t2Wall,
+        active_seconds: r.active_seconds,
+        session_count: Number(r.session_count) + t2Sessions
+      }
+    };
+  });
+
+  // 排序：cost_usd DESC，null 視為 -Infinity 排到最後
+  merged.sort((a, b) => {
+    const ac = a.totals.cost_usd ?? -Infinity;
+    const bc = b.totals.cost_usd ?? -Infinity;
+    if (bc !== ac) return bc - ac;
+    return a.user.id - b.user.id;
+  });
+  return merged;
 }
 
 export default createTeamStatsRouter();
