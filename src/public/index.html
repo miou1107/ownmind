@@ -219,6 +219,7 @@
     <div class="tab" data-tab="reports" onclick="switchTab('reports')">週/月報</div>
     <div class="tab" data-tab="usage" onclick="switchTab('usage')">我的用量</div>
     <div class="tab hidden" id="tabBtn-team-usage" data-tab="team-usage" onclick="switchTab('team-usage')">團隊用量</div>
+    <div class="tab hidden" id="tabBtn-settings" data-tab="settings" onclick="switchTab('settings')">設定</div>
   </div>
 
   <!-- ===== TAB: 使用者管理 ===== -->
@@ -477,26 +478,6 @@
       </div>
     </div>
 
-    <!-- Pricing（super_admin） -->
-    <div class="card hidden" id="pricingPanel">
-      <div class="card-header"><h3>Model 定價</h3>
-        <button class="btn-success btn-sm" onclick="openAddPricingModal()">+ 新增定價</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>Tool</th><th>Model</th>
-            <th style="text-align:right;">Input</th>
-            <th style="text-align:right;">Output</th>
-            <th style="text-align:right;">Cache Write</th>
-            <th style="text-align:right;">Cache Read</th>
-            <th>Effective</th>
-          </tr></thead>
-          <tbody id="pricingTable"></tbody>
-        </table>
-      </div>
-    </div>
-
     <!-- Audit log -->
     <div class="card">
       <div class="card-header"><h3>Audit Log</h3>
@@ -523,6 +504,35 @@
       </div>
     </div>
   </div><!-- end tab-team-usage -->
+
+  <!-- ===== TAB: 設定（super_admin only） ===== -->
+  <div id="tab-settings" class="tab-content">
+    <!-- 成本設定 -->
+    <div class="card">
+      <div class="card-header">
+        <h3>成本設定 — Model 定價</h3>
+        <button class="btn-success btn-sm" onclick="openAddPricingModal()">+ 新增定價</button>
+      </div>
+      <div style="margin-bottom:12px;padding:8px 12px;background:#f5f3ff;border-left:3px solid #7c3aed;border-radius:4px;font-size:12px;color:#6d28d9;line-height:1.6;">
+        💡 <b>Append-only 歷史定價</b>：每次調整加一筆新 <code>effective_date</code> row，舊 row 保留；nightly recompute 會自動套用新價到當日起的資料。刪除不支援（避免歷史記錄遺失）。
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Tool</th><th>Model</th>
+            <th style="text-align:right;">Input</th>
+            <th style="text-align:right;">Output</th>
+            <th style="text-align:right;">Cache Write</th>
+            <th style="text-align:right;">Cache Read</th>
+            <th>Effective</th>
+          </tr></thead>
+          <tbody id="pricingTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 未來可在此加其他設定區塊 -->
+  </div><!-- end tab-settings -->
 
 </div>
 
@@ -769,9 +779,9 @@
         el.classList.remove('hidden');
         el.style.display = '';
       });
-      // Pricing 管理面板
-      const pp = document.getElementById('pricingPanel');
-      if (pp) pp.classList.remove('hidden');
+      // 「設定」tab（含 Model 定價管理）— super_admin only
+      const settingsBtn = document.getElementById('tabBtn-settings');
+      if (settingsBtn) settingsBtn.classList.remove('hidden');
     }
 
     // admin 以上才看得到「團隊用量」tab（P9 gate — 資料僅 admin+ 可見）
@@ -1079,7 +1089,8 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       loadUserStats();
     }
     if (tab === 'usage')      loadPersonalUsage();
-    if (tab === 'team-usage') { loadTeamUsage(); loadAuditLog(); if (currentUserRole === 'super_admin') loadPricingList(); }
+    if (tab === 'team-usage') { loadTeamUsage(); loadAuditLog(); }
+    if (tab === 'settings')   { loadPricingList(); }
   }
 
   // ===== P8: Personal Usage =====
