@@ -458,6 +458,8 @@
         <table>
           <thead><tr>
             <th>成員</th><th style="text-align:right;">成本 (USD)</th>
+            <th style="text-align:right;" title="input + cache_creation + cache_read">Token In</th>
+            <th style="text-align:right;" title="output + reasoning">Token Out</th>
             <th style="text-align:right;">訊息</th>
             <th style="text-align:right;">活躍時長</th>
             <th style="text-align:right;">Session</th>
@@ -1190,15 +1192,25 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
   function renderTeamUsers(users, sortBy) {
     if (!users) users = [];
     users.sort((a, b) => (Number(b.totals[sortBy]) || 0) - (Number(a.totals[sortBy]) || 0));
-    const rows = users.map(u => `<tr>
+    const rows = users.map(u => {
+      // Token In = input + cache_creation + cache_read；Token Out = output + reasoning
+      const tokenIn = Number(u.totals.input_tokens || 0)
+        + Number(u.totals.cache_creation_tokens || 0)
+        + Number(u.totals.cache_read_tokens || 0);
+      const tokenOut = Number(u.totals.output_tokens || 0)
+        + Number(u.totals.reasoning_tokens || 0);
+      return `<tr>
       <td>${escapeHtml(u.user.name || u.user.email)}</td>
       <td style="text-align:right;">${fmtUsd(u.totals.cost_usd)}</td>
+      <td style="text-align:right;">${fmtInt(tokenIn)}</td>
+      <td style="text-align:right;">${fmtInt(tokenOut)}</td>
       <td style="text-align:right;">${fmtInt(u.totals.message_count)}</td>
       <td style="text-align:right;">${fmtHours(u.totals.active_seconds)}</td>
       <td style="text-align:right;">${fmtInt(u.totals.session_count)}</td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     document.getElementById('teamUsersTable').innerHTML =
-      rows || '<tr><td colspan="5" style="text-align:center;color:#86868b;">期間內無資料</td></tr>';
+      rows || '<tr><td colspan="7" style="text-align:center;color:#86868b;">期間內無資料</td></tr>';
   }
 
   // ===== P9: Pricing management (super_admin) =====
