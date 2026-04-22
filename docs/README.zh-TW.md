@@ -128,13 +128,15 @@ sequenceDiagram
 - **自動 Session 記錄** — 對話結束時自動存摘要 + 結構化情境
 - **3 個月壓縮** — 舊 session 自動合併成月摘要
 
-### 裝機狀況 Dashboard `v1.17.0` *(開發中)*
+### 裝機狀況 Dashboard + 廣播通知系統 `v1.17.0` *(開發中)*
 
 - **一眼掌握覆蓋率** — `設定 > 裝機狀況` 列出每個 user 的各工具 `scanner_version`、最後 heartbeat、五種狀態：🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 需升級 / ⚪ 未裝
-- **Semver 自動判定升級** — `scanner_version < SERVER_VERSION` 就標黃；null / `unknown` 版本一律視為需升級
+- **Semver 自動判定升級** — `scanner_version < SERVER_VERSION` 就標黃；null / `unknown` / pre-release 版本一律視為需升級（遵 SemVer 2.0.0）
 - **多工具聚合** — 同一人用 Claude Code + Codex + Cursor 合併成一行，三個 tool 一起列
-- **Coverage summary** — 文字行「共 N 人 · 已裝 X · active Y · stale Z · offline W · 未裝 M · K 人需升級」團隊一眼看完
-- 廣播通知系統 + 互動式 AI 升級流程將在後續 P2–P7 phase 交付
+- **通用廣播系統**（P2）— super_admin 可於 `設定 > 廣播管理` 發布任意訊息（一般公告 / 維護通知 / 規則變更），支援版本區間（min / max）、指定 user、可選 snooze
+- **自動升級提醒** — 夜間 03:30 Asia/Taipei 自動產生 `upgrade_reminder` 廣播；用 `max_version=${SERVER_VERSION}-prev` + pre-release 排序規則，只讓舊版看到
+- **每則廣播的 Cooldown** — `cooldown_minutes` 欄位避免 MCP 注入刷屏；「每日首次」與「隔 4h」仍會覆蓋 cooldown 確保重要訊息看得到
+- 互動式 AI 升級 + MCP 注入將於 P3–P7 交付
 
 ### Token 用量追蹤 `v1.16.0`
 

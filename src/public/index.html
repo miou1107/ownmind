@@ -525,6 +525,26 @@
       </div>
     </div>
 
+    <!-- 廣播管理（v1.17.0 P2，super_admin only） -->
+    <div class="card super-admin-only hidden">
+      <div class="card-header">
+        <h3>廣播管理</h3>
+        <button class="btn-success btn-sm" onclick="openAddBroadcastModal()">+ 新增廣播</button>
+      </div>
+      <div style="margin-bottom:12px;padding:8px 12px;background:#ecfdf5;border-left:3px solid #10b981;border-radius:4px;font-size:12px;color:#065f46;line-height:1.6;">
+        💡 <b>發布通用公告</b>：維護通知、新功能上線、規則變更都能用。升級提醒由 nightly job 自動產生（03:30 Asia/Taipei），無需手動發。User 端在 Claude Code SessionStart 或 MCP call 時會看到。
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>時間</th><th>Type</th><th>Severity</th><th>標題</th>
+            <th>生效區間</th><th>Snooze</th><th>操作</th>
+          </tr></thead>
+          <tbody id="broadcastTable"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- 裝機狀況（v1.17.0） -->
     <div class="card">
       <div class="card-header">
@@ -576,6 +596,49 @@
     <div class="modal-footer">
       <button class="btn-cancel btn-ghost" onclick="closePricingModal()">取消</button>
       <button class="btn-confirm btn-success" onclick="submitPricing()">新增</button>
+    </div>
+  </div>
+</div>
+
+<!-- Broadcast modal (v1.17.0 P2) -->
+<div class="modal-overlay" id="broadcastModal">
+  <div class="modal-content" style="max-width:600px;">
+    <button class="modal-close" onclick="closeBroadcastModal()">×</button>
+    <h3>新增廣播</h3>
+    <label class="field-label required">Type</label>
+    <select id="bcType">
+      <option value="announcement">announcement（一般公告）</option>
+      <option value="maintenance">maintenance（維護通知）</option>
+      <option value="rule_change">rule_change（規則變更）</option>
+    </select>
+    <label class="field-label">Severity</label>
+    <select id="bcSeverity">
+      <option value="info">info</option>
+      <option value="warning">warning</option>
+      <option value="critical">critical</option>
+    </select>
+    <label class="field-label required">標題</label>
+    <input type="text" id="bcTitle" placeholder="例：本週五晚 10:00 維護" maxlength="200">
+    <label class="field-label required">內容（≤2000 字）</label>
+    <textarea id="bcBody" rows="4" placeholder="詳細說明..." maxlength="2000"></textarea>
+    <label class="field-label">CTA 文字（選填）</label>
+    <input type="text" id="bcCtaText" placeholder="例：我已知道">
+    <label class="field-label">Target Users（選填，user_id 以逗號分隔；空=全員）</label>
+    <input type="text" id="bcTargetUsers" placeholder="例：1,2,3">
+    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;">
+      <label style="display:flex;align-items:center;gap:6px;margin:0;">
+        <input type="checkbox" id="bcAllowSnooze"> 允許 user snooze
+      </label>
+      <label style="margin:0;">Snooze 時長（小時）</label>
+      <input type="number" id="bcSnoozeHours" value="24" min="1" style="width:80px;">
+    </div>
+    <label class="field-label">Cooldown（分鐘；廣播注入間隔，避免刷屏）</label>
+    <input type="number" id="bcCooldownMinutes" value="1440" min="0">
+    <label class="field-label">Ends At（選填，ISO 8601 或空=永久）</label>
+    <input type="text" id="bcEndsAt" placeholder="例：2026-04-30T23:00:00+08:00">
+    <div class="modal-footer">
+      <button class="btn-cancel btn-ghost" onclick="closeBroadcastModal()">取消</button>
+      <button class="btn-confirm btn-success" onclick="submitBroadcast()">發布</button>
     </div>
   </div>
 </div>
@@ -1110,7 +1173,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     }
     if (tab === 'team-usage') { loadTeamUsage(); loadAuditLog(); }
     if (tab === 'settings')   {
-      if (currentUserRole === 'super_admin') loadPricingList();
+      if (currentUserRole === 'super_admin') { loadPricingList(); loadBroadcastList(); }
       loadClientsStatus();
     }
   }
@@ -1175,6 +1238,118 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         <span style="color:#86868b;">· ${ago}</span>
       </div>`;
     }).join('');
+  }
+
+  // ===== v1.17.0 P2: 廣播管理 =====
+  async function loadBroadcastList() {
+    try {
+      const res = await fetch(`${API}/broadcast/admin?include_ended=true`, { headers: headers() });
+      if (!res.ok) throw new Error(await res.text());
+      const rows = await res.json();
+      const tbody = document.getElementById('broadcastTable');
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#86868b;">尚無廣播</td></tr>';
+        return;
+      }
+      const nowTs = Date.now();
+      tbody.innerHTML = rows.map(r => {
+        const ends = r.ends_at ? new Date(r.ends_at) : null;
+        const active = !ends || ends.getTime() > nowTs;
+        const typeColor = r.type === 'upgrade_reminder' ? '#d97706'
+          : r.type === 'maintenance' ? '#dc2626'
+          : r.type === 'rule_change' ? '#7c3aed' : '#374151';
+        const sevColor = r.severity === 'critical' ? '#dc2626'
+          : r.severity === 'warning' ? '#d97706' : '#059669';
+        const autoBadge = r.is_auto ? ' <span style="font-size:10px;color:#6b7280;">(auto)</span>' : '';
+        const rangeStr = (r.starts_at ? new Date(r.starts_at).toLocaleString('zh-TW') : '—')
+          + ' — ' + (r.ends_at ? new Date(r.ends_at).toLocaleString('zh-TW') : '永久');
+        return `<tr${active ? '' : ' style="opacity:0.45;"'}>
+          <td style="font-size:11px;color:#86868b;">${escapeHtml(new Date(r.created_at).toLocaleString('zh-TW'))}</td>
+          <td><code style="color:${typeColor};">${escapeHtml(r.type)}</code>${autoBadge}</td>
+          <td><span style="color:${sevColor};">${escapeHtml(r.severity)}</span></td>
+          <td>${escapeHtml(r.title)}</td>
+          <td style="font-size:11px;color:#6b7280;">${escapeHtml(rangeStr)}</td>
+          <td>${r.allow_snooze ? `${r.snooze_hours}h` : '—'}</td>
+          <td>
+            ${active && !r.is_auto ? `<button class="btn-danger btn-sm" onclick="revokeBroadcast(${r.id})">撤銷</button>` : ''}
+            ${active && r.is_auto ? `<span style="font-size:11px;color:#86868b;">(auto-managed)</span>` : ''}
+          </td>
+        </tr>`;
+      }).join('');
+    } catch (err) {
+      showToast('載入廣播失敗：' + err.message, true);
+    }
+  }
+
+  function openAddBroadcastModal() {
+    document.getElementById('bcType').value = 'announcement';
+    document.getElementById('bcSeverity').value = 'info';
+    document.getElementById('bcTitle').value = '';
+    document.getElementById('bcBody').value = '';
+    document.getElementById('bcCtaText').value = '';
+    document.getElementById('bcTargetUsers').value = '';
+    document.getElementById('bcAllowSnooze').checked = false;
+    document.getElementById('bcSnoozeHours').value = 24;
+    document.getElementById('bcCooldownMinutes').value = 1440;
+    document.getElementById('bcEndsAt').value = '';
+    document.getElementById('broadcastModal').classList.add('active');
+  }
+
+  function closeBroadcastModal() {
+    document.getElementById('broadcastModal').classList.remove('active');
+  }
+
+  async function submitBroadcast() {
+    const payload = {
+      type: document.getElementById('bcType').value,
+      severity: document.getElementById('bcSeverity').value,
+      title: document.getElementById('bcTitle').value.trim(),
+      body: document.getElementById('bcBody').value.trim(),
+      cta_text: document.getElementById('bcCtaText').value.trim() || null,
+      allow_snooze: document.getElementById('bcAllowSnooze').checked,
+      snooze_hours: Number(document.getElementById('bcSnoozeHours').value) || 24,
+      cooldown_minutes: Number(document.getElementById('bcCooldownMinutes').value) || 1440
+    };
+    if (!payload.title || !payload.body) {
+      return showToast('標題與內容必填', true);
+    }
+    // target_users parse
+    const tuStr = document.getElementById('bcTargetUsers').value.trim();
+    if (tuStr) {
+      const ids = tuStr.split(/[,\s]+/).map(s => parseInt(s, 10)).filter(n => Number.isInteger(n) && n > 0);
+      if (ids.length > 0) payload.target_users = ids;
+    }
+    const endsStr = document.getElementById('bcEndsAt').value.trim();
+    if (endsStr) payload.ends_at = endsStr;
+
+    try {
+      const res = await fetch(`${API}/broadcast/admin`, {
+        method: 'POST',
+        headers: { ...headers(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || res.statusText);
+      }
+      showToast('廣播已發布', false);
+      closeBroadcastModal();
+      loadBroadcastList();
+    } catch (err) {
+      showToast('發布失敗：' + err.message, true);
+    }
+  }
+
+  async function revokeBroadcast(id) {
+    if (!confirm(`撤銷這則廣播（#${id}）？`)) return;
+    try {
+      const res = await fetch(`${API}/broadcast/admin/${id}`, { method: 'DELETE', headers: headers() });
+      if (!res.ok) throw new Error(await res.text());
+      showToast('已撤銷', false);
+      loadBroadcastList();
+    } catch (err) {
+      showToast('撤銷失敗：' + err.message, true);
+    }
   }
 
   function formatAgo(isoTs) {

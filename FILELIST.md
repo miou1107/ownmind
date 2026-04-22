@@ -47,6 +47,9 @@ OwnMind/
 │   │       ├── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
 │   │       ├── admin-clients.js     # v1.17.0 — GET 裝機狀況（admin+；per user+tool heartbeat + needs_upgrade + coverage）
 │   │       └── team-stats.js        # GET 團隊 coverage + 逐 user 總計（admin+，spec D5）
+│   │   └── broadcast.js             # v1.17.0 P2 — 廣播系統（admin CRUD + user active/dismiss + snooze）
+│   ├── lib/
+│   │   └── broadcast-filter.js      # v1.17.0 P2 — filterVisibleBroadcasts / filterInjectable（P2 + P4 共用）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -61,7 +64,8 @@ OwnMind/
 │   ├── jobs/
 │   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
-│   │   └── nightly-recompute.js     # 每日 03:00 Asia/Taipei 跑近 7 天完整 recompute
+│   │   ├── nightly-recompute.js     # 每日 03:00 Asia/Taipei 跑近 7 天完整 recompute
+│   │   └── nightly-upgrade-reminder.js  # v1.17.0 P2 — 每日 03:30 冪等產生 upgrade_reminder 廣播
 │   └── public/
 │       └── index.html               # Admin 管理後台（單頁應用）
 │
@@ -149,7 +153,9 @@ OwnMind/
 │   ├── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
 │   ├── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
 │   ├── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
-│   └── clients.test.js              # v1.17.0 — /api/usage/admin/clients（10 tests：auth / status / upgrade / multi-tool / coverage）
+│   ├── clients.test.js              # v1.17.0 — /api/usage/admin/clients（auth / status / upgrade / multi-tool / coverage / pre-release）
+│   ├── semver.test.js               # v1.17.0 — parseSemver / compareSemver（pre-release / build metadata / malformed）
+│   └── broadcast.test.js            # v1.17.0 P2 — validate / CRUD / snooze / filter / cooldown / nightly job（28 tests）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

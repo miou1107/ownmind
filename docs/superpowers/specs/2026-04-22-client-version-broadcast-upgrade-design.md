@@ -166,10 +166,10 @@ Response: {
 
 ```
 # Admin 管理
-POST   /api/admin/broadcast           super_admin   新增廣播
-GET    /api/admin/broadcast           admin+        列出所有廣播（含歷史）
-PATCH  /api/admin/broadcast/:id       super_admin   更新 ends_at / target_users
-DELETE /api/admin/broadcast/:id       super_admin   撤銷（set ends_at=NOW()）
+POST   /api/broadcast/admin           super_admin   新增廣播
+GET    /api/broadcast/admin           admin+        列出（預設 active；?include_ended=true 含歷史）
+PATCH  /api/broadcast/admin/:id       super_admin   更新 ends_at / target_users（ends_at 須可 parse）
+DELETE /api/broadcast/admin/:id       super_admin   撤銷（set ends_at=NOW()；is_auto=TRUE 禁手動撤）
 
 # User 端
 GET    /api/broadcast/active?tool=X   all           取得該 user+tool 當前應顯示的廣播

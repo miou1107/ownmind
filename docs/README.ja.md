@@ -128,13 +128,15 @@ sequenceDiagram
 - **自動セッションログ** — 会話終了時に構造化コンテキスト付き要約を自動保存
 - **3ヶ月圧縮** — 古いセッションログを月別サマリーに自動圧縮
 
-### インストール状況ダッシュボード `v1.17.0` *(開発中)*
+### インストール状況ダッシュボード + ブロードキャスト通知 `v1.17.0` *(開発中)*
 
 - **カバレッジを一目で確認** — `設定 > インストール状況` で各ユーザーのツールごとの `scanner_version`、最後の heartbeat、5 種類の状態（🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 要アップグレード / ⚪ 未インストール）を一覧
-- **Semver 自動判定** — `scanner_version < SERVER_VERSION` で黄色マーク；null / `unknown` バージョンは要アップグレード扱い
+- **Semver 自動判定** — `scanner_version < SERVER_VERSION` で黄色マーク；null / `unknown` / pre-release バージョンは要アップグレード扱い（SemVer 2.0.0 準拠）
 - **複数ツール集約** — 同じユーザーが Claude Code + Codex + Cursor を使用 → 1 行にまとめて 3 ツール表示
-- **カバレッジサマリー** — 「N 人 · インストール X · active Y · stale Z · offline W · 未インストール M · K 人要アップグレード」でチーム全体を即座に把握
-- ブロードキャスト通知システム + AI 対話式アップグレードフローは後続の P2–P7 で提供予定
+- **汎用ブロードキャストシステム**（P2）— super_admin が `設定 > ブロードキャスト管理` で任意のメッセージ（announcement / maintenance / rule_change）を配信；バージョン範囲（min / max）・対象ユーザー指定・任意 snooze に対応
+- **自動アップグレードリマインダー** — 毎日 03:30 Asia/Taipei にジョブが `upgrade_reminder` ブロードキャストを冪等生成；`max_version=${SERVER_VERSION}-prev` + pre-release 順序で古いクライアントのみ表示
+- **ブロードキャスト毎の Cooldown** — `cooldown_minutes` で MCP 注入時のフラッディングを防止；「本日初回」「4h 空き」はクールダウンを上書きして重要通知を確実に表示
+- AI 対話式アップグレード + MCP レスポンス注入は P3–P7 で提供予定
 
 ### Token 使用量トラッキング `v1.16.0`
 
