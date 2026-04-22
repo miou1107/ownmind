@@ -136,6 +136,14 @@ sequenceDiagram
 - **Session auto-logging** — AI auto-logs work summary with structured context at end of each conversation
 - **3-month compression** — Old session logs auto-compress into monthly summaries
 
+### Client Version Dashboard `v1.17.0` *(in progress)*
+
+- **Installation coverage at a glance** — `Settings > Client Status` lists every user with per-tool `scanner_version`, last heartbeat, and one of five states: 🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 Needs Upgrade / ⚪ Not Installed
+- **Semver-based upgrade flag** — client auto-flagged if `scanner_version < SERVER_VERSION`; null / `unknown` version treated as needs-upgrade
+- **Multi-tool aggregation** — one user using Claude Code + Codex + Cursor shows up as a single row with all three listed
+- **Coverage summary line** — "N users · X installed · Y active · Z stale · W offline · K need upgrade" for quick team health scan
+- Broadcast system + interactive AI-assisted upgrade coming in subsequent P2–P7 phases
+
 ### Token Usage Tracking `v1.16.0`
 
 - **Cross-IDE usage capture** — Automatic token + cost tracking for Tier 1 tools (Claude Code, Codex, OpenCode) with per-message granularity

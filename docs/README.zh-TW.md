@@ -128,6 +128,14 @@ sequenceDiagram
 - **自動 Session 記錄** — 對話結束時自動存摘要 + 結構化情境
 - **3 個月壓縮** — 舊 session 自動合併成月摘要
 
+### 裝機狀況 Dashboard `v1.17.0` *(開發中)*
+
+- **一眼掌握覆蓋率** — `設定 > 裝機狀況` 列出每個 user 的各工具 `scanner_version`、最後 heartbeat、五種狀態：🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 需升級 / ⚪ 未裝
+- **Semver 自動判定升級** — `scanner_version < SERVER_VERSION` 就標黃；null / `unknown` 版本一律視為需升級
+- **多工具聚合** — 同一人用 Claude Code + Codex + Cursor 合併成一行，三個 tool 一起列
+- **Coverage summary** — 文字行「共 N 人 · 已裝 X · active Y · stale Z · offline W · 未裝 M · K 人需升級」團隊一眼看完
+- 廣播通知系統 + 互動式 AI 升級流程將在後續 P2–P7 phase 交付
+
 ### Token 用量追蹤 `v1.16.0`
 
 - **跨 IDE 用量擷取** — Tier 1 工具（Claude Code、Codex、OpenCode）自動逐訊息記錄 tokens + 成本

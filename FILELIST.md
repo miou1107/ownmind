@@ -20,7 +20,8 @@ OwnMind/
 │   ├── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
 │   ├── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
 │   ├── 006_add_standard_detail.sql   # memories type 加上 standard_detail
-│   └── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
+│   ├── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
+│   └── 008_broadcast.sql             # v1.17.0 — broadcast_messages / user_broadcast_state / user_tool_last_seen / memories.is_test
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -44,6 +45,7 @@ OwnMind/
 │   │       ├── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
 │   │       ├── exemptions.js        # GET / POST / DELETE usage_tracking_exemption（super_admin only）
 │   │       ├── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
+│   │       ├── admin-clients.js     # v1.17.0 — GET 裝機狀況（admin+；per user+tool heartbeat + needs_upgrade + coverage）
 │   │       └── team-stats.js        # GET 團隊 coverage + 逐 user 總計（admin+，spec D5）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
@@ -54,7 +56,8 @@ OwnMind/
 │   │   ├── enforcement.js          # Enforcement alerts 計算純函式
 │   │   ├── templates.js            # 規則模板庫 + 自動匹配
 │   │   ├── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
-│   │   └── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
+│   │   ├── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
+│   │   └── semver.js               # v1.17.0 — parseSemver / compareSemver / isLower / isHigher（version 比對共用）
 │   ├── jobs/
 │   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
@@ -145,7 +148,8 @@ OwnMind/
 │   ├── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
 │   ├── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
 │   ├── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
-│   └── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
+│   ├── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
+│   └── clients.test.js              # v1.17.0 — /api/usage/admin/clients（10 tests：auth / status / upgrade / multi-tool / coverage）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
