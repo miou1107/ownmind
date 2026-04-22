@@ -136,6 +136,17 @@ sequenceDiagram
 - **Session auto-logging** — AI auto-logs work summary with structured context at end of each conversation
 - **3-month compression** — Old session logs auto-compress into monthly summaries
 
+### Token Usage Tracking `v1.16.0`
+
+- **Cross-IDE usage capture** — Automatic token + cost tracking for Tier 1 tools (Claude Code, Codex, OpenCode) with per-message granularity
+- **Tier 2 activity markers** — Cursor and Antigravity captured via daily `session_count` (no token data available but activity is observable)
+- **Server-side cost calculation** — All pricing math runs server-side with historical `model_pricing` (effective_date), so client-reported costs can never skew the numbers
+- **Always-on collector** — `launchd` (macOS) / `systemd` (Linux) / Task Scheduler (Windows) agents run every 30 minutes, no dependency on opening an IDE
+- **Codex fingerprint audit** — Codex JSONL has no native message_id, so the server re-canonicalizes the full token breakdown and computes its own SHA-256 `expectedId`; client-supplied IDs become untrusted witnesses (collision / mismatch / missing-material audits)
+- **Personal + team dashboards** — Per-user daily cost, tokens, work hours (wall vs active); admin team view with coverage panel (<80% triggers "data incomplete" watermark) and leaderboards
+- **Super-admin pricing management** — Append-only price history via dashboard (new `effective_date` row, never overwrite); nightly recompute applies price changes to historical costs
+- **Transparent opt-out** — Super-admin grants exemptions in-dashboard; suppressed ingestion writes to `usage_audit_log` with reason; affected users see "tracking exempt" status instead of a silent lie
+
 ### Iron Rule Enforcement Engine `v1.11.0`
 
 - **7-layer defense** — git pre-commit hook (L1), PreToolUse hook (L2), MCP auto-verify (L3), Init reminder (L4), post-commit audit (L5), Session audit (L6), escalation warning (L7)

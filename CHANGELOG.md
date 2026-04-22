@@ -1,216 +1,89 @@
 # OwnMind 更新紀錄
 
-## v1.16.0（開發中）- 修正 codex review 4 個 dashboard 資料完整性 bug
+## v1.16.0 - Token 用量追蹤系統（全 9 phase）
 
-套用 /codex:review 在全 branch diff 跑出來的 2 × P1 + 2 × P2 問題：
+> 跨 IDE token / 成本 / 工時追蹤，從 raw event 收集到團隊績效 dashboard 一條龍。
+> Spec / Plan：`docs/superpowers/specs/2026-04-21-token-usage-tracking-design.md`、`docs/superpowers/plans/2026-04-21-token-usage-tracking.md`
+> PR：#5
 
-### 修復
-- **[P1] 個人 stats 納入 Tier-2 session**：`/api/usage/stats` 原本只讀
-  `token_usage_daily`，Cursor/Antigravity 只寫 `session_count` → Tier-2-only
-  user 會看到 `session_count=0`。改用雙查詢合併：
-  - `totals.session_count += SUM(session_count.count)`
-  - `totals.wall_seconds += SUM(session_count.wall_seconds)`
-  - `series` group_by=day/tool 時 merge Tier-2 rows；model/session 不適用
-- **[P1] 團隊 stats 納入 Tier-2 session**：`/api/usage/team-stats` 同樣修；
-  原本 Tier-2-only user 在排行榜看起來是零 sessions。per-user LEFT JOIN
-  session_count 加總到 totals 後排序
-- **[P2] stats totals null-cost 保留**：原本 `COALESCE(SUM(cost_usd), 0)`
-  會把「部分日有 NULL cost」偽裝成完整數字。改用
-  `bool_or(cost_usd IS NULL)` 偵測，有任一 NULL → 整筆 `cost_usd` 回 null
-  （與 `buildDailyRow` 的 policy 對齊）
-- **[P2] stats series + team-stats 同樣修**：每個 group 獨立判斷
-- Dashboard bar chart：`cost_usd=null` 時渲染為灰色 bar + `—`（原本偽裝成
-  `$0.0000`），hover 提示「部分期間 pricing 未設定」
+### 新增功能
 
-### 新增測試
-- `tests/stats.test.js`（9 tests）
-  - P1 regression：Tier-2-only user 看到 session_count
-  - P2 regression：totals / group_by=tool 的 cost_usd=null 傳遞
-  - series merge Tier-2 tool / day 的 overlap 行為
-  - is_exempt flag
-  - buildGrouping
-- `tests/team-stats.test.js` 擴充 2 個：P1 Tier-2 merge、P2 null-cost
+**資料層**
+- `db/007_token_usage.sql`：7 張新表 — `model_pricing`、`token_events`（含 `cumulative_total_tokens NOT NULL` 與 `codex_fingerprint_material JSONB`）、`token_usage_daily`、`collector_heartbeat`、`session_count`、`usage_tracking_exemption`、`usage_audit_log`；附 claude-code / codex 初始定價
+- `src/utils/pricing-lookup.js`：`pickPricing` / `computeCost` / `lookupPricing` — effective_date 歷史版本查找，TZ-proof YYYY-MM-DD 比對，`id DESC` tiebreaker
 
-驗證：361/361 tests pass（+11：stats 9、team-stats +2）
+**API**
+- `POST /api/usage/events` — raw event ingestion（含 Tier 2 `sessions` array）
+  - 必填驗證、model allowlist、D7 token_regression 偵測、UNIQUE dedupe、觸發 aggregation
+  - Codex 專用：`codex_fingerprint_material` 必填 → server canonicalize → `expectedId` 強制覆寫；client id 錯誤寫 `fingerprint_mismatch`，ON CONFLICT 寫 `fingerprint_collision`
+  - Heartbeat UPSERT（支援空 events + heartbeat-only）
+  - Exemption 最早檢查、audit 壓制
+- `GET /api/usage/stats`（個人）— 日期區間、group_by 日/工具/model/session，Tier-1 + Tier-2 合併，`is_exempt` flag
+- `GET /api/usage/team-stats`（admin+）— coverage panel（`reporting_today` / `stale` / `opted_out` / `per_tool`）+ per-user aggregate
+- `GET /api/usage/pricing`、`POST /api/usage/pricing`（super_admin, append-only）
+- `usage_tracking_exemption` CRUD（super_admin），granted / reason_updated / revoked 三種 audit
+- `GET /api/usage/admin/audit`（admin+，可 filter event_type）
 
-## v1.16.0（開發中）- Token 用量追蹤（P8 + P9：個人 / 團隊 dashboard）
+**後端 Job**
+- `src/jobs/usage-aggregation.js` — `recomputeDaily`：冪等；cost 採 null-on-any-unknown policy；wall / active seconds 以 Asia/Taipei 切日、600s gap 判離線
+- `src/jobs/nightly-recompute.js` — 每日 03:00 Asia/Taipei 重算近 7 天（處理 pricing 變更 / 漏算）
 
-> **Token usage tracking 全 9 phases 實作完成**，等待部署測試。
+**Client Scanner（5 個 IDE）**
+- `shared/scanners/base.js` — 單一 `runScan` 流程（spec D11）：讀 offset → 分批 POST → 全部成功才原子寫回；失敗可無痛重送（server UNIQUE dedupe）
+- `shared/scanners/id-helper.js` — Codex 專用 canonical material + SHA-256 message_id（64 hex，client + server 共用同一支）
+- Tier 1：`claude-code.js`、`codex.js`（yyyy/mm/dd 遞迴）、`opencode.js`（sqlite3 CLI、composite `(time_created, id)` cursor）
+- Tier 2：`cursor.js`、`antigravity.js` 共用 `vscode-telemetry.js`（state.vscdb）
+- `hooks/ownmind-usage-scanner.js` — 主 entry；PID-aware 自我 lock（live/stale/6h mtime）；runtime opt-out flag
 
-### 新增
-- `src/routes/usage/team-stats.js` — GET `/api/usage/team-stats`（admin+）
-  - `coverage` 包含 total_users / reporting_today / stale（48h+）/ opted_out，以及逐 user 的 stale_users + exempt_users 清單供 dashboard 直接渲染
-  - `per_tool` 逐 tool 的 reporting / stale 統計
-  - `users` array：逐 user 的 tokens / cost / wall_seconds / active_seconds / message_count / session_count 總計（LEFT JOIN token_usage_daily 確保沒資料的 user 也出現）
-  - `tests/team-stats.test.js` — 5 tests（parseParams、403、coverage 計算、period defaults）
-- `src/public/index.html` 新增兩個 dashboard tab：
-  - **「我的用量」（P8，所有 user）**：日期區間篩選、group_by（day/tool/model/session）、10 張 stat-mini 卡片（成本 / input / output / cache / reasoning / 訊息 / wall / active / session）、bar chart、追蹤狀態指示燈（正常 / 豁免）
-  - **「團隊用量」（P9，admin+ 可見）**：覆蓋率 panel（D5，<80% 浮水印警示）、列出失蹤 / 豁免成員姓名、團隊排行榜（可依 cost / 訊息 / 活躍時長排序）、Model 定價管理（super_admin 可新增 effective_date row）、Audit log 子頁（admin+ 可依 event_type filter）
-- `src/public/index.html` 的角色 gating：super_admin 看得到 Pricing panel；admin+ 看得到「團隊用量」tab；一般 user 只看得到「我的用量」
-- Pricing modal：Tool / Model / Input / Output / Cache Write / Cache Read / Effective Date / Notes 表單，POST /api/usage/pricing（append-only）
+**Always-on 排程**
+- `scripts/install-helpers/run-scanner.sh` — wrapper 動態找 node（`.node-path` → PATH → glob）+ v20+ 驗證
+- macOS launchd plist（30 分鐘 + RunAtLoad）
+- Linux systemd user timer（OnBootSec=5min + OnUnitActiveSec=30min）
+- Windows Task Scheduler（PS 腳本，單一 Once+Repetition trigger，WriteAllText 無 BOM）
+- `install.sh` / `install.ps1` 自動偵測 node、寫 `.node-path`、註冊 schedule；尊重 `~/.ownmind/.no-usage-scanner` opt-out
 
-## v1.16.0（開發中）- Token 用量追蹤（P7：Cursor + Antigravity Tier 2）
+**Dashboard（Admin 後台）**
+- 「我的用量」tab（所有 user）：日期區間 + group_by + 10 張 stat-mini 卡片 + bar chart + 追蹤狀態指示燈（`is_exempt` 警示）
+- 「團隊用量」tab（admin+）：coverage panel 強制顯示，< 80% 自動浮水印「資料不完整」；排行榜可依 cost / 訊息 / 活躍時長排序
+- Model 定價管理子面板（super_admin）：append-only 新增 effective_date row
+- Audit log 子面板（admin+）：event_type filter、最近 100 筆
 
-### 新增
-- `shared/scanners/vscode-telemetry.js` — VSCode-based IDE 共用 helper
-  - `readVscodeTelemetry({ dbPath, ... })` 透過 sqlite3 CLI 讀 `ItemTable` 的
-    `telemetry.firstSessionDate / lastSessionDate / currentSessionDate`
-  - `toTaipeiYmd(date)` 純函式（Intl.DateTimeFormat Asia/Taipei）
-  - `createVscodeAdapter({ tool, dbPath, ... })` 共用 adapter 工廠
-- `shared/scanners/cursor.js` — Cursor 薄包裝（DB 路徑依 platform）
-- `shared/scanners/antigravity.js` — Antigravity 薄包裝（同 VSCode schema）
-- Server `POST /api/usage/events` 接受 `sessions` array（Tier 2）
-  - 驗證 tool / date (YYYY-MM-DD) / count 非負 / wall_seconds 非負
-  - UPSERT `session_count`，`count / wall_seconds` 取 GREATEST 避免 race 回退
-  - Exempt user 同樣壓制（sessions 不入 DB，audit details 帶 session_count + tools）
-  - Response 新增 `sessions_upserted: N`
-- Wire Cursor + Antigravity 進主 scanner entry（與 Tier 1 三個 adapter 並列）
+### 決策與鐵則
 
-### 改善
-- `shared/scanners/base.js` `runScan` 支援 adapter 回傳的 `sessions` array：
-  - 單批：events + sessions + heartbeat 一起送
-  - 多批：sessions 只附最後一批（與 heartbeat 同語義）
-  - 空 events + 有 sessions：仍寫 offsetPatch（Tier 2 `last_session_date` 推進）
-- `POST /api/usage/events` 允許「events=[] 但 sessions 非空」不再 400
-
-### Tests
-- `tests/scanner-cursor-antigravity.test.js`（14 tests）— toTaipeiYmd / readVscodeTelemetry（含 ENOENT）/ adapter 首次 scan / 同日不重發 / 新日重發
-- `tests/ingestion.test.js` 擴充 4 個：sessions upsert、rejected 驗證、exempt 壓制 sessions、empty body 400
-- `tests/scanner-base.test.js` 擴充 2 個：Tier 2 events=[]+sessions 流程、sessions 僅附最後一批
-
-## v1.16.0（開發中）- Token 用量追蹤（P6：always-on collector）
-
-> **P9 gate 解除**：launchd / systemd / Task Scheduler 全部就位，scanner 不依賴
-> user 主動開 IDE，為 P9 團隊 dashboard coverage panel 鋪路。
-
-### 新增
-- `scripts/install-helpers/run-scanner.sh` — wrapper script（D12）
-  - 動態找 node：`.node-path` cache → PATH → `/opt/homebrew/bin` / `/usr/local/bin` / nvm glob（sort -rV 取最新）
-  - 每個候選都要通過 `--version` 且 major ≥ `OWNMIND_MIN_NODE_MAJOR`（預設 20），版本不合格寫入 err log
-  - 找不到 node → exit 1 + 明確錯誤寫 `~/.ownmind/logs/scanner.err`
-  - 找不到 scanner.js → exit 2
-  - 選用 node 後 log 印 `using node=<path> version=<v>`（heartbeat 故障時好追）
-  - 測試用 env：`OWNMIND_SKIP_SYSTEM_CANDIDATES=1` 關閉系統候選（避免真實 node 干擾 test）
-- `scripts/launchd/com.ownmind.usage-scanner.plist`（macOS）— 每 30 分鐘 + RunAtLoad，log 分流 launchd.stdout/stderr
-- `scripts/systemd/ownmind-usage-scanner.{service,timer}`（Linux）— user timer，開機後 5 分鐘首次 + 每 30 分鐘
-- `scripts/windows/register-scanner-task.ps1`（Windows）— Task Scheduler，自帶 node 偵測 + v20+ 檢查 + `.node-path` 快取
-- `tests/run-scanner-wrapper.test.js`（7 tests）— spawn 真實 bash 配合 stub node 驗證完整候選選擇 / 版本守衛 / 錯誤路徑
-
-### 改善
-- `install.sh` 加入 4e 區塊：複製 scanner + shared modules + wrapper，偵測 node 寫入 `.node-path`，macOS 自動 `launchctl load -w`、Linux 自動 `systemctl --user enable --now`；尊重 `~/.ownmind/.no-usage-scanner` opt-out
-- `install.ps1` 對應加入：偵測 opt-out flag，呼叫 `register-scanner-task.ps1`
-
-### Opt-out
-使用者可以建立 `~/.ownmind/.no-usage-scanner` 檔案跳過自動排程安裝（install.sh / install.ps1 都尊重此旗標）。
-
-## v1.16.0（開發中）- Token 用量追蹤（P5：Codex + OpenCode scanner）
-
-### 新增
-- `shared/scanners/codex.js`：Codex JSONL adapter
-  - 掃 `~/.codex/sessions/**` 與 `~/.codex/archived_sessions/**`（yyyy/mm/dd 遞迴）
-  - 只讀 `event_msg/token_count`（**不讀** response_item — 後者無 usage 欄位）
-  - 用 `info.last_token_usage` 當該 event 的增量（不是 cumulative）
-  - 透過 `turn_context.payload.model` 維護 `currentModel` 狀態
-  - session_id 從檔名 UUID 擷取（`rollout-<ts>-<uuid>.jsonl`）
-  - message_id = `codexMessageId(session_id, canonicalizeCodexMaterial(...))`（共用 P3 id-helper）
-  - Codex token schema → OwnMind：input = input − cached_input、cache_creation = 0（Codex 無此概念）、cache_read = cached_input、reasoning = reasoning_output
-  - 只用 byte_offset cursor（禁用 line_offset，因檔案可能 compact/rewrite 破壞 dedupe）
-- `shared/scanners/opencode.js`：OpenCode SQLite adapter
-  - 透過 `sqlite3 -json -readonly` CLI（零新 deps，plan P5 要求）
-  - **實作偏離原 plan**：發現 `message.id` schema 實際是 TEXT 而非 INTEGER，改採 composite cursor `(time_created, id)`，ORDER BY 與 WHERE 同鍵順序，避免 ms-tie 遺漏/重送
-  - 每 session 獨立累加：`new = prev + input + output + reasoning + cache_read + cache_write`，按 global (time_created, id) 讀取時不因 session 切換 reset
-  - SQL injection defense：high_water_id 透過 sqlQuote 做 `'` → `''` escape
-- Wire codex + opencode 進 `hooks/ownmind-usage-scanner.js`（與 claude-code 並列）
-- `tests/scanner-codex.test.js`（16 tests）、`tests/scanner-opencode.test.js`（14 tests）
-
-## v1.16.0（開發中）- Token 用量追蹤（P4：Claude Code scanner）
-
-### 新增
-- `shared/scanners/base.js`：scanner orchestrator 共用骨架
-  - `runScan({ adapter, apiUrl, apiKey, cachePath, fetchFn })`：單一流程（spec D11）— 讀 offset → adapter.readSince → 分批 POST /api/usage/events → 全部成功才原子寫回 offset
-  - 500 events/批次；最後一批附 heartbeat；空 scan 也送 heartbeat
-  - `writeOffsetsAtomic` 用 temp + rename 確保無半寫狀態
-  - `mergeState` 純函式 merge offset patch + session cumulative patch
-- `shared/scanners/claude-code.js`：Claude Code JSONL adapter
-  - 掃 `~/.claude/projects/<project>/<session>.jsonl`
-  - 只處理 `type='assistant'` 且 `message.usage` 非空；message_id=uuid、session_id=sessionId
-  - 維護 per-session 累加 map：`new = prev + input + output + cache_creation + cache_read`
-  - byte_offset cursor；檔案被截斷/輪轉自動重置為 0；partial line 保留到下次 scan
-- `hooks/ownmind-usage-scanner.js`：主 entry
-  - 自我 lock（`~/.ownmind/cache/scanner.lock`）防多實例同跑
-  - 讀 `~/.claude/settings.json` 的 credentials → 跑 adapter → log 到 `~/.ownmind/logs/scanner.log`
-  - `export { main }` + `isDirectRun` guard，import 時不觸發
-- `tests/scanner-base.test.js`（15 tests）、`tests/scanner-claude-code.test.js`（15 tests）
-
-### 改善
-- `src/routes/usage/events.js`：允許 `events=[]` 當 heartbeat 存在時，支援空 scan 仍送心跳（避免 coverage panel 誤判失蹤）
-- `src/app.js`：JSON body limit 從 100kb 提升到 10mb，容納 500-event batch
-- `scripts/update.sh`：usage scanner 入口加可執行權限
-
-## v1.16.0（開發中）- Token 用量追蹤（P3：heartbeat + exemption + Codex fingerprint）
-
-### 新增
-- `shared/scanners/id-helper.js`（client + server 共用）：
-  - `canonicalizeCodexMaterial(raw)` — ts_iso ISO 8601 毫秒精度、null→0、非 finite throw
-  - `codexMessageId(sessionId, canonical)` — 完整 sha256（64 hex 不截斷）
-  - `materialsEqual(a, b)` — server canonical material 比對用
-  - 8 個必填欄位：ts_iso / total_cumulative / last_total / input / output / cache_creation / cache_read / reasoning
-- `src/routes/usage/exemptions.js`：super_admin CRUD usage_tracking_exemption
-  - POST 要填 reason（空白也 reject）；DELETE 寫 `exemption_revoked` audit
-  - UPSERT 時 granted_at 更新，避免被舊 row 擋住
-- `src/routes/usage/admin-audit.js`：admin+ 查詢 usage_audit_log（可 filter event_type / user_id / limit）
-- Ingestion handler（`events.js`）升級：
-  - Exemption 最優先檢查：exempt user → 寫 `ingestion_suppressed_exempt` audit、回 `exempted: true`、不進 DB、heartbeat 仍更新
-  - Codex 專用流程（D13）：material 必填 → server canonicalize → 自己算 expectedId → 一律用 expectedId 蓋掉 client message_id → client id 錯誤寫 `fingerprint_mismatch` → ON CONFLICT 時比 material 寫 `fingerprint_collision`
-  - Heartbeat UPSERT：`body.heartbeat { tool, scanner_version, machine }` 一併處理
+- **Client 只送 raw event**（D1）：Cost 100% server-side 算；client 的 `native_cost_usd` 僅供比對
+- **Codex fingerprint**（D10 / D13）：完整 sha256 64 hex 不截斷（避免 `DO NOTHING` 永久丟資料）；server expectedId 為唯一 truth source
+- **Cost null policy**：任何 unknown pricing → 整筆 cost_usd = null（不做 partial cost；codex review 修復過的 P2 bug）
+- **Coverage gate**（D5）：團隊 dashboard < 80% 強制顯示「資料不完整」浮水印
+- **透明 opt-out**（D3）：豁免由 super_admin 在 dashboard 操作，用戶看得到狀態；無 local opt-out sentinel
 
 ### 測試
-- `tests/fingerprint.test.js`（18 tests）：canonicalize 正規化 / 不同欄位導致不同 id / ts 不同格式同瞬間 id 相同 / 完整 sha256 64 hex
-- `tests/exemptions.test.js`（9 tests）：CRUD + auth + audit 寫入
-- `tests/ingestion.test.js` 擴充 11 個：Codex 5 個（missing material / partial material / override mismatch / dedupe by expectedId / collision audit）、heartbeat 3 個、exemption 2 個
+**361 tests pass**（既有 165 + P1–P9 本次 196 個新測試）
+- 單元：pricing-lookup、id-helper canonicalize / hash、aggregation（cost / wall / active）
+- Route：events（exempt / codex / heartbeat / sessions / null-cost）、stats、team-stats、pricing、exemptions
+- Scanner：base（atomic offsets / batching / crash-resume）、claude-code、codex、opencode、cursor/antigravity、run-scanner.sh wrapper（spawn bash + stub node）
 
-### Audit log event_types 清單
-`unknown_model` / `token_regression` / `fingerprint_collision` / `fingerprint_mismatch` /
-`codex_missing_material` / `ingestion_suppressed_exempt` /
-`exemption_granted` / `exemption_revoked` / `rate_anomaly`（保留）
+### 已知限制（deploy / 觀察期再處理）
+- 所有 SQL 尚未對真實 postgres 執行過；deploy 時以 `psql -f db/007_token_usage.sql` 驗證
+- 5 個 scanner 未 end-to-end 打真實 server 跑整輪；Vin 本機試跑 P4（Claude Code）為首批
+- launchd / systemd / Task Scheduler 三平台實機測試未做（plan P6 verify 條目）
+- `stale_users` / `exempt_users` array 無長度上限（>50 人團隊需 cap）
+- 24h–48h 灰區 user 不計入 reporting 也不計入 stale（寬鬆策略）
+- 尚無 uninstall 腳本（launchctl unload + 刪 plist）
 
-## v1.16.0（開發中）- Token 用量追蹤（P2：ingestion + aggregation + stats）
-
-### 新增
-- `src/routes/usage/events.js`：`POST /api/usage/events` — raw event ingestion
-  - 必填欄位驗證（message_id / cumulative_total_tokens / ts）
-  - Model allowlist：不在 `model_pricing` 的 model → `usage_audit_log.event_type='unknown_model'`，event 仍接收
-  - D7 token_regression：新 event 的 cumulative < 同 session 歷史 MAX → 寫入 audit log（仍接收）
-  - Dedupe：`INSERT ... ON CONFLICT (user_id, tool, session_id, message_id) DO NOTHING`
-  - Response：`{ accepted, duplicated, rejected: [...] }`
-  - TODO(P3)：Codex fingerprint override + heartbeat + exemption
-- `src/jobs/usage-aggregation.js`：
-  - 純函式 `computeTimeSpans` / `groupByModel` / `buildDailyRow` / `deriveTouchedCombos`
-  - DB 版 `recomputeDaily({ query }, keys)` — 從 `token_events` 重算 UPSERT `token_usage_daily`
-  - 冪等：重跑不 double count；wall / active seconds 以 Asia/Taipei 切日、600s gap 判離線
-- `src/routes/usage/stats.js`：`GET /api/usage/stats?from=&to=&group_by=day|tool|model|session`
-- `src/jobs/nightly-recompute.js`：每日 03:00 Asia/Taipei 跑近 7 天完整 recompute（處理 pricing 變更）
-- `tests/aggregation.test.js`（13 tests）+ `tests/ingestion.test.js`（11 tests）
-
-### 改善
-- `src/routes/usage/index.js` 掛載 events / stats 子路由
-- `src/index.js` 啟動 nightly recompute cron
-
-## v1.16.0（開發中）- Token 用量追蹤（P1：DB schema + pricing API）
-
-> 跨 IDE 團隊用量追蹤系統的第一階段後端骨架。
-> Spec / Plan：`docs/superpowers/specs/2026-04-21-token-usage-tracking-design.md`、`docs/superpowers/plans/2026-04-21-token-usage-tracking.md`
-
-### 新增
-- `db/007_token_usage.sql` migration：新增 7 張表 — `model_pricing`、`token_events`（含 `cumulative_total_tokens NOT NULL` + `codex_fingerprint_material JSONB`）、`token_usage_daily`、`collector_heartbeat`、`session_count`、`usage_tracking_exemption`、`usage_audit_log`，並插入 claude-code / codex 初始定價
-- `src/utils/pricing-lookup.js`：純函式 `pickPricing(rows, tool, model, date)` + `computeCost(pricing, tokens)`，搭配 DB 版 `lookupPricing()` 供 aggregation 使用（`effective_date <= date` 規則）
-- `src/routes/usage/pricing.js`：`GET /api/usage/pricing`（所有登入 user）+ `POST /api/usage/pricing`（super_admin only，append-only；格式 / 非負價格驗證）
-- `tests/pricing.test.js`：12 個單元測試涵蓋 effective_date 挑選、null 欄位、reasoning_tokens 計價、真實 sample
-
-### 已知待辦（P2+）
-- `/api/usage/events` ingestion、server-side aggregation、heartbeat、exemption、scanner 將在 P2–P6 交付，詳見 plan。
+### 實作過程
+分 9 phase 交付，每 phase 走完 IR-012 品管三步驟（verification + code review + receiving review），codex adversarial review 全跑完畢並修復：
+- P1 DB schema + pricing API（`8ad2c63`）
+- P2 ingestion + aggregation + personal stats（`b067d96`）
+- P3 heartbeat + exemption + Codex fingerprint audit（`b9b7506`）
+- P4 Claude Code scanner + runScan orchestrator（`e498f43`）
+- P5 Codex + OpenCode scanners — Tier 1 完整（`2436a3d`）
+- P6 always-on collector — P9 gate 解除（`025f8f9`）
+- P7 Cursor + Antigravity Tier 2（`e0e15a9`）
+- P8 + P9 個人 + 團隊 dashboard（`3584b53`）
+- 修 codex review 4 個資料完整性 bug：Tier-2 session 合併、null-cost 傳遞（`ba4f671`）
 
 ---
+
 
 ## v1.15.4 - SessionStart 可靠觸發 + 鐵律顯著標記
 
