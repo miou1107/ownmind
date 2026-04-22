@@ -142,16 +142,20 @@ mkdir -p "$SKILL_DIR"
 cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$SKILL_DIR/SKILL.md"
 echo "   安裝 ownmind-memory skill"
 
-# --- 4b. 安裝 Hook Scripts ---
+# --- 4b. 安裝 Hook Scripts + hooks/lib 模組（v1.17.0 P3）---
 HOOK_DIR="$HOME/.claude/hooks"
-mkdir -p "$HOOK_DIR"
+mkdir -p "$HOOK_DIR/lib"
 cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-worktree-setup.sh" "$HOOK_DIR/"
 chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
 chmod +x "$HOOK_DIR/ownmind-session-start.sh"
 chmod +x "$HOOK_DIR/ownmind-worktree-setup.sh"
-echo "   安裝 hook scripts (session-start + iron-rule-check + worktree-setup)"
+# 同步 hooks/lib（SessionStart hook render 模組等）
+if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
+  cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
+fi
+echo "   安裝 hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "

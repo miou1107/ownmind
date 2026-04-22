@@ -5,6 +5,27 @@
 > 讓 admin 一眼看到裝機版本、推播提醒，讓 user 說「我要升級」就有 AI 自動完成。
 > Spec / Plan：`docs/superpowers/specs/2026-04-22-client-version-broadcast-upgrade-design.md`、`docs/superpowers/plans/2026-04-22-client-version-broadcast-upgrade.md`
 
+### P3 — Claude Code SessionStart Hook 讀廣播（Layer 1）
+
+**新增**
+- `hooks/lib/render-session-context.js` — 純函式 `renderSessionContext(data, broadcasts)`；拆出 render 邏輯方便 unit test
+- `hooks/lib/session-start-output.js` — Node CLI 包裝，給 hook shell script 呼叫
+- `hooks/ownmind-session-start.sh` — 新增 `curl /api/broadcast/active?tool=claude-code`（fail-silent 3 秒 timeout）；render 改呼叫 lib 模組
+
+**行為**
+- 每次 Claude Code session 啟動，hook 把當前應顯示的廣播 prepend 到 `additionalContext` 最前面（`## 📢 OwnMind 系統通知`）
+- 廣播 render 包含：severity badge / title / body（截 400 字 / 5 行）/ CTA hint / snooze 選項
+- 最多 3 則，其餘顯示「另有 N 則廣播未顯示」
+
+**部署**
+- `install.sh` + `scripts/update.sh` 同步 `hooks/lib/*.js` 到 `~/.claude/hooks/lib/`
+
+**測試**
+- 新增 10 個 test（`tests/session-start-render.test.js`）：無廣播、順序、CTA/snooze、超量截斷、多行折疊、memory sections、結尾訊息
+- **450 tests pass**（P2 後 440 + P3 新增 10）
+
+---
+
 ### P2 — 廣播系統 Backend + Admin CRUD
 
 **新增**

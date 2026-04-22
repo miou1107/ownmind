@@ -102,7 +102,10 @@ OwnMind/
 │   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
 │   ├── ownmind-git-post-commit     # post-commit shell wrapper
 │   ├── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
-│   └── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
+│   ├── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
+│   └── lib/                        # v1.17.0 P3 — hook 共用純函式
+│       ├── render-session-context.js   # renderSessionContext(data, broadcasts) → additionalContext 字串
+│       └── session-start-output.js     # Node CLI wrapper，讓 bash hook 呼叫
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
@@ -155,7 +158,8 @@ OwnMind/
 │   ├── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
 │   ├── clients.test.js              # v1.17.0 — /api/usage/admin/clients（auth / status / upgrade / multi-tool / coverage / pre-release）
 │   ├── semver.test.js               # v1.17.0 — parseSemver / compareSemver（pre-release / build metadata / malformed）
-│   └── broadcast.test.js            # v1.17.0 P2 — validate / CRUD / snooze / filter / cooldown / nightly job（28 tests）
+│   ├── broadcast.test.js            # v1.17.0 P2 — validate / CRUD / snooze / filter / cooldown / nightly job（46 tests）
+│   └── session-start-render.test.js # v1.17.0 P3 — renderSessionContext（broadcasts + memory）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

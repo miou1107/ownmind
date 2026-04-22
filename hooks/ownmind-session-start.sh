@@ -95,49 +95,16 @@ fi
 
 log_event "init" "status" "ok"
 
-# --- 解析記憶 + 輸出 JSON（單次 node 呼叫）---
-node -e "
-  const data = JSON.parse(process.argv[1]);
-  const lines = [];
+# --- v1.17.0 P3: 抓當前應顯示的廣播（fail-silent，不擋 SessionStart）---
+BROADCAST_DATA=$(curl -sf --max-time 3 \
+  -H "Authorization: Bearer $API_KEY" \
+  "${API_URL}/api/broadcast/active?tool=claude-code" 2>/dev/null)
+# 空值 / 失敗一律當 "[]"（就是沒廣播）
+[ -z "$BROADCAST_DATA" ] && BROADCAST_DATA="[]"
 
-  lines.push('【OwnMind v' + (data.server_version || '?') + '】記憶載入：已載入你的個人記憶');
-  lines.push('');
-
-  if (data.profile) {
-    lines.push('## Profile');
-    const p = data.profile;
-    lines.push('- ' + (p.title || '') + ': ' + (p.content || '').substring(0, 200));
-    lines.push('');
-  }
-
-  if (data.iron_rules_digest) {
-    lines.push('## 鐵律（必須嚴格遵守）');
-    lines.push(data.iron_rules_digest);
-    lines.push('');
-  }
-
-  if (data.principles && data.principles.length > 0) {
-    lines.push('## 工作原則');
-    data.principles.forEach(p => lines.push('- ' + p.title));
-    lines.push('');
-  }
-
-  if (data.active_handoff) {
-    lines.push('## 待接手交接');
-    lines.push('專案: ' + (data.active_handoff.project || '?'));
-    lines.push('');
-  }
-
-  // Enforcement Alerts 已由 server 端嵌入 iron_rules_digest，不需 client 重複解析
-
-  lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get(\"iron_rule\")。');
-
-  console.log(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'SessionStart',
-      additionalContext: lines.join('\n')
-    }
-  }));
-" "$INIT_DATA" 2>/dev/null
+# --- 解析記憶 + 廣播 + 輸出 JSON ---
+# render 邏輯拆到 hooks/lib/render-session-context.js（可被 unit test）
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+node "$SCRIPT_DIR/lib/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA" 2>/dev/null
 
 exit 0

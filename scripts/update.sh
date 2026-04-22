@@ -15,16 +15,20 @@ if [ -d "$HOME/.claude" ]; then
   echo "   ✅ skill 已更新"
 fi
 
-# --- 2. 同步 hook scripts（所有 hook 一次同步）---
+# --- 2. 同步 hook scripts + hooks/lib 模組 ---
 if [ -d "$HOME/.claude" ]; then
   HOOK_DIR="$HOME/.claude/hooks"
-  mkdir -p "$HOOK_DIR"
+  mkdir -p "$HOOK_DIR/lib"
   for hook_file in "$OWNMIND_DIR/hooks/"*.sh; do
     if [ -f "$hook_file" ]; then
       cp "$hook_file" "$HOOK_DIR/"
       chmod +x "$HOOK_DIR/$(basename "$hook_file")"
     fi
   done
+  # v1.17.0 P3：SessionStart hook 需要 lib/ 裡的 render 模組
+  if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
+    cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
+  fi
   echo "   ✅ hook scripts 已同步"
 fi
 
