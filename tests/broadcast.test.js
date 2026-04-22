@@ -534,6 +534,140 @@ describe('filterInjectable (cooldown)', () => {
 // ============================================================
 // ensureUpgradeReminder (nightly job)
 // ============================================================
+// ============================================================
+// POST /api/broadcast/inject — MCP 注入 endpoint (P4)
+// ============================================================
+describe('POST /api/broadcast/inject', () => {
+  function mkAdminQuery({ seenRow = null, visibleRows = [], upsertCaptures = [] } = {}) {
+    return async (sql, params) => {
+      if (/SELECT last_mcp_call_at.*FROM user_tool_last_seen/s.test(sql)) {
+        return { rows: seenRow ? [seenRow] : [] };
+      }
+      if (/INSERT INTO user_tool_last_seen/.test(sql)) {
+        upsertCaptures.push({ type: 'utls', params });
+        return { rows: [] };
+      }
+      if (/FROM broadcast_messages b/i.test(sql) && /LEFT JOIN user_broadcast_state/i.test(sql)) {
+        return { rows: visibleRows };
+      }
+      if (/INSERT INTO user_broadcast_state/.test(sql) && /last_injected_at/.test(sql)) {
+        upsertCaptures.push({ type: 'inject_mark', params });
+        return { rows: [] };
+      }
+      return { rows: [] };
+    };
+  }
+
+  it('rejects missing tool', async () => {
+    const app = buildApp({
+      queryFn: mkAdminQuery(),
+      user: { id: 5, role: 'user' }
+    });
+    const res = await request(app, { method: 'POST', path: '/api/broadcast/inject', body: {} });
+    assert.equal(res.status, 400);
+  });
+
+  it('first-of-day forceInject bypasses cooldown', async () => {
+    // Previous seen was yesterday
+    const yesterday = new Date('2026-04-21T08:00:00Z');
+    const nowDate = new Date('2026-04-22T10:00:00+08:00');
+    const captures = [];
+    const visibleRows = [
+      { id: 1, title: 't', body: 'b', severity: 'warning',
+        cta_text: null, cta_action: null,
+        allow_snooze: false, snooze_hours: 24,
+        cooldown_minutes: 30,
+        last_injected_at: new Date(nowDate.getTime() - 5 * 60000) // 5 min ago, normally cooldown blocks
+      }
+    ];
+    const app = buildApp({
+      queryFn: mkAdminQuery({
+        seenRow: { last_mcp_call_at: yesterday, last_day_seen_tpe: '2026-04-21' },
+        visibleRows,
+        upsertCaptures: captures
+      }),
+      user: { id: 5, role: 'user' },
+      deps: { now: () => nowDate }
+    });
+    const res = await request(app, {
+      method: 'POST', path: '/api/broadcast/inject',
+      body: { tool: 'claude-code' }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.force, true, 'first-of-day should forceInject');
+    assert.equal(res.body.broadcasts.length, 1);
+  });
+
+  it('4h gap triggers forceInject', async () => {
+    const nowDate = new Date('2026-04-22T14:00:00+08:00');
+    const fourAndHalfHoursAgo = new Date(nowDate.getTime() - 4.5 * 3600 * 1000);
+    const visibleRows = [
+      { id: 1, title: 't', body: 'b', severity: 'info',
+        cta_text: null, allow_snooze: false, cooldown_minutes: 60,
+        last_injected_at: new Date(nowDate.getTime() - 10 * 60000)  // 10min ago
+      }
+    ];
+    const app = buildApp({
+      queryFn: mkAdminQuery({
+        seenRow: {
+          last_mcp_call_at: fourAndHalfHoursAgo,
+          last_day_seen_tpe: new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+          }).format(nowDate)
+        },
+        visibleRows
+      }),
+      user: { id: 5, role: 'user' },
+      deps: { now: () => nowDate }
+    });
+    const res = await request(app, {
+      method: 'POST', path: '/api/broadcast/inject',
+      body: { tool: 'claude-code' }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.force, true);
+    assert.equal(res.body.broadcasts.length, 1);
+  });
+
+  it('no force + cooldown active → not injected', async () => {
+    const nowDate = new Date('2026-04-22T14:00:00+08:00');
+    const tenMinAgo = new Date(nowDate.getTime() - 10 * 60000);
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(nowDate);
+    const visibleRows = [
+      { id: 1, title: 't', body: 'b', severity: 'info',
+        cta_text: null, allow_snooze: false, cooldown_minutes: 60,
+        last_injected_at: tenMinAgo
+      }
+    ];
+    const app = buildApp({
+      queryFn: mkAdminQuery({
+        seenRow: { last_mcp_call_at: tenMinAgo, last_day_seen_tpe: today },
+        visibleRows
+      }),
+      user: { id: 5, role: 'user' },
+      deps: { now: () => nowDate }
+    });
+    const res = await request(app, {
+      method: 'POST', path: '/api/broadcast/inject',
+      body: { tool: 'claude-code' }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.force, false);
+    assert.equal(res.body.broadcasts.length, 0, '10min < 60min cooldown → skip');
+  });
+
+  it('unauthenticated = 401', async () => {
+    const app = buildApp({ queryFn: mkAdminQuery(), user: null });
+    const res = await request(app, {
+      method: 'POST', path: '/api/broadcast/inject',
+      body: { tool: 'claude-code' }
+    });
+    assert.equal(res.status, 401);
+  });
+});
+
 describe('ensureUpgradeReminder', () => {
   it('skips when no super_admin exists', async () => {
     const query = async (sql) => {

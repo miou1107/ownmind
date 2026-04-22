@@ -5,6 +5,36 @@
 > 讓 admin 一眼看到裝機版本、推播提醒，讓 user 說「我要升級」就有 AI 自動完成。
 > Spec / Plan：`docs/superpowers/specs/2026-04-22-client-version-broadcast-upgrade-design.md`、`docs/superpowers/plans/2026-04-22-client-version-broadcast-upgrade.md`
 
+### P4 — MCP Response 注入（Layer 2：跨工具通用）
+
+**新增 Server endpoint**
+- `POST /api/broadcast/inject` — 每次 MCP `ownmind_*` tool call 時 ping
+  - Upsert `user_tool_last_seen`（判首次 / 4h gap）
+  - 判 `is_first_of_day`（Asia/Taipei day boundary）+ `is_long_gap`（> 4h）
+  - `forceInject = isFirstOfDay || isLongGap`（覆蓋 cooldown）
+  - 未 force 時走每則廣播的 `cooldown_minutes`
+  - Mark `user_broadcast_state.last_injected_at` 防刷屏
+  - Response：`{ broadcasts: [...], force: bool }`，MCP client 直接拿去 prepend
+
+**MCP Client 改動**
+- `mcp/index.js` CallToolRequestSchema handler 新增 `fetchBroadcastsSafely()`：
+  - 每次 tool call 完 → POST `/api/broadcast/inject`
+  - 2 秒 timeout、失敗靜默（不該因廣播掛掉 tool）
+  - `renderBroadcasts()` → prepend 到 content parts 最前面
+  - 舊版 MCP client 自動相容（不接 `_broadcast` 欄位也能看到，因為就是 text）
+
+**行為**
+- User 每天第一次 call ownmind → 一定看到廣播
+- 上次 call 超過 4h（午休 / 過夜）→ 再次注入
+- 同 session 狂 call → cooldown 擋住不刷屏
+- 每則廣播有自己的 cooldown_minutes（升級提醒 30 分、一般 1440 分）
+
+**測試**
+- 新增 5 個 test 於 `tests/broadcast.test.js`：missing tool 400、first-of-day force、4h gap force、cooldown 擋注入、unauthenticated 401
+- **455 tests pass**（P3 後 450 + P4 新增 5）
+
+---
+
 ### P3 — Claude Code SessionStart Hook 讀廣播（Layer 1）
 
 **新增**

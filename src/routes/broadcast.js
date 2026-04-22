@@ -3,7 +3,7 @@ import { query as defaultQuery } from '../utils/db.js';
 import defaultAuth from '../middleware/auth.js';
 import defaultAdminAuth, { superAdminAuth as defaultSuperAdminAuth } from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
-import { filterVisibleBroadcasts } from '../lib/broadcast-filter.js';
+import { filterVisibleBroadcasts, filterInjectable } from '../lib/broadcast-filter.js';
 
 const VALID_TYPES = new Set(['announcement', 'upgrade_reminder', 'maintenance', 'rule_change']);
 const VALID_SEVERITY = new Set(['info', 'warning', 'critical']);
@@ -267,7 +267,103 @@ export function createBroadcastRouter(deps = {}) {
     }
   });
 
+  // ============================================================
+  // MCP: 取「現在該注入的廣播」— 每次 ownmind_* tool call 時都 ping
+  //
+  // 此 endpoint 負責「時機決策」而非「可見性」：
+  //   1. Upsert user_tool_last_seen（供首次 / 4h 判定）
+  //   2. 判 is_first_of_day（Asia/Taipei）、is_long_gap（> 4h）
+  //   3. filterVisibleBroadcasts → filterInjectable（forceInject=首次 or 長間隔）
+  //   4. Mark last_injected_at 於 user_broadcast_state
+  //   5. 回傳 { broadcasts: [...] } 給 MCP client prepend 到 tool response text
+  //
+  // Server side effects only，MCP client 只要把回來的文字塞前面即可。
+  // ============================================================
+  router.post('/inject', auth, async (req, res) => {
+    try {
+      const tool = String((req.body && req.body.tool) || req.query.tool || '').trim();
+      if (!tool) return res.status(400).json({ error: 'tool 是必填' });
+      const client_version = (req.body && req.body.client_version)
+        || req.query.client_version
+        || req.headers['x-ownmind-version']
+        || null;
+
+      const nowTs = now();
+      const user_id = req.user.id;
+
+      // 1. 取上次 seen（判首次 / 4h）
+      const seen = await query(
+        `SELECT last_mcp_call_at, last_day_seen_tpe FROM user_tool_last_seen
+          WHERE user_id = $1 AND tool = $2`,
+        [user_id, tool]
+      );
+      const prev = seen.rows[0] || null;
+      const todayTpe = toTpeDate(nowTs);
+      const isFirstOfDay = !prev
+        || !prev.last_day_seen_tpe
+        || new Date(prev.last_day_seen_tpe).toISOString().slice(0, 10) < todayTpe;
+      const isLongGap = !!prev && prev.last_mcp_call_at
+        && (nowTs.getTime() - new Date(prev.last_mcp_call_at).getTime()) > 4 * 3600 * 1000;
+      const forceInject = isFirstOfDay || isLongGap;
+
+      // 2. Upsert user_tool_last_seen（即使沒廣播要 inject，也要更新）
+      await query(
+        `INSERT INTO user_tool_last_seen (user_id, tool, last_mcp_call_at, last_day_seen_tpe)
+         VALUES ($1, $2, $3, $4::date)
+         ON CONFLICT (user_id, tool) DO UPDATE
+           SET last_mcp_call_at = EXCLUDED.last_mcp_call_at,
+               last_day_seen_tpe = EXCLUDED.last_day_seen_tpe`,
+        [user_id, tool, nowTs, todayTpe]
+      );
+
+      // 3. filter visible → injectable
+      const visible = await filterVisibleBroadcasts(query, {
+        user_id, tool, client_version, now: nowTs
+      });
+      const injectable = filterInjectable(visible, { forceInject, now: nowTs });
+
+      if (injectable.length === 0) {
+        return res.json({ broadcasts: [], force: forceInject });
+      }
+
+      // 4. Mark last_injected_at for each（non-blocking 方式，但用 Promise.all 保證 response 前完成）
+      const ids = injectable.map((bc) => bc.id);
+      await query(
+        `INSERT INTO user_broadcast_state (user_id, broadcast_id, tool, last_injected_at)
+         SELECT $1, id, $2, $3 FROM unnest($4::int[]) AS id
+         ON CONFLICT (user_id, broadcast_id, tool) DO UPDATE
+           SET last_injected_at = EXCLUDED.last_injected_at`,
+        [user_id, tool, nowTs, ids]
+      );
+
+      // 5. 回傳 — 只帶 MCP client 需要的欄位，不洩 internal state
+      res.json({
+        broadcasts: injectable.map((bc) => ({
+          id: bc.id,
+          type: bc.type,
+          severity: bc.severity,
+          title: bc.title,
+          body: bc.body,
+          cta_text: bc.cta_text,
+          cta_action: bc.cta_action,
+          allow_snooze: bc.allow_snooze,
+          snooze_hours: bc.snooze_hours
+        })),
+        force: forceInject
+      });
+    } catch (err) {
+      logger.error('broadcast/inject 失敗', { error: err.message });
+      res.status(500).json({ error: 'inject 失敗：' + err.message });
+    }
+  });
+
   return router;
+}
+
+function toTpeDate(date) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(date);
 }
 
 /**
