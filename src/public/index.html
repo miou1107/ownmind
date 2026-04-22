@@ -1228,7 +1228,9 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       const cacheIn   = Number(u.totals.cache_creation_tokens || 0);
       const cacheOut  = Number(u.totals.cache_read_tokens || 0);
       const displayName = u.user.name || u.user.email;
-      return `<tr style="cursor:pointer;" onclick="openMemberDetail(${u.user.id}, ${JSON.stringify(displayName)})" title="點擊查看詳情">
+      // onclick attribute：JSON.stringify 會產生雙引號 → 用 &quot; HTML-encode 避免斷掉 attribute
+      const nameArg = JSON.stringify(displayName).replace(/"/g, '&quot;');
+      return `<tr style="cursor:pointer;" onclick="openMemberDetail(${u.user.id}, ${nameArg})" title="點擊查看詳情">
       <td><span style="color:#7c3aed;text-decoration:underline;">${escapeHtml(displayName)}</span></td>
       <td style="text-align:right;">${fmtUsd(u.totals.cost_usd)}</td>
       <td style="text-align:right;">${fmtInt(input)}</td>
