@@ -34,7 +34,29 @@ export function createStatsRouter(deps = {}) {
         return res.status(400).json({ error: 'group_by 必須是 day/tool/model/session' });
       }
 
-      const userId = req.user.id;
+      // 決定要查哪個 user 的 stats：
+      //   - 預設：req.user.id（查自己）
+      //   - admin+ 可帶 ?user_id=N 查他人（dashboard 「團隊用量」點某成員展開詳情）
+      //   - 一般 user 帶 ?user_id 查他人 → 403
+      let userId = req.user.id;
+      if (req.query.user_id != null && req.query.user_id !== '') {
+        const requested = parseInt(req.query.user_id, 10);
+        if (!Number.isFinite(requested)) {
+          return res.status(400).json({ error: 'user_id 必須為整數' });
+        }
+        if (requested !== req.user.id) {
+          if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: '只有 admin 以上可查他人用量' });
+          }
+        }
+        userId = requested;
+      }
+
+      // 取 target user 的 name / email（用於 dashboard 顯示）
+      const target = userId === req.user.id
+        ? { id: req.user.id, name: req.user.name, email: req.user.email }
+        : await loadUserBasics({ query }, userId);
+      if (!target) return res.status(404).json({ error: '找不到該 user' });
 
       const totals = await loadTotals({ query }, userId, from, to);
       const series = await loadSeries({ query }, userId, from, to, groupBy);
@@ -43,11 +65,7 @@ export function createStatsRouter(deps = {}) {
       const isExempt = await isUserExempt({ query }, userId);
 
       res.json({
-        user: {
-          id: req.user.id,
-          name: req.user.name,
-          email: req.user.email
-        },
+        user: target,
         period: { from, to },
         totals,
         series,
@@ -88,6 +106,13 @@ function toYmd(date) {
     year: 'numeric', month: '2-digit', day: '2-digit'
   });
   return fmt.format(date);
+}
+
+async function loadUserBasics({ query }, userId) {
+  const r = await query(
+    `SELECT id, name, email FROM users WHERE id = $1 LIMIT 1`, [userId]
+  );
+  return r.rows[0] || null;
 }
 
 async function isUserExempt({ query }, userId) {
