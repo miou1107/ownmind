@@ -1213,7 +1213,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         <td style="text-align:right;">${r.output_per_1m}</td>
         <td style="text-align:right;">${r.cache_write_per_1m ?? '—'}</td>
         <td style="text-align:right;">${r.cache_read_per_1m ?? '—'}</td>
-        <td>${r.effective_date}</td>
+        <td>${String(r.effective_date || '').slice(0, 10)}</td>
       </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#86868b;">尚無定價</td></tr>';
     } catch (err) { showToast('載入定價失敗：' + err.message, true); }
   }
