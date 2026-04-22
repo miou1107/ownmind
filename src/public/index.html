@@ -405,6 +405,9 @@
 
   <!-- ===== TAB: 我的用量 (P8) ===== -->
   <div id="tab-usage" class="tab-content">
+    <div style="margin-bottom:12px;padding:10px 14px;background:#f5f3ff;border-left:3px solid #7c3aed;border-radius:6px;font-size:12px;color:#6d28d9;line-height:1.6;">
+      💡 <b>Notional 成本</b> = 按 Anthropic / OpenAI API rate card 換算的「若走 API 要付多少」；訂閱用戶（Claude Pro/Max、ChatGPT Plus/Pro 等）實際支出以訂閱方案為準，通常遠低於此。此數字主要用於 workload 規模比較與判斷訂閱划算度。
+    </div>
     <div class="card" style="margin-bottom:12px;">
       <div class="card-header"><h3>我的 Token 用量</h3>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -433,6 +436,9 @@
 
   <!-- ===== TAB: 團隊用量 (P9，admin+) ===== -->
   <div id="tab-team-usage" class="tab-content">
+    <div style="margin-bottom:12px;padding:10px 14px;background:#f5f3ff;border-left:3px solid #7c3aed;border-radius:6px;font-size:12px;color:#6d28d9;line-height:1.6;">
+      💡 <b>Notional 成本</b> = 按 API rate card 換算的「若走 API 要付多少」；訂閱用戶實際支出以方案為準。此欄位用於 workload 規模比較、跨成員公平度分析、判斷團隊訂閱方案是否划算。
+    </div>
     <!-- Coverage panel（spec D5） -->
     <div class="card" id="coveragePanel">
       <h3 style="margin-bottom:12px;">📊 覆蓋率</h3>
@@ -457,7 +463,7 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>成員</th><th style="text-align:right;">成本 (USD)</th>
+            <th>成員</th><th style="text-align:right;" title="按 API rate card 換算；訂閱用戶實際支出以方案為準">Notional 成本 (USD)</th>
             <th style="text-align:right;" title="真正新輸入的 tokens（不含 cache）">Input</th>
             <th style="text-align:right;" title="output + reasoning">Output</th>
             <th style="text-align:right;" title="cache_creation — 寫入 cache 的 tokens">Cache In</th>
@@ -1116,7 +1122,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
   function renderUsageTotals(t) {
     if (!t) { document.getElementById('usageTotals').innerHTML = ''; return; }
     const cards = [
-      { label: '總成本', value: fmtUsd(t.cost_usd) },
+      { label: 'Notional 成本 (API 等價)', value: fmtUsd(t.cost_usd) },
       { label: 'Input tokens', value: fmtInt(t.input_tokens) },
       { label: 'Output tokens', value: fmtInt(t.output_tokens) },
       { label: 'Cache Read', value: fmtInt(t.cache_read_tokens) },
