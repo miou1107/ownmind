@@ -98,14 +98,27 @@ export async function runScan(deps) {
   } = deps;
 
   const state = await readOffsets(cachePath);
-  const { events, offsetPatch, cumulativePatch, heartbeat } = await adapter.readSince(state);
+  const {
+    events, offsetPatch, cumulativePatch, heartbeat,
+    sessions = []        // Tier 2 adapters 會帶；Tier 1 預設空
+  } = await adapter.readSince(state);
 
-  // 空 scan：仍送 heartbeat（單次 empty-events + heartbeat 呼叫）
+  // 空 scan：送 heartbeat + 任何 sessions
   if (events.length === 0) {
-    if (heartbeat) {
-      await postBatch({ apiUrl, apiKey, fetchFn }, { events: [], heartbeat });
+    if (heartbeat || sessions.length > 0) {
+      const payload = { events: [], heartbeat };
+      if (sessions.length > 0) payload.sessions = sessions;
+      await postBatch({ apiUrl, apiKey, fetchFn }, payload);
     }
-    return { tool: adapter.tool, sent: 0, batches: 0, accepted: 0, duplicated: 0 };
+    // 仍需原子寫回 offset（Tier 2 session_date 可能推進）
+    if (Object.keys(offsetPatch).length > 0) {
+      const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
+      await writeOffsetsAtomic(cachePath, newState);
+    }
+    return {
+      tool: adapter.tool, sent: 0, batches: 0, accepted: 0, duplicated: 0,
+      sessions: sessions.length
+    };
   }
 
   const batches = chunk(events, BATCH_SIZE);
@@ -116,6 +129,7 @@ export async function runScan(deps) {
     const isLast = i === batches.length - 1;
     const payload = { events: batches[i] };
     if (isLast && heartbeat) payload.heartbeat = heartbeat;
+    if (isLast && sessions.length > 0) payload.sessions = sessions;
 
     const resp = await postBatch({ apiUrl, apiKey, fetchFn }, payload);
     accepted += Number(resp.accepted ?? 0);
@@ -132,7 +146,8 @@ export async function runScan(deps) {
     tool: adapter.tool,
     sent: events.length,
     batches: batches.length,
-    accepted, duplicated
+    accepted, duplicated,
+    sessions: sessions.length
   };
 }
 

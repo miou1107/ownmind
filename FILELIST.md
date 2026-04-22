@@ -77,7 +77,10 @@ OwnMind/
 │       ├── base.js                  # Scanner orchestrator：runScan / atomic offsets / batching（P4）
 │       ├── claude-code.js           # Claude Code JSONL adapter（session cumulative running total、byte_offset cursor）
 │       ├── codex.js                 # Codex JSONL adapter（event_msg/token_count → canonical material → message_id）
-│       └── opencode.js              # OpenCode SQLite adapter（sqlite3 CLI、composite (time_created, id) cursor）
+│       ├── opencode.js              # OpenCode SQLite adapter（sqlite3 CLI、composite (time_created, id) cursor）
+│       ├── vscode-telemetry.js      # Cursor/Antigravity 共用 helper（state.vscdb 讀取 + Taipei Ymd + 通用 adapter 工廠）
+│       ├── cursor.js                # Cursor Tier 2 adapter（session_count only）
+│       └── antigravity.js           # Antigravity Tier 2 adapter（session_count only）
 │
 ├── hooks/                           # Claude Code hook scripts（安裝時複製到 ~/.claude/hooks/）
 │   ├── package.json                 # ESM module declaration（type: module）
@@ -138,7 +141,8 @@ OwnMind/
 │   ├── scanner-lock.test.js         # acquireLock：live PID / stale PID / 6h mtime 接手
 │   ├── scanner-codex.test.js        # codex adapter：token_count → material → message_id / compact / byte_offset cursor
 │   ├── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
-│   └── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
+│   ├── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
+│   └── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

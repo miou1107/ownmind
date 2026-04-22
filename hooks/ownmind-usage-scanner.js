@@ -17,6 +17,8 @@ import { runScan } from '../shared/scanners/base.js';
 import { createClaudeCodeAdapter } from '../shared/scanners/claude-code.js';
 import { createCodexAdapter } from '../shared/scanners/codex.js';
 import { createOpenCodeAdapter } from '../shared/scanners/opencode.js';
+import { createCursorAdapter } from '../shared/scanners/cursor.js';
+import { createAntigravityAdapter } from '../shared/scanners/antigravity.js';
 
 const HOME = os.homedir();
 const LOG_PATH = path.join(HOME, '.ownmind', 'logs', 'scanner.log');
@@ -102,9 +104,13 @@ async function main() {
     const machine = os.hostname();
 
     const adapters = [
+      // Tier 1 — raw token events
       createClaudeCodeAdapter({ scannerVersion, machine }),
       createCodexAdapter({ scannerVersion, machine }),
-      createOpenCodeAdapter({ scannerVersion, machine })
+      createOpenCodeAdapter({ scannerVersion, machine }),
+      // Tier 2 — session_count only
+      createCursorAdapter({ scannerVersion, machine }),
+      createAntigravityAdapter({ scannerVersion, machine })
     ];
 
     for (const adapter of adapters) {

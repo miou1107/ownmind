@@ -208,6 +208,63 @@ describe('runScan', () => {
     assert.deepEqual(s, {}, 'failed scan must not advance offset');
   });
 
+  it('Tier 2 adapter (events=[], sessions=[...]) sends payload + persists offset', async () => {
+    const adapter = {
+      tool: 'cursor',
+      async readSince() {
+        return {
+          events: [],
+          sessions: [{ tool: 'cursor', date: '2026-04-21', count: 1, wall_seconds: 0 }],
+          offsetPatch: { cursor: { last_session_date: '2026-04-21' } },
+          cumulativePatch: {},
+          heartbeat: { tool: 'cursor', scanner_version: 'v', machine: 'h' }
+        };
+      }
+    };
+    const { fetchFn, calls } = makeFakeFetch([
+      { ok: true, json: { accepted: 0, duplicated: 0, sessions_upserted: 1 } }
+    ]);
+    const result = await runScan({
+      adapter, apiUrl: 'http://test', apiKey: 'x',
+      cachePath: CACHE_PATH, fetchFn, logger: { info: () => {} }
+    });
+    assert.equal(result.sessions, 1);
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].body.events, []);
+    assert.equal(calls[0].body.sessions.length, 1);
+    assert.ok(calls[0].body.heartbeat);
+    // offsetPatch 即使 events 空也要寫回
+    const saved = await readOffsets(CACHE_PATH);
+    assert.equal(saved.cursor.last_session_date, '2026-04-21');
+  });
+
+  it('sessions attached only to last batch when events split across batches', async () => {
+    const events = Array.from({ length: 600 }, (_, i) => ({
+      tool: 'mixed', session_id: 's', message_id: `m${i}`
+    }));
+    const adapter = {
+      tool: 'mixed',
+      async readSince() {
+        return {
+          events,
+          sessions: [{ tool: 'cursor', date: '2026-04-21', count: 1, wall_seconds: 0 }],
+          offsetPatch: {}, cumulativePatch: {},
+          heartbeat: { tool: 'mixed', scanner_version: 'v', machine: 'h' }
+        };
+      }
+    };
+    const { fetchFn, calls } = makeFakeFetch([
+      { ok: true, json: { accepted: 500 } },
+      { ok: true, json: { accepted: 100 } }
+    ]);
+    await runScan({
+      adapter, apiUrl: 'http://test', apiKey: 'x',
+      cachePath: CACHE_PATH, fetchFn, logger: { info: () => {} }
+    });
+    assert.equal(calls[0].body.sessions, undefined, '第一批不該有 sessions');
+    assert.equal(calls[1].body.sessions.length, 1, '最後一批才掛 sessions');
+  });
+
   it('empty events → sends heartbeat-only POST', async () => {
     const adapter = makeFakeAdapter([], { tool: 'claude-code', scanner_version: 'v', machine: 'h' });
     const { fetchFn, calls } = makeFakeFetch([{ ok: true, json: { accepted: 0, duplicated: 0 } }]);

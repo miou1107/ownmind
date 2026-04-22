@@ -114,6 +114,13 @@ function makeFakeQuery(state = { events: [], audits: [] }) {
       });
       return { rowCount: 1, rows: [{ id: state.events.length }] };
     }
+    // UPSERT session_count
+    if (/INSERT INTO session_count/.test(sql)) {
+      if (!state.session_counts) state.session_counts = [];
+      state.session_counts.push({ user_id: params[0], tool: params[1], date: params[2],
+        count: params[3], wall_seconds: params[4] });
+      return { rowCount: 1, rows: [] };
+    }
     // INSERT audit
     if (/INSERT INTO usage_audit_log/.test(sql)) {
       state.audits.push({
@@ -505,6 +512,74 @@ describe('Codex fingerprint flow (P3)', () => {
     assert.equal(collision.details.message_id, expectedId);
     assert.ok(collision.details.existing);
     assert.ok(collision.details.incoming);
+  });
+
+  it('upserts session_count when sessions array is present (P7 Tier 2)', async () => {
+    const state = { events: [], audits: [], knownModels: new Set() };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: {
+        events: [],
+        sessions: [
+          { tool: 'cursor', date: '2026-04-21', count: 1, wall_seconds: 0 },
+          { tool: 'antigravity', date: '2026-04-21', count: 1, wall_seconds: 0 }
+        ],
+        heartbeat: { tool: 'cursor', scanner_version: '1.16.0', machine: 'mac' }
+      }
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.sessions_upserted, 2);
+    assert.equal(state.session_counts.length, 2);
+    assert.equal(state.session_counts[0].tool, 'cursor');
+    assert.equal(state.session_counts[0].date, '2026-04-21');
+  });
+
+  it('rejects malformed session entries with per-session reason', async () => {
+    const state = { events: [], audits: [], knownModels: new Set() };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: {
+        events: [],
+        sessions: [
+          { tool: 'cursor', date: '2026-04-21' },          // ok（count 可選）
+          { tool: 'cursor', date: '2026/04/21' },          // 錯誤格式
+          { tool: 'cursor', date: '2026-04-21', count: -5 }  // 負數
+        ],
+        heartbeat: { tool: 'cursor' }
+      }
+    });
+    assert.equal(res.body.sessions_upserted, 1);
+    assert.equal(res.body.rejected.length, 2);
+  });
+
+  it('exempt user suppresses sessions too (not just events)', async () => {
+    const state = {
+      events: [], audits: [], knownModels: new Set(),
+      exemptions: [{ user_id: 1, reason: 'x' }]
+    };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: {
+        events: [],
+        sessions: [{ tool: 'cursor', date: '2026-04-21', count: 1, wall_seconds: 0 }]
+      }
+    });
+    assert.equal(state.session_counts, undefined, 'exempt user 不寫 session_count');
+    const audit = state.audits.find((a) => a.event_type === 'ingestion_suppressed_exempt');
+    assert.ok(audit);
+    assert.equal(audit.details.session_count, 1);
+    assert.ok(audit.details.tools.includes('cursor'));
+  });
+
+  it('rejects empty body (no events, no sessions, no heartbeat)', async () => {
+    const app = buildApp({ queryFn: async () => { throw new Error('no-db'); }, user: { id: 1 } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events', body: { events: [] }
+    });
+    assert.equal(res.status, 400);
   });
 
   it('accepts codex event when client id equals expectedId (no mismatch audit)', async () => {

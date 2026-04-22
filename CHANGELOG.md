@@ -1,5 +1,34 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P7：Cursor + Antigravity Tier 2）
+
+### 新增
+- `shared/scanners/vscode-telemetry.js` — VSCode-based IDE 共用 helper
+  - `readVscodeTelemetry({ dbPath, ... })` 透過 sqlite3 CLI 讀 `ItemTable` 的
+    `telemetry.firstSessionDate / lastSessionDate / currentSessionDate`
+  - `toTaipeiYmd(date)` 純函式（Intl.DateTimeFormat Asia/Taipei）
+  - `createVscodeAdapter({ tool, dbPath, ... })` 共用 adapter 工廠
+- `shared/scanners/cursor.js` — Cursor 薄包裝（DB 路徑依 platform）
+- `shared/scanners/antigravity.js` — Antigravity 薄包裝（同 VSCode schema）
+- Server `POST /api/usage/events` 接受 `sessions` array（Tier 2）
+  - 驗證 tool / date (YYYY-MM-DD) / count 非負 / wall_seconds 非負
+  - UPSERT `session_count`，`count / wall_seconds` 取 GREATEST 避免 race 回退
+  - Exempt user 同樣壓制（sessions 不入 DB，audit details 帶 session_count + tools）
+  - Response 新增 `sessions_upserted: N`
+- Wire Cursor + Antigravity 進主 scanner entry（與 Tier 1 三個 adapter 並列）
+
+### 改善
+- `shared/scanners/base.js` `runScan` 支援 adapter 回傳的 `sessions` array：
+  - 單批：events + sessions + heartbeat 一起送
+  - 多批：sessions 只附最後一批（與 heartbeat 同語義）
+  - 空 events + 有 sessions：仍寫 offsetPatch（Tier 2 `last_session_date` 推進）
+- `POST /api/usage/events` 允許「events=[] 但 sessions 非空」不再 400
+
+### Tests
+- `tests/scanner-cursor-antigravity.test.js`（14 tests）— toTaipeiYmd / readVscodeTelemetry（含 ENOENT）/ adapter 首次 scan / 同日不重發 / 新日重發
+- `tests/ingestion.test.js` 擴充 4 個：sessions upsert、rejected 驗證、exempt 壓制 sessions、empty body 400
+- `tests/scanner-base.test.js` 擴充 2 個：Tier 2 events=[]+sessions 流程、sessions 僅附最後一批
+
 ## v1.16.0（開發中）- Token 用量追蹤（P6：always-on collector）
 
 > **P9 gate 解除**：launchd / systemd / Task Scheduler 全部就位，scanner 不依賴
