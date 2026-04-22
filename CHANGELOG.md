@@ -1,5 +1,90 @@
 # OwnMind 更新紀錄
 
+## v1.16.0 - Token 用量追蹤系統（全 9 phase）
+
+> 跨 IDE token / 成本 / 工時追蹤，從 raw event 收集到團隊績效 dashboard 一條龍。
+> Spec / Plan：`docs/superpowers/specs/2026-04-21-token-usage-tracking-design.md`、`docs/superpowers/plans/2026-04-21-token-usage-tracking.md`
+> PR：#5
+
+### 新增功能
+
+**資料層**
+- `db/007_token_usage.sql`：7 張新表 — `model_pricing`、`token_events`（含 `cumulative_total_tokens NOT NULL` 與 `codex_fingerprint_material JSONB`）、`token_usage_daily`、`collector_heartbeat`、`session_count`、`usage_tracking_exemption`、`usage_audit_log`；附 claude-code / codex 初始定價
+- `src/utils/pricing-lookup.js`：`pickPricing` / `computeCost` / `lookupPricing` — effective_date 歷史版本查找，TZ-proof YYYY-MM-DD 比對，`id DESC` tiebreaker
+
+**API**
+- `POST /api/usage/events` — raw event ingestion（含 Tier 2 `sessions` array）
+  - 必填驗證、model allowlist、D7 token_regression 偵測、UNIQUE dedupe、觸發 aggregation
+  - Codex 專用：`codex_fingerprint_material` 必填 → server canonicalize → `expectedId` 強制覆寫；client id 錯誤寫 `fingerprint_mismatch`，ON CONFLICT 寫 `fingerprint_collision`
+  - Heartbeat UPSERT（支援空 events + heartbeat-only）
+  - Exemption 最早檢查、audit 壓制
+- `GET /api/usage/stats`（個人）— 日期區間、group_by 日/工具/model/session，Tier-1 + Tier-2 合併，`is_exempt` flag
+- `GET /api/usage/team-stats`（admin+）— coverage panel（`reporting_today` / `stale` / `opted_out` / `per_tool`）+ per-user aggregate
+- `GET /api/usage/pricing`、`POST /api/usage/pricing`（super_admin, append-only）
+- `usage_tracking_exemption` CRUD（super_admin），granted / reason_updated / revoked 三種 audit
+- `GET /api/usage/admin/audit`（admin+，可 filter event_type）
+
+**後端 Job**
+- `src/jobs/usage-aggregation.js` — `recomputeDaily`：冪等；cost 採 null-on-any-unknown policy；wall / active seconds 以 Asia/Taipei 切日、600s gap 判離線
+- `src/jobs/nightly-recompute.js` — 每日 03:00 Asia/Taipei 重算近 7 天（處理 pricing 變更 / 漏算）
+
+**Client Scanner（5 個 IDE）**
+- `shared/scanners/base.js` — 單一 `runScan` 流程（spec D11）：讀 offset → 分批 POST → 全部成功才原子寫回；失敗可無痛重送（server UNIQUE dedupe）
+- `shared/scanners/id-helper.js` — Codex 專用 canonical material + SHA-256 message_id（64 hex，client + server 共用同一支）
+- Tier 1：`claude-code.js`、`codex.js`（yyyy/mm/dd 遞迴）、`opencode.js`（sqlite3 CLI、composite `(time_created, id)` cursor）
+- Tier 2：`cursor.js`、`antigravity.js` 共用 `vscode-telemetry.js`（state.vscdb）
+- `hooks/ownmind-usage-scanner.js` — 主 entry；PID-aware 自我 lock（live/stale/6h mtime）；runtime opt-out flag
+
+**Always-on 排程**
+- `scripts/install-helpers/run-scanner.sh` — wrapper 動態找 node（`.node-path` → PATH → glob）+ v20+ 驗證
+- macOS launchd plist（30 分鐘 + RunAtLoad）
+- Linux systemd user timer（OnBootSec=5min + OnUnitActiveSec=30min）
+- Windows Task Scheduler（PS 腳本，單一 Once+Repetition trigger，WriteAllText 無 BOM）
+- `install.sh` / `install.ps1` 自動偵測 node、寫 `.node-path`、註冊 schedule；尊重 `~/.ownmind/.no-usage-scanner` opt-out
+
+**Dashboard（Admin 後台）**
+- 「我的用量」tab（所有 user）：日期區間 + group_by + 10 張 stat-mini 卡片 + bar chart + 追蹤狀態指示燈（`is_exempt` 警示）
+- 「團隊用量」tab（admin+）：coverage panel 強制顯示，< 80% 自動浮水印「資料不完整」；排行榜可依 cost / 訊息 / 活躍時長排序
+- Model 定價管理子面板（super_admin）：append-only 新增 effective_date row
+- Audit log 子面板（admin+）：event_type filter、最近 100 筆
+
+### 決策與鐵則
+
+- **Client 只送 raw event**（D1）：Cost 100% server-side 算；client 的 `native_cost_usd` 僅供比對
+- **Codex fingerprint**（D10 / D13）：完整 sha256 64 hex 不截斷（避免 `DO NOTHING` 永久丟資料）；server expectedId 為唯一 truth source
+- **Cost null policy**：任何 unknown pricing → 整筆 cost_usd = null（不做 partial cost；codex review 修復過的 P2 bug）
+- **Coverage gate**（D5）：團隊 dashboard < 80% 強制顯示「資料不完整」浮水印
+- **透明 opt-out**（D3）：豁免由 super_admin 在 dashboard 操作，用戶看得到狀態；無 local opt-out sentinel
+
+### 測試
+**361 tests pass**（既有 165 + P1–P9 本次 196 個新測試）
+- 單元：pricing-lookup、id-helper canonicalize / hash、aggregation（cost / wall / active）
+- Route：events（exempt / codex / heartbeat / sessions / null-cost）、stats、team-stats、pricing、exemptions
+- Scanner：base（atomic offsets / batching / crash-resume）、claude-code、codex、opencode、cursor/antigravity、run-scanner.sh wrapper（spawn bash + stub node）
+
+### 已知限制（deploy / 觀察期再處理）
+- 所有 SQL 尚未對真實 postgres 執行過；deploy 時以 `psql -f db/007_token_usage.sql` 驗證
+- 5 個 scanner 未 end-to-end 打真實 server 跑整輪；Vin 本機試跑 P4（Claude Code）為首批
+- launchd / systemd / Task Scheduler 三平台實機測試未做（plan P6 verify 條目）
+- `stale_users` / `exempt_users` array 無長度上限（>50 人團隊需 cap）
+- 24h–48h 灰區 user 不計入 reporting 也不計入 stale（寬鬆策略）
+- 尚無 uninstall 腳本（launchctl unload + 刪 plist）
+
+### 實作過程
+分 9 phase 交付，每 phase 走完 IR-012 品管三步驟（verification + code review + receiving review），codex adversarial review 全跑完畢並修復：
+- P1 DB schema + pricing API（`8ad2c63`）
+- P2 ingestion + aggregation + personal stats（`b067d96`）
+- P3 heartbeat + exemption + Codex fingerprint audit（`b9b7506`）
+- P4 Claude Code scanner + runScan orchestrator（`e498f43`）
+- P5 Codex + OpenCode scanners — Tier 1 完整（`2436a3d`）
+- P6 always-on collector — P9 gate 解除（`025f8f9`）
+- P7 Cursor + Antigravity Tier 2（`e0e15a9`）
+- P8 + P9 個人 + 團隊 dashboard（`3584b53`）
+- 修 codex review 4 個資料完整性 bug：Tier-2 session 合併、null-cost 傳遞（`ba4f671`）
+
+---
+
+
 ## v1.15.4 - SessionStart 可靠觸發 + 鐵律顯著標記
 
 ### 修復

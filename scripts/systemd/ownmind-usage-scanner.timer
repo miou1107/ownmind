@@ -1,0 +1,12 @@
+[Unit]
+Description=Run OwnMind token usage scanner every 30 minutes
+
+[Timer]
+# 開機後 5 分鐘首次執行，之後每 30 分鐘
+OnBootSec=5min
+OnUnitActiveSec=30min
+Persistent=true
+Unit=ownmind-usage-scanner.service
+
+[Install]
+WantedBy=timers.target

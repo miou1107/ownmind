@@ -13,7 +13,8 @@ const app = express();
 // 安全性與基本中介層
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
-app.use(express.json());
+// JSON body limit 10MB 以容納 scanner 500-event batch（單 event 可達 ~2KB）
+app.use(express.json({ limit: '10mb' }));
 
 // 靜態檔案（Admin 後台）
 app.use('/admin', express.static(join(__dirname, 'public')));
@@ -36,6 +37,7 @@ import adminRoutes from './routes/admin.js';
 import secretRoutes from './routes/secret.js';
 import exportRoutes from './routes/export.js';
 import activityRoutes from './routes/activity.js';
+import usageRoutes from './routes/usage/index.js';
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
@@ -44,6 +46,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/usage', usageRoutes);
 
 // 根路徑導向 Admin
 app.get('/', (req, res) => {

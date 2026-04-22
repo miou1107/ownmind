@@ -267,6 +267,28 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
   }
 }
 
+# --- Always-on Usage Scanner（P6）---
+# Opt-out：~/.ownmind/.no-usage-scanner 存在 → 跳過
+$NoScannerFlag = Join-Path $OwnmindDir '.no-usage-scanner'
+if (Test-Path $NoScannerFlag) {
+  Write-Host "   跳過 usage scanner 安裝（.no-usage-scanner opt-out）"
+} else {
+  Write-Host "   安裝 usage scanner..."
+  # Scanner entry 已隨 repo clone 到 $OwnmindDir\hooks\ownmind-usage-scanner.js
+  # 註冊 Task Scheduler（register-scanner-task.ps1 內建 node 偵測 + v20+ 驗證 + .node-path 快取）
+  $RegisterScript = Join-Path $OwnmindDir 'scripts\windows\register-scanner-task.ps1'
+  if (Test-Path $RegisterScript) {
+    try {
+      & powershell -ExecutionPolicy Bypass -File $RegisterScript
+      Write-Host "   Task Scheduler 已註冊（每 30 分鐘執行）" -ForegroundColor Green
+    } catch {
+      Write-Host "   Task Scheduler 註冊失敗: $_" -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "   找不到 register-scanner-task.ps1；請手動執行" -ForegroundColor Yellow
+  }
+}
+
 Write-Host ""
 Write-Host "OwnMind 安裝完成！" -ForegroundColor Green
 Write-Host ""

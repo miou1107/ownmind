@@ -1,0 +1,10 @@
+[Unit]
+Description=OwnMind token usage scanner
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash %h/.ownmind/bin/run-scanner.sh
+# 失敗不 retry，等下一次 timer 觸發
+Restart=no
+# 確保 $HOME / PATH 可用
+Environment=LANG=en_US.UTF-8

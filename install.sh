@@ -245,6 +245,97 @@ else
   echo "   ⚠️ 找不到 git，跳過 global hooks path 設定"
 fi
 
+# --- 4e. Always-on Usage Scanner（P6）---
+# 目標：launchd (macOS) / systemd (Linux) 每 30 分鐘自動跑 scanner，
+#       不依賴 user 開啟 IDE，確保 coverage panel 不掉單。
+# 跳過條件：$HOME/.ownmind/.no-usage-scanner 存在 → opt-out
+
+NO_SCANNER_FLAG="$HOME/.ownmind/.no-usage-scanner"
+if [ -f "$NO_SCANNER_FLAG" ]; then
+  echo "   跳過 usage scanner 安裝（.no-usage-scanner opt-out）"
+elif [ "$IS_WINDOWS" = true ]; then
+  echo "   （Windows）usage scanner 請用 install.ps1 註冊 Task Scheduler"
+else
+  echo "   安裝 usage scanner..."
+
+  OWNMIND_BIN_DIR="$HOME/.ownmind/bin"
+  mkdir -p "$OWNMIND_BIN_DIR"
+
+  # 4e-1 複製 scanner entry + 所有 shared 模組（scanner 需要 id-helper, base, adapters）
+  # 注意：此 cp 對 git-clone 場景是冗餘的（$OWNMIND_DIR 已是 ~/.ownmind 本身），
+  # 但 idempotent；保留作為防禦式覆寫，避免部分 clone / 手動放置檔案的情境缺檔
+  cp "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" "$HOME/.ownmind/hooks/"
+  chmod +x "$HOME/.ownmind/hooks/ownmind-usage-scanner.js"
+  mkdir -p "$HOME/.ownmind/shared/scanners"
+  for f in id-helper.js base.js claude-code.js codex.js opencode.js; do
+    if [ -f "$OWNMIND_DIR/shared/scanners/$f" ]; then
+      cp "$OWNMIND_DIR/shared/scanners/$f" "$HOME/.ownmind/shared/scanners/"
+    fi
+  done
+  # scanner 也依賴 shared/helpers.js（readCredentials、getClientVersion）
+  if [ -f "$OWNMIND_DIR/shared/helpers.js" ]; then
+    cp "$OWNMIND_DIR/shared/helpers.js" "$HOME/.ownmind/shared/"
+  fi
+
+  # 4e-2 複製 wrapper script
+  cp "$OWNMIND_DIR/scripts/install-helpers/run-scanner.sh" "$OWNMIND_BIN_DIR/"
+  chmod +x "$OWNMIND_BIN_DIR/run-scanner.sh"
+
+  # 4e-3 偵測 node 並寫入 .node-path
+  NODE_BIN="$(command -v node 2>/dev/null || true)"
+  if [ -z "$NODE_BIN" ]; then
+    echo "   ⚠️ 找不到 node；請先安裝 Node.js v20+ 再重跑"
+  else
+    NODE_VER="$("$NODE_BIN" --version 2>/dev/null || echo 'unknown')"
+    NODE_MAJOR="$(echo "$NODE_VER" | sed -E 's/^v([0-9]+).*/\1/')"
+    if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 20 ] 2>/dev/null; then
+      echo "$NODE_BIN" > "$HOME/.ownmind/.node-path"
+      echo "   使用 node: $NODE_BIN ($NODE_VER)"
+    else
+      echo "   ⚠️ node 版本過舊 ($NODE_VER)；scanner 需要 v20+。請升級後重跑"
+    fi
+  fi
+
+  # 4e-4 安裝排程（macOS launchd / Linux systemd user timer）
+  case "$OSTYPE" in
+    darwin*)
+      LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
+      mkdir -p "$LAUNCH_AGENTS"
+      PLIST_PATH="$LAUNCH_AGENTS/com.ownmind.usage-scanner.plist"
+      # 把 {HOME} 佔位符替換成實際 $HOME
+      sed "s|{HOME}|$HOME|g" "$OWNMIND_DIR/scripts/launchd/com.ownmind.usage-scanner.plist" > "$PLIST_PATH"
+
+      # unload 舊的（如果存在）再 load 新的，確保變更生效
+      launchctl unload "$PLIST_PATH" 2>/dev/null || true
+      if launchctl load -w "$PLIST_PATH" 2>/dev/null; then
+        echo "   ✅ launchd agent loaded (30 min interval)"
+      else
+        echo "   ⚠️ launchctl load 失敗；請手動檢查 $PLIST_PATH"
+      fi
+      ;;
+    linux*)
+      if command -v systemctl &>/dev/null; then
+        SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+        mkdir -p "$SYSTEMD_USER_DIR"
+        cp "$OWNMIND_DIR/scripts/systemd/ownmind-usage-scanner.service" "$SYSTEMD_USER_DIR/"
+        cp "$OWNMIND_DIR/scripts/systemd/ownmind-usage-scanner.timer" "$SYSTEMD_USER_DIR/"
+
+        systemctl --user daemon-reload 2>/dev/null || true
+        if systemctl --user enable --now ownmind-usage-scanner.timer 2>/dev/null; then
+          echo "   ✅ systemd user timer enabled (30 min interval)"
+        else
+          echo "   ⚠️ systemd user timer 啟用失敗；請手動 systemctl --user enable --now ownmind-usage-scanner.timer"
+        fi
+      else
+        echo "   ⚠️ 找不到 systemctl；請手動設定 cron 或排程"
+      fi
+      ;;
+    *)
+      echo "   ⚠️ 未知 OS ($OSTYPE)；scanner 只安裝檔案，未註冊自動排程"
+      ;;
+  esac
+fi
+
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"

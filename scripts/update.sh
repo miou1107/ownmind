@@ -28,6 +28,13 @@ if [ -d "$HOME/.claude" ]; then
   echo "   ✅ hook scripts 已同步"
 fi
 
+# --- 2b. 同步 usage scanner（需要 shared/ 模組，留在 $OWNMIND_DIR 本體下執行）---
+# P6 的 launchd / systemd 會呼叫 $OWNMIND_DIR/hooks/ownmind-usage-scanner.js
+if [ -f "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" ]; then
+  chmod +x "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js"
+  echo "   ✅ usage scanner 已就緒"
+fi
+
 # --- 3. 確保 Claude Code settings.json 有所有 hook 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 ERR_LOG="$HOME/.ownmind/logs/update-errors.log"

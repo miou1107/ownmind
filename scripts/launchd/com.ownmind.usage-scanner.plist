@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.ownmind.usage-scanner.plist — macOS launchd agent
+
+  安裝路徑：~/Library/LaunchAgents/com.ownmind.usage-scanner.plist
+  載入：    launchctl load -w ~/Library/LaunchAgents/com.ownmind.usage-scanner.plist
+
+  {HOME} 佔位符由 install.sh 以 sed 替換為實際 $HOME 路徑（plist 無法讀環境變數）。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ownmind.usage-scanner</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>{HOME}/.ownmind/bin/run-scanner.sh</string>
+  </array>
+
+  <!-- 每 1800 秒 (30 分鐘) 跑一次 -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <!-- 載入時立刻跑一次 -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Log 分流 -->
+  <key>StandardOutPath</key>
+  <string>{HOME}/.ownmind/logs/launchd.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>{HOME}/.ownmind/logs/launchd.stderr.log</string>
+
+  <!-- 只在有使用者登入時執行；避免開機冷啟搶資源 -->
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
