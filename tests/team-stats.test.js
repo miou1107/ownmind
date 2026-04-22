@@ -110,6 +110,28 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     assert.equal(res.body.users[0].totals.session_count, 3);
   });
 
+  it('P2 regression: user with no activity shows cost_usd=0 (not null from LEFT JOIN)', async () => {
+    // 回 cost_usd: 0 代表 bool_or 已正確排除 LEFT JOIN 的 NULL 列
+    // （實測 staging 曾回 null，因 bool_or(NULL IS NULL)=true 誤判）
+    const fakeQuery = async (sql) => {
+      if (/user_status AS/.test(sql)) return { rows: [] };
+      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
+        return { rows: [{ id: 1, name: 'Fresh User', email: 'fresh@x.com',
+          cost_usd: 0, input_tokens: '0', output_tokens: '0',
+          cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
+          message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0 }] };
+      }
+      if (/FROM session_count\s+WHERE date/.test(sql)) return { rows: [] };
+      throw new Error('unexpected SQL');
+    };
+    const app = buildApp({ queryFn: fakeQuery, user: { id: 9, role: 'admin' } });
+    const res = await request(app, { path: '/api/usage/team-stats' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.users[0].totals.cost_usd, 0,
+      '完全沒 activity 的 user 應顯示 0，不是 null');
+  });
+
   it('P2 regression: cost_usd is null when any day had unknown pricing', async () => {
     // Simulate DB returning NULL cost_usd (what Tier-1 SQL returns when bool_or kicks in)
     const fakeQuery = async (sql) => {

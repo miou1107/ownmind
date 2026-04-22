@@ -130,9 +130,11 @@ async function loadCoverage({ query }) {
 
 async function loadUsersAggregate({ query }, from, to) {
   // Tier 1 per-user aggregate（含 null-cost policy）
+  // bool_or 要排除 LEFT JOIN 補出的純 NULL 列（d.id IS NULL = 無 matching row），
+  // 否則完全沒 activity 的 user 會被誤判為「有 unknown pricing」→ cost_usd=null
   const tier1 = await query(
     `SELECT u.id, u.name, u.email,
-            CASE WHEN bool_or(d.cost_usd IS NULL) THEN NULL
+            CASE WHEN bool_or(d.id IS NOT NULL AND d.cost_usd IS NULL) THEN NULL
                  ELSE COALESCE(SUM(d.cost_usd), 0)::float END AS cost_usd,
             COALESCE(SUM(d.input_tokens), 0)::bigint      AS input_tokens,
             COALESCE(SUM(d.output_tokens), 0)::bigint     AS output_tokens,
