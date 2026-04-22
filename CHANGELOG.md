@@ -1,5 +1,30 @@
 # OwnMind 更新紀錄
 
+## v1.16.0（開發中）- Token 用量追蹤（P6：always-on collector）
+
+> **P9 gate 解除**：launchd / systemd / Task Scheduler 全部就位，scanner 不依賴
+> user 主動開 IDE，為 P9 團隊 dashboard coverage panel 鋪路。
+
+### 新增
+- `scripts/install-helpers/run-scanner.sh` — wrapper script（D12）
+  - 動態找 node：`.node-path` cache → PATH → `/opt/homebrew/bin` / `/usr/local/bin` / nvm glob（sort -rV 取最新）
+  - 每個候選都要通過 `--version` 且 major ≥ `OWNMIND_MIN_NODE_MAJOR`（預設 20），版本不合格寫入 err log
+  - 找不到 node → exit 1 + 明確錯誤寫 `~/.ownmind/logs/scanner.err`
+  - 找不到 scanner.js → exit 2
+  - 選用 node 後 log 印 `using node=<path> version=<v>`（heartbeat 故障時好追）
+  - 測試用 env：`OWNMIND_SKIP_SYSTEM_CANDIDATES=1` 關閉系統候選（避免真實 node 干擾 test）
+- `scripts/launchd/com.ownmind.usage-scanner.plist`（macOS）— 每 30 分鐘 + RunAtLoad，log 分流 launchd.stdout/stderr
+- `scripts/systemd/ownmind-usage-scanner.{service,timer}`（Linux）— user timer，開機後 5 分鐘首次 + 每 30 分鐘
+- `scripts/windows/register-scanner-task.ps1`（Windows）— Task Scheduler，自帶 node 偵測 + v20+ 檢查 + `.node-path` 快取
+- `tests/run-scanner-wrapper.test.js`（7 tests）— spawn 真實 bash 配合 stub node 驗證完整候選選擇 / 版本守衛 / 錯誤路徑
+
+### 改善
+- `install.sh` 加入 4e 區塊：複製 scanner + shared modules + wrapper，偵測 node 寫入 `.node-path`，macOS 自動 `launchctl load -w`、Linux 自動 `systemctl --user enable --now`；尊重 `~/.ownmind/.no-usage-scanner` opt-out
+- `install.ps1` 對應加入：偵測 opt-out flag，呼叫 `register-scanner-task.ps1`
+
+### Opt-out
+使用者可以建立 `~/.ownmind/.no-usage-scanner` 檔案跳過自動排程安裝（install.sh / install.ps1 都尊重此旗標）。
+
 ## v1.16.0（開發中）- Token 用量追蹤（P5：Codex + OpenCode scanner）
 
 ### 新增

@@ -95,7 +95,16 @@ OwnMind/
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
-│   └── migrate-verification.js      # 鐵律 verification 一次性遷移
+│   ├── migrate-verification.js      # 鐵律 verification 一次性遷移
+│   ├── install-helpers/
+│   │   └── run-scanner.sh           # Usage scanner wrapper：動態找 node + v20+ 驗證（D12）
+│   ├── launchd/
+│   │   └── com.ownmind.usage-scanner.plist  # macOS launchd agent（30 分鐘 + RunAtLoad）
+│   ├── systemd/
+│   │   ├── ownmind-usage-scanner.service    # Linux user service（oneshot）
+│   │   └── ownmind-usage-scanner.timer      # Linux user timer（開機 5 分鐘 + 每 30 分鐘）
+│   └── windows/
+│       └── register-scanner-task.ps1        # Windows Task Scheduler 註冊腳本
 │
 ├── configs/                         # 各工具的全域強制規則（安裝時複製到對應位置）
 │   ├── CLAUDE.md                    # Claude Code → ~/.claude/CLAUDE.md
@@ -128,7 +137,8 @@ OwnMind/
 │   ├── scanner-claude-code.test.js  # claude-code adapter：fixture parse / cumulative / crash-resume / replay safety
 │   ├── scanner-lock.test.js         # acquireLock：live PID / stale PID / 6h mtime 接手
 │   ├── scanner-codex.test.js        # codex adapter：token_count → material → message_id / compact / byte_offset cursor
-│   └── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
+│   ├── scanner-opencode.test.js     # opencode adapter：composite cursor / interleaved sessions / SQL escape
+│   └── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
