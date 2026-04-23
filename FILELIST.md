@@ -161,7 +161,8 @@ OwnMind/
 │   ├── semver.test.js               # v1.17.0 — parseSemver / compareSemver（pre-release / build metadata / malformed）
 │   ├── broadcast.test.js            # v1.17.0 P2 — validate / CRUD / snooze / filter / cooldown / nightly job（46 tests）
 │   ├── session-start-render.test.js # v1.17.0 P3 — renderSessionContext（broadcasts + memory）
-│   └── mcp-startup-heartbeat.test.js # MCP 啟動時自動觸發 heartbeat 的靜態檢查（v1.17.4）
+│   ├── mcp-startup-heartbeat.test.js # MCP 啟動時自動觸發 heartbeat 的靜態檢查（v1.17.4）
+│   └── heartbeat-once-per-process.test.js # Heartbeat 每個 MCP process 最多發一次（crash-loop 保護，v1.17.5）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README

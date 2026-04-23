@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.5 — Heartbeat 一行程每次最多一次（crash-loop 保護）
+
+**背景**：v1.17.4 在 MCP server 啟動時加了 heartbeat 觸發。若某位使用者的 MCP 被配錯導致 crash-loop（啟動 → crash → 重啟），每次重啟都會發一次 heartbeat，理論上可以飆到每分鐘數十次。server 端 UPSERT 是 O(1) 不會炸，但 log 會被灌爆、DB 連線池壓力增加。
+
+**修正**
+- `mcp/index.js`：`sendMcpHeartbeat` 加 module-scope flag `heartbeatSent`，每個 MCP process 最多發 1 次 heartbeat，不管呼叫幾次。flag 設在 `await` 之前，所以平行/高速連續呼叫也會 short-circuit（不會競爭發多個 POST）。
+- 副作用（好的）：v1.17.4 code review 的 M1「startup + ownmind_init 會 double-fire」自動解決 — startup 搶到 flag 後，ownmind_init 的呼叫直接 early return。
+
+**新增測試**
+- `tests/heartbeat-once-per-process.test.js`：靜態檢查 `mcp/index.js` 有 module-scope flag + early-return guard + 設 flag 時序正確（必須在 await 之前）。
+
+**升級方式**
+v1.17.4 → v1.17.5：跑 `bash ~/.ownmind/scripts/interactive-upgrade.sh` 或對 AI 說「升級 OwnMind」。舊版（< v1.17.4）使用者看到的 v1.17.4 廣播會把他們直接帶到 main 最新版（含本版修正），不需要另發廣播。
+
+---
+
 ## v1.17.4 — MCP 啟動即發 heartbeat（自動安裝回報）
 
 **背景**：v1.17.2 引入的 heartbeat 只在 `ownmind_init` 時觸發。只用 `ownmind_get` / `ownmind_save` 等工具、從不呼叫 init 的已安裝使用者，在 Admin 的「裝機狀況」永遠顯示「未裝」。
