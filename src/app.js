@@ -81,6 +81,18 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Public bootstrap scripts — served without auth so fresh machines can
+// `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash` before they
+// have an API key. See docs/superpowers/plans/2026-04-23-universal-bootstrap.md.
+app.get('/bootstrap.sh', (req, res) => {
+  res.type('text/x-shellscript; charset=utf-8');
+  res.sendFile(join(__dirname, '..', 'scripts', 'bootstrap.sh'), { dotfiles: 'allow' });
+});
+app.get('/bootstrap.ps1', (req, res) => {
+  res.type('text/plain; charset=utf-8');
+  res.sendFile(join(__dirname, '..', 'scripts', 'bootstrap.ps1'), { dotfiles: 'allow' });
+});
+
 // 錯誤處理中介層
 app.use((err, req, res, next) => {
   logger.error('未捕獲的錯誤', { error: err.message, stack: err.stack });
