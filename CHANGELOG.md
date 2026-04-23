@@ -1,5 +1,27 @@
 # OwnMind 更新紀錄
 
+## v1.17.2 — 版本檢查閉環（三層 drift detection）
+
+**Goal**：user 說「查版本」→ 三層完整檢查 → 有新版主動問是否升級 → 同意就一路跑完 interactive-upgrade.sh。
+
+**新增**
+- `scripts/check-sync.sh` — 三層 OwnMind 健檢腳本：
+  - **L1 Remote**：`~/.ownmind` git HEAD vs origin/main（偵測 auto-update 沒拉到的情況）
+  - **L2 Server**：client `package.json.version` vs server `server_version`（semver 比，pre-release 視為低於 stable）
+  - **L3 Deploy**：比對 `~/.claude/hooks/*`、`~/.claude/hooks/lib/*.js`、`~/.claude/skills/ownmind-*/SKILL.md` 跟 `~/.ownmind/` source 是否 byte-identical（抓 user 忘記跑 `update.sh` 的情境）
+  - 結構化 STDOUT（`L1_REMOTE:`、`L2_SERVER:`、`L3_DEPLOY:`、`L3_DRIFT_FILE:`、`OVERALL:`）供 skill 解析
+  - 永不 exit != 0，錯誤走 `error` 標籤
+- `skills/ownmind-upgrade.md` 擴充：
+  - 加「模式 A 查版本」觸發詞（「查版本」/「版本多少」/「我的版本」/「版號」/「check version」）
+  - 模式 A → call `check-sync.sh` → 解析三層 → 報告 user + 有 drift 主動問「要我幫你升嗎?」 → user 同意就導流模式 B
+  - 模式 B（升級）與模式 C（snooze）保留原邏輯
+
+**背景**：原本只靠廣播推 + 使用者主動說「我要升級」。現在加上 **user 主動查版本** 這個入口，且補上 **L3 deploy drift** 偵測（解決 `~/.ownmind` 已新但 `~/.claude/hooks/` 沒同步的盲區）。
+
+**測試**：手動模擬 drift（改 1 byte） → L3 正確列出 drifted 檔案；復原 → OVERALL:in_sync。
+
+---
+
 ## v1.17.1 — security patch + install.sh hotfix + npm audit 修復
 
 ### npm 依賴安全升級（2026-04-23）
