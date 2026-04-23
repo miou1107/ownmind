@@ -18,3 +18,12 @@ OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind
 - **WARNING / ERROR 等級** 或 **版本更新通知（upgrade_reminder）**：強制等級，必須在第一句回應中主動告知使用者通知內容與可執行動作（升級 / 已收到 / 暫緩）
 
 強制廣播出現時 context 中會有 `[SYSTEM] 強制行動要求` 標記，這是系統觸發的強制指令，不可忽略。
+
+## 新用戶 Onboarding 規則
+
+當 ownmind_init 回傳包含 `_onboarding_instruction` 時，必須：
+1. 立即向使用者提出問題（問題文字在 `_onboarding_instruction` 中）
+2. 收到回答後呼叫 `ownmind_save` 建立 type=profile 記憶，content 包含：名字、工作、使用工具
+3. 完成後告知用戶「已建立你的 OwnMind 個人記憶」
+
+不可跳過、不可等使用者主動詢問。
