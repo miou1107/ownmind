@@ -13,6 +13,19 @@ import {
 } from '../../../shared/scanners/id-helper.js';
 
 /**
+ * Server-side heartbeat rate limit (defense-in-depth, v1.17.5).
+ *
+ * Even with the client's once-per-process cap (mcp/index.js `heartbeatSent`),
+ * a misconfigured scanner or rogue client could still spam the endpoint.
+ * The UPSERT's ON CONFLICT WHERE clause suppresses writes when the last
+ * heartbeat for this (user, tool) was less than this many seconds ago.
+ * Atomic, single-query, zero extra round-trips.
+ *
+ * 30s ≈ balances "dashboard feels live" with "spam doesn't hit DB".
+ */
+const HEARTBEAT_RATE_LIMIT_SECONDS = 30;
+
+/**
  * POST /api/usage/events — Client scanner 轉發 raw events
  *
  * P3 新增：
@@ -382,6 +395,10 @@ async function upsertSessionCount({ query }, userId, s) {
 async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
   if (!heartbeat || typeof heartbeat !== 'object' || !heartbeat.tool) return;
   try {
+    // Rate-limited UPSERT: if an existing row's last_reported_at is younger
+    // than HEARTBEAT_RATE_LIMIT_SECONDS, DO UPDATE is suppressed by the WHERE
+    // clause → no write, zero audit noise. First-time inserts always land
+    // because ON CONFLICT only fires when a matching row already exists.
     await query(
       `INSERT INTO collector_heartbeat
          (user_id, tool, last_reported_at, scanner_version, machine, status)
@@ -390,7 +407,8 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
          last_reported_at = NOW(),
          scanner_version  = EXCLUDED.scanner_version,
          machine          = EXCLUDED.machine,
-         status           = 'active'`,
+         status           = 'active'
+       WHERE collector_heartbeat.last_reported_at < NOW() - INTERVAL '${HEARTBEAT_RATE_LIMIT_SECONDS} seconds'`,
       [userId, heartbeat.tool,
        heartbeat.scanner_version ?? null, heartbeat.machine ?? null]
     );
