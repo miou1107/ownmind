@@ -226,7 +226,6 @@ const TIPS = [
   '你說「這個專案做完了」，我會把它歸檔到作品集，記錄技術選型和心得',
 ];
 let lastTipIndex = -1;
-let tipCallCount = 0;
 function getRandomTip() {
   let idx;
   do { idx = Math.floor(Math.random() * TIPS.length); } while (idx === lastTipIndex && TIPS.length > 1);
@@ -993,9 +992,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     contentParts.push({ type: "text", text: `${tag}：` });
     contentParts.push({ type: "text", text: body });
-    if (++tipCallCount % 10 === 1) {
-      contentParts.push({ type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` });
-    }
+    // v1.17.7: tip fires on EVERY tool call (was every-10th via `% 10`).
+    // Skill doc promises "每次操作後附上一行" — honor that.
+    contentParts.push({ type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` });
     return { content: contentParts };
   } catch (error) {
     logEvent('error', { tool_name: name, error: error.message });
