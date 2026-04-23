@@ -1,5 +1,62 @@
 # OwnMind 更新紀錄
 
+## v1.17.6 — Universal Bootstrap（一句指令搞定安裝/升級/修復）
+
+**背景**：之前 install / upgrade 分成 4 支腳本（`install.sh` / `install.ps1` / `interactive-upgrade.sh` / `interactive-upgrade.ps1`），user 得自己判斷跑哪一支；新用戶更慘，完全不知道從哪開始。跨平台（Windows vs Mac）又多一層分岔。
+
+**新增**
+- `scripts/bootstrap.sh` + `scripts/bootstrap.ps1`：單一入口，自動三分支處理
+  1. `~/.ownmind` 不存在 → `git clone` + `install.sh/.ps1`（轉發 `$@` / `@args` 作為 API_KEY / API_URL）
+  2. 存在但不是 git repo（壞掉）→ 備份到 `~/.ownmind.broken.<timestamp>` + 重 clone + install
+  3. 是 git repo（正常）→ 轉交 `interactive-upgrade.*`
+- Express 新增 public routes：`GET /bootstrap.sh` + `GET /bootstrap.ps1`（不需 auth，給新機器用；boot 時 `readFileSync` 進記憶體，零 disk I/O per request）
+- `skills/ownmind-upgrade.md` 擴充：新觸發詞「裝」「重裝」「修」「OwnMind 壞了」「install」「repair」；新 Mode D 合併進 Mode B 統一走 bootstrap
+
+**修正（pre-existing bug，被 bootstrap 的升級路徑暴露出來）**
+- `scripts/interactive-upgrade.ps1` 原本呼叫 `install.ps1 --update`，但 `install.ps1` 沒有 `--update` 參數 — 它會把 `--update` 當成 `$args[0]` (API_KEY)，Windows 升級 silent mis-config。現在改成和 bash 版一致：從 `~/.claude/settings.json` 讀 credentials，以 positional args 傳給 `install.ps1`。
+
+**硬化（Codex review 建議）**
+- `bootstrap.sh` 加 `set -o pipefail`，避免 `git clone | while read` 遮蔽 git 失敗
+- `bootstrap.ps1` branch 2（壞掉修復）clone 後加 `$LASTEXITCODE` + `.git` 驗證（branch 1 本來就有）
+- `src/app.js` 拿掉 `sendFile` 的 `dotfiles: 'allow'`，改為 boot 時一次 `readFileSync` 到記憶體並從 buffer 回應
+
+**使用方式 — 任何平台、任何狀態**
+
+對 AI 說一句：
+- 「升級 OwnMind」 / 「裝 OwnMind」 / 「修 OwnMind」 / 「OwnMind 壞了」
+
+AI 自動偵測 OS + 狀態後執行正確動作。
+
+**或命令列 one-liner（不靠 AI）**
+
+Mac / Linux / Git Bash（**已安裝、只升級**）：
+```bash
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+```
+
+Mac / Linux / Git Bash（**首次安裝**，要提供 API key + URL）：
+```bash
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+```
+
+Windows PowerShell（**已安裝、只升級**）：
+```powershell
+iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+```
+
+Windows PowerShell（**首次安裝**）：
+```powershell
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+```
+
+**新增測試**
+- `tests/bootstrap-script.test.js`：靜態檢查兩支 bootstrap 腳本的三分支、+x bit、logging 格式、curl-pipe 安全性
+- `tests/bootstrap-routes.test.js`：Express integration tests（ephemeral listen + fetch）驗證 public routes 無 auth 回對的 content-type + body
+
+**IR-022 server + client 兩端皆觸及**：client 是兩支 bootstrap 腳本；server 是兩個 public routes + 修好的 `interactive-upgrade.ps1`。
+
+---
+
 ## v1.17.5 — Heartbeat 雙層防護（Client once-per-process + Server 30s rate-limit）
 
 **背景**：v1.17.4 在 MCP server 啟動時加了 heartbeat 觸發。若某位使用者的 MCP 被配錯導致 crash-loop（啟動 → crash → 重啟），每次重啟都會發一次 heartbeat，理論上可以飆到每分鐘數十次。server 端 UPSERT 是 O(1) 不會炸，但 log 會被灌爆、DB 連線池壓力增加。
