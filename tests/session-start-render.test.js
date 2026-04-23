@@ -62,6 +62,13 @@ describe('renderSessionContext — 廣播', () => {
     assert.ok(!out.includes('Line 5'));
   });
 
+  it('error 等級廣播附加 SYSTEM 強制指令 block', () => {
+    const out = renderSessionContext({ server_version: '1.17.0' }, [{
+      title: '嚴重錯誤', body: '請立即處理', severity: 'error'
+    }]);
+    assert.match(out, /\[SYSTEM\] 強制行動要求/);
+  });
+
   it('warning 等級廣播附加 SYSTEM 強制指令 block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '安全更新', body: '請盡快升級', severity: 'warning'
