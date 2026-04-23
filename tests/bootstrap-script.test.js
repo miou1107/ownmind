@@ -45,10 +45,10 @@ test('bootstrap.ps1 exists', () => {
 
 test('bootstrap.ps1 handles all three install states', () => {
   const src = readFileSync(ps1Path, 'utf8');
-  assert.match(src, /Test-Path\s+(?:-?\w+\s+)?\$OwnmindDir/i,
+  assert.match(src, /Test-Path\s+(?:-?\w+\s+)?"?\$OwnmindDir/i,
     'expected Test-Path $OwnmindDir check (no install branch)');
-  assert.match(src, /git\s+clone\s+\$Repo/i,
-    'expected git clone $Repo command');
+  assert.match(src, /git\s+clone\s+"?\$Repo"?\s+"?\$OwnmindDir/i,
+    'expected git clone $Repo $OwnmindDir command (quotes allowed for path-with-spaces safety)');
   assert.match(src, /\.broken\./,
     'expected timestamp-suffixed backup path for broken state');
   assert.match(src, /interactive-upgrade\.ps1/,

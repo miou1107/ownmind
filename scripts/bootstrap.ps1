@@ -31,15 +31,15 @@ function Log-Err($code, $msg)  { Write-Host "ERROR:${code}:${msg}" -ForegroundCo
 Log-Info detect "檢查 OwnMind 安裝狀態（$OwnmindDir）"
 
 # Branch 1: no install
-if (-not (Test-Path $OwnmindDir)) {
+if (-not (Test-Path "$OwnmindDir")) {
   Log-Info fresh "首次安裝，clone repo"
-  git clone $Repo $OwnmindDir
+  git clone "$Repo" "$OwnmindDir"
   if (-not (Test-Path "$OwnmindDir\.git")) {
     Log-Err git_clone "git clone 失敗，請檢查網路或 GitHub 權限"
     exit 1
   }
   Log-Ok clone "clone 完成"
-  Set-Location $OwnmindDir
+  Set-Location "$OwnmindDir"
   Log-Info install "執行 install.ps1"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗"; exit 1 }
@@ -51,11 +51,11 @@ if (-not (Test-Path $OwnmindDir)) {
 if (-not (Test-Path "$OwnmindDir\.git")) {
   $Bak = "$OwnmindDir.broken.$Ts"
   Log-Info broken "$OwnmindDir 存在但不是 git repo，備份至 $Bak"
-  Move-Item $OwnmindDir $Bak
+  Move-Item "$OwnmindDir" "$Bak"
   Log-Ok backup "已備份"
   Log-Info fresh "重新 clone"
-  git clone $Repo $OwnmindDir
-  Set-Location $OwnmindDir
+  git clone "$Repo" "$OwnmindDir"
+  Set-Location "$OwnmindDir"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗"; exit 1 }
   Log-Ok done "修復完成（舊資料保留於 $Bak，3 天後可手動刪除）"
