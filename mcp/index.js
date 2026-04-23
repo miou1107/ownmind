@@ -1088,5 +1088,10 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => emergencySessionLog());
 }
 
+// Fire-and-forget heartbeat on every MCP startup so already-installed users
+// appear as "installed" in Admin without manually running ownmind_init.
+// UPSERT keyed by (user_id, tool) — repeat calls just refresh last_reported_at.
+sendMcpHeartbeat();
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
