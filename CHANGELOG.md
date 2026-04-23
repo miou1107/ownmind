@@ -1,5 +1,18 @@
 # OwnMind 更新紀錄
 
+## v1.17.0.1 — hotfix: install.sh 升級情境 `cp` 同檔案錯
+
+**Bug**：升級既有 `~/.ownmind` 時，`install.sh` 多處 `cp $OWNMIND_DIR/X $HOME/.ownmind/X/` 源 == 目的路徑 → macOS `cp` 回 `... are identical (not copied).` → exit 1 → `interactive-upgrade.sh` 觸發 rollback → 客戶端無法升級（SessionStart hook 不會同步到 broadcast 檔案）。
+
+**Fix**：
+- `install.sh` 加 `safe_cp` helper：先用 bash `-ef` 判 source/dest 是否同 inode，相同就跳過
+- 5 處會 same-file 失敗的 `cp` 改用 `safe_cp`（verification.js、git hook JS、scanner entry、scanner/shared 模組、scanner wrapper）
+- 其餘 cp（複製到不同目錄）維持原狀
+
+**測試**：實機重跑 `install.sh` 完整通過；`~/.claude/hooks/lib/` + `ownmind-session-start.sh` 新版都 deliver 到位。
+
+---
+
 ## v1.17.0（開發中）— Client 版本 Dashboard、廣播通知、互動升級
 
 > 讓 admin 一眼看到裝機版本、推播提醒，讓 user 說「我要升級」就有 AI 自動完成。

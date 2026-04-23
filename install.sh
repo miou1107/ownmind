@@ -32,6 +32,24 @@ fi
 
 # --- 1. Clone MCP Server ---
 OWNMIND_DIR="$HOME/.ownmind"
+
+# safe_cp — 避免升級情境下 source == dest 時 macOS cp 報「identical」錯
+# 用法：safe_cp SRC DEST_DIR_OR_FILE
+safe_cp() {
+  local src="$1"
+  local dest="$2"
+  local resolved
+  if [ -d "$dest" ]; then
+    resolved="$dest/$(basename "$src")"
+  else
+    resolved="$dest"
+  fi
+  [ -f "$src" ] || return 1
+  if [ "$src" -ef "$resolved" ] 2>/dev/null; then
+    return 0
+  fi
+  cp "$src" "$dest"
+}
 if [ -d "$OWNMIND_DIR" ]; then
   echo "   更新 OwnMind MCP Server..."
   git -C "$OWNMIND_DIR" pull -q
@@ -259,16 +277,20 @@ mkdir -p "$HOME/.ownmind/hooks"
 mkdir -p "$HOME/.ownmind/git-hooks"
 
 # 複製 verification engine
-if [ -f "$OWNMIND_DIR/shared/verification.js" ]; then
-  cp "$OWNMIND_DIR/shared/verification.js" "$HOME/.ownmind/shared/"
+SRC_VERIFY="$OWNMIND_DIR/shared/verification.js"
+DST_VERIFY="$HOME/.ownmind/shared/verification.js"
+if [ -f "$SRC_VERIFY" ] && ! [ "$SRC_VERIFY" -ef "$DST_VERIFY" ]; then
+  cp "$SRC_VERIFY" "$DST_VERIFY"
   echo "   複製 verification engine"
 fi
 
 # 複製 git hook JS 檔案
 HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
 for js_file in "${HOOK_JS_FILES[@]}"; do
-  if [ -f "$OWNMIND_DIR/hooks/$js_file" ]; then
-    cp "$OWNMIND_DIR/hooks/$js_file" "$HOME/.ownmind/hooks/"
+  SRC_JS="$OWNMIND_DIR/hooks/$js_file"
+  DST_JS="$HOME/.ownmind/hooks/$js_file"
+  if [ -f "$SRC_JS" ] && ! [ "$SRC_JS" -ef "$DST_JS" ]; then
+    cp "$SRC_JS" "$DST_JS"
     echo "   複製 $js_file"
   fi
 done
@@ -309,24 +331,18 @@ else
   OWNMIND_BIN_DIR="$HOME/.ownmind/bin"
   mkdir -p "$OWNMIND_BIN_DIR"
 
-  # 4e-1 複製 scanner entry + 所有 shared 模組（scanner 需要 id-helper, base, adapters）
-  # 注意：此 cp 對 git-clone 場景是冗餘的（$OWNMIND_DIR 已是 ~/.ownmind 本身），
-  # 但 idempotent；保留作為防禦式覆寫，避免部分 clone / 手動放置檔案的情境缺檔
-  cp "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" "$HOME/.ownmind/hooks/"
+  # 4e-1 複製 scanner entry + 所有 shared 模組（safe_cp 處理 source==dest 升級情境）
+  safe_cp "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" "$HOME/.ownmind/hooks/"
   chmod +x "$HOME/.ownmind/hooks/ownmind-usage-scanner.js"
   mkdir -p "$HOME/.ownmind/shared/scanners"
   for f in id-helper.js base.js claude-code.js codex.js opencode.js; do
-    if [ -f "$OWNMIND_DIR/shared/scanners/$f" ]; then
-      cp "$OWNMIND_DIR/shared/scanners/$f" "$HOME/.ownmind/shared/scanners/"
-    fi
+    safe_cp "$OWNMIND_DIR/shared/scanners/$f" "$HOME/.ownmind/shared/scanners/"
   done
   # scanner 也依賴 shared/helpers.js（readCredentials、getClientVersion）
-  if [ -f "$OWNMIND_DIR/shared/helpers.js" ]; then
-    cp "$OWNMIND_DIR/shared/helpers.js" "$HOME/.ownmind/shared/"
-  fi
+  safe_cp "$OWNMIND_DIR/shared/helpers.js" "$HOME/.ownmind/shared/"
 
   # 4e-2 複製 wrapper script
-  cp "$OWNMIND_DIR/scripts/install-helpers/run-scanner.sh" "$OWNMIND_BIN_DIR/"
+  safe_cp "$OWNMIND_DIR/scripts/install-helpers/run-scanner.sh" "$OWNMIND_BIN_DIR/"
   chmod +x "$OWNMIND_BIN_DIR/run-scanner.sh"
 
   # 4e-3 偵測 node 並寫入 .node-path
