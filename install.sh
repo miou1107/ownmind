@@ -136,22 +136,70 @@ OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind
 CLAUDE_EOF
 fi
 
-# --- 4. 安裝 Skill ---
+# --- 4. 安裝 Skills ---
 SKILL_DIR="$HOME/.claude/skills/ownmind-memory"
 mkdir -p "$SKILL_DIR"
 cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$SKILL_DIR/SKILL.md"
-echo "   安裝 ownmind-memory skill"
 
-# --- 4b. 安裝 Hook Scripts ---
+# v1.17.0 P7：升級 skill（僅 Claude Code）
+UPGRADE_SKILL_DIR="$HOME/.claude/skills/ownmind-upgrade"
+mkdir -p "$UPGRADE_SKILL_DIR"
+cp "$OWNMIND_DIR/skills/ownmind-upgrade.md" "$UPGRADE_SKILL_DIR/SKILL.md"
+echo "   安裝 ownmind-memory + ownmind-upgrade skills (Claude Code)"
+
+# v1.17.0 P7：升級規則片段分發到其他 AI 工具（偵測目錄存在才裝，跳過未裝的）
+UPGRADE_SNIPPET="$OWNMIND_DIR/skills/ownmind-upgrade-agents-snippet.md"
+INSTALLED_TOOLS=0
+SKIPPED_TOOLS=0
+append_upgrade_rule_if_exists() {
+  local tool_name="$1"
+  local target_file="$2"
+  if [ -d "$(dirname "$target_file")" ] || [ "$3" = "force" ]; then
+    mkdir -p "$(dirname "$target_file")"
+    # 移除舊的 OwnMind 升級 rule 區塊（以 marker 包住）
+    if [ -f "$target_file" ]; then
+      node -e "
+        const fs = require('fs');
+        const p = process.argv[1];
+        let c = fs.readFileSync(p, 'utf8');
+        c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
+        fs.writeFileSync(p, c);
+      " "$target_file" 2>/dev/null || true
+    fi
+    {
+      echo ""
+      echo "<!-- ownmind-upgrade-rule -->"
+      cat "$UPGRADE_SNIPPET"
+      echo "<!-- /ownmind-upgrade-rule -->"
+    } >> "$target_file"
+    INSTALLED_TOOLS=$((INSTALLED_TOOLS + 1))
+    echo "   ✓ ${tool_name} → ${target_file}"
+  else
+    SKIPPED_TOOLS=$((SKIPPED_TOOLS + 1))
+  fi
+}
+append_upgrade_rule_if_exists "Codex"       "$HOME/.codex/AGENTS.md"
+append_upgrade_rule_if_exists "Cursor"      "$HOME/.cursor/rules/ownmind.md"
+append_upgrade_rule_if_exists "Antigravity" "$HOME/.antigravity/rules/ownmind.md"
+append_upgrade_rule_if_exists "OpenCode"    "$HOME/.opencode/AGENTS.md"
+append_upgrade_rule_if_exists "Windsurf"    "$HOME/.windsurf/rules/ownmind.md"
+append_upgrade_rule_if_exists "Gemini"      "$HOME/.gemini/GEMINI.md"
+echo "   安裝升級規則：${INSTALLED_TOOLS} 個工具已裝，${SKIPPED_TOOLS} 個未安裝已跳過"
+
+# --- 4b. 安裝 Hook Scripts + hooks/lib 模組（v1.17.0 P3）---
 HOOK_DIR="$HOME/.claude/hooks"
-mkdir -p "$HOOK_DIR"
+mkdir -p "$HOOK_DIR/lib"
 cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-worktree-setup.sh" "$HOOK_DIR/"
 chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
 chmod +x "$HOOK_DIR/ownmind-session-start.sh"
 chmod +x "$HOOK_DIR/ownmind-worktree-setup.sh"
-echo "   安裝 hook scripts (session-start + iron-rule-check + worktree-setup)"
+# 同步 hooks/lib（SessionStart hook render 模組等）
+if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
+  cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
+fi
+echo "   安裝 hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "

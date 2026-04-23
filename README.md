@@ -136,6 +136,16 @@ sequenceDiagram
 - **Session auto-logging** — AI auto-logs work summary with structured context at end of each conversation
 - **3-month compression** — Old session logs auto-compress into monthly summaries
 
+### Client Version Dashboard + Broadcast System `v1.17.0` *(in progress)*
+
+- **Installation coverage at a glance** — `Settings > Client Status` lists every user with per-tool `scanner_version`, last heartbeat, and one of five states: 🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 Needs Upgrade / ⚪ Not Installed
+- **Semver-based upgrade flag** — client auto-flagged if `scanner_version < SERVER_VERSION`; null / `unknown` / pre-release versions treated as needs-upgrade (follows SemVer 2.0.0)
+- **Multi-tool aggregation** — one user using Claude Code + Codex + Cursor shows up as a single row with all three listed
+- **Broadcast system** (P2) — super_admin publishes any message type (announcement / maintenance / rule_change) via `Settings > Broadcast Management`. Version targeting (`min_version` / `max_version`), per-user targeting, and opt-in snooze all supported
+- **Auto upgrade reminder** — nightly job (03:30 Asia/Taipei) creates an `upgrade_reminder` broadcast when the server version advances; uses `max_version=${SERVER_VERSION}-prev` + pre-release ordering so only outdated clients see it
+- **Cooldown per broadcast** — `cooldown_minutes` field prevents repeated MCP response injection within a short window; "first call of the day" and "4h gap" still force-inject for high-salience reminders
+- Interactive AI-assisted upgrade + MCP response injection coming in subsequent P3–P7 phases
+
 ### Token Usage Tracking `v1.16.0`
 
 - **Cross-IDE usage capture** — Automatic token + cost tracking for Tier 1 tools (Claude Code, Codex, OpenCode) with per-message granularity

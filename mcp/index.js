@@ -236,6 +236,57 @@ const toolCallCounts = {};
 let complianceEvents = [];
 let sessionLogged = false;
 
+// --- v1.17.0 P4: Broadcast fetch + render ---
+// 不 block tool call、失敗靜默、逾時 2s
+async function fetchBroadcastsSafely() {
+  if (!API_KEY) return '';
+  try {
+    const controller = new AbortController();
+    const to = setTimeout(() => controller.abort(), 2000);
+    const clientVersion = process.env.OWNMIND_VERSION || '';
+    const res = await fetch(`${API_URL}/api/broadcast/inject`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`,
+        ...(clientVersion ? { 'x-ownmind-version': clientVersion } : {})
+      },
+      body: JSON.stringify({ tool: TOOL_NAME, client_version: clientVersion || null }),
+      signal: controller.signal
+    }).finally(() => clearTimeout(to));
+    if (!res.ok) return '';
+    const data = await res.json();
+    const bcList = Array.isArray(data.broadcasts) ? data.broadcasts : [];
+    if (bcList.length === 0) return '';
+    return renderBroadcasts(bcList);
+  } catch {
+    return '';  // 網路異常 / timeout → 靜默
+  }
+}
+
+function renderBroadcasts(broadcasts) {
+  const lines = ['📢 OwnMind 系統通知'];
+  for (const bc of broadcasts.slice(0, 3)) {
+    const sev = String(bc.severity || 'info').toUpperCase();
+    lines.push(`[${sev}] ${String(bc.title || '').replace(/\n/g, ' ')}`);
+    const body = String(bc.body || '').split('\n').slice(0, 5).join(' ').slice(0, 400);
+    if (body) lines.push(body);
+    if (bc.cta_text) {
+      const hint = bc.cta_action === 'upgrade_ownmind' ? '讓 AI 幫你升級' : '';
+      lines.push(`👉 可說「${bc.cta_text}」${hint}`);
+    }
+    if (bc.allow_snooze) {
+      lines.push(`（不想現在處理？可說「暫緩升級」延後 ${bc.snooze_hours || 24} 小時）`);
+    }
+    lines.push('');
+  }
+  if (broadcasts.length > 3) {
+    lines.push(`（另有 ${broadcasts.length - 3} 則廣播未顯示）`);
+  }
+  lines.push('---');
+  return lines.join('\n');
+}
+
 // --- Helper ---
 async function callApi(method, path, body) {
   const url = `${API_URL}${path}`;
@@ -891,13 +942,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const typeName = resolveType(name, args);
     const tag = formatTag(typeName);
     const body = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-    return {
-      content: [
-        { type: "text", text: `${tag}：` },
-        { type: "text", text: body },
-        ...(++tipCallCount % 10 === 1 ? [{ type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` }] : []),
-      ],
-    };
+
+    // v1.17.0 P4：每次 ownmind_* tool call 後 ping server 要廣播注入
+    // 不 block 主流程：fetch 失敗 → 靜默 skip（不該因廣播掛掉 tool）
+    const broadcastText = await fetchBroadcastsSafely();
+
+    const contentParts = [];
+    if (broadcastText) {
+      contentParts.push({ type: "text", text: broadcastText });
+    }
+    contentParts.push({ type: "text", text: `${tag}：` });
+    contentParts.push({ type: "text", text: body });
+    if (++tipCallCount % 10 === 1) {
+      contentParts.push({ type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` });
+    }
+    return { content: contentParts };
   } catch (error) {
     logEvent('error', { tool_name: name, error: error.message });
     const tag = formatTag('錯誤回報');
