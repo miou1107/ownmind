@@ -63,15 +63,38 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
   Set-Location $OwnMindDir
 }
 
-# --- 4. install.ps1 --update ---
-Step "install" "重跑 install.ps1 --update"
+# --- 4. Re-run install.ps1（從現有 ~/.claude/settings.json 讀 creds）---
+#
+# BUG FIX (v1.17.6): previously called `install.ps1 --update`, but install.ps1
+# doesn't support `--update` — it parses $args[0] as API_KEY, so `--update`
+# got treated as the key, leading to silent mis-configuration. Now mirrors
+# the bash interactive-upgrade.sh pattern: read creds from settings.json
+# and pass them as positional args.
+Step "install" "重跑 install.ps1（skill / hook / 排程同步）"
 $installScript = Join-Path $OwnMindDir "install.ps1"
-if (Test-Path $installScript) {
-  & powershell -ExecutionPolicy Bypass -File $installScript --update 2>&1 | Out-File -Append $LogFile
+$claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
+$apiKey = ""
+$apiUrl = ""
+if (Test-Path $claudeSettings) {
+  try {
+    $settings = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+    if ($settings.mcpServers -and $settings.mcpServers.ownmind -and $settings.mcpServers.ownmind.env) {
+      $apiKey = $settings.mcpServers.ownmind.env.OWNMIND_API_KEY
+      $apiUrl = $settings.mcpServers.ownmind.env.OWNMIND_API_URL
+    }
+  } catch { }
+}
+
+if (-not (Test-Path $installScript)) {
+  Step "install" "找不到 install.ps1，跳過（結構異常，建議重裝）"
+} elseif ([string]::IsNullOrEmpty($apiKey) -or [string]::IsNullOrEmpty($apiUrl)) {
+  Step "install" "找不到現有 credentials，跳過 install.ps1 重跑（skill/hook 可由後續 update.sh 補）"
+} else {
+  & powershell -ExecutionPolicy Bypass -File $installScript $apiKey $apiUrl 2>&1 | Out-File -Append $LogFile
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback
-    Fail "install" "install.ps1 --update 失敗，備份已還原"
+    Fail "install" "install.ps1 失敗（詳細見 $LogFile）；備份已還原"
   }
   OK "install" "setup 完成"
 }
