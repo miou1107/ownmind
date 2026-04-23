@@ -1,6 +1,6 @@
 {
   "name": "ownmind",
-  "version": "1.17.0-dev",
+  "version": "1.17.1",
   "description": "",
   "main": "index.js",
   "scripts": {
