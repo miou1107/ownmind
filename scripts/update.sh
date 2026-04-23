@@ -7,12 +7,44 @@ OWNMIND_DIR="$HOME/.ownmind"
 
 echo "🔄 OwnMind 同步更新中..."
 
-# --- 1. 同步 Claude Code skill ---
+# --- 1. 同步 Claude Code skills ---
 if [ -d "$HOME/.claude" ]; then
-  SKILL_DIR="$HOME/.claude/skills/ownmind-memory"
-  mkdir -p "$SKILL_DIR"
-  cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$SKILL_DIR/SKILL.md"
-  echo "   ✅ skill 已更新"
+  mkdir -p "$HOME/.claude/skills/ownmind-memory"
+  cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$HOME/.claude/skills/ownmind-memory/SKILL.md"
+  # v1.17.0 P7：升級 skill
+  if [ -f "$OWNMIND_DIR/skills/ownmind-upgrade.md" ]; then
+    mkdir -p "$HOME/.claude/skills/ownmind-upgrade"
+    cp "$OWNMIND_DIR/skills/ownmind-upgrade.md" "$HOME/.claude/skills/ownmind-upgrade/SKILL.md"
+  fi
+  echo "   ✅ skills 已更新（ownmind-memory + ownmind-upgrade）"
+fi
+
+# --- 1b. 同步升級規則到其他 AI 工具（跳過未安裝的）---
+UPGRADE_SNIPPET="$OWNMIND_DIR/skills/ownmind-upgrade-agents-snippet.md"
+if [ -f "$UPGRADE_SNIPPET" ]; then
+  append_rule() {
+    local target_file="$1"
+    if [ -d "$(dirname "$target_file")" ]; then
+      mkdir -p "$(dirname "$target_file")"
+      if [ -f "$target_file" ]; then
+        node -e "
+          const fs = require('fs');
+          const p = process.argv[1];
+          let c = fs.readFileSync(p, 'utf8');
+          c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
+          fs.writeFileSync(p, c);
+        " "$target_file" 2>/dev/null || true
+      fi
+      { echo ''; echo '<!-- ownmind-upgrade-rule -->'; cat "$UPGRADE_SNIPPET"; echo '<!-- /ownmind-upgrade-rule -->'; } >> "$target_file"
+    fi
+  }
+  append_rule "$HOME/.codex/AGENTS.md"
+  append_rule "$HOME/.cursor/rules/ownmind.md"
+  append_rule "$HOME/.antigravity/rules/ownmind.md"
+  append_rule "$HOME/.opencode/AGENTS.md"
+  append_rule "$HOME/.windsurf/rules/ownmind.md"
+  append_rule "$HOME/.gemini/GEMINI.md"
+  echo "   ✅ 升級規則已同步到偵測到的 AI 工具"
 fi
 
 # --- 2. 同步 hook scripts + hooks/lib 模組 ---

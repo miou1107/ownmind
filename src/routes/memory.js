@@ -662,6 +662,35 @@ router.get('/init', async (req, res) => {
 /**
  * GET /type/:type - 依類型取得記憶
  */
+/**
+ * v1.17.0 P6: 升級驗測測試資料清除
+ *
+ * DELETE /api/memory/test-cleanup?name_prefix=__upgrade_test__
+ * 僅允許：is_test = TRUE AND title LIKE <prefix>%
+ * 雙重保險：即使 prefix 被改，is_test 仍過濾；即使 is_test 誤寫，prefix 也擋
+ */
+router.delete('/test-cleanup', async (req, res) => {
+  try {
+    const rawPrefix = String(req.query.name_prefix || '').trim();
+    // 硬性限制：僅接受 __upgrade_test__ 開頭，防止一般 title 被誤刪
+    if (!rawPrefix.startsWith('__upgrade_test__')) {
+      return res.status(400).json({ error: 'name_prefix 必須以 __upgrade_test__ 開頭' });
+    }
+    const result = await query(
+      `DELETE FROM memories
+       WHERE user_id = $1
+         AND is_test = TRUE
+         AND title LIKE $2
+       RETURNING id, title`,
+      [req.user.id, rawPrefix + '%']
+    );
+    res.json({ deleted: result.rowCount, titles: result.rows.map((r) => r.title) });
+  } catch (err) {
+    logger.error('test-cleanup 失敗', { error: err.message });
+    res.status(500).json({ error: 'cleanup 失敗：' + err.message });
+  }
+});
+
 router.get('/type/:type', async (req, res) => {
   try {
     // team_standard 跨使用者共享，回傳所有人的
@@ -769,7 +798,7 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { type, title, content, code, tags, metadata, sync_token, rule_stats } = req.body;
+    const { type, title, content, code, tags, metadata, sync_token, rule_stats, is_test } = req.body;
 
     if (!type || !title || !content) {
       return res.status(400).json({ error: '必填欄位：type, title, content' });
@@ -779,6 +808,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({
         error: `無效的記憶類型: "${type}"`,
         allowed_types: ALLOWED_MEMORY_TYPES
+      });
+    }
+
+    // v1.17.0 P6: is_test flag（升級驗測用）必須搭配 __upgrade_test__ prefix，
+    // 否則一般 user 可藉 is_test 標記繞過 sync
+    const isTestFlag = Boolean(is_test);
+    if (isTestFlag && !String(title).startsWith('__upgrade_test__')) {
+      return res.status(400).json({
+        error: 'is_test 僅限 title 以 __upgrade_test__ 開頭的升級驗測使用'
       });
     }
 
@@ -804,10 +842,10 @@ router.post('/', async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO memories (user_id, type, title, content, code, tags, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO memories (user_id, type, title, content, code, tags, metadata, is_test)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [req.user.id, type, title, content, finalCode, tags || null, metadata || null]
+      [req.user.id, type, title, content, finalCode, tags || null, metadata || null, isTestFlag]
     );
 
     const memory = result.rows[0];

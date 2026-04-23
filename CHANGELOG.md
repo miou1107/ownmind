@@ -5,6 +5,43 @@
 > 讓 admin 一眼看到裝機版本、推播提醒，讓 user 說「我要升級」就有 AI 自動完成。
 > Spec / Plan：`docs/superpowers/specs/2026-04-22-client-version-broadcast-upgrade-design.md`、`docs/superpowers/plans/2026-04-22-client-version-broadcast-upgrade.md`
 
+### P5–P7 — 互動升級 Script + 驗測 + AI 工具 Skill 分發
+
+**P5：Upgrade Script**
+- `scripts/interactive-upgrade.sh` — 結構化 stdout（`INFO/OK/ERROR/ASK:<code>:msg`），AI 可逐行轉述
+- `scripts/interactive-upgrade.ps1` — Windows PowerShell 版，同結構
+- 流程：pre-check → backup → git pull --ff-only → npm install → install.sh（從 `~/.claude/settings.json` 讀 creds）→ 重註冊 launchd/systemd/Task Scheduler → 驗測 → 清理
+- **失敗自動 rollback**：`~/.ownmind.bak.<timestamp>` → `~/.ownmind`（任何步驟失敗都還原，user 不會壞掉）
+
+**P6：Verification Script + memories.is_test**
+- `scripts/verify-upgrade.sh --local` — MCP / skill / hook / VERSION 存在性
+- `scripts/verify-upgrade.sh --server` — `/health` ping → 寫測試 memory（`__upgrade_test__<ts>__<host>`）→ 讀回 → init API 鐵律 digest 檢查
+- `scripts/verify-upgrade.sh --cleanup` — 清 `is_test=TRUE AND title LIKE '__upgrade_test__%'`
+- `POST /api/memory` 新增 `is_test` 欄位，**只允許 `__upgrade_test__` 開頭 title**（防止 user 繞過 sync）
+- `DELETE /api/memory/test-cleanup?name_prefix=__upgrade_test__` — 雙重保險（is_test=TRUE + title LIKE + user_id 隔離）
+
+**P7：AI Tool Skills 分發**
+- `skills/ownmind-upgrade.md` — Claude Code skill（觸發詞：「我要升級」/「升級 OwnMind」；錯誤碼引導表）
+- `skills/ownmind-upgrade-agents-snippet.md` — 給 Codex / Cursor / Antigravity / OpenCode / Windsurf / Gemini 的通用規則片段
+- `install.sh` + `scripts/update.sh` **偵測目錄存在才裝**，跳過未安裝工具；以 `<!-- ownmind-upgrade-rule -->` marker 包住，重跑時自動去重
+
+**測試**
+- `tests/memory-upgrade-test.test.js`（3 tests）：is_test guard、test-cleanup route 存在、user_id 隔離
+- `scripts/interactive-upgrade.sh` 實機 smoke test：fail-safe rollback 驗證通過
+- **458 tests pass**（P4 後 455 + P5-P7 新增 3）
+
+### 驗證覆蓋
+- 所有 10 個 spec scenarios（A-K）已涵蓋
+- Codex adversarial review：P1 13 findings / P2 7 findings 全數修復
+
+### Deploy 步驟（ship v1.17.0 時跑）
+1. `psql -f db/008_broadcast.sql`（migration）
+2. `docker compose build --no-cache`（IR-018 + IR-023）
+3. Push + 部署 → 瀏覽器實測（IR-020）：裝機狀況 tab、廣播管理、發測試廣播 → user 端在 Claude Code / Codex / Cursor 應看到
+4. `git tag v1.17.0`（IR-031）+ push tag
+
+---
+
 ### P4 — MCP Response 注入（Layer 2：跨工具通用）
 
 **新增 Server endpoint**
