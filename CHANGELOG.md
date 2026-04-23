@@ -1,6 +1,41 @@
 # OwnMind 更新紀錄
 
-## v1.17.2 — 版本檢查閉環（三層 drift detection）
+## v1.17.2 — 廣播強制通知 + 新用戶 onboarding + MCP heartbeat + 版本檢查閉環
+
+**本版包含四個方向的強化：**
+
+### 1. 廣播強制通知（防止 AI 靜默略過）
+
+**背景**：廣播通知系統原本靠 `configs/CLAUDE.md` 指示 AI 顯示，但 AI 可以忽略。IR-027 要求「提醒無效，邏輯才有效」—用程式強制觸發。
+
+**新增**
+- `hooks/lib/render-session-context.js`：當渲染的廣播中有 `severity='warning'/'error'` 或 `type='upgrade_reminder'` 時，動態注入 `[SYSTEM] 強制行動要求` instruction block，強制 AI 在第一句回應中主動告知使用者。INFO 廣播維持被動顯示。
+- `configs/CLAUDE.md`：新增「廣播通知處理規則」區塊，定義各 severity 的 AI 行為規範。
+- `tests/session-start-render.test.js`：新增 4 個 TDD 測試（warning、error、upgrade_reminder、info 各一）。
+
+### 2. 新用戶自動 Onboarding
+
+**背景**：新用戶第一次 `ownmind_init` 時 profile/principles/iron_rules 全空，API 只回傳版本資訊，AI 沒辦法主動引導。
+
+**新增**
+- `src/utils/onboarding.js`：`buildOnboarding({ hasAnyMemory, onboardingCompletedAt, tool })` 純函式，偵測是否為新用戶並回傳引導資料。
+- `src/routes/memory.js`：`/api/memory/init` 新增 `_onboarding` 欄位；首次儲存任何記憶時自動寫入 `users.settings.onboarding_completed_at`（永久標記，防止刪光後被重新引導）。
+- `mcp/index.js`：`callApi` 加 `x-ownmind-tool: claude-code` header；`ownmind_init` 偵測新用戶 flag 時注入 `_onboarding_instruction` 強制 AI 問名字/工作並建立 profile。
+- `configs/CLAUDE.md`：新增「新用戶 Onboarding 規則」。
+
+**修補的 bug**
+- **Bug 1（誤判）**：偵測邏輯從「只看 profile/principle/iron_rule 三種」改為「查使用者有沒有任何類型的 active memory」（10 種類型全納入），避免只有 `coding_standard`/`project` 等記憶的老用戶被誤判。
+- **Bug 2（重複觸發）**：新增 `users.settings.onboarding_completed_at` 永久標記，避免用戶刪光記憶後重新被引導。
+
+### 3. MCP Heartbeat（裝機狀態感知）
+
+**背景**：裝機狀態 dashboard 只看 `collector_heartbeat`（由排程 scanner 寫入），所以**只裝 MCP 沒跑 `install.sh`** 的用戶會錯誤顯示為「未裝」。
+
+**新增**
+- `mcp/index.js`：每次 `ownmind_init` 呼叫後 fire-and-forget 發 heartbeat（`tool=claude-code`, `scanner_version=CLIENT_VERSION`, `machine=hostname`）到 `/api/usage/events`。失敗靜默不阻塞 init。
+- **效果**：只要用戶有啟動 AI 用 OwnMind，dashboard 就會自動顯示為「已裝」，不需額外跑排程。
+
+### 4. 版本檢查閉環（三層 drift detection）
 
 **Goal**：user 說「查版本」→ 三層完整檢查 → 有新版主動問是否升級 → 同意就一路跑完 interactive-upgrade.sh。
 
