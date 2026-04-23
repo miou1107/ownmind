@@ -631,7 +631,14 @@ router.get('/init', async (req, res) => {
       : principles;
 
     const detectedTool = req.headers['x-ownmind-tool'] || 'AI 工具';
-    const onboarding = buildOnboarding(profile, principles ?? [], ironRules ?? [], detectedTool);
+    const userStateResult = await query(
+      `SELECT
+        EXISTS (SELECT 1 FROM memories WHERE user_id = $1 AND status = 'active') AS has_any_memory,
+        (SELECT settings->>'onboarding_completed_at' FROM users WHERE id = $1) AS onboarding_completed_at`,
+      [req.user.id]
+    );
+    const { has_any_memory: hasAnyMemory, onboarding_completed_at: onboardingCompletedAt } = userStateResult.rows[0] || {};
+    const onboarding = buildOnboarding({ hasAnyMemory, onboardingCompletedAt, tool: detectedTool });
 
     res.json({
       sync_token: syncToken,
@@ -864,6 +871,18 @@ router.post('/', async (req, res) => {
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'create', $3, $4)`,
       [memory.id, metadata?.tool || 'api', content, metadata || null]
+    );
+
+    // Mark onboarding complete on first memory save (永久標記，防止刪光後被重新引導)
+    await query(
+      `UPDATE users
+       SET settings = jsonb_set(
+         COALESCE(settings, '{}'::jsonb),
+         '{onboarding_completed_at}',
+         to_jsonb(NOW()::text)
+       )
+       WHERE id = $1 AND (settings->>'onboarding_completed_at') IS NULL`,
+      [req.user.id]
     );
 
     // iron_rule 自動匹配 verification template
