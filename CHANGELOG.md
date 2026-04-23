@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.17.7 — MCP 技巧提示每次都顯示（對齊 skill 文件承諾）
+
+**背景**：skill 文件 `ownmind-memory.md` 寫「MCP tool 每次回傳自動附上一行隨機小技巧」，但 `mcp/index.js:996` 實際上用 `if (++tipCallCount % 10 === 1)` 每 10 次才顯示 1 次。文件 vs 實作不一致被 Vin 抓到。
+
+**修正**
+- `mcp/index.js`：拿掉 `tipCallCount` + modulo gating，每次 tool call 的 response 都會附 `【OwnMind vX.X.X】技巧提示：...`
+- 現在用戶每次呼叫 MCP tool 都會看到一條隨機小技巧（從 50+ 條 TIPS 池裡隨機挑，避開上一次選過的）
+
+**新增測試**
+- `tests/tip-every-call.test.js`：靜態檢查 `mcp/index.js` 不再含 `tipCallCount % 10` gating，且 `contentParts.push(...技巧提示...)` 呼叫沒有被 modulo 條件包住
+
+**為什麼不吵**：隨機 TIP 池有 50+ 條，每次挑一條又避開上次選過的，實際體驗是「每次都有小教學」而不是「同樣提示不停冒出」。
+
+---
+
 ## v1.17.6 — Universal Bootstrap（一句指令搞定安裝/升級/修復）
 
 **背景**：之前 install / upgrade 分成 4 支腳本（`install.sh` / `install.ps1` / `interactive-upgrade.sh` / `interactive-upgrade.ps1`），user 得自己判斷跑哪一支；新用戶更慘，完全不知道從哪開始。跨平台（Windows vs Mac）又多一層分岔。

@@ -2,6 +2,8 @@ AIパーソナライズド永続メモリソリューション
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
+**現在のバージョン：v1.17.7** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+
 # OwnMind — クロスプラットフォームAIメモリシステム
 
 AIツール間でメモリを共有。Claude Code、Codex、Cursor、Copilot、OpenCode、その他のオンラインAI — OwnMindがすべてのツールであなたの好み、鉄則、プロジェクトコンテキストを読み書きできるようにします。
