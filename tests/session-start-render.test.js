@@ -61,6 +61,27 @@ describe('renderSessionContext — 廣播', () => {
     assert.ok(out.includes('Line 4'));
     assert.ok(!out.includes('Line 5'));
   });
+
+  it('warning 等級廣播附加 SYSTEM 強制指令 block', () => {
+    const out = renderSessionContext({ server_version: '1.17.0' }, [{
+      title: '安全更新', body: '請盡快升級', severity: 'warning'
+    }]);
+    assert.match(out, /\[SYSTEM\] 強制行動要求/);
+  });
+
+  it('upgrade_reminder 類型廣播附加 SYSTEM 強制指令 block', () => {
+    const out = renderSessionContext({ server_version: '1.17.0' }, [{
+      title: 'OwnMind 有新版本', body: '請升級', severity: 'info', type: 'upgrade_reminder'
+    }]);
+    assert.match(out, /\[SYSTEM\] 強制行動要求/);
+  });
+
+  it('info 等級且非 upgrade_reminder 不附加強制指令', () => {
+    const out = renderSessionContext({ server_version: '1.17.0' }, [{
+      title: '一般公告', body: '系統維護', severity: 'info', type: 'announcement'
+    }]);
+    assert.doesNotMatch(out, /\[SYSTEM\] 強制行動要求/);
+  });
 });
 
 describe('renderSessionContext — memory', () => {

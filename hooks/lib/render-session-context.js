@@ -38,6 +38,14 @@ export function renderSessionContext(data, broadcasts) {
       lines.push('（另有 ' + (bcList.length - 3) + ' 則廣播未顯示）');
       lines.push('');
     }
+    const hasForced = bcList.slice(0, 3).some(bc =>
+      ['warning', 'error'].includes(String(bc.severity || '').toLowerCase()) ||
+      bc.type === 'upgrade_reminder'
+    );
+    if (hasForced) {
+      lines.push('> **[SYSTEM] 強制行動要求：** 上方通知為強制等級（WARNING/ERROR 或版本更新）。你必須在本次回應的第一句主動告知使用者通知內容與可執行動作（升級 / 已收到 / 暫緩），不可略過、不可等使用者詢問。');
+      lines.push('');
+    }
   }
 
   const d = data || {};
