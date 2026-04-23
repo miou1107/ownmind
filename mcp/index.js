@@ -295,7 +295,17 @@ function renderBroadcasts(broadcasts) {
 // --- Helper ---
 // Send MCP heartbeat so dashboard can mark this user as "installed" even
 // without the scheduled scanner. Fire-and-forget — never block init.
+//
+// Crash-loop protection: a misconfigured MCP that starts → crashes → restarts
+// in a fast loop would otherwise spam heartbeats at high rate. The module-
+// scope `heartbeatSent` flag caps each MCP process at exactly one heartbeat,
+// regardless of how many call sites trigger it (startup + ownmind_init).
+// The flag is set BEFORE the await so parallel/rapid calls during the in-
+// flight POST also short-circuit, instead of racing multiple POSTs.
+let heartbeatSent = false;
 async function sendMcpHeartbeat() {
+  if (heartbeatSent) return;
+  heartbeatSent = true;
   try {
     await callApi('POST', '/api/usage/events', {
       events: [],
