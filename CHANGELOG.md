@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.17.3 — MCP 支援多 AI 工具識別（OWNMIND_CLIENT_TOOL env var）
+
+**背景**：v1.17.2 的 MCP heartbeat 把 `tool` hardcode 成 `claude-code`，導致 Cursor / Codex / Antigravity / OpenCode 等用戶用 MCP 時會被誤標為 claude-code，污染 dashboard 的 per-tool 統計。
+
+**新增**
+- `mcp/index.js`：新增 `CLIENT_TOOL` 常數，從 `OWNMIND_CLIENT_TOOL` 環境變數讀取，預設 `claude-code`。影響兩處：
+  - `callApi` header `x-ownmind-tool`
+  - `sendMcpHeartbeat` 的 `heartbeat.tool`
+- **設定方式**：非 Claude Code 用戶在他們的 MCP config 加環境變數：
+  ```json
+  { "env": { "OWNMIND_CLIENT_TOOL": "cursor" } }
+  ```
+
+---
+
 ## v1.17.2 — 廣播強制通知 + 新用戶 onboarding + MCP heartbeat + 版本檢查閉環
 
 **本版包含四個方向的強化：**

@@ -154,6 +154,11 @@ const CLIENT_VERSION = (() => {
     return pkg.version || '0.0.0';
   } catch { return '0.0.0'; }
 })();
+// Which AI tool is hosting this MCP. Cursor / Codex / Antigravity / OpenCode
+// users should set OWNMIND_CLIENT_TOOL in their MCP config so heartbeat +
+// broadcast targeting identify them correctly. Defaults to claude-code.
+const CLIENT_TOOL = process.env.OWNMIND_CLIENT_TOOL || 'claude-code';
+
 let serverVersion = null;
 let currentSyncToken = null;
 
@@ -295,7 +300,7 @@ async function sendMcpHeartbeat() {
     await callApi('POST', '/api/usage/events', {
       events: [],
       heartbeat: {
-        tool: 'claude-code',
+        tool: CLIENT_TOOL,
         scanner_version: CLIENT_VERSION,
         machine: os.hostname(),
       },
@@ -307,7 +312,7 @@ async function callApi(method, path, body) {
   const url = `${API_URL}${path}`;
   const headers = {
     "Content-Type": "application/json",
-    "x-ownmind-tool": "claude-code",
+    "x-ownmind-tool": CLIENT_TOOL,
   };
   if (API_KEY) {
     headers["Authorization"] = `Bearer ${API_KEY}`;
