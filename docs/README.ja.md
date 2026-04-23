@@ -185,28 +185,39 @@ sequenceDiagram
 
 管理者に連絡してAPIキーを取得してください。
 
-### 2. インストール
+### 2. インストール / アップグレード / 修復 — 統一エントリー（v1.17.6〜）
 
-**Windows**ユーザーはPowerShellでインストール：
-```powershell
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
+**一番簡単な方法 — AIに一言話すだけ**（Claude Code / Cursor / Codex / Antigravity / OpenCode など）：
+
+```
+OwnMindをインストールして（API keyはYOUR_API_KEY、URLはYOUR_API_URL）
 ```
 
-**Mac / Linux / Git Bash**ユーザー：
+またはすでにインストール済みでアップグレードしたい場合：
+```
+OwnMindをアップグレード
+```
+
+AIがOS + 現在の状態を自動検出し、適切なコマンドを実行します。新規インストール / アップグレード / 修復（壊れた `~/.ownmind`）の3状態をカバー。
+
+**または手動で one-liner を実行** — `bootstrap` スクリプトが3つの状態（未インストール / 壊れた / 正常）を自動判定して適切に動作。
+
+**Mac / Linux / Git Bash**:
 ```bash
-curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+# 新規インストール（API key + URLが必要）
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+# インストール済み、アップグレードのみ
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
 ```
 
-またはこのプロンプトをAIツールにペースト：
+**Windows PowerShell**:
+```powershell
+# 新規インストール
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 
-```
-OwnMindをインストール：curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
-```
-
-シェルを実行できないツールの場合：
-
-```
-https://github.com/miou1107/ownmind を ~/.ownmind/ にclone、npm installを実行、bash ~/.ownmind/install.sh YOUR_API_KEY YOUR_API_URL を実行
+# インストール済み、アップグレードのみ
+iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
 ### 3. 使い始める

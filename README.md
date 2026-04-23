@@ -185,28 +185,39 @@ sequenceDiagram
 
 Contact the admin to get your API key.
 
-### 2. Install
+### 2. Install / Upgrade / Repair — one universal entry (v1.17.6+)
 
-**Windows** users can install with PowerShell:
-```powershell
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
+**The easiest way — just talk to your AI** (Claude Code, Cursor, Codex, Antigravity, OpenCode, etc.):
+
+```
+Install OwnMind (my API key is YOUR_API_KEY, URL is YOUR_API_URL)
 ```
 
-**Mac / Linux / Git Bash** users:
+or, if OwnMind is already installed and you want to upgrade:
+```
+Upgrade OwnMind
+```
+
+AI auto-detects your OS + current state and runs the right command. Works for: fresh install / upgrade / repair (broken `~/.ownmind`).
+
+**Or run the one-liner yourself** — the `bootstrap` script handles all three states (no install / broken / normal) by itself.
+
+**Mac / Linux / Git Bash**:
 ```bash
-curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+# Fresh install (needs API key + URL)
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+# Already installed — upgrade only
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
 ```
 
-Or paste this prompt into your AI tool (Claude Code, Codex, Cursor, etc.):
+**Windows PowerShell**:
+```powershell
+# Fresh install
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 
-```
-Install OwnMind: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
-```
-
-If your tool can't run shell commands, use this prompt instead:
-
-```
-Clone https://github.com/miou1107/ownmind to ~/.ownmind/, run npm install in ~/.ownmind/mcp/, then run bash ~/.ownmind/install.sh YOUR_API_KEY YOUR_API_URL
+# Already installed — upgrade only
+iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
 ### 3. Start Using

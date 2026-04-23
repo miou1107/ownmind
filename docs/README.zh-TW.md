@@ -185,28 +185,44 @@ sequenceDiagram
 
 聯繫管理員取得你的 API key。
 
-### 2. 安裝
+### 2. 安裝 / 升級 / 修復 — 單一入口（v1.17.6 起）
 
-**Windows 用戶**可以用 PowerShell 直接安裝：
-```powershell
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
+**最簡單的方式 — 直接對 AI 說**（Claude Code / Cursor / Codex / Antigravity / OpenCode 等）：
+
+```
+幫我裝 OwnMind（API key 是 YOUR_API_KEY，URL 是 YOUR_API_URL）
 ```
 
-**Mac / Linux / Git Bash** 用戶：
+或如果已經裝過，要升級：
+```
+升級 OwnMind
+```
+
+或壞掉要修：
+```
+修 OwnMind
+```
+
+AI 會自動偵測作業系統 + 當前狀態，跑對的指令。涵蓋：首次安裝 / 升級 / 壞掉修復 三種情境。
+
+**或手動跑 one-liner** — `bootstrap` 腳本自己判斷三種狀態（沒裝 / 壞掉 / 正常），跑對的動作。
+
+**Mac / Linux / Git Bash**：
 ```bash
-curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+# 首次安裝（要提供 API key + URL）
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+
+# 已安裝、只升級
+curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
 ```
 
-或者複製以下 prompt 貼到你的 AI 工具（Claude Code、Codex、Cursor 等）：
+**Windows PowerShell**：
+```powershell
+# 首次安裝
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 
-```
-幫我安裝 OwnMind：curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
-```
-
-如果工具不能執行 shell：
-
-```
-把 https://github.com/miou1107/ownmind clone 到 ~/.ownmind/，執行 npm install，然後跑 bash ~/.ownmind/install.sh YOUR_API_KEY YOUR_API_URL
+# 已安裝、只升級
+iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
 ### 3. 開始使用
