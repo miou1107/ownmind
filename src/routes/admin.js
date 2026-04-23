@@ -62,10 +62,18 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * POST /setup — 首次設定 super_admin 密碼（無需 auth，一次性）
+ * POST /setup — 首次設定 super_admin 密碼（需帶 SETUP_TOKEN，一次性）
  */
 router.post('/setup', async (req, res) => {
   try {
+    const setupToken = process.env.SETUP_TOKEN;
+    if (!setupToken) {
+      return res.status(403).json({ error: '/setup 端點已停用（伺服器未設定 SETUP_TOKEN）' });
+    }
+    if (req.body.setup_token !== setupToken) {
+      return res.status(403).json({ error: 'SETUP_TOKEN 不正確' });
+    }
+
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: '請輸入 Email 和密碼' });

@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.17.0.3 — security: C5 sync token 強制驗證、C6 rate limiting + CORS 收斂
+
+**C5 — Sync token 不再 graceful fallback**：寫入操作未帶 `sync_token` 改為直接回 409，要求先呼叫 `ownmind_init`。防止持有 API key 的攻擊者繞過 MVCC 保護靜默覆寫記憶。
+
+**C6 — Rate limiting**：加入 `express-rate-limit`。`/api/admin/login` 與 `/api/admin/setup` 限制 10 次/15 分鐘；所有 `/api` 路由限制 200 次/分鐘。
+
+**C6 — CORS 收斂**：`cors()` 改為 `cors({ origin: process.env.CORS_ORIGIN || false })`，未設定 `CORS_ORIGIN` 環境變數時禁止所有跨域請求。
+
+**`.env.example` 更新**：加入 `CORS_ORIGIN` 欄位說明。
+
+---
+
+## v1.17.0.2 — security: 三項安全強化（ENCRYPTION_KEY fail-fast、/setup token、session log 清理）
+
+**C3 — ENCRYPTION_KEY fail-fast**：`src/utils/crypto.js` 啟動時若 `ENCRYPTION_KEY` 未設或為預設值，強制 `process.exit(1)`，防止靜默 fallback 導致 secrets 實際明文儲存。
+
+**C2 — /setup SETUP_TOKEN 保護**：`/setup` 端點改為必須在 request body 帶 `setup_token`，server 端驗證與 `SETUP_TOKEN` 環境變數是否吻合。未設定 `SETUP_TOKEN` 則端點直接回 403。防止初裝窗口期被搶佔 super_admin。
+
+**U3 — 移除 session.js 死代碼**：`SENSITIVE_PATTERNS` array 從未被 `sanitize()` 使用，且包含過度寬泛的長字串 regex（會誤殺合法內容）。移除此 array，保留正確的 inline regex 邏輯。
+
+**`.env.example` 更新**：加入 `SETUP_TOKEN` 欄位說明。
+
+---
+
 ## v1.17.0.1 — hotfix: install.sh 升級情境 `cp` 同檔案錯
 
 **Bug**：升級既有 `~/.ownmind` 時，`install.sh` 多處 `cp $OWNMIND_DIR/X $HOME/.ownmind/X/` 源 == 目的路徑 → macOS `cp` 回 `... are identical (not copied).` → exit 1 → `interactive-upgrade.sh` 觸發 rollback → 客戶端無法升級（SessionStart hook 不會同步到 broadcast 檔案）。

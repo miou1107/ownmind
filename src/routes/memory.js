@@ -27,17 +27,22 @@ function parseSemver(v) {
 const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
 
 /**
- * Sync token 驗證（graceful fallback）
+ * Sync token 驗證
  * - 有 token 且 valid → 通過
  * - 有 token 但 stale → 409 要求 re-init
- * - 沒 token（舊 client）→ 放行但附 warning，敦促更新
- * 回傳: { ok: boolean, warning?: string, errorResponse?: object }
+ * - 沒 token → 409 要求先呼叫 init（不再 graceful fallback）
+ * 回傳: { ok: boolean, errorResponse?: object }
  */
 async function checkSyncToken(userId, syncToken) {
   if (!syncToken) {
-    // 舊 client 沒帶 token → graceful fallback，放行但警告
-    logger.warn('寫入操作未帶 sync_token（舊版 client）', { userId });
-    return { ok: true, warning: UPDATE_PROMPT };
+    logger.warn('寫入操作未帶 sync_token，拒絕（請先呼叫 ownmind_init）', { userId });
+    return {
+      ok: false,
+      errorResponse: {
+        error: '請先呼叫 ownmind_init 取得 sync_token 後再進行寫入操作',
+        require_init: true,
+      }
+    };
   }
   const check = await validateSyncToken(userId, syncToken);
   if (!check.valid) {
