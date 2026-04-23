@@ -2,13 +2,16 @@
 # OwnMind Universal Bootstrap — install / upgrade / repair in one script
 #
 # Usage:
-#   Local:  bash ~/.ownmind/scripts/bootstrap.sh
-#   Remote: curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+#   Already installed (upgrade only):
+#     bash ~/.ownmind/scripts/bootstrap.sh
+#     curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+#   Fresh install / repair (needs API key + URL):
+#     curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 #
 # Branches:
-#   1. ~/.ownmind not present         → fresh clone + install
-#   2. ~/.ownmind present, no .git    → backup + re-clone + install (repair)
-#   3. ~/.ownmind is a git repo       → delegate to scripts/interactive-upgrade.sh
+#   1. ~/.ownmind not present         → fresh clone + install.sh "$@" (requires API key args)
+#   2. ~/.ownmind present, no .git    → backup + re-clone + install.sh "$@" (requires API key args)
+#   3. ~/.ownmind is a git repo       → delegate to scripts/interactive-upgrade.sh (no args needed)
 #
 # Env overrides (for testing):
 #   OWNMIND_DIR   — install path (default: $HOME/.ownmind)
@@ -20,6 +23,9 @@
 #   ERROR:install:<message> — 失敗
 
 set -e
+# pipefail: ensure `git clone ... | while read ...` propagates git's
+# non-zero exit code instead of masking it behind the always-successful while.
+set -o pipefail
 
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
 OWNMIND_REPO="${OWNMIND_REPO:-https://github.com/miou1107/ownmind.git}"
@@ -41,8 +47,10 @@ if [ ! -d "$OWNMIND_DIR" ]; then
   fi
   log_ok clone "clone 完成"
   cd "$OWNMIND_DIR"
-  log_info install "執行 install.sh"
-  bash install.sh || { log_err install "install.sh 失敗"; exit 1; }
+  log_info install "執行 install.sh（轉發參數 API_KEY + API_URL）"
+  # Forward positional args ("$@") to install.sh; if missing, install.sh
+  # prints its own friendly "請提供 API Key" message and exits non-zero.
+  bash install.sh "$@" || { log_err install "install.sh 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1; }
   log_ok done "首次安裝完成"
   exit 0
 fi
@@ -56,7 +64,7 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   log_info fresh "重新 clone"
   git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done
   cd "$OWNMIND_DIR"
-  bash install.sh || { log_err install "install.sh 失敗"; exit 1; }
+  bash install.sh "$@" || { log_err install "install.sh 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1; }
   log_ok done "修復完成（舊資料保留於 $BAK，3 天後可手動刪除）"
   exit 0
 fi

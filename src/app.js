@@ -84,13 +84,19 @@ app.get('/health', (req, res) => {
 // Public bootstrap scripts — served without auth so fresh machines can
 // `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash` before they
 // have an API key. See docs/superpowers/plans/2026-04-23-universal-bootstrap.md.
+//
+// Read once at boot instead of per-request sendFile: (a) avoids needing the
+// `dotfiles: 'allow'` option when tests run inside hidden worktree paths;
+// (b) served content is guaranteed to match the deployed commit (no hot-reload
+// drift); (c) zero disk I/O per request.
+import { readFileSync } from 'fs';
+const bootstrapSh = readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.sh'), 'utf8');
+const bootstrapPs1 = readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.ps1'), 'utf8');
 app.get('/bootstrap.sh', (req, res) => {
-  res.type('text/x-shellscript; charset=utf-8');
-  res.sendFile(join(__dirname, '..', 'scripts', 'bootstrap.sh'), { dotfiles: 'allow' });
+  res.type('text/x-shellscript; charset=utf-8').send(bootstrapSh);
 });
 app.get('/bootstrap.ps1', (req, res) => {
-  res.type('text/plain; charset=utf-8');
-  res.sendFile(join(__dirname, '..', 'scripts', 'bootstrap.ps1'), { dotfiles: 'allow' });
+  res.type('text/plain; charset=utf-8').send(bootstrapPs1);
 });
 
 // 錯誤處理中介層

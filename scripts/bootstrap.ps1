@@ -1,13 +1,17 @@
 # OwnMind Universal Bootstrap for Windows PowerShell
 #
 # Usage:
-#   Local:  powershell -ExecutionPolicy Bypass -File $HOME\.ownmind\scripts\bootstrap.ps1
-#   Remote: iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+#   Already installed (upgrade only):
+#     powershell -ExecutionPolicy Bypass -File $HOME\.ownmind\scripts\bootstrap.ps1
+#     iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+#   Fresh install / repair (needs API key + URL via args or env):
+#     $env:OWNMIND_API_KEY='xxx'; $env:OWNMIND_API_URL='https://your-server.com/ownmind'
+#     iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 #
 # Branches:
-#   1. ~/.ownmind not present         → fresh clone + install
-#   2. ~/.ownmind present, no .git    → backup + re-clone + install (repair)
-#   3. ~/.ownmind is a git repo       → delegate to scripts/interactive-upgrade.ps1
+#   1. ~/.ownmind not present         → fresh clone + install.ps1 (needs API key args/env)
+#   2. ~/.ownmind present, no .git    → backup + re-clone + install.ps1 (needs API key args/env)
+#   3. ~/.ownmind is a git repo       → delegate to scripts/interactive-upgrade.ps1 (no args needed)
 #
 # Env overrides (for testing):
 #   $env:OWNMIND_DIR   — install path (default: $env:USERPROFILE\.ownmind)
@@ -30,19 +34,25 @@ function Log-Err($code, $msg)  { Write-Host "ERROR:${code}:${msg}" -ForegroundCo
 
 Log-Info detect "檢查 OwnMind 安裝狀態（$OwnmindDir）"
 
+# Forward positional args (if any) to install.ps1; install.ps1 falls back to
+# $env:OWNMIND_API_KEY / $env:OWNMIND_API_URL when args are empty (see its own
+# arg handling). This lets both `bootstrap.ps1 KEY URL` and
+# `$env:OWNMIND_API_KEY=... iwr | iex` patterns work.
+$InstallArgs = $args
+
 # Branch 1: no install
 if (-not (Test-Path "$OwnmindDir")) {
   Log-Info fresh "首次安裝，clone repo"
   git clone "$Repo" "$OwnmindDir"
-  if (-not (Test-Path "$OwnmindDir\.git")) {
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
     Log-Err git_clone "git clone 失敗，請檢查網路或 GitHub 權限"
     exit 1
   }
   Log-Ok clone "clone 完成"
   Set-Location "$OwnmindDir"
-  Log-Info install "執行 install.ps1"
-  & powershell -ExecutionPolicy Bypass -File .\install.ps1
-  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗"; exit 1 }
+  Log-Info install "執行 install.ps1（轉發 API_KEY / API_URL）"
+  & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1 }
   Log-Ok done "首次安裝完成"
   exit 0
 }
@@ -55,9 +65,13 @@ if (-not (Test-Path "$OwnmindDir\.git")) {
   Log-Ok backup "已備份"
   Log-Info fresh "重新 clone"
   git clone "$Repo" "$OwnmindDir"
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
+    Log-Err git_clone "重新 clone 失敗，舊資料已保留於 $Bak"
+    exit 1
+  }
   Set-Location "$OwnmindDir"
-  & powershell -ExecutionPolicy Bypass -File .\install.ps1
-  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗"; exit 1 }
+  & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1 }
   Log-Ok done "修復完成（舊資料保留於 $Bak，3 天後可手動刪除）"
   exit 0
 }
