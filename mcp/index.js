@@ -288,6 +288,21 @@ function renderBroadcasts(broadcasts) {
 }
 
 // --- Helper ---
+// Send MCP heartbeat so dashboard can mark this user as "installed" even
+// without the scheduled scanner. Fire-and-forget — never block init.
+async function sendMcpHeartbeat() {
+  try {
+    await callApi('POST', '/api/usage/events', {
+      events: [],
+      heartbeat: {
+        tool: 'claude-code',
+        scanner_version: CLIENT_VERSION,
+        machine: os.hostname(),
+      },
+    });
+  } catch { /* silent fail — heartbeat is best-effort */ }
+}
+
 async function callApi(method, path, body) {
   const url = `${API_URL}${path}`;
   const headers = {
@@ -622,6 +637,7 @@ async function handleTool(name, args) {
       getEvaluateConditions().catch(() => {});
 
       logEvent('init', { status: 'ok', details: { rules: data.iron_rules?.length || 0, profile: !!data.profile, handoff: !!data.active_handoff, version: data.server_version } });
+      sendMcpHeartbeat();
       if (data._onboarding?.is_new_user) {
         data._onboarding_instruction =
           `【OwnMind 新用戶初始化】偵測到這是全新帳號，尚無任何記憶。` +
