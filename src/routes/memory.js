@@ -10,6 +10,7 @@ import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
 import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
+import { buildOnboarding } from '../utils/onboarding.js';
 import { createRequire } from 'module';
 
 const SERVER_VERSION = (() => {
@@ -629,6 +630,9 @@ router.get('/init', async (req, res) => {
       ? principles.map(p => ({ id: p.id, title: p.title, code: p.code }))
       : principles;
 
+    const detectedTool = req.headers['x-ownmind-tool'] || 'AI 工具';
+    const onboarding = buildOnboarding(profile, principles ?? [], ironRules ?? [], detectedTool);
+
     res.json({
       sync_token: syncToken,
       server_version: SERVER_VERSION,
@@ -650,6 +654,7 @@ router.get('/init', async (req, res) => {
       memory_health: memoryHealth,
       pending_review: pendingReview,
       enforcement_alerts: enforcementAlerts,
+      _onboarding: onboarding,
     });
 
     // 背景壓縮舊 session logs（不阻塞回應）
