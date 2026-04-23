@@ -1,5 +1,5 @@
-export function buildOnboarding(profile, principles, ironRules, tool = 'AI 工具') {
-  const isNew = !profile && principles.length === 0 && ironRules.length === 0;
+export function buildOnboarding({ hasAnyMemory, onboardingCompletedAt, tool = 'AI 工具' }) {
+  const isNew = !hasAnyMemory && !onboardingCompletedAt;
   if (!isNew) return null;
   return {
     is_new_user: true,
