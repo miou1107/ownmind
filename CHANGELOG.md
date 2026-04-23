@@ -1,5 +1,16 @@
 # OwnMind 更新紀錄
 
+## v1.17.1 — security patch + install.sh hotfix + npm audit 修復
+
+### npm 依賴安全升級（2026-04-23）
+
+- `path-to-regexp` → 8.4.2（修復高危 ReDoS，`npm audit fix` 自動處理）
+- `node-cron` 3.x → 4.2.1（移除內嵌 uuid 依賴，解決 moderate ReDoS）
+- `uuid` 13.x → 14.0.0（修復 buffer bounds check CVE）
+- `npm audit` 結果：0 vulnerabilities
+
+---
+
 ## v1.17.1 — security patch + install.sh hotfix
 
 ### 安全強化（五項）
