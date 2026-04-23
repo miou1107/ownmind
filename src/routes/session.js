@@ -8,20 +8,6 @@ import { computePeriodRange, computeReportData } from '../utils/report.js';
 const router = Router();
 router.use(auth);
 
-/**
- * 過濾敏感資訊 — 遮蔽密碼、API key、token 等
- */
-const SENSITIVE_PATTERNS = [
-  // API keys & tokens (長度 >= 16 的英數混合)
-  /\b[A-Za-z0-9_\-]{20,}\b/g,
-  // 密碼欄位值 (password=xxx, pwd:xxx, secret:xxx)
-  /(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi,
-  // IP:port 組合
-  /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?\b/g,
-  // Bearer tokens
-  /Bearer\s+\S+/gi,
-];
-
 function sanitize(text) {
   if (!text || typeof text !== 'string') return text;
   let result = text;
