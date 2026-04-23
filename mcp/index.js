@@ -292,6 +292,7 @@ async function callApi(method, path, body) {
   const url = `${API_URL}${path}`;
   const headers = {
     "Content-Type": "application/json",
+    "x-ownmind-tool": "claude-code",
   };
   if (API_KEY) {
     headers["Authorization"] = `Bearer ${API_KEY}`;
@@ -621,6 +622,14 @@ async function handleTool(name, args) {
       getEvaluateConditions().catch(() => {});
 
       logEvent('init', { status: 'ok', details: { rules: data.iron_rules?.length || 0, profile: !!data.profile, handoff: !!data.active_handoff, version: data.server_version } });
+      if (data._onboarding?.is_new_user) {
+        data._onboarding_instruction =
+          `【OwnMind 新用戶初始化】偵測到這是全新帳號，尚無任何記憶。` +
+          `使用工具：${data._onboarding.detected_tool}（已自動記錄）。` +
+          `請立即向使用者提問：「${data._onboarding.question}」` +
+          `收到回答後，呼叫 ownmind_save 建立 type=profile 記憶，` +
+          `content 包含：名字、工作、使用工具。完成後告知用戶記憶已建立。`;
+      }
       return data;
     }
 
