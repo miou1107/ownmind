@@ -1,5 +1,153 @@
 # OwnMind 更新紀錄
 
+## v1.17.0（開發中）— Client 版本 Dashboard、廣播通知、互動升級
+
+> 讓 admin 一眼看到裝機版本、推播提醒，讓 user 說「我要升級」就有 AI 自動完成。
+> Spec / Plan：`docs/superpowers/specs/2026-04-22-client-version-broadcast-upgrade-design.md`、`docs/superpowers/plans/2026-04-22-client-version-broadcast-upgrade.md`
+
+### P5–P7 — 互動升級 Script + 驗測 + AI 工具 Skill 分發
+
+**P5：Upgrade Script**
+- `scripts/interactive-upgrade.sh` — 結構化 stdout（`INFO/OK/ERROR/ASK:<code>:msg`），AI 可逐行轉述
+- `scripts/interactive-upgrade.ps1` — Windows PowerShell 版，同結構
+- 流程：pre-check → backup → git pull --ff-only → npm install → install.sh（從 `~/.claude/settings.json` 讀 creds）→ 重註冊 launchd/systemd/Task Scheduler → 驗測 → 清理
+- **失敗自動 rollback**：`~/.ownmind.bak.<timestamp>` → `~/.ownmind`（任何步驟失敗都還原，user 不會壞掉）
+
+**P6：Verification Script + memories.is_test**
+- `scripts/verify-upgrade.sh --local` — MCP / skill / hook / VERSION 存在性
+- `scripts/verify-upgrade.sh --server` — `/health` ping → 寫測試 memory（`__upgrade_test__<ts>__<host>`）→ 讀回 → init API 鐵律 digest 檢查
+- `scripts/verify-upgrade.sh --cleanup` — 清 `is_test=TRUE AND title LIKE '__upgrade_test__%'`
+- `POST /api/memory` 新增 `is_test` 欄位，**只允許 `__upgrade_test__` 開頭 title**（防止 user 繞過 sync）
+- `DELETE /api/memory/test-cleanup?name_prefix=__upgrade_test__` — 雙重保險（is_test=TRUE + title LIKE + user_id 隔離）
+
+**P7：AI Tool Skills 分發**
+- `skills/ownmind-upgrade.md` — Claude Code skill（觸發詞：「我要升級」/「升級 OwnMind」；錯誤碼引導表）
+- `skills/ownmind-upgrade-agents-snippet.md` — 給 Codex / Cursor / Antigravity / OpenCode / Windsurf / Gemini 的通用規則片段
+- `install.sh` + `scripts/update.sh` **偵測目錄存在才裝**，跳過未安裝工具；以 `<!-- ownmind-upgrade-rule -->` marker 包住，重跑時自動去重
+
+**測試**
+- `tests/memory-upgrade-test.test.js`（3 tests）：is_test guard、test-cleanup route 存在、user_id 隔離
+- `scripts/interactive-upgrade.sh` 實機 smoke test：fail-safe rollback 驗證通過
+- **458 tests pass**（P4 後 455 + P5-P7 新增 3）
+
+### 驗證覆蓋
+- 所有 10 個 spec scenarios（A-K）已涵蓋
+- Codex adversarial review：P1 13 findings / P2 7 findings 全數修復
+
+### Deploy 步驟（ship v1.17.0 時跑）
+1. `psql -f db/008_broadcast.sql`（migration）
+2. `docker compose build --no-cache`（IR-018 + IR-023）
+3. Push + 部署 → 瀏覽器實測（IR-020）：裝機狀況 tab、廣播管理、發測試廣播 → user 端在 Claude Code / Codex / Cursor 應看到
+4. `git tag v1.17.0`（IR-031）+ push tag
+
+---
+
+### P4 — MCP Response 注入（Layer 2：跨工具通用）
+
+**新增 Server endpoint**
+- `POST /api/broadcast/inject` — 每次 MCP `ownmind_*` tool call 時 ping
+  - Upsert `user_tool_last_seen`（判首次 / 4h gap）
+  - 判 `is_first_of_day`（Asia/Taipei day boundary）+ `is_long_gap`（> 4h）
+  - `forceInject = isFirstOfDay || isLongGap`（覆蓋 cooldown）
+  - 未 force 時走每則廣播的 `cooldown_minutes`
+  - Mark `user_broadcast_state.last_injected_at` 防刷屏
+  - Response：`{ broadcasts: [...], force: bool }`，MCP client 直接拿去 prepend
+
+**MCP Client 改動**
+- `mcp/index.js` CallToolRequestSchema handler 新增 `fetchBroadcastsSafely()`：
+  - 每次 tool call 完 → POST `/api/broadcast/inject`
+  - 2 秒 timeout、失敗靜默（不該因廣播掛掉 tool）
+  - `renderBroadcasts()` → prepend 到 content parts 最前面
+  - 舊版 MCP client 自動相容（不接 `_broadcast` 欄位也能看到，因為就是 text）
+
+**行為**
+- User 每天第一次 call ownmind → 一定看到廣播
+- 上次 call 超過 4h（午休 / 過夜）→ 再次注入
+- 同 session 狂 call → cooldown 擋住不刷屏
+- 每則廣播有自己的 cooldown_minutes（升級提醒 30 分、一般 1440 分）
+
+**測試**
+- 新增 5 個 test 於 `tests/broadcast.test.js`：missing tool 400、first-of-day force、4h gap force、cooldown 擋注入、unauthenticated 401
+- **455 tests pass**（P3 後 450 + P4 新增 5）
+
+---
+
+### P3 — Claude Code SessionStart Hook 讀廣播（Layer 1）
+
+**新增**
+- `hooks/lib/render-session-context.js` — 純函式 `renderSessionContext(data, broadcasts)`；拆出 render 邏輯方便 unit test
+- `hooks/lib/session-start-output.js` — Node CLI 包裝，給 hook shell script 呼叫
+- `hooks/ownmind-session-start.sh` — 新增 `curl /api/broadcast/active?tool=claude-code`（fail-silent 3 秒 timeout）；render 改呼叫 lib 模組
+
+**行為**
+- 每次 Claude Code session 啟動，hook 把當前應顯示的廣播 prepend 到 `additionalContext` 最前面（`## 📢 OwnMind 系統通知`）
+- 廣播 render 包含：severity badge / title / body（截 400 字 / 5 行）/ CTA hint / snooze 選項
+- 最多 3 則，其餘顯示「另有 N 則廣播未顯示」
+
+**部署**
+- `install.sh` + `scripts/update.sh` 同步 `hooks/lib/*.js` 到 `~/.claude/hooks/lib/`
+
+**測試**
+- 新增 10 個 test（`tests/session-start-render.test.js`）：無廣播、順序、CTA/snooze、超量截斷、多行折疊、memory sections、結尾訊息
+- **450 tests pass**（P2 後 440 + P3 新增 10）
+
+---
+
+### P2 — 廣播系統 Backend + Admin CRUD
+
+**新增**
+- `src/lib/broadcast-filter.js`：`filterVisibleBroadcasts` + `filterInjectable` — 單一 filter logic，P4 MCP injection 也會共用
+- `src/routes/broadcast.js`：
+  - `POST /api/broadcast/admin`（super_admin）— 發布廣播
+  - `GET /api/broadcast/admin?include_ended=true`（admin+）— 列表
+  - `PATCH /api/broadcast/admin/:id`（super_admin）— 更新 ends_at / target_users
+  - `DELETE /api/broadcast/admin/:id`（super_admin）— 撤銷（soft delete = ends_at=NOW()）
+  - `GET /api/broadcast/active?tool=X`（all）— user 當下應看到的廣播（套 filter，不含 cooldown）
+  - `POST /api/broadcast/dismiss`（all）— dismiss 或 snooze，allow_snooze=false 時只能 dismiss
+- `src/jobs/nightly-upgrade-reminder.js`：每天 03:30 Asia/Taipei 跑 `ensureUpgradeReminder`；用 `max_version=${SERVER_VERSION}-prev` 搭配 pre-release semver 規則，讓只有落後的 client 收到提醒
+- Dashboard「設定」tab 新增「廣播管理」sub-panel（super_admin only）：發布 / 列表 / 撤銷，auto-managed 項（升級提醒）不可手動撤銷
+
+**決策**
+- **Cooldown 不放在 /active 端點** — filter_visible 只做基本可見性檢查；cooldown 是 injection 時的「避免刷屏」策略，dashboard 查詢則應列出所有當下生效的廣播
+- **撤銷 = soft delete**（`ends_at=NOW()`）— 保留歷史紀錄，避免誤刪；auto-managed 由 unique partial index 保證冪等
+
+**測試**
+- 新增 28 個 test（`tests/broadcast.test.js`）：validate payload、CRUD 權限邊界、snooze / dismiss 行為、filterVisibleBroadcasts semver filter、filterInjectable cooldown、ensureUpgradeReminder 冪等性
+- **422 tests pass**（P1 後 394 + P2 新增 28）
+
+---
+
+### P1 — DB Migration + 裝機狀況 Dashboard
+
+**資料層**
+- `db/008_broadcast.sql`：4 張新表 — `broadcast_messages`、`user_broadcast_state`、`user_tool_last_seen`；`memories` 加 `is_test BOOLEAN` + partial index（升級驗測用，D16）
+- Unique partial index `ux_broadcast_auto_upgrade` 保證自動升級提醒同版本只插一筆
+
+**API**
+- `GET /api/usage/admin/clients` — admin+；每 (user, tool) 最新 heartbeat 聚合 + needs_upgrade（semver 比對）+ status（active/stale/offline）+ coverage summary
+- `src/utils/semver.js`：`parseSemver` / `compareSemver` / `isLower` / `isHigher` — 供 P2/P4 共用，避免散落多處
+
+**Dashboard**
+- 「設定」tab 下新增「裝機狀況」sub-panel（super_admin 可見）
+- 一表看完：user / role / 整體狀態 / 各 tool 版本 + 相對時間（10 分鐘前 / 1 天前）
+- Status 色碼：🟢 Active（24h 內）/ 🟠 Stale（24–48h）/ 🔴 Offline（>48h）/ 🟡 需升級 / ⚪ 未裝
+- Coverage summary 文字：「共 N 人 · 已裝 X · active Y · stale Z · offline W · 未裝 M · K 人需升級」
+
+### 測試
+- 新增 10 個 test（`tests/clients.test.js`）：auth 權限、狀態分類、semver 升級判定、multi-tool 聚合、coverage 統計、排序規則
+- **378 tests pass**（既有 368 + P1 新增 10）
+
+### 決策摘要（spec 完整列表）
+- **D2** 版本落後以 `scanner_version < SERVER_VERSION` 為準，null/unknown 一律視為舊版需升級
+- **D14** 廣播後續採 main-response-text-prepend（P4），舊版 client 自動相容；P1 先鋪好 DB 欄位
+- **D16** `memories.is_test` flag：升級驗測寫入的測試資料不進 sync、不 trigger alert（P6 用）
+
+### 已知限制 / Deploy 注意
+- SQL 未對 prod postgres 執行，deploy 時 `psql -f db/008_broadcast.sql` 手動驗證
+- 前端 JS 暫仍靠 `renderOverallStatus` / `renderToolList` / `formatAgo` 在全域 scope；這是既有 index.html 的 pattern，未來拆 module 時一併處理
+
+---
+
 ## v1.16.0 - Token 用量追蹤系統（全 9 phase）
 
 > 跨 IDE token / 成本 / 工時追蹤，從 raw event 收集到團隊績效 dashboard 一條龍。

@@ -20,7 +20,8 @@ OwnMind/
 │   ├── 004_weekly_summary_marker.sql # users.weekly_summary_sent_at（週摘要 marker）
 │   ├── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
 │   ├── 006_add_standard_detail.sql   # memories type 加上 standard_detail
-│   └── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
+│   ├── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
+│   └── 008_broadcast.sql             # v1.17.0 — broadcast_messages / user_broadcast_state / user_tool_last_seen / memories.is_test
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -44,7 +45,11 @@ OwnMind/
 │   │       ├── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
 │   │       ├── exemptions.js        # GET / POST / DELETE usage_tracking_exemption（super_admin only）
 │   │       ├── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
+│   │       ├── admin-clients.js     # v1.17.0 — GET 裝機狀況（admin+；per user+tool heartbeat + needs_upgrade + coverage）
 │   │       └── team-stats.js        # GET 團隊 coverage + 逐 user 總計（admin+，spec D5）
+│   │   └── broadcast.js             # v1.17.0 P2 — 廣播系統（admin CRUD + user active/dismiss + snooze）
+│   ├── lib/
+│   │   └── broadcast-filter.js      # v1.17.0 P2 — filterVisibleBroadcasts / filterInjectable（P2 + P4 共用）
 │   ├── utils/
 │   │   ├── db.js                    # PostgreSQL 連線池
 │   │   ├── logger.js                # Winston logger
@@ -54,11 +59,13 @@ OwnMind/
 │   │   ├── enforcement.js          # Enforcement alerts 計算純函式
 │   │   ├── templates.js            # 規則模板庫 + 自動匹配
 │   │   ├── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
-│   │   └── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
+│   │   ├── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
+│   │   └── semver.js               # v1.17.0 — parseSemver / compareSemver / isLower / isHigher（version 比對共用）
 │   ├── jobs/
 │   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
-│   │   └── nightly-recompute.js     # 每日 03:00 Asia/Taipei 跑近 7 天完整 recompute
+│   │   ├── nightly-recompute.js     # 每日 03:00 Asia/Taipei 跑近 7 天完整 recompute
+│   │   └── nightly-upgrade-reminder.js  # v1.17.0 P2 — 每日 03:30 冪等產生 upgrade_reminder 廣播
 │   └── public/
 │       └── index.html               # Admin 管理後台（單頁應用）
 │
@@ -95,7 +102,10 @@ OwnMind/
 │   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
 │   ├── ownmind-git-post-commit     # post-commit shell wrapper
 │   ├── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
-│   └── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
+│   ├── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
+│   └── lib/                        # v1.17.0 P3 — hook 共用純函式
+│       ├── render-session-context.js   # renderSessionContext(data, broadcasts) → additionalContext 字串
+│       └── session-start-output.js     # Node CLI wrapper，讓 bash hook 呼叫
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
@@ -145,7 +155,11 @@ OwnMind/
 │   ├── run-scanner-wrapper.test.js  # wrapper shell script：候選選擇 / version 檢查 / error 路徑（spawn bash）
 │   ├── scanner-cursor-antigravity.test.js  # Tier 2 adapter（state.vscdb + Taipei Ymd + session record emit 規則）
 │   ├── team-stats.test.js           # /api/usage/team-stats coverage + users aggregate + 角色驗證
-│   └── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
+│   ├── stats.test.js                # /api/usage/stats totals / series / Tier-2 merge / null-cost policy
+│   ├── clients.test.js              # v1.17.0 — /api/usage/admin/clients（auth / status / upgrade / multi-tool / coverage / pre-release）
+│   ├── semver.test.js               # v1.17.0 — parseSemver / compareSemver（pre-release / build metadata / malformed）
+│   ├── broadcast.test.js            # v1.17.0 P2 — validate / CRUD / snooze / filter / cooldown / nightly job（46 tests）
+│   └── session-start-render.test.js # v1.17.0 P3 — renderSessionContext（broadcasts + memory）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
