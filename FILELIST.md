@@ -109,6 +109,7 @@ OwnMind/
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
+│   ├── check-sync.sh                # v1.17.2 — 三層 drift 健檢（L1 git / L2 server version / L3 deploy diff）
 │   ├── migrate-verification.js      # 鐵律 verification 一次性遷移
 │   ├── install-helpers/
 │   │   └── run-scanner.sh           # Usage scanner wrapper：動態找 node + v20+ 驗證（D12）

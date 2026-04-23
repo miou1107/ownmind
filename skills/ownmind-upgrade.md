@@ -1,31 +1,67 @@
 ---
 name: ownmind-upgrade
-description: OwnMind 互動式升級。當 user 說「我要升級」「升級 OwnMind」「幫我升 OwnMind」「更新 OwnMind」時觸發，自動跑 ~/.ownmind/scripts/interactive-upgrade.sh（Mac/Linux）或 interactive-upgrade.ps1（Windows），逐步回報進度。若 user 說「暫緩升級」「先不要」「稍後再升級」則呼叫 ownmind_save 將廣播 snooze 24h。
+description: OwnMind 版本查詢 + 互動式升級。user 說「查版本」「版本多少」「我的版本」「版號」觸發版本檢查，有新版就主動問要不要升。「我要升級」「升級 OwnMind」「更新 OwnMind」直接跑升級腳本。「暫緩升級」「先不要」則 snooze 廣播 24h。
 user_invocable: true
 ---
 
-# OwnMind 互動式升級 Skill (v1.17.0)
+# OwnMind 版本查詢 + 互動式升級 Skill (v1.17.2)
 
-User 看到升級提醒時（來自 SessionStart hook 或 MCP `_broadcast` 注入），可說「我要升級」觸發此 skill。AI 負責：
-1. 偵測 OS → 跑對應 script
-2. 讀 script 結構化 stdout（`INFO:<code>:msg` / `OK:<code>:msg` / `ERROR:<code>:msg`）
-3. 即時把進度轉述給 user
-4. 失敗時依 error code 引導修復
-5. 成功時回報版本 + dismiss 升級廣播
+此 skill 封裝完整版本管理閉環：**查版本 → 發現新版 → 使用者同意 → 自動升級 → 完成**。
 
 ---
 
-## 觸發意圖（user 說出這些就啟動此 skill）
+## 三種觸發模式
 
-**升級**：
+### 模式 A：查版本 + 同步狀況（唯讀）
+
+User 說出下列任一句 → **check-only 模式**：
+- 「查版本」「查一下版本」「我的版本」「我的 OwnMind 版本」
+- 「版本多少」「現在版本」「版號」「OwnMind 版號」
+- 「check version」「what version」
+
+**流程（用一支腳本一次搞定三層檢查）**：
+
+```bash
+bash ~/.ownmind/scripts/check-sync.sh
+```
+
+輸出格式（每行 `KEY:value`）：
+```
+L1_REMOTE:in_sync | behind count=N | not_git | error
+L2_SERVER:in_sync version=X.Y.Z | outdated client=X.Y.Z server=A.B.C | ahead ... | error ...
+L3_DEPLOY:in_sync | drifted count=N
+L3_DRIFT_FILE:<path>    # 每個 drifted 檔一行（L3 drifted 時才有）
+OVERALL:in_sync | needs_upgrade
+```
+
+**三層解讀**：
+- **L1 Remote**：`~/.ownmind` git HEAD 跟 GitHub origin/main 是否一致
+- **L2 Server**：client 的 `package.json.version` 對比 OwnMind server 回的 `server_version`
+- **L3 Deploy**：`~/.claude/hooks/*`、`~/.claude/skills/*` 是否跟 `~/.ownmind/` source 一致（忘記跑 `update.sh` 會 drift）
+
+**回報 user 的邏輯**：
+- `OVERALL:in_sync` → 「已是最新 vX.Y.Z，全部同步正常」
+- `OVERALL:needs_upgrade` → 依 drift 類型告訴 user 差在哪，然後問「**要我現在幫你升級嗎？**」
+  - User 同意（「好」「要」「升吧」「OK」「yes」）→ 走**模式 B**
+  - User 拒絕 → 提示「可說『暫緩升級』延後提醒 24 小時」
+- `L2_SERVER:ahead` → 「你在 pre-release 版（client 比 server 新），無需升級」
+
+**為什麼非 check-sync.sh 不可**：只比 `package.json.version` 不夠 — user 常見情境是 `~/.ownmind/` 被 MCP auto-update 拉到最新，但 `~/.claude/hooks/` 沒跑 `update.sh` 同步 → 新功能（例如 forced broadcast block）沒生效。必須 L3 diff 檔案才抓得到。
+
+### 模式 B：升級（直接執行）
+
+User 說出下列任一句 → **跳過確認直接跑升級**：
 - 「我要升級」「我要升級 OwnMind」「升級 OwnMind」「幫我升 OwnMind」「更新 OwnMind」「upgrade ownmind」
 
-**Snooze**（不是升級，是延後提醒）：
+也由模式 A 自動導流（user 回 yes 時）。
+
+### 模式 C：Snooze（延後提醒）
+
 - 「暫緩升級」「先不要」「稍後再升級」「晚點再說」「skip」「snooze」
 
 ---
 
-## 執行流程（升級）
+## 執行流程（升級，模式 B）
 
 ### Step 1：偵測 OS + 選對 script
 
