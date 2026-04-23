@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import app from '../src/app.js';
+
+// src/utils/crypto.js process.exit(1) if ENCRYPTION_KEY unset at import-time.
+// Set a test-only key BEFORE dynamically importing app so the suite is
+// runnable with plain `npm test` (no env prefix required).
+process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
+  || 'test-only-encryption-key-32-chars-x';
+const { default: app } = await import('../src/app.js');
 
 function listenApp() {
   return new Promise((resolve) => {
