@@ -160,7 +160,8 @@ OwnMind/
 │   ├── clients.test.js              # v1.17.0 — /api/usage/admin/clients（auth / status / upgrade / multi-tool / coverage / pre-release）
 │   ├── semver.test.js               # v1.17.0 — parseSemver / compareSemver（pre-release / build metadata / malformed）
 │   ├── broadcast.test.js            # v1.17.0 P2 — validate / CRUD / snooze / filter / cooldown / nightly job（46 tests）
-│   └── session-start-render.test.js # v1.17.0 P3 — renderSessionContext（broadcasts + memory）
+│   ├── session-start-render.test.js # v1.17.0 P3 — renderSessionContext（broadcasts + memory）
+│   └── mcp-startup-heartbeat.test.js # MCP 啟動時自動觸發 heartbeat 的靜態檢查（v1.17.4）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
@@ -169,5 +170,8 @@ OwnMind/
     ├── setup-codex.md
     ├── setup-cursor.md
     ├── setup-copilot.md
-    └── setup-online-ai.md
+    ├── setup-online-ai.md
+    └── superpowers/
+        └── plans/
+            └── 2026-04-23-mcp-startup-heartbeat.md  # v1.17.4 MCP 啟動 heartbeat 實作計畫
 ```

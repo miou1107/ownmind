@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.17.4 — MCP 啟動即發 heartbeat（自動安裝回報）
+
+**背景**：v1.17.2 引入的 heartbeat 只在 `ownmind_init` 時觸發。只用 `ownmind_get` / `ownmind_save` 等工具、從不呼叫 init 的已安裝使用者，在 Admin 的「裝機狀況」永遠顯示「未裝」。
+
+**修正**
+- `mcp/index.js`：在 `new StdioServerTransport()` 之前加一行 `sendMcpHeartbeat()`。MCP server 每次啟動都 fire-and-forget 一次 heartbeat（不 await，不會 block 啟動）。UPSERT keyed by `(user_id, tool)`，重複呼叫只會刷新 `last_reported_at`，無害。
+- 影響：所有支援 MCP 的 AI 工具（Claude Code / Cursor / Codex / Antigravity / OpenCode）啟動時自動回報 — 使用者無需手動動作。
+
+**新增測試**
+- `tests/mcp-startup-heartbeat.test.js`：靜態檢查 `mcp/index.js` 源碼，確保 top-level `sendMcpHeartbeat();` 呼叫存在於 `await server.connect(transport)` 之前。
+
+**升級方式**
+舊版（≤ v1.17.3）使用者跑一行指令即可：
+```bash
+bash ~/.ownmind/scripts/interactive-upgrade.sh
+```
+
+---
+
 ## v1.17.3 — MCP 支援多 AI 工具識別（OWNMIND_CLIENT_TOOL env var）
 
 **背景**：v1.17.2 的 MCP heartbeat 把 `tool` hardcode 成 `claude-code`，導致 Cursor / Codex / Antigravity / OpenCode 等用戶用 MCP 時會被誤標為 claude-code，污染 dashboard 的 per-tool 統計。
