@@ -22,11 +22,20 @@ const DEFAULT_SETTINGS_PATH = path.join(HOME, '.claude', 'settings.json');
 // ============================================================
 
 /**
- * 安全讀取 JSON 檔案，失敗回傳 null
+ * 去掉字串開頭的 UTF-8 BOM (\uFEFF)。
+ * v1.17.12：Windows installer (PS 5.1) 用 `Set-Content -Encoding UTF8` 寫 JSON
+ * 時會加 BOM，Node 的 JSON.parse 會炸。
+ */
+function stripBom(s) {
+  return typeof s === 'string' && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
+}
+
+/**
+ * 安全讀取 JSON 檔案，失敗回傳 null。容忍 UTF-8 BOM。
  */
 export function readJsonSafe(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return JSON.parse(stripBom(fs.readFileSync(filePath, 'utf8')));
   } catch {
     return null;
   }
@@ -47,7 +56,8 @@ export function getChangedSourceFiles(files, patterns = SOURCE_PATTERNS) {
 export function getClientVersion() {
   try {
     // 統一從根目錄 package.json 讀取版號（單一來源）
-    const pkg = JSON.parse(fs.readFileSync(path.join(HOME, '.ownmind', 'package.json'), 'utf8'));
+    // v1.17.12 同樣 stripBom 防 Windows 編輯器吐的 BOM
+    const pkg = JSON.parse(stripBom(fs.readFileSync(path.join(HOME, '.ownmind', 'package.json'), 'utf8')));
     return pkg.version || '?';
   } catch {
     return '?';
@@ -60,7 +70,10 @@ export function getClientVersion() {
  */
 export function readCredentials(settingsPath = DEFAULT_SETTINGS_PATH) {
   try {
-    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    // v1.17.12 — stripBom 防 Windows PS 5.1 用 Set-Content -Encoding UTF8 寫出
+    // 的 BOM-prefixed JSON。沒 stripBom 時 Adam/Eric 的 scanner 會在這裡 throw，
+    // 被 catch 成空 creds，scanner 提早退出，Admin 看到的就是「未裝」+ 用量 0。
+    const s = JSON.parse(stripBom(fs.readFileSync(settingsPath, 'utf8')));
     const env = s.mcpServers?.ownmind?.env || {};
     return { apiKey: env.OWNMIND_API_KEY || '', apiUrl: env.OWNMIND_API_URL || '' };
   } catch {
