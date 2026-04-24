@@ -90,8 +90,14 @@ app.get('/health', (req, res) => {
 // (b) served content is guaranteed to match the deployed commit (no hot-reload
 // drift); (c) zero disk I/O per request.
 import { readFileSync } from 'fs';
-const bootstrapSh = readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.sh'), 'utf8');
-const bootstrapPs1 = readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.ps1'), 'utf8');
+// v1.17.10 回報者 Adam：bootstrap.ps1 在磁碟保留 UTF-8 BOM 支援 `powershell -File`
+// (PS 5.1 需要 BOM 才能正確讀中文)，但 `iwr | iex` 路徑會把開頭 \uFEFF 當 cmdlet
+// 呼叫，吐 warning。serve 時 strip 首字元 BOM 讓 iex 安靜執行。
+function stripBom(s) {
+  return s.length > 0 && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
+}
+const bootstrapSh = stripBom(readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.sh'), 'utf8'));
+const bootstrapPs1 = stripBom(readFileSync(join(__dirname, '..', 'scripts', 'bootstrap.ps1'), 'utf8'));
 app.get('/bootstrap.sh', (req, res) => {
   res.type('text/x-shellscript; charset=utf-8').send(bootstrapSh);
 });

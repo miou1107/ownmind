@@ -1,5 +1,30 @@
 # OwnMind 更新紀錄
 
+## v1.17.10 — 修 v1.17.9 遺漏的三個 Windows 安裝警告（回報者 Adam）
+
+**背景**：Adam 裝完 v1.17.9 回報三個警告。檔案都在（驗證通過），但警告嚇人且暴露三個真 bug：
+1. **`Copy-Item cannot overwrite with itself ×4`** — install.ps1 把 `$OwnmindDir\shared\verification.js` 複製到 `$HOME\.ownmind\shared\`，但 `$OwnmindDir` 本來就是 `$HOME\.ownmind`，等於自己複製到自己。git hook JS 檔（3 個）同樣問題。install.sh 用 `-ef` 檢查 inode 避開，install.ps1 漏做
+2. **`Register-ScheduledTask Duration 格式錯誤`** — `[TimeSpan]::MaxValue` 在某些 Windows build 超出 Task Scheduler 可接受範圍，整個 task 註冊失敗 → usage scanner 排程沒上 → heartbeat 每 30 分鐘送不出去（只剩 MCP startup heartbeat 能送）
+3. **`首行 BOM 字元被誤解讀為命令`** — `iwr -useb bootstrap.ps1 | iex` 時，response 首字 `\uFEFF` 被 iex 當 cmdlet 呼叫，吐「不是有效命令」warning。雖無害但會嚇到使用者以為安裝失敗
+
+**修正**
+- `install.ps1`：新增 `Copy-IfDifferent` helper，用 `[System.IO.Path]::GetFullPath` 比對解析後路徑，同位置就 skip。verification.js + 3 個 git hook JS 全改用此 helper
+- `scripts/windows/register-scanner-task.ps1`：`-RepetitionDuration ([TimeSpan]::MaxValue)` → `-RepetitionDuration (New-TimeSpan -Days 36500)`（100 年，符合 Microsoft docs 建議）
+- `src/app.js`：新增 `stripBom` helper，boot 時 strip bootstrap.sh / bootstrap.ps1 的首字 `\uFEFF`；磁碟上檔案仍保留 BOM（`powershell -File` 讀檔路徑還是需要）
+
+**新增測試**
+- `tests/install-ps1-copy-safety.test.js` — 靜態檢查 install.ps1 有 self-overwrite guard
+- `tests/scheduled-task-duration.test.js` — 靜態檢查不再用 `[TimeSpan]::MaxValue`，改用有限大值
+- `tests/bootstrap-strip-bom.test.js` — 靜態檢查 src/app.js 有 stripBom 且磁碟 bootstrap.ps1 仍有 BOM
+- 全 suite 539/539 綠，零 regression
+
+**Adam 實測驗證**
+裝完 v1.17.10 應該三個警告全消失；usage scanner 排程 30 分鐘會正常執行 → `collector_heartbeat` 更新 → Admin 「裝機狀況」看得到。
+
+**IR-022 server + client 兩端皆觸及**：server 改 `src/app.js` serve 邏輯（需 deploy）；client 改 install.ps1 + register-scanner-task.ps1。
+
+---
+
 ## v1.17.9 — 修 Windows 兩個獨立問題（回報者 Eric + Adam）
 
 **背景 #1（Eric）**：Windows PowerShell 5.1（Windows 10 預設）讀 `.ps1` 時用系統 codepage（繁中 Windows 是 CP950）而非 UTF-8，中文字節被誤解讀，部分序列撞到 PowerShell 保留字元（反引號、引號）造成 parser 失敗。PowerShell 7+ 沒事，但不能預期每個使用者都升 pwsh。
