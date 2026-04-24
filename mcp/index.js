@@ -665,6 +665,25 @@ async function handleTool(name, args) {
 
     case "ownmind_get": {
       const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
+      // v1.17.13 Michelle case: session_log 存 session_logs 獨立表而非 memories，
+      // 轉呼 /api/session/recent 讓使用者寫 (ownmind_log_session) 讀 (ownmind_get) 一致
+      if (args.type === 'session_log') {
+        try {
+          const rows = await callApi("GET", `/api/session/recent?days=30&include_compressed=true`);
+          logEvent('memory_get', { type: args.type, from_session_logs: true });
+          return { data: Array.isArray(rows) ? rows : [] };
+        } catch (err) {
+          if (isNetworkError(err)) {
+            logEvent('memory_get', { type: args.type, offline: true });
+            return {
+              data: [],
+              _offline: true,
+              _offline_notice: '【OwnMind 離線模式】session_log 需要連線查詢 session_logs 表',
+            };
+          }
+          throw err;
+        }
+      }
       try {
         const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}`);
         if (data.new_token) currentSyncToken = data.new_token;
@@ -688,13 +707,30 @@ async function handleTool(name, args) {
     case "ownmind_search": {
       const searchTokenParam = currentSyncToken ? `&sync_token=${currentSyncToken}` : '';
       try {
-        const data = await callApi(
-          "GET",
-          `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`
-        );
-        if (data.new_token) currentSyncToken = data.new_token;
-        logEvent('memory_search', { query: args.query });
-        return data;
+        // v1.17.13 同時搜 memories + session_logs 合併（Michelle case）
+        const [memoryRows, sessionRows] = await Promise.all([
+          callApi("GET", `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`)
+            .catch(() => []),
+          callApi("GET", `/api/session/recent?days=90&include_compressed=true&q=${encodeURIComponent(args.query)}`)
+            .catch(() => []),
+        ]);
+        const memoryData = Array.isArray(memoryRows) ? memoryRows : (memoryRows?.data || []);
+        const sessionData = Array.isArray(sessionRows) ? sessionRows : [];
+        const sessionAsMemory = sessionData.map((s) => ({
+          id: s.id,
+          type: 'session_log',
+          title: (s.summary || '').slice(0, 80),
+          content: s.summary,
+          details: s.details,
+          tool: s.tool,
+          model: s.model,
+          created_at: s.created_at,
+          _source: 'session_logs',
+        }));
+        const merged = [...memoryData, ...sessionAsMemory];
+        if (memoryRows?.new_token) currentSyncToken = memoryRows.new_token;
+        logEvent('memory_search', { query: args.query, memory_hits: memoryData.length, session_hits: sessionData.length });
+        return { data: merged, memory_hits: memoryData.length, session_hits: sessionData.length };
       } catch (err) {
         if (isNetworkError(err)) {
           const cache = readMemoryCache();

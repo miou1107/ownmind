@@ -4,6 +4,7 @@ import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { SESSION_RETENTION_DAYS } from '../constants.js';
 import { computePeriodRange, computeReportData } from '../utils/report.js';
+import { buildSessionRecentQuery } from '../lib/session-query.js';
 
 const router = Router();
 router.use(auth);
@@ -63,37 +64,21 @@ router.post('/', async (req, res) => {
 
 /**
  * GET /recent - 取得近期 session
- * ?days=7          - 最近幾天（預設 7）
- * ?tool=cursor     - 按工具過濾
- * ?include_compressed=true - 包含月摘要
+ * ?days=7                   - 最近幾天（預設 7）
+ * ?tool=cursor              - 按工具過濾
+ * ?include_compressed=true  - 包含月摘要
+ * ?q=keyword                - v1.17.13 搜 summary + details ILIKE（Michelle case）
  */
 router.get('/recent', async (req, res) => {
   try {
-    const days = parseInt(req.query.days) || 7;
-    const tool = req.query.tool || null;
-    const includeCompressed = req.query.include_compressed === 'true';
-
-    let sql = `SELECT * FROM session_logs WHERE user_id = $1`;
-    const params = [req.user.id];
-    let paramIdx = 2;
-
-    if (!includeCompressed) {
-      sql += ` AND compressed = false`;
-    }
-
-    sql += ` AND created_at >= NOW() - INTERVAL '1 day' * $${paramIdx}`;
-    params.push(days);
-    paramIdx++;
-
-    if (tool) {
-      sql += ` AND tool = $${paramIdx}`;
-      params.push(tool);
-      paramIdx++;
-    }
-
-    sql += ` ORDER BY created_at DESC`;
-
-    const result = await query(sql, params);
+    const { text, values } = buildSessionRecentQuery({
+      userId: req.user.id,
+      days: parseInt(req.query.days) || 7,
+      tool: req.query.tool || null,
+      includeCompressed: req.query.include_compressed === 'true',
+      q: req.query.q || null,
+    });
+    const result = await query(text, values);
     res.json(result.rows);
   } catch (err) {
     logger.error('查詢近期 session 失敗', { error: err.message });
