@@ -36,6 +36,17 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
+# --- Write-Utf8NoBom helper (v1.17.12, 回報者 Adam/Eric root cause) ---
+# PS 5.1 的 `Set-Content -Encoding UTF8` 會加 UTF-8 BOM (EF BB BF)，下游 Node
+# JSON.parse / /bin/sh / cmd 讀到 BOM 直接爆。統一用 [System.IO.File]::WriteAllText
+# 寫 BOM-less UTF-8。注意該 API 只接受絕對路徑 — 所以內部 Resolve-Path。
+function Write-Utf8NoBom {
+  param([string]$Path, [string]$Content)
+  $full = [System.IO.Path]::GetFullPath($Path)
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($full, $Content, $utf8NoBom)
+}
+
 # --- 提前建立所有需要的目錄 ---
 $OwnmindDir     = Join-Path $HOME ".ownmind"
 $ClaudeDir       = Join-Path $HOME ".claude"
@@ -86,11 +97,11 @@ if (Test-Path $ClaudeSettings) {
       $settings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
     }
     $settings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$McpConfig) -Force
-    $settings | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
+    Write-Utf8NoBom -Path $ClaudeSettings -Content ($settings | ConvertTo-Json -Depth 10)
   }
 } else {
   Write-Host "   建立 Claude Code MCP 設定..."
-  @{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
+  Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
 }
 
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
@@ -110,11 +121,11 @@ if (Test-Path $ClaudeMd) {
     Write-Host "   CLAUDE.md 已包含 OwnMind，跳過"
   } else {
     Write-Host "   更新 CLAUDE.md..."
-    Add-Content $ClaudeMd $OwnmindBlock -Encoding UTF8
+    Write-Utf8NoBom -Path $ClaudeMd -Content ($existing + $OwnmindBlock)
   }
 } else {
   Write-Host "   建立 CLAUDE.md..."
-  Set-Content $ClaudeMd $OwnmindBlock -Encoding UTF8
+  Write-Utf8NoBom -Path $ClaudeMd -Content $OwnmindBlock
 }
 
 # --- 4. 安裝 Skill ---
@@ -186,7 +197,7 @@ if (-not $preExists) {
   Write-Host "   加入 PreToolUse hook"
 }
 
-$hookSettings | ConvertTo-Json -Depth 10 | Set-Content $ClaudeSettings -Encoding UTF8
+Write-Utf8NoBom -Path $ClaudeSettings -Content ($hookSettings | ConvertTo-Json -Depth 10)
 
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
 Write-Host "   安裝 Git Hooks（Iron Rule Verification Engine）..."
@@ -240,18 +251,14 @@ $PreCommitJs = Join-Path $HOME ".ownmind\hooks\ownmind-git-pre-commit.js"
 $PostCommitJs = Join-Path $HOME ".ownmind\hooks\ownmind-git-post-commit.js"
 
 if (Test-Path (Join-Path $OwnmindDir "hooks\ownmind-git-pre-commit.js")) {
-  @"
-#!/bin/sh
-node "$HOME/.ownmind/hooks/ownmind-git-pre-commit.js"
-"@ | Set-Content $PreCommitBat -Encoding UTF8 -NoNewline
+  $preContent = "#!/bin/sh`nnode `"$HOME/.ownmind/hooks/ownmind-git-pre-commit.js`""
+  Write-Utf8NoBom -Path $PreCommitBat -Content $preContent
   Write-Host "   安裝 git pre-commit hook"
 }
 
 if (Test-Path (Join-Path $OwnmindDir "hooks\ownmind-git-post-commit.js")) {
-  @"
-#!/bin/sh
-node "$HOME/.ownmind/hooks/ownmind-git-post-commit.js"
-"@ | Set-Content $PostCommitBat -Encoding UTF8 -NoNewline
+  $postContent = "#!/bin/sh`nnode `"$HOME/.ownmind/hooks/ownmind-git-post-commit.js`""
+  Write-Utf8NoBom -Path $PostCommitBat -Content $postContent
   Write-Host "   安裝 git post-commit hook"
 }
 
@@ -280,11 +287,11 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
         $cursorSettings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
       }
       $cursorSettings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$McpConfig) -Force
-      $cursorSettings | ConvertTo-Json -Depth 10 | Set-Content $CursorMcp -Encoding UTF8
+      Write-Utf8NoBom -Path $CursorMcp -Content ($cursorSettings | ConvertTo-Json -Depth 10)
     }
   } else {
     Write-Host "   設定 Cursor MCP..."
-    @{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10 | Set-Content $CursorMcp -Encoding UTF8
+    Write-Utf8NoBom -Path $CursorMcp -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
   }
 }
 
@@ -299,11 +306,17 @@ if (Test-Path $NoScannerFlag) {
   # 註冊 Task Scheduler（register-scanner-task.ps1 內建 node 偵測 + v20+ 驗證 + .node-path 快取）
   $RegisterScript = Join-Path $OwnmindDir 'scripts\windows\register-scanner-task.ps1'
   if (Test-Path $RegisterScript) {
-    try {
-      & powershell -ExecutionPolicy Bypass -File $RegisterScript
+    # v1.17.12 Adam 類問題：舊版 silent fail，install 印「已註冊」但其實 task 沒上。
+    # 現在要同時檢查 exit code + 用 Get-ScheduledTask 驗證真的存在。
+    & powershell -ExecutionPolicy Bypass -File $RegisterScript
+    $regExit = $LASTEXITCODE
+    $taskOk = $null -ne (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue)
+    if ($regExit -eq 0 -and $taskOk) {
       Write-Host "   Task Scheduler 已註冊（每 30 分鐘執行）" -ForegroundColor Green
-    } catch {
-      Write-Host "   Task Scheduler 註冊失敗: $_" -ForegroundColor Yellow
+    } else {
+      Write-Host "   Task Scheduler 註冊失敗 (exit=$regExit, task_exists=$taskOk)" -ForegroundColor Yellow
+      Write-Host "   usage scanner 不會每 30 分鐘跑；請手動 debug 或重跑：" -ForegroundColor Yellow
+      Write-Host "     powershell -ExecutionPolicy Bypass -File $RegisterScript" -ForegroundColor Yellow
     }
   } else {
     Write-Host "   找不到 register-scanner-task.ps1；請手動執行" -ForegroundColor Yellow

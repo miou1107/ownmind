@@ -1,5 +1,59 @@
 # OwnMind 更新紀錄
 
+## v1.17.12 — 修 Windows usage scanner 全體卡關的 root cause（回報者 Vin observes）
+
+**背景**：Admin 後台「團隊用量排行榜」顯示 Mac 使用者 ×2（Vincent, Michelle）用量正常，Windows 使用者 ×4（Sunny, Adam, Eric, pitt）**全部 0**。Eric 的 Task Scheduler 明明已排程，為何用量還是 0？Codex adversarial review 找到 smoking gun：
+
+**Root cause — `install.ps1` 寫 BOM-prefixed settings.json**
+
+PS 5.1 的 `Set-Content -Encoding UTF8` 在 Windows 10 預設環境會加 UTF-8 BOM (`EF BB BF`)。Node.js 的 `JSON.parse('\uFEFF{...}')` 直接 throw SyntaxError。
+
+結果鏈式反應：
+1. `shared/helpers.js` 的 `readCredentials()` catch 後回空字串
+2. `hooks/ownmind-usage-scanner.js:97-100` 偵測 creds 空 → 立刻 log "credentials not found; skipping" + exit
+3. 沒 heartbeat 送 → Admin 看到「未裝」
+4. 沒 event 送 → 用量全 0
+5. MCP server 啟動時同樣 readCredentials → MCP crash → 沒 MCP startup heartbeat
+
+諷刺的是：`scripts/windows/register-scanner-task.ps1:64-69` 已經明註「避開 PS 5.1 UTF-8 BOM」用 `WriteAllText` 寫 `.node-path`，但 `install.ps1` 寫 settings.json 沒做同樣防護。Mac `install.sh` 走 heredoc 不帶 BOM，所以完全不受影響。
+
+**修正 — Defense in depth**
+
+**A. `install.ps1`：全面改用 `Write-Utf8NoBom` helper**
+- 新增 helper：`[System.IO.File]::WriteAllText(..., new UTF8Encoding $false)` 明確指定 no-BOM
+- settings.json（3 處）/ CLAUDE.md（2 處）/ Cursor mcp.json（2 處）/ git hook shell wrapper（2 處）全部改寫
+
+**B. `shared/helpers.js`：`readCredentials` / `readJsonSafe` / `getClientVersion` 都 stripBom**
+- 現有已中招的 Windows 使用者**不用重裝**；下次 scanner 跑 → readCredentials 能 parse → 開始送 heartbeat/event
+- 未來再出現 BOM 污染（編輯器/其他 tool）也會被吸收
+
+**C. `install.ps1`：註冊 Task Scheduler 後驗證 `$LASTEXITCODE + Get-ScheduledTask`**
+- Adam 當時 Duration bug，`Register-ScheduledTask` 失敗但 install 印「已註冊」silent lie
+- 現在失敗會清楚顯示 `(exit=N, task_exists=False)` + 給 debug 指令
+
+**新增測試**
+- `tests/credentials-bom-safe.test.js` — readCredentials / readJsonSafe BOM tolerance（6 tests）
+- `tests/install-ps1-no-bom-outputs.test.js` — install.ps1 禁用 Set-Content 寫敏感檔（3 tests）
+- `tests/install-ps1-scanner-task-check.test.js` — install.ps1 驗證 scanner task 真的註冊（1 test）
+- 全 suite 549/549 綠
+
+**對 Eric/Adam/Sunny/pitt**
+升到 v1.17.12：
+```
+cd ~/.ownmind
+git pull
+cd mcp && npm install  # 新 readCredentials 生效
+cd .. && powershell -ExecutionPolicy Bypass -File scripts\windows\register-scanner-task.ps1
+```
+
+或跟 AI 說「升級 OwnMind」（走 interactive-upgrade.ps1 全部做完）。
+
+升級後下次 scanner 30 分鐘觸發就會正常送 heartbeat + event，Admin 裝機狀況 + 用量排行榜都會有數字。
+
+**IR-022 server + client 兩端皆觸及**：純 client 修（helpers.js + install.ps1），但 bootstrap route 會 serve 給 `iwr|iex` 使用者，server deploy 後才吐新版。
+
+---
+
 ## v1.17.11 — Task Scheduler Duration 再調小（回報者 Eric）
 
 **背景**：v1.17.10 把 `RepetitionDuration` 從 `[TimeSpan]::MaxValue` 改成 `36500 天（100 年）`，以為解決了問題。Eric 實測回報：
