@@ -1,5 +1,41 @@
 # OwnMind 更新紀錄
 
+## v1.17.13 — 修 session_log 寫讀不一致（回報者 Michelle）
+
+**背景**：Michelle 用 `ownmind_log_session` 寫入 id=221 後，用 `ownmind_get("session_log")` / `ownmind_search` 試搜 `ai_kol` / `Selenium` / `趨勢` 全部回空。追查發現**單一 root cause，兩個症狀**：
+
+| 動作 | 實際操作 |
+|---|---|
+| `ownmind_log_session` 寫入 | → `INSERT INTO session_logs`（獨立表） |
+| `ownmind_get("session_log")` 讀 | → `SELECT FROM memories WHERE type='session_log'` |
+| `ownmind_search` 搜 | → `SELECT FROM memories WHERE content/title ILIKE` |
+
+寫 A 讀 B — 兩個 get 都永遠 miss 剛寫的 session_log。
+
+**修法**（server + MCP 端分叉整合，不動 `session_logs` 表避免 migration）
+
+**Server — `src/routes/session.js` + 新 `src/lib/session-query.js`**
+- `GET /api/session/recent` 加 `?q=` 參數，ILIKE search `summary` + `details::text`（Michelle 那類 session-topic 搜尋）
+- SQL builder 拆成純函式 `buildSessionRecentQuery`，新 `tests/session-recent-query.test.js` 9 tests 守住
+
+**MCP — `mcp/index.js`**
+- `ownmind_get('session_log')`：偵測到 type 轉呼 `/api/session/recent?days=30&include_compressed=true`（讀到剛寫的 session_logs 內容）
+- `ownmind_search`：`Promise.all` 同時查 `/api/memory/search` + `/api/session/recent?q=` → 合併成單一 `data` 陣列，session_logs 項目標 `_source: 'session_logs'` + `type: 'session_log'` 方便區分。新回應含 `memory_hits` / `session_hits` 計數給 AI 看清楚
+
+**對 Michelle / 所有使用者**
+升 v1.17.13 後下次 `ownmind_search "ai_kol"` 會同時搜 memories + session_logs，她的 session id=221（summary 含 ai_kol）會現身。`ownmind_get("session_log")` 會列最近 30 天的 session 紀錄。
+
+**為什麼不動 `session_logs` 表**：activity / weeklyReport / report 都依賴此表 schema，migrate 進 memories 會 cascading break。MCP 端分叉是最小風險路徑。
+
+**IR-022 server + client 兩端皆觸及**：server 端 query + route；MCP 端 tool handler 分叉。
+
+**新增測試**：`tests/session-recent-query.test.js`（9 tests），全 suite 558/558 綠。
+
+**未修（留 v1.17.14 或以後）**
+- 🟡 Tier 2 (Cursor / Antigravity / OpenCode) 在 Windows 預設沒 `sqlite3` CLI 失敗 — 只影響 session_count 計數，不影響 Tier 1 token 統計
+
+---
+
 ## v1.17.12 — 修 Windows usage scanner 全體卡關的 root cause（回報者 Vin observes）
 
 **背景**：Admin 後台「團隊用量排行榜」顯示 Mac 使用者 ×2（Vincent, Michelle）用量正常，Windows 使用者 ×4（Sunny, Adam, Eric, pitt）**全部 0**。Eric 的 Task Scheduler 明明已排程，為何用量還是 0？Codex adversarial review 找到 smoking gun：
