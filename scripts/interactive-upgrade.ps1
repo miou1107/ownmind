@@ -1,10 +1,15 @@
-# OwnMind 互動式升級 script — Windows PowerShell (v1.17.0 P5)
+﻿# OwnMind 互動式升級 script — Windows PowerShell (v1.17.0 P5)
 #
 # 用法：powershell -ExecutionPolicy Bypass -File ~/.ownmind/scripts/interactive-upgrade.ps1
 # stdout 格式與 bash 版相同（INFO / OK / ERROR / ASK 前綴）
 
 Set-StrictMode -Version Latest
 Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction SilentlyContinue
+
+# 環境正規化（v1.17.9, 回報者 Adam）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
+  Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
+}
 
 $OwnMindDir = Join-Path $HOME ".ownmind"
 $Ts = Get-Date -Format "yyyyMMdd-HHmmss"

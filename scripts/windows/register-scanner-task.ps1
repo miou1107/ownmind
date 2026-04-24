@@ -1,4 +1,4 @@
-# register-scanner-task.ps1 — OwnMind token usage scanner Windows Task Scheduler 註冊
+﻿# register-scanner-task.ps1 — OwnMind token usage scanner Windows Task Scheduler 註冊
 #
 # 用法（install.ps1 會自動呼叫）：
 #   powershell -ExecutionPolicy Bypass -File register-scanner-task.ps1
@@ -6,6 +6,11 @@
 # 每 30 分鐘執行一次，使用當前登入 user 身分，即使 IDE 沒開也會跑。
 
 $ErrorActionPreference = 'Stop'
+
+# 環境正規化（v1.17.9, 回報者 Adam）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
+  Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
+}
 
 $TaskName = 'OwnMind Usage Scanner'
 $OwnMindDir = Join-Path $env:USERPROFILE '.ownmind'

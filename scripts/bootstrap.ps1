@@ -1,4 +1,4 @@
-# OwnMind Universal Bootstrap for Windows PowerShell
+﻿# OwnMind Universal Bootstrap for Windows PowerShell
 #
 # Usage:
 #   Already installed (upgrade only):
@@ -23,6 +23,11 @@
 #   "ERROR:install:<message>" — 失敗
 
 $ErrorActionPreference = "Stop"
+
+# 環境正規化（v1.17.9, 回報者 Adam）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
+  Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
+}
 
 $OwnmindDir = if ($env:OWNMIND_DIR) { $env:OWNMIND_DIR } else { "$env:USERPROFILE\.ownmind" }
 $Repo = if ($env:OWNMIND_REPO) { $env:OWNMIND_REPO } else { "https://github.com/miou1107/ownmind.git" }
