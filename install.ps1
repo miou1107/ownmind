@@ -36,6 +36,30 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
+# --- sqlite3 自動裝（v1.17.14，Tier 2 Cursor/Antigravity/OpenCode 需要）---
+# Windows 預設沒 sqlite3 CLI → Cursor/Antigravity/OpenCode usage 永遠收不到。
+# 用 winget（Windows 10 1809+ 內建 App Installer）自動裝；裝失敗走 fallback。
+if (-not (Get-Command sqlite3 -ErrorAction SilentlyContinue)) {
+  Write-Host "   未偵測到 sqlite3（Tier 2 usage scanner 需要）" -ForegroundColor Yellow
+  $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+  if ($hasWinget) {
+    Write-Host "   嘗試用 winget 自動安裝 SQLite.SQLite..."
+    try {
+      winget install --id SQLite.SQLite --scope user --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "   sqlite3 已裝（重開 terminal 讓 PATH 生效；下次 scanner 自動啟用 Tier 2）" -ForegroundColor Green
+      } else {
+        Write-Host "   winget install 回傳 exit=$LASTEXITCODE；請手動裝後重開 terminal" -ForegroundColor Yellow
+      }
+    } catch {
+      Write-Host "   winget install 失敗：$_" -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "   無 winget；請到 https://www.sqlite.org/download.html 下載 sqlite-tools-win-x64 並加入 PATH" -ForegroundColor Yellow
+  }
+  Write-Host "   不裝 sqlite3 不影響 Claude Code / Codex 主要 usage，只是 Tier 2（Cursor / Antigravity / OpenCode）session 計數不會收集" -ForegroundColor Gray
+}
+
 # --- Write-Utf8NoBom helper (v1.17.12, 回報者 Adam/Eric root cause) ---
 # PS 5.1 的 `Set-Content -Encoding UTF8` 會加 UTF-8 BOM (EF BB BF)，下游 Node
 # JSON.parse / /bin/sh / cmd 讀到 BOM 直接爆。統一用 [System.IO.File]::WriteAllText

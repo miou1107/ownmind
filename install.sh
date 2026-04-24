@@ -23,6 +23,18 @@ fi
 
 echo "🧠 OwnMind 安裝中..."
 
+# --- sqlite3 偵測（v1.17.14，Tier 2 scanner 需要）---
+# Mac 預設內建 sqlite3，Linux 多半要 apt install。Windows（Git Bash）交由 install.ps1 處理。
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  echo "⚠️  未偵測到 sqlite3 CLI（Tier 2 usage scanner — Cursor / Antigravity / OpenCode — 需要）"
+  case "$OSTYPE" in
+    linux*) echo "   裝法：sudo apt install sqlite3（Debian/Ubuntu）或 sudo dnf install sqlite（Fedora/RHEL）" ;;
+    darwin*) echo "   Mac 通常內建；若真的沒裝：brew install sqlite" ;;
+    msys*|cygwin*|win32*) echo "   Windows：跑 install.ps1 會自動用 winget 裝，或到 https://www.sqlite.org/download.html" ;;
+  esac
+  echo "   不裝不影響 Claude Code / Codex 主要 usage，只是 Tier 2 session 計數不會收集"
+fi
+
 # --- 偵測作業系統 ---
 IS_WINDOWS=false
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then

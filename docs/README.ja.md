@@ -2,7 +2,7 @@ AIパーソナライズド永続メモリソリューション
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.17.13** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.17.14** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォームAIメモリシステム
 

@@ -28,7 +28,13 @@ import path from 'path';
 import os from 'os';
 
 const execFileP = promisify(execFile);
-const DEFAULT_DB = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
+// v1.17.14 — 補 win32 path（OpenCode Windows 版放 AppData/Roaming/opencode/）
+const DEFAULT_DB_PATHS = {
+  darwin: path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db'),
+  linux: path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db'),
+  win32: path.join(os.homedir(), 'AppData', 'Roaming', 'opencode', 'opencode.db'),
+};
+const DEFAULT_DB = DEFAULT_DB_PATHS[process.platform] ?? DEFAULT_DB_PATHS.linux;
 const TOOL = 'opencode';
 const SOURCE_KEY = 'opencode';  // 全域單一 cursor，不按檔分
 
@@ -69,7 +75,9 @@ export function createOpenCodeAdapter({
         if (err.code === 'ENOENT') {
           logger?.warn?.(
             `[opencode scanner] sqlite3 CLI not found at '${sqlitePath}'. ` +
-            `Install sqlite3 or pass sqlitePath option. Skipping OpenCode scan.`
+            `裝法：Windows 跑 \`winget install SQLite.SQLite\`、Linux 跑 \`apt install sqlite3\`、` +
+            `或從 https://www.sqlite.org/download.html 下載。裝完重開 terminal。` +
+            `不裝的話 OpenCode Tier 2 usage 永遠無法收集（Mac/Linux 多半已內建）。`
           );
         } else {
           logger?.warn?.(`[opencode scanner] sqlite query failed: ${err.message}`);

@@ -1,5 +1,37 @@
 # OwnMind 更新紀錄
 
+## v1.17.14 — Tier 2 (Cursor / Antigravity / OpenCode) Windows 支援（v1.17.12 留的 Tier 2 債）
+
+**背景**：v1.17.12 修好 Windows 主線 Tier 1（Claude Code / Codex）usage scanner 的 BOM root cause，但 Tier 2（Cursor / Antigravity / OpenCode）Windows 仍永遠無法收集 session 計數。原因：
+1. `opencode.js` 沒 win32 path branch — `DEFAULT_DB` 硬寫 POSIX `.local/share/opencode/`
+2. `vscode-telemetry.js` + `opencode.js` 都靠 `sqlite3` CLI，Windows 預設沒裝 → ENOENT 直接 skip
+
+**修正**
+
+**Scanner adapter**
+- `shared/scanners/opencode.js`：新增 `DEFAULT_DB_PATHS = {darwin, linux, win32}`，Windows 指向 `AppData/Roaming/opencode/opencode.db`
+- `shared/scanners/vscode-telemetry.js`：ENOENT 錯誤訊息加具體裝法（`winget install` / `apt install` / sqlite.org URL）
+- `shared/scanners/opencode.js`：同上 actionable error
+
+**Install 腳本自動裝 sqlite3**
+- `install.ps1`：偵測到沒 sqlite3 → 嘗試 `winget install --id SQLite.SQLite --scope user --silent`（Win10 1809+ 內建 winget）。失敗 fallback 印清楚手動裝法
+- `install.sh`：新用戶偵測沒 sqlite3 → 按 OS 印正確裝法（Linux `apt install`、Mac `brew install`、Windows 轉 install.ps1）
+- Mac 多半內建，所以只對真正缺少的平台 warn
+
+**新增測試**
+- `tests/tier2-windows-fix.test.js`（8 tests）— opencode win32 path + install 腳本 sqlite3 偵測 + actionable error 訊息
+- 全 suite 566/566 綠
+
+**對使用者**
+- 新 install：Windows 端執行 install.ps1 會自動裝 sqlite3（winget 成功率高），只需重開 terminal 讓 PATH 生效。下次 scanner 跑就能收 Tier 2 data
+- 已裝使用者：跟 AI 說「升級 OwnMind」或手動跑 install.ps1 / install.sh，scanner 下次 30 分鐘 trigger 就會順便用上 sqlite3
+
+**為什麼不 bundle sqlite3.exe 進 repo**：binary (~1.5MB) 放版控不理想；winget 是 Windows 官方認可的 install 路徑、user 事後也可用同一條指令更新 sqlite，可維護性最好。
+
+**IR-022 server + client 兩端皆觸及**：純 client 修（scanner adapter + install scripts）；server 無改動。
+
+---
+
 ## v1.17.13 — 修 session_log 寫讀不一致（回報者 Michelle）
 
 **背景**：Michelle 用 `ownmind_log_session` 寫入 id=221 後，用 `ownmind_get("session_log")` / `ownmind_search` 試搜 `ai_kol` / `Selenium` / `趨勢` 全部回空。追查發現**單一 root cause，兩個症狀**：
