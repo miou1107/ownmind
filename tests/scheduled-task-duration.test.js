@@ -30,12 +30,16 @@ describe('register-scanner-task.ps1 — Duration', () => {
     );
   });
 
-  it('要用 New-TimeSpan -Days <large>（>= 1000 天）', () => {
+  it('Days 介於 1000 ~ 9999 之間（v1.17.11 Eric 實測上限）', () => {
     const match = content.match(
       /RepetitionDuration\s+\(New-TimeSpan\s+-Days\s+(\d+)\)/
     );
     assert.ok(match, '缺 RepetitionDuration (New-TimeSpan -Days N) 寫法');
     const days = parseInt(match[1], 10);
-    assert.ok(days >= 1000, `Days=${days} 太小；推薦 36500 (100 年)`);
+    assert.ok(
+      days >= 1000 && days <= 9999,
+      `Days=${days} 超出 Task Scheduler COM validator 範圍；` +
+      `>= 1000 保足夠長，<= 9999 避 "Duration 超出允許範圍" warning（Eric 回報 36500 會吐）`
+    );
   });
 });

@@ -82,15 +82,15 @@ $Action = New-ScheduledTaskAction `
 # 開機後 5 分鐘首次跑，之後每 30 分鐘；無限重複。
 # 重要：使用單一 "Once" trigger + Repetition，不要對 AtLogOn trigger 指派
 # .Repetition 屬性（某些 Windows build 的 CimInstance 會 reject re-assignment）。
-# v1.17.10 修 Adam 回報「Duration 格式錯誤」：
-# [TimeSpan]::MaxValue 在某些 Windows build 超出 Task Scheduler 可接受範圍
-# → Register-ScheduledTask reject 整個 task。改用 100 年（足夠大的有限值，
-# 符合 Microsoft 文件建議）。
+# v1.17.11 — Eric 回報 36500 天仍超出 Task Scheduler COM validator 範圍
+# （validator 上限約 9999 天，超過會吐 warning "超出允許範圍" 再 fallback）。
+# 改用 9999 天（~27 年，PowerShell 社群公認的 safe-forever 值），保證 Win10/11
+# 所有 build 都接受不吐 warning。task 在 ~27 年內手動重裝過很多次，實務上等於永久。
 $Trigger = New-ScheduledTaskTrigger `
   -Once `
   -At (Get-Date).AddMinutes(5) `
   -RepetitionInterval (New-TimeSpan -Minutes 30) `
-  -RepetitionDuration (New-TimeSpan -Days 36500)
+  -RepetitionDuration (New-TimeSpan -Days 9999)
 
 $Settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `

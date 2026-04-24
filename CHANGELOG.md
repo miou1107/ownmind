@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.17.11 — Task Scheduler Duration 再調小（回報者 Eric）
+
+**背景**：v1.17.10 把 `RepetitionDuration` 從 `[TimeSpan]::MaxValue` 改成 `36500 天（100 年）`，以為解決了問題。Eric 實測回報：
+
+> Task Scheduler：原本註冊 P36500D（100 年）超出 Windows 允許範圍失敗，但已自動 fallback 成「每 30 分鐘觸發」，功能正常
+
+意思是 Task Scheduler COM 底層 validator 還是 reject 了 36500 天，吐 warning 再 fallback。功能沒斷但 warning 嚇人。
+
+**Root cause**：Windows Task Scheduler COM validator 對 `RepetitionDuration` 有上限 **約 9999 天（~27 年）**，超過就 warn。`[TimeSpan]::MaxValue` / `36500 天` 都踩線。
+
+**修正**
+- `scripts/windows/register-scanner-task.ps1`：`-RepetitionDuration (New-TimeSpan -Days 36500)` → `-RepetitionDuration (New-TimeSpan -Days 9999)`（PowerShell 社群公認的 safe-forever 值）
+- `tests/scheduled-task-duration.test.js`：把允許範圍改為 `1000 <= Days <= 9999`，避免以後又手滑設太大
+
+**對使用者**
+升到 v1.17.11 跑 `register-scanner-task.ps1` 就沒 warning 了。已有安裝的直接跟 AI 說「升級 OwnMind」或手動重跑：
+```powershell
+cd $HOME\.ownmind
+git pull
+powershell -ExecutionPolicy Bypass -File scripts\windows\register-scanner-task.ps1
+```
+
+---
+
 ## v1.17.10 — 修 v1.17.9 遺漏的三個 Windows 安裝警告（回報者 Adam）
 
 **背景**：Adam 裝完 v1.17.9 回報三個警告。檔案都在（驗證通過），但警告嚇人且暴露三個真 bug：
