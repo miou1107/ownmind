@@ -203,21 +203,33 @@ foreach ($dir in $GitHookDirs) {
   New-Item -ItemType Directory -Force -Path $dir -ErrorAction SilentlyContinue | Out-Null
 }
 
+# Helper：src 跟 destDir\<leaf> 同路徑時就 skip copy
+# （install.sh 用 `-ef` 比 inode；PS 改比 GetFullPath 解析後字串）
+# v1.17.10 修 Adam 回報的 "Copy-Item cannot overwrite with itself ×4"
+function Copy-IfDifferent {
+  param([string]$Src, [string]$DestDir, [string]$Label)
+  if (-not (Test-Path $Src)) { return }
+  $leaf = Split-Path $Src -Leaf
+  $dstPath = Join-Path $DestDir $leaf
+  $srcFull = [System.IO.Path]::GetFullPath($Src)
+  $dstFull = [System.IO.Path]::GetFullPath($dstPath)
+  if ($srcFull -ieq $dstFull) {
+    Write-Host "   $Label 已在目標位置（git clone），略過"
+    return
+  }
+  Copy-Item $Src $DestDir -Force
+  Write-Host "   複製 $Label"
+}
+
 # 複製 verification engine
 $VerificationSrc = Join-Path $OwnmindDir "shared\verification.js"
-if (Test-Path $VerificationSrc) {
-  Copy-Item $VerificationSrc (Join-Path $HOME ".ownmind\shared\") -Force
-  Write-Host "   複製 verification engine"
-}
+Copy-IfDifferent -Src $VerificationSrc -DestDir (Join-Path $HOME ".ownmind\shared\") -Label "verification engine"
 
 # 複製 git hook JS 檔案
 $GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
 foreach ($jsFile in $GitHookJsFiles) {
   $src = Join-Path $OwnmindDir "hooks\$jsFile"
-  if (Test-Path $src) {
-    Copy-Item $src (Join-Path $HOME ".ownmind\hooks\") -Force
-    Write-Host "   複製 $jsFile"
-  }
+  Copy-IfDifferent -Src $src -DestDir (Join-Path $HOME ".ownmind\hooks\") -Label $jsFile
 }
 
 # Windows: 建立 bat wrapper 呼叫 node 執行 JS hooks
