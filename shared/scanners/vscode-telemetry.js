@@ -42,7 +42,9 @@ export async function readVscodeTelemetry({
     if (err.code === 'ENOENT') {
       logger?.warn?.(
         `[vscode-telemetry] sqlite3 CLI not found at '${sqlitePath}'. ` +
-        `Install sqlite3 or pass sqlitePath option.`
+        `裝法：Windows 跑 \`winget install SQLite.SQLite\`、Linux 跑 \`apt install sqlite3\`、` +
+        `或從 https://www.sqlite.org/download.html 下載。裝完重開 terminal。` +
+        `不裝的話 Cursor/Antigravity Tier 2 session_count 無法收集（Mac 已內建）。`
       );
     } else {
       logger?.warn?.(`[vscode-telemetry] sqlite query failed (${dbPath}): ${err.message}`);
