@@ -11,6 +11,7 @@ import { computeEnforcementAlerts } from '../utils/enforcement.js';
 import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 import { buildOnboarding } from '../utils/onboarding.js';
+import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.js';
 import { createRequire } from 'module';
 
 const SERVER_VERSION = (() => {
@@ -705,6 +706,35 @@ router.delete('/test-cleanup', async (req, res) => {
   } catch (err) {
     logger.error('test-cleanup 失敗', { error: err.message });
     res.status(500).json({ error: 'cleanup 失敗：' + err.message });
+  }
+});
+
+/**
+ * GET /sync — Delta sync for local memory mirror
+ * Query:
+ *   types=iron_rule,project,feedback (default)
+ *   since=<ISO8601> (optional; if omitted → first-run, only active)
+ * Returns: { server_time, memories: [{id, type, title, content, tags, metadata, updated_at, status}] }
+ * Includes disabled rows when `since` provided so client can tombstone local files.
+ */
+router.get('/sync', async (req, res) => {
+  try {
+    const typesCheck = parseSyncTypes(req.query.types);
+    if (!typesCheck.ok) return res.status(400).json({ error: typesCheck.error });
+
+    const sinceCheck = parseSince(req.query.since);
+    if (!sinceCheck.ok) return res.status(400).json({ error: sinceCheck.error });
+
+    const q = buildSyncQuery(req.user.id, typesCheck.types, sinceCheck.since);
+    const result = await query(q.text, q.values);
+
+    res.json({
+      server_time: new Date().toISOString(),
+      memories: result.rows,
+    });
+  } catch (err) {
+    logger.error('memory sync 失敗', { error: err.message });
+    res.status(500).json({ error: 'sync 失敗' });
   }
 });
 

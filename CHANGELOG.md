@@ -1,5 +1,39 @@
 # OwnMind 更新紀錄
 
+## v1.17.8 — 本地記憶雲端 delta sync（A+C 方案）
+
+**背景**：`~/.claude/projects/<slug>/memory/*.md` 是 Claude Code 每次 session 載入的 auto-memory，但這些檔案是一次性快照。當 Vin 用 `ownmind_save` 或 Admin UI 更新雲端記憶後，本地 md 不會自動刷新 — SessionStart 把過期的 MEMORY.md 當 context 餵給 AI，AI 根據 24 天前的快照下結論（實際案例：把 P2-P5 roadmap 當最新待辦，但雲端主線早已換成 token-usage-tracking）。
+
+**新增（Server）**
+- `src/lib/memory-sync.js` — 純函式：`parseSyncTypes` / `parseSince` / `buildSyncQuery`，可單元測試
+- `src/routes/memory.js`：新增 `GET /api/memory/sync?types=iron_rule,project,feedback&since=<ISO>`
+  - `types` 白名單過濾（只允許 iron_rule / project / feedback — 過期最痛的三類）
+  - `since` 省略 → 只回 active（首次同步用）
+  - `since` 帶上 → 回 `updated_at > since OR disabled_at > since`（含 tombstone）
+  - 回傳 `{server_time, memories: [...]}`
+  - 用 `ANY($2::text[])` 防 SQL injection
+
+**新增（Client）**
+- `hooks/lib/sync-memory-files.js` — Node script，stdin 吃 JSON 後：
+  - 解出 `<memoryDir> = $HOME/.claude/projects/<CLAUDE_PROJECT_DIR slug>/memory/`
+  - 首次若有手寫 MEMORY.md → 備份到 `MEMORY.md.pre-sync-backup-<ts>`
+  - 寫 `<type>_<id>_<slug_title>.md` 含 frontmatter（name / description / type / cloud_id / updated_at）
+  - `status='disabled'` 或本地 orphan（不在 active 集合）→ 刪掉
+  - 重算 MEMORY.md：auto-sync marker + 按 type 分組 + 每行 `— updated YYYY-MM-DD`（C 部分 staleness badge）
+  - `--fail` 模式：在 MEMORY.md 頂端插「⚠️ last sync FAILED」警告但不刪檔；連續 fail 不堆疊警告
+- `hooks/ownmind-session-start.sh`：init API 之後串 sync endpoint + 呼叫 node script（fail-silent、不阻塞 session）
+
+**測試**
+- `tests/memory-sync-endpoint.test.js`（16 tests）— parser / query builder / whitelist / SQL shape
+- `tests/sync-memory-files.test.js`（19 tests）— slugify / filename / 首次寫入 / 備份機制 / tombstone / fail mode / 二次 re-sync
+- 全 suite 518 tests 綠，零 regression
+
+**IR-022 server + client 兩端皆觸及**：server 是新 `/sync` endpoint + 純函式 lib；client 是新 node script + 改 shell hook。
+
+**使用者零操作**：升到 v1.17.8 後下一次開 Claude Code session 自動同步。SessionStart 失敗或 server 連不上時用本地舊版但會在 MEMORY.md 插警告，AI 自己看得到「local 可能過期」。
+
+---
+
 ## v1.17.7 — MCP 技巧提示每次都顯示（對齊 skill 文件承諾）
 
 **背景**：skill 文件 `ownmind-memory.md` 寫「MCP tool 每次回傳自動附上一行隨機小技巧」，但 `mcp/index.js:996` 實際上用 `if (++tipCallCount % 10 === 1)` 每 10 次才顯示 1 次。文件 vs 實作不一致被 Vin 抓到。

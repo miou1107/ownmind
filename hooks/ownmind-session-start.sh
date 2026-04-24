@@ -107,4 +107,19 @@ BROADCAST_DATA=$(curl -sf --max-time 3 \
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 node "$SCRIPT_DIR/lib/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA" 2>/dev/null
 
+# --- v1.17.8: delta sync 本地記憶 md 檔（A+C 方案，不阻塞，fail-silent）---
+# 把雲端 iron_rule/project/feedback 同步到 $CLAUDE_PROJECT_DIR 的 auto-memory dir，
+# 避免 AI 讀到過期快照。CLAUDE_PROJECT_DIR 未設時 node script 自己 exit 0。
+if [ -n "$CLAUDE_PROJECT_DIR" ]; then
+  SYNC_DATA=$(curl -sf --max-time 4 \
+    -H "Authorization: Bearer $API_KEY" \
+    "${API_URL}/api/memory/sync?types=iron_rule,project,feedback" 2>/dev/null)
+  if [ -n "$SYNC_DATA" ]; then
+    echo "$SYNC_DATA" | node "$SCRIPT_DIR/lib/sync-memory-files.js" 2>/dev/null
+  else
+    node "$SCRIPT_DIR/lib/sync-memory-files.js" --fail 2>/dev/null
+    log_event "memory_sync_fail"
+  fi
+fi
+
 exit 0

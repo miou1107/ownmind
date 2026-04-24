@@ -2,7 +2,7 @@ AI個人化永久記憶解決方案
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.17.7** · 詳見 [CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.17.8** · 詳見 [CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 跨平台 AI 個人記憶系統
 
