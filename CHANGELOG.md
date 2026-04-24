@@ -1,5 +1,46 @@
 # OwnMind 更新紀錄
 
+## v1.17.9 — 修 Windows 兩個獨立問題（回報者 Eric + Adam）
+
+**背景 #1（Eric）**：Windows PowerShell 5.1（Windows 10 預設）讀 `.ps1` 時用系統 codepage（繁中 Windows 是 CP950）而非 UTF-8，中文字節被誤解讀，部分序列撞到 PowerShell 保留字元（反引號、引號）造成 parser 失敗。PowerShell 7+ 沒事，但不能預期每個使用者都升 pwsh。
+
+**背景 #2（Adam）**：從 Git Bash / MSYS 呼叫 `install.ps1` 時，`$HOME` 被污染成 POSIX 格式 `/c/Users/Adam`，跟 Windows path 串接後變 `C:\c\Users\Adam\.gemini\settings.json.tmp` 怪路徑（多了一層 `c\`），node 寫檔到錯地方，設定檔全寫到不存在的目錄。另外 Adam 的 `install.ps1 --update` 走了舊版路徑，`--update` 被當成 API key。
+
+**修正 #1 — UTF-8 BOM**
+- `install.ps1` / `scripts/bootstrap.ps1` / `scripts/interactive-upgrade.ps1` / `scripts/windows/register-scanner-task.ps1` 全部加上 UTF-8 BOM（`EF BB BF`）
+- 對 PowerShell 7+ 是 no-op，對 5.1 強制走 UTF-8 路徑
+
+**修正 #2 — 環境正規化 preamble**
+- 每支 `.ps1` 開頭加：
+  ```powershell
+  if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
+    Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
+  }
+  ```
+- 保證無論從哪個 shell 呼叫，`$HOME` 一律指向 Windows 格式 `C:\Users\xxx`，`Join-Path $HOME ...` 不再被 POSIX 路徑污染
+
+**修正 #3 — install.ps1 flag 過濾**
+- `$args` 在進位置參數前先過濾掉開頭 `-` 的項（`--update` / `-u` 等）
+- 即使舊版 interactive-upgrade 還傳 `--update`，也不會被當成 API key 寫進 MCP config
+
+**新增測試**
+- `tests/ps1-utf8-bom.test.js` — 全 repo .ps1 必須以 UTF-8 BOM 開頭（含中文才檢查）
+- `tests/ps1-windows-compat.test.js` — 4 支 .ps1 都有環境正規化 preamble；install.ps1 有 flag 過濾
+
+**對已卡住的使用者**
+腳本失敗已經自動還原舊版的話，一次性重裝最乾脆：
+```powershell
+Remove-Item -Recurse -Force $HOME\.ownmind
+$env:OWNMIND_API_KEY='你的 key'
+$env:OWNMIND_API_URL='你的 API URL'
+iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+```
+Bootstrap 會抓到含 BOM + 環境正規化 + flag 過濾的 v1.17.9 乾淨 clone，之後升級自動走新路徑。
+
+**IR-022 server + client 兩端皆觸及**：純 client 端修 — 但因 bootstrap route（v1.17.6 加的 public endpoint）會 serve `bootstrap.ps1`，server deploy 後使用者 one-liner 才會抓到 BOM 版。
+
+---
+
 ## v1.17.8 — 本地記憶雲端 delta sync（A+C 方案）
 
 **背景**：`~/.claude/projects/<slug>/memory/*.md` 是 Claude Code 每次 session 載入的 auto-memory，但這些檔案是一次性快照。當 Vin 用 `ownmind_save` 或 Admin UI 更新雲端記憶後，本地 md 不會自動刷新 — SessionStart 把過期的 MEMORY.md 當 context 餵給 AI，AI 根據 24 天前的快照下結論（實際案例：把 P2-P5 roadmap 當最新待辦，但雲端主線早已換成 token-usage-tracking）。

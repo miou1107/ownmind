@@ -1,10 +1,19 @@
-# OwnMind 一鍵安裝腳本（Windows PowerShell 原生版）
+﻿# OwnMind 一鍵安裝腳本（Windows PowerShell 原生版）
 # 用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL
 # 或: $env:OWNMIND_API_KEY='xxx'; $env:OWNMIND_API_URL='https://your-server.com/ownmind'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
 
+# --- 環境正規化（v1.17.9, 回報者 Adam）---
+# 從 Git Bash / MSYS / Cygwin 呼叫 powershell 時，$HOME 會是 POSIX 格式 /c/Users/xxx，
+# 跟 Windows path 串接變 C:\c\Users\xxx 怪路徑。強制把 $HOME 指向 $env:USERPROFILE。
+if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
+  Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
+}
+
 # --- 參數處理（同時支援 param 和環境變數，irm | iex 不支援 param）---
-if ($args.Count -ge 1) { $ApiKey = $args[0] } else { $ApiKey = $env:OWNMIND_API_KEY }
-if ($args.Count -ge 2) { $ApiUrl = $args[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
+# 過濾 flag-like args（如舊版 interactive-upgrade.ps1 傳的 --update），避免被當 API key
+$PosArgs = @($args | Where-Object { $_ -notlike '-*' })
+if ($PosArgs.Count -ge 1) { $ApiKey = $PosArgs[0] } else { $ApiKey = $env:OWNMIND_API_KEY }
+if ($PosArgs.Count -ge 2) { $ApiUrl = $PosArgs[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
 
 if (-not $ApiKey) {
   Write-Error "請提供 API Key`n用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL`n或設定環境變數: `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
