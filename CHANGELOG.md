@@ -1,5 +1,55 @@
 # OwnMind 更新紀錄
 
+## v1.17.16 — 修 update_ok 假陽性事件（dashboard 數據誠信問題，回報者 Adam case）
+
+**背景**：Adam (Windows) 4/26 dashboard 顯示有 `update_check + update_ok` 兩個 event，看起來升級成功，但實際 client 還是 1.17.10（沒升）。追下去發現 OwnMind 的自動更新機制在兩個地方有同款 silent-fail bug：
+
+1. `mcp/index.js`（每次 MCP server 啟動跑一次）
+2. `hooks/ownmind-session-start.sh`（每個 SessionStart 跑一次，頻率更高）
+
+**Root cause**：兩處的 shell pipeline 都把 `git pull / npm install / update.sh` 用 `2>/dev/null` 吞掉錯誤，最後 `if [ shell exit 0 ]` 就無條件寫 `update_ok`（mcp）/ `update_applied`（hook）。但下面三種情境都會 exit 0：
+
+- `UPDATES=""` 沒新 commit 可拉（if 整段不跑，echo marker 仍 exit 0）
+- `git pull` 失敗被 `2>/dev/null` 吞 + `||` fallback → exit 0
+- `npm install` / `update.sh` silent fail → exit 0
+
+`update_ok` 字面意思「升級成功」≠ 實際語意「shell 沒爆」 → dashboard 顯示「使用者已更新」但實際根本沒升。違反 OwnMind「透明度」原則。
+
+**修正**
+
+**mcp/index.js（client 端）**
+- shell pipeline 改寫：每個關鍵 step（fetch / pull / npm install / update.sh）顯式 echo fail marker（`__OM_PULL_FAIL__` 等）+ `exit 11..14`
+- `git log HEAD..origin/main` 維持 `2>/dev/null` 防 stderr 污染 UPDATES 變數
+- callback 不再寫死 `update_ok`，改三分支：
+  - `update_applied` — 真有拉到新 commit + npm install + update.sh 都 OK
+  - `update_clean` — 沒新版可拉（合法 no-op）
+  - `update_failed` — 任一 step 失敗，details 含 step 名稱 + exit code（**不上傳完整 stdout/stderr，避免洩漏使用者本機 path**）
+
+**hooks/ownmind-session-start.sh（client 端）**
+- 對齊 mcp/index.js 修法：每個 step 用 `if ! ...; then log_event "update_failed" "step" "..."; exit; fi` 包起來
+- 同樣三分支：`update_applied` / `update_clean` / `update_failed`
+
+**Dashboard label（server 端）**
+- `src/public/index.html` ZH 對應表加 `update_clean: '無新版'` + `update_failed: '升級失敗'`，避免 dashboard 顯示英文 raw key
+
+**新增測試**
+- `tests/p3-update-event-semantics.test.js`（11 個 source-grep assertions）：
+  - mcp/index.js 不能再寫死 `update_ok`
+  - mcp/index.js + hook 都必須有 `update_applied` / `update_clean` / `update_failed` 三條路徑
+  - shell 內必須有 fail marker
+  - dashboard 必須有對應中文 label
+- 防退化：未來 reviewer 漏修任一支都會被 test 抓到（這次 review 就是這樣抓到 hook 漏修）
+
+**對使用者**
+- 升級到 1.17.16 後，dashboard 上「Audit Log」看到的事件名稱會更精確：實際升級成功才是「已更新」、沒新版是「無新版」、失敗是「升級失敗」+ 具體哪個 step 出錯
+- Adam 場景：升 1.17.16 後就不會再看到「假陽性 update_ok」誤導你以為他升級成功
+
+**為什麼 v1.17.15 的 fix 漏了 hook**：v1.17.15 只 review MCP 路徑，沒注意到 hook 有同款 pattern。本次 code review 階段被 superpowers code-reviewer 抓到。learning：未來 review 涉及自動更新邏輯時，必查 `mcp/` + `hooks/` + `scripts/` 三個地方的對偶實作。
+
+**IR-022 server + client**：純 client 修（mcp/index.js + hooks + dashboard label）；server 無改動。
+
+---
+
 ## v1.17.15 — 修 Windows pre-commit hook "Exec format error"（回報者 Eric）+ 修 verify-upgrade.sh server round-trip
 
 **背景一：Eric 在 Windows 上 commit 時跳錯**
