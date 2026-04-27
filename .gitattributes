@@ -1,0 +1,21 @@
+# Force LF line endings for shell scripts and git hooks.
+# Reason: Windows checkout with core.autocrlf=true would convert LF→CRLF, which
+# breaks `#!/bin/sh` (the shell sees `/bin/sh\r` and fails with "Exec format error").
+# These files must be LF on disk regardless of platform.
+
+*.sh                              text eol=lf
+hooks/ownmind-git-pre-commit      text eol=lf
+hooks/ownmind-git-post-commit     text eol=lf
+hooks/ownmind-iron-rule-check.sh  text eol=lf
+hooks/ownmind-session-start.sh    text eol=lf
+hooks/ownmind-worktree-setup.sh   text eol=lf
+git-hooks/pre-commit              text eol=lf
+git-hooks/post-commit             text eol=lf
+scripts/*.sh                      text eol=lf
+# bin/ 之後可能放 binary（如 sqlite-vec 之類），只規範 *.sh 避免破壞二進位
+bin/*.sh                          text eol=lf
+
+# PowerShell and batch files are Windows-native, keep CRLF
+*.ps1                             text eol=crlf
+*.bat                             text eol=crlf
+*.cmd                             text eol=crlf

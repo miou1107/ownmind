@@ -71,6 +71,47 @@ function Write-Utf8NoBom {
   [System.IO.File]::WriteAllText($full, $Content, $utf8NoBom)
 }
 
+# --- Copy-AsLf helper (v1.17.15, 回報者 Eric) ---
+# Windows git checkout 在 core.autocrlf=true 時會把 LF 轉 CRLF。我們的 sh hook 一旦
+# 變 CRLF，shebang `#!/bin/sh\r` 找不到 `/bin/sh\r` 這支 → "Exec format error"。
+# 從 source 讀 bytes、過濾 0x0D（CR）、無 BOM 寫出，保證 LF on disk。
+# .gitattributes 已強制 hook 檔 eol=lf，這個 helper 是雙重保險（防 user 手動編輯後存 CRLF）。
+function Copy-AsLf {
+  param([string]$Src, [string]$Dest)
+  if (-not (Test-Path $Src)) { return $false }
+  $srcBytes = [System.IO.File]::ReadAllBytes($Src)
+  $cleanBytes = New-Object System.Collections.Generic.List[byte]
+  foreach ($b in $srcBytes) {
+    if ($b -ne 0x0D) { $cleanBytes.Add($b) }
+  }
+  $destFull = [System.IO.Path]::GetFullPath($Dest)
+  [System.IO.File]::WriteAllBytes($destFull, $cleanBytes.ToArray())
+  return $true
+}
+
+# --- Test-ShAvailable (v1.17.15, 回報者 Eric) ---
+# Windows git 跑 sh hook 必須能 spawn sh.exe。Git for Windows 自帶在 usr\bin\，
+# 但 VS Code Bundled Git / Microsoft.Git (WinGet) / Scoop git-with-openssh 都沒。
+# 沒 sh.exe 時，git hook 會回 "Exec format error"。
+function Test-ShAvailable {
+  $sh = Get-Command sh.exe -ErrorAction SilentlyContinue
+  if ($sh) { return $sh.Path }
+  # Fallback：Git for Windows 典型路徑
+  $gitCmd = Get-Command git.exe -ErrorAction SilentlyContinue
+  if ($gitCmd) {
+    $gitDir = Split-Path -Parent $gitCmd.Path
+    # Git for Windows 真實佈局：cmd\git.exe + usr\bin\sh.exe（無 ..\bin\sh.exe）
+    $candidates = @(
+      (Join-Path $gitDir "..\usr\bin\sh.exe"),
+      (Join-Path $gitDir "sh.exe")
+    )
+    foreach ($c in $candidates) {
+      if (Test-Path $c) { return (Resolve-Path $c).Path }
+    }
+  }
+  return $null
+}
+
 # --- 提前建立所有需要的目錄 ---
 $OwnmindDir     = Join-Path $HOME ".ownmind"
 $ClaudeDir       = Join-Path $HOME ".claude"
@@ -267,32 +308,40 @@ foreach ($jsFile in $GitHookJsFiles) {
   Copy-IfDifferent -Src $src -DestDir (Join-Path $HOME ".ownmind\hooks\") -Label $jsFile
 }
 
-# Windows: 建立 bat wrapper 呼叫 node 執行 JS hooks
+# Windows: 安裝 sh wrapper（與 Mac/Linux 對齊；含 chain existing hooks 邏輯）
+# 實作改點（v1.17.15, 回報者 Eric）：
+# 1. 不再 inline 生 wrapper 內容（缺 chain 邏輯），改 copy source（hooks/ownmind-git-{pre,post}-commit）
+# 2. Copy-AsLf 強制 LF 行尾，防 Windows core.autocrlf 把 sh script 轉 CRLF 導致 "Exec format error"
+# 3. 偵測 sh.exe（Git for Windows 才有）；找不到時 fail-fast 並提示安裝來源
 $PreCommitBat = Join-Path $HOME ".ownmind\git-hooks\pre-commit"
 $PostCommitBat = Join-Path $HOME ".ownmind\git-hooks\post-commit"
+$PreCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-pre-commit"
+$PostCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-post-commit"
 
-$PreCommitJs = Join-Path $HOME ".ownmind\hooks\ownmind-git-pre-commit.js"
-$PostCommitJs = Join-Path $HOME ".ownmind\hooks\ownmind-git-post-commit.js"
+# 偵測 sh.exe（Git for Windows 自帶）
+$shPath = Test-ShAvailable
+if (-not $shPath) {
+  Write-Host '   ⚠️ 找不到 sh.exe — git hook 將無法執行（"Exec format error"）' -ForegroundColor Yellow
+  Write-Host "      原因：你的 git 不是 Git for Windows（VS Code 內建 / WinGet Microsoft.Git / Scoop git-minimal 都沒帶 sh.exe）" -ForegroundColor Yellow
+  Write-Host "      解法：安裝 Git for Windows → https://git-scm.com/download/win" -ForegroundColor Yellow
+  Write-Host "      跳過 git hooks 安裝" -ForegroundColor Yellow
+} else {
+  Write-Host "   偵測 sh.exe: $shPath" -ForegroundColor Gray
+  if (Copy-AsLf -Src $PreCommitSrc -Dest $PreCommitBat) {
+    Write-Host "   安裝 git pre-commit hook（LF）"
+  } else {
+    Write-Host "   ⚠️ 找不到 source: $PreCommitSrc，跳過 pre-commit hook" -ForegroundColor Yellow
+  }
+  if (Copy-AsLf -Src $PostCommitSrc -Dest $PostCommitBat) {
+    Write-Host "   安裝 git post-commit hook（LF）"
+  } else {
+    Write-Host "   ⚠️ 找不到 source: $PostCommitSrc，跳過 post-commit hook" -ForegroundColor Yellow
+  }
 
-if (Test-Path (Join-Path $OwnmindDir "hooks\ownmind-git-pre-commit.js")) {
-  $preContent = "#!/bin/sh`nnode `"$HOME/.ownmind/hooks/ownmind-git-pre-commit.js`""
-  Write-Utf8NoBom -Path $PreCommitBat -Content $preContent
-  Write-Host "   安裝 git pre-commit hook"
-}
-
-if (Test-Path (Join-Path $OwnmindDir "hooks\ownmind-git-post-commit.js")) {
-  $postContent = "#!/bin/sh`nnode `"$HOME/.ownmind/hooks/ownmind-git-post-commit.js`""
-  Write-Utf8NoBom -Path $PostCommitBat -Content $postContent
-  Write-Host "   安裝 git post-commit hook"
-}
-
-# 設定 global git hooks path
-if (Get-Command git -ErrorAction SilentlyContinue) {
+  # 設定 global git hooks path（只有 sh.exe 可用時才設，不然會壞所有 commit）
   $gitHooksPath = Join-Path $HOME ".ownmind\git-hooks"
   git config --global core.hooksPath $gitHooksPath
   Write-Host "   設定 git global hooks path: $gitHooksPath"
-} else {
-  Write-Host "   找不到 git，跳過 global hooks path 設定" -ForegroundColor Yellow
 }
 
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---

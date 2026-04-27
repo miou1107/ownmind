@@ -1,5 +1,50 @@
 # OwnMind 更新紀錄
 
+## v1.17.15 — 修 Windows pre-commit hook "Exec format error"（回報者 Eric）+ 修 verify-upgrade.sh server round-trip
+
+**背景一：Eric 在 Windows 上 commit 時跳錯**
+```
+error: cannot spawn C:\Users\Eric\.ownmind\git-hooks/pre-commit: Exec format error
+```
+
+OwnMind 的 git hook 安裝邏輯有三個累積問題：
+1. **install.ps1 寫的 sh wrapper 缺 chain existing hooks 邏輯** — Mac/Linux 版有的 `git rev-parse --git-dir` 那段，Windows 版完全沒寫，導致 user 自己 repo 的 `.git/hooks/pre-commit` 被 OwnMind hook 完全覆蓋
+2. **沒有 `.gitattributes` 強制 LF 行尾** — Windows checkout 時 `core.autocrlf=true`（Git for Windows 預設）會把 LF 轉 CRLF，shebang `#!/bin/sh\r` 找不到 `/bin/sh\r` → "Exec format error"
+3. **沒偵測 `sh.exe` 是否可用** — VS Code 內建 git / WinGet `Microsoft.Git` / Scoop `git-with-openssh` 都不含 `sh.exe`；OwnMind 仍寫了 sh wrapper 出去 → 無法 spawn
+
+**背景二：升級流程 server 驗測一直假性失敗**
+
+`scripts/verify-upgrade.sh --server` 一直回 `write_failed`，但 server 正常。三個 bug 疊加：
+1. 寫入前未呼叫 `/api/memory/init` 取 `sync_token`，被 server 409 拒絕（v1.17.0 開始強制）
+2. 讀回用了不存在的 `GET /api/memory?include_test=true`（404）
+3. `curl -sf` 在 4xx 靜默失敗，錯誤訊息誤導為「API_KEY 過期或 server 500」
+
+**修正**
+
+**Windows hook 安裝（client 端）**
+- `.gitattributes` **新增**：強制 `*.sh` / `hooks/ownmind-git-{pre,post}-commit` / `git-hooks/{pre,post}-commit` 等檔案 `eol=lf`，根本解 CRLF 污染
+- `install.ps1`：
+  - 新增 `Copy-AsLf` helper：從 source 讀 bytes、過濾 `0x0D` (CR)、無 BOM 寫出（雙重保險）
+  - 新增 `Test-ShAvailable` helper：偵測 `sh.exe` 是否在 PATH 或 Git for Windows 典型路徑（`usr\bin\sh.exe`）
+  - hook 安裝改為 **直接 copy source**（`hooks/ownmind-git-pre-commit`），不再 inline 生簡陋版 → 自動帶 chain existing hooks 邏輯，與 Mac/Linux 對齊
+  - 偵測不到 `sh.exe` 時 fail-fast：明確指出常見原因 + 解法（裝 Git for Windows）+ 跳過 hook 安裝以免壞所有 commit
+
+**verify-upgrade.sh（client 端）**
+- `--server` 模式：寫入前先 `GET /api/memory/init?compact=true` 取 `sync_token`，塞進 POST body
+- 讀回改用 `GET /api/memory/:id`（從 write response 取 id），不再打不存在的 list endpoint
+- `curl -sf` 改 `curl -s` + 捕捉 HTTP code，失敗時顯示實際 server 回應 + body 前 200 字
+- 鐵律 digest 檢查改重用 step 2 的 init response，省一次 round-trip
+
+**驗證**
+- Mac 端 `bash verify-upgrade.sh --local / --server / --cleanup` 三模式全綠
+- Windows 端待 Eric 重跑 `iwr .../install.ps1 | iex` 後實測 commit 不再爆
+
+**為什麼選「fail-fast 而非自動裝 Git for Windows」**：Git for Windows 是大型 installer (~50MB)，沒有可靠的 silent install 流程；明確訊息 + 文件指引比黑魔法更符合「使用者零負擔」原則。
+
+**IR-022 server + client 兩端**：純 client 修（install.ps1 + verify-upgrade.sh + .gitattributes）；server 無改動。
+
+---
+
 ## v1.17.14 — Tier 2 (Cursor / Antigravity / OpenCode) Windows 支援（v1.17.12 留的 Tier 2 債）
 
 **背景**：v1.17.12 修好 Windows 主線 Tier 1（Claude Code / Codex）usage scanner 的 BOM root cause，但 Tier 2（Cursor / Antigravity / OpenCode）Windows 仍永遠無法收集 session 計數。原因：
