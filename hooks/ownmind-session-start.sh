@@ -65,17 +65,38 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
   if [ "$LAST_CHECK" != "$TODAY" ]; then
     log_event "update_check"
     # 背景執行更新，不阻塞記憶載入
+    # P3 修正（Adam case 2026-04-26）：原本 silent 吞失敗後無條件寫 update_applied，
+    # 即使 git pull / npm / update.sh 任一失敗都會誤報「已更新」。對齊 mcp/index.js
+    # 的修法：每步顯式檢查；分流寫 update_applied / update_clean / update_failed。
     (
       touch "$LOCK_FILE"
-      cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; exit 0; }
-      git fetch -q 2>/dev/null
+      cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; log_event "update_failed" "step" "cd"; exit 0; }
+      if ! git fetch -q 2>/dev/null; then
+        rm -f "$LOCK_FILE"
+        log_event "update_failed" "step" "fetch"
+        exit 0
+      fi
       UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null)
       if [ -n "$UPDATES" ]; then
         git stash -q 2>/dev/null
-        git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null
-        cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null
-        bash "$OWNMIND_DIR/scripts/update.sh" >/dev/null 2>&1
+        if ! { git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null; }; then
+          rm -f "$LOCK_FILE"
+          log_event "update_failed" "step" "pull"
+          exit 0
+        fi
+        if ! ( cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null ); then
+          rm -f "$LOCK_FILE"
+          log_event "update_failed" "step" "npm"
+          exit 0
+        fi
+        if ! bash "$OWNMIND_DIR/scripts/update.sh" >/dev/null 2>&1; then
+          rm -f "$LOCK_FILE"
+          log_event "update_failed" "step" "update_sh"
+          exit 0
+        fi
         log_event "update_applied"
+      else
+        log_event "update_clean"
       fi
       echo "$TODAY" > "$MARKER_FILE"
       rm -f "$LOCK_FILE"

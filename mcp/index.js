@@ -1066,26 +1066,52 @@ try {
 
   if (lastCheck !== today && fs.existsSync(path.join(OWNMIND_DIR, '.git')) && !fs.existsSync(LOCK_FILE)) {
     logEvent('update_check', { source: 'mcp' });
+    // P3 修正（Adam case 2026-04-26）：
+    // 原本 shell exit 0 callback 統一寫 update_ok，但「沒新 commit / silent fail」都會 exit 0
+    // → dashboard 數據誠信問題（user 沒升級也回報 update_ok）。
+    // 修法：每個關鍵 step 顯式 echo 失敗 marker；callback 解 stdout 分支寫
+    // update_applied (真有拉) / update_clean (沒新版) / update_failed (任一 step 出錯)。
     exec(`
-      touch "${LOCK_FILE}" &&
-      cd ~/.ownmind &&
-      git fetch -q 2>/dev/null &&
-      UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null) &&
+      touch "${LOCK_FILE}"
+      cd ~/.ownmind || { echo "__OM_CD_FAIL__"; exit 10; }
+      git fetch -q 2>/dev/null || { echo "__OM_FETCH_FAIL__"; exit 11; }
+      # 用 2>/dev/null 防止 stderr (例如 origin 不存在) 污染 UPDATES 變數誤判為「有新版」
+      UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null)
       if [ -n "$UPDATES" ]; then
-        git stash -q 2>/dev/null;
-        git pull -q --rebase 2>/dev/null ||
-        git pull -q 2>/dev/null;
-        cd mcp && npm install -q 2>/dev/null;
-        bash ~/.ownmind/scripts/update.sh 2>/dev/null;
-      fi &&
-      rm -f "${LOCK_FILE}" &&
+        git stash -q 2>/dev/null || true
+        git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null || { echo "__OM_PULL_FAIL__"; exit 12; }
+        ( cd mcp && npm install -q 2>/dev/null ) || { echo "__OM_NPM_FAIL__"; exit 13; }
+        # update.sh 用絕對路徑前先 cd 到 OWNMIND_DIR 避免 cwd 漂移
+        cd ~/.ownmind || { echo "__OM_CD_FAIL__"; exit 10; }
+        bash ~/.ownmind/scripts/update.sh >/dev/null 2>&1 || { echo "__OM_UPDATE_FAIL__"; exit 14; }
+        echo "__OM_APPLIED__"
+      else
+        echo "__OM_CLEAN__"
+      fi
+      rm -f "${LOCK_FILE}"
       echo "${today}" > "${MARKER_FILE}"
-    `, { timeout: 60000, cwd: OWNMIND_DIR }, (err) => {
+    `, { timeout: 60000, cwd: OWNMIND_DIR }, (err, stdout, stderr) => {
+      try { fs.unlinkSync(LOCK_FILE); } catch {}
+      const out = String(stdout || '');
+      // 隱私：只擷取 fail marker / 不上傳完整 stdout/stderr（含 user file path）
+      const failMarkers = ['__OM_CD_FAIL__', '__OM_FETCH_FAIL__', '__OM_PULL_FAIL__', '__OM_NPM_FAIL__', '__OM_UPDATE_FAIL__'];
+      const failed = failMarkers.find(m => out.includes(m));
       if (err) {
-        logEvent('update_failed', { source: 'mcp', error: err.message });
-        try { fs.unlinkSync(LOCK_FILE); } catch {}
+        // shell 內顯式 exit 10..14 / killed / timeout 都會走這
+        logEvent('update_failed', {
+          source: 'mcp',
+          step: failed || 'unknown',
+          exit_code: typeof err.code === 'number' ? err.code : null,
+        });
+        return;
+      }
+      if (out.includes('__OM_APPLIED__')) {
+        logEvent('update_applied', { source: 'mcp' });
+      } else if (out.includes('__OM_CLEAN__')) {
+        logEvent('update_clean', { source: 'mcp' });
       } else {
-        logEvent('update_ok', { source: 'mcp' });
+        // 預期外：shell 跑完但兩個 marker 都沒看到（可能被截斷）→ 視為失敗
+        logEvent('update_failed', { source: 'mcp', step: 'no_marker' });
       }
     });
   }
