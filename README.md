@@ -222,6 +222,8 @@ $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -u
 iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
+> **⚠️ Windows prerequisite — install Git for Windows.** OwnMind's git hooks are POSIX shell scripts. Git for Windows ships with `sh.exe` (under `C:\Program Files\Git\usr\bin\`) needed to spawn them. **VS Code's bundled Git, WinGet's `Microsoft.Git`, and Scoop's `git-with-openssh` do NOT include `sh.exe`** — commits will fail with `cannot spawn ... pre-commit: Exec format error`. Get Git for Windows: https://git-scm.com/download/win  (Since v1.17.15, `install.ps1` detects this and skips hook installation cleanly with a clear message.)
+
 ### 3. Start Using
 
 After installation, OwnMind auto-loads your memory at every new session. No manual steps needed.

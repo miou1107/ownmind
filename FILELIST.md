@@ -6,6 +6,7 @@ OwnMind/
 ├── FILELIST.md                      # 本檔案 — 檔案結構說明
 ├── CHANGELOG.md                     # 版本更新紀錄
 ├── .env.example                     # 環境變數範本
+├── .gitattributes                   # 強制 hook / shell scripts 用 LF 行尾（防 Windows core.autocrlf 把 sh script 轉 CRLF 導致 Exec format error）
 ├── .gitignore                       # Git 忽略規則
 ├── Dockerfile                       # API Server Docker image
 ├── docker-compose.yml               # Docker Compose 部署設定

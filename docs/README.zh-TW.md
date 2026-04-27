@@ -227,6 +227,8 @@ $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -u
 iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
+> **⚠️ Windows 前置需求 — 請裝 Git for Windows。** OwnMind 的 git hooks 是 POSIX shell scripts，需要 Git for Windows 內建的 `sh.exe`（位於 `C:\Program Files\Git\usr\bin\`）才能 spawn。**VS Code 內建的 Git、WinGet 的 `Microsoft.Git`、Scoop 的 `git-with-openssh` 都不含 `sh.exe`** — commit 會跳 `cannot spawn ... pre-commit: Exec format error`。下載 Git for Windows：https://git-scm.com/download/win  （v1.17.15 起 `install.ps1` 會自動偵測；找不到 sh.exe 時會明確跳過 hook 安裝並給訊息，不會默默壞掉。）
+
 ### 3. 開始使用
 
 安裝完成後，每次開新 session 記憶會自動載入，不需要手動操作。

@@ -222,6 +222,8 @@ $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -u
 iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
+> **⚠️ Windows 前提条件 — Git for Windows のインストールが必須です。** OwnMind の git hooks は POSIX シェルスクリプトで、Git for Windows 同梱の `sh.exe`（`C:\Program Files\Git\usr\bin\`）が必要です。**VS Code 内蔵の Git、WinGet の `Microsoft.Git`、Scoop の `git-with-openssh` には `sh.exe` が含まれていません** — commit 時に `cannot spawn ... pre-commit: Exec format error` が発生します。Git for Windows ダウンロード：https://git-scm.com/download/win  （v1.17.15 から `install.ps1` が自動検出し、sh.exe が無い場合は明確なメッセージと共に hook インストールをスキップします。）
+
 ### 3. 使い始める
 
 インストール完了後、毎セッション自動的にメモリが読み込まれます。手動操作は不要です。
