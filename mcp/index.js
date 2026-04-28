@@ -312,6 +312,7 @@ async function sendMcpHeartbeat() {
         tool: CLIENT_TOOL,
         scanner_version: CLIENT_VERSION,
         machine: os.hostname(),
+        os: os.platform(),
       },
     });
   } catch { /* silent fail — heartbeat is best-effort */ }
