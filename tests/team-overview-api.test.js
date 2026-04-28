@@ -15,6 +15,12 @@ describe('extractRuleCounts', () => {
     const d = { rules_complied: ['IR-003','IR-008'], rules_skipped: ['IR-009'] };
     assert.deepEqual(extractRuleCounts(d), { complied: 2, skipped: 1, triggered: 3 });
   });
+  it('treats non-array rules fields as zero', () => {
+    assert.deepEqual(
+      extractRuleCounts({ rules_complied: 'IR-003', rules_skipped: null }),
+      { complied: 0, skipped: 0, triggered: 0 }
+    );
+  });
 });
 
 describe('aggregateCompliance', () => {
@@ -33,6 +39,12 @@ describe('aggregateCompliance', () => {
     assert.equal(r.complied, 3);
     assert.equal(r.triggered, 4);
     assert.equal(r.rate, 0.75);
+  });
+  it('returns zero complied and rate=null for empty sessions', () => {
+    const r = aggregateCompliance([]);
+    assert.equal(r.triggered, 0);
+    assert.equal(r.rate, null);
+    assert.equal(r.complied, 0);
   });
 });
 
@@ -54,5 +66,8 @@ describe('pickTopProject', () => {
       { details: { project: 'ownmind' } }
     ];
     assert.equal(pickTopProject(ss), 'ownmind');
+  });
+  it('returns null for empty sessions array', () => {
+    assert.equal(pickTopProject([]), null);
   });
 });
