@@ -475,6 +475,24 @@
         <h4 style="font-size:13px;color:#86868b;margin-bottom:10px;">用量分佈</h4>
         <div class="bar-chart" id="memberDetailBars"></div>
       </div>
+      <div style="margin-top:24px;border-top:1px solid #e5e5e7;padding-top:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h4 style="font-size:13px;color:#86868b;margin:0;">最近對話 <span id="memberDetailSessionLogsCount"></span></h4>
+          <button class="btn-sm btn-ghost" id="memberDetailSessionLogsToggle" onclick="toggleMemberSessionLogs()">展開</button>
+        </div>
+        <div id="memberDetailSessionLogs" class="hidden">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>時間</th><th>工具</th><th>模型</th><th>機器</th>
+                <th>專案</th><th style="text-align:right;">輪數</th>
+                <th style="text-align:right;">遵守%</th><th>摘要</th>
+              </tr></thead>
+              <tbody id="memberDetailSessionLogsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Audit log -->
@@ -1384,10 +1402,99 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     return { from: fmt(start), to: fmt(end) };
   }
 
+  // ===== 最近對話流水（從 session_logs API）=====
+  let currentMemberDetailUserId = null;
+  let _memberSessionLogsLoaded = null;  // 已載入過的 user_id
+
+  function osDisplayName(raw) {
+    if (!raw) return '';
+    const map = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
+    return map[raw] || raw;
+  }
+
+  async function toggleMemberSessionLogs() {
+    const wrap = document.getElementById('memberDetailSessionLogs');
+    const btn = document.getElementById('memberDetailSessionLogsToggle');
+    if (wrap.classList.contains('hidden')) {
+      if (!currentMemberDetailUserId) return;
+      if (_memberSessionLogsLoaded !== currentMemberDetailUserId) {
+        await loadMemberSessionLogs(currentMemberDetailUserId);
+        _memberSessionLogsLoaded = currentMemberDetailUserId;
+      }
+      wrap.classList.remove('hidden');
+      btn.textContent = '收合';
+    } else {
+      wrap.classList.add('hidden');
+      btn.textContent = '展開';
+    }
+  }
+
+  async function loadMemberSessionLogs(userId) {
+    const from = document.getElementById('detailFrom').value;
+    const to = document.getElementById('detailTo').value;
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    qs.set('limit', '100');
+    try {
+      const res = await fetch(`/api/usage/admin/team-overview/${userId}/sessions?${qs}`,
+                             { credentials: 'include' });
+      if (!res.ok) throw new Error('狀態 ' + res.status);
+      const data = await res.json();
+      document.getElementById('memberDetailSessionLogsCount').textContent =
+        `(${data.sessions.length})`;
+      const body = document.getElementById('memberDetailSessionLogsBody');
+      if (data.sessions.length === 0) {
+        body.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#86868b;padding:16px;">期間內無對話紀錄</td></tr>`;
+      } else {
+        body.innerHTML = data.sessions.map(renderSessionLogRow).join('');
+      }
+    } catch (err) {
+      showToast('載入對話流水失敗：' + err.message, true);
+    }
+  }
+
+  function renderSessionLogRow(s) {
+    let machine;
+    if (s.machine_meta) {
+      const sub = [osDisplayName(s.machine_meta.os), s.machine_meta.scanner_version]
+        .filter(Boolean).join(' · ');
+      machine = `${escapeHtml(s.machine || '—')}<br><small style="color:#86868b;font-size:12px;">${escapeHtml(sub)}</small>`;
+    } else {
+      machine = escapeHtml(s.machine || '—');
+    }
+    const rateStr = s.rule_compliance
+      ? `${Math.round(s.rule_compliance.rate * 100)}%`
+      : '—';
+    const summaryFull = s.summary || '';
+    const summary = summaryFull.length > 60
+      ? escapeHtml(summaryFull.slice(0, 60)) + '…'
+      : escapeHtml(summaryFull);
+    return `
+      <tr>
+        <td title="${escapeHtml(s.created_at || '')}">${formatRelativeTime(s.created_at)}</td>
+        <td>${escapeHtml(s.tool || '—')}</td>
+        <td>${escapeHtml(s.model || '—')}</td>
+        <td>${machine}</td>
+        <td>${escapeHtml(s.project || '—')}</td>
+        <td style="text-align:right;">${s.duration_turns ?? '—'}</td>
+        <td style="text-align:right;">${rateStr}</td>
+        <td title="${escapeHtml(summaryFull)}">${summary}</td>
+      </tr>`;
+  }
+
   // ===== 成員詳情（點 team 排行榜展開；替代原「我的用量」tab）=====
   let currentDetailUserId = null;
 
   async function openMemberDetail(userId, userName) {
+    currentMemberDetailUserId = userId;
+    _memberSessionLogsLoaded = null;
+    const sessionLogsEl = document.getElementById('memberDetailSessionLogs');
+    const sessionLogsBtn = document.getElementById('memberDetailSessionLogsToggle');
+    const sessionLogsCount = document.getElementById('memberDetailSessionLogsCount');
+    if (sessionLogsEl) sessionLogsEl.classList.add('hidden');
+    if (sessionLogsBtn) sessionLogsBtn.textContent = '展開';
+    if (sessionLogsCount) sessionLogsCount.textContent = '';
     currentDetailUserId = userId;
     document.getElementById('memberDetailCard').classList.remove('hidden');
     document.getElementById('memberDetailTitle').textContent = `成員詳情：${userName || '#' + userId}`;
