@@ -110,4 +110,11 @@ describe('GET /:user_id/sessions', () => {
     await request(app, { method: 'GET', path: '/1/sessions?limit=-5' });
     assert.equal(captured[captured.length - 1], 100);
   });
+
+  it('rejects invalid from/to with 400', async () => {
+    const queryFn = async () => ({ rows: [] });
+    const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
+    const r = await request(app, { method: 'GET', path: '/1/sessions?from=garbage' });
+    assert.equal(r.status, 400);
+  });
 });

@@ -168,4 +168,11 @@ describe('GET /api/usage/admin/team-overview', () => {
     assert.ok(r.body.range.from);
     assert.ok(r.body.range.to);
   });
+
+  it('rejects invalid from/to with 400', async () => {
+    const queryFn = async () => ({ rows: [] });
+    const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
+    const r = await request(app, { method: 'GET', path: '/?from=garbage' });
+    assert.equal(r.status, 400);
+  });
 });

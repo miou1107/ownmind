@@ -1450,8 +1450,8 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     if (to) qs.set('to', to);
     qs.set('limit', '100');
     try {
-      const res = await fetch(`/api/usage/admin/team-overview/${userId}/sessions?${qs}`,
-                             { credentials: 'include' });
+      const res = await fetch(`${API}/usage/admin/team-overview/${userId}/sessions?${qs}`,
+                             { headers: headers() });
       if (!res.ok) throw new Error('狀態 ' + res.status);
       const data = await res.json();
       document.getElementById('memberDetailSessionLogsCount').textContent =

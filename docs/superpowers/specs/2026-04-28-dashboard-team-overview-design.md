@@ -135,7 +135,7 @@ LIMIT 1
       "model": "claude-opus-4-7",
       "machine": "Vincent.local",
       "machine_meta": {
-        "os": "macos",
+        "os": "darwin",
         "scanner_version": "0.4.1"
       },
       "project": "ownmind",
