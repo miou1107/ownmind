@@ -63,6 +63,10 @@ export function createTeamOverviewRouter(deps = {}) {
         ? new Date(req.query.from)
         : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return res.status(400).json({ error: 'from/to 必須是合法 ISO 日期' });
+      }
+
       const sql = `
         SELECT u.id AS user_id,
                u.name AS user_name,
@@ -110,6 +114,11 @@ export function createTeamOverviewRouter(deps = {}) {
       const from = req.query.from
         ? new Date(req.query.from)
         : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+        return res.status(400).json({ error: 'from/to 必須是合法 ISO 日期' });
+      }
+
       const rawLimit = parseInt(req.query.limit, 10);
       const limit = Math.min(Number.isInteger(rawLimit) && rawLimit > 0 ? rawLimit : 100, 500);
 
