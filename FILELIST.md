@@ -185,7 +185,9 @@ OwnMind/
 │   ├── install-ps1-scanner-task-check.test.js # v1.17.12 — install.ps1 驗證 scanner task 真的註冊
 │   ├── session-recent-query.test.js # v1.17.13 — buildSessionRecentQuery 含 q= search 支援
 │   ├── tier2-windows-fix.test.js    # v1.17.14 — Tier 2 Windows 支援（opencode win32 + sqlite3 偵測）
-│   └── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Adam case；mcp/index.js + hook 對偶；11 tests）
+│   ├── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Adam case；mcp/index.js + hook 對偶；11 tests）
+│   ├── team-overview-api.test.js         # v1.17.17 — 鐵律遵守率算法、票選專案、scoreboard endpoint（16 cases）
+│   └── team-overview-sessions-api.test.js # v1.17.17 — sessions endpoint、machine_meta fallback、limit 邊界（7 cases）
 │
 └── docs/                            # 文件 + 多語系 README
     ├── README.zh-TW.md              # 繁體中文 README
@@ -196,6 +198,31 @@ OwnMind/
     ├── setup-copilot.md
     ├── setup-online-ai.md
     └── superpowers/
-        └── plans/
-            └── 2026-04-23-mcp-startup-heartbeat.md  # v1.17.4 MCP 啟動 heartbeat 實作計畫
+        ├── plans/
+        │   ├── 2026-04-23-mcp-startup-heartbeat.md  # v1.17.4 MCP 啟動 heartbeat 實作計畫
+        │   └── 2026-04-28-dashboard-team-overview.md  # v1.17.17 Dashboard 團隊一覽改造計畫
+        └── specs/
+            └── 2026-04-28-dashboard-team-overview-design.md  # v1.17.17 Dashboard 團隊一覽設計 spec
+```
+
+## v1.17.17 新增 / 修改
+
+新增檔案：
+
+```
+src/routes/usage/team-overview.js         — 團隊一覽 admin API（scoreboard + sessions timeline）
+db/009_collector_heartbeat_os.sql         — collector_heartbeat 加 os 欄位 migration
+tests/team-overview-api.test.js           — 團隊一覽 scoreboard 單元測試（16 cases）
+tests/team-overview-sessions-api.test.js  — 團隊一覽 sessions 單元測試（7 cases）
+docs/superpowers/specs/2026-04-28-dashboard-team-overview-design.md
+docs/superpowers/plans/2026-04-28-dashboard-team-overview.md
+```
+
+修改的既有檔：
+
+```
+src/routes/usage/events.js   — heartbeat UPSERT 補 os 欄位
+src/routes/usage/index.js    — mount team-overview router
+mcp/index.js                 — heartbeat 加 os: os.platform()
+src/public/index.html        — 表格擴欄 / 最近對話區 / Audit Log 改名為「資料品質警示」
 ```
