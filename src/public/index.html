@@ -432,14 +432,19 @@
       <div class="table-wrap">
         <table>
           <thead><tr>
-            <th>成員</th><th style="text-align:right;" title="按 API rate card 換算；訂閱用戶實際支出以方案為準">Notional 成本 (USD)</th>
+            <th>成員</th>
+            <th title="該成員最近一次寫入 session_log 的時間">最近活動</th>
+            <th style="text-align:right;" title="來自 session_logs：AI 主動寫入的會話紀錄數">對話場次</th>
+            <th title="該成員 7 天內 session_logs.details.project 出現次數最高者；票數相同走字典序">最常做的專案</th>
+            <th style="text-align:right;" title="rules_complied / (rules_complied + rules_skipped)，全段 sum 後再除">鐵律遵守率</th>
+            <th style="text-align:right;" title="按 API rate card 換算；訂閱用戶實際支出以方案為準">Notional 成本 (USD)</th>
             <th style="text-align:right;" title="真正新輸入的 tokens（不含 cache）">Input</th>
             <th style="text-align:right;" title="output + reasoning">Output</th>
             <th style="text-align:right;" title="cache_creation — 寫入 cache 的 tokens">Cache In</th>
             <th style="text-align:right;" title="cache_read — 從 cache 讀出的 tokens">Cache Out</th>
             <th style="text-align:right;">訊息</th>
             <th style="text-align:right;">活躍時長</th>
-            <th style="text-align:right;">Session</th>
+            <th style="text-align:right;" title="來自 usage_metrics_daily：collector 端觀察的對話 session（不一定等於對話場次）">Session</th>
           </tr></thead>
           <tbody id="teamUsersTable"></tbody>
         </table>
@@ -1172,7 +1177,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       }
       loadUserStats();
     }
-    if (tab === 'team-usage') { loadTeamUsage(); loadAuditLog(); }
+    if (tab === 'team-usage') { ensureTeamUsageDefaultDates(); loadTeamUsage(); loadAuditLog(); }
     if (tab === 'settings')   {
       if (currentUserRole === 'super_admin') { loadPricingList(); loadBroadcastList(); }
       loadClientsStatus();
@@ -1460,8 +1465,31 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     document.getElementById('memberDetailBars').innerHTML = rows;
   }
 
+  function formatRelativeTime(iso) {
+    if (!iso) return '—';
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.round(diff / 60000);
+    if (m < 1) return '剛剛';
+    if (m < 60) return `${m} 分鐘前`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h} 小時前`;
+    const d = Math.round(h / 24);
+    return `${d} 天前`;
+  }
+
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function ensureTeamUsageDefaultDates() {
+    const fromEl = document.getElementById('teamUsageFrom');
+    const toEl = document.getElementById('teamUsageTo');
+    if (!fromEl.value && !toEl.value) {
+      const today = new Date();
+      const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      fromEl.value = sevenDaysAgo.toISOString().slice(0, 10);
+      toEl.value = today.toISOString().slice(0, 10);
+    }
   }
 
   // ===== P9: Team Usage =====
@@ -1470,12 +1498,28 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     const toEl = document.getElementById('teamUsageTo');
     if (!fromEl.value) { const d = defaultDateRange(); fromEl.value = d.from; toEl.value = d.to; }
     const sortBy = document.getElementById('teamSortBy').value;
+    const qs = new URLSearchParams();
+    if (fromEl.value) qs.set('from', fromEl.value);
+    if (toEl.value) qs.set('to', toEl.value);
+    const overviewQs = new URLSearchParams();
+    if (fromEl.value) overviewQs.set('from', fromEl.value);
+    if (toEl.value) overviewQs.set('to', toEl.value);
     try {
-      const res = await fetch(`${API}/usage/team-stats?from=${fromEl.value}&to=${toEl.value}`, { headers: headers() });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const [usageRes, overviewRes] = await Promise.all([
+        fetch(`${API}/usage/team-stats?${qs}`, { headers: headers() }),
+        fetch(`${API}/usage/admin/team-overview?${overviewQs}`, { headers: headers() })
+      ]);
+      if (!usageRes.ok) throw new Error(await usageRes.text());
+      const data = await usageRes.json();
+      const overview = overviewRes.ok ? await overviewRes.json() : { members: [] };
       renderCoverage(data.coverage);
-      renderTeamUsers(data.users, sortBy);
+      // 用 user_id 把 overview merge 進 usage 每一列
+      const overviewMap = new Map((overview.members || []).map(m => [m.user_id, m]));
+      const merged = (data.users || []).map(u => ({
+        ...u,
+        _overview: overviewMap.get(u.user.id) || null
+      }));
+      renderTeamUsers(merged, sortBy);
     } catch (err) {
       showToast('載入團隊用量失敗：' + err.message, true);
     }
@@ -1511,8 +1555,27 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       const displayName = u.user.name || u.user.email;
       // onclick attribute：JSON.stringify 會產生雙引號 → 用 &quot; HTML-encode 避免斷掉 attribute
       const nameArg = JSON.stringify(displayName).replace(/"/g, '&quot;');
+      // 新欄位：來自 team-overview API
+      const ov = u._overview || null;
+      const lastActive = ov?.last_active_at ? formatRelativeTime(ov.last_active_at) : '—';
+      const lastActiveTitle = ov?.last_active_at || '';
+      const sessionCount = ov?.session_count ?? '—';
+      const topProject = ov?.top_project ?? '—';
+      const compl = ov?.rule_compliance || null;
+      const rateStr = compl ? `${Math.round(compl.rate * 100)}%` : '—';
+      const rateColor = !compl ? '#86868b'
+                      : compl.rate >= 0.9 ? '#16a34a'
+                      : compl.rate < 0.7 ? '#dc2626'
+                      : '#3a3a3c';
+      const rateTitle = compl
+        ? `complied=${compl.complied} / triggered=${compl.triggered}`
+        : '此期間無 session 觸發任何鐵律';
       return `<tr style="cursor:pointer;" onclick="openMemberDetail(${u.user.id}, ${nameArg})" title="點擊查看詳情">
       <td><span style="color:#7c3aed;text-decoration:underline;">${escapeHtml(displayName)}</span></td>
+      <td title="${escapeHtml(lastActiveTitle)}">${lastActive}</td>
+      <td style="text-align:right;">${sessionCount}</td>
+      <td>${escapeHtml(topProject)}</td>
+      <td style="text-align:right;color:${rateColor};" title="${escapeHtml(rateTitle)}">${rateStr}</td>
       <td style="text-align:right;">${fmtUsd(u.totals.cost_usd)}</td>
       <td style="text-align:right;">${fmtInt(input)}</td>
       <td style="text-align:right;">${fmtInt(output)}</td>
@@ -1524,7 +1587,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     </tr>`;
     }).join('');
     document.getElementById('teamUsersTable').innerHTML =
-      rows || '<tr><td colspan="9" style="text-align:center;color:#86868b;">期間內無資料</td></tr>';
+      rows || '<tr><td colspan="13" style="text-align:center;color:#86868b;">期間內無資料</td></tr>';
   }
 
   // ===== P9: Pricing management (super_admin) =====
