@@ -495,9 +495,9 @@
       </div>
     </div>
 
-    <!-- Audit log -->
+    <!-- 資料品質警示（原 Audit log） -->
     <div class="card">
-      <div class="card-header"><h3>Audit Log</h3>
+      <div class="card-header"><h3>資料品質警示</h3>
         <select id="auditEventType" style="width:auto;margin:0;" onchange="loadAuditLog()">
           <option value="">-- 全部 --</option>
           <option value="unknown_model">unknown_model</option>
@@ -510,6 +510,9 @@
           <option value="exemption_reason_updated">exemption_reason_updated</option>
           <option value="exemption_revoked">exemption_revoked</option>
         </select>
+      </div>
+      <div style="margin:8px 0 12px;padding:8px 12px;background:#fef3c7;color:#92400e;border-radius:6px;font-size:12px;line-height:1.6;">
+        這裡記錄資料抓取時的異常事件（model 無法識別、token 數倒退、指紋衝突等），給管理員追問題用。<b>不是團隊活動紀錄</b>，活動紀錄請看上方「團隊用量排行榜」與成員詳情。
       </div>
       <div class="table-wrap">
         <table>
