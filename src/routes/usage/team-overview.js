@@ -100,6 +100,65 @@ export function createTeamOverviewRouter(deps = {}) {
     }
   });
 
+  router.get('/:user_id/sessions', adminAuth, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.user_id, 10);
+      if (!Number.isFinite(userId)) {
+        return res.status(400).json({ error: 'user_id 必須為整數' });
+      }
+      const to = req.query.to ? new Date(req.query.to) : new Date();
+      const from = req.query.from
+        ? new Date(req.query.from)
+        : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+
+      const sql = `
+        SELECT sl.id, sl.created_at, sl.tool, sl.model, sl.machine, sl.summary, sl.details,
+               hb.os AS machine_os,
+               hb.scanner_version AS machine_scanner_version
+          FROM session_logs sl
+     LEFT JOIN LATERAL (
+                 SELECT os, scanner_version
+                   FROM usage_collector_heartbeat h
+                  WHERE h.user_id = sl.user_id AND h.machine = sl.machine
+                  ORDER BY h.last_seen DESC
+                  LIMIT 1
+               ) hb ON TRUE
+         WHERE sl.user_id = $1
+           AND sl.created_at >= $2 AND sl.created_at <= $3
+         ORDER BY sl.created_at DESC
+         LIMIT $4`;
+      const result = await query(sql, [userId, from.toISOString(), to.toISOString(), limit]);
+
+      const sessions = result.rows.map(row => {
+        const counts = extractRuleCounts(row.details);
+        const meta = (row.machine_os || row.machine_scanner_version)
+          ? { os: row.machine_os, scanner_version: row.machine_scanner_version }
+          : null;
+        return {
+          id: row.id,
+          created_at: row.created_at,
+          tool: row.tool,
+          model: row.model,
+          machine: row.machine,
+          machine_meta: meta,
+          project: row.details?.project ?? null,
+          duration_turns: row.details?.duration_turns ?? null,
+          rule_compliance: counts.triggered === 0
+            ? null
+            : { complied: counts.complied, triggered: counts.triggered, rate: counts.complied / counts.triggered },
+          summary: row.summary || '',
+          details: row.details || {}
+        };
+      });
+
+      res.json({ user_id: userId, range: { from: from.toISOString(), to: to.toISOString() }, sessions });
+    } catch (err) {
+      logger.error('team-overview sessions 查詢失敗', { error: err.message });
+      res.status(500).json({ error: '查詢失敗' });
+    }
+  });
+
   return router;
 }
 
