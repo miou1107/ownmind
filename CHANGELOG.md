@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.17.17 — Dashboard 團隊一覽改造
+
+**背景**：admin 在 dashboard 上看不到「最近 7 天每位成員整體在做什麼、守鐵律守得如何」。「Audit Log」這個名字也誤導，user 直覺以為是團隊活動紀錄，實際內容是 ingestion 異常事件。
+
+**改動**
+
+- 後端新增 `GET /api/usage/admin/team-overview` — 每位成員的最近活動、對話場次、最常做的專案、鐵律遵守率（從 `session_logs.details` 彙總）
+- 後端新增 `GET /api/usage/admin/team-overview/:user_id/sessions` — 該成員最近 N 場 session 流水（含 `machine_meta` 副資訊：os / scanner_version）
+- 後端 `collector_heartbeat` 表加 `os` 欄位（migration `db/009_collector_heartbeat_os.sql`）
+- Client（mcp/index.js）heartbeat payload 加 `os: os.platform()`（darwin / linux / win32）
+- 前端「團隊用量排行榜」加四欄：最近活動 / 對話場次 / 最常做的專案 / 鐵律遵守率
+- 前端日期篩選器預設帶最近 7 天
+- 前端「成員詳情」卡新增「最近對話」摺疊區（lazy load + race guard）
+- 「Audit Log」改名「資料品質警示」+ 加說明列說明它不是團隊活動紀錄
+- 機器名旁加 OS · scanner_version 副資訊（避免 Adam 機器叫「after」這類短名造成 UX 混淆；前端把 darwin/linux/win32 轉成 macOS/Linux/Windows）
+
+**新增測試**
+
+- `tests/team-overview-api.test.js` — 鐵律遵守率算法、票選專案、scoreboard endpoint（含 7 天預設、range echo、邊界 case）— 16 cases
+- `tests/team-overview-sessions-api.test.js` — sessions endpoint、machine_meta fallback、limit 上限/0/負數 — 7 cases
+
+**No schema migration 對既有資料**：`db/009_*.sql` 只是加新欄位（IF NOT EXISTS），既有資料不動。
+
+**相容性**：v1.16 之前的 session 沒填 `details.project` / `details.rules_*` 的會被忽略不算（前端顯示「—」），不擋查詢。
+
+**鐵律對應**：IR-022（Server + Client 兩端同改）、IR-031（package.json 同步推 1.17.17）、IR-008 / IR-026（CHANGELOG / README / FILELIST 同步）、IR-020（部署後瀏覽器實測）、IR-034（新 db/009_*.sql 由 Dockerfile `COPY db/` 自動涵蓋）。
+
 ## v1.17.16 — 修 update_ok 假陽性事件（dashboard 數據誠信問題，回報者 Adam case）
 
 **背景**：Adam (Windows) 4/26 dashboard 顯示有 `update_check + update_ok` 兩個 event，看起來升級成功，但實際 client 還是 1.17.10（沒升）。追下去發現 OwnMind 的自動更新機制在兩個地方有同款 silent-fail bug：
