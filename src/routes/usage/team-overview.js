@@ -56,6 +56,50 @@ export function createTeamOverviewRouter(deps = {}) {
   const adminAuth = deps.adminAuth ?? defaultAdminAuth;
   const router = Router();
   // routes 待 Task 2 起逐步補入
+  router.get('/', adminAuth, async (req, res) => {
+    try {
+      const to = req.query.to ? new Date(req.query.to) : new Date();
+      const from = req.query.from
+        ? new Date(req.query.from)
+        : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+      const sql = `
+        SELECT u.id AS user_id,
+               u.name AS user_name,
+               MAX(sl.created_at) AS last_active_at,
+               COUNT(sl.id)::int AS session_count,
+               jsonb_agg(jsonb_build_object('details', sl.details)
+                         ORDER BY sl.created_at DESC) AS sessions_json
+          FROM users u
+          JOIN session_logs sl ON sl.user_id = u.id
+         WHERE sl.created_at >= $1 AND sl.created_at <= $2
+         GROUP BY u.id, u.name
+         ORDER BY MAX(sl.created_at) DESC`;
+      const result = await query(sql, [from.toISOString(), to.toISOString()]);
+
+      const members = result.rows.map(row => {
+        const sessions = Array.isArray(row.sessions_json) ? row.sessions_json : [];
+        const compliance = aggregateCompliance(sessions);
+        return {
+          user_id: row.user_id,
+          user_name: row.user_name,
+          last_active_at: row.last_active_at,
+          session_count: row.session_count,
+          top_project: pickTopProject(sessions),
+          rule_compliance: compliance.triggered === 0 ? null : compliance
+        };
+      });
+
+      res.json({
+        range: { from: from.toISOString(), to: to.toISOString() },
+        members
+      });
+    } catch (err) {
+      logger.error('team-overview 查詢失敗', { error: err.message });
+      res.status(500).json({ error: '查詢失敗' });
+    }
+  });
+
   return router;
 }
 
