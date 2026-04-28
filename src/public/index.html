@@ -1467,7 +1467,9 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
 
   function formatRelativeTime(iso) {
     if (!iso) return '—';
+    // diff 是 UTC epoch 差值，時區無關。負值代表 server 時間偏差或資料異常。
     const diff = Date.now() - new Date(iso).getTime();
+    if (diff < 0) return '剛剛';
     const m = Math.round(diff / 60000);
     if (m < 1) return '剛剛';
     if (m < 60) return `${m} 分鐘前`;
@@ -1494,9 +1496,9 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
 
   // ===== P9: Team Usage =====
   async function loadTeamUsage() {
+    ensureTeamUsageDefaultDates();
     const fromEl = document.getElementById('teamUsageFrom');
     const toEl = document.getElementById('teamUsageTo');
-    if (!fromEl.value) { const d = defaultDateRange(); fromEl.value = d.from; toEl.value = d.to; }
     const sortBy = document.getElementById('teamSortBy').value;
     const qs = new URLSearchParams();
     if (fromEl.value) qs.set('from', fromEl.value);
@@ -1561,7 +1563,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       const lastActiveTitle = ov?.last_active_at || '';
       const sessionCount = ov?.session_count ?? '—';
       const topProject = ov?.top_project ?? '—';
-      const compl = ov?.rule_compliance || null;
+      const compl = ov?.rule_compliance ?? null;
       const rateStr = compl ? `${Math.round(compl.rate * 100)}%` : '—';
       const rateColor = !compl ? '#86868b'
                       : compl.rate >= 0.9 ? '#16a34a'
