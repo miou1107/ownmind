@@ -106,9 +106,7 @@ LIMIT 1
         "complied": 92,
         "triggered": 100,
         "rate": 0.92
-      },
-      "cost_usd": 12.34,
-      "message_count": 540
+      }
     }
   ]
 }
@@ -117,9 +115,8 @@ LIMIT 1
 `rule_compliance: null` 代表全段沒任何 session 觸發鐵律 → 前端顯示「—」。
 
 **實作要點**：
-- 一個 query 撈 `session_logs` 彙總（用 CTE：分別跑 last_active / session_count / project_mode / rule_aggregate），最後 join `users`
-- 另一個 query 沿用 `team_usage` 邏輯撈 `cost_usd` / `message_count`
-- 後端在 JS 層 join 兩份結果（避免單一 SQL 過於肥大）
+- 一個 query 從 `users JOIN session_logs` 彙總每位成員的 last_active_at / session_count / sessions_json，最後在 JS 層用 Task 1 的純函式算 top_project / rule_compliance
+- **`cost_usd` / `message_count` 不在本 endpoint 範圍**：前端在 `loadTeamUsage()` 內平行打 `/api/usage/team-stats`（既有）+ `/api/usage/admin/team-overview`（本 endpoint）後依 `user_id` 合併
 
 ### 4.2 新增 `GET /api/usage/admin/team-overview/:user_id/sessions`
 **Auth**：`adminAuth`

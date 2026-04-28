@@ -158,4 +158,14 @@ describe('GET /api/usage/admin/team-overview', () => {
     const diffDays = (to - from) / (24*60*60*1000);
     assert.ok(diffDays >= 6.99 && diffDays <= 7.01, `expected ~7 days, got ${diffDays}`);
   });
+
+  it('response body includes range echo', async () => {
+    const queryFn = async () => ({ rows: [] });
+    const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
+    const r = await request(app, { method: 'GET', path: '/?from=2026-04-21T00:00:00Z&to=2026-04-28T00:00:00Z' });
+    assert.equal(r.status, 200);
+    assert.ok(r.body.range);
+    assert.ok(r.body.range.from);
+    assert.ok(r.body.range.to);
+  });
 });
