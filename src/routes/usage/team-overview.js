@@ -47,7 +47,7 @@ export function pickTopProject(sessions) {
   if (counts.size === 0) return null;
   return [...counts.entries()].sort((a, b) => {
     if (b[1] !== a[1]) return b[1] - a[1];
-    return a[0].localeCompare(b[0]);
+    return a[0].localeCompare(b[0], 'en', { sensitivity: 'base' });
   })[0][0];
 }
 
@@ -55,7 +55,7 @@ export function createTeamOverviewRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
   const adminAuth = deps.adminAuth ?? defaultAdminAuth;
   const router = Router();
-  // routes 待 Task 4 補
+  // routes 待 Task 2 起逐步補入
   return router;
 }
 
