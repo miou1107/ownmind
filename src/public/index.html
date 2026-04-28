@@ -1405,6 +1405,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
   // ===== 最近對話流水（從 session_logs API）=====
   let currentMemberDetailUserId = null;
   let _memberSessionLogsLoaded = null;  // 已載入過的 user_id
+  let _memberSessionLogsLoading = false;
 
   function osDisplayName(raw) {
     if (!raw) return '';
@@ -1413,13 +1414,22 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
   }
 
   async function toggleMemberSessionLogs() {
+    if (_memberSessionLogsLoading) return;  // 載入中忽略後續點擊
     const wrap = document.getElementById('memberDetailSessionLogs');
     const btn = document.getElementById('memberDetailSessionLogsToggle');
     if (wrap.classList.contains('hidden')) {
       if (!currentMemberDetailUserId) return;
       if (_memberSessionLogsLoaded !== currentMemberDetailUserId) {
-        await loadMemberSessionLogs(currentMemberDetailUserId);
-        _memberSessionLogsLoaded = currentMemberDetailUserId;
+        _memberSessionLogsLoading = true;
+        btn.disabled = true;
+        btn.textContent = '載入中…';
+        try {
+          await loadMemberSessionLogs(currentMemberDetailUserId);
+          _memberSessionLogsLoaded = currentMemberDetailUserId;
+        } finally {
+          _memberSessionLogsLoading = false;
+          btn.disabled = false;
+        }
       }
       wrap.classList.remove('hidden');
       btn.textContent = '收合';
@@ -1531,6 +1541,14 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     } catch (err) {
       showToast('載入成員詳情失敗：' + err.message, true);
     }
+    // 套用新時間範圍時，session logs 快取要失效，並收合避免使用者誤以為是新資料
+    _memberSessionLogsLoaded = null;
+    const sessionLogsEl = document.getElementById('memberDetailSessionLogs');
+    const sessionLogsBtn = document.getElementById('memberDetailSessionLogsToggle');
+    const sessionLogsCount = document.getElementById('memberDetailSessionLogsCount');
+    if (sessionLogsEl) sessionLogsEl.classList.add('hidden');
+    if (sessionLogsBtn) sessionLogsBtn.textContent = '展開';
+    if (sessionLogsCount) sessionLogsCount.textContent = '';
   }
 
   function renderDetailTotals(t) {
