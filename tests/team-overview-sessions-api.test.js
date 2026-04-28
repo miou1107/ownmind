@@ -50,7 +50,7 @@ describe('GET /:user_id/sessions', () => {
       summary: 'OwnMind 連發版',
       details: { project: 'ownmind', duration_turns: 60,
                  rules_complied: ['IR-003'], rules_skipped: [] },
-      machine_os: 'macos', machine_scanner_version: '0.4.1'
+      machine_os: 'darwin', machine_scanner_version: '0.4.1'
     }];
     const queryFn = async () => ({ rows: fakeRows });
     const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
@@ -62,7 +62,7 @@ describe('GET /:user_id/sessions', () => {
     assert.equal(s.id, 248);
     assert.equal(s.tool, 'claude-code');
     assert.equal(s.machine, 'Vincent.local');
-    assert.deepEqual(s.machine_meta, { os: 'macos', scanner_version: '0.4.1' });
+    assert.deepEqual(s.machine_meta, { os: 'darwin', scanner_version: '0.4.1' });
     assert.equal(s.project, 'ownmind');
     assert.equal(s.duration_turns, 60);
     assert.equal(s.rule_compliance.complied, 1);
@@ -93,5 +93,21 @@ describe('GET /:user_id/sessions', () => {
     const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
     await request(app, { method: 'GET', path: '/1/sessions?limit=9999' });
     assert.equal(captured[captured.length - 1], 500);
+  });
+
+  it('treats limit=0 as default 100', async () => {
+    let captured;
+    const queryFn = async (_sql, params) => { captured = params; return { rows: [] }; };
+    const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
+    await request(app, { method: 'GET', path: '/1/sessions?limit=0' });
+    assert.equal(captured[captured.length - 1], 100);
+  });
+
+  it('treats negative limit as default 100', async () => {
+    let captured;
+    const queryFn = async (_sql, params) => { captured = params; return { rows: [] }; };
+    const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
+    await request(app, { method: 'GET', path: '/1/sessions?limit=-5' });
+    assert.equal(captured[captured.length - 1], 100);
   });
 });

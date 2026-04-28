@@ -401,16 +401,19 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     // because ON CONFLICT only fires when a matching row already exists.
     await query(
       `INSERT INTO collector_heartbeat
-         (user_id, tool, last_reported_at, scanner_version, machine, status)
-       VALUES ($1, $2, NOW(), $3, $4, 'active')
+         (user_id, tool, last_reported_at, scanner_version, machine, os, status)
+       VALUES ($1, $2, NOW(), $3, $4, $5, 'active')
        ON CONFLICT (user_id, tool) DO UPDATE SET
          last_reported_at = NOW(),
          scanner_version  = EXCLUDED.scanner_version,
          machine          = EXCLUDED.machine,
+         os               = EXCLUDED.os,
          status           = 'active'
        WHERE collector_heartbeat.last_reported_at < NOW() - INTERVAL '${HEARTBEAT_RATE_LIMIT_SECONDS} seconds'`,
       [userId, heartbeat.tool,
-       heartbeat.scanner_version ?? null, heartbeat.machine ?? null]
+       heartbeat.scanner_version ?? null,
+       heartbeat.machine ?? null,
+       heartbeat.os ?? null]
     );
   } catch (err) {
     logger.error('heartbeat 更新失敗', { error: err.message });

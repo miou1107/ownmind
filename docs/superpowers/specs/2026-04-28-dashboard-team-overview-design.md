@@ -150,8 +150,10 @@ LIMIT 1
 
 **`machine_meta` 來源**：
 - 優先讀 `session_logs.details.machine_meta`（將來 client 主動上送）
-- 過渡期：從 `usage_collector_heartbeat` 表用 `(user_id, machine)` 找最近一筆 heartbeat 拿 OS / scanner_version
+- 過渡期：從 `collector_heartbeat` 表用 `(user_id, tool)` 找最近一筆 heartbeat 取 `os` / `scanner_version`（v1.17.17 新增 migration `db/009_collector_heartbeat_os.sql` 加 os 欄位）
 - 都查不到時 `machine_meta: null`，前端不顯示副資訊
+
+**OS 欄位格式**：後端原樣帶 Node.js `os.platform()` 的回值（`darwin` / `linux` / `win32` / 其他）。前端在「最近對話」表顯示時會轉成 `macOS` / `Linux` / `Windows`。
 
 ## 五、前端改動
 

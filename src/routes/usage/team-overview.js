@@ -47,7 +47,7 @@ export function pickTopProject(sessions) {
   if (counts.size === 0) return null;
   return [...counts.entries()].sort((a, b) => {
     if (b[1] !== a[1]) return b[1] - a[1];
-    return a[0].localeCompare(b[0], 'en', { sensitivity: 'base' });
+    return a[0].localeCompare(b[0], 'en');
   })[0][0];
 }
 
@@ -110,18 +110,23 @@ export function createTeamOverviewRouter(deps = {}) {
       const from = req.query.from
         ? new Date(req.query.from)
         : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const limit = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+      const rawLimit = parseInt(req.query.limit, 10);
+      const limit = Math.min(Number.isInteger(rawLimit) && rawLimit > 0 ? rawLimit : 100, 500);
 
       const sql = `
         SELECT sl.id, sl.created_at, sl.tool, sl.model, sl.machine, sl.summary, sl.details,
                hb.os AS machine_os,
                hb.scanner_version AS machine_scanner_version
           FROM session_logs sl
+     -- 注意：collector_heartbeat 的 UNIQUE 是 (user_id, tool)，所以同一 user 換機器時
+     -- 只保留最新的那台。fallback 對 user "曾在多台機器執行同個 tool" 的舊 session 會 miss
+     -- （machine 對不上）→ machine_meta 為 null，前端不顯示副資訊。這是過渡期 best-effort。
+     -- 將來：將 details.machine_meta 由 client 主動上送，徹底擺脫 fallback。
      LEFT JOIN LATERAL (
                  SELECT os, scanner_version
-                   FROM usage_collector_heartbeat h
+                   FROM collector_heartbeat h
                   WHERE h.user_id = sl.user_id AND h.machine = sl.machine
-                  ORDER BY h.last_seen DESC
+                  ORDER BY h.last_reported_at DESC
                   LIMIT 1
                ) hb ON TRUE
          WHERE sl.user_id = $1
