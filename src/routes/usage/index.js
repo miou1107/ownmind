@@ -6,6 +6,7 @@ import teamStatsRoutes from './team-stats.js';
 import exemptionsRoutes from './exemptions.js';
 import adminAuditRoutes from './admin-audit.js';
 import adminClientsRoutes from './admin-clients.js';
+import teamOverviewRoutes from './team-overview.js';
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use('/team-stats', teamStatsRoutes);
 router.use('/exemptions', exemptionsRoutes);
 router.use('/admin/audit', adminAuditRoutes);
 router.use('/admin/clients', adminClientsRoutes);
+router.use('/admin/team-overview', teamOverviewRoutes);
 
 export default router;
