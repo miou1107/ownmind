@@ -450,6 +450,44 @@ describe('GET /api/broadcast/active', () => {
     const res = await request(app, { path: '/api/broadcast/active?tool=claude-code' });
     assert.equal(res.status, 401);
   });
+
+  // v1.17.18 regression — broadcast-version-filter handoff
+  // Before this fix, hooks/ownmind-session-start.sh didn't pass client_version,
+  // so the route fell through filterVisibleBroadcasts' `if (client_version)` guard
+  // and never applied min/max_version filtering — already-upgraded users kept
+  // seeing stale upgrade_reminder broadcasts (max_version=<prev>).
+  it('applies max_version filter when client_version is in query string', async () => {
+    const app = buildApp({
+      queryFn: async () => ({ rows: [
+        { id: 1, title: 'old upgrade reminder', min_version: null, max_version: '1.17.17-prev' },
+        { id: 2, title: 'always visible', min_version: null, max_version: null }
+      ]}),
+      user: { id: 5, role: 'user' }
+    });
+    const res = await request(app, {
+      path: '/api/broadcast/active?tool=claude-code&client_version=1.17.18'
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(
+      res.body.map(b => b.id),
+      [2],
+      'client 1.17.18 > max_version 1.17.17-prev should hide id=1'
+    );
+  });
+
+  it('skips semver filter when client_version absent (back-compat)', async () => {
+    // 不帶 version 時保持 fail-open（不破壞舊 client）— 改 fail-closed 屬 Task 5 設計決策
+    const app = buildApp({
+      queryFn: async () => ({ rows: [
+        { id: 1, title: 'old upgrade reminder', min_version: null, max_version: '1.17.17-prev' },
+        { id: 2, title: 'always visible', min_version: null, max_version: null }
+      ]}),
+      user: { id: 5, role: 'user' }
+    });
+    const res = await request(app, { path: '/api/broadcast/active?tool=claude-code' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.length, 2, 'no client_version → no semver filter');
+  });
 });
 
 // ============================================================

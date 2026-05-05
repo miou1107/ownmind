@@ -117,9 +117,21 @@ fi
 log_event "init" "status" "ok"
 
 # --- v1.17.0 P3: 抓當前應顯示的廣播（fail-silent，不擋 SessionStart）---
-BROADCAST_DATA=$(curl -sf --max-time 3 \
-  -H "Authorization: Bearer $API_KEY" \
-  "${API_URL}/api/broadcast/active?tool=claude-code" 2>/dev/null)
+# v1.17.18: 帶 client_version 讓 server semver filter 生效
+# （否則 broadcast-filter.js 的 min/max_version 過濾會跳過 → 已升級用戶仍見舊升級廣播）
+CLIENT_VERSION=$(node -p "require('$OWNMIND_DIR/package.json').version" 2>/dev/null || echo "")
+BROADCAST_URL="${API_URL}/api/broadcast/active?tool=claude-code"
+if [ -n "$CLIENT_VERSION" ]; then
+  BROADCAST_URL="${BROADCAST_URL}&client_version=${CLIENT_VERSION}"
+  BROADCAST_DATA=$(curl -sf --max-time 3 \
+    -H "Authorization: Bearer $API_KEY" \
+    -H "X-Ownmind-Version: ${CLIENT_VERSION}" \
+    "${BROADCAST_URL}" 2>/dev/null)
+else
+  BROADCAST_DATA=$(curl -sf --max-time 3 \
+    -H "Authorization: Bearer $API_KEY" \
+    "${BROADCAST_URL}" 2>/dev/null)
+fi
 # 空值 / 失敗一律當 "[]"（就是沒廣播）
 [ -z "$BROADCAST_DATA" ] && BROADCAST_DATA="[]"
 

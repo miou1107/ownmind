@@ -148,8 +148,46 @@ if [ -x "${OWNMIND_DIR}/scripts/verify-upgrade.sh" ]; then
     || STEP "cleanup" "清理失敗（稍後 super_admin 可手動清 __upgrade_test__）"
 fi
 
-# --- 7. 告知 server 升級完成 → dismiss 升級廣播 ---
+# --- 7. 告知 server 升級完成 → 主動 dismiss upgrade_reminder 廣播 ---
+# v1.17.18: 把 dismiss 從 AI skill 移到腳本本身（IR-027「邏輯才有效」）。
+# 之前依賴 AI 讀完 OK:done:* 後手動呼叫 /api/broadcast/dismiss，
+# 漏做時 broadcast 一直不會 dismiss → user 每個 session 都重看升級提醒。
 VERSION=$(node -p "require('${OWNMIND_DIR}/package.json').version" 2>/dev/null || echo "unknown")
+
+if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; then
+  STEP "dismiss" "Dismiss 已過時的升級廣播"
+  ACTIVE=$(curl -sf --max-time 5 \
+    -H "Authorization: Bearer ${API_KEY}" \
+    -H "X-Ownmind-Version: ${VERSION}" \
+    "${API_URL}/api/broadcast/active?tool=claude-code&client_version=${VERSION}" 2>/dev/null || echo "[]")
+  IDS=$(echo "${ACTIVE}" | node -e '
+    let buf = "";
+    process.stdin.on("data", d => buf += d);
+    process.stdin.on("end", () => {
+      try {
+        const arr = JSON.parse(buf || "[]");
+        if (!Array.isArray(arr)) return;
+        for (const b of arr) {
+          if (b && b.type === "upgrade_reminder" && b.id) console.log(b.id);
+        }
+      } catch {}
+    });
+  ' 2>/dev/null)
+  COUNT=0
+  if [ -n "${IDS}" ]; then
+    while IFS= read -r ID; do
+      [ -z "$ID" ] && continue
+      curl -sf --max-time 3 -X POST \
+        -H "Authorization: Bearer ${API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "{\"broadcast_id\":${ID},\"tool\":\"claude-code\"}" \
+        "${API_URL}/api/broadcast/dismiss" >/dev/null 2>&1 \
+        && COUNT=$((COUNT + 1))
+    done <<< "${IDS}"
+  fi
+  OK "dismiss" "升級廣播已 dismiss（${COUNT} 則）"
+fi
+
 OK "done" "升級完成 → 版本：${VERSION}。備份保留於 ${BACKUP_DIR}"
 
 exit 0

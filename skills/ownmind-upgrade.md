@@ -106,15 +106,19 @@ OK:done:首次安裝完成
 - `ERROR:<code>:<msg>` — 立即停止、轉述錯誤 + 建議修復（下面錯誤碼表）
 - `ASK:<code>:<msg>` — 等 user 回答
 
-### Step 3：成功後 dismiss 升級廣播
+### Step 3：成功後 dismiss 升級廣播（v1.17.18 起改由腳本自動處理）
 
-讀完 `OK:done:*` 後，若是升級流程（不是首次安裝）→ dismiss 該 user 對應的 `upgrade_reminder` 廣播：
+**AI 不需要手動呼叫 `/api/broadcast/dismiss`。**
 
-```
-POST /api/broadcast/dismiss
-```
+`interactive-upgrade.sh` / `.ps1` 在 `OK:done:*` **之前**會先輸出
+`OK:dismiss:升級廣播已 dismiss（N 則）`，由腳本自己呼叫 `/api/broadcast/active`
+撈出 `type=upgrade_reminder` 的廣播後逐一 dismiss。
 
-讓 user 不再看到同一則升級提醒。
+理由：之前依賴 AI 在 skill 裡手動 dismiss，漏做時 user 每個 session 都會
+重看到舊的升級提醒（IR-027「邏輯才有效」）。
+
+唯一例外：user 主動說「暫緩升級」走 snooze 模式時，仍要呼叫 `/api/broadcast/dismiss`
+帶 `snooze_hours`（見下方 Snooze 段落）。
 
 ---
 
