@@ -1,5 +1,42 @@
 # OwnMind 更新紀錄
 
+## v1.17.18 — 修「升級後仍重複跳出升級提醒」
+
+**背景**：每次 Claude Code SessionStart 都跳出 `[WARNING] OwnMind 有新版本 …` 廣播，
+即使 client 已升級到最新仍持續顯示，需要 AI 手動 dismiss 才會停。Root cause 是兩個獨立 bug：
+
+1. `hooks/ownmind-session-start.sh` 呼叫 `/api/broadcast/active` 沒帶 `client_version`，
+   server 端 `src/lib/broadcast-filter.js` 的 `if (client_version)` 條件不成立 →
+   `min/max_version` semver 過濾完全跳過 → 已升級用戶仍收到 `max_version=<prev>` 的歷史升級提醒。
+2. `mcp/index.js` 的 `fetchBroadcastsSafely` 讀 `process.env.OWNMIND_VERSION`（從未設定），
+   實際應該用同檔案頂端從 `package.json` 解出的 `CLIENT_VERSION`。
+3. dismiss 責任之前掛在 AI skill 上（讀完 `OK:done:*` 後手動 POST），AI 漏做就不會 dismiss
+   → 違反 IR-027「邏輯才有效」。
+
+**改動**
+
+- `hooks/ownmind-session-start.sh` — 抓 `package.json` 版號，當 `?client_version=` query 與
+  `X-Ownmind-Version` header 一起送
+- `mcp/index.js` `fetchBroadcastsSafely` — 改用 `CLIENT_VERSION`，env var 改 fallback
+- `scripts/interactive-upgrade.sh` + `.ps1` — 在 `OK:done:*` 之前主動撈 `upgrade_reminder`
+  廣播並逐一 POST `/api/broadcast/dismiss`，腳本主動清自己
+- `skills/ownmind-upgrade.md` — 移除「Step 3：AI 手動 dismiss」段落，註明現在由腳本自動處理
+- 既有 server 端 `/api/broadcast/active` 已支援 `?client_version` 與 `X-Ownmind-Version`
+  header（`src/routes/broadcast.js:187-189`），無需改動
+
+**新增測試**
+
+- `tests/broadcast.test.js` — 新增 2 個 regression case：
+  - `applies max_version filter when client_version is in query string`
+  - `skips semver filter when client_version absent (back-compat)`
+- 全部 53 個 broadcast cases 通過
+
+**鐵律對齊**
+
+- IR-027 邏輯卡控：dismiss 從 AI skill 移到腳本
+- IR-031 三處版號同步：`package.json` → 1.17.18（SERVER_VERSION / CLIENT_VERSION 都從 package.json 讀，單一來源）
+- IR-008 / IR-026：CHANGELOG / FILELIST 同步
+
 ## v1.17.17 — Dashboard 團隊一覽改造
 
 **背景**：admin 在 dashboard 上看不到「最近 7 天每位成員整體在做什麼、守鐵律守得如何」。「Audit Log」這個名字也誤導，user 直覺以為是團隊活動紀錄，實際內容是 ingestion 異常事件。

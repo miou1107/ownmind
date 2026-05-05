@@ -134,6 +134,38 @@ if (Test-Path $verifyScript) {
 Pop-Location
 
 $pkg = Get-Content (Join-Path $OwnMindDir "package.json") -Raw | ConvertFrom-Json
-OK "done" "升級完成 → 版本：$($pkg.version)。備份保留於 $BackupDir"
+$Version = $pkg.version
+
+# --- 7. Dismiss 已過時的升級廣播（v1.17.18） ---
+# 把 dismiss 從 AI skill 移到腳本（IR-027 邏輯卡控），對齊 .sh 行為。
+if ($apiKey -and $apiUrl -and $Version) {
+  Step "dismiss" "Dismiss 已過時的升級廣播"
+  try {
+    $headers = @{
+      "Authorization"     = "Bearer $apiKey"
+      "X-Ownmind-Version" = "$Version"
+    }
+    $activeUrl = "$apiUrl/api/broadcast/active?tool=claude-code&client_version=$Version"
+    $active = Invoke-RestMethod -Uri $activeUrl -Headers $headers -Method Get -TimeoutSec 5 -ErrorAction Stop
+    $count = 0
+    if ($active) {
+      foreach ($b in @($active)) {
+        if ($b.type -eq "upgrade_reminder" -and $b.id) {
+          $body = @{ broadcast_id = [int]$b.id; tool = "claude-code" } | ConvertTo-Json -Compress
+          try {
+            Invoke-RestMethod -Uri "$apiUrl/api/broadcast/dismiss" -Headers $headers `
+              -Method Post -ContentType "application/json" -Body $body -TimeoutSec 3 | Out-Null
+            $count++
+          } catch { }
+        }
+      }
+    }
+    OK "dismiss" "升級廣播已 dismiss（$count 則）"
+  } catch {
+    Step "dismiss" "Dismiss 失敗（網路或 server 暫斷），不影響升級結果"
+  }
+}
+
+OK "done" "升級完成 → 版本：$Version。備份保留於 $BackupDir"
 
 exit 0

@@ -247,7 +247,9 @@ async function fetchBroadcastsSafely() {
   try {
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 2000);
-    const clientVersion = process.env.OWNMIND_VERSION || '';
+    // v1.17.18: 用 package.json 讀出的 CLIENT_VERSION（process.env.OWNMIND_VERSION
+    // 從未被設定，導致 broadcast inject 永遠不帶版本，semver filter 跳過）
+    const clientVersion = CLIENT_VERSION || process.env.OWNMIND_VERSION || '';
     const res = await fetch(`${API_URL}/api/broadcast/inject`, {
       method: 'POST',
       headers: {

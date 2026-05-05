@@ -226,3 +226,18 @@ src/routes/usage/index.js    — mount team-overview router
 mcp/index.js                 — heartbeat 加 os: os.platform()
 src/public/index.html        — 表格擴欄 / 最近對話區 / Audit Log 改名為「資料品質警示」
 ```
+
+## v1.17.18 修改（broadcast-version-filter handoff）
+
+修改的既有檔：
+
+```
+hooks/ownmind-session-start.sh        — 呼叫 /broadcast/active 時帶 client_version + X-Ownmind-Version
+mcp/index.js                          — fetchBroadcastsSafely 改用 CLIENT_VERSION（不再依賴未設定的 env var）
+scripts/interactive-upgrade.sh        — OK:done 之前自動 dismiss type=upgrade_reminder 廣播
+scripts/interactive-upgrade.ps1       — 同上，PowerShell 版
+skills/ownmind-upgrade.md             — 移除「Step 3：AI 手動 dismiss」段落，改成「腳本自動處理」
+tests/broadcast.test.js               — 新增 2 個 /broadcast/active route 的 client_version regression case
+package.json / docs/README*           — 1.17.17 → 1.17.18，三語系同步
+CHANGELOG.md                          — v1.17.18 條目
+```
