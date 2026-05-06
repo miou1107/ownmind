@@ -136,3 +136,38 @@ test('P3: hook 必須能寫 update_failed（任一 step 出錯）', () => {
     'hook 在 fetch/pull/npm/update.sh 任一失敗時必須 log update_failed，不能 silent 吞'
   );
 });
+
+// ────────────────────────────────────────────────────────────
+// v1.17.19 補修（project_281 backlog item C）：
+// LOCK_FILE touch 失敗（disk full / readonly FS）原本沒偵測，
+// 後續會在沒 lock 保護下繼續跑 → race condition 風險。
+// 對齊 P3「每步顯式 trap」原則，把 lock 也納入失敗 marker。
+// ────────────────────────────────────────────────────────────
+
+test('P3-lock: mcp/index.js shell 必須對 touch LOCK_FILE 失敗顯式 echo marker', () => {
+  // 修前：`touch "${LOCK_FILE}"` 沒接 ||
+  // 修後：`touch "${LOCK_FILE}" || { echo "__OM_LOCK_FAIL__"; exit 9; }`
+  assert.match(
+    mcpSource,
+    /touch\s+"\$\{LOCK_FILE\}"\s*\|\|\s*\{\s*echo\s+"__OM_LOCK_FAIL__"/,
+    'shell 內 touch LOCK_FILE 必須對失敗 echo __OM_LOCK_FAIL__ marker，不能默默繼續跑'
+  );
+});
+
+test('P3-lock: mcp/index.js callback failMarkers 必須包含 __OM_LOCK_FAIL__', () => {
+  // 確保 callback 解 stdout 時能識別 lock 失敗、寫 update_failed step=lock
+  assert.ok(
+    mcpSource.includes('__OM_LOCK_FAIL__'),
+    'failMarkers 陣列 / callback 解析必須認得 __OM_LOCK_FAIL__，否則 lock 失敗會被歸成 unknown step'
+  );
+});
+
+test('P3-lock: hooks/ownmind-session-start.sh 必須對 touch LOCK_FILE 失敗 log update_failed step=lock', () => {
+  // 修前：`touch "$LOCK_FILE"` 沒接 ||
+  // 修後：`touch "$LOCK_FILE" || { log_event "update_failed" "step" "lock"; exit 0; }`
+  assert.match(
+    hookSource,
+    /touch\s+"\$LOCK_FILE"\s*\|\|\s*\{[^}]*log_event[^}]*update_failed[^}]*lock/,
+    'hook 內 touch LOCK_FILE 必須對失敗 log update_failed step=lock，不能默默繼續跑'
+  );
+});

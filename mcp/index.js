@@ -1075,7 +1075,7 @@ try {
     // 修法：每個關鍵 step 顯式 echo 失敗 marker；callback 解 stdout 分支寫
     // update_applied (真有拉) / update_clean (沒新版) / update_failed (任一 step 出錯)。
     exec(`
-      touch "${LOCK_FILE}"
+      touch "${LOCK_FILE}" || { echo "__OM_LOCK_FAIL__"; exit 9; }
       cd ~/.ownmind || { echo "__OM_CD_FAIL__"; exit 10; }
       git fetch -q 2>/dev/null || { echo "__OM_FETCH_FAIL__"; exit 11; }
       # 用 2>/dev/null 防止 stderr (例如 origin 不存在) 污染 UPDATES 變數誤判為「有新版」
@@ -1097,7 +1097,7 @@ try {
       try { fs.unlinkSync(LOCK_FILE); } catch {}
       const out = String(stdout || '');
       // 隱私：只擷取 fail marker / 不上傳完整 stdout/stderr（含 user file path）
-      const failMarkers = ['__OM_CD_FAIL__', '__OM_FETCH_FAIL__', '__OM_PULL_FAIL__', '__OM_NPM_FAIL__', '__OM_UPDATE_FAIL__'];
+      const failMarkers = ['__OM_LOCK_FAIL__', '__OM_CD_FAIL__', '__OM_FETCH_FAIL__', '__OM_PULL_FAIL__', '__OM_NPM_FAIL__', '__OM_UPDATE_FAIL__'];
       const failed = failMarkers.find(m => out.includes(m));
       if (err) {
         // shell 內顯式 exit 10..14 / killed / timeout 都會走這

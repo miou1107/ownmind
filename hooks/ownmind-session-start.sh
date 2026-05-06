@@ -69,7 +69,7 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
     # 即使 git pull / npm / update.sh 任一失敗都會誤報「已更新」。對齊 mcp/index.js
     # 的修法：每步顯式檢查；分流寫 update_applied / update_clean / update_failed。
     (
-      touch "$LOCK_FILE"
+      touch "$LOCK_FILE" || { log_event "update_failed" "step" "lock"; exit 0; }
       cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; log_event "update_failed" "step" "cd"; exit 0; }
       if ! git fetch -q 2>/dev/null; then
         rm -f "$LOCK_FILE"
