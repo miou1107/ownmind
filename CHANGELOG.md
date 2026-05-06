@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.19 — 自動更新 lock 失敗納入失敗偵測（project_281 backlog item C）
+
+**背景**：v1.17.18 的 P3 修法把 `git fetch / pull / npm install / update.sh` 每步都加了顯式
+失敗 marker，但漏了第一步的 `touch "${LOCK_FILE}"`。disk full / readonly FS / 權限異常時 touch
+會失敗，後續的 update pipeline 會在「沒 lock 保護」下繼續跑，理論上有機會與另一個並行的
+SessionStart hook race。實務碰到機率低，但對齊 P3「每步顯式 trap」原則補完。
+
+**改動**
+
+- `mcp/index.js` — shell 首行 `touch "${LOCK_FILE}" || { echo "__OM_LOCK_FAIL__"; exit 9; }`，
+  callback `failMarkers` 陣列補入 `__OM_LOCK_FAIL__`，lock 失敗會寫 `update_failed` step=lock
+- `hooks/ownmind-session-start.sh` — `touch "$LOCK_FILE" || { log_event update_failed step=lock; exit 0; }`
+- `tests/p3-update-event-semantics.test.js` — 新增 3 個 P3-lock regression case
+
+**測試**：606/606 pass
+
 ## v1.17.18 — 修「升級後仍重複跳出升級提醒」
 
 **背景**：每次 Claude Code SessionStart 都跳出 `[WARNING] OwnMind 有新版本 …` 廣播，

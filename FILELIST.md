@@ -241,3 +241,15 @@ tests/broadcast.test.js               — 新增 2 個 /broadcast/active route �
 package.json / docs/README*           — 1.17.17 → 1.17.18，三語系同步
 CHANGELOG.md                          — v1.17.18 條目
 ```
+
+## v1.17.19 修改（project_281 backlog item C — LOCK_FILE touch fail handling）
+
+修改的既有檔：
+
+```
+mcp/index.js                              — touch "${LOCK_FILE}" 加 || echo __OM_LOCK_FAIL__ + failMarkers 補入
+hooks/ownmind-session-start.sh            — touch "$LOCK_FILE" 加 || log_event update_failed step=lock
+tests/p3-update-event-semantics.test.js   — 新增 3 個 P3-lock regression case
+package.json / docs/README*               — 1.17.18 → 1.17.19，三語系同步
+CHANGELOG.md                              — v1.17.19 條目
+```
