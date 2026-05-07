@@ -632,10 +632,12 @@ function render(report) {
   const SEV_LABEL = { high: '🔴 嚴重', medium: '🟡 注意', low: '🔵 提示' };
   const TYPE_LABEL = {
     compliance_gap: '合規回報缺漏',
+    compliance_unobserved: '系統漏觀測（系統 bug）',
+    compliance_unverified: 'AI 未主動回報遵守',
     heartbeat_absent: 'Token 收集器離線',
     source_inconsistent: '資料來源不一致',
     orphan_session: 'Session 沒帶合規紀錄',
-    ir027_candidate: 'IR-027 風險（系統靠 user 自報）',
+    ir027_candidate: 'IR-027 風險（系統靠使用者自報）',
     unobservable_source: '不可觀測來源（非 MCP 介面）',
     team_blindspot: '團隊盲點（成員不可觀測）',
   };

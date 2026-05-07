@@ -1,5 +1,27 @@
 # OwnMind 更新紀錄
 
+## v1.17.42 — Compliance gap 拆兩種等級（漏觀測 vs 未驗證）
+
+**Vincent 反饋**：拆 vs 不拆對比後選拆，理由：
+> 「不拆等於系統幫 AI 擦屁股，跟『不靠 AI 自覺』訴求矛盾」
+
+**修法**
+
+把原本單一 `compliance_gap` 改成兩種獨立的 audit findings：
+
+| Finding | 嚴重度 | 條件 | 動作建議 |
+|---|---|---|---|
+| `compliance_unobserved` | 🔴 高 | 高風險動作 ±10 分鐘**完全沒**任何合規紀錄（連系統觀測都沒抓到）| 系統可能有 bug，要排查觸發機制 |
+| `compliance_unverified` | 🟡 中 | 有系統觀測（observed_trigger）但無 AI 主動回報的 comply | AI 該養成主動回報習慣 |
+
+**為什麼拆**
+
+之前把兩種混成一個，`observed_trigger` 一寫進來就把所有 gap 蓋成 0，看儀表板會誤以為「全部守規」。實際上很多是「系統有看到但 AI 沒驗證」。
+
+拆開後：
+- 0 高警 = 系統健康，能抓到所有觸發
+- 中警出現 = 推 AI 改善主動回報習慣
+
 ## v1.17.41 — Codex round 4 review 後 auto-compliance 誠信修補（P1+P2 全做）
 
 **Codex 抓到的核心誠信問題**：

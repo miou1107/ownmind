@@ -433,31 +433,38 @@ router.get('/report', async (req, res) => {
     //   P2.1 heartbeat 用 LOWER() tool 比對
     const V17_37_SHIPPED = '2026-05-07';  // v1.17.37 之後 emergencySessionLog 才會自動帶 compliance arr
 
-    // #1 activity/compliance gap：縮窄成「真鐵律相關」事件
-    // 之前 memory_update 太吵；改成只看 high-confidence：
-    //   - handoff_create（一定觸發 IR-008/009/024 等 commit/contributor 鐵律）
-    //   - memory_disable（停用鐵律本身就是 IR-006 全層同步事件）
-    //   - memory_save type=iron_rule（新增鐵律本身）
+    // #1 activity/compliance gap：v1.17.42 拆兩種等級
+    //   gap_a「漏觀測」: 完全沒有任何 compliance event（連系統觀測都沒抓到 → 系統壞了）
+    //   gap_b「未驗證」: 有 system_auto observed_trigger 但沒 AI 主動回報的 comply
     const complianceGapQ = await query(`
       WITH sensitive AS (
-        SELECT id, ts, event FROM activity_logs
+        SELECT id, ts FROM activity_logs
         WHERE user_id = $1 AND ts ${timeFilter}
           AND (
             event IN ('handoff_create', 'memory_disable')
             OR (event = 'memory_save' AND details->>'type' = 'iron_rule')
           )
       ),
-      compliance_window AS (
-        SELECT s.id
+      classified AS (
+        SELECT s.id,
+          EXISTS (
+            SELECT 1 FROM activity_logs c
+            WHERE c.user_id = $1 AND c.event = 'iron_rule_compliance'
+              AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
+          ) AS has_any,
+          EXISTS (
+            SELECT 1 FROM activity_logs c
+            WHERE c.user_id = $1 AND c.event = 'iron_rule_compliance'
+              AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
+              AND c.details->>'action' = 'comply'
+              AND COALESCE(c.details->>'source', '') != 'system_auto'
+          ) AS has_manual_comply
         FROM sensitive s
-        WHERE NOT EXISTS (
-          SELECT 1 FROM activity_logs c
-          WHERE c.user_id = $1
-            AND c.event = 'iron_rule_compliance'
-            AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
-        )
       )
-      SELECT COUNT(*) AS gap_count FROM compliance_window`,
+      SELECT
+        COUNT(*) FILTER (WHERE NOT has_any) AS gap_unobserved,
+        COUNT(*) FILTER (WHERE has_any AND NOT has_manual_comply) AS gap_unverified
+      FROM classified`,
       [me.id]
     );
 
@@ -531,13 +538,25 @@ router.get('/report', async (req, res) => {
 
     // 整理 audit_findings 給前端
     const myAuditFindings = [];
-    const gapCount = parseInt(complianceGapQ.rows[0]?.gap_count, 10) || 0;
-    if (gapCount > 0) {
+    // v1.17.42: 兩種 gap 嚴重度不同
+    //   gap_unobserved（漏觀測）= 連系統都沒抓到 → 系統壞了，high
+    //   gap_unverified（未驗證）= 有系統觀測但無 AI 主動回報 → AI 沒承認遵守，medium
+    const gapUnobserved = parseInt(complianceGapQ.rows[0]?.gap_unobserved, 10) || 0;
+    const gapUnverified = parseInt(complianceGapQ.rows[0]?.gap_unverified, 10) || 0;
+    if (gapUnobserved > 0) {
       myAuditFindings.push({
-        type: 'compliance_gap',
-        severity: gapCount > 5 ? 'high' : 'medium',
-        count: gapCount,
-        message: `${gapCount} 個高風險動作（交接 / 停用鐵律 / 新增鐵律）前後 10 分鐘沒有合規回報，AI 可能漏觸發 iron_rule_compliance`,
+        type: 'compliance_unobserved',
+        severity: 'high',
+        count: gapUnobserved,
+        message: `${gapUnobserved} 個高風險動作（交接 / 停用鐵律 / 新增鐵律）前後 10 分鐘完全沒有任何合規紀錄，連系統自動觀測都沒抓到 → 系統可能有 bug`,
+      });
+    }
+    if (gapUnverified > 0) {
+      myAuditFindings.push({
+        type: 'compliance_unverified',
+        severity: 'medium',
+        count: gapUnverified,
+        message: `${gapUnverified} 個高風險動作系統有觀測到，但 AI 沒主動回報「我有遵守」 → AI 該養成主動 ownmind_report_compliance 的習慣`,
       });
     }
     const heartbeatStale = heartbeatAuditQ.rows;
