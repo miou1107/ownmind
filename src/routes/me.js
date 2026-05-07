@@ -171,10 +171,10 @@ router.get('/report', async (req, res) => {
     );
 
     // v1.17.34: project 名稱用 LOWER(TRIM(...)) 正規化合併（'ownmind' / 'OwnMind' 算同個）
-    // 顯示用 MIN() 取一個原字串（任一變體）
+    // v1.17.56: 用 REGEXP_REPLACE 砍掉「( ... )」描述，避免「ai_kol」「ai_kol (xxx)」分裂
     const myProjectsQ = await query(`
-      SELECT LOWER(TRIM(details->>'project')) AS project_key,
-        MIN(details->>'project') AS project,
+      SELECT LOWER(TRIM(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,
+        MIN(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', '')) AS project,
         COUNT(*) AS sessions,
         SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
       FROM session_logs
@@ -351,9 +351,10 @@ router.get('/report', async (req, res) => {
     // v1.17.34: project 名稱用 LOWER(TRIM(...)) 合併大小寫變體
     // v1.17.36: 多源合併 — session_logs（量化資料）+ handoffs（也算活動跡象，
     //   因為有些工作只寫交接沒寫 session_log，例如 RING 專案）
+    // v1.17.56: REGEXP_REPLACE 砍「( ... )」描述
     const projectContribQ = await query(`
-      SELECT LOWER(TRIM(details->>'project')) AS project_key,
-        MIN(details->>'project') AS project,
+      SELECT LOWER(TRIM(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,
+        MIN(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', '')) AS project,
         u.name,
         COUNT(*) AS sessions,
         SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
