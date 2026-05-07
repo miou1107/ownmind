@@ -1192,10 +1192,19 @@ function renderNarrativeInsights(ins) {
 
   const fric = ins.project_friction || {};
   const fricRoot = document.getElementById('project-friction-render');
+  // v1.17.54: 三段式（what / impact / mitigation）；舊版單行字串也吃，向下相容
+  const renderFricItem = (i) => {
+    if (typeof i === 'string') return `<li>${esc(i)}</li>`;
+    if (!i || typeof i !== 'object') return '';
+    const what = i.what ? `<strong>${esc(i.what)}</strong>` : '';
+    const impact = i.impact ? `<div style="color:#6b7280;font-size:13px;margin-top:2px">影響：${esc(i.impact)}</div>` : '';
+    const mit = i.mitigation ? `<div style="color:#6b7280;font-size:13px">改善：${esc(i.mitigation)}</div>` : '';
+    return `<li style="margin-bottom:0.5rem">${what}${impact}${mit}</li>`;
+  };
   const fricHtml = Object.entries(fric).map(([proj, items]) => {
     if (!Array.isArray(items) || items.length === 0) return '';
     return `<h4 style="margin-top:0.5rem">${esc(proj)}</h4>
-            <ul>${items.map(i => `<li>${esc(String(i))}</li>`).join('')}</ul>`;
+            <ul>${items.map(renderFricItem).join('')}</ul>`;
   }).filter(Boolean).join('');
   fricRoot.innerHTML = fricHtml || '<em style="color:#9ca3af">本期間無明顯踩坑紀錄</em>';
 

@@ -1,5 +1,34 @@
 # OwnMind 更新紀錄
 
+## v1.17.54 — 整體分析 LLM prompt 改寫（友善白話 + 踩坑三段式）
+
+**Vincent 反饋**（v1.17.53 ship 後）：
+1. 「第二名 Michelle 是潛在大使人選」— 「大使」是行銷術語管理者看不懂
+2. 「10. 各專案最常踩什麼坑」每條只有一句話，沒講影響也沒講怎麼改善
+3. AI 把自己的流程心得（「我觸發了完整 brainstorming skill」）當成「踩坑」寫進報告
+
+**問題根源**：`src/lib/llm-narrative.js` 的 `SYSTEM_PROMPT`：
+1. 範例用「潛在大使人選」這種行銷詞，LLM 模仿就會輸出行話
+2. `project_friction` schema 只是字串陣列，沒位置放「影響」「改善」
+3. 規則 5 只說「萃取實質踩過的坑」，沒禁止 AI 把自己的流程心得當坑
+
+**修法**：
+- `src/lib/llm-narrative.js` SYSTEM_PROMPT：
+  - Rule 2 範例改寫：「第一名 Vin 用了 40% 的 AI 工作量，第二名 Michelle 也很常用，用了 25%，是在團隊中最常用 AI 完成工作的人」
+    （加排名 + 給實際比例 + 把名次轉成角色定位 + 不用「大使」「分流」「扛」這類行話）
+  - Rule 5 schema 改三段式：`{ what, impact, mitigation }`，明確指定每段要寫什麼，
+    沒明確證據時填「影響不確定」/「需找 PM 釐清根因」（不要編）
+  - 新增規則 7：禁用行話清單（大使／賦能／對齊／閉環／bus factor／分流／扛）
+  - Rule 3/4 既有範例同步改白話（去掉「bus factor=1」、「賦能」這類詞）
+- `src/public/me/index.html` `renderNarrativeInsights()`：
+  - 新增 `renderFricItem()` 渲染三段式：what 加粗、影響/改善各一行 13px 灰字
+  - 向下相容：舊版字串資料（cache 還在的話）仍能渲染
+
+對使用者的好處：
+- 報告讀起來像同事在講話、不像顧問報告
+- 每個踩坑都看得出「為什麼要在意」「下一步要幹嘛」
+- AI 自言自語不再混進真正的痛點清單
+
 ## v1.17.53 — 誠信表 UX 強化（問題優先排序 + 雜訊過濾 + 違反高亮）
 
 **Vincent 反饋**（v1.17.52 ship 後）：「per-user 拆完後表變得很長，

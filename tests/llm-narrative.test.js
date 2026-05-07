@@ -16,6 +16,29 @@ describe('buildMessages', () => {
     const msgs = buildMessages({ x: 1 });
     assert.equal(msgs[1].content, '{"x":1}');
   });
+
+  // v1.17.54: prompt 規格 pin — friction 三段式、不准用行話
+  it('prompt 要求 friction 三段式（what/impact/mitigation）', () => {
+    const msgs = buildMessages({});
+    const sys = msgs[0].content;
+    assert.match(sys, /what.*impact.*mitigation/s);
+    assert.match(sys, /影響不確定/);
+    assert.match(sys, /需找 PM 釐清根因/);
+  });
+
+  it('prompt 禁用行話清單包含「大使」「賦能」「對齊」', () => {
+    const sys = buildMessages({})[0].content;
+    assert.match(sys, /不要用行話/);
+    assert.match(sys, /大使/);
+    assert.match(sys, /賦能/);
+    assert.match(sys, /對齊/);
+  });
+
+  it('prompt rule 2 範例用「AI 工作量」+ 比例 + 角色定位（非「大使人選」）', () => {
+    const sys = buildMessages({})[0].content;
+    assert.match(sys, /AI 工作量/);
+    assert.doesNotMatch(sys, /大使人選/);
+  });
 });
 
 describe('parseLLMJson', () => {
