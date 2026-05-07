@@ -126,13 +126,27 @@ router.get('/profile', async (req, res) => {
  */
 router.get('/report', async (req, res) => {
   try {
+    // v1.17.34: 支援 ?start=YYYY-MM-DD&end=YYYY-MM-DD 自訂範圍；否則沿用 ?range=Xd preset
     const range = String(req.query.range || '14d');
-    const interval = ({
-      '7d': "7 days",
-      '14d': "14 days",
-      '30d': "30 days",
-      'all': "100 years",
-    })[range] || "14 days";
+    const start = String(req.query.start || '');
+    const end = String(req.query.end || '');
+    const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+    // 既輸入 start+end 又通過格式驗證 → 用 BETWEEN，否則用 INTERVAL preset
+    // 採直接 string interpolation，但兩者都已 whitelist 驗證過格式（無注入風險）
+    let timeFilter;
+    if (ISO.test(start) && ISO.test(end)) {
+      // end 加 1 天讓當日整天都涵蓋
+      timeFilter = `BETWEEN '${start}'::timestamptz AND ('${end}'::date + INTERVAL '1 day')`;
+    } else {
+      const interval = ({
+        '7d': "7 days",
+        '14d': "14 days",
+        '30d': "30 days",
+        'all': "100 years",
+      })[range] || "14 days";
+      timeFilter = `>= NOW() - INTERVAL '${interval}'`;
+    }
 
     const me = req.user;
 
@@ -143,7 +157,7 @@ router.get('/report', async (req, res) => {
         COUNT(*) AS events,
         MAX(ts) AS last_activity
       FROM activity_logs
-      WHERE user_id = $1 AND ts >= NOW() - INTERVAL '${interval}'`,
+      WHERE user_id = $1 AND ts ${timeFilter}`,
       [me.id]
     );
     const myStats = myStatsQ.rows[0];
@@ -156,16 +170,19 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
+    // v1.17.34: project 名稱用 LOWER(TRIM(...)) 正規化合併（'ownmind' / 'OwnMind' 算同個）
+    // 顯示用 MIN() 取一個原字串（任一變體）
     const myProjectsQ = await query(`
-      SELECT details->>'project' AS project,
+      SELECT LOWER(TRIM(details->>'project')) AS project_key,
+        MIN(details->>'project') AS project,
         COUNT(*) AS sessions,
-        SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns,
-        ARRAY_AGG(DISTINCT details->>'friction_points') FILTER (WHERE details->>'friction_points' IS NOT NULL) AS friction_points_arr
+        SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
       FROM session_logs
       WHERE user_id = $1
-        AND created_at >= NOW() - INTERVAL '${interval}'
+        AND created_at ${timeFilter}
         AND details->>'project' IS NOT NULL
-      GROUP BY details->>'project'
+        AND TRIM(details->>'project') != ''
+      GROUP BY project_key
       ORDER BY turns DESC NULLS LAST`,
       [me.id]
     );
@@ -180,7 +197,7 @@ router.get('/report', async (req, res) => {
         FROM activity_logs
         WHERE user_id = $1
           AND event = 'iron_rule_compliance'
-          AND ts >= NOW() - INTERVAL '${interval}'
+          AND ts ${timeFilter}
         GROUP BY rule_code
       )
       SELECT m.code AS rule_code, m.title,
@@ -201,7 +218,7 @@ router.get('/report', async (req, res) => {
       SELECT ts, event, tool, source, details
       FROM activity_logs
       WHERE user_id = $1
-        AND ts >= NOW() - INTERVAL '${interval}'
+        AND ts ${timeFilter}
       ORDER BY ts DESC`,
       [me.id]
     );
@@ -214,7 +231,7 @@ router.get('/report', async (req, res) => {
         MAX(al.ts) AS last_activity
       FROM users u
       LEFT JOIN activity_logs al ON al.user_id = u.id
-        AND al.ts >= NOW() - INTERVAL '${interval}'
+        AND al.ts ${timeFilter}
       GROUP BY u.id, u.name, u.email, u.role
       ORDER BY events DESC NULLS LAST`
     );
@@ -223,7 +240,7 @@ router.get('/report', async (req, res) => {
       SELECT to_char(ts AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d,
         COUNT(*) AS count
       FROM activity_logs
-      WHERE ts >= NOW() - INTERVAL '${interval}'
+      WHERE ts ${timeFilter}
       GROUP BY d ORDER BY d`
     );
 
@@ -231,7 +248,7 @@ router.get('/report', async (req, res) => {
       SELECT EXTRACT(HOUR FROM ts AT TIME ZONE 'Asia/Taipei')::int AS hour,
         COUNT(*) AS count
       FROM activity_logs
-      WHERE ts >= NOW() - INTERVAL '${interval}'
+      WHERE ts ${timeFilter}
       GROUP BY hour ORDER BY hour`
     );
 
@@ -239,14 +256,14 @@ router.get('/report', async (req, res) => {
       SELECT EXTRACT(DOW FROM ts AT TIME ZONE 'Asia/Taipei')::int AS dow,
         COUNT(*) AS count
       FROM activity_logs
-      WHERE ts >= NOW() - INTERVAL '${interval}'
+      WHERE ts ${timeFilter}
       GROUP BY dow ORDER BY dow`
     );
 
     const eventTypesQ = await query(`
       SELECT event, COUNT(*) AS count
       FROM activity_logs
-      WHERE ts >= NOW() - INTERVAL '${interval}'
+      WHERE ts ${timeFilter}
       GROUP BY event ORDER BY count DESC LIMIT 15`
     );
 
@@ -260,27 +277,31 @@ router.get('/report', async (req, res) => {
 
     // ── 專案區塊（Q2=B 全團隊專案都看得到）──
     // v1.17.30: 改成 per-user 細項，前端可顯示「主要負責人」與其他人的分工
+    // v1.17.34: project 名稱用 LOWER(TRIM(...)) 合併大小寫不同變體（'ownmind' / 'OwnMind'）
     const projectContribQ = await query(`
-      SELECT details->>'project' AS project,
+      SELECT LOWER(TRIM(details->>'project')) AS project_key,
+        MIN(details->>'project') AS project,
         u.name,
         COUNT(*) AS sessions,
         SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
       FROM session_logs sl
       JOIN users u ON u.id = sl.user_id
-      WHERE sl.created_at >= NOW() - INTERVAL '${interval}'
+      WHERE sl.created_at ${timeFilter}
         AND details->>'project' IS NOT NULL
-      GROUP BY 1, 2
-      ORDER BY 1, 4 DESC NULLS LAST`
+        AND TRIM(details->>'project') != ''
+      GROUP BY project_key, u.name
+      ORDER BY project_key, 5 DESC NULLS LAST`
     );
-    // 整理成 { project: { sessions, turns, contributors: [{name, sessions, turns}] }}
+    // 整理成 { project_key: { sessions, turns, contributors: [{name, sessions, turns}] }}
     const projMap = new Map();
     for (const r of projectContribQ.rows) {
       const t = parseInt(r.turns, 10) || 0;
       const s = parseInt(r.sessions, 10) || 0;
-      if (!projMap.has(r.project)) {
-        projMap.set(r.project, { project: r.project, sessions: 0, turns: 0, contributors: [], my_sessions: 0 });
+      const key = r.project_key;
+      if (!projMap.has(key)) {
+        projMap.set(key, { project: r.project, sessions: 0, turns: 0, contributors: [], my_sessions: 0 });
       }
-      const e = projMap.get(r.project);
+      const e = projMap.get(key);
       e.sessions += s;
       e.turns += t;
       e.contributors.push({ name: r.name, sessions: s, turns: t });
@@ -297,7 +318,7 @@ router.get('/report', async (req, res) => {
         COUNT(DISTINCT user_id) AS reporters
       FROM activity_logs
       WHERE event = 'iron_rule_compliance'
-        AND ts >= NOW() - INTERVAL '${interval}'
+        AND ts ${timeFilter}
       GROUP BY rule_code
       ORDER BY COUNT(*) DESC`
     );

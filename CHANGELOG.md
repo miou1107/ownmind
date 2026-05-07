@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## v1.17.34 — 自訂日期範圍 + 專案名稱大小寫合併
+
+**Vincent 反饋兩點**：
+1. 想自己指定起訖日（不只 7d/14d/30d/all preset）
+2. 「ownmind」跟「OwnMind」明明同一個專案，被拆兩列
+
+**修法**
+
+- 後端 `/api/me/report`：
+  - 支援 `?start=YYYY-MM-DD&end=YYYY-MM-DD` 自訂範圍（end 涵蓋當日整天）
+  - 格式驗證 ISO 才接受、否則 fallback 到 preset
+  - 專案名稱用 `LOWER(TRIM(...))` 當 group key 合併大小寫變體；
+    顯示用 `MIN()` 取一個原字串
+- 前端：
+  - range select 多 `自訂…` 選項，揭露起 / 訖 date input + 套用按鈕
+  - 選 custom 時預設帶 14 天前 → 今天
+  - 切到 preset 直接 reload；切到 custom 等使用者按「套用」
+
 ## v1.17.33 — 鐵律/活動紀錄分頁 30 筆 + 活動範圍內全列出
 
 **Vincent 反饋**：

@@ -282,12 +282,20 @@
   <div>
     <h1>【OwnMind】用量報告</h1>
     <div class="meta">你好 <strong id="meName">—</strong>（<span id="meRole">—</span>）·
-      範圍 <select id="rangeSel" style="margin-left:4px;">
+      範圍
+      <select id="rangeSel" style="margin-left:4px;">
         <option value="7d">最近 7 天</option>
         <option value="14d" selected>最近 14 天</option>
         <option value="30d">最近 30 天</option>
         <option value="all">全部</option>
+        <option value="custom">自訂…</option>
       </select>
+      <span id="customRange" class="hidden" style="margin-left:8px;">
+        <input type="date" id="startDate" style="padding:4px 6px;font-size:12px;">
+        ～
+        <input type="date" id="endDate" style="padding:4px 6px;font-size:12px;">
+        <button class="secondary" id="applyRangeBtn" style="padding:4px 10px;font-size:12px;">套用</button>
+      </span>
     </div>
   </div>
   <div class="actions">
@@ -442,10 +450,12 @@ async function tryAuth(key) {
   return r.json();
 }
 
-async function fetchReport(key, range) {
-  const r = await fetch('/ownmind/api/me/report?range=' + encodeURIComponent(range), {
-    headers: { Authorization: 'Bearer ' + key }
-  });
+async function fetchReport(key, range, start, end) {
+  let url = '/ownmind/api/me/report?range=' + encodeURIComponent(range);
+  if (range === 'custom' && start && end) {
+    url += '&start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end);
+  }
+  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + key } });
   if (!r.ok) throw new Error('報告載入失敗');
   return r.json();
 }
@@ -748,10 +758,12 @@ async function loadReport() {
   const key = localStorage.getItem(KEY_NAME);
   if (!key) return showLogin();
   const range = $('#rangeSel').value;
+  const start = $('#startDate').value;
+  const end = $('#endDate').value;
   try {
     const profile = await tryAuth(key);
     if (profile.must_change_password) return showChangePw();
-    const report = await fetchReport(key, range);
+    const report = await fetchReport(key, range, start, end);
     render(report);
     showReport();
   } catch (e) {
@@ -838,7 +850,28 @@ $('#changePwBtn').addEventListener('click', async () => {
 });
 
 $('#refreshBtn').addEventListener('click', loadReport);
-$('#rangeSel').addEventListener('change', loadReport);
+$('#rangeSel').addEventListener('change', () => {
+  const isCustom = $('#rangeSel').value === 'custom';
+  $('#customRange').classList.toggle('hidden', !isCustom);
+  if (isCustom) {
+    // 預設帶今天 / 14 天前
+    if (!$('#endDate').value) {
+      const today = new Date();
+      const fourteenAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+      $('#startDate').value = fourteenAgo.toISOString().slice(0, 10);
+      $('#endDate').value = today.toISOString().slice(0, 10);
+    }
+    return; // custom 模式等使用者按「套用」
+  }
+  loadReport();
+});
+$('#applyRangeBtn').addEventListener('click', () => {
+  if (!$('#startDate').value || !$('#endDate').value) {
+    alert('請選擇起訖日期');
+    return;
+  }
+  loadReport();
+});
 $('#logoutBtn').addEventListener('click', () => {
   localStorage.removeItem(KEY_NAME);
   $('#emailInput').value = '';
