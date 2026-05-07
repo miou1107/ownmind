@@ -261,6 +261,29 @@
     overflow-x: auto;
     margin-top: 8px;
   }
+  .ai-summary {
+    background: #eef2ff;
+    border-left: 4px solid #6366f1;
+    padding: 0.75rem 1rem;
+    margin: 0.5rem 0 1rem;
+    font-size: 1rem;
+    color: #1e293b;
+  }
+  .ai-explain {
+    background: #f8fafc;
+    border-left: 3px solid #94a3b8;
+    padding: 0.5rem 0.75rem;
+    margin: 0.25rem 0 1rem;
+    font-size: 0.9rem;
+    color: #475569;
+    font-style: italic;
+  }
+  .narrative-section { margin-bottom: 1.25rem; }
+  .narrative-section h3 { margin-top: 1.5rem; }
+  .narrative-bar { display:flex; align-items:flex-end; gap:4px; height:140px; margin:0.5rem 0; }
+  .narrative-bar .nbar { flex:1; background:#6366f1; border-radius:3px 3px 0 0; position:relative; min-height:1px; }
+  .narrative-bar .nbar-label { font-size:11px; color:#64748b; text-align:center; margin-top:4px; }
+  .narrative-bar .nbar-value { position:absolute; top:-18px; left:0; right:0; text-align:center; font-size:11px; color:#475569; }
   .hidden { display: none !important; }
 </style>
 </head>
@@ -321,6 +344,7 @@
     <button class="active" data-tab="me">個人</button>
     <button data-tab="team">團隊</button>
     <button data-tab="projects">專案</button>
+    <button data-tab="narrative">📊 敘事報告</button>
   </div>
 
   <!-- 個人 tab -->
@@ -448,6 +472,24 @@
         <th>主要負責人</th>
         <th>其他貢獻者</th>
       </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- 敘事報告 tab -->
+  <div id="tab-narrative" class="tab-content">
+    <div class="card">
+      <h2>📊 團隊敘事報告</h2>
+      <div class="desc">過去 N 天的全團隊使用分析。機械段秒回；AI 洞察開頁自動觸發、伺服器端 cache 1 小時。</div>
+      <div id="narrative-summary" class="ai-summary">⏳ 產生洞察中…</div>
+      <div id="narrative-sections"></div>
+      <div class="card" style="margin-top:1rem;background:#f9fafb">
+        <h3>給管理者的洞察</h3>
+        <ol id="narrative-insight-list"><li class="ai-explain">⏳ 產生中…</li></ol>
+      </div>
+      <div class="card" style="margin-top:1rem;background:#fef3c7">
+        <h3>給你的下一步動作</h3>
+        <ol id="narrative-action-list"><li class="ai-explain">⏳ 產生中…</li></ol>
+      </div>
     </div>
   </div>
 
@@ -958,12 +1000,20 @@ $('#rangeSel').addEventListener('change', () => {
     }
     return; // custom 模式等使用者按「套用」
   }
+  narrativeLoaded = false;
+  if (document.querySelector('.tabs button.active')?.dataset.tab === 'narrative') {
+    loadNarrative();
+  }
   loadReport();
 });
 $('#applyRangeBtn').addEventListener('click', () => {
   if (!$('#startDate').value || !$('#endDate').value) {
     alert('請選擇起訖日期');
     return;
+  }
+  narrativeLoaded = false;
+  if (document.querySelector('.tabs button.active')?.dataset.tab === 'narrative') {
+    loadNarrative();
   }
   loadReport();
 });
@@ -974,13 +1024,255 @@ $('#logoutBtn').addEventListener('click', () => {
   showLogin();
 });
 
+let narrativeLoaded = false;
 $$('.tabs button').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
     $$('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
     $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
+    if (tab === 'narrative' && !narrativeLoaded) {
+      narrativeLoaded = true;
+      loadNarrative();
+    }
   });
 });
+
+async function loadNarrative() {
+  const range = $('#rangeSel').value || '14d';
+  const start = $('#startDate').value;
+  const end = $('#endDate').value;
+  const key = localStorage.getItem(KEY_NAME);
+  if (!key) return showLogin();
+  const headers = { Authorization: 'Bearer ' + key };
+
+  const qs = new URLSearchParams({ range });
+  if (start) qs.set('start', start);
+  if (end) qs.set('end', end);
+
+  const mechP = fetch(`/ownmind/api/me/narrative?${qs}`, { headers })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('mechanical ' + r.status)));
+  const insightP = fetch(`/ownmind/api/me/narrative/insights?${qs}`, { headers })
+    .then(async r => {
+      if (r.ok) return r.json();
+      const body = await r.json().catch(() => ({}));
+      return { _error: body.error || ('LLM ' + r.status), _status: r.status };
+    });
+
+  try {
+    const mech = await mechP;
+    renderNarrativeMechanical(mech);
+  } catch (e) {
+    document.getElementById('narrative-sections').innerHTML =
+      `<div class="ai-explain" style="color:#dc2626">機械段載入失敗：${esc(e.message)}</div>`;
+    return;
+  }
+
+  const ins = await insightP;
+  if (ins._error) {
+    const msg = ins._status === 503
+      ? '（管理者尚未設定 LLM；機械版報告仍可用）'
+      : '（洞察暫時無法產生）';
+    document.querySelectorAll('.ai-summary, .ai-explain').forEach(el => el.textContent = msg);
+    return;
+  }
+  renderNarrativeInsights(ins);
+}
+
+function renderNarrativeMechanical(data) {
+  const s = data.sections;
+  const root = document.getElementById('narrative-sections');
+  root.innerHTML = `
+    <div class="narrative-section">
+      <h3>1. 誰最常用 OwnMind</h3>
+      ${renderRankingTable(s.ranking)}
+      <div class="ai-explain" data-section="ranking">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>2. 大家的軟體版本</h3>
+      ${renderVersionsTable(s.versions, s.ranking)}
+      <div class="ai-explain" data-section="versions">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>3. 哪幾天最忙</h3>
+      ${renderBarChart(s.daily, 'd', 'c')}
+      <div class="ai-explain" data-section="daily">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>4. 一天裡哪個時段最忙（台北時間）</h3>
+      ${renderBarChart(padHours(s.hourly), 'hour', 'c')}
+      <div class="ai-explain" data-section="hourly">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>5. 一週各天分布</h3>
+      ${renderBarChart(padWeekdays(s.weekday), 'dow_label', 'c')}
+      <div class="ai-explain" data-section="weekday">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>6. 大家都在做什麼類型的事</h3>
+      ${renderEventTypesTable(s.event_types)}
+      <div class="ai-explain" data-section="event_types">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>7. 鐵律有沒有被遵守</h3>
+      ${renderComplianceTable(s.compliance)}
+      <div class="ai-explain" data-section="compliance">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>8. 軟體更新有沒有失敗</h3>
+      ${renderUpdateHealthTable(s.update_health)}
+      <div class="ai-explain" data-section="update_health">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>9. 各專案活動量排行</h3>
+      ${renderProjectRankingTable(s.project_ranking)}
+      <div class="ai-explain" data-section="project_ranking">⏳ 產生洞察中…</div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>10. 各專案最常踩什麼坑</h3>
+      <div id="project-friction-render"><em style="color:#9ca3af">⏳ AI 萃取中…</em></div>
+    </div>
+
+    <div class="narrative-section">
+      <h3>11. 各專案守了哪些鐵律</h3>
+      ${renderProjectComplianceTable(s.project_compliance)}
+      <div class="ai-explain" data-section="project_compliance">⏳ 產生洞察中…</div>
+    </div>
+  `;
+}
+
+function renderNarrativeInsights(ins) {
+  document.getElementById('narrative-summary').textContent = ins.summary_one_line || '（無摘要）';
+
+  for (const [section, text] of Object.entries(ins.section_explanations || {})) {
+    const el = document.querySelector(`.ai-explain[data-section="${section}"]`);
+    if (el) el.textContent = text || '（無說明）';
+  }
+
+  const fric = ins.project_friction || {};
+  const fricRoot = document.getElementById('project-friction-render');
+  const fricHtml = Object.entries(fric).map(([proj, items]) => {
+    if (!Array.isArray(items) || items.length === 0) return '';
+    return `<h4 style="margin-top:0.5rem">${esc(proj)}</h4>
+            <ul>${items.map(i => `<li>${esc(String(i))}</li>`).join('')}</ul>`;
+  }).filter(Boolean).join('');
+  fricRoot.innerHTML = fricHtml || '<em style="color:#9ca3af">本期間無明顯踩坑紀錄</em>';
+
+  const insList = ins.insights_for_admin || [];
+  document.getElementById('narrative-insight-list').innerHTML =
+    insList.length ? insList.map(t => `<li>${esc(String(t))}</li>`).join('')
+                   : '<li><em style="color:#9ca3af">無</em></li>';
+
+  const actList = ins.next_actions || [];
+  document.getElementById('narrative-action-list').innerHTML =
+    actList.length ? actList.map(t => `<li>${esc(String(t))}</li>`).join('')
+                   : '<li><em style="color:#9ca3af">無</em></li>';
+}
+
+function renderRankingTable(rows) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  return `<table><thead><tr><th>人</th><th>身份</th><th class="num">Sessions</th><th class="num">總事件</th><th>最後活動</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(r.name||'-')}</td><td>${esc(r.role||'')}</td><td class="num">${r.sessions||0}</td><td class="num">${r.events||0}</td><td>${r.last_activity ? new Date(r.last_activity).toLocaleString('zh-TW') : '—'}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderVersionsTable(versions, ranking) {
+  if (!versions || versions.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  const byUser = {};
+  for (const v of versions) {
+    if (!byUser[v.user_id]) byUser[v.user_id] = {};
+    byUser[v.user_id][v.tool] = v.version;
+  }
+  const userNames = Object.fromEntries((ranking||[]).map(r => [r.id, r.name]));
+  const tools = [...new Set(versions.map(v => v.tool))].sort();
+  return `<table><thead><tr><th>人</th>${tools.map(t => `<th>${esc(t)}</th>`).join('')}</tr></thead><tbody>${
+    Object.entries(byUser).map(([uid, m]) => `<tr><td>${esc(userNames[uid] || ('user#'+uid))}</td>${tools.map(t => `<td>${esc(m[t]||'—')}</td>`).join('')}</tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderBarChart(rows, labelKey, valueKey) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  const max = Math.max(...rows.map(r => parseInt(r[valueKey], 10) || 0), 1);
+  return `<div class="narrative-bar">${
+    rows.map(r => {
+      const v = parseInt(r[valueKey], 10) || 0;
+      const h = Math.max(1, Math.round((v / max) * 120));
+      return `<div style="display:flex;flex-direction:column;align-items:center;flex:1">
+        <div class="nbar" style="height:${h}px;width:80%"><span class="nbar-value">${v}</span></div>
+        <div class="nbar-label">${esc(String(r[labelKey]))}</div>
+      </div>`;
+    }).join('')
+  }</div>`;
+}
+
+function padHours(rows) {
+  const map = Object.fromEntries((rows||[]).map(r => [parseInt(r.hour,10), parseInt(r.c,10)||0]));
+  return Array.from({length:24}, (_,h) => ({ hour: String(h).padStart(2,'0'), c: map[h]||0 }));
+}
+
+function padWeekdays(rows) {
+  const labels = ['日','一','二','三','四','五','六'];
+  const map = Object.fromEntries((rows||[]).map(r => [parseInt(r.dow,10), parseInt(r.c,10)||0]));
+  return Array.from({length:7}, (_,d) => ({ dow_label: labels[d], c: map[d]||0 }));
+}
+
+function renderEventTypesTable(rows) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  return `<table><thead><tr><th>事件</th><th class="num">次數</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(r.event||'')}</td><td class="num">${r.c||0}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderComplianceTable(rows) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料（請等系統收集中）</em>';
+  return `<table><thead><tr><th>規則</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th><th class="num">系統觀測</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(r.rule_code||'')}</td><td class="num">${r.comply||0}</td><td class="num">${r.skip||0}</td><td class="num">${r.violate||0}</td><td class="num">${r.observed||0}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderUpdateHealthTable(rows) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  return `<table><thead><tr><th>事件</th><th class="num">次數</th></tr></thead><tbody>${
+    rows.map(r => `<tr><td>${esc(r.event||'')}</td><td class="num">${r.c||0}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderProjectRankingTable(rows) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  const agg = {};
+  for (const r of rows) {
+    const k = r.project_key || '(unnamed)';
+    if (!agg[k]) agg[k] = { project: r.project || k, sessions: 0, turns: 0, contributors: [] };
+    agg[k].sessions += parseInt(r.sessions,10)||0;
+    agg[k].turns += parseInt(r.turns,10)||0;
+    if (r.name) agg[k].contributors.push(`${r.name}（${r.turns||0} 輪）`);
+  }
+  const list = Object.values(agg).sort((a,b) => b.turns - a.turns);
+  return `<table><thead><tr><th>專案</th><th class="num">Sessions</th><th class="num">輪次</th><th>貢獻者</th></tr></thead><tbody>${
+    list.map(r => `<tr><td>${esc(r.project)}</td><td class="num">${r.sessions}</td><td class="num">${r.turns}</td><td>${esc(r.contributors.join(', '))}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderProjectComplianceTable(rows) {
+  if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
+  const byProj = {};
+  for (const r of rows) {
+    const k = r.project_key || '(unnamed)';
+    if (!byProj[k]) byProj[k] = [];
+    byProj[k].push(`${r.rule_code}（${r.c}）`);
+  }
+  return `<table><thead><tr><th>專案</th><th>守的規則</th></tr></thead><tbody>${
+    Object.entries(byProj).map(([k, rules]) => `<tr><td>${esc(k)}</td><td>${esc(rules.join(', '))}</td></tr>`).join('')
+  }</tbody></table>`;
+}
 
 // Initial load
 loadReport();
