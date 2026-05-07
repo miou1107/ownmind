@@ -562,6 +562,17 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.51 修改（誠信表 IR 代號加白話說明）
+
+```
+src/routes/me-narrative.js                — compliance query 改 CTE，JOIN memories
+                                            DISTINCT ON (code) 取最新 IR title
+src/public/me/index.html                  — renderComplianceTable() 顯示 IR title
+                                            （代號粗體 + title 灰字小字）
+package.json / README* / docs/README*     — 1.17.50 → 1.17.51
+CHANGELOG.md                              — v1.17.51 條目
+```
+
 ## v1.17.50 修改（事件代號加白話說明）
 
 ```

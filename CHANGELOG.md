@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.17.51 — 整體分析誠信表 IR 代號加白話說明
+
+**Vincent 反饋**（v1.17.50 ship 後）：「這些 IR 是每個人都不同？可以多寫一句話去說明，這樣沒頭沒尾看不懂。」
+
+**問題**：v1.17.47 的整體分析（敘事）誠信表只列 `IR-024` 這種代號，
+讀者沒看過鐵律本人會完全不懂指什麼。個人分析早就有 title 顯示，
+敘事這支 SQL 沒 JOIN `memories`，title 沒帶上來。
+
+**修法**：
+- `src/routes/me-narrative.js` compliance query 改成 CTE：
+  stats（活動統計）+ titles（`DISTINCT ON (code)` 取 `memories.iron_rule.title`，
+  跨使用者用最新更新的版本作為共用標題）
+- `src/public/me/index.html` `renderComplianceTable()` 改用個人分析同款排版：
+  代號粗體在上、title 灰字小字在下（`<br><small>`）
+
+每個 user 鐵律可能不同（含客製版本），LEFT JOIN 對不上 title 時保持空白不顯示。
+
 ## v1.17.50 — 整體分析事件代號加白話說明
 
 **Vincent 反饋**：「這些英文代號可以加上簡短說明嗎？例如 `update_check`（檢查 OwnMind 版本）」
