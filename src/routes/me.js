@@ -384,20 +384,19 @@ router.get('/report', async (req, res) => {
       const s = parseInt(r.sessions, 10) || 0;
       const key = r.project_key;
       if (!projMap.has(key)) {
-        projMap.set(key, { project: r.project, sessions: 0, turns: 0, handoffs: 0, contributors: [], my_sessions: 0, my_handoffs: 0 });
+        projMap.set(key, { project: r.project, sessions: 0, turns: 0, handoffs: 0, contributors: [] });
       }
       const e = projMap.get(key);
       e.sessions += s;
       e.turns += t;
       e.contributors.push({ name: r.name, sessions: s, turns: t, handoffs: 0 });
-      if (r.name === me.name) e.my_sessions += s;
     }
     // 把 handoffs 數加進去；若該 project 之前沒在 session_logs 出現也建立 entry
     for (const r of projectHandoffQ.rows) {
       const h = parseInt(r.handoffs, 10) || 0;
       const key = r.project_key;
       if (!projMap.has(key)) {
-        projMap.set(key, { project: r.project, sessions: 0, turns: 0, handoffs: 0, contributors: [], my_sessions: 0, my_handoffs: 0 });
+        projMap.set(key, { project: r.project, sessions: 0, turns: 0, handoffs: 0, contributors: [] });
       }
       const e = projMap.get(key);
       e.handoffs += h;
@@ -408,7 +407,6 @@ router.get('/report', async (req, res) => {
         e.contributors.push(contrib);
       }
       contrib.handoffs += h;
-      if (r.name === me.name) e.my_handoffs += h;
     }
     // 排序：先看 turns（主要量化指標），平手看 handoffs，再看 sessions
     const teamProjects = Array.from(projMap.values())
