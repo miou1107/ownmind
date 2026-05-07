@@ -562,6 +562,16 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.53 修改（誠信表 UX 強化）
+
+```
+src/routes/me-narrative.js                — compliance query 加 WHERE 過濾全零列
+                                            ORDER BY 改 violate DESC, user_name, rule_code
+src/public/me/index.html                  — renderComplianceTable() violate > 0 紅色加粗
+package.json / README* / docs/README*     — 1.17.52 → 1.17.53
+CHANGELOG.md                              — v1.17.53 條目
+```
+
 ## v1.17.52 修改（誠信表加「使用者」欄）
 
 ```

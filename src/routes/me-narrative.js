@@ -140,6 +140,7 @@ async function collectSections({ query, range }) {
   // 7. compliance — iron_rule 統計（同 me.js 的誠信邏輯）
   // v1.17.52: 改成 per-user × rule_code，每筆鐵律配對到「該使用者自己的 title」
   //          因為每個 user 的鐵律不同（含客製版本），合併顯示會誤導
+  // v1.17.53: 過濾 4 項計數全零列，排序改 violate DESC 讓問題第一眼看到
   const compliance = (await query(`
     WITH stats AS (
       SELECT user_id, details->>'rule_code' AS rule_code,
@@ -160,7 +161,8 @@ async function collectSections({ query, range }) {
     LEFT JOIN memories m
       ON m.user_id = s.user_id AND m.code = s.rule_code
       AND m.type = 'iron_rule' AND m.status = 'active'
-    ORDER BY u.name NULLS LAST, s.rule_code
+    WHERE (s.comply + s.skip + s.violate + s.observed) > 0
+    ORDER BY s.violate DESC, u.name NULLS LAST, s.rule_code
   `)).rows;
 
   // 8. update_health — 升級/檢查事件
