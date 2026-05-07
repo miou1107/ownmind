@@ -7,6 +7,9 @@ import logger from '../utils/logger.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
+// v1.17.26: 新增 user 時若 admin 不指定密碼，自動套這個預設值 + must_change_password=true
+// 與 src/jobs/seed-default-passwords.js 邏輯一致
+const DEFAULT_USER_PASSWORD = 'Password42760988';
 
 async function writeAuditLog(actorId, action, targetType, targetId, details) {
   try {
@@ -157,15 +160,21 @@ router.post('/users', async (req, res) => {
 
     const apiKey = randomUUID();
     let passwordHash = null;
+    let mustChangePassword = false;
     if (password) {
+      // admin 自己設了密碼 → 直接用，不強制改
       passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    } else if (targetRole === 'user') {
+      // v1.17.26: user role 沒指定密碼 → 套預設值，登入後強制改
+      passwordHash = await bcrypt.hash(DEFAULT_USER_PASSWORD, BCRYPT_ROUNDS);
+      mustChangePassword = true;
     }
 
     const result = await query(
-      `INSERT INTO users (name, email, role, api_key, password_hash, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, name, email, role, api_key, created_at`,
-      [name || null, email, targetRole, apiKey, passwordHash, actorId]
+      `INSERT INTO users (name, email, role, api_key, password_hash, must_change_password, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, name, email, role, api_key, must_change_password, created_at`,
+      [name || null, email, targetRole, apiKey, passwordHash, mustChangePassword, actorId]
     );
 
     const newUser = result.rows[0];
