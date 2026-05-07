@@ -682,5 +682,13 @@ echo "   ✅ Claude Code — SessionStart hook"
 { [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "   ✅ Antigravity — rules file"
 echo "   ✅ Git Hooks — pre-commit + post-commit（Iron Rule Verification）"
 echo ""
+
+# v1.17.63: 跑 self-check 把所有元件的真實狀態抓下來、寫 log + 上傳。
+# 包 || true 保證 self-check 出錯不擋安裝完成的訊息。
+SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+if [ -f "$SELF_CHECK_SCRIPT" ]; then
+  node "$SELF_CHECK_SCRIPT" --trigger=post_install || true
+fi
+
 echo "   開一個新對話，OwnMind 會自動載入你的記憶！"
 echo ""

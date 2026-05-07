@@ -415,5 +415,13 @@ if (-not $HasBash) {
 }
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
+
+# v1.17.63: self-check 把所有元件真實狀態抓下來、寫 log + 上傳
+# 包 try/catch：若 user 的 $ErrorActionPreference=Stop，沒包會中斷後面的安裝完成訊息
+$SelfCheckScript = Join-Path $OwnmindDir 'scripts\install-helpers\self-check.cjs'
+if (Test-Path $SelfCheckScript) {
+  try { & node $SelfCheckScript --trigger=post_install } catch { }
+}
+
 Write-Host "   開一個新的 Claude Code 對話，OwnMind 會自動載入你的記憶！"
 Write-Host ""
