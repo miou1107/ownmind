@@ -386,3 +386,11 @@ src/public/me/index.html                  — .bar-row / .bar / .bar-label CSS �
 package.json / docs/README*               — 1.17.27 → 1.17.28
 CHANGELOG.md                              — v1.17.28 條目
 ```
+
+## v1.17.29 修改（bar chart 數字標籤）
+
+```
+src/public/me/index.html                  — barChart 加 .bar-value 顯示數值
+package.json / docs/README*               — 1.17.28 → 1.17.29
+CHANGELOG.md                              — v1.17.29 條目
+```

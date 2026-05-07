@@ -1,5 +1,10 @@
 # OwnMind 更新紀錄
 
+## v1.17.29 — bar chart 加數字標籤（Vincent 回報）
+
+每根 bar 上方顯示數值（0 值不顯示避免雜訊）。`.bar-chart` 高度從 220 → 240px、
+新增 `padding-top: 18px` 留數字空間。
+
 ## v1.17.28 — hotfix /ownmind/me/ bar chart 全空（Vincent 截圖回報）
 
 **症狀**：登入進報告頁後，「每日活動量」「時段分布」「一週節奏」三張柱狀圖
