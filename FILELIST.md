@@ -562,6 +562,16 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.48 修改（整體分析 上線後修正）
+
+```
+src/public/me/index.html                  — 長條圖 CSS 修正（flex 衝突 → width 固定）
+                                            「敘事報告」→「整體分析」改名
+src/lib/llm-narrative.js                  — prompt 加正反例 + 規範洞察必須具體
+package.json / README* / docs/README*     — 1.17.47 → 1.17.48
+CHANGELOG.md                              — v1.17.48 條目
+```
+
 ## v1.17.47 修改（/me 敘事報告）
 
 ```
