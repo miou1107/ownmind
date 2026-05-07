@@ -80,7 +80,8 @@ NO_SESSION_HOOK_FLAG="$HOME/.ownmind/.no-session-hook"
 if [ -f "$CLAUDE_SETTINGS" ]; then
   node -e "
     const fs = require('fs');
-    const s = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
+    const s = loadOrSkip('$CLAUDE_SETTINGS', {});
     const noSessionHook = fs.existsSync('$NO_SESSION_HOOK_FLAG');
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
@@ -160,11 +161,9 @@ if [ -d "$HOME/.gemini" ]; then
   GEMINI_SETTINGS="$HOME/.gemini/settings.json"
   node -e "
     const fs = require('fs');
+    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
     const path = '$GEMINI_SETTINGS';
-    let s = {};
-    if (fs.existsSync(path)) {
-      try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
-    }
+    const s = loadOrSkip(path, {});
     if (!s.hooks) s.hooks = {};
     if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
     const exists = s.hooks.SessionStart.some(h =>
@@ -191,11 +190,9 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
   mkdir -p "$GH_HOOKS_DIR"
   node -e "
     const fs = require('fs');
+    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
     const path = '$GH_HOOKS_FILE';
-    let s = { version: 1, hooks: {} };
-    if (fs.existsSync(path)) {
-      try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
-    }
+    const s = loadOrSkip(path, { version: 1, hooks: {} });
     if (!s.hooks) s.hooks = {};
     if (!s.hooks.sessionStart) s.hooks.sessionStart = [];
     const exists = s.hooks.sessionStart.some(h => (h.command || '').includes('ownmind'));
@@ -214,11 +211,9 @@ if [ -d "$HOME/.cursor" ]; then
   CURSOR_HOOKS="$HOME/.cursor/hooks.json"
   node -e "
     const fs = require('fs');
+    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
     const path = '$CURSOR_HOOKS';
-    let s = { version: 1, hooks: {} };
-    if (fs.existsSync(path)) {
-      try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
-    }
+    const s = loadOrSkip(path, { version: 1, hooks: {} });
     if (!s.hooks) s.hooks = {};
     if (!s.hooks['session-start']) s.hooks['session-start'] = [];
     const exists = s.hooks['session-start'].some(h => (h.command || '').includes('ownmind'));

@@ -563,6 +563,19 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.60 修改（settings.json 安全讀取 + 自動更新 lock 旗標）
+
+```
+scripts/install-helpers/load-settings-safe.cjs   — 新增（loadOrSkip helper：壞掉印警告 + exit(0)，原檔不洗掉）
+scripts/update.sh                                — 4 處 node -e 改用 loadOrSkip（Claude / Gemini / Copilot / Cursor）
+scripts/update.ps1                               — 對應 4 處 node 腳本改用 loadOrSkip
+mcp/index.js                                     — 加 module-scope _lockHeld 旗標；外層 catch 只在自己持有時 cleanup
+tests/load-settings-safe.test.js                 — 新增（7 case：missing / valid / corrupt-no-overwrite / caller-write-also-no-clobber / non-object JSON / empty file / unreadable）
+package.json                                     — 1.17.59 → 1.17.60
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.59 → 1.17.60
+CHANGELOG.md                                     — v1.17.60 條目
+```
+
 ## v1.17.59 修改（mcp/index.js 三項硬化）
 
 ```

@@ -93,10 +93,13 @@ $NoSessionFlag = Join-Path $OwnMindDir ".no-session-hook"
 if (Test-Path $ClaudeSettings) {
   $nodeScript = @"
     const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const { loadOrSkip } = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/load-settings-safe.cjs'));
     // v1.17.23: argv[0]=node, argv[1]=script path, argv[2]+=user args
     const settingsPath = process.argv[2];
     const noSessionHook = process.argv[3] === 'true';
-    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const s = loadOrSkip(settingsPath, {});
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
 
@@ -153,9 +156,11 @@ if (Test-Path $GeminiDir) {
   $GeminiSettings = Join-Path $GeminiDir "settings.json"
   $geminiNodeScript = @"
     const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const { loadOrSkip } = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/load-settings-safe.cjs'));
     const p = process.argv[2];
-    let s = {};
-    if (fs.existsSync(p)) { try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} }
+    const s = loadOrSkip(p, {});
     if (!s.hooks) s.hooks = {};
     if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
     const exists = s.hooks.SessionStart.some(h =>
@@ -185,9 +190,11 @@ if ((Test-Path $GithubDir) -or $GhCmd) {
   if (-not (Test-Path $GhHookDir)) { New-Item -ItemType Directory -Force -Path $GhHookDir | Out-Null }
   $copilotNodeScript = @"
     const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const { loadOrSkip } = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/load-settings-safe.cjs'));
     const p = process.argv[2];
-    let s = { version: 1, hooks: {} };
-    if (fs.existsSync(p)) { try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} }
+    const s = loadOrSkip(p, { version: 1, hooks: {} });
     if (!s.hooks) s.hooks = {};
     if (!s.hooks.sessionStart) s.hooks.sessionStart = [];
     const exists = s.hooks.sessionStart.some(h => (h.command || '').includes('ownmind'));
@@ -211,9 +218,11 @@ if (Test-Path $CursorDir) {
   $CursorHooks = Join-Path $CursorDir "hooks.json"
   $cursorNodeScript = @"
     const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
+    const { loadOrSkip } = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/load-settings-safe.cjs'));
     const p = process.argv[2];
-    let s = { version: 1, hooks: {} };
-    if (fs.existsSync(p)) { try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} }
+    const s = loadOrSkip(p, { version: 1, hooks: {} });
     if (!s.hooks) s.hooks = {};
     if (!s.hooks['session-start']) s.hooks['session-start'] = [];
     const exists = s.hooks['session-start'].some(h => (h.command || '').includes('ownmind'));
