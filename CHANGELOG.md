@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.17.39 — Codex round 3 review 後 audit 全面修補（P1+P2+P3）
+
+**Vincent 指示**：「P1/P2/P3 全都修」
+
+**修法（5 項對應 Codex review）**
+
+- **P1.1 orphan_session 加日期 gate**
+  - 之前 v1.17.37 之前的歷史 sessions 全部誤標
+  - 加 `AND created_at >= '2026-05-07'`（v1.17.37 ship 日）
+
+- **P1.2 compliance_gap 縮窄 sensitive event**
+  - 之前 `memory_update` 太常見會大量誤報
+  - 改成只看 high-confidence：`handoff_create` / `memory_disable` / `memory_save where type=iron_rule`
+
+- **P2.1 heartbeat tool name 用 LOWER(TRIM(...)) 比對**
+  - 之前 activity tool 跟 heartbeat tool 大小寫不同就漏判
+  - 加大小寫不敏感比對 + 過濾 `unknown` / `mcp` 這種 placeholder
+
+- **P2.2 audit_findings 持久化（high severity）**
+  - 之前 on-the-fly 計算，user 沒打開報告就看不到
+  - 改成 `severity='high'` 的 findings 寫進 `audit_logs` 表（24h 內 dedup）
+  - 未來可接 broadcast / email 通知管線
+
+- **P3 blind-spot detection**
+  - 新增 `unobservable_source` finding：帳號 > 7 天但 14 天內 0 activity / 0 token / 無 heartbeat
+  - 新增 `team_blindspot` finding（super_admin only）：列出可能用非 MCP 介面（claude.ai web / ChatGPT）工作的成員
+
 ## v1.17.38 — Server-side 反向稽核 5 項（Codex review 後實作）
 
 **背景**：Codex adversarial review 指出 compliance / token_events / session_log

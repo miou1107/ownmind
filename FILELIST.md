@@ -475,3 +475,14 @@ src/public/me/index.html                  — #audit-findings 卡片區、CSS .a
 package.json / docs/README*               — 1.17.37 → 1.17.38
 CHANGELOG.md                              — v1.17.38 條目
 ```
+
+## v1.17.39 修改（Codex round 3 audit 全面修補）
+
+```
+src/routes/me.js                          — P1.1 orphan_session 日期 gate; P1.2 compliance_gap
+                                            縮窄事件; P2.1 heartbeat LOWER 比對; P2.2 high
+                                            findings 寫 audit_logs; P3 blind_spot + team_blindspot
+src/public/me/index.html                  — 加 unobservable_source / team_blindspot label
+package.json / docs/README*               — 1.17.38 → 1.17.39
+CHANGELOG.md                              — v1.17.39 條目
+```
