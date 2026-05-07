@@ -563,6 +563,18 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.64 修改（self-check endpoint + auth header 修正）
+
+```
+scripts/install-helpers/self-check.cjs   — checkApiCredentials 從 POST /api/init 改 GET /api/memory/init；
+                                            api_credentials + uploadReport 兩處 header 從 X-OwnMind-API-Key
+                                            改 Authorization: Bearer
+tests/self-check.test.js                 — 加 2 條 regression（驗 URL + Bearer header）
+package.json                             — 1.17.63 → 1.17.64
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.63 → 1.17.64
+CHANGELOG.md / FILELIST.md               — 補 v1.17.64 條目
+```
+
 ## v1.17.63 修改（安裝/升級自動 self-check + 上傳 log）
 
 ```

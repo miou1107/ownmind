@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.17.64 — self-check 兩個小 bug 修正：endpoint 404 + auth header 401
+
+**Vincent 反饋**：v1.17.63 上線後實測發現 self-check 的 `api_credentials` 檢查永遠 fail、上傳 log 也永遠失敗。Adam / Eric / Michelle 升完只會看到自己的本機被標壞，但其實是 self-check 寫錯了 — 不是他們的環境壞了。
+
+**根因**：
+
+1. `scripts/install-helpers/self-check.cjs:123` 把 `api_credentials` 檢查打到 `POST /api/init`，但 server 上根本沒這條路由（實際是 `GET /api/memory/init`，掛在 `src/app.js:73`），因此一律回 404。
+2. 同檔 `:127` 跟 `:304`（上傳 log 的 fetch）帶的是自訂 header `X-OwnMind-API-Key`，但 `src/middleware/auth.js:10-12` 只認 `Authorization: Bearer <key>`，所以 server 看到請求直接擋下回 401。`mcp/index.js:276,349` 一直都是用 Bearer，是 self-check 落單寫錯。
+
+**修法**（純 client-side 修正，server 不動）：
+
+1. `scripts/install-helpers/self-check.cjs` `checkApiCredentials`：
+   - URL 從 `/api/init` 改成 `/api/memory/init`。
+   - method 從 `POST` 改回 `GET`（這條路由本來就是 GET、不需要 body）。
+   - header 從 `X-OwnMind-API-Key` 改成 `Authorization: Bearer <key>`。
+2. 同檔 `uploadReport`：上傳 `/api/debug/install-check` 的 header 同步改成 `Authorization: Bearer <key>`。
+3. `tests/self-check.test.js` 加 2 條 regression test：
+   - 攔截 `globalThis.fetch`，檢查 `checkApiCredentials` 真的打 `/api/memory/init` 並帶 Bearer header（不再帶舊的 `X-OwnMind-API-Key`）。
+   - 401 回應仍然要判 fail（避免日後 server 換認證後 false pass）。
+
+**驗證**：`node --test tests/self-check.test.js tests/debug-route.test.js` → 22 / 22 pass。
+
+**升級指引**：v1.17.63 用戶（Adam / Eric / Michelle / Vincent）升 v1.17.64 後跑一次 `~/.ownmind/scripts/interactive-upgrade.{sh,ps1}` 或手動 `node ~/.ownmind/scripts/install-helpers/self-check.cjs --trigger=manual`，self-check log 會正確上傳 server，admin dashboard 才看得到誰真的有問題。
+
 ## v1.17.63 — 安裝/升級結尾自動 self-check + 上傳 log
 
 **Vincent 反饋**：v1.17.62 修了 Adam 的 npm EINVAL，但發現 Adam 還有另一個 silent fail — 他的 Task Scheduler（Windows 排程器）從一開始就沒註冊好，scanner 從來沒跑、伺服器端從來沒收到他的 token 事件，使用一個多月才被發現。原因是 install.ps1 跑完印 ✅，但 ✅ 只代表「這個區塊沒 throw」、不代表後續元件真的會運作。需要一個自動驗證機制，每次安裝/升級後抓本機真實狀態。
