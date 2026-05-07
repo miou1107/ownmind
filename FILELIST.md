@@ -562,6 +562,16 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.50 修改（事件代號加白話說明）
+
+```
+src/public/me/index.html                  — 加 EVENT_LABELS 對照表 + eventLabel() helper
+                                            renderEventTypesTable / renderUpdateHealthTable
+                                            從 1 欄改 2 欄（原始代號 + 白話說明）
+package.json / README* / docs/README*     — 1.17.49 → 1.17.50
+CHANGELOG.md                              — v1.17.50 條目
+```
+
 ## v1.17.49 修改（預設密碼不再公開洩漏）
 
 ```

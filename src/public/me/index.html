@@ -567,6 +567,35 @@ function esc(s) {
 
 const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
 
+// 事件代號對照表（給整體分析顯示）
+const EVENT_LABELS = {
+  init: 'AI session 啟動',
+  init_fail: 'session 啟動失敗',
+  memory_search: '搜尋記憶',
+  memory_get: '讀取單筆記憶',
+  memory_save: '儲存新記憶',
+  memory_update: '更新既有記憶',
+  memory_disable: '停用某筆記憶',
+  memory_sync_standard: '同步團隊共用標準',
+  session_log: 'session 結束總結',
+  handoff_create: '建立交接',
+  handoff_accept: '接受交接',
+  iron_rule_compliance: '鐵律遵守 / 違反回報',
+  iron_rule_trigger: '系統偵測到鐵律觸發點',
+  update_check: '檢查 OwnMind 是否有新版',
+  update_applied: '升級成功',
+  update_ok: '已是最新版（檢查無新版）',
+  update_skipped: '使用者選擇暫緩升級',
+  update_clean: '清理舊版備份',
+  update_failed: '升級失敗',
+  sync_conflict: '雲端記憶與本地衝突',
+  verification: '系統驗證',
+  error: 'AI 端通報的錯誤',
+};
+function eventLabel(code) {
+  return EVENT_LABELS[code] || '';
+}
+
 function maxOf(arr, key) {
   let m = 0;
   for (const x of arr) {
@@ -1230,8 +1259,12 @@ function padWeekdays(rows) {
 
 function renderEventTypesTable(rows) {
   if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
-  return `<table><thead><tr><th>事件</th><th class="num">次數</th></tr></thead><tbody>${
-    rows.map(r => `<tr><td>${esc(r.event||'')}</td><td class="num">${r.c||0}</td></tr>`).join('')
+  return `<table><thead><tr><th>事件</th><th>說明</th><th class="num">次數</th></tr></thead><tbody>${
+    rows.map(r => `<tr>
+      <td><code style="font-size:13px">${esc(r.event||'')}</code></td>
+      <td style="color:#6b7280">${esc(eventLabel(r.event))}</td>
+      <td class="num">${r.c||0}</td>
+    </tr>`).join('')
   }</tbody></table>`;
 }
 
@@ -1244,8 +1277,12 @@ function renderComplianceTable(rows) {
 
 function renderUpdateHealthTable(rows) {
   if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料</em>';
-  return `<table><thead><tr><th>事件</th><th class="num">次數</th></tr></thead><tbody>${
-    rows.map(r => `<tr><td>${esc(r.event||'')}</td><td class="num">${r.c||0}</td></tr>`).join('')
+  return `<table><thead><tr><th>事件</th><th>說明</th><th class="num">次數</th></tr></thead><tbody>${
+    rows.map(r => `<tr>
+      <td><code style="font-size:13px">${esc(r.event||'')}</code></td>
+      <td style="color:#6b7280">${esc(eventLabel(r.event))}</td>
+      <td class="num">${r.c||0}</td>
+    </tr>`).join('')
   }</tbody></table>`;
 }
 
