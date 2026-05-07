@@ -538,3 +538,16 @@ src/public/me/index.html                  — TYPE_LABEL.compliance_unverified �
 package.json / docs/README*               — 1.17.43 → 1.17.44
 CHANGELOG.md                              — v1.17.44 條目
 ```
+
+## v1.17.45 修改（自動觀測搬到伺服器端）
+
+```
+src/routes/activity.js                    — 新增 autoEmitObservedTrigger()，
+                                            POST /batch 收到 memory_disable / save / update
+                                            (iron_rule) 自動補 observed_trigger
+                                            source='system_server_auto'
+src/routes/me.js                          — gap audit 跟 compliance 統計 source 比對
+                                            從 != 'system_auto' 改成 NOT LIKE 'system_%'
+package.json / docs/README*               — 1.17.44 → 1.17.45
+CHANGELOG.md                              — v1.17.45 條目
+```

@@ -1,5 +1,34 @@
 # OwnMind 更新紀錄
 
+## v1.17.45 — 自動觀測搬到伺服器端（不再依賴客戶端版本）
+
+**Vincent 反饋**：「我的本機 OwnMind 還是 v1.17.22，自動觀測只寫在客戶端，
+所以最近 14 天 6 個高風險動作都沒被觀測到。其他人也卡舊版（Adam 1.17.16），
+這個邏輯應該搬到伺服器端。」
+
+**修法**
+
+新增 `src/routes/activity.js` 的 `autoEmitObservedTrigger()`：
+活動紀錄進伺服器時，若是高風險事件，自動補寫一筆 `iron_rule_compliance`
+（action='observed_trigger', source='system_server_auto'）。
+
+對應規則：
+- `memory_disable` (target type=iron_rule，伺服器查 memories.type 確認) → IR-006
+- `memory_save` (details.type=iron_rule) → IR-006
+- `memory_update` (target type=iron_rule，伺服器查 memories.type 確認) → IR-006
+- 不對 handoff_create 自動觀測（Codex round 4 過度推論問題仍適用）
+
+**配套**
+
+- `src/routes/me.js` 鐵律遵守表 + gap audit 把 source 比對改成
+  `NOT LIKE 'system_%'`，讓 client `system_auto` 跟 server `system_server_auto`
+  都被歸類成「自動觀測」、不混入「人工驗證」統計
+
+**好處**
+
+不再依賴客戶端版本：即使 Adam 卡 1.17.16、Vincent 本機沒升，他們的活動只要
+傳到伺服器，伺服器就會自動補觀測紀錄。徹底落實 IR-027「邏輯卡控不靠端版本」。
+
 ## v1.17.44 — 前端 unverified label 對齊後端中性文案
 
 Codex round 7 抓到的小不一致：v1.17.43 已把 unverified message 中性化，

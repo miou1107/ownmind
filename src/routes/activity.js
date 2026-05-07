@@ -60,6 +60,55 @@ async function getContextAnalysis(userId, fromDate) {
  * Body: { events: [{ ts, event, tool, source, details }, ...] }
  * 需要一般 auth（用自己的 API key）
  */
+// v1.17.45: 伺服器端自動觀測（IR-027 邏輯卡控的最終形態）
+// 之前的 client-side autoComplyForToolCall 在 mcp/index.js，但要求每位 user
+// 都升到 v1.17.40+ 客戶端才有效。實務上會有人卡舊版（如 Adam 1.17.16）。
+// 把邏輯搬到伺服器端：activity 進來時若是高風險事件，自動 emit observed_trigger
+// compliance event，不再依賴客戶端版本。
+async function autoEmitObservedTrigger(userId, event) {
+  // memory_save with type=iron_rule → IR-006
+  if (event.event === 'memory_save' && event.details?.type === 'iron_rule') {
+    return {
+      rule_code: 'IR-006',
+      rule_title: '學到東西必須全層同步更新',
+      tool_call: 'memory_save',
+      context: `新增鐵律 "${event.details.title || ''}"`,
+    };
+  }
+  // memory_disable: 要查 memories.type 才知是不是 iron_rule
+  if (event.event === 'memory_disable' && event.details?.id) {
+    const r = await query(
+      `SELECT type, code, title FROM memories WHERE id = $1`,
+      [event.details.id]
+    );
+    if (r.rows[0]?.type === 'iron_rule') {
+      return {
+        rule_code: 'IR-006',
+        rule_title: '學到東西必須全層同步更新',
+        tool_call: 'memory_disable',
+        context: `停用鐵律 ${r.rows[0].code || ''}: ${r.rows[0].title || ''}`,
+      };
+    }
+  }
+  // memory_update with iron_rule type
+  if (event.event === 'memory_update' && event.details?.id) {
+    const r = await query(
+      `SELECT type, code FROM memories WHERE id = $1`,
+      [event.details.id]
+    );
+    if (r.rows[0]?.type === 'iron_rule') {
+      return {
+        rule_code: 'IR-006',
+        rule_title: '學到東西必須全層同步更新',
+        tool_call: 'memory_update',
+        context: `更新鐵律 ${r.rows[0].code || ''}`,
+      };
+    }
+  }
+  // 不對 handoff_create 自動觀測（Codex round 4 review 過度推論問題仍適用）
+  return null;
+}
+
 router.post('/batch', auth, async (req, res) => {
   try {
     const { events } = req.body;
@@ -70,6 +119,7 @@ router.post('/batch', auth, async (req, res) => {
     // 限制單次上傳量
     const batch = events.slice(0, 500);
     let inserted = 0;
+    let autoObserved = 0;
 
     for (const e of batch) {
       if (!e.ts || !e.event) continue;
@@ -79,9 +129,42 @@ router.post('/batch', auth, async (req, res) => {
         [req.user.id, e.ts, e.event, e.tool || null, e.source || null, e.details || {}]
       );
       inserted++;
+
+      // v1.17.45 伺服器端自動觀測：若是高風險事件，自動補一筆 observed_trigger
+      // 來源是客戶端的 system_auto 或 client 沒升級，伺服器都會幫忙寫
+      try {
+        const trigger = await autoEmitObservedTrigger(req.user.id, e);
+        if (trigger) {
+          await query(
+            `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              req.user.id,
+              e.ts,  // 用同 ts 確保 ±10 分鐘 window 一定 match
+              'iron_rule_compliance',
+              e.tool || 'server',
+              'system_server_auto',
+              JSON.stringify({
+                rule_code: trigger.rule_code,
+                rule_title: trigger.rule_title,
+                action: 'observed_trigger',
+                source: 'system_server_auto',
+                tool_call: trigger.tool_call,
+                context: trigger.context,
+              }),
+            ]
+          );
+          autoObserved++;
+        }
+      } catch (err) {
+        logger.warn('伺服器端自動觀測失敗（不阻擋主流程）', {
+          error: err.message,
+          event: e.event,
+        });
+      }
     }
 
-    res.json({ inserted, total: batch.length });
+    res.json({ inserted, total: batch.length, auto_observed: autoObserved });
   } catch (err) {
     logger.error('批次上傳 activity log 失敗', { error: err.message });
     res.status(500).json({ error: '上傳失敗' });

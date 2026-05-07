@@ -195,18 +195,19 @@ router.get('/report', async (req, res) => {
         SELECT details->>'rule_code' AS rule_code,
           COUNT(*) FILTER (
             WHERE details->>'action' = 'comply'
-              AND COALESCE(details->>'source', '') != 'system_auto'
+              AND COALESCE(details->>'source', '') NOT LIKE 'system_%'
           ) AS comply,
           COUNT(*) FILTER (
             WHERE details->>'action' = 'skip'
-              AND COALESCE(details->>'source', '') != 'system_auto'
+              AND COALESCE(details->>'source', '') NOT LIKE 'system_%'
           ) AS skip,
           COUNT(*) FILTER (
             WHERE details->>'action' = 'violate'
           ) AS violate,
           COUNT(*) FILTER (
             WHERE details->>'action' = 'observed_trigger'
-              OR (details->>'source' = 'system_auto' AND details->>'action' = 'comply')
+              OR (COALESCE(details->>'source', '') LIKE 'system_%'
+                  AND details->>'action' = 'comply')
           ) AS observed
         FROM activity_logs
         WHERE user_id = $1
@@ -465,7 +466,8 @@ router.get('/report', async (req, res) => {
             WHERE c.user_id = $1 AND c.event = 'iron_rule_compliance'
               AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
               AND c.details->>'action' = 'comply'
-              AND COALESCE(c.details->>'source', '') != 'system_auto'
+              -- v1.17.45: 排除所有 system_* 自動來源（client + server 兩端）
+              AND COALESCE(c.details->>'source', '') NOT LIKE 'system_%'
               AND c.details->>'rule_code' = ANY(s.expected_rules)
           ) AS has_matching_manual_comply
         FROM sensitive s
