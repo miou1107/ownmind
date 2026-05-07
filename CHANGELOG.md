@@ -1,5 +1,13 @@
 # OwnMind 更新紀錄
 
+## v1.17.44 — 前端 unverified label 對齊後端中性文案
+
+Codex round 7 抓到的小不一致：v1.17.43 已把 unverified message 中性化，
+但前端 TYPE_LABEL 還寫「AI 未主動回報遵守」（仍偏 AI 行為歸因）。
+
+修：`src/public/me/index.html` TYPE_LABEL.compliance_unverified 改成
+「未驗證合規（僅系統觀測）」對齊後端文案。
+
 ## v1.17.43 — Compliance gap 加 rule_code 關聯比對 + 文案中性化
 
 **Codex round 6 review 抓到的兩個 P1**

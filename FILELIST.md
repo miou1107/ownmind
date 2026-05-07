@@ -530,3 +530,11 @@ src/routes/me.js                          — sensitive CTE 加 expected_rules �
 package.json / docs/README*               — 1.17.42 → 1.17.43
 CHANGELOG.md                              — v1.17.43 條目
 ```
+
+## v1.17.44 修改（前端 unverified label 對齊）
+
+```
+src/public/me/index.html                  — TYPE_LABEL.compliance_unverified 改中性文案
+package.json / docs/README*               — 1.17.43 → 1.17.44
+CHANGELOG.md                              — v1.17.44 條目
+```
