@@ -1,5 +1,28 @@
 # OwnMind 更新紀錄
 
+## v1.17.38 — Server-side 反向稽核 5 項（Codex review 後實作）
+
+**背景**：Codex adversarial review 指出 compliance / token_events / session_log
+本質都是「靠 client 自首」，AI/scanner/process 任一環節失敗就漏。
+Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
+
+**新增 5 個 server-side audit（在 `/api/me/report` 即時計算，回 `me.audit_findings`）**
+
+1. **`compliance_gap`** — 高風險 activity（handoff_create / memory_disable /
+   memory_update）前後 ±10 分鐘沒對應 iron_rule_compliance event → 標 medium/high
+2. **`heartbeat_absent`** — 最近 7 天有該工具的 activity 但 collector_heartbeat
+   超過 24 小時沒回報 → 標 high（直指 Adam Windows scanner 失靈場景）
+3. **`source_inconsistent`** — 某天有 activity_logs 但 0 token_events → 標 low/medium
+4. **`orphan_session`** — session_logs 對話輪次 ≥5 但 details.compliance 是空陣列
+   → 標 low（AI 整段沒回報合規）
+5. **`ir027_candidate`**（super_admin only）— user 建立超過 7 天仍 must_change_password
+   = TRUE → 可能根本沒登入 /ownmind/me/
+
+**前端**：個人 tab 最頂顯示警示卡片（紅高 / 黃中 / 藍低），含人話訊息 + 統計。
+
+**設計原則**：on-the-fly 計算（非持久化 audit_findings 表），減少 schema 變更
++ 一律最新。未來資料量大可遷成 nightly job + persistent table。
+
 ## v1.17.37 — Session log 自動帶 project + 多種退出 signal 都記錄（IR-027 邏輯卡控）
 
 **Vincent 反饋**：「叫 user 每次跟 AI 講『寫 session_log』違反 IR-027 邏輯才有效。
