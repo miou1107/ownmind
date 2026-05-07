@@ -357,7 +357,12 @@
       <div class="desc">每次鐵律觸發時 AI 自動回報的遵守 / 跳過 / 違反次數。
       遵守率 = 遵守 ÷（遵守＋跳過＋違反）。</div>
       <table id="me-compliance"><thead><tr>
-        <th>鐵律</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th><th class="num">遵守率</th>
+        <th>鐵律</th>
+        <th class="num">AI 自報遵守</th>
+        <th class="num">跳過</th>
+        <th class="num">違反</th>
+        <th class="num">系統觀測</th>
+        <th class="num">遵守率</th>
       </tr></thead><tbody></tbody></table>
       <div id="me-compliance-pager" class="pager"></div>
     </div>
@@ -682,19 +687,24 @@ function render(report) {
     const rows = me.compliance || [];
     const slice = paginate(rows, pageState.compliance);
     $('#me-compliance tbody').innerHTML = rows.length === 0
-      ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無鐵律可顯示</td></tr>'
+      ? '<tr><td colspan="6" style="text-align:center;color:#9ca3af">尚無鐵律可顯示</td></tr>'
       : slice.map(c => {
+          // 遵守率只算 AI 自報部分（comply / skip / violate），系統自動觀測獨立列
           const total = (c.comply || 0) + (c.skip || 0) + (c.violate || 0);
           const rate = total > 0 ? Math.round((c.comply || 0) / total * 100) + '%' : '—';
           const rateColor = total === 0 ? '#9ca3af' :
             (c.comply / total >= 0.8 ? '#059669' :
              c.comply / total >= 0.5 ? '#d97706' : '#dc2626');
           const ruleCell = `<strong>${esc(c.rule_code || '—')}</strong>${c.title ? '<br><small style="color:#6b7280">' + esc(c.title) + '</small>' : ''}`;
+          const observedCell = c.observed > 0
+            ? `<span style="color:#6b7280" title="系統自動觀測到 tool 被呼叫，未驗證真有遵守">${c.observed}</span>`
+            : '<span style="color:#d1d5db">0</span>';
           return `<tr>
             <td>${ruleCell}</td>
             <td class="num">${c.comply || 0}</td>
             <td class="num">${c.skip || 0}</td>
             <td class="num" style="color:${c.violate > 0 ? '#dc2626' : '#1a1a1a'}">${c.violate || 0}</td>
+            <td class="num">${observedCell}</td>
             <td class="num" style="color:${rateColor};font-weight:600">${rate}</td>
           </tr>`;
         }).join('');

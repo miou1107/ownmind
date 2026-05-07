@@ -1,5 +1,38 @@
 # OwnMind 更新紀錄
 
+## v1.17.41 — Codex round 4 review 後 auto-compliance 誠信修補（P1+P2 全做）
+
+**Codex 抓到的核心誠信問題**：
+> 「v1.17.40 把 system 觀測寫成 action='comply' 是自欺。Disable iron_rule 不證明
+> 全層同步、handoff_create 不證明 commit 守規」
+
+**修法 6 項**
+
+### P1（必修，誠信問題）
+
+- **action 從 'comply' 改成 'observed_trigger'**（系統自動 path）
+  誠實標示「系統觀測到 tool 被呼叫」，不假裝「已驗證遵守」
+- **移除 `handoff_create → IR-008/009/024` 自動觸發**（過度推論，commit 規則該靠 git hook）
+- **`compliance_gap` audit 加 source filter**：observed_trigger 只關「漏觸發」gap，不算驗證合規
+- **鐵律遵守表加「系統觀測」獨立欄位**，遵守率只算 AI 自報部分，不混 system_auto
+
+### P2（建議）
+
+- 移除 `.catch(() => {})` silent，改 `console.error('[autoComply] failed: ...')`
+- `complianceEvents` 加 dedup：用 `(rule_code, tool, 1分鐘 timestamp bucket)` key，
+  避免同一動作被 AI manual + system auto 重複算
+- auto path 補呼叫 `appendCompliance()` 對齊 manual ownmind_report_compliance
+
+**三層語意現在區分清楚**
+
+| Action | 來源 | 算「遵守率」？ |
+|---|---|---|
+| `comply` | AI 主動 ownmind_report_compliance | ✅ 算 |
+| `skip` | 同上 | ❌ 不算 |
+| `violate` | 同上 | ❌ 不算 |
+| `observed_trigger` | 系統 tool handler 自動 | ⏸ 獨立統計，不混入遵守率 |
+| `verified_comply`（未來預留）| git hook 等程式驗證 | ✅ 最嚴謹 |
+
 ## v1.17.40 — Compliance call 從 AI 自覺改成系統強制（IR-027 邏輯卡控落地）
 
 **Vincent 反饋**：

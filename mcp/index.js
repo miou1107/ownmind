@@ -1024,62 +1024,89 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOLS,
 }));
 
-// v1.17.40 — IR-027「邏輯才有效」: 系統自動代為呼叫 iron_rule_compliance
-// Codex round 3 review 指出：靠 AI 自覺呼叫 ownmind_report_compliance 必然漏。
-// 把它變成程式卡控：tool call 成功後，系統根據 tool name + args 自動 emit
-// 對應的 compliance event，不再讓 AI「忘了講」就漏紀錄。
+// v1.17.41 — Codex round 4 review 修補：
+// 之前 v1.17.40 把 system 觀測寫成 action='comply' 是自欺，誠信問題。
+// 改成 action='observed_trigger'：誠實標示「系統觀測到 tool 被呼叫」，
+// 不假裝「已驗證遵守鐵律」。
+// 同時移除 handoff_create → IR-008/009/024 的過度推論（commit 規則該靠 git hook）。
 //
-// source='system_auto' 標記讓 dashboard 區分「系統自動 vs AI 自報」。
+// 三層語意：
+//   - observed_trigger（系統自動）= 系統看到觸發點，不證明遵守
+//   - comply（AI 主動 ownmind_report_compliance）= AI 聲稱遵守
+//   - verified_comply（未來預留）= git hook 等程式驗證過
+//
+// In-memory dedup：用 (rule_code + tool_call + 1 分鐘 timestamp bucket) 當 key
+const _autoComplyDedup = new Set();
+function _dedupKey(name, ruleCode) {
+  return `${ruleCode}|${name}|${Math.floor(Date.now() / 60000)}`;
+}
+
 async function autoComplyForToolCall(name, args, result) {
   const triggers = [];
   // ownmind_disable rule → IR-006「學到東西必須全層同步更新」
+  // 觀測到「鐵律記憶被停用」這個 trigger，但不能證明 OpenSpec/skill 等其他層也同步
   if (name === 'ownmind_disable' &&
       (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule')) {
     triggers.push({
       rule_code: 'IR-006',
       rule_title: '學到東西必須全層同步更新',
-      action: 'comply',
-      context: `停用鐵律 id=${args.id} reason="${(args.reason || '').slice(0, 50)}"`,
+      action: 'observed_trigger',
+      context: `停用鐵律 id=${args.id}（系統觀測到觸發點，未驗證全層同步）`,
     });
   }
-  // ownmind_save / ownmind_update with type=iron_rule → IR-006
+  // ownmind_save / ownmind_update with type=iron_rule
   if ((name === 'ownmind_save' && args.type === 'iron_rule') ||
       (name === 'ownmind_update' &&
        (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule'))) {
     triggers.push({
       rule_code: 'IR-006',
       rule_title: '學到東西必須全層同步更新',
-      action: 'comply',
-      context: `${name === 'ownmind_save' ? '新增' : '更新'}鐵律 id=${args.id || result?.id || '?'}`,
+      action: 'observed_trigger',
+      context: `${name === 'ownmind_save' ? '新增' : '更新'}鐵律 id=${args.id || result?.id || '?'}（系統觀測，未驗證）`,
     });
   }
-  // ownmind_handoff_create → IR-008（commit 同步 docs）+ IR-009（contributors）+ IR-024（不加 Co-Authored-By）
-  if (name === 'ownmind_handoff_create') {
-    for (const [code, title] of [
-      ['IR-008', '每次 commit 必須同步更新 README、FILELIST、CHANGELOG'],
-      ['IR-009', 'Git contributors 一律顯示 Vin'],
-      ['IR-024', 'Git commit 絕對不加 Co-Authored-By'],
-    ]) {
-      triggers.push({
-        rule_code: code,
-        rule_title: title,
-        action: 'comply',
-        context: `建立交接 project=${args.project}（系統自動回報，假設前面 commit/push 已遵守）`,
-      });
-    }
-  }
+  // 移除 handoff_create → IR-008/009/024 的過度推論
+  // Codex review：建立交接不能證明 commit 守了那些鐵律
+  // 那些是 git hook 該抓的，不是 MCP handoff handler 自動聲稱
 
-  // 用既有 logEvent pipeline 寫入（local JSONL + server upload，跟 ownmind_report_compliance 同 path）
   for (const trig of triggers) {
-    logEvent('iron_rule_compliance', {
-      rule_code: trig.rule_code,
-      rule_title: trig.rule_title,
-      action: trig.action,
-      context: trig.context,
-      source: 'system_auto',
-      tool_call: name,
-    });
-    // 進 in-memory complianceEvents 給 emergencySessionLog 收尾
+    // 去重：同一鐵律 1 分鐘內同一 tool 只算一次
+    const key = _dedupKey(name, trig.rule_code);
+    if (_autoComplyDedup.has(key)) continue;
+    _autoComplyDedup.add(key);
+    // 控制 set 大小避免長 session 記憶體膨脹
+    if (_autoComplyDedup.size > 500) {
+      const first = _autoComplyDedup.values().next().value;
+      _autoComplyDedup.delete(first);
+    }
+
+    // logEvent 失敗會自己寫 stderr，這裡額外 try/catch 不吞錯誤訊息
+    try {
+      logEvent('iron_rule_compliance', {
+        rule_code: trig.rule_code,
+        rule_title: trig.rule_title,
+        action: trig.action,
+        context: trig.context,
+        source: 'system_auto',
+        tool_call: name,
+      });
+    } catch (e) {
+      console.error('[autoComply] logEvent failed:', e?.message);
+    }
+    try {
+      // 對齊 manual ownmind_report_compliance path（mcp/index.js:907）
+      appendCompliance({
+        event: trig.rule_code,
+        action: trig.action,
+        rule_code: trig.rule_code,
+        rule_title: trig.rule_title,
+        source: 'system_auto',
+        tool_call: name,
+        context: trig.context,
+      });
+    } catch (e) {
+      console.error('[autoComply] appendCompliance failed:', e?.message);
+    }
     complianceEvents.push({
       ...trig,
       source: 'system_auto',
@@ -1094,7 +1121,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     const result = await handleTool(name, args || {});
     // v1.17.40: 自動代呼 iron_rule_compliance（不阻擋主流程）
-    autoComplyForToolCall(name, args || {}, result).catch(() => {});
+    // v1.17.41: 不再 silent — 錯誤寫 stderr 至少能 debug
+    autoComplyForToolCall(name, args || {}, result).catch((e) => {
+      console.error('[autoComply] failed:', e?.message);
+    });
     const typeName = resolveType(name, args);
     const tag = formatTag(typeName);
     const body = typeof result === "string" ? result : JSON.stringify(result, null, 2);
