@@ -1,5 +1,15 @@
 # OwnMind 更新紀錄
 
+## v1.17.27 — hotfix /ownmind/me/ API path 寫錯（Vincent 截圖回報）
+
+**症狀**：登入畫面按「登入」吐 `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`
+
+**Root cause**：`src/public/me/index.html` 用 `/api/me/...` 直接打 root，
+但 nginx 只 rewrite `/ownmind/...` → `/...`。前端打 `https://kkvin.com/api/me/login`
+沒對應 route，nginx 回 default HTML 頁，前端 `r.json()` 解析失敗。
+
+**修法**：所有 fetch 從 `/api/me/...` 改 `/ownmind/api/me/...`，跟 admin 一致。
+
 ## v1.17.26 — admin 建 user 時自動套預設密碼
 
 **背景**：v1.17.25 補了存量 user 的預設密碼，但「admin 後台新增 user」流程

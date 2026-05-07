@@ -370,3 +370,11 @@ tests/me-report.test.js                   — 新增 1 case
 package.json / docs/README*               — 1.17.25 → 1.17.26，三語系同步
 CHANGELOG.md                              — v1.17.26 條目
 ```
+
+## v1.17.27 修改（hotfix /ownmind/me/ API path）
+
+```
+src/public/me/index.html                  — fetch path 從 /api/me/ 改 /ownmind/api/me/
+package.json / docs/README*               — 1.17.26 → 1.17.27
+CHANGELOG.md                              — v1.17.27 條目
+```
