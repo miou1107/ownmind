@@ -104,6 +104,7 @@ OwnMind/
 │   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
 │   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
 │   ├── ownmind-git-post-commit     # post-commit shell wrapper
+│   ├── ownmind-git-commit-msg      # commit-msg shell wrapper（IR-024 阻擋 Co-Authored-By）
 │   ├── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
 │   ├── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
 │   └── lib/                        # v1.17.0 P3 — hook 共用純函式
@@ -560,6 +561,20 @@ src/public/me/index.html                  — 移除「我的份」欄（header 
 src/routes/me.js                          — 清掉 my_sessions / my_handoffs 累計欄位
 package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
+```
+
+## v1.17.58 修改（IR-024 commit-msg hook）
+
+```
+hooks/ownmind-git-commit-msg              — 新增（bash 鉤子，IR-024 commit message 偵測）
+install.sh                                — 加 5 行：複製 ownmind-git-commit-msg 到 ~/.ownmind/git-hooks/
+install.ps1                               — 加對應邏輯（Copy-AsLf + LF 行尾）
+tests/git-hook-co-authored-by.test.js     — 新增（7 個測試）
+package.json                              — 1.17.57 → 1.17.58
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.57 → 1.17.58
+CHANGELOG.md                              — v1.17.58 條目
+docs/superpowers/specs/2026-05-07-git-hook-co-authored-by-design.md  — 新增（spec）
+docs/superpowers/plans/2026-05-07-git-hook-co-authored-by.md         — 新增（plan）
 ```
 
 ## v1.17.57 修改（整體分析報告改正面肯定 + 拿掉冗餘描述句）
