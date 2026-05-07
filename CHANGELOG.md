@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.17.55 — 各專案活動量排行表加 Tokens + 成本欄
+
+**Vincent 反饋**：「9. 各專案活動量排行 應該要有期間累計消耗的 token 數」。原表只顯示 sessions / 輪次 / 貢獻者，看不出哪些專案燒最多 token、最花錢。
+
+**修法**：
+1. `src/routes/me-narrative.js` 9.project_ranking SQL 加一個 CTE，從 `token_usage_daily` 用 `(user_id, tool, session_id)` JOIN，按 `last_ts ${tfTs}` 過濾期間，加總 5 種 tokens（input + output + cache_creation + cache_read + reasoning）和 `cost_usd`。
+2. `src/public/me/index.html` `renderProjectRankingTable`：表格加「Tokens」「成本」兩欄，tokens 沿用既有 `fmtBig`（1.2M 格式），成本顯示 `$X.XX`（不滿 $1 用 4 位小數），無資料顯示「—」。
+
+**為何選 token_usage_daily 而非 token_events 直接 JOIN**：
+- daily 表 `cost_usd` 已用 `model_pricing` 算好，免重做計價邏輯。
+- 用 `last_ts ${tfTs}` 過濾比掃 events 快很多（daily 已 dedupe 到 session × date）。
+- session_logs 用 LEFT JOIN，沒 token 資料的 session 顯示「—」不會被排除。
+
+**測試**：`tests/me-narrative.test.js` 用 fakeQuery 回空 rows，schema 不變仍綠。
+
 ## v1.17.54 — 整體分析 LLM prompt 改寫（友善白話 + 踩坑三段式）
 
 **Vincent 反饋**（v1.17.53 ship 後）：

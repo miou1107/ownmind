@@ -562,6 +562,23 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.55 修改（各專案活動量排行加 Tokens + 成本欄）
+
+```
+src/routes/me-narrative.js               — project_ranking SQL：加 CTE 從
+                                            token_usage_daily 用 (user_id,
+                                            tool, session_id) JOIN，按
+                                            last_ts ${tfTs} 過濾，加總 5 種
+                                            tokens + cost_usd
+src/public/me/index.html                 — renderProjectRankingTable：表頭加
+                                            「Tokens」「成本」兩欄，tokens 用
+                                            fmtBig（1.2M），成本 $X.XX；
+                                            6. 標題改「大家的OwnMind行為分析」
+                                            2. 標題改「大家的OwnMind版本」
+package.json / README* / docs/README*    — 1.17.54 → 1.17.55
+CHANGELOG.md                             — v1.17.55 條目
+```
+
 ## v1.17.54 修改（LLM prompt 友善白話 + 踩坑三段式）
 
 ```
