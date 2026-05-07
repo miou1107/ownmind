@@ -394,3 +394,12 @@ src/public/me/index.html                  — barChart 加 .bar-value 顯示數�
 package.json / docs/README*               — 1.17.28 → 1.17.29
 CHANGELOG.md                              — v1.17.29 條目
 ```
+
+## v1.17.30 修改（bar chart 平均線 + 專案主要貢獻者拆分）
+
+```
+src/routes/me.js                          — projects 改回 contributors[{name,sessions,turns}]
+src/public/me/index.html                  — barChart 加平均線；專案表加「主要負責人」「其他貢獻者」欄
+package.json / docs/README*               — 1.17.29 → 1.17.30
+CHANGELOG.md                              — v1.17.30 條目
+```

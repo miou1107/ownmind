@@ -181,6 +181,26 @@
     white-space: nowrap;
     overflow: hidden;
   }
+  .bar-avg-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 1px dashed #dc2626;
+    pointer-events: none;
+  }
+  .bar-avg-label {
+    position: absolute;
+    right: 0;
+    top: -16px;
+    background: #fff;
+    color: #dc2626;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 0 6px;
+    border-radius: 3px;
+    border: 1px solid #fecaca;
+  }
   .pie-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
   .pie-bar { display: flex; height: 32px; border-radius: 4px; overflow: hidden; flex: 1; min-width: 200px; }
   .pie-bar > div { transition: opacity 0.2s; }
@@ -345,10 +365,11 @@
   <div id="tab-projects" class="tab-content">
     <div class="card">
       <h2>各專案活動量排行</h2>
-      <div class="desc">全團隊專案。「我的份」= 我自己貢獻多少 session。</div>
+      <div class="desc">全團隊專案。「主要負責人」= 寫 session_log 對話輪次最多的人；
+      其他人也許是偶爾協作或測試。「我的份」= 自己 session 數。</div>
       <table id="projects-table"><thead><tr>
-        <th>專案</th><th class="num">Session 總數</th><th class="num">對話輪次</th>
-        <th>負責人</th><th class="num">我的份</th>
+        <th>專案</th><th class="num">Session 數</th><th class="num">對話輪次</th>
+        <th>主要負責人</th><th>其他貢獻者</th><th class="num">我的份</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </div>
@@ -435,13 +456,19 @@ function maxOf(arr, key) {
 function barChart(containerId, data, getLabel, getValue) {
   const el = $(containerId);
   el.innerHTML = '';
-  const max = Math.max(1, ...data.map(getValue));
+  const values = data.map(getValue);
+  const max = Math.max(1, ...values);
+  const total = values.reduce((a, b) => a + b, 0);
+  const nonZero = values.filter(v => v > 0).length || 1;
+  const avg = Math.round(total / nonZero);
+  // 平均線位置（從底部往上的百分比）
+  const avgPct = (avg / max * 100).toFixed(1);
+
   for (const d of data) {
     const v = getValue(d);
     const h = (v / max * 100).toFixed(1) + '%';
     const row = document.createElement('div');
     row.className = 'bar-row';
-    // 0 值不顯示數字（避免 0 字塞滿空 bar 上方）
     const valueLabel = v > 0 ? `<div class="bar-value">${v}</div>` : '';
     row.innerHTML = `
       <div class="bar" style="height:${h}" title="${esc(getLabel(d))}: ${v}">${valueLabel}</div>
@@ -449,6 +476,12 @@ function barChart(containerId, data, getLabel, getValue) {
     `;
     el.appendChild(row);
   }
+  // 平均線（橫跨整張圖）
+  const avgLine = document.createElement('div');
+  avgLine.className = 'bar-avg-line';
+  avgLine.style.bottom = `calc(24px + (100% - 42px) * ${avgPct} / 100)`;
+  avgLine.innerHTML = `<span class="bar-avg-label">平均 ${avg}</span>`;
+  el.appendChild(avgLine);
 }
 
 function compareVersion(a, b) {
@@ -561,14 +594,26 @@ function render(report) {
 
   // ── 專案 ──
   $('#projects-table tbody').innerHTML = projects.length === 0
-    ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無專案紀錄</td></tr>'
-    : projects.map(p => `<tr>
-        <td><strong>${esc(p.project)}</strong></td>
-        <td class="num">${p.sessions}</td>
-        <td class="num">${p.turns || 0}</td>
-        <td>${esc((p.owners || []).join(', '))}</td>
-        <td class="num">${p.my_sessions}</td>
-      </tr>`).join('');
+    ? '<tr><td colspan="6" style="text-align:center;color:#9ca3af">尚無專案紀錄</td></tr>'
+    : projects.map(p => {
+        const contribs = (p.contributors || []).slice().sort((a, b) => b.turns - a.turns);
+        const main = contribs[0];
+        const others = contribs.slice(1);
+        const mainCell = main
+          ? `<strong>${esc(main.name)}</strong><br><small style="color:#6b7280">${main.turns} 輪 / ${main.sessions} sessions</small>`
+          : '—';
+        const othersCell = others.length === 0
+          ? '<span style="color:#9ca3af">—</span>'
+          : others.map(c => `${esc(c.name)} <small style="color:#9ca3af">(${c.turns})</small>`).join(', ');
+        return `<tr>
+          <td><strong>${esc(p.project)}</strong></td>
+          <td class="num">${p.sessions}</td>
+          <td class="num">${p.turns || 0}</td>
+          <td>${mainCell}</td>
+          <td>${othersCell}</td>
+          <td class="num">${p.my_sessions}</td>
+        </tr>`;
+      }).join('');
 }
 
 async function loadReport() {

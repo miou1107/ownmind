@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.30 — bar chart 加平均線 + 專案改顯示主要 vs 其他貢獻者（Vincent 回報）
+
+**Vincent 反饋兩點**：
+1. bar chart 沒平均值參考 → 看不出「這天比平均高還低」
+2. 「OwnMind 是 Vincent 的專案，為什麼 owners 列出 Adam？」
+
+**修法**
+
+1. **bar chart 加平均線**：
+   - 紅色虛線橫跨整張圖、右上方標「平均 N」
+   - 平均只看非零值（避免週末、未開始日把平均拉低）
+2. **專案表改成「主要負責人」+「其他貢獻者」兩欄**：
+   - 後端 API 改回傳 `contributors: [{name, sessions, turns}]`（依 turns 排序）
+   - 前端取第 1 名當主要負責人、其他人列為「協作」
+   - 例：OwnMind 專案 → 主要 Vincent (140 輪)，其他 Adam (8 輪)
+
 ## v1.17.29 — bar chart 加數字標籤（Vincent 回報）
 
 每根 bar 上方顯示數值（0 值不顯示避免雜訊）。`.bar-chart` 高度從 220 → 240px、

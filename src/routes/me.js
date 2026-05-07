@@ -237,20 +237,35 @@ router.get('/report', async (req, res) => {
     );
 
     // ── 專案區塊（Q2=B 全團隊專案都看得到）──
-    const teamProjectsQ = await query(`
+    // v1.17.30: 改成 per-user 細項，前端可顯示「主要負責人」與其他人的分工
+    const projectContribQ = await query(`
       SELECT details->>'project' AS project,
+        u.name,
         COUNT(*) AS sessions,
-        SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns,
-        ARRAY_AGG(DISTINCT u.name) AS owners,
-        COUNT(*) FILTER (WHERE sl.user_id = $1) AS my_sessions
+        SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
       FROM session_logs sl
       JOIN users u ON u.id = sl.user_id
       WHERE sl.created_at >= NOW() - INTERVAL '${interval}'
         AND details->>'project' IS NOT NULL
-      GROUP BY details->>'project'
-      ORDER BY turns DESC NULLS LAST`,
-      [me.id]
+      GROUP BY 1, 2
+      ORDER BY 1, 4 DESC NULLS LAST`
     );
+    // 整理成 { project: { sessions, turns, contributors: [{name, sessions, turns}] }}
+    const projMap = new Map();
+    for (const r of projectContribQ.rows) {
+      const t = parseInt(r.turns, 10) || 0;
+      const s = parseInt(r.sessions, 10) || 0;
+      if (!projMap.has(r.project)) {
+        projMap.set(r.project, { project: r.project, sessions: 0, turns: 0, contributors: [], my_sessions: 0 });
+      }
+      const e = projMap.get(r.project);
+      e.sessions += s;
+      e.turns += t;
+      e.contributors.push({ name: r.name, sessions: s, turns: t });
+      if (r.name === me.name) e.my_sessions += s;
+    }
+    const teamProjects = Array.from(projMap.values())
+      .sort((a, b) => b.turns - a.turns);
 
     const teamComplianceQ = await query(`
       SELECT details->>'rule_code' AS rule_code,
@@ -292,13 +307,7 @@ router.get('/report', async (req, res) => {
         versions: allVersionsQ.rows,
         compliance: teamComplianceQ.rows,
       },
-      projects: teamProjectsQ.rows.map(r => ({
-        project: r.project,
-        sessions: parseInt(r.sessions, 10) || 0,
-        turns: parseInt(r.turns, 10) || 0,
-        owners: r.owners || [],
-        my_sessions: parseInt(r.my_sessions, 10) || 0,
-      })),
+      projects: teamProjects,
     });
   } catch (err) {
     logger.error('me/report 失敗', { error: err.message, stack: err.stack });
