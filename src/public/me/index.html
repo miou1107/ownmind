@@ -135,7 +135,8 @@
     display: flex;
     align-items: flex-end;
     gap: 4px;
-    height: 220px;
+    height: 240px;
+    padding-top: 18px;
     padding-bottom: 24px;
     position: relative;
   }
@@ -154,8 +155,21 @@
     width: 100%;
     min-height: 2px;
     transition: background 0.15s;
+    position: relative;
   }
   .bar:hover { background: #1d4ed8; }
+  .bar-value {
+    position: absolute;
+    top: -16px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #1f2937;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
   .bar-label {
     font-size: 11px;
     color: #6b7280;
@@ -427,8 +441,10 @@ function barChart(containerId, data, getLabel, getValue) {
     const h = (v / max * 100).toFixed(1) + '%';
     const row = document.createElement('div');
     row.className = 'bar-row';
+    // 0 值不顯示數字（避免 0 字塞滿空 bar 上方）
+    const valueLabel = v > 0 ? `<div class="bar-value">${v}</div>` : '';
     row.innerHTML = `
-      <div class="bar" style="height:${h}" title="${esc(getLabel(d))}: ${v}"></div>
+      <div class="bar" style="height:${h}" title="${esc(getLabel(d))}: ${v}">${valueLabel}</div>
       <div class="bar-label">${esc(getLabel(d))}</div>
     `;
     el.appendChild(row);
