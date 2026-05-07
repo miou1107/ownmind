@@ -420,3 +420,12 @@ src/public/me/index.html                  — 個人 tab 加活動紀錄表 + �
 package.json / docs/README*               — 1.17.31 → 1.17.32
 CHANGELOG.md                              — v1.17.32 條目
 ```
+
+## v1.17.33 修改（鐵律/活動紀錄分頁）
+
+```
+src/routes/me.js                          — me.activity 移除 LIMIT 200
+src/public/me/index.html                  — 加 paginate / renderPager helper、CSS .pager
+package.json / docs/README*               — 1.17.32 → 1.17.33
+CHANGELOG.md                              — v1.17.33 條目
+```
