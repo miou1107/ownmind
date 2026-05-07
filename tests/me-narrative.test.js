@@ -72,3 +72,85 @@ describe('GET /api/me/narrative', () => {
     assert.match(res.body.error, /敘事|narrative/i);
   });
 });
+
+describe('GET /api/me/narrative/insights', () => {
+  it('沒設 LLM_SWITCH_API_KEY 回 503', async () => {
+    const router = createNarrativeRouter({
+      query: async () => ({ rows: [] }),
+      auth: fakeAuth,
+      env: {},
+    });
+    const app = express();
+    app.use('/api/me/narrative', router);
+    const res = await get(app, '/api/me/narrative/insights?range=14d');
+    assert.equal(res.status, 503);
+    assert.equal(res.body.code, 'no_api_key');
+  });
+
+  it('資料 hash 相同時走 cache、第二次不打 LLM', async () => {
+    let llmCalls = 0;
+    const fakeLLM = async () => {
+      llmCalls++;
+      return {
+        summary_one_line: 'x',
+        section_explanations: {},
+        project_friction: {},
+        insights_for_admin: [],
+        next_actions: [],
+      };
+    };
+    const router = createNarrativeRouter({
+      query: async () => ({ rows: [] }),
+      auth: fakeAuth,
+      llmCall: fakeLLM,
+      env: { LLM_SWITCH_API_KEY: 'sk-test' },
+    });
+    const app = express();
+    app.use('/api/me/narrative', router);
+
+    const r1 = await get(app, '/api/me/narrative/insights?range=14d');
+    assert.equal(r1.status, 200);
+    assert.equal(r1.body.cached, false);
+
+    const r2 = await get(app, '/api/me/narrative/insights?range=14d');
+    assert.equal(r2.body.cached, true);
+
+    assert.equal(llmCalls, 1, 'LLM should be called only once');
+  });
+
+  it('LLM 失敗回 502', async () => {
+    const router = createNarrativeRouter({
+      query: async () => ({ rows: [] }),
+      auth: fakeAuth,
+      llmCall: async () => { throw new Error('upstream timeout'); },
+      env: { LLM_SWITCH_API_KEY: 'sk-test' },
+    });
+    const app = express();
+    app.use('/api/me/narrative', router);
+    const res = await get(app, '/api/me/narrative/insights?range=14d');
+    assert.equal(res.status, 502);
+  });
+
+  it('PII (email) 在送 LLM 前被 redact', async () => {
+    let received;
+    const fakeLLM = async ({ messages }) => {
+      received = messages[1].content;
+      return {
+        summary_one_line: '', section_explanations: {}, project_friction: {},
+        insights_for_admin: [], next_actions: [],
+      };
+    };
+    const router = createNarrativeRouter({
+      query: async () => ({ rows: [{ name: 'alice@example.com', friction: 'see admin@foo.bar' }] }),
+      auth: fakeAuth,
+      llmCall: fakeLLM,
+      env: { LLM_SWITCH_API_KEY: 'sk-test' },
+    });
+    const app = express();
+    app.use('/api/me/narrative', router);
+    await get(app, '/api/me/narrative/insights?range=14d');
+    assert.doesNotMatch(received, /alice@example\.com/);
+    assert.doesNotMatch(received, /admin@foo\.bar/);
+    assert.match(received, /\[email\]/);
+  });
+});

@@ -1,8 +1,19 @@
 import { Router } from 'express';
+import { buildMessages, callLLMSwitch, computeDataHash } from '../lib/llm-narrative.js';
+import { createNarrativeCache } from '../lib/narrative-cache.js';
 
-export function createNarrativeRouter({ query, auth }) {
+export function createNarrativeRouter({
+  query, auth,
+  llmCall,
+  cache,
+  env = process.env,
+}) {
   const router = Router();
   router.use(auth);
+
+  const insightsCache = cache || createNarrativeCache({ ttlMs: 3_600_000 });
+  const defaultLLM = async ({ apiKey, messages }) => callLLMSwitch({ apiKey, messages });
+  const callLLM = llmCall || defaultLLM;
 
   router.get('/', async (req, res) => {
     try {
@@ -19,7 +30,49 @@ export function createNarrativeRouter({ query, auth }) {
     }
   });
 
+  router.get('/insights', async (req, res) => {
+    const apiKey = env.LLM_SWITCH_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        error: '管理者尚未設定 LLM；機械版報告仍可用',
+        code: 'no_api_key',
+      });
+    }
+    try {
+      const range = String(req.query.range || '14d');
+      const sections = await collectSections({ query, range });
+      const redacted = redactPIIDeep(sections);
+      const hash = computeDataHash(redacted);
+      const cacheKey = `${range}:${hash}`;
+      const hit = insightsCache.get(cacheKey);
+      if (hit) return res.json({ cached: true, ...hit });
+
+      const messages = buildMessages(redacted);
+      const result = await callLLM({ apiKey, messages });
+      insightsCache.set(cacheKey, result);
+      res.json({ cached: false, ...result });
+    } catch (err) {
+      console.error('[me-narrative] insights failed:', err);
+      res.status(502).json({ error: '洞察暫時無法產生，稍後再試' });
+    }
+  });
+
   return router;
+}
+
+function redactPIIDeep(value) {
+  const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+  const IP_RE = /\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g;
+  if (typeof value === 'string') {
+    return value.replace(EMAIL_RE, '[email]').replace(IP_RE, '[ip]');
+  }
+  if (Array.isArray(value)) return value.map(redactPIIDeep);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) out[k] = redactPIIDeep(value[k]);
+    return out;
+  }
+  return value;
 }
 
 function buildTimeFilter(range) {
