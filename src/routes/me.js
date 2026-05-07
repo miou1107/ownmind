@@ -12,27 +12,111 @@
  */
 
 import { Router } from 'express';
+import bcrypt from 'bcrypt';
 import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
+const BCRYPT_ROUNDS = 10;
 
-// 任何 role 都通過，用 auth middleware（一般版，不限 role）
+/**
+ * POST /api/me/login — email + password 登入（v1.17.25 起接受任意 role）
+ * 成功回 api_key + must_change_password flag
+ */
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: '請輸入 Email 和密碼' });
+    }
+    const result = await query(
+      `SELECT id, email, name, role, api_key, password_hash, must_change_password
+       FROM users WHERE LOWER(email) = LOWER($1)`,
+      [email]
+    );
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: '帳號或密碼錯誤' });
+    }
+    const user = result.rows[0];
+    if (!user.password_hash) {
+      return res.status(401).json({ error: '此帳號尚未設定密碼，請聯絡管理員' });
+    }
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) {
+      return res.status(401).json({ error: '帳號或密碼錯誤' });
+    }
+    res.json({
+      id: user.id,
+      api_key: user.api_key,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      must_change_password: !!user.must_change_password,
+    });
+  } catch (err) {
+    logger.error('me/login 失敗', { error: err.message });
+    res.status(500).json({ error: '登入失敗' });
+  }
+});
+
+// 以下 endpoint 都需 Bearer api_key auth（任意 role）
 router.use(auth);
+
+/**
+ * POST /api/me/change-password — 修改自己密碼
+ * Body: { current_password, new_password }
+ * must_change_password 旗標自動清掉
+ */
+router.post('/change-password', async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body || {};
+    if (!current_password || !new_password) {
+      return res.status(400).json({ error: '請輸入舊密碼和新密碼' });
+    }
+    if (new_password.length < 8) {
+      return res.status(400).json({ error: '新密碼長度至少 8 字元' });
+    }
+    if (new_password === current_password) {
+      return res.status(400).json({ error: '新密碼必須跟舊密碼不一樣' });
+    }
+    const cur = await query(
+      `SELECT password_hash FROM users WHERE id = $1`, [req.user.id]
+    );
+    const ok = cur.rows[0]?.password_hash &&
+      await bcrypt.compare(current_password, cur.rows[0].password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: '舊密碼錯誤' });
+    }
+    const hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+    await query(
+      `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2`,
+      [hash, req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    logger.error('me/change-password 失敗', { error: err.message });
+    res.status(500).json({ error: '修改密碼失敗' });
+  }
+});
 
 /**
  * GET /profile — 驗 api_key，回身份摘要
  * 前端拿來確認 key 有效 + 顯示 user 名字
  */
-router.get('/profile', (req, res) => {
+router.get('/profile', async (req, res) => {
   const u = req.user;
+  // 補抓 must_change_password（auth middleware select 沒帶這欄）
+  const r = await query(
+    `SELECT must_change_password FROM users WHERE id = $1`, [u.id]
+  );
   res.json({
     id: u.id,
     name: u.name,
     email: u.email,
     role: u.role,
     created_at: u.created_at,
+    must_change_password: !!r.rows[0]?.must_change_password,
   });
 });
 

@@ -338,3 +338,23 @@ src/app.js                                — 掛 /api/me 路由 + /me 靜態頁
 package.json / docs/README*               — 1.17.23 → 1.17.24，三語系同步
 CHANGELOG.md                              — v1.17.24 條目
 ```
+
+## v1.17.25 新增 / 修改（user role 改成帳密登入）
+
+新增檔：
+
+```
+db/010_user_password_login.sql            — must_change_password 欄位 + email 索引
+src/jobs/seed-default-passwords.js        — boot 時補預設密碼（idempotent）
+```
+
+修改既有：
+
+```
+src/routes/me.js                          — 加 POST /login + /change-password；/profile 多回 must_change_password
+src/public/me/index.html                  — Email/password 登入；強制首次改密碼 UI
+src/index.js                              — boot 時呼叫 seedDefaultPasswords()
+tests/me-report.test.js                   — 新增 6 case
+package.json / docs/README*               — 1.17.24 → 1.17.25，三語系同步
+CHANGELOG.md                              — v1.17.25 條目
+```
