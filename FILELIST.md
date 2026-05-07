@@ -510,3 +510,13 @@ src/public/me/index.html                  — 鐵律表多「系統觀測」欄�
 package.json / docs/README*               — 1.17.40 → 1.17.41
 CHANGELOG.md                              — v1.17.41 條目
 ```
+
+## v1.17.42 修改（compliance gap 拆兩等級）
+
+```
+src/routes/me.js                          — complianceGapQ 拆 gap_unobserved / gap_unverified
+                                            兩種 finding type 不同 severity
+src/public/me/index.html                  — TYPE_LABEL 加 compliance_unobserved/unverified
+package.json / docs/README*               — 1.17.41 → 1.17.42
+CHANGELOG.md                              — v1.17.42 條目
+```
