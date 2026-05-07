@@ -563,6 +563,18 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.59 修改（mcp/index.js 三項硬化）
+
+```
+shared/helpers.js                         — 加 sanitizeErrorMessage / pushBounded / shouldSkipDuplicate 三個 helper
+mcp/index.js                              — 套 helper：complianceEvents 改環形緩衝 (上限 500)、
+                                            console.error 過 sanitize、_autoComplyDedup 改 Map+滑動時間窗
+tests/mcp-hardening.test.js               — 新增（17 case：3 個 helper 各自的快樂路徑/邊界/分鐘交界回歸）
+package.json                              — 1.17.58 → 1.17.59
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.58 → 1.17.59
+CHANGELOG.md                              — v1.17.59 條目
+```
+
 ## v1.17.58 修改（IR-024 commit-msg hook）
 
 ```

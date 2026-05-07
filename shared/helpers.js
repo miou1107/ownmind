@@ -108,3 +108,58 @@ export function detectTriggerFromContext(context) {
   if (/\bdelete\b|刪除/i.test(context)) return 'delete';
   return null;
 }
+
+/**
+ * 把錯誤訊息變安全：替換家目錄路徑為 ~、抹掉 sk-/Bearer 樣式 token、截長度。
+ * 用在 console.error stderr 訊息，避免噴使用者本機路徑或 API key。
+ * @param {unknown} msg
+ * @param {number} [maxLen=80]
+ * @returns {string}
+ */
+export function sanitizeErrorMessage(msg, maxLen = 80) {
+  if (msg === null || msg === undefined) return '';
+  let s = typeof msg === 'string' ? msg : String(msg);
+  const home = HOME;
+  if (home && home.length > 1) {
+    s = s.split(home).join('~');
+  }
+  s = s.replace(/sk-[A-Za-z0-9_-]{6,}/g, '<redacted>');
+  s = s.replace(/Bearer\s+[A-Za-z0-9_.-]+/g, '<redacted>');
+  if (s.length > maxLen) s = s.slice(0, maxLen) + '...';
+  return s;
+}
+
+/**
+ * 把元素推入陣列並維持上限長度，超過就丟最舊的（環形緩衝）。
+ * 用在會在 long session 一直累積的 in-memory 陣列。
+ * @template T
+ * @param {T[]} arr
+ * @param {T} item
+ * @param {number} maxSize
+ * @returns {T[]} 同一個陣列引用（原地修改）
+ */
+export function pushBounded(arr, item, maxSize) {
+  arr.push(item);
+  while (arr.length > maxSize) arr.shift();
+  return arr;
+}
+
+/**
+ * 滑動時間窗去重：回傳 true 代表 ttlMs 內看過、應該跳過。
+ * 順手 GC 掉地圖內所有過期項目。第一次出現會記下時間戳；
+ * 後續呼叫不會 slide 時間戳（沿用第一次時間，所以最終會過期）。
+ * @param {Map<string, number>} map - 紀錄 key → first_seen_ts
+ * @param {string} key
+ * @param {number} ttlMs
+ * @param {number} [now=Date.now()] - 注入時間方便測試
+ * @returns {boolean} 是否該跳過此筆
+ */
+export function shouldSkipDuplicate(map, key, ttlMs, now = Date.now()) {
+  for (const [k, ts] of map) {
+    if (now - ts >= ttlMs) map.delete(k);
+  }
+  const last = map.get(key);
+  if (last !== undefined && now - last < ttlMs) return true;
+  map.set(key, now);
+  return false;
+}

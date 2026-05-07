@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.17.59 — `mcp/index.js` 三項硬化（記憶體上限 + 錯誤訊息消毒 + 滑動時間窗去重）
+
+**Vincent 反饋**：v1.17.58 的 Codex review 之後 ack 過、留下的 5 項技術債清掉前三項（`project_310` 第 2 / 3 / 4）。
+
+**根因**：
+1. `complianceEvents` 陣列只在 init 時清空，long session 持續累積，理論上會無限大、最後吃光記憶體。
+2. `autoComplyForToolCall` 的三個 `console.error` 直接把 `e.message` 噴到 stderr，可能含家目錄路徑、API key 樣式字串等敏感資訊。
+3. `_autoComplyDedup` 用 `Math.floor(Date.now() / 60000)` 當 bucket key，分鐘交界（59→00）連打的兩次會被分到不同 bucket、兩次都通過去重檢查（計數膨脹）。
+
+**修法**：
+1. `shared/helpers.js` 新增 `pushBounded(arr, item, maxSize)` 環形緩衝 helper，超過上限自動丟最舊。`complianceEvents` 兩個 push 站點改用，上限 500 筆（常數 `COMPLIANCE_EVENTS_MAX`）。
+2. `shared/helpers.js` 新增 `sanitizeErrorMessage(msg, maxLen=80)` — 把家目錄路徑換成 `~`、`sk-...` / `Bearer ...` 樣式字串換成 `<redacted>`、超長截斷補 `...`。`autoComplyForToolCall` 的 3 個 `console.error` 全部套用。
+3. `shared/helpers.js` 新增 `shouldSkipDuplicate(map, key, ttlMs, now)` 滑動時間窗去重 helper：用 `Map<key, first_seen_ts>`，60 秒內看過就 skip、不 slide 時間戳（讓最終會過期）；每次呼叫順手 GC 過期項目。`_autoComplyDedup` 從 `Set` 改成 `Map`，dedup key 拿掉分鐘 bucket。
+
+**測試**：`tests/mcp-hardening.test.js` 新增 17 個測試 case，涵蓋三個 helper 的快樂路徑、邊界、邊角案例（含分鐘交界 bug 的回歸測試）。
+
+**升級方式**：純內部硬化，無 API 行為改變。Server / client 升到 1.17.59 即可。
 ## v1.17.58 — IR-024 邏輯卡控（commit-msg hook 阻擋 `Co-Authored-By`）
 
 **Vincent 反饋**：IR-024（Git commit 絕對不加 `Co-Authored-By`）目前只在 dashboard 上顯示提醒，依賴 AI 自覺。違反 IR-027「提醒無效，邏輯才有效」。要求改成 git hook 強卡。

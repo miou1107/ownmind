@@ -14,7 +14,12 @@ import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance } from '../shared/compliance.js';
-import { detectTriggerFromContext } from '../shared/helpers.js';
+import {
+  detectTriggerFromContext,
+  sanitizeErrorMessage,
+  pushBounded,
+  shouldSkipDuplicate,
+} from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
@@ -238,6 +243,8 @@ const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
 let sessionStartTime = null;
 const toolCallCounts = {};
 let complianceEvents = [];
+const COMPLIANCE_EVENTS_MAX = 500;
+const AUTO_COMPLY_DEDUP_TTL_MS = 60_000;
 let sessionLogged = false;
 // v1.17.37: 自動偵測 project 名稱（IR-027「邏輯才有效」— 不要叫 user 每次手動跟 AI 講）
 // CLAUDE_PROJECT_DIR 是 Claude Code 在啟動 MCP 時帶進來的專案根目錄；
@@ -895,7 +902,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_report_compliance": {
-      complianceEvents.push({ rule_title: args.rule_title, action: args.action, rule_code: args.rule_code || '', ts: new Date().toISOString() });
+      pushBounded(complianceEvents, { rule_title: args.rule_title, action: args.action, rule_code: args.rule_code || '', ts: new Date().toISOString() }, COMPLIANCE_EVENTS_MAX);
       logEvent('iron_rule_compliance', {
         rule_title: args.rule_title,
         rule_code: args.rule_code || null,
@@ -1035,10 +1042,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 //   - comply（AI 主動 ownmind_report_compliance）= AI 聲稱遵守
 //   - verified_comply（未來預留）= git hook 等程式驗證過
 //
-// In-memory dedup：用 (rule_code + tool_call + 1 分鐘 timestamp bucket) 當 key
-const _autoComplyDedup = new Set();
+// In-memory dedup：滑動時間窗（60s 內同 rule + tool 不重複算）
+// v1.17.59 改：原本用「分鐘 bucket」當 key，:59 → :00 邊界連打會被分到不同 bucket、
+// 兩次都通過。改成 Map<key, first_seen_ts> + sliding window，避免邊界 bug。
+const _autoComplyDedup = new Map();
 function _dedupKey(name, ruleCode) {
-  return `${ruleCode}|${name}|${Math.floor(Date.now() / 60000)}`;
+  return `${ruleCode}|${name}`;
 }
 
 async function autoComplyForToolCall(name, args, result) {
@@ -1070,15 +1079,9 @@ async function autoComplyForToolCall(name, args, result) {
   // 那些是 git hook 該抓的，不是 MCP handoff handler 自動聲稱
 
   for (const trig of triggers) {
-    // 去重：同一鐵律 1 分鐘內同一 tool 只算一次
+    // 去重：同一鐵律 60s 內同一 tool 只算一次（滑動視窗）
     const key = _dedupKey(name, trig.rule_code);
-    if (_autoComplyDedup.has(key)) continue;
-    _autoComplyDedup.add(key);
-    // 控制 set 大小避免長 session 記憶體膨脹
-    if (_autoComplyDedup.size > 500) {
-      const first = _autoComplyDedup.values().next().value;
-      _autoComplyDedup.delete(first);
-    }
+    if (shouldSkipDuplicate(_autoComplyDedup, key, AUTO_COMPLY_DEDUP_TTL_MS)) continue;
 
     // logEvent 失敗會自己寫 stderr，這裡額外 try/catch 不吞錯誤訊息
     try {
@@ -1091,7 +1094,7 @@ async function autoComplyForToolCall(name, args, result) {
         tool_call: name,
       });
     } catch (e) {
-      console.error('[autoComply] logEvent failed:', e?.message);
+      console.error('[autoComply] logEvent failed:', sanitizeErrorMessage(e?.message));
     }
     try {
       // 對齊 manual ownmind_report_compliance path（mcp/index.js:907）
@@ -1105,13 +1108,13 @@ async function autoComplyForToolCall(name, args, result) {
         context: trig.context,
       });
     } catch (e) {
-      console.error('[autoComply] appendCompliance failed:', e?.message);
+      console.error('[autoComply] appendCompliance failed:', sanitizeErrorMessage(e?.message));
     }
-    complianceEvents.push({
+    pushBounded(complianceEvents, {
       ...trig,
       source: 'system_auto',
       ts: new Date().toISOString(),
-    });
+    }, COMPLIANCE_EVENTS_MAX);
   }
 }
 
@@ -1123,7 +1126,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // v1.17.40: 自動代呼 iron_rule_compliance（不阻擋主流程）
     // v1.17.41: 不再 silent — 錯誤寫 stderr 至少能 debug
     autoComplyForToolCall(name, args || {}, result).catch((e) => {
-      console.error('[autoComply] failed:', e?.message);
+      console.error('[autoComply] failed:', sanitizeErrorMessage(e?.message));
     });
     const typeName = resolveType(name, args);
     const tag = formatTag(typeName);
