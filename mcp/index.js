@@ -1178,6 +1178,11 @@ import { execFile as _execFile } from 'child_process';
 import { promisify } from 'util';
 const execFile = promisify(_execFile);
 
+// v1.17.60: 用 module-scope 旗標讓「runAutoUpdate 內部」與「外層 catch」共享狀態。
+// 之前外層 catch 一律 unlinkSync(LOCK_FILE)，未來若引入「acquire lock 之前 throw」
+// 的路徑，會誤刪別 process 的 lock。改成只在自己持有時才 cleanup。
+let _lockHeld = false;
+
 async function runAutoUpdate() {
   const today = new Date().toISOString().slice(0, 10);
   const lastCheck = fs.existsSync(MARKER_FILE)
@@ -1207,6 +1212,7 @@ async function runAutoUpdate() {
   try {
     const fd = fs.openSync(LOCK_FILE, 'wx');
     fs.closeSync(fd);
+    _lockHeld = true;
   } catch (e) {
     if (e.code === 'EEXIST') {
       logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
@@ -1218,7 +1224,11 @@ async function runAutoUpdate() {
 
   logEvent('update_check', { source: 'mcp' });
 
-  const cleanup = () => { try { fs.unlinkSync(LOCK_FILE); } catch {} };
+  const cleanup = () => {
+    if (!_lockHeld) return;
+    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    _lockHeld = false;
+  };
   const fail = (step, err) => {
     cleanup();
     logEvent('update_failed', {
@@ -1309,6 +1319,7 @@ async function runAutoUpdate() {
 
 // fire-and-forget — 不阻塞 MCP 啟動
 // v1.17.23: catch 不再 silent — 任何意外都寫 update_failed step=outer
+// v1.17.60: 只在自己持有 lock 時才 cleanup，避免誤刪別 process 的 lock
 runAutoUpdate().catch((e) => {
   try {
     logEvent('update_failed', {
@@ -1317,7 +1328,10 @@ runAutoUpdate().catch((e) => {
       error: e?.code || e?.message || String(e).slice(0, 120),
     });
   } catch {}
-  try { fs.unlinkSync(LOCK_FILE); } catch {}
+  if (_lockHeld) {
+    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    _lockHeld = false;
+  }
 });
 
 // --- Emergency shutdown: 保存 session log ---
