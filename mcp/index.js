@@ -1281,12 +1281,16 @@ async function runAutoUpdate() {
       }
     }
 
-    // npm install — Windows 必須用 npm.cmd（execFile 不過 shell 找不到 npm）
+    // npm install — Windows 必須用 npm.cmd 並走 shell。
+    // v1.17.62: Node v18.20.2 / v20.12.2 / v21.7.3 起為 CVE-2024-27980 修補，禁止 execFile
+    // 直接跑 .cmd / .bat 檔，要 shell:true 才行。Adam 的 update_failed step=npm error=EINVAL
+    // 就是這個。Mac / Linux 不受影響，所以只在 Windows 開 shell。
     try {
       await execFile(NPM_CMD, ['install', '-q'], {
         cwd: path.join(OWNMIND_DIR, 'mcp'),
         timeout: 120000,
         windowsHide: true,
+        shell: IS_WINDOWS,
       });
     } catch (e) {
       return fail('npm', e);
@@ -1312,6 +1316,39 @@ async function runAutoUpdate() {
     cleanup();
     try { fs.writeFileSync(MARKER_FILE, today); } catch {}
     logEvent('update_applied', { source: 'mcp' });
+
+    // v1.17.62: 升級成功後重發一次心跳，讀磁碟上**新版** package.json，
+    // 不等 user 重啟 AI 工具就讓 server 看到新版號。
+    // 為什麼要這樣：CLIENT_VERSION 是 module-load 時 cache 的常數，自動更新後磁碟更新但
+    // 這個 process 記憶體裡還是舊值。先前的 sendMcpHeartbeat 用 cached 值且 heartbeatSent
+    // 旗標每個 process 只送一次心跳 → 長跑的 MCP process 永遠回報舊版號（Michelle / Eric 卡住的原因）。
+    // 跑 5 秒 timeout（callApi 本身沒 timeout）；失敗就 log 一個觀測 event。
+    try {
+      const rootPkg = new URL('../package.json', import.meta.url);
+      const freshVersion = JSON.parse(fs.readFileSync(rootPkg, 'utf8')).version;
+      if (freshVersion && freshVersion !== CLIENT_VERSION) {
+        await Promise.race([
+          callApi('POST', '/api/usage/events', {
+            events: [],
+            heartbeat: {
+              tool: CLIENT_TOOL,
+              scanner_version: freshVersion,
+              machine: os.hostname(),
+              os: os.platform(),
+            },
+          }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('heartbeat_timeout_5s')), 5000)),
+        ]);
+      }
+    } catch (e) {
+      // 失敗就 log，方便 dashboard 監看新版補心跳的有效性
+      try {
+        logEvent('update_heartbeat_failed', {
+          source: 'mcp',
+          error: e?.code || e?.message || String(e).slice(0, 120),
+        });
+      } catch {}
+    }
   } catch (e) {
     fail('unknown', e);
   }

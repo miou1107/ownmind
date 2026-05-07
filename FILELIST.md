@@ -563,6 +563,17 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.62 修改（修自動更新兩個 silent fail）
+
+```
+mcp/index.js                              — execFile(NPM_CMD,...) 加 shell: IS_WINDOWS（修 Adam Windows EINVAL）
+                                            update_applied 後重發心跳、讀 disk package.json 新版號
+                                            （修 Michelle 長跑 MCP cached 舊版回報）
+package.json                              — 1.17.61 → 1.17.62
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.61 → 1.17.62
+CHANGELOG.md                              — v1.17.62 條目
+```
+
 ## v1.17.61 修改（/me 報告頁加 MCP 通道盲點提示）
 
 ```
