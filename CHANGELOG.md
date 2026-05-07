@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.17.36 — 專案來源加 handoffs（修 RING 看不到）
+
+**Vincent 反饋**：「RING 為什麼沒在專案裡？」
+
+**Root cause**：之前專案來源只看 `session_logs.details.project`，但 Vincent
+做 RING 時都只寫 handoff（交接）給下個 session，沒走「結束總結」流程，
+所以 RING 在 session_logs 裡 0 筆。
+
+**修法**
+
+- 後端：加 `projectHandoffQ` 從 `handoffs` 表撈每個 user 對每個專案的交接數，
+  跟 session_logs 結果合併到同一個 projects map
+- 排序改：`turns DESC, handoffs DESC, sessions DESC`（先看量化，再看交接活動）
+- 「主要負責人」「其他貢獻者」邏輯：若該人 turns=0 但 handoffs>0，
+  顯示成「N 次交接（無 session_log）」
+- 前端專案表加「交接」欄
+
 ## v1.17.35 — 團隊趨勢圖支援切換 metric（Session / Token / 對話輪次）
 
 **Vincent 反饋**：團隊頁趨勢圖只能看 Session 數，希望可以切換看 Token 量或對話輪次。

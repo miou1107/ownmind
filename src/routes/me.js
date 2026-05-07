@@ -331,8 +331,10 @@ router.get('/report', async (req, res) => {
     );
 
     // ── 專案區塊（Q2=B 全團隊專案都看得到）──
-    // v1.17.30: 改成 per-user 細項，前端可顯示「主要負責人」與其他人的分工
-    // v1.17.34: project 名稱用 LOWER(TRIM(...)) 合併大小寫不同變體（'ownmind' / 'OwnMind'）
+    // v1.17.30: 改成 per-user 細項顯示「主要負責人」與分工
+    // v1.17.34: project 名稱用 LOWER(TRIM(...)) 合併大小寫變體
+    // v1.17.36: 多源合併 — session_logs（量化資料）+ handoffs（也算活動跡象，
+    //   因為有些工作只寫交接沒寫 session_log，例如 RING 專案）
     const projectContribQ = await query(`
       SELECT LOWER(TRIM(details->>'project')) AS project_key,
         MIN(details->>'project') AS project,
@@ -347,23 +349,54 @@ router.get('/report', async (req, res) => {
       GROUP BY project_key, u.name
       ORDER BY project_key, 5 DESC NULLS LAST`
     );
-    // 整理成 { project_key: { sessions, turns, contributors: [{name, sessions, turns}] }}
+    // handoffs 補充（從沒寫 session_log 但有交接的專案）
+    const projectHandoffQ = await query(`
+      SELECT LOWER(TRIM(h.project)) AS project_key,
+        MIN(h.project) AS project,
+        u.name,
+        COUNT(*) AS handoffs
+      FROM handoffs h
+      JOIN users u ON u.id = h.user_id
+      WHERE h.created_at ${timeFilter}
+        AND h.project IS NOT NULL
+        AND TRIM(h.project) != ''
+      GROUP BY project_key, u.name`
+    );
     const projMap = new Map();
     for (const r of projectContribQ.rows) {
       const t = parseInt(r.turns, 10) || 0;
       const s = parseInt(r.sessions, 10) || 0;
       const key = r.project_key;
       if (!projMap.has(key)) {
-        projMap.set(key, { project: r.project, sessions: 0, turns: 0, contributors: [], my_sessions: 0 });
+        projMap.set(key, { project: r.project, sessions: 0, turns: 0, handoffs: 0, contributors: [], my_sessions: 0, my_handoffs: 0 });
       }
       const e = projMap.get(key);
       e.sessions += s;
       e.turns += t;
-      e.contributors.push({ name: r.name, sessions: s, turns: t });
+      e.contributors.push({ name: r.name, sessions: s, turns: t, handoffs: 0 });
       if (r.name === me.name) e.my_sessions += s;
     }
+    // 把 handoffs 數加進去；若該 project 之前沒在 session_logs 出現也建立 entry
+    for (const r of projectHandoffQ.rows) {
+      const h = parseInt(r.handoffs, 10) || 0;
+      const key = r.project_key;
+      if (!projMap.has(key)) {
+        projMap.set(key, { project: r.project, sessions: 0, turns: 0, handoffs: 0, contributors: [], my_sessions: 0, my_handoffs: 0 });
+      }
+      const e = projMap.get(key);
+      e.handoffs += h;
+      // 找該 user 的 contributor entry，找不到就新增
+      let contrib = e.contributors.find(c => c.name === r.name);
+      if (!contrib) {
+        contrib = { name: r.name, sessions: 0, turns: 0, handoffs: 0 };
+        e.contributors.push(contrib);
+      }
+      contrib.handoffs += h;
+      if (r.name === me.name) e.my_handoffs += h;
+    }
+    // 排序：先看 turns（主要量化指標），平手看 handoffs，再看 sessions
     const teamProjects = Array.from(projMap.values())
-      .sort((a, b) => b.turns - a.turns);
+      .sort((a, b) => b.turns - a.turns || b.handoffs - a.handoffs || b.sessions - a.sessions);
 
     const teamComplianceQ = await query(`
       SELECT details->>'rule_code' AS rule_code,
