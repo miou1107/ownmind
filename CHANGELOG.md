@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.60 — update.sh / update.ps1 settings.json 安全讀取 + 自動更新 lock 旗標
+
+**Vincent 反饋**：v1.17.59 之後 `project_299` 還剩兩項技術債（第 2 跟第 3）一起清掉。第 1 項（`--autostash` fallback 對 2015 年前的 git 失效）太邊角不做。
+
+**根因**：
+1. **settings.json 損壞會被洗掉**：`update.sh` / `update.ps1` 各有四個 `node -e` 區塊在裝 hook 時讀使用者的 IDE 設定檔（Claude / Gemini / Copilot / Cursor）。其中 Gemini / Copilot / Cursor 三個用 `try { JSON.parse(...) } catch {}` 吃掉錯誤後帶著空 `{}` 繼續走，最後 `writeFileSync` 把空物件寫回原檔，使用者損壞但有資料的設定會被洗掉、無法救回。中等嚴重，沒實際 bug 報案但風險真的存在。
+2. **自動更新外層 `catch` 可能誤刪別 process 的 lock**：`runAutoUpdate().catch` 一律 `unlinkSync(LOCK_FILE)`，目前 code path 都在拿到 lock 後才會 throw 所以沒事；但未來只要有人改動引入「拿 lock 之前 throw」的路徑（例如 stale lock 偵測或 `fetch MARKER_FILE` 失敗），外層 catch 就會把另一個 MCP process 正在持有的 lock 砍掉，兩個 process 同時做 `git pull` / `npm install`、衝突或損壞。低嚴重度但 preventive。
+
+**修法**：
+1. 新增 `scripts/install-helpers/load-settings-safe.cjs`：純函式 `loadOrSkip(path, fallback)`，檔案不存在回 fallback、檔案壞掉印警告 + `process.exit(0)`（直接退出 node、後面寫檔不會跑到、原檔保留）。`update.sh` 4 處 + `update.ps1` 4 處全部換成這個 helper。`exit(0)` 是因為 update 腳本不該因為一個 hook 區塊壞掉就整支爆掉、要繼續跑下一個區塊。
+2. `mcp/index.js` `runAutoUpdate` 加 module-scope `_lockHeld` 旗標：`fs.openSync(LOCK_FILE, 'wx')` 成功才 set 為 `true`，cleanup 跟外層 catch 都先檢查旗標，只在自己持有時才 `unlinkSync`。
+
+**測試**：`tests/load-settings-safe.test.js` 5 case：檔案不存在 / 有效 / 壞掉不覆寫 / 壞掉但 caller 後面想寫也不會洗掉原檔 / 讀不到（權限）。`process.exit(0)` 行為以 `spawnSync` 跑 subprocess 驗證 exit code 跟 stderr。
+
+**升級方式**：純內部硬化，無 API 行為改變、無使用者操作。Server / client 升到 1.17.60 即可。
+
 ## v1.17.59 — `mcp/index.js` 三項硬化（記憶體上限 + 錯誤訊息消毒 + 滑動時間窗去重）
 
 **Vincent 反饋**：v1.17.58 的 Codex review 之後 ack 過、留下的 5 項技術債清掉前三項（`project_310` 第 2 / 3 / 4）。
