@@ -170,17 +170,39 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
+    // 鐵律遵守：列出全部 active 鐵律 + 該 user 的遵守統計（LEFT JOIN）
     const myComplianceQ = await query(`
-      SELECT details->>'rule_code' AS rule_code,
-        COUNT(*) FILTER (WHERE details->>'action' = 'comply') AS comply,
-        COUNT(*) FILTER (WHERE details->>'action' = 'skip') AS skip,
-        COUNT(*) FILTER (WHERE details->>'action' = 'violate') AS violate
+      WITH stats AS (
+        SELECT details->>'rule_code' AS rule_code,
+          COUNT(*) FILTER (WHERE details->>'action' = 'comply') AS comply,
+          COUNT(*) FILTER (WHERE details->>'action' = 'skip') AS skip,
+          COUNT(*) FILTER (WHERE details->>'action' = 'violate') AS violate
+        FROM activity_logs
+        WHERE user_id = $1
+          AND event = 'iron_rule_compliance'
+          AND ts >= NOW() - INTERVAL '${interval}'
+        GROUP BY rule_code
+      )
+      SELECT m.code AS rule_code, m.title,
+        COALESCE(s.comply, 0) AS comply,
+        COALESCE(s.skip, 0) AS skip,
+        COALESCE(s.violate, 0) AS violate
+      FROM memories m
+      LEFT JOIN stats s ON s.rule_code = m.code
+      WHERE m.type = 'iron_rule' AND m.status = 'active' AND m.code IS NOT NULL
+      ORDER BY (COALESCE(s.comply,0) + COALESCE(s.skip,0) + COALESCE(s.violate,0)) DESC,
+        m.code ASC`,
+      [me.id]
+    );
+
+    // 個人活動紀錄（最近 200 筆）
+    const myActivityQ = await query(`
+      SELECT ts, event, tool, source, details
       FROM activity_logs
       WHERE user_id = $1
-        AND event = 'iron_rule_compliance'
         AND ts >= NOW() - INTERVAL '${interval}'
-      GROUP BY rule_code
-      ORDER BY COUNT(*) DESC`,
+      ORDER BY ts DESC
+      LIMIT 200`,
       [me.id]
     );
 
@@ -292,7 +314,14 @@ router.get('/report', async (req, res) => {
         last_activity: myStats.last_activity,
         versions: myVersionsQ.rows,
         projects: myProjectsQ.rows,
-        compliance: myComplianceQ.rows,
+        compliance: myComplianceQ.rows.map(r => ({
+          rule_code: r.rule_code,
+          title: r.title,
+          comply: parseInt(r.comply, 10) || 0,
+          skip: parseInt(r.skip, 10) || 0,
+          violate: parseInt(r.violate, 10) || 0,
+        })),
+        activity: myActivityQ.rows,
       },
       team: {
         users: teamUsersQ.rows.map(r => ({

@@ -312,9 +312,18 @@
 
     <div class="card">
       <h2>我的鐵律遵守紀錄</h2>
-      <div class="desc">每次鐵律觸發時 AI 自動回報的遵守 / 跳過 / 違反次數。</div>
+      <div class="desc">每次鐵律觸發時 AI 自動回報的遵守 / 跳過 / 違反次數。
+      遵守率 = 遵守 ÷（遵守＋跳過＋違反）。</div>
       <table id="me-compliance"><thead><tr>
-        <th>鐵律</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th>
+        <th>鐵律</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th><th class="num">遵守率</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>我的活動紀錄</h2>
+      <div class="desc">最近 200 筆活動（依時間倒序）。details 是事件附帶資料（init 等簡單事件可能空白）。</div>
+      <table id="me-activity"><thead><tr>
+        <th>時間</th><th>事件</th><th>工具</th><th>來源</th><th>Details</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </div>
@@ -544,13 +553,50 @@ function render(report) {
       </tr>`).join('');
 
   $('#me-compliance tbody').innerHTML = me.compliance.length === 0
-    ? '<tr><td colspan="4" style="text-align:center;color:#9ca3af">尚無合規回報紀錄</td></tr>'
-    : me.compliance.map(c => `<tr>
-        <td>${esc(c.rule_code || '—')}</td>
-        <td class="num">${c.comply || 0}</td>
-        <td class="num">${c.skip || 0}</td>
-        <td class="num" style="color:${c.violate > 0 ? '#dc2626' : '#1a1a1a'}">${c.violate || 0}</td>
-      </tr>`).join('');
+    ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無鐵律可顯示</td></tr>'
+    : me.compliance.map(c => {
+        const total = (c.comply || 0) + (c.skip || 0) + (c.violate || 0);
+        const rate = total > 0 ? Math.round((c.comply || 0) / total * 100) + '%' : '—';
+        const rateColor = total === 0 ? '#9ca3af' :
+          (c.comply / total >= 0.8 ? '#059669' :
+           c.comply / total >= 0.5 ? '#d97706' : '#dc2626');
+        const ruleCell = `<strong>${esc(c.rule_code || '—')}</strong>${c.title ? '<br><small style="color:#6b7280">' + esc(c.title) + '</small>' : ''}`;
+        return `<tr>
+          <td>${ruleCell}</td>
+          <td class="num">${c.comply || 0}</td>
+          <td class="num">${c.skip || 0}</td>
+          <td class="num" style="color:${c.violate > 0 ? '#dc2626' : '#1a1a1a'}">${c.violate || 0}</td>
+          <td class="num" style="color:${rateColor};font-weight:600">${rate}</td>
+        </tr>`;
+      }).join('');
+
+  // 我的活動紀錄
+  const ZH_EVENT_INDIV = {
+    init: 'Session 啟動', memory_save: '儲存記憶', memory_get: '讀取記憶',
+    memory_search: '搜尋記憶', memory_update: '更新記憶', memory_disable: '停用記憶',
+    update_check: '檢查更新', update_applied: '已更新', update_clean: '無新版',
+    update_failed: '更新失敗', update_skipped: '更新跳過', update_ok: '已更新（舊命名）',
+    iron_rule_compliance: '合規回報', session_log: '結束總結',
+    handoff_create: '建立交接', handoff_accept: '接受交接',
+    error: '錯誤', init_fail: '初始化失敗', test_event: '測試事件',
+    memory_sync_standard: '同步團隊規範', session_log_emergency: '緊急結束',
+  };
+  $('#me-activity tbody').innerHTML = (me.activity || []).length === 0
+    ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無活動紀錄</td></tr>'
+    : me.activity.map(a => {
+        const hasDetails = a.details && Object.keys(a.details).length > 0;
+        const detailsStr = hasDetails ? JSON.stringify(a.details) : '';
+        const detailsCell = detailsStr
+          ? `<code style="font-size:11px;color:#6b7280">${esc(detailsStr.slice(0, 120))}${detailsStr.length > 120 ? '…' : ''}</code>`
+          : '<span style="color:#d1d5db">—</span>';
+        return `<tr>
+          <td><small>${esc(fmtTs(a.ts))}</small></td>
+          <td>${esc(ZH_EVENT_INDIV[a.event] || a.event)} <code style="color:#9ca3af;font-size:11px">${esc(a.event)}</code></td>
+          <td><small>${esc(a.tool || '—')}</small></td>
+          <td><small>${esc(a.source || '—')}</small></td>
+          <td>${detailsCell}</td>
+        </tr>`;
+      }).join('');
 
   // ── 團隊 ──
   $('#team-users tbody').innerHTML = team.users.map(u => `<tr>
