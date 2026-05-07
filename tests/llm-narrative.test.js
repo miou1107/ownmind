@@ -39,6 +39,14 @@ describe('buildMessages', () => {
     assert.match(sys, /AI 工作量/);
     assert.doesNotMatch(sys, /大使人選/);
   });
+
+  // v1.17.57: 高貢獻者改正面肯定，禁止個人風險評價（離職、接不下去、扛太多）
+  it('prompt 禁止個人風險評價、要求正面肯定高貢獻者', () => {
+    const sys = buildMessages({})[0].content;
+    assert.match(sys, /主要開發者|貢獻極大|認真/);
+    assert.match(sys, /禁止|不要|不寫/);
+    assert.match(sys, /離職|扛太多|接不下去/);
+  });
 });
 
 describe('parseLLMJson', () => {

@@ -562,6 +562,19 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.57 修改（整體分析報告改正面肯定 + 拿掉冗餘描述句）
+
+```
+src/lib/llm-narrative.js                 — SYSTEM_PROMPT rule 3 範例改正面
+                                            肯定（主要開發者、貢獻極大）；
+                                            rule 6 強化禁止個人風險評價
+                                            （離職、扛太多、接不下去、bus factor）
+src/public/me/index.html                 — 拿掉「過去 N 天的全團隊使用分析…」描述句
+tests/llm-narrative.test.js              — pin 正面肯定 + 個人風險禁用詞
+package.json / README* / docs/README*    — 1.17.56 → 1.17.57
+CHANGELOG.md                             — v1.17.57 條目
+```
+
 ## v1.17.56 修改（v1.17.55 顯示問題修正：Tokens 估算 + 長專案名）
 
 ```
