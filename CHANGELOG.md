@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.26 — admin 建 user 時自動套預設密碼
+
+**背景**：v1.17.25 補了存量 user 的預設密碼，但「admin 後台新增 user」流程
+還沒對齊。admin 沒指定密碼建出來的 user 進不了 /ownmind/me/。
+
+**改動**
+
+- `src/routes/admin.js` POST /users：
+  - 新增常數 `DEFAULT_USER_PASSWORD = 'Password42760988'`
+  - admin 沒指定 password 且 role='user' → 自動套預設密碼 + `must_change_password = TRUE`
+  - admin 指定 password → 維持原行為（不強制改）
+  - INSERT 帶上 `must_change_password` 欄位
+- `tests/me-report.test.js`：新增 1 case 確保預設密碼 + must_change_password 都有寫入
+
+**測試**：644/644 pass
+
 ## v1.17.25 — /ownmind/me/ 改成帳密登入 + 強制首次改密碼
 
 **背景**：v1.17.24 用 api_key 登入 UX 太差（user 要從設定檔翻 key、洩漏風險高）。

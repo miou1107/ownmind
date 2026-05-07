@@ -69,6 +69,23 @@ test('db/010_user_password_login.sql: 必須加 must_change_password 欄位', ()
   assert.match(sql, /must_change_password\s+BOOLEAN/i, 'migration 必須加 must_change_password 欄位');
 });
 
+test('admin.js POST /users: user role 無 password 時自動套預設密碼 + must_change_password', () => {
+  // v1.17.26: 新增 user 時，若無 password（admin 不想自己設），server 自動套
+  // Password42760988 + must_change_password=TRUE，跟 seed-default-passwords 行為一致
+  const adminSrc = readFileSync(join(repoRoot, 'src', 'routes', 'admin.js'), 'utf8');
+  // 必須有 DEFAULT_USER_PASSWORD 常數或 'Password42760988' literal
+  assert.ok(
+    adminSrc.includes('Password42760988') || /DEFAULT_USER_PASSWORD/.test(adminSrc),
+    'admin.js 必須引用預設密碼 Password42760988'
+  );
+  // INSERT users 必須能寫入 must_change_password 欄位
+  assert.match(
+    adminSrc,
+    /INSERT INTO users[\s\S]{0,400}must_change_password/,
+    'POST /users 的 INSERT 必須帶 must_change_password 欄位'
+  );
+});
+
 test('src/routes/me.js: endpoint 必須用 auth middleware（接受任意 role）', () => {
   const meSource = readFileSync(join(repoRoot, 'src', 'routes', 'me.js'), 'utf8');
   // 用 ../middleware/auth.js（不是 adminAuth — 否則 user role 被擋）

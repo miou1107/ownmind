@@ -358,3 +358,15 @@ tests/me-report.test.js                   — 新增 6 case
 package.json / docs/README*               — 1.17.24 → 1.17.25，三語系同步
 CHANGELOG.md                              — v1.17.25 條目
 ```
+
+## v1.17.26 修改（admin 建 user 自動套預設密碼）
+
+修改既有：
+
+```
+src/routes/admin.js                       — POST /users 對 user role 無密碼時套
+                                            DEFAULT_USER_PASSWORD + must_change_password=TRUE
+tests/me-report.test.js                   — 新增 1 case
+package.json / docs/README*               — 1.17.25 → 1.17.26，三語系同步
+CHANGELOG.md                              — v1.17.26 條目
+```
