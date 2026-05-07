@@ -429,3 +429,12 @@ src/public/me/index.html                  — 加 paginate / renderPager helper�
 package.json / docs/README*               — 1.17.32 → 1.17.33
 CHANGELOG.md                              — v1.17.33 條目
 ```
+
+## v1.17.34 修改（自訂日期範圍 + 專案大小寫合併）
+
+```
+src/routes/me.js                          — 加 start/end 參數 + LOWER(TRIM) 專案 group key
+src/public/me/index.html                  — range select 加「自訂…」 + date inputs + 套用按鈕
+package.json / docs/README*               — 1.17.33 → 1.17.34
+CHANGELOG.md                              — v1.17.34 條目
+```
