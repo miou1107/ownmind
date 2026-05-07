@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.17.62 — 修自動更新兩個 silent fail（Adam Windows / Michelle 心跳）
+
+**Vincent 反饋**：production heartbeat 顯示 Adam（1.17.24 / win32）、Eric（1.17.45）、Michelle（1.17.20 / Mac）三個 user 卡很久沒上來。Server 已經 1.17.61，他們各卡 16~37 個版本之前。本來 backlog 是「等他們自己升級才能切 broadcast-filter fail-closed」（`project_290`），結果根本不會自己升級。
+
+**根因**：
+
+1. **Windows npm.cmd `EINVAL`（Adam 卡 1.17.24）**：Node v18.20.2 / v20.12.2 / v21.7.3 起為 CVE-2024-27980 安全修補，禁止 `child_process.execFile` 直接呼叫 `.cmd` / `.bat`，要 `shell: true` 才行。`mcp/index.js:1286` 的 `execFile(NPM_CMD, ['install', '-q'], ...)` 在 Adam 那邊就吃這個 EINVAL，整個自動更新中斷。從 activity log 看到 `update_failed step=npm error=EINVAL`。
+
+2. **MCP process cached `CLIENT_VERSION`（Michelle 卡 1.17.20）**：`mcp/index.js:154` 把 `CLIENT_VERSION` 在 module-load 時當常數讀進來。MCP 是長跑 process，user 不關 AI 工具就一直開著。自動更新成功 → 磁碟上 package.json 是新版 → 但這個 process 記憶體裡還是舊 `CLIENT_VERSION`。`sendMcpHeartbeat` 用 cached 值且 `heartbeatSent` 旗標每個 process 只送一次心跳 → 長跑 process 永遠回報舊版號。Michelle 02:19 有 `update_applied`、09:11 五個工具同時心跳回報 1.17.20，就是這個。
+
+**修法**：
+
+1. `mcp/index.js:1286` `execFile(NPM_CMD, [...])` 加 `shell: IS_WINDOWS`。Mac / Linux 不受影響、Windows 走 shell 才能跑 `.cmd`。
+2. `mcp/index.js` `runAutoUpdate` 在 `logEvent('update_applied', ...)` 之後重發一次心跳，用 `fs.readFileSync` 讀**磁碟上**的 `package.json`、回報新版號。同時不更新 cached `CLIENT_VERSION`（保守 — 只動心跳，process 內其他 callsite 用 cached 不變，下次 process 重啟自然會更新）。
+
+**升級方式**：v1.17.62 上線後，**user 仍然要再跑一次 `bash ~/.ownmind/scripts/bootstrap.sh`** 把 disk 升到 1.17.62 並重啟 MCP（讓新代碼生效）。從 1.17.62 之後的自動更新就會自己處理 — 升級後立刻補心跳、Windows 也不會再 EINVAL。`project_290`（broadcast-filter fail-closed）解 blocker 之後可以切。
+
 ## v1.17.61 — /me 報告頁加 MCP 通道盲點提示
 
 **Vincent 反饋**：`project_310` 第 5 項（非 MCP 介面盲點標示）。OwnMind 的 client 是 MCP server，只能看到走 MCP 通道的 AI 工具呼叫。但實際工作上很多 AI 使用是走網頁版（claude.ai / ChatGPT / Gemini Web 等）或非 MCP 終端，這些活動 OwnMind 完全看不到。報告頁卻沒有任何說明，使用者誤以為看到的就是全部活動。
