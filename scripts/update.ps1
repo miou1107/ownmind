@@ -93,8 +93,9 @@ $NoSessionFlag = Join-Path $OwnMindDir ".no-session-hook"
 if (Test-Path $ClaudeSettings) {
   $nodeScript = @"
     const fs = require('fs');
-    const settingsPath = process.argv[1];
-    const noSessionHook = process.argv[2] === 'true';
+    // v1.17.23: argv[0]=node, argv[1]=script path, argv[2]+=user args
+    const settingsPath = process.argv[2];
+    const noSessionHook = process.argv[3] === 'true';
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
@@ -144,6 +145,90 @@ if (Test-Path $ClaudeSettings) {
   $noFlag = if (Test-Path $NoSessionFlag) { 'true' } else { 'false' }
   & node $tmpScript $ClaudeSettings $noFlag 2>>$ErrLog
   Remove-Item $tmpScript -ErrorAction SilentlyContinue
+}
+
+# --- 4. Gemini CLI hooks ---
+$GeminiDir = Join-Path $HOME ".gemini"
+if (Test-Path $GeminiDir) {
+  $GeminiSettings = Join-Path $GeminiDir "settings.json"
+  $geminiNodeScript = @"
+    const fs = require('fs');
+    const p = process.argv[2];
+    let s = {};
+    if (fs.existsSync(p)) { try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} }
+    if (!s.hooks) s.hooks = {};
+    if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
+    const exists = s.hooks.SessionStart.some(h =>
+      (h.command || '').includes('ownmind') ||
+      (h.hooks && h.hooks.some(hh => (hh.command || '').includes('ownmind')))
+    );
+    if (!exists) {
+      s.hooks.SessionStart.push({ type: 'command', command: 'bash ~/.claude/hooks/ownmind-session-start.sh' });
+      const tmp = p + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, p);
+      console.log('   Gemini CLI SessionStart hook 已加入');
+    }
+"@
+  $tmpGemini = Join-Path $env:TEMP "ownmind-update-gemini.js"
+  Set-Content -Path $tmpGemini -Value $geminiNodeScript -Encoding UTF8
+  & node $tmpGemini $GeminiSettings 2>>$ErrLog
+  Remove-Item $tmpGemini -ErrorAction SilentlyContinue
+}
+
+# --- 5. GitHub Copilot hooks ---
+$GithubDir = Join-Path $HOME ".github"
+$GhCmd = Get-Command gh -ErrorAction SilentlyContinue
+if ((Test-Path $GithubDir) -or $GhCmd) {
+  $GhHookDir = Join-Path $GithubDir "hooks"
+  $GhHookFile = Join-Path $GhHookDir "hooks.json"
+  if (-not (Test-Path $GhHookDir)) { New-Item -ItemType Directory -Force -Path $GhHookDir | Out-Null }
+  $copilotNodeScript = @"
+    const fs = require('fs');
+    const p = process.argv[2];
+    let s = { version: 1, hooks: {} };
+    if (fs.existsSync(p)) { try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} }
+    if (!s.hooks) s.hooks = {};
+    if (!s.hooks.sessionStart) s.hooks.sessionStart = [];
+    const exists = s.hooks.sessionStart.some(h => (h.command || '').includes('ownmind'));
+    if (!exists) {
+      s.hooks.sessionStart.push({ command: 'bash ~/.claude/hooks/ownmind-session-start.sh' });
+      const tmp = p + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, p);
+      console.log('   GitHub Copilot sessionStart hook 已加入');
+    }
+"@
+  $tmpGh = Join-Path $env:TEMP "ownmind-update-copilot.js"
+  Set-Content -Path $tmpGh -Value $copilotNodeScript -Encoding UTF8
+  & node $tmpGh $GhHookFile 2>>$ErrLog
+  Remove-Item $tmpGh -ErrorAction SilentlyContinue
+}
+
+# --- 6. Cursor hooks ---
+$CursorDir = Join-Path $HOME ".cursor"
+if (Test-Path $CursorDir) {
+  $CursorHooks = Join-Path $CursorDir "hooks.json"
+  $cursorNodeScript = @"
+    const fs = require('fs');
+    const p = process.argv[2];
+    let s = { version: 1, hooks: {} };
+    if (fs.existsSync(p)) { try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch {} }
+    if (!s.hooks) s.hooks = {};
+    if (!s.hooks['session-start']) s.hooks['session-start'] = [];
+    const exists = s.hooks['session-start'].some(h => (h.command || '').includes('ownmind'));
+    if (!exists) {
+      s.hooks['session-start'].push({ command: 'bash ~/.claude/hooks/ownmind-session-start.sh' });
+      const tmp = p + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+      fs.renameSync(tmp, p);
+      console.log('   Cursor session-start hook 已加入');
+    }
+"@
+  $tmpCursor = Join-Path $env:TEMP "ownmind-update-cursor.js"
+  Set-Content -Path $tmpCursor -Value $cursorNodeScript -Encoding UTF8
+  & node $tmpCursor $CursorHooks 2>>$ErrLog
+  Remove-Item $tmpCursor -ErrorAction SilentlyContinue
 }
 
 # --- 標記已安裝 ---
