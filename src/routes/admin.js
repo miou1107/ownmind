@@ -182,6 +182,10 @@ router.post('/users', async (req, res) => {
       email: newUser.email, role: newUser.role
     });
 
+    // 用了 shared default 才回傳明碼讓 admin 一次性轉告 user；admin 自設密碼不洩漏
+    if (newUser.must_change_password && !password) {
+      newUser.default_password = DEFAULT_USER_PASSWORD;
+    }
     res.status(201).json(newUser);
   } catch (err) {
     logger.error('建立使用者失敗', { error: err.message });

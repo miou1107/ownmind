@@ -562,6 +562,17 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.49 修改（預設密碼不再公開洩漏）
+
+```
+src/public/me/index.html                  — 登入頁副標 + 改密碼 placeholder 拿掉明碼
+src/public/index.html                     — addUser() 收到 default_password 後 alert 顯示
+src/routes/admin.js                       — POST /admin/users response 多 default_password
+                                            （shared default 才回傳，admin 自設不洩漏）
+package.json / README* / docs/README*     — 1.17.48 → 1.17.49
+CHANGELOG.md                              — v1.17.49 條目
+```
+
 ## v1.17.48 修改（整體分析 上線後修正）
 
 ```
