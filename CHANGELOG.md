@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.17.61 — /me 報告頁加 MCP 通道盲點提示
+
+**Vincent 反饋**：`project_310` 第 5 項（非 MCP 介面盲點標示）。OwnMind 的 client 是 MCP server，只能看到走 MCP 通道的 AI 工具呼叫。但實際工作上很多 AI 使用是走網頁版（claude.ai / ChatGPT / Gemini Web 等）或非 MCP 終端，這些活動 OwnMind 完全看不到。報告頁卻沒有任何說明，使用者誤以為看到的就是全部活動。
+
+**根因**：先前 `/me` 報告頁的 audit findings 只有在「14 天 0 activity」才觸發 `unobservable_source` finding，但實際上即使有少量 MCP activity，使用者可能一半時間在網頁版 AI、那半也是不可觀測。沒有固定提示說「我只看 MCP 通道」。
+
+**修法**：`src/public/me/index.html` 在 4 個 tab 之上、`<main>` 最上方加一個 `.blindspot-notice` 區塊（淡藍色 left border，視覺輕量、不擋功能），告訴使用者：「OwnMind 看不到的活動：透過網頁 AI、未裝 OwnMind 的工具、或 MCP 通道以外的活動都不會出現在這個報告。實際 AI 使用量可能比這裡看到的多。」全部 tab（個人 / 團隊 / 專案 / 整體分析）都看得到。
+
+**為什麼選固定提示而非 audit finding**：
+1. 這是設計層問題（無完美解），不是「異常觸發」的事件 — fixed notice 比 dynamic finding 更誠實
+2. 加 finding type `partial_blindspot` 要先決定「異常閾值」是什麼，閾值定錯反而誤導
+3. 固定提示一次寫清楚、所有使用者都看得到、不需要計算就能落地
+
+**沒做的部分**：`project_281` 第 E 項（dashboard machine 加 OS / scanner_version 副欄位）已經在 v1.17.17 一系列改動中實作完成，`src/public/index.html:1530-1536` 已渲染 `machine_meta`，backlog memory 過期。
+
 ## v1.17.60 — update.sh / update.ps1 settings.json 安全讀取 + 自動更新 lock 旗標
 
 **Vincent 反饋**：v1.17.59 之後 `project_299` 還剩兩項技術債（第 2 跟第 3）一起清掉。第 1 項（`--autostash` fallback 對 2015 年前的 git 失效）太邊角不做。
