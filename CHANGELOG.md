@@ -1,5 +1,28 @@
 # OwnMind 更新紀錄
 
+## v1.17.43 — Compliance gap 加 rule_code 關聯比對 + 文案中性化
+
+**Codex round 6 review 抓到的兩個 P1**
+
+### P1.1 has_manual_comply 加 rule_code 關聯
+之前 `has_manual_comply` 只看「±10 分鐘內任一 manual comply」就清 gap，會誤判。
+例如：14:00 停用 IR-006，14:05 對 IR-008 主動回報遵守 → 系統誤以為 IR-006 也有人驗證過。
+
+修法：sensitive CTE 加 `expected_rules` 欄位（陣列）：
+- `memory_disable` → `['IR-006']`
+- `memory_save type=iron_rule` → `['IR-006']`
+- `handoff_create` → `['IR-008', 'IR-009', 'IR-024']`
+
+`has_matching_manual_comply` 改成：找出 ±10 分鐘內 `action='comply'` AND `source != 'system_auto'`
+AND **`rule_code = ANY(expected_rules)`** 的紀錄才算數。
+
+### P1.2 unverified 文案中性化
+之前訊息：「AI 沒主動回報，AI 該養成主動 ownmind_report_compliance 的習慣」
+→ 太像在訓練 AI，使用者讀起來像內部備忘錄。
+
+改成：「N 個高風險動作僅由系統自動觀測到，沒有對應鐵律的人工驗證紀錄」
+→ 描述事實、不帶教訓語氣。
+
 ## v1.17.42 — Compliance gap 拆兩種等級（漏觀測 vs 未驗證）
 
 **Vincent 反饋**：拆 vs 不拆對比後選拆，理由：

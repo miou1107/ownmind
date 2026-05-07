@@ -520,3 +520,13 @@ src/public/me/index.html                  — TYPE_LABEL 加 compliance_unobserv
 package.json / docs/README*               — 1.17.41 → 1.17.42
 CHANGELOG.md                              — v1.17.42 條目
 ```
+
+## v1.17.43 修改（gap rule_code 關聯 + 文案中性化）
+
+```
+src/routes/me.js                          — sensitive CTE 加 expected_rules 陣列
+                                            has_matching_manual_comply 加 rule_code = ANY 比對
+                                            unverified 訊息改成中性描述
+package.json / docs/README*               — 1.17.42 → 1.17.43
+CHANGELOG.md                              — v1.17.43 條目
+```

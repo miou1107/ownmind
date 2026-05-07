@@ -435,10 +435,18 @@ router.get('/report', async (req, res) => {
 
     // #1 activity/compliance gap：v1.17.42 拆兩種等級
     //   gap_a「漏觀測」: 完全沒有任何 compliance event（連系統觀測都沒抓到 → 系統壞了）
-    //   gap_b「未驗證」: 有 system_auto observed_trigger 但沒 AI 主動回報的 comply
+    //   gap_b「未驗證」: 有 system_auto observed_trigger 但沒對應鐵律 manual comply
+    // v1.17.43: has_manual_comply 加 rule_code 關聯，避免不相關 comply 誤清 gap
+    //   每種 sensitive event 對應特定鐵律（expected_rules 陣列）
     const complianceGapQ = await query(`
       WITH sensitive AS (
-        SELECT id, ts FROM activity_logs
+        SELECT id, ts,
+          CASE
+            WHEN event = 'memory_disable' THEN ARRAY['IR-006']
+            WHEN event = 'memory_save' AND details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
+            WHEN event = 'handoff_create' THEN ARRAY['IR-008', 'IR-009', 'IR-024']
+          END AS expected_rules
+        FROM activity_logs
         WHERE user_id = $1 AND ts ${timeFilter}
           AND (
             event IN ('handoff_create', 'memory_disable')
@@ -458,12 +466,13 @@ router.get('/report', async (req, res) => {
               AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
               AND c.details->>'action' = 'comply'
               AND COALESCE(c.details->>'source', '') != 'system_auto'
-          ) AS has_manual_comply
+              AND c.details->>'rule_code' = ANY(s.expected_rules)
+          ) AS has_matching_manual_comply
         FROM sensitive s
       )
       SELECT
         COUNT(*) FILTER (WHERE NOT has_any) AS gap_unobserved,
-        COUNT(*) FILTER (WHERE has_any AND NOT has_manual_comply) AS gap_unverified
+        COUNT(*) FILTER (WHERE has_any AND NOT has_matching_manual_comply) AS gap_unverified
       FROM classified`,
       [me.id]
     );
@@ -556,7 +565,7 @@ router.get('/report', async (req, res) => {
         type: 'compliance_unverified',
         severity: 'medium',
         count: gapUnverified,
-        message: `${gapUnverified} 個高風險動作系統有觀測到，但 AI 沒主動回報「我有遵守」 → AI 該養成主動 ownmind_report_compliance 的習慣`,
+        message: `${gapUnverified} 個高風險動作僅由系統自動觀測到，沒有對應鐵律的人工驗證紀錄`,
       });
     }
     const heartbeatStale = heartbeatAuditQ.rows;
