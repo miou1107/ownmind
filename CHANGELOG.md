@@ -1,5 +1,16 @@
 # OwnMind 更新紀錄
 
+## v1.17.31 — 專案「其他貢獻者」過濾偶發測試（Vincent 回報）
+
+**Vincent 反饋**：「Adam 是 user 不是開發者，為什麼算他進 OwnMind 貢獻者？」
+
+**Root cause**：Adam 4/24 寫了 1 筆 session_log 標 project='ownmind' 8 輪
+（可能測試或誤標）。前一版只要寫過 session_log 就算協作，semantic 不準。
+
+**修法**：「其他貢獻者」加門檻 `max(20 輪, 專案總輪次 × 10%)`，低於視為偶發測試。
+- OwnMind 148 輪 → 門檻 20 → Adam 8 輪略過、UI 標「+1 位偶發測試略過」
+- funit-v2 491 輪 → Adam 是主要負責人，正常顯示
+
 ## v1.17.30 — bar chart 加平均線 + 專案改顯示主要 vs 其他貢獻者（Vincent 回報）
 
 **Vincent 反饋兩點**：

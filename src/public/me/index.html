@@ -598,13 +598,24 @@ function render(report) {
     : projects.map(p => {
         const contribs = (p.contributors || []).slice().sort((a, b) => b.turns - a.turns);
         const main = contribs[0];
-        const others = contribs.slice(1);
+        // 「實質貢獻」門檻：≥ 10% 專案總輪次 或 ≥ 20 輪（取大），低於就當 noise 隱藏
+        // 例：OwnMind 148 輪 → 門檻 20，Adam 8 輪 → 偶發測試，不算協作
+        const threshold = Math.max(20, Math.round((p.turns || 0) * 0.1));
+        const meaningful = contribs.slice(1).filter(c => c.turns >= threshold);
+        const noise = contribs.slice(1).filter(c => c.turns < threshold);
         const mainCell = main
           ? `<strong>${esc(main.name)}</strong><br><small style="color:#6b7280">${main.turns} 輪 / ${main.sessions} sessions</small>`
           : '—';
-        const othersCell = others.length === 0
-          ? '<span style="color:#9ca3af">—</span>'
-          : others.map(c => `${esc(c.name)} <small style="color:#9ca3af">(${c.turns})</small>`).join(', ');
+        let othersCell;
+        if (meaningful.length === 0 && noise.length === 0) {
+          othersCell = '<span style="color:#9ca3af">—</span>';
+        } else if (meaningful.length === 0) {
+          othersCell = `<small style="color:#9ca3af">（${noise.length} 位偶發測試 < ${threshold} 輪 略過）</small>`;
+        } else {
+          const m = meaningful.map(c => `${esc(c.name)} <small style="color:#9ca3af">(${c.turns})</small>`).join(', ');
+          const n = noise.length > 0 ? `<br><small style="color:#9ca3af">+ ${noise.length} 位偶發測試略過</small>` : '';
+          othersCell = m + n;
+        }
         return `<tr>
           <td><strong>${esc(p.project)}</strong></td>
           <td class="num">${p.sessions}</td>
