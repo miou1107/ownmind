@@ -239,6 +239,18 @@ let sessionStartTime = null;
 const toolCallCounts = {};
 let complianceEvents = [];
 let sessionLogged = false;
+// v1.17.37: 自動偵測 project 名稱（IR-027「邏輯才有效」— 不要叫 user 每次手動跟 AI 講）
+// CLAUDE_PROJECT_DIR 是 Claude Code 在啟動 MCP 時帶進來的專案根目錄；
+// 若 user 沒在 git repo 或別的工具就用 cwd basename 當 fallback。
+const AUTO_PROJECT = (() => {
+  try {
+    const dir = process.env.CLAUDE_PROJECT_DIR
+      || process.env.OWNMIND_PROJECT_DIR
+      || process.cwd();
+    if (!dir || dir === '/' || dir === os.homedir()) return null;
+    return path.basename(dir);
+  } catch { return null; }
+})();
 
 // --- v1.17.0 P4: Broadcast fetch + render ---
 // 不 block tool call、失敗靜默、逾時 2s
@@ -1210,15 +1222,20 @@ runAutoUpdate().catch((e) => {
 });
 
 // --- Emergency shutdown: 保存 session log ---
-async function emergencySessionLog() {
+async function emergencySessionLog(reason = 'mcp_shutdown') {
   if (sessionLogged || !sessionStartTime) return;
   const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);
   if (totalCalls <= 1) return; // 只有 init，不記錄
+  sessionLogged = true; // 防止重複觸發
 
-  const summary = `[emergency] ${Object.entries(toolCallCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
+  const summary = `[auto] ${AUTO_PROJECT ? AUTO_PROJECT + ' · ' : ''}${Object.entries(toolCallCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
+  // v1.17.37: 自動帶 project + duration_turns 讓報告頁能歸類專案
+  const turns = Math.max(1, Math.round(totalCalls / 2));  // 估算對話輪次（每 turn 約 2 個 tool call）
   const details = {
-    _recovery: 'mcp_shutdown',
+    _recovery: reason,
+    project: AUTO_PROJECT || undefined,  // ⚠️ undefined 會被 sanitizeDetails 移除
     duration_ms: Date.now() - sessionStartTime,
+    duration_turns: turns,
     tool_calls: { ...toolCallCounts },
     compliance: [...complianceEvents],
   };
@@ -1241,13 +1258,30 @@ async function emergencySessionLog() {
   } catch {
     // Silent fail — local JSONL is the safety net
   }
-
-  process.exit(0);
 }
 
-for (const sig of ['SIGTERM', 'SIGINT']) {
-  process.on(sig, () => emergencySessionLog());
+// v1.17.37: 多種退出 signal 都觸發 — SIGTERM/SIGINT 是 graceful，
+// SIGHUP 是 terminal close、process.on('exit') 是同步保險最後機會
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT']) {
+  process.on(sig, async () => {
+    await emergencySessionLog('signal_' + sig);
+    process.exit(0);
+  });
 }
+// 'exit' 是同步事件，async 寫入沒法完成；只能 fire-and-forget logEvent (本地 JSONL)
+process.on('exit', () => {
+  if (!sessionLogged && sessionStartTime) {
+    const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);
+    if (totalCalls > 1) {
+      logEvent('session_log_emergency', {
+        summary: `[exit_sync] ${AUTO_PROJECT ? AUTO_PROJECT + ' · ' : ''}${totalCalls} calls`,
+        project: AUTO_PROJECT,
+        _recovery: 'process_exit',
+        tool_calls: { ...toolCallCounts },
+      });
+    }
+  }
+});
 
 // Fire-and-forget heartbeat on every MCP startup so already-installed users
 // appear as "installed" in Admin without manually running ownmind_init.

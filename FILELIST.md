@@ -456,3 +456,13 @@ src/public/me/index.html                  — 專案表加「交接」欄；只�
 package.json / docs/README*               — 1.17.35 → 1.17.36
 CHANGELOG.md                              — v1.17.36 條目
 ```
+
+## v1.17.37 修改（auto-write session_log 帶 project + 多 signal 全收）
+
+```
+mcp/index.js                              — AUTO_PROJECT 從 CLAUDE_PROJECT_DIR 偵測；
+                                            emergencySessionLog 寫 project + duration_turns；
+                                            訂 SIGTERM/SIGINT/SIGHUP/SIGQUIT 全部 + process.on('exit') 保險
+package.json / docs/README*               — 1.17.36 → 1.17.37
+CHANGELOG.md                              — v1.17.37 條目
+```

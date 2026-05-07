@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.17.37 — Session log 自動帶 project + 多種退出 signal 都記錄（IR-027 邏輯卡控）
+
+**Vincent 反饋**：「叫 user 每次跟 AI 講『寫 session_log』違反 IR-027 邏輯才有效。
+系統應該自己處理。」
+
+**問題**
+
+- 之前 emergencySessionLog 不寫 project 欄位 → 報告頁無法歸到專案
+- 只訂 SIGTERM/SIGINT，但 SIGHUP（terminal close）、SIGQUIT、kill -9 都漏接
+- 結果：很多 session 結束沒有產生 session_log，user 又得手動叫 AI 寫
+
+**修法**
+
+- `mcp/index.js` 啟動時自動從 `CLAUDE_PROJECT_DIR` / `OWNMIND_PROJECT_DIR` /
+  `process.cwd()` 取 `path.basename()` 當 `AUTO_PROJECT`
+- emergencySessionLog 寫入 details 時帶 `project: AUTO_PROJECT` +
+  `duration_turns`（估算）
+- 多訂 SIGHUP / SIGQUIT signal handler
+- 加 `process.on('exit', ...)` 同步 fallback：kill -9 沒有 signal 但 exit 仍會
+  觸發；只能寫本地 JSONL（async upload 不及完成）
+- 防重複：emergencySessionLog 一進就 set sessionLogged
+
+**對 RING 等專案的影響**
+
+未來 user 在 ring-linebot 目錄開 Claude Code → MCP 啟動 → AUTO_PROJECT='ring-linebot'
+→ 不論怎麼結束都會寫帶 project 的 session_log → 報告頁正確歸類。
+
 ## v1.17.36 — 專案來源加 handoffs（修 RING 看不到）
 
 **Vincent 反饋**：「RING 為什麼沒在專案裡？」
