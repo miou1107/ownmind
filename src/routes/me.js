@@ -96,7 +96,7 @@ router.get('/report', async (req, res) => {
         AND event = 'iron_rule_compliance'
         AND ts >= NOW() - INTERVAL '${interval}'
       GROUP BY rule_code
-      ORDER BY comply + skip + violate DESC`,
+      ORDER BY COUNT(*) DESC`,
       [me.id]
     );
 
@@ -178,7 +178,7 @@ router.get('/report', async (req, res) => {
       WHERE event = 'iron_rule_compliance'
         AND ts >= NOW() - INTERVAL '${interval}'
       GROUP BY rule_code
-      ORDER BY comply + skip + violate DESC`
+      ORDER BY COUNT(*) DESC`
     );
 
     res.json({
