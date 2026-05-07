@@ -120,12 +120,13 @@ async function checkApiCredentials(apiUrl, apiKey) {
     return fail('api_credentials', 'apiUrl 或 apiKey 空白',
       '重跑 bootstrap，重新填 API key');
   }
-  const url = `${apiUrl.replace(/\/$/, '')}/api/init`;
+  // v1.17.64：mcp/index.js 跟其他 client 都打 GET /api/memory/init + Authorization Bearer。
+  // v1.17.63 寫成 POST /api/init + X-OwnMind-API-Key header，server 沒這條路由 (404) 且
+  // auth middleware 只認 Bearer (401)，造成 api_credentials 永遠 fail。
+  const url = `${apiUrl.replace(/\/$/, '')}/api/memory/init`;
   try {
     const r = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-OwnMind-API-Key': apiKey },
-      body: '{}',
+      headers: { 'Authorization': `Bearer ${apiKey}` },
     });
     if (r.status === 401 || r.status === 403) {
       return fail('api_credentials', `auth ${r.status}`, '重跑 bootstrap 重設 API key');
@@ -301,7 +302,8 @@ async function uploadReport(report, apiUrl, apiKey) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-OwnMind-API-Key': apiKey,
+          // v1.17.64：對齊 auth middleware（src/middleware/auth.js）— 一律 Bearer。
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify(report),
       },
