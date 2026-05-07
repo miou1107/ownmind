@@ -1,5 +1,38 @@
 # OwnMind 更新紀錄
 
+## v1.17.40 — Compliance call 從 AI 自覺改成系統強制（IR-027 邏輯卡控落地）
+
+**Vincent 反饋**：
+> 「我每次跟你 commit、停用 memory、新增 IR-036、新增 backlog memory… 都該主動呼叫
+> ownmind_report_compliance 但我沒有。」「把 compliance call 變成系統強制。」
+
+**修法**
+
+`mcp/index.js` 在 CallToolRequestSchema handler 內 `await handleTool` 成功後，
+新增 `autoComplyForToolCall(name, args, result)` — 根據 tool name + args 自動 emit
+對應的 `iron_rule_compliance` events，**不再讓 AI「忘了講」就漏紀錄**。
+
+**對應規則**
+
+| Tool call | 自動 comply 哪些鐵律 |
+|---|---|
+| `ownmind_disable`（停用 iron_rule） | IR-006 全層同步 |
+| `ownmind_save`（type=iron_rule） | IR-006 |
+| `ownmind_update`（target type=iron_rule） | IR-006 |
+| `ownmind_handoff_create` | IR-008 + IR-009 + IR-024 |
+
+**source='system_auto' 標記**
+
+每筆 system 自動 emit 的 compliance event 都帶 `source: 'system_auto'`，跟
+AI 主動呼叫的（無 source / 'ai'）區別。dashboard 未來可分開統計「系統自動 vs
+AI 自報」，但 audit 端兩者都算數（gap 偵測會關掉）。
+
+**效果**
+
+- compliance_gap audit 從現在起對 memory 操作系列幾乎不會再報
+- 即便 AI 完全不呼叫 ownmind_report_compliance，DB 也會有完整鐵律觸發紀錄
+- 真正解到「邏輯卡控」 — 對齊 IR-027
+
 ## v1.17.39 — Codex round 3 review 後 audit 全面修補（P1+P2+P3）
 
 **Vincent 指示**：「P1/P2/P3 全都修」

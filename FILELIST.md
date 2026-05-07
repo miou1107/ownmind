@@ -486,3 +486,13 @@ src/public/me/index.html                  — 加 unobservable_source / team_bli
 package.json / docs/README*               — 1.17.38 → 1.17.39
 CHANGELOG.md                              — v1.17.39 條目
 ```
+
+## v1.17.40 修改（compliance call 系統強制）
+
+```
+mcp/index.js                              — 加 autoComplyForToolCall()，CallToolRequestSchema
+                                            handler 成功後自動 emit iron_rule_compliance
+                                            event（source='system_auto'）
+package.json / docs/README*               — 1.17.39 → 1.17.40
+CHANGELOG.md                              — v1.17.40 條目
+```
