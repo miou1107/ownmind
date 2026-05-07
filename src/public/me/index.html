@@ -281,7 +281,8 @@
   .narrative-section { margin-bottom: 1.25rem; }
   .narrative-section h3 { margin-top: 1.5rem; }
   .narrative-bar { display:flex; align-items:flex-end; gap:4px; height:140px; margin:0.5rem 0; }
-  .narrative-bar .nbar { flex:1; background:#6366f1; border-radius:3px 3px 0 0; position:relative; min-height:1px; }
+  .narrative-bar .nbar { width:80%; background:#6366f1; border-radius:3px 3px 0 0; position:relative; min-height:2px; }
+  .narrative-bar > div { display:flex; flex-direction:column; align-items:center; justify-content:flex-end; flex:1; height:100%; }
   .narrative-bar .nbar-label { font-size:11px; color:#64748b; text-align:center; margin-top:4px; }
   .narrative-bar .nbar-value { position:absolute; top:-18px; left:0; right:0; text-align:center; font-size:11px; color:#475569; }
   .hidden { display: none !important; }
@@ -344,7 +345,7 @@
     <button class="active" data-tab="me">個人</button>
     <button data-tab="team">團隊</button>
     <button data-tab="projects">專案</button>
-    <button data-tab="narrative">📊 敘事報告</button>
+    <button data-tab="narrative">📊 整體分析</button>
   </div>
 
   <!-- 個人 tab -->
@@ -475,10 +476,10 @@
     </div>
   </div>
 
-  <!-- 敘事報告 tab -->
+  <!-- 整體分析 tab -->
   <div id="tab-narrative" class="tab-content">
     <div class="card">
-      <h2>📊 團隊敘事報告</h2>
+      <h2>📊 整體分析</h2>
       <div class="desc">過去 N 天的全團隊使用分析。機械段秒回；AI 洞察開頁自動觸發、伺服器端 cache 1 小時。</div>
       <div id="narrative-summary" class="ai-summary">⏳ 產生洞察中…</div>
       <div id="narrative-sections"></div>
@@ -1208,8 +1209,8 @@ function renderBarChart(rows, labelKey, valueKey) {
     rows.map(r => {
       const v = parseInt(r[valueKey], 10) || 0;
       const h = Math.max(1, Math.round((v / max) * 120));
-      return `<div style="display:flex;flex-direction:column;align-items:center;flex:1">
-        <div class="nbar" style="height:${h}px;width:80%"><span class="nbar-value">${v}</span></div>
+      return `<div>
+        <div class="nbar" style="height:${h}px"><span class="nbar-value">${v}</span></div>
         <div class="nbar-label">${esc(String(r[labelKey]))}</div>
       </div>`;
     }).join('')

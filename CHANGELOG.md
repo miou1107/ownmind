@@ -1,5 +1,18 @@
 # OwnMind 更新紀錄
 
+## v1.17.48 — /me 整體分析 上線後三項修正
+
+v1.17.47 部署後實測抓到問題：
+
+1. **長條圖 bars 渲染成 1px 細線** — `.narrative-bar .nbar` 的 `flex:1`
+   在 column wrapper 沒固定高度時，`flex-basis:0` 會吃掉 inline `height:Xpx`。
+   改用 `width:80%` 固定 + 把 column wrapper 抽到 CSS 選擇器並補 `height:100%`、
+   `justify-content:flex-end`，bars 才能依資料長出正常高度。
+2. **改名「敘事報告」→「整體分析」**（tab + H2 + 註解）
+3. **LLM prompt 強化** — 原本產出「使用者排名可以幫助管理員了解使用者行為」這種
+   廢話。prompt 加正反例示範（廢話 vs 具體），要求洞察必須找 bus factor／
+   風險／盲點，next_actions 必須含對象 + 指令式動作，避免空泛。
+
 ## v1.17.47 — /me 敘事報告（HackMD 風格 14 天分析）
 
 新增 `/ownmind/me` 第四個 tab「📊 敘事報告」：12 段團隊使用分析。
