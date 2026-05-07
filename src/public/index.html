@@ -218,6 +218,7 @@
     <div class="tab" data-tab="stats" onclick="switchTab('stats')">統計儀表板</div>
     <div class="tab" data-tab="reports" onclick="switchTab('reports')">週/月報</div>
     <div class="tab hidden" id="tabBtn-team-usage" data-tab="team-usage" onclick="switchTab('team-usage')">團隊用量</div>
+    <div class="tab hidden" id="tabBtn-work-log" data-tab="work-log" onclick="switchTab('work-log')">工作紀錄</div>
     <div class="tab hidden" id="tabBtn-settings" data-tab="settings" onclick="switchTab('settings')">設定</div>
   </div>
 
@@ -495,8 +496,8 @@
       </div>
     </div>
 
-    <!-- 資料品質警示（原 Audit log） -->
-    <div class="card">
+    <!-- 資料品質警示（原 Audit log） — v1.17.20 隱藏：給管理員追資料抓取異常用，日常不需顯示 -->
+    <div class="card" hidden>
       <div class="card-header"><h3>資料品質警示</h3>
         <select id="auditEventType" style="width:auto;margin:0;" onchange="loadAuditLog()">
           <option value="">-- 全部 --</option>
@@ -524,6 +525,52 @@
       </div>
     </div>
   </div><!-- end tab-team-usage -->
+
+  <!-- ===== TAB: 工作紀錄（super_admin only） ===== -->
+  <div id="tab-work-log" class="tab-content">
+    <div class="card">
+      <div class="card-header"><h3>工作紀錄（時間軸）</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input type="date" id="wlFrom" style="margin:0;width:auto;">
+          <span>~</span>
+          <input type="date" id="wlTo" style="margin:0;width:auto;">
+          <select id="wlSource" style="margin:0;width:auto;">
+            <option value="">所有來源</option>
+            <option value="activity">活動</option>
+            <option value="compliance">合規</option>
+            <option value="session">Session</option>
+          </select>
+          <select id="wlUser" style="margin:0;width:auto;"><option value="">所有使用者</option></select>
+          <select id="wlTool" style="margin:0;width:auto;"><option value="">所有工具</option></select>
+          <select id="wlEventType" style="margin:0;width:auto;"><option value="">所有 event</option></select>
+          <input type="text" id="wlQ" placeholder="搜尋 details / summary" style="margin:0;width:200px;">
+          <button class="btn-primary btn-sm" onclick="loadWorkLog(true)">查詢</button>
+        </div>
+      </div>
+      <div style="margin:8px 0 12px;padding:8px 12px;background:#eef2ff;color:#3730a3;border-radius:6px;font-size:12px;line-height:1.6;">
+        三來源時間軸：<b>活動</b>（init / update / tool 等）、<b>合規</b>（鐵律違反 / 遵守）、<b>Session</b>（AI session 摘要）。預設最近 30 天，每頁 100 筆。
+      </div>
+      <div style="margin-bottom:8px;color:#86868b;font-size:13px;">
+        共 <span id="wlTotal">0</span> 筆，已顯示 <span id="wlShown">0</span> 筆
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:160px;">時間</th>
+            <th style="width:80px;">來源</th>
+            <th style="width:120px;">使用者</th>
+            <th style="width:100px;">工具</th>
+            <th style="width:140px;">Event</th>
+            <th>內容</th>
+          </tr></thead>
+          <tbody id="wlTable"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;text-align:center;">
+        <button class="btn-secondary btn-sm" id="wlLoadMore" onclick="loadWorkLog(false)" style="display:none;">載入更多</button>
+      </div>
+    </div>
+  </div><!-- end tab-work-log -->
 
   <!-- ===== TAB: 設定（super_admin only） ===== -->
   <div id="tab-settings" class="tab-content">
@@ -900,6 +947,12 @@
       if (btn) btn.classList.remove('hidden');
     }
 
+    // 「工作紀錄」tab — super_admin only（三來源 timeline）
+    if (currentUserRole === 'super_admin') {
+      const btn = document.getElementById('tabBtn-work-log');
+      if (btn) btn.classList.remove('hidden');
+    }
+
     loadUsers();
     loadStats();
   }
@@ -1199,6 +1252,7 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       loadUserStats();
     }
     if (tab === 'team-usage') { ensureTeamUsageDefaultDates(); loadTeamUsage(); loadAuditLog(); }
+    if (tab === 'work-log')   { initWorkLog(); }
     if (tab === 'settings')   {
       if (currentUserRole === 'super_admin') { loadPricingList(); loadBroadcastList(); }
       loadClientsStatus();
@@ -1798,6 +1852,98 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         <td style="font-family:'SF Mono',monospace;font-size:11px;color:#86868b;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(JSON.stringify(r.details || {}))}">${escapeHtml(JSON.stringify(r.details || {}).slice(0, 80))}</td>
       </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#86868b;">無資料</td></tr>';
     } catch (err) { showToast('載入 audit log 失敗：' + err.message, true); }
+  }
+
+  // ===== Work Log（super_admin 三來源時間軸） =====
+  let wlOffset = 0;
+  let wlLoaded = false;
+
+  async function initWorkLog() {
+    if (wlLoaded) return;
+    // 預設日期：30 天前 ~ 今天
+    const today = new Date();
+    const thirty = new Date(Date.now() - 30 * 86400000);
+    document.getElementById('wlFrom').value = thirty.toISOString().slice(0, 10);
+    document.getElementById('wlTo').value = today.toISOString().slice(0, 10);
+    // 拉 filters
+    try {
+      const res = await fetch(`${API}/admin/work-log/filters`, { headers: headers() });
+      if (res.ok) {
+        const d = await res.json();
+        const u = document.getElementById('wlUser');
+        u.innerHTML = '<option value="">所有使用者</option>' +
+          d.users.map(x => `<option value="${x.id}">${escapeHtml(x.name || x.email)}</option>`).join('');
+        const t = document.getElementById('wlTool');
+        t.innerHTML = '<option value="">所有工具</option>' +
+          d.tools.map(x => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+        const e = document.getElementById('wlEventType');
+        e.innerHTML = '<option value="">所有 event</option>' +
+          d.event_types.map(x => `<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join('');
+      }
+    } catch {}
+    wlLoaded = true;
+    loadWorkLog(true);
+  }
+
+  async function loadWorkLog(reset) {
+    if (reset) {
+      wlOffset = 0;
+      document.getElementById('wlTable').innerHTML = '';
+    }
+    const params = new URLSearchParams();
+    const from = document.getElementById('wlFrom').value;
+    const to   = document.getElementById('wlTo').value;
+    const src  = document.getElementById('wlSource').value;
+    const usr  = document.getElementById('wlUser').value;
+    const tool = document.getElementById('wlTool').value;
+    const et   = document.getElementById('wlEventType').value;
+    const q    = document.getElementById('wlQ').value.trim();
+    if (from) params.set('from', from + 'T00:00:00.000Z');
+    if (to)   params.set('to',   to   + 'T23:59:59.999Z');
+    if (src)  params.set('source', src);
+    if (usr)  params.set('user_id', usr);
+    if (tool) params.set('tool', tool);
+    if (et)   params.set('event_type', et);
+    if (q)    params.set('q', q);
+    params.set('limit', '100');
+    params.set('offset', String(wlOffset));
+
+    try {
+      const res = await fetch(`${API}/admin/work-log/?${params}`, { headers: headers() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const tbody = document.getElementById('wlTable');
+      const sourceColor = { activity: '#0369a1', compliance: '#b91c1c', session: '#15803d' };
+      const sourceLabel = { activity: '活動', compliance: '合規', session: 'Session' };
+      const html = data.rows.map(r => {
+        const color = sourceColor[r.source] || '#374151';
+        const label = sourceLabel[r.source] || r.source;
+        const detailsStr = r.summary
+          ? r.summary
+          : JSON.stringify(r.details || {});
+        const trimmed = (detailsStr || '').slice(0, 200);
+        return `<tr>
+          <td style="font-family:'SF Mono',monospace;font-size:11px;">${escapeHtml(new Date(r.ts).toLocaleString('zh-TW'))}</td>
+          <td><span class="role-badge" style="background:${color}1a;color:${color};">${escapeHtml(label)}</span></td>
+          <td>${escapeHtml(r.user_name || '#' + r.user_id)}</td>
+          <td>${escapeHtml(r.tool || '—')}</td>
+          <td><code style="font-size:11px;">${escapeHtml(r.event_type)}</code></td>
+          <td style="font-family:'SF Mono',monospace;font-size:11px;color:#374151;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(detailsStr)}">${escapeHtml(trimmed)}</td>
+        </tr>`;
+      }).join('');
+      if (reset) {
+        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#86868b;">無資料</td></tr>';
+      } else {
+        tbody.insertAdjacentHTML('beforeend', html);
+      }
+      wlOffset += data.rows.length;
+      document.getElementById('wlTotal').textContent = data.total;
+      document.getElementById('wlShown').textContent = wlOffset;
+      const more = document.getElementById('wlLoadMore');
+      more.style.display = wlOffset < data.total ? 'inline-block' : 'none';
+    } catch (err) {
+      showToast('載入工作紀錄失敗：' + err.message, true);
+    }
   }
 
   // ===== Reports =====
