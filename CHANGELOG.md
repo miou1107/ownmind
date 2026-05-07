@@ -1,5 +1,25 @@
 # OwnMind 更新紀錄
 
+## v1.17.20 — Admin 工作紀錄頁 + 隱藏資料品質警示
+
+**Admin Dashboard 新增「工作紀錄」頁籤**（super_admin only）
+
+三來源時間軸，把全團隊每個人的活動串起來，super_admin 可查看：
+- **活動**：`activity_logs` 中 event ≠ `iron_rule_compliance` 的事件（init / update / tool_call 等）
+- **合規**：`activity_logs` 中 `iron_rule_compliance` 事件（鐵律遵守 / 違反）
+- **Session**：`session_logs` 表的 AI session 摘要
+
+預設顯示最近 30 天 / 100 筆，支援篩選：日期 range / user / tool / event_type / 全文搜尋（details / summary 走 ILIKE）。
+
+**改動**
+
+- `src/routes/admin-work-log.js`（新檔）— `GET /api/admin/work-log` + `/filters` endpoint，三來源 UNION ALL，依 ts DESC 排序，limit 上限 500
+- `src/app.js` — mount router 在 `/api/admin/work-log`，順序在 `/api/admin` 之前避免被 catch
+- `src/public/index.html` — 新「工作紀錄」tab（super_admin only）、篩選列、分頁載入更多按鈕；同時把「資料品質警示」card 加 `hidden`（日常不需顯示）
+- `tests/admin-work-log.test.js` — 9 個 case：權限、UNION、篩選、limit cap、total_count
+
+**測試**：615/615 pass
+
 ## v1.17.19 — 自動更新 lock 失敗納入失敗偵測（project_281 backlog item C）
 
 **背景**：v1.17.18 的 P3 修法把 `git fetch / pull / npm install / update.sh` 每步都加了顯式

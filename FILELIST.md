@@ -253,3 +253,21 @@ tests/p3-update-event-semantics.test.js   — 新增 3 個 P3-lock regression ca
 package.json / docs/README*               — 1.17.18 → 1.17.19，三語系同步
 CHANGELOG.md                              — v1.17.19 條目
 ```
+
+## v1.17.20 新增 / 修改（admin 工作紀錄頁）
+
+新增檔：
+
+```
+src/routes/admin-work-log.js              — GET /api/admin/work-log + /filters，三來源 UNION ALL
+tests/admin-work-log.test.js              — 9 case 涵蓋權限/SQL/篩選/limit cap/total
+```
+
+修改既有：
+
+```
+src/app.js                                — mount /api/admin/work-log（在 /api/admin 之前）
+src/public/index.html                     — 新「工作紀錄」tab + JS loader；資料品質警示 card 加 hidden
+package.json / docs/README*               — 1.17.19 → 1.17.20，三語系同步
+CHANGELOG.md                              — v1.17.20 條目
+```

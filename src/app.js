@@ -60,10 +60,13 @@ import exportRoutes from './routes/export.js';
 import activityRoutes from './routes/activity.js';
 import usageRoutes from './routes/usage/index.js';
 import broadcastRoutes from './routes/broadcast.js';
+import adminWorkLogRoutes from './routes/admin-work-log.js';
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
 app.use('/api/handoff', handoffRoutes);
+// 子路徑要在 /api/admin 之前 mount，否則 adminRoutes 會吃掉
+app.use('/api/admin/work-log', adminWorkLogRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
