@@ -175,18 +175,34 @@ async function collectSections({ query, range }) {
   `)).rows;
 
   // 9. project_ranking — 跨專案排行（同 me.js 的 LOWER/TRIM 正規化）
+  // v1.17.55: 加 tokens + cost_usd（從 token_usage_daily 用 session_id JOIN）
   const project_ranking = (await query(`
-    SELECT LOWER(TRIM(details->>'project')) AS project_key,
-      MIN(details->>'project') AS project,
+    WITH tok AS (
+      SELECT user_id, tool, session_id,
+        SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)
+            + COALESCE(cache_creation_tokens,0) + COALESCE(cache_read_tokens,0)
+            + COALESCE(reasoning_tokens,0)) AS tokens,
+        SUM(COALESCE(cost_usd, 0)) AS cost_usd
+      FROM token_usage_daily
+      WHERE last_ts ${tfTs}
+      GROUP BY user_id, tool, session_id
+    )
+    SELECT LOWER(TRIM(sl.details->>'project')) AS project_key,
+      MIN(sl.details->>'project') AS project,
       sl.user_id,
       u.name,
       COUNT(*) AS sessions,
-      SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
+      SUM(COALESCE((sl.details->>'duration_turns')::int, 0)) AS turns,
+      COALESCE(SUM(tok.tokens), 0)::bigint AS tokens,
+      COALESCE(SUM(tok.cost_usd), 0)::numeric(12,4) AS cost_usd
     FROM session_logs sl
     LEFT JOIN users u ON u.id = sl.user_id
+    LEFT JOIN tok ON tok.user_id = sl.user_id
+      AND tok.tool = sl.tool
+      AND tok.session_id = sl.session_id
     WHERE sl.created_at ${tfCreated}
-      AND details->>'project' IS NOT NULL
-      AND TRIM(details->>'project') != ''
+      AND sl.details->>'project' IS NOT NULL
+      AND TRIM(sl.details->>'project') != ''
     GROUP BY project_key, sl.user_id, u.name
     ORDER BY turns DESC NULLS LAST
   `)).rows;

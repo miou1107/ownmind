@@ -1128,7 +1128,7 @@ function renderNarrativeMechanical(data) {
     </div>
 
     <div class="narrative-section">
-      <h3>2. 大家的軟體版本</h3>
+      <h3>2. 大家的OwnMind版本</h3>
       ${renderVersionsTable(s.versions, s.ranking)}
       <div class="ai-explain" data-section="versions">⏳ 產生洞察中…</div>
     </div>
@@ -1152,7 +1152,7 @@ function renderNarrativeMechanical(data) {
     </div>
 
     <div class="narrative-section">
-      <h3>6. 大家都在做什麼類型的事</h3>
+      <h3>6. 大家的OwnMind行為分析</h3>
       ${renderEventTypesTable(s.event_types)}
       <div class="ai-explain" data-section="event_types">⏳ 產生洞察中…</div>
     </div>
@@ -1308,14 +1308,17 @@ function renderProjectRankingTable(rows) {
   const agg = {};
   for (const r of rows) {
     const k = r.project_key || '(unnamed)';
-    if (!agg[k]) agg[k] = { project: r.project || k, sessions: 0, turns: 0, contributors: [] };
+    if (!agg[k]) agg[k] = { project: r.project || k, sessions: 0, turns: 0, tokens: 0, cost: 0, contributors: [] };
     agg[k].sessions += parseInt(r.sessions,10)||0;
     agg[k].turns += parseInt(r.turns,10)||0;
+    agg[k].tokens += parseInt(r.tokens,10)||0;
+    agg[k].cost += parseFloat(r.cost_usd)||0;
     if (r.name) agg[k].contributors.push(`${r.name}（${r.turns||0} 輪）`);
   }
   const list = Object.values(agg).sort((a,b) => b.turns - a.turns);
-  return `<table><thead><tr><th>專案</th><th class="num">Sessions</th><th class="num">輪次</th><th>貢獻者</th></tr></thead><tbody>${
-    list.map(r => `<tr><td>${esc(r.project)}</td><td class="num">${r.sessions}</td><td class="num">${r.turns}</td><td>${esc(r.contributors.join(', '))}</td></tr>`).join('')
+  const fmtCost = c => c > 0 ? '$' + (c >= 1 ? c.toFixed(2) : c.toFixed(4)) : '—';
+  return `<table><thead><tr><th>專案</th><th class="num">Sessions</th><th class="num">輪次</th><th class="num">Tokens</th><th class="num">成本</th><th>貢獻者</th></tr></thead><tbody>${
+    list.map(r => `<tr><td>${esc(r.project)}</td><td class="num">${r.sessions}</td><td class="num">${r.turns}</td><td class="num">${r.tokens > 0 ? fmtBig(r.tokens) : '—'}</td><td class="num">${fmtCost(r.cost)}</td><td>${esc(r.contributors.join(', '))}</td></tr>`).join('')
   }</tbody></table>`;
 }
 
