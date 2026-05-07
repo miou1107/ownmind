@@ -65,6 +65,9 @@ import usageRoutes from './routes/usage/index.js';
 import broadcastRoutes from './routes/broadcast.js';
 import adminWorkLogRoutes from './routes/admin-work-log.js';
 import meRoutes from './routes/me.js';
+import { createNarrativeRouter } from './routes/me-narrative.js';
+import { query } from './utils/db.js';
+import auth from './middleware/auth.js';
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
@@ -77,6 +80,8 @@ app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);
+// 子路徑要在 /api/me 之前 mount，否則 meRoutes 會先接到請求並回 404
+app.use('/api/me/narrative', createNarrativeRouter({ query, auth }));
 app.use('/api/me', meRoutes);
 
 // 根路徑導向 Admin

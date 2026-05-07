@@ -561,3 +561,22 @@ src/routes/me.js                          — 清掉 my_sessions / my_handoffs �
 package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
+
+## v1.17.47 修改（/me 敘事報告）
+
+```
+src/lib/llm-narrative.js                  — 新增（llm-switch OpenAI-compatible wrapper）
+src/lib/narrative-cache.js                — 新增（in-memory TTL hash cache）
+src/routes/me-narrative.js                — 新增（mechanical + insights endpoints + PII redact）
+src/app.js                                — 掛 /api/me/narrative 路由（須在 /api/me 之前）
+src/public/me/index.html                  — 加第 4 tab「📊 敘事報告」+ 11 section render
+                                            + auto LLM trigger + range change re-fetch
+.env.example                              — 補 LLM_SWITCH_API_KEY 說明
+tests/narrative-cache.test.js             — 4 tests
+tests/llm-narrative.test.js               — 13 tests
+tests/me-narrative.test.js                — 8 tests（4 mechanical + 4 insights）
+docs/superpowers/specs/2026-05-07-me-narrative-report-design.md  — 新增（spec）
+docs/superpowers/plans/2026-05-07-me-narrative-report-plan.md    — 新增（plan）
+package.json / README* / docs/README*     — 1.17.46 → 1.17.47
+CHANGELOG.md                              — v1.17.47 條目
+```
