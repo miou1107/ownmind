@@ -1271,12 +1271,14 @@ function renderEventTypesTable(rows) {
 function renderComplianceTable(rows) {
   if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料（請等系統收集中）</em>';
   // v1.17.52: 加「使用者」欄 — 每個 user 鐵律不同（含客製 title），合併顯示會誤導
+  // v1.17.53: 後端已過濾全零列、按 violate DESC 排序；違反次數 > 0 用紅色加粗強調
   return `<table><thead><tr><th>使用者</th><th>規則</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th><th class="num">系統觀測</th></tr></thead><tbody>${
     rows.map(r => {
       const user = esc(r.user_name || '—');
       const code = `<strong>${esc(r.rule_code||'—')}</strong>`;
       const title = r.title ? `<br><small style="color:#6b7280">${esc(r.title)}</small>` : '';
-      return `<tr><td>${user}</td><td>${code}${title}</td><td class="num">${r.comply||0}</td><td class="num">${r.skip||0}</td><td class="num">${r.violate||0}</td><td class="num">${r.observed||0}</td></tr>`;
+      const vCls = (parseInt(r.violate,10)||0) > 0 ? ' style="color:#dc2626;font-weight:600"' : '';
+      return `<tr><td>${user}</td><td>${code}${title}</td><td class="num">${r.comply||0}</td><td class="num">${r.skip||0}</td><td class="num"${vCls}>${r.violate||0}</td><td class="num">${r.observed||0}</td></tr>`;
     }).join('')
   }</tbody></table>`;
 }

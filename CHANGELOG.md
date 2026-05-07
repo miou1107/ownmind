@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.17.53 — 誠信表 UX 強化（問題優先排序 + 雜訊過濾 + 違反高亮）
+
+**Vincent 反饋**（v1.17.52 ship 後）：「per-user 拆完後表變得很長，
+按使用者字母排還是要自己掃；應該讓問題第一眼看到。」
+
+**問題**：v1.17.52 把誠信表拆 per-user 後，30 條鐵律 × 多 user 時：
+1. 多數 cell 是 0（user 沒觸發過該鐵律），表變得又長又稀疏
+2. 排序按使用者名稱字母 → 違反次數高的列散落各處，要自己滑
+3. 違反次數跟其他數字同色，視覺上沒有警示
+
+**修法**：在 v1.17.52 per-user 設計上疊三項 UX 強化：
+- `src/routes/me-narrative.js` compliance query：
+  - 加 `WHERE (s.comply + s.skip + s.violate + s.observed) > 0` 過濾全零列
+  - `ORDER BY` 改成 `s.violate DESC, u.name NULLS LAST, s.rule_code`，違反次數高的排最前
+- `src/public/me/index.html` `renderComplianceTable()`：
+  - 違反次數 > 0 時 cell 加紅色加粗（`#dc2626` + `font-weight:600`）
+
+per-user title JOIN 邏輯沿用 v1.17.52，不動。
+
 ## v1.17.52 — 整體分析誠信表加「使用者」欄
 
 **Vincent 反饋**（v1.17.51 ship 後）：「如果每個人的 IR 都不一樣，應該要列出是哪位 user 的 IR。」
