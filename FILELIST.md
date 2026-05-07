@@ -562,6 +562,21 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.56 修改（v1.17.55 顯示問題修正：Tokens 估算 + 長專案名）
+
+```
+src/routes/me-narrative.js               — project_ranking 改 (user_id, tool)
+                                            bridge：usr_tok CTE 加總期間總量，
+                                            proj CTE 按 turns 比例分配；
+                                            REGEXP_REPLACE 砍掉「( ... )」描述
+src/routes/me.js                         — myProjects + projectContrib 兩個
+                                            SQL 同步加 REGEXP_REPLACE 名稱正規化
+src/public/me/index.html                 — renderProjectRankingTable：欄頭加 *，
+                                            下方註明「估算值（按輪次比例分配）」
+package.json / README* / docs/README*    — 1.17.55 → 1.17.56
+CHANGELOG.md                             — v1.17.56 條目
+```
+
 ## v1.17.55 修改（各專案活動量排行加 Tokens + 成本欄）
 
 ```

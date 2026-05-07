@@ -1317,9 +1317,11 @@ function renderProjectRankingTable(rows) {
   }
   const list = Object.values(agg).sort((a,b) => b.turns - a.turns);
   const fmtCost = c => c > 0 ? '$' + (c >= 1 ? c.toFixed(2) : c.toFixed(4)) : '—';
-  return `<table><thead><tr><th>專案</th><th class="num">Sessions</th><th class="num">輪次</th><th class="num">Tokens</th><th class="num">成本</th><th>貢獻者</th></tr></thead><tbody>${
+  // v1.17.56: Tokens / 成本 為估算（按 turns 比例分配 user × tool 總量），因 session_logs.session_id 未填無法精確 JOIN
+  const tip = '估算值：依各專案 turns 比例分配該使用者 × 工具的期間總用量';
+  return `<table><thead><tr><th>專案</th><th class="num">Sessions</th><th class="num">輪次</th><th class="num" title="${tip}">Tokens *</th><th class="num" title="${tip}">成本 *</th><th>貢獻者</th></tr></thead><tbody>${
     list.map(r => `<tr><td>${esc(r.project)}</td><td class="num">${r.sessions}</td><td class="num">${r.turns}</td><td class="num">${r.tokens > 0 ? fmtBig(r.tokens) : '—'}</td><td class="num">${fmtCost(r.cost)}</td><td>${esc(r.contributors.join(', '))}</td></tr>`).join('')
-  }</tbody></table>`;
+  }</tbody></table><div style="font-size:12px;color:#9ca3af;margin-top:4px">* Tokens / 成本為估算值（按各專案輪次比例分配，因 session 對不上）</div>`;
 }
 
 function renderProjectComplianceTable(rows) {
