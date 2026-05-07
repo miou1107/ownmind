@@ -1,5 +1,64 @@
 # OwnMind 更新紀錄
 
+## v1.17.63 — 安裝/升級結尾自動 self-check + 上傳 log
+
+**Vincent 反饋**：v1.17.62 修了 Adam 的 npm EINVAL，但發現 Adam 還有另一個 silent fail — 他的 Task Scheduler（Windows 排程器）從一開始就沒註冊好，scanner 從來沒跑、伺服器端從來沒收到他的 token 事件，使用一個多月才被發現。原因是 install.ps1 跑完印 ✅，但 ✅ 只代表「這個區塊沒 throw」、不代表後續元件真的會運作。需要一個自動驗證機制，每次安裝/升級後抓本機真實狀態。
+
+**根因**：
+
+1. `install.sh` / `install.ps1` 各區塊的 ✅ 印出來只表示該區塊執行到底，沒有實際驗證 launchd / Task Scheduler / systemd 真的收到註冊、scanner 能不能跑、git hooks 有沒有 +x。
+2. 從 server 視角看不到使用者本機到底裝了什麼，只能等使用者主動回報才知道哪邊壞掉。
+3. Adam 那種「以為裝好了、實際沒裝好」的 silent fail 在現有架構下要等很久才會被發現。
+
+**修法**：每次安裝/升級結尾跑一遍 self-check，把當下本機所有元件的真實狀態抓下來。
+
+**新增**：
+
+1. `scripts/install-helpers/self-check.cjs` — 跨平台 Node 腳本，跑 7 項檢查：
+   - `mcp_files`：`~/.ownmind/mcp/index.js` 在不在
+   - `package_version`：`package.json` 是否合法 semver
+   - `mcp_node_modules`：`mcp/node_modules` 非空
+   - `server_health`：`GET /health`
+   - `api_credentials`：`POST /api/init` 帶 API key 不能被拒
+   - `git_hooks`：`pre-commit` / `post-commit` / `commit-msg` 三個鉤子在且可執行
+   - `scheduler`：macOS 跑 `launchctl list`、Linux 跑 `systemctl --user is-active`、Windows 跑 `Get-ScheduledTask` 確認排程器真的註冊
+   每項回 `pass` / `warn` / `fail` + 失敗修法指示。
+2. `db/011_install_check_logs.sql` — 新表 `install_check_logs(user_id, ts, client_version, platform, trigger, machine, summary, full_log)`，存每次 self-check 上傳的 log。
+3. `src/routes/debug.js` — 新 endpoint `POST /api/debug/install-check`：使用者 API key auth、payload 上限 64KB、寫進新表。
+4. `tests/self-check.test.js` — 13 個測試（pure function + smoke check）。
+5. `tests/debug-route.test.js` — 5 個測試（auth、成功寫入、缺欄位、過大 payload、DB 失敗）。
+
+**修改**：
+
+1. `install.sh` / `install.ps1` 結尾呼叫 self-check，trigger=`post_install`。
+2. `scripts/interactive-upgrade.sh` / `.ps1` 結尾呼叫 self-check，trigger=`post_upgrade`。
+3. `src/app.js` 掛 `/api/debug` 路由。
+
+**Self-check 行為**：
+
+- 每項檢查 5s timeout，整支 self-check 包 try/catch + `process.exit(0)` — 出錯**不擋**安裝/升級的「✅ 完成」訊息。
+- 結果寫到 `~/.ownmind/logs/self-check-<timestamp>.log`（JSON）。
+- console 印綠勾 / 黃驚嘆號 / 紅叉 + 失敗的修復指示。
+- 自動上傳到 server `POST /api/debug/install-check`。Opt-out：`touch ~/.ownmind/.no-self-check-upload`。
+- 隱私：上傳的 detail 字串先過 `sanitizePath()` 砍家目錄路徑。沒有 secrets / API key / commit message 內容。
+
+**Server 端**：
+
+- 新表 `install_check_logs`。Deploy 時要手動跑 migration（OwnMind 沒有 auto-migration runner）：
+  ```
+  ssh root@kkvin.com "docker exec -i ownmind-db psql -U ownmind -d ownmind" < db/011_install_check_logs.sql
+  ```
+
+**Dashboard UI 留下個 PR**：本 PR 先把資料收集起來。Admin 想看哪個 user 哪個 component 壞掉，目前用 SQL 直接查 `install_check_logs`：
+```sql
+SELECT u.name, l.ts, l.client_version, l.summary
+FROM install_check_logs l JOIN users u ON u.id=l.user_id
+WHERE l.ts > NOW() - INTERVAL '7 days'
+ORDER BY u.name, l.ts DESC;
+```
+
+**升級方式**：v1.17.63 上線後，使用者下次跑 bootstrap 就會自動跑 self-check + 上傳。已經升到 v1.17.62 但還沒升 v1.17.63 的使用者要再跑一次 bootstrap 才會啟用。
+
 ## v1.17.62 — 修自動更新兩個 silent fail（Adam Windows / Michelle 心跳）
 
 **Vincent 反饋**：production heartbeat 顯示 Adam（1.17.24 / win32）、Eric（1.17.45）、Michelle（1.17.20 / Mac）三個 user 卡很久沒上來。Server 已經 1.17.61，他們各卡 16~37 個版本之前。本來 backlog 是「等他們自己升級才能切 broadcast-filter fail-closed」（`project_290`），結果根本不會自己升級。

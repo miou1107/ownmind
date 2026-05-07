@@ -168,4 +168,10 @@ if ($apiKey -and $apiUrl -and $Version) {
 
 OK "done" "升級完成 → 版本：$Version。備份保留於 $BackupDir"
 
+# v1.17.63: 升級完跑 self-check，把當下本機狀態抓下來、寫 log + 上傳
+$SelfCheckScript = Join-Path $OwnMindDir 'scripts\install-helpers\self-check.cjs'
+if (Test-Path $SelfCheckScript) {
+  try { & node $SelfCheckScript --trigger=post_upgrade } catch { }
+}
+
 exit 0
