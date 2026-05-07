@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.17.35 — 團隊趨勢圖支援切換 metric（Session / Token / 對話輪次）
+
+**Vincent 反饋**：團隊頁趨勢圖只能看 Session 數，希望可以切換看 Token 量或對話輪次。
+
+**修法**
+
+- 後端：團隊每位成員 + 三張 trend chart 都新增 tokens / turns 欄位
+  - `tokens` = SUM(input + output + cache_creation + cache_read + reasoning_tokens) from `token_events`
+  - `turns` = SUM(`details.duration_turns`) from `session_logs`
+  - 用 FULL OUTER JOIN 合併三個 dataset，避免某 metric 沒資料的 bucket 被丟掉
+- 前端：
+  - 團隊每位成員表加 Token 數 / 對話輪次 兩欄（K/M 縮寫顯示，hover 看完整數）
+  - 趨勢區塊上方放下拉選單切換：Session 數 / Token 數 / 對話輪次
+  - barChart 加 fmtBig() 處理大數（13.5K / 2.4M）+ tooltip 顯示完整數
+
 ## v1.17.34 — 自訂日期範圍 + 專案名稱大小寫合併
 
 **Vincent 反饋兩點**：

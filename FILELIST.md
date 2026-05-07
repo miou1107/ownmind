@@ -438,3 +438,12 @@ src/public/me/index.html                  — range select 加「自訂…」 + 
 package.json / docs/README*               — 1.17.33 → 1.17.34
 CHANGELOG.md                              — v1.17.34 條目
 ```
+
+## v1.17.35 修改（團隊趨勢圖切換 metric）
+
+```
+src/routes/me.js                          — team.users + 3 trend charts 加 tokens/turns（FULL OUTER JOIN）
+src/public/me/index.html                  — 加 metricSel 下拉、users 表加 Token/輪次 欄、barChart 加 fmtBig
+package.json / docs/README*               — 1.17.34 → 1.17.35
+CHANGELOG.md                              — v1.17.35 條目
+```

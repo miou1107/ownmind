@@ -362,15 +362,31 @@
   <div id="tab-team" class="tab-content">
     <div class="card">
       <h2>團隊每位成員</h2>
-      <div class="desc">過去這段期間每位 user 的活動量。Session 數 = 開了幾次對話。</div>
+      <div class="desc">過去這段期間每位 user 的用量。Token = input + output + cache + reasoning 合計；
+      對話輪次 = session_log 紀錄的對話來回次數。</div>
       <table id="team-users"><thead><tr>
-        <th>成員</th><th>角色</th><th class="num">Session 數</th>
-        <th class="num">總事件</th><th>最後活動</th>
+        <th>成員</th><th>角色</th>
+        <th class="num">Session 數</th>
+        <th class="num">Token 數</th>
+        <th class="num">對話輪次</th>
+        <th class="num">總事件</th>
+        <th>最後活動</th>
       </tr></thead><tbody></tbody></table>
     </div>
 
     <div class="card">
-      <h2>每日活動量</h2>
+      <h2>趨勢圖表
+        <select id="metricSel" style="margin-left:12px;font-size:14px;font-weight:normal;padding:4px 8px;">
+          <option value="sessions">Session 數</option>
+          <option value="tokens">Token 數</option>
+          <option value="turns">對話輪次</option>
+        </select>
+      </h2>
+      <div class="desc">下面三張圖（每日 / 時段 / 一週）都用上方選的 metric 顯示。</div>
+    </div>
+
+    <div class="card">
+      <h2>每日趨勢</h2>
       <div id="team-daily" class="bar-chart"></div>
     </div>
 
@@ -494,6 +510,11 @@ function maxOf(arr, key) {
   return m || 1;
 }
 
+function fmtBig(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+  return String(n);
+}
 function barChart(containerId, data, getLabel, getValue) {
   const el = $(containerId);
   el.innerHTML = '';
@@ -502,7 +523,6 @@ function barChart(containerId, data, getLabel, getValue) {
   const total = values.reduce((a, b) => a + b, 0);
   const nonZero = values.filter(v => v > 0).length || 1;
   const avg = Math.round(total / nonZero);
-  // 平均線位置（從底部往上的百分比）
   const avgPct = (avg / max * 100).toFixed(1);
 
   for (const d of data) {
@@ -510,18 +530,17 @@ function barChart(containerId, data, getLabel, getValue) {
     const h = (v / max * 100).toFixed(1) + '%';
     const row = document.createElement('div');
     row.className = 'bar-row';
-    const valueLabel = v > 0 ? `<div class="bar-value">${v}</div>` : '';
+    const valueLabel = v > 0 ? `<div class="bar-value">${fmtBig(v)}</div>` : '';
     row.innerHTML = `
-      <div class="bar" style="height:${h}" title="${esc(getLabel(d))}: ${v}">${valueLabel}</div>
+      <div class="bar" style="height:${h}" title="${esc(getLabel(d))}: ${v.toLocaleString()}">${valueLabel}</div>
       <div class="bar-label">${esc(getLabel(d))}</div>
     `;
     el.appendChild(row);
   }
-  // 平均線（橫跨整張圖）
   const avgLine = document.createElement('div');
   avgLine.className = 'bar-avg-line';
   avgLine.style.bottom = `calc(24px + (100% - 42px) * ${avgPct} / 100)`;
-  avgLine.innerHTML = `<span class="bar-avg-label">平均 ${avg}</span>`;
+  avgLine.innerHTML = `<span class="bar-avg-label">平均 ${fmtBig(avg)}</span>`;
   el.appendChild(avgLine);
 }
 
@@ -680,17 +699,30 @@ function render(report) {
   renderActivityPage();
 
   // ── 團隊 ──
+  function fmtNum(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
   $('#team-users tbody').innerHTML = team.users.map(u => `<tr>
     <td><strong>${esc(u.name)}</strong></td>
     <td>${esc(({ user: '一般', admin: '管理員', super_admin: '超管' })[u.role] || u.role)}</td>
     <td class="num">${u.sessions}</td>
+    <td class="num" title="${u.tokens}">${fmtNum(u.tokens)}</td>
+    <td class="num">${u.turns}</td>
     <td class="num">${u.events}</td>
     <td>${esc(fmtAgo(u.last_activity))}</td>
   </tr>`).join('');
 
-  barChart('#team-daily', team.daily_trend, d => d.d, d => d.count);
-  barChart('#team-hourly', team.hourly_trend, d => d.hour + 'h', d => d.count);
-  barChart('#team-weekday', team.weekday_trend, d => WEEKDAY[d.dow], d => d.count);
+  // v1.17.35: 三張趨勢圖支援 metric 切換（sessions / tokens / turns）
+  function renderTrendCharts() {
+    const metric = $('#metricSel').value || 'sessions';
+    barChart('#team-daily', team.daily_trend, d => d.d, d => d[metric] || 0);
+    barChart('#team-hourly', team.hourly_trend, d => d.hour + 'h', d => d[metric] || 0);
+    barChart('#team-weekday', team.weekday_trend, d => WEEKDAY[d.dow], d => d[metric] || 0);
+  }
+  renderTrendCharts();
+  $('#metricSel').onchange = renderTrendCharts;
 
   $('#team-versions tbody').innerHTML = team.versions.length === 0
     ? '<tr><td colspan="4" style="text-align:center;color:#9ca3af">尚無資料</td></tr>'
