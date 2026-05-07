@@ -1,5 +1,16 @@
 # OwnMind 更新紀錄
 
+## v1.17.46 — /me 專案排行 UI 精簡
+
+**Vincent 反饋**：「我的份這欄位拿掉，另外也不用說什麼偶發測試。」
+
+**修法**
+
+- `src/public/me/index.html`：
+  - 移除「我的份」欄位（header + cell + desc 文案）
+  - 移除「N 位偶發測試略過」註記，noise contributors 不再顯示
+- `src/routes/me.js`：清掉 `my_sessions` / `my_handoffs` 累計欄位（前端已不用）
+
 ## v1.17.45 — 自動觀測搬到伺服器端（不再依賴客戶端版本）
 
 **Vincent 反饋**：「我的本機 OwnMind 還是 v1.17.22，自動觀測只寫在客戶端，

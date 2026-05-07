@@ -551,3 +551,13 @@ src/routes/me.js                          — gap audit 跟 compliance 統計 so
 package.json / docs/README*               — 1.17.44 → 1.17.45
 CHANGELOG.md                              — v1.17.45 條目
 ```
+
+## v1.17.46 修改（/me 專案排行 UI 精簡）
+
+```
+src/public/me/index.html                  — 移除「我的份」欄（header + cell + desc）
+                                            移除「N 位偶發測試略過」註記
+src/routes/me.js                          — 清掉 my_sessions / my_handoffs 累計欄位
+package.json / README* / docs/README*     — 1.17.45 → 1.17.46
+CHANGELOG.md                              — v1.17.46 條目
+```

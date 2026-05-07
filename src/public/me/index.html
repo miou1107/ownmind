@@ -439,8 +439,7 @@
   <div id="tab-projects" class="tab-content">
     <div class="card">
       <h2>各專案活動量排行</h2>
-      <div class="desc">全團隊專案。「主要負責人」= 寫 session_log 對話輪次最多的人；
-      其他人也許是偶爾協作或測試。「我的份」= 自己 session 數。</div>
+      <div class="desc">全團隊專案。「主要負責人」= 寫 session_log 對話輪次最多的人。</div>
       <table id="projects-table"><thead><tr>
         <th>專案</th>
         <th class="num">Session 數</th>
@@ -448,7 +447,6 @@
         <th class="num">交接</th>
         <th>主要負責人</th>
         <th>其他貢獻者</th>
-        <th class="num">我的份</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </div>
@@ -832,19 +830,14 @@ function render(report) {
           ? `<strong>${esc(main.name)}</strong><br><small style="color:#6b7280">${mainStat}</small>`
           : '—';
         let othersCell;
-        if (meaningful.length === 0 && noise.length === 0) {
+        if (meaningful.length === 0) {
           othersCell = '<span style="color:#9ca3af">—</span>';
-        } else if (meaningful.length === 0) {
-          othersCell = `<small style="color:#9ca3af">（${noise.length} 位偶發測試略過）</small>`;
         } else {
-          const m = meaningful.map(c => {
+          othersCell = meaningful.map(c => {
             const stat = c.turns > 0 ? c.turns + ' 輪' : (c.handoffs || 0) + ' 交接';
             return `${esc(c.name)} <small style="color:#9ca3af">(${stat})</small>`;
           }).join(', ');
-          const n = noise.length > 0 ? `<br><small style="color:#9ca3af">+ ${noise.length} 位偶發測試略過</small>` : '';
-          othersCell = m + n;
         }
-        const myShare = p.my_sessions || (p.my_handoffs > 0 ? `${p.my_handoffs} 交接` : 0);
         return `<tr>
           <td><strong>${esc(p.project)}</strong></td>
           <td class="num">${p.sessions}</td>
@@ -852,7 +845,6 @@ function render(report) {
           <td class="num">${p.handoffs || 0}</td>
           <td>${mainCell}</td>
           <td>${othersCell}</td>
-          <td class="num">${myShare}</td>
         </tr>`;
       }).join('');
 }
