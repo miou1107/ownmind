@@ -1051,15 +1051,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // --- Auto-update check (background, non-blocking) ---
-const OWNMIND_DIR = path.join(process.env.HOME || '', '.ownmind');
+// v1.17.22 修：Eric (Windows LAPTOP-G95HIQ3V) / Adam 卡舊版的 root cause
+//   1. process.env.HOME 在 Windows 是 undefined，OWNMIND_DIR 變相對路徑 → 整段 silent skip
+//      → 改用 os.homedir()（跨平台 — Windows 自動讀 USERPROFILE）
+//   2. exec(bashScript) 的 bash 語法在 Windows cmd 解釋失敗 → 即使路徑對也不會升
+//      → 改用 execFile 走 git/npm 二進位，跨平台
+//   3. 條件不成立時原本 silent return → 加 update_skipped event 提供觀測
+const OWNMIND_DIR = path.join(os.homedir(), '.ownmind');
 const MARKER_FILE = path.join(OWNMIND_DIR, '.last-mcp-update-check');
 const LOCK_FILE = path.join(OWNMIND_DIR, '.update-lock');
+const IS_WINDOWS = process.platform === 'win32';
+const NPM_CMD = IS_WINDOWS ? 'npm.cmd' : 'npm';
 
-try {
+import { execFile as _execFile } from 'child_process';
+import { promisify } from 'util';
+const execFile = promisify(_execFile);
+
+async function runAutoUpdate() {
   const today = new Date().toISOString().slice(0, 10);
-  const lastCheck = fs.existsSync(MARKER_FILE) ? fs.readFileSync(MARKER_FILE, 'utf8').trim() : '';
+  const lastCheck = fs.existsSync(MARKER_FILE)
+    ? fs.readFileSync(MARKER_FILE, 'utf8').trim()
+    : '';
 
-  // Stale lock detection: if lock file is older than 5 minutes, remove it
+  // Stale lock detection
   if (fs.existsSync(LOCK_FILE)) {
     try {
       const lockAge = Date.now() - fs.statSync(LOCK_FILE).mtimeMs;
@@ -1067,60 +1081,118 @@ try {
     } catch {}
   }
 
-  if (lastCheck !== today && fs.existsSync(path.join(OWNMIND_DIR, '.git')) && !fs.existsSync(LOCK_FILE)) {
-    logEvent('update_check', { source: 'mcp' });
-    // P3 修正（Adam case 2026-04-26）：
-    // 原本 shell exit 0 callback 統一寫 update_ok，但「沒新 commit / silent fail」都會 exit 0
-    // → dashboard 數據誠信問題（user 沒升級也回報 update_ok）。
-    // 修法：每個關鍵 step 顯式 echo 失敗 marker；callback 解 stdout 分支寫
-    // update_applied (真有拉) / update_clean (沒新版) / update_failed (任一 step 出錯)。
-    exec(`
-      touch "${LOCK_FILE}" || { echo "__OM_LOCK_FAIL__"; exit 9; }
-      cd ~/.ownmind || { echo "__OM_CD_FAIL__"; exit 10; }
-      git fetch -q 2>/dev/null || { echo "__OM_FETCH_FAIL__"; exit 11; }
-      # 用 2>/dev/null 防止 stderr (例如 origin 不存在) 污染 UPDATES 變數誤判為「有新版」
-      UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null)
-      if [ -n "$UPDATES" ]; then
-        git stash -q 2>/dev/null || true
-        git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null || { echo "__OM_PULL_FAIL__"; exit 12; }
-        ( cd mcp && npm install -q 2>/dev/null ) || { echo "__OM_NPM_FAIL__"; exit 13; }
-        # update.sh 用絕對路徑前先 cd 到 OWNMIND_DIR 避免 cwd 漂移
-        cd ~/.ownmind || { echo "__OM_CD_FAIL__"; exit 10; }
-        bash ~/.ownmind/scripts/update.sh >/dev/null 2>&1 || { echo "__OM_UPDATE_FAIL__"; exit 14; }
-        echo "__OM_APPLIED__"
-      else
-        echo "__OM_CLEAN__"
-      fi
-      rm -f "${LOCK_FILE}"
-      echo "${today}" > "${MARKER_FILE}"
-    `, { timeout: 60000, cwd: OWNMIND_DIR }, (err, stdout, stderr) => {
-      try { fs.unlinkSync(LOCK_FILE); } catch {}
-      const out = String(stdout || '');
-      // 隱私：只擷取 fail marker / 不上傳完整 stdout/stderr（含 user file path）
-      const failMarkers = ['__OM_LOCK_FAIL__', '__OM_CD_FAIL__', '__OM_FETCH_FAIL__', '__OM_PULL_FAIL__', '__OM_NPM_FAIL__', '__OM_UPDATE_FAIL__'];
-      const failed = failMarkers.find(m => out.includes(m));
-      if (err) {
-        // shell 內顯式 exit 10..14 / killed / timeout 都會走這
-        logEvent('update_failed', {
-          source: 'mcp',
-          step: failed || 'unknown',
-          exit_code: typeof err.code === 'number' ? err.code : null,
-        });
-        return;
-      }
-      if (out.includes('__OM_APPLIED__')) {
-        logEvent('update_applied', { source: 'mcp' });
-      } else if (out.includes('__OM_CLEAN__')) {
-        logEvent('update_clean', { source: 'mcp' });
-      } else {
-        // 預期外：shell 跑完但兩個 marker 都沒看到（可能被截斷）→ 視為失敗
-        logEvent('update_failed', { source: 'mcp', step: 'no_marker' });
-      }
-    });
+  // Skip-reason 觀測 — 先前 silent skip 讓 Eric/Adam 卡舊版完全沒人發現
+  if (lastCheck === today) {
+    logEvent('update_skipped', { source: 'mcp', reason: 'marker_today' });
+    return;
   }
-} catch (e) {
-  // Silent fail for background check
+  if (!fs.existsSync(path.join(OWNMIND_DIR, '.git'))) {
+    logEvent('update_skipped', { source: 'mcp', reason: 'no_git_dir', dir: OWNMIND_DIR });
+    return;
+  }
+  if (fs.existsSync(LOCK_FILE)) {
+    logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
+    return;
+  }
+
+  logEvent('update_check', { source: 'mcp' });
+
+  // 拿 lock — touch 失敗（disk full / readonly）顯式報
+  try {
+    fs.writeFileSync(LOCK_FILE, '');
+  } catch (e) {
+    logEvent('update_failed', { source: 'mcp', step: 'lock', error: e.code || e.message });
+    return;
+  }
+
+  const cleanup = () => { try { fs.unlinkSync(LOCK_FILE); } catch {} };
+  const fail = (step, err) => {
+    cleanup();
+    logEvent('update_failed', {
+      source: 'mcp',
+      step,
+      error: err?.code || err?.message || String(err).slice(0, 120),
+    });
+  };
+
+  try {
+    // git fetch
+    try {
+      await execFile('git', ['fetch', '-q'], { cwd: OWNMIND_DIR, timeout: 30000 });
+    } catch (e) {
+      return fail('fetch', e);
+    }
+
+    // 看有沒有新 commit
+    let updates = '';
+    try {
+      const { stdout } = await execFile(
+        'git', ['log', 'HEAD..origin/main', '--oneline'],
+        { cwd: OWNMIND_DIR, timeout: 10000 }
+      );
+      updates = String(stdout || '').trim();
+    } catch (e) {
+      return fail('log', e);
+    }
+
+    if (!updates) {
+      cleanup();
+      try { fs.writeFileSync(MARKER_FILE, today); } catch {}
+      logEvent('update_clean', { source: 'mcp' });
+      return;
+    }
+
+    // 有新版，繼續
+    try { await execFile('git', ['stash', '-q'], { cwd: OWNMIND_DIR, timeout: 10000 }); } catch {}
+
+    try {
+      await execFile('git', ['pull', '-q', '--rebase'], { cwd: OWNMIND_DIR, timeout: 30000 });
+    } catch {
+      try {
+        await execFile('git', ['pull', '-q'], { cwd: OWNMIND_DIR, timeout: 30000 });
+      } catch (e) {
+        return fail('pull', e);
+      }
+    }
+
+    // npm install — Windows 必須用 npm.cmd（execFile 不過 shell 找不到 npm）
+    try {
+      await execFile(NPM_CMD, ['install', '-q'], {
+        cwd: path.join(OWNMIND_DIR, 'mcp'),
+        timeout: 120000,
+        windowsHide: true,
+      });
+    } catch (e) {
+      return fail('npm', e);
+    }
+
+    // 同步 skill / hook：Unix 跑 update.sh、Windows 跑 update.ps1
+    try {
+      if (IS_WINDOWS) {
+        await execFile(
+          'powershell.exe',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+            path.join(OWNMIND_DIR, 'scripts', 'update.ps1')],
+          { cwd: OWNMIND_DIR, timeout: 60000, windowsHide: true }
+        );
+      } else {
+        await execFile('bash', [path.join(OWNMIND_DIR, 'scripts', 'update.sh')],
+          { cwd: OWNMIND_DIR, timeout: 60000 });
+      }
+    } catch (e) {
+      return fail('update_sh', e);
+    }
+
+    cleanup();
+    try { fs.writeFileSync(MARKER_FILE, today); } catch {}
+    logEvent('update_applied', { source: 'mcp' });
+  } catch (e) {
+    fail('unknown', e);
+  }
 }
+
+// fire-and-forget — 不阻塞 MCP 啟動
+runAutoUpdate().catch(() => {});
 
 // --- Emergency shutdown: 保存 session log ---
 async function emergencySessionLog() {
