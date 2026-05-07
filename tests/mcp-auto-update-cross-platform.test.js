@@ -112,3 +112,67 @@ test('scripts/update.ps1 必須同步 Claude Code skills 目錄', () => {
   assert.match(content, /SessionStart|PreToolUse/,
     'update.ps1 必須注入 settings.json hooks（對應 update.sh 的 3. 段）');
 });
+
+// v1.17.23 補修（Codex review 抓到的 4 個問題）
+
+test('v1.17.23 update.ps1: Node script 用 argv[2]/argv[3] 而非 argv[1]/argv[2]', () => {
+  // v1.17.22 bug：node $tmpScript $arg1 $arg2 時 argv[1] 是 .js 檔路徑
+  // 不是 $arg1，會嘗試 JSON.parse 自己 → settings 注入整段失效
+  const ps1Path = join(repoRoot, 'scripts', 'update.ps1');
+  if (!existsSync(ps1Path)) return;
+  const content = readFileSync(ps1Path, 'utf8');
+  // 應該用 argv[2]（settings path）和 argv[3]（noSessionHook flag）
+  assert.match(
+    content,
+    /process\.argv\[2\]/,
+    'Node 腳本接 settings path 必須用 process.argv[2]（argv[1] 是 .js 檔本身）'
+  );
+  assert.doesNotMatch(
+    content,
+    /settingsPath\s*=\s*process\.argv\[1\]/,
+    'argv[1] 是 .js 檔路徑，不能拿來當 settings path'
+  );
+});
+
+test('v1.17.23 mcp/index.js: lock acquire 必須 atomic（openSync wx）', () => {
+  // v1.17.22 用 existsSync + writeFileSync，TOCTOU race：兩個 MCP 同時通過 existsSync
+  // 修法：fs.openSync(LOCK_FILE, 'wx') — exclusive create，已存在會 EEXIST
+  assert.match(
+    mcpSource,
+    /fs\.openSync\(LOCK_FILE,\s*['"]wx['"]\)/,
+    'lock acquire 必須用 openSync wx flag 才 atomic（避免並發 race）'
+  );
+});
+
+test('v1.17.23 update.ps1: 必須有 Gemini / Copilot / Cursor hooks 注入', () => {
+  // v1.17.22 update.ps1 漏了 update.sh 的 4./5./6. 段（Gemini / GitHub Copilot / Cursor）
+  const ps1Path = join(repoRoot, 'scripts', 'update.ps1');
+  if (!existsSync(ps1Path)) return;
+  const content = readFileSync(ps1Path, 'utf8');
+  for (const tool of ['.gemini', '.github', '.cursor']) {
+    assert.ok(
+      content.includes(tool),
+      `update.ps1 必須注入 ${tool} hook（對應 update.sh 的 4./5./6. 段）`
+    );
+  }
+});
+
+test('v1.17.23 mcp/index.js: 用 git pull --autostash（避免 stash 後沒 pop 吞 user 變更）', () => {
+  // v1.17.22 git stash -q 後 pull，但沒 stash pop → user 未提交變更會消失
+  // 修法：git pull --rebase --autostash 一次搞定（git 2.6+）
+  assert.match(
+    mcpSource,
+    /['"]--autostash['"]/,
+    'git pull 必須帶 --autostash flag，避免 stash 後沒 pop 吞掉 user 變更'
+  );
+});
+
+test('v1.17.23 mcp/index.js: 外層 catch 必須 log update_failed step=outer', () => {
+  // v1.17.22 runAutoUpdate().catch(() => {}) silent fail
+  // 修法：catch (e) => logEvent('update_failed', { step: 'outer', error: ... })
+  assert.match(
+    mcpSource,
+    /runAutoUpdate\(\)\.catch\([\s\S]{0,200}step:\s*['"]outer['"]/,
+    '外層 catch 必須 logEvent update_failed step=outer，不能 silent 吞例外'
+  );
+});

@@ -1090,20 +1090,22 @@ async function runAutoUpdate() {
     logEvent('update_skipped', { source: 'mcp', reason: 'no_git_dir', dir: OWNMIND_DIR });
     return;
   }
-  if (fs.existsSync(LOCK_FILE)) {
-    logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
+
+  // v1.17.23: atomic lock acquire — 之前 existsSync + writeFileSync 有 TOCTOU race
+  // openSync 'wx' = exclusive create，已存在會拋 EEXIST（可區分 lock_held vs disk error）
+  try {
+    const fd = fs.openSync(LOCK_FILE, 'wx');
+    fs.closeSync(fd);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
+    } else {
+      logEvent('update_failed', { source: 'mcp', step: 'lock', error: e.code || e.message });
+    }
     return;
   }
 
   logEvent('update_check', { source: 'mcp' });
-
-  // 拿 lock — touch 失敗（disk full / readonly）顯式報
-  try {
-    fs.writeFileSync(LOCK_FILE, '');
-  } catch (e) {
-    logEvent('update_failed', { source: 'mcp', step: 'lock', error: e.code || e.message });
-    return;
-  }
 
   const cleanup = () => { try { fs.unlinkSync(LOCK_FILE); } catch {} };
   const fail = (step, err) => {
@@ -1143,13 +1145,16 @@ async function runAutoUpdate() {
     }
 
     // 有新版，繼續
-    try { await execFile('git', ['stash', '-q'], { cwd: OWNMIND_DIR, timeout: 10000 }); } catch {}
-
+    // v1.17.23: 用 --autostash（git 2.6+）取代手動 stash／無 pop 流程
+    // 之前手動 stash 但沒 pop，user 未提交變更會永遠卡 stash 裡
     try {
-      await execFile('git', ['pull', '-q', '--rebase'], { cwd: OWNMIND_DIR, timeout: 30000 });
+      await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
+        { cwd: OWNMIND_DIR, timeout: 30000 });
     } catch {
+      // fallback：autostash 不支援的舊 git → 不帶 rebase 試一次
       try {
-        await execFile('git', ['pull', '-q'], { cwd: OWNMIND_DIR, timeout: 30000 });
+        await execFile('git', ['pull', '-q', '--autostash'],
+          { cwd: OWNMIND_DIR, timeout: 30000 });
       } catch (e) {
         return fail('pull', e);
       }
@@ -1192,7 +1197,17 @@ async function runAutoUpdate() {
 }
 
 // fire-and-forget — 不阻塞 MCP 啟動
-runAutoUpdate().catch(() => {});
+// v1.17.23: catch 不再 silent — 任何意外都寫 update_failed step=outer
+runAutoUpdate().catch((e) => {
+  try {
+    logEvent('update_failed', {
+      source: 'mcp',
+      step: 'outer',
+      error: e?.code || e?.message || String(e).slice(0, 120),
+    });
+  } catch {}
+  try { fs.unlinkSync(LOCK_FILE); } catch {}
+});
 
 // --- Emergency shutdown: 保存 session log ---
 async function emergencySessionLog() {

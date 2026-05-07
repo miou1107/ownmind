@@ -1,5 +1,36 @@
 # OwnMind 更新紀錄
 
+## v1.17.23 — Codex review 抓到的 v1.17.22 後續修補（5 項）
+
+**背景**：v1.17.22 修了 Windows MCP auto-update silent-skip，但 Codex
+adversarial review 又抓到 5 個問題，整理在這個 patch 一次處理。
+
+**改動**
+
+1. 🔴 **`scripts/update.ps1` argv index bug**
+   - v1.17.22 寫法：`process.argv[1]` 取 settings path → 實際是 `.js` 檔本身
+   - 結果：Windows 用戶 settings.json 注入 hook 整段失效
+   - 修法：改用 `process.argv[2]` / `process.argv[3]`
+
+2. 🔴 **`mcp/index.js` lock acquire 不 atomic**
+   - v1.17.22：`existsSync` + `writeFileSync` 有 TOCTOU race
+   - 修法：`fs.openSync(LOCK_FILE, 'wx')` exclusive create，
+     EEXIST → `update_skipped reason=lock_held`，其他 → `update_failed step=lock`
+
+3. 🟡 **`scripts/update.ps1` 漏了 Gemini / Copilot / Cursor hooks 注入**
+   - v1.17.22 PS1 只覆蓋 Claude 部分（update.sh 的 1./2./3. 段）
+   - 修法：補上 4./5./6. 段（Gemini CLI / GitHub Copilot / Cursor）
+
+4. 🟡 **`mcp/index.js` git stash 沒 pop 會吞 user 變更**
+   - v1.17.22：`git stash -q` 後 `git pull`，但沒 pop
+   - 修法：用 `git pull --rebase --autostash`（git 2.6+ 一條命令解決）
+
+5. 🟡 **`mcp/index.js` 外層 catch silent fail**
+   - v1.17.22：`runAutoUpdate().catch(() => {})` 把意外吞光
+   - 修法：catch 寫 `update_failed step=outer` + cleanup lock
+
+**測試**：631/631 pass，新增 5 個 reproduction case。
+
 ## v1.17.22 — 修「Windows 用戶 MCP auto-update silent skip」（Eric / Adam case）
 
 **背景**（從工作紀錄分析報告 2026-05-07 發現）

@@ -306,3 +306,17 @@ tests/p3-update-event-semantics.test.js   — 既有 P3 / P3-lock 測試對齊 N
 package.json / docs/README*               — 1.17.21 → 1.17.22，三語系同步
 CHANGELOG.md                              — v1.17.22 條目
 ```
+
+## v1.17.23 修改（Codex review 後續修補 5 項）
+
+修改既有：
+
+```
+mcp/index.js                              — atomic lock (openSync wx) + git pull --autostash
+                                            + 外層 catch log update_failed step=outer
+scripts/update.ps1                        — argv[2]/[3] 修正 + 補 Gemini/Copilot/Cursor hooks
+tests/mcp-auto-update-cross-platform.test.js  — 新增 5 case 對應 Codex review findings
+tests/p3-update-event-semantics.test.js   — P3-lock test 對齊 openSync wx 新架構
+package.json / docs/README*               — 1.17.22 → 1.17.23，三語系同步
+CHANGELOG.md                              — v1.17.23 條目
+```

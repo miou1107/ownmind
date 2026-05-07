@@ -154,14 +154,14 @@ test('P3: hook 必須能寫 update_failed（任一 step 出錯）', () => {
 // 對齊 P3「每步顯式 trap」原則，把 lock 也納入失敗 marker。
 // ────────────────────────────────────────────────────────────
 
-test('P3-lock: mcp/index.js touch LOCK_FILE 失敗必須寫 update_failed step=lock（v1.17.22 改 Node-native）', () => {
-  // v1.17.19 原本是 shell `touch "${LOCK_FILE}" || echo __OM_LOCK_FAIL__`
-  // v1.17.22 重構為 Node-native：fs.writeFileSync 包 try/catch，失敗走 update_failed step=lock
-  // 確認 fs.writeFileSync(LOCK_FILE...) 在 try/catch 內，且 catch 走 update_failed step=lock
+test('P3-lock: mcp/index.js LOCK_FILE acquire 失敗必須寫 update_failed step=lock（v1.17.23 改 atomic openSync wx）', () => {
+  // v1.17.19: shell `touch "${LOCK_FILE}" || echo __OM_LOCK_FAIL__`
+  // v1.17.22: fs.writeFileSync 包 try/catch（但有 TOCTOU race）
+  // v1.17.23: fs.openSync(LOCK_FILE, 'wx') atomic create，EEXIST → lock_held / 其他 → update_failed step=lock
   assert.match(
     mcpSource,
-    /fs\.writeFileSync\(LOCK_FILE[\s\S]{0,200}step:\s*['"]lock['"]/,
-    'mcp/index.js 必須對 fs.writeFileSync(LOCK_FILE) 失敗寫 update_failed step=lock'
+    /fs\.openSync\(LOCK_FILE,\s*['"]wx['"]\)[\s\S]{0,400}step:\s*['"]lock['"]/,
+    'mcp/index.js 必須用 openSync wx atomic acquire，且非 EEXIST 失敗寫 update_failed step=lock'
   );
 });
 
