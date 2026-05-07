@@ -411,3 +411,12 @@ src/public/me/index.html                  — 加 max(20輪, 10% 專案總輪次
 package.json / docs/README*               — 1.17.30 → 1.17.31
 CHANGELOG.md                              — v1.17.31 條目
 ```
+
+## v1.17.32 修改（個人 tab：活動紀錄 + 鐵律完整列表 + 遵守率）
+
+```
+src/routes/me.js                          — me.compliance LEFT JOIN 全鐵律；新增 me.activity 200 筆
+src/public/me/index.html                  — 個人 tab 加活動紀錄表 + 鐵律加遵守率欄
+package.json / docs/README*               — 1.17.31 → 1.17.32
+CHANGELOG.md                              — v1.17.32 條目
+```

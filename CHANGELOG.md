@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## v1.17.32 — 個人 tab 加活動紀錄區塊 + 鐵律遵守列出全部 + 遵守率
+
+**Vincent 反饋兩點**：
+1. 想看自己過去這段期間的「全部活動」流水，個人 tab 最下方加一塊
+2. 鐵律遵守表只列觸發過的，希望列**所有 active 鐵律**並算遵守率
+
+**修法**
+
+- 後端 `/api/me/report`：
+  - `me.compliance`：改 LEFT JOIN `memories` 列出 `type=iron_rule, status=active` 全部 31 條；
+    沒觸發過的 comply/skip/violate 都 0
+  - 新增 `me.activity`：最近 200 筆 activity_logs（含 event / tool / source / details）
+- 前端 `/ownmind/me/`：
+  - 鐵律表加「遵守率」欄，計算 `comply / (comply + skip + violate)`，依比率著色
+    （≥80% 綠 / ≥50% 橘 / <50% 紅 / 無紀錄灰）
+  - 個人 tab 最下加「我的活動紀錄」card，列時間 / 事件 / 工具 / 來源 / details
+    （依時間倒序、最多 200 筆）
+
 ## v1.17.31 — 專案「其他貢獻者」過濾偶發測試（Vincent 回報）
 
 **Vincent 反饋**：「Adam 是 user 不是開發者，為什麼算他進 OwnMind 貢獻者？」
