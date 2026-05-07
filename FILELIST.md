@@ -562,6 +562,22 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.54 修改（LLM prompt 友善白話 + 踩坑三段式）
+
+```
+src/lib/llm-narrative.js                 — SYSTEM_PROMPT 改寫：
+                                            1. project_friction schema 改 {what,impact,mitigation}
+                                            2. Rule 2 範例改白話（去「大使」用「常用 AI 的人」）
+                                            3. Rule 5 三段式 friction + 禁 AI 自言自語
+                                            4. 新增 Rule 7 行話黑名單（大使/賦能/對齊/扛...）
+src/public/me/index.html                 — renderNarrativeInsights 新增 renderFricItem()
+                                            三段式渲染：what 粗體、impact/mitigation 灰字 13px
+                                            向下相容舊版字串
+tests/llm-narrative.test.js              — pin prompt 規格（三段式 / 行話黑名單 / AI 工作量）
+package.json / README* / docs/README*    — 1.17.53 → 1.17.54
+CHANGELOG.md                             — v1.17.54 條目
+```
+
 ## v1.17.53 修改（誠信表 UX 強化）
 
 ```
