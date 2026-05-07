@@ -1270,8 +1270,13 @@ function renderEventTypesTable(rows) {
 
 function renderComplianceTable(rows) {
   if (!rows || rows.length === 0) return '<em style="color:#9ca3af">無資料（請等系統收集中）</em>';
+  // v1.17.51: 顯示 IR title，避免讀者看到 IR-024 卻不知道規則內容
   return `<table><thead><tr><th>規則</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th><th class="num">系統觀測</th></tr></thead><tbody>${
-    rows.map(r => `<tr><td>${esc(r.rule_code||'')}</td><td class="num">${r.comply||0}</td><td class="num">${r.skip||0}</td><td class="num">${r.violate||0}</td><td class="num">${r.observed||0}</td></tr>`).join('')
+    rows.map(r => {
+      const code = `<strong>${esc(r.rule_code||'—')}</strong>`;
+      const title = r.title ? `<br><small style="color:#6b7280">${esc(r.title)}</small>` : '';
+      return `<tr><td>${code}${title}</td><td class="num">${r.comply||0}</td><td class="num">${r.skip||0}</td><td class="num">${r.violate||0}</td><td class="num">${r.observed||0}</td></tr>`;
+    }).join('')
   }</tbody></table>`;
 }
 
