@@ -318,6 +318,11 @@ if [ -f "$OWNMIND_DIR/hooks/ownmind-git-post-commit" ]; then
   chmod +x "$HOME/.ownmind/git-hooks/post-commit"
   echo "   安裝 git post-commit hook"
 fi
+if [ -f "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" ]; then
+  cp "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" "$HOME/.ownmind/git-hooks/commit-msg"
+  chmod +x "$HOME/.ownmind/git-hooks/commit-msg"
+  echo "   安裝 git commit-msg hook (IR-024)"
+fi
 
 # 設定 global git hooks path（需要 git 可用）
 if command -v git &>/dev/null; then

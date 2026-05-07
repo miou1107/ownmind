@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.17.58 — IR-024 邏輯卡控（commit-msg hook 阻擋 `Co-Authored-By`）
+
+**Vincent 反饋**：IR-024（Git commit 絕對不加 `Co-Authored-By`）目前只在 dashboard 上顯示提醒，依賴 AI 自覺。違反 IR-027「提醒無效，邏輯才有效」。要求改成 git hook 強卡。
+
+**根因**：之前 IR-024 是軟性規則 — 寫在 OwnMind dashboard 的鐵律列表，靠 AI 看到提醒主動避免。但實際上 AI 經常忘記、寫 commit 訊息時還是會加 `Co-Authored-By` trailer。沒有任何技術機制阻擋。
+
+**設計決定（為什麼放全域）**：第一版原本想做 per-repo 的 hook（`scripts/git-hooks/` + npm postinstall 設 `core.hooksPath`），但 OwnMind 本身就是「全域 git hooks 產品」（`install.sh` 已把 `~/.ownmind/git-hooks/` 設成 global hooksPath，裡面有 `pre-commit` 跟 `post-commit`）。per-repo 的 local config 在 worktree（工作樹）會被 worktree config 覆蓋，根本贏不了全域設定。改放全域：跟 `pre-commit`、`post-commit` 同一套機制，自動覆蓋使用者所有 repo。
+
+**修法**：
+1. 新增 `hooks/ownmind-git-commit-msg` — bash 鉤子腳本。用 `grep -qiE '^[[:space:]]*Co-Authored-By:'` 偵測，case-insensitive、行首有 trailer 格式才擋（避免誤殺敘述文字）。三行錯誤訊息（IR-024 違反 / Vin 鐵律 / 強制覆蓋用 `--no-verify`）。
+2. `install.sh` 加 5 行 — 仿 `pre-commit` 寫法把 hook 複製到 `~/.ownmind/git-hooks/commit-msg` 並 `chmod +x`。
+3. `install.ps1` 加對應邏輯 — 用 `Copy-AsLf` 強制 LF 行尾（防 Windows `core.autocrlf` 把 sh script 轉 CRLF 導致 `Exec format error`）。
+4. `tests/git-hook-co-authored-by.test.js` 7 個測試 — 涵蓋三種大小寫變體（`Co-Authored-By` / `Co-authored-by` / `co-authored-by`）、縮排、純文字 / `Reviewed-by` / 文字偶然提到「co-authored」三種不該擋的情況。
+5. `package.json` 版號 1.17.57 → 1.17.58。
+
+**升級方式**：使用者自動更新時會帶到新檔案；新版 `install.sh` / `install.ps1` 會在下次重跑時把 `commit-msg` 安裝到 `~/.ownmind/git-hooks/`。已安裝舊版的使用者需要重跑 `install.sh` 或 `install.ps1` 才會啟用 commit-msg hook（pre-commit / post-commit 不受影響）。
+
 ## v1.17.57 — 整體分析報告改正面肯定 + 拿掉冗餘描述句
 
 **Vincent 反饋**：

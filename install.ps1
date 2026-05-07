@@ -315,8 +315,10 @@ foreach ($jsFile in $GitHookJsFiles) {
 # 3. 偵測 sh.exe（Git for Windows 才有）；找不到時 fail-fast 並提示安裝來源
 $PreCommitBat = Join-Path $HOME ".ownmind\git-hooks\pre-commit"
 $PostCommitBat = Join-Path $HOME ".ownmind\git-hooks\post-commit"
+$CommitMsgBat = Join-Path $HOME ".ownmind\git-hooks\commit-msg"
 $PreCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-pre-commit"
 $PostCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-post-commit"
+$CommitMsgSrc = Join-Path $OwnmindDir "hooks\ownmind-git-commit-msg"
 
 # 偵測 sh.exe（Git for Windows 自帶）
 $shPath = Test-ShAvailable
@@ -336,6 +338,11 @@ if (-not $shPath) {
     Write-Host "   安裝 git post-commit hook（LF）"
   } else {
     Write-Host "   ⚠️ 找不到 source: $PostCommitSrc，跳過 post-commit hook" -ForegroundColor Yellow
+  }
+  if (Copy-AsLf -Src $CommitMsgSrc -Dest $CommitMsgBat) {
+    Write-Host "   安裝 git commit-msg hook（LF）(IR-024)"
+  } else {
+    Write-Host "   ⚠️ 找不到 source: $CommitMsgSrc，跳過 commit-msg hook" -ForegroundColor Yellow
   }
 
   # 設定 global git hooks path（只有 sh.exe 可用時才設，不然會壞所有 commit）
