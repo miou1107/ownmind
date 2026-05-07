@@ -1078,9 +1078,14 @@
         body: JSON.stringify(body)
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      const data = await res.json();
       showToast(`已建立 ${email}`);
       closeAddUserModal();
       loadUsers();
+      // 若是用 shared default 建立，把密碼一次性顯示給 admin（公開頁不再洩漏）
+      if (data.default_password) {
+        alert(`使用者已建立\n\n預設密碼：${data.default_password}\n\n請以安全管道（私訊／面對面）告知 ${email}，登入後系統會強制改密碼。`);
+      }
     } catch (e) { showToast(e.message, true); }
     finally { setLoading('addUserBtn', false); }
   }

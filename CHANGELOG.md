@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## v1.17.49 — security: 預設密碼不再公開洩漏
+
+**Vincent 反饋**：「登入頁不應該把預設密碼寫在畫面上。」
+
+**問題**：登入頁副標 + 改密碼頁 input placeholder 直接把 `Password42760988`
+寫死在 HTML 裡。任何人打開 `/ownmind/me/` 就看得到，新建帳號的初始保護等於零。
+
+**修法**：
+- 公開的登入頁 + 改密碼頁移除明碼（改成「請聯絡管理者取得預設密碼」）
+- admin 端 `POST /api/admin/users` 在「沒指定密碼、套用 shared default」時，
+  response 多一個 `default_password` 欄位（一次性返回）
+- admin 後台 UI 收到後跳 alert 顯示明碼，提醒用安全管道告知 user
+- 其他情境（admin 自設密碼、admin 角色）不回傳
+
+**未來改進方向**（不在本版範圍）：
+- 改成每位 user 隨機產生一次性密碼，不再用 shared default
+- 改成 email-based password reset link
+
 ## v1.17.48 — /me 整體分析 上線後三項修正
 
 v1.17.47 部署後實測抓到問題：
