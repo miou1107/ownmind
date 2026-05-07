@@ -496,3 +496,17 @@ mcp/index.js                              — 加 autoComplyForToolCall()，Call
 package.json / docs/README*               — 1.17.39 → 1.17.40
 CHANGELOG.md                              — v1.17.40 條目
 ```
+
+## v1.17.41 修改（Codex round 4 後 auto-compliance 誠信修補）
+
+```
+mcp/index.js                              — autoComplyForToolCall：action 改 'observed_trigger'
+                                            移除 handoff IR-008/009/024 over-extrapolation
+                                            加 dedup set + 補 appendCompliance()
+                                            移除 silent catch 改 console.error
+src/routes/me.js                          — compliance query 排除 system_auto 於 comply 計數，
+                                            加獨立 observed 欄位
+src/public/me/index.html                  — 鐵律表多「系統觀測」欄、遵守率只算 AI 自報
+package.json / docs/README*               — 1.17.40 → 1.17.41
+CHANGELOG.md                              — v1.17.41 條目
+```
