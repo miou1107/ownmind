@@ -95,6 +95,46 @@ describe('buildReport', () => {
   });
 });
 
+// v1.17.64 reproduction tests — Adam/Eric/Michelle 升 v1.17.63 後實測：
+// (1) checkApiCredentials 打 /api/init → server 沒這條，回 404 → 永遠 fail
+// (2) self-check 帶 X-OwnMind-API-Key header → auth middleware 認 Authorization Bearer，回 401
+// 這兩個 test 在修復前會 fail，修復後 pass。
+describe('checkApiCredentials (v1.17.64 regression)', () => {
+  it('打 /api/memory/init（不是 /api/init）+ 帶 Authorization Bearer header', async () => {
+    const captured = [];
+    const orig = globalThis.fetch;
+    globalThis.fetch = async (url, opts) => {
+      captured.push({ url: String(url), headers: opts?.headers || {}, method: opts?.method });
+      return { ok: true, status: 200 };
+    };
+    try {
+      const r = await selfCheck.checkApiCredentials('https://kkvin.com/ownmind', 'k_test_apikey');
+      assert.equal(r.status, 'pass');
+      assert.equal(captured.length, 1);
+      assert.match(captured[0].url, /\/api\/memory\/init$/,
+        `應打 /api/memory/init，實際 URL=${captured[0].url}`);
+      assert.equal(captured[0].headers.Authorization, 'Bearer k_test_apikey',
+        `應用 Authorization: Bearer，實際 headers=${JSON.stringify(captured[0].headers)}`);
+      assert.ok(!captured[0].headers['X-OwnMind-API-Key'],
+        '不該再帶舊的 X-OwnMind-API-Key header');
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
+  it('401 回應仍判為 fail（避免 server 換認證後回 false pass）', async () => {
+    const orig = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 401 });
+    try {
+      const r = await selfCheck.checkApiCredentials('https://kkvin.com/ownmind', 'bad');
+      assert.equal(r.status, 'fail');
+      assert.match(r.detail, /401/);
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+});
+
 describe('check functions (smoke)', () => {
   it('checkMcpFiles 對不存在的家目錄回傳 fail', async () => {
     // 真實 ~/.ownmind 可能存在也可能不存在，看本機狀態。
