@@ -1,5 +1,16 @@
 # OwnMind 更新紀錄
 
+## v1.17.50 — 整體分析事件代號加白話說明
+
+**Vincent 反饋**：「這些英文代號可以加上簡短說明嗎？例如 `update_check`（檢查 OwnMind 版本）」
+
+新增 `EVENT_LABELS` 對照表，整體分析的「動作類型」「軟體更新健康度」兩段
+表格從 1 欄改 2 欄：左邊 `<code>` 顯示原始代號（給 debug／搜 log 用），
+右邊用灰色文字加白話說明（給 user 看）。
+
+涵蓋 21 個事件代號（init / memory_* / handoff_* / iron_rule_* /
+update_* / sync_conflict / verification / error）。
+
 ## v1.17.49 — security: 預設密碼不再公開洩漏
 
 **Vincent 反饋**：「登入頁不應該把預設密碼寫在畫面上。」
