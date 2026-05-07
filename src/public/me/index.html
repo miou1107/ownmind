@@ -241,6 +241,17 @@
   .pager button:hover:not(:disabled) { background: #f9fafb; }
   .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
   .pager .info { padding: 0 8px; }
+  .blindspot-notice {
+    background: #f0f9ff;
+    border-left: 3px solid #0284c7;
+    padding: 10px 14px;
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    color: #0c4a6e;
+    line-height: 1.55;
+    border-radius: 4px;
+  }
+  .blindspot-notice b { color: #075985; }
   .audit-card {
     border-radius: 8px;
     padding: 14px 18px;
@@ -341,6 +352,10 @@
 </header>
 
 <main id="reportMain" class="hidden">
+  <div class="blindspot-notice">
+    ℹ️ <b>OwnMind 看不到的活動</b>：透過網頁 AI（claude.ai / ChatGPT 等）、未裝 OwnMind 的工具、或 MCP 通道以外的活動都不會出現在這個報告。實際 AI 使用量可能比這裡看到的多。
+  </div>
+
   <div class="tabs">
     <button class="active" data-tab="me">個人</button>
     <button data-tab="team">團隊</button>
