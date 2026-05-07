@@ -466,3 +466,12 @@ mcp/index.js                              — AUTO_PROJECT 從 CLAUDE_PROJECT_DI
 package.json / docs/README*               — 1.17.36 → 1.17.37
 CHANGELOG.md                              — v1.17.37 條目
 ```
+
+## v1.17.38 修改（5 個 server-side 反向稽核）
+
+```
+src/routes/me.js                          — 5 個 audit query + me.audit_findings 回傳結構
+src/public/me/index.html                  — #audit-findings 卡片區、CSS .audit-card 三色
+package.json / docs/README*               — 1.17.37 → 1.17.38
+CHANGELOG.md                              — v1.17.38 條目
+```

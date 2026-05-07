@@ -411,6 +411,144 @@ router.get('/report', async (req, res) => {
       ORDER BY COUNT(*) DESC`
     );
 
+    // ── Server-side 反向稽核（v1.17.38）──
+    // Codex review 指出 compliance / token_events 都是 trust-but-verify。
+    // server 主動偵測「該有但缺」的訊號，產 audit_findings 給前端顯示。
+    // 不依賴 user 手動回報（IR-027 邏輯卡控原則）。
+
+    // #1 activity/compliance gap：高風險事件後 ±10 min 沒 compliance 紀錄
+    const complianceGapQ = await query(`
+      WITH sensitive AS (
+        SELECT id, ts, event FROM activity_logs
+        WHERE user_id = $1 AND ts ${timeFilter}
+          AND event IN ('handoff_create', 'memory_disable', 'memory_update')
+      ),
+      compliance_window AS (
+        SELECT s.id
+        FROM sensitive s
+        WHERE NOT EXISTS (
+          SELECT 1 FROM activity_logs c
+          WHERE c.user_id = $1
+            AND c.event = 'iron_rule_compliance'
+            AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
+        )
+      )
+      SELECT COUNT(*) AS gap_count FROM compliance_window`,
+      [me.id]
+    );
+
+    // #3 heartbeat absence：有 activity 但 heartbeat stale > 24h
+    const heartbeatAuditQ = await query(`
+      WITH active AS (
+        SELECT DISTINCT tool FROM activity_logs
+        WHERE user_id = $1 AND ts >= NOW() - INTERVAL '7 days'
+      ),
+      hb AS (
+        SELECT tool, last_reported_at FROM collector_heartbeat
+        WHERE user_id = $1
+      )
+      SELECT a.tool,
+        COALESCE(hb.last_reported_at, NULL) AS last_hb,
+        EXTRACT(EPOCH FROM (NOW() - hb.last_reported_at)) / 3600 AS stale_hours
+      FROM active a LEFT JOIN hb ON a.tool = hb.tool
+      WHERE hb.last_reported_at IS NULL
+        OR hb.last_reported_at < NOW() - INTERVAL '24 hours'`,
+      [me.id]
+    );
+
+    // #4 cross-source consistency：有 activity 但 0 token_events（per day）
+    const consistencyQ = await query(`
+      WITH days AS (
+        SELECT DISTINCT to_char(ts AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS d
+        FROM activity_logs WHERE user_id = $1 AND ts ${timeFilter}
+      ),
+      tok_days AS (
+        SELECT DISTINCT to_char(ts AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS d
+        FROM token_events WHERE user_id = $1 AND ts ${timeFilter}
+      )
+      SELECT COUNT(*) AS missing_days
+      FROM days d WHERE NOT EXISTS (SELECT 1 FROM tok_days t WHERE t.d = d.d)`,
+      [me.id]
+    );
+
+    // #2 orphan session compliance：session_logs 有但 compliance arr 空
+    const orphanComplianceQ = await query(`
+      SELECT COUNT(*) AS orphan_count
+      FROM session_logs
+      WHERE user_id = $1 AND created_at ${timeFilter}
+        AND (
+          details->'compliance' IS NULL
+          OR jsonb_array_length(details->'compliance') = 0
+        )
+        AND COALESCE((details->>'duration_turns')::int, 0) >= 5`,
+      [me.id]
+    );
+
+    // 整理 audit_findings 給前端
+    const myAuditFindings = [];
+    const gapCount = parseInt(complianceGapQ.rows[0]?.gap_count, 10) || 0;
+    if (gapCount > 0) {
+      myAuditFindings.push({
+        type: 'compliance_gap',
+        severity: gapCount > 5 ? 'high' : 'medium',
+        count: gapCount,
+        message: `${gapCount} 個高風險動作（交接/記憶停用/更新）前後 10 分鐘沒有合規回報，AI 可能漏觸發 iron_rule_compliance`,
+      });
+    }
+    const heartbeatStale = heartbeatAuditQ.rows;
+    if (heartbeatStale.length > 0) {
+      myAuditFindings.push({
+        type: 'heartbeat_absent',
+        severity: 'high',
+        count: heartbeatStale.length,
+        message: `${heartbeatStale.length} 個工具最近有活動但 collector heartbeat 超過 24 小時沒回報，token 用量資料可能不完整`,
+        details: { tools: heartbeatStale.map(r => r.tool) },
+      });
+    }
+    const missingDays = parseInt(consistencyQ.rows[0]?.missing_days, 10) || 0;
+    if (missingDays > 0) {
+      myAuditFindings.push({
+        type: 'source_inconsistent',
+        severity: missingDays > 3 ? 'medium' : 'low',
+        count: missingDays,
+        message: `${missingDays} 天有 activity 紀錄但完全沒有 token_events，scanner 可能沒在跑`,
+      });
+    }
+    const orphanCount = parseInt(orphanComplianceQ.rows[0]?.orphan_count, 10) || 0;
+    if (orphanCount > 0) {
+      myAuditFindings.push({
+        type: 'orphan_session',
+        severity: 'low',
+        count: orphanCount,
+        message: `${orphanCount} 個有實質工作量（≥5 輪）的 session 沒帶 compliance 紀錄，AI 可能整段都沒回報`,
+      });
+    }
+
+    // #5 IR-027 reverse audit（啟發式）：
+    // 偵測「明明 admin 改了 user 設定但本人沒收到 / 系統靠 user 自報」的訊號
+    // 目前只偵測：admin 創建 user 後超過 7 天 user 都沒登入過 → 預設密碼可能還沒用
+    // 這個比較複雜先給 placeholder，未來再擴充
+    if (me.role === 'super_admin') {
+      const ir027Q = await query(`
+        SELECT u.id, u.email,
+          EXTRACT(EPOCH FROM (NOW() - u.created_at)) / 86400 AS age_days,
+          u.must_change_password
+        FROM users u
+        WHERE u.role = 'user'
+          AND u.must_change_password = TRUE
+          AND u.created_at < NOW() - INTERVAL '7 days'
+      `);
+      if (ir027Q.rows.length > 0) {
+        myAuditFindings.push({
+          type: 'ir027_candidate',
+          severity: 'medium',
+          count: ir027Q.rows.length,
+          message: `${ir027Q.rows.length} 位 user 建立超過 7 天仍是預設密碼（must_change_password=TRUE），可能根本沒登入過 /ownmind/me/`,
+          details: { emails: ir027Q.rows.map(r => r.email) },
+        });
+      }
+    }
+
     res.json({
       range,
       generated_at: new Date().toISOString(),
@@ -431,6 +569,7 @@ router.get('/report', async (req, res) => {
           violate: parseInt(r.violate, 10) || 0,
         })),
         activity: myActivityQ.rows,
+        audit_findings: myAuditFindings,
       },
       team: {
         users: teamUsersQ.rows.map(r => ({

@@ -241,6 +241,18 @@
   .pager button:hover:not(:disabled) { background: #f9fafb; }
   .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
   .pager .info { padding: 0 8px; }
+  .audit-card {
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    border-left: 4px solid;
+    font-size: 14px;
+  }
+  .audit-card.high { background: #fef2f2; border-color: #dc2626; color: #991b1b; }
+  .audit-card.medium { background: #fffbeb; border-color: #d97706; color: #92400e; }
+  .audit-card.low { background: #eff6ff; border-color: #2563eb; color: #1e40af; }
+  .audit-card .audit-title { font-weight: 600; margin-bottom: 4px; }
+  .audit-card .audit-detail { font-size: 12px; margin-top: 6px; opacity: 0.85; }
   pre {
     background: #f3f4f6;
     padding: 8px;
@@ -313,6 +325,8 @@
 
   <!-- 個人 tab -->
   <div id="tab-me" class="tab-content active">
+    <div id="audit-findings"></div>
+
     <div class="card">
       <h2>我的活動</h2>
       <div class="stat-grid">
@@ -607,6 +621,29 @@ function render(report) {
   $('#meName').textContent = me.name;
   $('#meRole').textContent = ({ user: '一般成員', admin: '管理員', super_admin: '超級管理員' })[me.role] || me.role;
   $('#generated').textContent = '產生時間 ' + fmtTs(report.generated_at);
+
+  // ── 個人：audit findings 警示 ──
+  const findings = me.audit_findings || [];
+  const SEV_LABEL = { high: '🔴 嚴重', medium: '🟡 注意', low: '🔵 提示' };
+  const TYPE_LABEL = {
+    compliance_gap: '合規回報缺漏',
+    heartbeat_absent: 'Token 收集器離線',
+    source_inconsistent: '資料來源不一致',
+    orphan_session: 'Session 沒帶合規紀錄',
+    ir027_candidate: 'IR-027 風險（系統靠 user 自報）',
+  };
+  $('#audit-findings').innerHTML = findings.length === 0
+    ? ''
+    : findings.map(f => {
+        const detail = f.details
+          ? `<div class="audit-detail">${esc(JSON.stringify(f.details))}</div>`
+          : '';
+        return `<div class="audit-card ${esc(f.severity)}">
+          <div class="audit-title">${SEV_LABEL[f.severity] || ''} ${esc(TYPE_LABEL[f.type] || f.type)}（${f.count}）</div>
+          <div>${esc(f.message)}</div>
+          ${detail}
+        </div>`;
+      }).join('');
 
   // ── 個人 ──
   $('#me-sessions').textContent = me.sessions.toLocaleString();
