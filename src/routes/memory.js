@@ -626,6 +626,18 @@ router.get('/init', async (req, res) => {
       ironRulesDigestFinal = ironRulesDigest + alertText;
     }
 
+    // v1.17.21 修：compact mode 砍掉 INSTRUCTIONS_SOP 後，AI 看不到「必須呼叫
+    // ownmind_report_compliance」這條指令；compliance 紀錄從 4/21 起斷流。
+    // 把指令固定附加在 digest 末尾（compact 也送），語意上 digest = 鐵律清單，
+    // compliance = 鐵律觸發後的回報，兩者天然成對，多 ~80 tokens 換永久觀測。
+    ironRulesDigestFinal +=
+      '\n\n## 合規回報（強制）\n' +
+      '每次鐵律被觸發時，必須呼叫 ownmind_report_compliance 回報結果：\n' +
+      '- 遵守了 → action: comply\n' +
+      '- 使用者要求跳過 → action: skip\n' +
+      '- 不小心違反了 → action: violate\n' +
+      '不需要使用者確認，直接回報；這些數據用於追蹤鐵律落地率。';
+
     // Principles: compact mode only sends titles
     const principlesOut = compact
       ? principles.map(p => ({ id: p.id, title: p.title, code: p.code }))

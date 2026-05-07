@@ -1,5 +1,40 @@
 # OwnMind 更新紀錄
 
+## v1.17.21 — 修「compact mode 砍掉合規回報指令導致 iron_rule_compliance 0 紀錄」
+
+**背景**（2026-05-07 從工作紀錄分析報告中發現）
+
+`activity_logs` 中 `iron_rule_compliance` event 自 2026-04-21 起完全停止寫入
+（之前累積 60 筆，4/22~5/7 是 0 筆），而 MCP tool `ownmind_report_compliance`
+寫入端正常（手動測試會進 DB）。
+
+**Root cause**
+
+`src/routes/memory.js` 用 `?compact=true` 拉 init 時，第 653 行
+`...(!compact && { instructions: INSTRUCTIONS_SOP })` 會把整段 SOP 拿掉。
+SOP 第 193 行有「**每次鐵律被觸發後，必須呼叫 ownmind_report_compliance**」
+這條指令；compact mode 等於把這條教學完全砍掉。SessionStart hook 用的就是
+compact，新 session 的 AI 拿不到指令，隨時間自然漂移成「不再呼叫」。
+
+Compact 從 3/30 上線，4/21 之前還有紀錄是因為 AI 從 skill 檔 / 歷史對話
+記得這條規則；隨著 skills 重構，記憶逐漸流失。
+
+**修法**
+
+把合規回報指令固定附加在 `iron_rules_digest` 末尾。digest 在 compact mode
+也會送（`iron_rules_digest: ironRulesDigestFinal` 沒 compact gate），語意上
+digest = 鐵律清單，compliance = 鐵律觸發後的回報，兩者天然成對。多 ~80 tokens
+換永久觀測。
+
+**改動**
+
+- `src/routes/memory.js` — `ironRulesDigestFinal` 末尾固定附加合規回報指令，
+  涵蓋 comply / skip / violate 三個 action
+- `tests/init-compact-compliance-instruction.test.js` — 3 個 regression case：
+  digest 含 `ownmind_report_compliance`、digest 在 compact 也送、三 action 齊全
+
+**測試**：618/618 pass
+
 ## v1.17.20 — Admin 工作紀錄頁 + 隱藏資料品質警示
 
 **Admin Dashboard 新增「工作紀錄」頁籤**（super_admin only）
