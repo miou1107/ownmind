@@ -224,11 +224,19 @@ router.get('/report', async (req, res) => {
     );
 
     // ── 團隊區塊（Q1=C 完全開放）──
+    // v1.17.35: 加 tokens / turns 兩個 metric 給前端切換
     const teamUsersQ = await query(`
       SELECT u.id, u.name, u.email, u.role,
         COUNT(*) FILTER (WHERE al.event = 'init') AS sessions,
         COUNT(al.id) AS events,
-        MAX(al.ts) AS last_activity
+        MAX(al.ts) AS last_activity,
+        COALESCE((SELECT SUM(input_tokens + output_tokens + cache_creation_tokens
+                            + cache_read_tokens + reasoning_tokens)
+                  FROM token_events te
+                  WHERE te.user_id = u.id AND te.ts ${timeFilter}), 0) AS tokens,
+        COALESCE((SELECT SUM(COALESCE((details->>'duration_turns')::int, 0))
+                  FROM session_logs sl
+                  WHERE sl.user_id = u.id AND sl.created_at ${timeFilter}), 0) AS turns
       FROM users u
       LEFT JOIN activity_logs al ON al.user_id = u.id
         AND al.ts ${timeFilter}
@@ -236,28 +244,75 @@ router.get('/report', async (req, res) => {
       ORDER BY events DESC NULLS LAST`
     );
 
+    // v1.17.35: 3 個 trend chart 都加 tokens / turns 數據（活動數仍是預設）
+    // 用 FULL OUTER JOIN 把 3 個 dataset 合在一起，避免缺 bucket
     const dailyTrendQ = await query(`
-      SELECT to_char(ts AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d,
-        COUNT(*) AS count
-      FROM activity_logs
-      WHERE ts ${timeFilter}
-      GROUP BY d ORDER BY d`
+      WITH a AS (
+        SELECT to_char(ts AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d,
+          COUNT(*) AS sessions
+        FROM activity_logs WHERE ts ${timeFilter} GROUP BY d
+      ), t AS (
+        SELECT to_char(ts AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d,
+          SUM(input_tokens + output_tokens + cache_creation_tokens
+              + cache_read_tokens + reasoning_tokens) AS tokens
+        FROM token_events WHERE ts ${timeFilter} GROUP BY d
+      ), s AS (
+        SELECT to_char(created_at AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d,
+          SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
+        FROM session_logs WHERE created_at ${timeFilter} GROUP BY d
+      )
+      SELECT COALESCE(a.d, t.d, s.d) AS d,
+        COALESCE(a.sessions, 0) AS sessions,
+        COALESCE(t.tokens, 0) AS tokens,
+        COALESCE(s.turns, 0) AS turns
+      FROM a FULL OUTER JOIN t ON a.d = t.d FULL OUTER JOIN s ON COALESCE(a.d, t.d) = s.d
+      ORDER BY d`
     );
 
     const hourlyTrendQ = await query(`
-      SELECT EXTRACT(HOUR FROM ts AT TIME ZONE 'Asia/Taipei')::int AS hour,
-        COUNT(*) AS count
-      FROM activity_logs
-      WHERE ts ${timeFilter}
-      GROUP BY hour ORDER BY hour`
+      WITH a AS (
+        SELECT EXTRACT(HOUR FROM ts AT TIME ZONE 'Asia/Taipei')::int AS hour,
+          COUNT(*) AS sessions
+        FROM activity_logs WHERE ts ${timeFilter} GROUP BY hour
+      ), t AS (
+        SELECT EXTRACT(HOUR FROM ts AT TIME ZONE 'Asia/Taipei')::int AS hour,
+          SUM(input_tokens + output_tokens + cache_creation_tokens
+              + cache_read_tokens + reasoning_tokens) AS tokens
+        FROM token_events WHERE ts ${timeFilter} GROUP BY hour
+      ), s AS (
+        SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Taipei')::int AS hour,
+          SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
+        FROM session_logs WHERE created_at ${timeFilter} GROUP BY hour
+      )
+      SELECT COALESCE(a.hour, t.hour, s.hour) AS hour,
+        COALESCE(a.sessions, 0) AS sessions,
+        COALESCE(t.tokens, 0) AS tokens,
+        COALESCE(s.turns, 0) AS turns
+      FROM a FULL OUTER JOIN t ON a.hour = t.hour FULL OUTER JOIN s ON COALESCE(a.hour, t.hour) = s.hour
+      ORDER BY hour`
     );
 
     const weekdayTrendQ = await query(`
-      SELECT EXTRACT(DOW FROM ts AT TIME ZONE 'Asia/Taipei')::int AS dow,
-        COUNT(*) AS count
-      FROM activity_logs
-      WHERE ts ${timeFilter}
-      GROUP BY dow ORDER BY dow`
+      WITH a AS (
+        SELECT EXTRACT(DOW FROM ts AT TIME ZONE 'Asia/Taipei')::int AS dow,
+          COUNT(*) AS sessions
+        FROM activity_logs WHERE ts ${timeFilter} GROUP BY dow
+      ), t AS (
+        SELECT EXTRACT(DOW FROM ts AT TIME ZONE 'Asia/Taipei')::int AS dow,
+          SUM(input_tokens + output_tokens + cache_creation_tokens
+              + cache_read_tokens + reasoning_tokens) AS tokens
+        FROM token_events WHERE ts ${timeFilter} GROUP BY dow
+      ), s AS (
+        SELECT EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Taipei')::int AS dow,
+          SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
+        FROM session_logs WHERE created_at ${timeFilter} GROUP BY dow
+      )
+      SELECT COALESCE(a.dow, t.dow, s.dow) AS dow,
+        COALESCE(a.sessions, 0) AS sessions,
+        COALESCE(t.tokens, 0) AS tokens,
+        COALESCE(s.turns, 0) AS turns
+      FROM a FULL OUTER JOIN t ON a.dow = t.dow FULL OUTER JOIN s ON COALESCE(a.dow, t.dow) = s.dow
+      ORDER BY dow`
     );
 
     const eventTypesQ = await query(`
@@ -349,10 +404,27 @@ router.get('/report', async (req, res) => {
           ...r,
           sessions: parseInt(r.sessions, 10) || 0,
           events: parseInt(r.events, 10) || 0,
+          tokens: parseInt(r.tokens, 10) || 0,
+          turns: parseInt(r.turns, 10) || 0,
         })),
-        daily_trend: dailyTrendQ.rows.map(r => ({ d: r.d, count: parseInt(r.count, 10) })),
-        hourly_trend: hourlyTrendQ.rows.map(r => ({ hour: r.hour, count: parseInt(r.count, 10) })),
-        weekday_trend: weekdayTrendQ.rows.map(r => ({ dow: r.dow, count: parseInt(r.count, 10) })),
+        daily_trend: dailyTrendQ.rows.map(r => ({
+          d: r.d,
+          sessions: parseInt(r.sessions, 10) || 0,
+          tokens: parseInt(r.tokens, 10) || 0,
+          turns: parseInt(r.turns, 10) || 0,
+        })),
+        hourly_trend: hourlyTrendQ.rows.map(r => ({
+          hour: r.hour,
+          sessions: parseInt(r.sessions, 10) || 0,
+          tokens: parseInt(r.tokens, 10) || 0,
+          turns: parseInt(r.turns, 10) || 0,
+        })),
+        weekday_trend: weekdayTrendQ.rows.map(r => ({
+          dow: r.dow,
+          sessions: parseInt(r.sessions, 10) || 0,
+          tokens: parseInt(r.tokens, 10) || 0,
+          turns: parseInt(r.turns, 10) || 0,
+        })),
         event_types: eventTypesQ.rows.map(r => ({ event: r.event, count: parseInt(r.count, 10) })),
         versions: allVersionsQ.rows,
         compliance: teamComplianceQ.rows,
