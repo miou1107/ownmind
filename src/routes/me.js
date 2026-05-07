@@ -411,17 +411,26 @@ router.get('/report', async (req, res) => {
       ORDER BY COUNT(*) DESC`
     );
 
-    // ── Server-side 反向稽核（v1.17.38）──
-    // Codex review 指出 compliance / token_events 都是 trust-but-verify。
-    // server 主動偵測「該有但缺」的訊號，產 audit_findings 給前端顯示。
-    // 不依賴 user 手動回報（IR-027 邏輯卡控原則）。
+    // ── Server-side 反向稽核（v1.17.38 起）──
+    // Codex round 3 review 後（v1.17.39）改進：
+    //   P1.1 orphan_session 加 v1.17.37 ship 日期 gate
+    //   P1.2 compliance_gap 縮窄 sensitive event 列表 + 用 verification metadata
+    //   P2.1 heartbeat 用 LOWER() tool 比對
+    const V17_37_SHIPPED = '2026-05-07';  // v1.17.37 之後 emergencySessionLog 才會自動帶 compliance arr
 
-    // #1 activity/compliance gap：高風險事件後 ±10 min 沒 compliance 紀錄
+    // #1 activity/compliance gap：縮窄成「真鐵律相關」事件
+    // 之前 memory_update 太吵；改成只看 high-confidence：
+    //   - handoff_create（一定觸發 IR-008/009/024 等 commit/contributor 鐵律）
+    //   - memory_disable（停用鐵律本身就是 IR-006 全層同步事件）
+    //   - memory_save type=iron_rule（新增鐵律本身）
     const complianceGapQ = await query(`
       WITH sensitive AS (
         SELECT id, ts, event FROM activity_logs
         WHERE user_id = $1 AND ts ${timeFilter}
-          AND event IN ('handoff_create', 'memory_disable', 'memory_update')
+          AND (
+            event IN ('handoff_create', 'memory_disable')
+            OR (event = 'memory_save' AND details->>'type' = 'iron_rule')
+          )
       ),
       compliance_window AS (
         SELECT s.id
@@ -437,26 +446,29 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // #3 heartbeat absence：有 activity 但 heartbeat stale > 24h
+    // #3 heartbeat absence：用 LOWER(TRIM(...)) 比對 tool name 避免大小寫漏判
     const heartbeatAuditQ = await query(`
       WITH active AS (
-        SELECT DISTINCT tool FROM activity_logs
+        SELECT DISTINCT LOWER(TRIM(tool)) AS tool_key, MIN(tool) AS tool
+        FROM activity_logs
         WHERE user_id = $1 AND ts >= NOW() - INTERVAL '7 days'
+          AND tool IS NOT NULL AND tool NOT IN ('unknown', 'mcp')
+        GROUP BY tool_key
       ),
       hb AS (
-        SELECT tool, last_reported_at FROM collector_heartbeat
-        WHERE user_id = $1
+        SELECT LOWER(TRIM(tool)) AS tool_key, MAX(last_reported_at) AS last_hb
+        FROM collector_heartbeat WHERE user_id = $1
+        GROUP BY tool_key
       )
-      SELECT a.tool,
-        COALESCE(hb.last_reported_at, NULL) AS last_hb,
-        EXTRACT(EPOCH FROM (NOW() - hb.last_reported_at)) / 3600 AS stale_hours
-      FROM active a LEFT JOIN hb ON a.tool = hb.tool
-      WHERE hb.last_reported_at IS NULL
-        OR hb.last_reported_at < NOW() - INTERVAL '24 hours'`,
+      SELECT a.tool, hb.last_hb,
+        EXTRACT(EPOCH FROM (NOW() - hb.last_hb)) / 3600 AS stale_hours
+      FROM active a LEFT JOIN hb ON a.tool_key = hb.tool_key
+      WHERE hb.last_hb IS NULL OR hb.last_hb < NOW() - INTERVAL '24 hours'`,
       [me.id]
     );
 
-    // #4 cross-source consistency：有 activity 但 0 token_events（per day）
+    // #4 cross-source consistency：標記某天 activity 但 0 token_events
+    // 排除「某 tool 本來就沒 token scanner」的場景：只看有 collector_heartbeat 的 tool
     const consistencyQ = await query(`
       WITH days AS (
         SELECT DISTINCT to_char(ts AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS d
@@ -465,23 +477,41 @@ router.get('/report', async (req, res) => {
       tok_days AS (
         SELECT DISTINCT to_char(ts AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS d
         FROM token_events WHERE user_id = $1 AND ts ${timeFilter}
+      ),
+      has_scanner AS (
+        SELECT EXISTS(SELECT 1 FROM collector_heartbeat WHERE user_id = $1) AS yes
       )
-      SELECT COUNT(*) AS missing_days
-      FROM days d WHERE NOT EXISTS (SELECT 1 FROM tok_days t WHERE t.d = d.d)`,
+      SELECT COUNT(*) AS missing_days FROM days d, has_scanner h
+      WHERE h.yes = TRUE
+        AND NOT EXISTS (SELECT 1 FROM tok_days t WHERE t.d = d.d)`,
       [me.id]
     );
 
-    // #2 orphan session compliance：session_logs 有但 compliance arr 空
+    // #2 orphan session compliance：v1.17.37 之後 ship 才有自動寫 compliance arr
+    // 加日期 gate 避免歷史污染
     const orphanComplianceQ = await query(`
       SELECT COUNT(*) AS orphan_count
       FROM session_logs
-      WHERE user_id = $1 AND created_at ${timeFilter}
+      WHERE user_id = $1
+        AND created_at ${timeFilter}
+        AND created_at >= '${V17_37_SHIPPED}'::timestamptz
         AND (
           details->'compliance' IS NULL
           OR jsonb_array_length(details->'compliance') = 0
         )
         AND COALESCE((details->>'duration_turns')::int, 0) >= 5`,
       [me.id]
+    );
+
+    // P3: blind-spot detection — user 有 OwnMind 帳號但完全沒 MCP activity
+    // 可能用非 MCP 介面（claude.ai web、ChatGPT）做事，整個不可觀測
+    const blindSpotQ = await query(`
+      SELECT
+        (SELECT COUNT(*) FROM activity_logs WHERE user_id = $1 AND ts >= NOW() - INTERVAL '14 days') AS recent_activity,
+        (SELECT COUNT(*) FROM token_events WHERE user_id = $1 AND ts >= NOW() - INTERVAL '14 days') AS recent_tokens,
+        (SELECT MAX(last_reported_at) FROM collector_heartbeat WHERE user_id = $1) AS latest_hb,
+        EXTRACT(EPOCH FROM (NOW() - $2::timestamptz)) / 86400 AS account_age_days`,
+      [me.id, me.created_at]
     );
 
     // 整理 audit_findings 給前端
@@ -492,7 +522,7 @@ router.get('/report', async (req, res) => {
         type: 'compliance_gap',
         severity: gapCount > 5 ? 'high' : 'medium',
         count: gapCount,
-        message: `${gapCount} 個高風險動作（交接/記憶停用/更新）前後 10 分鐘沒有合規回報，AI 可能漏觸發 iron_rule_compliance`,
+        message: `${gapCount} 個高風險動作（交接 / 停用鐵律 / 新增鐵律）前後 10 分鐘沒有合規回報，AI 可能漏觸發 iron_rule_compliance`,
       });
     }
     const heartbeatStale = heartbeatAuditQ.rows;
@@ -520,14 +550,26 @@ router.get('/report', async (req, res) => {
         type: 'orphan_session',
         severity: 'low',
         count: orphanCount,
-        message: `${orphanCount} 個有實質工作量（≥5 輪）的 session 沒帶 compliance 紀錄，AI 可能整段都沒回報`,
+        message: `${orphanCount} 個（v1.17.37 起）有實質工作量（≥5 輪）的 session 沒帶 compliance 紀錄，AI 可能整段都沒回報`,
       });
     }
 
-    // #5 IR-027 reverse audit（啟發式）：
-    // 偵測「明明 admin 改了 user 設定但本人沒收到 / 系統靠 user 自報」的訊號
-    // 目前只偵測：admin 創建 user 後超過 7 天 user 都沒登入過 → 預設密碼可能還沒用
-    // 這個比較複雜先給 placeholder，未來再擴充
+    // P3: blind-spot — 帳號開超過 7 天但完全沒 MCP activity
+    const bs = blindSpotQ.rows[0];
+    if (parseFloat(bs.account_age_days || 0) > 7
+      && parseInt(bs.recent_activity, 10) === 0
+      && parseInt(bs.recent_tokens, 10) === 0
+      && !bs.latest_hb) {
+      myAuditFindings.push({
+        type: 'unobservable_source',
+        severity: 'medium',
+        count: 1,
+        message: `帳號開立 ${Math.round(parseFloat(bs.account_age_days))} 天，但 14 天內 0 個 MCP activity / token / heartbeat。可能：(a) 完全沒在用 (b) 用非 MCP 介面（claude.ai web / ChatGPT）做事，OwnMind 整段不可觀測`,
+      });
+    }
+
+    // #5 IR-027 reverse audit（super_admin only）：
+    // user 建立 > 7 天仍預設密碼（must_change_password=TRUE）
     if (me.role === 'super_admin') {
       const ir027Q = await query(`
         SELECT u.id, u.email,
@@ -543,9 +585,58 @@ router.get('/report', async (req, res) => {
           type: 'ir027_candidate',
           severity: 'medium',
           count: ir027Q.rows.length,
-          message: `${ir027Q.rows.length} 位 user 建立超過 7 天仍是預設密碼（must_change_password=TRUE），可能根本沒登入過 /ownmind/me/`,
+          message: `${ir027Q.rows.length} 位 user 建立超過 7 天仍是預設密碼，可能根本沒登入過 /ownmind/me/`,
           details: { emails: ir027Q.rows.map(r => r.email) },
         });
+      }
+
+      // P3 admin 視角：找出「team 內可能用非 MCP 介面工作」的 user
+      const teamBlindQ = await query(`
+        SELECT u.email, u.name
+        FROM users u
+        WHERE u.role IN ('user', 'admin')
+          AND u.created_at < NOW() - INTERVAL '7 days'
+          AND NOT EXISTS (
+            SELECT 1 FROM activity_logs WHERE user_id = u.id
+              AND ts >= NOW() - INTERVAL '14 days'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM token_events WHERE user_id = u.id
+              AND ts >= NOW() - INTERVAL '14 days'
+          )
+      `);
+      if (teamBlindQ.rows.length > 0) {
+        myAuditFindings.push({
+          type: 'team_blindspot',
+          severity: 'low',
+          count: teamBlindQ.rows.length,
+          message: `${teamBlindQ.rows.length} 位 team 成員 14 天內無任何 MCP / token 訊號，OwnMind 對其工作完全不可觀測`,
+          details: { members: teamBlindQ.rows.map(r => r.name + ' (' + r.email + ')') },
+        });
+      }
+    }
+
+    // P2.2: 寫進 audit_logs 表持久化（high severity 才寫，避免噪音）
+    // 用既有 audit_logs schema：actor_id=系統(0)、action='audit_finding'、target_type='user'
+    // 持久化讓背景監控／email/broadcast 將來可以接（目前先落表，未來再接通知管線）
+    for (const f of myAuditFindings) {
+      if (f.severity === 'high') {
+        // 同 user/type 24h 內已寫過就不重複（粗略 dedup）
+        try {
+          await query(`
+            INSERT INTO audit_logs (actor_id, action, target_type, target_id, details)
+            SELECT NULL, 'audit_finding', 'user', $1, $2::jsonb
+            WHERE NOT EXISTS (
+              SELECT 1 FROM audit_logs
+              WHERE action = 'audit_finding' AND target_id = $1
+                AND details->>'type' = $3
+                AND created_at > NOW() - INTERVAL '24 hours'
+            )
+          `, [me.id, JSON.stringify(f), f.type]);
+        } catch (e) {
+          // silent fail — 不阻擋報告產出
+          logger.warn('audit_finding 持久化失敗', { error: e.message });
+        }
       }
     }
 
