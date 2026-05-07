@@ -174,36 +174,59 @@ async function collectSections({ query, range }) {
     GROUP BY event
   `)).rows;
 
-  // 9. project_ranking — 跨專案排行（同 me.js 的 LOWER/TRIM 正規化）
-  // v1.17.55: 加 tokens + cost_usd（從 token_usage_daily 用 session_id JOIN）
+  // 9. project_ranking — 跨專案排行
+  // v1.17.55: 加 tokens + cost_usd（嘗試用 session_id JOIN，但 session_logs.session_id 全 NULL，失敗）
+  // v1.17.56: 改用 (user_id, tool) bridge — 估算值（按 turns 比例分配）；
+  //           專案名稱用 REGEXP_REPLACE 砍掉「( ... )」描述，避免「ai_kol」「ai_kol (xxx)」分裂成兩列
   const project_ranking = (await query(`
-    WITH tok AS (
-      SELECT user_id, tool, session_id,
+    WITH usr_tok AS (
+      SELECT user_id, tool,
         SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)
             + COALESCE(cache_creation_tokens,0) + COALESCE(cache_read_tokens,0)
             + COALESCE(reasoning_tokens,0)) AS tokens,
         SUM(COALESCE(cost_usd, 0)) AS cost_usd
       FROM token_usage_daily
       WHERE last_ts ${tfTs}
-      GROUP BY user_id, tool, session_id
+      GROUP BY user_id, tool
+    ),
+    proj AS (
+      SELECT
+        LOWER(TRIM(REGEXP_REPLACE(sl.details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,
+        MIN(REGEXP_REPLACE(sl.details->>'project', '\\s*[\\(（].*$', '')) AS project,
+        sl.user_id, sl.tool, u.name,
+        COUNT(*) AS sessions,
+        SUM(COALESCE((sl.details->>'duration_turns')::int, 0)) AS turns
+      FROM session_logs sl
+      LEFT JOIN users u ON u.id = sl.user_id
+      WHERE sl.created_at ${tfCreated}
+        AND sl.details->>'project' IS NOT NULL
+        AND TRIM(sl.details->>'project') != ''
+      GROUP BY project_key, sl.user_id, sl.tool, u.name
+    ),
+    ut_turns AS (
+      SELECT user_id, tool, SUM(turns) AS total_turns
+      FROM proj
+      GROUP BY user_id, tool
     )
-    SELECT LOWER(TRIM(sl.details->>'project')) AS project_key,
-      MIN(sl.details->>'project') AS project,
-      sl.user_id,
-      u.name,
-      COUNT(*) AS sessions,
-      SUM(COALESCE((sl.details->>'duration_turns')::int, 0)) AS turns,
-      COALESCE(SUM(tok.tokens), 0)::bigint AS tokens,
-      COALESCE(SUM(tok.cost_usd), 0)::numeric(12,4) AS cost_usd
-    FROM session_logs sl
-    LEFT JOIN users u ON u.id = sl.user_id
-    LEFT JOIN tok ON tok.user_id = sl.user_id
-      AND tok.tool = sl.tool
-      AND tok.session_id = sl.session_id
-    WHERE sl.created_at ${tfCreated}
-      AND sl.details->>'project' IS NOT NULL
-      AND TRIM(sl.details->>'project') != ''
-    GROUP BY project_key, sl.user_id, u.name
+    SELECT p.project_key,
+      MIN(p.project) AS project,
+      p.user_id, p.name,
+      SUM(p.sessions)::int AS sessions,
+      SUM(p.turns)::int AS turns,
+      COALESCE(SUM(
+        CASE WHEN utt.total_turns > 0 AND ut.tokens IS NOT NULL
+          THEN ut.tokens::numeric * p.turns / utt.total_turns
+          ELSE 0 END
+      ), 0)::bigint AS tokens,
+      COALESCE(SUM(
+        CASE WHEN utt.total_turns > 0 AND ut.cost_usd IS NOT NULL
+          THEN ut.cost_usd * p.turns / utt.total_turns
+          ELSE 0 END
+      ), 0)::numeric(12,4) AS cost_usd
+    FROM proj p
+    LEFT JOIN usr_tok ut ON ut.user_id = p.user_id AND ut.tool = p.tool
+    LEFT JOIN ut_turns utt ON utt.user_id = p.user_id AND utt.tool = p.tool
+    GROUP BY p.project_key, p.user_id, p.name
     ORDER BY turns DESC NULLS LAST
   `)).rows;
 

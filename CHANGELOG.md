@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.56 — 修 v1.17.55 的兩個顯示問題（Tokens 全空 + 長專案名）
+
+**Vincent 反饋**：「為何沒有數字」「ai_kol (kol_content_system 新版：...) 的專案名稱還是太長」。
+
+**根因 1（Tokens 全空）**：v1.17.55 用 `(user_id, tool, session_id)` JOIN `token_usage_daily`，但 prod DB `session_logs.session_id` **過去 60 天 0 筆有值**（writer 沒填）。token_events / token_usage_daily 由獨立的 token-collector 寫入，session_id 是真實 UUID 但跟 session_logs 對不上 — JOIN 永遠 NULL。
+
+**根因 2（專案名長）**：「ai_kol」「ai_kol (kol_content_system 新版：...)」是同一個專案，被 `LOWER(TRIM())` 後 key 不同，分裂成兩列；長 key 的描述也直接顯示。
+
+**修法**：
+1. `src/routes/me-narrative.js` project_ranking 改用 `(user_id, tool)` bridge —
+   先在 `usr_tok` CTE 加總每個 user × tool 的期間總 tokens / cost，再依 `proj` (user, tool, project) 的 turns 比例分配。是估算值但有意義。
+2. 同時三個 SQL（narrative + me.js × 2）都加 `REGEXP_REPLACE(project, '\\s*[\\(（].*$', '')` 砍掉「( ... )」描述，全形半形括號都吃；自動合併分裂列。
+3. `src/public/me/index.html` `renderProjectRankingTable` 表頭加 `*` 符號，下方註明「估算值（按各專案輪次比例分配）」，誠實標示。
+
+**為何不直接修 session_logs writer**：那是 client side 的事（要等所有 client 升上去 + 等 14d 資料累積），estimation 是當下唯一能讓欄位有用的辦法；長期該補。
+
 ## v1.17.55 — 各專案活動量排行表加 Tokens + 成本欄
 
 **Vincent 反饋**：「9. 各專案活動量排行 應該要有期間累計消耗的 token 數」。原表只顯示 sessions / 輪次 / 貢獻者，看不出哪些專案燒最多 token、最花錢。
