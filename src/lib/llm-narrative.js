@@ -1,13 +1,17 @@
 import { createHash } from 'node:crypto';
 
 const SYSTEM_PROMPT = `你是 OwnMind 內部的數據敘事 agent。
-輸入是一份團隊使用統計 JSON。請以「白話、不裝專業」風格產出 JSON，schema：
+輸入是一份團隊使用統計 JSON，包含這些 key：
+ranking, versions, daily, hourly, weekday, event_types, compliance, update_health,
+project_ranking, project_friction_raw
+
+請以「白話、不裝專業」風格產出 JSON，schema：
 {
   "summary_one_line": "一句話結論",
   "section_explanations": {
     "ranking": "...", "versions": "...", "daily": "...", "hourly": "...",
     "weekday": "...", "event_types": "...", "compliance": "...",
-    "update_health": "...", "project_ranking": "...", "project_compliance": "..."
+    "update_health": "...", "project_ranking": "..."
   },
   "project_friction": { "<project_key>": ["踩坑短句", ...] },
   "insights_for_admin": ["洞察 1", "洞察 2", "洞察 3"],
@@ -16,7 +20,7 @@ const SYSTEM_PROMPT = `你是 OwnMind 內部的數據敘事 agent。
 規則：
 - 只回 JSON、不加 markdown 圍欄、不加說明文字
 - 「白話講」每段 1-3 句，避免術語
-- project_friction 從 friction_raw 萃取，沒資料就回空陣列
+- project_friction 從輸入的 project_friction_raw 萃取（key=project_key, 內容=friction 字串）；沒資料就回空物件 {}
 - 對事不對人，不評論個人能力`;
 
 export function buildMessages(narrativeData) {

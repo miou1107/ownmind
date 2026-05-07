@@ -177,31 +177,22 @@ async function collectSections({ query, range }) {
   `)).rows;
 
   // 10. project_friction_raw — friction notes for LLM extraction
+  // 真實欄位名是 friction_points（見 src/utils/report.js + src/routes/activity.js writer）
   const project_friction_raw = (await query(`
     SELECT LOWER(TRIM(details->>'project')) AS project_key,
-      details->>'friction' AS friction
+      details->>'friction_points' AS friction
     FROM session_logs
     WHERE created_at ${tfCreated}
-      AND details ? 'friction'
-      AND details->>'friction' IS NOT NULL
-      AND TRIM(details->>'friction') != ''
+      AND details ? 'friction_points'
+      AND details->>'friction_points' IS NOT NULL
+      AND TRIM(details->>'friction_points') != ''
     LIMIT 100
   `)).rows;
 
-  // 11. project_compliance — 各專案守了哪些鐵律
-  const project_compliance = (await query(`
-    SELECT details->>'project_key' AS project_key,
-      details->>'rule_code' AS rule_code,
-      COUNT(*) AS c
-    FROM activity_logs
-    WHERE event='iron_rule_compliance'
-      AND details->>'action'='comply'
-      AND COALESCE(details->>'source','') NOT LIKE 'system_%'
-      AND ts ${tfTs}
-      AND details ? 'project_key'
-    GROUP BY project_key, rule_code
-    ORDER BY project_key, rule_code
-  `)).rows;
+  // 11. project_compliance — 暫不實作
+  // iron_rule_compliance 的 details 並無 writer 寫入 project_key（活動是觸發時記的，不一定在某 session 內）
+  // 要做的話得 JOIN session_logs 用 user/time window 推導，誤差會很大；YAGNI 暫不做
+  const project_compliance = [];
 
   return {
     ranking, versions, daily, hourly, weekday,

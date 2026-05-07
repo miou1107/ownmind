@@ -1037,21 +1037,23 @@ $$('.tabs button').forEach(btn => {
   });
 });
 
+let narrativeAbort = null;
 async function loadNarrative() {
+  // 取消上一輪未完成的 fetch（避免 race：舊回應蓋過新回應）
+  if (narrativeAbort) narrativeAbort.abort();
+  narrativeAbort = new AbortController();
+  const signal = narrativeAbort.signal;
+
   const range = $('#rangeSel').value || '14d';
-  const start = $('#startDate').value;
-  const end = $('#endDate').value;
   const key = localStorage.getItem(KEY_NAME);
   if (!key) return showLogin();
   const headers = { Authorization: 'Bearer ' + key };
 
   const qs = new URLSearchParams({ range });
-  if (start) qs.set('start', start);
-  if (end) qs.set('end', end);
 
-  const mechP = fetch(`/ownmind/api/me/narrative?${qs}`, { headers })
+  const mechP = fetch(`/ownmind/api/me/narrative?${qs}`, { headers, signal })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('mechanical ' + r.status)));
-  const insightP = fetch(`/ownmind/api/me/narrative/insights?${qs}`, { headers })
+  const insightP = fetch(`/ownmind/api/me/narrative/insights?${qs}`, { headers, signal })
     .then(async r => {
       if (r.ok) return r.json();
       const body = await r.json().catch(() => ({}));
@@ -1060,14 +1062,21 @@ async function loadNarrative() {
 
   try {
     const mech = await mechP;
+    if (signal.aborted) return;
     renderNarrativeMechanical(mech);
   } catch (e) {
+    if (e.name === 'AbortError' || signal.aborted) return;
     document.getElementById('narrative-sections').innerHTML =
       `<div class="ai-explain" style="color:#dc2626">機械段載入失敗：${esc(e.message)}</div>`;
     return;
   }
 
-  const ins = await insightP;
+  let ins;
+  try { ins = await insightP; } catch (e) {
+    if (e.name === 'AbortError' || signal.aborted) return;
+    ins = { _error: e.message };
+  }
+  if (signal.aborted) return;
   if (ins._error) {
     const msg = ins._status === 503
       ? '（管理者尚未設定 LLM；機械版報告仍可用）'
@@ -1139,12 +1148,6 @@ function renderNarrativeMechanical(data) {
     <div class="narrative-section">
       <h3>10. 各專案最常踩什麼坑</h3>
       <div id="project-friction-render"><em style="color:#9ca3af">⏳ AI 萃取中…</em></div>
-    </div>
-
-    <div class="narrative-section">
-      <h3>11. 各專案守了哪些鐵律</h3>
-      ${renderProjectComplianceTable(s.project_compliance)}
-      <div class="ai-explain" data-section="project_compliance">⏳ 產生洞察中…</div>
     </div>
   `;
 }
