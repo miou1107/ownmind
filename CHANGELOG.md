@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.17.47 — /me 敘事報告（HackMD 風格 14 天分析）
+
+新增 `/ownmind/me` 第四個 tab「📊 敘事報告」：12 段團隊使用分析。
+
+**機械段（秒回，純 SQL）**
+
+人員排行 / 版本對照 / 日時週分布 / 動作類型 / 鐵律 / 更新健康度 / 專案排行 / 各專案合規。
+
+**LLM 段（開頁自動觸發、伺服器端 cache 1 小時）**
+
+- 一句話結論 + 各段「白話講」 + 給管理者的洞察 + 下一步動作 + 各專案踩坑萃取
+- 走 llm-switch（OpenAI-compatible）`https://kkvin.com/llm-switch/v1`，`model='auto'`，`response_format=json_object`
+- Server 端 cache by `sha256(narrative_data)`，TTL 1 小時，全團隊每 range 每小時最多打 1 次 LLM
+- friction notes 給 LLM 前 redactPII（email / IP）
+
+**新檔**
+
+- `src/lib/llm-narrative.js` — llm-switch wrapper（buildMessages + parseLLMJson + computeDataHash + callLLMSwitch）
+- `src/lib/narrative-cache.js` — in-memory hash cache
+- `src/routes/me-narrative.js` — 兩個 endpoint
+- `tests/{narrative-cache,llm-narrative,me-narrative}.test.js` — 24 個新測試
+
+**設定**
+
+管理者需在 production `.env` 加 `LLM_SWITCH_API_KEY`（見 `.env.example`）。
+沒 key 時 endpoint 回 503，機械版報告仍可用。
+
 ## v1.17.46 — /me 專案排行 UI 精簡
 
 **Vincent 反饋**：「我的份這欄位拿掉，另外也不用說什麼偶發測試。」
