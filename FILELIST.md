@@ -378,3 +378,11 @@ src/public/me/index.html                  — fetch path 從 /api/me/ 改 /ownmi
 package.json / docs/README*               — 1.17.26 → 1.17.27
 CHANGELOG.md                              — v1.17.27 條目
 ```
+
+## v1.17.28 修改（hotfix bar chart CSS）
+
+```
+src/public/me/index.html                  — .bar-row / .bar / .bar-label CSS 重寫
+package.json / docs/README*               — 1.17.27 → 1.17.28
+CHANGELOG.md                              — v1.17.28 條目
+```

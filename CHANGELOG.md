@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.17.28 — hotfix /ownmind/me/ bar chart 全空（Vincent 截圖回報）
+
+**症狀**：登入進報告頁後，「每日活動量」「時段分布」「一週節奏」三張柱狀圖
+都只有底部的標籤、沒有任何 bar。
+
+**Root cause**：
+- `.bar-row` 用 `display: flex; flex-direction: column` 但沒給高度
+- 內部 `.bar` 用 inline `height: ${h}%`，% 找不到固定高度的 parent → 0
+- 等於 bar 永遠 0px
+
+**修法**（純 CSS）：
+- `.bar-row` 加 `height: 100%; justify-content: flex-end`，確保 row 等高且 bar 從底部往上長
+- `.bar-label` 改 absolute position 在 row 下方（不佔 bar 的高度）
+- `.bar-chart` 加 `padding-bottom: 24px` 留 label 空間
+
 ## v1.17.27 — hotfix /ownmind/me/ API path 寫錯（Vincent 截圖回報）
 
 **症狀**：登入畫面按「登入」吐 `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`
