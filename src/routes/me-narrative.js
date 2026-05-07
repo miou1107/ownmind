@@ -96,7 +96,7 @@ async function collectSections({ query, range }) {
       COUNT(*) FILTER (WHERE a.event='init') AS sessions,
       COUNT(a.id) AS events,
       MAX(a.ts) AS last_activity
-    FROM web_users u
+    FROM users u
     LEFT JOIN activity_logs a ON a.user_id = u.id AND a.ts ${tfTs}
     GROUP BY u.id, u.name, u.role
     ORDER BY events DESC NULLS LAST
@@ -168,7 +168,7 @@ async function collectSections({ query, range }) {
       COUNT(*) AS sessions,
       SUM(COALESCE((details->>'duration_turns')::int, 0)) AS turns
     FROM session_logs sl
-    LEFT JOIN web_users u ON u.id = sl.user_id
+    LEFT JOIN users u ON u.id = sl.user_id
     WHERE sl.created_at ${tfCreated}
       AND details->>'project' IS NOT NULL
       AND TRIM(details->>'project') != ''
