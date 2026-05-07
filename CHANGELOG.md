@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.17.52 — 整體分析誠信表加「使用者」欄
+
+**Vincent 反饋**（v1.17.51 ship 後）：「如果每個人的 IR 都不一樣，應該要列出是哪位 user 的 IR。」
+
+**問題**：v1.17.51 雖然帶上了 IR title，但仍是團隊合計（GROUP BY rule_code），
+然後用 `DISTINCT ON` 任意挑某個 user 的 title 當共用。當不同 user 的同 code
+鐵律 title 不同時（例如客製版本），會挑到誤導性標題。
+
+**修法**：
+- `src/routes/me-narrative.js` compliance query 改 `GROUP BY (user_id, rule_code)`
+  JOIN `memories` 用 `(user_id, code)` 配對，每筆都是「該 user 自己的鐵律 title」
+- `src/public/me/index.html` `renderComplianceTable()` 多一欄「使用者」
+- 排序：使用者名稱 → IR 代號
+
+每個 user 沒對應 memories 紀錄時 title 留白（不誤導）。
+
 ## v1.17.51 — 整體分析誠信表 IR 代號加白話說明
 
 **Vincent 反饋**（v1.17.50 ship 後）：「這些 IR 是每個人都不同？可以多寫一句話去說明，這樣沒頭沒尾看不懂。」
