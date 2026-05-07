@@ -1,5 +1,49 @@
 # OwnMind 更新紀錄
 
+## v1.17.22 — 修「Windows 用戶 MCP auto-update silent skip」（Eric / Adam case）
+
+**背景**（從工作紀錄分析報告 2026-05-07 發現）
+
+Eric (LAPTOP-G95HIQ3V) 卡 v1.17.17、Adam 卡 v1.17.16，
+但 server 已經 v1.17.21。兩人 4/21 後完全沒有 update_check / update_failed
+event，只有 init / memory_* 正常進 DB。
+
+**Root cause（兩層）**
+
+1. `mcp/index.js` line 1054 用 `process.env.HOME || ''`：Windows 通常沒設
+   HOME（用 USERPROFILE），導致 `OWNMIND_DIR = '.ownmind'` 變相對路徑，
+   `fs.existsSync('.ownmind/.git')` 永遠 false → **整個 auto-update silent skip
+   沒任何 log 可觀測**。
+2. 即使路徑對，`exec(bashScript)` 的 bash 語法（`touch`、`||`、`cd ~`、heredoc）
+   在 Windows cmd.exe 全部不認，會立刻語法錯誤。
+
+**修法**
+
+- `mcp/index.js` 整段 auto-update 重構：
+  - `OWNMIND_DIR` 改用 `os.homedir()`（跨平台、Windows 自動讀 USERPROFILE）
+  - 廢棄 `exec(bashScript)`，改用 Node-native `execFile` 呼叫 git/npm 二進位
+  - Windows 用 `npm.cmd`（execFile 不過 shell 找不到 `npm`）
+  - 同步 skill/hook 步驟：Unix 跑 `bash update.sh`、Windows 跑
+    `powershell update.ps1`
+  - 條件不成立時新增 `update_skipped` event（reason: marker_today /
+    no_git_dir / lock_held），終結 silent skip
+- `scripts/update.ps1`（新檔，含 UTF-8 BOM）：對應 update.sh 的 PowerShell 版，
+  同步 Claude Code skills、hook scripts、settings.json hooks
+- 測試：
+  - `tests/mcp-auto-update-cross-platform.test.js`（8 case）：os.homedir、
+    update_skipped、execFile 跨平台、update.ps1 存在性
+  - `tests/p3-update-event-semantics.test.js` 既有測試對齊新 Node-native 架構
+
+**測試**：626/626 pass
+
+**對 Eric / Adam 的影響**
+
+下次 MCP 啟動時：
+- 路徑解析正確 → 進入 auto-update 流程（之前永遠跳過）
+- 寫 update_check event（之前 0 筆）
+- 任何 step 失敗都寫 update_failed + step 名稱（之前完全 silent）
+- 即使整體沒升起來，dashboard 也看得到「為什麼沒升」
+
 ## v1.17.21 — 修「compact mode 砍掉合規回報指令導致 iron_rule_compliance 0 紀錄」
 
 **背景**（2026-05-07 從工作紀錄分析報告中發現）

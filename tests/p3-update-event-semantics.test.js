@@ -55,29 +55,39 @@ test('P3: mcp/index.js 必須寫 update_clean 給「沒新版可拉」的 case',
   );
 });
 
-test('P3: shell pipeline 必須有 __OM_APPLIED__ 跟 __OM_CLEAN__ marker 才能讓 callback 可靠分支', () => {
-  assert.ok(
-    mcpSource.includes('__OM_APPLIED__'),
-    'shell 必須在「git pull 拉到新 commit + npm install + update.sh 都成功」時 echo __OM_APPLIED__'
+test('P3: mcp/index.js 必須對 update_applied / update_clean 兩種情境分流（不再依賴 shell marker）', () => {
+  // v1.17.22 後改用 Node-native execFile，不再用 shell __OM_APPLIED__ / __OM_CLEAN__ marker
+  // 但 update_applied vs update_clean 的語意分流仍是 P3 的核心：
+  //   - 真有拉到新 commit + 全步驟成功 → update_applied
+  //   - 沒新 commit（git log HEAD..origin/main 空）→ update_clean
+  assert.match(
+    mcpSource,
+    /logEvent\(['"]update_applied['"]/,
+    'mcp/index.js 必須在拉到新 commit 且各步驟成功後寫 update_applied'
   );
-  assert.ok(
-    mcpSource.includes('__OM_CLEAN__'),
-    'shell 必須在「UPDATES 為空」時 echo __OM_CLEAN__，而不是默默走完'
+  assert.match(
+    mcpSource,
+    /logEvent\(['"]update_clean['"]/,
+    'mcp/index.js 必須在沒新版時寫 update_clean，不能默默走完'
   );
 });
 
-test('P3: shell 關鍵 step 必須顯式 trap exit code（git pull / npm install / update.sh 不能再被 silent 吞）', () => {
-  // 修前 shell 用 `git pull -q 2>/dev/null` + `||` fallback，silent 吞失敗。
-  // 修後每個關鍵 step 必須要嘛 echo 失敗 marker、要嘛 exit non-zero。
-  // 我們檢查至少有一個明確 fail marker 來代表這個防禦縱深存在。
-  const hasFailMarker =
-    mcpSource.includes('__OM_PULL_FAIL__') ||
-    mcpSource.includes('__OM_NPM_FAIL__') ||
-    mcpSource.includes('__OM_UPDATE_FAIL__');
-  assert.ok(
-    hasFailMarker,
-    'shell 內必須對 git pull / npm install / update.sh 任一加顯式失敗 marker 或 exit code，避免 silent 失敗仍寫 update_applied'
+test('P3: mcp/index.js 各關鍵 step 失敗必須顯式寫 update_failed（不再被 silent 吞）', () => {
+  // v1.17.22 重構為 Node-native after Eric/Adam Windows silent-skip incident
+  // 每個 step（fetch / log / pull / npm / update_sh）失敗都會走 fail() helper
+  // 寫 update_failed 並帶 step 名稱
+  assert.match(
+    mcpSource,
+    /logEvent\(['"]update_failed['"][^)]*step/,
+    'update_failed event 必須帶 step 欄位區分失敗位置'
   );
+  // 必須涵蓋所有關鍵 step
+  for (const step of ['fetch', 'pull', 'npm', 'update_sh']) {
+    assert.ok(
+      mcpSource.includes(`'${step}'`) || mcpSource.includes(`"${step}"`),
+      `step="${step}" 必須在 update_failed 路徑出現`
+    );
+  }
 });
 
 test('P3: dashboard label 必須含 update_clean（修前只有 update_check + update_applied）', () => {
@@ -144,21 +154,14 @@ test('P3: hook 必須能寫 update_failed（任一 step 出錯）', () => {
 // 對齊 P3「每步顯式 trap」原則，把 lock 也納入失敗 marker。
 // ────────────────────────────────────────────────────────────
 
-test('P3-lock: mcp/index.js shell 必須對 touch LOCK_FILE 失敗顯式 echo marker', () => {
-  // 修前：`touch "${LOCK_FILE}"` 沒接 ||
-  // 修後：`touch "${LOCK_FILE}" || { echo "__OM_LOCK_FAIL__"; exit 9; }`
+test('P3-lock: mcp/index.js touch LOCK_FILE 失敗必須寫 update_failed step=lock（v1.17.22 改 Node-native）', () => {
+  // v1.17.19 原本是 shell `touch "${LOCK_FILE}" || echo __OM_LOCK_FAIL__`
+  // v1.17.22 重構為 Node-native：fs.writeFileSync 包 try/catch，失敗走 update_failed step=lock
+  // 確認 fs.writeFileSync(LOCK_FILE...) 在 try/catch 內，且 catch 走 update_failed step=lock
   assert.match(
     mcpSource,
-    /touch\s+"\$\{LOCK_FILE\}"\s*\|\|\s*\{\s*echo\s+"__OM_LOCK_FAIL__"/,
-    'shell 內 touch LOCK_FILE 必須對失敗 echo __OM_LOCK_FAIL__ marker，不能默默繼續跑'
-  );
-});
-
-test('P3-lock: mcp/index.js callback failMarkers 必須包含 __OM_LOCK_FAIL__', () => {
-  // 確保 callback 解 stdout 時能識別 lock 失敗、寫 update_failed step=lock
-  assert.ok(
-    mcpSource.includes('__OM_LOCK_FAIL__'),
-    'failMarkers 陣列 / callback 解析必須認得 __OM_LOCK_FAIL__，否則 lock 失敗會被歸成 unknown step'
+    /fs\.writeFileSync\(LOCK_FILE[\s\S]{0,200}step:\s*['"]lock['"]/,
+    'mcp/index.js 必須對 fs.writeFileSync(LOCK_FILE) 失敗寫 update_failed step=lock'
   );
 });
 

@@ -287,3 +287,22 @@ src/routes/memory.js                         — ironRulesDigestFinal 末尾固�
 package.json / docs/README*                  — 1.17.20 → 1.17.21，三語系同步
 CHANGELOG.md                                 — v1.17.21 條目
 ```
+
+## v1.17.22 新增 / 修改（Windows MCP auto-update silent-skip 修補）
+
+新增檔：
+
+```
+scripts/update.ps1                                — update.sh 的 PowerShell 版（含 UTF-8 BOM）
+tests/mcp-auto-update-cross-platform.test.js      — 8 case 跨平台 reproduction
+```
+
+修改既有：
+
+```
+mcp/index.js                              — 整段 auto-update 重構：os.homedir() + Node-native execFile
+                                            + update_skipped 觀測 event
+tests/p3-update-event-semantics.test.js   — 既有 P3 / P3-lock 測試對齊 Node-native 新架構
+package.json / docs/README*               — 1.17.21 → 1.17.22，三語系同步
+CHANGELOG.md                              — v1.17.22 條目
+```
