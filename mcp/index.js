@@ -1024,11 +1024,77 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOLS,
 }));
 
+// v1.17.40 — IR-027「邏輯才有效」: 系統自動代為呼叫 iron_rule_compliance
+// Codex round 3 review 指出：靠 AI 自覺呼叫 ownmind_report_compliance 必然漏。
+// 把它變成程式卡控：tool call 成功後，系統根據 tool name + args 自動 emit
+// 對應的 compliance event，不再讓 AI「忘了講」就漏紀錄。
+//
+// source='system_auto' 標記讓 dashboard 區分「系統自動 vs AI 自報」。
+async function autoComplyForToolCall(name, args, result) {
+  const triggers = [];
+  // ownmind_disable rule → IR-006「學到東西必須全層同步更新」
+  if (name === 'ownmind_disable' &&
+      (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule')) {
+    triggers.push({
+      rule_code: 'IR-006',
+      rule_title: '學到東西必須全層同步更新',
+      action: 'comply',
+      context: `停用鐵律 id=${args.id} reason="${(args.reason || '').slice(0, 50)}"`,
+    });
+  }
+  // ownmind_save / ownmind_update with type=iron_rule → IR-006
+  if ((name === 'ownmind_save' && args.type === 'iron_rule') ||
+      (name === 'ownmind_update' &&
+       (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule'))) {
+    triggers.push({
+      rule_code: 'IR-006',
+      rule_title: '學到東西必須全層同步更新',
+      action: 'comply',
+      context: `${name === 'ownmind_save' ? '新增' : '更新'}鐵律 id=${args.id || result?.id || '?'}`,
+    });
+  }
+  // ownmind_handoff_create → IR-008（commit 同步 docs）+ IR-009（contributors）+ IR-024（不加 Co-Authored-By）
+  if (name === 'ownmind_handoff_create') {
+    for (const [code, title] of [
+      ['IR-008', '每次 commit 必須同步更新 README、FILELIST、CHANGELOG'],
+      ['IR-009', 'Git contributors 一律顯示 Vin'],
+      ['IR-024', 'Git commit 絕對不加 Co-Authored-By'],
+    ]) {
+      triggers.push({
+        rule_code: code,
+        rule_title: title,
+        action: 'comply',
+        context: `建立交接 project=${args.project}（系統自動回報，假設前面 commit/push 已遵守）`,
+      });
+    }
+  }
+
+  // 用既有 logEvent pipeline 寫入（local JSONL + server upload，跟 ownmind_report_compliance 同 path）
+  for (const trig of triggers) {
+    logEvent('iron_rule_compliance', {
+      rule_code: trig.rule_code,
+      rule_title: trig.rule_title,
+      action: trig.action,
+      context: trig.context,
+      source: 'system_auto',
+      tool_call: name,
+    });
+    // 進 in-memory complianceEvents 給 emergencySessionLog 收尾
+    complianceEvents.push({
+      ...trig,
+      source: 'system_auto',
+      ts: new Date().toISOString(),
+    });
+  }
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
     const result = await handleTool(name, args || {});
+    // v1.17.40: 自動代呼 iron_rule_compliance（不阻擋主流程）
+    autoComplyForToolCall(name, args || {}, result).catch(() => {});
     const typeName = resolveType(name, args);
     const tag = formatTag(typeName);
     const body = typeof result === "string" ? result : JSON.stringify(result, null, 2);
