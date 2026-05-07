@@ -563,6 +563,23 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.63 修改（安裝/升級自動 self-check + 上傳 log）
+
+```
+scripts/install-helpers/self-check.cjs   — 新增（7 項本機檢查、寫 log、上傳 server）
+db/011_install_check_logs.sql            — 新增（schema migration）
+src/routes/debug.js                      — 新增（POST /api/debug/install-check 收 log）
+tests/self-check.test.js                 — 新增（13 case：parseArgs / summarize / sanitizePath / buildReport / smoke）
+tests/debug-route.test.js                — 新增（5 case：auth / 成功 / 缺欄位 / 過大 / DB 錯）
+src/app.js                               — 掛 /api/debug router
+install.sh / install.ps1                 — 結尾呼叫 self-check（trigger=post_install）
+scripts/interactive-upgrade.sh / .ps1    — 結尾呼叫 self-check（trigger=post_upgrade）
+docs/superpowers/specs/2026-05-08-install-self-check-design.md — 新增（spec）
+package.json                             — 1.17.62 → 1.17.63
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.62 → 1.17.63
+CHANGELOG.md                             — v1.17.63 條目
+```
+
 ## v1.17.62 修改（修自動更新兩個 silent fail）
 
 ```

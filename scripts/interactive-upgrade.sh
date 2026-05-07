@@ -190,4 +190,10 @@ fi
 
 OK "done" "升級完成 → 版本：${VERSION}。備份保留於 ${BACKUP_DIR}"
 
+# v1.17.63: 升級完跑 self-check，把當下本機狀態抓下來、寫 log + 上傳。失敗不擋升級訊息。
+SELF_CHECK_SCRIPT="${OWNMIND_DIR}/scripts/install-helpers/self-check.cjs"
+if [ -f "${SELF_CHECK_SCRIPT}" ]; then
+  node "${SELF_CHECK_SCRIPT}" --trigger=post_upgrade || true
+fi
+
 exit 0
