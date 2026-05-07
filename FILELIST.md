@@ -271,3 +271,19 @@ src/public/index.html                     — 新「工作紀錄」tab + JS load
 package.json / docs/README*               — 1.17.19 → 1.17.20，三語系同步
 CHANGELOG.md                              — v1.17.20 條目
 ```
+
+## v1.17.21 修改（compact mode 砍掉合規回報指令的回灌）
+
+新增檔：
+
+```
+tests/init-compact-compliance-instruction.test.js  — 3 case 防退化
+```
+
+修改既有：
+
+```
+src/routes/memory.js                         — ironRulesDigestFinal 末尾固定加合規回報指令
+package.json / docs/README*                  — 1.17.20 → 1.17.21，三語系同步
+CHANGELOG.md                                 — v1.17.21 條目
+```

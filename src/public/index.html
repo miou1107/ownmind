@@ -811,7 +811,7 @@
     debug: '除錯', research: '研究', refactor: '重構', test: '測試',
     review: '審查', install: '安裝', config: '設定',
     comply: '遵守', skip: '跳過', violate: '違反',
-    init: '初始化', memory_save: '儲存記憶', memory_get: '讀取記憶',
+    init: 'Session 啟動', memory_save: '儲存記憶', memory_get: '讀取記憶',
     memory_update: '更新記憶', memory_search: '搜尋記憶', memory_disable: '停用記憶',
     iron_rule_trigger: '鐵律觸發', iron_rule_compliance: '合規回報',
     sync_conflict: '同步衝突', update_check: '檢查更新', update_applied: '已更新',
@@ -1918,16 +1918,19 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       const html = data.rows.map(r => {
         const color = sourceColor[r.source] || '#374151';
         const label = sourceLabel[r.source] || r.source;
+        // details 為空 {} 時顯示 '—'（init 等事件本來就不帶 payload，
+        // 印 '{}' 字面只是雜訊）
+        const hasDetails = r.details && Object.keys(r.details).length > 0;
         const detailsStr = r.summary
           ? r.summary
-          : JSON.stringify(r.details || {});
-        const trimmed = (detailsStr || '').slice(0, 200);
+          : (hasDetails ? JSON.stringify(r.details) : '');
+        const trimmed = detailsStr ? detailsStr.slice(0, 200) : '—';
         return `<tr>
           <td style="font-family:'SF Mono',monospace;font-size:11px;">${escapeHtml(new Date(r.ts).toLocaleString('zh-TW'))}</td>
           <td><span class="role-badge" style="background:${color}1a;color:${color};">${escapeHtml(label)}</span></td>
           <td>${escapeHtml(r.user_name || '#' + r.user_id)}</td>
           <td>${escapeHtml(r.tool || '—')}</td>
-          <td><code style="font-size:11px;">${escapeHtml(r.event_type)}</code></td>
+          <td><code style="font-size:11px;" title="${escapeHtml(r.event_type)}">${escapeHtml(zh(r.event_type))}</code></td>
           <td style="font-family:'SF Mono',monospace;font-size:11px;color:#374151;max-width:500px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(detailsStr)}">${escapeHtml(trimmed)}</td>
         </tr>`;
       }).join('');
