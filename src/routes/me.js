@@ -195,14 +195,14 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // 個人活動紀錄（最近 200 筆）
+    // 個人活動紀錄（時間範圍內全部，前端分頁）
+    // v1.17.33: 移除 LIMIT 200，user 反饋「紀錄應該要在時間範圍內都要列出」
     const myActivityQ = await query(`
       SELECT ts, event, tool, source, details
       FROM activity_logs
       WHERE user_id = $1
         AND ts >= NOW() - INTERVAL '${interval}'
-      ORDER BY ts DESC
-      LIMIT 200`,
+      ORDER BY ts DESC`,
       [me.id]
     );
 

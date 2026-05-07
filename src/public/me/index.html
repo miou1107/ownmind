@@ -221,6 +221,26 @@
   button.secondary:hover { background: #f9fafb; }
   details { margin-top: 8px; }
   details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
+  .pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #6b7280;
+  }
+  .pager button {
+    background: #fff;
+    border: 1px solid #d1d5db;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .pager button:hover:not(:disabled) { background: #f9fafb; }
+  .pager button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pager .info { padding: 0 8px; }
   pre {
     background: #f3f4f6;
     padding: 8px;
@@ -317,14 +337,16 @@
       <table id="me-compliance"><thead><tr>
         <th>鐵律</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th><th class="num">遵守率</th>
       </tr></thead><tbody></tbody></table>
+      <div id="me-compliance-pager" class="pager"></div>
     </div>
 
     <div class="card">
       <h2>我的活動紀錄</h2>
-      <div class="desc">最近 200 筆活動（依時間倒序）。details 是事件附帶資料（init 等簡單事件可能空白）。</div>
+      <div class="desc">時間範圍內所有活動（依時間倒序）。details 是事件附帶資料（init 等簡單事件可能空白）。</div>
       <table id="me-activity"><thead><tr>
         <th>時間</th><th>事件</th><th>工具</th><th>來源</th><th>Details</th>
       </tr></thead><tbody></tbody></table>
+      <div id="me-activity-pager" class="pager"></div>
     </div>
   </div>
 
@@ -511,8 +533,39 @@ function versionStatus(version, latest) {
   return { cls: 'ver-bad', label: version + ' 🔴' };
 }
 
+// 簡易分頁器
+const PAGE_SIZE = 30;
+const pageState = { compliance: 0, activity: 0 };
+
+function paginate(rows, page) {
+  const start = page * PAGE_SIZE;
+  return rows.slice(start, start + PAGE_SIZE);
+}
+
+function renderPager(containerSel, total, page, onChange) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const el = $(containerSel);
+  if (total <= PAGE_SIZE) { el.innerHTML = ''; return; }
+  const start = page * PAGE_SIZE + 1;
+  const end = Math.min((page + 1) * PAGE_SIZE, total);
+  el.innerHTML = `
+    <button data-act="prev" ${page === 0 ? 'disabled' : ''}>‹ 上一頁</button>
+    <span class="info">${start}–${end} / ${total}（第 ${page + 1} / ${totalPages} 頁）</span>
+    <button data-act="next" ${page >= totalPages - 1 ? 'disabled' : ''}>下一頁 ›</button>
+  `;
+  el.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.act;
+      onChange(act === 'prev' ? page - 1 : page + 1);
+    });
+  });
+}
+
 function render(report) {
   currentReport = report;
+  // 切換 range 時重置分頁
+  pageState.compliance = 0;
+  pageState.activity = 0;
   const me = report.me;
   const team = report.team;
   const projects = report.projects;
@@ -552,23 +605,32 @@ function render(report) {
         <td class="num">${p.turns || 0}</td>
       </tr>`).join('');
 
-  $('#me-compliance tbody').innerHTML = me.compliance.length === 0
-    ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無鐵律可顯示</td></tr>'
-    : me.compliance.map(c => {
-        const total = (c.comply || 0) + (c.skip || 0) + (c.violate || 0);
-        const rate = total > 0 ? Math.round((c.comply || 0) / total * 100) + '%' : '—';
-        const rateColor = total === 0 ? '#9ca3af' :
-          (c.comply / total >= 0.8 ? '#059669' :
-           c.comply / total >= 0.5 ? '#d97706' : '#dc2626');
-        const ruleCell = `<strong>${esc(c.rule_code || '—')}</strong>${c.title ? '<br><small style="color:#6b7280">' + esc(c.title) + '</small>' : ''}`;
-        return `<tr>
-          <td>${ruleCell}</td>
-          <td class="num">${c.comply || 0}</td>
-          <td class="num">${c.skip || 0}</td>
-          <td class="num" style="color:${c.violate > 0 ? '#dc2626' : '#1a1a1a'}">${c.violate || 0}</td>
-          <td class="num" style="color:${rateColor};font-weight:600">${rate}</td>
-        </tr>`;
-      }).join('');
+  function renderCompliancePage() {
+    const rows = me.compliance || [];
+    const slice = paginate(rows, pageState.compliance);
+    $('#me-compliance tbody').innerHTML = rows.length === 0
+      ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無鐵律可顯示</td></tr>'
+      : slice.map(c => {
+          const total = (c.comply || 0) + (c.skip || 0) + (c.violate || 0);
+          const rate = total > 0 ? Math.round((c.comply || 0) / total * 100) + '%' : '—';
+          const rateColor = total === 0 ? '#9ca3af' :
+            (c.comply / total >= 0.8 ? '#059669' :
+             c.comply / total >= 0.5 ? '#d97706' : '#dc2626');
+          const ruleCell = `<strong>${esc(c.rule_code || '—')}</strong>${c.title ? '<br><small style="color:#6b7280">' + esc(c.title) + '</small>' : ''}`;
+          return `<tr>
+            <td>${ruleCell}</td>
+            <td class="num">${c.comply || 0}</td>
+            <td class="num">${c.skip || 0}</td>
+            <td class="num" style="color:${c.violate > 0 ? '#dc2626' : '#1a1a1a'}">${c.violate || 0}</td>
+            <td class="num" style="color:${rateColor};font-weight:600">${rate}</td>
+          </tr>`;
+        }).join('');
+    renderPager('#me-compliance-pager', rows.length, pageState.compliance, (p) => {
+      pageState.compliance = p;
+      renderCompliancePage();
+    });
+  }
+  renderCompliancePage();
 
   // 我的活動紀錄
   const ZH_EVENT_INDIV = {
@@ -581,22 +643,31 @@ function render(report) {
     error: '錯誤', init_fail: '初始化失敗', test_event: '測試事件',
     memory_sync_standard: '同步團隊規範', session_log_emergency: '緊急結束',
   };
-  $('#me-activity tbody').innerHTML = (me.activity || []).length === 0
-    ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無活動紀錄</td></tr>'
-    : me.activity.map(a => {
-        const hasDetails = a.details && Object.keys(a.details).length > 0;
-        const detailsStr = hasDetails ? JSON.stringify(a.details) : '';
-        const detailsCell = detailsStr
-          ? `<code style="font-size:11px;color:#6b7280">${esc(detailsStr.slice(0, 120))}${detailsStr.length > 120 ? '…' : ''}</code>`
-          : '<span style="color:#d1d5db">—</span>';
-        return `<tr>
-          <td><small>${esc(fmtTs(a.ts))}</small></td>
-          <td>${esc(ZH_EVENT_INDIV[a.event] || a.event)} <code style="color:#9ca3af;font-size:11px">${esc(a.event)}</code></td>
-          <td><small>${esc(a.tool || '—')}</small></td>
-          <td><small>${esc(a.source || '—')}</small></td>
-          <td>${detailsCell}</td>
-        </tr>`;
-      }).join('');
+  function renderActivityPage() {
+    const rows = me.activity || [];
+    const slice = paginate(rows, pageState.activity);
+    $('#me-activity tbody').innerHTML = rows.length === 0
+      ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無活動紀錄</td></tr>'
+      : slice.map(a => {
+          const hasDetails = a.details && Object.keys(a.details).length > 0;
+          const detailsStr = hasDetails ? JSON.stringify(a.details) : '';
+          const detailsCell = detailsStr
+            ? `<code style="font-size:11px;color:#6b7280">${esc(detailsStr.slice(0, 120))}${detailsStr.length > 120 ? '…' : ''}</code>`
+            : '<span style="color:#d1d5db">—</span>';
+          return `<tr>
+            <td><small>${esc(fmtTs(a.ts))}</small></td>
+            <td>${esc(ZH_EVENT_INDIV[a.event] || a.event)} <code style="color:#9ca3af;font-size:11px">${esc(a.event)}</code></td>
+            <td><small>${esc(a.tool || '—')}</small></td>
+            <td><small>${esc(a.source || '—')}</small></td>
+            <td>${detailsCell}</td>
+          </tr>`;
+        }).join('');
+    renderPager('#me-activity-pager', rows.length, pageState.activity, (p) => {
+      pageState.activity = p;
+      renderActivityPage();
+    });
+  }
+  renderActivityPage();
 
   // ── 團隊 ──
   $('#team-users tbody').innerHTML = team.users.map(u => `<tr>
