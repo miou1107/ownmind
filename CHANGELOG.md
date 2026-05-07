@@ -1,5 +1,43 @@
 # OwnMind 更新紀錄
 
+## v1.17.24 — 用戶用量報告頁（/ownmind/me/）
+
+**背景**：之前後台只有 admin / super_admin 能登入，user role 完全看不到自己 / 團隊
+的活動量。Vincent 表示要開放讓 user 也能看「個人 + 團隊」用量報告，內容比照
+HackMD 那份手動整理的版本，但即時資料、自助登入。
+
+**設計決策**（跟 Vincent brainstorm 4 題拍板）
+
+- Q1 = C：完全開放，互看活動 / 版本，不匿名化
+- Q2 = B：全團隊專案都看得到（不含對話內容、只看數量）
+- Q3 = B：獨立 URL `/ownmind/me/`，跟 admin 後台分開
+- Q4 = 完整版（不是 MVP）
+
+**新增**
+
+- `src/routes/me.js` — `/api/me/profile` + `/api/me/report?range=7d/14d/30d/all`
+  - 用 `auth` middleware（一般 auth，不擋 user role）
+  - report 回 me / team / projects 三大區塊：個人活動 / 版本 / 專案 / 合規 +
+    團隊成員列表 / 每日趨勢 / 時段熱力 / 一週節奏 / 事件類型 / 全工具版本
+- `src/public/me/index.html` — 自助登入（貼 api_key 存 localStorage）+ 三 tab
+  報告頁，內建 bar chart（純 CSS，無 mermaid 依賴）
+- `tests/me-report.test.js` — 7 個 case 防退化
+
+**改動**
+
+- `src/app.js` — 掛 `/api/me` 路由 + 提供 `/me` 靜態頁（nginx rewrite 到
+  `/ownmind/me/`）
+- 三語系 README + CHANGELOG + FILELIST 同步
+
+**測試**：638/638 pass
+
+**對 user 的影響**
+
+Eric / Michelle / Adam（user role）現在可以開 https://kkvin.com/ownmind/me/，
+貼上自己的 api_key（從 `~/.claude/settings.json` 找 `OWNMIND_API_KEY`），看自己
+的活動 + 全團隊聚合資料。Vincent / Eric（admin）也能用此頁，但他們也保留 admin
+後台原有功能。
+
 ## v1.17.23 — Codex review 抓到的 v1.17.22 後續修補（5 項）
 
 **背景**：v1.17.22 修了 Windows MCP auto-update silent-skip，但 Codex

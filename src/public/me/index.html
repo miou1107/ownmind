@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OwnMind 用量報告</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang TC',
+      'Microsoft JhengHei', 'Helvetica Neue', sans-serif;
+    background: #f7f8fa;
+    color: #1a1a1a;
+    line-height: 1.6;
+  }
+  header {
+    background: #fff;
+    padding: 16px 24px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header .meta { color: #6b7280; font-size: 13px; }
+  header .meta strong { color: #1a1a1a; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  .tabs button {
+    background: transparent;
+    border: none;
+    padding: 12px 20px;
+    cursor: pointer;
+    font-size: 15px;
+    color: #6b7280;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+  }
+  .tabs button.active {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+    font-weight: 600;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .card h2 {
+    margin: 0 0 12px;
+    font-size: 17px;
+    color: #1a1a1a;
+  }
+  .card .desc {
+    color: #6b7280;
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+  .stat {
+    background: #f9fafb;
+    padding: 16px;
+    border-radius: 6px;
+    text-align: center;
+  }
+  .stat .v { font-size: 28px; font-weight: 700; color: #2563eb; }
+  .stat .l { font-size: 13px; color: #6b7280; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 14px;
+  }
+  th { background: #f9fafb; font-weight: 600; color: #4b5563; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ver-ok { color: #059669; font-weight: 600; }
+  .ver-warn { color: #d97706; font-weight: 600; }
+  .ver-bad { color: #dc2626; font-weight: 600; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+  .login-card {
+    max-width: 460px;
+    margin: 80px auto;
+    background: #fff;
+    padding: 32px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+  .login-card h1 { margin-top: 0; }
+  .login-card p { color: #6b7280; }
+  .login-card input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: monospace;
+    margin-top: 12px;
+  }
+  .login-card button, button.primary {
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-top: 16px;
+    font-weight: 600;
+  }
+  .login-card button:hover, button.primary:hover { background: #1d4ed8; }
+  .err { color: #dc2626; margin-top: 12px; font-size: 13px; }
+  .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 200px; padding: 12px 0; }
+  .bar { flex: 1; background: #2563eb; border-radius: 3px 3px 0 0; position: relative; min-height: 2px; }
+  .bar:hover { background: #1d4ed8; }
+  .bar-label { font-size: 11px; color: #6b7280; text-align: center; padding-top: 4px; }
+  .bar-row { display: flex; flex-direction: column; flex: 1; }
+  .pie-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .pie-bar { display: flex; height: 32px; border-radius: 4px; overflow: hidden; flex: 1; min-width: 200px; }
+  .pie-bar > div { transition: opacity 0.2s; }
+  .pie-bar > div:hover { opacity: 0.8; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+  .legend .dot { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; margin-right: 4px; }
+  .footer { color: #9ca3af; font-size: 12px; text-align: center; margin: 32px 0 16px; }
+  .actions { display: flex; gap: 8px; }
+  button.secondary {
+    background: #fff;
+    color: #4b5563;
+    border: 1px solid #d1d5db;
+    padding: 8px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button.secondary:hover { background: #f9fafb; }
+  details { margin-top: 8px; }
+  details summary { cursor: pointer; color: #6b7280; font-size: 13px; }
+  pre {
+    background: #f3f4f6;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    overflow-x: auto;
+    margin-top: 8px;
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- 登入頁 -->
+<div id="loginView" class="login-card">
+  <h1>【OwnMind】用量報告</h1>
+  <p>請貼上你的 OwnMind <strong>API Key</strong>。<br>
+  Key 在你的 Claude Code 設定（<code>~/.claude/settings.json</code> 的
+  <code>OWNMIND_API_KEY</code>）。</p>
+  <input type="password" id="apiKeyInput" placeholder="貼上 API Key…" autocomplete="off">
+  <button id="loginBtn">登入</button>
+  <div id="loginErr" class="err hidden"></div>
+</div>
+
+<!-- 報告頁 -->
+<header id="reportHeader" class="hidden">
+  <div>
+    <h1>【OwnMind】用量報告</h1>
+    <div class="meta">你好 <strong id="meName">—</strong>（<span id="meRole">—</span>）·
+      範圍 <select id="rangeSel" style="margin-left:4px;">
+        <option value="7d">最近 7 天</option>
+        <option value="14d" selected>最近 14 天</option>
+        <option value="30d">最近 30 天</option>
+        <option value="all">全部</option>
+      </select>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="secondary" id="refreshBtn">重新整理</button>
+    <button class="secondary" id="logoutBtn">登出</button>
+  </div>
+</header>
+
+<main id="reportMain" class="hidden">
+  <div class="tabs">
+    <button class="active" data-tab="me">個人</button>
+    <button data-tab="team">團隊</button>
+    <button data-tab="projects">專案</button>
+  </div>
+
+  <!-- 個人 tab -->
+  <div id="tab-me" class="tab-content active">
+    <div class="card">
+      <h2>我的活動</h2>
+      <div class="stat-grid">
+        <div class="stat"><div class="v" id="me-sessions">—</div><div class="l">Session 啟動</div></div>
+        <div class="stat"><div class="v" id="me-events">—</div><div class="l">總事件數</div></div>
+        <div class="stat"><div class="v" id="me-last">—</div><div class="l">最後活動</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>我的軟體版本</h2>
+      <div class="desc">每個 AI 工具的 OwnMind client 版本。落後 server 太多版可能要升級。</div>
+      <table id="me-versions"><thead><tr>
+        <th>工具</th><th>版本</th><th>最後心跳</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>我的專案</h2>
+      <div class="desc">過去這段期間我寫過 session_log 的專案。</div>
+      <table id="me-projects"><thead><tr>
+        <th>專案</th><th class="num">Session 數</th><th class="num">對話輪次</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>我的鐵律遵守紀錄</h2>
+      <div class="desc">每次鐵律觸發時 AI 自動回報的遵守 / 跳過 / 違反次數。</div>
+      <table id="me-compliance"><thead><tr>
+        <th>鐵律</th><th class="num">遵守</th><th class="num">跳過</th><th class="num">違反</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- 團隊 tab -->
+  <div id="tab-team" class="tab-content">
+    <div class="card">
+      <h2>團隊每位成員</h2>
+      <div class="desc">過去這段期間每位 user 的活動量。Session 數 = 開了幾次對話。</div>
+      <table id="team-users"><thead><tr>
+        <th>成員</th><th>角色</th><th class="num">Session 數</th>
+        <th class="num">總事件</th><th>最後活動</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>每日活動量</h2>
+      <div id="team-daily" class="bar-chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>時段分布（台北時間）</h2>
+      <div id="team-hourly" class="bar-chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>一週節奏</h2>
+      <div id="team-weekday" class="bar-chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>各工具版本分布（過去 14 天活躍）</h2>
+      <div class="desc">每位 user 的每個工具當前版本。落後超過 3 版要小心，可能自動更新失靈。</div>
+      <table id="team-versions"><thead><tr>
+        <th>成員</th><th>工具</th><th>版本</th><th>最後心跳</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>事件類型 Top 15</h2>
+      <table id="team-events"><thead><tr>
+        <th>事件</th><th class="num">次數</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <!-- 專案 tab -->
+  <div id="tab-projects" class="tab-content">
+    <div class="card">
+      <h2>各專案活動量排行</h2>
+      <div class="desc">全團隊專案。「我的份」= 我自己貢獻多少 session。</div>
+      <table id="projects-table"><thead><tr>
+        <th>專案</th><th class="num">Session 總數</th><th class="num">對話輪次</th>
+        <th>負責人</th><th class="num">我的份</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <div class="footer">
+    OwnMind 用量報告 · 資料即時取自 kkvin.com · <span id="generated">—</span>
+  </div>
+</main>
+
+<script>
+const KEY_NAME = 'ownmind_api_key';
+let currentReport = null;
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+
+function showLogin() {
+  $('#loginView').classList.remove('hidden');
+  $('#reportHeader').classList.add('hidden');
+  $('#reportMain').classList.add('hidden');
+}
+
+function showReport() {
+  $('#loginView').classList.add('hidden');
+  $('#reportHeader').classList.remove('hidden');
+  $('#reportMain').classList.remove('hidden');
+}
+
+async function tryAuth(key) {
+  const r = await fetch('/api/me/profile', {
+    headers: { Authorization: 'Bearer ' + key }
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(j.error || '驗證失敗');
+  }
+  return r.json();
+}
+
+async function fetchReport(key, range) {
+  const r = await fetch('/api/me/report?range=' + encodeURIComponent(range), {
+    headers: { Authorization: 'Bearer ' + key }
+  });
+  if (!r.ok) throw new Error('報告載入失敗');
+  return r.json();
+}
+
+function fmtTs(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+}
+
+function fmtAgo(ts) {
+  if (!ts) return '—';
+  const ms = Date.now() - new Date(ts).getTime();
+  const min = Math.round(ms / 60000);
+  if (min < 1) return '剛剛';
+  if (min < 60) return min + ' 分鐘前';
+  const hr = Math.round(min / 60);
+  if (hr < 24) return hr + ' 小時前';
+  const day = Math.round(hr / 24);
+  return day + ' 天前';
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
+
+function maxOf(arr, key) {
+  let m = 0;
+  for (const x of arr) {
+    if (x[key] > m) m = x[key];
+  }
+  return m || 1;
+}
+
+function barChart(containerId, data, getLabel, getValue) {
+  const el = $(containerId);
+  el.innerHTML = '';
+  const max = Math.max(1, ...data.map(getValue));
+  for (const d of data) {
+    const v = getValue(d);
+    const h = (v / max * 100).toFixed(1) + '%';
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `
+      <div class="bar" style="height:${h}" title="${esc(getLabel(d))}: ${v}"></div>
+      <div class="bar-label">${esc(getLabel(d))}</div>
+    `;
+    el.appendChild(row);
+  }
+}
+
+function compareVersion(a, b) {
+  const pa = String(a || '').split('.').map(n => parseInt(n, 10) || 0);
+  const pb = String(b || '').split('.').map(n => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const da = pa[i] || 0, db = pb[i] || 0;
+    if (da !== db) return da - db;
+  }
+  return 0;
+}
+
+function versionStatus(version, latest) {
+  if (!version) return { cls: '', label: '—' };
+  const diff = compareVersion(latest, version);
+  if (diff <= 0) return { cls: 'ver-ok', label: version + ' ✅' };
+  if (diff <= 3 * 100) return { cls: 'ver-warn', label: version + ' ⚠️' };
+  return { cls: 'ver-bad', label: version + ' 🔴' };
+}
+
+function render(report) {
+  currentReport = report;
+  const me = report.me;
+  const team = report.team;
+  const projects = report.projects;
+
+  $('#meName').textContent = me.name;
+  $('#meRole').textContent = ({ user: '一般成員', admin: '管理員', super_admin: '超級管理員' })[me.role] || me.role;
+  $('#generated').textContent = '產生時間 ' + fmtTs(report.generated_at);
+
+  // ── 個人 ──
+  $('#me-sessions').textContent = me.sessions.toLocaleString();
+  $('#me-events').textContent = me.events.toLocaleString();
+  $('#me-last').textContent = fmtAgo(me.last_activity);
+
+  // 找團隊最高版本當基準
+  const latestVer = team.versions
+    .map(v => v.version)
+    .sort(compareVersion)
+    .pop() || '';
+
+  const meVerBody = $('#me-versions tbody');
+  meVerBody.innerHTML = me.versions.length === 0
+    ? '<tr><td colspan="3" style="text-align:center;color:#9ca3af">尚無心跳資料</td></tr>'
+    : me.versions.map(v => {
+        const s = versionStatus(v.version, latestVer);
+        return `<tr>
+          <td>${esc(v.tool)}</td>
+          <td class="${s.cls}">${esc(s.label)}</td>
+          <td>${esc(fmtAgo(v.last_reported_at))}</td>
+        </tr>`;
+      }).join('');
+
+  $('#me-projects tbody').innerHTML = me.projects.length === 0
+    ? '<tr><td colspan="3" style="text-align:center;color:#9ca3af">尚無專案紀錄（Claude Code session 結束時 AI 沒寫 session_log）</td></tr>'
+    : me.projects.map(p => `<tr>
+        <td>${esc(p.project)}</td>
+        <td class="num">${p.sessions}</td>
+        <td class="num">${p.turns || 0}</td>
+      </tr>`).join('');
+
+  $('#me-compliance tbody').innerHTML = me.compliance.length === 0
+    ? '<tr><td colspan="4" style="text-align:center;color:#9ca3af">尚無合規回報紀錄</td></tr>'
+    : me.compliance.map(c => `<tr>
+        <td>${esc(c.rule_code || '—')}</td>
+        <td class="num">${c.comply || 0}</td>
+        <td class="num">${c.skip || 0}</td>
+        <td class="num" style="color:${c.violate > 0 ? '#dc2626' : '#1a1a1a'}">${c.violate || 0}</td>
+      </tr>`).join('');
+
+  // ── 團隊 ──
+  $('#team-users tbody').innerHTML = team.users.map(u => `<tr>
+    <td><strong>${esc(u.name)}</strong></td>
+    <td>${esc(({ user: '一般', admin: '管理員', super_admin: '超管' })[u.role] || u.role)}</td>
+    <td class="num">${u.sessions}</td>
+    <td class="num">${u.events}</td>
+    <td>${esc(fmtAgo(u.last_activity))}</td>
+  </tr>`).join('');
+
+  barChart('#team-daily', team.daily_trend, d => d.d, d => d.count);
+  barChart('#team-hourly', team.hourly_trend, d => d.hour + 'h', d => d.count);
+  barChart('#team-weekday', team.weekday_trend, d => WEEKDAY[d.dow], d => d.count);
+
+  $('#team-versions tbody').innerHTML = team.versions.length === 0
+    ? '<tr><td colspan="4" style="text-align:center;color:#9ca3af">尚無資料</td></tr>'
+    : team.versions.map(v => {
+        const s = versionStatus(v.version, latestVer);
+        return `<tr>
+          <td>${esc(v.name)}</td>
+          <td>${esc(v.tool)}</td>
+          <td class="${s.cls}">${esc(s.label)}</td>
+          <td>${esc(fmtAgo(v.last_reported_at))}</td>
+        </tr>`;
+      }).join('');
+
+  const ZH_EVENT = {
+    init: 'Session 啟動', memory_save: '儲存記憶', memory_get: '讀取記憶',
+    memory_search: '搜尋記憶', memory_update: '更新記憶', memory_disable: '停用記憶',
+    update_check: '檢查更新', update_applied: '已更新', update_clean: '無新版',
+    update_failed: '更新失敗', update_skipped: '更新跳過', update_ok: '已更新（舊命名）',
+    iron_rule_compliance: '合規回報', session_log: '結束總結',
+    handoff_create: '建立交接', handoff_accept: '接受交接',
+    error: '錯誤', init_fail: '初始化失敗', test_event: '測試事件',
+    memory_sync_standard: '同步團隊規範', session_log_emergency: '緊急結束',
+  };
+  $('#team-events tbody').innerHTML = team.event_types.map(e => `<tr>
+    <td>${esc(ZH_EVENT[e.event] || e.event)} <code style="color:#9ca3af;font-size:11px">${esc(e.event)}</code></td>
+    <td class="num">${e.count}</td>
+  </tr>`).join('');
+
+  // ── 專案 ──
+  $('#projects-table tbody').innerHTML = projects.length === 0
+    ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af">尚無專案紀錄</td></tr>'
+    : projects.map(p => `<tr>
+        <td><strong>${esc(p.project)}</strong></td>
+        <td class="num">${p.sessions}</td>
+        <td class="num">${p.turns || 0}</td>
+        <td>${esc((p.owners || []).join(', '))}</td>
+        <td class="num">${p.my_sessions}</td>
+      </tr>`).join('');
+}
+
+async function loadReport() {
+  const key = localStorage.getItem(KEY_NAME);
+  if (!key) return showLogin();
+  const range = $('#rangeSel').value;
+  try {
+    await tryAuth(key);
+    const report = await fetchReport(key, range);
+    render(report);
+    showReport();
+  } catch (e) {
+    localStorage.removeItem(KEY_NAME);
+    showLogin();
+    $('#loginErr').textContent = '登入過期或 key 無效，請重新貼一次';
+    $('#loginErr').classList.remove('hidden');
+  }
+}
+
+$('#loginBtn').addEventListener('click', async () => {
+  const key = $('#apiKeyInput').value.trim();
+  $('#loginErr').classList.add('hidden');
+  if (!key) {
+    $('#loginErr').textContent = '請貼上 API Key';
+    $('#loginErr').classList.remove('hidden');
+    return;
+  }
+  try {
+    await tryAuth(key);
+    localStorage.setItem(KEY_NAME, key);
+    await loadReport();
+  } catch (e) {
+    $('#loginErr').textContent = '驗證失敗：' + e.message;
+    $('#loginErr').classList.remove('hidden');
+  }
+});
+
+$('#apiKeyInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') $('#loginBtn').click();
+});
+
+$('#refreshBtn').addEventListener('click', loadReport);
+$('#rangeSel').addEventListener('change', loadReport);
+$('#logoutBtn').addEventListener('click', () => {
+  localStorage.removeItem(KEY_NAME);
+  $('#apiKeyInput').value = '';
+  showLogin();
+});
+
+$$('.tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    $$('.tabs button').forEach(b => b.classList.toggle('active', b === btn));
+    $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + tab));
+  });
+});
+
+// Initial load
+loadReport();
+</script>
+</body>
+</html>
