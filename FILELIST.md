@@ -562,6 +562,17 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.52 修改（誠信表加「使用者」欄）
+
+```
+src/routes/me-narrative.js                — compliance query 改 GROUP BY (user_id, rule_code)
+                                            JOIN users + memories(user_id, code) 帶該 user 自己的 title
+src/public/me/index.html                  — renderComplianceTable() 多一欄「使用者」
+                                            ORDER BY user_name → rule_code
+package.json / README* / docs/README*     — 1.17.51 → 1.17.52
+CHANGELOG.md                              — v1.17.52 條目
+```
+
 ## v1.17.51 修改（誠信表 IR 代號加白話說明）
 
 ```

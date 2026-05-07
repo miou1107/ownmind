@@ -138,11 +138,11 @@ async function collectSections({ query, range }) {
   `)).rows;
 
   // 7. compliance — iron_rule 統計（同 me.js 的誠信邏輯）
-  // v1.17.51: JOIN memories 帶出 IR title，讓報表讀者一看就懂規則內容
-  // 用 DISTINCT ON 取每個 code 最新 title（不同 user 可能有同 code 的客製版本）
+  // v1.17.52: 改成 per-user × rule_code，每筆鐵律配對到「該使用者自己的 title」
+  //          因為每個 user 的鐵律不同（含客製版本），合併顯示會誤導
   const compliance = (await query(`
     WITH stats AS (
-      SELECT details->>'rule_code' AS rule_code,
+      SELECT user_id, details->>'rule_code' AS rule_code,
         COUNT(*) FILTER (WHERE details->>'action'='comply' AND COALESCE(details->>'source','') NOT LIKE 'system_%') AS comply,
         COUNT(*) FILTER (WHERE details->>'action'='skip' AND COALESCE(details->>'source','') NOT LIKE 'system_%') AS skip,
         COUNT(*) FILTER (WHERE details->>'action'='violate') AS violate,
@@ -150,19 +150,17 @@ async function collectSections({ query, range }) {
           OR (COALESCE(details->>'source','') LIKE 'system_%' AND details->>'action'='comply')) AS observed
       FROM activity_logs
       WHERE event='iron_rule_compliance' AND ts ${tfTs}
-      GROUP BY rule_code
-    ),
-    titles AS (
-      SELECT DISTINCT ON (code) code, title
-      FROM memories
-      WHERE type='iron_rule' AND status='active' AND code IS NOT NULL
-      ORDER BY code, updated_at DESC NULLS LAST
+      GROUP BY user_id, rule_code
     )
-    SELECT s.rule_code, t.title,
+    SELECT s.user_id, u.name AS user_name,
+      s.rule_code, m.title,
       s.comply, s.skip, s.violate, s.observed
     FROM stats s
-    LEFT JOIN titles t ON t.code = s.rule_code
-    ORDER BY s.rule_code
+    LEFT JOIN users u ON u.id = s.user_id
+    LEFT JOIN memories m
+      ON m.user_id = s.user_id AND m.code = s.rule_code
+      AND m.type = 'iron_rule' AND m.status = 'active'
+    ORDER BY u.name NULLS LAST, s.rule_code
   `)).rows;
 
   // 8. update_health — 升級/檢查事件
