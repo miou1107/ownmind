@@ -40,6 +40,9 @@ app.use('/api', apiLimiter);
 // 靜態檔案（Admin 後台）
 app.use('/admin', express.static(join(__dirname, 'public')));
 
+// v1.17.24: 用戶用量報告頁（user role 也可看，路徑 /ownmind/me/）
+app.use('/me', express.static(join(__dirname, 'public', 'me')));
+
 // 請求日誌
 app.use((req, res, next) => {
   const start = Date.now();
@@ -61,6 +64,7 @@ import activityRoutes from './routes/activity.js';
 import usageRoutes from './routes/usage/index.js';
 import broadcastRoutes from './routes/broadcast.js';
 import adminWorkLogRoutes from './routes/admin-work-log.js';
+import meRoutes from './routes/me.js';
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
@@ -73,6 +77,7 @@ app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);
+app.use('/api/me', meRoutes);
 
 // 根路徑導向 Admin
 app.get('/', (req, res) => {

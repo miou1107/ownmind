@@ -320,3 +320,21 @@ tests/p3-update-event-semantics.test.js   — P3-lock test 對齊 openSync wx �
 package.json / docs/README*               — 1.17.22 → 1.17.23，三語系同步
 CHANGELOG.md                              — v1.17.23 條目
 ```
+
+## v1.17.24 新增 / 修改（用戶用量報告頁）
+
+新增檔：
+
+```
+src/routes/me.js                          — /api/me/profile + /api/me/report endpoint
+src/public/me/index.html                  — 用戶端自助登入 + 三 tab 報告 UI
+tests/me-report.test.js                   — 7 case 防退化
+```
+
+修改既有：
+
+```
+src/app.js                                — 掛 /api/me 路由 + /me 靜態頁
+package.json / docs/README*               — 1.17.23 → 1.17.24，三語系同步
+CHANGELOG.md                              — v1.17.24 條目
+```
