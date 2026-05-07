@@ -403,3 +403,11 @@ src/public/me/index.html                  — barChart 加平均線；專案表�
 package.json / docs/README*               — 1.17.29 → 1.17.30
 CHANGELOG.md                              — v1.17.30 條目
 ```
+
+## v1.17.31 修改（其他貢獻者門檻過濾）
+
+```
+src/public/me/index.html                  — 加 max(20輪, 10% 專案總輪次) 門檻過濾偶發測試
+package.json / docs/README*               — 1.17.30 → 1.17.31
+CHANGELOG.md                              — v1.17.31 條目
+```
