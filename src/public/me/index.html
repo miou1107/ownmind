@@ -423,8 +423,13 @@
       <div class="desc">全團隊專案。「主要負責人」= 寫 session_log 對話輪次最多的人；
       其他人也許是偶爾協作或測試。「我的份」= 自己 session 數。</div>
       <table id="projects-table"><thead><tr>
-        <th>專案</th><th class="num">Session 數</th><th class="num">對話輪次</th>
-        <th>主要負責人</th><th>其他貢獻者</th><th class="num">我的份</th>
+        <th>專案</th>
+        <th class="num">Session 數</th>
+        <th class="num">對話輪次</th>
+        <th class="num">交接</th>
+        <th>主要負責人</th>
+        <th>其他貢獻者</th>
+        <th class="num">我的份</th>
       </tr></thead><tbody></tbody></table>
     </div>
   </div>
@@ -755,33 +760,48 @@ function render(report) {
   $('#projects-table tbody').innerHTML = projects.length === 0
     ? '<tr><td colspan="6" style="text-align:center;color:#9ca3af">尚無專案紀錄</td></tr>'
     : projects.map(p => {
-        const contribs = (p.contributors || []).slice().sort((a, b) => b.turns - a.turns);
+        // contributors 排序：turns 優先；turns 全 0（只有交接）就用 handoffs 排
+        const contribs = (p.contributors || []).slice().sort((a, b) =>
+          (b.turns - a.turns) || ((b.handoffs || 0) - (a.handoffs || 0)) || (b.sessions - a.sessions));
         const main = contribs[0];
-        // 「實質貢獻」門檻：≥ 10% 專案總輪次 或 ≥ 20 輪（取大），低於就當 noise 隱藏
-        // 例：OwnMind 148 輪 → 門檻 20，Adam 8 輪 → 偶發測試，不算協作
-        const threshold = Math.max(20, Math.round((p.turns || 0) * 0.1));
-        const meaningful = contribs.slice(1).filter(c => c.turns >= threshold);
-        const noise = contribs.slice(1).filter(c => c.turns < threshold);
+        // 「實質貢獻」門檻：≥ 10% 專案總輪次 或 ≥ 20 輪
+        // 若專案只有 handoffs（turns 全 0），門檻改 1（任何交接都算）
+        const threshold = (p.turns || 0) > 0
+          ? Math.max(20, Math.round(p.turns * 0.1))
+          : 1;
+        const isMeaningful = (c) => (p.turns > 0 ? c.turns >= threshold : (c.handoffs || 0) >= 1);
+        const meaningful = contribs.slice(1).filter(isMeaningful);
+        const noise = contribs.slice(1).filter(c => !isMeaningful(c));
+        const mainStat = main
+          ? (main.turns > 0
+              ? `${main.turns} 輪 / ${main.sessions} sessions`
+              : `${main.handoffs || 0} 次交接（無 session_log）`)
+          : '';
         const mainCell = main
-          ? `<strong>${esc(main.name)}</strong><br><small style="color:#6b7280">${main.turns} 輪 / ${main.sessions} sessions</small>`
+          ? `<strong>${esc(main.name)}</strong><br><small style="color:#6b7280">${mainStat}</small>`
           : '—';
         let othersCell;
         if (meaningful.length === 0 && noise.length === 0) {
           othersCell = '<span style="color:#9ca3af">—</span>';
         } else if (meaningful.length === 0) {
-          othersCell = `<small style="color:#9ca3af">（${noise.length} 位偶發測試 < ${threshold} 輪 略過）</small>`;
+          othersCell = `<small style="color:#9ca3af">（${noise.length} 位偶發測試略過）</small>`;
         } else {
-          const m = meaningful.map(c => `${esc(c.name)} <small style="color:#9ca3af">(${c.turns})</small>`).join(', ');
+          const m = meaningful.map(c => {
+            const stat = c.turns > 0 ? c.turns + ' 輪' : (c.handoffs || 0) + ' 交接';
+            return `${esc(c.name)} <small style="color:#9ca3af">(${stat})</small>`;
+          }).join(', ');
           const n = noise.length > 0 ? `<br><small style="color:#9ca3af">+ ${noise.length} 位偶發測試略過</small>` : '';
           othersCell = m + n;
         }
+        const myShare = p.my_sessions || (p.my_handoffs > 0 ? `${p.my_handoffs} 交接` : 0);
         return `<tr>
           <td><strong>${esc(p.project)}</strong></td>
           <td class="num">${p.sessions}</td>
           <td class="num">${p.turns || 0}</td>
+          <td class="num">${p.handoffs || 0}</td>
           <td>${mainCell}</td>
           <td>${othersCell}</td>
-          <td class="num">${p.my_sessions}</td>
+          <td class="num">${myShare}</td>
         </tr>`;
       }).join('');
 }

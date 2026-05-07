@@ -447,3 +447,12 @@ src/public/me/index.html                  — 加 metricSel 下拉、users 表�
 package.json / docs/README*               — 1.17.34 → 1.17.35
 CHANGELOG.md                              — v1.17.35 條目
 ```
+
+## v1.17.36 修改（專案來源加 handoffs）
+
+```
+src/routes/me.js                          — projectHandoffQ 補 handoffs 進 projMap，含 my_handoffs
+src/public/me/index.html                  — 專案表加「交接」欄；只交接無 session_log 顯示「N 次交接」
+package.json / docs/README*               — 1.17.35 → 1.17.36
+CHANGELOG.md                              — v1.17.36 條目
+```
