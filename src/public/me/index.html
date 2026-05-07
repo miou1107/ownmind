@@ -172,12 +172,24 @@
 <!-- 登入頁 -->
 <div id="loginView" class="login-card">
   <h1>【OwnMind】用量報告</h1>
-  <p>請貼上你的 OwnMind <strong>API Key</strong>。<br>
-  Key 在你的 Claude Code 設定（<code>~/.claude/settings.json</code> 的
-  <code>OWNMIND_API_KEY</code>）。</p>
-  <input type="password" id="apiKeyInput" placeholder="貼上 API Key…" autocomplete="off">
+  <p>用你的 Email + 密碼登入。<br>
+  <small style="color:#9ca3af">第一次登入請用預設密碼 <code>Password42760988</code>，登入後會強制改新密碼。</small></p>
+  <input type="email" id="emailInput" placeholder="你的 Email" autocomplete="username">
+  <input type="password" id="passwordInput" placeholder="密碼" autocomplete="current-password">
   <button id="loginBtn">登入</button>
   <div id="loginErr" class="err hidden"></div>
+</div>
+
+<!-- 強制改密碼頁 -->
+<div id="changePwView" class="login-card hidden">
+  <h1>【OwnMind】首次登入請改密碼</h1>
+  <p>為了帳號安全，第一次登入必須把預設密碼換掉。<br>
+  <small style="color:#9ca3af">新密碼至少 8 字元，且不可與舊密碼相同。</small></p>
+  <input type="password" id="curPwInput" placeholder="目前密碼（預設 Password42760988）" autocomplete="current-password">
+  <input type="password" id="newPwInput" placeholder="新密碼（至少 8 字元）" autocomplete="new-password">
+  <input type="password" id="newPw2Input" placeholder="再輸入一次新密碼" autocomplete="new-password">
+  <button id="changePwBtn">確認修改</button>
+  <div id="changePwErr" class="err hidden"></div>
 </div>
 
 <!-- 報告頁 -->
@@ -308,14 +320,16 @@ let currentReport = null;
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-function showLogin() {
-  $('#loginView').classList.remove('hidden');
+function hideAll() {
+  $('#loginView').classList.add('hidden');
+  $('#changePwView').classList.add('hidden');
   $('#reportHeader').classList.add('hidden');
   $('#reportMain').classList.add('hidden');
 }
-
+function showLogin() { hideAll(); $('#loginView').classList.remove('hidden'); }
+function showChangePw() { hideAll(); $('#changePwView').classList.remove('hidden'); }
 function showReport() {
-  $('#loginView').classList.add('hidden');
+  hideAll();
   $('#reportHeader').classList.remove('hidden');
   $('#reportMain').classList.remove('hidden');
 }
@@ -515,45 +529,100 @@ async function loadReport() {
   if (!key) return showLogin();
   const range = $('#rangeSel').value;
   try {
-    await tryAuth(key);
+    const profile = await tryAuth(key);
+    if (profile.must_change_password) return showChangePw();
     const report = await fetchReport(key, range);
     render(report);
     showReport();
   } catch (e) {
     localStorage.removeItem(KEY_NAME);
     showLogin();
-    $('#loginErr').textContent = '登入過期或 key 無效，請重新貼一次';
+    $('#loginErr').textContent = '登入過期，請重新登入';
     $('#loginErr').classList.remove('hidden');
   }
 }
 
 $('#loginBtn').addEventListener('click', async () => {
-  const key = $('#apiKeyInput').value.trim();
+  const email = $('#emailInput').value.trim();
+  const password = $('#passwordInput').value;
   $('#loginErr').classList.add('hidden');
-  if (!key) {
-    $('#loginErr').textContent = '請貼上 API Key';
+  if (!email || !password) {
+    $('#loginErr').textContent = '請輸入 Email 和密碼';
     $('#loginErr').classList.remove('hidden');
     return;
   }
   try {
-    await tryAuth(key);
-    localStorage.setItem(KEY_NAME, key);
+    const r = await fetch('/api/me/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || '登入失敗');
+    localStorage.setItem(KEY_NAME, j.api_key);
+    if (j.must_change_password) return showChangePw();
     await loadReport();
   } catch (e) {
-    $('#loginErr').textContent = '驗證失敗：' + e.message;
+    $('#loginErr').textContent = e.message;
     $('#loginErr').classList.remove('hidden');
   }
 });
 
-$('#apiKeyInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') $('#loginBtn').click();
+['#emailInput', '#passwordInput'].forEach(sel => {
+  $(sel).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#loginBtn').click();
+  });
+});
+
+$('#changePwBtn').addEventListener('click', async () => {
+  const cur = $('#curPwInput').value;
+  const np = $('#newPwInput').value;
+  const np2 = $('#newPw2Input').value;
+  $('#changePwErr').classList.add('hidden');
+  if (!cur || !np) {
+    $('#changePwErr').textContent = '請填寫所有欄位';
+    $('#changePwErr').classList.remove('hidden');
+    return;
+  }
+  if (np !== np2) {
+    $('#changePwErr').textContent = '兩次新密碼輸入不一致';
+    $('#changePwErr').classList.remove('hidden');
+    return;
+  }
+  if (np.length < 8) {
+    $('#changePwErr').textContent = '新密碼至少 8 字元';
+    $('#changePwErr').classList.remove('hidden');
+    return;
+  }
+  const key = localStorage.getItem(KEY_NAME);
+  try {
+    const r = await fetch('/api/me/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
+      body: JSON.stringify({ current_password: cur, new_password: np })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || '修改失敗');
+    // 改完直接進報告頁
+    await loadReport();
+  } catch (e) {
+    $('#changePwErr').textContent = e.message;
+    $('#changePwErr').classList.remove('hidden');
+  }
+});
+
+['#curPwInput', '#newPwInput', '#newPw2Input'].forEach(sel => {
+  $(sel).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') $('#changePwBtn').click();
+  });
 });
 
 $('#refreshBtn').addEventListener('click', loadReport);
 $('#rangeSel').addEventListener('change', loadReport);
 $('#logoutBtn').addEventListener('click', () => {
   localStorage.removeItem(KEY_NAME);
-  $('#apiKeyInput').value = '';
+  $('#emailInput').value = '';
+  $('#passwordInput').value = '';
   showLogin();
 });
 

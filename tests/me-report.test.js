@@ -27,10 +27,46 @@ test('src/routes/me.js: 必須存在（user-accessible 用量報告路由）', (
   );
 });
 
-test('src/routes/me.js: 必須有 /profile 跟 /report 兩個 endpoint', () => {
+test('src/routes/me.js: 必須有 /profile / /report / /login / /change-password endpoint', () => {
   const meSource = readFileSync(join(repoRoot, 'src', 'routes', 'me.js'), 'utf8');
-  assert.match(meSource, /router\.get\(['"]\/profile['"]/, 'GET /profile 必須存在（驗 api_key + 回身份）');
-  assert.match(meSource, /router\.get\(['"]\/report['"]/, 'GET /report 必須存在（聚合用量資料）');
+  assert.match(meSource, /router\.get\(['"]\/profile['"]/, 'GET /profile 必須存在');
+  assert.match(meSource, /router\.get\(['"]\/report['"]/, 'GET /report 必須存在');
+  assert.match(meSource, /router\.post\(['"]\/login['"]/, 'POST /login（v1.17.25+ email+password）');
+  assert.match(meSource, /router\.post\(['"]\/change-password['"]/, 'POST /change-password 必須存在');
+});
+
+test('src/routes/me.js: /login 必須用 bcrypt.compare 驗密碼', () => {
+  const meSource = readFileSync(join(repoRoot, 'src', 'routes', 'me.js'), 'utf8');
+  assert.match(meSource, /bcrypt\.compare/, '/login 必須用 bcrypt.compare 驗 password_hash');
+});
+
+test('src/routes/me.js: /change-password 必須清掉 must_change_password 旗標', () => {
+  const meSource = readFileSync(join(repoRoot, 'src', 'routes', 'me.js'), 'utf8');
+  assert.match(
+    meSource,
+    /must_change_password\s*=\s*FALSE/,
+    '/change-password 成功後必須 SET must_change_password = FALSE'
+  );
+});
+
+test('src/jobs/seed-default-passwords.js: 必須存在', () => {
+  assert.ok(
+    existsSync(join(repoRoot, 'src', 'jobs', 'seed-default-passwords.js')),
+    'seed-default-passwords.js 必須存在 — server boot 時補預設密碼'
+  );
+});
+
+test('src/jobs/seed-default-passwords.js: 必須是 idempotent（只 UPDATE password_hash IS NULL）', () => {
+  const src = readFileSync(join(repoRoot, 'src', 'jobs', 'seed-default-passwords.js'), 'utf8');
+  assert.match(src, /password_hash\s+IS\s+NULL/i, 'seed 必須只動 password_hash IS NULL 的 row');
+  assert.match(src, /must_change_password\s*=\s*TRUE/, '補預設密碼時必須一併設 must_change_password = TRUE');
+});
+
+test('db/010_user_password_login.sql: 必須加 must_change_password 欄位', () => {
+  const sqlPath = join(repoRoot, 'db', '010_user_password_login.sql');
+  assert.ok(existsSync(sqlPath), 'migration 010 必須存在');
+  const sql = readFileSync(sqlPath, 'utf8');
+  assert.match(sql, /must_change_password\s+BOOLEAN/i, 'migration 必須加 must_change_password 欄位');
 });
 
 test('src/routes/me.js: endpoint 必須用 auth middleware（接受任意 role）', () => {
@@ -81,16 +117,17 @@ test('src/public/me/index.html: 必須存在', () => {
   );
 });
 
-test('src/public/me/index.html: 必須含 api key 輸入 + report fetch + 三大區塊', () => {
+test('src/public/me/index.html: email/password 登入 + 強制改密碼 + 三大區塊', () => {
   const html = readFileSync(join(repoRoot, 'src', 'public', 'me', 'index.html'), 'utf8');
-  assert.match(html, /api[_-]?key|API\s*Key/i, 'me/index.html 必須有 api key 輸入欄位（user 第一次貼 key）');
+  // v1.17.25 改成 email + password 登入
+  assert.match(html, /type="email"/, '必須有 email 輸入欄');
+  assert.match(html, /type="password"/, '必須有 password 輸入欄');
+  assert.match(html, /\/api\/me\/login/, '必須打 /api/me/login（POST email/password）');
+  assert.match(html, /\/api\/me\/change-password/, '必須有 /change-password 呼叫（強制改密碼）');
+  assert.match(html, /must_change_password/, '必須處理 must_change_password 旗標分支');
   assert.match(html, /\/api\/me\/report/, '必須 fetch /api/me/report 拿資料');
-  assert.match(html, /localStorage/, '必須用 localStorage 存 api key 避免每次重貼');
-  // 三大區塊（個人 / 團隊 / 專案）
+  assert.match(html, /localStorage/, '必須用 localStorage 存 session');
   for (const word of ['個人', '團隊', '專案']) {
-    assert.ok(
-      html.includes(word),
-      `me/index.html 必須有「${word}」段落`
-    );
+    assert.ok(html.includes(word), `me/index.html 必須有「${word}」段落`);
   }
 });

@@ -4,6 +4,7 @@ import logger from './utils/logger.js';
 import { startJobs } from './jobs/weeklyReport.js';
 import { startNightlyRecomputeJob } from './jobs/nightly-recompute.js';
 import { startNightlyUpgradeReminderJob } from './jobs/nightly-upgrade-reminder.js';
+import { seedDefaultPasswords } from './jobs/seed-default-passwords.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -12,4 +13,6 @@ app.listen(PORT, () => {
   startJobs();
   startNightlyRecomputeJob();
   startNightlyUpgradeReminderJob();
+  // v1.17.25: 補預設密碼給沒 password_hash 的 user（idempotent）
+  seedDefaultPasswords();
 });

@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.17.25 — /ownmind/me/ 改成帳密登入 + 強制首次改密碼
+
+**背景**：v1.17.24 用 api_key 登入 UX 太差（user 要從設定檔翻 key、洩漏風險高）。
+改成標準的 email + password 流程。
+
+**改動**
+
+- `db/010_user_password_login.sql`：新增 `must_change_password` 欄位 + 強化 email 索引
+- `src/jobs/seed-default-passwords.js`：server boot 時補預設密碼給 `password_hash IS NULL` 的 user，
+  預設 `Password42760988`、`must_change_password = TRUE`，idempotent
+- `src/routes/me.js`：
+  - `POST /api/me/login` — 接受 email+password，回 api_key + must_change_password flag
+  - `POST /api/me/change-password` — 改完自動清 must_change_password 旗標
+  - `/profile` 多回 must_change_password
+- `src/public/me/index.html`：登入表單從「貼 api_key」改成「Email + 密碼」，
+  must_change_password=true 時強制顯示改密碼表單再進報告
+- `src/index.js`：boot 時呼叫 seedDefaultPasswords()
+
+**user 流程**
+
+1. 開 https://kkvin.com/ownmind/me/
+2. 輸入 Email + 預設密碼 `Password42760988`
+3. 系統強制顯示「改密碼」表單，輸入舊密碼 + 新密碼（≥8 字元）
+4. 改完直接看報告，下次只要 Email + 新密碼
+
+**測試**：643/643 pass，新增 6 個 reproduction case
+
 ## v1.17.24 — 用戶用量報告頁（/ownmind/me/）
 
 **背景**：之前後台只有 admin / super_admin 能登入，user role 完全看不到自己 / 團隊
