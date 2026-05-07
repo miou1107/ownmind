@@ -563,6 +563,15 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.61 修改（/me 報告頁加 MCP 通道盲點提示）
+
+```
+src/public/me/index.html                  — 新增 .blindspot-notice CSS + main 最上方固定提示元素
+package.json                              — 1.17.60 → 1.17.61
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.60 → 1.17.61
+CHANGELOG.md                              — v1.17.61 條目
+```
+
 ## v1.17.60 修改（settings.json 安全讀取 + 自動更新 lock 旗標）
 
 ```
