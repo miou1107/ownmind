@@ -23,6 +23,31 @@ fi
 
 echo "🧠 OwnMind 安裝中..."
 
+# --- v1.17.78 IR-038：install_started beacon（觀測管道補洞）---
+# install.sh 中段任何 set -e 失敗都會直接 exit，end-of-file self-check 跑不到，
+# admin 看不到 user 試過裝。送一個輕量 beacon 至少留紀錄。fire-and-forget。
+send_install_beacon() {
+  local trigger="$1"
+  if [ -z "$API_URL" ] || [ -z "$API_KEY" ]; then return; fi
+  local ts machine platform body
+  ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  machine="$(hostname 2>/dev/null || echo unknown)"
+  case "$OSTYPE" in
+    darwin*) platform='darwin' ;;
+    linux*) platform='linux' ;;
+    msys*|cygwin*|win32*) platform='win32' ;;
+    *) platform="$OSTYPE" ;;
+  esac
+  body=$(printf '{"ts":"%s","trigger":"%s","client_version":"install-script","platform":"%s","machine":"%s"}' \
+    "$ts" "$trigger" "$platform" "$machine")
+  curl -fsS -m 5 -X POST \
+    -H "Authorization: Bearer $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "${API_URL%/}/api/debug/install-check" >/dev/null 2>&1 || true
+}
+send_install_beacon 'install_started'
+
 # --- sqlite3 偵測（v1.17.14，Tier 2 scanner 需要）---
 # Mac 預設內建 sqlite3，Linux 多半要 apt install。Windows（Git Bash）交由 install.ps1 處理。
 if ! command -v sqlite3 >/dev/null 2>&1; then

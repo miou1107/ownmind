@@ -1,5 +1,37 @@
 # OwnMind 更新紀錄
 
+## v1.17.78 — install_started beacon 補 IR-038 觀測盲點（vin-windows-test 第三輪）
+
+**背景**：vin-windows-test (user_id=8) 安裝後查 DB 發現 `install_check_logs` **0 row**。Root cause：
+
+- `install.ps1` 中段任何 fatal error（npm install 被 ExecutionPolicy 擋、winget 失敗、git clone 失敗）都會 `Write-Error + exit 1`
+- end-of-file 的 `self-check.cjs` 是「success path 才會跑」 — 中段死掉就沒紀錄
+- vin-windows-test 真實案例：他卡在 npm install 那段（v1.17.76 修 ExecutionPolicy 之前），self-check 從來沒跑到 → admin 看不到他試過裝
+
+v1.17.76 修了 ExecutionPolicy block 點，但中段其他失敗仍是同樣盲點。**IR-038 直接適用**：「修 bug 前必須先確保有足夠的觀測資料能持續追蹤該 bug」。
+
+**修法（兩端對稱補洞）**：
+
+### Server: `src/routes/debug.js`
+- `POST /api/debug/install-check` 放寬欄位驗證：只強制 `ts`，`checks` / `summary` 改選填
+- 接受 beacon-style minimal payload（`{ ts, trigger, client_version, platform, machine }`）
+- 完整 self-check report（含 checks/summary）仍向後相容
+
+### Client: `install.ps1` + `install.sh`
+- API key/URL 確認後立刻送 `install_started` beacon（fire-and-forget，5s timeout）
+- 失敗不擋 install（network 沒通也照樣裝得起來）
+- 即使中段死掉，admin 至少看得到 user 8 試過、什麼版本、哪台機器、什麼 platform
+
+**驗證**：
+- 新增 `tests/install-started-beacon.test.js`（7 條：minimal beacon 接受 / 完整 report 向後相容 / 沒 ts reject / checks 非 array reject / status 不合法 reject / install.ps1 含 beacon code / install.sh 含 beacon code）
+- npm test **831/831 pass / 0 fail**
+
+**鐵律觸發**：IR-006（reproduction test 先寫）/ IR-008 / IR-022（Server + Client 同改）/ IR-031 / IR-032 / **IR-038（觀測管道完善）✅** ← 這版的核心目的
+
+**升級指引**：純機制改善，user 完全無感。下次新 user 安裝就會有 install_started beacon 進 DB；vin-windows-test 那筆歷史 gap 不能補（資料沒了），但**未來不會再發生**。
+
+**關於 token_events.native_cost_usd 的後續說明**：上輪報告誤判 — 這欄位是 client scanner 的 advisory data（可空），server-authoritative cost 在 `token_usage_daily` 由 nightly recompute（每日 03:00 Asia/Taipei）算。user 8 第一個 03:00 還沒過，`token_usage_daily` 才是空的（不是 pricing 缺）。`model_pricing` 表 Sonnet 4.6 已存在 3/15 USD/MTok。
+
 ## v1.17.77 — 修 v1.17.76 沒守到的下一層：start.cmd fallback + User PATH 持久化（vin-windows-test 第二輪）
 
 **背景**：v1.17.76 修了「裝 OwnMind 時自動裝 node」，但 vin-windows-test 安裝完後 Claude Code 還是無法連到 OwnMind MCP。他的 AI 助手診斷出根因：
