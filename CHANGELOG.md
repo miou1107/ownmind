@@ -1,5 +1,49 @@
 # OwnMind 更新紀錄
 
+## v1.17.81 — update.ps1 StackOverflow 根因修法 + update.{ps1,sh} 觀測管道補洞（vin-windows-test 第五輪）
+
+**背景**：vin-windows-test 第五輪測試他的 AI 助手用 `find` 搜「*update*」抓到 `update.ps1`，跑下去：
+```
+OwnMind 同步更新中（Windows）...
+   skills 已更新（ownmind-memory + ownmind-upgrade）
+   升級規則已同步到偵測到的 AI 工具
+   hook scripts 已同步
+   usage scanner 已就緒
+Process is terminated due to StackOverflowException.
+```
+
+兩個問題交錯：
+
+### 問題 1：StackOverflowException（exit 253）
+**Root cause**：`update.ps1` 4 處用 `@"..."@` 雙引號 heredoc 包 node JS 腳本。雙引號 heredoc 在 PS 內會做變數展開（`$var`、`$(...)`）。內含的 JS code 有大量 `$variables` 跟 `$(JSON.stringify(...))` 等 pattern，在 `Set-StrictMode -Version Latest` 路徑會觸發 PS 遞迴展開，**整個 PS process 死於 StackOverflow，沒任何錯誤訊息**。
+
+**修法**：4 處 heredoc 全改 `@'...'@` 單引號 — 完全 disable PS 變數/subexpression 展開。JS code 內所有 `$` 原樣保留，由 node 自己 parse。
+
+### 問題 2：update.{ps1,sh} 完全沒接 IR-038 觀測管道
+v1.17.79/80 把 errors/ spool wiring 上去 install + interactive-upgrade，但 `update.ps1` / `update.sh` 完全沒接。所以 vin-windows-test 第五輪 server 端**完全看不到他跑了什麼、什麼版本、為什麼死**。
+
+**修法**：兩支都加：
+- 開頭送 `update_started` beacon（fire-and-forget + spool fallback，同 v1.17.80）
+- dot-source / source `report-error` helper
+- 包住 node child process 呼叫的 try/catch 加 `Report-Error -Kind update_settings_inject_failed`
+
+### 問題 3：腳本命名混淆 — AI 把 update.ps1 當升級用
+update.ps1 / update.sh 只是 light sync（skill + hook 檔案複製），但檔名「update」讓 AI 誤判為升級流程的入口。
+
+**修法**：兩支檔頭加明顯註解：
+> ⚠️ 這支只做 skill / hook / settings 同步，**不是完整升級流程**。
+>    要升級 OwnMind 版本請改跑 `bootstrap.{sh,ps1}`。
+
+下次 AI grep 看到這支會認得不該拿來當升級用。
+
+**驗證**：
+- 新增 `tests/update-script-observability.test.js`（8 條：禁雙引號 heredoc / 至少有單引號 heredoc 訊號 / update_started beacon / report-error 引入 / 檔頭提到 bootstrap — 兩支腳本各 4 條）
+- npm test **858/858 pass / 0 fail**
+
+**鐵律觸發**：IR-006（reproduction test 先寫）/ IR-007（vin-windows-test 第五輪持續性 bug — 同一條觀測盲點再次出現）/ IR-008 / IR-031 / IR-032 / **IR-038（觀測管道擴及 light path）✅**
+
+**升級指引**：對 user 完全無感。下次 AI 助手如果跑 update.ps1 不會再 StackOverflow，且即使中途失敗 server 也看得到 update_started beacon + 失敗 kind，admin 可追蹤。
+
 ## v1.17.80 — install_started beacon 失敗 spool fallback（vin-windows-test 第四輪）
 
 **背景**：vin-windows-test 確認自己升到 1.17.78，但 server DB 完全沒看到任何 beacon / heartbeat / install_check_logs 資料更新（最後 16:39:59 之後 0 row）。診斷出 v1.17.78 的 `Send-InstallBeacon` / `send_install_beacon` 是 **fire-and-forget**：
