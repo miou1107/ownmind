@@ -1,5 +1,73 @@
 # OwnMind 更新紀錄
 
+## v1.17.66 — Windows 平台硬化 + 觀測管道修補（IR-038）
+
+**背景**：2026-05-07~05-08 連續兩天 Eric/Adam 升 v1.17.65 都遭遇相同失敗劇本：升級主流程全 OK，但 `verify_local` 失敗連帶 `rollback` 失敗，仰賴雙重失敗才保住新版本。額外回報「OwnMind 觸發時不定時跳出 console 視窗，沒用 Claude 也跳」。深入調查發現是七個獨立 bug 累積，根因都在「shell / path / process spawn 假設了 Unix 行為」。這是第三波同類踩坑（v1.17.62 / v1.17.65 / v1.17.66），啟動 systematic-debugging Phase 4.5 架構性修補。
+
+完整 spec：[openspec/changes/v1.17.66-windows-hardening/](openspec/changes/v1.17.66-windows-hardening/)。
+
+**七個 bug + 修法**：
+
+1. **#1 PowerShell `bash` 解到 WSL relay**（P0）
+   - 觸發點：[scripts/interactive-upgrade.ps1:120,125,130](scripts/interactive-upgrade.ps1) 三處 bare `bash`
+   - 根因：Windows 10/11 內建 `C:\Windows\System32\bash.exe`（WSL relay），沒裝 distro 也存在；PowerShell PATH 解析優先 System32
+   - 修法：新增 [scripts/windows/lib/find-git-bash.ps1](scripts/windows/lib/find-git-bash.ps1) helper，三段式偵測（cache → 常見路徑 → where.exe 過濾）+ `bash --version` 確認是 Git Bash 而非 WSL
+
+2. **#2 `execFile + shell:true` 在 Windows 被 cmd 包**（P0）
+   - 觸發點：[scripts/install-helpers/self-check.cjs:195-197](scripts/install-helpers/self-check.cjs)
+   - 根因：cmd.exe 把 PowerShell `Get-ScheduledTask | Select-Object` 的 `|` 當自己的 pipe operator，找 `Select-Object` 當外部命令失敗（Eric/Adam 兩台一字不差錯誤訊息）
+   - 修法：新增 [scripts/install-helpers/safe-spawn.cjs](scripts/install-helpers/safe-spawn.cjs) helper（強制 `shell:false` + `windowsHide:true` + 5s timeout），self-check.cjs 改用 safeSpawn
+
+3. **#4 升級失敗時 self-check 不被觸發、上傳 401 不重試**（P0）
+   - 觸發點：[scripts/interactive-upgrade.ps1:122](scripts/interactive-upgrade.ps1) `Fail` exit 早於 line 172 self-check 呼叫；self-check.cjs 上傳失敗即丟
+   - 根因：失敗路徑沒走 `try/finally` 結構；Adam 401 案例 server `install_check_logs` 表完全沒收到資料（最該收的時候反而靜默）
+   - 修法：interactive-upgrade.ps1 整個流程包進 `try { ... } finally { Run-SelfCheckOnce }`；self-check.cjs 新增 `appendSpool` / `retrySpool` 機制（401 / 網路 / 5xx 寫進 `~/.ownmind/logs/.upload-spool.jsonl`，下次跑 self-check 開頭先補傳）
+
+4. **#6 PowerShell `Out-File` 預設 UTF-16 BOM**（P1）
+   - 觸發點：interactive-upgrade.ps1 六處 `| Out-File -Append $LogFile`
+   - 根因：PS 5.x 預設編碼 Unicode（UTF-16 LE BOM），現代工具預期 UTF-8。Eric 的 upgrade log 中文 garbled
+   - 修法：所有 `Out-File` 加 `-Encoding utf8`
+
+5. **#7 Scanner Task Scheduler 跳 console 視窗**（P0）
+   - 觸發點：[scripts/windows/register-scanner-task.ps1:78-100](scripts/windows/register-scanner-task.ps1)
+   - 根因：`-LogonType Interactive` + console subsystem binary `node.exe` = Windows 必開 console window；`StartWhenAvailable` + 30 分鐘間隔 + catch-up 補跑 = 連跳幾個視窗
+   - 修法：(a) 新增 [scripts/windows/run-hidden.vbs](scripts/windows/run-hidden.vbs) launcher（wscript.exe GUI subsystem），task action 改 `wscript.exe run-hidden.vbs node.exe scanner.js`，徹底隱藏；(b) `RepetitionInterval` 30 → 120 分鐘降頻 4×；(c) 加 `-DontStartIfOnBatteries` + `-StopIfGoingOnBatteries` 筆電友善
+
+**架構性新增（Phase 4.5）— 三個共用 helper 防同類雷再現**：
+
+- [scripts/windows/lib/find-git-bash.ps1](scripts/windows/lib/find-git-bash.ps1) — Git Bash 偵測，過濾 WSL relay
+- [scripts/install-helpers/safe-spawn.cjs](scripts/install-helpers/safe-spawn.cjs) — Win32 friendly execFile 包裝
+- [scripts/install-helpers/path-to-win32.cjs](scripts/install-helpers/path-to-win32.cjs) — MSYS `/c/X` ↔ Win32 `C:\X` 轉換（v1.17.67 修 Bug #3 verify-upgrade.sh 用）
+
+**環境資訊收集擴充（IR-038 落實）**：
+
+- self-check.cjs 新增 `collectEnv()`，每次上傳帶 `os_release / arch / node / home_format / msystem / shell_chain / encoding / bash_resolution / scheduler_detail`
+- 全部資料 < 4KB，遠低於 server 端 `install_check_logs.full_log` 64KB 上限
+- PII 友善：`home_format` 只記格式類別不傳實際 path，`node.exec_path` 走 sanitizePath
+- 用途：admin dashboard 可直接看每台機器 bash 解析到 WSL relay 還是 Git Bash、PS 預設編碼是 UTF-16 還是 UTF-8、Task Scheduler 真實 state / last_run / next_run
+
+**延 v1.17.67 的 bug 與功能**：
+- #3 `verify-upgrade.sh:49` 餵 MSYS path 給 native `node.exe`（次要 bug，要 #1 修好才浮出）
+- #5 Windows rollback 鎖檔（修了 #1 之後不會被觸發；要設計「停 MCP / Task Scheduler 再 rollback」protocol）
+- Admin dashboard `install-check` 檢視頁（讓 v1.17.66 PR 規模可控、先讓 server 收 24~48h 真實資料）
+
+**Reproduction tests（IR-003 + TDD red-green）**：
+
+- [tests/ps1-windows-compat.test.js](tests/ps1-windows-compat.test.js) 加 11 條（Bug #1 / #6 / #7 / #4 try-finally）
+- [tests/self-check.test.js](tests/self-check.test.js) 加 9 條（Bug #2 / #4 spool round-trip / collectEnv schema）
+- 全部先紅、修完轉綠；抽樣 Bug #2 做完整 revert→紅→restore→綠 cycle 驗 reproduction 真能抓 bug
+- 全 repo 749 / 749 pass / 0 fail
+
+**鐵律觸發**：IR-003、IR-004、IR-005、IR-007、IR-008、IR-022、IR-027、IR-031、IR-032，並新增 IR-038 候選：「修 bug 前必須先確保有足夠的觀測資料能持續追蹤該 bug」。
+
+**Eric / Adam 升級時請對照真機驗證的清單**（PR 描述會附）：
+1. Find-GitBash 確實過濾 System32 WSL relay
+2. interactive-upgrade.ps1 try/finally 保證 self-check 在升級失敗時仍跑
+3. VBS launcher 真的隱藏 console 視窗
+4. Task settings Battery 行為（拔電源不跑、跑到一半拔電源停）
+5. detectBashResolution / detectSchedulerDetail / detectWindowsEncoding 三個 Windows-only collector
+6. Spool 在「真實 server 401」時的補傳行為（目前 mock fetch 驗過）
+
 ## v1.17.65 — autostash fallback 死路徑修掉（清 v1.17.24 backlog）
 
 **背景**：v1.17.23 引入 `git pull --autostash` 取代手動 stash／無 pop，並寫了 fallback「處理 git < 2.6 沒 --autostash 支援的舊版」。但 fallback 那條也帶 `--autostash` —— 主路徑會失敗的根因（git 太舊）在 fallback 一定再失敗一次，等於沒 fallback。Codex review 在 v1.17.23 抓到並 ack 過，但當時不阻擋上線、留進 backlog（[project_299](OwnMind 專案記憶)）。

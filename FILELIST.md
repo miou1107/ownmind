@@ -765,6 +765,41 @@ package.json / README* / docs/README*     — 1.17.49 → 1.17.50
 CHANGELOG.md                              — v1.17.50 條目
 ```
 
+## v1.17.66 修改（Windows 平台硬化 + 觀測管道修補 IR-038）
+
+```
+新增 — 三個共用 helper（架構性，防同類雷）：
+  scripts/windows/lib/find-git-bash.ps1     — Find-GitBash + Test-IsGitBash，過濾 WSL relay
+  scripts/install-helpers/safe-spawn.cjs    — Win32-friendly execFile（shell:false + windowsHide:true）
+  scripts/install-helpers/path-to-win32.cjs — MSYS /c/X ↔ Win32 C:\X 雙向轉換
+
+新增 — 視窗隱藏 launcher：
+  scripts/windows/run-hidden.vbs            — wscript GUI subsystem 隱藏 console（Bug #7-a）
+
+新增 — OpenSpec：
+  openspec/changes/v1.17.66-windows-hardening/proposal.md  — 七個 bug 根因 + 架構性發現
+  openspec/changes/v1.17.66-windows-hardening/spec.md      — Helper API + GIVEN/WHEN/THEN
+  openspec/changes/v1.17.66-windows-hardening/tasks.md     — 0~10 階段執行清單
+
+修改：
+  scripts/interactive-upgrade.ps1           — 三處 bash 改用 Find-GitBash（#1）
+                                              所有 Out-File 加 -Encoding utf8（#6）
+                                              整個流程包 try/finally，self-check 在 finally 保證執行（#4）
+                                              verify_local 失敗不再 Rollback（觀測 ≠ 升級成功與否）
+  scripts/install-helpers/self-check.cjs    — checkScheduler 改用 safeSpawn 拿掉 shell:true（#2）
+                                              新增 appendSpool / retrySpool / 重寫 uploadReport（#4 spool）
+                                              新增 collectEnv / detectShellChain / detectBashResolution
+                                              / detectSchedulerDetail / detectWindowsEncoding（IR-038）
+                                              buildReport 接受可選 env 參數
+  scripts/windows/register-scanner-task.ps1 — Action 改用 wscript.exe + run-hidden.vbs 包 node.exe（#7-a）
+                                              RepetitionInterval 30 → 120 分鐘（#7-b）
+                                              加 -DontStartIfOnBatteries + -StopIfGoingOnBatteries（#7-b）
+  tests/ps1-windows-compat.test.js          — 加 v1.17.66 Bug #1 / #6 / #7 / #4 reproduction（11 條）
+  tests/self-check.test.js                  — 加 v1.17.66 Bug #2 / #4 spool / collectEnv reproduction（9 條）
+  package.json / README* / docs/README*     — 1.17.65 → 1.17.66
+  CHANGELOG.md                              — v1.17.66 條目
+```
+
 ## v1.17.49 修改（預設密碼不再公開洩漏）
 
 ```
