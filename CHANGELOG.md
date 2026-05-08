@@ -1,5 +1,28 @@
 # OwnMind 更新紀錄
 
+## v1.17.73 — 結構性拆 v1.17.71/v1.17.72 那種「fixture 集體偽陽性」雷（IR-007 follow-through）
+
+**背景**：v1.17.72 修了 v1.17.71 那個「19 條 fixture 全部用同一錯誤 shape → 803/803 測試全綠但 prod 100% 壞」的 bug。但 v1.17.72 是點修補 — 只加了 1 條 IR-007 regression test 守住 (A) shape 那條路徑。如果未來有人手滑、把這條測試刪掉或改成跟其他一樣的 shape，又會回到 v1.17.71 的雷型（fixture 集體偏向某一 shape → 另一條路徑壞掉沒人發現）。Code review 把這列為 v1.17.73+ backlog M-1。
+
+**修法**：把 fixture 結構抽成 helper、多條測試混搭兩種 shape、加 contract test，確保兩條路徑（MCP / legacy）任何一條壞掉都會被多條測試抓到。
+
+1. **[tests/ownmind-tty-echo.test.js](tests/ownmind-tty-echo.test.js)**：
+   - 新增 `mcpToolResponse(parts)` / `legacyToolResponse(parts)` 兩個 helper（fixture builder）
+   - 把現有 banner 抽取相關測試遷移到 helper：4 條改用 `mcpToolResponse`（prod MCP 真實 shape），2 條（測試名明確談「content」的）保留 `legacyToolResponse`，IR-007 regression test 維持 prod 真實 captured payload
+   - **新增結構性 contract test**「兩種 tool_response shape 在同一句 banner 文字下產出一致 block」— 用同一句 banner 餵兩種 shape，比對 block 必須一致；任何 path-specific bug 立刻被抓到
+
+**Mutation test 驗證拆雷有效**：
+- 故意把 extractBanners 的 legacy 路徑改成回 `[]`（破壞 (B) 路徑）→ **3 條測試紅**（contract test + 2 條明確標 legacy 的測試），不只 1 條
+- 對比 v1.17.71 ship 時 19 條測試全綠通過（因為全部偏 (B) shape）— 現在多路徑混搭，**單路徑壞掉一定爆紅**
+
+**驗證**：
+- `npm test` 805/805 pass（v1.17.72 是 804、+1 contract test）
+- Mutation test：legacy 路徑斷掉 → 3 紅；mcp 路徑斷掉 → 對稱結果（驗證對稱性）；還原 → 全綠
+
+**鐵律觸發**：IR-007（核心：結構性拆雷，不只點修補）/ IR-008 / IR-026 / IR-031 / IR-032。
+
+**升級指引**：純測試重構 + helper 抽取，hooks 行為零改動、prod 邏輯零改動。用戶不會感覺到差異。意義在於**未來再有 fixture/prod 不一致這類 bug，會被多條測試一起爆出來，不會再 803/803 全綠通過**。
+
 ## v1.17.72 — 修 v1.17.71 在場感 100% 失效（IR-007 雷型）
 
 **背景**：v1.17.71 ship 後實測「在場感」完全沒出來。Vin 在新對話視窗用 OwnMind tool 都看不到 banner，跟 v1.17.71 commit message 講的「直寫 user terminal、不靠 AI 自律」結果相反。連續排查兩條路徑（`/dev/tty` 寫入是否成功、`banner-pending.jsonl` 是否累積 fallback record）都顯示 hook 跑了但完全沒抽到 banner。

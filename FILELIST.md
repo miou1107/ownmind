@@ -563,6 +563,21 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.73 修改（結構性拆 v1.17.71/v1.17.72 fixture 集體偽陽性雷 — IR-007 follow-through）
+
+```
+tests/ownmind-tty-echo.test.js            — 新增 mcpToolResponse / legacyToolResponse
+                                            兩個 fixture helper；4 條既有測試遷移到
+                                            mcpToolResponse、2 條（測試名明確談 content
+                                            的）保留 legacyToolResponse、混搭兩種
+                                            shape；新增 1 條結構性 contract test
+                                            「兩種 shape 同 banner 文字產出 block 必須
+                                            一致」（12→13 條）
+package.json                              — 1.17.72 → 1.17.73
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.72 → 1.17.73
+CHANGELOG.md / FILELIST.md                — 補 v1.17.73 條目
+```
+
 ## v1.17.72 修改（修 v1.17.71 在場感 100% 失效 — IR-007 雷型）
 
 ```
