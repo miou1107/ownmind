@@ -1,9 +1,16 @@
-﻿# OwnMind 自動更新腳本（Windows PowerShell 版）
-# 在 git pull 後執行，同步 skill、hook、settings 到各工具目錄
-# 用法：powershell -NoProfile -ExecutionPolicy Bypass -File ~/.ownmind/scripts/update.ps1
+﻿# OwnMind 同步更新腳本（Windows PowerShell 版）— light sync only
 #
-# 對應 scripts/update.sh，是 Windows MCP auto-update 流程的尾端 sync 步驟。
+# ⚠️ 這支只做 skill / hook / settings 同步，**不是完整升級流程**。
+#    要升級 OwnMind 版本請改跑：
+#       powershell -ExecutionPolicy Bypass -File ~/.ownmind/scripts/bootstrap.ps1
+#    bootstrap 會自動判斷 install / upgrade / repair 並走對應流程。
+#
+# 適用場景：git pull 後 / install.ps1 尾端，把 ~/.ownmind/ 內檔同步到各工具目錄。
 # v1.17.22 新增（修 Eric / Adam 卡舊版的根因）。
+# v1.17.81 修 StackOverflow + 加觀測管道（vin-windows-test 第五輪）：
+#   - 4 處 @"..."@ heredoc 改 @'...'@ 單引號 — 雙引號會觸發 PS 對 JS code 內 $var 做展開，
+#     某些路徑會遞迴展開 → StackOverflowException 整個 process 死。單引號完全 disable 展開。
+#   - 加 update_started beacon + try/catch + report-error，跟 install / upgrade 同等觀測層級。
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
@@ -16,6 +23,50 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 $OwnMindDir = Join-Path $HOME ".ownmind"
 $ErrLog = Join-Path $OwnMindDir "logs\update-errors.log"
 New-Item -ItemType Directory -Force -Path (Split-Path $ErrLog) | Out-Null
+
+# v1.17.81 — 載入 report-error helper（IR-038 觀測管道）
+$reportErrorHelper = Join-Path $OwnMindDir 'scripts\install-helpers\report-error.ps1'
+if (Test-Path $reportErrorHelper) {
+  . $reportErrorHelper
+} else {
+  function Report-Error { param($Kind, $Detail, $ContextFile = "") }
+}
+
+# v1.17.81 — update_started beacon（fire-and-forget，失敗 spool 同 v1.17.80 模式）
+function Send-UpdateBeacon {
+  param([string]$Trigger)
+  $claudeSettings = Join-Path $HOME '.claude\settings.json'
+  if (-not (Test-Path $claudeSettings)) { return }
+  try {
+    $cfg = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+    $env = $cfg.mcpServers.ownmind.env
+    $apiKey = $env.OWNMIND_API_KEY
+    $apiUrl = $env.OWNMIND_API_URL
+    if (-not $apiKey -or -not $apiUrl) { return }
+    $machine = try { [System.Net.Dns]::GetHostName() } catch { 'unknown' }
+    $body = @{
+      ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+      trigger = $Trigger
+      client_version = 'update-script'
+      platform = 'win32'
+      machine = $machine
+    } | ConvertTo-Json -Compress
+    try {
+      Invoke-RestMethod -Uri "$($apiUrl.TrimEnd('/'))/api/debug/install-check" `
+        -Method POST `
+        -Headers @{ Authorization = "Bearer $apiKey"; 'Content-Type' = 'application/json' } `
+        -Body $body -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {
+      # spool fallback
+      try {
+        $spoolFile = Join-Path $OwnMindDir 'logs\.upload-spool.jsonl'
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::AppendAllText($spoolFile, ($body + "`n"), $utf8NoBom)
+      } catch { }
+    }
+  } catch { }
+}
+Send-UpdateBeacon -Trigger 'update_started'
 
 Write-Host "OwnMind 同步更新中（Windows）..."
 
@@ -91,7 +142,8 @@ if (Test-Path $ScannerJs) { Write-Host "   usage scanner 已就緒" }
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
 $NoSessionFlag = Join-Path $OwnMindDir ".no-session-hook"
 if (Test-Path $ClaudeSettings) {
-  $nodeScript = @"
+  # v1.17.81：單引號 heredoc — JS code 內所有 $var / $(...) 原樣保留，不被 PS 展開
+  $nodeScript = @'
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
@@ -142,11 +194,15 @@ if (Test-Path $ClaudeSettings) {
       fs.renameSync(tmp, settingsPath);
       console.log('   settings.json hooks 已更新');
     }
-"@
+'@
   $tmpScript = Join-Path $env:TEMP "ownmind-update-settings.js"
   Set-Content -Path $tmpScript -Value $nodeScript -Encoding UTF8
   $noFlag = if (Test-Path $NoSessionFlag) { 'true' } else { 'false' }
-  & node $tmpScript $ClaudeSettings $noFlag 2>>$ErrLog
+  try {
+    & node $tmpScript $ClaudeSettings $noFlag 2>>$ErrLog
+  } catch {
+    Report-Error -Kind "update_settings_inject_failed" -Detail "Claude settings hook 注入 node 腳本失敗：$_" -ContextFile $ErrLog
+  }
   Remove-Item $tmpScript -ErrorAction SilentlyContinue
 }
 
@@ -154,7 +210,7 @@ if (Test-Path $ClaudeSettings) {
 $GeminiDir = Join-Path $HOME ".gemini"
 if (Test-Path $GeminiDir) {
   $GeminiSettings = Join-Path $GeminiDir "settings.json"
-  $geminiNodeScript = @"
+  $geminiNodeScript = @'
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
@@ -174,7 +230,7 @@ if (Test-Path $GeminiDir) {
       fs.renameSync(tmp, p);
       console.log('   Gemini CLI SessionStart hook 已加入');
     }
-"@
+'@
   $tmpGemini = Join-Path $env:TEMP "ownmind-update-gemini.js"
   Set-Content -Path $tmpGemini -Value $geminiNodeScript -Encoding UTF8
   & node $tmpGemini $GeminiSettings 2>>$ErrLog
@@ -188,7 +244,7 @@ if ((Test-Path $GithubDir) -or $GhCmd) {
   $GhHookDir = Join-Path $GithubDir "hooks"
   $GhHookFile = Join-Path $GhHookDir "hooks.json"
   if (-not (Test-Path $GhHookDir)) { New-Item -ItemType Directory -Force -Path $GhHookDir | Out-Null }
-  $copilotNodeScript = @"
+  $copilotNodeScript = @'
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
@@ -205,7 +261,7 @@ if ((Test-Path $GithubDir) -or $GhCmd) {
       fs.renameSync(tmp, p);
       console.log('   GitHub Copilot sessionStart hook 已加入');
     }
-"@
+'@
   $tmpGh = Join-Path $env:TEMP "ownmind-update-copilot.js"
   Set-Content -Path $tmpGh -Value $copilotNodeScript -Encoding UTF8
   & node $tmpGh $GhHookFile 2>>$ErrLog
@@ -216,7 +272,7 @@ if ((Test-Path $GithubDir) -or $GhCmd) {
 $CursorDir = Join-Path $HOME ".cursor"
 if (Test-Path $CursorDir) {
   $CursorHooks = Join-Path $CursorDir "hooks.json"
-  $cursorNodeScript = @"
+  $cursorNodeScript = @'
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
@@ -233,7 +289,7 @@ if (Test-Path $CursorDir) {
       fs.renameSync(tmp, p);
       console.log('   Cursor session-start hook 已加入');
     }
-"@
+'@
   $tmpCursor = Join-Path $env:TEMP "ownmind-update-cursor.js"
   Set-Content -Path $tmpCursor -Value $cursorNodeScript -Encoding UTF8
   & node $tmpCursor $CursorHooks 2>>$ErrLog

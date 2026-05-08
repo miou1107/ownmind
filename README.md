@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.17.80** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.17.81** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory System
 
@@ -181,7 +181,7 @@ sequenceDiagram
 - **Adaptive Iron Rule Reinforcement** — automatically strengthens reminders for frequently violated rules based on compliance history
 - **Offline resilience** — Local cache fallback + write queue for offline operations, auto-replay on reconnect `v1.14.0`
 
-## Client Experience Matrix `v1.17.80`
+## Client Experience Matrix `v1.17.81`
 
 OwnMind banners (memory load / write / read / iron-rule trigger / compliance violation / broadcast notice) appear naturally in **most MCP clients** — their chat UI doesn't collapse tool responses, and the AI relays banner content into its reply. **Claude Code is the exception** — its UI collapses MCP tool results into cards and its design exclusively gives the chat stream to the AI, so by default users don't see OwnMind banners.
 

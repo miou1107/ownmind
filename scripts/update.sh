@@ -1,9 +1,57 @@
 #!/bin/bash
-# OwnMind 自動更新腳本
-# 在 git pull 後執行，同步 skill、hook、settings 到各工具目錄
-# 用法: bash ~/.ownmind/scripts/update.sh
+# OwnMind 同步更新腳本 — light sync only
+#
+# ⚠️ 這支只做 skill / hook / settings 同步，**不是完整升級流程**。
+#    要升級 OwnMind 版本請改跑：
+#       bash ~/.ownmind/scripts/bootstrap.sh
+#    bootstrap 會自動判斷 install / upgrade / repair 並走對應流程。
+#
+# 適用場景：git pull 後 / install.sh 尾端，把 ~/.ownmind/ 內檔同步到各工具目錄。
+# v1.17.81 加觀測管道（IR-038）：update_started beacon + report-error，跟 install / upgrade 同等。
 
 OWNMIND_DIR="$HOME/.ownmind"
+
+# v1.17.81 — 載入 report-error helper
+if [ -f "$OWNMIND_DIR/scripts/install-helpers/report-error.sh" ]; then
+  # shellcheck disable=SC1090
+  . "$OWNMIND_DIR/scripts/install-helpers/report-error.sh"
+else
+  report_error() { :; }
+fi
+
+# v1.17.81 — update_started beacon（fire-and-forget + spool fallback）
+send_update_beacon() {
+  local trigger="$1"
+  local claude_settings="$HOME/.claude/settings.json"
+  [ -f "$claude_settings" ] || return
+  local api_key api_url
+  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>/dev/null)
+  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>/dev/null)
+  [ -n "$api_key" ] && [ -n "$api_url" ] || return
+  local ts machine platform body
+  ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  machine="$(hostname 2>/dev/null || echo unknown)"
+  case "$OSTYPE" in
+    darwin*) platform='darwin' ;;
+    linux*) platform='linux' ;;
+    msys*|cygwin*|win32*) platform='win32' ;;
+    *) platform="$OSTYPE" ;;
+  esac
+  body=$(printf '{"ts":"%s","trigger":"%s","client_version":"update-script","platform":"%s","machine":"%s"}' \
+    "$ts" "$trigger" "$platform" "$machine")
+  if curl -fsS -m 5 -X POST \
+    -H "Authorization: Bearer $api_key" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "${api_url%/}/api/debug/install-check" >/dev/null 2>&1; then
+    return
+  fi
+  # spool fallback (同 v1.17.80)
+  local spool_dir="${HOME}/.ownmind/logs"
+  mkdir -p "$spool_dir" 2>/dev/null || return
+  printf '%s\n' "$body" >> "${spool_dir}/.upload-spool.jsonl" 2>/dev/null || true
+}
+send_update_beacon 'update_started'
 
 echo "🔄 OwnMind 同步更新中..."
 
