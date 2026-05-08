@@ -1,5 +1,37 @@
 # OwnMind 更新紀錄
 
+## v1.17.75 — 文件化 Claude Code 體驗降級的根本原因（β 路線：保留 hook / 不再投資補救）
+
+**背景**：v1.17.71 → v1.17.74 連續 4 版投資「OwnMind 在場感」hook 線（PostToolUse hook 寫 /dev/tty / fallback file），但 Vin 實測 + 對 claude-code-guide subagent 諮詢後得出 authoritative 結論：
+
+- **/dev/tty 在 Claude Code spawn 的 hook subprocess 一律 ENXIO**（Mac/Linux 都不可用、app 環境更慘 — 連 controlling terminal 都沒）
+- **hook 所有通道（stderr / stdout / additionalContext）都進 AI 那一側**，沒有「直接給 user 看」的內建管道
+- **Issue #11120**「顯示 hook stdout」被 Anthropic **closed as not planned**（明確不打算做）
+- **Claude Code 設計哲學**：chat 訊息流是 AI 獨佔，MCP / hook 不該繞過 AI 直接往 user UI 塞東西
+- 但 Vin 在 **Gemini CLI** 跑同一個 OwnMind MCP server，**banner 自然嵌在訊息流、user 看得到** — 證實 OwnMind server 端設計沒問題、是 Claude Code 的 UI 哲學特殊
+
+**結論**：OwnMind 的 banner 設計從 server 端做對了。**Gemini CLI / Codex CLI / Cursor / Copilot / OpenCode / Windsurf 等其他 MCP client 都會自然 work**（UI 不摺疊 + AI 老實轉述）— 只有 Claude Code 兩端都拒絕（UI 摺疊 + Claude 經常吞）。v1.17.71-74 那條 hook 線本質是「OwnMind 替 Claude Code 補它自己的 UX 缺陷」，**OwnMind 沒義務這麼做**。
+
+**修法**：選 β 路線 — 保留 hook 當降級補救（不 revert，避免破壞已升級用戶），但**清楚文件化** Claude Code 體驗降級的事實，不再為了補 Claude Code 投資新 hook 通道。
+
+1. **三語 README** 新增 `## Client Experience Matrix` / `## OwnMind 在不同 AI 客戶端的體驗` / `## 異なるAIクライアントでのOwnMind体験` 區塊（IR-032）：
+   - 對照表清楚列出每個 client 的 banner 體驗 + 為什麼
+   - Gemini CLI / Codex CLI / Cursor 等標 ✅ 最佳體驗（UI 不摺疊 / stdout 直通）
+   - Claude Code 標 ⚠️ 降級體驗（UI 摺疊 + AI 獨佔 chat），鏈到 Anthropic Issue #11120
+   - 解釋現有 hook 是「事後在場感」（next SessionStart 補印），不是即時
+   - **建議使用 Claude Code 以外的客戶端**獲得最佳體驗
+
+**對 Vin 的建議路線（不在這個 commit 做、列為長期方向）**：
+- δ：把 OwnMind 投資轉去其他能贏的地方 — admin dashboard 月報 / IR-027 攔截型卡控（不是提醒）/ 給 Anthropic 提結構性 issue（MCP server 沒 user-visible 通道）
+
+**驗證**：
+- npm test 812/812 pass / 0 fail（無 code 改動、純 docs）
+- 三語 README 內容對照（IR-032）
+
+**鐵律觸發**：IR-008 / IR-026 / IR-031 / IR-032 / 透明度原則（誠實揭露技術限制）。
+
+**升級指引**：純文件改動。用戶不會感覺到 client 行為差異 — 但**會在 README 看到「為什麼自己用 Claude Code 看不到 OwnMind banner」的明確說明**。建議改用 Gemini CLI / Codex CLI 等其他 MCP client 獲得最佳體驗。
+
 ## v1.17.74 — 深化結構性 contract test：把 1 條變 8 條、覆蓋 broadcast / multi-part / 空 parts / 壞 parts 變體（v1.17.73 m-1 / m-6）
 
 **背景**：v1.17.73 加了一條結構性 contract test（兩種 tool_response shape 產出 block 必須一致），但只覆蓋一種 banner 文字（kind + tip 雙 banner）。Code review 點到（v1.17.74+ m-1）：broadcast / multi-part / 空 parts / 壞 parts 都沒測，那些路徑的 path-specific bug 還是漏。

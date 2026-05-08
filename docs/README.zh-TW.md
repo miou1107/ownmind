@@ -2,7 +2,7 @@ AI個人化永久記憶解決方案
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.17.74** · 詳見 [CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.17.75** · 詳見 [CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 跨平台 AI 個人記憶系統
 
@@ -180,6 +180,21 @@ sequenceDiagram
 - **Windows 原生支援** — 提供 `install.ps1` 和 `start.cmd`
 - **鐵律智慧強化** — 根據合規歷史自動加強經常違反的規則提醒
 - **離線韌性** — 本地快取回退 + 寫入佇列，斷線操作上線後自動重播 `v1.14.0`
+
+## OwnMind 在不同 AI 客戶端的體驗 `v1.17.75`
+
+OwnMind 的 banner（記憶載入 / 寫入 / 讀取 / 鐵律觸發 / 合規違反 / 廣播通知等）在**大部分 MCP 客戶端**會自然出現 — 它們的對話 UI 不摺疊 tool 回應、AI 也會老實把 banner 內容轉述到回覆裡。**Claude Code 是例外** — 它的 UI 把 MCP tool 回應摺疊成卡片、加上設計上讓 AI 獨佔對話訊息流，導致 OwnMind banner 預設情況下 user 看不到。
+
+| 客戶端 | Banner 體驗 | 原因 |
+|---|---|---|
+| Gemini CLI | ✅ 最佳體驗 — banner 自然嵌在對話、AI 會轉述 | UI 不摺疊 tool 回應 |
+| Codex CLI | ✅ 最佳體驗（未實測但預期 OK） | stdout 直通 |
+| Cursor / Copilot / Antigravity / OpenCode / Windsurf | ✅ 預期最佳體驗 | 大多數 MCP 客戶端不摺疊 tool 回應 |
+| **Claude Code** | ⚠️ 降級體驗 — tool 回應被摺疊、AI 經常跳過 banner | Anthropic 設計：對話訊息流是 AI 獨佔（見 [Issue #11120](https://github.com/anthropics/claude-code/issues/11120) — 申請被官方 close as not planned） |
+
+OwnMind 從 v1.17.71 起加了一個 PostToolUse hook（`hooks/ownmind-tty-echo.cjs`），試圖在 Claude Code 環境下繞過這個限制 — banner 寫到 fallback 檔（`~/.ownmind/logs/banner-pending.jsonl`），下次 SessionStart 開頭補印。這是**事後在場感** — 這個 session 的 banner 會在**下次** session 開頭看到。Claude Code 環境的「即時在場感」目前技術上做不到（Anthropic UI 通道架構限制），在他們改之前不在 OwnMind 路線圖上。
+
+**建議**：搭配 Claude Code 以外的任何 AI 客戶端使用，可以獲得最佳 banner 體驗。如果你一定要用 Claude Code，請接受降級體驗 + 倚賴下次 SessionStart 補印。
 
 ## 快速開始
 

@@ -2,7 +2,7 @@ AIパーソナライズド永続メモリソリューション
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.17.74** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.17.75** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォームAIメモリシステム
 
@@ -180,6 +180,21 @@ sequenceDiagram
 - **Windowsネイティブ対応** — `install.ps1` と `start.cmd` 同梱
 - **適応型鉄則強化** — コンプライアンス履歴に基づき、頻繁に違反されるルールのリマインダーを自動強化
 - **オフラインレジリエンス** — ローカルキャッシュフォールバック＋書き込みキュー、オフライン操作は再接続時に自動リプレイ `v1.14.0`
+
+## 異なるAIクライアントでのOwnMind体験 `v1.17.75`
+
+OwnMindのバナー（メモリ読み込み / 書き込み / 読み取り / 鉄則トリガー / コンプライアンス違反 / ブロードキャスト通知など）は、**多くの MCP クライアント**で自然に表示されます — チャット UI が tool レスポンスを折りたたまず、AI がバナー内容を回答に転述するためです。**Claude Code は例外**です — その UI は MCP tool レスポンスをカードに折りたたみ、設計上 AI がチャットストリームを独占するため、OwnMindバナーは標準では user に表示されません。
+
+| クライアント | バナー体験 | 理由 |
+|---|---|---|
+| Gemini CLI | ✅ 最適 — バナーが対話に自然に埋め込まれ、AIが転述 | UI が tool レスポンスを折りたたまない |
+| Codex CLI | ✅ 最適（未検証だが期待値 OK） | stdout を素通し |
+| Cursor / Copilot / Antigravity / OpenCode / Windsurf | ✅ 期待値最適 | 多くの MCP クライアントは tool レスポンスを折りたたまない |
+| **Claude Code** | ⚠️ 降格体験 — tool レスポンスが折りたたまれ、AI がバナーをスキップしがち | Anthropic の設計上、チャットストリームは AI 専用（[Issue #11120](https://github.com/anthropics/claude-code/issues/11120) — 公式が closed as not planned） |
+
+OwnMindはv1.17.71からPostToolUseフック（`hooks/ownmind-tty-echo.cjs`）を提供し、Claude Code環境でこの制限を回避しようとしています — バナーはfallbackファイル（`~/.ownmind/logs/banner-pending.jsonl`）に書き込まれ、次のSessionStart開始時に印字されます。これは**事後プレゼンス**です — このセッションのバナーは**次の**セッション開始時に表示されます。Claude Code環境での「リアルタイムプレゼンス」は現在技術的に不可能（Anthropic の UI チャネルアーキテクチャの制約）であり、彼らが変更するまで OwnMind のロードマップには含まれません。
+
+**推奨**：Claude Code 以外の AI クライアントと組み合わせて使用すると、最適なバナー体験が得られます。Claude Code を使う必要がある場合は、降格体験を受け入れ、次の SessionStart 補印に依存してください。
 
 ## クイックスタート
 
