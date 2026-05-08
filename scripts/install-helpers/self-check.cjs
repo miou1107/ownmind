@@ -285,6 +285,39 @@ async function detectBashResolution() {
   return { where_results: lines, selected, git_bash_path: gitBashPath };
 }
 
+// v1.17.67 IR-038：抓 install.ps1 寫的 register-task log，task 註冊失敗時
+// 把 PS 錯誤訊息一併上傳。狀況：v1.17.66 兩個 battery param 拼錯導致整個
+// register 動作 throw、task 沒註冊；舊版 detectSchedulerDetail 只回 NOT_FOUND，
+// 看不到根因。現在補上「最近一次 install 跑 register-scanner-task.ps1 的輸出」。
+function readLatestRegisterLog() {
+  try {
+    const logDir = path.join(HOME, '.ownmind', 'logs');
+    if (!fs.existsSync(logDir)) return null;
+    const files = fs.readdirSync(logDir)
+      .filter((f) => /^register-task-.+\.log$/.test(f))
+      .map((f) => ({
+        name: f,
+        mtime: fs.statSync(path.join(logDir, f)).mtimeMs,
+      }))
+      .sort((a, b) => b.mtime - a.mtime);
+    if (files.length === 0) return null;
+    const latest = files[0];
+    const fullPath = path.join(logDir, latest.name);
+    // 最多 8KB（log 通常很小，超過代表異常）
+    const buf = fs.readFileSync(fullPath, { encoding: 'utf8' });
+    const tail = buf.length > 8192 ? '...(truncated)...\n' + buf.slice(-8192) : buf;
+    // 走 sanitizePath：PowerShell 錯誤訊息常帶絕對 path（C:\Users\<realname>\...），
+    // 本機 user 名是 PII，上傳前替換成 ~ 跟其他欄位一致。
+    return {
+      file: latest.name,
+      mtime: new Date(latest.mtime).toISOString(),
+      content: sanitizePath(tail),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function detectSchedulerDetail() {
   if (PLATFORM !== 'win32') return null;
   const cmd =
@@ -295,9 +328,16 @@ async function detectSchedulerDetail() {
     "LastTaskResult=$i.LastTaskResult; NextRunTime=[string]$i.NextRunTime } | " +
     "ConvertTo-Json -Compress";
   const r = await safeSpawn('powershell.exe', ['-NoProfile', '-Command', cmd]);
-  if (!r.ok) return null;
+  const registerLog = readLatestRegisterLog();
+  if (!r.ok) return registerLog ? { register_log: registerLog } : null;
   const out = r.stdout.trim();
-  if (out === 'NOT_FOUND') return { task_name: 'OwnMind Usage Scanner', state: 'NOT_FOUND' };
+  if (out === 'NOT_FOUND') {
+    return {
+      task_name: 'OwnMind Usage Scanner',
+      state: 'NOT_FOUND',
+      register_log: registerLog,
+    };
+  }
   try {
     const obj = JSON.parse(out);
     return {
@@ -309,9 +349,10 @@ async function detectSchedulerDetail() {
         ? `0x${obj.LastTaskResult.toString(16)}`
         : null,
       next_run_time: obj.NextRunTime || null,
+      register_log: registerLog,
     };
   } catch {
-    return null;
+    return registerLog ? { register_log: registerLog } : null;
   }
 }
 
