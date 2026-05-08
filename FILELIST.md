@@ -190,6 +190,8 @@ OwnMind/
 │   ├── error-spool-mechanism.test.js       # v1.17.79 — errors/ spool 統一錯誤回報 + dirty tree auto-recover（IR-038 廣域觀測管道 15 條）
 │   ├── install-beacon-spool-fallback.test.js # v1.17.80 — install_started beacon 失敗 spool fallback（vin-windows-test 第四輪 4 條）
 │   ├── update-script-observability.test.js  # v1.17.81 — update.ps1 heredoc StackOverflow fix + beacon/report-error wiring（vin-windows-test 第五輪 8 條）
+│   ├── install-check-null-byte-sanitize.test.js # v1.17.83 — server JSONB null byte sanitize（vin-windows-test 第六輪 5xx 風暴 4 條）
+│   ├── spool-retry-cap.test.js              # v1.17.83 — retrySpool 達 MAX 後 drop 避免無限重送（3 條）
 │   ├── session-recent-query.test.js # v1.17.13 — buildSessionRecentQuery 含 q= search 支援
 │   ├── tier2-windows-fix.test.js    # v1.17.14 — Tier 2 Windows 支援（opencode win32 + sqlite3 偵測）
 │   ├── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Adam case；mcp/index.js + hook 對偶；11 tests）

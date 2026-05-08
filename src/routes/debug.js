@@ -50,6 +50,12 @@ export function createDebugRouter({ query, auth }) {
         return res.status(413).json({ error: 'payload too large' });
       }
 
+      // v1.17.83 — Postgres JSONB 嚴格拒絕 ；client 端 mojibake / 髒環境變數會引入。
+      // 寫入前先 strip null byte，其他控制字元 JSON 規格允許不需動。
+      // 真實案例：vin-windows-test 第六輪 server log 連續 5xx「unsupported Unicode escape sequence」
+      // 都是同一筆 payload 含 null byte 反覆重送（搭配 client 端 retrySpool cap 兩端對稱守住）。
+      const sanitizeNullBytes = (s) => (typeof s === 'string' ? s.replace(/\u0000/g, '').replace(/\\u0000/g, '') : s);
+
       await query(
         `INSERT INTO install_check_logs
            (user_id, ts, client_version, platform, trigger_kind, machine, summary, full_log)
@@ -57,12 +63,12 @@ export function createDebugRouter({ query, auth }) {
         [
           userId,
           ts,
-          body.client_version || null,
-          body.platform || null,
-          body.trigger || null,
-          body.machine || null,
-          JSON.stringify(summary),
-          fullLog,
+          sanitizeNullBytes(body.client_version) || null,
+          sanitizeNullBytes(body.platform) || null,
+          sanitizeNullBytes(body.trigger) || null,
+          sanitizeNullBytes(body.machine) || null,
+          sanitizeNullBytes(JSON.stringify(summary)),
+          sanitizeNullBytes(fullLog),
         ]
       );
 

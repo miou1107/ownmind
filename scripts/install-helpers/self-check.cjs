@@ -588,7 +588,12 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
     return { retried: 0, failed: 0 };
   }
 
+  // v1.17.83（vin-windows-test 第六輪）— 達到 MAX 重試次數就 drop，不再無限重送同一筆壞 payload。
+  // 真實案例：null byte payload 被 server JSONB 拒絕 5xx，舊版 retrySpool 一直重送、server log
+  // 連續 500。新版每筆帶 `_attempts`，5 次後丟掉 + stderr 印 warn。
+  const MAX_SPOOL_ATTEMPTS = opts.maxAttempts || 5;
   let retried = 0;
+  let dropped = 0;
   const remaining = [];
   for (const line of lines) {
     let report;
@@ -597,12 +602,20 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
       const r = await postReport(report, apiUrl, apiKey);
       if (r.ok) {
         retried++;
-      } else {
-        remaining.push(line);
+        continue; // 上傳成功，不寫回 spool
       }
     } catch {
-      remaining.push(line);
+      // 落到下面 attempt 計數
     }
+    // 失敗（5xx / network / catch）— 增加計數
+    const attempts = (Number(report._attempts) || 0) + 1;
+    if (attempts >= MAX_SPOOL_ATTEMPTS) {
+      dropped++;
+      process.stderr.write(`[spool] drop after ${attempts} attempts: ${report.trigger || 'unknown'}\n`);
+      continue;
+    }
+    report._attempts = attempts;
+    remaining.push(JSON.stringify(report));
   }
 
   // 失敗的 append 回主 spool（不覆蓋 — 期間可能已有新 entries）
@@ -613,7 +626,7 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
     fs.unlinkSync(processingPath);
   } catch {}
 
-  return { retried, failed: remaining.length };
+  return { retried, failed: remaining.length, dropped };
 }
 
 // ============================================================
