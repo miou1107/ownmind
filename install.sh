@@ -8,20 +8,21 @@ API_KEY="${1:-}"
 API_URL="${2:-}"
 
 if [ -z "$API_KEY" ]; then
-  echo "❌ 請提供 API Key 和 API URL"
-  echo "用法: bash install.sh YOUR_API_KEY YOUR_API_URL"
-  echo "範例: bash install.sh abc123 https://your-server.com/ownmind"
+  echo "[ERROR] API Key and API URL required"
+  echo "Usage:   bash install.sh YOUR_API_KEY YOUR_API_URL"
+  echo "Example: bash install.sh abc123 https://your-server.com/ownmind"
   exit 1
 fi
 
 if [ -z "$API_URL" ]; then
-  echo "❌ 請提供 API URL"
-  echo "用法: bash install.sh YOUR_API_KEY YOUR_API_URL"
-  echo "範例: bash install.sh abc123 https://your-server.com/ownmind"
+  echo "[ERROR] API URL required"
+  echo "Usage:   bash install.sh YOUR_API_KEY YOUR_API_URL"
+  echo "Example: bash install.sh abc123 https://your-server.com/ownmind"
   exit 1
 fi
 
-echo "🧠 OwnMind 安裝中..."
+echo "OwnMind installer"
+echo "─────────────────────────────────────────────"
 
 # --- v1.17.78 IR-038：install_started beacon（觀測管道補洞）---
 # install.sh 中段任何 set -e 失敗都會直接 exit，end-of-file self-check 跑不到，
@@ -70,67 +71,67 @@ maybe_load_report_error() {
 # --- sqlite3 偵測（v1.17.14，Tier 2 scanner 需要）---
 # Mac 預設內建 sqlite3，Linux 多半要 apt install。Windows（Git Bash）交由 install.ps1 處理。
 if ! command -v sqlite3 >/dev/null 2>&1; then
-  echo "⚠️  未偵測到 sqlite3 CLI（Tier 2 usage scanner — Cursor / Antigravity / OpenCode — 需要）"
+  echo "[WARN] sqlite3 CLI not found (required by Tier 2 usage scanner: Cursor / Antigravity / OpenCode)"
   case "$OSTYPE" in
-    linux*) echo "   裝法：sudo apt install sqlite3（Debian/Ubuntu）或 sudo dnf install sqlite（Fedora/RHEL）" ;;
-    darwin*) echo "   Mac 通常內建；若真的沒裝：brew install sqlite" ;;
-    msys*|cygwin*|win32*) echo "   Windows：跑 install.ps1 會自動用 winget 裝，或到 https://www.sqlite.org/download.html" ;;
+    linux*) echo "       Install: sudo apt install sqlite3 (Debian/Ubuntu) or sudo dnf install sqlite (Fedora/RHEL)" ;;
+    darwin*) echo "       macOS usually ships sqlite3; install with: brew install sqlite" ;;
+    msys*|cygwin*|win32*) echo "       Windows: install.ps1 installs via winget, or download from https://www.sqlite.org/download.html" ;;
   esac
-  echo "   不裝不影響 Claude Code / Codex 主要 usage，只是 Tier 2 session 計數不會收集"
+  echo "       Skipping does not affect Claude Code / Codex usage; only Tier 2 session counts are unavailable"
 fi
 
 # --- 偵測作業系統 ---
 IS_WINDOWS=false
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
   IS_WINDOWS=true
-  echo "   偵測到 Windows 環境（Git Bash）"
+  echo "[INFO] Detected Windows environment (Git Bash)"
 fi
 
 # --- node 偵測 + 自動安裝（v1.17.76, 回報者 vin-windows-test）---
 # v1.17.75 之前：完全沒查 node，直到下面 npm install 才神秘失敗。
 # 現在：mac 用 brew 自動裝、linux 提示 apt/dnf 指令、windows 改走 install.ps1。
 if ! command -v node >/dev/null 2>&1; then
-  echo "⚠️  未偵測到 Node.js（OwnMind 必要依賴）"
+  echo "[WARN] Node.js not found (required by OwnMind)"
   case "$OSTYPE" in
     darwin*)
       if command -v brew >/dev/null 2>&1; then
-        echo "   嘗試 brew install node..."
+        echo "       Attempting: brew install node"
         if brew install node; then
-          echo "   ✅ Node.js 已裝"
+          echo "[ OK ] Node.js installed"
         else
-          echo "❌ brew install node 失敗。請手動裝 Node.js v20+（https://nodejs.org/）後重跑"
+          echo "[ERROR] brew install node failed. Install Node.js v20+ manually (https://nodejs.org/) and retry"
           exit 1
         fi
       else
-        echo "❌ Mac 沒裝 Homebrew。請選一個："
-        echo "   1. 到 https://nodejs.org/ 下載 Node.js v20+ LTS 安裝"
-        echo "   2. 先裝 Homebrew (https://brew.sh/) 後重跑此 install.sh"
+        echo "[ERROR] Homebrew not installed. Choose one:"
+        echo "        1. Download Node.js v20+ LTS from https://nodejs.org/"
+        echo "        2. Install Homebrew (https://brew.sh/) and re-run this script"
         exit 1
       fi
       ;;
     linux*)
-      echo "❌ Linux 請手動安裝 Node.js v20+ 後重跑："
-      echo "   Debian/Ubuntu: sudo apt install nodejs npm"
-      echo "   Fedora/RHEL:   sudo dnf install nodejs npm"
-      echo "   或用 nvm（推薦，版本控管彈性）: https://github.com/nvm-sh/nvm"
+      echo "[ERROR] Linux: install Node.js v20+ manually and re-run:"
+      echo "        Debian/Ubuntu: sudo apt install nodejs npm"
+      echo "        Fedora/RHEL:   sudo dnf install nodejs npm"
+      echo "        Or via nvm (recommended for version flexibility): https://github.com/nvm-sh/nvm"
       exit 1
       ;;
     msys*|cygwin*|win32*)
-      echo "❌ Windows 請改跑 install.ps1（會自動 winget 安裝 Node.js）"
+      echo "[ERROR] Windows: run install.ps1 instead (it auto-installs Node.js via winget)"
       exit 1
       ;;
     *)
-      echo "❌ 未知 OS ($OSTYPE)；請手動安裝 Node.js v20+ 後重跑"
+      echo "[ERROR] Unknown OS ($OSTYPE); install Node.js v20+ manually and retry"
       exit 1
       ;;
   esac
 fi
 
-# Node 版本驗證（>= v20，scanner / mcp 需要）
+# Node version check (>= v20, required by scanner / mcp)
 NODE_VER=$(node --version 2>/dev/null | sed 's/^v//')
 NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
 if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
-  echo "❌ Node.js 版本過舊 (v$NODE_VER)；OwnMind 需要 v20+。請升級後重跑"
+  echo "[ERROR] Node.js too old (v$NODE_VER); OwnMind requires v20+. Upgrade and retry"
   exit 1
 fi
 
@@ -155,28 +156,28 @@ safe_cp() {
   cp "$src" "$dest"
 }
 if [ -d "$OWNMIND_DIR" ]; then
-  echo "   更新 OwnMind MCP Server..."
+  echo "[INFO] Updating OwnMind MCP server"
   if ! git -C "$OWNMIND_DIR" pull -q; then
     maybe_load_report_error
-    report_error "install_git_pull_failed" "git pull 失敗（既有 OwnMind 目錄無法更新）"
-    echo "❌ git pull 失敗。請改跑 bootstrap.sh 或手動修復"
+    report_error "install_git_pull_failed" "git pull failed (existing OwnMind directory cannot be updated)"
+    echo "[ERROR] git pull failed. Run bootstrap.sh or fix manually"
     exit 1
   fi
 else
-  echo "   下載 OwnMind MCP Server..."
+  echo "[INFO] Cloning OwnMind MCP server"
   if ! git clone -q https://github.com/miou1107/ownmind.git "$OWNMIND_DIR"; then
-    report_error "install_git_clone_failed" "git clone github.com/miou1107/ownmind 失敗"
-    echo "❌ git clone 失敗（網路或 GitHub 權限）"
+    report_error "install_git_clone_failed" "git clone github.com/miou1107/ownmind failed"
+    echo "[ERROR] git clone failed (network or GitHub access)"
     exit 1
   fi
 fi
 maybe_load_report_error
 
-echo "   安裝依賴..."
+echo "[INFO] Installing dependencies"
 cd "$OWNMIND_DIR/mcp"
 if ! npm install -q 2>/dev/null; then
-  report_error "install_npm_failed" "npm install 在 ${OWNMIND_DIR}/mcp 失敗"
-  echo "❌ npm install 失敗。試 npm install -g npm@latest 後重跑"
+  report_error "install_npm_failed" "npm install in ${OWNMIND_DIR}/mcp failed"
+  echo "[ERROR] npm install failed. Try: npm install -g npm@latest and retry"
   exit 1
 fi
 
@@ -200,9 +201,9 @@ fi
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 if [ -f "$CLAUDE_SETTINGS" ]; then
   if grep -q '"ownmind"' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    echo "   Claude Code MCP 已設定，跳過"
+    echo "[INFO] Claude Code MCP already configured, skipping"
   else
-    echo "   設定 Claude Code MCP..."
+    echo "[INFO] Configuring Claude Code MCP"
     node -e "
       const fs = require('fs');
       const entry = $MCP_ENTRY;
@@ -222,7 +223,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     "
   fi
 else
-  echo "   建立 Claude Code MCP 設定..."
+  echo "[INFO] Creating Claude Code MCP config"
   mkdir -p "$HOME/.claude"
   node -e "
     const fs = require('fs');
@@ -255,9 +256,9 @@ fi
 CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 if [ -f "$CLAUDE_MD" ]; then
   if grep -q "OwnMind" "$CLAUDE_MD" 2>/dev/null; then
-    echo "   CLAUDE.md 已包含 OwnMind，跳過"
+    echo "[INFO] CLAUDE.md already references OwnMind, skipping"
   else
-    echo "   更新 CLAUDE.md..."
+    echo "[INFO] Updating CLAUDE.md"
     cat >> "$CLAUDE_MD" << 'CLAUDE_EOF'
 
 # OwnMind 個人記憶系統
@@ -269,7 +270,7 @@ OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind
 CLAUDE_EOF
   fi
 else
-  echo "   建立 CLAUDE.md..."
+  echo "[INFO] Creating CLAUDE.md"
   mkdir -p "$HOME/.claude"
   cat > "$CLAUDE_MD" << 'CLAUDE_EOF'
 # OwnMind 個人記憶系統
@@ -290,7 +291,7 @@ cp "$OWNMIND_DIR/skills/ownmind-memory.md" "$SKILL_DIR/SKILL.md"
 UPGRADE_SKILL_DIR="$HOME/.claude/skills/ownmind-upgrade"
 mkdir -p "$UPGRADE_SKILL_DIR"
 cp "$OWNMIND_DIR/skills/ownmind-upgrade.md" "$UPGRADE_SKILL_DIR/SKILL.md"
-echo "   安裝 ownmind-memory + ownmind-upgrade skills (Claude Code)"
+echo "[INFO] Installed ownmind-memory + ownmind-upgrade skills (Claude Code)"
 
 # v1.17.0 P7：升級規則片段分發到其他 AI 工具（偵測目錄存在才裝，跳過未裝的）
 UPGRADE_SNIPPET="$OWNMIND_DIR/skills/ownmind-upgrade-agents-snippet.md"
@@ -318,7 +319,7 @@ append_upgrade_rule_if_exists() {
       echo "<!-- /ownmind-upgrade-rule -->"
     } >> "$target_file"
     INSTALLED_TOOLS=$((INSTALLED_TOOLS + 1))
-    echo "   ✓ ${tool_name} → ${target_file}"
+    echo "[ OK ] ${tool_name} -> ${target_file}"
   else
     SKIPPED_TOOLS=$((SKIPPED_TOOLS + 1))
   fi
@@ -329,7 +330,7 @@ append_upgrade_rule_if_exists "Antigravity" "$HOME/.antigravity/rules/ownmind.md
 append_upgrade_rule_if_exists "OpenCode"    "$HOME/.opencode/AGENTS.md"
 append_upgrade_rule_if_exists "Windsurf"    "$HOME/.windsurf/rules/ownmind.md"
 append_upgrade_rule_if_exists "Gemini"      "$HOME/.gemini/GEMINI.md"
-echo "   安裝升級規則：${INSTALLED_TOOLS} 個工具已裝，${SKIPPED_TOOLS} 個未安裝已跳過"
+echo "[INFO] Upgrade rules synced: ${INSTALLED_TOOLS} installed, ${SKIPPED_TOOLS} skipped"
 
 # --- 4b. 安裝 Hook Scripts + hooks/lib 模組（v1.17.0 P3）---
 HOOK_DIR="$HOME/.claude/hooks"
@@ -344,7 +345,7 @@ chmod +x "$HOOK_DIR/ownmind-worktree-setup.sh"
 if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
   cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
 fi
-echo "   安裝 hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib"
+echo "[INFO] Installed hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "
@@ -394,7 +395,7 @@ node -e "
 " 2>/dev/null
 
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
-echo "   安裝 Git Hooks（Iron Rule Verification Engine）..."
+echo "[INFO] Installing Git hooks (Iron Rule Verification Engine)"
 
 # 建立所需目錄
 mkdir -p "$HOME/.ownmind/shared"
@@ -408,7 +409,7 @@ SRC_VERIFY="$OWNMIND_DIR/shared/verification.js"
 DST_VERIFY="$HOME/.ownmind/shared/verification.js"
 if [ -f "$SRC_VERIFY" ] && ! [ "$SRC_VERIFY" -ef "$DST_VERIFY" ]; then
   cp "$SRC_VERIFY" "$DST_VERIFY"
-  echo "   複製 verification engine"
+  echo "[INFO] Copied verification engine"
 fi
 
 # 複製 git hook JS 檔案
@@ -418,7 +419,7 @@ for js_file in "${HOOK_JS_FILES[@]}"; do
   DST_JS="$HOME/.ownmind/hooks/$js_file"
   if [ -f "$SRC_JS" ] && ! [ "$SRC_JS" -ef "$DST_JS" ]; then
     cp "$SRC_JS" "$DST_JS"
-    echo "   複製 $js_file"
+    echo "[INFO] Copied $js_file"
   fi
 done
 
@@ -426,25 +427,25 @@ done
 if [ -f "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" ]; then
   cp "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" "$HOME/.ownmind/git-hooks/pre-commit"
   chmod +x "$HOME/.ownmind/git-hooks/pre-commit"
-  echo "   安裝 git pre-commit hook"
+  echo "[ OK ] Installed git pre-commit hook"
 fi
 if [ -f "$OWNMIND_DIR/hooks/ownmind-git-post-commit" ]; then
   cp "$OWNMIND_DIR/hooks/ownmind-git-post-commit" "$HOME/.ownmind/git-hooks/post-commit"
   chmod +x "$HOME/.ownmind/git-hooks/post-commit"
-  echo "   安裝 git post-commit hook"
+  echo "[ OK ] Installed git post-commit hook"
 fi
 if [ -f "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" ]; then
   cp "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" "$HOME/.ownmind/git-hooks/commit-msg"
   chmod +x "$HOME/.ownmind/git-hooks/commit-msg"
-  echo "   安裝 git commit-msg hook (IR-024)"
+  echo "[ OK ] Installed git commit-msg hook (IR-024)"
 fi
 
 # 設定 global git hooks path（需要 git 可用）
 if command -v git &>/dev/null; then
   git config --global core.hooksPath "$HOME/.ownmind/git-hooks"
-  echo "   設定 git global hooks path: $HOME/.ownmind/git-hooks"
+  echo "[ OK ] Set git global hooks path: $HOME/.ownmind/git-hooks"
 else
-  echo "   ⚠️ 找不到 git，跳過 global hooks path 設定"
+  echo "[WARN] git not found, skipping global hooks path"
 fi
 
 # --- 4e. Always-on Usage Scanner（P6）---
@@ -454,11 +455,11 @@ fi
 
 NO_SCANNER_FLAG="$HOME/.ownmind/.no-usage-scanner"
 if [ -f "$NO_SCANNER_FLAG" ]; then
-  echo "   跳過 usage scanner 安裝（.no-usage-scanner opt-out）"
+  echo "[INFO] Skipping usage scanner install (.no-usage-scanner opt-out)"
 elif [ "$IS_WINDOWS" = true ]; then
-  echo "   （Windows）usage scanner 請用 install.ps1 註冊 Task Scheduler"
+  echo "[INFO] Windows: register usage scanner via install.ps1 / Task Scheduler"
 else
-  echo "   安裝 usage scanner..."
+  echo "[INFO] Installing usage scanner"
 
   OWNMIND_BIN_DIR="$HOME/.ownmind/bin"
   mkdir -p "$OWNMIND_BIN_DIR"
@@ -480,15 +481,15 @@ else
   # 4e-3 偵測 node 並寫入 .node-path
   NODE_BIN="$(command -v node 2>/dev/null || true)"
   if [ -z "$NODE_BIN" ]; then
-    echo "   ⚠️ 找不到 node；請先安裝 Node.js v20+ 再重跑"
+    echo "[WARN] node not found; install Node.js v20+ and retry"
   else
-    NODE_VER="$("$NODE_BIN" --version 2>/dev/null || echo 'unknown')"
+    NODE_VER="$("$NODE_BIN" --version 2>/dev/null || echo "unknown")"
     NODE_MAJOR="$(echo "$NODE_VER" | sed -E 's/^v([0-9]+).*/\1/')"
     if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 20 ] 2>/dev/null; then
       echo "$NODE_BIN" > "$HOME/.ownmind/.node-path"
-      echo "   使用 node: $NODE_BIN ($NODE_VER)"
+      echo "[INFO] Using node: $NODE_BIN ($NODE_VER)"
     else
-      echo "   ⚠️ node 版本過舊 ($NODE_VER)；scanner 需要 v20+。請升級後重跑"
+      echo "[WARN] node too old ($NODE_VER); scanner requires v20+. Upgrade and retry"
     fi
   fi
 
@@ -506,7 +507,7 @@ else
       if launchctl load -w "$PLIST_PATH" 2>/dev/null; then
         echo "   ✅ launchd agent loaded (30 min interval)"
       else
-        echo "   ⚠️ launchctl load 失敗；請手動檢查 $PLIST_PATH"
+        echo "[WARN] launchctl load failed; check $PLIST_PATH manually"
       fi
       ;;
     linux*)
@@ -520,14 +521,14 @@ else
         if systemctl --user enable --now ownmind-usage-scanner.timer 2>/dev/null; then
           echo "   ✅ systemd user timer enabled (30 min interval)"
         else
-          echo "   ⚠️ systemd user timer 啟用失敗；請手動 systemctl --user enable --now ownmind-usage-scanner.timer"
+          echo "[WARN] systemd user timer enable failed; run: systemctl --user enable --now ownmind-usage-scanner.timer"
         fi
       else
-        echo "   ⚠️ 找不到 systemctl；請手動設定 cron 或排程"
+        echo "[WARN] systemctl not found; configure cron or scheduler manually"
       fi
       ;;
     *)
-      echo "   ⚠️ 未知 OS ($OSTYPE)；scanner 只安裝檔案，未註冊自動排程"
+      echo "[WARN] Unknown OS ($OSTYPE); scanner files installed but auto-schedule not registered"
       ;;
   esac
 fi
@@ -536,9 +537,9 @@ fi
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"
   if [ -f "$CURSOR_MCP" ] && grep -q '"ownmind"' "$CURSOR_MCP" 2>/dev/null; then
-    echo "   Cursor MCP 已設定，跳過"
+    echo "[INFO] Cursor MCP already configured, skipping"
   else
-    echo "   設定 Cursor MCP..."
+    echo "[INFO] Configuring Cursor MCP"
     if [ -f "$CURSOR_MCP" ]; then
       node -e "
         const fs = require('fs');
@@ -582,9 +583,9 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   # Cursor hooks（beforeShellExecution 作為 session-start workaround）
   CURSOR_HOOKS="$HOME/.cursor/hooks.json"
   if [ -f "$CURSOR_HOOKS" ] && grep -q 'ownmind' "$CURSOR_HOOKS" 2>/dev/null; then
-    echo "   Cursor hooks 已設定，跳過"
+    echo "[INFO] Cursor hooks already configured, skipping"
   else
-    echo "   設定 Cursor hooks..."
+    echo "[INFO] Configuring Cursor hooks"
     node -e "
       const fs = require('fs');
       const path = '$CURSOR_HOOKS';
@@ -610,7 +611,7 @@ fi
 
 # --- 6. Gemini CLI 設定（如果有 .gemini 目錄或 gemini 命令）---
 if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
-  echo "   設定 Gemini CLI..."
+  echo "[INFO] Configuring Gemini CLI"
   GEMINI_SETTINGS="$HOME/.gemini/settings.json"
   mkdir -p "$HOME/.gemini"
 
@@ -642,9 +643,9 @@ if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
   # Gemini GEMINI.md
   GEMINI_MD="$HOME/.gemini/GEMINI.md"
   if [ -f "$GEMINI_MD" ] && grep -q "OwnMind" "$GEMINI_MD" 2>/dev/null; then
-    echo "   GEMINI.md 已包含 OwnMind，跳過"
+    echo "[INFO] GEMINI.md already references OwnMind, skipping"
   else
-    echo "   更新 GEMINI.md..."
+    echo "[INFO] Updating GEMINI.md"
     cat >> "$GEMINI_MD" << 'GEMINI_EOF'
 
 # OwnMind 個人記憶系統（強制規則）
@@ -661,7 +662,7 @@ fi
 
 # --- 7. GitHub Copilot hooks（如果有 .github 目錄）---
 if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
-  echo "   設定 GitHub Copilot hooks..."
+  echo "[INFO] Configuring GitHub Copilot hooks"
   GH_HOOKS_DIR="$HOME/.github/hooks"
   GH_HOOKS_FILE="$GH_HOOKS_DIR/hooks.json"
   mkdir -p "$GH_HOOKS_DIR"
@@ -688,24 +689,24 @@ fi
 
 # --- 8. Windsurf 設定（如果有 .windsurf 目錄）---
 if [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; then
-  echo "   設定 Windsurf rules..."
+  echo "[INFO] Configuring Windsurf rules"
   WINDSURF_RULES="$HOME/.windsurf/rules"
   mkdir -p "$WINDSURF_RULES"
 
   if [ -f "$WINDSURF_RULES/ownmind.md" ] 2>/dev/null; then
-    echo "   Windsurf rules 已設定，跳過"
+    echo "[INFO] Windsurf rules already configured, skipping"
   else
     cp "$OWNMIND_DIR/configs/global_rules.md" "$WINDSURF_RULES/ownmind.md"
-    echo "   安裝 Windsurf OwnMind rules"
+    echo "[ OK ] Installed Windsurf OwnMind rules"
   fi
 fi
 
 # --- 9. OpenCode 設定 ---
 OPENCODE_CONFIG="$HOME/.opencode.json"
 if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
-  echo "   設定 OpenCode..."
+  echo "[INFO] Configuring OpenCode"
   if [ -f "$OPENCODE_CONFIG" ] && grep -q 'ownmind' "$OPENCODE_CONFIG" 2>/dev/null; then
-    echo "   OpenCode 已設定，跳過"
+    echo "[INFO] OpenCode already configured, skipping"
   else
     node -e "
       const fs = require('fs');
@@ -722,16 +723,16 @@ if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
     " 2>/dev/null
-    echo "   加入 OpenCode instructions"
+    echo "[ OK ] Added OpenCode instructions"
   fi
 fi
 
 # --- 10. OpenClaw 設定 ---
 OPENCLAW_CONFIG="$HOME/.openclaw.json"
 if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
-  echo "   設定 OpenClaw..."
+  echo "[INFO] Configuring OpenClaw"
   if [ -f "$OPENCLAW_CONFIG" ] && grep -q 'ownmind' "$OPENCLAW_CONFIG" 2>/dev/null; then
-    echo "   OpenClaw 已設定，跳過"
+    echo "[INFO] OpenClaw already configured, skipping"
   else
     node -e "
       const fs = require('fs');
@@ -748,17 +749,17 @@ if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
     " 2>/dev/null
-    echo "   加入 OpenClaw bootstrap"
+    echo "[ OK ] Added OpenClaw bootstrap"
   fi
 fi
 
 # --- 11. Google Antigravity 設定 ---
 ANTIGRAVITY_DIR="$HOME/.antigravity"
 if [ -d "$ANTIGRAVITY_DIR" ] || command -v antigravity &>/dev/null; then
-  echo "   設定 Google Antigravity..."
+  echo "[INFO] Configuring Google Antigravity"
   mkdir -p "$ANTIGRAVITY_DIR"
   if [ -f "$ANTIGRAVITY_DIR/rules.md" ] && grep -q 'OwnMind' "$ANTIGRAVITY_DIR/rules.md" 2>/dev/null; then
-    echo "   Antigravity rules 已設定，跳過"
+    echo "[INFO] Antigravity rules already configured, skipping"
   else
     cat >> "$ANTIGRAVITY_DIR/rules.md" << 'ANTIGRAVITY_EOF'
 
@@ -772,30 +773,31 @@ if [ -d "$ANTIGRAVITY_DIR" ] || command -v antigravity &>/dev/null; then
 - 鐵律必須在整個 session 中嚴格遵守
 - 衝突時以 OwnMind 為準
 ANTIGRAVITY_EOF
-    echo "   安裝 Antigravity OwnMind rules"
+    echo "[ OK ] Installed Antigravity OwnMind rules"
   fi
 fi
 
 echo ""
-echo "✅ OwnMind 安裝完成！"
-echo ""
-echo "   MCP Server: $OWNMIND_DIR/mcp/index.js"
-echo "   API URL:    $API_URL"
-echo "   API Key:    ${API_KEY:0:4}****${API_KEY: -4}"
+echo "─────────────────────────────────────────────"
+echo "OwnMind installation complete"
+echo "─────────────────────────────────────────────"
+echo "  MCP Server: $OWNMIND_DIR/mcp/index.js"
+echo "  API URL:    $API_URL"
+echo "  API Key:    ${API_KEY:0:4}****${API_KEY: -4}"
 if [ "$IS_WINDOWS" = true ]; then
-echo "   Windows:    使用 cmd.exe + start.cmd 啟動 MCP"
+echo "  Windows:    MCP launched via cmd.exe + start.cmd"
 fi
 echo ""
-echo "   已設定自動載入（偵測到的平台）："
-echo "   ✅ Claude Code — SessionStart hook"
-{ command -v gemini &>/dev/null || [ -d "$HOME/.gemini" ]; } && echo "   ✅ Gemini CLI — SessionStart hook"
-{ command -v cursor &>/dev/null || [ -d "$HOME/.cursor" ]; } && echo "   ✅ Cursor — session-start hook"
-{ command -v gh &>/dev/null || [ -d "$HOME/.github" ]; } && echo "   ✅ GitHub Copilot — sessionStart hook"
-{ [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; } && echo "   ✅ Windsurf — rules file"
-{ [ -f "$HOME/.opencode.json" ] || command -v opencode &>/dev/null; } && echo "   ✅ OpenCode — instructions file"
-{ [ -f "$HOME/.openclaw.json" ] || command -v openclaw &>/dev/null; } && echo "   ✅ OpenClaw — bootstrap file"
-{ [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "   ✅ Antigravity — rules file"
-echo "   ✅ Git Hooks — pre-commit + post-commit（Iron Rule Verification）"
+echo "Auto-load configured for detected platforms:"
+echo "  [ OK ] Claude Code        SessionStart hook"
+{ command -v gemini &>/dev/null || [ -d "$HOME/.gemini" ]; } && echo "  [ OK ] Gemini CLI         SessionStart hook"
+{ command -v cursor &>/dev/null || [ -d "$HOME/.cursor" ]; } && echo "  [ OK ] Cursor             session-start hook"
+{ command -v gh &>/dev/null || [ -d "$HOME/.github" ]; } && echo "  [ OK ] GitHub Copilot     sessionStart hook"
+{ [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; } && echo "  [ OK ] Windsurf           rules file"
+{ [ -f "$HOME/.opencode.json" ] || command -v opencode &>/dev/null; } && echo "  [ OK ] OpenCode           instructions file"
+{ [ -f "$HOME/.openclaw.json" ] || command -v openclaw &>/dev/null; } && echo "  [ OK ] OpenClaw           bootstrap file"
+{ [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "  [ OK ] Antigravity        rules file"
+echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
 echo ""
 
 # v1.17.63: 跑 self-check 把所有元件的真實狀態抓下來、寫 log + 上傳。
@@ -805,5 +807,5 @@ if [ -f "$SELF_CHECK_SCRIPT" ]; then
   node "$SELF_CHECK_SCRIPT" --trigger=post_install || true
 fi
 
-echo "   開一個新對話，OwnMind 會自動載入你的記憶！"
+echo "Open a new AI session — OwnMind will auto-load your memory."
 echo ""

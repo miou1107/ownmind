@@ -76,19 +76,19 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = TIMEOUT_MS) {
 async function checkMcpFiles() {
   const p = path.join(OWNMIND_DIR, 'mcp', 'index.js');
   if (!fs.existsSync(p)) {
-    return fail('mcp_files', `${sanitizePath(p)} 不存在`, '重跑 bootstrap.sh / bootstrap.ps1');
+    return fail('mcp_files', `${sanitizePath(p)} not found`, 'Re-run bootstrap.sh / bootstrap.ps1');
   }
-  return pass('mcp_files', `${sanitizePath(p)} 存在`);
+  return pass('mcp_files', sanitizePath(p));
 }
 
 async function checkPackageVersion() {
   const p = path.join(OWNMIND_DIR, 'package.json');
   const pkg = readJsonSafe(p);
   if (!pkg) {
-    return fail('package_version', `${sanitizePath(p)} 讀不到或非 JSON`, '重跑 bootstrap');
+    return fail('package_version', `${sanitizePath(p)} unreadable or invalid JSON`, 'Re-run bootstrap');
   }
   if (!pkg.version || !/^\d+\.\d+\.\d+/.test(pkg.version)) {
-    return fail('package_version', `version="${pkg.version}" 不像 semver`, '重跑 bootstrap');
+    return fail('package_version', `version="${pkg.version}" is not semver`, 'Re-run bootstrap');
   }
   return pass('package_version', `v${pkg.version}`);
 }
@@ -96,27 +96,27 @@ async function checkPackageVersion() {
 async function checkMcpNodeModules() {
   const p = path.join(OWNMIND_DIR, 'mcp', 'node_modules');
   if (!fs.existsSync(p)) {
-    return fail('mcp_node_modules', `${sanitizePath(p)} 不存在`,
-      '在 ~/.ownmind/mcp 跑 npm install');
+    return fail('mcp_node_modules', `${sanitizePath(p)} not found`,
+      'Run: cd ~/.ownmind/mcp && npm install');
   }
   let count = 0;
   try { count = (await fsp.readdir(p)).length; } catch {}
   if (count === 0) {
-    return fail('mcp_node_modules', '空目錄', '在 ~/.ownmind/mcp 跑 npm install');
+    return fail('mcp_node_modules', 'directory is empty', 'Run: cd ~/.ownmind/mcp && npm install');
   }
-  return pass('mcp_node_modules', `${count} 個 module`);
+  return pass('mcp_node_modules', `${count} modules`);
 }
 
 async function checkServerHealth(apiUrl) {
-  if (!apiUrl) return fail('server_health', '沒有 apiUrl', '重跑 bootstrap');
+  if (!apiUrl) return fail('server_health', 'apiUrl not configured', 'Re-run bootstrap');
   const url = `${apiUrl.replace(/\/$/, '')}/health`;
   try {
     const r = await fetchWithTimeout(url);
-    if (!r.ok) return fail('server_health', `HTTP ${r.status}`, '檢查 server 是否在 line 上');
-    return pass('server_health', `${url} → 200`);
+    if (!r.ok) return fail('server_health', `HTTP ${r.status}`, 'Check whether server is online');
+    return pass('server_health', `${url} -> 200`);
   } catch (e) {
-    return fail('server_health', `fetch 失敗：${sanitizePath(e?.message || String(e))}`,
-      '檢查網路或 apiUrl 設定');
+    return fail('server_health', `fetch failed: ${sanitizePath(e?.message || String(e))}`,
+      'Check network or apiUrl configuration');
   }
 }
 
@@ -128,48 +128,48 @@ async function checkServerHealth(apiUrl) {
 // 純看 settings.json 裡 OWNMIND_API_KEY 的字串長相，把已經中招的存量挖出來。
 function checkApiKeyFormat(apiKey) {
   if (typeof apiKey !== 'string' || apiKey === '') {
-    return fail('api_key_format', 'OWNMIND_API_KEY 空白',
-      '重跑 bootstrap，重新填 API key');
+    return fail('api_key_format', 'OWNMIND_API_KEY is empty',
+      'Re-run bootstrap with a valid API key');
   }
-  // 已知壞值清單（歷史踩坑）
+  // Known bad values (legacy issues)
   const KNOWN_BAD = new Set(['--update', '--upgrade', '--install', '--help',
     '/help', '/?', 'true', 'false', 'undefined', 'null', '${OWNMIND_API_KEY}']);
   if (KNOWN_BAD.has(apiKey)) {
     return fail('api_key_format',
-      `OWNMIND_API_KEY 是已知壞值 "${apiKey}"（v1.17.9 之前 install.ps1 沒過濾 flag-like args 的存量問題）`,
-      '從 OwnMind admin UI 拿 API key 重設 settings.json，或請 admin 重發');
+      `OWNMIND_API_KEY is known bad value "${apiKey}" (legacy: install.ps1 < v1.17.9 did not filter flag-like args)`,
+      'Reset settings.json with a fresh API key from the OwnMind admin UI');
   }
-  // flag-like：開頭 `-` 通常是 PowerShell 參數誤傳
+  // flag-like: leading `-` is usually a misrouted PowerShell flag
   if (apiKey.startsWith('-')) {
     return fail('api_key_format',
-      `OWNMIND_API_KEY 以 - 開頭，疑似 PowerShell 旗標誤傳`,
-      '從 OwnMind admin UI 重發 API key');
+      'OWNMIND_API_KEY starts with "-", likely a misrouted PowerShell flag',
+      'Reissue API key from OwnMind admin UI');
   }
-  // 長度太短：合法 key 至少 16 chars（UUID v4 是 36，custom prefix 也 ≥ 20）
+  // Length sanity: valid keys are >= 16 chars (UUID v4 is 36, prefixed >= 20)
   if (apiKey.length < 16) {
     return fail('api_key_format',
-      `OWNMIND_API_KEY 長度 ${apiKey.length} 太短（合法 ≥ 16）`,
-      '從 OwnMind admin UI 重發 API key');
+      `OWNMIND_API_KEY length ${apiKey.length} is too short (minimum 16)`,
+      'Reissue API key from OwnMind admin UI');
   }
-  // 不能含空白（CRLF / 空格 / tab — 設定檔複製貼上常見污染）
+  // No whitespace (CRLF / space / tab from copy-paste)
   if (/\s/.test(apiKey)) {
     return fail('api_key_format',
-      'OWNMIND_API_KEY 含空白字元（換行 / 空格 / tab）',
-      '檢查 settings.json，把 key 中間的空白移掉；或重發 key');
+      'OWNMIND_API_KEY contains whitespace (newline / space / tab)',
+      'Remove whitespace in settings.json or reissue the key');
   }
-  // 不能含非 printable ASCII（BOM / 控制字元）
+  // No non-printable ASCII (BOM / control chars)
   if (/[\x00-\x1F\x7F-\x9F﻿]/.test(apiKey)) {
     return fail('api_key_format',
-      'OWNMIND_API_KEY 含不可見字元（BOM / 控制字元）',
-      '從 OwnMind admin UI 重發 API key，避免從帶 BOM 的檔案複製');
+      'OWNMIND_API_KEY contains non-printable characters (BOM / control)',
+      'Reissue API key (avoid copying from BOM-prefixed files)');
   }
-  return pass('api_key_format', `格式 OK (len=${apiKey.length})`);
+  return pass('api_key_format', `valid (len=${apiKey.length})`);
 }
 
 async function checkApiCredentials(apiUrl, apiKey) {
   if (!apiUrl || !apiKey) {
-    return fail('api_credentials', 'apiUrl 或 apiKey 空白',
-      '重跑 bootstrap，重新填 API key');
+    return fail('api_credentials', 'apiUrl or apiKey is empty',
+      'Re-run bootstrap with a valid API key');
   }
   // v1.17.64：mcp/index.js 跟其他 client 都打 GET /api/memory/init + Authorization Bearer。
   // v1.17.63 寫成 POST /api/init + X-OwnMind-API-Key header，server 沒這條路由 (404) 且
@@ -180,13 +180,13 @@ async function checkApiCredentials(apiUrl, apiKey) {
       headers: { 'Authorization': `Bearer ${apiKey}` },
     });
     if (r.status === 401 || r.status === 403) {
-      return fail('api_credentials', `auth ${r.status}`, '重跑 bootstrap 重設 API key');
+      return fail('api_credentials', `auth ${r.status}`, 'Re-run bootstrap to reset API key');
     }
-    if (!r.ok) return warn('api_credentials', `HTTP ${r.status}`, '看 server log');
-    return pass('api_credentials', `auth OK`);
+    if (!r.ok) return warn('api_credentials', `HTTP ${r.status}`, 'Check server log');
+    return pass('api_credentials', 'authenticated');
   } catch (e) {
     return fail('api_credentials', sanitizePath(e?.message || String(e)),
-      '檢查 server 連線');
+      'Check server connectivity');
   }
 }
 
@@ -205,13 +205,13 @@ async function checkGitHooks() {
     } catch { missing.push(name); }
   }
   if (missing.length > 0) {
-    return fail('git_hooks', `缺：${missing.join(', ')}`, '重跑 install.sh / install.ps1');
+    return fail('git_hooks', `missing: ${missing.join(', ')}`, 'Re-run install.sh / install.ps1');
   }
   if (notExec.length > 0) {
-    return warn('git_hooks', `沒 exec bit：${notExec.join(', ')}`,
+    return warn('git_hooks', `not executable: ${notExec.join(', ')}`,
       `chmod +x ${notExec.map(n => path.join(dir, n)).join(' ')}`);
   }
-  return pass('git_hooks', `${expected.length} 個鉤子都在`);
+  return pass('git_hooks', `${expected.length} hooks installed`);
 }
 
 async function checkScheduler() {
@@ -219,12 +219,12 @@ async function checkScheduler() {
     try {
       const { stdout } = await execFileAsync('launchctl', ['list'], { timeout: TIMEOUT_MS });
       if (stdout.includes('com.ownmind.usage-scanner')) {
-        return pass('scheduler', 'launchd com.ownmind.usage-scanner 已載入');
+        return pass('scheduler', 'launchd agent loaded');
       }
-      return fail('scheduler', 'launchd 沒看到 com.ownmind.usage-scanner',
-        '重跑 install.sh 或手動：launchctl load ~/Library/LaunchAgents/com.ownmind.usage-scanner.plist');
+      return fail('scheduler', 'launchd agent not found',
+        'Re-run install.sh or: launchctl load ~/Library/LaunchAgents/com.ownmind.usage-scanner.plist');
     } catch (e) {
-      return fail('scheduler', `launchctl 跑失敗：${sanitizePath(e?.message)}`, '檢查 launchctl');
+      return fail('scheduler', `launchctl failed: ${sanitizePath(e?.message)}`, 'Check launchctl');
     }
   }
   if (PLATFORM === 'linux') {
@@ -235,10 +235,10 @@ async function checkScheduler() {
       const out = stdout.trim();
       if (out === 'active') return pass('scheduler', 'systemd timer active');
       return fail('scheduler', `timer state=${out}`,
-        '重跑 install.sh 或：systemctl --user enable --now ownmind-usage-scanner.timer');
+        'Re-run install.sh or: systemctl --user enable --now ownmind-usage-scanner.timer');
     } catch (e) {
-      return fail('scheduler', `systemctl 跑失敗：${sanitizePath(e?.message)}`,
-        '檢查 systemd user instance');
+      return fail('scheduler', `systemctl failed: ${sanitizePath(e?.message)}`,
+        'Check systemd user instance');
     }
   }
   if (PLATFORM === 'win32') {
@@ -249,21 +249,21 @@ async function checkScheduler() {
       ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
       { timeout: TIMEOUT_MS });
     if (!r.ok) {
-      return fail('scheduler', `Get-ScheduledTask 失敗：${r.error}`,
-        '需要 Windows + PowerShell');
+      return fail('scheduler', `Get-ScheduledTask failed: ${r.error}`,
+        'Requires Windows + PowerShell');
     }
     const state = r.stdout.trim();
     if (state === 'Ready' || state === 'Running') {
       return pass('scheduler', `Task Scheduler state=${state}`);
     }
     if (!state) {
-      return fail('scheduler', 'Task Scheduler 找不到 OwnMind Usage Scanner',
-        'PowerShell 跑：powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
+      return fail('scheduler', 'Task Scheduler entry not found for "OwnMind Usage Scanner"',
+        'Run: powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
     }
     return warn('scheduler', `Task Scheduler state=${state}`,
-      '檢查 Task Scheduler 介面或重跑 register-scanner-task.ps1');
+      'Check Task Scheduler UI or re-run register-scanner-task.ps1');
   }
-  return warn('scheduler', `不支援的平台：${PLATFORM}`, null);
+  return warn('scheduler', `unsupported platform: ${PLATFORM}`, null);
 }
 
 // ============================================================
@@ -278,8 +278,8 @@ async function safeCheck(name, fn) {
     return await fn();
   } catch (e) {
     return fail(name,
-      `check 拋例外：${sanitizePath(e?.message || String(e))}`,
-      '看 ~/.ownmind/logs/self-check-*.log 找原因');
+      `check threw: ${sanitizePath(e?.message || String(e))}`,
+      'See ~/.ownmind/logs/self-check-*.log for details');
   }
 }
 
@@ -503,18 +503,22 @@ function writeLog(report) {
   }
 }
 
+// v1.17.82 — professional English output, ASCII-only (no encoding hazards on Windows)
 function printConsole(report) {
-  const icons = { pass: '✅', warn: '⚠️ ', fail: '❌' };
+  const tag = { pass: '[ OK ]', warn: '[WARN]', fail: '[FAIL]' };
+  const sep = '-'.repeat(50);
   process.stderr.write('\n');
-  process.stderr.write('===== OwnMind self-check =====\n');
+  process.stderr.write('OwnMind self-check\n');
+  process.stderr.write(sep + '\n');
   for (const c of report.checks) {
-    process.stderr.write(`${icons[c.status]} ${c.name.padEnd(20)} ${c.detail}\n`);
+    process.stderr.write(`${tag[c.status]}  ${c.name.padEnd(20)} ${c.detail}\n`);
     if (c.fix && c.status !== 'pass') {
-      process.stderr.write(`     修復：${c.fix}\n`);
+      process.stderr.write(`        Fix: ${c.fix}\n`);
     }
   }
   const s = report.summary;
-  process.stderr.write(`\n總結：✅ ${s.pass || 0}　⚠️  ${s.warn || 0}　❌ ${s.fail || 0}\n`);
+  process.stderr.write('\n');
+  process.stderr.write(`Summary:  ${s.pass || 0} passed, ${s.warn || 0} warnings, ${s.fail || 0} failed\n`);
 }
 
 // v1.17.66 — Spool helpers（IR-038 觀測管道）
@@ -754,32 +758,32 @@ async function main() {
   const logPath = writeLog(report);
   printConsole(report);
   if (logPath) {
-    process.stderr.write(`本機 log：${sanitizePath(logPath)}\n`);
+    process.stderr.write(`Log:      ${sanitizePath(logPath)}\n`);
   }
 
   const upload = await uploadReport(report, apiUrl, apiKey);
   if (upload.skipped) {
-    process.stderr.write(`上傳：跳過（${upload.reason}）${upload.spooled ? '，已暫存待重試' : ''}\n`);
+    process.stderr.write(`Upload:   skipped (${upload.reason})${upload.spooled ? ', queued for retry' : ''}\n`);
   } else if (upload.ok) {
-    process.stderr.write(`上傳：成功\n`);
+    process.stderr.write(`Upload:   succeeded\n`);
   } else {
     const reason = upload.error || `HTTP ${upload.status}`;
-    process.stderr.write(`上傳：失敗（${reason}）${upload.spooled ? '，已暫存待重試' : ''}\n`);
+    process.stderr.write(`Upload:   failed (${reason})${upload.spooled ? ', queued for retry' : ''}\n`);
   }
   if (upload.retried > 0) {
-    process.stderr.write(`順手補傳 spool 舊紀錄：${upload.retried} 筆\n`);
+    process.stderr.write(`Retried:  ${upload.retried} queued report(s)\n`);
   }
 
-  // v1.17.79 — 順手 drain errors/ spool（全 client 端失敗回報）
+  // v1.17.79 — drain errors/ spool (broad client-side failure pipeline)
   try {
     const errDrain = await drainErrorSpool(apiUrl, apiKey);
     if (errDrain.uploaded > 0 || errDrain.failed > 0) {
-      process.stderr.write(`Error spool：上傳 ${errDrain.uploaded} 筆，失敗 ${errDrain.failed} 筆\n`);
+      process.stderr.write(`Errors:   ${errDrain.uploaded} uploaded, ${errDrain.failed} failed\n`);
     }
   } catch (e) {
-    process.stderr.write(`Error spool drain 失敗：${sanitizePath(e?.message || String(e))}\n`);
+    process.stderr.write(`Errors:   drain failed (${sanitizePath(e?.message || String(e))})\n`);
   }
-  process.stderr.write('==============================\n\n');
+  process.stderr.write('-'.repeat(50) + '\n\n');
 
   // 即使有 fail check 也回 exit 0 — 不擋安裝/升級流程
   process.exit(0);

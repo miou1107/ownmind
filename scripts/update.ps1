@@ -68,7 +68,8 @@ function Send-UpdateBeacon {
 }
 Send-UpdateBeacon -Trigger 'update_started'
 
-Write-Host "OwnMind 同步更新中（Windows）..."
+Write-Host "OwnMind sync (light path)"
+Write-Host "─────────────────────────────────────────────"
 
 function CopyIfExists {
   param([string]$Src, [string]$Dest)
@@ -90,7 +91,7 @@ if (Test-Path $ClaudeDir) {
   CopyIfExists `
     (Join-Path $OwnMindDir "skills\ownmind-upgrade.md") `
     (Join-Path $ClaudeDir "skills\ownmind-upgrade\SKILL.md") | Out-Null
-  Write-Host "   skills 已更新（ownmind-memory + ownmind-upgrade）"
+  Write-Host "[ OK ] Skills synced (ownmind-memory + ownmind-upgrade)"
 }
 
 # --- 1b. 同步升級規則到其他 AI 工具 ---
@@ -116,7 +117,7 @@ if (Test-Path $UpgradeSnippet) {
   AppendRule (Join-Path $HOME ".opencode\AGENTS.md")
   AppendRule (Join-Path $HOME ".windsurf\rules\ownmind.md")
   AppendRule (Join-Path $HOME ".gemini\GEMINI.md")
-  Write-Host "   升級規則已同步到偵測到的 AI 工具"
+  Write-Host "[ OK ] Upgrade rules synced to detected AI tools"
 }
 
 # --- 2. hook scripts + lib（Git Bash 才能跑 .sh）---
@@ -131,12 +132,12 @@ if (Test-Path $ClaudeDir) {
     Get-ChildItem -Path $LibSrc -Filter "*.js" -ErrorAction SilentlyContinue |
       ForEach-Object { Copy-Item -Force -Path $_.FullName -Destination $HookLibDir }
   }
-  Write-Host "   hook scripts 已同步"
+  Write-Host "[ OK ] Hook scripts synced"
 }
 
 # --- 2b. usage scanner ---
 $ScannerJs = Join-Path $OwnMindDir "hooks\ownmind-usage-scanner.js"
-if (Test-Path $ScannerJs) { Write-Host "   usage scanner 已就緒" }
+if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }
 
 # --- 3. Claude Code settings.json：注入 hooks ---
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
@@ -299,4 +300,5 @@ if (Test-Path $CursorDir) {
 # --- 標記已安裝 ---
 $null = New-Item -ItemType File -Force -Path (Join-Path $OwnMindDir ".session-hook-installed")
 
-Write-Host "OwnMind 同步完成（Windows）"
+Write-Host "─────────────────────────────────────────────"
+Write-Host "OwnMind sync complete"

@@ -35,15 +35,15 @@ if ($PosArgs.Count -ge 1) { $ApiKey = $PosArgs[0] } else { $ApiKey = $env:OWNMIN
 if ($PosArgs.Count -ge 2) { $ApiUrl = $PosArgs[1] } else { $ApiUrl = $env:OWNMIND_API_URL }
 
 if (-not $ApiKey) {
-  Write-Error "請提供 API Key`n用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL`n或設定環境變數: `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
+  Write-Error "API Key required`nUsage:   .\install.ps1 YOUR_API_KEY YOUR_API_URL`nOr env:  `$env:OWNMIND_API_KEY='xxx'; `$env:OWNMIND_API_URL='https://...'"
   exit 1
 }
 if (-not $ApiUrl) {
-  Write-Error "請提供 API URL`n用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL"
+  Write-Error "API URL required`nUsage: .\install.ps1 YOUR_API_KEY YOUR_API_URL"
   exit 1
 }
 
-Write-Host "OwnMind 安裝中..." -ForegroundColor Cyan
+Write-Host "OwnMind installer" -ForegroundColor Cyan
 
 # --- v1.17.78 IR-038：install_started beacon（觀測管道補洞）---
 # 為什麼必要：install.ps1 中段任何 fatal error（npm install 被 ExecutionPolicy 擋、
@@ -103,36 +103,36 @@ function Install-WithWinget {
     [string]$WingetId,    # "Git.Git" / "OpenJS.NodeJS.LTS"
     [string]$ManualUrl    # 手動安裝 fallback URL
   )
-  Write-Host "   未偵測到 $ToolName（OwnMind 必要依賴）" -ForegroundColor Yellow
+  Write-Host "[WARN] $ToolName not found (required by OwnMind)" -ForegroundColor Yellow
   $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
   if (-not $hasWinget) {
-    Write-Error "找不到 winget 也找不到 $ToolName。請到 $ManualUrl 下載安裝後重跑。"
+    Write-Error "$ToolName missing and winget unavailable. Install from $ManualUrl then retry."
     exit 1
   }
-  Write-Host "   嘗試用 winget 自動安裝 $WingetId（約需 1-2 分鐘）..."
+  Write-Host "[INFO] Auto-installing $WingetId via winget (1-2 min)"
   try {
     winget install --id $WingetId --scope user --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-      Write-Error "winget install $WingetId 失敗 (exit=$LASTEXITCODE)。請手動安裝 $ToolName ($ManualUrl) 後重跑。"
+      Write-Error "winget install $WingetId failed (exit=$LASTEXITCODE). Install $ToolName manually ($ManualUrl) and retry."
       exit 1
     }
   } catch {
-    Write-Error "winget install $WingetId 失敗：$_。請手動安裝 $ToolName ($ManualUrl) 後重跑。"
+    Write-Error "winget install $WingetId failed: $_. Install $ToolName manually ($ManualUrl) and retry."
     exit 1
   }
   Reload-Path
   if (-not (Get-Command $ToolName -ErrorAction SilentlyContinue)) {
-    Write-Error "$ToolName 已裝但當前 PowerShell session 仍找不到。請完全關閉此 terminal、重開後再執行同一條 install 指令。"
+    Write-Error "$ToolName installed but not visible in current PowerShell session. Close this terminal completely, reopen, and re-run the same install command."
     exit 1
   }
-  Write-Host "   ✅ $ToolName 已裝（PATH 已重整）" -ForegroundColor Green
+  Write-Host "[ OK ] $ToolName installed (PATH reloaded)" -ForegroundColor Green
 }
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   try {
     Install-WithWinget -ToolName "git" -WingetId "Git.Git" -ManualUrl "https://git-scm.com/download/win"
   } catch {
-    Report-Error -Kind "install_winget_git_failed" -Detail "winget Git.Git 失敗：$_"
+    Report-Error -Kind "install_winget_git_failed" -Detail "winget Git.Git failed: $_"
     throw
   }
 }
@@ -140,7 +140,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
   try {
     Install-WithWinget -ToolName "node" -WingetId "OpenJS.NodeJS.LTS" -ManualUrl "https://nodejs.org/"
   } catch {
-    Report-Error -Kind "install_winget_node_failed" -Detail "winget OpenJS.NodeJS.LTS 失敗：$_"
+    Report-Error -Kind "install_winget_node_failed" -Detail "winget OpenJS.NodeJS.LTS failed: $_"
     throw
   }
 }
@@ -151,7 +151,7 @@ $nodeVer = $nodeVerRaw -replace '^v', ''
 $nodeMajor = 0
 try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
 if ($nodeMajor -lt 20) {
-  Write-Error "Node.js 版本過舊 ($nodeVerRaw)；OwnMind 需要 v20+。請升級後重跑：winget upgrade OpenJS.NodeJS.LTS"
+  Write-Error "Node.js too old ($nodeVerRaw); OwnMind requires v20+. Upgrade with: winget upgrade OpenJS.NodeJS.LTS"
   exit 1
 }
 Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
@@ -176,9 +176,9 @@ if ($nodeCmd) {
     $newUserPath = if ($userPath) { "$userPath;$nodeDir" } else { $nodeDir }
     try {
       [System.Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
-      Write-Host "   ✅ Node 路徑已寫入 User PATH ($nodeDir) — 重開 terminal 或 Claude Code 後生效" -ForegroundColor Green
+      Write-Host "[ OK ] Node path persisted to User PATH ($nodeDir) - effective after terminal/Claude Code restart" -ForegroundColor Green
     } catch {
-      Write-Host "   ⚠️ 寫 User PATH 失敗：$_（不致命，start.cmd 有 fallback）" -ForegroundColor Yellow
+      Write-Host "[WARN] Failed to write User PATH: $_ (non-fatal; start.cmd has fallback)" -ForegroundColor Yellow
     }
   }
 }
@@ -187,24 +187,24 @@ if ($nodeCmd) {
 # Windows 預設沒 sqlite3 CLI → Cursor/Antigravity/OpenCode usage 永遠收不到。
 # 用 winget（Windows 10 1809+ 內建 App Installer）自動裝；裝失敗走 fallback。
 if (-not (Get-Command sqlite3 -ErrorAction SilentlyContinue)) {
-  Write-Host "   未偵測到 sqlite3（Tier 2 usage scanner 需要）" -ForegroundColor Yellow
+  Write-Host "[WARN] sqlite3 not found (required by Tier 2 usage scanner)" -ForegroundColor Yellow
   $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
   if ($hasWinget) {
-    Write-Host "   嘗試用 winget 自動安裝 SQLite.SQLite..."
+    Write-Host "[INFO] Auto-installing SQLite.SQLite via winget"
     try {
       winget install --id SQLite.SQLite --scope user --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
       if ($LASTEXITCODE -eq 0) {
-        Write-Host "   sqlite3 已裝（重開 terminal 讓 PATH 生效；下次 scanner 自動啟用 Tier 2）" -ForegroundColor Green
+        Write-Host "[ OK ] sqlite3 installed (reopen terminal for PATH; next scanner run enables Tier 2)" -ForegroundColor Green
       } else {
-        Write-Host "   winget install 回傳 exit=$LASTEXITCODE；請手動裝後重開 terminal" -ForegroundColor Yellow
+        Write-Host "[WARN] winget install returned exit=$LASTEXITCODE; install manually then reopen terminal" -ForegroundColor Yellow
       }
     } catch {
-      Write-Host "   winget install 失敗：$_" -ForegroundColor Yellow
+      Write-Host "[WARN] winget install failed: $_" -ForegroundColor Yellow
     }
   } else {
-    Write-Host "   無 winget；請到 https://www.sqlite.org/download.html 下載 sqlite-tools-win-x64 並加入 PATH" -ForegroundColor Yellow
+    Write-Host "[WARN] winget unavailable; download sqlite-tools-win-x64 from https://www.sqlite.org/download.html and add to PATH" -ForegroundColor Yellow
   }
-  Write-Host "   不裝 sqlite3 不影響 Claude Code / Codex 主要 usage，只是 Tier 2（Cursor / Antigravity / OpenCode）session 計數不會收集" -ForegroundColor Gray
+  Write-Host "       Skipping does not affect Claude Code / Codex usage; only Tier 2 (Cursor / Antigravity / OpenCode) session counts are unavailable" -ForegroundColor Gray
 }
 
 # --- Write-Utf8NoBom helper (v1.17.12, 回報者 Adam/Eric root cause) ---
@@ -273,32 +273,32 @@ foreach ($dir in @($ClaudeDir, $SkillDir, $HookDir)) {
 
 # --- 1. Clone MCP Server ---
 if (Test-Path $OwnmindDir) {
-  Write-Host "   更新 OwnMind MCP Server..."
+  Write-Host "[INFO] Updating OwnMind MCP server"
   git -C $OwnmindDir pull -q
   if ($LASTEXITCODE -ne 0) {
     Maybe-LoadReportError
     Report-Error -Kind "install_git_pull_failed" -Detail "git pull 失敗於 $OwnmindDir"
-    Write-Error "git pull 失敗。改跑 bootstrap 或手動修復後重跑"
+    Write-Error "git pull failed. Run bootstrap or fix manually and retry"
     exit 1
   }
 } else {
-  Write-Host "   下載 OwnMind MCP Server..."
+  Write-Host "[INFO] Cloning OwnMind MCP server"
   git clone -q https://github.com/miou1107/ownmind.git $OwnmindDir
   if ($LASTEXITCODE -ne 0) {
     Report-Error -Kind "install_git_clone_failed" -Detail "git clone github.com/miou1107/ownmind 失敗"
-    Write-Error "git clone 失敗（網路或 GitHub 權限）"
+    Write-Error "git clone failed (network or GitHub access)"
     exit 1
   }
 }
 Maybe-LoadReportError
 
-Write-Host "   安裝依賴..."
+Write-Host "[INFO] Installing dependencies"
 Push-Location (Join-Path $OwnmindDir "mcp")
 npm install -q 2>$null
 if ($LASTEXITCODE -ne 0) {
   Pop-Location
   Report-Error -Kind "install_npm_failed" -Detail "npm install 在 $OwnmindDir\mcp 失敗"
-  Write-Error "npm install 失敗。試 npm install -g npm@latest 後重跑"
+  Write-Error "npm install failed. Try: npm install -g npm@latest and retry"
   exit 1
 }
 Pop-Location
@@ -319,9 +319,9 @@ $McpConfig = @{
 if (Test-Path $ClaudeSettings) {
   $content = Get-Content $ClaudeSettings -Raw
   if ($content -match '"ownmind"') {
-    Write-Host "   Claude Code MCP 已設定，跳過"
+    Write-Host "[INFO] Claude Code MCP already configured, skipping"
   } else {
-    Write-Host "   設定 Claude Code MCP..."
+    Write-Host "[INFO] Configuring Claude Code MCP"
     $settings = $content | ConvertFrom-Json
     if (-not $settings.mcpServers) {
       $settings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
@@ -330,7 +330,7 @@ if (Test-Path $ClaudeSettings) {
     Write-Utf8NoBom -Path $ClaudeSettings -Content ($settings | ConvertTo-Json -Depth 10)
   }
 } else {
-  Write-Host "   建立 Claude Code MCP 設定..."
+  Write-Host "[INFO] Creating Claude Code MCP config"
   Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
 }
 
@@ -356,19 +356,19 @@ $OwnmindBlock = @(
 if (Test-Path $ClaudeMd) {
   $existing = Get-Content $ClaudeMd -Raw
   if ($existing -match "OwnMind") {
-    Write-Host "   CLAUDE.md 已包含 OwnMind，跳過"
+    Write-Host "[INFO] CLAUDE.md already references OwnMind, skipping"
   } else {
-    Write-Host "   更新 CLAUDE.md..."
+    Write-Host "[INFO] Updating CLAUDE.md"
     Write-Utf8NoBom -Path $ClaudeMd -Content ($existing + $OwnmindBlock)
   }
 } else {
-  Write-Host "   建立 CLAUDE.md..."
+  Write-Host "[INFO] Creating CLAUDE.md"
   Write-Utf8NoBom -Path $ClaudeMd -Content $OwnmindBlock
 }
 
 # --- 4. 安裝 Skill ---
 Copy-Item (Join-Path $OwnmindDir "skills\ownmind-memory.md") (Join-Path $SkillDir "SKILL.md") -Force
-Write-Host "   安裝 ownmind-memory skill"
+Write-Host "[ OK ] Installed ownmind-memory skill"
 
 # --- 4b. 安裝 Hook Scripts（bash + node fallback）---
 $BashHooks = @("ownmind-iron-rule-check.sh", "ownmind-session-start.sh", "ownmind-worktree-setup.sh")
@@ -382,7 +382,7 @@ foreach ($hook in $NodeHooks) {
   $src = Join-Path $OwnmindDir "hooks\$hook"
   if (Test-Path $src) { Copy-Item $src $HookDir -Force }
 }
-Write-Host "   安裝 hook scripts"
+Write-Host "[ OK ] Installed hook scripts"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 # 偵測是否有 bash（WSL / Git Bash）
@@ -411,7 +411,7 @@ if (-not $sessionExists) {
     hooks = @([pscustomobject]@{ type = "command"; command = $sessionCmd; timeout = 10 })
   }
   $hookSettings.hooks.SessionStart += $newSessionHook
-  Write-Host "   加入 SessionStart hook"
+  Write-Host "[ OK ] Added SessionStart hook"
 }
 
 # PreToolUse hook
@@ -432,13 +432,13 @@ if (-not $preExists) {
     hooks   = @([pscustomobject]@{ type = "command"; command = $preCmd })
   }
   $hookSettings.hooks.PreToolUse += $newPreHook
-  Write-Host "   加入 PreToolUse hook"
+  Write-Host "[ OK ] Added PreToolUse hook"
 }
 
 Write-Utf8NoBom -Path $ClaudeSettings -Content ($hookSettings | ConvertTo-Json -Depth 10)
 
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
-Write-Host "   安裝 Git Hooks（Iron Rule Verification Engine）..."
+Write-Host "[INFO] Installing Git hooks (Iron Rule Verification Engine)"
 
 # 建立所需目錄
 $GitHookDirs = @(
@@ -463,11 +463,11 @@ function Copy-IfDifferent {
   $srcFull = [System.IO.Path]::GetFullPath($Src)
   $dstFull = [System.IO.Path]::GetFullPath($dstPath)
   if ($srcFull -ieq $dstFull) {
-    Write-Host "   $Label 已在目標位置（git clone），略過"
+    Write-Host "[INFO] $Label already at destination (git clone), skipping"
     return
   }
   Copy-Item $Src $DestDir -Force
-  Write-Host "   複製 $Label"
+  Write-Host "[INFO] Copied $Label"
 }
 
 # 複製 verification engine
@@ -496,32 +496,32 @@ $CommitMsgSrc = Join-Path $OwnmindDir "hooks\ownmind-git-commit-msg"
 # 偵測 sh.exe（Git for Windows 自帶）
 $shPath = Test-ShAvailable
 if (-not $shPath) {
-  Write-Host '   ⚠️ 找不到 sh.exe — git hook 將無法執行（"Exec format error"）' -ForegroundColor Yellow
-  Write-Host "      原因：你的 git 不是 Git for Windows（VS Code 內建 / WinGet Microsoft.Git / Scoop git-minimal 都沒帶 sh.exe）" -ForegroundColor Yellow
-  Write-Host "      解法：安裝 Git for Windows → https://git-scm.com/download/win" -ForegroundColor Yellow
-  Write-Host "      跳過 git hooks 安裝" -ForegroundColor Yellow
+  Write-Host '[WARN] sh.exe not found - git hooks cannot run ("Exec format error")' -ForegroundColor Yellow
+  Write-Host "       Cause: your git is not Git for Windows (VS Code bundled / WinGet Microsoft.Git / Scoop git-minimal do not ship sh.exe)" -ForegroundColor Yellow
+  Write-Host "       Fix:   install Git for Windows -> https://git-scm.com/download/win" -ForegroundColor Yellow
+  Write-Host "       Skipping git hooks install" -ForegroundColor Yellow
 } else {
-  Write-Host "   偵測 sh.exe: $shPath" -ForegroundColor Gray
+  Write-Host "[INFO] sh.exe detected: $shPath" -ForegroundColor Gray
   if (Copy-AsLf -Src $PreCommitSrc -Dest $PreCommitBat) {
-    Write-Host "   安裝 git pre-commit hook（LF）"
+    Write-Host "[ OK ] Installed git pre-commit hook (LF)"
   } else {
-    Write-Host "   ⚠️ 找不到 source: $PreCommitSrc，跳過 pre-commit hook" -ForegroundColor Yellow
+    Write-Host "[WARN] source not found: $PreCommitSrc, skipping pre-commit hook" -ForegroundColor Yellow
   }
   if (Copy-AsLf -Src $PostCommitSrc -Dest $PostCommitBat) {
-    Write-Host "   安裝 git post-commit hook（LF）"
+    Write-Host "[ OK ] Installed git post-commit hook (LF)"
   } else {
-    Write-Host "   ⚠️ 找不到 source: $PostCommitSrc，跳過 post-commit hook" -ForegroundColor Yellow
+    Write-Host "[WARN] source not found: $PostCommitSrc, skipping post-commit hook" -ForegroundColor Yellow
   }
   if (Copy-AsLf -Src $CommitMsgSrc -Dest $CommitMsgBat) {
-    Write-Host "   安裝 git commit-msg hook（LF）(IR-024)"
+    Write-Host "[ OK ] Installed git commit-msg hook (LF) (IR-024)"
   } else {
-    Write-Host "   ⚠️ 找不到 source: $CommitMsgSrc，跳過 commit-msg hook" -ForegroundColor Yellow
+    Write-Host "[WARN] source not found: $CommitMsgSrc, skipping commit-msg hook" -ForegroundColor Yellow
   }
 
   # 設定 global git hooks path（只有 sh.exe 可用時才設，不然會壞所有 commit）
   $gitHooksPath = Join-Path $HOME ".ownmind\git-hooks"
   git config --global core.hooksPath $gitHooksPath
-  Write-Host "   設定 git global hooks path: $gitHooksPath"
+  Write-Host "[ OK ] Set git global hooks path: $gitHooksPath"
 }
 
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
@@ -532,9 +532,9 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
   if (Test-Path $CursorMcp) {
     $content = Get-Content $CursorMcp -Raw
     if ($content -match '"ownmind"') {
-      Write-Host "   Cursor MCP 已設定，跳過"
+      Write-Host "[INFO] Cursor MCP already configured, skipping"
     } else {
-      Write-Host "   設定 Cursor MCP..."
+      Write-Host "[INFO] Configuring Cursor MCP"
       $cursorSettings = $content | ConvertFrom-Json
       if (-not $cursorSettings.mcpServers) {
         $cursorSettings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
@@ -543,7 +543,7 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
       Write-Utf8NoBom -Path $CursorMcp -Content ($cursorSettings | ConvertTo-Json -Depth 10)
     }
   } else {
-    Write-Host "   設定 Cursor MCP..."
+    Write-Host "[INFO] Configuring Cursor MCP"
     Write-Utf8NoBom -Path $CursorMcp -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
   }
 }
@@ -552,9 +552,9 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
 # Opt-out：~/.ownmind/.no-usage-scanner 存在 → 跳過
 $NoScannerFlag = Join-Path $OwnmindDir '.no-usage-scanner'
 if (Test-Path $NoScannerFlag) {
-  Write-Host "   跳過 usage scanner 安裝（.no-usage-scanner opt-out）"
+  Write-Host "[INFO] Skipping usage scanner install (.no-usage-scanner opt-out)"
 } else {
-  Write-Host "   安裝 usage scanner..."
+  Write-Host "[INFO] Installing usage scanner"
   # Scanner entry 已隨 repo clone 到 $OwnmindDir\hooks\ownmind-usage-scanner.js
   # 註冊 Task Scheduler（被呼叫腳本內建 node 偵測 + v20+ 驗證 + .node-path 快取）
   $RegisterScript = Join-Path $OwnmindDir 'scripts\windows\register-scanner-task.ps1'
@@ -568,28 +568,28 @@ if (Test-Path $NoScannerFlag) {
     $regExit = $LASTEXITCODE
     $taskOk = $null -ne (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue)
     if ($regExit -eq 0 -and $taskOk) {
-      Write-Host "   Task Scheduler 已註冊（每 120 分鐘執行）" -ForegroundColor Green
+      Write-Host "[ OK ] Task Scheduler registered (runs every 120 min)" -ForegroundColor Green
     } else {
-      Write-Host "   Task Scheduler 註冊失敗 (exit=$regExit, task_exists=$taskOk)" -ForegroundColor Yellow
-      Write-Host "   錯誤紀錄已寫入：$RegisterLogPath" -ForegroundColor Yellow
-      Write-Host "   self-check 結尾會自動把 log 上傳，Vin 那邊可看到根因。" -ForegroundColor Yellow
-      Write-Host "   手動重跑：" -ForegroundColor Yellow
+      Write-Host "[WARN] Task Scheduler registration failed (exit=$regExit, task_exists=$taskOk)" -ForegroundColor Yellow
+      Write-Host "       Error log: $RegisterLogPath" -ForegroundColor Yellow
+      Write-Host "       self-check will upload the log so admin can see root cause" -ForegroundColor Yellow
+      Write-Host "       Manual retry:" -ForegroundColor Yellow
       Write-Host "     powershell -ExecutionPolicy Bypass -File $RegisterScript" -ForegroundColor Yellow
     }
   } else {
-    Write-Host "   找不到 register-scanner-task.ps1；請手動執行" -ForegroundColor Yellow
+    Write-Host "[WARN] register-scanner-task.ps1 not found; run manually" -ForegroundColor Yellow
   }
 }
 
 Write-Host ""
-Write-Host "OwnMind 安裝完成！" -ForegroundColor Green
+Write-Host "OwnMind installation complete" -ForegroundColor Green
 Write-Host ""
 Write-Host "   MCP Server: $OwnmindDir\mcp\index.js"
 Write-Host "   API URL:    $ApiUrl"
 Write-Host "   API Key:    $($ApiKey.Substring(0,4))****$($ApiKey.Substring($ApiKey.Length-4))"
-Write-Host "   啟動方式:   cmd.exe + start.cmd（Windows 相容）"
+Write-Host "   Launch:     cmd.exe + start.cmd (Windows compatible)"
 if (-not $HasBash) {
-  Write-Host "   Hooks:      使用 Node.js 執行（未偵測到 bash）" -ForegroundColor Yellow
+  Write-Host "   Hooks:      executed via Node.js (bash not detected)" -ForegroundColor Yellow
 }
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
@@ -601,5 +601,5 @@ if (Test-Path $SelfCheckScript) {
   try { & node $SelfCheckScript --trigger=post_install } catch { }
 }
 
-Write-Host "   開一個新的 Claude Code 對話，OwnMind 會自動載入你的記憶！"
+Write-Host "Open a new Claude Code session - OwnMind will auto-load your memory."
 Write-Host ""

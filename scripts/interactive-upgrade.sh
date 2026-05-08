@@ -33,22 +33,22 @@ else
 fi
 
 # --- 0. Pre-check ---
-STEP "check" "檢查 OwnMind 目錄是否存在"
-[ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "找不到 ${OWNMIND_DIR}，請先跑 install.sh 初始安裝"
-[ -d "${OWNMIND_DIR}/.git" ] || FAIL "no_git" "${OWNMIND_DIR} 不是 git repo，無法升級"
+STEP "check" "Checking OwnMind directory"
+[ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "${OWNMIND_DIR} not found; run install.sh for fresh install"
+[ -d "${OWNMIND_DIR}/.git" ] || FAIL "no_git" "${OWNMIND_DIR} is not a git repo; cannot upgrade"
 
-# --- 1. 備份 ---
-STEP "backup" "備份到 ${BACKUP_DIR}"
+# --- 1. Backup ---
+STEP "backup" "Backing up to ${BACKUP_DIR}"
 if cp -r "${OWNMIND_DIR}" "${BACKUP_DIR}" >>"${LOG_FILE}" 2>&1; then
-  OK "backup" "備份完成"
+  OK "backup" "Backup complete"
 else
-  FAIL "backup_failed" "備份失敗，請檢查磁碟空間"
+  FAIL "backup_failed" "Backup failed (check disk space)"
 fi
 
 rollback() {
-  STEP "rollback" "還原備份 ${BACKUP_DIR} → ${OWNMIND_DIR}"
+  STEP "rollback" "Restoring backup ${BACKUP_DIR} -> ${OWNMIND_DIR}"
   rm -rf "${OWNMIND_DIR}"
-  mv "${BACKUP_DIR}" "${OWNMIND_DIR}" && OK "rollback" "已還原舊版"
+  mv "${BACKUP_DIR}" "${OWNMIND_DIR}" && OK "rollback" "Restored previous version"
 }
 
 # --- 2. git pull ---
@@ -56,45 +56,45 @@ rollback() {
 # dirty 就 report_error + git fetch + reset --hard origin/main 強制對齊（backup 保險絲已先做）。
 # 真實案例：vin-windows-test 的 AI 編輯 mcp/start.cmd 加 fallback，下次 git pull --ff-only
 # 直接被 reject、整個升級卡住，server 完全沒紀錄。
-STEP "pull" "拉取最新 OwnMind"
-cd "${OWNMIND_DIR}" || FAIL "cd_failed" "無法進入 ${OWNMIND_DIR}"
+STEP "pull" "Pulling latest OwnMind"
+cd "${OWNMIND_DIR}" || FAIL "cd_failed" "Cannot enter ${OWNMIND_DIR}"
 
 DIRTY=$(git status --porcelain 2>/dev/null)
 if [ -n "${DIRTY}" ]; then
-  STEP "pull_dirty" "偵測到 working tree 有未 commit 改動，自動對齊 origin/main（備份已先做）"
+  STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"
-  report_error "upgrade_dirty_tree" "git status --porcelain 非空，自動 reset --hard 對齊 origin/main" "${LOG_FILE}.dirty"
+  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main" "${LOG_FILE}.dirty"
   if git fetch origin >>"${LOG_FILE}" 2>&1 \
      && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
-    OK "pull" "強制對齊完成（dirty 改動已蓋掉，舊版見備份）"
+    OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
   else
-    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main 失敗" "${LOG_FILE}"
+    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed" "${LOG_FILE}"
     rollback
-    FAIL "git_pull" "強制對齊也失敗（網路或權限），備份已還原"
+    FAIL "git_pull" "Force-align failed (network or permissions); backup restored"
   fi
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
-  OK "pull" "git pull 成功"
+  OK "pull" "git pull complete"
 else
-  report_error "upgrade_git_pull_failed" "git pull --ff-only 失敗（可能網路或非 ff merge）" "${LOG_FILE}"
+  report_error "upgrade_git_pull_failed" "git pull --ff-only failed (network or non-ff merge)" "${LOG_FILE}"
   rollback
-  FAIL "git_pull" "git pull 失敗（可能網路），備份已還原。手動檢查：cd ~/.ownmind && git status"
+  FAIL "git_pull" "git pull failed; backup restored. Manual check: cd ~/.ownmind && git status"
 fi
 
 # --- 3. npm install (MCP 依賴) ---
 if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
-  STEP "npm_install" "更新 MCP 依賴"
+  STEP "npm_install" "Updating MCP dependencies"
   cd "${OWNMIND_DIR}/mcp" || true
   if npm install --silent >>"${LOG_FILE}" 2>&1; then
-    OK "npm_install" "MCP 依賴完成"
+    OK "npm_install" "MCP dependencies updated"
   else
-    report_error "upgrade_npm_install_failed" "MCP npm install 失敗" "${LOG_FILE}"
+    report_error "upgrade_npm_install_failed" "MCP npm install failed" "${LOG_FILE}"
     rollback
-    FAIL "npm_install" "MCP npm install 失敗；備份已還原，請檢查 ${LOG_FILE}"
+    FAIL "npm_install" "MCP npm install failed; backup restored. Check ${LOG_FILE}"
   fi
 fi
 
-# --- 4. Re-run install.sh（從現有 ~/.claude/settings.json 讀 creds）---
-STEP "install" "重跑 install.sh（skill / hook / 排程同步）"
+# --- 4. Re-run install.sh (read creds from existing ~/.claude/settings.json) ---
+STEP "install" "Re-running install.sh (sync skills / hooks / scheduler)"
 CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
 API_KEY=""
 API_URL=""
@@ -113,22 +113,22 @@ if [ -f "${CLAUDE_SETTINGS}" ]; then
 fi
 
 if [ -z "${API_KEY}" ] || [ -z "${API_URL}" ]; then
-  STEP "install" "找不到現有 credentials，跳過 install.sh 重跑（skill/hook 可由後續 update.sh 補）"
-  STEP "install_fallback" "執行 scripts/update.sh 同步 skill + hook"
+  STEP "install" "No existing credentials; skipping install.sh re-run (skill/hook synced by update.sh)"
+  STEP "install_fallback" "Running scripts/update.sh to sync skills + hooks"
   cd "${OWNMIND_DIR}"
   if bash scripts/update.sh >>"${LOG_FILE}" 2>&1; then
-    OK "install" "update.sh setup 完成（scheduler 未重註冊，請手動跑 install.sh）"
+    OK "install" "update.sh complete (scheduler not re-registered; run install.sh manually if needed)"
   else
     rollback
-    FAIL "install" "scripts/update.sh 也失敗，已還原"
+    FAIL "install" "scripts/update.sh also failed; backup restored"
   fi
 else
   cd "${OWNMIND_DIR}"
   if bash install.sh "${API_KEY}" "${API_URL}" >>"${LOG_FILE}" 2>&1; then
-    OK "install" "setup 完成"
+    OK "install" "Setup complete"
   else
     rollback
-    FAIL "install" "install.sh 失敗（詳細見 ${LOG_FILE}）；備份已還原"
+    FAIL "install" "install.sh failed (see ${LOG_FILE}); backup restored"
   fi
 fi
 
@@ -136,18 +136,18 @@ fi
 case "$(uname -s)" in
   Darwin)
     if [ -f "${HOME}/Library/LaunchAgents/com.ownmind.usage-scanner.plist" ]; then
-      STEP "reschedule" "重載 launchd agent"
+      STEP "reschedule" "Reloading launchd agent"
       launchctl unload "${HOME}/Library/LaunchAgents/com.ownmind.usage-scanner.plist" 2>/dev/null || true
       if launchctl load "${HOME}/Library/LaunchAgents/com.ownmind.usage-scanner.plist" 2>>"${LOG_FILE}"; then
-        OK "reschedule" "launchd 重載完成"
+        OK "reschedule" "launchd reload complete"
       else
-        STEP "reschedule" "launchd 重載失敗，但升級已完成，可手動處理"
+        STEP "reschedule" "launchd reload failed; upgrade itself complete (handle manually)"
       fi
     fi
     ;;
   Linux)
     if command -v systemctl >/dev/null 2>&1; then
-      STEP "reschedule" "reload systemd user timer"
+      STEP "reschedule" "Reloading systemd user timer"
       systemctl --user daemon-reload 2>/dev/null || true
       systemctl --user restart ownmind-usage-scanner.timer 2>/dev/null && OK "reschedule" "systemd timer restarted" || true
     fi
@@ -156,25 +156,25 @@ esac
 
 # --- 6. 本地驗測 + server round-trip + 清理 ---
 if [ -x "${OWNMIND_DIR}/scripts/verify-upgrade.sh" ]; then
-  STEP "verify_local" "本地元件驗測"
+  STEP "verify_local" "Verifying local components"
   if bash "${OWNMIND_DIR}/scripts/verify-upgrade.sh" --local >>"${LOG_FILE}" 2>&1; then
-    OK "verify_local" "本地元件全在"
+    OK "verify_local" "Local components present"
   else
     rollback
-    FAIL "verify_local" "本地驗測失敗（缺檔）。詳細見 ${LOG_FILE}"
+    FAIL "verify_local" "Local verification failed (missing files). See ${LOG_FILE}"
   fi
 
-  STEP "verify_server" "Server 連線 + 寫入讀取測試 + 鐵律觸發"
+  STEP "verify_server" "Verifying server connectivity (write/read + iron rule)"
   if bash "${OWNMIND_DIR}/scripts/verify-upgrade.sh" --server >>"${LOG_FILE}" 2>&1; then
-    OK "verify_server" "server 正常"
+    OK "verify_server" "Server reachable"
   else
-    STEP "verify_server" "server 驗測失敗（可能網路暫斷），升級本身已完成。詳細見 ${LOG_FILE}"
+    STEP "verify_server" "Server verification failed (possible network blip); upgrade itself complete. See ${LOG_FILE}"
   fi
 
-  STEP "cleanup" "清理測試資料"
+  STEP "cleanup" "Cleaning up test data"
   bash "${OWNMIND_DIR}/scripts/verify-upgrade.sh" --cleanup >>"${LOG_FILE}" 2>&1 \
-    && OK "cleanup" "測試資料已清" \
-    || STEP "cleanup" "清理失敗（稍後 super_admin 可手動清 __upgrade_test__）"
+    && OK "cleanup" "Test data cleaned" \
+    || STEP "cleanup" "Cleanup failed (super_admin can clear __upgrade_test__ later)"
 fi
 
 # --- 7. 告知 server 升級完成 → 主動 dismiss upgrade_reminder 廣播 ---
@@ -184,7 +184,7 @@ fi
 VERSION=$(node -p "require('${OWNMIND_DIR}/package.json').version" 2>/dev/null || echo "unknown")
 
 if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; then
-  STEP "dismiss" "Dismiss 已過時的升級廣播"
+  STEP "dismiss" "Dismissing stale upgrade broadcasts"
   ACTIVE=$(curl -sf --max-time 5 \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "X-Ownmind-Version: ${VERSION}" \
@@ -214,7 +214,7 @@ if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; 
         && COUNT=$((COUNT + 1))
     done <<< "${IDS}"
   fi
-  OK "dismiss" "升級廣播已 dismiss（${COUNT} 則）"
+  OK "dismiss" "Upgrade broadcasts dismissed (${COUNT})"
 fi
 
 # v1.17.70：升級成功末段 sweep ~/.ownmind.bak.<ts>/ 超過 N 天的（IR-027 邏輯卡控）。
@@ -222,11 +222,11 @@ fi
 # 防呆：sweep 失敗（權限 / 磁碟）也不影響升級結果。
 # 設計選擇：單次 sweep、不預先 wc 計數（避免 count vs delete race + 處理檔名特殊字元的 wc 噪音）。
 RETENTION_DAYS="${OWNMIND_BACKUP_RETENTION_DAYS:-7}"
-STEP "sweep" "清除超過 ${RETENTION_DAYS} 天的舊備份（如有）"
+STEP "sweep" "Sweeping backups older than ${RETENTION_DAYS} days (if any)"
 find "${HOME}" -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +"${RETENTION_DAYS}" -exec rm -rf {} + 2>/dev/null || true
-OK "sweep" "舊備份 sweep 完成"
+OK "sweep" "Old backup sweep complete"
 
-OK "done" "升級完成 → 版本：${VERSION}。備份保留於 ${BACKUP_DIR}（${RETENTION_DAYS} 天後下次升級自動清）"
+OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} (auto-swept after ${RETENTION_DAYS} days)"
 
 # v1.17.63: 升級完跑 self-check，把當下本機狀態抓下來、寫 log + 上傳。失敗不擋升級訊息。
 SELF_CHECK_SCRIPT="${OWNMIND_DIR}/scripts/install-helpers/self-check.cjs"
