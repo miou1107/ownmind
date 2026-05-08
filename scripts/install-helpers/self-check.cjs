@@ -22,11 +22,16 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
+// v1.17.66 — Windows 上 spawn 統一走 safeSpawn 強制 shell:false + windowsHide:true
+const { safeSpawn } = require('./safe-spawn.cjs');
 
 const HOME = os.homedir();
 const OWNMIND_DIR = path.join(HOME, '.ownmind');
 const LOG_DIR = path.join(OWNMIND_DIR, 'logs');
 const NO_UPLOAD_FLAG = path.join(OWNMIND_DIR, '.no-self-check-upload');
+// v1.17.66 — 上傳失敗（401 / 網路 / 5xx）時把 report 暫存到這個 jsonl，
+// 下次跑 self-check 開頭先試補傳。Adam 401 案例就是缺這層導致 server 永遠收不到。
+const SPOOL_FILENAME = '.upload-spool.jsonl';
 const PLATFORM = process.platform;
 const TIMEOUT_MS = 5000;
 
@@ -191,24 +196,26 @@ async function checkScheduler() {
     }
   }
   if (PLATFORM === 'win32') {
-    try {
-      const { stdout } = await execFileAsync('powershell.exe',
-        ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
-        { timeout: TIMEOUT_MS, shell: true });
-      const state = stdout.trim();
-      if (state === 'Ready' || state === 'Running') {
-        return pass('scheduler', `Task Scheduler state=${state}`);
-      }
-      if (!state) {
-        return fail('scheduler', 'Task Scheduler 找不到 OwnMind Usage Scanner',
-          'PowerShell 跑：powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
-      }
-      return warn('scheduler', `Task Scheduler state=${state}`,
-        '檢查 Task Scheduler 介面或重跑 register-scanner-task.ps1');
-    } catch (e) {
-      return fail('scheduler', `Get-ScheduledTask 失敗：${sanitizePath(e?.message)}`,
+    // v1.17.66：以前帶 shell 旗標會被 cmd.exe 包，| 被 cmd 吃掉造成
+    // 「'Select-Object' is not recognized」假性失敗（Eric/Adam 兩台都中）。
+    // 現在走 safeSpawn 強制不過 shell + windowsHide。
+    const r = await safeSpawn('powershell.exe',
+      ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
+      { timeout: TIMEOUT_MS });
+    if (!r.ok) {
+      return fail('scheduler', `Get-ScheduledTask 失敗：${r.error}`,
         '需要 Windows + PowerShell');
     }
+    const state = r.stdout.trim();
+    if (state === 'Ready' || state === 'Running') {
+      return pass('scheduler', `Task Scheduler state=${state}`);
+    }
+    if (!state) {
+      return fail('scheduler', 'Task Scheduler 找不到 OwnMind Usage Scanner',
+        'PowerShell 跑：powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
+    }
+    return warn('scheduler', `Task Scheduler state=${state}`,
+      '檢查 Task Scheduler 介面或重跑 register-scanner-task.ps1');
   }
   return warn('scheduler', `不支援的平台：${PLATFORM}`, null);
 }
@@ -230,6 +237,135 @@ async function safeCheck(name, fn) {
   }
 }
 
+// ============================================================
+// v1.17.66 — 環境資訊收集（IR-038 觀測管道）
+//
+// 把每次 self-check 跑時的執行環境一起傳到 server，方便 admin dashboard 直接看：
+//   - 哪台機器 bash 解到 WSL relay 還是 Git Bash？
+//   - 哪台機器 Out-File 預設還是 UTF-16？
+//   - Scanner 真實 state / last_run / next_run 是什麼？
+// 全部資料 < 4KB，遠低於 server 端 install_check_logs.full_log 的 64KB 上限。
+// ============================================================
+
+function detectShellChain() {
+  // 簡化版：用環境變數標記推測。完整 parent/grandparent process 偵測需要 Windows
+  // WMIC 或 native API，留 v1.17.67 evaluate。
+  const chain = [];
+  if (process.env.MSYSTEM) chain.push(`msys/git-bash:${process.env.MSYSTEM}`);
+  // v1.17.66 review fix — WSL_DISTRO_NAME 可含使用者命名（如 "Adam-Ubuntu"），
+  // 改 boolean 標記避免 PII 外洩
+  if (process.env.WSL_DISTRO_NAME) chain.push('wsl');
+  // PSModulePath 在 PowerShell session 內才有；cmd.exe 沒有
+  if (PLATFORM === 'win32' && process.env.PSModulePath) chain.push('powershell');
+  chain.push(`node:${process.version}`);
+  return chain;
+}
+
+async function detectBashResolution() {
+  if (PLATFORM !== 'win32') return null;
+  const r = await safeSpawn('where.exe', ['bash']);
+  if (!r.ok) return { where_results: [], selected: 'NOT_FOUND', git_bash_path: null };
+  const lines = r.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  let selected = 'NOT_FOUND';
+  let gitBashPath = null;
+  for (const line of lines) {
+    if (/Windows[\\/]System32[\\/]bash\.exe$/i.test(line)) {
+      if (selected === 'NOT_FOUND') selected = 'WSL_RELAY';
+    } else if (/Git[\\/](?:bin|usr[\\/]bin)[\\/]bash\.exe$/i.test(line)) {
+      // 第一個遇到的 Git Bash 就贏（Find-GitBash helper 邏輯也是這樣）
+      if (selected !== 'GIT_BASH') {
+        selected = 'GIT_BASH';
+        gitBashPath = line;
+      }
+    } else if (selected === 'NOT_FOUND') {
+      // 不認識的 bash 路徑，標記但不選
+      selected = 'OTHER';
+    }
+  }
+  return { where_results: lines, selected, git_bash_path: gitBashPath };
+}
+
+async function detectSchedulerDetail() {
+  if (PLATFORM !== 'win32') return null;
+  const cmd =
+    "$t = Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue; " +
+    "if (-not $t) { 'NOT_FOUND' | Out-String; exit 0 } " +
+    "$i = $t | Get-ScheduledTaskInfo; " +
+    "[pscustomobject]@{ State=[string]$t.State; LastRunTime=[string]$i.LastRunTime; " +
+    "LastTaskResult=$i.LastTaskResult; NextRunTime=[string]$i.NextRunTime } | " +
+    "ConvertTo-Json -Compress";
+  const r = await safeSpawn('powershell.exe', ['-NoProfile', '-Command', cmd]);
+  if (!r.ok) return null;
+  const out = r.stdout.trim();
+  if (out === 'NOT_FOUND') return { task_name: 'OwnMind Usage Scanner', state: 'NOT_FOUND' };
+  try {
+    const obj = JSON.parse(out);
+    return {
+      task_name: 'OwnMind Usage Scanner',
+      state: obj.State || null,
+      last_run_time: obj.LastRunTime || null,
+      // LastTaskResult 是 hex code，0 = success；轉 hex 字串方便人看
+      last_task_result: typeof obj.LastTaskResult === 'number'
+        ? `0x${obj.LastTaskResult.toString(16)}`
+        : null,
+      next_run_time: obj.NextRunTime || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function detectWindowsEncoding() {
+  if (PLATFORM !== 'win32') return { lang: process.env.LANG || process.env.LC_ALL || null };
+  let codepage = null;
+  const c = await safeSpawn('chcp.com', []);
+  if (c.ok) {
+    const m = c.stdout.match(/(\d+)/);
+    if (m) codepage = m[1];
+  }
+  // PS 5.x default Out-File = Unicode（UTF-16 LE BOM）— Bug #6 根因
+  // PS 6+ default Out-File = UTF-8
+  let outfile = null;
+  let psVersion = null;
+  const v = await safeSpawn('powershell.exe', ['-NoProfile', '-Command',
+    '$PSVersionTable.PSVersion.ToString()']);
+  if (v.ok) {
+    psVersion = v.stdout.trim();
+    outfile = psVersion.startsWith('5.') ? 'Unicode (UTF-16 LE BOM)' : 'UTF-8';
+  }
+  return {
+    lang: process.env.LANG || process.env.LC_ALL || null,
+    console_codepage: codepage,
+    default_outfile_encoding: outfile,
+    powershell_version: psVersion,
+  };
+}
+
+async function collectEnv() {
+  const isMsysHome = PLATFORM === 'win32' && /^\/[a-zA-Z]\//.test(HOME);
+  const homeStyle = PLATFORM === 'win32' ? (isMsysHome ? 'msys' : 'win32') : 'posix';
+  const env = {
+    os_release: os.release(),
+    arch: os.arch(),
+    node: {
+      version: process.version,
+      exec_path: sanitizePath(process.execPath),
+    },
+    home_format: {
+      // 只記格式類別，不傳實際 path（PII 友善）
+      style: homeStyle,
+      is_msys: isMsysHome,
+    },
+    msystem: process.env.MSYSTEM || null,
+    shell_chain: detectShellChain(),
+    encoding: await detectWindowsEncoding(),
+  };
+  // Windows 才有的兩塊（其他平台對應 launchd / systemd 已在 checkScheduler 收）
+  env.bash_resolution = await detectBashResolution();
+  env.scheduler_detail = await detectSchedulerDetail();
+  return env;
+}
+
 async function runAllChecks() {
   const { apiKey, apiUrl } = readCredentials();
   const checks = [];
@@ -249,8 +385,8 @@ function summarize(checks) {
   return summary;
 }
 
-function buildReport({ checks, trigger, clientVersion, machine }) {
-  return {
+function buildReport({ checks, trigger, clientVersion, machine, env }) {
+  const r = {
     ts: new Date().toISOString(),
     trigger,
     client_version: clientVersion,
@@ -260,6 +396,9 @@ function buildReport({ checks, trigger, clientVersion, machine }) {
     checks,
     summary: summarize(checks),
   };
+  // v1.17.66 — env 是選填的（unit test 不一定每次都收集），有就帶上
+  if (env) r.env = env;
+  return r;
 }
 
 function writeLog(report) {
@@ -288,30 +427,121 @@ function printConsole(report) {
   process.stderr.write(`\n總結：✅ ${s.pass || 0}　⚠️  ${s.warn || 0}　❌ ${s.fail || 0}\n`);
 }
 
-async function uploadReport(report, apiUrl, apiKey) {
+// v1.17.66 — Spool helpers（IR-038 觀測管道）
+//
+// 上傳失敗時不直接丟掉 report，寫進 ~/.ownmind/logs/.upload-spool.jsonl。
+// 下次跑 self-check 開頭呼叫 retrySpool 先補傳，再傳這次的 report。
+// 結果：API key 401 / 網路暫斷 / server 5xx 都不再 silent 丟資料。
+
+function getSpoolPath(opts = {}) {
+  return path.join(opts.spoolDir || LOG_DIR, SPOOL_FILENAME);
+}
+
+function appendSpool(report, opts = {}) {
+  try {
+    const dir = opts.spoolDir || LOG_DIR;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(getSpoolPath(opts), JSON.stringify(report) + '\n');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function postReport(report, apiUrl, apiKey) {
+  return fetchWithTimeout(
+    `${apiUrl.replace(/\/$/, '')}/api/debug/install-check`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // v1.17.64：對齊 auth middleware（src/middleware/auth.js）— 一律 Bearer。
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(report),
+    },
+    TIMEOUT_MS,
+  );
+}
+
+async function retrySpool(apiUrl, apiKey, opts = {}) {
+  const spoolPath = getSpoolPath(opts);
+  if (!fs.existsSync(spoolPath)) return { retried: 0, failed: 0 };
+  if (!apiUrl || !apiKey) return { retried: 0, failed: 0, skipped: 'no_credentials' };
+
+  // v1.17.66 review fix — 並行 self-check 時用 rename pattern 避免 race condition：
+  //   1. 把當下 spool atomically rename 到 .processing.<ts>.<pid>
+  //   2. 新進來的 appendSpool 寫到新建立的 spool（互不打架）
+  //   3. 處理完失敗的 append 回主 spool（appendFileSync 是 O_APPEND atomic）
+  // 多個 retrySpool 並發：只有第一個 rename 成功，後面跳過。
+  const processingPath = `${spoolPath}.processing.${Date.now()}.${process.pid}`;
+  try {
+    fs.renameSync(spoolPath, processingPath);
+  } catch {
+    // 可能別的 retrySpool 已 rename 過、或檔被 GC 掉
+    return { retried: 0, failed: 0, skipped: 'concurrent_retry' };
+  }
+
+  let lines;
+  try {
+    lines = fs.readFileSync(processingPath, 'utf8').split('\n').filter(Boolean);
+  } catch {
+    try { fs.unlinkSync(processingPath); } catch {}
+    return { retried: 0, failed: 0, skipped: 'read_failed' };
+  }
+  if (lines.length === 0) {
+    try { fs.unlinkSync(processingPath); } catch {}
+    return { retried: 0, failed: 0 };
+  }
+
+  let retried = 0;
+  const remaining = [];
+  for (const line of lines) {
+    let report;
+    try { report = JSON.parse(line); } catch { continue; /* 壞行丟掉 */ }
+    try {
+      const r = await postReport(report, apiUrl, apiKey);
+      if (r.ok) {
+        retried++;
+      } else {
+        remaining.push(line);
+      }
+    } catch {
+      remaining.push(line);
+    }
+  }
+
+  // 失敗的 append 回主 spool（不覆蓋 — 期間可能已有新 entries）
+  try {
+    if (remaining.length > 0) {
+      fs.appendFileSync(spoolPath, remaining.join('\n') + '\n');
+    }
+    fs.unlinkSync(processingPath);
+  } catch {}
+
+  return { retried, failed: remaining.length };
+}
+
+async function uploadReport(report, apiUrl, apiKey, opts = {}) {
   if (fs.existsSync(NO_UPLOAD_FLAG)) {
     return { skipped: true, reason: 'opt_out_flag' };
   }
+  // 開頭先試補傳之前 spool 的 report（Adam 401 後改 key 重跑時就在這裡補回）
+  const retryResult = await retrySpool(apiUrl, apiKey, opts);
+
   if (!apiUrl || !apiKey) {
-    return { skipped: true, reason: 'no_credentials' };
+    const spooled = appendSpool(report, opts);
+    return { skipped: true, reason: 'no_credentials', spooled, retried: retryResult.retried };
   }
   try {
-    const r = await fetchWithTimeout(
-      `${apiUrl.replace(/\/$/, '')}/api/debug/install-check`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // v1.17.64：對齊 auth middleware（src/middleware/auth.js）— 一律 Bearer。
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(report),
-      },
-      TIMEOUT_MS,
-    );
-    return { ok: r.ok, status: r.status };
+    const r = await postReport(report, apiUrl, apiKey);
+    if (r.ok) return { ok: true, status: r.status, retried: retryResult.retried };
+    // 401 / 403 / 5xx → 寫 spool 不丟掉
+    const spooled = appendSpool(report, opts);
+    return { ok: false, status: r.status, spooled, retried: retryResult.retried };
   } catch (e) {
-    return { ok: false, error: sanitizePath(e?.message || String(e)) };
+    const spooled = appendSpool(report, opts);
+    return { ok: false, error: sanitizePath(e?.message || String(e)), spooled, retried: retryResult.retried };
   }
 }
 
@@ -331,7 +561,9 @@ async function main() {
   const machine = os.hostname();
 
   const { checks, apiKey, apiUrl } = await runAllChecks();
-  const report = buildReport({ checks, trigger: args.trigger, clientVersion, machine });
+  // v1.17.66 — IR-038 觀測管道：每次 self-check 都收當下執行環境
+  const env = await collectEnv();
+  const report = buildReport({ checks, trigger: args.trigger, clientVersion, machine, env });
 
   const logPath = writeLog(report);
   printConsole(report);
@@ -341,11 +573,15 @@ async function main() {
 
   const upload = await uploadReport(report, apiUrl, apiKey);
   if (upload.skipped) {
-    process.stderr.write(`上傳：跳過（${upload.reason}）\n`);
+    process.stderr.write(`上傳：跳過（${upload.reason}）${upload.spooled ? '，已暫存待重試' : ''}\n`);
   } else if (upload.ok) {
     process.stderr.write(`上傳：成功\n`);
   } else {
-    process.stderr.write(`上傳：失敗（${upload.error || `HTTP ${upload.status}`}）\n`);
+    const reason = upload.error || `HTTP ${upload.status}`;
+    process.stderr.write(`上傳：失敗（${reason}）${upload.spooled ? '，已暫存待重試' : ''}\n`);
+  }
+  if (upload.retried > 0) {
+    process.stderr.write(`順手補傳 spool 舊紀錄：${upload.retried} 筆\n`);
   }
   process.stderr.write('==============================\n\n');
 
@@ -358,6 +594,11 @@ module.exports = {
   checkMcpFiles, checkPackageVersion, checkMcpNodeModules,
   checkServerHealth, checkApiCredentials, checkGitHooks, checkScheduler,
   buildReport, summarize, sanitizePath, parseArgs,
+  // v1.17.66 — Spool 機制（IR-038 觀測管道）
+  uploadReport, appendSpool, retrySpool,
+  // v1.17.66 — 環境資訊收集（IR-038）
+  collectEnv, detectShellChain, detectBashResolution,
+  detectSchedulerDetail, detectWindowsEncoding,
 };
 
 if (require.main === module) {
