@@ -97,6 +97,33 @@ if ($nodeMajor -lt 20) {
 }
 Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
 
+# --- v1.17.77: 把 node 安裝目錄持久化寫入 User PATH（回報者 vin-windows-test 第二輪）---
+# 為什麼必要：winget 只更新 Machine PATH，但 already-running 的 Claude Code 不會 reload；
+# 它 spawn `cmd.exe /c start.cmd` 時繼承的 PATH 仍 stale → MCP server 起不來。
+# 寫 User PATH 確保「下次開新 terminal / 重啟 Claude Code」就會找到，跟 fallback 兩層守住。
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if ($nodeCmd) {
+  $nodeDir = (Split-Path -Parent $nodeCmd.Path).TrimEnd('\')
+  $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+  $allParts = @()
+  if ($userPath) { $allParts += $userPath -split ';' }
+  if ($machinePath) { $allParts += $machinePath -split ';' }
+  $alreadyInPath = $false
+  foreach ($p in $allParts) {
+    if ($p -and ($p.TrimEnd('\') -ieq $nodeDir)) { $alreadyInPath = $true; break }
+  }
+  if (-not $alreadyInPath) {
+    $newUserPath = if ($userPath) { "$userPath;$nodeDir" } else { $nodeDir }
+    try {
+      [System.Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+      Write-Host "   ✅ Node 路徑已寫入 User PATH ($nodeDir) — 重開 terminal 或 Claude Code 後生效" -ForegroundColor Green
+    } catch {
+      Write-Host "   ⚠️ 寫 User PATH 失敗：$_（不致命，start.cmd 有 fallback）" -ForegroundColor Yellow
+    }
+  }
+}
+
 # --- sqlite3 自動裝（v1.17.14，Tier 2 Cursor/Antigravity/OpenCode 需要）---
 # Windows 預設沒 sqlite3 CLI → Cursor/Antigravity/OpenCode usage 永遠收不到。
 # 用 winget（Windows 10 1809+ 內建 App Installer）自動裝；裝失敗走 fallback。
