@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.17.74** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.17.75** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory System
 
@@ -180,6 +180,21 @@ sequenceDiagram
 - **Windows native support** — `install.ps1` and `start.cmd` included
 - **Adaptive Iron Rule Reinforcement** — automatically strengthens reminders for frequently violated rules based on compliance history
 - **Offline resilience** — Local cache fallback + write queue for offline operations, auto-replay on reconnect `v1.14.0`
+
+## Client Experience Matrix `v1.17.75`
+
+OwnMind banners (memory load / write / read / iron-rule trigger / compliance violation / broadcast notice) appear naturally in **most MCP clients** — their chat UI doesn't collapse tool responses, and the AI relays banner content into its reply. **Claude Code is the exception** — its UI collapses MCP tool results into cards and its design exclusively gives the chat stream to the AI, so by default users don't see OwnMind banners.
+
+| Client | Banner Experience | Why |
+|---|---|---|
+| Gemini CLI | ✅ Optimal — banners inline in chat, AI relays them | UI doesn't collapse tool responses |
+| Codex CLI | ✅ Optimal (untested but expected) | stdout passes through |
+| Cursor / Copilot / Antigravity / OpenCode / Windsurf | ✅ Likely optimal | Most MCP clients don't collapse tool responses |
+| **Claude Code** | ⚠️ Degraded — tool results collapsed; AI often skips banner content | By Anthropic design: chat stream is AI-exclusive (see [Issue #11120](https://github.com/anthropics/claude-code/issues/11120) — closed as not planned) |
+
+Since v1.17.71, OwnMind ships a PostToolUse hook (`hooks/ownmind-tty-echo.cjs`) that tries to bridge this gap on Claude Code — banners are written to a fallback file (`~/.ownmind/logs/banner-pending.jsonl`) and printed at the next SessionStart. This is **post-hoc presence** — banners from this session show up at the start of the *next* session. Real-time presence on Claude Code is currently technically impossible (Anthropic's UI-channel architecture) and is not on OwnMind's roadmap until that changes.
+
+**Recommendation**: Use OwnMind with any AI client *other than Claude Code* for the optimal banner experience. If you must use Claude Code, accept the degraded experience and rely on the next-SessionStart recap.
 
 ## Quick Start
 

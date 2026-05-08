@@ -563,6 +563,21 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.75 修改（文件化 Claude Code 體驗降級 — β 路線：保留 hook / 不再投資補救）
+
+```
+README.md / docs/README.zh-TW.md / docs/README.ja.md
+                                          — 三語新增「Client Experience Matrix」/
+                                            「OwnMind 在不同 AI 客戶端的體驗」/
+                                            「異なるAIクライアントでのOwnMind体験」
+                                            區塊。對照表列每個 client 的 banner
+                                            體驗 + 為什麼。Claude Code 標 ⚠️ 降級
+                                            體驗、鏈到 Anthropic Issue #11120。
+                                            版本徽章 1.17.74 → 1.17.75
+package.json                              — 1.17.74 → 1.17.75
+CHANGELOG.md / FILELIST.md                — 補 v1.17.75 條目
+```
+
 ## v1.17.74 修改（contract test 參數化 — 1→8 條，覆蓋 broadcast / multi-part / 空 / 壞 parts 變體）
 
 ```
