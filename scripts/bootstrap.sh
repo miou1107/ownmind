@@ -65,7 +65,7 @@ if [ ! -d "$OWNMIND_DIR/.git" ]; then
   git clone "$OWNMIND_REPO" "$OWNMIND_DIR" 2>&1 | while IFS= read -r line; do echo "  $line"; done
   cd "$OWNMIND_DIR"
   bash install.sh "$@" || { log_err install "install.sh 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1; }
-  log_ok done "修復完成（舊資料保留於 $BAK，3 天後可手動刪除）"
+  log_ok done "修復完成（舊資料保留於 $BAK，下次升級自動清除超過 7 天的舊備份）"
   exit 0
 fi
 

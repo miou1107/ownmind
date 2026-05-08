@@ -77,7 +77,7 @@ if (-not (Test-Path "$OwnmindDir\.git")) {
   Set-Location "$OwnmindDir"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
   if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1 }
-  Log-Ok done "修復完成（舊資料保留於 $Bak，3 天後可手動刪除）"
+  Log-Ok done "修復完成（舊資料保留於 $Bak，下次升級自動清除超過 7 天的舊備份）"
   exit 0
 }
 

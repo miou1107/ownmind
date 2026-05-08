@@ -1,5 +1,26 @@
 # OwnMind 更新紀錄
 
+## v1.17.70 — 升級備份自動清除（IR-027 邏輯卡控）
+
+**背景**：`interactive-upgrade.sh` / `.ps1` 升級時會把舊版本備份到 `~/.ownmind.bak.<timestamp>/`，每份約 50 MB。`bootstrap.sh` / `bootstrap.ps1` 修復路徑的 log 訊息一直寫「3 天後可手動刪除」，但**全 repo 沒有任何邏輯實際清**，使用者忘了就無限累積。Vin 機器上累積到 **19 份 / 894 MB**（從 4/23 到 5/8 共 15 天）。違反 IR-027「提醒無效，邏輯才有效」。
+
+**修法**：在升級成功末段補 sweep（IR-027 邏輯卡控）：
+
+1. **[scripts/interactive-upgrade.sh](scripts/interactive-upgrade.sh)**：`OK "done"` 之前 `find $HOME -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +N -exec rm -rf {} +`，預設 N=7、可用 `OWNMIND_BACKUP_RETENTION_DAYS` 環境變數覆蓋。Sweep 失敗（權限 / 磁碟）不影響升級結果。
+2. **[scripts/interactive-upgrade.ps1](scripts/interactive-upgrade.ps1)**：對稱實作，`Get-ChildItem $HOME -Directory -Filter '.ownmind.bak.*' | Where LastWriteTime -lt $cutoff | Remove-Item -Recurse -Force`。
+3. **[scripts/bootstrap.sh](scripts/bootstrap.sh) + [bootstrap.ps1](scripts/bootstrap.ps1)** 的 log 訊息從「3 天後可手動刪除」改成「下次升級自動清除超過 7 天的舊備份」。
+
+實際效果：每次跑升級都順手把 7 天前的舊備份刷掉，使用者零負擔。
+
+**Reproduction tests 8 條（IR-003）**：
+- 新增 [tests/sweep-old-backups.test.js](tests/sweep-old-backups.test.js)：用 `fs.utimesSync` 建假 fixture 驗 `find -mtime +N` 在 macOS BSD / Linux GNU 上行為一致；驗 `-maxdepth 1` 不會誤殺巢狀目錄、不會誤殺名稱類似但 prefix 不同的目錄（如 `.ownmind`、`.ownmind.cache`）；驗 retention 0 / 空目錄 edge case；驗 interactive-upgrade.sh / .ps1 含 sweep 邏輯、bootstrap log 訊息已換掉「可手動」字樣。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-008 / IR-022（client 兩端 .sh + .ps1 同步、server 不變）/ IR-026 / IR-027（重點：用邏輯卡控取代提醒）/ IR-031 / IR-032。
+
+**驗證**：本地 `npm test` 784/784 pass / 0 fail（v1.17.69 是 776，+8 新 test）。
+
+**升級指引**：純 client 端、server 不需重新部署。用戶下次跑升級就會自動清；現有的舊備份**這次升級立刻被清掉**（因為 sweep 邏輯是「升級到 v1.17.70 時跑」，不需要等下一輪）。
+
 ## v1.17.69 — MCP 回傳合併單一 text part（修 Claude Code 看不到技巧提示）
 
 **背景**：Vin 回報「之前都會出現的技巧提示，現在 Claude Code 看不到，其他工具（Codex / Cursor / Antigravity）都看得到」。

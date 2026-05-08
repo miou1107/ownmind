@@ -563,6 +563,25 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.70 修改（升級備份自動清除 — IR-027 邏輯卡控）
+
+```
+scripts/interactive-upgrade.sh            — 升級成功末段加 find -mtime +N sweep
+                                            支援 OWNMIND_BACKUP_RETENTION_DAYS env
+                                            覆蓋（預設 7 天）。Sweep 失敗不擋升級
+scripts/interactive-upgrade.ps1           — 對稱實作 Get-ChildItem + Where
+                                            LastWriteTime -lt cutoff + Remove-Item
+scripts/bootstrap.sh                      — 修復路徑 log 訊息「3 天後可手動刪除」
+                                            改「下次升級自動清除超過 7 天」
+scripts/bootstrap.ps1                     — 同上 PS 版本
+tests/sweep-old-backups.test.js           — 新增（8 條：find -mtime / -maxdepth /
+                                            -name 邊界 + retention 0 + 空目錄 +
+                                            upgrade 腳本內容檢查）
+package.json                              — 1.17.69 → 1.17.70
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.69 → 1.17.70
+CHANGELOG.md / FILELIST.md                — 補 v1.17.70 條目
+```
+
 ## v1.17.69 修改（MCP 回傳合併單一 text part — 修 Claude Code 看不到技巧提示）
 
 ```
