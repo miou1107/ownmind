@@ -1,5 +1,33 @@
 # OwnMind 更新紀錄
 
+## v1.17.72 — 修 v1.17.71 在場感 100% 失效（IR-007 雷型）
+
+**背景**：v1.17.71 ship 後實測「在場感」完全沒出來。Vin 在新對話視窗用 OwnMind tool 都看不到 banner，跟 v1.17.71 commit message 講的「直寫 user terminal、不靠 AI 自律」結果相反。連續排查兩條路徑（`/dev/tty` 寫入是否成功、`banner-pending.jsonl` 是否累積 fallback record）都顯示 hook 跑了但完全沒抽到 banner。
+
+**Root cause**：tests fixture 跟 prod 真實 PostToolUse stdin JSON 結構不一致 — 測試全綠但 prod 100% 抽不到 banner。
+
+| | Hook 期望（fixture 用的） | Claude Code prod 真實送的 |
+|---|---|---|
+| `tool_response` 結構 | `{ content: [{type, text}, ...] }` | `[{type, text}, ...]`（直接 array） |
+
+[hooks/ownmind-tty-echo.cjs](hooks/ownmind-tty-echo.cjs) 的 `extractBanners` 抓 `tr.content`，但 prod 的 `tr` 本身就是 array、`tr.content` 是 undefined → `contentParts = []` → `fullText = ''` → `banner_count: 0` → hook 直接 exit、連 fallback 都不寫。19 條測試全綠的原因是所有 fixture 都用 `{tool_response: {content: [...]}}`，跟 prod 不一致。**典型 IR-007 雷型 — 測試保護不到 prod**。
+
+**修法**：
+
+1. **[hooks/ownmind-tty-echo.cjs](hooks/ownmind-tty-echo.cjs)** `extractBanners`：同時支援兩種 `tool_response` 結構（直接 array → MCP tool / `.content` array → 其他 tool / 舊版）。改動 12 行 + 註解。
+2. **[tests/ownmind-tty-echo.test.js](tests/ownmind-tty-echo.test.js)** 新增 1 條 IR-003 reproduction test，用真實 prod PostToolUse stdin 截下來的結構（含 `session_id` / `hook_event_name` / `tool_use_id` 等真實欄位），先紅後綠驗證 fix。
+
+**驗證**：
+- `npm test` 804/804 pass / 0 fail（v1.17.71 是 803、+1 IR-007 regression test）
+- Local prod-spike：把 source 同步到 `~/.ownmind/hooks/ownmind-tty-echo.cjs`、清空 `banner-pending.jsonl`、觸發 `mcp__ownmind__ownmind_search` → jsonl 從 0 行 → 1 行、`block` 內容是預期的「【OwnMind v1.17.71】\n  記憶搜尋\n  技巧提示：...」格式
+- 確認 `/dev/tty` 在 Claude Code spawn 的 hook subprocess 拋 `ENXIO`（No such device or address）→ `writeToTty` 必失敗、必走 fallback。這是 Claude Code 環境的客觀限制、不是 bug。
+
+**鐵律觸發**：IR-003（先寫 reproduction test）/ IR-005（不 blind edit、加 trace 觀測再修）/ IR-007（核心 — 修 v1.17.71 自己埋的雷）/ IR-008 / IR-026 / IR-031 / IR-032 / IR-038（先 trace JSONL 觀測 stdin / banner_count，確認 root cause 後再動 source；trace 殘留已清）。
+
+**升級指引**：純 client 端、server 不需重新部署。用戶升到 v1.17.72 後 `~/.ownmind/hooks/ownmind-tty-echo.cjs` 自動更新；既有 `~/.claude/settings.json` 的 PostToolUse hook 設定不用改。下次任意 OwnMind tool 呼叫，banner 會寫到 `~/.ownmind/logs/banner-pending.jsonl`，**重啟 Claude Code 開新 session** 時 SessionStart hook 補印到 stderr → user 看到。
+
+**已知限制（v1.17.73+ backlog）**：`/dev/tty` 在 Claude Code hook subprocess 不可開啟，v1.17.71 的「即時在場感」設計前提在 Claude Code 環境下不成立。目前是「事後在場感」— 補印在下次 session 開頭、不是即時。要做到真即時要另尋通道（例如：user 自己 tail 一個專屬 log file、或 push notification）。
+
 ## v1.17.71 — OwnMind 在場感（presence）— 直寫 user terminal 繞過 AI 過濾（IR-027）
 
 **背景**：v1.17.0 起 MCP tool result 末尾附「【OwnMind vX.Y.Z】XXX：YYY」banner 想讓 user 看到 OwnMind 持續運作。但 Claude Code UI 把 tool result 摺疊成卡片、user 完全看不到；AI 也常吞掉不轉述到 chat。Vin 反映「我在新對話視窗中還是沒出現這種訊息」。連續幾版（v1.17.69 合併單一 text part / Codex 第二意見建議降頻）都沒解決根本問題：**訊息走 AI / tool result 通道一定會被吃**。

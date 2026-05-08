@@ -141,6 +141,36 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     assert.match(content, /OwnMind 系統通知/);
   });
 
+  it('IR-007 regression: tool_response 直接是 array（Claude Code prod 真實送的格式）', () => {
+    // 背景：v1.17.71 ship 後實測在場感 100% 失效。Trace 顯示 stdin 有資料、
+    // hook 有跑、但 banner_count 永遠 0。Root cause：Claude Code PostToolUse
+    // 送的 JSON 是 `tool_response: [{type, text}, ...]`（直接 array），
+    // 而不是 hook 預期的 `tool_response: { content: [...] }`。所有原本的
+    // fixture 都用後者，因此測試全綠但 prod 抓不到 banner。
+    //
+    // 本條 test 用真實 PostToolUse stdin 截下來的結構，確保 prod 格式可被處理。
+    const input = {
+      session_id: '7e090be5-a795-4ea7-8a5a-699fc953c175',
+      hook_event_name: 'PostToolUse',
+      tool_name: 'mcp__ownmind__ownmind_search',
+      tool_input: { query: 'capture full json' },
+      tool_response: [
+        {
+          type: 'text',
+          text: '【OwnMind v1.17.71】記憶搜尋：\n{\n  "data": [],\n  "memory_hits": 0,\n  "session_hits": 0\n}\n\n【OwnMind v1.17.71】技巧提示：記憶分短期和長期：session log 會自動壓縮，鐵律和決策永久保留',
+        },
+      ],
+      tool_use_id: 'toolu_019gnX792kxsc3qL4AQQtVF7',
+    };
+    const r = runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
+    assert.equal(r.status, 0);
+    assert.ok(fs.existsSync(pendingFile),
+      'prod 格式（tool_response 直接是 array）也要能抽出 banner');
+    const content = fs.readFileSync(pendingFile, 'utf8');
+    assert.match(content, /記憶搜尋/);
+    assert.match(content, /技巧提示/);
+  });
+
   it('壞掉的 JSON 輸入也不能 crash（防呆）', () => {
     const r = runHook('this is not json');
     assert.equal(r.status, 0, '壞 JSON 也要 exit 0、不擋 tool 流程');

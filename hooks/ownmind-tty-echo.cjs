@@ -89,8 +89,19 @@ function extractBanners(rawJson) {
   try { parsed = JSON.parse(rawJson || '{}'); }
   catch { return []; }
 
+  // Claude Code PostToolUse 實測會送兩種 tool_response 結構：
+  //   (A) 直接 array：tool_response: [{type, text}, ...]   ← MCP tool 走這條
+  //   (B) wrap 在 content：tool_response: { content: [...] }  ← 其他 tool / 舊版
+  // v1.17.71 只處理 (B)，導致 prod MCP banner 抽不到。兩種都要支援。
   const tr = parsed.tool_response || parsed.toolResponse || {};
-  const contentParts = Array.isArray(tr.content) ? tr.content : [];
+  let contentParts;
+  if (Array.isArray(tr)) {
+    contentParts = tr;
+  } else if (Array.isArray(tr.content)) {
+    contentParts = tr.content;
+  } else {
+    contentParts = [];
+  }
   const fullText = contentParts
     .map((p) => (p && typeof p.text === 'string' ? p.text : ''))
     .filter(Boolean)

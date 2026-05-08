@@ -563,6 +563,25 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.72 修改（修 v1.17.71 在場感 100% 失效 — IR-007 雷型）
+
+```
+hooks/ownmind-tty-echo.cjs                — extractBanners 同時支援兩種 prod
+                                            tool_response 結構：直接 array（MCP
+                                            tool 走這條）+ { content: [...] }
+                                            （舊版/其他 tool）。v1.17.71 只處理
+                                            後者，導致 prod MCP banner 抽不到、
+                                            user 100% 看不到。
+tests/ownmind-tty-echo.test.js            — +1 IR-007 regression test（11→12 條），
+                                            用真實 PostToolUse stdin 截下來的結構
+                                            （含 session_id / hook_event_name /
+                                            tool_use_id 等真實欄位）；先紅後綠
+                                            驗證 fix。
+package.json                              — 1.17.71 → 1.17.72
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.71 → 1.17.72
+CHANGELOG.md / FILELIST.md                — 補 v1.17.72 條目
+```
+
 ## v1.17.71 修改（OwnMind 在場感 — 直寫 user terminal 繞過 AI 過濾）
 
 ```
