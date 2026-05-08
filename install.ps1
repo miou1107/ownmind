@@ -169,6 +169,14 @@ if (Test-Path $ClaudeSettings) {
   Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
 }
 
+# --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
+# 用同一支跨平台 Node helper（idempotent + backup + atomic）。
+$AddHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-post-tool-use-hook.cjs"
+if (Test-Path $AddHookHelper) {
+  $hookResult = & node $AddHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  Write-Host "   PostToolUse banner hook：$hookResult"
+}
+
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
 $OwnmindBlock = @(
   "",
