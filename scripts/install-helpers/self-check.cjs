@@ -120,6 +120,52 @@ async function checkServerHealth(apiUrl) {
   }
 }
 
+// v1.17.68 IR-007 防同類雷：v1.17.9 之前 install.ps1 沒過濾 flag-like args，
+// 舊版 interactive-upgrade.ps1 把 `--update` 當 positional arg 傳進去，被當 API key
+// 寫進 settings.json。Adam 從 2026-03-26 建帳號到 2026-05-08 都吃 401（token_events
+// 0 筆 / install_check_logs 0 筆 / scanner 永遠 401）— 沒人發現是因為 self-check
+// 只打 server 看 200/401，不檢查 key 字串本身的格式。這個 check 不打 server，
+// 純看 settings.json 裡 OWNMIND_API_KEY 的字串長相，把已經中招的存量挖出來。
+function checkApiKeyFormat(apiKey) {
+  if (typeof apiKey !== 'string' || apiKey === '') {
+    return fail('api_key_format', 'OWNMIND_API_KEY 空白',
+      '重跑 bootstrap，重新填 API key');
+  }
+  // 已知壞值清單（歷史踩坑）
+  const KNOWN_BAD = new Set(['--update', '--upgrade', '--install', '--help',
+    '/help', '/?', 'true', 'false', 'undefined', 'null', '${OWNMIND_API_KEY}']);
+  if (KNOWN_BAD.has(apiKey)) {
+    return fail('api_key_format',
+      `OWNMIND_API_KEY 是已知壞值 "${apiKey}"（v1.17.9 之前 install.ps1 沒過濾 flag-like args 的存量問題）`,
+      '從 OwnMind admin UI 拿 API key 重設 settings.json，或請 admin 重發');
+  }
+  // flag-like：開頭 `-` 通常是 PowerShell 參數誤傳
+  if (apiKey.startsWith('-')) {
+    return fail('api_key_format',
+      `OWNMIND_API_KEY 以 - 開頭，疑似 PowerShell 旗標誤傳`,
+      '從 OwnMind admin UI 重發 API key');
+  }
+  // 長度太短：合法 key 至少 16 chars（UUID v4 是 36，custom prefix 也 ≥ 20）
+  if (apiKey.length < 16) {
+    return fail('api_key_format',
+      `OWNMIND_API_KEY 長度 ${apiKey.length} 太短（合法 ≥ 16）`,
+      '從 OwnMind admin UI 重發 API key');
+  }
+  // 不能含空白（CRLF / 空格 / tab — 設定檔複製貼上常見污染）
+  if (/\s/.test(apiKey)) {
+    return fail('api_key_format',
+      'OWNMIND_API_KEY 含空白字元（換行 / 空格 / tab）',
+      '檢查 settings.json，把 key 中間的空白移掉；或重發 key');
+  }
+  // 不能含非 printable ASCII（BOM / 控制字元）
+  if (/[\x00-\x1F\x7F-\x9F﻿]/.test(apiKey)) {
+    return fail('api_key_format',
+      'OWNMIND_API_KEY 含不可見字元（BOM / 控制字元）',
+      '從 OwnMind admin UI 重發 API key，避免從帶 BOM 的檔案複製');
+  }
+  return pass('api_key_format', `格式 OK (len=${apiKey.length})`);
+}
+
 async function checkApiCredentials(apiUrl, apiKey) {
   if (!apiUrl || !apiKey) {
     return fail('api_credentials', 'apiUrl 或 apiKey 空白',
@@ -414,6 +460,9 @@ async function runAllChecks() {
   checks.push(await safeCheck('package_version', checkPackageVersion));
   checks.push(await safeCheck('mcp_node_modules', checkMcpNodeModules));
   checks.push(await safeCheck('server_health', () => checkServerHealth(apiUrl)));
+  // v1.17.68：先驗 key 格式（不打 server），抓 Adam 那種 settings.json 殘留 "--update"
+  // 的存量問題；放在 api_credentials 之前讓 fail 訊息更具體（指向格式 vs server 拒絕）。
+  checks.push(await safeCheck('api_key_format', () => checkApiKeyFormat(apiKey)));
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
   checks.push(await safeCheck('scheduler', checkScheduler));
@@ -633,7 +682,7 @@ async function main() {
 // 給 test 用
 module.exports = {
   checkMcpFiles, checkPackageVersion, checkMcpNodeModules,
-  checkServerHealth, checkApiCredentials, checkGitHooks, checkScheduler,
+  checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   buildReport, summarize, sanitizePath, parseArgs,
   // v1.17.66 — Spool 機制（IR-038 觀測管道）
   uploadReport, appendSpool, retrySpool,

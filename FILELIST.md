@@ -563,6 +563,25 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.68 修改（settings.json `--update` 殘留地雷 + 401 觀測管道 IR-007/IR-038）
+
+```
+src/middleware/auth.js                    — 401 path 加 logger.warn('auth_failed',...)
+                                            帶 route / ip / masked_key / ua；新增 maskApiKey()
+                                            純函式 + 第 4 個參數 deps={} 測試注入點
+scripts/install-helpers/self-check.cjs    — 新增 checkApiKeyFormat 純函式（不打 server，
+                                            純看 key 字串長相），抓 v1.17.9 之前 install.ps1
+                                            沒過濾 flag-like args 殘留的 settings.json 存量問題
+                                            （Adam 從 2026-03-26 到 2026-05-08 都吃 401 的根因）；
+                                            排在 api_credentials 之前，fail 訊息明確指向修法
+tests/auth-401-observability.test.js      — 新增（7 條：maskApiKey 邊界 + auth middleware
+                                            401 / no-bearer logger.warn shape）
+tests/self-check.test.js                  — 加 10 條 checkApiKeyFormat 測試
+package.json                              — 1.17.67 → 1.17.68
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.67 → 1.17.68
+CHANGELOG.md / FILELIST.md                — 補 v1.17.68 條目
+```
+
 ## v1.17.67 修改（v1.17.66 Windows scanner task hotfix + IR-007 防同類雷）
 
 ```
