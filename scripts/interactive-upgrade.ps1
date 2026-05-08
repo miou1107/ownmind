@@ -41,6 +41,17 @@ if (Test-Path $reportErrorHelper) {
   function Report-Error { param($Kind, $Detail, $ContextFile = "") }
 }
 
+# v1.17.84 — Windows file-lock detection（vin-windows-test 第七輪）
+# OwnMind MCP node process 持有 ~/.ownmind/mcp/node_modules/*.js handle 時，
+# git pull / npm install 會吃 EBUSY / EACCES。掃 log 找 lock pattern，中了就改錯誤碼為
+# file_locked 並給明確提示。
+function Test-FileLockError {
+  param([string]$LogPath)
+  if (-not (Test-Path $LogPath)) { return $false }
+  $patterns = 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied'
+  return $null -ne (Select-String -Path $LogPath -Pattern $patterns -CaseSensitive:$false -Quiet)
+}
+
 # --- v1.17.66 Self-check 觀測管道保證執行（IR-038） ---
 # 用 try { 主流程 } catch { 印錯記 exit code } finally { 跑 self-check }
 # 確保升級任何階段失敗，server 都能收到當下狀態 + 7 項本機 check + env。
@@ -119,6 +130,12 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
   Set-Location $mcpDir
   npm install --silent 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
+    if (Test-FileLockError $LogFile) {
+      Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running)" -ContextFile $LogFile
+      Pop-Location
+      Rollback
+      Fail "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
+    }
     Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed" -ContextFile $LogFile
     Pop-Location
     Rollback

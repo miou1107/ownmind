@@ -52,6 +52,13 @@ if [ -f "${OWNMIND_DIR}/package.json" ]; then
     try { console.log(require('${OWNMIND_DIR}/package.json').version || ''); }
     catch { }
   " 2>/dev/null)
+  # v1.17.84 — Windows file-lock fallback: when MCP node process holds package.json
+  # handle, node -e require() may fail or return empty. Use grep/sed text parse
+  # as a lock-tolerant fallback (read-only via stdio, no module resolver involved).
+  if [ -z "${CLIENT_VER}" ]; then
+    CLIENT_VER=$(grep -m1 -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "${OWNMIND_DIR}/package.json" 2>/dev/null \
+      | sed -E 's/.*"([^"]+)".*/\1/')
+  fi
 fi
 
 # 讀 API credentials
