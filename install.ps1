@@ -67,8 +67,21 @@ function Send-InstallBeacon {
       -Method POST `
       -Headers @{ Authorization = "Bearer $ApiKey"; 'Content-Type' = 'application/json' } `
       -Body $body `
-      -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
-  } catch { }
+      -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    return
+  } catch {
+    # v1.17.80（vin-windows-test 第四輪）：POST 失敗 → spool 到 .upload-spool.jsonl
+    # 下次 self-check 開頭 retrySpool() 自動補傳。BOM-less UTF-8 防 Node JSON.parse 炸。
+    try {
+      $spoolDir = Join-Path $HOME '.ownmind\logs'
+      if (-not (Test-Path $spoolDir)) {
+        New-Item -ItemType Directory -Force -Path $spoolDir -ErrorAction SilentlyContinue | Out-Null
+      }
+      $spoolFile = Join-Path $spoolDir '.upload-spool.jsonl'
+      $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+      [System.IO.File]::AppendAllText($spoolFile, ($body + "`n"), $utf8NoBom)
+    } catch { }
+  }
 }
 Send-InstallBeacon -Trigger 'install_started'
 

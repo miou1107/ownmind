@@ -40,11 +40,18 @@ send_install_beacon() {
   esac
   body=$(printf '{"ts":"%s","trigger":"%s","client_version":"install-script","platform":"%s","machine":"%s"}' \
     "$ts" "$trigger" "$platform" "$machine")
-  curl -fsS -m 5 -X POST \
+  if curl -fsS -m 5 -X POST \
     -H "Authorization: Bearer $API_KEY" \
     -H "Content-Type: application/json" \
     -d "$body" \
-    "${API_URL%/}/api/debug/install-check" >/dev/null 2>&1 || true
+    "${API_URL%/}/api/debug/install-check" >/dev/null 2>&1; then
+    return
+  fi
+  # v1.17.80（vin-windows-test 第四輪）：POST 失敗 → spool 到 .upload-spool.jsonl
+  # 下次 self-check retrySpool() 自動補傳，不再 fire-and-forget 丟資料。
+  local spool_dir="${HOME}/.ownmind/logs"
+  mkdir -p "$spool_dir" 2>/dev/null || return
+  printf '%s\n' "$body" >> "${spool_dir}/.upload-spool.jsonl" 2>/dev/null || true
 }
 send_install_beacon 'install_started'
 

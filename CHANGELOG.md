@@ -1,5 +1,34 @@
 # OwnMind 更新紀錄
 
+## v1.17.80 — install_started beacon 失敗 spool fallback（vin-windows-test 第四輪）
+
+**背景**：vin-windows-test 確認自己升到 1.17.78，但 server DB 完全沒看到任何 beacon / heartbeat / install_check_logs 資料更新（最後 16:39:59 之後 0 row）。診斷出 v1.17.78 的 `Send-InstallBeacon` / `send_install_beacon` 是 **fire-and-forget**：
+
+- PowerShell 版用 `try { Invoke-RestMethod } catch { }` 把錯誤吞掉
+- bash 版用 `curl ... || true` 把錯誤吞掉
+- 兩邊**都沒寫進 retry spool**，network blip / 401 / 5xx 直接資料丟失
+
+v1.17.79 修了 errors/ spool 但這條沒涵蓋 — beacon 不算 fatal-path，是「該被觀測但不該擋」的 ping 訊號。
+
+**修法**：beacon POST 失敗時 append body 到 `~/.ownmind/logs/.upload-spool.jsonl`（複用 v1.17.66 的 self-check spool）。下次 self-check `retrySpool()` 自動補傳：
+
+### `install.ps1` Send-InstallBeacon
+- POST 成功 → `return`
+- POST 失敗 → catch + `[System.IO.File]::AppendAllText(spoolFile, body + "\n", UTF8NoBom)`
+- BOM-less UTF-8（複用 v1.17.12 寫法，Node JSON.parse 不炸）
+
+### `install.sh` send_install_beacon
+- `if curl ...; then return; fi`（成功）
+- 失敗走 `printf '%s\n' "$body" >> .upload-spool.jsonl`
+
+**驗證**：
+- 新增 `tests/install-beacon-spool-fallback.test.js`（4 條：Send-InstallBeacon 含 spool 寫入路徑 + BOM-less append / send_install_beacon 同 + return-on-success 結構）
+- npm test **850/850 pass / 0 fail**
+
+**鐵律觸發**：IR-006（reproduction test 先寫）/ IR-007（vin-windows-test 第四輪持續性 bug）/ IR-008 / IR-031 / IR-032 / **IR-038（觀測管道防漏）✅**
+
+**升級指引**：對既有 user 完全無感。下次升級時若 beacon 上傳失敗（user 機器網路暫斷 / proxy / VPN）會自動進 spool，下次 self-check 補傳；不會再像 vin-windows-test 那樣 server 端完全看不到資料。
+
 ## v1.17.79 — 統一錯誤 spool 機制 + interactive-upgrade dirty tree 自動處理（vin-windows-test 第三輪）
 
 **背景**：v1.17.77/78 修了 start.cmd fallback 跟 install_started beacon，但 vin-windows-test 第三輪測試發現他升級到 v1.17.78 沒成功（DB 看 collector_heartbeat 還停 1.17.75）。診斷出兩個結構性盲點：
