@@ -42,6 +42,54 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; t
   echo "   偵測到 Windows 環境（Git Bash）"
 fi
 
+# --- node 偵測 + 自動安裝（v1.17.76, 回報者 vin-windows-test）---
+# v1.17.75 之前：完全沒查 node，直到下面 npm install 才神秘失敗。
+# 現在：mac 用 brew 自動裝、linux 提示 apt/dnf 指令、windows 改走 install.ps1。
+if ! command -v node >/dev/null 2>&1; then
+  echo "⚠️  未偵測到 Node.js（OwnMind 必要依賴）"
+  case "$OSTYPE" in
+    darwin*)
+      if command -v brew >/dev/null 2>&1; then
+        echo "   嘗試 brew install node..."
+        if brew install node; then
+          echo "   ✅ Node.js 已裝"
+        else
+          echo "❌ brew install node 失敗。請手動裝 Node.js v20+（https://nodejs.org/）後重跑"
+          exit 1
+        fi
+      else
+        echo "❌ Mac 沒裝 Homebrew。請選一個："
+        echo "   1. 到 https://nodejs.org/ 下載 Node.js v20+ LTS 安裝"
+        echo "   2. 先裝 Homebrew (https://brew.sh/) 後重跑此 install.sh"
+        exit 1
+      fi
+      ;;
+    linux*)
+      echo "❌ Linux 請手動安裝 Node.js v20+ 後重跑："
+      echo "   Debian/Ubuntu: sudo apt install nodejs npm"
+      echo "   Fedora/RHEL:   sudo dnf install nodejs npm"
+      echo "   或用 nvm（推薦，版本控管彈性）: https://github.com/nvm-sh/nvm"
+      exit 1
+      ;;
+    msys*|cygwin*|win32*)
+      echo "❌ Windows 請改跑 install.ps1（會自動 winget 安裝 Node.js）"
+      exit 1
+      ;;
+    *)
+      echo "❌ 未知 OS ($OSTYPE)；請手動安裝 Node.js v20+ 後重跑"
+      exit 1
+      ;;
+  esac
+fi
+
+# Node 版本驗證（>= v20，scanner / mcp 需要）
+NODE_VER=$(node --version 2>/dev/null | sed 's/^v//')
+NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
+if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
+  echo "❌ Node.js 版本過舊 (v$NODE_VER)；OwnMind 需要 v20+。請升級後重跑"
+  exit 1
+fi
+
 # --- 1. Clone MCP Server ---
 OWNMIND_DIR="$HOME/.ownmind"
 

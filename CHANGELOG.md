@@ -1,5 +1,40 @@
 # OwnMind 更新紀錄
 
+## v1.17.76 — 缺 Node.js / git 時 install.ps1 + install.sh 自動安裝（vin-windows-test 回報）
+
+**背景**：vin-windows-test 在 Windows 全新環境第一次跑 install.ps1，因為沒裝 Node.js 直接 `Write-Error + exit 1`，user 只看到「請到 nodejs.org 安裝」就卡住。同檔案第 42-61 行對 sqlite3 已有完整「winget auto-install + fallback」pattern，但 pattern **沒套到 node / git** — 對最常見的「全新 user」情境最不友善。從實際安裝 log 採證還抓到三個延伸問題：
+
+1. **node 缺失只 Write-Error exit** — sqlite3 那段 pattern 沒套到 node / git
+2. **winget 裝完當前 PowerShell session PATH 沒生效** — user 必須關 terminal 重開才能繼續
+3. **PowerShell 預設 ExecutionPolicy 擋 npm install** — 中段 `npm install` 被擋住、`node_modules` 沒建好
+
+**修法**：
+
+### `install.ps1`
+1. **入口設 `Set-ExecutionPolicy -Scope Process Bypass`** — 只影響當前 process，避免 user 預設 Restricted policy 擋 npm。
+2. **`Reload-Path` helper** — 從 `Machine` + `User` scope 重組 `$env:Path`，winget 裝完直接生效，user 不必重開 terminal。
+3. **`Install-WithWinget` helper** — 抽 sqlite3 那段 pattern 成可重用 function，wire 給 `git` (`Git.Git`) 和 `node` (`OpenJS.NodeJS.LTS`)。失敗時帶手動安裝 URL fallback。
+4. **Node 版本驗 v20+** — winget OpenJS.NodeJS.LTS 偶爾 manifest 命名漂移到 v24（vin-windows-test log 確認），所以驗版本只擋過舊（< v20）不擋過新。
+
+### `install.sh`
+- **mac**：缺 node 時嘗試 `brew install node`（fallback 給 nodejs.org / brew.sh 連結）。
+- **linux**：缺 node 時提示 apt / dnf / nvm 三選一指令（不自動 sudo）。
+- **windows (Git Bash)**：缺 node 時提示改跑 install.ps1。
+- **node 版本驗 v20+** — 跟 ps1 對齊。
+
+**驗證**：
+- 新增 `tests/install-prerequisite-auto-install.test.js`（7 條 contract test：ExecutionPolicy / winget OpenJS.NodeJS.LTS / Reload PATH Machine+User / winget Git.Git / Node v20 check / mac brew install node / linux apt|dnf 提示）
+- npm test 819/819 pass / 0 fail（先 red 後 green、TDD 流程，IR-006）
+
+**鐵律觸發**：
+- IR-006（修 bug 前先寫 reproduction test）✅
+- IR-008（commit 同步更新 README/FILELIST/CHANGELOG）✅
+- IR-022（OwnMind 功能修改必須同時檢查 Server + Client 兩端 — 此次只改 client install scripts，Server 無影響）✅
+- IR-031（package.json + 三語 README 版號同步）✅
+- IR-032（OwnMind README 三語系必須同步更新）✅
+
+**升級指引**：對既有 user 完全無感（已裝過 node 的人 detection 直接跳過）。新 user 第一次裝會看到「未偵測到 Node.js → 嘗試用 winget 自動安裝 OpenJS.NodeJS.LTS」訊息，全程不需手動干預。
+
 ## v1.17.75 — 文件化 Claude Code 體驗降級的根本原因（β 路線：保留 hook / 不再投資補救）
 
 **背景**：v1.17.71 → v1.17.74 連續 4 版投資「OwnMind 在場感」hook 線（PostToolUse hook 寫 /dev/tty / fallback file），但 Vin 實測 + 對 claude-code-guide subagent 諮詢後得出 authoritative 結論：
