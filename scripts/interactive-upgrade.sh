@@ -32,6 +32,16 @@ else
   report_error() { :; }
 fi
 
+# v1.17.84 — Windows file-lock detection（vin-windows-test 第七輪）
+# OwnMind MCP node process 持有 ~/.ownmind/mcp/node_modules/*.js handle 的時候，
+# git pull / npm install / install.sh 想改寫會吃 EBUSY / EACCES。把錯誤 log 掃 lock
+# pattern，若中即把錯誤碼改 file_locked，並給明確提示「關閉 Claude Code 再重跑」。
+is_file_lock_error() {
+  local log="$1"
+  [ -f "$log" ] || return 1
+  grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy' "$log" 2>/dev/null
+}
+
 # --- 0. Pre-check ---
 STEP "check" "Checking OwnMind directory"
 [ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "${OWNMIND_DIR} not found; run install.sh for fresh install"
@@ -87,6 +97,11 @@ if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
   if npm install --silent >>"${LOG_FILE}" 2>&1; then
     OK "npm_install" "MCP dependencies updated"
   else
+    if is_file_lock_error "${LOG_FILE}"; then
+      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running)" "${LOG_FILE}"
+      rollback
+      FAIL "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
+    fi
     report_error "upgrade_npm_install_failed" "MCP npm install failed" "${LOG_FILE}"
     rollback
     FAIL "npm_install" "MCP npm install failed; backup restored. Check ${LOG_FILE}"
