@@ -1,5 +1,46 @@
 # OwnMind 更新紀錄
 
+## v1.17.68 — settings.json `--update` 殘留地雷 + 401 觀測管道（IR-007 + IR-038）
+
+**背景**：v1.17.67 修完 Windows scanner task 註冊問題後，Adam 用量報告 token 還是 0，scanner 跑出來全 5 個 client 一起回 401「無效的 API Key」。深入查 server 發現 Adam 的 `~/.claude/settings.json` 裡 `OWNMIND_API_KEY` 整個值是字串 `"--update"`（8 字元），不是合法的 API key。
+
+**根因**：v1.17.9 之前 `install.ps1` 沒過濾 flag-like positional args，**舊版 `interactive-upgrade.ps1` 把 `--update` 當位置參數傳給 `install.ps1`，被當成 API key 寫進 `settings.json`**。Adam 是 2026-03-26 建帳號的早期用戶，當時版本沒有 args 過濾，他的 settings.json 從那天起就壞了。v1.17.9 之後修了 args 過濾，**讓未來不會再寫壞**，但**沒寫 migration 把已經中招的存量挖出來**。
+
+**為什麼 6 週沒人發現**：
+- Adam 的 token_events 表 0 筆（從建帳號到現在沒成功上傳一次）
+- Adam 的 install_check_logs 表也是 0 筆 —— self-check 上傳本身吃 401，連 self-check 「我有問題」這個訊號都傳不到 server
+- 自我檢查的 `api_credentials` check 只看 server 回 200/401，不看 key 字串本身格式 → red 但訊息只說「auth 401」，沒指出根因
+- server 端 auth.js 401 path 沒留結構化 log，admin 從 docker logs 只看到「POST /api/usage/events 401 3ms」這種 access log，看不出是誰、key prefix 也沒留
+
+**修法**：
+
+1. **client 端：[scripts/install-helpers/self-check.cjs](scripts/install-helpers/self-check.cjs)** 加 `checkApiKeyFormat`（不打 server，純看 key 字串長相）：
+   - 已知壞值清單：`--update` / `--upgrade` / `--install` / `--help` / `true` / `false` / `null` / `undefined` / `${OWNMIND_API_KEY}`
+   - flag-like：以 `-` 開頭直接 fail
+   - 長度 < 16 fail（合法 UUID 36 / custom prefix ≥ 20）
+   - 含空白 / BOM / 控制字元 fail
+   - 排在 `api_credentials` 之前，user 看到 `api_key_format: fail` 時 detail 直接點出歷史踩坑 + 修法路徑（admin UI 重發 / 重設 settings.json）
+
+2. **server 端：[src/middleware/auth.js](src/middleware/auth.js)** 401 path 加 `logger.warn('auth_failed', {...})`（IR-038 觀測管道）：
+   - 結構化欄位：`route` / `ip` / `masked_key`（前 4...後 4 + len） / `ua`（截 80 char）
+   - `masked_key` 透過新 `maskApiKey()` 純函式產生：空 key → `<empty>`、< 8 char → `<too-short:N>`、長 key → `eb80...e0dc (len=36)`，admin 能反查 users 表又不會把 key 全文寫進 docker logs（PII 友善）
+   - 沒帶 Bearer header 也 log（`masked_key=<no-bearer>`）
+   - auth.js 第 4 個參數加 `deps={}` 給測試注入 logger / query，不影響 production 呼叫
+
+3. **Reproduction tests 17 條（IR-003）**：
+   - [tests/self-check.test.js](tests/self-check.test.js) 加 10 條 `checkApiKeyFormat` 測試（含 Adam 的 `--update`、各種已知壞值、flag-like、太短、含空白 / BOM、合法 UUID、合法 custom prefix）
+   - [tests/auth-401-observability.test.js](tests/auth-401-observability.test.js) 新增 7 條（`maskApiKey` 邊界 + auth middleware 401 / no-bearer log shape）
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007 / IR-008 / IR-022 / IR-026 / IR-031 / IR-032 / IR-038。
+
+**驗證**：本地 `npm test` 768/768 pass / 0 fail（v1.17.67 是 750，+18 新 test）。
+
+**Code review 抓到的修正**（superpowers:code-reviewer）：
+- **Important（info-leak）**：`maskApiKey` 原本門檻 `< 8` 走 `<too-short:N>`，但 8 char key（如 Adam 的 `--update`）走到 `slice(0,4) + '...' + slice(-4)` 路徑會產生 `--up...date` —— admin 從 docker logs 把三個點移掉就拿到原文。提高門檻到 12（中間至少還有 4 char 被遮掉）；8 char 改走 `<too-short:8>`，自我檢查的 `checkApiKeyFormat` 會在 client 端先抓出來，server log 端不負責顯示這種 key 的 prefix。
+- **Minor**：`x-forwarded-for` 取第一個 IP（forensics 要的是 client、不是 proxy chain）；`KNOWN_BAD` 加 `/help` `/?` 防 cmd 風格 flag 誤傳；auth.js 多加一行 comment 鎖 `fn.length === 3` 不變式（避免未來改 signature 把 middleware 變 Express error handler）。
+
+**升級指引**：受影響用戶（v1.17.9 之前裝過、後來只升級沒重灌、settings.json 殘留 `--update`）跑 `~/.ownmind/install.ps1` 升到 v1.17.68 後，self-check 會在 `api_key_format` 欄位直接紅燈、訊息明確指向修法路徑。Admin 端 docker logs 也會看到 `auth_failed` 結構化 log，能主動發現未升級的用戶。
+
 ## v1.17.67 — v1.17.66 Windows scanner task hotfix + IR-007 防同類雷
 
 **背景**：v1.17.66 上線後 Adam / Eric 兩位 Windows 用戶獨立回報 OwnMind 用量報告 token 數卡 0。診斷發現背景 token scanner 的 Task Scheduler 在他們機器上根本沒註冊。`self-check` 跑出 `scheduler ❌`，手動跑 `register-scanner-task.ps1` 才看到 PowerShell 直接 `throw`。

@@ -301,3 +301,86 @@ describe('check functions (smoke)', () => {
     assert.ok(['pass', 'warn', 'fail'].includes(r.status));
   });
 });
+
+// ============================================================================
+// v1.17.68 — checkApiKeyFormat（IR-007 防同類雷）
+// ============================================================================
+//
+// 背景：Adam 從 2026-03-26 建帳號到 2026-05-08 都吃 401，因為 settings.json 裡
+// OWNMIND_API_KEY 殘留字串 "--update"（v1.17.9 之前 install.ps1 沒過濾 flag-like
+// args 的存量問題）。期間 token_events 0 筆 / install_check_logs 0 筆 / scanner
+// 永遠 401，沒人發現是因為 self-check 只打 server 看 401，不檢查 key 字串本身。
+// 加 checkApiKeyFormat 純粹看 key 字串長相，把已經中招的存量挖出來。
+// ============================================================================
+
+describe('v1.17.68 — checkApiKeyFormat（client 端格式驗證 / 不打 server）', () => {
+  it('module 應 export checkApiKeyFormat', () => {
+    assert.equal(typeof selfCheck.checkApiKeyFormat, 'function');
+  });
+
+  it('Adam 的 "--update" 應 fail 且 detail 帶歷史踩坑說明', () => {
+    const r = selfCheck.checkApiKeyFormat('--update');
+    assert.equal(r.status, 'fail');
+    assert.match(r.detail, /--update/);
+    assert.match(r.detail, /1\.17\.9|歷史|存量|flag-like/i,
+      'detail 應點出這是 v1.17.9 之前的歷史問題');
+  });
+
+  it('其他已知壞值（--upgrade / true / null / ${OWNMIND_API_KEY}）也 fail', () => {
+    for (const bad of ['--upgrade', '--install', 'true', 'false', 'null',
+                       'undefined', '${OWNMIND_API_KEY}']) {
+      const r = selfCheck.checkApiKeyFormat(bad);
+      assert.equal(r.status, 'fail', `"${bad}" 應該 fail`);
+    }
+  });
+
+  it('flag-like（- 開頭但不在已知清單）也 fail', () => {
+    const r = selfCheck.checkApiKeyFormat('-mysteriousfutureflag');
+    assert.equal(r.status, 'fail');
+    assert.match(r.detail, /-/);
+  });
+
+  it('空字串 / undefined / 非 string 全 fail', () => {
+    assert.equal(selfCheck.checkApiKeyFormat('').status, 'fail');
+    assert.equal(selfCheck.checkApiKeyFormat(undefined).status, 'fail');
+    assert.equal(selfCheck.checkApiKeyFormat(null).status, 'fail');
+    assert.equal(selfCheck.checkApiKeyFormat(123).status, 'fail');
+  });
+
+  it('長度 < 16 fail（合法 UUID 36 / custom prefix ≥ 20）', () => {
+    const r = selfCheck.checkApiKeyFormat('shortkey1234');
+    assert.equal(r.status, 'fail');
+    assert.match(r.detail, /長度/);
+  });
+
+  it('含空白字元 fail（CR/LF/space/tab — 設定檔複製貼上常見污染）', () => {
+    for (const bad of [
+      'eb801d3f-03a3-4592-aee7-a54eb86fe0dc\n',
+      ' eb801d3f-03a3-4592-aee7-a54eb86fe0dc',
+      'eb801d3f-03a3-4592\t-aee7-a54eb86fe0dc',
+      'eb801d3f-03a3-4592 -aee7-a54eb86fe0dc',
+    ]) {
+      const r = selfCheck.checkApiKeyFormat(bad);
+      assert.equal(r.status, 'fail', `"${JSON.stringify(bad)}" 應該 fail`);
+    }
+  });
+
+  it('含 BOM / 控制字元 fail', () => {
+    const withBom = '﻿eb801d3f-03a3-4592-aee7-a54eb86fe0dc';
+    const r = selfCheck.checkApiKeyFormat(withBom);
+    assert.equal(r.status, 'fail');
+  });
+
+  it('合法 UUID v4 → pass', () => {
+    const uuid = 'eb801d3f-03a3-4592-aee7-a54eb86fe0dc';
+    const r = selfCheck.checkApiKeyFormat(uuid);
+    assert.equal(r.status, 'pass');
+    assert.match(r.detail, /len=36/);
+  });
+
+  it('合法 custom prefix（Vincent id=1 vin-...） → pass', () => {
+    const r = selfCheck.checkApiKeyFormat('vin-abcdef0123456789-2026');
+    assert.equal(r.status, 'pass');
+  });
+});
+
