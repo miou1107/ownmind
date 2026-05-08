@@ -188,7 +188,16 @@ if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; 
   OK "dismiss" "升級廣播已 dismiss（${COUNT} 則）"
 fi
 
-OK "done" "升級完成 → 版本：${VERSION}。備份保留於 ${BACKUP_DIR}"
+# v1.17.70：升級成功末段 sweep ~/.ownmind.bak.<ts>/ 超過 N 天的（IR-027 邏輯卡控）。
+# 預設 7 天，可用 OWNMIND_BACKUP_RETENTION_DAYS 環境變數覆蓋。
+# 防呆：sweep 失敗（權限 / 磁碟）也不影響升級結果。
+# 設計選擇：單次 sweep、不預先 wc 計數（避免 count vs delete race + 處理檔名特殊字元的 wc 噪音）。
+RETENTION_DAYS="${OWNMIND_BACKUP_RETENTION_DAYS:-7}"
+STEP "sweep" "清除超過 ${RETENTION_DAYS} 天的舊備份（如有）"
+find "${HOME}" -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +"${RETENTION_DAYS}" -exec rm -rf {} + 2>/dev/null || true
+OK "sweep" "舊備份 sweep 完成"
+
+OK "done" "升級完成 → 版本：${VERSION}。備份保留於 ${BACKUP_DIR}（${RETENTION_DAYS} 天後下次升級自動清）"
 
 # v1.17.63: 升級完跑 self-check，把當下本機狀態抓下來、寫 log + 上傳。失敗不擋升級訊息。
 SELF_CHECK_SCRIPT="${OWNMIND_DIR}/scripts/install-helpers/self-check.cjs"

@@ -205,7 +205,25 @@ if ($apiKey -and $apiUrl -and $Version) {
   }
 }
 
-OK "done" "升級完成 → 版本：$Version。備份保留於 $BackupDir"
+# v1.17.70：升級成功末段 sweep ~/.ownmind.bak.<ts>/ 超過 N 天的（IR-027 邏輯卡控）。
+# 預設 7 天，可用 OWNMIND_BACKUP_RETENTION_DAYS 環境變數覆蓋。
+# 防呆：sweep 失敗（權限 / 鎖定）不影響升級訊息，但用 STEP 記下 error message
+# 給未來 debug 用（IR-038 觀測管道）。
+$RetentionDays = if ($env:OWNMIND_BACKUP_RETENTION_DAYS) {
+  [int]$env:OWNMIND_BACKUP_RETENTION_DAYS
+} else { 7 }
+Step "sweep" "清除超過 $RetentionDays 天的舊備份（如有）"
+try {
+  $cutoff = (Get-Date).AddDays(-$RetentionDays)
+  Get-ChildItem -LiteralPath $HOME -Directory -Force -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like '.ownmind.bak.*' -and $_.LastWriteTime -lt $cutoff } |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+  OK "sweep" "舊備份 sweep 完成"
+} catch {
+  Step "sweep" "sweep 跳過（error: $($_.Exception.Message)）"
+}
+
+OK "done" "升級完成 → 版本：$Version。備份保留於 $BackupDir（$RetentionDays 天後下次升級自動清）"
 
 }
 catch {
