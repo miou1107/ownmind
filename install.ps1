@@ -45,6 +45,33 @@ if (-not $ApiUrl) {
 
 Write-Host "OwnMind 安裝中..." -ForegroundColor Cyan
 
+# --- v1.17.78 IR-038：install_started beacon（觀測管道補洞）---
+# 為什麼必要：install.ps1 中段任何 fatal error（npm install 被 ExecutionPolicy 擋、
+# winget 失敗等）都會 exit 1，end-of-file 的 self-check 永遠跑不到，admin 看不到
+# 「user 試圖安裝過」。在 API key 確認後立刻送一個輕量 beacon，至少留一筆紀錄。
+# fire-and-forget — 失敗不擋安裝（network 沒通也照樣裝得起來）。
+function Send-InstallBeacon {
+  param([string]$Trigger)
+  if (-not $ApiUrl -or -not $ApiKey) { return }
+  $machine = try { [System.Net.Dns]::GetHostName() } catch { 'unknown' }
+  $body = @{
+    ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+    trigger = $Trigger
+    client_version = 'install-script'
+    platform = 'win32'
+    node_version = $null
+    machine = $machine
+  } | ConvertTo-Json -Compress
+  try {
+    Invoke-RestMethod -Uri "$($ApiUrl.TrimEnd('/'))/api/debug/install-check" `
+      -Method POST `
+      -Headers @{ Authorization = "Bearer $ApiKey"; 'Content-Type' = 'application/json' } `
+      -Body $body `
+      -TimeoutSec 5 -ErrorAction SilentlyContinue | Out-Null
+  } catch { }
+}
+Send-InstallBeacon -Trigger 'install_started'
+
 # --- 檢查必要工具（v1.17.76：缺 git/node 走 winget 自動裝，回報者 vin-windows-test）---
 # v1.17.75 之前：缺 git 或 node 直接 Write-Error exit，user 沒裝過 = 完全卡死。
 # 現在：跟 sqlite3 同 pattern → winget 自動裝、reload PATH、再驗證一次。

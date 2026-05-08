@@ -18,19 +18,32 @@ export function createDebugRouter({ query, auth }) {
       if (!userId) return res.status(401).json({ error: 'unauthenticated' });
 
       const body = req.body || {};
-      // 基本欄位驗證 — 失敗就丟棄、回 400 而不是 500
-      if (!body.ts || !Array.isArray(body.checks) || !body.summary) {
-        return res.status(400).json({ error: 'missing required fields' });
+      // v1.17.78（IR-038）：接受 install_started / install_failed_* 這類 beacon
+      // payload — 比 self-check 報告更早送出，讓 admin 至少看到「user 嘗試裝過」。
+      // 必填欄位只剩 ts；checks / summary 可缺省為空。
+      if (!body.ts) {
+        return res.status(400).json({ error: 'missing ts' });
       }
       const ts = new Date(body.ts);
       if (Number.isNaN(ts.getTime())) {
         return res.status(400).json({ error: 'invalid ts' });
       }
-      // checks[*].status 限 pass / warn / fail 三選一，防 client 亂送髒資料
-      const validStatus = new Set(['pass', 'warn', 'fail']);
-      if (!body.checks.every((c) => c && validStatus.has(c.status))) {
-        return res.status(400).json({ error: 'invalid check status' });
+      // checks 是選填的；給的話必須是 array 且 status 合法
+      if (body.checks !== undefined) {
+        if (!Array.isArray(body.checks)) {
+          return res.status(400).json({ error: 'checks must be array' });
+        }
+        const validStatus = new Set(['pass', 'warn', 'fail']);
+        if (!body.checks.every((c) => c && validStatus.has(c.status))) {
+          return res.status(400).json({ error: 'invalid check status' });
+        }
       }
+      // summary 也是選填；給的話必須是 object
+      if (body.summary !== undefined && (typeof body.summary !== 'object' || Array.isArray(body.summary))) {
+        return res.status(400).json({ error: 'summary must be object' });
+      }
+      const checks = body.checks || [];
+      const summary = body.summary || { pass: 0, warn: 0, fail: 0 };
       // 砍超大 payload 防濫用（正常 ~2KB，給 64KB 上限）
       const fullLog = JSON.stringify(body);
       if (fullLog.length > 64 * 1024) {
@@ -48,7 +61,7 @@ export function createDebugRouter({ query, auth }) {
           body.platform || null,
           body.trigger || null,
           body.machine || null,
-          JSON.stringify(body.summary),
+          JSON.stringify(summary),
           fullLog,
         ]
       );
