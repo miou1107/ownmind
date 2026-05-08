@@ -157,12 +157,72 @@ describe('v1.17.66 — Bug #7 Scanner 隱藏視窗 + Battery settings', () => {
     }
   });
 
-  it('register-scanner-task.ps1 含 DontStartIfOnBatteries + StopIfGoingOnBatteries（筆電友善）', () => {
+  // v1.17.67 修：v1.17.66 想加電池友善設定，但 -DontStartIfOnBatteries
+  // 和 -StopIfGoingOnBatteries 都不是 New-ScheduledTaskSettingsSet 的合法參數
+  // （正確名是 -DisallowStartIfOnBatteries / -DontStopIfGoingOnBatteries），
+  // 在 PS 5.1 + PS 7 都直接 throw → task 完全沒註冊（Adam / Eric 兩台中標）。
+  // 而且 PowerShell 預設行為本來就是「電池上不啟動 + 切電池就停」，這兩個
+  // 顯式設定其實多餘，乾脆刪掉。
+  it('register-scanner-task.ps1 不可包含 v1.17.66 拼錯的兩個 battery 參數', () => {
     const content = readPs1('scripts/windows/register-scanner-task.ps1');
-    assert.match(content, /-DontStartIfOnBatteries/,
-      'task settings 要加 -DontStartIfOnBatteries（筆電拔電源不跑）');
-    assert.match(content, /-StopIfGoingOnBatteries/,
-      'task settings 要加 -StopIfGoingOnBatteries（跑到一半拔電源就停）');
+    // 剝掉 PowerShell 行註解（# ... 到行尾），避免註解裡為了說明 bug
+    // 而提到舊壞 param 名被誤判成實際使用。
+    const code = content.replace(/(^|\s)#[^\n]*/g, '$1');
+    assert.doesNotMatch(code, /-DontStartIfOnBatteries\b/,
+      '-DontStartIfOnBatteries 不是 PowerShell 合法參數（正確：-DisallowStartIfOnBatteries）。' +
+      'PS 預設已是「電池上不啟動」，乾脆完全不設。');
+    assert.doesNotMatch(code, /-StopIfGoingOnBatteries\b/,
+      '-StopIfGoingOnBatteries 不是 PowerShell 合法參數（正確：-DontStopIfGoingOnBatteries 是反向 switch）。' +
+      'PS 預設已是「切電池就停」，乾脆完全不設。');
+  });
+
+  // IR-007 Persistent Bug Protocol：v1.17.66 原本的 test 只 assert 字串存在於檔案，
+  // 字串對 ≠ PowerShell 接受該 param。改用白名單比對防止下次再有人打錯。
+  it('register-scanner-task.ps1 New-ScheduledTaskSettingsSet 全部 param 必須是 PowerShell 合法名稱', () => {
+    const content = readPs1('scripts/windows/register-scanner-task.ps1');
+
+    // PowerShell 5.1 + 7 共通的 New-ScheduledTaskSettingsSet 合法參數
+    // 來源：Microsoft Docs ScheduledTasks module (Windows Server 2012+)
+    // 維護策略：新增 param 時必須來自官方文件，並在 PS 5.1 跑過 Get-Help 驗證。
+    const VALID_PARAMS = new Set([
+      'AllowDemandStart', 'AllowHardTerminate', 'AllowStartIfOnBatteries',
+      'Compatibility', 'DeleteExpiredTaskAfter', 'Disable',
+      'DisallowDemandStart', 'DisallowHardTerminate', 'DisallowStartIfOnBatteries',
+      'DontStopIfGoingOnBatteries', 'DontStopOnIdleEnd',
+      'ExecutionTimeLimit', 'Hidden',
+      'IdleDuration', 'IdleWaitTimeout',
+      'MaintenanceDeadline', 'MaintenanceExclusive', 'MaintenancePeriod',
+      'MultipleInstances', 'NetworkId', 'NetworkName',
+      'Priority', 'RestartCount', 'RestartInterval', 'RestartOnIdle',
+      'RunOnlyIfIdle', 'RunOnlyIfNetworkAvailable',
+      'StartWhenAvailable', 'WakeToRun',
+    ]);
+
+    // 先剝掉 PowerShell 行註解（# 到行尾），不然 regex 會抓到註解區塊裡為了
+    // 解釋而出現的 cmdlet 名稱，把註解內容當實際 cmdlet 區塊驗 → 錯過真 bug
+    // （v1.17.67 code review 抓到，注入 -BogusFakeParam 到實際 call test 還是綠）。
+    const codeOnly = content.replace(/(^|\s)#[^\n]*/g, '$1');
+
+    // 抓 New-ScheduledTaskSettingsSet 整個 ` 接續多行區塊
+    const blockMatch = codeOnly.match(/New-ScheduledTaskSettingsSet[\s\S]*?(?=\n\$|\n\n|\nRegister-)/);
+    assert.ok(blockMatch, '找不到 New-ScheduledTaskSettingsSet 區塊');
+
+    // 先剝掉 ( ... ) 內層函式呼叫（如 New-TimeSpan -Minutes 10），
+    // 避免把內層 cmdlet 的 param 誤算成 New-ScheduledTaskSettingsSet 的 param。
+    let stripped = blockMatch[0];
+    let prev;
+    do {
+      prev = stripped;
+      stripped = stripped.replace(/\([^()]*\)/g, '');
+    } while (stripped !== prev);
+
+    const usedParams = [...stripped.matchAll(/(?<![\w-])-([A-Z][A-Za-z0-9]+)\b/g)]
+      .map((m) => m[1]);
+
+    const unknownParams = usedParams.filter((p) => !VALID_PARAMS.has(p));
+    assert.deepEqual(unknownParams, [],
+      `register-scanner-task.ps1 用了 PowerShell 不認識的 param：${unknownParams.join(', ')}。` +
+      `這些在 PS 5.1 / 7 都會直接 throw、task 完全沒註冊。請對照 Microsoft Docs 修正。`);
   });
 
   it('register-scanner-task.ps1 RepetitionInterval 改成 120 分鐘（30→120）', () => {

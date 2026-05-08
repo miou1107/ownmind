@@ -383,19 +383,24 @@ if (Test-Path $NoScannerFlag) {
 } else {
   Write-Host "   安裝 usage scanner..."
   # Scanner entry 已隨 repo clone 到 $OwnmindDir\hooks\ownmind-usage-scanner.js
-  # 註冊 Task Scheduler（register-scanner-task.ps1 內建 node 偵測 + v20+ 驗證 + .node-path 快取）
+  # 註冊 Task Scheduler（被呼叫腳本內建 node 偵測 + v20+ 驗證 + .node-path 快取）
   $RegisterScript = Join-Path $OwnmindDir 'scripts\windows\register-scanner-task.ps1'
   if (Test-Path $RegisterScript) {
-    # v1.17.12 Adam 類問題：舊版 silent fail，install 印「已註冊」但其實 task 沒上。
-    # 現在要同時檢查 exit code + 用 Get-ScheduledTask 驗證真的存在。
-    & powershell -ExecutionPolicy Bypass -File $RegisterScript
+    # v1.17.12 驗 exit code + Get-ScheduledTask（避免 silent fail）。
+    # v1.17.67 IR-038：Tee stdout+stderr 到 log，self-check 會上傳給 admin 看根因。
+    # logs 目錄已在 line 270-280 隨 $GitHookDirs 建好。
+    $RegisterLogPath = Join-Path $OwnmindDir ('logs\register-task-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+    & powershell -ExecutionPolicy Bypass -File $RegisterScript 2>&1 |
+      Tee-Object -FilePath $RegisterLogPath
     $regExit = $LASTEXITCODE
     $taskOk = $null -ne (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue)
     if ($regExit -eq 0 -and $taskOk) {
-      Write-Host "   Task Scheduler 已註冊（每 30 分鐘執行）" -ForegroundColor Green
+      Write-Host "   Task Scheduler 已註冊（每 120 分鐘執行）" -ForegroundColor Green
     } else {
       Write-Host "   Task Scheduler 註冊失敗 (exit=$regExit, task_exists=$taskOk)" -ForegroundColor Yellow
-      Write-Host "   usage scanner 不會每 30 分鐘跑；請手動 debug 或重跑：" -ForegroundColor Yellow
+      Write-Host "   錯誤紀錄已寫入：$RegisterLogPath" -ForegroundColor Yellow
+      Write-Host "   self-check 結尾會自動把 log 上傳，Vin 那邊可看到根因。" -ForegroundColor Yellow
+      Write-Host "   手動重跑：" -ForegroundColor Yellow
       Write-Host "     powershell -ExecutionPolicy Bypass -File $RegisterScript" -ForegroundColor Yellow
     }
   } else {

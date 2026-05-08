@@ -563,6 +563,30 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.67 修改（v1.17.66 Windows scanner task hotfix + IR-007 防同類雷）
+
+```
+scripts/windows/register-scanner-task.ps1 — 刪除 -DontStartIfOnBatteries 和
+                                            -StopIfGoingOnBatteries 兩個拼錯的 PS param
+                                            （v1.17.66 上線後讓 Windows scanner task 完全沒
+                                            註冊、token 用量報告卡 0）；
+                                            stale Write-Host 「every 30 min」修為「every 120 min」
+tests/ps1-windows-compat.test.js          — 反轉舊 test：assert 兩個壞 param 必須不存在；
+                                            新增 New-ScheduledTaskSettingsSet param 白名單驗證
+                                            （IR-007 Persistent Bug Protocol — 防字串對 / 語意錯
+                                            的同類雷）
+install.ps1                              — Tee register-scanner-task.ps1 stdout+stderr 到
+                                            ~/.ownmind/logs/register-task-<ts>.log；訊息「30 分鐘」
+                                            改「120 分鐘」（IR-038 觀測管道）
+scripts/install-helpers/self-check.cjs    — detectSchedulerDetail 新增 readLatestRegisterLog()，
+                                            把最新 register-task 日誌（最多 8KB）併入
+                                            scheduler_detail.register_log，admin 可從
+                                            install_check_logs 直接看 PS error stack
+package.json                             — 1.17.66 → 1.17.67
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.66 → 1.17.67
+CHANGELOG.md / FILELIST.md               — 補 v1.17.67 條目
+```
+
 ## v1.17.65 修改（autostash fallback 死路徑 — v1.17.24 backlog 清完）
 
 ```

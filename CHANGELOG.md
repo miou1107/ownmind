@@ -1,5 +1,38 @@
 # OwnMind 更新紀錄
 
+## v1.17.67 — v1.17.66 Windows scanner task hotfix + IR-007 防同類雷
+
+**背景**：v1.17.66 上線後 Adam / Eric 兩位 Windows 用戶獨立回報 OwnMind 用量報告 token 數卡 0。診斷發現背景 token scanner 的 Task Scheduler 在他們機器上根本沒註冊。`self-check` 跑出 `scheduler ❌`，手動跑 `register-scanner-task.ps1` 才看到 PowerShell 直接 `throw`。
+
+**根因**：[scripts/windows/register-scanner-task.ps1:103-107](scripts/windows/register-scanner-task.ps1)（修法前）v1.17.66 想加電池友善設定，用了 `-DontStartIfOnBatteries` 和 `-StopIfGoingOnBatteries` 兩個參數 —— 但這兩個都不是 `New-ScheduledTaskSettingsSet` 的合法參數名（正確名是 `-DisallowStartIfOnBatteries` 和反向 switch `-DontStopIfGoingOnBatteries`）。在 PS 5.1 + PS 7 都會直接 `throw`、整個 register 動作中斷、task 完全沒註冊。
+
+而且 PowerShell 預設行為**本來就**是「電池上不啟動 + 切電池就停」，這兩個顯式設定根本多此一舉。
+
+**為什麼 v1.17.66 的 reproduction test 沒擋住**：[tests/ps1-windows-compat.test.js:160-166](tests/ps1-windows-compat.test.js)（修法前）的 test 只 `assert.match` 那兩個壞 param 字串「存在」於檔案 —— 字串對 ≠ PowerShell 接受該 param。**測試驗了文字，沒驗語意**。這是 IR-007 Persistent Bug Protocol 要處理的同類雷。
+
+**修法**：
+
+1. **刪掉壞 param**：[scripts/windows/register-scanner-task.ps1](scripts/windows/register-scanner-task.ps1) 移除 `-DontStartIfOnBatteries` 和 `-StopIfGoingOnBatteries` 兩行；註解說明「PS 預設已是爛電池友善，不用顯式設定」
+2. **反轉舊 test**：原本 assert「壞 param 存在」改成 `assert.doesNotMatch` 兩個壞 param **必須不存在**
+3. **加 param 白名單驗證 test**（IR-007 防同類雷）：把 `New-ScheduledTaskSettingsSet` 區塊內所有 `-FooBar` 抽出來比對 PowerShell 官方參數白名單，未來再有人在這支腳本打錯 cmdlet param 立刻紅燈
+4. **IR-038 觀測管道補強**：
+   - [install.ps1:387-409](install.ps1) 跑 `register-scanner-task.ps1` 時 `Tee-Object` 把 stdout+stderr 寫到 `~/.ownmind/logs/register-task-<ts>.log`
+   - [scripts/install-helpers/self-check.cjs:288](scripts/install-helpers/self-check.cjs) `detectSchedulerDetail` 新增 `readLatestRegisterLog()`，把最新一份 register log（最多 8KB）併入 `scheduler_detail.register_log`
+   - 下次有人踩同類 PS bug，admin 從 `install_check_logs.full_log` 直接看得到 PS error stack，不用用戶手動跑指令貼回來
+5. **修 v1.17.66 stale 訊息**：register-scanner-task.ps1 line 129 Write-Host 從「every 30 min」改成「every 120 min」（呼應 v1.17.66 的 interval 變更但漏改）
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007 / IR-008 / IR-021 / IR-022 / IR-026 / IR-031 / IR-032 / IR-038。
+
+**驗證**：本地 `npm test` 750/750 pass / 0 fail（v1.17.66 是 749，新增一個 param 白名單驗證 test）。reproduction test 走完整 red-green：先反轉/新增 test 確認紅 → 修 .ps1 確認轉綠。
+
+**Code review 抓到的修正**（superpowers:code-reviewer）：
+- **Critical**：白名單 test 的區塊比對 regex 抓到的是 `New-ScheduledTaskSettingsSet` 第一次出現的位置 —— 但這是註解區塊（line 102），不是實際 cmdlet 呼叫（line 114）。test 等於只在驗註解裡的 param 名，未來注入壞 param 到實際呼叫不會被抓。修法：regex 比對前先剝掉 `# ...` 註解。透過注入 `-BogusFakeParam` 到實際 cmdlet 確認 red → 移除注入確認 green，full TDD cycle 過。
+- **Important**：`scheduler_detail.register_log.content` 走 `sanitizePath()`（PowerShell 錯誤訊息常帶絕對 path `C:\Users\<realname>\...`，user 名是 PII）。
+- **Important**：install.ps1 多餘的 `New-Item` 移除（`~/.ownmind/logs` 已在 line 270-280 隨 `$GitHookDirs` 建好）。
+- **Minor**：register-scanner-task.ps1 file header `每 30 分鐘執行一次` 補修為 120 分鐘。
+
+**升級指引**：v1.17.66 受影響的用戶（升級後 token 用量報告卡 0）跑 `~/.ownmind/install.ps1` 再升一次即可，新版 register-scanner-task.ps1 會把 task 補上來。
+
 ## v1.17.66 — Windows 平台硬化 + 觀測管道修補（IR-038）
 
 **背景**：2026-05-07~05-08 連續兩天 Eric/Adam 升 v1.17.65 都遭遇相同失敗劇本：升級主流程全 OK，但 `verify_local` 失敗連帶 `rollback` 失敗，仰賴雙重失敗才保住新版本。額外回報「OwnMind 觸發時不定時跳出 console 視窗，沒用 Claude 也跳」。深入調查發現是七個獨立 bug 累積，根因都在「shell / path / process spawn 假設了 Unix 行為」。這是第三波同類踩坑（v1.17.62 / v1.17.65 / v1.17.66），啟動 systematic-debugging Phase 4.5 架構性修補。

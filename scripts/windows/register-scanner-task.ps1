@@ -3,7 +3,7 @@
 # 用法（install.ps1 會自動呼叫）：
 #   powershell -ExecutionPolicy Bypass -File register-scanner-task.ps1
 #
-# 每 30 分鐘執行一次，使用當前登入 user 身分，即使 IDE 沒開也會跑。
+# 每 120 分鐘執行一次，使用當前登入 user 身分，即使 IDE 沒開也會跑。
 
 $ErrorActionPreference = 'Stop'
 
@@ -97,14 +97,23 @@ $Trigger = New-ScheduledTaskTrigger `
   -RepetitionInterval (New-TimeSpan -Minutes 120) `
   -RepetitionDuration (New-TimeSpan -Days 9999)
 
-# v1.17.66 — 加 -DontStartIfOnBatteries + -StopIfGoingOnBatteries，
-# 筆電拔電源時 scanner 不啟動 / 跑到一半拔電源就停（爛電池友善）。
-# StartWhenAvailable 維持，所以接電源回來會自動補跑。
+# v1.17.67 修 v1.17.66 雷：原本想加 -DontStartIfOnBatteries +
+# -StopIfGoingOnBatteries 做電池友善，但這兩個都不是
+# New-ScheduledTaskSettingsSet 的合法參數（正確名是 -DisallowStartIfOnBatteries
+# 和反向 switch -DontStopIfGoingOnBatteries），在 PS 5.1 + PS 7 都會直接 throw、
+# task 完全沒註冊（Adam / Eric 兩台 v1.17.66 升級踩到）。
+#
+# 解法：直接刪掉 — Windows Task Scheduler 預設行為本來就是
+#   1. 電池上不啟動（要顯式 -AllowStartIfOnBatteries 才會反向）
+#   2. 切電池就停（要顯式 -DontStopIfGoingOnBatteries 才會反向）
+# 預設已經是「爛電池友善」，不用加任何 param。
+# StartWhenAvailable 維持，接電源回來會自動補跑。
+#
+# 防再現：tests/ps1-windows-compat.test.js 加了 param 白名單驗證，
+# 之後再有人在這支腳本打錯 cmdlet param 立刻紅燈。
 $Settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
   -DontStopOnIdleEnd `
-  -DontStartIfOnBatteries `
-  -StopIfGoingOnBatteries `
   -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
 $Principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
@@ -117,4 +126,4 @@ Register-ScheduledTask `
   -Principal $Principal `
   -Description 'OwnMind token usage scanner (every 120 minutes)' | Out-Null
 
-Write-Host "[ownmind] task '$TaskName' registered; first run in 5 min, then every 30 min."
+Write-Host "[ownmind] task '$TaskName' registered; first run in 5 min, then every 120 min."
