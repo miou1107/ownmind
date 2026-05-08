@@ -1,5 +1,31 @@
 # OwnMind 更新紀錄
 
+## v1.17.65 — autostash fallback 死路徑修掉（清 v1.17.24 backlog）
+
+**背景**：v1.17.23 引入 `git pull --autostash` 取代手動 stash／無 pop，並寫了 fallback「處理 git < 2.6 沒 --autostash 支援的舊版」。但 fallback 那條也帶 `--autostash` —— 主路徑會失敗的根因（git 太舊）在 fallback 一定再失敗一次，等於沒 fallback。Codex review 在 v1.17.23 抓到並 ack 過，但當時不阻擋上線、留進 backlog（[project_299](OwnMind 專案記憶)）。
+
+**根因**：[mcp/index.js:1271-1282](mcp/index.js:1271)（修法前）兩個 try 區塊都帶 `--autostash`：
+
+```js
+try { await execFile('git', ['pull', '-q', '--rebase', '--autostash'], …); }
+catch {
+  try { await execFile('git', ['pull', '-q', '--autostash'], …); }  // ← 死路徑
+  catch (e) { return fail('pull', e); }
+}
+```
+
+**修法**：fallback 改 `git pull -q --ff-only` —— 不帶 `--autostash`、不帶 `--rebase`。
+
+- 工作樹有未提交變更時，`--ff-only` 會明確拒絕 → 觸發 `logEvent('update_failed', step: 'pull')`，user 看 log 自己處理。
+- 不再做手動 stash —— v1.17.22 已驗證沒 pop 會吞 user 變更（IR-007 Persistent Bug Protocol）。
+- `--ff-only` 比裸 `git pull` 安全：避免自動產生 merge commit；要 fast-forward 才繼續。
+
+**測試**：[tests/mcp-auto-update-cross-platform.test.js](tests/mcp-auto-update-cross-platform.test.js) 加 1 條 regression —— 從 mcpSource 抓主路徑後緊接的 fallback execFile 區塊，斷言不能再含 `--autostash`。修法前 fail（fallback args 是 `'pull', '-q', '--autostash'`），修法後 pass。
+
+**v1.17.24 backlog 後續確認**：原 backlog 列三項，另外兩項早已隨他 PR 解掉，**這次只剩 autostash fallback**：
+- ✅ 問題 2「lock cleanup 未來可能誤刪別 process 的 lock」── v1.17.60 已加 `_lockHeld` 旗標（[mcp/index.js:1184](mcp/index.js:1184) / `:1228`）。
+- ✅ 問題 3「`update.ps1` / `update.sh` settings.json parse 失敗用空物件覆寫」── v1.17.60 已新增 [scripts/install-helpers/load-settings-safe.cjs](scripts/install-helpers/load-settings-safe.cjs)，parse 失敗 `process.exit(0)` 不洗檔；兩支 update script 全部改用 `loadOrSkip`。
+
 ## v1.17.64 — self-check 兩個小 bug 修正：endpoint 404 + auth header 401
 
 **Vincent 反饋**：v1.17.63 上線後實測發現 self-check 的 `api_credentials` 檢查永遠 fail、上傳 log 也永遠失敗。Adam / Eric / Michelle 升完只會看到自己的本機被標壞，但其實是 self-check 寫錯了 — 不是他們的環境壞了。
