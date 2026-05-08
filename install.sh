@@ -48,6 +48,18 @@ send_install_beacon() {
 }
 send_install_beacon 'install_started'
 
+# v1.17.79 — 載入 report-error helper（IR-038 觀測管道）
+# 注意：第一次安裝時 ~/.ownmind 還沒 clone 下來，helper 還不存在 — 後續 clone 後可用。
+# 設一個本地 fallback 先擋著，clone 完才覆蓋。
+report_error() { :; }
+maybe_load_report_error() {
+  local h="${HOME}/.ownmind/scripts/install-helpers/report-error.sh"
+  if [ -f "$h" ]; then
+    # shellcheck disable=SC1090
+    . "$h"
+  fi
+}
+
 # --- sqlite3 偵測（v1.17.14，Tier 2 scanner 需要）---
 # Mac 預設內建 sqlite3，Linux 多半要 apt install。Windows（Git Bash）交由 install.ps1 處理。
 if ! command -v sqlite3 >/dev/null 2>&1; then
@@ -137,14 +149,29 @@ safe_cp() {
 }
 if [ -d "$OWNMIND_DIR" ]; then
   echo "   更新 OwnMind MCP Server..."
-  git -C "$OWNMIND_DIR" pull -q
+  if ! git -C "$OWNMIND_DIR" pull -q; then
+    maybe_load_report_error
+    report_error "install_git_pull_failed" "git pull 失敗（既有 OwnMind 目錄無法更新）"
+    echo "❌ git pull 失敗。請改跑 bootstrap.sh 或手動修復"
+    exit 1
+  fi
 else
   echo "   下載 OwnMind MCP Server..."
-  git clone -q https://github.com/miou1107/ownmind.git "$OWNMIND_DIR"
+  if ! git clone -q https://github.com/miou1107/ownmind.git "$OWNMIND_DIR"; then
+    report_error "install_git_clone_failed" "git clone github.com/miou1107/ownmind 失敗"
+    echo "❌ git clone 失敗（網路或 GitHub 權限）"
+    exit 1
+  fi
 fi
+maybe_load_report_error
 
 echo "   安裝依賴..."
-cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null
+cd "$OWNMIND_DIR/mcp"
+if ! npm install -q 2>/dev/null; then
+  report_error "install_npm_failed" "npm install 在 ${OWNMIND_DIR}/mcp 失敗"
+  echo "❌ npm install 失敗。試 npm install -g npm@latest 後重跑"
+  exit 1
+fi
 
 # --- 決定 MCP command / args ---
 if [ "$IS_WINDOWS" = true ]; then

@@ -1,5 +1,46 @@
 # OwnMind 更新紀錄
 
+## v1.17.79 — 統一錯誤 spool 機制 + interactive-upgrade dirty tree 自動處理（vin-windows-test 第三輪）
+
+**背景**：v1.17.77/78 修了 start.cmd fallback 跟 install_started beacon，但 vin-windows-test 第三輪測試發現他升級到 v1.17.78 沒成功（DB 看 collector_heartbeat 還停 1.17.75）。診斷出兩個結構性盲點：
+
+1. **AI 助手 local edit 擋住升級** — 上輪他的 AI 編輯 mcp/start.cmd 加 fallback 沒 commit，下次 `git pull --ff-only` 直接被 reject、整個升級卡住
+2. **client 端各種失敗都沒回報管道** — install / upgrade / hook / scanner / start.cmd 失敗都靜默死掉，server 完全看不到。v1.17.78 的 install_started beacon 只覆蓋 install 開頭，runtime 失敗（如 start.cmd 找不到 node）依然盲
+
+**修法（廣域觀測管道）**：
+
+### 1. `errors/` spool 統一機制
+- 所有失敗點寫 `~/.ownmind/logs/errors/<unix_ms>-<kind>.json`（或 cmd.exe 寫 `.txt` key=value 格式）
+- self-check.cjs 加 `drainErrorSpool()`：把目錄裡的所有檔案上傳到 `/api/debug/install-check`（v1.17.78 已放寬 endpoint），成功就刪、失敗下次再試
+- Drain 觸發點：每次 self-check（含 install/upgrade 結尾、scheduler 跑 scanner、user 手動 trigger）
+
+### 2. Cross-platform helpers
+- `scripts/install-helpers/report-error.cjs` — Node 主力 helper（HOME 路徑 sanitize / context-file 讀尾 30 行 / atomic write）
+- `scripts/install-helpers/report-error.sh` — bash function `report_error <kind> <detail> [context]`，內部呼叫 .cjs
+- `scripts/install-helpers/report-error.ps1` — PowerShell `Report-Error -Kind ... -Detail ... [-ContextFile ...]`
+
+### 3. interactive-upgrade.{sh,ps1}：dirty tree 自動處理
+- 偵測 `git status --porcelain` 非空
+- drop `upgrade_dirty_tree` error report（含 dirty file 清單）
+- `git fetch && git reset --hard origin/main` 強制對齊（backup 已在前一步完成，安全網 OK）
+- 既有 clean 路徑走 `git pull --ff-only` 不變
+
+### 4. 失敗點 wire（每個 fatal-path 落 error report）
+- `install.sh` / `install.ps1`：winget / git clone / git pull / npm install
+- `interactive-upgrade.{sh,ps1}`：git pull / npm / verify
+- `mcp/start.cmd`：找不到 node 時 echo `key=value` 到 errors\<ts>-mcp_start_no_node.txt，下次 self-check drain
+- self-check 自身的 fail check 會經由 install-check spool 走（已存在）
+
+**為什麼分 .json + .txt 兩種格式**：cmd.exe 寫 JSON 要處理 escape 太痛苦，讓 cmd 寫簡單 key=value，drainErrorSpool 內 `parseKeyValueText` 統一轉換。`.sh` / `.ps1` / `.cjs` 都呼叫 report-error.cjs 寫 `.json`。
+
+**驗證**：
+- 新增 `tests/error-spool-mechanism.test.js`（15 條：spool 寫檔 / 特殊字元 / context-file / drain 上傳刪檔 / drain 5xx 保留 / drain no-creds / drain no-dir / dirty tree 三條 sh + 三條 ps1 / start.cmd 寫 errors/）
+- npm test **846/846 pass / 0 fail**（v1.17.78 → v1.17.79 多 15 條）
+
+**鐵律觸發**：IR-006（reproduction test 先寫）/ IR-007（vin-windows-test 第三輪）/ IR-008 / IR-022（Server + Client 同時涵蓋 — 此次純 client 端結構性改動）/ IR-031 / IR-032 / **IR-038（觀測管道完善）✅**
+
+**升級指引**：對既有 user 完全無感。下次升級碰到 dirty tree 會自動對齊（之前會 fail）；start.cmd 找不到 node 時不再靜默壞掉；admin dashboard 開始看到全 client 端各種失敗事件。
+
 ## v1.17.78 — install_started beacon 補 IR-038 觀測盲點（vin-windows-test 第三輪）
 
 **背景**：vin-windows-test (user_id=8) 安裝後查 DB 發現 `install_check_logs` **0 row**。Root cause：
