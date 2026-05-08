@@ -612,6 +612,102 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
   return { retried, failed: remaining.length };
 }
 
+// ============================================================
+// v1.17.79 — Error spool drain（IR-038 觀測管道延伸）
+//
+// errors/ spool dir：所有 client 端失敗都用「寫檔」回報（cmd.exe / .sh / .ps1 /
+// .cjs / hook 都能參與），self-check 統一把目錄裡的所有 JSON 檔案上傳。
+// 跟 install-check spool 並存：
+//   - install-check spool（.upload-spool.jsonl）= self-check report 自己上傳失敗的重試
+//   - errors spool（errors/<ts>-<kind>.json）= 全 client 端 fatal-path 觀測管道
+// 上傳成功就刪檔；失敗就保留下次再試（同 install-check 模式）。
+// 壞掉的 JSON（部分寫入）直接刪，不能永遠卡在 spool 裡。
+// ============================================================
+// v1.17.79 — cmd.exe 寫的 .txt 格式（key=value 一行一條）轉成 report shape
+// 為什麼要這個 fallback：start.cmd 寫 JSON 要處理 escape，痛點大。讓 cmd 寫
+// 簡單的 key=value 文字檔，drainErrorSpool 統一轉換。
+function parseKeyValueText(raw, filename) {
+  const obj = {};
+  for (const line of raw.split(/\r?\n/)) {
+    const m = line.match(/^([a-zA-Z_]+)=(.*)$/);
+    if (m) obj[m[1]] = m[2];
+  }
+  // kind 從 content 取，沒有就從 filename 推（去掉 timestamp 前綴）
+  let kind = obj.kind;
+  if (!kind && filename) {
+    const m = filename.match(/^[\d-]+-(.+?)\.txt$/);
+    if (m) kind = m[1];
+  }
+  return {
+    ts: obj.time || new Date().toISOString(),
+    kind: kind || 'unknown',
+    detail: obj.detail || '',
+    context: obj.searched || obj.context || '',
+    client_version: obj.client_version || 'unknown',
+    platform: obj.platform || 'unknown',
+    machine: obj.machine || null,
+  };
+}
+
+async function drainErrorSpool(apiUrl, apiKey, opts = {}) {
+  const errorsDir = opts.errorsDir || path.join(OWNMIND_DIR, 'logs', 'errors');
+  if (!fs.existsSync(errorsDir)) return { uploaded: 0, failed: 0 };
+  if (!apiUrl || !apiKey) return { uploaded: 0, failed: 0, skipped: 'no_credentials' };
+
+  let entries;
+  try {
+    entries = fs.readdirSync(errorsDir).filter((f) => /\.(json|txt)$/.test(f));
+  } catch {
+    return { uploaded: 0, failed: 0, skipped: 'readdir_failed' };
+  }
+  let uploaded = 0;
+  let failed = 0;
+  for (const name of entries) {
+    const filePath = path.join(errorsDir, name);
+    let report;
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8');
+      if (name.endsWith('.json')) {
+        report = JSON.parse(raw);
+      } else {
+        // .txt: cmd.exe 寫的 key=value 格式（start.cmd 用，因為 cmd 寫 JSON 太痛）
+        report = parseKeyValueText(raw, name);
+      }
+    } catch {
+      // 壞檔（部分寫入 / 非 JSON / 非 key=value）— 直接刪掉避免永遠卡 spool
+      try { fs.unlinkSync(filePath); } catch {}
+      continue;
+    }
+    const trigger = `error_${report.kind || 'unknown'}`;
+    const wrapped = {
+      ts: report.ts || new Date().toISOString(),
+      trigger,
+      client_version: report.client_version || 'unknown',
+      platform: report.platform || 'unknown',
+      machine: report.machine || null,
+      checks: [{
+        name: report.kind || 'unknown',
+        status: 'fail',
+        detail: report.detail || '',
+        context: report.context || '',
+      }],
+      summary: { pass: 0, warn: 0, fail: 1 },
+    };
+    try {
+      const r = await postReport(wrapped, apiUrl, apiKey);
+      if (r.ok) {
+        try { fs.unlinkSync(filePath); } catch {}
+        uploaded += 1;
+      } else {
+        failed += 1;
+      }
+    } catch {
+      failed += 1;
+    }
+  }
+  return { uploaded, failed };
+}
+
 async function uploadReport(report, apiUrl, apiKey, opts = {}) {
   if (fs.existsSync(NO_UPLOAD_FLAG)) {
     return { skipped: true, reason: 'opt_out_flag' };
@@ -673,6 +769,16 @@ async function main() {
   if (upload.retried > 0) {
     process.stderr.write(`順手補傳 spool 舊紀錄：${upload.retried} 筆\n`);
   }
+
+  // v1.17.79 — 順手 drain errors/ spool（全 client 端失敗回報）
+  try {
+    const errDrain = await drainErrorSpool(apiUrl, apiKey);
+    if (errDrain.uploaded > 0 || errDrain.failed > 0) {
+      process.stderr.write(`Error spool：上傳 ${errDrain.uploaded} 筆，失敗 ${errDrain.failed} 筆\n`);
+    }
+  } catch (e) {
+    process.stderr.write(`Error spool drain 失敗：${sanitizePath(e?.message || String(e))}\n`);
+  }
   process.stderr.write('==============================\n\n');
 
   // 即使有 fail check 也回 exit 0 — 不擋安裝/升級流程
@@ -686,6 +792,8 @@ module.exports = {
   buildReport, summarize, sanitizePath, parseArgs,
   // v1.17.66 — Spool 機制（IR-038 觀測管道）
   uploadReport, appendSpool, retrySpool,
+  // v1.17.79 — Error spool drain（廣域 client 端失敗回報）
+  drainErrorSpool,
   // v1.17.66 — 環境資訊收集（IR-038）
   collectEnv, detectShellChain, detectBashResolution,
   detectSchedulerDetail, detectWindowsEncoding,

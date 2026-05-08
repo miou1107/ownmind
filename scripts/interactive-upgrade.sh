@@ -23,6 +23,15 @@ FAIL() { echo "ERROR:$1:$2"; exit 1; }
 
 mkdir -p "${OWNMIND_DIR}/logs"
 
+# v1.17.79 — 載入 report-error helper（IR-038 觀測管道）
+# source 失敗（檔不存在 / 舊版裝過沒這支）就 fallback 成 no-op，不擋升級
+if [ -f "${OWNMIND_DIR}/scripts/install-helpers/report-error.sh" ]; then
+  # shellcheck disable=SC1090
+  . "${OWNMIND_DIR}/scripts/install-helpers/report-error.sh"
+else
+  report_error() { :; }
+fi
+
 # --- 0. Pre-check ---
 STEP "check" "檢查 OwnMind 目錄是否存在"
 [ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "找不到 ${OWNMIND_DIR}，請先跑 install.sh 初始安裝"
@@ -42,14 +51,33 @@ rollback() {
   mv "${BACKUP_DIR}" "${OWNMIND_DIR}" && OK "rollback" "已還原舊版"
 }
 
-# --- 2. git pull (--ff-only，衝突就 fail 不硬 merge) ---
+# --- 2. git pull ---
+# v1.17.79：先偵測 dirty working tree（user 的 AI 助手手動編輯過 OwnMind 內檔很常見），
+# dirty 就 report_error + git fetch + reset --hard origin/main 強制對齊（backup 保險絲已先做）。
+# 真實案例：vin-windows-test 的 AI 編輯 mcp/start.cmd 加 fallback，下次 git pull --ff-only
+# 直接被 reject、整個升級卡住，server 完全沒紀錄。
 STEP "pull" "拉取最新 OwnMind"
 cd "${OWNMIND_DIR}" || FAIL "cd_failed" "無法進入 ${OWNMIND_DIR}"
-if git pull --ff-only >>"${LOG_FILE}" 2>&1; then
+
+DIRTY=$(git status --porcelain 2>/dev/null)
+if [ -n "${DIRTY}" ]; then
+  STEP "pull_dirty" "偵測到 working tree 有未 commit 改動，自動對齊 origin/main（備份已先做）"
+  echo "${DIRTY}" > "${LOG_FILE}.dirty"
+  report_error "upgrade_dirty_tree" "git status --porcelain 非空，自動 reset --hard 對齊 origin/main" "${LOG_FILE}.dirty"
+  if git fetch origin >>"${LOG_FILE}" 2>&1 \
+     && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
+    OK "pull" "強制對齊完成（dirty 改動已蓋掉，舊版見備份）"
+  else
+    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main 失敗" "${LOG_FILE}"
+    rollback
+    FAIL "git_pull" "強制對齊也失敗（網路或權限），備份已還原"
+  fi
+elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull 成功"
 else
+  report_error "upgrade_git_pull_failed" "git pull --ff-only 失敗（可能網路或非 ff merge）" "${LOG_FILE}"
   rollback
-  FAIL "git_pull" "git pull 失敗（可能網路或 conflict）。備份已還原。請手動 cd ~/.ownmind 後 git status 檢查"
+  FAIL "git_pull" "git pull 失敗（可能網路），備份已還原。手動檢查：cd ~/.ownmind && git status"
 fi
 
 # --- 3. npm install (MCP 依賴) ---
@@ -59,6 +87,7 @@ if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
   if npm install --silent >>"${LOG_FILE}" 2>&1; then
     OK "npm_install" "MCP 依賴完成"
   else
+    report_error "upgrade_npm_install_failed" "MCP npm install 失敗" "${LOG_FILE}"
     rollback
     FAIL "npm_install" "MCP npm install 失敗；備份已還原，請檢查 ${LOG_FILE}"
   fi

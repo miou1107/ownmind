@@ -33,6 +33,14 @@ function Fail($code, $msg) { throw "ERROR:${code}:$msg" }
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
+# v1.17.79 — 載入 report-error helper（IR-038）
+$reportErrorHelper = Join-Path $OwnMindDir 'scripts\install-helpers\report-error.ps1'
+if (Test-Path $reportErrorHelper) {
+  . $reportErrorHelper
+} else {
+  function Report-Error { param($Kind, $Detail, $ContextFile = "") }
+}
+
 # --- v1.17.66 Self-check 觀測管道保證執行（IR-038） ---
 # 用 try { 主流程 } catch { 印錯記 exit code } finally { 跑 self-check }
 # 確保升級任何階段失敗，server 都能收到當下狀態 + 7 項本機 check + env。
@@ -69,15 +77,40 @@ function Rollback {
 }
 
 # --- 2. git pull ---
+# v1.17.79：先偵測 dirty working tree（user 的 AI 助手手動編輯 OwnMind 內檔很常見），
+# dirty 就 Report-Error + git fetch + reset --hard origin/main 強制對齊（backup 保險絲已先做）。
+# 真實案例：vin-windows-test 的 AI 編輯 mcp/start.cmd 加 fallback，下次 git pull --ff-only
+# 直接被 reject、整個升級卡住，server 完全沒紀錄。
 Step "pull" "拉取最新 OwnMind"
 Push-Location $OwnMindDir
-$pullOut = git pull --ff-only 2>&1
-if ($LASTEXITCODE -ne 0) {
-  Pop-Location
-  Rollback
-  Fail "git_pull" "git pull 失敗（可能網路或 conflict），備份已還原"
+
+$dirty = git status --porcelain 2>$null
+if ($dirty) {
+  Step "pull_dirty" "偵測到 working tree 有未 commit 改動，自動對齊 origin/main（備份已先做）"
+  $dirtyLog = "$LogFile.dirty"
+  $dirty | Out-File -FilePath $dirtyLog -Encoding utf8
+  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain 非空，自動 reset --hard 對齊 origin/main" -ContextFile $dirtyLog
+  git fetch origin 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  if ($LASTEXITCODE -eq 0) {
+    git reset --hard origin/main 2>&1 | Out-File -Append $LogFile -Encoding utf8
+  }
+  if ($LASTEXITCODE -ne 0) {
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main 失敗" -ContextFile $LogFile
+    Pop-Location
+    Rollback
+    Fail "git_pull" "強制對齊也失敗（網路或權限），備份已還原"
+  }
+  OK "pull" "強制對齊完成（dirty 改動已蓋掉，舊版見備份）"
+} else {
+  $pullOut = git pull --ff-only 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only 失敗（可能網路或非 ff merge）" -ContextFile $LogFile
+    Pop-Location
+    Rollback
+    Fail "git_pull" "git pull 失敗（可能網路），備份已還原"
+  }
+  OK "pull" "git pull 成功"
 }
-OK "pull" "git pull 成功"
 
 # --- 3. npm install (MCP) ---
 $mcpDir = Join-Path $OwnMindDir "mcp"
@@ -86,6 +119,7 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
   Set-Location $mcpDir
   npm install --silent 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
+    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install 失敗" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "npm_install" "MCP npm install 失敗，備份已還原"

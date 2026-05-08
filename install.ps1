@@ -72,6 +72,15 @@ function Send-InstallBeacon {
 }
 Send-InstallBeacon -Trigger 'install_started'
 
+# v1.17.79 — 載入 report-error helper（IR-038 觀測管道）
+# 注意：第一次安裝時 ~/.ownmind 還沒 clone 下來，helper 還不存在 — clone 完才能用。
+# 設一個本地 fallback 先擋著。
+function Report-Error { param($Kind, $Detail, $ContextFile = "") }
+function Maybe-LoadReportError {
+  $h = Join-Path $HOME '.ownmind\scripts\install-helpers\report-error.ps1'
+  if (Test-Path $h) { . $h }
+}
+
 # --- 檢查必要工具（v1.17.76：缺 git/node 走 winget 自動裝，回報者 vin-windows-test）---
 # v1.17.75 之前：缺 git 或 node 直接 Write-Error exit，user 沒裝過 = 完全卡死。
 # 現在：跟 sqlite3 同 pattern → winget 自動裝、reload PATH、再驗證一次。
@@ -107,10 +116,20 @@ function Install-WithWinget {
 }
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  Install-WithWinget -ToolName "git" -WingetId "Git.Git" -ManualUrl "https://git-scm.com/download/win"
+  try {
+    Install-WithWinget -ToolName "git" -WingetId "Git.Git" -ManualUrl "https://git-scm.com/download/win"
+  } catch {
+    Report-Error -Kind "install_winget_git_failed" -Detail "winget Git.Git 失敗：$_"
+    throw
+  }
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Install-WithWinget -ToolName "node" -WingetId "OpenJS.NodeJS.LTS" -ManualUrl "https://nodejs.org/"
+  try {
+    Install-WithWinget -ToolName "node" -WingetId "OpenJS.NodeJS.LTS" -ManualUrl "https://nodejs.org/"
+  } catch {
+    Report-Error -Kind "install_winget_node_failed" -Detail "winget OpenJS.NodeJS.LTS 失敗：$_"
+    throw
+  }
 }
 
 # Node 版本驗證（>= v20，scanner / mcp 需要）
@@ -243,14 +262,32 @@ foreach ($dir in @($ClaudeDir, $SkillDir, $HookDir)) {
 if (Test-Path $OwnmindDir) {
   Write-Host "   更新 OwnMind MCP Server..."
   git -C $OwnmindDir pull -q
+  if ($LASTEXITCODE -ne 0) {
+    Maybe-LoadReportError
+    Report-Error -Kind "install_git_pull_failed" -Detail "git pull 失敗於 $OwnmindDir"
+    Write-Error "git pull 失敗。改跑 bootstrap 或手動修復後重跑"
+    exit 1
+  }
 } else {
   Write-Host "   下載 OwnMind MCP Server..."
   git clone -q https://github.com/miou1107/ownmind.git $OwnmindDir
+  if ($LASTEXITCODE -ne 0) {
+    Report-Error -Kind "install_git_clone_failed" -Detail "git clone github.com/miou1107/ownmind 失敗"
+    Write-Error "git clone 失敗（網路或 GitHub 權限）"
+    exit 1
+  }
 }
+Maybe-LoadReportError
 
 Write-Host "   安裝依賴..."
 Push-Location (Join-Path $OwnmindDir "mcp")
 npm install -q 2>$null
+if ($LASTEXITCODE -ne 0) {
+  Pop-Location
+  Report-Error -Kind "install_npm_failed" -Detail "npm install 在 $OwnmindDir\mcp 失敗"
+  Write-Error "npm install 失敗。試 npm install -g npm@latest 後重跑"
+  exit 1
+}
 Pop-Location
 
 # --- 決定 MCP 啟動方式（Windows 用 cmd.exe + start.cmd）---
