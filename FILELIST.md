@@ -563,6 +563,23 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.69 修改（MCP 回傳合併單一 text part — 修 Claude Code 看不到技巧提示）
+
+```
+mcp/lib/compose-tool-response.js          — 新增（純函式：把 broadcast / tag / body / tip
+                                            合併成單一 { type: 'text', text } part，
+                                            所有 MCP client 渲染一致）
+mcp/index.js                              — 把原本 4 個 contentParts.push 換成
+                                            composeToolResponse({...}) 呼叫
+tests/mcp-tool-response-shape.test.js     — 新增（8 條：單一 part 結構、tag/body
+                                            視覺分隔、有無 broadcast/tip 都正確）
+tests/tip-every-call.test.js              — 更新 assert pattern 對齊新結構，仍驗
+                                            tip 必須無條件附（不能有 % 10 閘門）
+package.json                              — 1.17.68 → 1.17.69
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.68 → 1.17.69
+CHANGELOG.md / FILELIST.md                — 補 v1.17.69 條目
+```
+
 ## v1.17.68 修改（settings.json `--update` 殘留地雷 + 401 觀測管道 IR-007/IR-038）
 
 ```

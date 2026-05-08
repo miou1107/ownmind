@@ -12,6 +12,7 @@ import path from 'path';
 import os from 'os';
 import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
+import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance } from '../shared/compliance.js';
 import {
@@ -1136,16 +1137,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // 不 block 主流程：fetch 失敗 → 靜默 skip（不該因廣播掛掉 tool）
     const broadcastText = await fetchBroadcastsSafely();
 
-    const contentParts = [];
-    if (broadcastText) {
-      contentParts.push({ type: "text", text: broadcastText });
-    }
-    contentParts.push({ type: "text", text: `${tag}：` });
-    contentParts.push({ type: "text", text: body });
-    // v1.17.7: tip fires on EVERY tool call (was every-10th via `% 10`).
-    // Skill doc promises "每次操作後附上一行" — honor that.
-    contentParts.push({ type: "text", text: `\n${formatTag('技巧提示')}：${getRandomTip()}` });
-    return { content: contentParts };
+    // v1.17.69：合併成單一 text part。v1.17.0~v1.17.68 用 4 個獨立 part（broadcast /
+    // 前綴行 / body / tip），多數 client 順序合併能看到全部，但 Claude Code 的 UI
+    // 摺疊卡片會吃掉多 part 之間的視覺、最後一段的 tip 完全藏起來。改成一段所有
+    // client 一致。語意：v1.17.7 起 tip 每次都附（不是每 10 次一次）。
+    return composeToolResponse({
+      broadcastText,
+      tag,
+      body,
+      tip: getRandomTip(),
+      tipTag: formatTag('技巧提示'),
+    });
   } catch (error) {
     logEvent('error', { tool_name: name, error: error.message });
     const tag = formatTag('錯誤回報');

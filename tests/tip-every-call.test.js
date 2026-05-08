@@ -23,29 +23,31 @@ test('tip gating modulo (% 10) is removed — tip fires on every call', () => {
   );
 });
 
-test('random tip is pushed into every tool response content (unconditional)', () => {
-  // Locate the handleTool success return block. We expect a contentParts.push
-  // for the tip that is NOT guarded by a modulo / counter condition.
-  const returnBlockStart = mcpSource.indexOf('return { content: contentParts };');
-  assert.ok(returnBlockStart > 0, 'expected handleTool to return { content: contentParts }');
+test('random tip is included in every tool response (unconditional)', () => {
+  // v1.17.69 起改用 composeToolResponse({ ..., tip: getRandomTip(), tipTag: ... })
+  // 取代原本的 contentParts.push。主要動機：把多個 text part 合併成單一 part，
+  // 避免 Claude Code UI 摺疊卡片把後段 part 藏起來。tip 仍必須無條件帶上。
+  const composeCallMatch = mcpSource.match(
+    /return\s+composeToolResponse\(\s*\{[\s\S]*?\}\s*\)\s*;/
+  );
+  assert.ok(composeCallMatch, '預期 success path return composeToolResponse({...})');
 
-  // Look at the 400 chars preceding the return — that's where the tip push lives.
-  const precedingSlice = mcpSource.slice(Math.max(0, returnBlockStart - 400), returnBlockStart);
-
-  // Must have the tip push ...
+  const composeCall = composeCallMatch[0];
   assert.match(
-    precedingSlice,
-    /contentParts\.push\([^)]*formatTag\(['"`]技巧提示['"`]\)/,
-    'expected contentParts.push(...formatTag("技巧提示")...) before the final return'
+    composeCall,
+    /tip:\s*getRandomTip\(\)/,
+    '預期 composeToolResponse 帶 tip: getRandomTip()，未來再有人改路徑要保持 tip 無條件帶上'
+  );
+  assert.match(
+    composeCall,
+    /tipTag:\s*formatTag\(['"`]技巧提示['"`]\)/,
+    '預期 tipTag 用 formatTag("技巧提示")，跟版號標籤對齊'
   );
 
-  // ... and must NOT be wrapped in an `if (...% ...)` condition on the same line or immediately before.
-  const lastFiftyLines = precedingSlice.split('\n').slice(-10).join('\n');
-  const hasGuardedPush = /if\s*\([^)]*%[^)]*\)\s*\{?\s*(?:\/\/[^\n]*\n\s*)?contentParts\.push\([^)]*技巧提示/
-    .test(lastFiftyLines);
-  assert.equal(
-    hasGuardedPush,
-    false,
-    'tip push must not be guarded by a modulo condition — it should fire on every call'
-  );
+  // 同樣不能再退回 % 10 那種閘門
+  const blockStart = mcpSource.indexOf(composeCall);
+  const precedingSlice = mcpSource.slice(Math.max(0, blockStart - 400), blockStart);
+  const hasGuard = /if\s*\([^)]*%[^)]*\)/.test(precedingSlice.split('\n').slice(-10).join('\n'));
+  assert.equal(hasGuard, false,
+    'tip 不能被任何取餘條件包住 — 每次 call 都要附');
 });

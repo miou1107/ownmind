@@ -1,5 +1,26 @@
 # OwnMind 更新紀錄
 
+## v1.17.69 — MCP 回傳合併單一 text part（修 Claude Code 看不到技巧提示）
+
+**背景**：Vin 回報「之前都會出現的技巧提示，現在 Claude Code 看不到，其他工具（Codex / Cursor / Antigravity）都看得到」。
+
+**根因**：v1.17.0 起 [mcp/index.js:1139](mcp/index.js)（修法前）把 MCP 工具回傳組成 **4 個獨立的 `{ type: "text", text: ... }` parts**：broadcast / 前綴行 / JSON body / 技巧提示。多數 MCP client 會把全部 parts 順序合起來顯示，但 **Claude Code UI 對 tool result 用摺疊卡片渲染時，多 part 之間的視覺被吃掉、最後一段（tip）完全看不到**。技術上 server 一視同仁送相同 payload，AI 端也都收得到全部 parts，純粹是 client UI 渲染差異。
+
+**修法**：把 4 個 part 合併成單一 text part，所有 client 渲染一致。新增 [mcp/lib/compose-tool-response.js](mcp/lib/compose-tool-response.js) 純函式封裝合併邏輯，[mcp/index.js](mcp/index.js) 改呼叫它。視覺版型維持跟 v1.17.68 之前各 client 看到的一樣（tag 跟 body 用「：」連接、body 跟 tip 之間留一個空白行）。
+
+**Reproduction tests 8 條（IR-003）**：
+- 新增 [tests/mcp-tool-response-shape.test.js](tests/mcp-tool-response-shape.test.js)：驗 `composeToolResponse` 必回單一 text part、各段視覺分隔、有無 broadcast / tip 都不會多空白
+- 更新 [tests/tip-every-call.test.js](tests/tip-every-call.test.js)：原本 assert `contentParts.push(...)` pattern，改成 assert `composeToolResponse({ tip: getRandomTip(), tipTag: ... })` pattern；不變的是 tip 必須無條件附（不能再有 `% 10` 之類的閘門）
+
+**鐵律觸發**：IR-003 / IR-005 / IR-008 / IR-022（純 client 修法、server 端不變）/ IR-026 / IR-031 / IR-032。
+
+**驗證**：本地 `npm test` 776/776 pass / 0 fail（v1.17.68 是 768，+8 新 test）。
+
+**Code review 抓到的修正**（superpowers:code-reviewer）：
+- **Important（visual regression）**：第一版把 tag 跟 body 用「：」inline 連接（`記憶搜尋：{...}`），多 KB JSON body 會被擠成超長一行、視覺上比舊 4-part 結構差。修法：tag 後接「：\n」當 header 行、body 換到下一行（`記憶搜尋：\n{...}`），跟舊 4-part 各 client 看到的版型一致。
+
+**升級指引**：純 client 端修法，server 不需重新部署。用戶跟 Claude / Codex 說「升級 OwnMind」即可，下次 MCP 工具呼叫起 Claude Code UI 就會看到完整的回傳含技巧提示。
+
 ## v1.17.68 — settings.json `--update` 殘留地雷 + 401 觀測管道（IR-007 + IR-038）
 
 **背景**：v1.17.67 修完 Windows scanner task 註冊問題後，Adam 用量報告 token 還是 0，scanner 跑出來全 5 個 client 一起回 401「無效的 API Key」。深入查 server 發現 Adam 的 `~/.claude/settings.json` 裡 `OWNMIND_API_KEY` 整個值是字串 `"--update"`（8 字元），不是合法的 API key。
