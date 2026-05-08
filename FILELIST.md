@@ -185,6 +185,7 @@ OwnMind/
 │   ├── install-ps1-no-bom-outputs.test.js # v1.17.12 — install.ps1 禁用 Set-Content 寫敏感檔
 │   ├── install-ps1-scanner-task-check.test.js # v1.17.12 — install.ps1 驗證 scanner task 真的註冊
 │   ├── install-prerequisite-auto-install.test.js # v1.17.76 — 缺 node/git 時 install.ps1/sh 自動安裝（vin-windows-test 回報 7 條 contract test）
+│   ├── start-cmd-node-fallback.test.js     # v1.17.77 — start.cmd 多層 node fallback + install.ps1 寫 User PATH（vin-windows-test 第二輪 5 條）
 │   ├── session-recent-query.test.js # v1.17.13 — buildSessionRecentQuery 含 q= search 支援
 │   ├── tier2-windows-fix.test.js    # v1.17.14 — Tier 2 Windows 支援（opencode win32 + sqlite3 偵測）
 │   ├── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Adam case；mcp/index.js + hook 對偶；11 tests）

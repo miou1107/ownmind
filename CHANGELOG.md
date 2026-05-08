@@ -1,5 +1,45 @@
 # OwnMind 更新紀錄
 
+## v1.17.77 — 修 v1.17.76 沒守到的下一層：start.cmd fallback + User PATH 持久化（vin-windows-test 第二輪）
+
+**背景**：v1.17.76 修了「裝 OwnMind 時自動裝 node」，但 vin-windows-test 安裝完後 Claude Code 還是無法連到 OwnMind MCP。他的 AI 助手診斷出根因：
+
+- winget 把 node 裝到 `C:\Program Files\nodejs\`，PATH 只更新 Machine scope
+- **Claude Code 早就在跑**（PATH frozen 在啟動時），spawn `cmd.exe /c start.cmd` 時繼承的 PATH 是 stale 的
+- `where node` 找不到 → MCP server 永遠起不來
+- vin-windows-test 那邊的 AI 自己改了 `start.cmd` 加 fallback 才繞過 — 但這修在使用者本機，**沒回灌到 source = 下個新 user 還是中**
+
+**修法（兩層守住）**：
+
+### `mcp/start.cmd`（runtime fallback，守住「user 還沒重啟 Claude Code」窗口）
+```
+1. where node                                       (PATH 最快路徑)
+2. C:\Program Files\nodejs\node.exe                 (winget 預設)
+3. %ProgramFiles%\nodejs\node.exe                   (相容非 C: 系統碟)
+4. %LOCALAPPDATA%\Programs\nodejs\node.exe          (winget --scope user)
+```
+全部 miss 時錯誤訊息列出每個試過的路徑 + 提示重啟 Claude Code。
+
+### `install.ps1`（install-time 持久化，下次重啟後就不用 fallback）
+- Install + version check 通過後，把 node 安裝目錄寫入 **User PATH**（`SetEnvironmentVariable scope=User`）
+- User PATH 跟 Machine PATH 都不在 = append；已在任一個 = skip（idempotent）
+- 寫失敗不致命（fallback 還在）
+
+**驗證**：
+- 新增 `tests/start-cmd-node-fallback.test.js`（5 條 contract test）
+- npm test **824/824 pass / 0 fail**
+
+**鐵律觸發**：
+- IR-006（reproduction test 先寫）✅
+- IR-007（Persistent Bug Protocol — vin-windows-test 第二輪回報，把 local 修補回灌 source）✅
+- IR-008 / IR-031 / IR-032（package.json + 三語 README + FILELIST/CHANGELOG 同步）✅
+- IR-022（Server + Client 兩端檢查 — 此次純 client 改動）✅
+- IR-038（觀測資料 — 上次發現 install_check_logs 應有但沒有；此 commit 不修，列為下一輪）
+
+**升級指引**：
+- 既有已裝 user：跑 OwnMind 升級流程，會更新 start.cmd（runtime fallback 立即生效）+ install.ps1（下次裝才用得到）
+- 全新 user：bootstrap 走完，PATH 會持久化、start.cmd 也有 fallback —**重啟 Claude Code 後即可使用**（不必重開 terminal）
+
 ## v1.17.76 — 缺 Node.js / git 時 install.ps1 + install.sh 自動安裝（vin-windows-test 回報）
 
 **背景**：vin-windows-test 在 Windows 全新環境第一次跑 install.ps1，因為沒裝 Node.js 直接 `Write-Error + exit 1`，user 只看到「請到 nodejs.org 安裝」就卡住。同檔案第 42-61 行對 sqlite3 已有完整「winget auto-install + fallback」pattern，但 pattern **沒套到 node / git** — 對最常見的「全新 user」情境最不友善。從實際安裝 log 採證還抓到三個延伸問題：
