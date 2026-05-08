@@ -563,6 +563,17 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.65 修改（autostash fallback 死路徑 — v1.17.24 backlog 清完）
+
+```
+mcp/index.js                             — autostash fallback 從 git pull --autostash 改 --ff-only
+                                            （主路徑 + fallback 都帶 --autostash 等於沒 fallback）
+tests/mcp-auto-update-cross-platform.test.js — 加 1 條 regression（fallback args 不可含 --autostash）
+package.json                             — 1.17.64 → 1.17.65
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.64 → 1.17.65
+CHANGELOG.md / FILELIST.md               — 補 v1.17.65 條目
+```
+
 ## v1.17.64 修改（self-check endpoint + auth header 修正）
 
 ```

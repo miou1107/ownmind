@@ -167,6 +167,24 @@ test('v1.17.23 mcp/index.js: 用 git pull --autostash（避免 stash 後沒 pop 
   );
 });
 
+test('v1.17.65 mcp/index.js: autostash fallback 不能再帶 --autostash（不然兩條路都同樣失敗）', () => {
+  // v1.17.23 寫了 fallback 處理 git < 2.6 沒 --autostash 支援的舊版，但 fallback
+  // 那條也帶 --autostash → 主路徑失敗的 root cause 在 fallback 一定再失敗一次。
+  // 修法：fallback 改 git pull -q --ff-only（不帶 --autostash、不帶 --rebase）。
+  // user 工作樹有未提交變更時 ff-only pull 會明確拒絕並 logEvent step=pull，user 自己處理；
+  // 不再做手動 stash → v1.17.22 已驗證手動 stash 沒 pop 會吞 user 變更。
+  const idx = mcpSource.indexOf("'pull', '-q', '--rebase', '--autostash'");
+  assert.ok(idx >= 0, '主路徑仍須是 git pull -q --rebase --autostash');
+  // 從主路徑 catch block 開始 1500 字內找 fallback 的 execFile
+  const slice = mcpSource.slice(idx, idx + 1500);
+  const fallbackMatch = slice.match(/} catch[\s\S]+?execFile\([^)]*'git'[^)]*\[([^\]]+)\]/);
+  assert.ok(fallbackMatch, '主路徑後須有 fallback execFile git 區塊');
+  assert.ok(
+    !fallbackMatch[1].includes('--autostash'),
+    'autostash fallback 不可再帶 --autostash（v1.17.23 留下的死路徑），實際參數：' + fallbackMatch[1]
+  );
+});
+
 test('v1.17.23 mcp/index.js: 外層 catch 必須 log update_failed step=outer', () => {
   // v1.17.22 runAutoUpdate().catch(() => {}) silent fail
   // 修法：catch (e) => logEvent('update_failed', { step: 'outer', error: ... })
