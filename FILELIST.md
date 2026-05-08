@@ -563,6 +563,38 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.71 修改（OwnMind 在場感 — 直寫 user terminal 繞過 AI 過濾）
+
+```
+hooks/ownmind-tty-echo.cjs                — 新增（跨平台 Node helper）
+                                            從 PostToolUse stdin 讀 JSON、抓
+                                            「【OwnMind vX.Y.Z】XXX」 + 「📢 OwnMind」
+                                            banner、合併成招牌區塊、寫 /dev/tty 或
+                                            \\.\CONOUT$；fallback 寫 banner-pending.jsonl
+                                            給下次 SessionStart 補印；嚴禁寫
+                                            stderr/stdout（規格 #3 不被 AI 吃）
+scripts/install-helpers/add-post-tool-use-hook.cjs
+                                          — 新增（idempotent merge PostToolUse hook 到
+                                            ~/.claude/settings.json；backup + atomic +
+                                            rollback；保留 user 既有設定）
+hooks/ownmind-session-start.sh            — 開頭呼叫 flush-pending-banners.js 補印
+                                            （stderr → user-visible 通道）+ 清空檔案
+hooks/lib/flush-pending-banners.js        — 新增（一次 spawn node 串流讀整個
+                                            pending file 印 stderr，避免 bash while
+                                            loop per-line spawn 在 50+ 積壓時卡頓）
+install.sh                                — MCP 設定後呼叫 add-post-tool-use-hook helper
+install.ps1                               — Windows 對稱（用同一支 cjs helper）
+tests/ownmind-tty-echo.test.js            — 新增（11 條：banner 抽取/合併/廣播/空輸入/
+                                            壞 JSON/fallback JSON Lines/stderr 必空白/
+                                            主路徑 tty 寫入）
+tests/add-post-tool-use-hook.test.js      — 新增（8 條：created/added/skipped 三狀態 +
+                                            idempotent + backup + 絕對 path + 壞 JSON
+                                            不污染原檔）
+package.json                              — 1.17.70 → 1.17.71
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.70 → 1.17.71
+CHANGELOG.md / FILELIST.md                — 補 v1.17.71 條目
+```
+
 ## v1.17.70 修改（升級備份自動清除 — IR-027 邏輯卡控）
 
 ```

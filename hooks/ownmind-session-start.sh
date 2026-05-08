@@ -9,6 +9,23 @@ LOCK_FILE="$OWNMIND_DIR/.update-lock"
 LOG_DIR="$OWNMIND_DIR/logs"
 UPDATE_MSG=""
 
+# v1.17.71：補印上次 session 因 tty 不可用沒寫成的 banner（規格 #3 不被 AI 過濾）。
+# SessionStart 的 stderr → user terminal，是 user-visible 通道。
+# JSON Lines format：每行一個 { "ts", "block" } record。
+# 單次 spawn node 串流讀整個檔（不在 bash while loop 裡 per-line spawn）—
+# 50+ banner 積壓時 per-line spawn 會卡住數秒。
+PENDING_BANNER_FILE="$LOG_DIR/banner-pending.jsonl"
+SCRIPT_DIR_FOR_FLUSH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -s "$PENDING_BANNER_FILE" ]; then
+  echo "" >&2
+  echo "📥 OwnMind 上次 session 累積的訊息（tty 寫不到、補印）：" >&2
+  node "$SCRIPT_DIR_FOR_FLUSH/lib/flush-pending-banners.js" < "$PENDING_BANNER_FILE" 2>&1 1>/dev/null
+  # 註：concurrency — 兩個 session 同時跑時，append 是 atomic（O_APPEND），但
+  # 介於 read 跟下面 truncate 之間進來的 banner 會被丟掉。v1.17.71 接受這個
+  # microsecond race；之後若有人發現掉訊息再考慮 lockfile。
+  : > "$PENDING_BANNER_FILE"  # 清空
+fi
+
 # --- Log function (local + server) ---
 log_event() {
   local event="$1"; shift

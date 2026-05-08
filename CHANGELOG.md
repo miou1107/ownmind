@@ -1,5 +1,49 @@
 # OwnMind 更新紀錄
 
+## v1.17.71 — OwnMind 在場感（presence）— 直寫 user terminal 繞過 AI 過濾（IR-027）
+
+**背景**：v1.17.0 起 MCP tool result 末尾附「【OwnMind vX.Y.Z】XXX：YYY」banner 想讓 user 看到 OwnMind 持續運作。但 Claude Code UI 把 tool result 摺疊成卡片、user 完全看不到；AI 也常吞掉不轉述到 chat。Vin 反映「我在新對話視窗中還是沒出現這種訊息」。連續幾版（v1.17.69 合併單一 text part / Codex 第二意見建議降頻）都沒解決根本問題：**訊息走 AI / tool result 通道一定會被吃**。
+
+**Vin 三條規格**：
+1. 合規回報頻繁也 OK，所有 OwnMind 動作都要 user 看見
+2. 同次觸發多條 banner 合併成一個招牌區塊
+3. **嚴禁被 AI 過濾或吃掉** — fallback 不能走 stderr / stdout / additionalContext
+
+**修法**：新增 PostToolUse hook 直寫 user terminal device，繞過 Claude Code hook output 系統。
+
+1. **新增 [hooks/ownmind-tty-echo.cjs](hooks/ownmind-tty-echo.cjs)**（跨平台 Node helper）：
+   - 從 stdin 讀 PostToolUse JSON、抓 tool_response.content 裡所有「【OwnMind vX】」 + 「📢 OwnMind」 開頭的 banner
+   - 同次觸發合併成單一招牌區塊（招牌 header + 縮排 list、不重複 prefix）
+   - 主路徑：`/dev/tty`（mac/linux）或 `\\.\CONOUT$`（Windows）— 直寫 terminal device、繞過 Claude Code
+   - Fallback：寫 `~/.ownmind/logs/banner-pending.jsonl`（JSON Lines）給 SessionStart 補印
+   - 不寫 stderr / stdout（PostToolUse stderr→AI / stdout→丟掉，都不符合規格 #3）
+   - 永遠 exit 0、不擋 tool 流程
+
+2. **新增 [scripts/install-helpers/add-post-tool-use-hook.cjs](scripts/install-helpers/add-post-tool-use-hook.cjs)**（idempotent）：
+   - settings.json 不存在 → 建立
+   - 已有其他 PostToolUse hook → append、保留既有
+   - 已有 OwnMind hook → skipped、不重複加
+   - 寫入前 `settings.json.bak.<ts>` backup、atomic tmp+rename、失敗 rollback
+
+3. **修改 [install.sh](install.sh) + [install.ps1](install.ps1)**：MCP 設定後跑 helper 把 PostToolUse hook 加進 `~/.claude/settings.json`。
+
+4. **修改 [hooks/ownmind-session-start.sh](hooks/ownmind-session-start.sh)**：開頭讀 `banner-pending.jsonl` 補印 + 清空。SessionStart 的 stderr 是 user-visible 通道（跟 PostToolUse 相反）。
+
+**Reproduction tests 19 條（IR-003）**：
+- [tests/ownmind-tty-echo.test.js](tests/ownmind-tty-echo.test.js) 11 條：banner 抽取、招牌區塊合併、廣播 block、多 content parts、空輸入 / 壞 JSON、fallback JSON Lines、**stderr/stdout 必須空白**（規格 #3 hard guarantee）、主路徑 tty 寫入
+- [tests/add-post-tool-use-hook.test.js](tests/add-post-tool-use-hook.test.js) 8 條：settings.json 不存在 / 無 hooks 區塊 / 已有其他 PostToolUse / idempotent skipped / 壞 JSON not modified / backup 機制 / 絕對 path / matcher 正確
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007（防同類雷）/ IR-008 / IR-022（client 兩端 .sh + .ps1 同步）/ IR-026 / IR-027（核心：用邏輯卡控取代「AI 應該轉述」這種提醒式設計）/ IR-031 / IR-032 / IR-038（fallback 觀測管道）。
+
+**驗證**：本地 `npm test` 803/803 pass / 0 fail（v1.17.70 是 784，+19 新 test）。額外做 local spike：用 heredoc 餵假 JSON 給 hook、強制 fallback 路徑、確認 `banner-pending.jsonl` 寫入正確的招牌區塊格式（header 單獨一行 + 縮排 list）。
+
+**Code review 抓到的修正**（superpowers:code-reviewer）：
+- **Important**：`banner-pending.jsonl` 沒大小上限、non-tty long-running script 會無限長 → 加 1 MB rotate（超過就 rename 成 `.old` 覆蓋舊的，~10k records 上限）
+- **Important**：原本 SessionStart 補印用 bash while loop 每行 spawn node，50+ banner 積壓會卡住 → 改抽出 [hooks/lib/flush-pending-banners.js](hooks/lib/flush-pending-banners.js)，stdin 一次讀完整檔
+- **Minor**：拿掉 hook entry 裡的 `name` field（Claude Code schema 沒這個欄位，雖被容忍但不該依賴；改用 `command` 字串裡的 `ownmind-tty-echo` substring 識別 idempotency）
+
+**升級指引**：純 client 端、server 不需重新部署。用戶升到 v1.17.71 後 `install.sh`/`install.ps1` 會自動把 PostToolUse hook 加進 `~/.claude/settings.json`（既有設定保留 + backup）。**重啟 Claude Code 後**下次任意 OwnMind tool 呼叫起，直接在 terminal 看到「【OwnMind v1.17.71】記憶搜尋…」banner，不靠 AI 自律。
+
 ## v1.17.70 — 升級備份自動清除（IR-027 邏輯卡控）
 
 **背景**：`interactive-upgrade.sh` / `.ps1` 升級時會把舊版本備份到 `~/.ownmind.bak.<timestamp>/`，每份約 50 MB。`bootstrap.sh` / `bootstrap.ps1` 修復路徑的 log 訊息一直寫「3 天後可手動刪除」，但**全 repo 沒有任何邏輯實際清**，使用者忘了就無限累積。Vin 機器上累積到 **19 份 / 894 MB**（從 4/23 到 5/8 共 15 天）。違反 IR-027「提醒無效，邏輯才有效」。
