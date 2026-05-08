@@ -189,27 +189,90 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     assert.match(content, /技巧提示/);
   });
 
-  it('結構性合約：兩種 tool_response shape 在同一句 banner 文字下產出一致 block（v1.17.73 IR-007 拆雷）', () => {
-    // 拆 v1.17.71 → v1.17.72 那種「fixture 集體用同一錯誤 shape」的雷。
-    // 用相同 banner 文字、兩種 shape、各跑一次，比較 block 內容必須一致。
-    // 任何 path-specific bug（例如未來 fix 只改 mcp 漏改 legacy）會立刻被抓到。
-    const text = '【OwnMind v1.17.71】記憶搜尋：A\n\n【OwnMind v1.17.71】技巧提示：B';
-    const parts = [{ type: 'text', text }];
+  // ─── 結構性合約測試（v1.17.73 引入單條 / v1.17.74 參數化 — IR-007 拆雷 ※深化）─────
+  // 拆 v1.17.71 → v1.17.72 那種「fixture 集體用同一錯誤 shape」的雷。
+  // 用相同 input 餵兩種 shape、比 extractBanners 結果必須一致（不論抽到 / 沒抽到）。
+  //
+  // v1.17.73 只覆蓋一句「kind + tip」雙 banner。reviewer 點到（v1.17.74+ m-1）：
+  // broadcast / multi-part / 空 parts / 壞 parts 都沒測 — 那些路徑的 path-specific
+  // bug 還是漏。v1.17.74 把 contract case 表化、跑同一邏輯、覆蓋 8 種變體。
+  const contractCases = [
+    {
+      name: '單條 kind banner',
+      parts: [{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A' }],
+      expectBanner: true,
+    },
+    {
+      name: '雙條 banner（kind + tip）',
+      parts: [{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A\n\n【OwnMind v1.17.71】技巧提示：B' }],
+      expectBanner: true,
+    },
+    {
+      name: '廣播 banner（📢 OwnMind 系統通知）',
+      parts: [{ type: 'text', text: '📢 OwnMind 系統通知\n[INFO] 升級到 v1.17.71\n---' }],
+      expectBanner: true,
+    },
+    {
+      name: '廣播 + 一般 banner 混合',
+      parts: [{ type: 'text', text: '📢 OwnMind 系統通知\n升級到 v1.17.74\n---\n\n【OwnMind v1.17.71】記憶搜尋：A' }],
+      expectBanner: true,
+    },
+    {
+      name: 'banner 拆到多個 content parts',
+      parts: [
+        { type: 'text', text: '【OwnMind v1.17.71】鐵律提醒：[IR-007]' },
+        { type: 'text', text: '【OwnMind v1.17.71】技巧提示：鐵律不會被刪除' },
+      ],
+      expectBanner: true,
+    },
+    {
+      name: '空 parts array（無內容）',
+      parts: [],
+      expectBanner: false,
+    },
+    {
+      name: '壞 part（type 有但 text 欄位缺）',
+      parts: [{ type: 'text' }],
+      expectBanner: false,
+    },
+    {
+      name: '純文字沒 banner',
+      parts: [{ type: 'text', text: 'No banner here, just plain data' }],
+      expectBanner: false,
+    },
+  ];
 
-    // (A) MCP shape
-    runHook({ tool_response: mcpToolResponse(parts) }, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
-    const aBlock = JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block;
+  for (const c of contractCases) {
+    it(`結構性合約 [${c.name}]：兩種 shape 行為必須一致`, () => {
+      // (A) MCP shape
+      runHook({ tool_response: mcpToolResponse(c.parts) }, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
+      const aHasFile = fs.existsSync(pendingFile);
+      const aBlock = aHasFile
+        ? JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block
+        : null;
+      if (aHasFile) fs.unlinkSync(pendingFile);  // conditional cleanup（m-6）
 
-    // 清空 pending file 再跑 (B)
-    fs.unlinkSync(pendingFile);
+      // (B) legacy shape
+      runHook({ tool_response: legacyToolResponse(c.parts) }, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
+      const bHasFile = fs.existsSync(pendingFile);
+      const bBlock = bHasFile
+        ? JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block
+        : null;
 
-    // (B) legacy shape
-    runHook({ tool_response: legacyToolResponse(parts) }, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
-    const bBlock = JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block;
+      // 兩種 shape 必須對「要不要寫 pending file」做一樣的決定
+      assert.equal(aHasFile, bHasFile,
+        `兩種 shape 必須一致決定 pending file 寫不寫（[${c.name}] mcp=${aHasFile} legacy=${bHasFile}）`);
 
-    assert.equal(aBlock, bBlock,
-      '相同 banner 文字、兩種 shape，產出的 block 必須完全一致 — 否則代表 extractBanners 有 path-specific bug');
-  });
+      if (c.expectBanner) {
+        assert.ok(aHasFile, `[${c.name}] 預期抽到 banner、應寫 pending file`);
+        assert.equal(aBlock, bBlock,
+          `[${c.name}] 兩種 shape 的 block 內容必須一致（path-specific bug 立刻被抓到）`);
+        assert.ok(aBlock && aBlock.length > 0, `[${c.name}] block 不可為空`);
+      } else {
+        assert.equal(aHasFile, false, `[${c.name}] 不該抽到 banner、不該寫 pending file`);
+      }
+    });
+  }
 
   it('壞掉的 JSON 輸入也不能 crash（防呆）', () => {
     const r = runHook('this is not json');

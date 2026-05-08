@@ -563,6 +563,20 @@ package.json / README* / docs/README*     — 1.17.45 → 1.17.46
 CHANGELOG.md                              — v1.17.46 條目
 ```
 
+## v1.17.74 修改（contract test 參數化 — 1→8 條，覆蓋 broadcast / multi-part / 空 / 壞 parts 變體）
+
+```
+tests/ownmind-tty-echo.test.js            — contract test 從 1 條變 8 條（contractCases
+                                            array + for loop 生成 8 個獨立 it），
+                                            覆蓋單 banner / 雙 banner / 廣播 / 廣播+混合 /
+                                            multi-part / 空 parts / 壞 part / 純文字
+                                            8 種變體；conditional cleanup 修 v1.17.73 m-6
+                                            （13→20 條）
+package.json                              — 1.17.73 → 1.17.74
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.73 → 1.17.74
+CHANGELOG.md / FILELIST.md                — 補 v1.17.74 條目
+```
+
 ## v1.17.73 修改（結構性拆 v1.17.71/v1.17.72 fixture 集體偽陽性雷 — IR-007 follow-through）
 
 ```

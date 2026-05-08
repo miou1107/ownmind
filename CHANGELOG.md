@@ -1,5 +1,50 @@
 # OwnMind 更新紀錄
 
+## v1.17.74 — 深化結構性 contract test：把 1 條變 8 條、覆蓋 broadcast / multi-part / 空 parts / 壞 parts 變體（v1.17.73 m-1 / m-6）
+
+**背景**：v1.17.73 加了一條結構性 contract test（兩種 tool_response shape 產出 block 必須一致），但只覆蓋一種 banner 文字（kind + tip 雙 banner）。Code review 點到（v1.17.74+ m-1）：broadcast / multi-part / 空 parts / 壞 parts 都沒測，那些路徑的 path-specific bug 還是漏。
+
+**修法**：把 contract test 表化（`contractCases` array），用 `for` loop 為每個 case 生成獨立 `it`，覆蓋 8 種變體：
+
+| # | case | 預期 |
+|---|---|---|
+| 1 | 單條 kind banner | 抽到 |
+| 2 | 雙條 banner（kind + tip） | 抽到 |
+| 3 | 廣播 banner（📢 OwnMind 系統通知） | 抽到 |
+| 4 | 廣播 + 一般 banner 混合 | 抽到 |
+| 5 | banner 拆到多個 content parts | 抽到 |
+| 6 | 空 parts array | 不該抽到 |
+| 7 | 壞 part（type 有但 text 缺） | 不該抽到 |
+| 8 | 純文字沒 banner | 不該抽到 |
+
+每個 case 都同時驗：(1) 兩種 shape 一致決定要不要寫 pending file、(2) 預期抽到時兩種 shape 的 block 內容必須完全相同、(3) 預期不抽到時兩種 shape 都不該寫 file。
+
+**順便修 v1.17.73 m-6**：原本 contract test 用 `fs.unlinkSync(pendingFile)` 在兩次 runHook 之間清，沒檢查 file 是否存在 — 對「expectBanner: false」case 會炸（檔不存在）。改成 conditional：`if (aHasFile) fs.unlinkSync(pendingFile)`。
+
+**Mutation test 驗證拆雷威力倍增**：
+
+| Mutation | v1.17.73（單條 contract） | v1.17.74（8 條參數化） |
+|---|---|---|
+| legacy 路徑斷掉（回 `[]`） | 3 條紅 | **7 條紅** |
+| broadcast trigger 改成只認 `📢 OwnMind 系統 XXX`（更嚴格） | 2 條紅 | 2 條紅 |
+
+leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / multi-part 變體）。
+
+**誠實揭露 contract test 盲點**：mutation B（broadcast 識別改嚴）下，[廣播 + 一般 banner 混合] case **沒紅** — 因為一般 banner 還是被抓到、block 還有內容，雖然 broadcast 部分兩種 shape 都掉了但比對相等。「兩 path 一致 ≠ 行為正確」。靠原本「支援廣播 banner」的絕對比對測試補位才抓到。
+
+**Lesson learned（記給未來）**：
+- contract test（relative invariant）跟 absolute test（固定預期值）是互補關係，不能彼此取代
+- contract test 抓 path-specific 漂移；absolute test 抓 path-independent 行為崩壞
+- 一個結構良好的測試套要兩種都有，比例上 absolute 多、contract 少（contract 主要是給 multi-path 函數防 path-divergence 用）
+
+**驗證**：
+- npm test 812/812 pass / 0 fail（v1.17.73 是 805、+7 contract case，原本的 1 條取代成 8 條 → 淨 +7）
+- 雙重 mutation test 跑通（legacy 路徑 / broadcast trigger）
+
+**鐵律觸發**：IR-007（深化拆雷）/ IR-008 / IR-026 / IR-031 / IR-032。
+
+**升級指引**：純測試重構，hooks 行為零改動。用戶不會感覺到差異。意義在於更廣泛的 path-specific bug 會被多條 contract case 同時抓到。
+
 ## v1.17.73 — 結構性拆 v1.17.71/v1.17.72 那種「fixture 集體偽陽性」雷（IR-007 follow-through）
 
 **背景**：v1.17.72 修了 v1.17.71 那個「19 條 fixture 全部用同一錯誤 shape → 803/803 測試全綠但 prod 100% 壞」的 bug。但 v1.17.72 是點修補 — 只加了 1 條 IR-007 regression test 守住 (A) shape 那條路徑。如果未來有人手滑、把這條測試刪掉或改成跟其他一樣的 shape，又會回到 v1.17.71 的雷型（fixture 集體偏向某一 shape → 另一條路徑壞掉沒人發現）。Code review 把這列為 v1.17.73+ backlog M-1。
