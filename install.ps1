@@ -2,11 +2,30 @@
 # 用法: .\install.ps1 YOUR_API_KEY YOUR_API_URL
 # 或: $env:OWNMIND_API_KEY='xxx'; $env:OWNMIND_API_URL='https://your-server.com/ownmind'; irm https://raw.githubusercontent.com/miou1107/ownmind/main/install.ps1 | iex
 
+# --- ExecutionPolicy Bypass for current process (v1.17.76, 回報者 vin-windows-test) ---
+# 預設 PS Restricted 會擋 npm install / npx 的 cmdlet — 只影響當前 process，不動 system policy。
+try {
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue
+} catch { }
+
 # --- 環境正規化（v1.17.9, 回報者 Adam）---
 # 從 Git Bash / MSYS / Cygwin 呼叫 powershell 時，$HOME 會是 POSIX 格式 /c/Users/xxx，
 # 跟 Windows path 串接變 C:\c\Users\xxx 怪路徑。強制把 $HOME 指向 $env:USERPROFILE。
 if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
   Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
+}
+
+# --- Reload-Path helper (v1.17.76) ---
+# winget install 完不會更新當前 session 的 $env:Path。從 Machine + User scope
+# 重組 PATH 讓剛裝的 node/git 馬上能用，不必 user 重開 terminal。
+function Reload-Path {
+  $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+  $userPath = [System.Environment]::GetEnvironmentVariable("Path", "User")
+  if ($machinePath -and $userPath) {
+    $env:Path = "$machinePath;$userPath"
+  } elseif ($machinePath) {
+    $env:Path = $machinePath
+  }
 }
 
 # --- 參數處理（同時支援 param 和環境變數，irm | iex 不支援 param）---
@@ -26,15 +45,57 @@ if (-not $ApiUrl) {
 
 Write-Host "OwnMind 安裝中..." -ForegroundColor Cyan
 
-# --- 檢查必要工具 ---
+# --- 檢查必要工具（v1.17.76：缺 git/node 走 winget 自動裝，回報者 vin-windows-test）---
+# v1.17.75 之前：缺 git 或 node 直接 Write-Error exit，user 沒裝過 = 完全卡死。
+# 現在：跟 sqlite3 同 pattern → winget 自動裝、reload PATH、再驗證一次。
+function Install-WithWinget {
+  param(
+    [string]$ToolName,    # "git" / "node"
+    [string]$WingetId,    # "Git.Git" / "OpenJS.NodeJS.LTS"
+    [string]$ManualUrl    # 手動安裝 fallback URL
+  )
+  Write-Host "   未偵測到 $ToolName（OwnMind 必要依賴）" -ForegroundColor Yellow
+  $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+  if (-not $hasWinget) {
+    Write-Error "找不到 winget 也找不到 $ToolName。請到 $ManualUrl 下載安裝後重跑。"
+    exit 1
+  }
+  Write-Host "   嘗試用 winget 自動安裝 $WingetId（約需 1-2 分鐘）..."
+  try {
+    winget install --id $WingetId --scope user --silent --accept-source-agreements --accept-package-agreements 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Error "winget install $WingetId 失敗 (exit=$LASTEXITCODE)。請手動安裝 $ToolName ($ManualUrl) 後重跑。"
+      exit 1
+    }
+  } catch {
+    Write-Error "winget install $WingetId 失敗：$_。請手動安裝 $ToolName ($ManualUrl) 後重跑。"
+    exit 1
+  }
+  Reload-Path
+  if (-not (Get-Command $ToolName -ErrorAction SilentlyContinue)) {
+    Write-Error "$ToolName 已裝但當前 PowerShell session 仍找不到。請完全關閉此 terminal、重開後再執行同一條 install 指令。"
+    exit 1
+  }
+  Write-Host "   ✅ $ToolName 已裝（PATH 已重整）" -ForegroundColor Green
+}
+
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-  Write-Error "找不到 git，請先安裝 Git for Windows: https://git-scm.com/download/win"
-  exit 1
+  Install-WithWinget -ToolName "git" -WingetId "Git.Git" -ManualUrl "https://git-scm.com/download/win"
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  Write-Error "找不到 node，請先安裝 Node.js: https://nodejs.org/"
+  Install-WithWinget -ToolName "node" -WingetId "OpenJS.NodeJS.LTS" -ManualUrl "https://nodejs.org/"
+}
+
+# Node 版本驗證（>= v20，scanner / mcp 需要）
+$nodeVerRaw = (& node --version 2>$null)
+$nodeVer = $nodeVerRaw -replace '^v', ''
+$nodeMajor = 0
+try { $nodeMajor = [int]($nodeVer -split '\.' | Select-Object -First 1) } catch { }
+if ($nodeMajor -lt 20) {
+  Write-Error "Node.js 版本過舊 ($nodeVerRaw)；OwnMind 需要 v20+。請升級後重跑：winget upgrade OpenJS.NodeJS.LTS"
   exit 1
 }
+Write-Host "   Node.js: $nodeVerRaw ✓" -ForegroundColor Gray
 
 # --- sqlite3 自動裝（v1.17.14，Tier 2 Cursor/Antigravity/OpenCode 需要）---
 # Windows 預設沒 sqlite3 CLI → Cursor/Antigravity/OpenCode usage 永遠收不到。
