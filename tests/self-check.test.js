@@ -350,7 +350,7 @@ describe('v1.17.68 — checkApiKeyFormat（client 端格式驗證 / 不打 serve
   it('長度 < 16 fail（合法 UUID 36 / custom prefix ≥ 20）', () => {
     const r = selfCheck.checkApiKeyFormat('shortkey1234');
     assert.equal(r.status, 'fail');
-    assert.match(r.detail, /長度/);
+    assert.match(r.detail, /length|too short/i);
   });
 
   it('含空白字元 fail（CR/LF/space/tab — 設定檔複製貼上常見污染）', () => {

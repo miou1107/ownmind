@@ -2,7 +2,7 @@ AI個人化永久記憶解決方案
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.17.81** · 詳見 [CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.17.82** · 詳見 [CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 跨平台 AI 個人記憶系統
 
@@ -181,7 +181,7 @@ sequenceDiagram
 - **鐵律智慧強化** — 根據合規歷史自動加強經常違反的規則提醒
 - **離線韌性** — 本地快取回退 + 寫入佇列，斷線操作上線後自動重播 `v1.14.0`
 
-## OwnMind 在不同 AI 客戶端的體驗 `v1.17.81`
+## OwnMind 在不同 AI 客戶端的體驗 `v1.17.82`
 
 OwnMind 的 banner（記憶載入 / 寫入 / 讀取 / 鐵律觸發 / 合規違反 / 廣播通知等）在**大部分 MCP 客戶端**會自然出現 — 它們的對話 UI 不摺疊 tool 回應、AI 也會老實把 banner 內容轉述到回覆裡。**Claude Code 是例外** — 它的 UI 把 MCP tool 回應摺疊成卡片、加上設計上讓 AI 獨佔對話訊息流，導致 OwnMind banner 預設情況下 user 看不到。
 

@@ -53,7 +53,8 @@ send_update_beacon() {
 }
 send_update_beacon 'update_started'
 
-echo "🔄 OwnMind 同步更新中..."
+echo "OwnMind sync (light path)"
+echo "─────────────────────────────────────────────"
 
 # --- 1. 同步 Claude Code skills ---
 if [ -d "$HOME/.claude" ]; then
@@ -64,7 +65,7 @@ if [ -d "$HOME/.claude" ]; then
     mkdir -p "$HOME/.claude/skills/ownmind-upgrade"
     cp "$OWNMIND_DIR/skills/ownmind-upgrade.md" "$HOME/.claude/skills/ownmind-upgrade/SKILL.md"
   fi
-  echo "   ✅ skills 已更新（ownmind-memory + ownmind-upgrade）"
+  echo "[ OK ] Skills synced (ownmind-memory + ownmind-upgrade)"
 fi
 
 # --- 1b. 同步升級規則到其他 AI 工具（跳過未安裝的）---
@@ -92,7 +93,7 @@ if [ -f "$UPGRADE_SNIPPET" ]; then
   append_rule "$HOME/.opencode/AGENTS.md"
   append_rule "$HOME/.windsurf/rules/ownmind.md"
   append_rule "$HOME/.gemini/GEMINI.md"
-  echo "   ✅ 升級規則已同步到偵測到的 AI 工具"
+  echo "[ OK ] Upgrade rules synced to detected AI tools"
 fi
 
 # --- 2. 同步 hook scripts + hooks/lib 模組 ---
@@ -109,14 +110,14 @@ if [ -d "$HOME/.claude" ]; then
   if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
     cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
   fi
-  echo "   ✅ hook scripts 已同步"
+  echo "[ OK ] Hook scripts synced"
 fi
 
 # --- 2b. 同步 usage scanner（需要 shared/ 模組，留在 $OWNMIND_DIR 本體下執行）---
 # P6 的 launchd / systemd 會呼叫 $OWNMIND_DIR/hooks/ownmind-usage-scanner.js
 if [ -f "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" ]; then
   chmod +x "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js"
-  echo "   ✅ usage scanner 已就緒"
+  echo "[ OK ] Usage scanner ready"
 fi
 
 # --- 3. 確保 Claude Code settings.json 有所有 hook 設定 ---
@@ -278,4 +279,5 @@ fi
 # --- 標記 SessionStart hook 已安裝（避免 iron-rule-check 重複升級）---
 touch "$HOME/.ownmind/.session-hook-installed"
 
-echo "✅ OwnMind 同步完成"
+echo "─────────────────────────────────────────────"
+echo "OwnMind sync complete"

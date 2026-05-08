@@ -37,7 +37,7 @@ function Log-Info($code, $msg) { Write-Host "INFO:${code}:${msg}" }
 function Log-Ok($code, $msg)   { Write-Host "OK:${code}:${msg}" }
 function Log-Err($code, $msg)  { Write-Host "ERROR:${code}:${msg}" -ForegroundColor Red }
 
-Log-Info detect "檢查 OwnMind 安裝狀態（$OwnmindDir）"
+Log-Info detect "Checking OwnMind installation ($OwnmindDir)"
 
 # Forward positional args (if any) to install.ps1; install.ps1 falls back to
 # $env:OWNMIND_API_KEY / $env:OWNMIND_API_URL when args are empty (see its own
@@ -47,41 +47,41 @@ $InstallArgs = $args
 
 # Branch 1: no install
 if (-not (Test-Path "$OwnmindDir")) {
-  Log-Info fresh "首次安裝，clone repo"
+  Log-Info fresh "Fresh install: cloning repo"
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
-    Log-Err git_clone "git clone 失敗，請檢查網路或 GitHub 權限"
+    Log-Err git_clone "git clone failed (check network or GitHub access)"
     exit 1
   }
-  Log-Ok clone "clone 完成"
+  Log-Ok clone "Clone complete"
   Set-Location "$OwnmindDir"
-  Log-Info install "執行 install.ps1（轉發 API_KEY / API_URL）"
+  Log-Info install "Running install.ps1 (forwarding API_KEY / API_URL)"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
-  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1 }
-  Log-Ok done "首次安裝完成"
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
+  Log-Ok done "Fresh install complete"
   exit 0
 }
 
 # Branch 2: broken
 if (-not (Test-Path "$OwnmindDir\.git")) {
   $Bak = "$OwnmindDir.broken.$Ts"
-  Log-Info broken "$OwnmindDir 存在但不是 git repo，備份至 $Bak"
+  Log-Info broken "$OwnmindDir exists but is not a git repo; backing up to $Bak"
   Move-Item "$OwnmindDir" "$Bak"
-  Log-Ok backup "已備份"
-  Log-Info fresh "重新 clone"
+  Log-Ok backup "Backed up"
+  Log-Info fresh "Re-cloning"
   git clone "$Repo" "$OwnmindDir"
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$OwnmindDir\.git")) {
-    Log-Err git_clone "重新 clone 失敗，舊資料已保留於 $Bak"
+    Log-Err git_clone "Re-clone failed; old data preserved at $Bak"
     exit 1
   }
   Set-Location "$OwnmindDir"
   & powershell -ExecutionPolicy Bypass -File .\install.ps1 @InstallArgs
-  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 失敗（缺 API_KEY/URL 或其他錯誤）"; exit 1 }
-  Log-Ok done "修復完成（舊資料保留於 $Bak，下次升級自動清除超過 7 天的舊備份）"
+  if ($LASTEXITCODE -ne 0) { Log-Err install "install.ps1 failed (missing API_KEY/URL or other error)"; exit 1 }
+  Log-Ok done "Repair complete (old data preserved at $Bak; backups older than 7 days are swept on next upgrade)"
   exit 0
 }
 
 # Branch 3: normal upgrade
-Log-Info upgrade "已安裝，交給 interactive-upgrade.ps1"
+Log-Info upgrade "Installed; delegating to interactive-upgrade.ps1"
 & powershell -ExecutionPolicy Bypass -File "$OwnmindDir\scripts\interactive-upgrade.ps1"
 exit $LASTEXITCODE

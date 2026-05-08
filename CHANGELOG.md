@@ -1,5 +1,64 @@
 # OwnMind 更新紀錄
 
+## v1.17.82 — Stdout 全英文化 + self-check 專業格式（解 mojibake、產品品質）
+
+**背景**：vin-windows-test 第六輪實測升級成功，但 PowerShell console 把 bash 輸出的 UTF-8 中文當 cp950 解碼，整螢幕 mojibake：
+
+```
+INFO:detect:�ˬd OwnMind �w�˪��A�]C:\Users\Vin\.ownmind�^
+INFO:upgrade:�w�w�ˡA�浹 interactive-upgrade.ps1
+```
+
+Vin 觀察：「我不希望顯示亂碼，可以用英文顯示，self-check 訊息要專業一點，要像是專業軟體」。
+
+**Root cause**：bootstrap.ps1 → 跑 bash → bash 用 UTF-8 輸出 → PS console codepage 是 cp950 → mojibake。最乾淨的解法是 **stdout 一律 ASCII (英文)**，不 fight encoding chain。
+
+**修法（涵蓋全部 user-facing 腳本 stdout）**：
+
+| 檔案 | 改動 |
+|---|---|
+| `scripts/bootstrap.{sh,ps1}` | INFO/OK/ERROR 後訊息全英文 |
+| `scripts/interactive-upgrade.{sh,ps1}` | 升級每階段 INFO/OK/ERROR 訊息全英文 |
+| `install.{sh,ps1}` | 安裝每階段 + winget / git / npm 失敗訊息全英文 |
+| `scripts/update.{sh,ps1}` | sync 訊息全英文 |
+| `scripts/install-helpers/self-check.cjs` | `printConsole()` 重設計成 industry-standard log 格式 |
+
+### Self-check 新格式（professional, ASCII-only）
+
+```
+OwnMind self-check
+--------------------------------------------------
+[ OK ]  mcp_files            ~/.ownmind/mcp/index.js
+[ OK ]  package_version      v1.17.82
+[ OK ]  mcp_node_modules     99 modules
+[ OK ]  server_health        https://kkvin.com/ownmind/health -> 200
+[ OK ]  api_key_format       valid (len=22)
+[ OK ]  api_credentials      authenticated
+[ OK ]  git_hooks            3 hooks installed
+[ OK ]  scheduler            launchd agent loaded
+
+Summary:  8 passed, 0 warnings, 0 failed
+Log:      ~/.ownmind/logs/self-check-...log
+Upload:   succeeded
+--------------------------------------------------
+```
+
+對齊 npm / docker / CI tool 工業標準 — `[ OK ] / [WARN] / [FAIL]` 三狀態，移除 emoji 跟 `=====` 雙線（換成 `─`），列對齊。
+
+### 不動的部分
+- 內部 log 檔內容（admin 看的，繁中 OK，無 encoding hazard）
+- 程式碼註解（中文 OK，不是 stdout）
+- IR rule / memory entries（個人化中文）
+- Admin dashboard UI（另一回合）
+
+**驗證**：
+- npm test **858/858 pass**（一條原本 assert.match `/長度/` 的 test 改成 `/length|too short/i`）
+- 沒有 prod-side 改動
+
+**鐵律觸發**：IR-008 / IR-031 / IR-032 / IR-036（白話對應）/ IR-037（不中英混雜 — 這版執行徹底，stdout 純英文，但內部記憶/IR/註解保留繁中對 Vin 友善）
+
+**升級指引**：對 user 完全無感（功能不變）。下次升級 vin-windows-test 不會再看到 mojibake。Mac/Linux user 看到一致的英文輸出。整體看起來像 npm/docker 級的專業工具。
+
 ## v1.17.81 — update.ps1 StackOverflow 根因修法 + update.{ps1,sh} 觀測管道補洞（vin-windows-test 第五輪）
 
 **背景**：vin-windows-test 第五輪測試他的 AI 助手用 `find` 搜「*update*」抓到 `update.ps1`，跑下去：

@@ -58,21 +58,21 @@ function Run-SelfCheckOnce {
 try {
 
 # --- 0. Pre-check ---
-Step "check" "檢查 OwnMind 目錄是否存在"
-if (-not (Test-Path $OwnMindDir)) { Fail "no_ownmind" "找不到 $OwnMindDir，請先跑 install.ps1 初始安裝" }
-if (-not (Test-Path (Join-Path $OwnMindDir ".git"))) { Fail "no_git" "$OwnMindDir 不是 git repo" }
+Step "check" "Checking OwnMind directory"
+if (-not (Test-Path $OwnMindDir)) { Fail "no_ownmind" "$OwnMindDir not found; run install.ps1 for fresh install" }
+if (-not (Test-Path (Join-Path $OwnMindDir ".git"))) { Fail "no_git" "$OwnMindDir is not a git repo" }
 
-# --- 1. 備份 ---
-Step "backup" "備份到 $BackupDir"
-try { Copy-Item -Recurse -Path $OwnMindDir -Destination $BackupDir; OK "backup" "備份完成" }
-catch { Fail "backup_failed" "備份失敗：$_" }
+# --- 1. Backup ---
+Step "backup" "Backing up to $BackupDir"
+try { Copy-Item -Recurse -Path $OwnMindDir -Destination $BackupDir; OK "backup" "Backup complete" }
+catch { Fail "backup_failed" "Backup failed: $_" }
 
 function Rollback {
-  Step "rollback" "還原備份 $BackupDir → $OwnMindDir"
+  Step "rollback" "Restoring backup $BackupDir -> $OwnMindDir"
   try {
     Remove-Item -Recurse -Force $OwnMindDir -ErrorAction Stop
     Move-Item -Path $BackupDir -Destination $OwnMindDir
-    OK "rollback" "已還原舊版"
+    OK "rollback" "Restored previous version"
   } catch { Write-Host "ERROR:rollback_failed:$_" }
 }
 
@@ -81,50 +81,50 @@ function Rollback {
 # dirty 就 Report-Error + git fetch + reset --hard origin/main 強制對齊（backup 保險絲已先做）。
 # 真實案例：vin-windows-test 的 AI 編輯 mcp/start.cmd 加 fallback，下次 git pull --ff-only
 # 直接被 reject、整個升級卡住，server 完全沒紀錄。
-Step "pull" "拉取最新 OwnMind"
+Step "pull" "Pulling latest OwnMind"
 Push-Location $OwnMindDir
 
 $dirty = git status --porcelain 2>$null
 if ($dirty) {
-  Step "pull_dirty" "偵測到 working tree 有未 commit 改動，自動對齊 origin/main（備份已先做）"
+  Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
   $dirty | Out-File -FilePath $dirtyLog -Encoding utf8
-  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain 非空，自動 reset --hard 對齊 origin/main" -ContextFile $dirtyLog
+  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain non-empty; auto reset --hard to origin/main" -ContextFile $dirtyLog
   git fetch origin 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -eq 0) {
     git reset --hard origin/main 2>&1 | Out-File -Append $LogFile -Encoding utf8
   }
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main 失敗" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "強制對齊也失敗（網路或權限），備份已還原"
+    Fail "git_pull" "Force-align failed (network or permissions); backup restored"
   }
-  OK "pull" "強制對齊完成（dirty 改動已蓋掉，舊版見備份）"
+  OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
 } else {
   $pullOut = git pull --ff-only 2>&1
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only 失敗（可能網路或非 ff merge）" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed (network or non-ff merge)" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "git pull 失敗（可能網路），備份已還原"
+    Fail "git_pull" "git pull failed; backup restored"
   }
-  OK "pull" "git pull 成功"
+  OK "pull" "git pull complete"
 }
 
 # --- 3. npm install (MCP) ---
 $mcpDir = Join-Path $OwnMindDir "mcp"
 if (Test-Path (Join-Path $mcpDir "package.json")) {
-  Step "npm_install" "更新 MCP 依賴"
+  Step "npm_install" "Updating MCP dependencies"
   Set-Location $mcpDir
   npm install --silent 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install 失敗" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "npm_install" "MCP npm install 失敗，備份已還原"
+    Fail "npm_install" "MCP npm install failed; backup restored"
   }
-  OK "npm_install" "MCP 依賴完成"
+  OK "npm_install" "MCP dependencies updated"
   Set-Location $OwnMindDir
 }
 
@@ -135,7 +135,7 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
 # got treated as the key, leading to silent mis-configuration. Now mirrors
 # the bash interactive-upgrade.sh pattern: read creds from settings.json
 # and pass them as positional args.
-Step "install" "重跑 install.ps1（skill / hook / 排程同步）"
+Step "install" "Re-running install.ps1 (sync skills / hooks / scheduler)"
 $installScript = Join-Path $OwnMindDir "install.ps1"
 $claudeSettings = Join-Path $env:USERPROFILE ".claude\settings.json"
 $apiKey = ""
@@ -151,26 +151,26 @@ if (Test-Path $claudeSettings) {
 }
 
 if (-not (Test-Path $installScript)) {
-  Step "install" "找不到 install.ps1，跳過（結構異常，建議重裝）"
+  Step "install" "install.ps1 not found; skipping (structure abnormal, reinstall recommended)"
 } elseif ([string]::IsNullOrEmpty($apiKey) -or [string]::IsNullOrEmpty($apiUrl)) {
-  Step "install" "找不到現有 credentials，跳過 install.ps1 重跑（skill/hook 可由後續 update.sh 補）"
+  Step "install" "No existing credentials; skipping install.ps1 re-run (skill/hook synced by update.sh)"
 } else {
   & powershell -ExecutionPolicy Bypass -File $installScript $apiKey $apiUrl 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback
-    Fail "install" "install.ps1 失敗（詳細見 $LogFile）；備份已還原"
+    Fail "install" "install.ps1 failed (see $LogFile); backup restored"
   }
-  OK "install" "setup 完成"
+  OK "install" "Setup complete"
 }
 
-# --- 5. 重註冊 Task Scheduler ---
+# --- 5. Re-register Task Scheduler ---
 $taskScript = Join-Path $OwnMindDir "scripts\windows\register-scanner-task.ps1"
 if (Test-Path $taskScript) {
-  Step "reschedule" "重註冊 Task Scheduler"
+  Step "reschedule" "Re-registering Task Scheduler"
   & powershell -ExecutionPolicy Bypass -File $taskScript 2>&1 | Out-File -Append $LogFile -Encoding utf8
-  if ($LASTEXITCODE -eq 0) { OK "reschedule" "Task Scheduler 重註冊完成" }
-  else { Step "reschedule" "Task Scheduler 重註冊失敗，但升級本體已完成" }
+  if ($LASTEXITCODE -eq 0) { OK "reschedule" "Task Scheduler re-registered" }
+  else { Step "reschedule" "Task Scheduler re-register failed; upgrade itself complete" }
 }
 
 # --- 6. 驗測 + 清理 ---
@@ -186,21 +186,21 @@ if (Test-Path $verifyScript) {
   }
 
   if (-not $bashExe) {
-    Step "verify_local" "找不到 Git Bash（請安裝 https://git-scm.com/），跳過 verify 但不擋升級"
+    Step "verify_local" "Git Bash not found (install from https://git-scm.com/); skipping verify but upgrade continues"
   } else {
-    Step "verify_local" "本地元件驗測"
+    Step "verify_local" "Verifying local components"
     & $bashExe $verifyScript --local 2>&1 | Out-File -Append $LogFile -Encoding utf8
-    if ($LASTEXITCODE -eq 0) { OK "verify_local" "本地元件全在" }
-    else { Step "verify_local" "本地驗測失敗（不擋升級，繼續走完 self-check 觀測）" }
+    if ($LASTEXITCODE -eq 0) { OK "verify_local" "Local components present" }
+    else { Step "verify_local" "Local verification failed (upgrade continues; self-check will observe)" }
 
-    Step "verify_server" "Server 驗測"
+    Step "verify_server" "Verifying server"
     & $bashExe $verifyScript --server 2>&1 | Out-File -Append $LogFile -Encoding utf8
-    if ($LASTEXITCODE -eq 0) { OK "verify_server" "server 正常" }
-    else { Step "verify_server" "server 驗測失敗（可能網路暫斷）" }
+    if ($LASTEXITCODE -eq 0) { OK "verify_server" "Server reachable" }
+    else { Step "verify_server" "Server verification failed (possible network blip)" }
 
-    Step "cleanup" "清理測試資料"
+    Step "cleanup" "Cleaning up test data"
     & $bashExe $verifyScript --cleanup 2>&1 | Out-File -Append $LogFile -Encoding utf8 | Out-Null
-    OK "cleanup" "測試資料已清"
+    OK "cleanup" "Test data cleaned"
   }
 }
 
@@ -212,7 +212,7 @@ $Version = $pkg.version
 # --- 7. Dismiss 已過時的升級廣播（v1.17.18） ---
 # 把 dismiss 從 AI skill 移到腳本（IR-027 邏輯卡控），對齊 .sh 行為。
 if ($apiKey -and $apiUrl -and $Version) {
-  Step "dismiss" "Dismiss 已過時的升級廣播"
+  Step "dismiss" "Dismissing stale upgrade broadcasts"
   try {
     $headers = @{
       "Authorization"     = "Bearer $apiKey"
@@ -233,9 +233,9 @@ if ($apiKey -and $apiUrl -and $Version) {
         }
       }
     }
-    OK "dismiss" "升級廣播已 dismiss（$count 則）"
+    OK "dismiss" "Upgrade broadcasts dismissed ($count)"
   } catch {
-    Step "dismiss" "Dismiss 失敗（網路或 server 暫斷），不影響升級結果"
+    Step "dismiss" "Dismiss failed (network or server blip); does not affect upgrade outcome"
   }
 }
 
@@ -246,18 +246,18 @@ if ($apiKey -and $apiUrl -and $Version) {
 $RetentionDays = if ($env:OWNMIND_BACKUP_RETENTION_DAYS) {
   [int]$env:OWNMIND_BACKUP_RETENTION_DAYS
 } else { 7 }
-Step "sweep" "清除超過 $RetentionDays 天的舊備份（如有）"
+Step "sweep" "Sweeping backups older than $RetentionDays days (if any)"
 try {
   $cutoff = (Get-Date).AddDays(-$RetentionDays)
   Get-ChildItem -LiteralPath $HOME -Directory -Force -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -like '.ownmind.bak.*' -and $_.LastWriteTime -lt $cutoff } |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
-  OK "sweep" "舊備份 sweep 完成"
+  OK "sweep" "Old backup sweep complete"
 } catch {
-  Step "sweep" "sweep 跳過（error: $($_.Exception.Message)）"
+  Step "sweep" "Sweep skipped (error: $($_.Exception.Message))"
 }
 
-OK "done" "升級完成 → 版本：$Version。備份保留於 $BackupDir（$RetentionDays 天後下次升級自動清）"
+OK "done" "Upgrade complete -> version $Version. Backup kept at $BackupDir (auto-swept after $RetentionDays days)"
 
 }
 catch {
