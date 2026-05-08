@@ -1268,13 +1268,15 @@ async function runAutoUpdate() {
     // 有新版，繼續
     // v1.17.23: 用 --autostash（git 2.6+）取代手動 stash／無 pop 流程
     // 之前手動 stash 但沒 pop，user 未提交變更會永遠卡 stash 裡
+    // v1.17.65: fallback 不再帶 --autostash（之前主路徑跟 fallback 都帶 --autostash，
+    // git < 2.6 兩條都失敗等於沒 fallback）。改 --ff-only：dirty tree 會拒絕並 logEvent，
+    // user 看 log 自己處理；絕不做手動 stash（v1.17.22 已驗證沒 pop 會吞變更）。
     try {
       await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
         { cwd: OWNMIND_DIR, timeout: 30000 });
     } catch {
-      // fallback：autostash 不支援的舊 git → 不帶 rebase 試一次
       try {
-        await execFile('git', ['pull', '-q', '--autostash'],
+        await execFile('git', ['pull', '-q', '--ff-only'],
           { cwd: OWNMIND_DIR, timeout: 30000 });
       } catch (e) {
         return fail('pull', e);
