@@ -121,6 +121,24 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
   fi
 fi
 
+# v1.17.86 IR-038：drain .upload-spool.jsonl（v1.17.85 reviewer I1 + IR-007 同類雷收尾）
+# 場景：升級成功末段的 upgrade_complete beacon / post_upgrade self-check 上傳失敗時
+# 寫進 .upload-spool.jsonl，原本要等下次 self-check.cjs 才 drain。但若 user 升完就
+# quit Claude Code，永遠沒下次 self-check 來觸發 → spool 卡在他本機、server 永遠
+# 看不到 user 升上去了。
+# 改在 SessionStart 也跑 drain — 任何新 Claude Code session 起來都 retry 一次、
+# 縮短「user 升完 → server 看到」的延遲到「下次開 Claude Code」即可。
+# Fire-and-forget、3 秒 timeout、絕不擋 SessionStart。
+SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+if [ -f "$SELF_CHECK_SCRIPT" ] && [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
+  timeout 3 node -e "
+    const sc = require('$SELF_CHECK_SCRIPT');
+    if (sc.retrySpool) {
+      sc.retrySpool('$API_URL', '$API_KEY').catch(() => {});
+    }
+  " >/dev/null 2>&1 &
+fi
+
 # --- 呼叫 OwnMind init API（compact mode）---
 INIT_DATA=$(curl -sf --max-time 5 \
   -H "Authorization: Bearer $API_KEY" \

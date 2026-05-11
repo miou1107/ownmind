@@ -195,6 +195,7 @@ OwnMind/
 │   ├── upgrade-windows-file-lock.test.js    # v1.17.84 — Windows file-lock 偵測 + check-sync.sh L2 grep fallback（vin-windows-test 第七輪 7 條）
 │   ├── install-failed-beacon.test.js        # v1.17.85 — interactive-upgrade FAIL 函式統一補 fallback report_error（IR-038 觀測盲點補強 3 條）
 │   ├── debug-route-beacon-version.test.js   # v1.17.85 — debug.js beacon trigger client_version 強制 NULL，admin query 不再被 sentinel 污染（6 條）
+│   ├── upgrade-complete-beacon.test.js      # v1.17.86 — upgrade_complete beacon + SessionStart drain spool（IR-038 兩 source 對不上修補 + IR-007 同類雷收尾 7 條）
 │   ├── session-recent-query.test.js # v1.17.13 — buildSessionRecentQuery 含 q= search 支援
 │   ├── tier2-windows-fix.test.js    # v1.17.14 — Tier 2 Windows 支援（opencode win32 + sqlite3 偵測）
 │   ├── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Adam case；mcp/index.js + hook 對偶；11 tests）
