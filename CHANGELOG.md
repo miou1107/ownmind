@@ -1,5 +1,65 @@
 # OwnMind 更新紀錄
 
+## v1.17.87 — 踩坑紀錄 tab + memory.js 7 筆漏觀測修正（IR-038 觀測管道 + IR-027）
+
+**背景**：v1.17.86 之後個人 /me 頁面三條合規警告（9 筆漏觀測 + 2 筆未驗證 + 1 筆 orphan session）顯示在每個 user 自己畫面。Vin 提出兩個架構性問題：
+
+1. 個別 user 看自己的「合規警告」沒意義 — 那是系統 bug 或 AI 行為問題、不是 user 該緊張的事
+2. 跨 user 比對才看得出 pattern（例如 9 筆全部來自 3 條 handler）
+
+調查發現另一個矛盾：[src/routes/me.js:447](src/routes/me.js) 把 `handoff_create` 列入 sensitive event、但 [src/routes/activity.js:108](src/routes/activity.js) `autoEmitObservedTrigger` 故意不觀測 handoff（Codex round 4 過度推論 review 限制）。兩端設計不一致導致 handoff 永遠進「漏觀測」警告但 server 永遠不會自動補。
+
+**修法（v1.17.87 整套）**：
+
+1. **個人 /me 頁拿掉三條合規警告**（[src/routes/me.js](src/routes/me.js)）：
+   - `compliance_unobserved` / `compliance_unverified` / `orphan_session` 都搬到新 tab
+   - 保留 `heartbeat_absent` / `source_inconsistent` / `unobservable_source`（這些是 user 自己環境問題、確實該通知）
+
+2. **sensitive event 列表拿掉 handoff_create**（[me.js:443-456](src/routes/me.js)）：跟 `activity.js` autoEmit 設計選擇對齊。handoff content 是 user 主觀內容、不該被當 compliance 觸發點。
+
+3. **新增 `GET /api/me/pitfalls` endpoint**（[me.js:730+](src/routes/me.js)）：
+   - 任何 user 可見（不限 super_admin）— 跨 user 合併呈現系統健康度
+   - 三 section：unobserved / unverified / orphan_session
+   - 每筆 row 四欄位：`when`（時間）/ `what`（發生情況）/ `impact`（影響）/ `fix_hint`（建議修法）
+   - 支援 `window=7d/30d/90d/all` 下拉切換
+   - JOIN `users` 拿 name 顯示「誰做的」
+
+4. **新增「🕳️ 踩坑紀錄」tab**（[src/public/me/index.html](src/public/me/index.html)）：
+   - tab 列加新按鈕、tab 容器三個 section
+   - `<details>` + `<summary>` 原生 HTML5 折疊、不靠 JS framework
+   - 點 summary 展開看完整四欄位
+
+5. **memory.js save iron_rule + disable 兩條 handler 寫 server-side compliance log**（[src/routes/memory.js](src/routes/memory.js)）：
+   - save handler `type=iron_rule` → 立刻 INSERT `iron_rule_compliance` (rule_code=IR-006, source=`system_server_auto`, action=`observed_trigger`)
+   - disable handler `type=iron_rule` → 同上
+   - 試錯時 try/catch 不擋主流程
+   - 這修了原本 9 筆漏觀測中的 7 筆根因（4 筆 memory_save iron_rule + 3 筆 memory_disable，剩 2 筆 handoff_create 由 #2 修法從 sensitive list 拿掉）
+
+**結果**：升級到 v1.17.87 後：
+- 個人 /me 頁面**乾淨**、沒有合規警告打擾 user
+- 新 tab 跨 user 看得到所有踩坑、點擊展開看完整脈絡 + 建議
+- memory.js 新事件**自動寫 compliance log**、不會再進「漏觀測」清單
+- 歷史 9 筆 + 1 orphan session 仍在 pitfalls tab 顯示（直到 30 天滾動視窗過期、或未來加 mutation endpoint 改 status 為 `resolved`）
+
+**Reproduction tests 17 條（IR-003）**：
+- [tests/me-pitfalls.test.js](tests/me-pitfalls.test.js)：
+  - me.js sensitive event 不含 handoff_create（剝註解後判定）
+  - 個人頁 myAuditFindings 不再 push 三條合規警告（保留 heartbeat 等）
+  - pitfalls endpoint：route 註冊 / 跨 user JOIN / 三 section query / 四欄位 / window param
+  - memory.js：save+disable handler INSERT iron_rule_compliance / IR-006 / observed_trigger / try-catch
+  - me.html：tabs 按鈕 / tab 容器 / 三 section / window 下拉四選項 / loadPitfalls function / `<details>` 折疊 + 四欄位 label
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007（防同類雷：兩端設計衝突的 handoff_create 已對齊）/ IR-008 / IR-022（server + client html 同步）/ IR-026 / IR-027（個人警告無效→改成 admin tab 邏輯卡控）/ IR-031 / IR-032 / IR-038（觀測管道 — 核心動機）。
+
+**驗證**：本地 `npm test` 907/907 pass / 0 fail（v1.17.86 是 890，+17 新 test）。
+
+**Code review 抓到的修正**（superpowers:code-reviewer）：
+- **Important #1**：`(s.details->>'id')::int` 對非數字 id 會 cast error 整個 endpoint 500。改 `CASE WHEN ... ~ '^\d+$' THEN ::int END` 防呆。
+- **Minor #3**：orphan session 的 `raw.summary` 是別 user 的 session 內容、跨 user 可見會洩漏。截 40 char + 末端 …（pitfalls 是 pattern-spotting、不是內容披露）。
+- **Minor #4 預期行為說明**：v1.17.87 補了 server-side `system_server_auto` observed_trigger，新 save/disable 事件會從 `unobserved` 移出。但 `unverified` 邏輯是「has_any AND NOT has_matching_manual_comply」— 仍要 AI 主動 manual comply。所以**短期間 unverified 數量會增加**（unobserved → unverified 遷移），直到 AI 行為調整補 IR-006 manual comply。屬於預期、不是 bug。
+
+**升級指引**：server 端要重新部署（me.js + memory.js 都改）。Client 端只有 me.html 改、user 重新整理瀏覽器即可看到新 tab。
+
 ## v1.17.86 — `upgrade_complete` beacon：升完不靠 self-check 就能確認真版號（IR-038）
 
 **背景**：v1.17.85 修了 FAIL fallback，但 Vin 從 `/me` 用量報告（撈 `collector_heartbeat.scanner_version`）看到 Adam / Eric / Michelle 都在 1.17.84，**而 `install_check_logs` 那個表卻沒任何他們的 post_install / post_upgrade self-check report**。

@@ -361,6 +361,7 @@
     <button data-tab="team">團隊</button>
     <button data-tab="projects">專案</button>
     <button data-tab="narrative">📊 整體分析</button>
+    <button data-tab="pitfalls">🕳️ 踩坑紀錄</button>
   </div>
 
   <!-- 個人 tab -->
@@ -505,6 +506,48 @@
         <h3>給你的下一步動作</h3>
         <ol id="narrative-action-list"><li class="ai-explain">⏳ 產生中…</li></ol>
       </div>
+    </div>
+  </div>
+
+  <!-- 踩坑紀錄 tab (v1.17.87) -->
+  <div id="tab-pitfalls" class="tab-content">
+    <div class="card">
+      <h2>🕳️ 踩坑紀錄</h2>
+      <div class="desc">
+        OwnMind 系統 / AI 行為層面的稽核資料 — <strong>全使用者共見</strong>，幫你看出系統性 pattern。
+        每筆「漏觀測 / 未驗證 / orphan session」都列出時間、誰、發生情況、影響、建議修法。
+      </div>
+      <div style="margin-top:.75rem">
+        時間範圍：
+        <select id="pitfalls-window" style="padding:.25rem .5rem;font-size:14px">
+          <option value="7d">過去 7 天</option>
+          <option value="30d" selected>過去 30 天</option>
+          <option value="90d">過去 90 天</option>
+          <option value="all">全部歷史</option>
+        </select>
+        <span id="pitfalls-summary" style="color:#6b7280;margin-left:1rem">⏳ 載入中…</span>
+      </div>
+    </div>
+
+    <div class="card" id="pitfalls-section-unobserved">
+      <h3>🔴 漏觀測 (<span data-count="unobserved">0</span>)
+        <span style="font-weight:normal;color:#6b7280;font-size:14px">— 高風險動作沒任何合規紀錄（系統 bug 或 server 漏寫）</span>
+      </h3>
+      <div data-rows="unobserved"><em style="color:#9ca3af">⏳ 載入中…</em></div>
+    </div>
+
+    <div class="card" id="pitfalls-section-unverified">
+      <h3>🟡 未驗證合規 (<span data-count="unverified">0</span>)
+        <span style="font-weight:normal;color:#6b7280;font-size:14px">— 有系統觀測但 AI 沒主動回報遵守</span>
+      </h3>
+      <div data-rows="unverified"><em style="color:#9ca3af">⏳ 載入中…</em></div>
+    </div>
+
+    <div class="card" id="pitfalls-section-orphan">
+      <h3>🔵 Orphan Session (<span data-count="orphan_session">0</span>)
+        <span style="font-weight:normal;color:#6b7280;font-size:14px">— ≥5 輪 session 整段沒 compliance 紀錄</span>
+      </h3>
+      <div data-rows="orphan_session"><em style="color:#9ca3af">⏳ 載入中…</em></div>
     </div>
   </div>
 
@@ -954,6 +997,75 @@ async function loadReport() {
     $('#loginErr').classList.remove('hidden');
   }
 }
+
+// v1.17.87 — 踩坑紀錄 tab
+async function loadPitfalls() {
+  const key = localStorage.getItem(KEY_NAME);
+  if (!key) return;
+  const window = $('#pitfalls-window').value;
+  $('#pitfalls-summary').textContent = '⏳ 載入中…';
+  try {
+    const r = await fetch(`/ownmind/api/me/pitfalls?window=${encodeURIComponent(window)}`, {
+      headers: { 'Authorization': 'Bearer ' + key },
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    renderPitfalls(data);
+  } catch (e) {
+    $('#pitfalls-summary').textContent = '❌ 載入失敗：' + (e.message || 'unknown');
+  }
+}
+
+function renderPitfalls(data) {
+  const total = data.sections.unobserved.count + data.sections.unverified.count + data.sections.orphan_session.count;
+  $('#pitfalls-summary').textContent = `共 ${total} 筆，時間範圍：${data.window}`;
+
+  const severityIcon = { unobserved: '🔴', unverified: '🟡', orphan_session: '🔵' };
+  const fmtTs = (iso) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false });
+    } catch { return iso; }
+  };
+
+  for (const sect of ['unobserved', 'unverified', 'orphan_session']) {
+    const s = data.sections[sect];
+    document.querySelector(`[data-count="${sect}"]`).textContent = s.count;
+    const container = document.querySelector(`[data-rows="${sect}"]`);
+    if (s.count === 0) {
+      container.innerHTML = '<em style="color:#10b981">✓ 無</em>';
+      continue;
+    }
+    container.innerHTML = s.rows.map((r, idx) => `
+      <details style="border:1px solid #e5e7eb;border-radius:6px;padding:.5rem .75rem;margin-bottom:.5rem;background:#fff">
+        <summary style="cursor:pointer;font-weight:500">
+          ${severityIcon[sect]} <span style="color:#6b7280;font-size:13px">${esc(fmtTs(r.when))}</span>
+          · <strong>${esc(r.user_name || '?')}</strong>
+          · ${esc(r.what)}
+          <span style="margin-left:.5rem;font-size:12px;color:#f59e0b">[${r.status}]</span>
+        </summary>
+        <div style="margin-top:.5rem;padding-left:1rem;font-size:14px;line-height:1.6">
+          <div><strong>何時：</strong>${esc(fmtTs(r.when))}</div>
+          <div><strong>誰：</strong>${esc(r.user_name)} (user_id=${r.user_id})</div>
+          <div><strong>發生情況：</strong>${esc(r.what)}</div>
+          <div><strong>造成影響：</strong>${esc(r.impact)}</div>
+          <div><strong>建議修法：</strong>${esc(r.fix_hint)}</div>
+          ${r.expected_rules && r.expected_rules.length > 0
+            ? `<div><strong>該配對的鐵律：</strong>${r.expected_rules.map(esc).join(' / ')}</div>`
+            : ''}
+        </div>
+      </details>
+    `).join('');
+  }
+}
+
+// 切到 pitfalls tab 時自動 load 一次；window 變更時重 load
+document.querySelector('[data-tab="pitfalls"]').addEventListener('click', () => {
+  // 只在「沒載過」或「window 切換」時 load — 簡化版每次切都重 load
+  loadPitfalls();
+});
+$('#pitfalls-window').addEventListener('change', loadPitfalls);
+// 註：esc helper 在更上面已經定義過（行 619 / 1070），這裡 reuse
 
 $('#loginBtn').addEventListener('click', async () => {
   const email = $('#emailInput').value.trim();

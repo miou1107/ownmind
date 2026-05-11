@@ -440,16 +440,18 @@ router.get('/report', async (req, res) => {
     //   每種 sensitive event 對應特定鐵律（expected_rules 陣列）
     const complianceGapQ = await query(`
       WITH sensitive AS (
+        -- v1.17.87：拿掉 handoff_create（跟 activity.js autoEmitObservedTrigger
+        -- 設計選擇對齊 — handoff content 是 user 主觀內容、不該被當 compliance
+        -- 觸發點觀測。剩下兩個都是「動到鐵律本身」的明確 IR-006 觸發。
         SELECT id, ts,
           CASE
             WHEN event = 'memory_disable' THEN ARRAY['IR-006']
             WHEN event = 'memory_save' AND details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
-            WHEN event = 'handoff_create' THEN ARRAY['IR-008', 'IR-009', 'IR-024']
           END AS expected_rules
         FROM activity_logs
         WHERE user_id = $1 AND ts ${timeFilter}
           AND (
-            event IN ('handoff_create', 'memory_disable')
+            event = 'memory_disable'
             OR (event = 'memory_save' AND details->>'type' = 'iron_rule')
           )
       ),
@@ -547,28 +549,16 @@ router.get('/report', async (req, res) => {
     );
 
     // 整理 audit_findings 給前端
+    // v1.17.87：拿掉個人頁的 compliance_unobserved / compliance_unverified /
+    // orphan_session 三條合規警告。理由：
+    //   1. 這三條反映系統 bug 或 AI 行為問題，不是個別 user 該緊張的事
+    //   2. 跨 user 比對才看得出 pattern（例如「9 筆全部來自 3 條 handler」）
+    //   3. 改放新 GET /api/pitfalls endpoint + me.html「踩坑紀錄」tab、跨 user
+    //      合併呈現，任何 user 都看得到
+    // 保留：heartbeat_absent / source_inconsistent / unobservable_source 三條
+    // —— 這些是 user 自己環境的問題（scanner 沒跑 / 沒用 MCP 工具），確實該
+    // 在個人頁通知 user。
     const myAuditFindings = [];
-    // v1.17.42: 兩種 gap 嚴重度不同
-    //   gap_unobserved（漏觀測）= 連系統都沒抓到 → 系統壞了，high
-    //   gap_unverified（未驗證）= 有系統觀測但無 AI 主動回報 → AI 沒承認遵守，medium
-    const gapUnobserved = parseInt(complianceGapQ.rows[0]?.gap_unobserved, 10) || 0;
-    const gapUnverified = parseInt(complianceGapQ.rows[0]?.gap_unverified, 10) || 0;
-    if (gapUnobserved > 0) {
-      myAuditFindings.push({
-        type: 'compliance_unobserved',
-        severity: 'high',
-        count: gapUnobserved,
-        message: `${gapUnobserved} 個高風險動作（交接 / 停用鐵律 / 新增鐵律）前後 10 分鐘完全沒有任何合規紀錄，連系統自動觀測都沒抓到 → 系統可能有 bug`,
-      });
-    }
-    if (gapUnverified > 0) {
-      myAuditFindings.push({
-        type: 'compliance_unverified',
-        severity: 'medium',
-        count: gapUnverified,
-        message: `${gapUnverified} 個高風險動作僅由系統自動觀測到，沒有對應鐵律的人工驗證紀錄`,
-      });
-    }
     const heartbeatStale = heartbeatAuditQ.rows;
     if (heartbeatStale.length > 0) {
       myAuditFindings.push({
@@ -588,15 +578,7 @@ router.get('/report', async (req, res) => {
         message: `${missingDays} 天有 activity 紀錄但完全沒有 token_events，scanner 可能沒在跑`,
       });
     }
-    const orphanCount = parseInt(orphanComplianceQ.rows[0]?.orphan_count, 10) || 0;
-    if (orphanCount > 0) {
-      myAuditFindings.push({
-        type: 'orphan_session',
-        severity: 'low',
-        count: orphanCount,
-        message: `${orphanCount} 個（v1.17.37 起）有實質工作量（≥5 輪）的 session 沒帶 compliance 紀錄，AI 可能整段都沒回報`,
-      });
-    }
+    // v1.17.87：orphan_session 也搬到 /api/pitfalls 跨 user 呈現、不在個人頁警告
 
     // P3: blind-spot — 帳號開超過 7 天但完全沒 MCP activity
     const bs = blindSpotQ.rows[0];
@@ -742,6 +724,210 @@ router.get('/report', async (req, res) => {
   } catch (err) {
     logger.error('me/report 失敗', { error: err.message, stack: err.stack });
     res.status(500).json({ error: '報告產生失敗' });
+  }
+});
+
+// =========================================================================
+// v1.17.87 — GET /api/me/pitfalls：跨 user 踩坑紀錄（任何 user 可見）
+// =========================================================================
+//
+// 設計：把原本 /me/report 個人頁的合規警告（compliance_unobserved /
+// compliance_unverified / orphan_session）改成跨 user 合併、放新 tab「踩坑紀錄」。
+//
+// 為什麼任何 user 可見：
+//   - 這些是「系統 bug 或 AI 行為問題」、不是個別 user 的隱私
+//   - 跨 user 比對才看得出 pattern（9 筆全部來自 3 條 handler）
+//   - Vin 規格：所有 user 都該看到「OwnMind 整體稽核健康度」
+//
+// Query params:
+//   - window: 7d / 30d / 90d / all（預設 30d）
+//   - status: pending / resolved / wontfix / all（預設 pending）— v1.17.87 P1
+//     先全部回 pending，未來加 mutation endpoint 改 status
+//
+// 回 3 個 section：
+//   - unobserved: 高風險動作沒任何合規紀錄（系統 bug）
+//   - unverified: 有系統觀測但無 AI 主動回報（AI 行為）
+//   - orphan_session: ≥5 輪 session 沒帶 compliance（AI 整段沒回報）
+//
+// 每筆 row 含四欄資訊：when（時間）/ what（發生情況）/ impact（影響）/ fix_hint（建議）
+router.get('/pitfalls', async (req, res) => {
+  try {
+    // window param
+    const window = req.query.window || '30d';
+    let timeFilter;
+    if (window === 'all') {
+      timeFilter = `>= '2025-01-01'::timestamptz`;
+    } else {
+      const days = { '7d': 7, '30d': 30, '90d': 90 }[window] || 30;
+      timeFilter = `>= NOW() - INTERVAL '${days} days'`;
+    }
+
+    // ── Section 1: unobserved（高風險動作 ±10 分鐘無任何 compliance log）──
+    const unobservedQ = await query(`
+      WITH sensitive AS (
+        SELECT a.id, a.ts, a.user_id, a.event, a.details,
+          CASE
+            WHEN a.event = 'memory_disable' THEN ARRAY['IR-006']
+            WHEN a.event = 'memory_save' AND a.details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
+          END AS expected_rules
+        FROM activity_logs a
+        WHERE a.ts ${timeFilter}
+          AND (
+            a.event = 'memory_disable'
+            OR (a.event = 'memory_save' AND a.details->>'type' = 'iron_rule')
+          )
+      )
+      SELECT
+        s.id, s.ts, s.user_id, s.event, s.expected_rules,
+        u.name AS user_name,
+        s.details->>'title' AS save_title,
+        s.details->>'id' AS disabled_memory_id,
+        (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END)) AS disabled_title,
+        (SELECT code FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END)) AS disabled_code
+      FROM sensitive s
+      JOIN users u ON u.id = s.user_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM activity_logs c
+        WHERE c.user_id = s.user_id
+          AND c.event = 'iron_rule_compliance'
+          AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
+      )
+      ORDER BY s.ts DESC`);
+
+    // ── Section 2: unverified（有系統觀測但無 matching manual comply）──
+    const unverifiedQ = await query(`
+      WITH sensitive AS (
+        SELECT a.id, a.ts, a.user_id, a.event, a.details,
+          CASE
+            WHEN a.event = 'memory_disable' THEN ARRAY['IR-006']
+            WHEN a.event = 'memory_save' AND a.details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
+          END AS expected_rules
+        FROM activity_logs a
+        WHERE a.ts ${timeFilter}
+          AND (
+            a.event = 'memory_disable'
+            OR (a.event = 'memory_save' AND a.details->>'type' = 'iron_rule')
+          )
+      )
+      SELECT
+        s.id, s.ts, s.user_id, s.event, s.expected_rules,
+        u.name AS user_name,
+        s.details->>'title' AS save_title,
+        s.details->>'id' AS disabled_memory_id,
+        (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END)) AS disabled_title
+      FROM sensitive s
+      JOIN users u ON u.id = s.user_id
+      WHERE EXISTS (
+        SELECT 1 FROM activity_logs c1
+        WHERE c1.user_id = s.user_id
+          AND c1.event = 'iron_rule_compliance'
+          AND c1.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM activity_logs c2
+        WHERE c2.user_id = s.user_id
+          AND c2.event = 'iron_rule_compliance'
+          AND c2.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
+          AND c2.details->>'action' = 'comply'
+          AND COALESCE(c2.details->>'source', '') NOT LIKE 'system_%'
+          AND c2.details->>'rule_code' = ANY(s.expected_rules)
+      )
+      ORDER BY s.ts DESC`);
+
+    // ── Section 3: orphan_session（≥5 輪 session 無 compliance）──
+    const V17_37_SHIPPED = '2026-05-07';
+    const orphanQ = await query(`
+      SELECT s.id, s.created_at AS ts, s.user_id, s.tool, s.machine,
+        u.name AS user_name,
+        s.details->>'project' AS project,
+        COALESCE((s.details->>'duration_turns')::int, 0) AS turns,
+        s.details->>'summary' AS summary
+      FROM session_logs s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.created_at ${timeFilter}
+        AND s.created_at >= '${V17_37_SHIPPED}'::timestamptz
+        AND (
+          s.details->'compliance' IS NULL
+          OR jsonb_array_length(s.details->'compliance') = 0
+        )
+        AND COALESCE((s.details->>'duration_turns')::int, 0) >= 5
+      ORDER BY s.created_at DESC`);
+
+    // 把 row 包成統一 shape：when / what / impact / fix_hint + 詳細欄位
+    const fmtUnobs = (r) => {
+      const isSave = r.event === 'memory_save';
+      const what = isSave
+        ? `新增鐵律「${r.save_title || '(無 title)'}」`
+        : `停用鐵律 ${r.disabled_code || ''}「${r.disabled_title || '(找不到)'}」`;
+      return {
+        type: 'unobserved',
+        status: 'pending',  // v1.17.87 先全 pending、未來支援 mutation
+        when: r.ts,
+        user_id: r.user_id,
+        user_name: r.user_name,
+        expected_rules: r.expected_rules || [],
+        what,
+        impact: `${(r.expected_rules || []).join(' / ')} 鐵律觸發但伺服器沒留稽核紀錄、admin 無法回溯查證 AI 是否遵守`,
+        fix_hint: 'v1.17.87 server route handler 已補 system_auto observed_trigger 寫入；歷史紀錄 14 天後自動過期',
+        raw: { id: r.id, event: r.event },
+      };
+    };
+    const fmtUnverif = (r) => {
+      const isSave = r.event === 'memory_save';
+      const what = isSave
+        ? `新增鐵律「${r.save_title || '(無 title)'}」`
+        : `停用鐵律「${r.disabled_title || '(找不到)'}」`;
+      return {
+        type: 'unverified',
+        status: 'pending',
+        when: r.ts,
+        user_id: r.user_id,
+        user_name: r.user_name,
+        expected_rules: r.expected_rules || [],
+        what,
+        impact: '系統已觀測到觸發、但 AI 沒主動 call ownmind_report_compliance 留遵守紀錄',
+        fix_hint: 'AI 行為問題：在 SKILL.md 加指引、提醒 AI 動到鐵律時要主動 call compliance',
+        raw: { id: r.id, event: r.event },
+      };
+    };
+    const fmtOrphan = (r) => ({
+      type: 'orphan_session',
+      status: 'pending',
+      when: r.ts,
+      user_id: r.user_id,
+      user_name: r.user_name,
+      what: `Session #${r.id} on ${r.tool || '?'} (${r.turns} 輪, 專案：${r.project || '-'})`,
+      impact: '高互動 session 整段沒留任何 compliance call、AI 可能整段都沒回報鐵律遵守',
+      fix_hint: '過去事件、無需手動處理；自然過期。AI 行為層面可加 session 末端 compliance summary',
+      // v1.17.87 reviewer #3：raw.summary 是別 user 的 session 內容、跨 user 可見會洩漏。
+      // 截 40 char 讓踩坑能識別大致脈絡但不暴露完整訊息（pitfalls 是 pattern-spotting、不是內容披露）。
+      raw: {
+        id: r.id, tool: r.tool, machine: r.machine,
+        summary: r.summary ? String(r.summary).slice(0, 40) + (r.summary.length > 40 ? '…' : '') : null,
+      },
+    });
+
+    res.json({
+      window,
+      generated_at: new Date().toISOString(),
+      sections: {
+        unobserved: {
+          count: unobservedQ.rows.length,
+          rows: unobservedQ.rows.map(fmtUnobs),
+        },
+        unverified: {
+          count: unverifiedQ.rows.length,
+          rows: unverifiedQ.rows.map(fmtUnverif),
+        },
+        orphan_session: {
+          count: orphanQ.rows.length,
+          rows: orphanQ.rows.map(fmtOrphan),
+        },
+      },
+    });
+  } catch (err) {
+    logger.error('me/pitfalls 失敗', { error: err.message, stack: err.stack });
+    res.status(500).json({ error: '踩坑紀錄查詢失敗' });
   }
 });
 
