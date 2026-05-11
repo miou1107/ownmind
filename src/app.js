@@ -41,6 +41,16 @@ app.use('/api', apiLimiter);
 app.use('/admin', express.static(join(__dirname, 'public')));
 
 // v1.17.24: 用戶用量報告頁（user role 也可看，路徑 /ownmind/me/）
+// v1.17.88: 加 trailing slash redirect — /me 沒尾斜線直接 404，現在 301 → me/
+// 用相對路徑 redirect（'me/' 而非 '/me/'）避免 nginx reverse proxy strip 掉
+// /ownmind prefix 後 Location header 變絕對路徑、把使用者導到沒 prefix 的 /me/。
+// 相對 'me/' 對當前 URL /ownmind/me 而言會被瀏覽器拼成 /ownmind/me/ ✓
+// 條件式：只在 originalUrl 不以 / 結尾時 redirect，否則 next() 給 static middleware。
+// （Express 預設 strict routing=false，/me 跟 /me/ 都會 match 這條 route）
+app.get('/me', (req, res, next) => {
+  if (req.originalUrl.endsWith('/')) return next();
+  res.redirect(301, 'me/');
+});
 app.use('/me', express.static(join(__dirname, 'public', 'me')));
 
 // 請求日誌
