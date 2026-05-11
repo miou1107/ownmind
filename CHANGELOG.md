@@ -1,5 +1,31 @@
 # OwnMind 更新紀錄
 
+## v1.17.88 — `/me` trailing slash redirect 小修
+
+**背景**：Vin 回報 `https://kkvin.com/ownmind/me`（沒尾斜線）連不上、必須打 `/ownmind/me/`。Express `app.use('/me', express.static(...))` 對 mount path 本身不自動補 trailing slash — `/me` 直接 404、`/me/` 才 hit index.html。
+
+**修法**：[src/app.js](src/app.js) static mount 前加條件式 redirect handler。原本想直接 `app.get('/me', res.redirect(301, 'me/'))` 但 Express 預設 strict routing=false、`/me/` 也會 match 變成無限循環。改成：
+
+```js
+app.get('/me', (req, res, next) => {
+  if (req.originalUrl.endsWith('/')) return next();  // 已有 / → 給 static
+  res.redirect(301, 'me/');  // 沒 / → 301 補上（相對路徑避開 nginx prefix 問題）
+});
+```
+
+**為什麼相對路徑**：用 `'me/'` 而非 `'/me/'`。kkvin.com 跑 nginx 反代到 `/ownmind`、Express 內部 URL 看不到 `/ownmind` prefix。如果用絕對 `/me/`、Location header 會是 `/me/`、user browser 拼到 origin 變成 `https://kkvin.com/me/`（沒 prefix）。用相對 `me/` 對當前 URL `/ownmind/me` 來說、browser 拼出 `/ownmind/me/`。
+
+**Reproduction tests 3 條（IR-003）**：
+- [tests/me-trailing-slash.test.js](tests/me-trailing-slash.test.js)
+- 用 mini express app + `fetch redirect:'manual'` 驗 301 + Location header
+- 也驗 source code 含條件式 endsWith 邏輯（防止未來退化）
+
+**鐵律觸發**：IR-003 / IR-005 / IR-008 / IR-026 / IR-031 / IR-032。
+
+**驗證**：本地 `npm test` 910/910 pass / 0 fail（v1.17.87 是 907，+3 新 test）。
+
+**升級指引**：server 端要重新部署（src/app.js 改）。User 端不變、deploy 後直接打 `/ownmind/me` 自動跳到 `/ownmind/me/`。
+
 ## v1.17.87 — 踩坑紀錄 tab + memory.js 7 筆漏觀測修正（IR-038 觀測管道 + IR-027）
 
 **背景**：v1.17.86 之後個人 /me 頁面三條合規警告（9 筆漏觀測 + 2 筆未驗證 + 1 筆 orphan session）顯示在每個 user 自己畫面。Vin 提出兩個架構性問題：
