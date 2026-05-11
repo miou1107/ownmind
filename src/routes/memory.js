@@ -915,6 +915,35 @@ router.post('/', async (req, res) => {
       [memory.id, metadata?.tool || 'api', content, metadata || null]
     );
 
+    // v1.17.87 IR-038 觀測管道補洞：新增 iron_rule 是高風險 sensitive event，
+    // server 端立刻寫 system_auto observed_trigger compliance log，不依賴 client
+    // batch upload（client 可能漏寫、batch path 也可能卡）。
+    // 對應 me.js compliance gap 稽核：原本 4 筆 memory_save iron_rule 漏觀測來自
+    // 這條 server route 沒寫 compliance log，現在補上、未來新事件不會再漏。
+    if (type === 'iron_rule') {
+      try {
+        await query(
+          `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
+           VALUES ($1, NOW(), 'iron_rule_compliance', $2, 'system_server_auto', $3)`,
+          [
+            req.user.id,
+            metadata?.tool || 'server',
+            JSON.stringify({
+              rule_code: 'IR-006',
+              rule_title: '學到東西必須全層同步更新',
+              action: 'observed_trigger',
+              source: 'system_server_auto',
+              tool_call: 'memory_save',
+              context: `新增鐵律 "${title}"（id=${memory.id}）`,
+            }),
+          ]
+        );
+      } catch (e) {
+        logger.error?.('memory_save iron_rule observed_trigger 寫入失敗', { error: e.message });
+        // 失敗不擋主流程
+      }
+    }
+
     // Mark onboarding complete on first memory save (永久標記，防止刪光後被重新引導)
     await query(
       `UPDATE users
@@ -1131,6 +1160,33 @@ router.put('/:id/disable', async (req, res) => {
        VALUES ($1, $2, 'disable', $3, $4)`,
       [req.params.id, 'api', result.rows[0].content, JSON.stringify({ reason })]
     );
+
+    // v1.17.87 IR-038：disable iron_rule 是高風險 sensitive event，server 端立刻
+    // 寫 system_auto observed_trigger compliance log（同 save iron_rule 修法）。
+    // 對應 me.js compliance gap 稽核：原本 3 筆 memory_disable 漏觀測來自這條
+    // server route 沒寫，現在補上。team_standard / 其他 type 不算 sensitive、跳過。
+    if (result.rows[0].type === 'iron_rule') {
+      try {
+        await query(
+          `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
+           VALUES ($1, NOW(), 'iron_rule_compliance', $2, 'system_server_auto', $3)`,
+          [
+            req.user.id,
+            'server',
+            JSON.stringify({
+              rule_code: 'IR-006',
+              rule_title: '學到東西必須全層同步更新',
+              action: 'observed_trigger',
+              source: 'system_server_auto',
+              tool_call: 'memory_disable',
+              context: `停用鐵律 ${result.rows[0].code || ''} (id=${result.rows[0].id})：${reason.slice(0, 80)}`,
+            }),
+          ]
+        );
+      } catch (e) {
+        logger.error?.('memory_disable iron_rule observed_trigger 寫入失敗', { error: e.message });
+      }
+    }
 
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...result.rows[0], sync_token: newToken };
