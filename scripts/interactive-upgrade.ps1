@@ -286,6 +286,44 @@ try {
 
 OK "done" "Upgrade complete -> version $Version. Backup kept at $BackupDir (auto-swept after $RetentionDays days)"
 
+# v1.17.86 — upgrade_complete beacon（IR-038 觀測管道補洞，跟 .sh 對稱）
+# 比 self-check 早一步、payload 簡單 + 5 秒 timeout + spool fallback，
+# 場景：升完了但 self-check 上傳沒成功（Adam / Michelle 案例）→ server
+# 至少看得到 upgrade_complete row 證明 user 升上去了、版本 X。
+function Send-UpgradeCompleteBeacon {
+  param([string]$ClientVersion)
+  $claudeSettings = Join-Path $HOME '.claude\settings.json'
+  if (-not (Test-Path $claudeSettings)) { return }
+  try {
+    $cfg = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+    $env = $cfg.mcpServers.ownmind.env
+    $apiKey = $env.OWNMIND_API_KEY
+    $apiUrl = $env.OWNMIND_API_URL
+    if (-not $apiKey -or -not $apiUrl) { return }
+    $machine = try { [System.Net.Dns]::GetHostName() } catch { 'unknown' }
+    $body = @{
+      ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+      trigger = 'upgrade_complete'
+      client_version = $ClientVersion
+      platform = 'win32'
+      machine = $machine
+    } | ConvertTo-Json -Compress
+    try {
+      Invoke-RestMethod -Uri "$($apiUrl.TrimEnd('/'))/api/debug/install-check" `
+        -Method POST `
+        -Headers @{ Authorization = "Bearer $apiKey"; 'Content-Type' = 'application/json' } `
+        -Body $body -TimeoutSec 5 -ErrorAction Stop | Out-Null
+    } catch {
+      try {
+        $spoolFile = Join-Path $OwnMindDir 'logs\.upload-spool.jsonl'
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::AppendAllText($spoolFile, ($body + "`n"), $utf8NoBom)
+      } catch { }
+    }
+  } catch { }
+}
+Send-UpgradeCompleteBeacon -ClientVersion $Version
+
 }
 catch {
   # v1.17.66 review fix — Fail() throw 的訊息（已含 ERROR:<code>:<msg> 前綴）

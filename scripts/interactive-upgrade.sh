@@ -253,6 +253,46 @@ OK "sweep" "Old backup sweep complete"
 
 OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} (auto-swept after ${RETENTION_DAYS} days)"
 
+# v1.17.86 — upgrade_complete beacon（IR-038 觀測管道補洞）
+# 比 self-check 早一步、payload 簡單到不會卡住，server 至少看得到「user 升完了、
+# 版本 X」。
+# 場景：Adam / Michelle 升到 1.17.84 但 install_check_logs 沒任何 post_install row
+# （collector_heartbeat 證實升上去）。可能 self-check 跑了 upload 失敗 spool 等下
+# 次 drain，但 user 升完就 quit Claude Code，永遠沒下次。upgrade_complete 比
+# self-check 早送 + 簡單 fail-fast 5 秒 timeout + spool fallback，繞過該 race。
+send_upgrade_complete_beacon() {
+  local version="$1"
+  local claude_settings="$HOME/.claude/settings.json"
+  [ -f "$claude_settings" ] || return
+  local api_key api_url
+  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>/dev/null)
+  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>/dev/null)
+  [ -n "$api_key" ] && [ -n "$api_url" ] || return
+  local ts machine platform body
+  ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  machine="$(hostname 2>/dev/null || echo unknown)"
+  case "$OSTYPE" in
+    darwin*) platform='darwin' ;;
+    linux*) platform='linux' ;;
+    msys*|cygwin*|win32*) platform='win32' ;;
+    *) platform="$OSTYPE" ;;
+  esac
+  body=$(printf '{"ts":"%s","trigger":"upgrade_complete","client_version":"%s","platform":"%s","machine":"%s"}' \
+    "$ts" "$version" "$platform" "$machine")
+  if curl -fsS -m 5 -X POST \
+    -H "Authorization: Bearer $api_key" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "${api_url%/}/api/debug/install-check" >/dev/null 2>&1; then
+    return
+  fi
+  # spool fallback（同 v1.17.80 模式）
+  local spool_dir="${HOME}/.ownmind/logs"
+  mkdir -p "$spool_dir" 2>/dev/null || return
+  printf '%s\n' "$body" >> "${spool_dir}/.upload-spool.jsonl" 2>/dev/null || true
+}
+send_upgrade_complete_beacon "${VERSION}"
+
 # v1.17.63: 升級完跑 self-check，把當下本機狀態抓下來、寫 log + 上傳。失敗不擋升級訊息。
 SELF_CHECK_SCRIPT="${OWNMIND_DIR}/scripts/install-helpers/self-check.cjs"
 if [ -f "${SELF_CHECK_SCRIPT}" ]; then
