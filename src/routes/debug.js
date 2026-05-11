@@ -1,6 +1,21 @@
 import { Router } from 'express';
 import logger from '../utils/logger.js';
 
+// v1.17.85 IR-038：beacon trigger 清單（升級流程中發出、不是 self-check report）。
+// 寫入 install_check_logs 時 client_version 一律 NULL，避免 sentinel 污染版號欄位。
+//
+// 抽成 named const + trailing underscore prefix：
+//   - 未來新 kind 命名 (e.g. upgrade_failed_dirty_tree) 不會意外被當 beacon
+//   - 既有 _step 級 report (upgrade_npm_install_failed / upgrade_dirty_tree) 不會誤中
+const BEACON_TRIGGER_EXACT = new Set(['install_started', 'update_started']);
+const BEACON_TRIGGER_PREFIXES = ['install_failed_', 'update_failed_', 'upgrade_failed_'];
+
+function isBeaconTrigger(trigger) {
+  if (!trigger || typeof trigger !== 'string') return false;
+  if (BEACON_TRIGGER_EXACT.has(trigger)) return true;
+  return BEACON_TRIGGER_PREFIXES.some((p) => trigger.startsWith(p));
+}
+
 /**
  * Debug routes — 收 client 端 self-check 上傳。
  *
@@ -56,6 +71,22 @@ export function createDebugRouter({ query, auth }) {
       // 都是同一筆 payload 含 null byte 反覆重送（搭配 client 端 retrySpool cap 兩端對稱守住）。
       const sanitizeNullBytes = (s) => (typeof s === 'string' ? s.replace(/\u0000/g, '').replace(/\\u0000/g, '') : s);
 
+      // v1.17.85 IR-038：beacon trigger（升級流程中發出、不是 self-check report）的
+      // client_version 不可靠 — 升級剛開始時 client 端用 sentinel "install-script" /
+      // "update-script" 占位，或 fail 時用 "unknown"。一律寫 NULL，避免污染
+      // client_version column、誤導 admin query 把 sentinel 當 last_version。
+      //
+      // install_check_logs 仍會留 row（觀測管道完整）；只是 client_version 為 NULL，
+      // last-version query 自然只看 self-check report (post_install / manual /
+      // post_upgrade) 的真版號。
+      //
+      // beacon 判定邏輯抽到 isBeaconTrigger() 純函式（檔案頂端常數），
+      // 未來新 kind 命名規則改變不會誤判（reviewer I1 建議）。
+      const trigger = sanitizeNullBytes(body.trigger) || null;
+      const clientVersion = isBeaconTrigger(trigger)
+        ? null
+        : (sanitizeNullBytes(body.client_version) || null);
+
       await query(
         `INSERT INTO install_check_logs
            (user_id, ts, client_version, platform, trigger_kind, machine, summary, full_log)
@@ -63,9 +94,9 @@ export function createDebugRouter({ query, auth }) {
         [
           userId,
           ts,
-          sanitizeNullBytes(body.client_version) || null,
+          clientVersion,
           sanitizeNullBytes(body.platform) || null,
-          sanitizeNullBytes(body.trigger) || null,
+          trigger,
           sanitizeNullBytes(body.machine) || null,
           sanitizeNullBytes(JSON.stringify(summary)),
           sanitizeNullBytes(fullLog),

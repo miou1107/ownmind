@@ -19,7 +19,17 @@ LOG_FILE="${OWNMIND_DIR}/logs/upgrade-${TS}.log"
 
 STEP() { echo "INFO:$1:$2"; }
 OK()   { echo "OK:$1:$2"; }
-FAIL() { echo "ERROR:$1:$2"; exit 1; }
+# v1.17.85 IR-038：FAIL 統一補 fallback report_error，避免「漏網的 FAIL path」
+# 沒留觀測資料。Adam (id=3) / Michelle (id=6) 5/10-11 跑 update_started beacon
+# 後沒任何 post_install 也沒任何 errors spool 紀錄就是這條觀測盲點。
+# kind 帶 _terminal 後綴讓 admin 看得出是「終點觀測」（caller 可能也 call 過更
+# 具體的 report_error，那是 _step 級觀測；FAIL fallback 是兜底 _terminal 級）。
+# report_error 已是 noop-on-missing，第二輪呼叫無害。
+FAIL() {
+  echo "ERROR:$1:$2"
+  report_error "upgrade_failed_terminal_$1" "$2" "${LOG_FILE:-}" 2>/dev/null || true
+  exit 1
+}
 
 mkdir -p "${OWNMIND_DIR}/logs"
 
