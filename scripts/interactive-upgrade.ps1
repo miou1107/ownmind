@@ -29,7 +29,17 @@ function OK($code, $msg)   { Write-Host "OK:${code}:$msg" }
 # 為什麼：PowerShell 5.1/7.x 在 try block 內遇到 `exit` 時，finally 不一定會跑
 # （MS docs 說會跑，但實測有 bug 報告）。改成 throw + 外層 catch + finally
 # 確保 self-check 觀測一定執行（IR-038）。
-function Fail($code, $msg) { throw "ERROR:${code}:$msg" }
+# v1.17.85 IR-038：throw 前統一補 fallback Report-Error，避免漏網的 Fail path
+# 沒留觀測資料（對應 .sh 的 FAIL 修法、保持兩端對稱 IR-022）。kind 帶
+# _terminal 後綴讓 admin 區別「終點觀測」vs caller 先 call 的「_step 級觀測」。
+function Fail($code, $msg) {
+  try {
+    if (Get-Command Report-Error -ErrorAction SilentlyContinue) {
+      Report-Error -Kind "upgrade_failed_terminal_$code" -Detail $msg -ContextFile $LogFile
+    }
+  } catch { }
+  throw "ERROR:${code}:$msg"
+}
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
