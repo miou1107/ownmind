@@ -763,6 +763,12 @@ router.get('/pitfalls', async (req, res) => {
     }
 
     // ── Section 1: unobserved（高風險動作 ±10 分鐘無任何 compliance log）──
+    //
+    // v1.17.90: memory_disable 分支加 iron_rule type filter
+    //   背景：v1.17.88 30 筆漏觀測有 22 筆（73%）是 team_standard / standard_detail
+    //   / project disable 被誤算進 sensitive。team_standard 等 disable 不該觸發 IR-006。
+    //   先用 COALESCE 讀 v1.17.89+ enrich 寫入的 details->>'disabled_type'，找不到
+    //   再 JOIN memories（給 v1.17.89 之前的歷史資料 — 14 天後自然過期）。
     const unobservedQ = await query(`
       WITH sensitive AS (
         SELECT a.id, a.ts, a.user_id, a.event, a.details,
@@ -773,7 +779,11 @@ router.get('/pitfalls', async (req, res) => {
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
           AND (
-            a.event = 'memory_disable'
+            (a.event = 'memory_disable'
+              AND COALESCE(
+                a.details->>'disabled_type',
+                (SELECT type FROM memories WHERE id = (CASE WHEN a.details->>'id' ~ '^\d+$' THEN (a.details->>'id')::int END))
+              ) = 'iron_rule')
             OR (a.event = 'memory_save' AND a.details->>'type' = 'iron_rule')
           )
       )
@@ -803,6 +813,7 @@ router.get('/pitfalls', async (req, res) => {
       ORDER BY s.ts DESC`);
 
     // ── Section 2: unverified（有系統觀測但無 matching manual comply）──
+    // v1.17.90: 同 unobserved 邏輯、memory_disable 加 iron_rule type filter
     const unverifiedQ = await query(`
       WITH sensitive AS (
         SELECT a.id, a.ts, a.user_id, a.event, a.details,
@@ -813,7 +824,11 @@ router.get('/pitfalls', async (req, res) => {
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
           AND (
-            a.event = 'memory_disable'
+            (a.event = 'memory_disable'
+              AND COALESCE(
+                a.details->>'disabled_type',
+                (SELECT type FROM memories WHERE id = (CASE WHEN a.details->>'id' ~ '^\d+$' THEN (a.details->>'id')::int END))
+              ) = 'iron_rule')
             OR (a.event = 'memory_save' AND a.details->>'type' = 'iron_rule')
           )
       )
