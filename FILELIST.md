@@ -64,7 +64,8 @@ OwnMind/
 │   │   ├── auto-numbering.js       # Iron rule 自動編號（generateNextIronRuleCode）
 │   │   ├── pricing-lookup.js       # Token 定價查找（pickPricing / computeCost / lookupPricing）
 │   │   ├── semver.js               # v1.17.0 — parseSemver / compareSemver / isLower / isHigher（version 比對共用）
-│   │   └── enrich-activity.js      # v1.17.89 + v1.17.90 — activity_log 落 DB 前 enrich：所有 disable/update 自動 snapshot disabled_type；iron_rule 額外 snapshot disabled_code+disabled_title
+│   │   ├── enrich-activity.js      # v1.17.89 + v1.17.90 — activity_log 落 DB 前 enrich：所有 disable/update 自動 snapshot disabled_type；iron_rule 額外 snapshot disabled_code+disabled_title
+│   │   └── iron-rule-quality.js    # v1.17.94 — 鐵律品質 lint（trigger tag / 適用情境 / 規則段落 / 字數 / 中英混雜 / context 依賴詞），server POST/PUT iron_rule 強制檢查
 │   ├── jobs/
 │   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
