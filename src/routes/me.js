@@ -762,14 +762,14 @@ router.get('/pitfalls', async (req, res) => {
       timeFilter = `>= NOW() - INTERVAL '${days} days'`;
     }
 
-    // v1.17.92: V17_87_SHIPPED cutoff
-    //   v1.17.87 (2026-05-11 16:29) 已在 memory.js POST iron_rule save 加
-    //   server-side autoEmit observed_trigger。v1.17.87 ship 前的歷史 save
-    //   事件沒這條 server-side hook、會在 unobserved/unverified 看起來像漏觀測
-    //   但實際上是「過去的修法 gap」、不是現況問題。把 cutoff 套上、避免歷史
-    //   殘留汙染現況分析。同理 unverified 也套。
-    //   （orphan section 已有 V17_37_SHIPPED 對齊 emergencySessionLog compliance arr 修法）
-    const V17_87_SHIPPED = '2026-05-11';
+    // v1.17.92 → v1.17.93: V17_87_SHIPPED cutoff revert
+    //   v1.17.92 加 cutoff 是 workaround — 把 8 筆 v1.17.87 ship 前的歷史殘留
+    //   藏起來、但資料還在 DB 裡、違反「透明度」+ IR-027（提醒無效、邏輯才有效）。
+    //   v1.17.93 撤回 cutoff、留著 8 筆顯示。改用 fix_hint 文案明確說明：
+    //   - 是 v1.17.87 之前的歷史殘留（memory.js POST 那時沒寫 server-side compliance）
+    //   - 無法補記（補假 audit log 反而汙染稽核）
+    //   - 14 天 retention 後自然消失
+    //   admin 看到會清楚理解「不是現況 bug、不用處理」。
 
     // ── Section 1: unobserved（高風險動作 ±10 分鐘無任何 compliance log）──
     //
@@ -787,7 +787,6 @@ router.get('/pitfalls', async (req, res) => {
           END AS expected_rules
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
-          AND a.ts >= '${V17_87_SHIPPED}'::timestamptz
           AND (
             (a.event = 'memory_disable'
               AND COALESCE(
@@ -833,7 +832,6 @@ router.get('/pitfalls', async (req, res) => {
           END AS expected_rules
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
-          AND a.ts >= '${V17_87_SHIPPED}'::timestamptz
           AND (
             (a.event = 'memory_disable'
               AND COALESCE(
@@ -906,7 +904,9 @@ router.get('/pitfalls', async (req, res) => {
         expected_rules: r.expected_rules || [],
         what,
         impact: `${(r.expected_rules || []).join(' / ')} 鐵律觸發但伺服器沒留稽核紀錄、admin 無法回溯查證 AI 是否遵守`,
-        fix_hint: 'v1.17.87 server route handler 已補 system_auto observed_trigger 寫入；歷史紀錄 14 天後自動過期',
+        // v1.17.93: 改寫 fix_hint，明確告訴 admin「這是歷史殘留、不用處理」
+        // 避免有人看到 pitfalls 列表想去手動補記 compliance log（補假 audit 反而汙染稽核）
+        fix_hint: 'v1.17.87 (2026-05-11) 已補上 memory.js POST iron_rule 路徑的 server-side observed_trigger，新事件不會再漏。剩下顯示的是 v1.17.87 之前的歷史殘留、無法補記（補假 audit log 反而汙染稽核）、14 天 retention 後自然消失、不需要處理',
         raw: { id: r.id, event: r.event },
       };
     };
@@ -924,7 +924,8 @@ router.get('/pitfalls', async (req, res) => {
         expected_rules: r.expected_rules || [],
         what,
         impact: '系統已觀測到觸發、但 AI 沒主動 call ownmind_report_compliance 留遵守紀錄',
-        fix_hint: 'AI 行為問題：在 SKILL.md 加指引、提醒 AI 動到鐵律時要主動 call compliance',
+        // v1.17.93: 同步說明歷史殘留 + 14 天 retention 自然消失
+        fix_hint: 'AI 行為問題：在 SKILL.md 加指引、提醒 AI 動到鐵律時要主動 call compliance。v1.17.87 (2026-05-11) 之前的舊事件無法補記、14 天 retention 後自然消失',
         raw: { id: r.id, event: r.event },
       };
     };
