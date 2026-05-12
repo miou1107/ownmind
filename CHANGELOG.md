@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.17.92 — pitfalls unobserved/unverified 加 V17_87_SHIPPED cutoff、歷史殘留 8→0
+
+**背景**：v1.17.91 部署完成、pitfalls 從 30→8、誤報歸零。剩下 8 筆全是 iron_rule save 「缺 compliance」、看似系統 bug。
+
+**追到的真相**：8 筆 ts 全部在 **2026-05-11 16:29 之前**（v1.17.87 commit 4302b09 時間）。v1.17.87 已加 server-side autoEmit observed_trigger（[memory.js POST](src/routes/memory.js)）+ v1.17.45 activity.js batch handler 也對 `memory_save iron_rule` autoEmit — 兩條路徑保證新事件都有 compliance log。v1.17.87 ship 後 0 筆新 save 缺 compliance、修法已生效。**剩下 8 筆是「v1.17.87 ship 前的歷史殘留」、非現況 bug。**
+
+**修法**：[me.js](src/routes/me.js) 已有 `V17_37_SHIPPED = 2026-05-07` cutoff 給 orphan section、解法成熟。同套模式給 unobserved + unverified 加 `V17_87_SHIPPED = 2026-05-11`：
+
+```sql
+WHERE a.ts ${timeFilter}
+  AND a.ts >= '${V17_87_SHIPPED}'::timestamptz  -- v1.17.92 新增
+  AND (...)
+```
+
+**Prod 驗證**：v1.17.92 SQL 套 prod activity_logs：**8 → 0**。
+
+**鐵律觸發**：IR-003（先寫測試）/ IR-007（持續性 bug：v1.17.87/89/90/91 改了四輪才完整收尾）/ IR-008 / IR-031 / IR-032 / IR-038。
+
+**驗證**：本地 `npm test` 945/945 pass（v1.17.91 是 942、+3 新測）+ prod DB SQL dry-run 確認歸零。
+
+**為什麼這個 cutoff 是對的而非掩蓋問題**：cutoff 套的是「修法 ship 時間」、不是「最近 N 天」。v1.17.87 之前的事件本來就因為修法 gap 沒 server-side hook、無法挽救（不可能去回填過去從未存在的 compliance log — 那是偽造 audit）。把它們排除等於明確劃出「v1.17.87 之前不在此分析範圍」。orphan section 已有同模式（V17_37_SHIPPED）、語意一致。
+
+**收尾**：本 session 從 v1.17.89 開始的 pitfalls 修法序列完整收尾、pitfalls 漏觀測完全清零。
+
 ## v1.17.91 — Secret 管理補完：upsert + delete + activity_log audit
 
 **背景**：Vin 發現 OwnMind MCP 工具列表沒有 `delete_secret`，問要做嗎、修改嗎、停用嗎。翻 code 還順便挖出三個問題：

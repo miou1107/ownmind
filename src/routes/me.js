@@ -762,6 +762,15 @@ router.get('/pitfalls', async (req, res) => {
       timeFilter = `>= NOW() - INTERVAL '${days} days'`;
     }
 
+    // v1.17.92: V17_87_SHIPPED cutoff
+    //   v1.17.87 (2026-05-11 16:29) 已在 memory.js POST iron_rule save 加
+    //   server-side autoEmit observed_trigger。v1.17.87 ship 前的歷史 save
+    //   事件沒這條 server-side hook、會在 unobserved/unverified 看起來像漏觀測
+    //   但實際上是「過去的修法 gap」、不是現況問題。把 cutoff 套上、避免歷史
+    //   殘留汙染現況分析。同理 unverified 也套。
+    //   （orphan section 已有 V17_37_SHIPPED 對齊 emergencySessionLog compliance arr 修法）
+    const V17_87_SHIPPED = '2026-05-11';
+
     // ── Section 1: unobserved（高風險動作 ±10 分鐘無任何 compliance log）──
     //
     // v1.17.90: memory_disable 分支加 iron_rule type filter
@@ -778,6 +787,7 @@ router.get('/pitfalls', async (req, res) => {
           END AS expected_rules
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
+          AND a.ts >= '${V17_87_SHIPPED}'::timestamptz
           AND (
             (a.event = 'memory_disable'
               AND COALESCE(
@@ -823,6 +833,7 @@ router.get('/pitfalls', async (req, res) => {
           END AS expected_rules
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
+          AND a.ts >= '${V17_87_SHIPPED}'::timestamptz
           AND (
             (a.event = 'memory_disable'
               AND COALESCE(
