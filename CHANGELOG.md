@@ -1,5 +1,37 @@
 # OwnMind 更新紀錄
 
+## v1.17.93 — Revert v1.17.92 cutoff（透明度修正）+ fix_hint 改寫
+
+**背景**：v1.17.92 部署完、pitfalls 顯示 0、看似完美。Vin 質疑「所以不用處理嗎」— 點出 v1.17.92 的 cutoff 本質是 workaround：把 8 筆 v1.17.87 ship 前的歷史殘留藏到 SQL filter 後面、資料還在 DB 裡、admin 不知道有歷史 gap。違反「透明度」原則 + IR-027（提醒無效、邏輯才有效 — cutoff 是「提醒系統忽略過去」、不是「邏輯處理過去」）。
+
+**思考過的 3 條路**：
+
+| 選項 | 評估 |
+|---|---|
+| A. Backfill 補記（用 `source=system_backfill_v1_17_92` 標記透明補）| 寫「未實際發生的 audit log」即使有 source marker、未來如果有 audit forensics 需求、混進 backfill 會增加判讀成本 |
+| B. **留著 8 筆 + 明確 fix_hint**（採用）| 完全透明、不修飾資料、14 天後自然消失、admin 看 fix_hint 就懂 |
+| C. v1.17.92 cutoff（已 revert）| Workaround、hidden state、設計上不對 |
+
+**修法**：
+
+1. **撤掉 [me.js](src/routes/me.js) sensitive CTE 的 `V17_87_SHIPPED` cutoff**（unobserved + unverified 兩段）
+2. **改寫 fmtUnobs / fmtUnverif `fix_hint`** 文案：
+   - unobserved: 「v1.17.87 (2026-05-11) 已補上 memory.js POST iron_rule 路徑的 server-side observed_trigger，新事件不會再漏。剩下顯示的是 v1.17.87 之前的歷史殘留、無法補記（補假 audit log 反而汙染稽核）、14 天 retention 後自然消失、不需要處理」
+   - unverified: 對應加上「v1.17.87 之前的舊事件無法補記、14 天 retention 後自然消失」
+3. **刪掉 `tests/pitfalls-cutoff.test.js`**（反向測試這套修法）
+4. **新 `tests/pitfalls-no-cutoff.test.js` 4 條測試**：sensitive CTE 不該有 cutoff、fix_hint 必須含 v1.17.87 + 14 天 + 「無法補/不需處理」字眼
+
+**為什麼這次學到的東西重要**：
+
+- 我第一輪反射式選 cutoff 是因為「pitfalls 顯示 0」看起來像完美收尾、實際只是把問題壓平。
+- Vin 一句「所以不用處理嗎」逼我重新檢視。
+- IR-007 持續性 bug protocol 的精神不只是「同一個 bug 反覆修」、也包含「同一類型錯誤判斷反覆出現」— 用 cutoff/filter 藏歷史資料是反 pattern、要學起來。
+- 寫進 CHANGELOG 留教訓、未來看 git log 不要再做同樣反射式選擇。
+
+**驗證**：本地 `npm test` 946/946 pass（v1.17.92 是 945、+1 條淨增測試：4 新 - 3 刪）。Prod 部署後 pitfalls 應顯示 8 筆 + 新 fix_hint、5/22 後自然歸 0。
+
+**鐵律觸發**：IR-003 / IR-007（反 pattern 學起來）/ IR-027（cutoff 是提醒不是邏輯、refactor 成 fix_hint 文案讓 admin 看了直接懂）/ IR-008 / IR-031 / IR-032。
+
 ## v1.17.92 — pitfalls unobserved/unverified 加 V17_87_SHIPPED cutoff、歷史殘留 8→0
 
 **背景**：v1.17.91 部署完成、pitfalls 從 30→8、誤報歸零。剩下 8 筆全是 iron_rule save 「缺 compliance」、看似系統 bug。
