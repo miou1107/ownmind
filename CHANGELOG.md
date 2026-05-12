@@ -1,5 +1,45 @@
 # OwnMind 更新紀錄
 
+## v1.17.90 — pitfalls 漏觀測 73% 是誤報 — sensitive event 加 iron_rule type filter
+
+**背景**：v1.17.89 ship 完之後、Vin 要繼續挖 pitfalls。SSH 進 prod DB 撈那 30 筆「漏觀測」實際資料、發現**只有 8 筆是真的 iron_rule 缺 compliance、其他 22 筆全是 team_standard / standard_detail / project disable 被誤算進 sensitive 列表（誤報率 73%）**。
+
+**Eric 5/11 09:50 那 11 秒 11 連發 disable 全是合理使用**：他停用 `team_standard` id=199（GitLab 移交規範）+ 它底下 10 個 `standard_detail` children、不是異常 pattern。pitfalls 把它列出來是邏輯 bug、不是 Eric 行為問題。
+
+**根因**：[me.js:770-779](src/routes/me.js) sensitive CTE 兩條 OR：
+- `memory_save AND details->>'type' = 'iron_rule'` ✓ 有過濾
+- `memory_disable` ❌ 沒過濾 type — 因為 disable event 的 details 只有 `{id, reason}`、沒帶 type、要 JOIN memories 才查得到
+
+**修法**（搭 v1.17.89 enrich 機制延伸）：
+
+1. **[src/utils/enrich-activity.js](src/utils/enrich-activity.js)** — 改寫 disable/update enrich 邏輯：
+   - **所有 type** 都 snapshot `disabled_type`（給 pitfalls SQL 用、不再依賴 JOIN）
+   - 只有 iron_rule 才額外 snapshot `disabled_code` + `disabled_title`（admin 顯示用）
+   - 行為改變：v1.17.89 是「非 iron_rule 不 snapshot 任何東西」；v1.17.90 是「所有 type 都 snapshot type、只 iron_rule snapshot code/title」
+
+2. **[src/routes/me.js](src/routes/me.js) pitfalls SQL** — 兩段 sensitive CTE 的 memory_disable 分支都加 type filter：
+   ```sql
+   (a.event = 'memory_disable'
+     AND COALESCE(
+       a.details->>'disabled_type',           -- v1.17.89+ enrich 寫的
+       (SELECT type FROM memories WHERE ...)  -- 歷史資料 fallback
+     ) = 'iron_rule')
+   ```
+
+3. **Reproduction tests +5 條**（IR-003）：
+   - disabled_type snapshot 對 preference / project / team_standard / standard_detail / iron_rule 各 type 行為驗證
+   - me.js SQL 必含 iron_rule type filter（靜態斷言、防退化）
+
+**Prod 驗證**：v1.17.90 SQL 套到 prod activity_logs：**30 筆 → 8 筆**。22 筆誤報全消、剩 8 筆都是真實的 iron_rule save 缺 compliance（AI 行為層問題、需另外追）。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007（v1.17.87/89 改 pitfalls 兩輪、才挖到誤報這個更大的洞）/ IR-008 / IR-022 / IR-031 / IR-032 / IR-038（觀測補完 + 直接修 false positive 雜訊）。
+
+**驗證**：本地 `npm test` 928/928 pass（v1.17.89 是 923、+5 新測）+ prod DB SQL dry-run 確認誤報歸零。
+
+**升級指引**：server 端重新部署即可。Client 不變。Deploy 後新 disable 自動帶 `disabled_type`、歷史 v1.17.89 之前資料靠 SQL COALESCE 走 JOIN fallback。
+
+**已知未解**：剩下 8 筆 iron_rule save 缺 compliance 是 AI 行為層問題（不是 server bug）— autoEmit 應該要寫 observed_trigger 但這 8 筆顯然沒寫到。可能是 client 版本 < v1.17.45（autoEmit 加入版本）。留 v1.17.91 backlog。
+
 ## v1.17.89 — 修「停用鐵律「(找不到)」」觀測黑洞（IR-038）
 
 **背景**：v1.17.88 pitfalls 頁顯示 30 筆漏觀測，幾乎全部都是 `停用鐵律「(找不到)」` — admin 看不出到底停了哪條鐵律、稽核能力等於零。Vin 翻 log 抓到這個 pattern 後要求修。

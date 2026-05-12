@@ -46,24 +46,35 @@ export async function enrichActivityDetails(event, lookup) {
     return baseDetails;
   }
 
-  if (!row || row.type !== 'iron_rule') {
+  if (!row) {
     return baseDetails;
   }
 
-  // snapshot title + code 到 details（用 disabled_* 前綴跟現有 pitfalls 命名一致）
+  // v1.17.90: 不管什麼 type 都 snapshot disabled_type
+  //   背景：v1.17.88 pitfalls 顯示 30 筆漏觀測 prod 驗證有 22 筆（73%）是
+  //   team_standard / standard_detail / project disable 被誤算進 iron_rule sensitive。
+  //   me.js pitfalls SQL 需要 disabled_type 才能過濾出真正 iron_rule disable。
   //
-  // ⚠️ Snapshot 語意是「lookup 當下」、不是「事件發生當下」：
+  // Snapshot 語意是「lookup 當下」、不是「事件發生當下」：
   //   - memory_disable 事件：disable 操作完成後才寫 activity log，lookup 出來的
-  //     title/code 就是當下值 → 跟事件意圖一致
+  //     title/code/type 就是當下值 → 跟事件意圖一致
   //   - memory_update 事件：UPDATE 完才落 log、lookup 拿到的是 post-update 值。
   //     對 pitfalls 顯示用途（admin 想知道「這條鐵律叫什麼」）是正確的、但若未來
   //     有人預期這欄是 "title at moment of trigger" 則會誤判
   //
   // 用 || null 而非 || '' — JSONB NULL 才會讓 me.js 的 COALESCE fallback JOIN
   // 正確被觸發（'' 不是 NULL、會吃掉 fallback）
-  return {
+  const enriched = {
     ...baseDetails,
-    disabled_code: row.code || null,
-    disabled_title: row.title || null,
+    disabled_type: row.type || null,
   };
+
+  // disabled_code / disabled_title 是給 admin 看「停了哪條鐵律」的、只 iron_rule 寫
+  //（其他 type 沒 IR-XXX code、title 也通常較長不適合 inline 顯示）
+  if (row.type === 'iron_rule') {
+    enriched.disabled_code = row.code || null;
+    enriched.disabled_title = row.title || null;
+  }
+
+  return enriched;
 }
