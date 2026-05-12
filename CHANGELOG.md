@@ -1,5 +1,62 @@
 # OwnMind 更新紀錄
 
+## v1.17.91 — Secret 管理補完：upsert + delete + activity_log audit
+
+**背景**：Vin 發現 OwnMind MCP 工具列表沒有 `delete_secret`，問要做嗎、修改嗎、停用嗎。翻 code 還順便挖出三個問題：
+
+1. `ownmind_set_secret` 描述寫「儲存或更新」、但 server [secret.js](src/routes/secret.js) POST **純 INSERT**、重複 set 同 key 會 23505 unique violation 直接 500、AI 想改 secret 會炸。
+2. MCP 沒有 `ownmind_delete_secret` tool（但 server `DELETE /api/secret/:key` 早就有）— 功能 gap、AI 沒辦法刪 secret。
+3. secret 操作完全沒寫 activity_log audit trail（memory 有 memory_history、secret 沒對應）— 無法追溯誰、何時、改/刪了哪個 secret。
+
+**設計決策（討論過再做）**：
+
+| 選項 | 結論 | 理由 |
+|---|---|---|
+| ✓ 修 POST 為 upsert | 做 | 跟工具描述對齊、修現有 bug |
+| ✓ 加 ownmind_delete_secret | 做 | 資安 best practice — 過期 / 洩漏 key 該能刪 |
+| ✓ secret 操作寫 activity_log | 做 | 補 audit gap、IR-002 不寫 value 只記 key+動作 |
+| ✗ 加 disable_secret（soft-delete） | 不做 | Secret 沒「啟用 / 停用」語義、加 status 反而給錯誤安全感（DB 裡還在但被「停用」）。要不用就刪、要換就 set 蓋掉 |
+
+**修法**：
+
+1. **[src/routes/secret.js](src/routes/secret.js) POST 改 upsert**：
+   ```sql
+   INSERT INTO secrets (...)
+   VALUES (...)
+   ON CONFLICT (user_id, key) DO UPDATE
+     SET encrypted_value = EXCLUDED.encrypted_value,
+         description = COALESCE(EXCLUDED.description, secrets.description),
+         updated_at = NOW()
+   RETURNING ..., (xmax = 0) AS inserted
+   ```
+   `xmax = 0` 用來判斷實際是 create 還是 update、決定 HTTP status (201 vs 200) 跟 activity_log action 標籤。description COALESCE 避免「呼叫端沒帶 description 時把原值蓋成 null」。
+
+2. **[mcp/index.js](mcp/index.js) 新增 `ownmind_delete_secret` tool**：
+   - tool description 含「永久刪除」「不可復原」「建議刪除前先用 ownmind_list_secrets 確認 key、避免誤刪」— 卡控 AI 行為
+   - switch case 走 `callApi("DELETE", /api/secret/:key)` 對應 server 既有 endpoint
+   - 加入 tool category 常數 `密鑰管理`
+
+3. **secret_set / secret_delete activity_log audit**（IR-002 不洩漏 value）：
+   - POST 成功時寫 `event='secret_set'`、details 只記 `{key, action: 'create'|'update'}`
+   - DELETE 成功時寫 `event='secret_delete'`、details 只記 `{key}`
+   - log 寫入失敗時吞掉 warn、不阻擋主流程
+
+4. **11 條 reproduction tests**（IR-003）— [tests/secret-mgmt.test.js](tests/secret-mgmt.test.js)：
+   - upsert SQL 含 `ON CONFLICT DO UPDATE` + `EXCLUDED.encrypted_value` + `updated_at = NOW()`
+   - MCP tool 定義 + switch case + DELETE callApi 路徑
+   - tool 描述含「不可復原」警告
+   - activity_log 寫入 + 事件名 + **details 絕對不含 value / encrypted_value**（IR-002 防呆）
+
+**鐵律觸發**：IR-002（不洩漏 value 到 log）/ IR-003 / IR-005 / IR-008 / IR-022 / IR-027（用程式卡控、不靠提醒）/ IR-031 / IR-032 / IR-038（補 audit 觀測管道）。
+
+**驗證**：本地 `npm test` 940/940 pass（v1.17.90 是 929、+11 新測）。
+
+**升級指引**：server + client 都需重新部署：
+- server：upsert SQL + activity_log audit 都在 server route
+- client（MCP）：要 ship 新 `ownmind_delete_secret` tool 才能讓 AI 用上
+
+**已知未解**：v1.17.90 backlog 還有「8 筆 iron_rule save 缺 compliance」沒追、留 v1.17.92。
+
 ## v1.17.90 — pitfalls 漏觀測 73% 是誤報 — sensitive event 加 iron_rule type filter
 
 **背景**：v1.17.89 ship 完之後、Vin 要繼續挖 pitfalls。SSH 進 prod DB 撈那 30 筆「漏觀測」實際資料、發現**只有 8 筆是真的 iron_rule 缺 compliance、其他 22 筆全是 team_standard / standard_detail / project disable 被誤算進 sensitive 列表（誤報率 73%）**。
