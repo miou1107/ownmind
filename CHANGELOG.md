@@ -1,5 +1,69 @@
 # OwnMind 更新紀錄
 
+## v1.17.96 — Stop hook 整合：回話品質 lint 真的卡到 AI（IR-027 落地）
+
+**背景**：v1.17.95 ship 了 `shared/language-lint.js` 純 lib 但沒整合任何卡關點 — IR-037（中英混雜）/ IR-036（行話沒附白話說明、即沒寫括號或冒號補充）的判斷邏輯有了、卻還是依賴 AI 自覺。enforcement_alerts 顯示 IR-037 critical 100% 違反率。違反 IR-027「提醒無效、邏輯才有效」精神。
+
+**修法**：寫 Claude Code Stop hook（每輪 AI 回話結束時觸發）、自動讀 transcript（即 Claude Code 把每輪對話寫成的 JSONL 檔）、抽最後一輪 assistant 純 text 跑 `lintReply`、違反就：
+
+1. **印 banner 到 user terminal**（重用 v1.17.71 ownmind-tty-echo.cjs 的 writeToTty/fallback pattern — 寫 /dev/tty 或 \\.\CONOUT$、失敗 fallback 到 ~/.ownmind/logs/banner-pending.jsonl，下次 SessionStart 補印）
+2. **最佳努力 POST `/api/activity/batch` 報 `iron_rule_compliance` action=violate**（跨 session 統計、fire-and-forget、絕不阻擋 hook）
+
+**新增 / 改動**：
+
+1. **新檔 [hooks/ownmind-reply-lint.js](hooks/ownmind-reply-lint.js)** — Stop hook 主程式：
+   - 讀 stdin Stop payload（`{session_id, transcript_path, hook_event_name, stop_hook_active}`）
+   - `stop_hook_active=true` 立刻退出（防迴圈、Claude Code 規格）
+   - 大檔 transcript 只讀尾巴 256KB（防巨型 session 拖慢 hook）
+   - 從尾巴往前找第一筆 `type=assistant`、抽 `content[].type='text'` 部分（跳過 tool_use / thinking）
+   - 永遠 exit 0；stderr/stdout 永遠空白（IR-027 規格 #3：嚴禁被 AI 過濾）
+
+2. **新檔 [scripts/install-helpers/add-stop-hook.cjs](scripts/install-helpers/add-stop-hook.cjs)** — install-time Stop hook 安裝 helper：
+   - 同 v1.17.71 add-post-tool-use-hook.cjs 同款 idempotent（即可重複跑不重複加）合併語意
+   - settings.json 不存在 → created；存在無 hooks → added；已加過 → skipped
+   - atomic write（tmp + rename）+ backup
+   - Stop hook entry 沒 matcher 欄位（Claude Code Stop hook 規格 — Stop 不依附 tool）
+
+3. **新檔 [tests/reply-lint-hook.test.js](tests/reply-lint-hook.test.js)** — 12 條 hook 行為測試：基本契約 / IR-037 IR-036 偵測 / 只看最後一輪 assistant / 跳過 tool_use parts / stop_hook_active 防迴圈 / fallback 不污染 stdout/stderr
+
+4. **新檔 [tests/add-stop-hook.test.js](tests/add-stop-hook.test.js)** — 9 條 install helper 測試：created/added/skipped 三狀態 + 多種 settings.json 既有狀態 + 和 PostToolUse hook 共存
+
+5. **改 [install.sh](install.sh)** — 在 v1.17.71 PostToolUse hook 安裝段落後面加一段 2.2 呼叫 add-stop-hook.cjs
+
+6. **改 [install.ps1](install.ps1)** — Windows 版同樣加一段 2.2
+
+**真實 transcript dogfood**（即拿真的歷史 session 的對話檔餵給 hook 跑跑看）：抓到 IR-037 26.5% + IR-036 10 個未解釋詞 + exit 0 + stderr/stdout 空白 ✓
+
+**為什麼用 Stop hook 而不是 PostToolUse**：PostToolUse 只在 tool 呼叫後跑、純文字回話沒觸發；Stop 是「每輪結束」觸發、不論這輪是純文字還是有 tool 都會跑。
+
+**為什麼不擋（exit 0 而非 block）**：違反當下強制 AI 重新生成成本太高、user 已經看到那輪回應了；用「印 banner 給 user 看 + 報 violate 累計統計」做事後反饋比較合理。未來 v1.18+ 如果 violate 率還是高、可以升級成 block。
+
+**用 user 端 hook 而不是 server 端 lint 的原因**：reply 內容只在 user 端的 transcript file（即 Claude Code 把對話寫成的 JSONL 檔）裡、server 拿不到原文（也不該拿、隱私）。所以 Stop hook 是落地 IR-027 的唯一可行點。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007 / IR-008 / IR-022 / IR-027（這版的核心動機）/ IR-031 / IR-032 / IR-034（不觸發 — hook 跑在 client、不是 server code）/ IR-038。
+
+**驗證**：本地 `npm test` 1006/1006 pass（v1.17.95 是 985、+21 新測：12 hook 行為 + 9 install helper）。真實 session JSONL dogfood 確認抽到違反 + 不污染 stdout/stderr。
+
+**升級指引**：v1.17.96 純 client 端改動、**不部署 server**（Docker image 不變）。User 升級走自動更新拿到 hook + install helper、再跑一次 `bash install.sh` 把 Stop hook 寫進 ~/.claude/settings.json 即可。
+
+**Opt-out**（即關閉這功能的方法）：環境變數 `OWNMIND_REPLY_LINT_DISABLE=1` 完全跳過 lint（user 端不想被卡可關）。
+
+**Code review 修正（commit 前 Codex 對抗 review）**：
+
+1. **POST schema 對齊 server**：原本送 `{type, action, timestamp, meta}`、實際 `src/routes/activity.js:145` 要求 `{ts, event, tool, source, details}` — 缺 `ts/event` 會被 server 直接 continue 跳過。修正後對齊 `mcp/ownmind-log.js logEvent` 同款 schema。**沒這個修法，IR-027 落地完全失效（合規違反不會進 DB）。**
+2. **Spool jsonl 保底**：POST 失敗 / `process.exit(0)` 砍 socket 都不會丟事件 — 寫進 `~/.ownmind/logs/YYYY-MM-DD.jsonl`（同 MCP 用的 LOGS_DIR）durability 保底。
+3. **POST 改 await**：原本 fire-and-forget `process.exit(0)` 可能在 socket flush 前砍掉 → 改 await + 1500ms timeout。
+4. **import-time stderr 防漏**：原本 ESM static `import` 失敗會讓 Node 直接吐 stack trace 到 stderr、違反 spec #3。改成 dynamic import 包在 try/catch、加 process-wide `uncaughtException` / `unhandledRejection` handler 保底。
+5. **transcript_path 防呆**：`realpath` 後限制必須是 `.jsonl` regular file + size > 0，拒絕目錄 / 空檔 / 非預期路徑。
+6. **256KB tail 截斷處理**：transcript > 256KB 時 tail 第一行可能從 JSON 中間切起 → 直接丟掉第一行避免誤判。
+7. **嚴格契約測試**：所有錯誤 / 邊界路徑都驗 `stdout === ''` 且 `stderr === ''`、不只是「不含 banner」。
+8. **POST schema fake-server 驗證測試**：起本機 fake HTTP server 接 POST、解 body、逐欄位驗對齊 server 期望（`ts/event/tool/source/details/details.action/details.rule_code`）。沒這個測試 review-A1 schema bug 永遠抓不到。
+
+**已知問題（v1.17.97 backlog）**：
+
+1. **install.sh on Git Bash (Windows) — 路徑沒正規化**：`add-stop-hook.cjs` 拿到的 `$OWNMIND_DIR` 是 POSIX path（如 `/c/Users/x/.ownmind`）而非 Win32 path。Claude Code 在 Windows 原生跑可能找不到 hook 檔。**這是 v1.17.71 PostToolUse hook 既有問題、不是 v1.17.96 引入** — install.ps1 走原生 Windows path 沒受影響、Git Bash 安裝 OwnMind 的 user 才會踩到。v1.17.97 backlog 改成兩個 helper 都加 `cygpath -w` 正規化、一次解決。
+2. **SessionStart spool flush**：spool 寫進 `~/.ownmind/logs/YYYY-MM-DD.jsonl` 後、目前沒有 reader 主動撿走（只有 MCP 自己 logEvent 進 buffer 那條路會送）。實際靠 user 下一次 MCP tool 呼叫時、那次 logEvent 會 flush MCP buffer、但不會掃 spool 檔。v1.17.97 計畫加 SessionStart hook 開頭掃 spool jsonl + POST 補傳。
+
 ## v1.17.95 — 回話品質 lint lib（IR-037 / IR-036 程式邏輯卡控前置）
 
 **背景**：Vin 反覆違反 IR-037（中英混雜）跟 IR-036（行話沒附白話說明、即沒寫括號或冒號補充）、enforcement_alerts 顯示 critical 100% 違反率。既有機制是「AI 自己事後 call report_compliance 報 violate」、依賴 AI 自覺、違反 IR-027「提醒無效、邏輯才有效」精神。

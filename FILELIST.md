@@ -68,7 +68,7 @@ OwnMind/
 │   │   └── iron-rule-quality.js    # v1.17.94 — 鐵律品質 lint（trigger tag / 適用情境 / 規則段落 / 字數 / 中英混雜 / context 依賴詞），server POST/PUT iron_rule 強制檢查
 │
 ├── shared/                          # 跨 server + client + hook 共用 lib
-│   └── language-lint.js            # v1.17.95 — IR-037 中英混雜 + IR-036 行話檢查的純函式（給 iron-rule lint + 未來 Stop hook 共用）
+│   └── language-lint.js            # v1.17.95 — IR-037 中英混雜 + IR-036 行話檢查的純函式（給 iron-rule lint + Stop hook reply-lint 共用）
 │   ├── jobs/
 │   │   ├── weeklyReport.js          # 週/月報 cron job（node-cron）
 │   │   ├── usage-aggregation.js     # token_events → token_usage_daily 重算（純函式 + recomputeDaily）
@@ -104,6 +104,8 @@ OwnMind/
 │   ├── ownmind-session-start.js    # SessionStart hook（L4）：ESM，載入初始記憶並顯示鐵律摘要
 │   ├── ownmind-iron-rule-check.sh  # PreToolUse hook：高風險指令前自動顯示相關鐵律（bash 版）
 │   ├── ownmind-iron-rule-check.js  # PreToolUse hook（L2）：ESM，commit/deploy/delete 都跑 verification blocking
+│   ├── ownmind-tty-echo.cjs        # v1.17.71 — PostToolUse hook：把【OwnMind】banner 寫到 user terminal（繞過 Claude Code UI）
+│   ├── ownmind-reply-lint.js       # v1.17.96 — Stop hook：每輪 AI 回話結束跑 IR-037/IR-036 lint、違反印 banner + 報 violate
 │   ├── ownmind-worktree-setup.sh   # WorktreeCreate hook：worktree 自動注入 .mcp.json
 │   ├── ownmind-git-pre-commit.js   # git pre-commit hook (L1)
 │   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
@@ -124,6 +126,8 @@ OwnMind/
 │   ├── check-sync.sh                # v1.17.2 — 三層 drift 健檢（L1 git / L2 server version / L3 deploy diff）
 │   ├── migrate-verification.js      # 鐵律 verification 一次性遷移
 │   ├── install-helpers/
+│   │   ├── add-post-tool-use-hook.cjs  # v1.17.71 — 把 ownmind-tty-echo PostToolUse hook idempotent 寫入 settings.json
+│   │   ├── add-stop-hook.cjs           # v1.17.96 — 把 ownmind-reply-lint Stop hook idempotent 寫入 settings.json
 │   │   └── run-scanner.sh           # Usage scanner wrapper：動態找 node + v20+ 驗證（D12）
 │   ├── launchd/
 │   │   └── com.ownmind.usage-scanner.plist  # macOS launchd agent（30 分鐘 + RunAtLoad）
@@ -1012,6 +1016,27 @@ src/public/me/index.html                  — 長條圖 CSS 修正（flex 衝突
 src/lib/llm-narrative.js                  — prompt 加正反例 + 規範洞察必須具體
 package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
+```
+
+## v1.17.96 新增 / 修改（Stop hook 整合：回話品質 lint 真的卡 AI）
+
+新增檔：
+
+```
+hooks/ownmind-reply-lint.js                  — Stop hook 主程式：讀 transcript、抽最後一輪 assistant text、跑 lintReply、違反印 banner + 報 violate
+scripts/install-helpers/add-stop-hook.cjs    — install-time helper，把 Stop hook idempotent 寫進 ~/.claude/settings.json
+tests/reply-lint-hook.test.js                — 12 條 hook 行為測試
+tests/add-stop-hook.test.js                  — 9 條 install helper 測試
+```
+
+修改的既有檔：
+
+```
+install.sh                                   — 加段 2.2 呼叫 add-stop-hook.cjs（接在 v1.17.71 PostToolUse hook 後）
+install.ps1                                  — Windows 版同樣加段 2.2
+package.json / README* / docs/README*        — 1.17.95 → 1.17.96
+CHANGELOG.md                                 — v1.17.96 條目
+FILELIST.md                                  — hooks/ + scripts/install-helpers/ 樹補新檔
 ```
 
 ## v1.17.47 修改（/me 敘事報告）

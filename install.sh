@@ -252,6 +252,14 @@ if [ -f "$ADD_HOOK_HELPER" ]; then
   echo "   PostToolUse banner hook：$HOOK_RESULT"
 fi
 
+# --- 2.2 v1.17.96 IR-037/IR-036 邏輯卡控：加 Stop hook 跑 reply-lint ---
+# 每輪 AI 回話結束自動掃中英混雜 + 行話沒附白話說明、違反就印 banner 到 terminal
+ADD_STOP_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-stop-hook.cjs"
+if [ -f "$ADD_STOP_HOOK_HELPER" ]; then
+  STOP_HOOK_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  echo "   Stop reply-lint hook：$STOP_HOOK_RESULT"
+fi
+
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
 CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 if [ -f "$CLAUDE_MD" ]; then
