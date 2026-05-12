@@ -782,8 +782,16 @@ router.get('/pitfalls', async (req, res) => {
         u.name AS user_name,
         s.details->>'title' AS save_title,
         s.details->>'id' AS disabled_memory_id,
-        (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END)) AS disabled_title,
-        (SELECT code FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END)) AS disabled_code
+        -- v1.17.89: 優先讀 details snapshot（新資料、enrichActivityDetails 寫入）
+        -- 找不到再 JOIN memories（v1.17.88 之前的歷史資料、會在 14 天後自然過期）
+        COALESCE(
+          s.details->>'disabled_title',
+          (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
+        ) AS disabled_title,
+        COALESCE(
+          s.details->>'disabled_code',
+          (SELECT code FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
+        ) AS disabled_code
       FROM sensitive s
       JOIN users u ON u.id = s.user_id
       WHERE NOT EXISTS (
@@ -814,7 +822,11 @@ router.get('/pitfalls', async (req, res) => {
         u.name AS user_name,
         s.details->>'title' AS save_title,
         s.details->>'id' AS disabled_memory_id,
-        (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END)) AS disabled_title
+        -- v1.17.89: 優先讀 details snapshot、找不到再 JOIN memories
+        COALESCE(
+          s.details->>'disabled_title',
+          (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
+        ) AS disabled_title
       FROM sensitive s
       JOIN users u ON u.id = s.user_id
       WHERE EXISTS (
