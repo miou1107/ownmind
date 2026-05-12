@@ -1,5 +1,43 @@
 # OwnMind 更新紀錄
 
+## v1.17.95 — 回話品質 lint lib（IR-037 / IR-036 程式邏輯卡控前置）
+
+**背景**：Vin 反覆違反 IR-037（中英混雜）跟 IR-036（行話沒附白話說明、即沒寫括號或冒號補充）、enforcement_alerts 顯示 critical 100% 違反率。既有機制是「AI 自己事後 call report_compliance 報 violate」、依賴 AI 自覺、違反 IR-027「提醒無效、邏輯才有效」精神。
+
+**Vin 點出的核心**：v1.17.94 鐵律品質 lint（程式邏輯卡控）有效、要把同樣思路用在「AI 回話品質檢查」— 用 script 取代 LLM 思考、AI 沒辦法騙過。
+
+**v1.17.95 範圍（保守的第一步）**：寫純 lib + 測試、Stop hook 整合留 v1.17.96。
+
+**修法**：
+
+1. **新檔 [shared/language-lint.js](shared/language-lint.js)** — 抽 v1.17.94 鐵律品質 lint 的中英混雜邏輯到 shared lib、加 IR-036 行話檢查：
+   - `TECH_WHITELIST` — 80+ 技術詞 / OwnMind 概念詞白名單（API / SQL / OwnMind / IR / Skill / Memory 等）
+   - `checkMixedLanguage(content, threshold=0.15)` — IR-037 檢查
+   - `checkJargonExplanation(content)` — IR-036 檢查：抓非白名單英文詞、看後面 50 字內有沒附「（白話）」「：解釋」「即...」「- 同位語」
+   - `lintReply(content)` — 兩個一起跑、回 `{ok, violations}`
+   - 純函式、跨平台（Mac / Linux / Windows）、無 native binding
+
+2. **新檔 [tests/reply-lint.test.js](tests/reply-lint.test.js)** — 12 條測試覆蓋 IR-037 / IR-036 / 回傳格式 / Dogfood（餵真實 session 訊息）
+
+**Dogfood 驗證**：
+- 「pre-commit hook 段落」抓到 IR-037 24.6% + IR-036 5 個詞沒解釋 ✓
+- 「對比表段落」抓到 IR-037 26.9% + IR-036 5 個詞沒解釋 ✓
+- 純白話中文段落 ok ✓
+
+**為什麼 Stop hook 整合留 v1.17.96**：
+- Claude Code Stop hook stdin JSON 格式要解析 transcript_path JSONL、複雜度高
+- settings.json 改動是 user 端動作、不該 OwnMind 自動改、要設計範例 + 部署機制
+- 沒實機 hook 環境可測、貿然 ship 容易 silent fail
+- 保守先 ship 純 lib、邏輯確認 100% 對、下個版本接 hook 風險低
+
+**v1.17.96 預定**：寫 `hooks/ownmind-reply-lint.js` Stop hook、讀 transcript、跑 lintReply、違反走 banner 機制（重用 v1.17.71 tty-echo fallback）+ 自動 report violate 到 server。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-008 / IR-022 / IR-027 / IR-031 / IR-032 / IR-037（lib 在解、但這版還沒卡 runtime）/ IR-038。
+
+**驗證**：本地 `npm test` 985/985 pass（v1.17.94 是 973、+12 新測）。
+
+**升級指引**：v1.17.95 純 lib + 測試、**不部署 server**（lib 不在 server route 用、Docker image 不變）。client 端走自動升級拿到新檔、但目前無 runtime 影響、等 v1.17.96 接 hook 才生效。
+
 ## v1.17.94 — 鐵律品質檢查（程式邏輯卡控、IR-027 落地）
 
 **背景**：v1.17.93 收尾、新增 IR-039「不要用條件過濾把歷史殘留資料藏起來」。我第一版 IR-039 寫成劇情記述、Vin 看了問「你自己以後看得懂嗎」— 點出更深層的問題：鐵律本身的品質如果沒被卡住、未來新 session 的 AI 看到根本不懂、形同虛設。
