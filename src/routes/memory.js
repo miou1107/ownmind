@@ -8,6 +8,7 @@ import { isAtLeast } from '../middleware/adminAuth.js';
 import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
+import { lintIronRule } from '../utils/iron-rule-quality.js';
 import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 import { buildOnboarding } from '../utils/onboarding.js';
@@ -870,6 +871,20 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // v1.17.94: iron_rule 寫入前跑品質檢查、不過直接退回（IR-027 程式邏輯卡控）
+    // 確保未來 AI 看到鐵律時、知道何時觸發、知道規則內容、不會形同虛設。
+    // 跳過 __upgrade_test__ prefix 的測試用記憶。
+    if (type === 'iron_rule' && !String(title).startsWith('__upgrade_test__')) {
+      const lintResult = lintIronRule({ title, content, tags });
+      if (!lintResult.ok) {
+        return res.status(400).json({
+          error: '鐵律品質檢查失敗、請修正以下問題後再存',
+          errors: lintResult.errors,
+          hint: '鐵律必須讓未來新 session 的 AI 看得懂何時觸發、規則是什麼。看 IR-039 / IR-027 設計理念。',
+        });
+      }
+    }
+
     // v1.17.0 P6: is_test flag（升級驗測用）必須搭配 __upgrade_test__ prefix，
     // 否則一般 user 可藉 is_test 標記繞過 sync
     const isTestFlag = Boolean(is_test);
@@ -1046,6 +1061,24 @@ router.put('/:id', async (req, res) => {
     // team_standard 僅限 admin 修改
     if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: '團隊規範僅限管理員修改' });
+    }
+
+    // v1.17.94: iron_rule 更新時也跑品質檢查（merge 新舊內容後檢查）
+    // 用 COALESCE 邏輯 — caller 沒帶的欄位用舊值
+    if (oldMemory.type === 'iron_rule' && !String(oldMemory.title).startsWith('__upgrade_test__')) {
+      const merged = {
+        title: title !== undefined ? title : oldMemory.title,
+        content: content !== undefined ? content : oldMemory.content,
+        tags: tags !== undefined ? tags : oldMemory.tags,
+      };
+      const lintResult = lintIronRule(merged);
+      if (!lintResult.ok) {
+        return res.status(400).json({
+          error: '鐵律品質檢查失敗、請修正以下問題後再更新',
+          errors: lintResult.errors,
+          hint: '鐵律必須讓未來新 session 的 AI 看得懂何時觸發、規則是什麼。看 IR-039 / IR-027 設計理念。',
+        });
+      }
     }
 
     const result = await query(

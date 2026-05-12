@@ -1,5 +1,33 @@
 # OwnMind 更新紀錄
 
+## v1.17.94 — 鐵律品質檢查（程式邏輯卡控、IR-027 落地）
+
+**背景**：v1.17.93 收尾、新增 IR-039「不要用條件過濾把歷史殘留資料藏起來」。我第一版 IR-039 寫成劇情記述、Vin 看了問「你自己以後看得懂嗎」— 點出更深層的問題：鐵律本身的品質如果沒被卡住、未來新 session 的 AI 看到根本不懂、形同虛設。
+
+Vin 進一步點：「應該寫成程式邏輯」、「所有人都必須要有這個邏輯、這是產品思維」。對應 IR-027（提醒無效、邏輯才有效）的精神 — OwnMind 自己要先把自己的紀錄品質卡住、才有資格要求別人。
+
+**修法**：在 server 端 `POST /api/memory` + `PUT /api/memory/:id` 寫入 iron_rule 時、強制跑 `lintIronRule()` 品質檢查、不過直接 400 退回。所有 client（MCP / web UI / curl）繞不過、所有 user 都會被卡。
+
+**檢查項（7 條）**：
+1. title 字數 10~100
+2. content 字數 100~3000
+3. 至少 1 個 `trigger:xxx` tag（沒觸發詞 = AI 不知何時觸發）
+4. content 必須有「適用情境段落」關鍵字（適用 / 觸發 / 情境 / 何時 / 什麼時候）
+5. content 必須有「規則段落」關鍵字（規則 / 該做 / 不該做 / 禁止 / 必須 / 應該 / 不可 / 不要）
+6. 禁止依賴 context 的詞（上次 / 之前那個 / 剛剛 / 這次 session / 這次對話 / 剛才那個 / 剛才那條）
+7. 中英混雜比例 < 10%（IR-037 落地、有技術詞白名單避免誤殺）
+
+**檔案**：
+- 新檔 [src/utils/iron-rule-quality.js](src/utils/iron-rule-quality.js) — pure function `lintIronRule(rule) → {ok, errors}`
+- [src/routes/memory.js](src/routes/memory.js) POST + PUT 接入、iron_rule 寫入前必過 lint
+- 新檔 [tests/iron-rule-quality.test.js](tests/iron-rule-quality.test.js) — 25 條測試（含 dogfood：IR-039 套用 lint 自己過關）
+
+**Dogfood 驗證**：v1.17.93 寫的 IR-039 拿來跑 v1.17.94 的 lint、應該過關（測試確認 ✓）— 表示規則設計合理、不是設太嚴遷就壞鐵律。
+
+**升級指引**：server 端重新部署。client 不變。**注意**：未來新增 / 更新鐵律品質不夠會被退回、AI 收到 400 錯誤需自己修了再 retry。
+
+**累計**：本 session v1.17.89 → v1.17.94 共 6 個版本、971/971 tests pass（+61 新測）。
+
 ## v1.17.93 — Revert v1.17.92 cutoff（透明度修正）+ fix_hint 改寫
 
 **背景**：v1.17.92 部署完、pitfalls 顯示 0、看似完美。Vin 質疑「所以不用處理嗎」— 點出 v1.17.92 的 cutoff 本質是 workaround：把 8 筆 v1.17.87 ship 前的歷史殘留藏到 SQL filter 後面、資料還在 DB 裡、admin 不知道有歷史 gap。違反「透明度」原則 + IR-027（提醒無效、邏輯才有效 — cutoff 是「提醒系統忽略過去」、不是「邏輯處理過去」）。
