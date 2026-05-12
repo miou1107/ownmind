@@ -342,6 +342,14 @@ if (Test-Path $AddHookHelper) {
   Write-Host "   PostToolUse banner hook：$hookResult"
 }
 
+# --- 2.2 v1.17.96 IR-037/IR-036 邏輯卡控：加 Stop hook 跑 reply-lint ---
+# 每輪 AI 回話結束自動掃中英混雜 + 行話沒附白話說明、違反就印 banner 到 terminal
+$AddStopHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-stop-hook.cjs"
+if (Test-Path $AddStopHookHelper) {
+  $stopHookResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  Write-Host "   Stop reply-lint hook：$stopHookResult"
+}
+
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
 $OwnmindBlock = @(
   "",
