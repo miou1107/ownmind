@@ -3,6 +3,26 @@ import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import adminAuth from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
+import { enrichActivityDetails } from '../utils/enrich-activity.js';
+
+// v1.17.89: enrich lookup — 給 enrichActivityDetails 注入 DB 查詢
+// 包成 module-level function 方便重用（batch handler 每 event 呼叫一次）
+//
+// ⚠️ 不要加 status='active' filter！
+//   memory_disable 事件落 DB 時、memories 那 row 已經是 status='disabled'。
+//   加 active filter 會讓剛 disable 的鐵律永遠 enrich 不到 → 重新製造「(找不到)」。
+//   v1.17.89 code-reviewer 確認過、明確要求保留無 filter。
+//
+// ⚠️ 效能：目前 batch handler 對 N 個 disable/update 事件做 N 次 SELECT（serially）。
+//   實務上單次 batch 通常 1~3 個事件，影響可忽略。
+//   若未來 batch 變大（>50 events），考慮改用 IN (...) 一次撈完（v1.17.90 backlog）。
+async function memoryLookup(id) {
+  const r = await query(
+    `SELECT type, code, title FROM memories WHERE id = $1`,
+    [id]
+  );
+  return r.rows[0] || null;
+}
 
 const router = Router();
 
@@ -123,10 +143,16 @@ router.post('/batch', auth, async (req, res) => {
 
     for (const e of batch) {
       if (!e.ts || !e.event) continue;
+
+      // v1.17.89: 落 DB 前 enrich details — 補 disable/update iron_rule 的
+      // code+title snapshot，未來 pitfalls 查詢不用 JOIN memories 也能顯示完整
+      // 脈絡。enrich 失敗會吞掉錯誤（pure function 內建 try/catch）回原 details
+      const enrichedDetails = await enrichActivityDetails(e, memoryLookup);
+
       await query(
         `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [req.user.id, e.ts, e.event, e.tool || null, e.source || null, e.details || {}]
+        [req.user.id, e.ts, e.event, e.tool || null, e.source || null, enrichedDetails]
       );
       inserted++;
 

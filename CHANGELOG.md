@@ -1,5 +1,34 @@
 # OwnMind 更新紀錄
 
+## v1.17.89 — 修「停用鐵律「(找不到)」」觀測黑洞（IR-038）
+
+**背景**：v1.17.88 pitfalls 頁顯示 30 筆漏觀測，幾乎全部都是 `停用鐵律「(找不到)」` — admin 看不出到底停了哪條鐵律、稽核能力等於零。Vin 翻 log 抓到這個 pattern 後要求修。
+
+**根因**：
+1. Client MCP 在 `ownmind_disable` 時 [mcp/index.js:832](mcp/index.js) 只送 `{ id, reason }` 進 `/api/activity/batch`
+2. Server [activity.js](src/routes/activity.js) 直接寫入 `activity_logs.details`、沒 enrich
+3. 之後 admin 看 [/api/me/pitfalls](src/routes/me.js)，靠 subquery JOIN `memories` 表補 title/code
+4. 失敗情境：id 非數字（regex `^\d+$` 不過）、記憶被刪、跨 user → subquery 回 null → 顯示「(找不到)」
+
+**修法**（server 端 enrich、client 不動以保持向後相容）：
+
+1. **新檔 [src/utils/enrich-activity.js](src/utils/enrich-activity.js)** — pure function `enrichActivityDetails(event, lookup)`：
+   - 若 event 是 `memory_disable` / `memory_update` 且 target 是 iron_rule
+   - 立刻 lookup `memories` 把 `code` + `title` snapshot 到 `details.disabled_code` / `details.disabled_title`
+   - lookup 失敗（DB error、memory 不存在、id 非數字）一律吞掉、回原 details — enrich 不能阻擋主 INSERT
+2. **[src/routes/activity.js](src/routes/activity.js) batch handler**：INSERT 前呼叫 enrich、把 enriched details 寫入 DB（之後看 activity_log 不用 JOIN 就有完整脈絡）
+3. **[src/routes/me.js](src/routes/me.js) pitfalls SQL**：`COALESCE(details->>'disabled_title', JOIN memories)` — 優先讀 details snapshot（新資料）、找不到再 fallback JOIN（v1.17.88 之前的歷史資料）
+
+**Reproduction tests 13 條（IR-003）**：[tests/disable-details-snapshot.test.js](tests/disable-details-snapshot.test.js) — 涵蓋 enrich 各邊界（iron_rule / 非 iron_rule / id 非數字 / lookup 丟錯 / details 是 null / non-disable event），加 batch handler 跟 pitfalls SQL 的靜態斷言。
+
+**鐵律觸發**：IR-003（先寫測試）/ IR-005（無盲改、有讀 code）/ IR-007（持續性 bug：v1.17.87 改過一輪 disable observability 才挖到這條黑洞）/ IR-008（CHANGELOG/README/FILELIST 同步）/ IR-022（Server + Client 兩端確認：client 不動、server 接管 enrich）/ IR-031（package.json + 三語 README 版號）/ IR-032（三語系 README 同步）/ IR-038（觀測管道補完）。
+
+**驗證**：本地 `npm test` 923/923 pass / 0 fail（v1.17.88 是 910，+13 新 test）。
+
+**升級指引**：server 端重新部署即可。Client 不變、deploy 後新發生的 disable 事件就會自動帶 snapshot。歷史 30 筆「(找不到)」會在 14 天 retention window 後自然過期。
+
+**已知未解**：Eric 在 2026/5/11 09:50:00-09:50:11 連發 11 條 disable（11 秒內），這個異常 pattern 跟本次修法無關、留作 v1.17.90 調查（需先確認 Eric 客戶端版號 + 為何短時間連停 11 條鐵律）。
+
 ## v1.17.88 — `/me` trailing slash redirect 小修
 
 **背景**：Vin 回報 `https://kkvin.com/ownmind/me`（沒尾斜線）連不上、必須打 `/ownmind/me/`。Express `app.use('/me', express.static(...))` 對 mount path 本身不自動補 trailing slash — `/me` 直接 404、`/me/` 才 hit index.html。
