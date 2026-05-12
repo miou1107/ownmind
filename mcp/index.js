@@ -186,6 +186,7 @@ const TYPE_MAP = {
   ownmind_get_secret: '密鑰管理',
   ownmind_list_secrets: '密鑰管理',
   ownmind_set_secret: '密鑰管理',
+  ownmind_delete_secret: '密鑰管理',
   ownmind_report_compliance: '合規回報',
 };
 
@@ -545,7 +546,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_set_secret",
-    description: "儲存或更新一筆 secret。",
+    description: "儲存或更新一筆 secret（upsert：key 已存在則覆蓋值）。",
     inputSchema: {
       type: "object",
       properties: {
@@ -554,6 +555,17 @@ const TOOLS = [
         description: { type: "string", description: "說明（選填）" },
       },
       required: ["key", "value"],
+    },
+  },
+  {
+    name: "ownmind_delete_secret",
+    description: "永久刪除一筆 secret。注意：刪除不可復原，無法回復。建議刪除前先用 ownmind_list_secrets 確認 key、避免誤刪。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        key: { type: "string", description: "要刪除的 Secret key" },
+      },
+      required: ["key"],
     },
   },
   {
@@ -900,6 +912,12 @@ async function handleTool(name, args) {
       const body = { key: args.key, value: args.value };
       if (args.description !== undefined) body.description = args.description;
       return await callApi("POST", "/api/secret", body);
+    }
+
+    case "ownmind_delete_secret": {
+      // v1.17.91: 永久刪除一筆 secret。server 端會寫 activity_log audit
+      // （IR-002 不洩漏 value、只記 key 跟動作）
+      return await callApi("DELETE", `/api/secret/${encodeURIComponent(args.key)}`);
     }
 
     case "ownmind_report_compliance": {

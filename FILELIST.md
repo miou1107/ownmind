@@ -36,7 +36,7 @@ OwnMind/
 │   │   ├── session.js               # Session log 紀錄
 │   │   ├── handoff.js               # 交接機制
 │   │   ├── admin.js                 # 使用者管理 + 帳密登入 + 角色控管 + 稽核
-│   │   ├── secret.js                # 密鑰管理（AES-256 加密）
+│   │   ├── secret.js                # 密鑰管理（AES-256 加密；v1.17.91 POST 改 upsert + 寫 activity_log audit）
 │   │   ├── export.js                # 記憶匯出
 │   │   ├── activity.js              # Activity log batch upload + 統計 API
 │   │   └── usage/                   # Token 用量追蹤 API（P1 起）
