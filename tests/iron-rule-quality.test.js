@@ -158,16 +158,30 @@ describe('v1.17.94 — 禁止依賴 context 的詞（未來 AI 看不懂）', ()
   });
 });
 
-describe('v1.17.94 — 中英混雜檢查（IR-037 落地）', () => {
-  it('連續英文詞太多（非技術詞白名單）→ 失敗', () => {
+describe('v1.18.1 — 鐵律 lint 不再做 IR-037 中英混雜檢查（D 設計修正）', () => {
+  // v1.17.94 原本對鐵律 content 跑 IR-037、但這條規則的設計初衷是「AI 回話」、
+  // reply-lint Stop hook 已專門做。鐵律本身是「技術筆記」、含技術詞天經地義。
+  // v1.18.1 audit 35 條 prod 鐵律、26 條 fail (74%) 證明套錯場景。
+  //
+  // 移除後：含 docker / openspec / Adam / Eric 等技術詞 / 人名的合理鐵律
+  // 不再被 reject。
+  it('連續英文詞太多（合理技術筆記）→ 通過（v1.18.1 不再 reject）', () => {
     const r = lintIronRule({
       title: '混雜的鐵律',
       content: '## 什麼時候適用\nyou are coding the system component for example when refactoring the workflow\n## 規則\nyou should not just hide data behind filter conditions instead change the actual logic.' + 'a'.repeat(100),
       tags: ['trigger:edit'],
     });
-    assert.equal(r.ok, false);
-    assert.match(r.errors.join('|'), /中英|混雜|English/,
-      '錯誤訊息應提到中英混雜');
+    assert.equal(r.ok, true,
+      `v1.18.1: 鐵律 lint 不再對 content 跑 IR-037、合理 mixed content 應 pass、errors: ${JSON.stringify(r.errors)}`);
+  });
+
+  it('鐵律含 docker / openspec / Adam / Eric 等技術詞 → 通過', () => {
+    const r = lintIronRule({
+      title: 'OwnMind 部署流程',
+      content: '## 什麼時候適用\n部署到 prod\n## 規則\n必須用 docker compose build --no-cache、不能用 docker build。Adam / Eric 在 Windows 上跑要先檢查 openspec init 是否成功、走 propose → apply → archive 流程。' + '字'.repeat(50),
+      tags: ['trigger:deploy'],
+    });
+    assert.equal(r.ok, true, `errors: ${JSON.stringify(r.errors)}`);
   });
 
   it('白名單技術詞（SQL / API / IR-XXX / OwnMind）不算混雜', () => {

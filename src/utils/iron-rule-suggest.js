@@ -19,6 +19,7 @@
 
 import crypto from 'node:crypto';
 import { detectFrontmatter } from './iron-rule-frontmatter.js';
+import { lintIronRule } from './iron-rule-quality.js';
 
 /**
  * 把 legacy iron_rule 推成 SKILL.md proposal
@@ -81,10 +82,28 @@ export function suggestSkillMdFormat(rule) {
     notes.push('原鐵律無 trigger:xxx tag、description 用 general 觸發 — 強烈建議補 trigger tag');
   }
 
+  // v1.18.1 A: round-trip lint self-check — helper 自己驗證輸出是否過 lint
+  // 之前 (rc3) 沒做、IR-004 升級助手點下去才被 server 退回、IR-007 fixture/prod mismatch
+  // 現在 helper 內自己跑 lint、過不了在 notes 加 warning 給 admin
+  const lintCheck = lintIronRule({
+    title: rule.title,
+    content: proposed,
+    tags: rule.tags,
+  });
+  if (!lintCheck.ok) {
+    notes.push(`⚠️ Template 提案沒過 lint (將被 server reject)：${lintCheck.errors.join(' / ')}`);
+    notes.push('Admin 必須手動修正才能儲存、不要直接按確認');
+  }
+  if (lintCheck.warnings && lintCheck.warnings.length > 0) {
+    for (const w of lintCheck.warnings) notes.push(`提示：${w}`);
+  }
+
   return {
     already_skill_md: false,
     proposed_content: proposed,
     notes,
+    lint_ok: lintCheck.ok,
+    lint_errors: lintCheck.errors,
   };
 }
 

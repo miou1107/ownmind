@@ -120,13 +120,11 @@ export function lintSkillMdRule(rule, fm) {
     errors.push('S7 body 缺規則段落 — 必須寫明「規則該做什麼 / 不該做什麼 / 禁止 / 必須」、否則 AI 看不懂該做啥');
   }
 
-  // S8 — 中英混雜檢查（沿用 v1.17.94 #7、檢 body + description 合併）
-  // 注意：description 是 SKILL.md 標準英文寫法（pushy「Use when ... Triggers on ...」）、
-  // 不該被當混雜算進 ratio。只檢 body 段。
-  const mixedError = checkMixedLanguage(body);
-  if (mixedError) {
-    errors.push(`S8 ${mixedError}`);
-  }
+  // S8 — v1.18.1 移除 — IR-037 中英混雜不該套到 SKILL.md body
+  // 同 lintLegacyTextRule 規則 #7 移除理由：
+  //   IR-037 是給「AI 回話」用的、reply-lint Stop hook 已專門做這事。
+  //   鐵律 body 是給 AI 看的「技術筆記」、含技術詞天經地義。
+  //   實證 35 條 prod 鐵律 26 條 fail (74%)、17 條都是 IR-037 — 設計錯誤、不是規則太嚴。
 
   // S9 — description 字數 < 50 → warning（不 reject）
   if (description && description.length >= 20 && description.length < 50) {
@@ -202,12 +200,22 @@ export function lintLegacyTextRule(rule) {
     );
   }
 
-  // (7) 中英混雜檢查（IR-037）
-  // 抓連續 4 個以上英文字母的詞、扣除白名單、計算佔比
-  const mixedError = checkMixedLanguage(content);
-  if (mixedError) {
-    errors.push(mixedError);
-  }
+  // (7) v1.18.1 移除 — IR-037 中英混雜檢查不該套在「鐵律 content」
+  //
+  // 為什麼移除：
+  //   IR-037「回話一律白話中文不要中英文混雜」設計初衷是針對「AI 回話」、
+  //   reply-lint Stop hook (v1.17.96) 已專門做這件事。
+  //
+  //   鐵律 content 本身是「給 AI 看的技術筆記」、含 docker / Python / OpenSpec
+  //   /  Adam / Eric 等技術詞天經地義。把 IR-037 套到鐵律 lint 是「規則用錯地方」、
+  //   不是「規則太嚴」。
+  //
+  //   實證：v1.18.1 audit script 跑 35 條 prod 鐵律、26 條 fail (74%)、
+  //   17 條都是 IR-037 中英混雜超標 — 證明把 IR-037 套到鐵律 content 是
+  //   錯誤的設計、不是個別 case。
+  //
+  //   v1.17.94 上線 6 個月沒人發現是因為 lint 只對 POST/PUT 跑、不對既有 row
+  //   反向校驗、被掩蓋。這次升級助手把問題炸開、是好事。
 
   return {
     ok: errors.length === 0,
