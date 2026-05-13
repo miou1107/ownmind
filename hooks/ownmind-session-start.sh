@@ -26,6 +26,14 @@ if [ -s "$PENDING_BANNER_FILE" ]; then
   : > "$PENDING_BANNER_FILE"  # 清空
 fi
 
+# v1.17.97：補送 reply-lint Stop hook 上次 POST 失敗 / 離線時 spool 的合規事件。
+# helper 自己處理：沒檔/沒 credentials/POST 失敗 → 留檔等下次；POST 200 → 刪檔。
+# 嚴禁外漏 stderr/stdout（user-visible 通道）— helper 內部已做防護、這邊也丟到 /dev/null 雙保險。
+COMPLIANCE_SPOOL_FILE="$LOG_DIR/reply-lint-pending.jsonl"
+if [ -s "$COMPLIANCE_SPOOL_FILE" ]; then
+  node "$SCRIPT_DIR_FOR_FLUSH/lib/flush-compliance-spool.js" >/dev/null 2>&1 || true
+fi
+
 # --- Log function (local + server) ---
 log_event() {
   local event="$1"; shift

@@ -244,20 +244,35 @@ else
   "
 fi
 
+# --- 2.0 v1.17.97：算出傳給 hook installer 的 OwnMind 路徑（給 §2.1 + §2.2 共用）---
+# Git Bash on Windows 必須傳 Win32 path（C:\...），否則 Claude Code 在 Windows
+# 原生 command runner 找不到 hook 檔（POSIX path /c/Users/... 不認）。
+# 抽到兩個 section 之外算、避免 §2.1 helper 不存在時 §2.2 用到空字串
+# （review B1 — 之前就是這個 bug）。
+if [ "$IS_WINDOWS" = true ]; then
+  OWNMIND_DIR_FOR_HOOK=$(cygpath -w "$OWNMIND_DIR" 2>/dev/null || echo "$OWNMIND_DIR")
+else
+  OWNMIND_DIR_FOR_HOOK="$OWNMIND_DIR"
+fi
+
 # --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
 # helper 是 idempotent，已加過會回 skipped；既有 user 設定必保留 + atomic write + backup
 ADD_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-post-tool-use-hook.cjs"
 if [ -f "$ADD_HOOK_HELPER" ]; then
-  HOOK_RESULT=$(node "$ADD_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  HOOK_RESULT=$(node "$ADD_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" 2>&1)
   echo "   PostToolUse banner hook：$HOOK_RESULT"
+else
+  echo "[WARN] add-post-tool-use-hook.cjs 不存在（升級殘留？）— 跳過 PostToolUse hook 註冊"
 fi
 
 # --- 2.2 v1.17.96 IR-037/IR-036 邏輯卡控：加 Stop hook 跑 reply-lint ---
 # 每輪 AI 回話結束自動掃中英混雜 + 行話沒附白話說明、違反就印 banner 到 terminal
 ADD_STOP_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-stop-hook.cjs"
 if [ -f "$ADD_STOP_HOOK_HELPER" ]; then
-  STOP_HOOK_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  STOP_HOOK_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" 2>&1)
   echo "   Stop reply-lint hook：$STOP_HOOK_RESULT"
+else
+  echo "[WARN] add-stop-hook.cjs 不存在（升級殘留？）— 跳過 Stop hook 註冊"
 fi
 
 # --- 3. CLAUDE.md 加入 OwnMind 引用 ---
