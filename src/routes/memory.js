@@ -874,12 +874,21 @@ router.post('/', async (req, res) => {
     // v1.17.94: iron_rule 寫入前跑品質檢查、不過直接退回（IR-027 程式邏輯卡控）
     // 確保未來 AI 看到鐵律時、知道何時觸發、知道規則內容、不會形同虛設。
     // 跳過 __upgrade_test__ prefix 的測試用記憶。
+    // v1.18.0: lintIronRule 升級到偵測 SKILL.md frontmatter
+    //   - 有 frontmatter → schema lint S1-S9
+    //   - 沒 frontmatter → v1.17.94 regex lint（向後相容）
+    // return shape 加 format ('skill_md' | 'legacy_text') + warnings
+    let lintFormat = null;
+    let lintWarnings = [];
     if (type === 'iron_rule' && !String(title).startsWith('__upgrade_test__')) {
       const lintResult = lintIronRule({ title, content, tags });
+      lintFormat = lintResult.format;
+      lintWarnings = lintResult.warnings || [];
       if (!lintResult.ok) {
         return res.status(400).json({
           error: '鐵律品質檢查失敗、請修正以下問題後再存',
           errors: lintResult.errors,
+          format: lintResult.format,
           hint: '鐵律必須讓未來新 session 的 AI 看得懂何時觸發、規則是什麼。看 IR-039 / IR-027 設計理念。',
         });
       }
@@ -1018,6 +1027,12 @@ router.post('/', async (req, res) => {
     if (matched_template) response.matched_template = matched_template;
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
 
+    // v1.18.0: iron_rule 寫入結果回 lint format + warnings、給 client 顯示
+    if (lintFormat) {
+      response.lint_format = lintFormat;
+      if (lintWarnings.length > 0) response.lint_warnings = lintWarnings;
+    }
+
     // 附帶 pending_review 計數（提醒 AI 有待確認記憶）
     const prCount = await query(
       `SELECT COUNT(*) as cnt FROM memories WHERE user_id = $1 AND status = 'active' AND tags @> ARRAY['pending_review']`,
@@ -1063,23 +1078,36 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ error: '團隊規範僅限管理員修改' });
     }
 
-    // v1.17.94: iron_rule 更新時也跑品質檢查（merge 新舊內容後檢查）
-    // 用 COALESCE 邏輯 — caller 沒帶的欄位用舊值
-    if (oldMemory.type === 'iron_rule' && !String(oldMemory.title).startsWith('__upgrade_test__')) {
-      const merged = {
-        title: title !== undefined ? title : oldMemory.title,
-        content: content !== undefined ? content : oldMemory.content,
-        tags: tags !== undefined ? tags : oldMemory.tags,
-      };
+    // v1.18.0: lintIronRule 升級到偵測 SKILL.md frontmatter（同 POST handler）
+    // v1.18.0 review B2 修正：用 merged.title 判斷 __upgrade_test__ bypass、不是
+    //   oldMemory.title。攻擊面：POST 用 __upgrade_test__xxx 寫進 DB（跳過 lint）→
+    //   再 PUT 改 title 成正常名 + content 改垃圾 → 若用 oldMemory.title 判斷
+    //   bypass 就成功了。改用 merged.title「未來會變成的 title」判斷。
+    let lintFormatPut = null;
+    let lintWarningsPut = [];
+    const merged = {
+      title: title !== undefined ? title : oldMemory.title,
+      content: content !== undefined ? content : oldMemory.content,
+      tags: tags !== undefined ? tags : oldMemory.tags,
+    };
+    if (oldMemory.type === 'iron_rule' && !String(merged.title).startsWith('__upgrade_test__')) {
       const lintResult = lintIronRule(merged);
+      lintFormatPut = lintResult.format;
+      lintWarningsPut = lintResult.warnings || [];
       if (!lintResult.ok) {
         return res.status(400).json({
           error: '鐵律品質檢查失敗、請修正以下問題後再更新',
           errors: lintResult.errors,
+          format: lintResult.format,
           hint: '鐵律必須讓未來新 session 的 AI 看得懂何時觸發、規則是什麼。看 IR-039 / IR-027 設計理念。',
         });
       }
     }
+
+    // v1.18.0: 寫入前備份原 content 到 previous_content（升級助手寫壞時可救）
+    // 只在 iron_rule 且 content 真的改變時備份、避免無謂寫入
+    const willChangeContent = content !== undefined && content !== oldMemory.content;
+    const shouldBackup = oldMemory.type === 'iron_rule' && willChangeContent;
 
     const result = await query(
       `UPDATE memories
@@ -1087,10 +1115,11 @@ router.put('/:id', async (req, res) => {
            content = COALESCE($2, content),
            tags = COALESCE($3, tags),
            metadata = COALESCE($4, metadata),
+           previous_content = CASE WHEN $7::boolean THEN content ELSE previous_content END,
            updated_at = NOW()
        WHERE id = $5 AND user_id = $6
        RETURNING *`,
-      [title || null, content || null, tags || null, metadata || null, req.params.id, req.user.id]
+      [title || null, content || null, tags || null, metadata || null, req.params.id, req.user.id, shouldBackup]
     );
 
     const memory = result.rows[0];
@@ -1134,6 +1163,12 @@ router.put('/:id', async (req, res) => {
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...memory, sync_token: newToken };
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
+
+    // v1.18.0: iron_rule 更新結果回 lint format + warnings
+    if (lintFormatPut) {
+      response.lint_format = lintFormatPut;
+      if (lintWarningsPut.length > 0) response.lint_warnings = lintWarningsPut;
+    }
 
     // 附帶 pending_review 計數
     const prCount = await query(
