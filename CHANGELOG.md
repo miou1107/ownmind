@@ -1,5 +1,104 @@
 # OwnMind 更新紀錄
 
+## v1.18.0 — 鐵律對齊 Anthropic SKILL.md + 1 big iron-rules skill + conditional sync
+
+**核心轉向**：鐵律從 v1.17.94 free-text + 關鍵字啟發式 lint 升級成 **Anthropic SKILL.md 標準**（YAML frontmatter `name` + `description` + markdown body）+ **export 成 1 big skill** 到 `~/.claude/skills/ownmind-iron-rules/` 讓 Claude Code / Cursor / Codex 等工具**平台級主動 invoke**。落地 IR-027「提醒無效、邏輯才有效」最後一里路（從 50% → 70-90%）。
+
+設計演進 4 版（Vin 對話過程逐步收斂）：
+- v1: 自創 7 欄位 schema → Vin「應該參考 skills 標準」
+- v2: 對齊 SKILL.md 標準 → Vin「快、省資源、卡控更精準?」
+- v3: 加 export 1 big iron-rules skill → Vin「35 個 individual 太混亂」
+- v4: 加 conditional sync (sync_token hash check) → Vin「應該用 hash 檢查、有需要再同步」
+
+**3 個 rc 拆分（每個含獨立 code review + 修正）**：
+
+### rc1: SKILL.md frontmatter parser + schema lint + previous_content
+- 新檔 `src/utils/iron-rule-frontmatter.js` — js-yaml JSON_SCHEMA 安全解析
+- `src/utils/iron-rule-quality.js` lintIronRule 加 frontmatter dispatch (有 → S1-S9 / 沒 → 走原 v1.17.94 regex)
+- 新 schema lint S1-S9：YAML 解析 / name 必填 + ASCII kebab-case / description 必填 + 含觸發詞 / body ≥ 100 字 + 含規則段落
+- `src/routes/memory.js` POST/PUT 用新 lint return shape、回 lint_format + lint_warnings
+- 新 `db/013_iron_rule_previous_content.sql` ALTER ADD COLUMN
+- PUT handler UPDATE 加 CASE 子句、iron_rule + content 真改才備份原 content
+- npm + js-yaml ^4.1.1
+- Code review 修正: B1 (parseError fallback to legacy lint) + B2 (PUT bypass merged.title)
+- 測試: 1054 → 1091 (+37)
+
+### rc2: Conditional sync + 1 big iron-rules skill 跨工具 export
+- 新 endpoint `GET /api/memory/sync-token` lightweight (~50 bytes、純算 hash 不查資料)
+- 新 `src/utils/iron-rule-sync.js` builders + filesystem sync
+  - `buildBigSkillMd` / `buildReferenceFile` (legacy auto-wrap minimal frontmatter)
+  - `syncToFilesystem` 3 種 kind (skill_folder / inline_md / agents_md_block)
+  - 7 個 TOOL_TARGETS (claude / cursor / antigravity / windsurf / codex / opencode / gemini)
+  - 父目錄不存在 skip (沿用 install.sh:300 pattern)
+  - **atomic write** (writeFileSync tmp + renameSync) 防 multi-window race
+- 新 `hooks/lib/conditional-sync.js` pure functions
+  - readCache / writeCache / shouldRefreshCache (24hr stale 強制 refresh)
+  - fetchSyncTokenLight (3s timeout) / fetchInitFull (8s timeout)
+  - runConditionalSync 主流程 (cache_fresh / init_refreshed / cache_fallback / error)
+- 新 `hooks/lib/conditional-sync-cli.js` sh hook wrapper
+  - runConditionalSync → 拿 init data
+  - refreshed=true → 額外打 /api/memory/sync 拿 iron_rule list
+  - syncToAllTools → 寫本地 + 跨工具
+  - results 寫 ~/.ownmind/logs/sync.log debug
+- `hooks/ownmind-session-start.sh` 改用 wrapper、fallback: 失敗 → 直 curl init
+- Code review 修正: B1 (extractIronRules 死碼 IR-007 fixture/prod mismatch) +
+  I1 (atomic write race) + I3 (stdout drain) + I4 (sync log)
+- Smoke test prod: 35 條鐵律真同步到 5 個工具 (Cursor/Antigravity 沒裝 skip)、
+  ~/.claude/skills/ownmind-iron-rules/SKILL.md 12KB + references/ 35 個檔
+  Claude Code 真把 ownmind-iron-rules 載入到 active skill list
+- 測試: 1091 → 1148 (+57)
+
+### rc3: 升級助手 admin Web UI + API
+- 新 `src/utils/iron-rule-suggest.js` template-based SKILL.md proposal
+  - name = code + ASCII title hint + 6 字 sha1 hash (跨平台 fs 安全、不含中文)
+  - body 只放原 content + HTML comment 提示 (不放 placeholder section、避免 lint bypass)
+  - 不接 LLM、未來 OWNMIND_SUGGEST_API_KEY 切 LLM 路徑
+- 新 `src/routes/admin-iron-rule-upgrade.js` 3 endpoints
+  - GET /upgrade-status → list + format + sync_token
+  - POST /:id/suggest-skill-md → proposal、不寫 DB
+  - PUT /:id/upgrade → sync_token check + lint + UPDATE + previous_content + memory_history + admin_audit_logs
+- `src/public/index.html` admin 新「鐵律升級」tab + diff modal
+  - data-rule-id delegate click (XSS-safe、不傳 title 進 onclick attr)
+  - confirm button disable 防 double-click + sync_token 衝突自動刷新
+- Code review 修正: B1 (XSS in onclick attr) + B2 (PUT 跳過 sync_token race) +
+  I1 (suggest body placeholder bypass lint) + I4 (S2 ASCII only) + I2 (admin audit) +
+  I5 (移除空殼驗證 button) + N3 (button disable)
+- 測試: 1148 → 1156 (+8)
+
+**graceful 雙軌、永遠不強制 migration**：
+| 路徑 | 行為 |
+|---|---|
+| 新鐵律寫入 | client 走 SKILL.md frontmatter + body、server 卡 S1-S9 |
+| 既有 35 條鐵律 | **不自動轉**、純文字 graceful fallback、Vin 用升級助手手動轉 |
+| Server lint | 偵測 frontmatter：有 → schema lint；沒 → 舊 v1.17.94 regex |
+| 舊 client 寫鐵律 | server graceful fallback、不 reject |
+| SessionStart context | 維持現狀 (title + tags 列表)、不載入 frontmatter (避免 token 膨脹) |
+| ~/.claude/skills/ownmind-iron-rules/ | 新增 — sync hook 維護 |
+
+**鐵律觸發**：IR-003 / IR-005 / IR-006 / IR-007 (code review 抓 fixture/prod mismatch) /
+IR-008 / IR-022 / IR-027 (本版核心目標) / IR-031 / IR-032。
+
+**升級指引（這版部署 server）**：
+1. SSH prod: `ssh root@kkvin.com`
+2. `cd /VinService/ownmind && git pull origin main`
+3. **手動 apply migration**: `docker compose exec -T db psql -U ownmind -d ownmind < db/013_iron_rule_previous_content.sql`
+4. `docker compose build --no-cache api && docker compose up -d api` (IR-018 + IR-023)
+5. 驗版號: `docker compose exec -T api node -e "console.log(require('./package.json').version)"` → 1.18.0
+6. Browser 實測 (IR-020):
+   - admin 開 /admin、看新「鐵律升級」tab、35 條鐵律列表
+   - 選一條按 [升級提案]、看 diff modal
+   - [確認升級] 一條、看 DB 寫入 + format='skill_md'
+   - 開新 Claude Code session、看 ~/.claude/skills/ownmind-iron-rules/ 已建
+   - 觀察 server log: GET /api/memory/sync-token 200 出現、init endpoint 流量大幅減少
+
+**v1.18.x backlog (rc2/rc3 review 留下)**：
+- N1 route handler integration test refactor (rc2)
+- I5 mcp/ownmind-log.js flush 路徑覆蓋率 (rc2)
+- ?user_id=N 跨 user 升級 (rc3)
+- LLM-based suggest (OWNMIND_SUGGEST_API_KEY 環境變數路徑、目前空殼)
+- title vs frontmatter name 對齊 (rc3 I3)
+- DB cache stale 24hr 之外的 monitor
+
 ## v1.17.99 — Dedup helper 抽 + MCP log 也帶 client_event_id + 移 node-fetch 依賴
 
 **背景**：v1.17.98 reviewer 點到三件事：
