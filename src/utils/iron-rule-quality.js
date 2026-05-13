@@ -1,4 +1,5 @@
 import { detectFrontmatter } from './iron-rule-frontmatter.js';
+import { validateOriginContext } from './iron-rule-origin-context.js';
 
 /**
  * lintIronRule — 鐵律品質檢查（程式邏輯卡控、IR-027 落地）
@@ -33,6 +34,7 @@ export function lintIronRule(rule) {
 
   // v1.18.0: 先偵測 frontmatter — 有就走 schema lint
   const fm = detectFrontmatter(content);
+  let result;
   if (fm.has) {
     // v1.18.0 review B1 修正：YAML parse 失敗 → fallback 到 legacy regex lint
     //   理由：user 可能寫 `---` 當分隔線（不是真的要寫 SKILL.md）、parseError
@@ -44,12 +46,48 @@ export function lintIronRule(rule) {
         `偵測到 frontmatter marker（---）但 YAML 解析失敗（${fm.parseError}）— ` +
         `退回 free-text lint。若刻意寫 SKILL.md 格式、請修 YAML 語法；若 --- 是內文分隔線、忽略此警告即可。`
       );
-      return { ...legacyResult, warnings };
+      result = { ...legacyResult, warnings };
+    } else {
+      result = lintSkillMdRule(rule, fm);
     }
-    return lintSkillMdRule(rule, fm);
+  } else {
+    result = lintLegacyTextRule(rule);
   }
 
-  return lintLegacyTextRule(rule);
+  // v1.18.2: origin_context check (鬆設計、warning 不 reject)
+  const originCheck = checkOriginContext(rule);
+  if (originCheck.warnings.length > 0) {
+    result.warnings = [...(result.warnings || []), ...originCheck.warnings];
+  }
+  if (originCheck.errors.length > 0) {
+    // 只有 origin_context 結構非法 (有寫但寫壞) 才報 error
+    result.errors = [...(result.errors || []), ...originCheck.errors];
+    result.ok = false;
+  }
+  return result;
+}
+
+/**
+ * v1.18.2: 檢查 metadata.origin_context
+ *   - 沒 origin_context → warning「鼓勵補時空背景」
+ *   - 有但結構非法 → error
+ *   - 有且合法 → silent
+ */
+function checkOriginContext(rule) {
+  const oc = rule?.metadata?.origin_context;
+  if (oc === undefined || oc === null) {
+    return {
+      warnings: [
+        '建議補 metadata.origin_context 記錄時空背景（為什麼建立這條鐵律 / 在哪個專案 / user 原話）— 不擋、但未來 AI 看不懂歷史脈絡時會回頭問。'
+      ],
+      errors: [],
+    };
+  }
+  const v = validateOriginContext(oc);
+  if (!v.ok) {
+    return { warnings: [], errors: v.errors.map(e => `origin_context: ${e}`) };
+  }
+  return { warnings: [], errors: [] };
 }
 
 /**

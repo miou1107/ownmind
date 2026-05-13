@@ -26,6 +26,7 @@ import { detectFrontmatter } from '../utils/iron-rule-frontmatter.js';
 import { lintIronRule } from '../utils/iron-rule-quality.js';
 import { suggestSkillMdFormat } from '../utils/iron-rule-suggest.js';
 import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
+import { injectOriginSection } from '../utils/iron-rule-origin-context.js';
 
 // audit log writer — 跟 src/routes/admin.js writeAuditLog 同 schema
 async function writeAdminAudit(actorId, action, targetType, targetId, details) {
@@ -159,7 +160,7 @@ router.put('/:id/upgrade', async (req, res) => {
       return res.status(400).json({ error: 'invalid rule id' });
     }
 
-    const { content, sync_token } = req.body;
+    const { content, sync_token, origin_event, user_quote } = req.body;
     if (typeof content !== 'string' || !content.trim()) {
       return res.status(400).json({ error: 'content 必填' });
     }
@@ -209,14 +210,30 @@ router.put('/:id/upgrade', async (req, res) => {
       });
     }
 
+    // v1.18.2: admin 補了 origin_event / user_quote → 寫進 metadata.origin_context
+    // + 自動 inject「## 起源」段落到 body (從 metadata render)
+    let finalContent = content;
+    let updatedMetadata = oldRule.metadata || null;
+    if (origin_event || user_quote) {
+      const oc = {
+        captured_at: new Date().toISOString(),
+        confidence: 'user_direct',  // admin 手填、不是從 session 推、視為 user_direct
+        event: origin_event || 'admin 升級助手手動補（無對話脈絡）',
+      };
+      if (user_quote) oc.user_quote = user_quote;
+      finalContent = injectOriginSection(content, oc);
+      updatedMetadata = { ...(updatedMetadata || {}), origin_context: oc };
+    }
+
     // 3. UPDATE — 備份原 content 到 previous_content
     await query(
       `UPDATE memories
        SET content = $1,
            previous_content = $2,
+           metadata = COALESCE($5, metadata),
            updated_at = NOW()
        WHERE id = $3 AND user_id = $4`,
-      [content, oldRule.content, ruleId, req.user.id]
+      [finalContent, oldRule.content, ruleId, req.user.id, updatedMetadata ? JSON.stringify(updatedMetadata) : null]
     );
 
     // 4. memory_history audit
