@@ -220,6 +220,7 @@
     <div class="tab hidden" id="tabBtn-team-usage" data-tab="team-usage" onclick="switchTab('team-usage')">團隊用量</div>
     <div class="tab hidden" id="tabBtn-work-log" data-tab="work-log" onclick="switchTab('work-log')">工作紀錄</div>
     <div class="tab hidden" id="tabBtn-settings" data-tab="settings" onclick="switchTab('settings')">設定</div>
+    <div class="tab" data-tab="iron-rule-upgrade" onclick="switchTab('iron-rule-upgrade')">鐵律升級</div>
   </div>
 
   <!-- ===== TAB: 使用者管理 ===== -->
@@ -642,6 +643,71 @@
     </div>
 
   </div><!-- end tab-settings -->
+
+  <!-- ===== TAB: 鐵律升級助手 (v1.18.0) ===== -->
+  <div id="tab-iron-rule-upgrade" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <h3>鐵律升級助手 — Legacy → SKILL.md</h3>
+        <button class="btn-secondary btn-sm" onclick="loadIronRuleStatus()">重新載入</button>
+      </div>
+      <div style="margin-bottom:12px;padding:8px 12px;background:#f5f3ff;border-left:3px solid #7c3aed;border-radius:4px;font-size:12px;color:#6d28d9;line-height:1.6;">
+        💡 <b>graceful 雙軌</b>：legacy 鐵律永遠保留可用、不強制升級。SKILL.md 格式 (frontmatter name + description + body) 對齊 Anthropic 標準、可被 Claude Code / Cursor / Codex 等工具平台級主動 invoke。
+      </div>
+      <div class="stats" style="margin-bottom:16px;">
+        <div class="stat-card">
+          <div class="number" id="iruTotal">-</div>
+          <div class="label">總鐵律數</div>
+        </div>
+        <div class="stat-card">
+          <div class="number" id="iruSkillMd" style="color:#10b981;">-</div>
+          <div class="label">已升級 (SKILL.md)</div>
+        </div>
+        <div class="stat-card">
+          <div class="number" id="iruLegacy" style="color:#f59e0b;">-</div>
+          <div class="label">待升級 (legacy)</div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Title</th>
+              <th>Tags</th>
+              <th>Format</th>
+              <th>動作</th>
+            </tr>
+          </thead>
+          <tbody id="iruTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- end tab-iron-rule-upgrade -->
+
+  <!-- 鐵律升級 Diff Modal -->
+  <div class="modal-overlay" id="iruDiffModal">
+    <div class="modal-content" style="max-width:1200px;width:95%;">
+      <button class="modal-close" onclick="closeIruDiffModal()">×</button>
+      <h3 id="iruDiffTitle">升級鐵律</h3>
+      <div id="iruNotes" style="margin-bottom:12px;padding:8px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:#92400e;line-height:1.6;"></div>
+      <div style="display:flex;gap:16px;margin-bottom:16px;">
+        <div style="flex:1;">
+          <label class="field-label">原本（legacy）</label>
+          <textarea id="iruOriginal" readonly style="width:100%;height:400px;font-family:monospace;font-size:12px;background:#f9fafb;"></textarea>
+        </div>
+        <div style="flex:1;">
+          <label class="field-label">提案 (SKILL.md format) — 可編輯</label>
+          <textarea id="iruProposed" style="width:100%;height:400px;font-family:monospace;font-size:12px;"></textarea>
+        </div>
+      </div>
+      <div id="iruLintErrors" style="display:none;margin-bottom:12px;padding:8px 12px;background:#fee2e2;border-left:3px solid #dc2626;border-radius:4px;font-size:12px;color:#991b1b;line-height:1.6;"></div>
+      <div class="modal-footer">
+        <button class="btn-cancel btn-ghost" onclick="closeIruDiffModal()">取消</button>
+        <button class="btn-success" id="iruConfirmBtn" onclick="iruConfirmUpgrade()">確認升級</button>
+      </div>
+    </div>
+  </div>
 
 </div>
 
@@ -1262,6 +1328,140 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       if (currentUserRole === 'super_admin') { loadPricingList(); loadBroadcastList(); }
       loadClientsStatus();
     }
+    if (tab === 'iron-rule-upgrade') { loadIronRuleStatus(); }
+  }
+
+  // ===== v1.18.0: 鐵律升級助手 =====
+  let iruCurrentRuleId = null;
+  let iruSyncToken = null;       // v1.18.0-rc3 review B2: stale check
+  let iruRulesCache = [];        // v1.18.0-rc3 review B1: title 從 cache 取、不傳 onclick attr 防 XSS
+
+  async function loadIronRuleStatus() {
+    try {
+      const res = await fetch(`${API}/admin/iron-rules/upgrade-status`, { headers: headers() });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      iruSyncToken = data.sync_token || null;
+      iruRulesCache = data.rules || [];
+      document.getElementById('iruTotal').textContent = data.total;
+      document.getElementById('iruSkillMd').textContent = data.skill_md_format;
+      document.getElementById('iruLegacy').textContent = data.legacy_text;
+      const tbody = document.getElementById('iruTable');
+      if (!data.rules || data.rules.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#86868b;">您的帳號目前沒有自有鐵律</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.rules.map(r => {
+        const tagsStr = (r.tags || []).filter(t => String(t).startsWith('trigger:')).join(', ') || '—';
+        const formatBadge = r.format === 'skill_md'
+          ? '<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:4px;font-size:11px;">SKILL.md ✓</span>'
+          : '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:4px;font-size:11px;">Legacy</span>';
+        // v1.18.0-rc3 review B1: data-rule-id attr (XSS-safe) + delegate click
+        // 之前 onclick="iruSuggest(N, title)" 把 title 當 string literal 傳 → XSS
+        const btnLabel = r.format === 'legacy_text' ? '升級提案' : '重新編輯';
+        const btnClass = r.format === 'legacy_text' ? 'btn-success' : 'btn-secondary';
+        const action = `<button class="${btnClass} btn-sm" data-action="iru-suggest" data-rule-id="${r.id}">${btnLabel}</button>`;
+        return `<tr>
+          <td><b>${escapeHtml(r.code)}</b></td>
+          <td>${escapeHtml(r.title)}</td>
+          <td style="font-size:11px;color:#6b7280;">${escapeHtml(tagsStr)}</td>
+          <td>${formatBadge}</td>
+          <td>${action}</td>
+        </tr>`;
+      }).join('');
+      // 統一 click delegate
+      tbody.querySelectorAll('button[data-action="iru-suggest"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const ruleId = parseInt(btn.dataset.ruleId, 10);
+          if (!Number.isNaN(ruleId)) iruSuggest(ruleId);
+        });
+      });
+    } catch (e) {
+      console.error('loadIronRuleStatus 失敗', e);
+      alert('載入鐵律列表失敗：' + e.message);
+    }
+  }
+
+  async function iruSuggest(ruleId) {
+    iruCurrentRuleId = ruleId;
+    // 從 cache 拿 title (XSS safe — title 進 textContent 不是 attr)
+    const rule = iruRulesCache.find(r => r.id === ruleId);
+    const title = rule ? rule.title : '';
+    document.getElementById('iruDiffTitle').textContent = `升級鐵律：${title}`;
+    document.getElementById('iruOriginal').value = '載入中...';
+    document.getElementById('iruProposed').value = '';
+    document.getElementById('iruNotes').textContent = '';
+    document.getElementById('iruLintErrors').style.display = 'none';
+    document.getElementById('iruConfirmBtn').disabled = false;
+    document.getElementById('iruDiffModal').classList.add('active');
+    try {
+      const res = await fetch(`${API}/admin/iron-rules/${ruleId}/suggest-skill-md`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      document.getElementById('iruOriginal').value = data.original_content || '';
+      document.getElementById('iruProposed').value = data.proposed_content || '';
+      const notes = (data.notes || []).join(' / ');
+      document.getElementById('iruNotes').textContent = notes;
+    } catch (e) {
+      console.error('iruSuggest 失敗', e);
+      alert('產生提案失敗：' + e.message);
+    }
+  }
+
+  function closeIruDiffModal() {
+    document.getElementById('iruDiffModal').classList.remove('active');
+    iruCurrentRuleId = null;
+    document.getElementById('iruConfirmBtn').disabled = false;
+  }
+
+  async function iruConfirmUpgrade() {
+    if (!iruCurrentRuleId) return;
+    const content = document.getElementById('iruProposed').value;
+    if (!content.trim()) { alert('提案內容不能為空'); return; }
+    if (!iruSyncToken) { alert('sync_token 缺、請刷新列表'); return; }
+    const errBox = document.getElementById('iruLintErrors');
+    errBox.style.display = 'none';
+    // v1.18.0-rc3 review N3: disable button 防 double-click
+    const btn = document.getElementById('iruConfirmBtn');
+    btn.disabled = true;
+    try {
+      const res = await fetch(`${API}/admin/iron-rules/${iruCurrentRuleId}/upgrade`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify({ content, sync_token: iruSyncToken }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = (data.error || '失敗') + (data.errors ? '\n' + data.errors.join('\n') : '');
+        errBox.textContent = msg;
+        errBox.style.display = 'block';
+        // sync_token 衝突 → 自動刷新
+        if (res.status === 409 && data.new_token) {
+          iruSyncToken = data.new_token;
+          alert('鐵律狀態已變動、列表將自動刷新、請重新編輯');
+          closeIruDiffModal();
+          loadIronRuleStatus();
+        }
+        btn.disabled = false;
+        return;
+      }
+      iruSyncToken = data.sync_token || iruSyncToken;
+      alert(`升級成功！format: ${data.format}` + (data.lint_warnings && data.lint_warnings.length ? '\n警告：\n' + data.lint_warnings.join('\n') : ''));
+      closeIruDiffModal();
+      loadIronRuleStatus();
+    } catch (e) {
+      errBox.textContent = e.message;
+      errBox.style.display = 'block';
+      btn.disabled = false;
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ===== v1.17.0 P1: 裝機狀況 =====

@@ -74,12 +74,18 @@ export function lintSkillMdRule(rule, fm) {
   const frontmatter = fm.frontmatter;
   const body = (fm.body || '').trim();
 
-  // S2 — name 必填、kebab-case
+  // S2 — name 必填、kebab-case ASCII only
+  //
+  // v1.18.0-rc3 review I4 修正：之前曾擴充接受中文 BMP、但跨平台 fs 危險
+  //   (macOS NFC/NFD normalize 不一致、Linux git path 跨平台壞)
+  //   → 收緊回 ASCII only。suggest helper 改用「title hash + ASCII hint」推 name
+  //
+  // 對齊 Anthropic SKILL.md 官方範例 (pdf, xlsx, skill-creator) 全 ASCII
   const name = typeof frontmatter.name === 'string' ? frontmatter.name.trim() : '';
   if (!name) {
     errors.push('S2 frontmatter 缺 name 欄位（必填）');
   } else if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(name)) {
-    errors.push(`S2 name "${name}" 不是 kebab-case（必須 ^[a-z0-9-]+$、頭尾不可 -）`);
+    errors.push(`S2 name "${name}" 不是 kebab-case（必須 ^[a-z0-9-]+$、頭尾不可 -、ASCII only）`);
   }
 
   // S3 — name 字數 3-60

@@ -74,6 +74,7 @@ import activityRoutes from './routes/activity.js';
 import usageRoutes from './routes/usage/index.js';
 import broadcastRoutes from './routes/broadcast.js';
 import adminWorkLogRoutes from './routes/admin-work-log.js';
+import adminIronRuleUpgradeRoutes from './routes/admin-iron-rule-upgrade.js';
 import meRoutes from './routes/me.js';
 import { createNarrativeRouter } from './routes/me-narrative.js';
 import { createDebugRouter } from './routes/debug.js';
@@ -85,6 +86,7 @@ app.use('/api/session', sessionRoutes);
 app.use('/api/handoff', handoffRoutes);
 // 子路徑要在 /api/admin 之前 mount，否則 adminRoutes 會吃掉
 app.use('/api/admin/work-log', adminWorkLogRoutes);
+app.use('/api/admin/iron-rules', adminIronRuleUpgradeRoutes);  // v1.18.0 升級助手
 app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
