@@ -1,5 +1,48 @@
 # OwnMind 更新紀錄
 
+## v1.18.4 — 產品健康度日報雛形 + tool='unknown' fallback 修正
+
+**背景**：Vin 提產品品質追蹤需求、走 Gemini r1/r2/r3 三輪 review 後、選擇路線 C「先用 SQL 探勘真實 telemetry 資料、再決定指標」。實作過程順手抓到一個 6 個月沒被發現的小 bug。
+
+### 新增：產品健康度日報雛形
+
+`scripts/health-report-daily.sh`：bash 腳本、SSH 進 prod 跑 6 條 SQL、輸出健康度日報。**只看絕對數字、不算比例**、避免冷啟動樣本不足下被分母為 0 / 百分比波動劇烈誤導。
+
+報告涵蓋：
+- 過去 7 天違反/遵守/跳過絕對件數
+- 觸發鐵律覆蓋數（vs 啟用鐵律總數）
+- 過去 7 天違反明細（按鐵律切）
+- 過去 7 天觸發但 0 違反的「靜默生效」鐵律
+- **過去 30 天 0 觸發的「死規則」**（可能是保險用、可能是設計問題）
+- 各 tool 觸發分布
+- 異常事件件數（排除 unknown_model）
+
+用法：`bash scripts/health-report-daily.sh > reports/health-$(date +%F).md`
+
+### 修正：tool='unknown' fallback bug
+
+第一次跑日報就抓到 229 筆 `tool='unknown'` 事件、追到根因：
+
+- `mcp/ownmind-log.js:7` fallback 預設 `'unknown'`
+- `mcp/index.js:245` 同樣預設 `'unknown'`
+- 但 `mcp/index.js:167` `CLIENT_TOOL` 預設 `'claude-code'`
+
+兩個 env var (`OWNMIND_TOOL` vs `OWNMIND_CLIENT_TOOL`) 名稱不一致、預設值不一致、user 沒設 env var 時就 fallback 到 'unknown'、導致跨工具分群指標失效。
+
+修法：兩個檔案都改成 `process.env.OWNMIND_TOOL || process.env.OWNMIND_CLIENT_TOOL || 'claude-code'`，向後相容、user 已設的不受影響。
+
+**永遠教訓**：env var fallback 預設值要跨檔案統一、不要每個檔自己決定。
+
+### Bonus：13 條死規則分析
+
+跑日報順便看到 35 條啟用中鐵律有 13 條過去 30 天 0 觸發：
+- 4 條正常保險用（IR-013/016/017/033）— 不動
+- 4 條 trigger 太寬鬆（IR-010/011/029/030）— 待調 trigger
+- **3 條規則太抽象 AI 無法判斷觸發點（IR-004/006/026）— 待重寫**
+- 2 條過新等樣本（IR-039/040）
+
+詳細處理建議見 Vin 個人 backlog。
+
 ## v1.18.3 — Hotfix: lint metadata 漏餵 + reply-lint Stop hook 漏裝
 
 **背景**：v1.18.2 完成後 Vin 罵「我老是提醒你、講到行話要做解釋說明、例如 dogfood 這種你應該要講清楚」— 觸發 IR-036（行話必須附白話說明）違反、深查暴露 2 個 v1.18.2 漏洞：

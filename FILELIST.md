@@ -1019,6 +1019,22 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.4 新增 / 修改 (產品健康度日報雛形 + tool='unknown' fallback 修正)
+
+新增檔:
+```
+scripts/health-report-daily.sh         — bash SSH 進 prod 跑 6 條 SQL、輸出健康度日報
+                                         只看絕對數字、不算比例、避免冷啟動誤導
+```
+
+修改的既有檔:
+```
+mcp/ownmind-log.js                     — TOOL_NAME fallback 從 'unknown' 改 'claude-code'
+                                         加 OWNMIND_CLIENT_TOOL alias、向後相容
+mcp/index.js                           — 同上、TOOL_NAME 跟 ownmind-log.js 同步
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.3 → 1.18.4
+```
+
 ## v1.18.3 新增 / 修改 (Hotfix: lint metadata 漏餵 + reply-lint Stop hook 安裝腳本漏修)
 
 修改的既有檔:
