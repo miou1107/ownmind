@@ -356,6 +356,35 @@ actions 常用值：code_edit, git_commit, git_push, deploy, debug, research, re
 - 本地 memory 可與 OwnMind 並存，發生衝突時以 OwnMind 為準`;
 
 /**
+ * GET /sync-token — Lightweight conditional sync endpoint (v1.18.0)
+ *
+ * 為什麼存在：
+ *   v1.17.x 起 SessionStart hook 每次都全量打 /init?compact=true、不論鐵律 / 記憶
+ *   有沒有變、99% sessions 都拉了同一份 30KB 資料下來。
+ *
+ *   v1.18.0 補完讀取端 conditional pull：client 先打這個輕量 endpoint 拿
+ *   sync_token、跟 local cache (~/.ownmind/cache/memories.json) 的 sync_token
+ *   比對、相同就跳過 /init download (省 95% 流量)、不同才走全量。
+ *
+ *   sync_token 機制本身已存在 (src/utils/syncToken.js)、只用在寫入端防 stale
+ *   client；本 endpoint 把它也用在讀取端。
+ *
+ * 行為：
+ *   - 純算 sync_token、不 query 任何 memory 內容
+ *   - response < 100 bytes
+ *   - timeout 友善 (3 秒內必回、給 hook 用)
+ */
+router.get('/sync-token', async (req, res) => {
+  try {
+    const sync_token = await generateSyncToken(req.user.id);
+    res.json({ sync_token });
+  } catch (err) {
+    logger.error('GET /sync-token 失敗', { error: err.message });
+    res.status(500).json({ error: 'sync-token 取得失敗' });
+  }
+});
+
+/**
  * GET /init - 載入初始記憶
  */
 router.get('/init', async (req, res) => {

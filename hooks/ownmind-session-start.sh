@@ -147,10 +147,24 @@ if [ -f "$SELF_CHECK_SCRIPT" ] && [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
   " >/dev/null 2>&1 &
 fi
 
-# --- 呼叫 OwnMind init API（compact mode）---
-INIT_DATA=$(curl -sf --max-time 5 \
-  -H "Authorization: Bearer $API_KEY" \
-  "${API_URL}/api/memory/init?compact=true" 2>/dev/null)
+# --- v1.18.0: Conditional sync — 用 sync_token 跳過 99% sessions 的 download ---
+# helper 流程：
+#   1. 讀 ~/.ownmind/cache/memories.json (sync_token + saved_at)
+#   2. 24hr 過期 → 強制走全量 init
+#   3. 否則 GET /sync-token (~50 bytes) 比對
+#   4. 相同 → 跳過 init download、用 cache (~95% sessions 走這條)
+#   5. 不同 → 全量 init + 寫新 cache + 重寫 ~/.claude/skills/ownmind-iron-rules/
+# helper 內建 fallback：fetch 失敗 → 用 cache、cache 也沒 → 印空 string
+SCRIPT_DIR_FOR_INIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INIT_DATA=$(timeout 10 node "$SCRIPT_DIR_FOR_INIT/lib/conditional-sync-cli.js" \
+  "$API_URL" "$API_KEY" 2>/dev/null)
+
+if [ -z "$INIT_DATA" ]; then
+  # conditional-sync 完全失敗（無網 + 無 cache）→ fallback 到 v1.17.x 直接 curl
+  INIT_DATA=$(curl -sf --max-time 5 \
+    -H "Authorization: Bearer $API_KEY" \
+    "${API_URL}/api/memory/init?compact=true" 2>/dev/null)
+fi
 
 if [ -z "$INIT_DATA" ]; then
   log_event "init_fail" "status" "api_timeout"
