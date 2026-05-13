@@ -6,7 +6,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import fetch from "node-fetch";
+// Node 18+ 有 global fetch、不需 node-fetch 套件（v1.17.99 移除依賴）
 import fs from 'fs';
 import path from 'path';
 import os from 'os';

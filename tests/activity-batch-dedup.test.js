@@ -3,8 +3,15 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { Router } from 'express';
 
+import { insertActivityLog, normalizeClientEventId, UUID_V4_REGEX }
+  from '../src/utils/activity-insert.js';
+
 /**
  * v1.17.98 — POST /api/activity/batch dedup 測試
+ *
+ * v1.17.99 update：原本 simplified copy 改用真 handler 的 helper（src/utils/activity-insert.js）
+ * — 同一份 dedup INSERT 邏輯被真 handler 跟測試共用、徹底解掉 v1.17.98 review I1 limitation
+ * （test 跟 prod 邏輯漂移風險）。
  *
  * 直接 stub query 函式驗證 SQL 行為：
  *   - INSERT 含 client_event_id 欄位
@@ -49,27 +56,16 @@ function makeFakeQuery(state) {
 }
 
 /**
- * 建一個只掛 batch 路由的 mini app，注入 fake query
+ * 建一個只掛 batch 路由的 mini app — 直接呼叫真 helper（v1.17.99）
+ *
+ * Handler 用真 helper insertActivityLog + normalizeClientEventId、
+ * 確保 test 走的程式跟 prod handler 100% 一致（解 v1.17.98 review I1）。
  */
 async function buildApp(state) {
-  // 動態 import 因為需要先注入 mock
-  const { default: enrichMod } = await import('../src/utils/enrich-activity.js')
-    .then(m => ({ default: m })).catch(() => ({ default: null }));
-
   const router = Router();
   const fakeAuth = (req, _res, next) => { req.user = { id: 1 }; next(); };
   const fakeQuery = makeFakeQuery(state);
 
-  // 簡化版 handler — 對應 src/routes/activity.js batch handler 的 dedup 邏輯
-  // ⚠️ 這是 simplified copy、不是真的 import 真 handler（review I1 limitation：
-  // src/routes/activity.js 用 module-level Router、無法注入 query mock；
-  // 真 handler 跟 module-level pg client 緊耦合、整合測試需要 refactor 成 factory pattern）
-  // 這條 simplified copy 必須跟 src/routes/activity.js batch handler 的 dedup 路徑邏輯
-  // 完全相同；改 server handler 時記得同步改這裡。
-  //
-  // v1.17.98 review B1 修正：拆兩條 path — clientEventId === null 走純 INSERT、
-  // 有 id 才走 ON CONFLICT 避免 partial index inference 邊界 bug。
-  const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   router.post('/batch', fakeAuth, async (req, res) => {
     const { events } = req.body;
     if (!Array.isArray(events) || events.length === 0) {
@@ -78,25 +74,17 @@ async function buildApp(state) {
     let inserted = 0, deduped = 0;
     for (const e of events) {
       if (!e.ts || !e.event) continue;
-      const clientEventId = (typeof e.client_event_id === 'string' && UUID_V4_REGEX.test(e.client_event_id))
-        ? e.client_event_id : null;
-      let r;
-      if (clientEventId === null) {
-        r = await fakeQuery(
-          `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-          [req.user.id, e.ts, e.event, e.tool || null, e.source || null, e.details || {}]
-        );
-      } else {
-        r = await fakeQuery(
-          `INSERT INTO activity_logs (user_id, ts, event, tool, source, details, client_event_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (user_id, client_event_id) WHERE client_event_id IS NOT NULL
-           DO NOTHING RETURNING id`,
-          [req.user.id, e.ts, e.event, e.tool || null, e.source || null, e.details || {}, clientEventId]
-        );
-      }
-      if (r.rows.length === 0) deduped++; else inserted++;
+      const clientEventId = normalizeClientEventId(e.client_event_id);
+      const { inserted: didInsert } = await insertActivityLog(fakeQuery, {
+        userId: req.user.id,
+        ts: e.ts,
+        event: e.event,
+        tool: e.tool || null,
+        source: e.source || null,
+        details: e.details || {},
+        clientEventId,
+      });
+      if (didInsert) inserted++; else deduped++;
     }
     res.json({ inserted, deduped, total: events.length });
   });
@@ -126,6 +114,79 @@ async function postBatch(app, events) {
     catch (e) { reject(e); }
   });
 }
+
+// v1.17.99 — 直接打真 helper 的單元測試（最快、不用 spin 整個 express）
+describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handler 同程式）', () => {
+  it('clientEventId === null → 純 INSERT、不帶 ON CONFLICT、6 個 params', async () => {
+    const state = { inserted: new Set(), captured: [] };
+    const fakeQuery = makeFakeQuery(state);
+    const r = await insertActivityLog(fakeQuery, {
+      userId: 1, ts: '2026-05-13T00:00:00Z', event: 'x',
+      tool: null, source: null, details: {}, clientEventId: null,
+    });
+    assert.equal(r.inserted, true);
+    assert.equal(state.captured.length, 1);
+    assert.ok(!/ON CONFLICT/.test(state.captured[0].sql), 'NULL path 不該帶 ON CONFLICT');
+    assert.equal(state.captured[0].params.length, 6);
+  });
+
+  it('合法 UUID v4 → ON CONFLICT path、7 個 params、第一次 inserted=true', async () => {
+    const state = { inserted: new Set(), captured: [] };
+    const fakeQuery = makeFakeQuery(state);
+    const id = '11111111-2222-4333-8444-555555555555';
+    const r = await insertActivityLog(fakeQuery, {
+      userId: 1, ts: '2026-05-13T00:00:00Z', event: 'x',
+      tool: null, source: null, details: {}, clientEventId: id,
+    });
+    assert.equal(r.inserted, true);
+    assert.match(state.captured[0].sql, /ON CONFLICT[\s\S]*WHERE client_event_id IS NOT NULL[\s\S]*DO NOTHING/i);
+    assert.equal(state.captured[0].params.length, 7);
+    assert.equal(state.captured[0].params[6], id);
+  });
+
+  it('同 (userId, clientEventId) 第二次 → inserted=false（dedup）', async () => {
+    const state = { inserted: new Set(), captured: [] };
+    const fakeQuery = makeFakeQuery(state);
+    const id = '22222222-3333-4444-8555-666666666666';
+    const args = {
+      userId: 1, ts: '2026-05-13T00:00:00Z', event: 'x',
+      tool: null, source: null, details: {}, clientEventId: id,
+    };
+    const r1 = await insertActivityLog(fakeQuery, args);
+    const r2 = await insertActivityLog(fakeQuery, args);
+    assert.equal(r1.inserted, true);
+    assert.equal(r2.inserted, false, '第二次同 id 必須 inserted=false');
+  });
+
+  it('normalizeClientEventId — 空 string / 非 string / 非 UUID → null', () => {
+    assert.equal(normalizeClientEventId(null), null);
+    assert.equal(normalizeClientEventId(undefined), null);
+    assert.equal(normalizeClientEventId(''), null);
+    assert.equal(normalizeClientEventId(123), null);
+    assert.equal(normalizeClientEventId({}), null);
+    assert.equal(normalizeClientEventId('not-a-uuid'), null);
+    // UUID v1（位置 13 不是 4）
+    assert.equal(normalizeClientEventId('11111111-2222-1111-8444-555555555555'), null);
+    // UUID v3 / v5 也不接（只接 v4）
+    assert.equal(normalizeClientEventId('11111111-2222-3333-8444-555555555555'), null);
+    assert.equal(normalizeClientEventId('11111111-2222-5333-8444-555555555555'), null);
+  });
+
+  it('normalizeClientEventId — 合法 UUID v4（含大寫 / 混合大小寫）→ 原樣回', () => {
+    const v4lower = '11111111-2222-4333-8444-555555555555';
+    const v4upper = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
+    const v4mixed = 'Aa1Bb2Cc-3333-4abc-8DEF-aaaaaaaaaaaa';
+    assert.equal(normalizeClientEventId(v4lower), v4lower);
+    assert.equal(normalizeClientEventId(v4upper), v4upper);
+    assert.equal(normalizeClientEventId(v4mixed), v4mixed);
+  });
+
+  it('UUID_V4_REGEX export 對齊（給其他 module 重用）', () => {
+    assert.ok(UUID_V4_REGEX instanceof RegExp);
+    assert.ok(UUID_V4_REGEX.test('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'));
+    assert.ok(!UUID_V4_REGEX.test('aaaaaaaa-bbbb-1ccc-8ddd-eeeeeeeeeeee'));  // v1
+  });
+});
 
 describe('v1.17.98 — POST /api/activity/batch client_event_id dedup', () => {
   it('有 client_event_id 時 — SQL 含欄位 + ON CONFLICT 子句', async () => {

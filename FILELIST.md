@@ -1019,6 +1019,28 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.17.99 新增 / 修改（Dedup helper 抽 + MCP log 帶 id + 移 node-fetch 依賴）
+
+新增檔：
+
+```
+src/utils/activity-insert.js                 — pure helper：normalizeClientEventId + insertActivityLog
+tests/mcp-log-event-uuid.test.js             — 3 條 mcp/ownmind-log client_event_id 測試
+```
+
+修改的既有檔：
+
+```
+src/routes/activity.js                       — import helper、移除 inline UUID_V4_REGEX 跟 40 行 INSERT
+tests/activity-batch-dedup.test.js           — buildApp 改用真 helper、+6 條 helper unit test
+mcp/ownmind-log.js                           — logEvent 加 client_event_id (UUID v4)、移 node-fetch import
+mcp/index.js                                 — 移 node-fetch import (改用 global fetch)
+mcp/package.json                             — 移 node-fetch dep
+mcp/package-lock.json                        — 同步 lock
+package.json / README* / docs/README*        — 1.17.98 → 1.17.99
+CHANGELOG.md                                 — v1.17.99 條目
+```
+
 ## v1.17.98 新增 / 修改（Server 端 dedup — client_event_id partial unique index）
 
 新增檔：
