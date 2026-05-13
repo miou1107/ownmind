@@ -129,6 +129,9 @@ async function autoEmitObservedTrigger(userId, event) {
   return null;
 }
 
+// UUID v4 形式檢查（client_event_id 必須是合法 UUID 否則當沒帶處理）
+const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 router.post('/batch', auth, async (req, res) => {
   try {
     const { events } = req.body;
@@ -139,21 +142,53 @@ router.post('/batch', auth, async (req, res) => {
     // 限制單次上傳量
     const batch = events.slice(0, 500);
     let inserted = 0;
+    let deduped = 0;
     let autoObserved = 0;
 
     for (const e of batch) {
       if (!e.ts || !e.event) continue;
+
+      // v1.17.98: client_event_id 給 dedup 用（hook + flush helper 重複送的場景）
+      // 必須合法 UUID v4、否則當作沒帶（NULL）— partial unique index 不會卡到 NULL row
+      const clientEventId = (typeof e.client_event_id === 'string' && UUID_V4_REGEX.test(e.client_event_id))
+        ? e.client_event_id
+        : null;
 
       // v1.17.89: 落 DB 前 enrich details — 補 disable/update iron_rule 的
       // code+title snapshot，未來 pitfalls 查詢不用 JOIN memories 也能顯示完整
       // 脈絡。enrich 失敗會吞掉錯誤（pure function 內建 try/catch）回原 details
       const enrichedDetails = await enrichActivityDetails(e, memoryLookup);
 
-      await query(
-        `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [req.user.id, e.ts, e.event, e.tool || null, e.source || null, enrichedDetails]
-      );
+      // v1.17.98: 拆兩條 path — 沒帶 id 直接 INSERT（舊 client / mcp/ownmind-log
+      // batch path）、有 id 才走 ON CONFLICT DO NOTHING dedup。
+      //
+      // 拆的理由：partial unique index `WHERE client_event_id IS NOT NULL` 加上
+      // ON CONFLICT inference 雖然理論上 NULL row 不會撞、但 Postgres 邊界行為
+      // 跨版本曾有變化、code review 也提出疑慮、保守用 explicit branch 比依賴
+      // partial inference 邏輯安全（且 intent 更明確：「有 id 才 dedup」）。
+      let insertResult;
+      if (clientEventId === null) {
+        insertResult = await query(
+          `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           RETURNING id`,
+          [req.user.id, e.ts, e.event, e.tool || null, e.source || null, enrichedDetails]
+        );
+      } else {
+        insertResult = await query(
+          `INSERT INTO activity_logs (user_id, ts, event, tool, source, details, client_event_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (user_id, client_event_id) WHERE client_event_id IS NOT NULL
+           DO NOTHING
+           RETURNING id`,
+          [req.user.id, e.ts, e.event, e.tool || null, e.source || null, enrichedDetails, clientEventId]
+        );
+      }
+      // ON CONFLICT 跳過時 RETURNING 0 rows（只發生在有 id 的 path）
+      if (insertResult.rows.length === 0) {
+        deduped++;
+        continue;  // 不跑 auto-observe trigger — 避免重送同事件時 server 端衍生事件被重複觸發
+      }
       inserted++;
 
       // v1.17.45 伺服器端自動觀測：若是高風險事件，自動補一筆 observed_trigger
@@ -190,7 +225,7 @@ router.post('/batch', auth, async (req, res) => {
       }
     }
 
-    res.json({ inserted, total: batch.length, auto_observed: autoObserved });
+    res.json({ inserted, deduped, total: batch.length, auto_observed: autoObserved });
   } catch (err) {
     logger.error('批次上傳 activity log 失敗', { error: err.message });
     res.status(500).json({ error: '上傳失敗' });

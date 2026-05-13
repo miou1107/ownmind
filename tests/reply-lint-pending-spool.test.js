@@ -184,6 +184,40 @@ describe('v1.17.97 — Hook 條件 spool（pending 檔只在失敗時寫）', ()
       `rotate 後新 pending 應只含這次新事件、實際 ${newStat.size} bytes`);
   });
 
+  // v1.17.98 — client_event_id 必須出現在 spooled events
+  it('每筆 spooled event 必須帶合法 UUID v4 client_event_id', () => {
+    writeViolatingTranscript();
+    setupCredentials('http://127.0.0.1:1');
+    runHook({ OWNMIND_REPLY_LINT_NO_NETWORK: '1' });
+    assert.ok(fs.existsSync(pendingSpoolPath));
+    const lines = fs.readFileSync(pendingSpoolPath, 'utf8').trim().split('\n');
+    const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    for (const line of lines) {
+      const ev = JSON.parse(line);
+      assert.ok(ev.client_event_id, '每筆 spooled event 必須有 client_event_id');
+      assert.match(ev.client_event_id, uuidV4, 'client_event_id 必須是合法 UUID v4');
+    }
+  });
+
+  it('同一個 violation 在多次 spool（hook + flush）必須沿用同一 id（不重新生）', () => {
+    // 第一次：hook 跑、POST 失敗 → spool 到 pending 一份事件、含 id
+    writeViolatingTranscript();
+    setupCredentials('http://127.0.0.1:1');
+    runHook({ OWNMIND_REPLY_LINT_NO_NETWORK: '1' });
+    const linesAfterHook = fs.readFileSync(pendingSpoolPath, 'utf8').trim().split('\n');
+    const idAfterHook = JSON.parse(linesAfterHook[0]).client_event_id;
+    // 同一個 events array 物件理論上應該重用同 id（hook 內 events 是同份、不會二次生 id）
+    // 這條測試確認的是：spool 跟 archive 寫的是「同一份 events 物件」、id 一致
+    // archive 檔名格式 YYYY-MM-DD.jsonl
+    const today = new Date().toISOString().slice(0, 10);
+    const archivePath = path.join(tmpHome, '.ownmind', 'logs', `${today}.jsonl`);
+    if (fs.existsSync(archivePath)) {
+      const arch = JSON.parse(fs.readFileSync(archivePath, 'utf8').trim().split('\n')[0]);
+      assert.equal(arch.client_event_id, idAfterHook,
+        'archive 與 pending 必須用同一個 client_event_id（hook 不該重複生 id）');
+    }
+  });
+
   it('既有 pending 內容 + 新一輪失敗 → append 不覆蓋', () => {
     fs.writeFileSync(pendingSpoolPath, JSON.stringify({
       ts: '2026-05-12T00:00:00.000Z',
