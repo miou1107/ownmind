@@ -56,6 +56,18 @@ send_update_beacon 'update_started'
 echo "OwnMind sync (light path)"
 echo "─────────────────────────────────────────────"
 
+# --- 0. v1.18.5 補修：conditional-sync-cli.js 需要 js-yaml ---
+# 原 user install 只在 ~/.ownmind/mcp/ 跑 npm install、root 依賴沒裝、js-yaml 缺
+# → conditional-sync-cli ERR_MODULE_NOT_FOUND crash、SessionStart hook silent fail
+# → big skill (~/.claude/skills/ownmind-iron-rules/) 從 v1.18.0 上線就沒更新過
+# 修法：在 root 補裝 js-yaml (轉 conditional-sync 用)、idempotent (已裝就 skip)
+if [ ! -d "$OWNMIND_DIR/node_modules/js-yaml" ]; then
+  echo "   📦 安裝 conditional-sync 缺的依賴 js-yaml..."
+  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.1.1 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+    && echo "   ✅ js-yaml 安裝完成" \
+    || echo "   ⚠️ js-yaml 安裝失敗 (詳見 ~/.ownmind/logs/update-err.log)、big skill sync 仍會 fallback skip、不影響其他功能"
+fi
+
 # --- 1. 同步 Claude Code skills ---
 if [ -d "$HOME/.claude" ]; then
   mkdir -p "$HOME/.claude/skills/ownmind-memory"

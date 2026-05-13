@@ -71,6 +71,25 @@ Send-UpdateBeacon -Trigger 'update_started'
 Write-Host "OwnMind sync (light path)"
 Write-Host "─────────────────────────────────────────────"
 
+# --- 0. v1.18.5 補修：conditional-sync-cli.js 需要 js-yaml ---
+# 對應 update.sh 的 root deps 修補。idempotent：已裝就 skip。
+$JsYamlDir = Join-Path $OwnMindDir "node_modules\js-yaml"
+if (-not (Test-Path $JsYamlDir)) {
+  Write-Host "   📦 安裝 conditional-sync 缺的依賴 js-yaml..."
+  Push-Location $OwnMindDir
+  try {
+    $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
+    & npm install js-yaml@^4.1.1 --no-save --silent --no-audit --no-fund 2>>$errLog
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "   [ OK ] js-yaml 安裝完成"
+    } else {
+      Write-Host "   [ WARN ] js-yaml 安裝失敗 (詳見 $errLog)、big skill sync 仍會 fallback skip"
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
 function CopyIfExists {
   param([string]$Src, [string]$Dest)
   if (Test-Path $Src) {

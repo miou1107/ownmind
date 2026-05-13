@@ -1,5 +1,61 @@
 # OwnMind 更新紀錄
 
+## v1.18.5 — Hotfix: big skill sync 從 v1.18.0 上線就壞了
+
+**背景**：v1.18.4 把 3 條死規則（IR-004/006/026）重寫成具體動作後、驗證新版有沒生效時、發現 `~/.claude/skills/ownmind-iron-rules/SKILL.md` 和 `references/*.md` 從沒被更新過（mtime 14:26、3 條鐵律 update 是 17:34+）。深查暴露 v1.18.0 上線就有的 silent bug。
+
+### Root Cause
+
+`hooks/lib/conditional-sync-cli.js` 在 module top-level static import：
+```js
+import { syncToAllTools } from '../../src/utils/iron-rule-sync.js';
+```
+
+但 `iron-rule-sync.js` → `iron-rule-frontmatter.js` → `js-yaml`、`js-yaml` 在 root `package.json` dependencies。
+
+User install 流程只在 `~/.ownmind/mcp/` 跑 `npm install`、root 依賴**從沒被裝過**、`~/.ownmind/node_modules/js-yaml` 不存在。
+
+結果：每次 SessionStart hook 呼叫 `conditional-sync-cli.js`、整個 Node module 在 load 階段就拋 `ERR_MODULE_NOT_FOUND`、stdout 印空字串、bash 端走 fallback 拉 init data — 但 **big skill sync 那段 code 根本沒機會跑**、`syncToAllTools` 永遠沒被呼叫。
+
+**後遺症（從 v1.18.0 上線 6 天）**：
+- 所有 user 端的 `~/.claude/skills/ownmind-iron-rules/` 內容凍結在 install 那一刻
+- 鐵律改動只在 server / MCP cache / SessionStart additional context 生效
+- 但 AI 透過 `ownmind-iron-rules` skill 讀的、永遠是舊版
+
+### 修法
+
+**1. `hooks/lib/conditional-sync-cli.js` — dynamic import 防護**
+
+把 `syncToAllTools` 從 top-level import 移到 `if (result.refreshed)` 區段內、加 `await import(...)`。
+失敗時被外層 try/catch 抓住、log 後 silent skip、cache + stdout init data 仍正常 work。
+
+**2. `scripts/update.sh` + `update.ps1` — 自動補裝 js-yaml**
+
+在 sync 主流程開頭加 idempotent check：
+```bash
+if [ ! -d "$OWNMIND_DIR/node_modules/js-yaml" ]; then
+  cd "$OWNMIND_DIR" && npm install js-yaml@^4.1.1 --no-save --silent
+fi
+```
+
+`--no-save` 不污染 package.json、`--silent` 不刷屏、idempotent 重跑安全。
+
+### 驗證
+
+修完手動裝 js-yaml → 跑 conditional-sync-cli → sync.log 新增「sync 36 rules — written: [claude,windsurf,codex,opencode,gemini]」→ 3 個 reference 檔 mtime 從 14:26 → 17:49 → IR-004 reference 確認含新版「## 觸發時機（具體動作）」段落。
+
+**永遠教訓（IR-007 重犯第 4 次）**：
+- 加新模組依賴時、必須同時更新所有 user-facing install / update 腳本
+- 用 static import 從 root deps 是 user-facing client code 的地雷（user 端 install 流程跟 dev 不同）
+- 對 user-facing CLI、優先用 dynamic import + try/catch、提供 graceful degrade
+
+### 順帶發現
+
+User install 流程跟 dev 工作流的依賴管理脫節是設計層議題、應該：
+- 把 client-side 依賴拆獨立 package（`mcp/` 已是這個模式）
+- 或 root `package.json` 區分 `dependencies` (server only) 和 `clientDependencies` (user CLI 用)
+- 列入 v1.19+ 重構 backlog
+
 ## v1.18.4 — 產品健康度日報雛形 + tool='unknown' fallback 修正
 
 **背景**：Vin 提產品品質追蹤需求、走 Gemini r1/r2/r3 三輪 review 後、選擇路線 C「先用 SQL 探勘真實 telemetry 資料、再決定指標」。實作過程順手抓到一個 6 個月沒被發現的小 bug。
