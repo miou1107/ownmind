@@ -129,6 +129,9 @@ router.post('/:id/suggest-skill-md', async (req, res) => {
       proposed_content: suggestion.proposed_content,
       already_skill_md: suggestion.already_skill_md,
       notes: suggestion.notes,
+      // v1.18.1: helper 內 round-trip lint self-check 結果、UI 可顯示 warning
+      lint_ok: suggestion.lint_ok,
+      lint_errors: suggestion.lint_errors || [],
       suggest_method: 'template',  // 未來 'llm' 路徑保留欄位
     });
   } catch (err) {

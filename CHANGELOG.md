@@ -1,5 +1,55 @@
 # OwnMind 更新紀錄
 
+## v1.18.1 — Hotfix: 移除 IR-037 中英混雜 lint (鐵律是技術筆記、規則用錯場景)
+
+**背景**：v1.18.0 升級助手 browser 實測時、IR-004「使用 OpenSpec 開發流程」點 [升級提案] 後被 IR-037 lint 擋下、抓 `lint / body / Driven / Development / openspec` 5 個英文詞超過 15% 中英混雜 threshold。
+
+Vin 質疑：「規矩太嚴 OR suggest 提案本身品質不對？」
+
+**Audit baseline (v1.18.1 hotfix B)**：寫 `scripts/audit-real-iron-rules-lint.js` 拿 prod 真實 35 條鐵律跑 lint：
+- **26/35 fail (74%)** — 不是個案、是設計錯誤
+- 17 條 fail 是 IR-037 中英混雜 (docker / openspec / Adam / Eric / MacBook / claude / opus / review / 等技術詞 / 人名)
+- 9 條缺適用情境段落 / 6 條缺 trigger / 3 條缺規則段落 / 1 條太短
+
+**根本原因**：IR-037「回話一律白話中文不要中英文混雜」設計初衷是「**AI 回話**」、reply-lint Stop hook (v1.17.96) 已專門做這件事。鐵律 content 本身是「**給 AI 看的技術筆記**」、含技術詞天經地義。**把 IR-037 套到鐵律 lint 是「規則用錯場景」、不是「規則太嚴」**。v1.17.94 上線 6 個月沒人發現是因為 lint 只對 POST/PUT 跑、不對既有 row 反向校驗、被掩蓋。升級助手把問題炸開、是好事。
+
+**修法 (D)**：移除 lintIronRule 的 IR-037 檢查（v1.17.94 規則 #7 + v1.18.0 schema lint S8）。reply-lint Stop hook 那條保留（IR-037 該管的場景）。
+
+**順帶解 rc3 設計缺陷 (A)**：suggest helper 加 round-trip lint self-check
+- 之前 (rc3) 沒做、IR-004 升級助手點下去才被 server 退回 (IR-007 fixture/prod mismatch 重蹈覆轍)
+- v1.18.1 helper 內自己跑 lintIronRule 驗證 proposed_content
+- 過不了在 notes 加 warning、admin 一進 modal 就看到 lint errors 不用點 confirm 才知道
+
+**新增 / 改動**：
+- 新檔 `scripts/audit-real-iron-rules-lint.js` — baseline audit script
+- `src/utils/iron-rule-quality.js`:
+  - lintLegacyTextRule 移除規則 #7 IR-037
+  - lintSkillMdRule 移除 S8 IR-037
+- `src/utils/iron-rule-suggest.js`:
+  - 加 round-trip lint check
+  - 回傳 `lint_ok` + `lint_errors` 給 admin endpoint
+- `src/routes/admin-iron-rule-upgrade.js`:
+  - POST /:id/suggest-skill-md response 加 lint_ok / lint_errors
+- `src/public/index.html`:
+  - Diff modal 進場時若 lint_ok=false → 預先在錯誤 box 顯示
+- `tests/iron-rule-quality.test.js`:
+  - 改 IR-037 測試反映新行為（合理 mixed content 應 pass）
+  - 加新測試「鐵律含 docker/openspec/Adam/Eric → 通過」
+
+**Audit 結果 (D 修完後)**：26 fail → **16 fail**、10 條鐵律從 fail 變 pass。剩 16 都是合理結構性問題（缺 trigger / 缺段落 / 太短）、Vin 之後手動補。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007 (再次踩 fixture/prod mismatch、這次解掉) / IR-008 / IR-022 / IR-027 / IR-031 / IR-032 / IR-038 (audit 提供觀測資料)。
+
+**測試**：1156 → 1157 (+1) 全綠。
+
+**升級指引（這版部署 server）**：
+1. SSH prod: `ssh root@kkvin.com`
+2. `cd /VinService/ownmind && git pull origin main`
+3. **不需 migration** (純 lint 邏輯改)
+4. `docker compose build --no-cache api && docker compose up -d api`
+5. 驗版號: 1.18.1
+6. Browser 重試 IR-004 升級提案 — 預期：proposal 過 lint、可直接 [確認升級]
+
 ## v1.18.0 — 鐵律對齊 Anthropic SKILL.md + 1 big iron-rules skill + conditional sync
 
 **核心轉向**：鐵律從 v1.17.94 free-text + 關鍵字啟發式 lint 升級成 **Anthropic SKILL.md 標準**（YAML frontmatter `name` + `description` + markdown body）+ **export 成 1 big skill** 到 `~/.claude/skills/ownmind-iron-rules/` 讓 Claude Code / Cursor / Codex 等工具**平台級主動 invoke**。落地 IR-027「提醒無效、邏輯才有效」最後一里路（從 50% → 70-90%）。

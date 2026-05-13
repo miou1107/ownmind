@@ -1405,6 +1405,13 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       document.getElementById('iruProposed').value = data.proposed_content || '';
       const notes = (data.notes || []).join(' / ');
       document.getElementById('iruNotes').textContent = notes;
+      // v1.18.1: 如果 helper round-trip lint 沒過、預先在 lintErrors box 顯示
+      // admin 一進 modal 就看到、不用點 confirm 才知道
+      if (data.lint_ok === false && data.lint_errors && data.lint_errors.length > 0) {
+        const errBox = document.getElementById('iruLintErrors');
+        errBox.textContent = '⚠️ Template 提案沒過 lint、必須手動修正：\n' + data.lint_errors.join('\n');
+        errBox.style.display = 'block';
+      }
     } catch (e) {
       console.error('iruSuggest 失敗', e);
       alert('產生提案失敗：' + e.message);
