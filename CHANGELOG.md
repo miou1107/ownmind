@@ -1,5 +1,62 @@
 # OwnMind 更新紀錄
 
+## v1.17.99 — Dedup helper 抽 + MCP log 也帶 client_event_id + 移 node-fetch 依賴
+
+**背景**：v1.17.98 reviewer 點到三件事：
+1. (I1) `tests/activity-batch-dedup.test.js` 用 simplified copy、邏輯漂移風險
+2. `mcp/ownmind-log.js` batch path 沒帶 `client_event_id`、所有 mcp 端事件（memory_save / disable / update / iron_rule_compliance via report_compliance）走 NULL path、沒 dedup 保護
+3. test fidelity vs route handler refactor 的 trade-off
+
+v1.17.99 一起解。
+
+**新增 / 改動**：
+
+1. **新檔 [src/utils/activity-insert.js](src/utils/activity-insert.js)** — pure helper module export：
+   - `UUID_V4_REGEX` — UUID v4 形式 regex（給其他 module 重用）
+   - `normalizeClientEventId(raw)` — 非 string / 非合法 v4 / 空字串 → null
+   - `insertActivityLog(query, args)` — 拆兩條 path INSERT、回 `{inserted: bool}`
+   - 純函式、query 由 caller 注入、好測試
+
+2. **改 [src/routes/activity.js](src/routes/activity.js)** POST /batch handler — 改 import + 用 helper、原本 40 行 inline dedup INSERT 邏輯收成 7 行 helper call。SQL byte-equivalent、行為不變。
+
+3. **改 [tests/activity-batch-dedup.test.js](tests/activity-batch-dedup.test.js)**：
+   - `buildApp` 把 simplified copy 拔掉、改用真 helper（`insertActivityLog` + `normalizeClientEventId` direct import）— 解 v1.17.98 review I1
+   - +6 條 helper 直接 unit test（不用 spin express）
+
+4. **改 [mcp/ownmind-log.js](mcp/ownmind-log.js)**：
+   - `logEvent` 給每筆 entry 加 `client_event_id: randomUUID()`、本地 JSONL + buffer POST 共用同物件 → 同 id
+   - 移 `import fetch from 'node-fetch'`、改用 Node 18+ 內建 global fetch
+
+5. **改 [mcp/index.js](mcp/index.js)** — 同上、移 node-fetch import
+
+6. **改 [mcp/package.json](mcp/package.json) + [mcp/package-lock.json](mcp/package-lock.json)** — 移除 `"node-fetch": "^3.3.0"` direct dep + lock 同步
+
+7. **新檔 [tests/mcp-log-event-uuid.test.js](tests/mcp-log-event-uuid.test.js)（3 條）** — 本地 JSONL entry 帶 UUID v4 / POST body 帶 / 兩處同 id
+
+**Code review 修正**（自己再走一輪 receiving-code-review）：
+
+1. **[B1] node-fetch 半套清理** — 第一版只移了 `mcp/ownmind-log.js` + `mcp/package.json`、忘了 `mcp/index.js` line 9 還在 import → user `npm install` 後 MCP 開不起來。修法：mcp/index.js 也拔掉、跑 `cd mcp && npm install` 同步 package-lock。
+2. **[I3] test 開發機環境 hygiene** — `tests/mcp-log-event-uuid.test.js` 沒清 `OWNMIND_TOOL` env、改在 beforeEach 顯式設 `'test-claude-code'`。
+3. **[I4] setTimeout(200) flaky** — 改用 `waitForPosts(n)` poll captured.length（10ms 間隔、2s timeout）、CI 機器忙不會炸。
+4. **[I2] cachebust import 累積 process listener** — afterEach 加 `removeAllListeners('beforeExit'/'SIGINT'/'SIGTERM')` 清掉。
+
+**Reviewer 點到還沒解 / 留 backlog**（v1.17.100+）：
+
+1. **N1 — route handler integration test** 仍是 `buildApp` 寫死 mini handler、不是 import 真 router。dedup INSERT 已 100% 一致（共享 helper）、但 route 的 batch slicing / enrich / auto-observe trigger 互動還沒測。需要 refactor `src/routes/activity.js` 成 factory pattern 才能注入 `query`。scope 大、留 v1.17.100+。
+2. **I5 — `mcp/ownmind-log.js` flush 路徑覆蓋率漏洞**：buffer ≥ 10 / 30s scheduleFlush / SIGTERM/INT flush / fetch 失敗 silent fail 都沒測。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-006（helper 抽出後相關層級全更新）/ IR-008 / IR-022（server + client 兩端都動）/ IR-031 / IR-032。
+
+**驗證**：本地 `npm test` 1054/1054 pass（v1.17.98 是 1045、+9）。
+
+**升級指引**（**這版部署 server**）：
+1. SSH 到 prod：`ssh root@kkvin.com`
+2. `cd /VinService/ownmind && git pull origin main`
+3. **不需 migration**（schema 沒動）
+4. `docker compose build --no-cache api && docker compose up -d api`（IR-018 + IR-023）
+5. 驗：`docker compose exec -T api node -e "console.log(require('./package.json').version)"` → 1.17.99
+6. Server SQL 跟 v1.17.98 byte-equivalent、行為不變、無迴歸風險
+
 ## v1.17.98 — Server 端 dedup（client_event_id）— 解掉 v1.17.97 review I1 race
 
 **背景**：v1.17.97 review 點出兩條 race 場景會讓同一個合規違反事件被寫進 DB 兩次：

@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import fetch from 'node-fetch';
+import { randomUUID } from 'node:crypto';
+// Node 18+ 有 global fetch、不需 node-fetch 套件（v1.17.99 移除依賴）
 
 const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
 const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
@@ -89,7 +90,13 @@ export function logEvent(event, details = {}) {
     const tool = details.tool || TOOL_NAME;
     const source = details.source || 'mcp';
     const { tool: _t, source: _s, ...rest } = details;
-    const entry = { ts, event, tool, source, details: rest };
+
+    // v1.17.99: 給每筆事件生 client_event_id (UUID v4)、server 端用
+    // (user_id, client_event_id) partial unique index dedup
+    // 場景：同一個 logEvent() 因 buffer / scheduleFlush / signal flush 多條
+    // path 重複 POST 同事件 → server 對相同 id 跳過。本機 JSONL 寫入跟 buffer
+    // push 用同一份 entry 物件、id 一致。
+    const entry = { ts, event, tool, source, client_event_id: randomUUID(), details: rest };
 
     // Write local
     appendFileSync(filePath, JSON.stringify(entry) + '\n');
