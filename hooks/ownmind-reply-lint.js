@@ -72,6 +72,10 @@ const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'banner-pending.jsonl');
 const PENDING_FILE_MAX_BYTES = 1024 * 1024;
 
+// v1.17.97 — POST 失敗 / NO_NETWORK 才 spool 到這個檔；SessionStart 補送。
+// 跟 archive YYYY-MM-DD.jsonl 分開：archive 是 debugging 用、pending 是 retry queue。
+const COMPLIANCE_PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'reply-lint-pending.jsonl');
+
 // 防呆：transcript 檔太大時只讀尾巴（避免巨大 session 拖慢 hook）。
 // 一行 JSON 通常 < 50KB；256KB 足夠覆蓋最後 5+ 輪 messages。
 const MAX_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
@@ -123,15 +127,22 @@ async function main() {
   }
 
   // === Compliance event 路徑（跨 session 統計）===
-  // 設計：先 spool 到 daily JSONL（durability、絕不漏）、再 best-effort POST。
-  // POST 失敗或 process exit 早於 socket flush 都不會丟資料。
+  // 設計（v1.17.97 改）：
+  //   1. archive 寫進 YYYY-MM-DD.jsonl（debugging、無 reader）— 保留 v1.17.96 行為
+  //   2. await POST 嘗試送 server
+  //   3. POST 失敗 / NO_NETWORK 才寫 reply-lint-pending.jsonl 給 SessionStart flush
+  //      （POST 成功就不寫 pending、避免 flush 重複送、DB 不會有 duplicate）
   const events = buildComplianceEvents(lintResult.violations);
   spoolEvents(events);
 
+  let postOk = false;
   if (!NO_NETWORK) {
-    // 用 await + 1500ms timeout — 確保 socket 真的 flush 才 exit（review B2）
-    try { await postEvents(events, readCredentials); }
-    catch { /* swallow — spool 已寫入、不會丟資料 */ }
+    try {
+      postOk = await postEvents(events, readCredentials);
+    } catch { postOk = false; }
+  }
+  if (!postOk) {
+    spoolPendingForRetry(events);
   }
 
   process.exit(0);
@@ -306,9 +317,8 @@ function buildComplianceEvents(violations) {
 }
 
 /**
- * Spool 到 ~/.ownmind/logs/YYYY-MM-DD.jsonl（同 mcp/ownmind-log.js LOGS_DIR）。
- * 這是 durability 保底 — 即使 POST 完全失敗、event 還是落地、之後可重送。
- *
+ * Archive 寫到 ~/.ownmind/logs/YYYY-MM-DD.jsonl（同 mcp/ownmind-log.js LOGS_DIR）。
+ * 純 debugging / human-readable 用、目前沒 reader 主動撿走（v1.17.97 確認）。
  * 不丟錯：寫不進去也不該擋 hook 流程。
  */
 function spoolEvents(events) {
@@ -324,28 +334,56 @@ function spoolEvents(events) {
 }
 
 /**
+ * v1.17.97 — POST 失敗時 spool 到 reply-lint-pending.jsonl 等下次 SessionStart flush。
+ * Append-only：既有內容保留、新事件加在後面。
+ *
+ * Size cap（review N1）：超過 1MB rotate 成 .old 覆蓋舊的，避免長期離線無限長。
+ *
+ * 不丟錯。
+ */
+const COMPLIANCE_PENDING_MAX_BYTES = 1024 * 1024;
+
+function spoolPendingForRetry(events) {
+  if (!Array.isArray(events) || events.length === 0) return;
+  try {
+    const dir = path.dirname(COMPLIANCE_PENDING_FILE);
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      const stat = fs.statSync(COMPLIANCE_PENDING_FILE);
+      if (stat.size > COMPLIANCE_PENDING_MAX_BYTES) {
+        try { fs.renameSync(COMPLIANCE_PENDING_FILE, COMPLIANCE_PENDING_FILE + '.old'); } catch { /* ignore */ }
+      }
+    } catch { /* file 不存在 → skip */ }
+    const lines = events.map(e => JSON.stringify(e)).join('\n') + '\n';
+    fs.appendFileSync(COMPLIANCE_PENDING_FILE, lines);
+  } catch { /* swallow */ }
+}
+
+/**
  * Best-effort POST events 到 /api/activity/batch。
  * await 直到 socket flush 完才 resolve（review B2 — 避免 process.exit 砍 socket）。
- * 1500ms timeout，超過就 destroy + resolve。
+ * 1500ms timeout，超過就 destroy + resolve(false)。
+ *
+ * @returns {Promise<boolean>} true 代表 HTTP 2xx；其他狀況回 false 讓上層走 spool retry。
  */
 function postEvents(events, readCredentials) {
   return new Promise((resolve) => {
-    if (!Array.isArray(events) || events.length === 0) { resolve(); return; }
+    if (!Array.isArray(events) || events.length === 0) { resolve(false); return; }
     let apiKey = '', apiUrl = '';
     try {
       ({ apiKey, apiUrl } = readCredentials());
-    } catch { resolve(); return; }
+    } catch { resolve(false); return; }
     if (API_URL_OVERRIDE) apiUrl = API_URL_OVERRIDE;
-    if (!apiKey || !apiUrl) { resolve(); return; }
+    if (!apiKey || !apiUrl) { resolve(false); return; }
 
     let u;
     try { u = new URL('/api/activity/batch', apiUrl); }
-    catch { resolve(); return; }
+    catch { resolve(false); return; }
 
     const body = JSON.stringify({ events });
     const mod = u.protocol === 'https:' ? https : http;
     let settled = false;
-    const done = () => { if (!settled) { settled = true; resolve(); } };
+    const done = (ok) => { if (!settled) { settled = true; resolve(ok === true); } };
 
     let req;
     try {
@@ -361,15 +399,17 @@ function postEvents(events, readCredentials) {
         },
         timeout: POST_TIMEOUT_MS,
       }, (res) => {
+        // HTTP 2xx 才算成功；4xx/5xx 算失敗、走 spool retry
+        const ok = res.statusCode >= 200 && res.statusCode < 300;
         res.on('data', () => { /* drain */ });
-        res.on('end', done);
-        res.on('error', done);
+        res.on('end', () => done(ok));
+        res.on('error', () => done(false));
       });
-    } catch { resolve(); return; }
+    } catch { resolve(false); return; }
 
-    req.on('error', done);
-    req.on('timeout', () => { try { req.destroy(); } catch { /* ignore */ } done(); });
+    req.on('error', () => done(false));
+    req.on('timeout', () => { try { req.destroy(); } catch { /* ignore */ } done(false); });
     try { req.write(body); req.end(); }
-    catch { done(); }
+    catch { done(false); }
   });
 }

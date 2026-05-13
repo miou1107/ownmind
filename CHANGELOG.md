@@ -1,5 +1,68 @@
 # OwnMind 更新紀錄
 
+## v1.17.97 — SessionStart spool flush + Windows path 兩個 v1.17.96 backlog 解掉
+
+**背景**：v1.17.96 ship 兩個已知問題：
+1. POST 失敗時事件雖有寫 archive jsonl 但沒 reader 主動撿走、形同丟失
+2. install.sh 在 Git Bash on Windows 沒走 cygpath 正規化（v1.17.71 既有 bug、v1.17.96 沿用）
+
+v1.17.97 兩個一起解。
+
+**修法**：
+
+1. **新增 `hooks/lib/flush-compliance-spool.js`** — SessionStart 開頭呼叫的補送 helper：
+   - 讀 `~/.ownmind/logs/reply-lint-pending.jsonl`、一次 POST `/api/activity/batch`
+   - HTTP 2xx → 刪檔（事件已落 server DB）
+   - 連線失敗 / 5xx → 留檔等下次 SessionStart 再試
+   - 全壞行 → 直接刪檔（避免每次 SessionStart 都重試永遠送不出去的內容）
+   - 嚴禁外漏 stderr / stdout（同 v1.17.71 規格 #3）
+   - inline `readCredentials`（不 import shared/helpers.js）— 避免 install.sh 把 helper 複製到 `~/.claude/hooks/lib/` 後跨目錄 relative import 解析不到 `~/.ownmind/shared/`
+
+2. **改 `hooks/ownmind-reply-lint.js` spool 語意**（避免 v1.17.97 flush 跟 hook POST 重複送）：
+   - `postEvents` 改回傳 boolean（HTTP 2xx 才算成功）
+   - 只在 POST 失敗 / NO_NETWORK 時寫 `reply-lint-pending.jsonl`
+   - archive `YYYY-MM-DD.jsonl` 行為不變（永遠寫、純 debugging 用）
+
+3. **改 `hooks/ownmind-session-start.sh`** — 在既有 banner-pending flush 段落後面加一段呼叫 flush-compliance-spool.js（output redirect `/dev/null` 雙保險不污染 user 通道）
+
+4. **改 `install.sh` 2.1 + 2.2 段** — Git Bash on Windows 偵測到 `IS_WINDOWS=true` 時、用 `cygpath -w` 把 `$OWNMIND_DIR` 轉成 Win32 path 再傳給 `add-post-tool-use-hook.cjs` 跟 `add-stop-hook.cjs`。Mac/Linux 行為不變。
+   - **這是 v1.17.71 既有問題、v1.17.96 沿用、v1.17.97 兩個 helper 一次解決**
+   - install.ps1 用原生 Windows path、不受影響、不需改
+
+**新增測試**：
+
+- `tests/reply-lint-pending-spool.test.js`（5 條）— hook 條件 spool 行為：POST 成功 / 失敗 / NO_NETWORK / 沒違反 / append 模式
+- `tests/flush-compliance-spool.test.js`（11 條）— flush helper 完整契約：基本契約 / POST 行為（200 / 5xx / 連線失敗 / 壞行混好行 / 全壞 / auth header）/ 嚴格 stdout/stderr 空白
+- 兩個測試都用 async `spawn` 而不 `spawnSync`，避免 fake server 跟被測 hook 同 Node process 時 event loop 卡住、server 接不到連線
+
+**End-to-end dogfood**：seed 兩條 offline 事件 → 跑 helper → fake server 收到 POST `/api/activity/batch` body 對齊 `{events:[{ts,event,tool,source,details}]}` schema → 200 → pending 檔被刪 ✓
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007 / IR-008 / IR-022 / IR-027 / IR-031 / IR-032 / IR-034（不觸發 — 純 client）。
+
+**驗證**：本地 `npm test` 1029/1029 pass（v1.17.96 是 1013、+16）。dogfood 確認 SessionStart flush + delete file 完整流程。
+
+**升級指引**：v1.17.97 純 client 改動、不部署 server。User 升級走自動更新拿到 hook + helper + install.sh 改動、再跑一次 `bash install.sh` 即可。
+
+**Code review 修正（commit 前獨立 agent 對抗 review）**：
+
+1. **[B1] install.sh `OWNMIND_DIR_FOR_HOOK` 變數作用域 bug** — 原本變數在 §2.1 的 `if [ -f "$ADD_HOOK_HELPER" ]` 區塊裡才 set、§2.2 直接用、若 §2.1 helper 檔案不存在（升級殘留 / 部分 cp 失敗）→ §2.2 會傳空字串給 add-stop-hook.cjs、Stop hook command 寫成 `node /ownmind-reply-lint.js` 直接啞掉。修法：把 cygpath 邏輯抽到 §2.0 一次算、兩個 section 共用；helper 不存在時加 `[WARN]` log 提醒 user。
+2. **[I2] flush helper read-then-delete race** — 原本 `read → POST → unlink` 中間 POST 期間（數百 ms ~ 3s）若 hook 新寫一筆事件進去、unlink 會把那筆新事件一起刪掉、永久遺失。修法：改 `rename → process → unlink` — flush 一開始把 PENDING_FILE rename 成 `.processing-<ts>-<pid>` 隔離出來、新事件去寫一個全新的空檔。POST 失敗時 restoreOrCleanup 把 .processing 還原成 PENDING（PENDING 已被新寫入時 append 過去）。順帶解掉 Concern #2「兩個 SessionStart 同時跑」— 第二個 rename 會 ENOENT 直接 exit。
+3. **[N1] pending spool 加 1MB rotate** — 對齊 `banner-pending.jsonl` 既有 `PENDING_FILE_MAX_BYTES = 1MB` 模式、超過 rotate 成 `.old` 覆蓋舊的、避免長期離線無限長拖慢 SessionStart。
+
+**新增測試**（+5）：
+- 4 條 review-I2 場景：POST 200 不留 .processing 殘留、POST 失敗 processing 還原 pending、沒 credentials 也還原 pending、PENDING 不存在直接 exit
+- 1 條 review-N1 場景：> 1MB pending → rotate 成 .old + 新檔只含新事件
+
+**已知問題（v1.17.98+ backlog）**：
+
+1. **[review-I1] Server 端沒 dedup — 同事件可能被寫兩次**：實際命中場景：
+   (a) hook POST 1500ms timeout 後 server 端 INSERT 仍可能完成 → hook 又 spool → SessionStart flush 再送一次 → DB 兩筆
+   (b) 兩個 SessionStart 並發、雖然 v1.17.97 rename 模式擋住「同檔被讀兩次」、但若 PENDING 被新寫入時間窗 + 第二個 flush 又拿 rename → 仍可能小機率重複
+   修法：events 帶 `client_event_id` (uuid v4)、server 對 `(user_id, client_event_id)` 加 partial unique index ON CONFLICT DO NOTHING。對 dashboard / pitfalls 統計影響：違反次數會偏高、偏高量不可預測（取決於離線 / timeout 頻率）。
+2. **[review-N2] 全壞行直接刪檔的 race** — hook 寫到一半被 SIGKILL 留下半行 JSON、SessionStart 同時觸發 view 為「全壞」就刪檔 → 後續 hook append 的好行也被刪。極罕見、視 SIGKILL 頻率而定、低風險。修法：保留 `.old` rename 而非 unlink。
+3. **archive `YYYY-MM-DD.jsonl` 還是寫但沒 reader** — 評估直接拿掉、減少 disk I/O（archive value 低、且 mcp/ownmind-log.js 也寫同檔、有混雜）。
+4. **flush helper retry 沒 backoff** — 連續 SessionStart 時若 server 一直 500 會連續打、低風險但可改。
+
 ## v1.17.96 — Stop hook 整合：回話品質 lint 真的卡到 AI（IR-027 落地）
 
 **背景**：v1.17.95 ship 了 `shared/language-lint.js` 純 lib 但沒整合任何卡關點 — IR-037（中英混雜）/ IR-036（行話沒附白話說明、即沒寫括號或冒號補充）的判斷邏輯有了、卻還是依賴 AI 自覺。enforcement_alerts 顯示 IR-037 critical 100% 違反率。違反 IR-027「提醒無效、邏輯才有效」精神。

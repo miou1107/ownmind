@@ -117,7 +117,8 @@ OwnMind/
 │   └── lib/                        # v1.17.0 P3 — hook 共用純函式
 │       ├── render-session-context.js   # renderSessionContext(data, broadcasts) → additionalContext 字串
 │       ├── session-start-output.js     # Node CLI wrapper，讓 bash hook 呼叫
-│       └── sync-memory-files.js        # v1.17.8 — 雲端 → 本地 md 檔 delta sync（stdin JSON / --fail mode）
+│       ├── sync-memory-files.js        # v1.17.8 — 雲端 → 本地 md 檔 delta sync（stdin JSON / --fail mode）
+│       └── flush-compliance-spool.js   # v1.17.97 — SessionStart 補送 reply-lint-pending.jsonl 到 /api/activity/batch（POST 200 後刪檔）
 │
 ├── scripts/                         # 維護工具腳本
 │   ├── bootstrap.sh                 # v1.17.6 — Universal Bootstrap（Mac/Linux/Git Bash）：三分支處理 install/upgrade/repair
@@ -1016,6 +1017,26 @@ src/public/me/index.html                  — 長條圖 CSS 修正（flex 衝突
 src/lib/llm-narrative.js                  — prompt 加正反例 + 規範洞察必須具體
 package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
+```
+
+## v1.17.97 新增 / 修改（SessionStart spool flush + Windows path 兩個 v1.17.96 backlog 解掉）
+
+新增檔：
+
+```
+hooks/lib/flush-compliance-spool.js          — SessionStart 補送 helper
+tests/flush-compliance-spool.test.js         — 11 條 flush helper 契約測試
+tests/reply-lint-pending-spool.test.js       — 5 條 hook 條件 spool 測試
+```
+
+修改的既有檔：
+
+```
+hooks/ownmind-reply-lint.js                  — postEvents 回 boolean、只在 POST 失敗才 spool pending
+hooks/ownmind-session-start.sh               — 加一段呼叫 flush-compliance-spool.js（接在 banner flush 後）
+install.sh                                   — 2.1 + 2.2 段加 cygpath -w（Git Bash on Windows）
+package.json / README* / docs/README*        — 1.17.96 → 1.17.97
+CHANGELOG.md                                 — v1.17.97 條目
 ```
 
 ## v1.17.96 新增 / 修改（Stop hook 整合：回話品質 lint 真的卡 AI）
