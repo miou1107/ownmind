@@ -1,27 +1,149 @@
+import { detectFrontmatter } from './iron-rule-frontmatter.js';
+
 /**
  * lintIronRule — 鐵律品質檢查（程式邏輯卡控、IR-027 落地）
  *
- * 為什麼存在：
- *   Vin 反饋的核心問題 — 鐵律寫進 OwnMind 之後、未來新 session 的 AI 看到
- *   要能 (1) 知道何時觸發、(2) 知道規則內容。不然鐵律形同虛設。
+ * v1.18.0 升級：偵測 SKILL.md frontmatter
+ *   - 有 frontmatter → 走 schema lint S1-S9（spec.md §1.3）
+ *   - 沒 frontmatter → 走 v1.17.94 regex lint（向後相容、既有 35 條鐵律不爆）
  *
- *   不靠 AI 自覺寫得清楚、要靠 server 端 lint 卡住、寫得太爛就退回不讓存。
- *
- * 檢查項：
- *   1. title 字數 10~100
- *   2. content 字數 100~3000
- *   3. 必須有至少一個 trigger:xxx tag（不然 AI 不知何時觸發）
- *   4. content 必須有「適用情境段落」關鍵字（何時觸發）
- *   5. content 必須有「規則段落」關鍵字（該做/不該做什麼）
- *   6. 禁止依賴 context 的詞（上次/之前那個/剛剛/這次 session/這次對話）
- *   7. 中英混雜檢查（IR-037 落地）— 計算英文詞比例、扣除白名單後 > 10% 失敗
+ * v1.17.94 規則（沒 frontmatter 走這條）：
+ *   1. title 字數 5~100
+ *   2. content 字數 50~3000
+ *   3. 必須有至少一個 trigger:xxx tag
+ *   4. content 必須有「適用情境段落」關鍵字
+ *   5. content 必須有「規則段落」關鍵字
+ *   6. 禁止依賴 context 的詞
+ *   7. 中英混雜檢查（IR-037）
  *
  * Pure function — 不碰 DB、好測試、好重用。
  *
  * @param {Object} rule - { title, content, tags }
- * @returns {{ ok: boolean, errors: string[] }}
+ * @returns {{
+ *   ok: boolean,
+ *   errors: string[],
+ *   warnings?: string[],
+ *   format?: 'skill_md' | 'legacy_text'
+ * }}
+ *   - ok: errors 為空才 true（warnings 不算）
+ *   - format: 給 server response 用、客戶端可顯示「這條走哪個 lint path」
  */
 export function lintIronRule(rule) {
+  const content = (rule?.content || '').trim();
+
+  // v1.18.0: 先偵測 frontmatter — 有就走 schema lint
+  const fm = detectFrontmatter(content);
+  if (fm.has) {
+    // v1.18.0 review B1 修正：YAML parse 失敗 → fallback 到 legacy regex lint
+    //   理由：user 可能寫 `---` 當分隔線（不是真的要寫 SKILL.md）、parseError
+    //   直接 reject 會困惑。fallback + warning 通知 user「偵測到但解析失敗」。
+    if (fm.parseError) {
+      const legacyResult = lintLegacyTextRule(rule);
+      const warnings = [...(legacyResult.warnings || [])];
+      warnings.push(
+        `偵測到 frontmatter marker（---）但 YAML 解析失敗（${fm.parseError}）— ` +
+        `退回 free-text lint。若刻意寫 SKILL.md 格式、請修 YAML 語法；若 --- 是內文分隔線、忽略此警告即可。`
+      );
+      return { ...legacyResult, warnings };
+    }
+    return lintSkillMdRule(rule, fm);
+  }
+
+  return lintLegacyTextRule(rule);
+}
+
+/**
+ * v1.18.0 — SKILL.md frontmatter schema lint（規則 S1-S9）
+ * 對齊 spec.md §1.3
+ *
+ * @param {Object} rule
+ * @param {{ has: boolean, frontmatter?: object, body?: string, parseError?: string }} fm
+ *   detectFrontmatter() 結果
+ */
+export function lintSkillMdRule(rule, fm) {
+  const errors = [];
+  const warnings = [];
+  const tags = Array.isArray(rule?.tags) ? rule.tags : [];
+
+  // S1 — YAML 解析合法
+  if (fm.parseError) {
+    errors.push(`S1 frontmatter YAML 解析失敗：${fm.parseError}`);
+    return { ok: false, errors, warnings, format: 'skill_md' };
+  }
+
+  const frontmatter = fm.frontmatter;
+  const body = (fm.body || '').trim();
+
+  // S2 — name 必填、kebab-case
+  const name = typeof frontmatter.name === 'string' ? frontmatter.name.trim() : '';
+  if (!name) {
+    errors.push('S2 frontmatter 缺 name 欄位（必填）');
+  } else if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(name)) {
+    errors.push(`S2 name "${name}" 不是 kebab-case（必須 ^[a-z0-9-]+$、頭尾不可 -）`);
+  }
+
+  // S3 — name 字數 3-60
+  if (name) {
+    if (name.length < 3) errors.push(`S3 name 太短（${name.length} 字、最少 3）`);
+    else if (name.length > 60) errors.push(`S3 name 太長（${name.length} 字、上限 60）`);
+  }
+
+  // S4 — description 必填、20-500 字
+  const description = typeof frontmatter.description === 'string' ? frontmatter.description.trim() : '';
+  if (!description) {
+    errors.push('S4 frontmatter 缺 description 欄位（必填、必須寫「何時觸發」）');
+  } else {
+    if (description.length < 20) errors.push(`S4 description 太短（${description.length} 字、最少 20）— 寫不清楚 AI 不會觸發這條鐵律`);
+    else if (description.length > 500) errors.push(`S4 description 太長（${description.length} 字、上限 500）— 摘要不該超過 500 字、細節寫進 body`);
+  }
+
+  // S5 — description 含觸發詞
+  if (description && description.length >= 20) {
+    if (!/when|whenever|use\s+when|triggers\s+on|何時|觸發|情境|準備|要做/i.test(description)) {
+      errors.push('S5 description 沒寫「何時觸發」— 必須含「when / 何時 / 觸發 / 情境 / 準備」之類觸發詞、AI 才知道何時 invoke 這條鐵律');
+    }
+  }
+
+  // S6 — body 字數 ≥ 100
+  if (body.length < 100) {
+    errors.push(`S6 body 太短（${body.length} 字、最少 100）— body 是給 AI 看細節、太短失去鐵律的 do/dont 教訓價值`);
+  }
+
+  // S7 — body 含規則段落關鍵字（沿用 v1.17.94 #5）
+  if (body.length >= 100 && !/規則|該做|不該做|禁止|必須|應該|不可|不要/.test(body)) {
+    errors.push('S7 body 缺規則段落 — 必須寫明「規則該做什麼 / 不該做什麼 / 禁止 / 必須」、否則 AI 看不懂該做啥');
+  }
+
+  // S8 — 中英混雜檢查（沿用 v1.17.94 #7、檢 body + description 合併）
+  // 注意：description 是 SKILL.md 標準英文寫法（pushy「Use when ... Triggers on ...」）、
+  // 不該被當混雜算進 ratio。只檢 body 段。
+  const mixedError = checkMixedLanguage(body);
+  if (mixedError) {
+    errors.push(`S8 ${mixedError}`);
+  }
+
+  // S9 — description 字數 < 50 → warning（不 reject）
+  if (description && description.length >= 20 && description.length < 50) {
+    warnings.push(`S9 description ${description.length} 字偏短（建議 50+ 寫得更 pushy、AI 觸發率更高）`);
+  }
+
+  // tags 結構檢查（保留 v1.17.94 reviewer Minor 3 行為）
+  if (rule?.tags !== undefined && rule?.tags !== null && !Array.isArray(rule.tags)) {
+    errors.push(`tags 必須是陣列、收到 ${typeof rule.tags}`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    format: 'skill_md',
+  };
+}
+
+/**
+ * v1.17.94 — legacy free-text lint（沒 frontmatter 走這條）
+ */
+export function lintLegacyTextRule(rule) {
   const errors = [];
   const title = (rule?.title || '').trim();
   const content = (rule?.content || '').trim();
@@ -84,6 +206,8 @@ export function lintIronRule(rule) {
   return {
     ok: errors.length === 0,
     errors,
+    warnings: [],
+    format: 'legacy_text',
   };
 }
 
