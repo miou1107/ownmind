@@ -1019,6 +1019,53 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.0 新增 / 修改（鐵律對齊 SKILL.md 標準 + 1 big skill 跨工具 + conditional sync + 升級助手 admin Web UI）
+
+新增檔（rc1 schema）:
+```
+src/utils/iron-rule-frontmatter.js    — js-yaml JSON_SCHEMA 安全 frontmatter 解析
+db/013_iron_rule_previous_content.sql — ALTER memories ADD previous_content TEXT
+tests/iron-rule-frontmatter.test.js   — 13 cases
+tests/iron-rule-quality-skill-md.test.js — 26 cases (S1-S9 + B1 fallback)
+```
+
+新增檔（rc2 conditional sync + 跨工具）:
+```
+src/utils/iron-rule-sync.js           — buildBigSkillMd + buildReferenceFile + syncToFilesystem (3 kind) + atomic write
+hooks/lib/conditional-sync.js         — readCache/writeCache/shouldRefreshCache/runConditionalSync
+hooks/lib/conditional-sync-cli.js     — sh hook wrapper (額外打 sync 拿鐵律 list、syncToAllTools)
+tests/sync-token-endpoint.test.js     — 10 cases (generateSyncToken pure + validateSyncToken)
+tests/iron-rule-sync.test.js          — 23 cases (pure builders + 真 fs IO)
+tests/conditional-sync.test.js        — 24 cases (mock fetch + tmp cache)
+```
+
+新增檔（rc3 升級助手）:
+```
+src/utils/iron-rule-suggest.js        — template-based SKILL.md proposal (ASCII name + hash)
+src/routes/admin-iron-rule-upgrade.js — 3 endpoints (status/suggest/upgrade)
+tests/iron-rule-suggest.test.js       — 8 cases
+```
+
+修改的既有檔:
+```
+src/utils/iron-rule-quality.js        — lintIronRule dispatch (frontmatter → schema lint / 沒 → legacy)
+src/routes/memory.js                  — POST/PUT format/warnings response + previous_content + GET /sync-token
+src/utils/syncToken.js                — queryFn 注入式 (test 友善)
+src/app.js                            — mount /api/admin/iron-rules
+src/public/index.html                 — admin 新「鐵律升級」tab + diff modal + 升級流程
+hooks/ownmind-session-start.sh        — 改用 conditional-sync-cli wrapper + fallback
+package.json / package-lock.json      — + js-yaml ^4.1.1
+package.json / README* / docs/README* — 1.17.99 → 1.18.0
+CHANGELOG.md / FILELIST.md            — v1.18.0 條目
+```
+
+OpenSpec:
+```
+openspec/changes/v1.18.0-iron-rule-schema/proposal.md (v4)
+openspec/changes/v1.18.0-iron-rule-schema/spec.md
+openspec/changes/v1.18.0-iron-rule-schema/tasks.md
+```
+
 ## v1.17.99 新增 / 修改（Dedup helper 抽 + MCP log 帶 id + 移 node-fetch 依賴）
 
 新增檔：
