@@ -28,7 +28,12 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { runConditionalSync } from './conditional-sync.js';
-import { syncToAllTools } from '../../src/utils/iron-rule-sync.js';
+// v1.18.5: syncToAllTools 改成 dynamic import (line 116 內)
+// 原因：iron-rule-sync.js → iron-rule-frontmatter.js → js-yaml
+// user install 只在 ~/.ownmind/mcp/ 跑 npm install、不裝 root deps、js-yaml 缺
+// 結果：整個 cli 在 import 階段就 ERR_MODULE_NOT_FOUND crash、SessionStart hook silent fail
+// → 後遺症：cache 也沒寫、big skill 永遠不更新 (從 v1.18.0 上線就壞)
+// 修法：dynamic import + 外層 try/catch、即使 big skill sync 失敗、cache + stdout init data 仍 work
 
 const SYNC_LOG_PATH = path.join(os.homedir(), '.ownmind', 'logs', 'sync.log');
 
@@ -109,6 +114,10 @@ async function main() {
   // cache_fresh 跳過避免無謂的 file system churn
   if (result.refreshed) {
     try {
+      // v1.18.5: dynamic import 防 js-yaml 沒裝 → 整個 cli crash 的問題
+      // 載入失敗會被外層 catch 抓住、log 後 silent skip、不擋 stdout init data 回傳
+      const { syncToAllTools } = await import('../../src/utils/iron-rule-sync.js');
+
       // v1.18.0-rc2 B1 修正：init endpoint compact 不送 iron_rules array、
       // 額外打 /api/memory/sync 拿完整列表
       const ironRules = await fetchIronRuleList(apiUrl, apiKey);
@@ -125,6 +134,8 @@ async function main() {
     } catch (err) {
       logSyncResult(`syncToAllTools error: ${err.message}`);
       // sync filesystem 失敗 silent、不擋 init data 回傳
+      // 常見原因：iron-rule-sync.js 鏈依賴 js-yaml、user 端沒裝 → MODULE_NOT_FOUND
+      // 解法：跑 update.sh 自動補裝 js-yaml (v1.18.5)
     }
   }
 

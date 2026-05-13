@@ -1019,6 +1019,19 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.5 新增 / 修改 (Hotfix: big skill sync 從 v1.18.0 上線就壞)
+
+修改的既有檔:
+```
+hooks/lib/conditional-sync-cli.js   — syncToAllTools 從 top-level static import
+                                      改成 if (refreshed) 區段內 dynamic import
+                                      失敗時 outer try/catch 抓住、graceful degrade
+scripts/update.sh                   — 開頭加 idempotent check 補裝 js-yaml
+                                      --no-save 不污染 package.json
+scripts/update.ps1                  — Windows 版同步補
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.4 → 1.18.5
+```
+
 ## v1.18.4 新增 / 修改 (產品健康度日報雛形 + tool='unknown' fallback 修正)
 
 新增檔:
