@@ -167,6 +167,59 @@ describe('v1.18.2 — injectOriginSection', () => {
   });
 });
 
+describe('v1.18.3 — lintIronRule 必須收到 metadata 才能 check origin_context', () => {
+  // 對應 v1.18.3 修的 bug：POST/PUT/admin handler 之前忘了把 metadata 餵進 lint
+  // 結果 IR-040 metadata 明明有 origin_context 卻被 warning 誤報「沒帶」
+  // import 真 lintIronRule 驗 round-trip
+  it('rule.metadata.origin_context 有 → lint 不該 warning「沒帶」', async () => {
+    const { lintIronRule } = await import('../src/utils/iron-rule-quality.js');
+    const r = lintIronRule({
+      title: '測試',
+      content: '## 適用情境\n寫鐵律時\n## 規則\n必須遵守。'.repeat(5),
+      tags: ['trigger:edit'],
+      metadata: {
+        origin_context: {
+          captured_at: new Date().toISOString(),
+          confidence: 'high',
+          event: 'test event',
+        },
+      },
+    });
+    const ocWarning = (r.warnings || []).find(w =>
+      w.includes('建議補 metadata.origin_context')
+    );
+    assert.equal(ocWarning, undefined,
+      `metadata 有 origin_context 不該 warning、實際 warnings: ${JSON.stringify(r.warnings)}`);
+  });
+
+  it('rule 沒帶 metadata → lint 該 warning', async () => {
+    const { lintIronRule } = await import('../src/utils/iron-rule-quality.js');
+    const r = lintIronRule({
+      title: '測試',
+      content: '## 適用情境\n寫鐵律時\n## 規則\n必須遵守。'.repeat(5),
+      tags: ['trigger:edit'],
+    });
+    const ocWarning = (r.warnings || []).find(w =>
+      w.includes('建議補 metadata.origin_context')
+    );
+    assert.ok(ocWarning, `沒 metadata 該 warning、實際 warnings: ${JSON.stringify(r.warnings)}`);
+  });
+
+  it('rule.metadata 不含 origin_context → 該 warning', async () => {
+    const { lintIronRule } = await import('../src/utils/iron-rule-quality.js');
+    const r = lintIronRule({
+      title: '測試',
+      content: '## 適用情境\n寫鐵律時\n## 規則\n必須遵守。'.repeat(5),
+      tags: ['trigger:edit'],
+      metadata: { tool: 'claude-code' },  // 有 metadata 但沒 origin_context
+    });
+    const ocWarning = (r.warnings || []).find(w =>
+      w.includes('建議補 metadata.origin_context')
+    );
+    assert.ok(ocWarning, '只 tool 沒 origin_context 該 warning');
+  });
+});
+
 describe('v1.18.2 — captureClientOriginContext', () => {
   it('預設 confidence=unknown + captured_at + cwd', () => {
     const oc = captureClientOriginContext();

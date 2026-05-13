@@ -1,5 +1,55 @@
 # OwnMind 更新紀錄
 
+## v1.18.3 — Hotfix: lint metadata 漏餵 + reply-lint Stop hook 漏裝
+
+**背景**：v1.18.2 完成後 Vin 罵「我老是提醒你、講到行話要做解釋說明、例如 dogfood 這種你應該要講清楚」— 觸發 IR-036（行話必須附白話說明）違反、深查暴露 2 個 v1.18.2 漏洞：
+
+### 漏洞 1：reply-lint Stop hook 沒擋我用 dogfood
+
+Audit 發現：
+- `~/.claude/settings.json` 的 hooks 完全沒 `Stop` 欄位
+- `~/.ownmind/hooks/ownmind-reply-lint.js` 檔案存在但沒被 register
+- 根因：v1.17.96 install.sh 有加 `add-stop-hook.cjs`、但 `update.sh` / `update.ps1` 沒呼叫
+- 既有 user (Vin 的機器就是) 升級 v1.17.95 → v1.17.96 → ... 從沒裝過 Stop hook
+- reply-lint 機制 v1.17.96 上線「形同未啟用」6 個版本 (v1.17.96 → v1.18.2)
+
+**修法**：
+- `scripts/update.sh` 加 `add-stop-hook.cjs` + `add-post-tool-use-hook.cjs` 呼叫 (idempotent)
+- `scripts/update.ps1` 同步補
+- 立即手動補 Vin 機器：`node add-stop-hook.cjs ~/.claude/settings.json --ownmind-dir ~/.ownmind` → 已 register
+
+### 漏洞 2：lint 沒收到 metadata、誤報「沒帶 origin_context」
+
+`src/routes/memory.js` POST/PUT + `admin-iron-rule-upgrade.js` PUT 三個 handler call `lintIronRule({title, content, tags})` 都沒帶 `metadata`。
+
+但 v1.18.2 加的 `checkOriginContext(rule)` 看 `rule.metadata.origin_context` — 收不到 metadata、永遠以為沒帶、永遠 warning。
+
+實證：IR-040 (id=367) update 後、metadata 明明有 origin_context 完整 7 欄、response 仍出現 `lint_warnings: ['建議補 metadata.origin_context...']`。
+
+**修法**：3 個 lintIronRule call 都加 `metadata`：
+- POST: `lintIronRule({ title, content, tags, metadata })`
+- PUT: `merged.metadata = metadata !== undefined ? metadata : oldMemory.metadata`
+- admin upgrade: `lintIronRule({ title, content, tags, metadata: oldRule.metadata })`
+
+**新增 / 改動**:
+- `src/routes/memory.js`: POST + PUT lintIronRule call 加 metadata
+- `src/routes/admin-iron-rule-upgrade.js`: PUT lintIronRule call 加 metadata
+- `scripts/update.sh` / `update.ps1`: 補 add-stop-hook + add-post-tool-use-hook idempotent re-register
+- `tests/iron-rule-origin-context.test.js`: +3 regression test (lint 收到 metadata 才不誤報)
+
+**測試**: 1176 → 1179 (+3)
+
+**鐵律觸發**: IR-006 / IR-007 (重複漏 hook 安裝、user 端 client 跑舊行為) / IR-008 / IR-022 / IR-027 / IR-031 / IR-036 (本版觸發點) / IR-038 (audit 觀測資料)
+
+**升級指引**:
+1. SSH prod: `ssh root@kkvin.com`
+2. `cd /VinService/ownmind && git pull origin main`
+3. **不需 migration** (純邏輯 + 安裝腳本修)
+4. `docker compose build --no-cache api && docker compose up -d api`
+5. 驗版號: 1.18.3
+6. **既有 user 端要重跑 update.sh 才會補裝 Stop hook**:
+   - `bash ~/.ownmind/scripts/update.sh` → 看到「Stop reply-lint hook：added」表示成功
+
 ## v1.18.2 — 鐵律時空背景 origin_context (Vin 提的需求 — 為什麼當時建立)
 
 **背景**：v1.18.1 hotfix 完、Vin 提新需求：

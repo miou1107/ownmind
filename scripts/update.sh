@@ -205,6 +205,23 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
   " 2>>"$ERR_LOG"
 fi
 
+# --- 3.5 v1.18.3 補修：v1.17.96 既有 user 升級時漏裝 reply-lint Stop hook ---
+# 原 install.sh 有跑 add-stop-hook、但 update.sh 沒。導致 v1.17.95 → v1.17.96 升級
+# 的 user (Vin 的機器就是) Stop hook 從沒被 register、reply-lint 從沒擋過 IR-036/037。
+# Idempotent: helper 偵測已存在會 skip。
+ADD_STOP_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-stop-hook.cjs"
+if [ -f "$ADD_STOP_HOOK_HELPER" ] && [ -f "$CLAUDE_SETTINGS" ]; then
+  STOP_RESULT=$(node "$ADD_STOP_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  echo "   Stop reply-lint hook：$STOP_RESULT"
+fi
+
+# 同理 — 補裝 PostToolUse banner hook (v1.17.71)、避免也漏裝
+ADD_POST_HOOK_HELPER="$OWNMIND_DIR/scripts/install-helpers/add-post-tool-use-hook.cjs"
+if [ -f "$ADD_POST_HOOK_HELPER" ] && [ -f "$CLAUDE_SETTINGS" ]; then
+  POST_RESULT=$(node "$ADD_POST_HOOK_HELPER" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1)
+  echo "   PostToolUse banner hook：$POST_RESULT"
+fi
+
 # --- 4. Gemini CLI hooks ---
 if [ -d "$HOME/.gemini" ]; then
   GEMINI_SETTINGS="$HOME/.gemini/settings.json"
