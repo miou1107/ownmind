@@ -242,7 +242,11 @@ function getRandomTip() {
 }
 
 // --- Session tracking (for emergency shutdown log) ---
-const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
+// v1.18.4: fallback 從 'unknown' 改 'claude-code'，跟 mcp/ownmind-log.js 同步。
+// OWNMIND_TOOL 仍優先生效，向後相容。
+const TOOL_NAME = process.env.OWNMIND_TOOL
+  || process.env.OWNMIND_CLIENT_TOOL
+  || 'claude-code';
 let sessionStartTime = null;
 const toolCallCounts = {};
 let complianceEvents = [];

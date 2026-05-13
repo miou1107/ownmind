@@ -4,7 +4,12 @@ import { randomUUID } from 'node:crypto';
 // Node 18+ 有 global fetch、不需 node-fetch 套件（v1.17.99 移除依賴）
 
 const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
-const TOOL_NAME = process.env.OWNMIND_TOOL || 'unknown';
+// v1.18.4: fallback 從 'unknown' 改 'claude-code'，避免大量 activity_logs
+// 標成 'unknown' 導致跨工具分群失效。對齊 mcp/index.js:167 CLIENT_TOOL 設計。
+// OWNMIND_TOOL 環境變數仍優先生效，向後相容。
+const TOOL_NAME = process.env.OWNMIND_TOOL
+  || process.env.OWNMIND_CLIENT_TOOL
+  || 'claude-code';
 const API_URL = (process.env.OWNMIND_API_URL || '').replace(/\/$/, '');
 const API_KEY = process.env.OWNMIND_API_KEY || '';
 
