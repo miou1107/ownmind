@@ -1119,7 +1119,15 @@ router.put('/:id', async (req, res) => {
       content: content !== undefined ? content : oldMemory.content,
       tags: tags !== undefined ? tags : oldMemory.tags,
     };
-    if (oldMemory.type === 'iron_rule' && !String(merged.title).startsWith('__upgrade_test__')) {
+    // v1.18.2 hotfix: metadata-only update 不跑 content lint
+    //   場景: backfill script 只加 origin_context、content/title/tags 沒變、不該被
+    //   content 結構 lint 擋。Lint 只在「會影響 lint 結果的欄位」改變時跑。
+    const contentChanged = content !== undefined && content !== oldMemory.content;
+    const titleChanged = title !== undefined && title !== oldMemory.title;
+    const tagsChanged = tags !== undefined && JSON.stringify(tags) !== JSON.stringify(oldMemory.tags);
+    const lintRelevantChange = contentChanged || titleChanged || tagsChanged;
+
+    if (oldMemory.type === 'iron_rule' && !String(merged.title).startsWith('__upgrade_test__') && lintRelevantChange) {
       const lintResult = lintIronRule(merged);
       lintFormatPut = lintResult.format;
       lintWarningsPut = lintResult.warnings || [];
