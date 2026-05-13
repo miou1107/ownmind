@@ -1,5 +1,59 @@
 # OwnMind 更新紀錄
 
+## v1.17.98 — Server 端 dedup（client_event_id）— 解掉 v1.17.97 review I1 race
+
+**背景**：v1.17.97 review 點出兩條 race 場景會讓同一個合規違反事件被寫進 DB 兩次：
+
+1. Hook POST 1500ms timeout 後 server 端 INSERT 仍可能完成、hook 看到 false 又 spool → SessionStart flush 撿走再送 → DB 兩筆
+2. 兩個 SessionStart 並發、雖然 v1.17.97 rename pattern 收窄、若 PENDING 被新寫入的時間窗剛好 + 第二個 flush 又 rename 成功 → 仍可能小機率重複
+
+對 dashboard / pitfalls 統計影響：違反次數會偏高、偏高量不可預測（取決於離線 / timeout 頻率）。**這是統計信任度問題、不該帶到 prod 太久。**
+
+**修法**：events 帶 `client_event_id` (UUID v4)、server 用 `(user_id, client_event_id)` partial unique index + `ON CONFLICT DO NOTHING` 做 dedup。
+
+**新增 / 改動**：
+
+1. **新檔 [db/012_activity_event_dedup.sql](db/012_activity_event_dedup.sql)** — `ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS client_event_id UUID` + `CREATE UNIQUE INDEX IF NOT EXISTS uniq_activity_logs_user_client_event ON activity_logs (user_id, client_event_id) WHERE client_event_id IS NOT NULL`。Partial index 只 enforce 在 `client_event_id IS NOT NULL` 的 row、舊事件 NULL 不受影響。
+
+2. **改 [src/routes/activity.js](src/routes/activity.js) `POST /batch` handler**：
+   - 新增 `UUID_V4_REGEX` 驗證、非合法 UUID 當 NULL（防 client 亂塞）
+   - 拆兩條 INSERT path：
+     - `clientEventId === null` → 純 INSERT、不帶 ON CONFLICT 子句（review B1 — 避免 partial index inference 邊界 bug）
+     - `clientEventId !== null` → INSERT 帶 `ON CONFLICT (user_id, client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING RETURNING id`
+   - response body 加 `deduped` 計數
+   - dedup 跳過時 `continue`、不跑 auto-observed-trigger（避免重送同事件時 server 端衍生事件被重複觸發）
+
+3. **改 [hooks/ownmind-reply-lint.js](hooks/ownmind-reply-lint.js) `buildComplianceEvents`** — 用 `crypto.randomUUID()` 給每個 violation 生 client_event_id、events array 同一份物件被 archive / POST / pending 三處共用、id 一致。
+
+4. **新檔 [tests/activity-batch-dedup.test.js](tests/activity-batch-dedup.test.js)（8 條）** — server-side dedup 行為：SQL 形狀 / 重複 dedup / NULL path 純 INSERT / 非合法 UUID 當 NULL / UUID v1 拒 / 混合 batch / batch 內同 id 退化
+
+5. **擴 [tests/reply-lint-pending-spool.test.js](tests/reply-lint-pending-spool.test.js)（+2）** — 每筆 spooled event 必須帶合法 UUID v4 / 同 violation 跨 spool / archive id 一致
+
+6. **擴 [tests/flush-compliance-spool.test.js](tests/flush-compliance-spool.test.js)（+1）** — flush helper 必須原封轉送 client_event_id 給 server
+
+**Code review 修正**（受 v1.17.97 review 啟發、自己再走一輪 receiving-code-review）：
+
+1. **[B1] ON CONFLICT 對 NULL client_event_id 的 partial index inference 邊界** — Postgres 理論上 NULL row 不在 partial index 裡、ON CONFLICT 不會 trigger、INSERT 該照常走。但跨版本邊界行為曾有變化、reviewer 提出 runtime 報錯疑慮、本機沒 Postgres 立即驗證。**保守拆兩條 path** — NULL 走純 INSERT、有 id 才走 ON CONFLICT。Intent 也更明確（「有 id 才 dedup」）。
+2. **[I3] Migration backfill 警告** — comment 加一句「未來若手動 backfill client_event_id 必須先 dedupe 同 (user_id, client_event_id) 的舊 row、否則 CREATE INDEX 會失敗」。
+3. **[I1 limitation 文件化]** — `tests/activity-batch-dedup.test.js` 用 simplified handler copy（不是真 import `src/routes/activity.js`）。原因：真 handler 是 module-level Router、與 module-level pg client 緊耦合、注入 query mock 需要 refactor 成 factory pattern（同 `src/routes/usage/events.js createEventsRouter`）。**v1.17.99+ backlog**。改 server handler dedup 路徑時記得同步改測試 simplified copy。
+
+**鐵律觸發**：IR-003 / IR-005 / IR-007 / IR-008 / IR-022（這版 server + client 兩端都改）/ IR-027 / IR-031 / IR-032 / IR-034（不觸發 — `db/` 已在 build context、Dockerfile 不需動）。
+
+**驗證**：本地 `npm test` 1045/1045 pass（v1.17.97 是 1034、+11：8 server dedup + 2 client uuid + 1 flush preserve）。
+
+**升級指引**（**這版部署 server**）：
+1. SSH 到 prod：`ssh root@kkvin.com`
+2. `cd /VinService/ownmind && git pull origin main`
+3. **手動 apply migration**：`docker compose exec -T db psql -U ownmind -d ownmind < db/012_activity_event_dedup.sql`
+4. `docker compose build --no-cache api && docker compose up -d api`（IR-018 + IR-023）
+5. 驗：`docker compose exec -T api node -e "console.log(require('./package.json').version)"` → 1.17.98
+6. Browser 實測 dashboard / 觸發一次違反看 deduped 計數（IR-020）
+
+**已知問題（v1.17.99+ backlog）**：
+- 上述 I1 limitation：refactor `src/routes/activity.js` 成 factory pattern、補真實 handler 整合測試
+- `mcp/ownmind-log.js` batch path 沒帶 `client_event_id`（memory_save / disable / update 等事件）— 該路徑沒 race 場景、不影響但可一併補上
+- enrich + dedup 順序：dedup 跳過時白做了 enrich（實務 batch 1~3 events、影響可忽略）
+
 ## v1.17.97 — SessionStart spool flush + Windows path 兩個 v1.17.96 backlog 解掉
 
 **背景**：v1.17.96 ship 兩個已知問題：

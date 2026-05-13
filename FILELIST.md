@@ -1019,6 +1019,26 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.17.98 新增 / 修改（Server 端 dedup — client_event_id partial unique index）
+
+新增檔：
+
+```
+db/012_activity_event_dedup.sql              — ALTER activity_logs + partial unique index
+tests/activity-batch-dedup.test.js           — 8 條 server dedup 行為測試（mock query）
+```
+
+修改的既有檔：
+
+```
+src/routes/activity.js                       — POST /batch 拆兩條 INSERT path、加 deduped 計數
+hooks/ownmind-reply-lint.js                  — buildComplianceEvents 加 client_event_id (UUID v4)
+tests/reply-lint-pending-spool.test.js       — +2 條 client_event_id 必須出現在 spool / archive
+tests/flush-compliance-spool.test.js         — +1 條 flush 必須轉送 client_event_id
+package.json / README* / docs/README*        — 1.17.97 → 1.17.98
+CHANGELOG.md                                 — v1.17.98 條目
+```
+
 ## v1.17.97 新增 / 修改（SessionStart spool flush + Windows path 兩個 v1.17.96 backlog 解掉）
 
 新增檔：

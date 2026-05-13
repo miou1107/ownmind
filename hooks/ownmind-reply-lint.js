@@ -61,6 +61,7 @@ import path from 'node:path';
 import os from 'node:os';
 import https from 'node:https';
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 
 const FORCE_FALLBACK = process.env.OWNMIND_TTY_FORCE_FALLBACK === '1';
 const TTY_OVERRIDE = process.env.OWNMIND_TTY_OVERRIDE || '';
@@ -294,11 +295,17 @@ function writeFallback(block) {
 
 /**
  * Compliance events — schema 對齊 src/routes/activity.js batch handler 要求：
- *   { ts, event, tool, source, details }
+ *   { ts, event, tool, source, details, client_event_id }
  * 缺 ts 或 event 會被 server 直接 continue 跳過（不落 DB）。
  *
  * details.rule_code + details.action 是 pitfalls / dashboard 後續查詢用的關鍵欄位
  * （對齊 mcp/index.js 的 report_compliance 寫法）。
+ *
+ * v1.17.98: client_event_id (uuid v4) — server 用 (user_id, client_event_id)
+ * partial unique index ON CONFLICT DO NOTHING 做 dedup，解掉 hook POST timeout
+ * 又被 SessionStart flush 重送 / 兩個 SessionStart 並發等 race 場景。
+ * 同一個違反在 hook 跟 flush 兩條路徑必須帶同一個 id 才有效；所以 id 在這裡產一次、
+ * banner / archive / pending 都用同一個。
  */
 function buildComplianceEvents(violations) {
   const ts = new Date().toISOString();
@@ -307,6 +314,7 @@ function buildComplianceEvents(violations) {
     event: 'iron_rule_compliance',
     tool: 'claude-code',
     source: 'reply-lint-hook',
+    client_event_id: randomUUID(),
     details: {
       action: 'violate',
       rule_code: v.rule,

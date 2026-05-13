@@ -208,6 +208,27 @@ describe('v1.17.97 — POST 行為', () => {
       '全壞 → 直接刪掉、避免每次 SessionStart 都重試一個永遠送不出去的檔');
   });
 
+  // v1.17.98 — flush helper 必須原封不動傳 client_event_id 給 server
+  it('POST body 必須含 spool 進來的 client_event_id（flush 不能吃掉）', async () => {
+    let captured = null;
+    const server = await startFakeServer((req, res) => {
+      captured = req;
+      res.statusCode = 200; res.end('{"inserted":1}');
+    });
+    try {
+      const apiUrl = `http://127.0.0.1:${server.address().port}`;
+      setupCredentials(apiUrl);
+      const id = '99999999-8888-4777-8666-555555555555';
+      const ev = { ...makeEvent(), client_event_id: id };
+      seedPending([ev]);
+      await runHelperAsync();
+      assert.ok(captured);
+      const body = JSON.parse(captured.body);
+      assert.equal(body.events[0].client_event_id, id,
+        'flush helper 必須原封轉送 client_event_id 給 server（dedup 才會生效）');
+    } finally { server.close(); }
+  });
+
   it('Auth header + Content-Type 對齊 server 期望', async () => {
     let captured = null;
     const server = await startFakeServer((req, res) => {
