@@ -207,6 +207,20 @@ if (Test-Path $ClaudeSettings) {
   Remove-Item $tmpScript -ErrorAction SilentlyContinue
 }
 
+# --- 3.5 v1.18.3 補修：補裝 Stop reply-lint hook + PostToolUse banner hook ---
+# 同 update.sh 修法：v1.17.71/96 的 install.sh 有跑、但 update.ps1 沒、
+# 既有 user 升級時漏裝。Idempotent helper、多裝一次安全。
+$AddStopHookHelper = Join-Path $OwnMindDir "scripts\install-helpers\add-stop-hook.cjs"
+if ((Test-Path $AddStopHookHelper) -and (Test-Path $ClaudeSettings)) {
+  $stopResult = & node $AddStopHookHelper $ClaudeSettings --ownmind-dir $OwnMindDir 2>&1
+  Write-Host "   Stop reply-lint hook：$stopResult"
+}
+$AddPostHookHelper = Join-Path $OwnMindDir "scripts\install-helpers\add-post-tool-use-hook.cjs"
+if ((Test-Path $AddPostHookHelper) -and (Test-Path $ClaudeSettings)) {
+  $postResult = & node $AddPostHookHelper $ClaudeSettings --ownmind-dir $OwnMindDir 2>&1
+  Write-Host "   PostToolUse banner hook：$postResult"
+}
+
 # --- 4. Gemini CLI hooks ---
 $GeminiDir = Join-Path $HOME ".gemini"
 if (Test-Path $GeminiDir) {

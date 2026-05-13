@@ -197,10 +197,13 @@ router.put('/:id/upgrade', async (req, res) => {
     const oldRule = existing.rows[0];
 
     // 2. 跑 lint (rc1 schema lint)
+    // v1.18.3 fix: metadata 也餵進 lint、checkOriginContext (v1.18.2) 才看得到
+    // origin_context 不會誤報「沒帶」
     const lintResult = lintIronRule({
       title: oldRule.title,
       content,
       tags: oldRule.tags,
+      metadata: oldRule.metadata,
     });
     if (!lintResult.ok) {
       return res.status(400).json({

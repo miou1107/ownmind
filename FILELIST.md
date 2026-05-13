@@ -1019,6 +1019,49 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.3 新增 / 修改 (Hotfix: lint metadata 漏餵 + reply-lint Stop hook 安裝腳本漏修)
+
+修改的既有檔:
+```
+src/routes/memory.js                  — POST + PUT lintIronRule call 加 metadata
+src/routes/admin-iron-rule-upgrade.js — PUT lintIronRule call 加 metadata
+scripts/update.sh                     — 補 add-stop-hook + add-post-tool-use-hook
+scripts/update.ps1                    — 同步補 (Windows)
+tests/iron-rule-origin-context.test.js — +3 regression test (lint 收 metadata 才正確)
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.2 → 1.18.3
+```
+
+## v1.18.2 新增 / 修改 (鐵律時空背景 origin_context — Vin 提的需求)
+
+新增檔:
+```
+src/utils/iron-rule-origin-context.js — pure helpers (validate/render/inject/capture)
+tests/iron-rule-origin-context.test.js — 19 cases
+scripts/backfill-iron-rule-origin-context.js — backfill 35 條既有鐵律 user_direct
+```
+
+修改的既有檔:
+```
+src/utils/iron-rule-quality.js        — lintIronRule 加 checkOriginContext (warning 不擋)
+mcp/index.js                          — ownmind_save schema 加 4 個 iron_rule 欄位 + 自動 capture
+skills/ownmind-memory.md              — 教 AI 主動帶 origin_event/user_quote/origin_confidence
+src/routes/admin-iron-rule-upgrade.js — PUT 接受 origin_event/user_quote、injectOriginSection
+src/public/index.html                 — 升級助手 modal 加 2 input + 藍色提示框
+src/routes/memory.js                  — PUT metadata-only update bypass content lint
+```
+
+## v1.18.1 新增 / 修改 (Hotfix: 移除 IR-037 中英混雜 lint)
+
+修改的既有檔:
+```
+src/utils/iron-rule-quality.js        — 移除 IR-037 (兩處)
+src/utils/iron-rule-suggest.js        — 加 round-trip lint check + lint_ok/errors
+src/routes/admin-iron-rule-upgrade.js — response 加 lint_ok/lint_errors
+src/public/index.html                 — modal 進場預先顯示 lint errors
+tests/iron-rule-quality.test.js       — IR-037 測試改反映新行為
+scripts/audit-real-iron-rules-lint.js — 新檔: baseline audit
+```
+
 ## v1.18.0 新增 / 修改（鐵律對齊 SKILL.md 標準 + 1 big skill 跨工具 + conditional sync + 升級助手 admin Web UI）
 
 新增檔（rc1 schema）:

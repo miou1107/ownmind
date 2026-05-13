@@ -910,7 +910,10 @@ router.post('/', async (req, res) => {
     let lintFormat = null;
     let lintWarnings = [];
     if (type === 'iron_rule' && !String(title).startsWith('__upgrade_test__')) {
-      const lintResult = lintIronRule({ title, content, tags });
+      // v1.18.3 fix: metadata 也餵進 lint、checkOriginContext (v1.18.2) 才看得到
+      // metadata.origin_context — 之前漏傳、即使 caller 有帶 origin_context 也被
+      // lint warning 誤報「沒帶」。
+      const lintResult = lintIronRule({ title, content, tags, metadata });
       lintFormat = lintResult.format;
       lintWarnings = lintResult.warnings || [];
       if (!lintResult.ok) {
@@ -1114,10 +1117,12 @@ router.put('/:id', async (req, res) => {
     //   bypass 就成功了。改用 merged.title「未來會變成的 title」判斷。
     let lintFormatPut = null;
     let lintWarningsPut = [];
+    // v1.18.3 fix: metadata 餵進 merged、lint 才看得到 origin_context
     const merged = {
       title: title !== undefined ? title : oldMemory.title,
       content: content !== undefined ? content : oldMemory.content,
       tags: tags !== undefined ? tags : oldMemory.tags,
+      metadata: metadata !== undefined ? metadata : oldMemory.metadata,
     };
     // v1.18.2 hotfix: metadata-only update 不跑 content lint
     //   場景: backfill script 只加 origin_context、content/title/tags 沒變、不該被
