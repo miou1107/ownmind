@@ -522,6 +522,44 @@ team_standard（已開啟）> iron_rule > principle > coding_standard > profile
 
 新增鐵律時，先查現有的 iron_rules 確認最新編號，+1 作為新編號。
 
+### 時空背景 origin_context（v1.18.2 強烈建議）
+
+**寫 `ownmind_save` type=iron_rule 時、AI 必須主動帶以下參數記錄「為什麼當時建立這條鐵律」**：
+
+| 參數 | 必填 | 說明 |
+|---|---|---|
+| `origin_event` | 強烈建議 | 從本 session 對話脈絡推斷的事件描述。例：「升級助手測試發現 IR-037 套錯場景、Vin 質疑」 |
+| `user_quote` | 強烈建議 | user 觸發鐵律建立的原話。例：「我覺得鐵律應該記時空背景」 |
+| `origin_confidence` | 預設 unknown | `high`=從對話脈絡推斷可信 / `user_direct`=user 直接下令、無工作脈絡 / `unknown`=無法判斷 |
+| `related_rules` | 選填 | 相關鐵律 code。例：`["IR-037", "IR-007"]` |
+
+**判斷流程**：
+
+1. 看本 session 對話 — 有明確「踩坑事件」「測試失敗」「user 質疑」等觸發點？
+   → 寫 `origin_event` 一句話描述 + `origin_confidence: 'high'`
+2. user 直接說「記起來」「新增鐵律 XXX」沒給上下文？
+   → `origin_event: 'user 直接下令建立、無工作脈絡'` + `origin_confidence: 'user_direct'`
+3. 完全推不出來？
+   → `origin_confidence: 'unknown'`、event 留空
+
+**為什麼重要**：未來 session 的 AI 看鐵律時、需要知道「為什麼當時 Vin 寫這條」才看得懂規則本質。沒 origin_context 的鐵律 = 沒歷史脈絡的提醒、AI 容易誤解。
+
+**Client 自動 capture 的部分**：cwd / git_branch / project / captured_at — AI 不用管、MCP client 自動帶。
+
+**範例（完整 ownmind_save call）**：
+```js
+ownmind_save({
+  type: 'iron_rule',
+  title: '記錄鐵律時空背景',
+  content: '...',
+  tags: ['trigger:edit'],
+  origin_event: 'v1.18.0 升級助手測試完成、Vin 提出新需求',
+  user_quote: '我覺得鐵律在紀錄時、應該要把時空背景記錄下來',
+  origin_confidence: 'high',
+  related_rules: ['IR-037'],
+})
+```
+
 ### Metadata
 每次寫入都帶：
 ```json

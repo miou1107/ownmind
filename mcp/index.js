@@ -22,6 +22,7 @@ import {
   shouldSkipDuplicate,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
+import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
@@ -413,7 +414,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_save",
-    description: "儲存一筆新記憶。可指定類型、標題、內容，以及選填的 code、tags、metadata。",
+    description: "儲存一筆新記憶。可指定類型、標題、內容，以及選填的 code、tags、metadata。寫 iron_rule 時 AI 應主動帶 origin_event / user_quote 描述「為什麼當時建立這條鐵律」、不知道時就寫「user 直接下令」。",
     inputSchema: {
       type: "object",
       properties: {
@@ -429,6 +430,25 @@ const TOOLS = [
         metadata: {
           type: "object",
           description: "額外的 metadata（選填）",
+        },
+        // v1.18.2: iron_rule 專用 — AI 主動補時空背景
+        origin_event: {
+          type: "string",
+          description: "（iron_rule 用）AI 從對話脈絡推斷的事件描述。例：『升級助手測試發現 IR-037 套錯場景』。不知道時寫『user 直接下令建立、無工作脈絡』。",
+        },
+        user_quote: {
+          type: "string",
+          description: "（iron_rule 用）user 觸發鐵律建立的原話（選填）。例：『我覺得鐵律應該記時空背景』。",
+        },
+        origin_confidence: {
+          type: "string",
+          enum: ["high", "user_direct", "unknown"],
+          description: "（iron_rule 用）背景信心：high=從對話脈絡推斷可信、user_direct=user 直接下令、unknown=無法判斷。預設 unknown。",
+        },
+        related_rules: {
+          type: "array",
+          items: { type: "string" },
+          description: "（iron_rule 用）相關鐵律 code（選填）。例：['IR-037', 'IR-007']",
         },
       },
       required: ["type", "title", "content"],
@@ -791,6 +811,35 @@ async function handleTool(name, args) {
       if (args.code !== undefined) body.code = args.code;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
+
+      // v1.18.2: iron_rule 自動 capture + 注入 origin_context (時空背景)
+      // - 技術部分 (cwd/git_branch/captured_at) 由 client 自動帶
+      // - 事件描述 (event/user_quote/confidence) 由 AI 主動帶 (透過 args.origin_event 等)
+      // - 沒帶 → confidence='unknown'、寫進 metadata 但不擋
+      // - body 自動 inject「## 起源」段落 (給未來 AI 看脈絡)
+      if (args.type === 'iron_rule') {
+        const oc = captureClientOriginContext({
+          confidence: args.origin_confidence || (args.origin_event ? 'high' : 'unknown'),
+          event: args.origin_event,
+          userQuote: args.user_quote,
+          relatedRules: args.related_rules,
+        });
+        // git branch (best effort、git 沒裝就 skip)
+        try {
+          const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+            encoding: 'utf8', timeout: 1000, stdio: ['ignore', 'pipe', 'ignore'],
+          }).trim();
+          if (branch) oc.git_branch = branch;
+        } catch { /* not a git repo */ }
+
+        // 寫進 metadata
+        body.metadata = body.metadata || {};
+        body.metadata.origin_context = oc;
+
+        // 注入 body「## 起源」段落 (render from oc)
+        body.content = injectOriginSection(body.content, oc);
+      }
+
       try {
         const data = await callApi("POST", "/api/memory", body);
         if (data.sync_token) currentSyncToken = data.sync_token;

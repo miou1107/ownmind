@@ -702,6 +702,19 @@
         </div>
       </div>
       <div id="iruLintErrors" style="display:none;margin-bottom:12px;padding:8px 12px;background:#fee2e2;border-left:3px solid #dc2626;border-radius:4px;font-size:12px;color:#991b1b;line-height:1.6;"></div>
+
+      <!-- v1.18.2: 補時空背景 (選填、不擋升級) -->
+      <div style="margin-bottom:12px;padding:12px;background:#eff6ff;border-left:3px solid #3b82f6;border-radius:4px;">
+        <div style="font-size:12px;color:#1e40af;margin-bottom:8px;line-height:1.6;">
+          💡 <b>順手補時空背景（選填）</b>：記下「為什麼當時建立這條鐵律」、未來 AI 看鐵律時會懂歷史脈絡。<br/>
+          填了會自動寫進 <code>metadata.origin_context</code> + 在 body 末尾加「## 起源」段落。沒填就跳過。
+        </div>
+        <label class="field-label" style="font-size:12px;">origin_event（為什麼當時建立、選填）</label>
+        <input type="text" id="iruOriginEvent" placeholder="例：v1.18.0 升級助手測試發現 IR-037 套錯場景、Vin 質疑" style="width:100%;font-size:12px;">
+        <label class="field-label" style="font-size:12px;margin-top:8px;">user_quote（user 原話、選填）</label>
+        <input type="text" id="iruUserQuote" placeholder="例：我覺得鐵律應該記時空背景" style="width:100%;font-size:12px;">
+      </div>
+
       <div class="modal-footer">
         <button class="btn-cancel btn-ghost" onclick="closeIruDiffModal()">取消</button>
         <button class="btn-success" id="iruConfirmBtn" onclick="iruConfirmUpgrade()">確認升級</button>
@@ -1392,6 +1405,8 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     document.getElementById('iruProposed').value = '';
     document.getElementById('iruNotes').textContent = '';
     document.getElementById('iruLintErrors').style.display = 'none';
+    document.getElementById('iruOriginEvent').value = '';
+    document.getElementById('iruUserQuote').value = '';
     document.getElementById('iruConfirmBtn').disabled = false;
     document.getElementById('iruDiffModal').classList.add('active');
     try {
@@ -1435,10 +1450,17 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     const btn = document.getElementById('iruConfirmBtn');
     btn.disabled = true;
     try {
+      // v1.18.2: 帶 origin_event / user_quote (選填)
+      const originEvent = document.getElementById('iruOriginEvent').value.trim();
+      const userQuote = document.getElementById('iruUserQuote').value.trim();
+      const putBody = { content, sync_token: iruSyncToken };
+      if (originEvent) putBody.origin_event = originEvent;
+      if (userQuote) putBody.user_quote = userQuote;
+
       const res = await fetch(`${API}/admin/iron-rules/${iruCurrentRuleId}/upgrade`, {
         method: 'PUT',
         headers: headers(),
-        body: JSON.stringify({ content, sync_token: iruSyncToken }),
+        body: JSON.stringify(putBody),
       });
       const data = await res.json();
       if (!res.ok) {

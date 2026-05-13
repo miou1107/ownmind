@@ -1,5 +1,93 @@
 # OwnMind 更新紀錄
 
+## v1.18.2 — 鐵律時空背景 origin_context (Vin 提的需求 — 為什麼當時建立)
+
+**背景**：v1.18.1 hotfix 完、Vin 提新需求：
+> 鐵律在紀錄時、應該要把時空背景記錄下來、例如正在執行 XX 案子、因為遇到什麼事情所以才建立這條鐵律。如果沒辦法判斷時空背景、那就是直接寫 user 直接下令要建立。
+
+**核心**：metadata 結構化欄位 `origin_context` + body 自動 render「## 起源」段落 (1C / 2a+b / 3 鬆 / 4 backfill+助手補)
+
+**Schema**:
+```yaml
+metadata.origin_context:
+  captured_at: ISO 8601 (必填、寫入時間)
+  confidence: 'high' | 'user_direct' | 'unknown' (必填)
+  project: string (選填、cwd basename)
+  cwd: string (MCP client 自動)
+  git_branch: string (MCP client 自動)
+  event: string (AI 從對話脈絡推斷 / admin 手填)
+  user_quote: string (user 原話)
+  related_rules: string[] (相關鐵律)
+```
+
+**新增 / 改動**：
+
+1. **新檔 `src/utils/iron-rule-origin-context.js`** — pure helpers
+   - `validateOriginContext` — schema 驗證
+   - `renderOriginContextSection` — 把 oc 渲染成 markdown 段落
+   - `injectOriginSection` — 把段落塞 / 替換到 body 末尾 (split-based、避開 JS regex 沒 \\Z 問題)
+   - `captureClientOriginContext` — MCP client 自動 capture cwd / project / timestamp
+
+2. **新檔 `tests/iron-rule-origin-context.test.js`** — 19 cases
+
+3. **`src/utils/iron-rule-quality.js`** lintIronRule 加 `checkOriginContext`：
+   - 沒 origin_context → warning「鼓勵補時空背景」(不擋)
+   - 有但結構非法 → reject
+
+4. **`mcp/index.js`** ownmind_save:
+   - schema 加 4 個 iron_rule 用欄位 (origin_event / user_quote / origin_confidence / related_rules)
+   - handler iron_rule path:
+     - 自動 captureClientOriginContext (cwd / project / captured_at)
+     - 補 git branch (git rev-parse、best effort)
+     - 寫進 body.metadata.origin_context
+     - injectOriginSection 把「## 起源」段落塞進 body content
+
+5. **`skills/ownmind-memory.md`** — 新章節「時空背景 origin_context (v1.18.2 強烈建議)」
+   - 教 AI 寫 ownmind_save 時主動帶 origin_event / user_quote / origin_confidence
+   - 判斷流程：對話脈絡明確 high / user 直接下令 user_direct / 推不出來 unknown
+   - 完整範例
+
+6. **`src/routes/admin-iron-rule-upgrade.js`** PUT /:id/upgrade:
+   - 接受 origin_event / user_quote (選填)
+   - 若有 → build origin_context (confidence=user_direct) + injectOriginSection 進 content
+   - UPDATE 加 metadata 欄位
+
+7. **`src/public/index.html`** — 升級助手 modal:
+   - 加 2 個 input (origin_event / user_quote、藍色提示框包起來)
+   - confirm 時帶上去
+   - reset 時清空
+
+8. **新檔 `scripts/backfill-iron-rule-origin-context.js`** — backfill 35 條既有鐵律
+   - 拿所有 active iron_rule、檢查 metadata.origin_context
+   - 沒 → confidence='user_direct' + event='v1.18.2 backfill: 起源不可考...'
+   - 已有 → skip (idempotent)
+   - --dry-run 模式
+
+**為什麼 1C (metadata + body 雙寫) 而不是只 metadata 或只 body**:
+- metadata: 給 admin 統計 / sync helper / 結構化過濾
+- body: 給 AI 看「為什麼存在」的歷史脈絡 (AI 不會 parse metadata、只看 markdown)
+- 雙寫由 helper 控制 (injectOriginSection)、避免不同步
+
+**為什麼 3 鬆 (warning 不擋)**:
+- 不擋舊 client (沒帶就沒帶)
+- 既有 35 條等 backfill / Vin 升級時手動補
+- 強制改造容易讓 user 抗拒、漸進更好
+
+**鐵律觸發**：IR-003 / IR-005 / IR-006 / IR-008 / IR-022 (server + client + skill 三端) / IR-027 (邏輯卡控、不過 origin_context 用 warning) / IR-031 / IR-032。
+
+**測試**：1157 → 1176 (+19) 全綠。
+
+**升級指引**：
+1. SSH prod: `ssh root@kkvin.com`
+2. `cd /VinService/ownmind && git pull origin main`
+3. **不需 migration** (用既有 metadata JSONB 欄位)
+4. `docker compose build --no-cache api && docker compose up -d api`
+5. 驗版號: 1.18.2
+6. 跑 backfill (從 user 端跑、不從 server 跑):
+   - `node scripts/backfill-iron-rule-origin-context.js --dry-run` 看 35 條
+   - `node scripts/backfill-iron-rule-origin-context.js` 真跑
+7. Browser 重試 IR-004 升級提案 — 預期：modal 含 origin_event 輸入框、可填可不填
+
 ## v1.18.1 — Hotfix: 移除 IR-037 中英混雜 lint (鐵律是技術筆記、規則用錯場景)
 
 **背景**：v1.18.0 升級助手 browser 實測時、IR-004「使用 OpenSpec 開發流程」點 [升級提案] 後被 IR-037 lint 擋下、抓 `lint / body / Driven / Development / openspec` 5 個英文詞超過 15% 中英混雜 threshold。
