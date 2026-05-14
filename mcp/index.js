@@ -1321,7 +1321,17 @@ async function runAutoUpdate() {
     if (e.code === 'EEXIST') {
       logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
     } else {
-      logEvent('update_failed', { source: 'mcp', step: 'lock', error: e.code || e.message });
+      // v1.18.6: 補 alias 欄位、跟 'error' event 觀測一致
+      // 原 error: e.code || e.message 保留向後相容、新增結構化欄位
+      logEvent('update_failed', {
+        source: 'mcp',
+        step: 'lock',
+        error: e.code || e.message,
+        error_message: e.message,
+        error_code: e.code,
+        error_name: e.name || 'Error',
+        ...(e.stack ? { stack: String(e.stack).split('\n').slice(0, 5).join('\n') } : {}),
+      });
     }
     return;
   }
