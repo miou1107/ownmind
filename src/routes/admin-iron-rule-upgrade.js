@@ -54,7 +54,7 @@ router.use(adminAuth);
 router.get('/upgrade-status', async (req, res) => {
   try {
     const result = await query(
-      `SELECT id, code, title, content, tags
+      `SELECT id, code, title, content, tags, tier
        FROM memories
        WHERE user_id = $1
          AND type = 'iron_rule'
@@ -72,6 +72,8 @@ router.get('/upgrade-status', async (req, res) => {
         title: r.title,
         format: isSkillMd ? 'skill_md' : 'legacy_text',
         tags: r.tags || [],
+        // v1.19: 鐵律分級（admin UI 顯示 + 編輯用）
+        tier: r.tier || 'default',
       };
     });
 

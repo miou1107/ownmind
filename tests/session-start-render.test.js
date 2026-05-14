@@ -125,3 +125,36 @@ describe('renderSessionContext — 結尾固定訊息', () => {
     assert.match(out, /ownmind_\* MCP tools/);
   });
 });
+
+// v1.19: 鐵律 tier 分佈 summary
+describe('renderSessionContext — v1.19 tier 分佈 summary', () => {
+  it('有 tier_counts 時、鐵律段標題加上分佈', () => {
+    const out = renderSessionContext({
+      server_version: '1.19.0',
+      iron_rules_digest: 'IR-002: test',
+      iron_rules_tier_counts: { critical: 10, default: 25, advisory: 6, total: 41 },
+    }, []);
+    assert.match(out, /共 41 條/);
+    assert.match(out, /🔴 Critical 10/);
+    assert.match(out, /🟡 Default 25/);
+    assert.match(out, /⚪ Advisory 6/);
+  });
+
+  it('沒有 tier_counts（舊 server）時、鐵律段標題回到舊版格式', () => {
+    const out = renderSessionContext({
+      server_version: '1.18.0',
+      iron_rules_digest: 'IR-002: test',
+    }, []);
+    assert.match(out, /## 鐵律（必須嚴格遵守）\n/);
+    assert.ok(!out.includes('共 0 條'), '不該顯示假計數');
+  });
+
+  it('total 為 0 時、不顯示 summary 數字', () => {
+    const out = renderSessionContext({
+      server_version: '1.19.0',
+      iron_rules_digest: 'IR-002: test',
+      iron_rules_tier_counts: { critical: 0, default: 0, advisory: 0, total: 0 },
+    }, []);
+    assert.ok(!out.includes('共 0 條'), 'total 0 不該顯示計數');
+  });
+});

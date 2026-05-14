@@ -1,5 +1,78 @@
 # OwnMind 更新紀錄
 
+## v1.19.0 — 鐵律分級制（Critical / Default / Advisory）
+
+**背景：** v1.18.9 時鐵律已累積 41 條（IR-002 ~ IR-042），告警疲勞已發生（單次 session 啟動可跳 13 條回話品質 lint 警告）、重要規則被次要規則稀釋、IR-027「提醒無效、邏輯才有效」失效。本版埋下分級資料層、不動執行邏輯；v1.20 起依分級改卡控行為。
+
+詳見 `openspec/changes/v1.19-iron-rule-tier/proposal.md`。
+
+### 1. 分級設計
+
+| 級別 | 中文 | 違反處理（v1.19） | 違反處理（v1.20 後） |
+|------|------|--------------------|----------------------|
+| `critical` | 核心硬規則 | 跟 default 相同（本版不動執行邏輯） | 直接卡控 |
+| `default` | 預設規則 | 跳警告 + 寫違反紀錄 | 不變 |
+| `advisory` | 純參考提示 | 跟 default 相同（本版不動執行邏輯） | 只寫紀錄、不跳警告 |
+
+### 2. 資料庫變動：`db/014_iron_rule_tier.sql`
+
+- `memories` 加 `tier VARCHAR(20) DEFAULT 'default'` + CHECK constraint
+- 部分索引 `idx_memories_iron_rule_tier`（只覆蓋 `type='iron_rule'`）
+- 既有 41 條鐵律 migration 後全部為 `'default'`
+
+### 3. 新檔（純函式）
+
+| 檔案 | 用途 |
+|------|------|
+| `shared/iron-rule-tier.js` | tier 常數、validation、emoji、排序、分桶 |
+| `src/utils/iron-rule-tier-validator.js` | server route 用的請求驗證 + 寫入兜底 |
+| `src/utils/iron-rule-digest.js` | `buildIronRulesDigest` + `countByTier` |
+| `hooks/lib/build-compliance-events.js` | reply-lint 違反事件組裝（v1.19 details 加 tier） |
+
+### 4. 改動
+
+- `src/routes/memory.js` POST/PUT 接受 tier 欄位、寫進 DB
+- `src/routes/memory.js` `/init` 回傳 `iron_rules_tier_counts` 結構化計數
+- `src/routes/admin-iron-rule-upgrade.js` `/upgrade-status` 回 tier
+- `mcp/index.js` `ownmind_save` / `ownmind_update` schema 加 tier 參數
+- `hooks/lib/render-session-context.js` 鐵律段標題加 tier 分佈 summary
+- `hooks/ownmind-session-start.js` 經由 init API 自動顯示按 tier 分組
+- `hooks/ownmind-reply-lint.js` violation event details 加 tier
+- `hooks/ownmind-git-post-commit.js` violation event details 加 tier
+- `shared/compliance.js` `appendCompliance` 接受 entry.tier
+- `src/public/index.html` 鐵律升級助手列表加 tier dropdown（inline 編輯、PUT /memory/:id）
+
+### 5. 拍板紀錄（2026-05-14）
+
+| # | 議題 | 拍板 |
+|---|------|------|
+| 1 | 幾級分類 | 3 級：Critical / Default / Advisory |
+| 2 | Critical 名單（10 條） | IR-002 / 005 / 008 / 009 / 012 / 024 / 027 / 031 / 038 / 041 |
+| 3 | migration 預設值 | 全部設為 `default`、發版後 admin UI 手動升 Critical |
+| 4 | Advisory 名單時機 | v1.19.1 hotfix 處理、本版先讓所有非 Critical 維持 default |
+| 5 | 本版是否包含執行邏輯卡控 | 否、純資料層 + UI、卡控等 v1.20 |
+
+### 6. 跨工具相容
+
+- 舊客戶端讀不到 tier 欄位也不會壞（JSON 多一個欄位）
+- SessionStart hook 對舊 server（沒回 `iron_rules_tier_counts`）自動 fallback 到舊版格式
+- `getTierFromRules()` 找不到規則 / 規則無 tier / 非法值一律回 `'default'`
+
+### 7. 測試覆蓋
+
+- 9 個新測試檔、約 60 個新測試案例
+- 全套 1275 個測試零紅燈、零回歸
+- 純函式優先：tier validation、digest 組裝、compliance event 組裝都是 testable 純函式
+
+### 8. 發版前 Vin 必跑
+
+- 跑 014 migration on dev DB、確認既有 41 條鐵律 tier 全部是 default
+- 部署後 browser 實測（IR-020）：admin UI 鐵律升級助手 → tier dropdown 改值 → 列表立即反映
+- 在 admin UI 把 10 條 Critical 鐵律手動升級
+- 跑驗收 SQL：`SELECT tier, COUNT(*) FROM memories WHERE type='iron_rule' GROUP BY tier`、預期 critical=10、default≈30、advisory=0
+
+---
+
 ## v1.18.9 — MCP 工具 latency 埋點（v1.18.6 漏作補）
 
 **背景：** v1.18.5 原本是大型 release（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + latency 埋點），實作過程經歷 3 次棄用後，最終只剩 latency 埋點。詳見 `openspec/changes/archive/v1.18.9-mcp-latency-tracking/proposal.md`。

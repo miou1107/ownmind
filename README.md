@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.18.9** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.19.0** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory System
 
@@ -171,6 +171,7 @@ sequenceDiagram
 - **L2 commit blocking** — PreToolUse hook runs verification engine for all triggers including commit, blocks on failure `v1.15.0`
 - **Cache auto-refresh** — iron_rules.json cache refreshes automatically after save/update/disable operations `v1.15.0`
 - **Actionable failure messages** — verification failures include fix hints (e.g., "please git add X") `v1.15.0`
+- **Three-tier rule classification** — every rule labeled `critical` / `default` / `advisory`; SessionStart digest groups by tier (🔴 Critical fully listed, 🟡 Default fully listed, ⚪ Advisory count-only); v1.20+ uses the tier to differentiate blocking vs. warning vs. log-only behavior `v1.19.0`
 
 ### Infrastructure
 

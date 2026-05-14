@@ -456,6 +456,12 @@ const TOOLS = [
           items: { type: "string" },
           description: "（iron_rule 用）相關鐵律 code（選填）。例：['IR-037', 'IR-007']",
         },
+        // v1.19: 鐵律分級
+        tier: {
+          type: "string",
+          enum: ["critical", "default", "advisory"],
+          description: "（iron_rule 用）規則分級（選填，預設 default）。critical=核心硬規則 v1.20 起會被卡控；default=預設規則跳警告；advisory=純參考提示只寫紀錄。",
+        },
       },
       required: ["type", "title", "content"],
     },
@@ -477,6 +483,12 @@ const TOOLS = [
         metadata: {
           type: "object",
           description: "更新後的 metadata（選填）",
+        },
+        // v1.19: 鐵律分級
+        tier: {
+          type: "string",
+          enum: ["critical", "default", "advisory"],
+          description: "（iron_rule 用）規則分級（選填）。critical / default / advisory 三選一。",
         },
       },
       required: ["id", "update_reason"],
@@ -817,6 +829,8 @@ async function handleTool(name, args) {
       if (args.code !== undefined) body.code = args.code;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
+      // v1.19: 鐵律分級 — server 端會 validate 非鐵律不能設 tier
+      if (args.tier !== undefined) body.tier = args.tier;
 
       // v1.18.2: iron_rule 自動 capture + 注入 origin_context (時空背景)
       // - 技術部分 (cwd/git_branch/captured_at) 由 client 自動帶
@@ -871,6 +885,8 @@ async function handleTool(name, args) {
       if (args.content !== undefined) body.content = args.content;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
+      // v1.19: 鐵律分級 — server 端會 validate 非鐵律不能改 tier
+      if (args.tier !== undefined) body.tier = args.tier;
       try {
         const data = await callApi("PUT", `/api/memory/${args.id}`, body);
         if (data.sync_token) currentSyncToken = data.sync_token;

@@ -676,6 +676,7 @@
               <th>Title</th>
               <th>Tags</th>
               <th>Format</th>
+              <th title="v1.19 鐵律分級：🔴 Critical 核心硬規則、🟡 Default 預設、⚪ Advisory 只記錄">Tier</th>
               <th>動作</th>
             </tr>
           </thead>
@@ -1374,11 +1375,20 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         const btnLabel = r.format === 'legacy_text' ? '升級提案' : '重新編輯';
         const btnClass = r.format === 'legacy_text' ? 'btn-success' : 'btn-secondary';
         const action = `<button class="${btnClass} btn-sm" data-action="iru-suggest" data-rule-id="${r.id}">${btnLabel}</button>`;
+        // v1.19: tier 下拉選單（inline 編輯）
+        const tier = r.tier || 'default';
+        const tierSelect =
+          `<select class="iru-tier-select" data-rule-id="${r.id}" data-prev="${tier}" style="font-size:11px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;background:${tier === 'critical' ? '#fee2e2' : tier === 'advisory' ? '#f3f4f6' : '#fef3c7'};">` +
+          `<option value="critical"${tier === 'critical' ? ' selected' : ''}>🔴 Critical</option>` +
+          `<option value="default"${tier === 'default' ? ' selected' : ''}>🟡 Default</option>` +
+          `<option value="advisory"${tier === 'advisory' ? ' selected' : ''}>⚪ Advisory</option>` +
+          `</select>`;
         return `<tr>
           <td><b>${escapeHtml(r.code)}</b></td>
           <td>${escapeHtml(r.title)}</td>
           <td style="font-size:11px;color:#6b7280;">${escapeHtml(tagsStr)}</td>
           <td>${formatBadge}</td>
+          <td>${tierSelect}</td>
           <td>${action}</td>
         </tr>`;
       }).join('');
@@ -1387,6 +1397,26 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
         btn.addEventListener('click', () => {
           const ruleId = parseInt(btn.dataset.ruleId, 10);
           if (!Number.isNaN(ruleId)) iruSuggest(ruleId);
+        });
+      });
+      // v1.19: tier dropdown change → PATCH /memory/:id { tier }
+      tbody.querySelectorAll('select.iru-tier-select').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const ruleId = parseInt(sel.dataset.ruleId, 10);
+          const newTier = sel.value;
+          const prevTier = sel.dataset.prev;
+          if (Number.isNaN(ruleId)) return;
+          try {
+            await iruUpdateTier(ruleId, newTier);
+            sel.dataset.prev = newTier;
+            // 換背景色提供視覺回饋
+            sel.style.background = newTier === 'critical' ? '#fee2e2' : newTier === 'advisory' ? '#f3f4f6' : '#fef3c7';
+            showToast(`已把規則改為 ${newTier === 'critical' ? '🔴 Critical' : newTier === 'advisory' ? '⚪ Advisory' : '🟡 Default'}`);
+          } catch (e) {
+            // 失敗 → 回復原值
+            sel.value = prevTier;
+            showToast('更新失敗：' + e.message, true);
+          }
         });
       });
     } catch (e) {
@@ -1437,6 +1467,36 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     document.getElementById('iruDiffModal').classList.remove('active');
     iruCurrentRuleId = null;
     document.getElementById('iruConfirmBtn').disabled = false;
+  }
+
+  // v1.19: 把鐵律 tier 改成 newTier、PUT /memory/:id（後端 validator 會擋非 iron_rule）
+  //   update_reason 帶 prevTier → newTier 給 audit 追溯（spec 場景 8）
+  async function iruUpdateTier(ruleId, newTier) {
+    if (!iruSyncToken) throw new Error('sync_token 缺、請重新載入列表');
+    const cached = iruRulesCache.find(r => r.id === ruleId);
+    const prevTier = (cached && cached.tier) || 'default';
+    const res = await fetch(`${API}/memory/${ruleId}`, {
+      method: 'PUT',
+      headers: headers(),
+      body: JSON.stringify({
+        tier: newTier,
+        sync_token: iruSyncToken,
+        update_reason: `Admin UI: tier ${prevTier} → ${newTier}`,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // sync_token stale → 自動 refresh、要求 user 重試
+      if (res.status === 409 && data.new_token) {
+        iruSyncToken = data.new_token;
+        throw new Error('狀態已變動、請再試一次');
+      }
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    if (data.sync_token) iruSyncToken = data.sync_token;
+    // local cache 同步
+    const cached = iruRulesCache.find(r => r.id === ruleId);
+    if (cached) cached.tier = newTier;
   }
 
   async function iruConfirmUpgrade() {

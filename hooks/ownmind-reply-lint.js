@@ -90,10 +90,13 @@ async function main() {
   if (DISABLED) { process.exit(0); return; }
 
   // dynamic import shared/* 包在 try：失敗也不外漏（review A2）
-  let lintReply, readCredentials, getClientVersion;
+  // v1.19: 全部 shared/* 與 hooks/lib/* 統一 catch → exit 0、不再 inline fallback（review M-2）
+  let lintReply, readCredentials, getClientVersion, getTierFromRules, buildComplianceEvents;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
+    ({ getTierFromRules } = await import('../shared/iron-rule-tier.js'));
+    ({ buildComplianceEvents } = await import('./lib/build-compliance-events.js'));
   } catch {
     process.exit(0); return;
   }
@@ -133,7 +136,9 @@ async function main() {
   //   2. await POST 嘗試送 server
   //   3. POST 失敗 / NO_NETWORK 才寫 reply-lint-pending.jsonl 給 SessionStart flush
   //      （POST 成功就不寫 pending、避免 flush 重複送、DB 不會有 duplicate）
-  const events = buildComplianceEvents(lintResult.violations);
+  // v1.19: 讀 iron_rules cache 給每筆違反查 tier（best-effort、cache miss 用 default）
+  const cachedRules = readIronRulesCache();
+  const events = buildComplianceEvents(lintResult.violations, cachedRules, getTierFromRules);
   spoolEvents(events);
 
   let postOk = false;
@@ -307,21 +312,23 @@ function writeFallback(block) {
  * 同一個違反在 hook 跟 flush 兩條路徑必須帶同一個 id 才有效；所以 id 在這裡產一次、
  * banner / archive / pending 都用同一個。
  */
-function buildComplianceEvents(violations) {
-  const ts = new Date().toISOString();
-  return violations.map(v => ({
-    ts,
-    event: 'iron_rule_compliance',
-    tool: 'claude-code',
-    source: 'reply-lint-hook',
-    client_event_id: randomUUID(),
-    details: {
-      action: 'violate',
-      rule_code: v.rule,
-      // 截掉訊息避免 DB 暴大
-      message: typeof v.message === 'string' ? v.message.slice(0, 300) : '',
-    },
-  }));
+// v1.19: 抽到 hooks/lib/build-compliance-events.js 給單元測試用
+//   buildComplianceEvents(violations, rules, getTier) — dynamic import 在 main() 內
+
+/**
+ * v1.19: 讀本地 iron_rules cache 給 tier 查詢用
+ * 純 best-effort、cache 不存在或解析失敗一律回空陣列、不擋主流程
+ */
+function readIronRulesCache() {
+  try {
+    const cachePath = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
+    if (!fs.existsSync(cachePath)) return [];
+    const raw = fs.readFileSync(cachePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 /**

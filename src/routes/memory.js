@@ -13,6 +13,8 @@ import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 import { buildOnboarding } from '../utils/onboarding.js';
 import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.js';
+import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
+import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { createRequire } from 'module';
 
 const SERVER_VERSION = (() => {
@@ -431,12 +433,9 @@ router.get('/init', async (req, res) => {
     const teamStandards = teamStandardsResult.rows;
     const activeHandoff = handoffResult.rows[0] || null;
 
-    // 精簡摘要：每條鐵律一行，供 AI 快速內化
-    const ironRulesDigest = ironRules.map(r => {
-      const code = r.code || 'IR-?';
-      const triggers = (r.tags || []).filter(t => t.startsWith('trigger:')).map(t => t.replace('trigger:', '')).join('/');
-      return `${code}: ${r.title}${triggers ? ` [觸發: ${triggers}]` : ''}`;
-    }).join('\n');
+    // v1.19: 按 tier 分組顯示（Critical / Default / Advisory），Advisory 只顯示計數
+    const ironRulesDigest = buildIronRulesDigest(ironRules);
+    const ironRulesTierCounts = countByTier(ironRules);
 
     // 團隊規範摘要
     const teamStandardsDigest = teamStandards.map(r => `[團隊] ${r.title}`).join('\n');
@@ -692,6 +691,7 @@ router.get('/init', async (req, res) => {
       team_standards_hash: teamStandardsHash,
       last_team_standard_update: lastTeamUpdate,
       iron_rules_count: ironRules.length,
+      iron_rules_tier_counts: ironRulesTierCounts,
       ...(!compact && { instructions: INSTRUCTIONS_SOP }),
       profile,
       principles: principlesOut,
@@ -887,7 +887,7 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { type, title, content, code, tags, metadata, sync_token, rule_stats, is_test } = req.body;
+    const { type, title, content, code, tags, metadata, sync_token, rule_stats, is_test, tier } = req.body;
 
     if (!type || !title || !content) {
       return res.status(400).json({ error: '必填欄位：type, title, content' });
@@ -898,6 +898,12 @@ router.post('/', async (req, res) => {
         error: `無效的記憶類型: "${type}"`,
         allowed_types: ALLOWED_MEMORY_TYPES
       });
+    }
+
+    // v1.19: 鐵律分級 tier 欄位驗證
+    const tierCheck = validateTierRequest({ memoryType: type, tier });
+    if (!tierCheck.ok) {
+      return res.status(tierCheck.status).json({ error: tierCheck.error });
     }
 
     // v1.17.94: iron_rule 寫入前跑品質檢查、不過直接退回（IR-027 程式邏輯卡控）
@@ -956,11 +962,14 @@ router.post('/', async (req, res) => {
       finalCode = generateNextIronRuleCode(codeResult.rows.map(r => r.code));
     }
 
+    // v1.19: tier 寫入（非 iron_rule 一律 null、不污染其他 type）
+    const finalTier = applyTierDefault({ memoryType: type, tier });
+
     const result = await query(
-      `INSERT INTO memories (user_id, type, title, content, code, tags, metadata, is_test)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO memories (user_id, type, title, content, code, tags, metadata, is_test, tier)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [req.user.id, type, title, content, finalCode, tags || null, metadata || null, isTestFlag]
+      [req.user.id, type, title, content, finalCode, tags || null, metadata || null, isTestFlag, finalTier]
     );
 
     const memory = result.rows[0];
@@ -1085,7 +1094,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { title, content, tags, metadata, update_reason, sync_token, rule_stats } = req.body;
+    const { title, content, tags, metadata, update_reason, sync_token, rule_stats, tier } = req.body;
 
     // Sync token 驗證（舊 client 無 token 時 graceful fallback）
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
@@ -1108,6 +1117,14 @@ router.put('/:id', async (req, res) => {
     // team_standard 僅限 admin 修改
     if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: '團隊規範僅限管理員修改' });
+    }
+
+    // v1.19: tier 驗證 — 用既有 memory 的 type、避免靠 client 傳的 type 繞過
+    if (tier !== undefined && tier !== null) {
+      const tierCheck = validateTierRequest({ memoryType: oldMemory.type, tier });
+      if (!tierCheck.ok) {
+        return res.status(tierCheck.status).json({ error: tierCheck.error });
+      }
     }
 
     // v1.18.0: lintIronRule 升級到偵測 SKILL.md frontmatter（同 POST handler）
@@ -1151,6 +1168,9 @@ router.put('/:id', async (req, res) => {
     const willChangeContent = content !== undefined && content !== oldMemory.content;
     const shouldBackup = oldMemory.type === 'iron_rule' && willChangeContent;
 
+    // v1.19: tier 變動 — 只有當 caller 明確帶 tier 時才覆寫，COALESCE 行為一致
+    const tierForUpdate = (tier === undefined || tier === null) ? null : tier;
+
     const result = await query(
       `UPDATE memories
        SET title = COALESCE($1, title),
@@ -1158,15 +1178,25 @@ router.put('/:id', async (req, res) => {
            tags = COALESCE($3, tags),
            metadata = COALESCE($4, metadata),
            previous_content = CASE WHEN $7::boolean THEN content ELSE previous_content END,
+           tier = COALESCE($8, tier),
            updated_at = NOW()
        WHERE id = $5 AND user_id = $6
        RETURNING *`,
-      [title || null, content || null, tags || null, metadata || null, req.params.id, req.user.id, shouldBackup]
+      [title || null, content || null, tags || null, metadata || null, req.params.id, req.user.id, shouldBackup, tierForUpdate]
     );
 
     const memory = result.rows[0];
 
     // 存舊內容到歷史，並記錄更新原因
+    // v1.19: tier 改動寫進 metadata.tier_change 給 audit 追溯（spec 場景 2 / 場景 8）
+    const tierChanged = tier !== undefined && tier !== null && tier !== oldMemory.tier;
+    const historyMetadata = {
+      ...oldMemory.metadata,
+      update_reason: update_reason || null,
+      ...(tierChanged && {
+        tier_change: { from: oldMemory.tier || 'default', to: tier },
+      }),
+    };
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'update', $3, $4)`,
@@ -1174,7 +1204,7 @@ router.put('/:id', async (req, res) => {
         memory.id,
         metadata?.tool || oldMemory.metadata?.tool || 'api',
         oldMemory.content,
-        JSON.stringify({ ...oldMemory.metadata, update_reason: update_reason || null })
+        JSON.stringify(historyMetadata),
       ]
     );
 

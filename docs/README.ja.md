@@ -2,7 +2,7 @@ AIパーソナライズド永続メモリソリューション
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.18.9** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.19.0** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォームAIメモリシステム
 
@@ -163,6 +163,7 @@ sequenceDiagram
 - **L2 commitブロック** — PreToolUse hookが全トリガータイプ（commit含む）で検証エンジンを実行、失敗時にブロック `v1.15.0`
 - **キャッシュ自動リフレッシュ** — save/update/disable後にiron_rules.jsonキャッシュを自動更新 `v1.15.0`
 - **アクション可能な失敗メッセージ** — 検証失敗時に修正ヒントを付与（例：「git add Xしてください」） `v1.15.0`
+- **3段階分類** — 各鉄則に `critical` / `default` / `advisory` を付与；SessionStart ダイジェストをティアごとにグルーピング表示（🔴 Critical 全件、🟡 Default 全件、⚪ Advisory はカウントのみ）；v1.20+ からティアでブロック / 警告 / 記録のみの動作を切り替え `v1.19.0`
 
 ### スマートラーニング＆データ駆動進化 `v1.10.0`
 
