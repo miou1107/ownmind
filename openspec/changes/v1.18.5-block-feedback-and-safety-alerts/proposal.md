@@ -1,12 +1,23 @@
-# v1.18.9 — 阻擋誤殺回饋按鈕 + 4 種安全告警偵測 + latency_ms 埋點
+# v1.18.9 — 4 種安全告警偵測 + latency_ms 埋點
 
+> **🚫 block_feedback 功能棄用（2026-05-14 part 2）：** 拍板時設計成「訊息流 markdown 連結 → 開瀏覽器確認頁」、實作時撞牆：
+> - reply-lint hook 沒辦法在 client 端簽 sig（沒 server secret 也沒 user_id）
+> - OwnMind 沒 cookie/session 機制（純 Bearer api_key），網頁端要 POST 必須先登入
+> - 「網頁需登入」徹底違反拍板「按一次 1 秒完成」的 UX 目標
+>
+> 三個替代方案（純 CLI / 連結+登入 / hook 等 server 簽 sig）Vin 都拒絕，整個 block_feedback 功能棄用。已 commit 8bcfc69 的 server 端程式（feedback-sig / block-feedback handler / 兩個 route / 兩個 test）下個 commit 全部刪除。git 歷史保留作為「曾嘗試」紀錄。
+>
+> **本提案剩餘範圍：** 4 種安全告警 + 健康度分頁 + latency_ms 埋點。誤殺率指標卡（C6）也跟著移除（沒 block_feedback event 來源）。
+>
+> ---
+>
 > **版號修正（2026-05-14）：** 原本以 v1.18.5 命名，但 v1.18.5/.6/.7/.8 已被前面 4 次 hotfix / 觀測補丁占用，本提案實際發版號為 **v1.18.9**。worktree 目錄名保留不變（`v1.18.5-block-feedback-and-safety-alerts`）以避免 git 路徑變動。
 >
 > **範圍擴充（2026-05-14）：** 合併原規劃 v1.18.6 才做的 `latency_ms` 埋點（漏作項）一併在本版發。
 
 - **Author**: Vin
-- **Date**: 2026-05-13（提案）/ 2026-05-14（拍板 + 實作展開）
-- **Status**: 拍板完成，實作中
+- **Date**: 2026-05-13（提案）/ 2026-05-14（拍板、part 2 棄用 block_feedback）
+- **Status**: 範圍縮減，4 種安全告警 + 健康度分頁 + latency 埋點實作中
 - **Worktree**: `determined-bouman-20c22a`
 - **Branch**: `vin/determined-bouman-20c22a`
 
