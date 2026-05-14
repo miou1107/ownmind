@@ -1,8 +1,12 @@
-# v1.18.5 — 阻擋誤殺回饋按鈕 + 4 種安全告警偵測
+# v1.18.9 — 阻擋誤殺回饋按鈕 + 4 種安全告警偵測 + latency_ms 埋點
+
+> **版號修正（2026-05-14）：** 原本以 v1.18.5 命名，但 v1.18.5/.6/.7/.8 已被前面 4 次 hotfix / 觀測補丁占用，本提案實際發版號為 **v1.18.9**。worktree 目錄名保留不變（`v1.18.5-block-feedback-and-safety-alerts`）以避免 git 路徑變動。
+>
+> **範圍擴充（2026-05-14）：** 合併原規劃 v1.18.6 才做的 `latency_ms` 埋點（漏作項）一併在本版發。
 
 - **Author**: Vin
-- **Date**: 2026-05-13
-- **Status**: Draft（待 Vin 拍板範圍 + 實作優先級）
+- **Date**: 2026-05-13（提案）/ 2026-05-14（拍板 + 實作展開）
+- **Status**: 拍板完成，實作中
 - **Worktree**: `determined-bouman-20c22a`
 - **Branch**: `vin/determined-bouman-20c22a`
 
@@ -72,23 +76,31 @@ v1.18.4 落地產品健康度日報雛形（路線 C 階段 A、只看絕對數�
 - ✅ 管理員儀表板加「健康度」分頁、顯示誤殺率 + 安全告警件數
 - ✅ 安全告警觸發後的自動暫停帳號邏輯
 
-### 不範圍（v1.18.6+ 處理）
-- ❌ MCP API 延遲埋點（會在 mcp/index.js 加 `latency_ms`、獨立 commit）
+### 範圍擴充（2026-05-14 合併進 v1.18.9）
+- ✅ MCP API 延遲埋點（mcp/index.js 加 `latency_ms`）— 原規劃 v1.18.6 處理但漏作
+
+### 不範圍（v1.19.x+ 處理）
 - ❌ Phase 2 阻擋後修正成功率（SQL 需要關聯兩個 event、太難）
 - ❌ Phase 3 凍結 100 條鐵律 benchmark
 - ❌ 規則生效覆蓋率 < 10% 強制紅燈（依賴 Veto 機制、Gemini r3 警告 Veto 太嚴、設計層議題）
 
 ---
 
-## 3. 待拍板決策
+## 3. 拍板決策（2026-05-14 完成）
 
-| # | 議題 | 選項 A | 選項 B | 我建議 |
-|---|---|---|---|---|
-| 1 | 「擋錯了」按鈕怎麼顯示 | reply-lint Stop hook 終端機 echo + URL | MCP server 回傳特殊欄位、客戶端 IDE 直接渲染按鈕 | **A**（簡單、不依賴 IDE 支援） |
-| 2 | false positive 回饋形式 | 點 URL → 開瀏覽器 admin 頁、按確認 | 純 CLI `ownmind report-false-positive --event-id=xxx` | **B**（不離開終端機） |
-| 3 | 4 種告警觸發後是「自動暫停帳號」還是「只通知」 | 自動暫停 | 只通知、人工決定 | **B**（自動暫停風險高、誤判封自己 user） |
-| 4 | 暫停閾值（大量資料外洩） | 單 user 1h > 1000 筆 | 單 user 1h > 200 筆（更嚴） | **A**（合理上限、避免太敏感） |
-| 5 | 規則阻擋誤殺率紅燈閾值 | > 30%（Gemini r3 建議） | > 15%（更敏感） | **A**（先寬鬆、跑 1 個月看趨勢再調） |
+| # | 議題 | 拍板結果 | 備註 |
+|---|---|---|---|
+| 1 | 「擋錯了」按鈕怎麼顯示 | **訊息流裡的 markdown 連結 → 開瀏覽器確認頁** | 原本 Vin 選「IDE 渲染按鈕」，但 [project_326](memory) 已驗證 Claude Code 架構不允許 MCP server 渲染按鈕，改成等價的「藍色 markdown 連結」方案。Cursor/Gemini/Codex 直接看得到、Claude Code 摺疊卡片時 user 可手動展開 |
+| 2 | false positive 回饋形式 | **網頁確認頁面（按一次確認、不要表單）+ CLI 並存** | 主管道是連結 → 確認頁，「按一次確認 1 秒完成」把多話降到最低；CLI `ownmind report-false-positive --event-id=xxx` 保留給 power user / AI agent |
+| 3 | 4 種告警觸發後 | **只通知 super_admin、不自動暫停帳號** | 自動暫停風險高、誤判封自己 user。一個月後看資料再決定要不要加自動暫停 |
+| 4 | 暫停閾值（大量資料外洩） | **單 user / api_key 1h 內讀取 > 1000 筆** | 合理上限，避免 AI agent 腳本誤觸 |
+| 5 | 規則阻擋誤殺率紅燈閾值 | **> 30%** | 先寬鬆、跑 1 個月看趨勢再調 |
+
+**衍生設計決定（基於拍板結果）：**
+
+- 連結 URL 帶 HMAC 簽名（防 URL 被盜用）：`https://kkvin.com/ownmind/feedback/block?event_id=xxx&sig=abc123`
+- 確認頁面只顯示一個 `[確認擋錯了]` 按鈕、按下 POST → 顯示「已回報」、1 秒後自動關閉。不要表單、不要原因欄位
+- CLI 通道（決策 2 並存）走同一個 server endpoint `POST /api/feedback/block`，但用 `Authorization: Bearer ${OWNMIND_API_KEY}` 而不是 sig query param
 
 ---
 
@@ -127,17 +139,17 @@ v1.18.4 落地產品健康度日報雛形（路線 C 階段 A、只看絕對數�
 | 階段 | 落地版本 | 內容 |
 |---|---|---|
 | 路線 C 階段 A | **v1.18.4 已完成** | 健康度日報 SQL 雛形、4 個絕對數字 |
-| 路線 C 階段 B | **本 proposal v1.18.5** | 補阻擋誤殺回饋 + 4 種安全告警 |
-| 路線 C 階段 B+ | v1.18.6 | MCP API 延遲埋點 |
+| 路線 C 階段 A+ | v1.18.5 / .6 / .7 / .8 | sync hotfix + 錯誤觀測 enrichErrorDetails + 健康度日報 launchd 排程 |
+| 路線 C 階段 B | **本 proposal v1.18.9** | 阻擋誤殺回饋 + 4 種安全告警 + latency_ms 埋點（合併原 v1.18.6 漏作項） |
 | 路線 C 階段 C | v1.19.x | 等 user > 10、樣本 > 1000 後、再實作 v3 spec 完整綜合指標 |
 
 ---
 
-## 7. 拍板後下一步
+## 7. 拍板後下一步（執行中）
 
-1. Vin 對 5 個決策議題拍板
-2. 我寫 spec.md 細節 + tasks.md 拆解
-3. 走 TDD（按 IR-003）寫 reproduction test
-4. 實作 + 測試 + browser 實測（按 IR-020）
+1. ✅ Vin 對 5 個決策議題拍板（2026-05-14）
+2. ✅ 更新 proposal.md / spec.md / tasks.md 反映拍板結果
+3. 走 TDD（按 IR-003）寫 reproduction test → 實作 → 測試
+4. browser 實測（按 IR-020）— 連結方案的網頁確認頁、安全告警觸發
 5. 走品管三步驟（按 IR-012/045）+ 同步 README/FILELIST/CHANGELOG（按 IR-008）
-6. Tag v1.18.5、部署、Vin 跑兩週看資料
+6. Tag v1.18.9、push、提醒 Vin 部署 prod、跑兩週看資料
