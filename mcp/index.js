@@ -23,37 +23,7 @@ import {
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
-
-// --- v1.18.6: enrichErrorDetails ---
-// 過去 error event 只記 { tool_name, error }、缺結構化欄位（http_status / stack /
-// payload type 等）→ 觀測缺口。改成豐富 details、保留 error 欄位向後相容。
-function enrichErrorDetails(error, toolName, args) {
-  const msg = error?.message || String(error || '');
-  const details = {
-    error: msg,                            // 向後相容（v1.17.x~v1.18.5 都用這欄）
-    error_message: msg,                    // v1.18.6 新增、結構化命名一致
-    error_name: error?.name || 'Error',
-    tool_name: toolName,
-  };
-  if (error?.stack) {
-    details.stack = String(error.stack).split('\n').slice(0, 5).join('\n');
-  }
-  // 從 message 抓 HTTP status (e.g. "API 400: ..." → 400)
-  const statusMatch = msg.match(/^API (\d{3}):/);
-  if (statusMatch) details.http_status = parseInt(statusMatch[1], 10);
-  // payload summary（不洩漏敏感資料、只記結構欄位）
-  if (args && typeof args === 'object') {
-    const summary = {};
-    if (args.type) summary.type = args.type;
-    if (args.code) summary.code = args.code;
-    if (args.id !== undefined) summary.id = args.id;
-    if (typeof args.title === 'string') summary.title_length = args.title.length;
-    if (typeof args.content === 'string') summary.content_length = args.content.length;
-    if (Array.isArray(args.tags)) summary.tags_count = args.tags.length;
-    if (Object.keys(summary).length > 0) details.payload_summary = summary;
-  }
-  return details;
-}
+import { enrichErrorDetails, errorAliasFields } from './lib/enrich-error.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
@@ -1321,16 +1291,13 @@ async function runAutoUpdate() {
     if (e.code === 'EEXIST') {
       logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
     } else {
-      // v1.18.6: 補 alias 欄位、跟 'error' event 觀測一致
-      // 原 error: e.code || e.message 保留向後相容、新增結構化欄位
+      // v1.18.8: 重構用 errorAliasFields helper、跟 'error' event 共用結構化邏輯
+      // error: e.code || e.message 保留原 fallback（向後相容）
       logEvent('update_failed', {
         source: 'mcp',
         step: 'lock',
         error: e.code || e.message,
-        error_message: e.message,
-        error_code: e.code,
-        error_name: e.name || 'Error',
-        ...(e.stack ? { stack: String(e.stack).split('\n').slice(0, 5).join('\n') } : {}),
+        ...errorAliasFields(e),
       });
     }
     return;
