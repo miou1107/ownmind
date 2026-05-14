@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.ownmind.health-report-daily.plist — macOS launchd agent
+
+  v1.18.8 新增：每天早上 9 點自動跑 scripts/health-report-daily.sh
+  輸出到 ~/.ownmind/reports/health-YYYY-MM-DD.md
+
+  安裝（dev / admin 端手動、不在 user install 流程內）：
+    1. sed "s|{HOME}|$HOME|g" ~/.ownmind/scripts/launchd/com.ownmind.health-report-daily.plist \
+        > ~/Library/LaunchAgents/com.ownmind.health-report-daily.plist
+    2. launchctl load -w ~/Library/LaunchAgents/com.ownmind.health-report-daily.plist
+    3. 確認：launchctl list | grep ownmind.health
+    4. 手動跑一次測試：launchctl start com.ownmind.health-report-daily
+
+  解除：
+    launchctl unload -w ~/Library/LaunchAgents/com.ownmind.health-report-daily.plist
+
+  注意：腳本內用 SSH 進 prod、launchd 環境沒 ssh-agent、必須用 ~/.ssh/ 預設 key
+  且該 key 已加進 prod 的 authorized_keys（Vin 機器目前狀態符合）。
+
+  {HOME} 佔位符由安裝者以 sed 替換為實際 $HOME 路徑（plist 無法讀環境變數）。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ownmind.health-report-daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>mkdir -p {HOME}/.ownmind/reports && {HOME}/.ownmind/scripts/health-report-daily.sh > {HOME}/.ownmind/reports/health-$(date +%Y-%m-%d).md 2>&1</string>
+  </array>
+
+  <!-- 每天早上 09:00 跑一次 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- 載入時不立刻跑（避免每次重開機都跑、累積 noise） -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- launchctl log 分流（給 launchd 自己錯誤用、實際輸出在 reports/） -->
+  <key>StandardOutPath</key>
+  <string>{HOME}/.ownmind/logs/launchd-health-report.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>{HOME}/.ownmind/logs/launchd-health-report.stderr.log</string>
+
+  <!-- 只在有使用者登入時執行；避免開機冷啟搶資源 -->
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

@@ -1,5 +1,47 @@
 # OwnMind 更新紀錄
 
+## v1.18.8 — error helper 抽出 + unit test 補完 + 健康度日報 launchd 排程
+
+### 1. `mcp/lib/enrich-error.js` 抽出（v1.18.6/7 重構）
+
+v1.18.6 inline 在 `mcp/index.js` 的 `enrichErrorDetails` 拆到獨立 module、加 `errorAliasFields` 共用 helper：
+
+- `errorAliasFields(error)`：純 error → 結構化欄位（`error_message`、`error_name`、`error_code?`、`stack?`、`http_status?`）
+- `enrichErrorDetails(error, toolName, args)`：包 `errorAliasFields` + 加 `error`（向後相容）+ `tool_name` + `payload_summary`
+- v1.18.7 `update_failed` event 重構成 `{ source, step, error: e.code||e.message, ...errorAliasFields(e) }`、不再 inline 拼欄位
+
+行為向後相容、單純為 testability + DRY。
+
+### 2. `tests/enrich-error.test.js` 新增（25 cases）
+
+涵蓋：
+- 基本欄位（Error / TypeError / string / null）
+- stack 截短到 5 行
+- http_status regex（API 4xx/5xx 抓得到、非 API 不出現）
+- payload_summary 隱私邊界（title/content 只記長度不記內容、tags 只記數量）
+- id === 0 不被 falsy check 過濾
+- 向後相容（error 跟 error_message 鏡像一致）
+- `errorAliasFields` 獨立行為 + update_failed 情境整合測試
+
+跑：`node --test tests/enrich-error.test.js` → 25 pass / 0 fail。
+
+### 3. `scripts/launchd/com.ownmind.health-report-daily.plist` 新增
+
+每天早上 09:00 自動跑 `scripts/health-report-daily.sh`、輸出到 `~/.ownmind/reports/health-YYYY-MM-DD.md`。
+
+僅 admin / 維運者使用、不進 user install 流程。手動安裝：
+```bash
+sed "s|{HOME}|$HOME|g" ~/.ownmind/scripts/launchd/com.ownmind.health-report-daily.plist \
+  > ~/Library/LaunchAgents/com.ownmind.health-report-daily.plist
+launchctl load -w ~/Library/LaunchAgents/com.ownmind.health-report-daily.plist
+```
+
+### 4. 新鐵律 IR-042
+
+「加 npm 依賴必須同步更新 user-facing install/update 腳本」— v1.18.5 IR-007 同類失敗第 4 次（dev/prod 環境 mismatch）沉澱出來的具體鐵律。
+
+content 在 OwnMind 雲端（不在 git）、tags: `trigger:edit / package_json / new_dependency / import`。
+
 ## v1.18.7 — update_failed event 同步補 error 結構化欄位
 
 v1.18.6 補了 MCP tool exception 的 `error` event 結構化欄位、但同檔還有另一個 error 寫入點：`update_failed`（auto-update lock 取不到時觸發、`mcp/index.js:1324`）也只記 `{ source, step, error: e.code || e.message }`、跟 `error` event 屬同類觀測缺口。

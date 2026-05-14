@@ -1019,6 +1019,27 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.8 新增 / 修改 (error helper 抽出 + unit test + 健康度日報 launchd)
+
+新增檔:
+```
+mcp/lib/enrich-error.js                  — enrichErrorDetails + errorAliasFields helper
+                                            v1.18.6 inline 拆出、加 errorAliasFields 共用
+tests/enrich-error.test.js               — 25 unit tests
+                                            涵蓋基本欄位/stack/http_status/payload_summary/
+                                            隱私邊界/向後相容/update_failed 情境整合
+scripts/launchd/com.ownmind.health-report-daily.plist — 每天 09:00 跑日報、輸出 reports/
+                                            admin 端手動 launchctl load 安裝
+```
+
+修改的既有檔:
+```
+mcp/index.js                             — (1) 移除 inline enrichErrorDetails、改 import
+                                          — (2) update_failed event 用 errorAliasFields
+                                            DRY、跟 error event 共用結構化邏輯
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.7 → 1.18.8
+```
+
 ## v1.18.7 新增 / 修改 (update_failed event 同步補 error 結構化欄位)
 
 修改的既有檔:
