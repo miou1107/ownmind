@@ -22,8 +22,9 @@
 
 ### T1.2 HMAC 簽名 helper
 - `src/utils/feedback-sig.js`：`signFeedback(eventId, userId)` / `verifyFeedback(eventId, userId, sig)`
-- secret 從 `process.env.OWNMIND_FEEDBACK_HMAC_SECRET` 讀，沒設定就 startup 時自動產生 32-byte 寫 `.env`（用既有 `src/utils/env-bootstrap.js` 機制；若沒有就建一個）
+- secret 從 `HMAC-SHA256(ENCRYPTION_KEY, 'ownmind-feedback-sig-v1')` derive，不新增環境變數
 - day_bucket = floor(unix_ts / 86400)，24h 內有效
+- pure module、secret derive 結果可注入測試
 
 ### T1.3 後端 endpoint
 - `src/routes/block-feedback.js`：

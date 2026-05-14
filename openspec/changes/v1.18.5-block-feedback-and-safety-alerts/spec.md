@@ -27,7 +27,7 @@
 - `event_id` 由 reply-lint hook 從 `mcp/ownmind-log.js` 寫進 `activity_logs.client_event_id` 並注入連結 query
 - `sig` = HMAC-SHA256(`event_id|user_id|day_bucket`, secret) 取前 16 字元
   - `day_bucket = floor(unix_ts / 86400)`、24h 內有效、過期回 410 Gone
-  - secret 取 server 端 env `OWNMIND_FEEDBACK_HMAC_SECRET`（首次部署自動產生 32-byte 寫 `.env`）
+  - secret 從既有 `ENCRYPTION_KEY` 衍生（`HMAC-SHA256(ENCRYPTION_KEY, 'ownmind-feedback-sig-v1')`），不需新增環境變數、零部署成本
 
 ### A.2 網頁確認頁面 + CLI 並存（決策 2 = 按一次 1 秒完成）
 

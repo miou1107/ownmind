@@ -24,6 +24,7 @@ import {
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
 import { enrichErrorDetails, errorAliasFields } from './lib/enrich-error.js';
+import { logMcpCallSafe } from './lib/log-mcp-call.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
@@ -1193,6 +1194,8 @@ async function autoComplyForToolCall(name, args, result) {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  // v1.18.9：量「user 看到 result 的真實感受時間」、含 broadcast / autoComply / compose
+  const startedAt = Date.now();
 
   try {
     const result = await handleTool(name, args || {});
@@ -1209,6 +1212,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // 不 block 主流程：fetch 失敗 → 靜默 skip（不該因廣播掛掉 tool）
     const broadcastText = await fetchBroadcastsSafely();
 
+    // v1.18.9：成功 path 寫 mcp_call event 含 latency_ms
+    logMcpCallSafe({ logEvent, tool: name, latencyMs: Date.now() - startedAt, status: 'ok' });
+
     // v1.17.69：合併成單一 text part。v1.17.0~v1.17.68 用 4 個獨立 part（broadcast /
     // 前綴行 / body / tip），多數 client 順序合併能看到全部，但 Claude Code 的 UI
     // 摺疊卡片會吃掉多 part 之間的視覺、最後一段的 tip 完全藏起來。改成一段所有
@@ -1221,7 +1227,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       tipTag: formatTag('技巧提示'),
     });
   } catch (error) {
-    logEvent('error', enrichErrorDetails(error, name, args));
+    // v1.18.9：error path 也帶 latency_ms（既有 enrichErrorDetails 結果再 spread 進去）
+    const latencyMs = Date.now() - startedAt;
+    logEvent('error', { ...enrichErrorDetails(error, name, args), latency_ms: latencyMs });
+    logMcpCallSafe({ logEvent, tool: name, latencyMs, status: 'error' });
     const tag = formatTag('錯誤回報');
     return {
       content: [
