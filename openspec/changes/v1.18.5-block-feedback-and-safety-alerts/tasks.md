@@ -66,7 +66,15 @@
 
 ---
 
-## Phase 2：4 種安全告警 — 估 2~2.5 天
+## ⛔ Phase 2：4 種安全告警 — 棄用（2026-05-14 part 3）
+
+> Vin 拍板：「我不需要這種功能」。OwnMind 個人用、ROI 不夠（主要 user 就 Vin + Adam + Eric，被攻擊機率低）。
+>
+> Phase 2 part 1 已 commit 127b740 的純函式 + helper（safety-detect.js / safety-audit.js + 兩個 test）part 3 全部刪除。git 歷史保留作「曾規劃」紀錄。
+>
+> 以下 T2.1~T2.5 規格保留作歷史記錄，**不再實作**。
+
+## Phase 2（已棄用）：4 種安全告警 — 原估 2~2.5 天
 
 ### T2.1 寫 reproduction test（IR-003）
 - `tests/safety-alerts.test.js`
@@ -98,7 +106,13 @@
 
 ---
 
-## Phase 3：管理員儀表板「健康度」分頁 — 估 1 天
+## ⛔ Phase 3：管理員儀表板「健康度」分頁 — 棄用（2026-05-14 part 3）
+
+> 上面只剩「合規數字 + latency p95」單一指標、不值得做新分頁。Vin 自己用既有後台或 SQL 看就好。
+>
+> 以下 T3.1~T3.3 規格保留作歷史記錄，**不再實作**。
+
+## Phase 3（已棄用）：管理員儀表板「健康度」分頁 — 原估 1 天
 
 ### T3.1 後端 endpoint
 - `src/routes/admin-health.js`：GET /admin/api/health

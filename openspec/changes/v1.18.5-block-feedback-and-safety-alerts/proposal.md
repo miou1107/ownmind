@@ -1,6 +1,23 @@
-# v1.18.9 — 4 種安全告警偵測 + latency_ms 埋點
+# v1.18.9 — latency_ms 埋點
 
-> **🚫 block_feedback 功能棄用（2026-05-14 part 2）：** 拍板時設計成「訊息流 markdown 連結 → 開瀏覽器確認頁」、實作時撞牆：
+> **🚫 全部「告警」與「分頁」功能棄用（2026-05-14 part 3）：**
+>
+> 本提案歷經三次棄用、最終 v1.18.9 release 內容只剩 latency_ms 埋點：
+>
+> | 棄用項 | 原因 | 棄用時機 |
+> |---|---|---|
+> | block_feedback（誤殺回饋） | 網頁端要登入違反「按一次 1 秒完成」的拍板 | part 2 |
+> | 4 種安全告警偵測 | Vin：「我不需要這種功能」（OwnMind 個人用、ROI 不夠） | part 3 |
+> | 健康度分頁 | 上面只剩 latency p95、不值得做新分頁 | part 3 |
+>
+> **v1.18.9 最終 release 範圍：** 只有 MCP API latency_ms 埋點（Phase A）。
+> 已 commit 127b740 的 Phase 2 純函式（safety-detect / safety-audit + 兩個 test）part 3 全部刪除。git 歷史保留作為「曾規劃」紀錄。
+>
+> 提案的 B 章 / C 章 / Phase 2 / Phase 3 全部標棄用、保留作歷史。
+>
+> ---
+>
+> **block_feedback 功能棄用（2026-05-14 part 2）：** 拍板時設計成「訊息流 markdown 連結 → 開瀏覽器確認頁」、實作時撞牆：
 > - reply-lint hook 沒辦法在 client 端簽 sig（沒 server secret 也沒 user_id）
 > - OwnMind 沒 cookie/session 機制（純 Bearer api_key），網頁端要 POST 必須先登入
 > - 「網頁需登入」徹底違反拍板「按一次 1 秒完成」的 UX 目標
@@ -16,8 +33,8 @@
 > **範圍擴充（2026-05-14）：** 合併原規劃 v1.18.6 才做的 `latency_ms` 埋點（漏作項）一併在本版發。
 
 - **Author**: Vin
-- **Date**: 2026-05-13（提案）/ 2026-05-14（拍板、part 2 棄用 block_feedback）
-- **Status**: 範圍縮減，4 種安全告警 + 健康度分頁 + latency 埋點實作中
+- **Date**: 2026-05-13（提案）/ 2026-05-14（三次棄用、最終 v1.18.9 = latency 埋點）
+- **Status**: 範圍縮到只剩 Phase A latency 埋點、part 3 收尾
 - **Worktree**: `determined-bouman-20c22a`
 - **Branch**: `vin/determined-bouman-20c22a`
 

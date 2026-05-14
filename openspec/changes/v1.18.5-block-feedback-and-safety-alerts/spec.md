@@ -143,7 +143,13 @@ FROM blocks, feedbacks;
 
 ---
 
-## B. 4 種安全告警
+## ⛔ B. 4 種安全告警 — 棄用（2026-05-14 part 3）
+
+> Vin：「我不需要這種功能」。OwnMind 個人用、ROI 不夠。已 commit 127b740 的 safety-detect.js + safety-audit.js + 兩個 test 全部刪除。本 B 章保留作歷史記錄、不再實作。
+>
+> 對應 D.場景 2 也跟著失效。
+
+## B（已棄用）. 4 種安全告警
 
 ### B.1 偵測規則（決策 3 = B：只通知、不自動暫停）
 
@@ -211,7 +217,13 @@ ORDER BY COUNT(*) DESC;
 
 ---
 
-## C. 管理員儀表板「健康度」分頁
+## ⛔ C. 管理員儀表板「健康度」分頁 — 棄用（2026-05-14 part 3）
+
+> 原本要顯示「誤殺率 + 4 種告警 + 違反/遵守/覆蓋率 + latency p95」。前兩項跟 block_feedback / 安全告警一起棄用、剩下「合規數字 + latency」單一指標、不值得新做一個分頁。Vin 自己是 super_admin、要看數字直接打開既有後台或跑 SQL 即可。
+>
+> 對應 Phase 3 全部不做。
+
+## C（已棄用）. 管理員儀表板「健康度」分頁
 
 `src/public/index.html` 既有 admin 網頁加新 tab：
 
