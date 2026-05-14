@@ -5,7 +5,15 @@
 
 ---
 
-## Phase 1：規則阻擋誤殺率（C6）— 估 1.5~2 天
+## ⛔ Phase 1：規則阻擋誤殺率（C6）— 棄用（2026-05-14 part 2）
+
+> **棄用原因：** 拍板「網頁連結 → 1 秒確認」實作時撞牆——hook 無法簽 sig（沒 server secret）+ 網頁要登入違反 1 秒目標。三個替代方案 Vin 都拒絕、整個功能放棄。
+>
+> Phase 1 server 端程式（feedback-sig / block-feedback handler / 兩個 route / 兩個 test）已從 commit 8bcfc69 全部刪除，git 歷史保留作「曾嘗試」紀錄。
+>
+> 以下原 T1.1~T1.7 規格保留作歷史記錄，**不再實作**。
+
+## Phase 1（已棄用）：規則阻擋誤殺率（C6）— 原估 1.5~2 天
 
 ### T1.1 寫 reproduction test（IR-003）
 - `tests/block-feedback.test.js`
@@ -183,13 +191,9 @@
 - [ ] 沒 blind edit、改動有對應的 test（IR-005）
 - [ ] README/FILELIST/CHANGELOG 三處同步（IR-008/026）
 - [ ] package.json / mcp/package.json / 三語 README 版號同步 v1.18.9（IR-031/032）
-- [ ] reply-lint 警告時 markdown 連結確實顯示（browser/CLI 實測 IR-020）
-- [ ] 連結點下去開瀏覽器、按一次確認、寫入 DB（IR-020 + IR-022 server + client 雙端）
 - [ ] 4 種告警偵測規則跑模擬資料、寫進 audit log（IR-020）
 - [ ] 4 種告警觸發後 super_admin 收到 email、**沒**自動暫停帳號（拍板決策 3）
 - [ ] mcp_call event 寫 latency_ms 整數、不阻塞 response（TA.1）
-- [ ] CLI ownmind 指令向後相容、舊 user 端跑得起來（IR-022）
-- [ ] install.sh/.ps1 + update.sh/.ps1 同步加裝 bin/ownmind（IR-042）
 - [ ] 不在 logs 印 secrets value（B.2 secret_value_in_logs 偵測規則自己會擋）
 - [ ] 沒加 Co-Authored-By（IR-024）
 - [ ] commit message contributors 用 Vin、不用 Claude（IR-009）

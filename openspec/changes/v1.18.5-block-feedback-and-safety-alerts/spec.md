@@ -7,6 +7,8 @@
 > - 決策 2 改為「網頁確認頁面（按一次 1 秒完成）+ CLI 並存」
 > - 新增 E 章「latency_ms 埋點」（合併原 v1.18.6 漏作項）
 > - A.4「防誤點」維持不變（同 user 同 event 5 分鐘內 dedup）
+>
+> **⛔ A 章棄用（2026-05-14 part 2）：** 整個 block_feedback 功能棄用，原因見 proposal.md 開頭。本 A 章保留作歷史記錄、不再實作。對應 C 章（健康度分頁）的「誤殺率指標卡」也跟著移除、D 章「場景 1」失效。
 
 ---
 
@@ -219,19 +221,20 @@ ORDER BY COUNT(*) DESC;
 ╔══════════════════════════════════════════════════════╗
 ║  OwnMind 健康度（過去 7 天）                          ║
 ╠══════════════════════════════════════════════════════╣
-║  📊 規則阻擋誤殺率：8.3% (3/36) — 綠燈              ║
 ║  🚨 嚴重告警：0 件 ✓                                 ║
 ║                                                      ║
 ║  違反：5 件                                          ║
 ║  遵守：73 件                                         ║
 ║  觸發鐵律覆蓋：25 / 41 (61%)                         ║
 ║  活躍 user 數（週）：4                                ║
+║  MCP latency p95：450ms（v1.18.9 加）                ║
 ╚══════════════════════════════════════════════════════╝
 ```
 
+> **2026-05-14 移除：** 「📊 規則阻擋誤殺率」指標卡跟著 block_feedback 棄用一起拿掉、改加 MCP latency p95 指標卡（從 v1.18.9 latency 埋點來）。
+
 ### C.2 隱私邊界
 
-- 「擋錯了」回饋 reason 內容**不顯示**給管理員、只顯示 user_id + 告警類型 + 件數
 - 安全告警**不顯示**詳細 user_id、只顯示「N 個 user 受影響」（按 Gemini r3「最小樣本 10」未達標時隱藏）
 - 例外：Vin 自己（super_admin）可看完整 audit log
 
@@ -239,13 +242,7 @@ ORDER BY COUNT(*) DESC;
 
 ## D. 端到端流程範例
 
-### 場景 1：使用者覺得 reply-lint 擋錯
-
-1. AI 回話完、reply-lint 偵測 IR-037 違反、寫 `activity_logs.event='iron_rule_compliance'`、`details.action='violate'`、`client_event_id='evt_abc'`
-2. terminal 印警告 + 「擋錯了？跑 ownmind report-false-positive --event-id=evt_abc」
-3. 使用者跑 CLI 指令
-4. server 寫 `block_feedback` 事件、details: `{original_event_id: 'evt_abc', reason: '...'}`
-5. 管理員儀表板誤殺率 +1
+> 2026-05-14：場景 1（reply-lint 誤殺回饋）跟 A 章一起棄用、移除。
 
 ### 場景 2：偵測到 user 越權存取
 
