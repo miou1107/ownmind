@@ -81,10 +81,10 @@ describe('install.ps1 — flag-like args 過濾（Adam / Eric workflow 兼容）
 // ============================================================================
 //
 // 七個 bug 的真實證據（log + 程式碼）已記錄於：
-//   openspec/changes/v1.17.66-windows-hardening/proposal.md
+//   openspec/changes/archive/v1.17.66-windows-hardening/proposal.md
 //
 // 修法的 GIVEN/WHEN/THEN：
-//   openspec/changes/v1.17.66-windows-hardening/spec.md
+//   openspec/changes/archive/v1.17.66-windows-hardening/spec.md
 //
 // 這裡放「修完之後該滿足」的斷言。實作前這些 test 會紅；修完轉綠。
 // ============================================================================

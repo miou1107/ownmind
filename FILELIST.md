@@ -975,9 +975,9 @@ CHANGELOG.md                              — v1.17.50 條目
   scripts/windows/run-hidden.vbs            — wscript GUI subsystem 隱藏 console（Bug #7-a）
 
 新增 — OpenSpec：
-  openspec/changes/v1.17.66-windows-hardening/proposal.md  — 七個 bug 根因 + 架構性發現
-  openspec/changes/v1.17.66-windows-hardening/spec.md      — Helper API + GIVEN/WHEN/THEN
-  openspec/changes/v1.17.66-windows-hardening/tasks.md     — 0~10 階段執行清單
+  openspec/changes/archive/v1.17.66-windows-hardening/proposal.md  — 七個 bug 根因 + 架構性發現
+  openspec/changes/archive/v1.17.66-windows-hardening/spec.md      — Helper API + GIVEN/WHEN/THEN
+  openspec/changes/archive/v1.17.66-windows-hardening/tasks.md     — 0~10 階段執行清單
 
 修改：
   scripts/interactive-upgrade.ps1           — 三處 bash 改用 Find-GitBash（#1）
@@ -1021,7 +1021,7 @@ CHANGELOG.md                              — v1.17.48 條目
 
 ## v1.18.9 新增 / 修改 (MCP 工具 latency 埋點)
 
-> 原規劃 5 大功能（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + sig helper + latency 埋點）三次棄用後、最終 release 只剩 latency 埋點。詳見 `openspec/changes/v1.18.5-block-feedback-and-safety-alerts/proposal.md`。
+> 原規劃 5 大功能（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + sig helper + latency 埋點）三次棄用後、最終 release 只剩 latency 埋點。詳見 `openspec/changes/archive/v1.18.9-mcp-latency-tracking/proposal.md`。
 
 新增檔:
 ```
@@ -1031,7 +1031,7 @@ mcp/lib/log-mcp-call.js                  — logMcpCallSafe helper、寫 mcp_cal
 tests/log-mcp-call.test.js               — 6 unit tests
                                             涵蓋 payload 對 / null tool fallback / logEvent throw
                                             不 escalate / latency_ms 是 0 也照寫
-openspec/changes/v1.18.5-block-feedback-and-safety-alerts/  — 完整提案 + 棄用紀錄
+openspec/changes/archive/v1.18.9-mcp-latency-tracking/  — 完整提案 + 棄用紀錄
                                             proposal.md / spec.md / tasks.md
                                             「曾規劃但棄用」的 2 個 commit (8bcfc69 / 127b740)
                                             git log 可查
@@ -1216,9 +1216,9 @@ CHANGELOG.md / FILELIST.md            — v1.18.0 條目
 
 OpenSpec:
 ```
-openspec/changes/v1.18.0-iron-rule-schema/proposal.md (v4)
-openspec/changes/v1.18.0-iron-rule-schema/spec.md
-openspec/changes/v1.18.0-iron-rule-schema/tasks.md
+openspec/changes/archive/v1.18.0-iron-rule-schema/proposal.md (v4)
+openspec/changes/archive/v1.18.0-iron-rule-schema/spec.md
+openspec/changes/archive/v1.18.0-iron-rule-schema/tasks.md
 ```
 
 ## v1.17.99 新增 / 修改（Dedup helper 抽 + MCP log 帶 id + 移 node-fetch 依賴）
