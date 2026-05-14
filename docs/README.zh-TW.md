@@ -2,7 +2,7 @@ AI個人化永久記憶解決方案
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.18.9** · 詳見 [CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.19.0** · 詳見 [CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 跨平台 AI 個人記憶系統
 
@@ -163,6 +163,7 @@ sequenceDiagram
 - **L2 commit 攔截** — PreToolUse hook 對所有觸發類型（含 commit）跑驗證引擎，失敗時攔截 `v1.15.0`
 - **快取自動刷新** — save/update/disable 鐵律後自動刷新 iron_rules.json 快取 `v1.15.0`
 - **可操作的失敗訊息** — 驗證失敗時附帶修復指引（例如「請 git add X」） `v1.15.0`
+- **三級分類** — 每條鐵律標註 `critical` / `default` / `advisory`；SessionStart 摘要按 tier 分組顯示（🔴 Critical 全列、🟡 Default 全列、⚪ Advisory 只顯示計數）；v1.20+ 起按 tier 區分卡控、警告、純記錄三種行為 `v1.19.0`
 
 ### 智慧學習與數據驅動進化 `v1.10.0`
 
