@@ -1,5 +1,50 @@
 # OwnMind 更新紀錄
 
+## v1.18.6 — Error 事件觀測缺口補完
+
+**背景**：Vin 看健康度日報時提「server 端 error 事件 error_message 都是空」、查 prod 確認觀測缺口屬實但根因不同。
+
+### 真實狀況
+
+過去 30 天 57 件 `event='error'` 紀錄：
+- ✅ `details.error` 100% 有內容（API 錯誤訊息字串）
+- ✅ `details.tool_name` 100% 有（哪個 MCP 工具失敗）
+- ❌ `details.error_message` 0 件（命名不一致、Vin 觀察的查詢條件用這個）
+- ❌ 沒 `stack` / `http_status` / `payload_summary` / `error_name`
+
+根因：`mcp/index.js:1223` 只記 `{ tool_name, error: error.message }`、其他結構化欄位全缺。
+
+### 修法
+
+新增 `enrichErrorDetails(error, toolName, args)` helper、寫進 `mcp/index.js`：
+
+| 欄位 | 說明 | 例子 |
+|---|---|---|
+| `error` | 向後相容（v1.17.x~v1.18.5 用這名） | `"API 400: 鐵律品質檢查失敗"` |
+| `error_message` | v1.18.6 新增、結構化命名一致 | 同上 |
+| `error_name` | Error class 名稱 | `"TypeError"` / `"Error"` |
+| `tool_name` | MCP 工具名 | `"ownmind_save"` |
+| `stack` | 截短到前 5 行的 call stack | `"Error: ...\n  at handle..."` |
+| `http_status` | 從 `^API NNN:` regex parse | `400` / `409` |
+| `payload_summary` | args 結構（不洩漏敏感內容、只記 type/code/length） | `{ type: 'iron_rule', code: 'IR-099', title_length: 4, content_length: 300, tags_count: 2 }` |
+
+### 隱私邊界
+
+`payload_summary` 只記**結構性 metadata**：
+- ✅ 記：args.type / args.code / args.id / title 字數 / content 字數 / tags 數
+- ❌ 不記：args.title 內容、args.content 內容、args.tags 細節
+- 避免 error log 變成 user 私人資料外洩管道
+
+### 向後相容
+
+- 舊欄位 `error` 保留、舊 query / dashboard 全部還能用
+- 新欄位「自當下起」累積、舊事件不回填
+- 任何 SQL `details->>'error_message'` 從這版起就有資料
+
+### 驗證
+
+inline node 跑 helper 三種情境（API error 帶 args / TypeError 沒 args / 純字串 error）— 都正確產出、不會 throw。
+
 ## v1.18.5 — Hotfix: big skill sync 從 v1.18.0 上線就壞了
 
 **背景**：v1.18.4 把 3 條死規則（IR-004/006/026）重寫成具體動作後、驗證新版有沒生效時、發現 `~/.claude/skills/ownmind-iron-rules/SKILL.md` 和 `references/*.md` 從沒被更新過（mtime 14:26、3 條鐵律 update 是 17:34+）。深查暴露 v1.18.0 上線就有的 silent bug。

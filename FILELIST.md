@@ -1019,6 +1019,18 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.6 新增 / 修改 (Error 事件觀測缺口補完)
+
+修改的既有檔:
+```
+mcp/index.js                        — 新增 enrichErrorDetails helper（line ~28）
+                                      改 catch error 從 { tool_name, error } 變
+                                      豐富 details (error/error_message/error_name/
+                                      stack/http_status/payload_summary)
+                                      payload_summary 只記結構 metadata、不洩內容
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.5 → 1.18.6
+```
+
 ## v1.18.5 新增 / 修改 (Hotfix: big skill sync 從 v1.18.0 上線就壞)
 
 修改的既有檔:
