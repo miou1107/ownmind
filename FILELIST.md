@@ -1019,6 +1019,26 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## docs — OpenSpec 慣例文件（housekeeping，無版號）
+
+> v1.18.9 release 後、把 OpenSpec 資料夾慣例（archive 凍結政策、搬遷規則、驗證流程）落成檔案。
+> 對應 PR #37（archive 第一次搬遷）的政策正式化。
+
+新增：
+```
+openspec/CONVENTIONS.md            — OpenSpec 提案資料夾慣例
+                                      第 1 段：資料夾結構（changes/ + archive/）
+                                      第 2 段：進入 archive 的時機（已 release / 已棄用）
+                                      第 3 段：搬遷規則（git mv + 正名 + 同步外部引用）
+                                      第 4 段：archive 凍結政策（歷史快照、不再追改舊路徑）
+                                      第 5 段：驗證流程（grep 範本確認 archive 外無殘留）
+```
+
+修改：
+```
+FILELIST.md                        — 本區塊（新增 CONVENTIONS.md 項目）
+```
+
 ## v1.18.9 新增 / 修改 (MCP 工具 latency 埋點)
 
 > 原規劃 5 大功能（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + sig helper + latency 埋點）三次棄用後、最終 release 只剩 latency 埋點。詳見 `openspec/changes/archive/v1.18.9-mcp-latency-tracking/proposal.md`。
