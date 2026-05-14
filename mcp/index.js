@@ -24,6 +24,37 @@ import {
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
 
+// --- v1.18.6: enrichErrorDetails ---
+// 過去 error event 只記 { tool_name, error }、缺結構化欄位（http_status / stack /
+// payload type 等）→ 觀測缺口。改成豐富 details、保留 error 欄位向後相容。
+function enrichErrorDetails(error, toolName, args) {
+  const msg = error?.message || String(error || '');
+  const details = {
+    error: msg,                            // 向後相容（v1.17.x~v1.18.5 都用這欄）
+    error_message: msg,                    // v1.18.6 新增、結構化命名一致
+    error_name: error?.name || 'Error',
+    tool_name: toolName,
+  };
+  if (error?.stack) {
+    details.stack = String(error.stack).split('\n').slice(0, 5).join('\n');
+  }
+  // 從 message 抓 HTTP status (e.g. "API 400: ..." → 400)
+  const statusMatch = msg.match(/^API (\d{3}):/);
+  if (statusMatch) details.http_status = parseInt(statusMatch[1], 10);
+  // payload summary（不洩漏敏感資料、只記結構欄位）
+  if (args && typeof args === 'object') {
+    const summary = {};
+    if (args.type) summary.type = args.type;
+    if (args.code) summary.code = args.code;
+    if (args.id !== undefined) summary.id = args.id;
+    if (typeof args.title === 'string') summary.title_length = args.title.length;
+    if (typeof args.content === 'string') summary.content_length = args.content.length;
+    if (Array.isArray(args.tags)) summary.tags_count = args.tags.length;
+    if (Object.keys(summary).length > 0) details.payload_summary = summary;
+  }
+  return details;
+}
+
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
 
@@ -1220,7 +1251,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       tipTag: formatTag('技巧提示'),
     });
   } catch (error) {
-    logEvent('error', { tool_name: name, error: error.message });
+    logEvent('error', enrichErrorDetails(error, name, args));
     const tag = formatTag('錯誤回報');
     return {
       content: [
