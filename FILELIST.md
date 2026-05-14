@@ -1019,6 +1019,17 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.7 新增 / 修改 (update_failed event 同步補 error 結構化欄位)
+
+修改的既有檔:
+```
+mcp/index.js                        — update_failed event (line ~1324) inline 補
+                                      error_message/error_code/error_name/stack alias
+                                      跟 v1.18.6 的 error event 欄位一致、不用 helper
+                                      (因 update_failed 語意不同沒 args 概念)
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.6 → 1.18.7
+```
+
 ## v1.18.6 新增 / 修改 (Error 事件觀測缺口補完)
 
 修改的既有檔:

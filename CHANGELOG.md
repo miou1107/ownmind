@@ -1,5 +1,18 @@
 # OwnMind 更新紀錄
 
+## v1.18.7 — update_failed event 同步補 error 結構化欄位
+
+v1.18.6 補了 MCP tool exception 的 `error` event 結構化欄位、但同檔還有另一個 error 寫入點：`update_failed`（auto-update lock 取不到時觸發、`mcp/index.js:1324`）也只記 `{ source, step, error: e.code || e.message }`、跟 `error` event 屬同類觀測缺口。
+
+直接 inline 補 alias 欄位（**不用 enrichErrorDetails、因為語意不同：update_failed 沒 args 概念、不該帶 payload_summary**）：
+- `error`：保留原 fallback 邏輯 `e.code || e.message`、向後相容
+- `error_message`：純 `e.message`、結構化命名一致
+- `error_code`：保留 syscall code（如 `'EEXIST'`）
+- `error_name`：Error class
+- `stack`：截短到前 5 行（可選、stack 存在才加）
+
+**永遠教訓**：改 source code 時 hook 強制要求 README/CHANGELOG/FILELIST 全部 stage、不分情境（IR-026/IR-008/IR-031/IR-032 串聯）。原本想當 v1.18.6 follow-up commit 但被擋下、改成獨立 v1.18.7 micro release。
+
 ## v1.18.6 — Error 事件觀測缺口補完
 
 **背景**：Vin 看健康度日報時提「server 端 error 事件 error_message 都是空」、查 prod 確認觀測缺口屬實但根因不同。
@@ -44,6 +57,7 @@
 ### 驗證
 
 inline node 跑 helper 三種情境（API error 帶 args / TypeError 沒 args / 純字串 error）— 都正確產出、不會 throw。
+
 
 ## v1.18.5 — Hotfix: big skill sync 從 v1.18.0 上線就壞了
 
