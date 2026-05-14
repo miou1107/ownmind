@@ -78,6 +78,8 @@ import adminIronRuleUpgradeRoutes from './routes/admin-iron-rule-upgrade.js';
 import meRoutes from './routes/me.js';
 import { createNarrativeRouter } from './routes/me-narrative.js';
 import { createDebugRouter } from './routes/debug.js';
+import blockFeedbackRoutes from './routes/block-feedback.js';
+import feedbackPageRoutes from './routes/feedback-page.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
 
@@ -93,6 +95,8 @@ app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);
+app.use('/api/feedback/block', blockFeedbackRoutes);  // v1.18.9 阻擋誤殺回饋
+app.use('/feedback/block', feedbackPageRoutes);       // v1.18.9 確認頁面（無 auth、HTML）
 // 子路徑要在 /api/me 之前 mount，否則 meRoutes 會先接到請求並回 404
 app.use('/api/me/narrative', createNarrativeRouter({ query, auth }));
 app.use('/api/me', meRoutes);
