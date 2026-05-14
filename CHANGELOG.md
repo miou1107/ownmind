@@ -1,5 +1,55 @@
 # OwnMind 更新紀錄
 
+## v1.18.9 — MCP 工具 latency 埋點（v1.18.6 漏作補）
+
+**背景：** v1.18.5 原本是大型 release（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + latency 埋點），實作過程經歷 3 次棄用後，最終只剩 latency 埋點。詳見 `openspec/changes/v1.18.5-block-feedback-and-safety-alerts/proposal.md`。
+
+### 1. `mcp/lib/log-mcp-call.js` 新增
+
+`logMcpCallSafe({ logEvent, tool, latencyMs, status })` — 安全寫一筆 `mcp_call` event。任何 `logEvent` 失敗都被吞掉、不阻塞 tool call 主流程。
+
+跟 `enrich-error.js` 同 pattern：純 module、好測。
+
+### 2. `mcp/index.js` setRequestHandler 主流程埋點
+
+```js
+const startedAt = Date.now();
+try {
+  const result = await handleTool(name, args || {});
+  ...
+  // 成功 path 寫 mcp_call event 含 latency_ms
+  logMcpCallSafe({ logEvent, tool: name, latencyMs: Date.now() - startedAt, status: 'ok' });
+  return composeToolResponse({...});
+} catch (error) {
+  // 失敗 path：error event 加 latency_ms + 另寫 mcp_call status=error
+  const latencyMs = Date.now() - startedAt;
+  logEvent('error', { ...enrichErrorDetails(error, name, args), latency_ms: latencyMs });
+  logMcpCallSafe({ logEvent, tool: name, latencyMs, status: 'error' });
+  ...
+}
+```
+
+量「user 看到 result 的真實感受時間」、含 broadcast fetch / autoComply / composeToolResponse 全環節。
+
+### 3. `tests/log-mcp-call.test.js` 新增（6 cases）
+
+涵蓋：payload 對 / null tool fallback / logEvent throw 不 escalate / latency_ms 是 0 也照寫。
+
+跑：`node --test tests/log-mcp-call.test.js` → 6 pass / 0 fail。
+
+### 4. 設計棄用紀錄（詳見 proposal.md）
+
+本 release 原規劃內容三次棄用：
+- block_feedback 誤殺回饋（part 2）— 網頁端要登入違反「按一次 1 秒完成」拍板
+- 4 種安全告警偵測（part 3）— OwnMind 個人用 ROI 不夠
+- 健康度分頁（part 3）— 剩單一指標不值得做新分頁
+
+git 歷史保留 commit 8bcfc69（block_feedback server core）+ commit 127b740（safety detect/audit）作「曾嘗試」紀錄。
+
+### 5. 衍生學習
+
+`profile`（id=3）加「解說偏好」段落 + 自我檢查黑名單清單。Vin 兩次踩坑（part 1 五題拍板 + part 2 block_feedback 三方案）證明 AI 在解釋實作障礙時容易回到術語模式、必須有清單機制 enforce「真實情境解說」。
+
 ## v1.18.8 — error helper 抽出 + unit test 補完 + 健康度日報 launchd 排程
 
 ### 1. `mcp/lib/enrich-error.js` 抽出（v1.18.6/7 重構）

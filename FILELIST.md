@@ -1019,6 +1019,45 @@ package.json / README* / docs/README*     — 1.17.47 → 1.17.48
 CHANGELOG.md                              — v1.17.48 條目
 ```
 
+## v1.18.9 新增 / 修改 (MCP 工具 latency 埋點)
+
+> 原規劃 5 大功能（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + sig helper + latency 埋點）三次棄用後、最終 release 只剩 latency 埋點。詳見 `openspec/changes/v1.18.5-block-feedback-and-safety-alerts/proposal.md`。
+
+新增檔:
+```
+mcp/lib/log-mcp-call.js                  — logMcpCallSafe helper、寫 mcp_call event
+                                            含 latency_ms。任何 logEvent 失敗都被吞掉、
+                                            不阻塞 tool call。跟 enrich-error.js 同 pattern
+tests/log-mcp-call.test.js               — 6 unit tests
+                                            涵蓋 payload 對 / null tool fallback / logEvent throw
+                                            不 escalate / latency_ms 是 0 也照寫
+openspec/changes/v1.18.5-block-feedback-and-safety-alerts/  — 完整提案 + 棄用紀錄
+                                            proposal.md / spec.md / tasks.md
+                                            「曾規劃但棄用」的 2 個 commit (8bcfc69 / 127b740)
+                                            git log 可查
+```
+
+修改的既有檔:
+```
+mcp/index.js                             — setRequestHandler 主流程入口記 startedAt、
+                                            成功 path 寫 mcp_call event、失敗 path
+                                            error event + mcp_call status=error 都帶 latency_ms
+package.json / README* / CHANGELOG.md / FILELIST.md — 1.18.8 → 1.18.9
+```
+
+刪除（曾嘗試但棄用）:
+```
+src/utils/feedback-sig.js                — block_feedback HMAC sig（part 2 棄用）
+src/lib/block-feedback.js                — block_feedback core handler（part 2 棄用）
+src/routes/block-feedback.js             — POST /api/feedback/block 路由（part 2 棄用）
+src/routes/feedback-page.js              — GET /feedback/block 確認頁（part 2 棄用）
+tests/feedback-sig.test.js / tests/block-feedback.test.js — block_feedback 測試
+src/lib/safety-detect.js                 — 4 種安全告警偵測（part 3 棄用）
+src/utils/safety-audit.js                — writeSafetyAudit helper（part 3 棄用）
+tests/safety-detect.test.js / tests/safety-audit.test.js — safety 測試
+```
+git 歷史保留 commit 8bcfc69 + 127b740 作「曾嘗試」紀錄。
+
 ## v1.18.8 新增 / 修改 (error helper 抽出 + unit test + 健康度日報 launchd)
 
 新增檔:
