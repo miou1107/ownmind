@@ -2,7 +2,7 @@
 
 ## v1.18.9 — MCP 工具 latency 埋點（v1.18.6 漏作補）
 
-**背景：** v1.18.5 原本是大型 release（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + latency 埋點），實作過程經歷 3 次棄用後，最終只剩 latency 埋點。詳見 `openspec/changes/v1.18.5-block-feedback-and-safety-alerts/proposal.md`。
+**背景：** v1.18.5 原本是大型 release（誤殺回饋按鈕 + 4 種安全告警 + 健康度分頁 + latency 埋點），實作過程經歷 3 次棄用後，最終只剩 latency 埋點。詳見 `openspec/changes/archive/v1.18.9-mcp-latency-tracking/proposal.md`。
 
 ### 1. `mcp/lib/log-mcp-call.js` 新增
 
