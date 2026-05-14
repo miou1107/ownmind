@@ -1,5 +1,44 @@
 # OwnMind 檔案結構
 
+## v1.19.0 新增 / 修改（鐵律分級 Critical / Default / Advisory）
+
+新增檔：
+
+```
+db/014_iron_rule_tier.sql                                — memories 加 tier 欄位 + CHECK + 部分索引
+shared/iron-rule-tier.js                                 — tier 常數 / validation / emoji / 排序 / 分桶純函式
+src/utils/iron-rule-tier-validator.js                    — server route 用的請求驗證 + 寫入兜底
+src/utils/iron-rule-digest.js                            — buildIronRulesDigest（分組顯示）+ countByTier
+hooks/lib/build-compliance-events.js                     — reply-lint violation event 組裝（details.tier）
+tests/iron-rule-tier-helper.test.js                      — 21 條 helper 測試
+tests/iron-rule-tier-validator.test.js                   — 10 條 validator 測試
+tests/iron-rule-tier-digest.test.js                      — 12 條 digest 測試
+tests/iron-rule-tier-mcp.test.js                         — 7 條 MCP source-level 測試
+tests/build-compliance-events.test.js                    — 9 條 compliance event 測試
+openspec/changes/v1.19-iron-rule-tier/proposal.md        — 提案
+openspec/changes/v1.19-iron-rule-tier/spec.md            — 12 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19-iron-rule-tier/tasks.md           — 任務拆解
+```
+
+修改的既有檔：
+
+```
+src/routes/memory.js                                     — POST/PUT 接 tier; /init 回 iron_rules_tier_counts; digest 改用 buildIronRulesDigest
+src/routes/admin-iron-rule-upgrade.js                    — /upgrade-status 回 tier 欄位
+mcp/index.js                                             — ownmind_save / ownmind_update schema 加 tier; case handler 把 args.tier 傳到 body
+hooks/lib/render-session-context.js                      — 鐵律段標題加 tier 分佈 summary（舊 server fallback）
+hooks/ownmind-reply-lint.js                              — dynamic import getTierFromRules + buildComplianceEvents
+hooks/ownmind-git-post-commit.js                         — appendCompliance 加 tier 欄位
+shared/compliance.js                                     — appendCompliance 接 entry.tier（用 isValidTier 過濾）
+tests/compliance.test.js                                 — 加 3 條 v1.19 tier 測試
+tests/session-start-render.test.js                       — 加 3 條 v1.19 tier 分佈 summary 測試
+src/public/index.html                                    — 鐵律升級助手列表加 Tier 欄 + dropdown（inline 編輯 PUT /memory/:id）
+package.json / README* / docs/README*                    — 1.18.9 → 1.19.0
+CHANGELOG.md                                             — v1.19.0 條目
+```
+
+---
+
 ```
 OwnMind/
 ├── README.md                        # 專案說明、應用情境、安裝 prompt

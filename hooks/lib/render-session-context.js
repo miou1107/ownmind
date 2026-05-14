@@ -59,7 +59,15 @@ export function renderSessionContext(data, broadcasts) {
   }
 
   if (d.iron_rules_digest) {
-    lines.push('## 鐵律（必須嚴格遵守）');
+    // v1.19: 標題後加 tier 分佈 summary（舊 server 沒回 iron_rules_tier_counts 時跳過）
+    const tc = d.iron_rules_tier_counts;
+    if (tc && typeof tc === 'object' && tc.total > 0) {
+      lines.push('## 鐵律（必須嚴格遵守）— 共 ' + tc.total + ' 條（🔴 Critical ' +
+        (tc.critical || 0) + ' / 🟡 Default ' + (tc.default || 0) + ' / ⚪ Advisory ' +
+        (tc.advisory || 0) + '）');
+    } else {
+      lines.push('## 鐵律（必須嚴格遵守）');
+    }
     lines.push(d.iron_rules_digest);
     lines.push('');
   }

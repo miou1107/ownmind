@@ -104,6 +104,8 @@ async function main() {
         source: 'post_commit',
         commit_hash: commitHash,
         failures: result.failures,
+        // v1.19: 直接從 cache 的 rule 物件取 tier（沒有就靠 appendCompliance 端略過該欄位）
+        tier: rule.tier,
       });
     }
   }

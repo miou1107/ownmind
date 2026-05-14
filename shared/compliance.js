@@ -14,11 +14,13 @@
  *   session_id?: string
  *   commit_hash?: string
  *   failures?: string[]
+ *   tier?: 'critical' | 'default' | 'advisory' — v1.19 起、caller 從鐵律快取查好後傳入
  */
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { isValidTier } from './iron-rule-tier.js';
 
 const DEFAULT_LOG_PATH = path.join(os.homedir(), '.ownmind', 'logs', 'compliance.jsonl');
 
@@ -49,6 +51,8 @@ export function appendCompliance(entry) {
     if (entry.session_id) record.session_id = entry.session_id;
     if (entry.commit_hash) record.commit_hash = entry.commit_hash;
     if (entry.failures) record.failures = entry.failures;
+    // v1.19 tier 欄位（caller 已 normalize）— 不合法值不寫入避免污染查詢
+    if (entry.tier && isValidTier(entry.tier)) record.tier = entry.tier;
 
     fs.appendFileSync(logPath, JSON.stringify(record) + '\n');
   } catch {

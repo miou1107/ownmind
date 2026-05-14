@@ -59,6 +59,45 @@ describe('appendCompliance', () => {
     assert.deepEqual(entry.failures, ['staged .env file']);
     assert.equal(entry.session_id, '123');
   });
+
+  // v1.19 — tier 欄位
+  it('v1.19: 合法 tier 寫入 record', () => {
+    appendCompliance({
+      event: 'IR-002',
+      action: 'violate',
+      rule_code: 'IR-002',
+      rule_title: '不要 commit .env',
+      source: 'pre_commit',
+      tier: 'critical',
+    });
+    const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
+    assert.equal(entry.tier, 'critical');
+  });
+
+  it('v1.19: tier 缺失時不寫 tier 欄位', () => {
+    appendCompliance({
+      event: 'IR-002',
+      action: 'comply',
+      rule_code: 'IR-002',
+      rule_title: 'test',
+      source: 'mcp',
+    });
+    const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
+    assert.equal(entry.tier, undefined);
+  });
+
+  it('v1.19: 非法 tier 值不寫入避免污染查詢', () => {
+    appendCompliance({
+      event: 'IR-002',
+      action: 'comply',
+      rule_code: 'IR-002',
+      rule_title: 'test',
+      source: 'mcp',
+      tier: 'invalid_tier_value',
+    });
+    const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
+    assert.equal(entry.tier, undefined);
+  });
 });
 
 describe('readComplianceEvents', () => {
