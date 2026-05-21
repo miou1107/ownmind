@@ -1,5 +1,39 @@
 # OwnMind 更新紀錄
 
+## v1.19.1 — 密碼／Token 不寫進記憶、AI 自動走 set_secret
+
+**背景：** 2026-05-18 Vin 嘗試用 ownmind_update 存好好玩 FUNIT 的 WordPress 應用程式密碼、記憶 API 回 500「更新記憶失敗」黑盒、AI 不知道分流規則。對應 IR-027「提醒無效、邏輯才有效」的失效情境——光在記憶系統提示「密碼請走密鑰管理」是不夠的、要靠程式邏輯卡控。
+
+**三層防護：**
+
+1. **MCP 工具描述警語**（階段 D）— `ownmind_save` / `ownmind_update` description 開頭加「⚠️ 含密碼／token／API key 等敏感資料請改用 ownmind_set_secret、不要寫進記憶」。AI 在挑工具當下就讀到分流規則、不需要踩到錯誤才知道。
+2. **伺服器偵測**（階段 A + B）— 記憶 API 寫入前跑 `detectSecretLike` 偵測：5 條 regex（WP App Password / JWT / GitHub PAT / AWS / OpenAI）+ 英中混合 keyword + 長度啟發式（≥20 字純英數字、無 CJK）。命中即回 400 + `{ hint, redirect_tool: 'ownmind_set_secret', detected_by }`。narrative 類型（iron_rule / principle / coding_standard / team_standard / session_log）跳過 keyword 偵測、但仍跑 regex、避免討論密碼主題的記憶被誤擋。
+3. **新增 IR-047**（階段 E）— 「敏感資料一律走密鑰管理工具、不寫進記憶／對話／程式碼提交」、tier=critical、跨「記憶／對話／git 提交」三個通道的統一規則。
+
+**附帶改造：** 把記憶 API 既有的 catch-all 500「更新記憶失敗／建立記憶失敗」拆成依錯誤類別分流的 400 / 409 / 503 / 500（階段 C）：
+
+- PostgreSQL 約束違反（23xxx）→ 400 + hint（含 not_null / foreign_key / check_violation）
+- 資料重複（23505）→ 409「資料重複」
+- 連線錯誤（08xxx / ECONNREFUSED）→ 503「請稍候重試」
+- JS SyntaxError → 400「資料格式錯誤」
+- 其他未分類 → 500 + log stack 給除錯
+- 4xx 用 logger.warn、5xx 用 logger.error 分流
+
+之前 Vin 踩到的 500 黑盒、現在加上偵測會變成 400 + 明確 redirect_tool、AI 一看就知道下一步該怎麼走。
+
+**Bypass：** `metadata.allow_secret_like: true` 跳過偵測 + 寫 `metadata.lint_warnings` audit entry（type: 'bypass_secret_detect'、含 timestamp）。給「我在 1Password 存了 key、想記指向位置」這種情境用。
+
+**測試：** 新增 81 個 case 涵蓋偵測、API 整合、錯誤分類、MCP 警語。
+
+| 測試檔 | case 數 |
+|---|---|
+| tests/secret-detect-unit.test.js | 26 |
+| tests/memory-secret-guard.test.js | 24 |
+| tests/memory-error-classifier.test.js | 21 |
+| tests/mcp-tool-description-secret-warning.test.js | 10 |
+
+---
+
 ## v1.19.0 — 鐵律分級制（Critical / Default / Advisory）
 
 **背景：** v1.18.9 時鐵律已累積 41 條（IR-002 ~ IR-042），告警疲勞已發生（單次 session 啟動可跳 13 條回話品質 lint 警告）、重要規則被次要規則稀釋、IR-027「提醒無效、邏輯才有效」失效。本版埋下分級資料層、不動執行邏輯；v1.20 起依分級改卡控行為。

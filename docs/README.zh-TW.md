@@ -2,7 +2,7 @@ AI個人化永久記憶解決方案
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.19.0** · 詳見 [CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.19.1** · 詳見 [CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 跨平台 AI 個人記憶系統
 
@@ -98,6 +98,7 @@ graph LR
 - **鐵律即時防護** — session 開始時自動載入，AI 主動攔截違規
 - **Trigger Tags** — 鐵律標記觸發時機（`trigger:commit`、`trigger:deploy`），AI 在操作前自動 re-check
 - **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程
+- **記憶／密鑰路由分流** `v1.19.1` — 記憶 API 寫入時自動偵測密碼／token／API key、命中即回 400 並引導去 `ownmind_set_secret`。三層防護：MCP 工具描述警語、伺服器偵測、專屬鐵律 IR-047。詳見 [v1.19.1 提案](../openspec/changes/v1.19.1-secret-tool-routing/proposal.md)。
 
 ### 協作與同步
 

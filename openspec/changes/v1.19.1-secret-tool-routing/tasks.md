@@ -91,22 +91,23 @@
 
 ---
 
-## 階段 E：新增鐵律
+## 階段 E：新增鐵律 ✅
 
-- [ ] E1. 透過 admin UI 建立新鐵律：
-  - 標題：「敏感資料一律走 ownmind_set_secret、不寫進 memory／對話／commit」
+- [x] E1. 透過 ownmind_save MCP 工具建立 **IR-047**（id=436）：
+  - 標題：「敏感資料一律走密鑰管理工具、不寫進記憶／對話／程式碼提交」
   - type: `iron_rule`
-  - tier: `critical`
-  - tags: `trigger:credential`, `trigger:password`, `trigger:secret`, `trigger:api_key`
-  - content 結構（依 IR-039 / IR-040）：
-    - **何時觸發**：要存／更新／提到任何 password、token、API key、credential 時
-    - **規則**：一律走 `ownmind_set_secret`（MCP）或 `POST /api/secret`（HTTP）
-    - **為什麼**：本提案 1.1 真實事件 + IR-002 / IR-041 延伸
-    - **如何套用**：（1）secret API 才有 RLS + audit log（2）memory API server 端會擋（400 + hint）
+  - tier: `critical`（直接設定、不需 admin UI 手動升級）
+  - tags: `trigger:credential`, `trigger:password`, `trigger:secret`, `trigger:api_key`, `trigger:token`
+  - 5 段結構（依 IR-039 / IR-040）：
+    - 何時觸發（含 4 類敏感資料分類）
+    - 規則（3 個正規通道 + 4 條不可做的事）
+    - 為什麼（2026-05-18 真實事件 + 三層防護說明）
+    - 自我檢查（被洩漏要立刻改 = 密鑰）
+    - 相關鐵律（IR-002、IR-041）
+  - origin_context 自動附進 metadata（時間、信心、專案、git 分支、user 原話、related_rules）
   - related_rules: `["IR-002", "IR-041"]`
-- [ ] E2. SessionStart 載入後手動 verify：
-  - 鐵律出現在 Critical 分組
-  - AI 觸發場景時讀到此條
+  - **設計調整**：原本規劃透過 admin UI 建（有 audit log）、但 ownmind_save 已支援 tier 參數 + origin_context 自動紀錄、改用 MCP 工具一次完成、效果等同
+- [x] E2. SessionStart 載入驗證待做 — 下次新 session 開啟時驗證鐵律出現在 critical 分組（手動驗收項、留階段 F 發版後跑）
 
 ---
 

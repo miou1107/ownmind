@@ -186,6 +186,7 @@ describe('validateMemoryContent — narrative types 完整覆蓋', () => {
     'coding_standard',
     'team_standard',
     'session_log',
+    'standard_detail', // code review I-2 補：團隊標準明細也是 narrative
   ];
 
   for (const type of narrativeTypes) {

@@ -98,6 +98,7 @@ graph LR
 - **Real-time rule enforcement** — Rules auto-load at session start, AI proactively blocks violations
 - **Trigger tags** — Rules tagged with triggers (`trigger:commit`, `trigger:deploy`), AI auto-checks before those actions
 - **Rule version history** — Old versions preserved automatically, full evolution traceable
+- **Memory vs Secret routing** `v1.19.1` — Memory API auto-detects passwords / tokens / API keys in writes and blocks with 400 + redirect hint to `ownmind_set_secret`. Three-layer defense: MCP tool description warning, server-side detector, dedicated iron rule IR-047. See [v1.19.1 proposal](openspec/changes/v1.19.1-secret-tool-routing/proposal.md).
 
 ### Collaboration & Sync
 

@@ -116,6 +116,23 @@ describe('detectSecretLike — 長度啟發式', () => {
     const result = detectSecretLike('abcdefghij日本語テキストklmnopqrstuvwxyz');
     assert.equal(result.detected, false);
   });
+
+  // code review I-1 regression — 純英文筆記不該命中 heuristic
+  it('英文筆記含空白 → 不命中（I-1 regression）', () => {
+    const cases = [
+      'Working on JWT integration today',
+      'Update README and FILELIST after refactor done',
+      'Need to commit the README updates again',
+      'Phase 2 complete need code review next step',
+    ];
+    for (const value of cases) {
+      const result = detectSecretLike(value);
+      assert.equal(
+        result.detected, false,
+        `「${value}」不該被當成密鑰；實際 detected=${result.detected}, rule=${result.rule}`
+      );
+    }
+  });
 });
 
 describe('detectSecretLike — bypass', () => {
