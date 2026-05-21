@@ -112,7 +112,7 @@ POST `/api/memory` 同步處理。
 
 ### 3.1 範圍內（v1.19.1）
 
-- ✅ Server `src/lib/secret-detect.js`（新檔）：偵測函式 + 單元測試
+- ✅ Server `src/utils/secret-detect.js`（新檔）：偵測函式 + 單元測試
 - ✅ Server `src/routes/memory.js`：POST + PUT 接 detector、catch 分流 4xx/5xx
 - ✅ MCP `mcp/index.js`：`ownmind_save` / `ownmind_update` description 加警語
 - ✅ 新鐵律：「敏感資料一律走 `ownmind_set_secret`、不寫進 memory／對話／commit」（透過 admin UI 或 ownmind_save 建立）
@@ -133,7 +133,7 @@ POST `/api/memory` 同步處理。
 
 | 檔案 | 改動 |
 |------|------|
-| `src/lib/secret-detect.js` | **新檔** — `detectSecretLike(value, { description, title }): { detected, reason, rule }` |
+| `src/utils/secret-detect.js` | **新檔** — `detectSecretLike(value, { title, description, allow_bypass }): { detected, rule, reason }` |
 | `src/routes/memory.js` | POST + PUT 在寫入前呼叫 detector；500 catch 拆成 4xx/5xx |
 
 ### 4.2 MCP

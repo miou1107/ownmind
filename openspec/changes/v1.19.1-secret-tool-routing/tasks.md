@@ -6,9 +6,9 @@
 
 ---
 
-## 階段 A：Detector 純函式 + 單元測試
+## 階段 A：Detector 純函式 + 單元測試 ✅
 
-- [ ] A1. 寫測試 `tests/secret-detect-unit.test.js`（預估 14 case）
+- [x] A1. 寫測試 `tests/secret-detect-unit.test.js`（實際 26 case，含偵測順序、邊界輸入、回傳結構額外覆蓋）
   - WP Application Password 格式命中（場景 1）
   - JWT 格式命中（場景 2）
   - GitHub PAT 格式命中（`ghp_...`、`ghs_...`、`gho_...`、`ghu_...`）
@@ -22,7 +22,7 @@
   - bypass：`{ allow_secret_like: true }` → 跳過所有偵測
   - `detectSecretLike(null)` / `undefined` → `{ detected: false }`（不丟）
   - 回傳結構：`{ detected: boolean, rule: string, reason: string }`
-- [ ] A2. 新檔 `src/lib/secret-detect.js`（純函式、不依賴 DB）
+- [x] A2. 新檔 `src/utils/secret-detect.js`（純函式、不依賴 DB）
   - `detectSecretLike(value, { title, description, allow_bypass } = {}): DetectResult`
   - 常數區：`SECRET_REGEXES`（5 條）、`SECRET_KEYWORDS`（英中混合）
   - 偵測順序：bypass → regex → keyword → length heuristic
@@ -105,7 +105,7 @@
 - [ ] F2. 同步 `docs/README.zh-TW.md` 與 `docs/README.ja.md`
 - [ ] F3. `CHANGELOG.md` 加 v1.19.1 條目
 - [ ] F4. `FILELIST.md` 加新檔：
-  - `src/lib/secret-detect.js`
+  - `src/utils/secret-detect.js`
   - `tests/secret-detect-unit.test.js`
   - `tests/memory-api-secret-detect.test.js`
   - `tests/memory-api-error-codes.test.js`
