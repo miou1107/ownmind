@@ -420,7 +420,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_save",
-    description: "儲存一筆新記憶。可指定類型、標題、內容，以及選填的 code、tags、metadata。寫 iron_rule 時 AI 應主動帶 origin_event / user_quote 描述「為什麼當時建立這條鐵律」、不知道時就寫「user 直接下令」。",
+    description: "⚠️ 含密碼／token／API key／credential 等敏感資料請改用 ownmind_set_secret、不要寫進記憶（記憶 API 會偵測並擋下、回 400）。儲存一筆新記憶：指定類型、標題、內容，以及選填的 code、tags、metadata。寫 iron_rule 時 AI 應主動帶 origin_event / user_quote 描述「為什麼當時建立這條鐵律」、不知道時就寫「user 直接下令」。",
     inputSchema: {
       type: "object",
       properties: {
@@ -468,7 +468,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_update",
-    description: "更新一筆既有記憶的內容。需提供記憶 ID 和更新原因（update_reason），舊內容會自動保存到歷史紀錄。",
+    description: "⚠️ 含密碼／token／API key／credential 等敏感資料請改用 ownmind_set_secret、不要寫進記憶（記憶 API 會偵測並擋下、回 400）。更新一筆既有記憶的內容：提供記憶 ID 和更新原因（update_reason），舊內容會自動保存到歷史紀錄。",
     inputSchema: {
       type: "object",
       properties: {
