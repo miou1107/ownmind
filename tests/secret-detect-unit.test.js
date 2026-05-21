@@ -1,0 +1,197 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { detectSecretLike } from '../src/utils/secret-detect.js';
+
+/**
+ * v1.19.1 — secret-detect detector unit tests
+ *
+ * 對應 openspec/changes/v1.19.1-secret-tool-routing/proposal.md §2.1
+ * 偵測順序：bypass → regex → keyword → length heuristic
+ */
+describe('detectSecretLike — regex 規則', () => {
+  it('WP Application Password 格式命中（場景 1）', () => {
+    const result = detectSecretLike('iXEN ops5 pJcy 8PJI lVFM heaH');
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'regex:wp_application_password');
+  });
+
+  it('JWT 格式命中（場景 2）', () => {
+    const jwt =
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const result = detectSecretLike(jwt);
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'regex:jwt');
+  });
+
+  it('GitHub Personal Access Token（ghp_）命中', () => {
+    const pat = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789AB';
+    const result = detectSecretLike(pat);
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'regex:github_pat');
+  });
+
+  it('GitHub Server Token（ghs_）命中', () => {
+    const pat = 'ghs_abcdefghijklmnopqrstuvwxyz0123456789AB';
+    const result = detectSecretLike(pat);
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'regex:github_pat');
+  });
+
+  it('AWS Access Key 格式命中', () => {
+    const key = 'AKIAIOSFODNN7EXAMPLE';
+    const result = detectSecretLike(key);
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'regex:aws_access_key');
+  });
+
+  it('OpenAI API key 格式命中', () => {
+    const key = 'sk-proj-abc123XYZdef456ghi789jkl';
+    const result = detectSecretLike(key);
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'regex:openai_api_key');
+  });
+});
+
+describe('detectSecretLike — keyword 規則', () => {
+  it('title 含 "password" 命中（場景 3）', () => {
+    const result = detectSecretLike('abc123XYZ789longRandomString', {
+      title: 'Stripe production password',
+    });
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'keyword:password');
+  });
+
+  it('title 含 "token"（大寫）命中（不分大小寫）', () => {
+    const result = detectSecretLike('abc123XYZ789longRandomString', {
+      title: 'API TOKEN for prod',
+    });
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'keyword:token');
+  });
+
+  it('description 含繁中關鍵字「應用程式密碼」命中', () => {
+    const result = detectSecretLike('iXENops5pJcy', {
+      description: 'WordPress 應用程式密碼',
+    });
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'keyword:應用程式密碼');
+  });
+
+  it('description 含「存取金鑰」命中', () => {
+    const result = detectSecretLike('abc', {
+      description: 'AWS 存取金鑰',
+    });
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'keyword:存取金鑰');
+  });
+
+  it('content 含 "api_key"（snake case）命中', () => {
+    const result = detectSecretLike('api_key: abc123');
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'keyword:api_key');
+  });
+});
+
+describe('detectSecretLike — 長度啟發式', () => {
+  it('純英數字 ≥20 字 → 命中（場景 4）', () => {
+    const result = detectSecretLike('abcDEF1234567890XYZ9876543210');
+    assert.equal(result.detected, true);
+    assert.equal(result.rule, 'heuristic:long_alnum');
+  });
+
+  it('含中文 → 不命中（場景 5）', () => {
+    const result = detectSecretLike(
+      '2026-05-07 接手後第一週需要處理的緊急事項清單：1. WP backup ...',
+      { title: '好好玩 FUNIT 接手後緊急事項' }
+    );
+    assert.equal(result.detected, false);
+  });
+
+  it('短字串 < 20 → 不命中', () => {
+    const result = detectSecretLike('hello world');
+    assert.equal(result.detected, false);
+  });
+
+  it('長字串但含日文 → 不命中', () => {
+    const result = detectSecretLike('abcdefghij日本語テキストklmnopqrstuvwxyz');
+    assert.equal(result.detected, false);
+  });
+});
+
+describe('detectSecretLike — bypass', () => {
+  it('allow_secret_like=true → 跳過所有偵測（場景 6）', () => {
+    const result = detectSecretLike('iXEN ops5 pJcy 8PJI lVFM heaH', {
+      allow_bypass: true,
+    });
+    assert.equal(result.detected, false);
+  });
+
+  it('allow_secret_like=true + keyword 命中也跳過', () => {
+    const result = detectSecretLike('abc', {
+      title: 'production password',
+      allow_bypass: true,
+    });
+    assert.equal(result.detected, false);
+  });
+});
+
+describe('detectSecretLike — 邊界輸入', () => {
+  it('value=null → 不丟、回 detected=false', () => {
+    const result = detectSecretLike(null);
+    assert.equal(result.detected, false);
+  });
+
+  it('value=undefined → 不丟、回 detected=false', () => {
+    const result = detectSecretLike(undefined);
+    assert.equal(result.detected, false);
+  });
+
+  it('value=空字串 → 不丟、回 detected=false', () => {
+    const result = detectSecretLike('');
+    assert.equal(result.detected, false);
+  });
+
+  it('options=undefined（沒傳第二參數）→ 不丟', () => {
+    const result = detectSecretLike('hello');
+    assert.equal(result.detected, false);
+  });
+
+  it('value 是 number 而非 string → 不丟、回 detected=false', () => {
+    const result = detectSecretLike(12345);
+    assert.equal(result.detected, false);
+  });
+});
+
+describe('detectSecretLike — 回傳結構', () => {
+  it('detected=true 時回傳含 rule + reason', () => {
+    const result = detectSecretLike('iXEN ops5 pJcy 8PJI lVFM heaH');
+    assert.equal(typeof result.detected, 'boolean');
+    assert.equal(typeof result.rule, 'string');
+    assert.equal(typeof result.reason, 'string');
+    assert.ok(result.reason.length > 0);
+  });
+
+  it('detected=false 時 rule 為 undefined', () => {
+    const result = detectSecretLike('hello world');
+    assert.equal(result.detected, false);
+    assert.equal(result.rule, undefined);
+  });
+});
+
+describe('detectSecretLike — 偵測順序', () => {
+  it('regex 命中優先於 keyword（先 regex）', () => {
+    // value 同時符合 JWT regex 跟 keyword (title 含 token)
+    const jwt =
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const result = detectSecretLike(jwt, { title: 'my token' });
+    assert.equal(result.rule, 'regex:jwt');
+  });
+
+  it('keyword 命中優先於 heuristic（regex 沒命中時）', () => {
+    // 長字串 + title 有 password → keyword 優先於 length heuristic
+    const result = detectSecretLike('abcDEF1234567890XYZ9876543210', {
+      title: 'my password',
+    });
+    assert.equal(result.rule, 'keyword:password');
+  });
+});
