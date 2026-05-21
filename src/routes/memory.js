@@ -16,6 +16,7 @@ import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.j
 import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
+import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { createRequire } from 'module';
 
 const SERVER_VERSION = (() => {
@@ -1112,8 +1113,14 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(response);
   } catch (err) {
-    logger.error('建立記憶失敗', { error: err.message });
-    res.status(500).json({ error: '建立記憶失敗' });
+    // v1.19.1: 把 catch-all 500 拆成 400/409/503/500 分類
+    //   提案 §2.3：之前所有錯誤都回 generic 500「建立記憶失敗」、caller 不知為什麼錯
+    //   現在依 err.code（PG SQLSTATE）/ err 類型分流、附帶 hint
+    const classified = classifyMemoryError(err, { context: 'create' });
+    const logPayload = { error: err?.message, code: err?.code };
+    if (classified.logStack) logPayload.stack = err?.stack;
+    logger[classified.logLevel]('建立記憶失敗', logPayload);
+    res.status(classified.status).json(classified.body);
   }
 });
 
@@ -1317,8 +1324,12 @@ router.put('/:id', async (req, res) => {
 
     res.json(response);
   } catch (err) {
-    logger.error('更新記憶失敗', { error: err.message });
-    res.status(500).json({ error: '更新記憶失敗' });
+    // v1.19.1: 把 catch-all 500 拆成 400/409/503/500 分類（同 POST handler）
+    const classified = classifyMemoryError(err, { context: 'update' });
+    const logPayload = { error: err?.message, code: err?.code };
+    if (classified.logStack) logPayload.stack = err?.stack;
+    logger[classified.logLevel]('更新記憶失敗', logPayload);
+    res.status(classified.status).json(classified.body);
   }
 });
 
