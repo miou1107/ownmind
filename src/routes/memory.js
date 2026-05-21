@@ -15,6 +15,7 @@ import { buildOnboarding } from '../utils/onboarding.js';
 import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.js';
 import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
+import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { createRequire } from 'module';
 
 const SERVER_VERSION = (() => {
@@ -941,6 +942,20 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // v1.19.1: secret-detect 卡控（IR-027「邏輯才有效」、IR-002 延伸場景）
+    //   POST /api/memory 寫入前偵測 value 是不是密碼／token／API key、
+    //   命中就回 400 引導去 ownmind_set_secret（而非 generic 500）
+    //   bypass: metadata.allow_secret_like=true → 跳過 + 寫 audit lint_warning
+    //   __upgrade_test__ prefix 跳過（測試用記憶不該被擋）
+    let secretGuardWarning = null;
+    if (!String(title).startsWith('__upgrade_test__')) {
+      const guardResult = validateMemoryContent({ type, title, content, metadata });
+      if (!guardResult.ok) {
+        return res.status(guardResult.status).json(guardResult.body);
+      }
+      secretGuardWarning = guardResult.lint_warning_entry || null;
+    }
+
     // Sync token 驗證（舊 client 無 token 時 graceful fallback）
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
     if (!tokenResult.ok) {
@@ -965,11 +980,24 @@ router.post('/', async (req, res) => {
     // v1.19: tier 寫入（非 iron_rule 一律 null、不污染其他 type）
     const finalTier = applyTierDefault({ memoryType: type, tier });
 
+    // v1.19.1: secret-guard bypass → 把 warning entry 合併進 metadata.lint_warnings
+    let finalMetadata = metadata || null;
+    if (secretGuardWarning) {
+      const baseMetadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
+      const existingWarnings = Array.isArray(baseMetadata.lint_warnings)
+        ? baseMetadata.lint_warnings
+        : [];
+      finalMetadata = {
+        ...baseMetadata,
+        lint_warnings: [...existingWarnings, secretGuardWarning],
+      };
+    }
+
     const result = await query(
       `INSERT INTO memories (user_id, type, title, content, code, tags, metadata, is_test, tier)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [req.user.id, type, title, content, finalCode, tags || null, metadata || null, isTestFlag, finalTier]
+      [req.user.id, type, title, content, finalCode, tags || null, finalMetadata, isTestFlag, finalTier]
     );
 
     const memory = result.rows[0];
@@ -977,7 +1005,7 @@ router.post('/', async (req, res) => {
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'create', $3, $4)`,
-      [memory.id, metadata?.tool || 'api', content, metadata || null]
+      [memory.id, metadata?.tool || 'api', content, finalMetadata]
     );
 
     // v1.17.87 IR-038 觀測管道補洞：新增 iron_rule 是高風險 sensitive event，
@@ -1163,6 +1191,24 @@ router.put('/:id', async (req, res) => {
       }
     }
 
+    // v1.19.1: secret-detect 卡控（IR-027「邏輯才有效」、IR-002 延伸場景）
+    //   PUT 也要擋、避免 update content 把密鑰偷塞進去。
+    //   只在 content 真的有改時才跑（metadata-only update 不跑）
+    //   __upgrade_test__ prefix 跳過
+    let secretGuardWarningPut = null;
+    if (contentChanged && !String(merged.title).startsWith('__upgrade_test__')) {
+      const guardResult = validateMemoryContent({
+        type: oldMemory.type,
+        title: merged.title,
+        content: merged.content,
+        metadata: merged.metadata,
+      });
+      if (!guardResult.ok) {
+        return res.status(guardResult.status).json(guardResult.body);
+      }
+      secretGuardWarningPut = guardResult.lint_warning_entry || null;
+    }
+
     // v1.18.0: 寫入前備份原 content 到 previous_content（升級助手寫壞時可救）
     // 只在 iron_rule 且 content 真的改變時備份、避免無謂寫入
     const willChangeContent = content !== undefined && content !== oldMemory.content;
@@ -1170,6 +1216,25 @@ router.put('/:id', async (req, res) => {
 
     // v1.19: tier 變動 — 只有當 caller 明確帶 tier 時才覆寫，COALESCE 行為一致
     const tierForUpdate = (tier === undefined || tier === null) ? null : tier;
+
+    // v1.19.1: secret-guard bypass → 把 warning entry 合併進 metadata.lint_warnings
+    //   合併基礎用「即將寫入的 metadata」（caller 傳的）、不是 oldMemory.metadata、
+    //   避免把舊 lint_warnings 重複寫一次
+    let metadataForUpdate = metadata !== undefined ? metadata : null;
+    if (secretGuardWarningPut) {
+      const baseMetadata = metadata && typeof metadata === 'object'
+        ? { ...metadata }
+        : (oldMemory.metadata && typeof oldMemory.metadata === 'object'
+           ? { ...oldMemory.metadata }
+           : {});
+      const existingWarnings = Array.isArray(baseMetadata.lint_warnings)
+        ? baseMetadata.lint_warnings
+        : [];
+      metadataForUpdate = {
+        ...baseMetadata,
+        lint_warnings: [...existingWarnings, secretGuardWarningPut],
+      };
+    }
 
     const result = await query(
       `UPDATE memories
@@ -1182,7 +1247,7 @@ router.put('/:id', async (req, res) => {
            updated_at = NOW()
        WHERE id = $5 AND user_id = $6
        RETURNING *`,
-      [title || null, content || null, tags || null, metadata || null, req.params.id, req.user.id, shouldBackup, tierForUpdate]
+      [title || null, content || null, tags || null, metadataForUpdate, req.params.id, req.user.id, shouldBackup, tierForUpdate]
     );
 
     const memory = result.rows[0];
