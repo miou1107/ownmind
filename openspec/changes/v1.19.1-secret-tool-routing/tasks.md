@@ -77,17 +77,17 @@
 
 ---
 
-## 階段 D：MCP 工具描述警語
+## 階段 D：MCP 工具描述警語 ✅
 
-- [ ] D1. 寫測試 `tests/mcp-tool-description-secret-warning.test.js`（預估 3 case、source-level）
-  - 註：mcp/index.js 載入會自動連 stdio MCP server、用 regex 驗證 source（同 v1.19 C1 經驗）
-  - `ownmind_save` description 含「敏感資料」「ownmind_set_secret」字串
-  - `ownmind_update` description 含同上
-  - `ownmind_set_secret` description **不含**警語（避免循環提示）
-- [ ] D2. 改 `mcp/index.js`
-  - `ownmind_save` description 開頭加：「⚠️ 含密碼／token／API key 請改用 `ownmind_set_secret`，不要寫進記憶。」
+- [x] D1. 寫測試 `tests/mcp-tool-description-secret-warning.test.js`（實際 10 case、source-level regex 驗證）
+  - ownmind_save：找到描述 / 含「敏感資料／密碼」/ 含「ownmind_set_secret」/ 警語在前 80 字
+  - ownmind_update：同上 4 case
+  - ownmind_set_secret：找到描述 / 不含「請改用 ownmind_set_secret」（避免循環）
+- [x] D2. 改 `mcp/index.js`
+  - `ownmind_save` description 開頭加：「⚠️ 含密碼／token／API key／credential 等敏感資料請改用 ownmind_set_secret、不要寫進記憶（記憶 API 會偵測並擋下、回 400）」
   - `ownmind_update` description 同上
   - 不動 inputSchema
+  - `ownmind_set_secret` description 維持原樣（不加自我循環警語）
 
 ---
 
