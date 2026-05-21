@@ -55,18 +55,25 @@
 
 ---
 
-## 階段 C：500 → 4xx catch-all 改造
+## 階段 C：500 → 4xx catch-all 改造 ✅
 
-- [ ] C1. 寫測試 `tests/memory-api-error-codes.test.js`（預估 5 case）
-  - validation error（schema 不符）→ 400（場景 9 維持）
-  - 偽造 DB 錯誤（mock）→ 500 + log 帶 stack（場景 10）
-  - auth path（既有 404/403）→ 不退化（場景 11）
-  - body 結構：400 一定帶 `hint`、500 不帶
-  - log 內容：500 必須含 error.message + error.stack
-- [ ] C2. 改 `src/routes/memory.js` catch-all
-  - 引入 error type 判斷 helper（檢查 `err.code`、`err.name`、是否為 `ValidationError`）
-  - validation → 400 + hint
-  - 其他（DB / 未分類）→ 500 + 詳細 log
+- [x] C1. 寫測試 `tests/memory-error-classifier.test.js`（實際 21 case）
+  - PG constraint violations 4 case：23502 / 23503 / 23505 / 23514
+  - PG connection / 系統錯誤 3 case：08000 / 08006 / ECONNREFUSED
+  - JS 內建錯誤 2 case：SyntaxError / TypeError
+  - 邊界 5 case：null / undefined / 字串 / 物件帶 status / 未分類 Error
+  - 回傳結構 4 case：error 字串、logStack、logLevel
+  - context 參數 3 case：create / update / 預設
+- [x] C2. 新檔 `src/utils/memory-error-classifier.js`
+  - `classifyMemoryError(err, { context }): { status, body, logLevel, logStack }`
+  - PG SQLSTATE 分類：23xxx → 400/409、22xxx → 400、08xxx → 503
+  - JS SyntaxError → 400、其他 → 500
+  - null/undefined/非物件 → 500 fallback、不丟
+- [x] C3. 改 `src/routes/memory.js` POST + PUT catch
+  - POST handler line 1114 catch 接 classifyMemoryError({ context: 'create' })
+  - PUT handler line 1326 catch 接 classifyMemoryError({ context: 'update' })
+  - log 含 error.message + code，500/503 額外含 stack
+  - 改用 classified.logLevel（warn for 4xx、error for 5xx）避免 4xx noisy log
 
 ---
 
