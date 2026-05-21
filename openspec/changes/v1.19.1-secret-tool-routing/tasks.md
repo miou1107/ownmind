@@ -29,22 +29,29 @@
 
 ---
 
-## 階段 B：Memory API 接入 detector
+## 階段 B：Memory API 接入 detector ✅
 
-- [ ] B1. 寫測試 `tests/memory-api-secret-detect.test.js`（預估 8 case）
-  - POST 命中 WP password → 400 + redirect_tool（場景 1）
-  - POST 命中 JWT → 400（場景 2）
-  - PUT 命中 OpenAI key → 400、原 content 未變（場景 7）
-  - POST 正常記憶含中文 → 201（場景 5）
-  - POST + metadata.allow_secret_like → 201、metadata.lint_warnings 帶 bypass 條目（場景 6）
-  - 400 response body 結構符合場景 1 規格
-  - `memory_history` 在 400 時不寫入
-  - `/api/secret` 路由不適用 detector（場景 13）
-- [ ] B2. 改 `src/routes/memory.js`
-  - POST handler：寫入 DB 前呼叫 `detectSecretLike(content, { title, description })`
-  - PUT handler：merged.content 算出後呼叫 detector（如果 content 有改）
-  - bypass：metadata.allow_secret_like=true → 跳過 + 寫 `metadata.lint_warnings` 條目
-  - 命中 → 回 400 + `{ error, hint, redirect_tool, detected_by }`
+- [x] B1. 寫測試 `tests/memory-secret-guard.test.js`（實際 24 case）
+  - 偵測命中 4 case（WP / JWT / keyword:password / heuristic）
+  - 正常記憶通過 4 case（含中文、iron_rule 討論密碼、principle、narrative regex 仍擋）
+  - Bypass 3 case（lint_warning_entry 結構、真 JWT bypass、無 metadata 不丟）
+  - 邊界 3 case（body 結構、空 content、null content）
+  - narrative types 完整覆蓋 10 case（5 個 narrative type × 2 場景）
+  - **設計調整**：採「helper 純函式測試」而非「全 route 整合測試」、跟 iron-rule-quality.test.js 同一個模式
+- [x] B2. 新檔 `src/utils/memory-secret-guard.js`
+  - `validateMemoryContent({ type, title, content, metadata })`
+  - narrative 類型（iron_rule / principle / coding_standard / team_standard / session_log）跳 keyword、保留 regex
+  - bypass: metadata.allow_secret_like=true → 跳過 + 回傳 lint_warning_entry
+  - 命中 → `{ ok: false, status: 400, body: { error, hint, redirect_tool, detected_by } }`
+- [x] B3. detector 擴充 `skip_keyword` 選項（v1.19.1 設計調整）
+  - regex 改 non-anchored、用 word boundary 等抓 embedded 密鑰
+  - WP password 改 `{5}` 而非 `{5,}` 限縮為恰好 6 組降低誤判
+- [x] B4. 改 `src/routes/memory.js`
+  - POST handler：lintIronRule 後、syncToken 前接 validateMemoryContent
+  - PUT handler：merged 算出後、UPDATE 前接 validateMemoryContent（只在 contentChanged 時跑）
+  - bypass：把 lint_warning_entry 合併進 metadata.lint_warnings（保留既有 warnings）
+  - 命中 → 直接 res.status(400).json(body)、不寫 memory / memory_history
+  - __upgrade_test__ prefix 跳過（測試用記憶不該被擋）
 
 ---
 

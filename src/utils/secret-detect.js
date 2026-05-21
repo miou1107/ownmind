@@ -19,6 +19,10 @@
  * @param {string} [options.title] - 對應記憶的 title（用於 keyword 偵測）
  * @param {string} [options.description] - 對應記憶的 description / metadata 註解
  * @param {boolean} [options.allow_bypass] - 明確 opt-in 跳過偵測（已寫 audit）
+ * @param {boolean} [options.skip_keyword] - 跳過 keyword 偵測（narrative 類型專用）
+ *   regex 跟 length heuristic 仍會跑、避免漏掉真貼進去的密鑰；
+ *   只有 keyword（title/description/content 含 password/token/密碼...）不跑、
+ *   避免討論密碼主題的 narrative 記憶（iron_rule、principle）被誤擋。
  * @returns {{ detected: boolean, rule?: string, reason?: string }}
  *   - detected: 是否命中
  *   - rule: detected_by 標籤（regex:xxx / keyword:xxx / heuristic:xxx）
@@ -51,35 +55,39 @@ export function detectSecretLike(value, options = {}) {
   }
 
   // 4. Keyword 偵測（title + description 含敏感關鍵字）
-  const haystack = `${title} ${description}`.toLowerCase();
-  const haystackOriginal = `${title} ${description}`; // CJK 不轉小寫
-  for (const keyword of SECRET_KEYWORDS_EN) {
-    if (haystack.includes(keyword)) {
-      return {
-        detected: true,
-        rule: `keyword:${keyword}`,
-        reason: `title／description 含關鍵字「${keyword}」`,
-      };
+  //    skip_keyword=true 時跳過、給 narrative 類型用（iron_rule / principle 等
+  //    經常討論密碼主題、不應該被 keyword 誤擋；regex 跟 length heuristic 仍跑）
+  if (!options.skip_keyword) {
+    const haystack = `${title} ${description}`.toLowerCase();
+    const haystackOriginal = `${title} ${description}`; // CJK 不轉小寫
+    for (const keyword of SECRET_KEYWORDS_EN) {
+      if (haystack.includes(keyword)) {
+        return {
+          detected: true,
+          rule: `keyword:${keyword}`,
+          reason: `title／description 含關鍵字「${keyword}」`,
+        };
+      }
     }
-  }
-  for (const keyword of SECRET_KEYWORDS_CJK) {
-    if (haystackOriginal.includes(keyword)) {
-      return {
-        detected: true,
-        rule: `keyword:${keyword}`,
-        reason: `title／description 含關鍵字「${keyword}」`,
-      };
+    for (const keyword of SECRET_KEYWORDS_CJK) {
+      if (haystackOriginal.includes(keyword)) {
+        return {
+          detected: true,
+          rule: `keyword:${keyword}`,
+          reason: `title／description 含關鍵字「${keyword}」`,
+        };
+      }
     }
-  }
-  // value 本身也掃英文 keyword（例如 content 出現 "api_key:" 模式）
-  const valueLower = value.toLowerCase();
-  for (const keyword of SECRET_KEYWORDS_EN) {
-    if (valueLower.includes(keyword)) {
-      return {
-        detected: true,
-        rule: `keyword:${keyword}`,
-        reason: `value 含關鍵字「${keyword}」`,
-      };
+    // value 本身也掃英文 keyword（例如 content 出現 "api_key:" 模式）
+    const valueLower = value.toLowerCase();
+    for (const keyword of SECRET_KEYWORDS_EN) {
+      if (valueLower.includes(keyword)) {
+        return {
+          detected: true,
+          rule: `keyword:${keyword}`,
+          reason: `value 含關鍵字「${keyword}」`,
+        };
+      }
     }
   }
 
@@ -102,35 +110,40 @@ export function detectSecretLike(value, options = {}) {
 
 /**
  * 已知的密鑰格式 regex。命中即視為敏感。
- * 順序：先放最精確、長度限制最緊的、最不會誤判。
+ *
+ * 設計：不用 ^/$ 錨定整字串、要能抓「embedded 在 narrative 文字中的密鑰」
+ * （例如 iron_rule 內貼了真 token 想當例子）。
+ * 為了降低 false positive，每條 regex 都設緊長度／字元 class 限制。
  */
 const SECRET_REGEXES = [
-  // WordPress Application Password: 4 字一組、6 組以上、空白分隔
+  // WordPress Application Password: 4 字一組、恰好 6 組、空白分隔
   // 例：iXEN ops5 pJcy 8PJI lVFM heaH
+  // 用 {5}（恰好 5 個分隔 = 6 組）而非 {5,}、避免普通英文文字偶然命中
   {
     name: 'wp_application_password',
-    pattern: /^[A-Za-z0-9]{4}(\s[A-Za-z0-9]{4}){5,}$/,
+    pattern: /\b[A-Za-z0-9]{4}(?:\s[A-Za-z0-9]{4}){5}\b/,
   },
   // JWT: header.payload.signature，三段 base64url
-  // 例：eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c
+  // 每段至少 10 字降低 false positive
   {
     name: 'jwt',
-    pattern: /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/,
+    pattern: /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
   },
   // GitHub PAT: ghp_ / ghs_ / gho_ / ghu_ 開頭 + 36+ 字元
   {
     name: 'github_pat',
-    pattern: /^gh[opsu]_[A-Za-z0-9]{36,}$/,
+    pattern: /gh[opsu]_[A-Za-z0-9]{36,}/,
   },
   // AWS Access Key ID: AKIA + 16 大寫英數字
+  // 用 (?![A-Z0-9]) 確保後面不是更多大寫英數字（避免抓到 AKIA + 17+ 字的偶然字串）
   {
     name: 'aws_access_key',
-    pattern: /^AKIA[A-Z0-9]{16}$/,
+    pattern: /AKIA[A-Z0-9]{16}(?![A-Z0-9])/,
   },
-  // OpenAI API key: sk- 開頭、後接英數字／hyphen
+  // OpenAI API key: sk- 開頭、後接 20+ 字元（英數字／hyphen／_）
   {
     name: 'openai_api_key',
-    pattern: /^sk-[A-Za-z0-9_-]{20,}$/,
+    pattern: /sk-[A-Za-z0-9_-]{20,}/,
   },
 ];
 
