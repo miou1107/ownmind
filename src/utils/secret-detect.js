@@ -177,9 +177,15 @@ const SECRET_KEYWORDS_CJK = [
 
 /**
  * 純英數字＋少數符號（給長度啟發式用）
- * 包含：A-Z a-z 0-9 - _ + / = . 空白
+ * 包含：A-Z a-z 0-9 - _ + / = .
+ *
+ * 不含空白——code review I-1 修：原本含 \s 導致純英文筆記
+ * （例：「Working on JWT integration today」）被誤判為密鑰、
+ * 因為含空白＋字母長度 ≥ 20 就命中。實際密鑰格式都是單一 token
+ * 沒空白（JWT / GitHub PAT / AWS / OpenAI）、WP password 走自己的
+ * 專用 regex、heuristic 不需要支援空白。
  */
-const LONG_ALNUM_REGEX = /^[A-Za-z0-9\-_+/=.\s]+$/;
+const LONG_ALNUM_REGEX = /^[A-Za-z0-9\-_+/=.]+$/;
 
 /**
  * CJK Unicode ranges（中日韓統一表意文字）

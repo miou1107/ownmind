@@ -2,7 +2,7 @@ AIパーソナライズド永続メモリソリューション
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.19.0** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.19.1** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォームAIメモリシステム
 
@@ -98,6 +98,7 @@ graph LR
 - **リアルタイムルール適用** — セッション開始時に自動読み込み、AIが違反を能動的にブロック
 - **トリガータグ** — 鉄則にトリガーをタグ付け（`trigger:commit`、`trigger:deploy`）、操作前に自動チェック
 - **ルールバージョン履歴** — 変更時に旧バージョンを自動保存、進化の過程を追跡可能
+- **メモリと秘密鍵のルーティング** `v1.19.1` — メモリ API への書き込み時にパスワード／トークン／API キーを自動検出、命中時は 400 を返し `ownmind_set_secret` へ誘導。三層防御：MCP ツール記述の警告、サーバー検出、専用鉄則 IR-047。詳細は [v1.19.1 プロポーザル](../openspec/changes/v1.19.1-secret-tool-routing/proposal.md)。
 
 ### コラボレーションと同期
 

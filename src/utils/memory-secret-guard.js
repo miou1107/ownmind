@@ -35,12 +35,14 @@ export function validateMemoryContent({ type, title, content, metadata }) {
 
   // narrative 類型：跳 keyword 偵測（這些類型經常討論密碼主題）
   // 名單需跟 ALLOWED_MEMORY_TYPES 對齊、未來新增 type 時記得評估歸類
+  // code review I-2 修：standard_detail（v1.x 加的、團隊標準明細）也是 narrative、漏列
   const narrativeTypes = new Set([
     'iron_rule',
     'principle',
     'coding_standard',
     'team_standard',
     'session_log',
+    'standard_detail',
   ]);
   const skipKeyword = narrativeTypes.has(type);
 
@@ -62,7 +64,7 @@ export function validateMemoryContent({ type, title, content, metadata }) {
         error: '偵測到此內容看起來是敏感資料（密碼／token／API key）',
         hint:
           '敏感資料請改用 ownmind_set_secret（MCP 工具）或 POST /api/secret（HTTP API）。' +
-          '記憶系統只應該存非敏感的 user／project／reference 等內容。',
+          '記憶系統只應該存非敏感的 profile／project／portfolio／session_log 等內容。',
         redirect_tool: 'ownmind_set_secret',
         detected_by: detection.rule,
       },

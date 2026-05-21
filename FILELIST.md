@@ -1,5 +1,42 @@
 # OwnMind 檔案結構
 
+## v1.19.1 新增 / 修改（密碼 / Token 不寫進記憶、三層防護）
+
+新增檔：
+
+```
+src/utils/secret-detect.js                               — detectSecretLike 純函式：5 regex + 英中 keyword + 長度啟發式 + skip_keyword 選項
+src/utils/memory-secret-guard.js                         — validateMemoryContent 包一層、narrative 類型跳 keyword、bypass 回 lint_warning_entry
+src/utils/memory-error-classifier.js                     — classifyMemoryError 把 catch-all 500 拆成 400/409/503/500（PG SQLSTATE 分流）
+tests/secret-detect-unit.test.js                         — 26 case：5 regex、keyword、長度啟發式、bypass、邊界
+tests/memory-secret-guard.test.js                        — 24 case：偵測、bypass、narrative 跳 keyword 但 regex 仍跑
+tests/memory-error-classifier.test.js                    — 21 case：PG SQLSTATE / Node 連線 / JS 內建錯誤分類
+tests/mcp-tool-description-secret-warning.test.js        — 10 case：source-level 驗證警語在前 80 字內
+openspec/changes/v1.19.1-secret-tool-routing/proposal.md — 提案
+openspec/changes/v1.19.1-secret-tool-routing/spec.md     — 13 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19.1-secret-tool-routing/tasks.md    — 6 階段任務拆解（A-F）
+```
+
+修改的既有檔：
+
+```
+src/routes/memory.js                                     — POST/PUT 接 validateMemoryContent；catch-all 接 classifyMemoryError；4xx 用 warn 5xx 用 error
+mcp/index.js                                             — ownmind_save / ownmind_update description 開頭加敏感資料警語、不動 inputSchema
+README.md / docs/README.zh-TW.md / docs/README.ja.md     — 「Memory & Protection」段加「Memory vs Secret routing」條目
+package.json / docs/README*                              — 1.19.0 → 1.19.1
+CHANGELOG.md                                             — v1.19.1 條目
+```
+
+OwnMind iron_rule 新增（透過 ownmind_save、不在 repo）：
+
+```
+IR-047                                                   — 敏感資料一律走密鑰管理工具、不寫進記憶／對話／程式碼提交
+                                                          tier=critical、related_rules=[IR-002, IR-041]
+                                                          5 個 trigger tags（credential/password/secret/api_key/token）
+```
+
+---
+
 ## v1.19.0 新增 / 修改（鐵律分級 Critical / Default / Advisory）
 
 新增檔：
