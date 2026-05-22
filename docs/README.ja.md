@@ -165,6 +165,8 @@ sequenceDiagram
 - **キャッシュ自動リフレッシュ** — save/update/disable後にiron_rules.jsonキャッシュを自動更新 `v1.15.0`
 - **アクション可能な失敗メッセージ** — 検証失敗時に修正ヒントを付与（例：「git add Xしてください」） `v1.15.0`
 - **3段階分類** — 各鉄則に `critical` / `default` / `advisory` を付与；SessionStart ダイジェストをティアごとにグルーピング表示（🔴 Critical 全件、🟡 Default 全件、⚪ Advisory はカウントのみ）；v1.20+ からティアでブロック / 警告 / 記録のみの動作を切り替え `v1.19.0`
+- **共通ジャッジコア** — `hooks/lib/rule-enforcer.js` は純粋関数 `enforceRule(ruleCode, context, options)` を提供し、ティア + 既存の `block_on_fail` フラグに基づき `allow` / `block` / `warn` / `log_only` / `bypass` の 5 アクションを返す。v1.19.7+ で git pre-commit / PreToolUse / reply-lint の 3 フックに接続予定 `v1.19.6`
+- **バイパスチャネル + 監査ログ** — `hooks/lib/bypass-handler.js` は `OWNMIND_BYPASS=IR-008,IR-024`（または `OWNMIND_BYPASS=all`、大文字小文字無視）を解析し、バイパス毎に `compliance.jsonl` へ `action: 'bypass'` を書き込む。プロセススコープ（グローバル汚染なし）`v1.19.6`
 
 ### スマートラーニング＆データ駆動進化 `v1.10.0`
 

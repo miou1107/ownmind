@@ -173,6 +173,8 @@ sequenceDiagram
 - **Cache auto-refresh** — iron_rules.json cache refreshes automatically after save/update/disable operations `v1.15.0`
 - **Actionable failure messages** — verification failures include fix hints (e.g., "please git add X") `v1.15.0`
 - **Three-tier rule classification** — every rule labeled `critical` / `default` / `advisory`; SessionStart digest groups by tier (🔴 Critical fully listed, 🟡 Default fully listed, ⚪ Advisory count-only); v1.20+ uses the tier to differentiate blocking vs. warning vs. log-only behavior `v1.19.0`
+- **Shared rule-enforcer core** — `hooks/lib/rule-enforcer.js` provides pure-function `enforceRule(ruleCode, context, options)` returning one of `allow` / `block` / `warn` / `log_only` / `bypass` based on tier + legacy `block_on_fail`. To be wired into git pre-commit / PreToolUse / reply-lint hooks in v1.19.7+ `v1.19.6`
+- **Bypass channel + audit** — `hooks/lib/bypass-handler.js` parses `OWNMIND_BYPASS=IR-008,IR-024` (or `OWNMIND_BYPASS=all`, case-insensitive) and writes every bypass to `compliance.jsonl` with `action: 'bypass'`. Process-scoped (does not leak globally) `v1.19.6`
 
 ### Infrastructure
 

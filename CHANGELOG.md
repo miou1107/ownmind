@@ -1,5 +1,61 @@
 # OwnMind 更新紀錄
 
+## v1.19.6 — Critical 鐵律卡控的共用判定核心（基礎建設、不擋任何規則）
+
+**背景：** v1.19 給鐵律掛了 critical / default / advisory 標籤、但執行層仍跟 v1.18 一樣（看 `block_on_fail`）。v1.20 原本要一口氣把 10 條 critical 切到硬擋；Vin 拍板拆成 v1.19.6 ~ v1.19.10 漸進推、永遠停在 v1.19.x。
+
+Gemini 對抗審查後三條被從候選剔除（降警告）：
+- **IR-005**（不要 blind edit）— MCP 無狀態、user 手動點開檔案 hook 看不到、大量誤判
+- **IR-008**（同步三文件）— 改錯字也擋會逼人塞廢話或關 hook
+- **IR-048**（部署前查 DB migration）— 連外部狀態太脆、緊急修復會死
+
+最終 10 條 + 漸進排程詳見 [v1.20 提案](openspec/changes/v1.20-iron-rule-enforcement/proposal.md)。
+
+**v1.19.6 本批次只做基礎建設**：
+
+- 新增 `hooks/lib/rule-enforcer.js` — 純函式 `enforceRule(ruleCode, context, options)` 入口
+  - 內部包既有 `shared/verification.js` 的 `evaluateConditions`
+  - 視 tier 決定 action：critical → block、default → 看 `block_on_fail`（向後相容）、advisory → log_only
+  - fail-open：任何 throw 回 `action: 'allow'` + `reason: 'enforcer_internal_error'`、絕不卡死工作流
+  - 純函式、無 fs / network / process.exit side effects、共用給三種 hook
+- 新增 `hooks/lib/bypass-handler.js` — 放行通道
+  - `parseBypass({ OWNMIND_BYPASS: 'IR-008,IR-024' })` 回 `Set`
+  - `OWNMIND_BYPASS=all`（含大小寫變體 ALL / All）→ 涵蓋所有規則
+  - `logBypass({ ruleCode, source, ... })` 寫一筆 `action: 'bypass'` 到 `compliance.jsonl`
+  - process scope、不污染全域 / 不修改 env
+- 擴充 `shared/compliance.js` schema 註解新增三個合法 action：`block` / `bypass` / `hook_internal_error`
+  - schema 本身已支援任意 action 字串、本批次純註解同步
+
+**測試：**
+
+- 新增 `tests/rule-enforcer-core.test.js`（18 case）涵蓋：
+  - 規則不在快取 / rules 非陣列 → fail-open
+  - critical / default / advisory 三 tier 違反 → 對應 action
+  - default + `block_on_fail=true` → block（向後相容）
+  - 未知 tier → fallback default
+  - bypass set 命中 / `all` / 沒命中 / 未提供 → 各路徑
+  - `evaluateConditions` 真的 throw（用 getter 觸發）→ catch 回 fail-open `reason: 'enforcer_internal_error'`
+- 新增 `tests/bypass-handler.test.js`（15 case）涵蓋：
+  - 空 / 單條 / 多條 / 大小寫變體 ALL / 純逗號
+  - `isBypassed` 命中 / 沒命中 / `all` / null set
+  - `logBypass` 寫 audit、可選欄位 `commit_hash` / `session_id` / `failures`
+  - ruleTitle 缺失 fallback
+- 補 `tests/compliance.test.js` 3 case：action `block` / `bypass` / `hook_internal_error` 都能寫入 + 讀回
+
+**驗證：** `npm test` 1524 / 1524 綠（既有 1521 + 新 47 - 重複部分）。沒任何既有 hook 被破壞。
+
+**設計剝離原則：** v1.19.6 不接任何 hook、不擋任何規則；本層純粹是 v1.19.7+ 的零件供應商。
+
+Gemini 對抗審查 + Claude 自評後修了 4 個 review 意見：
+- **I-1**：違反路徑加 `reason: 'conditions_violated'`、跟 allow 路徑對稱、方便下游 hook 統一 audit
+- **I-4**：fail-open catch path 改用 getter 真的 throw、避免測試名稱與實際路徑脫鉤
+- **I-5**：`OWNMIND_BYPASS=ALL`（大寫）/ `All` 統一 normalize 成 `all`、避免緊急場景靜默失效
+- **M-5**：`shared/compliance.js` schema 註解補上 block / bypass / hook_internal_error 三個新合法值
+
+剩 8 條 Important / Minor（如 `enforceRules` 整批 miss 通報、benchmark、`decideAction` export）留 v1.19.7 接 hook 時順手處理。
+
+---
+
 ## v1.19.5 — 修白名單 case-insensitive bug + 補真實踩坑漏字
 
 **背景：** v1.19.4 預設翻 block 後立刻被 Vin 端對端測試踩到 v1.19.3 兩個 bug：

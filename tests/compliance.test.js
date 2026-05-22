@@ -98,6 +98,51 @@ describe('appendCompliance', () => {
     const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
     assert.equal(entry.tier, undefined);
   });
+
+  // v1.19.6 — Critical 鐵律卡控新增的 action 值
+  it('v1.19.6: action=block 可寫入（hook 擋下時用）', () => {
+    appendCompliance({
+      event: 'IR-002',
+      action: 'block',
+      rule_code: 'IR-002',
+      rule_title: '不要 commit .env',
+      source: 'pre_commit',
+      tier: 'critical',
+      failures: ['偵測到 .env.production 進入 commit'],
+    });
+    const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
+    assert.equal(entry.action, 'block');
+    assert.equal(entry.tier, 'critical');
+    assert.deepEqual(entry.failures, ['偵測到 .env.production 進入 commit']);
+  });
+
+  it('v1.19.6: action=bypass 可寫入（OWNMIND_BYPASS 用）', () => {
+    appendCompliance({
+      event: 'IR-008',
+      action: 'bypass',
+      rule_code: 'IR-008',
+      rule_title: '同步文件',
+      source: 'pre_commit',
+      commit_hash: 'abc1234',
+    });
+    const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
+    assert.equal(entry.action, 'bypass');
+    assert.equal(entry.commit_hash, 'abc1234');
+  });
+
+  it('v1.19.6: action=hook_internal_error 可寫入（fail-open 通報用）', () => {
+    appendCompliance({
+      event: 'IR-002',
+      action: 'hook_internal_error',
+      rule_code: 'IR-002',
+      rule_title: '不要 commit .env',
+      source: 'pre_commit',
+      failures: ['enforcer 拋例外：unknown handler type'],
+    });
+    const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
+    assert.equal(entry.action, 'hook_internal_error');
+    assert.ok(entry.failures[0].includes('enforcer'));
+  });
 });
 
 describe('readComplianceEvents', () => {
