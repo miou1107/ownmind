@@ -351,6 +351,17 @@ Authorization: Bearer YOUR_API_KEY
 - **MCP:** @modelcontextprotocol/sdk
 - **部署:** Docker Compose
 
+### DB Migration 自動化（v1.19.2+）
+
+`db/[0-9][0-9][0-9]_*.sql` 下的 migration 會在 server 啟動時自動套用：
+
+- `src/utils/run-migrations.js` 在 `src/index.js` 的 `app.listen()` 前跑、把所有未套用的 SQL 依編號順序套上
+- 用 `schema_migrations` 表追蹤（`filename` 為主鍵、含 `applied_at`、`applied_by`）
+- 任何一條 migration 失敗 → API process exit 1、container 不會起 listen（避免新 code 配舊 schema 對外服務）
+- `scripts/run-migrations.sh` 是手動 / CLI 版本（用 `docker exec ownmind-db psql` 或直連 psql）
+
+新增 migration：在 `db/` 下加一條 `016_xxx.sql`（用 `IF NOT EXISTS` 確保 idempotent）、下次 `docker restart ownmind-api` 自動套用、不用人工 SSH 跑 psql。
+
 ## Contributors
 
 - Vin (miou1107)

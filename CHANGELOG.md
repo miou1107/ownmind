@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.19.2 — DB Migration 自動套用 + schema_migrations 追蹤表
+
+**背景：** 2026-05-22 中午發現 v1.19.1 prod 所有 `ownmind_save` 回 500 `column "tier" does not exist`。追查發現 v1.19.0 的 `db/014_iron_rule_tier.sql` commit 進 repo 但沒人手動跑到 prod DB、整支 memory API 對 INSERT/UPDATE 全炸。對應 IR-027「邏輯才有效」失效——靠人記得跑 SQL 就是會漏。
+
+**核心修法：把 migration 從「人工檢查」改成「server 啟動時自動套用」。**
+
+**三件套：**
+
+1. **`db/015_schema_migrations_table.sql`** — 追蹤已套用 migration 的表（filename PK + applied_at + applied_by）。用 `IF NOT EXISTS` + `ON CONFLICT DO NOTHING` 確保重跑安全、self-record 自己 filename 避免下次再被誤判。
+2. **`src/utils/run-migrations.js`** — Node 版自動 runner、在 `src/index.js` 的 `app.listen()` 前跑。掃 `db/[0-9][0-9][0-9]_*.sql`、比對 `schema_migrations` 表、跑沒套過的、寫一筆紀錄。任何一條失敗就 `throw` → `process.exit(1)`、container 不會 listen（避免新 code 配舊 schema 對外服務）。
+3. **`scripts/run-migrations.sh`** — Bash 版手動 / CLI runner（dev 環境 / fresh deploy debug 用）。支援 docker exec 或直連 psql、INFO/OK/ERROR 輸出格式跟 bootstrap.sh 一致。
+
+**整合點：** `src/index.js` 改成 async `start()`、`await runMigrations()` 後才 `app.listen`。Vin 既有的「git pull → docker compose build → docker restart api」工作流不變、第 3 步自動套 migration。
+
+**Prod backfill：** 既有 14 條 migration (001~014) 已透過 `INSERT INTO schema_migrations(filename, applied_by) VALUES (..., 'backfill')` 一次性 backfill、所以新版上線後 runner 看到 15 條全套用、什麼也不做、純驗證 idempotent。
+
+**新增鐵律 IR-048：** deploy OwnMind / RING / 任何 server 前必須跑 db/ 下所有未套用 migration（人工版本、適用所有專案）。本版 OwnMind 自動化後、IR-048 在 OwnMind 場景降為 advisory、但對 RING / fapa / ima 等專案仍是 default 強度。
+
+**新增測試 22 case** — 涵蓋 SQL idempotent、bash runner 結構、Node migrator 行為、src/index.js 整合順序。
+
+**對應規格：** `openspec/changes/v1.19.2-auto-migration/{proposal,spec,tasks}.md`
+
+---
+
 ## v1.19.1 — 密碼／Token 不寫進記憶、AI 自動走 set_secret
 
 **背景：** 2026-05-18 Vin 嘗試用 ownmind_update 存好好玩 FUNIT 的 WordPress 應用程式密碼、記憶 API 回 500「更新記憶失敗」黑盒、AI 不知道分流規則。對應 IR-027「提醒無效、邏輯才有效」的失效情境——光在記憶系統提示「密碼請走密鑰管理」是不夠的、要靠程式邏輯卡控。

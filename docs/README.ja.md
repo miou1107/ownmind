@@ -346,6 +346,17 @@ Authorization: Bearer YOUR_API_KEY
 - **MCP:** @modelcontextprotocol/sdk
 - **デプロイ:** Docker Compose
 
+### DB マイグレーション自動化（v1.19.2+）
+
+`db/[0-9][0-9][0-9]_*.sql` のマイグレーションは server 起動時に自動適用されます：
+
+- `src/utils/run-migrations.js` が `src/index.js` の `app.listen()` の前に走り、未適用の SQL をファイル名順に適用
+- 追跡用に `schema_migrations` テーブル（`filename` 主キー、`applied_at`、`applied_by`）を使用
+- いずれかのマイグレーションが失敗すると API プロセスは exit 1、container は listen を開始しない（新 code と旧 schema の組み合わせで外部に提供することを防ぐ）
+- `scripts/run-migrations.sh` は手動 / CLI 版（`docker exec ownmind-db psql` または直接 psql を使用）
+
+新規マイグレーション追加：`db/` に `016_xxx.sql` を作成（`IF NOT EXISTS` パターン推奨）。次回 `docker restart ownmind-api` で自動適用、手動 SSH+psql 不要。
+
 ## コントリビューター
 
 - Vin (miou1107)

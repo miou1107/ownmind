@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## v1.19.2 新增 / 修改（DB Migration 自動套用）
+
+新增檔：
+
+```
+db/015_schema_migrations_table.sql                       — schema_migrations 追蹤表（filename PK / applied_at / applied_by）+ self-record
+scripts/run-migrations.sh                                — CLI 版 migration runner（bash、docker exec ownmind-db 或直連 psql、INFO/OK/ERROR 輸出）
+src/utils/run-migrations.js                              — Node 版 migration runner（在 src/index.js 啟動時自動跑、失敗 process.exit(1)）
+tests/run-migrations.test.js                             — 22 case：SQL idempotent、bash 結構、Node migrator 行為、src/index.js 整合順序
+openspec/changes/v1.19.2-auto-migration/proposal.md      — 提案
+openspec/changes/v1.19.2-auto-migration/spec.md          — 10 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19.2-auto-migration/tasks.md         — 7 階段任務拆解（A-G）
+```
+
+修改的既有檔：
+
+```
+src/index.js                                             — 改 async start()、await runMigrations() 後才 app.listen
+README.md                                                — Tech Stack 加 DB Migrations 段
+docs/README.zh-TW.md / docs/README.ja.md                 — 三語系同步（IR-032）
+CHANGELOG.md                                             — v1.19.2 條目
+package.json                                             — version 1.19.2
+```
+
+---
+
 ## v1.19.1 新增 / 修改（密碼 / Token 不寫進記憶、三層防護）
 
 新增檔：

@@ -346,6 +346,17 @@ Authorization: Bearer YOUR_API_KEY
 - **MCP:** @modelcontextprotocol/sdk
 - **Deploy:** Docker Compose
 
+### DB Migrations (v1.19.2+)
+
+Migrations under `db/[0-9][0-9][0-9]_*.sql` are auto-applied on server startup:
+
+- `src/utils/run-migrations.js` runs in `src/index.js` before `app.listen()` — applies any unapplied SQL files in order
+- A `schema_migrations` table (`filename` PK, `applied_at`, `applied_by`) tracks what has been run
+- If any migration fails, the API process exits with code 1 — container does not start with stale schema
+- `scripts/run-migrations.sh` is the manual / CLI equivalent (uses `docker exec ownmind-db psql` or direct psql)
+
+To add a new migration: drop a `db/016_xxx.sql` (or next number) using `IF NOT EXISTS` patterns for idempotency. Next `docker restart ownmind-api` will apply it automatically.
+
 ## Contributors
 
 - Vin (miou1107)
