@@ -16,7 +16,8 @@
  * Schema:
  *   {
  *     "<session_id>": {
- *       "count": <int>,
+ *       "count": <int>,                       // 違規累積次數（決定何時進入 block）
+ *       "block_count": <int>,                 // v1.19.7：已 block 的次數（決定何時降警告）
  *       "last_violation_ts": "<ISO8601>",
  *       "started_at": "<ISO8601>"
  *     }
@@ -97,6 +98,63 @@ export function incrementCounter(sessionId) {
   }
   writeAll(all);
   return all[sessionId].count;
+}
+
+/**
+ * v1.19.7：讀某 session 已 block 次數、檔不存在或毀損回 0
+ *
+ * Block 次數獨立於 violation count：
+ *   - violation count：累積到門檻才進入 block 狀態
+ *   - block_count：實際把 AI 擋下重寫的次數；達到 3 就降警告（防死循環）
+ */
+export function readBlockCount(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return 0;
+  const all = readAll();
+  return all[sessionId]?.block_count || 0;
+}
+
+/**
+ * v1.19.7：將某 session 的 block 次數 +1、回新值
+ *
+ * 寫失敗（無權限）也不丟、回 1 視為「這次有 block 但下次讀回 0」。
+ * Session 紀錄不存在會自動建立。
+ */
+export function incrementBlockCount(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return 0;
+  const all = readAll();
+  const nowIso = new Date().toISOString();
+  const existing = all[sessionId];
+  if (existing && typeof existing === 'object') {
+    existing.block_count = (typeof existing.block_count === 'number' ? existing.block_count : 0) + 1;
+    existing.last_block_ts = nowIso;
+    if (typeof existing.count !== 'number') existing.count = 0;
+    if (!existing.started_at) existing.started_at = nowIso;
+  } else {
+    all[sessionId] = {
+      count: 0,
+      block_count: 1,
+      last_block_ts: nowIso,
+      started_at: nowIso,
+    };
+  }
+  writeAll(all);
+  return all[sessionId].block_count;
+}
+
+/**
+ * v1.19.7：清零某 session 的 block 次數（不動 violation count）
+ *
+ * 觸發時機：reply-lint 通過時呼叫，避免跨 turn 計數累積誤觸發降警告。
+ * 不丟錯：session 紀錄不存在直接 noop。
+ */
+export function resetBlockCount(sessionId) {
+  if (!sessionId || typeof sessionId !== 'string') return;
+  const all = readAll();
+  const existing = all[sessionId];
+  if (!existing || typeof existing !== 'object') return;
+  if (!existing.block_count) return;
+  existing.block_count = 0;
+  writeAll(all);
 }
 
 /**

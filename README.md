@@ -173,8 +173,10 @@ sequenceDiagram
 - **Cache auto-refresh** — iron_rules.json cache refreshes automatically after save/update/disable operations `v1.15.0`
 - **Actionable failure messages** — verification failures include fix hints (e.g., "please git add X") `v1.15.0`
 - **Three-tier rule classification** — every rule labeled `critical` / `default` / `advisory`; SessionStart digest groups by tier (🔴 Critical fully listed, 🟡 Default fully listed, ⚪ Advisory count-only); v1.20+ uses the tier to differentiate blocking vs. warning vs. log-only behavior `v1.19.0`
-- **Shared rule-enforcer core** — `hooks/lib/rule-enforcer.js` provides pure-function `enforceRule(ruleCode, context, options)` returning one of `allow` / `block` / `warn` / `log_only` / `bypass` based on tier + legacy `block_on_fail`. To be wired into git pre-commit / PreToolUse / reply-lint hooks in v1.19.7+ `v1.19.6`
+- **Shared rule-enforcer core** — `hooks/lib/rule-enforcer.js` provides pure-function `enforceRule(ruleCode, context, options)` returning one of `allow` / `block` / `warn` / `log_only` / `bypass` based on tier + legacy `block_on_fail`. **Status:** v1.19.7 wires only `bypass-handler.js` into git pre-commit + reply-lint (so `OWNMIND_BYPASS` works); the full `enforceRule` integration that replaces direct `evaluateConditions` loops is deferred to v1.19.8 `v1.19.6`
 - **Bypass channel + audit** — `hooks/lib/bypass-handler.js` parses `OWNMIND_BYPASS=IR-008,IR-024` (or `OWNMIND_BYPASS=all`, case-insensitive) and writes every bypass to `compliance.jsonl` with `action: 'bypass'`. Process-scoped (does not leak globally) `v1.19.6`
+- **Privacy leak detection** — `shared/privacy-detect.js` scans each AI reply for Taiwan ID numbers (with official checksum validation), email addresses, and Taiwan mobile numbers. Strings the user themselves prompted are exempt (treated as the user actively sharing). Integrated into reply-lint as IR-041 `v1.19.7`
+- **Pre-commit secret content scan** — `hooks/ownmind-git-pre-commit.js` now scans staged diff added lines via `detectSecretLike` for OpenAI / GitHub PAT / JWT / AWS key patterns on top of the existing filename blocklist for IR-002 `v1.19.7`
 
 ### Infrastructure
 
@@ -359,17 +361,18 @@ Migrations under `db/[0-9][0-9][0-9]_*.sql` are auto-applied on server startup:
 
 To add a new migration: drop a `db/016_xxx.sql` (or next number) using `IF NOT EXISTS` patterns for idempotency. Next `docker restart ownmind-api` will apply it automatically.
 
-### Reply Lint Progressive Block (v1.19.3+, default-block since v1.19.4)
+### Reply Lint Progressive Block (v1.19.3+, default-block since v1.19.4, hard-block via exit 2 since v1.19.7)
 
-The Claude Code Stop hook (`hooks/ownmind-reply-lint.js`) checks each AI reply against IR-037 (Chinese-English mixing) and IR-036 (jargon without plain-language explanation). v1.19.4 makes progressive block the **default** behavior (was opt-in in v1.19.3, but opt-in defeats IR-027 "logic over reminders"):
+The Claude Code Stop hook (`hooks/ownmind-reply-lint.js`) checks each AI reply against IR-037 (Chinese-English mixing), IR-036 (jargon without plain-language explanation), and IR-041 (privacy leak — Taiwan ID / email / mobile patterns added in v1.19.7). v1.19.4 makes progressive block the **default** behavior (was opt-in in v1.19.3, but opt-in defeats IR-027 "logic over reminders"):
 
-- **MODE=block** (default since v1.19.4): counts violations per Claude session. First 3 violations are warned only; the 4th writes `{"decision":"block","reason":"..."}` to stdout, which makes Claude rewrite the previous reply
+- **MODE=block** (default since v1.19.4): counts violations per Claude session (cumulative across turns, not per-turn). First 3 per-session violations are warned only; the 4th `process.exit(2)` with a directive-style rewrite prompt on stderr (Claude Code feeds stderr back to Claude as the next prompt). v1.19.7 replaced the legacy `{"decision":"block"}` stdout JSON with exit 2; both paths are equivalent in Claude Code's Stop-hook protocol
+- **Anti-deadlock downgrade** (v1.19.7): after 3 consecutive hard blocks in the same session, the 4th violation downgrades to `exit 1` warning (non-blocking) and writes `action: 'repeated_violation_softblock'` to compliance, so a stubborn AI rewrite loop doesn't burn through Claude Code's 8-block hard cap
 - **MODE=warn** (opt-out): writes a banner to your terminal on violation, never blocks the AI flow (v1.19.3 default — flip back here if block feels too aggressive)
 - **MODE=disable**: skips lint entirely (same as `OWNMIND_REPLY_LINT_DISABLE=1`)
 
 Set the mode via `OWNMIND_REPLY_LINT_MODE` env var. Unknown values fail-open to `warn` with a hint in the banner.
 
-The session violation counter lives in `~/.ownmind/logs/reply-lint-session-counter.json`. Old session records auto-prune after 30 days. The `stop_hook_active=true` signal (set by Claude Code when the rewrite triggers another Stop event) is detected and the hook exits immediately to prevent recursive blocks; Claude Code itself has a hard cap of 8 consecutive blocks.
+The session violation counter lives in `~/.ownmind/logs/reply-lint-session-counter.json` (v1.19.7 added `block_count` field). Old session records auto-prune after 30 days. The `stop_hook_active=true` signal (set by Claude Code when the rewrite triggers another Stop event) is detected and the hook exits immediately to prevent recursive blocks; Claude Code itself has a hard cap of 8 consecutive blocks. Passing the lint after a block resets `block_count` to 0.
 
 The whitelist was expanded from 80 to 200+ terms in v1.19.3 based on a 30-day audit of real violations (Top 30 hits were mostly project names, company names, and standard git/dev jargon). The threshold also adapts: 25% (instead of 15%) when the reply contains code blocks; full exemption for replies containing "code review" / "code-review". IR-036's lookahead window for explanations was expanded from 50 to 80 characters.
 

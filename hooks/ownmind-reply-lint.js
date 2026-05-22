@@ -71,8 +71,11 @@ const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
 
 // v1.19.3：MODE env、漸進式 block
 // v1.19.4：預設從 warn 翻成 block（IR-027 邏輯才有效——opt-in 等於沒落地）
-// - block（預設）：違規累積到 BLOCK_THRESHOLD（4 次）後寫 stdout JSON 觸發 Claude 重寫
+// v1.19.7：block 路徑改用 exit 2 + stderr reason（取代 stdout JSON），新增連續 block 達
+//          BLOCK_DOWNGRADE_LIMIT 次後降警告（避免 AI 死循環、給 user 手動介入機會）
+// - block（預設）：違規累積到 BLOCK_THRESHOLD（4 次）後 exit 2 + stderr 觸發 Claude 重寫
 //                  前 3 次只警告（漸進緩衝、避免單一誤判毀對話）
+//                  連續 block 達 3 次仍違反 → 降警告 exit 1（防死循環）
 // - warn：違規寫 banner、永遠不 block（opt-out、給覺得太煩的 user）
 // - disable：完全跳過（同 OWNMIND_REPLY_LINT_DISABLE=1）
 // - 未知值（fail-open）：當 warn 處理 + banner 加提示
@@ -81,6 +84,7 @@ const VALID_MODES = new Set(['warn', 'block', 'disable']);
 const MODE = VALID_MODES.has(RAW_MODE) ? RAW_MODE : 'warn';
 const MODE_INVALID = !VALID_MODES.has(RAW_MODE);
 const BLOCK_THRESHOLD = 4;  // 第 4 次違規才 block（前 3 次警告）
+const BLOCK_DOWNGRADE_LIMIT = 3;  // v1.19.7：已連續 block 這麼多次後、下次違規降警告
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 天
 
 const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
@@ -108,13 +112,21 @@ async function main() {
   // v1.19: 全部 shared/* 與 hooks/lib/* 統一 catch → exit 0、不再 inline fallback（review M-2）
   // v1.19.3: 新增 session-counter
   let lintReply, readCredentials, getClientVersion, getTierFromRules, buildComplianceEvents;
-  let incrementCounter, cleanupStale;
+  let incrementCounter, cleanupStale, incrementBlockCount, readBlockCount, resetBlockCount;
+  let detectPrivacyLeak;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
     ({ getTierFromRules } = await import('../shared/iron-rule-tier.js'));
     ({ buildComplianceEvents } = await import('./lib/build-compliance-events.js'));
-    ({ incrementCounter, cleanupStale } = await import('./lib/session-counter.js'));
+    ({
+      incrementCounter,
+      cleanupStale,
+      incrementBlockCount,
+      readBlockCount,
+      resetBlockCount,
+    } = await import('./lib/session-counter.js'));
+    ({ detectPrivacyLeak } = await import('../shared/privacy-detect.js'));
   } catch {
     process.exit(0); return;
   }
@@ -137,46 +149,99 @@ async function main() {
   const lastAssistantText = readLastAssistantText(transcriptPath);
   if (!lastAssistantText) { process.exit(0); return; }
 
+  // v1.19.7：抽最近的 user prompt 作為 IR-041 privacy 例外比對來源
+  // （使用者自己提到的個資、AI 引用不算外洩）
+  const userPrompts = readRecentUserPrompts(transcriptPath);
+
+  const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
+
   let lintResult;
   try { lintResult = lintReply(lastAssistantText); }
   catch { process.exit(0); return; }
-  if (lintResult.ok) { process.exit(0); return; }
 
-  // === v1.19.3: 計數累積 + 決定是否 block ===
-  const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
+  // v1.19.7：加掛 IR-041 隱私偵測、跟 IR-037 / IR-036 違規合併
+  let privacyResult = { detected: false, matches: [] };
+  try {
+    privacyResult = detectPrivacyLeak(lastAssistantText, { userPrompts });
+  } catch { /* 偵測本身錯不該擋主流程 */ }
+  const violations = Array.isArray(lintResult.violations) ? [...lintResult.violations] : [];
+  if (privacyResult.detected) {
+    violations.push({
+      rule: 'IR-041',
+      message: `偵測到個資外洩樣式 — ${privacyResult.matches.length} 處（${formatPrivacySummary(privacyResult.matches)}）。請改寫掉、或改用代稱`,
+      detail: { matches: privacyResult.matches },
+    });
+  }
+
+  const combinedOk = violations.length === 0;
+  if (combinedOk) {
+    // v1.19.7：通過時清零 block_count、讓下個 turn 的計數重新開始
+    try { resetBlockCount(sessionId); } catch { /* swallow */ }
+    process.exit(0); return;
+  }
+
+  // === v1.19.3: 違規計數累積 + 決定是否 block ===
+  //
+  // v1.19.7 code-review M-1 partial-failure window 註記：
+  // 違規路徑的寫入順序是 count → block_count（達門檻時）→ stderr → compliance event
+  //（spool / POST）。若 hook 被 SIGKILL 等強制終止、可能落在中間任意點：
+  //   - count 已 +1 但 block_count 未 +1：下次 hook 仍會走正常 block 路徑、
+  //     最多多警告 1 次、無資料損壞
+  //   - block_count 已 +1 但 compliance event 未寫：admin 看不到該筆 block 紀錄、
+  //     但 hook 行為仍正確
+  // 這是可接受的觀測性退化（observability degradation：意指統計資料殘缺、
+  // 但實際擋下邏輯沒受影響）。Stop hook 不該為了交易完整性引入 fsync。
   let currentCount = 1;  // 預設 1（incrementCounter 失敗時的 fallback）
   try { currentCount = incrementCounter(sessionId); } catch { /* swallow */ }
   // best-effort 自掃過期 session（每次 hook 觸發跑一下、避免檔無限長）
   try { cleanupStale(SESSION_TTL_MS); } catch { /* swallow */ }
 
-  const shouldBlock = MODE === 'block' && currentCount >= BLOCK_THRESHOLD;
+  const reachedBlockThreshold = MODE === 'block' && currentCount >= BLOCK_THRESHOLD;
+
+  // === v1.19.7：連續 block 達門檻 → 降警告（防 AI 死循環）===
+  let priorBlockCount = 0;
+  try { priorBlockCount = readBlockCount(sessionId); } catch { /* swallow */ }
+  const downgradeToWarning = reachedBlockThreshold && priorBlockCount >= BLOCK_DOWNGRADE_LIMIT;
+  const shouldHardBlock = reachedBlockThreshold && !downgradeToWarning;
 
   // === Banner 路徑（給 user 看）===
-  const banner = formatBanner(lintResult.violations, getClientVersion, {
+  const banner = formatBanner(violations, getClientVersion, {
     mode: MODE,
     modeInvalid: MODE_INVALID,
     rawMode: RAW_MODE,
     count: currentCount,
     threshold: BLOCK_THRESHOLD,
-    blocked: shouldBlock,
+    blocked: shouldHardBlock,
+    downgraded: downgradeToWarning,
+    blockCount: priorBlockCount,
   });
   if (banner) {
     const wrote = !FORCE_FALLBACK && writeToTty(banner);
     if (!wrote) writeFallback(banner);
   }
 
-  // === v1.19.3: 寫 block decision JSON 到 stdout（Claude Code 觸發 Claude 重寫）===
-  // 順序：stdout 先寫、其他工作後做（避免 POST timeout 卡住 block signal）
-  if (shouldBlock) {
-    const reason = formatBlockReason(lintResult.violations);
-    try {
-      process.stdout.write(JSON.stringify({ decision: 'block', reason }) + '\n');
-    } catch { /* 寫不出也吞、Claude Code 收不到 block 就算了、退化成 warn 模式 */ }
+  // === v1.19.7：block reason 寫 stderr 給 Claude / user 看（取代舊 stdout JSON）===
+  let exitCode = 0;
+  if (shouldHardBlock) {
+    try { incrementBlockCount(sessionId); } catch { /* swallow */ }
+    const reason = formatBlockReason(violations);
+    try { process.stderr.write(reason + '\n'); } catch { /* ignore */ }
+    exitCode = 2;
+  } else if (downgradeToWarning) {
+    const note = formatDowngradeNotice(priorBlockCount, violations);
+    try { process.stderr.write(note + '\n'); } catch { /* ignore */ }
+    exitCode = 1;
   }
 
   // === Compliance event 路徑（跨 session 統計）===
   const cachedRules = readIronRulesCache();
-  const events = buildComplianceEvents(lintResult.violations, cachedRules, getTierFromRules);
+  const events = buildComplianceEvents(violations, cachedRules, getTierFromRules);
+  if (downgradeToWarning) {
+    // v1.19.7：每筆違規額外標 repeated_violation_softblock，給 admin 追警告降級事件
+    for (const ev of events) {
+      if (ev?.details) ev.details.action = 'repeated_violation_softblock';
+    }
+  }
   spoolEvents(events);
 
   let postOk = false;
@@ -189,7 +254,7 @@ async function main() {
     spoolPendingForRetry(events);
   }
 
-  process.exit(0);
+  process.exit(exitCode);
 }
 
 function readStdin() {
@@ -231,6 +296,64 @@ function sanitizeTranscriptPath(p) {
   if (!stat.isFile()) return null;
   if (stat.size === 0) return null;
   return real;
+}
+
+/**
+ * v1.19.7：從 transcript JSONL 撈最近 N 輪 user message 的純 text。
+ *
+ * 給 IR-041 privacy detector 當例外比對來源：使用者自己 prompt 過的個資、
+ * AI 回覆引用不算外洩。
+ *
+ * 注意：Claude Code transcript 的 user message content 有兩種型態：
+ *   1. 字串：{ message: { role: 'user', content: '你好' } }
+ *   2. 陣列：{ message: { role: 'user', content: [{ type: 'text', text: '...' }, ...] } }
+ *      （e.g. tool_result 也走這條）
+ * 兩種都要支援。
+ *
+ * 跟 readLastAssistantText 共用尾巴讀法（檔大時只讀後 256KB）。
+ */
+function readRecentUserPrompts(transcriptPath, maxTurns = 5) {
+  let buf;
+  let truncatedHead = false;
+  try {
+    const stat = fs.statSync(transcriptPath);
+    if (stat.size <= MAX_TRANSCRIPT_TAIL_BYTES) {
+      buf = fs.readFileSync(transcriptPath, 'utf8');
+    } else {
+      const fd = fs.openSync(transcriptPath, 'r');
+      try {
+        const chunk = Buffer.alloc(MAX_TRANSCRIPT_TAIL_BYTES);
+        fs.readSync(fd, chunk, 0, MAX_TRANSCRIPT_TAIL_BYTES, stat.size - MAX_TRANSCRIPT_TAIL_BYTES);
+        buf = chunk.toString('utf8');
+        truncatedHead = true;
+      } finally {
+        fs.closeSync(fd);
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  let lines = buf.split('\n').filter(Boolean);
+  if (truncatedHead && lines.length > 0) lines = lines.slice(1);
+
+  const prompts = [];
+  for (let i = lines.length - 1; i >= 0 && prompts.length < maxTurns; i--) {
+    const entry = safeParse(lines[i]);
+    if (!entry || entry.type !== 'user') continue;
+    const content = entry.message?.content;
+    if (typeof content === 'string') {
+      if (content) prompts.push(content);
+      continue;
+    }
+    if (Array.isArray(content)) {
+      const texts = content
+        .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+        .map((p) => p.text);
+      if (texts.length > 0) prompts.push(texts.join('\n'));
+    }
+  }
+  return prompts;
 }
 
 /**
@@ -287,6 +410,7 @@ function readLastAssistantText(transcriptPath) {
  * 把 lint violations 包成招牌格式（沿用 ownmind-tty-echo.cjs 視覺風格）。
  *
  * v1.19.3：加 MODE 與 session 計數顯示
+ * v1.19.7：新增「連續 block 達門檻、降為警告」狀態
  *
  * 範例（warn mode）：
  *   【OwnMind v1.19.3】回話品質 lint（warn mode、本 session 累積 1 次）
@@ -297,17 +421,31 @@ function readLastAssistantText(transcriptPath) {
  *
  * 範例（block mode、第 4 次觸發 block）：
  *   【OwnMind v1.19.3】回話品質 lint ⚠️ 已觸發 block、Claude 將收到重寫指令
+ *
+ * 範例（連續 block 達 3 次後降警告）：
+ *   【OwnMind v1.19.7】回話品質 lint ⚠️ 連續擋 3 次降警告（請手動 review）
  */
 function formatBanner(violations, getClientVersion, opts = {}) {
   if (!Array.isArray(violations) || violations.length === 0) return null;
   let version;
   try { version = getClientVersion(); } catch { version = '?'; }
 
-  const { mode = 'warn', modeInvalid = false, rawMode = '', count = 1, threshold = 4, blocked = false } = opts;
+  const {
+    mode = 'warn',
+    modeInvalid = false,
+    rawMode = '',
+    count = 1,
+    threshold = 4,
+    blocked = false,
+    downgraded = false,
+    blockCount = 0,
+  } = opts;
 
   const out = [];
   let header = `【OwnMind v${version}】回話品質 lint`;
-  if (blocked) {
+  if (downgraded) {
+    header += ` ⚠️ 連續擋 ${blockCount} 次降警告（請手動 review、避免死循環）`;
+  } else if (blocked) {
     header += ` ⚠️ 已觸發 block、Claude 將收到重寫指令（本 session 累積 ${count} 次）`;
   } else if (mode === 'block') {
     const remaining = Math.max(0, threshold - count);
@@ -328,6 +466,41 @@ function formatBanner(violations, getClientVersion, opts = {}) {
 }
 
 /**
+ * v1.19.7：把 IR-041 命中的個資項目壓成一個摘要字串（type×n 形式）
+ */
+function formatPrivacySummary(matches) {
+  if (!Array.isArray(matches) || matches.length === 0) return '';
+  const byType = new Map();
+  for (const m of matches) {
+    byType.set(m.type, (byType.get(m.type) || 0) + 1);
+  }
+  const labels = {
+    tw_id: '身分證',
+    email: '電子信箱',
+    phone_tw_mobile: '手機',
+  };
+  return Array.from(byType.entries())
+    .map(([t, n]) => `${labels[t] || t} ${n} 處`)
+    .join('、');
+}
+
+/**
+ * v1.19.7：連續 block 達門檻後降警告時、寫到 stderr 給 user 看的訊息
+ * （exit 1 而非 exit 2、所以這段訊息會被 Claude Code 視為 non-blocking 警告
+ *  顯示給 user、不會餵回 Claude 當下個 prompt）
+ */
+function formatDowngradeNotice(priorBlockCount, violations) {
+  const ruleList = Array.isArray(violations)
+    ? violations.map((v) => v.rule).join(', ')
+    : '';
+  return [
+    `【OwnMind】reply-lint 已連續擋下 ${priorBlockCount} 次、這次降為警告避免死循環。`,
+    `仍偵測到：${ruleList}`,
+    '請手動檢查 AI 回應、或設定 OWNMIND_REPLY_LINT_MODE=warn 暫時關閉硬擋。',
+  ].join('\n');
+}
+
+/**
  * v1.19.3：把 violations 包成「指令型」reason、給 Claude Code block 後餵 Claude 當下一個 prompt
  *
  * Codex 對抗審查警告：reason 是「下一個 prompt」、不是「修正指令」。
@@ -345,21 +518,33 @@ function formatBlockReason(violations) {
   lines.push('請重寫你剛才的回應、改善以下品質問題（保持原意、只改語言風格）：');
   lines.push('');
 
+  // v1.19.7 code-review I-5：用 running counter 動態編號、
+  // 避免只命中部分規則時編號從 "3." 開始的孤立現象
+  let n = 1;
   for (const v of violations) {
     if (v.rule === 'IR-037') {
       const words = (v.detail && Array.isArray(v.detail.mixedWords)) ? v.detail.mixedWords.slice(0, 10) : [];
-      lines.push(`1. 用白話中文取代以下英文詞（或在第一次出現時用括號附中文解釋）：`);
+      lines.push(`${n}. 用白話中文取代以下英文詞（或在第一次出現時用括號附中文解釋）：`);
       if (words.length > 0) {
         lines.push(`   ${words.join(', ')}`);
       }
       lines.push('');
+      n += 1;
     } else if (v.rule === 'IR-036') {
       const words = (v.detail && Array.isArray(v.detail.jargon)) ? v.detail.jargon.slice(0, 10) : [];
-      lines.push(`2. 以下技術詞第一次出現時要附白話說明、用「：解釋」、「（白話）」、「即...」、「也就是...」等格式：`);
+      lines.push(`${n}. 以下技術詞第一次出現時要附白話說明、用「：解釋」、「（白話）」、「即...」、「也就是...」等格式：`);
       if (words.length > 0) {
         lines.push(`   ${words.join(', ')}`);
       }
       lines.push('');
+      n += 1;
+    } else if (v.rule === 'IR-041') {
+      // v1.19.7：privacy 命中、不告訴 Claude 命中字串（避免在重寫時把個資再帶一次）
+      const matches = (v.detail && Array.isArray(v.detail.matches)) ? v.detail.matches : [];
+      const summary = formatPrivacySummary(matches);
+      lines.push(`${n}. 回應疑似含使用者隱私（${summary}）。請改寫掉那段或改用代稱（如「[email]」「[手機號碼]」），不要在新回應裡再重複那筆個資。`);
+      lines.push('');
+      n += 1;
     }
   }
 
