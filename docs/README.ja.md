@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.19.8** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.19.9** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -308,6 +308,30 @@ AI に普通の言葉で命令：
 | サーバー移行、旧 DB をインポート | pg_dump / pg_restore + 上記いずれかのレスキューパス |
 
 通常の初回インストールは `SETUP_TOKEN` **不要** — wizard が完全カバー。
+
+#### Q: Admin がパスワードを忘れたら？（v1.19.9+ 三層レスキュー）
+
+「他の admin がいるか」で経路が決まる：
+
+**シナリオ A：チームに他の admin がいる（最も一般的）**
+- 他の super_admin が管理コンソールにログイン、「使用者管理」でロックされた admin を見つけ「パスワードリセット」をクリック
+- システムが 12 文字のランダム一時パスワードを生成（混同しやすい 0/O/I/l/1 を除外）、本人にコピーして渡す
+- 本人は一時パスワードでログイン、強制的に新パスワードを設定
+
+**シナリオ B：唯一の admin がパスワードを忘れた**
+- サーバーホストに SSH してレスキュースクリプトを実行：
+  ```bash
+  node scripts/reset-admin-password.js
+  ```
+- スクリプトはインタラクティブ：全 super_admin を列挙、リセット対象を選択、`yes` 入力で確認
+- ランダム `SETUP_TOKEN` を生成・ターミナルに表示
+- 続いて `export SETUP_TOKEN=<token>`、サーバー再起動、ブラウザで `/admin/setup` を開いて新パスワード設定
+
+**シナリオ C：SSH 権限なし（クラウド SaaS モード）**
+- 現状ビルトイン経路なし — サービス提供者に連絡
+- v1.20+ で email リセットフロー追加予定（SMTP 統合に依存）
+
+**予防は治療に勝る**：v1.19.9+ から、admin が 1 人だけの時は管理コンソールにオレンジ警告バナーを表示、第二の admin 作成を強く推奨。
 
 #### Q: `.cursorrules` や `CLAUDE.md` と共存可能？
 

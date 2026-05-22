@@ -213,6 +213,13 @@
 <!-- Dashboard -->
 <div id="dashboard" class="container hidden">
 
+  <!-- v1.19.9：單 admin 警告 banner（admin+super_admin 合計 ≤ 1 時顯示）-->
+  <div id="singleAdminBanner" class="hidden" style="background:#fff7ed;border:1px solid #fed7aa;border-left:4px solid #ea580c;color:#9a3412;padding:14px 18px;border-radius:10px;margin-bottom:16px;display:none;font-size:13px;line-height:1.6;">
+    <strong>⚠️ 你是唯一的管理員、忘記密碼將難以救援。</strong><br>
+    建議到「使用者管理」新增第二位 super_admin、互相備援。
+    <button onclick="switchTab('users');document.getElementById('singleAdminBanner').classList.add('hidden');" style="margin-left:12px;padding:4px 12px;background:#ea580c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">前往使用者管理 →</button>
+  </div>
+
   <div class="tabs">
     <div class="tab active" data-tab="users" onclick="switchTab('users')">使用者管理</div>
     <div class="tab" data-tab="stats" onclick="switchTab('stats')">統計儀表板</div>
@@ -1094,6 +1101,20 @@
     const sel = document.getElementById('promptUser');
     sel.innerHTML = '<option value="">-- 選擇使用者 --</option>' +
       usersData.map(u => `<option value="${u.api_key}">${u.name || u.email}</option>`).join('');
+
+    // v1.19.9：單 admin 警告 banner
+    // admin + super_admin 角色合計 ≤ 1 時顯示、提醒建第二位避免忘記密碼鎖死
+    const adminCount = usersData.filter(u => u.role === 'admin' || u.role === 'super_admin').length;
+    const banner = document.getElementById('singleAdminBanner');
+    if (banner) {
+      if (adminCount <= 1) {
+        banner.classList.remove('hidden');
+        banner.style.display = 'block';
+      } else {
+        banner.classList.add('hidden');
+        banner.style.display = 'none';
+      }
+    }
   }
 
   // ===== Action dropdown =====

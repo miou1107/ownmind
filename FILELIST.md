@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.19.9 新增 / 修改（忘記密碼救援三條防線）
+
+新增檔：
+```
+src/routes/admin-password-reset.js                            — POST /api/admin/users/:id/reset-password；factory pattern；generateTempPassword 純函式
+scripts/reset-admin-password.js                               — CLI 救援腳本；互動式列 super_admin、雙重確認、產 SETUP_TOKEN、寫 audit log
+tests/admin-reset-password.test.js                            — 16 case：權限規則 + 不能改自己 + 404 + 401 + audit log + bcrypt 端到端
+tests/reset-admin-password-script.test.js                     — 4 case：腳本 smoke test（--help / DB 失敗）
+openspec/changes/v1.19.9-password-recovery/proposal.md        — 提案：三條防線設計 + 安全性分析
+openspec/changes/v1.19.9-password-recovery/spec.md            — 規格：15 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19.9-password-recovery/tasks.md           — 任務清單
+```
+
+修改的既有檔：
+```
+src/app.js                                                    — 掛 /api/admin/users 的 admin-password-reset router（在 /api/admin 之前）
+src/public/setup.html                                         — 成功頁加警告框：建議立即建第二位 admin
+src/public/index.html                                         — 加 singleAdminBanner（admin+super_admin ≤ 1 時顯示）+ loadUsers() 計算邏輯
+package.json                                                  — version 1.19.8 → 1.19.9
+CHANGELOG.md                                                  — v1.19.9 條目
+README.md / docs/README.zh-TW.md / docs/README.ja.md          — FAQ 新加「忘記密碼怎麼辦」段（位置在「首次安裝」段下方）
+```
+
+---
+
 ## v1.19.8 新增 / 修改（Setup Wizard：首次安裝零摩擦進後台）
 
 新增檔：

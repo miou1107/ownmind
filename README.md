@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.19.8** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.19.9** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -308,6 +308,30 @@ If your deployment hits one of these scenarios, the wizard won't apply:
 | Migrating server, importing old DB | pg_dump / pg_restore + either rescue path above |
 
 Normal first-time install **does not need** `SETUP_TOKEN` — the wizard handles it.
+
+#### Q: Admin forgot their password — what now? (v1.19.9+ three-tier recovery)
+
+The right path depends on "are there other admins":
+
+**Scenario A: Team has other admins (most common)**
+- Any other super_admin logs in, goes to "User Management", finds the locked-out admin, clicks "Reset Password"
+- System generates a 12-char random temporary password (avoiding confusable chars 0/O/I/l/1), copy it to the affected user
+- They log in with the temp password and are forced to set a new one
+
+**Scenario B: Sole admin forgot password (you are the only one)**
+- SSH into the server host and run the rescue script:
+  ```bash
+  node scripts/reset-admin-password.js
+  ```
+- Script interactively: lists all super_admins, asks which one to reset, requires typing `yes` to confirm
+- Auto-generates a `SETUP_TOKEN`, prints it to your terminal
+- Then `export SETUP_TOKEN=<token>`, restart server, open `/admin/setup` in browser to set a new password
+
+**Scenario C: No SSH access at all (cloud SaaS mode)**
+- Currently no built-in path — contact the service operator
+- v1.20+ plans to add email-based reset (depends on SMTP integration)
+
+**Prevention beats cure**: v1.19.9+ shows an orange warning banner in the admin console when there's only one admin, strongly suggesting you create a second one for mutual rescue.
 
 #### Q: Can it coexist with `.cursorrules` or `CLAUDE.md`?
 

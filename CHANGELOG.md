@@ -1,5 +1,68 @@
 # OwnMind 更新紀錄
 
+## v1.19.9 — 忘記密碼救援機制（三條防線）
+
+**背景：** v1.19.8 把首次安裝體驗修好了、但「admin 忘記密碼」沒救：
+
+- 沒有「忘記密碼」UI
+- 既有 `POST /admin/users/:id/password` 改密碼需要舊密碼（自己改）或限 super_admin 改 admin（admin 之間互救）
+- 唯一 super_admin 忘記密碼 → 只能 SSH 進 DB 跑 `UPDATE users SET password_hash = NULL` 然後設 `SETUP_TOKEN` 重啟、走舊 setup 路徑、流程繁瑣
+
+對非技術 admin 等同「公司資料庫鎖死」。v1.19.9 推三條救援組合涵蓋全部情境。
+
+### 方案 3：後台他人重設密碼（常態救援）
+
+- 新增 `src/routes/admin-password-reset.js` — factory pattern、可注入測試
+- 新增 endpoint `POST /api/admin/users/:id/reset-password`：
+  - 跟既有 `POST /users/:id/password` 語意分開：前者是「忘記救援」、後者是「有意修改」
+  - super_admin 可重設任何人；admin 只能重設 user；不可重設自己
+  - 系統產 12 字隨機臨時密碼（含大小寫+數字、去掉 0/O/I/l/1 混淆字、用 `crypto.randomBytes`）
+  - 設 `must_change_password=TRUE`、強制對方下次登入改
+  - 寫 audit log（action='reset_password_by_admin'）
+- 16 case 單元測試（含 generateTempPassword 純函式 + endpoint 整合）
+
+### 方案 2：CLI 救援腳本（最後一道防線）
+
+- 新增 `scripts/reset-admin-password.js`
+- 互動式：列出 super_admin、選擇要重設誰、雙重確認（輸入 `yes`）才執行
+- 動作：把 password_hash 設 NULL、產隨機 SETUP_TOKEN（32 字 hex）、印給使用者
+- 後續引導：「設 SETUP_TOKEN 環境變數、重啟 server、開 /admin/setup 重設」
+- 寫 audit log（action='cli_reset_password', source='cli_script'）
+- 只列 super_admin（不列 admin / user、避免被當成後門用）
+- 4 case smoke test：腳本存在、`--help` 退出碼 0、DB 失敗時錯誤訊息明確
+
+### 方案 1：UI 強制引導（預防勝於治療）
+
+- `src/public/setup.html` 完成頁加警告框：「立即建立第二位 admin、否則忘記密碼會卡死」
+- `src/public/index.html` 加 `singleAdminBanner`：載入使用者列表時若 admin+super_admin ≤ 1 顯示橘色 banner 跟「前往使用者管理」按鈕
+- 多於 1 位 admin 時 banner 自動隱藏
+
+### 三條的協同覆蓋
+
+| 情境 | 走哪條 |
+|---|---|
+| 還沒忘密碼、但只有一個 admin | 方案 1 banner 提醒、引導建第二位 |
+| Admin A 忘密碼、Admin B 還在 | 方案 3 後台他人重設 |
+| 只有一位 admin、且忘記密碼 | 方案 2 SSH + CLI 腳本 |
+| 全部 admin 都忘記 | 方案 2 SSH + CLI 腳本 |
+| 完全無 SSH 權限的雲端 SaaS 場景 | v1.20+ email 重設流程（不在 v1.19.9 範圍） |
+
+### 設計取捨
+
+- **為何不用 email 重設**：依賴 SMTP（簡單郵件傳輸協定：寄信用的協定）外部服務、工程量大、留 v1.20+
+- **為何 CLI 腳本只列 super_admin**：admin 跟 user 該走後台救援（方案 3）；如果連 admin 都救不了那就是 super_admin 全部忘了的災難情境、才需要 CLI
+- **為何臨時密碼避開 0/O/I/l/1**：使用者口頭轉告或手寫時容易看錯
+- **為何強制 must_change_password=TRUE**：臨時密碼只該存活到第一次登入、設者跟被設者都不該長期持有
+- **為何 audit 用 self-reference actor**：CLI 腳本場景沒有「重設者」可指（操作者由 source='cli_script' 註記）；後台場景 actor 是執行重設的 admin
+
+### 測試
+
+- `npm test` 1646 / 1646 全綠（v1.19.8 之後新增 20 個 case）
+- 不破壞既有 `POST /users/:id/password`（修改密碼）跟 `/admin/setup` + `SETUP_TOKEN`（首次設定）
+- 不需要 DB schema 變更（沿用既有 `users.must_change_password` 跟 `audit_logs` 表）
+
+---
+
 ## v1.19.8 — Setup Wizard：首次安裝零摩擦進後台
 
 **背景：** v1.19.7 之前新使用者部署完伺服器後遇到 chicken-and-egg 鎖死：
