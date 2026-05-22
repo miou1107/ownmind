@@ -357,12 +357,12 @@ Authorization: Bearer YOUR_API_KEY
 
 新規マイグレーション追加：`db/` に `016_xxx.sql` を作成（`IF NOT EXISTS` パターン推奨）。次回 `docker restart ownmind-api` で自動適用、手動 SSH+psql 不要。
 
-### Reply Lint 段階的ブロック（v1.19.3+）
+### Reply Lint 段階的ブロック（v1.19.3+、v1.19.4 からデフォルト block）
 
-Claude Code の Stop hook（`hooks/ownmind-reply-lint.js`）は AI の各返答終了時に IR-037（中英混在）/ IR-036（専門用語の説明不足）をチェックします。v1.19.3 で「警告のみ」から「段階的ブロック」へアップグレード：
+Claude Code の Stop hook（`hooks/ownmind-reply-lint.js`）は AI の各返答終了時に IR-037（中英混在）/ IR-036（専門用語の説明不足）をチェックします。v1.19.4 から段階的ブロックを**デフォルト**動作にしました（v1.19.3 は opt-in だったが、opt-in は IR-027「ロジックでこそ有効」に反する — user は自発的に有効化しない）：
 
-- **MODE=warn**（デフォルト）：違反時にターミナルへバナー出力、AI フローは決してブロックしない（v1.17.96+ と後方互換）
-- **MODE=block**：Claude session 単位で違反をカウント。最初の 3 回は警告のみ、4 回目で `{"decision":"block","reason":"..."}` を stdout に出力し、Claude Code が reason を次の prompt として Claude に渡して書き直しさせる
+- **MODE=block**（v1.19.4 からデフォルト）：Claude session 単位で違反をカウント。最初の 3 回は警告のみ、4 回目で `{"decision":"block","reason":"..."}` を stdout に出力し、Claude Code が reason を次の prompt として Claude に渡して書き直しさせる
+- **MODE=warn**（opt-out）：違反時にターミナルへバナー出力、AI フローは決してブロックしない（v1.19.3 のデフォルト動作、block が煩わしい場合はこちらに戻せる）
 - **MODE=disable**：lint を完全にスキップ（`OWNMIND_REPLY_LINT_DISABLE=1` と同等）
 
 `OWNMIND_REPLY_LINT_MODE` 環境変数で設定。未知の値は `warn` にフェイルオープンしてバナーに注意を表示。

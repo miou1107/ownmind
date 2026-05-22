@@ -357,12 +357,12 @@ Migrations under `db/[0-9][0-9][0-9]_*.sql` are auto-applied on server startup:
 
 To add a new migration: drop a `db/016_xxx.sql` (or next number) using `IF NOT EXISTS` patterns for idempotency. Next `docker restart ownmind-api` will apply it automatically.
 
-### Reply Lint Progressive Block (v1.19.3+)
+### Reply Lint Progressive Block (v1.19.3+, default-block since v1.19.4)
 
-The Claude Code Stop hook (`hooks/ownmind-reply-lint.js`) checks each AI reply against IR-037 (Chinese-English mixing) and IR-036 (jargon without plain-language explanation). v1.19.3 upgrades it from "warn only" to "progressive block":
+The Claude Code Stop hook (`hooks/ownmind-reply-lint.js`) checks each AI reply against IR-037 (Chinese-English mixing) and IR-036 (jargon without plain-language explanation). v1.19.4 makes progressive block the **default** behavior (was opt-in in v1.19.3, but opt-in defeats IR-027 "logic over reminders"):
 
-- **MODE=warn** (default): writes a banner to your terminal on violation, never blocks the AI flow (backward compatible with v1.17.96+)
-- **MODE=block**: counts violations per Claude session. First 3 violations are warned only; the 4th writes `{"decision":"block","reason":"..."}` to stdout, which makes Claude rewrite the previous reply
+- **MODE=block** (default since v1.19.4): counts violations per Claude session. First 3 violations are warned only; the 4th writes `{"decision":"block","reason":"..."}` to stdout, which makes Claude rewrite the previous reply
+- **MODE=warn** (opt-out): writes a banner to your terminal on violation, never blocks the AI flow (v1.19.3 default — flip back here if block feels too aggressive)
 - **MODE=disable**: skips lint entirely (same as `OWNMIND_REPLY_LINT_DISABLE=1`)
 
 Set the mode via `OWNMIND_REPLY_LINT_MODE` env var. Unknown values fail-open to `warn` with a hint in the banner.

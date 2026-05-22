@@ -68,22 +68,60 @@ function stopPayload(extra = {}) {
 // 違規文本：中英混雜 + 行話無解釋
 const VIOLATING_TEXT = 'I think we should monomorphism the whole codeapp using a completely fresh approach because the implementation has obvious bugs.';
 
-describe('v1.19.3 場景 1 — MODE=warn（預設）違規只警告', () => {
+describe('v1.19.3 場景 1 — 違規第 1 次永遠不 block（不論 MODE 為何）', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('MODE 未設、違規 → stdout 不含 block JSON', () => {
+  it('MODE 未設（v1.19.4 起預設 block）、第 1 次違規不 block', () => {
     writeTranscript(VIOLATING_TEXT);
-    const r = runHook(stopPayload()); // 沒設 MODE
+    const r = runHook(stopPayload()); // 沒設 MODE、v1.19.4 預設 block
     assert.equal(r.status, 0);
-    assert.ok(!r.stdout.includes('"decision"'), `MODE=warn 不該寫 block decision、stdout=${r.stdout}`);
+    // 第 1 次違規 counter=1 < 4、不該 block
+    assert.ok(!r.stdout.includes('"decision"'), `第 1 次不該 block、stdout=${r.stdout}`);
   });
 
-  it('MODE=warn 明確設、違規 → stdout 不含 block JSON', () => {
+  it('MODE=warn opt-out、違規 → stdout 不含 block JSON', () => {
     writeTranscript(VIOLATING_TEXT);
     const r = runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'warn' });
     assert.equal(r.status, 0);
     assert.ok(!r.stdout.includes('"decision"'));
+  });
+});
+
+describe('v1.19.4 — 預設 MODE=block：連續 4 次違規不設 env 也會擋', () => {
+  beforeEach(() => setupTmpHome());
+  afterEach(() => cleanupTmpHome());
+
+  it('未設 OWNMIND_REPLY_LINT_MODE 時、第 4 次違規仍會寫 block JSON', () => {
+    writeTranscript(VIOLATING_TEXT);
+    const sessionId = 'sess-v1194-default';
+    const payload = stopPayload({ session_id: sessionId });
+
+    // 不設 env、用預設 MODE（v1.19.4 起 = block）
+    for (let i = 1; i <= 3; i++) {
+      const r = runHook(payload);
+      assert.equal(r.status, 0);
+      assert.ok(!r.stdout.includes('"decision"'), `第 ${i} 次不該 block、stdout=${r.stdout}`);
+    }
+    const r4 = runHook(payload);
+    assert.equal(r4.status, 0);
+    assert.ok(r4.stdout.includes('"decision"'),
+      `預設 MODE 應該是 block、第 4 次該寫 block JSON、stdout=${r4.stdout}`);
+
+    const parsed = JSON.parse(r4.stdout.trim());
+    assert.equal(parsed.decision, 'block');
+  });
+
+  it('MODE=warn 明確設、即使第 4 次違規也不寫 block JSON', () => {
+    writeTranscript(VIOLATING_TEXT);
+    const sessionId = 'sess-v1194-warn-optout';
+    const payload = stopPayload({ session_id: sessionId });
+
+    for (let i = 1; i <= 4; i++) {
+      const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'warn' });
+      assert.equal(r.status, 0);
+      assert.ok(!r.stdout.includes('"decision"'), `第 ${i} 次 warn opt-out 不該 block`);
+    }
   });
 });
 
