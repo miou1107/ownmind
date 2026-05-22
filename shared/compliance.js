@@ -7,7 +7,7 @@
  * Schema:
  *   ts: ISO 8601
  *   event: rule_code（如 'IR-008'）
- *   action: 'comply' | 'skip' | 'violate'
+ *   action: 'comply' | 'skip' | 'violate' | 'block' | 'bypass' | 'hook_internal_error'
  *   rule_code: string
  *   rule_title: string
  *   source: 'mcp' | 'pre_commit' | 'post_commit' | 'session_audit' | 'hook'

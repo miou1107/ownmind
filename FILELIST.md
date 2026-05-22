@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.19.6 新增 / 修改（Critical 鐵律卡控共用判定核心）
+
+新增檔：
+```
+hooks/lib/rule-enforcer.js                                    — 純函式 enforceRule(ruleCode, context, options)、依 tier 決定 action（allow/block/warn/log_only/bypass）；包 shared/verification.js
+hooks/lib/bypass-handler.js                                   — parseBypass + isBypassed + logBypass；OWNMIND_BYPASS 環境變數放行通道（含 ALL/All 大小寫 normalize）
+tests/rule-enforcer-core.test.js                              — 18 case：fail-open / 三 tier 違反路徑 / bypass / catch path 真的 throw
+tests/bypass-handler.test.js                                  — 15 case：parseBypass / isBypassed / logBypass / 大小寫變體
+```
+
+修改的既有檔：
+```
+shared/compliance.js                                          — schema 註解新增 block / bypass / hook_internal_error 三個合法 action
+tests/compliance.test.js                                      — 補 3 case：新 action 三個值都能寫入 + 讀回
+openspec/changes/v1.20-iron-rule-enforcement/proposal.md      — 重寫：反映 Gemini 對抗審查拍板（剔 IR-005/008/048）+ 漸進切法 v1.19.6~10
+openspec/changes/v1.20-iron-rule-enforcement/tasks.md         — 重寫：v1.19.6 範圍清單 + v1.19.7~10 後續預告
+README.md / docs/README.zh-TW.md / docs/README.ja.md          — Iron Rule Enforcement Engine 段加 v1.19.6 兩條（rule-enforcer / bypass-handler）
+CHANGELOG.md                                                  — v1.19.6 條目
+package.json                                                  — version 1.19.5 → 1.19.6
+```
+
+---
+
 ## v1.19.5 新增 / 修改（修白名單 case-insensitive bug + 補漏字）
 
 新增檔：

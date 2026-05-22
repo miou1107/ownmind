@@ -1,214 +1,118 @@
-# v1.20 — Critical 鐵律卡控 任務清單
+# Critical 鐵律卡控 — 漸進推 v1.19.6 → v1.19.10 任務清單
 
 > 依 IR-003（TDD）：每個實作 task 前面先寫測試。
 > 依 IR-012（品管三步驟）：驗證 → 請評審 → 處理回饋。
 > 依 IR-008（commit 同步更新 README/FILELIST/CHANGELOG）。
-> 估時：5~6 週、分 9 個階段。
 
 ---
 
-## 階段 A：共用 Enforcer 核心（純函式）
+## v1.19.6 — 共用判定核心 + 放行通道 + 審計擴充（本批次）
 
-> 三種 hook（pre-commit / PreToolUse / reply-lint）共用的判定核心。
-> 先做這個讓 hook 層只需要組合、不重複寫偵測邏輯。
+> 純基礎建設、不擋任何規則。目標是讓後續 v1.19.7~9 hook 層只需要組合。
 
-- [ ] A1. 寫測試 `tests/rule-enforcer-core.test.js`（預估 25 case）
-  - `evaluateRule(ruleCode, context): { action, message, detected_by }` 各鐵律分支
-  - 10 條 critical 都有對應測試（含通過 + 違反兩端）
-  - context 缺欄位的 fallback 行為（fail-open）
-- [ ] A2. 新檔 `hooks/lib/rule-enforcer.js`（純函式）
-  - 主入口 `evaluateRule(ruleCode, context)`
-  - 各鐵律一個檢查函式（`checkIR002`、`checkIR005`、...）
-  - 共用 `shared/secret-detect.js`（v1.19.1 引入）
-  - 不依賴任何 hook 框架、可在 node 直接 require
-
----
-
-## 階段 B：Bypass 機制與 Audit log
-
-- [ ] B1. 寫測試 `tests/bypass-handler.test.js`（預估 10 case）
-  - `OWNMIND_BYPASS=IR-008` 跳過單條
-  - `OWNMIND_BYPASS=IR-008,IR-024` 跳過多條
-  - `OWNMIND_BYPASS=all` 跳過所有
-  - bypass scope 是 process（不污染全域）
-  - bypass 寫 audit event 結構正確
-- [ ] B2. 新檔 `hooks/lib/bypass-handler.js`
+- [ ] **A1. 寫測試** `tests/rule-enforcer-core.test.js`（預估 12+ case）
+  - `enforceRule(ruleCode, context, options)` 各分支
+  - 規則不在快取 → `action: 'allow'`、`reason: 'rule_not_in_cache'`
+  - critical 規則違反 → `action: 'block'`
+  - default 規則違反 → `action: 'warn'`
+  - advisory 規則違反 → `action: 'log_only'`
+  - critical 規則通過 → `action: 'allow'`
+  - bypass 設定生效 → `action: 'bypass'`
+  - bypass=all → 任何規則 `action: 'bypass'`
+  - 鐵律沒 conditions → `action: 'allow'`、`reason: 'no_conditions'`
+  - 批次 `enforceRules` 多條獨立判定
+  - context 缺欄位 fallback（依 verification handler 行為）
+  - hook_internal_error fallback：handler 拋例外 → fail-open + 標記
+- [ ] **A2. 新檔** `hooks/lib/rule-enforcer.js`
+  - 純函式入口 `enforceRule` / `enforceRules`
+  - 內部包 `shared/verification.js` 的 `evaluateConditions`
+  - 依 tier 決定 action：critical → block、default → warn、advisory → log_only
+  - bypass set 取代 process.env 解析（測試友善）
+- [ ] **B1. 寫測試** `tests/bypass-handler.test.js`（預估 8+ case）
+  - `parseBypass(env)` 空 / 單條 / 多條 / `all`
+  - `isBypassed` 命中 / 沒命中 / null
+  - bypass=all 涵蓋所有規則
+  - bypass scope 是 process（解析時不修改 env）
+  - `logBypass` 寫 audit、action='bypass'
+- [ ] **B2. 新檔** `hooks/lib/bypass-handler.js`
   - `parseBypass(env): Set<string>` 解析環境變數
   - `isBypassed(ruleCode, bypassSet): boolean`
-  - `logBypass(ruleCode, context)` 寫 audit
-- [ ] B3. 改 `shared/compliance.js`
-  - `appendCompliance` 接受 `action='bypass'`、`action='block'`、`action='hook_internal_error'` 新值
-  - 補對應測試 5 case 到 `tests/compliance.test.js`
-- [ ] B4. 改 `src/routes/compliance.js`
-  - 新 API `GET /api/compliance/bypass?from=&to=&rule_code=` 查 bypass 紀錄
-  - 新 API `PUT /api/compliance/:id/review` 標記已 review（不可刪）
-  - 寫測試 `tests/compliance-bypass-api.test.js`（5 case）
+  - `logBypass({ ruleCode, source, context })` 寫 audit
+- [ ] **C1. 改 shared/compliance.js**
+  - `appendCompliance` 接受 `action='block' | 'bypass' | 'hook_internal_error'` 新值
+  - schema 不變（純新增合法值），不破壞既有測試
+- [ ] **C2. 補測試** `tests/compliance.test.js`
+  - 新 action 三個值都能寫入並讀回
+- [ ] **D. 跑全測試 + 品管三步驟**
+  - `npm test` 全綠
+  - `superpowers:verification-before-completion`
+  - `superpowers:requesting-code-review`
+- [ ] **E. 文件 + 版號同步**
+  - `README.md` Iron Rule Enforcement Engine 段加 v1.19.6 一段
+  - `docs/README.zh-TW.md` / `docs/README.ja.md`（IR-032 三語系同步）
+  - `CHANGELOG.md` v1.19.6 條目
+  - `FILELIST.md` 加 `hooks/lib/rule-enforcer.js`、`hooks/lib/bypass-handler.js`、新測試檔
+  - 三處版號同步（IR-031）：`package.json` 1.19.5 → 1.19.6
+  - 預備打 tag `v1.19.6`
+
+### v1.19.6 驗收
+
+- [ ] `npm test` 0 failure
+- [ ] `enforceRule('IR-002', { stagedFiles: ['.env'] }, { rules: [...] })` 回傳 `action: 'block'`
+- [ ] `OWNMIND_BYPASS=IR-002 enforceRule(...)` 回傳 `action: 'bypass'`
+- [ ] 鐵律 cache 為空時 `enforceRule` fail-open（action: 'allow'）
+- [ ] 沒任何既有 hook 被破壞
 
 ---
 
-## 階段 C：Git pre-commit hook（最大塊）
+## v1.19.7 — IR-041 + IR-002 + reply-lint 切擋下（下批次）
 
-- [ ] C1. 寫測試 `tests/git-pre-commit-integration.test.js`（預估 18 case）
-  - 涵蓋場景 1~10（規格中 git pre-commit 場景）
-  - 用 `child_process.spawn` 跑 hook 腳本、檢查 exit code 與 stderr
-  - fixtures：每個違反情境一個 staged diff snapshot
-- [ ] C2. 新檔 `hooks/ownmind-git-pre-commit.js`
-  - 讀 staged diff（`git diff --cached --name-only` + `git diff --cached`）
-  - 並行跑 6 條 critical 檢查（Promise.all）
-  - 任一違反 → exit 1（除非有 bypass）
-  - 所有通過 → exit 0 + 寫 comply audit
-  - SLA：< 100ms p95（含 detector）
-- [ ] C3. 新檔 `hooks/ownmind-git-commit-msg.js`
-  - 專責檢查 commit message（IR-024 Co-Authored-By）
-  - 比 pre-commit 更小更快、< 20ms
-- [ ] C4. 新檔 `hooks/ownmind-git-pre-tag.js`
-  - 專責 IR-031 三處版號同步
-  - 解析 package.json / src/SERVER_VERSION / 即將打的 tag
-- [ ] C5. Benchmark 測試 `tests/hook-performance.test.js`
-  - 50 staged 檔案的 commit、跑 100 次、p95 < 100ms
+- [ ] 寫 IR-041 隱私 detector（身分證／信箱／電話樣式 + user prompt 例外）
+- [ ] 寫 IR-002 pre-commit 整合（用 v1.19.1 secret-detect + 新 rule-enforcer）
+- [ ] reply-lint hook 切擋下模式（exit 2）+ 連續 3 次降警告
+- [ ] 兩週觀察期、根據誤判紀錄調規則
 
 ---
 
-## 階段 D：PreToolUse hook（Claude Code + Codex）
+## v1.19.8 — 指令樣式類 5 條
 
-- [ ] D1. 寫測試 `tests/pre-tool-use-hook.test.js`（預估 12 case）
-  - IR-005 Read state 追蹤（涵蓋場景 11、12）
-  - IR-002 工具層 `rm .env` 攔截（場景 13）
-  - bypass 機制（場景 18~20 部分）
-- [ ] D2. 新檔 `hooks/ownmind-pre-tool-use.js`
-  - 入口接收 Claude Code / Codex 的 PreToolUse payload（JSON via stdin）
-  - 區分 tool name：Edit/Write 走 IR-005 check、Bash 走 IR-002 pattern check
-  - exit 2 = block + 訊息給 AI（Claude Code 慣例）
-- [ ] D3. 新檔 `hooks/lib/session-read-tracker.js`
-  - 維護本 session 的 read-files 狀態
-  - 路徑：`~/.ownmind/state/session-<id>/read-files.json`
-  - PostToolUse Read 時更新（需配套寫 `hooks/ownmind-post-tool-use.js`）
-- [ ] D4. 新檔 `hooks/ownmind-post-tool-use.js`
-  - 偵測 Read 工具呼叫完成、更新 session-read-tracker
-  - 必須跟 D2 共用 session-id 取得邏輯
+- [ ] PreToolUse 整合 rule-enforcer
+- [ ] IR-023 / IR-018 / IR-044 / IR-046 / IR-043 detector
 
 ---
 
-## 階段 E：Reply-lint 升級為硬擋
+## v1.19.9 — 靜態檢查收尾
 
-- [ ] E1. 寫測試 `tests/reply-lint-block-mode.test.js`（預估 8 case）
-  - IR-037 中英混雜 → exit 2（場景 14）
-  - IR-036 行話無白話 → exit 2（場景 15）
-  - 連續擋 3 次 → 第 4 次降為 warning（場景 16）
-  - IR-041 user 自己 prompt 含同樣字串 → 不擋（場景 17 例外）
-- [ ] E2. 改 `hooks/ownmind-reply-lint.js`
-  - 既有偵測邏輯不變、退出碼從 0 改 2（違反時）
-  - 加 `~/.ownmind/state/session-<id>/reply-block-count.json` 追蹤連續擋次數
-  - 加 user prompt 比對邏輯（IR-041 例外）
-- [ ] E3. 改 `hooks/lib/reply-lint-rules.js`（若既有）
-  - 確保 IR-036 / IR-037 / IR-041 規則邏輯共用 rule-enforcer.js
+- [ ] IR-009 git user.name 檢查
+- [ ] IR-024 commit-msg Co-Authored-By 檢查
+- [ ] IR-031 pre-tag 三處版號檢查
 
 ---
 
-## 階段 F：跨工具相容
+## v1.19.10 — 觀察期 + 調校
 
-- [ ] F1. 寫測試 `tests/cross-tool-hooks.test.js`（預估 5 case）
-  - Claude Code settings.json hook 註冊測試
-  - Codex 對應 hook 點測試
-  - Cursor 用戶純走 git pre-commit 的整合測試
-- [ ] F2. 改 `install.sh` / `install.ps1`
-  - 新增 `--install-hooks` 旗標
-  - 安裝對應工具的 hook 設定（Claude Code settings.json / Codex 對應檔）
-  - git hooks 用 symlink 不覆蓋既有
-- [ ] F3. 新檔 `scripts/migrate-hooks.sh` / `migrate-hooks.ps1`
-  - 既有 user 升級到 v1.20 跑這個
-  - 偵測 git repo、symlink hook
-  - 若 `.git/hooks/pre-commit` 已存在 → 不覆蓋、提示手動處理
+- [ ] 收集兩週誤判紀錄
+- [ ] 根據 bypass audit log 調 detector 規則
+- [ ] 評估是否需要 admin UI Bypass 紀錄分頁
 
 ---
 
-## 階段 G：Admin UI Bypass 紀錄
+## 非任務（明確不做）
 
-- [ ] G1. 寫測試 `tests/admin-bypass-page.test.js`（預估 4 case）
-  - 列表頁渲染
-  - 篩選功能（依規則、依日期）
-  - review 標記
-  - 嘗試刪除 → 沒按鈕、API 也擋
-- [ ] G2. 改 `src/public/index.html`
-  - 新增「Bypass 紀錄」分頁
-  - 表格欄位：時間、規則、commit sha、訊息、review 狀態
-  - 篩選器：rule_code dropdown + 日期 picker
-- [ ] G3. 改 `src/public/index.html` 樣式
-  - bypass_all 紅字警示
-  - 一週內 bypass 次數小卡片
-
----
-
-## 階段 H：SessionStart 升級引導
-
-- [ ] H1. 寫測試 `tests/session-start-migrate-prompt.test.js`（預估 3 case）
-  - server 版本 v1.20、本機 hook 未安裝 → 顯示引導
-  - server v1.20、本機 hook 已安裝 → 不顯示
-  - server < v1.20 → 完全不提
-- [ ] H2. 改 `hooks/ownmind-session-start.js`
-  - 偵測 `.git/hooks/pre-commit` 是否 symlink 到 `~/.ownmind/hooks/`
-  - 缺少時插入引導訊息（一次性、寫 flag 避免每次跳）
-
----
-
-## 階段 I：文件與發版
-
-- [ ] I1. 改 `README.md`
-  - 「Iron Rule Enforcement Engine」段大幅擴充
-  - 加 v1.20 三層卡控示意圖
-  - bypass 機制說明 + 範例
-- [ ] I2. 改 `docs/README.zh-TW.md` / `docs/README.ja.md`（IR-131 三語系同步）
-- [ ] I3. 改 `CHANGELOG.md`
-  - 加 v1.20.0 完整條目
-- [ ] I4. 改 `FILELIST.md`
-  - 加所有新檔（hook 5 個、lib 3 個、scripts 2 個、tests 8 個）
-- [ ] I5. 三處版號同步（IR-031）
-  - `package.json` → 1.20.0
-  - `src/SERVER_VERSION` → 1.20.0
-  - 預備打 tag `v1.20.0`
-- [ ] I6. 跑全測試（`npm test`）、確認 0 failure
-- [ ] I7. 品管三步驟（IR-012）
-  - verification-before-completion（跑驗證、貼輸出）
-  - requesting-code-review（請評審）
-  - receiving-code-review（嚴謹處理回饋）
-- [ ] I8. Browser 實測（IR-020）
-  - Admin UI Bypass 紀錄分頁
-  - 實際跑一次故意違反每條 critical 確認都被擋
-- [ ] I9. Vin 拍板 → push → 部署 prod
-- [ ] I10. 跑兩週觀察期、收集 bypass 紀錄 + 誤判通報
-
----
-
-## 驗收條件
-
-- [ ] 故意 commit `.env` 檔案 → 被 IR-002 擋（場景 1）
-- [ ] 故意 commit src/ 改動不同步 README → 被 IR-008 擋（場景 3）
-- [ ] 故意 commit message 加 Co-Authored-By → 被 IR-024 擋（場景 6）
-- [ ] AI 直接 Edit 沒讀過的檔案 → 被 IR-005 擋（場景 11）
-- [ ] AI 回應中英混雜 > 15% → 被 IR-037 擋（場景 14）
-- [ ] `OWNMIND_BYPASS=IR-008 git commit ...` → 跳過 + 寫 audit（場景 18）
-- [ ] hook 內部錯誤 → fail-open + 寫 error log（場景 26）
-- [ ] 100 次 commit benchmark p95 < 100ms（場景 23）
-- [ ] Admin UI Bypass 紀錄正常顯示、不可刪除（場景 24、25）
-- [ ] 升級流程：v1.19 → v1.20 跑 migrate-hooks 一切正常（場景 22）
-- [ ] 全測試通過、無 regression
-- [ ] README 三語系同步、CHANGELOG 完整、FILELIST 不缺檔
-
----
-
-## 非任務（v1.21+ 處理）
-
-- ❌ Advisory tier 邏輯（只寫紀錄、不跳警告）
-- ❌ Default tier 違反次數自動升 critical
-- ❌ AI 輔助分類（LLM 建議 tier）
+- ❌ IR-005（blind edit）跨工具追蹤 — Gemini 對抗審查批：MCP 無狀態、user 手動點開檔案會大量誤判；維持警告
+- ❌ IR-008（三文件同步）硬擋 — Gemini 批：改錯字也擋會逼人 bypass；維持警告
+- ❌ IR-048（部署前 DB migration）硬擋 — Gemini 批：連外部狀態太脆；維持警告
+- ❌ Advisory tier 邏輯（v1.21+）
+- ❌ 動態升降級（v1.22+）
+- ❌ AI 輔助分類
 - ❌ per-user 客製分級
-- ❌ Cursor PreToolUse 卡控（等 Cursor 推出 hook）
+- ❌ Cursor PreToolUse 卡控（Cursor 沒 hook 點）
 
 ---
 
 ## 風險檢查點（每階段結束時 review）
 
-- [ ] 階段 C 結束：跑一次 dogfood、用 v1.20 hook 自己 commit v1.20 程式碼、確認沒卡死
-- [ ] 階段 E 結束：跑一次 reply-lint 硬擋、確認 AI 能正確重做
-- [ ] 階段 F 結束：在另一台機器跑 migrate-hooks、驗證升級流程
-- [ ] 階段 I 結束：發版前再跑一次完整 e2e（自己違反每條 critical、確認都被擋）
+- [ ] v1.19.6 結束：跑一次 dogfood、用 rule-enforcer 自己 commit v1.19.6 程式碼、確認沒卡死
+- [ ] v1.19.7 結束：跑一次 reply-lint 硬擋、確認 AI 能正確重做
+- [ ] v1.19.8 結束：在另一台機器跑 migrate-hooks、驗證升級流程
+- [ ] v1.19.10 結束：發版前再跑一次完整 e2e、自己違反每條 critical、確認都被擋

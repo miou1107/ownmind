@@ -165,6 +165,8 @@ sequenceDiagram
 - **快取自動刷新** — save/update/disable 鐵律後自動刷新 iron_rules.json 快取 `v1.15.0`
 - **可操作的失敗訊息** — 驗證失敗時附帶修復指引（例如「請 git add X」） `v1.15.0`
 - **三級分類** — 每條鐵律標註 `critical` / `default` / `advisory`；SessionStart 摘要按 tier 分組顯示（🔴 Critical 全列、🟡 Default 全列、⚪ Advisory 只顯示計數）；v1.20+ 起按 tier 區分卡控、警告、純記錄三種行為 `v1.19.0`
+- **共用判定核心** — `hooks/lib/rule-enforcer.js` 提供純函式 `enforceRule(ruleCode, context, options)`、依 tier + 既有 `block_on_fail` 旗標回 `allow` / `block` / `warn` / `log_only` / `bypass` 五種動作。v1.19.7+ 起會把這層接到 git pre-commit / PreToolUse / reply-lint 三種 hook `v1.19.6`
+- **放行通道 + 審計紀錄** — `hooks/lib/bypass-handler.js` 解析 `OWNMIND_BYPASS=IR-008,IR-024`（或 `OWNMIND_BYPASS=all`、大小寫不敏感）、每次放行都寫一筆 `action: 'bypass'` 到 `compliance.jsonl`。process scope（不污染全域）`v1.19.6`
 
 ### 智慧學習與數據驅動進化 `v1.10.0`
 
