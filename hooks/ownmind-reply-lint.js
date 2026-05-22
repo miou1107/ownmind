@@ -70,11 +70,13 @@ const DISABLED = process.env.OWNMIND_REPLY_LINT_DISABLE === '1';
 const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
 
 // v1.19.3：MODE env、漸進式 block
-// - warn（預設）：違規寫 banner、不 block
-// - block：違規累積到 BLOCK_THRESHOLD（4 次）後寫 stdout JSON 觸發 Claude 重寫
+// v1.19.4：預設從 warn 翻成 block（IR-027 邏輯才有效——opt-in 等於沒落地）
+// - block（預設）：違規累積到 BLOCK_THRESHOLD（4 次）後寫 stdout JSON 觸發 Claude 重寫
+//                  前 3 次只警告（漸進緩衝、避免單一誤判毀對話）
+// - warn：違規寫 banner、永遠不 block（opt-out、給覺得太煩的 user）
 // - disable：完全跳過（同 OWNMIND_REPLY_LINT_DISABLE=1）
 // - 未知值（fail-open）：當 warn 處理 + banner 加提示
-const RAW_MODE = (process.env.OWNMIND_REPLY_LINT_MODE || 'warn').toLowerCase();
+const RAW_MODE = (process.env.OWNMIND_REPLY_LINT_MODE || 'block').toLowerCase();
 const VALID_MODES = new Set(['warn', 'block', 'disable']);
 const MODE = VALID_MODES.has(RAW_MODE) ? RAW_MODE : 'warn';
 const MODE_INVALID = !VALID_MODES.has(RAW_MODE);

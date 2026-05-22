@@ -1,5 +1,19 @@
 # OwnMind 檔案結構
 
+## v1.19.4 修改（Reply-lint 預設翻成 block）
+
+修改的既有檔：
+
+```
+hooks/ownmind-reply-lint.js                                   — RAW_MODE 預設 'warn' → 'block'（IR-027 邏輯才有效、opt-in 等於沒落地）
+tests/reply-lint-hook-v1193-block.test.js                     — 加 v1.19.4 預設 block suite 2 case + 更新場景 1 describe
+README.md / docs/README.zh-TW.md / docs/README.ja.md          — Reply Lint 段更新預設行為說明
+CHANGELOG.md                                                  — v1.19.4 條目
+package.json                                                  — version 1.19.4
+```
+
+---
+
 ## v1.19.3 新增 / 修改（Reply-lint 漸進式 block + 白名單擴 200+ 詞）
 
 新增檔：

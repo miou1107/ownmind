@@ -1,5 +1,34 @@
 # OwnMind 更新紀錄
 
+## v1.19.4 — Reply-lint 預設翻成 block（v1.19.3 設 opt-in 違反 IR-027）
+
+**背景：** v1.19.3 雖然把漸進式 block 機制蓋好、但預設 `OWNMIND_REPLY_LINT_MODE=warn`、要 user 主動設環境變數 `block` 才生效。Vin 立刻抓到問題：「為何不直接打開 block？」——這就是 IR-027「邏輯才有效」失效。Vin 不會主動 opt-in、預設不打開等於沒落地、v1.19.3 等於白做。
+
+**修法：1 行 default 改動。**
+
+- `hooks/ownmind-reply-lint.js`：`RAW_MODE` 預設值 `'warn'` → `'block'`
+- 不喜歡 block 的 user 改設 `OWNMIND_REPLY_LINT_MODE=warn` opt-out（退回 v1.19.3 預設行為）
+- 漸進緩衝（前 3 次警告、第 4 次才擋）保留、所以即使誤判也有 3 次容忍空間
+
+**為什麼這次直接翻、不再保守：**
+
+1. v1.19.3 白名單已從 80 詞擴到 200+ 詞、Top 30 違規詞 95% 被吸收、誤判源頭已修
+2. v1.19.3 加 proper noun 偵測（`^[A-Z][a-z]+$` 大寫開頭詞自動跳過）、人名 / 公司名不會被當違規
+3. v1.19.3 加 threshold 分情境（含 code 25%、code review 豁免）、IR-036 視窗 50→80
+4. **漸進式 4 階段本身就是緩衝**、第 1 次誤判只警告、不會直接毀對話
+5. v1.19.3 smoke test 20/20 通過（用實際裝在 `~/.ownmind/` 的 hook + 真實 Stop hook payload）
+
+**新增測試 2 case：**
+- `tests/reply-lint-hook-v1193-block.test.js`：「v1.19.4 — 預設 MODE=block」suite
+  - 未設 env、連續 4 次違規 → 第 4 次仍會寫 block JSON（驗預設真的是 block）
+  - MODE=warn opt-out、連續 4 次違規 → 永遠不寫 block JSON（驗 opt-out 有效）
+
+**測試結果：** 105 case 全綠（103 v1.19.3 既有 + 2 新加）。
+
+**Vin opt-out 指引：** 若新 block 行為太煩、設 `OWNMIND_REPLY_LINT_MODE=warn` 環境變數（例如寫進 `~/.claude/settings.json` 的 mcpServers.ownmind.env 或 shell rc 檔）退回 v1.19.3 預設行為。
+
+---
+
 ## v1.19.3 — Reply-lint 漸進式 block + 白名單擴 200+ 詞 + threshold 分情境
 
 **背景：** OwnMind SessionStart hook 帶 5 條「強制注意」、其中 IR-037（中英混雜）/ IR-036（行話沒解釋）/ 解說偏好對當前 AI 違反率 100%——警告對 AI 完全無效、user 看到也只能下次注意。對應 IR-027「邏輯才有效」失效。

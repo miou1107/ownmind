@@ -362,12 +362,12 @@ Authorization: Bearer YOUR_API_KEY
 
 新增 migration：在 `db/` 下加一條 `016_xxx.sql`（用 `IF NOT EXISTS` 確保 idempotent）、下次 `docker restart ownmind-api` 自動套用、不用人工 SSH 跑 psql。
 
-### 回話品質 lint 漸進式 block（v1.19.3+）
+### 回話品質 lint 漸進式 block（v1.19.3+、v1.19.4 起預設 block）
 
-Claude Code Stop hook（`hooks/ownmind-reply-lint.js`）每輪 AI 回應結束時、檢查 IR-037（中英混雜）+ IR-036（行話沒附白話說明）。v1.19.3 從「只警告」升級為「漸進式卡控」：
+Claude Code Stop hook（`hooks/ownmind-reply-lint.js`）每輪 AI 回應結束時、檢查 IR-037（中英混雜）+ IR-036（行話沒附白話說明）。v1.19.4 起把漸進式 block 改為**預設**行為（v1.19.3 是 opt-in、但 opt-in 違反 IR-027「邏輯才有效」、user 不會主動開）：
 
-- **MODE=warn**（預設）：違規時寫招牌到你的 terminal、永遠不擋 AI 流程（向後相容 v1.17.96+）
-- **MODE=block**：以 Claude session 為單位累積違規。前 3 次只警告、第 4 次寫 `{"decision":"block","reason":"..."}` 到 stdout、Claude Code 會餵 reason 給 Claude 當下一個 prompt、Claude 會重寫上一則回應
+- **MODE=block**（v1.19.4 起預設）：以 Claude session 為單位累積違規。前 3 次只警告、第 4 次寫 `{"decision":"block","reason":"..."}` 到 stdout、Claude Code 會餵 reason 給 Claude 當下一個 prompt、Claude 會重寫上一則回應
+- **MODE=warn**（opt-out）：違規時寫招牌到你的 terminal、永遠不擋 AI 流程（v1.19.3 預設行為、覺得 block 太煩可以退回這裡）
 - **MODE=disable**：完全跳過 lint（等同 `OWNMIND_REPLY_LINT_DISABLE=1`）
 
 透過 `OWNMIND_REPLY_LINT_MODE` 環境變數設定。未知值 fail-open 到 `warn`、招牌會多一行提示。
