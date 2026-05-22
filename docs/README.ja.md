@@ -165,8 +165,10 @@ sequenceDiagram
 - **キャッシュ自動リフレッシュ** — save/update/disable後にiron_rules.jsonキャッシュを自動更新 `v1.15.0`
 - **アクション可能な失敗メッセージ** — 検証失敗時に修正ヒントを付与（例：「git add Xしてください」） `v1.15.0`
 - **3段階分類** — 各鉄則に `critical` / `default` / `advisory` を付与；SessionStart ダイジェストをティアごとにグルーピング表示（🔴 Critical 全件、🟡 Default 全件、⚪ Advisory はカウントのみ）；v1.20+ からティアでブロック / 警告 / 記録のみの動作を切り替え `v1.19.0`
-- **共通ジャッジコア** — `hooks/lib/rule-enforcer.js` は純粋関数 `enforceRule(ruleCode, context, options)` を提供し、ティア + 既存の `block_on_fail` フラグに基づき `allow` / `block` / `warn` / `log_only` / `bypass` の 5 アクションを返す。v1.19.7+ で git pre-commit / PreToolUse / reply-lint の 3 フックに接続予定 `v1.19.6`
+- **共通ジャッジコア** — `hooks/lib/rule-enforcer.js` は純粋関数 `enforceRule(ruleCode, context, options)` を提供し、ティア + 既存の `block_on_fail` フラグに基づき `allow` / `block` / `warn` / `log_only` / `bypass` の 5 アクションを返す。**ステータス**：v1.19.7 では `bypass-handler.js` のみを git pre-commit と reply-lint に接続（`OWNMIND_BYPASS` 環境変数が機能する）；`evaluateConditions` ループを `enforceRule` 呼び出しに置き換える完全統合は v1.19.8 に延期 `v1.19.6`
 - **バイパスチャネル + 監査ログ** — `hooks/lib/bypass-handler.js` は `OWNMIND_BYPASS=IR-008,IR-024`（または `OWNMIND_BYPASS=all`、大文字小文字無視）を解析し、バイパス毎に `compliance.jsonl` へ `action: 'bypass'` を書き込む。プロセススコープ（グローバル汚染なし）`v1.19.6`
+- **個人情報漏洩検出** — `shared/privacy-detect.js` は AI 返答ごとに台湾 ID 番号（公式チェックサム検証付き）／メールアドレス／台湾携帯電話番号をスキャン。ユーザー自身がプロンプトで提示した文字列は能動的共有とみなし例外扱い。reply-lint に IR-041 として統合 `v1.19.7`
+- **Pre-commit シークレット内容スキャン** — `hooks/ownmind-git-pre-commit.js` は既存のファイル名ブロックに加え、staged diff の追加行を `detectSecretLike` でスキャンし、OpenAI / GitHub PAT / JWT / AWS key パターンを IR-002 違反として検出 `v1.19.7`
 
 ### スマートラーニング＆データ駆動進化 `v1.10.0`
 
@@ -359,17 +361,18 @@ Authorization: Bearer YOUR_API_KEY
 
 新規マイグレーション追加：`db/` に `016_xxx.sql` を作成（`IF NOT EXISTS` パターン推奨）。次回 `docker restart ownmind-api` で自動適用、手動 SSH+psql 不要。
 
-### Reply Lint 段階的ブロック（v1.19.3+、v1.19.4 からデフォルト block）
+### Reply Lint 段階的ブロック（v1.19.3+、v1.19.4 からデフォルト block、v1.19.7 から exit 2 + 連続 3 回ブロック後警告へ自動降格）
 
-Claude Code の Stop hook（`hooks/ownmind-reply-lint.js`）は AI の各返答終了時に IR-037（中英混在）/ IR-036（専門用語の説明不足）をチェックします。v1.19.4 から段階的ブロックを**デフォルト**動作にしました（v1.19.3 は opt-in だったが、opt-in は IR-027「ロジックでこそ有効」に反する — user は自発的に有効化しない）：
+Claude Code の Stop hook（`hooks/ownmind-reply-lint.js`）は AI の各返答終了時に IR-037（中英混在）/ IR-036（専門用語の説明不足）/ IR-041（v1.19.7 で追加した個人情報漏洩検出：身分証 / メール / 携帯電話）をチェックします。v1.19.4 から段階的ブロックを**デフォルト**動作にしました（v1.19.3 は opt-in だったが、opt-in は IR-027「ロジックでこそ有効」に反する — user は自発的に有効化しない）：
 
-- **MODE=block**（v1.19.4 からデフォルト）：Claude session 単位で違反をカウント。最初の 3 回は警告のみ、4 回目で `{"decision":"block","reason":"..."}` を stdout に出力し、Claude Code が reason を次の prompt として Claude に渡して書き直しさせる
+- **MODE=block**（v1.19.4 からデフォルト）：Claude session 単位で違反をカウント。最初の 3 回は警告のみ、4 回目で `process.exit(2)` + stderr に書き直し用の指令型プロンプトを出力（Claude Code は stderr を次の prompt として Claude に渡す）。v1.19.7 で旧 `{"decision":"block"}` stdout JSON を exit 2 に置き換え。Claude Code の Stop hook 規格ではどちらも公式の block 方法
+- **連続 3 回ブロック後の自動警告降格**（v1.19.7）：同一 session で連続 hard block 3 回後、4 回目の違反は `exit 1` 警告（非ブロッキング）に降格し `action: 'repeated_violation_softblock'` を compliance に書き込み、AI 書き直しループが Claude Code の 8 回連続上限を消費するのを防ぐ
 - **MODE=warn**（opt-out）：違反時にターミナルへバナー出力、AI フローは決してブロックしない（v1.19.3 のデフォルト動作、block が煩わしい場合はこちらに戻せる）
 - **MODE=disable**：lint を完全にスキップ（`OWNMIND_REPLY_LINT_DISABLE=1` と同等）
 
 `OWNMIND_REPLY_LINT_MODE` 環境変数で設定。未知の値は `warn` にフェイルオープンしてバナーに注意を表示。
 
-session 違反カウンタは `~/.ownmind/logs/reply-lint-session-counter.json` に保存。30 日経過した記録は自動削除。`stop_hook_active=true`（Claude Code が書き直し時の Stop に付与）を検出すると hook は即座に終了し再帰的ブロックを防ぐ。Claude Code 自体にも 8 回連続ブロックの上限がある。
+session 違反カウンタは `~/.ownmind/logs/reply-lint-session-counter.json` に保存（v1.19.7 で `block_count` フィールドを追加し連続 block 回数を追跡）。30 日経過した記録は自動削除。`stop_hook_active=true`（Claude Code が書き直し時の Stop に付与）を検出すると hook は即座に終了し再帰的ブロックを防ぐ。Claude Code 自体にも 8 回連続ブロックの上限がある。lint 通過時に `block_count` は自動でゼロリセットされ、turn を跨いだカウント蓄積による誤降格を防止。
 
 ホワイトリストは v1.19.3 で 80 語から 200+ 語へ拡張、根拠は 30 日間の実違反 log の Top 30 語（大半はプロジェクト名、会社名、標準的な git/dev 用語）。Threshold もコンテキスト依存：code block を含む場合は 25%（通常 15%）、「code review / code-review」を含む場合は完全免除。IR-036 の説明検索ウィンドウは 50 字から 80 字へ拡張。
 

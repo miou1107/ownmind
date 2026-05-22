@@ -165,8 +165,10 @@ sequenceDiagram
 - **快取自動刷新** — save/update/disable 鐵律後自動刷新 iron_rules.json 快取 `v1.15.0`
 - **可操作的失敗訊息** — 驗證失敗時附帶修復指引（例如「請 git add X」） `v1.15.0`
 - **三級分類** — 每條鐵律標註 `critical` / `default` / `advisory`；SessionStart 摘要按 tier 分組顯示（🔴 Critical 全列、🟡 Default 全列、⚪ Advisory 只顯示計數）；v1.20+ 起按 tier 區分卡控、警告、純記錄三種行為 `v1.19.0`
-- **共用判定核心** — `hooks/lib/rule-enforcer.js` 提供純函式 `enforceRule(ruleCode, context, options)`、依 tier + 既有 `block_on_fail` 旗標回 `allow` / `block` / `warn` / `log_only` / `bypass` 五種動作。v1.19.7+ 起會把這層接到 git pre-commit / PreToolUse / reply-lint 三種 hook `v1.19.6`
+- **共用判定核心** — `hooks/lib/rule-enforcer.js` 提供純函式 `enforceRule(ruleCode, context, options)`、依 tier + 既有 `block_on_fail` 旗標回 `allow` / `block` / `warn` / `log_only` / `bypass` 五種動作。**狀態**：v1.19.7 只把 `bypass-handler.js` 接到 git pre-commit 跟 reply-lint（讓 `OWNMIND_BYPASS` 環境變數能放行）；把判斷迴圈整體換成呼叫 `enforceRule` 的重構留 v1.19.8 做 `v1.19.6`
 - **放行通道 + 審計紀錄** — `hooks/lib/bypass-handler.js` 解析 `OWNMIND_BYPASS=IR-008,IR-024`（或 `OWNMIND_BYPASS=all`、大小寫不敏感）、每次放行都寫一筆 `action: 'bypass'` 到 `compliance.jsonl`。process scope（不污染全域）`v1.19.6`
+- **隱私洩漏偵測** — `shared/privacy-detect.js` 掃每輪 AI 回應的台灣身分證（含官方檢碼算式驗證）／電子信箱／台灣手機號碼。使用者自己 prompt 過的字串視為主動分享、例外放行。整合到 reply-lint 作為 IR-041 `v1.19.7`
+- **Pre-commit 內容掃密** — `hooks/ownmind-git-pre-commit.js` 在既有檔名擋的基礎上、新增掃 staged diff 新增行內容跑 `detectSecretLike`、偵測 OpenAI / GitHub PAT / JWT / AWS key 等樣式作為 IR-002 違反 `v1.19.7`
 
 ### 智慧學習與數據驅動進化 `v1.10.0`
 
@@ -364,17 +366,18 @@ Authorization: Bearer YOUR_API_KEY
 
 新增 migration：在 `db/` 下加一條 `016_xxx.sql`（用 `IF NOT EXISTS` 確保 idempotent）、下次 `docker restart ownmind-api` 自動套用、不用人工 SSH 跑 psql。
 
-### 回話品質 lint 漸進式 block（v1.19.3+、v1.19.4 起預設 block）
+### 回話品質 lint 漸進式 block（v1.19.3+、v1.19.4 起預設 block、v1.19.7 起改 exit 2 + 連續擋 3 次降警告）
 
-Claude Code Stop hook（`hooks/ownmind-reply-lint.js`）每輪 AI 回應結束時、檢查 IR-037（中英混雜）+ IR-036（行話沒附白話說明）。v1.19.4 起把漸進式 block 改為**預設**行為（v1.19.3 是 opt-in、但 opt-in 違反 IR-027「邏輯才有效」、user 不會主動開）：
+Claude Code Stop hook（`hooks/ownmind-reply-lint.js`）每輪 AI 回應結束時、檢查 IR-037（中英混雜）+ IR-036（行話沒附白話說明）+ IR-041（v1.19.7 新增的個資洩漏偵測：身分證／信箱／手機）。v1.19.4 起把漸進式 block 改為**預設**行為（v1.19.3 是 opt-in、但 opt-in 違反 IR-027「邏輯才有效」、user 不會主動開）：
 
-- **MODE=block**（v1.19.4 起預設）：以 Claude session 為單位累積違規。前 3 次只警告、第 4 次寫 `{"decision":"block","reason":"..."}` 到 stdout、Claude Code 會餵 reason 給 Claude 當下一個 prompt、Claude 會重寫上一則回應
+- **MODE=block**（v1.19.4 起預設）：以 Claude session 為單位累積違規。前 3 次只警告、第 4 次 `process.exit(2)` + 把指令型重寫提示寫到 stderr（Claude Code 會把 stderr 餵給 Claude 當下一個 prompt、Claude 會重寫上一則回應）。v1.19.7 把舊版 `{"decision":"block"}` stdout JSON 換成 exit 2、兩種都是 Claude Code Stop hook 規格認可的 block 方式
+- **連續擋 3 次自動降警告**（v1.19.7）：同一 session 連續 hard block 3 次後、第 4 次違規降為 `exit 1` 警告（不擋）、寫 `action: 'repeated_violation_softblock'` 到 compliance、避免 AI 重寫死循環吃光 Claude Code 的 8 次硬上限
 - **MODE=warn**（opt-out）：違規時寫招牌到你的 terminal、永遠不擋 AI 流程（v1.19.3 預設行為、覺得 block 太煩可以退回這裡）
 - **MODE=disable**：完全跳過 lint（等同 `OWNMIND_REPLY_LINT_DISABLE=1`）
 
 透過 `OWNMIND_REPLY_LINT_MODE` 環境變數設定。未知值 fail-open 到 `warn`、招牌會多一行提示。
 
-session 違規計數存在 `~/.ownmind/logs/reply-lint-session-counter.json`。30 天前的紀錄會自動清掉。`stop_hook_active=true`（Claude Code 在重寫又觸發 Stop 時會帶這個 flag）會被偵測、hook 立刻退出避免遞迴 block；Claude Code 內建也有 8 次連續 block 的硬上限。
+session 違規計數存在 `~/.ownmind/logs/reply-lint-session-counter.json`（v1.19.7 新增 `block_count` 欄位追蹤連續 block 次數）。30 天前的紀錄會自動清掉。`stop_hook_active=true`（Claude Code 在重寫又觸發 Stop 時會帶這個 flag）會被偵測、hook 立刻退出避免遞迴 block；Claude Code 內建也有 8 次連續 block 的硬上限。lint 通過時 `block_count` 自動清零、避免跨 turn 計數誤觸發降警告。
 
 白名單從 v1.19.3 起從 80 詞擴到 200+ 詞、依據是 30 天真實違規 log 的 Top 30 詞（大多是專案名、公司名、標準 git/dev 行話）。Threshold 也分情境：含 code block 寬鬆到 25%（一般是 15%）；含「code review / code-review」直接豁免。IR-036 的解釋查找視窗從 50 字擴到 80 字。
 

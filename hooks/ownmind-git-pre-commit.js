@@ -9,12 +9,14 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import https from 'https';
 import http from 'http';
 import os from 'os';
 import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials } from '../shared/helpers.js';
 import { readComplianceEvents } from '../shared/compliance.js';
+import { detectSecretLike } from '../src/utils/secret-detect.js';
+import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
@@ -34,6 +36,69 @@ function getStagedFiles() {
   } catch {
     return [];
   }
+}
+
+/**
+ * v1.19.7：抓 staged diff 中各檔的「新增行」內容
+ * 用於跑 detectSecretLike 偵測寫入的敏感資料
+ *
+ * 取 unified diff context=0（白話：不顯示前後參考行，只給真正改動的行）
+ * 並過濾出開頭為 '+' 但非檔頭 '+++' 的純新增行
+ *
+ * v1.19.7 code-review I-3：用 execFileSync 把檔名當參數陣列傳，避免 shell 解析。
+ * 如此檔名含 $、反引號、空白、反斜線都安全（之前 execSync 字串拼接只 escape 雙引號、
+ * 對 backslash / dollar / backtick 的檔名會中招或誤吞 IR-002 違規）。
+ *
+ * 失敗一律回空（fail-open、不擋 commit）
+ */
+function getStagedAddedLines(file) {
+  let diff;
+  try {
+    diff = execFileSync('git', ['diff', '--cached', '-U0', '--', file], {
+      encoding: 'utf8',
+      maxBuffer: 5 * 1024 * 1024, // 5 MB，足以覆蓋一般 patch
+    });
+  } catch {
+    return [];
+  }
+  const lines = diff.split('\n');
+  const added = [];
+  for (const line of lines) {
+    if (!line.startsWith('+')) continue;
+    if (line.startsWith('+++')) continue; // 檔頭 +++ b/file 排除
+    added.push(line.slice(1));
+  }
+  return added;
+}
+
+/**
+ * v1.19.7：對 staged 檔案逐一掃 diff 內容、命中 detectSecretLike 即列為違規
+ *
+ * 設計：
+ * - 用 skip_keyword=true 跑 regex + length heuristic，不抓 keyword（白話：
+ *   原始碼很常出現 "password"／"secret" 變數名／字串字面值，keyword 模式會誤擋）
+ * - 同一檔多行命中只報第一筆（避免報太細）
+ * - 文字檔 binary 都跑（diff 由 git 處理過、binary 通常無 + 行可掃）
+ *
+ * @returns {Array<{file, rule, reason, sample}>} 命中列表
+ */
+function checkStagedDiffForSecrets(stagedFiles) {
+  const hits = [];
+  for (const file of stagedFiles) {
+    const lines = getStagedAddedLines(file);
+    for (const line of lines) {
+      const r = detectSecretLike(line, { skip_keyword: true });
+      if (r.detected) {
+        hits.push({
+          file,
+          rule: r.rule,
+          reason: r.reason,
+        });
+        break; // 同檔只報一筆、保留訊息精簡
+      }
+    }
+  }
+  return hits;
 }
 
 function getCommitMessage() {
@@ -177,6 +242,8 @@ async function main() {
   }
 
   // 6. Evaluate each rule
+  // v1.19.7：整合 OWNMIND_BYPASS 環境變數 + IR-002 secret-detect 雙重檢查
+  const bypassSet = parseBypass(process.env);
   const blockFailures = [];
   let checkedCount = 0;
 
@@ -184,20 +251,34 @@ async function main() {
     const verification = rule.metadata?.verification;
     if (!verification?.conditions) continue;
 
+    const ruleCode = rule.code || rule.metadata?.code || 'IR-???';
+    const ruleTitle = rule.title || '未命名規則';
+
+    // v1.19.7：bypass 命中 → 跳過 + 寫 audit
+    if (isBypassed(ruleCode, bypassSet)) {
+      try {
+        logBypass({ ruleCode, ruleTitle, source: 'pre_commit' });
+      } catch { /* ignore audit error */ }
+      continue;
+    }
+
     checkedCount++;
     const result = evaluateConditions(verification.conditions, context);
+    const failures = Array.isArray(result.failures) ? [...result.failures] : [];
 
-    if (!result.pass) {
-      const ruleCode = rule.code || rule.metadata?.code || 'IR-???';
-      const ruleTitle = rule.title || '未命名規則';
+    // v1.19.7：IR-002 額外掃 staged diff 內容，命中 detectSecretLike 即視為違反
+    if (ruleCode === 'IR-002') {
+      const secretHits = checkStagedDiffForSecrets(stagedFiles);
+      for (const hit of secretHits) {
+        failures.push(`${hit.file}: ${hit.reason}（detected_by=${hit.rule}）`);
+      }
+    }
 
-      if (verification.block_on_fail) {
-        blockFailures.push(`${ruleCode}: ${ruleTitle}`);
-        if (result.failures.length > 0) {
-          for (const f of result.failures) {
-            blockFailures.push(`    → ${f}`);
-          }
-        }
+    const violated = !result.pass || failures.length > 0;
+    if (violated && verification.block_on_fail) {
+      blockFailures.push(`${ruleCode}: ${ruleTitle}`);
+      for (const f of failures) {
+        blockFailures.push(`    → ${f}`);
       }
     }
   }

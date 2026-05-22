@@ -92,7 +92,7 @@ describe('v1.19.4 — 預設 MODE=block：連續 4 次違規不設 env 也會擋
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('未設 OWNMIND_REPLY_LINT_MODE 時、第 4 次違規仍會寫 block JSON', () => {
+  it('未設 OWNMIND_REPLY_LINT_MODE 時、第 4 次違規 exit 2 + stderr 寫重寫指令（v1.19.7）', () => {
     writeTranscript(VIOLATING_TEXT);
     const sessionId = 'sess-v1194-default';
     const payload = stopPayload({ session_id: sessionId });
@@ -100,27 +100,23 @@ describe('v1.19.4 — 預設 MODE=block：連續 4 次違規不設 env 也會擋
     // 不設 env、用預設 MODE（v1.19.4 起 = block）
     for (let i = 1; i <= 3; i++) {
       const r = runHook(payload);
-      assert.equal(r.status, 0);
-      assert.ok(!r.stdout.includes('"decision"'), `第 ${i} 次不該 block、stdout=${r.stdout}`);
+      assert.equal(r.status, 0, `第 ${i} 次不該 block`);
+      assert.equal(r.stderr, '', `第 ${i} 次 stderr 該空白`);
     }
     const r4 = runHook(payload);
-    assert.equal(r4.status, 0);
-    assert.ok(r4.stdout.includes('"decision"'),
-      `預設 MODE 應該是 block、第 4 次該寫 block JSON、stdout=${r4.stdout}`);
-
-    const parsed = JSON.parse(r4.stdout.trim());
-    assert.equal(parsed.decision, 'block');
+    assert.equal(r4.status, 2, `v1.19.7 第 4 次該 exit 2、stdout=${r4.stdout} stderr=${r4.stderr}`);
+    assert.match(r4.stderr, /請重寫/, 'stderr 該含重寫指令（指令型 reason）');
   });
 
-  it('MODE=warn 明確設、即使第 4 次違規也不寫 block JSON', () => {
+  it('MODE=warn 明確設、即使第 4 次違規也 exit 0', () => {
     writeTranscript(VIOLATING_TEXT);
     const sessionId = 'sess-v1194-warn-optout';
     const payload = stopPayload({ session_id: sessionId });
 
     for (let i = 1; i <= 4; i++) {
       const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'warn' });
-      assert.equal(r.status, 0);
-      assert.ok(!r.stdout.includes('"decision"'), `第 ${i} 次 warn opt-out 不該 block`);
+      assert.equal(r.status, 0, `第 ${i} 次 warn opt-out 不該 block`);
+      assert.equal(r.stderr, '', `第 ${i} 次 warn 模式 stderr 該空白`);
     }
   });
 });
@@ -134,33 +130,31 @@ describe('v1.19.3 場景 2/3 — MODE=block 漸進累積', () => {
     const payload = stopPayload({ session_id: 'sess-progressive-1' });
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0);
-    assert.ok(!r.stdout.includes('"decision"'), `第 1 次不該 block、stdout=${r.stdout}`);
+    assert.equal(r.stderr, '', '第 1 次 stderr 該空白');
     // counter 應寫進檔
     const counterData = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counterData['sess-progressive-1'].count, 1);
   });
 
-  it('連續 4 次違規 → 第 4 次寫 block JSON', () => {
+  it('連續 4 次違規 → 第 4 次 exit 2 + stderr 寫指令型 reason（v1.19.7）', () => {
     writeTranscript(VIOLATING_TEXT);
     const sessionId = 'sess-progressive-4';
     const payload = stopPayload({ session_id: sessionId });
 
     for (let i = 1; i <= 3; i++) {
       const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-      assert.equal(r.status, 0);
-      assert.ok(!r.stdout.includes('"decision"'), `第 ${i} 次不該 block`);
+      assert.equal(r.status, 0, `第 ${i} 次不該 block`);
     }
 
-    // 第 4 次應 block
+    // 第 4 次應 exit 2 + stderr 含 reason
     const r4 = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r4.status, 0);
-    assert.ok(r4.stdout.includes('"decision"'), `第 4 次該寫 block JSON、stdout=${r4.stdout}`);
+    assert.equal(r4.status, 2, `第 4 次該 exit 2、stdout=${r4.stdout} stderr=${r4.stderr}`);
+    assert.ok(r4.stderr.length > 0, 'stderr 該含 reason');
+    assert.match(r4.stderr, /^請重寫/m, 'reason 該以「請重寫」開頭');
 
-    // 驗 block JSON 格式
-    const parsed = JSON.parse(r4.stdout.trim());
-    assert.equal(parsed.decision, 'block');
-    assert.ok(typeof parsed.reason === 'string', 'reason 必須是字串');
-    assert.ok(parsed.reason.length > 0, 'reason 不該為空');
+    // block_count 累計
+    const counterData = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
+    assert.equal(counterData[sessionId].block_count, 1, '第 4 次違規 block_count=1');
   });
 });
 
@@ -168,7 +162,7 @@ describe('v1.19.3 場景 4 — stop_hook_active=true 防迴圈', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('stop_hook_active=true 即使違規也不增計數、不寫 stdout', () => {
+  it('stop_hook_active=true 即使違規也不增計數、不擋 exit 0', () => {
     writeTranscript(VIOLATING_TEXT);
     const sessionId = 'sess-stop-active';
 
@@ -184,8 +178,8 @@ describe('v1.19.3 場景 4 — stop_hook_active=true 防迴圈', () => {
       stopPayload({ session_id: sessionId, stop_hook_active: true }),
       { OWNMIND_REPLY_LINT_MODE: 'block' }
     );
-    assert.equal(r.status, 0);
-    assert.ok(!r.stdout.includes('"decision"'), 'stop_hook_active=true 絕不寫 block');
+    assert.equal(r.status, 0, 'stop_hook_active=true 必須 exit 0');
+    assert.equal(r.stderr, '', 'stop_hook_active=true 不該寫 stderr');
 
     // counter 不增
     const after = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
@@ -201,7 +195,7 @@ describe('v1.19.3 場景 5 — MODE=disable 完全跳過', () => {
     writeTranscript(VIOLATING_TEXT);
     const r = runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'disable' });
     assert.equal(r.status, 0);
-    assert.ok(!r.stdout.includes('"decision"'));
+    assert.equal(r.stderr, '');
     // 不該寫 pending 也不該寫 counter
     assert.equal(fs.existsSync(pendingFile), false, 'disable 不該寫 banner');
     assert.equal(fs.existsSync(counterPath), false, 'disable 不該寫 counter');
@@ -216,7 +210,7 @@ describe('v1.19.3 場景 6 — MODE 未知值 fail-open 到 warn', () => {
     writeTranscript(VIOLATING_TEXT);
     const r = runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'foo' });
     assert.equal(r.status, 0);
-    assert.ok(!r.stdout.includes('"decision"'), '未知 MODE 不該 block');
+    assert.equal(r.stderr, '', '未知 MODE 不該 block');
     assert.ok(fs.existsSync(pendingFile), '違規該寫 banner');
     const banner = fs.readFileSync(pendingFile, 'utf8');
     assert.match(banner, /foo/, 'banner 該含未知 MODE 值');
@@ -224,38 +218,42 @@ describe('v1.19.3 場景 6 — MODE 未知值 fail-open 到 warn', () => {
   });
 });
 
-describe('v1.19.3 場景 15 — block reason 為指令型 + 含具體詞', () => {
+describe('v1.19.7 場景 — block reason 寫 stderr、為指令型 + 含具體詞', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('block 觸發時 reason 含「請重寫」、具體違規詞、改寫格式範例', () => {
+  it('block 觸發時 stderr 含「請重寫」、具體違規詞、改寫格式範例', () => {
     writeTranscript(VIOLATING_TEXT);
     const sessionId = 'sess-reason';
 
-    for (let i = 1; i <= 4; i++) {
-      runHook(stopPayload({ session_id: sessionId }), { OWNMIND_REPLY_LINT_MODE: 'block' });
+    // 前 3 次累積（exit 0）
+    for (let i = 1; i <= 3; i++) {
+      const r = runHook(stopPayload({ session_id: sessionId }), { OWNMIND_REPLY_LINT_MODE: 'block' });
+      assert.equal(r.status, 0);
     }
 
-    // 撈最後一次的 stdout
+    // 第 4 次該 exit 2、stderr 有 reason
     const r = runHook(stopPayload({ session_id: sessionId }), { OWNMIND_REPLY_LINT_MODE: 'block' });
-    const parsed = JSON.parse(r.stdout.trim());
+    assert.equal(r.status, 2, `第 4 次該 exit 2、stderr=${r.stderr}`);
+
+    const reason = r.stderr;
 
     // 1. 指令動詞開頭
-    assert.match(parsed.reason, /^請重寫/, 'reason 必須以「請重寫」開頭（指令型）');
+    assert.match(reason, /^請重寫/m, 'reason 必須以「請重寫」開頭（指令型）');
 
     // 2. 含具體違規詞（monomorphism 或 codeapp）
     assert.ok(
-      parsed.reason.includes('monomorphism') || parsed.reason.includes('codeapp'),
-      `reason 該含具體違規詞、實際：${parsed.reason}`
+      reason.includes('monomorphism') || reason.includes('codeapp'),
+      `reason 該含具體違規詞、實際：${reason}`
     );
 
     // 3. 含改寫格式範例
-    assert.match(parsed.reason, /括號|：|（|即/, 'reason 該含改寫格式提示');
+    assert.match(reason, /括號|：|（|即/, 'reason 該含改寫格式提示');
 
     // 4. 含例外指引（變數名 / 函式名）
-    assert.match(parsed.reason, /變數名|函式名|程式碼/, 'reason 該含例外指引');
+    assert.match(reason, /變數名|函式名|程式碼/, 'reason 該含例外指引');
 
     // 5. 不含「你違反」這種報告式語氣
-    assert.ok(!parsed.reason.includes('你違反'), 'reason 不該用報告式「你違反」');
+    assert.ok(!reason.includes('你違反'), 'reason 不該用報告式「你違反」');
   });
 });

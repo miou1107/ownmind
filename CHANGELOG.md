@@ -1,5 +1,64 @@
 # OwnMind 更新紀錄
 
+## v1.19.7 — IR-041 隱私偵測 + IR-002 密碼進 commit + reply-lint 切硬擋模式
+
+**背景：** v1.19.6 把共用判定核心（rule-enforcer + bypass-handler）做好但沒接 hook；v1.19.7 是第一批真的擋下使用者的批次，落地三條：
+
+1. **IR-041「不收集使用者隱私」** — reply-lint hook 在每輪 AI 回應結束時掃身分證／電子信箱／台灣手機樣式。例外（白話：什麼情況不算違反）：使用者自己 prompt 過的同樣字串視為主動分享、不擋
+2. **IR-002「不要 commit .env 或密碼」** — pre-commit hook 整合 v1.19.1 `detectSecretLike`，除了既有檔名擋（`.env` / `*.pem` 等）再掃 staged diff 新增行內容，命中 OpenAI key / GitHub PAT / JWT / AWS key 等正規表達式樣式即擋
+3. **reply-lint 切硬擋（exit 2）** — 違規累積到第 4 次時改 `process.exit(2)` + `stderr` 寫指令型重寫提示（取代 v1.19.3 的 stdout JSON 做法）；連續被擋 3 次後第 4 次違規降為 `exit 1` 警告防 AI 死循環
+
+**新增：**
+
+- `shared/privacy-detect.js` — 純函式 `detectPrivacyLeak(text, { userPrompts })`
+  - 樣式：台灣身分證（含官方檢碼算式）／電子信箱（含 TLD 至少 2 字邊界檢查）／台灣手機（09 開頭 + 8 碼、過濾全同尾碼測試碼）
+  - 使用者提問例外：命中字串若也出現在 `options.userPrompts` 任何一條裡即略過
+  - 不丟例外、未知輸入回 `{ detected: false, matches: [] }`、好測試
+- `hooks/ownmind-reply-lint.js` — 三大改動：
+  - 加掛 `detectPrivacyLeak`（從 transcript 抽最近 5 輪 user message 作為例外比對來源）
+  - 違規計數達門檻時、改 `process.exit(2)` + `process.stderr.write(reason)`，移除舊 stdout JSON 路徑
+  - 新增 `BLOCK_DOWNGRADE_LIMIT=3`：連續 block 達 3 次後再違規降警告 `exit 1`、`compliance event` 改寫 `action='repeated_violation_softblock'`
+  - 通過 lint 時自動 `resetBlockCount(sessionId)`、避免跨 turn 計數誤觸發降警告
+- `hooks/lib/session-counter.js` — 擴 schema 加 `block_count` 與 `last_block_ts`
+  - 新增 `readBlockCount` / `incrementBlockCount` / `resetBlockCount` 三個純函式
+  - 對既有 v1.19.6 升上來的舊資料安全加欄位（不動 `count`）
+- `hooks/ownmind-git-pre-commit.js`：
+  - 引入 `parseBypass` / `isBypassed` / `logBypass`，每條規則處理前檢查 bypass、命中即跳過 + 寫 audit
+  - 對 IR-002 額外掃 staged diff 新增行（`git diff --cached -U0`）跑 `detectSecretLike(line, { skip_keyword: true })`
+  - 為什麼用 `skip_keyword=true`：原始碼很常出現 `password` / `secret` 變數名與字串字面值、開 keyword 會誤擋一般程式碼；只走 regex + length heuristic 才命中真實密鑰
+
+**測試（npm test）：**
+
+- 新增 `tests/privacy-detect-unit.test.js`（25 case）：身分證檢碼、信箱、手機、user prompt 例外、誤判防呆
+- 新增 `tests/session-counter-block.test.js`（10 case）：`block_count` 累加 / 讀取 / 清零、與 `count` 獨立、毀損檔回 0
+- 新增 `tests/reply-lint-hook-v197.test.js`（7 case）：場景 16 連續擋 3 次降警告、通過時 reset、場景 17 IR-041 整合與 user prompt 例外、block reason 不再列原個資
+- 新增 `tests/pre-commit-secret.test.js`（13 case）：場景 1 `.env` 擋 / 場景 2 staged diff 含密鑰擋 / `OWNMIND_BYPASS=IR-002` / `=all` / 邊界情境
+- 更新 `tests/reply-lint-hook-v1193-block.test.js`：把 stdout JSON 斷言改為 `exit 2` + stderr 重寫指令斷言（5 處）
+
+**設計取捨：**
+
+- **reply-lint 同時寫 tty banner 跟 stderr**：banner（給使用者看）走 tty 不被 AI 通道吃；stderr（給 Claude 看）只在 block 時寫，目的不同所以不衝突
+- **block reason 不再列原個資字串**：IR-041 命中時提示「請改用代稱」而不複述命中值、避免 Claude 重寫又把個資帶一次
+- **連續擋 3 次降警告**：用 `block_count` 獨立追蹤、與 `violation count` 分開，避免警告降級被一般違規累積干擾；通過時清零讓下個 turn 重新開始
+- **pre-commit secret 偵測用 `skip_keyword=true`**：原始碼變數名出現 `password` / `token` 等英文詞是高頻場景、不能擋；regex + length heuristic 才能精準鎖真實密鑰
+- **規則 `.env` pattern 字面比對**：實際雲端規則 patterns 為 `['.env', '*.pem', ...]`、`.env` 嚴格匹配；`.env.production` 等變體待 v1.19.10 觀察期看誤判紀錄調整
+
+**Code review 採納事項（reviewer 一輪 6 個 Important + 1 個 Minor、全部處理）：**
+
+- **I-1**（架構誠實）：reviewer 指出 README 寫「v1.19.7 wires rule-enforcer」但 hook 實際只 import `bypass-handler`、`evaluateConditions` 迴圈仍直接呼叫。三語系 README 改成「v1.19.7 only wires `bypass-handler`、full `enforceRule` integration deferred to v1.19.8」。本批次不做大重構、避免 v1.19.7 task 範圍外擴
+- **I-2**（信箱白名單）：`shared/privacy-detect.js` 加 `EMAIL_ALLOWLIST_DOMAINS`（`example.com` / `example.org` / `example.net` / `localhost` / `.test` / `.invalid` / `.local`）跟 `EMAIL_ALLOWLIST_LOCAL`（`noreply` / `no-reply` / `donotreply` / `do-not-reply`）。連 `Co-Authored-By: Claude <noreply@anthropic.com>` 都會放行、避免兩週觀察期被噪訊蓋過真正洩漏訊號。補 10 個白名單測試 case
+- **I-3**（避免 shell injection 跟 escape 漏洞）：`hooks/ownmind-git-pre-commit.js` 的 `git diff` 從 `execSync` 字串拼接改 `execFileSync('git', [...args, file])`、檔名當參數陣列傳。檔名含 `$` / 反引號 / 反斜線都安全
+- **I-4**（README 措辭澄清）：英文 README 把「First 3 violations are warned only」改成「First 3 per-session violations are warned only（cumulative across turns, not per-turn）」明示是 session 累積、不是連續違規
+- **I-5**（`formatBlockReason` 編號）：原本固定寫 `1.` / `2.` / `3.`、若只命中 IR-041 時 reason 從「3.」開始很怪。改 running counter 動態編號。補一個整合測試驗證單獨 IR-041 命中時編號從「1.」開始
+- **I-6**（測試骨架腳註）：`tests/pre-commit-secret.test.js` 加註解寫明 `shared/*.js` 複製清單的維護條件、避免將來新增 import 時測試莫名失敗
+- **M-1**（partial-failure window 文件化）：`hooks/ownmind-reply-lint.js` 違規路徑加註解、說明 counter / block_count / compliance event 寫入順序、及 SIGKILL 落在中間時的退化行為（觀測性殘缺、但 block 邏輯仍正確）
+
+延後到 v1.19.8/v1.19.10 cleanup 的 reviewer 建議：M-2（`secret-detect.js` 從 `src/utils/` 搬到 `shared/`）、M-3（JSDoc 範例對齊）、M-4（label fallback）、M-5（`readRecentUserPrompts` 跟 `readLastAssistantText` 合併一次 I/O）。
+
+**驗證：** `npm test` 1595 / 1595 全綠（review fix 多加 11 個 case：10 個信箱白名單 + 1 個 IR-041 編號）。
+
+---
+
 ## v1.19.6 — Critical 鐵律卡控的共用判定核心（基礎建設、不擋任何規則）
 
 **背景：** v1.19 給鐵律掛了 critical / default / advisory 標籤、但執行層仍跟 v1.18 一樣（看 `block_on_fail`）。v1.20 原本要一口氣把 10 條 critical 切到硬擋；Vin 拍板拆成 v1.19.6 ~ v1.19.10 漸進推、永遠停在 v1.19.x。

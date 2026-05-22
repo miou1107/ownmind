@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.19.7 新增 / 修改（IR-041 隱私偵測 + IR-002 密碼進 commit + reply-lint 切硬擋）
+
+新增檔：
+```
+shared/privacy-detect.js                                      — 純函式 detectPrivacyLeak(text, { userPrompts })；身分證／信箱／台灣手機樣式 + user prompt 例外
+tests/privacy-detect-unit.test.js                             — 25 case：身分證檢碼／信箱／手機／user prompt 例外／邊界／誤判防呆
+tests/session-counter-block.test.js                           — 10 case：block_count 累加／讀取／清零、與 count 獨立、毀損檔回 0
+tests/reply-lint-hook-v197.test.js                            — 7 case：連續擋 3 次降警告／通過時 reset／IR-041 整合與 user prompt 例外
+tests/pre-commit-secret.test.js                               — 13 case：.env 擋／staged diff 含密鑰擋／OWNMIND_BYPASS 整合／邊界情境
+```
+
+修改的既有檔：
+```
+hooks/ownmind-reply-lint.js                                   — exit 2 + stderr reason／連續擋 3 次降警告 exit 1／加 IR-041 偵測整合
+hooks/lib/session-counter.js                                  — schema 加 block_count／last_block_ts；新增 readBlockCount / incrementBlockCount / resetBlockCount
+hooks/ownmind-git-pre-commit.js                               — 引入 parseBypass / logBypass；IR-002 加掃 staged diff 內容跑 detectSecretLike
+tests/reply-lint-hook-v1193-block.test.js                     — 5 處：stdout JSON 斷言改 exit 2 + stderr 重寫指令斷言
+CHANGELOG.md                                                  — v1.19.7 條目
+package.json                                                  — version 1.19.6 → 1.19.7
+```
+
+---
+
 ## v1.19.6 新增 / 修改（Critical 鐵律卡控共用判定核心）
 
 新增檔：
