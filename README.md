@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.19.7** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.19.8** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -288,13 +288,26 @@ Talk to your AI in plain English:
 
 #### Q: Fresh server deployment — how do I get into the admin console the first time?
 
-**Current flow (manual)**:
-1. When deploying the server, set env var `SETUP_TOKEN=<random string>` (e.g., `openssl rand -hex 32`)
-2. Open browser to `https://your-server/admin/setup`, enter the token + the super_admin credentials you want
-3. Once created, log in normally at `/admin/login`
-4. After admin creation, the token is invalidated and you can remove it from env
+**v1.19.8+ recommended flow (zero friction)**:
+1. `docker compose up -d` to start the server
+2. Open browser to `https://your-server/admin` — system detects an empty `users` table and auto-redirects to `/setup`
+3. Fill in email + password to create the first super_admin
+4. Page then displays your api_key (one-click copy) + a client install template (auto-filled with current server URL)
+5. Click "Go to login" to enter the admin console; create other members and manage iron rules from there
 
-**Known pain point**: this flow is unfriendly. v1.20+ will ship a **setup wizard** (auto-guide for first-time setup via web UI) so no manual token needed. Until then, if you deployed without `SETUP_TOKEN`, you can SSH into the DB and `INSERT` a super_admin row manually.
+Total: about 2 minutes. The wizard auto-closes permanently after the first admin is created.
+
+**Advanced / rescue path (legacy v1.19.7 and earlier)**:
+
+If your deployment hits one of these scenarios, the wizard won't apply:
+
+| Scenario | Path to take |
+|:---|:---|
+| Restore from backup; `users` table has a super_admin but `password_hash IS NULL` | Set env `SETUP_TOKEN`, use `POST /admin/setup` |
+| Admin forgot password, wants to reset | SSH into DB, `UPDATE users SET password_hash = NULL WHERE id = ...`, then use setup token path |
+| Migrating server, importing old DB | pg_dump / pg_restore + either rescue path above |
+
+Normal first-time install **does not need** `SETUP_TOKEN` — the wizard handles it.
 
 #### Q: Can it coexist with `.cursorrules` or `CLAUDE.md`?
 

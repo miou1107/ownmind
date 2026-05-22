@@ -1,5 +1,81 @@
 # OwnMind 更新紀錄
 
+## v1.19.8 — Setup Wizard：首次安裝零摩擦進後台
+
+**背景：** v1.19.7 之前新使用者部署完伺服器後遇到 chicken-and-egg 鎖死：
+
+1. `db/001_init.sql` 只建 schema、不 seed 任何帳號
+2. 想用 `/admin/login` → 找不到 super_admin、回「帳號或密碼錯誤」
+3. 想用 `/admin/setup` endpoint 救援 → 必須先設環境變數 `SETUP_TOKEN` 重啟 server、還要手動 SQL INSERT 一筆 `password_hash IS NULL` 的 super_admin 紀錄
+4. 想跑 client install.sh → 必須先有 API key、但只能由已存在的 super_admin 在後台建 user 後產生
+
+結果：平均卡 30 分鐘以上、極差的 onboarding 體驗。
+
+**v1.19.8 解法：** 新增 setup wizard 網頁、users 表為空時自動引導、零文件閱讀成本。
+
+### 新增
+
+- `src/routes/setup.js` — 新增兩個公開 endpoint：
+  - `GET /api/setup/status` → 回 `{ first_run, users_count }`
+  - `POST /api/setup/init` → first_run=true 時建第一個 super_admin、自動產 api_key、寫 audit log（action='setup_init'）
+  - 用 `pg_advisory_xact_lock` 鎖確保並發 init 請求只有一個能成功（race condition 防護）
+  - Factory pattern（`createSetupRouter` + `createFirstRunDetector`）、依賴可注入方便單元測試
+- `src/middleware/first-run-redirect.js` — first-run redirect middleware：
+  - users 表為空 + `/admin/*` 請求 → 302 redirect 到 `/setup`
+  - users 表非空 + `/setup` 請求 → 302 redirect 到 `/admin/login`
+  - 失敗時 fail-open（DB 連不上不誤導使用者進 wizard）
+- `src/public/setup.html` — 純 HTML wizard 頁：
+  - 表單收 email / name（可選）/ password / password 確認
+  - 成功後顯示 api_key + 一鍵複製按鈕 + client install.sh 範例指令（自動填當前 host）
+  - 含 `<meta name="robots" content="noindex,nofollow">` 不被搜尋引擎爬
+- `src/utils/db.js` — 新增 `withTransaction(fn)` helper、給需要 transaction 序列化的場景用
+- `tests/setup-wizard.test.js` — 19 個 case 涵蓋場景 4~10、14 + cache 行為 + race condition 模擬
+
+### 修改
+
+- `src/app.js` — 掛 first-run middleware（在 `/admin` static 之前）+ `/api/setup` route（在 `/api/admin` 之前）+ `GET /setup` 靜態頁
+- README / docs/README.zh-TW.md / docs/README.ja.md — FAQ「首次安裝」段改寫：首推 wizard、`SETUP_TOKEN` 降級為「進階／救援通道」
+
+### 跟舊路徑並存
+
+舊 `/admin/setup` + `SETUP_TOKEN` 不刪除、定位改為「緊急救援」：
+
+- **users 表為空** → 新 wizard 走（零摩擦、無需 token）
+- **users 表有 super_admin 但 `password_hash IS NULL`**（從外部匯入帳號的場景） → 舊路徑走、仍需 SETUP_TOKEN
+- **users 表正常但 admin 忘記密碼** → 走 SQL 手動重置
+
+### 測試
+
+- `npm test` 1614 / 1614 全綠（v1.19.7 之後新增 19 個 setup wizard case）
+- 19 個 case 覆蓋：first-run 偵測、欄位驗證、race condition、advisory lock 呼叫、audit log 寫入、cache 行為、fail-open
+
+### 設計取捨
+
+- **為何不用 SETUP_TOKEN 強化版**：要求新使用者設環境變數重啟伺服器、再開瀏覽器、UX 很差；wizard 完全無需重啟即可使用
+- **為何不直接 auto-seed admin/admin**：生產環境誤啟動就完蛋；wizard 強制使用者第一次自己設密碼
+- **為何用 advisory lock 而非 schema constraint**：partial unique index `WHERE role='super_admin'` 在 PG 各版本支援度差異、advisory lock 應用層控制更乾淨
+- **為何 cache 只快取 false 結果**：first_run=true 是過渡狀態（建好就翻 false）、頻繁查 DB 沒問題；快取 false 才能省 /admin/* 每個靜態請求的 DB 查詢
+
+### Code review 採納事項（reviewer 一輪：0 Critical / 4 Important / 7 Minor、處理 6 條、延後 5 條）
+
+- **I-1**（rate limit 對齊）：`/api/setup/init` 掛 `authLimiter`（15 分鐘 10 次）、跟既有 `/api/admin/setup` 一致；first-run 階段給使用者試錯空間、建好後 endpoint 自動 403、不會被暴力破解
+- **I-2**（middleware 整合測試）：重構 `first-run-redirect.js` 成 factory `createFirstRunRedirect({ detectFirstRun })`、新增 `tests/first-run-redirect.test.js` 8 case 直接驗證場景 1/2/3 + 邊界 + fail-open
+- **I-3**（race test 註解）：在場景 10 測試補註解、明確說「這層驗證的是 post-lock recheck、不是 advisory lock 本身」、列為未來 integration test 補充項
+- **M-1**（dead code 清除）：拿掉 `firstRunRedirect` 中 `/api/*` 的 dead guard
+- **M-2**（spec 修正）：場景 5 範例的 `id` 從 `"<uuid>"` 改為 `1`（PostgreSQL SERIAL 整數）、保留 `api_key` 為 UUID
+- **M-4**（onclick 顯式 event）：`setup.html` 的 `copyApiKey()` / `copyInstallCmd()` 改 `(event)` 參數、不依賴全域 `event`
+
+延後 v1.19.10 cleanup：
+- **I-4**：bootstrap audit 改用 `actor_id=NULL` + `details.source='setup_wizard_bootstrap'`（需 audit reader 對齊調整）
+- **M-3**：`shared/email-regex.js` 抽共用、給 `privacy-detect.js` + `setup.js` 共用
+- **M-5**：`result.user` 防禦性檢查
+- **M-6**：BCRYPT_ROUNDS 從 10 升 12
+- **M-7**：HTTPS 執行時 guard（`req.protocol === 'http'` 拒絕）
+
+**驗證：** `npm test` 1622 / 1622 全綠（v1.19.7 之後新增 27 個 case：setup wizard 19 + first-run-redirect 8）。
+
+---
+
 ## v1.19.7 — IR-041 隱私偵測 + IR-002 密碼進 commit + reply-lint 切硬擋模式
 
 **背景：** v1.19.6 把共用判定核心（rule-enforcer + bypass-handler）做好但沒接 hook；v1.19.7 是第一批真的擋下使用者的批次，落地三條：

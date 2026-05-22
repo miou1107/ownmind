@@ -35,10 +35,27 @@ const authLimiter = rateLimit({
 });
 app.use('/api/admin/login', authLimiter);
 app.use('/api/admin/setup', authLimiter);
+// v1.19.8 code-review I-1：跟 /api/admin/setup 對齊、避免被誤打
+// （first_run 階段不會擋使用者試錯、因為這個限制是 15 分鐘 10 次、夠他試密碼格式；
+// 建好 admin 後 endpoint 自動回 403、rate limit 只是防誤打的後盾）
+app.use('/api/setup/init', authLimiter);
 app.use('/api', apiLimiter);
+
+// v1.19.8：first-run redirect middleware
+// users 表為空 → /admin/* 自動 redirect 到 /setup（首次安裝引導）
+// users 表非空 → /setup 自動 redirect 到 /admin/login（避免使用者誤入已關閉的 wizard）
+// 掛在 /admin static 之前才能截到 GET /admin/login
+import { firstRunRedirect } from './middleware/first-run-redirect.js';
+app.use(firstRunRedirect);
 
 // 靜態檔案（Admin 後台）
 app.use('/admin', express.static(join(__dirname, 'public')));
+
+// v1.19.8：setup wizard 靜態頁（serve src/public/setup.html）
+// 直接吃 / 路徑下的 setup.html、不需要獨立資料夾
+app.get('/setup', (req, res) => {
+  res.sendFile(join(__dirname, 'public', 'setup.html'));
+});
 
 // v1.17.24: 用戶用量報告頁（user role 也可看，路徑 /ownmind/me/）
 // v1.17.88: 加 trailing slash redirect — /me 沒尾斜線直接 404，現在 301 → me/
@@ -78,8 +95,13 @@ import adminIronRuleUpgradeRoutes from './routes/admin-iron-rule-upgrade.js';
 import meRoutes from './routes/me.js';
 import { createNarrativeRouter } from './routes/me-narrative.js';
 import { createDebugRouter } from './routes/debug.js';
+import setupRoutes from './routes/setup.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
+
+// v1.19.8：setup wizard API endpoints（公開、無需 auth）
+// 必須在 /api/admin 之前 mount，避免 /api/admin 吃掉
+app.use('/api/setup', setupRoutes);
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);

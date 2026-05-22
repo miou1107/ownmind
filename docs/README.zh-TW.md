@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.19.7** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.19.8** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -288,13 +288,26 @@ export OWNMIND_DISABLED=1
 
 #### Q: 全新部署伺服器、第一次怎麼進管理後台？
 
-**目前流程（需手動）**：
-1. 部署伺服器時設環境變數 `SETUP_TOKEN=隨機字串`（例如用 `openssl rand -hex 32` 產出）
-2. 開瀏覽器到 `https://你的伺服器/admin/setup`、輸入該 token 跟想設的 super_admin 帳號密碼
-3. 建好後即可正常登入 `/admin/login`
-4. 建好帳號後該 token 就失效、可以從環境變數移除
+**v1.19.8+ 推薦流程（零摩擦）**：
+1. `docker compose up -d` 啟動伺服器
+2. 開瀏覽器到 `https://你的伺服器/admin` — 系統偵測 `users` 表為空、自動 redirect 到 `/setup`
+3. 填 email + 密碼建第一個 super_admin
+4. 成功後頁面顯示 api_key（一鍵複製）+ client 安裝指令範本（自動填當前伺服器 URL）
+5. 點「前往登入」進後台、即可開始建立其他成員跟管理鐵律
 
-**已知痛點**：這個流程不夠友善、v1.20+ 會做 setup wizard（安裝精靈：自動引導首次設定的網頁）、首次部署無需手動設 token。在那之前、如果你忘了設 `SETUP_TOKEN` 就部署、可直接登入 DB 跑 SQL 手動 INSERT 一筆 super_admin 紀錄。
+整個流程約 2 分鐘。Setup wizard 在第一個 admin 建好後自動永久關閉、不再開放。
+
+**進階／救援通道（v1.19.7 以前的舊路徑）**：
+
+若你的部署遇到下列情境、wizard 可能不夠用：
+
+| 情境 | 走哪條路 |
+|:---|:---|
+| 從備份還原時 `users` 表已有 super_admin 但 `password_hash IS NULL` | 設環境變數 `SETUP_TOKEN`、走 `POST /admin/setup` |
+| 管理員忘記密碼、想重設 | SSH 進 DB、`UPDATE users SET password_hash = NULL WHERE id = ...`、然後走 setup token 路徑 |
+| 整個伺服器搬家、想直接匯入舊資料庫 | pg_dump / pg_restore + 上述任一救援路徑 |
+
+正常首次安裝**不需要**設 `SETUP_TOKEN`、wizard 已涵蓋。
 
 #### Q: 跟 `.cursorrules` 或 `CLAUDE.md` 可以並存嗎？
 
