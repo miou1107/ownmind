@@ -364,4 +364,7 @@ router.post('/users/:id/password', async (req, res) => {
   }
 });
 
+// v1.19.9：reset-password endpoint 移到獨立 factory module（src/routes/admin-password-reset.js）
+// 方便注入測試 + 把「忘記密碼救援」邏輯跟「正常改密碼」邏輯清楚分開
+
 export default router;

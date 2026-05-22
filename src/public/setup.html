@@ -87,6 +87,13 @@
     <h2>✅ 建立成功</h2>
     <p>下方的 API key 是 client 端安裝時要用的金鑰、請立刻複製保存。<strong>離開此頁後將無法再次取得</strong>（仍可在後台重新產生）。</p>
 
+    <!-- v1.19.9：強烈建議建第二位 admin（單 admin 忘記密碼會卡死） -->
+    <div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:12px 14px;border-radius:8px;font-size:13px;margin:12px 0;">
+      ⚠️ <strong>下一步建議：立即建立第二位 admin</strong><br>
+      你現在是唯一的管理員、如果忘記密碼會需要 SSH 進伺服器跑救援腳本。<br>
+      進後台後第一件事：到「使用者管理」新增第二位 super_admin、互相備援。
+    </div>
+
     <label style="font-size:13px;font-weight:600;">你的 API key：</label>
     <div class="api-key-box" id="api-key-box">
       <span id="api-key-text"></span>

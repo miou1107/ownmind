@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.19.8** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.19.9** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -308,6 +308,30 @@ export OWNMIND_DISABLED=1
 | 整個伺服器搬家、想直接匯入舊資料庫 | pg_dump / pg_restore + 上述任一救援路徑 |
 
 正常首次安裝**不需要**設 `SETUP_TOKEN`、wizard 已涵蓋。
+
+#### Q: Admin 忘記密碼怎麼辦？（v1.19.9+ 三條救援防線）
+
+依「還有沒有其他 admin」決定走哪條：
+
+**情境 A：團隊有其他 admin（最常見）**
+- 任一其他 super_admin 進後台、到「使用者管理」找到忘記密碼的人、按「重設密碼」
+- 系統產 12 字隨機臨時密碼（自動避開 0/O/I/l/1 等混淆字）、複製給對方
+- 對方用臨時密碼登入、強制改新密碼
+
+**情境 B：唯一 admin 忘記密碼（你是公司唯一管理員）**
+- 需 SSH 進伺服器主機跑救援腳本：
+  ```bash
+  node scripts/reset-admin-password.js
+  ```
+- 腳本互動式：列出所有 super_admin、選誰要重設、輸入 `yes` 確認
+- 自動產 `SETUP_TOKEN`、印給你
+- 接著設環境變數 `export SETUP_TOKEN=<token>`、重啟 server、開瀏覽器到 `/admin/setup` 重新設密碼
+
+**情境 C：完全沒 SSH 權限（雲端 SaaS 模式）**
+- 目前無解、必須聯絡服務提供方協助
+- v1.20+ 規劃整合 email 重設流程（依賴 SMTP）
+
+**預防勝於治療**：v1.19.9 起後台會在「只有一個 admin」時顯示橘色警告 banner（提醒條：頁面頂部的提示）、強烈建議建立第二位 admin 互相備援。
 
 #### Q: 跟 `.cursorrules` 或 `CLAUDE.md` 可以並存嗎？
 

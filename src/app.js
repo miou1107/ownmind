@@ -96,12 +96,17 @@ import meRoutes from './routes/me.js';
 import { createNarrativeRouter } from './routes/me-narrative.js';
 import { createDebugRouter } from './routes/debug.js';
 import setupRoutes from './routes/setup.js';
+import adminPasswordResetRoutes from './routes/admin-password-reset.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
 
 // v1.19.8：setup wizard API endpoints（公開、無需 auth）
 // 必須在 /api/admin 之前 mount，避免 /api/admin 吃掉
 app.use('/api/setup', setupRoutes);
+
+// v1.19.9：admin 緊急重設他人密碼（必須在 /api/admin 之前 mount）
+// path 是 /api/admin/users/:id/reset-password
+app.use('/api/admin/users', adminPasswordResetRoutes);
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
