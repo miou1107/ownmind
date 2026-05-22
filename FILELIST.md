@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.19.3 新增 / 修改（Reply-lint 漸進式 block + 白名單擴 200+ 詞）
+
+新增檔：
+
+```
+hooks/lib/session-counter.js                                  — Claude session 違規累積計數純函式（讀 / 寫 / 自掃 30 天前）
+tests/language-lint-v1193.test.js                             — 55 case：Top 30 詞、proper noun、threshold 分情境、code review 豁免、IR-036 視窗 80
+tests/session-counter.test.js                                 — 10 case：純函式 + 防呆（檔不存在 / 毀損 / 自掃 / 無權限）
+tests/reply-lint-hook-v1193-block.test.js                     — 8 case：MODE=warn / block / disable / 未知值、漸進累積、stop_hook_active、reason 指令型
+openspec/changes/v1.19.3-reply-lint-progressive-block/proposal.md   — 提案 + Codex 對抗審查結論
+openspec/changes/v1.19.3-reply-lint-progressive-block/spec.md       — 15 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19.3-reply-lint-progressive-block/tasks.md      — 7 階段任務拆解（A-G）
+```
+
+修改的既有檔：
+
+```
+shared/language-lint.js                                       — TECH_WHITELIST 從 80 詞擴到 200+ 詞、加 proper noun 偵測、threshold 分情境、IR-036 視窗 50→80
+hooks/ownmind-reply-lint.js                                   — 加 OWNMIND_REPLY_LINT_MODE env、漸進式 block 計數、block JSON stdout、formatBlockReason 指令型
+README.md                                                     — Reply Lint Progressive Block 段
+docs/README.zh-TW.md / docs/README.ja.md                      — 三語系同步（IR-032）
+CHANGELOG.md                                                  — v1.19.3 條目
+package.json                                                  — version 1.19.3
+```
+
+---
+
 ## v1.19.2 新增 / 修改（DB Migration 自動套用）
 
 新增檔：

@@ -69,6 +69,18 @@ const NO_NETWORK = process.env.OWNMIND_REPLY_LINT_NO_NETWORK === '1';
 const DISABLED = process.env.OWNMIND_REPLY_LINT_DISABLE === '1';
 const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
 
+// v1.19.3：MODE env、漸進式 block
+// - warn（預設）：違規寫 banner、不 block
+// - block：違規累積到 BLOCK_THRESHOLD（4 次）後寫 stdout JSON 觸發 Claude 重寫
+// - disable：完全跳過（同 OWNMIND_REPLY_LINT_DISABLE=1）
+// - 未知值（fail-open）：當 warn 處理 + banner 加提示
+const RAW_MODE = (process.env.OWNMIND_REPLY_LINT_MODE || 'warn').toLowerCase();
+const VALID_MODES = new Set(['warn', 'block', 'disable']);
+const MODE = VALID_MODES.has(RAW_MODE) ? RAW_MODE : 'warn';
+const MODE_INVALID = !VALID_MODES.has(RAW_MODE);
+const BLOCK_THRESHOLD = 4;  // 第 4 次違規才 block（前 3 次警告）
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 天
+
 const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'banner-pending.jsonl');
 const PENDING_FILE_MAX_BYTES = 1024 * 1024;
@@ -87,16 +99,20 @@ const POST_TIMEOUT_MS = 1500;
 main().catch(() => { try { process.exit(0); } catch { /* ignore */ } });
 
 async function main() {
-  if (DISABLED) { process.exit(0); return; }
+  // v1.19.3: MODE=disable 等同舊 DISABLED env
+  if (DISABLED || MODE === 'disable') { process.exit(0); return; }
 
   // dynamic import shared/* 包在 try：失敗也不外漏（review A2）
   // v1.19: 全部 shared/* 與 hooks/lib/* 統一 catch → exit 0、不再 inline fallback（review M-2）
+  // v1.19.3: 新增 session-counter
   let lintReply, readCredentials, getClientVersion, getTierFromRules, buildComplianceEvents;
+  let incrementCounter, cleanupStale;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
     ({ getTierFromRules } = await import('../shared/iron-rule-tier.js'));
     ({ buildComplianceEvents } = await import('./lib/build-compliance-events.js'));
+    ({ incrementCounter, cleanupStale } = await import('./lib/session-counter.js'));
   } catch {
     process.exit(0); return;
   }
@@ -110,6 +126,7 @@ async function main() {
 
   // stop_hook_active=true 代表這次 Stop 是因為前一個 hook block 觸發
   // → 立刻退出避免無限迴圈（Claude Code Stop hook 規格）
+  // v1.19.3：這也保證 Claude 重寫過程的 Stop 不會被重複計數
   if (payload.stop_hook_active === true) { process.exit(0); return; }
 
   const transcriptPath = sanitizeTranscriptPath(payload.transcript_path);
@@ -123,20 +140,39 @@ async function main() {
   catch { process.exit(0); return; }
   if (lintResult.ok) { process.exit(0); return; }
 
+  // === v1.19.3: 計數累積 + 決定是否 block ===
+  const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
+  let currentCount = 1;  // 預設 1（incrementCounter 失敗時的 fallback）
+  try { currentCount = incrementCounter(sessionId); } catch { /* swallow */ }
+  // best-effort 自掃過期 session（每次 hook 觸發跑一下、避免檔無限長）
+  try { cleanupStale(SESSION_TTL_MS); } catch { /* swallow */ }
+
+  const shouldBlock = MODE === 'block' && currentCount >= BLOCK_THRESHOLD;
+
   // === Banner 路徑（給 user 看）===
-  const block = formatBanner(lintResult.violations, getClientVersion);
-  if (block) {
-    const wrote = !FORCE_FALLBACK && writeToTty(block);
-    if (!wrote) writeFallback(block);
+  const banner = formatBanner(lintResult.violations, getClientVersion, {
+    mode: MODE,
+    modeInvalid: MODE_INVALID,
+    rawMode: RAW_MODE,
+    count: currentCount,
+    threshold: BLOCK_THRESHOLD,
+    blocked: shouldBlock,
+  });
+  if (banner) {
+    const wrote = !FORCE_FALLBACK && writeToTty(banner);
+    if (!wrote) writeFallback(banner);
+  }
+
+  // === v1.19.3: 寫 block decision JSON 到 stdout（Claude Code 觸發 Claude 重寫）===
+  // 順序：stdout 先寫、其他工作後做（避免 POST timeout 卡住 block signal）
+  if (shouldBlock) {
+    const reason = formatBlockReason(lintResult.violations);
+    try {
+      process.stdout.write(JSON.stringify({ decision: 'block', reason }) + '\n');
+    } catch { /* 寫不出也吞、Claude Code 收不到 block 就算了、退化成 warn 模式 */ }
   }
 
   // === Compliance event 路徑（跨 session 統計）===
-  // 設計（v1.17.97 改）：
-  //   1. archive 寫進 YYYY-MM-DD.jsonl（debugging、無 reader）— 保留 v1.17.96 行為
-  //   2. await POST 嘗試送 server
-  //   3. POST 失敗 / NO_NETWORK 才寫 reply-lint-pending.jsonl 給 SessionStart flush
-  //      （POST 成功就不寫 pending、避免 flush 重複送、DB 不會有 duplicate）
-  // v1.19: 讀 iron_rules cache 給每筆違反查 tier（best-effort、cache miss 用 default）
   const cachedRules = readIronRulesCache();
   const events = buildComplianceEvents(lintResult.violations, cachedRules, getTierFromRules);
   spoolEvents(events);
@@ -248,21 +284,87 @@ function readLastAssistantText(transcriptPath) {
 /**
  * 把 lint violations 包成招牌格式（沿用 ownmind-tty-echo.cjs 視覺風格）。
  *
- * 範例：
- *   【OwnMind v1.17.96】回話品質 lint
+ * v1.19.3：加 MODE 與 session 計數顯示
+ *
+ * 範例（warn mode）：
+ *   【OwnMind v1.19.3】回話品質 lint（warn mode、本 session 累積 1 次）
  *     ⚠️  IR-037: 中英混雜比例 32% > 15% — refactor, codebase, ...
- *     ⚠️  IR-036: 行話沒附白話說明 — refactor, hook
+ *
+ * 範例（block mode、第 3 次預告）：
+ *   【OwnMind v1.19.3】回話品質 lint（block mode、本 session 累積 3 次、下次違規會 block）
+ *
+ * 範例（block mode、第 4 次觸發 block）：
+ *   【OwnMind v1.19.3】回話品質 lint ⚠️ 已觸發 block、Claude 將收到重寫指令
  */
-function formatBanner(violations, getClientVersion) {
+function formatBanner(violations, getClientVersion, opts = {}) {
   if (!Array.isArray(violations) || violations.length === 0) return null;
   let version;
   try { version = getClientVersion(); } catch { version = '?'; }
+
+  const { mode = 'warn', modeInvalid = false, rawMode = '', count = 1, threshold = 4, blocked = false } = opts;
+
   const out = [];
-  out.push(`【OwnMind v${version}】回話品質 lint`);
+  let header = `【OwnMind v${version}】回話品質 lint`;
+  if (blocked) {
+    header += ` ⚠️ 已觸發 block、Claude 將收到重寫指令（本 session 累積 ${count} 次）`;
+  } else if (mode === 'block') {
+    const remaining = Math.max(0, threshold - count);
+    header += `（block mode、本 session 累積 ${count} 次、再 ${remaining} 次就 block）`;
+  } else {
+    header += `（${mode} mode、本 session 累積 ${count} 次）`;
+  }
+  out.push(header);
+
+  if (modeInvalid) {
+    out.push(`  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' 不認識、fallback 到 warn`);
+  }
+
   for (const v of violations) {
     out.push(`  ⚠️  ${v.rule}: ${v.message}`);
   }
   return out.join('\n');
+}
+
+/**
+ * v1.19.3：把 violations 包成「指令型」reason、給 Claude Code block 後餵 Claude 當下一個 prompt
+ *
+ * Codex 對抗審查警告：reason 是「下一個 prompt」、不是「修正指令」。
+ *   ❌ 報告型：「你違反 IR-037、比例 32%、找到 5 個英文詞」
+ *   ✅ 指令型：「請重寫剛才那則回應、用白話中文取代以下英文詞...」
+ *
+ * 重寫提示要：
+ *   1. 用動詞「請重寫」開頭
+ *   2. 列出具體問題詞、Claude 才知道改哪些
+ *   3. 給改寫格式範例（白話、括號附中文等）
+ *   4. 加例外指引（變數名 / 函式名等不用改）、避免 Claude 把 code 也改壞
+ */
+function formatBlockReason(violations) {
+  const lines = [];
+  lines.push('請重寫你剛才的回應、改善以下品質問題（保持原意、只改語言風格）：');
+  lines.push('');
+
+  for (const v of violations) {
+    if (v.rule === 'IR-037') {
+      const words = (v.detail && Array.isArray(v.detail.mixedWords)) ? v.detail.mixedWords.slice(0, 10) : [];
+      lines.push(`1. 用白話中文取代以下英文詞（或在第一次出現時用括號附中文解釋）：`);
+      if (words.length > 0) {
+        lines.push(`   ${words.join(', ')}`);
+      }
+      lines.push('');
+    } else if (v.rule === 'IR-036') {
+      const words = (v.detail && Array.isArray(v.detail.jargon)) ? v.detail.jargon.slice(0, 10) : [];
+      lines.push(`2. 以下技術詞第一次出現時要附白話說明、用「：解釋」、「（白話）」、「即...」、「也就是...」等格式：`);
+      if (words.length > 0) {
+        lines.push(`   ${words.join(', ')}`);
+      }
+      lines.push('');
+    }
+  }
+
+  lines.push('如果上述詞屬於變數名 / 函式名 / 程式碼引用、或上下文已說明過、可保留不改。');
+  lines.push('重寫時請回到原本對話脈絡、不要重新確認問題、直接給新答案。');
+
+  return lines.join('\n');
 }
 
 /**
