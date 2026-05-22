@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.19.7** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.19.8** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -288,13 +288,26 @@ AI に普通の言葉で命令：
 
 #### Q: 新規サーバーデプロイ後、初回の管理コンソールへの入り方は？
 
-**現行フロー（手動）**：
-1. サーバーデプロイ時に環境変数 `SETUP_TOKEN=<ランダム文字列>` を設定（例：`openssl rand -hex 32` で生成）
-2. ブラウザで `https://あなたのサーバー/admin/setup` を開き、token と設定したい super_admin の認証情報を入力
-3. 作成後は通常通り `/admin/login` でログイン
-4. admin 作成後は token 無効化、env から削除可能
+**v1.19.8+ 推奨フロー（摩擦ゼロ）**：
+1. `docker compose up -d` でサーバー起動
+2. ブラウザで `https://あなたのサーバー/admin` を開く — システムが `users` テーブルが空であることを検出し `/setup` に自動 redirect
+3. email + パスワードを入力して最初の super_admin を作成
+4. ページに api_key（ワンクリックコピー）+ client インストールテンプレート（現在のサーバー URL 自動入力済）が表示
+5. 「ログインへ」をクリックして管理コンソールへ入り、他のメンバー作成や鉄則管理を開始
 
-**既知の痛点**：このフローは不親切。v1.20+ で **setup wizard**（セットアップウィザード：Web UI が初回設定を自動誘導）を実装予定、token 手動設定不要に。それまでは `SETUP_TOKEN` 未設定でデプロイした場合、DB に SSH して super_admin 行を手動 INSERT で対応。
+所要時間：約 2 分。Setup wizard は最初の admin 作成後、永続的に自動クローズ。
+
+**進階／レスキューパス（v1.19.7 以前の旧フロー）**：
+
+下記シナリオは wizard で対応不可：
+
+| シナリオ | 経路 |
+|:---|:---|
+| バックアップから復元、`users` テーブルに super_admin はいるが `password_hash IS NULL` | 環境変数 `SETUP_TOKEN` 設定、`POST /admin/setup` 使用 |
+| 管理者がパスワードを忘れて再設定したい | DB に SSH、`UPDATE users SET password_hash = NULL WHERE id = ...`、その後 setup token パス利用 |
+| サーバー移行、旧 DB をインポート | pg_dump / pg_restore + 上記いずれかのレスキューパス |
+
+通常の初回インストールは `SETUP_TOKEN` **不要** — wizard が完全カバー。
 
 #### Q: `.cursorrules` や `CLAUDE.md` と共存可能？
 

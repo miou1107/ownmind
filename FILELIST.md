@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.19.8 新增 / 修改（Setup Wizard：首次安裝零摩擦進後台）
+
+新增檔：
+```
+src/routes/setup.js                                           — GET /api/setup/status + POST /api/setup/init；用 pg_advisory_xact_lock 鎖、Factory pattern 可注入
+src/middleware/first-run-redirect.js                          — users 表為空 → /admin/* 自動 redirect 到 /setup；建好後反向 redirect 回登入頁
+src/public/setup.html                                         — 純 HTML wizard：表單 + 成功頁顯示 api_key + 一鍵複製 + install.sh 範例
+tests/setup-wizard.test.js                                    — 19 case：first-run 偵測 / 欄位驗證 / race condition / cache 行為 / fail-open
+tests/first-run-redirect.test.js                              — 8 case：middleware 整合測試（code-review I-2 補的覆蓋缺口）
+openspec/changes/v1.19.8-setup-wizard/proposal.md             — 提案：chicken-and-egg 問題分析 + 解法選型（B+C 推薦、Codex Rescue 評估）
+openspec/changes/v1.19.8-setup-wizard/spec.md                 — 規格：16 個場景（GIVEN/WHEN/THEN）
+openspec/changes/v1.19.8-setup-wizard/tasks.md                — 任務清單
+```
+
+修改的既有檔：
+```
+src/app.js                                                    — 掛 first-run middleware + /api/setup route + GET /setup 靜態頁
+src/utils/db.js                                               — 新增 withTransaction(fn) helper、給 transaction 序列化場景用
+package.json                                                  — version 1.19.7 → 1.19.8
+CHANGELOG.md                                                  — v1.19.8 條目
+README.md / docs/README.zh-TW.md / docs/README.ja.md          — FAQ「首次安裝」段改寫：首推 wizard、SETUP_TOKEN 降為救援
+```
+
+---
+
 ## v1.19.7 新增 / 修改（IR-041 隱私偵測 + IR-002 密碼進 commit + reply-lint 切硬擋）
 
 新增檔：

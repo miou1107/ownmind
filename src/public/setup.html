@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex,nofollow">
+  <title>OwnMind 初次安裝精靈</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; min-height: 100vh; padding: 24px; }
+    .header { text-align: center; margin: 40px auto 24px; }
+    .header h1 { font-size: 24px; font-weight: 700; }
+    .header h1 span { color: #7c3aed; }
+    .header .sub { font-size: 13px; color: #86868b; margin-top: 8px; }
+
+    .wizard { max-width: 480px; margin: 0 auto; background: #fff; padding: 32px; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .wizard h2 { font-size: 18px; margin-bottom: 20px; text-align: center; }
+    .wizard p { font-size: 14px; color: #515154; line-height: 1.5; margin-bottom: 16px; }
+
+    .field { margin-bottom: 16px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #1d1d1f; }
+    .field input { width: 100%; padding: 10px 12px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 14px; }
+    .field input:focus { outline: none; border-color: #7c3aed; }
+    .field .hint { font-size: 12px; color: #86868b; margin-top: 4px; }
+
+    .btn { width: 100%; padding: 12px; background: #7c3aed; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn:hover { background: #6d28d9; }
+    .btn:disabled { background: #d2d2d7; cursor: not-allowed; }
+
+    .error { background: #fef2f2; color: #b91c1c; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: none; }
+    .error.show { display: block; }
+
+    .success { display: none; }
+    .success.show { display: block; }
+    .success h2 { color: #16a34a; }
+    .success .api-key-box { background: #f5f5f7; border: 1px solid #d2d2d7; border-radius: 8px; padding: 12px; font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; margin: 12px 0; position: relative; }
+    .success .copy-btn { position: absolute; top: 8px; right: 8px; padding: 4px 10px; background: #fff; border: 1px solid #d2d2d7; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    .success .copy-btn:hover { background: #f5f5f7; }
+    .success .next-btn { display: block; text-align: center; margin-top: 20px; padding: 12px; background: #7c3aed; color: #fff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px; }
+    .success .install-cmd { background: #1d1d1f; color: #fff; padding: 12px; border-radius: 8px; font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5; overflow-x: auto; margin: 12px 0; }
+
+    .footer { text-align: center; margin-top: 24px; font-size: 12px; color: #86868b; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>OwnMind <span>初次安裝精靈</span></h1>
+    <p class="sub">建立第一個管理員帳號、之後就可以登入後台管理鐵律跟記憶</p>
+  </div>
+
+  <!-- 表單區 -->
+  <div class="wizard" id="form-section">
+    <h2>建立 super_admin 帳號</h2>
+    <p>這是這個 OwnMind 伺服器的第一個管理員、擁有最高權限。建立完成後此精靈會自動關閉、後續新增成員請走管理後台。</p>
+
+    <div class="error" id="error-box"></div>
+
+    <form id="setup-form">
+      <div class="field">
+        <label for="email">管理員 Email</label>
+        <input type="email" id="email" required placeholder="admin@your-company.com" autocomplete="off">
+        <div class="hint">會作為登入帳號、之後可在後台修改</div>
+      </div>
+
+      <div class="field">
+        <label for="name">名稱（選填）</label>
+        <input type="text" id="name" placeholder="管理員" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="password">密碼</label>
+        <input type="password" id="password" required minlength="8" placeholder="至少 8 個字元">
+        <div class="hint">建議用密碼管理器產生、避免共用其他服務的密碼</div>
+      </div>
+
+      <div class="field">
+        <label for="password2">確認密碼</label>
+        <input type="password" id="password2" required minlength="8">
+      </div>
+
+      <button type="submit" class="btn" id="submit-btn">建立管理員帳號</button>
+    </form>
+  </div>
+
+  <!-- 成功區 -->
+  <div class="wizard success" id="success-section">
+    <h2>✅ 建立成功</h2>
+    <p>下方的 API key 是 client 端安裝時要用的金鑰、請立刻複製保存。<strong>離開此頁後將無法再次取得</strong>（仍可在後台重新產生）。</p>
+
+    <label style="font-size:13px;font-weight:600;">你的 API key：</label>
+    <div class="api-key-box" id="api-key-box">
+      <span id="api-key-text"></span>
+      <button class="copy-btn" onclick="copyApiKey(event)">複製</button>
+    </div>
+
+    <label style="font-size:13px;font-weight:600;">在你的開發機跑這行指令安裝 client：</label>
+    <div class="install-cmd" id="install-cmd"></div>
+    <button class="copy-btn" style="position:static;display:block;margin-bottom:16px;" onclick="copyInstallCmd(event)">複製安裝指令</button>
+
+    <a href="/admin/login" class="next-btn">前往登入後台</a>
+  </div>
+
+  <div class="footer">
+    OwnMind v1.19.8 · 詳見 <a href="https://github.com/miou1107/OwnMind" target="_blank">GitHub</a>
+  </div>
+
+  <script>
+    const form = document.getElementById('setup-form');
+    const errorBox = document.getElementById('error-box');
+    const submitBtn = document.getElementById('submit-btn');
+    const formSection = document.getElementById('form-section');
+    const successSection = document.getElementById('success-section');
+    const apiKeyText = document.getElementById('api-key-text');
+    const installCmd = document.getElementById('install-cmd');
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.classList.add('show');
+    }
+    function clearError() {
+      errorBox.classList.remove('show');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearError();
+
+      const email = document.getElementById('email').value.trim();
+      const name = document.getElementById('name').value.trim();
+      const password = document.getElementById('password').value;
+      const password2 = document.getElementById('password2').value;
+
+      if (password !== password2) {
+        showError('兩次輸入的密碼不一樣、請再確認');
+        return;
+      }
+      if (password.length < 8) {
+        showError('密碼至少 8 個字元');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '建立中...';
+
+      try {
+        const res = await fetch('/api/setup/init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name: name || undefined }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showError(data.error || '建立失敗、請查 server log');
+          submitBtn.disabled = false;
+          submitBtn.textContent = '建立管理員帳號';
+          return;
+        }
+
+        // 成功：切到 success 區
+        apiKeyText.textContent = data.api_key;
+        const host = window.location.origin;
+        installCmd.textContent =
+          `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- ${data.api_key} ${host}`;
+        formSection.style.display = 'none';
+        successSection.classList.add('show');
+      } catch (err) {
+        showError('網路錯誤、無法連到伺服器');
+        submitBtn.disabled = false;
+        submitBtn.textContent = '建立管理員帳號';
+      }
+    });
+
+    function copyApiKey(ev) {
+      navigator.clipboard.writeText(apiKeyText.textContent);
+      const btn = ev.target;
+      const orig = btn.textContent;
+      btn.textContent = '已複製';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+    function copyInstallCmd(ev) {
+      navigator.clipboard.writeText(installCmd.textContent);
+      const btn = ev.target;
+      const orig = btn.textContent;
+      btn.textContent = '已複製';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  </script>
+</body>
+</html>
