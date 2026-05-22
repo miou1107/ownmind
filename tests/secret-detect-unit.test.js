@@ -50,6 +50,47 @@ describe('detectSecretLike — regex 規則', () => {
     assert.equal(result.detected, true);
     assert.equal(result.rule, 'regex:openai_api_key');
   });
+
+  // v1.19.10：OwnMind 預定金鑰前綴
+  it('OwnMind 預定金鑰 vin-ownmind-admin-2026 命中（incident 字面）', () => {
+    const r = detectSecretLike('vin-ownmind-admin-2026');
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'regex:ownmind_predefined_key');
+  });
+
+  it('OwnMind 預定金鑰 ownmind-admin-xxx（無 vin- 前綴）也命中', () => {
+    const r = detectSecretLike('ownmind-admin-prod2026');
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'regex:ownmind_predefined_key');
+  });
+
+  it('OwnMind 其他角色 super / user / api 命中', () => {
+    assert.equal(detectSecretLike('ownmind-super-token').detected, true);
+    assert.equal(detectSecretLike('ownmind-user-abc1').detected, true);
+    assert.equal(detectSecretLike('ownmind-api-xyz9').detected, true);
+  });
+
+  it('一般「ownmind」字串（無角色前綴）不誤判', () => {
+    const r = detectSecretLike('我用 ownmind 來管理鐵律', { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  // v1.19.10：預設密碼字面樣式
+  it('預設密碼 Password42760988 命中（incident 字面）', () => {
+    const r = detectSecretLike('Password42760988');
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'regex:default_password_literal');
+  });
+
+  it('Password 後接 8 位以上純數字命中', () => {
+    assert.equal(detectSecretLike('Password12345678').detected, true);
+    assert.equal(detectSecretLike('Password99999999').detected, true);
+  });
+
+  it('Password 後接少於 8 位數字不命中（避免誤判 form label）', () => {
+    const r = detectSecretLike('Password123', { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
 });
 
 describe('detectSecretLike — keyword 規則', () => {

@@ -4,12 +4,13 @@ import bcrypt from 'bcrypt';
 import { query } from '../utils/db.js';
 import adminAuth, { superAdminAuth, isAtLeast } from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
+import { generateRandomPassword } from '../../shared/random-password.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
-// v1.17.26: 新增 user 時若 admin 不指定密碼，自動套這個預設值 + must_change_password=true
-// 與 src/jobs/seed-default-passwords.js 邏輯一致
-const DEFAULT_USER_PASSWORD = 'Password42760988';
+// v1.19.10：固定預設密碼 'Password42760988' 已被移除（repo 公開後外洩）。
+// 改成每個 user 建立時各別產隨機密碼、admin 一次性看到、寫入後不留任何固定字串。
+// 對應 openspec/changes/v1.19.10-secret-leak-hotfix/proposal.md
 
 async function writeAuditLog(actorId, action, targetType, targetId, details) {
   try {
@@ -161,12 +162,14 @@ router.post('/users', async (req, res) => {
     const apiKey = randomUUID();
     let passwordHash = null;
     let mustChangePassword = false;
+    let generatedPassword = null;
     if (password) {
       // admin 自己設了密碼 → 直接用，不強制改
       passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     } else if (targetRole === 'user') {
-      // v1.17.26: user role 沒指定密碼 → 套預設值，登入後強制改
-      passwordHash = await bcrypt.hash(DEFAULT_USER_PASSWORD, BCRYPT_ROUNDS);
+      // v1.19.10：每個 user 各別隨機產生（取代 v1.17.26 的固定 'Password42760988' 預設值）
+      generatedPassword = generateRandomPassword();
+      passwordHash = await bcrypt.hash(generatedPassword, BCRYPT_ROUNDS);
       mustChangePassword = true;
     }
 
@@ -182,9 +185,9 @@ router.post('/users', async (req, res) => {
       email: newUser.email, role: newUser.role
     });
 
-    // 用了 shared default 才回傳明碼讓 admin 一次性轉告 user；admin 自設密碼不洩漏
-    if (newUser.must_change_password && !password) {
-      newUser.default_password = DEFAULT_USER_PASSWORD;
+    // 系統產生密碼（admin 沒指定時）一次性回傳給 admin、不存到任何固定字串
+    if (generatedPassword) {
+      newUser.default_password = generatedPassword;
     }
     res.status(201).json(newUser);
   } catch (err) {

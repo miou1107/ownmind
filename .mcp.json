@@ -1,4 +1,5 @@
 {
+  "_comment": "v1.19.10：API key 不再硬寫進 repo 公開檔。本機跑時、Claude Code 會自動讀 ~/.ownmind/credentials 取金鑰；或可建立 .mcp.local.json（已加進 .gitignore）覆蓋。",
   "mcpServers": {
     "ownmind": {
       "command": "node",
@@ -7,7 +8,7 @@
       ],
       "env": {
         "OWNMIND_API_URL": "https://kkvin.com/ownmind",
-        "OWNMIND_API_KEY": "vin-ownmind-admin-2026",
+        "OWNMIND_API_KEY": "__SET_VIA_LOCAL_CREDENTIALS_OR_ENV__",
         "OWNMIND_TOOL": "claude-code"
       }
     }

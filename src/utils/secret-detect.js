@@ -145,6 +145,18 @@ const SECRET_REGEXES = [
     name: 'openai_api_key',
     pattern: /sk-[A-Za-z0-9_-]{20,}/,
   },
+  // v1.19.10：OwnMind 預定金鑰前綴
+  // 對應 2026-05-22 incident：'vin-ownmind-admin-2026' 等字面金鑰被 commit 進公開 repo
+  {
+    name: 'ownmind_predefined_key',
+    pattern: /\b(?:vin-)?ownmind-(?:admin|super|user|api)-[A-Za-z0-9-]{2,}\b/i,
+  },
+  // v1.19.10：預設密碼字面樣式（Password 開頭+8 位以上純數字）
+  // 對應 2026-05-22 incident：'Password42760988' 這類常見「預設密碼模板」
+  {
+    name: 'default_password_literal',
+    pattern: /\bPassword\d{8,}\b/,
+  },
 ];
 
 /**

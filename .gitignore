@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env.*
 .DS_Store
 .last-update-check
 logs/
@@ -8,3 +9,17 @@ logs/
 .claude/skills
 .claude/*.json
 .claude/*.lock
+
+# v1.19.10：repo 公開後敏感資料外洩 incident 後加強
+# 任何含金鑰／密碼／證書／本機覆蓋設定的檔都不該進 repo
+.mcp.local.json
+credentials
+credentials.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+.env.local
+.env.production
+.env.staging
