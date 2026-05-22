@@ -15,7 +15,7 @@ import http from 'http';
 import os from 'os';
 import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials } from '../shared/helpers.js';
 import { readComplianceEvents } from '../shared/compliance.js';
-import { detectSecretLike } from '../src/utils/secret-detect.js';
+import { detectSecretLike } from '../shared/secret-detect.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
 
 const HOME = os.homedir();

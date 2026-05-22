@@ -1,4 +1,4 @@
-import { detectSecretLike } from './secret-detect.js';
+import { detectSecretLike } from '../../shared/secret-detect.js';
 
 /**
  * memory-secret-guard — 記憶 API 寫入前的密鑰偵測守門員

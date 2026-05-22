@@ -1,5 +1,57 @@
 # OwnMind 更新紀錄
 
+## v1.19.12 — Code review 延後項收尾 + nginx 反向代理修正
+
+**背景：** v1.19.7-10 累積的 code review reviewer 建議的 M-2 / M-3 / M-4 / M-5 四個延後項、加 v1.19.11 部署 prod 時發現的 `express-rate-limit` 警告、一起做完。
+
+### M-2：`secret-detect.js` 從 `src/utils/` 搬到 `shared/`
+
+統一純函式偵測器的位置。`shared/` 目錄底下的模組由 hooks（client）跟 server 都會用、是真正的「跨層工具」。
+
+修改：
+- `git mv src/utils/secret-detect.js shared/secret-detect.js`
+- `src/utils/memory-secret-guard.js` import 路徑改 `../../shared/secret-detect.js`
+- `hooks/ownmind-git-pre-commit.js` import 路徑改 `../shared/secret-detect.js`
+- `tests/secret-detect-unit.test.js` import 路徑改 `../shared/secret-detect.js`
+
+驗證 80 個相關測試（secret detect + memory guard + pre-commit）全綠。
+
+### M-4：`PRIVACY_TYPE_LABELS` 並列 `PRIVACY_PATTERNS`、未來加類型不漏配對
+
+`shared/privacy-detect.js` 新加 export 的 `PRIVACY_TYPE_LABELS` 常數（凍結物件、防誤改）、跟 `PRIVACY_PATTERNS` 並列。未來加新偵測類型時、改到這個檔自然會看到要補對應顯示標籤、不會散落各處。
+
+`hooks/ownmind-reply-lint.js` 的 `formatPrivacySummary` 加註解、提示 labels 必須跟 shared 版本同步；本地保留 hardcode 避免 module top-level 函式 import 失敗的風險。
+
+### M-5：合併 transcript 讀取（I/O 減半）
+
+`hooks/ownmind-reply-lint.js` 把原本兩個函式 `readLastAssistantText` 跟 `readRecentUserPrompts` 合併成單一 `readTranscriptTail`、一次 statSync + readFileSync 同時抽「最後一輪 assistant 文字」+「最近 5 輪 user prompts」。
+
+效益：大 transcript 場景（> 256KB）的 I/O 從 2 次降為 1 次、降低 hook 延遲。提早 break 機制（拿到目標就停止掃舊行）也降低解析成本。
+
+### nginx 反向代理修正（trust proxy）
+
+`src/app.js` 加 `app.set('trust proxy', 1)`。修正 v1.19.11 部署 prod 後容器 log 出現的 `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` 警告。
+
+意義：開了之後、`express-rate-limit` 會用 `X-Forwarded-For` header 識別真實 user IP、不再把所有經過 nginx 的請求當同一個來源計數。對 prod 多 user 環境的 rate limit 準確度有實質影響。
+
+### 不在 v1.19.12 範圍
+
+- M-3（JSDoc 範例對齊）：reviewer 原評估「低影響、cosmetic」、目前範例註解仍對齊 v1.19.4 banner 格式、不影響理解、留作 v1.20+ cleanup
+
+### 驗證
+
+- `npm test` 1675 / 1675 全綠（v1.19.11 之後 0 個新測試、純內部重構）
+- secret-detect 路徑搬家後既有 80 個相關測試全綠
+- transcript 合併讀取後既有 reply-lint 相關 36 個測試全綠（含分級顯示、log 紀錄、privacy 例外）
+
+### 部署影響
+
+- 不需 db schema 變更
+- prod 重啟後容器 log 不再出現 `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` 警告
+- 客戶端 hook 重新讀取（next reply-lint trigger）會用新的 `readTranscriptTail`、向後相容
+
+---
+
 ## v1.19.11 — Lint UX 改善：誤判降低 + 雙顯示原因標註 + 自學資料根基
 
 **背景：** v1.19.7-10 落地後、Vin 在使用中發現三個體驗問題：

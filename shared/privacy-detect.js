@@ -113,6 +113,18 @@ const EMAIL_ALLOWLIST_LOCAL = [
  * - 電子信箱用標準格式（前綴 + @ + 網域 + 至少 2 字 TLD）
  * - 手機只抓台灣 09 開頭格式（國際碼版本 +886-9... 不在範圍內、避免誤判電話號碼類技術詞）
  */
+/**
+ * Privacy 類型顯示標籤（給 banner / reason 字串用）
+ *
+ * v1.19.12 把這份 export 出來、跟 PRIVACY_PATTERNS 並列。
+ * 加新偵測類型時、必須同時更新此標籤對應、否則 banner 會顯示原始類型代號（如 'tw_id'）。
+ */
+export const PRIVACY_TYPE_LABELS = Object.freeze({
+  tw_id: '身分證',
+  email: '電子信箱',
+  phone_tw_mobile: '手機',
+});
+
 const PRIVACY_PATTERNS = [
   {
     name: 'tw_id',

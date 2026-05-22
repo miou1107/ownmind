@@ -151,14 +151,13 @@ async function main() {
   const transcriptPath = sanitizeTranscriptPath(payload.transcript_path);
   if (!transcriptPath) { process.exit(0); return; }
 
-  const lastAssistantText = readLastAssistantText(transcriptPath);
-  if (!lastAssistantText) { process.exit(0); return; }
-
-  // v1.19.7：抽最近的 user prompt 作為 privacy 例外比對來源
-  // （使用者自己提到的個資、AI 引用不算外洩）
+  // v1.19.12：一次讀 transcript 同時抽 last assistant text + 最近 user prompts
+  // （取代 v1.19.7 的兩次 statSync + readFileSync、I/O 減半）
+  // user prompts 給 privacy detector 當例外比對來源：使用者自己提到的個資、AI 引用不算外洩
   // 註：使用者若有對應的隱私鐵律（例如 Vin 的 IR-041）、會收到事件編號 'privacy_check'
   //     再由各自的鐵律判斷要不要擋；hook 本身不綁特定使用者編號（v1.19.10 中性化調整）
-  const userPrompts = readRecentUserPrompts(transcriptPath);
+  const { lastAssistantText, recentUserPrompts: userPrompts } = readTranscriptTail(transcriptPath);
+  if (!lastAssistantText) { process.exit(0); return; }
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
 
@@ -336,72 +335,29 @@ function sanitizeTranscriptPath(p) {
 }
 
 /**
- * v1.19.7：從 transcript JSONL 撈最近 N 輪 user message 的純 text。
+ * v1.19.12：合併 transcript 一次讀取、回傳「最後一輪 assistant text + 最近 N 輪 user prompts」。
  *
- * 給 privacy detector 當例外比對來源：使用者自己 prompt 過的個資、
- * AI 回覆引用不算外洩。
- *
- * 注意：Claude Code transcript 的 user message content 有兩種型態：
- *   1. 字串：{ message: { role: 'user', content: '你好' } }
- *   2. 陣列：{ message: { role: 'user', content: [{ type: 'text', text: '...' }, ...] } }
- *      （e.g. tool_result 也走這條）
- * 兩種都要支援。
- *
- * 跟 readLastAssistantText 共用尾巴讀法（檔大時只讀後 256KB）。
- */
-function readRecentUserPrompts(transcriptPath, maxTurns = 5) {
-  let buf;
-  let truncatedHead = false;
-  try {
-    const stat = fs.statSync(transcriptPath);
-    if (stat.size <= MAX_TRANSCRIPT_TAIL_BYTES) {
-      buf = fs.readFileSync(transcriptPath, 'utf8');
-    } else {
-      const fd = fs.openSync(transcriptPath, 'r');
-      try {
-        const chunk = Buffer.alloc(MAX_TRANSCRIPT_TAIL_BYTES);
-        fs.readSync(fd, chunk, 0, MAX_TRANSCRIPT_TAIL_BYTES, stat.size - MAX_TRANSCRIPT_TAIL_BYTES);
-        buf = chunk.toString('utf8');
-        truncatedHead = true;
-      } finally {
-        fs.closeSync(fd);
-      }
-    }
-  } catch {
-    return [];
-  }
-
-  let lines = buf.split('\n').filter(Boolean);
-  if (truncatedHead && lines.length > 0) lines = lines.slice(1);
-
-  const prompts = [];
-  for (let i = lines.length - 1; i >= 0 && prompts.length < maxTurns; i--) {
-    const entry = safeParse(lines[i]);
-    if (!entry || entry.type !== 'user') continue;
-    const content = entry.message?.content;
-    if (typeof content === 'string') {
-      if (content) prompts.push(content);
-      continue;
-    }
-    if (Array.isArray(content)) {
-      const texts = content
-        .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
-        .map((p) => p.text);
-      if (texts.length > 0) prompts.push(texts.join('\n'));
-    }
-  }
-  return prompts;
-}
-
-/**
- * 從 transcript JSONL 讀最後一輪 assistant 的純 text 內容（concat 多個 text part）。
- * 跳過 tool_use / thinking / 其他非 text part。
+ * 取代 v1.19.7 的 readLastAssistantText + readRecentUserPrompts（兩次 statSync + readFileSync）。
+ * 大 transcript 情境節省一半 I/O。
  *
  * 防呆：
  *   - 檔案大時只讀尾巴 256KB（最後一輪通常在末尾）
  *   - 尾巴讀法可能從某行中間切到 → 丟掉第一行（review B4）
+ *
+ * user message content 有兩種型態：
+ *   1. 字串：{ message: { role: 'user', content: '你好' } }
+ *   2. 陣列：{ message: { role: 'user', content: [{ type: 'text', text: '...' }] } }
+ * 兩種都支援。
+ *
+ * @param {string} transcriptPath
+ * @param {object} [opts]
+ * @param {number} [opts.maxUserTurns=5]
+ * @returns {{ lastAssistantText: string|null, recentUserPrompts: string[] }}
  */
-function readLastAssistantText(transcriptPath) {
+function readTranscriptTail(transcriptPath, opts = {}) {
+  const maxUserTurns = typeof opts.maxUserTurns === 'number' ? opts.maxUserTurns : 5;
+  const empty = { lastAssistantText: null, recentUserPrompts: [] };
+
   let buf;
   let truncatedHead = false;
   try {
@@ -420,27 +376,49 @@ function readLastAssistantText(transcriptPath) {
       }
     }
   } catch {
-    return null;
+    return empty;
   }
 
   let lines = buf.split('\n').filter(Boolean);
   // truncatedHead=true 時第一行可能從某筆 JSON 中間切起 → 丟掉（review B4）
   if (truncatedHead && lines.length > 0) lines = lines.slice(1);
 
-  // 從後往前找第一筆 type=assistant
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const entry = safeParse(lines[i]);
-    if (!entry || entry.type !== 'assistant') continue;
-    const content = entry.message?.content;
-    if (!Array.isArray(content)) continue;
+  let lastAssistantText = null;
+  const recentUserPrompts = [];
 
-    const texts = content
-      .filter(p => p && p.type === 'text' && typeof p.text === 'string')
-      .map(p => p.text);
-    if (texts.length === 0) continue;
-    return texts.join('\n');
+  // 從後往前掃、同時找 last assistant + 最近 N 輪 user
+  for (let i = lines.length - 1; i >= 0; i--) {
+    // 已抓到 last assistant + 集滿 user prompts → 提早結束
+    if (lastAssistantText !== null && recentUserPrompts.length >= maxUserTurns) break;
+
+    const entry = safeParse(lines[i]);
+    if (!entry) continue;
+
+    if (entry.type === 'assistant' && lastAssistantText === null) {
+      const content = entry.message?.content;
+      if (Array.isArray(content)) {
+        const texts = content
+          .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+          .map((p) => p.text);
+        if (texts.length > 0) lastAssistantText = texts.join('\n');
+      }
+      continue;
+    }
+
+    if (entry.type === 'user' && recentUserPrompts.length < maxUserTurns) {
+      const content = entry.message?.content;
+      if (typeof content === 'string') {
+        if (content) recentUserPrompts.push(content);
+      } else if (Array.isArray(content)) {
+        const texts = content
+          .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
+          .map((p) => p.text);
+        if (texts.length > 0) recentUserPrompts.push(texts.join('\n'));
+      }
+    }
   }
-  return null;
+
+  return { lastAssistantText, recentUserPrompts };
 }
 
 /**
@@ -504,6 +482,12 @@ function formatBanner(violations, getClientVersion, opts = {}) {
 
 /**
  * v1.19.7：把 privacy 命中的個資項目壓成一個摘要字串（type×n 形式）
+ *
+ * v1.19.12 同步說明：labels 跟 shared/privacy-detect.js 的 PRIVACY_TYPE_LABELS
+ * 必須保持一致；那邊有 export PRIVACY_TYPE_LABELS 給其他模組共用、未來新增類型時
+ * 兩處都要更新。這裡用本地常數而非 dynamic import 是因為函式跑在 module top-level、
+ * 不適合 import 失敗時整個 hook 卡住。fallback `labels[t] || t` 仍能保證未知類型
+ * 不會破版面。
  */
 function formatPrivacySummary(matches) {
   if (!Array.isArray(matches) || matches.length === 0) return '';

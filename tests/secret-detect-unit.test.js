@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectSecretLike } from '../src/utils/secret-detect.js';
+import { detectSecretLike } from '../shared/secret-detect.js';
 
 /**
  * v1.19.1 — secret-detect detector unit tests
