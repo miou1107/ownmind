@@ -1,5 +1,26 @@
 # OwnMind 檔案結構
 
+## v1.19.12 修改（Code review 延後項收尾 + nginx 反向代理修正）
+
+移動的檔（M-2）：
+```
+src/utils/secret-detect.js → shared/secret-detect.js          — 路徑統一到 shared/、所有 import 對應更新
+```
+
+修改的既有檔：
+```
+src/app.js                                                    — 加 app.set('trust proxy', 1)、修 express-rate-limit 警告
+src/utils/memory-secret-guard.js                              — secret-detect import 路徑改 ../../shared/
+hooks/ownmind-git-pre-commit.js                               — secret-detect import 路徑改 ../shared/
+hooks/ownmind-reply-lint.js                                   — 合併 readLastAssistantText + readRecentUserPrompts 為 readTranscriptTail（I/O 減半）
+shared/privacy-detect.js                                      — export PRIVACY_TYPE_LABELS（凍結物件、跟 PRIVACY_PATTERNS 並列）
+tests/secret-detect-unit.test.js                              — import 路徑對應改 ../shared/
+package.json                                                  — version 1.19.11 → 1.19.12
+CHANGELOG.md                                                  — v1.19.12 條目
+```
+
+---
+
 ## v1.19.11 新增 / 修改（Lint UX 改善：誤判降低 + 雙顯示原因標註 + 自學資料根基）
 
 新增檔：

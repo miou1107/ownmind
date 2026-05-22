@@ -11,6 +11,12 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
+// v1.19.12：信任反向代理（nginx / caddy）的 X-Forwarded-For header
+// 不開的話、express-rate-limit 會用 socket IP 算次數、所有請求都被當同一個 client、誤判
+// "1" 代表只信任最近 1 層 proxy（kkvin.com 的 nginx）。多層 CDN 環境要調整。
+// 對應 v1.19.11 prod 容器 log 的 ERR_ERL_UNEXPECTED_X_FORWARDED_FOR 警告
+app.set('trust proxy', 1);
+
 // 安全性與基本中介層
 app.use(helmet({ contentSecurityPolicy: false }));
 // CORS：只允許 CORS_ORIGIN 環境變數指定的 origin；未設定則禁止跨域
