@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.19.10 新增 / 修改（安全強化：預設密碼隨機化 + 設定檔最佳實踐）
+
+新增檔：
+```
+shared/random-password.js                                     — 從 v1.19.9 generateTempPassword 抽出來、給多處共用（admin 建 user / seed job / reset-password）
+openspec/changes/v1.19.10-credential-hygiene/proposal.md      — 變更提案：預設密碼隨機化跟設定檔最佳實踐
+openspec/changes/v1.19.10-credential-hygiene/tasks.md         — 任務清單
+```
+
+修改的既有檔：
+```
+.mcp.json                                                     — OWNMIND_API_KEY 字面值改 __SET_VIA_LOCAL_CREDENTIALS_OR_ENV__ 佔位符、走本機憑證
+src/routes/admin.js                                           — 移除固定預設密碼、改用 generateRandomPassword 每 user 隨機
+src/jobs/seed-default-passwords.js                            — 同上、每筆 password_hash IS NULL 的 user 各別產隨機密碼、寫 log 一次性
+src/routes/admin-password-reset.js                            — 改用 shared/random-password.js（generateTempPassword 為向後相容 alias）
+src/utils/secret-detect.js                                    — 加 2 條 regex：ownmind_predefined_key + default_password_literal
+tests/secret-detect-unit.test.js                              — 補 9 個 case 驗新樣式
+.gitignore                                                    — 補 .mcp.local.json / credentials* / *.pem / .env.* / *.key 等
+package.json                                                  — version 1.19.9 → 1.19.10
+CHANGELOG.md                                                  — v1.19.10 條目
+```
+
+---
+
 ## v1.19.9 新增 / 修改（忘記密碼救援三條防線）
 
 新增檔：

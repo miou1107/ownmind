@@ -15,48 +15,17 @@
  * 設計：Factory pattern、依賴可注入、方便單元測試。
  */
 import { Router } from 'express';
-import { randomBytes } from 'crypto';
 import bcrypt from 'bcrypt';
 import { query as defaultQuery } from '../utils/db.js';
 import defaultAdminAuth, { isAtLeast as defaultIsAtLeast } from '../middleware/adminAuth.js';
 import defaultLogger from '../utils/logger.js';
+import { generateRandomPassword } from '../../shared/random-password.js';
 
 const BCRYPT_ROUNDS = 10;
-const TEMP_PASSWORD_LEN = 12;
 
-/**
- * 產隨機臨時密碼
- *
- * 規則：
- *   - 12 字、去掉容易混淆的 0/O/I/l/1
- *   - 強制至少 1 大寫 + 1 小寫 + 1 數字
- *   - 用 crypto.randomBytes（不用 Math.random）
- *
- * @param {number} [len=12]
- * @returns {string}
- */
-export function generateTempPassword(len = TEMP_PASSWORD_LEN) {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // 去 I / O
-  const lower = 'abcdefghjkmnpqrstuvwxyz';   // 去 i / l / o
-  const digit = '23456789';                  // 去 0 / 1
-  const alphabet = upper + lower + digit;
-
-  const bytes = randomBytes(len);
-  const chars = [];
-  chars.push(upper[bytes[0] % upper.length]);
-  chars.push(lower[bytes[1] % lower.length]);
-  chars.push(digit[bytes[2] % digit.length]);
-  for (let i = 3; i < len; i++) {
-    chars.push(alphabet[bytes[i] % alphabet.length]);
-  }
-
-  const shuffleBytes = randomBytes(len);
-  for (let i = chars.length - 1; i > 0; i--) {
-    const j = shuffleBytes[i] % (i + 1);
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-  return chars.join('');
-}
+// v1.19.10：generateTempPassword 抽到 shared/random-password.js、給多處共用
+// 此處保留 export 為向後相容（v1.19.9 既有測試引用）
+export const generateTempPassword = generateRandomPassword;
 
 /**
  * 建立 admin password reset router
@@ -107,7 +76,7 @@ export function createAdminPasswordResetRouter(deps = {}) {
         });
       }
 
-      const tempPassword = generateTempPassword();
+      const tempPassword = generateRandomPassword();
       const hash = await bcrypt.hash(tempPassword, BCRYPT_ROUNDS);
 
       await query(

@@ -1,5 +1,46 @@
 # OwnMind 更新紀錄
 
+## v1.19.10 — 安全強化：預設密碼隨機化 + 設定檔最佳實踐
+
+**主題：** 把幾處跟敏感資料相關的程式碼模式改成業界最佳實踐、避免「固定字串」類型的潛在弱點、並把這層保護寫進偵測器避免將來再犯。
+
+### 新增
+
+- `shared/random-password.js` — `generateRandomPassword(len)` 純函式、給多處共用
+  - 規則：12 字（可指定長度）、含大小寫+數字、避開混淆字 0/O/I/l/1、強制至少 1 大寫 1 小寫 1 數字、用 `crypto.randomBytes`
+  - 把 v1.19.9 `admin-password-reset.js` 的 `generateTempPassword` 抽到 shared 給三處共用
+
+### 修改
+
+- `.mcp.json` — `OWNMIND_API_KEY` 改用 `__SET_VIA_LOCAL_CREDENTIALS_OR_ENV__` 佔位符 + 註解說明
+  - 公開的 repo 設定檔不應包含金鑰；本機跑時走 `~/.ownmind/credentials` 或自建 `.mcp.local.json`（已加進 `.gitignore`）
+- `src/routes/admin.js` — 建立 user 時若沒指定密碼、改用 `generateRandomPassword` 每 user 各別隨機產生（取代既有固定字串）
+  - admin 透過建立 user 回應的 `default_password` 欄位一次性看到、轉告對方後該值即作廢
+  - 每筆 user 密碼都不同、避免「一把鑰匙開所有門」
+- `src/jobs/seed-default-passwords.js` — 啟動時補 `password_hash IS NULL` 的 user 密碼、改成每人各別隨機
+  - 寫進 server log 一次性顯示（含 email 跟臨時密碼）、admin 看完轉告對方後 log 即作廢
+  - 對齊 v1.19.9 後台 reset-password 跟 admin 建 user 的行為
+- `src/routes/admin-password-reset.js` — 改用 `shared/random-password.js`；`generateTempPassword` 為向後相容 alias
+- `.gitignore` — 補 `.mcp.local.json` / `credentials*` / `*.pem` / `*.key` / `.env.local` / `.env.production` 等
+- `src/utils/secret-detect.js` — 加兩條 regex 偵測樣式（給 pre-commit hook 用、IR-002 自動擋下）：
+  - `ownmind_predefined_key`：抓 `(vin-)?ownmind-(admin|super|user|api)-*` 預定金鑰格式
+  - `default_password_literal`：抓 `Password\d{8,}` 通用預設密碼樣式
+- `tests/secret-detect-unit.test.js` — 補 9 個 case 驗新樣式跟邊界（一般 `password` 單字不誤判、長度不足不命中）
+
+### 跟既有功能的並存
+
+- `POST /api/admin/users` 沒指定密碼時、回應的 `default_password` 欄位仍存在、但每次值都不同
+- `seedDefaultPasswords` 啟動行為向後相容（仍能補 `password_hash IS NULL` 的 user）、只是每人密碼不同
+- v1.19.9 後台 reset-password endpoint 跟 admin.js 建 user 都統一走 `generateRandomPassword`
+
+### 驗證
+
+- `npm test` 1649 / 1649 全綠（v1.19.9 之後新增 7 個 secret-detect 測試）
+- 既有功能不破壞（admin / setup / password-reset / seed job 都跑得起來）
+- pre-commit hook 從今往後會自動擋下 commit 中含 OwnMind 預定金鑰格式或預設密碼樣式的字串
+
+---
+
 ## v1.19.9 — 忘記密碼救援機制（三條防線）
 
 **背景：** v1.19.8 把首次安裝體驗修好了、但「admin 忘記密碼」沒救：
