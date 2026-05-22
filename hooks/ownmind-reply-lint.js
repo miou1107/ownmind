@@ -149,8 +149,10 @@ async function main() {
   const lastAssistantText = readLastAssistantText(transcriptPath);
   if (!lastAssistantText) { process.exit(0); return; }
 
-  // v1.19.7：抽最近的 user prompt 作為 IR-041 privacy 例外比對來源
+  // v1.19.7：抽最近的 user prompt 作為 privacy 例外比對來源
   // （使用者自己提到的個資、AI 引用不算外洩）
+  // 註：使用者若有對應的隱私鐵律（例如 Vin 的 IR-041）、會收到事件編號 'privacy_check'
+  //     再由各自的鐵律判斷要不要擋；hook 本身不綁特定使用者編號（v1.19.10 中性化調整）
   const userPrompts = readRecentUserPrompts(transcriptPath);
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
@@ -159,7 +161,9 @@ async function main() {
   try { lintResult = lintReply(lastAssistantText); }
   catch { process.exit(0); return; }
 
-  // v1.19.7：加掛 IR-041 隱私偵測、跟 IR-037 / IR-036 違規合併
+  // v1.19.7 引入、v1.19.10 中性化：加掛隱私偵測、事件名 'privacy_check'
+  // 此事件由各使用者自己的鐵律判斷要不要擋（Vin 設了 IR-041 對應此事件、其他使用者
+  // 可自行設定要不要寫成鐵律啟用）
   let privacyResult = { detected: false, matches: [] };
   try {
     privacyResult = detectPrivacyLeak(lastAssistantText, { userPrompts });
@@ -167,7 +171,7 @@ async function main() {
   const violations = Array.isArray(lintResult.violations) ? [...lintResult.violations] : [];
   if (privacyResult.detected) {
     violations.push({
-      rule: 'IR-041',
+      rule: 'privacy_check',
       message: `偵測到個資外洩樣式 — ${privacyResult.matches.length} 處（${formatPrivacySummary(privacyResult.matches)}）。請改寫掉、或改用代稱`,
       detail: { matches: privacyResult.matches },
     });
@@ -301,7 +305,7 @@ function sanitizeTranscriptPath(p) {
 /**
  * v1.19.7：從 transcript JSONL 撈最近 N 輪 user message 的純 text。
  *
- * 給 IR-041 privacy detector 當例外比對來源：使用者自己 prompt 過的個資、
+ * 給 privacy detector 當例外比對來源：使用者自己 prompt 過的個資、
  * AI 回覆引用不算外洩。
  *
  * 注意：Claude Code transcript 的 user message content 有兩種型態：
@@ -466,7 +470,7 @@ function formatBanner(violations, getClientVersion, opts = {}) {
 }
 
 /**
- * v1.19.7：把 IR-041 命中的個資項目壓成一個摘要字串（type×n 形式）
+ * v1.19.7：把 privacy 命中的個資項目壓成一個摘要字串（type×n 形式）
  */
 function formatPrivacySummary(matches) {
   if (!Array.isArray(matches) || matches.length === 0) return '';
@@ -538,8 +542,9 @@ function formatBlockReason(violations) {
       }
       lines.push('');
       n += 1;
-    } else if (v.rule === 'IR-041') {
+    } else if (v.rule === 'privacy_check') {
       // v1.19.7：privacy 命中、不告訴 Claude 命中字串（避免在重寫時把個資再帶一次）
+      // v1.19.10：事件名從 'IR-041' 中性化為 'privacy_check'（不綁特定使用者的鐵律編號）
       const matches = (v.detail && Array.isArray(v.detail.matches)) ? v.detail.matches : [];
       const summary = formatPrivacySummary(matches);
       lines.push(`${n}. 回應疑似含使用者隱私（${summary}）。請改寫掉那段或改用代稱（如「[email]」「[手機號碼]」），不要在新回應裡再重複那筆個資。`);

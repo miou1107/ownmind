@@ -1,11 +1,11 @@
 /**
  * v1.19.7 — privacy-detect 純函式測試
  *
- * 對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md 場景 17、
- * IR-041「不收集使用者隱私，除非跟工作直接相關」。
+ * 對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md 場景 17。
  *
- * 偵測 AI 回應中的個資外洩（白話：identity / 聯絡資料），
+ * 偵測 AI 回應中的個資外洩（白話：身分／聯絡資料）、
  * 並對「使用者自己 prompt 過的內容」放行（白話：使用者主動分享過、不算外洩）。
+ * v1.19.10：事件名中性化為 privacy_check、不綁特定使用者的鐵律編號。
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';

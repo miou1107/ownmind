@@ -1,19 +1,19 @@
 /**
- * privacy-detect — 偵測「使用者隱私（個資）外洩」樣式
+ * privacy-detect — 偵測「使用者隱私（個資）樣式」純函式
  *
- * v1.19.7 引入。對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md 場景 17、
- * IR-041「不收集使用者隱私，除非跟工作直接相關」。
+ * v1.19.7 引入。v1.19.10 中性化、不綁特定使用者的鐵律編號。
  *
- * 適用 reply-lint hook：每輪 AI 回話結束時掃一次回應內容，
- * 命中即視為違反 IR-041。
+ * 適用 reply-lint hook：每輪 AI 回話結束時掃一次回應內容、
+ * 命中即發出 'privacy_check' 事件。實際要不要擋下、由使用者自己的鐵律決定
+ * （例如 Vin 設了 IR-041 對應此事件；其他使用者可選擇要不要寫類似鐵律）。
  *
- * 例外（白話：什麼情況不算違反）：
- *   當「使用者自己的提問」內容也含同樣字串時、表示是使用者主動分享，
- *   AI 回覆引用屬必要溝通、不算外洩。
+ * 例外（白話：什麼情況不算命中）：
+ *   當「使用者自己的提問」內容也含同樣字串時、表示是使用者主動分享、
+ *   AI 回覆引用屬必要溝通、不算個資洩漏。
  *
  * 設計原則：
- * - 保守偵測（寧可漏掉也不誤擋）：reply-lint 是高頻通道，誤判 = 強迫 AI 重寫無意義內容
- * - Pure function：不碰 IO、不丟 exception、好測試
+ * - 保守偵測（寧可漏掉也不誤擋）：reply-lint 是高頻通道、誤判等於強迫 AI 重寫無意義內容
+ * - Pure function（純函式）：不碰 IO、不丟例外、好測試
  * - 偵測樣式：台灣身分證（含檢碼算式）、電子信箱、台灣手機（09 開頭）
  *
  * @param {string|*} text - 要掃的 AI 回應文字
@@ -64,7 +64,7 @@ export function detectPrivacyLeak(text, options = {}) {
  *   - 假網域：example.com / example.org / example.net / .test / .invalid / .local / localhost
  *   - 系統發信前綴：noreply / no-reply / donotreply（這些不會回信、不是真人聯絡點）
  *
- * 目的：避免 AI 在解釋程式碼、Git 紀錄（如 Co-Authored-By 標籤）、文件範例時誤觸 IR-041。
+ * 目的：避免 AI 在解釋程式碼、Git 紀錄（如 Co-Authored-By 標籤）、文件範例時誤觸 privacy_check。
  * 留 v1.19.10 觀察期收集真實誤判紀錄、再決定要不要擴充清單。
  *
  * @param {string} email - 已通過 regex 命中的信箱字串
