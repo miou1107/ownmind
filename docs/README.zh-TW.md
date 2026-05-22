@@ -1,390 +1,433 @@
-AI個人化永久記憶解決方案
+Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.19.1** · 詳見 [CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.19.7** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
-# OwnMind — 跨平台 AI 個人記憶系統
+# OwnMind — 最佳 Harness Engine AI 管控系統
 
-讓你的 AI 工具共享記憶。不管用 Claude Code、Codex、Cursor、Copilot、OpenCode 還是線上 AI，OwnMind 讓所有工具都能讀寫你的偏好、鐵律、專案 context。
+別再讓 AI 丟三落四、也別讓它一再犯下相同的低級錯誤。無論你用的是 Claude Code（命令列版 Claude）、Codex（OpenAI 命令列工具）、Cursor（AI 編輯器）、Gemini CLI（Google 命令列工具），還是任何線上 AI，OwnMind 都能幫你把開發偏好、專案脈絡、跟不可違反的「剛性鐵律」（剛性規則：不能違反的硬性規定）牢牢鎖定。
 
-## 願景
+---
 
-OwnMind 讓你在各種 LLM、編輯器、電腦、專案、AI 會話中自由橫移，記憶共享且無痛切換。
+## 這四種人最適合用 OwnMind
 
-- **裝後即忘** — 安裝後不需學習，OwnMind 自動運作，你完全感受不到它的存在
-- **越用越聰明** — 用越久記憶越豐富，AI 越來越了解你的工作偏好和習慣，變得越來越聰明
-- **數據驅動進化** — 搜集使用中的資訊和數據，用來訓練和改善 OwnMind，持續做出更好的功能
-- **跨平台無縫** — 一個 API，所有工具共用。換工具、換電腦、換專案，記憶跟著走，不用重新教
-- **團隊規範落地** — 管理員設定一次公司規範（git flow、coding standard、review 流程），全員的 AI 自動載入並遵守。新人入職，規範自動生效
-- **多管理者管理** — 三級角色階層（super_admin > admin > user），密碼管理，完整操作稽核 `v1.12.0`
+### 👤 個人開發者 — 偏好設定一次、跨機器跨工具都記得
 
-## 為什麼需要 OwnMind？
+你在公司電腦設好的「commit message（提交訊息：每次 git 紀錄要寫的說明）一律用繁中」、回家換筆電開新對話、AI 還是會自動遵守。出差用別人的機器登入也一樣。**你的開發人格不會因為換環境就歸零。**
 
-### 現在的 AI 工具有三個根本問題
+### 🔁 工具混搭族 — Claude / Cursor / Codex / Copilot 全部同一份規則
+
+你早上用 Claude Code 寫後端、下午切到 Cursor 改前端、晚上用 Codex CLI 寫腳本。每個工具都會自動載入同一份個人偏好跟鐵律、**不用為每個工具重新教一遍**。底層的記憶儲存統一、不管你哪天又裝了 OpenCode、Windsurf 或新冒出來的 AI 編輯器、接上 OwnMind 就直接繼承。
+
+### 👥 團隊主管 — 規範一次發布、全團隊強制落實 + 合規數據儀表板
+
+你在後台發布一條團隊規範（例如「PR 必須附測試」）、所有成員的 AI 自動載入。本機 pre-commit hook（提交前攔截：把 git commit 動作擋下檢查的小程式）會把不合規的代碼擋下、不讓提交。後台儀表板（資料看板：把數據畫成圖表的網頁）顯示每位成員、每條鐵律的真實遵守率、團隊最常踩的坑、誰最常用 OWNMIND_BYPASS（跳規則環境變數）跳規則 — **全部有數據佐證、不是憑感覺管團隊**。
+
+### 🛡️ 安全意識者 — 敏感資料絕對不會被 AI 不小心外洩
+
+- 密碼／API 金鑰（呼叫線上服務的通行碼）想 commit 進 git → pre-commit hook 用樣式比對直接擋下（v1.19.7 新功能）
+- AI 想把密碼寫進記憶 → 記憶接口用狀態碼 400 拒絕、引導去加密金鑰庫
+- AI 回應夾了使用者身分證／信箱／手機 → reply-lint（回應品質檢查工具：自動掃 AI 回應有沒有違反規則）擋下叫 AI 重寫（v1.19.7 IR-041 新增）
+
+對金融、醫療、法務等敏感產業的開發者特別有用。
+
+---
+
+## 安裝 OwnMind 前後的開發體驗對比
+
+AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型（例如 Anthropic 的 Claude 跟 Google 的 Gemini）解讀規則的方式大相徑庭、更不用說在多台機器切換時的割裂感。以下是你安裝 OwnMind 前後的典型體驗對比：
+
+### 痛點一：每次開新視窗都要「重新交代偏好」
+
+- **安裝前**：你開啟新對話、想寫一段代碼、AI 又寫出過時的舊語法、或忘了你特定的程式碼風格。你只好重複打字解釋：「別忘了、我們專案的寫法是這樣這樣...」
+- **安裝後**：對話開啟的瞬間、OwnMind 已經自動把你的偏好、風格、剛性限制注入給 AI。你直接寫需求、AI 一次就寫出合規的代碼。
+
+### 痛點二：跨機器與跨模型切換時「智商歸零、規格割裂」
+
+- **安裝前**：早上在公司電腦用 Claude Code、下午回家換筆電用 Cursor + Gemini。跨越了**不同機器**+**不同 AI 模型**、你的記憶脈絡徹底歸零、要重新複製代碼跟調教不同模型的理解偏差。
+- **安裝後**：不論你換哪台電腦、用哪種 AI 模型、OwnMind 在背景自動統一你的記憶核心。**在任何地方開啟對話都能獲得連續一致的體驗。**
+
+### 痛點三：重蹈覆轍 — AI 重複犯下相同的愚蠢錯誤
+
+- **安裝前**：上週因為部署時漏掉一個環境變數、導致正式資料庫崩潰、修一整晚。今天讓 AI 幫你部署新功能、它居然又寫出漏掉變數的指令、差點再次釀災。
+- **安裝後**：上次出錯時你只需對 AI 說「記住這個教訓」、這條鐵律就上傳到 OwnMind。今天當它又試圖部署、系統在底層一鍵攔截、強制 AI 自我檢視、主動防範悲劇再發生。
+
+### 痛點四：團隊開發各自為政、完全沒有統一標準
+
+- **安裝前**：團隊擴大時、每個人用 AI 的習慣與規範都不一樣。有人讓 AI 寫沒有測試的粗糙代碼、有人不小心把密碼提交上去。主管寫的開發規範根本沒人看、團隊品質全面失控。
+- **安裝後**：主管只需在後台發布一次團隊規範、所有成員的 AI 自動強制加載並落實。寫出不合規代碼的人、本地 Git 預提交鉤子會硬性卡關拒絕提交、實現全自動的團隊標準同步與品質把關。
+
+### 痛點五：缺乏中央管理中心、完全無法掌握團隊的 AI 開發狀況
+
+- **安裝前**：主管對團隊成員怎麼用 AI 一無所知。誰用了哪些工具、頻繁遇到哪些技術摩擦、代碼規範的實際合規率是多少、主管像盲人摸象、沒有數據支撐、無法評估真實開發效率與潛在風險。
+- **安裝後**：主管擁有專屬的「中央管理中心與數據儀表板」。團隊整體 AI 使用狀況、每個人對代碼鐵律的實際合規率、團隊最常踩坑的技術摩擦點、關鍵數據一目瞭然。所有合規分析與稽核日誌（audit log：完整紀錄每個動作的不可竄改檔案）自動彙整。
+
+---
+
+## 踩坑進化論：從犯錯到鐵律的持續學習鏈
+
+OwnMind 最核心的價值、在於將你或團隊在日常開發中「踩坑的經驗」、瞬間沉澱為 AI 的「基因規則」、確保同一個錯誤絕對不會在團隊中發生第二次：
 
 ```mermaid
 graph LR
-    subgraph "😤 沒有 OwnMind"
-        A["開新對話"] --> B["重新解釋偏好"]
-        B --> C["重新說明專案"]
-        C --> D["踩同一個坑"]
-        D --> A
-    end
+    A["你在開發中踩坑 (例如未跑測試就提交)"] --> B["對 AI 說：記住這個教訓"]
+    B --> C["AI 自動提煉並建立剛性鐵律"]
+    C --> D["中央伺服器同步分發"]
+    D --> E["所有團隊成員與工具自動加載"]
+    E --> F["AI 下次試圖違規時、工具與 Git 提交強行卡關阻擋"]
 ```
 
-**1. 每次對話都從零開始**
-你跟 AI 說過一百次「不要用 var」「部署前檢查環境變數」，但下一次對話它全忘了。你花大量時間在重複教 AI 相同的事。
+1. **踩坑捕獲**：你在部署或開發時遇到問題、對 AI 說一句「記住這個教訓：部署前必須確認主庫連線」
+2. **規則提煉**：AI 自動整合當前上下文、提煉成機器可驗證的剛性鐵律（例如 `IR-038`）、上傳至 OwnMind
+3. **持續品質把關**：規則立刻同步至你所有的開發工具。下一次不論在哪裡開發、一旦 AI 試圖「不檢查連線就直接部署」、系統在底層立刻啟動攔截、硬性終止操作
 
-**2. 換工具就失憶**
-早上用 Claude Code 寫了半天，下午切到 Cursor 繼續，AI 完全不知道你早上做了什麼。你的經驗被鎖在單一工具裡。
+---
 
-**3. 踩過的坑會再踩**
-上週部署炸了是因為忘記改環境變數，你自己記住了，但 AI 不知道。下次它還是會犯同樣的錯。
+## 團隊管理防線：如何強制落實所有開發規範？
 
-### OwnMind 怎麼解決
+當專案規模擴大時、團隊管理往往是災難的開始 — 開發規範寫在文件裡沒人看、新進人員寫出的代碼漏洞百出。OwnMind 為團隊設計了一套強制規範落實的硬核管理系統：
 
-```mermaid
-graph TB
-    subgraph "🧠 有 OwnMind"
-        CC["Claude Code"] --> OM["OwnMind API"]
-        CX["Codex"] --> OM
-        CR["Cursor"] --> OM
-        OC["OpenCode"] --> OM
-        WS["Windsurf"] --> OM
-        GM["Gemini CLI"] --> OM
-        OM --> DB[("PostgreSQL\n+ pgvector")]
-    end
+### 1. 三層權限角色管理
 
-    style OM fill:#6C5CE7,stroke:#fff,color:#fff
-    style DB fill:#2D3436,stroke:#fff,color:#fff
-```
+系統內建「超級管理員（Super Admin）」「管理員（Admin）」「一般使用者（User）」三層權限。前兩者擁有對團隊鐵律的絕對控制權、防止一般使用者或 AI 在對話中私自修改或停用核心安全規範。
 
-**一個 API，所有工具共用同一份記憶。** 你只要教一次，所有 AI 都知道。
+### 2. 團隊標準一鍵推播
 
-## 誰適合用？
+開發主管只需在後台發布一次團隊規範（例如「所有回應必須包含要求識別碼」）。系統透過 RAG（檢索增強生成：先去外部知識庫搜資料再交給 AI 回答的技術）做語意切片。團隊任何成員開啟新對話時、AI 強制加載並嚴格執行這些規範、省去人工宣導與標準同步成本。
 
-- **每天使用多個 AI 工具的開發者** — 不用再對每個工具重新解釋你的偏好
-- **跨專案、跨裝置工作的人** — 你的記憶跟著你走，不受裝置限制
-- **有團隊 AI 規範需求的技術主管** — 規則設定一次，全員自動遵守
-- **想讓 AI 持續進化的重度使用者** — 讓 AI 累積經驗，越用越懂你
+### 3. 本機 Git 提交剛性卡關
 
-## 最常用的三句話
+這是團隊管理的最強物理防線。OwnMind 在每位成員的本機安裝預提交鉤子。如果成員的 AI 在寫代碼時違反了團隊鐵律（例如寫入了敏感密碼、或未同步文件）、Git 提交會被直接硬性拒絕並阻擋、強制開發者與 AI 修正代碼後才允許提交。
 
-| 你說 | AI 做什麼 |
-|------|----------|
-| **「記住了」** | 把經驗寫進鐵律，跨平台永久保存，永不再犯 |
-| **「你學到什麼」** | 回顧這次對話，列出值得記下的新知識 |
-| **「我最近做了什麼？哪些還沒做？」** | 從所有專案的進度和待辦中回答 |
+### 4. 團隊合規率分析儀表板與審計日誌
 
-## 核心功能
+系統後台自動追蹤每位成員、每個 AI 模型對各項鐵律的執行數據（遵守次數、觸發次數、違規次數）、繪製成直觀的合規率趨勢圖。所有 AI 的操作、違規行為、跟繞過審查的例外申請、都會被記錄在防偽的審計日誌中、為團隊開發品質提供精確的數據支撐。
+
+---
+
+## 剛性安全卡關：三道防線
+
+靠提示詞拜託 AI 守規矩根本沒用。OwnMind 透過本機環境與系統底層、架設三道無法被 AI 不留紀錄繞過的剛性物理防線：
+
+1. **第一道防線：規範規格統一** — 開啟對話時、系統直接呼叫 API 注入底層提示詞、完成語意防線
+2. **第二道防線：執行端控制** — 在 AI 真正修改代碼或執行命令前進行**工具使用前攔截**（PreToolUse：AI 呼叫外部工具前的安全卡關機制）。如果它沒讀過代碼就想亂改、系統直接拒絕並退回、防止盲目修改（Blind Edit：在未閱讀代碼的狀況下直接修改檔案）
+3. **第三道防線：輸出端審查** — AI 完成輸出時、結束鉤子（Stop Hook：AI 完成輸出時自動觸發的審查程式）自動啟動回應品質檢查。一旦發現中英混雜、行話沒解釋、或不小心夾了使用者身分證／信箱／手機（IR-041、v1.19.7 新增）、系統會在背景命令 AI「重新改寫」直到合規才放行。**連續被擋 3 次後自動降警告**、避免 AI 重寫死循環卡住整個對話
+
+---
+
+## 為什麼不用專案底下的靜態規則檔？
+
+「我用專案目錄底下的靜態規則檔（例如 `.cursorrules` 或 `CLAUDE.md`）就好了、為什麼要用 OwnMind？」
+因為靜態規則檔非常脆弱（容易被 AI 幻覺繞過）、而 OwnMind 是全自動運作的剛性安全卡關系統：
+
+| 比較項目 | 專案底下的靜態規則檔 | OwnMind 狀態化安全卡關系統 |
+|:---|:---|:---|
+| **維護方式** | 各專案檔案散落、難以同步更新 | 中央伺服器一處修改、所有機器與工具同步生效 |
+| **卡關力道** | 靠 AI 自律、遇到幻覺就自動失效 | critical 等級鐵律由程式強制中斷、本機 pre-commit hook 連 Git 提交都過不了 |
+| **錯誤學習** | 每次對話都是全新空白、重複踩坑 | 自動記錄違規、啟用適應性強化機制（系統會根據 AI 的違規歷史、動態增強提醒力度） |
+| **資訊安全** | 容易把敏感金鑰或密碼不小心提交出去 | 自動過濾敏感字並強行阻擋、引導至安全金鑰庫 |
+| **團隊落地** | 成員手動複製檔案、漏掉就沒人管 | 主管一鍵推播、新成員首日即自動強制對齊 |
+
+> **誠實揭露**：OWNMIND_BYPASS 環境變數（跳規則開關）允許在緊急情況下放行單條鐵律、但會寫一筆稽核紀錄。AI 無法在不留下紀錄的情況下繞過。
+
+---
+
+## 實用核心功能
 
 ### 記憶與防護
 
-```mermaid
-graph LR
-    A["你踩坑"] --> B["說「記住了」"]
-    B --> C["AI 建立鐵律"]
-    C --> D["所有工具載入"]
-    D --> E["下次自動攔截"]
-    E --> F["不再犯"]
-
-    style C fill:#E17055,stroke:#fff,color:#fff
-    style E fill:#00B894,stroke:#fff,color:#fff
-```
-
-- **跨平台記憶** — 一個 API，所有 AI 工具共用
-- **鐵律管理** — 踩過的坑不會再犯，含完整背景脈絡
-- **鐵律即時防護** — session 開始時自動載入，AI 主動攔截違規
-- **Trigger Tags** — 鐵律標記觸發時機（`trigger:commit`、`trigger:deploy`），AI 在操作前自動 re-check
-- **規則時間序列** — 規則改變時自動保留舊版本，可追溯演變過程
-- **記憶／密鑰路由分流** `v1.19.1` — 記憶 API 寫入時自動偵測密碼／token／API key、命中即回 400 並引導去 `ownmind_set_secret`。三層防護：MCP 工具描述警語、伺服器偵測、專屬鐵律 IR-047。詳見 [v1.19.1 提案](../openspec/changes/v1.19.1-secret-tool-routing/proposal.md)。
+- **個人記憶／密鑰路由** — 三類資料分流：profile / memory（一般記憶）/ secret（加密金鑰）。AI 想寫密碼到一般記憶會被以狀態碼 400 阻擋、引導去加密金鑰庫 `v1.19.1`
+- **個資外洩偵測** — 每輪 AI 回應自動掃台灣身分證（含官方檢碼算式驗證）、電子信箱、台灣手機。使用者自己 prompt 過的字串視為主動分享、放行例外 `v1.19.7`
+- **Pre-commit 內容掃密** — 在既有檔名擋的基礎上、新增掃 staged diff 新增行內容、偵測 OpenAI / GitHub PAT（個人存取令牌）/ JWT（JSON 網頁令牌）/ AWS key 等樣式作為 IR-002 違反 `v1.19.7`
 
 ### 協作與同步
 
-```mermaid
-sequenceDiagram
-    participant CC as Claude Code
-    participant OM as OwnMind
-    participant CR as Cursor
+- **跨工具進度交接** — 下班前對 AI 說「wrap up 並準備交接（總結並打包進度）」、它會把未完任務與設計思路打包上傳。明天用另一個編輯器、另一個 AI 自動接續工作 `v1.13.0`
+- **多端防衝突鎖** — 多個編輯器同時寫入記憶時、同步令牌（sync token：判斷誰先寫的標籤）自動擋下過期版本、強迫 AI 重新取得最新記憶、避免你辛苦累積的開發規則被覆蓋
+- **跨機器自動同步** — 換筆電、出差、新員工首日上工、登入後記憶與鐵律自動拉下來、零等待
 
-    CC->>OM: 寫入記憶 (sync_token=A)
-    CR->>OM: 寫入記憶 (sync_token=A)
-    OM-->>CR: ⚠️ token 過期，先同步
-    CR->>OM: re-init (取得最新)
-    CR->>OM: 寫入記憶 (sync_token=B) ✅
-```
+### 觀測與分析
 
-- **Sync Token** — 多工具同時使用時自動偵測衝突，確保記憶一致性 `v1.8.0`
-- **交接機制** — 在不同工具間無縫交接工作
-- **團隊規範** — 管理員統一下發規則，成員自動載入 `v1.8.0`
-- **Team Standard RAG** — Markdown 標題階層切分（H1-H3），精準語意檢索複雜規範。透過 `ownmind_upload_standard` 上傳，`ownmind_confirm_upload` 確認 `v1.15.0`
-- **規則品質追蹤** — 自動記錄遵守/違反/觸發次數，落地率低時主動預警 `v1.8.0`
+- **三級鐵律分類** — 每條鐵律標註 `critical`（紅、強制擋下）/ `default`（黃、看設定）/ `advisory`（灰、只記錄）。新對話開啟時依等級分組顯示 `v1.19.0`
+- **合規率儀表板** — 追蹤每位成員、每個 AI 模型對各項鐵律的遵守次數 / 觸發次數 / 違規次數、繪製趨勢圖
+- **回話品質檢查** — Stop hook 每輪掃中英混雜（IR-037）、行話沒附白話說明（IR-036）、隱私洩漏（IR-041）。違規累積到第 4 次硬擋（exit 2、把指令型重寫提示寫到 stderr）。連續 3 次擋下後自動降警告防 AI 死循環 `v1.19.7`
+- **版本強制即時檢查** — 開新對話時呼叫 API 確認 client / server 版號、避免用舊版踩到已修的雷 `v1.19.4`
 
-### 觀測與分析 `v1.9.0`
+### 鐵律執行引擎
 
-- **活動日誌** — 所有 OwnMind 事件自動記錄，本地 + 上傳 server
-- **合規回報** — AI 自動回報鐵律是否遵守、跳過或違反
-- **管理後台** — 使用者統計、工具/模型分佈、每日活躍度、落地率
-- **交叉分析** — 按工具、按模型、按規則、按使用者的落地率
-- **情境報告** — AI 每次 session 回報使用者痛點和改善建議
-- **自動 Session 記錄** — 對話結束時自動存摘要 + 結構化情境
-- **3 個月壓縮** — 舊 session 自動合併成月摘要
-
-### 裝機狀況 Dashboard + 廣播通知系統 `v1.17.0` *(開發中)*
-
-- **一眼掌握覆蓋率** — `設定 > 裝機狀況` 列出每個 user 的各工具 `scanner_version`、最後 heartbeat、五種狀態：🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 需升級 / ⚪ 未裝
-- **Semver 自動判定升級** — `scanner_version < SERVER_VERSION` 就標黃；null / `unknown` / pre-release 版本一律視為需升級（遵 SemVer 2.0.0）
-- **多工具聚合** — 同一人用 Claude Code + Codex + Cursor 合併成一行，三個 tool 一起列
-- **通用廣播系統**（P2）— super_admin 可於 `設定 > 廣播管理` 發布任意訊息（一般公告 / 維護通知 / 規則變更），支援版本區間（min / max）、指定 user、可選 snooze
-- **自動升級提醒** — 夜間 03:30 Asia/Taipei 自動產生 `upgrade_reminder` 廣播；用 `max_version=${SERVER_VERSION}-prev` + pre-release 排序規則，只讓舊版看到
-- **每則廣播的 Cooldown** — `cooldown_minutes` 欄位避免 MCP 注入刷屏；「每日首次」與「隔 4h」仍會覆蓋 cooldown 確保重要訊息看得到
-- 互動式 AI 升級 + MCP 注入將於 P3–P7 交付
-
-### Token 用量追蹤 `v1.16.0`
-
-- **跨 IDE 用量擷取** — Tier 1 工具（Claude Code、Codex、OpenCode）自動逐訊息記錄 tokens + 成本
-- **Tier 2 活躍度標記** — Cursor / Antigravity 因 API 無 token 資料，以每日 `session_count` 記錄活動
-- **成本完全由 server 算** — Pricing 採 `effective_date` 歷史版本管理，client 的 `native_cost_usd` 只當參考，無法左右數字
-- **Always-on collector** — macOS launchd / Linux systemd / Windows Task Scheduler 每 30 分鐘自動跑，不依賴使用者主動開啟 IDE
-- **Codex fingerprint 稽核** — Codex JSONL 無 native message_id，server 重新 canonicalize 完整 token breakdown 並自算 SHA-256 `expectedId`；client 送的 id 只當「實作正確性 witness」，碰撞 / 不一致 / 缺材料全進 audit log
-- **個人 + 團隊 dashboard** — 個人頁顯示今日 / 本週 / 本月 cost、tokens、工時（wall vs active）；團隊頁（admin+）頂部強制顯示 coverage panel，< 80% 自動加「資料不完整」浮水印，並提供排行榜
-- **Super_admin 定價管理** — 定價採 append-only 新 `effective_date` row，永不覆寫；夜間 03:00 Asia/Taipei 重算套用到歷史成本
-- **透明豁免機制** — Super_admin 可於 dashboard 核准個別 user 豁免；被豁免用戶看到「已豁免追蹤」狀態而非靜默欺騙；豁免期間進入的資料寫入 `usage_audit_log` 註明原因
-
-### 鐵律執行引擎 `v1.11.0`
-
-- **七層防護** — git pre-commit hook (L1)、PreToolUse hook (L2)、MCP 自動驗證 (L3)、Init 提醒 (L4)、post-commit 稽核 (L5)、Session 稽核 (L6)、升級警告 (L7)
-- **自動模板匹配** — Server 建立鐵律時自動匹配驗證模板，不需手動設定
-- **自動編號** — 鐵律建立時自動分配序號（IR-001、IR-002、...） `v1.13.0`
-- **可驗證條件** — AND/OR/when-then 條件組合引擎，規則可被機器檢查
-- **Git hook 強制執行** — pre-commit hook 讀取本地 JSONL 合規記錄，違反時阻止 commit
-- **共用驗證引擎** — `shared/verification.js`、`shared/helpers.js`、`shared/compliance.js` — 所有層共用同一套程式碼 `v1.15.0`
-- **L1 fail-closed** — pre-commit hook 快取為空時嘗試 API 同步（3 秒 timeout） `v1.15.0`
-- **L2 commit 攔截** — PreToolUse hook 對所有觸發類型（含 commit）跑驗證引擎，失敗時攔截 `v1.15.0`
-- **快取自動刷新** — save/update/disable 鐵律後自動刷新 iron_rules.json 快取 `v1.15.0`
-- **可操作的失敗訊息** — 驗證失敗時附帶修復指引（例如「請 git add X」） `v1.15.0`
-- **三級分類** — 每條鐵律標註 `critical` / `default` / `advisory`；SessionStart 摘要按 tier 分組顯示（🔴 Critical 全列、🟡 Default 全列、⚪ Advisory 只顯示計數）；v1.20+ 起按 tier 區分卡控、警告、純記錄三種行為 `v1.19.0`
-- **共用判定核心** — `hooks/lib/rule-enforcer.js` 提供純函式 `enforceRule(ruleCode, context, options)`、依 tier + 既有 `block_on_fail` 旗標回 `allow` / `block` / `warn` / `log_only` / `bypass` 五種動作。**狀態**：v1.19.7 只把 `bypass-handler.js` 接到 git pre-commit 跟 reply-lint（讓 `OWNMIND_BYPASS` 環境變數能放行）；把判斷迴圈整體換成呼叫 `enforceRule` 的重構留 v1.19.8 做 `v1.19.6`
-- **放行通道 + 審計紀錄** — `hooks/lib/bypass-handler.js` 解析 `OWNMIND_BYPASS=IR-008,IR-024`（或 `OWNMIND_BYPASS=all`、大小寫不敏感）、每次放行都寫一筆 `action: 'bypass'` 到 `compliance.jsonl`。process scope（不污染全域）`v1.19.6`
-- **隱私洩漏偵測** — `shared/privacy-detect.js` 掃每輪 AI 回應的台灣身分證（含官方檢碼算式驗證）／電子信箱／台灣手機號碼。使用者自己 prompt 過的字串視為主動分享、例外放行。整合到 reply-lint 作為 IR-041 `v1.19.7`
-- **Pre-commit 內容掃密** — `hooks/ownmind-git-pre-commit.js` 在既有檔名擋的基礎上、新增掃 staged diff 新增行內容跑 `detectSecretLike`、偵測 OpenAI / GitHub PAT / JWT / AWS key 等樣式作為 IR-002 違反 `v1.19.7`
-
-### 智慧學習與數據驅動進化 `v1.10.0`
-
-- **週/月報** — 自動產生摩擦分析和改善建議
-- **模式偵測** — AI 偵測重複問題，主動建議存為規則
-- **自動暫存** — 有價值的學習自動存到待審佇列
-- **週摘要** — 每週第一次 init 顯示上週回顧
-- **摩擦自動立案** — 高頻摩擦（3 次以上）自動建立專案記憶
+- **共用判定核心** — 純函式 `enforceRule(ruleCode, context, options)`、依等級回 `allow` / `block` / `warn` / `log_only` / `bypass`。`v1.19.7` 已把 bypass-handler 接到 git pre-commit 跟 reply-lint（讓 `OWNMIND_BYPASS` 環境變數能放行）；完整整合留 v1.19.8 `v1.19.6`
+- **適應性強化** — 系統根據 AI 的違規歷史動態增強提醒力度（同一條規則一個 session 內違反 3 次以上、下次該規則的提示會自動變成強警告）
 
 ### 基礎設施
 
-- **密鑰管理** — 安全儲存 API keys 和密碼
-- **語意搜尋** — pgvector 驅動，找到相關記憶
-- **分層壓縮** — 短期記憶自動壓縮，長期記憶永久保留
-- **Windows 原生支援** — 提供 `install.ps1` 和 `start.cmd`
-- **鐵律智慧強化** — 根據合規歷史自動加強經常違反的規則提醒
-- **離線韌性** — 本地快取回退 + 寫入佇列，斷線操作上線後自動重播 `v1.14.0`
+- **密鑰管理** — 安全儲存 API 金鑰跟密碼、雙重加密（master key + per-row salt）
+- **語意搜尋** — 用 pgvector（PostgreSQL 的向量搜尋擴充：可以用「意思相近」搜記憶）做模糊比對、找到關聯記憶
+- **分層壓縮** — 短期記憶自動壓縮、長期記憶永久保存
+- **Windows 原生支援** — `install.ps1` 跟 `start.cmd` 都附、不需要 WSL（Windows 子系統 for Linux）
 
-## OwnMind 在不同 AI 客戶端的體驗 `v1.17.84`
+---
 
-OwnMind 的 banner（記憶載入 / 寫入 / 讀取 / 鐵律觸發 / 合規違反 / 廣播通知等）在**大部分 MCP 客戶端**會自然出現 — 它們的對話 UI 不摺疊 tool 回應、AI 也會老實把 banner 內容轉述到回覆裡。**Claude Code 是例外** — 它的 UI 把 MCP tool 回應摺疊成卡片、加上設計上讓 AI 獨佔對話訊息流，導致 OwnMind banner 預設情況下 user 看不到。
+## 系統需求
 
-| 客戶端 | Banner 體驗 | 原因 |
-|---|---|---|
-| Gemini CLI | ✅ 最佳體驗 — banner 自然嵌在對話、AI 會轉述 | UI 不摺疊 tool 回應 |
-| Codex CLI | ✅ 最佳體驗（未實測但預期 OK） | stdout 直通 |
-| Cursor / Copilot / Antigravity / OpenCode / Windsurf | ✅ 預期最佳體驗 | 大多數 MCP 客戶端不摺疊 tool 回應 |
-| **Claude Code** | ⚠️ 降級體驗 — tool 回應被摺疊、AI 經常跳過 banner | Anthropic 設計：對話訊息流是 AI 獨佔（見 [Issue #11120](https://github.com/anthropics/claude-code/issues/11120) — 申請被官方 close as not planned） |
+- **客戶端**：Node.js 20+、Git 2.30+
+- **伺服器端**：自架（提供 Docker Compose 一鍵部署）或使用授權主辦方提供的服務
+- **支援平台**：macOS / Linux / Windows（Windows 用戶需安裝完整版 Git for Windows、提供 sh.exe 給 Git hook 使用）
+- **支援的 AI 工具**：Claude Code、Codex CLI、Cursor、Copilot、OpenCode、Windsurf、Gemini CLI 等任何能讀 MCP（Model Context Protocol：AI 跟外部工具的標準對接協議）或 hook 的客戶端
 
-OwnMind 從 v1.17.71 起加了一個 PostToolUse hook（`hooks/ownmind-tty-echo.cjs`），試圖在 Claude Code 環境下繞過這個限制 — banner 寫到 fallback 檔（`~/.ownmind/logs/banner-pending.jsonl`），下次 SessionStart 開頭補印。這是**事後在場感** — 這個 session 的 banner 會在**下次** session 開頭看到。Claude Code 環境的「即時在場感」目前技術上做不到（Anthropic UI 通道架構限制），在他們改之前不在 OwnMind 路線圖上。
+---
 
-**建議**：搭配 Claude Code 以外的任何 AI 客戶端使用，可以獲得最佳 banner 體驗。如果你一定要用 Claude Code，請接受降級體驗 + 倚賴下次 SessionStart 補印。
+## 快速上手
 
-## 快速開始
+### 1. 取得金鑰與路徑
 
-### 1. 取得 API Key
+安裝 OwnMind 之後、以管理員身份登入系統後台、取得你的存取金鑰（API key）跟伺服器路徑（API URL）。
 
-聯繫管理員取得你的 API key。
+### 2. 選擇安裝方式（二擇一）
 
-### 2. 安裝 / 升級 / 修復 — 單一入口（v1.17.6 起）
+#### 方法 A：讓 AI 自動安裝（最簡單）
 
-**最簡單的方式 — 直接對 AI 說**（Claude Code / Cursor / Codex / Antigravity / OpenCode 等）：
+在你的 AI 編輯器（例如 Cursor 或 Claude Code）對話框輸入：
 
-```
-幫我裝 OwnMind（API key 是 YOUR_API_KEY，URL 是 YOUR_API_URL）
-```
+- **全新安裝**：`安裝 OwnMind (我的金鑰是 YOUR_API_KEY、路徑是 YOUR_API_URL)`
+- **自動升級**：`升級 OwnMind`
 
-或如果已經裝過，要升級：
-```
-升級 OwnMind
-```
+AI 會自己偵測你的作業系統並自動完成安裝。
 
-或壞掉要修：
-```
-修 OwnMind
-```
+#### 方法 B：使用終端機單行指令安裝
 
-AI 會自動偵測作業系統 + 當前狀態，跑對的指令。涵蓋：首次安裝 / 升級 / 壞掉修復 三種情境。
+macOS 或 Linux：
 
-**或手動跑 one-liner** — `bootstrap` 腳本自己判斷三種狀態（沒裝 / 壞掉 / 正常），跑對的動作。
-
-**Mac / Linux / Git Bash**：
 ```bash
-# 首次安裝（要提供 API key + URL）
+# 全新安裝
 curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
-# 已安裝、只升級
+# 升級
 curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
 ```
 
-**Windows PowerShell**：
+Windows PowerShell：
+
 ```powershell
-# 首次安裝
+# 全新安裝
 $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 
-# 已安裝、只升級
+# 升級
 iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
-> **⚠️ Windows 前置需求 — 請裝 Git for Windows。** OwnMind 的 git hooks 是 POSIX shell scripts，需要 Git for Windows 內建的 `sh.exe`（位於 `C:\Program Files\Git\usr\bin\`）才能 spawn。**VS Code 內建的 Git、WinGet 的 `Microsoft.Git`、Scoop 的 `git-with-openssh` 都不含 `sh.exe`** — commit 會跳 `cannot spawn ... pre-commit: Exec format error`。下載 Git for Windows：https://git-scm.com/download/win  （v1.17.15 起 `install.ps1` 會自動偵測；找不到 sh.exe 時會明確跳過 hook 安裝並給訊息，不會默默壞掉。）
+> **Windows 用戶請注意**：OwnMind 依賴 Windows 版 Git 隨附的 Shell 執行環境（sh.exe）跑 Git hook。請確保安裝完整版 Git for Windows、避免簡易版或精簡版、否則代碼提交時會報錯。
 
-### 3. 開始使用
+### 3. 驗證安裝成功
 
-安裝完成後，每次開新 session 記憶會自動載入，不需要手動操作。
+裝完後打開新對話、跟 AI 說：
 
-## 應用情境
+> 「你目前載入了哪些 OwnMind 鐵律？列前 5 條給我看。」
 
-### 1. 踩坑後讓 AI 永遠記住
-> 你：「記住了，部署前一定要檢查環境變數」
+如果 AI 列得出來（含 IR-002、IR-008 等代號）、就代表 hook 已正確注入記憶。
 
-AI 會自動建立一條鐵律，記錄你踩坑的背景和規則。下次不管用哪個工具、哪個 AI，都不會再犯同樣的錯。
+如果列不出來、檢查：
 
-### 2. 問 AI 還有什麼事沒做
-> 你：「ring 這個專案還有什麼沒做？」
+```bash
+cat ~/.ownmind/credentials   # 確認金鑰存在
+cat ~/.ownmind/cache/iron_rules.json | head -3   # 確認規則快取
+```
 
-AI 從 OwnMind 調出專案的待辦清單和進度，告訴你哪些做了、哪些還沒。
+---
 
-### 3. 在不同工具間無縫交接
-> 你（在 Claude Code）：「整理一下，交接給 Codex」
+## 緊急停用：被卡住怎麼辦？
 
-AI 把目前進度、待辦、注意事項整理好存到 OwnMind。你切到 Codex 開新對話，AI 自動讀取交接內容，無縫接手。
+OwnMind 提供環境變數逃生通道、緊急情況下可暫時放行。**所有跳關都會寫稽核紀錄、可被主管或自己事後檢視。**
 
-### 4. 讓 AI 自我回顧學到什麼
-> 你：「你今天學到什麼？」
+### pre-commit 被擋、要先 commit 再說
 
-AI 回顧整個對話，列出所有還沒記下來的新知識和發現，問你哪些要存進 OwnMind。
+```bash
+# 只跳單條鐵律
+OWNMIND_BYPASS=IR-002 git commit -m "hotfix: 緊急修復"
 
-### 5. AI 主動攔截你踩過的坑
-> AI 正準備用多次 SSH 連線部署...
->
-> 【OwnMind vX.X.X】鐵律觸發：你提醒過「SSH 不要頻繁登入登出」，我要遵守，不能再犯
+# 跳所有鐵律（極端情況）
+OWNMIND_BYPASS=all git commit -m "hotfix: 緊急修復"
+```
 
-AI 在即將違反鐵律的那一刻主動停下來，不用你提醒。
+### reply-lint 太煩、想退回只警告
 
-### 6. 多工具同時用，記憶不打架
-> 你同時在 Claude Code 和 Cursor 工作，兩邊都在寫記憶...
->
-> 【OwnMind vX.X.X】行為觸發：偵測到狀態已變更，正在 re-init 取得最新記憶...
+```bash
+# 違規只警告、不擋下 AI 回應
+export OWNMIND_REPLY_LINT_MODE=warn
 
-Sync Token 機制自動偵測衝突。寫入前驗證 token，過期就先同步再寫，不會互相覆蓋。
+# 或完全跳過
+export OWNMIND_REPLY_LINT_DISABLE=1
+```
 
-### 7. 團隊共用規範，一人設定全員生效
-> 管理員：「新增團隊規範：所有 API 回傳必須包含 request_id」
->
-> 【OwnMind vX.X.X】行為觸發：⚠️ 你即將新增團隊規範，此規範將套用到所有成員。請輸入「我確認」。
+### 整套 OwnMind 暫停
 
-團隊規範由管理員統一下發，成員開新對話自動載入，違反時強制提醒。個人可 opt-out 但會持續提醒。
+```bash
+# 暫時禁用所有 hook
+export OWNMIND_DISABLED=1
+```
 
-### 8. 規則有沒有在遵守？數據說話
-> 你：「我的鐵律遵守狀況如何？」
->
-> 【OwnMind vX.X.X】規則自評：IR-001 SSH 規則 — 遵守 12 次，觸發 3 次，遺漏 0 次（落地率 100%）
+> **重點**：這些都是「逃生」用途、長期關掉等於失去產品價值。如果你發現某條規則一直需要 bypass、那條規則本身可能設計錯誤、回後台調整它比關掉 OwnMind 好。
 
-每條鐵律自動追蹤 enforced/missed/triggered 計數，落地率低的規則會主動預警。
+---
 
-### 9. 換一台電腦，記憶跟著走
-> 你（在新電腦）：「幫我安裝 OwnMind，API Key 是 xxx」
+## 常用對話指令
 
-AI 自動完成安裝設定，你的所有偏好、鐵律、專案 context 立刻可用，不用重新教。
+直接用大白話命令你的 AI：
+
+- **「記住這個教訓：[內容]」** — 自動生成一條剛性鐵律、同步到你所有工具
+- **「這個專案還有什麼沒做完的事？」** — AI 主動從 OwnMind 抓出跨視窗的待辦清單
+- **「總結今天的工作並準備交接」** — 自動打包進度、明天換台機器或換工具直接滿血復活
+- **「我的版本是不是最新？」** — 強制查線上最新版號、避免用舊版踩到已修的雷
+- **「列前 10 條鐵律給我看」** — 確認本機鐵律快取狀態
+
+---
+
+## 常見問題 FAQ
+
+### 安裝相關
+
+#### Q: 全新部署伺服器、第一次怎麼進管理後台？
+
+**目前流程（需手動）**：
+1. 部署伺服器時設環境變數 `SETUP_TOKEN=隨機字串`（例如用 `openssl rand -hex 32` 產出）
+2. 開瀏覽器到 `https://你的伺服器/admin/setup`、輸入該 token 跟想設的 super_admin 帳號密碼
+3. 建好後即可正常登入 `/admin/login`
+4. 建好帳號後該 token 就失效、可以從環境變數移除
+
+**已知痛點**：這個流程不夠友善、v1.20+ 會做 setup wizard（安裝精靈：自動引導首次設定的網頁）、首次部署無需手動設 token。在那之前、如果你忘了設 `SETUP_TOKEN` 就部署、可直接登入 DB 跑 SQL 手動 INSERT 一筆 super_admin 紀錄。
+
+#### Q: 跟 `.cursorrules` 或 `CLAUDE.md` 可以並存嗎？
+
+可以。OwnMind 是中央集中式管理、`.cursorrules` 是專案級補充。建議把跨專案的個人偏好跟剛性鐵律放 OwnMind、把單一專案的特殊規則放 `.cursorrules`。兩者不衝突。
+
+### 隱私與安全
+
+#### Q: 我的對話資料會傳到哪？OwnMind 自己收集個資嗎？
+
+OwnMind 自己訂了一條 IR-041「不收集使用者隱私、除非跟工作直接相關」鐵律約束自己。明細：
+
+**會上傳到 server**：
+- 你主動命名的鐵律、記憶條目、profile 偏好
+- 合規事件（哪條鐵律何時觸發、結果是 comply / violate / bypass）— 用於合規率分析
+
+**絕對不上傳**：
+- AI 完整對話內容（你的 prompt + AI 回應原文）
+- 你的程式碼 / 檔案內容
+- 系統路徑、檔名（除了你主動寫進記憶的）
+- 鍵盤輸入、滑鼠軌跡等 telemetry（行為遙測：監看使用者操作的數據）
+
+**自架就是 100% 在你自己伺服器**、上述「會上傳」的也只進你自己的資料庫。
+
+#### Q: API key 跟密碼怎麼存？傳輸安全嗎？
+
+- **儲存層**：API key 跟 `/api/secret` 存的金鑰走雙重加密（master key + per-row salt：主金鑰加每筆獨立鹽值）、即使資料庫整個被偷也無法直接解密
+- **傳輸層**：強制 HTTPS（HTTP 自動 redirect、可用 nginx / caddy 反向代理掛 SSL 憑證）
+- **本機層**：客戶端 `~/.ownmind/credentials` 權限設 0600（只有當前 user 可讀）
+- **稽核**：所有 API 動作寫入 audit log、含時間戳跟操作者 user ID、防篡改
+
+#### Q: OwnMind 會看到我的程式碼嗎？
+
+不會。OwnMind 的 hook 只攔截「規則違反事件」（例如 staged 檔含密碼樣式、AI 回應中英混雜超標）、把違規事件的 metadata（中介資料：描述事件本身的資料、不含程式碼內容）回傳 server。原始程式碼跟 AI 對話內容**不離開你的本機**。
+
+例外：你**主動命令 AI**「把這段程式碼存進記憶」、那這段才會上傳。
+
+### 成本與效能
+
+#### Q: 用 OwnMind 會增加我的 AI token 帳單嗎？
+
+會、但很少。OwnMind 自己**不打 LLM**（不呼叫 GPT/Claude）、所以沒額外的 API 呼叫費用。但因為每次新對話會把鐵律列表（30-50 條，約 2-5 KB 文字）注入到 AI 的 system prompt 裡、所以你的 AI 每次對話的 input token 會多 1500-3000 個（依鐵律數量而定）。
+
+以 Claude Sonnet 計算（input $3 / 1M tokens）：每次新對話多花約 $0.005-0.01 美金。一天開 20 個新對話、額外成本約 $0.10-0.20 / day。比起省下的「重新交代偏好」時間、ROI（投資報酬率：投入跟收益的比例）非常正。
+
+> 想優化的話：到後台把不影響當前工作的鐵律標 `disabled`、或設成 `advisory` tier（廣告級：純記錄不主動注入）、可降低 token 開銷。
+
+#### Q: hook 會不會拖慢我的開發節奏？
+
+各 hook 量測值（M1 MacBook、本機快取已建立的情況）：
+
+| Hook | 延遲 | 何時觸發 |
+|---|---|---|
+| pre-commit | < 50 ms | 每次 `git commit` |
+| reply-lint | < 30 ms | AI 每輪回應結束 |
+| session-start | 200-500 ms | 開新 AI 對話（含載入規則） |
+| version-check | < 100 ms | 開新對話（並行打 API、不阻塞） |
+
+唯一可能感知的是 session-start 的 200-500 ms、其他都在感知門檻以下（< 100 ms 人類感覺不到）。網路同步是背景非阻塞執行、不擋你打 commit。
+
+#### Q: 萬一伺服器掛了、本機工作會卡住嗎？
+
+不會。設計原則 fail-open（失敗時放行而非擋住）— 伺服器無回應時 hook 跳過檢查、不擋 commit 也不擋 AI 回應。鐵律快取 24 小時內仍能本機檢查。超過 24 小時會嘗試重新同步、同步失敗時也仍 fail-open。
+
+### 其他
+
+#### Q: 離線可以用嗎？
+
+可以。所有鐵律快取在 `~/.ownmind/cache/iron_rules.json`、24 小時內離線都能正常擋下。
+
+#### Q: 鐵律可以匯入／匯出嗎？跨團隊分享？
+
+可以。每條鐵律有獨立 UUID（全球唯一識別碼）、後台支援 JSON 匯出。可在不同 OwnMind 實例間轉移、或者開源到 GitHub 給其他團隊使用。
+
+#### Q: 為什麼叫 OwnMind？
+
+「Own your mind」— 你的記憶屬於你自己、不屬於某家 AI 公司。每次換工具都要重新調教、本質上等於把你的思考習慣（mental model：你怎麼想事情的習慣）租給 AI 廠商。OwnMind 把這份所有權還給你。
+
+---
 
 ## API 文件
 
 ### 認證
-所有 API 請求需要在 header 加入：
+
+所有 API 請求需在 Header 帶 `Authorization: Bearer YOUR_API_KEY`。
+
+### 主要 Endpoints（接口端點）
+
 ```
-Authorization: Bearer YOUR_API_KEY
+GET    /api/memory               # 列出記憶
+POST   /api/memory               # 新增記憶
+PUT    /api/memory/:id           # 更新記憶
+DELETE /api/memory/:id           # 刪除記憶
+GET    /api/memory/type/:type    # 依類型抓記憶（例如 iron_rule）
+
+POST   /api/secret               # 新增加密金鑰
+GET    /api/secret/:key          # 取得解密金鑰
+DELETE /api/secret/:key          # 刪除金鑰
+
+POST   /api/activity/batch       # 批次回報合規事件
+GET    /api/compliance/stats     # 查詢合規率統計
 ```
 
-### 主要 Endpoints
-
-| Endpoint | 說明 |
-|----------|------|
-| `GET /api/memory/init` | 載入記憶（profile + principles + instructions） |
-| `GET /api/memory/type/:type` | 取得特定類型記憶 |
-| `GET /api/memory/search?q=` | 語意搜尋 |
-| `POST /api/memory` | 新增記憶 |
-| `PUT /api/memory/:id` | 更新記憶 |
-| `PUT /api/memory/:id/disable` | 停用記憶 |
-| `POST /api/handoff` | 建立交接 |
-| `GET /api/handoff/pending` | 取得待接手的交接 |
-| `POST /api/session` | 記錄 session |
-| `GET /api/export` | 匯出所有記憶 |
-| `POST /api/memory/batch-sync-standard` | 批次同步團隊規範細項（RAG） |
-| `GET /health` | 健康檢查 |
+完整 API 文件見 [OpenAPI spec](../openapi.yaml)（如有）。
 
 ### 記憶類型
 
-| 類型 | 說明 |
-|------|------|
-| `profile` | 個人檔案：身份、溝通偏好、工作風格 |
-| `principle` | 核心原則與願景 |
-| `iron_rule` | 鐵律：踩坑後訂下的不可違反規則 |
-| `coding_standard` | 技術偏好與編碼標準 |
-| `team_standard` | 團隊規範：管理員下發，全員共享 |
-| `project` | 專案 context：架構、環境、進度 |
-| `portfolio` | 作品集 |
-| `env` | 開發環境資訊 |
-| `standard_detail` | 團隊規範細項（RAG）：階層式片段供語意檢索 |
+- `profile` — 個人偏好（暱稱、慣用工具、寫作風格）
+- `iron_rule` — 剛性鐵律（含驗證條件、tier 等級、block_on_fail 旗標）
+- `project` — 專案脈絡（架構、技術棧、待辦事項）
+- `principle` — 工作原則（不可機器驗證、但給 AI 參考）
+- `learning` — 踩坑紀錄（提煉成鐵律前的草稿）
+
+---
 
 ## 技術棧
 
-- **Runtime:** Node.js + Express
-- **Database:** PostgreSQL + pgvector
-- **MCP:** @modelcontextprotocol/sdk
-- **部署:** Docker Compose
+- 後端：Node.js 20+ / Express
+- 資料庫：PostgreSQL 16 + pgvector
+- 部署：Docker Compose
+- 客戶端 hook：Node.js（macOS / Linux / Windows）
+- 同步協議：HTTPS REST + MCP（Model Context Protocol）
 
-### DB Migration 自動化（v1.19.2+）
+---
 
-`db/[0-9][0-9][0-9]_*.sql` 下的 migration 會在 server 啟動時自動套用：
+## 貢獻者
 
-- `src/utils/run-migrations.js` 在 `src/index.js` 的 `app.listen()` 前跑、把所有未套用的 SQL 依編號順序套上
-- 用 `schema_migrations` 表追蹤（`filename` 為主鍵、含 `applied_at`、`applied_by`）
-- 任何一條 migration 失敗 → API process exit 1、container 不會起 listen（避免新 code 配舊 schema 對外服務）
-- `scripts/run-migrations.sh` 是手動 / CLI 版本（用 `docker exec ownmind-db psql` 或直連 psql）
+- Vin（miou1107）
 
-新增 migration：在 `db/` 下加一條 `016_xxx.sql`（用 `IF NOT EXISTS` 確保 idempotent）、下次 `docker restart ownmind-api` 自動套用、不用人工 SSH 跑 psql。
+歡迎 issue、PR、跟使用回饋。
+專案位置：[github.com/miou1107/OwnMind](https://github.com/miou1107/OwnMind)（如已公開）
 
-### 回話品質 lint 漸進式 block（v1.19.3+、v1.19.4 起預設 block、v1.19.7 起改 exit 2 + 連續擋 3 次降警告）
+---
 
-Claude Code Stop hook（`hooks/ownmind-reply-lint.js`）每輪 AI 回應結束時、檢查 IR-037（中英混雜）+ IR-036（行話沒附白話說明）+ IR-041（v1.19.7 新增的個資洩漏偵測：身分證／信箱／手機）。v1.19.4 起把漸進式 block 改為**預設**行為（v1.19.3 是 opt-in、但 opt-in 違反 IR-027「邏輯才有效」、user 不會主動開）：
-
-- **MODE=block**（v1.19.4 起預設）：以 Claude session 為單位累積違規。前 3 次只警告、第 4 次 `process.exit(2)` + 把指令型重寫提示寫到 stderr（Claude Code 會把 stderr 餵給 Claude 當下一個 prompt、Claude 會重寫上一則回應）。v1.19.7 把舊版 `{"decision":"block"}` stdout JSON 換成 exit 2、兩種都是 Claude Code Stop hook 規格認可的 block 方式
-- **連續擋 3 次自動降警告**（v1.19.7）：同一 session 連續 hard block 3 次後、第 4 次違規降為 `exit 1` 警告（不擋）、寫 `action: 'repeated_violation_softblock'` 到 compliance、避免 AI 重寫死循環吃光 Claude Code 的 8 次硬上限
-- **MODE=warn**（opt-out）：違規時寫招牌到你的 terminal、永遠不擋 AI 流程（v1.19.3 預設行為、覺得 block 太煩可以退回這裡）
-- **MODE=disable**：完全跳過 lint（等同 `OWNMIND_REPLY_LINT_DISABLE=1`）
-
-透過 `OWNMIND_REPLY_LINT_MODE` 環境變數設定。未知值 fail-open 到 `warn`、招牌會多一行提示。
-
-session 違規計數存在 `~/.ownmind/logs/reply-lint-session-counter.json`（v1.19.7 新增 `block_count` 欄位追蹤連續 block 次數）。30 天前的紀錄會自動清掉。`stop_hook_active=true`（Claude Code 在重寫又觸發 Stop 時會帶這個 flag）會被偵測、hook 立刻退出避免遞迴 block；Claude Code 內建也有 8 次連續 block 的硬上限。lint 通過時 `block_count` 自動清零、避免跨 turn 計數誤觸發降警告。
-
-白名單從 v1.19.3 起從 80 詞擴到 200+ 詞、依據是 30 天真實違規 log 的 Top 30 詞（大多是專案名、公司名、標準 git/dev 行話）。Threshold 也分情境：含 code block 寬鬆到 25%（一般是 15%）；含「code review / code-review」直接豁免。IR-036 的解釋查找視窗從 50 字擴到 80 字。
-
-## Contributors
-
-- Vin (miou1107)
-
-## License
+## 授權
 
 MIT

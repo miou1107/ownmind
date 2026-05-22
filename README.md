@@ -2,383 +2,431 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.19.0** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.19.7** · see [CHANGELOG](CHANGELOG.md) for details
 
-# OwnMind — Cross-platform AI Memory System
+# OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
-Let your AI tools share memory. Whether you use Claude Code, Codex, Cursor, Copilot, OpenCode, or any online AI, OwnMind lets all of them read and write your preferences, iron rules, and project context.
+Stop letting AI forget your preferences and repeat the same dumb mistakes. Whether you use Claude Code (Claude's CLI), Codex (OpenAI's CLI), Cursor (AI editor), Gemini CLI (Google's CLI), or any online AI, OwnMind locks in your development preferences, project context, and unbreakable "iron rules" across every tool, machine, and AI model.
 
-## Vision
+---
 
-OwnMind enables you to move freely across any LLM, editor, machine, project, or AI conversation — your memory is shared and switching is painless.
+## Who Is OwnMind For?
 
-- **Install and forget** — After setup, OwnMind runs automatically. No learning curve, no manual steps. You won't even notice it's there.
-- **Gets smarter over time** — The longer you use it, the richer your memory becomes. AI learns your work preferences, habits, and patterns — it gets better at helping you.
-- **Data-driven evolution** — OwnMind collects usage data, friction points, and AI behavior metrics. This data feeds back into improving the product itself — better features, smarter defaults, continuous upgrades.
-- **Seamless cross-platform** — One API for all tools. Switch from Claude Code to Cursor to Codex — your memory follows. Switch machines — your memory follows. No re-teaching.
-- **Team standards enforcement** — Admins push company rules (git flow, coding standards, review policies) once. Every team member's AI auto-loads and enforces them. New hire? Standards apply from day one.
-- **Multi-admin management** — Three-tier role hierarchy (super_admin > admin > user), password management, full audit trail `v1.12.0`
+### 👤 Solo Developer — Set preferences once, they follow you everywhere
 
-## Why OwnMind?
+The "commit messages must be in Traditional Chinese" rule you set on your work laptop? It still applies when you open a new conversation on your home machine, on a borrowed laptop on a business trip, anywhere. **Your dev persona doesn't reset when your environment changes.**
 
-### Three fundamental problems with today's AI tools
+### 🔁 Multi-Tool User — Same rules across Claude / Cursor / Codex / Copilot
+
+Backend in Claude Code in the morning, frontend in Cursor in the afternoon, scripts in Codex CLI at night. Every tool auto-loads the same personal preferences and iron rules — **no need to re-teach each one**. Add a new editor next month (OpenCode, Windsurf, whatever) and it inherits everything as soon as it connects to OwnMind.
+
+### 👥 Team Lead — Push standards once, dashboard shows real compliance
+
+Publish a team rule in the admin console (e.g., "PRs must include tests") and every team member's AI auto-loads it. Local pre-commit hooks (small programs that intercept `git commit` to inspect changes) block non-compliant code before it can be committed. The admin dashboard (data dashboard: web page showing data as charts) shows real per-rule, per-member compliance rates, the team's most-hit pitfalls, and who uses `OWNMIND_BYPASS` (rule-bypass env var) the most — **manage your team with data, not gut feel.**
+
+### 🛡️ Security-Conscious Engineer — Sensitive data never leaks through AI
+
+- Trying to commit passwords/API keys (credentials for calling online services) → pre-commit hook blocks via pattern match (new in v1.19.7)
+- AI tries to write a password into memory → memory API rejects with HTTP 400 and routes to the encrypted vault
+- AI reply accidentally includes the user's national ID / email / mobile → reply-lint (reply quality linter: auto-scans AI responses for rule violations) blocks and asks AI to rewrite (new IR-041 in v1.19.7)
+
+Especially useful in finance, healthcare, legal, and other sensitive industries.
+
+---
+
+## Before vs After Installing OwnMind
+
+AI is powerful but **has no long-term memory by design**, and different models (e.g., Anthropic's Claude vs Google's Gemini) interpret rules differently. Add multiple machines into the mix and the friction multiplies. Here are five typical pain points before and after:
+
+### Pain Point 1: Re-explaining preferences in every new conversation
+
+- **Before**: You open a new conversation, ask AI to write some code, and it produces outdated syntax or ignores your style preferences. You re-type the same explanation again: "Remember, our project uses this pattern..."
+- **After**: The moment the conversation opens, OwnMind has already injected your preferences, style, and iron rules into the AI. You state the requirement; AI produces compliant code the first try.
+
+### Pain Point 2: IQ reset across machines and models
+
+- **Before**: Morning on the work desktop with Claude Code, afternoon at home on a laptop with Cursor + Gemini. Crossing **different machines** + **different AI models** wipes your memory context — re-copy code, re-tune for each model's quirks, painful.
+- **After**: Whichever machine you switch to, whichever model you pick, OwnMind silently unifies the memory core in the background. **Open a conversation anywhere; the experience is continuous and consistent.**
+
+### Pain Point 3: AI repeats the same dumb mistakes
+
+- **Before**: Last week production DB crashed because a deploy missed an env var. You stayed up all night fixing it. Today you ask AI to deploy a new feature and it produces the same instruction missing the same env var, nearly repeating the disaster.
+- **After**: When the mistake happened, you said "remember this lesson" to AI. That iron rule got uploaded to OwnMind. Today when AI tries to deploy, the system intercepts at the kernel level, forces AI to self-check, and prevents the disaster from repeating.
+
+### Pain Point 4: Team works in silos with no unified standards
+
+- **Before**: As the team grows, everyone uses AI differently. Someone lets AI write code without tests; someone accidentally commits a password. The dev standards doc nobody reads. Code quality spirals.
+- **After**: Lead publishes a team rule once in the admin console; every member's AI auto-loads and enforces it. Non-compliant code? The local pre-commit hook hard-blocks it, forcing dev + AI to fix before commit. Fully automated team standardization and quality gates.
+
+### Pain Point 5: No central management, no visibility into team AI usage
+
+- **Before**: The lead has zero visibility into how the team uses AI. Who uses what tools? Which technical frictions hit most often? What's the actual rule-compliance rate? Manage blind without data, can't evaluate real productivity or risk.
+- **After**: A dedicated **central admin console + data dashboard**. Team-wide AI usage, per-member per-rule compliance rates, the team's most-hit pitfalls — all key metrics at a glance. Compliance analytics and audit logs (audit log: tamper-proof record of every action) are aggregated automatically.
+
+---
+
+## Pitfall Evolution: From Mistake to Iron Rule
+
+OwnMind's core value is turning "pitfalls you stumbled into" into "AI's genetic rules" — guaranteeing the same mistake never happens twice on your team:
 
 ```mermaid
 graph LR
-    subgraph "😤 Without OwnMind"
-        A["Start new chat"] --> B["Re-explain preferences"]
-        B --> C["Re-describe project"]
-        C --> D["Repeat same mistake"]
-        D --> A
-    end
+    A["You hit a pitfall (e.g., commit without tests)"] --> B["Tell AI: remember this lesson"]
+    B --> C["AI extracts and creates iron rule"]
+    C --> D["Central server distributes"]
+    D --> E["All team members & tools auto-load"]
+    E --> F["AI tries to violate next time → tool + git commit hard-block"]
 ```
 
-**1. Every conversation starts from zero**
-You've told your AI a hundred times "don't use var" or "check env vars before deploying," but next conversation it forgets everything. You waste time re-teaching the same things.
+1. **Capture**: After hitting a deploy or dev pitfall, just say "remember this lesson: always verify DB connection before deploy"
+2. **Extract**: AI integrates current context, distills a machine-verifiable iron rule (e.g., `IR-038`), uploads to OwnMind
+3. **Continuous gating**: The rule syncs immediately to all your dev tools. Next time, wherever you work, the moment AI tries to "deploy without checking connection", the system intercepts at the kernel level
 
-**2. Switch tools, lose memory**
-You spent the morning coding with Claude Code, then switch to Cursor in the afternoon — it has no idea what you did. Your experience is locked inside a single tool.
+---
 
-**3. Past mistakes will happen again**
-Last week's deployment crashed because of a missed env var. You remember, but the AI doesn't. Next time, it'll make the same mistake.
+## Team Enforcement Defense Lines
 
-### How OwnMind solves this
+When projects scale, team management is where disasters start — dev standards docs no one reads, juniors writing buggy code. OwnMind ships a hardcore enforcement system for teams:
 
-```mermaid
-graph TB
-    subgraph "🧠 With OwnMind"
-        CC["Claude Code"] --> OM["OwnMind API"]
-        CX["Codex"] --> OM
-        CR["Cursor"] --> OM
-        OC["OpenCode"] --> OM
-        WS["Windsurf"] --> OM
-        GM["Gemini CLI"] --> OM
-        OM --> DB[("PostgreSQL\n+ pgvector")]
-    end
+### 1. Three-tier role hierarchy
 
-    style OM fill:#6C5CE7,stroke:#fff,color:#fff
-    style DB fill:#2D3436,stroke:#fff,color:#fff
-```
+Built-in **Super Admin** > **Admin** > **User** roles. The first two have absolute control over team iron rules — preventing regular users or AI from silently editing or disabling core safety rules in conversation.
 
-**One API, shared memory across all tools.** Teach once, every AI knows.
+### 2. One-click team standard broadcast
 
-## Who is OwnMind for?
+Lead publishes a team rule once (e.g., "every response must include a request ID") via the admin console. The system slices it semantically via RAG (Retrieval-Augmented Generation: fetches external knowledge before AI answers). When any team member opens a new conversation, AI hard-loads and enforces it. Zero manual training, zero standard-sync cost.
 
-- **Developers using multiple AI tools daily** — Stop re-explaining your preferences to each tool
-- **People working across projects and devices** — Your memory follows you everywhere
-- **Tech leads with team AI standards** — Push rules once, enforce everywhere
-- **Power users who want AI that evolves** — Let your AI accumulate experience over time
+### 3. Local Git pre-commit hard gate
 
-## Top 3 phrases you'll use
+The strongest physical defense for team management. OwnMind installs a pre-commit hook on every member's machine. If a member's AI writes code that violates team rules (e.g., secret in source, or missing doc sync), `git commit` is hard-rejected — forcing dev + AI to fix before submission.
 
-| You say | AI does |
-|---------|---------|
-| **"Remember this"** | Saves it as an iron rule — persisted across all tools, never forgotten |
-| **"What did you learn?"** | Reviews the conversation, lists new knowledge worth saving |
-| **"What's left to do on this project?"** | Pulls up progress and TODOs from all projects |
+### 4. Compliance dashboard + audit log
+
+The admin console auto-tracks per-member, per-AI-model execution metrics (compliance count, trigger count, violation count) for each rule and plots them as compliance-rate trend charts. Every AI action, every violation, every bypass — all recorded in tamper-proof audit logs for solid data-driven quality management.
+
+---
+
+## Three Defense Lines: Rule Enforcement Without Begging the AI
+
+Prompting the AI to behave doesn't work. OwnMind builds three physical defense lines at the OS and tool level that AI can't bypass without leaving a trace:
+
+1. **Defense 1: Spec unification** — When a conversation opens, the system calls the API to inject base prompts. Semantic line of defense.
+2. **Defense 2: Execution-side control** — Before AI actually modifies code or runs commands, **PreToolUse intercept** (PreToolUse: pre-tool-call safety gate). If it tries to edit code without reading it first, the system rejects and rolls back, preventing **blind edit** (modifying files without reading them).
+3. **Defense 3: Output-side review** — When AI finishes a response, the Stop hook (Stop hook: post-output review program triggered when AI completes a turn) auto-runs reply-lint. If it detects Chinese-English mixing, unexplained jargon, or accidental leak of user national ID / email / mobile (IR-041, new in v1.19.7), the system commands AI to **rewrite** in the background until compliant. **After 3 consecutive blocks, the system auto-downgrades to a warning** to prevent infinite rewrite loops.
+
+---
+
+## Why not `.cursorrules` or `CLAUDE.md`?
+
+"I'll just use project-level static rule files (`.cursorrules`, `CLAUDE.md`). Why OwnMind?"
+
+Because static rule files are fragile — AI hallucinations bypass them silently. OwnMind is a stateful enforcement system:
+
+| Aspect | Project-level static rules | OwnMind stateful enforcement |
+|:---|:---|:---|
+| **Maintenance** | Files scattered across projects, hard to sync | Edit once on central server; all machines and tools sync immediately |
+| **Enforcement** | Relies on AI self-discipline; hallucinations bypass | Critical-tier rules: programmatic hard-stop. Local pre-commit hook blocks `git commit` itself |
+| **Learning from errors** | Every conversation starts blank; same pitfalls repeat | Auto-record violations; adaptive reinforcement (the system dynamically strengthens prompts based on AI's violation history) |
+| **Security** | Easy to accidentally commit credentials | Auto-filter sensitive strings and hard-block; route to secure vault |
+| **Team rollout** | Manual file copy; missed copies = no enforcement | Lead pushes once; new hires auto-align from day one |
+
+> **Honest disclosure**: The `OWNMIND_BYPASS` env var (rule-bypass switch) allows you to skip a single iron rule in emergencies — but every bypass is logged in the audit trail. AI cannot bypass without leaving a trace.
+
+---
 
 ## Core Features
 
 ### Memory & Protection
 
-```mermaid
-graph LR
-    A["You hit a bug"] --> B["Say 'Remember this'"]
-    B --> C["AI creates iron rule"]
-    C --> D["All tools load it"]
-    D --> E["Auto-intercept next time"]
-    E --> F["Never again"]
-
-    style C fill:#E17055,stroke:#fff,color:#fff
-    style E fill:#00B894,stroke:#fff,color:#fff
-```
-
-- **Cross-platform memory** — One API, all AI tools share it
-- **Iron rule management** — Lessons learned are never forgotten, with full context
-- **Real-time rule enforcement** — Rules auto-load at session start, AI proactively blocks violations
-- **Trigger tags** — Rules tagged with triggers (`trigger:commit`, `trigger:deploy`), AI auto-checks before those actions
-- **Rule version history** — Old versions preserved automatically, full evolution traceable
-- **Memory vs Secret routing** `v1.19.1` — Memory API auto-detects passwords / tokens / API keys in writes and blocks with 400 + redirect hint to `ownmind_set_secret`. Three-layer defense: MCP tool description warning, server-side detector, dedicated iron rule IR-047. See [v1.19.1 proposal](openspec/changes/v1.19.1-secret-tool-routing/proposal.md).
+- **Memory / secret routing** — Three data classes: profile / memory / secret (encrypted vault). AI tries to write a password to plain memory → blocked with HTTP 400 and redirected to the vault `v1.19.1`
+- **Privacy leak detection** — Each AI reply auto-scans for Taiwan national ID (with official checksum validation), email, Taiwan mobile patterns. Strings the user themselves prompted are exempted (treated as the user actively sharing) `v1.19.7`
+- **Pre-commit secret content scan** — On top of the existing filename-pattern block, scans staged diff added lines for OpenAI / GitHub PAT (Personal Access Token) / JWT (JSON Web Token) / AWS key patterns as IR-002 violations `v1.19.7`
 
 ### Collaboration & Sync
 
-```mermaid
-sequenceDiagram
-    participant CC as Claude Code
-    participant OM as OwnMind
-    participant CR as Cursor
+- **Cross-tool handoff** — Before logging off, say "wrap up and prepare handoff" to AI; it packages incomplete tasks and design context, uploads. Tomorrow, on a different editor with a different AI, it resumes seamlessly `v1.13.0`
+- **Multi-client conflict lock** — When multiple editors write memory simultaneously, sync tokens (tags identifying write order) block stale versions and force AI to refetch latest. Your hard-won dev rules aren't overwritten
+- **Cross-machine auto-sync** — Switch laptops, travel, new hire's day one — login pulls memory and rules immediately, zero wait
 
-    CC->>OM: Write memory (sync_token=A)
-    CR->>OM: Write memory (sync_token=A)
-    OM-->>CR: ⚠️ Token expired, sync first
-    CR->>OM: re-init (get latest)
-    CR->>OM: Write memory (sync_token=B) ✅
-```
+### Observability & Analytics
 
-- **Sync Token** — Auto-detect conflicts when multiple tools write simultaneously `v1.8.0`
-- **Handoff** — Seamlessly hand off work between different tools
-- **Team standards** — Admins push rules, members auto-load them `v1.8.0`
-- **Team Standard RAG** — Hierarchical Markdown chunking (H1-H3) for precise semantic retrieval of complex standards. Upload via `ownmind_upload_standard`, confirm via `ownmind_confirm_upload` `v1.15.0`
-- **Rule quality tracking** — Auto-track enforced/missed/triggered counts, alert on low compliance `v1.8.0`
+- **Three-tier rule classification** — Every rule labeled `critical` (red, hard-block) / `default` (yellow, depends on settings) / `advisory` (gray, log-only). SessionStart digests group by tier `v1.19.0`
+- **Compliance dashboard** — Tracks per-member, per-AI-model compliance / trigger / violation counts per rule; plots trend charts
+- **Reply quality lint** — Stop hook scans for Chinese-English mixing (IR-037), unexplained jargon (IR-036), privacy leaks (IR-041). 4th violation per session → `process.exit(2)` with directive-style rewrite prompt on stderr. After 3 consecutive hard blocks, auto-downgrades to warning to prevent rewrite deadlock `v1.19.7`
+- **Forced version check** — Each new conversation calls API to verify client / server version. Prevents using outdated versions with already-fixed bugs `v1.19.4`
 
-### Smart Learning & Data-Driven Evolution `v1.10.0`
+### Iron Rule Enforcement Engine
 
-- **Weekly/monthly reports** — Auto-generated friction analysis and improvement suggestions
-- **Pattern detection** — AI detects repeated issues and prompts to save as rules
-- **Auto-staging** — Valuable learnings auto-saved to pending review queue
-- **Weekly summary** — First init of the week shows last week's recap
-- **Friction auto-issue** — High-frequency frictions (3+) auto-create project memories
-
-### Observability & Analytics `v1.9.0`
-
-- **Activity logging** — All OwnMind events tracked locally + uploaded to server
-- **Compliance reporting** — AI auto-reports whether iron rules were followed, skipped, or violated
-- **Admin dashboard** — User stats, tool/model distribution, daily activity, compliance rates
-- **Cross-dimensional analysis** — Compliance by tool, by model, by rule, by user
-- **Context reporting** — AI reports friction points and improvement suggestions each session
-- **Session auto-logging** — AI auto-logs work summary with structured context at end of each conversation
-- **3-month compression** — Old session logs auto-compress into monthly summaries
-
-### Client Version Dashboard + Broadcast System `v1.17.0` *(in progress)*
-
-- **Installation coverage at a glance** — `Settings > Client Status` lists every user with per-tool `scanner_version`, last heartbeat, and one of five states: 🟢 Active / 🟠 Stale / 🔴 Offline / 🟡 Needs Upgrade / ⚪ Not Installed
-- **Semver-based upgrade flag** — client auto-flagged if `scanner_version < SERVER_VERSION`; null / `unknown` / pre-release versions treated as needs-upgrade (follows SemVer 2.0.0)
-- **Multi-tool aggregation** — one user using Claude Code + Codex + Cursor shows up as a single row with all three listed
-- **Broadcast system** (P2) — super_admin publishes any message type (announcement / maintenance / rule_change) via `Settings > Broadcast Management`. Version targeting (`min_version` / `max_version`), per-user targeting, and opt-in snooze all supported
-- **Auto upgrade reminder** — nightly job (03:30 Asia/Taipei) creates an `upgrade_reminder` broadcast when the server version advances; uses `max_version=${SERVER_VERSION}-prev` + pre-release ordering so only outdated clients see it
-- **Cooldown per broadcast** — `cooldown_minutes` field prevents repeated MCP response injection within a short window; "first call of the day" and "4h gap" still force-inject for high-salience reminders
-- Interactive AI-assisted upgrade + MCP response injection coming in subsequent P3–P7 phases
-
-### Token Usage Tracking `v1.16.0`
-
-- **Cross-IDE usage capture** — Automatic token + cost tracking for Tier 1 tools (Claude Code, Codex, OpenCode) with per-message granularity
-- **Tier 2 activity markers** — Cursor and Antigravity captured via daily `session_count` (no token data available but activity is observable)
-- **Server-side cost calculation** — All pricing math runs server-side with historical `model_pricing` (effective_date), so client-reported costs can never skew the numbers
-- **Always-on collector** — `launchd` (macOS) / `systemd` (Linux) / Task Scheduler (Windows) agents run every 30 minutes, no dependency on opening an IDE
-- **Codex fingerprint audit** — Codex JSONL has no native message_id, so the server re-canonicalizes the full token breakdown and computes its own SHA-256 `expectedId`; client-supplied IDs become untrusted witnesses (collision / mismatch / missing-material audits)
-- **Personal + team dashboards** — Per-user daily cost, tokens, work hours (wall vs active); admin team view with coverage panel (<80% triggers "data incomplete" watermark) and leaderboards
-- **Super-admin pricing management** — Append-only price history via dashboard (new `effective_date` row, never overwrite); nightly recompute applies price changes to historical costs
-- **Transparent opt-out** — Super-admin grants exemptions in-dashboard; suppressed ingestion writes to `usage_audit_log` with reason; affected users see "tracking exempt" status instead of a silent lie
-
-### Iron Rule Enforcement Engine `v1.11.0`
-
-- **7-layer defense** — git pre-commit hook (L1), PreToolUse hook (L2), MCP auto-verify (L3), Init reminder (L4), post-commit audit (L5), Session audit (L6), escalation warning (L7)
-- **Automatic template matching** — Server auto-matches verification templates when creating iron rules, no manual config needed
-- **Auto-numbering** — Iron rules automatically assigned sequential codes (IR-001, IR-002, ...) on creation `v1.13.0`
-- **Verifiable conditions** — AND/OR/when-then condition combinator engine, rules become machine-checkable
-- **Git hook enforcement** — pre-commit hook reads local JSONL compliance records and blocks commits that violate rules
-- **Shared verification engine** — `shared/verification.js`, `shared/helpers.js`, `shared/compliance.js` — one codebase shared across all layers `v1.15.0`
-- **L1 fail-closed** — pre-commit hook attempts API sync when cache is empty, with 3s timeout `v1.15.0`
-- **L2 commit blocking** — PreToolUse hook runs verification engine for all triggers including commit, blocks on failure `v1.15.0`
-- **Cache auto-refresh** — iron_rules.json cache refreshes automatically after save/update/disable operations `v1.15.0`
-- **Actionable failure messages** — verification failures include fix hints (e.g., "please git add X") `v1.15.0`
-- **Three-tier rule classification** — every rule labeled `critical` / `default` / `advisory`; SessionStart digest groups by tier (🔴 Critical fully listed, 🟡 Default fully listed, ⚪ Advisory count-only); v1.20+ uses the tier to differentiate blocking vs. warning vs. log-only behavior `v1.19.0`
-- **Shared rule-enforcer core** — `hooks/lib/rule-enforcer.js` provides pure-function `enforceRule(ruleCode, context, options)` returning one of `allow` / `block` / `warn` / `log_only` / `bypass` based on tier + legacy `block_on_fail`. **Status:** v1.19.7 wires only `bypass-handler.js` into git pre-commit + reply-lint (so `OWNMIND_BYPASS` works); the full `enforceRule` integration that replaces direct `evaluateConditions` loops is deferred to v1.19.8 `v1.19.6`
-- **Bypass channel + audit** — `hooks/lib/bypass-handler.js` parses `OWNMIND_BYPASS=IR-008,IR-024` (or `OWNMIND_BYPASS=all`, case-insensitive) and writes every bypass to `compliance.jsonl` with `action: 'bypass'`. Process-scoped (does not leak globally) `v1.19.6`
-- **Privacy leak detection** — `shared/privacy-detect.js` scans each AI reply for Taiwan ID numbers (with official checksum validation), email addresses, and Taiwan mobile numbers. Strings the user themselves prompted are exempt (treated as the user actively sharing). Integrated into reply-lint as IR-041 `v1.19.7`
-- **Pre-commit secret content scan** — `hooks/ownmind-git-pre-commit.js` now scans staged diff added lines via `detectSecretLike` for OpenAI / GitHub PAT / JWT / AWS key patterns on top of the existing filename blocklist for IR-002 `v1.19.7`
+- **Shared rule-enforcer core** — Pure function `enforceRule(ruleCode, context, options)` returns `allow` / `block` / `warn` / `log_only` / `bypass` by tier. **Status:** v1.19.7 wires `bypass-handler.js` into git pre-commit + reply-lint (so `OWNMIND_BYPASS` works); full `enforceRule` integration replacing direct `evaluateConditions` loops is deferred to v1.19.8 `v1.19.6`
+- **Adaptive reinforcement** — System dynamically strengthens prompts based on AI's violation history (3+ violations of the same rule per session → that rule's prompt auto-upgrades to a strong warning)
 
 ### Infrastructure
 
-- **Secret management** — Securely store API keys and passwords
-- **Semantic search** — Powered by pgvector
-- **Tiered compression** — Short-term memory auto-compresses, long-term persists forever
-- **Windows native support** — `install.ps1` and `start.cmd` included
-- **Adaptive Iron Rule Reinforcement** — automatically strengthens reminders for frequently violated rules based on compliance history
-- **Offline resilience** — Local cache fallback + write queue for offline operations, auto-replay on reconnect `v1.14.0`
+- **Secret management** — Securely store API keys and passwords with double encryption (master key + per-row salt)
+- **Semantic search** — Powered by pgvector (PostgreSQL vector search extension: search memories by semantic similarity)
+- **Tiered compression** — Short-term memory auto-compresses, long-term memory persists forever
+- **Native Windows support** — `install.ps1` and `start.cmd` included, no WSL (Windows Subsystem for Linux) needed
 
-## Client Experience Matrix `v1.17.84`
+---
 
-OwnMind banners (memory load / write / read / iron-rule trigger / compliance violation / broadcast notice) appear naturally in **most MCP clients** — their chat UI doesn't collapse tool responses, and the AI relays banner content into its reply. **Claude Code is the exception** — its UI collapses MCP tool results into cards and its design exclusively gives the chat stream to the AI, so by default users don't see OwnMind banners.
+## System Requirements
 
-| Client | Banner Experience | Why |
-|---|---|---|
-| Gemini CLI | ✅ Optimal — banners inline in chat, AI relays them | UI doesn't collapse tool responses |
-| Codex CLI | ✅ Optimal (untested but expected) | stdout passes through |
-| Cursor / Copilot / Antigravity / OpenCode / Windsurf | ✅ Likely optimal | Most MCP clients don't collapse tool responses |
-| **Claude Code** | ⚠️ Degraded — tool results collapsed; AI often skips banner content | By Anthropic design: chat stream is AI-exclusive (see [Issue #11120](https://github.com/anthropics/claude-code/issues/11120) — closed as not planned) |
+- **Client**: Node.js 20+, Git 2.30+
+- **Server**: Self-host (Docker Compose one-click deploy provided) or use a licensed hosted service
+- **Platforms**: macOS / Linux / Windows (Windows users need full Git for Windows installer for sh.exe used by Git hooks)
+- **Supported AI tools**: Claude Code, Codex CLI, Cursor, Copilot, OpenCode, Windsurf, Gemini CLI, or any client that reads MCP (Model Context Protocol: standard for AI ↔ external tool integration) or hooks
 
-Since v1.17.71, OwnMind ships a PostToolUse hook (`hooks/ownmind-tty-echo.cjs`) that tries to bridge this gap on Claude Code — banners are written to a fallback file (`~/.ownmind/logs/banner-pending.jsonl`) and printed at the next SessionStart. This is **post-hoc presence** — banners from this session show up at the start of the *next* session. Real-time presence on Claude Code is currently technically impossible (Anthropic's UI-channel architecture) and is not on OwnMind's roadmap until that changes.
-
-**Recommendation**: Use OwnMind with any AI client *other than Claude Code* for the optimal banner experience. If you must use Claude Code, accept the degraded experience and rely on the next-SessionStart recap.
+---
 
 ## Quick Start
 
-### 1. Get an API Key
+### 1. Get API key and URL
 
-Contact the admin to get your API key.
+After installing OwnMind, log in to the admin console as admin to obtain your access key (API key) and server path (API URL).
 
-### 2. Install / Upgrade / Repair — one universal entry (v1.17.6+)
+### 2. Pick an install path (choose one)
 
-**The easiest way — just talk to your AI** (Claude Code, Cursor, Codex, Antigravity, OpenCode, etc.):
+#### Option A: Let AI install (easiest)
 
-```
-Install OwnMind (my API key is YOUR_API_KEY, URL is YOUR_API_URL)
-```
+In your AI editor (e.g., Cursor or Claude Code) chat, type:
 
-or, if OwnMind is already installed and you want to upgrade:
-```
-Upgrade OwnMind
-```
+- **Fresh install**: `Install OwnMind (my key is YOUR_API_KEY, URL is YOUR_API_URL)`
+- **Auto upgrade**: `Upgrade OwnMind`
 
-AI auto-detects your OS + current state and runs the right command. Works for: fresh install / upgrade / repair (broken `~/.ownmind`).
+AI auto-detects your OS and runs the installer.
 
-**Or run the one-liner yourself** — the `bootstrap` script handles all three states (no install / broken / normal) by itself.
+#### Option B: One-line shell install
 
-**Mac / Linux / Git Bash**:
+macOS or Linux:
+
 ```bash
-# Fresh install (needs API key + URL)
+# Fresh install
 curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
-# Already installed — upgrade only
+# Upgrade
 curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
 ```
 
-**Windows PowerShell**:
+Windows PowerShell:
+
 ```powershell
 # Fresh install
 $env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 
-# Already installed — upgrade only
+# Upgrade
 iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
 ```
 
-> **⚠️ Windows prerequisite — install Git for Windows.** OwnMind's git hooks are POSIX shell scripts. Git for Windows ships with `sh.exe` (under `C:\Program Files\Git\usr\bin\`) needed to spawn them. **VS Code's bundled Git, WinGet's `Microsoft.Git`, and Scoop's `git-with-openssh` do NOT include `sh.exe`** — commits will fail with `cannot spawn ... pre-commit: Exec format error`. Get Git for Windows: https://git-scm.com/download/win  (Since v1.17.15, `install.ps1` detects this and skips hook installation cleanly with a clear message.)
+> **Windows note**: OwnMind depends on the Bash shell (sh.exe) bundled with Git for Windows to run Git hooks. Install the full Git for Windows installer (not Lite or Portable), or commits will error out.
 
-### 3. Start Using
+### 3. Verify installation
 
-After installation, OwnMind auto-loads your memory at every new session. No manual steps needed.
+After installing, open a new conversation and ask AI:
 
-## Use Cases
+> "Which OwnMind iron rules are currently loaded? Show me the first 5."
 
-### 1. Make AI remember your lessons forever
-> You: "Remember this — always check env vars before deploying"
+If AI lists them (with codes like IR-002, IR-008), hooks are correctly injecting memory.
 
-AI creates an iron rule with full context. Next time, no matter which tool or AI, it won't repeat the mistake.
+If not, check:
 
-### 2. Ask what's left to do
-> You: "What's left on the ring project?"
+```bash
+cat ~/.ownmind/credentials   # confirm key exists
+cat ~/.ownmind/cache/iron_rules.json | head -3   # confirm rule cache
+```
 
-AI pulls up the project's TODO list and progress from OwnMind.
+---
 
-### 3. Seamless handoff between tools
-> You (in Claude Code): "Wrap up and hand off to Codex"
+## Emergency Bypass: What if I'm stuck?
 
-AI packages progress, TODOs, and notes into OwnMind. Switch to Codex, start a new chat, and AI picks up right where you left off.
+OwnMind provides env-var escape hatches. **Every bypass writes an audit log** that your team lead (or future self) can review.
 
-### 4. AI self-review
-> You: "What did you learn today?"
+### Pre-commit blocked, need to commit anyway
 
-AI reviews the entire conversation, lists undocumented knowledge, and asks which to save.
+```bash
+# Bypass a single rule
+OWNMIND_BYPASS=IR-002 git commit -m "hotfix: emergency"
 
-### 5. Proactive rule enforcement
-> AI is about to deploy with multiple SSH sessions...
->
-> 【OwnMind vX.X.X】鐵律觸發：You reminded me: "Don't open multiple SSH sessions" — I must follow this rule.
+# Bypass everything (extreme cases)
+OWNMIND_BYPASS=all git commit -m "hotfix: emergency"
+```
 
-AI stops itself the moment it's about to violate a rule. No reminder needed.
+### Reply-lint too aggressive
 
-### 6. Multi-tool, no conflicts
-> You're working in Claude Code and Cursor simultaneously, both writing memory...
->
-> 【OwnMind vX.X.X】行為觸發：State change detected, re-initializing to get latest memory...
+```bash
+# Warn only, don't block AI replies
+export OWNMIND_REPLY_LINT_MODE=warn
 
-Sync Token auto-detects conflicts. Validates before write, syncs if expired. No overwrites.
+# Or fully skip
+export OWNMIND_REPLY_LINT_DISABLE=1
+```
 
-### 7. Team standards, set once for everyone
-> Admin: "New team rule: all API responses must include request_id"
->
-> 【OwnMind vX.X.X】行為觸發：⚠️ You're about to add a team standard. This will apply to all members. Type "I confirm".
+### Disable OwnMind entirely
 
-Team rules pushed by admins, auto-loaded by members, enforced with reminders. Individual opt-out available but persistent reminders continue.
+```bash
+export OWNMIND_DISABLED=1
+```
 
-### 8. Rule compliance with data
-> You: "How am I doing on my iron rules?"
->
-> 【OwnMind vX.X.X】規則自評：IR-001 SSH Rule — enforced 12 times, triggered 3 times, missed 0 (compliance: 100%)
+> **Key point**: These are escape hatches, not long-term settings. If you find yourself bypassing a rule constantly, that rule is probably mis-designed — fix it in the admin console rather than disabling OwnMind.
 
-Every rule auto-tracks enforced/missed/triggered counts. Low compliance rules trigger proactive alerts.
+---
 
-### 9. New machine, memory follows
-> You (on a new computer): "Install OwnMind, API Key is xxx"
+## Useful Chat Commands
 
-AI completes setup automatically. All your preferences, rules, and project context are instantly available.
+Talk to your AI in plain English:
+
+- **"Remember this lesson: [content]"** — Auto-generate an iron rule, sync to every tool
+- **"What's left to do on this project?"** — AI pulls cross-session TODO list from OwnMind
+- **"Wrap up today's work and prepare handoff"** — Auto-package progress; tomorrow on a different machine or tool, resume at full speed
+- **"Am I on the latest version?"** — Force a fresh online version check
+- **"Show me the first 10 iron rules"** — Verify local rule cache state
+
+---
+
+## FAQ
+
+### Installation
+
+#### Q: Fresh server deployment — how do I get into the admin console the first time?
+
+**Current flow (manual)**:
+1. When deploying the server, set env var `SETUP_TOKEN=<random string>` (e.g., `openssl rand -hex 32`)
+2. Open browser to `https://your-server/admin/setup`, enter the token + the super_admin credentials you want
+3. Once created, log in normally at `/admin/login`
+4. After admin creation, the token is invalidated and you can remove it from env
+
+**Known pain point**: this flow is unfriendly. v1.20+ will ship a **setup wizard** (auto-guide for first-time setup via web UI) so no manual token needed. Until then, if you deployed without `SETUP_TOKEN`, you can SSH into the DB and `INSERT` a super_admin row manually.
+
+#### Q: Can it coexist with `.cursorrules` or `CLAUDE.md`?
+
+Yes. OwnMind is central, `.cursorrules` is project-local. Recommended: cross-project personal preferences and iron rules → OwnMind; single-project-specific rules → `.cursorrules`. No conflict.
+
+### Privacy & Security
+
+#### Q: Where does my conversation data go? Does OwnMind itself collect PII?
+
+OwnMind has bound itself with IR-041 ("don't collect user privacy unless directly work-related"). Specifically:
+
+**Uploaded to server**:
+- Iron rules, memory entries, and profile preferences you actively create
+- Compliance events (which rule triggered when, result: comply / violate / bypass) — for compliance analytics
+
+**Never uploaded**:
+- Full AI conversation contents (your prompts + AI responses)
+- Your source code / file contents
+- System paths, filenames (except those you actively store as memory)
+- Keystrokes, mouse trails, or any behavioral telemetry (user-action monitoring data)
+
+**Self-hosted = 100% on your own server**; even the "uploaded" data only goes to your database.
+
+#### Q: How are API keys and passwords stored? Is transport secure?
+
+- **Storage**: API keys and `/api/secret` entries use double encryption (master key + per-row salt — a primary key plus a unique salt per record). Even a full DB dump can't be decrypted directly
+- **Transport**: HTTPS enforced (HTTP auto-redirected; you can put nginx/caddy in front for SSL termination)
+- **Local**: client `~/.ownmind/credentials` is mode 0600 (only current user can read)
+- **Audit**: every API action writes an audit log with timestamp + actor user ID, tamper-resistant
+
+#### Q: Does OwnMind see my source code?
+
+No. OwnMind hooks only intercept **rule-violation events** (e.g., staged file contains a credential pattern; AI response Chinese-English mixing over threshold) and send violation metadata (data describing the event itself, not the code) back to the server. Original source code and AI conversation contents **never leave your machine**.
+
+Exception: if you explicitly tell AI "store this code snippet as memory", that snippet is uploaded.
+
+### Cost & Performance
+
+#### Q: Will using OwnMind increase my AI token bill?
+
+Yes, slightly. OwnMind itself **does not call any LLM** (no GPT/Claude API calls), so there's no extra LLM API cost. But because each new conversation injects the iron-rule list (30-50 rules, ~2-5 KB of text) into the AI's system prompt, your AI's input tokens per new conversation go up by 1500-3000 tokens (depending on rule count).
+
+At Claude Sonnet pricing (input $3 / 1M tokens): about $0.005-0.01 extra per new conversation. Twenty new conversations a day → $0.10-0.20/day extra. Compared to the time saved from not re-explaining preferences, ROI (return on investment) is strongly positive.
+
+> To optimize: in the admin console, mark non-current-work rules as `disabled` or set them to `advisory` tier (log-only, not auto-injected). Reduces token overhead.
+
+#### Q: Will the hooks slow down my dev workflow?
+
+Measured latencies (M1 MacBook, with local cache warm):
+
+| Hook | Latency | Triggered by |
+|---|---|---|
+| pre-commit | < 50 ms | Every `git commit` |
+| reply-lint | < 30 ms | Every AI reply turn |
+| session-start | 200-500 ms | Opening a new AI conversation (includes rule loading) |
+| version-check | < 100 ms | Opening a new conversation (parallel API call, non-blocking) |
+
+The only one you might perceive is session-start at 200-500 ms; the rest are below the perception threshold (humans don't notice < 100 ms). Network sync runs asynchronously in the background and never blocks a commit.
+
+#### Q: What if the server goes down? Will my work get stuck?
+
+No. Fail-open by design — when the server doesn't respond, hooks skip the check and don't block commits or AI replies. Local rule cache covers offline operation for 24h. After 24h, hooks try to re-sync; if sync fails, still fail-open.
+
+### Other
+
+#### Q: Does it work offline?
+
+Yes. All iron rules cache to `~/.ownmind/cache/iron_rules.json`; offline operation within 24 hours is normal.
+
+#### Q: Can iron rules be imported/exported? Shared across teams?
+
+Yes. Each rule has a unique UUID; the admin console supports JSON export. Move rules between OwnMind instances, or open-source them on GitHub for other teams.
+
+#### Q: Why "OwnMind"?
+
+"Own your mind" — your memory belongs to you, not some AI vendor. Re-teaching your style to every new tool effectively rents your mental model (how you think about things) to the vendor. OwnMind hands ownership back to you.
+
+---
 
 ## API Reference
 
 ### Authentication
-All API requests require the header:
-```
-Authorization: Bearer YOUR_API_KEY
-```
+
+All API requests require `Authorization: Bearer YOUR_API_KEY` header.
 
 ### Main Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /api/memory/init` | Load memory (profile + principles + instructions) |
-| `GET /api/memory/type/:type` | Get memories by type |
-| `GET /api/memory/search?q=` | Semantic search |
-| `POST /api/memory` | Create memory |
-| `PUT /api/memory/:id` | Update memory |
-| `PUT /api/memory/:id/disable` | Disable memory |
-| `POST /api/handoff` | Create handoff |
-| `GET /api/handoff/pending` | Get pending handoffs |
-| `POST /api/session` | Log session |
-| `GET /api/export` | Export all memories |
-| `POST /api/memory/batch-sync-standard` | Batch sync team standard chunks (RAG) |
-| `GET /health` | Health check |
+```
+GET    /api/memory               # List memories
+POST   /api/memory               # Create memory
+PUT    /api/memory/:id           # Update memory
+DELETE /api/memory/:id           # Delete memory
+GET    /api/memory/type/:type    # Fetch by type (e.g., iron_rule)
+
+POST   /api/secret               # Create encrypted secret
+GET    /api/secret/:key          # Retrieve decrypted secret
+DELETE /api/secret/:key          # Delete secret
+
+POST   /api/activity/batch       # Batch report compliance events
+GET    /api/compliance/stats     # Query compliance stats
+```
+
+Full API docs in [OpenAPI spec](openapi.yaml) (if available).
 
 ### Memory Types
 
-| Type | Description |
-|------|-------------|
-| `profile` | Identity, communication preferences, work style |
-| `principle` | Core principles and vision |
-| `iron_rule` | Iron rules: inviolable rules created from past mistakes |
-| `coding_standard` | Technical preferences and coding standards |
-| `team_standard` | Team standards: admin-pushed, shared across members |
-| `project` | Project context: architecture, environment, progress |
-| `portfolio` | Portfolio |
-| `env` | Development environment info |
-| `standard_detail` | Team standard chunks (RAG): hierarchical sections for semantic retrieval |
+- `profile` — Personal preferences (nickname, preferred tools, writing style)
+- `iron_rule` — Iron rules (with verification conditions, tier, block_on_fail flag)
+- `project` — Project context (architecture, stack, TODOs)
+- `principle` — Working principles (non-machine-verifiable, AI reference only)
+- `learning` — Pitfall records (drafts before being distilled into iron rules)
+
+---
 
 ## Tech Stack
 
-- **Runtime:** Node.js + Express
-- **Database:** PostgreSQL + pgvector
-- **MCP:** @modelcontextprotocol/sdk
-- **Deploy:** Docker Compose
+- Backend: Node.js 20+ / Express
+- Database: PostgreSQL 16 + pgvector
+- Deployment: Docker Compose
+- Client hooks: Node.js (macOS / Linux / Windows)
+- Sync protocol: HTTPS REST + MCP (Model Context Protocol)
 
-### DB Migrations (v1.19.2+)
-
-Migrations under `db/[0-9][0-9][0-9]_*.sql` are auto-applied on server startup:
-
-- `src/utils/run-migrations.js` runs in `src/index.js` before `app.listen()` — applies any unapplied SQL files in order
-- A `schema_migrations` table (`filename` PK, `applied_at`, `applied_by`) tracks what has been run
-- If any migration fails, the API process exits with code 1 — container does not start with stale schema
-- `scripts/run-migrations.sh` is the manual / CLI equivalent (uses `docker exec ownmind-db psql` or direct psql)
-
-To add a new migration: drop a `db/016_xxx.sql` (or next number) using `IF NOT EXISTS` patterns for idempotency. Next `docker restart ownmind-api` will apply it automatically.
-
-### Reply Lint Progressive Block (v1.19.3+, default-block since v1.19.4, hard-block via exit 2 since v1.19.7)
-
-The Claude Code Stop hook (`hooks/ownmind-reply-lint.js`) checks each AI reply against IR-037 (Chinese-English mixing), IR-036 (jargon without plain-language explanation), and IR-041 (privacy leak — Taiwan ID / email / mobile patterns added in v1.19.7). v1.19.4 makes progressive block the **default** behavior (was opt-in in v1.19.3, but opt-in defeats IR-027 "logic over reminders"):
-
-- **MODE=block** (default since v1.19.4): counts violations per Claude session (cumulative across turns, not per-turn). First 3 per-session violations are warned only; the 4th `process.exit(2)` with a directive-style rewrite prompt on stderr (Claude Code feeds stderr back to Claude as the next prompt). v1.19.7 replaced the legacy `{"decision":"block"}` stdout JSON with exit 2; both paths are equivalent in Claude Code's Stop-hook protocol
-- **Anti-deadlock downgrade** (v1.19.7): after 3 consecutive hard blocks in the same session, the 4th violation downgrades to `exit 1` warning (non-blocking) and writes `action: 'repeated_violation_softblock'` to compliance, so a stubborn AI rewrite loop doesn't burn through Claude Code's 8-block hard cap
-- **MODE=warn** (opt-out): writes a banner to your terminal on violation, never blocks the AI flow (v1.19.3 default — flip back here if block feels too aggressive)
-- **MODE=disable**: skips lint entirely (same as `OWNMIND_REPLY_LINT_DISABLE=1`)
-
-Set the mode via `OWNMIND_REPLY_LINT_MODE` env var. Unknown values fail-open to `warn` with a hint in the banner.
-
-The session violation counter lives in `~/.ownmind/logs/reply-lint-session-counter.json` (v1.19.7 added `block_count` field). Old session records auto-prune after 30 days. The `stop_hook_active=true` signal (set by Claude Code when the rewrite triggers another Stop event) is detected and the hook exits immediately to prevent recursive blocks; Claude Code itself has a hard cap of 8 consecutive blocks. Passing the lint after a block resets `block_count` to 0.
-
-The whitelist was expanded from 80 to 200+ terms in v1.19.3 based on a 30-day audit of real violations (Top 30 hits were mostly project names, company names, and standard git/dev jargon). The threshold also adapts: 25% (instead of 15%) when the reply contains code blocks; full exemption for replies containing "code review" / "code-review". IR-036's lookahead window for explanations was expanded from 50 to 80 characters.
+---
 
 ## Contributors
 
 - Vin (miou1107)
+
+Issues, PRs, and usage feedback welcome.
+Repo: [github.com/miou1107/OwnMind](https://github.com/miou1107/OwnMind) (if public)
+
+---
 
 ## License
 
