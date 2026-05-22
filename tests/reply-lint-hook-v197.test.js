@@ -225,12 +225,13 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
   it('privacy 單獨命中時 reason 從「1.」開始（v1.19.7 code-review I-5 修正）', () => {
     // 用身分證觸發（privacy_check）且不要中英混雜（避免 IR-037 同步觸發影響編號驗證）
     // A123456789 純大寫字母+數字、不被 IR-037 抓
+    // v1.19.11 修：只跑到「第 4 次違規（第 1 次擋下）」才是完整訊息、不能跑第 5 次（分級簡短訊息）
     const sessionId = 'sess-numbering';
     const payload = stopPayload({ session_id: sessionId });
     writeTranscript([
       { role: 'assistant', text: '查到了，編號 A123456789 是測試用戶資料。' },
     ]);
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 3; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
@@ -240,12 +241,13 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
   });
 
   it('block 觸發時 stderr 不應「再次列出」命中的個資（避免 AI 重寫又帶一次）', () => {
+    // v1.19.11 修：只跑到第 1 次擋下、才會走完整訊息分支（含「代稱」提示）
     const sessionId = 'sess-privacy-reason';
     const payload = stopPayload({ session_id: sessionId });
     writeTranscript([
       { role: 'assistant', text: '請聯絡 leaked-secret-mail@fontrip.com' },
     ]);
-    for (let i = 1; i <= 4; i++) {
+    for (let i = 1; i <= 3; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });

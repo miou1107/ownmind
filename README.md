@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.19.10** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.19.11** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -336,6 +336,26 @@ The right path depends on "are there other admins":
 #### Q: Can it coexist with `.cursorrules` or `CLAUDE.md`?
 
 Yes. OwnMind is central, `.cursorrules` is project-local. Recommended: cross-project personal preferences and iron rules → OwnMind; single-project-specific rules → `.cursorrules`. No conflict.
+
+#### Q: Why does AI sometimes seem to say the same thing twice?
+
+That's not a bug — it's a visible side-effect of the reply quality check. The flow:
+
+1. AI's first response gets emitted; the lint hook detects a violation (Chinese-English mixing, unexplained jargon, or PII leak)
+2. After 4 consecutive violations in the session, the hook blocks and tells AI to rewrite
+3. AI emits a compliant rewrite — you see two similar paragraphs
+
+v1.19.11 added three mitigations:
+
+- **AI self-annotation** (85% reliability): rewrite begins with a quote block "⚠️ Previous version violated IR-XXX, re-adjusting" + separator
+- **Tiered display**: first block shows full message; 2nd-3rd show short "↻ previous version violated IR-XXX, rewritten"
+- **Permanent log**: every block event is appended to `~/.ownmind/logs/reply-lint-events.jsonl`; query anytime "how many times was I blocked this week, which rule most often"
+
+If AI skips annotation (15% case), check the log to know what happened:
+
+```bash
+tail -5 ~/.ownmind/logs/reply-lint-events.jsonl
+```
 
 ### Privacy & Security
 
