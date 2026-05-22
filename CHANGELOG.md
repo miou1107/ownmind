@@ -1,5 +1,57 @@
 # OwnMind 更新紀錄
 
+## v1.19.3 — Reply-lint 漸進式 block + 白名單擴 200+ 詞 + threshold 分情境
+
+**背景：** OwnMind SessionStart hook 帶 5 條「強制注意」、其中 IR-037（中英混雜）/ IR-036（行話沒解釋）/ 解說偏好對當前 AI 違反率 100%——警告對 AI 完全無效、user 看到也只能下次注意。對應 IR-027「邏輯才有效」失效。
+
+**修法概覽：** 從「只警告」升級為「漸進式 block」、但同時做了多項配套避免直接擋下時誤殺正常對話。
+
+**核心機制（4 件套）：**
+
+1. **`OWNMIND_REPLY_LINT_MODE` env 切換**
+   - `warn`（**預設**）：行為跟 v1.19.2 完全一樣、只寫 terminal 招牌、永遠不擋（向後相容）
+   - `block`：opt-in 啟用漸進式 block
+   - `disable`：完全跳過（等同 `OWNMIND_REPLY_LINT_DISABLE=1`）
+   - 未知值 fail-open 到 `warn`、招牌會多一行提示
+
+2. **漸進式累積（MODE=block 時）**
+   - session 內前 3 次違規只警告、第 4 次才寫 `{"decision":"block","reason":"..."}` 到 stdout
+   - Claude Code 收到 block JSON → 把 reason 當下個 prompt 餵 Claude、Claude 重寫上一則回應
+   - 計數存 `~/.ownmind/logs/reply-lint-session-counter.json`、30 天前自動清
+   - 防迴圈：`stop_hook_active=true`（Claude Code 在重寫又觸發 Stop 時帶的 flag）會被偵測、hook 立刻退出、計數不增；Claude Code 內建另有 8 次連續 block 上限
+
+3. **白名單從 80 詞擴到 200+ 詞**（基於 30 天 audit Top 30 真實違規詞）
+   - 大公司 / 平台名：Google、Meta、OpenAI、Chrome、OAuth、YouTube、Imagen、Llama 等 35+ 詞
+   - Vin 個人專案名：adog、fapa、fontrip、ring、ownmind、auto、speech、ima、funit 等
+   - Git / dev 流程詞：main、origin、branch、worktree、commits、hook、Hook、review、prod、spec、prompt、tasks、tests、pipeline、Pipeline、Stage、chunk、monorepo、render、retry、batch、async、await、middleware、dispatcher、payload、handler、router 等 80+ 詞
+   - 常見技術概念：promise、callback、queue、lock、debounce、polling、cache、timeout 等 25+ 詞
+
+4. **Threshold 分情境**
+   - 一般對話：15%（維持）
+   - 含 code block（偵測 \`...\` 或 \`\`\`）：放寬到 25%
+   - 含「code review / code-review」字眼：直接豁免
+   - IR-036 解釋查找視窗從 50 字擴到 80 字（Codex 對抗審查指出中文語境 50 字太短）
+   - Proper noun 偵測：大寫開頭孤立詞（`^[A-Z][a-z]+$`、例：Eric、Phoebe、Google）視為人名 / 公司名、跳過
+
+**新增鐵律：** 無（v1.19.2 已加 IR-048、本版只動 hook 行為、不需新鐵律）
+
+**新增測試 73 case：**
+- `tests/language-lint-v1193.test.js` 55 case：白名單 Top 30 詞、proper noun、threshold 分情境、code review 豁免、IR-036 視窗
+- `tests/session-counter.test.js` 10 case：純函式 + 防呆（檔不存在 / 毀損 / 30 天自掃 / 無權限）
+- `tests/reply-lint-hook-v1193-block.test.js` 8 case：MODE=warn / block / disable / 未知值、漸進累積、stop_hook_active 防呆、reason 指令型
+
+**對應規格：** `openspec/changes/v1.19.3-reply-lint-progressive-block/{proposal,spec,tasks}.md`
+
+**設計過程（重要）：**
+- 走完 Codex `codex-rescue` subagent 對抗審查、抓到 5 大破口（hook 哲學跟 block 衝突、Claude Code spec 沒實證、跨工具相容、subagent transcript path、Superpowers code review 大量誤殺）
+- 用 `claude-code-guide` subagent 實證 Claude Code 官方 Stop hook block 規格
+- 30 天 jq audit 找 Top 30 違規詞、量化擴白名單
+- 不直接 block 預設（opt-in）+ 漸進式（前 3 次警告緩衝）= 雙保險避免誤殺對話
+
+**後續計畫：** Vin 跑 1 週 warn 模式 audit、確認誤判率降到可接受才考慮翻 `block` 為預設。
+
+---
+
 ## v1.19.2 — DB Migration 自動套用 + schema_migrations 追蹤表
 
 **背景：** 2026-05-22 中午發現 v1.19.1 prod 所有 `ownmind_save` 回 500 `column "tier" does not exist`。追查發現 v1.19.0 的 `db/014_iron_rule_tier.sql` commit 進 repo 但沒人手動跑到 prod DB、整支 memory API 對 INSERT/UPDATE 全炸。對應 IR-027「邏輯才有效」失效——靠人記得跑 SQL 就是會漏。

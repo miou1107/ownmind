@@ -357,6 +357,20 @@ Authorization: Bearer YOUR_API_KEY
 
 新規マイグレーション追加：`db/` に `016_xxx.sql` を作成（`IF NOT EXISTS` パターン推奨）。次回 `docker restart ownmind-api` で自動適用、手動 SSH+psql 不要。
 
+### Reply Lint 段階的ブロック（v1.19.3+）
+
+Claude Code の Stop hook（`hooks/ownmind-reply-lint.js`）は AI の各返答終了時に IR-037（中英混在）/ IR-036（専門用語の説明不足）をチェックします。v1.19.3 で「警告のみ」から「段階的ブロック」へアップグレード：
+
+- **MODE=warn**（デフォルト）：違反時にターミナルへバナー出力、AI フローは決してブロックしない（v1.17.96+ と後方互換）
+- **MODE=block**：Claude session 単位で違反をカウント。最初の 3 回は警告のみ、4 回目で `{"decision":"block","reason":"..."}` を stdout に出力し、Claude Code が reason を次の prompt として Claude に渡して書き直しさせる
+- **MODE=disable**：lint を完全にスキップ（`OWNMIND_REPLY_LINT_DISABLE=1` と同等）
+
+`OWNMIND_REPLY_LINT_MODE` 環境変数で設定。未知の値は `warn` にフェイルオープンしてバナーに注意を表示。
+
+session 違反カウンタは `~/.ownmind/logs/reply-lint-session-counter.json` に保存。30 日経過した記録は自動削除。`stop_hook_active=true`（Claude Code が書き直し時の Stop に付与）を検出すると hook は即座に終了し再帰的ブロックを防ぐ。Claude Code 自体にも 8 回連続ブロックの上限がある。
+
+ホワイトリストは v1.19.3 で 80 語から 200+ 語へ拡張、根拠は 30 日間の実違反 log の Top 30 語（大半はプロジェクト名、会社名、標準的な git/dev 用語）。Threshold もコンテキスト依存：code block を含む場合は 25%（通常 15%）、「code review / code-review」を含む場合は完全免除。IR-036 の説明検索ウィンドウは 50 字から 80 字へ拡張。
+
 ## コントリビューター
 
 - Vin (miou1107)

@@ -362,6 +362,20 @@ Authorization: Bearer YOUR_API_KEY
 
 新增 migration：在 `db/` 下加一條 `016_xxx.sql`（用 `IF NOT EXISTS` 確保 idempotent）、下次 `docker restart ownmind-api` 自動套用、不用人工 SSH 跑 psql。
 
+### 回話品質 lint 漸進式 block（v1.19.3+）
+
+Claude Code Stop hook（`hooks/ownmind-reply-lint.js`）每輪 AI 回應結束時、檢查 IR-037（中英混雜）+ IR-036（行話沒附白話說明）。v1.19.3 從「只警告」升級為「漸進式卡控」：
+
+- **MODE=warn**（預設）：違規時寫招牌到你的 terminal、永遠不擋 AI 流程（向後相容 v1.17.96+）
+- **MODE=block**：以 Claude session 為單位累積違規。前 3 次只警告、第 4 次寫 `{"decision":"block","reason":"..."}` 到 stdout、Claude Code 會餵 reason 給 Claude 當下一個 prompt、Claude 會重寫上一則回應
+- **MODE=disable**：完全跳過 lint（等同 `OWNMIND_REPLY_LINT_DISABLE=1`）
+
+透過 `OWNMIND_REPLY_LINT_MODE` 環境變數設定。未知值 fail-open 到 `warn`、招牌會多一行提示。
+
+session 違規計數存在 `~/.ownmind/logs/reply-lint-session-counter.json`。30 天前的紀錄會自動清掉。`stop_hook_active=true`（Claude Code 在重寫又觸發 Stop 時會帶這個 flag）會被偵測、hook 立刻退出避免遞迴 block；Claude Code 內建也有 8 次連續 block 的硬上限。
+
+白名單從 v1.19.3 起從 80 詞擴到 200+ 詞、依據是 30 天真實違規 log 的 Top 30 詞（大多是專案名、公司名、標準 git/dev 行話）。Threshold 也分情境：含 code block 寬鬆到 25%（一般是 15%）；含「code review / code-review」直接豁免。IR-036 的解釋查找視窗從 50 字擴到 80 字。
+
 ## Contributors
 
 - Vin (miou1107)

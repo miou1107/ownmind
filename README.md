@@ -357,6 +357,20 @@ Migrations under `db/[0-9][0-9][0-9]_*.sql` are auto-applied on server startup:
 
 To add a new migration: drop a `db/016_xxx.sql` (or next number) using `IF NOT EXISTS` patterns for idempotency. Next `docker restart ownmind-api` will apply it automatically.
 
+### Reply Lint Progressive Block (v1.19.3+)
+
+The Claude Code Stop hook (`hooks/ownmind-reply-lint.js`) checks each AI reply against IR-037 (Chinese-English mixing) and IR-036 (jargon without plain-language explanation). v1.19.3 upgrades it from "warn only" to "progressive block":
+
+- **MODE=warn** (default): writes a banner to your terminal on violation, never blocks the AI flow (backward compatible with v1.17.96+)
+- **MODE=block**: counts violations per Claude session. First 3 violations are warned only; the 4th writes `{"decision":"block","reason":"..."}` to stdout, which makes Claude rewrite the previous reply
+- **MODE=disable**: skips lint entirely (same as `OWNMIND_REPLY_LINT_DISABLE=1`)
+
+Set the mode via `OWNMIND_REPLY_LINT_MODE` env var. Unknown values fail-open to `warn` with a hint in the banner.
+
+The session violation counter lives in `~/.ownmind/logs/reply-lint-session-counter.json`. Old session records auto-prune after 30 days. The `stop_hook_active=true` signal (set by Claude Code when the rewrite triggers another Stop event) is detected and the hook exits immediately to prevent recursive blocks; Claude Code itself has a hard cap of 8 consecutive blocks.
+
+The whitelist was expanded from 80 to 200+ terms in v1.19.3 based on a 30-day audit of real violations (Top 30 hits were mostly project names, company names, and standard git/dev jargon). The threshold also adapts: 25% (instead of 15%) when the reply contains code blocks; full exemption for replies containing "code review" / "code-review". IR-036's lookahead window for explanations was expanded from 50 to 80 characters.
+
 ## Contributors
 
 - Vin (miou1107)
