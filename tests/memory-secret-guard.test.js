@@ -187,6 +187,8 @@ describe('validateMemoryContent — narrative types 完整覆蓋', () => {
     'team_standard',
     'session_log',
     'standard_detail', // code review I-2 補：團隊標準明細也是 narrative
+    'project',         // v1.19.11 擴大：專案紀錄會引用程式碼路徑
+    'portfolio',       // v1.19.11 擴大：作品集會引用實作細節
   ];
 
   for (const type of narrativeTypes) {
@@ -210,4 +212,37 @@ describe('validateMemoryContent — narrative types 完整覆蓋', () => {
       assert.equal(result.ok, false, `${type} 即使 narrative、貼真 JWT 也要擋`);
     });
   }
+});
+
+// v1.19.11 真實踩坑回歸測試：寫 project 紀錄含程式碼路徑不該被擋
+describe('validateMemoryContent — v1.19.11 真實踩坑回歸', () => {
+  it('project 紀錄含 random-password.js 路徑 → 不被擋', () => {
+    const result = validateMemoryContent({
+      type: 'project',
+      title: 'v1.19.10 完成紀錄',
+      content: '新增 shared/random-password.js 跟 src/routes/admin-password-reset.js、' +
+               '對應的 openspec 資料夾在 v1.19.9-password-recovery 跟 v1.19.10-credential-hygiene。'
+               + '字'.repeat(50),
+    });
+    assert.equal(result.ok, true, 'project 紀錄含程式碼檔名跟資料夾名不該被誤擋');
+  });
+
+  it('portfolio 紀錄含 auth/token 等技術詞 → 不被擋', () => {
+    const result = validateMemoryContent({
+      type: 'portfolio',
+      title: '某專案實作回顧',
+      content: '用 OAuth token 整合第三方登入、實作位置在 src/auth/token-verify.js。' +
+               '字'.repeat(50),
+    });
+    assert.equal(result.ok, true, 'portfolio 紀錄含技術詞不該被誤擋');
+  });
+
+  it('project 紀錄含真 GitHub PAT → 仍被擋', () => {
+    const result = validateMemoryContent({
+      type: 'project',
+      title: '某專案',
+      content: '我把 token 寫進去 ghp_abcdefghijklmnopqrstuvwxyz0123456789AB 看會不會擋',
+    });
+    assert.equal(result.ok, false, '即使 project、貼真 PAT 也要擋');
+  });
 });

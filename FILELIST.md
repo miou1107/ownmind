@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.19.11 新增 / 修改（Lint UX 改善：誤判降低 + 雙顯示原因標註 + 自學資料根基）
+
+新增檔：
+```
+hooks/lib/lint-event-logger.js                                — writeEvent 寫擋下事件、extractViolatedWords 抽違反詞統計（privacy 不存原值）；5MB cap rotate
+tests/lint-event-logger.test.js                               — 12 case 純函式覆蓋
+tests/reply-lint-hook-v1911.test.js                           — 7 case：分級訊息 + log 寫入整合
+openspec/changes/v1.19.11-lint-ux-improvements/proposal.md    — 提案：UX 改善三條 + 自學鋪路
+openspec/changes/v1.19.11-lint-ux-improvements/spec.md        — 14 個場景規格
+openspec/changes/v1.19.11-lint-ux-improvements/tasks.md       — 任務清單
+```
+
+修改的既有檔：
+```
+src/utils/memory-secret-guard.js                              — narrative 清單加 project / portfolio（誤判降低）
+hooks/ownmind-reply-lint.js                                   — formatBlockReason 加分級顯示 + 標註要求；主流程整合 log 寫入
+tests/memory-secret-guard.test.js                             — narrative 清單對齊 + 3 case 真實踩坑回歸
+tests/reply-lint-hook-v197.test.js                            — 兩 case 改跑到第 1 次擋下（避開分級簡短訊息）
+package.json                                                  — version 1.19.10 → 1.19.11
+CHANGELOG.md                                                  — v1.19.11 條目
+```
+
+---
+
 ## v1.19.10 新增 / 修改（安全強化：預設密碼隨機化 + 設定檔最佳實踐）
 
 新增檔：

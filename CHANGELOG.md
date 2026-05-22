@@ -1,5 +1,98 @@
 # OwnMind 更新紀錄
 
+## v1.19.11 — Lint UX 改善：誤判降低 + 雙顯示原因標註 + 自學資料根基
+
+**背景：** v1.19.7-10 落地後、Vin 在使用中發現三個體驗問題：
+
+1. 寫專案紀錄（type=project）時、本來就會大量引用程式碼檔名跟路徑（`random-password.js`、`v1.19.9-password-recovery`、`must_change_password`），這些子字串被偵測器當敏感資料攔下、必須迂迴改寫
+2. reply-lint 擋下後 Claude 直接重寫一份新回應、不會自我標註「我剛被擋了、現在重寫」，使用者看到兩段相似內容、感覺 AI 在重複
+3. 被擋下的事件沒結構化紀錄，沒法統計「我這週被擋幾次、最常違反哪條」，後台儀表板資料來源不完整
+
+v1.19.11 三條改善一起做。
+
+### 1. 誤判降低（方案 A）
+
+`src/utils/memory-secret-guard.js` 的 narrative 類型清單擴大：
+
+- 新增 `project`：專案紀錄會引用程式碼路徑
+- 新增 `portfolio`：作品集會引用實作細節
+
+這些類型寫入時、`skip_keyword: true` 跳過 keyword 偵測。樣式比對（regex）跟長度啟發式仍跑、不影響真實金鑰偵測。
+
+補測試 `tests/memory-secret-guard.test.js`：3 個 v1.19.11 真實踩坑回歸 case（project 含程式碼路徑不被擋、portfolio 含技術詞不被擋、project 含真 PAT 仍被擋）。
+
+### 2. AI 自我標註（軟性提示、盡力做到）
+
+`hooks/ownmind-reply-lint.js` 的 `formatBlockReason` 加要求 AI 重寫時開頭加引述標註：
+
+```markdown
+> ⚠️ **上一版違反 IR-036、重新調整：**
+> （簡短說明違規詞或原因）
+
+---
+
+[新回應內容]
+```
+
+不驗證 AI 是否照做（接受約 85% 服從率、業界沒有實證能到 100%）。失效時靠 log 保底（見 4）。
+
+### 3. 分級顯示（避免使用者疲勞）
+
+根據 session 內擋下次數調整訊息長度：
+
+| 第 N 次擋下 | 顯示樣式 |
+|---|---|
+| 第 1 次 | 完整：違規規則 + 違規詞清單 + 改寫提示 + 標註要求 |
+| 第 2-3 次 | 簡短：「↻ 上版違反 IR-XXX、已被指示重寫（本 session 第 N 次擋下）」 |
+| 第 4 次 | 達 downgrade limit、降為警告 exit 1（既有 v1.19.7 行為） |
+
+### 4. 結構化擋下紀錄（log 保底 + 自學根基）
+
+新檔 `hooks/lib/lint-event-logger.js`：
+
+- `writeEvent(entry)`：擋下事件 append 一筆到 `~/.ownmind/logs/reply-lint-events.jsonl`
+- `extractViolatedWords(violations)`：純函式、抽違反詞統計（privacy 不存原值、只存類型計數）
+- 5MB cap 自動 rotate（超過 rename 成 `.old`）
+- 寫入失敗 fail-open（不擋 hook 主流程）
+
+紀錄欄位：`ts / session_id / event / rule_codes / violated_words / violation_count_in_session / block_count_in_session / downgraded_to_warning / ai_instructed_to_annotate`
+
+為下列 v1.20+ 功能鋪資料根基：
+
+- 個人統計（後台儀表板：你這週被擋幾次、最常違反哪條）
+- 誤判建議（某條規則高頻違反 + 高 bypass 率 → 建議調寬）
+- 規則優化（某詞重複被擋 → 建議加白名單）
+- 跨工具連續紀錄（所有 OwnMind 客戶端共用同一份紀錄）
+
+### 整合到主流程
+
+`hooks/ownmind-reply-lint.js` 主流程：
+
+- 擋下時、寫一筆 `event: 'blocked'`、`ai_instructed_to_annotate: true`
+- 降警告時、寫一筆 `event: 'downgraded_to_warning'`
+- 沒擋下時、不寫紀錄（保持紀錄檔精簡）
+
+### 測試
+
+- 新增 `tests/lint-event-logger.test.js`（12 case）：純函式覆蓋、rotate、寫入失敗、privacy 不存原值
+- 新增 `tests/reply-lint-hook-v1911.test.js`（7 case）：場景 5+7 完整訊息、場景 8 簡短訊息、場景 9 降警告、場景 10/13/14 紀錄寫入
+- 更新 `tests/memory-secret-guard.test.js`：narrative 清單擴大 + 真實踩坑回歸 3 case
+- 更新 `tests/reply-lint-hook-v197.test.js`：兩個 case 改成跑到第 1 次擋下（避開分級簡短訊息）
+
+### 驗證
+
+- `npm test` 1675 / 1675 全綠（v1.19.10 之後新增約 26 個 case）
+- 不破壞既有 reply-lint 行為（v1.19.3 / v1.19.7 / v1.19.10 既有 case 全綠）
+
+### 設計取捨
+
+- **為何不驗證 AI 標註**：Stop hook 沒法看 AI 重寫的內容、要驗證需 PostResponse hook 進入無限套娃。接受 best-effort、log 保底
+- **為何只擴大 project / portfolio 而不全部敘述型**：profile 跟 env 真的會存敏感資料、不該跳過 keyword 偵測
+- **為何 5MB cap**：個人開發者一週擋下事件約 50-200 筆、5MB 夠存 2-3 個月。超過 rotate 保留 .old 一份歷史
+- **為何 privacy 不存原值**：IR-041 設計：紀錄個資原值會二次外流。只存類型計數（`privacy_matches_count`、`privacy_types`）夠統計用
+
+---
+
 ## v1.19.10 — 安全強化：預設密碼隨機化 + 設定檔最佳實踐 + 隱私偵測中性化
 
 > 兩個主題的合併版本：上半「預設密碼隨機化 + 設定檔最佳實踐」、下半「隱私偵測中性化」（把個人鐵律編號從產品程式碼抽掉、改成中性事件名）。

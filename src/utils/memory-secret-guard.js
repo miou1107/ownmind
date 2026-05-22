@@ -33,9 +33,13 @@ export function validateMemoryContent({ type, title, content, metadata }) {
   const md = metadata && typeof metadata === 'object' ? metadata : {};
   const allowBypass = md.allow_secret_like === true;
 
-  // narrative 類型：跳 keyword 偵測（這些類型經常討論密碼主題）
+  // narrative 類型：跳 keyword 偵測（這些類型經常討論密碼主題、或引用程式碼路徑檔名）
   // 名單需跟 ALLOWED_MEMORY_TYPES 對齊、未來新增 type 時記得評估歸類
   // code review I-2 修：standard_detail（v1.x 加的、團隊標準明細）也是 narrative、漏列
+  // v1.19.11 擴大：project / portfolio 也是 narrative — 專案紀錄會大量引用檔名跟路徑
+  //   （例如 'random-password.js'、'reset-admin-password.js' 含 password 子字串、會誤判）
+  //   regex 跟 length heuristic 仍跑、不影響真實金鑰偵測
+  // 仍排除：profile（個人偏好、不該存敏感）、env（環境設定、真的會有 token）、reference
   const narrativeTypes = new Set([
     'iron_rule',
     'principle',
@@ -43,6 +47,8 @@ export function validateMemoryContent({ type, title, content, metadata }) {
     'team_standard',
     'session_log',
     'standard_detail',
+    'project',     // v1.19.11
+    'portfolio',   // v1.19.11
   ]);
   const skipKeyword = narrativeTypes.has(type);
 

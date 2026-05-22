@@ -114,6 +114,7 @@ async function main() {
   let lintReply, readCredentials, getClientVersion, getTierFromRules, buildComplianceEvents;
   let incrementCounter, cleanupStale, incrementBlockCount, readBlockCount, resetBlockCount;
   let detectPrivacyLeak;
+  let writeLintEvent, extractViolatedWords;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
@@ -127,6 +128,10 @@ async function main() {
       resetBlockCount,
     } = await import('./lib/session-counter.js'));
     ({ detectPrivacyLeak } = await import('../shared/privacy-detect.js'));
+    ({
+      writeEvent: writeLintEvent,
+      extractViolatedWords,
+    } = await import('./lib/lint-event-logger.js'));
   } catch {
     process.exit(0); return;
   }
@@ -228,13 +233,41 @@ async function main() {
   let exitCode = 0;
   if (shouldHardBlock) {
     try { incrementBlockCount(sessionId); } catch { /* swallow */ }
-    const reason = formatBlockReason(violations);
+    const reason = formatBlockReason(violations, { priorBlockCount });
     try { process.stderr.write(reason + '\n'); } catch { /* ignore */ }
     exitCode = 2;
+
+    // v1.19.11：寫結構化擋下事件、為自學機制鋪資料根基
+    try {
+      writeLintEvent({
+        sessionId,
+        event: 'blocked',
+        ruleCodes: violations.map(v => v.rule),
+        violatedWords: extractViolatedWords(violations),
+        violationCountInSession: currentCount,
+        blockCountInSession: priorBlockCount + 1,
+        downgradedToWarning: false,
+        aiInstructedToAnnotate: true,
+      });
+    } catch { /* swallow、不擋主流程 */ }
   } else if (downgradeToWarning) {
     const note = formatDowngradeNotice(priorBlockCount, violations);
     try { process.stderr.write(note + '\n'); } catch { /* ignore */ }
     exitCode = 1;
+
+    // v1.19.11：降警告也寫一筆紀錄
+    try {
+      writeLintEvent({
+        sessionId,
+        event: 'downgraded_to_warning',
+        ruleCodes: violations.map(v => v.rule),
+        violatedWords: extractViolatedWords(violations),
+        violationCountInSession: currentCount,
+        blockCountInSession: priorBlockCount,
+        downgradedToWarning: true,
+        aiInstructedToAnnotate: false,
+      });
+    } catch { /* swallow */ }
   }
 
   // === Compliance event 路徑（跨 session 統計）===
@@ -517,7 +550,24 @@ function formatDowngradeNotice(priorBlockCount, violations) {
  *   3. 給改寫格式範例（白話、括號附中文等）
  *   4. 加例外指引（變數名 / 函式名等不用改）、避免 Claude 把 code 也改壞
  */
-function formatBlockReason(violations) {
+function formatBlockReason(violations, opts = {}) {
+  const priorBlockCount = typeof opts.priorBlockCount === 'number' ? opts.priorBlockCount : 0;
+  const ruleCodes = violations.map(v => v.rule).join(' + ');
+
+  // v1.19.11 分級顯示：第 2-3 次擋下只給簡短訊息、避免使用者疲勞
+  // priorBlockCount=0 是「第 1 次擋」、=1 是「第 2 次擋」、=2 是「第 3 次擋」
+  if (priorBlockCount >= 1 && priorBlockCount <= 2) {
+    return [
+      `↻ 上版違反 ${ruleCodes}、已被指示重寫（本 session 第 ${priorBlockCount + 1} 次擋下）。`,
+      '',
+      '請開頭加一行標註後再寫新回應：',
+      `> ↻ 上版違反 ${ruleCodes}、重新調整。`,
+      '',
+      '然後直接重寫、不要重新確認問題。',
+    ].join('\n');
+  }
+
+  // 第 1 次擋下（priorBlockCount=0）或第 4 次以後（不應走到、走 downgrade）→ 完整訊息
   const lines = [];
   lines.push('請重寫你剛才的回應、改善以下品質問題（保持原意、只改語言風格）：');
   lines.push('');
@@ -554,6 +604,19 @@ function formatBlockReason(violations) {
   }
 
   lines.push('如果上述詞屬於變數名 / 函式名 / 程式碼引用、或上下文已說明過、可保留不改。');
+
+  // v1.19.11 新增：要求 AI 重寫時開頭加自我標註、讓使用者一眼看出「下面是重寫版、原因 XXX」
+  // 接受 85% 服從率、AI 沒做不二次擋下（log 保底會記）
+  lines.push('');
+  lines.push('重寫時必須在開頭加一段引述標註、用以下格式：');
+  lines.push('');
+  lines.push(`> ⚠️ **上一版違反 ${ruleCodes}、重新調整：**`);
+  lines.push('> （簡短說明違規詞或原因）');
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push('（接著才寫新回應內容）');
+  lines.push('');
   lines.push('重寫時請回到原本對話脈絡、不要重新確認問題、直接給新答案。');
 
   return lines.join('\n');

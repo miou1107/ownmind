@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.19.10** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.19.11** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -336,6 +336,26 @@ export OWNMIND_DISABLED=1
 #### Q: 跟 `.cursorrules` 或 `CLAUDE.md` 可以並存嗎？
 
 可以。OwnMind 是中央集中式管理、`.cursorrules` 是專案級補充。建議把跨專案的個人偏好跟剛性鐵律放 OwnMind、把單一專案的特殊規則放 `.cursorrules`。兩者不衝突。
+
+#### Q: 為什麼 AI 有時候看似把同樣的話說兩次？
+
+那不是 bug、是回應品質檢查機制的可見副作用。流程：
+
+1. AI 第一次回應寫完、回應品質檢查偵測到違反規則（中英混雜、行話沒附白話、含個資）
+2. 違規累積到第 4 次、攔截程式擋下、把「請重寫」指令給 AI
+3. AI 重寫一份合規版、你會看到兩段相似內容
+
+v1.19.11 加了三層改善降低困惑：
+
+- **AI 自我標註**（85% 機率有效）：重寫版開頭加引述框「⚠️ 上一版違反 IR-XXX、重新調整」+ 分隔線
+- **分級顯示**：第 1 次擋下顯示完整訊息、第 2-3 次只顯示簡短「↻ 上版違反 IR-XXX、已重寫」
+- **永久紀錄**：所有擋下事件寫進 `~/.ownmind/logs/reply-lint-events.jsonl`、可隨時查「我這週被擋幾次、最常違反哪條」
+
+如果 AI 沒加標註（15% 機率），查紀錄檔可知道發生了什麼：
+
+```bash
+tail -5 ~/.ownmind/logs/reply-lint-events.jsonl
+```
 
 ### 隱私與安全
 
