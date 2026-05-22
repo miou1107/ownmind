@@ -4,7 +4,7 @@
  * 對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md：
  *   - 場景 13~15：reply-lint block 改用 exit 2 + stderr
  *   - 場景 16：連續 block 達 BLOCK_DOWNGRADE_LIMIT 後降警告 exit 1
- *   - 場景 17：IR-041 偵測身分證 / email；user prompt 例外
+ *   - 場景 17：privacy 偵測身分證 / email；user prompt 例外（事件名 privacy_check、v1.19.10 中性化）
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -176,10 +176,10 @@ describe('v1.19.7 — 通過 lint 時清零 block_count', () => {
 });
 
 // ============================================================
-// IR-041 整合（場景 17）
+// Privacy 偵測整合（場景 17、事件名 privacy_check）
 // ============================================================
 
-describe('v1.19.7 場景 17 — IR-041 隱私偵測整合', () => {
+describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
@@ -202,7 +202,7 @@ describe('v1.19.7 場景 17 — IR-041 隱私偵測整合', () => {
   });
 
   it('AI 回應引用 user prompt 裡的身分證 → 不算違反、exit 0', () => {
-    // 用身分證測 IR-041 例外（純數字+1 字母、不會被 IR-037 中英混雜抓到）
+    // 用身分證測 privacy 例外（純數字+1 字母、不會被 IR-037 中英混雜抓到）
     writeTranscript([
       { role: 'user', text: '請幫我查身分證 A123456789 的資料' },
       { role: 'assistant', text: '查到了，A123456789 是測試帳號的編號。' },
@@ -212,18 +212,18 @@ describe('v1.19.7 場景 17 — IR-041 隱私偵測整合', () => {
     assert.equal(fs.existsSync(pendingFile), false, '使用者自己提的個資不該觸發 banner');
   });
 
-  it('banner 含 IR-041 標識', () => {
+  it('banner 含 privacy_check 標識（v1.19.10 中性化）', () => {
     writeTranscript([
       { role: 'assistant', text: '聯絡 leaked@fontrip.com' },
     ]);
     runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.ok(fs.existsSync(pendingFile), 'IR-041 違反該寫 banner');
+    assert.ok(fs.existsSync(pendingFile), 'privacy 違反該寫 banner');
     const banner = fs.readFileSync(pendingFile, 'utf8');
-    assert.match(banner, /IR-041/);
+    assert.match(banner, /privacy_check/);
   });
 
-  it('IR-041 單獨命中時 reason 從「1.」開始（v1.19.7 code-review I-5 修正）', () => {
-    // 用身分證觸發（IR-041）且不要中英混雜（避免 IR-037 同步觸發影響編號驗證）
+  it('privacy 單獨命中時 reason 從「1.」開始（v1.19.7 code-review I-5 修正）', () => {
+    // 用身分證觸發（privacy_check）且不要中英混雜（避免 IR-037 同步觸發影響編號驗證）
     // A123456789 純大寫字母+數字、不被 IR-037 抓
     const sessionId = 'sess-numbering';
     const payload = stopPayload({ session_id: sessionId });
@@ -235,7 +235,7 @@ describe('v1.19.7 場景 17 — IR-041 隱私偵測整合', () => {
     }
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2, `期望 exit 2、stderr=${r.stderr}`);
-    assert.match(r.stderr, /^1\. /m, 'IR-041 單獨命中時編號該從 1. 開始、不該是 3.');
+    assert.match(r.stderr, /^1\. /m, 'privacy 單獨命中時編號該從 1. 開始、不該是 3.');
     assert.ok(!r.stderr.includes('3. 回應疑似'), '不該出現孤立的 3. 編號');
   });
 

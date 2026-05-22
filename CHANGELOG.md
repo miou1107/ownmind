@@ -1,6 +1,32 @@
 # OwnMind 更新紀錄
 
-## v1.19.10 — 安全強化：預設密碼隨機化 + 設定檔最佳實踐
+## v1.19.10 — 安全強化：預設密碼隨機化 + 設定檔最佳實踐 + 隱私偵測中性化
+
+> 兩個主題的合併版本：上半「預設密碼隨機化 + 設定檔最佳實踐」、下半「隱私偵測中性化」（把個人鐵律編號從產品程式碼抽掉、改成中性事件名）。
+
+### 隱私偵測中性化（架構修正）
+
+v1.19.7 把隱私偵測接到 reply-lint hook 時、把「IR-041」這個個人鐵律編號硬編碼進產品程式碼跟公開 README。問題：
+
+- IR-041 是個別使用者的 iron_rule 編號（Vin 個人記憶內的鐵律）、不是 OwnMind 產品系統編號
+- 別的 OwnMind 使用者沒有 IR-041、卻會被 hook 強制以該編號回報違反事件、混淆概念
+- 公開 README 把它寫成「v1.19.7 新增 IR-041 偵測」、誤導讀者以為這是系統內建編號
+
+**修正**：
+
+- `hooks/ownmind-reply-lint.js` 中硬編碼的 `rule: 'IR-041'` 改成中性的 `rule: 'privacy_check'`
+- `formatBlockReason` 中 `v.rule === 'IR-041'` 也改成 `v.rule === 'privacy_check'`
+- `shared/privacy-detect.js` 跟 `tests/privacy-detect-unit.test.js` 註解中性化、改用「對應到 privacy_check 事件」描述
+- `tests/reply-lint-hook-v197.test.js` 多處 IR-041 斷言改成 privacy_check
+- 三語系 README 對應行改寫：「privacy 偵測工具發出 privacy_check 事件、實際擋下與否由使用者自設鐵律決定」、不再把 IR-041 當系統編號宣傳
+
+**向後相容**：
+
+- Vin 自己 server 上的 IR-041 鐵律仍正常運作、只是事件編號從 'IR-041' 變成 'privacy_check'
+- 該鐵律的 verification 條件可調整為對應 'privacy_check' 事件
+- 合規事件統計（compliance dashboard）會看到 'privacy_check' 取代 'IR-041' 出現
+
+### 預設密碼隨機化跟設定檔最佳實踐
 
 **主題：** 把幾處跟敏感資料相關的程式碼模式改成業界最佳實踐、避免「固定字串」類型的潛在弱點、並把這層保護寫進偵測器避免將來再犯。
 
