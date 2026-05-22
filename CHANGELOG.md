@@ -1,5 +1,35 @@
 # OwnMind 更新紀錄
 
+## v1.19.5 — 修白名單 case-insensitive bug + 補真實踩坑漏字
+
+**背景：** v1.19.4 預設翻 block 後立刻被 Vin 端對端測試踩到 v1.19.3 兩個 bug：
+1. **case-insensitive bug**：v1.19.3 寫 `TECH_WHITELIST.has(w.toLowerCase())` 看似有 normalize、但 Set.has 是精確字串比對。白名單存 `Claude` (PascalCase)、查 `claude` (lowercase) 都 false、漏判。Vin 開新 session 自我介紹「我是 claude」、claude 漏判觸發違規
+2. **漏加白名單**：`terminal`（Vin 收到的 block reason 列的詞）、`bump`（我寫「bump 版號」也被擋）、加上 v1.19.4 測試 prompt 暴露的一堆技術詞
+
+**修法：**
+
+- `shared/language-lint.js`：
+  - 建構 `TECH_WHITELIST_LOWER`（全 lowercase）一次、查詢統一 `LOWER.has(w.toLowerCase())`
+  - 補 30+ 個漏字：
+    - shell / IDE 周邊：`terminal, shell, console, stdout, stderr, tty`
+    - 發版動詞：`bump`
+    - v1.19.4 測試暴露：`Suspense, Concurrent, Pod, Saga, Envoy, Istio, sidecar, kubernetes, monad, functor, applicative, observable, mergeMap, switchMap, concatMap, combineLatest, ajax, fromEvent, subscribe, pipe`
+    - 微服務 / 函式編程：`choreography, orchestration, orchestrator, Maybe, Either, Just, Nothing, hydration, reactive`
+
+**新增測試** `tests/language-lint-v1195.test.js`：
+- 4 case 直接驗 case-insensitive bug（claude / CODEX / cursor 都該被白名單吸收）
+- 22 case 驗每個新加詞在白名單
+- 3 case 真實踩坑回歸（Vin 收到的 reason 詞、v1.19.4 測試 prompt 全部技術詞、bump）
+
+**測試結果：** 134 case 全綠（v1.19.5 新加 29 + 既有 105）。
+
+**為什麼這麼快又出 v1.19.5：**
+- v1.19.4 預設 block 一翻、bug 立刻暴露（如預期）
+- 漸進緩衝 + opt-out 機制讓 user 不會被擋死、但快速回饋促成快速修補
+- 這就是 IR-027「邏輯才有效」的好處：擺著的規則 user 不會踩、卡控的規則 user 一定踩到、bug 才會被看見
+
+---
+
 ## v1.19.4 — Reply-lint 預設翻成 block（v1.19.3 設 opt-in 違反 IR-027）
 
 **背景：** v1.19.3 雖然把漸進式 block 機制蓋好、但預設 `OWNMIND_REPLY_LINT_MODE=warn`、要 user 主動設環境變數 `block` 才生效。Vin 立刻抓到問題：「為何不直接打開 block？」——這就是 IR-027「邏輯才有效」失效。Vin 不會主動 opt-in、預設不打開等於沒落地、v1.19.3 等於白做。

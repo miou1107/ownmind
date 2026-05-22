@@ -79,7 +79,32 @@ export const TECH_WHITELIST = new Set([
   'adog', 'fapa', 'fontrip', 'ring', 'ownmind', 'vincent',
   'auto', 'speech', 'ima', 'asir', 'funit', 'majitreats',
   'kkvin', 'tutorial', 'rescue', 'narrative',
+  // ─── 9. v1.19.5 漏字補充（真實踩坑暴露）───
+  // shell / terminal / console 系列：v1.19.4 測試 reply 自我介紹漏判踩坑
+  'terminal', 'shell', 'console', 'stdout', 'stderr', 'tty',
+  // 發版動詞
+  'bump',
+  // v1.19.4 測試 prompt 暴露的技術詞漏字
+  'Suspense', 'Concurrent', 'Pod', 'Saga', 'Envoy', 'Istio',
+  'sidecar', 'service mesh', 'kubernetes',
+  'monad', 'functor', 'applicative', 'observable',
+  'mergeMap', 'switchMap', 'concatMap', 'combineLatest',
+  'ajax', 'fromEvent', 'subscribe', 'pipe',
+  // 微服務 / 分散式
+  'choreography', 'orchestration', 'orchestrator',
+  // 函式編程
+  'Maybe', 'Either', 'Just', 'Nothing',
+  // React / 前端
+  'hydration', 'reactive', 'Reactive',
 ]);
+
+// v1.19.5：建構 lowercase 版本給 case-insensitive 比對
+// 為什麼存在：v1.19.3 原本寫 `TECH_WHITELIST.has(w.toLowerCase())` 看似有 normalize、
+// 但 Set.has 是精確字串比對。白名單存 'Claude' (PascalCase)、查 'claude' 都 false。
+// 真實踩坑：Vin v1.19.4 開新 session 自我介紹「我是 claude」、claude 漏判觸發違規。
+export const TECH_WHITELIST_LOWER = new Set(
+  Array.from(TECH_WHITELIST).map(w => w.toLowerCase())
+);
 
 /**
  * v1.19.3：偵測「大寫開頭孤立詞」當作 proper noun（人名、品牌名）跳過
@@ -117,13 +142,12 @@ function stripCodeAndLinks(content) {
 
 /**
  * 抓所有連續 4+ 英文字母詞、扣除白名單 + v1.19.3 扣除 proper noun
+ * v1.19.5：白名單比對改用 TECH_WHITELIST_LOWER（修 case-insensitive bug）
  */
 function extractNonWhitelistEnglishWords(cleaned) {
   const words = cleaned.match(/[A-Za-z]{4,}/g) || [];
   return words.filter(w => {
-    const lower = w.toLowerCase();
-    const upper = w.toUpperCase();
-    if (TECH_WHITELIST.has(w) || TECH_WHITELIST.has(lower) || TECH_WHITELIST.has(upper)) return false;
+    if (TECH_WHITELIST_LOWER.has(w.toLowerCase())) return false;
     // v1.19.3：大寫開頭孤立詞視為 proper noun（人名 / 公司名 / 品牌）、跳過
     if (looksLikeProperNoun(w)) return false;
     return true;
@@ -199,10 +223,8 @@ export function checkJargonExplanation(content) {
     const word = match[0];
     const pos = match.index;
 
-    // 白名單跳過
-    if (TECH_WHITELIST.has(word) ||
-        TECH_WHITELIST.has(word.toLowerCase()) ||
-        TECH_WHITELIST.has(word.toUpperCase())) {
+    // 白名單跳過（v1.19.5：用 LOWER set 修 case-insensitive bug）
+    if (TECH_WHITELIST_LOWER.has(word.toLowerCase())) {
       continue;
     }
 

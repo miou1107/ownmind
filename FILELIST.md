@@ -1,5 +1,21 @@
 # OwnMind 檔案結構
 
+## v1.19.5 新增 / 修改（修白名單 case-insensitive bug + 補漏字）
+
+新增檔：
+```
+tests/language-lint-v1195.test.js                             — 29 case：case-insensitive 修復 + 22 個新加詞 + 真實踩坑回歸
+```
+
+修改的既有檔：
+```
+shared/language-lint.js                                       — 建構 TECH_WHITELIST_LOWER、查詢統一 lowercase；補 30+ 漏字（terminal / bump / Suspense / monad 等）
+CHANGELOG.md                                                  — v1.19.5 條目
+package.json                                                  — version 1.19.5
+```
+
+---
+
 ## v1.19.4 修改（Reply-lint 預設翻成 block）
 
 修改的既有檔：
