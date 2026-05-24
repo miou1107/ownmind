@@ -100,6 +100,40 @@ const CHECK_HANDLERS = {
     return params.patterns.some(p =>
       ctx.changedSourceFiles.some(f => globMatch(f, p))
     );
+  },
+
+  /**
+   * Bash 指令字串必須符合任一 regex pattern（v1.19.20）
+   * 用於「指令裡必須出現某樣式」的卡控、例如 docker build 必須含 --no-cache
+   * context 缺失 command → return true（沒指令時跳過、讓其他層補檢查）
+   * 無效 regex pattern → 視為不符合（保守處理）
+   */
+  command_matches: (params, ctx) => {
+    if (!ctx.command) return true;
+    return params.patterns.some(p => {
+      try {
+        return new RegExp(p).test(ctx.command);
+      } catch {
+        return false;
+      }
+    });
+  },
+
+  /**
+   * Bash 指令字串不能符合任何 regex pattern（v1.19.20）
+   * 用於「指令裡不能出現某樣式」的卡控、例如不能用 sshpass
+   * context 缺失 command → return true
+   * 無效 regex pattern → 視為不符合（即不違反）
+   */
+  command_not_matches: (params, ctx) => {
+    if (!ctx.command) return true;
+    return !params.patterns.some(p => {
+      try {
+        return new RegExp(p).test(ctx.command);
+      } catch {
+        return false;
+      }
+    });
   }
 };
 
@@ -125,6 +159,8 @@ const FIX_HINTS = {
   commit_message_contains: () => '，請修改 commit message',
   commit_message_not_contains: () => '，請修改後重試',
   recent_event_exists: (params) => `，請先完成「${params.event}」對應步驟`,
+  command_matches: (params) => `，指令必須符合：${params.patterns.join(' 或 ')}`,
+  command_not_matches: (params) => `，指令不能含：${params.patterns.join(' 或 ')}`,
 };
 
 // ============================================================
