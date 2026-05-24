@@ -1944,8 +1944,9 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       throw new Error(data.error || `HTTP ${res.status}`);
     }
     if (data.sync_token) iruSyncToken = data.sync_token;
-    // local cache 同步
-    const cached = iruRulesCache.find(r => r.id === ruleId);
+    // local cache 同步（v1.19.16 hotfix：重用上面已找到的 cached、不重新宣告
+    // 避免 SyntaxError: Identifier 'cached' has already been declared 整個
+    // admin script 解析失敗造成 login 函式拿不到）
     if (cached) cached.tier = newTier;
   }
 

@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## v1.19.16 修改（hotfix：admin 後台登入頁 SyntaxError）
+
+新增檔：
+```
+tests/admin-html-no-duplicate-const.test.js                  — 防止 iruUpdateTier 內 const cached 重複宣告復發
+```
+
+修改的既有檔：
+```
+src/public/index.html                                        — 砍第 1948 行重複的 const cached、重用第 1926 行
+package.json                                                 — version 1.19.15 → 1.19.16
+README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version → v1.19.16
+CHANGELOG.md                                                 — v1.19.16 條目
+```
+
+---
+
 ## v1.19.15 修改（bug_reports id 從 BIGSERIAL 改 SERIAL）
 
 新增檔：
