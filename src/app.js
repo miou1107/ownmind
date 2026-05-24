@@ -57,6 +57,19 @@ app.use(firstRunRedirect);
 // 靜態檔案（Admin 後台）
 app.use('/admin', express.static(join(__dirname, 'public')));
 
+// v1.20：新版統合後台（並存於舊 /admin 與 /me、單一入口含三角色分流）
+// SPA fallback 用 middleware（Express 5 path-to-regexp 不再接受 /dashboard/* 舊式 wildcard）
+// 流程：express.static 先試找檔案、找不到才走 fallback 回 index.html 讓 react-router 接管
+app.use('/dashboard', express.static(join(__dirname, 'public', 'dashboard')));
+app.use('/dashboard', (req, res, next) => {
+  // 只對 GET 請求做 SPA fallback、其他方法（POST 等）走原本錯誤處理
+  if (req.method !== 'GET') return next();
+  const filePath = join(__dirname, 'public', 'dashboard', 'index.html');
+  res.sendFile(filePath, (err) => {
+    if (err) next();
+  });
+});
+
 // v1.19.8：setup wizard 靜態頁（serve src/public/setup.html）
 // 直接吃 / 路徑下的 setup.html、不需要獨立資料夾
 app.get('/setup', (req, res) => {

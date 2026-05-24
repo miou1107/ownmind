@@ -1,5 +1,68 @@
 # OwnMind 更新紀錄
 
+## v1.20.0 — 後台前端基礎建設（藍綠並存「藍」打地基）
+
+**背景：** 規劃 v1.20 系列「後台前端整套重構」、本版聚焦基礎建設、為後續 v1.20.1~4 功能版本建好地基。新版前端 SPA（單頁應用、Single Page Application）進 `/dashboard/` 路徑、舊版 `/admin/` + `/me/` 完全不動（藍綠並存策略、即新舊並存到 v1.20.4 才退役）。
+
+**v1.20 系列版控規劃：**
+
+- v1.20.0（本版）— 基礎建設（client 目錄 + 編譯流程 + i18n 多語系機制 + 中英混雜 lint）
+- v1.20.1 — Dashboard 個人版（Portal + Preference 共 7 頁 + 後端 API 對接）
+- v1.20.2 — 管理員頁面（Team + Bugs）
+- v1.20.3 — 超管頁面（Config + Broadcast + Audit）
+- v1.20.4 — 舊版退役（`/admin/` + `/me/` 301 轉址到 `/dashboard/`、舊靜態檔搬 legacy 保留）
+
+**前端編譯打包基礎建設：**
+
+- `client/` 新目錄：React 19.2.6 + Vite 8.0.14 + Tailwind v4.3.0 + Recharts 3.8.1 + Lucide-react 1.16.0 + react-router-dom 7
+- multi-stage Dockerfile：stage 1 編譯前端、stage 2 COPY 進 `./src/public/dashboard/`
+- 主 `package.json` 加 `build:client` / `dev:client` / `translate:client` script
+- `src/app.js` 新增 `/dashboard` 路由 + SPA fallback（舊 `/admin` + `/me` 完全不動）
+- 編譯後 bundle 大小：235KB JS、壓縮後 75KB（gzip）、203 毫秒打包完成
+
+**i18n 編譯時自動翻譯機制（路線 C）：**
+
+- 設計：寫繁中、`npm run build` 時自動翻譯成 EN / JA、結果 commit 進 git（不每次發版重翻、不每次使用者切語言打 LLM）
+- `client/src/i18n/`：`zh.json` 為唯一真實來源（30 個起手 key）+ `glossary.json` 術語固定對照（20 個品牌專業詞）+ `{locale}.override.json` 人工強制覆寫
+- `client/src/scripts/translate.mjs`：增量翻譯腳本、支援 OpenAI 相容 API（kkvin.com llm-switch / OpenAI / Anthropic）、`temperature=0` 降低隨機性、hash 比對未變動就跳過
+- 4 機制控制翻譯一致性：(1) git 快取、(2) temperature=0、(3) 術語表、(4) 人工覆寫
+- 額度成本估算：每次發版增量翻譯約 0.001 美金、一年 50 次發版約 1.6 台幣
+- 無 API key 時自動退到 manual mode、列出待翻 key 提示人工貼進外部翻譯工具
+
+**中英混雜 lint：**
+
+- `scripts/lint-zh-only.js`：掃 `client/src` 的 JSX/JS、抓寫死英文 UI 文案
+- 黑名單詞（Compliance / Bug Triage / Notional / EXCELLENT / TOTAL INPUTS / Status: 等 ~15 個）、除非外包 `t('key')` 翻譯函式
+- 跑出 0 個違反
+
+**設計三原則（最高約束、貫穿整個 v1.20 系列）：**
+
+1. **純白話中文、零中英混雜**（lint 強制）
+2. **保留 Gemini Antigravity 原型的視覺風格、文案、UX 巧思**（重寫不照搬程式碼、設計稿留在外部不入倉）
+3. **可長期維護、不寫死、不疊床架屋**（元件拆分 + 前端路由化 + i18n 自動翻譯 + Context 拆狀態 + 統一 API client + 設計 token）
+
+**端到端測試結果（v1.20.0 範疇）：**
+
+- 14 條路由切換全通過（Portal 4 頁 + Preference 3 頁 + Admin 2 頁 + Super 3 頁 + 預設導向 + 404 fallback）
+- 桌面（1457×828）+ 手機（375×812）viewport 渲染對
+- console 零錯誤
+- 中英混雜 lint 0 違反
+- Vite build 203 毫秒、產出 dist 成功
+- prod basename `/ownmind/dashboard` 正確寫進 bundle
+
+**順手修 bug：** `main.jsx` basename 原本用 `document.baseURI` 動態推算、但 Vite SPA fallback 後 baseURI 跟著 URL 變、產生 URL 堆疊（`/portal/X/portal/Y`、同一段路徑被疊兩次）。修法：改用 `import.meta.env.PROD` 判斷、dev 走空字串、prod 寫死 `/ownmind/dashboard`。e2e 測試抓到這個 bug、若直接 commit 部署、prod 才會踩到。
+
+**部署前確認：**
+
+- 既有 1827+ 測試全綠
+- `npm audit` 0 漏洞
+- `vite build` 產出 dist 成功
+- 三語系 README 版號同步 v1.20.0
+
+**v1.20.1+ 後續：** 各 release 提案的 stub 已建在 `openspec/changes/v1.20.{1,2,3,4}-*/`、對應 release 開動時展開為完整提案。
+
+---
+
 ## v1.19.20 — Critical 鐵律卡控擴充：4 條 Bash 指令樣式 detector
 
 **背景：** v1.19.6 + v1.19.7 已建立 rule-enforcer 共用判定核心、本版補完 PreToolUse hook（AI 呼叫工具前的攔截程式）對 Bash 指令樣式比對的卡控能力。

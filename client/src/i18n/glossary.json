@@ -1,0 +1,27 @@
+{
+  "_comment": "固定術語對照表 — LLM 翻譯時必須使用這份對照、確保品牌與專業術語一致性",
+  "zh-to-en": {
+    "鐵律": "Iron Rule",
+    "合規率": "Compliance Rate",
+    "工作交接": "Work Handoff",
+    "等值 API 額度": "Estimated API Credit (USD)",
+    "AI 互動場次": "AI Active Sessions",
+    "個人紀錄分析": "Personal Analytics",
+    "個人偏好管理": "Personal Preferences",
+    "錯誤回報分流": "Bug Triage",
+    "密鑰管理": "Credentials Vault",
+    "用量分析": "Usage Analytics"
+  },
+  "zh-to-ja": {
+    "鐵律": "鉄則",
+    "合規率": "コンプライアンス率",
+    "工作交接": "作業引継ぎ",
+    "等值 API 額度": "API 換算クレジット (USD)",
+    "AI 互動場次": "AI セッション数",
+    "個人紀錄分析": "個人記録分析",
+    "個人偏好管理": "個人設定管理",
+    "錯誤回報分流": "バグ振分け",
+    "密鑰管理": "認証情報管理",
+    "用量分析": "使用量分析"
+  }
+}

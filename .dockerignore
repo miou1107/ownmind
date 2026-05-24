@@ -1,0 +1,15 @@
+node_modules
+client/node_modules
+client/dist
+.git
+.github
+.claude
+.ownmind
+openspec
+tests
+docs
+*.md
+.env
+.env.*
+.DS_Store
+logs

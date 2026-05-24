@@ -1,0 +1,38 @@
+{
+  "nav.usage": "用量分析",
+  "nav.project_history": "專案歷程",
+  "nav.handoffs": "工作交接",
+  "nav.reports": "回報紀錄",
+  "nav.profile": "個人資料",
+  "nav.security": "帳密修改",
+  "nav.vault": "密鑰管理",
+  "nav.team": "團隊與成員管理",
+  "nav.bugs": "錯誤回報分流",
+  "nav.config": "系統配置與計價",
+  "nav.broadcast": "廣播管理",
+  "nav.audit": "全域稽核",
+  "nav.section.personal": "個人版塊",
+  "nav.section.admin": "管理員專區",
+  "nav.section.super": "超級管理員設定",
+
+  "header.title": "OwnMind 控制中心",
+  "header.subtitle": "極簡清爽 統合控制中心",
+  "header.role_simulator": "模擬角色",
+  "header.role.user": "一般使用者",
+  "header.role.admin": "管理員",
+  "header.role.super_admin": "超級管理員",
+
+  "filter.title": "紀錄與數據篩選",
+  "filter.subtitle": "篩選特定的提報日期、活躍專案或搜尋關鍵字進行即時分析",
+  "filter.all_projects": "所有專案",
+  "filter.keyword_placeholder": "搜尋關鍵字...",
+
+  "kpi.compliance_rate": "鐵律合規率",
+  "kpi.sessions": "AI 互動場次",
+  "kpi.sessions_unit": "場對話",
+  "kpi.api_cost": "估算等值 API 額度",
+  "kpi.token_traffic": "Token 流量分析",
+
+  "placeholder.coming_soon": "此頁面正在重構中、即將於後續階段完工",
+  "error.not_found": "找不到此頁面"
+}
