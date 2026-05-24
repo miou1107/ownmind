@@ -52,6 +52,16 @@
 - **3.9 + 3.10 區段**：Important 3 條全處理（修 2 條：must_change_password 防繞過、401 burst debounce；push back 1 條 — error msg i18n key map，因後端 login 端點本來就回繁中文案、不是 machine code）、Minor 6 條（修 2 條：self-loop guard、form name；其他屬於 refactor / 未實證 / 超出 scope）。
 - **Important #1（must_change_password 卡控）後續實作**：新增 `client/src/components/common/RequireFreshPassword.jsx` 守門員、`auth.js` 擴展 must_change_password 三個 API（get / set / clear），App.jsx 把所有受保護路由再多包一層 `RequireFreshPassword`。瀏覽器手動驗：登入時 must_change_password=true 訪問 `/portal/usage` 自動導 `/preference/security`、清掉 flag 後正常通行。
 
+**Hotfix：mcp-log-event-uuid 跨時區午夜邊界 flake**
+
+`mcp/ownmind-log.js` 的 `logEvent` 寫檔用 local time（`getFullYear/Month/Date`）、但 `tests/mcp-log-event-uuid.test.js` 用 `new Date().toISOString().slice(0, 10)`（UTC）計算「今天」。跨午夜 UTC vs 台北 8 小時差時、test 找不到 logEvent 寫的檔（找 `2026-05-24.jsonl`、實際檔 `2026-05-25.jsonl`）→ ENOENT、2 條 test fail。
+
+修：`mcp/ownmind-log.js` 抽 `export function localDateOnly(date)` helper（同邏輯）、`logEvent` 內 `dateStr` 改用 helper；`tests/mcp-log-event-uuid.test.js` import `localDateOnly` 用同源（IR-9 全層同步、避免 dup code）。按 IR-032 OwnMind 時區站台北。改前 `npm test` 1884 pass / 2 fail、改後 1886 pass / 0 fail。
+
+**Backlog**：加 mock-Date regression test（強制設台北跨午夜場景），避免未來重新拆兩處算 date 再炸（natural reproduction 只在凌晨幾小時觸發）。
+
+---
+
 **步驟 3 收尾大半：3.3 + 3.4 + 3.5 Portal 三頁（專案歷程 / 工作交接 / 回報紀錄）**
 
 - **3.3 ProjectHistoryPage** — `GET /api/memory/type/project` 列出 type=project 記憶（按 updated_at 倒序）、點 row 開 Modal 看完整 content

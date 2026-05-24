@@ -68,6 +68,16 @@ const IMMEDIATE_FLUSH_EVENTS = new Set([
   'session_log',
 ]);
 
+// v1.20.1: 抽出來避免 test 跟 logEvent 對「今天」用不同時區（test 原本用
+// toISOString().slice(0,10) = UTC、logEvent 用 local time getFullYear/Month/Date）
+// 跨午夜 UTC vs 台北 8 小時差時、test 找不到 logEvent 寫的檔導致 flake。
+// 按 IR-032 時區強制定標準、OwnMind 站在 user 的本地時區看「今天」。
+export function localDateOnly(date) {
+  return date.getFullYear() + '-' +
+    String(date.getMonth() + 1).padStart(2, '0') + '-' +
+    String(date.getDate()).padStart(2, '0');
+}
+
 /**
  * Write a structured log event to ~/.ownmind/logs/YYYY-MM-DD.jsonl
  * and buffer for batch upload to server.
@@ -81,15 +91,13 @@ export function logEvent(event, details = {}) {
     const sign = tzOffset >= 0 ? '+' : '-';
     const hh = String(Math.floor(Math.abs(tzOffset) / 60)).padStart(2, '0');
     const mm = String(Math.abs(tzOffset) % 60).padStart(2, '0');
-    const ts = now.getFullYear() + '-' +
-      String(now.getMonth() + 1).padStart(2, '0') + '-' +
-      String(now.getDate()).padStart(2, '0') + 'T' +
+    const dateStr = localDateOnly(now);
+    const ts = dateStr + 'T' +
       String(now.getHours()).padStart(2, '0') + ':' +
       String(now.getMinutes()).padStart(2, '0') + ':' +
       String(now.getSeconds()).padStart(2, '0') +
       sign + hh + ':' + mm;
 
-    const dateStr = ts.slice(0, 10);
     const filePath = join(LOGS_DIR, `${dateStr}.jsonl`);
 
     const tool = details.tool || TOOL_NAME;
