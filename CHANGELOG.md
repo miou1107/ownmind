@@ -37,13 +37,26 @@
 - 多出 6KB 來自 7 個元件 + LocaleContext + 額外 lucide icons
 - 編譯時間：203ms → 323ms
 
+**步驟 3 開頭：3.0 API client base + 3.1 後端補缺 + 3.9 登入頁 + 3.10 守門員**
+
+完整 v1.20.1 步驟 3 拆成 11 個子任務（清單在 `openspec/changes/v1.20.1-portal-pages/tasks.md`），本次完成 4 項（都是其他 7 頁的前置地基）：
+
+- **3.0 — `client/src/api/` 統一呼叫模組**：建立 `fetch` 封裝（即把對伺服器發請求的工具集中一處）。`auth.js` 用 `localStorage` 存 `api_key`（token，登入後拿到的鑰匙）；`client.js` 統一所有請求都自動帶 `Authorization: Bearer …` 標頭、把回應收斂成 `{ ok, data, error, status }` 同一個格式；401（未授權）自動清掉 `localStorage` 並廣播 `ownmind:auth-expired` event。`README.md` 寫設計取捨。
+- **3.1 — 後端補 `PUT /api/me/profile`**:原本只有 `GET /profile`（看自己資料）、沒對應的 `PUT`（改自己資料）。本次補上、只允許改 `name`（email / role 連 body 帶都忽略、避免 user 偷改權限），name 自動 trim + 長度 1-100，配合 race condition（用戶被 admin 同時刪掉時）回 404 不假裝成功。
+- **3.9 — 登入頁 `/login`**：`client/src/pages/LoginPage.jsx` 不包 Layout、唯一公開路由。Email + 密碼欄、按鈕禁用避免重複送、後端 error 直接顯示給 user。`must_change_password=true` 時強制導 `/preference/security`、否則導原本想去的頁面（讀 `location.state.from`）。已登入訪問 `/login` 自動導去原本想去的地方、避免重複登入。
+- **3.10 — 守門員 `RequireAuth`**：`client/src/components/common/RequireAuth.jsx` 沒 `api_key` 就 `<Navigate to="/login" state={{from: location}} />`。`App.jsx` 用 `RequireAuth` 包 Portal / Preference / Admin / Super 全部路由、並在 `useEffect` 內 listen `ownmind:auth-expired` event 自動 `navigate('/login')`（保留 SPA 體驗、不 hard reload）。
+- **測試**：`tests/me-profile-put.test.js` 11 條 source code 比對測試、全綠；`npm test` 整體 1883 / 1883 全綠；瀏覽器手動驗 3 個 case 都通過（未登入訪問 `/portal/usage` → 自動導 `/login`、有 `api_key` 訪問 `/portal/usage` → 正常顯示 Layout、清 `api_key` + dispatch `auth-expired` event → 自動回 `/login`）。
+
+外部 code review 處理紀錄：
+- **3.0 + 3.1 區段**：Important 3 條（其中 1 條「全改 HTTP 整合測試」push back — 用「source-match 是本專案既有 convention」+「runtime 行為由步驟 4 e2e 涵蓋」回應）、Minor 5 條（修 2 條：README alias 範例、logger.error 帶 stack）。
+- **3.9 + 3.10 區段**：Important 3 條全處理（修 2 條：must_change_password 防繞過、401 burst debounce；push back 1 條 — error msg i18n key map，因後端 login 端點本來就回繁中文案、不是 machine code）、Minor 6 條（修 2 條：self-loop guard、form name；其他屬於 refactor / 未實證 / 超出 scope）。
+- **Important #1（must_change_password 卡控）後續實作**：新增 `client/src/components/common/RequireFreshPassword.jsx` 守門員、`auth.js` 擴展 must_change_password 三個 API（get / set / clear），App.jsx 把所有受保護路由再多包一層 `RequireFreshPassword`。瀏覽器手動驗：登入時 must_change_password=true 訪問 `/portal/usage` 自動導 `/preference/security`、清掉 flag 後正常通行。
+
 **剩餘待辦（v1.20.1 完版尚需）：**
 
-- 步驟 3：實作 7 個頁面（替換目前的空殼 PlaceholderPage）
-- 步驟 4：建 `client/src/api/` 統一呼叫模組
-- 步驟 5：對應後端介面補缺（grep `src/routes/` 看缺什麼）
-- 步驟 6：端到端測試（登入 → 看用量 → 接手交接）
-- 步驟 7：翻第一批繁中字典 + 升版 v1.20.1 + 部署
+- 步驟 3 子任務 3.2 ~ 3.8（用量 / 專案歷程 / 交接 / 回報 / 個人資料 / 帳密 / 密鑰 7 頁實作）
+- 步驟 4：Playwright e2e 測試（登入 → 看用量 → 接手交接）
+- 步驟 5：升版 v1.20.1 + 部署 + 瀏覽器實測
 
 ---
 

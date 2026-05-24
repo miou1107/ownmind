@@ -121,6 +121,60 @@ router.get('/profile', async (req, res) => {
 });
 
 /**
+ * PUT /profile — 修改自己的 name（v1.20.1 補上、配合 Dashboard 個人資料頁）
+ *
+ * 只允許改 name。email / role 都不能 user 自己改：
+ *   - email：唯一索引、變更要走 admin 流程（避免登入帳號被改掉）
+ *   - role：admin / super_admin 才有權，走 /api/admin/users
+ *
+ * 即使 body 帶 email / role 也整個忽略、不報錯，保持 idempotent + 對 client 友善。
+ */
+router.put('/profile', async (req, res) => {
+  try {
+    const rawName = req.body?.name;
+    if (typeof rawName !== 'string') {
+      return res.status(400).json({ error: '請提供 name 欄位' });
+    }
+    const name = rawName.trim();
+    if (name.length === 0) {
+      return res.status(400).json({ error: 'name 不能為空' });
+    }
+    if (name.length > 100) {
+      return res.status(400).json({ error: 'name 長度不能超過 100 字' });
+    }
+    // WHERE 鎖 req.user.id，避免 body 偷塞 id 越權改別人
+    const upd = await query(
+      `UPDATE users SET name = $1 WHERE id = $2`,
+      [name, req.user.id]
+    );
+    // rowCount === 0：token 仍有效但 user row 已被刪（admin 同時刪 user 的 race condition）
+    // 不能 silent 200 + 假 data，會誤導 client「儲存成功」
+    if (upd.rowCount === 0) {
+      return res.status(404).json({ error: '使用者不存在' });
+    }
+    // 回傳 shape 跟 GET /profile 對齊，client 拿到可直接覆蓋 state
+    const r = await query(
+      `SELECT must_change_password FROM users WHERE id = $1`, [req.user.id]
+    );
+    res.json({
+      id: req.user.id,
+      name,
+      email: req.user.email,
+      role: req.user.role,
+      created_at: req.user.created_at,
+      must_change_password: !!r.rows[0]?.must_change_password,
+    });
+  } catch (err) {
+    logger.error('me/profile PUT 失敗', {
+      error: err.message,
+      stack: err.stack,
+      user_id: req.user?.id,
+    });
+    res.status(500).json({ error: '更新個人資料失敗' });
+  }
+});
+
+/**
  * GET /report?range=14d — 用量報告主聚合 endpoint
  * 預設 14 天；可透過 ?range=7d/30d/all 切換
  */
