@@ -99,15 +99,17 @@ Gemini 批判：「前期風平浪靜、後期突然亂擋」、違背提早排�
 
 ---
 
-## 4. 漸進切法（v1.19.20 → v1.19.24）
+## 4. 漸進切法（5 個小版本、v1.19.6 → v1.19.22）
 
-| 版本 | 範圍 | 原則 |
-|---|---|---|
-| **v1.19.20** | 共用判定核心 `hooks/lib/rule-enforcer.js` + 放行通道 `hooks/lib/bypass-handler.js` + 審計紀錄擴充 | 基礎建設、不擋任何規則 |
-| **v1.19.21** | IR-041（隱私）+ IR-002（密碼進 commit）+ reply-lint 切擋下模式（IR-036 / IR-037） | 高誤判 + 已驗證有效的先上、邊用邊磨 |
-| **v1.19.22** | 指令樣式類 5 條：IR-044 / IR-023 / IR-018 / IR-046 / IR-043 | 一波處理 PreToolUse 指令攔截 |
-| **v1.19.23** | 靜態檢查收尾：IR-009 / IR-024 / IR-031 | 最後上零誤判 |
-| **v1.19.24** | 兩週觀察期、根據誤判紀錄調規則 | 不新增功能、純調校 |
+| 規格小版本 | 實際發版 | 範圍 | 狀態 |
+|---|---|---|---|
+| 第 1 版 | **v1.19.6** | 共用判定核心 `hooks/lib/rule-enforcer.js` + 放行通道 `hooks/lib/bypass-handler.js` + 審計紀錄擴充 | ✅ 完工 2026-05-22 |
+| 第 2 版 | **v1.19.7** | IR-041（隱私）+ IR-002（密碼進 commit）+ reply-lint 切擋下模式（IR-036 / IR-037） | ✅ 完工 |
+| 第 3 版 | **v1.19.20** | 指令樣式類 5 條：IR-044 / IR-023 / IR-018 / IR-046 / IR-043 | ⏳ 待動工（本批次先做） |
+| 第 4 版 | **v1.19.21** | 靜態檢查收尾：IR-009 / IR-024 / IR-031 | ⏳ 待動工 |
+| 第 5 版 | **v1.19.22** | 兩週觀察期、根據誤判紀錄調規則 | ⏳ 待動工 |
+
+> **歷史脈絡：** 原規劃連續編號 v1.19.6-v1.19.10；前兩版（v1.19.6 + v1.19.7）按計畫完工後、Vin 把後續版號讓給其他功能（v1.19.8 setup wizard、v1.19.9 password recovery 等）、剩 3 個小版本延後到 v1.19.20 起再做。
 
 關鍵原則（採納 Gemini）：**前兩版先磨高誤判 + 切 reply-lint 擋下、後一版做零誤判收尾**。兩週觀察期收的是「字串樣式比對怎麼調」的真實回饋、不是「靜態檢查零驚喜」的假平靜。
 
@@ -139,28 +141,32 @@ Gemini 批判：「前期風平浪靜、後期突然亂擋」、違背提早排�
 
 ---
 
-## 6. v1.19.20 範圍（本批次先做的）
+## 6. v1.19.20 範圍（本批次：PreToolUse 指令樣式 5 條）
 
 ### 6.1 範圍內
 
-- ✅ **共用判定核心** `hooks/lib/rule-enforcer.js`（純函式、被三種 hook 共用）
-  - API：`enforceRule(ruleCode, context, options)` → `{ action, rule_code, tier, message, failures }`
-  - 內部包 `shared/verification.js` 的 `evaluateConditions`
-  - 視 tier 決定 action：critical → block、default → warn、advisory → log_only
-- ✅ **放行通道** `hooks/lib/bypass-handler.js`
-  - 解析 `OWNMIND_BYPASS=IR-008,IR-024` 或 `OWNMIND_BYPASS=all`
-  - 寫 audit log
-  - process scope（不污染全域）
-- ✅ **審計紀錄擴充**：`shared/compliance.js` 支援 `action='block' | 'bypass' | 'hook_internal_error'`
-- ✅ **測試覆蓋**：rule-enforcer 12+ case、bypass-handler 8+ case、compliance 補 3 case
+- **PreToolUse hook 整合 rule-enforcer**：把 v1.19.6 已寫好的 `hooks/lib/rule-enforcer.js` 接到 Claude Code / Codex 的 PreToolUse hook（AI 呼叫工具前先檢查）
+- **5 條 detector**（用指令字串樣式比對）：
+  - IR-023 部署用 docker compose build、不用 docker build
+  - IR-018 docker build 要加 --no-cache
+  - IR-044 paramiko sudo 不能 stdin.write 密碼（會洩漏到下游）
+  - IR-046 跑超過 5 分鐘背景任務必須用 nohup（脫離 session）
+  - IR-043 Windows AI ssh 帶密碼用 paramiko、不用 sshpass
+- **測試**：5 條 detector 各 3-5 個 case + PreToolUse hook 整合測試
 
-### 6.2 不範圍（v1.19.21+ 處理）
+### 6.2 已完工（前批次、不需再做）
 
-- ❌ 任何特定鐵律的 detect 邏輯（v1.19.21 起、IR-041 + IR-002 先上）
-- ❌ Reply-lint 切擋下模式（v1.19.21 一起）
-- ❌ PreToolUse 指令攔截（v1.19.22）
-- ❌ Git pre-commit / pre-tag 整合到 rule-enforcer（v1.19.23）
-- ❌ Admin UI Bypass 紀錄分頁（v1.19.24 觀察期結束後再評估）
+- ✅ 共用判定核心 `hooks/lib/rule-enforcer.js`（v1.19.6、36 個測試綠）
+- ✅ 放行通道 `hooks/lib/bypass-handler.js`（v1.19.6）
+- ✅ 審計紀錄擴充 `shared/compliance.js`（v1.19.6、新 action 值 block / bypass / hook_internal_error）
+- ✅ IR-041 隱私 detector（v1.19.7）
+- ✅ IR-002 密碼進 commit detector（v1.19.7、reuse v1.19.1 secret-detect）
+- ✅ reply-lint 切擋下模式（v1.19.7、exit 2 + 連續 3 次降警告）
+
+### 6.3 不範圍（後續版本處理）
+
+- ❌ Git pre-commit / commit-msg / pre-tag 整合 IR-009 / IR-024 / IR-031（→ 第 4 版 v1.19.21）
+- ❌ Admin UI Bypass 紀錄分頁（→ 第 5 版 v1.19.22 觀察期結束後再評估）
 
 ---
 
