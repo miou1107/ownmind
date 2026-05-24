@@ -3,6 +3,7 @@ import { query as defaultQuery } from '../../utils/db.js';
 import defaultAuth from '../../middleware/auth.js';
 import { superAdminAuth as defaultSuperAdminAuth } from '../../middleware/adminAuth.js';
 import logger from '../../utils/logger.js';
+import { requireFields } from '../../utils/require-fields.js';
 
 /**
  * Factory：回傳 pricing router。
@@ -52,15 +53,8 @@ export function createPricingRouter(deps = {}) {
         effective_date, notes
       } = req.body || {};
 
-      const missing = [];
-      if (!tool) missing.push('tool');
-      if (!model) missing.push('model');
-      if (input_per_1m == null) missing.push('input_per_1m');
-      if (output_per_1m == null) missing.push('output_per_1m');
-      if (!effective_date) missing.push('effective_date');
-      if (missing.length > 0) {
-        return res.status(400).json({ error: `必填欄位缺少：${missing.join(', ')}` });
-      }
+      const validation = requireFields(req.body, ['tool', 'model', 'input_per_1m', 'output_per_1m', 'effective_date']);
+      if (validation) return res.status(400).json(validation);
 
       if (!/^\d{4}-\d{2}-\d{2}$/.test(String(effective_date))) {
         return res.status(400).json({ error: 'effective_date 格式需為 YYYY-MM-DD' });

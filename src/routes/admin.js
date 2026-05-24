@@ -5,6 +5,7 @@ import { query } from '../utils/db.js';
 import adminAuth, { superAdminAuth, isAtLeast } from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
 import { generateRandomPassword } from '../../shared/random-password.js';
+import { requireFields } from '../utils/require-fields.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
@@ -139,13 +140,12 @@ router.get('/users', async (req, res) => {
  */
 router.post('/users', async (req, res) => {
   try {
+    const validation = requireFields(req.body, ['email']);
+    if (validation) return res.status(400).json(validation);
+
     const { email, name, role, password } = req.body;
     const actorRole = req.user.role;
     const actorId = req.user.id;
-
-    if (!email) {
-      return res.status(400).json({ error: '必填欄位：email' });
-    }
 
     const targetRole = role || 'user';
 

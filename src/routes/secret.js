@@ -3,6 +3,7 @@ import { query } from '../utils/db.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import { requireFields } from '../utils/require-fields.js';
 
 const router = Router();
 router.use(auth);
@@ -73,11 +74,10 @@ router.get('/:key', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { key, value, description } = req.body;
+    const validation = requireFields(req.body, ['key', 'value']);
+    if (validation) return res.status(400).json(validation);
 
-    if (!key || !value) {
-      return res.status(400).json({ error: '必填欄位：key, value' });
-    }
+    const { key, value, description } = req.body;
 
     const encryptedValue = encrypt(value);
 
