@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- base href="./" 讓 document.baseURI = 「index.html 所在資料夾的絕對 URL」、不會混入
+         SPA 內部 React Router 路徑。main.jsx 的 basename + client.js 的 API_BASE 都靠這個
+         拿到「Express serve 的根路徑」、適配本機 docker / 線上反向代理任一前綴。 -->
+    <base href="./" />
     <title>OwnMind 控制中心</title>
   </head>
   <body>

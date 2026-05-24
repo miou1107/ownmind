@@ -133,6 +133,25 @@ OpenSpec：`openspec/changes/v1.20.1-db-healthcheck/`（含 proposal.md + tasks.
 
 ---
 
+**Hotfix：補 `<base href="./">` 修 baseURI 算進 React Router 路徑的設計缺陷**
+
+API base fix（commit 33c915e）push 上 prod 後再實測：填表單按登入後 SPA 重新渲染、URL 變成 `/ownmind/dashboard/login/login`（多了一個 login）。原因：先前以為「document.baseURI 反映 SPA 安裝路徑」、實際上 HTML 沒 `<base>` tag 時 `baseURI === document.URL`、會把 React Router 的 sub-route 算進去：
+
+- 首次載入 `/ownmind/dashboard/login` → pathname `/ownmind/dashboard/login`
+- basename 算成 `/ownmind/dashboard/login`（錯、不該含 /login）
+- reload 後 React Router 用錯誤 basename + 當前 path `/login` → URL 拼成 `/ownmind/dashboard/login/login`
+
+正解：`client/index.html` head 加 `<base href="./">`、瀏覽器解析後 `baseURI` 就會等於「index.html 所在資料夾的絕對 URL」、不含當前 SPA route。main.jsx 的 basename + client.js 的 API_BASE 邏輯不用動、加 base tag 之後就推得對：
+
+- 本機 docker `/dashboard/login` → baseURI `http://localhost:3100/dashboard/` → basename `/dashboard`
+- 線上 `/ownmind/dashboard/login` → baseURI `https://kkvin.com/ownmind/dashboard/` → basename `/ownmind/dashboard`
+
+驗證：本機 docker rebuild 後直接訪問 `/dashboard/login`（非 root path、模擬 prod 場景）、baseURI 顯示為 `http://localhost:3100/dashboard/`（不含 /login）、SPA 正常渲染、登入頁顯示「登入 OwnMind」。
+
+教訓（升級版）：basename / API_BASE 動態偵測這條路線、必須跟 `<base>` tag 配套、不能只看 `document.baseURI` 自動值。reviewer 之前的 code review 已提到「無 base tag 時 baseURI 等於 document.URL」、但沒預見「SPA route reload 場景 baseURI 會混入 sub-route」這個推論的後果。下次類似動態偵測設計、要把所有 SPA navigation 場景（首次訪問 / reload / sub-route reload / pushState）的 baseURI 都驗一輪。
+
+---
+
 **Hotfix：API base 寫死導致 prod fetch 缺 /ownmind/ 前綴登入失敗**
 
 v1.20.1 prod deploy 後 Claude in Chrome 線上實測登入立即踩到：填表單按登入後沒反應、停留在 /login 頁、無錯誤訊息。直接 curl `https://kkvin.com/ownmind/api/me/login` 成功拿到 api_key、確認後端正常 → 前端 fetch URL 錯。
