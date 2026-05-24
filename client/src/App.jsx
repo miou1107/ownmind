@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useT } from './i18n/LocaleContext';
 import { Layout, RequireAuth, RequireFreshPassword } from './components/common';
 import LoginPage from './pages/LoginPage';
+import SecurityPage from './pages/Preference/SecurityPage';
 
 // 階段 1 空殼 — 各頁面在階段 3（v1.20.1 步驟 3）拆出實作
 function PlaceholderPage({ titleKey }) {
@@ -71,6 +72,15 @@ export default function App() {
     </RequireAuth>
   );
 
+  // 實際頁面 wrapper：跟 renderPlaceholder 同樣守門結構、但顯示真實 page
+  const renderPage = (page) => (
+    <RequireAuth>
+      <RequireFreshPassword>
+        <Layout {...layoutProps}>{page}</Layout>
+      </RequireFreshPassword>
+    </RequireAuth>
+  );
+
   return (
     <Routes>
       {/* /login 不包 Layout、不包 RequireAuth — 唯一公開路由 */}
@@ -84,7 +94,7 @@ export default function App() {
       <Route path="/portal/reports" element={renderPlaceholder('nav.reports')} />
 
       <Route path="/preference/profile" element={renderPlaceholder('nav.profile')} />
-      <Route path="/preference/security" element={renderPlaceholder('nav.security')} />
+      <Route path="/preference/security" element={renderPage(<SecurityPage />)} />
       <Route path="/preference/vault" element={renderPlaceholder('nav.vault')} />
 
       <Route path="/admin/team" element={renderPlaceholder('nav.team')} />

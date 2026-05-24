@@ -58,5 +58,21 @@
   "login.password_placeholder": "輸入密碼",
   "login.submit": "登入",
   "login.submitting": "登入中…",
-  "login.error_generic": "登入失敗、請稍後再試"
+  "login.error_generic": "登入失敗、請稍後再試",
+
+  "security.title": "修改密碼",
+  "security.subtitle": "為保護你的帳號、建議定期更換密碼",
+  "security.must_change_notice": "你還在使用預設密碼、請先改密碼才能用其他功能",
+  "security.current_label": "目前密碼",
+  "security.new_label": "新密碼",
+  "security.new_confirm_label": "再次輸入新密碼",
+  "security.placeholder_password": "請輸入密碼",
+  "security.hint_min_length": "至少 8 個字元、且不能跟舊密碼相同",
+  "security.submit": "修改密碼",
+  "security.submitting": "修改中…",
+  "security.success_toast": "密碼已更新",
+  "security.error_mismatch": "兩次新密碼不一致",
+  "security.error_same_as_old": "新密碼不能跟舊密碼相同",
+  "security.error_too_short": "新密碼長度至少 8 個字元",
+  "security.error_generic": "密碼修改失敗、請稍後再試"
 }
