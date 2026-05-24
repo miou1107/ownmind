@@ -1,5 +1,35 @@
 # OwnMind 檔案結構
 
+## v1.19.20 修改（Critical 鐵律卡控擴充：4 條 Bash 指令樣式 detector）
+
+新增檔：
+```
+tests/verification-command-handlers.test.js                  — 27 個 unit test（含 IR-018/023/043/046 when/then 場景）
+openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/proposal.md  — 規格（含 v1.19.6/7 完工進度表）
+openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/spec.md      — 場景測試規格
+openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/tasks.md     — 任務清單與鐵律觸發 checklist
+```
+
+修改的既有檔：
+```
+shared/verification.js                                       — 新增 command_matches / command_not_matches handler + FIX_HINTS
+hooks/ownmind-iron-rule-check.js                             — detect 不到 trigger 時 fallback 成 'command'、context 加 command 欄位、reminder 避開 command trigger
+package.json / package-lock.json                             — version 1.19.19 → 1.19.20
+README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version → v1.19.20
+CHANGELOG.md                                                 — v1.19.20 條目
+```
+
+雲端鐵律記憶更新（透過 ownmind_update API）：
+```
+IR-018 (id=50)  — tier=critical、加 verification（when docker build → then --no-cache）
+IR-023 (id=118) — tier=critical、加 verification（when docker build → then compose）
+IR-043 (id=426) — tier=critical、加 verification（不能含 sshpass）
+IR-046 (id=435) — tier=critical、加 verification（背景跑長指令 → 必須含 nohup）
+4 條都加 tag 'trigger:command'
+```
+
+---
+
 ## v1.19.19 修改（全站 requireFields helper：API 必填欄位錯誤訊息可偵錯化）
 
 新增檔：

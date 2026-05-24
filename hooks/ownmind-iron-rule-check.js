@@ -45,8 +45,10 @@ async function main() {
 
   if (!command) process.exit(0);
 
-  const trigger = detectCommandTrigger(command);
-  if (!trigger) process.exit(0);
+  // v1.19.20：detect 不到 trigger 時 fallback 成 'command'、讓 command-based 鐵律
+  //（IR-018/023/043/046）的 verification 永遠能跑、不被 trigger 過濾擋掉
+  const detectedTrigger = detectCommandTrigger(command);
+  const trigger = detectedTrigger || 'command';
 
   const { apiKey, apiUrl } = readCredentials();
   if (!apiKey || !apiUrl) process.exit(0);
@@ -65,11 +67,12 @@ async function main() {
     if (!r.tags || r.tags.length === 0) return true;
     return r.tags.some(t =>
       t === 'trigger:' + trigger ||
+      t === 'trigger:command' ||  // v1.19.20：command-based 鐵律總是相關
       (trigger === 'commit' && t === 'trigger:git')
     );
   });
 
-  if (relevant.length === 0) process.exit(0);
+  // v1.19.20：即使沒 reminder 相關鐵律、verification engine 段仍可能擋下、不 early return
 
   const lines = [];
 
@@ -109,7 +112,8 @@ async function main() {
 
   // commit trigger: 精簡模式（頻率高，只顯示結果）
   // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則 + 醒目標記）
-  if (trigger !== 'commit') {
+  // v1.19.20: 'command' fallback trigger 不顯示 reminder（不是按操作類型觸發、是按指令樣式）
+  if (trigger !== 'commit' && trigger !== 'command' && relevant.length > 0) {
     const triggerTag = `【OwnMind v${VERSION}】鐵律觸發（${trigger}）`;
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     lines.push(triggerTag);
@@ -128,12 +132,16 @@ async function main() {
 
     const triggerRules = cachedRules.filter(r => {
       const triggers = r.metadata?.verification?.trigger;
-      return Array.isArray(triggers) && triggers.includes(trigger);
+      if (!Array.isArray(triggers)) return false;
+      // v1.19.20：trigger='command' 的鐵律總是會被評估（不論當前操作類型）
+      return triggers.includes(trigger) || triggers.includes('command');
     });
 
     if (triggerRules.length > 0) {
       const complianceEvents = readComplianceEvents();
-      const context = { complianceEvents };
+      // v1.19.20：把 command 加進 context、讓 command_matches /
+      // command_not_matches handler 能對 Bash 指令字串做樣式比對
+      const context = { complianceEvents, command };
       const blockFailures = [];
 
       for (const rule of triggerRules) {
