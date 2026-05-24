@@ -13,7 +13,7 @@ openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/tasks.md     �
 修改的既有檔：
 ```
 shared/verification.js                                       — 新增 command_matches / command_not_matches handler + FIX_HINTS
-hooks/ownmind-iron-rule-check.js                             — detect 不到 trigger 時 fallback 成 'command'、context 加 command 欄位、reminder 避開 command trigger
+hooks/ownmind-iron-rule-check.js                             — detect 不到 trigger 時 fallback 成 'command'、context 加 command 欄位、reminder 避開 command trigger；補修 API envelope 兼容（rules.filter 靜默 throw bug）
 package.json / package-lock.json                             — version 1.19.19 → 1.19.20
 README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version → v1.19.20
 CHANGELOG.md                                                 — v1.19.20 條目

@@ -32,6 +32,18 @@ OWNMIND_BYPASS=all docker build .      # 全部放行
 **對應規格：** `openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/`
 **對應 GitHub issue：** [#41](https://github.com/miou1107/ownmind/issues/41)
 
+### 順手修：PreToolUse hook 靜默失效（嚴重）
+
+實測時發現 `hooks/ownmind-iron-rule-check.js` 在 parse API 回應後直接 `rules.filter()` 會 throw「rules.filter is not a function」、被 `main().catch()` 吞掉、整個 hook 靜默退出（exit 0、無 output）。
+
+根因：API 在 v1.19.x 某版改成 `{ data: [...] }` envelope 回應、但這支 client hook 沒同步、誤把 envelope 當 array 用。
+
+影響：v1.19.x 某版以來所有 PreToolUse 卡控（含 v1.19.6 的 rule-enforcer、本版的 4 條 detector）都靜默失效。表面看像沒擋過任何違規、其實是 hook 還沒跑到 verification engine 就 throw 退出。
+
+修法：兼容兩種格式 — `rules = Array.isArray(parsed) ? parsed : (parsed.data || [])`。
+
+修完後本機實測 4 條 critical 鐵律全部正常擋下違規指令。
+
 ---
 
 ## v1.19.19 — 全站 requireFields helper（API 必填欄位錯誤訊息可偵錯化）
