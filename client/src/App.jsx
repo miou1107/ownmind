@@ -5,6 +5,9 @@ import { Layout, RequireAuth, RequireFreshPassword } from './components/common';
 import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
+import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
+import HandoffsPage from './pages/Portal/HandoffsPage';
+import ReportsPage from './pages/Portal/ReportsPage';
 
 // 階段 1 空殼 — 各頁面在階段 3（v1.20.1 步驟 3）拆出實作
 function PlaceholderPage({ titleKey }) {
@@ -90,9 +93,9 @@ export default function App() {
       <Route path="/" element={<Navigate to="/portal/usage" replace />} />
 
       <Route path="/portal/usage" element={renderPlaceholder('nav.usage')} />
-      <Route path="/portal/project-history" element={renderPlaceholder('nav.project_history')} />
-      <Route path="/portal/handoffs" element={renderPlaceholder('nav.handoffs')} />
-      <Route path="/portal/reports" element={renderPlaceholder('nav.reports')} />
+      <Route path="/portal/project-history" element={renderPage(<ProjectHistoryPage />)} />
+      <Route path="/portal/handoffs" element={renderPage(<HandoffsPage />)} />
+      <Route path="/portal/reports" element={renderPage(<ReportsPage />)} />
 
       <Route path="/preference/profile" element={renderPage(<ProfilePage />)} />
       <Route path="/preference/security" element={renderPage(<SecurityPage />)} />

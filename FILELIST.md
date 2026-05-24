@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2 + 步驟 3 開頭 + 3.6 個資頁 + 3.7 帳密頁、開發中）
+## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2 + 步驟 3 開頭 + Preference 區完工 + Portal 3 頁、開發中）
 
 新增檔（共用元件 + 語系 context + API 客戶端 + 後端 PUT 測試 + 登入頁 + 守門員）：
 ```
@@ -23,6 +23,10 @@ client/src/api/README.md                       — 用法 + 設計取捨
 client/src/pages/LoginPage.jsx                 — 登入頁、不包 Layout、handle must_change_password redirect + 已登入導回原本想去的頁
 client/src/pages/Preference/SecurityPage.jsx   — 帳密修改頁、3 欄表單、trim 防空白、setTimeout cleanup、失敗清新密欄位
 client/src/pages/Preference/ProfilePage.jsx    — 個人資料頁、GET 載入 + PUT 存 name、role 白名單防破窗、toLocaleString 帶 BCP-47 locale
+client/src/pages/Portal/ProjectHistoryPage.jsx — 專案歷程頁、GET /api/memory/type/project + Modal 看完整 content
+client/src/pages/Portal/HandoffsPage.jsx       — 工作交接頁、GET /handoff/pending + PUT /:id/accept、profile 失敗 disable accept 防空字串污染 DB
+client/src/pages/Portal/ReportsPage.jsx        — 回報紀錄頁、GET /bug-reports + GET /:id Modal 詳情、403 i18n mapping
+client/src/utils/fmtDate.js                    — 共用日期格式工具、BCP-47 locale + isNaN 防 invalid Date
 tests/me-profile-put.test.js                   — PUT /api/me/profile 11 條 source-match 測試（含 trim / whitelist / rowCount=0 / IR-038）
 tests/me-change-password-status.test.js        — 守住舊密錯誤必須回 400 不回 401（避免 client.js 401 burst handler 誤踢用戶回 /login）
 ```

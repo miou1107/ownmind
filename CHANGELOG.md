@@ -52,6 +52,14 @@
 - **3.9 + 3.10 區段**：Important 3 條全處理（修 2 條：must_change_password 防繞過、401 burst debounce；push back 1 條 — error msg i18n key map，因後端 login 端點本來就回繁中文案、不是 machine code）、Minor 6 條（修 2 條：self-loop guard、form name；其他屬於 refactor / 未實證 / 超出 scope）。
 - **Important #1（must_change_password 卡控）後續實作**：新增 `client/src/components/common/RequireFreshPassword.jsx` 守門員、`auth.js` 擴展 must_change_password 三個 API（get / set / clear），App.jsx 把所有受保護路由再多包一層 `RequireFreshPassword`。瀏覽器手動驗：登入時 must_change_password=true 訪問 `/portal/usage` 自動導 `/preference/security`、清掉 flag 後正常通行。
 
+**步驟 3 收尾大半：3.3 + 3.4 + 3.5 Portal 三頁（專案歷程 / 工作交接 / 回報紀錄）**
+
+- **3.3 ProjectHistoryPage** — `GET /api/memory/type/project` 列出 type=project 記憶（按 updated_at 倒序）、點 row 開 Modal 看完整 content
+- **3.4 HandoffsPage** — `Promise.all` 並行 `GET /api/me/profile` 拿使用者名稱 + `GET /api/handoff/pending` 列待接手交接、`PUT /api/handoff/:id/accept` 接手後從 list 移除。**Profile 失敗 / name 為空時整頁 banner + disable accept 按鈕**，避免空字串污染 DB（IR-122 邏輯卡控）
+- **3.5 ReportsPage** — `GET /api/bug-reports?scope=mine&size=100` 列出個人錯誤回報、severity/status badge 配色、點 row 觸發 `GET /:id` Modal 顯示詳情（severity / component / status / created_at / resolved_at / status_reason / description）
+- **抽 utility**：`client/src/utils/fmtDate.js` 共用日期格式工具、3 頁從 copy-paste 改 import（M1 修補）
+- **外部 code review 處理**：1 Critical（HandoffsPage `'unknown'` fallback 污染 DB、修為 disable + banner）+ 2 Important（ProjectHistoryPage 拿掉 `slice(200)` 避免 UTF-16 surrogate pair 切斷、交給 `line-clamp-2` / ReportsPage 403 mapping 到 `reports.error_forbidden` i18n key）+ 1 Minor（變數 `r` 改 `report` 避免 scope shadowing）；M2 / M5 / M6 不修（已 OK / 無 XSS / 邊緣 case）
+
 **步驟 3 中段：3.6 個人資料頁 + 3.7 帳密修改頁 + 後端改密 status code 修補**
 
 - **3.6 — Preference 個人資料頁 `client/src/pages/Preference/ProfilePage.jsx`**：useEffect 載入 GET `/api/me/profile`、表單可改 name（其他欄位 email / role / created_at read-only）、PUT `/api/me/profile { name }` 存檔。loading / error / 成功 toast 三態各自處理。Code review 處理 1 Critical（useEffect deps `[t]` 切語系會重打 API、改成 `[]`）+ 4 Important（共用 `header.role.*` namespace 避免翻譯重複 / role 白名單破窗保護 / toLocaleString 帶 BCP-47 locale 跟 LocaleContext 同步 / read-only 用 `<dl><dt><dd>` 補 a11y 關聯）+ 1 Minor（`isNaN(d.getTime())` 防 invalid Date 字串）。瀏覽器手動驗：mock GET 載入 + 改名 PUT body 正確 + guest 未知 role 顯示原值（不是 raw key）+ 18:30 zh-TW 格式 + dl 結構生效。
@@ -64,7 +72,7 @@
 
 **剩餘待辦（v1.20.1 完版尚需）：**
 
-- 步驟 3 子任務 3.2 ~ 3.5 + 3.8（用量 / 專案歷程 / 交接 / 回報 / 密鑰 5 頁實作）
+- 步驟 3 子任務 3.2（用量分析頁、最複雜）+ 3.8（密鑰管理頁）
 - 步驟 4：Playwright e2e 測試（登入 → 看用量 → 接手交接）
 - 步驟 5：升版 v1.20.1 + 部署 + 瀏覽器實測
 - **Backlog**：修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake（UTC vs 台北時區跨午夜時 log 檔名期望不一致）
