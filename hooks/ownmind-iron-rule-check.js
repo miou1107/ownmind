@@ -58,7 +58,10 @@ async function main() {
     const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
       'Authorization': `Bearer ${apiKey}`
     });
-    rules = JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // v1.19.20: API 在 v1.19.x 某版開始包 { data: [...] } envelope、
+    // 舊 hook 直接 .filter 會 throw。兼容兩種格式。
+    rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
   } catch {
     process.exit(0);
   }
