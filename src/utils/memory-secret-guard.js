@@ -73,6 +73,8 @@ export function validateMemoryContent({ type, title, content, metadata }) {
           '記憶系統只應該存非敏感的 profile／project／portfolio／session_log 等內容。',
         redirect_tool: 'ownmind_set_secret',
         detected_by: detection.rule,
+        // v1.19.13：把命中片段回傳給 caller、讓 AI 看到哪段觸發、第一次就能改對
+        matched_text: detection.matched_text,
       },
     };
   }
