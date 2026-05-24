@@ -1,5 +1,44 @@
 # OwnMind 檔案結構
 
+## v1.19.14 修改（錯誤回報工具：使用者 ⇄ 開發者雙向通知）
+
+新增檔：
+```
+openspec/changes/v1.19.14-bug-report-tool/proposal.md     — 提案：四版設計演進（經三輪 Gemini 對抗審查）
+openspec/changes/v1.19.14-bug-report-tool/spec.md         — 規格：60+ 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19.14-bug-report-tool/tasks.md        — 任務拆解：含 v4.1 校正
+db/016_bug_reports.sql                                    — 5 張新表 + 6 個 CHECK + 6 個 index
+shared/bug-fingerprints.js                                — 錯誤指紋註冊表（16 個指紋、6 個前綴分類）
+shared/context-blob-schema.js                             — 對話片段聯合型別 + 驗證
+shared/privacy-redact.js                                  — 把個資樣式替換成代稱（信箱／身分證／手機）
+shared/device-fingerprint.js                              — 主機指紋（node-machine-id + 安裝路徑 → SHA-256）
+src/utils/bug-report-helpers.js                           — 純函式 helpers（confirm_string 驗證、查冷靜期/封鎖、組旗標）
+src/services/bug-report-spam-detector.js                  — spam 偵測器（Levenshtein + 三條規則）
+src/routes/bug-reports.js                                 — 11 個 API 端點
+tests/migration-016-bug-reports.test.js                   — 24 個測試：表結構 + index + CHECK constraint
+tests/bug-fingerprints.test.js                            — 14 個測試：指紋註冊表 + 查詢 API
+tests/context-blob-schema.test.js                         — 19 個測試：聯合型別 + 驗證
+tests/privacy-redact.test.js                              — 11 個測試：代稱化 + 同值同代稱
+tests/device-fingerprint.test.js                          — 9 個測試：主機指紋穩定性 + fallback
+tests/bug-report-helpers.test.js                          — 16 個測試：所有 helpers
+tests/bug-report-spam-detector.test.js                    — 14 個測試：三條規則 + Levenshtein
+```
+
+修改的既有檔：
+```
+src/app.js                                                — 註冊 /api/bug-reports 路由
+src/routes/memory.js                                      — 寫入被擋的回應加 suggest_report 旗標
+mcp/index.js                                              — 加 ownmind_report_bug MCP 工具
+hooks/ownmind-session-start.js                            — 加錯誤回報通知段（雙軌：admin + reporter）
+scripts/update.sh                                         — 加 node-machine-id 安裝步驟
+scripts/update.ps1                                        — 加 node-machine-id 安裝步驟（Windows）
+package.json                                              — version 1.19.13 → 1.19.14、加 node-machine-id ^1.1.12 依賴
+README.md / docs/README.zh-TW.md / docs/README.ja.md      — Current version → v1.19.14
+CHANGELOG.md                                              — v1.19.14 條目
+```
+
+---
+
 ## v1.19.13 修改（掃密 keyword 偵測收緊、降低誤判）
 
 新增檔：
