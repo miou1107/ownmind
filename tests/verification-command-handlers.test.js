@@ -1,7 +1,7 @@
 /**
  * v1.19.20 — command_matches / command_not_matches handler 測試
  *
- * 對應 openspec/changes/v1.19.20-iron-rule-enforcement-finishing/
+ * 對應 openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/
  * 5 條鐵律的 Bash 指令字串樣式比對基礎。
  */
 import { describe, it } from 'node:test';
