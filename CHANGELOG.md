@@ -18,7 +18,7 @@
 | Windows SSH 工具選擇 | 指令不能含 `\bsshpass\b` | 違反直接擋下 |
 | 長指令背景保護 | when 含背景 `&` + 長指令樣式（docker build / npm install 等）→ then 必須含 `nohup` | 違反直接擋下 |
 
-具體對應到的個人鐵律編號是使用者私人記憶、不在此公開文件中引用。實際卡控規則透過 `ownmind_update` API 對使用者自訂規則加 metadata、不寫死在程式碼。
+具體對應到的使用者規則編號是使用者私人記憶、不在此公開文件中引用。實際卡控規則透過 `ownmind_update` API 對使用者自訂規則加 metadata、不寫死在程式碼。
 
 **Python SSH 密碼處理規則為何跳過：** 是寫 Python 程式碼時的卡控、不是 Bash 指令、需要 PreToolUse 的 Edit/Write matcher hook（另一種 hook 類型）、列入 v1.19.21+。
 
@@ -44,7 +44,7 @@ OWNMIND_BYPASS=all docker build .            # 全部放行
 
 修法：兼容兩種格式 — `rules = Array.isArray(parsed) ? parsed : (parsed.data || [])`。
 
-修完後本機實測 4 條 critical 鐵律全部正常擋下違規指令。
+修完後本機實測 4 條 critical 規則全部正常擋下違規指令。
 
 ---
 
