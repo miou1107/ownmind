@@ -1,5 +1,57 @@
 # OwnMind 檔案結構
 
+## v1.20.0 修改（後台前端基礎建設）
+
+新增檔：
+```
+client/                                                       — 前端 SPA 目錄（React 19 + Vite 8 + Tailwind v4）
+client/package.json                                           — 前端套件依賴鎖定
+client/vite.config.js                                         — Vite 編譯設定（base './' + outDir ../src/public/dashboard）
+client/index.html                                             — SPA 入口
+client/.gitignore                                             — 排除 node_modules / dist / .vite
+client/src/main.jsx                                           — React root render + BrowserRouter（basename 由 import.meta.env.PROD 判斷）
+client/src/App.jsx                                            — 路由骨架 + 三角色守衛預留位
+client/src/index.css                                          — Tailwind v4 @theme 北歐色票
+client/src/design-tokens/colors.js                            — JS 端設計 token
+client/src/i18n/index.js                                      — t(key, locale, params) 翻譯函式
+client/src/i18n/zh.json                                       — 繁中字典（唯一真實來源、30 個起手 key）
+client/src/i18n/en.json                                       — 英文翻譯（編譯產出）
+client/src/i18n/ja.json                                       — 日文翻譯（編譯產出）
+client/src/i18n/glossary.json                                 — 術語固定對照（20 個品牌專業詞）
+client/src/i18n/en.override.json                              — 英文人工強制覆寫字典
+client/src/i18n/ja.override.json                              — 日文人工強制覆寫字典
+client/src/i18n/README.md                                     — i18n 維護流程說明
+client/src/scripts/translate.mjs                              — 編譯時自動翻譯腳本（OpenAI 相容 API + manual fallback）
+scripts/lint-zh-only.js                                       — 中英混雜 lint（掃 client/src JSX/JS、抓寫死英文文案）
+.dockerignore                                                 — Docker build 排除清單
+openspec/changes/v1.20.0-frontend-foundation/proposal.md      — 本版規格（藍綠並存 + 三原則）
+openspec/changes/v1.20.0-frontend-foundation/tasks.md         — 本版任務清單
+openspec/changes/v1.20.1-portal-pages/proposal.md             — 下版規格 stub（Portal + Preference 共 7 頁）
+openspec/changes/v1.20.1-portal-pages/tasks.md                — 同上 task stub
+openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
+openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
+openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
+openspec/changes/v1.20.3-super-pages/tasks.md                 — 同上 task stub
+openspec/changes/v1.20.4-legacy-retire/proposal.md            — 規格 stub（舊版 301 轉址退役）
+openspec/changes/v1.20.4-legacy-retire/tasks.md               — 同上 task stub
+```
+
+修改檔：
+```
+package.json            — 加 build:client / dev:client / translate:client script、版號升 1.20.0
+Dockerfile              — 改 multi-stage build（stage 1 編譯前端 → stage 2 COPY dist 進 src/public/dashboard）
+.gitignore              — 加 client/node_modules / client/dist / src/public/dashboard / i18n 翻譯快取
+src/app.js              — 新增 /dashboard 路由 + SPA fallback（舊 /admin + /me 完全不動）
+.claude/launch.json     — 加 Vite dev server entry（dev:client 用）
+README.md               — 版號 v1.20.0
+docs/README.zh-TW.md    — 版號 v1.20.0
+docs/README.ja.md       — 版號 v1.20.0
+CHANGELOG.md            — 加 v1.20.0 段（藍綠並存 + 三原則 + e2e 測試結果 + 修 bug 紀錄）
+FILELIST.md             — 加 v1.20.0 段
+```
+
+---
+
 ## v1.19.20 修改（Critical 鐵律卡控擴充：4 條 Bash 指令樣式 detector）
 
 新增檔：

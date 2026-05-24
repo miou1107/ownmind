@@ -1,13 +1,16 @@
 {
   "name": "ownmind",
-  "version": "1.19.20",
+  "version": "1.20.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test",
-    "test:watch": "node --test --watch"
+    "test:watch": "node --test --watch",
+    "build:client": "cd client && npm install && npm run build",
+    "dev:client": "cd client && npm run dev",
+    "translate:client": "cd client && npm run translate"
   },
   "repository": {
     "type": "git",
