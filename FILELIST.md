@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2、開發中）
+
+新增檔（前端共用元件 + 語系切換 context）：
+```
+client/src/components/common/Sidebar.jsx       — 側邊欄、4 區段 + 13 條導航、按角色顯示、手風琴折疊
+client/src/components/common/TopBar.jsx        — 上方列、標題 + 語系切換 + 角色模擬器 + 頭像選單
+client/src/components/common/FilterBar.jsx     — 篩選列、日期 + 專案 + 關鍵字（受控元件）
+client/src/components/common/Footer.jsx        — 頁尾、版本號 + 版本紀錄毛玻璃彈窗
+client/src/components/common/Modal.jsx         — 通用彈窗、ESC + 點背景關閉、3 尺寸 + 毛玻璃模式
+client/src/components/common/RoleBadge.jsx     — 角色標籤、3 種角色配色
+client/src/components/common/StatCard.jsx      — 統計卡、KPI 顯示用
+client/src/components/common/Layout.jsx        — 頁面包裝、所有路由共用
+client/src/components/common/index.js          — barrel export
+client/src/i18n/LocaleContext.jsx              — LocaleProvider + useLocale + useT hook、含 localStorage 持久化
+```
+
+修改檔：
+```
+client/src/App.jsx                             — 拿掉 useState('zh') 改用 LocaleProvider、Layout 包所有路由
+client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告
+client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 36 個、加 portal_analytics / preference / changelog / menu 區）
+CHANGELOG.md                                   — 加 v1.20.1-dev 中段進度區塊
+FILELIST.md                                    — 本檔
+```
+
+---
+
 ## v1.20.0 修改（後台前端基礎建設）
 
 新增檔：
