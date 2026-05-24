@@ -90,5 +90,36 @@
   "profile.error_name_too_long": "顯示名稱不能超過 100 字",
   "profile.error_load": "載入個人資料失敗",
   "profile.error_save": "儲存失敗、請稍後再試",
-  "profile.loading": "載入中…"
+  "profile.loading": "載入中…",
+
+  "common.loading": "載入中…",
+  "common.error_load": "載入失敗、請稍後再試",
+  "common.empty": "目前沒有紀錄",
+  "common.close": "關閉",
+
+  "project_history.title": "專案歷程",
+  "project_history.subtitle": "你的所有專案記憶、按最後更新時間排序",
+  "project_history.detail_title": "專案內容",
+
+  "handoffs.title": "工作交接",
+  "handoffs.subtitle": "其他 AI 工具留給你的交接內容、接手後從清單移除",
+  "handoffs.empty": "沒有待處理的交接",
+  "handoffs.from_label": "來源",
+  "handoffs.accept": "接手",
+  "handoffs.accepting": "接手中…",
+  "handoffs.accept_success": "已接手",
+  "handoffs.accept_error": "接手失敗、請稍後再試",
+  "handoffs.profile_failed": "無法取得使用者資料、接手功能暫停。請重新整理頁面或重新登入",
+
+  "reports.title": "回報紀錄",
+  "reports.subtitle": "你建立的錯誤回報、可看處理狀態",
+  "reports.detail_title": "回報詳情",
+  "reports.severity_label": "嚴重程度",
+  "reports.component_label": "元件",
+  "reports.status_label": "狀態",
+  "reports.created_at_label": "建立時間",
+  "reports.resolved_at_label": "處理時間",
+  "reports.status_reason_label": "處理說明",
+  "reports.description_label": "詳細描述",
+  "reports.error_forbidden": "你沒有權限看這筆回報"
 }
