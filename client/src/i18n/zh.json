@@ -74,5 +74,21 @@
   "security.error_mismatch": "兩次新密碼不一致",
   "security.error_same_as_old": "新密碼不能跟舊密碼相同",
   "security.error_too_short": "新密碼長度至少 8 個字元",
-  "security.error_generic": "密碼修改失敗、請稍後再試"
+  "security.error_generic": "密碼修改失敗、請稍後再試",
+
+  "profile.title": "個人資料",
+  "profile.subtitle": "管理你的顯示名稱、其他資料由管理員維護",
+  "profile.name_label": "顯示名稱",
+  "profile.name_placeholder": "你想被怎麼稱呼",
+  "profile.email_label": "Email",
+  "profile.role_label": "角色",
+  "profile.created_at_label": "帳號建立時間",
+  "profile.submit": "儲存修改",
+  "profile.submitting": "儲存中…",
+  "profile.success_toast": "個人資料已更新",
+  "profile.error_name_required": "顯示名稱不能空白",
+  "profile.error_name_too_long": "顯示名稱不能超過 100 字",
+  "profile.error_load": "載入個人資料失敗",
+  "profile.error_save": "儲存失敗、請稍後再試",
+  "profile.loading": "載入中…"
 }
