@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.19.18 修改（安全：npm audit fix 修補三個中度漏洞）
+
+修改的既有檔：
+```
+package.json                                                 — version 1.19.17 → 1.19.18
+package-lock.json                                            — qs 6.15.0→6.15.2、ip-address 10.1.0→10.2.0、express-rate-limit 8.3.2→8.5.2
+README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version → v1.19.18
+CHANGELOG.md                                                 — v1.19.18 條目
+```
+
+新增檔：
+```
+openspec/changes/v1.19.18-security-audit-fix/proposal.md     — 提案：背景、設計、範圍、風險檢查點
+openspec/changes/v1.19.18-security-audit-fix/tasks.md        — 任務清單與鐵律觸發 checklist
+```
+
+---
+
 ## v1.19.17 修改（hotfix：錯誤回報後台 modal 按鈕無反應）
 
 修改的既有檔：
