@@ -115,6 +115,21 @@
 - 用量分析頁未來若加「日期區間自訂」（後端已支援 `?start=&end=`）、評估 FilterBar 重塑成 preset + custom range 兩種模式跟 ProjectHistoryPage 共用
 - 補 db healthcheck + api `depends_on: service_healthy`（v1.20.1 docker-compose 修補 reviewer 提的、避免 db 慢起時 api 第一次 bootstrap 撞 ECONNREFUSED、現況 restart 會自動修復但會有 1-2 秒下線）
 - fresh deploy E2E smoke test（down -v → up → setup wizard → login → /api/me/report 接口通、整套自動化、對應 IR-027 邏輯卡控）
+- prod 部署到 https://kkvin.com/ownmind/dashboard/ 後手動 smoke test `document.baseURI` 拿到預期值（reviewer 建議、basename 動態偵測理論上 nginx reverse proxy 不會干擾 baseURI、但實測 30 秒 100% 安心）
+
+---
+
+**Hotfix：SPA basename 寫死導致非標準路徑部署 SPA 不渲染**
+
+v1.20.1 release deploy 到本機 docker（路徑 /dashboard/、無 /ownmind/ 前綴）後 Claude in Chrome 實測立即踩到：頁面空白、console warning「Router basename="/ownmind/dashboard" is not able to match the URL "/dashboard/"」、整個 SPA Router 不渲染。
+
+修：`client/src/main.jsx` 把 basename 從 `import.meta.env.PROD ? '/ownmind/dashboard' : ''` 改成 `import.meta.env.VITE_BASE_PATH ?? new URL(document.baseURI).pathname.replace(/\/$/, '')`。動態偵測當前部署路徑、保留 env override 給特殊場景。
+
+原理：HTML 沒 `<base>` tag 時、`document.baseURI === document.URL`（瀏覽器當前頁面 URL）、抽 pathname 就拿到部署路徑。本機 docker /dashboard/ → basename '/dashboard'、線上 /ownmind/dashboard/ → basename '/ownmind/dashboard'、vite dev / → basename ''（空字串等同無 basename）。
+
+驗證：本機 docker rebuild + Claude in Chrome 實測登入 → 用量分析三分頁 → 6 頁 navigation → 改名 → 加密鑰 → 登出 → RequireAuth 守門員，全綠、0 console error。
+
+外部 code review：0 Critical + 1 Important（comment 對 `<base href="./">` 因果描述錯誤、實際是「無 base tag 時 baseURI 等於 document.URL」、已改寫 comment）+ 3 Minor（M-2「加回 VITE_BASE_PATH env override 保留 escape hatch」採納、M-1 / M-3 不必）。
 
 ---
 
