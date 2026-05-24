@@ -1,5 +1,18 @@
 # OwnMind 檔案結構
 
+## v1.19.17 修改（hotfix：錯誤回報後台 modal 按鈕無反應）
+
+修改的既有檔：
+```
+src/public/index.html                                        — 4 處 classList .show → .active
+tests/admin-html-no-duplicate-const.test.js                  — 加 grep 防 'show' class 復發的 case
+package.json                                                 — version 1.19.16 → 1.19.17
+README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version → v1.19.17
+CHANGELOG.md                                                 — v1.19.17 條目
+```
+
+---
+
 ## v1.19.16 修改（hotfix：admin 後台登入頁 SyntaxError）
 
 新增檔：

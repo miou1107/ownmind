@@ -1646,14 +1646,14 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       document.getElementById('brEditStatusReasonNote').value = r.status_reason_note || '';
       brOnStatusChange();
 
-      document.getElementById('bugReportModal').classList.add('show');
+      document.getElementById('bugReportModal').classList.add('active');
     } catch (e) {
       alert('載入失敗：' + e.message);
     }
   }
 
   function closeBugReportModal() {
-    document.getElementById('bugReportModal').classList.remove('show');
+    document.getElementById('bugReportModal').classList.remove('active');
     brCurrentReport = null;
   }
 
@@ -1746,11 +1746,11 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       </div>
     `;
     document.getElementById('brSpamReason').value = '';
-    document.getElementById('spamSuspectModal').classList.add('show');
+    document.getElementById('spamSuspectModal').classList.add('active');
   }
 
   function closeSpamSuspectModal() {
-    document.getElementById('spamSuspectModal').classList.remove('show');
+    document.getElementById('spamSuspectModal').classList.remove('active');
     brCurrentSuspect = null;
   }
 
