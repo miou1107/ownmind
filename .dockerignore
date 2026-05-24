@@ -1,3 +1,5 @@
+# 純為了減小 Docker context、不影響 runtime（這些路徑都不會被 server 端讀）
+# 若未來 server code 新增讀檔路徑、要從這份排除清單拿掉
 node_modules
 client/node_modules
 client/dist
@@ -5,6 +7,7 @@ client/dist
 .github
 .claude
 .ownmind
+# openspec / tests / docs / *.md：純文件、server runtime 不需要
 openspec
 tests
 docs

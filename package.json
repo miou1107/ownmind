@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test",
+    "test": "npm run lint:zh-only && node --test",
     "test:watch": "node --test --watch",
+    "lint:zh-only": "node scripts/lint-zh-only.js client/src",
     "build:client": "cd client && npm install && npm run build",
     "dev:client": "cd client && npm run dev",
     "translate:client": "cd client && npm run translate"

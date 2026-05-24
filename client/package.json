@@ -3,13 +3,16 @@
   "private": true,
   "version": "1.20.0",
   "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
   "scripts": {
     "dev": "vite",
-    "build": "npm run translate && vite build",
-    "build:no-translate": "vite build",
+    "build": "npm run lint:zh-only && npm run translate && vite build",
+    "build:no-translate": "npm run lint:zh-only && vite build",
     "preview": "vite preview",
     "translate": "node src/scripts/translate.mjs",
-    "lint:zh-only": "node ../scripts/lint-zh-only.js client/src"
+    "lint:zh-only": "node ../scripts/lint-zh-only.js src"
   },
   "dependencies": {
     "react": "19.2.6",

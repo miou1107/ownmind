@@ -20,14 +20,17 @@
 - `src/app.js` 新增 `/dashboard` 路由 + SPA fallback（舊 `/admin` + `/me` 完全不動）
 - 編譯後 bundle 大小：235KB JS、壓縮後 75KB（gzip）、203 毫秒打包完成
 
-**i18n 編譯時自動翻譯機制（路線 C）：**
+**i18n 機制已建好、英日字典 v1.20.1 隨 UI 一起翻譯（路線 C）：**
 
-- 設計：寫繁中、`npm run build` 時自動翻譯成 EN / JA、結果 commit 進 git（不每次發版重翻、不每次使用者切語言打 LLM）
+- 設計：寫繁中、dev 端跑 `npm run build` 含自動翻譯成 EN / JA、結果 commit 進 git（不每次發版重翻、不每次使用者切語言打 LLM）
+- Dockerfile prod build 走 `build:no-translate`、用已 commit 的字典（避免 Docker build 時依賴 LLM API key）
 - `client/src/i18n/`：`zh.json` 為唯一真實來源（30 個起手 key）+ `glossary.json` 術語固定對照（20 個品牌專業詞）+ `{locale}.override.json` 人工強制覆寫
 - `client/src/scripts/translate.mjs`：增量翻譯腳本、支援 OpenAI 相容 API（kkvin.com llm-switch / OpenAI / Anthropic）、`temperature=0` 降低隨機性、hash 比對未變動就跳過
 - 4 機制控制翻譯一致性：(1) git 快取、(2) temperature=0、(3) 術語表、(4) 人工覆寫
 - 額度成本估算：每次發版增量翻譯約 0.001 美金、一年 50 次發版約 1.6 台幣
 - 無 API key 時自動退到 manual mode、列出待翻 key 提示人工貼進外部翻譯工具
+- **本版 (v1.20.0)：機制已建好、`en.json` / `ja.json` 仍為空 `{}`、字典 v1.20.1 連同實際 UI 內容一起翻譯**
+- 當前所有頁面都是空殼（顯示「重構中」）、`t()` fallback 回繁中、英日 user 看到繁中也合理
 
 **中英混雜 lint：**
 
