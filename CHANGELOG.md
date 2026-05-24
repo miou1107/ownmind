@@ -1,6 +1,6 @@
 # OwnMind 更新紀錄
 
-## v1.20.1-dev — Dashboard 個人版（開發中 / 步驟 3 完工）
+## v1.20.1 — Dashboard 個人版（Portal 4 頁 + Preference 3 頁 + 登入頁 + 守門員完工）
 
 **背景：** v1.20.0 把後台前端地基打好之後、v1.20.1 開始把空殼填滿、目標是個人 Dashboard 共 7 頁（4 個人紀錄分析頁 + 3 個人偏好頁）+ 後端介面對接。本次 commit 是中段進度、完成步驟 1（拆共用元件）與步驟 2（語系切換 context）。
 
@@ -98,12 +98,23 @@
 - **驗證**：lint:zh-only 0 違反、瀏覽器手動 mock fetch 跑完整流程（KPI 卡 42 場 / 357 事件 / 80% 合規率 / 鐵律遵守表 / 版本表 / 活動表 → 切團隊：6 點日趨勢折線繪出 / 21 條時段棒 / 7 條星期棒 → 切專案：點 OwnMind row 開 Modal 顯示貢獻成員 Vin 18 場 920 回合 3 交接）、console.error 0 條、console.warn 只有 recharts initial measurement 階段的 `width(-1)` 雜訊（圖最終正常渲染、屬已知 recharts 3.x DX 議題、不影響功能）。
 - **外部 code review 處理**：0 Critical + 0 Important（reviewer 評估 Ready to merge: Yes）+ 8 Minor 全部標 YAGNI / 風格 / 已驗證無問題不修（reviewer 自己也標「不阻擋」、唯一建議的防禦性 `key={range}` 屬於「為假設未來 loading UX 改寫」做準備、違反 CLAUDE.md「Don't design for hypothetical future requirements」）。
 
-**剩餘待辦（v1.20.1 完版尚需）：**
+**步驟 4 取捨**：原規劃 Playwright e2e 測試（瀏覽器自動化測試框架）跳過、改用 Claude in Chrome（讓 AI 直接操作真實 Chrome）在本機 docker 部署環境跑實測。覆蓋 7 頁主要流程（登入 → 看用量 → 接手交接 → 改名 → 改密 → 加密鑰 → 查報告）。優點：不用 setup Playwright、用既有 AI 工具；缺點：非自動化 regression（未來改動不會重跑、要再請 AI 操作一次）— 屬於有意識的工程取捨。
 
-- 步驟 4：Playwright e2e 測試（登入 → 看用量 → 接手交接）
-- 步驟 5：升版 v1.20.1 + 部署 + 瀏覽器實測
-- **Backlog**：修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake（UTC vs 台北時區跨午夜時 log 檔名期望不一致 — v1.20.1 已修但 backlog 是加 mock-Date regression test 強制設台北跨午夜場景）
-- **Backlog**：研究 recharts 3.x initial measurement `width(-1)` 警告抑制（cosmetic、不影響功能、但 console 有點吵）
+**步驟 5 — 升版 v1.20.1 + 部署：**
+
+- 三處版號同步（IR-130）：`package.json` / `client/package.json` / `client/src/App.jsx` 內顯示版號全部 1.20.0 → 1.20.1，CHANGELOG / FILELIST 標題拿掉 `-dev`
+- DB migration：v1.20.x 期間沒新增 migration、最後一條是 017_bug_reports_id_to_serial（docker entrypoint 自動套用、IR-447）
+- 本機 docker compose build --no-cache（IR-50 / IR-118）+ up 部署
+- Claude in Chrome 跑 7 頁實測（IR-058 部署後必須瀏覽器實測）
+
+**Backlog（不阻擋 v1.20.1 release）：**
+
+- 修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake：v1.20.1 已修主因（抽 localDateOnly helper 同源計算）、backlog 是加 mock-Date regression test 強制設台北跨午夜場景
+- 研究 recharts 3.x initial measurement `width(-1)` 警告抑制：cosmetic、不影響功能、但 console 有點吵
+- v1.20.2+ admin pages 開動（在 `openspec/changes/v1.20.2-admin-pages/`）
+- 用量分析頁未來若加「日期區間自訂」（後端已支援 `?start=&end=`）、評估 FilterBar 重塑成 preset + custom range 兩種模式跟 ProjectHistoryPage 共用
+- 補 db healthcheck + api `depends_on: service_healthy`（v1.20.1 docker-compose 修補 reviewer 提的、避免 db 慢起時 api 第一次 bootstrap 撞 ECONNREFUSED、現況 restart 會自動修復但會有 1-2 秒下線）
+- fresh deploy E2E smoke test（down -v → up → setup wizard → login → /api/me/report 接口通、整套自動化、對應 IR-027 邏輯卡控）
 
 ---
 
