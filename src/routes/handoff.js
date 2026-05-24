@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import { requireFields } from '../utils/require-fields.js';
 
 const router = Router();
 router.use(auth);
@@ -11,11 +12,10 @@ router.use(auth);
  */
 router.post('/', async (req, res) => {
   try {
-    const { project, from_tool, from_model, from_machine, content } = req.body;
+    const validation = requireFields(req.body, ['project', 'from_tool', 'from_model', 'content']);
+    if (validation) return res.status(400).json(validation);
 
-    if (!project || !from_tool || !from_model || !content) {
-      return res.status(400).json({ error: '必填欄位：project, from_tool, from_model, content' });
-    }
+    const { project, from_tool, from_model, from_machine, content } = req.body;
 
     const result = await query(
       `INSERT INTO handoffs (user_id, project, from_tool, from_model, from_machine, content, status)

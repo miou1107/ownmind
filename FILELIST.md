@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.19.19 修改（全站 requireFields helper：API 必填欄位錯誤訊息可偵錯化）
+
+新增檔：
+```
+src/utils/require-fields.js                                  — 共用必填欄位 helper、回 missing/received/expected、自動遮蔽敏感欄位
+tests/require-fields.test.js                                 — 18 個 unit test（含安全關鍵的敏感遮蔽 case）
+openspec/changes/archive/v1.19.19-require-fields-helper/proposal.md     — 提案：背景、設計、移植範圍、風險檢查點
+openspec/changes/archive/v1.19.19-require-fields-helper/tasks.md        — 任務清單與鐵律觸發 checklist
+```
+
+修改的既有檔：
+```
+src/routes/session.js                                        — POST / 改用 requireFields
+src/routes/admin.js                                          — POST /users 改用 requireFields
+src/routes/handoff.js                                        — POST / 改用 requireFields
+src/routes/memory.js                                         — POST / 與 POST /batch-sync-standard 改用 requireFields
+src/routes/secret.js                                         — POST / 改用 requireFields（value 自動遮蔽）
+src/routes/usage/pricing.js                                  — POST / 統一改用 requireFields
+package.json / package-lock.json                             — version 1.19.18 → 1.19.19
+README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version → v1.19.19
+CHANGELOG.md                                                 — v1.19.19 條目
+```
+
+---
+
 ## v1.19.18 修改（安全：npm audit fix 修補三個中度漏洞）
 
 修改的既有檔：

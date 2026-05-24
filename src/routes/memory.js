@@ -17,6 +17,7 @@ import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-v
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
+import { requireFields } from '../utils/require-fields.js';
 import {
   withReportSuggestion,
   isSuggestReportEligible,
@@ -893,11 +894,10 @@ router.get('/:id', async (req, res) => {
  */
 router.post('/', async (req, res) => {
   try {
-    const { type, title, content, code, tags, metadata, sync_token, rule_stats, is_test, tier } = req.body;
+    const validation = requireFields(req.body, ['type', 'title', 'content']);
+    if (validation) return res.status(400).json(validation);
 
-    if (!type || !title || !content) {
-      return res.status(400).json({ error: '必填欄位：type, title, content' });
-    }
+    const { type, title, content, code, tags, metadata, sync_token, rule_stats, is_test, tier } = req.body;
 
     if (!ALLOWED_MEMORY_TYPES.includes(type)) {
       return res.status(400).json({
@@ -1682,11 +1682,13 @@ async function autoConfirmPendingReview(userId) {
  */
 router.post('/batch-sync-standard', async (req, res) => {
   try {
-    const { parent_title, chunks, sync_token } = req.body;
-
-    if (!parent_title || !Array.isArray(chunks)) {
-      return res.status(400).json({ error: '必填欄位：parent_title, chunks (array)' });
+    const validation = requireFields(req.body, ['parent_title', 'chunks']);
+    if (validation) return res.status(400).json(validation);
+    if (!Array.isArray(req.body.chunks)) {
+      return res.status(400).json({ error: 'chunks 必須是陣列' });
     }
+
+    const { parent_title, chunks, sync_token } = req.body;
 
     // Sync token 驗證
     const tokenResult = await checkSyncToken(req.user.id, sync_token);

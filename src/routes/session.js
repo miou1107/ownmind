@@ -5,6 +5,7 @@ import logger from '../utils/logger.js';
 import { SESSION_RETENTION_DAYS } from '../constants.js';
 import { computePeriodRange, computeReportData } from '../utils/report.js';
 import { buildSessionRecentQuery } from '../lib/session-query.js';
+import { requireFields } from '../utils/require-fields.js';
 
 const router = Router();
 router.use(auth);
@@ -37,12 +38,11 @@ function sanitizeDetails(details) {
  */
 router.post('/', async (req, res) => {
   try {
+    const validation = requireFields(req.body, ['tool', 'model', 'summary']);
+    if (validation) return res.status(400).json(validation);
+
     const { session_id, tool, model, machine, details } = req.body;
     let { summary } = req.body;
-
-    if (!tool || !model || !summary) {
-      return res.status(400).json({ error: '必填欄位：tool, model, summary' });
-    }
 
     // 過濾敏感資訊
     summary = sanitize(summary);

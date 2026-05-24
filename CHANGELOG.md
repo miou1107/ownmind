@@ -1,5 +1,54 @@
 # OwnMind 更新紀錄
 
+## v1.19.19 — 全站 requireFields helper（API 必填欄位錯誤訊息可偵錯化）
+
+**背景：** v1.19.18 release 後想跑 `ownmind_log_session` 記錄、連續兩次收到：
+
+```
+API 400: 必填欄位：tool, model, summary
+```
+
+但實際傳了三個欄位。debug 後發現是 AI 寫 tool call 時把 `antml:parameter` 寫成 `parameter`（少了命名空間前綴）、MCP 解析時只認得第一個欄位、其他三個被丟掉、client 送出去缺欄位的 body、server 正確回 400。
+
+問題：**錯誤訊息無法 self-correct**。AI 看到「必填欄位：tool, model, summary」、會覺得「我明明三個都填了啊」、無從判斷是 args parse 階段就掉了、還是 transport 階段、還是 server 端的問題。
+
+**修法：** 新增 `src/utils/require-fields.js` 共用 helper、回的 400 payload 含：
+
+```json
+{
+  "error": "必填欄位缺少",
+  "missing": ["tool", "model"],
+  "expected": ["tool", "model", "summary"],
+  "received": { "summary": "test summary" }
+}
+```
+
+客戶端看到 `missing` + `received` 立刻能診斷「我傳了 summary、但 tool / model 不見了 → args 階段就掉了」。
+
+**移植範圍（7 個 endpoint）：**
+
+| 檔案 | 必填欄位 |
+|---|---|
+| `src/routes/session.js` | tool, model, summary |
+| `src/routes/admin.js` | email |
+| `src/routes/handoff.js` | project, from_tool, from_model, content |
+| `src/routes/memory.js`（POST /） | type, title, content |
+| `src/routes/memory.js`（POST /batch-sync-standard） | parent_title, chunks |
+| `src/routes/secret.js` | key, value（**value 自動遮蔽**） |
+| `src/routes/usage/pricing.js` | tool, model, input_per_1m, output_per_1m, effective_date（順手統一） |
+
+**安全：** `received` 中已知敏感 key（password / token / secret / api_key / value 等）自動遮蔽成 `<REDACTED>`、避免錯誤回應洩漏密鑰。
+
+**測試：** 18 個 unit test 含敏感欄位遮蔽（安全關鍵）、邊界值（null / undefined / 空陣列 / 數字 0 / false）。全套 1845 個測試綠。
+
+**Breaking change：** 無（既有客戶端只看 status code、不解析 error payload 內容）。
+
+**腿 B（MCP client schema pre-validation）已列 backlog**、未來若 generic 400 仍頻繁發生再動工。
+
+**對應規格：** `openspec/changes/archive/v1.19.19-require-fields-helper/`
+
+---
+
 ## v1.19.18 — 安全：修補三個中度依賴漏洞（npm audit fix）
 
 **背景：** 在 Antigravity 環境跑 `npm audit` 發現 3 個中度（moderate）相依套件漏洞：
