@@ -57,12 +57,14 @@ function lintFile(filePath) {
   const content = readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
 
-  // 移除註解（簡化版、不處理 nested）+ 移除 t('...') 內容
+  // 移除註解（簡化版、不處理 nested）+ 移除 t(...) 整個 call expression 內容
+  // 用簡化的括號 match：t( 開頭、第一個 ) 結尾、覆蓋大部分 case
+  // 跨行 t() 在現實 React 程式碼罕見、若出現可手動加 lint-zh-only-ignore 註解
   const stripped = lines.map((line) => {
     return line
       .replace(/\/\/.*$/, '')
       .replace(/\/\*.*?\*\//g, '')
-      .replace(/\bt\(['"]([^'"]*)['"][^)]*\)/g, ''); // 移除 t('key', ...) 內容
+      .replace(/\bt\([^)]*\)/g, ''); // 移除 t(...) 全部內容
   });
 
   stripped.forEach((line, idx) => {

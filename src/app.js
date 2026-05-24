@@ -64,6 +64,9 @@ app.use('/dashboard', express.static(join(__dirname, 'public', 'dashboard')));
 app.use('/dashboard', (req, res, next) => {
   // 只對 GET 請求做 SPA fallback、其他方法（POST 等）走原本錯誤處理
   if (req.method !== 'GET') return next();
+  // 排除帶副檔名的請求（asset/image/font 等）— 找不到就讓它正常 404、不要回 HTML
+  // 否則瀏覽器收到 HTML 當圖片解析、快取會壞
+  if (req.path.includes('.')) return next();
   const filePath = join(__dirname, 'public', 'dashboard', 'index.html');
   res.sendFile(filePath, (err) => {
     if (err) next();
