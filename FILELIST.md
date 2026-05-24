@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.20.1-dev 修改（步驟 1+2 + 步驟 3 開頭 + Preference 區完工 + Portal 3 頁 + 密鑰管理頁、剩 3.2 用量頁、開發中）
+## v1.20.1-dev 修改（步驟 1+2 + 步驟 3 完工：Portal 4 頁 + Preference 3 頁 + 登入頁 + 守門員、開發中）
 
 新增檔（共用元件 + 語系 context + API 客戶端 + 後端 PUT 測試 + 登入頁 + 守門員）：
 ```
@@ -24,6 +24,10 @@ client/src/pages/LoginPage.jsx                 — 登入頁、不包 Layout、h
 client/src/pages/Preference/SecurityPage.jsx   — 帳密修改頁、3 欄表單、trim 防空白、setTimeout cleanup、失敗清新密欄位
 client/src/pages/Preference/ProfilePage.jsx    — 個人資料頁、GET 載入 + PUT 存 name、role 白名單防破窗、toLocaleString 帶 BCP-47 locale
 client/src/pages/Preference/VaultPage.jsx      — 密鑰管理頁、list + 點顯示才解密 + 60 秒自動隱藏、新增/編輯/刪除（紅色 + confirm dialog IR-046）、useRef 存 timer 確保 unmount 清乾淨
+client/src/pages/Portal/UsagePage.jsx           — 用量分析主頁、三分頁標籤 + 時段切換條（7d/14d/30d/all）、useEffect 監聽 range refetch、tab 切換不重打
+client/src/pages/Portal/UsageMine.jsx           — 個人區塊、4 張 KPI 卡（場次/事件/最後活動/合規率）+ 專案/鐵律/版本/活動四表
+client/src/pages/Portal/UsageTeam.jsx           — 團隊區塊、成員表 + 3 張 recharts 圖（日趨勢 LineChart / 24h BarChart / 星期 BarChart）+ 事件類型 + 版本
+client/src/pages/Portal/UsageProjects.jsx       — 全團隊專案、list + 點 row 開 Modal 看貢獻成員（contributors）細項
 client/src/pages/Portal/ProjectHistoryPage.jsx — 專案歷程頁、GET /api/memory/type/project + Modal 看完整 content
 client/src/pages/Portal/HandoffsPage.jsx       — 工作交接頁、GET /handoff/pending + PUT /:id/accept、profile 失敗 disable accept 防空字串污染 DB
 client/src/pages/Portal/ReportsPage.jsx        — 回報紀錄頁、GET /bug-reports + GET /:id Modal 詳情、403 i18n mapping
@@ -34,12 +38,12 @@ tests/me-change-password-status.test.js        — 守住舊密錯誤必須回 4
 
 修改檔：
 ```
-client/src/App.jsx                             — 加 /login 路由、其他路由包 RequireAuth + RequireFreshPassword、useEffect listen auth-expired event 自動 navigate /login；加 renderPage helper、/preference/security 接 SecurityPage
+client/src/App.jsx                             — 加 /login 路由、其他路由包 RequireAuth + RequireFreshPassword、useEffect listen auth-expired event 自動 navigate /login；加 renderPage helper、/preference/security 接 SecurityPage、/portal/usage 接 UsagePage
 src/routes/me.js                               — 補 PUT /profile endpoint + POST /change-password 舊密錯誤改回 400（從 401）
 mcp/ownmind-log.js                             — 抽 export localDateOnly(date) helper、logEvent 改用、同源避免 test / prod 時區算法分歧
 tests/mcp-log-event-uuid.test.js               — import localDateOnly 用同源 local date 計算、修跨午夜 UTC vs 台北邊界 flake
 client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告
-client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 74 個、加 portal_analytics / preference / changelog / menu / login / security / profile 區）
+client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 74 個 → 加 usage.* ~40 個鍵 / tab / range / col / weekday / mine / team / projects 分群）
 openspec/changes/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
 CHANGELOG.md                                   — 加 v1.20.1-dev 步驟 3 開頭進度區塊
 FILELIST.md                                    — 本檔

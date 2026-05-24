@@ -74,7 +74,7 @@
 
 ---
 
-### 子任務 3.2：Portal `/portal/usage` 用量分析頁
+### 子任務 3.2：Portal `/portal/usage` 用量分析頁 ✅
 
 **Files：**
 - Create：`client/src/pages/Portal/UsagePage.jsx` — 主頁
@@ -88,11 +88,11 @@
 **API：** `GET /api/me/report?range=14d` 或 `?start=YYYY-MM-DD&end=YYYY-MM-DD`
 
 **Acceptance：**
-- [ ] 三個 tab：個人 / 團隊 / 專案
-- [ ] FilterBar 切換 range（7d/14d/30d/all）
-- [ ] Trend chart 用 recharts（日/時/週 三條）
-- [ ] Loading state、error state、empty state 都有處理
-- [ ] preview_start + preview_snapshot 確認頁面正常顯示、preview_console_logs 無 error
+- [x] 三個 tab：個人 / 團隊 / 專案
+- [x] 切換 range（7d/14d/30d/all）— 實作為獨立小元件「時段切換條」、不用 FilterBar（介面對不上）
+- [x] Trend chart 用 recharts（日折線 / 時段棒 / 星期棒）
+- [x] Loading state、error state、empty state 都有處理
+- [x] 瀏覽器手動 mock fetch 驗證三分頁 + Modal 流程、console.error 0 條
 
 ---
 

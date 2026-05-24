@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
 import VaultPage from './pages/Preference/VaultPage';
+import UsagePage from './pages/Portal/UsagePage';
 import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
 import ReportsPage from './pages/Portal/ReportsPage';
@@ -93,7 +94,7 @@ export default function App() {
 
       <Route path="/" element={<Navigate to="/portal/usage" replace />} />
 
-      <Route path="/portal/usage" element={renderPlaceholder('nav.usage')} />
+      <Route path="/portal/usage" element={renderPage(<UsagePage />)} />
       <Route path="/portal/project-history" element={renderPage(<ProjectHistoryPage />)} />
       <Route path="/portal/handoffs" element={renderPage(<HandoffsPage />)} />
       <Route path="/portal/reports" element={renderPage(<ReportsPage />)} />
