@@ -1,4 +1,4 @@
-# v1.20 — Critical 鐵律卡控 規格（GIVEN / WHEN / THEN）
+# v1.19.20+ — Critical 鐵律卡控 規格（GIVEN / WHEN / THEN）
 
 > BDD 三段式描述（前提 / 動作 / 預期結果），對應 OpenSpec CONVENTIONS.md。
 > 卡控落點、偵測邏輯、bypass 機制詳見 proposal §2、§3、§6。
@@ -11,7 +11,7 @@
 
 **GIVEN（前提）**
 
-- v1.20 pre-commit hook 已安裝（`~/.ownmind/hooks/git-pre-commit` symlink 到 git hook dir）
+- v1.19.20+ pre-commit hook 已安裝（`~/.ownmind/hooks/git-pre-commit` symlink 到 git hook dir）
 - 工作區有 `.env.production` 檔案
 - `OWNMIND_BYPASS` 環境變數**未設**
 
@@ -40,7 +40,7 @@ git commit -m "feat: add env"
 
 **GIVEN**
 
-- v1.20 pre-commit hook 已安裝
+- v1.19.20+ pre-commit hook 已安裝
 - staged diff 含明文 OpenAI API key（`sk-proj-1234...`）
 
 **WHEN**
@@ -155,12 +155,12 @@ git commit -F /tmp/msg
 
 - `package.json.version` = `1.20.0`
 - `src/SERVER_VERSION` = `1.19.0`（沒同步）
-- user 要打 tag `v1.20.0`
+- user 要打 tag `v1.19.20`
 
 **WHEN**
 
 ```bash
-git tag v1.20.0
+git tag v1.19.20
 ```
 
 **THEN**
@@ -171,7 +171,7 @@ git tag v1.20.0
   ❌ IR-031 違反: 三處版號不同步
     package.json:   1.20.0
     SERVER_VERSION: 1.19.0
-    tag:            v1.20.0
+    tag:            v1.19.20
     請先把 SERVER_VERSION 更新到 1.20.0
   ```
 - tag 未建立
@@ -250,7 +250,7 @@ git commit -m "feat: legit feature"
 
 **GIVEN**
 
-- v1.20 PreToolUse hook 已安裝（Claude Code `~/.claude/settings.json` 加 hook）
+- v1.19.20+ PreToolUse hook 已安裝（Claude Code `~/.claude/settings.json` 加 hook）
 - AI 沒對 `src/routes/auth.js` 呼叫過 Read
 
 **WHEN**
@@ -291,7 +291,7 @@ git commit -m "feat: legit feature"
 
 **GIVEN**
 
-- v1.20 PreToolUse hook 已安裝
+- v1.19.20+ PreToolUse hook 已安裝
 
 **WHEN**
 
@@ -314,7 +314,7 @@ git commit -m "feat: legit feature"
 
 **GIVEN**
 
-- v1.20 reply-lint hook 已升級為 exit 2 模式
+- v1.19.20+ reply-lint hook 已升級為 exit 2 模式
 - AI 草稿回應中英混雜比例 21.9%
 
 **WHEN**
@@ -481,7 +481,7 @@ OWNMIND_BYPASS=all git commit -m "emergency"
 
 ---
 
-### 場景 22：v1.19 既有用戶升級到 v1.20
+### 場景 22：v1.19 既有用戶升級到 v1.19.20+
 
 **GIVEN**
 
@@ -490,13 +490,13 @@ OWNMIND_BYPASS=all git commit -m "emergency"
 
 **WHEN**
 
-- SessionStart 偵測到 v1.20 已部署、本機 hook 還沒接上
+- SessionStart 偵測到 v1.19.20+ 已部署、本機 hook 還沒接上
 
 **THEN**
 
 - 顯示一次性引導訊息：
   ```
-  【OwnMind v1.20】Critical 卡控已上線、請跑：
+  【OwnMind v1.19.20+】Critical 卡控已上線、請跑：
     ownmind migrate-hooks
   把 pre-commit / PreToolUse / reply-lint hook 接上。
   ```
@@ -529,7 +529,7 @@ OWNMIND_BYPASS=all git commit -m "emergency"
 
 **GIVEN**
 
-- v1.20 跑了一週
+- v1.19.20+ 跑了一週
 
 **WHEN**
 

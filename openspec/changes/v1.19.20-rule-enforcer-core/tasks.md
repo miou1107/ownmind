@@ -1,4 +1,4 @@
-# Critical 鐵律卡控 — 漸進推 v1.19.6 → v1.19.10 任務清單
+# Critical 鐵律卡控 — 漸進推 v1.19.20 → v1.19.24 任務清單
 
 > 依 IR-003（TDD）：每個實作 task 前面先寫測試。
 > 依 IR-012（品管三步驟）：驗證 → 請評審 → 處理回饋。
@@ -6,9 +6,9 @@
 
 ---
 
-## v1.19.6 — 共用判定核心 + 放行通道 + 審計擴充（本批次）
+## v1.19.20 — 共用判定核心 + 放行通道 + 審計擴充（本批次）
 
-> 純基礎建設、不擋任何規則。目標是讓後續 v1.19.7~9 hook 層只需要組合。
+> 純基礎建設、不擋任何規則。目標是讓後續 v1.19.21~9 hook 層只需要組合。
 
 - [ ] **A1. 寫測試** `tests/rule-enforcer-core.test.js`（預估 12+ case）
   - `enforceRule(ruleCode, context, options)` 各分支
@@ -48,14 +48,14 @@
   - `superpowers:verification-before-completion`
   - `superpowers:requesting-code-review`
 - [ ] **E. 文件 + 版號同步**
-  - `README.md` Iron Rule Enforcement Engine 段加 v1.19.6 一段
+  - `README.md` Iron Rule Enforcement Engine 段加 v1.19.20 一段
   - `docs/README.zh-TW.md` / `docs/README.ja.md`（IR-032 三語系同步）
-  - `CHANGELOG.md` v1.19.6 條目
+  - `CHANGELOG.md` v1.19.20 條目
   - `FILELIST.md` 加 `hooks/lib/rule-enforcer.js`、`hooks/lib/bypass-handler.js`、新測試檔
   - 三處版號同步（IR-031）：`package.json` 1.19.5 → 1.19.6
-  - 預備打 tag `v1.19.6`
+  - 預備打 tag `v1.19.20`
 
-### v1.19.6 驗收
+### v1.19.20 驗收
 
 - [ ] `npm test` 0 failure
 - [ ] `enforceRule('IR-002', { stagedFiles: ['.env'] }, { rules: [...] })` 回傳 `action: 'block'`
@@ -65,7 +65,7 @@
 
 ---
 
-## v1.19.7 — IR-041 + IR-002 + reply-lint 切擋下（下批次）
+## v1.19.21 — IR-041 + IR-002 + reply-lint 切擋下（下批次）
 
 - [ ] 寫 IR-041 隱私 detector（身分證／信箱／電話樣式 + user prompt 例外）
 - [ ] 寫 IR-002 pre-commit 整合（用 v1.19.1 secret-detect + 新 rule-enforcer）
@@ -74,14 +74,14 @@
 
 ---
 
-## v1.19.8 — 指令樣式類 5 條
+## v1.19.22 — 指令樣式類 5 條
 
 - [ ] PreToolUse 整合 rule-enforcer
 - [ ] IR-023 / IR-018 / IR-044 / IR-046 / IR-043 detector
 
 ---
 
-## v1.19.9 — 靜態檢查收尾
+## v1.19.23 — 靜態檢查收尾
 
 - [ ] IR-009 git user.name 檢查
 - [ ] IR-024 commit-msg Co-Authored-By 檢查
@@ -89,7 +89,7 @@
 
 ---
 
-## v1.19.10 — 觀察期 + 調校
+## v1.19.24 — 觀察期 + 調校
 
 - [ ] 收集兩週誤判紀錄
 - [ ] 根據 bypass audit log 調 detector 規則
@@ -112,7 +112,7 @@
 
 ## 風險檢查點（每階段結束時 review）
 
-- [ ] v1.19.6 結束：跑一次 dogfood、用 rule-enforcer 自己 commit v1.19.6 程式碼、確認沒卡死
-- [ ] v1.19.7 結束：跑一次 reply-lint 硬擋、確認 AI 能正確重做
-- [ ] v1.19.8 結束：在另一台機器跑 migrate-hooks、驗證升級流程
-- [ ] v1.19.10 結束：發版前再跑一次完整 e2e、自己違反每條 critical、確認都被擋
+- [ ] v1.19.20 結束：跑一次 dogfood、用 rule-enforcer 自己 commit v1.19.20 程式碼、確認沒卡死
+- [ ] v1.19.21 結束：跑一次 reply-lint 硬擋、確認 AI 能正確重做
+- [ ] v1.19.22 結束：在另一台機器跑 migrate-hooks、驗證升級流程
+- [ ] v1.19.24 結束：發版前再跑一次完整 e2e、自己違反每條 critical、確認都被擋
