@@ -9,21 +9,23 @@
 - `shared/verification.js` 新增 `command_matches` / `command_not_matches` 兩個 handler、能對 Bash 指令字串做 regex 樣式比對
 - `hooks/ownmind-iron-rule-check.js` 升級：detect 不到 trigger 時 fallback 成 `'command'`、讓 command-based 鐵律能跑；context 加 command 欄位
 
-**4 條鐵律升 critical + 加 verification（自動卡控）：**
+**4 種指令樣式類別升 critical + 加 verification（自動卡控）：**
 
-| 鐵律 | 卡控樣式 | 行為 |
+| 類別 | 卡控樣式 | 行為 |
 |---|---|---|
-| **IR-018** Docker build 要加 --no-cache | when 含 `docker(\| compose) build` → then 必須含 `--no-cache` | 違反直接擋下 |
-| **IR-023** 部署用 docker compose build、不用 docker build | when 含 `\bdocker build\b` → then 必須含 `compose` | 違反直接擋下 |
-| **IR-043** Windows AI ssh 不能用 sshpass | 指令不能含 `\bsshpass\b` | 違反直接擋下 |
-| **IR-046** 長指令背景跑必須加 nohup | when 含背景 `&` + 長指令樣式（docker build / npm install 等）→ then 必須含 `nohup` | 違反直接擋下 |
+| Docker 編譯快取 | when 含 `docker(\| compose) build` → then 必須含 `--no-cache` | 違反直接擋下 |
+| Docker Compose 部署一致性 | when 含 `\bdocker build\b` → then 必須含 `compose` | 違反直接擋下 |
+| Windows SSH 工具選擇 | 指令不能含 `\bsshpass\b` | 違反直接擋下 |
+| 長指令背景保護 | when 含背景 `&` + 長指令樣式（docker build / npm install 等）→ then 必須含 `nohup` | 違反直接擋下 |
 
-**為什麼 IR-044（paramiko sudo 不能 stdin.write 密碼）跳過：** 是寫 Python 程式碼時的卡控、不是 Bash 指令、需要 PreToolUse 的 Edit/Write matcher hook（另一種 hook 類型）、列入 v1.19.21+。
+具體對應到的個人鐵律編號是使用者私人記憶、不在此公開文件中引用。實際卡控規則透過 `ownmind_update` API 對使用者自訂規則加 metadata、不寫死在程式碼。
+
+**Python SSH 密碼處理規則為何跳過：** 是寫 Python 程式碼時的卡控、不是 Bash 指令、需要 PreToolUse 的 Edit/Write matcher hook（另一種 hook 類型）、列入 v1.19.21+。
 
 **Bypass 機制（前批次 v1.19.6 已建立）：**
 ```bash
-OWNMIND_BYPASS=IR-018 docker build .   # 單條放行
-OWNMIND_BYPASS=all docker build .      # 全部放行
+OWNMIND_BYPASS=<rule_code> docker build .   # 單條放行（代號從 user 個人記憶查）
+OWNMIND_BYPASS=all docker build .            # 全部放行
 ```
 每次放行寫 audit log。
 
