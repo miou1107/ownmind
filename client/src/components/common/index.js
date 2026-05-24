@@ -8,3 +8,5 @@ export { default as Modal } from './Modal';
 export { default as RoleBadge } from './RoleBadge';
 export { default as StatCard } from './StatCard';
 export { default as Layout } from './Layout';
+export { default as RequireAuth } from './RequireAuth';
+export { default as RequireFreshPassword } from './RequireFreshPassword';

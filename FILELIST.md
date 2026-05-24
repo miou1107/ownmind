@@ -1,8 +1,8 @@
 # OwnMind 檔案結構
 
-## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2、開發中）
+## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2 + 步驟 3 開頭 3.0/3.1/3.9/3.10、開發中）
 
-新增檔（前端共用元件 + 語系切換 context）：
+新增檔（共用元件 + 語系 context + API 客戶端 + 後端 PUT 測試 + 登入頁 + 守門員）：
 ```
 client/src/components/common/Sidebar.jsx       — 側邊欄、4 區段 + 13 條導航、按角色顯示、手風琴折疊
 client/src/components/common/TopBar.jsx        — 上方列、標題 + 語系切換 + 角色模擬器 + 頭像選單
@@ -12,16 +12,26 @@ client/src/components/common/Modal.jsx         — 通用彈窗、ESC + 點背�
 client/src/components/common/RoleBadge.jsx     — 角色標籤、3 種角色配色
 client/src/components/common/StatCard.jsx      — 統計卡、KPI 顯示用
 client/src/components/common/Layout.jsx        — 頁面包裝、所有路由共用
-client/src/components/common/index.js          — barrel export
+client/src/components/common/RequireAuth.jsx   — 路由守門員、沒 api_key 自動導 /login 並記下原本想去的路徑
+client/src/components/common/RequireFreshPassword.jsx — 強制改密碼守門員、must_change_password=true 時強制導 /preference/security（IR-122 卡控）
+client/src/components/common/index.js          — barrel export（含新增 RequireAuth）
 client/src/i18n/LocaleContext.jsx              — LocaleProvider + useLocale + useT hook、含 localStorage 持久化
+client/src/api/auth.js                         — localStorage 管理 api_key + must_change_password（get/set/clear，含隱私模式 try/catch）
+client/src/api/client.js                       — fetch 封裝、自動帶 Bearer header、統一回 { ok, data, error, status }、401 自清 token + 廣播 auth-expired event（含 1s debounce 避免 burst 多次 dispatch）
+client/src/api/index.js                        — barrel export
+client/src/api/README.md                       — 用法 + 設計取捨
+client/src/pages/LoginPage.jsx                 — 登入頁、不包 Layout、handle must_change_password redirect + 已登入導回原本想去的頁
+tests/me-profile-put.test.js                   — PUT /api/me/profile 11 條 source-match 測試（含 trim / whitelist / rowCount=0 / IR-038）
 ```
 
 修改檔：
 ```
-client/src/App.jsx                             — 拿掉 useState('zh') 改用 LocaleProvider、Layout 包所有路由
+client/src/App.jsx                             — 加 /login 路由、其他路由包 RequireAuth + RequireFreshPassword、useEffect listen auth-expired event 自動 navigate /login
 client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告
-client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 36 個、加 portal_analytics / preference / changelog / menu 區）
-CHANGELOG.md                                   — 加 v1.20.1-dev 中段進度區塊
+client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 45 個、加 portal_analytics / preference / changelog / menu / login 區）
+src/routes/me.js                               — 補 PUT /profile endpoint（只允許改 name、email/role 不收、rowCount=0 回 404）
+openspec/changes/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
+CHANGELOG.md                                   — 加 v1.20.1-dev 步驟 3 開頭進度區塊
 FILELIST.md                                    — 本檔
 ```
 

@@ -1,0 +1,102 @@
+// 統一 fetch 封裝 — 所有頁面對後端的呼叫都走這層
+//
+// 設計目標：
+//   1. 自動帶 Bearer header（從 localStorage 拿 api_key）
+//   2. 統一回傳格式 { ok, data, error, status } — caller 不用自己 try/catch
+//   3. 401 自動清掉 api_key，但不直接 redirect（交給 RequireAuth 處理）
+//   4. 白名單路徑（login）不帶 Bearer
+//
+// 用法：
+//   const { ok, data, error } = await apiGet('/api/me/profile');
+//   if (!ok) toast.error(error);
+//
+// 為什麼不用 axios：依賴最少化、fetch 已夠用、Bundle 小
+
+import { getApiKey, clearApiKey } from './auth.js';
+
+// 不需 Bearer header 的端點（公開）
+const NO_AUTH_PATHS = ['/api/me/login'];
+
+// 401 burst debounce：同時 5 個 in-flight requests 都 401 時、只 dispatch 一次 event
+// 避免 React DevTools / Sentry 冒 noise + 多次 navigate 重跑
+// 1 秒 window 內第二次以後的 401 不再 dispatch（仍會清 token 跟回 unauthorized）
+let authExpiredDispatched = false;
+
+function needsAuth(path) {
+  return !NO_AUTH_PATHS.includes(path);
+}
+
+async function request(method, path, body, opts = {}) {
+  const headers = {
+    Accept: 'application/json',
+    ...(opts.headers || {}),
+  };
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+  }
+  if (needsAuth(path)) {
+    const key = getApiKey();
+    if (key) headers.Authorization = `Bearer ${key}`;
+  }
+
+  let resp;
+  try {
+    resp = await fetch(path, {
+      method,
+      headers,
+      body: body === undefined || body === null ? undefined : JSON.stringify(body),
+      credentials: 'same-origin',
+    });
+  } catch (err) {
+    // 網路掛掉、CORS 擋、URL 錯 — 都到這
+    return { ok: false, error: err.message || 'network_error', status: 0 };
+  }
+
+  // 401 — token 失效，清掉 localStorage 並廣播 event
+  // App.jsx 監聽 'ownmind:auth-expired' 跑 navigate('/login')、保留 SPA 體驗
+  // 不在 client.js 直接 window.location 硬跳：保留純函數性、方便單元測試
+  if (resp.status === 401) {
+    clearApiKey();
+    if (typeof window !== 'undefined' && !authExpiredDispatched) {
+      authExpiredDispatched = true;
+      window.dispatchEvent(new CustomEvent('ownmind:auth-expired'));
+      // 1 秒後 reset flag、允許後續真實過期再次觸發
+      setTimeout(() => { authExpiredDispatched = false; }, 1000);
+    }
+    return { ok: false, error: 'unauthorized', status: 401 };
+  }
+
+  // 嘗試 parse JSON；後端錯誤回應通常是 { error: '...' }
+  let payload = null;
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    try {
+      payload = await resp.json();
+    } catch {
+      payload = null;
+    }
+  }
+
+  if (!resp.ok) {
+    const error = (payload && payload.error) || resp.statusText || `http_${resp.status}`;
+    return { ok: false, error, status: resp.status, data: payload };
+  }
+
+  return { ok: true, data: payload, status: resp.status };
+}
+
+export function apiGet(path, opts) {
+  return request('GET', path, null, opts);
+}
+
+export function apiPost(path, body, opts) {
+  return request('POST', path, body, opts);
+}
+
+export function apiPut(path, body, opts) {
+  return request('PUT', path, body, opts);
+}
+
+export function apiDelete(path, opts) {
+  return request('DELETE', path, null, opts);
+}

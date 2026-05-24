@@ -48,5 +48,15 @@
   "changelog.empty": "目前尚無版本紀錄",
 
   "placeholder.coming_soon": "此頁面正在重構中、即將於後續階段完工",
-  "error.not_found": "找不到此頁面"
+  "error.not_found": "找不到此頁面",
+
+  "login.title": "登入 OwnMind",
+  "login.subtitle": "用你的 Email 與密碼登入控制中心",
+  "login.email_label": "Email",
+  "login.email_placeholder": "你的 Email",
+  "login.password_label": "密碼",
+  "login.password_placeholder": "輸入密碼",
+  "login.submit": "登入",
+  "login.submitting": "登入中…",
+  "login.error_generic": "登入失敗、請稍後再試"
 }
