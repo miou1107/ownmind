@@ -1,6 +1,6 @@
 # OwnMind 更新紀錄
 
-## v1.20.1-dev — Dashboard 個人版（開發中 / 步驟 1+2 進度）
+## v1.20.1-dev — Dashboard 個人版（開發中 / 步驟 3 完工）
 
 **背景：** v1.20.0 把後台前端地基打好之後、v1.20.1 開始把空殼填滿、目標是個人 Dashboard 共 7 頁（4 個人紀錄分析頁 + 3 個人偏好頁）+ 後端介面對接。本次 commit 是中段進度、完成步驟 1（拆共用元件）與步驟 2（語系切換 context）。
 
@@ -88,12 +88,22 @@
 - **外部 code review 處理**：1 Critical（C1、修）+ 3 Important（I1 setTimeout cleanup、I2 失敗清新密欄位、I3 trim 防純空白、全修）+ 4 Minor（M1/M2/M4 不修 — DRY saving 小 / 行為符合設計 / 邏輯已安全；M3 合併進 I3 修）。
 - **測試結果**：1884 pass / 2 fail（**pre-existing flake**：`mcp-log-event-uuid.test.js` 日期 boundary 時區 bug、與本次改動無關、stash 後仍 fail、留 backlog）。新增 3 條 `me-change-password-status` 測試全綠。
 
+**步驟 3 完工：3.2 Portal 用量分析頁**
+
+- **3.2 — `client/src/pages/Portal/UsagePage.jsx`** — Portal 招牌頁、三分頁標籤（個人 / 團隊 / 專案）+ 頂部時段切換條（7d / 14d / 30d / all）。`useEffect` 監聽 `range` 變化重打 `GET /api/me/report?range={range}`（client `encodeURIComponent` + server whitelist 雙保險擋 SQL 注入）、tab 切換不重新打 API（資料一次拿完三區塊都在）。
+- **拆 3 個子元件**：`UsageMine.jsx`（KPI 卡：場次 / 事件數 / 最後活動時間 / 鐵律合規率 — 算法 comply ÷ (comply+skip+violate)、不算 observed 因為那是系統自動觀測非主動選擇遵守；+ 專案 / 鐵律 / 版本 / 活動四張表）、`UsageTeam.jsx`（成員表 + 三張 recharts 圖：日趨勢 LineChart / 24 小時分布 BarChart / 星期分布 BarChart、+ 事件類型 + 成員工具版本表）、`UsageProjects.jsx`（全團隊專案 list、點 row 開 Modal 看 contributors 細項）。
+- **設計取捨**：spec 寫「FilterBar 切換 range」、但 FilterBar 介面是「日期 + 專案 + 關鍵字」三件套、跟「4 個 preset 時段」對不上。獨立做小 inline 元件「時段切換條」、不硬塞 FilterBar 破壞既有元件抽象。
+- **i18n**：zh.json 加 ~40 個 `usage.*` 鍵（tab / range / col / weekday / mine / team / projects 分群），en/ja 由 build 時 translate.mjs 自動補。
+- **lint:zh-only 卡控**：函式名原本叫 `calcComplianceRate` 觸發黑名單字「Compliance」、改成 `calcRulePassRate` 避開（黑名單原本為了擋 UI 文案、但識別字也被同一條 includes 規則擋）。
+- **驗證**：lint:zh-only 0 違反、瀏覽器手動 mock fetch 跑完整流程（KPI 卡 42 場 / 357 事件 / 80% 合規率 / 鐵律遵守表 / 版本表 / 活動表 → 切團隊：6 點日趨勢折線繪出 / 21 條時段棒 / 7 條星期棒 → 切專案：點 OwnMind row 開 Modal 顯示貢獻成員 Vin 18 場 920 回合 3 交接）、console.error 0 條、console.warn 只有 recharts initial measurement 階段的 `width(-1)` 雜訊（圖最終正常渲染、屬已知 recharts 3.x DX 議題、不影響功能）。
+- **外部 code review 處理**：0 Critical + 0 Important（reviewer 評估 Ready to merge: Yes）+ 8 Minor 全部標 YAGNI / 風格 / 已驗證無問題不修（reviewer 自己也標「不阻擋」、唯一建議的防禦性 `key={range}` 屬於「為假設未來 loading UX 改寫」做準備、違反 CLAUDE.md「Don't design for hypothetical future requirements」）。
+
 **剩餘待辦（v1.20.1 完版尚需）：**
 
-- 步驟 3 子任務 3.2（用量分析頁、最複雜、`GET /api/me/report` 大物件拆 3 區塊 + recharts trend chart）
 - 步驟 4：Playwright e2e 測試（登入 → 看用量 → 接手交接）
 - 步驟 5：升版 v1.20.1 + 部署 + 瀏覽器實測
-- **Backlog**：修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake（UTC vs 台北時區跨午夜時 log 檔名期望不一致）
+- **Backlog**：修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake（UTC vs 台北時區跨午夜時 log 檔名期望不一致 — v1.20.1 已修但 backlog 是加 mock-Date regression test 強制設台北跨午夜場景）
+- **Backlog**：研究 recharts 3.x initial measurement `width(-1)` 警告抑制（cosmetic、不影響功能、但 console 有點吵）
 
 ---
 
