@@ -20,7 +20,11 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - ownmind_data:/var/lib/postgresql/data
-      - ./db/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql
+      # 註：001_init.sql 不再走 docker-entrypoint-initdb.d、改由 src/utils/run-migrations.js
+      # 統一管所有 db/*.sql（v1.19.2 後的設計、跟 002~017 一致）。
+      # 既有 prod volume 早已套用 001、不受影響；fresh deploy 由 migration runner 從 zero state 補套。
+      # ⚠️ 禁止把 docker-entrypoint-initdb.d 那條 mount 加回來 — 會造成 001 被 postgres
+      #    init + migration runner 雙重執行、users 表重建衝突、API 容器無限 restart。
     expose:
       - "5432"
 
