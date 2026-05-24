@@ -4,6 +4,7 @@ import { useT } from './i18n/LocaleContext';
 import { Layout, RequireAuth, RequireFreshPassword } from './components/common';
 import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
+import ProfilePage from './pages/Preference/ProfilePage';
 
 // 階段 1 空殼 — 各頁面在階段 3（v1.20.1 步驟 3）拆出實作
 function PlaceholderPage({ titleKey }) {
@@ -93,7 +94,7 @@ export default function App() {
       <Route path="/portal/handoffs" element={renderPlaceholder('nav.handoffs')} />
       <Route path="/portal/reports" element={renderPlaceholder('nav.reports')} />
 
-      <Route path="/preference/profile" element={renderPlaceholder('nav.profile')} />
+      <Route path="/preference/profile" element={renderPage(<ProfilePage />)} />
       <Route path="/preference/security" element={renderPage(<SecurityPage />)} />
       <Route path="/preference/vault" element={renderPlaceholder('nav.vault')} />
 
