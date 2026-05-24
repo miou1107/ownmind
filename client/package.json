@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run lint:zh-only && npm run translate && vite build",
-    "build:no-translate": "npm run lint:zh-only && vite build",
+    "build:no-translate": "vite build",
     "preview": "vite preview",
     "translate": "node src/scripts/translate.mjs",
     "lint:zh-only": "node ../scripts/lint-zh-only.js src"
