@@ -11,6 +11,8 @@
   "nav.config": "系統配置與計價",
   "nav.broadcast": "廣播管理",
   "nav.audit": "全域稽核",
+  "nav.section.portal_analytics": "個人紀錄分析",
+  "nav.section.preference": "個人偏好管理",
   "nav.section.personal": "個人版塊",
   "nav.section.admin": "管理員專區",
   "nav.section.super": "超級管理員設定",
@@ -21,17 +23,29 @@
   "header.role.user": "一般使用者",
   "header.role.admin": "管理員",
   "header.role.super_admin": "超級管理員",
+  "header.guest": "訪客",
+
+  "menu.profile": "個人資料",
+  "menu.preferences": "偏好設定",
+  "menu.logout": "登出",
 
   "filter.title": "紀錄與數據篩選",
   "filter.subtitle": "篩選特定的提報日期、活躍專案或搜尋關鍵字進行即時分析",
   "filter.all_projects": "所有專案",
-  "filter.keyword_placeholder": "搜尋關鍵字...",
+  "filter.keyword_placeholder": "搜尋關鍵字",
+  "filter.clear": "清除篩選",
 
   "kpi.compliance_rate": "鐵律合規率",
   "kpi.sessions": "AI 互動場次",
   "kpi.sessions_unit": "場對話",
   "kpi.api_cost": "估算等值 API 額度",
   "kpi.token_traffic": "Token 流量分析",
+
+  "footer.changelog": "系統版本更新紀錄",
+  "footer.copyright": "OwnMind 開源計畫",
+
+  "changelog.title": "版本更新紀錄",
+  "changelog.empty": "目前尚無版本紀錄",
 
   "placeholder.coming_soon": "此頁面正在重構中、即將於後續階段完工",
   "error.not_found": "找不到此頁面"

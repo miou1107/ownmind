@@ -1,5 +1,52 @@
 # OwnMind 更新紀錄
 
+## v1.20.1-dev — Dashboard 個人版（開發中 / 步驟 1+2 進度）
+
+**背景：** v1.20.0 把後台前端地基打好之後、v1.20.1 開始把空殼填滿、目標是個人 Dashboard 共 7 頁（4 個人紀錄分析頁 + 3 個人偏好頁）+ 後端介面對接。本次 commit 是中段進度、完成步驟 1（拆共用元件）與步驟 2（語系切換 context）。
+
+**步驟 1 — 7 個共用元件拆出（client/src/components/common/）：**
+
+- `Sidebar.jsx`：側邊欄、4 區段（個人紀錄分析 / 個人偏好管理 / 管理員專區 / 超管設定）、按角色顯示、手風琴可折疊、13 條導航
+- `TopBar.jsx`：上方列、頁面標題 / 語系切換按鈕 / 角色模擬器 / 頭像下拉選單
+- `FilterBar.jsx`：篩選列、日期 + 專案 + 關鍵字 + 清除按鈕（受控元件）
+- `Footer.jsx`：頁尾、版本號 + 版本紀錄按鈕（毛玻璃彈窗呈現）
+- `Modal.jsx`：通用彈窗、ESC 與點背景關閉、3 種尺寸、可選毛玻璃模式
+- `RoleBadge.jsx`：角色標籤、3 種角色配色（user 灰 / admin 靛 / super_admin 琥珀）
+- `StatCard.jsx`：統計卡、KPI 顯示用（標題 + 數值 + 單位 + 趨勢 + icon）
+- `Layout.jsx`：頁面包裝、Sidebar + TopBar + 內容 + Footer 統一組合、所有路由套同一個
+- `index.js`：barrel export、方便 `import { Sidebar, TopBar } from '@/components/common'`
+
+設計參考來自 Gemini Antigravity 原型的視覺風格與文案、但重寫不照搬程式碼。
+
+**步驟 2 — i18n 語系切換 context：**
+
+- `client/src/i18n/LocaleContext.jsx`：`LocaleProvider` + `useLocale` + `useT` hook
+- `localStorage` 持久化（重整保留語系選擇、key=`ownmind.locale`）
+- `html` lang 屬性自動同步（無障礙、螢幕閱讀器辨識）
+- `document.title` 跟著 locale 動態更新（main.jsx 內的 `TitleSync` 元件）
+- 6 個元件全部改用 `useT()`、locale prop 全部拿掉、不再層層傳遞
+- 解掉 v1.20.0 reviewer 標 important 留下的 TODO
+
+**順手修 v1.20.0 留下的小問題：**
+
+- `main.jsx` createRoot 加 window cache、修掉 Vite HMR 重跑時「createRoot called twice」警告（連帶觸發的 Invalid hook call 也一起消失）
+
+**步驟 1+2 後 bundle 大小：**
+
+- JS：235KB → 253KB（gzip：75KB → 81KB）
+- 多出 6KB 來自 7 個元件 + LocaleContext + 額外 lucide icons
+- 編譯時間：203ms → 323ms
+
+**剩餘待辦（v1.20.1 完版尚需）：**
+
+- 步驟 3：實作 7 個頁面（替換目前的空殼 PlaceholderPage）
+- 步驟 4：建 `client/src/api/` 統一呼叫模組
+- 步驟 5：對應後端介面補缺（grep `src/routes/` 看缺什麼）
+- 步驟 6：端到端測試（登入 → 看用量 → 接手交接）
+- 步驟 7：翻第一批繁中字典 + 升版 v1.20.1 + 部署
+
+---
+
 ## v1.20.0 — 後台前端基礎建設（藍綠並存「藍」打地基）
 
 **背景：** 規劃 v1.20 系列「後台前端整套重構」、本版聚焦基礎建設、為後續 v1.20.1~4 功能版本建好地基。新版前端 SPA（單頁應用、Single Page Application）進 `/dashboard/` 路徑、舊版 `/admin/` + `/me/` 完全不動（藍綠並存策略、即新舊並存到 v1.20.4 才退役）。
