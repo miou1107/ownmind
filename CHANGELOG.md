@@ -52,6 +52,14 @@
 - **3.9 + 3.10 區段**：Important 3 條全處理（修 2 條：must_change_password 防繞過、401 burst debounce；push back 1 條 — error msg i18n key map，因後端 login 端點本來就回繁中文案、不是 machine code）、Minor 6 條（修 2 條：self-loop guard、form name；其他屬於 refactor / 未實證 / 超出 scope）。
 - **Important #1（must_change_password 卡控）後續實作**：新增 `client/src/components/common/RequireFreshPassword.jsx` 守門員、`auth.js` 擴展 must_change_password 三個 API（get / set / clear），App.jsx 把所有受保護路由再多包一層 `RequireFreshPassword`。瀏覽器手動驗：登入時 must_change_password=true 訪問 `/portal/usage` 自動導 `/preference/security`、清掉 flag 後正常通行。
 
+**步驟 3 收尾：3.8 Preference 密鑰管理頁**
+
+- **3.8 — `client/src/pages/Preference/VaultPage.jsx`** — list 所有 secret key（不含 value、IR-002 不洩漏明文）、點「顯示密鑰」才 GET `/:key` 解密 value、60 秒後自動隱藏（防離席被肩窺）。新增 / 編輯 / 刪除走既有共用 Modal 元件。刪除走 confirm dialog + 紅色按鈕 + ml-4 距離（IR-046）、編輯模式 key 鎖定（避免改 unique identifier）、value 不預填（防誤覆蓋）。
+- **外部 code review 處理**：1 Critical（unmount cleanup useEffect deps `[]` 拿不到後加的 timer、改用 `useRef` 存 timer ids、unmount 從 ref 清乾淨）+ 3 Important（POST upsert toast 永遠 success_create 誤導、改成比對 items 判斷實際是新增還是更新 / `rowError` 跟 `rowBusy` stale entries 不清、delete 時一併清 / edit 模式 description 無條件覆蓋會誤清原值、改成 oldDescription 比對只送有改的欄位、都沒改直接關 modal noop submit）+ 1 Minor（按鈕加 `title` 屬性給原生 tooltip、trackpad 無 hover 友善）；其他 Minor 不修（C2 reviewer 自己撤回 / Express `%2F` 風險 user 不會輸入 / 60 秒 countdown UI nice-to-have / 編輯重開殘留不是 bug / DevTools 可見是 trade-off）。
+- **驗證**：lint 0 違反、npm test 1886 pass / 0 fail、瀏覽器手動 mock fetch 跑完整 CRUD 流程（list 2 個 → 點顯示密鑰拿到 `sk-xxxx-FAKE-1234` → 點刪除開 confirm「確認刪除」→ 點紅色「確定刪除」→ list 剩 1 個 + toast「密鑰已刪除」）。
+
+---
+
 **Hotfix：mcp-log-event-uuid 跨時區午夜邊界 flake**
 
 `mcp/ownmind-log.js` 的 `logEvent` 寫檔用 local time（`getFullYear/Month/Date`）、但 `tests/mcp-log-event-uuid.test.js` 用 `new Date().toISOString().slice(0, 10)`（UTC）計算「今天」。跨午夜 UTC vs 台北 8 小時差時、test 找不到 logEvent 寫的檔（找 `2026-05-24.jsonl`、實際檔 `2026-05-25.jsonl`）→ ENOENT、2 條 test fail。
@@ -82,7 +90,7 @@
 
 **剩餘待辦（v1.20.1 完版尚需）：**
 
-- 步驟 3 子任務 3.2（用量分析頁、最複雜）+ 3.8（密鑰管理頁）
+- 步驟 3 子任務 3.2（用量分析頁、最複雜、`GET /api/me/report` 大物件拆 3 區塊 + recharts trend chart）
 - 步驟 4：Playwright e2e 測試（登入 → 看用量 → 接手交接）
 - 步驟 5：升版 v1.20.1 + 部署 + 瀏覽器實測
 - **Backlog**：修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake（UTC vs 台北時區跨午夜時 log 檔名期望不一致）
