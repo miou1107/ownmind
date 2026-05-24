@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.19.16 — hotfix：admin 後台登入頁 SyntaxError、所有人登不進去
+
+**P0 緊急修補。** v1.19.14/15 部署後 Vin 從瀏覽器打開 `https://kkvin.com/ownmind/admin/`、輸入帳密按登入沒反應。打開 DevTools 看 console 顯示：
+
+```
+Uncaught SyntaxError: Identifier 'cached' has already been declared (admin/:1948)
+Uncaught ReferenceError: login is not defined at HTMLButtonElement.onclick
+```
+
+**根因：** `src/public/index.html` 的 `iruUpdateTier` 函式內 `const cached` 出現兩次（1926 + 1948 行）、是 JavaScript 規範明確的 SyntaxError。整個 `<script>` tag 解析失敗 → 所有函式（含 `login`）都拿不到 → 按登入按鈕沒反應。
+
+**Bug 來源：** v1.19.0 release（commit 5ffc646、鐵律 tier 升級助手）就引入。瀏覽器快取讓部分使用者一直沒爆、直到 v1.19.14 / v1.19.15 部署後 reload 才被發現。
+
+**修法：** 第 1948 行的 `const cached` 砍掉、重用第 1926 行已找到的 `cached` 變數（async function 同 scope 看得到）。
+
+**為什麼之前自動測試沒抓到：** OwnMind 既有測試都是純後端、`src/public/index.html` 沒測試覆蓋。本版加 `tests/admin-html-no-duplicate-const.test.js` 用文字比對防止這類問題復發。
+
+---
+
 ## v1.19.15 — bug_reports 系列 id 從 BIGSERIAL 改 SERIAL
 
 **背景：** v1.19.14 部署後跑 smoke test 發現 `POST /api/bug-reports` 回應的 `id` 是字串 `"1"`、跟既有 `memories` 表（回數字 `3`）不一致。原因：node-pg 套件預設把 PostgreSQL 的 bigint（型別 oid 20）回字串、避免超過 JS Number 安全整數上限（2^53 - 1）失精；而 SERIAL（int4、oid 23）則自動轉成 Number。
