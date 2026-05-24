@@ -1,5 +1,19 @@
 # OwnMind 更新紀錄
 
+## v1.19.15 — bug_reports 系列 id 從 BIGSERIAL 改 SERIAL
+
+**背景：** v1.19.14 部署後跑 smoke test 發現 `POST /api/bug-reports` 回應的 `id` 是字串 `"1"`、跟既有 `memories` 表（回數字 `3`）不一致。原因：node-pg 套件預設把 PostgreSQL 的 bigint（型別 oid 20）回字串、避免超過 JS Number 安全整數上限（2^53 - 1）失精；而 SERIAL（int4、oid 23）則自動轉成 Number。
+
+**修法：** migration 017 把 5 張表的 `id` 從 BIGSERIAL 改 SERIAL（21 億上限、bug_reports 表絕對夠用），順便把 `bug_report_spam_suspects.report_ids` 從 `BIGINT[]` 改 `INT[]`。
+
+**為什麼不全域改 node-pg type parser**：會影響既有 `token_usage` 表的 BIGINT 計數欄位（token 數累積可能超過 Number 安全範圍、需要保留字串）。改 schema 比改 parser 風險小、影響面小。
+
+**安全保證**：migration 017 開頭加 sanity check、五張表任一非空就 `RAISE EXCEPTION` 拒絕跑（避免在 prod 已有資料時毀資料）。剛 release v1.19.14 後跑了 smoke test 並清空、這時點搭 migration 017 是安全的。
+
+**對應規格**：`openspec/changes/v1.19.15-bug-reports-id-serial/`
+
+---
+
 ## v1.19.14 — 錯誤回報工具（使用者 ⇄ 開發者雙向通知）
 
 **背景：** OwnMind 倉庫公開後、需要正式管道讓使用者主動回報「OwnMind 本身的問題」（例如寫入被誤擋、出錯、設計不合理）。既有的 `ownmind_save type=project` 跟 `ownmind_report_compliance` 語意不對、無法擴展。
