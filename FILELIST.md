@@ -19,13 +19,14 @@ README.md / docs/README.zh-TW.md / docs/README.ja.md         — Current version
 CHANGELOG.md                                                 — v1.19.20 條目
 ```
 
-雲端鐵律記憶更新（透過 ownmind_update API）：
+雲端使用者自訂規則更新（透過 ownmind_update API、4 條規則升 critical + 加 verification、不寫死在程式碼）：
 ```
-IR-018 (id=50)  — tier=critical、加 verification（when docker build → then --no-cache）
-IR-023 (id=118) — tier=critical、加 verification（when docker build → then compose）
-IR-043 (id=426) — tier=critical、加 verification（不能含 sshpass）
-IR-046 (id=435) — tier=critical、加 verification（背景跑長指令 → 必須含 nohup）
+規則 #1（Docker 編譯快取）  — verification: when docker build → then --no-cache
+規則 #2（Docker Compose 部署一致性） — verification: when docker build → then compose
+規則 #3（Windows SSH 工具選擇）  — verification: 不能含 sshpass
+規則 #4（長指令背景保護）  — verification: when 背景跑長指令 → then 必須含 nohup
 4 條都加 tag 'trigger:command'
+具體對應到的鐵律編號是使用者個人記憶、不在此公開文件中引用。
 ```
 
 ---
