@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2 + 步驟 3 開頭 3.0/3.1/3.9/3.10、開發中）
+## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2 + 步驟 3 開頭 + 3.7 帳密頁、開發中）
 
 新增檔（共用元件 + 語系 context + API 客戶端 + 後端 PUT 測試 + 登入頁 + 守門員）：
 ```
@@ -21,15 +21,17 @@ client/src/api/client.js                       — fetch 封裝、自動帶 Bear
 client/src/api/index.js                        — barrel export
 client/src/api/README.md                       — 用法 + 設計取捨
 client/src/pages/LoginPage.jsx                 — 登入頁、不包 Layout、handle must_change_password redirect + 已登入導回原本想去的頁
+client/src/pages/Preference/SecurityPage.jsx   — 帳密修改頁、3 欄表單、trim 防空白、setTimeout cleanup、失敗清新密欄位
 tests/me-profile-put.test.js                   — PUT /api/me/profile 11 條 source-match 測試（含 trim / whitelist / rowCount=0 / IR-038）
+tests/me-change-password-status.test.js        — 守住舊密錯誤必須回 400 不回 401（避免 client.js 401 burst handler 誤踢用戶回 /login）
 ```
 
 修改檔：
 ```
-client/src/App.jsx                             — 加 /login 路由、其他路由包 RequireAuth + RequireFreshPassword、useEffect listen auth-expired event 自動 navigate /login
+client/src/App.jsx                             — 加 /login 路由、其他路由包 RequireAuth + RequireFreshPassword、useEffect listen auth-expired event 自動 navigate /login；加 renderPage helper、/preference/security 接 SecurityPage
+src/routes/me.js                               — 補 PUT /profile endpoint + POST /change-password 舊密錯誤改回 400（從 401）
 client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告
-client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 45 個、加 portal_analytics / preference / changelog / menu / login 區）
-src/routes/me.js                               — 補 PUT /profile endpoint（只允許改 name、email/role 不收、rowCount=0 回 404）
+client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 60 個、加 portal_analytics / preference / changelog / menu / login / security 區）
 openspec/changes/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
 CHANGELOG.md                                   — 加 v1.20.1-dev 步驟 3 開頭進度區塊
 FILELIST.md                                    — 本檔

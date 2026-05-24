@@ -86,7 +86,9 @@ router.post('/change-password', async (req, res) => {
     const ok = cur.rows[0]?.password_hash &&
       await bcrypt.compare(current_password, cur.rows[0].password_hash);
     if (!ok) {
-      return res.status(401).json({ error: '舊密碼錯誤' });
+      // 回 400 不回 401：401 會被 client.js 認成 token 過期、把 user 踢回 /login
+      // 舊密錯誤是 user input 錯、不是身份失效、語義也對
+      return res.status(400).json({ error: '舊密碼錯誤' });
     }
     const hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
     await query(

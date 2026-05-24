@@ -52,11 +52,19 @@
 - **3.9 + 3.10 區段**：Important 3 條全處理（修 2 條：must_change_password 防繞過、401 burst debounce；push back 1 條 — error msg i18n key map，因後端 login 端點本來就回繁中文案、不是 machine code）、Minor 6 條（修 2 條：self-loop guard、form name；其他屬於 refactor / 未實證 / 超出 scope）。
 - **Important #1（must_change_password 卡控）後續實作**：新增 `client/src/components/common/RequireFreshPassword.jsx` 守門員、`auth.js` 擴展 must_change_password 三個 API（get / set / clear），App.jsx 把所有受保護路由再多包一層 `RequireFreshPassword`。瀏覽器手動驗：登入時 must_change_password=true 訪問 `/portal/usage` 自動導 `/preference/security`、清掉 flag 後正常通行。
 
+**步驟 3 中段：3.7 帳密修改頁 + 後端改密 status code 修補**
+
+- **3.7 — Preference 帳密修改頁 `client/src/pages/Preference/SecurityPage.jsx`**：3 欄表單（舊密 / 新密 / 確認）、前端先驗（長度 8、新舊不同、確認一致、trim 後不能純空白）、後端 POST `/api/me/change-password`。成功後 `clearMustChangePassword()` 讓 RequireFreshPassword 守門員放行、`mustChange` 用戶 1.5 秒後自動導去 `/portal/usage`。失敗時清掉新密欄位（保留 current、避免明文卡 React state）、`setTimeout` 用 `useRef` + `useEffect` cleanup 避免 unmount 後 timer 仍 fire。
+- **C1 修補 — 後端 `me.js` POST `/change-password` 舊密錯誤改回 400**：原本回 401、但 `client.js` 對 401 一律清 `api_key` + 廣播 `ownmind:auth-expired` event → App.jsx 自動 navigate `/login`。結果 mustChange 用戶在 SecurityPage 打錯舊密碼就被踢回登入頁、完全破壞改密流程。改 400 後語義對（user input 錯、不是身份失效）+ 不再被 401 burst handler 誤判。新增 `tests/me-change-password-status.test.js` 3 條 source-match 測試守住「handler 內不能有 status(401)」+「舊密錯誤必須 400」。
+- **外部 code review 處理**：1 Critical（C1、修）+ 3 Important（I1 setTimeout cleanup、I2 失敗清新密欄位、I3 trim 防純空白、全修）+ 4 Minor（M1/M2/M4 不修 — DRY saving 小 / 行為符合設計 / 邏輯已安全；M3 合併進 I3 修）。
+- **測試結果**：1884 pass / 2 fail（**pre-existing flake**：`mcp-log-event-uuid.test.js` 日期 boundary 時區 bug、與本次改動無關、stash 後仍 fail、留 backlog）。新增 3 條 `me-change-password-status` 測試全綠。
+
 **剩餘待辦（v1.20.1 完版尚需）：**
 
-- 步驟 3 子任務 3.2 ~ 3.8（用量 / 專案歷程 / 交接 / 回報 / 個人資料 / 帳密 / 密鑰 7 頁實作）
+- 步驟 3 子任務 3.2 ~ 3.6 + 3.8（用量 / 專案歷程 / 交接 / 回報 / 個人資料 / 密鑰 6 頁實作）
 - 步驟 4：Playwright e2e 測試（登入 → 看用量 → 接手交接）
 - 步驟 5：升版 v1.20.1 + 部署 + 瀏覽器實測
+- **Backlog**：修 `mcp-log-event-uuid.test.js` 日期 boundary 時區 flake（UTC vs 台北時區跨午夜時 log 檔名期望不一致）
 
 ---
 
