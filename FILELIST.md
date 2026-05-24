@@ -17,7 +17,7 @@ client/src/components/common/RequireFreshPassword.jsx — 強制改密碼守門�
 client/src/components/common/index.js          — barrel export（含新增 RequireAuth）
 client/src/i18n/LocaleContext.jsx              — LocaleProvider + useLocale + useT hook、含 localStorage 持久化
 client/src/api/auth.js                         — localStorage 管理 api_key + must_change_password（get/set/clear，含隱私模式 try/catch）
-client/src/api/client.js                       — fetch 封裝、自動帶 Bearer header、統一回 { ok, data, error, status }、401 自清 token + 廣播 auth-expired event（含 1s debounce 避免 burst 多次 dispatch）
+client/src/api/client.js                       — fetch 封裝、自動帶 Bearer header、統一回 { ok, data, error, status }、401 自清 token + 廣播 auth-expired event（含 1s debounce 避免 burst 多次 dispatch）；加 API_BASE 動態偵測 + resolveUrl helper（v1.20.1 hotfix 修 prod /ownmind/ 前綴漏帶）
 client/src/api/index.js                        — barrel export
 client/src/api/README.md                       — 用法 + 設計取捨
 client/src/pages/LoginPage.jsx                 — 登入頁、不包 Layout、handle must_change_password redirect + 已登入導回原本想去的頁

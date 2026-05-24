@@ -133,6 +133,18 @@ OpenSpec：`openspec/changes/v1.20.1-db-healthcheck/`（含 proposal.md + tasks.
 
 ---
 
+**Hotfix：API base 寫死導致 prod fetch 缺 /ownmind/ 前綴登入失敗**
+
+v1.20.1 prod deploy 後 Claude in Chrome 線上實測登入立即踩到：填表單按登入後沒反應、停留在 /login 頁、無錯誤訊息。直接 curl `https://kkvin.com/ownmind/api/me/login` 成功拿到 api_key、確認後端正常 → 前端 fetch URL 錯。
+
+原因：`client/src/api/client.js` 直接 `fetch('/api/me/login')`、瀏覽器解析成 `https://kkvin.com/api/me/login`（同 host 絕對路徑）、不會自動帶 nginx 反向代理的 `/ownmind/` 前綴。線上 endpoint 在 `/ownmind/api/...`、所以打到不存在的 URL、靜默失敗。本機 docker 部署在 `/dashboard/`（無 /ownmind 前綴）/api 同 host root 就 work、沒踩到。
+
+修：跟 main.jsx basename 動態偵測同源邏輯、`client/src/api/client.js` 新增 `API_BASE` 從 `document.baseURI` 抽 dashboard 之前的 pathname、`resolveUrl()` helper 對 `/api/...` 開頭的 path 自動加前綴。線上 baseURI `https://kkvin.com/ownmind/dashboard/...` → API_BASE = `/ownmind`、fetch 拼成 `/ownmind/api/me/login`。本機 docker baseURI `http://localhost:3100/dashboard/...` → API_BASE = ''、行為不變。
+
+教訓：v1.20.1 basename fix（commit 3396031）只修了 SPA route 前綴問題、漏掉 API call 同根本原因。**「前綴寫死」這類 bug 要全面掃**、不能修一處就以為清乾淨。Backlog 加進 IR 候選：未來新增 fetch / Router 設定時、要 grep 全 repo 確認沒同樣 pattern 寫死。
+
+---
+
 **Hotfix：SPA basename 寫死導致非標準路徑部署 SPA 不渲染**
 
 v1.20.1 release deploy 到本機 docker（路徑 /dashboard/、無 /ownmind/ 前綴）後 Claude in Chrome 實測立即踩到：頁面空白、console warning「Router basename="/ownmind/dashboard" is not able to match the URL "/dashboard/"」、整個 SPA Router 不渲染。

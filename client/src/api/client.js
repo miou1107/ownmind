@@ -17,6 +17,25 @@ import { getApiKey, clearApiKey } from './auth.js';
 // 不需 Bearer header 的端點（公開）
 const NO_AUTH_PATHS = ['/api/me/login'];
 
+// API base 動態偵測：跟 main.jsx 的 basename 同源邏輯、抽 dashboard 之前的部分
+// 線上 https://kkvin.com/ownmind/dashboard/* → API base = '/ownmind'（nginx /ownmind/ 前綴）
+// 本機 docker http://localhost:3100/dashboard/* → API base = ''（同 host root）
+// vite dev http://localhost:5173/* → API base = ''（vite proxy /api 到 :3000）
+//
+// 為什麼動態：fetch('/api/me/login') 會被瀏覽器解析成 https://<host>/api/me/login、
+// 不會自動帶 nginx 反向代理的 /ownmind/ 前綴、線上會打到不存在 endpoint 致登入失敗。
+const API_BASE = (() => {
+  const path = new URL(document.baseURI).pathname;
+  const m = path.match(/^(.*)\/dashboard(\/.*)?$/);
+  return m ? m[1] : '';
+})();
+
+function resolveUrl(path) {
+  // 只對 /api/... 加前綴；外部 URL（https://...）或非 /api 開頭不動
+  if (path.startsWith('/api/')) return API_BASE + path;
+  return path;
+}
+
 // 401 burst debounce：同時 5 個 in-flight requests 都 401 時、只 dispatch 一次 event
 // 避免 React DevTools / Sentry 冒 noise + 多次 navigate 重跑
 // 1 秒 window 內第二次以後的 401 不再 dispatch（仍會清 token 跟回 unauthorized）
@@ -41,7 +60,7 @@ async function request(method, path, body, opts = {}) {
 
   let resp;
   try {
-    resp = await fetch(path, {
+    resp = await fetch(resolveUrl(path), {
       method,
       headers,
       body: body === undefined || body === null ? undefined : JSON.stringify(body),
