@@ -58,7 +58,7 @@ export default function App() {
     role: currentRole,
     onRoleChange: setCurrentRole,
     profile: { name: 'Vin' },
-    version: 'v1.20.1-dev',
+    version: 'v1.20.1',
     changelog: MOCK_CHANGELOG,
     onLogout: () => console.log('logout'),
     onOpenProfile: () => console.log('open profile'),
