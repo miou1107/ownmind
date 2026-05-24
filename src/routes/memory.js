@@ -17,6 +17,10 @@ import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-v
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
+import {
+  withReportSuggestion,
+  isSuggestReportEligible,
+} from '../utils/bug-report-helpers.js';
 import { createRequire } from 'module';
 
 const SERVER_VERSION = (() => {
@@ -952,7 +956,31 @@ router.post('/', async (req, res) => {
     if (!String(title).startsWith('__upgrade_test__')) {
       const guardResult = validateMemoryContent({ type, title, content, metadata });
       if (!guardResult.ok) {
-        return res.status(guardResult.status).json(guardResult.body);
+        // v1.19.14：附 suggest_report 旗標讓客戶端詢問是否回報誤判
+        // detected_by 開頭分類：keyword:* → mem_blocked_secret_keyword、
+        // 其他（regex:*、heuristic:*）→ mem_blocked_secret_regex
+        let body = guardResult.body;
+        try {
+          const fingerprint =
+            typeof guardResult.body?.detected_by === 'string' &&
+            guardResult.body.detected_by.startsWith('keyword:')
+              ? 'mem_blocked_secret_keyword'
+              : 'mem_blocked_secret_regex';
+          const eligible = await isSuggestReportEligible(
+            query,
+            req.user.id,
+            fingerprint
+          );
+          if (eligible) {
+            body = withReportSuggestion(body, fingerprint, {
+              hint: '你覺得不該被擋？回報給開發者（會請使用者預覽再送）',
+            });
+          }
+        } catch (err) {
+          // 旗標附加失敗不影響原始錯誤回應
+          logger.warn('suggest_report_flag_failed', { error: err.message });
+        }
+        return res.status(guardResult.status).json(body);
       }
       secretGuardWarning = guardResult.lint_warning_entry || null;
     }

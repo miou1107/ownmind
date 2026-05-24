@@ -68,6 +68,16 @@ if [ ! -d "$OWNMIND_DIR/node_modules/js-yaml" ]; then
     || echo "   ⚠️ js-yaml 安裝失敗 (詳見 ~/.ownmind/logs/update-err.log)、big skill sync 仍會 fallback skip、不影響其他功能"
 fi
 
+# --- 0b. v1.19.14 補修：device-fingerprint 需要 node-machine-id ---
+# 用作業系統層級機器 ID 算裝置指紋（白話：穩定識別「同一台機器」用）
+# 取代 v3 設計的「主機名 + MAC」（Docker / VPN 環境會變動不穩）
+if [ ! -d "$OWNMIND_DIR/node_modules/node-machine-id" ]; then
+  echo "   📦 安裝錯誤回報工具用的依賴 node-machine-id..."
+  (cd "$OWNMIND_DIR" && npm install node-machine-id@^1.1.12 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+    && echo "   ✅ node-machine-id 安裝完成" \
+    || echo "   ⚠️ node-machine-id 安裝失敗、ownmind_report_bug 會用 fallback 指紋（不穩、但功能仍可用）"
+fi
+
 # --- 1. 同步 Claude Code skills ---
 if [ -d "$HOME/.claude" ]; then
   mkdir -p "$HOME/.claude/skills/ownmind-memory"

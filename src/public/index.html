@@ -228,6 +228,7 @@
     <div class="tab hidden" id="tabBtn-work-log" data-tab="work-log" onclick="switchTab('work-log')">工作紀錄</div>
     <div class="tab hidden" id="tabBtn-settings" data-tab="settings" onclick="switchTab('settings')">設定</div>
     <div class="tab" data-tab="iron-rule-upgrade" onclick="switchTab('iron-rule-upgrade')">鐵律升級</div>
+    <div class="tab" data-tab="bug-reports" onclick="switchTab('bug-reports')">錯誤回報</div>
   </div>
 
   <!-- ===== TAB: 使用者管理 ===== -->
@@ -729,6 +730,167 @@
       </div>
     </div>
   </div>
+
+  <!-- ===== TAB: 錯誤回報（v1.19.14）===== -->
+  <div id="tab-bug-reports" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <h3>使用者錯誤回報</h3>
+        <button class="btn-secondary btn-sm" onclick="loadBugReports()">重新載入</button>
+      </div>
+      <div style="margin-bottom:12px;padding:8px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:#92400e;line-height:1.6;">
+        💡 使用者透過 <code>ownmind_report_bug</code> 工具回報的 OwnMind 本身問題；spam suspect 是後端自動偵測「短時間內連續送相似回報」的提醒、管理員確認後該使用者 24 小時不會收到 suggest_report 旗標。
+      </div>
+      <div class="stats" style="margin-bottom:16px;">
+        <div class="stat-card">
+          <div class="number" id="brTotalPending">-</div>
+          <div class="label">未處理回報</div>
+        </div>
+        <div class="stat-card">
+          <div class="number" id="brSpamSuspectCount" style="color:#f59e0b;">-</div>
+          <div class="label">疑似 spam（待審查）</div>
+        </div>
+        <div class="stat-card">
+          <div class="number" id="brSpamBlockedCount" style="color:#ef4444;">-</div>
+          <div class="label">封鎖期內使用者</div>
+        </div>
+      </div>
+
+      <!-- 子分頁切換 -->
+      <div style="display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid #e5e7eb;">
+        <button class="br-sub-tab br-sub-active" data-sub="reports" onclick="brSwitchSub('reports')">回報列表</button>
+        <button class="br-sub-tab" data-sub="spam" onclick="brSwitchSub('spam')">spam suspect 審查</button>
+      </div>
+
+      <!-- 子分頁：回報列表 -->
+      <div id="br-sub-reports">
+        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+          <label style="font-size:12px;color:#6b7280;">狀態：</label>
+          <select id="brStatusFilter" onchange="loadBugReports()" style="font-size:12px;">
+            <option value="">全部</option>
+            <option value="new">new（未處理）</option>
+            <option value="triaged">triaged（已分類）</option>
+            <option value="in_progress">in_progress（處理中）</option>
+            <option value="fixed">fixed（已修）</option>
+            <option value="wontfix">wontfix（不修）</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>標題</th>
+                <th>嚴重度</th>
+                <th>模組</th>
+                <th>狀態</th>
+                <th>使用者</th>
+                <th>建立時間</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="brReportsTable"><tr><td colspan="8" style="text-align:center;color:#9ca3af;">尚未載入</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 子分頁：spam suspect -->
+      <div id="br-sub-spam" style="display:none;">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>使用者</th>
+                <th>觸發規則</th>
+                <th>觸發時間</th>
+                <th>關聯回報數</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="brSpamTable"><tr><td colspan="6" style="text-align:center;color:#9ca3af;">尚未載入</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 錯誤回報詳細頁 modal -->
+  <div class="modal-overlay" id="bugReportModal">
+    <div class="modal-content" style="max-width:780px;">
+      <button class="modal-close" onclick="closeBugReportModal()">×</button>
+      <h3>錯誤回報詳細 <span id="brModalId" style="color:#6b7280;font-weight:normal;"></span></h3>
+      <div id="brModalBody" style="font-size:13px;line-height:1.6;"></div>
+
+      <hr style="margin:16px 0;border:none;border-top:1px solid #e5e7eb;">
+      <h4 style="margin:8px 0;font-size:14px;">處理狀態</h4>
+      <label class="field-label">狀態</label>
+      <select id="brEditStatus" onchange="brOnStatusChange()">
+        <option value="new">new（未處理）</option>
+        <option value="triaged">triaged（已分類）</option>
+        <option value="in_progress">in_progress（處理中）</option>
+        <option value="fixed">fixed（已修）</option>
+        <option value="wontfix">wontfix（不修）</option>
+      </select>
+      <div id="brStatusReasonBlock" style="display:none;">
+        <label class="field-label required" style="margin-top:8px;">不修原因</label>
+        <select id="brEditStatusReason">
+          <option value="by_design">by_design（設計如此）</option>
+          <option value="duplicate">duplicate（重複回報）</option>
+          <option value="low_priority">low_priority（優先順序低）</option>
+          <option value="cannot_reproduce">cannot_reproduce（無法重現）</option>
+          <option value="wontfix_other">wontfix_other（其他、必填補充）</option>
+        </select>
+        <label class="field-label" style="margin-top:8px;">補充說明（wontfix_other 必填）</label>
+        <textarea id="brEditStatusReasonNote" rows="3" style="width:100%;font-size:13px;"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-cancel btn-ghost" onclick="closeBugReportModal()">取消</button>
+        <button class="btn-success" onclick="brSaveStatus()">儲存狀態</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- spam suspect 確認 modal -->
+  <div class="modal-overlay" id="spamSuspectModal">
+    <div class="modal-content" style="max-width:520px;">
+      <button class="modal-close" onclick="closeSpamSuspectModal()">×</button>
+      <h3>確認 spam suspect <span id="brSpamModalId" style="color:#6b7280;font-weight:normal;"></span></h3>
+      <div id="brSpamModalBody" style="font-size:13px;line-height:1.6;margin-bottom:12px;"></div>
+      <label class="field-label">封鎖原因（選填、會記在封鎖紀錄）</label>
+      <textarea id="brSpamReason" rows="3" style="width:100%;font-size:13px;" placeholder="例：AI 腦補連送 5 筆假回報"></textarea>
+      <div class="modal-footer">
+        <button class="btn-cancel btn-ghost" onclick="closeSpamSuspectModal()">取消</button>
+        <button class="btn-secondary" onclick="brSpamDismissCurrent()">不是 spam、撤銷</button>
+        <button class="btn-danger" onclick="brSpamConfirmCurrent()">確認 spam、封鎖該使用者 24 小時</button>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .br-sub-tab {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 8px 16px;
+      font-size: 14px;
+      color: #6b7280;
+      cursor: pointer;
+    }
+    .br-sub-tab.br-sub-active {
+      color: #2563eb;
+      border-bottom-color: #2563eb;
+    }
+    .br-severity-low { color: #6b7280; }
+    .br-severity-medium { color: #f59e0b; }
+    .br-severity-high { color: #ef4444; }
+    .br-severity-critical { color: #b91c1c; font-weight: bold; }
+    .br-status-new { background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .br-status-triaged { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .br-status-in_progress { background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .br-status-fixed { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .br-status-wontfix { background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+  </style>
 
 </div>
 
@@ -1364,6 +1526,273 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
       loadClientsStatus();
     }
     if (tab === 'iron-rule-upgrade') { loadIronRuleStatus(); }
+    if (tab === 'bug-reports') { loadBugReports(); loadSpamSuspects(); }
+  }
+
+  // ===== v1.19.14：錯誤回報後台 =====
+  let brCurrentSub = 'reports';
+  let brCurrentReport = null;
+  let brCurrentSuspect = null;
+
+  function brSwitchSub(sub) {
+    brCurrentSub = sub;
+    document.querySelectorAll('.br-sub-tab').forEach(t => t.classList.remove('br-sub-active'));
+    document.querySelector(`.br-sub-tab[data-sub="${sub}"]`).classList.add('br-sub-active');
+    document.getElementById('br-sub-reports').style.display = sub === 'reports' ? '' : 'none';
+    document.getElementById('br-sub-spam').style.display = sub === 'spam' ? '' : 'none';
+  }
+
+  async function loadBugReports() {
+    const status = document.getElementById('brStatusFilter').value;
+    const url = `${API}/bug-reports?scope=all${status ? `&status=${status}` : ''}&size=50`;
+    try {
+      const res = await fetch(url, { headers: headers() });
+      if (!res.ok) {
+        document.getElementById('brReportsTable').innerHTML =
+          `<tr><td colspan="8" style="text-align:center;color:#ef4444;">載入失敗（HTTP ${res.status}）</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      const items = data.items || [];
+
+      // 計未處理數
+      const pendingRes = await fetch(`${API}/bug-reports?scope=all&status=new&size=1`, { headers: headers() });
+      if (pendingRes.ok) {
+        const pendingData = await pendingRes.json();
+        document.getElementById('brTotalPending').textContent = (pendingData.items || []).length >= 50 ? '50+' : (pendingData.items || []).length;
+      }
+
+      if (items.length === 0) {
+        document.getElementById('brReportsTable').innerHTML =
+          `<tr><td colspan="8" style="text-align:center;color:#9ca3af;">沒有符合條件的回報</td></tr>`;
+        return;
+      }
+
+      const userMap = {};
+      (usersData || []).forEach(u => { userMap[u.id] = u.name || u.email || `user#${u.id}`; });
+
+      document.getElementById('brReportsTable').innerHTML = items.map(r => `
+        <tr>
+          <td>#${r.id}</td>
+          <td>${esc(r.title || '')}</td>
+          <td class="br-severity-${esc(r.severity || 'medium')}">${esc(r.severity || 'medium')}</td>
+          <td>${esc(r.component || '-')}</td>
+          <td><span class="br-status-${esc(r.status)}">${esc(r.status)}</span></td>
+          <td>${esc(userMap[r.user_id] || `user#${r.user_id}`)}</td>
+          <td>${esc((r.created_at || '').slice(0, 16).replace('T', ' '))}</td>
+          <td>
+            <button class="btn-secondary btn-sm" onclick="openBugReportModal(${r.id})">查看</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      document.getElementById('brReportsTable').innerHTML =
+        `<tr><td colspan="8" style="text-align:center;color:#ef4444;">載入失敗：${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  async function openBugReportModal(id) {
+    try {
+      const res = await fetch(`${API}/bug-reports/${id}`, { headers: headers() });
+      if (!res.ok) {
+        alert(`載入失敗（HTTP ${res.status}）`);
+        return;
+      }
+      brCurrentReport = await res.json();
+      document.getElementById('brModalId').textContent = `#${brCurrentReport.id}`;
+
+      const r = brCurrentReport;
+      const ctxBlob = r.context_blob || {};
+      const snippets = Array.isArray(ctxBlob.conversation_snippets) ? ctxBlob.conversation_snippets : [];
+      const snippetsHtml = snippets.map((s, i) => {
+        if (typeof s === 'string') {
+          return `<div style="padding:6px;border-left:2px solid #e5e7eb;margin:4px 0;">${esc(s)}</div>`;
+        }
+        if (s && s.truncated === true) {
+          return `<details style="padding:6px;border-left:2px solid #fbbf24;margin:4px 0;">
+            <summary style="cursor:pointer;color:#92400e;">已截斷（原長 ${s.original_size} bytes、展開看頭尾）</summary>
+            <div style="margin-top:4px;color:#6b7280;font-size:12px;">頭：${esc(s.head || '')}</div>
+            <div style="color:#6b7280;font-size:12px;">尾：${esc(s.tail || '')}</div>
+          </details>`;
+        }
+        if (s && typeof s.truncated_messages === 'number') {
+          return `<div style="padding:6px;color:#9ca3af;font-style:italic;">${esc(s.summary || '已省略')}</div>`;
+        }
+        return '';
+      }).join('');
+
+      document.getElementById('brModalBody').innerHTML = `
+        <table style="width:100%;font-size:12px;">
+          <tr><td style="width:120px;color:#6b7280;">標題</td><td><b>${esc(r.title)}</b></td></tr>
+          <tr><td style="color:#6b7280;">指紋</td><td><code>${esc(r.bug_fingerprint)}</code></td></tr>
+          <tr><td style="color:#6b7280;">嚴重度</td><td class="br-severity-${esc(r.severity)}">${esc(r.severity)}</td></tr>
+          <tr><td style="color:#6b7280;">模組</td><td>${esc(r.component || '-')}</td></tr>
+          <tr><td style="color:#6b7280;">客戶端工具</td><td>${esc(r.client_tool || '-')}</td></tr>
+          <tr><td style="color:#6b7280;">裝置指紋</td><td><code style="font-size:11px;">${esc(r.device_fingerprint || '-')}</code></td></tr>
+          <tr><td style="color:#6b7280;">建立時間</td><td>${esc((r.created_at || '').replace('T', ' ').slice(0, 19))}</td></tr>
+        </table>
+        <h4 style="margin:12px 0 4px;font-size:13px;">描述</h4>
+        <div style="padding:8px;background:#f9fafb;border-radius:4px;white-space:pre-wrap;">${esc(r.description || '')}</div>
+        ${r.reproduce_input ? `<h4 style="margin:12px 0 4px;font-size:13px;">最小重現輸入</h4>
+          <pre style="padding:8px;background:#f9fafb;border-radius:4px;font-size:11px;overflow-x:auto;">${esc(r.reproduce_input)}</pre>` : ''}
+        ${snippets.length > 0 ? `<h4 style="margin:12px 0 4px;font-size:13px;">對話片段（已遮蔽個資）</h4>${snippetsHtml}` : ''}
+        ${r.related_lint_event_ids && r.related_lint_event_ids.length > 0 ? `
+          <h4 style="margin:12px 0 4px;font-size:13px;">關聯回話品質事件</h4>
+          <div style="font-size:12px;color:#6b7280;">id: ${r.related_lint_event_ids.join(', ')}</div>` : ''}
+      `;
+
+      document.getElementById('brEditStatus').value = r.status || 'new';
+      document.getElementById('brEditStatusReason').value = r.status_reason || 'by_design';
+      document.getElementById('brEditStatusReasonNote').value = r.status_reason_note || '';
+      brOnStatusChange();
+
+      document.getElementById('bugReportModal').classList.add('show');
+    } catch (e) {
+      alert('載入失敗：' + e.message);
+    }
+  }
+
+  function closeBugReportModal() {
+    document.getElementById('bugReportModal').classList.remove('show');
+    brCurrentReport = null;
+  }
+
+  function brOnStatusChange() {
+    const status = document.getElementById('brEditStatus').value;
+    document.getElementById('brStatusReasonBlock').style.display = status === 'wontfix' ? '' : 'none';
+  }
+
+  async function brSaveStatus() {
+    if (!brCurrentReport) return;
+    const status = document.getElementById('brEditStatus').value;
+    const body = { status };
+    if (status === 'wontfix') {
+      body.status_reason = document.getElementById('brEditStatusReason').value;
+      const note = document.getElementById('brEditStatusReasonNote').value.trim();
+      if (body.status_reason === 'wontfix_other' && !note) {
+        alert('status_reason=wontfix_other 必須填補充說明');
+        return;
+      }
+      body.status_reason_note = note || null;
+    }
+    try {
+      const res = await fetch(`${API}/bug-reports/${brCurrentReport.id}/status`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        alert('儲存失敗：' + (err.error || res.status));
+        return;
+      }
+      closeBugReportModal();
+      loadBugReports();
+    } catch (e) {
+      alert('儲存失敗：' + e.message);
+    }
+  }
+
+  async function loadSpamSuspects() {
+    try {
+      const res = await fetch(`${API}/bug-reports/spam-suspects?status=pending`, { headers: headers() });
+      if (!res.ok) {
+        document.getElementById('brSpamTable').innerHTML =
+          `<tr><td colspan="6" style="text-align:center;color:#ef4444;">載入失敗（HTTP ${res.status}）</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      const items = data.items || [];
+      document.getElementById('brSpamSuspectCount').textContent = items.length;
+
+      const userMap = {};
+      (usersData || []).forEach(u => { userMap[u.id] = u.name || u.email || `user#${u.id}`; });
+
+      if (items.length === 0) {
+        document.getElementById('brSpamTable').innerHTML =
+          `<tr><td colspan="6" style="text-align:center;color:#9ca3af;">目前沒有待審查的 spam suspect</td></tr>`;
+        return;
+      }
+      document.getElementById('brSpamTable').innerHTML = items.map(s => `
+        <tr>
+          <td>#${s.id}</td>
+          <td>${esc(userMap[s.user_id] || `user#${s.user_id}`)}</td>
+          <td><code style="font-size:11px;">${esc(s.trigger_rule)}</code></td>
+          <td>${esc((s.triggered_at || '').slice(0, 16).replace('T', ' '))}</td>
+          <td>${(s.report_ids || []).length}</td>
+          <td>
+            <button class="btn-secondary btn-sm" onclick="openSpamSuspectModal(${s.id}, ${s.user_id}, '${esc(s.trigger_rule)}', ${JSON.stringify(s.report_ids).replace(/"/g, '&quot;')})">審查</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      document.getElementById('brSpamTable').innerHTML =
+        `<tr><td colspan="6" style="text-align:center;color:#ef4444;">載入失敗：${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  function openSpamSuspectModal(id, userId, rule, reportIds) {
+    brCurrentSuspect = { id, userId, rule, reportIds };
+    document.getElementById('brSpamModalId').textContent = `#${id}`;
+    const userMap = {};
+    (usersData || []).forEach(u => { userMap[u.id] = u.name || u.email || `user#${u.id}`; });
+    document.getElementById('brSpamModalBody').innerHTML = `
+      <div><b>使用者：</b>${esc(userMap[userId] || `user#${userId}`)}</div>
+      <div><b>觸發規則：</b><code>${esc(rule)}</code></div>
+      <div><b>關聯回報 id：</b>${esc((reportIds || []).join(', '))}</div>
+      <div style="margin-top:8px;color:#6b7280;font-size:12px;">
+        確認 spam → 該使用者 24 小時內錯誤回應不會附 suggest_report 旗標。
+        若是正常使用（例如真的連續踩到多個 bug）請選「不是 spam」。
+      </div>
+    `;
+    document.getElementById('brSpamReason').value = '';
+    document.getElementById('spamSuspectModal').classList.add('show');
+  }
+
+  function closeSpamSuspectModal() {
+    document.getElementById('spamSuspectModal').classList.remove('show');
+    brCurrentSuspect = null;
+  }
+
+  async function brSpamConfirmCurrent() {
+    if (!brCurrentSuspect) return;
+    if (!confirm('確認該使用者的回報是 spam、並封鎖 24 小時？')) return;
+    const reason = document.getElementById('brSpamReason').value.trim();
+    try {
+      const res = await fetch(`${API}/bug-reports/spam-suspects/${brCurrentSuspect.id}/confirm`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify({ reason: reason || null }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        alert('確認失敗：' + (err.error || res.status));
+        return;
+      }
+      closeSpamSuspectModal();
+      loadSpamSuspects();
+    } catch (e) {
+      alert('確認失敗：' + e.message);
+    }
+  }
+
+  async function brSpamDismissCurrent() {
+    if (!brCurrentSuspect) return;
+    try {
+      const res = await fetch(`${API}/bug-reports/spam-suspects/${brCurrentSuspect.id}/dismiss`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        alert('撤銷失敗：' + (err.error || res.status));
+        return;
+      }
+      closeSpamSuspectModal();
+      loadSpamSuspects();
+    } catch (e) {
+      alert('撤銷失敗：' + e.message);
+    }
   }
 
   // ===== v1.18.0: 鐵律升級助手 =====

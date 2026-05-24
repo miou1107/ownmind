@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## v1.19.14 — 錯誤回報工具（使用者 ⇄ 開發者雙向通知）
+
+**背景：** OwnMind 倉庫公開後、需要正式管道讓使用者主動回報「OwnMind 本身的問題」（例如寫入被誤擋、出錯、設計不合理）。既有的 `ownmind_save type=project` 跟 `ownmind_report_compliance` 語意不對、無法擴展。
+
+**範圍：**
+
+1. **新增資料表**：`bug_reports` 主表 + `bug_report_declines`（冷靜期）+ `bug_report_spam_suspects`（自動偵測疑似亂送）+ `bug_report_spam_blocks`（24 小時封鎖）+ `bug_report_notification_mutes`（通知靜音）。
+2. **新增 11 個 API 端點**（POST 建立、GET 列表、PATCH 狀態、decline、通知 fetch、batch mark-all-read、靜音、spam-suspects 三支）。
+3. **新增 MCP 工具 `ownmind_report_bug`**：跨多種 AI 工具（Claude Code、Cursor、Codex 等）共用、AI 看到後端的 `suggest_report` 旗標就提示使用者要不要回報。
+4. **介面層 + 後端三道防線**：
+   - 介面層：同 fingerprint 1 小時內已 3 筆 → 直接 HTTP 429
+   - 後端：`confirm_string="送出"` 守門（要使用者親口輸入）
+   - 後端：spam 偵測背景跑（1h 5 筆+3 相似 / 24h 30 筆 / 1h 同 fingerprint 5 筆 → 標 suspect、由管理員審查確認、確認後 24 小時封鎖該 user 的 `suggest_report` 旗標）
+5. **隱私強制遮蔽（fail-closed）**：對話片段送 `ownmind_report_bug` 時、後端強制套用 `shared/privacy-detect.js`、把信箱／身分證／台灣手機代稱化；偵測器崩潰時回 500 + 不寫 DB。
+6. **冷靜期整合到原始錯誤回應**：後端拋 400 / 5xx 時內聯查 `bug_report_declines`、過去 24 小時拒絕過 → 不附 `suggest_report` 旗標。客戶端不需要打額外 API。
+7. **客戶端啟動通知**：SessionStart hook 時 fetch 通知、雙軌顯示（管理員看新回報、回報者看處理完成）；fetch 失敗靜默略過、不擋啟動。
+8. **主機指紋**：用 npm 套件 `node-machine-id` 抓作業系統機器 ID（macOS IOPlatformUUID / Linux /etc/machine-id / Windows MachineGuid）+ 安裝路徑 → SHA-256 取前 16 字。每次啟動即時算、不寫檔、跨重啟穩定、Docker / VPN 環境不會變動。
+9. **對話片段聯合型別**：`conversation_snippets` 是 `(string | TruncatedMessage)[]`、共用 schema 在 `shared/context-blob-schema.js`、避免強型別語言（Go / Rust）對接時反序列化失敗。
+
+**設計演進**：經三輪 Gemini 對抗審查（v1 → v4.1）、砍掉本地持久化 retry queue（過度設計）、砍掉 should-prompt 獨立 API（冗餘）、砍掉客戶端 confirm-window hook（多客戶端做不到）。最終以「介面層硬擋 + 後端守門 + 後台 spam 審查」三道防線取代不可靠的客戶端 hook。
+
+**新增依賴**：`node-machine-id ^1.1.12`。`scripts/update.sh` 跟 `scripts/update.ps1` 已同步補裝邏輯（IR-042）。
+
+**對應規格**：`openspec/changes/v1.19.14-bug-report-tool/`（proposal.md / spec.md / tasks.md）。
+
+---
+
 ## v1.19.13 — 掃密 keyword 偵測收緊、降低誤判
 
 **背景：** 2026-05-23 / 2026-05-24 連續 4 次 AI 想存 type=`env` 的「bot.kkvin.com 遠端訪問方式總覽」記憶被擋。追根究柢、被擋的內容只是「密鑰名稱字串」（如 `anydesk.bot_kkvin.unattended_password`）跟 IP／連線編號等非敏感資訊、實際密碼存在 OwnMind 密鑰管理工具裡。v1.19.1 引入的 value-side keyword 偵測太寬鬆（「只要出現 password 字樣就擋」）導致誤判率高。

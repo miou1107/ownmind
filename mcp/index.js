@@ -643,6 +643,42 @@ const TOOLS = [
       required: ["session_id"],
     },
   },
+  {
+    name: "ownmind_report_bug",
+    description: "回報 OwnMind 本身的錯誤或設計問題（白話：使用者覺得 OwnMind 出包了、想告訴開發者）。\n\n重要：呼叫前必須先把欄位內容顯示給使用者預覽、等使用者親口輸入「送出」兩字才呼叫本工具、並把那兩字當 confirm_string 帶過來。AI 不可自行填寫 confirm_string、否則後端會 400 拒絕。沒看到使用者打「送出」就呼叫 = 違反設計、且功能會失效。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "一句話描述問題" },
+        description: { type: "string", description: "完整重現步驟 + 預期行為 vs 實際行為" },
+        severity: {
+          type: "string",
+          enum: ["low", "medium", "high", "critical"],
+          description: "嚴重程度（被擋下 → medium、報錯 → high、連續觸發 → critical）",
+        },
+        component: { type: "string", description: "出錯的模組名（例：memory、setup、lint）" },
+        reproduce_input: { type: "string", description: "觸發錯誤的最小輸入" },
+        context_summary: {
+          type: "object",
+          description: "前後對話片段 + 環境資訊（系統會強制經個資遮蔽中介層處理）",
+        },
+        bug_fingerprint: {
+          type: "string",
+          description: "錯誤指紋（從錯誤回應的 suggest_report 旗標來、不可自己編）",
+        },
+        related_lint_event_ids: {
+          type: "array",
+          items: { type: "number" },
+          description: "（選填）關聯的 reply-lint 事件 id",
+        },
+        confirm_string: {
+          type: "string",
+          description: "必填、且必須是使用者親口輸入的「送出」兩字；AI 不可自填",
+        },
+      },
+      required: ["title", "description", "bug_fingerprint", "confirm_string"],
+    },
+  },
 ];
 
 // --- Tool handlers ---
@@ -989,6 +1025,47 @@ async function handleTool(name, args) {
       // v1.17.91: 永久刪除一筆 secret。server 端會寫 activity_log audit
       // （IR-002 不洩漏 value、只記 key 跟動作）
       return await callApi("DELETE", `/api/secret/${encodeURIComponent(args.key)}`);
+    }
+
+    case "ownmind_report_bug": {
+      // 兩階段確認流程：AI 在預覽前不該呼叫；後端會驗 confirm_string="送出"
+      // device_fingerprint 由本地動態算（白話：用作業系統提供的機器 ID 算雜湊）
+      let deviceFingerprint = 'unknown';
+      let fingerprintSource = 'unavailable';
+      try {
+        const { generateDeviceFingerprint } = await import('../shared/device-fingerprint.js');
+        const fp = await generateDeviceFingerprint();
+        deviceFingerprint = fp.device_fingerprint;
+        fingerprintSource = fp.fingerprint_source;
+      } catch (err) {
+        logEvent('device_fingerprint_failed', { error: err.message });
+      }
+
+      const body = {
+        title: args.title,
+        description: args.description,
+        severity: args.severity || 'medium',
+        component: args.component || null,
+        reproduce_input: args.reproduce_input || null,
+        context_blob: {
+          ...(args.context_summary || {}),
+          env: {
+            os: process.platform,
+            node: process.version,
+            client_version: CLIENT_VERSION,
+            fingerprint_source: fingerprintSource,
+          },
+        },
+        bug_fingerprint: args.bug_fingerprint,
+        related_lint_event_ids: Array.isArray(args.related_lint_event_ids)
+          ? args.related_lint_event_ids
+          : null,
+        confirm_string: args.confirm_string,
+        device_fingerprint: deviceFingerprint,
+        client_tool: process.env.OWNMIND_CLIENT_TOOL || 'claude-code',
+      };
+
+      return await callApi('POST', '/api/bug-reports', body);
     }
 
     case "ownmind_report_compliance": {

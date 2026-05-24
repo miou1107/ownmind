@@ -90,6 +90,25 @@ if (-not (Test-Path $JsYamlDir)) {
   }
 }
 
+# v1.19.14：device-fingerprint 需要 node-machine-id
+# 對應 update.sh 的 0b 區塊。idempotent：已裝就 skip。
+$MachineIdDir = Join-Path $OwnMindDir "node_modules\node-machine-id"
+if (-not (Test-Path $MachineIdDir)) {
+  Write-Host "   📦 安裝錯誤回報工具用的依賴 node-machine-id..."
+  Push-Location $OwnMindDir
+  try {
+    $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
+    & npm install node-machine-id@^1.1.12 --no-save --silent --no-audit --no-fund 2>>$errLog
+    if ($LASTEXITCODE -eq 0) {
+      Write-Host "   [ OK ] node-machine-id 安裝完成"
+    } else {
+      Write-Host "   [ WARN ] node-machine-id 安裝失敗、ownmind_report_bug 會用 fallback 指紋"
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
 function CopyIfExists {
   param([string]$Src, [string]$Dest)
   if (Test-Path $Src) {

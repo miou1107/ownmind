@@ -86,6 +86,39 @@ async function main() {
     lines.push('');
   }
 
+  // v1.19.14：錯誤回報通知（雙軌：管理員看新回報、回報者看處理完成）
+  // fetch 失敗 / 連不到 → 靜默略過（不擋啟動流程、見 spec 場景 50）
+  try {
+    const isAdmin =
+      initData.profile?.role === 'admin' || initData.profile?.role === 'super_admin';
+    const role = isAdmin ? 'both' : 'reporter';
+    const rawNotif = await httpGet(
+      `${apiUrl}/api/bug-reports/notifications?role=${role}`,
+      { Authorization: `Bearer ${apiKey}` }
+    );
+    const notif = JSON.parse(rawNotif);
+    const segments = [];
+    if (notif.admin && notif.admin.unhandled_count > 0) {
+      segments.push(
+        `身為管理員：有 ${notif.admin.unhandled_count} 筆未處理錯誤回報`
+      );
+    }
+    if (notif.reporter && notif.reporter.unread_resolved_count > 0) {
+      segments.push(
+        `你的 ${notif.reporter.unread_resolved_count} 筆回報已處理`
+      );
+    }
+    if (segments.length > 0) {
+      lines.push('## 錯誤回報通知');
+      segments.forEach((s) => lines.push(`- ${s}`));
+      lines.push('（用「列我的回報」或後台 /admin/bug-reports 查詳情）');
+      lines.push('');
+    }
+  } catch {
+    // fetch 失敗 → 靜默略過、寫 log 但不擋啟動
+    logEvent('bug_report_notifications_fetch_failed', {});
+  }
+
   lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get("iron_rule")。');
 
   console.log(JSON.stringify({
