@@ -5,6 +5,7 @@ import { Layout, RequireAuth, RequireFreshPassword } from './components/common';
 import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
+import VaultPage from './pages/Preference/VaultPage';
 import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
 import ReportsPage from './pages/Portal/ReportsPage';
@@ -99,7 +100,7 @@ export default function App() {
 
       <Route path="/preference/profile" element={renderPage(<ProfilePage />)} />
       <Route path="/preference/security" element={renderPage(<SecurityPage />)} />
-      <Route path="/preference/vault" element={renderPlaceholder('nav.vault')} />
+      <Route path="/preference/vault" element={renderPage(<VaultPage />)} />
 
       <Route path="/admin/team" element={renderPlaceholder('nav.team')} />
       <Route path="/admin/bugs" element={renderPlaceholder('nav.bugs')} />

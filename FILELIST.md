@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.20.1-dev 修改（Dashboard 個人版步驟 1+2 + 步驟 3 開頭 + Preference 區完工 + Portal 3 頁、開發中）
+## v1.20.1-dev 修改（步驟 1+2 + 步驟 3 開頭 + Preference 區完工 + Portal 3 頁 + 密鑰管理頁、剩 3.2 用量頁、開發中）
 
 新增檔（共用元件 + 語系 context + API 客戶端 + 後端 PUT 測試 + 登入頁 + 守門員）：
 ```
@@ -23,6 +23,7 @@ client/src/api/README.md                       — 用法 + 設計取捨
 client/src/pages/LoginPage.jsx                 — 登入頁、不包 Layout、handle must_change_password redirect + 已登入導回原本想去的頁
 client/src/pages/Preference/SecurityPage.jsx   — 帳密修改頁、3 欄表單、trim 防空白、setTimeout cleanup、失敗清新密欄位
 client/src/pages/Preference/ProfilePage.jsx    — 個人資料頁、GET 載入 + PUT 存 name、role 白名單防破窗、toLocaleString 帶 BCP-47 locale
+client/src/pages/Preference/VaultPage.jsx      — 密鑰管理頁、list + 點顯示才解密 + 60 秒自動隱藏、新增/編輯/刪除（紅色 + confirm dialog IR-046）、useRef 存 timer 確保 unmount 清乾淨
 client/src/pages/Portal/ProjectHistoryPage.jsx — 專案歷程頁、GET /api/memory/type/project + Modal 看完整 content
 client/src/pages/Portal/HandoffsPage.jsx       — 工作交接頁、GET /handoff/pending + PUT /:id/accept、profile 失敗 disable accept 防空字串污染 DB
 client/src/pages/Portal/ReportsPage.jsx        — 回報紀錄頁、GET /bug-reports + GET /:id Modal 詳情、403 i18n mapping
