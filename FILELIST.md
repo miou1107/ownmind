@@ -4,9 +4,9 @@
 
 新增檔：
 ```
-openspec/changes/v1.19.14-bug-report-tool/proposal.md     — 提案：四版設計演進（經三輪 Gemini 對抗審查）
-openspec/changes/v1.19.14-bug-report-tool/spec.md         — 規格：60+ 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19.14-bug-report-tool/tasks.md        — 任務拆解：含 v4.1 校正
+openspec/changes/archive/v1.19.14-bug-report-tool/proposal.md  — 提案：四版設計演進（經三輪 Gemini 對抗審查）
+openspec/changes/archive/v1.19.14-bug-report-tool/spec.md      — 規格：60+ 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19.14-bug-report-tool/tasks.md     — 任務拆解：含 v4.1 校正
 db/016_bug_reports.sql                                    — 5 張新表 + 6 個 CHECK + 6 個 index
 shared/bug-fingerprints.js                                — 錯誤指紋註冊表（16 個指紋、6 個前綴分類）
 shared/context-blob-schema.js                             — 對話片段聯合型別 + 驗證
