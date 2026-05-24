@@ -1,5 +1,60 @@
 # OwnMind 更新紀錄
 
+## v1.19.13 — 掃密 keyword 偵測收緊、降低誤判
+
+**背景：** 2026-05-23 / 2026-05-24 連續 4 次 AI 想存 type=`env` 的「bot.kkvin.com 遠端訪問方式總覽」記憶被擋。追根究柢、被擋的內容只是「密鑰名稱字串」（如 `anydesk.bot_kkvin.unattended_password`）跟 IP／連線編號等非敏感資訊、實際密碼存在 OwnMind 密鑰管理工具裡。v1.19.1 引入的 value-side keyword 偵測太寬鬆（「只要出現 password 字樣就擋」）導致誤判率高。
+
+### 變更：value-side keyword 從寬鬆比對改賦值樣式
+
+`shared/secret-detect.js` 的 value-side keyword 偵測從「value 含 password／token／secret 字樣就擋」改成「**含 `KEY: VALUE` 或 `KEY=VALUE` 賦值樣式、且 VALUE 長度 ≥ 8 字才擋**」。
+
+對照表：
+
+| 內容 | v1.19.12 | v1.19.13 |
+|------|----------|----------|
+| `anydesk.bot_kkvin.unattended_password`（密鑰名稱 reference） | ❌ 誤擋 | ✅ 放行 |
+| `the password is in the vault`（描述句） | ❌ 誤擋 | ✅ 放行 |
+| `process.env.MY_PASSWORD`（程式碼 reference） | ❌ 誤擋 | ✅ 放行 |
+| `password: MyP@ssw0rd123`（真實貼密碼） | ✅ 擋下 | ✅ 擋下 |
+| `API_TOKEN=abc123XYZ987`（真實貼 token） | ✅ 擋下 | ✅ 擋下 |
+| `password: hi`（form label / placeholder） | ❌ 誤擋 | ✅ 放行（值 < 8） |
+| `mypassword=hello123`（複合詞變數） | ❌ 誤擋 | ✅ 放行（詞邊界保護） |
+
+### 變更：點分隔識別字路徑跳過長度啟發式
+
+`process.env.MY_PASSWORD` 跟 `anydesk.bot_kkvin.unattended_password` 這類「點分隔識別字路徑」（每段是合法變數名、用 `.` 串接）也被長度啟發式（≥ 20 字純英數字）誤抓。v1.19.13 加負向條件、識別字路徑樣式直接放行。真實密鑰（JWT、AWS、GitHub PAT、OpenAI key）有專屬 regex 抓、不依賴此啟發式。
+
+### 變更：400 回應加 `matched_text` 欄
+
+`detectSecretLike()` 命中時回傳體新增 `matched_text` 欄位（截 80 字）、`src/utils/memory-secret-guard.js` 把它帶進 400 body。AI 收到 400 時直接看到「哪段觸發」、可一次改對、不必反覆嘗試 3 次。
+
+### 不變
+
+- title／description keyword 掃描邏輯**不動**（保持「出現就擋」、narrative 類型透過 `skip_keyword: true` opt-in 例外）
+- Regex 7 條全部不動（WP / JWT / GH PAT / AWS / OpenAI / OwnMind 預定金鑰 / 預設密碼字面）
+- bypass flag、narrative 類型例外、邊界輸入處理、pre-commit hook 行為均不變
+
+### 驗證
+
+- `npm test` 1706 / 1706 全綠（+31 個 v1.19.13 新測試含 bot.kkvin.com 真實案例 regression、+ code review 後追加 I-1 PII 不洩漏 / I-2 雙段 base64 不放過 / I-3 snake_case 仍擋 共 11 條）
+- `tests/secret-detect-unit.test.js` `tests/memory-secret-guard.test.js` `tests/pre-commit-secret.test.js` 三檔合計 111 測試全綠
+- 追根究柢確認專案 469 規劃的「CGNAT IP 白名單」「9-10 位純數字白名單」實際非觸發點、本版不做
+
+### Code review fixes（內部審查後追加）
+
+- **I-1**：`extractKeywordContext` 會把 title 中 keyword 周圍 20 字 echo 進 `matched_text`、若 title 含相鄰個資（手機／信箱）會洩漏進 400 body。改為只回 keyword 字面、不 echo 上下文。
+- **I-2**：`DOT_SEPARATED_IDENTIFIER_REGEX` 原本要求 ≥ 2 段、會放過被砍掉 signature 的 JWT 樣式（`eyJhbGc...eyJzdW...`）。改為要求 ≥ 3 段（真實 reference 都符合此特徵）。
+- **I-3**：lookbehind `(?<![A-Za-z])` 刻意不對稱（只擋字母前綴、`foo_password=xxx` 仍擋）、補 spec.md S1.9 / S1.10 + 程式碼註解誠實標示此設計意圖。
+- **I-5**：賦值 regex 值長度加上界 `{8,200}`、避免 pathological 大輸入。
+
+### 部署影響
+
+- 不需 db schema 變更
+- 重啟 server 後 v1.19.1 起部分被誤擋的 reference 型記憶可正常寫入
+- API 行為向後相容（matched_text 是新增欄、舊 client 忽略即可）
+
+---
+
 ## v1.19.12 — Code review 延後項收尾 + nginx 反向代理修正
 
 **背景：** v1.19.7-10 累積的 code review reviewer 建議的 M-2 / M-3 / M-4 / M-5 四個延後項、加 v1.19.11 部署 prod 時發現的 `express-rate-limit` 警告、一起做完。

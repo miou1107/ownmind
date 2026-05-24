@@ -1,5 +1,27 @@
 # OwnMind 檔案結構
 
+## v1.19.13 修改（掃密 keyword 偵測收緊、降低誤判）
+
+新增檔：
+```
+openspec/changes/v1.19.13-secret-detect-keyword-tighten/proposal.md  — 提案：value-side keyword 從寬鬆比對改賦值樣式
+openspec/changes/v1.19.13-secret-detect-keyword-tighten/spec.md      — 規格：S1～S5 共 20+ 個 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.19.13-secret-detect-keyword-tighten/tasks.md     — 任務拆解：Phase 0～6
+```
+
+修改的既有檔：
+```
+shared/secret-detect.js                                              — value-side keyword 改賦值 regex；matched_text 截 80 字回傳；長度啟發式排除點分隔識別字
+src/utils/memory-secret-guard.js                                     — 400 body 加 matched_text
+tests/secret-detect-unit.test.js                                     — +27 case：S1 賦值樣式、S2 matched_text、review I-1 PII 不洩漏、I-2 雙段 base64 不放過、I-3 snake_case 仍擋
+tests/memory-secret-guard.test.js                                    — +4 case：S3 400 含 matched_text、S4 bot.kkvin.com 全文 regression
+package.json                                                         — version 1.19.12 → 1.19.13
+README.md / docs/README.zh-TW.md / docs/README.ja.md                 — Current version → v1.19.13
+CHANGELOG.md                                                         — v1.19.13 條目
+```
+
+---
+
 ## v1.19.12 修改（Code review 延後項收尾 + nginx 反向代理修正）
 
 移動的檔（M-2）：

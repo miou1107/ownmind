@@ -246,3 +246,73 @@ describe('validateMemoryContent — v1.19.11 真實踩坑回歸', () => {
     assert.equal(result.ok, false, '即使 project、貼真 PAT 也要擋');
   });
 });
+
+// ============================================================
+// v1.19.13 — matched_text + bot.kkvin.com regression
+// 對應 openspec/changes/v1.19.13-secret-detect-keyword-tighten/spec.md
+// ============================================================
+
+describe('v1.19.13 — 400 回應含 matched_text（S3）', () => {
+  // S3.1
+  it('S3.1：命中時 400 body 含 matched_text', () => {
+    const result = validateMemoryContent({
+      type: 'env',
+      title: 'test',
+      content: 'password: MyP@ssw0rd123',
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+    assert.ok(result.body.detected_by.startsWith('keyword:'),
+      `detected_by 應 keyword: 開頭、實際 ${result.body.detected_by}`);
+    assert.equal(typeof result.body.matched_text, 'string');
+    assert.ok(result.body.matched_text.length > 0);
+    assert.ok(result.body.matched_text.length <= 80);
+  });
+
+  // S3.2
+  it('S3.2：點分隔識別字 anydesk.bot_kkvin.unattended_password → 放行（regression）', () => {
+    const result = validateMemoryContent({
+      type: 'env',
+      title: 'test',
+      content: 'anydesk.bot_kkvin.unattended_password',
+    });
+    assert.equal(result.ok, true,
+      `不該擋、實際 body=${result.body ? JSON.stringify(result.body) : 'none'}`);
+  });
+});
+
+describe('v1.19.13 — bot.kkvin.com 整段內容 regression（S4）', () => {
+  // S4.1：完整 2026-05-23/24 對話中被連續擋下的內容
+  it('S4.1：bot.kkvin.com 遠端訪問方式總覽全文 → 放行', () => {
+    const content =
+      '## bot.kkvin.com 可以怎麼遠端連進來\n\n' +
+      '| 方式 | URL / IP / Port | 認證 | 用途 |\n' +
+      '|---|---|---|---|\n' +
+      '| **SSH** | `ssh vin@bot.kkvin.com`（port 22）| 密碼 or key | 終端機指令、AI 自動化 |\n' +
+      '| **xrdp** | `bot.kkvin.com:3389` | ssh 同密碼 | 圖形桌面 |\n' +
+      '| **AnyDesk** | ID `1901091212` | unattended password（在 OwnMind `anydesk.bot_kkvin.unattended_password`）| 跨平台桌面 |\n' +
+      '| **Tailscale** | bot-kkvin 或 `100.72.72.60` | Tailscale 私網 | 私網存取 |\n' +
+      '| **Guacamole** | `https://app.kkvin.com/guacamole/` | Guacamole 自己的帳密 | 瀏覽器內桌面 |\n' +
+      '\n## 相關記憶\n\n' +
+      '- OwnMind secret：`anydesk.bot_kkvin.unattended_password`、' +
+      '`ssh.bot.kkvin.com.vin.password`、`hermes.telegram.bot_token`\n';
+
+    const result = validateMemoryContent({
+      type: 'env',
+      title: 'bot.kkvin.com 遠端訪問方式總覽',
+      content,
+    });
+    assert.equal(result.ok, true,
+      `bot.kkvin.com 全文不該被擋、實際 body=${result.body ? JSON.stringify(result.body) : 'none'}`);
+  });
+
+  // 額外：env 類型 + 真實賦值樣式 → 仍擋
+  it('額外：env 類型 + password: 真實值 → 仍擋（避免廣放）', () => {
+    const result = validateMemoryContent({
+      type: 'env',
+      title: 'API 設定',
+      content: 'OPENAI_API_KEY=sk-realkey1234567890abcdef',
+    });
+    assert.equal(result.ok, false, 'env 類型貼真實 API key 仍要擋');
+  });
+});

@@ -126,10 +126,240 @@ describe('detectSecretLike — keyword 規則', () => {
     assert.equal(result.rule, 'keyword:存取金鑰');
   });
 
-  it('content 含 "api_key"（snake case）命中', () => {
-    const result = detectSecretLike('api_key: abc123');
+  it('content 含 "api_key"（snake case）+ 賦值樣式 + 值 ≥ 8 → 命中', () => {
+    // v1.19.13 起 value-side keyword 偵測要求賦值樣式 + 值 ≥ 8 字
+    // 短於 8 字的「值」常為 placeholder / form label / 引用、不應誤擋
+    const result = detectSecretLike('api_key: abc12345xyz');
     assert.equal(result.detected, true);
     assert.equal(result.rule, 'keyword:api_key');
+  });
+});
+
+// ============================================================
+// v1.19.13 — value-side keyword 偵測收緊（賦值樣式才命中）
+// 對應 openspec/changes/v1.19.13-secret-detect-keyword-tighten/spec.md
+// ============================================================
+
+describe('v1.19.13 — value-side keyword 賦值樣式才命中（S1）', () => {
+  // S1.1 真實踩坑 regression
+  it('S1.1：點分隔識別字 anydesk.bot_kkvin.unattended_password → 放行', () => {
+    const r = detectSecretLike('anydesk.bot_kkvin.unattended_password');
+    assert.equal(r.detected, false, `不該擋、實際 rule=${r.rule}`);
+  });
+
+  // S1.2
+  it('S1.2：「the password is in the vault」→ 放行', () => {
+    const r = detectSecretLike('the password is in the vault');
+    assert.equal(r.detected, false, `不該擋、實際 rule=${r.rule}`);
+  });
+
+  // S1.3
+  it('S1.3：多層點分隔 hermes.telegram.bot_token → 放行', () => {
+    const r = detectSecretLike('hermes.telegram.bot_token');
+    assert.equal(r.detected, false, `不該擋、實際 rule=${r.rule}`);
+  });
+
+  // S1.4
+  it('S1.4：process.env.MY_PASSWORD → 放行', () => {
+    const r = detectSecretLike('process.env.MY_PASSWORD');
+    assert.equal(r.detected, false, `不該擋、實際 rule=${r.rule}`);
+  });
+
+  // S1.5 賦值樣式（冒號）命中
+  it('S1.5：password: MyP@ssw0rd123 → 命中', () => {
+    const r = detectSecretLike('password: MyP@ssw0rd123');
+    assert.equal(r.detected, true);
+    assert.ok(r.rule.startsWith('keyword:'), `rule 應 keyword: 開頭、實際 ${r.rule}`);
+    assert.ok(r.reason.includes('賦值樣式'), `reason 應含「賦值樣式」、實際「${r.reason}」`);
+  });
+
+  // S1.6 賦值樣式（等號）命中
+  it('S1.6：API_TOKEN=abc123XYZ987 → 命中 keyword:token', () => {
+    const r = detectSecretLike('API_TOKEN=abc123XYZ987');
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'keyword:token');
+  });
+
+  // S1.7 值 < 8 字放行（避免 form label 誤判）
+  it('S1.7：password: hi（值 < 8 字）→ 放行', () => {
+    const r = detectSecretLike('password: hi');
+    assert.equal(r.detected, false, `不該擋、實際 rule=${r.rule}`);
+  });
+
+  // S1.8 引號包圍的值命中
+  it('S1.8：secret = "supersecretvalue" → 命中 keyword:secret', () => {
+    const r = detectSecretLike('secret = "supersecretvalue"');
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'keyword:secret');
+  });
+
+  // S1.9 複合詞（mypassword）不該命中
+  it('S1.9：mypassword=hello123（複合詞）→ 放行', () => {
+    const r = detectSecretLike('mypassword=hello123');
+    assert.equal(r.detected, false, `不該擋、複合詞「mypassword」非密鑰；實際 rule=${r.rule}`);
+  });
+
+  // 額外：bearer + JWT 走 regex 不該 keyword
+  it('額外：bearer 後接長字串、由 regex 處理（不是 keyword 命中）', () => {
+    const r = detectSecretLike(
+      'bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+    );
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'regex:jwt', 'JWT regex 優先於 keyword');
+  });
+
+  // 額外：純 reference 文件，含多個密鑰名稱
+  it('額外：reference 文件含多個密鑰名稱（無賦值）→ 全部放行', () => {
+    const refDoc =
+      '相關 OwnMind secret：\n' +
+      '- ssh.bot.kkvin.com.vin.password\n' +
+      '- anydesk.bot_kkvin.unattended_password\n' +
+      '- hermes.telegram.bot_token';
+    const r = detectSecretLike(refDoc);
+    assert.equal(r.detected, false, `reference 文件不該擋、實際 rule=${r.rule}`);
+  });
+});
+
+describe('v1.19.13 — matched_text 回傳（S2）', () => {
+  // S2.1
+  it('S2.1：keyword 命中時 matched_text 為字串、≤ 80 字', () => {
+    const r = detectSecretLike('password: MyP@ssw0rd123');
+    assert.equal(r.detected, true);
+    assert.equal(typeof r.matched_text, 'string');
+    assert.ok(r.matched_text.length > 0);
+    assert.ok(r.matched_text.length <= 80, `matched_text 長度 ${r.matched_text.length} 超過 80`);
+    assert.ok(
+      r.matched_text.toLowerCase().includes('password'),
+      `matched_text 應含 password、實際「${r.matched_text}」`
+    );
+  });
+
+  // S2.2
+  it('S2.2：regex 命中時 matched_text 為字串、≤ 80 字', () => {
+    const pat = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789AB';
+    const r = detectSecretLike(pat);
+    assert.equal(r.rule, 'regex:github_pat');
+    assert.equal(typeof r.matched_text, 'string');
+    assert.ok(r.matched_text.length <= 80);
+    assert.ok(r.matched_text.startsWith('ghp_'));
+  });
+
+  // S2.3
+  it('S2.3：length heuristic 命中時 matched_text 為字串、≤ 80 字', () => {
+    const r = detectSecretLike('abcDEF1234567890XYZ9876543210');
+    assert.equal(r.rule, 'heuristic:long_alnum');
+    assert.equal(typeof r.matched_text, 'string');
+    assert.ok(r.matched_text.length <= 80);
+  });
+
+  // S2.4
+  it('S2.4：detected=false 時 matched_text 為 undefined', () => {
+    const r = detectSecretLike('hello world');
+    assert.equal(r.detected, false);
+    assert.equal(r.matched_text, undefined);
+  });
+
+  // matched_text 截斷：超長密鑰也只回 80 字
+  it('額外：超長密鑰 matched_text 截到 80 字', () => {
+    const longKey = 'ghp_' + 'a'.repeat(200);
+    const r = detectSecretLike(longKey);
+    assert.equal(r.detected, true);
+    assert.ok(r.matched_text.length <= 80, `截斷失敗、長度 ${r.matched_text.length}`);
+  });
+});
+
+// ============================================================
+// v1.19.13 review fixes — I-1 / I-2 / I-3 regression tests
+// ============================================================
+
+describe('v1.19.13 review I-1：title keyword 命中時不洩漏周圍個資', () => {
+  it('title 含 password + 相鄰電話／信箱 → matched_text 只回 keyword 字面', () => {
+    const r = detectSecretLike('some narrative content', {
+      title: '電話 0912345678 password 信箱 user@example.com',
+    });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'keyword:password');
+    // 重點：matched_text 不該含手機或信箱
+    assert.equal(r.matched_text, 'password',
+      `matched_text 應該只回 keyword 字面、實際「${r.matched_text}」`);
+    assert.ok(!r.matched_text.includes('0912'), 'matched_text 洩漏手機');
+    assert.ok(!r.matched_text.includes('@'), 'matched_text 洩漏信箱');
+  });
+
+  it('description 含 token + 相鄰 GitHub PAT 字面 → matched_text 只回 keyword', () => {
+    const r = detectSecretLike('content', {
+      description: 'this is a token ghp_abcdefghij1234567890abcdef',
+    });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'keyword:token');
+    assert.equal(r.matched_text, 'token');
+    assert.ok(!r.matched_text.includes('ghp_'), 'matched_text 洩漏 PAT');
+  });
+
+  it('CJK keyword「密碼」命中 → matched_text 回 keyword 字面', () => {
+    const r = detectSecretLike('content', { title: '我的 密碼 在 vault' });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'keyword:密碼');
+    assert.equal(r.matched_text, '密碼');
+  });
+});
+
+describe('v1.19.13 review I-2：點分隔識別字要求 ≥ 3 段', () => {
+  it('2 段樣式 eyJhbGc...eyJzdW...（被砍 signature 的 JWT）→ 仍被長度啟發式抓', () => {
+    // 兩段都 ≥ 20 字、看起來像 base64 token chunk
+    const truncatedJwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0';
+    const r = detectSecretLike(truncatedJwt);
+    assert.equal(r.detected, true,
+      `2 段 base64 樣式不該被當成識別字路徑放掉、實際 rule=${r.rule}`);
+    assert.equal(r.rule, 'heuristic:long_alnum');
+  });
+
+  it('其他 2 段 base64 樣式 abcdef1234567890.fedcba0987654321 → 仍被擋', () => {
+    const r = detectSecretLike('abcdef1234567890ABCDEF.fedcba0987654321XYZ');
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'heuristic:long_alnum');
+  });
+
+  it('3 段識別字路徑 anydesk.bot_kkvin.unattended_password → 放行（不變）', () => {
+    const r = detectSecretLike('anydesk.bot_kkvin.unattended_password');
+    assert.equal(r.detected, false);
+  });
+
+  it('3 段 process.env.MY_PASSWORD → 放行（不變）', () => {
+    const r = detectSecretLike('process.env.MY_PASSWORD');
+    assert.equal(r.detected, false);
+  });
+});
+
+describe('v1.19.13 review I-3：snake_case 前綴 + keyword 賦值仍命中（設計意圖）', () => {
+  it('foo_password=secretvalue123 → 命中（snake_case env var、應擋）', () => {
+    const r = detectSecretLike('foo_password=secretvalue123');
+    assert.equal(r.detected, true,
+      `snake_case 前綴的 password 賦值應該擋、實際 rule=${r.rule}`);
+    assert.equal(r.rule, 'keyword:password');
+  });
+
+  it('reset_password_token=abc12345xyz → 命中（多重 snake_case、token 也算）', () => {
+    const r = detectSecretLike('reset_password_token=abc12345xyz');
+    assert.equal(r.detected, true);
+    // 兩個 keyword 都可能命中、實作上第一個（password 在 alternation 前）會先
+    assert.ok(
+      r.rule === 'keyword:password' || r.rule === 'keyword:token',
+      `應為 password 或 token、實際 ${r.rule}`
+    );
+  });
+
+  it('-token=abc12345xyz（hyphen 前綴）→ 命中（kebab-case env var）', () => {
+    const r = detectSecretLike('-token=abc12345xyz');
+    assert.equal(r.detected, true);
+  });
+
+  it('mypassword=12345678（letter 前綴複合詞、總長 < 20）→ keyword 階段放行', () => {
+    // 注意：lookbehind 只保護 keyword 偵測階段、不擋長度啟發式
+    // 此測試刻意把總長控制在 < 20 字避開長度啟發式、純驗 keyword 階段行為
+    const r = detectSecretLike('mypassword=12345678');
+    assert.equal(r.detected, false,
+      `keyword 階段不該命中、實際 rule=${r.rule}`);
   });
 });
 

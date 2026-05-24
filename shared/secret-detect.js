@@ -14,6 +14,16 @@
  *   regex 最精確、最先跑；heuristic 最寬鬆、最後當保底
  * - Pure function：不碰 DB / 不碰 fs / 不丟 exception、好測試
  *
+ * v1.19.13 變更：
+ *   value-side keyword 從「含 password 字樣就擋」改成「賦值樣式（KEY: VALUE
+ *   或 KEY=VALUE）且 VALUE ≥ 8 字才擋」。理由：reference 文件大量提到密鑰名稱
+ *   （例 anydesk.bot_kkvin.unattended_password）會被舊邏輯誤判、實際上那只是
+ *   「鑰匙的名字」、不是「鑰匙本身」。對應 openspec/changes/
+ *   v1.19.13-secret-detect-keyword-tighten/proposal.md
+ *
+ *   同時、detected=true 時回傳體新增 matched_text 欄位（截 80 字）、讓 caller
+ *   能在 400 回應裡告訴 AI 哪段觸發、第一次就能改對、不用試 3 次。
+ *
  * @param {string|*} value - 要偵測的內容（通常是 memory.content）
  * @param {Object} [options]
  * @param {string} [options.title] - 對應記憶的 title（用於 keyword 偵測）
@@ -23,10 +33,11 @@
  *   regex 跟 length heuristic 仍會跑、避免漏掉真貼進去的密鑰；
  *   只有 keyword（title/description/content 含 password/token/密碼...）不跑、
  *   避免討論密碼主題的 narrative 記憶（iron_rule、principle）被誤擋。
- * @returns {{ detected: boolean, rule?: string, reason?: string }}
+ * @returns {{ detected: boolean, rule?: string, reason?: string, matched_text?: string }}
  *   - detected: 是否命中
  *   - rule: detected_by 標籤（regex:xxx / keyword:xxx / heuristic:xxx）
  *   - reason: 給 caller 看的白話原因
+ *   - matched_text: 觸發片段（≤ 80 字、v1.19.13 起）
  */
 export function detectSecretLike(value, options = {}) {
   // 1. Bypass：明確 opt-in 跳過、其他檢查全部不跑
@@ -45,11 +56,13 @@ export function detectSecretLike(value, options = {}) {
 
   // 3. Regex 偵測（最精確、優先）
   for (const { name, pattern } of SECRET_REGEXES) {
-    if (pattern.test(value)) {
+    const m = value.match(pattern);
+    if (m) {
       return {
         detected: true,
         rule: `regex:${name}`,
         reason: `value 符合 ${name} 格式`,
+        matched_text: truncateMatch(m[0]),
       };
     }
   }
@@ -66,6 +79,9 @@ export function detectSecretLike(value, options = {}) {
           detected: true,
           rule: `keyword:${keyword}`,
           reason: `title／description 含關鍵字「${keyword}」`,
+          // v1.19.13 review I-1：不 echo 周圍上下文、避免把 title 中相鄰的個資
+          //（手機／信箱）一併 echo 進 400 body／log。只回 keyword 字面。
+          matched_text: keyword,
         };
       }
     }
@@ -75,37 +91,66 @@ export function detectSecretLike(value, options = {}) {
           detected: true,
           rule: `keyword:${keyword}`,
           reason: `title／description 含關鍵字「${keyword}」`,
+          matched_text: keyword,
         };
       }
     }
-    // value 本身也掃英文 keyword（例如 content 出現 "api_key:" 模式）
-    const valueLower = value.toLowerCase();
-    for (const keyword of SECRET_KEYWORDS_EN) {
-      if (valueLower.includes(keyword)) {
-        return {
-          detected: true,
-          rule: `keyword:${keyword}`,
-          reason: `value 含關鍵字「${keyword}」`,
-        };
-      }
+
+    // v1.19.13：value-side keyword 只認賦值樣式（KEY: VALUE 或 KEY=VALUE）
+    //   原本「value.includes(keyword) 就擋」會誤判：
+    //     - 「anydesk.bot_kkvin.unattended_password」這種密鑰「名稱」reference
+    //     - 「the password is in the vault」這種一般描述句
+    //   新邏輯要求 keyword 後接 :／= 分隔符 + ≥ 8 字的「像值」字串才視為敏感、
+    //   把「在講密碼這件事」跟「在貼真實密碼」分開。
+    //   對應 openspec/changes/v1.19.13-secret-detect-keyword-tighten/spec.md S1
+    const am = value.match(KEYWORD_ASSIGNMENT_REGEX);
+    if (am) {
+      const keyword = normalizeKeywordRuleName(am[1]);
+      return {
+        detected: true,
+        rule: `keyword:${keyword}`,
+        reason: `value 含 ${am[1]} 賦值樣式（值長度 ${am[2].length}）`,
+        matched_text: truncateMatch(am[0]),
+      };
     }
   }
 
   // 5. Length heuristic（最後保底）
   //    純英數字（含 -, _, +, /, =）≥ 20 字 且不含 CJK 字元 → 命中
+  //    v1.19.13：點分隔識別字路徑（例 anydesk.bot_kkvin.unattended_password、
+  //    process.env.MY_PASSWORD）不算「像 key／token」、跳過此啟發式。
+  //    真實密鑰（JWT、AWS、GitHub PAT、OpenAI）都有專屬 regex 抓、不依賴啟發式。
   if (
     value.length >= 20 &&
     !CJK_REGEX.test(value) &&
-    LONG_ALNUM_REGEX.test(value)
+    LONG_ALNUM_REGEX.test(value) &&
+    !DOT_SEPARATED_IDENTIFIER_REGEX.test(value)
   ) {
     return {
       detected: true,
       rule: 'heuristic:long_alnum',
       reason: 'value 為 ≥20 字純英數字、看起來像 key / token',
+      matched_text: truncateMatch(value),
     };
   }
 
   return { detected: false };
+}
+
+/**
+ * v1.19.13：把命中片段截到 80 字以內、避免把真實密鑰整段 echo 回 console / log
+ */
+function truncateMatch(text) {
+  if (typeof text !== 'string') return '';
+  return text.length > 80 ? text.slice(0, 80) : text;
+}
+
+/**
+ * v1.19.13：把抓到的關鍵字字面（可能含 -／_／空白）轉成 rule 名
+ * 例：「API_KEY」→「api_key」、「API KEY」→「api_key」、「Api-Key」→「api_key」
+ */
+function normalizeKeywordRuleName(raw) {
+  return raw.toLowerCase().replace(/[-\s]/g, '_');
 }
 
 /**
@@ -186,6 +231,56 @@ const SECRET_KEYWORDS_CJK = [
   '密鑰',
   '金鑰',
 ];
+
+/**
+ * v1.19.13：value-side keyword 賦值樣式偵測
+ *
+ * 命中條件（同時滿足）：
+ *   1. 詞邊界開頭的 keyword（password / passwd / token / api_key / apikey
+ *      / secret / credential / bearer）
+ *   2. 後接 :／=／=> 任一分隔符（前後可有空白）
+ *   3. 後接「像值」字串：可被引號包圍、≥ 8 個非空白非引號字元
+ *
+ * 不命中（過濾掉的誤判型）：
+ *   - 「anydesk.bot_kkvin.unattended_password」沒 :／= 後綴、不命中
+ *   - 「the password is in the vault」沒 :／=、不命中
+ *   - 「password: hi」值長度 < 8、不命中（避免 form label 誤判）
+ *   - 「mypassword=xxx」前面 m 不是詞邊界、不命中（複合詞）
+ *
+ * 注意：unicode flag 'u' 讓 \b 跟 CJK 字元邊界正確處理
+ */
+const KEYWORD_ASSIGNMENT_REGEX =
+  /(?<![A-Za-z])(password|passwd|token|api[_\- ]?key|apikey|secret|credential|bearer)\s*(?:=>|[:=])\s*["']?([^\s"'`,;]{8,200})["']?/i;
+// 用 (?<![A-Za-z]) 而非 \b：避免「mypassword=」的 password 被當成獨立 keyword、
+// 但允許「API_TOKEN=」這種 _ 分隔的常見 env var 名稱（_ 不是 letter、不擋）。
+//
+// review I-3 明示：此 lookbehind 刻意不對稱、容許「_password=」「foo_password=」
+//   「-token=」「123token=」等非字母前綴的賦值繼續命中。這些通常是 snake_case
+//   / kebab-case env var 名稱（例：reset_password_token=abc12345）、被擋是正確的；
+//   只有字母前綴的「mypassword=」「mytoken=」這類複合詞才被視為非密鑰、放行。
+//
+// review I-5 上界：值長度上限 200、避免 pathological 1MB 輸入讓 regex 引擎拖累。
+
+/**
+ * v1.19.13：點分隔識別字路徑（dot-separated identifier path）
+ *
+ * 形如「foo.bar.baz_qux」「process.env.MY_KEY」的字串、
+ * 視為「對某個資源／鑰匙的命名 reference」、不是鑰匙本身。
+ *
+ * 規則：
+ *   - 每段是合法的識別字（字母／底線開頭 + 字母／數字／底線）
+ *   - 至少含**兩**個 `.` 分隔（即至少 3 段）
+ *
+ * review I-2：要求 ≥ 3 段、不收兩段樣式。理由：被砍掉 signature 的 JWT
+ * （`eyJhbGc...eyJzdW...`）剛好是兩段樣式、字母／數字組成、會被當成識別字路徑放掉。
+ * 真實密鑰名稱 reference（`anydesk.bot_kkvin.unattended_password`、
+ * `process.env.MY_PASSWORD`）都是 3+ 段、不受影響。
+ * 2 段的 `lodash.merge`、`package.json` 通常 < 20 字、走不到長度啟發式。
+ *
+ * 用於：length heuristic 的負向條件（看到這種樣式就放行、不視為密鑰）
+ */
+const DOT_SEPARATED_IDENTIFIER_REGEX =
+  /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$/;
 
 /**
  * 純英數字＋少數符號（給長度啟發式用）
