@@ -12,8 +12,8 @@ CHANGELOG.md                                                 — v1.19.18 條目
 
 新增檔：
 ```
-openspec/changes/v1.19.18-security-audit-fix/proposal.md     — 提案：背景、設計、範圍、風險檢查點
-openspec/changes/v1.19.18-security-audit-fix/tasks.md        — 任務清單與鐵律觸發 checklist
+openspec/changes/archive/v1.19.18-security-audit-fix/proposal.md     — 提案：背景、設計、範圍、風險檢查點
+openspec/changes/archive/v1.19.18-security-audit-fix/tasks.md        — 任務清單與鐵律觸發 checklist
 ```
 
 ---
