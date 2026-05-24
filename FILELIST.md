@@ -45,7 +45,7 @@ tests/mcp-log-event-uuid.test.js               — import localDateOnly 用同�
 client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告、basename 改用 document.baseURI 動態偵測（hotfix 寫死 /ownmind/dashboard 導致本機 docker 部署 SPA 不渲染）
 client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 74 個 → 加 usage.* ~40 個鍵 / tab / range / col / weekday / mine / team / projects 分群）
 openspec/changes/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
-docker-compose.yml                             — 拿掉 db/001_init.sql 到 docker-entrypoint-initdb.d 的 mount、由 migration runner 統管（fix 既有設計衝突、獨立 commit 15d1d26）
+docker-compose.yml                             — 拿掉 db/001_init.sql 到 docker-entrypoint-initdb.d 的 mount、由 migration runner 統管（fix 既有設計衝突、獨立 commit 15d1d26）；加 postgres healthcheck + api depends_on 長形式 condition: service_healthy 卡控啟動順序（v1.20.1-db-healthcheck hotfix）
 package.json                                   — version 1.20.0 → 1.20.1
 client/package.json                            — version 1.20.0 → 1.20.1
 CHANGELOG.md                                   — v1.20.1 release note（步驟 1+2 + 步驟 3 全 11 個子任務完工紀錄）

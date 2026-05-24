@@ -8,7 +8,8 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   db:
     image: pgvector/pgvector:pg16
@@ -27,6 +28,15 @@ services:
       #    init + migration runner 雙重執行、users 表重建衝突、API 容器無限 restart。
     expose:
       - "5432"
+    # Healthcheck：postgres accept connection 才算 healthy
+    # 配合 api depends_on condition: service_healthy 卡控 api 啟動順序、
+    # 避免 fresh deploy 時 api 比 db 早就緒、撞 ECONNREFUSED 靠 restart 隨機修復（IR-122）
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ownmind -d ownmind"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
 volumes:
   ownmind_data:
