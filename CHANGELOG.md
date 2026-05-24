@@ -119,6 +119,20 @@
 
 ---
 
+**Hotfix：db healthcheck + api 等 db healthy 再啟動**
+
+v1.20.1 拿掉 `db/001_init.sql` 到 `docker-entrypoint-initdb.d` 的 mount（commit 15d1d26）後、fresh deploy 時 API container 一啟動就跑 migration runner 連 db、但 `depends_on` 短形式只保證 db container 先啟動、不保證 postgres 已 accept connection — 慢硬碟 / CI / 新機器上會撞 ECONNREFUSED、靠 Docker restart 自動拉起來才成功（IR-122 反例：靠 retry 撞運氣、不是邏輯卡控）。
+
+修：`docker-compose.yml` db service 加 postgres healthcheck（`pg_isready -U ownmind -d ownmind`、5s 間隔、5s timeout、10 retries、10s start_period）、api 的 `depends_on` 改長形式 + `condition: service_healthy` 卡控啟動順序。
+
+驗收：`docker compose down -v && docker compose up -d` 跑完、api log 0 條 ECONNREFUSED / Bootstrap failed（之前會出現 1-2 條）、`docker compose ps` db 顯示 `(healthy)`、migration runner 一次跑完 16 條 applied + 1 條 skipped、setup wizard 一次建帳號成功。
+
+OpenSpec：`openspec/changes/v1.20.1-db-healthcheck/`（含 proposal.md + tasks.md、archived 進 `archive/`）。
+
+新增 backlog：fresh deploy E2E smoke test 自動化（用 bash 串 `down -v → up → wait db healthy → setup wizard POST → login POST → /api/me/report GET → 全綠才 exit 0`、CI 可跑、IR-027 邏輯卡控）。
+
+---
+
 **Hotfix：SPA basename 寫死導致非標準路徑部署 SPA 不渲染**
 
 v1.20.1 release deploy 到本機 docker（路徑 /dashboard/、無 /ownmind/ 前綴）後 Claude in Chrome 實測立即踩到：頁面空白、console warning「Router basename="/ownmind/dashboard" is not able to match the URL "/dashboard/"」、整個 SPA Router 不渲染。
