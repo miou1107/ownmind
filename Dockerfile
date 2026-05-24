@@ -29,7 +29,8 @@ COPY shared/ ./shared/
 
 # v1.20：藍綠並存策略 — 新版 client build 產物放 dashboard/、舊 admin/ + me/ 維持不動
 # 等新版觀察期通過、Vin 拍板退役才會把舊版搬到 legacy-admin-v1.html 並 301 轉址
-COPY --from=client-builder /client/dist/ ./src/public/dashboard/
+# 注意 vite outDir 設 '../src/public/dashboard'（相對 client/）、stage 1 cwd=/client、build 後寫到 /src/public/dashboard、不是預設的 /client/dist
+COPY --from=client-builder /src/public/dashboard/ ./src/public/dashboard/
 
 EXPOSE 3000
 
