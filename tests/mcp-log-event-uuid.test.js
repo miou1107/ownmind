@@ -81,6 +81,9 @@ async function freshLogModule(env = {}) {
   return mod;
 }
 
+// 從 ownmind-log.js export 的同一份邏輯 — 兩處用同源避免時區飄移
+const { localDateOnly } = await import('../mcp/ownmind-log.js');
+
 describe('v1.17.99 — mcp/ownmind-log.js logEvent 帶 client_event_id', () => {
   beforeEach(async () => {
     setup();
@@ -103,7 +106,9 @@ describe('v1.17.99 — mcp/ownmind-log.js logEvent 帶 client_event_id', () => {
     logEvent('memory_disable', { rule_code: 'IR-002' });
 
     // 等本地 JSONL 寫完（appendFileSync 同步）
-    const today = new Date().toISOString().slice(0, 10);
+    // 跟 logEvent 對齊用 local-time date（IR-032 時區政策、避免跨午夜 UTC vs
+    // 台北 8h 差讓 test 找錯檔名）
+    const today = localDateOnly(new Date());
     const file = path.join(logsDir, `${today}.jsonl`);
     assert.ok(fs.existsSync(file));
     const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
@@ -135,7 +140,9 @@ describe('v1.17.99 — mcp/ownmind-log.js logEvent 帶 client_event_id', () => {
     logEvent('iron_rule_compliance', { action: 'violate', rule_code: 'IR-036' });
     await waitForPosts(1);
 
-    const today = new Date().toISOString().slice(0, 10);
+    // 跟 logEvent 對齊用 local-time date（IR-032 時區政策、避免跨午夜 UTC vs
+    // 台北 8h 差讓 test 找錯檔名）
+    const today = localDateOnly(new Date());
     const file = path.join(logsDir, `${today}.jsonl`);
     const localEntry = JSON.parse(fs.readFileSync(file, 'utf8').trim().split('\n')[0]);
     const postedEvent = captured[0]?.events?.[0];

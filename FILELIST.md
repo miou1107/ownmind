@@ -35,6 +35,8 @@ tests/me-change-password-status.test.js        — 守住舊密錯誤必須回 4
 ```
 client/src/App.jsx                             — 加 /login 路由、其他路由包 RequireAuth + RequireFreshPassword、useEffect listen auth-expired event 自動 navigate /login；加 renderPage helper、/preference/security 接 SecurityPage
 src/routes/me.js                               — 補 PUT /profile endpoint + POST /change-password 舊密錯誤改回 400（從 401）
+mcp/ownmind-log.js                             — 抽 export localDateOnly(date) helper、logEvent 改用、同源避免 test / prod 時區算法分歧
+tests/mcp-log-event-uuid.test.js               — import localDateOnly 用同源 local date 計算、修跨午夜 UTC vs 台北邊界 flake
 client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告
 client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 74 個、加 portal_analytics / preference / changelog / menu / login / security / profile 區）
 openspec/changes/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
