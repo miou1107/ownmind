@@ -4,8 +4,8 @@
 
 新增檔：
 ```
-openspec/changes/v1.19.15-bug-reports-id-serial/proposal.md  — 提案：為什麼改型別 + 安全保證
-openspec/changes/v1.19.15-bug-reports-id-serial/tasks.md     — 任務清單
+openspec/changes/archive/v1.19.15-bug-reports-id-serial/proposal.md  — 提案：為什麼改型別 + 安全保證
+openspec/changes/archive/v1.19.15-bug-reports-id-serial/tasks.md     — 任務清單
 db/017_bug_reports_id_to_serial.sql                          — DROP + CREATE 重建 5 表、id 用 SERIAL
 tests/migration-017-bug-reports-id-serial.test.js            — 12 個測試：sanity check + DROP + 型別 + CHECK + index
 ```
