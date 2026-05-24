@@ -40,3 +40,28 @@ test('iruUpdateTier 函式內 const cached 不重複宣告', () => {
 // 廣義檢查會誤報很多其實合法的（例如 if/else 兩 block 各有 const t）、
 // 留 iruUpdateTier 這條精確檢查就夠 cover 這次的真 bug。未來若有別處
 // 重複宣告再個別加 case。
+
+// ============================================================
+// v1.19.17 hotfix：modal-overlay 顯示用 .active class、不是 .show
+// ============================================================
+// 原因：CSS 規則是 `.modal-overlay.active { display: flex; }`、所以
+// classList 操作必須用 'active'。若用 'show' modal 永遠不顯示、
+// 「查看」「審查」等按鈕點了沒反應、UX 死掉。
+
+test('modal classList 操作只能用 active、不能用 show', () => {
+  // 既有 CSS 規則：.modal-overlay.active 才顯示
+  assert.match(
+    html,
+    /\.modal-overlay\.active\s*\{\s*display:\s*flex/,
+    'CSS 應該定義 .modal-overlay.active 才會顯示'
+  );
+
+  // 不該有任何 classList.add('show') / .remove('show')（會打到死的 modal）
+  const wrongAdd = (html.match(/classList\.add\(\s*['"]show['"]\s*\)/g) || []).length;
+  const wrongRemove = (html.match(/classList\.remove\(\s*['"]show['"]\s*\)/g) || []).length;
+  assert.equal(
+    wrongAdd + wrongRemove,
+    0,
+    `發現 classList.add/remove('show') 共 ${wrongAdd + wrongRemove} 處、應該全部改成 'active'（因為 CSS 規則用的是 .active）`
+  );
+});

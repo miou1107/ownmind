@@ -1,5 +1,19 @@
 # OwnMind 更新紀錄
 
+## v1.19.17 — hotfix：錯誤回報後台「查看」「審查」按鈕點了沒反應
+
+**症狀：** 登入後台 → 錯誤回報分頁 → 點任一筆的「查看」按鈕、沒反應、modal 沒展開。
+
+**根因：** 既有 modal 顯示用 CSS class `.active` 觸發（規則：`.modal-overlay.active { display: flex; }`）、但 v1.19.14 加錯誤回報分頁時 JS 寫的是 `classList.add('show')`、永遠對不上 CSS、modal 永遠不顯示。
+
+是 IR-005「不要 blind edit」的活樣本：寫新 modal 時沒看既有 modal 怎麼用、自己假設 class 名是 show、實際是 active。
+
+**修法：** `src/public/index.html` 共 4 處 `classList.add/remove('show')` 改成 `'active'`（bugReportModal 跟 spamSuspectModal 各 2 處）。
+
+**測試：** `tests/admin-html-no-duplicate-const.test.js` 加新 case、grep 整份 HTML 不能再出現 `classList.add/remove('show')`、防止這類問題復發。
+
+---
+
 ## v1.19.16 — hotfix：admin 後台登入頁 SyntaxError、所有人登不進去
 
 **P0 緊急修補。** v1.19.14/15 部署後 Vin 從瀏覽器打開 `https://kkvin.com/ownmind/admin/`、輸入帳密按登入沒反應。打開 DevTools 看 console 顯示：
