@@ -1,5 +1,28 @@
 # OwnMind 更新紀錄
 
+## v1.19.18 — 安全：修補三個中度依賴漏洞（npm audit fix）
+
+**背景：** 在 Antigravity 環境跑 `npm audit` 發現 3 個中度（moderate）相依套件漏洞：
+
+| 套件 | 升級 | 漏洞 |
+|---|---|---|
+| `qs` | 6.15.0 → 6.15.2 | DoS 阻斷服務（`encodeValuesOnly` 開啟時對 null/undefined 解析會炸 TypeError）— [GHSA-q8mj-m7cp-5q26](https://github.com/advisories/GHSA-q8mj-m7cp-5q26) |
+| `ip-address` | 10.1.0 → 10.2.0 | XSS 跨站攻擊（Address6 HTML-emitting methods）— [GHSA-v2v4-37r5-5v8g](https://github.com/advisories/GHSA-v2v4-37r5-5v8g) |
+| `express-rate-limit` | 8.3.2 → 8.5.2 | 自己沒漏洞、是因依賴有漏洞的 `ip-address` 連帶升級 |
+
+**為什麼這三個要修：**
+
+- **`qs` DoS**：Express 5 內建用 `qs` 解析查詢字串（URL 後面 `?key=value` 那段）、可被遠端觸發。OwnMind 伺服器直接面向公開網際網路、有實際風險。
+- **`ip-address` XSS**：只在用 `Address6` 的 `.toString()` 等 HTML 輸出方法時觸發。`express-rate-limit` 只拿來判斷 IPv6 位址範圍、沒走 HTML 輸出路徑、實際被利用機率低。一併升掉。
+- **`express-rate-limit`**：間接依賴連帶升級。
+
+**修法：** 跑 `npm audit fix`、npm 自動升三個套件到無漏洞的 minor 版本（不會跨 major、不引入 breaking change）。全套 1827 個測試綠、`npm audit` 回 0 漏洞。
+
+**對應規格：** `openspec/changes/v1.19.18-security-audit-fix/`
+**對應 GitHub issue：** [#43](https://github.com/miou1107/ownmind/issues/43)
+
+---
+
 ## v1.19.17 — hotfix：錯誤回報後台「查看」「審查」按鈕點了沒反應
 
 **症狀：** 登入後台 → 錯誤回報分頁 → 點任一筆的「查看」按鈕、沒反應、modal 沒展開。
