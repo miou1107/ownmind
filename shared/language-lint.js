@@ -330,9 +330,41 @@ export function checkJargonExplanation(content, historicalCorpus = '') {
  * @param {string} [historicalCorpus=''] - 同 session 前面所有 assistant reply 合併（選填）
  * @returns {{ok: boolean, violations: Array<{rule: string, message: string}>}}
  */
-export function lintReply(content, historicalCorpus = '') {
+export function lintReply(content, enabledValidatorsOrHistorical = [], context = {}) {
+  // v1.21.0：兩種呼叫方式
+  //   - 新 API：lintReply(content, resolvedValidators, context)
+  //     resolvedValidators 是 [{rule, validator, check, params}, ...]、caller 已解析好 check fn
+  //   - 舊 API：lintReply(content, historicalCorpus)  ← 向後相容、historicalCorpus 是字串
+  let resolvedValidators = [];
+  let mergedContext = { ...context };
+  if (typeof enabledValidatorsOrHistorical === 'string') {
+    mergedContext.historicalCorpus = enabledValidatorsOrHistorical;
+  } else if (Array.isArray(enabledValidatorsOrHistorical)) {
+    resolvedValidators = enabledValidatorsOrHistorical;
+  }
+
   const violations = [];
 
+  // v1.21.0：規則驅動 — 只跑 caller 解析好的 validator check fn
+  if (resolvedValidators.length > 0) {
+    for (const entry of resolvedValidators) {
+      if (typeof entry.check !== 'function') continue;
+      try {
+        const result = entry.check(content, entry.params || {}, mergedContext);
+        if (!result || result.ok) continue;
+        const v = result.violation || {};
+        violations.push({
+          rule: v.event || entry.validator || 'unknown',
+          message: v.message || '',
+          detail: v.detail || {},
+          sourceRule: entry.rule || '',
+        });
+      } catch { /* validator 內部錯不擋主流程 */ }
+    }
+    return { ok: violations.length === 0, violations };
+  }
+
+  // 舊 API fallback：給沒傳 enabledValidators 的 caller 用（向後相容）
   const mixed = checkMixedLanguage(content);
   if (!mixed.ok) {
     violations.push({
@@ -342,7 +374,7 @@ export function lintReply(content, historicalCorpus = '') {
     });
   }
 
-  const jargon = checkJargonExplanation(content, historicalCorpus);
+  const jargon = checkJargonExplanation(content, mergedContext.historicalCorpus || '');
   if (!jargon.ok) {
     violations.push({
       rule: LINT_JARGON_EXPLANATION_REQUIRED,

@@ -99,6 +99,14 @@ shared/lint-event-types.js                                    — v1.20.4：lint
 openspec/changes/v1.20.4-lint-rule-neutralize/proposal.md     — 提案：產品碼去個人鐵律編號、改用中性事件常數
 openspec/changes/v1.20.4-lint-rule-neutralize/spec.md         — 規格：7 個 GIVEN/WHEN/THEN scenario
 openspec/changes/v1.20.4-lint-rule-neutralize/tasks.md        — 任務清單
+shared/validators/jargon-explanation.js                       — v1.21.0 validator：包裝既有行話檢查邏輯
+shared/validators/language-mixed-ratio.js                     — v1.21.0 validator：中英混雜檢查、threshold 可調
+shared/validators/privacy-detect.js                           — v1.21.0 validator：隱私偵測（從 lint hook 抽出）
+shared/validators/index.js                                    — v1.21.0：validator 註冊表 + findValidator / extractEnabledValidators
+tests/validators/registry.test.js                             — v1.21.0：16 個守備 case（註冊表 / 查找 / 抽取啟用 / 介面合約）
+openspec/changes/v1.21.0-lint-validator-architecture/proposal.md — 提案：lint 規則驅動架構
+openspec/changes/v1.21.0-lint-validator-architecture/spec.md   — 規格：8 個 GIVEN/WHEN/THEN scenario
+openspec/changes/v1.21.0-lint-validator-architecture/tasks.md  — 任務清單
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
