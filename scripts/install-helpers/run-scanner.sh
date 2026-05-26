@@ -1,30 +1,31 @@
 #!/bin/bash
 # run-scanner.sh — OwnMind token usage scanner wrapper
 #
-# 目的：launchd / systemd / Task Scheduler 呼叫此 script，script 動態找 node，
-#       驗證版本，再 exec 真正的 scanner js。避免 plist/service 寫死路徑。
+# Purpose: launchd / systemd / Task Scheduler invokes this script; it dynamically locates a
+#          working node, verifies the version, then exec's the actual scanner JS.
+#          Avoids hard-coding paths in plist/service files.
 #
-# Install 時由 install.sh 複製到 ~/.ownmind/bin/run-scanner.sh。
-# Plan P6 / D12。
+# Copied to ~/.ownmind/bin/run-scanner.sh by install.sh.
+# Plan P6 / D12.
 #
-# 候選 node 路徑（依序嘗試）：
-#   1. ~/.ownmind/.node-path（install 時偵測寫入）
-#   2. `command -v node`（當前 PATH）
-#   3. 常見 glob：/opt/homebrew/bin/node, /usr/local/bin/node,
-#                 ~/.nvm/versions/node/*/bin/node（按版本 sort -rV 取最新）
+# Candidate node paths (tried in order):
+#   1. ~/.ownmind/.node-path (written by install when it detected node)
+#   2. `command -v node` (current PATH)
+#   3. Common globs: /opt/homebrew/bin/node, /usr/local/bin/node,
+#                    ~/.nvm/versions/node/*/bin/node (sorted by version, newest first)
 #
-# 每個候選都要通過 --version 檢查且 major >= $MIN_NODE_MAJOR 才可用。
+# Each candidate must pass --version and have major >= $MIN_NODE_MAJOR to be selected.
 
 set -u
 
-# `set -u` + launchd 極少數情境下 $HOME 可能未設；補一個 fallback
+# `set -u` + launchd edge cases occasionally leave $HOME unset; provide a fallback.
 HOME="${HOME:-$(eval echo ~)}"
 
 MIN_NODE_MAJOR="${OWNMIND_MIN_NODE_MAJOR:-20}"
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
 
-# Runtime opt-out：使用者可以建 ~/.ownmind/.no-usage-scanner 立即停掉 scanner
-# （不用 launchctl unload / systemctl disable；下次 cron 被攔下）
+# Runtime opt-out: the user can create ~/.ownmind/.no-usage-scanner to disable the scanner
+# immediately (no launchctl unload / systemctl disable needed; the next cron firing skips it).
 if [ -f "${OWNMIND_DIR}/.no-usage-scanner" ]; then
   mkdir -p "${OWNMIND_DIR}/logs"
   echo "$(date -u +%FT%TZ) [scanner] opt-out flag present, skipping" >> "${OWNMIND_DIR}/logs/scanner.log"
@@ -43,7 +44,7 @@ TS() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 log_out() { echo "$(TS) $1" >> "$OUT_LOG"; }
 log_err() { echo "$(TS) $1" >> "$ERR_LOG"; }
 
-# 檢查候選是否能跑且版本合格
+# Check whether a candidate runs and meets the version requirement.
 # $1 = candidate path
 # return 0 if valid, 1 otherwise
 check_node() {
@@ -52,7 +53,7 @@ check_node() {
   [ -x "$cand" ] || return 1
   local ver
   ver="$("$cand" --version 2>/dev/null)" || return 1
-  # 期望 v20.12.3 之類格式
+  # Expect something like v20.12.3.
   local major
   major="$(echo "$ver" | sed -E 's/^v([0-9]+).*/\1/')"
   if [ -z "$major" ] || ! [ "$major" -ge "$MIN_NODE_MAJOR" ] 2>/dev/null; then
@@ -62,36 +63,37 @@ check_node() {
   return 0
 }
 
-# 依序建候選清單
+# Build the candidate list in order.
 candidates=()
 
-# 1. .node-path cache
+# 1. .node-path cache.
 if [ -f "$NODE_PATH_CACHE" ]; then
   cached="$(head -n 1 "$NODE_PATH_CACHE" 2>/dev/null)"
   [ -n "$cached" ] && candidates+=("$cached")
 fi
 
-# 2. PATH
+# 2. PATH.
 if cmd_node="$(command -v node 2>/dev/null)"; then
   candidates+=("$cmd_node")
 fi
 
-# 3. 常見位置 + nvm glob（nvm 取最新版本）
-# OWNMIND_SKIP_SYSTEM_CANDIDATES=1 停用系統路徑（測試用；避免真實 node 被撿到）
+# 3. Common locations + nvm glob (nvm picks the newest version).
+# OWNMIND_SKIP_SYSTEM_CANDIDATES=1 disables system paths (for tests; prevents a real node
+# from being picked up).
 if [ "${OWNMIND_SKIP_SYSTEM_CANDIDATES:-0}" != "1" ]; then
   for p in /opt/homebrew/bin/node /usr/local/bin/node; do
     [ -x "$p" ] && candidates+=("$p")
   done
   if [ -d "$HOME/.nvm/versions/node" ]; then
-    # sort -rV：版本號倒序（v22.1 > v20.12 > v18.5）
+    # sort -rV: version-aware reverse sort (v22.1 > v20.12 > v18.5).
     while IFS= read -r p; do
       [ -n "$p" ] && candidates+=("$p")
     done < <(ls -1d "$HOME/.nvm/versions/node"/*/bin/node 2>/dev/null | sort -rV)
   fi
 fi
 
-# 遍歷候選，取第一個通過檢查的
-# 注意：bash `set -u` 下空 array `"${candidates[@]}"` 會拋錯，要先 guard size
+# Iterate candidates, pick the first that passes the check.
+# Note: under bash `set -u`, an empty array `"${candidates[@]}"` throws — guard with a size check first.
 NODE_BIN=""
 if [ "${#candidates[@]}" -gt 0 ]; then
   for cand in "${candidates[@]}"; do

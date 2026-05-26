@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 /**
- * scripts/backfill-iron-rule-origin-context.js — v1.18.2 backfill 35 條既有鐵律
+ * scripts/backfill-iron-rule-origin-context.js — v1.18.2 backfill for 35 existing iron rules.
  *
- * 把既有沒 metadata.origin_context 的 iron_rule 標 confidence='user_direct' +
- * event='v1.18.2 backfill: 起源不可考，視為 user 直接下令建立'。
+ * Tags every iron_rule lacking metadata.origin_context with confidence='user_direct' +
+ * event='v1.18.2 backfill: origin unknown; treated as a direct user instruction'.
  *
- * 行為：
- *   - 拿所有 active iron_rule、檢查 metadata.origin_context
- *   - 沒 → 加 user_direct + backfill event
- *   - 已有 → skip (idempotent)
- *   - **不改 content body** (保留原 content、只動 metadata)
- *     未來 Vin 用升級助手時可選擇手動補 event 並 inject body 段落
+ * Behavior:
+ *   - Pull every active iron_rule, check metadata.origin_context.
+ *   - Missing → add user_direct + backfill event.
+ *   - Present → skip (idempotent).
+ *   - **Does NOT modify content body** (keep original content; only touch metadata).
+ *     In the future Vin can manually fill in `event` and inject a body section via the
+ *     upgrade assistant.
  *
- * 用法：
+ * Usage:
  *   node scripts/backfill-iron-rule-origin-context.js [--dry-run]
  */
 
@@ -58,13 +59,13 @@ async function updateRule(apiUrl, apiKey, ruleId, metadata, syncToken) {
     },
     body: JSON.stringify({
       metadata,
-      update_reason: 'v1.18.2 backfill: 補 origin_context (起源不可考、user_direct)',
+      update_reason: 'v1.18.2 backfill: fill in origin_context (origin unknown; user_direct)',
       sync_token: syncToken,
     }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-  // 拿新 sync_token (每次 update 後會變)
+  // Pick up the new sync_token (it changes after every update).
   try { return JSON.parse(text).sync_token; } catch { return syncToken; }
 }
 
@@ -124,8 +125,8 @@ async function main() {
       origin_context: {
         captured_at: new Date().toISOString(),
         confidence: 'user_direct',
-        event: 'v1.18.2 backfill: 起源不可考、視為 user 直接下令建立',
-        // 不寫 cwd / git_branch / project — backfill 時無從得知
+        event: 'v1.18.2 backfill: origin unknown; treated as a direct user instruction',
+        // Do not set cwd / git_branch / project — unknowable at backfill time.
       },
     };
     try {

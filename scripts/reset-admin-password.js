@@ -1,51 +1,53 @@
 #!/usr/bin/env node
 /**
- * OwnMind 緊急密碼救援腳本 — v1.19.9
+ * OwnMind emergency password recovery script — v1.19.9
  *
- * 對應 openspec/changes/v1.19.9-password-recovery/spec.md 場景 9-12。
+ * Corresponds to openspec/changes/v1.19.9-password-recovery/spec.md scenarios 9-12.
  *
- * 用途：當 super_admin 忘記密碼且沒有其他 admin 可協助救援時、
- *      在伺服器主機上跑這個腳本、把指定 super_admin 的 password_hash 設 NULL、
- *      然後走舊 /admin/setup + SETUP_TOKEN 重新設密碼。
+ * Purpose: when a super_admin forgets their password and no other admin can help recover it,
+ *          run this script on the server host to set the chosen super_admin's password_hash
+ *          to NULL, then reset the password via the legacy /admin/setup + SETUP_TOKEN flow.
  *
- * 安全性：腳本只能在能 SSH 進伺服器（已有最高物理權限）的人手上跑、
- *        不會降低系統安全等級、只是把「需要記 SQL 語法」降為「跑一行指令」。
+ * Security: this script can only be run by someone with SSH access to the server (who already
+ *           has the highest physical privilege). It doesn't lower the security level — it just
+ *           reduces "needs to remember SQL syntax" to "runs a single command".
  *
- * 用法：
+ * Usage:
  *   node scripts/reset-admin-password.js
- *   （腳本會列出所有 super_admin、互動式問你選誰）
+ *   (the script lists all super_admins and interactively asks which to reset)
  *
- * 環境變數：
- *   DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD — DB 連線
+ * Environment variables:
+ *   DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD — DB connection
  *
- * 退出碼：
- *   0 — 成功
- *   1 — DB 連線失敗 / 使用者取消 / 找不到 super_admin
+ * Exit codes:
+ *   0 — success
+ *   1 — DB connection failed / user cancelled / no super_admin found
  *
- * 設計：
- *   - 互動式雙重確認（避免誤觸發）
- *   - 寫 audit log（action='cli_reset_password'）
- *   - 自動產隨機 SETUP_TOKEN（32 字 hex）印給使用者
- *   - 只列 super_admin（不列 admin / user、避免被當成後門用、那兩個角色該走後台救援）
+ * Design:
+ *   - Interactive double confirmation (avoid accidental triggers).
+ *   - Writes an audit log (action='cli_reset_password').
+ *   - Auto-generates a random SETUP_TOKEN (32 hex chars) and prints it.
+ *   - Only lists super_admin (not admin / user — avoid being used as a backdoor; those two
+ *     roles should be recovered via the admin UI).
  */
 import readline from 'readline';
 import { randomBytes } from 'crypto';
 import { query } from '../src/utils/db.js';
 
 const HELP = `
-OwnMind 緊急密碼救援腳本
+OwnMind emergency password recovery script
 
-用法：
+Usage:
   node scripts/reset-admin-password.js
 
-說明：
-  在伺服器主機上跑這個腳本、把指定 super_admin 的密碼清空、
-  然後走 /admin/setup 重新設密碼。
+Description:
+  Run this script on the server host to clear the chosen super_admin's password,
+  then reset it via /admin/setup.
 
-需要環境變數：
-  DB_HOST、DB_PORT、DB_NAME、DB_USER、DB_PASSWORD
+Required environment variables:
+  DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
-退出碼：0 成功、1 失敗或取消。
+Exit codes: 0 success, 1 failure or cancellation.
 `;
 
 async function main() {
@@ -54,9 +56,9 @@ async function main() {
     process.exit(0);
   }
 
-  console.log('=== OwnMind 緊急密碼救援腳本 v1.19.9 ===\n');
+  console.log('=== OwnMind emergency password recovery v1.19.9 ===\n');
 
-  // 1. 列出所有 super_admin
+  // 1. List all super_admins.
   let admins;
   try {
     const result = await query(
@@ -67,60 +69,60 @@ async function main() {
     );
     admins = result.rows;
   } catch (err) {
-    console.error(`❌ DB 連線失敗：${err.message}`);
-    console.error('請確認 DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD');
+    console.error(`❌ DB connection failed: ${err.message}`);
+    console.error('Check DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD');
     process.exit(1);
   }
 
   if (admins.length === 0) {
-    console.log('⚠️ 系統中沒有任何 super_admin。');
-    console.log('如果這是新部署、請走 setup wizard（開瀏覽器到 /admin、自動引導）。');
+    console.log('⚠️ No super_admin exists in this system.');
+    console.log('If this is a fresh deployment, run the setup wizard (open /admin in a browser; auto-guided).');
     process.exit(1);
   }
 
-  console.log(`系統中有 ${admins.length} 位 super_admin：\n`);
+  console.log(`Found ${admins.length} super_admin(s) in this system:\n`);
   admins.forEach((a, i) => {
-    const lastUpdate = a.updated_at ? new Date(a.updated_at).toISOString().slice(0, 10) : '從未更新';
-    console.log(`  [${i + 1}] ${a.email}  (name: ${a.name || '-'}, 最後更新: ${lastUpdate})`);
+    const lastUpdate = a.updated_at ? new Date(a.updated_at).toISOString().slice(0, 10) : 'never updated';
+    console.log(`  [${i + 1}] ${a.email}  (name: ${a.name || '-'}, last updated: ${lastUpdate})`);
   });
   console.log();
 
-  // 2. 互動式選擇
+  // 2. Interactive selection.
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
   const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
 
-  const choice = (await ask('請輸入要重設的編號（或輸入 q 取消）：')).trim();
+  const choice = (await ask('Enter the number to reset (or q to cancel): ')).trim();
   if (choice.toLowerCase() === 'q' || !choice) {
-    console.log('已取消、未做任何變更。');
+    console.log('Cancelled. No changes made.');
     rl.close();
     process.exit(1);
   }
 
   const idx = parseInt(choice, 10) - 1;
   if (isNaN(idx) || idx < 0 || idx >= admins.length) {
-    console.error('❌ 編號無效。');
+    console.error('❌ Invalid number.');
     rl.close();
     process.exit(1);
   }
 
   const target = admins[idx];
 
-  // 3. 雙重確認
+  // 3. Double confirmation.
   console.log();
-  console.log(`⚠️ 即將清除 ${target.email} 的密碼、之後必須走 SETUP_TOKEN 流程重設。`);
-  const confirm = (await ask("確定要繼續？輸入 'yes' 確認：")).trim();
+  console.log(`⚠️ About to clear ${target.email}'s password — they will then have to go through the SETUP_TOKEN flow to reset.`);
+  const confirm = (await ask("Are you sure? Type 'yes' to confirm: ")).trim();
   rl.close();
 
   if (confirm !== 'yes') {
-    console.log('已取消、未做任何變更。');
+    console.log('Cancelled. No changes made.');
     process.exit(1);
   }
 
-  // 4. 執行清除 + 產 SETUP_TOKEN + 寫 audit log
-  const setupToken = randomBytes(16).toString('hex'); // 32 字 hex
+  // 4. Clear + generate SETUP_TOKEN + write audit log.
+  const setupToken = randomBytes(16).toString('hex'); // 32 hex chars
 
   try {
     await query(
@@ -137,7 +139,7 @@ async function main() {
         `INSERT INTO audit_logs (actor_id, action, target_type, target_id, details)
          VALUES ($1, $2, $3, $4, $5)`,
         [
-          target.id, // 自我審計（沒有其他 actor 可用、CLI 操作者由 source 註記）
+          target.id, // self-audit (no other actor available; the CLI operator is recorded via `source`)
           'cli_reset_password',
           'user',
           target.id,
@@ -145,33 +147,33 @@ async function main() {
         ]
       );
     } catch (auditErr) {
-      console.warn(`⚠️ audit log 寫入失敗（不影響救援）：${auditErr.message}`);
+      console.warn(`⚠️ audit log write failed (does not affect the rescue): ${auditErr.message}`);
     }
   } catch (err) {
-    console.error(`❌ UPDATE 失敗：${err.message}`);
+    console.error(`❌ UPDATE failed: ${err.message}`);
     process.exit(1);
   }
 
-  // 5. 印出後續指引
+  // 5. Print next-step instructions.
   console.log();
-  console.log('✅ 密碼已清除。後續步驟：\n');
-  console.log('  1. 設環境變數並重啟 server：');
+  console.log('✅ Password cleared. Next steps:\n');
+  console.log('  1. Set the environment variable and restart the server:');
   console.log(`     export SETUP_TOKEN=${setupToken}`);
-  console.log('     # 然後重啟你的 server（例如 docker compose restart 或 systemctl restart）');
+  console.log('     # then restart your server (e.g. docker compose restart or systemctl restart)');
   console.log();
-  console.log('  2. 開瀏覽器到 /admin/setup（不是 /setup）、輸入：');
+  console.log('  2. Open /admin/setup in a browser (NOT /setup) and enter:');
   console.log(`     - email: ${target.email}`);
   console.log(`     - setup_token: ${setupToken}`);
-  console.log('     - 新密碼（至少 8 字）');
+  console.log('     - new password (at least 8 chars)');
   console.log();
-  console.log('  3. 重設完成後、SETUP_TOKEN 環境變數可以移除、server 不必重啟');
+  console.log('  3. After resetting, the SETUP_TOKEN env var can be removed; no server restart needed.');
   console.log();
-  console.log('audit log 已記錄這次救援操作（action=cli_reset_password）。');
+  console.log('The audit log recorded this rescue operation (action=cli_reset_password).');
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error(`❌ 未預期錯誤：${err.message}`);
+  console.error(`❌ Unexpected error: ${err.message}`);
   console.error(err.stack);
   process.exit(1);
 });

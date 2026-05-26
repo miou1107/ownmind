@@ -1,13 +1,13 @@
 // scripts/install-helpers/path-to-win32.cjs
 //
-// MSYS / Cygwin path ↔ Win32 path 雙向轉換。非 Windows 平台 no-op。
+// Bidirectional MSYS / Cygwin path ↔ Win32 path conversion. No-op on non-Windows.
 //
-// 為什麼要這個 helper：
-//   Git Bash 的 $HOME 是 MSYS 格式（/c/Users/Adam）。
-//   Win32 native binary（node.exe、powershell.exe）的 path 解析器不認 /c/，
-//   結果像 verify-upgrade.sh:49 的 `node -p "require('${HOME}/.ownmind/...')"` 在
-//   Git Bash 內跑會吐 MODULE_NOT_FOUND（Adam 案例）。餵 native binary 之前用
-//   toWin32Path 正規化即可。
+// Why this helper exists:
+//   Git Bash's $HOME is in MSYS format (e.g. /c/Users/Adam). Win32 native binaries
+//   (node.exe, powershell.exe) don't recognize the /c/ prefix in their path resolver, so
+//   something like verify-upgrade.sh:49's `node -p "require('${HOME}/.ownmind/...')"` would
+//   spit MODULE_NOT_FOUND under Git Bash (Adam's case). Normalize the path with
+//   toWin32Path before passing it to a native binary.
 
 'use strict';
 

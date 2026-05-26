@@ -18,9 +18,9 @@
 #   OWNMIND_REPO  — git URL      (default: https://github.com/miou1107/ownmind.git)
 #
 # Log format (machine-readable):
-#   INFO:detect:<message>   — 進度訊息
-#   OK:done:<message>       — 步驟成功
-#   ERROR:install:<message> — 失敗
+#   INFO:detect:<message>   — progress message
+#   OK:done:<message>       — step succeeded
+#   ERROR:install:<message> — failure
 
 set -e
 # pipefail: ensure `git clone ... | while read ...` propagates git's

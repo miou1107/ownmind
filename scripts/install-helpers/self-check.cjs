@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 /**
- * OwnMind 安裝/升級 self-check
+ * OwnMind install/upgrade self-check.
  *
- * 跑 7 項本機檢查、寫 log、上傳到 server。安裝/升級腳本結尾呼叫。
+ * Runs 7 local checks, writes a log, uploads to the server. Invoked at the end of the install /
+ * upgrade scripts.
  *
- * 為什麼要做：Adam 這種 silent fail 案例（install.ps1 印 ✅ 但 Task Scheduler 沒真的註冊、
- * scanner 從來沒跑）伺服器端看不到、使用者也不會主動回報。Self-check 把每個元件的真實
- * 狀態抓下來，本機留 log + 上傳 server，admin 就有辦法追蹤。
+ * Why this exists: silent-fail cases like Adam's (install.ps1 printed ✅, but Task Scheduler
+ * never actually registered, so the scanner never ran) are invisible on the server side, and
+ * users almost never report them proactively. Self-check captures each component's real state,
+ * keeps the log locally, and uploads to the server so admins have a way to track these.
  *
- * 用法：node self-check.cjs [--trigger=post_install|post_upgrade|manual]
+ * Usage: node self-check.cjs [--trigger=post_install|post_upgrade|manual]
  *
- * Opt-out 上傳：touch ~/.ownmind/.no-self-check-upload
+ * Opt out of upload: touch ~/.ownmind/.no-self-check-upload
  */
 
 'use strict';
@@ -22,15 +24,16 @@ const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
-// v1.17.66 — Windows 上 spawn 統一走 safeSpawn 強制 shell:false + windowsHide:true
+// v1.17.66 — on Windows, every spawn goes through safeSpawn (forces shell:false + windowsHide:true).
 const { safeSpawn } = require('./safe-spawn.cjs');
 
 const HOME = os.homedir();
 const OWNMIND_DIR = path.join(HOME, '.ownmind');
 const LOG_DIR = path.join(OWNMIND_DIR, 'logs');
 const NO_UPLOAD_FLAG = path.join(OWNMIND_DIR, '.no-self-check-upload');
-// v1.17.66 — 上傳失敗（401 / 網路 / 5xx）時把 report 暫存到這個 jsonl，
-// 下次跑 self-check 開頭先試補傳。Adam 401 案例就是缺這層導致 server 永遠收不到。
+// v1.17.66 — when upload fails (401 / network / 5xx), park the report in this jsonl. The next
+// self-check run starts by retrying it. Adam's 401 case was caused by the absence of this layer
+// — the server never received anything.
 const SPOOL_FILENAME = '.upload-spool.jsonl';
 const PLATFORM = process.platform;
 const TIMEOUT_MS = 5000;
@@ -70,7 +73,7 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = TIMEOUT_MS) {
 }
 
 // ============================================================
-// 7 個 check
+// The 7 checks
 // ============================================================
 
 async function checkMcpFiles() {
@@ -120,12 +123,13 @@ async function checkServerHealth(apiUrl) {
   }
 }
 
-// v1.17.68 IR-007 防同類雷：v1.17.9 之前 install.ps1 沒過濾 flag-like args，
-// 舊版 interactive-upgrade.ps1 把 `--update` 當 positional arg 傳進去，被當 API key
-// 寫進 settings.json。Adam 從 2026-03-26 建帳號到 2026-05-08 都吃 401（token_events
-// 0 筆 / install_check_logs 0 筆 / scanner 永遠 401）— 沒人發現是因為 self-check
-// 只打 server 看 200/401，不檢查 key 字串本身的格式。這個 check 不打 server，
-// 純看 settings.json 裡 OWNMIND_API_KEY 的字串長相，把已經中招的存量挖出來。
+// v1.17.68 IR-007 same-class-bug prevention: before v1.17.9, install.ps1 did not filter
+// flag-like args, so older interactive-upgrade.ps1 passed `--update` as a positional arg —
+// which got written into settings.json as the API key. Adam ate 401s from 2026-03-26 to
+// 2026-05-08 (0 token_events / 0 install_check_logs / scanner always 401) and nobody
+// noticed, because self-check only hit the server and looked at 200/401 rather than at
+// the key string itself. This check does NOT hit the server — it just inspects the
+// OWNMIND_API_KEY string in settings.json to flush out latent victims.
 function checkApiKeyFormat(apiKey) {
   if (typeof apiKey !== 'string' || apiKey === '') {
     return fail('api_key_format', 'OWNMIND_API_KEY is empty',
@@ -171,9 +175,9 @@ async function checkApiCredentials(apiUrl, apiKey) {
     return fail('api_credentials', 'apiUrl or apiKey is empty',
       'Re-run bootstrap with a valid API key');
   }
-  // v1.17.64：mcp/index.js 跟其他 client 都打 GET /api/memory/init + Authorization Bearer。
-  // v1.17.63 寫成 POST /api/init + X-OwnMind-API-Key header，server 沒這條路由 (404) 且
-  // auth middleware 只認 Bearer (401)，造成 api_credentials 永遠 fail。
+  // v1.17.64: mcp/index.js and all other clients hit GET /api/memory/init + Authorization Bearer.
+  // v1.17.63 wrote it as POST /api/init + X-OwnMind-API-Key header — the server has no such route
+  // (404) and the auth middleware only accepts Bearer (401), so api_credentials always failed.
   const url = `${apiUrl.replace(/\/$/, '')}/api/memory/init`;
   try {
     const r = await fetchWithTimeout(url, {
@@ -200,7 +204,7 @@ async function checkGitHooks() {
     if (!fs.existsSync(p)) { missing.push(name); continue; }
     try {
       const st = fs.statSync(p);
-      // Windows 沒有 exec bit；Mac/Linux 看 0o111
+      // Windows has no exec bit; on Mac/Linux we check 0o111.
       if (PLATFORM !== 'win32' && (st.mode & 0o111) === 0) notExec.push(name);
     } catch { missing.push(name); }
   }
@@ -242,9 +246,9 @@ async function checkScheduler() {
     }
   }
   if (PLATFORM === 'win32') {
-    // v1.17.66：以前帶 shell 旗標會被 cmd.exe 包，| 被 cmd 吃掉造成
-    // 「'Select-Object' is not recognized」假性失敗（Eric/Adam 兩台都中）。
-    // 現在走 safeSpawn 強制不過 shell + windowsHide。
+    // v1.17.66: passing a shell flag used to wrap the command in cmd.exe, which would eat
+    // the `|` and produce a false "Select-Object is not recognized" failure (hit on both
+    // Eric's and Adam's machines). Now we go through safeSpawn — no shell, with windowsHide.
     const r = await safeSpawn('powershell.exe',
       ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
       { timeout: TIMEOUT_MS });
@@ -267,12 +271,12 @@ async function checkScheduler() {
 }
 
 // ============================================================
-// 主流程
+// Main flow
 // ============================================================
 
-// 每個 check 都包一層 try/catch — 一個 check 拋 uncaught 不能讓整支 self-check
-// 中斷（不然就是這個功能要解決的「silent fail」）。fallback 直接回 fail，
-// detail 跟 fix 給 user 看 log 找原因。
+// Every check is wrapped in try/catch — one check throwing uncaught must not abort the whole
+// self-check (that would be the exact "silent fail" this feature exists to solve). On error,
+// we just return fail; detail + fix point the user to the log.
 async function safeCheck(name, fn) {
   try {
     return await fn();
@@ -284,24 +288,25 @@ async function safeCheck(name, fn) {
 }
 
 // ============================================================
-// v1.17.66 — 環境資訊收集（IR-038 觀測管道）
+// v1.17.66 — environment info collection (IR-038 observability pipeline).
 //
-// 把每次 self-check 跑時的執行環境一起傳到 server，方便 admin dashboard 直接看：
-//   - 哪台機器 bash 解到 WSL relay 還是 Git Bash？
-//   - 哪台機器 Out-File 預設還是 UTF-16？
-//   - Scanner 真實 state / last_run / next_run 是什麼？
-// 全部資料 < 4KB，遠低於 server 端 install_check_logs.full_log 的 64KB 上限。
+// Send the execution environment of each self-check run to the server so the admin dashboard
+// can see it directly:
+//   - Which machines resolve bash to the WSL relay vs to Git Bash?
+//   - Which machines default Out-File to UTF-16?
+//   - What's the scheduler's real state / last_run / next_run?
+// The whole payload is < 4KB, well under the 64KB cap on install_check_logs.full_log.
 // ============================================================
 
 function detectShellChain() {
-  // 簡化版：用環境變數標記推測。完整 parent/grandparent process 偵測需要 Windows
-  // WMIC 或 native API，留 v1.17.67 evaluate。
+  // Simplified: infer from env-var markers. Full parent/grandparent process detection on
+  // Windows would need WMIC or native APIs — deferred to v1.17.67 evaluation.
   const chain = [];
   if (process.env.MSYSTEM) chain.push(`msys/git-bash:${process.env.MSYSTEM}`);
-  // v1.17.66 review fix — WSL_DISTRO_NAME 可含使用者命名（如 "Adam-Ubuntu"），
-  // 改 boolean 標記避免 PII 外洩
+  // v1.17.66 review fix — WSL_DISTRO_NAME can include a user-chosen name (e.g. "Adam-Ubuntu");
+  // switched to a boolean marker to avoid PII leakage.
   if (process.env.WSL_DISTRO_NAME) chain.push('wsl');
-  // PSModulePath 在 PowerShell session 內才有；cmd.exe 沒有
+  // PSModulePath only exists inside a PowerShell session; cmd.exe doesn't have it.
   if (PLATFORM === 'win32' && process.env.PSModulePath) chain.push('powershell');
   chain.push(`node:${process.version}`);
   return chain;
@@ -318,23 +323,24 @@ async function detectBashResolution() {
     if (/Windows[\\/]System32[\\/]bash\.exe$/i.test(line)) {
       if (selected === 'NOT_FOUND') selected = 'WSL_RELAY';
     } else if (/Git[\\/](?:bin|usr[\\/]bin)[\\/]bash\.exe$/i.test(line)) {
-      // 第一個遇到的 Git Bash 就贏（Find-GitBash helper 邏輯也是這樣）
+      // First Git Bash we hit wins (matches the Find-GitBash helper logic).
       if (selected !== 'GIT_BASH') {
         selected = 'GIT_BASH';
         gitBashPath = line;
       }
     } else if (selected === 'NOT_FOUND') {
-      // 不認識的 bash 路徑，標記但不選
+      // Unrecognized bash path — note it but don't select it.
       selected = 'OTHER';
     }
   }
   return { where_results: lines, selected, git_bash_path: gitBashPath };
 }
 
-// v1.17.67 IR-038：抓 install.ps1 寫的 register-task log，task 註冊失敗時
-// 把 PS 錯誤訊息一併上傳。狀況：v1.17.66 兩個 battery param 拼錯導致整個
-// register 動作 throw、task 沒註冊；舊版 detectSchedulerDetail 只回 NOT_FOUND，
-// 看不到根因。現在補上「最近一次 install 跑 register-scanner-task.ps1 的輸出」。
+// v1.17.67 IR-038: capture the register-task log written by install.ps1 so when task
+// registration fails, the PowerShell error is uploaded too. Background: v1.17.66 misnamed
+// two battery params, the whole register call threw, and the task never registered. The old
+// detectSchedulerDetail only returned NOT_FOUND — we couldn't see the root cause. Now we
+// also attach "the most recent install run of register-scanner-task.ps1's output".
 function readLatestRegisterLog() {
   try {
     const logDir = path.join(HOME, '.ownmind', 'logs');
@@ -349,11 +355,12 @@ function readLatestRegisterLog() {
     if (files.length === 0) return null;
     const latest = files[0];
     const fullPath = path.join(logDir, latest.name);
-    // 最多 8KB（log 通常很小，超過代表異常）
+    // Cap at 8KB (logs are normally small; anything larger suggests something is wrong).
     const buf = fs.readFileSync(fullPath, { encoding: 'utf8' });
     const tail = buf.length > 8192 ? '...(truncated)...\n' + buf.slice(-8192) : buf;
-    // 走 sanitizePath：PowerShell 錯誤訊息常帶絕對 path（C:\Users\<realname>\...），
-    // 本機 user 名是 PII，上傳前替換成 ~ 跟其他欄位一致。
+    // Run sanitizePath: PowerShell error messages often include absolute paths
+    // (C:\Users\<realname>\...) — the local username is PII; replace it with ~ before
+    // upload, consistent with the other fields.
     return {
       file: latest.name,
       mtime: new Date(latest.mtime).toISOString(),
@@ -390,7 +397,7 @@ async function detectSchedulerDetail() {
       task_name: 'OwnMind Usage Scanner',
       state: obj.State || null,
       last_run_time: obj.LastRunTime || null,
-      // LastTaskResult 是 hex code，0 = success；轉 hex 字串方便人看
+      // LastTaskResult is a hex code where 0 = success; render as a hex string for humans.
       last_task_result: typeof obj.LastTaskResult === 'number'
         ? `0x${obj.LastTaskResult.toString(16)}`
         : null,
@@ -410,8 +417,8 @@ async function detectWindowsEncoding() {
     const m = c.stdout.match(/(\d+)/);
     if (m) codepage = m[1];
   }
-  // PS 5.x default Out-File = Unicode（UTF-16 LE BOM）— Bug #6 根因
-  // PS 6+ default Out-File = UTF-8
+  // PS 5.x default Out-File = Unicode (UTF-16 LE BOM) — the root cause of Bug #6.
+  // PS 6+ default Out-File = UTF-8.
   let outfile = null;
   let psVersion = null;
   const v = await safeSpawn('powershell.exe', ['-NoProfile', '-Command',
@@ -439,7 +446,7 @@ async function collectEnv() {
       exec_path: sanitizePath(process.execPath),
     },
     home_format: {
-      // 只記格式類別，不傳實際 path（PII 友善）
+      // Record the format category only, never the actual path (PII-friendly).
       style: homeStyle,
       is_msys: isMsysHome,
     },
@@ -447,7 +454,8 @@ async function collectEnv() {
     shell_chain: detectShellChain(),
     encoding: await detectWindowsEncoding(),
   };
-  // Windows 才有的兩塊（其他平台對應 launchd / systemd 已在 checkScheduler 收）
+  // Two extra blocks only present on Windows (the launchd / systemd equivalents on other
+  // platforms are already captured by checkScheduler).
   env.bash_resolution = await detectBashResolution();
   env.scheduler_detail = await detectSchedulerDetail();
   return env;
@@ -460,8 +468,9 @@ async function runAllChecks() {
   checks.push(await safeCheck('package_version', checkPackageVersion));
   checks.push(await safeCheck('mcp_node_modules', checkMcpNodeModules));
   checks.push(await safeCheck('server_health', () => checkServerHealth(apiUrl)));
-  // v1.17.68：先驗 key 格式（不打 server），抓 Adam 那種 settings.json 殘留 "--update"
-  // 的存量問題；放在 api_credentials 之前讓 fail 訊息更具體（指向格式 vs server 拒絕）。
+  // v1.17.68: validate the key format first (no server hit) to catch Adam-class latent
+  // issues where settings.json contains the literal "--update". Putting this before
+  // api_credentials makes the fail message more specific (format vs. server reject).
   checks.push(await safeCheck('api_key_format', () => checkApiKeyFormat(apiKey)));
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
@@ -486,7 +495,7 @@ function buildReport({ checks, trigger, clientVersion, machine, env }) {
     checks,
     summary: summarize(checks),
   };
-  // v1.17.66 — env 是選填的（unit test 不一定每次都收集），有就帶上
+  // v1.17.66 — env is optional (unit tests don't always collect it); attach it when present.
   if (env) r.env = env;
   return r;
 }
@@ -521,11 +530,12 @@ function printConsole(report) {
   process.stderr.write(`Summary:  ${s.pass || 0} passed, ${s.warn || 0} warnings, ${s.fail || 0} failed\n`);
 }
 
-// v1.17.66 — Spool helpers（IR-038 觀測管道）
+// v1.17.66 — spool helpers (IR-038 observability pipeline).
 //
-// 上傳失敗時不直接丟掉 report，寫進 ~/.ownmind/logs/.upload-spool.jsonl。
-// 下次跑 self-check 開頭呼叫 retrySpool 先補傳，再傳這次的 report。
-// 結果：API key 401 / 網路暫斷 / server 5xx 都不再 silent 丟資料。
+// On upload failure we never just drop the report — we append it to
+// ~/.ownmind/logs/.upload-spool.jsonl. The next self-check run calls retrySpool first to drain
+// the backlog, then uploads the current report.
+// Result: 401 / transient network outage / server 5xx no longer silently lose data.
 
 function getSpoolPath(opts = {}) {
   return path.join(opts.spoolDir || LOG_DIR, SPOOL_FILENAME);
@@ -549,7 +559,7 @@ async function postReport(report, apiUrl, apiKey) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        // v1.17.64：對齊 auth middleware（src/middleware/auth.js）— 一律 Bearer。
+        // v1.17.64: aligned with the auth middleware (src/middleware/auth.js) — always Bearer.
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(report),
@@ -563,16 +573,16 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
   if (!fs.existsSync(spoolPath)) return { retried: 0, failed: 0 };
   if (!apiUrl || !apiKey) return { retried: 0, failed: 0, skipped: 'no_credentials' };
 
-  // v1.17.66 review fix — 並行 self-check 時用 rename pattern 避免 race condition：
-  //   1. 把當下 spool atomically rename 到 .processing.<ts>.<pid>
-  //   2. 新進來的 appendSpool 寫到新建立的 spool（互不打架）
-  //   3. 處理完失敗的 append 回主 spool（appendFileSync 是 O_APPEND atomic）
-  // 多個 retrySpool 並發：只有第一個 rename 成功，後面跳過。
+  // v1.17.66 review fix — when self-checks run in parallel, use a rename pattern to avoid races:
+  //   1. Atomically rename the current spool to .processing.<ts>.<pid>.
+  //   2. Incoming appendSpool calls land on a freshly created spool file (no contention).
+  //   3. Failures get appended back to the main spool (appendFileSync is O_APPEND atomic).
+  // Multiple concurrent retrySpool runs: only the first rename succeeds; later ones skip.
   const processingPath = `${spoolPath}.processing.${Date.now()}.${process.pid}`;
   try {
     fs.renameSync(spoolPath, processingPath);
   } catch {
-    // 可能別的 retrySpool 已 rename 過、或檔被 GC 掉
+    // Another retrySpool may have already renamed it, or the file was GC'd.
     return { retried: 0, failed: 0, skipped: 'concurrent_retry' };
   }
 
@@ -588,26 +598,28 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
     return { retried: 0, failed: 0 };
   }
 
-  // v1.17.83（vin-windows-test 第六輪）— 達到 MAX 重試次數就 drop，不再無限重送同一筆壞 payload。
-  // 真實案例：null byte payload 被 server JSONB 拒絕 5xx，舊版 retrySpool 一直重送、server log
-  // 連續 500。新版每筆帶 `_attempts`，5 次後丟掉 + stderr 印 warn。
+  // v1.17.83 (vin-windows-test round 6) — after MAX retries, drop the entry rather than
+  // resending the same broken payload forever. Real case: a null-byte payload got 5xx'd by
+  // the server's JSONB parser; the old retrySpool kept resending and the server log
+  // accumulated continuous 500s. New version tags each entry with `_attempts`; after 5 it's
+  // dropped and a warning goes to stderr.
   const MAX_SPOOL_ATTEMPTS = opts.maxAttempts || 5;
   let retried = 0;
   let dropped = 0;
   const remaining = [];
   for (const line of lines) {
     let report;
-    try { report = JSON.parse(line); } catch { continue; /* 壞行丟掉 */ }
+    try { report = JSON.parse(line); } catch { continue; /* broken line — drop it */ }
     try {
       const r = await postReport(report, apiUrl, apiKey);
       if (r.ok) {
         retried++;
-        continue; // 上傳成功，不寫回 spool
+        continue; // upload succeeded, do not write back to the spool
       }
     } catch {
-      // 落到下面 attempt 計數
+      // Falls through to the attempt counter below.
     }
-    // 失敗（5xx / network / catch）— 增加計數
+    // Failure (5xx / network / catch) — increment the attempt counter.
     const attempts = (Number(report._attempts) || 0) + 1;
     if (attempts >= MAX_SPOOL_ATTEMPTS) {
       dropped++;
@@ -618,7 +630,7 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
     remaining.push(JSON.stringify(report));
   }
 
-  // 失敗的 append 回主 spool（不覆蓋 — 期間可能已有新 entries）
+  // Append failures back to the main spool (don't overwrite — new entries may have arrived).
   try {
     if (remaining.length > 0) {
       fs.appendFileSync(spoolPath, remaining.join('\n') + '\n');
@@ -630,26 +642,27 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
 }
 
 // ============================================================
-// v1.17.79 — Error spool drain（IR-038 觀測管道延伸）
+// v1.17.79 — error spool drain (IR-038 observability extension).
 //
-// errors/ spool dir：所有 client 端失敗都用「寫檔」回報（cmd.exe / .sh / .ps1 /
-// .cjs / hook 都能參與），self-check 統一把目錄裡的所有 JSON 檔案上傳。
-// 跟 install-check spool 並存：
-//   - install-check spool（.upload-spool.jsonl）= self-check report 自己上傳失敗的重試
-//   - errors spool（errors/<ts>-<kind>.json）= 全 client 端 fatal-path 觀測管道
-// 上傳成功就刪檔；失敗就保留下次再試（同 install-check 模式）。
-// 壞掉的 JSON（部分寫入）直接刪，不能永遠卡在 spool 裡。
+// errors/ spool dir: every client-side failure is reported via "write a file" (cmd.exe / .sh /
+// .ps1 / .cjs / hook can all participate); self-check uploads every JSON file in the directory.
+// Coexists with the install-check spool:
+//   - install-check spool (.upload-spool.jsonl) = self-check's own retry-on-upload-fail.
+//   - errors spool (errors/<ts>-<kind>.json) = global client-side fatal-path observability.
+// On successful upload, delete the file; on failure, keep it for the next attempt (same
+// pattern as install-check). Broken JSON (partial writes) is deleted outright so it doesn't
+// stay stuck in the spool forever.
 // ============================================================
-// v1.17.79 — cmd.exe 寫的 .txt 格式（key=value 一行一條）轉成 report shape
-// 為什麼要這個 fallback：start.cmd 寫 JSON 要處理 escape，痛點大。讓 cmd 寫
-// 簡單的 key=value 文字檔，drainErrorSpool 統一轉換。
+// v1.17.79 — convert cmd.exe-written .txt (key=value, one per line) into report shape.
+// Why this fallback exists: start.cmd writing JSON requires escape handling — too painful.
+// We let cmd write a simple key=value text file and let drainErrorSpool normalize it.
 function parseKeyValueText(raw, filename) {
   const obj = {};
   for (const line of raw.split(/\r?\n/)) {
     const m = line.match(/^([a-zA-Z_]+)=(.*)$/);
     if (m) obj[m[1]] = m[2];
   }
-  // kind 從 content 取，沒有就從 filename 推（去掉 timestamp 前綴）
+  // Take `kind` from the content; if absent, infer from the filename (strip the timestamp prefix).
   let kind = obj.kind;
   if (!kind && filename) {
     const m = filename.match(/^[\d-]+-(.+?)\.txt$/);
@@ -687,11 +700,11 @@ async function drainErrorSpool(apiUrl, apiKey, opts = {}) {
       if (name.endsWith('.json')) {
         report = JSON.parse(raw);
       } else {
-        // .txt: cmd.exe 寫的 key=value 格式（start.cmd 用，因為 cmd 寫 JSON 太痛）
+        // .txt: cmd.exe-written key=value format (used by start.cmd because writing JSON in cmd hurts).
         report = parseKeyValueText(raw, name);
       }
     } catch {
-      // 壞檔（部分寫入 / 非 JSON / 非 key=value）— 直接刪掉避免永遠卡 spool
+      // Broken file (partial write / not JSON / not key=value) — delete it so the spool isn't stuck forever.
       try { fs.unlinkSync(filePath); } catch {}
       continue;
     }
@@ -729,7 +742,8 @@ async function uploadReport(report, apiUrl, apiKey, opts = {}) {
   if (fs.existsSync(NO_UPLOAD_FLAG)) {
     return { skipped: true, reason: 'opt_out_flag' };
   }
-  // 開頭先試補傳之前 spool 的 report（Adam 401 後改 key 重跑時就在這裡補回）
+  // First try to retransmit any previously spooled reports (this is where Adam's reports
+  // catch up after he replaces the bad key and re-runs).
   const retryResult = await retrySpool(apiUrl, apiKey, opts);
 
   if (!apiUrl || !apiKey) {
@@ -739,7 +753,7 @@ async function uploadReport(report, apiUrl, apiKey, opts = {}) {
   try {
     const r = await postReport(report, apiUrl, apiKey);
     if (r.ok) return { ok: true, status: r.status, retried: retryResult.retried };
-    // 401 / 403 / 5xx → 寫 spool 不丟掉
+    // 401 / 403 / 5xx → spool it, don't drop.
     const spooled = appendSpool(report, opts);
     return { ok: false, status: r.status, spooled, retried: retryResult.retried };
   } catch (e) {
@@ -764,7 +778,7 @@ async function main() {
   const machine = os.hostname();
 
   const { checks, apiKey, apiUrl } = await runAllChecks();
-  // v1.17.66 — IR-038 觀測管道：每次 self-check 都收當下執行環境
+  // v1.17.66 — IR-038 observability pipeline: collect the current execution environment.
   const env = await collectEnv();
   const report = buildReport({ checks, trigger: args.trigger, clientVersion, machine, env });
 
@@ -798,20 +812,20 @@ async function main() {
   }
   process.stderr.write('-'.repeat(50) + '\n\n');
 
-  // 即使有 fail check 也回 exit 0 — 不擋安裝/升級流程
+  // Even when some checks fail, return exit 0 — never block the install / upgrade flow.
   process.exit(0);
 }
 
-// 給 test 用
+// Exported for tests.
 module.exports = {
   checkMcpFiles, checkPackageVersion, checkMcpNodeModules,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   buildReport, summarize, sanitizePath, parseArgs,
-  // v1.17.66 — Spool 機制（IR-038 觀測管道）
+  // v1.17.66 — spool mechanism (IR-038 observability pipeline).
   uploadReport, appendSpool, retrySpool,
-  // v1.17.79 — Error spool drain（廣域 client 端失敗回報）
+  // v1.17.79 — error spool drain (broad client-side failure pipeline).
   drainErrorSpool,
-  // v1.17.66 — 環境資訊收集（IR-038）
+  // v1.17.66 — environment info collection (IR-038).
   collectEnv, detectShellChain, detectBashResolution,
   detectSchedulerDetail, detectWindowsEncoding,
 };
@@ -819,6 +833,6 @@ module.exports = {
 if (require.main === module) {
   main().catch((e) => {
     process.stderr.write(`[self-check] fatal: ${sanitizePath(e?.message || String(e))}\n`);
-    process.exit(0); // 不擋
+    process.exit(0); // do not block
   });
 }

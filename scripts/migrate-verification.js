@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * 一次性遷移腳本：為現有 iron_rule 記憶自動匹配 verification template
+ * One-shot migration: auto-match a verification template to every existing iron_rule memory.
  *
- * 冪等：已有 metadata.verification 的記憶會被跳過。
+ * Idempotent: rows that already have metadata.verification are skipped.
  *
- * 用法：node scripts/migrate-verification.js
+ * Usage: node scripts/migrate-verification.js
  */
 
 import pg from 'pg';
@@ -22,9 +22,9 @@ const pool = new Pool({
 });
 
 async function migrate() {
-  console.log('=== Iron Rule Verification 遷移開始 ===\n');
+  console.log('=== Iron rule verification migration starting ===\n');
 
-  // 抓所有 iron_rule 且沒有 metadata.verification 的記憶
+  // Pull every active iron_rule without metadata.verification.
   const result = await pool.query(
     `SELECT id, title, content, tags, metadata
      FROM memories
@@ -34,15 +34,15 @@ async function migrate() {
   );
 
   const rules = result.rows;
-  console.log(`找到 ${rules.length} 條需要遷移的 iron_rule\n`);
+  console.log(`Found ${rules.length} iron_rule(s) to migrate\n`);
 
   let matched = 0;
   let skipped = 0;
 
   for (const rule of rules) {
-    // 雙重冪等檢查（防止 SQL 條件未涵蓋的邊界情況）
+    // Belt-and-suspenders idempotency check (covers edge cases the SQL filter might miss).
     if (rule.metadata?.verification) {
-      console.log(`  [跳過] #${rule.id} "${rule.title}" — 已有 verification`);
+      console.log(`  [skip] #${rule.id} "${rule.title}" — already has verification`);
       skipped++;
       continue;
     }
@@ -54,7 +54,7 @@ async function migrate() {
     });
 
     if (!templateId) {
-      console.log(`  [無匹配] #${rule.id} "${rule.title}"`);
+      console.log(`  [no match] #${rule.id} "${rule.title}"`);
       skipped++;
       continue;
     }
@@ -67,20 +67,20 @@ async function migrate() {
       [JSON.stringify(updatedMetadata), rule.id]
     );
 
-    console.log(`  [已更新] #${rule.id} "${rule.title}" → ${templateId}`);
+    console.log(`  [updated] #${rule.id} "${rule.title}" → ${templateId}`);
     matched++;
   }
 
-  console.log(`\n=== 遷移完成 ===`);
-  console.log(`  已更新: ${matched}`);
-  console.log(`  跳過:   ${skipped}`);
-  console.log(`  總計:   ${rules.length}`);
+  console.log(`\n=== Migration complete ===`);
+  console.log(`  Updated: ${matched}`);
+  console.log(`  Skipped: ${skipped}`);
+  console.log(`  Total:   ${rules.length}`);
 
   await pool.end();
 }
 
 migrate().catch(err => {
-  console.error('遷移失敗:', err);
+  console.error('Migration failed:', err);
   pool.end();
   process.exit(1);
 });

@@ -1,9 +1,10 @@
 #!/bin/bash
-# check-sync.sh — OwnMind 三層健檢（Remote / Server / Deploy drift）
-# 用法：bash ~/.ownmind/scripts/check-sync.sh
-# 輸出：結構化 STDOUT，給 ownmind-upgrade skill 解析
+# check-sync.sh — three-layer OwnMind health check (Remote / Server / Deploy drift).
+# Usage: bash ~/.ownmind/scripts/check-sync.sh
+# Output: structured STDOUT for the ownmind-upgrade skill to parse.
 #
-# 永不拋 exit code ≠ 0（避免阻斷 AI 流程），所有錯誤走 STDOUT 的 error 標籤
+# Never throws a non-zero exit code (avoid blocking the AI flow); every error goes to
+# STDOUT under an `error` tag.
 
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
@@ -61,7 +62,7 @@ if [ -f "${OWNMIND_DIR}/package.json" ]; then
   fi
 fi
 
-# 讀 API credentials
+# Read API credentials.
 API_KEY=""
 API_URL=""
 if [ -f "${CLAUDE_DIR}/settings.json" ]; then
@@ -98,7 +99,7 @@ elif [ -z "${SERVER_VER}" ]; then
   L2="error"
   L2_DETAIL="cannot_reach_server"
 else
-  # Semver numeric compare（pre-release 視為低於 stable）
+  # Semver numeric compare (pre-release ranks below stable).
   CMP=$(node -e "
     const parse = v => {
       const noBuild = String(v).split('+')[0];
@@ -128,8 +129,8 @@ echo "L2_SERVER:${L2}${L2_DETAIL:+ ${L2_DETAIL}}"
 # ============================================================
 # L3 — Deploy drift（~/.ownmind source vs ~/.claude deployed）
 # ============================================================
-# 比對 pair：source → deployed
-# 若 source 不存在，跳過；deployed 不存在視為 missing drift
+# Comparison pairs: source → deployed.
+# If `source` is missing, skip; if `deployed` is missing, count as a "missing" drift.
 SRC_TO_DST=(
   "${OWNMIND_DIR}/hooks/ownmind-session-start.sh|${CLAUDE_DIR}/hooks/ownmind-session-start.sh"
   "${OWNMIND_DIR}/hooks/ownmind-iron-rule-check.sh|${CLAUDE_DIR}/hooks/ownmind-iron-rule-check.sh"
@@ -138,7 +139,7 @@ SRC_TO_DST=(
   "${OWNMIND_DIR}/skills/ownmind-upgrade.md|${CLAUDE_DIR}/skills/ownmind-upgrade/SKILL.md"
 )
 
-# hooks/lib/*.js 動態加入
+# hooks/lib/*.js added dynamically.
 if [ -d "${OWNMIND_DIR}/hooks/lib" ]; then
   for f in "${OWNMIND_DIR}/hooks/lib/"*.js; do
     [ -f "${f}" ] || continue
@@ -172,7 +173,7 @@ else
 fi
 
 # ============================================================
-# OVERALL 彙總（任一層 drift → needs_upgrade）
+# OVERALL summary (if any layer drifts → needs_upgrade).
 # ============================================================
 if [ "${L1}" = "behind" ] || [ "${L2}" = "outdated" ] || [ "${DRIFT_COUNT}" -gt 0 ]; then
   echo "OVERALL:needs_upgrade"

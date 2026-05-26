@@ -1,5 +1,27 @@
 # OwnMind 更新紀錄
 
+## v1.26.3 — 國際化第七期：scripts/ 內部註解英文化（軌道 B）
+
+**範圍**：翻 `scripts/` 下 21 個檔（.js / .sh / .cjs）共 314 行中文註解。延續 v1.26.2 mcp/ 同樣 pattern、零行為改動。
+
+**含軌道 A 補洞**：
+- `reset-admin-password.js` 完整 user-facing CLI 訊息英化（HELP / 互動 prompt / 錯誤訊息）
+- `migrate-verification.js` console output 英化
+- `load-settings-safe.cjs` warning 訊息英化
+- `health-report-daily.sh` SQL column alias / section header 英化
+- `bootstrap.sh` / `interactive-upgrade.sh` / `verify-upgrade.sh` / `run-migrations.sh` 全部結構化 STDOUT 訊息英化
+
+**測試更新**：
+- `tests/reset-admin-password-script.test.js` --help 斷言 `/緊急密碼救援/` → `/emergency password recovery/i`
+- `tests/add-stop-hook.test.js` 寫入失敗訊息斷言 `/寫入失敗/` → `/write failed/i`
+
+**刻意保留**：
+- `scripts/audit-real-iron-rules-lint.js` line 71/75 字面值 `'中英混雜'`, `'前 5 個'`（功能性、用來匹配 lintIronRule 回傳的中文錯誤訊息）
+
+**測試**：1956 pass / 0 fail
+**版本**：1.26.2 → 1.26.3
+**OpenSpec change**：`openspec/changes/v1.26.3-i18n-scripts-internal/`
+
 ## v1.26.2 — 國際化第六期：mcp/ 內部註解英文化（軌道 B）
 
 **範圍**：翻 `mcp/index.js` + 5 個 `mcp/lib/*.js` 共 216 行中文註解。延續 v1.26.0 hooks/ 同樣 pattern、零行為改動。

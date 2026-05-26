@@ -1,5 +1,35 @@
 # OwnMind 檔案結構
 
+## v1.26.3 修改（國際化第七期：scripts/ 內部註解英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.3-i18n-scripts-internal/proposal.md
+openspec/changes/v1.26.3-i18n-scripts-internal/tasks.md
+```
+
+修改檔（21 個 scripts/ 檔 + 2 個 test 斷言）：
+```
+scripts/install-helpers/self-check.cjs  — 97 行註解英化
+scripts/reset-admin-password.js         — 57 行（含 HELP / 互動 prompt / 訊息全英化）
+scripts/update.sh                       — 54 行
+scripts/health-report-daily.sh          — 49 行（含 SQL alias / section header 英化）
+scripts/verify-upgrade.sh               — 48 行（含 STDOUT 訊息英化）
+scripts/interactive-upgrade.sh          — 45 行（含 FAIL/STEP/OK 訊息英化）
+scripts/run-migrations.sh               — 35 行
+scripts/install-helpers/add-post-tool-use-hook.cjs / add-stop-hook.cjs / run-scanner.sh / safe-spawn.cjs — 中型檔
+scripts/lint-zh-only.js / migrate-verification.js / report-error.cjs / load-settings-safe.cjs / backfill-iron-rule-origin-context.js / audit-real-iron-rules-lint.js / check-sync.sh / path-to-win32.cjs / bootstrap.sh / report-error.sh — 小檔
+tests/reset-admin-password-script.test.js — --help 斷言改英文
+tests/add-stop-hook.test.js              — write failed 斷言改英文
+package.json                             — 1.26.2 → 1.26.3
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                             — v1.26.3 條目
+```
+
+**刻意保留**：`scripts/audit-real-iron-rules-lint.js` 內 2 處字串匹配字面值（'中英混雜'、'前 5 個'、用來抓 lintIronRule 中文錯誤訊息）。
+
+**驗證**：`npm test` 1956 pass / 0 fail；`node --check` / `bash -n` 全過。
+
 ## v1.26.2 修改（國際化第六期：mcp/ 內部註解英文化 — 軌道 B）
 
 新增檔：
