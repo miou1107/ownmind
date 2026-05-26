@@ -88,9 +88,9 @@ describe('v1.19.11 場景 5+7 — 第 1 次擋下、完整訊息含標註要求'
     assert.equal(r4.status, 2, '第 4 次該 exit 2');
 
     // 完整指令含原本的「請重寫」開頭
-    assert.match(r4.stderr, /請重寫/);
+    assert.match(r4.stderr, /Please rewrite/);
     // 含標註要求
-    assert.match(r4.stderr, /重寫時必須在開頭加一段引述標註/);
+    assert.match(r4.stderr, /rewrite must start with a quoted-block annotation/);
     // 含 markdown 引述範例
     assert.match(r4.stderr, /^> ⚠️/m);
     // 含分隔線範例
@@ -122,11 +122,11 @@ describe('v1.19.11 場景 8 — 第 2-3 次擋下、簡短訊息', () => {
 
     // 簡短訊息含「↻」+ session 次數
     assert.match(r.stderr, /↻/);
-    assert.match(r.stderr, /第 2 次擋下/);
+    assert.match(r.stderr, /session block #2/);
 
-    // 不該含「請重寫你剛才的回應、改善以下品質問題」完整訊息
+    // 不該含完整重寫指令訊息
     assert.ok(
-      !r.stderr.includes('1. 用白話中文取代以下英文詞'),
+      !r.stderr.includes('1. Use plain Chinese to replace the following English terms'),
       '簡短訊息不該含完整違規詞列表'
     );
   });
@@ -141,7 +141,7 @@ describe('v1.19.11 場景 8 — 第 2-3 次擋下、簡短訊息', () => {
     }
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2);
-    assert.match(r.stderr, /第 3 次擋下/);
+    assert.match(r.stderr, /session block #3/);
   });
 });
 
@@ -166,7 +166,7 @@ describe('v1.19.11 場景 9 — 第 4 次擋下達 downgrade limit、降警告',
     // 第 7 次（block_count=3、要降警告）
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 1, '應該降為警告 exit 1');
-    assert.match(r.stderr, /連續擋下|降為警告/);
+    assert.match(r.stderr, /blocked .* times in a row|downgrading to warning/);
   });
 });
 

@@ -15,14 +15,14 @@ import { LINT_PRIVACY_CHECK } from '../lint-event-types.js';
 export const name = 'privacy_detect';
 
 function formatPrivacySummary(matches) {
-  if (!Array.isArray(matches) || matches.length === 0) return '無';
+  if (!Array.isArray(matches) || matches.length === 0) return 'none';
   const byType = {};
   for (const m of matches) {
     byType[m.type] = (byType[m.type] || 0) + 1;
   }
   return Object.entries(byType)
     .map(([type, count]) => `${type}×${count}`)
-    .join('、');
+    .join(', ');
 }
 
 export function check(content, _params = {}, context = {}) {
@@ -33,7 +33,7 @@ export function check(content, _params = {}, context = {}) {
     ok: false,
     violation: {
       event: LINT_PRIVACY_CHECK,
-      message: `回應疑似含使用者隱私（${formatPrivacySummary(result.matches)}）。請改寫掉那段或改用代稱（例：「[email]」「[手機號碼]」）`,
+      message: `The response appears to contain user privacy data (${formatPrivacySummary(result.matches)}). Rewrite that segment using placeholders like "[email]" or "[mobile phone]".`,
       detail: { matches: result.matches },
     },
   };

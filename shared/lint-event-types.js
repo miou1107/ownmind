@@ -35,9 +35,9 @@ export const LINT_PRIVACY_CHECK = 'privacy_check';
  * 規則：不冠任何 IR-XXX 編號、純中性中文描述。
  */
 export const EVENT_DISPLAY_NAMES = {
-  [LINT_LANGUAGE_MIXED_RATIO]: '中英混雜',
-  [LINT_JARGON_EXPLANATION_REQUIRED]: '行話品質',
-  [LINT_PRIVACY_CHECK]: '隱私內容',
+  [LINT_LANGUAGE_MIXED_RATIO]: 'Mixed Chinese-English',
+  [LINT_JARGON_EXPLANATION_REQUIRED]: 'Jargon quality',
+  [LINT_PRIVACY_CHECK]: 'Privacy content',
 };
 
 /**

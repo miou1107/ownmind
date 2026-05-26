@@ -1,5 +1,48 @@
 # OwnMind 更新紀錄
 
+## v1.24.0 — 國際化第三期：reply-lint 行為性 prompt 英文化
+
+**背景**：v1.22 + v1.23 翻完 MCP / git hooks / SessionStart。第三期處理最複雜的一塊：reply-lint hook 給 Claude 看的重寫指令（30+ 行行為性 prompt、imperative 力度必須保留）。同時翻譯 lint validator 的違規訊息（含中性事件常數的 display name）。
+
+**改動**：
+
+1. `hooks/ownmind-reply-lint.js`
+   - session-off 提醒訊息英化（含每 10 輪終端機提醒）
+   - bug-report tip 兩處（block 路徑 + downgrade 路徑）英化
+   - `formatBanner` header / mode 訊息（block mode / warn mode / downgrade / mode invalid）英化
+   - `formatPrivacySummary` labels：身分證 / 電子信箱 / 手機 → Taiwan ID / Email / Mobile phone
+   - `formatDowngradeNotice` 三行訊息英化
+   - `formatBlockReason`：
+     - 第 2-3 次擋下簡短訊息（↻ Previous response violated X — Claude was instructed to rewrite，保留 ↻ 視覺信號）
+     - 第 1 次擋下完整訊息（含 3 種違規類型的個別重寫指引 + 例外指引 + 標註要求 + markdown 引用範例）
+     - 重寫標註 header template 保留 imperative 力度
+   - `_EVENT_DISPLAY_NAMES` 模組級內聯映射英化
+
+2. `shared/lint-event-types.js`
+   - 共用的 `EVENT_DISPLAY_NAMES` 英化：中英混雜 → Mixed Chinese-English；行話品質 → Jargon quality；隱私內容 → Privacy content
+   - 共用此 map 的 `hooks/lib/build-compliance-events.js` 自動跟著英化
+
+3. `shared/validators/*` 三個 validator 違規訊息英化
+   - `language-mixed-ratio.js`: Mixed Chinese-English ratio X% > Y% — found N non-whitelisted English words...
+   - `jargon-explanation.js`: Jargon / technical terms missing plain-Chinese explanation — N terms... lack a follow-up explanation within 50 characters
+   - `privacy-detect.js`: The response appears to contain user privacy data (...). Rewrite that segment using placeholders like "[email]" or "[mobile phone]"
+
+4. 招牌標籤 `【】` → `[]`（延續 v1.22 convention）
+
+5. 測試更新（5 個檔）
+   - `reply-lint-hook.test.js`: banner header regex / `回話品質` → `Reply quality lint`
+   - `reply-lint-hook-v1193-block.test.js`: 5 處重寫指令 regex 英化、example 形式提示 regex 雙語接受
+   - `reply-lint-hook-v197.test.js`: 連續擋下訊息、privacy 訊息斷言英化
+   - `reply-lint-hook-v1911.test.js`: session block #N / quoted-block annotation 斷言
+   - `build-compliance-events.test.js`: 中文事件 prefix → 英文事件 prefix
+
+**Defer 到 v1.25.0**：
+- `src/routes/memory.js` 28 處 server-side API response brand banner
+
+**版本**：1.23.0 → 1.24.0
+**測試**：1954 pass / 0 fail
+**OpenSpec change**：`openspec/changes/v1.24.0-i18n-reply-lint/`
+
 ## v1.23.0 — 國際化第二期：SessionStart 介面英文化
 
 **背景**：v1.22.0 翻完 MCP descriptions + git hooks + brand banner 後、剩下三個區塊 defer。v1.23.0 處理其中最小、風險最低的一塊：每次新對話的 SessionStart 介面（user 每次開新對話都會看到）。
