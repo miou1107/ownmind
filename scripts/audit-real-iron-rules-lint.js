@@ -2,17 +2,19 @@
 /**
  * scripts/audit-real-iron-rules-lint.js — v1.18.1 hotfix B
  *
- * 目的：拿 prod 真實 35 條鐵律跑 lintIronRule、報告每條過 / 不過、
- *      不過的話被抓哪些英文詞、頻率統計給 v1.18.1 hotfix C 擴白名單參考。
+ * Purpose: run lintIronRule against all 35 real iron rules in prod; report which pass /
+ *          fail; for the failing ones, list the offending words; aggregate frequency counts
+ *          to inform the v1.18.1 hotfix C whitelist expansion.
  *
- * 為什麼存在：
- *   v1.18.0 lint 上線時、only POST/PUT 跑、不對既有 row 反向校驗、
- *   所以「既有 35 條全綠」是假象 — 實際 IR-004 升級助手點下去就被擋。
- *   IR-007 fixture/prod mismatch 教訓：不能猜、要拿真資料校驗。
+ * Why this exists:
+ *   When v1.18.0 lint shipped it only ran on POST/PUT, never retroactively against existing
+ *   rows. The "all 35 rules pass" claim was an illusion — IR-004 actually got blocked the
+ *   moment the upgrade assistant ran it. IR-007 lesson (fixture/prod mismatch): don't guess,
+ *   validate against real data.
  *
- * 用法：
+ * Usage:
  *   node scripts/audit-real-iron-rules-lint.js
- *   讀 ~/.ownmind/cache/memories.json (SessionStart hook 同步來的)
+ *   Reads ~/.ownmind/cache/memories.json (synced by the SessionStart hook).
  */
 
 import fs from 'node:fs';
@@ -64,7 +66,7 @@ async function main() {
     if (r.ok) {
       passed.push({ code: rule.code, title: rule.title, format: r.format });
     } else {
-      // 抽 IR-037 (S8 / regex #7) 抓到的英文詞
+      // Extract the English words caught by IR-037 (S8 / regex #7).
       const mixedErr = r.errors.find(e =>
         e.includes('中英混雜') || e.includes('S8') || e.includes('IR-037')
       );

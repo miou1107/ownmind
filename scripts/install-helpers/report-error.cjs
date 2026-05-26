@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * report-error.cjs — 統一錯誤回報 helper（v1.17.79, IR-038 觀測管道）
+ * report-error.cjs — unified error-reporting helper (v1.17.79, IR-038 observability pipeline).
  *
- * 任何 install / upgrade / hook / scanner / start.cmd 失敗時呼叫，把錯誤資訊寫到
- * ~/.ownmind/logs/errors/<unix_ms>-<kind>.json。下次 self-check 跑會 drainErrorSpool
- * 一次 POST 給 /api/debug/install-check 並刪除已上傳的檔案。
+ * Called on any install / upgrade / hook / scanner / start.cmd failure; writes error info to
+ * ~/.ownmind/logs/errors/<unix_ms>-<kind>.json. The next self-check run calls drainErrorSpool,
+ * POSTs to /api/debug/install-check, and deletes the file on success.
  *
- * 用法（從 .sh / .ps1 / .cjs 都可以叫）：
+ * Usage (callable from .sh / .ps1 / .cjs):
  *   node report-error.cjs --kind=<kind> --detail=<detail> [--context-file=<path>]
  *
- * 設計原則：
- *   - 永不 throw（任何錯誤都吞掉，不能影響 caller 的退出碼）
- *   - HOME 路徑自動 sanitize 成 ~（PII 友善）
- *   - context-file 取尾 30 行（避免暴量上傳）
- *   - 檔案 atomic write（先寫 .tmp 再 rename）
+ * Design principles:
+ *   - Never throws (every error is swallowed; must not affect the caller's exit code).
+ *   - HOME path auto-sanitized to ~ (PII-friendly).
+ *   - context-file takes the tail 30 lines (avoid uploading huge files).
+ *   - Atomic file write (tmp + rename).
  */
 
 'use strict';
@@ -38,7 +38,7 @@ function parseArgs(argv) {
 
 function sanitizePath(s) {
   if (typeof s !== 'string') return String(s ?? '');
-  // HOME 替換 + 也順便處理 Windows 大小寫不敏感的 USERPROFILE
+  // Replace HOME + also handle case-insensitive USERPROFILE on Windows.
   let out = s;
   if (HOME) out = out.split(HOME).join('~');
   const up = process.env.USERPROFILE;
@@ -81,7 +81,8 @@ function readContextTail(contextFile, maxLines = 30, maxBytes = 8192) {
 function writeReport(args) {
   if (!args.kind) return;
 
-  // 確保 errors 目錄存在；失敗就放棄（user 磁碟可能滿了，不能再爆）
+  // Ensure the errors directory exists; on failure, give up (user disk may be full —
+  // do not compound the problem).
   try {
     fs.mkdirSync(ERRORS_DIR, { recursive: true });
   } catch {
@@ -90,7 +91,7 @@ function writeReport(args) {
 
   const tsMs = Date.now();
   const tsIso = new Date(tsMs).toISOString();
-  // 安全 kind：只允許 [a-zA-Z0-9_]
+  // Safe kind: only [a-zA-Z0-9_] allowed.
   const safeKind = String(args.kind).replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 64);
 
   const report = {
@@ -111,7 +112,7 @@ function writeReport(args) {
     fs.writeFileSync(tmpPath, JSON.stringify(report, null, 2));
     fs.renameSync(tmpPath, finalPath);
   } catch {
-    // 寫不出來就放棄（避免影響 caller）
+    // Give up if we can't write (avoid affecting the caller).
     try { fs.unlinkSync(tmpPath); } catch {}
   }
 }
@@ -120,7 +121,7 @@ if (require.main === module) {
   try {
     writeReport(parseArgs(process.argv));
   } catch {
-    // 永不擋 caller
+    // Never block the caller.
   }
   process.exit(0);
 }

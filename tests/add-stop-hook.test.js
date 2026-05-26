@@ -122,7 +122,7 @@ describe('v1.17.96 — add-stop-hook idempotent merge', () => {
     try {
       const r = helper.addHook(settingsPath, OWNMIND_DIR);
       assert.equal(r.status, 'error', '寫入失敗應回 error');
-      assert.match(r.message, /寫入失敗/);
+      assert.match(r.message, /write failed/i);
       assert.equal(fs.readFileSync(settingsPath, 'utf8'), original,
         '原 settings.json 必須保持完整不變');
     } finally {

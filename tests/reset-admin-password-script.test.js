@@ -34,7 +34,7 @@ describe('v1.19.9 — reset-admin-password.js smoke', () => {
       timeout: 5000,
     });
     assert.equal(r.status, 0);
-    assert.match(r.stdout, /緊急密碼救援/);
+    assert.match(r.stdout, /emergency password recovery/i);
     assert.match(r.stdout, /DB_HOST|DB_USER/);
   });
 

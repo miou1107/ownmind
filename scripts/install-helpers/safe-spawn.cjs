@@ -1,23 +1,25 @@
 // scripts/install-helpers/safe-spawn.cjs
 //
-// safeSpawn — execFile 的 Windows-friendly 包裝。
+// safeSpawn — a Windows-friendly wrapper around execFile.
 //
-// 為什麼要這個 helper：
-//   Node child_process.execFile 加 { shell: true } 在 Windows 會把命令包進 cmd.exe。
-//   cmd.exe 看到 "powershell.exe -Command 'Get-X | Select-Object'" 會把 | 當成 cmd 自己的
-//   pipe operator → 找 Select-Object 當外部命令 → 失敗。這是 v1.17.63 self-check.cjs
-//   scheduler 永遠 false fail 的根因。
+// Why this helper exists:
+//   Calling Node child_process.execFile with { shell: true } on Windows wraps the command in
+//   cmd.exe. cmd.exe sees something like "powershell.exe -Command 'Get-X | Select-Object'"
+//   and treats the `|` as its own pipe operator → looks for Select-Object as an external
+//   command → fails. This was the root cause of v1.17.63 self-check.cjs's scheduler check
+//   reporting a false negative every time.
 //
-//   此外 Windows 上 spawn console subsystem binary（如 node.exe、powershell.exe）
-//   預設會分配 console window — Task Scheduler 觸發時 = 跳視窗。windowsHide:true 防止此事。
+//   Also, spawning a console-subsystem binary on Windows (node.exe, powershell.exe, etc.) by
+//   default allocates a console window — when Task Scheduler triggers it, a window pops up.
+//   windowsHide:true prevents that.
 //
-// 預設值（可被 options override，但 shell:true 在 Windows 會 log warning）：
-//   - shell: false       絕不過 shell
-//   - windowsHide: true  絕不顯示 console window
+// Defaults (callable options override these, but shell:true on Windows logs a warning):
+//   - shell: false       never go through a shell
+//   - windowsHide: true  never show a console window
 //   - timeout: 5000ms
 //
-// 回傳：{ ok, stdout, stderr, code, error, stderr_tail }，不 throw。
-// 失敗呼叫者拿 ok=false + 結構化錯誤判斷，不用 try/catch。
+// Returns: { ok, stdout, stderr, code, error, stderr_tail }; never throws.
+// Callers branch on ok=false + the structured error, no try/catch needed.
 
 'use strict';
 
@@ -34,10 +36,10 @@ function sanitize(s) {
 }
 
 function safeSpawn(file, args = [], options = {}) {
-  // v1.17.66 review fix — 不能 log warning 了事（Task Scheduler 跑 stderr 沒人看，
-  // Bug #2 這類隱性 regression 會再次溜過 review）。
-  // 真要過 shell 的 caller 自己用 child_process.execFile，不要走 helper —
-  // helper 的價值就在「閉合不安全 default」。
+  // v1.17.66 review fix — must not just log a warning (Task Scheduler stderr has no audience,
+  // so a Bug #2-class hidden regression could slip past review again).
+  // If a caller really needs a shell, use child_process.execFile directly — this helper's
+  // value is "close off the unsafe default".
   if (options.shell === true && process.platform === 'win32') {
     throw new Error(
       `safeSpawn refuses shell:true on win32 — cmd.exe will eat PowerShell | pipes. ` +

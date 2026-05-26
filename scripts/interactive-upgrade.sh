@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# OwnMind 互動式升級 script (v1.17.0 P5)
+# OwnMind interactive upgrade script (v1.17.0 P5)
 #
-# 用法：bash ~/.ownmind/scripts/interactive-upgrade.sh
-# AI skill 呼叫後，逐行讀 stdout 判斷進度：
-#   INFO:<code>:<message>   — 進度訊息（轉述給 user）
-#   OK:<code>:<message>     — 步驟成功
-#   ERROR:<code>:<message>  — 失敗（AI 依 code 引導修復）
-#   ASK:<code>:<message>    — 需要 user 回答
+# Usage: bash ~/.ownmind/scripts/interactive-upgrade.sh
+# After the AI skill calls this, it reads stdout line by line to judge progress:
+#   INFO:<code>:<message>   — progress message (paraphrase to user)
+#   OK:<code>:<message>     — step succeeded
+#   ERROR:<code>:<message>  — failure (AI guides repair based on code)
+#   ASK:<code>:<message>    — needs user input
 #
-# 失敗後執行 rollback（從 ~/.ownmind.bak.<timestamp> 還原）
+# On failure, performs rollback (restores from ~/.ownmind.bak.<timestamp>).
 
-set -u  # 不 set -e，因為要自己控制 error path
+set -u  # do not set -e; we want to control error paths ourselves
 
 OWNMIND_DIR="${HOME}/.ownmind"
 TS=$(date +%Y%m%d-%H%M%S)
@@ -19,12 +19,14 @@ LOG_FILE="${OWNMIND_DIR}/logs/upgrade-${TS}.log"
 
 STEP() { echo "INFO:$1:$2"; }
 OK()   { echo "OK:$1:$2"; }
-# v1.17.85 IR-038：FAIL 統一補 fallback report_error，避免「漏網的 FAIL path」
-# 沒留觀測資料。Adam (id=3) / Michelle (id=6) 5/10-11 跑 update_started beacon
-# 後沒任何 post_install 也沒任何 errors spool 紀錄就是這條觀測盲點。
-# kind 帶 _terminal 後綴讓 admin 看得出是「終點觀測」（caller 可能也 call 過更
-# 具體的 report_error，那是 _step 級觀測；FAIL fallback 是兜底 _terminal 級）。
-# report_error 已是 noop-on-missing，第二輪呼叫無害。
+# v1.17.85 IR-038: FAIL uniformly appends a fallback report_error so any "uncovered FAIL path"
+# leaves observability data behind. Adam (id=3) / Michelle (id=6) ran update_started beacons
+# on 2026-05-10 and 2026-05-11 but produced neither a post_install record nor any errors-spool
+# entry — this was that observability gap.
+# Use the _terminal suffix on `kind` so admins can tell it's a "terminal observation" (callers
+# may also have called a more specific report_error — that's a _step-level observation; the
+# FAIL fallback is the catch-all _terminal level).
+# report_error is already noop-on-missing, so a second call is harmless.
 FAIL() {
   echo "ERROR:$1:$2"
   report_error "upgrade_failed_terminal_$1" "$2" "${LOG_FILE:-}" 2>/dev/null || true
@@ -33,8 +35,8 @@ FAIL() {
 
 mkdir -p "${OWNMIND_DIR}/logs"
 
-# v1.17.79 — 載入 report-error helper（IR-038 觀測管道）
-# source 失敗（檔不存在 / 舊版裝過沒這支）就 fallback 成 no-op，不擋升級
+# v1.17.79 — load the report-error helper (IR-038 observability pipeline).
+# If source fails (file missing / older install lacked it), fall back to no-op — never block upgrade.
 if [ -f "${OWNMIND_DIR}/scripts/install-helpers/report-error.sh" ]; then
   # shellcheck disable=SC1090
   . "${OWNMIND_DIR}/scripts/install-helpers/report-error.sh"
@@ -42,10 +44,11 @@ else
   report_error() { :; }
 fi
 
-# v1.17.84 — Windows file-lock detection（vin-windows-test 第七輪）
-# OwnMind MCP node process 持有 ~/.ownmind/mcp/node_modules/*.js handle 的時候，
-# git pull / npm install / install.sh 想改寫會吃 EBUSY / EACCES。把錯誤 log 掃 lock
-# pattern，若中即把錯誤碼改 file_locked，並給明確提示「關閉 Claude Code 再重跑」。
+# v1.17.84 — Windows file-lock detection (vin-windows-test round 7).
+# When the OwnMind MCP node process holds handles to ~/.ownmind/mcp/node_modules/*.js,
+# `git pull` / `npm install` / `install.sh` attempting to overwrite hits EBUSY / EACCES.
+# Scan the error log for lock patterns; if matched, change the error code to file_locked
+# and give a clear "close Claude Code and re-run" message.
 is_file_lock_error() {
   local log="$1"
   [ -f "$log" ] || return 1
@@ -72,10 +75,11 @@ rollback() {
 }
 
 # --- 2. git pull ---
-# v1.17.79：先偵測 dirty working tree（user 的 AI 助手手動編輯過 OwnMind 內檔很常見），
-# dirty 就 report_error + git fetch + reset --hard origin/main 強制對齊（backup 保險絲已先做）。
-# 真實案例：vin-windows-test 的 AI 編輯 mcp/start.cmd 加 fallback，下次 git pull --ff-only
-# 直接被 reject、整個升級卡住，server 完全沒紀錄。
+# v1.17.79: detect a dirty working tree first (very common when the user's AI assistant has
+# manually edited files inside OwnMind). If dirty, report_error + git fetch + reset --hard
+# origin/main to force alignment (the backup is already taken as a safety net).
+# Real case: vin-windows-test's AI edited mcp/start.cmd to add a fallback; the next
+# `git pull --ff-only` was rejected outright and the whole upgrade stalled — the server saw nothing.
 STEP "pull" "Pulling latest OwnMind"
 cd "${OWNMIND_DIR}" || FAIL "cd_failed" "Cannot enter ${OWNMIND_DIR}"
 
@@ -100,7 +104,7 @@ else
   FAIL "git_pull" "git pull failed; backup restored. Manual check: cd ~/.ownmind && git status"
 fi
 
-# --- 3. npm install (MCP 依賴) ---
+# --- 3. npm install (MCP deps) ---
 if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
   STEP "npm_install" "Updating MCP dependencies"
   cd "${OWNMIND_DIR}/mcp" || true
@@ -157,7 +161,7 @@ else
   fi
 fi
 
-# --- 5. 重註冊排程 ---
+# --- 5. Re-register the scheduled task ---
 case "$(uname -s)" in
   Darwin)
     if [ -f "${HOME}/Library/LaunchAgents/com.ownmind.usage-scanner.plist" ]; then
@@ -179,7 +183,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-# --- 6. 本地驗測 + server round-trip + 清理 ---
+# --- 6. Local verification + server round-trip + cleanup ---
 if [ -x "${OWNMIND_DIR}/scripts/verify-upgrade.sh" ]; then
   STEP "verify_local" "Verifying local components"
   if bash "${OWNMIND_DIR}/scripts/verify-upgrade.sh" --local >>"${LOG_FILE}" 2>&1; then
@@ -202,10 +206,10 @@ if [ -x "${OWNMIND_DIR}/scripts/verify-upgrade.sh" ]; then
     || STEP "cleanup" "Cleanup failed (super_admin can clear __upgrade_test__ later)"
 fi
 
-# --- 7. 告知 server 升級完成 → 主動 dismiss upgrade_reminder 廣播 ---
-# v1.17.18: 把 dismiss 從 AI skill 移到腳本本身（IR-027「邏輯才有效」）。
-# 之前依賴 AI 讀完 OK:done:* 後手動呼叫 /api/broadcast/dismiss，
-# 漏做時 broadcast 一直不會 dismiss → user 每個 session 都重看升級提醒。
+# --- 7. Tell the server we finished upgrading → proactively dismiss upgrade_reminder broadcasts ---
+# v1.17.18: moved dismiss from the AI skill into the script (IR-027 "only logic works").
+# Previously this relied on the AI calling /api/broadcast/dismiss after seeing OK:done:*;
+# when missed, the broadcast never dismissed and the user kept seeing the upgrade prompt every session.
 VERSION=$(node -p "require('${OWNMIND_DIR}/package.json').version" 2>/dev/null || echo "unknown")
 
 if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; then
@@ -242,10 +246,11 @@ if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; 
   OK "dismiss" "Upgrade broadcasts dismissed (${COUNT})"
 fi
 
-# v1.17.70：升級成功末段 sweep ~/.ownmind.bak.<ts>/ 超過 N 天的（IR-027 邏輯卡控）。
-# 預設 7 天，可用 OWNMIND_BACKUP_RETENTION_DAYS 環境變數覆蓋。
-# 防呆：sweep 失敗（權限 / 磁碟）也不影響升級結果。
-# 設計選擇：單次 sweep、不預先 wc 計數（避免 count vs delete race + 處理檔名特殊字元的 wc 噪音）。
+# v1.17.70: at the tail of a successful upgrade, sweep ~/.ownmind.bak.<ts>/ older than N days
+# (IR-027 logic gating). Default 7 days; override with the OWNMIND_BACKUP_RETENTION_DAYS env var.
+# Safety: if the sweep fails (permissions / disk), it does not affect the upgrade result.
+# Design choice: single sweep, no pre-count via wc (avoids count-vs-delete race + filename
+# special-char noise from wc).
 RETENTION_DAYS="${OWNMIND_BACKUP_RETENTION_DAYS:-7}"
 STEP "sweep" "Sweeping backups older than ${RETENTION_DAYS} days (if any)"
 find "${HOME}" -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +"${RETENTION_DAYS}" -exec rm -rf {} + 2>/dev/null || true
@@ -253,13 +258,14 @@ OK "sweep" "Old backup sweep complete"
 
 OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} (auto-swept after ${RETENTION_DAYS} days)"
 
-# v1.17.86 — upgrade_complete beacon（IR-038 觀測管道補洞）
-# 比 self-check 早一步、payload 簡單到不會卡住，server 至少看得到「user 升完了、
-# 版本 X」。
-# 場景：Adam / Michelle 升到 1.17.84 但 install_check_logs 沒任何 post_install row
-# （collector_heartbeat 證實升上去）。可能 self-check 跑了 upload 失敗 spool 等下
-# 次 drain，但 user 升完就 quit Claude Code，永遠沒下次。upgrade_complete 比
-# self-check 早送 + 簡單 fail-fast 5 秒 timeout + spool fallback，繞過該 race。
+# v1.17.86 — upgrade_complete beacon (IR-038 observability backfill).
+# Earlier than self-check, with a small payload that can't stall — the server at least sees
+# "this user finished upgrading, version X".
+# Scenario: Adam / Michelle reached 1.17.84 but install_check_logs had no post_install row
+# (collector_heartbeat confirmed the upgrade landed). Possible cause: self-check ran, upload
+# failed and spooled for the next drain, but the user quit Claude Code right after the
+# upgrade — so the next drain never happened. upgrade_complete sends earlier + simple
+# fail-fast 5s timeout + spool fallback, sidestepping that race.
 send_upgrade_complete_beacon() {
   local version="$1"
   local claude_settings="$HOME/.claude/settings.json"
@@ -286,14 +292,15 @@ send_upgrade_complete_beacon() {
     "${api_url%/}/api/debug/install-check" >/dev/null 2>&1; then
     return
   fi
-  # spool fallback（同 v1.17.80 模式）
+  # spool fallback (same pattern as v1.17.80)
   local spool_dir="${HOME}/.ownmind/logs"
   mkdir -p "$spool_dir" 2>/dev/null || return
   printf '%s\n' "$body" >> "${spool_dir}/.upload-spool.jsonl" 2>/dev/null || true
 }
 send_upgrade_complete_beacon "${VERSION}"
 
-# v1.17.63: 升級完跑 self-check，把當下本機狀態抓下來、寫 log + 上傳。失敗不擋升級訊息。
+# v1.17.63: after upgrade, run self-check to capture the current local state, write the log,
+# and upload. Any failure does NOT block the upgrade message.
 SELF_CHECK_SCRIPT="${OWNMIND_DIR}/scripts/install-helpers/self-check.cjs"
 if [ -f "${SELF_CHECK_SCRIPT}" ]; then
   node "${SELF_CHECK_SCRIPT}" --trigger=post_upgrade || true

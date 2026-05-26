@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# report-error.sh — Bash helper（v1.17.79, IR-038）
+# report-error.sh — Bash helper (v1.17.79, IR-038).
 #
-# 用法（source 之後呼叫）：
+# Usage (source then call):
 #   source ~/.ownmind/scripts/install-helpers/report-error.sh
 #   report_error <kind> <detail> [context_file]
 #
-# 設計：永不擋 caller。沒 node / 寫不出檔都靜默吞掉。
+# Design: never blocks the caller. If node is missing or the file can't be written, swallow silently.
 
 report_error() {
   local kind="${1:-unknown}"

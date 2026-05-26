@@ -1,18 +1,20 @@
 #!/usr/bin/env node
-// 中英混雜 lint — 掃 client/src 內的 JSX/JS、抓出寫死的英文 UI 文字
+// Mixed Chinese-English lint — scans JSX/JS under client/src for hard-coded English UI text.
 //
-// 規則：JSX 文字節點 + JS 字串若含黑名單詞、必須在 i18n key 對照表內、或包在 t(...) 內、否則 fail
-// 例外：i18n/*.json（字典本就要英日）、scripts/、node_modules、dist 跳過
+// Rule: a JSX text node or a JS string containing a blacklisted word must either appear in
+//       the i18n key mapping or be wrapped in t(...); otherwise it fails.
+// Exceptions: i18n/*.json (the dictionary itself must contain English/Japanese), scripts/,
+//             node_modules, dist are skipped.
 //
-// 用法：node scripts/lint-zh-only.js <target-dir>
-//   或 npm test 自動跑
+// Usage: node scripts/lint-zh-only.js <target-dir>
+//        or `npm test` invokes it automatically.
 
 import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, extname } from 'path';
 
 const TARGET_DIR = process.argv[2] || 'client/src';
 
-// 黑名單：原型踩坑常見的中英混雜詞
+// Blacklist: mixed-language words we've stumbled on during prototyping.
 const BLACKLIST = [
   'Compliance', 'Bug Triage', 'Notional', 'EXCELLENT',
   'TOTAL INPUTS', 'TOTAL OUTPUTS',
@@ -23,7 +25,7 @@ const BLACKLIST = [
   'Personal Analytics',
 ];
 
-// 跳過的 path 片段
+// Path segments to skip.
 const SKIP_PATHS = [
   'node_modules', 'dist', '.vite', 'i18n/',
   'glossary.json', 'override.json', '.translate-cache',
@@ -57,14 +59,14 @@ function lintFile(filePath) {
   const content = readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
 
-  // 移除註解（簡化版、不處理 nested）+ 移除 t(...) 整個 call expression 內容
-  // 用簡化的括號 match：t( 開頭、第一個 ) 結尾、覆蓋大部分 case
-  // 跨行 t() 在現實 React 程式碼罕見、若出現可手動加 lint-zh-only-ignore 註解
+  // Strip comments (simplified — no nested handling) + strip whole t(...) call expressions.
+  // Naive paren match: from `t(` to the first `)`; covers most cases.
+  // Multi-line t() is rare in real React code; if it shows up, add a lint-zh-only-ignore comment.
   const stripped = lines.map((line) => {
     return line
       .replace(/\/\/.*$/, '')
       .replace(/\/\*.*?\*\//g, '')
-      .replace(/\bt\([^)]*\)/g, ''); // 移除 t(...) 全部內容
+      .replace(/\bt\([^)]*\)/g, ''); // strip everything inside t(...)
   });
 
   stripped.forEach((line, idx) => {
@@ -81,20 +83,20 @@ function lintFile(filePath) {
   });
 }
 
-console.log(`🔍 掃描 ${TARGET_DIR} 是否有中英混雜...`);
+console.log(`🔍 Scanning ${TARGET_DIR} for mixed Chinese-English text...`);
 walk(TARGET_DIR);
 
 if (violations.length === 0) {
-  console.log('✅ 0 個中英混雜違反');
+  console.log('✅ 0 violations');
   process.exit(0);
 }
 
-console.error(`\n❌ 發現 ${violations.length} 個中英混雜違反：\n`);
+console.error(`\n❌ Found ${violations.length} mixed-language violation(s):\n`);
 for (const v of violations) {
   console.error(`  ${v.file}:${v.line}`);
-  console.error(`    含黑名單詞「${v.word}」`);
-  console.error(`    內容: ${v.snippet}`);
+  console.error(`    contains blacklisted word "${v.word}"`);
+  console.error(`    snippet: ${v.snippet}`);
   console.error('');
 }
-console.error('修正方式：把寫死的英文文案改成 t(\'i18n.key\')、或加進 client/src/i18n/zh.json');
+console.error('Fix: replace the hard-coded English with t(\'i18n.key\'), or add it to client/src/i18n/zh.json.');
 process.exit(1);
