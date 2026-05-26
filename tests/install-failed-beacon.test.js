@@ -11,24 +11,27 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.85 — interactive-upgrade FAIL 函式統一補 report_error（IR-038 觀測盲點補強）
+ * v1.17.85 — interactive-upgrade FAIL function uniformly adds report_error
+ * (IR-038 observability gap patch).
  *
- * 背景：Adam (id=3) / Michelle (id=6) 5/10-11 跑 update_started beacon 之後沒任何
- * post_install 報告 → 升級顯然失敗、但 errors/ spool 一條紀錄都沒寫。Trace 發現
- * interactive-upgrade.sh 雖然多數 FAIL path 之前有 call report_error，但仍有漏網
- * (no_ownmind / no_git / cd_failed / install / verify_local 等)，加上 unexpected
- * exit (syntax error / SIGTERM / unset var) 完全沒人攔。
+ * Background: Adam (id=3) and Michelle (id=6) ran update_started beacons on 5/10-11
+ * and produced no post_install report afterwards — the upgrade clearly failed, but
+ * the errors/ spool had zero entries. Tracing showed that interactive-upgrade.sh,
+ * while most FAIL paths called report_error first, still had a few uncovered
+ * branches (no_ownmind / no_git / cd_failed / install / verify_local), and
+ * unexpected exits (syntax error / SIGTERM / unset var) were entirely uncaught.
  *
- * 修法：FAIL 函式本身統一補 fallback report_error，避免依賴每個 caller 都記得先打。
+ * Fix: the FAIL function itself unconditionally fires a fallback report_error,
+ * so we no longer rely on every caller remembering to call it first.
  */
 
-describe('v1.17.85 — interactive-upgrade.sh FAIL 觸發時自動寫 errors/ 觀測', () => {
+describe('v1.17.85 — interactive-upgrade.sh writes errors/ observability when FAIL fires', () => {
   let tmpHome;
   let errorsDir;
 
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-fail-beacon-'));
-    // 把 report-error helper + report-error.sh 鏡像到 tmpHome 模擬使用者 .ownmind
+    // Mirror report-error helper + report-error.sh into tmpHome to simulate the user's .ownmind.
     const ownmindDir = path.join(tmpHome, '.ownmind');
     fs.mkdirSync(path.join(ownmindDir, 'scripts', 'install-helpers'), { recursive: true });
     fs.mkdirSync(path.join(ownmindDir, 'logs', 'errors'), { recursive: true });
@@ -47,7 +50,7 @@ describe('v1.17.85 — interactive-upgrade.sh FAIL 觸發時自動寫 errors/ �
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  // 抽小寫一個會 call FAIL 的最小化 stub，引用真的 interactive-upgrade.sh FAIL 函式
+  // A minimal stub that invokes FAIL, sourcing the real interactive-upgrade.sh FAIL function.
   function runMinimalUpgradeWithFail(failCode, failMsg) {
     const fakeUpgrade = `
       #!/usr/bin/env bash
@@ -56,14 +59,14 @@ describe('v1.17.85 — interactive-upgrade.sh FAIL 觸發時自動寫 errors/ �
       LOG_FILE="\${OWNMIND_DIR}/logs/upgrade-test.log"
       touch "\${LOG_FILE}"
 
-      # source report-error helper（同 interactive-upgrade.sh 開頭）
+      # source report-error helper (matches the top of interactive-upgrade.sh)
       if [ -f "\${OWNMIND_DIR}/scripts/install-helpers/report-error.sh" ]; then
         . "\${OWNMIND_DIR}/scripts/install-helpers/report-error.sh"
       else
         report_error() { :; }
       fi
 
-      # ↓ 從真的 interactive-upgrade.sh 拷貝 FAIL 函式 ↓
+      # ↓ Copy the FAIL function from the real interactive-upgrade.sh ↓
       eval "$(sed -n '/^FAIL()/,/^}/p' "${path.join(repoRoot, 'scripts/interactive-upgrade.sh')}")"
 
       FAIL "${failCode}" "${failMsg}"
@@ -75,33 +78,34 @@ describe('v1.17.85 — interactive-upgrade.sh FAIL 觸發時自動寫 errors/ �
     return result;
   }
 
-  it('呼叫 FAIL "no_ownmind" 時，errors/ 自動寫一筆觀測 record', () => {
+  it('calling FAIL "no_ownmind" automatically writes one observability record into errors/', () => {
     const r = runMinimalUpgradeWithFail('no_ownmind', 'OwnMind dir not found');
-    assert.equal(r.status, 1, 'FAIL 必須 exit 1');
+    assert.equal(r.status, 1, 'FAIL must exit 1');
 
     const files = fs.readdirSync(errorsDir);
-    assert.equal(files.length, 1, `errors/ 應有 1 筆 record，實際 ${files.length}：${files.join(',')}`);
+    assert.equal(files.length, 1, `errors/ should have 1 record; actual ${files.length}: ${files.join(',')}`);
     const fname = files[0];
     assert.match(fname, /upgrade_failed_terminal_no_ownmind\.json$/,
-      'kind 應為 upgrade_failed_terminal_<原本 FAIL code>');
+      'kind should be upgrade_failed_terminal_<original FAIL code>');
 
     const content = JSON.parse(fs.readFileSync(path.join(errorsDir, fname), 'utf8'));
     assert.equal(content.kind, 'upgrade_failed_terminal_no_ownmind');
     assert.match(content.detail, /OwnMind dir not found/);
   });
 
-  it('呼叫 FAIL "verify_local" 同樣寫 record（不依賴 caller 先 call report_error）', () => {
+  it('calling FAIL "verify_local" also writes a record (does not rely on caller calling report_error first)', () => {
     const r = runMinimalUpgradeWithFail('verify_local', 'local files missing');
     assert.equal(r.status, 1);
 
     const files = fs.readdirSync(errorsDir);
-    assert.ok(files.length >= 1, 'verify_local 也要寫 record');
+    assert.ok(files.length >= 1, 'verify_local must also write a record');
     const fname = files.find((f) => f.includes('verify_local'));
-    assert.ok(fname, 'kind 應含 verify_local');
+    assert.ok(fname, 'kind should contain verify_local');
   });
 
-  it('上一輪「FAIL 前 caller 已 call report_error」案例不會被破壞', () => {
-    // 模擬：先 call report_error，再 FAIL → 兩筆都進 errors/（重複觀測可接受、不錯過任何 path）
+  it('previous "caller called report_error before FAIL" case is not broken', () => {
+    // Simulate: call report_error first, then FAIL → both entries land in errors/
+    // (duplicate observability is fine; we don't want to miss any path).
     const fakeUpgrade = `
       #!/usr/bin/env bash
       set -u
@@ -122,15 +126,15 @@ describe('v1.17.85 — interactive-upgrade.sh FAIL 觸發時自動寫 errors/ �
     assert.equal(result.status, 1);
 
     const files = fs.readdirSync(errorsDir);
-    // 預期：1 筆 caller 寫的 + 1 筆 FAIL 函式 fallback 寫的 = 2 筆
+    // Expected: 1 entry written by caller + 1 by the FAIL fallback = 2.
     assert.equal(files.length, 2,
-      `應有 2 筆（caller + FAIL fallback），實際 ${files.length}：${files.join(',')}`);
+      `should have 2 records (caller + FAIL fallback); actual ${files.length}: ${files.join(',')}`);
 
     const kinds = files.map((f) => f.match(/-\d+(?:_[a-zA-Z0-9_]+)?\d*-(.+)\.json$/)?.[1])
       .map((k) => k || '');
     assert.ok(files.some((f) => f.includes('upgrade_git_pull_failed')),
-      'caller 寫的 kind 應在');
+      'caller-written kind should appear');
     assert.ok(files.some((f) => f.includes('upgrade_failed_terminal_git_pull')),
-      'FAIL fallback 寫的 kind 應在');
+      'FAIL-fallback kind should appear');
   });
 });

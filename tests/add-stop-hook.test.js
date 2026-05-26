@@ -21,14 +21,15 @@ function cleanup() {
 }
 
 /**
- * v1.17.96 — Stop hook（reply-lint）安裝 helper：跟 v1.17.71 add-post-tool-use-hook
- * 一樣的 idempotent 合併語意，但加在 settings.json 的 hooks.Stop（不是 PostToolUse）。
+ * v1.17.96 — Stop hook (reply-lint) installer helper. Same idempotent merge
+ * semantics as v1.17.71 add-post-tool-use-hook, but injected at settings.json
+ * hooks.Stop (not PostToolUse).
  */
 describe('v1.17.96 — add-stop-hook idempotent merge', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('settings.json 不存在 → status=created', () => {
+  it('settings.json missing → status=created', () => {
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'created');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -37,7 +38,7 @@ describe('v1.17.96 — add-stop-hook idempotent merge', () => {
     assert.match(s.hooks.Stop[0].hooks[0].command, /ownmind-reply-lint\.js/);
   });
 
-  it('settings.json 存在但無 hooks 區塊 → status=added、保留既有設定', () => {
+  it('settings.json exists but no hooks block → status=added, existing settings preserved', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({
       mcpServers: { ownmind: { command: 'node', args: ['x'] } },
       theme: 'dark',
@@ -45,12 +46,12 @@ describe('v1.17.96 — add-stop-hook idempotent merge', () => {
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'added');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    assert.equal(s.theme, 'dark', '既有 user 設定必須保留');
-    assert.equal(s.mcpServers.ownmind.command, 'node', 'mcpServers 必須保留');
+    assert.equal(s.theme, 'dark', 'existing user settings must be preserved');
+    assert.equal(s.mcpServers.ownmind.command, 'node', 'mcpServers must be preserved');
     assert.ok(Array.isArray(s.hooks.Stop));
   });
 
-  it('已有其他 Stop hook → 加在 array 末尾不影響既有', () => {
+  it('other Stop hooks already present → append at array end, do not disturb', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({
       hooks: {
         Stop: [
@@ -61,77 +62,77 @@ describe('v1.17.96 — add-stop-hook idempotent merge', () => {
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'added');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    assert.equal(s.hooks.Stop.length, 2, '原有 hook 應保留 + 新加');
+    assert.equal(s.hooks.Stop.length, 2, 'existing hook should be preserved + new appended');
     assert.match(s.hooks.Stop[0].hooks[0].command, /echo other-stop-hook/);
     assert.match(s.hooks.Stop[1].hooks[0].command, /ownmind-reply-lint/);
   });
 
-  it('已有 OwnMind reply-lint hook → status=skipped、不重複加', () => {
+  it('OwnMind reply-lint hook already present → status=skipped, no duplicate add', () => {
     helper.addHook(settingsPath, OWNMIND_DIR);
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'skipped');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    assert.equal(s.hooks.Stop.length, 1, 'idempotent — 不重複加');
+    assert.equal(s.hooks.Stop.length, 1, 'idempotent — no duplicate');
   });
 
-  it('壞掉的 JSON → status=error，settings.json 不被改', () => {
+  it('broken JSON → status=error, settings.json untouched', () => {
     fs.writeFileSync(settingsPath, '{ this is not valid json');
     const original = fs.readFileSync(settingsPath, 'utf8');
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'error');
     assert.match(r.message, /JSON parse/);
-    assert.equal(fs.readFileSync(settingsPath, 'utf8'), original, '原檔不該被改');
+    assert.equal(fs.readFileSync(settingsPath, 'utf8'), original, 'original file must not change');
   });
 
-  it('成功 add 時要 backup 既有檔', () => {
+  it('on successful add, must back up the existing file', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ existing: 'data' }));
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'added');
     const backups = fs.readdirSync(tmpDir).filter((f) => f.startsWith('settings.json.bak.'));
-    assert.equal(backups.length, 1, '應該有恰好 1 個 backup');
+    assert.equal(backups.length, 1, 'should be exactly 1 backup');
     const backupContent = JSON.parse(fs.readFileSync(path.join(tmpDir, backups[0]), 'utf8'));
-    assert.equal(backupContent.existing, 'data', 'backup 應含原始內容');
+    assert.equal(backupContent.existing, 'data', 'backup should preserve the original content');
   });
 
-  it('hook command 用絕對 path（避免 PATH 解析爛掉）', () => {
+  it('hook command uses an absolute path (avoid broken PATH resolution)', () => {
     const r = helper.addHook(settingsPath, '/abs/path/.ownmind');
     assert.equal(r.status, 'created');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const cmd = s.hooks.Stop[0].hooks[0].command;
     assert.match(cmd, /\/abs\/path\/\.ownmind\/hooks\/ownmind-reply-lint\.js/);
-    assert.ok(cmd.startsWith('node '), 'command 應以 node 開頭');
+    assert.ok(cmd.startsWith('node '), 'command should start with node');
   });
 
-  it('Stop hook 不需要 matcher（Claude Code 規格 — Stop hook 沒有 tool 概念）', () => {
+  it('Stop hook does not need a matcher (Claude Code spec — Stop hook has no tool concept)', () => {
     helper.addHook(settingsPath, OWNMIND_DIR);
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    // Stop hook entry 不該有 matcher 欄位
-    assert.equal(s.hooks.Stop[0].matcher, undefined, 'Stop hook 不該有 matcher');
+    // The Stop hook entry must not carry a matcher field.
+    assert.equal(s.hooks.Stop[0].matcher, undefined, 'Stop hook must not carry a matcher');
   });
 
-  // review-C2：atomic write 失敗 → rollback、原檔不該被改
-  it('atomic write 失敗時 — 原檔保持完整 + 沒留 tmp 檔', () => {
+  // review-C2: atomic write failure → rollback, original file must not change.
+  it('atomic write failure — original file stays intact + no leftover tmp file', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ existing: 'data' }));
     const original = fs.readFileSync(settingsPath, 'utf8');
 
-    // 製造寫入失敗：先把 settings.json 改成不可寫目錄結構
-    // 用「目錄佔位 settings.json.tmp」這條 — atomic write 用 fs.writeFileSync 寫 tmp
-    // → tmp path 已存在且是 dir → writeFileSync EISDIR → rollback
+    // Cause a write failure by turning settings.json into an unwritable layout.
+    // Trick: pre-create settings.json.tmp as a directory — atomic write calls
+    // fs.writeFileSync to the tmp path → it already exists as a dir → EISDIR → rollback.
     const tmpPath = `${settingsPath}.tmp`;
     fs.mkdirSync(tmpPath);
     try {
       const r = helper.addHook(settingsPath, OWNMIND_DIR);
-      assert.equal(r.status, 'error', '寫入失敗應回 error');
+      assert.equal(r.status, 'error', 'write failure should return error');
       assert.match(r.message, /write failed/i);
       assert.equal(fs.readFileSync(settingsPath, 'utf8'), original,
-        '原 settings.json 必須保持完整不變');
+        'the original settings.json must stay intact');
     } finally {
       fs.rmdirSync(tmpPath);
     }
   });
 
-  it('和 PostToolUse hook 共存 — 互不干擾', () => {
-    // 模擬已經有 PostToolUse hook（ownmind-tty-echo）
+  it('coexists with a PostToolUse hook — neither interferes', () => {
+    // Simulate an existing PostToolUse hook (ownmind-tty-echo).
     fs.writeFileSync(settingsPath, JSON.stringify({
       hooks: {
         PostToolUse: [
@@ -142,7 +143,7 @@ describe('v1.17.96 — add-stop-hook idempotent merge', () => {
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'added');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    assert.equal(s.hooks.PostToolUse.length, 1, 'PostToolUse 不該被影響');
+    assert.equal(s.hooks.PostToolUse.length, 1, 'PostToolUse must not be touched');
     assert.equal(s.hooks.Stop.length, 1);
   });
 });

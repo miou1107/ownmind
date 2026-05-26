@@ -1,10 +1,10 @@
 /**
- * v1.19.8 — firstRunRedirect middleware 整合測試
+ * v1.19.8 — firstRunRedirect middleware integration tests
  *
- * 對應 openspec/changes/v1.19.8-setup-wizard/spec.md 場景 1、2、3。
- * 補 code-review I-2 指出的覆蓋缺口（原本只靠讀程式碼、沒測試）。
+ * Maps to openspec/changes/v1.19.8-setup-wizard/spec.md scenarios 1, 2, 3.
+ * Closes the coverage gap raised in code-review I-2 (previously verified only by reading code).
  *
- * 用 createFirstRunRedirect factory 注入 fake detector、避免測試打 DB。
+ * Uses the createFirstRunRedirect factory to inject a fake detector so the tests do not hit the DB.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +12,7 @@ import express from 'express';
 import { createFirstRunRedirect } from '../src/middleware/first-run-redirect.js';
 
 /**
- * 建一個 detector 的 fake、可指定回傳值或丟例外
+ * Build a detector fake whose return value or thrown error is configurable.
  */
 function fakeDetector({ firstRun, throws } = {}) {
   return {
@@ -26,7 +26,7 @@ function fakeDetector({ firstRun, throws } = {}) {
 function buildApp(detector) {
   const app = express();
   app.use(createFirstRunRedirect({ detectFirstRun: detector.detectFirstRun }));
-  // 假的終點、模擬 static serve 行為
+  // Fake endpoints that mimic static-serve behavior.
   app.get('/admin/login', (req, res) => res.status(200).send('admin-login-page'));
   app.get('/admin/users', (req, res) => res.status(200).send('admin-users-page'));
   app.get('/setup', (req, res) => res.status(200).send('setup-wizard-page'));
@@ -80,10 +80,10 @@ async function request(app, { method, path, headers = {} }) {
 }
 
 // ============================================================
-// 場景 1：DB 為空 + /admin/* → redirect 到 /setup
+// Scenario 1: empty DB + /admin/* → redirect to /setup
 // ============================================================
 
-describe('v1.19.8 場景 1 — first_run=true 時 /admin/* 自動 redirect 到 /setup', () => {
+describe('v1.19.8 scenario 1 — when first_run=true, /admin/* auto-redirects to /setup', () => {
   it('/admin/login → 302 /setup', async () => {
     const app = buildApp(fakeDetector({ firstRun: true }));
     const r = await request(app, { method: 'GET', path: '/admin/login' });
@@ -91,7 +91,7 @@ describe('v1.19.8 場景 1 — first_run=true 時 /admin/* 自動 redirect 到 /
     assert.equal(r.redirect, '/setup');
   });
 
-  it('/admin/users（任何 /admin/* 子路徑）→ 302 /setup', async () => {
+  it('/admin/users (any /admin/* sub-path) → 302 /setup', async () => {
     const app = buildApp(fakeDetector({ firstRun: true }));
     const r = await request(app, { method: 'GET', path: '/admin/users' });
     assert.equal(r.status, 302);
@@ -100,10 +100,10 @@ describe('v1.19.8 場景 1 — first_run=true 時 /admin/* 自動 redirect 到 /
 });
 
 // ============================================================
-// 場景 2：DB 有 admin → /setup 自動 redirect 到 /admin/login
+// Scenario 2: DB already has admins → /setup auto-redirects to /admin/login
 // ============================================================
 
-describe('v1.19.8 場景 2 — first_run=false 時 /setup 自動 redirect 到 /admin/login', () => {
+describe('v1.19.8 scenario 2 — when first_run=false, /setup auto-redirects to /admin/login', () => {
   it('GET /setup → 302 /admin/login', async () => {
     const app = buildApp(fakeDetector({ firstRun: false }));
     const r = await request(app, { method: 'GET', path: '/setup' });
@@ -113,11 +113,11 @@ describe('v1.19.8 場景 2 — first_run=false 時 /setup 自動 redirect 到 /a
 });
 
 // ============================================================
-// 場景 3：DB 有 admin → /admin/login 正常顯示
+// Scenario 3: DB has admin → /admin/login renders normally
 // ============================================================
 
-describe('v1.19.8 場景 3 — first_run=false 時 /admin/* 正常通過', () => {
-  it('GET /admin/login → 200 不被 redirect', async () => {
+describe('v1.19.8 scenario 3 — when first_run=false, /admin/* passes through unchanged', () => {
+  it('GET /admin/login → 200, no redirect', async () => {
     const app = buildApp(fakeDetector({ firstRun: false }));
     const r = await request(app, { method: 'GET', path: '/admin/login' });
     assert.equal(r.status, 200);
@@ -126,19 +126,19 @@ describe('v1.19.8 場景 3 — first_run=false 時 /admin/* 正常通過', () =>
 });
 
 // ============================================================
-// 邊界：非 /admin、非 /setup 路徑不被攔截
+// Boundary: non-/admin and non-/setup paths are not intercepted.
 // ============================================================
 
-describe('v1.19.8 — middleware 不影響無關路徑', () => {
-  it('first_run=true、GET /other → 正常通過', async () => {
+describe('v1.19.8 — middleware does not affect unrelated paths', () => {
+  it('first_run=true, GET /other → passes through', async () => {
     const app = buildApp(fakeDetector({ firstRun: true }));
     const r = await request(app, { method: 'GET', path: '/other' });
     assert.equal(r.status, 200);
     assert.equal(r.body, 'other-page');
   });
 
-  it('first_run=true、GET /api/anything → 正常通過（不被 redirect）', async () => {
-    // 場景：使用者開到 wizard 後、前端 JS 打 /api/setup/status —— 不該被 redirect
+  it('first_run=true, GET /api/anything → passes through (no redirect)', async () => {
+    // Scenario: after the user opens the wizard, the frontend JS calls /api/setup/status — must not be redirected.
     const app = buildApp(fakeDetector({ firstRun: true }));
     const r = await request(app, { method: 'GET', path: '/api/anything' });
     assert.equal(r.status, 200);
@@ -147,18 +147,18 @@ describe('v1.19.8 — middleware 不影響無關路徑', () => {
 });
 
 // ============================================================
-// Fail-open：DB 連不上時不誤導使用者
+// Fail-open: do not mislead users when the DB is unreachable.
 // ============================================================
 
-describe('v1.19.8 — fail-open：DB 失敗時 middleware 放行', () => {
-  it('detectFirstRun 拋例外、/admin/login 不被 redirect（fail-open）', async () => {
+describe('v1.19.8 — fail-open: middleware lets requests through when the DB fails', () => {
+  it('detectFirstRun throws, /admin/login is not redirected (fail-open)', async () => {
     const app = buildApp(fakeDetector({ throws: 'DB down' }));
     const r = await request(app, { method: 'GET', path: '/admin/login' });
     assert.notEqual(r.redirect, '/setup');
-    assert.equal(r.status, 200, '失敗時放行、顯示原本的 admin 頁');
+    assert.equal(r.status, 200, 'on failure, pass through and show the original admin page');
   });
 
-  it('detectFirstRun 拋例外、/setup 也正常通過', async () => {
+  it('detectFirstRun throws, /setup also passes through', async () => {
     const app = buildApp(fakeDetector({ throws: 'DB down' }));
     const r = await request(app, { method: 'GET', path: '/setup' });
     assert.notEqual(r.redirect, '/admin/login');

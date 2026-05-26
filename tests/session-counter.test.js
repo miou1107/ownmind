@@ -1,8 +1,8 @@
 /**
- * v1.19.3 — Session counter 純函式測試
+ * v1.19.3 — pure-function tests for the session counter.
  *
- * 對應 openspec/changes/v1.19.3-reply-lint-progressive-block/spec.md
- *   場景 7 / 8 / 14
+ * Maps to openspec/changes/v1.19.3-reply-lint-progressive-block/spec.md
+ *   scenarios 7 / 8 / 14.
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -21,50 +21,50 @@ import {
 let tmpCounterPath;
 
 beforeEach(() => {
-  // 用獨立 temp file、避免汙染真實 ~/.ownmind/logs/
+  // Use a per-test temp file to avoid polluting the real ~/.ownmind/logs/.
   tmpCounterPath = path.join(os.tmpdir(), `session-counter-test-${Date.now()}-${Math.random()}.json`);
   _resetCounterPathForTests(tmpCounterPath);
 });
 
 afterEach(() => {
   try { fs.unlinkSync(tmpCounterPath); } catch { /* ignore */ }
-  _resetCounterPathForTests(null); // 還原預設
+  _resetCounterPathForTests(null); // restore default
 });
 
-describe('v1.19.3 場景 7 — counter 檔不存在視為 0', () => {
-  it('readCounter 對未存在 session 回 0', () => {
+describe('v1.19.3 scenario 7 — missing counter file is treated as 0', () => {
+  it('readCounter returns 0 for an unknown session', () => {
     const count = readCounter('session-abc');
     assert.equal(count, 0);
   });
 
-  it('incrementCounter 對未存在 session 寫成 1', () => {
+  it('incrementCounter writes 1 for an unknown session', () => {
     const newCount = incrementCounter('session-abc');
     assert.equal(newCount, 1);
     assert.equal(readCounter('session-abc'), 1);
   });
 });
 
-describe('v1.19.3 場景 8 — counter 檔毀損視為 0、覆寫', () => {
-  it('檔內容不是合法 JSON → read 回 0', () => {
+describe('v1.19.3 scenario 8 — corrupt counter file is treated as 0 and overwritten', () => {
+  it('file content is not valid JSON → read returns 0', () => {
     fs.mkdirSync(path.dirname(tmpCounterPath), { recursive: true });
     fs.writeFileSync(tmpCounterPath, 'this is not json {{{');
     const count = readCounter('session-abc');
     assert.equal(count, 0);
   });
 
-  it('檔毀損後 increment 覆寫成乾淨檔', () => {
+  it('after corruption, increment overwrites with a clean file', () => {
     fs.mkdirSync(path.dirname(tmpCounterPath), { recursive: true });
     fs.writeFileSync(tmpCounterPath, 'garbage');
     const newCount = incrementCounter('session-abc');
     assert.equal(newCount, 1);
-    // 確認檔變回合法 JSON
+    // Confirm the file is now valid JSON.
     const parsed = JSON.parse(fs.readFileSync(tmpCounterPath, 'utf8'));
     assert.equal(parsed['session-abc'].count, 1);
   });
 });
 
-describe('v1.19.3 場景 14 — 30 天前 session 自動清', () => {
-  it('cleanupStale 移除 maxAgeMs 以前的紀錄', () => {
+describe('v1.19.3 scenario 14 — sessions older than 30 days are auto-cleaned', () => {
+  it('cleanupStale removes records older than maxAgeMs', () => {
     const now = Date.now();
     const thirtyOneDaysMs = 31 * 24 * 60 * 60 * 1000;
     fs.mkdirSync(path.dirname(tmpCounterPath), { recursive: true });
@@ -75,27 +75,27 @@ describe('v1.19.3 場景 14 — 30 天前 session 自動清', () => {
     cleanupStale(30 * 24 * 60 * 60 * 1000);
 
     const data = JSON.parse(fs.readFileSync(tmpCounterPath, 'utf8'));
-    assert.equal(data['old-session'], undefined, '舊 session 該清掉');
-    assert.ok(data['fresh-session'], '新 session 該保留');
+    assert.equal(data['old-session'], undefined, 'old session should be cleared');
+    assert.ok(data['fresh-session'], 'fresh session should be retained');
   });
 
-  it('cleanupStale 對未存在檔不丟錯', () => {
-    // 確認檔不存在
+  it('cleanupStale does not throw when the file is missing', () => {
+    // Ensure the file is absent.
     try { fs.unlinkSync(tmpCounterPath); } catch { /* ignore */ }
-    // 不該丟
+    // Must not throw.
     cleanupStale(30 * 24 * 60 * 60 * 1000);
   });
 });
 
-describe('v1.19.3 基本流程', () => {
-  it('連續 increment 同 session 累積', () => {
+describe('v1.19.3 basic flow', () => {
+  it('consecutive increments on the same session accumulate', () => {
     assert.equal(incrementCounter('session-x'), 1);
     assert.equal(incrementCounter('session-x'), 2);
     assert.equal(incrementCounter('session-x'), 3);
     assert.equal(readCounter('session-x'), 3);
   });
 
-  it('不同 session 計數獨立', () => {
+  it('different sessions count independently', () => {
     incrementCounter('session-a');
     incrementCounter('session-a');
     incrementCounter('session-b');
@@ -103,20 +103,20 @@ describe('v1.19.3 基本流程', () => {
     assert.equal(readCounter('session-b'), 1);
   });
 
-  it('write 後 last_violation_ts 是 ISO8601 字串', () => {
+  it('after write, last_violation_ts is an ISO8601 string', () => {
     incrementCounter('session-y');
     const data = JSON.parse(fs.readFileSync(tmpCounterPath, 'utf8'));
     assert.match(data['session-y'].last_violation_ts, /^\d{4}-\d{2}-\d{2}T/);
   });
 });
 
-describe('v1.19.3 防呆 — 寫入失敗不該丟', () => {
-  it('write 到無權限路徑、incrementCounter 應吞錯回 1 或 0、不該 throw', () => {
-    _resetCounterPathForTests('/root/no-permission/x.json'); // 普通 user 寫不進
-    // 不該 throw
+describe('v1.19.3 defensive — write failure must not throw', () => {
+  it('writing to an unwritable path: incrementCounter swallows the error and returns 1 or 0, never throws', () => {
+    _resetCounterPathForTests('/root/no-permission/x.json'); // not writable by a normal user
+    // Must not throw.
     let didThrow = false;
     try { incrementCounter('session-z'); }
     catch { didThrow = true; }
-    assert.equal(didThrow, false, 'incrementCounter 寫入失敗時不該 throw');
+    assert.equal(didThrow, false, 'incrementCounter must not throw on write failure');
   });
 });

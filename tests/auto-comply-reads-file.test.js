@@ -7,20 +7,22 @@ import { evaluateConditions } from '../shared/verification.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 
 /**
- * v1.20.2 follow-up：autoComply 應讀檔案而非僅 in-memory complianceEvents
+ * v1.20.2 follow-up: autoComply should read from the file, not just in-memory complianceEvents.
  *
- * 背景（白話）：
- * - MCP 的 ownmind_report_compliance 在 case handler 內有個「E3: Auto-verify on trigger detection」
- *   段落（mcp/index.js:1090-1129）、會跑一次 IR-025 之類的驗證、若失敗則 block。
- * - 原本它用記憶體變數 `complianceEvents`、session 重啟（白話：MCP 進程重新啟動）就清空。
- * - pre-commit 鉤子改用 readComplianceEvents 從 jsonl 檔案讀、所以鉤子放行 / autoComply 阻擋會不一致。
- * - 修法：autoComply 也從檔案讀、跟鉤子一致。
+ * Background:
+ * - MCP's ownmind_report_compliance has an "E3: Auto-verify on trigger detection" block in the
+ *   case handler (mcp/index.js:1090-1129) that runs an IR-025-style check and blocks on failure.
+ * - Originally it used an in-memory `complianceEvents` array, so a session restart (MCP process
+ *   restart) wiped the state.
+ * - The pre-commit hook switched to reading via readComplianceEvents from the jsonl file, so the
+ *   hook-pass / autoComply-block paths diverged.
+ * - Fix: have autoComply also read from the file so it agrees with the hook.
  *
- * 本測試直接驗證「設計合約」：
- *   GIVEN in-memory 是空陣列（模擬 session 重啟）
- *   AND 檔案有 verification + code-review 兩筆 fresh comply 記錄
- *   WHEN 跑 IR-025 conditions
- *   THEN pass=true、不該 block
+ * This test pins the design contract:
+ *   GIVEN in-memory is empty (simulated session restart)
+ *   AND the file has fresh "verification" + "code-review" comply entries
+ *   WHEN we run the IR-025 conditions
+ *   THEN pass=true, no block.
  */
 
 const TMP_LOG = path.join(os.tmpdir(), `ownmind-test-compliance-${process.pid}.jsonl`);
@@ -41,10 +43,10 @@ const IR025_CONDITIONS = {
   ]
 };
 
-describe('v1.20.2 follow-up：autoComply 讀檔案而非僅 in-memory', () => {
+describe('v1.20.2 follow-up: autoComply reads the file, not just in-memory', () => {
   before(() => {
     process.env.__OWNMIND_COMPLIANCE_LOG_PATH = TMP_LOG;
-    // 清乾淨、避免上次測試殘留
+    // Clear leftovers from prior test runs.
     if (fs.existsSync(TMP_LOG)) fs.unlinkSync(TMP_LOG);
   });
 
@@ -53,8 +55,8 @@ describe('v1.20.2 follow-up：autoComply 讀檔案而非僅 in-memory', () => {
     delete process.env.__OWNMIND_COMPLIANCE_LOG_PATH;
   });
 
-  it('in-memory 空、檔案有 verification + code-review → IR-025 pass', () => {
-    // 寫兩筆 fresh comply 進檔案、模擬上一個 session 已做品管
+  it('in-memory empty, file has verification + code-review → IR-025 passes', () => {
+    // Write two fresh comply entries into the file, simulating QA done in a previous session.
     appendCompliance({
       event: 'verification',
       action: 'comply',
@@ -70,29 +72,30 @@ describe('v1.20.2 follow-up：autoComply 讀檔案而非僅 in-memory', () => {
       source: 'mcp',
     });
 
-    // 模擬 session 重啟：in-memory 陣列為空、ctx 從檔案讀
+    // Simulate session restart: in-memory array is empty, ctx reads from the file.
     const fileEvents = readComplianceEvents();
-    assert.equal(fileEvents.length, 2, '檔案應該讀回 2 筆 fresh comply 記錄');
+    assert.equal(fileEvents.length, 2, 'the file should yield 2 fresh comply entries');
 
-    // 跑 IR-025 conditions、預期 pass=true
+    // Run IR-025 conditions, expect pass=true.
     const ctx = { complianceEvents: fileEvents };
     const result = evaluateConditions(IR025_CONDITIONS, ctx);
     assert.equal(result.pass, true,
-      `預期 pass=true、實際 failures: ${JSON.stringify(result.failures)}`);
+      `expected pass=true, actual failures: ${JSON.stringify(result.failures)}`);
     assert.deepEqual(result.failures, []);
   });
 
-  it('反證：若只讀 in-memory（空陣列）會錯誤 block — 證明原 bug 真實存在', () => {
-    // 即使檔案有兩筆 fresh comply、in-memory 空就會 block
-    const inMemoryOnly = []; // 模擬 session 重啟後 in-memory
+  it('counter-proof: reading only in-memory (empty array) incorrectly blocks — proves the original bug', () => {
+    // Even though the file has two fresh comply entries, an empty in-memory blocks.
+    const inMemoryOnly = []; // simulates in-memory after a session restart
     const ctx = { complianceEvents: inMemoryOnly };
     const result = evaluateConditions(IR025_CONDITIONS, ctx);
-    assert.equal(result.pass, false, '原 bug：只看 in-memory 會錯誤 block');
+    assert.equal(result.pass, false, 'original bug: looking only at in-memory wrongly blocks');
     assert.equal(result.failures.length, 2);
   });
 
-  it('檔案 + in-memory 合併：兩個來源都有資料時應 pass', () => {
-    // 場景（白話）：本 session 內呼叫過 verification（in-memory 有）、檔案累積過 code-review
+  it('merge file + in-memory: when both sources have data, should pass', () => {
+    // Scenario: verification was called in this session (in-memory has it); the file
+    // already accumulated a code-review entry.
     const inMemory = [
       { event: 'verification', action: 'comply', ts: new Date().toISOString() }
     ];
@@ -100,6 +103,6 @@ describe('v1.20.2 follow-up：autoComply 讀檔案而非僅 in-memory', () => {
     const merged = [...inMemory, ...fileEvents];
     const ctx = { complianceEvents: merged };
     const result = evaluateConditions(IR025_CONDITIONS, ctx);
-    assert.equal(result.pass, true, '合併兩來源、預期 pass');
+    assert.equal(result.pass, true, 'merged sources, expected pass');
   });
 });

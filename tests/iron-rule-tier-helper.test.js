@@ -16,20 +16,20 @@ import {
 
 describe('v1.19 — iron-rule-tier helper', () => {
   // ----------------------------------------------------------------
-  // 常數
+  // Constants
   // ----------------------------------------------------------------
 
-  it('VALID_TIERS 為 [critical, default, advisory]', () => {
+  it('VALID_TIERS is [critical, default, advisory]', () => {
     assert.deepEqual(VALID_TIERS, ['critical', 'default', 'advisory']);
   });
 
-  it('TIER_EMOJI 每個 tier 都有 emoji', () => {
+  it('TIER_EMOJI has an emoji for every tier', () => {
     assert.equal(TIER_EMOJI.critical, '🔴');
     assert.equal(TIER_EMOJI.default, '🟡');
     assert.equal(TIER_EMOJI.advisory, '⚪');
   });
 
-  it('TIER_LABEL_ZH 每個 tier 都有中文標籤', () => {
+  it('TIER_LABEL_ZH has a Chinese label for every tier', () => {
     assert.match(TIER_LABEL_ZH.critical, /Critical/);
     assert.match(TIER_LABEL_ZH.default, /Default/);
     assert.match(TIER_LABEL_ZH.advisory, /Advisory/);
@@ -44,13 +44,13 @@ describe('v1.19 — iron-rule-tier helper', () => {
   // isValidTier
   // ----------------------------------------------------------------
 
-  it('isValidTier — 三個合法值都回 true', () => {
+  it('isValidTier — all three valid values return true', () => {
     assert.equal(isValidTier('critical'), true);
     assert.equal(isValidTier('default'), true);
     assert.equal(isValidTier('advisory'), true);
   });
 
-  it('isValidTier — 不合法值回 false（含 null / undefined / 空字串 / 數字 / 物件）', () => {
+  it('isValidTier — invalid values return false (incl. null / undefined / empty string / number / object)', () => {
     assert.equal(isValidTier('CRITICAL'), false); // case sensitive
     assert.equal(isValidTier('Important'), false);
     assert.equal(isValidTier(''), false);
@@ -65,13 +65,13 @@ describe('v1.19 — iron-rule-tier helper', () => {
   // normalizeTier
   // ----------------------------------------------------------------
 
-  it('normalizeTier — 合法值原樣回傳', () => {
+  it('normalizeTier — valid values returned as-is', () => {
     assert.equal(normalizeTier('critical'), 'critical');
     assert.equal(normalizeTier('default'), 'default');
     assert.equal(normalizeTier('advisory'), 'advisory');
   });
 
-  it('normalizeTier — 任何不合法值（含 null / undefined / 空字串 / 大寫）一律回 default', () => {
+  it('normalizeTier — every invalid value (incl. null / undefined / empty string / uppercase) returns default', () => {
     assert.equal(normalizeTier(null), 'default');
     assert.equal(normalizeTier(undefined), 'default');
     assert.equal(normalizeTier(''), 'default');
@@ -84,7 +84,7 @@ describe('v1.19 — iron-rule-tier helper', () => {
   // getTierFromRules
   // ----------------------------------------------------------------
 
-  it('getTierFromRules — 命中規則回傳該規則的 tier', () => {
+  it('getTierFromRules — match returns that rule\'s tier', () => {
     const rules = [
       { code: 'IR-002', tier: 'critical' },
       { code: 'IR-003', tier: 'default' },
@@ -93,29 +93,29 @@ describe('v1.19 — iron-rule-tier helper', () => {
     assert.equal(getTierFromRules(rules, 'IR-003'), 'default');
   });
 
-  it('getTierFromRules — 找不到規則回傳 default', () => {
+  it('getTierFromRules — no match returns default', () => {
     const rules = [{ code: 'IR-002', tier: 'critical' }];
     assert.equal(getTierFromRules(rules, 'IR-999'), 'default');
   });
 
-  it('getTierFromRules — 規則 tier 欄位缺失回傳 default', () => {
-    const rules = [{ code: 'IR-002' }]; // 沒 tier 欄位
+  it('getTierFromRules — rule with missing tier field returns default', () => {
+    const rules = [{ code: 'IR-002' }]; // no tier field
     assert.equal(getTierFromRules(rules, 'IR-002'), 'default');
   });
 
-  it('getTierFromRules — 規則 tier 是非法值回傳 default', () => {
+  it('getTierFromRules — rule with invalid tier returns default', () => {
     const rules = [{ code: 'IR-002', tier: 'invalid_tier' }];
     assert.equal(getTierFromRules(rules, 'IR-002'), 'default');
   });
 
-  it('getTierFromRules — rules 非陣列回傳 default 不丟錯', () => {
+  it('getTierFromRules — non-array rules returns default, no throw', () => {
     assert.equal(getTierFromRules(null, 'IR-002'), 'default');
     assert.equal(getTierFromRules(undefined, 'IR-002'), 'default');
     assert.equal(getTierFromRules('not-array', 'IR-002'), 'default');
     assert.equal(getTierFromRules({}, 'IR-002'), 'default');
   });
 
-  it('getTierFromRules — ruleCode 缺失回傳 default 不丟錯', () => {
+  it('getTierFromRules — missing ruleCode returns default, no throw', () => {
     const rules = [{ code: 'IR-002', tier: 'critical' }];
     assert.equal(getTierFromRules(rules, null), 'default');
     assert.equal(getTierFromRules(rules, undefined), 'default');
@@ -126,28 +126,28 @@ describe('v1.19 — iron-rule-tier helper', () => {
   // getTierEmoji
   // ----------------------------------------------------------------
 
-  it('getTierEmoji — 各 tier 對應 emoji', () => {
+  it('getTierEmoji — each tier maps to its emoji', () => {
     assert.equal(getTierEmoji('critical'), '🔴');
     assert.equal(getTierEmoji('default'), '🟡');
     assert.equal(getTierEmoji('advisory'), '⚪');
   });
 
-  it('getTierEmoji — 不合法值用 default 的 emoji', () => {
+  it('getTierEmoji — invalid value uses default emoji', () => {
     assert.equal(getTierEmoji(null), '🟡');
     assert.equal(getTierEmoji('invalid'), '🟡');
   });
 
   // ----------------------------------------------------------------
-  // compareTier — 排序用
+  // compareTier — for sorting
   // ----------------------------------------------------------------
 
-  it('compareTier — sort callback：critical 排最前、advisory 排最後', () => {
+  it('compareTier — sort callback: critical first, advisory last', () => {
     const arr = ['advisory', 'default', 'critical'];
     arr.sort(compareTier);
     assert.deepEqual(arr, ['critical', 'default', 'advisory']);
   });
 
-  it('compareTier — 不合法值視為 default 參與排序', () => {
+  it('compareTier — invalid values participate as default in sorting', () => {
     const arr = ['advisory', 'invalid', 'critical'];
     arr.sort(compareTier);
     assert.deepEqual(arr, ['critical', 'invalid', 'advisory']);
@@ -157,7 +157,7 @@ describe('v1.19 — iron-rule-tier helper', () => {
   // groupByTier
   // ----------------------------------------------------------------
 
-  it('groupByTier — 按 tier 分桶', () => {
+  it('groupByTier — buckets by tier', () => {
     const rules = [
       { code: 'IR-002', tier: 'critical' },
       { code: 'IR-003', tier: 'default' },
@@ -172,11 +172,11 @@ describe('v1.19 — iron-rule-tier helper', () => {
     assert.equal(groups.critical[1].code, 'IR-005');
   });
 
-  it('groupByTier — 缺 tier 欄位的規則歸到 default 桶', () => {
+  it('groupByTier — rules missing tier fall into the default bucket', () => {
     const rules = [
-      { code: 'IR-002' },                           // 無 tier
-      { code: 'IR-003', tier: 'invalid' },          // 非法 tier
-      { code: 'IR-004', tier: 'critical' },         // 正常
+      { code: 'IR-002' },                           // no tier
+      { code: 'IR-003', tier: 'invalid' },          // invalid tier
+      { code: 'IR-004', tier: 'critical' },         // normal
     ];
     const groups = groupByTier(rules);
     assert.equal(groups.default.length, 2);
@@ -184,7 +184,7 @@ describe('v1.19 — iron-rule-tier helper', () => {
     assert.equal(groups.advisory.length, 0);
   });
 
-  it('groupByTier — 空陣列、null、undefined 都回三個空桶', () => {
+  it('groupByTier — empty array, null, undefined all return three empty buckets', () => {
     assert.deepEqual(groupByTier([]), { critical: [], default: [], advisory: [] });
     assert.deepEqual(groupByTier(null), { critical: [], default: [], advisory: [] });
     assert.deepEqual(groupByTier(undefined), { critical: [], default: [], advisory: [] });

@@ -22,38 +22,38 @@ afterEach(() => {
 });
 
 describe('slugTitle', () => {
-  it('英文變小寫加底線', () => {
+  it('English lowercases and joins with underscore', () => {
     assert.equal(slugTitle('Hello World Test'), 'hello_world_test');
   });
-  it('中文保留', () => {
+  it('Chinese characters preserved', () => {
     assert.equal(slugTitle('OwnMind 專案'), 'ownmind_專案');
   });
-  it('特殊字元移除', () => {
+  it('special characters stripped', () => {
     assert.equal(slugTitle('foo/bar: baz!'), 'foo_bar_baz');
   });
-  it('超長截斷', () => {
+  it('overly long inputs are truncated', () => {
     const s = slugTitle('a'.repeat(100));
     assert.ok(s.length <= 60);
   });
-  it('空字串 fallback', () => {
+  it('empty string fallback', () => {
     assert.equal(slugTitle(''), 'untitled');
     assert.equal(slugTitle('   '), 'untitled');
   });
 });
 
 describe('memoryFilename', () => {
-  it('含 type + id + slug', () => {
+  it('includes type + id + slug', () => {
     const f = memoryFilename({ id: 123, type: 'project', title: 'Hello World' });
     assert.equal(f, 'project_123_hello_world.md');
   });
-  it('不同 type', () => {
+  it('different type', () => {
     const f = memoryFilename({ id: 5, type: 'iron_rule', title: 'IR-001 規則' });
     assert.equal(f, 'iron_rule_5_ir-001_規則.md');
   });
 });
 
 describe('syncMemoryFiles - first run', () => {
-  it('寫 md 檔 + MEMORY.md', () => {
+  it('writes md files + MEMORY.md', () => {
     const data = {
       server_time: '2026-04-24T10:00:00Z',
       memories: [
@@ -83,7 +83,7 @@ describe('syncMemoryFiles - first run', () => {
     assert.match(memIdx, /updated 2026-04-20/);
   });
 
-  it('首次若有手寫 MEMORY.md → 備份', () => {
+  it('first run with a hand-written MEMORY.md → backs it up', () => {
     const existing = '# My hand-written notes\n- item 1\n';
     fs.writeFileSync(path.join(tmpDir, 'MEMORY.md'), existing);
 
@@ -98,7 +98,7 @@ describe('syncMemoryFiles - first run', () => {
     assert.equal(fs.readFileSync(path.join(tmpDir, backup), 'utf8'), existing);
   });
 
-  it('若已是 auto-synced 的 MEMORY.md → 不重複備份', () => {
+  it('if MEMORY.md is already auto-synced → no duplicate backup', () => {
     const existing = '<!-- ownmind-auto-synced at 2026-04-23T00:00:00Z -->\n\n# Memory Index\n';
     fs.writeFileSync(path.join(tmpDir, 'MEMORY.md'), existing);
 
@@ -113,7 +113,7 @@ describe('syncMemoryFiles - first run', () => {
 });
 
 describe('syncMemoryFiles - tombstone', () => {
-  it('disabled 狀態刪掉對應 md 檔', () => {
+  it('disabled status deletes the corresponding md file', () => {
     const target = path.join(tmpDir, 'project_42_old.md');
     fs.writeFileSync(target, 'stale');
 
@@ -130,7 +130,7 @@ describe('syncMemoryFiles - tombstone', () => {
     assert.equal(fs.existsSync(target), false);
   });
 
-  it('disabled 但對應檔不存在也不爆', () => {
+  it('disabled without a matching file does not crash', () => {
     assert.doesNotThrow(() => syncMemoryFiles({
       memoryDir: tmpDir,
       data: {
@@ -142,7 +142,7 @@ describe('syncMemoryFiles - tombstone', () => {
 });
 
 describe('syncMemoryFiles - fail mode', () => {
-  it('sync 失敗 → MEMORY.md 有警告但不刪既有檔', () => {
+  it('sync failure → MEMORY.md gets a warning, existing files are not deleted', () => {
     fs.writeFileSync(path.join(tmpDir, 'project_1_x.md'), 'keep me');
     fs.writeFileSync(
       path.join(tmpDir, 'MEMORY.md'),
@@ -156,13 +156,13 @@ describe('syncMemoryFiles - fail mode', () => {
     assert.match(memIdx, /⚠️ last sync FAILED/);
   });
 
-  it('fail 模式下若 MEMORY.md 不存在 → 產出一份只含警告的', () => {
+  it('in fail mode, if MEMORY.md is missing → emit one that contains only the warning', () => {
     syncMemoryFiles({ memoryDir: tmpDir, sync_failed: true });
     const memIdx = fs.readFileSync(path.join(tmpDir, 'MEMORY.md'), 'utf8');
     assert.match(memIdx, /⚠️ last sync FAILED/);
   });
 
-  it('連續 fail 不重複堆疊警告', () => {
+  it('repeated failures do not stack duplicate warnings', () => {
     syncMemoryFiles({ memoryDir: tmpDir, sync_failed: true });
     syncMemoryFiles({ memoryDir: tmpDir, sync_failed: true });
     const memIdx = fs.readFileSync(path.join(tmpDir, 'MEMORY.md'), 'utf8');
@@ -172,7 +172,7 @@ describe('syncMemoryFiles - fail mode', () => {
 });
 
 describe('yaml quoting — frontmatter safety', () => {
-  it('title 含單引號 → 被 double', () => {
+  it('title containing a single quote → quoted by doubling', () => {
     syncMemoryFiles({
       memoryDir: tmpDir,
       data: {
@@ -186,7 +186,7 @@ describe('yaml quoting — frontmatter safety', () => {
     assert.match(md, /name: 'Vin''s project'/);
   });
 
-  it('title 含冒號 → 仍是合法 YAML scalar', () => {
+  it('title containing a colon → still a valid YAML scalar', () => {
     syncMemoryFiles({
       memoryDir: tmpDir,
       data: {
@@ -200,7 +200,7 @@ describe('yaml quoting — frontmatter safety', () => {
     assert.match(md, /name: 'Foo: bar "baz"'/);
   });
 
-  it('cloud_id 非數字 → fallback 0，不會變 YAML 注入', () => {
+  it('non-numeric cloud_id → falls back to 0, no YAML injection', () => {
     syncMemoryFiles({
       memoryDir: tmpDir,
       data: {
@@ -218,7 +218,7 @@ describe('yaml quoting — frontmatter safety', () => {
 });
 
 describe('buildMemoryIndex', () => {
-  it('by type 分組輸出', () => {
+  it('groups output by type', () => {
     const entries = [
       { id: 1, type: 'iron_rule', title: 'A', updated_at: '2026-04-20T00:00:00Z', filename: 'iron_rule_1_a.md' },
       { id: 2, type: 'project', title: 'B', updated_at: '2026-04-22T00:00:00Z', filename: 'project_2_b.md' },
@@ -233,20 +233,20 @@ describe('buildMemoryIndex', () => {
     assert.match(md, /## Feedback\n- \[C\]\(feedback_3_c\.md\) — updated 2026-04-10/);
   });
 
-  it('sync_failed → 含警告', () => {
+  it('sync_failed → includes the warning', () => {
     const md = buildMemoryIndex([], '2026-04-24T10:00:00Z', true);
     assert.match(md, /⚠️ last sync FAILED/);
   });
 
-  it('空 entries 也能輸出最小結構', () => {
+  it('empty entries still emit the minimal structure', () => {
     const md = buildMemoryIndex([], '2026-04-24T10:00:00Z', false);
     assert.match(md, /# Memory Index/);
   });
 });
 
 describe('syncMemoryFiles - full re-sync after partial state', () => {
-  it('第二次 sync 含 disabled 項 → 對應檔消失，新 active 項保留', () => {
-    // 第一次：2 項
+  it('second sync includes disabled entries → matching files disappear, new active entries retained', () => {
+    // First run: two entries.
     syncMemoryFiles({
       memoryDir: tmpDir,
       data: {
@@ -260,7 +260,7 @@ describe('syncMemoryFiles - full re-sync after partial state', () => {
     assert.equal(fs.existsSync(path.join(tmpDir, 'project_10_alpha.md')), true);
     assert.equal(fs.existsSync(path.join(tmpDir, 'project_11_beta.md')), true);
 
-    // 第二次：Alpha disabled，Beta 更新
+    // Second run: Alpha disabled, Beta updated.
     syncMemoryFiles({
       memoryDir: tmpDir,
       data: {

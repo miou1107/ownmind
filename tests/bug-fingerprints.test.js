@@ -8,91 +8,91 @@ import {
 } from '../shared/bug-fingerprints.js';
 
 // ============================================================
-// 註冊表是程式碼層級的列舉、新指紋必須登錄才能用
+// The registry is a code-level enumeration; new fingerprints must be registered before use.
 // ============================================================
 
-test('註冊表是物件、不是空的', () => {
+test('registry is an object and not empty', () => {
   assert.equal(typeof BUG_FINGERPRINT_REGISTRY, 'object');
   assert.ok(Object.keys(BUG_FINGERPRINT_REGISTRY).length > 0);
 });
 
-test('每筆指紋都有 category + description 兩個欄位', () => {
+test('every fingerprint has both category and description fields', () => {
   for (const [key, meta] of Object.entries(BUG_FINGERPRINT_REGISTRY)) {
-    assert.ok(meta.category, `${key} 缺 category`);
-    assert.ok(meta.description, `${key} 缺 description`);
+    assert.ok(meta.category, `${key} is missing category`);
+    assert.ok(meta.description, `${key} is missing description`);
   }
 });
 
-test('指紋名格式：<前綴>_<情境>、前綴只能是合法分類', () => {
+test('fingerprint name format: <prefix>_<context>; prefix must be a recognized category', () => {
   const validPrefixes = ['mem', 'srv_err', 'clt', 'lint', 'sync', 'auth'];
   for (const key of Object.keys(BUG_FINGERPRINT_REGISTRY)) {
     const prefix = key.startsWith('srv_err_') ? 'srv_err' : key.split('_')[0];
     assert.ok(
       validPrefixes.includes(prefix),
-      `${key} 的前綴 ${prefix} 不在合法清單`
+      `${key} prefix ${prefix} is not in the valid list`
     );
   }
 });
 
-test('指紋名只用小寫英文 / 數字 / 底線、不含時間或 id', () => {
+test('fingerprint names only contain lowercase a-z / digits / underscore, no timestamps or ids', () => {
   for (const key of Object.keys(BUG_FINGERPRINT_REGISTRY)) {
-    assert.match(key, /^[a-z0-9_]+$/, `${key} 含非法字元`);
-    assert.doesNotMatch(key, /\d{8,}/, `${key} 看起來像含時間戳`);
+    assert.match(key, /^[a-z0-9_]+$/, `${key} contains invalid characters`);
+    assert.doesNotMatch(key, /\d{8,}/, `${key} looks like it contains a timestamp`);
   }
 });
 
 // ============================================================
-// 查詢 API
+// Query API
 // ============================================================
 
-test('getFingerprintMetadata 回傳註冊資料', () => {
+test('getFingerprintMetadata returns the registry entry', () => {
   const meta = getFingerprintMetadata('mem_blocked_secret_keyword');
   assert.ok(meta);
   assert.equal(meta.category, 'mem');
 });
 
-test('getFingerprintMetadata 對未註冊指紋回 null', () => {
+test('getFingerprintMetadata returns null for unregistered fingerprints', () => {
   assert.equal(getFingerprintMetadata('not_registered_xxx'), null);
   assert.equal(getFingerprintMetadata(''), null);
   assert.equal(getFingerprintMetadata(null), null);
   assert.equal(getFingerprintMetadata(undefined), null);
 });
 
-test('isValidFingerprint 對註冊過的回 true', () => {
+test('isValidFingerprint returns true for registered fingerprints', () => {
   assert.equal(isValidFingerprint('mem_blocked_secret_keyword'), true);
 });
 
-test('isValidFingerprint 對沒註冊的回 false', () => {
+test('isValidFingerprint returns false for unregistered fingerprints', () => {
   assert.equal(isValidFingerprint('not_registered_xxx'), false);
   assert.equal(isValidFingerprint(''), false);
   assert.equal(isValidFingerprint(null), false);
 });
 
-test('fingerprintsByPrefix 回該分類下所有指紋', () => {
+test('fingerprintsByPrefix returns every fingerprint under the category', () => {
   const memFps = fingerprintsByPrefix('mem');
   assert.ok(Array.isArray(memFps));
   assert.ok(memFps.length > 0);
   for (const fp of memFps) {
-    assert.ok(fp.startsWith('mem_'), `${fp} 應該以 mem_ 開頭`);
+    assert.ok(fp.startsWith('mem_'), `${fp} should start with mem_`);
   }
 });
 
-test('fingerprintsByPrefix 對不存在分類回空陣列', () => {
+test('fingerprintsByPrefix returns empty array for unknown category', () => {
   assert.deepEqual(fingerprintsByPrefix('xxxxx'), []);
 });
 
 // ============================================================
-// 第一階段必須包含的指紋（規格場景對應）
+// Fingerprints required for phase 1 (mapped to spec.md scenarios)
 // ============================================================
 
-test('包含 spec.md 場景提到的 mem_blocked_secret_keyword', () => {
+test('contains mem_blocked_secret_keyword referenced in spec.md scenarios', () => {
   assert.ok(isValidFingerprint('mem_blocked_secret_keyword'));
 });
 
-test('包含 5xx 通用後端錯誤（給全域 5xx handler 用）', () => {
-  // 至少要有一個 srv_err_ 前綴的指紋
+test('contains a generic 5xx backend error (used by the global 5xx handler)', () => {
+  // At least one srv_err_ prefix fingerprint is required.
   const srvErrors = Object.keys(BUG_FINGERPRINT_REGISTRY).filter(k => k.startsWith('srv_err_'));
-  assert.ok(srvErrors.length > 0, '需要至少一個 srv_err_ 指紋給 5xx handler 用');
+  assert.ok(srvErrors.length > 0, 'need at least one srv_err_ fingerprint for the 5xx handler');
 });
 
 // v1.26.1: free-form escape hatch fingerprint must be registered.
@@ -105,21 +105,21 @@ test('v1.26.1: clt_user_reported_other is registered as the free-form escape hat
 });
 
 // ============================================================
-// 穩定性：指紋是常數、不該包含動態值
+// Stability: fingerprints are constants and must not contain dynamic values.
 // ============================================================
 
-test('指紋裡不含時間戳格式（例：YYYY-MM-DD、ISO）', () => {
+test('fingerprints contain no timestamp formats (e.g. YYYY-MM-DD, ISO)', () => {
   for (const key of Object.keys(BUG_FINGERPRINT_REGISTRY)) {
-    assert.doesNotMatch(key, /20\d{2}/, `${key} 看起來含年份`);
+    assert.doesNotMatch(key, /20\d{2}/, `${key} looks like it contains a year`);
   }
 });
 
-test('指紋裡不含 UUID 樣式', () => {
+test('fingerprints contain no UUID patterns', () => {
   for (const key of Object.keys(BUG_FINGERPRINT_REGISTRY)) {
     assert.doesNotMatch(
       key,
       /[0-9a-f]{8}-[0-9a-f]{4}/i,
-      `${key} 看起來含 UUID`
+      `${key} looks like it contains a UUID`
     );
   }
 });

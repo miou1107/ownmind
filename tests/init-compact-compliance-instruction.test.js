@@ -1,15 +1,16 @@
 /**
- * Reproduction test：4/21 之後 iron_rule_compliance event 突然降為 0 的根因
+ * Reproduction test: root cause for iron_rule_compliance events dropping to 0 after 4/21.
  *
- * 背景（2026-05-07 診斷）：
- *   - MCP tool ownmind_report_compliance 寫入端正常
- *   - 但 SessionStart hook 用 ?compact=true 拉 init API
- *   - compact 把 INSTRUCTIONS_SOP 整段拿掉（src/routes/memory.js:653）
- *     → AI 在 compact response 裡看不到「必須呼叫 ownmind_report_compliance」這條指令
- *   - 隨時間推移 AI 漸漸不再主動呼叫，4/21 後完全停
+ * Background (diagnosed 2026-05-07):
+ *   - MCP tool ownmind_report_compliance write path was healthy.
+ *   - But SessionStart hook fetched the init API with ?compact=true.
+ *   - compact strips the entire INSTRUCTIONS_SOP (src/routes/memory.js:653)
+ *     → the AI never sees the "must call ownmind_report_compliance" instruction in the compact response.
+ *   - Over time the AI stopped invoking it; after 4/21 it stopped completely.
  *
- * 修法：在 iron_rules_digest 末尾固定加上 compliance 指令，這樣 compact mode
- * 也送得到。digest 是合規回報的天然搭檔（鐵律觸發 → 必須回報），語意一致。
+ * Fix: always append the compliance instruction at the tail of iron_rules_digest so it
+ * survives compact mode. The digest is a natural pair for compliance reporting (iron rule
+ * triggers → compliance report), so the semantics stay consistent.
  */
 
 import { test } from 'node:test';
@@ -21,35 +22,36 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const memorySource = readFileSync(join(__dirname, '..', 'src', 'routes', 'memory.js'), 'utf8');
 
-test('init route：iron_rules_digest 必須含 ownmind_report_compliance 指令（compact 也送）', () => {
-  // 修前：compliance 指令只在 INSTRUCTIONS_SOP，被 !compact 阻擋
-  // 修後：digest 末尾固定追加 compliance 指令
+test('init route: iron_rules_digest must contain the ownmind_report_compliance instruction (delivered in compact too)', () => {
+  // Before the fix: compliance instruction lived only in INSTRUCTIONS_SOP and was filtered out by !compact.
+  // After the fix: the instruction is always appended at the tail of the digest.
   assert.match(
     memorySource,
     /ironRulesDigestFinal[\s\S]*?ownmind_report_compliance/,
-    'src/routes/memory.js 必須在組裝 ironRulesDigestFinal 時加入「呼叫 ownmind_report_compliance」字樣，否則 compact mode 拿不到指令'
+    'src/routes/memory.js must add a "call ownmind_report_compliance" line when assembling ironRulesDigestFinal, otherwise compact mode loses the instruction'
   );
 });
 
-test('init route：compact mode 仍會 emit iron_rules_digest（不被砍）', () => {
-  // 確認 digest 在 res.json 裡不被 compact 阻擋
-  // 修前後都該過——這是 control test，防止未來 refactor 把 digest 搬到 compact 後面
+test('init route: compact mode still emits iron_rules_digest (must not be filtered)', () => {
+  // Confirm the digest reaches res.json regardless of compact.
+  // This should pass both before and after the fix — it's a control test, guarding against
+  // future refactors moving the digest behind a compact guard.
   assert.match(
     memorySource,
     /iron_rules_digest:\s*ironRulesDigestFinal/,
-    'res.json 必須直接送 iron_rules_digest（不能加 !compact 條件）'
+    'res.json must emit iron_rules_digest directly (no !compact guard allowed)'
   );
 });
 
-test('init route：compliance 指令必須提到 comply / skip / violate 三個 action', () => {
-  // 確保指令完整、AI 不會只記住 comply 而忘了 skip / violate
+test('init route: compliance instruction must mention all three actions — comply / skip / violate', () => {
+  // Make sure the instruction is complete so the AI does not remember only comply and forget skip / violate.
   const digestSection = memorySource.match(
     /ironRulesDigestFinal[\s\S]{0,1500}/
   )?.[0] || '';
   for (const action of ['comply', 'skip', 'violate']) {
     assert.ok(
       digestSection.includes(action),
-      `digest 末段必須提到 action='${action}'，目前抓到的段落不含這個 keyword`
+      `tail of digest must mention action='${action}'; the captured section does not contain this keyword`
     );
   }
 });

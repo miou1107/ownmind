@@ -2,10 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { shouldRetryForSyncToken, applyNewToken } from '../mcp/lib/sync-token-retry.js';
 
-describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
+describe('v1.20.2 follow-up #2: sync_token auto-retry helper', () => {
 
   describe('shouldRetryForSyncToken', () => {
-    it('寫入 POST + 409 + 訊息含 sync_token → true', () => {
+    it('write POST + 409 + message contains sync_token → true', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 409,
@@ -13,7 +13,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), true);
     });
 
-    it('寫入 PUT + 409 + 訊息含 sync_token → true', () => {
+    it('write PUT + 409 + message contains sync_token → true', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'PUT',
         status: 409,
@@ -21,7 +21,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), true);
     });
 
-    it('寫入 DELETE + 409 + 訊息含 sync_token → true', () => {
+    it('write DELETE + 409 + message contains sync_token → true', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'DELETE',
         status: 409,
@@ -29,7 +29,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), true);
     });
 
-    it('GET + 409 → false（讀取操作不該 retry）', () => {
+    it('GET + 409 → false (reads should not retry)', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'GET',
         status: 409,
@@ -45,7 +45,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), false);
     });
 
-    it('POST + 200 → false（成功不該 retry）', () => {
+    it('POST + 200 → false (success should not retry)', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 200,
@@ -53,7 +53,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), false);
     });
 
-    it('POST + 409 + 訊息不含 sync_token → false（其他 409 不該誤 retry）', () => {
+    it('POST + 409 + message does not mention sync_token → false (other 409s must not retry by mistake)', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 409,
@@ -61,7 +61,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), false);
     });
 
-    it('POST + 500 + 訊息含 sync_token → false（必須是 409 才 retry）', () => {
+    it('POST + 500 + message contains sync_token → false (only 409 triggers retry)', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 500,
@@ -69,7 +69,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), false);
     });
 
-    it('errorMessage 為 undefined → false（防呆）', () => {
+    it('errorMessage is undefined → false (defensive)', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 409,
@@ -77,7 +77,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       }), false);
     });
 
-    it('errorMessage 大小寫不敏感（Sync_Token 也算）', () => {
+    it('errorMessage is case-insensitive (Sync_Token also counts)', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 409,
@@ -87,45 +87,45 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
   });
 
   describe('applyNewToken', () => {
-    it('body 有 sync_token 欄位 → 換成新值、回 true', () => {
+    it('body has a sync_token field → replace with the new value, return true', () => {
       const body = { type: 'project', sync_token: 'old-abc' };
       const result = applyNewToken(body, 'new-xyz');
       assert.equal(result, true);
       assert.equal(body.sync_token, 'new-xyz');
     });
 
-    it('body 沒 sync_token 欄位 → 不動、回 false', () => {
+    it('body has no sync_token field → no change, return false', () => {
       const body = { type: 'project' };
       const result = applyNewToken(body, 'new-xyz');
       assert.equal(result, false);
-      assert.ok(!('sync_token' in body), 'body 不應該被新增 sync_token 欄位');
+      assert.ok(!('sync_token' in body), 'body must not gain a sync_token field');
     });
 
-    it('body 為 null → 回 false 不 crash', () => {
+    it('body is null → return false, no crash', () => {
       const result = applyNewToken(null, 'new-xyz');
       assert.equal(result, false);
     });
 
-    it('body 為 undefined → 回 false 不 crash', () => {
+    it('body is undefined → return false, no crash', () => {
       const result = applyNewToken(undefined, 'new-xyz');
       assert.equal(result, false);
     });
 
-    it('newToken 為 null → 回 false 不破壞 body', () => {
+    it('newToken is null → return false, body untouched', () => {
       const body = { sync_token: 'old' };
       const result = applyNewToken(body, null);
       assert.equal(result, false);
-      assert.equal(body.sync_token, 'old', '原 token 不應該被覆蓋成 null');
+      assert.equal(body.sync_token, 'old', 'original token must not be overwritten with null');
     });
 
-    it('newToken 為空字串 → 回 false', () => {
+    it('newToken is empty string → return false', () => {
       const body = { sync_token: 'old' };
       const result = applyNewToken(body, '');
       assert.equal(result, false);
       assert.equal(body.sync_token, 'old');
     });
 
-    it('body 是字串而非物件 → 回 false 不 crash', () => {
+    it('body is a string instead of an object → return false, no crash', () => {
       const result = applyNewToken('not an object', 'new-xyz');
       assert.equal(result, false);
     });

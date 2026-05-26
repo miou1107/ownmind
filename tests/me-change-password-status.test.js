@@ -8,46 +8,48 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
 
 /**
- * v1.20.1 — me.js POST /change-password 舊密碼錯誤必須回 400、不能回 401
+ * v1.20.1 — me.js POST /change-password must return 400 for a wrong old password, not 401.
  *
- * 背景：v1.20.1 步驟 3.10 守門員上線後、client.js 對 401 一律清 api_key +
- * 廣播 ownmind:auth-expired event、App.jsx 自動 navigate /login。
+ * Background: after v1.20.1 step 3.10 enabled the auth guard, client.js clears the api_key
+ * and broadcasts ownmind:auth-expired on any 401; App.jsx then navigates to /login.
  *
- * 但 me.js POST /change-password 第 89 行原本對「舊密碼錯誤」也回 401、
- * 結果 mustChange 用戶在 SecurityPage 打錯舊密碼會立刻被踢回 /login、
- * 完全破壞改密流程的 UX。
+ * But me.js POST /change-password (line 89) originally returned 401 on a wrong old password,
+ * so a mustChange user who mistyped on SecurityPage was immediately kicked to /login —
+ * which completely broke the password-change UX.
  *
- * 修法：把舊密錯誤改回 400（這條已經在 router.use(auth) 之後、token 本來就有效）
- * 401 的語義保留給「身份完全失效」、跟改密失敗區分開。
+ * Fix: switch the wrong-old-password response back to 400 (this handler sits after
+ * router.use(auth), so the token is already valid). 401 is reserved for "identity fully
+ * invalidated" and stays separate from change-password failures.
  */
 
-describe('v1.20.1 — POST /change-password 舊密錯誤狀態碼', () => {
+describe('v1.20.1 — POST /change-password status code for wrong old password', () => {
   const meSource = readFileSync(join(repoRoot, 'src/routes/me.js'), 'utf8');
 
-  // 抓 change-password handler 整段
+  // Pull the whole change-password handler section.
   const handlerMatch = meSource.match(
     /router\.post\(['"]\/change-password['"][\s\S]+?(?=\n(?:router\.|export default))/
   );
 
-  it('change-password handler 必須存在', () => {
-    assert.ok(handlerMatch, '找不到 POST /change-password handler');
+  it('change-password handler must exist', () => {
+    assert.ok(handlerMatch, 'POST /change-password handler not found');
   });
 
-  it('handler 內不能有任何 status(401) 呼叫', () => {
+  it('handler must not call status(401) anywhere', () => {
     assert.ok(handlerMatch);
-    // change-password 在 router.use(auth) 之後、token 已被 middleware 驗過
-    // 處理階段任何錯誤都不該再回 401（避免 client.js 401 burst handler 誤判）
+    // change-password sits after router.use(auth); the token has already been validated
+    // by middleware, so no failure in this handler should still return 401 (avoid the
+    // client.js 401 burst handler misfiring).
     assert.doesNotMatch(handlerMatch[0], /status\(401\)/,
-      'change-password handler 整段不能有 status(401)；401 會被 client.js 視為 token 過期、踢用戶回 /login');
+      'change-password handler must not call status(401) anywhere; 401 would be treated as expired token and kick the user back to /login');
   });
 
-  it('「舊密碼錯誤」回應必須是 400', () => {
+  it('wrong-old-password response must be 400', () => {
     assert.ok(handlerMatch);
-    // 找 '舊密碼錯誤' 字串前面 80 字內最近的 status(N) call
-    // 用 reverse match 抓最後一個 status 在 '舊密碼錯誤' 前
+    // Find the nearest status(N) call within 80 chars before "舊密碼錯誤".
+    // Reverse match to capture the last status that precedes it.
     const m = handlerMatch[0].match(/status\((\d+)\)[\s\S]{0,80}?舊密碼錯誤/);
-    assert.ok(m, '找不到回應「舊密碼錯誤」的 status call');
+    assert.ok(m, 'status call for the "wrong old password" response not found');
     assert.equal(m[1], '400',
-      '舊密錯誤必須回 400、語義是「user input 錯」、跟「token 過期」(401) 區分開');
+      'wrong old password must return 400 — semantically "user input error", separate from "expired token" (401)');
   });
 });

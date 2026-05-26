@@ -1,7 +1,7 @@
 /**
- * v1.19.11 — lint-event-logger 純函式測試
+ * v1.19.11 — pure-function tests for lint-event-logger.
  *
- * 對應 openspec/changes/v1.19.11-lint-ux-improvements/spec.md 場景 10-14。
+ * Maps to openspec/changes/v1.19.11-lint-ux-improvements/spec.md scenarios 10-14.
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,9 +27,9 @@ afterEach(() => {
   _resetPathForTests(null);
 });
 
-describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
-  it('寫入後檔案存在、含一筆 JSON', () => {
-    // v1.20.4：ruleCodes 改用中性事件常數、violated_words 欄位也改中性命名
+describe('v1.19.11 scenario 10 — writeEvent records one entry', () => {
+  it('after write, file exists with one JSON entry', () => {
+    // v1.20.4: ruleCodes switched to neutral event constants, violated_words fields are neutral too.
     writeEvent({
       sessionId: 'sess-1',
       event: 'blocked',
@@ -52,7 +52,7 @@ describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
     assert.match(parsed.ts, /^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('連續寫多筆、append 不覆蓋', () => {
+  it('multiple consecutive writes append (no overwrite)', () => {
     writeEvent({ sessionId: 'a', event: 'blocked', ruleCodes: ['lint_jargon_explanation_required'] });
     writeEvent({ sessionId: 'b', event: 'blocked', ruleCodes: ['lint_language_mixed_ratio'] });
     const lines = fs.readFileSync(tmpPath, 'utf8').trim().split('\n');
@@ -61,7 +61,7 @@ describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
     assert.equal(JSON.parse(lines[1]).session_id, 'b');
   });
 
-  it('缺欄位有預設值', () => {
+  it('missing fields get defaults', () => {
     writeEvent({ sessionId: 'x', event: 'blocked' });
     const parsed = JSON.parse(fs.readFileSync(tmpPath, 'utf8').trim());
     assert.deepEqual(parsed.rule_codes, []);
@@ -73,18 +73,18 @@ describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
   });
 });
 
-describe('v1.19.11 場景 11 — rotate 機制', () => {
-  it('檔大小超過 5MB → rename 成 .old、新寫入空檔', () => {
-    // 寫一個 > 5MB 的假檔
+describe('v1.19.11 scenario 11 — rotate mechanism', () => {
+  it('file over 5MB → renamed to .old, new write goes into a fresh file', () => {
+    // Write a > 5MB fake file.
     const padding = 'x'.repeat(6 * 1024 * 1024);
     fs.writeFileSync(tmpPath, padding);
 
     writeEvent({ sessionId: 'after-rotate', event: 'blocked', ruleCodes: ['lint_jargon_explanation_required'] });
 
-    // 舊檔該被 rename 成 .old
+    // The old file should be renamed to .old.
     assert.equal(fs.existsSync(tmpPath + '.old'), true);
 
-    // 新檔該存在且只有一筆紀錄
+    // The new file should exist and contain exactly one entry.
     const newContent = fs.readFileSync(tmpPath, 'utf8').trim();
     const lines = newContent.split('\n').filter(Boolean);
     assert.equal(lines.length, 1);
@@ -92,41 +92,41 @@ describe('v1.19.11 場景 11 — rotate 機制', () => {
   });
 });
 
-describe('v1.19.11 場景 12 — 寫入失敗不丟', () => {
-  it('寫無權限路徑、回 false 不丟', () => {
+describe('v1.19.11 scenario 12 — write failure does not throw', () => {
+  it('writing to an unwritable path returns false without throwing', () => {
     _resetPathForTests('/root/no-permission/x.jsonl');
     let didThrow = false;
     let result;
     try {
       result = writeEvent({ sessionId: 's', event: 'blocked' });
     } catch { didThrow = true; }
-    assert.equal(didThrow, false, '不該丟例外');
-    assert.equal(result, false, '寫入失敗該回 false');
+    assert.equal(didThrow, false, 'must not throw');
+    assert.equal(result, false, 'write failure should return false');
   });
 
-  it('entry 為 null → 回 false 不丟', () => {
+  it('entry is null → returns false, does not throw', () => {
     const result = writeEvent(null);
     assert.equal(result, false);
   });
 });
 
-describe('v1.19.11 — extractViolatedWords 純函式', () => {
-  // v1.20.4：violations rule 用中性事件常數、輸出欄位也用中性命名
-  it('抽中英混雜事件的 mixedWords', () => {
+describe('v1.19.11 — pure-function extractViolatedWords', () => {
+  // v1.20.4: violations rule uses neutral event constants, output fields are neutral too.
+  it('extracts mixedWords from the mixed-language event', () => {
     const out = extractViolatedWords([
       { rule: 'lint_language_mixed_ratio', detail: { mixedWords: ['refactor', 'codebase'] } },
     ]);
     assert.deepEqual(out.mixed_lang_words, ['refactor', 'codebase']);
   });
 
-  it('抽行話事件的 jargon', () => {
+  it('extracts jargon from the jargon event', () => {
     const out = extractViolatedWords([
       { rule: 'lint_jargon_explanation_required', detail: { jargon: ['routes', 'middleware'] } },
     ]);
     assert.deepEqual(out.jargon_words, ['routes', 'middleware']);
   });
 
-  it('privacy_check 不存原值、只存類型計數', () => {
+  it('privacy_check does not store the original value, only type counts', () => {
     const out = extractViolatedWords([
       {
         rule: 'privacy_check',
@@ -141,13 +141,13 @@ describe('v1.19.11 — extractViolatedWords 純函式', () => {
     ]);
     assert.equal(out.privacy_matches_count, 3);
     assert.deepEqual(out.privacy_types.sort(), ['email', 'tw_id']);
-    // 不該含原 value
+    // Must not contain the original value.
     const serialized = JSON.stringify(out);
     assert.equal(serialized.includes('a@b.com'), false);
     assert.equal(serialized.includes('A123456789'), false);
   });
 
-  it('多違規同時抽', () => {
+  it('extracts from multiple violations at once', () => {
     const out = extractViolatedWords([
       { rule: 'lint_language_mixed_ratio', detail: { mixedWords: ['a'] } },
       { rule: 'lint_jargon_explanation_required', detail: { jargon: ['b'] } },
@@ -156,7 +156,7 @@ describe('v1.19.11 — extractViolatedWords 純函式', () => {
     assert.deepEqual(out.jargon_words, ['b']);
   });
 
-  it('上限 20 個詞、超過截斷', () => {
+  it('caps at 20 words; anything more is truncated', () => {
     const words = Array.from({ length: 30 }, (_, i) => `word${i}`);
     const out = extractViolatedWords([
       { rule: 'lint_language_mixed_ratio', detail: { mixedWords: words } },
@@ -164,7 +164,7 @@ describe('v1.19.11 — extractViolatedWords 純函式', () => {
     assert.equal(out.mixed_lang_words.length, 20);
   });
 
-  it('非陣列輸入回空物件', () => {
+  it('non-array input returns empty object', () => {
     assert.deepEqual(extractViolatedWords(null), {});
     assert.deepEqual(extractViolatedWords('abc'), {});
   });

@@ -9,17 +9,17 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.14 — Tier 2 (Cursor / Antigravity / OpenCode) Windows 支援
+ * v1.17.14 — Tier 2 (Cursor / Antigravity / OpenCode) Windows support
  *
- * 已知問題：
- * 1. opencode.js 沒 win32 path branch → Windows 路徑先天錯
- * 2. vscode-telemetry.js / opencode.js 靠 `sqlite3` CLI，Windows 預設沒裝
+ * Known issues:
+ * 1. opencode.js lacks a win32 path branch → Windows paths are wrong by default.
+ * 2. vscode-telemetry.js / opencode.js rely on the `sqlite3` CLI, which Windows does not ship by default.
  *
- * 修法：
- * - opencode.js 加 DEFAULT_DB_PATHS 跟 cursor/antigravity 一致
- * - install.ps1 自動 winget install sqlite3（Win10 1809+ 內建 winget）
- * - install.sh Linux 分支提示 apt install sqlite3（Mac 內建不 warn）
- * - vscode-telemetry.js ENOENT 錯誤訊息加裝法（actionable for user）
+ * Fix:
+ * - opencode.js adds DEFAULT_DB_PATHS to match cursor / antigravity.
+ * - install.ps1 auto-runs winget install sqlite3 (winget ships with Win10 1809+).
+ * - install.sh Linux branch hints apt install sqlite3 (Mac ships it, no warning).
+ * - vscode-telemetry.js ENOENT error message adds install hints (actionable for users).
  */
 
 describe('opencode.js — Windows path branch', () => {
@@ -28,80 +28,80 @@ describe('opencode.js — Windows path branch', () => {
     'utf8'
   );
 
-  it('要有 DEFAULT_DB_PATHS dict 含 win32', () => {
+  it('DEFAULT_DB_PATHS dict must contain win32', () => {
     assert.match(
       content,
       /DEFAULT_DB_PATHS\s*=\s*\{[\s\S]*win32[\s\S]*\}/,
-      'opencode.js 缺 win32 path branch'
+      'opencode.js is missing the win32 path branch'
     );
   });
 
-  it('win32 路徑用 AppData（OpenCode Windows 實際放法）', () => {
+  it('win32 path uses AppData (where OpenCode actually stores it on Windows)', () => {
     assert.match(
       content,
       /win32:[\s\S]{0,100}AppData[\s\S]{0,50}opencode/,
-      'Windows OpenCode DB 應在 AppData/...'
+      'OpenCode DB on Windows should live under AppData/...'
     );
   });
 
-  it('darwin/linux path 保留 XDG posix', () => {
+  it('darwin/linux paths preserve XDG posix layout', () => {
     // path.join(os.homedir(), '.local', 'share', 'opencode', ...)
-    // source 裡是 '.local', 'share', 'opencode' — 允許中間有 quote/comma/space
+    // The source literally has '.local', 'share', 'opencode' — allow quotes/commas/spaces in between.
     assert.match(content, /darwin:[\s\S]{0,200}\.local[\s\S]{0,20}share[\s\S]{0,20}opencode/);
     assert.match(content, /linux:[\s\S]{0,200}\.local[\s\S]{0,20}share[\s\S]{0,20}opencode/);
   });
 });
 
-describe('install.ps1 — winget 自動裝 sqlite3', () => {
+describe('install.ps1 — winget auto-installs sqlite3', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('偵測 sqlite3 存在', () => {
+  it('detects whether sqlite3 exists', () => {
     assert.match(
       content,
       /Get-Command\s+sqlite3\s+-ErrorAction\s+SilentlyContinue/,
-      'install.ps1 沒檢查 sqlite3'
+      'install.ps1 does not check for sqlite3'
     );
   });
 
-  it('若沒裝 sqlite3 且有 winget → 自動裝', () => {
+  it('if sqlite3 is missing and winget exists → auto-install', () => {
     assert.match(
       content,
       /winget\s+install[\s\S]{0,150}SQLite\.SQLite/,
-      'install.ps1 沒嘗試 winget install SQLite.SQLite'
+      'install.ps1 does not try winget install SQLite.SQLite'
     );
   });
 
-  it('提示重開 terminal 讓 PATH 生效', () => {
+  it('reminds the user to reopen terminal so PATH takes effect', () => {
     assert.match(
       content,
       /(PATH|環境變數|重開|restart)/i,
-      'install.ps1 應提示 PATH 生效'
+      'install.ps1 should remind users that PATH must take effect'
     );
   });
 });
 
-describe('install.sh — Linux sqlite3 提示（Mac 內建不 warn）', () => {
+describe('install.sh — Linux sqlite3 hint (no warning on Mac, which ships it)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
 
-  it('偵測 sqlite3 + 平台判斷', () => {
-    // 檢查 command -v sqlite3 或 which sqlite3 + 判斷 linux 才 warn
+  it('detects sqlite3 + platform check', () => {
+    // Check for `command -v sqlite3` or `which sqlite3` + a guard so we only warn on linux.
     const hasCheck = /command -v sqlite3|which sqlite3/.test(content);
-    assert.ok(hasCheck, 'install.sh 沒檢查 sqlite3');
+    assert.ok(hasCheck, 'install.sh does not check for sqlite3');
   });
 });
 
-describe('vscode-telemetry.js — ENOENT 錯誤訊息 actionable', () => {
+describe('vscode-telemetry.js — ENOENT error message is actionable', () => {
   const content = fs.readFileSync(
     path.join(repoRoot, 'shared', 'scanners', 'vscode-telemetry.js'),
     'utf8'
   );
 
-  it('ENOENT 提示具體裝法（winget / apt / URL）', () => {
-    // warn 訊息要包含 winget / apt-get / 或 sqlite.org URL 之一
+  it('ENOENT hints at a concrete install path (winget / apt / URL)', () => {
+    // The warning must mention one of: winget, apt-get, or sqlite.org URL.
     const actionable =
       /winget\s+install/i.test(content) ||
       /apt(-get)?\s+install/i.test(content) ||
       /sqlite\.org/i.test(content);
-    assert.ok(actionable, 'ENOENT 錯誤訊息缺裝法指示');
+    assert.ok(actionable, 'ENOENT error message lacks install guidance');
   });
 });

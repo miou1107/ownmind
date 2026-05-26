@@ -11,20 +11,20 @@ import {
 } from '../shared/context-blob-schema.js';
 
 // ============================================================
-// 常數
+// Constants
 // ============================================================
 
-test('上限常數：1MB / 50 條 / 每條 5KB', () => {
+test('limit constants: 1MB / 50 messages / 5KB per message', () => {
   assert.equal(CONTEXT_BLOB_MAX_BYTES, 1024 * 1024);
   assert.equal(CONTEXT_BLOB_MAX_MESSAGES, 50);
   assert.equal(CONTEXT_BLOB_MAX_PER_MESSAGE_BYTES, 5 * 1024);
 });
 
 // ============================================================
-// isTruncatedMessage：判別「截斷單條訊息」物件
+// isTruncatedMessage: detect the "single truncated message" object
 // ============================================================
 
-test('isTruncatedMessage 對完整的截斷物件回 true', () => {
+test('isTruncatedMessage returns true for a fully-formed truncation object', () => {
   assert.equal(
     isTruncatedMessage({
       truncated: true,
@@ -36,27 +36,27 @@ test('isTruncatedMessage 對完整的截斷物件回 true', () => {
   );
 });
 
-test('isTruncatedMessage 對純字串回 false', () => {
+test('isTruncatedMessage returns false for a plain string', () => {
   assert.equal(isTruncatedMessage('plain string'), false);
 });
 
-test('isTruncatedMessage 對 null / undefined / 數字回 false', () => {
+test('isTruncatedMessage returns false for null / undefined / number', () => {
   assert.equal(isTruncatedMessage(null), false);
   assert.equal(isTruncatedMessage(undefined), false);
   assert.equal(isTruncatedMessage(123), false);
 });
 
-test('isTruncatedMessage 對欄位缺漏的物件回 false', () => {
+test('isTruncatedMessage returns false for objects with missing fields', () => {
   assert.equal(isTruncatedMessage({ truncated: true }), false);
   assert.equal(isTruncatedMessage({ truncated: true, head: 'h' }), false);
   assert.equal(isTruncatedMessage({ truncated: false, head: 'h', tail: 't', original_size: 1 }), false);
 });
 
 // ============================================================
-// isTruncatedMessagesPlaceholder：判別「省略中間多條訊息」佔位
+// isTruncatedMessagesPlaceholder: detect the "elided middle messages" placeholder
 // ============================================================
 
-test('isTruncatedMessagesPlaceholder 對完整佔位物件回 true', () => {
+test('isTruncatedMessagesPlaceholder returns true for a fully-formed placeholder object', () => {
   assert.equal(
     isTruncatedMessagesPlaceholder({
       truncated_messages: 30,
@@ -66,11 +66,11 @@ test('isTruncatedMessagesPlaceholder 對完整佔位物件回 true', () => {
   );
 });
 
-test('isTruncatedMessagesPlaceholder 對純字串回 false', () => {
+test('isTruncatedMessagesPlaceholder returns false for a plain string', () => {
   assert.equal(isTruncatedMessagesPlaceholder('hello'), false);
 });
 
-test('isTruncatedMessagesPlaceholder 跟 isTruncatedMessage 互斥', () => {
+test('isTruncatedMessagesPlaceholder and isTruncatedMessage are mutually exclusive', () => {
   const placeholder = { truncated_messages: 30, summary: 'x' };
   const single = { truncated: true, original_size: 1000, head: 'h', tail: 't' };
   assert.equal(isTruncatedMessagesPlaceholder(placeholder), true);
@@ -80,15 +80,15 @@ test('isTruncatedMessagesPlaceholder 跟 isTruncatedMessage 互斥', () => {
 });
 
 // ============================================================
-// validateConversationSnippets：驗陣列內每筆是合法型別
+// validateConversationSnippets: verify each array item is a valid type
 // ============================================================
 
-test('validateConversationSnippets：純字串陣列合法', () => {
+test('validateConversationSnippets: pure string array is valid', () => {
   const result = validateConversationSnippets(['hello', 'world']);
   assert.equal(result.ok, true);
 });
 
-test('validateConversationSnippets：混合字串 + 截斷物件合法（聯合型別）', () => {
+test('validateConversationSnippets: mixed string + truncation object is valid (union type)', () => {
   const result = validateConversationSnippets([
     'short',
     { truncated: true, original_size: 100000, head: 'h', tail: 't' },
@@ -98,28 +98,28 @@ test('validateConversationSnippets：混合字串 + 截斷物件合法（聯合�
   assert.equal(result.ok, true);
 });
 
-test('validateConversationSnippets：含數字陣列項回 ok=false', () => {
+test('validateConversationSnippets: array containing a number returns ok=false', () => {
   const result = validateConversationSnippets(['ok', 123]);
   assert.equal(result.ok, false);
   assert.match(result.error, /型別|wrong type/);
 });
 
-test('validateConversationSnippets：含 null 項回 ok=false', () => {
+test('validateConversationSnippets: array containing null returns ok=false', () => {
   const result = validateConversationSnippets(['ok', null]);
   assert.equal(result.ok, false);
 });
 
-test('validateConversationSnippets：非陣列回 ok=false', () => {
+test('validateConversationSnippets: non-array returns ok=false', () => {
   assert.equal(validateConversationSnippets('not array').ok, false);
   assert.equal(validateConversationSnippets({}).ok, false);
   assert.equal(validateConversationSnippets(null).ok, false);
 });
 
 // ============================================================
-// validateContextBlob：整個 context_blob 物件驗證
+// validateContextBlob: validate the full context_blob object
 // ============================================================
 
-test('validateContextBlob：完整合法物件', () => {
+test('validateContextBlob: fully valid object', () => {
   const result = validateContextBlob({
     conversation_snippets: ['hello', 'world'],
     env: { os: 'darwin', node: 'v20' },
@@ -128,21 +128,21 @@ test('validateContextBlob：完整合法物件', () => {
   assert.equal(result.ok, true);
 });
 
-test('validateContextBlob：conversation_snippets 缺漏仍合法（選填）', () => {
+test('validateContextBlob: missing conversation_snippets is still valid (optional)', () => {
   const result = validateContextBlob({
     env: { os: 'darwin' },
   });
   assert.equal(result.ok, true);
 });
 
-test('validateContextBlob：conversation_snippets 不合法 → ok=false', () => {
+test('validateContextBlob: invalid conversation_snippets → ok=false', () => {
   const result = validateContextBlob({
     conversation_snippets: [123],
   });
   assert.equal(result.ok, false);
 });
 
-test('validateContextBlob：超過 1MB → ok=false + size_bytes 回報', () => {
+test('validateContextBlob: over 1MB → ok=false + size_bytes reported', () => {
   const big = 'x'.repeat(CONTEXT_BLOB_MAX_BYTES + 1);
   const result = validateContextBlob({
     conversation_snippets: [big],
@@ -151,7 +151,7 @@ test('validateContextBlob：超過 1MB → ok=false + size_bytes 回報', () => 
   assert.match(result.error, /1MB|大小|超過/);
 });
 
-test('validateContextBlob：超過 50 條訊息 → ok=false', () => {
+test('validateContextBlob: over 50 messages → ok=false', () => {
   const result = validateContextBlob({
     conversation_snippets: new Array(51).fill('msg'),
   });
@@ -159,7 +159,7 @@ test('validateContextBlob：超過 50 條訊息 → ok=false', () => {
   assert.match(result.error, /50|訊息數/);
 });
 
-test('validateContextBlob：非物件回 ok=false', () => {
+test('validateContextBlob: non-object returns ok=false', () => {
   assert.equal(validateContextBlob('string').ok, false);
   assert.equal(validateContextBlob(null).ok, false);
   assert.equal(validateContextBlob([]).ok, false);
