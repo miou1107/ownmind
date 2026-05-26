@@ -1,5 +1,35 @@
 # OwnMind 更新紀錄
 
+## v1.26.1 — 修復 `ownmind_report_bug` 設計缺陷（自由回報路徑）
+
+**問題**：
+
+1. `ownmind_report_bug` 強制 `bug_fingerprint` 必須是後端註冊過的指紋。使用者發現新設計問題時、手邊根本沒有匹配的指紋、整個工具退化成「只能回報開發者已經知道的錯誤類別」。
+2. 回話品質檢查（reply-lint）跟 pre-commit 鉤子在 stderr 自帶 `bug_fingerprint: lint_context_memory_missing` / `mem_iron_rule_blocking_commit_no_fingerprint` 邀請回報、但這些指紋只應該給「鉤子自己誤判」用。AI 拿這指紋去回報其他類別、會被歸錯類、訊息變雜訊。
+
+**修法**（加一個 generic 自由回報指紋作為 escape hatch）：
+
+1. **新增 `clt_user_reported_other` 指紋**（`shared/bug-fingerprints.js`）— 給「使用者自由回報、新發現問題」用。Rate limit + spam 偵測仍透過 1h/3 筆 / 24h/30 筆 / similarity 機制運作。
+2. **後端 400 錯誤訊息加 hint**（`src/routes/bug-reports.js`）— 指紋無效時、訊息明確指引使用 `clt_user_reported_other`。
+3. **MCP 工具描述放寬**（`mcp/index.js`）— 移除「must NOT be fabricated」過嚴限制、改說「如果沒有匹配的指紋、用 `clt_user_reported_other`」。
+4. **Hook stderr 加 disambiguation**（`hooks/ownmind-reply-lint.js` 跟 `hooks/ownmind-git-pre-commit.js`）— 明確說明 hook 給的指紋只應給「這次鉤子誤判」用、其他類別要改用 `clt_user_reported_other`。
+
+**不破壞既有 spam 防線**：
+- Spam 規則 3「1h 同指紋 5 筆」：透過 `clt_user_reported_other` 仍然能抓到「user 在亂送」。
+- Spam 規則 1「1h 5 筆 + ≥3 筆內容相似」：用 title + description 相似度、不依賴指紋。
+- Spam 規則 2「24h 30 筆」：純計數、不依賴指紋。
+- Rate limit「1h 同指紋 3 筆 → 429」：對 `clt_user_reported_other` 也適用、合理上限。
+
+**測試**：1956 pass / 0 fail（多 2 條新測試確認新指紋註冊 + `withReportSuggestion` 接受新指紋）
+
+**版本**：1.26.0 → 1.26.1
+**OpenSpec change**：`openspec/changes/v1.26.1-bug-report-free-form/`
+
+**Follow-up（未在本期）**：
+- Admin「promote to specific fingerprint」工作流 — 當某個 `clt_user_reported_other` 報告變成常見類別時、admin 一鍵升級為特定指紋。
+- MCP 自動 pre-fill `clt_user_reported_other` 給 AI（觀察新路徑使用情況後再評估）。
+- 多桶 rate limit（依分類限制、不只依指紋）。
+
 ## v1.26.0 — 國際化第五期：hooks 內部註解英文化（軌道 B 首發）
 
 **背景**：v1.22~v1.25 翻完 Track A（user-facing）主要 surface。雙軌國際化規則（CLAUDE.md / project_498）的 Track B（開發環境英文化）正式啟動、首發掃 `hooks/` 子目錄共 20 個檔 / 566 行中文，把 JSDoc + `//` 行內註解、設計理由、踩坑紀錄全部翻成英文。

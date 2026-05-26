@@ -158,9 +158,13 @@ function formatBlockMessage(failures) {
   }
   lines.push('Complete the steps above before committing.');
   // v1.20.2 follow-up #3: include the bug-report path so AI can flag wrongly-blocked commits.
+  // v1.26.1: clarify fingerprint scope — this fingerprint is ONLY for "this commit block was wrong".
+  // Unrelated issues must use `clt_user_reported_other`.
   lines.push(
     '[OwnMind bug report] Think this block is wrong? Call ownmind_report_bug to file a report. ' +
-    'bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true'
+    'bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true ' +
+    '(Use this fingerprint ONLY when reporting THIS commit block as wrong. ' +
+    'For unrelated issues, use bug_fingerprint=clt_user_reported_other instead.)'
   );
   lines.push('');
   return lines.join('\n');

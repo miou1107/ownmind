@@ -282,10 +282,14 @@ async function main() {
     const reason = formatBlockReason(violations, { priorBlockCount });
     try { process.stderr.write(reason + '\n'); } catch { /* ignore */ }
     // v1.20.2 follow-up #3: include the bug-report path so the AI can report when it thinks lint is wrong.
+    // v1.26.1: clarify fingerprint scope — `lint_context_memory_missing` is ONLY for "this lint
+    // decision was a misfire". Unrelated issues must use `clt_user_reported_other`.
     try {
       process.stderr.write(
         '[OwnMind bug report] Think this lint decision is wrong (e.g. an already-explained term was blocked)? Call ownmind_report_bug to file a report. ' +
-        'bug_fingerprint: lint_context_memory_missing, suggest_report: true\n'
+        'bug_fingerprint: lint_context_memory_missing, suggest_report: true ' +
+        '(Use this fingerprint ONLY when reporting THIS lint decision as a misfire. ' +
+        'For unrelated issues, use bug_fingerprint=clt_user_reported_other instead.)\n'
       );
     } catch { /* ignore */ }
     exitCode = 2;
@@ -307,10 +311,13 @@ async function main() {
     const note = formatDowngradeNotice(priorBlockCount, violations);
     try { process.stderr.write(note + '\n'); } catch { /* ignore */ }
     // v1.20.2 follow-up #3: the downgrade path also includes the bug-report path.
+    // v1.26.1: clarify fingerprint scope (see block path above).
     try {
       process.stderr.write(
         '[OwnMind bug report] Think this lint decision is wrong? Call ownmind_report_bug to file a report. ' +
-        'bug_fingerprint: lint_context_memory_missing, suggest_report: true\n'
+        'bug_fingerprint: lint_context_memory_missing, suggest_report: true ' +
+        '(Use this fingerprint ONLY when reporting THIS lint decision as a misfire. ' +
+        'For unrelated issues, use bug_fingerprint=clt_user_reported_other instead.)\n'
       );
     } catch { /* ignore */ }
     exitCode = 1;

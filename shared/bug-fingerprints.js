@@ -79,6 +79,13 @@ export const BUG_FINGERPRINT_REGISTRY = {
     category: 'clt',
     description: 'sync token 過期、需要重新 ownmind_init',
   },
+  // v1.26.1: free-form escape hatch — when a user discovers a new design issue
+  // that has no matching registered fingerprint, this is the canonical fallback.
+  // Rate-limit + spam-detection still apply (same-fingerprint 3/h → 429; ≥5/h → spam suspect).
+  clt_user_reported_other: {
+    category: 'clt',
+    description: 'User-initiated free-form report — for newly discovered design issues / categories not yet registered as a specific fingerprint.',
+  },
 
   // ── 同步相關（sync_*）─────────────────────────────────
   sync_memory_file_corrupt: {

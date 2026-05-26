@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.1 修改（修復 ownmind_report_bug 設計缺陷 — 自由回報路徑）
+
+新增檔：
+```
+openspec/changes/v1.26.1-bug-report-free-form/proposal.md   — 設計提案（escape hatch 指紋）
+openspec/changes/v1.26.1-bug-report-free-form/tasks.md      — 任務分解
+```
+
+修改檔（5 個產品檔 + 2 個測試）：
+```
+shared/bug-fingerprints.js               — 新增 clt_user_reported_other 指紋（clt 類別、free-form escape hatch）
+src/routes/bug-reports.js                — POST / 的 400 錯誤訊息改寫、加 hint 指引使用 clt_user_reported_other
+mcp/index.js                             — ownmind_report_bug 工具的 bug_fingerprint 欄位描述放寬：移除「must NOT be fabricated」、改說「沒匹配指紋時用 clt_user_reported_other」
+hooks/ownmind-reply-lint.js              — block path + downgrade path 兩處 stderr 訊息加 disambiguation：lint_context_memory_missing 只該給「這次 lint 誤判」用、其他類別改用 clt_user_reported_other
+hooks/ownmind-git-pre-commit.js          — formatBlockMessage 的 stderr 訊息加 disambiguation：mem_iron_rule_blocking_commit_no_fingerprint 只該給「這次 commit 擋下不對」用、其他類別改用 clt_user_reported_other
+tests/bug-fingerprints.test.js           — 新測試確認 clt_user_reported_other 已註冊
+tests/bug-report-helpers.test.js         — 新測試確認 withReportSuggestion 接受新指紋
+package.json                             — version 1.26.0 → 1.26.1
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                             — v1.26.1 條目
+```
+
+**驗證**：`npm test` 1956 pass / 0 fail（多 2 條新測試、無回歸）。
+
 ## v1.26.0 修改（國際化第五期：hooks/ 內部註解英文化 — 軌道 B 首發）
 
 新增檔：

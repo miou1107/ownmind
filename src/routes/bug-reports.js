@@ -77,7 +77,7 @@ router.post('/', auth, async (req, res) => {
     }
     if (!bug_fingerprint || !isValidFingerprint(bug_fingerprint)) {
       return res.status(400).json({
-        error: 'bug_fingerprint 必填、且必須是後端註冊過的指紋',
+        error: 'bug_fingerprint is required and must be a registered fingerprint. If you are reporting a newly discovered design issue and have no matching fingerprint, use "clt_user_reported_other".',
       });
     }
     if (!device_fingerprint || typeof device_fingerprint !== 'string') {

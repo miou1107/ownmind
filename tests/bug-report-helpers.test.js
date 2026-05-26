@@ -64,6 +64,13 @@ test('withReportSuggestion 預設 hint 可被選項覆寫', () => {
   assert.equal(r.report_hint, '客製提示文字');
 });
 
+// v1.26.1: free-form escape hatch fingerprint usable by withReportSuggestion.
+test('v1.26.1: withReportSuggestion accepts clt_user_reported_other', () => {
+  const r = withReportSuggestion({ error: 'x' }, 'clt_user_reported_other');
+  assert.equal(r.suggest_report, true);
+  assert.equal(r.bug_fingerprint, 'clt_user_reported_other');
+});
+
 // ============================================================
 // isUserInSpamBlock — 查使用者是否在 24h 封鎖期
 // ============================================================
