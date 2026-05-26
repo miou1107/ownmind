@@ -6,26 +6,31 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * v1.17.70 — sweep-old-backups（IR-027 邏輯卡控）
+ * v1.17.70 — sweep-old-backups (IR-027 program-logic gate)
  *
- * 背景：v1.17.0 起 interactive-upgrade.sh / .ps1 在 ~/.ownmind.bak.<ts>/ 留升級
- * 備份。bootstrap.sh / bootstrap.ps1 log 訊息只說「3 天後可手動刪除」 —— 但全
- * repo 沒有任何邏輯實際清，使用者忘了就無限累積。Vin 機器上累積到 19 份、
- * 894 MB（從 4/23 到 5/8 共 15 天）。違反 IR-027「提醒無效，邏輯才有效」。
+ * Background: from v1.17.0, interactive-upgrade.sh / .ps1 leave upgrade
+ * backups under ~/.ownmind.bak.<ts>/. bootstrap.sh / bootstrap.ps1 log
+ * messages just say "you can manually delete this after 3 days" — but
+ * nowhere in the repo is there logic that actually cleans them, so they
+ * accumulate forever if the user forgets. Vin's machine accumulated 19
+ * copies / 894 MB (4/23 to 5/8, 15 days). Classic IR-027 violation
+ * ("reminders are ineffective, only logic works").
  *
- * 修法：interactive-upgrade.sh 在升級成功末段補一個 find sweep，預設 retention
- * 7 天（可用 OWNMIND_BACKUP_RETENTION_DAYS 環境變數覆蓋）。
+ * Fix: interactive-upgrade.sh appends a find sweep at the tail of a
+ * successful upgrade with a default retention of 7 days (overridable via
+ * OWNMIND_BACKUP_RETENTION_DAYS env var).
  *
- * 這個 test 驗 find command 的 syntax + 邊界行為（mtime / -maxdepth / -name
- * pattern），在 CI 跑 macOS / Linux 都對。PS1 版本同樣邏輯但無法在 Node test
- * 跑、靠 manual review。
+ * This test verifies the find command syntax + boundary behavior
+ * (mtime / -maxdepth / -name pattern), running cleanly on macOS / Linux CI.
+ * The PS1 variant has the same logic but cannot run inside the Node test
+ * harness; we rely on manual review for it.
  */
 
 let tmpDir;
 
 function touch(filePath, mtime) {
   fs.mkdirSync(filePath, { recursive: true });
-  // 用 utimes 直接設 mtime（秒）
+  // Use utimes to set mtime directly (in seconds).
   const ts = mtime.getTime() / 1000;
   fs.utimesSync(filePath, ts, ts);
 }
@@ -35,13 +40,13 @@ function listRemaining() {
 }
 
 function runSweep(retentionDays) {
-  // 跟 interactive-upgrade.sh 將要用的同一條 find command
+  // Same find command interactive-upgrade.sh will use.
   const cmd = `find "${tmpDir}" -maxdepth 1 -type d -name '.ownmind.bak.*' -mtime +${retentionDays} -exec rm -rf {} + 2>/dev/null; true`;
   const r = spawnSync('bash', ['-c', cmd], { encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`sweep 失敗：${r.stderr}`);
+  if (r.status !== 0) throw new Error(`sweep failed: ${r.stderr}`);
 }
 
-describe('v1.17.70 — sweep old backups（find -mtime +N）', () => {
+describe('v1.17.70 — sweep old backups (find -mtime +N)', () => {
   before(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-sweep-test-'));
   });
@@ -50,10 +55,10 @@ describe('v1.17.70 — sweep old backups（find -mtime +N）', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('刪掉 mtime 超過 7 天的、留 ≤ 7 天的', () => {
+  it('deletes backups older than 7 days; keeps those ≤ 7 days old', () => {
     const now = Date.now();
     const day = 86400 * 1000;
-    // 設 5 個備份，mtime 從 14 天前到今天
+    // Create 5 backups with mtimes from 14 days ago to today.
     touch(path.join(tmpDir, '.ownmind.bak.20260424'), new Date(now - 14 * day));
     touch(path.join(tmpDir, '.ownmind.bak.20260429'), new Date(now - 9 * day));
     touch(path.join(tmpDir, '.ownmind.bak.20260430'), new Date(now - 8 * day));
@@ -63,17 +68,18 @@ describe('v1.17.70 — sweep old backups（find -mtime +N）', () => {
     runSweep(7);
 
     const remaining = listRemaining();
-    // 14/9/8 天前的都應被刪、3/0 天前的應留下。
-    // 7~8 天之間的邊界 mac BSD find 跟 GNU find 行為略不同，這個 test 避開那個區間
-    // （production 場景沒人在乎一兩小時的精度，7 天 retention 大致對就行）。
+    // 14/9/8 days ago should be deleted; 3/0 days ago should stay.
+    // The 7~8 day boundary differs slightly between BSD find (macOS) and GNU find;
+    // this test deliberately avoids that boundary range. In production nobody
+    // cares about hour-level precision; "roughly 7 days" is fine.
     assert.deepEqual(remaining, [
       '.ownmind.bak.20260505',
       '.ownmind.bak.20260508',
     ]);
   });
 
-  it('-maxdepth 1 不會誤殺巢狀目錄裡的同名（不該遞迴下去）', () => {
-    // 清掉前一個 test 留下的
+  it('-maxdepth 1 does not accidentally hit a same-named directory nested deeper', () => {
+    // Clear leftovers from the previous test.
     fs.readdirSync(tmpDir).forEach((f) =>
       fs.rmSync(path.join(tmpDir, f), { recursive: true, force: true })
     );
@@ -86,20 +92,20 @@ describe('v1.17.70 — sweep old backups（find -mtime +N）', () => {
 
     runSweep(7);
 
-    // outer 應被刪、unrelated/.ownmind.bak.nested 不該被掃到
+    // outer should be deleted; unrelated/.ownmind.bak.nested should not be reached.
     assert.equal(
       fs.existsSync(path.join(tmpDir, '.ownmind.bak.outer')),
       false,
-      'outer 應被刪'
+      'outer should be deleted'
     );
     assert.equal(
       fs.existsSync(path.join(tmpDir, 'unrelated', '.ownmind.bak.nested')),
       true,
-      '巢狀的不該被 -maxdepth 1 掃到'
+      'nested should not be reached due to -maxdepth 1'
     );
   });
 
-  it('不會誤殺名字像但 prefix 不同的目錄（如 .ownmind / .ownmind.cache）', () => {
+  it('does not accidentally hit similarly-named directories with a different prefix (.ownmind / .ownmind.cache)', () => {
     fs.readdirSync(tmpDir).forEach((f) =>
       fs.rmSync(path.join(tmpDir, f), { recursive: true, force: true })
     );
@@ -109,22 +115,22 @@ describe('v1.17.70 — sweep old backups（find -mtime +N）', () => {
 
     touch(path.join(tmpDir, '.ownmind'), new Date(now - 30 * day));
     touch(path.join(tmpDir, '.ownmind.cache'), new Date(now - 30 * day));
-    touch(path.join(tmpDir, 'ownmind.bak.foo'), new Date(now - 30 * day));  // 沒 dot prefix
+    touch(path.join(tmpDir, 'ownmind.bak.foo'), new Date(now - 30 * day));  // no dot prefix
     touch(path.join(tmpDir, '.ownmind.bak.real'), new Date(now - 30 * day));
 
     runSweep(7);
 
     assert.equal(fs.existsSync(path.join(tmpDir, '.ownmind')), true,
-      '.ownmind 主目錄絕對不能掃到');
+      '.ownmind main directory must absolutely not be touched');
     assert.equal(fs.existsSync(path.join(tmpDir, '.ownmind.cache')), true,
-      '.ownmind.cache 不能掃到');
+      '.ownmind.cache must not be touched');
     assert.equal(fs.existsSync(path.join(tmpDir, 'ownmind.bak.foo')), true,
-      '沒 dot prefix 的不該被刪');
+      'without the dot prefix should not be deleted');
     assert.equal(fs.existsSync(path.join(tmpDir, '.ownmind.bak.real')), false,
-      '真正的 .ownmind.bak.* 應被刪');
+      'a real .ownmind.bak.* should be deleted');
   });
 
-  it('retention 0 應刪所有舊備份（含今天的）', () => {
+  it('retention 0 should delete every old backup (including today\'s)', () => {
     fs.readdirSync(tmpDir).forEach((f) =>
       fs.rmSync(path.join(tmpDir, f), { recursive: true, force: true })
     );
@@ -137,50 +143,51 @@ describe('v1.17.70 — sweep old backups（find -mtime +N）', () => {
 
     runSweep(0);
 
-    // -mtime +0 仍是「>0 天」，0.1 天 → 預期刪；嚴格今天時間（0 天）邊界行為依 find 實作
+    // -mtime +0 still means "older than 0 days"; 0.1 days → expected to be deleted.
+    // The exact "today" boundary (0 days) varies by find implementation.
     assert.equal(fs.existsSync(path.join(tmpDir, '.ownmind.bak.older')), false);
   });
 
-  it('沒有任何 .ownmind.bak.* 也不會炸', () => {
+  it('does not blow up when no .ownmind.bak.* exists at all', () => {
     fs.readdirSync(tmpDir).forEach((f) =>
       fs.rmSync(path.join(tmpDir, f), { recursive: true, force: true })
     );
-    // 跑 sweep 對空目錄
+    // Run sweep against the empty directory.
     runSweep(7);
     assert.deepEqual(listRemaining(), []);
   });
 });
 
 // ============================================================================
-// v1.17.70 — interactive-upgrade.sh + .ps1 真的呼叫了 sweep
+// v1.17.70 — interactive-upgrade.sh + .ps1 actually call sweep
 // ============================================================================
-describe('v1.17.70 — upgrade 腳本必須在成功末段呼叫 sweep', () => {
-  it('interactive-upgrade.sh 含 find -mtime sweep 邏輯', () => {
+describe('v1.17.70 — upgrade script must call sweep at the tail of a successful upgrade', () => {
+  it('interactive-upgrade.sh contains a find -mtime sweep', () => {
     const sh = fs.readFileSync('scripts/interactive-upgrade.sh', 'utf8');
-    // 接受 $HOME / ${HOME} / "$HOME" / "${HOME}" 各種寫法
+    // Accept $HOME / ${HOME} / "$HOME" / "${HOME}" in any form.
     assert.match(sh, /find\s+["']?\$\{?HOME\}?["']?\s+-maxdepth\s+1\s+-type\s+d\s+-name\s+['"]\.ownmind\.bak\.\*['"]\s+-mtime\s+\+/,
-      'interactive-upgrade.sh 應有 find -maxdepth 1 -name .ownmind.bak.* -mtime +N sweep');
+      'interactive-upgrade.sh should have find -maxdepth 1 -name .ownmind.bak.* -mtime +N sweep');
     assert.match(sh, /OWNMIND_BACKUP_RETENTION_DAYS/,
-      'sweep 應支援 OWNMIND_BACKUP_RETENTION_DAYS env 覆蓋');
+      'sweep should support OWNMIND_BACKUP_RETENTION_DAYS env override');
   });
 
-  it('interactive-upgrade.ps1 含 LastWriteTime sweep 邏輯', () => {
+  it('interactive-upgrade.ps1 contains LastWriteTime sweep logic', () => {
     const ps = fs.readFileSync('scripts/interactive-upgrade.ps1', 'utf8');
     assert.match(ps, /LastWriteTime/,
-      'PS 版本應用 Get-ChildItem + Where LastWriteTime -lt cutoff 做 sweep');
+      'PS version should use Get-ChildItem + Where LastWriteTime -lt cutoff for sweep');
     assert.match(ps, /\.ownmind\.bak\.\*/,
-      'PS 版本應只清 .ownmind.bak.* pattern');
+      'PS version should only clean .ownmind.bak.* pattern');
     assert.match(ps, /OWNMIND_BACKUP_RETENTION_DAYS/,
-      'PS sweep 應支援 OWNMIND_BACKUP_RETENTION_DAYS env 覆蓋');
+      'PS sweep should support OWNMIND_BACKUP_RETENTION_DAYS env override');
   });
 
-  it('bootstrap.sh / .ps1 訊息更新成「自動清除」', () => {
+  it('bootstrap.sh / .ps1 messaging is updated to say "auto-cleaned"', () => {
     const sh = fs.readFileSync('scripts/bootstrap.sh', 'utf8');
     const ps = fs.readFileSync('scripts/bootstrap.ps1', 'utf8');
-    // 不能再寫「3 天後可手動刪除」(IR-027 提醒無效)
+    // Must no longer say "you can manually delete after 3 days" (IR-027 reminders are ineffective).
     assert.doesNotMatch(sh, /可手動(刪除|清除|清掉)/,
-      'bootstrap.sh 不該再寫「可手動刪除」這種無邏輯的提示');
+      'bootstrap.sh must no longer say "can manually delete" — that is the no-logic reminder pattern');
     assert.doesNotMatch(ps, /可手動(刪除|清除|清掉)/,
-      'bootstrap.ps1 不該再寫「可手動刪除」這種無邏輯的提示');
+      'bootstrap.ps1 must no longer say "can manually delete" — that is the no-logic reminder pattern');
   });
 });

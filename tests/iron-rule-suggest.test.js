@@ -6,18 +6,18 @@ import { detectFrontmatter } from '../src/utils/iron-rule-frontmatter.js';
 import { lintIronRule } from '../src/utils/iron-rule-quality.js';
 
 /**
- * v1.18.0 — iron-rule-suggest 測試
+ * v1.18.0 — iron-rule-suggest tests
  *
- * suggestSkillMdFormat 接 legacy rule、機械式拼 SKILL.md proposal。
- * 必須：
- *   1. 已是 SKILL.md 偵測到 → already_skill_md=true、原樣回
- *   2. Legacy → proposed_content 有合法 frontmatter
- *   3. proposed_content 過 lintIronRule (round-trip)
- *   4. notes 提示來源 / LLM 未啟用 / 缺 trigger tag 等
+ * suggestSkillMdFormat takes a legacy rule and mechanically assembles a
+ * SKILL.md proposal. It must:
+ *   1. Detect "already SKILL.md" → already_skill_md=true, return as-is.
+ *   2. Legacy → proposed_content has valid frontmatter.
+ *   3. proposed_content passes lintIronRule (round-trip).
+ *   4. notes mentions the source / LLM-not-enabled / missing trigger tag etc.
  */
 
 describe('v1.18.0 — suggestSkillMdFormat', () => {
-  it('已是 SKILL.md → already_skill_md=true、原樣回', () => {
+  it('already SKILL.md → already_skill_md=true, returned as-is', () => {
     const skillMdRule = {
       id: 1, code: 'IR-001',
       title: 'X',
@@ -30,7 +30,7 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     assert.match(r.notes.join(' '), /已是 SKILL.md 格式/);
   });
 
-  it('Legacy → already_skill_md=false、proposed 有合法 frontmatter', () => {
+  it('Legacy → already_skill_md=false; proposed has valid frontmatter', () => {
     const legacy = {
       id: 2, code: 'IR-002',
       title: '不要 commit .env 或密碼',
@@ -40,13 +40,13 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     const r = suggestSkillMdFormat(legacy);
     assert.equal(r.already_skill_md, false);
     const fm = detectFrontmatter(r.proposed_content);
-    assert.equal(fm.has, true, 'proposed 必須有 frontmatter');
-    assert.equal(fm.parseError, undefined, 'frontmatter YAML 必須合法');
+    assert.equal(fm.has, true, 'proposed must have frontmatter');
+    assert.equal(fm.parseError, undefined, 'frontmatter YAML must be valid');
     assert.equal(typeof fm.frontmatter.name, 'string');
     assert.equal(typeof fm.frontmatter.description, 'string');
   });
 
-  it('Legacy proposed_content 過 lintIronRule', () => {
+  it('Legacy proposed_content passes lintIronRule', () => {
     const legacy = {
       id: 3, code: 'IR-003',
       title: '修 bug 前先寫 reproduction test',
@@ -60,10 +60,10 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
       tags: legacy.tags,
     });
     assert.equal(lintResult.format, 'skill_md');
-    assert.equal(lintResult.ok, true, `lint 必須過、errors: ${JSON.stringify(lintResult.errors)}`);
+    assert.equal(lintResult.ok, true, `lint must pass; errors: ${JSON.stringify(lintResult.errors)}`);
   });
 
-  it('Legacy 無 trigger tag → notes 警告 + description 用 general', () => {
+  it('Legacy without trigger tag → notes warns + description uses "general"', () => {
     const legacy = {
       id: 99, code: 'IR-099',
       title: '無觸發測試規則',
@@ -75,7 +75,7 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     assert.match(r.proposed_content, /general/i);
   });
 
-  it('notes 提示 LLM 未啟用 (template-based)', () => {
+  it('notes mentions LLM not enabled (template-based)', () => {
     const legacy = {
       id: 4, code: 'IR-004',
       title: '測試規則',
@@ -86,7 +86,7 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     assert.match(r.notes.join(' '), /LLM suggest 未啟用|Template-based/);
   });
 
-  it('proposed name 是 ASCII kebab-case (review I4: 跨平台 fs 安全)', () => {
+  it('proposed name is ASCII kebab-case (review I4: cross-platform fs safety)', () => {
     const legacy = {
       id: 5, code: 'IR-005',
       title: '不要 BLIND edit',
@@ -96,13 +96,13 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     const r = suggestSkillMdFormat(legacy);
     const fm = detectFrontmatter(r.proposed_content);
     assert.match(fm.frontmatter.name, /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
-      `name 必須 ASCII kebab-case、實際: ${fm.frontmatter.name}`);
-    // 不能含中文
+      `name must be ASCII kebab-case; actual: ${fm.frontmatter.name}`);
+    // Must not contain Chinese.
     assert.ok(!/[一-鿿]/.test(fm.frontmatter.name),
-      `name 不可含中文 (跨平台 fs 風險)、實際: ${fm.frontmatter.name}`);
+      `name must not contain Chinese (cross-platform fs risk); actual: ${fm.frontmatter.name}`);
   });
 
-  it('純中文 title → name 用 hash + code (無 ASCII hint)', () => {
+  it('pure-Chinese title → name uses hash + code (no ASCII hint)', () => {
     const legacy = {
       id: 6, code: 'IR-039',
       title: '修報表加查詢條件讓數字歸零前先檢查資料',
@@ -112,10 +112,10 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     const r = suggestSkillMdFormat(legacy);
     const fm = detectFrontmatter(r.proposed_content);
     assert.match(fm.frontmatter.name, /^ir-039-[a-f0-9]{6}$/,
-      `純中文 title → ir-XXX-{6 字 hash}、實際: ${fm.frontmatter.name}`);
+      `pure-Chinese title → ir-XXX-{6-char hash}; actual: ${fm.frontmatter.name}`);
   });
 
-  it('mixed title (中英) → name 含 ASCII hint + hash', () => {
+  it('mixed title (Chinese + English) → name contains ASCII hint + hash', () => {
     const legacy = {
       id: 7, code: 'IR-002',
       title: '不要 commit env 或密碼',
@@ -124,10 +124,10 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     };
     const r = suggestSkillMdFormat(legacy);
     const fm = detectFrontmatter(r.proposed_content);
-    // 應該抓到 commit/env 兩個 ASCII 詞
+    // Should pick up both commit / env ASCII words.
     assert.match(fm.frontmatter.name, /^ir-002-(commit|env)/,
-      `應抓 commit / env ASCII hint、實際: ${fm.frontmatter.name}`);
+      `should pick up commit / env ASCII hint; actual: ${fm.frontmatter.name}`);
     assert.match(fm.frontmatter.name, /-[a-f0-9]{6}$/,
-      `結尾應為 6 字 hash、實際: ${fm.frontmatter.name}`);
+      `tail should be a 6-char hash; actual: ${fm.frontmatter.name}`);
   });
 });

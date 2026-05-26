@@ -1,10 +1,10 @@
 /**
- * v1.19.9 — POST /api/admin/users/:id/reset-password 測試
+ * v1.19.9 — POST /api/admin/users/:id/reset-password tests
  *
- * 對應 openspec/changes/v1.19.9-password-recovery/spec.md 場景 1-7。
+ * Tracks openspec/changes/v1.19.9-password-recovery/spec.md scenarios 1–7.
  *
- * Factory pattern：用 createAdminPasswordResetRouter 注入 query / adminAuth、
- * 不打真 DB、好測試。
+ * Factory pattern: createAdminPasswordResetRouter injects query / adminAuth,
+ * so we never hit a real DB — easy to test.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +16,7 @@ import {
 } from '../src/routes/admin-password-reset.js';
 
 /**
- * fake adminAuth：直接餵 req.user（由 buildApp 的閉包提供）
+ * fake adminAuth: just feeds req.user (provided by buildApp's closure).
  */
 function fakeAdminAuth(user) {
   return (req, res, next) => {
@@ -27,7 +27,7 @@ function fakeAdminAuth(user) {
 }
 
 /**
- * fake isAtLeast：對齊 src/middleware/adminAuth.js 行為
+ * fake isAtLeast: mirrors src/middleware/adminAuth.js behavior.
  */
 function fakeIsAtLeast(role, required) {
   const order = { user: 1, admin: 2, super_admin: 3 };
@@ -35,7 +35,7 @@ function fakeIsAtLeast(role, required) {
 }
 
 /**
- * 建一個 mock query 函式、模擬 DB 行為
+ * Build a mock query function that mimics DB behavior.
  */
 function makeFakeQuery({ targetUser, captureCalls = [] }) {
   return async function fakeQuery(sql, params) {
@@ -93,50 +93,50 @@ async function request(app, { method, path, body }) {
 }
 
 // ============================================================
-// generateTempPassword 純函式測試
+// generateTempPassword pure-function tests
 // ============================================================
 
-describe('v1.19.9 — generateTempPassword 純函式', () => {
-  it('產出 12 字長度', () => {
+describe('v1.19.9 — generateTempPassword pure function', () => {
+  it('produces a 12-char string', () => {
     assert.equal(generateTempPassword().length, 12);
   });
 
-  it('必含大寫+小寫+數字', () => {
+  it('always contains uppercase + lowercase + digit', () => {
     for (let i = 0; i < 20; i++) {
       const pwd = generateTempPassword();
-      assert.match(pwd, /[A-Z]/, `${pwd} 應含大寫`);
-      assert.match(pwd, /[a-z]/, `${pwd} 應含小寫`);
-      assert.match(pwd, /[0-9]/, `${pwd} 應含數字`);
+      assert.match(pwd, /[A-Z]/, `${pwd} should contain uppercase`);
+      assert.match(pwd, /[a-z]/, `${pwd} should contain lowercase`);
+      assert.match(pwd, /[0-9]/, `${pwd} should contain a digit`);
     }
   });
 
-  it('不含混淆字 0/O/I/l/1', () => {
+  it('does not include confusing characters 0/O/I/l/1', () => {
     for (let i = 0; i < 50; i++) {
       const pwd = generateTempPassword();
-      assert.doesNotMatch(pwd, /[0OIl1]/, `${pwd} 不該含混淆字`);
+      assert.doesNotMatch(pwd, /[0OIl1]/, `${pwd} should not contain confusing chars`);
     }
   });
 
-  it('連續 20 次都不同（夠隨機）', () => {
+  it('20 consecutive draws are all distinct (random enough)', () => {
     const set = new Set();
     for (let i = 0; i < 20; i++) {
       set.add(generateTempPassword());
     }
-    assert.equal(set.size, 20, '20 次該全部不同');
+    assert.equal(set.size, 20, '20 draws should all differ');
   });
 
-  it('支援自訂長度', () => {
+  it('supports a custom length', () => {
     assert.equal(generateTempPassword(16).length, 16);
     assert.equal(generateTempPassword(20).length, 20);
   });
 });
 
 // ============================================================
-// 場景 1：super_admin 重設 admin 密碼
+// Scenario 1: super_admin resets an admin's password
 // ============================================================
 
-describe('v1.19.9 場景 1 — super_admin 重設 admin', () => {
-  it('成功、回 temporary_password + must_change_password=true', async () => {
+describe('v1.19.9 scenario 1 — super_admin resets an admin', () => {
+  it('success; returns temporary_password + must_change_password=true', async () => {
     const app = buildApp({
       user: { id: 1, role: 'super_admin' },
       targetUser: { id: 2, email: 'admin-b@x.com', name: 'B', role: 'admin' },
@@ -155,7 +155,7 @@ describe('v1.19.9 場景 1 — super_admin 重設 admin', () => {
     assert.equal(r.body.must_change_password, true);
   });
 
-  it('UPDATE 時把 must_change_password 設 TRUE', async () => {
+  it('UPDATE sets must_change_password to TRUE', async () => {
     const calls = [];
     const app = buildApp({
       user: { id: 1, role: 'super_admin' },
@@ -168,17 +168,17 @@ describe('v1.19.9 場景 1 — super_admin 重設 admin', () => {
       body: {},
     });
     const updateCall = calls.find((c) => /UPDATE users[\s\S]*SET password_hash/i.test(c.sql));
-    assert.ok(updateCall, '應呼叫 UPDATE');
+    assert.ok(updateCall, 'UPDATE should be called');
     assert.match(updateCall.sql, /must_change_password\s*=\s*TRUE/i);
   });
 });
 
 // ============================================================
-// 場景 2：admin 重設 user
+// Scenario 2: admin resets a user
 // ============================================================
 
-describe('v1.19.9 場景 2 — admin 重設 user', () => {
-  it('admin 可重設 user 角色帳號', async () => {
+describe('v1.19.9 scenario 2 — admin resets a user', () => {
+  it('admin can reset a user-role account', async () => {
     const app = buildApp({
       user: { id: 2, role: 'admin' },
       targetUser: { id: 3, email: 'user-d@x.com', name: 'D', role: 'user' },
@@ -194,11 +194,11 @@ describe('v1.19.9 場景 2 — admin 重設 user', () => {
 });
 
 // ============================================================
-// 場景 3：admin 不能重設其他 admin
+// Scenario 3: admin cannot reset another admin
 // ============================================================
 
-describe('v1.19.9 場景 3 — admin 不能重設其他 admin', () => {
-  it('admin 重設另一個 admin → 403', async () => {
+describe('v1.19.9 scenario 3 — admin cannot reset another admin', () => {
+  it('admin resetting another admin → 403', async () => {
     const app = buildApp({
       user: { id: 2, role: 'admin' },
       targetUser: { id: 5, email: 'other-admin@x.com', name: 'E', role: 'admin' },
@@ -212,7 +212,7 @@ describe('v1.19.9 場景 3 — admin 不能重設其他 admin', () => {
     assert.match(r.body.error, /admin 只能重設 user/);
   });
 
-  it('admin 重設 super_admin → 403', async () => {
+  it('admin resetting super_admin → 403', async () => {
     const app = buildApp({
       user: { id: 2, role: 'admin' },
       targetUser: { id: 1, email: 'super@x.com', name: 'A', role: 'super_admin' },
@@ -227,11 +227,11 @@ describe('v1.19.9 場景 3 — admin 不能重設其他 admin', () => {
 });
 
 // ============================================================
-// 場景 4：不能重設自己
+// Scenario 4: cannot reset oneself
 // ============================================================
 
-describe('v1.19.9 場景 4 — 不能重設自己', () => {
-  it('super_admin 重設自己 → 400 + 引導去 change-password', async () => {
+describe('v1.19.9 scenario 4 — cannot reset oneself', () => {
+  it('super_admin resetting self → 400 + pointer to change-password', async () => {
     const app = buildApp({
       user: { id: 1, role: 'super_admin' },
       targetUser: { id: 1, email: 's@x.com', name: 'S', role: 'super_admin' },
@@ -245,7 +245,7 @@ describe('v1.19.9 場景 4 — 不能重設自己', () => {
     assert.match(r.body.error, /不能重設自己|change-password/);
   });
 
-  it('admin 重設自己 → 400', async () => {
+  it('admin resetting self → 400', async () => {
     const app = buildApp({
       user: { id: 2, role: 'admin' },
       targetUser: { id: 2, email: 'a@x.com', name: 'A', role: 'admin' },
@@ -260,11 +260,11 @@ describe('v1.19.9 場景 4 — 不能重設自己', () => {
 });
 
 // ============================================================
-// 場景 5：target 不存在
+// Scenario 5: target does not exist
 // ============================================================
 
-describe('v1.19.9 場景 5 — target 不存在', () => {
-  it('回 404', async () => {
+describe('v1.19.9 scenario 5 — target does not exist', () => {
+  it('returns 404', async () => {
     const app = buildApp({
       user: { id: 1, role: 'super_admin' },
       targetUser: null,
@@ -280,11 +280,11 @@ describe('v1.19.9 場景 5 — target 不存在', () => {
 });
 
 // ============================================================
-// 場景 6+7：未登入 / user role 由 adminAuth 擋
+// Scenarios 6+7: unauthenticated / user role blocked by adminAuth
 // ============================================================
 
-describe('v1.19.9 場景 6 — 未登入', () => {
-  it('回 401', async () => {
+describe('v1.19.9 scenario 6 — unauthenticated', () => {
+  it('returns 401', async () => {
     const app = buildApp({
       user: null,
       targetUser: { id: 2, email: 'b@x.com', name: 'B', role: 'admin' },
@@ -299,11 +299,11 @@ describe('v1.19.9 場景 6 — 未登入', () => {
 });
 
 // ============================================================
-// Audit log 寫入
+// Audit log writes
 // ============================================================
 
-describe('v1.19.9 — audit log 寫入', () => {
-  it('成功時呼叫 INSERT INTO audit_logs、action=reset_password_by_admin', async () => {
+describe('v1.19.9 — audit log writes', () => {
+  it('on success, calls INSERT INTO audit_logs with action=reset_password_by_admin', async () => {
     const calls = [];
     const app = buildApp({
       user: { id: 1, role: 'super_admin' },
@@ -316,7 +316,7 @@ describe('v1.19.9 — audit log 寫入', () => {
       body: {},
     });
     const auditCall = calls.find((c) => /INSERT INTO audit_logs/i.test(c.sql));
-    assert.ok(auditCall, '應寫 audit_log');
+    assert.ok(auditCall, 'should write audit_log');
     assert.equal(auditCall.params[1], 'reset_password_by_admin');
     assert.equal(auditCall.params[2], 'user');
     assert.equal(auditCall.params[3], 2);
@@ -324,11 +324,11 @@ describe('v1.19.9 — audit log 寫入', () => {
 });
 
 // ============================================================
-// bcrypt 端到端驗證
+// bcrypt end-to-end verification
 // ============================================================
 
-describe('v1.19.9 — 臨時密碼能用 bcrypt.compare 驗證', () => {
-  it('回傳的 temporary_password 跟寫進 DB 的 hash 一致', async () => {
+describe('v1.19.9 — temporary password verifies via bcrypt.compare', () => {
+  it('the returned temporary_password matches the hash written to the DB', async () => {
     const calls = [];
     const app = buildApp({
       user: { id: 1, role: 'super_admin' },
@@ -343,6 +343,6 @@ describe('v1.19.9 — 臨時密碼能用 bcrypt.compare 驗證', () => {
     const updateCall = calls.find((c) => /UPDATE users[\s\S]*SET password_hash/i.test(c.sql));
     const writtenHash = updateCall.params[0];
     const valid = await bcrypt.compare(r.body.temporary_password, writtenHash);
-    assert.equal(valid, true, '回傳密碼應能驗證寫入的 hash');
+    assert.equal(valid, true, 'the returned password should verify against the stored hash');
   });
 });

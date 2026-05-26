@@ -2,88 +2,92 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 /**
- * v1.17.68 — auth.js 401 觀測管道（IR-038）
+ * v1.17.68 — auth.js 401 observability pipe (IR-038)
  *
- * 背景：Adam 從 2026-03-26 建帳號到 2026-05-08 都吃 401，因為他 settings.json 裡
- * OWNMIND_API_KEY 是字串 "--update"（v1.17.9 之前 install.ps1 沒過濾 flag-like
- * args 的存量問題）。期間 token_events 表 0 筆 / install_check_logs 0 筆 / scanner
- * 永遠 401，沒人發現是因為 server 端 auth 401 path 沒留任何結構化 log，admin 從
- * docker logs 裡只看到 access log 「POST /api/usage/events 401 3ms」，看不出是誰、
- * 也看不到 key prefix 能跟 users 表反查。
+ * Background: from 2026-03-26 (account creation) to 2026-05-08 Adam kept hitting
+ * 401 because his settings.json had OWNMIND_API_KEY set to the literal string
+ * "--update" (a pre-v1.17.9 install.ps1 issue: it did not filter flag-like args
+ * out of the legacy slot). During that window token_events / install_check_logs
+ * were empty and the scanner kept 401'ing — nobody noticed because the server's
+ * auth-401 path had no structured log. Admins looking at docker logs only saw
+ * the access log line "POST /api/usage/events 401 3ms" — no way to tell who it
+ * was, no key prefix to cross-reference against the users table.
  *
- * 修法：auth.js 401 path 呼叫 logger.warn('auth_failed', {...}) 帶 path / ip /
- * masked key prefix-suffix / ua；同時 export maskApiKey() 純函式給測試覆蓋。
+ * Fix: the auth.js 401 path calls logger.warn('auth_failed', {...}) with
+ * route / ip / masked key prefix-suffix / ua, and exports maskApiKey() as a
+ * pure function for test coverage.
  */
 
-describe('v1.17.68 — auth.js maskApiKey() 純函式', () => {
-  it('module 應 export maskApiKey', async () => {
+describe('v1.17.68 — auth.js maskApiKey() pure function', () => {
+  it('module must export maskApiKey', async () => {
     const mod = await import('../src/middleware/auth.js');
     assert.equal(typeof mod.maskApiKey, 'function',
-      'auth.js 必須 export maskApiKey 給觀測 / 測試用');
+      'auth.js must export maskApiKey for observability / tests');
   });
 
-  it('空字串 / null / undefined → "<empty>"', async () => {
+  it('empty / null / undefined → "<empty>"', async () => {
     const { maskApiKey } = await import('../src/middleware/auth.js');
     assert.equal(maskApiKey(''), '<empty>');
     assert.equal(maskApiKey(null), '<empty>');
     assert.equal(maskApiKey(undefined), '<empty>');
   });
 
-  it('長度 < 12 → 「<too-short:N>」（不能洩漏短 key 全文）', async () => {
+  it('length < 12 → "<too-short:N>" (cannot leak the full short key)', async () => {
     const { maskApiKey } = await import('../src/middleware/auth.js');
     assert.equal(maskApiKey('abc'), '<too-short:3>');
     assert.equal(maskApiKey('1234567'), '<too-short:7>');
     assert.equal(maskApiKey('12345678901'), '<too-short:11>');
   });
 
-  it('Adam 的 "--update" (8 char) 走 too-short 路徑、不能 reconstruct 出全文', async () => {
+  it("Adam's --update (8 chars) takes the too-short branch, no full text leakage", async () => {
     const { maskApiKey } = await import('../src/middleware/auth.js');
     const out = maskApiKey('--update');
-    // v1.17.68 reviewer 抓到：原本 len < 8 的門檻讓 8 char key 走
-    // slice(0,4)+'...'+slice(-4) → '--up...date'，把三個點移掉就是原文。
-    // 提高門檻到 12 後 8 char 走 <too-short:8>，admin 從 log 看不到全文。
+    // v1.17.68 reviewer note: the original len < 8 threshold let an 8-char key
+    // fall through slice(0,4)+'...'+slice(-4) → '--up...date'; remove the three
+    // dots and you reconstruct the original. Raising the threshold to 12
+    // forces 8-char keys into <too-short:8> so admins never see the full key in logs.
     assert.equal(out, '<too-short:8>',
-      '8 char key 必須走 too-short 路徑、不能讓 mask 形成 prefix...suffix 拼回原文');
-    assert.ok(!out.includes('update'), '不能含原 key 任何 substring');
-    assert.ok(!out.includes('--up'), '不能含原 key 任何 substring');
+      'an 8-char key must take the too-short branch; mask must not allow prefix...suffix reconstruction');
+    assert.ok(!out.includes('update'), 'must not contain any substring of the original');
+    assert.ok(!out.includes('--up'), 'must not contain any substring of the original');
   });
 
-  it('len=12 邊界：剛好走 prefix...suffix 路徑、有真的遮到中間 4 char', async () => {
+  it('len=12 boundary: takes the prefix...suffix branch and actually masks 4 middle chars', async () => {
     const { maskApiKey } = await import('../src/middleware/auth.js');
     const out = maskApiKey('aaaaXXXXbbbb');
     assert.equal(out, 'aaaa...bbbb (len=12)');
-    // 中間 XXXX 有確實被點點蓋掉
-    assert.ok(!out.includes('XXXX'), '中間 4 char 必須被遮掉');
+    // The XXXX middle is genuinely covered by the dots.
+    assert.ok(!out.includes('XXXX'), 'middle 4 chars must be masked');
   });
 
-  it('UUID v4 格式 → "前4...後4 (len=N)"', async () => {
+  it('UUID v4 format → "first4...last4 (len=N)"', async () => {
     const { maskApiKey } = await import('../src/middleware/auth.js');
     const uuid = 'eb801d3f-03a3-4592-aee7-a54eb86fe0dc';
     const out = maskApiKey(uuid);
-    assert.match(out, /^eb80/, 'mask 應以前 4 char 開頭');
-    assert.match(out, /e0dc/, 'mask 應含後 4 char');
-    assert.match(out, /len=36/, 'mask 應帶長度');
+    assert.match(out, /^eb80/, 'mask should start with the first 4 chars');
+    assert.match(out, /e0dc/, 'mask should contain the last 4 chars');
+    assert.match(out, /len=36/, 'mask should include the length');
     assert.ok(!out.includes('1d3f-03a3-4592-aee7-a54eb86f'),
-      'mask 不能包含 key 中段（防 PII / key 洩漏）');
+      'mask must not contain the middle of the key (prevents PII / key leak)');
   });
 });
 
-describe('v1.17.68 — auth middleware 401 path logger.warn 形狀', () => {
-  it('401 時 logger.warn("auth_failed", {...}) 必須帶 route + masked_key + ip + ua', async () => {
+describe('v1.17.68 — auth middleware 401 path logger.warn shape', () => {
+  it('on 401, logger.warn("auth_failed", {...}) must include route + masked_key + ip + ua', async () => {
     const auth = (await import('../src/middleware/auth.js')).default;
 
-    // 收集 logger.warn 呼叫
+    // Collect logger.warn calls.
     const warnCalls = [];
     const fakeLogger = {
       warn: (msg, meta) => warnCalls.push({ msg, meta }),
       error: () => {},
     };
 
-    // 收集 query 呼叫，回 0 row 模擬 key 不存在
+    // Collect query calls; return 0 rows to simulate "key not found".
     const fakeQuery = async () => ({ rows: [] });
 
-    // 注入：auth.js 必須支援 testHooks 注入 logger + query
-    // （不接受全域 module mock 是因為 node:test 沒有 jest 那種能力）
+    // Inject: auth.js must support testHooks that injects logger + query.
+    // (We do not rely on global module mocking because node:test lacks jest-like capability.)
     const req = {
       headers: {
         authorization: 'Bearer --update',
@@ -102,21 +106,21 @@ describe('v1.17.68 — auth middleware 401 path logger.warn 形狀', () => {
 
     await auth(req, res, next, { logger: fakeLogger, query: fakeQuery });
 
-    assert.equal(statusCode, 401, '應該 401');
-    assert.equal(nextCalled, false, 'next() 不該被呼叫');
-    assert.equal(warnCalls.length, 1, '應該呼叫 logger.warn 恰好 1 次');
+    assert.equal(statusCode, 401, 'should be 401');
+    assert.equal(nextCalled, false, 'next() should not be called');
+    assert.equal(warnCalls.length, 1, 'logger.warn should be called exactly once');
     assert.equal(warnCalls[0].msg, 'auth_failed');
     const meta = warnCalls[0].meta;
     assert.equal(meta.route, '/api/usage/events');
     assert.equal(meta.ip, '203.0.113.45');
-    // v1.17.68 reviewer 抓到：8 char key 不能走 prefix...suffix（會直接拼回原文），
-    // 改走 <too-short:8> 路徑。
+    // v1.17.68 reviewer note: 8-char keys must not take the prefix...suffix branch
+    // (reconstructible to the original); they take <too-short:8> instead.
     assert.equal(meta.masked_key, '<too-short:8>');
-    assert.ok(!meta.masked_key.includes('update'), '不能含原 key 任何 substring');
+    assert.ok(!meta.masked_key.includes('update'), 'must not contain any substring of the original');
     assert.match(meta.ua, /OwnMindScanner/);
   });
 
-  it('「未提供認證令牌」path 也要 log（沒 Bearer header）', async () => {
+  it('"no auth token provided" path must also log (no Bearer header)', async () => {
     const auth = (await import('../src/middleware/auth.js')).default;
     const warnCalls = [];
     const fakeLogger = { warn: (m, meta) => warnCalls.push({ m, meta }), error: () => {} };
@@ -125,7 +129,7 @@ describe('v1.17.68 — auth middleware 401 path logger.warn 形狀', () => {
     const res = { status(c) { statusCode = c; return this; }, json() { return this; } };
     await auth(req, res, () => {}, { logger: fakeLogger, query: async () => ({ rows: [] }) });
     assert.equal(statusCode, 401);
-    assert.equal(warnCalls.length, 1, '沒帶 Bearer 也要 log（這也是 401 的一種）');
+    assert.equal(warnCalls.length, 1, 'no Bearer should also log (it is still a 401 case)');
     assert.equal(warnCalls[0].meta.masked_key, '<no-bearer>');
   });
 });

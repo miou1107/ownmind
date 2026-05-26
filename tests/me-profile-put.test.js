@@ -9,107 +9,110 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.20.1 — 補 PUT /api/me/profile endpoint
+ * v1.20.1 — add PUT /api/me/profile endpoint
  *
- * 背景：v1.17.24 加了 GET /api/me/profile 讓 user 看自己資料、但沒對應的 PUT。
- * Dashboard 個人版 Preference > 個人資料頁要能改 name、所以 v1.20.1 補上。
+ * Background: v1.17.24 added GET /api/me/profile so users could view their
+ * own profile, but no matching PUT. The dashboard's personal Preference >
+ * profile page needs to be able to edit name, so v1.20.1 fills that in.
  *
- * 設計決策：
- *   - 只允許改 name；email / role 不能 user 自己改（admin / super_admin 才能改 role）
- *   - name trim 後不能空、長度 1-100
- *   - 回傳跟 GET /profile 同 shape，方便 client 直接覆蓋 state
+ * Design decisions:
+ *   - Only name is editable; users cannot change their own email / role
+ *     (only admin / super_admin may change role).
+ *   - name (after trim) cannot be empty; length 1–100.
+ *   - Response shape matches GET /profile so the client can overwrite state directly.
  */
 
-describe('v1.20.1 — PUT /api/me/profile（個人資料修改）', () => {
+describe('v1.20.1 — PUT /api/me/profile (edit personal profile)', () => {
   const meSource = fs.readFileSync(path.join(repoRoot, 'src/routes/me.js'), 'utf8');
 
-  // 抓 PUT /profile handler 整段（從 router.put('/profile' 到下一個 router. 或 export）
+  // Grab the PUT /profile handler block (from router.put('/profile' to the next router. or export).
   const putHandlerMatch = meSource.match(
     /router\.put\(['"]\/profile['"][\s\S]+?(?=\n(?:router\.|export default))/
   );
 
-  it('me.js 必須有 PUT /profile route', () => {
+  it('me.js must register PUT /profile route', () => {
     assert.match(meSource, /router\.put\(['"]\/profile['"]/,
-      'PUT /profile 必須存在');
+      'PUT /profile must exist');
   });
 
-  it('PUT /profile handler 必須在 router.use(auth) 之後（需 Bearer 驗證）', () => {
+  it('PUT /profile handler must come after router.use(auth) (Bearer auth required)', () => {
     const authIdx = meSource.indexOf('router.use(auth)');
     const putIdx = meSource.search(/router\.put\(['"]\/profile['"]/);
-    assert.ok(authIdx > 0, '找不到 router.use(auth)');
+    assert.ok(authIdx > 0, 'router.use(auth) not found');
     assert.ok(putIdx > authIdx,
-      'PUT /profile 必須在 router.use(auth) 後、才會被 auth middleware 擋');
+      'PUT /profile must come after router.use(auth) so the auth middleware can block unauthenticated requests');
   });
 
-  it('PUT handler 必須 trim name 後再驗', () => {
-    assert.ok(putHandlerMatch, '找不到 PUT /profile handler 區塊');
+  it('PUT handler must trim name before validating', () => {
+    assert.ok(putHandlerMatch, 'PUT /profile handler block not found');
     assert.match(putHandlerMatch[0], /\.trim\(\)/,
-      'name 必須 trim 後再驗（避免純空白通過）');
+      'name must be trimmed before validation (so whitespace-only values do not pass)');
   });
 
-  it('PUT handler 必須擋空 name（400）', () => {
+  it('PUT handler must reject empty name (400)', () => {
     assert.ok(putHandlerMatch);
-    // 驗有 length check 跟 400 response
+    // Verify length check + 400 response.
     assert.match(putHandlerMatch[0], /status\(400\)/,
-      'name 不合法時必須回 400');
+      'invalid name must respond 400');
   });
 
-  it('PUT handler 必須做 name 長度上限檢查（≤ 100）', () => {
+  it('PUT handler must enforce a name length cap (≤ 100)', () => {
     assert.ok(putHandlerMatch);
     assert.match(putHandlerMatch[0], /100/,
-      'name 長度上限 100、避免 DB column 撐爆或 UI 排版炸');
+      'name length cap 100 — avoid blowing out the DB column or breaking the UI layout');
   });
 
-  it('PUT handler 必須只 UPDATE name 欄位、不能動 email / role', () => {
+  it('PUT handler must UPDATE only the name column; never email / role', () => {
     assert.ok(putHandlerMatch);
-    // 驗 SQL 含 SET name = ...
+    // Verify SQL contains SET name = ...
     assert.match(putHandlerMatch[0], /UPDATE\s+users\s+SET\s+name\s*=/i,
-      'UPDATE 只能改 name 欄位');
-    // 確保 SQL 內沒寫 SET email 或 SET role（即使 body 帶這兩個也忽略）
+      'UPDATE may only edit the name column');
+    // Ensure no SET email or SET role anywhere (even if body carries them, ignore them).
     assert.doesNotMatch(putHandlerMatch[0], /SET[^;]*\bemail\s*=/i,
-      'UPDATE 不能含 email = ...');
+      'UPDATE must not contain email = ...');
     assert.doesNotMatch(putHandlerMatch[0], /SET[^;]*\brole\s*=/i,
-      'UPDATE 不能含 role = ...');
+      'UPDATE must not contain role = ...');
   });
 
-  it('PUT handler 必須用 req.user.id 而非從 body 取 id（避免越權改別人）', () => {
+  it('PUT handler must use req.user.id (not an id from the body, to prevent privilege escalation)', () => {
     assert.ok(putHandlerMatch);
     assert.match(putHandlerMatch[0], /req\.user\.id/,
-      'WHERE 子句必須鎖 req.user.id、不能讓 caller 指定 id');
+      'WHERE clause must lock to req.user.id; the caller cannot specify an id');
   });
 
-  it('PUT handler 回應 shape 必須跟 GET /profile 一致', () => {
+  it('PUT handler response shape must match GET /profile', () => {
     assert.ok(putHandlerMatch);
-    // GET /profile 回 { id, name, email, role, created_at, must_change_password }
+    // GET /profile returns { id, name, email, role, created_at, must_change_password }.
     assert.match(putHandlerMatch[0], /res\.json\(/,
-      'PUT 必須 res.json(...) 回更新後資料');
-    assert.match(putHandlerMatch[0], /name/, 'response 必須含 name');
-    assert.match(putHandlerMatch[0], /email/, 'response 必須含 email');
-    assert.match(putHandlerMatch[0], /role/, 'response 必須含 role');
+      'PUT must res.json(...) the updated row');
+    assert.match(putHandlerMatch[0], /name/, 'response must include name');
+    assert.match(putHandlerMatch[0], /email/, 'response must include email');
+    assert.match(putHandlerMatch[0], /role/, 'response must include role');
   });
 
-  it('PUT handler 必須有 try/catch + logger.error（IR-038 觀測性）', () => {
+  it('PUT handler must have try/catch + logger.error (IR-038 observability)', () => {
     assert.ok(putHandlerMatch);
-    assert.match(putHandlerMatch[0], /try\s*\{/, 'PUT handler 必須包 try/catch');
+    assert.match(putHandlerMatch[0], /try\s*\{/, 'PUT handler must wrap try/catch');
     assert.match(putHandlerMatch[0], /logger\.error/,
-      '失敗時必須 logger.error、不能 silent fail');
+      'on failure, logger.error must be called; never silent-fail');
     assert.match(putHandlerMatch[0], /status\(500\)/,
-      'catch 內必須回 500');
+      'catch must respond 500');
   });
 
-  it('logger.error 必須帶 stack（跟 me/report 等其他 handler 一致）', () => {
+  it('logger.error must include stack (consistent with other handlers like me/report)', () => {
     assert.ok(putHandlerMatch);
-    // stack 對 debug 必要（其他 handler 如 me/report 都帶）
+    // stack is essential for debugging (every other handler like me/report includes it).
     assert.match(putHandlerMatch[0], /stack:\s*err\.stack/,
-      'logger.error 必須包 stack: err.stack，跟既有 handler 一致');
+      'logger.error must include stack: err.stack, matching existing handlers');
   });
 
-  it('UPDATE 必須檢查 rowCount === 0 → 404（race condition：user 被刪）', () => {
+  it('UPDATE must check rowCount === 0 → 404 (race: user got deleted)', () => {
     assert.ok(putHandlerMatch);
-    // 防 silent fail：token 仍有效但 user row 已被 admin 刪掉時、不能假裝 200
+    // Defend against silent fail: token may still be valid but the user row was deleted by an admin;
+    // we must not pretend 200 succeeded.
     assert.match(putHandlerMatch[0], /rowCount\s*===\s*0/,
-      'UPDATE 後必須檢查 rowCount === 0');
+      'UPDATE must check rowCount === 0');
     assert.match(putHandlerMatch[0], /status\(404\)/,
-      'rowCount === 0 時必須回 404');
+      'rowCount === 0 must respond 404');
   });
 });

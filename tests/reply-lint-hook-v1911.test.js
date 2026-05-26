@@ -1,7 +1,7 @@
 /**
- * v1.19.11 — reply-lint hook 分級顯示 + log 保底測試
+ * v1.19.11 — reply-lint hook tiered display + log persistence tests
  *
- * 對應 openspec/changes/v1.19.11-lint-ux-improvements/spec.md 場景 5-10、13-14。
+ * Tracks openspec/changes/v1.19.11-lint-ux-improvements/spec.md scenarios 5–10, 13–14.
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -69,14 +69,14 @@ function stopPayload(extra = {}) {
 const VIOLATING_TEXT = 'I think we should monomorphism the codeapp using a completely fresh approach because the implementation has obvious bugs.';
 
 // ============================================================
-// 場景 5 + 7：第 1 次擋下、完整標註
+// Scenarios 5 + 7: first block; full annotated message
 // ============================================================
 
-describe('v1.19.11 場景 5+7 — 第 1 次擋下、完整訊息含標註要求', () => {
+describe('v1.19.11 scenarios 5+7 — first block; full message including annotation requirement', () => {
   beforeEach(setup);
   afterEach(teardown);
 
-  it('第 4 次違規（第 1 次擋下）→ stderr 含完整指令 + 標註要求', () => {
+  it('4th violation (1st block) → stderr contains the full directive + annotation requirement', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-block-1';
     const payload = stopPayload({ session_id: sid });
@@ -85,53 +85,53 @@ describe('v1.19.11 場景 5+7 — 第 1 次擋下、完整訊息含標註要求'
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
     const r4 = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r4.status, 2, '第 4 次該 exit 2');
+    assert.equal(r4.status, 2, '4th violation should exit 2');
 
-    // 完整指令含原本的「請重寫」開頭
+    // Full directive opens with the original "please rewrite" line.
     assert.match(r4.stderr, /Please rewrite/);
-    // 含標註要求
+    // Includes the annotation requirement.
     assert.match(r4.stderr, /rewrite must start with a quoted-block annotation/);
-    // 含 markdown 引述範例
+    // Includes the markdown quote example.
     assert.match(r4.stderr, /^> ⚠️/m);
-    // 含分隔線範例
+    // Includes the separator example.
     assert.match(r4.stderr, /^---$/m);
   });
 });
 
 // ============================================================
-// 場景 8：第 2-3 次擋下、簡短訊息
+// Scenario 8: 2nd-3rd block; short message
 // ============================================================
 
-describe('v1.19.11 場景 8 — 第 2-3 次擋下、簡短訊息', () => {
+describe('v1.19.11 scenario 8 — 2nd–3rd block; short message', () => {
   beforeEach(setup);
   afterEach(teardown);
 
-  it('第 5 次違規（第 2 次擋下）→ 簡短訊息、不含完整列表', () => {
+  it('5th violation (2nd block) → short message; no full list', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-block-2';
     const payload = stopPayload({ session_id: sid });
 
-    // 跑前 4 次（第 1 次擋下）
+    // Run the first 4 (1st block).
     for (let i = 1; i <= 4; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
 
-    // 第 5 次（第 2 次擋下）
+    // 5th (2nd block).
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2);
 
-    // 簡短訊息含「↻」+ session 次數
+    // Short message contains "↻" + session count.
     assert.match(r.stderr, /↻/);
     assert.match(r.stderr, /session block #2/);
 
-    // 不該含完整重寫指令訊息
+    // Must not contain the full rewrite directive list.
     assert.ok(
       !r.stderr.includes('1. Use plain Chinese to replace the following English terms'),
-      '簡短訊息不該含完整違規詞列表'
+      'short message must not contain the full violation-word list'
     );
   });
 
-  it('第 6 次違規（第 3 次擋下）→ 仍簡短', () => {
+  it('6th violation (3rd block) → still short', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-block-3';
     const payload = stopPayload({ session_id: sid });
@@ -146,39 +146,39 @@ describe('v1.19.11 場景 8 — 第 2-3 次擋下、簡短訊息', () => {
 });
 
 // ============================================================
-// 場景 9：第 4 次降警告（既有 v1.19.7 行為、確認沒被破壞）
+// Scenario 9: 4th block downgrades to warning (preserves v1.19.7 behavior)
 // ============================================================
 
-describe('v1.19.11 場景 9 — 第 4 次擋下達 downgrade limit、降警告', () => {
+describe('v1.19.11 scenario 9 — 4th block hits downgrade limit; switch to warning', () => {
   beforeEach(setup);
   afterEach(teardown);
 
-  it('連續擋下 3 次後、第 4 次降為 exit 1 警告', () => {
+  it('after 3 consecutive blocks, the 4th downgrades to exit 1 warning', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-downgrade';
     const payload = stopPayload({ session_id: sid });
 
-    // 跑前 6 次（前 3 次累積、第 4-6 次擋下、block_count 達 3）
+    // Run the first 6 (3 accumulate + 3 blocks → block_count=3).
     for (let i = 1; i <= 6; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
 
-    // 第 7 次（block_count=3、要降警告）
+    // 7th (block_count=3, should downgrade to warning).
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r.status, 1, '應該降為警告 exit 1');
+    assert.equal(r.status, 1, 'should downgrade to warning exit 1');
     assert.match(r.stderr, /blocked .* times in a row|downgrading to warning/);
   });
 });
 
 // ============================================================
-// 場景 10：擋下事件寫進 reply-lint-events.jsonl
+// Scenario 10: block events are written to reply-lint-events.jsonl
 // ============================================================
 
-describe('v1.19.11 場景 10 — 擋下事件寫紀錄檔', () => {
+describe('v1.19.11 scenario 10 — block events are persisted', () => {
   beforeEach(setup);
   afterEach(teardown);
 
-  it('擋下後 reply-lint-events.jsonl 有新紀錄', () => {
+  it('after a block, reply-lint-events.jsonl has a new entry', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-log';
     const payload = stopPayload({ session_id: sid });
@@ -186,12 +186,12 @@ describe('v1.19.11 場景 10 — 擋下事件寫紀錄檔', () => {
     for (let i = 1; i <= 3; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
-    // 第 4 次擋下
+    // 4th block.
     runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
 
-    assert.equal(fs.existsSync(eventLogPath), true, 'reply-lint-events.jsonl 該存在');
+    assert.equal(fs.existsSync(eventLogPath), true, 'reply-lint-events.jsonl should exist');
     const lines = fs.readFileSync(eventLogPath, 'utf8').trim().split('\n').filter(Boolean);
-    assert.ok(lines.length >= 1, '至少一筆擋下紀錄');
+    assert.ok(lines.length >= 1, 'at least one block entry');
 
     const lastEntry = JSON.parse(lines[lines.length - 1]);
     assert.equal(lastEntry.session_id, sid);
@@ -205,34 +205,34 @@ describe('v1.19.11 場景 10 — 擋下事件寫紀錄檔', () => {
 });
 
 // ============================================================
-// 場景 13：未擋下時不寫紀錄
+// Scenario 13: do not log when nothing blocked
 // ============================================================
 
-describe('v1.19.11 場景 13 — 沒擋下不寫紀錄', () => {
+describe('v1.19.11 scenario 13 — no block → no log entry', () => {
   beforeEach(setup);
   afterEach(teardown);
 
-  it('合規回應不該寫紀錄', () => {
+  it('a compliant reply must not write an entry', () => {
     writeTranscript('好、我來改這個問題、先寫測試再實作。');
     runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(fs.existsSync(eventLogPath), false, '通過 lint 不該寫紀錄');
+    assert.equal(fs.existsSync(eventLogPath), false, 'passing lint must not write an entry');
   });
 });
 
 // ============================================================
-// 場景 14：降警告也寫紀錄
+// Scenario 14: downgrade-to-warning is also logged
 // ============================================================
 
-describe('v1.19.11 場景 14 — 降警告也寫紀錄', () => {
+describe('v1.19.11 scenario 14 — downgrade to warning is also logged', () => {
   beforeEach(setup);
   afterEach(teardown);
 
-  it('降警告事件含 event=downgraded_to_warning', () => {
+  it('downgrade entry has event=downgraded_to_warning', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-log-downgrade';
     const payload = stopPayload({ session_id: sid });
 
-    // 跑到觸發降警告
+    // Run until downgrade fires.
     for (let i = 1; i <= 6; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
@@ -240,7 +240,7 @@ describe('v1.19.11 場景 14 — 降警告也寫紀錄', () => {
 
     const lines = fs.readFileSync(eventLogPath, 'utf8').trim().split('\n').filter(Boolean);
     const downgradeEntry = lines.map(l => JSON.parse(l)).find(e => e.downgraded_to_warning === true);
-    assert.ok(downgradeEntry, '應有一筆降警告紀錄');
+    assert.ok(downgradeEntry, 'should have a downgrade entry');
     assert.equal(downgradeEntry.event, 'downgraded_to_warning');
   });
 });

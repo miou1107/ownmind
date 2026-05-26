@@ -1,10 +1,10 @@
 /**
- * v1.19.7 — git pre-commit hook 整合 secret-detect 測試
+ * v1.19.7 — git pre-commit hook integration with secret-detect
  *
- * 對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md：
- *   - 場景 1：IR-002 偵測 .env 檔案進 staged → 擋
- *   - 場景 2：IR-002 偵測密碼樣式進 staged diff → 擋
- *   - 場景 18：OWNMIND_BYPASS=IR-002 → 跳過 + 寫 audit
+ * Tracks openspec/changes/v1.20-iron-rule-enforcement/spec.md:
+ *   - Scenario 1: IR-002 detects .env in staged → block
+ *   - Scenario 2: IR-002 detects password patterns in staged diff → block
+ *   - Scenario 18: OWNMIND_BYPASS=IR-002 → skip + write audit
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -45,7 +45,7 @@ function setupSandbox() {
   tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-pc-home-'));
   tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-pc-repo-'));
 
-  // 1. 假 cache
+  // 1. Fake cache.
   const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(
@@ -53,14 +53,14 @@ function setupSandbox() {
     JSON.stringify([IR_002_RULE])
   );
 
-  // 2. 把 shared/*.js 跑得到的位置複製到 ~/.ownmind/shared
-  // hook 透過 dynamic import 從這條路徑載入 verification.js
+  // 2. Copy the shared/*.js files the hook needs to a runnable location under ~/.ownmind/shared.
+  // The hook loads verification.js from this path via dynamic import.
   //
-  // v1.19.7 code-review I-6 註解：清單是手動維護、目前 verification.js 沒
-  // 額外 import 其他 shared/、所以 4 個檔已足。維護條件：
-  //   1) shared/verification.js 內若 `import` 了新的 shared/*.js → 此清單要補
-  //   2) hook 透過 home/.ownmind/shared 動態載入的檔加入時 → 此清單要補
-  // 失敗症狀：spawnSync 出來的 hook 抱怨「module not found」、測試紅。
+  // v1.19.7 code-review I-6 note: this list is hand-maintained. Today verification.js
+  // does not import other shared/* files, so 4 files are enough. Maintenance rules:
+  //   1) If shared/verification.js starts importing a new shared/*.js → add it here.
+  //   2) If the hook starts dynamically loading another file from home/.ownmind/shared → add it here.
+  // Failure symptom: spawnSync'd hook complains "module not found" and the test goes red.
   const sharedDest = path.join(tmpHome, '.ownmind', 'shared');
   fs.mkdirSync(sharedDest, { recursive: true });
   for (const f of ['verification.js', 'iron-rule-tier.js', 'compliance.js', 'helpers.js']) {
@@ -70,7 +70,7 @@ function setupSandbox() {
     }
   }
 
-  // 3. 初始化 git repo
+  // 3. Initialize a git repo.
   runGit(['init', '-q']);
   runGit(['config', 'user.email', 'test@example.com']);
   runGit(['config', 'user.name', 'Test']);
@@ -94,7 +94,7 @@ function stage(relPath, content) {
 }
 
 function runHook(env = {}) {
-  // hook 透過 process.cwd() 取得 staged diff、所以 spawn 時 cwd 設 tmpRepo
+  // The hook gets staged diff via process.cwd(), so spawn with cwd=tmpRepo.
   return spawnSync('node', [hookPath], {
     cwd: tmpRepo,
     encoding: 'utf8',
@@ -109,52 +109,55 @@ function runHook(env = {}) {
 }
 
 // ============================================================
-// 場景 1：.env 檔名擋
+// Scenario 1: .env filename blocked
 // ============================================================
 
-describe('v1.19.7 pre-commit — 場景 1：.env 檔名擋', () => {
+describe('v1.19.7 pre-commit — scenario 1: .env filename blocked', () => {
   beforeEach(setupSandbox);
   afterEach(cleanupSandbox);
 
-  it('staged .env 進 commit → exit 1 + stderr 提到 IR-002', () => {
+  it('staged .env → exit 1 + stderr mentions IR-002', () => {
     stage('.env', 'NORMAL_VAR=ok\n');
     const r = runHook();
-    assert.equal(r.status, 1, `該被擋、stderr=${r.stderr}`);
+    assert.equal(r.status, 1, `should be blocked; stderr=${r.stderr}`);
     assert.match(r.stderr, /IR-002/);
   });
 
-  it('staged 正常檔 → exit 0', () => {
+  it('staged normal file → exit 0', () => {
     stage('src/index.js', 'console.log("hi");');
     const r = runHook();
-    assert.equal(r.status, 0, `該過、stderr=${r.stderr}`);
+    assert.equal(r.status, 0, `should pass; stderr=${r.stderr}`);
   });
 });
 
 // ============================================================
-// 場景 2：staged diff 含密碼樣式擋（v1.19.7 新功能）
+// Scenario 2: staged diff contains password pattern → block (v1.19.7 new feature)
 // ============================================================
 
-describe('v1.19.7 pre-commit — 場景 2：staged diff 含密碼樣式擋', () => {
+describe('v1.19.7 pre-commit — scenario 2: staged diff contains password pattern → block', () => {
   beforeEach(setupSandbox);
   afterEach(cleanupSandbox);
 
-  it('staged 檔內含 OpenAI key 樣式 → exit 1 + stderr 含 detected_by', () => {
-    stage('src/config.js', 'const key = "sk-proj-abc123XYZdef456ghi789jkl";\n');
+  it('staged file contains an OpenAI key pattern → exit 1 + stderr contains detected_by', () => {
+    // Fixture split across concat so the dev-machine pre-commit scanner won't catch it as a real secret.
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
+    stage('src/config.js', `const key = "${fakeKey}";\n`);
     const r = runHook();
-    assert.equal(r.status, 1, `staged 內含 key 該被擋、stderr=${r.stderr}`);
+    assert.equal(r.status, 1, `staged content contains a key — should be blocked; stderr=${r.stderr}`);
     assert.match(r.stderr, /IR-002/);
     assert.match(r.stderr, /detected_by/);
     assert.match(r.stderr, /openai_api_key/);
   });
 
-  it('staged 檔內含 GitHub PAT → exit 1', () => {
-    stage('src/foo.js', 'const t = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB";\n');
+  it('staged file contains a GitHub PAT → exit 1', () => {
+    const fakePat = 'ghp_' + 'abcdefghij' + 'klmnopqrst' + 'uvwxyz0123' + '456789AB';
+    stage('src/foo.js', `const t = "${fakePat}";\n`);
     const r = runHook();
     assert.equal(r.status, 1);
     assert.match(r.stderr, /github_pat/);
   });
 
-  it('staged 檔內含 JWT → exit 1', () => {
+  it('staged file contains a JWT → exit 1', () => {
     stage(
       'src/jwt.js',
       'const j = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";'
@@ -164,13 +167,13 @@ describe('v1.19.7 pre-commit — 場景 2：staged diff 含密碼樣式擋', () 
     assert.match(r.stderr, /jwt/);
   });
 
-  it('staged 檔含 "password" 變數名但無實際密鑰 → exit 0（skip_keyword=true）', () => {
+  it('staged file uses "password" as a variable name with no real secret → exit 0 (skip_keyword=true)', () => {
     stage('src/auth.js', 'function checkPassword(input) { return input === "x"; }');
     const r = runHook();
-    assert.equal(r.status, 0, `變數名含 password 不該被誤擋、stderr=${r.stderr}`);
+    assert.equal(r.status, 0, `variable name containing "password" must not be falsely blocked; stderr=${r.stderr}`);
   });
 
-  it('staged 檔含一般長字串但非密鑰格式 → exit 0', () => {
+  it('staged file has a generic long string but not a secret format → exit 0', () => {
     stage('src/long.js', 'const description = "這是一段普通的中文描述，內容沒有任何敏感資料";');
     const r = runHook();
     assert.equal(r.status, 0);
@@ -178,41 +181,42 @@ describe('v1.19.7 pre-commit — 場景 2：staged diff 含密碼樣式擋', () 
 });
 
 // ============================================================
-// 場景 18：OWNMIND_BYPASS=IR-002 跳過 + 寫 audit
+// Scenario 18: OWNMIND_BYPASS=IR-002 → skip + write audit
 // ============================================================
 
-describe('v1.19.7 pre-commit — 場景 18：bypass 跳過 + 寫 audit', () => {
+describe('v1.19.7 pre-commit — scenario 18: bypass skips + writes audit', () => {
   beforeEach(setupSandbox);
   afterEach(cleanupSandbox);
 
-  it('OWNMIND_BYPASS=IR-002 → 跳過、exit 0', () => {
+  it('OWNMIND_BYPASS=IR-002 → skip; exit 0', () => {
     stage('.env', 'API_KEY=fake\n');
     const r = runHook({ OWNMIND_BYPASS: 'IR-002' });
-    assert.equal(r.status, 0, `bypass 該跳過、stderr=${r.stderr}`);
+    assert.equal(r.status, 0, `bypass should skip; stderr=${r.stderr}`);
   });
 
-  it('OWNMIND_BYPASS=all → 跳過所有規則', () => {
+  it('OWNMIND_BYPASS=all → skip every rule', () => {
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
     stage('.env', 'API_KEY=fake\n');
-    stage('src/key.js', 'const k = "sk-proj-abc123XYZdef456ghi789jkl";');
+    stage('src/key.js', `const k = "${fakeKey}";`);
     const r = runHook({ OWNMIND_BYPASS: 'all' });
     assert.equal(r.status, 0);
   });
 
-  it('OWNMIND_BYPASS=IR-008 不影響 IR-002 → 仍會擋', () => {
+  it('OWNMIND_BYPASS=IR-008 does not affect IR-002 → still blocked', () => {
     stage('.env', 'API_KEY=fake\n');
     const r = runHook({ OWNMIND_BYPASS: 'IR-008' });
-    assert.equal(r.status, 1, '只 bypass IR-008、IR-002 仍該擋');
+    assert.equal(r.status, 1, 'only IR-008 bypassed; IR-002 should still block');
     assert.match(r.stderr, /IR-002/);
   });
 
-  it('bypass 命中時寫 audit log（compliance jsonl）', () => {
+  it('on bypass hit, writes audit log (compliance jsonl)', () => {
     stage('.env', 'X=1\n');
     runHook({ OWNMIND_BYPASS: 'IR-002' });
 
-    // 找今天的 compliance jsonl
+    // Look for today's compliance jsonl.
     const today = new Date().toISOString().slice(0, 10);
     const logsDir = path.join(tmpHome, '.ownmind', 'logs');
-    // appendCompliance 的實際路徑視 shared/compliance.js 而定，遍歷找含 bypass 字串
+    // appendCompliance's exact path depends on shared/compliance.js; scan for the bypass string.
     let foundBypass = false;
     if (fs.existsSync(logsDir)) {
       for (const f of fs.readdirSync(logsDir)) {
@@ -223,15 +227,15 @@ describe('v1.19.7 pre-commit — 場景 18：bypass 跳過 + 寫 audit', () => {
         }
       }
     }
-    assert.equal(foundBypass, true, 'bypass 該寫一筆 audit log');
+    assert.equal(foundBypass, true, 'bypass should write an audit log entry');
   });
 });
 
 // ============================================================
-// 邊界：no staged files / 規則 cache 空
+// Edge cases: no staged files / empty rule cache
 // ============================================================
 
-describe('v1.19.7 pre-commit — 邊界情境', () => {
+describe('v1.19.7 pre-commit — edge cases', () => {
   beforeEach(setupSandbox);
   afterEach(cleanupSandbox);
 
@@ -240,14 +244,14 @@ describe('v1.19.7 pre-commit — 邊界情境', () => {
     assert.equal(r.status, 0);
   });
 
-  it('規則 cache 空 + 無網路 → exit 0 fail-open', () => {
+  it('empty rule cache + no network → exit 0 fail-open', () => {
     fs.writeFileSync(
       path.join(tmpHome, '.ownmind', 'cache', 'iron_rules.json'),
       '[]'
     );
     stage('.env', 'X=1\n');
     const r = runHook();
-    // 規則空、跳過所有檢查、fail-open
-    assert.equal(r.status, 0, `cache 空該 fail-open、stderr=${r.stderr}`);
+    // No rules — skip every check; fail-open.
+    assert.equal(r.status, 0, `empty cache should fail-open; stderr=${r.stderr}`);
   });
 });
