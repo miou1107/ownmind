@@ -74,7 +74,7 @@ async function main() {
     const mod = await import(verificationPath);
     evaluateConditions = mod.evaluateConditions;
   } catch {
-    console.warn(`【OwnMind v${VERSION}】⚠️ 驗證引擎不可用，跳過 post-commit 檢查`);
+    console.warn(`[OwnMind v${VERSION}]⚠️ Validator engine unavailable — skipping post-commit check`);
     process.exit(0);
   }
 
@@ -88,7 +88,7 @@ async function main() {
 
     if (!result.pass) {
       const ruleCode = rule.code || rule.metadata?.code || 'IR-???';
-      const ruleTitle = rule.title || '未命名規則';
+      const ruleTitle = rule.title || 'Unnamed rule';
 
       violations.push({
         ruleCode,
@@ -118,8 +118,8 @@ async function main() {
       const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
       if (!tagOutput) {
         console.warn('');
-        console.warn(`【OwnMind v${VERSION}】版號提醒：package.json 版號為 ${pkgVersion}，但尚未建立 git tag`);
-        console.warn(`  → 請執行：git tag ${expectedTag}`);
+        console.warn(`[OwnMind v${VERSION}]Version reminder: package.json version is ${pkgVersion}, but no matching git tag exists yet`);
+        console.warn(`  → run: git tag ${expectedTag}`);
         console.warn('');
       }
     }
@@ -128,7 +128,7 @@ async function main() {
 
   if (violations.length > 0) {
     console.warn('');
-    console.warn(`【OwnMind v${VERSION}】Commit 後稽核：此 commit 有以下違規`);
+    console.warn(`[OwnMind v${VERSION}]Post-commit audit: this commit has the following violations`);
     for (const v of violations) {
       console.warn(`  ⚠️  ${v.ruleCode}: ${v.ruleTitle}`);
       for (const f of v.failures) {
@@ -136,7 +136,7 @@ async function main() {
       }
     }
     console.warn(`  commit: ${commitHash}`);
-    console.warn(`  違規已記錄。修正方式：修正後重新提交，或 git revert ${commitHash} 還原。`);
+    console.warn(`  Violations logged. To fix: amend or re-commit after fixing, or git revert ${commitHash} to undo.`);
     console.warn('');
   }
 
@@ -144,6 +144,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(`【OwnMind v${VERSION}】錯誤回報：post-commit 非預期錯誤: ${err.message}`);
+  console.error(`[OwnMind v${VERSION}]Error report: post-commit unexpected error: ${err.message}`);
   process.exit(0);
 });

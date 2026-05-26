@@ -26,11 +26,11 @@
 export function composeToolResponse({ broadcastText, tag, body, tip, tipTag } = {}) {
   const sections = [];
   if (broadcastText) sections.push(broadcastText);
-  sections.push(`${tag ?? ''}：\n${body ?? ''}`);
+  sections.push(`${tag ?? ''}:\n${body ?? ''}`);
   if (tip && tipTag) {
-    sections.push(`${tipTag}：${tip}`);
+    sections.push(`${tipTag}: ${tip}`);
   } else if (tip) {
-    sections.push(`技巧提示：${tip}`);
+    sections.push(`Tip: ${tip}`);
   }
   return {
     content: [{ type: 'text', text: sections.join('\n\n') }],

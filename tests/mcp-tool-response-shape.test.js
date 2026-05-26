@@ -39,14 +39,14 @@ describe('v1.17.69 — composeToolResponse 必回單一 text part', () => {
 
   it('內容包含 tag + body + tip 三段、用換行分隔', () => {
     const r = composeToolResponse({
-      tag: '【OwnMind v1.17.69】記憶搜尋',
+      tag: '[OwnMind v1.22.0] Memory search',
       body: '{"data":[]}',
-      tip: '你可以搜尋記憶',
+      tip: 'You can search memories',
     });
     const text = r.content[0].text;
-    assert.match(text, /記憶搜尋/);
+    assert.match(text, /Memory search/);
     assert.match(text, /\{"data":\[\]\}/);
-    assert.match(text, /技巧提示：你可以搜尋記憶/);
+    assert.match(text, /Tip: You can search memories/);
   });
 
   it('沒給 broadcast 不會多一段空白', () => {
@@ -62,39 +62,39 @@ describe('v1.17.69 — composeToolResponse 必回單一 text part', () => {
 
   it('有 broadcast 時也要併進來、且仍是單一 part', () => {
     const r = composeToolResponse({
-      broadcastText: '📢 OwnMind 系統通知\n[INFO] 升級到 v1.17.69\n---',
-      tag: '【OwnMind v1.17.69】記憶搜尋',
+      broadcastText: '📢 OwnMind broadcast\n[INFO] Upgraded to v1.22.0\n---',
+      tag: '[OwnMind v1.22.0] Memory search',
       body: '{}',
       tip: 'tip text',
     });
     assert.equal(r.content.length, 1, 'broadcast 也要併進同一個 part');
     const text = r.content[0].text;
-    assert.match(text, /📢 OwnMind 系統通知/);
-    assert.match(text, /記憶搜尋/);
-    assert.match(text, /技巧提示：tip text/);
+    assert.match(text, /📢 OwnMind broadcast/);
+    assert.match(text, /Memory search/);
+    assert.match(text, /Tip: tip text/);
   });
 
-  it('tag 後接「：\\n」再接 body — body 多行 JSON 不會被擠成一坨', () => {
+  it('tag 後接「:\\n」再接 body — body 多行 JSON 不會被擠成一坨', () => {
     const r = composeToolResponse({
-      tag: '【OwnMind v1.17.69】記憶搜尋',
+      tag: '[OwnMind v1.22.0] Memory search',
       body: '{"data":[]}',
       tip: 'x',
     });
     const text = r.content[0].text;
-    // tag 當 header 行：「記憶搜尋：\n{」（換行後才是 body）
-    assert.match(text, /記憶搜尋：\n\{/);
+    // tag 當 header 行：「Memory search:\n{」（換行後才是 body）
+    assert.match(text, /Memory search:\n\{/);
   });
 
   it('body 跟 tip 之間有空白行（視覺分隔）', () => {
     const r = composeToolResponse({
-      tag: '【OwnMind v1.17.69】記憶搜尋',
+      tag: '[OwnMind v1.22.0] Memory search',
       body: '{"data":[]}',
       tip: 'tip text',
-      tipTag: '【OwnMind v1.17.69】技巧提示',
+      tipTag: '[OwnMind v1.22.0] Tip',
     });
     const text = r.content[0].text;
     // body 跟 tip 之間應該有 \n\n（一個空白行）
-    assert.match(text, /\}\n\n【OwnMind/);
+    assert.match(text, /\}\n\n\[OwnMind/);
   });
 
   it('tip 為空字串時也不該炸', () => {
@@ -104,6 +104,6 @@ describe('v1.17.69 — composeToolResponse 必回單一 text part', () => {
       tip: '',
     });
     assert.equal(r.content.length, 1);
-    assert.match(r.content[0].text, /A：\nB/);
+    assert.match(r.content[0].text, /A:\nB/);
   });
 });

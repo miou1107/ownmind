@@ -126,9 +126,13 @@ function extractBanners(rawJson) {
       broadcastBuf = [line];
       continue;
     }
-    const m = line.match(/^【OwnMind\s+(v[\d.]+)】(.+?)\s*$/);
+    // Match both legacy 【】 brand banner and new [] format (v1.22.0+).
+    // Some product files still emit 【】 until their own i18n pass lands.
+    const m = line.match(/^(?:【OwnMind\s+(v[\d.]+)】|\[OwnMind\s+(v[\d.]+)\]\s*)(.+?)\s*$/);
     if (m) {
-      banners.push({ kind: 'banner', version: m[1], eventLine: m[2] });
+      const version = m[1] || m[2];
+      const eventLine = m[3];
+      banners.push({ kind: 'banner', version, eventLine });
     }
   }
   // 廣播沒收尾的也算（防呆）
@@ -167,7 +171,7 @@ function formatBlock(banners) {
   const eventBanners = banners.filter((b) => b.kind === 'banner');
   if (eventBanners.length > 0) {
     const version = eventBanners[0].version || '';
-    out.push(`【OwnMind ${version}】`);
+    out.push(`[OwnMind ${version}]`);
     for (const b of eventBanners) {
       // 拿掉結尾單獨的 「：」（多行事件如「記憶搜尋：」結尾是冒號 + 換行）
       const cleaned = b.eventLine.replace(/：\s*$/, '');

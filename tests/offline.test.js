@@ -146,7 +146,7 @@ describe('replayQueue', () => {
 
     assert.equal(result.replayed, 2);
     assert.equal(result.remaining, 0);
-    assert.ok(result.message.includes('完成'));
+    assert.ok(/complete|完成/i.test(result.message));
     assert.equal(helpers.readQueue().length, 0);
   });
 
@@ -174,7 +174,7 @@ describe('replayQueue', () => {
 
     assert.equal(result.replayed, 1);
     assert.equal(result.remaining, 2);
-    assert.ok(result.message.includes('部分失敗'));
+    assert.ok(/partially failed/i.test(result.message));
     assert.equal(helpers.readQueue().length, 2);
   });
 });

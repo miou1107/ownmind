@@ -73,8 +73,8 @@ describe('v1.17.91 — MCP 加 ownmind_delete_secret tool', () => {
   it('ownmind_delete_secret tool 描述必須警告「不可復原」', () => {
     const m = mcpSource.match(/name:\s*["']ownmind_delete_secret["'][\s\S]+?inputSchema/);
     assert.ok(m, '找不到 ownmind_delete_secret tool 區塊');
-    // 用「不可復原」「無法復原」「永久刪除」「irreversible」其中一個關鍵字
-    assert.match(m[0], /不可復原|無法復原|永久刪除|不可恢復/,
+    // Either Chinese or English wording is accepted
+    assert.match(m[0], /不可復原|無法復原|永久刪除|不可恢復|irreversible|cannot be undone|permanently delete/i,
       'delete tool 描述應警告刪除不可復原（避免 AI 誤刪）');
   });
 });
