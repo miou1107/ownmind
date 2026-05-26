@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.26.2 — 國際化第六期：mcp/ 內部註解英文化（軌道 B）
+
+**範圍**：翻 `mcp/index.js` + 5 個 `mcp/lib/*.js` 共 216 行中文註解。延續 v1.26.0 hooks/ 同樣 pattern、零行為改動。
+
+**Track A 補洞**（4 條 user-facing 訊息）：
+- `mcp/index.js` ownmind_session_off / ownmind_session_on 的 return message
+- `formatTag('錯誤回報')` → `'Error report'`
+
+**刻意保留**（CLAUDE.md 排除範圍）：
+- `mcp/index.js:1089` confirm_string="送出" 字面值（伺服器邏輯依賴）
+- `mcp/index.js:1343/1354` rule_title 個人鐵律字面（user data、code smell 留 `project_496` follow-up）
+
+**測試**：1956 pass / 0 fail（修了 `tests/p3-update-event-semantics.test.js` 因翻譯擴張字元距離而失敗的 case — 縮短註解、不放寬測試）
+
+**版本**：1.26.1 → 1.26.2
+**OpenSpec change**：`openspec/changes/v1.26.2-i18n-mcp-internal/`
+
 ## v1.26.1 — 修復 `ownmind_report_bug` 設計缺陷（自由回報路徑）
 
 **問題**：
