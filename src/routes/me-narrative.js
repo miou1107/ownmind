@@ -26,7 +26,7 @@ export function createNarrativeRouter({
       });
     } catch (err) {
       console.error('[me-narrative] mechanical failed:', err);
-      res.status(500).json({ error: '敘事報告產生失敗' });
+      res.status(500).json({ error: 'Failed to generate narrative report' });
     }
   });
 
@@ -34,7 +34,7 @@ export function createNarrativeRouter({
     const apiKey = env.LLM_SWITCH_API_KEY;
     if (!apiKey) {
       return res.status(503).json({
-        error: '管理者尚未設定 LLM；機械版報告仍可用',
+        error: 'Admin has not configured an LLM; the mechanical report is still available',
         code: 'no_api_key',
       });
     }
@@ -53,7 +53,7 @@ export function createNarrativeRouter({
       res.json({ cached: false, ...result });
     } catch (err) {
       console.error('[me-narrative] insights failed:', err);
-      res.status(502).json({ error: '洞察暫時無法產生，稍後再試' });
+      res.status(502).json({ error: 'Insights temporarily unavailable; please try again later' });
     }
   });
 
@@ -90,7 +90,7 @@ async function collectSections({ query, range }) {
   const tfTs = tf;      // for activity_logs.ts
   const tfCreated = tf; // for session_logs.created_at
 
-  // 1. ranking — 每 user 過去 N 天 sessions/events
+  // 1. ranking — per-user sessions/events over the last N days.
   const ranking = (await query(`
     SELECT u.id, u.name, u.role,
       COUNT(*) FILTER (WHERE a.event='init') AS sessions,
@@ -102,28 +102,28 @@ async function collectSections({ query, range }) {
     ORDER BY events DESC NULLS LAST
   `)).rows;
 
-  // 2. versions — collector_heartbeat 各人每工具版本
+  // 2. versions — collector_heartbeat per-user per-tool version.
   const versions = (await query(`
     SELECT user_id, tool, scanner_version AS version, last_reported_at
     FROM collector_heartbeat
     ORDER BY user_id, tool
   `)).rows;
 
-  // 3. daily — 每天 activity 數
+  // 3. daily — activity count per day.
   const daily = (await query(`
     SELECT to_char(ts AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d, COUNT(*) AS c
     FROM activity_logs WHERE ts ${tfTs}
     GROUP BY d ORDER BY d
   `)).rows;
 
-  // 4. hourly — 24 小時分布
+  // 4. hourly — 24-hour distribution.
   const hourly = (await query(`
     SELECT EXTRACT(HOUR FROM ts AT TIME ZONE 'Asia/Taipei')::int AS hour, COUNT(*) AS c
     FROM activity_logs WHERE ts ${tfTs}
     GROUP BY hour ORDER BY hour
   `)).rows;
 
-  // 5. weekday — 週幾分布
+  // 5. weekday — day-of-week distribution.
   const weekday = (await query(`
     SELECT EXTRACT(DOW FROM ts AT TIME ZONE 'Asia/Taipei')::int AS dow, COUNT(*) AS c
     FROM activity_logs WHERE ts ${tfTs}
@@ -137,10 +137,12 @@ async function collectSections({ query, range }) {
     GROUP BY event ORDER BY c DESC
   `)).rows;
 
-  // 7. compliance — iron_rule 統計（同 me.js 的誠信邏輯）
-  // v1.17.52: 改成 per-user × rule_code，每筆鐵律配對到「該使用者自己的 title」
-  //          因為每個 user 的鐵律不同（含客製版本），合併顯示會誤導
-  // v1.17.53: 過濾 4 項計數全零列，排序改 violate DESC 讓問題第一眼看到
+  // 7. compliance — iron_rule statistics (same honesty logic as me.js).
+  // v1.17.52: switched to per-user × rule_code so each rule pairs with the
+  //          user's own title (each user's rules can differ, including
+  //          customized variants; merging the display would mislead).
+  // v1.17.53: drop rows where all four counts are zero; sort by violate DESC
+  //          so problems show up first.
   const compliance = (await query(`
     WITH stats AS (
       SELECT user_id, details->>'rule_code' AS rule_code,
@@ -165,7 +167,7 @@ async function collectSections({ query, range }) {
     ORDER BY s.violate DESC, u.name NULLS LAST, s.rule_code
   `)).rows;
 
-  // 8. update_health — 升級/檢查事件
+  // 8. update_health — upgrade / check events.
   const update_health = (await query(`
     SELECT event, COUNT(*) AS c
     FROM activity_logs
@@ -174,10 +176,13 @@ async function collectSections({ query, range }) {
     GROUP BY event
   `)).rows;
 
-  // 9. project_ranking — 跨專案排行
-  // v1.17.55: 加 tokens + cost_usd（嘗試用 session_id JOIN，但 session_logs.session_id 全 NULL，失敗）
-  // v1.17.56: 改用 (user_id, tool) bridge — 估算值（按 turns 比例分配）；
-  //           專案名稱用 REGEXP_REPLACE 砍掉「( ... )」描述，避免「ai_kol」「ai_kol (xxx)」分裂成兩列
+  // 9. project_ranking — ranking across projects.
+  // v1.17.55: added tokens + cost_usd (tried JOIN via session_id but
+  // session_logs.session_id is all NULL — failed).
+  // v1.17.56: use (user_id, tool) as a bridge — values are estimates
+  // (allocated by turn ratio); project names are normalized with
+  // REGEXP_REPLACE that strips the trailing "(...)" description, so
+  // "ai_kol" and "ai_kol (xxx)" don't split into two rows.
   const project_ranking = (await query(`
     WITH usr_tok AS (
       SELECT user_id, tool,
@@ -230,8 +235,9 @@ async function collectSections({ query, range }) {
     ORDER BY turns DESC NULLS LAST
   `)).rows;
 
-  // 10. project_friction_raw — friction notes for LLM extraction
-  // 真實欄位名是 friction_points（見 src/utils/report.js + src/routes/activity.js writer）
+  // 10. project_friction_raw — friction notes for LLM extraction.
+  // The real field name is friction_points (see src/utils/report.js and the
+  // writer in src/routes/activity.js).
   const project_friction_raw = (await query(`
     SELECT LOWER(TRIM(details->>'project')) AS project_key,
       details->>'friction_points' AS friction
@@ -243,9 +249,11 @@ async function collectSections({ query, range }) {
     LIMIT 100
   `)).rows;
 
-  // 11. project_compliance — 暫不實作
-  // iron_rule_compliance 的 details 並無 writer 寫入 project_key（活動是觸發時記的，不一定在某 session 內）
-  // 要做的話得 JOIN session_logs 用 user/time window 推導，誤差會很大；YAGNI 暫不做
+  // 11. project_compliance — not implemented.
+  // iron_rule_compliance details have no project_key written by any writer
+  // (activity is recorded at trigger time and isn't necessarily inside a
+  // session). Doing this properly would need JOIN session_logs with a
+  // user/time window, with significant inaccuracy; YAGNI, skip for now.
   const project_compliance = [];
 
   return {

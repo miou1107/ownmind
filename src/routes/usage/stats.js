@@ -7,9 +7,9 @@ import logger from '../../utils/logger.js';
  * GET /api/usage/stats
  *
  * Query params:
- *   from=YYYY-MM-DD  (預設：30 天前)
- *   to=YYYY-MM-DD    (預設：今天)
- *   group_by=day|tool|model|session  (預設：day)
+ *   from=YYYY-MM-DD  (default: 30 days ago)
+ *   to=YYYY-MM-DD    (default: today)
+ *   group_by=day|tool|model|session  (default: day)
  *
  * Response:
  *   {
@@ -31,37 +31,39 @@ export function createStatsRouter(deps = {}) {
       const groupBy = group_by || 'day';
 
       if (!['day', 'tool', 'model', 'session'].includes(groupBy)) {
-        return res.status(400).json({ error: 'group_by 必須是 day/tool/model/session' });
+        return res.status(400).json({ error: 'group_by must be one of day/tool/model/session' });
       }
 
-      // 決定要查哪個 user 的 stats：
-      //   - 預設：req.user.id（查自己）
-      //   - admin+ 可帶 ?user_id=N 查他人（dashboard 「團隊用量」點某成員展開詳情）
-      //   - 一般 user 帶 ?user_id 查他人 → 403
+      // Decide which user's stats to query:
+      //   - default: req.user.id (themselves)
+      //   - admin+ can pass ?user_id=N to inspect someone else (dashboard
+      //     "team usage" clicks a member to expand)
+      //   - regular user passing ?user_id of someone else → 403
       let userId = req.user.id;
       if (req.query.user_id != null && req.query.user_id !== '') {
         const requested = parseInt(req.query.user_id, 10);
         if (!Number.isFinite(requested)) {
-          return res.status(400).json({ error: 'user_id 必須為整數' });
+          return res.status(400).json({ error: 'user_id must be an integer' });
         }
         if (requested !== req.user.id) {
           if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
-            return res.status(403).json({ error: '只有 admin 以上可查他人用量' });
+            return res.status(403).json({ error: 'Only admin or above may inspect another user\'s usage' });
           }
         }
         userId = requested;
       }
 
-      // 取 target user 的 name / email（用於 dashboard 顯示）
+      // Fetch the target user's name / email (for dashboard display).
       const target = userId === req.user.id
         ? { id: req.user.id, name: req.user.name, email: req.user.email }
         : await loadUserBasics({ query }, userId);
-      if (!target) return res.status(404).json({ error: '找不到該 user' });
+      if (!target) return res.status(404).json({ error: 'User not found' });
 
       const totals = await loadTotals({ query }, userId, from, to);
       const series = await loadSeries({ query }, userId, from, to, groupBy);
-      // is_exempt：用於 dashboard 追蹤狀態指示燈（D3 對齊 — 豁免 user 可能有歷史
-      // 資料，但目前 ingestion 被 suppressed；UI 必須如實告知狀態）
+      // is_exempt: used by the dashboard status indicator (D3 alignment —
+      // exempt users may have historical data but the current ingestion
+      // is suppressed; the UI must report the real status).
       const isExempt = await isUserExempt({ query }, userId);
 
       res.json({
@@ -72,8 +74,8 @@ export function createStatsRouter(deps = {}) {
         is_exempt: isExempt
       });
     } catch (err) {
-      logger.error('usage stats 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢用量失敗' });
+      logger.error('usage stats query failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to query usage' });
     }
   });
 
@@ -81,7 +83,7 @@ export function createStatsRouter(deps = {}) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Helpers（純函式可測）
+// Helpers (pure, testable)
 // ────────────────────────────────────────────────────────────
 
 export function parseQueryParams(q) {
@@ -126,10 +128,11 @@ async function isUserExempt({ query }, userId) {
 }
 
 async function loadTotals({ query }, userId, from, to) {
-  // Tier 1：token_usage_daily（有 token + cost）
-  // - cost_usd null policy：SUM 會 skip NULL rows，配合 COALESCE 會把
-  //   「部分日有 NULL cost」偽裝成完整數字。用 bool_or(IS NULL) 偵測，
-  //   有任一 NULL → 整筆 cost_usd 回 null（與 buildDailyRow 的 policy 對齊）
+  // Tier 1: token_usage_daily (with tokens + cost).
+  // cost_usd null policy: SUM skips NULL rows, and combined with COALESCE
+  // this would "hide" partial-NULL days behind a complete-looking number.
+  // Use bool_or(IS NULL) to detect any NULL → in that case the whole
+  // cost_usd response is null (aligned with buildDailyRow's policy).
   const tier1 = await query(
     `SELECT
        CASE WHEN bool_or(cost_usd IS NULL) THEN NULL
@@ -147,7 +150,7 @@ async function loadTotals({ query }, userId, from, to) {
      WHERE user_id = $1 AND date >= $2 AND date <= $3`,
     [userId, from, to]
   );
-  // Tier 2：session_count（Cursor / Antigravity，只有 count + wall_seconds）
+  // Tier 2: session_count (Cursor / Antigravity — only count + wall_seconds).
   const tier2 = await query(
     `SELECT COALESCE(SUM(count), 0)::int AS tier2_sessions,
             COALESCE(SUM(wall_seconds), 0)::int AS tier2_wall_seconds
@@ -174,7 +177,7 @@ function emptyTotals() {
 
 async function loadSeries({ query }, userId, from, to, groupBy) {
   const { selectKey, groupClause, orderClause } = buildGrouping(groupBy);
-  // cost_usd null-on-any-null policy（與 buildDailyRow 對齊）
+  // cost_usd null-on-any-null policy (aligned with buildDailyRow).
   const res = await query(
     `SELECT ${selectKey} AS key,
             CASE WHEN bool_or(cost_usd IS NULL) THEN NULL
@@ -195,8 +198,8 @@ async function loadSeries({ query }, userId, from, to, groupBy) {
   );
   const tier1Rows = res.rows;
 
-  // Tier 2 merge：只對 day / tool 兩種 group_by 有意義
-  //  - model / session：Tier 2 沒這概念，跳過
+  // Tier 2 merge: only meaningful for day / tool group_by.
+  //   - model / session: Tier 2 has no such concept, skip.
   if (groupBy !== 'day' && groupBy !== 'tool') return tier1Rows;
 
   const t2Res = groupBy === 'day'
@@ -219,7 +222,7 @@ async function loadSeries({ query }, userId, from, to, groupBy) {
         [userId, from, to]
       );
 
-  // Merge：同一 key 把 wall_seconds 疊加、加上 session_count 欄位
+  // Merge: same key accumulates wall_seconds, adds the session_count field.
   const byKey = new Map();
   for (const r of tier1Rows) byKey.set(String(r.key), { ...r, session_count: Number(r.message_count || 0) });
   for (const r of t2Res.rows) {
@@ -229,7 +232,7 @@ async function loadSeries({ query }, userId, from, to, groupBy) {
       existing.wall_seconds = Number(existing.wall_seconds || 0) + Number(r.wall_seconds || 0);
       existing.session_count = Number(existing.session_count || 0) + Number(r.session_count || 0);
     } else {
-      // Tier 2-only 的 key：填零的 tokens / cost
+      // Tier 2-only keys: fill tokens / cost with zeros.
       byKey.set(k, {
         key: k,
         cost_usd: 0,

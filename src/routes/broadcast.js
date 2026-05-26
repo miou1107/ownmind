@@ -9,8 +9,9 @@ const VALID_TYPES = new Set(['announcement', 'upgrade_reminder', 'maintenance', 
 const VALID_SEVERITY = new Set(['info', 'warning', 'critical']);
 
 /**
- * coerceNum — 把 JSON 送來的 number / numeric string（"24"）統一 coerce 成 number；
- * 不合法或 NaN 都 fallback 到 default。避免 Number.isFinite("24") === false 的坑。
+ * coerceNum — unifies JSON-supplied number / numeric string (e.g. "24") into
+ * a number; invalid input or NaN falls back to default. Avoids the
+ * Number.isFinite("24") === false pitfall.
  */
 function coerceNum(v, fallback) {
   if (v === undefined || v === null || v === '') return fallback;
@@ -19,17 +20,18 @@ function coerceNum(v, fallback) {
 }
 
 /**
- * Broadcast system — admin 發的通用廣播 + user 端查詢 / snooze / dismiss
+ * Broadcast system — admin-published general broadcasts plus user-side
+ * fetch / snooze / dismiss.
  *
- * Admin：
- *   POST   /api/broadcast/admin            super_admin   新增
- *   GET    /api/broadcast/admin            admin+        列出（含歷史）
- *   PATCH  /api/broadcast/admin/:id        super_admin   更新 ends_at / target_users
- *   DELETE /api/broadcast/admin/:id        super_admin   撤銷（soft delete = ends_at=NOW()）
+ * Admin:
+ *   POST   /api/broadcast/admin            super_admin   create
+ *   GET    /api/broadcast/admin            admin+        list (including history)
+ *   PATCH  /api/broadcast/admin/:id        super_admin   update ends_at / target_users
+ *   DELETE /api/broadcast/admin/:id        super_admin   revoke (soft delete = ends_at=NOW())
  *
- * User：
- *   GET    /api/broadcast/active?tool=X    all（auth 過的 user）   取當下應顯示的廣播
- *   POST   /api/broadcast/dismiss          all                     { broadcast_id, tool, snooze_hours? }
+ * User:
+ *   GET    /api/broadcast/active?tool=X    all (authed)             fetch broadcasts to show now
+ *   POST   /api/broadcast/dismiss          all                       { broadcast_id, tool, snooze_hours? }
  */
 export function createBroadcastRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -41,7 +43,7 @@ export function createBroadcastRouter(deps = {}) {
   const router = Router();
 
   // ============================================================
-  // Admin: 新增廣播
+  // Admin: create a broadcast.
   // ============================================================
   router.post('/admin', superAdminAuth, async (req, res) => {
     try {
@@ -78,13 +80,14 @@ export function createBroadcastRouter(deps = {}) {
       );
       res.status(201).json(result.rows[0]);
     } catch (err) {
-      logger.error('broadcast 新增失敗', { error: err.message });
-      res.status(500).json({ error: '新增廣播失敗：' + err.message });
+      logger.error('broadcast create failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to create broadcast: ' + err.message });
     }
   });
 
   // ============================================================
-  // Admin: 列出廣播（預設 active=true，全部歷史用 ?include_ended=true）
+  // Admin: list broadcasts (default active=true; use ?include_ended=true
+  // for the full history).
   // ============================================================
   router.get('/admin', adminAuth, async (req, res) => {
     try {
@@ -97,13 +100,13 @@ export function createBroadcastRouter(deps = {}) {
       const result = await query(sql);
       res.json(result.rows);
     } catch (err) {
-      logger.error('broadcast 列表失敗', { error: err.message });
-      res.status(500).json({ error: '查詢廣播失敗' });
+      logger.error('broadcast list failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to list broadcasts' });
     }
   });
 
   // ============================================================
-  // Admin: 更新 / 撤銷
+  // Admin: update / revoke.
   // ============================================================
   router.patch('/admin/:id', superAdminAuth, async (req, res) => {
     try {
@@ -113,12 +116,12 @@ export function createBroadcastRouter(deps = {}) {
       const fields = [];
       const params = [];
       if (body.ends_at !== undefined) {
-        // 允許 null 清除；其他值必須可 parse
+        // null clears; other values must be parseable.
         let endsAt = null;
         if (body.ends_at !== null) {
           endsAt = new Date(body.ends_at);
           if (!Number.isFinite(endsAt.getTime())) {
-            return res.status(400).json({ error: 'ends_at 格式不正確' });
+            return res.status(400).json({ error: 'ends_at has invalid format' });
           }
         }
         params.push(endsAt); fields.push(`ends_at = $${params.length}`);
@@ -128,7 +131,7 @@ export function createBroadcastRouter(deps = {}) {
         if (Array.isArray(body.target_users) && body.target_users.length > 0) {
           for (const uid of body.target_users) {
             if (!Number.isInteger(uid) || uid <= 0) {
-              return res.status(400).json({ error: 'target_users 必須是正整數陣列' });
+              return res.status(400).json({ error: 'target_users must be an array of positive integers' });
             }
           }
           val = body.target_users;
@@ -144,8 +147,8 @@ export function createBroadcastRouter(deps = {}) {
       if (result.rowCount === 0) return res.status(404).json({ error: 'not found' });
       res.json(result.rows[0]);
     } catch (err) {
-      logger.error('broadcast 更新失敗', { error: err.message });
-      res.status(500).json({ error: '更新廣播失敗：' + err.message });
+      logger.error('broadcast update failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to update broadcast: ' + err.message });
     }
   });
 
@@ -154,13 +157,14 @@ export function createBroadcastRouter(deps = {}) {
       const id = parseInt(req.params.id, 10);
       if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid id' });
 
-      // 先查 is_auto — auto-managed 廣播由 nightly job 掌控，不允許手動撤銷
-      // （若撤了，job 因 active-only check 會在下一輪重建，形成無意義循環）
+      // Check is_auto first — auto-managed broadcasts are controlled by the
+      // nightly job and may not be manually revoked (the job's active-only
+      // check would re-create them on the next run, creating a meaningless loop).
       const check = await query(`SELECT is_auto FROM broadcast_messages WHERE id = $1`, [id]);
       if (check.rowCount === 0) return res.status(404).json({ error: 'not found' });
       if (check.rows[0].is_auto) {
         return res.status(400).json({
-          error: 'auto-managed 廣播不可手動撤銷（由 nightly job 管理）'
+          error: 'auto-managed broadcasts cannot be manually revoked (managed by the nightly job)'
         });
       }
 
@@ -172,18 +176,18 @@ export function createBroadcastRouter(deps = {}) {
       if (result.rowCount === 0) return res.status(404).json({ error: 'already ended' });
       res.json({ id, revoked: true });
     } catch (err) {
-      logger.error('broadcast 撤銷失敗', { error: err.message });
-      res.status(500).json({ error: '撤銷廣播失敗：' + err.message });
+      logger.error('broadcast revoke failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to revoke broadcast: ' + err.message });
     }
   });
 
   // ============================================================
-  // User: 取當前應看到的廣播
+  // User: fetch broadcasts to display now.
   // ============================================================
   router.get('/active', auth, async (req, res) => {
     try {
       const tool = String(req.query.tool || '').trim();
-      if (!tool) return res.status(400).json({ error: 'tool 是必填' });
+      if (!tool) return res.status(400).json({ error: 'tool is required' });
       const client_version = req.query.client_version
         || req.headers['x-ownmind-version']
         || null;
@@ -196,13 +200,13 @@ export function createBroadcastRouter(deps = {}) {
       });
       res.json(rows);
     } catch (err) {
-      logger.error('broadcast/active 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢廣播失敗' });
+      logger.error('broadcast/active query failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to query broadcasts' });
     }
   });
 
   // ============================================================
-  // User: dismiss / snooze
+  // User: dismiss / snooze.
   // ============================================================
   router.post('/dismiss', auth, async (req, res) => {
     try {
@@ -210,11 +214,12 @@ export function createBroadcastRouter(deps = {}) {
       const broadcast_id = parseInt(body.broadcast_id, 10);
       const tool = String(body.tool || '').trim();
       if (!Number.isFinite(broadcast_id) || !tool) {
-        return res.status(400).json({ error: 'broadcast_id 與 tool 都必填' });
+        return res.status(400).json({ error: 'broadcast_id and tool are required' });
       }
 
-      // 可見性檢查（Critical 修補）：必須確認該 user 當前能看到這則廣播才允許 dismiss
-      // 否則 user 可 pre-dismiss 未來的針對性廣播，繞過 admin 的 targeting 保證
+      // Visibility check (critical fix): only allow dismiss when the user
+      // can currently see this broadcast. Otherwise users could pre-dismiss
+      // future targeted broadcasts and bypass admin targeting guarantees.
       const client_version = req.query.client_version
         || req.headers['x-ownmind-version']
         || null;
@@ -226,17 +231,17 @@ export function createBroadcastRouter(deps = {}) {
       });
       const bc = visible.find((b) => b.id === broadcast_id);
       if (!bc) {
-        return res.status(404).json({ error: 'broadcast 不存在或不在你的可見範圍' });
+        return res.status(404).json({ error: 'broadcast does not exist or is not in your visible set' });
       }
 
       const hasSnoozeArg = body.snooze_hours !== undefined && body.snooze_hours !== null;
       const parsedSnoozeHours = hasSnoozeArg ? Number(body.snooze_hours) : undefined;
       const isSnooze = hasSnoozeArg && Number.isFinite(parsedSnoozeHours) && parsedSnoozeHours > 0;
       if (hasSnoozeArg && !isSnooze) {
-        return res.status(400).json({ error: 'snooze_hours 必須為正數' });
+        return res.status(400).json({ error: 'snooze_hours must be a positive number' });
       }
       if (isSnooze && !bc.allow_snooze) {
-        return res.status(400).json({ error: '此廣播不允許 snooze（請用 dismiss）' });
+        return res.status(400).json({ error: 'this broadcast does not allow snooze (use dismiss)' });
       }
 
       const nowTs = now();
@@ -262,27 +267,31 @@ export function createBroadcastRouter(deps = {}) {
         snooze_until: snoozeUntil
       });
     } catch (err) {
-      logger.error('broadcast/dismiss 失敗', { error: err.message });
-      res.status(500).json({ error: 'dismiss 失敗：' + err.message });
+      logger.error('broadcast/dismiss failed', { error: err.message });
+      res.status(500).json({ error: 'dismiss failed: ' + err.message });
     }
   });
 
   // ============================================================
-  // MCP: 取「現在該注入的廣播」— 每次 ownmind_* tool call 時都 ping
+  // MCP: fetch "broadcasts to inject right now" — pinged on every
+  // ownmind_* tool call.
   //
-  // 此 endpoint 負責「時機決策」而非「可見性」：
-  //   1. Upsert user_tool_last_seen（供首次 / 4h 判定）
-  //   2. 判 is_first_of_day（Asia/Taipei）、is_long_gap（> 4h）
-  //   3. filterVisibleBroadcasts → filterInjectable（forceInject=首次 or 長間隔）
-  //   4. Mark last_injected_at 於 user_broadcast_state
-  //   5. 回傳 { broadcasts: [...] } 給 MCP client prepend 到 tool response text
+  // This endpoint owns "timing", not "visibility":
+  //   1. Upsert user_tool_last_seen (used for first-of-day / 4h gap detection).
+  //   2. Compute is_first_of_day (Asia/Taipei) and is_long_gap (> 4h).
+  //   3. filterVisibleBroadcasts → filterInjectable (forceInject when first
+  //      or long gap).
+  //   4. Mark last_injected_at on user_broadcast_state.
+  //   5. Return { broadcasts: [...] } for the MCP client to prepend to the
+  //      tool's response text.
   //
-  // Server side effects only，MCP client 只要把回來的文字塞前面即可。
+  // Server-side side effects only; the MCP client just prepends the text it
+  // receives.
   // ============================================================
   router.post('/inject', auth, async (req, res) => {
     try {
       const tool = String((req.body && req.body.tool) || req.query.tool || '').trim();
-      if (!tool) return res.status(400).json({ error: 'tool 是必填' });
+      if (!tool) return res.status(400).json({ error: 'tool is required' });
       const client_version = (req.body && req.body.client_version)
         || req.query.client_version
         || req.headers['x-ownmind-version']
@@ -291,7 +300,7 @@ export function createBroadcastRouter(deps = {}) {
       const nowTs = now();
       const user_id = req.user.id;
 
-      // 1. 取上次 seen（判首次 / 4h）
+      // 1. Fetch the previous "seen" (used for first-of-day / 4h gap detection).
       const seen = await query(
         `SELECT last_mcp_call_at, last_day_seen_tpe FROM user_tool_last_seen
           WHERE user_id = $1 AND tool = $2`,
@@ -306,7 +315,7 @@ export function createBroadcastRouter(deps = {}) {
         && (nowTs.getTime() - new Date(prev.last_mcp_call_at).getTime()) > 4 * 3600 * 1000;
       const forceInject = isFirstOfDay || isLongGap;
 
-      // 2. Upsert user_tool_last_seen（即使沒廣播要 inject，也要更新）
+      // 2. Upsert user_tool_last_seen (even if nothing to inject, still update).
       await query(
         `INSERT INTO user_tool_last_seen (user_id, tool, last_mcp_call_at, last_day_seen_tpe)
          VALUES ($1, $2, $3, $4::date)
@@ -326,7 +335,8 @@ export function createBroadcastRouter(deps = {}) {
         return res.json({ broadcasts: [], force: forceInject });
       }
 
-      // 4. Mark last_injected_at for each（non-blocking 方式，但用 Promise.all 保證 response 前完成）
+      // 4. Mark last_injected_at for each (non-blocking-ish, but Promise.all
+      //    ensures completion before sending the response).
       const ids = injectable.map((bc) => bc.id);
       await query(
         `INSERT INTO user_broadcast_state (user_id, broadcast_id, tool, last_injected_at)
@@ -336,7 +346,7 @@ export function createBroadcastRouter(deps = {}) {
         [user_id, tool, nowTs, ids]
       );
 
-      // 5. 回傳 — 只帶 MCP client 需要的欄位，不洩 internal state
+      // 5. Return — only the fields the MCP client needs; do not leak internal state.
       res.json({
         broadcasts: injectable.map((bc) => ({
           id: bc.id,
@@ -352,8 +362,8 @@ export function createBroadcastRouter(deps = {}) {
         force: forceInject
       });
     } catch (err) {
-      logger.error('broadcast/inject 失敗', { error: err.message });
-      res.status(500).json({ error: 'inject 失敗：' + err.message });
+      logger.error('broadcast/inject failed', { error: err.message });
+      res.status(500).json({ error: 'inject failed: ' + err.message });
     }
   });
 
@@ -367,36 +377,37 @@ function toTpeDate(date) {
 }
 
 /**
- * 驗證 POST /admin 的 payload。
- * 注意：對 string-number（`"24"`）先用 Number() coerce，避免 JSON 整數字串被誤拒。
- * 同時驗證 starts_at / ends_at 可 parse + 邏輯關係（ends_at > starts_at）。
+ * Validate the POST /admin payload.
+ * Note: string-numbers ("24") are coerced via Number() first to avoid
+ * spuriously rejecting JSON-integer strings.
+ * Also validates that starts_at / ends_at parse and that ends_at > starts_at.
  */
 export function validateBroadcastPayload(body) {
-  if (!body || typeof body !== 'object') return 'body 必須是 object';
-  if (!VALID_TYPES.has(body.type)) return `type 必須為 ${[...VALID_TYPES].join(' / ')}`;
+  if (!body || typeof body !== 'object') return 'body must be an object';
+  if (!VALID_TYPES.has(body.type)) return `type must be one of ${[...VALID_TYPES].join(' / ')}`;
   if (body.severity && !VALID_SEVERITY.has(body.severity)) {
-    return `severity 必須為 ${[...VALID_SEVERITY].join(' / ')}`;
+    return `severity must be one of ${[...VALID_SEVERITY].join(' / ')}`;
   }
-  if (typeof body.title !== 'string' || body.title.trim().length === 0) return 'title 必填';
-  if (body.title.length > 200) return 'title 不可超過 200 字';
-  if (typeof body.body !== 'string' || body.body.trim().length === 0) return 'body 必填';
-  if (body.body.length > 2000) return 'body 不可超過 2000 字';
+  if (typeof body.title !== 'string' || body.title.trim().length === 0) return 'title is required';
+  if (body.title.length > 200) return 'title must not exceed 200 characters';
+  if (typeof body.body !== 'string' || body.body.trim().length === 0) return 'body is required';
+  if (body.body.length > 2000) return 'body must not exceed 2000 characters';
   if (body.target_users !== undefined && body.target_users !== null) {
-    if (!Array.isArray(body.target_users)) return 'target_users 必須是 array';
+    if (!Array.isArray(body.target_users)) return 'target_users must be an array';
     for (const uid of body.target_users) {
-      if (!Number.isInteger(uid) || uid <= 0) return 'target_users 必須是正整數陣列';
+      if (!Number.isInteger(uid) || uid <= 0) return 'target_users must be an array of positive integers';
     }
   }
   if (body.snooze_hours !== undefined && body.snooze_hours !== null) {
     const n = Number(body.snooze_hours);
-    if (!Number.isFinite(n) || n <= 0) return 'snooze_hours 必須為正數';
+    if (!Number.isFinite(n) || n <= 0) return 'snooze_hours must be a positive number';
   }
   if (body.cooldown_minutes !== undefined && body.cooldown_minutes !== null) {
     const n = Number(body.cooldown_minutes);
-    if (!Number.isFinite(n) || n < 0) return 'cooldown_minutes 必須為 0 或正數';
+    if (!Number.isFinite(n) || n < 0) return 'cooldown_minutes must be 0 or a positive number';
   }
 
-  // Date 驗證：parseable + ends_at > starts_at
+  // Date validation: parseable + ends_at > starts_at.
   const parseDate = (v) => {
     if (v === undefined || v === null || v === '') return { ok: true, date: null };
     if (v instanceof Date) {
@@ -406,11 +417,11 @@ export function validateBroadcastPayload(body) {
     return Number.isFinite(d.getTime()) ? { ok: true, date: d } : { ok: false };
   };
   const sp = parseDate(body.starts_at);
-  if (!sp.ok) return 'starts_at 格式不正確（需為 ISO 8601 或 Date）';
+  if (!sp.ok) return 'starts_at has invalid format (expected ISO 8601 or Date)';
   const ep = parseDate(body.ends_at);
-  if (!ep.ok) return 'ends_at 格式不正確（需為 ISO 8601 或 Date）';
+  if (!ep.ok) return 'ends_at has invalid format (expected ISO 8601 or Date)';
   if (sp.date && ep.date && ep.date.getTime() <= sp.date.getTime()) {
-    return 'ends_at 必須晚於 starts_at';
+    return 'ends_at must be later than starts_at';
   }
 
   return null;

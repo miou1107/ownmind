@@ -36,17 +36,17 @@ const STALE_WINDOW_MS = 48 * 60 * 60 * 1000;
  *   }]
  * }
  *
- * 狀態分類（針對「整體 user」）：
- *   active         = 任一 tool 有 heartbeat 在 24h 內
- *   stale          = 最新 heartbeat 在 24–48h 區間，且無更新
- *   offline        = 最新 heartbeat 超過 48h
- *   not_installed  = 該 user 從未有過任何 heartbeat 紀錄
+ * Status categories (per-user overall):
+ *   active         = any tool has a heartbeat within the last 24h
+ *   stale          = newest heartbeat falls in 24–48h and is not refreshing
+ *   offline        = newest heartbeat is older than 48h
+ *   not_installed  = the user has never produced any heartbeat
  *
- * `needs_upgrade` 規則（per-tool）：
- *   client 的 scanner_version 以 semver 比較 < SERVER_VERSION → true
- *   scanner_version 為 null/'unknown' → 視為 true（當作舊版需升級）
+ * `needs_upgrade` rule (per-tool):
+ *   if the client's scanner_version compares < SERVER_VERSION via semver → true.
+ *   scanner_version null/'unknown' → treated as true (assume old version).
  *
- * 權限：admin+（不曝露其他 user 的 email 給一般 member）
+ * Permission: admin+ (we do not leak other users' email to regular members).
  */
 export function createAdminClientsRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -61,8 +61,8 @@ export function createAdminClientsRouter(deps = {}) {
       const data = await loadClients({ query, serverVersion, now: now() });
       res.json(data);
     } catch (err) {
-      logger.error('admin/clients 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢裝機狀況失敗' });
+      logger.error('admin/clients query failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to query install status' });
     }
   });
 
@@ -72,9 +72,10 @@ export function createAdminClientsRouter(deps = {}) {
 export async function loadClients({ query, serverVersion, now }) {
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
 
-  // 一次抓所有 user + 他們的每 (user, tool) heartbeat
-  // collector_heartbeat 已有 UNIQUE (user_id, tool)，每對僅一筆 → 直接 LEFT JOIN
-  // （移除 DISTINCT ON 與 unused heartbeat_status 欄位，per codex review）
+  // Fetch all users and their per-(user, tool) heartbeats in one query.
+  // collector_heartbeat already has UNIQUE (user_id, tool), so each pair has
+  // a single row — a simple LEFT JOIN is enough.
+  // (Removed DISTINCT ON and the unused heartbeat_status column, per codex review.)
   const result = await query(
     `SELECT u.id AS user_id, u.name AS user_name, u.email, u.role,
             h.tool, h.scanner_version, h.machine, h.last_reported_at
@@ -83,7 +84,7 @@ export async function loadClients({ query, serverVersion, now }) {
       ORDER BY u.id, h.tool NULLS LAST`
   );
 
-  // 依 user_id 分組
+  // Group by user_id.
   const byUser = new Map();
   for (const row of result.rows) {
     if (!byUser.has(row.user_id)) {
@@ -95,7 +96,7 @@ export async function loadClients({ query, serverVersion, now }) {
         clients: []
       });
     }
-    // row.tool 可能為 null（user 從未有 heartbeat）→ LEFT JOIN 補出的 placeholder
+    // row.tool may be null (user with no heartbeat) — placeholder from LEFT JOIN.
     if (row.tool) {
       const lastAtMs = row.last_reported_at
         ? new Date(row.last_reported_at).getTime()
@@ -131,7 +132,7 @@ export async function loadClients({ query, serverVersion, now }) {
     return { ...u, installed, any_active: anyActive, needs_upgrade: needsUpgrade };
   });
 
-  // 覆蓋率 summary
+  // Coverage summary.
   const coverage = {
     total_users: users.length,
     installed: users.filter((u) => u.installed).length,
@@ -148,7 +149,7 @@ export async function loadClients({ query, serverVersion, now }) {
     needs_upgrade: users.filter((u) => u.installed && u.needs_upgrade).length
   };
 
-  // 排序：needs_upgrade 先、未裝最後、其餘依 id
+  // Sort: needs_upgrade first, then uninstalled last, otherwise by id.
   users.sort((a, b) => {
     if (a.installed !== b.installed) return a.installed ? -1 : 1;
     if (a.needs_upgrade !== b.needs_upgrade) return a.needs_upgrade ? -1 : 1;

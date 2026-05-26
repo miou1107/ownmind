@@ -9,9 +9,10 @@ import { requireFields } from '../utils/require-fields.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
-// v1.19.10：固定預設密碼 'Password42760988' 已被移除（repo 公開後外洩）。
-// 改成每個 user 建立時各別產隨機密碼、admin 一次性看到、寫入後不留任何固定字串。
-// 對應 openspec/changes/v1.19.10-secret-leak-hotfix/proposal.md
+// v1.19.10: the fixed default password 'Password42760988' was removed
+// (leaked when the repo went public). Each new user now gets a random
+// password; admin sees it once and nothing fixed remains in code.
+// See openspec/changes/v1.19.10-secret-leak-hotfix/proposal.md.
 
 async function writeAuditLog(actorId, action, targetType, targetId, details) {
   try {
@@ -21,12 +22,12 @@ async function writeAuditLog(actorId, action, targetType, targetId, details) {
       [actorId, action, targetType, targetId, JSON.stringify(details)]
     );
   } catch (err) {
-    logger.error('audit_log 寫入失敗', { error: err.message });
+    logger.error('audit_log write failed', { error: err.message });
   }
 }
 
 /**
- * POST /login — Admin 帳密登入（無需 auth middleware）
+ * POST /login — admin email/password login (no auth middleware).
  */
 router.post('/login', async (req, res) => {
   try {
@@ -47,7 +48,7 @@ router.post('/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // 首次設定密碼流程
+    // First-time password setup flow.
     if (!user.password_hash) {
       return res.status(200).json({ requiresSetup: true });
     }
@@ -61,13 +62,14 @@ router.post('/login', async (req, res) => {
 
     res.json({ id: user.id, api_key: user.api_key, name: user.name, email: user.email, role: user.role });
   } catch (err) {
-    logger.error('登入失敗', { error: err.message });
+    logger.error('login failed', { error: err.message });
     res.status(500).json({ error: '登入失敗' });
   }
 });
 
 /**
- * POST /setup — 首次設定 super_admin 密碼（需帶 SETUP_TOKEN，一次性）
+ * POST /setup — set the super_admin password for the first time
+ * (requires SETUP_TOKEN; one-shot).
  */
 router.post('/setup', async (req, res) => {
   try {
@@ -109,17 +111,17 @@ router.post('/setup', async (req, res) => {
 
     res.json({ id: user.id, api_key: user.api_key, name: user.name, email: user.email, role: user.role });
   } catch (err) {
-    logger.error('設定密碼失敗', { error: err.message });
+    logger.error('setup password failed', { error: err.message });
     res.status(500).json({ error: '設定密碼失敗' });
   }
 });
 
-// ─── 以下路由需要 admin 認證 ───────────────────────────────────────
+// ─── The routes below require admin auth. ───────────────────────────────
 
 router.use(adminAuth);
 
 /**
- * GET /users — 列出所有使用者
+ * GET /users — list all users.
  */
 router.get('/users', async (req, res) => {
   try {
@@ -128,15 +130,15 @@ router.get('/users', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    logger.error('列出使用者失敗', { error: err.message });
+    logger.error('list users failed', { error: err.message });
     res.status(500).json({ error: '查詢失敗' });
   }
 });
 
 /**
- * POST /users — 建立使用者
- * - admin 只能建 role='user'
- * - super_admin 可建任何角色（含密碼）
+ * POST /users — create a user.
+ * - admin can only create role='user'
+ * - super_admin can create any role (including password)
  */
 router.post('/users', async (req, res) => {
   try {
@@ -149,12 +151,12 @@ router.post('/users', async (req, res) => {
 
     const targetRole = role || 'user';
 
-    // admin 只能建 user
+    // admin can only create user.
     if (!isAtLeast(actorRole, 'super_admin') && targetRole !== 'user') {
       return res.status(403).json({ error: '管理員只能建立 User 角色帳號' });
     }
 
-    // admin/super_admin 角色必須設定密碼
+    // admin/super_admin role requires a password.
     if (isAtLeast(targetRole, 'admin') && !password) {
       return res.status(400).json({ error: 'admin/super_admin 角色必須設定密碼' });
     }
@@ -164,10 +166,11 @@ router.post('/users', async (req, res) => {
     let mustChangePassword = false;
     let generatedPassword = null;
     if (password) {
-      // admin 自己設了密碼 → 直接用，不強制改
+      // Admin supplied a password explicitly → use it, don't force change.
       passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     } else if (targetRole === 'user') {
-      // v1.19.10：每個 user 各別隨機產生（取代 v1.17.26 的固定 'Password42760988' 預設值）
+      // v1.19.10: generate a random per-user password (replaces the
+      // v1.17.26 fixed default 'Password42760988').
       generatedPassword = generateRandomPassword();
       passwordHash = await bcrypt.hash(generatedPassword, BCRYPT_ROUNDS);
       mustChangePassword = true;
@@ -185,23 +188,24 @@ router.post('/users', async (req, res) => {
       email: newUser.email, role: newUser.role
     });
 
-    // 系統產生密碼（admin 沒指定時）一次性回傳給 admin、不存到任何固定字串
+    // When the system generated the password (admin did not supply one),
+    // return it to the admin exactly once; nothing fixed is persisted.
     if (generatedPassword) {
       newUser.default_password = generatedPassword;
     }
     res.status(201).json(newUser);
   } catch (err) {
-    logger.error('建立使用者失敗', { error: err.message });
+    logger.error('create user failed', { error: err.message });
     if (err.code === '23505') return res.status(409).json({ error: 'Email 已存在' });
     res.status(500).json({ error: '建立使用者失敗' });
   }
 });
 
 /**
- * PUT /users/:id — 更新使用者 (name, email, role)
- * - 角色變更只有 super_admin 能做
- * - 不能改自己的角色
- * - 降級 super_admin 前確認至少還有一個 super_admin
+ * PUT /users/:id — update a user (name, email, role).
+ * - role changes require super_admin
+ * - cannot change your own role
+ * - before demoting a super_admin, ensure at least one remains
  */
 router.put('/users/:id', async (req, res) => {
   try {
@@ -216,21 +220,21 @@ router.put('/users/:id', async (req, res) => {
     }
     const target = targetRes.rows[0];
 
-    // admin 不能修改 super_admin 的任何欄位
+    // admin cannot modify any field on a super_admin.
     if (!isAtLeast(actorRole, 'super_admin') && target.role === 'super_admin') {
       return res.status(403).json({ error: '不能修改超級管理員的資料' });
     }
 
-    // 角色變更：只有 super_admin 能做
+    // role change: super_admin only.
     if (role && role !== target.role) {
       if (!isAtLeast(actorRole, 'super_admin')) {
         return res.status(403).json({ error: '只有超級管理員可以變更角色' });
       }
-      // 不能改自己的角色
+      // Cannot change your own role.
       if (actorId === targetId) {
         return res.status(400).json({ error: '不能修改自己的角色' });
       }
-      // 降級 super_admin 前確認至少還有一個
+      // Before demoting super_admin, ensure at least one super_admin remains.
       if (target.role === 'super_admin' && role !== 'super_admin') {
         const countRes = await query(
           `SELECT COUNT(*) FROM users WHERE role = 'super_admin' AND id != $1`, [targetId]
@@ -259,15 +263,15 @@ router.put('/users/:id', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    logger.error('更新使用者失敗', { error: err.message });
+    logger.error('update user failed', { error: err.message });
     res.status(500).json({ error: '更新使用者失敗' });
   }
 });
 
 /**
- * DELETE /users/:id — 刪除使用者
- * - 只有 super_admin 能刪
- * - 不能刪自己、不能刪 ID=1
+ * DELETE /users/:id — delete a user.
+ * - super_admin only
+ * - cannot delete yourself; cannot delete ID=1
  */
 router.delete('/users/:id', async (req, res) => {
   try {
@@ -291,7 +295,8 @@ router.delete('/users/:id', async (req, res) => {
     }
     const target = targetRes.rows[0];
 
-    // 先刪除，再寫 audit log（避免刪除失敗但 audit 已記錄）
+    // Delete first, then write the audit log (avoid the case where deletion
+    // failed but audit was already recorded).
     await query('DELETE FROM users WHERE id = $1', [targetId]);
 
     await writeAuditLog(actorId, 'delete_user', 'user', targetId, {
@@ -300,15 +305,15 @@ router.delete('/users/:id', async (req, res) => {
 
     res.json({ message: '使用者已刪除', user: target });
   } catch (err) {
-    logger.error('刪除使用者失敗', { error: err.message });
+    logger.error('delete user failed', { error: err.message });
     res.status(500).json({ error: '刪除使用者失敗' });
   }
 });
 
 /**
- * POST /users/:id/password — 修改密碼
- * - super_admin：可改任何 admin 的密碼（不需舊密碼）
- * - admin：只能改自己的（需要 oldPassword）
+ * POST /users/:id/password — change a password.
+ * - super_admin: can change any admin's password (no oldPassword needed)
+ * - admin: can only change their own (oldPassword required)
  */
 router.post('/users/:id/password', async (req, res) => {
   try {
@@ -324,7 +329,7 @@ router.post('/users/:id/password', async (req, res) => {
     const isSelf = actorId === targetId;
     const isSuperAdmin = isAtLeast(actorRole, 'super_admin');
 
-    // admin 只能改自己的密碼
+    // admin may only change their own password.
     if (!isSuperAdmin && !isSelf) {
       return res.status(403).json({ error: '只能修改自己的密碼' });
     }
@@ -337,7 +342,8 @@ router.post('/users/:id/password', async (req, res) => {
     }
     const target = targetRes.rows[0];
 
-    // super_admin 改他人不需要舊密碼；改自己或 admin 改自己需要驗證
+    // super_admin changing someone else does not need oldPassword; changing
+    // your own (or admin changing their own) requires verification.
     if (isSelf || !isSuperAdmin) {
       if (!oldPassword) {
         return res.status(400).json({ error: '請輸入舊密碼' });
@@ -362,12 +368,13 @@ router.post('/users/:id/password', async (req, res) => {
 
     res.json({ message: '密碼已更新' });
   } catch (err) {
-    logger.error('修改密碼失敗', { error: err.message });
+    logger.error('change password failed', { error: err.message });
     res.status(500).json({ error: '修改密碼失敗' });
   }
 });
 
-// v1.19.9：reset-password endpoint 移到獨立 factory module（src/routes/admin-password-reset.js）
-// 方便注入測試 + 把「忘記密碼救援」邏輯跟「正常改密碼」邏輯清楚分開
+// v1.19.9: the reset-password endpoint moved to a standalone factory
+// module (src/routes/admin-password-reset.js) — easier to inject for tests
+// and cleanly separates "forgot-password recovery" from "normal change".
 
 export default router;

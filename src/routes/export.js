@@ -7,7 +7,7 @@ const router = Router();
 router.use(auth);
 
 /**
- * GET / - 匯出所有記憶為 JSON
+ * GET / - export all memories as JSON.
  */
 router.get('/', async (req, res) => {
   try {
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 
     const memories = result.rows;
 
-    // 依類型分組
+    // Group by type.
     const grouped = {};
     for (const memory of memories) {
       if (!grouped[memory.type]) {
@@ -36,8 +36,8 @@ router.get('/', async (req, res) => {
       memories: grouped
     });
   } catch (err) {
-    logger.error('匯出記憶失敗', { error: err.message });
-    res.status(500).json({ error: '匯出失敗' });
+    logger.error('memory export failed', { error: err.message });
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 

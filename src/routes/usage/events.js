@@ -26,17 +26,22 @@ import {
 const HEARTBEAT_RATE_LIMIT_SECONDS = 30;
 
 /**
- * POST /api/usage/events — Client scanner 轉發 raw events
+ * POST /api/usage/events — client scanner forwarding raw events.
  *
- * P3 新增：
- *   - Exemption check：exempt user 的資料不入 token_events，只寫 audit
- *   - Codex fingerprint flow（D13）：material 必填 → canonicalize → expectedId override
- *     → collision / mismatch audit（仍接收，只做觀測）
- *   - Heartbeat：body.heartbeat { tool, scanner_version, machine } → UPSERT collector_heartbeat
+ * P3 additions:
+ *   - Exemption check: exempt users' data does not enter token_events;
+ *     only audit is written.
+ *   - Codex fingerprint flow (D13): material is required → canonicalize →
+ *     expectedId override → collision / mismatch audit (still accepted, just
+ *     observed).
+ *   - Heartbeat: body.heartbeat { tool, scanner_version, machine } → UPSERT
+ *     collector_heartbeat.
  *
- * 已知限制（P2 既有）：
- *   - insert/audit/aggregation 無 transaction；若 aggregation throw 靠 nightly recompute 修復
- *   - 並發兩批同 session 可能造成 token_regression 誤報（audit 屬 advisory）
+ * Known limitations (carried over from P2):
+ *   - insert/audit/aggregation is not wrapped in a transaction; if
+ *     aggregation throws, the nightly recompute repairs it.
+ *   - Two concurrent batches for the same session may cause spurious
+ *     token_regression audits (audit is advisory).
  */
 export function createEventsRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -48,33 +53,34 @@ export function createEventsRouter(deps = {}) {
   router.post('/', auth, async (req, res) => {
     try {
       const userId = req.user?.id;
-      if (!userId) return res.status(401).json({ error: '未認證' });
+      if (!userId) return res.status(401).json({ error: 'unauthenticated' });
 
       const { events = [], heartbeat, sessions = [] } = req.body || {};
       if (!Array.isArray(events)) {
-        return res.status(400).json({ error: 'events 必須是 array' });
+        return res.status(400).json({ error: 'events must be an array' });
       }
       if (!Array.isArray(sessions)) {
-        return res.status(400).json({ error: 'sessions 必須是 array' });
+        return res.status(400).json({ error: 'sessions must be an array' });
       }
-      // 允許 heartbeat-only / sessions-only 呼叫（Tier 2 Cursor / Antigravity）
+      // Allow heartbeat-only / sessions-only calls (Tier 2 Cursor / Antigravity).
       if (events.length === 0 && sessions.length === 0 && !heartbeat) {
-        return res.status(400).json({ error: 'events/sessions/heartbeat 至少一個必須存在' });
+        return res.status(400).json({ error: 'at least one of events/sessions/heartbeat is required' });
       }
       if (events.length > 5000) {
-        return res.status(413).json({ error: '單次最多 5000 筆 events' });
+        return res.status(413).json({ error: 'at most 5000 events per request' });
       }
       if (sessions.length > 1000) {
-        return res.status(413).json({ error: '單次最多 1000 筆 sessions' });
+        return res.status(413).json({ error: 'at most 1000 sessions per request' });
       }
       if (events.length === 0 && sessions.length === 0) {
         await writeHeartbeatIfPresent({ query }, userId, heartbeat);
         return res.json({ accepted: 0, duplicated: 0, rejected: [], sessions_upserted: 0 });
       }
 
-      // ── 0. Exemption check（最早處理） ─────────────────────
-      // 備註：isExempt → INSERT 有微小 race（grant exemption 過程中到達的批次
-      //      可能仍入 DB）。可接受：下一批就會被擋，coverage 資料僅錯一批。
+      // ── 0. Exemption check (very first thing) ─────────────────────
+      // Note: isExempt → INSERT has a tiny race window (batches arriving
+      //      during the grant could still make it into the DB). Acceptable:
+      //      the next batch is blocked, only one batch of coverage data is off.
       const exempt = await isExempt({ query }, userId);
       if (exempt) {
         const tools = [
@@ -94,7 +100,7 @@ export function createEventsRouter(deps = {}) {
         });
       }
 
-      // ── 1. 驗證必填 + Codex canonicalize ──────────────────
+      // ── 1. Validate required fields + Codex canonicalize ──────────────────
       const rejected = [];
       const processed = []; // { event, originalMessageId, canonicalMaterial, isCodex }
       for (let i = 0; i < events.length; i += 1) {
@@ -122,13 +128,14 @@ export function createEventsRouter(deps = {}) {
         }
       }
 
-      // 若只有 sessions（Tier 2，events 為空）→ 跳過 Tier 1 流程直接 upsert sessions + heartbeat
+      // When there are only sessions (Tier 2, events empty) → skip the
+      // Tier 1 pipeline and just upsert sessions + heartbeat.
       if (processed.length === 0 && sessions.length === 0) {
         await writeHeartbeatIfPresent({ query }, userId, heartbeat);
         return res.status(400).json({ accepted: 0, duplicated: 0, rejected });
       }
 
-      // ── 2. Model allowlist（batch 查；無 events 時略過） ─
+      // ── 2. Model allowlist (batch query; skipped when no events) ─
       const modelKeys = [...new Set(
         processed.map((p) => `${p.event.tool}::${p.event.model ?? ''}`)
           .filter((k) => !k.endsWith('::'))
@@ -142,7 +149,7 @@ export function createEventsRouter(deps = {}) {
         }
       }
 
-      // ── 3. D7 token_regression（batch 查每 (tool, session_id) max） ──
+      // ── 3. D7 token_regression (batch-query per-(tool, session_id) max) ──
       const sessionKeys = [...new Set(
         processed.map((p) => `${p.event.tool}::${p.event.session_id}`)
       )];
@@ -155,14 +162,16 @@ export function createEventsRouter(deps = {}) {
         }
       }
 
-      // ── 4. INSERT + per-event audit（交錯，避免 insert 失敗卻 audit 已 commit） ──
+      // ── 4. INSERT + per-event audit (interleaved so we don't commit
+      //       audits whose insert failed) ──
       let accepted = 0;
       let duplicated = 0;
       for (const p of processed) {
         const { event: e, isCodex, canonicalMaterial, expectedId, originalMessageId } = p;
         const messageId = isCodex ? expectedId : e.message_id;
 
-        // Codex：client 送的 id ≠ server 算的 → 寫 mismatch（接收後 insert 仍用 expectedId）
+        // Codex: client-sent id ≠ server-computed → write a mismatch audit
+        // (still accept and use expectedId for the insert).
         if (isCodex && originalMessageId !== expectedId) {
           await writeAudit({ query }, userId, 'codex', 'fingerprint_mismatch', {
             session_id: e.session_id,
@@ -176,7 +185,8 @@ export function createEventsRouter(deps = {}) {
           accepted += 1;
         } else {
           duplicated += 1;
-          // Codex collision detection：讀既存 row 的 material 跟本次比對
+          // Codex collision detection: read the existing row's material and
+          // compare against the current one.
           if (isCodex) {
             const existing = await query(
               `SELECT codex_fingerprint_material
@@ -211,7 +221,7 @@ export function createEventsRouter(deps = {}) {
         }
       }
 
-      // ── 4b. Sessions UPSERT（Tier 2：Cursor / Antigravity） ──
+      // ── 4b. Sessions UPSERT (Tier 2: Cursor / Antigravity) ──
       let sessionsUpserted = 0;
       let sessionErrors = 0;
       for (const s of sessions) {
@@ -233,7 +243,7 @@ export function createEventsRouter(deps = {}) {
             userId, tool: t.tool, sessionId: t.session_id, date: t.date
           });
         } catch (err) {
-          logger.error('aggregation 失敗', {
+          logger.error('aggregation failed', {
             error: err.message, userId, tool: t.tool, session: t.session_id, date: t.date
           });
         }
@@ -245,8 +255,8 @@ export function createEventsRouter(deps = {}) {
         ...(sessionErrors > 0 ? { session_errors: sessionErrors } : {})
       });
     } catch (err) {
-      logger.error('ingestion 失敗', { error: err.message, stack: err.stack });
-      res.status(500).json({ error: 'ingestion 失敗' });
+      logger.error('ingestion failed', { error: err.message, stack: err.stack });
+      res.status(500).json({ error: 'ingestion failed' });
     }
   });
 
@@ -254,46 +264,49 @@ export function createEventsRouter(deps = {}) {
 }
 
 // ────────────────────────────────────────────────────────────
-// 純函式 / helper
+// Pure helpers
 // ────────────────────────────────────────────────────────────
 
 const TIER1_TOOLS = new Set(['claude-code', 'codex', 'opencode']);
 
 export function validateSession(s) {
-  if (!s || typeof s !== 'object') return 'session 必須是物件';
-  if (!s.tool || typeof s.tool !== 'string') return 'session.tool 必填';
+  if (!s || typeof s !== 'object') return 'session must be an object';
+  if (!s.tool || typeof s.tool !== 'string') return 'session.tool is required';
   if (!s.date || !/^\d{4}-\d{2}-\d{2}$/.test(String(s.date))) {
-    return 'session.date 需為 YYYY-MM-DD';
+    return 'session.date must be YYYY-MM-DD';
   }
-  if (s.count != null && !(Number(s.count) >= 0)) return 'session.count 需為非負整數';
+  if (s.count != null && !(Number(s.count) >= 0)) return 'session.count must be a non-negative integer';
   if (s.wall_seconds != null && !(Number(s.wall_seconds) >= 0)) {
-    return 'session.wall_seconds 需為非負整數';
+    return 'session.wall_seconds must be a non-negative integer';
   }
   return null;
 }
 
 export function validateEvent(e) {
-  if (!e || typeof e !== 'object') return 'event 必須是物件';
-  if (!e.tool || typeof e.tool !== 'string') return 'tool 必填';
-  if (!e.session_id || typeof e.session_id !== 'string') return 'session_id 必填';
-  // Codex: message_id 由 server 覆寫，這裡不強制（但欄位仍須存在，避免錯字 bug）
+  if (!e || typeof e !== 'object') return 'event must be an object';
+  if (!e.tool || typeof e.tool !== 'string') return 'tool is required';
+  if (!e.session_id || typeof e.session_id !== 'string') return 'session_id is required';
+  // Codex: server overwrites message_id; not strictly required here (but the
+  // field must still exist to catch typo bugs).
   if (e.tool !== 'codex') {
-    if (!e.message_id || typeof e.message_id !== 'string') return 'message_id 必填';
+    if (!e.message_id || typeof e.message_id !== 'string') return 'message_id is required';
   }
-  if (!e.ts) return 'ts 必填';
-  if (Number.isNaN(new Date(e.ts).getTime())) return 'ts 格式錯誤';
-  // Tier 1 含 codex：spec P5 line 237 要求 scanner 同時設定 top-level
-  // cumulative_total_tokens（= material.total_cumulative），因為 D7 regression
-  // 查詢是 top-level 欄位，不解析 JSONB material。兩處冗餘是 by-design。
+  if (!e.ts) return 'ts is required';
+  if (Number.isNaN(new Date(e.ts).getTime())) return 'ts has invalid format';
+  // Tier 1 (including codex): spec P5 line 237 requires the scanner to set the
+  // top-level cumulative_total_tokens (= material.total_cumulative); D7
+  // regression queries this top-level column and does not parse the JSONB
+  // material. The duplication is by design.
   if (TIER1_TOOLS.has(e.tool)) {
-    if (e.cumulative_total_tokens == null) return 'cumulative_total_tokens 必填（Tier 1）';
+    if (e.cumulative_total_tokens == null) return 'cumulative_total_tokens is required (Tier 1)';
     if (!Number.isFinite(Number(e.cumulative_total_tokens))) {
-      return 'cumulative_total_tokens 必須為數字';
+      return 'cumulative_total_tokens must be a number';
     }
   }
-  // Codex: material 必填欄位由 canonicalize 檢查；這邊只攔非物件
+  // Codex: required material fields are checked by canonicalize; here we only
+  // reject non-objects.
   if (e.tool === 'codex' && (!e.codex_fingerprint_material || typeof e.codex_fingerprint_material !== 'object')) {
-    return 'codex event 缺 codex_fingerprint_material';
+    return 'codex event missing codex_fingerprint_material';
   }
   return null;
 }
@@ -371,12 +384,16 @@ async function insertEvent({ query }, userId, e, messageId, canonicalMaterial) {
 
 async function upsertSessionCount({ query }, userId, s) {
   try {
-    // 政策：GREATEST(舊, 新)
-    // - count: Tier 2 adapter 每日只會 emit 一次 count=1；GREATEST 等同 "至少 1"。
-    //   若未來 Tier 2 要計真 session count，需改成 EXCLUDED（覆寫）或 sum（累加）
-    //   — 當天邏輯要一併考慮 race。目前語義為「該日是否有活動」的 boolean-ish。
-    // - wall_seconds: 目前恆為 0，GREATEST 無害。若未來要累加需改 +。
-    // 此策略避免 race 導致計數回退，但犧牲了累加的可能性。
+    // Policy: GREATEST(old, new).
+    // - count: each Tier 2 adapter emits count=1 per day at most; GREATEST
+    //   is therefore equivalent to "at least 1". If Tier 2 ever needs to
+    //   carry true session count, switch to EXCLUDED (overwrite) or sum
+    //   (accumulate) — and consider the same-day race. Current semantics
+    //   are a boolean-ish "was there activity today".
+    // - wall_seconds: currently always 0; GREATEST is harmless. Switch to
+    //   += if we ever want to accumulate.
+    // This policy avoids count regression from races but trades off
+    // accumulation.
     await query(
       `INSERT INTO session_count (user_id, tool, date, count, wall_seconds)
        VALUES ($1, $2, $3, $4, $5)
@@ -387,7 +404,7 @@ async function upsertSessionCount({ query }, userId, s) {
     );
     return true;
   } catch (err) {
-    logger.error('session_count upsert 失敗', { error: err.message });
+    logger.error('session_count upsert failed', { error: err.message });
     return false;
   }
 }
@@ -416,7 +433,7 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
        heartbeat.os ?? null]
     );
   } catch (err) {
-    logger.error('heartbeat 更新失敗', { error: err.message });
+    logger.error('heartbeat update failed', { error: err.message });
   }
 }
 
@@ -428,7 +445,7 @@ async function writeAudit({ query }, userId, tool, eventType, details) {
       [userId, tool, eventType, JSON.stringify(details)]
     );
   } catch (err) {
-    logger.error('usage_audit_log 寫入失敗', { error: err.message });
+    logger.error('usage_audit_log write failed', { error: err.message });
   }
 }
 

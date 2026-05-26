@@ -1,21 +1,23 @@
 /**
- * admin-iron-rule-upgrade.js — 鐵律升級助手 API (v1.18.0)
+ * admin-iron-rule-upgrade.js — iron-rule upgrade-helper API (v1.18.0).
  *
- * 對應 spec.md §3 + tasks.md §11
+ * Corresponds to spec.md §3 + tasks.md §11.
  *
- * 三個 endpoint：
+ * Three endpoints:
  *   GET  /api/admin/iron-rules/upgrade-status
  *     → { total, skill_md_format, legacy_text, rules: [{id, code, title, format, tags}] }
  *   POST /api/admin/iron-rules/:id/suggest-skill-md
- *     → { suggested: '<SKILL.md content>', notes: [...] } (不寫 DB)
+ *     → { suggested: '<SKILL.md content>', notes: [...] } (does not write DB)
  *   PUT  /api/admin/iron-rules/:id/upgrade { content }
  *     → { ok, format, lint_warnings? }
- *     寫 DB + 備份 previous_content + 觸發 sync (sync 由既有 PUT /api/memory/:id 處理)
+ *     writes DB + backs up previous_content + triggers sync (sync is
+ *     handled by the existing PUT /api/memory/:id).
  *
- * 簡化策略：PUT 直接代理到既有 /api/memory/:id PUT、避免 duplicate logic
- *   - lintIronRule 卡品質 (rc1 已加)
- *   - previous_content 自動備份 (rc1 已加)
- *   - sync_token / 鐵律 sync 機制全相容
+ * Simplification: PUT delegates to the existing /api/memory/:id PUT to
+ * avoid duplicating logic.
+ *   - lintIronRule guards quality (added in rc1).
+ *   - previous_content is auto-backed up (added in rc1).
+ *   - sync_token / iron-rule sync mechanism is fully compatible.
  */
 
 import { Router } from 'express';
@@ -28,7 +30,7 @@ import { suggestSkillMdFormat } from '../utils/iron-rule-suggest.js';
 import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
 import { injectOriginSection } from '../utils/iron-rule-origin-context.js';
 
-// audit log writer — 跟 src/routes/admin.js writeAuditLog 同 schema
+// Audit log writer — same schema as src/routes/admin.js writeAuditLog.
 async function writeAdminAudit(actorId, action, targetType, targetId, details) {
   try {
     await query(
@@ -37,7 +39,7 @@ async function writeAdminAudit(actorId, action, targetType, targetId, details) {
       [actorId, action, targetType, String(targetId), JSON.stringify(details || {})]
     );
   } catch (e) {
-    logger.warn('admin audit log 寫入失敗、不擋主流程', { error: e.message, action, targetId });
+    logger.warn('admin audit log write failed; main flow not blocked', { error: e.message, action, targetId });
   }
 }
 
@@ -46,10 +48,11 @@ const router = Router();
 router.use(adminAuth);
 
 /**
- * GET /upgrade-status — 列出目前 user 所有 active iron_rule + format status
+ * GET /upgrade-status — list every active iron_rule of the current user
+ * along with its format status.
  *
- * Note: 用 req.user.id 過濾 (per-user)、admin 看自己的 user_id 鐵律
- *   v1.18.x 可加 ?user_id=N 給 super_admin 看別人
+ * Note: filtered by req.user.id (per-user); admin sees their own user_id's
+ * rules. v1.18.x could add ?user_id=N for super_admin to inspect others.
  */
 router.get('/upgrade-status', async (req, res) => {
   try {
@@ -72,7 +75,7 @@ router.get('/upgrade-status', async (req, res) => {
         title: r.title,
         format: isSkillMd ? 'skill_md' : 'legacy_text',
         tags: r.tags || [],
-        // v1.19: 鐵律分級（admin UI 顯示 + 編輯用）
+        // v1.19: iron-rule tier (admin UI display + edit).
         tier: r.tier || 'default',
       };
     });
@@ -81,7 +84,8 @@ router.get('/upgrade-status', async (req, res) => {
     const skillMd = rules.filter(r => r.format === 'skill_md').length;
     const legacy = total - skillMd;
 
-    // v1.18.0-rc3 review B2 修正：回 sync_token 給 client、PUT upgrade 必須帶上做 stale check
+    // v1.18.0-rc3 review B2 fix: return sync_token to the client so PUT
+    // upgrade must echo it back for stale checks.
     const sync_token = await generateSyncToken(req.user.id);
 
     res.json({
@@ -92,16 +96,17 @@ router.get('/upgrade-status', async (req, res) => {
       sync_token,
     });
   } catch (err) {
-    logger.error('GET /upgrade-status 失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    logger.error('GET /upgrade-status failed', { error: err.message });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * POST /:id/suggest-skill-md — 推 SKILL.md proposal、不寫 DB
+ * POST /:id/suggest-skill-md — return a SKILL.md proposal; does not write DB.
  *
- * v1.18.0 用 template-based suggest (見 iron-rule-suggest.js)
- * 未來 OWNMIND_SUGGEST_API_KEY 設定就走 LLM (TODO v1.18.x)
+ * v1.18.0 uses template-based suggest (see iron-rule-suggest.js).
+ * In the future, when OWNMIND_SUGGEST_API_KEY is set, route through LLM
+ * (TODO v1.18.x).
  */
 router.post('/:id/suggest-skill-md', async (req, res) => {
   try {
@@ -118,7 +123,7 @@ router.post('/:id/suggest-skill-md', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該鐵律' });
+      return res.status(404).json({ error: 'Iron rule not found' });
     }
 
     const rule = result.rows[0];
@@ -132,28 +137,30 @@ router.post('/:id/suggest-skill-md', async (req, res) => {
       proposed_content: suggestion.proposed_content,
       already_skill_md: suggestion.already_skill_md,
       notes: suggestion.notes,
-      // v1.18.1: helper 內 round-trip lint self-check 結果、UI 可顯示 warning
+      // v1.18.1: the helper performs a round-trip lint self-check; expose
+      // the result so the UI can show a warning.
       lint_ok: suggestion.lint_ok,
       lint_errors: suggestion.lint_errors || [],
-      suggest_method: 'template',  // 未來 'llm' 路徑保留欄位
+      suggest_method: 'template',  // reserved field; future path 'llm'
     });
   } catch (err) {
-    logger.error('POST /:id/suggest-skill-md 失敗', { error: err.message, ruleId: req.params.id });
-    res.status(500).json({ error: '產生建議失敗' });
+    logger.error('POST /:id/suggest-skill-md failed', { error: err.message, ruleId: req.params.id });
+    res.status(500).json({ error: 'Failed to produce suggestion' });
   }
 });
 
 /**
- * PUT /:id/upgrade — 寫 DB + 備份 previous_content + 觸發 sync_token bump
+ * PUT /:id/upgrade — write DB + back up previous_content + bump sync_token.
  *
- * 流程：
- *   1. 跑 lintIronRule (rc1 schema lint)、不過 reject 400
- *   2. UPDATE memories SET content = $new, previous_content = content
- *   3. 寫 memory_history audit
- *   4. 回 { ok, format, lint_warnings? }
+ * Pipeline:
+ *   1. Run lintIronRule (rc1 schema lint); reject 400 on failure.
+ *   2. UPDATE memories SET content = $new, previous_content = content.
+ *   3. Write a memory_history audit row.
+ *   4. Return { ok, format, lint_warnings? }.
  *
- * 注意：sync_token 自動因 updated_at 變動而變、SessionStart 下次自動 refresh、
- * 本機 ~/.claude/skills/ownmind-iron-rules/ 自動更新（不需 endpoint 主動 trigger）
+ * Note: sync_token automatically rolls forward via updated_at, so the next
+ * SessionStart auto-refreshes ~/.claude/skills/ownmind-iron-rules/ on the
+ * local machine (no need for the endpoint to trigger it directly).
  */
 router.put('/:id/upgrade', async (req, res) => {
   try {
@@ -164,27 +171,28 @@ router.put('/:id/upgrade', async (req, res) => {
 
     const { content, sync_token, origin_event, user_quote } = req.body;
     if (typeof content !== 'string' || !content.trim()) {
-      return res.status(400).json({ error: 'content 必填' });
+      return res.status(400).json({ error: 'content is required' });
     }
 
-    // v1.18.0-rc3 review B2 修正：sync_token 必填、防跨 tab race
-    //   (admin 開 modal 時拿到 snapshot=A、背景 ownmind_save 改成 B、
-    //    admin 點 confirm 升級 → previous_content 被覆寫成 A、B 永久遺失)
+    // v1.18.0-rc3 review B2 fix: sync_token is required, to guard against
+    // cross-tab races (admin opens the modal at snapshot=A; a background
+    // ownmind_save updates it to B; admin clicks confirm and would
+    // overwrite previous_content with A — losing B permanently).
     if (!sync_token) {
       return res.status(400).json({
-        error: 'sync_token 必填、請刷新列表後重試',
-        hint: '從 GET /upgrade-status 拿 sync_token、PUT 帶上做 stale check',
+        error: 'sync_token is required; please refresh the list and retry',
+        hint: 'Take sync_token from GET /upgrade-status and include it in PUT for the stale check',
       });
     }
     const tokenCheck = await validateSyncToken(req.user.id, sync_token);
     if (!tokenCheck.valid) {
       return res.status(409).json({
-        error: '鐵律狀態已變動 (sync_token 不一致)、請重新載入後再升級',
+        error: 'Iron-rule state has changed (sync_token mismatch); please reload and retry',
         new_token: tokenCheck.new_token,
       });
     }
 
-    // 1. 取舊 row 確認所有權
+    // 1. Fetch the existing row and confirm ownership.
     const existing = await query(
       `SELECT id, type, title, content, tags
        FROM memories
@@ -193,14 +201,14 @@ router.put('/:id/upgrade', async (req, res) => {
     );
 
     if (existing.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該鐵律' });
+      return res.status(404).json({ error: 'Iron rule not found' });
     }
 
     const oldRule = existing.rows[0];
 
-    // 2. 跑 lint (rc1 schema lint)
-    // v1.18.3 fix: metadata 也餵進 lint、checkOriginContext (v1.18.2) 才看得到
-    // origin_context 不會誤報「沒帶」
+    // 2. Run lint (rc1 schema lint).
+    // v1.18.3 fix: feed metadata into lint as well, so checkOriginContext
+    // (v1.18.2) can see origin_context and won't falsely flag "missing".
     const lintResult = lintIronRule({
       title: oldRule.title,
       content,
@@ -209,28 +217,29 @@ router.put('/:id/upgrade', async (req, res) => {
     });
     if (!lintResult.ok) {
       return res.status(400).json({
-        error: '升級內容沒過 lint、修正後再儲存',
+        error: 'Upgrade content failed lint; fix and save again',
         errors: lintResult.errors,
         format: lintResult.format,
       });
     }
 
-    // v1.18.2: admin 補了 origin_event / user_quote → 寫進 metadata.origin_context
-    // + 自動 inject「## 起源」段落到 body (從 metadata render)
+    // v1.18.2: admin supplied origin_event / user_quote → write into
+    // metadata.origin_context, and auto-inject the "## 起源" section into
+    // the body (rendered from metadata).
     let finalContent = content;
     let updatedMetadata = oldRule.metadata || null;
     if (origin_event || user_quote) {
       const oc = {
         captured_at: new Date().toISOString(),
-        confidence: 'user_direct',  // admin 手填、不是從 session 推、視為 user_direct
-        event: origin_event || 'admin 升級助手手動補（無對話脈絡）',
+        confidence: 'user_direct',  // admin filled it manually, not inferred from a session → user_direct
+        event: origin_event || 'admin upgrade helper: manually backfilled (no conversation context)',
       };
       if (user_quote) oc.user_quote = user_quote;
       finalContent = injectOriginSection(content, oc);
       updatedMetadata = { ...(updatedMetadata || {}), origin_context: oc };
     }
 
-    // 3. UPDATE — 備份原 content 到 previous_content
+    // 3. UPDATE — back up the previous content into previous_content.
     await query(
       `UPDATE memories
        SET content = $1,
@@ -241,7 +250,7 @@ router.put('/:id/upgrade', async (req, res) => {
       [finalContent, oldRule.content, ruleId, req.user.id, updatedMetadata ? JSON.stringify(updatedMetadata) : null]
     );
 
-    // 4. memory_history audit
+    // 4. memory_history audit.
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'update', $3, $4)`,
@@ -253,7 +262,8 @@ router.put('/:id/upgrade', async (req, res) => {
       ]
     );
 
-    // v1.18.0-rc3 review I2 修正：補 admin audit log、追「哪個 admin」改了「哪條鐵律」
+    // v1.18.0-rc3 review I2 fix: write an admin audit log so we can trace
+    // "which admin updated which iron rule".
     await writeAdminAudit(req.user.id, 'iron_rule_upgrade', 'memory', ruleId, {
       code: oldRule.code,
       title: oldRule.title,
@@ -261,7 +271,7 @@ router.put('/:id/upgrade', async (req, res) => {
       new_format: lintResult.format,
     });
 
-    // 5. 回新 sync_token (給 client 知道狀態變了)
+    // 5. Return a fresh sync_token so the client knows state changed.
     const newSyncToken = await generateSyncToken(req.user.id);
 
     res.json({
@@ -272,8 +282,8 @@ router.put('/:id/upgrade', async (req, res) => {
       sync_token: newSyncToken,
     });
   } catch (err) {
-    logger.error('PUT /:id/upgrade 失敗', { error: err.message, ruleId: req.params.id });
-    res.status(500).json({ error: '升級失敗' });
+    logger.error('PUT /:id/upgrade failed', { error: err.message, ruleId: req.params.id });
+    res.status(500).json({ error: 'Upgrade failed' });
   }
 });
 

@@ -3,25 +3,25 @@ import { query as defaultQuery } from '../utils/db.js';
 import { superAdminAuth as defaultSuperAdminAuth } from '../middleware/adminAuth.js';
 
 /**
- * /api/admin/work-log — super_admin only
+ * /api/admin/work-log — super_admin only.
  *
- *   GET / — 三來源時間軸：
- *     - activity_logs（event != 'iron_rule_compliance'）→ source='activity'
- *     - activity_logs（event = 'iron_rule_compliance'）→ source='compliance'
- *     - session_logs → source='session'
+ *   GET / — merged three-source timeline:
+ *     - activity_logs (event != 'iron_rule_compliance') → source='activity'
+ *     - activity_logs (event = 'iron_rule_compliance')  → source='compliance'
+ *     - session_logs                                    → source='session'
  *
- *   Query params（皆選填）：
- *     from         ISO date（預設：30 天前）
- *     to           ISO date（預設：now）
+ *   Query params (all optional):
+ *     from         ISO date (default: 30 days ago)
+ *     to           ISO date (default: now)
  *     user_id      INT
  *     tool         string
- *     event_type   string（activity 是 event 欄位；session 用 'session'）
+ *     event_type   string (activity uses the event column; session uses 'session')
  *     source       'activity' | 'compliance' | 'session'
- *     q            搜 details / summary（ILIKE %q%）
- *     limit        預設 100，max 500
- *     offset       預設 0
+ *     q            search details / summary (ILIKE %q%)
+ *     limit        default 100, max 500
+ *     offset       default 0
  *
- *   GET /filters — 給前端下拉用：users / tools / event_types
+ *   GET /filters — for the front-end dropdowns: users / tools / event_types.
  */
 export function createAdminWorkLogRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;

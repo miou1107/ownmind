@@ -267,7 +267,7 @@ describe('POST /api/usage/pricing — route validation + auth', () => {
       body: { tool: 't', model: 'm', input_per_1m: -1, output_per_1m: 2, effective_date: '2026-01-01' }
     });
     assert.equal(res.status, 400);
-    assert.match(res.body.error, /非負數/);
+    assert.match(res.body.error, /非負數|non-negative/);
   });
 
   it('rejects non-numeric prices with a distinct message', async () => {
@@ -280,7 +280,7 @@ describe('POST /api/usage/pricing — route validation + auth', () => {
       body: { tool: 't', model: 'm', input_per_1m: 'abc', output_per_1m: 2, effective_date: '2026-01-01' }
     });
     assert.equal(res.status, 400);
-    assert.match(res.body.error, /需為數字/);
+    assert.match(res.body.error, /需為數字|must be a number/);
   });
 
   it('inserts successfully with valid super_admin request', async () => {

@@ -4,9 +4,9 @@ import defaultAdminAuth from '../../middleware/adminAuth.js';
 import logger from '../../utils/logger.js';
 
 /**
- * 從 session_logs.details 計算單一 session 的鐵律遵守。
- * 回傳 { complied, skipped, triggered }。triggered = complied + skipped。
- * details 為 null / 沒對應欄位時，三個值皆為 0。
+ * Compute iron-rule compliance from a single session_logs.details.
+ * Returns { complied, skipped, triggered }; triggered = complied + skipped.
+ * When details is null or missing the relevant fields, all three are 0.
  */
 export function extractRuleCounts(details) {
   if (!details || typeof details !== 'object') return { complied: 0, skipped: 0, triggered: 0 };
@@ -16,8 +16,9 @@ export function extractRuleCounts(details) {
 }
 
 /**
- * 把多場 session 的 rule counts 加總，回傳 { complied, triggered, rate }。
- * triggered === 0 時 rate 為 null（前端顯示「—」、不參與排名）。
+ * Sum the rule counts across multiple sessions; returns { complied, triggered, rate }.
+ * When triggered === 0, rate is null (the front-end shows "—" and the row is
+ * not ranked).
  */
 export function aggregateCompliance(sessions) {
   let complied = 0, triggered = 0;
@@ -34,8 +35,8 @@ export function aggregateCompliance(sessions) {
 }
 
 /**
- * 從多場 session 票選最常做的專案（details.project）。
- * count 相同走字典序。所有 session 都沒 project → null。
+ * Pick the most common project (details.project) across multiple sessions.
+ * Ties are broken alphabetically. If no session has a project → null.
  */
 export function pickTopProject(sessions) {
   const counts = new Map();
@@ -55,7 +56,7 @@ export function createTeamOverviewRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
   const adminAuth = deps.adminAuth ?? defaultAdminAuth;
   const router = Router();
-  // routes 待 Task 2 起逐步補入
+  // Additional routes will be added under Task 2.
   router.get('/', adminAuth, async (req, res) => {
     try {
       const to = req.query.to ? new Date(req.query.to) : new Date();
@@ -64,7 +65,7 @@ export function createTeamOverviewRouter(deps = {}) {
         : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-        return res.status(400).json({ error: 'from/to 必須是合法 ISO 日期' });
+        return res.status(400).json({ error: 'from/to must be valid ISO dates' });
       }
 
       const sql = `
@@ -99,8 +100,8 @@ export function createTeamOverviewRouter(deps = {}) {
         members
       });
     } catch (err) {
-      logger.error('team-overview 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢失敗' });
+      logger.error('team-overview query failed', { error: err.message });
+      res.status(500).json({ error: 'Query failed' });
     }
   });
 
@@ -108,7 +109,7 @@ export function createTeamOverviewRouter(deps = {}) {
     try {
       const userId = parseInt(req.params.user_id, 10);
       if (!Number.isFinite(userId)) {
-        return res.status(400).json({ error: 'user_id 必須為整數' });
+        return res.status(400).json({ error: 'user_id must be an integer' });
       }
       const to = req.query.to ? new Date(req.query.to) : new Date();
       const from = req.query.from
@@ -116,7 +117,7 @@ export function createTeamOverviewRouter(deps = {}) {
         : new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
-        return res.status(400).json({ error: 'from/to 必須是合法 ISO 日期' });
+        return res.status(400).json({ error: 'from/to must be valid ISO dates' });
       }
 
       const rawLimit = parseInt(req.query.limit, 10);
@@ -127,10 +128,13 @@ export function createTeamOverviewRouter(deps = {}) {
                hb.os AS machine_os,
                hb.scanner_version AS machine_scanner_version
           FROM session_logs sl
-     -- 注意：collector_heartbeat 的 UNIQUE 是 (user_id, tool)，所以同一 user 換機器時
-     -- 只保留最新的那台。fallback 對 user "曾在多台機器執行同個 tool" 的舊 session 會 miss
-     -- （machine 對不上）→ machine_meta 為 null，前端不顯示副資訊。這是過渡期 best-effort。
-     -- 將來：將 details.machine_meta 由 client 主動上送，徹底擺脫 fallback。
+     -- Note: collector_heartbeat's UNIQUE is (user_id, tool), so when a user
+     -- moves between machines for the same tool only the newest one is kept.
+     -- For older sessions across "the same user ran this tool on multiple
+     -- machines", the fallback may miss (machine doesn't line up) → machine_meta
+     -- becomes null and the front-end omits the side info. Transitional best-effort.
+     -- Future: have the client push details.machine_meta directly, dropping
+     -- the fallback entirely.
      LEFT JOIN LATERAL (
                  SELECT os, scanner_version
                    FROM collector_heartbeat h
@@ -168,8 +172,8 @@ export function createTeamOverviewRouter(deps = {}) {
 
       res.json({ user_id: userId, range: { from: from.toISOString(), to: to.toISOString() }, sessions });
     } catch (err) {
-      logger.error('team-overview sessions 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢失敗' });
+      logger.error('team-overview sessions query failed', { error: err.message });
+      res.status(500).json({ error: 'Query failed' });
     }
   });
 

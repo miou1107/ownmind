@@ -8,7 +8,7 @@ const router = Router();
 router.use(auth);
 
 /**
- * POST / - 建立交接
+ * POST / - create a handoff.
  */
 router.post('/', async (req, res) => {
   try {
@@ -26,13 +26,13 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    logger.error('建立交接失敗', { error: err.message });
-    res.status(500).json({ error: '建立交接失敗' });
+    logger.error('handoff create failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to create handoff' });
   }
 });
 
 /**
- * GET /pending - 取得待處理交接
+ * GET /pending - fetch pending handoffs.
  */
 router.get('/pending', async (req, res) => {
   try {
@@ -45,20 +45,20 @@ router.get('/pending', async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    logger.error('查詢待處理交接失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    logger.error('pending handoff query failed', { error: err.message });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * PUT /:id/accept - 接受交接
+ * PUT /:id/accept - accept a handoff.
  */
 router.put('/:id/accept', async (req, res) => {
   try {
     const { accepted_by } = req.body;
 
     if (!accepted_by) {
-      return res.status(400).json({ error: '必須提供 accepted_by' });
+      return res.status(400).json({ error: 'accepted_by is required' });
     }
 
     const result = await query(
@@ -72,13 +72,13 @@ router.put('/:id/accept', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該交接' });
+      return res.status(404).json({ error: 'Handoff not found' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
-    logger.error('接受交接失敗', { error: err.message });
-    res.status(500).json({ error: '接受交接失敗' });
+    logger.error('handoff accept failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to accept handoff' });
   }
 });
 

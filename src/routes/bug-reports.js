@@ -1,29 +1,30 @@
 /**
- * /api/bug-reports — v1.19.14 錯誤回報工具的後端 API
+ * /api/bug-reports — backend API for the v1.19.14 bug-report tool.
  *
- * 對應 OpenSpec 提案 v1.19.14-bug-report-tool（規格 §一～§六）。
+ * Corresponds to OpenSpec proposal v1.19.14-bug-report-tool (§I–§VI).
  *
- * 端點：
- *   POST   /                              建立回報
- *   GET    /                              使用者列表 / 管理員看全部
- *   GET    /:id                           單筆
- *   PATCH  /:id/status                    管理員改處理狀態
- *   POST   /:id/mark-notified             使用者標通知已讀
- *   POST   /decline                       使用者拒絕（寫冷靜期）
- *   GET    /notifications                 取得通知（admin / reporter / both）
- *   POST   /notifications/mark-all-read   批量標已讀
- *   POST   /notifications/mute            靜音某 fingerprint / own_reports
- *   GET    /spam-suspects                 管理員看 spam suspect 列表
- *   POST   /spam-suspects/:id/confirm     管理員確認為 spam（觸發 24h 封鎖）
- *   POST   /spam-suspects/:id/dismiss     管理員撤銷 suspect
+ * Endpoints:
+ *   POST   /                              create a report
+ *   GET    /                              user list / admin sees all
+ *   GET    /:id                           single row
+ *   PATCH  /:id/status                    admin updates processing status
+ *   POST   /:id/mark-notified             user marks notification as read
+ *   POST   /decline                       user declines (writes a cool-down)
+ *   GET    /notifications                 fetch notifications (admin / reporter / both)
+ *   POST   /notifications/mark-all-read   batch mark read
+ *   POST   /notifications/mute            mute by fingerprint / own_reports
+ *   GET    /spam-suspects                 admin sees the spam suspect list
+ *   POST   /spam-suspects/:id/confirm     admin confirms as spam (triggers 24h block)
+ *   POST   /spam-suspects/:id/dismiss     admin dismisses a suspect
  *
- * 設計重點：
- *   - 認證統一走 auth middleware（每個 route 自己掛）
- *   - 管理員權限用 isAtLeast(role, 'admin') 判
- *   - confirm_string="送出" 後端守門（A2 第二道防線）
- *   - 同 fingerprint 1h 3 筆直接 429（介面層第一道防線）
- *   - 隱私強制遮蔽用 fail-closed（崩潰 → 500、不寫 DB）
- *   - spam 偵測在背景 task 跑、不卡建立流程
+ * Design points:
+ *   - Auth is unified via the auth middleware (mounted per route).
+ *   - Admin permission uses isAtLeast(role, 'admin').
+ *   - confirm_string="送出" gated on the server (A2 second line of defense).
+ *   - Three same-fingerprint reports within 1 hour → 429 (UI is the first
+ *     line of defense).
+ *   - Privacy redaction is fail-closed (crash → 500, no DB write).
+ *   - Spam detection runs in a background task; doesn't block the create flow.
  */
 
 import { Router } from 'express';
@@ -46,7 +47,7 @@ import {
 const router = Router();
 
 // ============================================================
-// POST / — 建立回報
+// POST / — create a report.
 // ============================================================
 router.post('/', auth, async (req, res) => {
   try {
@@ -65,15 +66,15 @@ router.post('/', auth, async (req, res) => {
       client_tool,
     } = req.body || {};
 
-    // 1. confirm_string 守門
+    // 1. Confirm-string gate.
     const confirmCheck = validateConfirmString(confirm_string);
     if (!confirmCheck.ok) {
       return res.status(400).json({ error: confirmCheck.error });
     }
 
-    // 2. 必填欄位
+    // 2. Required fields.
     if (!title || !description) {
-      return res.status(400).json({ error: 'title 與 description 必填' });
+      return res.status(400).json({ error: 'title and description are required' });
     }
     if (!bug_fingerprint || !isValidFingerprint(bug_fingerprint)) {
       return res.status(400).json({
@@ -81,18 +82,20 @@ router.post('/', auth, async (req, res) => {
       });
     }
     if (!device_fingerprint || typeof device_fingerprint !== 'string') {
-      return res.status(400).json({ error: 'device_fingerprint 必填' });
+      return res.status(400).json({ error: 'device_fingerprint is required' });
     }
 
-    // 3. context_blob 大小與聯合型別驗證
+    // 3. context_blob size and union-type validation.
     const blobCheck = validateContextBlob(context_blob || {});
     if (!blobCheck.ok) {
-      // 1MB 超過 → 413、其他結構錯 → 400
-      const status = /1MB|超過/.test(blobCheck.error) ? 413 : 400;
+      // Over 1MB → 413; other shape errors → 400.
+      // Accept both Chinese 超過 and English exceeds to remain compatible
+      // with prior validateContextBlob output.
+      const status = /1MB|超過|exceeds/.test(blobCheck.error) ? 413 : 400;
       return res.status(status).json({ error: blobCheck.error });
     }
 
-    // 4. 介面層第一道防線：同 fingerprint 1h 已 3 筆 → 429
+    // 4. UI rate limit: same fingerprint, 3 reports in 1 hour → 429.
     const rateCheck = await shouldRejectByFingerprintRateLimit(
       query,
       userId,
@@ -102,7 +105,7 @@ router.post('/', auth, async (req, res) => {
       return res.status(429).json({ error: rateCheck.message });
     }
 
-    // 5. 隱私強制遮蔽（fail-closed：崩潰回 500、不寫 DB）
+    // 5. Mandatory privacy redaction (fail-closed: crash → 500, no DB write).
     let safeContextBlob = context_blob;
     try {
       if (context_blob && Array.isArray(context_blob.conversation_snippets)) {
@@ -127,11 +130,11 @@ router.post('/', auth, async (req, res) => {
         error: err.message,
       });
       return res.status(500).json({
-        error: '隱私遮蔽處理失敗、回報未送出、請聯絡管理員',
+        error: 'Privacy redaction failed; the report was not sent. Please contact the administrator.',
       });
     }
 
-    // 6. 寫入 DB
+    // 6. Write to the DB.
     const insertResult = await query(
       `INSERT INTO bug_reports
         (user_id, device_fingerprint, client_tool, title, description,
@@ -156,7 +159,7 @@ router.post('/', auth, async (req, res) => {
     );
     const created = insertResult.rows[0];
 
-    // 7. 背景跑 spam 偵測（不卡 response）
+    // 7. Run spam detection in the background (does not block the response).
     setImmediate(() => {
       detectSpam(query, userId)
         .then(async (result) => {
@@ -180,18 +183,18 @@ router.post('/', auth, async (req, res) => {
     res.status(201).json(created);
   } catch (err) {
     logger.error('bug_report_create_failed', { error: err.message });
-    res.status(500).json({ error: '建立回報失敗' });
+    res.status(500).json({ error: 'Failed to create report' });
   }
 });
 
 // ============================================================
-// POST /decline — 使用者拒絕回報（寫冷靜期）
+// POST /decline — user declines a report (writes a cool-down).
 // ============================================================
 router.post('/decline', auth, async (req, res) => {
   try {
     const { bug_fingerprint, device_fingerprint } = req.body || {};
     if (!bug_fingerprint) {
-      return res.status(400).json({ error: 'bug_fingerprint 必填' });
+      return res.status(400).json({ error: 'bug_fingerprint is required' });
     }
     await query(
       `INSERT INTO bug_report_declines (user_id, device_fingerprint, bug_fingerprint)
@@ -202,12 +205,12 @@ router.post('/decline', auth, async (req, res) => {
     res.status(201).json({ cooldown_until: cooldownUntil.toISOString() });
   } catch (err) {
     logger.error('bug_report_decline_failed', { error: err.message });
-    res.status(500).json({ error: '紀錄拒絕失敗' });
+    res.status(500).json({ error: 'Failed to record decline' });
   }
 });
 
 // ============================================================
-// GET /notifications — 取得通知列表
+// GET /notifications — fetch the notification list.
 // ============================================================
 router.get('/notifications', auth, async (req, res) => {
   try {
@@ -222,7 +225,7 @@ router.get('/notifications', auth, async (req, res) => {
     const result = {};
 
     if (role === 'reporter' || role === 'both') {
-      // 我送的、已處理但還沒讀的
+      // Reports I sent that are resolved but not yet read.
       const reporterRows = await query(
         `SELECT id, title, status, status_reason, status_reason_note,
                 bug_fingerprint, resolved_at
@@ -234,7 +237,7 @@ router.get('/notifications', auth, async (req, res) => {
           LIMIT 10`,
         [userId]
       );
-      // 過濾掉被靜音的 fingerprint
+      // Filter out fingerprints the user has muted.
       const mutes = await query(
         `SELECT target_value FROM bug_report_notification_mutes
           WHERE user_id = $1
@@ -253,7 +256,8 @@ router.get('/notifications', auth, async (req, res) => {
     }
 
     if (role === 'admin' || role === 'both') {
-      // 看自己以外、未處理的回報；若管理員設了「不提醒自己」、排除自己的
+      // Look at unhandled reports from others. If the admin set "don't
+      // remind me about my own", exclude their own.
       const muteOwn = await query(
         `SELECT 1 FROM bug_report_notification_mutes
           WHERE user_id = $1 AND mute_target = 'own_reports' AND muted_until > now()
@@ -289,12 +293,12 @@ router.get('/notifications', auth, async (req, res) => {
     res.json(result);
   } catch (err) {
     logger.error('bug_report_notifications_failed', { error: err.message });
-    res.status(500).json({ error: '取得通知失敗' });
+    res.status(500).json({ error: 'Failed to fetch notifications' });
   }
 });
 
 // ============================================================
-// POST /notifications/mark-all-read — 批量標已讀（reporter 用）
+// POST /notifications/mark-all-read — batch mark as read (reporter).
 // ============================================================
 router.post('/notifications/mark-all-read', auth, async (req, res) => {
   try {
@@ -309,30 +313,30 @@ router.post('/notifications/mark-all-read', auth, async (req, res) => {
     res.json({ marked_count: result.rowCount });
   } catch (err) {
     logger.error('bug_report_mark_all_read_failed', { error: err.message });
-    res.status(500).json({ error: '批量標已讀失敗' });
+    res.status(500).json({ error: 'Failed to mark all as read' });
   }
 });
 
 // ============================================================
-// POST /notifications/mute — 靜音某 fingerprint 或自己送的回報
+// POST /notifications/mute — mute by fingerprint or your own reports.
 // ============================================================
 router.post('/notifications/mute', auth, async (req, res) => {
   try {
     const { mute_target, target_value } = req.body || {};
     if (!['fingerprint', 'own_reports'].includes(mute_target)) {
       return res.status(400).json({
-        error: 'mute_target 必須是 fingerprint 或 own_reports',
+        error: 'mute_target must be fingerprint or own_reports',
       });
     }
     if (mute_target === 'fingerprint' && !target_value) {
       return res
         .status(400)
-        .json({ error: 'mute_target=fingerprint 時 target_value 必填' });
+        .json({ error: 'target_value is required when mute_target=fingerprint' });
     }
     if (mute_target === 'own_reports' && target_value) {
       return res
         .status(400)
-        .json({ error: 'mute_target=own_reports 時 target_value 必須為空' });
+        .json({ error: 'target_value must be empty when mute_target=own_reports' });
     }
     await query(
       `INSERT INTO bug_report_notification_mutes (user_id, mute_target, target_value)
@@ -342,12 +346,12 @@ router.post('/notifications/mute', auth, async (req, res) => {
     res.status(201).json({ ok: true });
   } catch (err) {
     logger.error('bug_report_mute_failed', { error: err.message });
-    res.status(500).json({ error: '建立靜音紀錄失敗' });
+    res.status(500).json({ error: 'Failed to create mute' });
   }
 });
 
 // ============================================================
-// GET / — 列出回報（使用者看自己 / 管理員加 ?scope=all 看全部）
+// GET / — list reports (user sees their own; admin can pass ?scope=all).
 // ============================================================
 router.get('/', auth, async (req, res) => {
   try {
@@ -390,12 +394,12 @@ router.get('/', auth, async (req, res) => {
     res.json({ page, size, items: rows.rows });
   } catch (err) {
     logger.error('bug_report_list_failed', { error: err.message });
-    res.status(500).json({ error: '列出回報失敗' });
+    res.status(500).json({ error: 'Failed to list reports' });
   }
 });
 
 // ============================================================
-// GET /spam-suspects — 管理員看 spam suspect 列表
+// GET /spam-suspects — admin sees the spam suspect list.
 // ============================================================
 router.get('/spam-suspects', auth, async (req, res) => {
   try {
@@ -414,12 +418,12 @@ router.get('/spam-suspects', auth, async (req, res) => {
     res.json({ items: rows.rows });
   } catch (err) {
     logger.error('bug_report_spam_suspects_list_failed', { error: err.message });
-    res.status(500).json({ error: '取得 spam suspects 失敗' });
+    res.status(500).json({ error: 'Failed to fetch spam suspects' });
   }
 });
 
 // ============================================================
-// POST /spam-suspects/:id/confirm — 管理員確認 spam、觸發 24h 封鎖
+// POST /spam-suspects/:id/confirm — admin confirms spam, triggers 24h block.
 // ============================================================
 router.post('/spam-suspects/:id/confirm', auth, async (req, res) => {
   try {
@@ -441,7 +445,7 @@ router.post('/spam-suspects/:id/confirm', auth, async (req, res) => {
     if (result.rows.length === 0) {
       return res
         .status(404)
-        .json({ error: '找不到該 suspect、或已不是 pending 狀態' });
+        .json({ error: 'suspect not found or no longer pending' });
     }
 
     await query(
@@ -453,12 +457,12 @@ router.post('/spam-suspects/:id/confirm', auth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     logger.error('bug_report_spam_confirm_failed', { error: err.message });
-    res.status(500).json({ error: '確認 spam 失敗' });
+    res.status(500).json({ error: 'Failed to confirm spam' });
   }
 });
 
 // ============================================================
-// POST /spam-suspects/:id/dismiss — 管理員撤銷 suspect
+// POST /spam-suspects/:id/dismiss — admin dismisses a suspect.
 // ============================================================
 router.post('/spam-suspects/:id/dismiss', auth, async (req, res) => {
   try {
@@ -477,17 +481,17 @@ router.post('/spam-suspects/:id/dismiss', auth, async (req, res) => {
     if (result.rowCount === 0) {
       return res
         .status(404)
-        .json({ error: '找不到該 suspect、或已不是 pending 狀態' });
+        .json({ error: 'suspect not found or no longer pending' });
     }
     res.json({ ok: true });
   } catch (err) {
     logger.error('bug_report_spam_dismiss_failed', { error: err.message });
-    res.status(500).json({ error: '撤銷 suspect 失敗' });
+    res.status(500).json({ error: 'Failed to dismiss suspect' });
   }
 });
 
 // ============================================================
-// GET /:id — 單筆（使用者只看自己、管理員看全部）
+// GET /:id — single report (user sees their own; admin sees all).
 // ============================================================
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -495,7 +499,7 @@ router.get('/:id', auth, async (req, res) => {
     const isAdmin = isAtLeast(req.user.role, 'admin');
     const result = await query(`SELECT * FROM bug_reports WHERE id = $1`, [id]);
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該回報' });
+      return res.status(404).json({ error: 'Report not found' });
     }
     const report = result.rows[0];
     if (!isAdmin && report.user_id !== req.user.id) {
@@ -504,12 +508,12 @@ router.get('/:id', auth, async (req, res) => {
     res.json(report);
   } catch (err) {
     logger.error('bug_report_get_failed', { error: err.message });
-    res.status(500).json({ error: '取得回報失敗' });
+    res.status(500).json({ error: 'Failed to fetch report' });
   }
 });
 
 // ============================================================
-// PATCH /:id/status — 管理員改處理狀態
+// PATCH /:id/status — admin updates the processing status.
 // ============================================================
 router.patch('/:id/status', auth, async (req, res) => {
   try {
@@ -521,17 +525,17 @@ router.patch('/:id/status', auth, async (req, res) => {
 
     const validStatuses = ['new', 'triaged', 'in_progress', 'fixed', 'wontfix'];
     if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: `status 必須是 ${validStatuses.join(' / ')}` });
+      return res.status(400).json({ error: `status must be one of ${validStatuses.join(' / ')}` });
     }
     if (status === 'wontfix' && !status_reason) {
       return res
         .status(400)
-        .json({ error: 'status=wontfix 必須帶 status_reason' });
+        .json({ error: 'status_reason is required when status=wontfix' });
     }
     if (status_reason === 'wontfix_other' && !status_reason_note) {
       return res
         .status(400)
-        .json({ error: 'status_reason=wontfix_other 必須填補充說明' });
+        .json({ error: 'a note is required when status_reason=wontfix_other' });
     }
 
     const isResolved = ['fixed', 'wontfix'].includes(status);
@@ -549,17 +553,17 @@ router.patch('/:id/status', auth, async (req, res) => {
       [id, status, status_reason || null, status_reason_note || null, isResolved, req.user.id]
     );
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該回報' });
+      return res.status(404).json({ error: 'Report not found' });
     }
     res.json(result.rows[0]);
   } catch (err) {
     logger.error('bug_report_status_failed', { error: err.message });
-    res.status(500).json({ error: '更新狀態失敗' });
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
 // ============================================================
-// POST /:id/mark-notified — 使用者標通知已讀
+// POST /:id/mark-notified — user marks the notification as read.
 // ============================================================
 router.post('/:id/mark-notified', auth, async (req, res) => {
   try {
@@ -573,12 +577,12 @@ router.post('/:id/mark-notified', auth, async (req, res) => {
     if (result.rowCount === 0) {
       return res
         .status(404)
-        .json({ error: '找不到該回報、或尚未處理完成' });
+        .json({ error: 'Report not found or not yet resolved' });
     }
     res.json({ ok: true });
   } catch (err) {
     logger.error('bug_report_mark_notified_failed', { error: err.message });
-    res.status(500).json({ error: '標已讀失敗' });
+    res.status(500).json({ error: 'Failed to mark as read' });
   }
 });
 

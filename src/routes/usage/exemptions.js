@@ -4,14 +4,17 @@ import { superAdminAuth as defaultSuperAdminAuth } from '../../middleware/adminA
 import logger from '../../utils/logger.js';
 
 /**
- * /api/usage/exemptions — super_admin only（D3）
+ * /api/usage/exemptions — super_admin only (D3).
  *
- *   GET    列出所有 exemption
- *   POST   新增一筆：{ user_id, reason, expires_at? }，reason 必填
- *   DELETE /:user_id 移除，並寫 usage_audit_log（event_type='exemption_revoked'）
+ *   GET    list every exemption.
+ *   POST   add one: { user_id, reason, expires_at? }; reason is required.
+ *   DELETE /:user_id remove one, writing usage_audit_log
+ *                    (event_type='exemption_revoked').
  *
- * 取消 exemption 的 audit 是稽核必要，因為 exempt 期間的資料是「合法缺漏」；
- * 事後復查若沒紀錄誰何時解除，會難以區分「一直沒人回報」和「曾豁免過」。
+ * Auditing the revocation is required: data missing during an exemption
+ * window is legitimately absent, but without a record of who revoked when,
+ * later review can't distinguish "no one ever reported" from "this user
+ * was exempted at the time."
  */
 export function createExemptionsRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -32,24 +35,25 @@ export function createExemptionsRouter(deps = {}) {
       );
       res.json(result.rows);
     } catch (err) {
-      logger.error('exemption 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢 exemption 失敗' });
+      logger.error('exemption query failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to query exemptions' });
     }
   });
 
   router.post('/', superAdminAuth, async (req, res) => {
     try {
       const { user_id, reason, expires_at } = req.body || {};
-      if (!user_id) return res.status(400).json({ error: 'user_id 必填' });
+      if (!user_id) return res.status(400).json({ error: 'user_id is required' });
       if (!reason || !String(reason).trim()) {
-        return res.status(400).json({ error: 'reason 必填' });
+        return res.status(400).json({ error: 'reason is required' });
       }
       if (expires_at && Number.isNaN(new Date(expires_at).getTime())) {
-        return res.status(400).json({ error: 'expires_at 格式錯誤' });
+        return res.status(400).json({ error: 'expires_at has invalid format' });
       }
 
-      // 先查是否已存在，以決定 audit event_type
-      // （granted 是新核准；reason_updated 是改動既有核准；兩種稽核意涵不同）
+      // First check whether one already exists, to decide the audit event_type.
+      // (granted = new approval; reason_updated = modifying an existing one;
+      // they have different audit meanings.)
       const prior = await query(
         `SELECT reason, expires_at FROM usage_tracking_exemption WHERE user_id = $1`,
         [user_id]
@@ -83,8 +87,8 @@ export function createExemptionsRouter(deps = {}) {
 
       res.status(isUpdate ? 200 : 201).json(result.rows[0]);
     } catch (err) {
-      logger.error('exemption 新增失敗', { error: err.message });
-      res.status(500).json({ error: '新增 exemption 失敗' });
+      logger.error('exemption insert failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to add exemption' });
     }
   });
 
@@ -92,7 +96,7 @@ export function createExemptionsRouter(deps = {}) {
     try {
       const targetId = parseInt(req.params.user_id, 10);
       if (!Number.isFinite(targetId)) {
-        return res.status(400).json({ error: 'user_id 必須為整數' });
+        return res.status(400).json({ error: 'user_id must be an integer' });
       }
 
       const result = await query(
@@ -101,17 +105,17 @@ export function createExemptionsRouter(deps = {}) {
         [targetId]
       );
       if (result.rowCount === 0) {
-        return res.status(404).json({ error: '找不到 exemption' });
+        return res.status(404).json({ error: 'exemption not found' });
       }
 
       await writeAudit({ query }, req.user.id, null, 'exemption_revoked', {
         target_user_id: targetId, prior_reason: result.rows[0].reason
       });
 
-      res.json({ message: 'exemption 已移除', user_id: targetId });
+      res.json({ message: 'exemption removed', user_id: targetId });
     } catch (err) {
-      logger.error('exemption 移除失敗', { error: err.message });
-      res.status(500).json({ error: '移除 exemption 失敗' });
+      logger.error('exemption remove failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to remove exemption' });
     }
   });
 
@@ -126,7 +130,7 @@ async function writeAudit({ query }, userId, tool, eventType, details) {
       [userId, tool, eventType, JSON.stringify(details)]
     );
   } catch (err) {
-    logger.error('usage_audit_log 寫入失敗', { error: err.message });
+    logger.error('usage_audit_log write failed', { error: err.message });
   }
 }
 
