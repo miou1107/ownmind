@@ -144,13 +144,17 @@ export function detectSecretLike(value, options = {}) {
   //    v1.19.13: dot-separated identifier paths (e.g.
   //    anydesk.bot_kkvin.unattended_password, process.env.MY_PASSWORD)
   //    are not "key/token-shaped" and skip this heuristic.
+  //    v1.26.8: slash-separated paths (e.g. openspec/changes/v1.x/proposal.md,
+  //    src/routes/admin/audit.js) follow the same logic — 3+ identifier
+  //    segments separated by `/` is a file path or URL path, not a key.
   //    Real keys (JWT, AWS, GitHub PAT, OpenAI) have dedicated regexes;
   //    we don't rely on the heuristic for them.
   if (
     value.length >= 20 &&
     !CJK_REGEX.test(value) &&
     LONG_ALNUM_REGEX.test(value) &&
-    !DOT_SEPARATED_IDENTIFIER_REGEX.test(value)
+    !DOT_SEPARATED_IDENTIFIER_REGEX.test(value) &&
+    !SLASH_SEPARATED_PATH_REGEX.test(value)
   ) {
     return {
       detected: true,
@@ -326,6 +330,30 @@ const KEYWORD_ASSIGNMENT_REGEX =
  */
 const DOT_SEPARATED_IDENTIFIER_REGEX =
   /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*){2,}$/;
+
+/**
+ * v1.26.8 — slash-separated file paths or URL paths with 3+ segments.
+ *
+ * Used as a negative condition for the length heuristic alongside
+ * DOT_SEPARATED_IDENTIFIER_REGEX. Real-world matches:
+ *   - openspec/changes/v1.26.7-hotfix-msys-path/proposal.md
+ *   - src/routes/admin/user-management/audit.js
+ *   - node_modules/some-package/dist/index.js
+ *   - foo/bar/baz-quux-stuff (minimum 3 segments)
+ *
+ * Each segment may contain alnum, dot, hyphen, underscore — enough to cover
+ * filenames with extensions and semver in path components. Segments cannot
+ * be empty (so `///` does not match) and the path cannot start with `/`
+ * (avoids matching Unix absolute paths like /tmp/foo/bar, which would not
+ * appear in a commit diff legitimately).
+ *
+ * A real key never has this shape: JWT / AWS / GitHub PAT / OpenAI are
+ * all single tokens with no internal `/`, and any `/` they do contain
+ * (e.g. JWT alg "HS256/HS384") is inside a base64 chunk and would not
+ * survive the per-segment identifier check.
+ */
+const SLASH_SEPARATED_PATH_REGEX =
+  /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){2,}$/;
 
 /**
  * Pure alphanumerics plus a few symbols (used by the length heuristic).

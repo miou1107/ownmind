@@ -484,3 +484,83 @@ describe('detectSecretLike — detection order', () => {
     assert.equal(result.rule, 'keyword:password');
   });
 });
+
+// ============================================================
+// v1.26.8 — slash-separated path exclusion (bug-report id=4, 2026-05-26)
+//
+// Background: Vin's v1.26.7 release commit was blocked because FILELIST.md
+// contained a literal openspec path that hit heuristic:long_alnum. Paths and
+// URLs share the "3+ segments of valid identifiers" shape with dotted-identifier
+// paths (which the heuristic already excludes), so they must also be excluded.
+// ============================================================
+
+describe('v1.26.8 — slash-separated path exclusion (heuristic regression)', () => {
+  it('reproduces the bug-report case: openspec/changes path → allow', () => {
+    const r = detectSecretLike(
+      'openspec/changes/v1.26.7-hotfix-msys-path/proposal.md',
+      { skip_keyword: true }
+    );
+    assert.equal(r.detected, false,
+      `slash-separated openspec path should not hit heuristic; actual rule=${r.rule}`);
+  });
+
+  it('deep source-tree path → allow', () => {
+    const r = detectSecretLike(
+      'src/routes/admin/user-management/audit.js',
+      { skip_keyword: true }
+    );
+    assert.equal(r.detected, false);
+  });
+
+  it('https URL with path segments → allow', () => {
+    const r = detectSecretLike(
+      'https://api.example.com/v1/users/12345/profile',
+      { skip_keyword: true }
+    );
+    assert.equal(r.detected, false);
+  });
+
+  it('node_modules-style path → allow', () => {
+    const r = detectSecretLike(
+      'node_modules/some-package/dist/index.js',
+      { skip_keyword: true }
+    );
+    assert.equal(r.detected, false);
+  });
+
+  it('2-segment slash shape that still looks key-like → still blocked', () => {
+    // A 2-segment slash shape with random-looking chunks should not slip through
+    // (real shortened JWTs split into 2 segments would otherwise escape).
+    const r = detectSecretLike(
+      'abcdef1234567890ABCDEF/fedcba0987654321XYZ',
+      { skip_keyword: true }
+    );
+    assert.equal(r.detected, true,
+      `2-segment alnum shape must still be caught; actual rule=${r.rule}`);
+    assert.equal(r.rule, 'heuristic:long_alnum');
+  });
+
+  it('real GitHub PAT → still blocked (regex runs before heuristic)', () => {
+    // Note: split the literal across concat so the dev-machine pre-commit hook's
+    // staged-diff scanner does not catch this fixture as a real secret.
+    const fakePat = 'ghp_' + 'abcdefghij' + 'klmnopqrst' + 'uvwxyz0123' + '456789AB';
+    const r = detectSecretLike(fakePat, { skip_keyword: true });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'regex:github_pat');
+  });
+
+  it('path with a long segment → still allowed (overall shape is a path)', () => {
+    // Even if one segment happens to be ≥ 20 chars, the overall slash-separated
+    // shape is still a path, not a key.
+    const r = detectSecretLike(
+      'src/some/very-deep-folder-name/with-many-words-in-it.js',
+      { skip_keyword: true }
+    );
+    assert.equal(r.detected, false);
+  });
+
+  it('exactly 3-segment slash path → allow (boundary case)', () => {
+    const r = detectSecretLike('foo/bar/baz-quux-stuff', { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+});

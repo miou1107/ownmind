@@ -17,6 +17,7 @@ import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials 
 import { readComplianceEvents } from '../shared/compliance.js';
 import { detectSecretLike } from '../shared/secret-detect.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
+import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
 import { isOff as isSessionOff } from '../shared/session-off-state.js';
 
 const HOME = os.homedir();
@@ -151,20 +152,19 @@ async function fetchAndCacheRules() {
   }
 }
 
-function formatBlockMessage(failures) {
+function formatBlockMessage(failures, blockReasons = []) {
   const lines = ['', `[OwnMind v${VERSION}]Pre-commit check: commit blocked`];
   for (const f of failures) {
     lines.push(`  ❌ ${f}`);
   }
   lines.push('Complete the steps above before committing.');
-  // v1.20.2 follow-up #3: include the bug-report path so AI can flag wrongly-blocked commits.
-  // v1.26.1: clarify fingerprint scope — this fingerprint is ONLY for "this commit block was wrong".
-  // Unrelated issues must use `clt_user_reported_other`.
+  // v1.26.8: dispatch the bug_fingerprint based on which rule actually blocked,
+  // so ownmind_report_bug calls don't hit "fingerprint not registered" on prod
+  // servers still on older registry versions. See hooks/lib/select-block-fingerprint.js.
+  const fingerprint = selectBlockFingerprint(blockReasons);
   lines.push(
     '[OwnMind bug report] Think this block is wrong? Call ownmind_report_bug to file a report. ' +
-    'bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true ' +
-    '(Use this fingerprint ONLY when reporting THIS commit block as wrong. ' +
-    'For unrelated issues, use bug_fingerprint=clt_user_reported_other instead.)'
+    `bug_fingerprint: ${fingerprint}, suggest_report: true`
   );
   lines.push('');
   return lines.join('\n');
@@ -268,6 +268,7 @@ async function main() {
   // v1.19.7: integrate the OWNMIND_BYPASS env var + IR-002 secret-detect double check.
   const bypassSet = parseBypass(process.env);
   const blockFailures = [];
+  const blockReasons = [];  // v1.26.8: parallel to blockFailures, used for fingerprint dispatch
   let checkedCount = 0;
 
   for (const rule of commitRules) {
@@ -290,10 +291,12 @@ async function main() {
     const failures = Array.isArray(result.failures) ? [...result.failures] : [];
 
     // v1.19.7: IR-002 additionally scans the staged diff content; a detectSecretLike hit counts as a violation.
+    let secretHit = false;
     if (ruleCode === 'IR-002') {
       const secretHits = checkStagedDiffForSecrets(stagedFiles);
       for (const hit of secretHits) {
         failures.push(`${hit.file}: ${hit.reason} (detected_by=${hit.rule})`);
+        secretHit = true;
       }
     }
 
@@ -303,12 +306,13 @@ async function main() {
       for (const f of failures) {
         blockFailures.push(`    → ${f}`);
       }
+      blockReasons.push({ ruleCode, ruleTitle, secretHit });
     }
   }
 
   // 7. Output results
   if (blockFailures.length > 0) {
-    console.error(formatBlockMessage(blockFailures));
+    console.error(formatBlockMessage(blockFailures, blockReasons));
     process.exit(1);
   }
 

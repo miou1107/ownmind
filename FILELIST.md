@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## v1.26.8 修改（修 secret-detect 路徑誤判 + pre-commit hook 動態指紋分派）
+
+新增檔：
+```
+hooks/lib/select-block-fingerprint.js                                       — 純函式 helper：根據攔下原因動態選 bug-report 指紋
+tests/git-pre-commit-fingerprint.test.js                                    — selectBlockFingerprint 11 條單元測試
+openspec/changes/v1.26.8-fix-secret-detect-and-hook-fingerprint/proposal.md — v1.26.8 提案
+openspec/changes/v1.26.8-fix-secret-detect-and-hook-fingerprint/tasks.md    — v1.26.8 任務清單
+```
+
+修改檔（2 個核心檔 + 1 個測試 + 版號 + 三語文件）：
+```
+shared/secret-detect.js                  — 加 SLASH_SEPARATED_PATH_REGEX、length heuristic 新增 `/` 分隔路徑排除
+hooks/ownmind-git-pre-commit.js          — 引入 selectBlockFingerprint、main() 收集 blockReasons、formatBlockMessage 動態選指紋
+tests/secret-detect-unit.test.js         — 新增 v1.26.8 區塊 8 條測試（路徑 allow / 2-segment shape 仍 block / 真實 PAT 仍 block）
+package.json                             — 1.26.7 → 1.26.8
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md / FILELIST.md               — v1.26.8 條目
+```
+
 ## v1.26.7 修改（Hotfix：Windows + Git Bash 升級失敗 — MSYS 路徑沒給 Node 正規化）
 
 新增檔：
