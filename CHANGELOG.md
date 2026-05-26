@@ -1,5 +1,38 @@
 # OwnMind 更新紀錄
 
+## v1.26.6 — 國際化第十期 Part 1：tests/ 前 25 大檔英文化（軌道 B）
+
+**範圍**：翻 `tests/*.test.js` 下含中文最多的 25 個檔（每檔 ≥ 56 行中文），共約 2025 行中文中的「真註解 + describe/it 標題 + assertion hint」（剩餘為 fixture 模擬使用者輸入、保留中文）。延續 v1.26.0 ~ v1.26.5 軌道 B（developer-facing 內部英文化）。
+
+**拆批策略**（2026-05-26 Vin 拍板）：tests/ 全套有 136 檔 / 4609 行中文。為了 commit 可審 + 避免 context 爆，拆兩個 patch：
+- **v1.26.6（本次）**= 前 25 大檔，~60% 中文密度集中區
+- **v1.26.7（下次）**= 剩餘 111 小檔
+- push origin 統一在 v1.26.7 完工後一次推（v1.26.0 ~ v1.26.7）
+
+**處理的 25 檔**：
+- 最大三檔：`iron-rule-quality.test.js` (150)、`verification.test.js` (141)、`secret-detect-unit.test.js` (132)
+- 100~120 行：`ownmind-tty-echo.test.js` (120)
+- 80~100 行：`reply-lint-hook.test.js` (98)、`disable-details-snapshot.test.js` (95)、`memory-secret-guard.test.js` (93)、`self-check.test.js` (91)、`ps1-windows-compat.test.js` (87)、`iron-rule-quality-skill-md.test.js` (81)
+- 60~80 行：`privacy-detect-unit.test.js` (79)、`mcp-auto-update-cross-platform.test.js` (78)、`me-pitfalls.test.js` (74)、`secret-mgmt.test.js` (68)、`iron-rule-origin-context.test.js` (68)、`p3-update-event-semantics.test.js` (67)、`reply-lint-hook-v1193-block.test.js` (66)
+- 56~58 行：`setup-wizard.test.js`、`enrich-error.test.js`、`reply-lint-hook-v197.test.js`、`upgrade-complete-beacon.test.js`、`me-report.test.js`、`language-lint-v1193.test.js`、`iron-rule-sync.test.js`、`flush-compliance-spool.test.js`
+
+**翻譯規則**（每行 5 分類）：
+- JSDoc / `//` 註解 → 翻
+- `describe()` / `it()` 標題 → 翻
+- `assert.X(actual, expected, '...')` hint message → 翻
+- 字串字面值 / fixture（測試輸入）→ 保留中文
+- 比對字面值（如 `'keyword:應用程式密碼'`、reason 文字 `'賦值樣式'`）→ 保留中文（對齊產生來源）
+
+**刻意保留**：
+- 所有 fixture 中模擬使用者中文輸入（CLAUDE.md §不在範圍明列）
+- iron rule title 字面值（如 `'學到東西必須全層同步更新'`、`'測試鐵律'`）— 跟 server DB 持久化內容對齊
+- secret-detect / privacy-detect 的 reason 字串（`'賦值樣式'` 等、屬 shared/ 範圍 Track A 未動）
+- ID 比對字面值跟 banner 標籤（中文輸出在地化內容）
+
+**測試**：1956 pass / 0 fail（無斷言改動）
+**版本**：1.26.5 → 1.26.6
+**OpenSpec change**：`openspec/changes/v1.26.6-i18n-tests-internal-part1/`
+
 ## v1.26.5 — 國際化第九期：src/routes/ 內部註解 + user-facing 字串英文化（軌道 B + A）
 
 **範圍**：翻 `src/routes/` 下 24 個檔（含 9 個 `usage/` 子目錄）共約 1213 行中文。Vin 2026-05-26 拍板「徹底翻」、含 user-facing HTTP 錯誤訊息（部分仍保留中文、見下）。

@@ -6,21 +6,23 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * v1.17.71 — hooks/ownmind-tty-echo.cjs（OwnMind 在場感 / IR-027 邏輯卡控）
+ * v1.17.71 — hooks/ownmind-tty-echo.cjs (OwnMind presence indicator / IR-027 program-logic gate)
  *
- * 背景：v1.17.0 起 MCP tool result 末尾附「【OwnMind vX.Y.Z】XXX：YYY」banner
- * 給 user 看 OwnMind 在場感。但 Claude Code UI 把 tool result 摺疊、user 看不到，
- * AI 也常吞掉不轉述。Vin 三條規格：
- *   1. 合規回報頻繁也 OK，所有 OwnMind 動作都要 user 看見
- *   2. 同次觸發合併成一個招牌區塊
- *   3. 嚴禁被 AI 過濾 / 吃掉 → fallback 不能走 stderr / additionalContext
+ * Background: from v1.17.0 onwards, MCP tool results end with a
+ * "[OwnMind vX.Y.Z] XXX: YYY" banner so the user sees OwnMind is active.
+ * But Claude Code UI collapses tool results — users do not see them — and
+ * the AI often swallows them and never relays. Vin's three specs:
+ *   1. Compliance reports being frequent is fine; the user must see every OwnMind action.
+ *   2. Banners produced in one trigger should merge into a single signature block.
+ *   3. The AI must not be able to filter / swallow them → fallback must not use
+ *      stderr / additionalContext.
  *
- * 主路徑：寫 /dev/tty (mac/linux) 或 \\.\CONOUT$ (Windows)，繞過 Claude Code
- * hook output 系統，直接寫 user 的 terminal device。
+ * Primary path: write to /dev/tty (mac/linux) or \\.\CONOUT$ (Windows), bypassing
+ * the Claude Code hook output pipeline, writing directly to the user's terminal device.
  *
- * Fallback：tty 寫不到（SSH 無 -t / nohup / detached）→ 寫
- * ~/.ownmind/logs/banner-pending.jsonl，下次 SessionStart hook 開頭補印。
- * 絕不走 stderr / additionalContext（會被 AI 吃）。
+ * Fallback: when tty cannot be written (SSH without -t / nohup / detached) → write
+ * ~/.ownmind/logs/banner-pending.jsonl; the next SessionStart hook reprints them at
+ * the top of the next session. Never use stderr / additionalContext (the AI eats them).
  */
 
 const repoRoot = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), '..');
@@ -48,20 +50,21 @@ function cleanupTmpHome() {
 }
 
 /**
- * v1.17.73 — 結構性 IR-007 拆雷（M-1）
+ * v1.17.73 — structural IR-007 mine clearance (M-1)
  *
- * v1.17.71 → v1.17.72 踩到的雷：所有 19 條 fixture 都用 (B) shape
- *（tool_response: { content: [...] }），但 Claude Code prod MCP tool 真實
- * 送的是 (A) shape（tool_response: [...] 直接 array）。fixture 全部一致
- * 用錯誤 shape → 803/803 測試全綠但 prod 100% 抽不到 banner。典型「測試
- * 套不住 prod，因為 fixture 集體偽陽性」。
+ * Mine hit during v1.17.71 → v1.17.72: all 19 fixtures used shape (B)
+ * (tool_response: { content: [...] }), but the Claude Code prod MCP tool actually
+ * sends shape (A) (tool_response: [...] direct array). With every fixture using the
+ * wrong shape uniformly → 803/803 tests passed but prod extracted 0% of banners.
+ * Classic "tests don't constrain prod because fixtures share a collective false positive."
  *
- * 拆雷做法：把 fixture builder 抽成兩個 helper，多條測試混搭使用，
- * 不再「一抄錯就全錯」。新增 test 也明確標示用哪種 shape。
+ * Mine clearance: extract fixture builders into two helpers and mix them across tests
+ * so "one typo no longer breaks everything." New tests must also explicitly mark
+ * which shape they use.
  *
- * 對應 prod：
- *   mcpToolResponse  → Claude Code MCP tool（mcp__ownmind__*） 真實 shape
- *   legacyToolResponse → 舊版 / 非 MCP tool 仍可能的 shape
+ * Maps to prod:
+ *   mcpToolResponse    → real Claude Code MCP tool (mcp__ownmind__*) shape
+ *   legacyToolResponse → legacy / non-MCP tool shape (may still appear)
  */
 function mcpToolResponse(parts) {
   return parts;
@@ -71,34 +74,34 @@ function legacyToolResponse(parts) {
   return { content: parts };
 }
 
-describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
+describe('v1.17.71 — ownmind-tty-echo.cjs banner extraction', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('module 檔案存在 + 可被 node 直接 spawn', () => {
-    assert.ok(fs.existsSync(hookPath), 'hooks/ownmind-tty-echo.cjs 必須存在');
+  it('module file exists + can be spawned directly with node', () => {
+    assert.ok(fs.existsSync(hookPath), 'hooks/ownmind-tty-echo.cjs must exist');
     const r = runHook('{}');
-    assert.equal(r.status, 0, '空輸入也要正常 exit 0、不能 crash');
+    assert.equal(r.status, 0, 'empty input must still exit 0 cleanly without crashing');
   });
 
-  it('從 tool_response.content[*].text 抽出所有 【OwnMind...】 開頭的行（legacy shape）', () => {
-    // 故意用 legacy {content: [...]} shape — 確保舊版 / 非 MCP tool 通道仍 work
+  it('extracts every line starting with [OwnMind...] from tool_response.content[*].text (legacy shape)', () => {
+    // Intentionally use legacy {content: [...]} shape — make sure the legacy / non-MCP channel still works.
     const input = {
       tool_name: 'mcp__ownmind__ownmind_search',
       tool_response: legacyToolResponse([
         { type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：\n{"data":[],"hits":0}\n\n【OwnMind v1.17.71】技巧提示：你可以搜尋記憶' },
       ]),
     };
-    // 強制 fallback 路徑（測試環境沒 /dev/tty 可寫）→ 寫入 pending file
+    // Force the fallback path (test env has no writable /dev/tty) → writes pending file.
     const r = runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
     assert.equal(r.status, 0);
-    assert.ok(fs.existsSync(pendingFile), 'fallback 應寫 banner-pending.jsonl');
+    assert.ok(fs.existsSync(pendingFile), 'fallback should write banner-pending.jsonl');
     const content = fs.readFileSync(pendingFile, 'utf8');
     assert.match(content, /記憶搜尋/);
     assert.match(content, /技巧提示/);
   });
 
-  it('沒有任何 【OwnMind】 banner 時不寫 pending file（不污染）', () => {
+  it('does not write pending file when there is no [OwnMind] banner (no pollution)', () => {
     const input = {
       tool_name: 'mcp__ownmind__ownmind_search',
       tool_response: mcpToolResponse([{ type: 'text', text: '純 JSON 沒 banner' }]),
@@ -106,10 +109,10 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     const r = runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
     assert.equal(r.status, 0);
     assert.equal(fs.existsSync(pendingFile), false,
-      '沒 banner 不該動 pending file');
+      'should not touch pending file when there is no banner');
   });
 
-  it('同次觸發多條 banner 合併成「招牌 header + 縮排 list」一個區塊', () => {
+  it('multiple banners in one trigger merge into a single "signature header + indented list" block', () => {
     const input = {
       tool_name: 'mcp__ownmind__ownmind_get',
       tool_response: mcpToolResponse([
@@ -120,20 +123,20 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     const content = fs.readFileSync(pendingFile, 'utf8');
     const record = JSON.parse(content.trim().split('\n').pop());
     const block = record.block;
-    // header：[OwnMind v1.22.0+] 在第一行單獨一行（v1.22.0 改用 ASCII 括號）
-    assert.match(block, /^\[OwnMind v[\d.]+\]\n/, '招牌 header 必須在第一行');
-    // 後續行不該再重複 prefix
+    // Header: [OwnMind v1.22.0+] sits alone on the first line (v1.22.0 switched to ASCII brackets).
+    assert.match(block, /^\[OwnMind v[\d.]+\]\n/, 'signature header must be on its own first line');
+    // Subsequent lines must not repeat the prefix.
     const lines = block.trim().split('\n');
     const tail = lines.slice(1).join('\n');
     assert.ok(!tail.includes('[OwnMind v') && !tail.includes('【OwnMind v'),
-      '招牌 prefix 不該在後續行重複（合併成一塊）');
-    // 內容 indented 列出
+      'signature prefix must not repeat on subsequent lines (merged into one block)');
+    // Body is listed indented.
     assert.match(block, /鐵律提醒/);
     assert.match(block, /技巧提示/);
   });
 
-  it('支援多 content parts（legacy shape — 偶爾還是會收多 part）', () => {
-    // 故意用 legacy {content: [...]} shape — 多 part 場景在 legacy 通道更常見
+  it('supports multiple content parts (legacy shape — occasionally still arrives as multi-part)', () => {
+    // Intentionally use legacy {content: [...]} shape — multi-part is more common on the legacy channel.
     const input = {
       tool_name: 'mcp__ownmind__ownmind_init',
       tool_response: legacyToolResponse([
@@ -147,7 +150,7 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     assert.match(content, /技巧提示/);
   });
 
-  it('支援廣播 banner（📢 OwnMind 開頭）也要被抓出來', () => {
+  it('supports broadcast banners (starting with the broadcast prefix) — must also be captured', () => {
     const input = {
       tool_name: 'mcp__ownmind__ownmind_search',
       tool_response: mcpToolResponse([
@@ -159,14 +162,15 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     assert.match(content, /OwnMind 系統通知/);
   });
 
-  it('IR-007 regression: tool_response 直接是 array（Claude Code prod 真實送的格式）', () => {
-    // 背景：v1.17.71 ship 後實測在場感 100% 失效。Trace 顯示 stdin 有資料、
-    // hook 有跑、但 banner_count 永遠 0。Root cause：Claude Code PostToolUse
-    // 送的 JSON 是 `tool_response: [{type, text}, ...]`（直接 array），
-    // 而不是 hook 預期的 `tool_response: { content: [...] }`。所有原本的
-    // fixture 都用後者，因此測試全綠但 prod 抓不到 banner。
+  it('IR-007 regression: tool_response as a direct array (the real Claude Code prod shape)', () => {
+    // Background: after v1.17.71 shipped, presence indicators failed 100% in prod.
+    // Tracing showed stdin had data, the hook ran, but banner_count stayed 0.
+    // Root cause: the PostToolUse JSON Claude Code sends is `tool_response: [{type, text}, ...]`
+    // (a direct array), not the `tool_response: { content: [...] }` the hook expected.
+    // Every original fixture used the latter, so tests stayed green while prod
+    // extracted nothing.
     //
-    // 本條 test 用真實 PostToolUse stdin 截下來的結構，確保 prod 格式可被處理。
+    // This test uses the real captured PostToolUse stdin to guarantee the prod shape is handled.
     const input = {
       session_id: '7e090be5-a795-4ea7-8a5a-699fc953c175',
       hook_event_name: 'PostToolUse',
@@ -183,42 +187,44 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     const r = runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
     assert.equal(r.status, 0);
     assert.ok(fs.existsSync(pendingFile),
-      'prod 格式（tool_response 直接是 array）也要能抽出 banner');
+      'prod shape (tool_response as a direct array) must also extract banners');
     const content = fs.readFileSync(pendingFile, 'utf8');
     assert.match(content, /記憶搜尋/);
     assert.match(content, /技巧提示/);
   });
 
-  // ─── 結構性合約測試（v1.17.73 引入單條 / v1.17.74 參數化 — IR-007 拆雷 ※深化）─────
-  // 拆 v1.17.71 → v1.17.72 那種「fixture 集體用同一錯誤 shape」的雷。
-  // 用相同 input 餵兩種 shape、比 extractBanners 結果必須一致（不論抽到 / 沒抽到）。
+  // ─── Structural contract tests (v1.17.73 introduced a single case / v1.17.74 parameterized — deepen IR-007 mine clearance) ───
+  // Clears the v1.17.71 → v1.17.72 mine where every fixture used the same wrong shape.
+  // For the same input, feed both shapes and require extractBanners' result to match
+  // (whether something is extracted or not).
   //
-  // v1.17.73 只覆蓋一句「kind + tip」雙 banner。reviewer 點到（v1.17.74+ m-1）：
-  // broadcast / multi-part / 空 parts / 壞 parts 都沒測 — 那些路徑的 path-specific
-  // bug 還是漏。v1.17.74 把 contract case 表化、跑同一邏輯、覆蓋 8 種變體。
+  // v1.17.73 covered only "kind + tip" dual banners. Reviewer pointed out (v1.17.74+ m-1):
+  // broadcast / multi-part / empty parts / malformed parts were untested — path-specific bugs
+  // on those branches still slipped through. v1.17.74 tabulates contract cases and runs the
+  // same logic over 8 variants.
   const contractCases = [
     {
-      name: '單條 kind banner',
+      name: 'single kind banner',
       parts: [{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A' }],
       expectBanner: true,
     },
     {
-      name: '雙條 banner（kind + tip）',
+      name: 'dual banner (kind + tip)',
       parts: [{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A\n\n【OwnMind v1.17.71】技巧提示：B' }],
       expectBanner: true,
     },
     {
-      name: '廣播 banner（📢 OwnMind 系統通知）',
+      name: 'broadcast banner (system notification)',
       parts: [{ type: 'text', text: '📢 OwnMind 系統通知\n[INFO] 升級到 v1.17.71\n---' }],
       expectBanner: true,
     },
     {
-      name: '廣播 + 一般 banner 混合',
+      name: 'broadcast + regular banner mixed',
       parts: [{ type: 'text', text: '📢 OwnMind 系統通知\n升級到 v1.17.74\n---\n\n【OwnMind v1.17.71】記憶搜尋：A' }],
       expectBanner: true,
     },
     {
-      name: 'banner 拆到多個 content parts',
+      name: 'banner split across multiple content parts',
       parts: [
         { type: 'text', text: '【OwnMind v1.17.71】鐵律提醒：[IR-007]' },
         { type: 'text', text: '【OwnMind v1.17.71】技巧提示：鐵律不會被刪除' },
@@ -226,31 +232,31 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
       expectBanner: true,
     },
     {
-      name: '空 parts array（無內容）',
+      name: 'empty parts array (no content)',
       parts: [],
       expectBanner: false,
     },
     {
-      name: '壞 part（type 有但 text 欄位缺）',
+      name: 'malformed part (type present, text missing)',
       parts: [{ type: 'text' }],
       expectBanner: false,
     },
     {
-      name: '純文字沒 banner',
+      name: 'plain text with no banner',
       parts: [{ type: 'text', text: 'No banner here, just plain data' }],
       expectBanner: false,
     },
   ];
 
   for (const c of contractCases) {
-    it(`結構性合約 [${c.name}]：兩種 shape 行為必須一致`, () => {
+    it(`structural contract [${c.name}]: both shapes must behave identically`, () => {
       // (A) MCP shape
       runHook({ tool_response: mcpToolResponse(c.parts) }, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
       const aHasFile = fs.existsSync(pendingFile);
       const aBlock = aHasFile
         ? JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block
         : null;
-      if (aHasFile) fs.unlinkSync(pendingFile);  // conditional cleanup（m-6）
+      if (aHasFile) fs.unlinkSync(pendingFile);  // conditional cleanup (m-6)
 
       // (B) legacy shape
       runHook({ tool_response: legacyToolResponse(c.parts) }, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
@@ -259,34 +265,34 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
         ? JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block
         : null;
 
-      // 兩種 shape 必須對「要不要寫 pending file」做一樣的決定
+      // Both shapes must agree on whether to write the pending file.
       assert.equal(aHasFile, bHasFile,
-        `兩種 shape 必須一致決定 pending file 寫不寫（[${c.name}] mcp=${aHasFile} legacy=${bHasFile}）`);
+        `both shapes must agree on writing pending file ([${c.name}] mcp=${aHasFile} legacy=${bHasFile})`);
 
       if (c.expectBanner) {
-        assert.ok(aHasFile, `[${c.name}] 預期抽到 banner、應寫 pending file`);
+        assert.ok(aHasFile, `[${c.name}] expected to extract a banner and write the pending file`);
         assert.equal(aBlock, bBlock,
-          `[${c.name}] 兩種 shape 的 block 內容必須一致（path-specific bug 立刻被抓到）`);
-        assert.ok(aBlock && aBlock.length > 0, `[${c.name}] block 不可為空`);
+          `[${c.name}] both shapes must produce the same block content (path-specific bugs caught immediately)`);
+        assert.ok(aBlock && aBlock.length > 0, `[${c.name}] block must not be empty`);
       } else {
-        assert.equal(aHasFile, false, `[${c.name}] 不該抽到 banner、不該寫 pending file`);
+        assert.equal(aHasFile, false, `[${c.name}] must not extract a banner and must not write the pending file`);
       }
     });
   }
 
-  it('壞掉的 JSON 輸入也不能 crash（防呆）', () => {
+  it('malformed JSON input must not crash (defense in depth)', () => {
     const r = runHook('this is not json');
-    assert.equal(r.status, 0, '壞 JSON 也要 exit 0、不擋 tool 流程');
+    assert.equal(r.status, 0, 'malformed JSON must still exit 0 and not block the tool flow');
   });
 
-  it('exit code 永遠是 0（即使 hook 內部有錯）', () => {
-    // 即使 input 完全合法但寫入失敗（force fallback + 不寫 file，模擬磁碟滿）
+  it('exit code is always 0 (even when the hook itself errors)', () => {
+    // Even if input is valid but writing fails (force fallback + cannot write file, simulating a full disk).
     const r = runHook({ tool_response: mcpToolResponse([{ type: 'text', text: '【OwnMind v1.17.71】X：Y' }]) },
       { OWNMIND_TTY_FORCE_FALLBACK: '1' });
     assert.equal(r.status, 0);
   });
 
-  it('Fallback 路徑 — 寫 banner-pending.jsonl 用 JSON Lines 格式（每行一個 record）', () => {
+  it('fallback path — banner-pending.jsonl uses JSON Lines format (one record per line)', () => {
     const input = {
       tool_response: mcpToolResponse([{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A' }]),
     };
@@ -294,48 +300,48 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
     const content = fs.readFileSync(pendingFile, 'utf8');
     const lines = content.trim().split('\n');
-    assert.equal(lines.length, 2, '兩次 fallback 應該是兩行 JSON Lines');
+    assert.equal(lines.length, 2, 'two fallback runs should produce two JSON Lines rows');
     for (const line of lines) {
       const rec = JSON.parse(line);
-      assert.ok(rec.ts, '每行 record 應有 ts 時戳');
-      assert.ok(rec.block, '每行 record 應有 block 內容');
+      assert.ok(rec.ts, 'every record must include a ts timestamp');
+      assert.ok(rec.block, 'every record must include a block payload');
     }
   });
 
-  it('Fallback 不該寫進 stderr 或 stdout（避免被 AI 看到）', () => {
-    // 關鍵：Vin 規格 #3 — 嚴禁被 AI 過濾或吃掉
-    // PostToolUse 的 stderr → AI；stdout(plain text) → 丟掉
-    // 我們的 fallback 只能寫 file，不能寫 stderr
+  it('fallback must not write to stderr or stdout (so the AI never sees it)', () => {
+    // Key point — Vin's spec #3: AI must not be able to filter or swallow the banner.
+    // PostToolUse stderr → AI; stdout(plain text) → discarded.
+    // Our fallback may only write to a file, never to stderr.
     const input = {
       tool_response: mcpToolResponse([{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A' }]),
     };
     const r = runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
-    assert.equal(r.stderr, '', 'stderr 必須空白（AI 通道不能用）');
-    // stdout 可以是空或 PostToolUse JSON 但不能含 banner 文字
+    assert.equal(r.stderr, '', 'stderr must stay empty (AI channel is off-limits)');
+    // stdout may be empty or the PostToolUse JSON, but must not contain banner text.
     assert.ok(!r.stdout.includes('【OwnMind v'),
-      'stdout 不能含 banner 文字（避免被 Claude Code 當 hook output 處理）');
+      'stdout must not contain banner text (avoid Claude Code treating it as hook output)');
   });
 });
 
-describe('v1.17.71 — ownmind-tty-echo.cjs 主路徑 tty 寫入（如果有 tty）', () => {
+describe('v1.17.71 — ownmind-tty-echo.cjs primary tty write path (when tty is available)', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('tty 可寫時不該觸發 fallback（無 pending file）', () => {
-    // 這個 test 只在有 /dev/tty 可寫的環境跑得起來；spawnSync 沒 controlling tty
-    // 預設會走 fallback，所以這個 test 只驗「強制走 main path」（透過環境變數
-    // 指向假的 tty 模擬器：用一個 pipe file）
+  it('does not trigger fallback when tty is writable (no pending file)', () => {
+    // This test only works in an environment with a writable /dev/tty; spawnSync has no controlling
+    // tty by default and would fall back. So this test forces the main path via an env var pointing
+    // at a fake tty simulator (a pipe file).
     const fakeTty = path.join(tmpHome, 'fake-tty');
-    fs.writeFileSync(fakeTty, '');  // 空檔當假 tty
+    fs.writeFileSync(fakeTty, '');  // empty file acting as a fake tty
     const input = {
       tool_response: mcpToolResponse([{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A' }]),
     };
     const r = runHook(input, { OWNMIND_TTY_OVERRIDE: fakeTty });
     assert.equal(r.status, 0);
     assert.equal(fs.existsSync(pendingFile), false,
-      '主路徑成功時不該寫 pending file');
-    // 假 tty 應收到 banner
+      'primary path must not write the pending file when it succeeds');
+    // The fake tty should receive the banner.
     const ttyContent = fs.readFileSync(fakeTty, 'utf8');
-    assert.match(ttyContent, /記憶搜尋/, '主路徑應寫到 tty');
+    assert.match(ttyContent, /記憶搜尋/, 'primary path should write to tty');
   });
 });

@@ -11,20 +11,24 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.94 — 鐵律品質檢查（程式邏輯卡控、IR-027 落地）
+ * v1.17.94 — iron rule quality lint (program-logic gate, IR-027 landing)
  *
- * 為什麼存在：
- *   Vin 提的核心 — 鐵律寫進 OwnMind 之後、未來新 session 的 AI 看到要能：
- *   (1) 知道什麼時候該觸發、(2) 知道規則是什麼。不然鐵律形同虛設。
- *   不能靠 AI 自覺寫得清楚、要靠 server 端 lint 卡住、寫得太爛就退回不讓存。
+ * Why it exists:
+ *   Core insight from Vin — once an iron rule is saved into OwnMind, future
+ *   AI sessions reading it must (1) know when to trigger it, (2) know what
+ *   the rule actually is. Otherwise the rule is window dressing.
+ *   We can't rely on the AI to write clearly on its own; the server must
+ *   lint and reject sloppy rules at write time.
  *
- * 設計：
- *   - lintIronRule(rule) 純函式、輸入 {title, content, tags}、回 {ok, errors}
- *   - server 端 POST/PUT memory type=iron_rule 時呼叫、不過 400
- *   - 所有人都會被卡（不分 client、不分新舊鐵律）
+ * Design:
+ *   - lintIronRule(rule) is a pure function: input {title, content, tags},
+ *     output {ok, errors}.
+ *   - Called by the server when POST/PUT memory type=iron_rule lands; 400
+ *     on failure.
+ *   - Applies to every client and every rule (no exceptions for legacy).
  */
 
-describe('v1.17.94 — lintIronRule 通過合格鐵律', () => {
+describe('v1.17.94 — lintIronRule accepts a valid rule', () => {
   const goodRule = {
     title: '修報表加查詢條件讓數字歸 0 前、先檢查資料是不是還在',
     content: `## 什麼時候適用這條（觸發情境）
@@ -40,47 +44,47 @@ describe('v1.17.94 — lintIronRule 通過合格鐵律', () => {
     tags: ['trigger:edit', 'trigger:fix'],
   };
 
-  it('合格鐵律 ok=true、errors=[]', () => {
+  it('valid rule returns ok=true and errors=[]', () => {
     const r = lintIronRule(goodRule);
-    assert.equal(r.ok, true, `不該失敗、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `should not fail, errors: ${JSON.stringify(r.errors)}`);
     assert.deepEqual(r.errors, []);
   });
 });
 
-describe('v1.17.94 — trigger tag 檢查', () => {
-  it('缺 trigger:xxx tag → 失敗', () => {
+describe('v1.17.94 — trigger tag check', () => {
+  it('missing trigger:xxx tag → fail', () => {
     const r = lintIronRule({
       title: '修報表前先檢查資料還在不在',
       content: '## 什麼時候適用\n修報表時\n## 規則\n不要加查詢條件藏資料。' + '字'.repeat(100),
       tags: ['some-tag', 'another-tag'],
     });
     assert.equal(r.ok, false);
-    assert.match(r.errors.join('|'), /trigger/, '錯誤訊息應提到 trigger');
+    assert.match(r.errors.join('|'), /trigger/, 'error message should mention trigger');
   });
 
-  it('沒 tags（undefined / null / 空陣列）→ 失敗', () => {
+  it('no tags (undefined / null / empty array) → fail', () => {
     for (const tags of [undefined, null, []]) {
       const r = lintIronRule({
         title: '測試標題不要太短',
         content: '## 什麼時候適用\n測試時\n## 規則\n要遵守。' + '字'.repeat(100),
         tags,
       });
-      assert.equal(r.ok, false, `tags=${JSON.stringify(tags)} 應失敗`);
+      assert.equal(r.ok, false, `tags=${JSON.stringify(tags)} should fail`);
     }
   });
 
-  it('有至少一個 trigger:xxx → 通過該項', () => {
+  it('at least one trigger:xxx → passes this check', () => {
     const r = lintIronRule({
       title: '測試標題寫得夠長一點才會過',
       content: '## 什麼時候適用\n測試時\n## 規則\n要遵守。' + '字'.repeat(100),
       tags: ['trigger:edit'],
     });
-    assert.equal(r.ok, true, `不該因 trigger 失敗、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `should not fail on trigger, errors: ${JSON.stringify(r.errors)}`);
   });
 });
 
-describe('v1.17.94 — 適用情境段落檢查', () => {
-  it('內容沒寫「什麼時候適用 / 觸發 / 情境」之類段落 → 失敗', () => {
+describe('v1.17.94 — applicability section check', () => {
+  it('content lacks "什麼時候適用 / 觸發 / 情境" section → fail', () => {
     const r = lintIronRule({
       title: '只有規則沒有適用情境',
       content: '這條規則要遵守。' + '字'.repeat(200),
@@ -88,10 +92,10 @@ describe('v1.17.94 — 適用情境段落檢查', () => {
     });
     assert.equal(r.ok, false);
     assert.match(r.errors.join('|'), /適用|觸發|情境|何時/,
-      '錯誤訊息應提到缺適用情境');
+      'error message should mention missing applicability section');
   });
 
-  it('有「什麼時候適用」段落 → 通過該項', () => {
+  it('has "什麼時候適用" section → passes this check', () => {
     const r = lintIronRule({
       title: '有適用情境的鐵律寫得清楚一點',
       content: '## 什麼時候適用\n寫程式碼的時候\n## 規則\n要小心。' + '字'.repeat(100),
@@ -100,7 +104,7 @@ describe('v1.17.94 — 適用情境段落檢查', () => {
     assert.equal(r.ok, true);
   });
 
-  it('用「觸發情境」也算 → 通過', () => {
+  it('"觸發情境" also counts → pass', () => {
     const r = lintIronRule({
       title: '用觸發情境寫的鐵律也算通過',
       content: '## 觸發情境\n你在 commit 時\n## 規則\n禁止 force push。' + '字'.repeat(100),
@@ -110,8 +114,8 @@ describe('v1.17.94 — 適用情境段落檢查', () => {
   });
 });
 
-describe('v1.17.94 — 規則段落檢查（該做/不該做的動作）', () => {
-  it('內容沒寫「規則 / 該做 / 不該做 / 禁止 / 必須」 → 失敗', () => {
+describe('v1.17.94 — rule section check (do / dont actions)', () => {
+  it('content lacks "規則 / 該做 / 不該做 / 禁止 / 必須" → fail', () => {
     const r = lintIronRule({
       title: '只有背景沒寫動作',
       content: '## 什麼時候適用\n寫程式時\n## 背景\n過去發生過一些事。' + '字'.repeat(150),
@@ -119,10 +123,10 @@ describe('v1.17.94 — 規則段落檢查（該做/不該做的動作）', () =>
     });
     assert.equal(r.ok, false);
     assert.match(r.errors.join('|'), /規則|該做|不該做|禁止|必須/,
-      '錯誤訊息應提到缺動作描述');
+      'error message should mention missing action description');
   });
 
-  it('有「規則」段落 → 通過', () => {
+  it('has "規則" section → pass', () => {
     const r = lintIronRule({
       title: '有完整段落的鐵律寫得清楚一點',
       content: '## 什麼時候適用\n寫程式時\n## 規則\n不該偷懶。' + '字'.repeat(100),
@@ -132,23 +136,23 @@ describe('v1.17.94 — 規則段落檢查（該做/不該做的動作）', () =>
   });
 });
 
-describe('v1.17.94 — 禁止依賴 context 的詞（未來 AI 看不懂）', () => {
+describe('v1.17.94 — forbid context-dependent phrases (future AI cannot understand)', () => {
   const forbidPhrases = ['上次', '之前那個', '剛剛', '這次 session', '這次對話'];
 
   for (const phrase of forbidPhrases) {
-    it(`內容含「${phrase}」 → 失敗`, () => {
+    it(`content contains "${phrase}" → fail`, () => {
       const r = lintIronRule({
         title: '測試標題夠長',
         content: `## 什麼時候適用\n寫程式時\n## 規則\n不要做 ${phrase} 提到的那種事。` + '字'.repeat(100),
         tags: ['trigger:edit'],
       });
-      assert.equal(r.ok, false, `phrase=「${phrase}」應失敗`);
+      assert.equal(r.ok, false, `phrase="${phrase}" should fail`);
       assert.match(r.errors.join('|'), /context|脈絡|看不懂|依賴/,
-        '錯誤訊息應提到依賴 context 問題');
+        'error message should mention context-dependency problem');
     });
   }
 
-  it('沒這些詞 → 通過該項', () => {
+  it('no such phrases → passes this check', () => {
     const r = lintIronRule({
       title: '不依賴 context 的鐵律',
       content: '## 什麼時候適用\n寫程式時\n## 規則\n禁止做不對的事。' + '字'.repeat(100),
@@ -158,24 +162,26 @@ describe('v1.17.94 — 禁止依賴 context 的詞（未來 AI 看不懂）', ()
   });
 });
 
-describe('v1.18.1 — 鐵律 lint 不再做 IR-037 中英混雜檢查（D 設計修正）', () => {
-  // v1.17.94 原本對鐵律 content 跑 IR-037、但這條規則的設計初衷是「AI 回話」、
-  // reply-lint Stop hook 已專門做。鐵律本身是「技術筆記」、含技術詞天經地義。
-  // v1.18.1 audit 35 條 prod 鐵律、26 條 fail (74%) 證明套錯場景。
+describe('v1.18.1 — iron-rule lint no longer enforces IR-037 mixed-language check (design D fix)', () => {
+  // v1.17.94 originally ran IR-037 over rule content, but IR-037 is meant for
+  // "AI replies"; the reply-lint Stop hook already covers that. Iron rules
+  // themselves are "technical notes" and naturally contain technical terms.
+  // The v1.18.1 audit of 35 prod rules showed 26 failing (74%), proving the
+  // check was applied to the wrong scope.
   //
-  // 移除後：含 docker / openspec / Adam / Eric 等技術詞 / 人名的合理鐵律
-  // 不再被 reject。
-  it('連續英文詞太多（合理技術筆記）→ 通過（v1.18.1 不再 reject）', () => {
+  // After removal: reasonable rules containing docker / openspec / Adam /
+  // Eric (technical terms / names) are no longer rejected.
+  it('lots of English words in a row (reasonable tech note) → pass (v1.18.1 no longer rejects)', () => {
     const r = lintIronRule({
       title: '混雜的鐵律',
       content: '## 什麼時候適用\nyou are coding the system component for example when refactoring the workflow\n## 規則\nyou should not just hide data behind filter conditions instead change the actual logic.' + 'a'.repeat(100),
       tags: ['trigger:edit'],
     });
     assert.equal(r.ok, true,
-      `v1.18.1: 鐵律 lint 不再對 content 跑 IR-037、合理 mixed content 應 pass、errors: ${JSON.stringify(r.errors)}`);
+      `v1.18.1: rule lint no longer runs IR-037 on content; reasonable mixed content should pass, errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('鐵律含 docker / openspec / Adam / Eric 等技術詞 → 通過', () => {
+  it('rule containing docker / openspec / Adam / Eric tech terms → pass', () => {
     const r = lintIronRule({
       title: 'OwnMind 部署流程',
       content: '## 什麼時候適用\n部署到 prod\n## 規則\n必須用 docker compose build --no-cache、不能用 docker build。Adam / Eric 在 Windows 上跑要先檢查 openspec init 是否成功、走 propose → apply → archive 流程。' + '字'.repeat(50),
@@ -184,18 +190,18 @@ describe('v1.18.1 — 鐵律 lint 不再做 IR-037 中英混雜檢查（D 設計
     assert.equal(r.ok, true, `errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('白名單技術詞（SQL / API / IR-XXX / OwnMind）不算混雜', () => {
+  it('whitelisted tech terms (SQL / API / IR-XXX / OwnMind) do not count as mixed', () => {
     const r = lintIronRule({
       title: '只用白名單技術詞的鐵律',
       content: '## 什麼時候適用\n寫 SQL 改 API 動到 OwnMind 的時候\n## 規則\n要遵守 IR-027、不能把 WHERE 條件當作藏資料的手段。' + '字'.repeat(100),
       tags: ['trigger:edit'],
     });
-    assert.equal(r.ok, true, `白名單詞不該觸發中英混雜、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `whitelisted terms should not trigger mixed-language, errors: ${JSON.stringify(r.errors)}`);
   });
 });
 
-describe('v1.17.94 — 字數檢查', () => {
-  it('content 少於 100 字 → 失敗（資訊不足）', () => {
+describe('v1.17.94 — length check', () => {
+  it('content < 100 chars → fail (info insufficient)', () => {
     const r = lintIronRule({
       title: '太短的鐵律',
       content: '## 什麼時候適用\n寫程式\n## 規則\n要小心',
@@ -205,7 +211,7 @@ describe('v1.17.94 — 字數檢查', () => {
     assert.match(r.errors.join('|'), /太短|資訊不足|字數/);
   });
 
-  it('content 超過 3000 字 → 失敗（要點不明）', () => {
+  it('content > 3000 chars → fail (points unclear)', () => {
     const r = lintIronRule({
       title: '太長的鐵律',
       content: '## 什麼時候適用\n寫程式時\n## 規則\n要小心\n' + '字'.repeat(3500),
@@ -216,8 +222,8 @@ describe('v1.17.94 — 字數檢查', () => {
   });
 });
 
-describe('v1.17.94 — title 檢查', () => {
-  it('title 少於 10 字 → 失敗', () => {
+describe('v1.17.94 — title check', () => {
+  it('title < 10 chars → fail', () => {
     const r = lintIronRule({
       title: '太短',
       content: '## 什麼時候適用\n寫程式時\n## 規則\n要小心。' + '字'.repeat(100),
@@ -227,7 +233,7 @@ describe('v1.17.94 — title 檢查', () => {
     assert.match(r.errors.join('|'), /title|標題/);
   });
 
-  it('title 多於 100 字 → 失敗', () => {
+  it('title > 100 chars → fail', () => {
     const r = lintIronRule({
       title: '這個鐵律的標題很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長很長',
       content: '## 什麼時候適用\n寫程式時\n## 規則\n要小心。' + '字'.repeat(100),
@@ -238,34 +244,35 @@ describe('v1.17.94 — title 檢查', () => {
   });
 });
 
-describe('v1.17.94 — memory.js 整合：iron_rule POST/PUT 接入 lint', () => {
-  // 靜態斷言、不跑實際 endpoint
+describe('v1.17.94 — memory.js integration: iron_rule POST/PUT wires up lint', () => {
+  // Static assertion; does not exercise the actual endpoint.
   const memorySrc = fs.readFileSync(path.join(repoRoot, 'src/routes/memory.js'), 'utf8');
 
-  it('memory.js 必須 import lintIronRule', () => {
+  it('memory.js must import lintIronRule', () => {
     assert.match(memorySrc, /import\s*\{\s*lintIronRule\s*\}\s*from\s*['"]\.\.\/utils\/iron-rule-quality\.js['"]/,
-      'memory.js 必須 import lintIronRule');
+      'memory.js must import lintIronRule');
   });
 
-  it('POST / 對 type=iron_rule 必須呼叫 lintIronRule', () => {
+  it('POST / for type=iron_rule must call lintIronRule', () => {
     const m = memorySrc.match(/router\.post\('\/'[\s\S]+?(?=\nrouter\.|\nexport)/);
-    assert.ok(m, '找不到 POST / handler');
+    assert.ok(m, 'POST / handler not found');
     assert.match(m[0], /lintIronRule\s*\(/,
-      'POST / 必須在 iron_rule 寫入前呼叫 lintIronRule');
+      'POST / must call lintIronRule before writing an iron_rule');
   });
 
-  it('PUT /:id 對 iron_rule 更新也必須呼叫 lintIronRule', () => {
+  it('PUT /:id for iron_rule update must also call lintIronRule', () => {
     const m = memorySrc.match(/router\.put\('\/:id'[\s\S]+?(?=\nrouter\.|\nexport)/);
-    assert.ok(m, '找不到 PUT /:id handler');
+    assert.ok(m, 'PUT /:id handler not found');
     assert.match(m[0], /lintIronRule\s*\(/,
-      'PUT /:id 必須在 iron_rule 更新前呼叫 lintIronRule');
+      'PUT /:id must call lintIronRule before updating an iron_rule');
   });
 });
 
-describe('v1.17.94 — Dogfood reviewer Minor 8：v1.17.94 enforcement 的核心鐵律自己也要過 lint', () => {
-  // reviewer 指：v1.17.94 想 enforce 「鐵律品質」、核心參考鐵律 IR-027 + IR-006
-  // 自己也要過、不然設計有內部矛盾
-  it('IR-027「提醒無效、邏輯才有效」過 lint', () => {
+describe('v1.17.94 — Dogfood reviewer Minor 8: v1.17.94 enforcement core rules must pass their own lint', () => {
+  // Reviewer point: if v1.17.94 wants to enforce "iron-rule quality" using
+  // IR-027 + IR-006 as reference rules, those rules must themselves pass the
+  // lint — otherwise the design is internally inconsistent.
+  it('IR-027 "reminders are ineffective; logic is what works" passes lint', () => {
     const ir027 = {
       title: '提醒無效，邏輯才有效 — 產品設計要用程式卡控',
       content: `## 規則
@@ -281,10 +288,10 @@ describe('v1.17.94 — Dogfood reviewer Minor 8：v1.17.94 enforcement 的核心
       tags: ['trigger:edit', 'product-design', 'ownmind'],
     };
     const r = lintIronRule(ir027);
-    assert.equal(r.ok, true, `IR-027 該過、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `IR-027 should pass, errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('IR-006「學到東西必須全層同步更新」過 lint', () => {
+  it('IR-006 "any new knowledge must propagate across all layers" passes lint', () => {
     const ir006 = {
       title: '學到東西必須全層同步更新',
       content: `## 規則
@@ -295,15 +302,15 @@ describe('v1.17.94 — Dogfood reviewer Minor 8：v1.17.94 enforcement 的核心
       tags: ['trigger:edit', 'trigger:commit'],
     };
     const r = lintIronRule(ir006);
-    assert.equal(r.ok, true, `IR-006 該過、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `IR-006 should pass, errors: ${JSON.stringify(r.errors)}`);
   });
 });
 
-describe('v1.17.94 — Dogfood：用 lint 重跑 IR-039 應該過', () => {
-  // 這是 dogfooding — v1.17.94 的 lint 設計是因為 IR-039 重寫過 3 次才寫好
-  // 如果 IR-039 過不了、表示 lint 規則太嚴；如果 IR-039 過得了、表示
-  // 規則合理可接受
-  it('IR-039 內容套用 lint 應通過', () => {
+describe('v1.17.94 — Dogfood: re-running lint on IR-039 should pass', () => {
+  // Dogfooding: the v1.17.94 lint design was driven by IR-039 needing
+  // three rewrites before it landed. If IR-039 cannot pass, the lint
+  // rules are too strict; if it passes, the rules are at acceptable.
+  it('IR-039 content under lint should pass', () => {
     const ir039 = {
       title: '修報表/儀表板加查詢條件讓數字歸 0 前、先檢查資料是不是還在',
       content: `## 什麼時候適用這條（觸發情境）
@@ -327,6 +334,6 @@ describe('v1.17.94 — Dogfood：用 lint 重跑 IR-039 應該過', () => {
              'trigger:pitfalls', 'trigger:sql_filter', 'trigger:hide_data'],
     };
     const r = lintIronRule(ir039);
-    assert.equal(r.ok, true, `IR-039 不該被 lint 擋下、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `IR-039 should not be rejected by lint, errors: ${JSON.stringify(r.errors)}`);
   });
 });

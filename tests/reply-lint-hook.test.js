@@ -6,25 +6,29 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
- * v1.17.96 — hooks/ownmind-reply-lint.js（Stop hook 整合 IR-037 + IR-036）
+ * v1.17.96 — hooks/ownmind-reply-lint.js (Stop hook integration for IR-037 + IR-036)
  *
- * 為什麼存在：
- *   v1.17.95 把 IR-037（中英混雜）+ IR-036（行話沒附白話說明）的判斷邏輯
- *   寫成 shared/language-lint.js 純函式 lib，但沒整合到任何卡關點 — AI 還是
- *   靠自覺、IR-027「提醒無效，邏輯才有效」沒落地。
+ * Why it exists:
+ *   v1.17.95 turned the IR-037 (mixed Chinese/English) + IR-036 (jargon without a
+ *   plain-language gloss) detection logic into a pure-function library at
+ *   shared/language-lint.js, but did not wire it into any gating point — AI was
+ *   still on its honor system, and IR-027 "reminders don't work, logic does" had
+ *   not landed.
  *
- *   v1.17.96 寫 Stop hook：每輪 AI 回話結束時自動讀 transcript、抽最後一輪
- *   assistant text、跑 lintReply、違反就寫 banner 到 user terminal +
- *   POST /api/activity/batch 報 violate。
+ *   v1.17.96 writes a Stop hook: at the end of each AI reply, automatically read
+ *   the transcript, pull the last assistant turn, run lintReply, and on violation
+ *   write a banner to the user's terminal + POST /api/activity/batch with violate.
  *
- * Vin 三條規格（沿用 v1.17.71 ownmind-tty-echo.cjs）：
- *   1. user 必須看見（不能只寫 stderr / additionalContext）
- *   2. 同次違反合併成單一招牌區塊
- *   3. 嚴禁被 AI 過濾 / 吃掉 — fallback 寫 ~/.ownmind/logs/banner-pending.jsonl
+ * Vin's three specs (inherited from v1.17.71 ownmind-tty-echo.cjs):
+ *   1. The user must see it (cannot use stderr / additionalContext only).
+ *   2. Multiple violations in one turn merge into a single signature block.
+ *   3. The AI must not be able to filter / swallow them — fallback writes
+ *      ~/.ownmind/logs/banner-pending.jsonl.
  *
- * Stop hook payload 規格（Claude Code 官方）：
+ * Stop hook payload spec (official Claude Code):
  *   { session_id, transcript_path, hook_event_name: 'Stop', stop_hook_active }
- *   stop_hook_active=true 代表這次 Stop 是因為前一個 hook block 觸發的、要立刻退出避免迴圈。
+ *   stop_hook_active=true means this Stop fired because the previous hook blocked;
+ *   exit immediately to avoid an infinite loop.
  */
 
 const repoRoot = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), '..');
@@ -42,9 +46,9 @@ function runHook(input, env = {}) {
       ...process.env,
       HOME: tmpHome,
       USERPROFILE: tmpHome,
-      // 強制 fallback 路徑（測試環境沒 controlling tty）
+      // Force the fallback path (test environment has no controlling tty).
       OWNMIND_TTY_FORCE_FALLBACK: '1',
-      // 禁止真的打 API（測試端不該打網路）
+      // Block real API calls (tests must not hit the network).
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       ...env,
     },
@@ -57,8 +61,9 @@ function setupTmpHome() {
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
 
-  // v1.21.0：規則驅動架構需要 user 鐵律快取宣告啟用哪些 validator
-  // 測試環境一律寫 fake cache 啟用全部 3 個 validator（模擬「user 全開」場景）
+  // v1.21.0: rule-driven architecture requires user-iron-rule cache to declare which
+  // validators to enable. Tests always write a fake cache enabling all 3 validators
+  // (simulating the "user opted in to all" scenario).
   const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
   fs.mkdirSync(cacheDir, { recursive: true });
   const cachePath = path.join(cacheDir, 'iron_rules.json');
@@ -83,7 +88,7 @@ function cleanupTmpHome() {
 }
 
 /**
- * 寫一個假的 Claude Code transcript JSONL：每行是 {type, message:{content:[...]}}。
+ * Write a fake Claude Code transcript JSONL: each line is {type, message:{content:[...]}}.
  * @param {Array<{role: 'user'|'assistant', text?: string, parts?: Array}>} turns
  */
 function writeTranscript(turns) {
@@ -114,40 +119,40 @@ function stopPayload(extra = {}) {
   };
 }
 
-describe('v1.17.96 — ownmind-reply-lint.js: 基本契約', () => {
+describe('v1.17.96 — ownmind-reply-lint.js: basic contract', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('hook 檔案存在 + 可被 node spawn', () => {
-    assert.ok(fs.existsSync(hookPath), 'hooks/ownmind-reply-lint.js 必須存在');
+  it('hook file exists + can be spawned with node', () => {
+    assert.ok(fs.existsSync(hookPath), 'hooks/ownmind-reply-lint.js must exist');
     const r = runHook('{}');
-    assert.equal(r.status, 0, '空輸入也要 exit 0、絕不 crash');
+    assert.equal(r.status, 0, 'empty input must exit 0; never crash');
   });
 
-  it('exit code 永遠是 0（不擋 AI 流程）', () => {
+  it('exit code is always 0 (does not block AI flow)', () => {
     writeTranscript([
       { role: 'user', text: '你好' },
       { role: 'assistant', text: 'I think we should refactor the entire codebase using a completely different approach.' },
     ]);
     const r = runHook(stopPayload());
-    assert.equal(r.status, 0, '即使違反也要 exit 0、只警告不擋');
+    assert.equal(r.status, 0, 'even on violation, exit 0; warn-only, never block');
   });
 
-  it('stderr / stdout 永遠空白（不能被 AI 看到）', () => {
+  it('stderr / stdout always blank (must not be visible to the AI)', () => {
     writeTranscript([
       { role: 'assistant', text: 'I think we should refactor using a different approach completely.' },
     ]);
     const r = runHook(stopPayload());
-    assert.equal(r.stderr, '', 'stderr 必須空白（IR-027 規格 #3）');
-    assert.ok(!r.stdout.includes('【OwnMind'), 'stdout 不能含 banner（會被 AI 通道吃）');
+    assert.equal(r.stderr, '', 'stderr must stay blank (IR-027 spec #3)');
+    assert.ok(!r.stdout.includes('【OwnMind'), 'stdout must not contain banner (AI channel swallows it)');
   });
 
-  it('壞掉的 stdin JSON 不 crash', () => {
+  it('malformed stdin JSON does not crash', () => {
     const r = runHook('this is not json at all');
     assert.equal(r.status, 0);
   });
 
-  it('transcript_path 指向不存在檔案 → exit 0、不寫 banner', () => {
+  it('transcript_path pointing to a missing file → exit 0, no banner', () => {
     const payload = {
       session_id: 'x',
       transcript_path: path.join(tmpHome, 'does-not-exist.jsonl'),
@@ -156,39 +161,39 @@ describe('v1.17.96 — ownmind-reply-lint.js: 基本契約', () => {
     };
     const r = runHook(payload);
     assert.equal(r.status, 0);
-    assert.equal(fs.existsSync(pendingFile), false, '找不到 transcript 不該寫 banner');
+    assert.equal(fs.existsSync(pendingFile), false, 'missing transcript should not write a banner');
   });
 });
 
-describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後一輪 assistant）', () => {
+describe('v1.17.96 — IR-037 / IR-036 violation detection (extracts the last assistant turn from transcript)', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('全中文回話 → 不寫 banner（沒違反）', () => {
+  it('all-Chinese reply → no banner (no violation)', () => {
     writeTranscript([
       { role: 'user', text: '你好' },
       { role: 'assistant', text: '好、那我來修這個問題、先寫測試再實作。' },
     ]);
     const r = runHook(stopPayload());
     assert.equal(r.status, 0);
-    assert.equal(fs.existsSync(pendingFile), false, '沒違反不該動 pending file');
+    assert.equal(fs.existsSync(pendingFile), false, 'no violation should not touch the pending file');
   });
 
-  it('中英混雜超過 15% → 寫 lint_language_mixed_ratio 違反 banner', () => {
+  it('Chinese/English mix above 15% → writes a lint_language_mixed_ratio violation banner', () => {
     writeTranscript([
       { role: 'assistant', text: 'I think we should refactor the codebase using a completely different approach because the implementation has obvious bugs.' },
     ]);
     const r = runHook(stopPayload());
     assert.equal(r.status, 0);
-    assert.ok(fs.existsSync(pendingFile), '違反該寫 fallback banner');
+    assert.ok(fs.existsSync(pendingFile), 'violation should write a fallback banner');
     const content = fs.readFileSync(pendingFile, 'utf8');
-    // v1.20.4：banner 用中性事件常數、不再寫死 IR-037
-    assert.match(content, /lint_language_mixed_ratio/, 'banner 必須含中性事件常數標識');
-    // 同時驗證沒有 IR-037 字眼洩漏（中性化保證）
-    assert.ok(!content.includes('IR-037'), 'banner 不該含 IR-037（v1.20.4 中性化）');
+    // v1.20.4: banner uses a neutral event constant, no longer hardcoding IR-037.
+    assert.match(content, /lint_language_mixed_ratio/, 'banner must include the neutral event constant identifier');
+    // Also verify no IR-037 string leaks (neutralization guarantee).
+    assert.ok(!content.includes('IR-037'), 'banner must not contain IR-037 (v1.20.4 neutralization)');
   });
 
-  it('只看最後一輪 assistant — 中間違反、最後乾淨 → 不寫 banner', () => {
+  it('only the last assistant turn matters — violation mid-conversation, clean at the end → no banner', () => {
     writeTranscript([
       { role: 'user', text: 'q1' },
       { role: 'assistant', text: 'I will refactor everything completely using a different approach now.' },
@@ -197,10 +202,10 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
     ]);
     const r = runHook(stopPayload());
     assert.equal(fs.existsSync(pendingFile), false,
-      '只看最後一輪 — 之前的違反不算（會由前面的 Stop hook 處理過）');
+      'only the last turn is checked — prior violations are not counted (the earlier Stop hook handled them)');
   });
 
-  it('最後一輪 assistant 含 tool_use parts → 只抽 text parts 跑 lint', () => {
+  it('last assistant turn contains tool_use parts → lint only runs on text parts', () => {
     writeTranscript([
       {
         role: 'assistant',
@@ -214,10 +219,10 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
     const r = runHook(stopPayload());
     assert.equal(r.status, 0);
     assert.equal(fs.existsSync(pendingFile), false,
-      '純中文 text parts 不該違反 — tool_use 不參與 lint');
+      'pure-Chinese text parts should not violate — tool_use does not participate in lint');
   });
 
-  it('banner 招牌格式：含 [OwnMind v?] + 違反條目', () => {
+  it('banner signature format: contains [OwnMind v?] + violation entries', () => {
     writeTranscript([
       { role: 'assistant', text: 'I really think we should refactor everything immediately because the codebase is broken.' },
     ]);
@@ -225,76 +230,76 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
     assert.ok(fs.existsSync(pendingFile));
     const record = JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop());
     const block = record.block;
-    assert.match(block, /^\[OwnMind\s+v[\d.?]+\]/, 'banner 必須以招牌開頭');
-    assert.match(block, /Reply quality lint/, 'banner 必須標示這是回話品質檢查');
+    assert.match(block, /^\[OwnMind\s+v[\d.?]+\]/, 'banner must begin with the signature');
+    assert.match(block, /Reply quality lint/, 'banner must mark this as the reply-quality check');
   });
 });
 
-describe('v1.17.96 — stop_hook_active 防迴圈', () => {
+describe('v1.17.96 — stop_hook_active loop guard', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('stop_hook_active=true → 不跑 lint、不寫 banner（避免遞迴）', () => {
+  it('stop_hook_active=true → skip lint, no banner (avoid recursion)', () => {
     writeTranscript([
       { role: 'assistant', text: 'I think we should refactor the entire codebase using a different approach.' },
     ]);
     const r = runHook(stopPayload({ stop_hook_active: true }));
     assert.equal(r.status, 0);
     assert.equal(fs.existsSync(pendingFile), false,
-      'stop_hook_active=true 必須立刻退出、不寫 banner');
+      'stop_hook_active=true must exit immediately and not write a banner');
   });
 });
 
-describe('v1.17.96 — fallback banner 不污染 stdout/stderr', () => {
+describe('v1.17.96 — fallback banner does not pollute stdout/stderr', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('違反時 — stdout/stderr 仍空白、所有訊息只到 fallback file', () => {
+  it('on violation — stdout/stderr stay blank; all messages go only to the fallback file', () => {
     writeTranscript([
       { role: 'assistant', text: 'I really should refactor this whole thing completely from scratch immediately.' },
     ]);
     const r = runHook(stopPayload());
     assert.equal(r.stderr, '');
-    assert.ok(!r.stdout.includes('lint_language_mixed_ratio'), 'lint 事件訊息不該外漏到 stdout');
-    assert.ok(!r.stdout.includes('IR-037'), 'IR-037 字眼絕不該出現在 stdout（中性化保證）');
-    assert.ok(!r.stdout.includes('【OwnMind'), 'OwnMind banner 不該外漏到 stdout');
+    assert.ok(!r.stdout.includes('lint_language_mixed_ratio'), 'lint event text must not leak to stdout');
+    assert.ok(!r.stdout.includes('IR-037'), 'IR-037 string must never appear in stdout (neutralization)');
+    assert.ok(!r.stdout.includes('【OwnMind'), 'OwnMind banner must not leak to stdout');
   });
 
-  // review-B3：嚴格驗 stdout / stderr 完全空白（不只是不含 banner）
-  it('嚴格契約：違反 + 沒違反 / 空 input / 壞 input — stdout 與 stderr 都必須完全空白', () => {
+  // review-B3: strictly verify stdout / stderr are completely blank (not just "no banner")
+  it('strict contract: violation + clean / empty input / malformed input — stdout and stderr must be completely blank', () => {
     writeTranscript([
       { role: 'assistant', text: 'I really should refactor everything completely from scratch immediately because of bugs.' },
     ]);
     const cases = [
-      { name: '違反', input: stopPayload() },
-      { name: '空 input', input: '{}' },
-      { name: '壞 JSON', input: 'this is not json' },
-      { name: 'transcript 不存在', input: stopPayload({ transcript_path: path.join(tmpHome, 'no-such-file.jsonl') }) },
+      { name: 'violation', input: stopPayload() },
+      { name: 'empty input', input: '{}' },
+      { name: 'malformed JSON', input: 'this is not json' },
+      { name: 'transcript missing', input: stopPayload({ transcript_path: path.join(tmpHome, 'no-such-file.jsonl') }) },
       { name: 'stop_hook_active=true', input: stopPayload({ stop_hook_active: true }) },
     ];
     for (const c of cases) {
       const r = runHook(c.input);
-      assert.equal(r.stdout, '', `[${c.name}] stdout 必須完全空白、實際：${JSON.stringify(r.stdout)}`);
-      assert.equal(r.stderr, '', `[${c.name}] stderr 必須完全空白、實際：${JSON.stringify(r.stderr)}`);
-      assert.equal(r.status, 0, `[${c.name}] 必須 exit 0`);
+      assert.equal(r.stdout, '', `[${c.name}] stdout must be completely blank, actual: ${JSON.stringify(r.stdout)}`);
+      assert.equal(r.stderr, '', `[${c.name}] stderr must be completely blank, actual: ${JSON.stringify(r.stderr)}`);
+      assert.equal(r.status, 0, `[${c.name}] must exit 0`);
     }
   });
 });
 
-// review-B1：transcript_path 安全性檢查
-describe('v1.17.96 — transcript_path 防呆 / 安全', () => {
+// review-B1: transcript_path safety checks
+describe('v1.17.96 — transcript_path defense / safety', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('非 .jsonl 副檔名 → 拒絕讀取', () => {
+  it('non-.jsonl extension → refuse to read', () => {
     const txtPath = path.join(tmpHome, 'fake.txt');
     fs.writeFileSync(txtPath, '{"type":"assistant","message":{"content":[{"type":"text","text":"refactor everything completely"}]}}');
     const r = runHook(stopPayload({ transcript_path: txtPath }));
     assert.equal(r.status, 0);
-    assert.equal(fs.existsSync(pendingFile), false, '非 .jsonl 不該被 lint');
+    assert.equal(fs.existsSync(pendingFile), false, 'non-.jsonl must not be linted');
   });
 
-  it('空檔案 → 拒絕讀取', () => {
+  it('empty file → refuse to read', () => {
     const empty = path.join(tmpHome, 'empty.jsonl');
     fs.writeFileSync(empty, '');
     const r = runHook(stopPayload({ transcript_path: empty }));
@@ -302,7 +307,7 @@ describe('v1.17.96 — transcript_path 防呆 / 安全', () => {
     assert.equal(fs.existsSync(pendingFile), false);
   });
 
-  it('目錄而非檔案 → 拒絕讀取', () => {
+  it('directory instead of a file → refuse to read', () => {
     const dir = path.join(tmpHome, 'a-dir.jsonl');
     fs.mkdirSync(dir);
     const r = runHook(stopPayload({ transcript_path: dir }));
@@ -310,16 +315,16 @@ describe('v1.17.96 — transcript_path 防呆 / 安全', () => {
   });
 });
 
-// review-B4：tail 截斷防呆
-describe('v1.17.96 — 大 transcript 尾巴讀取 — 第一行可能截斷', () => {
+// review-B4: tail-truncation defense
+describe('v1.17.96 — large transcript tail read — first line may be truncated', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('檔案 > 256KB 時、第一行被切到中間 → 不該嘗試 parse 那行', () => {
-    // 寫一個 > 256KB 的 transcript：
-    //   - 開頭塞一個極大的 valid assistant entry（超過 256KB）
-    //   - 末尾塞一個小的 valid assistant entry
-    // tail 讀進來時第一行一定是中間切起來的、不是合法 JSON
+  it('file > 256KB, first line cut mid-stream → must not attempt to parse that line', () => {
+    // Write a > 256KB transcript:
+    //   - prepend a huge valid assistant entry (> 256KB)
+    //   - append a small valid assistant entry at the tail
+    // When the tail is read, the first line will be cut in the middle and is not valid JSON.
     const padding = 'x'.repeat(300 * 1024);  // > 256KB
     const huge = JSON.stringify({
       type: 'assistant',
@@ -333,12 +338,12 @@ describe('v1.17.96 — 大 transcript 尾巴讀取 — 第一行可能截斷', (
     const r = runHook(stopPayload());
     assert.equal(r.status, 0);
     assert.equal(fs.existsSync(pendingFile), false,
-      '最後一輪是純中文、不該寫 banner（驗證 hook 沒被截斷的第一行卡住而誤判）');
+      'last turn is all Chinese — no banner (verifies the hook is not stalled on the truncated first line)');
   });
 });
 
-// review-B3：Compliance event POST schema 驗證（fake server）
-describe('v1.17.96 — POST /api/activity/batch schema 對齊 server 期望', () => {
+// review-B3: validate compliance event POST schema (fake server)
+describe('v1.17.96 — POST /api/activity/batch schema aligns with server expectations', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
@@ -366,7 +371,7 @@ describe('v1.17.96 — POST /api/activity/batch schema 對齊 server 期望', ()
     }));
   }
 
-  it('違反時 POST 的 body 對齊 src/routes/activity.js batch handler 規格', async () => {
+  it('on violation, POST body aligns with the src/routes/activity.js batch handler spec', async () => {
     const captured = [];
     const server = await startFakeServer((req) => captured.push(req));
     try {
@@ -376,7 +381,7 @@ describe('v1.17.96 — POST /api/activity/batch schema 對齊 server 期望', ()
       writeTranscript([
         { role: 'assistant', text: 'I should refactor everything completely from scratch immediately because clearly bugs.' },
       ]);
-      // 注意這個 case 不設 NO_NETWORK、要讓 POST 真的打出去
+      // Important: do not set NO_NETWORK here — let the POST actually go out.
       const r = await new Promise((resolve) => {
         const child = require('node:child_process').spawn('node', [hookPath], {
           env: {
@@ -397,31 +402,32 @@ describe('v1.17.96 — POST /api/activity/batch schema 對齊 server 期望', ()
 
       assert.equal(r.status, 0);
       assert.equal(r.stderr, '');
-      assert.equal(captured.length, 1, '應該打出 1 個 POST');
+      assert.equal(captured.length, 1, 'should fire exactly one POST');
       assert.equal(captured[0].method, 'POST');
       assert.equal(captured[0].url, '/api/activity/batch');
       assert.match(captured[0].headers['authorization'], /^Bearer test-key$/);
 
       const parsed = JSON.parse(captured[0].body);
-      assert.ok(Array.isArray(parsed.events), 'body 必須有 events array');
+      assert.ok(Array.isArray(parsed.events), 'body must contain an events array');
       assert.ok(parsed.events.length > 0);
       const ev = parsed.events[0];
-      // server src/routes/activity.js:145 — 缺 ts 或 event 會直接 continue 跳過
-      assert.ok(ev.ts, 'event.ts 必填（否則 server 會跳過 / 不落 DB）');
-      assert.equal(ev.event, 'iron_rule_compliance', 'event.event 必為 iron_rule_compliance');
+      // server src/routes/activity.js:145 — missing ts or event causes continue/skip
+      assert.ok(ev.ts, 'event.ts is required (server skips events lacking it / never writes DB)');
+      assert.equal(ev.event, 'iron_rule_compliance', 'event.event must be iron_rule_compliance');
       assert.equal(ev.tool, 'claude-code');
       assert.equal(ev.source, 'reply-lint-hook');
       assert.ok(ev.details && typeof ev.details === 'object');
       assert.equal(ev.details.action, 'violate');
-      // v1.20.4：rule_code 可能空（規則快取無對應）或對應 user 鐵律編號；至少要有 triggered_by_event
+      // v1.20.4: rule_code may be empty (no matching rule in the cache) or a user iron-rule code;
+      // at minimum, triggered_by_event must be present.
       assert.ok(
         typeof ev.details.rule_code === 'string',
-        'rule_code 必須是字串（即使空、也要存在欄位）'
+        'rule_code must be a string (even if empty, the field must exist)'
       );
       assert.match(
         ev.details.triggered_by_event,
         /^(lint_|privacy_check)/,
-        'triggered_by_event 必為中性事件常數'
+        'triggered_by_event must be a neutral event constant'
       );
     } finally {
       server.close();
@@ -429,7 +435,7 @@ describe('v1.17.96 — POST /api/activity/batch schema 對齊 server 期望', ()
   });
 });
 
-// 必要：require 給上面 fake server 用（ESM module 內混用）
+// Required: require for the fake server above (mixed use inside an ESM module)
 import { createRequire } from 'node:module';
 import http from 'node:http';
 const require = createRequire(import.meta.url);

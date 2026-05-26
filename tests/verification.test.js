@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { evaluateConditions, CHECK_HANDLERS } from '../shared/verification.js';
 
 // ============================================================
-// CHECK_HANDLERS 單元測試
+// CHECK_HANDLERS unit tests
 // ============================================================
 
 describe('CHECK_HANDLERS', () => {
@@ -11,7 +11,7 @@ describe('CHECK_HANDLERS', () => {
   // --- staged_files_include ---
 
   describe('staged_files_include', () => {
-    it('所有 pattern 都在 staged files 中 → true', () => {
+    it('all patterns present in staged files → true', () => {
       const ctx = { stagedFiles: ['README.md', 'CHANGELOG.md', 'src/index.js'] };
       const result = CHECK_HANDLERS.staged_files_include(
         { patterns: ['README.md', 'CHANGELOG.md'] }, ctx
@@ -19,7 +19,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('缺少一個 pattern → false', () => {
+    it('one pattern missing → false', () => {
       const ctx = { stagedFiles: ['README.md', 'src/index.js'] };
       const result = CHECK_HANDLERS.staged_files_include(
         { patterns: ['README.md', 'CHANGELOG.md'] }, ctx
@@ -27,7 +27,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('支援 glob pattern', () => {
+    it('supports glob patterns', () => {
       const ctx = { stagedFiles: ['docs/guide.md', 'src/index.js'] };
       const result = CHECK_HANDLERS.staged_files_include(
         { patterns: ['docs/*.md'] }, ctx
@@ -35,7 +35,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('context 缺失 stagedFiles → true（跳過檢查）', () => {
+    it('context missing stagedFiles → true (skip check)', () => {
       const result = CHECK_HANDLERS.staged_files_include(
         { patterns: ['README.md'] }, {}
       );
@@ -46,7 +46,7 @@ describe('CHECK_HANDLERS', () => {
   // --- staged_files_exclude ---
 
   describe('staged_files_exclude', () => {
-    it('staged files 不含排除 pattern → true', () => {
+    it('staged files do not contain excluded patterns → true', () => {
       const ctx = { stagedFiles: ['src/index.js', 'README.md'] };
       const result = CHECK_HANDLERS.staged_files_exclude(
         { patterns: ['.env', '*.pem'] }, ctx
@@ -54,7 +54,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('staged files 包含排除 pattern → false', () => {
+    it('staged files contain an excluded pattern → false', () => {
       const ctx = { stagedFiles: ['src/index.js', '.env'] };
       const result = CHECK_HANDLERS.staged_files_exclude(
         { patterns: ['.env', '*.pem'] }, ctx
@@ -62,7 +62,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('支援 glob pattern 排除', () => {
+    it('supports glob pattern exclusion', () => {
       const ctx = { stagedFiles: ['certs/server.pem'] };
       const result = CHECK_HANDLERS.staged_files_exclude(
         { patterns: ['**/*.pem'] }, ctx
@@ -70,7 +70,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('context 缺失 → true', () => {
+    it('context missing → true', () => {
       const result = CHECK_HANDLERS.staged_files_exclude(
         { patterns: ['.env'] }, {}
       );
@@ -81,7 +81,7 @@ describe('CHECK_HANDLERS', () => {
   // --- commit_message_contains ---
 
   describe('commit_message_contains', () => {
-    it('commit message 包含指定文字 → true', () => {
+    it('commit message contains one of the patterns → true', () => {
       const ctx = { commitMessage: 'feat: add login page' };
       const result = CHECK_HANDLERS.commit_message_contains(
         { patterns: ['feat:', 'fix:'] }, ctx
@@ -89,7 +89,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('commit message 不包含任何指定文字 → false', () => {
+    it('commit message contains none of the patterns → false', () => {
       const ctx = { commitMessage: 'update something' };
       const result = CHECK_HANDLERS.commit_message_contains(
         { patterns: ['feat:', 'fix:'] }, ctx
@@ -97,7 +97,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('context 缺失 → true', () => {
+    it('context missing → true', () => {
       const result = CHECK_HANDLERS.commit_message_contains(
         { patterns: ['feat:'] }, {}
       );
@@ -108,7 +108,7 @@ describe('CHECK_HANDLERS', () => {
   // --- commit_message_not_contains ---
 
   describe('commit_message_not_contains', () => {
-    it('commit message 不含禁止文字 → true', () => {
+    it('commit message does not contain forbidden text → true', () => {
       const ctx = { commitMessage: 'feat: add login page' };
       const result = CHECK_HANDLERS.commit_message_not_contains(
         { patterns: ['Co-Authored-By'] }, ctx
@@ -116,7 +116,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('commit message 包含禁止文字 → false', () => {
+    it('commit message contains forbidden text → false', () => {
       const ctx = { commitMessage: 'feat: add login\n\nCo-Authored-By: Bot' };
       const result = CHECK_HANDLERS.commit_message_not_contains(
         { patterns: ['Co-Authored-By'] }, ctx
@@ -124,7 +124,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('context 缺失 → true', () => {
+    it('context missing → true', () => {
       const result = CHECK_HANDLERS.commit_message_not_contains(
         { patterns: ['Co-Authored-By'] }, {}
       );
@@ -135,7 +135,7 @@ describe('CHECK_HANDLERS', () => {
   // --- recent_event_exists ---
 
   describe('recent_event_exists', () => {
-    it('complianceEvents 中有匹配的事件 → true', () => {
+    it('complianceEvents contains a matching event → true', () => {
       const ctx = {
         complianceEvents: [
           { event: 'verification', action: 'comply', ts: '2026-03-31T10:00:00Z' },
@@ -148,7 +148,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('有事件但 action 不匹配 → false', () => {
+    it('event exists but action does not match → false', () => {
       const ctx = {
         complianceEvents: [
           { event: 'code-review', action: 'violate', ts: '2026-03-31T10:00:00Z' }
@@ -160,7 +160,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('complianceEvents 為空 → false', () => {
+    it('complianceEvents is empty → false', () => {
       const ctx = { complianceEvents: [] };
       const result = CHECK_HANDLERS.recent_event_exists(
         { event: 'code-review', action: 'comply' }, ctx
@@ -168,7 +168,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('context 缺失 complianceEvents → true（跳過）', () => {
+    it('context missing complianceEvents → true (skip)', () => {
       const result = CHECK_HANDLERS.recent_event_exists(
         { event: 'code-review', action: 'comply' }, {}
       );
@@ -179,7 +179,7 @@ describe('CHECK_HANDLERS', () => {
   // --- source_files_changed ---
 
   describe('source_files_changed', () => {
-    it('有原始碼檔案匹配 pattern → true', () => {
+    it('source files match a pattern → true', () => {
       const ctx = { changedSourceFiles: ['src/routes/memory.js', 'src/utils/report.js'] };
       const result = CHECK_HANDLERS.source_files_changed(
         { patterns: ['src/**'] }, ctx
@@ -187,7 +187,7 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, true);
     });
 
-    it('無匹配 → false', () => {
+    it('no match → false', () => {
       const ctx = { changedSourceFiles: ['docs/README.md'] };
       const result = CHECK_HANDLERS.source_files_changed(
         { patterns: ['src/**'] }, ctx
@@ -195,14 +195,14 @@ describe('CHECK_HANDLERS', () => {
       assert.equal(result, false);
     });
 
-    it('context 缺失 changedSourceFiles → false（不是 true）', () => {
+    it('context missing changedSourceFiles → false (not true)', () => {
       const result = CHECK_HANDLERS.source_files_changed(
         { patterns: ['src/**'] }, {}
       );
       assert.equal(result, false);
     });
 
-    it('changedSourceFiles 為空 → false', () => {
+    it('changedSourceFiles is empty → false', () => {
       const ctx = { changedSourceFiles: [] };
       const result = CHECK_HANDLERS.source_files_changed(
         { patterns: ['src/**'] }, ctx
@@ -213,13 +213,13 @@ describe('CHECK_HANDLERS', () => {
 });
 
 // ============================================================
-// evaluateConditions 組合邏輯測試
+// evaluateConditions composition tests
 // ============================================================
 
 describe('evaluateConditions', () => {
 
-  describe('單一條件', () => {
-    it('通過 → pass: true, failures 空', () => {
+  describe('single condition', () => {
+    it('pass → pass: true, failures empty', () => {
       const conditions = {
         type: 'staged_files_include',
         params: { patterns: ['README.md'] },
@@ -231,7 +231,7 @@ describe('evaluateConditions', () => {
       assert.equal(result.failures.length, 0);
     });
 
-    it('失敗 → pass: false, failures 含 message', () => {
+    it('fail → pass: false, failures contains message', () => {
       const conditions = {
         type: 'staged_files_include',
         params: { patterns: ['README.md'] },
@@ -243,7 +243,7 @@ describe('evaluateConditions', () => {
       assert.deepEqual(result.failures, ['缺少 README，請 git add README.md 後重試']);
     });
 
-    it('未知 check type → pass: true（安全跳過）', () => {
+    it('unknown check type → pass: true (safe skip)', () => {
       const conditions = {
         type: 'unknown_check_type',
         params: {},
@@ -254,8 +254,8 @@ describe('evaluateConditions', () => {
     });
   });
 
-  describe('AND 條件', () => {
-    it('全部通過 → pass', () => {
+  describe('AND condition', () => {
+    it('all pass → pass', () => {
       const conditions = {
         operator: 'AND',
         checks: [
@@ -269,7 +269,7 @@ describe('evaluateConditions', () => {
       assert.equal(result.failures.length, 0);
     });
 
-    it('一個失敗 → fail，回傳該失敗的 message', () => {
+    it('one fails → fail, returns that failure message', () => {
       const conditions = {
         operator: 'AND',
         checks: [
@@ -283,7 +283,7 @@ describe('evaluateConditions', () => {
       assert.deepEqual(result.failures, ['缺 CHANGELOG，請 git add CHANGELOG.md 後重試']);
     });
 
-    it('全部失敗 → fail，回傳所有 message', () => {
+    it('all fail → fail, returns all messages', () => {
       const conditions = {
         operator: 'AND',
         checks: [
@@ -298,8 +298,8 @@ describe('evaluateConditions', () => {
     });
   });
 
-  describe('OR 條件', () => {
-    it('任一通過 → pass', () => {
+  describe('OR condition', () => {
+    it('any pass → pass', () => {
       const conditions = {
         operator: 'OR',
         checks: [
@@ -313,7 +313,7 @@ describe('evaluateConditions', () => {
       assert.equal(result.failures.length, 0);
     });
 
-    it('全部失敗 → fail，回傳所有 message', () => {
+    it('all fail → fail, returns all messages', () => {
       const conditions = {
         operator: 'OR',
         checks: [
@@ -328,8 +328,8 @@ describe('evaluateConditions', () => {
     });
   });
 
-  describe('巢狀條件', () => {
-    it('AND 內含 OR：外層 AND 全過 → pass', () => {
+  describe('nested conditions', () => {
+    it('AND containing OR: outer AND passes → pass', () => {
       const conditions = {
         operator: 'AND',
         checks: [
@@ -348,7 +348,7 @@ describe('evaluateConditions', () => {
       assert.equal(result.pass, true);
     });
 
-    it('AND 內含 OR：OR 全失敗 → 外層 AND fail', () => {
+    it('AND containing OR: OR all fail → outer AND fails', () => {
       const conditions = {
         operator: 'AND',
         checks: [
@@ -370,8 +370,8 @@ describe('evaluateConditions', () => {
     });
   });
 
-  describe('when/then 條件式', () => {
-    it('when 為 false → 整體 pass', () => {
+  describe('when/then conditional', () => {
+    it('when is false → overall pass', () => {
       const conditions = {
         when: { type: 'source_files_changed', params: { patterns: ['src/**'] } },
         then: { type: 'staged_files_include', params: { patterns: ['README.md'] }, message: '缺 README' }
@@ -382,7 +382,7 @@ describe('evaluateConditions', () => {
       assert.equal(result.failures.length, 0);
     });
 
-    it('when 為 true + then 通過 → pass', () => {
+    it('when is true + then passes → pass', () => {
       const conditions = {
         when: { type: 'source_files_changed', params: { patterns: ['src/**'] } },
         then: { type: 'staged_files_include', params: { patterns: ['README.md'] }, message: '缺 README' }
@@ -392,7 +392,7 @@ describe('evaluateConditions', () => {
       assert.equal(result.pass, true);
     });
 
-    it('when 為 true + then 失敗 → fail', () => {
+    it('when is true + then fails → fail', () => {
       const conditions = {
         when: { type: 'source_files_changed', params: { patterns: ['src/**'] } },
         then: { type: 'staged_files_include', params: { patterns: ['README.md'] }, message: '缺 README' }
@@ -404,8 +404,8 @@ describe('evaluateConditions', () => {
     });
   });
 
-  describe('隱含 AND（無 operator）', () => {
-    it('沒有明確指定 operator 時視為 AND', () => {
+  describe('implicit AND (no operator)', () => {
+    it('no explicit operator is treated as AND', () => {
       const conditions = {
         checks: [
           { type: 'staged_files_include', params: { patterns: ['README.md'] }, message: 'A' },
@@ -421,14 +421,14 @@ describe('evaluateConditions', () => {
 });
 
 // ============================================================
-// IR-008 遷移場景測試
+// IR-008 migration scenarios
 // ============================================================
 
-// 注意：IR-008 使用 when/then 語意，不是 AND。見下方 when/then 測試。
+// Note: IR-008 uses when/then semantics, not AND. See when/then tests below.
 
-describe('IR-008 正確語意：when/then 條件式檢查', () => {
-  // 正確語意：如果有原始碼改動 → 文件必須同步
-  // 用 when/then 表達
+describe('IR-008 correct semantics: when/then conditional check', () => {
+  // Correct semantics: if source code changed → docs must be synced.
+  // Expressed via when/then.
   const ir008Conditions = {
     when: {
       type: 'source_files_changed',
@@ -441,7 +441,7 @@ describe('IR-008 正確語意：when/then 條件式檢查', () => {
     }
   };
 
-  it('沒有原始碼改動 → pass（條件不適用）', () => {
+  it('no source code changes → pass (condition not applicable)', () => {
     const ctx = {
       changedSourceFiles: ['docs/guide.md'],
       stagedFiles: ['docs/guide.md']
@@ -451,7 +451,7 @@ describe('IR-008 正確語意：when/then 條件式檢查', () => {
     assert.equal(result.failures.length, 0);
   });
 
-  it('有原始碼改動且文件同步 → pass', () => {
+  it('source code changes + docs synced → pass', () => {
     const ctx = {
       changedSourceFiles: ['src/routes/memory.js'],
       stagedFiles: ['src/routes/memory.js', 'README.md', 'CHANGELOG.md', 'FILELIST.md']
@@ -460,7 +460,7 @@ describe('IR-008 正確語意：when/then 條件式檢查', () => {
     assert.equal(result.pass, true);
   });
 
-  it('有原始碼改動但文件未同步 → fail', () => {
+  it('source code changes + docs not synced → fail', () => {
     const ctx = {
       changedSourceFiles: ['src/routes/memory.js'],
       stagedFiles: ['src/routes/memory.js', 'README.md']
@@ -470,7 +470,7 @@ describe('IR-008 正確語意：when/then 條件式檢查', () => {
     assert.ok(result.failures.some(f => f.includes('未同步')));
   });
 
-  it('changedSourceFiles 為空 → pass（when 為 false）', () => {
+  it('changedSourceFiles empty → pass (when is false)', () => {
     const ctx = {
       changedSourceFiles: [],
       stagedFiles: ['README.md']
@@ -481,10 +481,10 @@ describe('IR-008 正確語意：when/then 條件式檢查', () => {
 });
 
 // ============================================================
-// IR-012 品管三步驟場景測試
+// IR-012 quality-control three-step scenario
 // ============================================================
 
-describe('IR-012 品管三步驟場景', () => {
+describe('IR-012 quality-control three-step scenario', () => {
   const ir012Conditions = {
     operator: 'AND',
     checks: [
@@ -501,7 +501,7 @@ describe('IR-012 品管三步驟場景', () => {
     ]
   };
 
-  it('兩個步驟都完成 → pass', () => {
+  it('both steps completed → pass', () => {
     const ctx = {
       complianceEvents: [
         { event: 'verification', action: 'comply', ts: '2026-03-31T10:00:00Z' },
@@ -512,7 +512,7 @@ describe('IR-012 品管三步驟場景', () => {
     assert.equal(result.pass, true);
   });
 
-  it('只做了 verification 沒做 code review → fail', () => {
+  it('verification done but code review missing → fail', () => {
     const ctx = {
       complianceEvents: [
         { event: 'verification', action: 'comply', ts: '2026-03-31T10:00:00Z' }
@@ -522,17 +522,17 @@ describe('IR-012 品管三步驟場景', () => {
     assert.equal(result.pass, false);
     assert.equal(result.failures.length, 1);
     assert.ok(result.failures[0].startsWith('還沒做 code review'),
-      `failure 開頭應為「還沒做 code review」：${result.failures[0]}`);
+      `failure should start with "還沒做 code review": ${result.failures[0]}`);
   });
 
-  it('兩個都沒做 → fail，回傳兩個 message', () => {
+  it('neither step done → fail, returns both messages', () => {
     const ctx = { complianceEvents: [] };
     const result = evaluateConditions(ir012Conditions, ctx);
     assert.equal(result.pass, false);
     assert.equal(result.failures.length, 2);
   });
 
-  it('有 code-review 但 action 是 violate → fail', () => {
+  it('code-review exists but action is violate → fail', () => {
     const ctx = {
       complianceEvents: [
         { event: 'verification', action: 'comply', ts: '2026-03-31T10:00:00Z' },
@@ -543,34 +543,34 @@ describe('IR-012 品管三步驟場景', () => {
     assert.equal(result.pass, false);
     assert.equal(result.failures.length, 1);
     assert.ok(result.failures[0].startsWith('還沒做 code review'),
-      `failure 開頭應為「還沒做 code review」：${result.failures[0]}`);
+      `failure should start with "還沒做 code review": ${result.failures[0]}`);
   });
 });
 
 // ============================================================
-// IR-002 不 commit .env 場景測試
+// IR-002 do not commit .env scenario
 // ============================================================
 
-describe('IR-002 不 commit .env 場景', () => {
+describe('IR-002 do not commit .env scenario', () => {
   const ir002Conditions = {
     type: 'staged_files_exclude',
     params: { patterns: ['.env', '*.pem', '**/*.pem', '*.key', '**/*.key', 'credentials.*'] },
     message: 'staged 包含敏感檔案'
   };
 
-  it('沒有敏感檔案 → pass', () => {
+  it('no sensitive files → pass', () => {
     const ctx = { stagedFiles: ['src/index.js', 'README.md'] };
     const result = evaluateConditions(ir002Conditions, ctx);
     assert.equal(result.pass, true);
   });
 
-  it('包含 .env → fail', () => {
+  it('contains .env → fail', () => {
     const ctx = { stagedFiles: ['src/index.js', '.env'] };
     const result = evaluateConditions(ir002Conditions, ctx);
     assert.equal(result.pass, false);
   });
 
-  it('包含 .pem 檔案（子目錄） → fail', () => {
+  it('contains a .pem file (subdirectory) → fail', () => {
     const ctx = { stagedFiles: ['server.pem'] };
     const result = evaluateConditions(ir002Conditions, ctx);
     assert.equal(result.pass, false);
@@ -578,23 +578,23 @@ describe('IR-002 不 commit .env 場景', () => {
 });
 
 // ============================================================
-// IR-009 Git contributor 場景測試
+// IR-009 Git contributor scenario
 // ============================================================
 
-describe('IR-009 Git contributor 場景', () => {
+describe('IR-009 Git contributor scenario', () => {
   const ir009Conditions = {
     type: 'commit_message_not_contains',
     params: { patterns: ['Co-Authored-By'] },
     message: 'commit message 不能包含 Co-Authored-By'
   };
 
-  it('正常 commit message → pass', () => {
+  it('normal commit message → pass', () => {
     const ctx = { commitMessage: 'feat: add verification engine' };
     const result = evaluateConditions(ir009Conditions, ctx);
     assert.equal(result.pass, true);
   });
 
-  it('包含 Co-Authored-By → fail', () => {
+  it('contains Co-Authored-By → fail', () => {
     const ctx = { commitMessage: 'feat: add something\n\nCo-Authored-By: Bot <bot@example.com>' };
     const result = evaluateConditions(ir009Conditions, ctx);
     assert.equal(result.pass, false);
@@ -602,10 +602,10 @@ describe('IR-009 Git contributor 場景', () => {
 });
 
 // ============================================================
-// context 互補測試（git hook vs MCP 各自有不同 context）
+// Context complementarity (git hook vs MCP each have different context)
 // ============================================================
 
-describe('context 互補行為', () => {
+describe('context complementarity behavior', () => {
   const mixedConditions = {
     operator: 'AND',
     checks: [
@@ -622,27 +622,27 @@ describe('context 互補行為', () => {
     ]
   };
 
-  it('git hook context（有 git，無 compliance）→ 只檢查 git 部分', () => {
+  it('git hook context (git present, no compliance) → only checks git portion', () => {
     const ctx = { stagedFiles: ['README.md', 'src/index.js'] };
-    // recent_event_exists 因為沒有 complianceEvents → return true（跳過）
+    // recent_event_exists returns true (skipped) because complianceEvents missing.
     const result = evaluateConditions(mixedConditions, ctx);
     assert.equal(result.pass, true);
   });
 
-  it('MCP context（有 compliance，無 git）→ 只檢查 compliance 部分', () => {
+  it('MCP context (compliance present, no git) → only checks compliance portion', () => {
     const ctx = {
       complianceEvents: [
         { event: 'code-review', action: 'comply', ts: '2026-03-31T10:00:00Z' }
       ]
     };
-    // staged_files_include 因為沒有 stagedFiles → return true（跳過）
+    // staged_files_include returns true (skipped) because stagedFiles missing.
     const result = evaluateConditions(mixedConditions, ctx);
     assert.equal(result.pass, true);
   });
 
-  it('完整 context（兩者都有）→ 兩部分都檢查', () => {
+  it('full context (both present) → both portions checked', () => {
     const ctx = {
-      stagedFiles: ['src/index.js'],  // 缺 README
+      stagedFiles: ['src/index.js'],  // README missing
       complianceEvents: [
         { event: 'code-review', action: 'comply', ts: '2026-03-31T10:00:00Z' }
       ]
@@ -652,18 +652,19 @@ describe('context 互補行為', () => {
     assert.deepEqual(result.failures, ['缺 README，請 git add README.md 後重試']);
   });
 
-  it('空 context → 全部跳過 → pass', () => {
+  it('empty context → all skipped → pass', () => {
     const result = evaluateConditions(mixedConditions, {});
     assert.equal(result.pass, true);
   });
 });
 
 // ============================================================
-// v1.20.2 — recent_event_exists 失敗訊息含具體 ownmind_report_compliance 呼叫範例
+// v1.20.2 — recent_event_exists failure message includes a concrete
+// ownmind_report_compliance call example
 // ============================================================
 
-describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
-  it('verification 缺失 → hint 含 ownmind_report_compliance 呼叫範例 + rule_title verification + 不要帶 rule_code 提示', () => {
+describe('v1.20.2 FIX_HINTS.recent_event_exists concrete call example', () => {
+  it('verification missing → hint includes ownmind_report_compliance call example + rule_title verification + "do not pass rule_code" warning', () => {
     const conditions = {
       type: 'recent_event_exists',
       params: { event: 'verification', action: 'comply' },
@@ -675,24 +676,24 @@ describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
     assert.equal(result.failures.length, 1);
     const msg = result.failures[0];
     assert.ok(msg.startsWith('還沒做 verification'),
-      `hint 開頭應為規則 message：${msg}`);
+      `hint should start with the rule message: ${msg}`);
     assert.ok(msg.includes('ownmind_report_compliance'),
-      `hint 應提及 ownmind_report_compliance：${msg}`);
+      `hint should mention ownmind_report_compliance: ${msg}`);
     assert.ok(
       msg.includes("rule_title: 'verification'") || msg.includes('rule_title: "verification"'),
-      `hint 應指明 rule_title: verification：${msg}`
+      `hint should specify rule_title: verification: ${msg}`
     );
     assert.ok(
       msg.includes("action: 'comply'") || msg.includes('action: "comply"'),
-      `hint 應指明 action: comply：${msg}`
+      `hint should specify action: comply: ${msg}`
     );
     assert.ok(
       msg.includes('rule_code') && /不要帶|不能填|別帶|不要填|無須|勿帶/.test(msg),
-      `hint 應警告不要帶 rule_code：${msg}`
+      `hint should warn not to pass rule_code: ${msg}`
     );
   });
 
-  it('code-review 缺失 → hint 含 rule_title: code-review', () => {
+  it('code-review missing → hint includes rule_title: code-review', () => {
     const conditions = {
       type: 'recent_event_exists',
       params: { event: 'code-review', action: 'comply' },
@@ -704,11 +705,11 @@ describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
     const msg = result.failures[0];
     assert.ok(
       msg.includes("rule_title: 'code-review'") || msg.includes('rule_title: "code-review"'),
-      `hint 應指明 rule_title: code-review：${msg}`
+      `hint should specify rule_title: code-review: ${msg}`
     );
   });
 
-  it('條件通過時不產生 failures', () => {
+  it('condition passes → no failures produced', () => {
     const conditions = {
       type: 'recent_event_exists',
       params: { event: 'verification', action: 'comply' },
@@ -724,7 +725,7 @@ describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
     assert.deepEqual(result.failures, []);
   });
 
-  it('失敗訊息長度不超過 250 字（避免鉤子輸出爆版）', () => {
+  it('failure message stays under 250 chars (keep hook output readable)', () => {
     const conditions = {
       type: 'recent_event_exists',
       params: { event: 'code-review', action: 'comply' },
@@ -738,7 +739,7 @@ describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
     );
   });
 
-  it('Spec Scenario 4 守備：其他 CHECK_HANDLERS 的 hint 文字不受影響', () => {
+  it('Spec Scenario 4 guard: hint text from other CHECK_HANDLERS is unchanged', () => {
     const stagedConditions = {
       type: 'staged_files_include',
       params: { patterns: ['README.md', 'CHANGELOG.md'] },
@@ -749,14 +750,14 @@ describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
     assert.equal(result.pass, false);
     assert.equal(result.failures.length, 1);
     const msg = result.failures[0];
-    assert.ok(msg.startsWith('缺檔案'), `hint 開頭應為規則 message：${msg}`);
+    assert.ok(msg.startsWith('缺檔案'), `hint should start with the rule message: ${msg}`);
     assert.ok(msg.includes('git add'),
-      `staged_files_include hint 應維持「請 git add ...」格式：${msg}`);
+      `staged_files_include hint should preserve the "請 git add ..." format: ${msg}`);
     assert.ok(!msg.includes('ownmind_report_compliance'),
-      `staged_files_include hint 不應誤帶 ownmind_report_compliance：${msg}`);
+      `staged_files_include hint should not leak ownmind_report_compliance: ${msg}`);
   });
 
-  it('params.event 內含單引號時、JSON.stringify 防護 hint 不會壞掉', () => {
+  it('when params.event contains a single quote, JSON.stringify guard keeps hint intact', () => {
     const conditions = {
       type: 'recent_event_exists',
       params: { event: "weird'name", action: 'comply' },
@@ -765,8 +766,8 @@ describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
     const ctx = { complianceEvents: [] };
     const result = evaluateConditions(conditions, ctx);
     const msg = result.failures[0];
-    // JSON.stringify("weird'name") = '"weird\'name"' → 雙引號包裹、單引號照原樣
+    // JSON.stringify("weird'name") = '"weird\'name"' — double quotes wrap, single quote stays as-is.
     assert.ok(msg.includes('"weird\'name"'),
-      `params.event 含單引號時應用雙引號包裹：${msg}`);
+      `params.event with a single quote should be wrapped in double quotes: ${msg}`);
   });
 });
