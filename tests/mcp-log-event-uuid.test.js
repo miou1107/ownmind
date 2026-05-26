@@ -6,18 +6,20 @@ import path from 'node:path';
 import http from 'node:http';
 
 /**
- * v1.17.99 — mcp/ownmind-log.js logEvent 必須給每筆事件生 client_event_id
+ * v1.17.99 — mcp/ownmind-log.js logEvent must generate a client_event_id per event.
  *
- * 為什麼：
- *   v1.17.98 server 端用 (user_id, client_event_id) partial unique index dedup。
- *   v1.17.96/97 reply-lint hook 已經帶 id、但 mcp/ownmind-log.js logEvent 沒帶 →
- *   server 對 logEvent 走 NULL path、夠用但沒 dedup 保護。
+ * Why:
+ *   v1.17.98 server uses a (user_id, client_event_id) partial unique index for dedup.
+ *   v1.17.96/97 reply-lint hook already sends an id, but mcp/ownmind-log.js logEvent
+ *   did not → server fell back to the NULL path for logEvent, sufficient but with no
+ *   dedup protection.
  *
- *   v1.17.99 給 logEvent 也加 client_event_id、跨所有 client path 一致 dedup。
+ *   v1.17.99 also adds client_event_id to logEvent so every client path dedups consistently.
  *
- * 注意：mcp/ownmind-log.js 用 fetch（node-fetch）打 server、用環境變數注入 API_URL/KEY、
- * buffer 邏輯複雜（10 events / 30s / IMMEDIATE_FLUSH_EVENTS 三種觸發）。
- * 這裡只驗 logEvent 寫進 JSONL 的 entry 跟 POST body 的 events 都帶 UUID v4。
+ * Note: mcp/ownmind-log.js uses fetch (node-fetch) to call the server with API_URL/KEY
+ * injected via env vars, and the buffer logic is non-trivial (three triggers:
+ * 10 events / 30s / IMMEDIATE_FLUSH_EVENTS). This test only verifies that the JSONL
+ * entry written by logEvent and the events in the POST body both carry a UUID v4.
  */
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -54,45 +56,46 @@ function setup() {
 
 function cleanup() {
   fs.rmSync(tmpHome, { recursive: true, force: true });
-  // I2 — 每次 cachebust import 都會 register 新的 process.on('beforeExit'/'SIGINT'/'SIGTERM')
-  // listener、避免累積到 MaxListenersExceededWarning。test 結束清掉這次新增的。
-  // 注意：不清乾淨的話會在 process exit 時觸發多次 fetch（雖然 fakeServer 已關、就是 silent fail）
+  // I2 — every cachebust import registers a new process.on('beforeExit'/'SIGINT'/'SIGTERM')
+  // listener, so they pile up to MaxListenersExceededWarning. Clear the ones added in this
+  // test at teardown. Without cleanup, process exit triggers multiple fetches (fakeServer is
+  // already closed, so it just silent-fails).
   for (const sig of ['beforeExit', 'SIGINT', 'SIGTERM']) {
     process.removeAllListeners(sig);
   }
 }
 
 /**
- * I4 — setTimeout flaky 替代：poll captured.length 直到 >= n 或 timeout
+ * I4 — setTimeout-flaky workaround: poll captured.length until it reaches n or times out.
  */
 async function waitForPosts(n, timeoutMs = 2000) {
   const start = Date.now();
   while (captured.length < n) {
     if (Date.now() - start > timeoutMs) {
-      throw new Error(`等 ${n} 個 POST 超時、實際 ${captured.length}`);
+      throw new Error(`timeout waiting for ${n} POSTs, actual ${captured.length}`);
     }
     await new Promise(r => setTimeout(r, 10));
   }
 }
 
 async function freshLogModule(env = {}) {
-  // 強迫 re-import 以套用最新 env
+  // Force re-import so the latest env is applied.
   const mod = await import(`../mcp/ownmind-log.js?cachebust=${Date.now()}-${Math.random()}`);
   return mod;
 }
 
-// 從 ownmind-log.js export 的同一份邏輯 — 兩處用同源避免時區飄移
+// Same logic exported from ownmind-log.js — sharing the source avoids timezone drift.
 const { localDateOnly } = await import('../mcp/ownmind-log.js');
 
-describe('v1.17.99 — mcp/ownmind-log.js logEvent 帶 client_event_id', () => {
+describe('v1.17.99 — mcp/ownmind-log.js logEvent carries client_event_id', () => {
   beforeEach(async () => {
     setup();
     await startFakeServer();
-    // logEvent 從 process.env 讀 HOME / API_URL / API_KEY、import 時就 freeze
+    // logEvent reads HOME / API_URL / API_KEY from process.env, frozen at import time.
     process.env.HOME = tmpHome;
     process.env.OWNMIND_API_URL = `http://127.0.0.1:${serverPort}`;
     process.env.OWNMIND_API_KEY = 'fake-key';
-    // I3 — hygiene：清掉開發機殘留的 OWNMIND_TOOL（不然第一筆 entry 會洩漏）
+    // I3 — hygiene: scrub the dev-machine OWNMIND_TOOL leftover (otherwise the first entry leaks it).
     process.env.OWNMIND_TOOL = 'test-claude-code';
   });
   afterEach(() => {
@@ -100,48 +103,48 @@ describe('v1.17.99 — mcp/ownmind-log.js logEvent 帶 client_event_id', () => {
     cleanup();
   });
 
-  it('每筆寫進本地 JSONL 的 entry 都帶 UUID v4 client_event_id', async () => {
+  it('every entry written to the local JSONL carries a UUID v4 client_event_id', async () => {
     const { logEvent } = await freshLogModule();
     logEvent('memory_save', { rule_code: 'IR-001' });
     logEvent('memory_disable', { rule_code: 'IR-002' });
 
-    // 等本地 JSONL 寫完（appendFileSync 同步）
-    // 跟 logEvent 對齊用 local-time date（IR-032 時區政策、避免跨午夜 UTC vs
-    // 台北 8h 差讓 test 找錯檔名）
+    // Wait for the local JSONL write (appendFileSync is sync).
+    // Align with logEvent's local-time date (IR-032 timezone policy: avoid the
+    // 8h gap between UTC and Taipei making the test pick the wrong filename across midnight).
     const today = localDateOnly(new Date());
     const file = path.join(logsDir, `${today}.jsonl`);
     assert.ok(fs.existsSync(file));
     const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
     assert.equal(lines.length, 2);
     const ids = lines.map(l => JSON.parse(l).client_event_id);
-    assert.ok(ids[0], 'event 1 必須有 client_event_id');
-    assert.ok(ids[1], 'event 2 必須有 client_event_id');
+    assert.ok(ids[0], 'event 1 must have a client_event_id');
+    assert.ok(ids[1], 'event 2 must have a client_event_id');
     assert.match(ids[0], UUID_V4);
     assert.match(ids[1], UUID_V4);
-    assert.notEqual(ids[0], ids[1], '兩筆事件必須不同 id（randomUUID 每次新生）');
+    assert.notEqual(ids[0], ids[1], 'two events must have different ids (randomUUID is fresh each call)');
   });
 
-  it('POST 到 server 的 events array 也帶 client_event_id（buffer flush 不能吃掉）', async () => {
+  it('events array POSTed to server also carries client_event_id (buffer flush must not drop it)', async () => {
     const { logEvent } = await freshLogModule();
-    // iron_rule_compliance 在 IMMEDIATE_FLUSH_EVENTS 內、會立刻 POST
+    // iron_rule_compliance is in IMMEDIATE_FLUSH_EVENTS, so it POSTs immediately.
     logEvent('iron_rule_compliance', { action: 'violate', rule_code: 'IR-037' });
-    // 等 fetch 完成
+    // Wait for the fetch to finish.
     await waitForPosts(1);
-    assert.ok(captured.length >= 1, 'server 應收到 POST');
+    assert.ok(captured.length >= 1, 'server should receive a POST');
     const body = captured[0];
     assert.ok(Array.isArray(body.events));
     assert.equal(body.events.length, 1);
-    assert.ok(body.events[0].client_event_id, 'POST body event 必須帶 client_event_id');
+    assert.ok(body.events[0].client_event_id, 'POST body event must carry client_event_id');
     assert.match(body.events[0].client_event_id, UUID_V4);
   });
 
-  it('JSONL entry 的 id 跟 POST body 的 id 必須相同（同一份 entry 物件共用）', async () => {
+  it('JSONL entry id and POST body id must match (the same entry object is reused)', async () => {
     const { logEvent } = await freshLogModule();
     logEvent('iron_rule_compliance', { action: 'violate', rule_code: 'IR-036' });
     await waitForPosts(1);
 
-    // 跟 logEvent 對齊用 local-time date（IR-032 時區政策、避免跨午夜 UTC vs
-    // 台北 8h 差讓 test 找錯檔名）
+    // Align with logEvent's local-time date (IR-032 timezone policy: avoid the
+    // 8h gap between UTC and Taipei making the test pick the wrong filename across midnight).
     const today = localDateOnly(new Date());
     const file = path.join(logsDir, `${today}.jsonl`);
     const localEntry = JSON.parse(fs.readFileSync(file, 'utf8').trim().split('\n')[0]);
@@ -150,6 +153,6 @@ describe('v1.17.99 — mcp/ownmind-log.js logEvent 帶 client_event_id', () => {
     assert.ok(localEntry.client_event_id);
     assert.ok(postedEvent?.client_event_id);
     assert.equal(localEntry.client_event_id, postedEvent.client_event_id,
-      '本地 JSONL 跟 POST body 必須帶同 id（dedup 才有意義）');
+      'local JSONL and POST body must share the same id (otherwise dedup is meaningless)');
   });
 });

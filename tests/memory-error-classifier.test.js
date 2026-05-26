@@ -3,16 +3,17 @@ import assert from 'node:assert/strict';
 import { classifyMemoryError } from '../src/utils/memory-error-classifier.js';
 
 /**
- * v1.19.1 — memory-error-classifier 單元測試
+ * v1.19.1 — memory-error-classifier unit test
  *
- * 對應 openspec/changes/v1.19.1-secret-tool-routing/proposal.md §2.3 / spec.md 場景 10、11
+ * Maps to openspec/changes/v1.19.1-secret-tool-routing/proposal.md §2.3 / spec.md scenarios 10, 11.
  *
- * 從原本的 catch-all 500「更新／建立記憶失敗」黑盒、拆成依錯誤類別分流：
- *   - PG constraint violation (23xxx)：400 + 帶 hint
- *   - PG unique violation (23505)：409 + 帶 hint「資料重複」
- *   - PG connection exception (08xxx)：503 + 帶 hint「請稍候重試」
- *   - JS SyntaxError（JSON parse 等）：400
- *   - 其他未分類：500 + log stack（給除錯）
+ * Splits the original catch-all 500 "update/create memory failed" black box
+ * into per-error-class routing:
+ *   - PG constraint violation (23xxx): 400 + hint
+ *   - PG unique violation (23505): 409 + hint about duplicate data
+ *   - PG connection exception (08xxx): 503 + hint to retry later
+ *   - JS SyntaxError (JSON parse, etc.): 400
+ *   - Other unclassified: 500 + log stack (for debugging)
  */
 
 describe('classifyMemoryError — PG constraint violations', () => {
@@ -29,7 +30,7 @@ describe('classifyMemoryError — PG constraint violations', () => {
     assert.equal(result.logStack, false);
   });
 
-  it('not_null_violation (23502) → 400 + hint「欄位不可為空」', () => {
+  it('not_null_violation (23502) → 400 + hint about column not being empty', () => {
     const err = Object.assign(
       new Error('null value in column "content" violates not-null constraint'),
       { code: '23502', column: 'content' }
@@ -47,7 +48,7 @@ describe('classifyMemoryError — PG constraint violations', () => {
     assert.equal(result.status, 400);
   });
 
-  it('unique_violation (23505) → 409 + hint「資料重複」', () => {
+  it('unique_violation (23505) → 409 + hint about duplicate data', () => {
     const err = Object.assign(new Error('duplicate key value violates unique constraint'), {
       code: '23505',
     });
@@ -57,13 +58,13 @@ describe('classifyMemoryError — PG constraint violations', () => {
   });
 });
 
-describe('classifyMemoryError — PG connection / 系統錯誤', () => {
-  it('connection_exception (08000) → 503 + hint「請稍候重試」', () => {
+describe('classifyMemoryError — PG connection / system errors', () => {
+  it('connection_exception (08000) → 503 + hint to retry later', () => {
     const err = Object.assign(new Error('connection refused'), { code: '08000' });
     const result = classifyMemoryError(err);
     assert.equal(result.status, 503);
     assert.ok(result.body.hint.includes('重試'));
-    assert.equal(result.logStack, true, 'connection 錯誤要 log stack 給除錯');
+    assert.equal(result.logStack, true, 'connection errors should log stack for debugging');
   });
 
   it('connection_failure (08006) → 503', () => {
@@ -81,15 +82,15 @@ describe('classifyMemoryError — PG connection / 系統錯誤', () => {
   });
 });
 
-describe('classifyMemoryError — JS 內建錯誤', () => {
-  it('SyntaxError → 400「資料格式錯誤」', () => {
+describe('classifyMemoryError — JS built-in errors', () => {
+  it('SyntaxError → 400 "data format error"', () => {
     const err = new SyntaxError('Unexpected token in JSON');
     const result = classifyMemoryError(err);
     assert.equal(result.status, 400);
     assert.ok(result.body.error.includes('格式'));
   });
 
-  it('TypeError → 500（程式 bug、要 log stack）', () => {
+  it('TypeError → 500 (program bug, must log stack)', () => {
     const err = new TypeError('Cannot read property foo of undefined');
     const result = classifyMemoryError(err);
     assert.equal(result.status, 500);
@@ -97,8 +98,8 @@ describe('classifyMemoryError — JS 內建錯誤', () => {
   });
 });
 
-describe('classifyMemoryError — 邊界與預設', () => {
-  it('未分類 Error → 500 + log stack', () => {
+describe('classifyMemoryError — boundaries and defaults', () => {
+  it('unclassified Error → 500 + log stack', () => {
     const err = new Error('something weird happened');
     const result = classifyMemoryError(err);
     assert.equal(result.status, 500);
@@ -106,36 +107,36 @@ describe('classifyMemoryError — 邊界與預設', () => {
     assert.ok(result.body.error.length > 0);
   });
 
-  it('null → 500 fallback、不丟', () => {
+  it('null → 500 fallback, does not throw', () => {
     const result = classifyMemoryError(null);
     assert.equal(result.status, 500);
   });
 
-  it('undefined → 500 fallback、不丟', () => {
+  it('undefined → 500 fallback, does not throw', () => {
     const result = classifyMemoryError(undefined);
     assert.equal(result.status, 500);
   });
 
-  it('字串 → 500 fallback', () => {
+  it('string → 500 fallback', () => {
     const result = classifyMemoryError('error message string');
     assert.equal(result.status, 500);
   });
 
-  it('物件帶 status → 沿用 caller 給的 status', () => {
+  it('object with status → reuse caller-provided status', () => {
     const err = Object.assign(new Error('explicit 422'), { status: 422 });
     const result = classifyMemoryError(err);
     assert.equal(result.status, 422);
   });
 });
 
-describe('classifyMemoryError — 回傳結構', () => {
-  it('body 必有 error 字串', () => {
+describe('classifyMemoryError — response shape', () => {
+  it('body must have error string', () => {
     const result = classifyMemoryError(new Error('test'));
     assert.equal(typeof result.body.error, 'string');
     assert.ok(result.body.error.length > 0);
   });
 
-  it('400 / 409 不 log stack（避免 noisy log）', () => {
+  it('400 / 409 do not log stack (avoid noisy log)', () => {
     const constraint = Object.assign(new Error('constraint'), { code: '23514' });
     assert.equal(classifyMemoryError(constraint).logStack, false);
 
@@ -143,7 +144,7 @@ describe('classifyMemoryError — 回傳結構', () => {
     assert.equal(classifyMemoryError(dup).logStack, false);
   });
 
-  it('500 / 503 一律 log stack（給除錯）', () => {
+  it('500 / 503 always log stack (for debugging)', () => {
     const conn = Object.assign(new Error('conn'), { code: '08000' });
     assert.equal(classifyMemoryError(conn).logStack, true);
 
@@ -151,7 +152,7 @@ describe('classifyMemoryError — 回傳結構', () => {
     assert.equal(classifyMemoryError(generic).logStack, true);
   });
 
-  it('logLevel：4xx 是 warn、5xx 是 error', () => {
+  it('logLevel: 4xx is warn, 5xx is error', () => {
     const constraint = Object.assign(new Error('c'), { code: '23514' });
     assert.equal(classifyMemoryError(constraint).logLevel, 'warn');
 
@@ -160,18 +161,18 @@ describe('classifyMemoryError — 回傳結構', () => {
   });
 });
 
-describe('classifyMemoryError — context 參數', () => {
-  it('context=create → error 訊息含「建立」', () => {
+describe('classifyMemoryError — context parameter', () => {
+  it('context=create → error message contains "建立"', () => {
     const result = classifyMemoryError(new Error('x'), { context: 'create' });
     assert.ok(result.body.error.includes('建立'));
   });
 
-  it('context=update → error 訊息含「更新」', () => {
+  it('context=update → error message contains "更新"', () => {
     const result = classifyMemoryError(new Error('x'), { context: 'update' });
     assert.ok(result.body.error.includes('更新'));
   });
 
-  it('context 未傳 → 通用訊息「處理記憶失敗」', () => {
+  it('context not provided → generic message "處理記憶失敗"', () => {
     const result = classifyMemoryError(new Error('x'));
     assert.ok(result.body.error.length > 0);
   });

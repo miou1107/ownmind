@@ -1,10 +1,11 @@
 /**
  * Tests for hooks/lib/rule-enforcer.js
  *
- * v1.19.6 — 共用判定核心
- * 純函式 API：給 rule_code + context + rules，回傳判定結果
+ * v1.19.6 — shared decision core
+ * Pure-function API: given rule_code + context + rules, returns a decision.
  *
- * 不擋任何規則 — 這層只計算 action、實際 exit code 由 hook 層決定。
+ * Does not block any rule — this layer only computes the action; the actual
+ * exit code is decided by the hook layer.
  */
 
 import { describe, it } from 'node:test';
@@ -79,14 +80,14 @@ function ruleAdvisory(overrides = {}) {
 // ============================================================
 
 describe('enforceRule', () => {
-  it('規則不在快取 → action=allow + reason=rule_not_in_cache', () => {
+  it('rule not in cache → action=allow + reason=rule_not_in_cache', () => {
     const result = enforceRule('IR-999', {}, { rules: [ruleCritical()] });
     assert.equal(result.action, 'allow');
     assert.equal(result.reason, 'rule_not_in_cache');
     assert.equal(result.rule_code, 'IR-999');
   });
 
-  it('critical 規則違反 → action=block + reason=conditions_violated', () => {
+  it('critical rule violation → action=block + reason=conditions_violated', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['.env.production'] },
@@ -99,7 +100,7 @@ describe('enforceRule', () => {
     assert.match(result.message, /\.env/);
   });
 
-  it('critical 規則通過 → action=allow', () => {
+  it('critical rule passes → action=allow', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['src/index.js'] },
@@ -109,7 +110,7 @@ describe('enforceRule', () => {
     assert.equal(result.tier, 'critical');
   });
 
-  it('default 規則違反 → action=warn（block_on_fail=false）', () => {
+  it('default rule violation → action=warn (block_on_fail=false)', () => {
     const result = enforceRule(
       'IR-008',
       { stagedFiles: ['src/foo.js'] },
@@ -119,7 +120,7 @@ describe('enforceRule', () => {
     assert.equal(result.tier, 'default');
   });
 
-  it('default 規則違反 + block_on_fail=true → action=block（向後相容）', () => {
+  it('default rule violation + block_on_fail=true → action=block (backward compat)', () => {
     const blocking = ruleDefault({
       metadata: {
         verification: {
@@ -139,7 +140,7 @@ describe('enforceRule', () => {
     assert.equal(result.action, 'block');
   });
 
-  it('advisory 規則違反 → action=log_only', () => {
+  it('advisory rule violation → action=log_only', () => {
     const result = enforceRule(
       'IR-099',
       { stagedFiles: ['src/foo.js'] },
@@ -149,7 +150,7 @@ describe('enforceRule', () => {
     assert.equal(result.tier, 'advisory');
   });
 
-  it('規則沒 conditions → action=allow + reason=no_conditions', () => {
+  it('rule has no conditions → action=allow + reason=no_conditions', () => {
     const ruleNoConditions = {
       code: 'IR-100',
       title: '空規則',
@@ -161,7 +162,7 @@ describe('enforceRule', () => {
     assert.equal(result.reason, 'no_conditions');
   });
 
-  it('bypass set 命中 → action=bypass', () => {
+  it('bypass set hits → action=bypass', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['.env'] },
@@ -171,7 +172,7 @@ describe('enforceRule', () => {
     assert.equal(result.rule_code, 'IR-002');
   });
 
-  it('bypass=all 涵蓋任何規則 → action=bypass', () => {
+  it('bypass=all covers every rule → action=bypass', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['.env'] },
@@ -180,7 +181,7 @@ describe('enforceRule', () => {
     assert.equal(result.action, 'bypass');
   });
 
-  it('bypass set 沒命中該規則 → 正常判定', () => {
+  it('bypass set does not match this rule → normal decision', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['.env'] },
@@ -189,7 +190,7 @@ describe('enforceRule', () => {
     assert.equal(result.action, 'block');
   });
 
-  it('未提供 bypassSet → 預設無 bypass', () => {
+  it('no bypassSet provided → defaults to no bypass', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['.env'] },
@@ -198,13 +199,13 @@ describe('enforceRule', () => {
     assert.equal(result.action, 'block');
   });
 
-  it('context 缺欄位 → 跟 verification handler 的 fallback 一致', () => {
-    // staged_files_exclude handler 在 stagedFiles 缺時 return true → pass
+  it('context missing fields → matches verification handler fallback', () => {
+    // staged_files_exclude handler returns true → pass when stagedFiles is missing
     const result = enforceRule('IR-002', {}, { rules: [ruleCritical()] });
     assert.equal(result.action, 'allow');
   });
 
-  it('未知 tier → 視為 default（normalizeTier 行為）', () => {
+  it('unknown tier → treated as default (normalizeTier behavior)', () => {
     const weirdTier = ruleCritical({ tier: 'mystery' });
     const result = enforceRule(
       'IR-002',
@@ -216,13 +217,13 @@ describe('enforceRule', () => {
     assert.equal(result.action, 'block');
   });
 
-  it('rules 不是陣列 → fail-open + reason=invalid_rules', () => {
+  it('rules is not an array → fail-open + reason=invalid_rules', () => {
     const result = enforceRule('IR-002', {}, { rules: null });
     assert.equal(result.action, 'allow');
     assert.equal(result.reason, 'invalid_rules');
   });
 
-  it('回傳必含 rule_code + rule_title', () => {
+  it('return value must include rule_code + rule_title', () => {
     const result = enforceRule(
       'IR-002',
       { stagedFiles: ['.env'] },
@@ -232,7 +233,7 @@ describe('enforceRule', () => {
     assert.equal(result.rule_title, '不要 commit .env');
   });
 
-  it('verification 未知 type → 安全跳過（verification.js 內建 fallback）', () => {
+  it('unknown verification type → safely skipped (verification.js built-in fallback)', () => {
     const buggyRule = ruleCritical({
       metadata: {
         verification: {
@@ -246,14 +247,14 @@ describe('enforceRule', () => {
       { stagedFiles: ['.env'] },
       { rules: [buggyRule] }
     );
-    // verification.js 對未知 type 是 return pass=true → enforcer 順 allow
+    // verification.js returns pass=true for unknown type → enforcer follows with allow
     assert.equal(result.action, 'allow');
-    // 沒走 catch path，所以也不會帶 enforcer_internal_error reason
+    // The catch path is not taken, so reason should not be enforcer_internal_error
     assert.notEqual(result.reason, 'enforcer_internal_error');
   });
 
-  it('evaluateConditions 真的 throw → fail-open + reason=enforcer_internal_error', () => {
-    // 用 getter 真的拋例外、確保 try/catch 被執行（reviewer I-4 修正）
+  it('evaluateConditions actually throws → fail-open + reason=enforcer_internal_error', () => {
+    // Throw from a getter to make sure try/catch is exercised (reviewer I-4 fix)
     const throwingConditions = {};
     Object.defineProperty(throwingConditions, 'when', {
       get() {
@@ -281,11 +282,11 @@ describe('enforceRule', () => {
 });
 
 // ============================================================
-// enforceRules — 批次
+// enforceRules — batch
 // ============================================================
 
 describe('enforceRules', () => {
-  it('批次評估多條 → 各條獨立判定', () => {
+  it('batch evaluation → each rule decided independently', () => {
     const results = enforceRules(
       ['IR-002', 'IR-008'],
       { stagedFiles: ['.env'] },
@@ -296,7 +297,7 @@ describe('enforceRules', () => {
     assert.equal(results[1].action, 'warn');  // IR-008 violated (default tier)
   });
 
-  it('空 ruleCodes → 空陣列', () => {
+  it('empty ruleCodes → empty array', () => {
     const results = enforceRules([], {}, { rules: [ruleCritical()] });
     assert.deepEqual(results, []);
   });

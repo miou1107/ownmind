@@ -11,20 +11,20 @@ const sql = (() => {
 })();
 
 // ============================================================
-// 檔案存在
+// File exists
 // ============================================================
 
-test('017_bug_reports_id_to_serial.sql 存在', () => {
+test('017_bug_reports_id_to_serial.sql exists', () => {
   statSync(sqlPath);
 });
 
 // ============================================================
-// Sanity check：表非空時拒絕跑
+// Sanity check: refuse to run when any table is non-empty
 // ============================================================
 
-test('開頭含 sanity check：五張表任一非空就 RAISE EXCEPTION', () => {
+test('header contains sanity check: RAISE EXCEPTION if any of the five tables is non-empty', () => {
   assert.match(sql, /RAISE\s+EXCEPTION/i);
-  // 五張表都要在 sanity check 裡
+  // all five tables must appear in the sanity check
   for (const t of [
     'bug_reports',
     'bug_report_declines',
@@ -35,16 +35,16 @@ test('開頭含 sanity check：五張表任一非空就 RAISE EXCEPTION', () => 
     assert.match(
       sql,
       new RegExp(`EXISTS\\s*\\(\\s*SELECT\\s+1\\s+FROM\\s+${t}\\s+LIMIT\\s+1\\s*\\)`, 'i'),
-      `sanity check 應檢查 ${t}`
+      `sanity check should check ${t}`
     );
   }
 });
 
 // ============================================================
-// DROP 順序正確（先 dependent、再被 reference 的）+ CASCADE
+// DROP order is correct (dependents first, referenced last) + CASCADE
 // ============================================================
 
-test('五張表都用 DROP TABLE IF EXISTS ... CASCADE', () => {
+test('all five tables use DROP TABLE IF EXISTS ... CASCADE', () => {
   for (const t of [
     'bug_report_notification_mutes',
     'bug_report_spam_blocks',
@@ -55,17 +55,17 @@ test('五張表都用 DROP TABLE IF EXISTS ... CASCADE', () => {
     assert.match(
       sql,
       new RegExp(`DROP\\s+TABLE\\s+IF\\s+EXISTS\\s+${t}\\s+CASCADE`, 'i'),
-      `應該 DROP TABLE IF EXISTS ${t} CASCADE`
+      `expected DROP TABLE IF EXISTS ${t} CASCADE`
     );
   }
 });
 
 // ============================================================
-// 重建：id 用 SERIAL、不是 BIGSERIAL
+// Rebuild: id uses SERIAL, not BIGSERIAL
 // ============================================================
 
-test('五張表都用 SERIAL 而不是 BIGSERIAL 當 id', () => {
-  // 用 grep 看：CREATE TABLE 後面到下一個 ); 之間的 id 欄位
+test('all five tables use SERIAL (not BIGSERIAL) for id', () => {
+  // Scan the id column between CREATE TABLE and the next );
   const tables = [
     'bug_reports',
     'bug_report_declines',
@@ -75,70 +75,70 @@ test('五張表都用 SERIAL 而不是 BIGSERIAL 當 id', () => {
   ];
   for (const t of tables) {
     const re = new RegExp(`CREATE\\s+TABLE\\s+${t}\\s*\\([\\s\\S]*?id\\s+SERIAL\\s+PRIMARY\\s+KEY`, 'i');
-    assert.match(sql, re, `${t}.id 應是 SERIAL PRIMARY KEY`);
+    assert.match(sql, re, `${t}.id should be SERIAL PRIMARY KEY`);
   }
 });
 
-test('真實 declaration 沒有 BIGSERIAL（註解可以有、解釋用）', () => {
-  // 把所有單行註解（-- ...）跟區塊註解過濾掉、只看實際 SQL
+test('real declarations contain no BIGSERIAL (only allowed inside comments for context)', () => {
+  // Strip line comments (-- ...) and block comments; only inspect actual SQL.
   const sqlNoComments = sql
     .split('\n')
-    .map((line) => line.replace(/--.*$/, '')) // 去掉行內註解
+    .map((line) => line.replace(/--.*$/, '')) // strip inline comments
     .join('\n');
   assert.doesNotMatch(
     sqlNoComments,
     /BIGSERIAL/i,
-    'migration 017 的實際 SQL declaration 不該再用 BIGSERIAL（只允許出現在註解裡解釋）'
+    'real SQL declarations in migration 017 must not use BIGSERIAL (only allowed inside explanatory comments)'
   );
 });
 
 // ============================================================
-// report_ids 從 BIGINT[] 改 INT[]
+// report_ids switches from BIGINT[] to INT[]
 // ============================================================
 
-test('bug_report_spam_suspects.report_ids 改成 INT[]、不是 BIGINT[]', () => {
+test('bug_report_spam_suspects.report_ids becomes INT[], not BIGINT[]', () => {
   assert.match(sql, /report_ids\s+INT\[\]\s+NOT\s+NULL/i);
-  // 確認沒有 BIGINT[] 殘留
+  // Confirm no BIGINT[] left over
   assert.doesNotMatch(sql, /report_ids\s+BIGINT\[\]/i);
 });
 
 // ============================================================
-// CHECK constraint 全部重建
+// All CHECK constraints are rebuilt
 // ============================================================
 
-test('重建後 bug_reports 三個 CHECK constraint 都有', () => {
+test('after rebuild, bug_reports has all three CHECK constraints', () => {
   for (const c of [
     'bug_reports_severity_check',
     'bug_reports_status_check',
     'bug_reports_status_reason_check',
   ]) {
-    assert.match(sql, new RegExp(`CONSTRAINT\\s+${c}`, 'i'), `應重建 ${c}`);
+    assert.match(sql, new RegExp(`CONSTRAINT\\s+${c}`, 'i'), `should rebuild ${c}`);
   }
 });
 
-test('重建後 spam_suspects 兩個 CHECK constraint 都有', () => {
+test('after rebuild, spam_suspects has both CHECK constraints', () => {
   for (const c of [
     'bug_report_spam_suspects_trigger_rule_check',
     'bug_report_spam_suspects_status_check',
   ]) {
-    assert.match(sql, new RegExp(`CONSTRAINT\\s+${c}`, 'i'), `應重建 ${c}`);
+    assert.match(sql, new RegExp(`CONSTRAINT\\s+${c}`, 'i'), `should rebuild ${c}`);
   }
 });
 
-test('重建後 notification_mutes 兩個 CHECK constraint 都有', () => {
+test('after rebuild, notification_mutes has both CHECK constraints', () => {
   for (const c of [
     'bug_report_notification_mutes_target_check',
     'bug_report_notification_mutes_target_value_check',
   ]) {
-    assert.match(sql, new RegExp(`CONSTRAINT\\s+${c}`, 'i'), `應重建 ${c}`);
+    assert.match(sql, new RegExp(`CONSTRAINT\\s+${c}`, 'i'), `should rebuild ${c}`);
   }
 });
 
 // ============================================================
-// 所有 index 全部重建
+// All indexes are rebuilt
 // ============================================================
 
-test('六個 index 全部重建', () => {
+test('all six indexes are rebuilt', () => {
   for (const idx of [
     'idx_bug_reports_user_created',
     'idx_bug_reports_status_created',
@@ -152,19 +152,19 @@ test('六個 index 全部重建', () => {
     assert.match(
       sql,
       new RegExp(`CREATE\\s+INDEX\\s+${idx}\\b`, 'i'),
-      `應重建 index ${idx}`
+      `should rebuild index ${idx}`
     );
   }
 });
 
 // ============================================================
-// 預設值跟原本一樣（blocked_until +24h、muted_until +30天）
+// Defaults match the originals (blocked_until +24h, muted_until +30 days)
 // ============================================================
 
-test('blocked_until 預設仍是 +24 hours', () => {
+test('blocked_until default is still +24 hours', () => {
   assert.match(sql, /blocked_until[^,]+DEFAULT\s+\(now\(\)\s*\+\s*INTERVAL\s+'24\s+hours'/i);
 });
 
-test('muted_until 預設仍是 +30 days', () => {
+test('muted_until default is still +30 days', () => {
   assert.match(sql, /muted_until[^,]+DEFAULT\s+\(now\(\)\s*\+\s*INTERVAL\s+'30\s+days'/i);
 });

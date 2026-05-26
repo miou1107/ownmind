@@ -1,5 +1,35 @@
 # OwnMind 檔案結構
 
+## v1.26.10 修改（國際化第十期 Part 3：tests/ 接續 15 檔英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.10-i18n-tests-internal-part3/proposal.md      — v1.26.10 提案
+openspec/changes/v1.26.10-i18n-tests-internal-part3/tasks.md         — v1.26.10 任務清單
+```
+
+修改檔（15 個 tests/*.test.js + 版號 + 三語文件）：
+```
+tests/memory-error-classifier.test.js              — 38 行（PG / JS 錯誤分流 + 邊界回 fallback）
+tests/debug-route-beacon-version.test.js           — 38 行（beacon trigger 強制 client_version NULL）
+tests/privacy-redact.test.js                       — 37 行（信箱 / 手機 / 身分證代稱化 + allowlist）
+tests/bug-report-spam-detector.test.js             — 37 行（Levenshtein 相似度 + 三條 spam 規則）
+tests/language-lint-v1195.test.js                  — 36 行（白名單 case-insensitive bug + 漏字補充）
+tests/iron-rule-tier-digest.test.js                — 36 行（buildIronRulesDigest tier 排序 + countByTier）
+tests/conditional-sync.test.js                     — 36 行（cache token 比對 + fallback 流程）
+tests/mcp-log-event-uuid.test.js                   — 35 行（logEvent UUID v4 + POST body 對齊）
+tests/rule-enforcer-core.test.js                   — 34 行（純函式 enforceRule + bypass / advisory）
+tests/mcp-tool-description-secret-warning.test.js  — 34 行（save / update / set_secret 描述警語）
+tests/verification-command-handlers.test.js        — 33 行（command_matches / not_matches + 5 條鐵律 when/then）
+tests/migration-017-bug-reports-id-serial.test.js  — 33 行（SQL sanity + SERIAL + index 重建）
+tests/error-spool-mechanism.test.js                — 33 行（errors/ spool 上傳 + dirty tree 自動處理）
+tests/bug-report-helpers.test.js                   — 33 行（confirm_string + spam block + rate-limit）
+tests/install-prerequisite-auto-install.test.js    — 32 行（winget / brew / apt auto-install 卡控）
+package.json                                       — 1.26.9 → 1.26.10
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md / FILELIST.md                         — v1.26.10 條目
+```
+
 ## v1.26.9 修改（國際化第十期 Part 2：tests/ 中型 14 檔英文化 — 軌道 B）
 
 新增檔：

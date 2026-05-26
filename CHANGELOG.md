@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.26.10 — 國際化第十期 Part 3：tests/ 接續 15 檔英文化（軌道 B）
+
+**範圍**：翻 `tests/*.test.js` 下 15 個檔（每檔 32–38 行中文），接續 v1.26.6 / v1.26.9 軌道 B。約 530 行中文中的「真註解 + describe/it 標題 + assertion hint」翻成英文。fixture 模擬使用者中文輸入、iron-rule title literal、production output 比對字面值按 CLAUDE.md 規則保留。
+
+**處理的 15 檔**：
+- 38 行：`memory-error-classifier`、`debug-route-beacon-version`
+- 37 行：`privacy-redact`、`bug-report-spam-detector`
+- 36 行：`language-lint-v1195`、`iron-rule-tier-digest`、`conditional-sync`
+- 35 行：`mcp-log-event-uuid`
+- 34 行：`rule-enforcer-core`、`mcp-tool-description-secret-warning`
+- 33 行：`verification-command-handlers`、`migration-017-bug-reports-id-serial`、`error-spool-mechanism`、`bug-report-helpers`
+- 32 行：`install-prerequisite-auto-install`
+
+**翻譯規則**：跟 v1.26.6 / v1.26.9 完全一致的 5 分類。
+
+**測試**：1999 pass / 0 fail（無斷言改動、無 baseline 變化）
+**版本**：1.26.9 → 1.26.10
+**OpenSpec change**：`openspec/changes/v1.26.10-i18n-tests-internal-part3/`
+
 ## v1.26.9 — 國際化第十期 Part 2：tests/ 中型 14 檔英文化（軌道 B）
 
 **範圍**：翻 `tests/*.test.js` 下 14 個中型檔（每檔 39–56 行中文），共約 680 行中文中的「真註解 + describe/it 標題 + assertion hint」翻成英文。剩餘 fixture 模擬使用者中文輸入按 CLAUDE.md 規則保留。

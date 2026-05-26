@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { redactPrivacyPatterns } from '../shared/privacy-redact.js';
 
 // ============================================================
-// 基本：信箱 / 身分證 / 手機都應該被代稱化
+// Basic: email / national ID / phone should all be aliased
 // ============================================================
 
-test('純字串：信箱被換成代稱', () => {
+test('plain string: email replaced with alias', () => {
   const { text, replacements } = redactPrivacyPatterns('聯絡 foo@bar.com 即可');
   assert.match(text, /<信箱-001>/);
   assert.doesNotMatch(text, /foo@bar\.com/);
@@ -14,37 +14,37 @@ test('純字串：信箱被換成代稱', () => {
   assert.equal(replacements[0].type, 'email');
 });
 
-test('純字串：台灣手機被換成代稱', () => {
+test('plain string: Taiwan mobile number replaced with alias', () => {
   const { text } = redactPrivacyPatterns('請打 0912-345-678');
   assert.match(text, /<手機-001>/);
   assert.doesNotMatch(text, /0912-345-678/);
 });
 
-test('純字串：身分證被換成代稱', () => {
-  // A123456789 是合法的身分證檢碼（A=10、計算後尾碼 9）
+test('plain string: national ID replaced with alias', () => {
+  // A123456789 is a valid Taiwan national-ID checksum (A=10, computed trailing digit 9)
   const { text } = redactPrivacyPatterns('身分證 A123456789 確認');
   assert.match(text, /<身分證-001>/);
 });
 
 // ============================================================
-// 同值同代稱：第二次出現同一信箱、編號要一樣
+// Same value same alias: a second occurrence of the same email reuses the index
 // ============================================================
 
-test('同值出現多次、共用同一代稱', () => {
+test('same value appears multiple times, shares one alias', () => {
   const { text } = redactPrivacyPatterns('a@b.com 跟 a@b.com 是同一個人');
-  // 信箱出現兩次、都被換成 <信箱-001>
+  // The email appears twice, both replaced by <信箱-001>
   const matches = text.match(/<信箱-001>/g) || [];
   assert.equal(matches.length, 2);
   assert.doesNotMatch(text, /a@b\.com/);
 });
 
-test('不同信箱、編號遞增', () => {
+test('different emails increment index', () => {
   const { text } = redactPrivacyPatterns('a@b.com 寫信給 c@d.com');
   assert.match(text, /<信箱-001>/);
   assert.match(text, /<信箱-002>/);
 });
 
-test('不同類型、各自編號', () => {
+test('different types each have their own index', () => {
   const { text } = redactPrivacyPatterns(
     '信箱 a@b.com、手機 0912-345-678、身分證 A123456789'
   );
@@ -54,26 +54,26 @@ test('不同類型、各自編號', () => {
 });
 
 // ============================================================
-// 沒命中：原樣回傳
+// No match: return as-is
 // ============================================================
 
-test('沒個資樣式：原樣回傳', () => {
+test('no private-data patterns: return as-is', () => {
   const { text, replacements } = redactPrivacyPatterns('一般文字、沒敏感資料');
   assert.equal(text, '一般文字、沒敏感資料');
   assert.equal(replacements.length, 0);
 });
 
 // ============================================================
-// 邊界：空字串、null、非字串型別
+// Boundaries: empty string, null, non-string types
 // ============================================================
 
-test('空字串：原樣回傳', () => {
+test('empty string: return as-is', () => {
   const { text, replacements } = redactPrivacyPatterns('');
   assert.equal(text, '');
   assert.equal(replacements.length, 0);
 });
 
-test('null / undefined：回傳空結果、不丟例外', () => {
+test('null / undefined: return empty result, do not throw', () => {
   assert.doesNotThrow(() => redactPrivacyPatterns(null));
   assert.doesNotThrow(() => redactPrivacyPatterns(undefined));
   const result = redactPrivacyPatterns(null);
@@ -81,19 +81,19 @@ test('null / undefined：回傳空結果、不丟例外', () => {
   assert.deepEqual(result.replacements, []);
 });
 
-test('非字串型別：原樣回傳', () => {
+test('non-string type: return as-is', () => {
   const r1 = redactPrivacyPatterns(123);
   assert.equal(r1.text, 123);
   assert.deepEqual(r1.replacements, []);
 });
 
 // ============================================================
-// allowlist：example.com 等假信箱不該被代稱化（沿用 privacy-detect 規則）
+// allowlist: fake emails such as example.com should not be aliased (per privacy-detect rules)
 // ============================================================
 
-test('example.com 假信箱不算個資、不代稱', () => {
+test('example.com fake emails are not private data, no aliasing', () => {
   const { text, replacements } = redactPrivacyPatterns('test@example.com 是假的');
-  // 看 privacy-detect 的 allowlist 結果、若 allowlist 包含則不代稱
+  // Defers to privacy-detect's allowlist result, no aliasing if allowlisted
   assert.equal(replacements.length, 0);
   assert.match(text, /test@example\.com/);
 });

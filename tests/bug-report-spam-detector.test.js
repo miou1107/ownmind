@@ -8,10 +8,10 @@ import {
 } from '../src/services/bug-report-spam-detector.js';
 
 // ============================================================
-// 門檻值（spec.md v4.1 對齊）
+// Thresholds (aligned with spec.md v4.1)
 // ============================================================
 
-test('門檻：24h 30 筆、1h 同指紋 5 筆、1h 5 筆+3 相似', () => {
+test('thresholds: 24h 30 reports, 1h same fingerprint 5 reports, 1h 5 reports + 3 similar', () => {
   assert.equal(SPAM_THRESHOLDS.HIGH_VOLUME_24H_COUNT, 30);
   assert.equal(SPAM_THRESHOLDS.REPEATED_FINGERPRINT_1H_COUNT, 5);
   assert.equal(SPAM_THRESHOLDS.HIGH_VOLUME_1H_COUNT, 5);
@@ -20,42 +20,42 @@ test('門檻：24h 30 筆、1h 同指紋 5 筆、1h 5 筆+3 相似', () => {
 });
 
 // ============================================================
-// Levenshtein 相似度
+// Levenshtein similarity
 // ============================================================
 
-test('Levenshtein 相似度：完全一樣回 1.0', () => {
+test('Levenshtein similarity: identical returns 1.0', () => {
   assert.equal(calculateLevenshteinSimilarity('hello', 'hello'), 1);
 });
 
-test('Levenshtein 相似度：完全不同回低分', () => {
+test('Levenshtein similarity: completely different returns low score', () => {
   const s = calculateLevenshteinSimilarity('abc', 'xyz');
-  assert.ok(s < 0.5, `預期 < 0.5、實際 ${s}`);
+  assert.ok(s < 0.5, `expected < 0.5, actual ${s}`);
 });
 
-test('Levenshtein 相似度：相近字串回高分', () => {
-  // 改一個字、長度 10 → 相似度 ≈ 0.9
+test('Levenshtein similarity: near-identical strings return high score', () => {
+  // Change one char, length 10 → similarity ≈ 0.9
   const s = calculateLevenshteinSimilarity('hello world', 'hello world!');
-  assert.ok(s >= 0.9, `預期 ≥ 0.9、實際 ${s}`);
+  assert.ok(s >= 0.9, `expected ≥ 0.9, actual ${s}`);
 });
 
-test('Levenshtein 相似度：兩個空字串回 1.0', () => {
+test('Levenshtein similarity: two empty strings return 1.0', () => {
   assert.equal(calculateLevenshteinSimilarity('', ''), 1);
 });
 
-test('Levenshtein 相似度：一空一非空回 0', () => {
+test('Levenshtein similarity: empty vs non-empty returns 0', () => {
   assert.equal(calculateLevenshteinSimilarity('', 'abc'), 0);
 });
 
-test('Levenshtein 相似度：非字串型別回 0', () => {
+test('Levenshtein similarity: non-string types return 0', () => {
   assert.equal(calculateLevenshteinSimilarity(null, 'x'), 0);
   assert.equal(calculateLevenshteinSimilarity(123, 'x'), 0);
 });
 
 // ============================================================
-// detectSimilarPairs：在多筆報告中找相似度 > 閾值的對
+// detectSimilarPairs: find pairs above threshold across multiple reports
 // ============================================================
 
-test('detectSimilarPairs：5 筆裡 3 筆高度相似 → 回那 3 筆 id', () => {
+test('detectSimilarPairs: 3 of 5 reports highly similar → returns those 3 ids', () => {
   const reports = [
     { id: 1, title: '寫入被擋', description: '我寫專案記憶被擋' },
     { id: 2, title: '寫入被擋', description: '我寫專案記憶被擋' },
@@ -67,11 +67,11 @@ test('detectSimilarPairs：5 筆裡 3 筆高度相似 → 回那 3 筆 id', () =
   assert.ok(result.has_cluster);
   assert.ok(result.cluster_ids.length >= 3);
   for (const id of [1, 2, 4]) {
-    assert.ok(result.cluster_ids.includes(id), `id=${id} 應在 cluster`);
+    assert.ok(result.cluster_ids.includes(id), `id=${id} should be in cluster`);
   }
 });
 
-test('detectSimilarPairs：都不相似 → has_cluster=false', () => {
+test('detectSimilarPairs: none are similar → has_cluster=false', () => {
   const reports = [
     { id: 1, title: 'A', description: 'aaa' },
     { id: 2, title: 'B', description: 'bbb' },
@@ -82,11 +82,11 @@ test('detectSimilarPairs：都不相似 → has_cluster=false', () => {
 });
 
 // ============================================================
-// detectSpam：綜合三條規則、回觸發結果
+// detectSpam: combines three rules, returns trigger result
 // ============================================================
 
-test('detectSpam 規則 1：1h 5 筆 + 3 相似 → high_volume_1h + similar_content', async () => {
-  // mock DB 回 1h 5 筆、其中 3 筆內容一樣
+test('detectSpam rule 1: 1h 5 reports + 3 similar → high_volume_1h + similar_content', async () => {
+  // mock DB returns 5 reports within 1h, 3 of them with identical content
   const reports = [
     { id: 11, title: '寫入被擋', description: '同樣的描述' },
     { id: 12, title: '寫入被擋', description: '同樣的描述' },
@@ -106,7 +106,7 @@ test('detectSpam 規則 1：1h 5 筆 + 3 相似 → high_volume_1h + similar_con
   assert.ok(r.report_ids.length >= 3);
 });
 
-test('detectSpam 規則 2：24h 30 筆 → high_volume_24h', async () => {
+test('detectSpam rule 2: 24h 30 reports → high_volume_24h', async () => {
   const reports30 = Array.from({ length: 30 }, (_, i) => ({
     id: 100 + i,
     title: `bug ${i}`,
@@ -117,7 +117,7 @@ test('detectSpam 規則 2：24h 30 筆 → high_volume_24h', async () => {
       return { rows: reports30 };
     }
     if (sql.includes("'1 hour'") || sql.includes('1 HOUR')) {
-      // 1h 內只有 2 筆、不觸發規則 1
+      // only 2 reports within 1h, does not trigger rule 1
       return { rows: reports30.slice(-2) };
     }
     return { rows: [] };
@@ -128,8 +128,8 @@ test('detectSpam 規則 2：24h 30 筆 → high_volume_24h', async () => {
   assert.equal(r.report_ids.length, 30);
 });
 
-test('detectSpam 規則 3：1h 同指紋 5 筆 → repeated_fingerprint', async () => {
-  // 注意：實際上介面層會擋 3 筆、所以此情境少見、但偵測器仍要能抓
+test('detectSpam rule 3: 1h same fingerprint 5 reports → repeated_fingerprint', async () => {
+  // Note: the interface layer already blocks at 3 reports, so this case is rare in practice, but the detector still needs to catch it
   const sameFpReports = Array.from({ length: 5 }, (_, i) => ({
     id: 200 + i,
     title: `same fp ${i}`,
@@ -151,13 +151,13 @@ test('detectSpam 規則 3：1h 同指紋 5 筆 → repeated_fingerprint', async 
   assert.equal(r.report_ids.length, 5);
 });
 
-test('detectSpam：都不觸發 → triggered=false', async () => {
+test('detectSpam: nothing triggers → triggered=false', async () => {
   const mockQuery = async () => ({ rows: [] });
   const r = await detectSpam(mockQuery, 1);
   assert.equal(r.triggered, false);
 });
 
-test('detectSpam：1h 4 筆（沒到 5）→ 不觸發', async () => {
+test('detectSpam: 1h 4 reports (not yet 5) → does not trigger', async () => {
   const reports4 = Array.from({ length: 4 }, (_, i) => ({
     id: i,
     title: `t${i}`,
