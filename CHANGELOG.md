@@ -1,5 +1,63 @@
 # OwnMind 更新紀錄
 
+## v1.26.8 — 修 secret-detect 路徑誤判 + pre-commit hook 動態指紋分派
+
+**回報者**：Vin（bug-report id=4、2026-05-26 v1.26.7 commit 時撞到）
+
+### Bug 1：secret-detect heuristic 把 `/` 分隔的純路徑誤判為密鑰
+
+**症狀**：v1.26.7 hotfix commit 時、ownmind-git-pre-commit 攔下、訊息「FILELIST.md: value 為 ≥20 字純英數字、看起來像 key / token（detected_by=heuristic:long_alnum）」。
+
+**根因**：`shared/secret-detect.js:148-159` 的 length heuristic：
+- `LONG_ALNUM_REGEX = /^[A-Za-z0-9\-_+/=.]+$/` 接受 `/` 跟 `.`
+- 只用 `DOT_SEPARATED_IDENTIFIER_REGEX` 排除 `a.b.c` 樣式
+- 沒對應的「`a/b/c` 樣式」排除 → 任何 ≥ 20 字、沒中文、用 `/.-_` 連接的 ASCII 路徑都中招
+
+**踩坑場景**：
+- `openspec/changes/v1.26.7-hotfix-msys-path/proposal.md`（Vin 報的）
+- `src/routes/admin/user-management/audit.js`（深層原始碼路徑）
+- `https://api.example.com/v1/users/12345/profile`（URL）
+- `node_modules/some-package/dist/index.js`（npm 套件路徑）
+
+**修法**：加 `SLASH_SEPARATED_PATH_REGEX = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){2,}$/`、跟現有 `DOT_SEPARATED_IDENTIFIER_REGEX` 同款負向條件。每段都是合法 identifier、3 段以上、整體像路徑、不像隨機密鑰。
+
+**注意**：v1.26.7 release commit 為了繞過這個 bug、FILELIST 條目加了中文描述（讓字串含 CJK → CJK_REGEX 命中 → 跳 heuristic）。本次 fix 後續 release 不再需要這種繞過。
+
+**重現測試**（`tests/secret-detect-unit.test.js` 新加 8 條）：
+- openspec 路徑、deep source 路徑、URL、node_modules 路徑 → 全部 allow
+- 2-segment `/` shape（疑似 shortened JWT）→ 仍 block
+- 真實 GitHub PAT → 仍 block（regex 優先於 heuristic）
+
+### Bug 2：pre-commit hook 用 placeholder 指紋擋住 bug 回報
+
+**症狀**：v1.26.7 釋出 commit 時、Vin 看到 hook 訊息「bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint」、AI 用這個指紋呼叫 `ownmind_report_bug` → server API 400「必須是後端註冊過的指紋」。
+
+**根因**：`hooks/ownmind-git-pre-commit.js:165` 不論攔下原因都 hard-code 同一個 placeholder 指紋 `mem_iron_rule_blocking_commit_no_fingerprint`。prod server 跑舊版（v1.20.x）、指紋表還沒同步到 v1.26.0+ 新加的指紋名稱。
+
+**修法**：新建 `hooks/lib/select-block-fingerprint.js` 純函式、根據攔下的原因（rule code + 是否被 secret-detect 攔）動態選最具體的指紋：
+
+| 攔下原因 | 指紋 |
+|---|---|
+| IR-002（密鑰/敏感檔）| `mem_blocked_secret_regex` |
+| IR-005/006/027 等鐵律品質類 | `mem_blocked_iron_rule_quality` |
+| 其他 block_on_fail 鐵律 | `clt_user_reported_other` |
+| 空清單 / 不認識的形狀 | placeholder fallback（保留向後相容）|
+
+這三個更具體的指紋在 prod 舊版註冊表都已存在、立刻可用、不必等 prod 升級。
+
+**單元測試**（`tests/git-pre-commit-fingerprint.test.js` 新 11 條）：
+- 各種單一/混合攔下情境的指紋選擇
+- 邊界：空陣列、null、undefined、缺欄位 → placeholder 或 generic fallback
+
+### 不在範圍
+
+- prod server 端指紋表升級 — 是 deployment 工作、不是 code 改動。等 prod 升到 v1.26.0+ 自動同步。
+- v1.26.7 commit message + FILELIST 中已存在的「中文繞過」字串 — 不回頭改、留作歷史紀錄。
+
+**測試**：1999 pass / 0 fail（baseline 1980 + 19 個新 test）
+**版本**：1.26.7 → 1.26.8
+**OpenSpec change**：`openspec/changes/v1.26.8-fix-secret-detect-and-hook-fingerprint/`
+
 ## v1.26.7 — Hotfix：Windows + Git Bash 升級失敗（MSYS 路徑沒給 Node 正規化）
 
 **回報者**：Vin（2026-05-26 自己升級 OwnMind 撞到）
