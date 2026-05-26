@@ -83,6 +83,9 @@ openspec/changes/v1.20.0-frontend-foundation/proposal.md      — 本版規格�
 openspec/changes/v1.20.0-frontend-foundation/tasks.md         — 本版任務清單
 openspec/changes/v1.20.1-portal-pages/proposal.md             — 下版規格 stub（Portal + Preference 共 7 頁）
 openspec/changes/v1.20.1-portal-pages/tasks.md                — 同上 task stub
+openspec/changes/v1.20.2-fix-hint/proposal.md                 — 提案：鉤子 recent_event_exists 失敗訊息加上具體 ownmind_report_compliance 呼叫範例
+openspec/changes/v1.20.2-fix-hint/spec.md                     — 規格：5 個 GIVEN/WHEN/THEN scenario
+openspec/changes/v1.20.2-fix-hint/tasks.md                    — 任務清單
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
