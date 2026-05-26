@@ -1,5 +1,41 @@
 # OwnMind 更新紀錄
 
+## v1.20.2 — 鉤子失敗訊息加上具體 ownmind_report_compliance 呼叫範例
+
+**背景：** 2026-05-26 Vin 在 ima 專案 commit 時、IR-025 鉤子兩條檢查（verification + code-review）一直擋。AI 跑了 superpowers 技巧、派了 reviewer 子代理人、也呼叫了 `ownmind_report_compliance` 兩次、但鉤子還是擋。後續抓 `~/.ownmind/logs/compliance.jsonl` 才發現：
+
+| 時間 | 寫入 event 欄位 | 為什麼沒過 |
+|------|---------------|----------|
+| 第 1 次呼叫帶 `rule_code='IR-025'` | `IR-025` | 鉤子要找的是 `event=verification`、不是 `IR-025` |
+| 第 2 次只帶 `rule_title='verification'`、沒帶 `rule_code` | `verification` ✓ | `args.rule_code || args.rule_title` 落到 title、剛好對上 |
+| 漏了 `rule_title='code-review'` 那次 | — | 鉤子持續擋 |
+
+真正的 bug 來源是 `mcp/index.js:1082`：MCP 處理 `ownmind_report_compliance` 時硬寫 `event: args.rule_code || args.rule_title`、優先用 rule_code。`shared/compliance.js:43` 的 fallback `event = entry.event || entry.rule_code || ''` 在 MCP 路徑根本不會生效（event 早在 1082 行就被 hard-code 算好）。AI 不知道要刻意不填 `rule_code` 才能讓 `rule_title` 進 event 欄位。原本鉤子訊息「請先完成『verification』對應步驟」也沒教怎麼修。
+
+**改動：**
+
+- **`shared/verification.js`**：`FIX_HINTS.recent_event_exists` 改成回傳含完整 `ownmind_report_compliance({ rule_title, action })` 呼叫範例 + 「不要帶 rule_code、否則 event 欄位會被覆蓋」警告。
+- **`tests/verification.test.js`**：加新 describe block `v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例` 4 個 case，順便修原本 IR-012 場景兩處 deepEqual 改成 startsWith（向前相容、未來改 hint 不會再壞）。
+- **`openspec/changes/v1.20.2-fix-hint/`**：新增提案資料夾（proposal + spec + tasks）。
+- **`package.json` / `client/package.json`**：版號 1.20.1 → 1.20.2（client 同步 bump、無實際客戶端程式碼變動）。
+
+**範圍外（留 backlog）：**
+
+- 治本修法：刪 `mcp/index.js:1082` 的 `args.rule_code || args.rule_title`、或 schema 加 `event` 欄位（中成本）
+- 自動偵測 `superpowers:*` 技巧/子代理人啟動寫合規記錄（高成本、最對）
+- bug_report 流程在 hook 失敗 path 拿不到 fingerprint（獨立 bug）
+- README 三語版號標示同步到 v1.20.2（既存 stale、留獨立 commit）
+
+**測試：**
+
+- `npm test` 1890 / 1890 全綠（新增 4 個 case、修改 2 個既有 case、加 1 個 Scenario 4 守備 case）
+- reproduction 流程：先寫 4 個新 case 驗證舊 hint 紅 → 改 FIX_HINTS → 再驗證綠
+
+**升級指引：**
+
+- **一般使用者**：等下一輪 OwnMind 廣播升級（`/ownmind upgrade` 或互動式升級腳本）會自動拿到新訊息。
+- **本機急用**：可手動同步 `cp shared/verification.js ~/.ownmind/shared/verification.js`（只影響自己這台、不影響廣播）。
+
 ## v1.20.1 — Dashboard 個人版（Portal 4 頁 + Preference 3 頁 + 登入頁 + 守門員完工）
 
 **背景：** v1.20.0 把後台前端地基打好之後、v1.20.1 開始把空殼填滿、目標是個人 Dashboard 共 7 頁（4 個人紀錄分析頁 + 3 個人偏好頁）+ 後端介面對接。本次 commit 是中段進度、完成步驟 1（拆共用元件）與步驟 2（語系切換 context）。

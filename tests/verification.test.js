@@ -520,7 +520,9 @@ describe('IR-012 品管三步驟場景', () => {
     };
     const result = evaluateConditions(ir012Conditions, ctx);
     assert.equal(result.pass, false);
-    assert.deepEqual(result.failures, ['還沒做 code review，請先完成「code-review」對應步驟']);
+    assert.equal(result.failures.length, 1);
+    assert.ok(result.failures[0].startsWith('還沒做 code review'),
+      `failure 開頭應為「還沒做 code review」：${result.failures[0]}`);
   });
 
   it('兩個都沒做 → fail，回傳兩個 message', () => {
@@ -539,7 +541,9 @@ describe('IR-012 品管三步驟場景', () => {
     };
     const result = evaluateConditions(ir012Conditions, ctx);
     assert.equal(result.pass, false);
-    assert.deepEqual(result.failures, ['還沒做 code review，請先完成「code-review」對應步驟']);
+    assert.equal(result.failures.length, 1);
+    assert.ok(result.failures[0].startsWith('還沒做 code review'),
+      `failure 開頭應為「還沒做 code review」：${result.failures[0]}`);
   });
 });
 
@@ -651,5 +655,118 @@ describe('context 互補行為', () => {
   it('空 context → 全部跳過 → pass', () => {
     const result = evaluateConditions(mixedConditions, {});
     assert.equal(result.pass, true);
+  });
+});
+
+// ============================================================
+// v1.20.2 — recent_event_exists 失敗訊息含具體 ownmind_report_compliance 呼叫範例
+// ============================================================
+
+describe('v1.20.2 FIX_HINTS.recent_event_exists 具體呼叫範例', () => {
+  it('verification 缺失 → hint 含 ownmind_report_compliance 呼叫範例 + rule_title verification + 不要帶 rule_code 提示', () => {
+    const conditions = {
+      type: 'recent_event_exists',
+      params: { event: 'verification', action: 'comply' },
+      message: '還沒做 verification'
+    };
+    const ctx = { complianceEvents: [] };
+    const result = evaluateConditions(conditions, ctx);
+    assert.equal(result.pass, false);
+    assert.equal(result.failures.length, 1);
+    const msg = result.failures[0];
+    assert.ok(msg.startsWith('還沒做 verification'),
+      `hint 開頭應為規則 message：${msg}`);
+    assert.ok(msg.includes('ownmind_report_compliance'),
+      `hint 應提及 ownmind_report_compliance：${msg}`);
+    assert.ok(
+      msg.includes("rule_title: 'verification'") || msg.includes('rule_title: "verification"'),
+      `hint 應指明 rule_title: verification：${msg}`
+    );
+    assert.ok(
+      msg.includes("action: 'comply'") || msg.includes('action: "comply"'),
+      `hint 應指明 action: comply：${msg}`
+    );
+    assert.ok(
+      msg.includes('rule_code') && /不要帶|不能填|別帶|不要填|無須|勿帶/.test(msg),
+      `hint 應警告不要帶 rule_code：${msg}`
+    );
+  });
+
+  it('code-review 缺失 → hint 含 rule_title: code-review', () => {
+    const conditions = {
+      type: 'recent_event_exists',
+      params: { event: 'code-review', action: 'comply' },
+      message: '還沒做 code review'
+    };
+    const ctx = { complianceEvents: [] };
+    const result = evaluateConditions(conditions, ctx);
+    assert.equal(result.pass, false);
+    const msg = result.failures[0];
+    assert.ok(
+      msg.includes("rule_title: 'code-review'") || msg.includes('rule_title: "code-review"'),
+      `hint 應指明 rule_title: code-review：${msg}`
+    );
+  });
+
+  it('條件通過時不產生 failures', () => {
+    const conditions = {
+      type: 'recent_event_exists',
+      params: { event: 'verification', action: 'comply' },
+      message: '還沒做 verification'
+    };
+    const ctx = {
+      complianceEvents: [
+        { event: 'verification', action: 'comply', ts: '2026-03-31T10:00:00Z' }
+      ]
+    };
+    const result = evaluateConditions(conditions, ctx);
+    assert.equal(result.pass, true);
+    assert.deepEqual(result.failures, []);
+  });
+
+  it('失敗訊息長度不超過 250 字（避免鉤子輸出爆版）', () => {
+    const conditions = {
+      type: 'recent_event_exists',
+      params: { event: 'code-review', action: 'comply' },
+      message: '還沒做 code review'
+    };
+    const ctx = { complianceEvents: [] };
+    const result = evaluateConditions(conditions, ctx);
+    assert.ok(
+      result.failures[0].length <= 250,
+      `failure msg too long: ${result.failures[0].length} chars`
+    );
+  });
+
+  it('Spec Scenario 4 守備：其他 CHECK_HANDLERS 的 hint 文字不受影響', () => {
+    const stagedConditions = {
+      type: 'staged_files_include',
+      params: { patterns: ['README.md', 'CHANGELOG.md'] },
+      message: '缺檔案'
+    };
+    const ctx = { stagedFiles: ['src/index.js'] };
+    const result = evaluateConditions(stagedConditions, ctx);
+    assert.equal(result.pass, false);
+    assert.equal(result.failures.length, 1);
+    const msg = result.failures[0];
+    assert.ok(msg.startsWith('缺檔案'), `hint 開頭應為規則 message：${msg}`);
+    assert.ok(msg.includes('git add'),
+      `staged_files_include hint 應維持「請 git add ...」格式：${msg}`);
+    assert.ok(!msg.includes('ownmind_report_compliance'),
+      `staged_files_include hint 不應誤帶 ownmind_report_compliance：${msg}`);
+  });
+
+  it('params.event 內含單引號時、JSON.stringify 防護 hint 不會壞掉', () => {
+    const conditions = {
+      type: 'recent_event_exists',
+      params: { event: "weird'name", action: 'comply' },
+      message: '還沒做 weird'
+    };
+    const ctx = { complianceEvents: [] };
+    const result = evaluateConditions(conditions, ctx);
+    const msg = result.failures[0];
+    // JSON.stringify("weird'name") = '"weird\'name"' → 雙引號包裹、單引號照原樣
+    assert.ok(msg.includes('"weird\'name"'),
+      `params.event 含單引號時應用雙引號包裹：${msg}`);
   });
 });

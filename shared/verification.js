@@ -158,7 +158,15 @@ const FIX_HINTS = {
   },
   commit_message_contains: () => '，請修改 commit message',
   commit_message_not_contains: () => '，請修改後重試',
-  recent_event_exists: (params) => `，請先完成「${params.event}」對應步驟`,
+  // 註：目前所有規則的 params.action 都用 'comply'；若未來出現 'violate' / 'skip' 等其他值、
+  // 提示文字會直接套用、可能讀起來語意有點怪（例：「請呼叫... action: 'violate'」）、屆時再評估。
+  // JSON.stringify 用於把 event / action 字面值安全嵌入（避免單引號等特殊字元破壞 JS literal）。
+  recent_event_exists: (params) => {
+    const event = JSON.stringify(params.event);
+    const action = JSON.stringify(params.action);
+    return `，請呼叫：ownmind_report_compliance({ rule_title: ${event}, action: ${action} })` +
+      `（注意：不要帶 rule_code、否則 event 欄位會被覆蓋）`;
+  },
   command_matches: (params) => `，指令必須符合：${params.patterns.join(' 或 ')}`,
   command_not_matches: (params) => `，指令不能含：${params.patterns.join(' 或 ')}`,
 };
