@@ -1,5 +1,35 @@
 # OwnMind 更新紀錄
 
+## v1.20.3 — Session 暫時關閉開關（/ownmind-off / /ownmind-on）
+
+**背景**：user 開發過程中、有時 OwnMind 鉤子過嚴或誤擋（例如 IR-036 / IR-037 連續 lint、或 v1.20.2 之前的 IR-025 過嚴擋 commit）。希望有臨時開關「先放著、之後再開」、又怕忘記重開長期無保護、所以加定時提醒機制。
+
+**改動**：
+
+- **`shared/session-off-state.js`**（新）：純函式狀態檔讀寫、24 小時 TTL（白話：狀態檔超過 24 小時自動失效）、零外部依賴
+- **`mcp/index.js`**：新增兩個工具 `ownmind_session_off` / `ownmind_session_on`
+- **`hooks/ownmind-reply-lint.js`**：開頭讀狀態檔、關閉狀態下 tick + 跳過 lint、每 10 輪用 `writeToTty` 寫終端機提醒
+- **`hooks/ownmind-git-pre-commit.js`**：開頭讀狀態檔、關閉狀態下印提示 + exit 0 放行 commit
+- **`hooks/ownmind-session-start.js`**：新 session 開啟時主動清狀態檔（白話：開新對話自動重新打開鉤子）
+- **`~/.claude/commands/ownmind-off.md` + `ownmind-on.md`**：slash 指令檔、引導 AI 呼叫對應 MCP 工具
+- **版號**：1.20.2 → 1.20.3、三語 README 標示同步
+
+**設計取捨**：
+
+- 不嚴格比對 session_id：MCP 工具寫狀態用 sessionStartTime（MCP 進程啟動時間戳）、Stop hook 拿到 payload.session_id（Claude session 編號）、兩者本質不同。改用「狀態檔存在 + 24 小時內 + SessionStart 主動清」三道防線達成「新 session 自動失效」
+- 不關 MCP 工具層 + SessionStart 載入：user 要 /ownmind-on 還得呼叫 MCP 工具、AI 仍能讀鐵律記憶
+- 失敗安全（fail-open）：所有 IO 失敗一律「視為沒關閉、正常跑鉤子」、避免狀態檔故障導致長期靜默無保護
+
+**測試**：
+- `tests/session-off-state.test.js`：15 個守備 case（read / write / clear / increment tick / isOff / 24h 過期 / 損毀防呆等）
+- `npm test` 全綠
+
+**使用方式**：
+- `/ownmind-off`：暫時關閉鉤子（含可選 reason 參數）
+- `/ownmind-on`：立即重開
+- 開新對話：自動重開
+- 關閉狀態下每 10 輪 AI 回應、終端機看到 ⚠️ 提醒
+
 ## v1.20.2 — 鉤子失敗訊息加上具體 ownmind_report_compliance 呼叫範例
 
 **背景：** 2026-05-26 Vin 在 ima 專案 commit 時、IR-025 鉤子兩條檢查（verification + code-review）一直擋。AI 跑了 superpowers 技巧、派了 reviewer 子代理人、也呼叫了 `ownmind_report_compliance` 兩次、但鉤子還是擋。後續抓 `~/.ownmind/logs/compliance.jsonl` 才發現：
