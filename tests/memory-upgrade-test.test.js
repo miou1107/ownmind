@@ -11,12 +11,12 @@ describe('memory route: is_test guard 邏輯', () => {
   it('POST / 正確處理 is_test flag（僅允許 __upgrade_test__ prefix）', () => {
     assert.match(src, /is_test/);
     assert.match(src, /__upgrade_test__/);
-    assert.match(src, /僅限 title 以 __upgrade_test__ 開頭/);
+    assert.match(src, /upgrade verification.*title must start with __upgrade_test__|is only allowed for upgrade verification/);
   });
 
   it('test-cleanup route 存在且有 prefix guard', () => {
     assert.match(src, /router\.delete\(['"]\/test-cleanup['"]/);
-    assert.match(src, /name_prefix 必須以 __upgrade_test__ 開頭/);
+    assert.match(src, /name_prefix must start with __upgrade_test__/);
     assert.match(src, /is_test = TRUE/);
   });
 

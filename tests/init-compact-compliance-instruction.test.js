@@ -44,7 +44,7 @@ test('init route：compact mode 仍會 emit iron_rules_digest（不被砍）', (
 test('init route：compliance 指令必須提到 comply / skip / violate 三個 action', () => {
   // 確保指令完整、AI 不會只記住 comply 而忘了 skip / violate
   const digestSection = memorySource.match(
-    /ironRulesDigestFinal[\s\S]{0,800}/
+    /ironRulesDigestFinal[\s\S]{0,1500}/
   )?.[0] || '';
   for (const action of ['comply', 'skip', 'violate']) {
     assert.ok(
