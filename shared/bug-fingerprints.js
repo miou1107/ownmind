@@ -103,7 +103,7 @@ export const BUG_FINGERPRINT_REGISTRY = {
   },
   lint_context_memory_missing: {
     category: 'lint',
-    description: 'IR-036 jargon 判斷未實作跨 reply 詞彙記憶、已解釋過的詞被重複擋（v1.20.2 follow-up #3 修正）',
+    description: '行話 / 專有名詞判斷未實作跨 reply 詞彙記憶、已解釋過的詞被重複擋（v1.20.2 follow-up #3 修正）',
   },
   lint_hook_no_suggest_report_path: {
     category: 'lint',

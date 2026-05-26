@@ -154,7 +154,7 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
     assert.equal(fs.existsSync(pendingFile), false, '沒違反不該動 pending file');
   });
 
-  it('中英混雜超過 15% → 寫 IR-037 違反 banner', () => {
+  it('中英混雜超過 15% → 寫 lint_language_mixed_ratio 違反 banner', () => {
     writeTranscript([
       { role: 'assistant', text: 'I think we should refactor the codebase using a completely different approach because the implementation has obvious bugs.' },
     ]);
@@ -162,7 +162,10 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
     assert.equal(r.status, 0);
     assert.ok(fs.existsSync(pendingFile), '違反該寫 fallback banner');
     const content = fs.readFileSync(pendingFile, 'utf8');
-    assert.match(content, /IR-037/, 'banner 必須含 IR-037 標識');
+    // v1.20.4：banner 用中性事件常數、不再寫死 IR-037
+    assert.match(content, /lint_language_mixed_ratio/, 'banner 必須含中性事件常數標識');
+    // 同時驗證沒有 IR-037 字眼洩漏（中性化保證）
+    assert.ok(!content.includes('IR-037'), 'banner 不該含 IR-037（v1.20.4 中性化）');
   });
 
   it('只看最後一輪 assistant — 中間違反、最後乾淨 → 不寫 banner', () => {
@@ -232,7 +235,8 @@ describe('v1.17.96 — fallback banner 不污染 stdout/stderr', () => {
     ]);
     const r = runHook(stopPayload());
     assert.equal(r.stderr, '');
-    assert.ok(!r.stdout.includes('IR-037'), 'IR-037 訊息不該外漏到 stdout');
+    assert.ok(!r.stdout.includes('lint_language_mixed_ratio'), 'lint 事件訊息不該外漏到 stdout');
+    assert.ok(!r.stdout.includes('IR-037'), 'IR-037 字眼絕不該出現在 stdout（中性化保證）');
     assert.ok(!r.stdout.includes('【OwnMind'), 'OwnMind banner 不該外漏到 stdout');
   });
 
@@ -389,7 +393,16 @@ describe('v1.17.96 — POST /api/activity/batch schema 對齊 server 期望', ()
       assert.equal(ev.source, 'reply-lint-hook');
       assert.ok(ev.details && typeof ev.details === 'object');
       assert.equal(ev.details.action, 'violate');
-      assert.match(ev.details.rule_code, /^IR-/);
+      // v1.20.4：rule_code 可能空（規則快取無對應）或對應 user 鐵律編號；至少要有 triggered_by_event
+      assert.ok(
+        typeof ev.details.rule_code === 'string',
+        'rule_code 必須是字串（即使空、也要存在欄位）'
+      );
+      assert.match(
+        ev.details.triggered_by_event,
+        /^(lint_|privacy_check)/,
+        'triggered_by_event 必為中性事件常數'
+      );
     } finally {
       server.close();
     }

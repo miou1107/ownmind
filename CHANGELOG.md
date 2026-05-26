@@ -1,5 +1,50 @@
 # OwnMind 更新紀錄
 
+## v1.20.4 — Lint 規則中性化（產品碼去個人鐵律編號）
+
+**背景**：Eric（另一個 AI session）看到自己對話裡出現「上一版違反 IR-036」字眼、Vin 抓到。grep 後發現 OwnMind 產品程式碼裡寫死了 Vin 的個人鐵律編號（IR-036 / IR-037）、會洩漏給其他 user 看到。違反 IR-050（個人鐵律編號不能寫進產品程式碼跟公開文件）。
+
+**改動**：
+
+- **`shared/lint-event-types.js`**（新）：定義 3 個中性事件常數
+  - `LINT_LANGUAGE_MIXED_RATIO`（中英混雜）
+  - `LINT_JARGON_EXPLANATION_REQUIRED`（行話品質）
+  - `LINT_PRIVACY_CHECK`（隱私內容）
+  - `EVENT_DISPLAY_NAMES` 對應中文顯示名
+  - `findUserRuleByEvent(rules, eventCode)` 從規則快取查對應個人鐵律
+
+- **`shared/language-lint.js`**：lintReply 違反清單 rule 欄位改用事件常數、註解去個人編號
+
+- **`hooks/ownmind-reply-lint.js`**：
+  - formatBlockReason 用中文事件名拼接（`中英混雜 + 行話品質`、不再吐 `IR-036 + IR-037`）
+  - 分支判斷改用事件常數
+  - 內聯 `_EVENT_DISPLAY_NAMES` 對應表跟 `_displayEventName` 避免 scope 問題
+
+- **`hooks/lib/build-compliance-events.js`**：
+  - 透過 `findUserRuleByEvent` 從規則快取對應事件到 rule_code
+  - 找不到對應 → rule_code 留空 + message 加事件中文名前綴（dashboard 仍能查）
+  - 新增 `triggered_by_event` 欄位保留原事件常數
+
+- **`hooks/lib/lint-event-logger.js`**：extractViolatedWords 改用中性命名（jargon_words / mixed_lang_words）
+
+- **`shared/bug-fingerprints.js`**：清掉「IR-036」字眼、改用「行話 / 專有名詞判斷」描述
+
+- **規則 metadata 加 `triggered_by_event`**（透過 ownmind_update）：
+  - IR-036 (id=300) → triggered_by_event: `lint_jargon_explanation_required`
+  - IR-037 (id=312) → triggered_by_event: `lint_language_mixed_ratio`
+
+- **版號**：1.20.3 → 1.20.4、三語 README 標示同步
+
+**測試**：
+- 6 個測試檔對應改成中性事件常數（lint-event-logger / build-compliance-events / reply-lint-pending-spool / reply-lint-hook / reply-lint）
+- `npm test` 1938/1938 全綠
+
+**效果**：
+- Eric 之類其他 user 對話裡不再看到「IR-036 / IR-037」字眼
+- 訊息改成中文事件名「中英混雜」「行話品質」、user-friendly
+- Vin 自己合規記錄仍能透過 metadata 對應到 IR-036 / IR-037（dashboard 不受影響）
+- 其他 user 沒設 metadata 也能用、合規記錄走中文事件名 fallback
+
 ## v1.20.3 — Session 暫時關閉開關（/ownmind-off / /ownmind-on）
 
 **背景**：user 開發過程中、有時 OwnMind 鉤子過嚴或誤擋（例如 IR-036 / IR-037 連續 lint、或 v1.20.2 之前的 IR-025 過嚴擋 commit）。希望有臨時開關「先放著、之後再開」、又怕忘記重開長期無保護、所以加定時提醒機制。

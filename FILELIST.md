@@ -95,6 +95,10 @@ tests/session-off-state.test.js                               — v1.20.3：15 �
 openspec/changes/v1.20.3-session-toggle/proposal.md           — 提案：/ownmind-off + /ownmind-on slash 指令、暫時關閉鉤子
 openspec/changes/v1.20.3-session-toggle/spec.md               — 規格：8 個 GIVEN/WHEN/THEN scenario
 openspec/changes/v1.20.3-session-toggle/tasks.md              — 任務清單
+shared/lint-event-types.js                                    — v1.20.4：lint 事件常數模組（LINT_LANGUAGE_MIXED_RATIO / LINT_JARGON_EXPLANATION_REQUIRED / LINT_PRIVACY_CHECK）+ findUserRuleByEvent 查表工具
+openspec/changes/v1.20.4-lint-rule-neutralize/proposal.md     — 提案：產品碼去個人鐵律編號、改用中性事件常數
+openspec/changes/v1.20.4-lint-rule-neutralize/spec.md         — 規格：7 個 GIVEN/WHEN/THEN scenario
+openspec/changes/v1.20.4-lint-rule-neutralize/tasks.md        — 任務清單
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
