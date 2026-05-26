@@ -9,67 +9,68 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.80 — install_started beacon 上傳失敗時 spool fallback（vin-windows-test 第四輪）
+ * v1.17.80 — install_started beacon spool fallback when upload fails
+ * (vin-windows-test, round 4)
  *
- * Root cause（v1.17.79 沒守到的下一層）：
- *   - v1.17.78 的 Send-InstallBeacon / send_install_beacon 是 fire-and-forget
- *   - try ... catch { } 把 upload 失敗整個吞掉，沒進 retry 機制
- *   - 真實案例：vin-windows-test 確認自己升到 1.17.78，但 server 完全沒收到任何 beacon
- *     → 升級時的 install.ps1 step 4（re-run install.ps1）的 Send-InstallBeacon 失敗了，
- *     資料就丟了。retrySpool 救不到，因為從來沒進 spool。
+ * Root cause (the next layer v1.17.79 missed):
+ *   - v1.17.78's Send-InstallBeacon / send_install_beacon was fire-and-forget.
+ *   - `try ... catch { }` swallowed upload failures completely, so they never entered retry.
+ *   - Real case: vin-windows-test confirmed they were on 1.17.78, but the server saw zero beacons
+ *     → Send-InstallBeacon during install.ps1 step 4 (re-run install.ps1) failed silently and the
+ *     data was lost. retrySpool could not save it because nothing ever reached the spool.
  *
- * 修法：beacon POST 失敗時把 body append 到 ~/.ownmind/logs/.upload-spool.jsonl，
- * 下次 self-check 開頭跑 retrySpool() 就會自動補傳。
+ * Fix: when a beacon POST fails, append the body to ~/.ownmind/logs/.upload-spool.jsonl.
+ * The next self-check runs retrySpool() at the top and re-sends.
  */
 
-describe('install.ps1 Send-InstallBeacon — POST 失敗時 spool fallback (v1.17.80)', () => {
+describe('install.ps1 Send-InstallBeacon — spool fallback on POST failure (v1.17.80)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('Send-InstallBeacon 內含 .upload-spool.jsonl 寫入路徑（beacon 失敗時 spool）', () => {
-    // 抓 Send-InstallBeacon function 整個 block，確認裡面有 .upload-spool.jsonl 字串
+  it('Send-InstallBeacon writes into .upload-spool.jsonl when the beacon fails', () => {
+    // Grab the whole Send-InstallBeacon function block and confirm it mentions .upload-spool.jsonl.
     const fnMatch = content.match(/function Send-InstallBeacon[\s\S]+?^\}/m);
-    assert.ok(fnMatch, '找不到 Send-InstallBeacon function 定義');
+    assert.ok(fnMatch, 'Send-InstallBeacon function definition not found');
     assert.match(
       fnMatch[0],
       /\.upload-spool\.jsonl/,
-      'Send-InstallBeacon 必須在失敗時寫入 .upload-spool.jsonl（同 self-check spool）'
+      'Send-InstallBeacon must write to .upload-spool.jsonl on failure (same spool as self-check)'
     );
   });
 
-  it('用 BOM-less UTF-8 append（複用 v1.17.12 的寫法）', () => {
+  it('appends BOM-less UTF-8 (reusing the v1.17.12 pattern)', () => {
     const fnMatch = content.match(/function Send-InstallBeacon[\s\S]+?^\}/m);
     assert.ok(fnMatch);
-    // 必須走 [System.IO.File]::AppendAllText 或 .NET UTF8Encoding($false)
-    // — Add-Content -Encoding UTF8 在 PS 5.1 會加 BOM，下游 Node JSON.parse 炸
+    // Must use [System.IO.File]::AppendAllText or .NET UTF8Encoding($false)
+    // — Add-Content -Encoding UTF8 inserts a BOM on PS 5.1, which breaks downstream Node JSON.parse.
     assert.match(
       fnMatch[0],
       /AppendAllText|UTF8Encoding/,
-      '必須用 .NET API append 而非 Add-Content（避免 BOM 污染）'
+      'must use the .NET API to append instead of Add-Content (avoid BOM pollution)'
     );
   });
 });
 
-describe('install.sh send_install_beacon — POST 失敗時 spool fallback (v1.17.80)', () => {
+describe('install.sh send_install_beacon — spool fallback on POST failure (v1.17.80)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
 
-  it('send_install_beacon 內含 .upload-spool.jsonl append 路徑', () => {
+  it('send_install_beacon appends to .upload-spool.jsonl', () => {
     const fnMatch = content.match(/send_install_beacon\(\)\s*\{[\s\S]+?\n\}/m);
-    assert.ok(fnMatch, '找不到 send_install_beacon function');
+    assert.ok(fnMatch, 'send_install_beacon function not found');
     assert.match(
       fnMatch[0],
       /\.upload-spool\.jsonl/,
-      'send_install_beacon 失敗時必須 append 到 .upload-spool.jsonl'
+      'send_install_beacon must append to .upload-spool.jsonl on failure'
     );
   });
 
-  it('curl 成功才 return；失敗走 spool 路徑', () => {
+  it('returns only when curl succeeds; failures take the spool path', () => {
     const fnMatch = content.match(/send_install_beacon\(\)\s*\{[\s\S]+?\n\}/m);
     assert.ok(fnMatch);
-    // 必須有 if curl ... then return 結構
+    // Must have an `if curl ... then return` structure.
     assert.match(
       fnMatch[0],
       /if\s+curl[\s\S]*?then[\s\S]*?return/,
-      'POST 成功要明確 return；失敗才走 spool（避免兩邊都做）'
+      'POST success must return explicitly; only failures fall through to the spool (avoid doing both)'
     );
   });
 });

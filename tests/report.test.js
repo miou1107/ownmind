@@ -3,26 +3,26 @@ import assert from 'node:assert/strict';
 import { computePeriodRange, groupFrictions, computeReportData } from '../src/utils/report.js';
 
 describe('computePeriodRange', () => {
-  it('week offset=0 回傳本週週一到週日（label 驗證）', () => {
-    // 2026-03-25 是週三
+  it('week offset=0 returns this week Mon–Sun (label check)', () => {
+    // 2026-03-25 is a Wednesday
     const now = new Date('2026-03-25T12:00:00+08:00');
     const { label } = computePeriodRange('week', 0, now);
     assert.equal(label, '2026-03-23 ~ 2026-03-29');
   });
 
-  it('week offset=1 回傳上週', () => {
+  it('week offset=1 returns last week', () => {
     const now = new Date('2026-03-25T12:00:00+08:00');
     const { label } = computePeriodRange('week', 1, now);
     assert.equal(label, '2026-03-16 ~ 2026-03-22');
   });
 
-  it('month offset=0 回傳本月', () => {
+  it('month offset=0 returns this month', () => {
     const now = new Date('2026-03-15T12:00:00+08:00');
     const { label } = computePeriodRange('month', 0, now);
     assert.equal(label, '2026-03-01 ~ 2026-03-31');
   });
 
-  it('week start/end 時間正確（UTC+8 Monday 00:00 ~ Sunday 23:59）', () => {
+  it('week start/end times correct (UTC+8 Monday 00:00 ~ Sunday 23:59)', () => {
     const now = new Date('2026-03-25T12:00:00+08:00');
     const { start, end } = computePeriodRange('week', 0, now);
     // Monday 00:00 Asia/Taipei = Sunday 16:00 UTC
@@ -31,25 +31,26 @@ describe('computePeriodRange', () => {
     assert.equal(end.toISOString(), '2026-03-29T15:59:59.999Z');
   });
 
-  it('unknown period 拋錯', () => {
+  it('unknown period throws', () => {
     assert.throws(() => computePeriodRange('quarter', 0), /Unknown period/);
   });
 
-  it('month offset=1 跨年（1月看12月）', () => {
+  it('month offset=1 across year boundary (January → previous December)', () => {
     const now = new Date('2026-01-15T12:00:00+08:00');
     const { label } = computePeriodRange('month', 1, now);
     assert.equal(label, '2025-12-01 ~ 2025-12-31');
   });
 
-  it('week 跨年（1月第一週看上週）', () => {
-    // 2026-01-01 是週四
+  it('week across year boundary (first week of January, last week)', () => {
+    // 2026-01-01 is a Thursday
     const now = new Date('2026-01-01T12:00:00+08:00');
     const { label } = computePeriodRange('week', 1, now);
-    // 上週是 2025-12-22 ~ 2025-12-28
+    // Previous week is 2025-12-22 ~ 2025-12-28
+
     assert.equal(label, '2025-12-22 ~ 2025-12-28');
   });
 
-  it('month offset=2 回傳兩個月前', () => {
+  it('month offset=2 returns two months ago', () => {
     const now = new Date('2026-03-15T12:00:00+08:00');
     const { label } = computePeriodRange('month', 2, now);
     assert.equal(label, '2026-01-01 ~ 2026-01-31');
@@ -57,7 +58,7 @@ describe('computePeriodRange', () => {
 });
 
 describe('groupFrictions', () => {
-  it('同前 20 字元歸為同類，計數正確', () => {
+  it('same leading 20 chars get grouped together, counts correct', () => {
     const frictions = [
       'SSH timeout connection refused on server',
       'SSH timeout connection refused again, retrying',
@@ -65,35 +66,35 @@ describe('groupFrictions', () => {
       'Docker cache not refreshed properly',
     ];
     const result = groupFrictions(frictions);
-    // 前三筆的前 20 字 "ssh timeout connecti" 相同
+    // The first three entries share the leading 20 chars "ssh timeout connecti".
     assert.equal(result[0].count, 3);
     assert.ok(result[0].text.startsWith('SSH timeout'));
     assert.equal(result[1].count, 1);
   });
 
-  it('大小寫視為相同', () => {
+  it('case is treated as equal', () => {
     const frictions = ['SSH Timeout issue A1', 'ssh timeout issue A2'];
     const result = groupFrictions(frictions);
-    // 前 20 字 "ssh timeout issue a1" vs "ssh timeout issue a2" — 不同！
-    // 換成確實前 20 字元相同的資料
+    // First 20 chars "ssh timeout issue a1" vs "ssh timeout issue a2" differ!
+    // Swap to data whose leading 20 chars truly match.
     assert.equal(result.length, 2);
   });
 
-  it('前 20 字元完全相同的大小寫混合', () => {
+  it('mixed case with identical leading 20 chars groups together', () => {
     const frictions = [
       'Docker Build Failed with error code 1',
       'docker build failed with error code 2',
     ];
     const result = groupFrictions(frictions);
-    // "docker build failed " 前 20 字完全相同
+    // "docker build failed " — leading 20 chars match exactly.
     assert.equal(result[0].count, 2);
   });
 
-  it('空陣列回傳空陣列', () => {
+  it('empty array returns empty array', () => {
     assert.deepEqual(groupFrictions([]), []);
   });
 
-  it('null/undefined 值被略過', () => {
+  it('null/undefined entries are skipped', () => {
     const result = groupFrictions([null, undefined, '', 'valid friction text here']);
     assert.equal(result.length, 1);
     assert.equal(result[0].count, 1);
@@ -101,7 +102,7 @@ describe('groupFrictions', () => {
 });
 
 describe('computeReportData', () => {
-  it('正常回傳報表結構', () => {
+  it('returns the normal report structure', () => {
     const sessions = [
       { details: { friction_points: 'SSH timeout connection refused on server', suggestions: '加 retry' } },
       { details: { friction_points: 'SSH timeout connection refused again', suggestions: null } },
@@ -115,7 +116,7 @@ describe('computeReportData', () => {
     assert.ok(result.generated_at);
   });
 
-  it('空 sessions 回傳空陣列', () => {
+  it('empty sessions return empty arrays', () => {
     const result = computeReportData([], 0, '2026-03-23 ~ 2026-03-29');
     assert.deepEqual(result.top_frictions, []);
     assert.deepEqual(result.top_suggestions, []);

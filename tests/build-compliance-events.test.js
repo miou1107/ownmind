@@ -5,13 +5,13 @@ import { buildComplianceEvents } from '../hooks/lib/build-compliance-events.js';
 import { getTierFromRules } from '../shared/iron-rule-tier.js';
 
 describe('v1.19 — buildComplianceEvents (reply-lint)', () => {
-  // v1.20.4：violations rule 改用中性事件常數、不再寫死個人鐵律編號
+  // v1.20.4: violations rule uses neutral event constants instead of hard-coded personal iron-rule codes.
   const violations = [
     { rule: 'lint_language_mixed_ratio', message: '中英混雜比例 30%' },
     { rule: 'lint_jargon_explanation_required', message: '行話沒附白話' },
   ];
 
-  // 規則快取裡放對應的個人鐵律（透過 triggered_by_event 對應）
+  // Rule cache contains the matching personal iron rules (linked via triggered_by_event).
   const userRules = [
     {
       code: 'IR-037',
@@ -27,12 +27,12 @@ describe('v1.19 — buildComplianceEvents (reply-lint)', () => {
     },
   ];
 
-  it('回傳 violations.length 筆 event', () => {
+  it('returns one event per violation', () => {
     const events = buildComplianceEvents(violations, userRules, getTierFromRules);
     assert.equal(events.length, 2);
   });
 
-  it('每筆 event 都有 v1.19 之前的必填欄位 + 對應到個人鐵律編號', () => {
+  it('every event carries the pre-v1.19 required fields + maps to its personal iron-rule code', () => {
     const [first] = buildComplianceEvents(violations, userRules, getTierFromRules);
     assert.ok(first.ts);
     assert.equal(first.event, 'iron_rule_compliance');
@@ -40,13 +40,13 @@ describe('v1.19 — buildComplianceEvents (reply-lint)', () => {
     assert.equal(first.source, 'reply-lint-hook');
     assert.ok(first.client_event_id);
     assert.equal(first.details.action, 'violate');
-    // v1.20.4：透過規則快取對應到個人鐵律編號
+    // v1.20.4: maps to the personal iron-rule code via the rule cache.
     assert.equal(first.details.rule_code, 'IR-037');
-    // v1.20.4：保留原事件常數
+    // v1.20.4: keep the original event constant.
     assert.equal(first.details.triggered_by_event, 'lint_language_mixed_ratio');
   });
 
-  it('v1.19: details 含 tier 欄位', () => {
+  it('v1.19: details contains the tier field', () => {
     const rulesWithTier = [
       {
         code: 'IR-037', tier: 'critical',
@@ -62,55 +62,55 @@ describe('v1.19 — buildComplianceEvents (reply-lint)', () => {
     assert.equal(events[1].details.tier, 'default');
   });
 
-  it('v1.20.4: cache miss（沒有對應事件的個人鐵律）→ rule_code 空 + message 加事件中文名前綴', () => {
+  it('v1.20.4: cache miss (no personal iron-rule matches the event) → empty rule_code + message prefixed with event name', () => {
     const events = buildComplianceEvents(violations, [], getTierFromRules);
-    // 沒對應規則 → rule_code 留空
+    // No matching rule → rule_code stays empty.
     assert.equal(events[0].details.rule_code, '');
     assert.equal(events[1].details.rule_code, '');
-    // tier fallback default
+    // tier falls back to default
     assert.equal(events[0].details.tier, 'default');
-    // message 含事件中文名前綴讓 dashboard 仍能辨識
+    // Prefix the message with the event name so the dashboard can still identify it.
     assert.ok(events[0].details.message.startsWith('[Mixed Chinese-English]'),
-      `message 開頭該含事件名：${events[0].details.message}`);
+      `message should begin with the event name: ${events[0].details.message}`);
     assert.ok(events[1].details.message.startsWith('[Jargon quality]'),
-      `message 開頭該含事件名：${events[1].details.message}`);
-    // triggered_by_event 仍保留原事件常數
+      `message should begin with the event name: ${events[1].details.message}`);
+    // triggered_by_event still carries the original event constant.
     assert.equal(events[0].details.triggered_by_event, 'lint_language_mixed_ratio');
   });
 
-  it('v1.19: rules 為 null / undefined 不丟錯、tier 用 default', () => {
+  it('v1.19: null / undefined rules do not throw; tier falls back to default', () => {
     const a = buildComplianceEvents(violations, null, getTierFromRules);
     const b = buildComplianceEvents(violations, undefined, getTierFromRules);
     assert.equal(a[0].details.tier, 'default');
     assert.equal(b[0].details.tier, 'default');
-    // rule_code 空（沒有規則可對應）
+    // rule_code empty (no rule to match)
     assert.equal(a[0].details.rule_code, '');
     assert.equal(b[0].details.rule_code, '');
   });
 
-  it('v1.19: getTier 不是 function 時、tier 用 default、不丟錯', () => {
+  it('v1.19: when getTier is not a function, tier defaults to default and does not throw', () => {
     const events = buildComplianceEvents(violations, [], null);
     assert.equal(events[0].details.tier, 'default');
   });
 
-  it('message 截斷到 300 字以內', () => {
+  it('message is truncated to 300 chars', () => {
     const long = 'x'.repeat(500);
     const events = buildComplianceEvents(
       [{ rule: 'lint_jargon_explanation_required', message: long }],
       userRules,
       getTierFromRules
     );
-    // 有對應規則 → message 無前綴、原樣截到 300
+    // With a matching rule → no prefix, message truncated to 300 as-is.
     assert.equal(events[0].details.message.length, 300);
   });
 
-  it('violations 為非陣列回傳空陣列', () => {
+  it('non-array violations returns an empty array', () => {
     assert.deepEqual(buildComplianceEvents(null, [], getTierFromRules), []);
     assert.deepEqual(buildComplianceEvents(undefined, [], getTierFromRules), []);
     assert.deepEqual(buildComplianceEvents('not-array', [], getTierFromRules), []);
   });
 
-  it('每筆 event 的 client_event_id 互相唯一', () => {
+  it('client_event_id is unique across events', () => {
     const events = buildComplianceEvents(violations, userRules, getTierFromRules);
     assert.notEqual(events[0].client_event_id, events[1].client_event_id);
   });

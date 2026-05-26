@@ -9,72 +9,74 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.81 — update.ps1 / update.sh 觀測管道補洞 + StackOverflow 根因修法（vin-windows-test 第五輪）
+ * v1.17.81 — update.ps1 / update.sh observability gap + StackOverflow root-cause fix
+ * (vin-windows-test, round 5)
  *
- * Root cause (StackOverflow)：
- *   update.ps1 用 `@"..."@` 雙引號 heredoc 包 node JS 腳本，PS 會對 heredoc 做變數展開。
- *   JS code 含大量 `$(...)` 和 `$變數`，遇上 Set-StrictMode -Version Latest 時某些路徑
- *   會觸發 PS 遞迴展開 → StackOverflowException 整個 process 死。
+ * Root cause (StackOverflow):
+ *   update.ps1 wraps the node JS script in a double-quoted heredoc `@"..."@`, which makes
+ *   PowerShell perform variable expansion on the heredoc body. The JS code contains many
+ *   `$(...)` and `$variables`, so under Set-StrictMode -Version Latest some paths trigger
+ *   recursive PS expansion → StackOverflowException kills the whole process.
  *
- *   修法：4 處 heredoc 全改單引號 `@'...'@`，禁止 PS 變數展開。JS code 內所有 `$`、`$()`
- *   原樣保留，由 node 自己 parse。
+ *   Fix: change all four heredocs to single-quoted `@'...'@` form, blocking PS variable
+ *   expansion. Every `$`, `$()` in the JS body is preserved verbatim and parsed by node.
  *
- * Observability gap (v1.17.79/80 沒覆蓋到的)：
- *   update.ps1 / update.sh 是「skill / hook 同步」的 light path，跟 install / upgrade 並列。
- *   v1.17.79 把 errors/ spool wiring 上去 install + interactive-upgrade，但漏了 update.{ps1,sh}。
- *   所以 vin-windows-test 第五輪：他的 AI 跑 update.ps1（不是 bootstrap），失敗後 server 完全
- *   看不到 — 因為這支沒 beacon、沒 report-error、沒 drain spool。
+ * Observability gap (uncovered by v1.17.79/80):
+ *   update.ps1 / update.sh are the "skill / hook sync" light path, parallel to install / upgrade.
+ *   v1.17.79 wired the errors/ spool into install + interactive-upgrade but missed update.{ps1,sh}.
+ *   That left vin-windows-test round 5 stuck: their AI ran update.ps1 (not bootstrap), it failed,
+ *   and the server saw nothing — no beacon, no report-error, no drain spool.
  *
- *   修法：update.{ps1,sh} 加 beacon (update_started) + try/catch report-error + 結尾 drain。
- *   與 install / upgrade 同等觀測層級。
+ *   Fix: update.{ps1,sh} adds a beacon (update_started) + try/catch report-error + a drain at the
+ *   end, bringing observability to parity with install / upgrade.
  */
 
-describe('update.ps1 — heredoc 必須單引號避免 PS 變數展開（v1.17.81 StackOverflow fix）', () => {
+describe('update.ps1 — heredoc must be single-quoted to block PS variable expansion (v1.17.81 StackOverflow fix)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'scripts/update.ps1'), 'utf8');
 
-  it('不得有 @"..."@ 雙引號 heredoc（會觸發 PS 變數展開內含 JS 的 $variables）', () => {
-    // 雙引號 heredoc 在 PS 內 enable 變數 + subexpression 展開；含 JS code 時危險
+  it('must not contain @"..."@ double-quoted heredoc (would trigger PS variable expansion on the embedded JS $variables)', () => {
+    // Double-quoted heredoc enables variable + subexpression expansion in PS — dangerous around JS code.
     assert.doesNotMatch(
       content,
       /@"\r?\n[\s\S]*?const\s+\w+\s*=/,
-      '改成 @\'...\'@ 單引號 heredoc，JS code 才能原樣保留'
+      'switch to @\'...\'@ single-quoted heredoc so JS code is preserved verbatim'
     );
   });
 
-  it('保留至少一個 @\'...\'@ 單引號 heredoc（修法已套用的訊號）', () => {
-    assert.match(content, /@'\r?\n/, '至少要有一個單引號 heredoc 才算修了');
+  it("preserves at least one @'...'@ single-quoted heredoc (signal that the fix is applied)", () => {
+    assert.match(content, /@'\r?\n/, 'must have at least one single-quoted heredoc to count as fixed');
   });
 });
 
-describe('update.ps1 — 觀測管道（v1.17.81 IR-038）', () => {
+describe('update.ps1 — observability channel (v1.17.81 IR-038)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'scripts/update.ps1'), 'utf8');
 
-  it('開頭送 update_started beacon（同 install_started 模式）', () => {
-    assert.match(content, /update_started/, 'beacon trigger 名稱用 update_started');
+  it('sends an update_started beacon at the top (same pattern as install_started)', () => {
+    assert.match(content, /update_started/, 'the beacon trigger name should be update_started');
   });
 
-  it('載入 report-error helper（dot-source）', () => {
-    assert.match(content, /report-error\.ps1/, '必須引入 report-error helper');
+  it('loads the report-error helper (dot-source)', () => {
+    assert.match(content, /report-error\.ps1/, 'must source the report-error helper');
   });
 
-  it('檔頭明示「不是完整升級，要升級請用 bootstrap」', () => {
-    // 防止 AI 助手看到「update」就跑這支當升級用
-    assert.match(content, /bootstrap/i, '檔頭至少要提到 bootstrap，引導正確升級路徑');
+  it('header explicitly says "not a full upgrade; use bootstrap for a real upgrade"', () => {
+    // Prevents AI assistants from running this as the upgrade path because they see "update".
+    assert.match(content, /bootstrap/i, 'header must at least mention bootstrap to guide the right upgrade path');
   });
 });
 
-describe('update.sh — 觀測管道（v1.17.81 IR-038）', () => {
+describe('update.sh — observability channel (v1.17.81 IR-038)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'scripts/update.sh'), 'utf8');
 
-  it('開頭送 update_started beacon', () => {
+  it('sends an update_started beacon at the top', () => {
     assert.match(content, /update_started/);
   });
 
-  it('source report-error helper', () => {
+  it('sources the report-error helper', () => {
     assert.match(content, /report-error\.sh/);
   });
 
-  it('檔頭明示「不是完整升級，要升級請用 bootstrap」', () => {
+  it('header explicitly says "not a full upgrade; use bootstrap for a real upgrade"', () => {
     assert.match(content, /bootstrap/i);
   });
 });

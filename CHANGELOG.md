@@ -1,5 +1,30 @@
 # OwnMind 更新紀錄
 
+## v1.26.11 — 國際化第十期 Part 4：tests/ 接續 30 檔英文化（軌道 B）
+
+**範圍**：翻 `tests/*.test.js` 下 30 個檔（每檔 20–31 中文行），接續 v1.26.6 / v1.26.9 / v1.26.10。約 770 行中文中的「真註解 + describe/it 標題 + assertion hint」翻成英文。fixture 模擬 user 中文輸入、iron-rule title literal、production output 比對字面值按 CLAUDE.md 規則保留。
+
+**處理的 30 檔**（依中文密度）：
+- 31 行：`tier2-windows-fix`、`iron-rule-frontmatter`
+- 30 行：`update-script-observability`、`llm-narrative`、`add-stop-hook`
+- 29 行：`context-blob-schema`、`auto-comply-reads-file`
+- 28 行：`session-counter`、`pitfalls-no-cutoff`、`mcp-tool-response-shape`、`bug-fingerprints`
+- 27 行：`sync-memory-files`、`bypass-handler`
+- 26 行：`start-cmd-node-fallback`、`lint-event-logger`、`iron-rule-tier-helper`、`ingestion`
+- 25 行：`session-counter-block`、`install-failed-beacon`、`install-beacon-spool-fallback`
+- 24 行：`upgrade-windows-file-lock`、`report`、`first-run-redirect`、`build-compliance-events`、`admin-html-no-duplicate-const`
+- 23 行：`auto-retry-sync-token`
+- 22 行：`require-fields`、`me-change-password-status`
+- 20 行：`sync-token-endpoint`、`init-compact-compliance-instruction`
+
+**翻譯規則**：跟前三批完全一致的 5 分類。
+
+**測試**：1999 pass / 0 fail（無斷言改動、無 baseline 變化）
+**版本**：1.26.10 → 1.26.11
+**OpenSpec change**：`openspec/changes/v1.26.11-i18n-tests-internal-part4/`
+
+剩餘 ~50 個小檔（< 20 中文行、多為 fixture 殘留）順延 v1.26.12+。
+
 ## v1.26.10 — 國際化第十期 Part 3：tests/ 接續 15 檔英文化（軌道 B）
 
 **範圍**：翻 `tests/*.test.js` 下 15 個檔（每檔 32–38 行中文），接續 v1.26.6 / v1.26.9 軌道 B。約 530 行中文中的「真註解 + describe/it 標題 + assertion hint」翻成英文。fixture 模擬使用者中文輸入、iron-rule title literal、production output 比對字面值按 CLAUDE.md 規則保留。

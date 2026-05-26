@@ -1,5 +1,50 @@
 # OwnMind 檔案結構
 
+## v1.26.11 修改（國際化第十期 Part 4：tests/ 接續 30 檔英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.11-i18n-tests-internal-part4/proposal.md      — v1.26.11 提案
+openspec/changes/v1.26.11-i18n-tests-internal-part4/tasks.md         — v1.26.11 任務清單
+```
+
+修改檔（30 個 tests/*.test.js + 版號 + 三語文件）：
+```
+tests/tier2-windows-fix.test.js                    — 31 行（Tier 2 Windows 安裝 + sqlite3 自動裝）
+tests/iron-rule-frontmatter.test.js                — 31 行（detectFrontmatter YAML 解析 + 安全模式）
+tests/update-script-observability.test.js          — 30 行（update.ps1 heredoc 修法 + beacon 觀測）
+tests/llm-narrative.test.js                        — 30 行（buildMessages prompt 規格 + parseLLMJson）
+tests/add-stop-hook.test.js                        — 30 行（Stop hook idempotent merge + backup）
+tests/context-blob-schema.test.js                  — 29 行（截斷物件 + validateContextBlob 1MB）
+tests/auto-comply-reads-file.test.js               — 29 行（IR-025 autoComply 讀檔 vs in-memory）
+tests/session-counter.test.js                      — 28 行（counter 檔 read/increment + cleanup）
+tests/pitfalls-no-cutoff.test.js                   — 28 行（V17_87_SHIPPED cutoff revert）
+tests/mcp-tool-response-shape.test.js              — 28 行（composeToolResponse 單一 text part）
+tests/bug-fingerprints.test.js                     — 28 行（指紋註冊表格式 + 5xx 通用指紋）
+tests/sync-memory-files.test.js                    — 27 行（slugTitle + memoryFilename + fail-mode）
+tests/bypass-handler.test.js                       — 27 行（OWNMIND_BYPASS 解析 + audit log）
+tests/start-cmd-node-fallback.test.js              — 26 行（start.cmd Windows node fallback）
+tests/lint-event-logger.test.js                    — 26 行（writeEvent rotate + extractViolatedWords）
+tests/iron-rule-tier-helper.test.js                — 26 行（VALID_TIERS + normalizeTier + groupByTier）
+tests/ingestion.test.js                            — 26 行（events / exemption / codex fingerprint）
+tests/session-counter-block.test.js                — 25 行（block_count read/increment/reset）
+tests/install-failed-beacon.test.js                — 25 行（FAIL 函式統一補 report_error）
+tests/install-beacon-spool-fallback.test.js        — 25 行（beacon POST 失敗 spool fallback）
+tests/upgrade-windows-file-lock.test.js            — 24 行（Windows file-lock 偵測訊息）
+tests/report.test.js                               — 24 行（週/月 period range + 摩擦點分組）
+tests/first-run-redirect.test.js                   — 24 行（first-run middleware redirect + fail-open）
+tests/build-compliance-events.test.js              — 24 行（reply-lint 違規事件對應個人鐵律）
+tests/admin-html-no-duplicate-const.test.js        — 24 行（admin HTML 內嵌 JS const 重複偵測）
+tests/auto-retry-sync-token.test.js                — 23 行（sync_token 409 retry helper）
+tests/require-fields.test.js                       — 22 行（requireFields + 敏感欄位遮蔽）
+tests/me-change-password-status.test.js            — 22 行（change-password 舊密錯誤回 400）
+tests/sync-token-endpoint.test.js                  — 20 行（generateSyncToken + validateSyncToken）
+tests/init-compact-compliance-instruction.test.js  — 20 行（compact mode digest 含 compliance 指令）
+package.json                                       — 1.26.10 → 1.26.11
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md / FILELIST.md                         — v1.26.11 條目
+```
+
 ## v1.26.10 修改（國際化第十期 Part 3：tests/ 接續 15 檔英文化 — 軌道 B）
 
 新增檔：

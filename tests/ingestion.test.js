@@ -201,7 +201,7 @@ describe('POST /api/usage/events', () => {
   });
 
   it('writes unknown_model audit log but still accepts the event', async () => {
-    const state = { events: [], audits: [], knownModels: new Set() };  // 沒有任何已知 model
+    const state = { events: [], audits: [], knownModels: new Set() };  // no known models
     const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
     const res = await request(app, {
       method: 'POST', path: '/api/usage/events',
@@ -234,12 +234,12 @@ describe('POST /api/usage/events', () => {
       body: { events: [{
         tool: 'claude-code', session_id: 's1', message_id: 'new',
         model: 'opus', ts: '2026-04-21T10:00:00Z',
-        cumulative_total_tokens: 500   // 比 1000 小 → regression
+        cumulative_total_tokens: 500   // smaller than 1000 → regression
       }] }
     });
-    assert.equal(res.body.accepted, 1, 'event 仍應接收');
+    assert.equal(res.body.accepted, 1, 'event should still be accepted');
     const reg = state.audits.find((a) => a.event_type === 'token_regression');
-    assert.ok(reg, 'token_regression 應該寫入 audit');
+    assert.ok(reg, 'token_regression should be written to audit');
     assert.equal(reg.details.expected_min, 1000);
     assert.equal(reg.details.actual, 500);
   });
@@ -263,7 +263,7 @@ describe('POST /api/usage/events', () => {
           model: 'opus', ts: '2026-04-21T11:00:00Z', cumulative_total_tokens: 1 }
       ] }
     });
-    // session s1 與 s2 各一次（同一 Asia/Taipei date 合併）
+    // session s1 and s2 each once (merged under the same Asia/Taipei date)
     assert.equal(touched.length, 2);
     const keys = touched.map((t) => `${t.tool}/${t.sessionId}/${t.date}`);
     assert.ok(keys.includes('claude-code/s1/2026-04-21'));
@@ -288,7 +288,7 @@ describe('POST /api/usage/events', () => {
       body: { events: [
         { tool: 'claude-code', session_id: 's1', message_id: 'good',
           model: 'opus', ts: '2026-04-21T09:00:00Z', cumulative_total_tokens: 1 },
-        { tool: 'claude-code', session_id: 's1' }  // 缺 message_id / ts / cumulative
+        { tool: 'claude-code', session_id: 's1' }  // missing message_id / ts / cumulative
       ] }
     });
     assert.equal(res.body.accepted, 1);
@@ -327,9 +327,9 @@ describe('Exemption suppression (P3)', () => {
     });
     assert.equal(res.body.exempted, true);
     assert.equal(res.body.accepted, 0);
-    assert.equal(state.events.length, 0, '資料不應寫入 token_events');
+    assert.equal(state.events.length, 0, 'data must not be written to token_events');
     const audit = state.audits.find((a) => a.event_type === 'ingestion_suppressed_exempt');
-    assert.ok(audit, '應有 ingestion_suppressed_exempt audit');
+    assert.ok(audit, 'should have an ingestion_suppressed_exempt audit');
     assert.equal(audit.details.reason, '休假');
   });
 
@@ -342,7 +342,7 @@ describe('Exemption suppression (P3)', () => {
     // makeFakeQuery returns row → events.js treats as exempt. So this case isn't
     // faithfully testable with our fake without mimicking SQL. Skip this scenario
     // at unit level; rely on SQL predicate `expires_at IS NULL OR expires_at > NOW()`.
-    assert.ok(true, '靠 SQL 過期判斷，fake 無法模擬 NOW()，留給整合測試');
+    assert.ok(true, 'relies on SQL expiry check; the fake cannot simulate NOW(), leave to integration tests');
   });
 });
 
@@ -383,7 +383,7 @@ describe('Heartbeat UPSERT (P3)', () => {
       }
     });
     assert.equal(state.heartbeats?.length, 1,
-      'exempt user 的 heartbeat 仍要更新，避免 coverage panel 誤判失蹤');
+      'heartbeat must still update for exempt users; otherwise the coverage panel wrongly flags them missing');
   });
 
   it('no heartbeat block → no UPSERT', async () => {
@@ -409,7 +409,7 @@ describe('Codex fingerprint flow (P3)', () => {
       body: { events: [{
         tool: 'codex', session_id: 's1', message_id: 'whatever',
         ts: '2026-04-21T09:00:00Z', cumulative_total_tokens: 100
-        // 無 codex_fingerprint_material
+        // no codex_fingerprint_material
       }] }
     });
     assert.equal(res.status, 400);
@@ -420,7 +420,7 @@ describe('Codex fingerprint flow (P3)', () => {
   it('rejects codex event with partial material (missing required key)', async () => {
     const state = { events: [], audits: [], knownModels: new Set() };
     const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
-    const { ts_iso: _unused, ...partial } = sampleMaterial;  // 缺 ts_iso
+    const { ts_iso: _unused, ...partial } = sampleMaterial;  // missing ts_iso
     void _unused;
     const res = await request(app, {
       method: 'POST', path: '/api/usage/events',
@@ -432,7 +432,7 @@ describe('Codex fingerprint flow (P3)', () => {
     });
     assert.equal(res.status, 400);
     const audit = state.audits.find((a) => a.event_type === 'codex_missing_material');
-    assert.ok(audit, '缺欄位 → codex_missing_material audit');
+    assert.ok(audit, 'missing fields → codex_missing_material audit');
   });
 
   it('overrides client message_id with server expectedId + writes fingerprint_mismatch audit', async () => {
@@ -453,7 +453,7 @@ describe('Codex fingerprint flow (P3)', () => {
 
     assert.equal(state.events.length, 1);
     assert.equal(state.events[0].message_id, expectedId,
-      'server 必須用 expectedId 蓋掉 client 送的 id');
+      'server must override the client-sent id with expectedId');
     const mismatch = state.audits.find((a) => a.event_type === 'fingerprint_mismatch');
     assert.ok(mismatch, 'client id ≠ expectedId → fingerprint_mismatch audit');
     assert.equal(mismatch.details.client_message_id, 'client-sent-wrong-id');
@@ -481,20 +481,21 @@ describe('Codex fingerprint flow (P3)', () => {
       }] }
     });
 
-    assert.equal(state.events.length, 1, 'server 應該 dedupe：兩次 request 只留一筆');
+    assert.equal(state.events.length, 1, 'server should dedupe: two requests, only one row kept');
   });
 
   it('writes fingerprint_collision audit when different material hashes to same id', async () => {
-    // 真實碰撞機率 2^-256，手工構造：直接插入一筆 row 然後以不同 material 送同 expectedId
+    // Real collision probability is 2^-256, so construct one manually: insert a row first, then
+    // send a different material with the same expectedId.
     const state = { events: [], audits: [], knownModels: new Set() };
     const material1 = canonicalizeCodexMaterial(sampleMaterial);
     const expectedId = codexMessageId('s1', material1);
-    // 手工放一筆「假裝」的既存 row，material 不同但 message_id 相同
+    // Plant a "pretend" existing row whose material differs but whose message_id matches.
     const material2 = canonicalizeCodexMaterial({ ...sampleMaterial, reasoning: 999 });
     state.events.push({
       user_id: 1, tool: 'codex', session_id: 's1', message_id: expectedId,
       cumulative_total_tokens: 100,
-      codex_fingerprint_material: material2  // 不同 material，同 id
+      codex_fingerprint_material: material2  // different material, same id
     });
 
     const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
@@ -508,7 +509,7 @@ describe('Codex fingerprint flow (P3)', () => {
     });
 
     const collision = state.audits.find((a) => a.event_type === 'fingerprint_collision');
-    assert.ok(collision, '既存 material ≠ 新 material → fingerprint_collision audit');
+    assert.ok(collision, 'existing material ≠ new material → fingerprint_collision audit');
     assert.equal(collision.details.message_id, expectedId);
     assert.ok(collision.details.existing);
     assert.ok(collision.details.incoming);
@@ -543,9 +544,9 @@ describe('Codex fingerprint flow (P3)', () => {
       body: {
         events: [],
         sessions: [
-          { tool: 'cursor', date: '2026-04-21' },          // ok（count 可選）
-          { tool: 'cursor', date: '2026/04/21' },          // 錯誤格式
-          { tool: 'cursor', date: '2026-04-21', count: -5 }  // 負數
+          { tool: 'cursor', date: '2026-04-21' },          // ok (count is optional)
+          { tool: 'cursor', date: '2026/04/21' },          // wrong format
+          { tool: 'cursor', date: '2026-04-21', count: -5 }  // negative
         ],
         heartbeat: { tool: 'cursor' }
       }
@@ -567,7 +568,7 @@ describe('Codex fingerprint flow (P3)', () => {
         sessions: [{ tool: 'cursor', date: '2026-04-21', count: 1, wall_seconds: 0 }]
       }
     });
-    assert.equal(state.session_counts, undefined, 'exempt user 不寫 session_count');
+    assert.equal(state.session_counts, undefined, 'exempt user must not write session_count');
     const audit = state.audits.find((a) => a.event_type === 'ingestion_suppressed_exempt');
     assert.ok(audit);
     assert.equal(audit.details.session_count, 1);
@@ -598,6 +599,6 @@ describe('Codex fingerprint flow (P3)', () => {
     });
     assert.equal(state.events.length, 1);
     const mismatch = state.audits.find((a) => a.event_type === 'fingerprint_mismatch');
-    assert.equal(mismatch, undefined, 'client id == expectedId → 不該有 mismatch audit');
+    assert.equal(mismatch, undefined, 'client id == expectedId → no mismatch audit');
   });
 });

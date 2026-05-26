@@ -1,13 +1,13 @@
 /**
  * Tests for hooks/lib/bypass-handler.js
  *
- * v1.19.6 — 放行通道（Bypass）+ audit log
+ * v1.19.6 — Bypass channel + audit log
  *
- * 設計：
- *   - OWNMIND_BYPASS=IR-008,IR-024 → 解析成 Set
- *   - OWNMIND_BYPASS=all → 涵蓋所有規則
- *   - process scope（解析時不修改 env）
- *   - logBypass 寫 audit
+ * Design:
+ *   - OWNMIND_BYPASS=IR-008,IR-024 → parsed into a Set
+ *   - OWNMIND_BYPASS=all → covers every rule
+ *   - Process scope (parsing must not mutate env)
+ *   - logBypass writes the audit entry
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -32,20 +32,20 @@ const {
 // ============================================================
 
 describe('parseBypass', () => {
-  it('空環境 → 空 Set', () => {
+  it('empty env → empty Set', () => {
     assert.equal(parseBypass({}).size, 0);
     assert.equal(parseBypass({ OWNMIND_BYPASS: '' }).size, 0);
     assert.equal(parseBypass(null).size, 0);
     assert.equal(parseBypass(undefined).size, 0);
   });
 
-  it('單條規則', () => {
+  it('single rule', () => {
     const s = parseBypass({ OWNMIND_BYPASS: 'IR-008' });
     assert.equal(s.size, 1);
     assert.ok(s.has('IR-008'));
   });
 
-  it('多條規則（逗號分隔）', () => {
+  it('multiple rules (comma-separated)', () => {
     const s = parseBypass({ OWNMIND_BYPASS: 'IR-008,IR-024,IR-031' });
     assert.equal(s.size, 3);
     assert.ok(s.has('IR-008'));
@@ -53,39 +53,39 @@ describe('parseBypass', () => {
     assert.ok(s.has('IR-031'));
   });
 
-  it('多條規則 — 自動 trim 空白', () => {
+  it('multiple rules — whitespace auto-trimmed', () => {
     const s = parseBypass({ OWNMIND_BYPASS: ' IR-008 , IR-024 ' });
     assert.equal(s.size, 2);
     assert.ok(s.has('IR-008'));
     assert.ok(s.has('IR-024'));
   });
 
-  it('all 關鍵字', () => {
+  it('all keyword', () => {
     const s = parseBypass({ OWNMIND_BYPASS: 'all' });
     assert.equal(s.size, 1);
     assert.ok(s.has('all'));
   });
 
-  it('ALL / All 大小寫 case-insensitive normalize 成 all', () => {
+  it('ALL / All case-insensitive, normalized to all', () => {
     assert.ok(parseBypass({ OWNMIND_BYPASS: 'ALL' }).has('all'));
     assert.ok(parseBypass({ OWNMIND_BYPASS: 'All' }).has('all'));
     assert.ok(parseBypass({ OWNMIND_BYPASS: 'aLL' }).has('all'));
   });
 
-  it('混用：IR-008,ALL → 含 IR-008 與 normalize 後的 all', () => {
+  it('mixed: IR-008,ALL → contains IR-008 and the normalized all', () => {
     const s = parseBypass({ OWNMIND_BYPASS: 'IR-008,ALL,IR-024' });
     assert.ok(s.has('IR-008'));
     assert.ok(s.has('IR-024'));
     assert.ok(s.has('all'));
   });
 
-  it('解析時不修改 env 物件', () => {
+  it('parsing must not mutate the env object', () => {
     const env = { OWNMIND_BYPASS: 'IR-008' };
     parseBypass(env);
     assert.equal(env.OWNMIND_BYPASS, 'IR-008');
   });
 
-  it('非字串值 → 空 Set', () => {
+  it('non-string value → empty Set', () => {
     const s = parseBypass({ OWNMIND_BYPASS: 123 });
     assert.equal(s.size, 0);
   });
@@ -96,21 +96,21 @@ describe('parseBypass', () => {
 // ============================================================
 
 describe('isBypassed', () => {
-  it('規則在 set 中 → true', () => {
+  it('rule is in the set → true', () => {
     assert.equal(isBypassed('IR-008', new Set(['IR-008'])), true);
   });
 
-  it('規則不在 set 中 → false', () => {
+  it('rule is not in the set → false', () => {
     assert.equal(isBypassed('IR-005', new Set(['IR-008'])), false);
   });
 
-  it('bypass=all → 任何規則都 true', () => {
+  it('bypass=all → every rule is true', () => {
     const s = new Set(['all']);
     assert.equal(isBypassed('IR-002', s), true);
     assert.equal(isBypassed('IR-999', s), true);
   });
 
-  it('空 set → false', () => {
+  it('empty set → false', () => {
     assert.equal(isBypassed('IR-008', new Set()), false);
   });
 
@@ -134,7 +134,7 @@ describe('logBypass', () => {
     try { fs.rmSync(TEST_LOG_DIR, { recursive: true }); } catch {}
   });
 
-  it('寫一筆 action=bypass 進 compliance.jsonl', () => {
+  it('writes one action=bypass entry into compliance.jsonl', () => {
     logBypass({
       ruleCode: 'IR-008',
       ruleTitle: '同步文件',
@@ -150,7 +150,7 @@ describe('logBypass', () => {
     assert.ok(entry.ts);
   });
 
-  it('支援可選欄位：commit_hash / session_id / failures', () => {
+  it('supports optional fields: commit_hash / session_id / failures', () => {
     logBypass({
       ruleCode: 'IR-002',
       ruleTitle: '不要 commit .env',
@@ -166,7 +166,7 @@ describe('logBypass', () => {
     assert.deepEqual(entry.failures, ['偵測到 .env 進入 commit']);
   });
 
-  it('ruleTitle 缺 → fallback 用 ruleCode', () => {
+  it('missing ruleTitle → falls back to ruleCode', () => {
     logBypass({ ruleCode: 'IR-999', source: 'hook' });
     const entry = JSON.parse(fs.readFileSync(TEST_LOG_FILE, 'utf8').trim());
     assert.equal(entry.rule_title, 'IR-999');
