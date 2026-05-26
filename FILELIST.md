@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.24.0 修改（國際化第三期：reply-lint + validator 訊息英文化）
+
+新增檔：
+```
+openspec/changes/v1.24.0-i18n-reply-lint/proposal.md   — i18n 第三期提案
+openspec/changes/v1.24.0-i18n-reply-lint/tasks.md      — 任務分解
+```
+
+修改檔（user-facing 字串 + Claude 行為性 prompt 翻譯）：
+```
+hooks/ownmind-reply-lint.js                 — session-off 提醒 + bug-report tip + formatBanner + formatPrivacySummary + formatDowngradeNotice + _EVENT_DISPLAY_NAMES + formatBlockReason（完整 + 簡短 + 標註要求）
+shared/lint-event-types.js                  — EVENT_DISPLAY_NAMES 共用映射英化
+shared/validators/language-mixed-ratio.js   — 違規訊息英化
+shared/validators/jargon-explanation.js     — 違規訊息英化
+shared/validators/privacy-detect.js         — 違規訊息 + formatPrivacySummary 英化
+tests/reply-lint-hook.test.js               — banner header / Reply quality lint 斷言
+tests/reply-lint-hook-v1193-block.test.js   — Please rewrite / parenthetical / variable names 斷言
+tests/reply-lint-hook-v197.test.js          — blocked X times in a row / privacy 斷言
+tests/reply-lint-hook-v1911.test.js         — session block #N / quoted-block annotation 斷言
+tests/build-compliance-events.test.js       — 中文 prefix → 英文 prefix 斷言
+package.json                                — version 1.23.0 → 1.24.0
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                                — v1.24.0 條目
+```
+
 ## v1.23.0 修改（國際化第二期：SessionStart 介面英文化）
 
 新增檔：

@@ -70,10 +70,10 @@ describe('v1.19 — buildComplianceEvents (reply-lint)', () => {
     // tier fallback default
     assert.equal(events[0].details.tier, 'default');
     // message 含事件中文名前綴讓 dashboard 仍能辨識
-    assert.ok(events[0].details.message.startsWith('[中英混雜]'),
-      `message 開頭該含事件中文名：${events[0].details.message}`);
-    assert.ok(events[1].details.message.startsWith('[行話品質]'),
-      `message 開頭該含事件中文名：${events[1].details.message}`);
+    assert.ok(events[0].details.message.startsWith('[Mixed Chinese-English]'),
+      `message 開頭該含事件名：${events[0].details.message}`);
+    assert.ok(events[1].details.message.startsWith('[Jargon quality]'),
+      `message 開頭該含事件名：${events[1].details.message}`);
     // triggered_by_event 仍保留原事件常數
     assert.equal(events[0].details.triggered_by_event, 'lint_language_mixed_ratio');
   });

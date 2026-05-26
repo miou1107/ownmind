@@ -105,7 +105,7 @@ describe('v1.19.4 — 預設 MODE=block：連續 4 次違規不設 env 也會擋
     }
     const r4 = runHook(payload);
     assert.equal(r4.status, 2, `v1.19.7 第 4 次該 exit 2、stdout=${r4.stdout} stderr=${r4.stderr}`);
-    assert.match(r4.stderr, /請重寫/, 'stderr 該含重寫指令（指令型 reason）');
+    assert.match(r4.stderr, /Please rewrite/, 'stderr 該含重寫指令（指令型 reason）');
   });
 
   it('MODE=warn 明確設、即使第 4 次違規也 exit 0', () => {
@@ -150,7 +150,7 @@ describe('v1.19.3 場景 2/3 — MODE=block 漸進累積', () => {
     const r4 = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r4.status, 2, `第 4 次該 exit 2、stdout=${r4.stdout} stderr=${r4.stderr}`);
     assert.ok(r4.stderr.length > 0, 'stderr 該含 reason');
-    assert.match(r4.stderr, /^請重寫/m, 'reason 該以「請重寫」開頭');
+    assert.match(r4.stderr, /^Please rewrite/m, 'reason 該以「Please rewrite」開頭');
 
     // block_count 累計
     const counterData = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
@@ -214,7 +214,7 @@ describe('v1.19.3 場景 6 — MODE 未知值 fail-open 到 warn', () => {
     assert.ok(fs.existsSync(pendingFile), '違規該寫 banner');
     const banner = fs.readFileSync(pendingFile, 'utf8');
     assert.match(banner, /foo/, 'banner 該含未知 MODE 值');
-    assert.match(banner, /fallback/, 'banner 該說 fallback');
+    assert.match(banner, /fallback|falling back/, 'banner 該說 fallback');
   });
 });
 
@@ -239,7 +239,7 @@ describe('v1.19.7 場景 — block reason 寫 stderr、為指令型 + 含具體�
     const reason = r.stderr;
 
     // 1. 指令動詞開頭
-    assert.match(reason, /^請重寫/m, 'reason 必須以「請重寫」開頭（指令型）');
+    assert.match(reason, /^Please rewrite/m, 'reason 必須以「Please rewrite」開頭（指令型）');
 
     // 2. 含具體違規詞（monomorphism 或 codeapp）
     assert.ok(
@@ -248,12 +248,12 @@ describe('v1.19.7 場景 — block reason 寫 stderr、為指令型 + 含具體�
     );
 
     // 3. 含改寫格式範例
-    assert.match(reason, /括號|：|（|即/, 'reason 該含改寫格式提示');
+    assert.match(reason, /parenthetical|explanation|：|（|即/, 'reason 該含改寫格式提示');
 
     // 4. 含例外指引（變數名 / 函式名）
-    assert.match(reason, /變數名|函式名|程式碼/, 'reason 該含例外指引');
+    assert.match(reason, /variable names|function names|code references/, 'reason 該含例外指引');
 
-    // 5. 不含「你違反」這種報告式語氣
-    assert.ok(!reason.includes('你違反'), 'reason 不該用報告式「你違反」');
+    // 5. 不含「你違反」這種報告式語氣（中英文兩種報告式皆禁）
+    assert.ok(!reason.includes('你違反') && !reason.includes('You violated'), 'reason 不該用報告式「你違反 / You violated」');
   });
 });

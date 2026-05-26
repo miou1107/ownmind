@@ -162,8 +162,8 @@ async function main() {
       if (tick > 0 && tick % 10 === 0) {
         const reminder = [
           '',
-          `【OwnMind v${getClientVersion()}】⚠️ OwnMind 目前關閉中（已 ${tick} 輪 AI 回應沒檢查 lint）`,
-          '  → 請記得用 /ownmind-on 重新打開、或開新對話會自動恢復',
+          `[OwnMind v${getClientVersion()}] ⚠️ OwnMind is currently disabled (${tick} AI responses skipped lint)`,
+          '  → Re-enable with /ownmind-on, or open a new conversation to restore',
           '',
         ].join('\n');
         const wrote = !FORCE_FALLBACK && writeToTty(reminder);
@@ -276,7 +276,7 @@ async function main() {
     // v1.20.2 follow-up #3：附帶 bug report 路徑、AI 認為 lint 判斷有問題時可送回報
     try {
       process.stderr.write(
-        '[OwnMind bug report] 認為這次 lint 判斷不對嗎（例如已解釋過的詞仍被擋）？可呼叫 ownmind_report_bug 送回報。' +
+        '[OwnMind bug report] Think this lint decision is wrong (e.g. an already-explained term was blocked)? Call ownmind_report_bug to file a report. ' +
         'bug_fingerprint: lint_context_memory_missing, suggest_report: true\n'
       );
     } catch { /* ignore */ }
@@ -301,7 +301,7 @@ async function main() {
     // v1.20.2 follow-up #3：降警告路徑也附 bug report 路徑
     try {
       process.stderr.write(
-        '[OwnMind bug report] 認為這次 lint 判斷不對嗎？可呼叫 ownmind_report_bug 送回報。' +
+        '[OwnMind bug report] Think this lint decision is wrong? Call ownmind_report_bug to file a report. ' +
         'bug_fingerprint: lint_context_memory_missing, suggest_report: true\n'
       );
     } catch { /* ignore */ }
@@ -520,21 +520,21 @@ function formatBanner(violations, getClientVersion, opts = {}) {
   } = opts;
 
   const out = [];
-  let header = `【OwnMind v${version}】回話品質 lint`;
+  let header = `[OwnMind v${version}] Reply quality lint`;
   if (downgraded) {
-    header += ` ⚠️ 連續擋 ${blockCount} 次降警告（請手動 review、避免死循環）`;
+    header += ` ⚠️ ${blockCount} consecutive blocks reached — downgrading to warning (please review manually to avoid a loop)`;
   } else if (blocked) {
-    header += ` ⚠️ 已觸發 block、Claude 將收到重寫指令（本 session 累積 ${count} 次）`;
+    header += ` ⚠️ Block triggered — Claude will receive a rewrite directive (session count ${count})`;
   } else if (mode === 'block') {
     const remaining = Math.max(0, threshold - count);
-    header += `（block mode、本 session 累積 ${count} 次、再 ${remaining} 次就 block）`;
+    header += ` (block mode, session count ${count}, ${remaining} more before block)`;
   } else {
-    header += `（${mode} mode、本 session 累積 ${count} 次）`;
+    header += ` (${mode} mode, session count ${count})`;
   }
   out.push(header);
 
   if (modeInvalid) {
-    out.push(`  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' 不認識、fallback 到 warn`);
+    out.push(`  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' is unrecognized — falling back to warn`);
   }
 
   for (const v of violations) {
@@ -559,13 +559,13 @@ function formatPrivacySummary(matches) {
     byType.set(m.type, (byType.get(m.type) || 0) + 1);
   }
   const labels = {
-    tw_id: '身分證',
-    email: '電子信箱',
-    phone_tw_mobile: '手機',
+    tw_id: 'Taiwan ID',
+    email: 'Email',
+    phone_tw_mobile: 'Mobile phone',
   };
   return Array.from(byType.entries())
-    .map(([t, n]) => `${labels[t] || t} ${n} 處`)
-    .join('、');
+    .map(([t, n]) => `${labels[t] || t} (${n})`)
+    .join(', ');
 }
 
 /**
@@ -578,9 +578,9 @@ function formatDowngradeNotice(priorBlockCount, violations) {
     ? violations.map((v) => v.rule).join(', ')
     : '';
   return [
-    `【OwnMind】reply-lint 已連續擋下 ${priorBlockCount} 次、這次降為警告避免死循環。`,
-    `仍偵測到：${ruleList}`,
-    '請手動檢查 AI 回應、或設定 OWNMIND_REPLY_LINT_MODE=warn 暫時關閉硬擋。',
+    `[OwnMind] reply-lint has blocked ${priorBlockCount} times in a row — downgrading to warning to break the loop.`,
+    `Still detected: ${ruleList}`,
+    'Manually review the AI response, or set OWNMIND_REPLY_LINT_MODE=warn to temporarily disable hard block.',
   ].join('\n');
 }
 
@@ -600,9 +600,9 @@ function formatDowngradeNotice(priorBlockCount, violations) {
 // v1.20.4：事件常數的中文顯示名對應、內聯避免 scope / import 問題
 // 跟 shared/lint-event-types.js 的 EVENT_DISPLAY_NAMES 保持同步
 const _EVENT_DISPLAY_NAMES = {
-  lint_language_mixed_ratio: '中英混雜',
-  lint_jargon_explanation_required: '行話品質',
-  privacy_check: '隱私內容',
+  lint_language_mixed_ratio: 'Mixed Chinese-English',
+  lint_jargon_explanation_required: 'Jargon quality',
+  privacy_check: 'Privacy content',
 };
 function _displayEventName(code) {
   return _EVENT_DISPLAY_NAMES[code] || code;
@@ -617,18 +617,18 @@ function formatBlockReason(violations, opts = {}) {
   // priorBlockCount=0 是「第 1 次擋」、=1 是「第 2 次擋」、=2 是「第 3 次擋」
   if (priorBlockCount >= 1 && priorBlockCount <= 2) {
     return [
-      `↻ 上版違反 ${ruleCodes}、已被指示重寫（本 session 第 ${priorBlockCount + 1} 次擋下）。`,
+      `↻ Previous response violated ${ruleCodes} — Claude was instructed to rewrite (session block #${priorBlockCount + 1}).`,
       '',
-      '請開頭加一行標註後再寫新回應：',
-      `> ↻ 上版違反 ${ruleCodes}、重新調整。`,
+      'Add this header line first, then write the new response:',
+      `> ↻ Previous violated ${ruleCodes}, rewriting.`,
       '',
-      '然後直接重寫、不要重新確認問題。',
+      'Then rewrite directly — do not re-confirm the question.',
     ].join('\n');
   }
 
   // 第 1 次擋下（priorBlockCount=0）或第 4 次以後（不應走到、走 downgrade）→ 完整訊息
   const lines = [];
-  lines.push('請重寫你剛才的回應、改善以下品質問題（保持原意、只改語言風格）：');
+  lines.push('Please rewrite your previous response to fix the following quality issues (preserve meaning, only change language style):');
   lines.push('');
 
   // v1.19.7 code-review I-5：用 running counter 動態編號、
@@ -637,7 +637,7 @@ function formatBlockReason(violations, opts = {}) {
   for (const v of violations) {
     if (v.rule === 'lint_language_mixed_ratio') {
       const words = (v.detail && Array.isArray(v.detail.mixedWords)) ? v.detail.mixedWords.slice(0, 10) : [];
-      lines.push(`${n}. 用白話中文取代以下英文詞（或在第一次出現時用括號附中文解釋）：`);
+      lines.push(`${n}. Use plain Chinese to replace the following English terms (or, on first occurrence, add a parenthetical Chinese explanation):`);
       if (words.length > 0) {
         lines.push(`   ${words.join(', ')}`);
       }
@@ -645,7 +645,7 @@ function formatBlockReason(violations, opts = {}) {
       n += 1;
     } else if (v.rule === 'lint_jargon_explanation_required') {
       const words = (v.detail && Array.isArray(v.detail.jargon)) ? v.detail.jargon.slice(0, 10) : [];
-      lines.push(`${n}. 以下技術詞第一次出現時要附白話說明、用「：解釋」、「（白話）」、「即...」、「也就是...」等格式：`);
+      lines.push(`${n}. Add a plain-Chinese explanation when these technical terms first appear (use formats like "：explanation", "（白話：...）", "即...", "也就是..."):`);
       if (words.length > 0) {
         lines.push(`   ${words.join(', ')}`);
       }
@@ -656,27 +656,27 @@ function formatBlockReason(violations, opts = {}) {
       // v1.19.10：事件名從 'IR-041' 中性化為 'privacy_check'（不綁特定使用者的鐵律編號）
       const matches = (v.detail && Array.isArray(v.detail.matches)) ? v.detail.matches : [];
       const summary = formatPrivacySummary(matches);
-      lines.push(`${n}. 回應疑似含使用者隱私（${summary}）。請改寫掉那段或改用代稱（如「[email]」「[手機號碼]」），不要在新回應裡再重複那筆個資。`);
+      lines.push(`${n}. The response appears to contain user privacy data (${summary}). Rewrite that segment using placeholders like "[email]" or "[mobile phone]" — do NOT repeat the personal data in the new response.`);
       lines.push('');
       n += 1;
     }
   }
 
-  lines.push('如果上述詞屬於變數名 / 函式名 / 程式碼引用、或上下文已說明過、可保留不改。');
+  lines.push('If the listed terms are variable names / function names / code references, or were already explained in context, they may be kept.');
 
   // v1.19.11 新增：要求 AI 重寫時開頭加自我標註、讓使用者一眼看出「下面是重寫版、原因 XXX」
   // 接受 85% 服從率、AI 沒做不二次擋下（log 保底會記）
   lines.push('');
-  lines.push('重寫時必須在開頭加一段引述標註、用以下格式：');
+  lines.push('Your rewrite must start with a quoted-block annotation in this format:');
   lines.push('');
-  lines.push(`> ⚠️ **上一版違反 ${ruleCodes}、重新調整：**`);
-  lines.push('> （簡短說明違規詞或原因）');
+  lines.push(`> ⚠️ **Previous violated ${ruleCodes}, rewriting:**`);
+  lines.push('> (brief note about the violation terms or reason)');
   lines.push('');
   lines.push('---');
   lines.push('');
-  lines.push('（接著才寫新回應內容）');
+  lines.push('(Then write the new response content)');
   lines.push('');
-  lines.push('重寫時請回到原本對話脈絡、不要重新確認問題、直接給新答案。');
+  lines.push('Return to the original conversation context — do not re-confirm the question, just give the new answer directly.');
 
   return lines.join('\n');
 }

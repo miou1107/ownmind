@@ -24,7 +24,7 @@ export function check(content, params = {}, _context = {}) {
     violation: {
       event: LINT_LANGUAGE_MIXED_RATIO,
       message:
-        `中英混雜比例 ${(result.ratio * 100).toFixed(1)}% > ${(threshold * 100).toFixed(0)}% — 找到 ${result.mixedWords.length} 個非白名單英文詞（前 5：${result.mixedWords.slice(0, 5).join(', ')}）。請改成白話中文`,
+        `Mixed Chinese-English ratio ${(result.ratio * 100).toFixed(1)}% > ${(threshold * 100).toFixed(0)}% — found ${result.mixedWords.length} non-whitelisted English words (first 5: ${result.mixedWords.slice(0, 5).join(', ')}). Please use plain Chinese.`,
       detail: { ratio: result.ratio, mixedWords: result.mixedWords },
     },
   };

@@ -130,8 +130,8 @@ describe('v1.19.7 場景 16 — 連續 block 達 3 次後第 4 次降警告 exit
     // 第 7 次：block_count 已 3，降警告 exit 1、不再 increment block_count
     r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 1, `第 7 次該降警告 exit 1、stderr=${r.stderr}`);
-    assert.match(r.stderr, /連續擋下/, 'stderr 該含降警告訊息');
-    assert.match(r.stderr, /避免死循環/);
+    assert.match(r.stderr, /blocked .* times in a row/, 'stderr 該含降警告訊息');
+    assert.match(r.stderr, /break the loop/);
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 3, '降警告時不該 increment block_count');
   });
@@ -208,7 +208,7 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
     }
     const r4 = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r4.status, 2, '隱私違規累積到第 4 次該 block');
-    assert.match(r4.stderr, /個資|隱私/);
+    assert.match(r4.stderr, /privacy|email|Privacy content/i);
   });
 
   it('AI 回應引用 user prompt 裡的身分證 → 不算違反、exit 0', () => {
@@ -266,6 +266,6 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
       !r.stderr.includes('leaked-secret-mail@fontrip.com'),
       'block reason 不該再列原個資字串'
     );
-    assert.match(r.stderr, /\[email\]|代稱|改用/, 'block reason 該提示用代稱');
+    assert.match(r.stderr, /\[email\]|placeholders|Rewrite that segment/i, 'block reason 該提示用代稱');
   });
 });

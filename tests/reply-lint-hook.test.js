@@ -217,7 +217,7 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
       '純中文 text parts 不該違反 — tool_use 不參與 lint');
   });
 
-  it('banner 招牌格式：含【OwnMind v?】+ 違反條目', () => {
+  it('banner 招牌格式：含 [OwnMind v?] + 違反條目', () => {
     writeTranscript([
       { role: 'assistant', text: 'I really think we should refactor everything immediately because the codebase is broken.' },
     ]);
@@ -225,8 +225,8 @@ describe('v1.17.96 — IR-037 / IR-036 違反偵測（從 transcript 抽最後�
     assert.ok(fs.existsSync(pendingFile));
     const record = JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop());
     const block = record.block;
-    assert.match(block, /^【OwnMind\s+v[\d.?]+】/, 'banner 必須以招牌開頭');
-    assert.match(block, /回話品質/, 'banner 必須標示這是回話品質檢查');
+    assert.match(block, /^\[OwnMind\s+v[\d.?]+\]/, 'banner 必須以招牌開頭');
+    assert.match(block, /Reply quality lint/, 'banner 必須標示這是回話品質檢查');
   });
 });
 
