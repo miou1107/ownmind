@@ -95,6 +95,15 @@ test('包含 5xx 通用後端錯誤（給全域 5xx handler 用）', () => {
   assert.ok(srvErrors.length > 0, '需要至少一個 srv_err_ 指紋給 5xx handler 用');
 });
 
+// v1.26.1: free-form escape hatch fingerprint must be registered.
+test('v1.26.1: clt_user_reported_other is registered as the free-form escape hatch', () => {
+  assert.equal(isValidFingerprint('clt_user_reported_other'), true);
+  const meta = getFingerprintMetadata('clt_user_reported_other');
+  assert.ok(meta);
+  assert.equal(meta.category, 'clt');
+  assert.match(meta.description, /free-form|user-initiated|design issue/i);
+});
+
 // ============================================================
 // 穩定性：指紋是常數、不該包含動態值
 // ============================================================

@@ -696,7 +696,7 @@ const TOOLS = [
         },
         bug_fingerprint: {
           type: "string",
-          description: "Error fingerprint (taken from the error response's suggest_report flag — must NOT be fabricated)",
+          description: "Error fingerprint. Prefer the value from a server suggest_report response. If reporting a newly discovered design issue with no matching registered fingerprint, use \"clt_user_reported_other\" instead of inventing a name (free-form names are rejected with HTTP 400).",
         },
         related_lint_event_ids: {
           type: "array",
