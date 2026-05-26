@@ -120,12 +120,12 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner 抽取', () => {
     const content = fs.readFileSync(pendingFile, 'utf8');
     const record = JSON.parse(content.trim().split('\n').pop());
     const block = record.block;
-    // header：【OwnMind v1.17.71】 在第一行單獨一行
-    assert.match(block, /^【OwnMind v[\d.]+】\n/, '招牌 header 必須在第一行');
+    // header：[OwnMind v1.22.0+] 在第一行單獨一行（v1.22.0 改用 ASCII 括號）
+    assert.match(block, /^\[OwnMind v[\d.]+\]\n/, '招牌 header 必須在第一行');
     // 後續行不該再重複 prefix
     const lines = block.trim().split('\n');
     const tail = lines.slice(1).join('\n');
-    assert.ok(!tail.includes('【OwnMind v'),
+    assert.ok(!tail.includes('[OwnMind v') && !tail.includes('【OwnMind v'),
       '招牌 prefix 不該在後續行重複（合併成一塊）');
     // 內容 indented 列出
     assert.match(block, /鐵律提醒/);

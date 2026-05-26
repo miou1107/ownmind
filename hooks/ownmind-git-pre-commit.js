@@ -150,14 +150,14 @@ async function fetchAndCacheRules() {
 }
 
 function formatBlockMessage(failures) {
-  const lines = ['', `【OwnMind v${VERSION}】Commit 前檢查：commit 被擋下`];
+  const lines = ['', `[OwnMind v${VERSION}]Pre-commit check: commit blocked`];
   for (const f of failures) {
     lines.push(`  ❌ ${f}`);
   }
-  lines.push('請先完成上述步驟再 commit。');
+  lines.push('Complete the steps above before committing.');
   // v1.20.2 follow-up #3：附帶 bug report 路徑、AI 認為鉤子擋下不對時可送回報
   lines.push(
-    '[OwnMind bug report] 認為這次擋下不對嗎？可呼叫 ownmind_report_bug 送回報。' +
+    '[OwnMind bug report] Think this block is wrong? Call ownmind_report_bug to file a report. ' +
     'bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true'
   );
   lines.push('');
@@ -166,8 +166,8 @@ function formatBlockMessage(failures) {
 
 function formatPassMessage(checkedCount, cacheAgeHours = 0) {
   if (checkedCount === 0) return '';
-  const ageNote = cacheAgeHours > 1 ? ` (快取 ${Math.round(cacheAgeHours)} 小時前更新)` : '';
-  return `【OwnMind v${VERSION}】Commit 前檢查：${checkedCount} 條規則全部通過 ✓${ageNote}`;
+  const ageNote = cacheAgeHours > 1 ? ` (cache updated ${Math.round(cacheAgeHours)}h ago)` : '';
+  return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
 }
 
 // ============================================================
@@ -179,7 +179,7 @@ async function main() {
   // 24 小時內有效、過期或新 session 開啟（SessionStart 清狀態檔）自動恢復
   try {
     if (isSessionOff()) {
-      console.error(`【OwnMind v${VERSION}】⚠️ OwnMind 目前關閉中、commit 鉤子跳過所有鐵律檢查。請記得用 /ownmind-on 重開、或開新對話自動恢復。`);
+      console.error(`[OwnMind v${VERSION}]⚠️ OwnMind is temporarily disabled — commit hook skipped all iron rule checks. Re-enable with /ownmind-on or open a new conversation.`);
       process.exit(0);
       return;
     }
@@ -254,7 +254,7 @@ async function main() {
     evaluateConditions = mod.evaluateConditions;
   } catch {
     // Fail-open but not silent
-    console.warn(`【OwnMind v${VERSION}】⚠️ 驗證引擎不可用，跳過 pre-commit 檢查`);
+    console.warn(`[OwnMind v${VERSION}]⚠️ Validator engine unavailable — skipping pre-commit check`);
     process.exit(0);
   }
 
@@ -269,7 +269,7 @@ async function main() {
     if (!verification?.conditions) continue;
 
     const ruleCode = rule.code || rule.metadata?.code || 'IR-???';
-    const ruleTitle = rule.title || '未命名規則';
+    const ruleTitle = rule.title || 'Unnamed rule';
 
     // v1.19.7：bypass 命中 → 跳過 + 寫 audit
     if (isBypassed(ruleCode, bypassSet)) {
@@ -315,6 +315,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(`【OwnMind v${VERSION}】錯誤回報：pre-commit 非預期錯誤，跳過檢查: ${err.message}`);
+  console.error(`[OwnMind v${VERSION}]Error report: pre-commit unexpected error — skipping check: ${err.message}`);
   process.exit(0);
 });

@@ -40,8 +40,8 @@ test('random tip is included in every tool response (unconditional)', () => {
   );
   assert.match(
     composeCall,
-    /tipTag:\s*formatTag\(['"`]技巧提示['"`]\)/,
-    '預期 tipTag 用 formatTag("技巧提示")，跟版號標籤對齊'
+    /tipTag:\s*formatTag\(['"`]Tip['"`]\)/,
+    '預期 tipTag 用 formatTag("Tip")，跟版號標籤對齊'
   );
 
   // 同樣不能再退回 % 10 那種閘門

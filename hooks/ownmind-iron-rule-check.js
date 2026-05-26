@@ -88,16 +88,16 @@ async function main() {
         const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
         if (!tagOutput) {
           // Tag doesn't exist — block push
-          const versionTag = `【OwnMind v${VERSION}】版號卡控`;
+          const versionTag = `[OwnMind v${VERSION}] Version block`;
           const blockLines = [
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
             versionTag,
             '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
-            `  package.json 版號為 ${pkgVersion}，但沒有對應的 git tag ${expectedTag}`,
-            `  ❌ 請先執行：git tag ${expectedTag}`,
-            `  然後再 git push --tags`,
+            `  package.json version is ${pkgVersion}, but no matching git tag ${expectedTag} exists`,
+            `  ❌ Run first: git tag ${expectedTag}`,
+            `  Then: git push --tags`,
             '',
-            `回應格式要求：AI 的第一行必須是「${versionTag}」。`,
+            `Response format: the AI's first line must be "${versionTag}".`,
           ];
           console.log(JSON.stringify({
             decision: 'block',
@@ -117,13 +117,13 @@ async function main() {
   // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則 + 醒目標記）
   // v1.19.20: 'command' fallback trigger 不顯示 reminder（不是按操作類型觸發、是按指令樣式）
   if (trigger !== 'commit' && trigger !== 'command' && relevant.length > 0) {
-    const triggerTag = `【OwnMind v${VERSION}】鐵律觸發（${trigger}）`;
+    const triggerTag = `[OwnMind v${VERSION}] Iron rule triggered (${trigger})`;
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     lines.push(triggerTag);
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     relevant.forEach(r => lines.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
     lines.push('');
-    lines.push(`回應格式要求：AI 的第一行必須是「${triggerTag}」，讓使用者看到鐵律觸發。`);
+    lines.push(`Response format: the AI's first line must be "${triggerTag}" so the user sees the rule trigger.`);
   }
 
   // Run verification engine for ALL triggers (commit/deploy/delete)
@@ -154,7 +154,7 @@ async function main() {
         const result = evaluateConditions(verification.conditions, context);
         if (!result.pass && verification.block_on_fail) {
           const code = rule.code || rule.metadata?.code || 'IR-???';
-          const title = rule.title || '未命名規則';
+          const title = rule.title || 'Unnamed rule';
           blockFailures.push(`${code}: ${title}`);
           for (const f of result.failures) {
             blockFailures.push(`    → ${f}`);
@@ -163,14 +163,14 @@ async function main() {
       }
 
       if (blockFailures.length > 0) {
-        const blockTag = `【OwnMind v${VERSION}】鐵律攔截（${trigger}）`;
+        const blockTag = `[OwnMind v${VERSION}] Iron rule block (${trigger})`;
         lines.push('');
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         lines.push(blockTag);
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         blockFailures.forEach(f => lines.push(`  ❌ ${f}`));
         lines.push('');
-        lines.push(`回應格式要求：AI 的第一行必須是「${blockTag}」，並說明為何被擋下。請先完成上述步驟再執行 ${trigger}。`);
+        lines.push(`Response format: the AI's first line must be "${blockTag}" and explain why this was blocked. Complete the steps above before executing ${trigger}.`);
 
         console.log(JSON.stringify({
           decision: 'block',
@@ -189,7 +189,7 @@ async function main() {
 
   // commit trigger 且無 block：顯示精簡通過訊息
   if (trigger === 'commit' && lines.length === 0) {
-    lines.push(`【OwnMind v${VERSION}】鐵律檢查：commit 操作，${relevant.length} 條規則已確認 ✓`);
+    lines.push(`[OwnMind v${VERSION}] Iron rule check: commit — ${relevant.length} rules verified ✓`);
   }
 
   console.log(JSON.stringify({

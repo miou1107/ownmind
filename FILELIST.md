@@ -1,5 +1,40 @@
 # OwnMind 檔案結構
 
+## v1.22.0 修改（國際化第一期：user-facing 字串英文化）
+
+新增檔：
+```
+CLAUDE.md                                                — repo 根目錄 dev 指引、雙軌國際化規則文件（v1.21.0 後加）
+openspec/changes/v1.22.0-i18n-user-facing/proposal.md   — i18n 第一期提案
+openspec/changes/v1.22.0-i18n-user-facing/tasks.md      — 任務分解
+openspec/changes/v1.22.0-i18n-user-facing/spec.md       — 規格 + scenarios + style examples
+```
+
+修改檔（user-facing 字串翻譯：中文 → 英文、CJK 標點 → ASCII）：
+```
+mcp/index.js                                — 19 個 TOOLS description + TYPE_MAP 22 條 + 28 條 TIPS + 7 處離線通知 + 4 處 throw error + renderBroadcasts + formatTag 改 ASCII 括號
+mcp/offline.js                              — replayQueue 兩條訊息
+mcp/lib/compose-tool-response.js            — tag/tip 連接符 CJK `：` → ASCII `:`、`技巧提示` → `Tip`
+hooks/ownmind-git-pre-commit.js             — 7 處 console / 訊息字串、`【】` → `[]`
+hooks/ownmind-git-post-commit.js            — 7 處 console / 訊息字串、`【】` → `[]`
+hooks/ownmind-iron-rule-check.js            — 版號卡控 + 鐵律觸發 + 鐵律攔截 + commit 通過訊息、`【】` → `[]`
+hooks/ownmind-tty-echo.cjs                  — banner 抽取 regex 改雙形相容（接受 `【】` 跟 `[]`、給尚未翻譯的舊檔 backward compat）、輸出 header 改 `[OwnMind ${version}]`
+tests/mcp-tool-description-secret-warning.test.js — 警語 regex 加 English keyword
+tests/secret-mgmt.test.js                   — irreversible 警告 regex 加 English
+tests/mcp-tool-response-shape.test.js       — fixture + 斷言改 `[OwnMind ...]` 跟 ASCII `:`
+tests/ownmind-tty-echo.test.js              — header regex 改 `[OwnMind v[\d.]+]`
+tests/offline.test.js                       — 訊息斷言改 `partially failed` / `complete`
+tests/tip-every-call.test.js                — `formatTag("技巧提示")` → `formatTag("Tip")`
+package.json                                — version 1.21.0 → 1.22.0
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                                — v1.22.0 條目
+```
+
+Defer 到 v1.23.0（單獨 spec、變更面較大）：
+- `hooks/ownmind-reply-lint.js`（Claude 重寫指令 30+ 行行為性 prompt）
+- `hooks/ownmind-session-start.js` + `hooks/lib/render-session-context.js`（每次新對話載入訊息）
+- `src/routes/memory.js` 28 處 server-side API response brand banner
+
 ## v1.20.1 修改（Dashboard 個人版完工：Portal 4 頁 + Preference 3 頁 + 登入頁 + 守門員）
 
 新增檔（共用元件 + 語系 context + API 客戶端 + 後端 PUT 測試 + 登入頁 + 守門員）：

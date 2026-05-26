@@ -102,7 +102,7 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
         return {
           replayed,
           remaining: remaining.length,
-          message: `【OwnMind】佇列重送部分失敗，已重送 ${replayed} 筆，還剩 ${remaining.length} 筆待送`,
+          message: `[OwnMind] Queue replay partially failed — ${replayed} operations sent, ${remaining.length} still pending`,
         };
       }
     }
@@ -111,7 +111,7 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     return {
       replayed,
       remaining: 0,
-      message: `【OwnMind】佇列重送完成，${replayed} 筆操作已同步`,
+      message: `[OwnMind] Queue replay complete — ${replayed} operations synced`,
     };
   }
 

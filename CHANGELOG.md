@@ -1,5 +1,47 @@
 # OwnMind 更新紀錄
 
+## v1.22.0 — 國際化第一期：user-facing 字串英文化（MCP descriptions + hooks + brand banner）
+
+**背景**：OwnMind 走向國際化服務、2026-05-26 Vin 拍板雙軌國際化計畫（軌道 A 產品 i18n、軌道 B 開發環境英文化）。v1.22.0 是軌道 A 的第一期、聚焦三個影響面最大的 surface：
+
+1. **MCP tool descriptions**（每個連 OwnMind 的 AI 都看到、非中文 AI 之前可能誤解語意）
+2. **Git pre/post-commit hooks**（每次 commit user 都看到、非中文 user 之前看不懂）
+3. **品牌標籤 `【OwnMind v...】`**（散落各處、CJK 標點對國際 user 不友善）
+
+**改動**：
+
+1. **`mcp/index.js` TOOLS 描述**（19 個工具 ~75 處 description）：tool-level 描述 + 每個 input 欄位描述、全部翻成英文。保留 `⚠️` 警語位置、imperative 語氣（"Save a new memory"）、行為性指令（confirm_string 必須 user 親口輸入）。
+2. **`mcp/index.js` 其他 user-facing 字串**：
+   - `formatTag` + `TYPE_MAP` 22 條 type 標籤
+   - 28 條 TIPS 隨機提示
+   - 7 處離線模式 / 佇列 / 新用戶初始化 / 預覽通知
+   - 4 處 `throw new Error` 訊息
+   - `renderBroadcasts` 廣播渲染段
+3. **`mcp/offline.js`**：佇列重送訊息
+4. **`mcp/lib/compose-tool-response.js`**：tag/tip 連接符（CJK `：` → ASCII `:`）+ `技巧提示` → `Tip`
+5. **`hooks/ownmind-git-pre-commit.js` + `ownmind-git-post-commit.js`**：所有 `console.warn` / `console.error` / block message 翻譯、`【】` → `[]`
+6. **`hooks/ownmind-iron-rule-check.js`**：版號卡控 + 鐵律觸發 + 鐵律攔截 + commit 通過訊息全部翻譯
+7. **`hooks/ownmind-tty-echo.cjs`**：banner 抽取 regex 改成雙形相容（`【】` 跟 `[]` 都接、給尚未翻譯的舊檔 backward compat），輸出 header 改 `[OwnMind ${version}]`
+8. **品牌標籤改 ASCII**：`【OwnMind v${VERSION}】` → `[OwnMind v${VERSION}]`（CJK 標點對國際 user 不友善）
+9. **測試更新**：
+   - `mcp-tool-description-secret-warning.test.js` 警語 regex 加 English keyword（sensitive / password / credential）
+   - `secret-mgmt.test.js` 不可復原警告 regex 加 `irreversible|cannot be undone|permanently delete`
+   - `mcp-tool-response-shape.test.js` fixture + 連接符斷言改 `[OwnMind ...]` 跟 ASCII `:`
+   - `ownmind-tty-echo.test.js` header regex 改 `[OwnMind v[\d.]+]`
+   - `offline.test.js` 訊息斷言改用 `partially failed` / `complete` 字串
+   - `tip-every-call.test.js` `tipTag: formatTag("技巧提示")` → `formatTag("Tip")`
+
+**Defer 到 v1.23.0**（需要單獨 spec / 變更面較大）：
+- `hooks/ownmind-reply-lint.js` Claude 重寫指令（30+ 行行為性 prompt）
+- `hooks/ownmind-session-start.js` + `hooks/lib/render-session-context.js` 每次新對話載入訊息
+- `src/routes/memory.js` 28 處 server-side API response brand banner
+
+**版本**：1.21.0 → 1.22.0（minor、user-facing string surface 變更、無 API breaking）
+
+**OpenSpec change**：`openspec/changes/v1.22.0-i18n-user-facing/` (proposal + tasks + spec)
+
+**測試**：1954 tests pass、0 fail
+
 ## v1.21.0 — Lint 驗證器架構（規則驅動、user 自選啟用）
 
 **背景**：v1.20.4 雖然把 user-facing 訊息中性化（IR-036 字串改成「行話品質」）、但根本問題沒解：lint 判斷邏輯仍硬寫在 `shared/language-lint.js`、所有 user 都被強迫跑「中英混雜」「行話」檢查。Vin 抓到「中英混雜檢查、行話檢查本身就是我個人的鐵律、不該強迫每個 user 都跑」。

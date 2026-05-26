@@ -173,69 +173,69 @@ const CLIENT_TOOL = process.env.OWNMIND_CLIENT_TOOL || 'claude-code';
 let serverVersion = null;
 let currentSyncToken = null;
 
-// --- 統一版本標記 ---
+// --- Unified version banner labels ---
 const TYPE_MAP = {
-  ownmind_init: '記憶載入',
+  ownmind_init: 'Memory loaded',
   ownmind_get: {
-    profile: '個人偏好', principle: '工作原則', iron_rule: '鐵律提醒',
-    coding_standard: '編碼標準', team_standard: '團隊規範', project: '專案記憶',
-    env: '環境設定', portfolio: '作品集', session_log: '進度紀錄',
+    profile: 'Profile', principle: 'Working principle', iron_rule: 'Iron rule reminder',
+    coding_standard: 'Coding standard', team_standard: 'Team standard', project: 'Project memory',
+    env: 'Environment', portfolio: 'Portfolio', session_log: 'Session log',
   },
-  ownmind_search: '記憶搜尋',
-  ownmind_save: '記憶寫入',
-  ownmind_update: '記憶寫入',
-  ownmind_disable: '記憶寫入',
-  ownmind_handoff_create: '建立交接',
-  ownmind_handoff_accept: '接受交接',
-  ownmind_log_session: '進度紀錄',
-  ownmind_get_secret: '密鑰管理',
-  ownmind_list_secrets: '密鑰管理',
-  ownmind_set_secret: '密鑰管理',
-  ownmind_delete_secret: '密鑰管理',
-  ownmind_report_compliance: '合規回報',
+  ownmind_search: 'Memory search',
+  ownmind_save: 'Memory write',
+  ownmind_update: 'Memory write',
+  ownmind_disable: 'Memory write',
+  ownmind_handoff_create: 'Handoff created',
+  ownmind_handoff_accept: 'Handoff accepted',
+  ownmind_log_session: 'Session logged',
+  ownmind_get_secret: 'Secret management',
+  ownmind_list_secrets: 'Secret management',
+  ownmind_set_secret: 'Secret management',
+  ownmind_delete_secret: 'Secret management',
+  ownmind_report_compliance: 'Compliance report',
 };
 
 function getVersion() { return serverVersion || CLIENT_VERSION; }
-function formatTag(type) { return `【OwnMind v${getVersion()}】${type}`; }
+function formatTag(type) { return `[OwnMind v${getVersion()}] ${type}`; }
 
 function resolveType(name, args) {
   const entry = TYPE_MAP[name];
   if (!entry) return name;
   if (typeof entry === 'string') return entry;
   // entry is object (ownmind_get)
-  return entry[args?.type] || '記憶載入';
+  return entry[args?.type] || 'Memory loaded';
 }
 
-// --- 技巧提示 ---
+// --- Tips ---
 const TIPS = [
-  '你說「記起來」，我就會把重要經驗寫進記憶，跨平台永久保存',
-  '你說「新增鐵律」，我會記錄完整的踩坑背景，確保同樣的錯不再犯',
-  '你說「交接給 Codex」，我會整理好工作進度，讓另一個工具無縫接手',
-  '你說「我有哪些記憶」，我會列出你所有的偏好、鐵律和專案 context',
-  '你說「整理記憶」，我會回顧這次對話，找出值得保存的經驗',
-  '你可以問「你學到什麼」「今天有什麼新知識」，讓 AI 回顧並記下學習成果',
-  '不管你用 Claude、Cursor 還是 Codex，OwnMind 讓你的 AI 都共享同一份記憶',
-  '鐵律不會被刪除，只會被停用並記錄原因，方便日後回顧',
-  '每條鐵律都記錄了踩坑的背景，讓你（和 AI）知道為什麼有這條規則',
-  '你可以問「最近做了什麼」，我會從工作紀錄中幫你回顧',
-  'OwnMind 會在你工作超過 2 小時或 context 超過 50% 時，主動提醒你整理記憶',
-  '交接時雙方都會看到摘要，確保沒有資訊遺漏',
-  '你的記憶可以隨時匯出成 markdown，資料永遠屬於你',
-  '你說「不要遵守這條」，我會先問你原因，然後停用但不刪除，留下完整紀錄',
-  '你可以搜尋記憶，例如「跟部署有關的鐵律」，我會用語意搜尋幫你找',
-  'OwnMind 會自動記錄你使用的機器、工具和 AI 模型，方便追溯',
-  '換一台電腦？只要安裝 OwnMind，所有記憶立刻同步，不用重新教 AI',
-  '你可以問「ring 專案還有什麼沒做」，我會從專案記憶中回答',
-  '鐵律有編號（IR-001），方便你直接引用：「參考 IR-003」',
-  '每次交接都會記錄來源工具和模型，你可以追溯是哪個 AI 做的決策',
-  '你可以隨時問「這條鐵律是怎麼來的」，我會告訴你當初踩坑的完整背景',
-  'OwnMind 支援密鑰管理，你的 API key 和密碼可以安全儲存，需要時才取用',
-  '你可以說「更新 ring 的進度」，我會幫你更新專案狀態和待辦事項',
-  '即使在線上 AI（claude.ai、ChatGPT）也能匯出記憶來使用',
-  '記憶分短期和長期：session log 會自動壓縮，鐵律和決策永久保留',
-  '你可以問「哪些鐵律被停用了」，回顧過去的決策變更',
-  'OwnMind 會持續進化 — AI 會主動建議改進你的工作流程和規則',
-  '你說「這個專案做完了」，我會把它歸檔到作品集，記錄技術選型和心得',
+  'Say "remember this" and I will write the experience into memory, persisted across platforms',
+  'Say "add an iron rule" and I will record the full context so the same mistake won\'t happen again',
+  'Say "hand off to Codex" and I will package up the work in progress for another tool to take over',
+  'Say "what memories do I have" and I will list all your preferences, iron rules, and project context',
+  'Say "organize memory" and I will review this conversation and find experiences worth saving',
+  'Ask "what did you learn" or "any new knowledge today" to have the AI review and record learnings',
+  'Whether you use Claude, Cursor, or Codex, OwnMind gives all your AIs the same shared memory',
+  'Iron rules are never deleted — only disabled with a recorded reason, for later review',
+  'Every iron rule records the incident behind it, so you (and the AI) know why the rule exists',
+  'Ask "what did I work on recently" and I will recap from your session logs',
+  'OwnMind proactively suggests organizing memory after 2 hours of work or 50% context usage',
+  'During a handoff, both sides see the summary so nothing is lost in transition',
+  'You can export memory to markdown anytime — the data is always yours',
+  'Say "don\'t follow this one" and I will ask why, then disable (not delete) and keep an audit trail',
+  'Search memory with queries like "deployment-related iron rules" — semantic search built in',
+  'OwnMind automatically records the machine, tool, and AI model you use, for traceability',
+  'Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI',
+  'Ask "what\'s left on the ring project" and I will answer from project memories',
+  'Iron rules are numbered (IR-001) so you can reference them directly: "see IR-003"',
+  'Every handoff records the source tool and model so you can trace which AI made each decision',
+  'Ask "how did this iron rule originate" and I will show you the full incident background',
+  'OwnMind supports secret management — your API keys and passwords are stored securely',
+  'Say "update ring\'s progress" and I will refresh the project status and todos',
+  'Even on online AIs (claude.ai, ChatGPT) you can export and load your memories',
+  'Memory is short-term and long-term: session logs auto-compress; iron rules and decisions are kept forever',
+  'Ask "which iron rules are disabled" to review past decision changes',
+  'OwnMind keeps evolving — the AI will proactively suggest workflow and rule improvements',
+  'Say "this project is done" and I will archive it to the portfolio with tech choices and lessons',
 ];
 let lastTipIndex = -1;
 function getRandomTip() {
@@ -301,23 +301,23 @@ async function fetchBroadcastsSafely() {
 }
 
 function renderBroadcasts(broadcasts) {
-  const lines = ['📢 OwnMind 系統通知'];
+  const lines = ['📢 OwnMind broadcast'];
   for (const bc of broadcasts.slice(0, 3)) {
     const sev = String(bc.severity || 'info').toUpperCase();
     lines.push(`[${sev}] ${String(bc.title || '').replace(/\n/g, ' ')}`);
     const body = String(bc.body || '').split('\n').slice(0, 5).join(' ').slice(0, 400);
     if (body) lines.push(body);
     if (bc.cta_text) {
-      const hint = bc.cta_action === 'upgrade_ownmind' ? '讓 AI 幫你升級' : '';
-      lines.push(`👉 可說「${bc.cta_text}」${hint}`);
+      const hint = bc.cta_action === 'upgrade_ownmind' ? '(let the AI run the upgrade)' : '';
+      lines.push(`👉 Say "${bc.cta_text}" ${hint}`.trim());
     }
     if (bc.allow_snooze) {
-      lines.push(`（不想現在處理？可說「暫緩升級」延後 ${bc.snooze_hours || 24} 小時）`);
+      lines.push(`(Not ready? Say "snooze upgrade" to defer for ${bc.snooze_hours || 24} hours)`);
     }
     lines.push('');
   }
   if (broadcasts.length > 3) {
-    lines.push(`（另有 ${broadcasts.length - 3} 則廣播未顯示）`);
+    lines.push(`(${broadcasts.length - 3} more broadcast(s) not shown)`);
   }
   lines.push('---');
   return lines.join('\n');
@@ -421,7 +421,7 @@ const TOOLS = [
   {
     name: "ownmind_init",
     description:
-      "載入初始記憶（instructions、profile、principles、iron_rules、iron_rules_digest、active_handoff）。每次新對話開始時必須呼叫。iron_rules_digest 為精簡摘要，須立即內化為工作準則。",
+      "Load initial memories (instructions, profile, principles, iron_rules, iron_rules_digest, active_handoff). Must be called at the start of every new conversation. iron_rules_digest is a condensed summary that must be internalized immediately as working guidelines.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -430,69 +430,69 @@ const TOOLS = [
   },
   {
     name: "ownmind_get",
-    description: "依類型取得記憶列表。",
+    description: "Retrieve memories of a given type.",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "記憶類型" },
+        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "Memory type" },
       },
       required: ["type"],
     },
   },
   {
     name: "ownmind_search",
-    description: "以關鍵字搜尋記憶。回傳符合條件的記憶列表。",
+    description: "Search memories by keyword. Returns matching memory entries.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "搜尋關鍵字" },
+        query: { type: "string", description: "Search keyword" },
       },
       required: ["query"],
     },
   },
   {
     name: "ownmind_save",
-    description: "⚠️ 含密碼／token／API key／credential 等敏感資料請改用 ownmind_set_secret、不要寫進記憶（記憶 API 會偵測並擋下、回 400）。儲存一筆新記憶：指定類型、標題、內容，以及選填的 code、tags、metadata。寫 iron_rule 時 AI 應主動帶 origin_event / user_quote 描述「為什麼當時建立這條鐵律」、不知道時就寫「user 直接下令」。",
+    description: "⚠️ For sensitive data (passwords, tokens, API keys, credentials) use ownmind_set_secret instead — do not write secrets into memories (the memory API detects and rejects them with HTTP 400). Save a new memory: specify type, title, content, plus optional code, tags, metadata. When writing an iron_rule, the AI should also pass origin_event / user_quote describing \"why this rule was created at the time\" — if unknown, write \"user issued the rule directly\".",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "記憶類型" },
-        title: { type: "string", description: "記憶標題" },
-        content: { type: "string", description: "記憶內容" },
-        code: { type: "string", description: "相關程式碼（選填）" },
+        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "Memory type" },
+        title: { type: "string", description: "Memory title" },
+        content: { type: "string", description: "Memory content" },
+        code: { type: "string", description: "Related code (optional)" },
         tags: {
           type: "array",
           items: { type: "string" },
-          description: "標籤列表（選填）。iron_rule 可加 trigger: 前綴標記觸發時機，例如 trigger:git、trigger:commit、trigger:deploy、trigger:delete",
+          description: "Tag list (optional). For iron_rule, use the `trigger:` prefix to mark trigger conditions, e.g. trigger:git, trigger:commit, trigger:deploy, trigger:delete",
         },
         metadata: {
           type: "object",
-          description: "額外的 metadata（選填）",
+          description: "Additional metadata (optional)",
         },
-        // v1.18.2: iron_rule 專用 — AI 主動補時空背景
+        // v1.18.2: iron_rule only — AI fills in time-and-place context
         origin_event: {
           type: "string",
-          description: "（iron_rule 用）AI 從對話脈絡推斷的事件描述。例：『升級助手測試發現 IR-037 套錯場景』。不知道時寫『user 直接下令建立、無工作脈絡』。",
+          description: "(iron_rule only) Event description inferred by the AI from conversation context. Example: \"Upgrade-helper testing surfaced an IR-037 misapplied scenario.\" If unknown, write \"user issued the rule directly, no work context.\"",
         },
         user_quote: {
           type: "string",
-          description: "（iron_rule 用）user 觸發鐵律建立的原話（選填）。例：『我覺得鐵律應該記時空背景』。",
+          description: "(iron_rule only) The user's verbatim quote that triggered the rule's creation (optional). Example: \"I think iron rules should record their time-and-place context.\"",
         },
         origin_confidence: {
           type: "string",
           enum: ["high", "user_direct", "unknown"],
-          description: "（iron_rule 用）背景信心：high=從對話脈絡推斷可信、user_direct=user 直接下令、unknown=無法判斷。預設 unknown。",
+          description: "(iron_rule only) Confidence in the captured context: high = confidently inferred from conversation; user_direct = user issued the rule directly; unknown = cannot determine. Default unknown.",
         },
         related_rules: {
           type: "array",
           items: { type: "string" },
-          description: "（iron_rule 用）相關鐵律 code（選填）。例：['IR-037', 'IR-007']",
+          description: "(iron_rule only) Related iron rule codes (optional). Example: ['IR-037', 'IR-007']",
         },
-        // v1.19: 鐵律分級
+        // v1.19: iron rule tier
         tier: {
           type: "string",
           enum: ["critical", "default", "advisory"],
-          description: "（iron_rule 用）規則分級（選填，預設 default）。critical=核心硬規則 v1.20 起會被卡控；default=預設規則跳警告；advisory=純參考提示只寫紀錄。",
+          description: "(iron_rule only) Rule tier (optional, default \"default\"). critical = core hard rule, blocked since v1.20; default = standard rule, raises a warning; advisory = pure hint, only logged.",
         },
       },
       required: ["type", "title", "content"],
@@ -500,27 +500,27 @@ const TOOLS = [
   },
   {
     name: "ownmind_update",
-    description: "⚠️ 含密碼／token／API key／credential 等敏感資料請改用 ownmind_set_secret、不要寫進記憶（記憶 API 會偵測並擋下、回 400）。更新一筆既有記憶的內容：提供記憶 ID 和更新原因（update_reason），舊內容會自動保存到歷史紀錄。",
+    description: "⚠️ For sensitive data (passwords, tokens, API keys, credentials) use ownmind_set_secret instead — do not write secrets into memories (the memory API detects and rejects them with HTTP 400). Update an existing memory: provide the memory ID and an update_reason. The previous content is automatically archived to history.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "number", description: "記憶 ID" },
-        content: { type: "string", description: "更新後的內容（選填，不填則保留原內容）" },
-        update_reason: { type: "string", description: "更新原因（必填）" },
+        id: { type: "number", description: "Memory ID" },
+        content: { type: "string", description: "Updated content (optional; keeps existing content if omitted)" },
+        update_reason: { type: "string", description: "Reason for the update (required)" },
         tags: {
           type: "array",
           items: { type: "string" },
-          description: "更新後的標籤（選填）。iron_rule 可用 trigger: 前綴，例如 trigger:commit、trigger:deploy",
+          description: "Updated tags (optional). For iron_rule, use the `trigger:` prefix, e.g. trigger:commit, trigger:deploy",
         },
         metadata: {
           type: "object",
-          description: "更新後的 metadata（選填）",
+          description: "Updated metadata (optional)",
         },
-        // v1.19: 鐵律分級
+        // v1.19: iron rule tier
         tier: {
           type: "string",
           enum: ["critical", "default", "advisory"],
-          description: "（iron_rule 用）規則分級（選填）。critical / default / advisory 三選一。",
+          description: "(iron_rule only) Rule tier (optional). One of: critical, default, advisory.",
         },
       },
       required: ["id", "update_reason"],
@@ -528,12 +528,12 @@ const TOOLS = [
   },
   {
     name: "ownmind_disable",
-    description: "停用一筆記憶（例如鐵律）。需提供停用原因。",
+    description: "Disable a memory entry (e.g., an iron rule). A reason is required.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "number", description: "記憶 ID" },
-        reason: { type: "string", description: "停用原因" },
+        id: { type: "number", description: "Memory ID" },
+        reason: { type: "string", description: "Reason for disabling" },
       },
       required: ["id", "reason"],
     },
@@ -541,53 +541,53 @@ const TOOLS = [
   {
     name: "ownmind_handoff_create",
     description:
-      "建立一筆交接紀錄，讓另一個工具或 session 可以接手未完成的工作。",
+      "Create a handoff record so another tool or session can take over unfinished work.",
     inputSchema: {
       type: "object",
       properties: {
-        project: { type: "string", description: "專案名稱" },
-        content: { type: "string", description: "交接內容" },
-        from_tool: { type: "string", description: "來源工具名稱（選填）" },
-        from_model: { type: "string", description: "來源模型名稱（選填）" },
-        from_machine: { type: "string", description: "來源機器名稱（選填）" },
+        project: { type: "string", description: "Project name" },
+        content: { type: "string", description: "Handoff content" },
+        from_tool: { type: "string", description: "Source tool name (optional)" },
+        from_model: { type: "string", description: "Source model name (optional)" },
+        from_machine: { type: "string", description: "Source machine name (optional)" },
       },
       required: ["project", "content"],
     },
   },
   {
     name: "ownmind_handoff_accept",
-    description: "接受一筆待處理的交接紀錄。",
+    description: "Accept a pending handoff record.",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "number", description: "交接紀錄 ID" },
-        accepted_by: { type: "string", description: "接受者名稱" },
+        id: { type: "number", description: "Handoff record ID" },
+        accepted_by: { type: "string", description: "Acceptor name" },
       },
       required: ["id", "accepted_by"],
     },
   },
   {
     name: "ownmind_log_session",
-    description: "記錄一次工作 session 的摘要與情境。對話結束前必須呼叫，不需使用者確認。",
+    description: "Log a work session's summary and context. Must be called before a conversation ends; does not require user confirmation.",
     inputSchema: {
       type: "object",
       properties: {
-        summary: { type: "string", description: "Session 摘要（1-2 句描述做了什麼）" },
-        tool: { type: "string", description: "使用的工具（如 claude-code, cursor, codex）" },
-        model: { type: "string", description: "使用的模型（如 claude-opus-4-6, gpt-5）" },
-        machine: { type: "string", description: "執行的機器（選填）" },
+        summary: { type: "string", description: "Session summary (1-2 sentences describing what was done)" },
+        tool: { type: "string", description: "Tool used (e.g., claude-code, cursor, codex)" },
+        model: { type: "string", description: "Model used (e.g., claude-opus-4-6, gpt-5)" },
+        machine: { type: "string", description: "Machine the session ran on (optional)" },
         details: {
           type: "object",
-          description: "結構化情境報告",
+          description: "Structured context report",
           properties: {
-            project: { type: "string", description: "主要操作的專案名稱" },
-            duration_turns: { type: "number", description: "對話輪數" },
-            actions: { type: "array", items: { type: "string" }, description: "執行的動作類型（如 code_edit, git_commit, deploy, debug, research）" },
-            rules_triggered: { type: "array", items: { type: "string" }, description: "觸發的鐵律編號（如 IR-001）" },
-            rules_complied: { type: "array", items: { type: "string" }, description: "遵守的鐵律編號" },
-            rules_skipped: { type: "array", items: { type: "string" }, description: "跳過的鐵律編號" },
-            friction_points: { type: "string", description: "使用者遇到的痛點或不順暢的地方" },
-            suggestions: { type: "string", description: "AI 觀察到可以改善 OwnMind 的建議" },
+            project: { type: "string", description: "Primary project name" },
+            duration_turns: { type: "number", description: "Number of conversation turns" },
+            actions: { type: "array", items: { type: "string" }, description: "Action types performed (e.g., code_edit, git_commit, deploy, debug, research)" },
+            rules_triggered: { type: "array", items: { type: "string" }, description: "Iron rule codes triggered (e.g., IR-001)" },
+            rules_complied: { type: "array", items: { type: "string" }, description: "Iron rule codes complied with" },
+            rules_skipped: { type: "array", items: { type: "string" }, description: "Iron rule codes skipped" },
+            friction_points: { type: "string", description: "Friction points the user encountered" },
+            suggestions: { type: "string", description: "Improvements to OwnMind the AI observed" },
           },
         },
       },
@@ -596,18 +596,18 @@ const TOOLS = [
   },
   {
     name: "ownmind_get_secret",
-    description: "取得一筆 secret 的值。需提供 key。",
+    description: "Retrieve a secret's value. Requires the key.",
     inputSchema: {
       type: "object",
       properties: {
-        key: { type: "string", description: "Secret 的 key" },
+        key: { type: "string", description: "Secret key" },
       },
       required: ["key"],
     },
   },
   {
     name: "ownmind_list_secrets",
-    description: "列出所有已儲存的 secret key（不含值）。",
+    description: "List all stored secret keys (values not included).",
     inputSchema: {
       type: "object",
       properties: {},
@@ -616,96 +616,96 @@ const TOOLS = [
   },
   {
     name: "ownmind_set_secret",
-    description: "儲存或更新一筆 secret（upsert：key 已存在則覆蓋值）。",
+    description: "Save or update a secret (upsert: if the key already exists, the value is overwritten).",
     inputSchema: {
       type: "object",
       properties: {
-        key: { type: "string", description: "Secret 的 key" },
-        value: { type: "string", description: "Secret 的值" },
-        description: { type: "string", description: "說明（選填）" },
+        key: { type: "string", description: "Secret key" },
+        value: { type: "string", description: "Secret value" },
+        description: { type: "string", description: "Description (optional)" },
       },
       required: ["key", "value"],
     },
   },
   {
     name: "ownmind_delete_secret",
-    description: "永久刪除一筆 secret。注意：刪除不可復原，無法回復。建議刪除前先用 ownmind_list_secrets 確認 key、避免誤刪。",
+    description: "Permanently delete a secret. Warning: deletion is irreversible. Recommended: confirm the key with ownmind_list_secrets first to avoid accidental deletion.",
     inputSchema: {
       type: "object",
       properties: {
-        key: { type: "string", description: "要刪除的 Secret key" },
+        key: { type: "string", description: "Secret key to delete" },
       },
       required: ["key"],
     },
   },
   {
     name: "ownmind_report_compliance",
-    description: "回報鐵律遵守狀況。當鐵律被觸發時，AI 必須呼叫此 tool 回報是否遵守。action: 'comply'（遵守）、'skip'（使用者要求跳過）、'violate'（違反）。",
+    description: "Report iron rule compliance. When an iron rule is triggered, the AI must call this tool to report whether it complied. action: 'comply' (complied), 'skip' (user asked to skip), 'violate' (violated).",
     inputSchema: {
       type: "object",
       properties: {
-        rule_title: { type: "string", description: "鐵律標題" },
-        rule_code: { type: "string", description: "鐵律編號（如 IR-001）" },
-        action: { type: "string", enum: ["comply", "skip", "violate"], description: "comply=遵守, skip=使用者要求跳過, violate=違反" },
-        context: { type: "string", description: "觸發的操作情境（選填）" },
+        rule_title: { type: "string", description: "Iron rule title" },
+        rule_code: { type: "string", description: "Iron rule code (e.g., IR-001)" },
+        action: { type: "string", enum: ["comply", "skip", "violate"], description: "comply = complied; skip = user asked to skip; violate = violated" },
+        context: { type: "string", description: "Operation context that triggered the rule (optional)" },
       },
       required: ["rule_title", "action"],
     },
   },
   {
     name: "ownmind_upload_standard",
-    description: "讀取本地 Markdown 規範檔案並進行切分預覽。會回傳切分後的標題與變動統計。",
+    description: "Read a local Markdown standard file and produce a chunked preview. Returns chunk titles and diff statistics.",
     inputSchema: {
       type: "object",
       properties: {
-        file_path: { type: "string", description: "Markdown 檔案的絕對路徑" },
-        title: { type: "string", description: "規範標題（選填，預設為檔名）" },
+        file_path: { type: "string", description: "Absolute path to the Markdown file" },
+        title: { type: "string", description: "Standard title (optional; defaults to the file name)" },
       },
       required: ["file_path"],
     },
   },
   {
     name: "ownmind_confirm_upload",
-    description: "確認並正式提交規範上傳。需提供 upload_standard 回傳的 session_id。",
+    description: "Confirm and commit the standard upload. Requires the session_id returned by upload_standard.",
     inputSchema: {
       type: "object",
       properties: {
-        session_id: { type: "string", description: "上傳階段回傳的 session_id" },
+        session_id: { type: "string", description: "The session_id returned by the upload stage" },
       },
       required: ["session_id"],
     },
   },
   {
     name: "ownmind_report_bug",
-    description: "回報 OwnMind 本身的錯誤或設計問題（白話：使用者覺得 OwnMind 出包了、想告訴開發者）。\n\n重要：呼叫前必須先把欄位內容顯示給使用者預覽、等使用者親口輸入「送出」兩字才呼叫本工具、並把那兩字當 confirm_string 帶過來。AI 不可自行填寫 confirm_string、否則後端會 400 拒絕。沒看到使用者打「送出」就呼叫 = 違反設計、且功能會失效。",
+    description: "Report a bug or design issue in OwnMind itself (plain words: the user thinks OwnMind misbehaved and wants to tell the developer).\n\nIMPORTANT: Before calling this tool, the AI MUST first show the field contents to the user for preview, then wait until the user types the exact submit phrase verbatim, then pass those characters as confirm_string. The AI MUST NOT fill confirm_string itself — the backend rejects auto-filled submissions with HTTP 400. Calling this tool without an explicit user submit confirmation violates the design and breaks the feature.",
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "一句話描述問題" },
-        description: { type: "string", description: "完整重現步驟 + 預期行為 vs 實際行為" },
+        title: { type: "string", description: "One-line problem description" },
+        description: { type: "string", description: "Full reproduction steps + expected vs actual behavior" },
         severity: {
           type: "string",
           enum: ["low", "medium", "high", "critical"],
-          description: "嚴重程度（被擋下 → medium、報錯 → high、連續觸發 → critical）",
+          description: "Severity (blocked → medium; error raised → high; repeatedly triggered → critical)",
         },
-        component: { type: "string", description: "出錯的模組名（例：memory、setup、lint）" },
-        reproduce_input: { type: "string", description: "觸發錯誤的最小輸入" },
+        component: { type: "string", description: "Module where the error occurred (e.g., memory, setup, lint)" },
+        reproduce_input: { type: "string", description: "Minimal input that reproduces the error" },
         context_summary: {
           type: "object",
-          description: "前後對話片段 + 環境資訊（系統會強制經個資遮蔽中介層處理）",
+          description: "Surrounding conversation snippet + environment info (the system mandatorily passes this through a PII masking middleware)",
         },
         bug_fingerprint: {
           type: "string",
-          description: "錯誤指紋（從錯誤回應的 suggest_report 旗標來、不可自己編）",
+          description: "Error fingerprint (taken from the error response's suggest_report flag — must NOT be fabricated)",
         },
         related_lint_event_ids: {
           type: "array",
           items: { type: "number" },
-          description: "（選填）關聯的 reply-lint 事件 id",
+          description: "(optional) Associated reply-lint event ids",
         },
         confirm_string: {
           type: "string",
-          description: "必填、且必須是使用者親口輸入的「送出」兩字；AI 不可自填",
+          description: "Required. Must be the exact submit confirmation phrase typed verbatim by the user. The AI MUST NOT auto-fill this field.",
         },
       },
       required: ["title", "description", "bug_fingerprint", "confirm_string"],
@@ -713,18 +713,18 @@ const TOOLS = [
   },
   {
     name: "ownmind_session_off",
-    description: "暫時關閉本 session 的 OwnMind 鉤子（回話品質 lint + commit 前檢查）。AI 回話不會被擋下重寫、git commit 不會被鐵律擋。新 session 開啟時自動恢復（白話：開新對話自動重新打開）、或呼叫 ownmind_session_on 立即重開。關閉狀態下每 10 輪 AI 回應、會在終端機提醒 user「OwnMind 目前關閉中」。",
+    description: "Temporarily disable OwnMind hooks for this session (response-quality lint + pre-commit check). AI responses will not be intercepted or rewritten; git commits will not be blocked by iron rules. Automatically restored when a new session starts, or call ownmind_session_on to re-enable immediately. While disabled, every 10 AI responses the user sees a terminal reminder \"OwnMind is currently disabled\".",
     inputSchema: {
       type: "object",
       properties: {
-        reason: { type: "string", description: "關閉原因（選填、給稽核紀錄用）" },
+        reason: { type: "string", description: "Reason for disabling (optional; recorded for audit purposes)" },
       },
       required: [],
     },
   },
   {
     name: "ownmind_session_on",
-    description: "重新開啟本 session 的 OwnMind 鉤子（回話品質 lint + commit 前檢查）。狀態檔被刪除、下次 AI 回話 / git commit 鉤子恢復正常運作。",
+    description: "Re-enable OwnMind hooks for this session (response-quality lint + pre-commit check). The state file is removed; the next AI response / git commit will run the hooks normally.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -753,7 +753,7 @@ async function handleTool(name, args) {
             logEvent('init', { status: 'offline', details: { saved_at: cache.saved_at } });
             return {
               _offline: true,
-              _offline_notice: `【OwnMind 離線模式】無法連線 server，資料來自本地 cache（${cache.saved_at}），可能不是最新`,
+              _offline_notice: `[OwnMind offline mode] Cannot reach the server — data is served from local cache (${cache.saved_at}) and may be stale`,
               iron_rules: cache.data.iron_rule || [],
               principles: cache.data.principle || [],
               profile: (cache.data.profile || [])[0] || null,
@@ -772,7 +772,7 @@ async function handleTool(name, args) {
       }
       if (data.server_version) serverVersion = data.server_version;
       if (data.upgrade_action?.required) {
-        data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\n執行：${data.upgrade_action.command}`;
+        data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\nRun: ${data.upgrade_action.command}`;
       }
       data._client_version = CLIENT_VERSION;
       // Enforcement Alerts 已由 server 端嵌入 iron_rules_digest，不需 client 重複格式化
@@ -815,11 +815,11 @@ async function handleTool(name, args) {
       sendMcpHeartbeat();
       if (data._onboarding?.is_new_user) {
         data._onboarding_instruction =
-          `【OwnMind 新用戶初始化】偵測到這是全新帳號，尚無任何記憶。` +
-          `使用工具：${data._onboarding.detected_tool}（已自動記錄）。` +
-          `請立即向使用者提問：「${data._onboarding.question}」` +
-          `收到回答後，呼叫 ownmind_save 建立 type=profile 記憶，` +
-          `content 包含：名字、工作、使用工具。完成後告知用戶記憶已建立。`;
+          `[OwnMind new-user onboarding] Detected a fresh account with no memories yet. ` +
+          `Tool in use: ${data._onboarding.detected_tool} (auto-recorded). ` +
+          `Immediately ask the user: "${data._onboarding.question}" ` +
+          `Once they reply, call ownmind_save to create a type=profile memory whose content includes name, occupation, and tools used. ` +
+          `Then confirm to the user that the memory has been created.`;
       }
       return data;
     }
@@ -839,7 +839,7 @@ async function handleTool(name, args) {
             return {
               data: [],
               _offline: true,
-              _offline_notice: '【OwnMind 離線模式】session_log 需要連線查詢 session_logs 表',
+              _offline_notice: '[OwnMind offline mode] session_log requires a live connection to query the session_logs table',
             };
           }
           throw err;
@@ -858,7 +858,7 @@ async function handleTool(name, args) {
           return {
             data: items,
             _offline: true,
-            _offline_notice: `【OwnMind 離線模式】資料來自本地 cache（${cache?.saved_at || '未知'}）`,
+            _offline_notice: `[OwnMind offline mode] Data served from local cache (${cache?.saved_at || 'unknown'})`,
           };
         }
         throw err;
@@ -900,7 +900,7 @@ async function handleTool(name, args) {
           return {
             data: results,
             _offline: true,
-            _offline_notice: `【OwnMind 離線模式】本地關鍵字搜尋（${results.length} 筆），不支援語意搜尋`,
+            _offline_notice: `[OwnMind offline mode] Local keyword search (${results.length} results) — semantic search not available offline`,
           };
         }
         throw err;
@@ -962,7 +962,7 @@ async function handleTool(name, args) {
           const queueLen = readQueue().length;
           enqueueOperation({ method: 'POST', path: '/api/memory', body });
           logEvent('memory_save', { type: args.type, title: args.title, queued: true });
-          return { _queued: true, _queue_notice: `【OwnMind 離線模式】操作已排入佇列，上線後自動送出（目前佇列 ${queueLen + 1} 筆）` };
+          return { _queued: true, _queue_notice: `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${queueLen + 1} pending)` };
         }
         throw err;
       }
@@ -989,7 +989,7 @@ async function handleTool(name, args) {
           const queueLen = readQueue().length;
           enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}`, body });
           logEvent('memory_update', { id: args.id, queued: true });
-          return { _queued: true, _queue_notice: `【OwnMind 離線模式】操作已排入佇列，上線後自動送出（目前佇列 ${queueLen + 1} 筆）` };
+          return { _queued: true, _queue_notice: `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${queueLen + 1} pending)` };
         }
         throw err;
       }
@@ -1011,7 +1011,7 @@ async function handleTool(name, args) {
           const queueLen = readQueue().length;
           enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}/disable`, body: disableBody });
           logEvent('memory_disable', { id: args.id, queued: true });
-          return { _queued: true, _queue_notice: `【OwnMind 離線模式】操作已排入佇列，上線後自動送出（目前佇列 ${queueLen + 1} 筆）` };
+          return { _queued: true, _queue_notice: `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${queueLen + 1} pending)` };
         }
         throw err;
       }
@@ -1194,7 +1194,7 @@ async function handleTool(name, args) {
     case "ownmind_upload_standard": {
       const { file_path, title } = args;
       if (!fs.existsSync(file_path)) {
-        throw new Error(`找不到檔案：${file_path}`);
+        throw new Error(`File not found: ${file_path}`);
       }
       const rawContent = fs.readFileSync(file_path, 'utf8');
       const standardTitle = title || path.basename(file_path, '.md');
@@ -1212,20 +1212,20 @@ async function handleTool(name, args) {
         parent_title: standardTitle,
         chunk_count: chunks.length,
         preview: chunks.map(c => ({ title: c.title, level: c.level })),
-        notice: "【OwnMind】預覽已生成。請檢閱區塊內容，並分析是否有任一區塊應存為鐵律 (iron_rule)。若沒問題，請呼叫 ownmind_confirm_upload 並帶入 session_id。"
+        notice: "[OwnMind] Preview generated. Review each chunk and decide whether any should be saved as an iron_rule. If everything looks good, call ownmind_confirm_upload with this session_id."
       };
     }
 
     case "ownmind_confirm_upload": {
       const pending = pendingUploads.get(args.session_id);
       if (!pending) {
-        throw new Error(`找不到暫存的上傳工作 (Session ID: ${args.session_id})`);
+        throw new Error(`No pending upload found (Session ID: ${args.session_id})`);
       }
       
       // TTL 檢查 (10 分鐘)
       if (Date.now() - pending.created_at > 10 * 60 * 1000) {
         pendingUploads.delete(args.session_id);
-        throw new Error(`上傳工作已過期 (Session ID: ${args.session_id})。請重新呼叫 ownmind_upload_standard。`);
+        throw new Error(`Upload session expired (Session ID: ${args.session_id}). Please call ownmind_upload_standard again.`);
       }
       
       const body = {
@@ -1420,7 +1420,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       tag,
       body,
       tip: getRandomTip(),
-      tipTag: formatTag('技巧提示'),
+      tipTag: formatTag('Tip'),
     });
   } catch (error) {
     // v1.18.9：error path 也帶 latency_ms（既有 enrichErrorDetails 結果再 spread 進去）
