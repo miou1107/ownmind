@@ -36,6 +36,19 @@
 - **一般使用者**：等下一輪 OwnMind 廣播升級（`/ownmind upgrade` 或互動式升級腳本）會自動拿到新訊息。
 - **本機急用**：可手動同步 `cp shared/verification.js ~/.ownmind/shared/verification.js`（只影響自己這台、不影響廣播）。
 
+**Follow-up patch（同 v1.20.2 版本內、不另開版號）：**
+
+修主 fix 上線後實測發現的副作用 bug — MCP 工具 `ownmind_report_compliance` 的 autoComply（白話：合規呼叫後自動再跑一次鉤子檢查的機制）用記憶體變數 `complianceEvents`、session 重啟（白話：MCP 進程重新啟動）就清空。pre-commit 鉤子讀 jsonl 檔案、不受影響。兩者資料來源不一致導致：鉤子放行、但 `ownmind_report_compliance` 工具回 `status: blocked`。
+
+實測 session log 證據：本機 session_id 從 `1779774294945` 換成 `1779778052749`、合規記錄 jsonl 仍有兩筆 fresh comply、但 autoComply 因 in-memory 已歸零、回傳 blocked。
+
+修法：`mcp/index.js:1090-1129` autoComply 改成把記憶體變數跟檔案合併 (`[...complianceEvents, ...readComplianceEvents()]`)、檔案視為唯一可靠來源、記憶體只當當前 session 的 cache。改動 1 個 import + 3 行邏輯。
+
+- **`mcp/index.js`**：autoComply 內讀檔案、合併 in-memory + file 兩來源
+- **`tests/auto-comply-reads-file.test.js`**：新增 3 個 case 守備設計合約（in-memory 空 + 檔案有資料 / 反證 / 合併情境）
+
+測試: `npm test` 1895/1895 全綠（v1.20.2 主 fix 1892 + follow-up 3 個 case = 1895）。
+
 ## v1.20.1 — Dashboard 個人版（Portal 4 頁 + Preference 3 頁 + 登入頁 + 守門員完工）
 
 **背景：** v1.20.0 把後台前端地基打好之後、v1.20.1 開始把空殼填滿、目標是個人 Dashboard 共 7 頁（4 個人紀錄分析頁 + 3 個人偏好頁）+ 後端介面對接。本次 commit 是中段進度、完成步驟 1（拆共用元件）與步驟 2（語系切換 context）。

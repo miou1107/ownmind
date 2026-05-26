@@ -14,7 +14,7 @@ import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
-import { appendCompliance } from '../shared/compliance.js';
+import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import {
   detectTriggerFromContext,
   sanitizeErrorMessage,
@@ -1096,13 +1096,21 @@ async function handleTool(name, args) {
             const rules = getCachedVerifiableRules().filter(r =>
               r.metadata?.verification?.trigger?.includes(trigger)
             );
+            // v1.20.2 follow-up：讀檔案而非僅記憶體（in-memory）變數
+            // 背景：MCP 進程 ownmind_init 會把 complianceEvents 變數歸零、session 重啟（白話：MCP 進程重新啟動）就清空。
+            // pre-commit 鉤子讀 jsonl 檔案、不受 session 重啟影響。兩者用不同資料來源會導致行為不一致：
+            // 鉤子放行、但 ownmind_report_compliance 工具卻 status: blocked。
+            // 解法：把記憶體變數跟檔案合併、檔案是唯一可靠來源、記憶體只當當前 session 的 cache（白話：暫存）。
+            const fileEvents = readComplianceEvents();
+            const mergedEvents = [...complianceEvents, ...fileEvents];
+
             const failures = [];
             for (const rule of rules) {
               const conditions = rule.metadata?.verification?.conditions;
               if (!conditions) continue;
               const sessionChecks = extractSessionChecks(conditions);
               if (sessionChecks.length === 0) continue;
-              const ctx = { complianceEvents };
+              const ctx = { complianceEvents: mergedEvents };
               const result = evalFn({ operator: 'AND', checks: sessionChecks }, ctx);
               if (!result.pass) {
                 const shouldBlock = rule.metadata?.verification?.block_on_fail;
