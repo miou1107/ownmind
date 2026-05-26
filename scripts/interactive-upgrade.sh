@@ -17,6 +17,17 @@ TS=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="${HOME}/.ownmind.bak.${TS}"
 LOG_FILE="${OWNMIND_DIR}/logs/upgrade-${TS}.log"
 
+# v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
+# Without this, ${OWNMIND_DIR}=/c/Users/Vin/.ownmind makes require() fail with
+# MODULE_NOT_FOUND. See path-helpers.sh.
+if [ -f "${OWNMIND_DIR}/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${OWNMIND_DIR}/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+OWNMIND_DIR_WIN="$(to_win_path "${OWNMIND_DIR}")"
+
 STEP() { echo "INFO:$1:$2"; }
 OK()   { echo "OK:$1:$2"; }
 # v1.17.85 IR-038: FAIL uniformly appends a fallback report_error so any "uncovered FAIL path"
@@ -125,12 +136,13 @@ fi
 # --- 4. Re-run install.sh (read creds from existing ~/.claude/settings.json) ---
 STEP "install" "Re-running install.sh (sync skills / hooks / scheduler)"
 CLAUDE_SETTINGS="${HOME}/.claude/settings.json"
+CLAUDE_SETTINGS_WIN="$(to_win_path "${CLAUDE_SETTINGS}")"
 API_KEY=""
 API_URL=""
 if [ -f "${CLAUDE_SETTINGS}" ]; then
   CREDS=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('${CLAUDE_SETTINGS}', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('${CLAUDE_SETTINGS_WIN}', 'utf8'));
       const srv = (s.mcpServers && s.mcpServers.ownmind) || {};
       const env = srv.env || {};
       console.log(env.OWNMIND_API_KEY || '');
@@ -210,7 +222,7 @@ fi
 # v1.17.18: moved dismiss from the AI skill into the script (IR-027 "only logic works").
 # Previously this relied on the AI calling /api/broadcast/dismiss after seeing OK:done:*;
 # when missed, the broadcast never dismissed and the user kept seeing the upgrade prompt every session.
-VERSION=$(node -p "require('${OWNMIND_DIR}/package.json').version" 2>/dev/null || echo "unknown")
+VERSION=$(node -p "require('${OWNMIND_DIR_WIN}/package.json').version" 2>/dev/null || echo "unknown")
 
 if [ -n "${API_KEY}" ] && [ -n "${API_URL}" ] && [ "${VERSION}" != "unknown" ]; then
   STEP "dismiss" "Dismissing stale upgrade broadcasts"
