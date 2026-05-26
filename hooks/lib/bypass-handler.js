@@ -1,25 +1,25 @@
 /**
  * OwnMind Bypass Handler — v1.19.6
  *
- * 解析 OWNMIND_BYPASS 環境變數、判斷規則是否被放行、寫 audit log。
+ * Parse the OWNMIND_BYPASS env var, decide whether a rule is bypassed, and write the audit log.
  *
- * 用法：
- *   OWNMIND_BYPASS=IR-008 git commit ...        # 單條
- *   OWNMIND_BYPASS=IR-008,IR-024 git commit ... # 多條
- *   OWNMIND_BYPASS=all git commit ...           # 全部
+ * Usage:
+ *   OWNMIND_BYPASS=IR-008 git commit ...        # single rule
+ *   OWNMIND_BYPASS=IR-008,IR-024 git commit ... # multiple rules
+ *   OWNMIND_BYPASS=all git commit ...           # all rules
  *
- * 設計原則：
- *   - process scope（不污染全域、不修改 env）
- *   - 永遠寫 audit（不可關閉、後續可審）
- *   - 純函式 + 一個 side-effect 函式（logBypass）
+ * Design principles:
+ *   - Process scope (no global pollution; never mutates env).
+ *   - Always writes audit (cannot be disabled — auditable after the fact).
+ *   - Pure functions + one side-effect function (logBypass).
  */
 
 import { appendCompliance } from '../../shared/compliance.js';
 
 /**
- * 解析 OWNMIND_BYPASS 環境變數成 Set
- * @param {object|null|undefined} env - process.env 或測試 stub
- * @returns {Set<string>} - 規則代碼集合；'all' 為特殊值
+ * Parse the OWNMIND_BYPASS env var into a Set.
+ * @param {object|null|undefined} env - process.env or a test stub
+ * @returns {Set<string>} - rule code set; 'all' is the special wildcard.
  */
 export function parseBypass(env) {
   if (!env || typeof env !== 'object') return new Set();
@@ -31,13 +31,13 @@ export function parseBypass(env) {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean)
-      // 緊急場景 user 常打 ALL/All；統一 normalize 成 'all' 避免無聲失效
+      // In emergency scenarios users often type ALL/All; normalize to 'all' to avoid a silent miss.
       .map((s) => (s.toLowerCase() === 'all' ? 'all' : s))
   );
 }
 
 /**
- * 判斷某條鐵律是否被放行
+ * Decide whether a given iron rule is bypassed.
  * @param {string} ruleCode
  * @param {Set<string>|null|undefined} bypassSet
  * @returns {boolean}
@@ -50,7 +50,7 @@ export function isBypassed(ruleCode, bypassSet) {
 }
 
 /**
- * 寫一筆 action=bypass 到 audit log
+ * Write an action=bypass row to the audit log.
  * @param {object} entry
  * @param {string} entry.ruleCode
  * @param {string} [entry.ruleTitle]

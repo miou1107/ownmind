@@ -2,9 +2,9 @@
 /**
  * OwnMind Git Pre-Commit Hook (L1)
  *
- * 在 commit 前自動檢查鐵律，若 block_on_fail 規則違反則阻止 commit。
- * 快取為空時嘗試從 API 同步（fail-closed）。
- * 零網路依賴（有快取時）：所有資料從本地快取讀取。
+ * Automatically check iron rules before commit; if a block_on_fail rule is violated, abort the commit.
+ * When the cache is empty, try fetching from the API (fail-closed).
+ * Zero network dependency when cache exists: everything reads from local cache.
  */
 
 import fs from 'fs';
@@ -40,24 +40,25 @@ function getStagedFiles() {
 }
 
 /**
- * v1.19.7：抓 staged diff 中各檔的「新增行」內容
- * 用於跑 detectSecretLike 偵測寫入的敏感資料
+ * v1.19.7: extract the "added lines" content from the staged diff for each file.
+ * Used to run detectSecretLike against the inserted content.
  *
- * 取 unified diff context=0（白話：不顯示前後參考行，只給真正改動的行）
- * 並過濾出開頭為 '+' 但非檔頭 '+++' 的純新增行
+ * Use unified diff context=0 (i.e. omit the surrounding context lines, only emit the actual changes)
+ * and filter to lines starting with '+' that are not file headers ('+++').
  *
- * v1.19.7 code-review I-3：用 execFileSync 把檔名當參數陣列傳，避免 shell 解析。
- * 如此檔名含 $、反引號、空白、反斜線都安全（之前 execSync 字串拼接只 escape 雙引號、
- * 對 backslash / dollar / backtick 的檔名會中招或誤吞 IR-002 違規）。
+ * v1.19.7 code-review I-3: pass the filename as an argv element to execFileSync to avoid shell parsing.
+ * That way filenames containing $, backticks, whitespace, or backslashes are all safe (the previous
+ * execSync string concatenation only escaped double quotes — filenames with backslash / dollar /
+ * backtick would either explode or silently swallow IR-002 violations).
  *
- * 失敗一律回空（fail-open、不擋 commit）
+ * Any failure returns empty (fail-open, never block the commit).
  */
 function getStagedAddedLines(file) {
   let diff;
   try {
     diff = execFileSync('git', ['diff', '--cached', '-U0', '--', file], {
       encoding: 'utf8',
-      maxBuffer: 5 * 1024 * 1024, // 5 MB，足以覆蓋一般 patch
+      maxBuffer: 5 * 1024 * 1024, // 5 MB — large enough for a typical patch
     });
   } catch {
     return [];
@@ -66,22 +67,23 @@ function getStagedAddedLines(file) {
   const added = [];
   for (const line of lines) {
     if (!line.startsWith('+')) continue;
-    if (line.startsWith('+++')) continue; // 檔頭 +++ b/file 排除
+    if (line.startsWith('+++')) continue; // exclude file header '+++ b/file'
     added.push(line.slice(1));
   }
   return added;
 }
 
 /**
- * v1.19.7：對 staged 檔案逐一掃 diff 內容、命中 detectSecretLike 即列為違規
+ * v1.19.7: scan each staged file's diff content; a detectSecretLike hit is reported as a violation.
  *
- * 設計：
- * - 用 skip_keyword=true 跑 regex + length heuristic，不抓 keyword（白話：
- *   原始碼很常出現 "password"／"secret" 變數名／字串字面值，keyword 模式會誤擋）
- * - 同一檔多行命中只報第一筆（避免報太細）
- * - 文字檔 binary 都跑（diff 由 git 處理過、binary 通常無 + 行可掃）
+ * Design:
+ * - Run with skip_keyword=true so we use only regex + length heuristic, not keyword matching
+ *   (source code frequently contains variable names / string literals like "password" or "secret",
+ *    so keyword mode produces too many false positives).
+ * - For a single file, only report the first hit (avoid being too noisy).
+ * - Text and binary files both run (git's diff already handles binaries — they usually emit no '+' lines).
  *
- * @returns {Array<{file, rule, reason, sample}>} 命中列表
+ * @returns {Array<{file, rule, reason, sample}>} list of hits
  */
 function checkStagedDiffForSecrets(stagedFiles) {
   const hits = [];
@@ -95,7 +97,7 @@ function checkStagedDiffForSecrets(stagedFiles) {
           rule: r.rule,
           reason: r.reason,
         });
-        break; // 同檔只報一筆、保留訊息精簡
+        break; // one hit per file — keep the message concise
       }
     }
   }
@@ -124,8 +126,8 @@ function httpGet(url, headers) {
 }
 
 /**
- * 嘗試從 API 同步 iron rules 到本地快取
- * @returns {Array|null} — 成功回傳 rules array，失敗回傳 null
+ * Try to sync iron rules from the API into the local cache.
+ * @returns {Array|null} — on success returns the rules array; on failure returns null.
  */
 async function fetchAndCacheRules() {
   const { apiKey, apiUrl } = readCredentials();
@@ -155,7 +157,7 @@ function formatBlockMessage(failures) {
     lines.push(`  ❌ ${f}`);
   }
   lines.push('Complete the steps above before committing.');
-  // v1.20.2 follow-up #3：附帶 bug report 路徑、AI 認為鉤子擋下不對時可送回報
+  // v1.20.2 follow-up #3: include the bug-report path so AI can flag wrongly-blocked commits.
   lines.push(
     '[OwnMind bug report] Think this block is wrong? Call ownmind_report_bug to file a report. ' +
     'bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true'
@@ -175,15 +177,15 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0) {
 // ============================================================
 
 async function main() {
-  // v1.20.3：user 用 /ownmind-off 暫時關閉鉤子 → 跳過所有鐵律檢查、直接放行 commit
-  // 24 小時內有效、過期或新 session 開啟（SessionStart 清狀態檔）自動恢復
+  // v1.20.3: user invoked /ownmind-off → skip every iron rule check and let the commit through.
+  // Stays in effect for 24 hours; expires or auto-resumes when a new session starts (SessionStart clears the state file).
   try {
     if (isSessionOff()) {
       console.error(`[OwnMind v${VERSION}]⚠️ OwnMind is temporarily disabled — commit hook skipped all iron rule checks. Re-enable with /ownmind-on or open a new conversation.`);
       process.exit(0);
       return;
     }
-  } catch { /* 讀狀態檔失敗、fail-open 正常跑 */ }
+  } catch { /* state file read failure — fail-open and run normally */ }
 
   // 1. Load iron rules from local cache (with staleness check)
   let rules = readJsonSafe(CACHE_FILE);
@@ -259,7 +261,7 @@ async function main() {
   }
 
   // 6. Evaluate each rule
-  // v1.19.7：整合 OWNMIND_BYPASS 環境變數 + IR-002 secret-detect 雙重檢查
+  // v1.19.7: integrate the OWNMIND_BYPASS env var + IR-002 secret-detect double check.
   const bypassSet = parseBypass(process.env);
   const blockFailures = [];
   let checkedCount = 0;
@@ -271,7 +273,7 @@ async function main() {
     const ruleCode = rule.code || rule.metadata?.code || 'IR-???';
     const ruleTitle = rule.title || 'Unnamed rule';
 
-    // v1.19.7：bypass 命中 → 跳過 + 寫 audit
+    // v1.19.7: bypass hit → skip + write audit.
     if (isBypassed(ruleCode, bypassSet)) {
       try {
         logBypass({ ruleCode, ruleTitle, source: 'pre_commit' });
@@ -283,11 +285,11 @@ async function main() {
     const result = evaluateConditions(verification.conditions, context);
     const failures = Array.isArray(result.failures) ? [...result.failures] : [];
 
-    // v1.19.7：IR-002 額外掃 staged diff 內容，命中 detectSecretLike 即視為違反
+    // v1.19.7: IR-002 additionally scans the staged diff content; a detectSecretLike hit counts as a violation.
     if (ruleCode === 'IR-002') {
       const secretHits = checkStagedDiffForSecrets(stagedFiles);
       for (const hit of secretHits) {
-        failures.push(`${hit.file}: ${hit.reason}（detected_by=${hit.rule}）`);
+        failures.push(`${hit.file}: ${hit.reason} (detected_by=${hit.rule})`);
       }
     }
 

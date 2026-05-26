@@ -2,16 +2,16 @@
 /**
  * hooks/lib/sync-memory-files.js
  *
- * 把 OwnMind 雲端 memories 鏡射到本地 `<memoryDir>/` 的 md 檔 + MEMORY.md index。
+ * Mirror OwnMind cloud memories to local md files under `<memoryDir>/` plus a MEMORY.md index.
  *
- * 使用情境：SessionStart hook 呼叫 `/api/memory/sync`，把 JSON 從 stdin 餵進來；
- * 或用 `--fail` 模式標記最近一次同步失敗。
+ * Usage scenarios: the SessionStart hook calls `/api/memory/sync` and pipes the JSON in via stdin;
+ * or use `--fail` mode to mark the most recent sync attempt as failed.
  *
  * CLI usage:
  *   cat sync.json | node sync-memory-files.js
  *   node sync-memory-files.js --fail
  *
- * 必要 env：CLAUDE_PROJECT_DIR（否則 silent exit — 非 Claude Code 情境不做事）。
+ * Required env: CLAUDE_PROJECT_DIR (otherwise silent exit — outside Claude Code there's nothing to do).
  */
 
 import fs from 'node:fs';
@@ -81,8 +81,8 @@ export function buildMemoryIndex(entries, serverTime, syncFailed) {
   lines.push('');
   lines.push('# Memory Index');
   lines.push('');
-  lines.push('由 OwnMind SessionStart hook 自動從雲端同步；請勿手動編輯 — 會被下次 sync 覆蓋。');
-  lines.push('需要修改內容？用 `ownmind_update` MCP 工具改雲端，或到 Admin UI。');
+  lines.push('Auto-synced from the cloud by the OwnMind SessionStart hook; do not edit manually — your changes will be overwritten on the next sync.');
+  lines.push('Need to change content? Use the `ownmind_update` MCP tool to edit the cloud copy, or use the Admin UI.');
   lines.push('');
 
   const byType = {};
@@ -142,7 +142,7 @@ function applyFailMode(memoryIndexPath) {
       '',
       '# Memory Index',
       '',
-      '⚠️ Sync failed — 本地記憶可能過期。檢查 OwnMind server 連線後重新開 session 以同步。',
+      '⚠️ Sync failed — local memory may be stale. Check your connection to the OwnMind server, then open a new session to re-sync.',
       '',
     ].join('\n')
   );

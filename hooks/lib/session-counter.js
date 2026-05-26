@@ -1,23 +1,24 @@
 /**
- * Session counter — v1.19.3 reply-lint 漸進式 block 用
+ * Session counter — used by reply-lint's v1.19.3 gradual block.
  *
- * 對應 openspec/changes/v1.19.3-reply-lint-progressive-block/spec.md 場景 7 / 8 / 14
+ * Corresponds to openspec/changes/v1.19.3-reply-lint-progressive-block/spec.md scenarios 7 / 8 / 14.
  *
- * 為什麼存在：
- *   reply-lint hook 從「警告」升級「漸進式 block」：前 2 次警告、第 3 次預告、
- *   第 4 次才寫 block JSON。需要追蹤每個 Claude session 累積了幾次違規。
+ * Why this exists:
+ *   The reply-lint hook escalated from "warn-only" to "gradual block": first 2 violations are
+ *   warnings, the 3rd is a pre-announce, the 4th writes the block JSON. We need to track how many
+ *   violations have accumulated within each Claude session.
  *
- * 設計原則：
- *   - 純 file-based（不依賴 DB / server、hook 本地立即能用）
- *   - 失敗即默許（毀損 / 無權限 → 視為 0、不擋 hook 主流程）
- *   - 自掃 30 天前的 session 紀錄（避免檔長期膨脹）
- *   - 純函式風格、好測試（_resetCounterPathForTests 給測試用、prod 不會 call）
+ * Design principles:
+ *   - Pure file-based (no DB / server dependency — the hook can use it immediately, locally).
+ *   - Fail-soft (corruption / no permission → treat as 0; never block the hook flow).
+ *   - Auto-sweep sessions older than 30 days (keep the file bounded).
+ *   - Pure-function style for testability (_resetCounterPathForTests is for tests, prod doesn't call it).
  *
  * Schema:
  *   {
  *     "<session_id>": {
- *       "count": <int>,                       // 違規累積次數（決定何時進入 block）
- *       "block_count": <int>,                 // v1.19.7：已 block 的次數（決定何時降警告）
+ *       "count": <int>,                       // cumulative violation count (decides when to block)
+ *       "block_count": <int>,                 // v1.19.7: cumulative block count (decides when to downgrade)
  *       "last_violation_ts": "<ISO8601>",
  *       "started_at": "<ISO8601>"
  *     }
@@ -38,8 +39,8 @@ const DEFAULT_COUNTER_PATH = path.join(
 let counterPath = DEFAULT_COUNTER_PATH;
 
 /**
- * 測試用：override counter 檔路徑、或傳 null 還原預設
- * Prod 程式碼不應 call 這個
+ * For tests: override the counter file path, or pass null to restore the default.
+ * Production code MUST NOT call this.
  */
 export function _resetCounterPathForTests(p) {
   counterPath = p || DEFAULT_COUNTER_PATH;
@@ -52,7 +53,7 @@ function readAll() {
     const parsed = JSON.parse(raw);
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch {
-    // 毀損 / 無權限 / 任何 IO 錯 → 視為空、後續 write 會覆寫成乾淨檔
+    // Corruption / no permission / any IO error → treat as empty; subsequent writes overwrite cleanly.
     return {};
   }
 }
@@ -63,13 +64,13 @@ function writeAll(data) {
     fs.writeFileSync(counterPath, JSON.stringify(data, null, 2));
     return true;
   } catch {
-    // 無權限 / 磁碟滿 → 吞錯、hook 仍能繼續（只是計數不會累積）
+    // No permission / disk full → swallow; the hook still proceeds (count just doesn't accumulate).
     return false;
   }
 }
 
 /**
- * 讀取某 session 目前計數、檔不存在或毀損回 0
+ * Read the current count for a session; returns 0 if the file is missing or corrupt.
  */
 export function readCounter(sessionId) {
   if (!sessionId || typeof sessionId !== 'string') return 0;
@@ -78,8 +79,9 @@ export function readCounter(sessionId) {
 }
 
 /**
- * 將某 session 計數 +1、回新計數值
- * 寫入失敗（無權限 / 磁碟）也不丟、回 1（視為這次有違規、但下次讀回又是 0）
+ * Increment a session's counter by 1 and return the new value.
+ * On write failure (no permission / disk full), do not throw; return 1 (treat as "this turn
+ * violated; next read sees 0 again").
  */
 export function incrementCounter(sessionId) {
   if (!sessionId || typeof sessionId !== 'string') return 0;
@@ -101,11 +103,12 @@ export function incrementCounter(sessionId) {
 }
 
 /**
- * v1.19.7：讀某 session 已 block 次數、檔不存在或毀損回 0
+ * v1.19.7: read the block count for a session; returns 0 if file missing or corrupt.
  *
- * Block 次數獨立於 violation count：
- *   - violation count：累積到門檻才進入 block 狀態
- *   - block_count：實際把 AI 擋下重寫的次數；達到 3 就降警告（防死循環）
+ * Block count is independent of violation count:
+ *   - violation count: must hit threshold before entering the block state.
+ *   - block_count: actual number of times we've blocked the AI for rewrite; at 3 we downgrade
+ *     to warning (loop protection).
  */
 export function readBlockCount(sessionId) {
   if (!sessionId || typeof sessionId !== 'string') return 0;
@@ -114,10 +117,10 @@ export function readBlockCount(sessionId) {
 }
 
 /**
- * v1.19.7：將某 session 的 block 次數 +1、回新值
+ * v1.19.7: increment a session's block count by 1 and return the new value.
  *
- * 寫失敗（無權限）也不丟、回 1 視為「這次有 block 但下次讀回 0」。
- * Session 紀錄不存在會自動建立。
+ * On write failure (no permission), do not throw; return 1 (treat as "this turn blocked; next
+ * read sees 0 again"). If no session record exists, create one.
  */
 export function incrementBlockCount(sessionId) {
   if (!sessionId || typeof sessionId !== 'string') return 0;
@@ -142,10 +145,11 @@ export function incrementBlockCount(sessionId) {
 }
 
 /**
- * v1.19.7：清零某 session 的 block 次數（不動 violation count）
+ * v1.19.7: reset a session's block count to 0 (does not touch violation count).
  *
- * 觸發時機：reply-lint 通過時呼叫，避免跨 turn 計數累積誤觸發降警告。
- * 不丟錯：session 紀錄不存在直接 noop。
+ * Trigger: called when reply-lint passes, to prevent stale cross-turn counts from incorrectly
+ * triggering the downgrade.
+ * Never throws: no session record → noop.
  */
 export function resetBlockCount(sessionId) {
   if (!sessionId || typeof sessionId !== 'string') return;
@@ -158,8 +162,8 @@ export function resetBlockCount(sessionId) {
 }
 
 /**
- * 清掉 started_at 超過 maxAgeMs 的 session 紀錄
- * 不丟錯（檔不存在 / 毀損都 noop）
+ * Sweep session records whose started_at is older than maxAgeMs.
+ * Never throws (missing / corrupt file → noop).
  */
 export function cleanupStale(maxAgeMs) {
   const all = readAll();

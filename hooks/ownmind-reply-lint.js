@@ -2,60 +2,62 @@
 /**
  * OwnMind Reply Lint — Claude Code Stop Hook (v1.17.96)
  *
- * 設計目的（接 v1.17.95 + IR-027「提醒無效，邏輯才有效」）：
- *   v1.17.95 把 IR-037（中英混雜）+ IR-036（行話沒附白話說明）的判斷邏輯
- *   抽到 shared/language-lint.js 純函式 lib，但沒整合到任何卡關點 — AI
- *   還是靠自覺、IR-027 沒落地。
+ * Purpose (extends v1.17.95 + IR-027 "reminders don't work, only logic does"):
+ *   v1.17.95 extracted the IR-037 (mixed Chinese-English) and IR-036 (jargon without
+ *   plain-Chinese explanation) detection logic into shared/language-lint.js as a pure
+ *   function lib, but never wired it into any gating point — the AI still relied on
+ *   self-discipline, so IR-027 never actually landed.
  *
- *   v1.17.96 在 Claude Code Stop hook（每輪 AI 回話結束時觸發）讀 transcript、
- *   抽最後一輪 assistant 的 text、跑 lintReply、違反就：
- *     1. 寫 banner 到 user terminal（重用 ownmind-tty-echo.cjs 的 writeToTty 邏輯）
- *     2. 寫 compliance event 到 ~/.ownmind/logs/YYYY-MM-DD.jsonl（給 MCP buffer 撿走）
- *        + best-effort POST /api/activity/batch（spool 是保底、POST 是快路徑）
+ *   v1.17.96 plugs into the Claude Code Stop hook (fires at the end of every AI turn),
+ *   reads the transcript, extracts the last assistant text, runs lintReply, and on
+ *   violations:
+ *     1. Writes a banner to the user terminal (reuses writeToTty from ownmind-tty-echo.cjs)
+ *     2. Writes a compliance event to ~/.ownmind/logs/YYYY-MM-DD.jsonl (picked up by MCP buffer)
+ *        + best-effort POST /api/activity/batch (spool is the fallback, POST is the fast path)
  *
- * Vin 三條規格（沿用 v1.17.71 ownmind-tty-echo.cjs）：
- *   1. 嚴禁被 AI 過濾或吃掉 — 不寫 stderr / stdout / additionalContext
- *   2. 主路徑寫 /dev/tty (mac/linux) 或 \\.\CONOUT$ (Windows)、繞過 Claude Code hook output
- *   3. Fallback 寫 ~/.ownmind/logs/banner-pending.jsonl，下次 SessionStart 補印
+ * Vin's 3 specs (inherited from v1.17.71 ownmind-tty-echo.cjs):
+ *   1. MUST NOT be filtered or swallowed by the AI — never write stderr / stdout / additionalContext
+ *   2. Primary path writes to /dev/tty (mac/linux) or \\.\CONOUT$ (Windows), bypassing the Claude Code hook output channel
+ *   3. Fallback writes to ~/.ownmind/logs/banner-pending.jsonl; next SessionStart flushes it
  *
- * Stop hook stdin 規格（Claude Code 官方）：
+ * Stop hook stdin schema (Claude Code official):
  *   {
  *     session_id: string,
  *     transcript_path: string,    // ~/.claude/projects/<proj>/<session>.jsonl
  *     hook_event_name: 'Stop',
- *     stop_hook_active: boolean   // true 代表這次 Stop 是因為前一個 hook block 觸發
- *                                 // → 必須立刻退出避免無限迴圈
+ *     stop_hook_active: boolean   // true means this Stop was triggered by a previous hook block
+ *                                 // → must exit immediately to avoid infinite loop
  *   }
  *
- * Transcript JSONL 格式（每行一個 message）：
+ * Transcript JSONL format (one message per line):
  *   { type: 'assistant', message: { content: [{type: 'text', text: '...'}, ...] }, ... }
  *
- * Activity log schema（對齊 src/routes/activity.js batch handler、mcp/ownmind-log.js logEvent）：
+ * Activity log schema (aligned with src/routes/activity.js batch handler and mcp/ownmind-log.js logEvent):
  *   { ts: ISO8601, event: 'iron_rule_compliance', tool: 'claude-code',
  *     source: 'reply-lint-hook',
  *     details: { action: 'violate', rule_code, rule_title, ... } }
  *
- * 永遠 exit 0（不擋 AI 流程）。
+ * Always exit 0 (never block the AI flow).
  *
- * 環境變數（測試 / opt-out 用）：
- *   OWNMIND_TTY_FORCE_FALLBACK=1     強制走 fallback file（測試用）
- *   OWNMIND_TTY_OVERRIDE=<path>      tty 路徑改用這個檔（測試用）
- *   OWNMIND_REPLY_LINT_NO_NETWORK=1  禁止 POST /api/activity/batch（測試用）
- *   OWNMIND_REPLY_LINT_DISABLE=1     完全跳過 lint（user opt-out）
- *   OWNMIND_REPLY_LINT_API_URL       覆寫 API URL（測試用 fake server）
+ * Environment variables (test / opt-out):
+ *   OWNMIND_TTY_FORCE_FALLBACK=1     Force the fallback file path (test)
+ *   OWNMIND_TTY_OVERRIDE=<path>      Use this path as the tty target (test)
+ *   OWNMIND_REPLY_LINT_NO_NETWORK=1  Disable POST /api/activity/batch (test)
+ *   OWNMIND_REPLY_LINT_DISABLE=1     Skip lint entirely (user opt-out)
+ *   OWNMIND_REPLY_LINT_API_URL       Override API URL (test with a fake server)
  */
 
 // ============================================================
-// IR-027 spec #3 (絕對): 永遠不寫 stderr / stdout
-// 註冊 process-wide handlers 蓋住任何同步 / 非同步例外，
-// 包括 import-time 失敗、unhandled rejection、uncaughtException。
-// 這必須在任何其他邏輯前最早設定。
+// IR-027 spec #3 (absolute): never write stderr / stdout.
+// Register process-wide handlers covering every sync / async exception,
+// including import-time failures, unhandled rejections, uncaughtException.
+// These MUST be installed before any other logic.
 // ============================================================
 process.on('uncaughtException', () => { try { process.exit(0); } catch { /* ignore */ } });
 process.on('unhandledRejection', () => { try { process.exit(0); } catch { /* ignore */ } });
 
-// 只 import Node built-ins（這些絕不會在 module load 時失敗）。
-// 對 shared/* 模組改用 dynamic import 包在 try/catch 裡（v1.17.96 review A2）。
+// Only import Node built-ins (these are guaranteed not to fail at module load time).
+// shared/* modules are loaded via dynamic import wrapped in try/catch (v1.17.96 review A2).
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -69,55 +71,57 @@ const NO_NETWORK = process.env.OWNMIND_REPLY_LINT_NO_NETWORK === '1';
 const DISABLED = process.env.OWNMIND_REPLY_LINT_DISABLE === '1';
 const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
 
-// v1.19.3：MODE env、漸進式 block
-// v1.19.4：預設從 warn 翻成 block（IR-027 邏輯才有效——opt-in 等於沒落地）
-// v1.19.7：block 路徑改用 exit 2 + stderr reason（取代 stdout JSON），新增連續 block 達
-//          BLOCK_DOWNGRADE_LIMIT 次後降警告（避免 AI 死循環、給 user 手動介入機會）
-// - block（預設）：違規累積到 BLOCK_THRESHOLD（4 次）後 exit 2 + stderr 觸發 Claude 重寫
-//                  前 3 次只警告（漸進緩衝、避免單一誤判毀對話）
-//                  連續 block 達 3 次仍違反 → 降警告 exit 1（防死循環）
-// - warn：違規寫 banner、永遠不 block（opt-out、給覺得太煩的 user）
-// - disable：完全跳過（同 OWNMIND_REPLY_LINT_DISABLE=1）
-// - 未知值（fail-open）：當 warn 處理 + banner 加提示
+// v1.19.3: MODE env, gradual block
+// v1.19.4: default flipped from warn to block (IR-027 says logic-only — opt-in equals "not deployed")
+// v1.19.7: block path switched to exit 2 + stderr reason (replacing stdout JSON); also added
+//          downgrade to warning after BLOCK_DOWNGRADE_LIMIT consecutive blocks (avoid an AI loop
+//          and give the user a chance to step in manually)
+// - block (default): violations accumulate; once count reaches BLOCK_THRESHOLD (4) → exit 2 + stderr
+//                    triggers Claude rewrite. First 3 violations only warn (gradual buffer, avoids one
+//                    misfire destroying a conversation). After 3 consecutive blocks → downgrade to
+//                    warning exit 1 (loop protection).
+// - warn: violations write a banner but never block (opt-out for users who find it noisy).
+// - disable: skip entirely (same as OWNMIND_REPLY_LINT_DISABLE=1).
+// - unknown value (fail-open): treat as warn + add a banner notice.
 const RAW_MODE = (process.env.OWNMIND_REPLY_LINT_MODE || 'block').toLowerCase();
 const VALID_MODES = new Set(['warn', 'block', 'disable']);
 const MODE = VALID_MODES.has(RAW_MODE) ? RAW_MODE : 'warn';
 const MODE_INVALID = !VALID_MODES.has(RAW_MODE);
-const BLOCK_THRESHOLD = 4;  // 第 4 次違規才 block（前 3 次警告）
-const BLOCK_DOWNGRADE_LIMIT = 3;  // v1.19.7：已連續 block 這麼多次後、下次違規降警告
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 天
+const BLOCK_THRESHOLD = 4;  // 4th violation triggers block (first 3 only warn)
+const BLOCK_DOWNGRADE_LIMIT = 3;  // v1.19.7: after this many consecutive blocks, downgrade next violation to warning
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 30 days
 
 const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'banner-pending.jsonl');
 const PENDING_FILE_MAX_BYTES = 1024 * 1024;
 
-// v1.17.97 — POST 失敗 / NO_NETWORK 才 spool 到這個檔；SessionStart 補送。
-// 跟 archive YYYY-MM-DD.jsonl 分開：archive 是 debugging 用、pending 是 retry queue。
+// v1.17.97 — only spool to this file when POST fails or NO_NETWORK; SessionStart resends.
+// Kept separate from the archive YYYY-MM-DD.jsonl: archive is for debugging, pending is the retry queue.
 const COMPLIANCE_PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'reply-lint-pending.jsonl');
 
-// 防呆：transcript 檔太大時只讀尾巴（避免巨大 session 拖慢 hook）。
-// 一行 JSON 通常 < 50KB；256KB 足夠覆蓋最後 5+ 輪 messages。
+// Safety: when the transcript file is large, only read the tail (avoid slowing the hook on huge sessions).
+// A single JSON line is usually < 50KB; 256KB covers the last 5+ messages.
 const MAX_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 
-// POST timeout — Stop hook 不該卡太久（user 等下一個 prompt）
+// POST timeout — Stop hook must not block too long (user is waiting for the next prompt).
 const POST_TIMEOUT_MS = 1500;
 
 main().catch(() => { try { process.exit(0); } catch { /* ignore */ } });
 
 async function main() {
-  // v1.19.3: MODE=disable 等同舊 DISABLED env
+  // v1.19.3: MODE=disable is equivalent to the legacy DISABLED env.
   if (DISABLED || MODE === 'disable') { process.exit(0); return; }
 
-  // dynamic import shared/* 包在 try：失敗也不外漏（review A2）
-  // v1.19: 全部 shared/* 與 hooks/lib/* 統一 catch → exit 0、不再 inline fallback（review M-2）
-  // v1.19.3: 新增 session-counter
-  // v1.20.3: 新增 session-off-state（session 暫時關閉開關）
+  // dynamic import of shared/* wrapped in try: failure must not leak (review A2).
+  // v1.19: all shared/* and hooks/lib/* uniformly caught → exit 0, no inline fallback (review M-2).
+  // v1.19.3: added session-counter
+  // v1.20.3: added session-off-state (temporary session disable toggle)
   let lintReply, readCredentials, getClientVersion, getTierFromRules, buildComplianceEvents;
   let incrementCounter, cleanupStale, incrementBlockCount, readBlockCount, resetBlockCount;
   let detectPrivacyLeak;
   let writeLintEvent, extractViolatedWords;
   let isOff, incrementTickCount;
-  // v1.21.0：validator 註冊表（規則驅動 lint）
+  // v1.21.0: validator registry (rule-driven lint).
   let findValidator, extractEnabledValidators;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
@@ -149,13 +153,13 @@ async function main() {
   } catch { process.exit(0); return; }
   if (!payload) { process.exit(0); return; }
 
-  // stop_hook_active=true 代表這次 Stop 是因為前一個 hook block 觸發
-  // → 立刻退出避免無限迴圈（Claude Code Stop hook 規格）
-  // v1.19.3：這也保證 Claude 重寫過程的 Stop 不會被重複計數
+  // stop_hook_active=true means this Stop was triggered by a previous hook block →
+  // exit immediately to avoid an infinite loop (Claude Code Stop hook spec).
+  // v1.19.3: also guarantees the Stop during Claude rewrite isn't counted again.
   if (payload.stop_hook_active === true) { process.exit(0); return; }
 
-  // v1.20.3：user 用 /ownmind-off 暫時關閉鉤子 → 跳過 lint、每 10 輪終端機提醒
-  // 新 session 開啟時、SessionStart 鉤子會主動清狀態檔、自動恢復
+  // v1.20.3: user invoked /ownmind-off → skip lint, remind in the terminal every 10 turns.
+  // When a new session starts, the SessionStart hook clears the state file automatically.
   if (typeof isOff === 'function' && isOff()) {
     try {
       const tick = incrementTickCount();
@@ -169,27 +173,30 @@ async function main() {
         const wrote = !FORCE_FALLBACK && writeToTty(reminder);
         if (!wrote) writeFallback(reminder);
       }
-    } catch { /* 提醒失敗不擋主流程 */ }
+    } catch { /* reminder failure must not block the main flow */ }
     process.exit(0); return;
   }
 
   const transcriptPath = sanitizeTranscriptPath(payload.transcript_path);
   if (!transcriptPath) { process.exit(0); return; }
 
-  // v1.19.12：一次讀 transcript 同時抽 last assistant text + 最近 user prompts
-  // （取代 v1.19.7 的兩次 statSync + readFileSync、I/O 減半）
-  // user prompts 給 privacy detector 當例外比對來源：使用者自己提到的個資、AI 引用不算外洩
-  // 註：使用者若有對應的隱私鐵律（例如 Vin 的 IR-041）、會收到事件編號 'privacy_check'
-  //     再由各自的鐵律判斷要不要擋；hook 本身不綁特定使用者編號（v1.19.10 中性化調整）
-  // v1.20.2 follow-up #3：除了 lastAssistantText / userPrompts、再抽歷史 assistant corpus
-  // 給 IR-036 跨 reply 詞彙記憶用（規則內文寫「上下文已說明過可保留不改」、現在有實作）
+  // v1.19.12: single transcript read pulls both the last assistant text and recent user prompts
+  // (replaces v1.19.7's two statSync + readFileSync calls, halving I/O).
+  // User prompts are passed to the privacy detector as an exemption source: personal data the user
+  // typed themselves and the AI quotes back shouldn't count as a leak.
+  // Note: users with a matching privacy iron rule (e.g. Vin's IR-041) receive the event code
+  //       'privacy_check' and their rule decides whether to block; the hook itself is not bound
+  //       to any specific user's rule number (v1.19.10 neutralization).
+  // v1.20.2 follow-up #3: in addition to lastAssistantText / userPrompts, also extract historical
+  // assistant corpus for IR-036 cross-reply vocabulary memory (the rule's text says "if already
+  // explained in context, may be kept" — now actually implemented).
   const { lastAssistantText, recentUserPrompts: userPrompts, historicalAssistantCorpus } = readTranscriptTail(transcriptPath);
   if (!lastAssistantText) { process.exit(0); return; }
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
 
-  // v1.21.0：規則驅動 — 從 user 鐵律快取找啟用的 validator
-  // 沒任何 user 啟用 → 鉤子完全不擋（白話：使用者沒設規則、OwnMind 安靜）
+  // v1.21.0: rule-driven — look up enabled validators from the user's iron rule cache.
+  // No user has any enabled → the hook does nothing (the user set no rules, so OwnMind stays quiet).
   let resolvedValidators = [];
   try {
     const rulesForValidator = readIronRulesCache();
@@ -208,7 +215,7 @@ async function main() {
         })
         .filter(Boolean);
     }
-  } catch { /* fail-open：找不到 validator 就視為沒啟用 */ }
+  } catch { /* fail-open: validator not found → treat as not enabled */ }
 
   let lintResult = { ok: true, violations: [] };
   try {
@@ -222,36 +229,37 @@ async function main() {
 
   const combinedOk = violations.length === 0;
   if (combinedOk) {
-    // v1.19.7：通過時清零 block_count、讓下個 turn 的計數重新開始
+    // v1.19.7: when lint passes, reset block_count so the next turn starts fresh.
     try { resetBlockCount(sessionId); } catch { /* swallow */ }
     process.exit(0); return;
   }
 
-  // === v1.19.3: 違規計數累積 + 決定是否 block ===
+  // === v1.19.3: accumulate violation count and decide whether to block ===
   //
-  // v1.19.7 code-review M-1 partial-failure window 註記：
-  // 違規路徑的寫入順序是 count → block_count（達門檻時）→ stderr → compliance event
-  //（spool / POST）。若 hook 被 SIGKILL 等強制終止、可能落在中間任意點：
-  //   - count 已 +1 但 block_count 未 +1：下次 hook 仍會走正常 block 路徑、
-  //     最多多警告 1 次、無資料損壞
-  //   - block_count 已 +1 但 compliance event 未寫：admin 看不到該筆 block 紀錄、
-  //     但 hook 行為仍正確
-  // 這是可接受的觀測性退化（observability degradation：意指統計資料殘缺、
-  // 但實際擋下邏輯沒受影響）。Stop hook 不該為了交易完整性引入 fsync。
-  let currentCount = 1;  // 預設 1（incrementCounter 失敗時的 fallback）
+  // v1.19.7 code-review M-1 partial-failure window note:
+  // The violation path writes in this order: count → block_count (when threshold reached) →
+  // stderr → compliance event (spool / POST). If the hook is force-killed (e.g. SIGKILL),
+  // we may land between any two steps:
+  //   - count already +1 but block_count not yet +1: next hook still takes the normal block
+  //     path; worst case is one extra warning, no data corruption.
+  //   - block_count already +1 but the compliance event wasn't written: admin loses that block
+  //     record, but the hook's blocking behavior is still correct.
+  // This is acceptable observability degradation (partial stats, but the actual block logic
+  // is unaffected). A Stop hook should not introduce fsync just for transactional integrity.
+  let currentCount = 1;  // default 1 (fallback when incrementCounter fails)
   try { currentCount = incrementCounter(sessionId); } catch { /* swallow */ }
-  // best-effort 自掃過期 session（每次 hook 觸發跑一下、避免檔無限長）
+  // best-effort sweep of expired sessions (run once per hook trigger to bound file size).
   try { cleanupStale(SESSION_TTL_MS); } catch { /* swallow */ }
 
   const reachedBlockThreshold = MODE === 'block' && currentCount >= BLOCK_THRESHOLD;
 
-  // === v1.19.7：連續 block 達門檻 → 降警告（防 AI 死循環）===
+  // === v1.19.7: consecutive blocks reached limit → downgrade to warning (prevent AI loop) ===
   let priorBlockCount = 0;
   try { priorBlockCount = readBlockCount(sessionId); } catch { /* swallow */ }
   const downgradeToWarning = reachedBlockThreshold && priorBlockCount >= BLOCK_DOWNGRADE_LIMIT;
   const shouldHardBlock = reachedBlockThreshold && !downgradeToWarning;
 
-  // === Banner 路徑（給 user 看）===
+  // === Banner path (shown to the user) ===
   const banner = formatBanner(violations, getClientVersion, {
     mode: MODE,
     modeInvalid: MODE_INVALID,
@@ -267,13 +275,13 @@ async function main() {
     if (!wrote) writeFallback(banner);
   }
 
-  // === v1.19.7：block reason 寫 stderr 給 Claude / user 看（取代舊 stdout JSON）===
+  // === v1.19.7: write block reason to stderr (replacing the old stdout JSON) ===
   let exitCode = 0;
   if (shouldHardBlock) {
     try { incrementBlockCount(sessionId); } catch { /* swallow */ }
     const reason = formatBlockReason(violations, { priorBlockCount });
     try { process.stderr.write(reason + '\n'); } catch { /* ignore */ }
-    // v1.20.2 follow-up #3：附帶 bug report 路徑、AI 認為 lint 判斷有問題時可送回報
+    // v1.20.2 follow-up #3: include the bug-report path so the AI can report when it thinks lint is wrong.
     try {
       process.stderr.write(
         '[OwnMind bug report] Think this lint decision is wrong (e.g. an already-explained term was blocked)? Call ownmind_report_bug to file a report. ' +
@@ -282,7 +290,7 @@ async function main() {
     } catch { /* ignore */ }
     exitCode = 2;
 
-    // v1.19.11：寫結構化擋下事件、為自學機制鋪資料根基
+    // v1.19.11: write a structured block event as data foundation for the self-learning mechanism.
     try {
       writeLintEvent({
         sessionId,
@@ -294,11 +302,11 @@ async function main() {
         downgradedToWarning: false,
         aiInstructedToAnnotate: true,
       });
-    } catch { /* swallow、不擋主流程 */ }
+    } catch { /* swallow, must not block the main flow */ }
   } else if (downgradeToWarning) {
     const note = formatDowngradeNotice(priorBlockCount, violations);
     try { process.stderr.write(note + '\n'); } catch { /* ignore */ }
-    // v1.20.2 follow-up #3：降警告路徑也附 bug report 路徑
+    // v1.20.2 follow-up #3: the downgrade path also includes the bug-report path.
     try {
       process.stderr.write(
         '[OwnMind bug report] Think this lint decision is wrong? Call ownmind_report_bug to file a report. ' +
@@ -307,7 +315,7 @@ async function main() {
     } catch { /* ignore */ }
     exitCode = 1;
 
-    // v1.19.11：降警告也寫一筆紀錄
+    // v1.19.11: the downgrade path also writes one record.
     try {
       writeLintEvent({
         sessionId,
@@ -322,11 +330,11 @@ async function main() {
     } catch { /* swallow */ }
   }
 
-  // === Compliance event 路徑（跨 session 統計）===
+  // === Compliance event path (cross-session stats) ===
   const cachedRules = readIronRulesCache();
   const events = buildComplianceEvents(violations, cachedRules, getTierFromRules);
   if (downgradeToWarning) {
-    // v1.19.7：每筆違規額外標 repeated_violation_softblock，給 admin 追警告降級事件
+    // v1.19.7: also tag each violation as repeated_violation_softblock so admin can track downgrade events.
     for (const ev of events) {
       if (ev?.details) ev.details.action = 'repeated_violation_softblock';
     }
@@ -364,14 +372,14 @@ function safeParse(s) {
 }
 
 /**
- * 清洗 transcript_path（review B1 — defensive）：
- *   - 必須是字串
- *   - 必須以 .jsonl 結尾
- *   - realpath 後必須是 regular file（拒絕 symlink 指向奇怪地方）
- *   - 大小 > 0
+ * Sanitize transcript_path (review B1 — defensive):
+ *   - must be a string
+ *   - must end in .jsonl
+ *   - after realpath must be a regular file (reject symlinks pointing somewhere odd)
+ *   - size > 0
  *
- * 註：Claude Code 自己控 stdin payload、不是真有攻擊者餵 path，
- *     但 Stop hook 是公開 surface area、寫防呆檢查比較安心。
+ * Note: Claude Code controls its own stdin payload — there isn't really an attacker feeding a path,
+ *       but the Stop hook is a public surface, so defensive checks here cost very little.
  */
 function sanitizeTranscriptPath(p) {
   if (!p || typeof p !== 'string') return null;
@@ -388,19 +396,19 @@ function sanitizeTranscriptPath(p) {
 }
 
 /**
- * v1.19.12：合併 transcript 一次讀取、回傳「最後一輪 assistant text + 最近 N 輪 user prompts」。
+ * v1.19.12: merged transcript read — returns "last assistant text + recent N user prompts" in one pass.
  *
- * 取代 v1.19.7 的 readLastAssistantText + readRecentUserPrompts（兩次 statSync + readFileSync）。
- * 大 transcript 情境節省一半 I/O。
+ * Replaces v1.19.7's readLastAssistantText + readRecentUserPrompts (two statSync + readFileSync).
+ * Saves half the I/O on large transcripts.
  *
- * 防呆：
- *   - 檔案大時只讀尾巴 256KB（最後一輪通常在末尾）
- *   - 尾巴讀法可能從某行中間切到 → 丟掉第一行（review B4）
+ * Safety:
+ *   - On large files, only read the last 256KB (the latest turn is almost always at the tail).
+ *   - Tail read may slice mid-line → discard the first line (review B4).
  *
- * user message content 有兩種型態：
- *   1. 字串：{ message: { role: 'user', content: '你好' } }
- *   2. 陣列：{ message: { role: 'user', content: [{ type: 'text', text: '...' }] } }
- * 兩種都支援。
+ * User message content has two shapes:
+ *   1. String: { message: { role: 'user', content: 'hi' } }
+ *   2. Array:  { message: { role: 'user', content: [{ type: 'text', text: '...' }] } }
+ * Both are supported.
  *
  * @param {string} transcriptPath
  * @param {object} [opts]
@@ -433,16 +441,16 @@ function readTranscriptTail(transcriptPath, opts = {}) {
   }
 
   let lines = buf.split('\n').filter(Boolean);
-  // truncatedHead=true 時第一行可能從某筆 JSON 中間切起 → 丟掉（review B4）
+  // When truncatedHead=true, the first line may start mid-JSON → discard it (review B4).
   if (truncatedHead && lines.length > 0) lines = lines.slice(1);
 
   let lastAssistantText = null;
   const recentUserPrompts = [];
-  // v1.20.2 follow-up #3：抽全部前輪 assistant text（不含最後一輪）
-  // 給 IR-036 lintReply 當歷史 corpus、實現「上下文已說明過的詞可保留」邏輯
+  // v1.20.2 follow-up #3: extract all prior assistant text (excluding the latest turn)
+  // as the historical corpus for IR-036 lintReply — implements "if already explained in context, may be kept".
   const historicalAssistantTexts = [];
 
-  // 從後往前掃、同時抽 last assistant + 最近 N 輪 user + 全部前輪 assistant 歷史
+  // Scan from the end backwards, simultaneously extracting last assistant + recent N user + all prior assistant history.
   for (let i = lines.length - 1; i >= 0; i--) {
     const entry = safeParse(lines[i]);
     if (!entry) continue;
@@ -478,30 +486,30 @@ function readTranscriptTail(transcriptPath, opts = {}) {
     }
   }
 
-  // 歷史 corpus 按時間順序合併（從後往前掃集到的、要反轉成從前往後）
+  // Historical corpus merged in chronological order (we scanned tail-to-head; reverse back to head-to-tail).
   const historicalAssistantCorpus = historicalAssistantTexts.reverse().join('\n\n');
 
   return { lastAssistantText, recentUserPrompts, historicalAssistantCorpus };
 }
 
 /**
- * 把 lint violations 包成招牌格式（沿用 ownmind-tty-echo.cjs 視覺風格）。
+ * Wrap lint violations into the brand banner format (matches ownmind-tty-echo.cjs visual style).
  *
- * v1.19.3：加 MODE 與 session 計數顯示
- * v1.19.7：新增「連續 block 達門檻、降為警告」狀態
+ * v1.19.3: added MODE and session count display.
+ * v1.19.7: added the "consecutive blocks reached limit, downgrade to warning" state.
  *
- * 範例（warn mode）：
- *   【OwnMind v1.19.3】回話品質 lint（warn mode、本 session 累積 1 次）
- *     ⚠️  IR-037: 中英混雜比例 32% > 15% — refactor, codebase, ...
+ * Example (warn mode):
+ *   [OwnMind v1.19.3] Reply quality lint (warn mode, session count 1)
+ *     ⚠️  IR-037: mixed Chinese-English ratio 32% > 15% — refactor, codebase, ...
  *
- * 範例（block mode、第 3 次預告）：
- *   【OwnMind v1.19.3】回話品質 lint（block mode、本 session 累積 3 次、下次違規會 block）
+ * Example (block mode, 3rd warning):
+ *   [OwnMind v1.19.3] Reply quality lint (block mode, session count 3, next violation will block)
  *
- * 範例（block mode、第 4 次觸發 block）：
- *   【OwnMind v1.19.3】回話品質 lint ⚠️ 已觸發 block、Claude 將收到重寫指令
+ * Example (block mode, 4th triggers block):
+ *   [OwnMind v1.19.3] Reply quality lint ⚠️ Block triggered, Claude will receive a rewrite directive
  *
- * 範例（連續 block 達 3 次後降警告）：
- *   【OwnMind v1.19.7】回話品質 lint ⚠️ 連續擋 3 次降警告（請手動 review）
+ * Example (downgraded after 3 consecutive blocks):
+ *   [OwnMind v1.19.7] Reply quality lint ⚠️ 3 consecutive blocks — downgrading to warning (please review manually)
  */
 function formatBanner(violations, getClientVersion, opts = {}) {
   if (!Array.isArray(violations) || violations.length === 0) return null;
@@ -544,13 +552,14 @@ function formatBanner(violations, getClientVersion, opts = {}) {
 }
 
 /**
- * v1.19.7：把 privacy 命中的個資項目壓成一個摘要字串（type×n 形式）
+ * v1.19.7: compress matched privacy items into one summary string (type×n form).
  *
- * v1.19.12 同步說明：labels 跟 shared/privacy-detect.js 的 PRIVACY_TYPE_LABELS
- * 必須保持一致；那邊有 export PRIVACY_TYPE_LABELS 給其他模組共用、未來新增類型時
- * 兩處都要更新。這裡用本地常數而非 dynamic import 是因為函式跑在 module top-level、
- * 不適合 import 失敗時整個 hook 卡住。fallback `labels[t] || t` 仍能保證未知類型
- * 不會破版面。
+ * v1.19.12 sync note: `labels` here must stay in sync with PRIVACY_TYPE_LABELS in
+ * shared/privacy-detect.js — that module exports PRIVACY_TYPE_LABELS for shared use, and when
+ * new types are added both places must be updated. We use a local constant rather than dynamic
+ * import because this function runs at module top level — we don't want an import failure to
+ * lock up the whole hook. The fallback `labels[t] || t` still guarantees unknown types won't
+ * break formatting.
  */
 function formatPrivacySummary(matches) {
   if (!Array.isArray(matches) || matches.length === 0) return '';
@@ -569,9 +578,9 @@ function formatPrivacySummary(matches) {
 }
 
 /**
- * v1.19.7：連續 block 達門檻後降警告時、寫到 stderr 給 user 看的訊息
- * （exit 1 而非 exit 2、所以這段訊息會被 Claude Code 視為 non-blocking 警告
- *  顯示給 user、不會餵回 Claude 當下個 prompt）
+ * v1.19.7: message written to stderr (for the user) when downgrading to warning after consecutive blocks.
+ * (Uses exit 1 rather than exit 2 — Claude Code treats this as a non-blocking warning shown to the user,
+ *  and it is NOT fed back to Claude as the next prompt.)
  */
 function formatDowngradeNotice(priorBlockCount, violations) {
   const ruleList = Array.isArray(violations)
@@ -585,20 +594,20 @@ function formatDowngradeNotice(priorBlockCount, violations) {
 }
 
 /**
- * v1.19.3：把 violations 包成「指令型」reason、給 Claude Code block 後餵 Claude 當下一個 prompt
+ * v1.19.3: package violations into a directive-style reason fed to Claude as the next prompt after a block.
  *
- * Codex 對抗審查警告：reason 是「下一個 prompt」、不是「修正指令」。
- *   ❌ 報告型：「你違反 IR-037、比例 32%、找到 5 個英文詞」
- *   ✅ 指令型：「請重寫剛才那則回應、用白話中文取代以下英文詞...」
+ * Codex review counter-warning: the reason is "the next prompt", not "a list of corrections".
+ *   ❌ Report style: "You violated IR-037, ratio 32%, found 5 English words"
+ *   ✅ Directive style: "Please rewrite the previous response, using plain Chinese to replace the following English terms..."
  *
- * 重寫提示要：
- *   1. 用動詞「請重寫」開頭
- *   2. 列出具體問題詞、Claude 才知道改哪些
- *   3. 給改寫格式範例（白話、括號附中文等）
- *   4. 加例外指引（變數名 / 函式名等不用改）、避免 Claude 把 code 也改壞
+ * The rewrite directive must:
+ *   1. Start with an imperative verb ("Please rewrite")
+ *   2. List the specific offending words so Claude knows what to change
+ *   3. Give format examples (plain Chinese, parenthetical explanations, etc.)
+ *   4. Include exceptions (variable names / function names need not change) so Claude doesn't break code
  */
-// v1.20.4：事件常數的中文顯示名對應、內聯避免 scope / import 問題
-// 跟 shared/lint-event-types.js 的 EVENT_DISPLAY_NAMES 保持同步
+// v1.20.4: event-code → display-name mapping, inlined to avoid scope / import issues.
+// Must stay in sync with EVENT_DISPLAY_NAMES in shared/lint-event-types.js.
 const _EVENT_DISPLAY_NAMES = {
   lint_language_mixed_ratio: 'Mixed Chinese-English',
   lint_jargon_explanation_required: 'Jargon quality',
@@ -610,11 +619,12 @@ function _displayEventName(code) {
 
 function formatBlockReason(violations, opts = {}) {
   const priorBlockCount = typeof opts.priorBlockCount === 'number' ? opts.priorBlockCount : 0;
-  // v1.20.4：用中文事件名拼接、不再吐個人鐵律編號（白話：避免 Eric 之類其他 user 看到「IR-036」）
+  // v1.20.4: assemble using display names; no longer leak personal iron rule numbers
+  // (so e.g. another user like Eric never sees "IR-036" in their banner).
   const ruleCodes = violations.map(v => _displayEventName(v.rule)).join(' + ');
 
-  // v1.19.11 分級顯示：第 2-3 次擋下只給簡短訊息、避免使用者疲勞
-  // priorBlockCount=0 是「第 1 次擋」、=1 是「第 2 次擋」、=2 是「第 3 次擋」
+  // v1.19.11 graded display: for 2nd–3rd consecutive block show a brief message to avoid user fatigue.
+  // priorBlockCount=0 means "1st block", =1 means "2nd block", =2 means "3rd block".
   if (priorBlockCount >= 1 && priorBlockCount <= 2) {
     return [
       `↻ Previous response violated ${ruleCodes} — Claude was instructed to rewrite (session block #${priorBlockCount + 1}).`,
@@ -626,13 +636,13 @@ function formatBlockReason(violations, opts = {}) {
     ].join('\n');
   }
 
-  // 第 1 次擋下（priorBlockCount=0）或第 4 次以後（不應走到、走 downgrade）→ 完整訊息
+  // 1st block (priorBlockCount=0) or 4th and later (shouldn't reach — downgrade path catches it) → full message.
   const lines = [];
   lines.push('Please rewrite your previous response to fix the following quality issues (preserve meaning, only change language style):');
   lines.push('');
 
-  // v1.19.7 code-review I-5：用 running counter 動態編號、
-  // 避免只命中部分規則時編號從 "3." 開始的孤立現象
+  // v1.19.7 code-review I-5: use a running counter for dynamic numbering,
+  // avoiding the orphan effect where partial-match cases start at "3.".
   let n = 1;
   for (const v of violations) {
     if (v.rule === 'lint_language_mixed_ratio') {
@@ -652,8 +662,8 @@ function formatBlockReason(violations, opts = {}) {
       lines.push('');
       n += 1;
     } else if (v.rule === 'privacy_check') {
-      // v1.19.7：privacy 命中、不告訴 Claude 命中字串（避免在重寫時把個資再帶一次）
-      // v1.19.10：事件名從 'IR-041' 中性化為 'privacy_check'（不綁特定使用者的鐵律編號）
+      // v1.19.7: on privacy match, don't tell Claude which substring matched (avoid echoing personal data in the rewrite).
+      // v1.19.10: event code neutralized from 'IR-041' to 'privacy_check' (no binding to a specific user's iron rule number).
       const matches = (v.detail && Array.isArray(v.detail.matches)) ? v.detail.matches : [];
       const summary = formatPrivacySummary(matches);
       lines.push(`${n}. The response appears to contain user privacy data (${summary}). Rewrite that segment using placeholders like "[email]" or "[mobile phone]" — do NOT repeat the personal data in the new response.`);
@@ -664,8 +674,8 @@ function formatBlockReason(violations, opts = {}) {
 
   lines.push('If the listed terms are variable names / function names / code references, or were already explained in context, they may be kept.');
 
-  // v1.19.11 新增：要求 AI 重寫時開頭加自我標註、讓使用者一眼看出「下面是重寫版、原因 XXX」
-  // 接受 85% 服從率、AI 沒做不二次擋下（log 保底會記）
+  // v1.19.11 added: require the AI to start the rewrite with a self-annotation so the user can tell at a glance
+  // "below is the rewrite, reason XXX". 85% compliance is accepted; non-compliance is NOT blocked again (log catches it).
   lines.push('');
   lines.push('Your rewrite must start with a quoted-block annotation in this format:');
   lines.push('');
@@ -682,8 +692,8 @@ function formatBlockReason(violations, opts = {}) {
 }
 
 /**
- * 寫到 user terminal device。成功 true、失敗 false。
- * 絕不寫 stderr / stdout（會被 Claude Code 當 hook 通道吃掉 → AI 看到）。
+ * Write to the user terminal device. Returns true on success, false on failure.
+ * MUST NOT write to stderr / stdout (those get captured by the Claude Code hook channel → the AI sees them).
  */
 function writeToTty(block) {
   const ttyPath = TTY_OVERRIDE || (process.platform === 'win32' ? '\\\\.\\CONOUT$' : '/dev/tty');
@@ -708,32 +718,32 @@ function writeFallback(block) {
       if (stat.size > PENDING_FILE_MAX_BYTES) {
         try { fs.renameSync(PENDING_FILE, PENDING_FILE + '.old'); } catch { /* ignore */ }
       }
-    } catch { /* file 不存在 → skip */ }
+    } catch { /* file does not exist → skip */ }
     const record = { ts: new Date().toISOString(), block };
     fs.appendFileSync(PENDING_FILE, JSON.stringify(record) + '\n');
   } catch { /* swallow */ }
 }
 
 /**
- * Compliance events — schema 對齊 src/routes/activity.js batch handler 要求：
+ * Compliance events — schema must align with src/routes/activity.js batch handler:
  *   { ts, event, tool, source, details, client_event_id }
- * 缺 ts 或 event 會被 server 直接 continue 跳過（不落 DB）。
+ * Missing ts or event causes the server to skip the row outright (no DB write).
  *
- * details.rule_code + details.action 是 pitfalls / dashboard 後續查詢用的關鍵欄位
- * （對齊 mcp/index.js 的 report_compliance 寫法）。
+ * details.rule_code + details.action are the key fields used by later pitfalls / dashboard queries
+ * (aligned with how mcp/index.js's report_compliance writes them).
  *
- * v1.17.98: client_event_id (uuid v4) — server 用 (user_id, client_event_id)
- * partial unique index ON CONFLICT DO NOTHING 做 dedup，解掉 hook POST timeout
- * 又被 SessionStart flush 重送 / 兩個 SessionStart 並發等 race 場景。
- * 同一個違反在 hook 跟 flush 兩條路徑必須帶同一個 id 才有效；所以 id 在這裡產一次、
- * banner / archive / pending 都用同一個。
+ * v1.17.98: client_event_id (uuid v4) — the server uses (user_id, client_event_id) as a partial
+ * unique index with ON CONFLICT DO NOTHING for dedup, resolving the race where hook POST timeout
+ * gets resent by SessionStart flush, or two SessionStarts run concurrently. The same violation
+ * across hook and flush paths MUST carry the same id to dedup correctly, so the id is generated
+ * once here and reused across banner / archive / pending.
  */
-// v1.19: 抽到 hooks/lib/build-compliance-events.js 給單元測試用
-//   buildComplianceEvents(violations, rules, getTier) — dynamic import 在 main() 內
+// v1.19: extracted to hooks/lib/build-compliance-events.js for unit testing:
+//   buildComplianceEvents(violations, rules, getTier) — dynamic import inside main().
 
 /**
- * v1.19: 讀本地 iron_rules cache 給 tier 查詢用
- * 純 best-effort、cache 不存在或解析失敗一律回空陣列、不擋主流程
+ * v1.19: read local iron_rules cache for tier lookup.
+ * Pure best-effort: missing cache or parse failure → return empty array, never block the main flow.
  */
 function readIronRulesCache() {
   try {
@@ -748,9 +758,9 @@ function readIronRulesCache() {
 }
 
 /**
- * Archive 寫到 ~/.ownmind/logs/YYYY-MM-DD.jsonl（同 mcp/ownmind-log.js LOGS_DIR）。
- * 純 debugging / human-readable 用、目前沒 reader 主動撿走（v1.17.97 確認）。
- * 不丟錯：寫不進去也不該擋 hook 流程。
+ * Archive write to ~/.ownmind/logs/YYYY-MM-DD.jsonl (same as mcp/ownmind-log.js LOGS_DIR).
+ * Pure debugging / human-readable artifact; no reader actively picks it up (confirmed v1.17.97).
+ * Must not throw: a write failure must not block the hook.
  */
 function spoolEvents(events) {
   if (!Array.isArray(events) || events.length === 0) return;
@@ -765,12 +775,13 @@ function spoolEvents(events) {
 }
 
 /**
- * v1.17.97 — POST 失敗時 spool 到 reply-lint-pending.jsonl 等下次 SessionStart flush。
- * Append-only：既有內容保留、新事件加在後面。
+ * v1.17.97 — on POST failure, spool to reply-lint-pending.jsonl for the next SessionStart flush.
+ * Append-only: existing content preserved, new events appended.
  *
- * Size cap（review N1）：超過 1MB rotate 成 .old 覆蓋舊的，避免長期離線無限長。
+ * Size cap (review N1): when above 1MB, rotate to .old (overwriting the previous .old), so an
+ * extended offline period can't grow this file unbounded.
  *
- * 不丟錯。
+ * Must not throw.
  */
 const COMPLIANCE_PENDING_MAX_BYTES = 1024 * 1024;
 
@@ -784,18 +795,18 @@ function spoolPendingForRetry(events) {
       if (stat.size > COMPLIANCE_PENDING_MAX_BYTES) {
         try { fs.renameSync(COMPLIANCE_PENDING_FILE, COMPLIANCE_PENDING_FILE + '.old'); } catch { /* ignore */ }
       }
-    } catch { /* file 不存在 → skip */ }
+    } catch { /* file does not exist → skip */ }
     const lines = events.map(e => JSON.stringify(e)).join('\n') + '\n';
     fs.appendFileSync(COMPLIANCE_PENDING_FILE, lines);
   } catch { /* swallow */ }
 }
 
 /**
- * Best-effort POST events 到 /api/activity/batch。
- * await 直到 socket flush 完才 resolve（review B2 — 避免 process.exit 砍 socket）。
- * 1500ms timeout，超過就 destroy + resolve(false)。
+ * Best-effort POST events to /api/activity/batch.
+ * Awaits until the socket flushes before resolving (review B2 — avoid process.exit killing the socket).
+ * 1500ms timeout; on timeout destroys the request and resolves(false).
  *
- * @returns {Promise<boolean>} true 代表 HTTP 2xx；其他狀況回 false 讓上層走 spool retry。
+ * @returns {Promise<boolean>} true on HTTP 2xx; otherwise false (caller falls back to spool retry).
  */
 function postEvents(events, readCredentials) {
   return new Promise((resolve) => {
@@ -830,7 +841,7 @@ function postEvents(events, readCredentials) {
         },
         timeout: POST_TIMEOUT_MS,
       }, (res) => {
-        // HTTP 2xx 才算成功；4xx/5xx 算失敗、走 spool retry
+        // HTTP 2xx counts as success; 4xx/5xx counts as failure → spool retry.
         const ok = res.statusCode >= 200 && res.statusCode < 300;
         res.on('data', () => { /* drain */ });
         res.on('end', () => done(ok));

@@ -1,17 +1,19 @@
 /**
  * Build compliance events for reply-lint hook
  *
- * 純函式、零外部依賴（除了 node:crypto.randomUUID）。
- * 從 reply-lint hook 抽出來方便單元測試。
+ * Pure function, zero external dependencies (other than node:crypto.randomUUID).
+ * Extracted from the reply-lint hook for ease of unit testing.
  *
- * v1.19: details.tier 加上、給 admin dashboard / v1.20 卡控判斷用。
- *   tier 由 caller 從 iron_rules cache 查好傳進來（getTier(rules, ruleCode)）。
- *   cache miss / 查不到 → 用 'default' 作為 fallback（getTierFromRules 行為）。
+ * v1.19: details.tier added, for use by the admin dashboard / v1.20 gating logic.
+ *   tier is looked up by the caller via the iron_rules cache (getTier(rules, ruleCode)).
+ *   cache miss / not found → 'default' fallback (getTierFromRules behavior).
  *
- * v1.20.4：違反清單 rule 改用中性事件常數（避免寫死個人鐵律編號）。
- *   - violations.rule 現在是事件常數（例：'lint_jargon_explanation_required'）
- *   - 寫合規記錄時、從規則快取找 metadata.triggered_by_event 對應的個人鐵律
- *   - 找不到 → rule_code 空 + message 含事件中文名（dashboard 仍能查）
+ * v1.20.4: the violation `rule` switched to a neutral event constant (no hard-coded personal iron rule numbers).
+ *   - violations.rule is now an event constant (e.g. 'lint_jargon_explanation_required').
+ *   - When writing the compliance record, look up the corresponding personal iron rule via
+ *     metadata.triggered_by_event in the rules cache.
+ *   - When no match is found → rule_code stays empty + the message includes the display name
+ *     (dashboard search still works).
  */
 
 import { randomUUID } from 'node:crypto';
@@ -21,9 +23,9 @@ const MAX_MESSAGE_LEN = 300;
 
 /**
  * @param {Array<{ rule: string, message?: string }>} violations
- * @param {Array<object>} rules — iron rules cache 內容
- * @param {(rules: Array, code: string) => string} getTier — 從 shared/iron-rule-tier.js 來
- * @returns {Array<object>} compliance events，schema 對齊 src/routes/activity.js batch handler
+ * @param {Array<object>} rules — iron rules cache contents
+ * @param {(rules: Array, code: string) => string} getTier — from shared/iron-rule-tier.js
+ * @returns {Array<object>} compliance events; schema aligned with src/routes/activity.js batch handler.
  */
 export function buildComplianceEvents(violations, rules, getTier) {
   if (!Array.isArray(violations)) return [];
@@ -31,14 +33,16 @@ export function buildComplianceEvents(violations, rules, getTier) {
   const lookupTier = (typeof getTier === 'function') ? getTier : (() => 'default');
 
   return violations.map((v) => {
-    // v1.20.4：事件常數 → 個人鐵律編號對應
-    // 規則快取內找 metadata.triggered_by_event === v.rule 的鐵律、用其 code 寫合規
-    // 找不到 → rule_code 留空（dashboard 仍能用事件中文名查）
+    // v1.20.4: map event constant → personal iron rule code.
+    // Look in the rules cache for a rule whose metadata.triggered_by_event === v.rule; use its
+    // code in the compliance record. When not found, leave rule_code empty (dashboard can still
+    // search by event display name).
     const userRule = findUserRuleByEvent(rules, v.rule);
     const resolvedRuleCode = userRule ? userRule.code : '';
     const eventDisplayName = getEventDisplayName(v.rule);
     const baseMessage = typeof v.message === 'string' ? v.message.slice(0, MAX_MESSAGE_LEN) : '';
-    // 沒有對應個人鐵律時、訊息前綴加事件中文名讓 dashboard 仍能辨識
+    // When there is no matching personal iron rule, prefix the message with the event display name
+    // so the dashboard can still identify the row.
     const message = resolvedRuleCode ? baseMessage : `[${eventDisplayName}] ${baseMessage}`;
 
     return {
@@ -52,7 +56,7 @@ export function buildComplianceEvents(violations, rules, getTier) {
         rule_code: resolvedRuleCode,
         tier: resolvedRuleCode ? lookupTier(rules, resolvedRuleCode) : 'default',
         message,
-        // v1.20.4：保留原事件常數、給未來查詢 / 分析用
+        // v1.20.4: keep the original event constant for future search / analytics.
         triggered_by_event: v.rule,
       },
     };

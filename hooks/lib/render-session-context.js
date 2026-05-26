@@ -1,22 +1,22 @@
 /**
  * render-session-context.js
  *
- * 給 hooks/ownmind-session-start.sh 用的 render 純函式。
- * 接收 init API 回來的 memory data + broadcasts array，
- * 回傳 SessionStart hook additionalContext 的字串。
+ * Pure render function used by hooks/ownmind-session-start.sh.
+ * Receives the memory data + broadcasts array returned by the init API and produces the
+ * SessionStart hook's additionalContext string.
  *
- * 拆出來做 unit test（tests/session-start-render.test.js）。
+ * Extracted for unit testing (tests/session-start-render.test.js).
  */
 
 /**
- * @param {Object} data  memory init response（server_version、profile、iron_rules_digest、principles、active_handoff）
- * @param {Array}  broadcasts  由 /api/broadcast/active 取回
+ * @param {Object} data  memory init response (server_version, profile, iron_rules_digest, principles, active_handoff)
+ * @param {Array}  broadcasts  fetched from /api/broadcast/active
  * @returns {string}  additionalContext
  */
 export function renderSessionContext(data, broadcasts) {
   const lines = [];
 
-  // v1.17.0 P3：廣播放最前面，AI 會優先轉述；最多 3 則避免 context 膨脹
+  // v1.17.0 P3: broadcasts go first so the AI relays them first; cap at 3 to avoid context bloat.
   const bcList = Array.isArray(broadcasts) ? broadcasts : [];
   if (bcList.length > 0) {
     lines.push('## 📢 OwnMind broadcast');
@@ -59,7 +59,8 @@ export function renderSessionContext(data, broadcasts) {
   }
 
   if (d.iron_rules_digest) {
-    // v1.19: 標題後加 tier 分佈 summary（舊 server 沒回 iron_rules_tier_counts 時跳過）
+    // v1.19: append a tier-distribution summary after the heading (skip when an older server
+    // doesn't return iron_rules_tier_counts).
     const tc = d.iron_rules_tier_counts;
     if (tc && typeof tc === 'object' && tc.total > 0) {
       lines.push('## Iron rules (strictly enforced) — ' + tc.total + ' total (🔴 Critical ' +

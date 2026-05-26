@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * v1.17.71 — 從 stdin 讀 banner-pending.jsonl 全部行、印 block 到 stderr
- *（SessionStart hook stderr → user 看得到）。
+ * v1.17.71 — read every line of banner-pending.jsonl from stdin and print each block to stderr
+ * (SessionStart hook stderr → user sees it).
  *
- * 為什麼不在 session-start.sh bash while loop 裡 per-line spawn node：
- *   non-tty long-running 場景下可能積到 50+ banner，per-line spawn 會起 50 次
- *   node process、SessionStart 卡住數秒。改一次 spawn、stdin 串流讀完、批次印。
+ * Why not per-line `spawn node` in a session-start.sh bash while-loop:
+ *   In non-tty long-running scenarios, 50+ banners can pile up; per-line spawn would start 50 node
+ *   processes and stall SessionStart for several seconds. Spawn once, stream stdin to end, batch-print instead.
  *
- * 用法：
+ * Usage:
  *   node hooks/lib/flush-pending-banners.js < banner-pending.jsonl
  *
- * 輸出：每個 record 的 block 印到 stderr，record 之間空一行。
- * Exit 0 always — 解析失敗的 line 略過、不擋 SessionStart。
+ * Output: each record's block is written to stderr, separated by a blank line.
+ * Always exit 0 — broken lines are skipped, never block SessionStart.
  */
 
 'use strict';
@@ -28,7 +28,7 @@ process.stdin.on('end', () => {
         process.stderr.write(rec.block + '\n\n');
       }
     } catch {
-      // 該行壞掉就略過、繼續下一行
+      // broken line — skip and continue with the next
     }
   }
   process.exit(0);
