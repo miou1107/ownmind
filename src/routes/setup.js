@@ -1,20 +1,26 @@
 /**
- * Setup wizard endpoints — v1.19.8
+ * Setup wizard endpoints — v1.19.8.
  *
- * 對應 openspec/changes/v1.19.8-setup-wizard/spec.md 場景 4~10、13、14。
+ * Corresponds to openspec/changes/v1.19.8-setup-wizard/spec.md scenarios
+ * 4–10, 13, 14.
  *
- * 解決首次安裝 chicken-and-egg 問題：v1.19.7 之前新使用者部署完 server、
- * 沒帳號可以登入 admin UI、必須手動設 SETUP_TOKEN 環境變數 + SQL INSERT
- * 一筆 super_admin 紀錄才能用、平均卡 30 分鐘以上。
+ * Solves the first-install chicken-and-egg problem: before v1.19.7 a new
+ * user finished deploying the server but had no account to log into the
+ * admin UI; they had to set the SETUP_TOKEN env var plus a manual SQL
+ * INSERT of a super_admin row, averaging 30+ minutes of being stuck.
  *
- * 設計原則：
- *   - first-run 偵測：users 表有任何 admin/super_admin 就視為已完成 setup、
- *     wizard endpoint 永久關閉
- *   - Race condition 防護：用 pg_advisory_xact_lock 確保並發 init 請求只有
- *     一個能成功（資料庫層級的單一寫入序列化）
- *   - 跟舊 /admin/setup + SETUP_TOKEN 並存：first_run 看 users 表為空、
- *     舊路徑看 password_hash IS NULL、各管各的
- *   - Factory pattern：依賴用注入、方便單元測試（對齊 admin-work-log.js 等既有風格）
+ * Design principles:
+ *   - first-run detection: as soon as the users table contains any
+ *     admin/super_admin, setup is considered done and the wizard endpoint
+ *     is permanently closed.
+ *   - Race-condition protection: pg_advisory_xact_lock ensures only one
+ *     concurrent init request can succeed (DB-level serialization of the
+ *     single write).
+ *   - Coexists with the older /admin/setup + SETUP_TOKEN: first_run looks
+ *     at an empty users table; the old path looks at password_hash IS NULL;
+ *     the two are independent.
+ *   - Factory pattern: deps are injected for unit testing
+ *     (mirroring the style of admin-work-log.js etc.).
  */
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
@@ -25,16 +31,17 @@ import defaultLogger from '../utils/logger.js';
 const BCRYPT_ROUNDS = 10;
 const MIN_PASSWORD_LEN = 8;
 
-// pg_advisory_xact_lock 用的固定數字、setup 流程獨佔（不會跟其他 advisory lock 撞）
-// 數字本身沒有特殊含義、純粹要一個唯一識別碼（白話：給這個鎖取個身分證號）
+// Fixed identifier for pg_advisory_xact_lock used by the setup flow (the
+// number itself has no special meaning; it just needs to be unique).
 const SETUP_LOCK_ID = 19198;
 
 const FIRST_RUN_CACHE_TTL_MS = 60 * 1000;
 
 /**
- * 建立 first-run 偵測器（含 cache）
+ * Build the first-run detector (with cache).
  *
- * 純 module-level 也行、但獨立工廠方便測試時清空 cache
+ * Could be module-level, but a separate factory makes it easier to flush
+ * the cache during tests.
  *
  * @param {{ query: Function, logger?: object }} deps
  * @returns {{ detectFirstRun: Function, invalidate: Function, _resetForTests: Function }}
@@ -54,14 +61,15 @@ export function createFirstRunDetector({ query = defaultQuery, logger = defaultL
       );
       const n = r.rows[0]?.n ?? 0;
       const result = { firstRun: n === 0, usersCount: n };
-      // 只 cache first_run=false（first_run=true 應每次重查、避免 race）
+      // Only cache first_run=false; first_run=true must be re-queried each
+      // time to avoid races.
       if (!result.firstRun) {
         cache = result;
         cacheAt = now;
       }
       return result;
     } catch (err) {
-      logger.warn?.('detectFirstRun 查詢失敗', { error: err.message });
+      logger.warn?.('detectFirstRun query failed', { error: err.message });
       return { firstRun: false, usersCount: -1 };
     }
   }
@@ -74,18 +82,18 @@ export function createFirstRunDetector({ query = defaultQuery, logger = defaultL
   return { detectFirstRun, invalidate, _resetForTests: invalidate };
 }
 
-// 預設單例（給 production 用）
+// Default singleton (for production).
 const defaultDetector = createFirstRunDetector({});
 export const detectFirstRun = defaultDetector.detectFirstRun;
 export const invalidateFirstRunCache = defaultDetector.invalidate;
 
 /**
- * 建立 setup wizard router
+ * Build the setup wizard router.
  *
- * @param {object} deps - 依賴注入（測試時可傳入 mock）
- * @param {Function} deps.query - DB query 函式
- * @param {Function} deps.withTransaction - DB transaction wrapper
- * @param {{ detectFirstRun, invalidate }} deps.detector - first-run 偵測器
+ * @param {object} deps - dependency injection (tests can pass mocks).
+ * @param {Function} deps.query - DB query function.
+ * @param {Function} deps.withTransaction - DB transaction wrapper.
+ * @param {{ detectFirstRun, invalidate }} deps.detector - first-run detector.
  * @param {object} deps.logger
  * @returns {import('express').Router}
  */
@@ -100,7 +108,7 @@ export function createSetupRouter(deps = {}) {
   const router = Router();
 
   /**
-   * GET /status — 公開、回 first_run 狀態
+   * GET /status — public, returns the first_run status.
    */
   router.get('/status', async (req, res) => {
     const { firstRun, usersCount } = await detector.detectFirstRun();
@@ -108,7 +116,7 @@ export function createSetupRouter(deps = {}) {
   });
 
   /**
-   * POST /init — 公開、僅 first_run=true 時開放
+   * POST /init — public, only available when first_run=true.
    */
   router.post('/init', async (req, res) => {
     const { email, password, name } = req.body || {};
@@ -125,10 +133,11 @@ export function createSetupRouter(deps = {}) {
 
     try {
       const result = await withTransaction(async (client) => {
-        // Advisory lock：並發 init 請求只有一個能進這段（race condition 防護）
+        // Advisory lock: only one concurrent init request can enter this
+        // section (race-condition protection).
         await client.query('SELECT pg_advisory_xact_lock($1)', [SETUP_LOCK_ID]);
 
-        // 拿到鎖後再次 check first-run（場景 6 + 10）
+        // Re-check first-run after acquiring the lock (scenarios 6 + 10).
         const r = await client.query(
           `SELECT COUNT(*)::int AS n FROM users WHERE role IN ('admin', 'super_admin')`
         );
@@ -160,7 +169,7 @@ export function createSetupRouter(deps = {}) {
             ]
           );
         } catch (auditErr) {
-          logger.warn?.('setup_init audit_log 寫入失敗', { error: auditErr.message });
+          logger.warn?.('setup_init audit_log write failed', { error: auditErr.message });
         }
 
         return { user: newUser };
@@ -176,10 +185,10 @@ export function createSetupRouter(deps = {}) {
       return res.status(201).json(result.user);
     } catch (err) {
       if (err.code === '23505') {
-        logger.warn?.('setup_init email 衝突', { error: err.message });
+        logger.warn?.('setup_init email conflict', { error: err.message });
         return res.status(409).json({ error: 'email 已被佔用、請改用其他' });
       }
-      logger.error?.('setup_init 失敗', { error: err.message, stack: err.stack });
+      logger.error?.('setup_init failed', { error: err.message, stack: err.stack });
       res.status(500).json({ error: '初始化失敗、請查 server log' });
     }
   });
@@ -187,5 +196,5 @@ export function createSetupRouter(deps = {}) {
   return router;
 }
 
-// Default export：給 production app.js 直接 mount 用
+// Default export so production app.js can mount it directly.
 export default createSetupRouter();

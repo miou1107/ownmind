@@ -6,17 +6,21 @@ import logger from '../utils/logger.js';
 import { enrichActivityDetails } from '../utils/enrich-activity.js';
 import { insertActivityLog, normalizeClientEventId } from '../utils/activity-insert.js';
 
-// v1.17.89: enrich lookup — 給 enrichActivityDetails 注入 DB 查詢
-// 包成 module-level function 方便重用（batch handler 每 event 呼叫一次）
+// v1.17.89: enrich lookup — injected DB query for enrichActivityDetails.
+// Wrapped as a module-level function so the batch handler can reuse it for
+// every event.
 //
-// ⚠️ 不要加 status='active' filter！
-//   memory_disable 事件落 DB 時、memories 那 row 已經是 status='disabled'。
-//   加 active filter 會讓剛 disable 的鐵律永遠 enrich 不到 → 重新製造「(找不到)」。
-//   v1.17.89 code-reviewer 確認過、明確要求保留無 filter。
+// ⚠️ DO NOT add a status='active' filter!
+//   memory_disable events hit the DB after the row in `memories` has
+//   already become status='disabled'. Adding an active filter would mean
+//   newly-disabled iron rules never enrich → we'd recreate the "(not found)"
+//   problem. The v1.17.89 code reviewer confirmed this and explicitly
+//   asked for the filter to stay off.
 //
-// ⚠️ 效能：目前 batch handler 對 N 個 disable/update 事件做 N 次 SELECT（serially）。
-//   實務上單次 batch 通常 1~3 個事件，影響可忽略。
-//   若未來 batch 變大（>50 events），考慮改用 IN (...) 一次撈完（v1.17.90 backlog）。
+// ⚠️ Performance: today the batch handler runs N SELECTs (serially) for N
+// disable/update events. In practice a batch usually carries 1–3 events,
+// so the impact is negligible. If batches grow much larger (>50 events) we
+// can switch to a single IN (...) query (v1.17.90 backlog).
 async function memoryLookup(id) {
   const r = await query(
     `SELECT type, code, title FROM memories WHERE id = $1`,
@@ -28,7 +32,7 @@ async function memoryLookup(id) {
 const router = Router();
 
 /**
- * 從 session_logs.details 分析情境報告
+ * Analyze a context report from session_logs.details.
  */
 async function getContextAnalysis(userId, fromDate) {
   try {
@@ -77,15 +81,17 @@ async function getContextAnalysis(userId, fromDate) {
 }
 
 /**
- * POST /batch — 批次上傳 activity log events
+ * POST /batch — upload activity log events in batch.
  * Body: { events: [{ ts, event, tool, source, details }, ...] }
- * 需要一般 auth（用自己的 API key）
+ * Requires regular auth (the user's own API key).
  */
-// v1.17.45: 伺服器端自動觀測（IR-027 邏輯卡控的最終形態）
-// 之前的 client-side autoComplyForToolCall 在 mcp/index.js，但要求每位 user
-// 都升到 v1.17.40+ 客戶端才有效。實務上會有人卡舊版（如 Adam 1.17.16）。
-// 把邏輯搬到伺服器端：activity 進來時若是高風險事件，自動 emit observed_trigger
-// compliance event，不再依賴客戶端版本。
+// v1.17.45: server-side auto observability (the final form of IR-027
+// "logic over reminders").
+// The earlier client-side autoComplyForToolCall in mcp/index.js required
+// every user to upgrade to v1.17.40+; in practice some users get stuck on
+// old versions (e.g. Adam on 1.17.16). Move the logic to the server: when
+// activity arrives, if the event is high-risk, automatically emit an
+// observed_trigger compliance event — independent of client version.
 async function autoEmitObservedTrigger(userId, event) {
   // memory_save with type=iron_rule → IR-006
   if (event.event === 'memory_save' && event.details?.type === 'iron_rule') {
@@ -96,7 +102,7 @@ async function autoEmitObservedTrigger(userId, event) {
       context: `新增鐵律 "${event.details.title || ''}"`,
     };
   }
-  // memory_disable: 要查 memories.type 才知是不是 iron_rule
+  // memory_disable: need to look up memories.type to know if it's an iron_rule.
   if (event.event === 'memory_disable' && event.details?.id) {
     const r = await query(
       `SELECT type, code, title FROM memories WHERE id = $1`,
@@ -111,7 +117,7 @@ async function autoEmitObservedTrigger(userId, event) {
       };
     }
   }
-  // memory_update with iron_rule type
+  // memory_update with iron_rule type.
   if (event.event === 'memory_update' && event.details?.id) {
     const r = await query(
       `SELECT type, code FROM memories WHERE id = $1`,
@@ -126,7 +132,8 @@ async function autoEmitObservedTrigger(userId, event) {
       };
     }
   }
-  // 不對 handoff_create 自動觀測（Codex round 4 review 過度推論問題仍適用）
+  // Do not auto-observe handoff_create (Codex round-4 review concerned about
+  // over-extrapolation; the concern still applies).
   return null;
 }
 
@@ -134,10 +141,10 @@ router.post('/batch', auth, async (req, res) => {
   try {
     const { events } = req.body;
     if (!Array.isArray(events) || events.length === 0) {
-      return res.status(400).json({ error: 'events 必須是非空陣列' });
+      return res.status(400).json({ error: 'events must be a non-empty array' });
     }
 
-    // 限制單次上傳量
+    // Cap the batch size.
     const batch = events.slice(0, 500);
     let inserted = 0;
     let deduped = 0;
@@ -146,17 +153,21 @@ router.post('/batch', auth, async (req, res) => {
     for (const e of batch) {
       if (!e.ts || !e.event) continue;
 
-      // v1.17.99: dedup INSERT 邏輯抽到 src/utils/activity-insert.js、handler
-      // 跟 tests/activity-batch-dedup.test.js 用同一份程式（解 v1.17.98 review I1）。
-      // normalizeClientEventId 會處理：非 string / 非 UUID v4 → null
+      // v1.17.99: dedup INSERT logic moved to src/utils/activity-insert.js
+      // so the handler and tests/activity-batch-dedup.test.js share the same
+      // implementation (addressing v1.17.98 review I1).
+      // normalizeClientEventId handles: non-string / non-UUID v4 → null.
       const clientEventId = normalizeClientEventId(e.client_event_id);
 
-      // v1.17.89: 落 DB 前 enrich details — 補 disable/update iron_rule 的
-      // code+title snapshot，未來 pitfalls 查詢不用 JOIN memories 也能顯示完整
-      // 脈絡。enrich 失敗會吞掉錯誤（pure function 內建 try/catch）回原 details
+      // v1.17.89: enrich details before insert — fill in code+title snapshot
+      // for disable/update iron_rule events so future pitfalls queries can
+      // show full context without JOINing memories. Enrich failure swallows
+      // its own errors (pure function with built-in try/catch) and returns
+      // the original details.
       const enrichedDetails = await enrichActivityDetails(e, memoryLookup);
 
-      // 走 v1.17.99 共用 helper — 內部拆兩條 path（NULL 純 INSERT / 有 id ON CONFLICT）
+      // Use the v1.17.99 shared helper — internally it splits into two paths
+      // (pure INSERT for NULL client id; ON CONFLICT path for present id).
       const { inserted: didInsert } = await insertActivityLog(query, {
         userId: req.user.id,
         ts: e.ts,
@@ -168,12 +179,14 @@ router.post('/batch', auth, async (req, res) => {
       });
       if (!didInsert) {
         deduped++;
-        continue;  // 不跑 auto-observe trigger — 避免重送同事件時 server 端衍生事件被重複觸發
+        continue;  // Don't run the auto-observe trigger — avoid generating
+                   // duplicate derived events when the same event is replayed.
       }
       inserted++;
 
-      // v1.17.45 伺服器端自動觀測：若是高風險事件，自動補一筆 observed_trigger
-      // 來源是客戶端的 system_auto 或 client 沒升級，伺服器都會幫忙寫
+      // v1.17.45 server-side auto observability: high-risk events also get
+      // an observed_trigger row. The source can be either the client's
+      // system_auto or "client didn't upgrade"; the server writes it either way.
       try {
         const trigger = await autoEmitObservedTrigger(req.user.id, e);
         if (trigger) {
@@ -182,7 +195,7 @@ router.post('/batch', auth, async (req, res) => {
              VALUES ($1, $2, $3, $4, $5, $6)`,
             [
               req.user.id,
-              e.ts,  // 用同 ts 確保 ±10 分鐘 window 一定 match
+              e.ts,  // Reuse the same ts so the ±10 minute window still matches.
               'iron_rule_compliance',
               e.tool || 'server',
               'system_server_auto',
@@ -199,7 +212,7 @@ router.post('/batch', auth, async (req, res) => {
           autoObserved++;
         }
       } catch (err) {
-        logger.warn('伺服器端自動觀測失敗（不阻擋主流程）', {
+        logger.warn('server-side auto observability failed (main flow not blocked)', {
           error: err.message,
           event: e.event,
         });
@@ -208,30 +221,30 @@ router.post('/batch', auth, async (req, res) => {
 
     res.json({ inserted, deduped, total: batch.length, auto_observed: autoObserved });
   } catch (err) {
-    logger.error('批次上傳 activity log 失敗', { error: err.message });
-    res.status(500).json({ error: '上傳失敗' });
+    logger.error('activity log batch upload failed', { error: err.message });
+    res.status(500).json({ error: 'Upload failed' });
   }
 });
 
 /**
- * GET /stats?user_id=1&days=30 — 取得單一用戶統計（admin only）
+ * GET /stats?user_id=1&days=30 — single-user statistics (admin only).
  */
 router.get('/stats', adminAuth, async (req, res) => {
   try {
     const userId = Number(req.query.user_id);
     const days = Math.min(Number(req.query.days) || 30, 365);
 
-    if (!userId || isNaN(userId)) return res.status(400).json({ error: '需要有效的 user_id' });
+    if (!userId || isNaN(userId)) return res.status(400).json({ error: 'a valid user_id is required' });
 
-    // 用戶資訊
+    // User info.
     const userResult = await query('SELECT id, name, email, role, created_at FROM users WHERE id = $1', [userId]);
-    if (userResult.rows.length === 0) return res.status(404).json({ error: '用戶不存在' });
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'user not found' });
     const user = userResult.rows[0];
 
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
 
-    // 記憶統計
+    // Memory statistics.
     const memoryTotal = await query(
       `SELECT type, status, COUNT(*) as count FROM memories WHERE user_id = $1 GROUP BY type, status`,
       [userId]
@@ -250,7 +263,7 @@ router.get('/stats', adminAuth, async (req, res) => {
       else disabled += parseInt(row.count);
     }
 
-    // Session 統計
+    // Session statistics.
     const sessionStats = await query(
       `SELECT tool, model, compressed, COUNT(*) as count
        FROM session_logs WHERE user_id = $1 GROUP BY tool, model, compressed`,
@@ -265,7 +278,7 @@ router.get('/stats', adminAuth, async (req, res) => {
       sessionsByModel[row.model] = (sessionsByModel[row.model] || 0) + parseInt(row.count);
     }
 
-    // Recovery session 統計
+    // Recovery session statistics.
     const recoveredSessions = await query(
       `SELECT COUNT(*) as count FROM session_logs
        WHERE user_id = $1 AND (details->>'_recovery') IS NOT NULL`,
@@ -273,7 +286,7 @@ router.get('/stats', adminAuth, async (req, res) => {
     );
     const sessionsRecovered = parseInt(recoveredSessions.rows[0]?.count || 0);
 
-    // Activity 統計
+    // Activity statistics.
     const activityByEvent = await query(
       `SELECT event, COUNT(*) as count FROM activity_logs
        WHERE user_id = $1 AND ts >= $2 GROUP BY event ORDER BY count DESC LIMIT 20`,
@@ -295,7 +308,7 @@ router.get('/stats', adminAuth, async (req, res) => {
       [userId, fromDate]
     );
 
-    // 鐵律統計
+    // Iron-rule statistics.
     const ironRulesResult = await query(
       `SELECT title, tags FROM memories WHERE user_id = $1 AND type = 'iron_rule' AND status = 'active'`,
       [userId]
@@ -312,7 +325,7 @@ router.get('/stats', adminAuth, async (req, res) => {
       [userId, fromDate]
     );
 
-    // 交接統計
+    // Handoff statistics.
     const handoffStats = await query(
       `SELECT status, COUNT(*) as count FROM handoffs WHERE user_id = $1 GROUP BY status`,
       [userId]
@@ -324,7 +337,7 @@ router.get('/stats', adminAuth, async (req, res) => {
       if (row.status === 'pending') handoffsPending += parseInt(row.count);
     }
 
-    // 系統健康
+    // System health.
     const initSuccess = await query(
       `SELECT COUNT(*) FILTER (WHERE event = 'init') as success,
               COUNT(*) FILTER (WHERE event = 'init_fail') as fail
@@ -346,7 +359,7 @@ router.get('/stats', adminAuth, async (req, res) => {
     const initF = parseInt(initSuccess.rows[0]?.fail || 0);
     const initRate = (initS + initF) > 0 ? ((initS / (initS + initF)) * 100).toFixed(1) : 100;
 
-    // 合規統計（iron_rule_compliance events）
+    // Compliance statistics (iron_rule_compliance events).
     const complianceResult = await query(
       `SELECT details->>'action' as action, COUNT(*) as count
        FROM activity_logs WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
@@ -359,7 +372,7 @@ router.get('/stats', adminAuth, async (req, res) => {
        GROUP BY rule, action ORDER BY count DESC LIMIT 30`,
       [userId, fromDate]
     );
-    // 按工具 × 合規
+    // By tool × compliance.
     const complianceByTool = await query(
       `SELECT tool, details->>'action' as action, COUNT(*) as count
        FROM activity_logs WHERE user_id = $1 AND event = 'iron_rule_compliance' AND ts >= $2
@@ -367,20 +380,20 @@ router.get('/stats', adminAuth, async (req, res) => {
       [userId, fromDate]
     );
 
-    // 計算合規率
+    // Compliance rate.
     const compActions = {};
     for (const r of complianceResult.rows) compActions[r.action] = parseInt(r.count);
     const totalComp = (compActions.comply || 0) + (compActions.skip || 0) + (compActions.violate || 0);
     const complianceRate = totalComp > 0 ? (((compActions.comply || 0) / totalComp) * 100).toFixed(1) : null;
 
-    // 按規則彙整合規
+    // Aggregate compliance by rule.
     const ruleCompliance = {};
     for (const r of complianceByRule.rows) {
       if (!ruleCompliance[r.rule]) ruleCompliance[r.rule] = { comply: 0, skip: 0, violate: 0 };
       ruleCompliance[r.rule][r.action] = parseInt(r.count);
     }
 
-    // 按工具彙整合規
+    // Aggregate compliance by tool.
     const toolCompliance = {};
     for (const r of complianceByTool.rows) {
       if (!toolCompliance[r.tool]) toolCompliance[r.tool] = { comply: 0, skip: 0, violate: 0 };
@@ -425,24 +438,24 @@ router.get('/stats', adminAuth, async (req, res) => {
       context: await getContextAnalysis(userId, fromDate)
     });
   } catch (err) {
-    logger.error('取得統計失敗', { error: err.message });
-    res.status(500).json({ error: '取得統計失敗' });
+    logger.error('activity stats failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch statistics' });
   }
 });
 
 /**
- * GET /stats/rules?user_id=1&days=30 — 每條鐵律的 enforced/skipped/violated stats（admin only）
+ * GET /stats/rules?user_id=1&days=30 — per-iron-rule enforced/skipped/violated stats (admin only).
  */
 router.get('/stats/rules', adminAuth, async (req, res) => {
   try {
     const userId = Number(req.query.user_id);
     const days = Math.min(Number(req.query.days) || 30, 365);
-    if (!userId || isNaN(userId)) return res.status(400).json({ error: '需要有效的 user_id' });
+    if (!userId || isNaN(userId)) return res.status(400).json({ error: 'a valid user_id is required' });
 
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
 
-    // 取得所有活躍鐵律
+    // Fetch active iron rules.
     const rules = await query(
       `SELECT id, code, title, tags, metadata FROM memories
        WHERE user_id = $1 AND type = 'iron_rule' AND status = 'active'
@@ -450,7 +463,7 @@ router.get('/stats/rules', adminAuth, async (req, res) => {
       [userId]
     );
 
-    // 取得所有 compliance events
+    // Fetch every compliance event.
     const events = await query(
       `SELECT details->>'rule_title' as rule_title,
               details->>'rule_code' as rule_code,
@@ -464,7 +477,7 @@ router.get('/stats/rules', adminAuth, async (req, res) => {
       [userId, fromDate]
     );
 
-    // 取得 trigger events（hook 層的觸發）
+    // Fetch trigger events (hook-layer triggers).
     const triggers = await query(
       `SELECT details->>'trigger' as trigger_type, COUNT(*) as count
        FROM activity_logs
@@ -473,7 +486,7 @@ router.get('/stats/rules', adminAuth, async (req, res) => {
       [userId, fromDate]
     );
 
-    // 按規則彙整
+    // Aggregate by rule.
     const ruleStats = {};
     for (const r of rules.rows) {
       const key = r.code || r.title;
@@ -494,14 +507,14 @@ router.get('/stats/rules', adminAuth, async (req, res) => {
       else if (e.action === 'skip') ruleStats[key].skipped += count;
       else if (e.action === 'violate') ruleStats[key].violated += count;
 
-      // by tool
+      // By tool.
       if (!ruleStats[key].by_tool[e.tool]) ruleStats[key].by_tool[e.tool] = { enforced: 0, skipped: 0, violated: 0 };
       if (e.action === 'comply') ruleStats[key].by_tool[e.tool].enforced += count;
       else if (e.action === 'skip') ruleStats[key].by_tool[e.tool].skipped += count;
       else if (e.action === 'violate') ruleStats[key].by_tool[e.tool].violated += count;
     }
 
-    // 計算落地率
+    // Compliance rate.
     const result = Object.values(ruleStats).map(r => {
       const total = r.enforced + r.skipped + r.violated;
       return {
@@ -524,13 +537,13 @@ router.get('/stats/rules', adminAuth, async (req, res) => {
       }
     });
   } catch (err) {
-    logger.error('取得鐵律統計失敗', { error: err.message });
-    res.status(500).json({ error: '取得統計失敗' });
+    logger.error('iron rule stats failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch statistics' });
   }
 });
 
 /**
- * GET /stats/all — 跨用戶總覽（admin only）
+ * GET /stats/all — cross-user overview (admin only).
  */
 router.get('/stats/all', adminAuth, async (req, res) => {
   try {
@@ -549,14 +562,14 @@ router.get('/stats/all', adminAuth, async (req, res) => {
       FROM users u ORDER BY last_active DESC NULLS LAST
     `, [fromDate]);
 
-    // 每用戶的工具/模型分佈
+    // Per-user tool/model distribution.
     const toolModelResult = await query(
       `SELECT user_id, tool, model, COUNT(*) as count
        FROM session_logs WHERE created_at >= $1
        GROUP BY user_id, tool, model ORDER BY count DESC`,
       [fromDate]
     );
-    // 每用戶的 AI 合規率（按工具）
+    // Per-user AI compliance (by tool).
     const toolCompResult = await query(
       `SELECT user_id, tool, details->>'action' as action, COUNT(*) as count
        FROM activity_logs WHERE event = 'iron_rule_compliance' AND ts >= $1
@@ -564,7 +577,7 @@ router.get('/stats/all', adminAuth, async (req, res) => {
       [fromDate]
     );
 
-    // 彙整
+    // Aggregate.
     const userToolModels = {};
     for (const r of toolModelResult.rows) {
       if (!userToolModels[r.user_id]) userToolModels[r.user_id] = { tools: {}, models: {} };
@@ -582,7 +595,7 @@ router.get('/stats/all', adminAuth, async (req, res) => {
     const users = result.rows.map(u => {
       const tm = userToolModels[u.id] || { tools: {}, models: {} };
       const tc = userToolComp[u.id] || {};
-      // 每工具的落地率
+      // Per-tool compliance rate.
       const toolStats = Object.entries(tc).map(([tool, acts]) => {
         const total = (acts.comply||0) + (acts.skip||0) + (acts.violate||0);
         return { tool, ...acts, total, rate: total > 0 ? parseFloat(((acts.comply||0)/total*100).toFixed(1)) : null };
@@ -601,8 +614,8 @@ router.get('/stats/all', adminAuth, async (req, res) => {
 
     res.json({ period: { days }, users });
   } catch (err) {
-    logger.error('取得跨用戶統計失敗', { error: err.message });
-    res.status(500).json({ error: '取得統計失敗' });
+    logger.error('cross-user stats failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch statistics' });
   }
 });
 

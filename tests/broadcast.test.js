@@ -135,7 +135,7 @@ describe('validateBroadcastPayload', () => {
       type: 'announcement', title: 't', body: 'b',
       starts_at: '2026-05-01T00:00:00Z',
       ends_at: '2026-04-30T00:00:00Z'
-    }), /晚於/);
+    }), /晚於|later than/);
   });
 
   it('accepts valid ISO dates', () => {
@@ -350,7 +350,7 @@ describe('POST /api/broadcast/dismiss', () => {
       body: { broadcast_id: 999, tool: 'claude-code' }
     });
     assert.equal(res.status, 404);
-    assert.match(res.body.error, /可見/);
+    assert.match(res.body.error, /可見|visible set/);
   });
 
   it('rejects snooze on broadcast with allow_snooze=false', async () => {

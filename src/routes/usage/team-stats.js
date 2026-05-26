@@ -6,7 +6,7 @@ import logger from '../../utils/logger.js';
 /**
  * GET /api/usage/team-stats (admin+)
  *
- * Response（per spec S2）：
+ * Response (per spec S2):
  *   {
  *     period: { from, to },
  *     coverage: {
@@ -16,7 +16,8 @@ import logger from '../../utils/logger.js';
  *     users: [{ user: { id, name, email }, totals: {...} }, ...]
  *   }
  *
- * D5：coverage 強制在 response 露出，dashboard 不達 80% 時加浮水印。
+ * D5: coverage is always surfaced in the response so the dashboard can show
+ * a watermark when coverage drops below 80%.
  */
 export function createTeamStatsRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -28,10 +29,10 @@ export function createTeamStatsRouter(deps = {}) {
     try {
       const { from, to } = parseParams(req.query);
 
-      // 1. User 總數 + 活躍 / 停滯 / 豁免
+      // 1. User totals + active / stale / exempt.
       const coverage = await loadCoverage({ query });
 
-      // 2. User 層聚合（cost / tokens / hours per user）
+      // 2. Per-user aggregate (cost / tokens / hours per user).
       const users = await loadUsersAggregate({ query }, from, to);
 
       res.json({
@@ -40,8 +41,8 @@ export function createTeamStatsRouter(deps = {}) {
         users
       });
     } catch (err) {
-      logger.error('team-stats 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢團隊用量失敗' });
+      logger.error('team-stats query failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to query team usage' });
     }
   });
 
@@ -63,7 +64,8 @@ function toYmd(date) {
 }
 
 async function loadCoverage({ query }) {
-  // 活躍 = 24h 內有 heartbeat；stale = 48h+ 無 heartbeat 的 user；exempt = 有豁免
+  // Active = a heartbeat within 24h; stale = no heartbeat for 48h+;
+  // exempt = the user has an active exemption.
   const res = await query(
     `WITH latest_hb AS (
        SELECT user_id, tool, MAX(last_reported_at) AS last_reported_at
@@ -104,10 +106,11 @@ async function loadCoverage({ query }) {
       if (age <= DAY) { reporting_today += 1; continue; }
       if (age > 2 * DAY) { stale += 1; stale_users.push({ id: r.id, name: r.name, email: r.email }); continue; }
     }
-    // 24h–48h 灰區：算入 reporting（寬鬆）或 stale（嚴謹）— 選寬鬆，只警告 48h+
+    // 24h–48h gray zone: count as reporting (loose) or stale (strict) — we
+    // chose loose, warning only at 48h+.
   }
 
-  // Per-tool 覆蓋
+  // Per-tool coverage.
   const perToolRes = await query(
     `SELECT tool,
             COUNT(*) FILTER (WHERE last_reported_at > NOW() - INTERVAL '24 hours') AS reporting,
@@ -129,9 +132,10 @@ async function loadCoverage({ query }) {
 }
 
 async function loadUsersAggregate({ query }, from, to) {
-  // Tier 1 per-user aggregate（含 null-cost policy）
-  // bool_or 要排除 LEFT JOIN 補出的純 NULL 列（d.id IS NULL = 無 matching row），
-  // 否則完全沒 activity 的 user 會被誤判為「有 unknown pricing」→ cost_usd=null
+  // Tier 1 per-user aggregate (with null-cost policy).
+  // bool_or must exclude rows that are purely NULL from the LEFT JOIN
+  // (d.id IS NULL = no matching row); otherwise a user with no activity at
+  // all would be wrongly flagged as having unknown pricing → cost_usd=null.
   const tier1 = await query(
     `SELECT u.id, u.name, u.email,
             CASE WHEN bool_or(d.id IS NOT NULL AND d.cost_usd IS NULL) THEN NULL
@@ -151,7 +155,7 @@ async function loadUsersAggregate({ query }, from, to) {
       GROUP BY u.id, u.name, u.email`,
     [from, to]
   );
-  // Tier 2 per-user aggregate（Cursor / Antigravity）
+  // Tier 2 per-user aggregate (Cursor / Antigravity).
   const tier2 = await query(
     `SELECT user_id,
             COALESCE(SUM(count), 0)::int AS tier2_sessions,
@@ -170,7 +174,7 @@ async function loadUsersAggregate({ query }, from, to) {
     return {
       user: { id: r.id, name: r.name, email: r.email },
       totals: {
-        cost_usd: r.cost_usd,   // 可能為 null（policy）
+        cost_usd: r.cost_usd,   // may be null (policy)
         input_tokens: r.input_tokens,
         output_tokens: r.output_tokens,
         cache_creation_tokens: r.cache_creation_tokens,
@@ -184,7 +188,7 @@ async function loadUsersAggregate({ query }, from, to) {
     };
   });
 
-  // 排序：cost_usd DESC，null 視為 -Infinity 排到最後
+  // Sort: cost_usd DESC, null treated as -Infinity so it lands last.
   merged.sort((a, b) => {
     const ac = a.totals.cost_usd ?? -Infinity;
     const bc = b.totals.cost_usd ?? -Infinity;

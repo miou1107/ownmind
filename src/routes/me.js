@@ -1,14 +1,14 @@
 /**
- * /api/me — User-accessible 用量報告 endpoint（v1.17.24）
+ * /api/me — user-accessible usage report endpoint (v1.17.24).
  *
- * 開放給任意 role（user / admin / super_admin）使用，提供：
- *   - GET /profile — 用 api_key 驗身份，回最少資料
- *   - GET /report — 個人 + 團隊 + 專案 三大區塊聚合資料
+ * Open to any role (user / admin / super_admin); offers:
+ *   - GET /profile — authenticate by api_key, returns minimal data.
+ *   - GET /report — personal + team + project aggregated data.
  *
- * 設計決策：
- *   - 用一般 auth middleware（一般版，不擋 user role）
- *   - Q1=C 完全開放，無匿名化（互看版本／活動）
- *   - Q2=B 全團隊專案都看得到（不含對話內容）
+ * Design decisions:
+ *   - Uses the regular auth middleware (does not block user role).
+ *   - Q1=C fully open, no anonymization (members see each other's activity).
+ *   - Q2=B all team projects are visible (no conversation content).
  */
 
 import { Router } from 'express';
@@ -21,8 +21,8 @@ const router = Router();
 const BCRYPT_ROUNDS = 10;
 
 /**
- * POST /api/me/login — email + password 登入（v1.17.25 起接受任意 role）
- * 成功回 api_key + must_change_password flag
+ * POST /api/me/login — email + password login (from v1.17.25, accepts any role).
+ * On success returns api_key + must_change_password flag.
  */
 router.post('/login', async (req, res) => {
   try {
@@ -55,18 +55,18 @@ router.post('/login', async (req, res) => {
       must_change_password: !!user.must_change_password,
     });
   } catch (err) {
-    logger.error('me/login 失敗', { error: err.message });
+    logger.error('me/login failed', { error: err.message });
     res.status(500).json({ error: '登入失敗' });
   }
 });
 
-// 以下 endpoint 都需 Bearer api_key auth（任意 role）
+// All endpoints below require Bearer api_key auth (any role).
 router.use(auth);
 
 /**
- * POST /api/me/change-password — 修改自己密碼
+ * POST /api/me/change-password — change one's own password.
  * Body: { current_password, new_password }
- * must_change_password 旗標自動清掉
+ * The must_change_password flag is cleared automatically.
  */
 router.post('/change-password', async (req, res) => {
   try {
@@ -86,8 +86,9 @@ router.post('/change-password', async (req, res) => {
     const ok = cur.rows[0]?.password_hash &&
       await bcrypt.compare(current_password, cur.rows[0].password_hash);
     if (!ok) {
-      // 回 400 不回 401：401 會被 client.js 認成 token 過期、把 user 踢回 /login
-      // 舊密錯誤是 user input 錯、不是身份失效、語義也對
+      // Return 400, not 401: client.js treats 401 as "token expired" and
+      // kicks the user back to /login. A wrong old password is a user-input
+      // error, not an authentication failure — 400 matches the semantics.
       return res.status(400).json({ error: '舊密碼錯誤' });
     }
     const hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
@@ -97,18 +98,20 @@ router.post('/change-password', async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
-    logger.error('me/change-password 失敗', { error: err.message });
+    logger.error('me/change-password failed', { error: err.message });
     res.status(500).json({ error: '修改密碼失敗' });
   }
 });
 
 /**
- * GET /profile — 驗 api_key，回身份摘要
- * 前端拿來確認 key 有效 + 顯示 user 名字
+ * GET /profile — verify api_key and return an identity summary.
+ * The front-end uses this to confirm the key is valid and to show the
+ * user's name.
  */
 router.get('/profile', async (req, res) => {
   const u = req.user;
-  // 補抓 must_change_password（auth middleware select 沒帶這欄）
+  // Also fetch must_change_password (the auth middleware's SELECT does not
+  // include this column).
   const r = await query(
     `SELECT must_change_password FROM users WHERE id = $1`, [u.id]
   );
@@ -123,13 +126,16 @@ router.get('/profile', async (req, res) => {
 });
 
 /**
- * PUT /profile — 修改自己的 name（v1.20.1 補上、配合 Dashboard 個人資料頁）
+ * PUT /profile — change one's own name (added in v1.20.1 alongside the
+ * Dashboard personal-profile page).
  *
- * 只允許改 name。email / role 都不能 user 自己改：
- *   - email：唯一索引、變更要走 admin 流程（避免登入帳號被改掉）
- *   - role：admin / super_admin 才有權，走 /api/admin/users
+ * Only name may be changed. The user cannot change their own email / role:
+ *   - email: unique index; changes must go through admin (so the login
+ *     account cannot be hijacked).
+ *   - role: requires admin / super_admin via /api/admin/users.
  *
- * 即使 body 帶 email / role 也整個忽略、不報錯，保持 idempotent + 對 client 友善。
+ * Even if the body carries email / role, they are silently ignored without
+ * an error — preserves idempotency and is client-friendly.
  */
 router.put('/profile', async (req, res) => {
   try {
@@ -144,17 +150,21 @@ router.put('/profile', async (req, res) => {
     if (name.length > 100) {
       return res.status(400).json({ error: 'name 長度不能超過 100 字' });
     }
-    // WHERE 鎖 req.user.id，避免 body 偷塞 id 越權改別人
+    // The WHERE clause pins to req.user.id, so a body-injected id cannot
+    // overwrite another user.
     const upd = await query(
       `UPDATE users SET name = $1 WHERE id = $2`,
       [name, req.user.id]
     );
-    // rowCount === 0：token 仍有效但 user row 已被刪（admin 同時刪 user 的 race condition）
-    // 不能 silent 200 + 假 data，會誤導 client「儲存成功」
+    // rowCount === 0: token is still valid but the user row was already
+    // deleted (race with an admin deleting the user). Returning a silent
+    // 200 with fake data would mislead the client into thinking the save
+    // succeeded.
     if (upd.rowCount === 0) {
       return res.status(404).json({ error: '使用者不存在' });
     }
-    // 回傳 shape 跟 GET /profile 對齊，client 拿到可直接覆蓋 state
+    // Response shape mirrors GET /profile so the client can overwrite state
+    // directly with what it receives.
     const r = await query(
       `SELECT must_change_password FROM users WHERE id = $1`, [req.user.id]
     );
@@ -167,7 +177,7 @@ router.put('/profile', async (req, res) => {
       must_change_password: !!r.rows[0]?.must_change_password,
     });
   } catch (err) {
-    logger.error('me/profile PUT 失敗', {
+    logger.error('me/profile PUT failed', {
       error: err.message,
       stack: err.stack,
       user_id: req.user?.id,
@@ -177,22 +187,25 @@ router.put('/profile', async (req, res) => {
 });
 
 /**
- * GET /report?range=14d — 用量報告主聚合 endpoint
- * 預設 14 天；可透過 ?range=7d/30d/all 切換
+ * GET /report?range=14d — main usage-report aggregator endpoint.
+ * Defaults to 14 days; switchable via ?range=7d/30d/all.
  */
 router.get('/report', async (req, res) => {
   try {
-    // v1.17.34: 支援 ?start=YYYY-MM-DD&end=YYYY-MM-DD 自訂範圍；否則沿用 ?range=Xd preset
+    // v1.17.34: support a custom range via ?start=YYYY-MM-DD&end=YYYY-MM-DD;
+    // otherwise fall back to the ?range=Xd preset.
     const range = String(req.query.range || '14d');
     const start = String(req.query.start || '');
     const end = String(req.query.end || '');
     const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
-    // 既輸入 start+end 又通過格式驗證 → 用 BETWEEN，否則用 INTERVAL preset
-    // 採直接 string interpolation，但兩者都已 whitelist 驗證過格式（無注入風險）
+    // Either both start+end pass format validation → use BETWEEN; otherwise
+    // use the INTERVAL preset.
+    // Direct string interpolation is used, but both sides are whitelist-
+    // validated for format (no injection risk).
     let timeFilter;
     if (ISO.test(start) && ISO.test(end)) {
-      // end 加 1 天讓當日整天都涵蓋
+      // Add a day to end so the whole day is included.
       timeFilter = `BETWEEN '${start}'::timestamptz AND ('${end}'::date + INTERVAL '1 day')`;
     } else {
       const interval = ({
@@ -206,7 +219,7 @@ router.get('/report', async (req, res) => {
 
     const me = req.user;
 
-    // ── 個人區塊 ──
+    // ── Personal section ──
     const myStatsQ = await query(`
       SELECT
         COUNT(*) FILTER (WHERE event = 'init') AS sessions,
@@ -226,8 +239,10 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // v1.17.34: project 名稱用 LOWER(TRIM(...)) 正規化合併（'ownmind' / 'OwnMind' 算同個）
-    // v1.17.56: 用 REGEXP_REPLACE 砍掉「( ... )」描述，避免「ai_kol」「ai_kol (xxx)」分裂
+    // v1.17.34: normalize project names via LOWER(TRIM(...)) so
+    // 'ownmind' / 'OwnMind' merge into the same row.
+    // v1.17.56: REGEXP_REPLACE strips trailing "(...)" descriptions so
+    // "ai_kol" and "ai_kol (xxx)" don't split into two rows.
     const myProjectsQ = await query(`
       SELECT LOWER(TRIM(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,
         MIN(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', '')) AS project,
@@ -243,9 +258,12 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // 鐵律遵守：列出全部 active 鐵律 + 該 user 的遵守統計（LEFT JOIN）
-    // v1.17.41: 加 observed（系統自動觀測）獨立欄位，跟 AI manual comply 區隔
-    // 誠信：system_auto 不算「已遵守」，只算「系統看到觸發點」
+    // Iron-rule compliance: list every active iron rule with the user's
+    // compliance stats (LEFT JOIN).
+    // v1.17.41: separate observed (system auto-observation) into its own
+    // column, distinct from AI manual comply.
+    // Honesty: system_auto does not count as "complied"; it only counts as
+    // "the system saw a trigger".
     const myComplianceQ = await query(`
       WITH stats AS (
         SELECT details->>'rule_code' AS rule_code,
@@ -284,8 +302,10 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // 個人活動紀錄（時間範圍內全部，前端分頁）
-    // v1.17.33: 移除 LIMIT 200，user 反饋「紀錄應該要在時間範圍內都要列出」
+    // Personal activity log (everything in the time window; the front-end
+    // paginates).
+    // v1.17.33: removed LIMIT 200 — user feedback: "the log should show
+    // everything in the time window".
     const myActivityQ = await query(`
       SELECT ts, event, tool, source, details
       FROM activity_logs
@@ -295,8 +315,8 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // ── 團隊區塊（Q1=C 完全開放）──
-    // v1.17.35: 加 tokens / turns 兩個 metric 給前端切換
+    // ── Team section (Q1=C fully open) ──
+    // v1.17.35: added tokens / turns as alternate metrics the front-end can toggle.
     const teamUsersQ = await query(`
       SELECT u.id, u.name, u.email, u.role,
         COUNT(*) FILTER (WHERE al.event = 'init') AS sessions,
@@ -316,8 +336,9 @@ router.get('/report', async (req, res) => {
       ORDER BY events DESC NULLS LAST`
     );
 
-    // v1.17.35: 3 個 trend chart 都加 tokens / turns 數據（活動數仍是預設）
-    // 用 FULL OUTER JOIN 把 3 個 dataset 合在一起，避免缺 bucket
+    // v1.17.35: all three trend charts also include tokens / turns
+    // (activity count remains the default). Use FULL OUTER JOIN to merge
+    // the three datasets without missing buckets.
     const dailyTrendQ = await query(`
       WITH a AS (
         SELECT to_char(ts AT TIME ZONE 'Asia/Taipei', 'MM-DD') AS d,
@@ -402,12 +423,15 @@ router.get('/report', async (req, res) => {
       ORDER BY u.name, h.tool`
     );
 
-    // ── 專案區塊（Q2=B 全團隊專案都看得到）──
-    // v1.17.30: 改成 per-user 細項顯示「主要負責人」與分工
-    // v1.17.34: project 名稱用 LOWER(TRIM(...)) 合併大小寫變體
-    // v1.17.36: 多源合併 — session_logs（量化資料）+ handoffs（也算活動跡象，
-    //   因為有些工作只寫交接沒寫 session_log，例如 RING 專案）
-    // v1.17.56: REGEXP_REPLACE 砍「( ... )」描述
+    // ── Project section (Q2=B all team projects visible) ──
+    // v1.17.30: switched to per-user details so primary owners and division
+    // of labor are visible.
+    // v1.17.34: normalize project names via LOWER(TRIM(...)) to merge
+    // case variants.
+    // v1.17.36: multi-source merge — session_logs (quantitative data) +
+    //   handoffs (also a signal of activity; some work has handoffs but
+    //   no session_log, e.g. the RING project).
+    // v1.17.56: REGEXP_REPLACE strips trailing "(...)" descriptions.
     const projectContribQ = await query(`
       SELECT LOWER(TRIM(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,
         MIN(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', '')) AS project,
@@ -422,7 +446,7 @@ router.get('/report', async (req, res) => {
       GROUP BY project_key, u.name
       ORDER BY project_key, 5 DESC NULLS LAST`
     );
-    // handoffs 補充（從沒寫 session_log 但有交接的專案）
+    // Handoff supplement (projects with handoffs but no session_log).
     const projectHandoffQ = await query(`
       SELECT LOWER(TRIM(h.project)) AS project_key,
         MIN(h.project) AS project,
@@ -448,7 +472,8 @@ router.get('/report', async (req, res) => {
       e.turns += t;
       e.contributors.push({ name: r.name, sessions: s, turns: t, handoffs: 0 });
     }
-    // 把 handoffs 數加進去；若該 project 之前沒在 session_logs 出現也建立 entry
+    // Merge handoff counts; if a project did not appear in session_logs
+    // before, create the entry now.
     for (const r of projectHandoffQ.rows) {
       const h = parseInt(r.handoffs, 10) || 0;
       const key = r.project_key;
@@ -457,7 +482,7 @@ router.get('/report', async (req, res) => {
       }
       const e = projMap.get(key);
       e.handoffs += h;
-      // 找該 user 的 contributor entry，找不到就新增
+      // Find the user's contributor entry; create one if missing.
       let contrib = e.contributors.find(c => c.name === r.name);
       if (!contrib) {
         contrib = { name: r.name, sessions: 0, turns: 0, handoffs: 0 };
@@ -465,7 +490,8 @@ router.get('/report', async (req, res) => {
       }
       contrib.handoffs += h;
     }
-    // 排序：先看 turns（主要量化指標），平手看 handoffs，再看 sessions
+    // Sort: turns first (primary quantitative metric), tie-break on
+    // handoffs, then sessions.
     const teamProjects = Array.from(projMap.values())
       .sort((a, b) => b.turns - a.turns || b.handoffs - a.handoffs || b.sessions - a.sessions);
 
@@ -482,23 +508,29 @@ router.get('/report', async (req, res) => {
       ORDER BY COUNT(*) DESC`
     );
 
-    // ── Server-side 反向稽核（v1.17.38 起）──
-    // Codex round 3 review 後（v1.17.39）改進：
-    //   P1.1 orphan_session 加 v1.17.37 ship 日期 gate
-    //   P1.2 compliance_gap 縮窄 sensitive event 列表 + 用 verification metadata
-    //   P2.1 heartbeat 用 LOWER() tool 比對
-    const V17_37_SHIPPED = '2026-05-07';  // v1.17.37 之後 emergencySessionLog 才會自動帶 compliance arr
+    // ── Server-side reverse audit (since v1.17.38) ──
+    // Improvements after the Codex round-3 review (v1.17.39):
+    //   P1.1 orphan_session gated by the v1.17.37 ship date.
+    //   P1.2 compliance_gap narrows the sensitive-event list + uses
+    //         verification metadata.
+    //   P2.1 heartbeat compares tools via LOWER().
+    const V17_37_SHIPPED = '2026-05-07';  // From v1.17.37 onward, emergencySessionLog auto-attaches a compliance array.
 
-    // #1 activity/compliance gap：v1.17.42 拆兩種等級
-    //   gap_a「漏觀測」: 完全沒有任何 compliance event（連系統觀測都沒抓到 → 系統壞了）
-    //   gap_b「未驗證」: 有 system_auto observed_trigger 但沒對應鐵律 manual comply
-    // v1.17.43: has_manual_comply 加 rule_code 關聯，避免不相關 comply 誤清 gap
-    //   每種 sensitive event 對應特定鐵律（expected_rules 陣列）
+    // #1 activity/compliance gap. v1.17.42 splits this into two severities:
+    //   gap_a "unobserved": no compliance event at all (even system
+    //     observation missed it → system is broken).
+    //   gap_b "unverified": system_auto observed_trigger exists but no
+    //     matching iron-rule manual comply.
+    // v1.17.43: has_manual_comply also matches by rule_code so unrelated
+    //   comply rows don't accidentally clear the gap.
+    //   Each sensitive event has a list of expected_rules.
     const complianceGapQ = await query(`
       WITH sensitive AS (
-        -- v1.17.87：拿掉 handoff_create（跟 activity.js autoEmitObservedTrigger
-        -- 設計選擇對齊 — handoff content 是 user 主觀內容、不該被當 compliance
-        -- 觸發點觀測。剩下兩個都是「動到鐵律本身」的明確 IR-006 觸發。
+        -- v1.17.87: dropped handoff_create (aligned with activity.js's
+        -- autoEmitObservedTrigger design choice — handoff content is the
+        -- user's subjective input and should not be treated as a compliance
+        -- trigger). The two remaining events are clear "modifying iron
+        -- rules" triggers for IR-006.
         SELECT id, ts,
           CASE
             WHEN event = 'memory_disable' THEN ARRAY['IR-006']
@@ -523,7 +555,7 @@ router.get('/report', async (req, res) => {
             WHERE c.user_id = $1 AND c.event = 'iron_rule_compliance'
               AND c.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
               AND c.details->>'action' = 'comply'
-              -- v1.17.45: 排除所有 system_* 自動來源（client + server 兩端）
+              -- v1.17.45: exclude any system_* automatic source (client + server).
               AND COALESCE(c.details->>'source', '') NOT LIKE 'system_%'
               AND c.details->>'rule_code' = ANY(s.expected_rules)
           ) AS has_matching_manual_comply
@@ -536,7 +568,8 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // #3 heartbeat absence：用 LOWER(TRIM(...)) 比對 tool name 避免大小寫漏判
+    // #3 heartbeat absence: compare tool names via LOWER(TRIM(...)) so case
+    // variations don't slip through.
     const heartbeatAuditQ = await query(`
       WITH active AS (
         SELECT DISTINCT LOWER(TRIM(tool)) AS tool_key, MIN(tool) AS tool
@@ -557,8 +590,10 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // #4 cross-source consistency：標記某天 activity 但 0 token_events
-    // 排除「某 tool 本來就沒 token scanner」的場景：只看有 collector_heartbeat 的 tool
+    // #4 cross-source consistency: flag days with activity but zero
+    // token_events.
+    // Skip the "this tool has no token scanner" case: only look at tools
+    // present in collector_heartbeat.
     const consistencyQ = await query(`
       WITH days AS (
         SELECT DISTINCT to_char(ts AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS d
@@ -577,8 +612,8 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // #2 orphan session compliance：v1.17.37 之後 ship 才有自動寫 compliance arr
-    // 加日期 gate 避免歷史污染
+    // #2 orphan session compliance: only since v1.17.37 ship do sessions
+    // auto-write a compliance array. Date-gated to avoid historical noise.
     const orphanComplianceQ = await query(`
       SELECT COUNT(*) AS orphan_count
       FROM session_logs
@@ -593,8 +628,9 @@ router.get('/report', async (req, res) => {
       [me.id]
     );
 
-    // P3: blind-spot detection — user 有 OwnMind 帳號但完全沒 MCP activity
-    // 可能用非 MCP 介面（claude.ai web、ChatGPT）做事，整個不可觀測
+    // P3: blind-spot detection — the user has an OwnMind account but no MCP
+    // activity at all. They may be using a non-MCP surface (claude.ai web,
+    // ChatGPT), which is entirely unobservable.
     const blindSpotQ = await query(`
       SELECT
         (SELECT COUNT(*) FROM activity_logs WHERE user_id = $1 AND ts >= NOW() - INTERVAL '14 days') AS recent_activity,
@@ -604,16 +640,19 @@ router.get('/report', async (req, res) => {
       [me.id, me.created_at]
     );
 
-    // 整理 audit_findings 給前端
-    // v1.17.87：拿掉個人頁的 compliance_unobserved / compliance_unverified /
-    // orphan_session 三條合規警告。理由：
-    //   1. 這三條反映系統 bug 或 AI 行為問題，不是個別 user 該緊張的事
-    //   2. 跨 user 比對才看得出 pattern（例如「9 筆全部來自 3 條 handler」）
-    //   3. 改放新 GET /api/pitfalls endpoint + me.html「踩坑紀錄」tab、跨 user
-    //      合併呈現，任何 user 都看得到
-    // 保留：heartbeat_absent / source_inconsistent / unobservable_source 三條
-    // —— 這些是 user 自己環境的問題（scanner 沒跑 / 沒用 MCP 工具），確實該
-    // 在個人頁通知 user。
+    // Assemble audit_findings for the front-end.
+    // v1.17.87: dropped the three compliance warnings from the personal page
+    // (compliance_unobserved / compliance_unverified / orphan_session).
+    // Reasons:
+    //   1. These reflect system bugs or AI behavior problems, not something
+    //      individual users should fret about.
+    //   2. The patterns only emerge across users (e.g. "all 9 rows come
+    //      from 3 handlers").
+    //   3. Moved to the new GET /api/pitfalls endpoint + me.html "pitfalls"
+    //      tab, presented cross-user; any user can see it.
+    // Kept: heartbeat_absent / source_inconsistent / unobservable_source —
+    // these are about the user's own environment (scanner not running, not
+    // using MCP tools) and rightly belong on the personal page.
     const myAuditFindings = [];
     const heartbeatStale = heartbeatAuditQ.rows;
     if (heartbeatStale.length > 0) {
@@ -634,9 +673,10 @@ router.get('/report', async (req, res) => {
         message: `${missingDays} 天有 activity 紀錄但完全沒有 token_events，scanner 可能沒在跑`,
       });
     }
-    // v1.17.87：orphan_session 也搬到 /api/pitfalls 跨 user 呈現、不在個人頁警告
+    // v1.17.87: orphan_session also moved to /api/pitfalls for cross-user
+    // presentation; no longer warned on the personal page.
 
-    // P3: blind-spot — 帳號開超過 7 天但完全沒 MCP activity
+    // P3: blind-spot — account is >7 days old but with no MCP activity.
     const bs = blindSpotQ.rows[0];
     if (parseFloat(bs.account_age_days || 0) > 7
       && parseInt(bs.recent_activity, 10) === 0
@@ -650,8 +690,9 @@ router.get('/report', async (req, res) => {
       });
     }
 
-    // #5 IR-027 reverse audit（super_admin only）：
-    // user 建立 > 7 天仍預設密碼（must_change_password=TRUE）
+    // #5 IR-027 reverse audit (super_admin only):
+    // user created > 7 days ago, still on a default password
+    // (must_change_password=TRUE).
     if (me.role === 'super_admin') {
       const ir027Q = await query(`
         SELECT u.id, u.email,
@@ -672,7 +713,7 @@ router.get('/report', async (req, res) => {
         });
       }
 
-      // P3 admin 視角：找出「team 內可能用非 MCP 介面工作」的 user
+      // P3 admin view: find team members who might be using a non-MCP surface.
       const teamBlindQ = await query(`
         SELECT u.email, u.name
         FROM users u
@@ -698,12 +739,14 @@ router.get('/report', async (req, res) => {
       }
     }
 
-    // P2.2: 寫進 audit_logs 表持久化（high severity 才寫，避免噪音）
-    // 用既有 audit_logs schema：actor_id=系統(0)、action='audit_finding'、target_type='user'
-    // 持久化讓背景監控／email/broadcast 將來可以接（目前先落表，未來再接通知管線）
+    // P2.2: persist into the audit_logs table (only high severity, to avoid
+    // noise). Reuses the audit_logs schema with actor_id=system(0),
+    // action='audit_finding', target_type='user'. Persisting lets background
+    // monitoring / email / broadcast hook into this later (today we just
+    // record; notification wiring comes later).
     for (const f of myAuditFindings) {
       if (f.severity === 'high') {
-        // 同 user/type 24h 內已寫過就不重複（粗略 dedup）
+        // De-dupe within 24h on the same user / type (coarse dedup).
         try {
           await query(`
             INSERT INTO audit_logs (actor_id, action, target_type, target_id, details)
@@ -716,8 +759,8 @@ router.get('/report', async (req, res) => {
             )
           `, [me.id, JSON.stringify(f), f.type]);
         } catch (e) {
-          // silent fail — 不阻擋報告產出
-          logger.warn('audit_finding 持久化失敗', { error: e.message });
+          // Silent fail — don't block report generation.
+          logger.warn('audit_finding persistence failed', { error: e.message });
         }
       }
     }
@@ -778,37 +821,39 @@ router.get('/report', async (req, res) => {
       projects: teamProjects,
     });
   } catch (err) {
-    logger.error('me/report 失敗', { error: err.message, stack: err.stack });
+    logger.error('me/report failed', { error: err.message, stack: err.stack });
     res.status(500).json({ error: '報告產生失敗' });
   }
 });
 
 // =========================================================================
-// v1.17.87 — GET /api/me/pitfalls：跨 user 踩坑紀錄（任何 user 可見）
+// v1.17.87 — GET /api/me/pitfalls: cross-user pitfalls log (visible to any user).
 // =========================================================================
 //
-// 設計：把原本 /me/report 個人頁的合規警告（compliance_unobserved /
-// compliance_unverified / orphan_session）改成跨 user 合併、放新 tab「踩坑紀錄」。
+// Design: moved the three compliance warnings from the /me/report personal
+// page (compliance_unobserved / compliance_unverified / orphan_session)
+// into a cross-user aggregated "pitfalls" tab.
 //
-// 為什麼任何 user 可見：
-//   - 這些是「系統 bug 或 AI 行為問題」、不是個別 user 的隱私
-//   - 跨 user 比對才看得出 pattern（9 筆全部來自 3 條 handler）
-//   - Vin 規格：所有 user 都該看到「OwnMind 整體稽核健康度」
+// Why visible to any user:
+//   - These are "system bugs or AI behavior problems", not individual privacy.
+//   - The patterns only emerge across users (9 rows all from 3 handlers).
+//   - Per Vin's spec: every user should see "OwnMind's overall audit health".
 //
 // Query params:
-//   - window: 7d / 30d / 90d / all（預設 30d）
-//   - status: pending / resolved / wontfix / all（預設 pending）— v1.17.87 P1
-//     先全部回 pending，未來加 mutation endpoint 改 status
+//   - window: 7d / 30d / 90d / all (default 30d)
+//   - status: pending / resolved / wontfix / all (default pending) —
+//     v1.17.87 P1 returns pending only for now; later we'll add a mutation
+//     endpoint to change status.
 //
-// 回 3 個 section：
-//   - unobserved: 高風險動作沒任何合規紀錄（系統 bug）
-//   - unverified: 有系統觀測但無 AI 主動回報（AI 行為）
-//   - orphan_session: ≥5 輪 session 沒帶 compliance（AI 整段沒回報）
+// Returns three sections:
+//   - unobserved: high-risk actions with no compliance record (system bug).
+//   - unverified: system observed but AI didn't proactively report (AI behavior).
+//   - orphan_session: ≥5-turn sessions with no compliance (whole session unreported).
 //
-// 每筆 row 含四欄資訊：when（時間）/ what（發生情況）/ impact（影響）/ fix_hint（建議）
+// Each row has four fields: when / what / impact / fix_hint.
 router.get('/pitfalls', async (req, res) => {
   try {
-    // window param
+    // window param.
     const window = req.query.window || '30d';
     let timeFilter;
     if (window === 'all') {
@@ -818,22 +863,29 @@ router.get('/pitfalls', async (req, res) => {
       timeFilter = `>= NOW() - INTERVAL '${days} days'`;
     }
 
-    // v1.17.92 → v1.17.93: V17_87_SHIPPED cutoff revert
-    //   v1.17.92 加 cutoff 是 workaround — 把 8 筆 v1.17.87 ship 前的歷史殘留
-    //   藏起來、但資料還在 DB 裡、違反「透明度」+ IR-027（提醒無效、邏輯才有效）。
-    //   v1.17.93 撤回 cutoff、留著 8 筆顯示。改用 fix_hint 文案明確說明：
-    //   - 是 v1.17.87 之前的歷史殘留（memory.js POST 那時沒寫 server-side compliance）
-    //   - 無法補記（補假 audit log 反而汙染稽核）
-    //   - 14 天 retention 後自然消失
-    //   admin 看到會清楚理解「不是現況 bug、不用處理」。
+    // v1.17.92 → v1.17.93: V17_87_SHIPPED cutoff revert.
+    //   v1.17.92 added the cutoff as a workaround — hides 8 v1.17.87
+    //   historical leftovers but the data still lives in the DB, which
+    //   violates "transparency" + IR-027 (reminders are useless, only logic
+    //   counts). v1.17.93 reverts the cutoff and leaves the 8 visible.
+    //   Use a fix_hint to explain clearly:
+    //   - It's v1.17.87 pre-ship history (memory.js POST didn't write a
+    //     server-side compliance row at that time).
+    //   - It cannot be backfilled (fake audit logs would taint the audit).
+    //   - It disappears naturally after the 14-day retention.
+    //   Admins see this and immediately understand "not a current bug, no
+    //   action needed".
 
-    // ── Section 1: unobserved（高風險動作 ±10 分鐘無任何 compliance log）──
+    // ── Section 1: unobserved (no compliance log within ±10 minutes of a
+    //   high-risk action) ──
     //
-    // v1.17.90: memory_disable 分支加 iron_rule type filter
-    //   背景：v1.17.88 30 筆漏觀測有 22 筆（73%）是 team_standard / standard_detail
-    //   / project disable 被誤算進 sensitive。team_standard 等 disable 不該觸發 IR-006。
-    //   先用 COALESCE 讀 v1.17.89+ enrich 寫入的 details->>'disabled_type'，找不到
-    //   再 JOIN memories（給 v1.17.89 之前的歷史資料 — 14 天後自然過期）。
+    // v1.17.90: memory_disable branch adds an iron_rule type filter.
+    //   Background: of the 30 unobserved rows in v1.17.88, 22 (73%) were
+    //   team_standard / standard_detail / project disables miscounted as
+    //   sensitive. team_standard etc. disables should not trigger IR-006.
+    //   First read details->>'disabled_type' (written by v1.17.89+
+    //   enrichActivityDetails); fall back to JOIN memories for older data
+    //   from before v1.17.89 (which naturally expires within 14 days).
     const unobservedQ = await query(`
       WITH sensitive AS (
         SELECT a.id, a.ts, a.user_id, a.event, a.details,
@@ -857,8 +909,9 @@ router.get('/pitfalls', async (req, res) => {
         u.name AS user_name,
         s.details->>'title' AS save_title,
         s.details->>'id' AS disabled_memory_id,
-        -- v1.17.89: 優先讀 details snapshot（新資料、enrichActivityDetails 寫入）
-        -- 找不到再 JOIN memories（v1.17.88 之前的歷史資料、會在 14 天後自然過期）
+        -- v1.17.89: prefer the details snapshot (new data, written by
+        -- enrichActivityDetails); fall back to JOIN memories for older
+        -- pre-v1.17.88 data, which naturally expires in 14 days.
         COALESCE(
           s.details->>'disabled_title',
           (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
@@ -877,8 +930,10 @@ router.get('/pitfalls', async (req, res) => {
       )
       ORDER BY s.ts DESC`);
 
-    // ── Section 2: unverified（有系統觀測但無 matching manual comply）──
-    // v1.17.90: 同 unobserved 邏輯、memory_disable 加 iron_rule type filter
+    // ── Section 2: unverified (system observed but no matching manual
+    //   comply) ──
+    // v1.17.90: same logic as unobserved; memory_disable filter requires
+    // iron_rule type.
     const unverifiedQ = await query(`
       WITH sensitive AS (
         SELECT a.id, a.ts, a.user_id, a.event, a.details,
@@ -902,7 +957,7 @@ router.get('/pitfalls', async (req, res) => {
         u.name AS user_name,
         s.details->>'title' AS save_title,
         s.details->>'id' AS disabled_memory_id,
-        -- v1.17.89: 優先讀 details snapshot、找不到再 JOIN memories
+        -- v1.17.89: prefer details snapshot; fall back to JOIN memories.
         COALESCE(
           s.details->>'disabled_title',
           (SELECT title FROM memories WHERE id = (CASE WHEN s.details->>'id' ~ '^\d+$' THEN (s.details->>'id')::int END))
@@ -926,7 +981,7 @@ router.get('/pitfalls', async (req, res) => {
       )
       ORDER BY s.ts DESC`);
 
-    // ── Section 3: orphan_session（≥5 輪 session 無 compliance）──
+    // ── Section 3: orphan_session (≥5-turn session with no compliance) ──
     const V17_37_SHIPPED = '2026-05-07';
     const orphanQ = await query(`
       SELECT s.id, s.created_at AS ts, s.user_id, s.tool, s.machine,
@@ -945,7 +1000,7 @@ router.get('/pitfalls', async (req, res) => {
         AND COALESCE((s.details->>'duration_turns')::int, 0) >= 5
       ORDER BY s.created_at DESC`);
 
-    // 把 row 包成統一 shape：when / what / impact / fix_hint + 詳細欄位
+    // Wrap rows into a unified shape: when / what / impact / fix_hint + details.
     const fmtUnobs = (r) => {
       const isSave = r.event === 'memory_save';
       const what = isSave
@@ -953,15 +1008,16 @@ router.get('/pitfalls', async (req, res) => {
         : `停用鐵律 ${r.disabled_code || ''}「${r.disabled_title || '(找不到)'}」`;
       return {
         type: 'unobserved',
-        status: 'pending',  // v1.17.87 先全 pending、未來支援 mutation
+        status: 'pending',  // v1.17.87: all pending for now; will add mutation later.
         when: r.ts,
         user_id: r.user_id,
         user_name: r.user_name,
         expected_rules: r.expected_rules || [],
         what,
         impact: `${(r.expected_rules || []).join(' / ')} 鐵律觸發但伺服器沒留稽核紀錄、admin 無法回溯查證 AI 是否遵守`,
-        // v1.17.93: 改寫 fix_hint，明確告訴 admin「這是歷史殘留、不用處理」
-        // 避免有人看到 pitfalls 列表想去手動補記 compliance log（補假 audit 反而汙染稽核）
+        // v1.17.93: rewrite fix_hint to make it clear "this is historical
+        // residue, no action needed", so admins don't try to manually
+        // backfill compliance logs (fake audit entries taint the audit).
         fix_hint: 'v1.17.87 (2026-05-11) 已補上 memory.js POST iron_rule 路徑的 server-side observed_trigger，新事件不會再漏。剩下顯示的是 v1.17.87 之前的歷史殘留、無法補記（補假 audit log 反而汙染稽核）、14 天 retention 後自然消失、不需要處理',
         raw: { id: r.id, event: r.event },
       };
@@ -980,7 +1036,7 @@ router.get('/pitfalls', async (req, res) => {
         expected_rules: r.expected_rules || [],
         what,
         impact: '系統已觀測到觸發、但 AI 沒主動 call ownmind_report_compliance 留遵守紀錄',
-        // v1.17.93: 同步說明歷史殘留 + 14 天 retention 自然消失
+        // v1.17.93: also explain historical residue + 14-day retention.
         fix_hint: 'AI 行為問題：在 SKILL.md 加指引、提醒 AI 動到鐵律時要主動 call compliance。v1.17.87 (2026-05-11) 之前的舊事件無法補記、14 天 retention 後自然消失',
         raw: { id: r.id, event: r.event },
       };
@@ -994,8 +1050,10 @@ router.get('/pitfalls', async (req, res) => {
       what: `Session #${r.id} on ${r.tool || '?'} (${r.turns} 輪, 專案：${r.project || '-'})`,
       impact: '高互動 session 整段沒留任何 compliance call、AI 可能整段都沒回報鐵律遵守',
       fix_hint: '過去事件、無需手動處理；自然過期。AI 行為層面可加 session 末端 compliance summary',
-      // v1.17.87 reviewer #3：raw.summary 是別 user 的 session 內容、跨 user 可見會洩漏。
-      // 截 40 char 讓踩坑能識別大致脈絡但不暴露完整訊息（pitfalls 是 pattern-spotting、不是內容披露）。
+      // v1.17.87 reviewer #3: raw.summary is another user's session content
+      // and would leak across users. Truncate to 40 chars so the pitfall
+      // entry conveys rough context without exposing the full message
+      // (pitfalls are pattern-spotting, not content disclosure).
       raw: {
         id: r.id, tool: r.tool, machine: r.machine,
         summary: r.summary ? String(r.summary).slice(0, 40) + (r.summary.length > 40 ? '…' : '') : null,
@@ -1021,7 +1079,7 @@ router.get('/pitfalls', async (req, res) => {
       },
     });
   } catch (err) {
-    logger.error('me/pitfalls 失敗', { error: err.message, stack: err.stack });
+    logger.error('me/pitfalls failed', { error: err.message, stack: err.stack });
     res.status(500).json({ error: '踩坑紀錄查詢失敗' });
   }
 });

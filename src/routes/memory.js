@@ -39,15 +39,15 @@ function parseSemver(v) {
 const UPDATE_PROMPT = 'Your OwnMind MCP client is outdated — please update. In the terminal run: cd ~/.ownmind && git pull && cd mcp && npm install. Or paste this prompt to the AI: "Update OwnMind for me: cd ~/.ownmind && git pull && cd mcp && npm install"';
 
 /**
- * Sync token 驗證
- * - 有 token 且 valid → 通過
- * - 有 token 但 stale → 409 要求 re-init
- * - 沒 token → 409 要求先呼叫 init（不再 graceful fallback）
- * 回傳: { ok: boolean, errorResponse?: object }
+ * Sync token check.
+ * - token present and valid → pass
+ * - token present but stale → 409 asks for re-init
+ * - no token → 409 asks for init first (no longer a graceful fallback)
+ * Returns: { ok: boolean, errorResponse?: object }
  */
 async function checkSyncToken(userId, syncToken) {
   if (!syncToken) {
-    logger.warn('寫入操作未帶 sync_token，拒絕（請先呼叫 ownmind_init）', { userId });
+    logger.warn('Write request missing sync_token; rejected (call ownmind_init first)', { userId });
     return {
       ok: false,
       errorResponse: {
@@ -364,36 +364,41 @@ Common actions values: code_edit, git_commit, git_push, deploy, debug, research,
 - Local memory may coexist with OwnMind, but OwnMind takes precedence on conflict`;
 
 /**
- * GET /sync-token — Lightweight conditional sync endpoint (v1.18.0)
+ * GET /sync-token — Lightweight conditional sync endpoint (v1.18.0).
  *
- * 為什麼存在：
- *   v1.17.x 起 SessionStart hook 每次都全量打 /init?compact=true、不論鐵律 / 記憶
- *   有沒有變、99% sessions 都拉了同一份 30KB 資料下來。
+ * Why it exists:
+ *   Since v1.17.x, the SessionStart hook unconditionally calls
+ *   /init?compact=true on every session, regardless of whether iron rules /
+ *   memory have actually changed. 99% of sessions end up downloading the
+ *   same 30KB payload.
  *
- *   v1.18.0 補完讀取端 conditional pull：client 先打這個輕量 endpoint 拿
- *   sync_token、跟 local cache (~/.ownmind/cache/memories.json) 的 sync_token
- *   比對、相同就跳過 /init download (省 95% 流量)、不同才走全量。
+ *   v1.18.0 completes the conditional-pull story on the read side: clients
+ *   first hit this lightweight endpoint to get a sync_token, compare with
+ *   the local cache (~/.ownmind/cache/memories.json), and skip the /init
+ *   download when tokens match (saves ~95% traffic); only fetch the full
+ *   payload when they differ.
  *
- *   sync_token 機制本身已存在 (src/utils/syncToken.js)、只用在寫入端防 stale
- *   client；本 endpoint 把它也用在讀取端。
+ *   The sync_token mechanism itself already exists (src/utils/syncToken.js)
+ *   and was previously used only on the write side to reject stale clients;
+ *   this endpoint reuses it on the read side.
  *
- * 行為：
- *   - 純算 sync_token、不 query 任何 memory 內容
- *   - response < 100 bytes
- *   - timeout 友善 (3 秒內必回、給 hook 用)
+ * Behavior:
+ *   - Computes the sync_token without querying any memory content.
+ *   - Response < 100 bytes.
+ *   - Timeout-friendly (replies within 3 seconds, suitable for the hook).
  */
 router.get('/sync-token', async (req, res) => {
   try {
     const sync_token = await generateSyncToken(req.user.id);
     res.json({ sync_token });
   } catch (err) {
-    logger.error('GET /sync-token 失敗', { error: err.message });
+    logger.error('GET /sync-token failed', { error: err.message });
     res.status(500).json({ error: 'Failed to obtain sync-token' });
   }
 });
 
 /**
- * GET /init - 載入初始記憶
+ * GET /init - load initial memories.
  */
 router.get('/init', async (req, res) => {
   try {
@@ -406,7 +411,8 @@ router.get('/init', async (req, res) => {
       [req.user.id]
     );
 
-    // team_standard: 跨使用者共享，載入摘要（排除 rule_detail 和使用者已 opt-out 的）
+    // team_standard is shared across users; load its summary (exclude
+    // rule_detail rows and anything the user has opted out of).
     const teamStandardsResult = await query(
       `SELECT m.* FROM memories m
        WHERE m.type = 'team_standard'
@@ -439,11 +445,12 @@ router.get('/init', async (req, res) => {
     const teamStandards = teamStandardsResult.rows;
     const activeHandoff = handoffResult.rows[0] || null;
 
-    // v1.19: 按 tier 分組顯示（Critical / Default / Advisory），Advisory 只顯示計數
+    // v1.19: group by tier (Critical / Default / Advisory) for display;
+    // Advisory shows only counts.
     const ironRulesDigest = buildIronRulesDigest(ironRules);
     const ironRulesTierCounts = countByTier(ironRules);
 
-    // 團隊規範摘要
+    // Team standards summary.
     const teamStandardsDigest = teamStandards.map(r => `[團隊] ${r.title}`).join('\n');
 
     // Sync token
@@ -459,7 +466,8 @@ router.get('/init', async (req, res) => {
       ? teamStandards.reduce((max, r) => r.updated_at > max ? r.updated_at : max, teamStandards[0].updated_at)
       : null;
 
-    // 升級指令：只在 server 版本比 client 新時才推送升級
+    // Upgrade instruction: only push an upgrade when the server is newer
+    // than the client.
     const clientVersion = req.headers['x-ownmind-version'] || req.query.client_version || '';
     let upgradeAction = null;
     const serverParts = parseSemver(SERVER_VERSION);
@@ -475,7 +483,7 @@ router.get('/init', async (req, res) => {
       };
     }
 
-    // weekly_summary：每週第一次 init 才回傳，其他靜默
+    // weekly_summary: returned only on the first init of the week; otherwise silent.
     let weeklySummary = null;
     try {
       const now = new Date();
@@ -486,7 +494,7 @@ router.get('/init', async (req, res) => {
         const monday = new Date(d);
         monday.setUTCDate(d.getUTCDate() - daysFromMonday);
         monday.setUTCHours(0, 0, 0, 0);
-        return new Date(monday.getTime() - 8 * 3600000); // 轉回 UTC
+        return new Date(monday.getTime() - 8 * 3600000); // back to UTC
       })();
 
       const markerResult = await query(
@@ -499,7 +507,7 @@ router.get('/init', async (req, res) => {
       if (shouldSend) {
         const { start, end, label } = computePeriodRange('week', 1);
 
-        // 優先找週報快照
+        // Prefer the weekly snapshot.
         const snapshotResult = await query(
           `SELECT details FROM session_logs
            WHERE user_id = $1 AND tool = 'system'
@@ -518,7 +526,7 @@ router.get('/init', async (req, res) => {
             top_frictions: (d.top_frictions || []).slice(0, 3).map(f => f.text || f),
           };
         } else {
-          // 即時計算（job 還沒跑時的 fallback）
+          // On-the-fly compute (fallback when the job has not run yet).
           const sessions = await query(
             `SELECT details FROM session_logs
              WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
@@ -544,20 +552,20 @@ router.get('/init', async (req, res) => {
           };
         }
 
-        // 更新 marker
+        // Update marker.
         await query(
           `UPDATE users SET weekly_summary_sent_at = NOW() WHERE id = $1`,
           [req.user.id]
         );
       }
     } catch (wsErr) {
-      logger.warn('weekly_summary 計算失敗（不影響 init）', { error: wsErr.message });
+      logger.warn('weekly_summary compute failed (does not affect init)', { error: wsErr.message });
     }
 
-    // 記憶健康檢查：偵測重複和過時記憶
+    // Memory health check: detect duplicates and stale memories.
     let memoryHealth = null;
     try {
-      // 重複 title 偵測（同 type + 同 title，active）
+      // Duplicate title detection (same type + same title, active).
       const dupes = await query(
         `SELECT type, title, COUNT(*) as cnt, array_agg(id) as ids
          FROM memories
@@ -568,7 +576,7 @@ router.get('/init', async (req, res) => {
         [req.user.id]
       );
 
-      // 過時記憶（90 天未更新，排除 iron_rule 和 session_log）
+      // Stale memories (no update in 90 days, excluding iron_rule and session_log).
       const stale = await query(
         `SELECT id, type, title, updated_at
          FROM memories
@@ -587,10 +595,10 @@ router.get('/init', async (req, res) => {
         };
       }
     } catch (mhErr) {
-      logger.warn('記憶健康檢查失敗（不影響 init）', { error: mhErr.message });
+      logger.warn('memory health check failed (does not affect init)', { error: mhErr.message });
     }
 
-    // 待確認暫存記憶
+    // Pending-review staging memories.
     let pendingReview = null;
     try {
       const prResult = await query(
@@ -606,10 +614,10 @@ router.get('/init', async (req, res) => {
         };
       }
     } catch (prErr) {
-      logger.warn('pending_review 查詢失敗（不影響 init）', { error: prErr.message });
+      logger.warn('pending_review query failed (does not affect init)', { error: prErr.message });
     }
 
-    // --- Enforcement Alerts：分析違反歷史，動態調整提醒強度 ---
+    // --- Enforcement Alerts: analyze violation history and dynamically adjust reminder intensity. ---
     let enforcementAlerts = null;
     try {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600000).toISOString();
@@ -624,8 +632,9 @@ router.get('/init', async (req, res) => {
         [req.user.id, thirtyDaysAgo]
       );
 
-      // 跨 session 記憶：從最近 session 的 compliance 記錄中取出實際違反的鐵律
-      // 注意：不用 rules_triggered（包含遵守的），要用 activity_logs 的 violate 記錄
+      // Cross-session memory: pull actual violations from recent sessions.
+      // Note: do NOT use rules_triggered (which includes complies); use the
+      // violate records from activity_logs.
       const lastSessionResult = await query(
         `SELECT DISTINCT details->>'rule_code' as rule_code
          FROM activity_logs
@@ -646,14 +655,15 @@ router.get('/init', async (req, res) => {
       const alerts = computeEnforcementAlerts(complianceResult.rows, lastViolations);
       if (alerts.length > 0) enforcementAlerts = alerts;
     } catch (err) {
-      logger.error('Enforcement alerts 計算失敗', { error: err.message });
+      logger.error('Enforcement alerts compute failed', { error: err.message });
     }
 
     // compact mode: skip SOP + full rules, only send digests (saves ~6000 tokens)
     const compact = req.query.compact === 'true';
 
-    // Server-side 渲染：將 enforcement_alerts 嵌入 iron_rules_digest
-    // 保證所有 client（MCP、hooks、未來新 client）都會顯示，不依賴 client 各自解析
+    // Server-side rendering: embed enforcement_alerts into iron_rules_digest.
+    // Guarantees every client (MCP, hooks, future clients) shows them, instead
+    // of relying on each client to parse it independently.
     let ironRulesDigestFinal = ironRulesDigest;
     if (enforcementAlerts && enforcementAlerts.length > 0) {
       const alertText = '\n\n## Enforcement Alerts (Historical Violations)\n' +
@@ -661,10 +671,13 @@ router.get('/init', async (req, res) => {
       ironRulesDigestFinal = ironRulesDigest + alertText;
     }
 
-    // v1.17.21 修：compact mode 砍掉 INSTRUCTIONS_SOP 後，AI 看不到「必須呼叫
-    // ownmind_report_compliance」這條指令；compliance 紀錄從 4/21 起斷流。
-    // 把指令固定附加在 digest 末尾（compact 也送），語意上 digest = 鐵律清單，
-    // compliance = 鐵律觸發後的回報，兩者天然成對，多 ~80 tokens 換永久觀測。
+    // v1.17.21 fix: with INSTRUCTIONS_SOP dropped in compact mode, the AI could
+    // not see the "must call ownmind_report_compliance" instruction; compliance
+    // records dried up from 4/21 onward.
+    // Append the instruction permanently to the digest tail (also sent in
+    // compact). Semantically: digest = iron-rule list; compliance = the report
+    // after a rule fires; the two naturally pair, costing ~80 tokens for
+    // permanent observability.
     ironRulesDigestFinal +=
       '\n\n## Compliance Report (Mandatory)\n' +
       'Whenever an iron rule is triggered, you MUST call ownmind_report_compliance with the result:\n' +
@@ -713,32 +726,34 @@ router.get('/init', async (req, res) => {
       _onboarding: onboarding,
     });
 
-    // 背景壓縮舊 session logs（不阻塞回應）
+    // Background: compress old session logs (does not block the response).
     compressOldSessions(req.user.id).catch(() => {});
-    // 背景復原孤兒 session（有 activity 但沒有 session_log）
+    // Background: recover orphan sessions (activity exists but no session_log).
     recoverOrphanSession(req.user.id).catch(() => {});
-    // 背景清理過期 pending_review（7 天未確認自動確認）
+    // Background: auto-confirm expired pending_review (7-day auto-confirm).
     autoConfirmPendingReview(req.user.id).catch(() => {});
   } catch (err) {
-    logger.error('載入初始記憶失敗', { error: err.message });
+    logger.error('init failed', { error: err.message });
     res.status(500).json({ error: 'Failed to load initial memories' });
   }
 });
 
 /**
- * GET /type/:type - 依類型取得記憶
+ * GET /type/:type - fetch memories by type.
  */
 /**
- * v1.17.0 P6: 升級驗測測試資料清除
+ * v1.17.0 P6: cleanup endpoint for upgrade-verification test data.
  *
  * DELETE /api/memory/test-cleanup?name_prefix=__upgrade_test__
- * 僅允許：is_test = TRUE AND title LIKE <prefix>%
- * 雙重保險：即使 prefix 被改，is_test 仍過濾；即使 is_test 誤寫，prefix 也擋
+ * Only allows: is_test = TRUE AND title LIKE <prefix>%
+ * Double safety: even if the prefix is changed, is_test still filters;
+ * even if is_test is set incorrectly, the prefix still gates.
  */
 router.delete('/test-cleanup', async (req, res) => {
   try {
     const rawPrefix = String(req.query.name_prefix || '').trim();
-    // 硬性限制：僅接受 __upgrade_test__ 開頭，防止一般 title 被誤刪
+    // Hard limit: only accept names starting with __upgrade_test__ to prevent
+    // accidental deletion of normal titles.
     if (!rawPrefix.startsWith('__upgrade_test__')) {
       return res.status(400).json({ error: 'name_prefix must start with __upgrade_test__' });
     }
@@ -752,13 +767,13 @@ router.delete('/test-cleanup', async (req, res) => {
     );
     res.json({ deleted: result.rowCount, titles: result.rows.map((r) => r.title) });
   } catch (err) {
-    logger.error('test-cleanup 失敗', { error: err.message });
+    logger.error('test-cleanup failed', { error: err.message });
     res.status(500).json({ error: 'Cleanup failed: ' + err.message });
   }
 });
 
 /**
- * GET /sync — Delta sync for local memory mirror
+ * GET /sync — Delta sync for local memory mirror.
  * Query:
  *   types=iron_rule,project,feedback (default)
  *   since=<ISO8601> (optional; if omitted → first-run, only active)
@@ -781,14 +796,14 @@ router.get('/sync', async (req, res) => {
       memories: result.rows,
     });
   } catch (err) {
-    logger.error('memory sync 失敗', { error: err.message });
+    logger.error('memory sync failed', { error: err.message });
     res.status(500).json({ error: 'Sync failed' });
   }
 });
 
 router.get('/type/:type', async (req, res) => {
   try {
-    // team_standard 跨使用者共享，回傳所有人的
+    // team_standard is shared across users; return all of them.
     const sql = req.params.type === 'team_standard'
       ? `SELECT * FROM memories WHERE type = 'team_standard' AND status = 'active' ORDER BY updated_at DESC`
       : `SELECT * FROM memories WHERE type = $1 AND user_id = $2 AND status = 'active' ORDER BY updated_at DESC`;
@@ -797,7 +812,7 @@ router.get('/type/:type', async (req, res) => {
       : [req.params.type, req.user.id];
     const result = await query(sql, params);
 
-    // 讀取操作：只有帶 token 且 invalid 才標 stale
+    // Read operations: mark stale only when a token is supplied and turns out invalid.
     const clientToken = req.query.sync_token;
     const response = { data: result.rows };
     if (clientToken) {
@@ -809,13 +824,13 @@ router.get('/type/:type', async (req, res) => {
     }
     res.json(response);
   } catch (err) {
-    logger.error('依類型查詢記憶失敗', { error: err.message });
+    logger.error('memory query by type failed', { error: err.message });
     res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * GET /project/:name - 取得單一專案
+ * GET /project/:name - fetch a single project.
  */
 router.get('/project/:name', async (req, res) => {
   try {
@@ -835,13 +850,13 @@ router.get('/project/:name', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    logger.error('查詢專案失敗', { error: err.message });
+    logger.error('project query failed', { error: err.message });
     res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * GET /search?q= - 全文搜尋記憶
+ * GET /search?q= - full-text search over memories.
  */
 router.get('/search', async (req, res) => {
   try {
@@ -862,13 +877,13 @@ router.get('/search', async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    logger.error('搜尋記憶失敗', { error: err.message });
+    logger.error('memory search failed', { error: err.message });
     res.status(500).json({ error: 'Search failed' });
   }
 });
 
 /**
- * GET /:id - 取得單一記憶
+ * GET /:id - fetch a single memory.
  */
 router.get('/:id', async (req, res) => {
   try {
@@ -883,13 +898,13 @@ router.get('/:id', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    logger.error('查詢記憶失敗', { error: err.message });
+    logger.error('memory query failed', { error: err.message });
     res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * POST / - 建立記憶
+ * POST / - create a memory.
  */
 router.post('/', async (req, res) => {
   try {
@@ -900,30 +915,31 @@ router.post('/', async (req, res) => {
 
     if (!ALLOWED_MEMORY_TYPES.includes(type)) {
       return res.status(400).json({
-        error: `無效的記憶類型: "${type}"`,
+        error: `Invalid memory type: "${type}"`,
         allowed_types: ALLOWED_MEMORY_TYPES
       });
     }
 
-    // v1.19: 鐵律分級 tier 欄位驗證
+    // v1.19: iron-rule tier field validation.
     const tierCheck = validateTierRequest({ memoryType: type, tier });
     if (!tierCheck.ok) {
       return res.status(tierCheck.status).json({ error: tierCheck.error });
     }
 
-    // v1.17.94: iron_rule 寫入前跑品質檢查、不過直接退回（IR-027 程式邏輯卡控）
-    // 確保未來 AI 看到鐵律時、知道何時觸發、知道規則內容、不會形同虛設。
-    // 跳過 __upgrade_test__ prefix 的測試用記憶。
-    // v1.18.0: lintIronRule 升級到偵測 SKILL.md frontmatter
-    //   - 有 frontmatter → schema lint S1-S9
-    //   - 沒 frontmatter → v1.17.94 regex lint（向後相容）
-    // return shape 加 format ('skill_md' | 'legacy_text') + warnings
+    // v1.17.94: iron_rule writes run a quality check; failures reject directly
+    // (IR-027 program-level enforcement). Ensures future-session AI knows when
+    // a rule triggers and what it says — rules can't be empty shells.
+    // Skip __upgrade_test__ prefixed test memories.
+    // v1.18.0: lintIronRule upgraded to detect SKILL.md frontmatter:
+    //   - With frontmatter → schema lint S1-S9
+    //   - Without frontmatter → v1.17.94 regex lint (backward compatible)
+    // Return shape now has format ('skill_md' | 'legacy_text') + warnings.
     let lintFormat = null;
     let lintWarnings = [];
     if (type === 'iron_rule' && !String(title).startsWith('__upgrade_test__')) {
-      // v1.18.3 fix: metadata 也餵進 lint、checkOriginContext (v1.18.2) 才看得到
-      // metadata.origin_context — 之前漏傳、即使 caller 有帶 origin_context 也被
-      // lint warning 誤報「沒帶」。
+      // v1.18.3 fix: feed metadata into lint so checkOriginContext (v1.18.2)
+      // can see metadata.origin_context. Previously omitted; callers carrying
+      // origin_context still got a "missing" lint warning.
       const lintResult = lintIronRule({ title, content, tags, metadata });
       lintFormat = lintResult.format;
       lintWarnings = lintResult.warnings || [];
@@ -937,8 +953,9 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // v1.17.0 P6: is_test flag（升級驗測用）必須搭配 __upgrade_test__ prefix，
-    // 否則一般 user 可藉 is_test 標記繞過 sync
+    // v1.17.0 P6: the is_test flag (used by upgrade verification) must be paired
+    // with the __upgrade_test__ prefix; otherwise normal users could bypass sync
+    // by setting is_test.
     const isTestFlag = Boolean(is_test);
     if (isTestFlag && !String(title).startsWith('__upgrade_test__')) {
       return res.status(400).json({
@@ -946,18 +963,20 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // v1.19.1: secret-detect 卡控（IR-027「邏輯才有效」、IR-002 延伸場景）
-    //   POST /api/memory 寫入前偵測 value 是不是密碼／token／API key、
-    //   命中就回 400 引導去 ownmind_set_secret（而非 generic 500）
-    //   bypass: metadata.allow_secret_like=true → 跳過 + 寫 audit lint_warning
-    //   __upgrade_test__ prefix 跳過（測試用記憶不該被擋）
+    // v1.19.1: secret-detect gate (IR-027 "logic over reminders", IR-002 extension).
+    //   Before POST /api/memory inserts, detect whether value looks like a
+    //   password / token / API key; on hit, 400 and direct caller to
+    //   ownmind_set_secret (instead of a generic 500).
+    //   bypass: metadata.allow_secret_like=true → skip + write a lint_warning audit.
+    //   __upgrade_test__ prefix → skip (test memories should not be blocked).
     let secretGuardWarning = null;
     if (!String(title).startsWith('__upgrade_test__')) {
       const guardResult = validateMemoryContent({ type, title, content, metadata });
       if (!guardResult.ok) {
-        // v1.19.14：附 suggest_report 旗標讓客戶端詢問是否回報誤判
-        // detected_by 開頭分類：keyword:* → mem_blocked_secret_keyword、
-        // 其他（regex:*、heuristic:*）→ mem_blocked_secret_regex
+        // v1.19.14: attach a suggest_report flag so the client can ask the
+        // user whether to report a false positive.
+        // detected_by prefix mapping: keyword:* → mem_blocked_secret_keyword;
+        // otherwise (regex:*, heuristic:*) → mem_blocked_secret_regex.
         let body = guardResult.body;
         try {
           const fingerprint =
@@ -976,7 +995,7 @@ router.post('/', async (req, res) => {
             });
           }
         } catch (err) {
-          // 旗標附加失敗不影響原始錯誤回應
+          // Adding the flag failing must not break the original error response.
           logger.warn('suggest_report_flag_failed', { error: err.message });
         }
         return res.status(guardResult.status).json(body);
@@ -984,18 +1003,18 @@ router.post('/', async (req, res) => {
       secretGuardWarning = guardResult.lint_warning_entry || null;
     }
 
-    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    // Sync token check (graceful fallback for old clients without a token).
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
     if (!tokenResult.ok) {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // team_standard 僅限 admin 寫入
+    // team_standard writes are admin-only.
     if (type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: 'Team standards may only be created by admins' });
     }
 
-    // iron_rule 自動編號
+    // iron_rule auto-numbering.
     let finalCode = code || null;
     if (type === 'iron_rule' && !finalCode) {
       const codeResult = await query(
@@ -1005,10 +1024,11 @@ router.post('/', async (req, res) => {
       finalCode = generateNextIronRuleCode(codeResult.rows.map(r => r.code));
     }
 
-    // v1.19: tier 寫入（非 iron_rule 一律 null、不污染其他 type）
+    // v1.19: tier write (non-iron_rule always null so other types stay clean).
     const finalTier = applyTierDefault({ memoryType: type, tier });
 
-    // v1.19.1: secret-guard bypass → 把 warning entry 合併進 metadata.lint_warnings
+    // v1.19.1: secret-guard bypass → merge the warning entry into
+    // metadata.lint_warnings.
     let finalMetadata = metadata || null;
     if (secretGuardWarning) {
       const baseMetadata = metadata && typeof metadata === 'object' ? { ...metadata } : {};
@@ -1036,11 +1056,14 @@ router.post('/', async (req, res) => {
       [memory.id, metadata?.tool || 'api', content, finalMetadata]
     );
 
-    // v1.17.87 IR-038 觀測管道補洞：新增 iron_rule 是高風險 sensitive event，
-    // server 端立刻寫 system_auto observed_trigger compliance log，不依賴 client
-    // batch upload（client 可能漏寫、batch path 也可能卡）。
-    // 對應 me.js compliance gap 稽核：原本 4 筆 memory_save iron_rule 漏觀測來自
-    // 這條 server route 沒寫 compliance log，現在補上、未來新事件不會再漏。
+    // v1.17.87 IR-038 observability backfill: creating an iron_rule is a
+    // high-risk sensitive event; the server writes a system_auto
+    // observed_trigger compliance log immediately, without relying on the
+    // client batch upload (the client may drop it, and the batch path can
+    // stall).
+    // Tied to me.js compliance gap audit: 4 memory_save iron_rule events
+    // were unobserved because this server route never wrote a compliance
+    // log; now it does, so future events won't be missed.
     if (type === 'iron_rule') {
       try {
         await query(
@@ -1060,12 +1083,13 @@ router.post('/', async (req, res) => {
           ]
         );
       } catch (e) {
-        logger.error?.('memory_save iron_rule observed_trigger 寫入失敗', { error: e.message });
-        // 失敗不擋主流程
+        logger.error?.('memory_save iron_rule observed_trigger write failed', { error: e.message });
+        // Failure must not block the main flow.
       }
     }
 
-    // Mark onboarding complete on first memory save (永久標記，防止刪光後被重新引導)
+    // Mark onboarding complete on first memory save (sticky marker, so deleting
+    // everything later does not re-trigger onboarding).
     await query(
       `UPDATE users
        SET settings = jsonb_set(
@@ -1077,7 +1101,7 @@ router.post('/', async (req, res) => {
       [req.user.id]
     );
 
-    // iron_rule 自動匹配 verification template
+    // Auto-match an iron_rule to a verification template.
     let matched_template = null;
     if (type === 'iron_rule' && !memory.metadata?.verification) {
       const templateId = matchTemplate({ title, content, tags });
@@ -1090,11 +1114,12 @@ router.post('/', async (req, res) => {
           [JSON.stringify(updatedMetadata), memory.id]
         );
         memory.metadata = updatedMetadata;
-        logger.info('鐵律自動匹配 verification template', { memory_id: memory.id, template: templateId });
+        logger.info('iron rule auto-matched verification template', { memory_id: memory.id, template: templateId });
       }
     }
 
-    // 搭便車：合併 rule_stats（主寫入後才更新，避免提前改變 sync token）
+    // Piggyback: merge rule_stats (after the main write so we don't bump the
+    // sync token prematurely).
     if (rule_stats && typeof rule_stats === 'object') {
       for (const [ruleKey, stats] of Object.entries(rule_stats)) {
         try {
@@ -1113,24 +1138,25 @@ router.post('/', async (req, res) => {
             [JSON.stringify(stats), ruleKey, req.user.id]
           );
         } catch (e) {
-          logger.warn('rule_stats 合併失敗', { ruleKey, error: e.message });
+          logger.warn('rule_stats merge failed', { ruleKey, error: e.message });
         }
       }
     }
 
-    // 回傳新的 sync token（寫入後狀態變了）
+    // Return a fresh sync token (state changed after the write).
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...memory, sync_token: newToken };
     if (matched_template) response.matched_template = matched_template;
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
 
-    // v1.18.0: iron_rule 寫入結果回 lint format + warnings、給 client 顯示
+    // v1.18.0: iron_rule write result returns lint format + warnings so the
+    // client can display them.
     if (lintFormat) {
       response.lint_format = lintFormat;
       if (lintWarnings.length > 0) response.lint_warnings = lintWarnings;
     }
 
-    // 附帶 pending_review 計數（提醒 AI 有待確認記憶）
+    // Attach pending_review count (reminds AI there are items to confirm).
     const prCount = await query(
       `SELECT COUNT(*) as cnt FROM memories WHERE user_id = $1 AND status = 'active' AND tags @> ARRAY['pending_review']`,
       [req.user.id]
@@ -1140,31 +1166,32 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(response);
   } catch (err) {
-    // v1.19.1: 把 catch-all 500 拆成 400/409/503/500 分類
-    //   提案 §2.3：之前所有錯誤都回 generic 500「建立記憶失敗」、caller 不知為什麼錯
-    //   現在依 err.code（PG SQLSTATE）/ err 類型分流、附帶 hint
+    // v1.19.1: split the catch-all 500 into 400/409/503/500.
+    //   Proposal §2.3: previously everything returned a generic 500
+    //   "Memory create failed" and callers had no idea what went wrong;
+    //   now route by err.code (PG SQLSTATE) / err type and include a hint.
     const classified = classifyMemoryError(err, { context: 'create' });
     const logPayload = { error: err?.message, code: err?.code };
     if (classified.logStack) logPayload.stack = err?.stack;
-    logger[classified.logLevel]('建立記憶失敗', logPayload);
+    logger[classified.logLevel]('memory create failed', logPayload);
     res.status(classified.status).json(classified.body);
   }
 });
 
 /**
- * PUT /:id - 更新記憶
+ * PUT /:id - update a memory.
  */
 router.put('/:id', async (req, res) => {
   try {
     const { title, content, tags, metadata, update_reason, sync_token, rule_stats, tier } = req.body;
 
-    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    // Sync token check (graceful fallback for old clients without a token).
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
     if (!tokenResult.ok) {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // 先確認記憶存在且屬於該使用者，並取得舊內容
+    // Confirm the memory exists and belongs to the user, and grab the old content.
     const existing = await query(
       'SELECT * FROM memories WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
@@ -1176,12 +1203,13 @@ router.put('/:id', async (req, res) => {
 
     const oldMemory = existing.rows[0];
 
-    // team_standard 僅限 admin 修改
+    // team_standard edits are admin-only.
     if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: 'Team standards may only be edited by admins' });
     }
 
-    // v1.19: tier 驗證 — 用既有 memory 的 type、避免靠 client 傳的 type 繞過
+    // v1.19: tier validation — use the existing memory's type to avoid the
+    // client smuggling in a different type to bypass.
     if (tier !== undefined && tier !== null) {
       const tierCheck = validateTierRequest({ memoryType: oldMemory.type, tier });
       if (!tierCheck.ok) {
@@ -1189,23 +1217,26 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // v1.18.0: lintIronRule 升級到偵測 SKILL.md frontmatter（同 POST handler）
-    // v1.18.0 review B2 修正：用 merged.title 判斷 __upgrade_test__ bypass、不是
-    //   oldMemory.title。攻擊面：POST 用 __upgrade_test__xxx 寫進 DB（跳過 lint）→
-    //   再 PUT 改 title 成正常名 + content 改垃圾 → 若用 oldMemory.title 判斷
-    //   bypass 就成功了。改用 merged.title「未來會變成的 title」判斷。
+    // v1.18.0: lintIronRule upgraded to detect SKILL.md frontmatter (same as
+    // POST handler).
+    // v1.18.0 review B2 fix: judge __upgrade_test__ bypass against merged.title,
+    //   not oldMemory.title. Attack surface: a POST with __upgrade_test__xxx
+    //   bypasses lint into the DB → a PUT then changes title to a normal name
+    //   while replacing content with garbage. Using oldMemory.title would let
+    //   this through; using merged.title (the future title) blocks it.
     let lintFormatPut = null;
     let lintWarningsPut = [];
-    // v1.18.3 fix: metadata 餵進 merged、lint 才看得到 origin_context
+    // v1.18.3 fix: feed metadata into merged so lint can see origin_context.
     const merged = {
       title: title !== undefined ? title : oldMemory.title,
       content: content !== undefined ? content : oldMemory.content,
       tags: tags !== undefined ? tags : oldMemory.tags,
       metadata: metadata !== undefined ? metadata : oldMemory.metadata,
     };
-    // v1.18.2 hotfix: metadata-only update 不跑 content lint
-    //   場景: backfill script 只加 origin_context、content/title/tags 沒變、不該被
-    //   content 結構 lint 擋。Lint 只在「會影響 lint 結果的欄位」改變時跑。
+    // v1.18.2 hotfix: skip content lint for metadata-only updates.
+    //   Scenario: a backfill script only adds origin_context, not changing
+    //   content / title / tags; it should not be blocked by content-structure
+    //   lint. Lint only runs when a lint-relevant field actually changes.
     const contentChanged = content !== undefined && content !== oldMemory.content;
     const titleChanged = title !== undefined && title !== oldMemory.title;
     const tagsChanged = tags !== undefined && JSON.stringify(tags) !== JSON.stringify(oldMemory.tags);
@@ -1225,10 +1256,10 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // v1.19.1: secret-detect 卡控（IR-027「邏輯才有效」、IR-002 延伸場景）
-    //   PUT 也要擋、避免 update content 把密鑰偷塞進去。
-    //   只在 content 真的有改時才跑（metadata-only update 不跑）
-    //   __upgrade_test__ prefix 跳過
+    // v1.19.1: secret-detect gate (IR-027 "logic over reminders", IR-002 extension).
+    //   PUT must also block so update content cannot smuggle a key in.
+    //   Only runs when content actually changes (metadata-only updates skip).
+    //   __upgrade_test__ prefix → skip.
     let secretGuardWarningPut = null;
     if (contentChanged && !String(merged.title).startsWith('__upgrade_test__')) {
       const guardResult = validateMemoryContent({
@@ -1243,17 +1274,20 @@ router.put('/:id', async (req, res) => {
       secretGuardWarningPut = guardResult.lint_warning_entry || null;
     }
 
-    // v1.18.0: 寫入前備份原 content 到 previous_content（升級助手寫壞時可救）
-    // 只在 iron_rule 且 content 真的改變時備份、避免無謂寫入
+    // v1.18.0: back up the previous content into previous_content before the
+    // write (so the upgrade helper can recover if it writes the wrong thing).
+    // Only iron_rule, and only when content really changes, to avoid no-op writes.
     const willChangeContent = content !== undefined && content !== oldMemory.content;
     const shouldBackup = oldMemory.type === 'iron_rule' && willChangeContent;
 
-    // v1.19: tier 變動 — 只有當 caller 明確帶 tier 時才覆寫，COALESCE 行為一致
+    // v1.19: tier change — only override when caller explicitly provided tier,
+    // keeping COALESCE behavior consistent.
     const tierForUpdate = (tier === undefined || tier === null) ? null : tier;
 
-    // v1.19.1: secret-guard bypass → 把 warning entry 合併進 metadata.lint_warnings
-    //   合併基礎用「即將寫入的 metadata」（caller 傳的）、不是 oldMemory.metadata、
-    //   避免把舊 lint_warnings 重複寫一次
+    // v1.19.1: secret-guard bypass → merge the warning entry into
+    // metadata.lint_warnings.
+    //   Base it on "the metadata about to be written" (what caller sent),
+    //   not oldMemory.metadata, to avoid duplicating old lint_warnings.
     let metadataForUpdate = metadata !== undefined ? metadata : null;
     if (secretGuardWarningPut) {
       const baseMetadata = metadata && typeof metadata === 'object'
@@ -1286,8 +1320,9 @@ router.put('/:id', async (req, res) => {
 
     const memory = result.rows[0];
 
-    // 存舊內容到歷史，並記錄更新原因
-    // v1.19: tier 改動寫進 metadata.tier_change 給 audit 追溯（spec 場景 2 / 場景 8）
+    // Save the old content to history and record the update reason.
+    // v1.19: tier change recorded in metadata.tier_change for audit
+    // (spec scenario 2 / scenario 8).
     const tierChanged = tier !== undefined && tier !== null && tier !== oldMemory.tier;
     const historyMetadata = {
       ...oldMemory.metadata,
@@ -1307,7 +1342,8 @@ router.put('/:id', async (req, res) => {
       ]
     );
 
-    // 搭便車：合併 rule_stats（主寫入後才更新，避免提前改變 sync token）
+    // Piggyback: merge rule_stats (after the main write so we don't bump the
+    // sync token prematurely).
     if (rule_stats && typeof rule_stats === 'object') {
       for (const [ruleKey, stats] of Object.entries(rule_stats)) {
         try {
@@ -1326,7 +1362,7 @@ router.put('/:id', async (req, res) => {
             [JSON.stringify(stats), ruleKey, req.user.id]
           );
         } catch (e) {
-          logger.warn('rule_stats 合併失敗', { ruleKey, error: e.message });
+          logger.warn('rule_stats merge failed', { ruleKey, error: e.message });
         }
       }
     }
@@ -1335,13 +1371,13 @@ router.put('/:id', async (req, res) => {
     const response = { ...memory, sync_token: newToken };
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
 
-    // v1.18.0: iron_rule 更新結果回 lint format + warnings
+    // v1.18.0: iron_rule update result returns lint format + warnings.
     if (lintFormatPut) {
       response.lint_format = lintFormatPut;
       if (lintWarningsPut.length > 0) response.lint_warnings = lintWarningsPut;
     }
 
-    // 附帶 pending_review 計數
+    // Attach pending_review count.
     const prCount = await query(
       `SELECT COUNT(*) as cnt FROM memories WHERE user_id = $1 AND status = 'active' AND tags @> ARRAY['pending_review']`,
       [req.user.id]
@@ -1351,17 +1387,17 @@ router.put('/:id', async (req, res) => {
 
     res.json(response);
   } catch (err) {
-    // v1.19.1: 把 catch-all 500 拆成 400/409/503/500 分類（同 POST handler）
+    // v1.19.1: split the catch-all 500 into 400/409/503/500 (same as POST handler).
     const classified = classifyMemoryError(err, { context: 'update' });
     const logPayload = { error: err?.message, code: err?.code };
     if (classified.logStack) logPayload.stack = err?.stack;
-    logger[classified.logLevel]('更新記憶失敗', logPayload);
+    logger[classified.logLevel]('memory update failed', logPayload);
     res.status(classified.status).json(classified.body);
   }
 });
 
 /**
- * PUT /:id/disable - 停用記憶
+ * PUT /:id/disable - disable a memory.
  */
 router.put('/:id/disable', async (req, res) => {
   try {
@@ -1371,13 +1407,13 @@ router.put('/:id/disable', async (req, res) => {
       return res.status(400).json({ error: 'A disable reason is required' });
     }
 
-    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    // Sync token check (graceful fallback for old clients without a token).
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
     if (!tokenResult.ok) {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // team_standard 僅限 admin 停用
+    // team_standard disables are admin-only.
     const check = await query('SELECT type FROM memories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     if (check.rows.length > 0 && check.rows[0].type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: 'Team standards may only be disabled by admins' });
@@ -1404,10 +1440,12 @@ router.put('/:id/disable', async (req, res) => {
       [req.params.id, 'api', result.rows[0].content, JSON.stringify({ reason })]
     );
 
-    // v1.17.87 IR-038：disable iron_rule 是高風險 sensitive event，server 端立刻
-    // 寫 system_auto observed_trigger compliance log（同 save iron_rule 修法）。
-    // 對應 me.js compliance gap 稽核：原本 3 筆 memory_disable 漏觀測來自這條
-    // server route 沒寫，現在補上。team_standard / 其他 type 不算 sensitive、跳過。
+    // v1.17.87 IR-038: disabling an iron_rule is a high-risk sensitive event;
+    // the server writes a system_auto observed_trigger compliance log immediately
+    // (same approach as save iron_rule).
+    // Tied to me.js compliance gap audit: 3 memory_disable events went unobserved
+    // because this server route never wrote one; now fixed. team_standard /
+    // other types aren't sensitive, so skip them.
     if (result.rows[0].type === 'iron_rule') {
       try {
         await query(
@@ -1427,7 +1465,7 @@ router.put('/:id/disable', async (req, res) => {
           ]
         );
       } catch (e) {
-        logger.error?.('memory_disable iron_rule observed_trigger 寫入失敗', { error: e.message });
+        logger.error?.('memory_disable iron_rule observed_trigger write failed', { error: e.message });
       }
     }
 
@@ -1436,19 +1474,19 @@ router.put('/:id/disable', async (req, res) => {
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
     res.json(response);
   } catch (err) {
-    logger.error('停用記憶失敗', { error: err.message });
+    logger.error('memory disable failed', { error: err.message });
     res.status(500).json({ error: 'Failed to disable memory' });
   }
 });
 
 /**
- * PUT /:id/enable - 重新啟用記憶
+ * PUT /:id/enable - re-enable a memory.
  */
 router.put('/:id/enable', async (req, res) => {
   try {
     const { sync_token } = req.body || {};
 
-    // Sync token 驗證（舊 client 無 token 時 graceful fallback）
+    // Sync token check (graceful fallback for old clients without a token).
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
     if (!tokenResult.ok) {
       return res.status(409).json(tokenResult.errorResponse);
@@ -1480,13 +1518,13 @@ router.put('/:id/enable', async (req, res) => {
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
     res.json(response);
   } catch (err) {
-    logger.error('啟用記憶失敗', { error: err.message });
+    logger.error('memory enable failed', { error: err.message });
     res.status(500).json({ error: 'Failed to enable memory' });
   }
 });
 
 /**
- * PUT /:id/revert - 還原到歷史版本
+ * PUT /:id/revert - revert to a historical version.
  */
 router.put('/:id/revert', async (req, res) => {
   try {
@@ -1496,7 +1534,7 @@ router.put('/:id/revert', async (req, res) => {
       return res.status(400).json({ error: 'history_id is required' });
     }
 
-    // 先確認記憶屬於該使用者，再取得歷史版本
+    // Confirm the memory belongs to the user, then fetch the historical version.
     const memCheck = await query(
       'SELECT id FROM memories WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
@@ -1516,7 +1554,7 @@ router.put('/:id/revert', async (req, res) => {
 
     const historyContent = historyResult.rows[0].content;
 
-    // 更新記憶內容
+    // Update the memory content.
     const result = await query(
       `UPDATE memories
        SET content = $1, updated_at = NOW()
@@ -1525,7 +1563,7 @@ router.put('/:id/revert', async (req, res) => {
       [historyContent, req.params.id, req.user.id]
     );
 
-    // 記錄還原操作
+    // Record the revert.
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'revert', $3, $4)`,
@@ -1534,17 +1572,17 @@ router.put('/:id/revert', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    logger.error('還原記憶失敗', { error: err.message });
+    logger.error('memory revert failed', { error: err.message });
     res.status(500).json({ error: 'Failed to restore memory' });
   }
 });
 
 /**
- * GET /:id/history - 取得記憶歷史
+ * GET /:id/history - fetch a memory's history.
  */
 router.get('/:id/history', async (req, res) => {
   try {
-    // 先確認記憶屬於該使用者
+    // Confirm the memory belongs to the user.
     const memCheck = await query(
       'SELECT id FROM memories WHERE id = $1 AND user_id = $2',
       [req.params.id, req.user.id]
@@ -1562,17 +1600,18 @@ router.get('/:id/history', async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
-    logger.error('查詢記憶歷史失敗', { error: err.message });
+    logger.error('memory history query failed', { error: err.message });
     res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * 孤兒 session 復原：偵測上次有 activity 但沒有 session_log 的情況
- * 從 activity_logs 自動生成最低品質的 recovery session_log
+ * Orphan-session recovery: detect when the previous session had activity but
+ * no session_log. From activity_logs, auto-generate a minimum-quality
+ * recovery session_log.
  */
 async function recoverOrphanSession(userId) {
-  // 找上一次 init 事件（跳過當前這次）
+  // Find the previous init event (skipping the current one).
   const prevInit = await query(
     `SELECT ts FROM activity_logs
      WHERE user_id = $1 AND event = 'init'
@@ -1583,7 +1622,7 @@ async function recoverOrphanSession(userId) {
 
   const prevInitTs = prevInit.rows[0].ts;
 
-  // 找當前 init 時間
+  // Find the current init time.
   const currInit = await query(
     `SELECT ts FROM activity_logs
      WHERE user_id = $1 AND event = 'init'
@@ -1592,16 +1631,16 @@ async function recoverOrphanSession(userId) {
   );
   const currInitTs = currInit.rows[0]?.ts || new Date();
 
-  // 檢查該時間段是否已有 session_log
+  // Check whether a session_log already exists for that range.
   const existingLog = await query(
     `SELECT id FROM session_logs
      WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
      LIMIT 1`,
     [userId, prevInitTs, currInitTs]
   );
-  if (existingLog.rows.length > 0) return; // 已有記錄，不需復原
+  if (existingLog.rows.length > 0) return; // already logged, no recovery needed
 
-  // 統計該時間段的 activity
+  // Tally activity within that range.
   const activities = await query(
     `SELECT event, tool, details FROM activity_logs
      WHERE user_id = $1 AND ts >= $2 AND ts < $3
@@ -1609,11 +1648,11 @@ async function recoverOrphanSession(userId) {
     [userId, prevInitTs, currInitTs]
   );
 
-  // 排除只有 init 的空 session
+  // Skip empty sessions that only contain init.
   const nonInitEvents = activities.rows.filter(r => r.event !== 'init');
   if (nonInitEvents.length === 0) return;
 
-  // 彙整 activity 資料
+  // Aggregate the activity data.
   const eventCounts = {};
   const tools = new Set();
   const compliance = [];
@@ -1643,11 +1682,11 @@ async function recoverOrphanSession(userId) {
     ]
   );
 
-  logger.info('孤兒 session 復原完成', { userId, events: nonInitEvents.length });
+  logger.info('orphan session recovered', { userId, events: nonInitEvents.length });
 }
 
 /**
- * 自動確認 7 天以上的 pending_review 記憶
+ * Auto-confirm pending_review memories older than 7 days.
  */
 async function autoConfirmPendingReview(userId) {
   const result = await query(
@@ -1668,7 +1707,7 @@ async function autoConfirmPendingReview(userId) {
   );
 
   if (result.rows.length > 0) {
-    logger.info('pending_review 自動確認', {
+    logger.info('pending_review auto-confirmed', {
       userId,
       count: result.rows.length,
       items: result.rows.map(r => r.title),
@@ -1677,7 +1716,7 @@ async function autoConfirmPendingReview(userId) {
 }
 
 /**
- * POST /batch-sync-standard - 批次同步團隊規範細項 (RAG)
+ * POST /batch-sync-standard - batch sync team-standard rule details (RAG).
  */
 router.post('/batch-sync-standard', async (req, res) => {
   try {
@@ -1689,13 +1728,13 @@ router.post('/batch-sync-standard', async (req, res) => {
 
     const { parent_title, chunks, sync_token } = req.body;
 
-    // Sync token 驗證
+    // Sync token check.
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
     if (!tokenResult.ok) {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // 1. 確保 parent (team_standard) 存在，僅 admin 可操作
+    // 1. Ensure parent (team_standard) exists; admin-only.
     let parent = await query(
       `SELECT id FROM memories WHERE type = 'team_standard' AND title = $1 AND status = 'active'`,
       [parent_title]
@@ -1705,7 +1744,7 @@ router.post('/batch-sync-standard', async (req, res) => {
       if (!isAtLeast(req.user.role, 'admin')) {
         return res.status(403).json({ error: 'Team standard not found and only admins may create one' });
       }
-      // 自動建立 parent
+      // Auto-create the parent.
       const parentResult = await query(
         `INSERT INTO memories (user_id, type, title, content, tags)
          VALUES ($1, 'team_standard', $2, $3, $4)
@@ -1721,7 +1760,7 @@ router.post('/batch-sync-standard', async (req, res) => {
 
     const parentId = parent.rows[0].id;
 
-    // 2. 取得現有的細項
+    // 2. Fetch the existing detail rows.
     const existingResult = await query(
       `SELECT id, title, metadata->>'hash' as hash FROM memories
        WHERE type = 'standard_detail'
@@ -1734,14 +1773,14 @@ router.post('/batch-sync-standard', async (req, res) => {
     const stats = { added: 0, updated: 0, deleted: 0, unchanged: 0 };
     const processedTitles = new Set();
 
-    // 3. 處理傳入的 chunks
+    // 3. Process the incoming chunks.
     for (const chunk of chunks) {
       const { title, content, hash, level } = chunk;
       processedTitles.add(title);
 
       const existing = existingMap.get(title);
       if (!existing) {
-        // 新增
+        // Add.
         await query(
           `INSERT INTO memories (user_id, type, title, content, tags, metadata)
            VALUES ($1, 'standard_detail', $2, $3, $4, $5)`,
@@ -1755,7 +1794,7 @@ router.post('/batch-sync-standard', async (req, res) => {
         );
         stats.added++;
       } else if (existing.hash !== hash) {
-        // 更新
+        // Update.
         await query(
           `UPDATE memories
            SET content = $1, metadata = $2, updated_at = NOW()
@@ -1768,7 +1807,7 @@ router.post('/batch-sync-standard', async (req, res) => {
       }
     }
 
-    // 4. 刪除消失的細項 (標記為 disabled)
+    // 4. Delete vanished details (mark as disabled).
     for (const [title, existing] of existingMap) {
       if (!processedTitles.has(title)) {
         await query(
@@ -1787,7 +1826,7 @@ router.post('/batch-sync-standard', async (req, res) => {
       sync_token: newToken
     });
   } catch (err) {
-    logger.error('批次同步規範失敗', { error: err.message });
+    logger.error('batch sync standard failed', { error: err.message });
     res.status(500).json({ error: 'Sync failed' });
   }
 });

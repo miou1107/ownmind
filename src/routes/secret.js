@@ -9,7 +9,7 @@ const router = Router();
 router.use(auth);
 
 /**
- * GET / - 列出所有 secret keys（不含值）
+ * GET / - list all secret keys (without values).
  */
 router.get('/', async (req, res) => {
   try {
@@ -21,13 +21,13 @@ router.get('/', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    logger.error('列出 secrets 失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    logger.error('list secrets failed', { error: err.message });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * GET /:key - 取得 secret 值（解密）
+ * GET /:key - fetch a secret value (decrypted).
  */
 router.get('/:key', async (req, res) => {
   try {
@@ -38,13 +38,13 @@ router.get('/:key', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該 secret' });
+      return res.status(404).json({ error: 'Secret not found' });
     }
 
     const secret = result.rows[0];
     const decryptedValue = decrypt(secret.encrypted_value);
 
-    logger.info('Secret 被存取', { key: req.params.key, user_id: req.user.id });
+    logger.info('Secret accessed', { key: req.params.key, user_id: req.user.id });
 
     res.json({
       id: secret.id,
@@ -53,24 +53,26 @@ router.get('/:key', async (req, res) => {
       description: secret.description
     });
   } catch (err) {
-    logger.error('取得 secret 失敗', { error: err.message });
-    res.status(500).json({ error: '取得 secret 失敗' });
+    logger.error('get secret failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch secret' });
   }
 });
 
 /**
- * POST / - 建立或更新 secret（upsert）
+ * POST / - create or update a secret (upsert).
  *
- * v1.17.91: 行為 = upsert（ON CONFLICT DO UPDATE）。
+ * v1.17.91: behavior = upsert (ON CONFLICT DO UPDATE).
  *
- * Description 語意：
- *   - 沒帶 description 或 description = null 時 → 保留既有 description 不蓋
- *   - 帶非 null description → 覆蓋
- *   - **想清空 description 請用 PUT /:key 明確帶 description: null**（POST 無法清空）
+ * Description semantics:
+ *   - No description / description = null → keep the existing one.
+ *   - Non-null description → overwrite.
+ *   - **To explicitly clear description, use PUT /:key with description:
+ *     null** (POST cannot clear it).
  *
- * 為什麼這樣設計：set_secret 主要使用情境是 AI 主動寫 secret、AI 不一定每次都
- * 帶 description；如果 POST 把沒帶當清空、AI 不小心會把使用者手動寫的 description
- * 洗掉。要清空是 explicit action、走 PUT。
+ * Why: set_secret is mostly used by AI writing secrets, and the AI doesn't
+ * always include a description. If POST treated missing as "clear", an
+ * accidental AI write could overwrite a user-supplied description. Clearing
+ * is therefore an explicit action and uses PUT.
  */
 router.post('/', async (req, res) => {
   try {
@@ -81,12 +83,15 @@ router.post('/', async (req, res) => {
 
     const encryptedValue = encrypt(value);
 
-    // v1.17.91: POST 改成 upsert（ON CONFLICT DO UPDATE）
-    // 修法背景：MCP `ownmind_set_secret` 描述寫「儲存或更新」、但舊版 POST
-    // 純 INSERT、重複 set 同 key 會 23505 unique violation 直接 500、AI 想改
-    // secret 會炸。改 upsert 跟工具描述對齊、也避免邊界錯誤。
-    // description 用 COALESCE(EXCLUDED, secrets.description) — 呼叫端沒帶
-    // description 時保留原值不蓋成 null。
+    // v1.17.91: POST switched to upsert (ON CONFLICT DO UPDATE).
+    // Rationale: the MCP tool `ownmind_set_secret` is described as
+    // "store or update", but the old POST was pure INSERT; setting the same
+    // key twice triggered a 23505 unique-violation 500, blowing up any AI
+    // that wanted to edit a secret. Upsert aligns with the tool description
+    // and removes edge-case errors.
+    // description uses COALESCE(EXCLUDED, secrets.description) — when the
+    // caller does not include description the existing value is preserved
+    // rather than blanked.
     const result = await query(
       `INSERT INTO secrets (user_id, key, encrypted_value, description)
        VALUES ($1, $2, $3, $4)
@@ -98,7 +103,8 @@ router.post('/', async (req, res) => {
       [req.user.id, key, encryptedValue, description || null]
     );
 
-    // v1.17.91: 寫 activity_log audit（IR-002 不洩漏 value、只記 key + 動作 + 是新增還是更新）
+    // v1.17.91: write an activity_log audit (IR-002 — don't leak the value;
+    // only log the key + action + whether it was an insert or update).
     const row = result.rows[0];
     try {
       await query(
@@ -107,22 +113,22 @@ router.post('/', async (req, res) => {
         [req.user.id, JSON.stringify({ key, action: row.inserted ? 'create' : 'update' })]
       );
     } catch (e) {
-      // v1.17.91 reviewer M-2: 用 error level 讓 audit 失敗能被 alert 抓到
-      // （這是 secret 操作、audit 缺漏比一般 log 嚴重）
-      logger.error('secret_set activity_log 寫入失敗（不阻擋主流程）', { error: e.message });
+      // v1.17.91 reviewer M-2: use error level so audit failure can be alerted
+      // (this is a secret operation; an audit gap is worse than a normal log).
+      logger.error('secret_set activity_log write failed (main flow not blocked)', { error: e.message });
     }
 
     res.status(row.inserted ? 201 : 200).json({
       id: row.id, key: row.key, description: row.description,
     });
   } catch (err) {
-    logger.error('建立/更新 secret 失敗', { error: err.message });
-    res.status(500).json({ error: '建立/更新 secret 失敗' });
+    logger.error('create/update secret failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to create/update secret' });
   }
 });
 
 /**
- * PUT /:key - 更新 secret
+ * PUT /:key - update a secret.
  */
 router.put('/:key', async (req, res) => {
   try {
@@ -142,7 +148,7 @@ router.put('/:key', async (req, res) => {
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: '請提供要更新的欄位' });
+      return res.status(400).json({ error: 'Please provide a field to update' });
     }
 
     updates.push(`updated_at = NOW()`);
@@ -157,11 +163,13 @@ router.put('/:key', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該 secret' });
+      return res.status(404).json({ error: 'Secret not found' });
     }
 
-    // v1.17.91: PUT 也要寫 activity_log audit（v1.17.91 first round 漏掉、reviewer I-1 抓到）
-    // 記哪些欄位被改、但不記具體值（IR-002 不洩漏 secret material）
+    // v1.17.91: PUT must also write an activity_log audit (missed in the
+    // first round of v1.17.91; reviewer I-1 caught it).
+    // Records which fields changed but not their values (IR-002 — never
+    // leak secret material).
     const changedFields = [];
     if (req.body.value !== undefined) changedFields.push('value');
     if (req.body.description !== undefined) changedFields.push('description');
@@ -172,18 +180,18 @@ router.put('/:key', async (req, res) => {
         [req.user.id, JSON.stringify({ key: req.params.key, changed_fields: changedFields })]
       );
     } catch (e) {
-      logger.error('secret_update activity_log 寫入失敗（不阻擋主流程）', { error: e.message });
+      logger.error('secret_update activity_log write failed (main flow not blocked)', { error: e.message });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
-    logger.error('更新 secret 失敗', { error: err.message });
-    res.status(500).json({ error: '更新 secret 失敗' });
+    logger.error('update secret failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to update secret' });
   }
 });
 
 /**
- * DELETE /:key - 刪除 secret
+ * DELETE /:key - delete a secret.
  */
 router.delete('/:key', async (req, res) => {
   try {
@@ -193,10 +201,11 @@ router.delete('/:key', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該 secret' });
+      return res.status(404).json({ error: 'Secret not found' });
     }
 
-    // v1.17.91: 寫 activity_log audit（IR-002 不洩漏 value、只記 key + 動作）
+    // v1.17.91: write an activity_log audit (IR-002 — don't leak the
+    // value; only log key + action).
     try {
       await query(
         `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
@@ -204,14 +213,15 @@ router.delete('/:key', async (req, res) => {
         [req.user.id, JSON.stringify({ key: result.rows[0].key })]
       );
     } catch (e) {
-      // v1.17.91 reviewer M-2: 改 error level（secret audit 缺漏比一般 log 嚴重）
-      logger.error('secret_delete activity_log 寫入失敗（不阻擋主流程）', { error: e.message });
+      // v1.17.91 reviewer M-2: use error level (secret audit gaps are worse
+      // than ordinary log gaps).
+      logger.error('secret_delete activity_log write failed (main flow not blocked)', { error: e.message });
     }
 
-    res.json({ message: 'Secret 已刪除', key: result.rows[0].key });
+    res.json({ message: 'Secret deleted', key: result.rows[0].key });
   } catch (err) {
-    logger.error('刪除 secret 失敗', { error: err.message });
-    res.status(500).json({ error: '刪除 secret 失敗' });
+    logger.error('delete secret failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete secret' });
   }
 });
 

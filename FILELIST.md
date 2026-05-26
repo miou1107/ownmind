@@ -1,5 +1,50 @@
 # OwnMind 檔案結構
 
+## v1.26.5 修改（國際化第九期：src/routes/ 內部註解 + user-facing 字串英文化 — 軌道 B + A）
+
+新增檔：
+```
+openspec/changes/v1.26.5-i18n-src-routes-internal/proposal.md
+openspec/changes/v1.26.5-i18n-src-routes-internal/tasks.md
+```
+
+修改檔（24 個 src/routes/ 檔 + 4 條 test 斷言 + package.json 補修）：
+```
+src/routes/memory.js                     — 194 行（init/SOP/CRUD 全部註解英化、保留 [團隊] prefix + DB-stored rule_title）
+src/routes/me.js                         — 176 行（GET /report + /pitfalls 兩大 endpoint 註解英化、保留 UI report 字串）
+src/routes/bug-reports.js                — 80 行（含 validateContextBlob 錯誤分流 regex 同步加 'exceeds'）
+src/routes/admin.js                      — 77 行（含登入/setup/password 三個 endpoint 註解 + logger 英化、保留 user-facing UI 字串）
+src/routes/activity.js                   — 75 行（含 autoEmitObservedTrigger 註解英化、保留 DB-stored audit context）
+src/routes/broadcast.js                  — 70 行（含 admin/user 兩端註解 + logger 英化、validateBroadcastPayload 錯誤訊息全英化）
+src/routes/usage/events.js               — 57 行（含 ingestion pipeline 註解 + validation 訊息英化）
+src/routes/admin-iron-rule-upgrade.js    — 55 行（含 PUT /:id/upgrade 註解英化、保留 modal 互動字串）
+src/routes/secret.js                     — 45 行
+src/routes/setup.js                      — 37 行（保留 setup wizard user-facing 字串）
+src/routes/session.js                    — 33 行（保留 月摘要 strings, 跨 server compress 用）
+src/routes/debug.js                      — 28 行
+src/routes/usage/stats.js                — 27 行
+src/routes/admin-password-reset.js       — 25 行（保留 admin / user role 變更時的中文 UI 字串）
+src/routes/me-narrative.js               — 21 行
+src/routes/usage/exemptions.js           — 20 行
+src/routes/usage/team-overview.js        — 19 行
+src/routes/usage/admin-clients.js        — 18 行
+src/routes/usage/pricing.js              — 14 行
+src/routes/usage/team-stats.js           — 13 行
+src/routes/handoff.js                    — 11 行
+src/routes/admin-work-log.js             — 9 行
+src/routes/usage/admin-audit.js          — 5 行
+src/routes/export.js                     — 4 行
+tests/pricing.test.js                    — 第 270 / 283 行斷言改成接受中英 (non-negative / must be a number)
+tests/broadcast.test.js                  — 第 138 / 353 行斷言改成接受中英 (later than / visible set)
+package.json                             — 1.26.3 → 1.26.5（補修 v1.26.4 漏掉的 1.26.3→1.26.4 升級）
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                             — v1.26.5 條目
+```
+
+**刻意保留**：101 行中文、主要在 `me.js` (33) + `admin.js` (34) + `bug-reports.js` (10) + `memory.js` (7)。詳見 CHANGELOG 同名段落。
+
+**驗證**：`npm test` 1956 pass / 0 fail；`node --check` 全過。
+
 ## v1.26.4 修改（國際化第八期：shared/ 內部註解英文化 — 軌道 B）
 
 新增檔：

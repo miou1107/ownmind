@@ -1,5 +1,35 @@
 # OwnMind 更新紀錄
 
+## v1.26.5 — 國際化第九期：src/routes/ 內部註解 + user-facing 字串英文化（軌道 B + A）
+
+**範圍**：翻 `src/routes/` 下 24 個檔（含 9 個 `usage/` 子目錄）共約 1213 行中文。Vin 2026-05-26 拍板「徹底翻」、含 user-facing HTTP 錯誤訊息（部分仍保留中文、見下）。
+
+**含軌道 A 補洞**：
+- `events.js` / `team-stats.js` / `team-overview.js` / `exemptions.js` / `pricing.js` / `admin-clients.js` / `admin-audit.js` 整批 user-facing `res.json({error: ...})` 字串英化
+- `bug-reports.js` 內 validateContextBlob 錯誤訊息分流 regex 同步接受英文（`/1MB|超過|exceeds/`）
+- `me.js` GET /report 跟 GET /pitfalls 大量註解英化（兩個 endpoint ~870 行）
+- `secret.js` / `handoff.js` / `setup.js` / `session.js` / `me-narrative.js` / `debug.js` / `usage/stats.js` / `admin-iron-rule-upgrade.js` 全套註解 + logger 英化
+
+**刻意保留中文**：
+- `me.js` + `admin.js` + `admin-password-reset.js` 登入 / 改密 / 找不到使用者等 user-facing 字串（中文 UI 流程、admin 面板已有 i18n 包裝）
+- `me.js` `/pitfalls` 內 `what / impact / fix_hint` 報告字串（在地化稽核報告內容、跟現行 me.html 對齊）
+- `memory.js` 兩處 JSON-stringified `rule_title: '學到東西必須全層同步更新'` + `新增鐵律 / 停用鐵律` audit context（DB 持久化內容、known code smell、留 project_496 follow-up）
+- `memory.js` `[團隊]` 前綴 / `summary LIKE '週報%'` / `由 ownmind-upload 自動建立的規範摘要` 字面值（跨服務溝通介面）
+- `activity.js` `autoEmitObservedTrigger` 內部 audit context（跟 memory.js 同樣 known smell）
+- `me.js` `audit_findings.message` 模板字串（user 報表內顯示）
+
+**測試更新（4 條斷言改為接受中英）**：
+- `tests/pricing.test.js:270` `/非負數/` → `/非負數|non-negative/`
+- `tests/pricing.test.js:283` `/需為數字/` → `/需為數字|must be a number/`
+- `tests/broadcast.test.js:138` `/晚於/` → `/晚於|later than/`
+- `tests/broadcast.test.js:353` `/可見/` → `/可見|visible set/`
+
+**v1.26.4 補修**：上一個 release commit 8b8e1a5 漏帶 package.json 版號（仍是 1.26.3），本 release 一次性補回到 1.26.5。`git tag v1.26.4` 與 package.json 不同步、後續查到再評估是否補打標籤。
+
+**測試**：1956 pass / 0 fail
+**版本**：1.26.4 (tag) / 1.26.3 (package.json 漏改) → 1.26.5
+**OpenSpec change**：`openspec/changes/v1.26.5-i18n-src-routes-internal/`
+
 ## v1.26.4 — 國際化第八期：shared/ 內部註解英文化（軌道 B）
 
 **範圍**：翻 `shared/` 下 26 個檔（10 個 top-level + 8 個 `scanners/` + 4 個 `validators/`）共 746 行中文 JSDoc + line comments。延續 v1.26.0 / v1.26.2 / v1.26.3 同樣 pattern、零行為改動。

@@ -13,8 +13,9 @@ const VALID_EVENT_TYPES = new Set([
 /**
  * GET /api/usage/admin/audit?event_type=&user_id=&limit=  (admin+)
  *
- * 最近 N 筆 usage_audit_log。用於 dashboard 的 audit 子頁 + debug。
- * 不允許任意 event_type，只能從 VALID_EVENT_TYPES 挑。
+ * Returns the most recent N rows of usage_audit_log — used by the dashboard
+ * audit sub-page plus debugging. Arbitrary event_type values are not allowed;
+ * only the entries in VALID_EVENT_TYPES are accepted.
  */
 export function createAdminAuditRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -29,7 +30,7 @@ export function createAdminAuditRouter(deps = {}) {
 
       if (event_type && !VALID_EVENT_TYPES.has(event_type)) {
         return res.status(400).json({
-          error: 'event_type 不在允許清單',
+          error: 'event_type is not in the allowed list',
           allowed: [...VALID_EVENT_TYPES]
         });
       }
@@ -54,8 +55,8 @@ export function createAdminAuditRouter(deps = {}) {
       const result = await query(sql, params);
       res.json(result.rows);
     } catch (err) {
-      logger.error('audit log 查詢失敗', { error: err.message });
-      res.status(500).json({ error: '查詢 audit log 失敗' });
+      logger.error('audit log query failed', { error: err.message });
+      res.status(500).json({ error: 'Audit log query failed' });
     }
   });
 

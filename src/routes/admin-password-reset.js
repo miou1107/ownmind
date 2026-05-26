@@ -1,18 +1,21 @@
 /**
- * Admin 緊急重設他人密碼 — v1.19.9
+ * Admin emergency password reset for other users — v1.19.9.
  *
- * 對應 openspec/changes/v1.19.9-password-recovery/spec.md 場景 1-7。
+ * Corresponds to openspec/changes/v1.19.9-password-recovery/spec.md
+ * scenarios 1-7.
  *
- * 跟既有 POST /api/admin/users/:id/password 的差異：
- *   - 既有 endpoint 是「有意修改」：需要舊密碼、由使用者自選新密碼
- *   - 這個 endpoint 是「忘記救援」：對方忘記密碼、系統產隨機臨時密碼讓他下次強制改
+ * Difference from the existing POST /api/admin/users/:id/password:
+ *   - The existing endpoint is "intentional change": requires the old
+ *     password, the user picks their new one.
+ *   - This endpoint is "forgot-password recovery": the system generates a
+ *     random temporary password and forces a change on next login.
  *
- * 權限：
- *   - super_admin 可重設任何人（admin / user）
- *   - admin 可重設 user（不可重設其他 admin / super_admin）
- *   - 不可重設自己（用 POST /api/me/change-password）
+ * Permissions:
+ *   - super_admin can reset anyone (admin / user).
+ *   - admin can reset users (not other admin / super_admin).
+ *   - You cannot reset yourself (use POST /api/me/change-password).
  *
- * 設計：Factory pattern、依賴可注入、方便單元測試。
+ * Design: factory pattern, injectable dependencies, easy to unit-test.
  */
 import { Router } from 'express';
 import bcrypt from 'bcrypt';
@@ -23,16 +26,16 @@ import { generateRandomPassword } from '../../shared/random-password.js';
 
 const BCRYPT_ROUNDS = 10;
 
-// v1.19.10：generateTempPassword 抽到 shared/random-password.js、給多處共用
-// 此處保留 export 為向後相容（v1.19.9 既有測試引用）
+// v1.19.10: generateTempPassword moved to shared/random-password.js for reuse.
+// The re-export here keeps backward compatibility (v1.19.9 tests reference it).
 export const generateTempPassword = generateRandomPassword;
 
 /**
- * 建立 admin password reset router
+ * Build the admin password reset router.
  *
  * @param {object} [deps]
  * @param {Function} [deps.query]
- * @param {Function} [deps.adminAuth] - 預設用真實 adminAuth middleware
+ * @param {Function} [deps.adminAuth] - defaults to the real adminAuth middleware
  * @param {Function} [deps.isAtLeast]
  * @param {object} [deps.logger]
  * @returns {import('express').Router}
@@ -52,14 +55,14 @@ export function createAdminPasswordResetRouter(deps = {}) {
       const actorId = req.user.id;
       const actorRole = req.user.role;
 
-      // 場景 4：不能重設自己
+      // Scenario 4: cannot reset yourself.
       if (targetId === actorId) {
         return res.status(400).json({
           error: '不能重設自己的密碼、請走 /api/me/change-password',
         });
       }
 
-      // 場景 5：找不到 target
+      // Scenario 5: target not found.
       const targetRes = await query(
         'SELECT id, email, name, role FROM users WHERE id = $1',
         [targetId]
@@ -69,7 +72,7 @@ export function createAdminPasswordResetRouter(deps = {}) {
       }
       const target = targetRes.rows[0];
 
-      // 場景 3：admin 只能重設 user 角色
+      // Scenario 3: admin can only reset users.
       if (!isAtLeast(actorRole, 'super_admin') && target.role !== 'user') {
         return res.status(403).json({
           error: 'admin 只能重設 user 角色帳號、不能重設其他 admin 或 super_admin',
@@ -105,8 +108,8 @@ export function createAdminPasswordResetRouter(deps = {}) {
           ]
         );
       } catch (auditErr) {
-        // audit 失敗不擋成功回應（既有風格）
-        logger.warn?.('reset_password audit_log 寫入失敗', { error: auditErr.message });
+        // Audit failure does not block the success response (existing style).
+        logger.warn?.('reset_password audit_log write failed', { error: auditErr.message });
       }
 
       res.json({
@@ -117,13 +120,13 @@ export function createAdminPasswordResetRouter(deps = {}) {
         must_change_password: true,
       });
     } catch (err) {
-      logger.error?.('重設密碼失敗', { error: err.message });
-      res.status(500).json({ error: '重設密碼失敗' });
+      logger.error?.('reset password failed', { error: err.message });
+      res.status(500).json({ error: 'Failed to reset password' });
     }
   });
 
   return router;
 }
 
-// Default export：給 production app.js 用
+// Default export for the production app.js.
 export default createAdminPasswordResetRouter();

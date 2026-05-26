@@ -13,13 +13,13 @@ router.use(auth);
 function sanitize(text) {
   if (!text || typeof text !== 'string') return text;
   let result = text;
-  // 密碼/token 欄位整體遮蔽
+  // Redact entire password / token field values.
   result = result.replace(/(?:password|passwd|pwd|secret|token|api[_-]?key)\s*[:=]\s*\S+/gi, (match) => {
     const sep = match.includes('=') ? '=' : ':';
     const key = match.split(/[:=]/)[0];
     return `${key}${sep}[REDACTED]`;
   });
-  // Bearer token
+  // Bearer token.
   result = result.replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]');
   return result;
 }
@@ -27,14 +27,14 @@ function sanitize(text) {
 function sanitizeDetails(details) {
   if (!details || typeof details !== 'object') return details;
   const clean = { ...details };
-  // 過濾 friction_points 和 suggestions（可能包含敏感指令）
+  // Sanitize friction_points and suggestions (may contain sensitive commands).
   if (clean.friction_points) clean.friction_points = sanitize(clean.friction_points);
   if (clean.suggestions) clean.suggestions = sanitize(clean.suggestions);
   return clean;
 }
 
 /**
- * POST / - 記錄 session
+ * POST / - record a session.
  */
 router.post('/', async (req, res) => {
   try {
@@ -44,7 +44,7 @@ router.post('/', async (req, res) => {
     const { session_id, tool, model, machine, details } = req.body;
     let { summary } = req.body;
 
-    // 過濾敏感資訊
+    // Sanitize sensitive content.
     summary = sanitize(summary);
     const cleanDetails = sanitizeDetails(details);
 
@@ -57,17 +57,17 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    logger.error('記錄 session 失敗', { error: err.message });
-    res.status(500).json({ error: '記錄 session 失敗' });
+    logger.error('session log failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to record session' });
   }
 });
 
 /**
- * GET /recent - 取得近期 session
- * ?days=7                   - 最近幾天（預設 7）
- * ?tool=cursor              - 按工具過濾
- * ?include_compressed=true  - 包含月摘要
- * ?q=keyword                - v1.17.13 搜 summary + details ILIKE（Michelle case）
+ * GET /recent - fetch recent sessions.
+ * ?days=7                   - last N days (default 7)
+ * ?tool=cursor              - filter by tool
+ * ?include_compressed=true  - include monthly summaries
+ * ?q=keyword                - v1.17.13 ILIKE search over summary + details (Michelle case)
  */
 router.get('/recent', async (req, res) => {
   try {
@@ -81,19 +81,20 @@ router.get('/recent', async (req, res) => {
     const result = await query(text, values);
     res.json(result.rows);
   } catch (err) {
-    logger.error('查詢近期 session 失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    logger.error('recent session query failed', { error: err.message });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
 /**
- * 壓縮超過 SESSION_RETENTION_DAYS 的 session logs
- * 同月份合併成一筆月摘要，原始記錄刪除
- * 非同步呼叫，不阻塞主流程
+ * Compress session_logs older than SESSION_RETENTION_DAYS.
+ * Same-month entries merge into a single monthly summary; originals removed.
+ * Called asynchronously without blocking the main flow.
  */
 export async function compressOldSessions(userId) {
   try {
-    // 找出超過保留期限的未壓縮 session logs，按月份分組
+    // Find uncompressed session_logs older than the retention window,
+    // grouped by month.
     const oldSessions = await query(
       `SELECT id, tool, model, summary, created_at,
               TO_CHAR(created_at, 'YYYY-MM') as month
@@ -107,7 +108,7 @@ export async function compressOldSessions(userId) {
 
     if (oldSessions.rows.length === 0) return;
 
-    // 按月份分組
+    // Group by month.
     const byMonth = {};
     for (const row of oldSessions.rows) {
       if (!byMonth[row.month]) byMonth[row.month] = [];
@@ -119,17 +120,17 @@ export async function compressOldSessions(userId) {
       const summary = `月摘要 — ${month}（${sessions.length} sessions）\n\n${lines.join('\n')}`;
       const ids = sessions.map(s => s.id);
 
-      // 用 transaction 防止 race condition
+      // Use a transaction to prevent race conditions.
       await query('BEGIN');
       try {
-        // 鎖定要刪除的 rows，防止並發壓縮
+        // Lock the rows we plan to delete, preventing concurrent compression.
         const locked = await query(
           `SELECT id FROM session_logs WHERE id = ANY($1) FOR UPDATE SKIP LOCKED`,
           [ids]
         );
         if (locked.rows.length === 0) {
           await query('ROLLBACK');
-          continue; // 已被其他 process 處理
+          continue; // already handled by another process
         }
 
         await query(
@@ -139,19 +140,19 @@ export async function compressOldSessions(userId) {
         );
         await query(`DELETE FROM session_logs WHERE id = ANY($1)`, [ids]);
         await query('COMMIT');
-        logger.info(`壓縮 session logs: ${month}, ${sessions.length} 筆 → 1 筆月摘要`, { userId });
+        logger.info(`session logs compressed: ${month}, ${sessions.length} rows → 1 monthly summary`, { userId });
       } catch (txErr) {
         await query('ROLLBACK');
-        logger.error(`壓縮 transaction 失敗: ${month}`, { error: txErr.message, userId });
+        logger.error(`compress transaction failed: ${month}`, { error: txErr.message, userId });
       }
     }
   } catch (err) {
-    logger.error('壓縮 session logs 失敗', { error: err.message, userId });
+    logger.error('compress session logs failed', { error: err.message, userId });
   }
 }
 
 /**
- * GET /report - 取週/月報
+ * GET /report - weekly / monthly report.
  * Query: period=week|month, offset=0,1,2...
  */
 router.get('/report', async (req, res) => {
@@ -160,15 +161,15 @@ router.get('/report', async (req, res) => {
     const offset = parseInt(req.query.offset, 10) || 0;
 
     if (!['week', 'month'].includes(period)) {
-      return res.status(400).json({ error: 'period 必須是 week 或 month' });
+      return res.status(400).json({ error: 'period must be either week or month' });
     }
     if (offset < 0 || offset > 52) {
-      return res.status(400).json({ error: 'offset 範圍 0~52' });
+      return res.status(400).json({ error: 'offset must be between 0 and 52' });
     }
 
     const { start, end, label } = computePeriodRange(period, offset);
 
-    // 查詢該 period 的 session logs（含 friction/suggestions）
+    // Query session logs in the period (with friction / suggestions).
     const sessions = await query(
       `SELECT tool, model, details FROM session_logs
        WHERE user_id = $1
@@ -179,7 +180,7 @@ router.get('/report', async (req, res) => {
       [req.user.id, start, end]
     );
 
-    // 查詢新增記憶數（排除 pending_review）
+    // Count new memories (excluding pending_review).
     const memoriesResult = await query(
       `SELECT COUNT(*) as cnt FROM memories
        WHERE user_id = $1
@@ -191,7 +192,7 @@ router.get('/report', async (req, res) => {
     );
     const newMemoriesCount = parseInt(memoriesResult.rows[0].cnt, 10);
 
-    // 查詢該 period 自動建立的 friction issue 數
+    // Count auto-created friction issues in the period.
     const frictionIssuesResult = await query(
       `SELECT COUNT(*) as cnt FROM memories
        WHERE user_id = $1
@@ -207,8 +208,8 @@ router.get('/report', async (req, res) => {
 
     res.json(report);
   } catch (err) {
-    logger.error('取週/月報失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    logger.error('week/month report failed', { error: err.message });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
