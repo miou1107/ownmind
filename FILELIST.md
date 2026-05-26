@@ -86,6 +86,7 @@ openspec/changes/v1.20.1-portal-pages/tasks.md                — 同上 task st
 openspec/changes/v1.20.2-fix-hint/proposal.md                 — 提案：鉤子 recent_event_exists 失敗訊息加上具體 ownmind_report_compliance 呼叫範例
 openspec/changes/v1.20.2-fix-hint/spec.md                     — 規格：5 個 GIVEN/WHEN/THEN scenario
 openspec/changes/v1.20.2-fix-hint/tasks.md                    — 任務清單
+tests/auto-comply-reads-file.test.js                          — v1.20.2 follow-up：3 個守備 case（in-memory 空 + 檔案有資料 / 反證 / 合併情境）證明 autoComply 應讀檔案
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）

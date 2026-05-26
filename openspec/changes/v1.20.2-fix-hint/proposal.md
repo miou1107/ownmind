@@ -53,3 +53,18 @@ post-commit 鉤子寫得清清楚楚：`failures: ["還沒做 code review，請�
 
 - **未改 MCP schema、AI 還是可能誤帶 rule_code 觸發備援**：靠 hint 提示治標、不治本。後續可以開 backlog 改 schema 加 `event` 欄位、根治。
 - **本機已安裝鉤子訊息不會自動更新**：要等 user 升級 OwnMind 才會拿到。Vin 本機可以手動同步 `~/.ownmind/shared/verification.js`。
+
+## Follow-up patch（同版本內、不另開版號）
+
+主 fix 上線後實測（2026-05-26 commit `de3a74f` 後）發現副作用 bug：
+
+**症狀**：MCP 工具 `ownmind_report_compliance` 回傳 `status: blocked`、但 pre-commit 鉤子卻放行同次提交。鉤子訊息正是這次主 fix 的新版 hint（白話：fix 本身上線運作、但也順帶把問題曝光得更清楚）。
+
+**根本原因**：`mcp/index.js:1090-1129` 的 autoComply（白話：合規呼叫後自動再跑一次鉤子檢查的機制）用記憶體變數 `complianceEvents`。`ownmind_init` 會把它歸零、session 重啟就清空。pre-commit 鉤子改讀 `~/.ownmind/logs/compliance.jsonl` 檔案、不受 session 重啟影響。兩者資料來源不一致 → 行為不一致。
+
+**證據**：session log 顯示 session_id 從 `1779774294945` 換成 `1779778052749`、合規記錄 jsonl 仍有兩筆 fresh comply、但 autoComply 因記憶體變數已歸零、誤判 block。
+
+**修法**（同 v1.20.2 版本內、不另開版號）：
+- `mcp/index.js`：autoComply 內把記憶體變數跟檔案合併（`[...complianceEvents, ...readComplianceEvents()]`）。檔案視為唯一可靠來源、記憶體只當當前 session 的 cache（白話：暫存）。
+- `tests/auto-comply-reads-file.test.js`：新增 3 個 case 守備設計合約。
+- 不抽 helper（白話：可獨立測試的小函式）：weighing 簡單性 vs 嚴格 reproduction test 紅綠循環、選擇前者；測試走「設計合約 + 反證」型而非嚴格紅綠。註明在 commit message。
