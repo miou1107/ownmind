@@ -36,6 +36,35 @@
 - **一般使用者**：等下一輪 OwnMind 廣播升級（`/ownmind upgrade` 或互動式升級腳本）會自動拿到新訊息。
 - **本機急用**：可手動同步 `cp shared/verification.js ~/.ownmind/shared/verification.js`（只影響自己這台、不影響廣播）。
 
+**Follow-up patch #3（同 v1.20.2 版本內、不另開版號）：**
+
+Eric（另一個 AI session）報 bug：「actor」「source」這兩個專有名詞、同 session 第一次解釋過、後續 reply 仍被 IR-036 lint 擋。規則內文寫「上下文已說明過、可保留不改」、但 lint 程式沒實作這個記憶。順手把整個 bug report 流程串起來修。
+
+**修了什麼**：
+
+1. **IR-036 跨 reply 詞彙記憶**（Eric 報的 bug）：
+   - `shared/language-lint.js`：`checkJargonExplanation` 跟 `lintReply` 加 optional 第二參數 `historicalCorpus`、預先掃歷史 corpus、把已解釋過的詞加進 seenWords
+   - 抽出新 helper `collectExplainedWords` 給歷史 corpus 跟當前 reply 共用
+   - 規則內文寫的「上下文已說明過、可保留不改」終於有實作
+
+2. **lint hook 餵歷史 corpus**：
+   - `hooks/ownmind-reply-lint.js`：`readTranscriptTail` 加抽 `historicalAssistantCorpus`（全部前輪 assistant text 合併）
+   - main flow 餵 corpus 給 lintReply
+
+3. **兩個 hook 失敗 stderr 加 bug report 路徑**（架構 bug：AI 拿不到指紋送不出 bug）：
+   - `ownmind-reply-lint.js` block 路徑 + 降警告路徑都加 `bug_fingerprint: lint_context_memory_missing, suggest_report: true`
+   - `ownmind-git-pre-commit.js` 擋下訊息加 `bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true`
+
+4. **註冊 3 個新指紋到 `shared/bug-fingerprints.js`**：
+   - `lint_context_memory_missing`：lint 沒實作跨 reply 詞彙記憶
+   - `lint_hook_no_suggest_report_path`：hook 失敗時沒帶 suggest_report 旗標（修這個 PR 之前的 bug）
+   - `mem_iron_rule_blocking_commit_no_fingerprint`：pre-commit 鉤子擋下但沒給 fingerprint
+
+5. **新測試**：
+   - `tests/jargon-context-memory.test.js`：11 個 case 守備歷史 corpus 邏輯（含「：」「即」「也就是」「（白話）」四種解釋格式、向後相容、null/undefined 防呆）
+
+測試: `npm test` 1923/1923 全綠（v1.20.2 主 fix + follow-up #1/2/3 + 既有測試 = 1923）。
+
 **Follow-up patch #2（同 v1.20.2 版本內、不另開版號）：**
 
 Vin 報 bug：每次寫 OwnMind 都會碰到 `API 409: 請先呼叫 ownmind_init 取得 sync_token 後再進行寫入操作`、要手動 init 再重試。AI 在本次工作中也連續踩 3 次同樣的坑。

@@ -200,6 +200,38 @@ export function checkMixedLanguage(content, thresholdOrOptions = undefined) {
 }
 
 /**
+ * 掃 text、把「後面 80 字內有解釋」的詞加進 seenWords（白話：把已解釋過的詞記下來）
+ *
+ * v1.20.2 follow-up #3 抽出來、給跨 reply 詞彙記憶共用。
+ *
+ * @param {string} text - 已清過程式碼跟連結的 text
+ * @param {Set<string>} seenWords - 累積的已解釋詞集合（會被 mutate）
+ */
+function collectExplainedWords(text, seenWords) {
+  const wordRegex = /[A-Za-z]{4,}/g;
+  let match;
+  while ((match = wordRegex.exec(text)) !== null) {
+    const word = match[0];
+    if (TECH_WHITELIST_LOWER.has(word.toLowerCase())) continue;
+    if (looksLikeProperNoun(word)) continue;
+
+    const lowerWord = word.toLowerCase();
+    if (seenWords.has(lowerWord)) continue;
+
+    const afterEnd = match.index + word.length;
+    const window = text.slice(afterEnd, afterEnd + 80);
+    const hasExplanation = /[\(（]/.test(window) ||
+                           /[:：]/.test(window) ||
+                           /-\s/.test(window) ||
+                           /(即|也就是|意思是|簡稱)/.test(window);
+
+    if (hasExplanation) {
+      seenWords.add(lowerWord);
+    }
+  }
+}
+
+/**
  * IR-036: 行話 / 專有名詞必須附白話說明
  *
  * 判斷邏輯：
@@ -208,12 +240,25 @@ export function checkMixedLanguage(content, thresholdOrOptions = undefined) {
  *   - 第一次出現位置後 30 字內、要有「（白話說明）」或「：解釋」其中一種
  *   - 沒有 → 違反
  *
- * @param {string} content
+ * v1.20.2 follow-up #3：加跨 reply 詞彙記憶。
+ *   - historicalCorpus 是「本 session 內前面所有 assistant reply 合併的 text」
+ *   - 預先掃 historicalCorpus、把已解釋過的詞加進 seenWords
+ *   - 規則內文寫的「上下文已說明過、可保留不改」終於有實作
+ *
+ * @param {string} content - 當前要檢查的 reply
+ * @param {string} [historicalCorpus=''] - 同 session 前面所有 assistant reply 合併（選填）
  * @returns {{ok: boolean, jargonWithoutExplanation: string[]}}
  */
-export function checkJargonExplanation(content) {
+export function checkJargonExplanation(content, historicalCorpus = '') {
   const cleaned = stripCodeAndLinks(content);
   const seenWords = new Set();
+
+  // v1.20.2 follow-up #3: 預先掃歷史 corpus、把已解釋過的詞加進 seenWords
+  if (historicalCorpus && typeof historicalCorpus === 'string') {
+    const historicalCleaned = stripCodeAndLinks(historicalCorpus);
+    collectExplainedWords(historicalCleaned, seenWords);
+  }
+
   const jargonWithoutExplanation = [];
 
   // 用 regex match 連續英文詞 + 位置
@@ -265,10 +310,16 @@ export function checkJargonExplanation(content) {
 
 /**
  * 跑兩個檢查、回統一格式
- * @param {string} content
+ *
+ * v1.20.2 follow-up #3：加跨 reply 詞彙記憶。
+ *   - historicalCorpus 是「本 session 內前面所有 assistant reply 合併的 text」
+ *   - 傳進來才會啟用「已解釋過的詞跳過 IR-036 檢查」
+ *
+ * @param {string} content - 當前要檢查的 reply
+ * @param {string} [historicalCorpus=''] - 同 session 前面所有 assistant reply 合併（選填）
  * @returns {{ok: boolean, violations: Array<{rule: string, message: string}>}}
  */
-export function lintReply(content) {
+export function lintReply(content, historicalCorpus = '') {
   const violations = [];
 
   const mixed = checkMixedLanguage(content);
@@ -280,7 +331,7 @@ export function lintReply(content) {
     });
   }
 
-  const jargon = checkJargonExplanation(content);
+  const jargon = checkJargonExplanation(content, historicalCorpus);
   if (!jargon.ok) {
     violations.push({
       rule: 'IR-036',

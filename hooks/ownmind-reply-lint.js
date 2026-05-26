@@ -156,13 +156,15 @@ async function main() {
   // user prompts 給 privacy detector 當例外比對來源：使用者自己提到的個資、AI 引用不算外洩
   // 註：使用者若有對應的隱私鐵律（例如 Vin 的 IR-041）、會收到事件編號 'privacy_check'
   //     再由各自的鐵律判斷要不要擋；hook 本身不綁特定使用者編號（v1.19.10 中性化調整）
-  const { lastAssistantText, recentUserPrompts: userPrompts } = readTranscriptTail(transcriptPath);
+  // v1.20.2 follow-up #3：除了 lastAssistantText / userPrompts、再抽歷史 assistant corpus
+  // 給 IR-036 跨 reply 詞彙記憶用（規則內文寫「上下文已說明過可保留不改」、現在有實作）
+  const { lastAssistantText, recentUserPrompts: userPrompts, historicalAssistantCorpus } = readTranscriptTail(transcriptPath);
   if (!lastAssistantText) { process.exit(0); return; }
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
 
   let lintResult;
-  try { lintResult = lintReply(lastAssistantText); }
+  try { lintResult = lintReply(lastAssistantText, historicalAssistantCorpus || ''); }
   catch { process.exit(0); return; }
 
   // v1.19.7 引入、v1.19.10 中性化：加掛隱私偵測、事件名 'privacy_check'
@@ -234,6 +236,13 @@ async function main() {
     try { incrementBlockCount(sessionId); } catch { /* swallow */ }
     const reason = formatBlockReason(violations, { priorBlockCount });
     try { process.stderr.write(reason + '\n'); } catch { /* ignore */ }
+    // v1.20.2 follow-up #3：附帶 bug report 路徑、AI 認為 lint 判斷有問題時可送回報
+    try {
+      process.stderr.write(
+        '[OwnMind bug report] 認為這次 lint 判斷不對嗎（例如已解釋過的詞仍被擋）？可呼叫 ownmind_report_bug 送回報。' +
+        'bug_fingerprint: lint_context_memory_missing, suggest_report: true\n'
+      );
+    } catch { /* ignore */ }
     exitCode = 2;
 
     // v1.19.11：寫結構化擋下事件、為自學機制鋪資料根基
@@ -252,6 +261,13 @@ async function main() {
   } else if (downgradeToWarning) {
     const note = formatDowngradeNotice(priorBlockCount, violations);
     try { process.stderr.write(note + '\n'); } catch { /* ignore */ }
+    // v1.20.2 follow-up #3：降警告路徑也附 bug report 路徑
+    try {
+      process.stderr.write(
+        '[OwnMind bug report] 認為這次 lint 判斷不對嗎？可呼叫 ownmind_report_bug 送回報。' +
+        'bug_fingerprint: lint_context_memory_missing, suggest_report: true\n'
+      );
+    } catch { /* ignore */ }
     exitCode = 1;
 
     // v1.19.11：降警告也寫一筆紀錄
@@ -385,22 +401,29 @@ function readTranscriptTail(transcriptPath, opts = {}) {
 
   let lastAssistantText = null;
   const recentUserPrompts = [];
+  // v1.20.2 follow-up #3：抽全部前輪 assistant text（不含最後一輪）
+  // 給 IR-036 lintReply 當歷史 corpus、實現「上下文已說明過的詞可保留」邏輯
+  const historicalAssistantTexts = [];
 
-  // 從後往前掃、同時找 last assistant + 最近 N 輪 user
+  // 從後往前掃、同時抽 last assistant + 最近 N 輪 user + 全部前輪 assistant 歷史
   for (let i = lines.length - 1; i >= 0; i--) {
-    // 已抓到 last assistant + 集滿 user prompts → 提早結束
-    if (lastAssistantText !== null && recentUserPrompts.length >= maxUserTurns) break;
-
     const entry = safeParse(lines[i]);
     if (!entry) continue;
 
-    if (entry.type === 'assistant' && lastAssistantText === null) {
+    if (entry.type === 'assistant') {
       const content = entry.message?.content;
       if (Array.isArray(content)) {
         const texts = content
           .filter((p) => p && p.type === 'text' && typeof p.text === 'string')
           .map((p) => p.text);
-        if (texts.length > 0) lastAssistantText = texts.join('\n');
+        if (texts.length > 0) {
+          const joined = texts.join('\n');
+          if (lastAssistantText === null) {
+            lastAssistantText = joined;
+          } else {
+            historicalAssistantTexts.push(joined);
+          }
+        }
       }
       continue;
     }
@@ -418,7 +441,10 @@ function readTranscriptTail(transcriptPath, opts = {}) {
     }
   }
 
-  return { lastAssistantText, recentUserPrompts };
+  // 歷史 corpus 按時間順序合併（從後往前掃集到的、要反轉成從前往後）
+  const historicalAssistantCorpus = historicalAssistantTexts.reverse().join('\n\n');
+
+  return { lastAssistantText, recentUserPrompts, historicalAssistantCorpus };
 }
 
 /**

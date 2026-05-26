@@ -54,6 +54,18 @@ post-commit 鉤子寫得清清楚楚：`failures: ["還沒做 code review，請�
 - **未改 MCP schema、AI 還是可能誤帶 rule_code 觸發備援**：靠 hint 提示治標、不治本。後續可以開 backlog 改 schema 加 `event` 欄位、根治。
 - **本機已安裝鉤子訊息不會自動更新**：要等 user 升級 OwnMind 才會拿到。Vin 本機可以手動同步 `~/.ownmind/shared/verification.js`。
 
+## Follow-up patch #3（同版本內、不另開版號）
+
+Eric（另一個 AI session）報 bug：規則 IR-036 寫「上下文已說明過、可保留不改」、但 lint 程式沒實作詞彙記憶。同 session 解釋過的詞、後續 reply 仍被擋、user 重寫成本爆炸。
+
+順手把整個 bug report 流程串起來修：
+
+1. **lint 加詞彙記憶**：`checkJargonExplanation` + `lintReply` 加第二參數 `historicalCorpus`、lint hook 從 transcript 抽全部前輪 assistant text 餵進去。
+2. **兩個 hook 失敗都帶 bug report 路徑**：lint hook + pre-commit hook 失敗 stderr 加 `bug_fingerprint:` + `suggest_report: true`、AI 拿到指紋就能送 bug report。
+3. **註冊 3 個新指紋**：`lint_context_memory_missing` / `lint_hook_no_suggest_report_path` / `mem_iron_rule_blocking_commit_no_fingerprint`。
+
+修法清單見 CHANGELOG v1.20.2 follow-up #3 段落。測試 `npm test` 1923/1923 全綠。
+
 ## Follow-up patch #2（同版本內、不另開版號）
 
 Vin 在工作期間遇到「每次寫 OwnMind 都要先 init 拿 token、不然 409」的 UX 痛點。AI 在本次工作中也連續踩 3 次。
