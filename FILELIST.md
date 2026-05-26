@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.7 修改（Hotfix：Windows + Git Bash 升級失敗 — MSYS 路徑沒給 Node 正規化）
+
+新增檔：
+```
+scripts/install-helpers/path-helpers.sh                              — 新增、提供 to_win_path() bash function（cygpath -m fallback to identity）
+tests/path-to-win32.test.js                                          — 新增、17 個 unit test、mock process.platform=win32 驗 toWin32Path/toMsysPath round-trip
+tests/path-helpers-bash.test.js                                      — 新增、7 個整合 test、spawn bash + 模擬 cygpath 驗 to_win_path() 行為
+openspec/changes/v1.26.7-hotfix-msys-path/proposal.md       — v1.26.7 hotfix 提案
+openspec/changes/v1.26.7-hotfix-msys-path/tasks.md          — v1.26.7 hotfix 任務清單
+```
+
+修改檔（4 個 sh 檔 + 版號 + 三語文件）：
+```
+hooks/ownmind-session-start.sh           — 加 source path-helpers.sh + OWNMIND_DIR_WIN、line 179 改用 _WIN
+scripts/interactive-upgrade.sh           — 加 source + OWNMIND_DIR_WIN、line 133/213 改用 _WIN
+scripts/verify-upgrade.sh                — 加 source + OWNMIND_DIR_WIN + CLAUDE_DIR_WIN、line 34/49 改用 _WIN（Vin 報的）
+scripts/check-sync.sh                    — 加 source + OWNMIND_DIR_WIN + CLAUDE_DIR_WIN、line 53/71 改用 _WIN
+package.json                             — 1.26.6 → 1.26.7
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md / FILELIST.md               — v1.26.7 條目
+```
+
+**未動**：`scripts/install-helpers/path-to-win32.cjs`（Node-side helper 早就存在、邏輯正確、只是沒人用、本次補上 sh-side 接線）
+
 ## v1.26.6 修改（國際化第十期 Part 1：tests/ 前 25 大檔英文化 — 軌道 B）
 
 新增檔：

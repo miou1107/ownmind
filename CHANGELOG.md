@@ -1,5 +1,42 @@
 # OwnMind 更新紀錄
 
+## v1.26.7 — Hotfix：Windows + Git Bash 升級失敗（MSYS 路徑沒給 Node 正規化）
+
+**回報者**：Vin（2026-05-26 自己升級 OwnMind 撞到）
+
+**症狀**：Windows + Git Bash user 跑 `bootstrap.sh` 升級 OwnMind 時、`scripts/verify-upgrade.sh --local` 報 `version_unreadable` → 自動回滾 → 升級被取消、停留在舊版。
+
+**根因**：`scripts/verify-upgrade.sh:49` 跟其他 6 個 sibling call site 把 `${OWNMIND_DIR}` 直接內插到 `node -p "require('${OWNMIND_DIR}/package.json').version"`。Git Bash 環境下 `${OWNMIND_DIR}` 是 MSYS 風格 `/c/Users/Vin/.ownmind`、但 Node.exe 在 Windows 上的 module resolver 不認 `/c/...` 路徑、`require()` 永遠 `MODULE_NOT_FOUND` → 拿不到版號 → 驗證失敗 → 回滾。
+
+**證據**（Vin 回報內附）：
+| Probe | Result |
+|---|---|
+| `node -p "require('/c/Users/Vin/.ownmind/package.json').version"` | `Cannot find module` |
+| `node -p "require('C:/Users/Vin/.ownmind/package.json').version"` | `1.20.4` ✅ |
+
+**影響範圍**：所有 Windows + Git Bash 走 `bootstrap.sh` 的 user。Mac / Linux 不受影響（路徑格式本來就對）。Windows + PowerShell 不受影響（不走 .sh）。
+
+**歷史脈絡**：v1.17.66（commit a2f701c）就寫了 `scripts/install-helpers/path-to-win32.cjs` helper、文件頭甚至直接點名 `verify-upgrade.sh:49` 是參考案例 — 但 helper 從沒被任何 sh 檔實際引用、bug 持續存在約兩個月。本次 hotfix 把 sh-side 跟 helper 真正接起來。
+
+**修法**：
+- 新增 `scripts/install-helpers/path-helpers.sh`、提供 `to_win_path()` bash function。內部用 `cygpath -m` 把 MSYS 路徑轉成 mixed-style Windows 路徑（`C:/Users/Vin/.ownmind`、正斜線 + 大寫磁碟代號）— Node 能讀、bash 內也不會有 backslash escape 問題。
+- 在每個 sh 檔頂部設定 `OWNMIND_DIR` / `CLAUDE_DIR` 之後 source helper、產生 `*_WIN` 變數。所有交給 Node 的 require / readFileSync 改用 `_WIN` 變數。
+- Mac / Linux 沒 `cygpath`、`to_win_path` fallback 回傳原路徑、跨平台行為一致。
+
+**修的 7 處 call site**：
+- `hooks/ownmind-session-start.sh:179` — broadcast 版本過濾的 `CLIENT_VERSION` 讀取
+- `scripts/interactive-upgrade.sh:133` + `:213` — 讀 Claude settings + dismiss broadcast 用的 version
+- `scripts/verify-upgrade.sh:34` + `:49` — read_creds + version 驗證（Vin 報的）
+- `scripts/check-sync.sh:53` + `:71` — L2 server-version drift + API credentials
+
+**Reproduction test**（IR-003 修 bug 前先寫 test）：
+- 新增 `tests/path-to-win32.test.js` — 17 個測試、mock `process.platform=win32` 驗 `toWin32Path` / `toMsysPath` round-trip。直接重現 Vin 報的 `/c/Users/Vin/.ownmind → C:\Users\Vin\.ownmind` 案例。
+- 新增 `tests/path-helpers-bash.test.js` — 7 個整合測試、spawn bash 模擬有 / 沒 cygpath 兩種環境、驗 `to_win_path()` 行為。含 `verify-upgrade.sh:49` post-fix 模式的 end-to-end regression test。
+
+**測試**：1980 pass / 0 fail（baseline 1956 + 新 24 個 test）
+**版本**：1.26.6 → 1.26.7
+**OpenSpec change**：`openspec/changes/v1.26.7-hotfix-msys-path/`
+
 ## v1.26.6 — 國際化第十期 Part 1：tests/ 前 25 大檔英文化（軌道 B）
 
 **範圍**：翻 `tests/*.test.js` 下含中文最多的 25 個檔（每檔 ≥ 56 行中文），共約 2025 行中文中的「真註解 + describe/it 標題 + assertion hint」（剩餘為 fixture 模擬使用者輸入、保留中文）。延續 v1.26.0 ~ v1.26.5 軌道 B（developer-facing 內部英文化）。

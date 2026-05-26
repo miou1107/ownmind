@@ -14,6 +14,18 @@ set -u
 OWNMIND_DIR="${HOME}/.ownmind"
 CLAUDE_DIR="${HOME}/.claude"
 
+# v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
+# Without this, ${OWNMIND_DIR}=/c/Users/Vin/.ownmind makes require() fail with
+# MODULE_NOT_FOUND, triggering the upgrade rollback. See path-helpers.sh.
+if [ -f "${OWNMIND_DIR}/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${OWNMIND_DIR}/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+OWNMIND_DIR_WIN="$(to_win_path "${OWNMIND_DIR}")"
+CLAUDE_DIR_WIN="$(to_win_path "${CLAUDE_DIR}")"
+
 # Make sure mktemp leftovers are cleaned on FAIL exit / Ctrl-C (per review: mktemp trap cleanup).
 INIT_TMP=""
 WRITE_TMP=""
@@ -29,9 +41,10 @@ MODE="${1:-}"
 # --- Read credentials (uses the key/url configured in the OwnMind MCP) ---
 read_creds() {
   local settings="${CLAUDE_DIR}/settings.json"
+  local settings_win="${CLAUDE_DIR_WIN}/settings.json"
   [ -f "${settings}" ] || return 1
   node -e "
-    const s = JSON.parse(require('fs').readFileSync('${settings}', 'utf8'));
+    const s = JSON.parse(require('fs').readFileSync('${settings_win}', 'utf8'));
     const srv = (s.mcpServers && s.mcpServers.ownmind) || {};
     const env = srv.env || {};
     console.log(env.OWNMIND_API_KEY || '');
@@ -46,7 +59,7 @@ case "${MODE}" in
     [ -f "${OWNMIND_DIR}/mcp/index.js" ] || FAIL "mcp_missing" "MCP server file not found"
     # 2. package.json version
     [ -f "${OWNMIND_DIR}/package.json" ] || FAIL "pkg_missing" "package.json not found"
-    VERSION=$(node -p "require('${OWNMIND_DIR}/package.json').version" 2>/dev/null || echo "")
+    VERSION=$(node -p "require('${OWNMIND_DIR_WIN}/package.json').version" 2>/dev/null || echo "")
     [ -n "${VERSION}" ] || FAIL "version_unreadable" "Cannot read package.json version"
     # 3. Claude Code skill
     if [ -d "${CLAUDE_DIR}/skills/ownmind-memory" ]; then

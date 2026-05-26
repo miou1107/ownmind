@@ -9,6 +9,17 @@ LOCK_FILE="$OWNMIND_DIR/.update-lock"
 LOG_DIR="$OWNMIND_DIR/logs"
 UPDATE_MSG=""
 
+# v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
+# Without this, $OWNMIND_DIR=/c/Users/Vin/.ownmind makes require() fail with
+# MODULE_NOT_FOUND. See path-helpers.sh.
+if [ -f "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+OWNMIND_DIR_WIN="$(to_win_path "$OWNMIND_DIR")"
+
 # v1.17.71：補印上次 session 因 tty 不可用沒寫成的 banner（規格 #3 不被 AI 過濾）。
 # SessionStart 的 stderr → user terminal，是 user-visible 通道。
 # JSON Lines format：每行一個 { "ts", "block" } record。
@@ -176,7 +187,7 @@ log_event "init" "status" "ok"
 # --- v1.17.0 P3: 抓當前應顯示的廣播（fail-silent，不擋 SessionStart）---
 # v1.17.18: 帶 client_version 讓 server semver filter 生效
 # （否則 broadcast-filter.js 的 min/max_version 過濾會跳過 → 已升級用戶仍見舊升級廣播）
-CLIENT_VERSION=$(node -p "require('$OWNMIND_DIR/package.json').version" 2>/dev/null || echo "")
+CLIENT_VERSION=$(node -p "require('$OWNMIND_DIR_WIN/package.json').version" 2>/dev/null || echo "")
 BROADCAST_URL="${API_URL}/api/broadcast/active?tool=claude-code"
 if [ -n "$CLIENT_VERSION" ]; then
   BROADCAST_URL="${BROADCAST_URL}&client_version=${CLIENT_VERSION}"

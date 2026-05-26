@@ -9,6 +9,18 @@
 OWNMIND_DIR="${OWNMIND_DIR:-$HOME/.ownmind}"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"
 
+# v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
+# Without this, ${OWNMIND_DIR}=/c/Users/Vin/.ownmind makes require() fail with
+# MODULE_NOT_FOUND. See path-helpers.sh.
+if [ -f "${OWNMIND_DIR}/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${OWNMIND_DIR}/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+OWNMIND_DIR_WIN="$(to_win_path "${OWNMIND_DIR}")"
+CLAUDE_DIR_WIN="$(to_win_path "${CLAUDE_DIR}")"
+
 # ============================================================
 # L1 — Remote drift（~/.ownmind git HEAD vs origin/main）
 # ============================================================
@@ -50,7 +62,7 @@ SERVER_VER=""
 
 if [ -f "${OWNMIND_DIR}/package.json" ]; then
   CLIENT_VER=$(node -e "
-    try { console.log(require('${OWNMIND_DIR}/package.json').version || ''); }
+    try { console.log(require('${OWNMIND_DIR_WIN}/package.json').version || ''); }
     catch { }
   " 2>/dev/null)
   # v1.17.84 — Windows file-lock fallback: when MCP node process holds package.json
@@ -68,7 +80,7 @@ API_URL=""
 if [ -f "${CLAUDE_DIR}/settings.json" ]; then
   CREDS=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('${CLAUDE_DIR}/settings.json', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('${CLAUDE_DIR_WIN}/settings.json', 'utf8'));
       const env = (s.mcpServers && s.mcpServers.ownmind && s.mcpServers.ownmind.env) || {};
       console.log(env.OWNMIND_API_KEY || '');
       console.log(env.OWNMIND_API_URL || '');
