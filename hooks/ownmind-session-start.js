@@ -2,7 +2,7 @@
 /**
  * OwnMind SessionStart Hook (L4)
  *
- * 載入初始記憶並顯示鐵律摘要。
+ * Load initial memory and display the iron rule digest.
  */
 
 import fs from 'fs';
@@ -41,8 +41,8 @@ function httpGet(url, headers) {
 }
 
 async function main() {
-  // v1.20.3：新 session 開啟時、清掉舊的「session 暫時關閉」狀態檔
-  // 達成 spec 寫的「新 session 自動恢復」（白話：開新對話、OwnMind 鉤子自動重新啟用）
+  // v1.20.3: when a new session starts, clear the legacy "session temporarily disabled" state file.
+  // Implements the spec's "new session auto-resumes" — opening a new conversation re-enables the OwnMind hooks.
   try {
     const prev = readSessionOffState();
     if (prev) {
@@ -97,8 +97,8 @@ async function main() {
     lines.push('');
   }
 
-  // v1.19.14：錯誤回報通知（雙軌：管理員看新回報、回報者看處理完成）
-  // fetch 失敗 / 連不到 → 靜默略過（不擋啟動流程、見 spec 場景 50）
+  // v1.19.14: bug report notifications (two channels — admin sees new reports, reporter sees resolutions).
+  // Fetch failure / unreachable → silently skip (do not block startup, see spec scenario 50).
   try {
     const isAdmin =
       initData.profile?.role === 'admin' || initData.profile?.role === 'super_admin';
@@ -126,7 +126,7 @@ async function main() {
       lines.push('');
     }
   } catch {
-    // fetch 失敗 → 靜默略過、寫 log 但不擋啟動
+    // fetch failed → silently skip, log it but don't block startup.
     logEvent('bug_report_notifications_fetch_failed', {});
   }
 

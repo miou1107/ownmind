@@ -2,9 +2,9 @@
 /**
  * OwnMind Git Post-Commit Hook (L5)
  *
- * commit 完成後檢查鐵律，違反時寫入 compliance.jsonl 並輸出警告。
- * 不會阻止 commit（已經完成了），僅記錄供後續分析。
- * 零網路依賴：所有資料從本地快取讀取。
+ * After the commit completes, check iron rules; on violation, write to compliance.jsonl and emit a warning.
+ * Does not abort the commit (it already happened) — only records for later analysis.
+ * Zero network dependency: everything reads from local cache.
  */
 
 import path from 'path';
@@ -104,13 +104,13 @@ async function main() {
         source: 'post_commit',
         commit_hash: commitHash,
         failures: result.failures,
-        // v1.19: 直接從 cache 的 rule 物件取 tier（沒有就靠 appendCompliance 端略過該欄位）
+        // v1.19: read tier directly from the cached rule object (when missing, appendCompliance just omits the field).
         tier: rule.tier,
       });
     }
   }
 
-  // Version-tag sync check: 版號有無對應 tag
+  // Version-tag sync check: does the version have a corresponding tag?
   try {
     const pkgVersion = VERSION !== '?' ? VERSION : null;
     if (pkgVersion) {

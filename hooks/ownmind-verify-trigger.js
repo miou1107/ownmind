@@ -63,7 +63,7 @@ async function main() {
 
     if (!result.pass && verification.block_on_fail) {
       const code = rule.code || rule.metadata?.code || 'IR-???';
-      const title = rule.title || '未命名規則';
+      const title = rule.title || '(untitled rule)';
       failures.push(`${code}: ${title}`);
       for (const f of result.failures) {
         failures.push(`  → ${f}`);

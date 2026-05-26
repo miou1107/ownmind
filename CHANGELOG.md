@@ -1,5 +1,44 @@
 # OwnMind 更新紀錄
 
+## v1.26.0 — 國際化第五期：hooks 內部註解英文化（軌道 B 首發）
+
+**背景**：v1.22~v1.25 翻完 Track A（user-facing）主要 surface。雙軌國際化規則（CLAUDE.md / project_498）的 Track B（開發環境英文化）正式啟動、首發掃 `hooks/` 子目錄共 20 個檔 / 566 行中文，把 JSDoc + `//` 行內註解、設計理由、踩坑紀錄全部翻成英文。
+
+**為什麼從 hooks/ 開始**：
+- 規模可控（566 行、單 release 做完）
+- 跟 src/ 沒共用 module surface area、低耦合
+- 94.9% 是純註解、零行為風險
+- hooks 跑在每位貢獻者本機、第一個被讀到 → 英文化價值最高
+
+**Track B 範圍**：
+- `hooks/*.js` + `hooks/*.cjs` + `hooks/lib/*.js` 全部 JSDoc + `//` + `/* */` 註解
+- 行尾 trailing inline comment（例如 `const STALE_LOCK_MS = ... // 6 hours`）
+- 變數/函式命名若有中文（本期無、原碼變數都是英文）
+
+**Track A 補洞（小範圍）**：之前 v1.22-v1.25 漏掉的 4 條 user-facing 字串：
+- `hooks/lib/sync-memory-files.js:84` — MEMORY.md 自動同步 header
+- `hooks/lib/sync-memory-files.js:85` — 編輯提示
+- `hooks/lib/sync-memory-files.js:145` — sync failed warning
+- `hooks/ownmind-verify-trigger.js:66` — `'未命名規則'` → `'(untitled rule)'` fallback
+
+**刻意保留**：
+- `hooks/ownmind-reply-lint.js:658` 那條中文 token（`"白話：..."`/`"即..."`/`"也就是..."`）是**功能性**的 — 它們是 lint prompt 教 AI 怎麼寫白話中文的格式範例、必須保留中文形式
+
+**Out of scope（明確 defer）**：
+- `src/` 內部註解（2067 行）— 包含部分 user-facing API error message、需先決定軌道 A 編譯時翻譯機制再動
+- `mcp/` 內部註解（216 行）— 可併入 src/ phase 或單獨 v1.27
+- `client/` / `shared/` / `scripts/` / `tests/` — 各自獨立 scope 決定
+
+**檔案異動**：20 個 hooks 檔翻譯（hooks/*.js + .cjs + lib/*.js）
+
+**版本**：1.25.0 → 1.26.0
+**測試**：1954 pass / 0 fail（純註解翻譯、零行為改動、無新測試需要）
+**OpenSpec change**：`openspec/changes/v1.26.0-i18n-hooks-internal/`
+
+**雙軌國際化進度**：
+- **Track A**（user-facing）：v1.22→v1.25 主要 surface 完工 ✅
+- **Track B**（dev environment）：v1.26 從 hooks/ 起跑、累積完工約 566 行（剩 src/ 2067 + mcp/ 216 + client/shared/scripts/tests 約 4000+ 行）
+
 ## v1.25.0 — 國際化第四期：Server-side memory route + INSTRUCTIONS_SOP 英文化
 
 **背景**：v1.22/v1.23/v1.24 翻完 MCP / git hooks / SessionStart / reply-lint。最後一個 defer 項目：`src/routes/memory.js` server-side API response 全英化、含 288 行 INSTRUCTIONS_SOP（每次 init 送給 AI client 的 behavioral manual、極度行為敏感）。

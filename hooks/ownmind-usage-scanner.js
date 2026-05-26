@@ -2,10 +2,11 @@
 /**
  * hooks/ownmind-usage-scanner.js
  *
- * 主 entry：依序 call 各 tool 的 adapter、走同一 `runScan()` 流程、送 events + heartbeat。
- * Plan P4：目前只掛 claude-code 一個 adapter；P5 加 codex、opencode。
+ * Main entry: invokes each tool adapter in turn through the shared `runScan()` flow, sending
+ * events + heartbeat.
+ * Plan P4: currently only the claude-code adapter is wired; P5 adds codex and opencode.
  *
- * Install 完成後由 launchd / systemd / Task Scheduler 每 30 分鐘呼叫一次（P6）。
+ * After installation this is invoked every 30 minutes by launchd / systemd / Task Scheduler (P6).
  */
 
 import os from 'os';
@@ -29,17 +30,17 @@ async function log(line) {
   await fs.appendFile(LOG_PATH, `${new Date().toISOString()} ${line}\n`, 'utf8');
 }
 
-const STALE_LOCK_MS = 6 * 60 * 60 * 1000;  // 6 小時
+const STALE_LOCK_MS = 6 * 60 * 60 * 1000;  // 6 hours
 
 /**
- * 自我 lock：避免 cron 撞上手動跑的 scanner。
+ * Self-locking: prevents the scheduled scanner from colliding with a manual run.
  *
- * 使用 O_EXCL 建立 lock 檔；已存在時：
- *   1. 讀檔內 PID，若該 process 已消失（`kill -0` ESRCH）→ 視為 stale、接手
- *   2. 或 lock 檔 mtime 超過 6 小時 → 視為 stale、接手
- *   3. 否則假設另一實例還活著，回 false
+ * Create the lock file with O_EXCL. When it already exists:
+ *   1. Read the PID inside; if that process is gone (`kill -0` returns ESRCH) → treat as stale, take over.
+ *   2. Or if the lock file's mtime is older than 6 hours → treat as stale, take over.
+ *   3. Otherwise assume another instance is alive and return false.
  *
- * 避免 SIGKILL / OOM / laptop sleep 後 lock 孤兒，永遠擋住後續 scan。
+ * This avoids an orphaned lock from SIGKILL / OOM / laptop sleep blocking all future scans forever.
  */
 async function acquireLock() {
   await fs.mkdir(path.dirname(LOCK_PATH), { recursive: true });
@@ -54,14 +55,14 @@ async function acquireLock() {
       if (err.code !== 'EEXIST') throw err;
     }
 
-    // Lock 已存在 — 檢查是否 stale
+    // Lock already exists — check whether it's stale.
     let stale = false;
     try {
       const raw = await fs.readFile(LOCK_PATH, 'utf8');
       const otherPid = parseInt(raw.trim(), 10);
       if (Number.isFinite(otherPid) && otherPid > 0 && otherPid !== process.pid) {
         try {
-          process.kill(otherPid, 0);  // 存在則回傳；不存在則 throw ESRCH
+          process.kill(otherPid, 0);  // returns if it exists; throws ESRCH if it does not
         } catch (e) {
           if (e.code === 'ESRCH') stale = true;
         }
@@ -71,14 +72,14 @@ async function acquireLock() {
         if (Date.now() - st.mtimeMs > STALE_LOCK_MS) stale = true;
       }
     } catch {
-      // 讀不到就當 stale，重建
+      // Can't read it → treat as stale and rebuild.
       stale = true;
     }
 
     if (!stale) return false;
 
-    // 刪掉 stale lock 再 retry 一次（仍用 wx 避免 race）
-    try { await fs.unlink(LOCK_PATH); } catch { /* 另一 process 剛接手也 OK */ }
+    // Delete the stale lock then retry once (still wx to avoid a race).
+    try { await fs.unlink(LOCK_PATH); } catch { /* another process just took over — also fine */ }
   }
 }
 
@@ -103,7 +104,7 @@ async function main() {
     const scannerVersion = getClientVersion() || 'unknown';
     const machine = os.hostname();
 
-    // OWNMIND_SKIP_TOOLS=tool1,tool2 可跳過指定 adapter（backfill / debug 用）
+    // OWNMIND_SKIP_TOOLS=tool1,tool2 skips the named adapters (for backfill / debug).
     const skip = new Set(
       (process.env.OWNMIND_SKIP_TOOLS || '')
         .split(',').map((s) => s.trim()).filter(Boolean)
@@ -141,8 +142,9 @@ async function main() {
 
 export { main, acquireLock, releaseLock };
 
-// 只在直接執行時才跑 main；import 時不觸發（測試友善）
-// fileURLToPath 處理 Windows 反斜線與 URL 編碼差異，`import.meta.url` 字串比對在 Win 會失敗
+// Only run main when invoked directly; importing this module does not trigger it (test-friendly).
+// fileURLToPath handles Windows backslash and URL-encoding differences — a plain `import.meta.url`
+// string comparison fails on Windows.
 const isDirectRun = process.argv[1] && (() => {
   try { return fileURLToPath(import.meta.url) === path.resolve(process.argv[1]); }
   catch { return false; }

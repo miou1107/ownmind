@@ -1,25 +1,25 @@
 /**
  * OwnMind Rule Enforcer — v1.19.6
  *
- * 共用判定核心。給 rule_code + context + rules，回傳判定結果。
- * 三種 hook 共用（git pre-commit / PreToolUse / reply-lint）。
+ * Shared decision core. Given rule_code + context + rules, returns the enforcement decision.
+ * Used by three hooks (git pre-commit / PreToolUse / reply-lint).
  *
- * 設計原則：
- *   1. 純函式（接收 rules、不自己讀快取；測試友善）
- *   2. fail-open（任何錯誤 → action='allow'、不卡死工作流）
- *   3. 不執行 side effects（不寫 log、不 exit）— 那些是 hook 層的責任
- *   4. 整合 tier（v1.19）與 verification.block_on_fail（v1.18 之前）兩個訊號
+ * Design principles:
+ *   1. Pure function (accepts rules; does not read cache itself — test-friendly).
+ *   2. Fail-open (any error → action='allow'; never blocks the workflow).
+ *   3. No side effects (no logging, no exit) — those are the hook layer's responsibility.
+ *   4. Integrates the tier signal (v1.19) and verification.block_on_fail (pre-v1.18) both.
  *
- * 決定 action 的邏輯：
- *   - 規則不在快取                                 → allow + reason='rule_not_in_cache'
- *   - rules 非陣列                                 → allow + reason='invalid_rules'
- *   - bypass set 命中（含 'all'）                  → bypass
- *   - 規則沒 verification.conditions               → allow + reason='no_conditions'
- *   - conditions 評估通過                          → allow
- *   - conditions 評估違反 + tier='critical'        → block
- *   - conditions 評估違反 + tier='default'  + block_on_fail=true  → block（向後相容）
- *   - conditions 評估違反 + tier='default'  + block_on_fail=false → warn
- *   - conditions 評估違反 + tier='advisory'        → log_only
+ * Decision logic for action:
+ *   - Rule not in cache                                  → allow + reason='rule_not_in_cache'
+ *   - rules not an array                                 → allow + reason='invalid_rules'
+ *   - bypass set hit (incl. 'all')                       → bypass
+ *   - rule has no verification.conditions                → allow + reason='no_conditions'
+ *   - conditions evaluate as pass                        → allow
+ *   - conditions violated + tier='critical'              → block
+ *   - conditions violated + tier='default' + block_on_fail=true  → block (backward compat)
+ *   - conditions violated + tier='default' + block_on_fail=false → warn
+ *   - conditions violated + tier='advisory'              → log_only
  */
 
 import { evaluateConditions } from '../../shared/verification.js';
@@ -27,12 +27,12 @@ import { normalizeTier } from '../../shared/iron-rule-tier.js';
 import { isBypassed } from './bypass-handler.js';
 
 /**
- * 評估單條鐵律
- * @param {string} ruleCode - 如 'IR-002'
- * @param {object} context - 給 verification handler 的環境資料
+ * Evaluate a single iron rule.
+ * @param {string} ruleCode - e.g. 'IR-002'
+ * @param {object} context - environment data passed to verification handlers
  * @param {object} options
- * @param {Array} options.rules - 從快取讀到的鐵律陣列
- * @param {Set<string>} [options.bypassSet] - 放行通道；若未提供則視為無 bypass
+ * @param {Array} options.rules - iron rule array read from the cache
+ * @param {Set<string>} [options.bypassSet] - bypass channel; if absent, treated as no bypass
  * @returns {object} - { action, rule_code, rule_title?, tier?, failures?, message?, reason? }
  */
 export function enforceRule(ruleCode, context, options = {}) {
@@ -49,7 +49,7 @@ export function enforceRule(ruleCode, context, options = {}) {
   const tier = normalizeTier(rule.tier);
   const ruleTitle = rule.title || ruleCode;
 
-  // Bypass 優先於評估（user 明示意圖）
+  // Bypass takes priority over evaluation (explicit user intent).
   if (isBypassed(ruleCode, options.bypassSet)) {
     return {
       action: 'bypass',
@@ -93,7 +93,7 @@ export function enforceRule(ruleCode, context, options = {}) {
     };
   }
 
-  // 違反！決定 action
+  // Violation! Decide on action.
   const action = decideAction(tier, verification.block_on_fail);
 
   return {
@@ -108,7 +108,7 @@ export function enforceRule(ruleCode, context, options = {}) {
 }
 
 /**
- * 批次評估多條鐵律
+ * Batch-evaluate multiple iron rules.
  * @param {string[]} ruleCodes
  * @param {object} context
  * @param {object} options
@@ -122,9 +122,9 @@ export function enforceRules(ruleCodes, context, options = {}) {
 /**
  * tier + block_on_fail → action
  *
- * critical 一律 block（v1.19 分級的核心承諾）。
- * default 看 block_on_fail（向後相容 v1.18 之前的設定）。
- * advisory 只寫 log（不打擾使用者）。
+ * critical always blocks (the core promise of v1.19's tiering).
+ * default falls back to block_on_fail (backward compatible with pre-v1.18 configs).
+ * advisory only logs (does not interrupt the user).
  */
 function decideAction(tier, blockOnFail) {
   if (tier === 'critical') return 'block';

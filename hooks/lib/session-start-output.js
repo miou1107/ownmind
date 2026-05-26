@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * hooks/lib/session-start-output.js — SessionStart hook 的 JSON 輸出包裝
+ * hooks/lib/session-start-output.js — JSON output wrapper for the SessionStart hook.
  *
  * Usage: node session-start-output.js '<init JSON>' '<broadcasts JSON>'
- * Output: JSON to stdout matching Claude Code hookSpecificOutput schema
+ * Output: JSON to stdout matching the Claude Code hookSpecificOutput schema.
  *
- * 拆出來好處：render 邏輯（renderSessionContext）可以被 tests/session-start-render.test.js 直接 import
+ * Why extract this: the render logic (renderSessionContext) can be imported directly by
+ * tests/session-start-render.test.js.
  */
 
 import { renderSessionContext } from './render-session-context.js';

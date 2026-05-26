@@ -1,5 +1,42 @@
 # OwnMind 檔案結構
 
+## v1.26.0 修改（國際化第五期：hooks/ 內部註解英文化 — 軌道 B 首發）
+
+新增檔：
+```
+openspec/changes/v1.26.0-i18n-hooks-internal/proposal.md   — i18n 第五期提案（軌道 B 首發）
+openspec/changes/v1.26.0-i18n-hooks-internal/tasks.md      — 任務分解
+```
+
+修改檔（軌道 B 內部註解英化、20 個 hooks 檔）：
+```
+hooks/ownmind-reply-lint.js              — JSDoc 大頭 + IR-027 spec + MODE 註解 + 違規計數 partial-failure 註記 + readTranscriptTail JSDoc + formatBanner JSDoc + formatBlockReason JSDoc + 各種行內 // 註解（178 行）
+hooks/ownmind-tty-echo.cjs               — JSDoc 大頭 + 主路徑 fallback 註解 + extractBanners / formatBlock JSDoc + writeFallback 註解
+hooks/ownmind-usage-scanner.js           — JSDoc 大頭 + acquireLock JSDoc + 各種行內註解 + isDirectRun 註解
+hooks/ownmind-git-pre-commit.js          — JSDoc 大頭 + getStagedAddedLines / checkStagedDiffForSecrets JSDoc + fetchAndCacheRules JSDoc + 各種行內註解
+hooks/ownmind-git-post-commit.js         — JSDoc 大頭 + tier 註解 + version-tag sync check 註解
+hooks/ownmind-iron-rule-check.js         — JSDoc 大頭 + trigger fallback / API envelope 兼容 / commit vs deploy 模式註解
+hooks/ownmind-session-start.js           — JSDoc 大頭 + session-off 清除註解 + bug report notifications 註解
+hooks/ownmind-verify-trigger.js          — fallback 字串 '未命名規則' → '(untitled rule)'（軌道 A 補洞）
+hooks/lib/flush-compliance-spool.js      — JSDoc 大頭 + I2 fix 註解 + restoreOrCleanup / readCredentialsInline JSDoc
+hooks/lib/conditional-sync-cli.js        — JSDoc 大頭（為什麼存在 / 流程 / review fixes）+ fetchIronRuleList / writeStdoutAsync JSDoc + dynamic import 註解
+hooks/lib/conditional-sync.js            — JSDoc 大頭（4 條 refresh 規則 / 設計）+ readCache / shouldRefreshCache / fetchSyncTokenLight / fetchInitFull / writeCache / runConditionalSync JSDoc + 各 step 註解
+hooks/lib/session-counter.js             — JSDoc 大頭（schema / 設計原則）+ 5 個函式 JSDoc + cleanupStale 註解
+hooks/lib/rule-enforcer.js               — JSDoc 大頭（決定 action 邏輯）+ enforceRule / enforceRules / decideAction JSDoc
+hooks/lib/lint-event-logger.js           — JSDoc 大頭 + writeEvent / extractViolatedWords JSDoc + rotate 註解
+hooks/lib/build-compliance-events.js     — JSDoc 大頭（v1.20.4 中性事件常數對應）+ buildComplianceEvents JSDoc
+hooks/lib/bypass-handler.js              — JSDoc 大頭（usage / 設計原則）+ parseBypass / isBypassed / logBypass JSDoc
+hooks/lib/flush-pending-banners.js       — JSDoc 大頭 + 行內註解
+hooks/lib/sync-memory-files.js           — JSDoc 大頭 + buildMemoryIndex 內 3 條 MEMORY.md user-facing 字串英化（軌道 A 補洞）
+hooks/lib/render-session-context.js      — JSDoc 大頭 + 廣播 / tier summary 註解
+hooks/lib/session-start-output.js        — JSDoc 大頭
+package.json                             — version 1.25.0 → 1.26.0
+README.md                                — 版號同步
+CHANGELOG.md                             — v1.26.0 條目
+```
+
+**驗證**：`rg '\p{Han}' hooks/` 剩 1 行（reply-lint.js:658 刻意保留的功能性 token）；`node --check` 全部過；`npm test` 1954 pass / 0 fail。
+
 ## v1.25.0 修改（國際化第四期：Server-side memory route + INSTRUCTIONS_SOP 英文化）
 
 新增檔：

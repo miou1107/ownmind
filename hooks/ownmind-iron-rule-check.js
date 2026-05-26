@@ -2,8 +2,8 @@
 /**
  * OwnMind Iron Rule Check — Claude Code PreToolUse Hook (L2)
  *
- * 偵測高風險操作（commit/deploy/delete），顯示鐵律提醒。
- * 對所有 trigger 類型都跑 verification engine，block_on_fail 規則會擋下操作。
+ * Detect high-risk operations (commit/deploy/delete) and surface iron rule reminders.
+ * Runs the verification engine for every trigger type; block_on_fail rules abort the operation.
  */
 
 import fs from 'fs';
@@ -45,8 +45,8 @@ async function main() {
 
   if (!command) process.exit(0);
 
-  // v1.19.20：detect 不到 trigger 時 fallback 成 'command'、讓 command-based 鐵律
-  //（IR-018/023/043/046）的 verification 永遠能跑、不被 trigger 過濾擋掉
+  // v1.19.20: when no trigger is detected, fall back to 'command' so command-based iron rules
+  // (IR-018/023/043/046) always run verification and aren't filtered out by the trigger check.
   const detectedTrigger = detectCommandTrigger(command);
   const trigger = detectedTrigger || 'command';
 
@@ -59,8 +59,8 @@ async function main() {
       'Authorization': `Bearer ${apiKey}`
     });
     const parsed = JSON.parse(raw);
-    // v1.19.20: API 在 v1.19.x 某版開始包 { data: [...] } envelope、
-    // 舊 hook 直接 .filter 會 throw。兼容兩種格式。
+    // v1.19.20: starting in some v1.19.x release the API wraps responses in { data: [...] };
+    // older hooks calling .filter directly would throw. Support both shapes.
     rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
   } catch {
     process.exit(0);
@@ -70,12 +70,13 @@ async function main() {
     if (!r.tags || r.tags.length === 0) return true;
     return r.tags.some(t =>
       t === 'trigger:' + trigger ||
-      t === 'trigger:command' ||  // v1.19.20：command-based 鐵律總是相關
+      t === 'trigger:command' ||  // v1.19.20: command-based iron rules are always relevant
       (trigger === 'commit' && t === 'trigger:git')
     );
   });
 
-  // v1.19.20：即使沒 reminder 相關鐵律、verification engine 段仍可能擋下、不 early return
+  // v1.19.20: even without any reminder-relevant rule, the verification engine block may still
+  // fire — do not early-return here.
 
   const lines = [];
 
@@ -113,9 +114,10 @@ async function main() {
     } catch { /* ignore version check errors */ }
   }
 
-  // commit trigger: 精簡模式（頻率高，只顯示結果）
-  // deploy/delete trigger: 完整模式（頻率低風險高，列出所有規則 + 醒目標記）
-  // v1.19.20: 'command' fallback trigger 不顯示 reminder（不是按操作類型觸發、是按指令樣式）
+  // commit trigger: compact mode (frequent — only show the result).
+  // deploy/delete trigger: full mode (infrequent + high risk — list all rules with eye-catching markers).
+  // v1.19.20: the 'command' fallback trigger does NOT show a reminder (it fires on command shape,
+  // not operation type).
   if (trigger !== 'commit' && trigger !== 'command' && relevant.length > 0) {
     const triggerTag = `[OwnMind v${VERSION}] Iron rule triggered (${trigger})`;
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -136,14 +138,14 @@ async function main() {
     const triggerRules = cachedRules.filter(r => {
       const triggers = r.metadata?.verification?.trigger;
       if (!Array.isArray(triggers)) return false;
-      // v1.19.20：trigger='command' 的鐵律總是會被評估（不論當前操作類型）
+      // v1.19.20: trigger='command' iron rules are always evaluated regardless of current operation type.
       return triggers.includes(trigger) || triggers.includes('command');
     });
 
     if (triggerRules.length > 0) {
       const complianceEvents = readComplianceEvents();
-      // v1.19.20：把 command 加進 context、讓 command_matches /
-      // command_not_matches handler 能對 Bash 指令字串做樣式比對
+      // v1.19.20: include command in context so command_matches / command_not_matches handlers
+      // can pattern-match against the Bash command string.
       const context = { complianceEvents, command };
       const blockFailures = [];
 
@@ -187,7 +189,7 @@ async function main() {
     // Verification engine not available, continue with reminder only
   }
 
-  // commit trigger 且無 block：顯示精簡通過訊息
+  // commit trigger with no block: show a compact pass message.
   if (trigger === 'commit' && lines.length === 0) {
     lines.push(`[OwnMind v${VERSION}] Iron rule check: commit — ${relevant.length} rules verified ✓`);
   }
