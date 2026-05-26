@@ -70,7 +70,7 @@ async function main() {
   logEvent('init', { status: 'ok' });
 
   const lines = [];
-  lines.push(`【OwnMind v${initData.server_version || '?'}】記憶載入：已載入你的個人記憶`);
+  lines.push(`[OwnMind v${initData.server_version || '?'}] Memory loaded: your personal memories are now active`);
   lines.push('');
 
   if (initData.profile) {
@@ -80,20 +80,20 @@ async function main() {
   }
 
   if (initData.iron_rules_digest) {
-    lines.push('## 鐵律（必須嚴格遵守）');
+    lines.push('## Iron rules (strictly enforced)');
     lines.push(initData.iron_rules_digest);
     lines.push('');
   }
 
   if (initData.principles && initData.principles.length > 0) {
-    lines.push('## 工作原則');
+    lines.push('## Working principles');
     initData.principles.forEach(p => lines.push(`- ${p.title}`));
     lines.push('');
   }
 
   if (initData.active_handoff) {
-    lines.push('## 待接手交接');
-    lines.push(`專案: ${initData.active_handoff.project || '?'}`);
+    lines.push('## Pending handoff');
+    lines.push(`Project: ${initData.active_handoff.project || '?'}`);
     lines.push('');
   }
 
@@ -111,18 +111,18 @@ async function main() {
     const segments = [];
     if (notif.admin && notif.admin.unhandled_count > 0) {
       segments.push(
-        `身為管理員：有 ${notif.admin.unhandled_count} 筆未處理錯誤回報`
+        `As admin: ${notif.admin.unhandled_count} unhandled bug reports`
       );
     }
     if (notif.reporter && notif.reporter.unread_resolved_count > 0) {
       segments.push(
-        `你的 ${notif.reporter.unread_resolved_count} 筆回報已處理`
+        `${notif.reporter.unread_resolved_count} of your reports have been resolved`
       );
     }
     if (segments.length > 0) {
-      lines.push('## 錯誤回報通知');
+      lines.push('## Bug report notifications');
       segments.forEach((s) => lines.push(`- ${s}`));
-      lines.push('（用「列我的回報」或後台 /admin/bug-reports 查詳情）');
+      lines.push('(Say "list my reports" or open /admin/bug-reports for details)');
       lines.push('');
     }
   } catch {
@@ -130,7 +130,7 @@ async function main() {
     logEvent('bug_report_notifications_fetch_failed', {});
   }
 
-  lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get("iron_rule")。');
+  lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
 
   console.log(JSON.stringify({
     hookSpecificOutput: {

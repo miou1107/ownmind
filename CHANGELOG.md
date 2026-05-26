@@ -1,5 +1,41 @@
 # OwnMind 更新紀錄
 
+## v1.23.0 — 國際化第二期：SessionStart 介面英文化
+
+**背景**：v1.22.0 翻完 MCP descriptions + git hooks + brand banner 後、剩下三個區塊 defer。v1.23.0 處理其中最小、風險最低的一塊：每次新對話的 SessionStart 介面（user 每次開新對話都會看到）。
+
+**改動**：
+
+1. `hooks/ownmind-session-start.js`
+   - 招牌標籤改 `[OwnMind v...] Memory loaded: your personal memories are now active`
+   - `## 鐵律（必須嚴格遵守）` → `## Iron rules (strictly enforced)`
+   - `## 工作原則` → `## Working principles`
+   - `## 待接手交接` → `## Pending handoff`、`專案:` → `Project:`
+   - `## 錯誤回報通知` → `## Bug report notifications`
+   - 管理員 / 回報者 通知訊息英化
+   - footer line `ownmind_* MCP tools 可操作記憶...` → `The ownmind_* MCP tools manage memory...`
+
+2. `hooks/lib/render-session-context.js`（給 shell hook 用的 render 純函式）
+   - `## 📢 OwnMind 系統通知` → `## 📢 OwnMind broadcast`
+   - CTA 升級提示 `讓 AI 幫你升級` → `(let the AI run the upgrade)`
+   - Snooze 提示 → `(Not ready? Say "snooze upgrade" to defer for N hours)`
+   - 剩餘廣播數 → `(N more broadcast(s) not shown)`
+   - `[SYSTEM] 強制行動要求` block 全翻成 `[SYSTEM] Action required` block、保留 imperative 力度
+   - 招牌 + 各 section 標題 + footer 同 session-start.js
+
+3. 招牌標籤 `【】` → `[]`（延續 v1.22.0 convention）
+
+4. 測試更新
+   - `tests/session-start-render.test.js`：13 處 Chinese assertion 改 English（broadcast section、SYSTEM block、Project line、tier summary 等）
+
+**Defer 到 v1.24.0+**：
+- `hooks/ownmind-reply-lint.js` Claude 重寫指令（30+ 行行為性 prompt）→ v1.24.0
+- `src/routes/memory.js` 28 處 server-side API response brand banner → v1.25.0
+
+**版本**：1.22.0 → 1.23.0
+**測試**：1954 pass / 0 fail
+**OpenSpec change**：`openspec/changes/v1.23.0-i18n-session-start/`
+
 ## v1.22.0 — 國際化第一期：user-facing 字串英文化（MCP descriptions + hooks + brand banner）
 
 **背景**：OwnMind 走向國際化服務、2026-05-26 Vin 拍板雙軌國際化計畫（軌道 A 產品 i18n、軌道 B 開發環境英文化）。v1.22.0 是軌道 A 的第一期、聚焦三個影響面最大的 surface：

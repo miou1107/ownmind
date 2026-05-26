@@ -19,23 +19,23 @@ export function renderSessionContext(data, broadcasts) {
   // v1.17.0 P3：廣播放最前面，AI 會優先轉述；最多 3 則避免 context 膨脹
   const bcList = Array.isArray(broadcasts) ? broadcasts : [];
   if (bcList.length > 0) {
-    lines.push('## 📢 OwnMind 系統通知');
+    lines.push('## 📢 OwnMind broadcast');
     for (const bc of bcList.slice(0, 3)) {
       const sev = String(bc.severity || 'info').toUpperCase();
       lines.push('> **[' + sev + '] ' + String(bc.title || '').replace(/\n/g, ' ') + '**');
       lines.push('> ' + String(bc.body || '').split('\n').slice(0, 5).join(' ').slice(0, 400));
       if (bc.cta_text) {
-        const upgradeHint = bc.cta_action === 'upgrade_ownmind' ? '讓 AI 幫你升級' : '';
-        lines.push('> 👉 可說「' + bc.cta_text + '」' + upgradeHint);
+        const upgradeHint = bc.cta_action === 'upgrade_ownmind' ? '(let the AI run the upgrade)' : '';
+        lines.push(('> 👉 Say "' + bc.cta_text + '" ' + upgradeHint).trim());
       }
       if (bc.allow_snooze) {
         const h = Number.isFinite(Number(bc.snooze_hours)) ? Number(bc.snooze_hours) : 24;
-        lines.push('> （不想現在處理？可說「暫緩升級」延後 ' + h + ' 小時）');
+        lines.push('> (Not ready? Say "snooze upgrade" to defer for ' + h + ' hours)');
       }
       lines.push('');
     }
     if (bcList.length > 3) {
-      lines.push('（另有 ' + (bcList.length - 3) + ' 則廣播未顯示）');
+      lines.push('(' + (bcList.length - 3) + ' more broadcast(s) not shown)');
       lines.push('');
     }
     const hasForced = bcList.slice(0, 3).some(bc =>
@@ -43,13 +43,13 @@ export function renderSessionContext(data, broadcasts) {
       bc.type === 'upgrade_reminder'
     );
     if (hasForced) {
-      lines.push('> **[SYSTEM] 強制行動要求：** 上方通知為強制等級（WARNING/ERROR 或版本更新）。你必須在本次回應的第一句主動告知使用者通知內容與可執行動作（升級 / 已收到 / 暫緩），不可略過、不可等使用者詢問。');
+      lines.push('> **[SYSTEM] Action required:** The notice above is mandatory severity (WARNING/ERROR or version update). In your first response sentence, proactively tell the user the notice content and the action they can take (upgrade / acknowledged / snooze). Do not skip; do not wait for the user to ask.');
       lines.push('');
     }
   }
 
   const d = data || {};
-  lines.push('【OwnMind v' + (d.server_version || '?') + '】記憶載入：已載入你的個人記憶');
+  lines.push('[OwnMind v' + (d.server_version || '?') + '] Memory loaded: your personal memories are now active');
   lines.push('');
 
   if (d.profile) {
@@ -62,29 +62,29 @@ export function renderSessionContext(data, broadcasts) {
     // v1.19: 標題後加 tier 分佈 summary（舊 server 沒回 iron_rules_tier_counts 時跳過）
     const tc = d.iron_rules_tier_counts;
     if (tc && typeof tc === 'object' && tc.total > 0) {
-      lines.push('## 鐵律（必須嚴格遵守）— 共 ' + tc.total + ' 條（🔴 Critical ' +
+      lines.push('## Iron rules (strictly enforced) — ' + tc.total + ' total (🔴 Critical ' +
         (tc.critical || 0) + ' / 🟡 Default ' + (tc.default || 0) + ' / ⚪ Advisory ' +
-        (tc.advisory || 0) + '）');
+        (tc.advisory || 0) + ')');
     } else {
-      lines.push('## 鐵律（必須嚴格遵守）');
+      lines.push('## Iron rules (strictly enforced)');
     }
     lines.push(d.iron_rules_digest);
     lines.push('');
   }
 
   if (Array.isArray(d.principles) && d.principles.length > 0) {
-    lines.push('## 工作原則');
+    lines.push('## Working principles');
     for (const p of d.principles) lines.push('- ' + (p.title || ''));
     lines.push('');
   }
 
   if (d.active_handoff) {
-    lines.push('## 待接手交接');
-    lines.push('專案: ' + (d.active_handoff.project || '?'));
+    lines.push('## Pending handoff');
+    lines.push('Project: ' + (d.active_handoff.project || '?'));
     lines.push('');
   }
 
-  lines.push('ownmind_* MCP tools 可操作記憶。鐵律完整內容：ownmind_get("iron_rule")。');
+  lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
 
   return lines.join('\n');
 }

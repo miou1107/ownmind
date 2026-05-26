@@ -6,7 +6,7 @@ const { renderSessionContext } = await import('../hooks/lib/render-session-conte
 describe('renderSessionContext — 廣播', () => {
   it('無廣播時輸出不含通知 section', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, []);
-    assert.doesNotMatch(out, /系統通知/);
+    assert.doesNotMatch(out, /OwnMind broadcast/);
     assert.match(out, /OwnMind v1\.17\.0/);
   });
 
@@ -15,8 +15,8 @@ describe('renderSessionContext — 廣播', () => {
       { server_version: '1.17.0' },
       [{ title: '維護通知', body: '週五晚 10pm', severity: 'warning' }]
     );
-    const bcIdx = out.indexOf('系統通知');
-    const memIdx = out.indexOf('記憶載入');
+    const bcIdx = out.indexOf('OwnMind broadcast');
+    const memIdx = out.indexOf('Memory loaded');
     assert.ok(bcIdx >= 0 && memIdx >= 0);
     assert.ok(bcIdx < memIdx, '廣播應在 memory 前');
   });
@@ -28,8 +28,8 @@ describe('renderSessionContext — 廣播', () => {
       allow_snooze: true, snooze_hours: 24
     }]);
     assert.match(out, /我要升級/);
-    assert.match(out, /讓 AI 幫你升級/);
-    assert.match(out, /延後 24 小時/);
+    assert.match(out, /let the AI run the upgrade/);
+    assert.match(out, /defer for 24 hours/);
   });
 
   it('最多顯示 3 則廣播，其餘摘要', () => {
@@ -40,7 +40,7 @@ describe('renderSessionContext — 廣播', () => {
     assert.ok(out.includes('廣播 0'));
     assert.ok(out.includes('廣播 2'));
     assert.ok(!out.includes('廣播 3'), '第 4 則不該渲染 body');
-    assert.match(out, /另有 2 則廣播未顯示/);
+    assert.match(out, /2 more broadcast\(s\) not shown/);
   });
 
   it('body 超過 400 字會被截斷，避免 context 爆炸', () => {
@@ -66,28 +66,28 @@ describe('renderSessionContext — 廣播', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '嚴重錯誤', body: '請立即處理', severity: 'error'
     }]);
-    assert.match(out, /\[SYSTEM\] 強制行動要求/);
+    assert.match(out, /\[SYSTEM\] Action required/);
   });
 
   it('warning 等級廣播附加 SYSTEM 強制指令 block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '安全更新', body: '請盡快升級', severity: 'warning'
     }]);
-    assert.match(out, /\[SYSTEM\] 強制行動要求/);
+    assert.match(out, /\[SYSTEM\] Action required/);
   });
 
   it('upgrade_reminder 類型廣播附加 SYSTEM 強制指令 block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: 'OwnMind 有新版本', body: '請升級', severity: 'info', type: 'upgrade_reminder'
     }]);
-    assert.match(out, /\[SYSTEM\] 強制行動要求/);
+    assert.match(out, /\[SYSTEM\] Action required/);
   });
 
   it('info 等級且非 upgrade_reminder 不附加強制指令', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '一般公告', body: '系統維護', severity: 'info', type: 'announcement'
     }]);
-    assert.doesNotMatch(out, /\[SYSTEM\] 強制行動要求/);
+    assert.doesNotMatch(out, /\[SYSTEM\] Action required/);
   });
 });
 
@@ -109,7 +109,7 @@ describe('renderSessionContext — memory', () => {
     assert.match(out, /IR-001/);
     assert.match(out, /- 通用性/);
     assert.match(out, /- 零負擔/);
-    assert.match(out, /專案: ownmind/);
+    assert.match(out, /Project: ownmind/);
   });
 
   it('missing sections 不 crash', () => {
@@ -134,7 +134,7 @@ describe('renderSessionContext — v1.19 tier 分佈 summary', () => {
       iron_rules_digest: 'IR-002: test',
       iron_rules_tier_counts: { critical: 10, default: 25, advisory: 6, total: 41 },
     }, []);
-    assert.match(out, /共 41 條/);
+    assert.match(out, /41 total/);
     assert.match(out, /🔴 Critical 10/);
     assert.match(out, /🟡 Default 25/);
     assert.match(out, /⚪ Advisory 6/);
@@ -145,8 +145,8 @@ describe('renderSessionContext — v1.19 tier 分佈 summary', () => {
       server_version: '1.18.0',
       iron_rules_digest: 'IR-002: test',
     }, []);
-    assert.match(out, /## 鐵律（必須嚴格遵守）\n/);
-    assert.ok(!out.includes('共 0 條'), '不該顯示假計數');
+    assert.match(out, /## Iron rules \(strictly enforced\)\n/);
+    assert.ok(!out.includes('0 total'), '不該顯示假計數');
   });
 
   it('total 為 0 時、不顯示 summary 數字', () => {
@@ -155,6 +155,6 @@ describe('renderSessionContext — v1.19 tier 分佈 summary', () => {
       iron_rules_digest: 'IR-002: test',
       iron_rules_tier_counts: { critical: 0, default: 0, advisory: 0, total: 0 },
     }, []);
-    assert.ok(!out.includes('共 0 條'), 'total 0 不該顯示計數');
+    assert.ok(!out.includes('0 total'), 'total 0 不該顯示計數');
   });
 });
