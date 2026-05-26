@@ -29,11 +29,12 @@ afterEach(() => {
 
 describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
   it('寫入後檔案存在、含一筆 JSON', () => {
+    // v1.20.4：ruleCodes 改用中性事件常數、violated_words 欄位也改中性命名
     writeEvent({
       sessionId: 'sess-1',
       event: 'blocked',
-      ruleCodes: ['IR-036', 'IR-037'],
-      violatedWords: { ir036_jargon: ['routes'], ir037_mixed: ['refactor'] },
+      ruleCodes: ['lint_jargon_explanation_required', 'lint_language_mixed_ratio'],
+      violatedWords: { jargon_words: ['routes'], mixed_lang_words: ['refactor'] },
       violationCountInSession: 4,
       blockCountInSession: 1,
       downgradedToWarning: false,
@@ -43,7 +44,7 @@ describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
     const parsed = JSON.parse(content);
     assert.equal(parsed.session_id, 'sess-1');
     assert.equal(parsed.event, 'blocked');
-    assert.deepEqual(parsed.rule_codes, ['IR-036', 'IR-037']);
+    assert.deepEqual(parsed.rule_codes, ['lint_jargon_explanation_required', 'lint_language_mixed_ratio']);
     assert.equal(parsed.violation_count_in_session, 4);
     assert.equal(parsed.block_count_in_session, 1);
     assert.equal(parsed.downgraded_to_warning, false);
@@ -52,8 +53,8 @@ describe('v1.19.11 場景 10 — writeEvent 寫一筆紀錄', () => {
   });
 
   it('連續寫多筆、append 不覆蓋', () => {
-    writeEvent({ sessionId: 'a', event: 'blocked', ruleCodes: ['IR-036'] });
-    writeEvent({ sessionId: 'b', event: 'blocked', ruleCodes: ['IR-037'] });
+    writeEvent({ sessionId: 'a', event: 'blocked', ruleCodes: ['lint_jargon_explanation_required'] });
+    writeEvent({ sessionId: 'b', event: 'blocked', ruleCodes: ['lint_language_mixed_ratio'] });
     const lines = fs.readFileSync(tmpPath, 'utf8').trim().split('\n');
     assert.equal(lines.length, 2);
     assert.equal(JSON.parse(lines[0]).session_id, 'a');
@@ -78,7 +79,7 @@ describe('v1.19.11 場景 11 — rotate 機制', () => {
     const padding = 'x'.repeat(6 * 1024 * 1024);
     fs.writeFileSync(tmpPath, padding);
 
-    writeEvent({ sessionId: 'after-rotate', event: 'blocked', ruleCodes: ['IR-036'] });
+    writeEvent({ sessionId: 'after-rotate', event: 'blocked', ruleCodes: ['lint_jargon_explanation_required'] });
 
     // 舊檔該被 rename 成 .old
     assert.equal(fs.existsSync(tmpPath + '.old'), true);
@@ -110,18 +111,19 @@ describe('v1.19.11 場景 12 — 寫入失敗不丟', () => {
 });
 
 describe('v1.19.11 — extractViolatedWords 純函式', () => {
-  it('抽 IR-037 的 mixedWords', () => {
+  // v1.20.4：violations rule 用中性事件常數、輸出欄位也用中性命名
+  it('抽中英混雜事件的 mixedWords', () => {
     const out = extractViolatedWords([
-      { rule: 'IR-037', detail: { mixedWords: ['refactor', 'codebase'] } },
+      { rule: 'lint_language_mixed_ratio', detail: { mixedWords: ['refactor', 'codebase'] } },
     ]);
-    assert.deepEqual(out.ir037_mixed, ['refactor', 'codebase']);
+    assert.deepEqual(out.mixed_lang_words, ['refactor', 'codebase']);
   });
 
-  it('抽 IR-036 的 jargon', () => {
+  it('抽行話事件的 jargon', () => {
     const out = extractViolatedWords([
-      { rule: 'IR-036', detail: { jargon: ['routes', 'middleware'] } },
+      { rule: 'lint_jargon_explanation_required', detail: { jargon: ['routes', 'middleware'] } },
     ]);
-    assert.deepEqual(out.ir036_jargon, ['routes', 'middleware']);
+    assert.deepEqual(out.jargon_words, ['routes', 'middleware']);
   });
 
   it('privacy_check 不存原值、只存類型計數', () => {
@@ -147,19 +149,19 @@ describe('v1.19.11 — extractViolatedWords 純函式', () => {
 
   it('多違規同時抽', () => {
     const out = extractViolatedWords([
-      { rule: 'IR-037', detail: { mixedWords: ['a'] } },
-      { rule: 'IR-036', detail: { jargon: ['b'] } },
+      { rule: 'lint_language_mixed_ratio', detail: { mixedWords: ['a'] } },
+      { rule: 'lint_jargon_explanation_required', detail: { jargon: ['b'] } },
     ]);
-    assert.deepEqual(out.ir037_mixed, ['a']);
-    assert.deepEqual(out.ir036_jargon, ['b']);
+    assert.deepEqual(out.mixed_lang_words, ['a']);
+    assert.deepEqual(out.jargon_words, ['b']);
   });
 
   it('上限 20 個詞、超過截斷', () => {
     const words = Array.from({ length: 30 }, (_, i) => `word${i}`);
     const out = extractViolatedWords([
-      { rule: 'IR-037', detail: { mixedWords: words } },
+      { rule: 'lint_language_mixed_ratio', detail: { mixedWords: words } },
     ]);
-    assert.equal(out.ir037_mixed.length, 20);
+    assert.equal(out.mixed_lang_words.length, 20);
   });
 
   it('非陣列輸入回空物件', () => {

@@ -96,11 +96,13 @@ export function writeEvent(entry) {
 /**
  * 從 violations 陣列抽出 violated_words 結構
  *
+ * v1.20.4：rule 欄位改用中性事件常數（不再寫死個人鐵律編號）。
+ *
  * 輸入是 reply-lint 內部 violations 格式：
- *   [{ rule: 'IR-037', detail: { mixedWords: [...] } }, ...]
+ *   [{ rule: 'lint_language_mixed_ratio', detail: { mixedWords: [...] } }, ...]
  *
  * 輸出統一格式：
- *   { ir036_jargon: [...], ir037_mixed: [...], privacy_matches_count: N }
+ *   { jargon_words: [...], mixed_lang_words: [...], privacy_matches_count: N }
  *
  * @param {Array} violations
  * @returns {Object}
@@ -109,12 +111,12 @@ export function extractViolatedWords(violations) {
   if (!Array.isArray(violations)) return {};
   const out = {};
   for (const v of violations) {
-    if (v.rule === 'IR-037' && v.detail?.mixedWords) {
-      out.ir037_mixed = v.detail.mixedWords.slice(0, 20);
-    } else if (v.rule === 'IR-036' && v.detail?.jargon) {
-      out.ir036_jargon = v.detail.jargon.slice(0, 20);
+    if (v.rule === 'lint_language_mixed_ratio' && v.detail?.mixedWords) {
+      out.mixed_lang_words = v.detail.mixedWords.slice(0, 20);
+    } else if (v.rule === 'lint_jargon_explanation_required' && v.detail?.jargon) {
+      out.jargon_words = v.detail.jargon.slice(0, 20);
     } else if (v.rule === 'privacy_check' && v.detail?.matches) {
-      // privacy 不存原值（IR-041 設計）、只存類型計數
+      // privacy 不存原值（隱私偵測設計）、只存類型計數
       out.privacy_matches_count = v.detail.matches.length;
       out.privacy_types = Array.from(new Set(v.detail.matches.map(m => m.type)));
     }

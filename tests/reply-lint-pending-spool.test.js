@@ -139,7 +139,12 @@ describe('v1.17.97 — Hook 條件 spool（pending 檔只在失敗時寫）', ()
     const ev = JSON.parse(lines[0]);
     assert.equal(ev.event, 'iron_rule_compliance');
     assert.equal(ev.details.action, 'violate');
-    assert.match(ev.details.rule_code, /^IR-/);
+    // v1.20.4：rule_code 可能空（規則快取無對應）、改驗 triggered_by_event
+    assert.match(
+      ev.details.triggered_by_event,
+      /^(lint_|privacy_check)/,
+      'triggered_by_event 必為中性事件常數'
+    );
   });
 
   it('NO_NETWORK 模式 → reply-lint-pending.jsonl 該被寫入（離線 / 測試 / opt-out）', () => {
@@ -224,7 +229,7 @@ describe('v1.17.97 — Hook 條件 spool（pending 檔只在失敗時寫）', ()
       event: 'iron_rule_compliance',
       tool: 'claude-code',
       source: 'reply-lint-hook',
-      details: { action: 'violate', rule_code: 'IR-037', message: 'old' },
+      details: { action: 'violate', rule_code: '', triggered_by_event: 'lint_language_mixed_ratio', message: 'old' },
     }) + '\n');
     writeViolatingTranscript();
     setupCredentials('http://127.0.0.1:1');

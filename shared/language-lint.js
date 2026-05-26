@@ -2,22 +2,33 @@
  * shared/language-lint.js — 語言品質檢查共用 lib（v1.17.95）
  *
  * 為什麼存在：
- *   IR-037（中英混雜）+ IR-036（行話沒附白話說明）的判斷邏輯需要在兩個地方用：
+ *   兩個事件判斷邏輯需要在兩個地方用：
+ *     - 中英混雜比例過高（事件常數 LINT_LANGUAGE_MIXED_RATIO）
+ *     - 行話沒附白話說明（事件常數 LINT_JARGON_EXPLANATION_REQUIRED）
  *   1. v1.17.94 鐵律品質 lint（寫鐵律時檢查）
  *   2. v1.17.95 回話 lint（AI 回話時檢查 — Stop hook 整合留下個版本）
  *
  *   抽到 shared/、兩邊 import 同一份、避免邏輯漂移。
  *
+ *   v1.20.4：違反清單 rule 欄位改用中性事件常數、不再寫死個人鐵律編號（IR-XXX）。
+ *   「事件 → 個人鐵律編號」對應由 caller 從規則快取查表處理。
+ *
  * 主要 export：
  *   - TECH_WHITELIST: 80 個技術詞白名單（OwnMind 認可、不算中英混雜）
- *   - checkMixedLanguage(content, threshold): IR-037 檢查
- *   - checkJargonExplanation(content): IR-036 檢查
+ *   - checkMixedLanguage(content, threshold): 中英混雜檢查
+ *   - checkJargonExplanation(content): 行話檢查
  *   - lintReply(content): 兩個一起跑、回 {ok, violations}
  *
  * 設計原則：
  *   - 純函式、不碰 DB、好測試
  *   - 跨平台（Mac/Linux/Windows）— 純 JS、無 native binding
  */
+
+// v1.20.4：lint 事件常數從中性模組 import、不再寫死個人鐵律編號
+import {
+  LINT_LANGUAGE_MIXED_RATIO,
+  LINT_JARGON_EXPLANATION_REQUIRED,
+} from './lint-event-types.js';
 
 // 白名單：常見技術詞 / OwnMind 概念詞、不算中英混雜
 // 跟 v1.17.94 src/utils/iron-rule-quality.js 同一份
@@ -155,7 +166,7 @@ function extractNonWhitelistEnglishWords(cleaned) {
 }
 
 /**
- * IR-037: 中英混雜比例檢查
+ * 中英混雜比例檢查（事件常數 LINT_LANGUAGE_MIXED_RATIO）
  *
  * v1.19.3 變更：
  *   - threshold 分情境：純對話 15%、含 code marker 25%、code review 豁免
@@ -232,7 +243,7 @@ function collectExplainedWords(text, seenWords) {
 }
 
 /**
- * IR-036: 行話 / 專有名詞必須附白話說明
+ * 行話 / 專有名詞必須附白話說明（事件常數 LINT_JARGON_EXPLANATION_REQUIRED）
  *
  * 判斷邏輯：
  *   - 抓非白名單英文詞（連續 4+ 字母）
@@ -313,7 +324,7 @@ export function checkJargonExplanation(content, historicalCorpus = '') {
  *
  * v1.20.2 follow-up #3：加跨 reply 詞彙記憶。
  *   - historicalCorpus 是「本 session 內前面所有 assistant reply 合併的 text」
- *   - 傳進來才會啟用「已解釋過的詞跳過 IR-036 檢查」
+ *   - 傳進來才會啟用「已解釋過的詞跳過行話檢查」
  *
  * @param {string} content - 當前要檢查的 reply
  * @param {string} [historicalCorpus=''] - 同 session 前面所有 assistant reply 合併（選填）
@@ -325,7 +336,7 @@ export function lintReply(content, historicalCorpus = '') {
   const mixed = checkMixedLanguage(content);
   if (!mixed.ok) {
     violations.push({
-      rule: 'IR-037',
+      rule: LINT_LANGUAGE_MIXED_RATIO,
       message: `中英混雜比例 ${(mixed.ratio * 100).toFixed(1)}% > 15% — 找到 ${mixed.mixedWords.length} 個非白名單英文詞（前 5：${mixed.mixedWords.slice(0, 5).join(', ')}）。請改成白話中文`,
       detail: { ratio: mixed.ratio, mixedWords: mixed.mixedWords },
     });
@@ -334,7 +345,7 @@ export function lintReply(content, historicalCorpus = '') {
   const jargon = checkJargonExplanation(content, historicalCorpus);
   if (!jargon.ok) {
     violations.push({
-      rule: 'IR-036',
+      rule: LINT_JARGON_EXPLANATION_REQUIRED,
       message: `行話 / 專有名詞沒附白話說明 — ${jargon.jargonWithoutExplanation.length} 個詞（${jargon.jargonWithoutExplanation.slice(0, 5).join(', ')}）後面 50 字內沒有「（白話）」「：解釋」「即...」之類補充`,
       detail: { jargon: jargon.jargonWithoutExplanation },
     });

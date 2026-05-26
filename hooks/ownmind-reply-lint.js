@@ -582,9 +582,21 @@ function formatDowngradeNotice(priorBlockCount, violations) {
  *   3. 給改寫格式範例（白話、括號附中文等）
  *   4. 加例外指引（變數名 / 函式名等不用改）、避免 Claude 把 code 也改壞
  */
+// v1.20.4：事件常數的中文顯示名對應、內聯避免 scope / import 問題
+// 跟 shared/lint-event-types.js 的 EVENT_DISPLAY_NAMES 保持同步
+const _EVENT_DISPLAY_NAMES = {
+  lint_language_mixed_ratio: '中英混雜',
+  lint_jargon_explanation_required: '行話品質',
+  privacy_check: '隱私內容',
+};
+function _displayEventName(code) {
+  return _EVENT_DISPLAY_NAMES[code] || code;
+}
+
 function formatBlockReason(violations, opts = {}) {
   const priorBlockCount = typeof opts.priorBlockCount === 'number' ? opts.priorBlockCount : 0;
-  const ruleCodes = violations.map(v => v.rule).join(' + ');
+  // v1.20.4：用中文事件名拼接、不再吐個人鐵律編號（白話：避免 Eric 之類其他 user 看到「IR-036」）
+  const ruleCodes = violations.map(v => _displayEventName(v.rule)).join(' + ');
 
   // v1.19.11 分級顯示：第 2-3 次擋下只給簡短訊息、避免使用者疲勞
   // priorBlockCount=0 是「第 1 次擋」、=1 是「第 2 次擋」、=2 是「第 3 次擋」
@@ -608,7 +620,7 @@ function formatBlockReason(violations, opts = {}) {
   // 避免只命中部分規則時編號從 "3." 開始的孤立現象
   let n = 1;
   for (const v of violations) {
-    if (v.rule === 'IR-037') {
+    if (v.rule === 'lint_language_mixed_ratio') {
       const words = (v.detail && Array.isArray(v.detail.mixedWords)) ? v.detail.mixedWords.slice(0, 10) : [];
       lines.push(`${n}. 用白話中文取代以下英文詞（或在第一次出現時用括號附中文解釋）：`);
       if (words.length > 0) {
@@ -616,7 +628,7 @@ function formatBlockReason(violations, opts = {}) {
       }
       lines.push('');
       n += 1;
-    } else if (v.rule === 'IR-036') {
+    } else if (v.rule === 'lint_jargon_explanation_required') {
       const words = (v.detail && Array.isArray(v.detail.jargon)) ? v.detail.jargon.slice(0, 10) : [];
       lines.push(`${n}. 以下技術詞第一次出現時要附白話說明、用「：解釋」、「（白話）」、「即...」、「也就是...」等格式：`);
       if (words.length > 0) {

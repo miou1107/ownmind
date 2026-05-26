@@ -30,14 +30,14 @@ describe('v1.17.95 — IR-037 中英混雜檢查（回話端）', () => {
     const text = 'I think we should refactor the codebase using a different approach because the current implementation has bugs and performance issues.';
     const r = lintReply(text);
     assert.equal(r.ok, false);
-    const ir037 = r.violations.find(v => v.rule === 'IR-037');
+    const ir037 = r.violations.find(v => v.rule === 'lint_language_mixed_ratio');
     assert.ok(ir037, '該找到 IR-037 違反');
     assert.match(ir037.message, /中英混雜|混雜比例/);
   });
 
   it('純技術詞白名單（SQL/API/IR-039）不觸發 IR-037', () => {
     const r = lintReply('我跑 SQL 改 API、動到 IR-039 的邏輯、用 npm install 部署。');
-    const ir037 = r.violations.find(v => v.rule === 'IR-037');
+    const ir037 = r.violations.find(v => v.rule === 'lint_language_mixed_ratio');
     assert.equal(ir037, undefined, '純白名單技術詞不該觸發 IR-037');
   });
 });
@@ -45,33 +45,33 @@ describe('v1.17.95 — IR-037 中英混雜檢查（回話端）', () => {
 describe('v1.17.95 — IR-036 行話 / 專有名詞必須附白話說明', () => {
   it('專有名詞後面有括號白話說明 ok', () => {
     const r = lintReply('用 pre-commit hook（git 提交前自動跑的腳本）擋住。');
-    const ir036 = r.violations.find(v => v.rule === 'IR-036');
+    const ir036 = r.violations.find(v => v.rule === 'lint_jargon_explanation_required');
     assert.equal(ir036, undefined, '有括號說明不該違反 IR-036');
   });
 
   it('專有名詞後面有冒號解釋 ok', () => {
     const r = lintReply('要做 refactor：重新寫但不改外部行為。');
-    const ir036 = r.violations.find(v => v.rule === 'IR-036');
+    const ir036 = r.violations.find(v => v.rule === 'lint_jargon_explanation_required');
     assert.equal(ir036, undefined, '有冒號解釋不該違反 IR-036');
   });
 
   it('非白名單英文詞無說明觸發 IR-036', () => {
     // refactor / hook 都不是 v1.17.94 白名單詞、後面沒附說明
     const r = lintReply('我們要 refactor 這個 hook 不然會壞掉。');
-    const ir036 = r.violations.find(v => v.rule === 'IR-036');
+    const ir036 = r.violations.find(v => v.rule === 'lint_jargon_explanation_required');
     assert.ok(ir036, '該找到 IR-036 違反');
     assert.match(ir036.message, /行話|專有名詞|說明/);
   });
 
   it('白名單技術詞 SQL / API 不要求附說明', () => {
     const r = lintReply('我跑 SQL 查資料、用 API 上傳。');
-    const ir036 = r.violations.find(v => v.rule === 'IR-036');
+    const ir036 = r.violations.find(v => v.rule === 'lint_jargon_explanation_required');
     assert.equal(ir036, undefined, '白名單詞不該被 IR-036 卡');
   });
 
   it('同一個非白名單詞重複出現只報一次', () => {
     const r = lintReply('我 refactor 一下。然後再 refactor 一次。第三次 refactor。');
-    const ir036 = r.violations.find(v => v.rule === 'IR-036');
+    const ir036 = r.violations.find(v => v.rule === 'lint_jargon_explanation_required');
     assert.ok(ir036, '該違反');
     // 只報 refactor 一次、不是三次
     const occurrenceCount = (ir036.message.match(/refactor/g) || []).length;
