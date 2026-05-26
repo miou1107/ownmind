@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.23.0 修改（國際化第二期：SessionStart 介面英文化）
+
+新增檔：
+```
+openspec/changes/v1.23.0-i18n-session-start/proposal.md   — i18n 第二期提案
+openspec/changes/v1.23.0-i18n-session-start/tasks.md      — 任務分解
+```
+
+修改檔（user-facing 字串翻譯：中文 → 英文）：
+```
+hooks/ownmind-session-start.js              — 招牌 + 6 個 Markdown header + 4 處 notification message + footer line
+hooks/lib/render-session-context.js         — 廣播渲染（CTA / snooze / 剩餘數 / SYSTEM action required）+ 各 section header + tier summary + footer
+tests/session-start-render.test.js          — 13 處中文 assertion 改 English
+package.json                                — version 1.22.0 → 1.23.0
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                                — v1.23.0 條目
+```
+
 ## v1.22.0 修改（國際化第一期：user-facing 字串英文化）
 
 新增檔：
