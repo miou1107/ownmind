@@ -9,95 +9,101 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.76 — 缺 Node.js / git 時 install.ps1 + install.sh 必須自動裝（回報者：vin-windows-test）
+ * v1.17.76 — when Node.js / git is missing, install.ps1 + install.sh must auto-install
+ * (reporter: vin-windows-test)
  *
- * Root cause：v1.17.75 之前 install.ps1 第 34-37 行對 node 缺失只 Write-Error + exit，
- * 把「裝 Node.js」這步丟回 user（user 沒裝過 Node = 完全卡住）。同檔對 sqlite3
- * （第 42-61 行）已有完整 winget auto-install pattern，pattern 沒套到 node / git。
+ * Root cause: before v1.17.75, install.ps1 lines 34-37 only ran Write-Error + exit
+ * when node was missing, pushing "install Node.js" back onto the user (a user who
+ * has never installed Node = completely stuck). The same file (lines 42-61) already
+ * had a full winget auto-install pattern for sqlite3, but the pattern was never
+ * applied to node / git.
  *
- * 真實案例的三個 gap（從 vin-windows-test 安裝 log 採證）：
- *   1. node 缺失 → 應該 winget install OpenJS.NodeJS.LTS（fallback 才提示手動）
- *   2. winget 裝完 PATH 在當前 PS session 沒生效 → install.ps1 內必須 reload
- *      Machine + User PATH 後 re-check 一次
- *   3. PowerShell 執行原則擋 npm install → 入口必須 Set-ExecutionPolicy Process Bypass
+ * Three real-world gaps (collected from the vin-windows-test install log):
+ *   1. node missing → should `winget install OpenJS.NodeJS.LTS` (fallback hints to install manually).
+ *   2. After winget installs, PATH does not take effect in the current PS session →
+ *      install.ps1 must reload Machine + User PATH and re-check.
+ *   3. PowerShell execution policy blocks `npm install` → the entry must run
+ *      `Set-ExecutionPolicy -Scope Process Bypass`.
  *
- * 同樣 pattern 套到 install.sh：缺 node 時用 brew (mac) / apt (linux) 自動裝。
+ * Apply the same pattern to install.sh: when node is missing, auto-install via brew
+ * (mac) / apt (linux).
  */
 
-describe('install.ps1 — 缺前置工具時不可只 error exit', () => {
+describe('install.ps1 — missing prerequisites must not just error-exit', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('入口處設 ExecutionPolicy Process Bypass（避免 npm install 被擋）', () => {
+  it('entry sets ExecutionPolicy Process Bypass (so npm install is not blocked)', () => {
     assert.match(
       content,
       /Set-ExecutionPolicy[^\n]*-Scope\s+Process[^\n]*-(ExecutionPolicy\s+)?Bypass/i,
-      '必須在 process scope 設 Bypass，否則 user 預設 Restricted 會擋 npm install'
+      'must set Bypass at process scope, otherwise the default Restricted policy blocks npm install'
     );
   });
 
-  it('node 缺失時走 winget OpenJS.NodeJS.LTS（不只 Write-Error）', () => {
-    // 允許 inline `winget install ... OpenJS.NodeJS.LTS` 或 helper function 帶參數
-    // 兩種寫法。重點是 file 必須同時提到 winget install + OpenJS.NodeJS.LTS。
-    assert.match(content, /winget\s+install/i, '必須有 winget install 呼叫');
+  it('when node is missing, calls winget OpenJS.NodeJS.LTS (not just Write-Error)', () => {
+    // Allow both forms: inline `winget install ... OpenJS.NodeJS.LTS`, or a helper
+    // function with parameters. What matters is that the file mentions both
+    // `winget install` and OpenJS.NodeJS.LTS.
+    assert.match(content, /winget\s+install/i, 'must contain a winget install call');
     assert.match(
       content,
       /OpenJS\.NodeJS\.LTS/,
-      'Node.js winget package id 必須出現在 install.ps1 (證明有 wire 進去自動裝)'
+      'the Node.js winget package id must appear in install.ps1 (proves it is wired for auto-install)'
     );
   });
 
-  it('node 自動裝完必須 reload Machine + User PATH（winget 不會幫當前 session 更新）', () => {
+  it('after node is auto-installed, must reload Machine + User PATH (winget does not refresh the current session)', () => {
     assert.match(
       content,
       /GetEnvironmentVariable\(["']Path["']\s*,\s*["']Machine["']\)/,
-      '要從 Machine + User scope 重組 PATH 才能讓剛裝的 node 在當前 PS session 找到'
+      'must recompose PATH from Machine + User scopes so the freshly installed node is visible in the current PS session'
     );
     assert.match(
       content,
       /GetEnvironmentVariable\(["']Path["']\s*,\s*["']User["']\)/,
-      '同上，User scope PATH 也要併入'
+      'same as above — must also merge in User-scope PATH'
     );
   });
 
-  it('git 缺失時走 winget Git.Git（不只 Write-Error）', () => {
+  it('when git is missing, calls winget Git.Git (not just Write-Error)', () => {
     assert.match(
       content,
       /["']Git\.Git["']/,
-      'Git winget package id 必須出現在 install.ps1 (證明有 wire 進去自動裝)'
+      'the Git winget package id must appear in install.ps1 (proves it is wired for auto-install)'
     );
   });
 
-  it('node 版本必須驗 >= 20（Tier 2 scanner 要求）', () => {
-    // install.ps1 內只要對 node --version 做數字比較即可
+  it('node version must be checked >= 20 (Tier 2 scanner requirement)', () => {
+    // install.ps1 just needs to compare `node --version` numerically.
     assert.match(
       content,
       /node\s+--version|node\.exe\s+-v/,
-      '至少要叫一次 node --version 抓版本'
+      'must call `node --version` at least once to capture the version'
     );
     assert.match(
       content,
       /\b(20|v20|GTE_NODE_MAJOR|NODE_MAJOR)\b/,
-      '要把 v20+ 寫進判斷裡'
+      'the comparison must encode the v20+ threshold'
     );
   });
 });
 
-describe('install.sh — 缺 node 時 mac 走 brew、linux 走 apt/dnf', () => {
+describe('install.sh — missing node: mac uses brew, linux uses apt/dnf', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
 
-  it('node 缺失時 mac 嘗試 brew install node', () => {
+  it('when node is missing on mac, tries brew install node', () => {
     assert.match(
       content,
       /command -v node[\s\S]*?brew\s+install\s+node/,
-      'mac 沒 node 應該嘗試 brew install node（fallback 才提示手動）'
+      'mac without node should attempt `brew install node` (fall back to manual hint)'
     );
   });
 
-  it('node 缺失時 linux 提示 apt / dnf 安裝指令', () => {
+  it('when node is missing on linux, prints apt / dnf install commands', () => {
     assert.match(
       content,
       /command -v node[\s\S]*?(apt(-get)?\s+install[^\n]*nodejs|dnf\s+install[^\n]*nodejs)/,
-      'linux 沒 node 應該至少提示 apt / dnf 指令（不一定要 sudo 自動裝）'
+      'linux without node should at least print apt / dnf commands (sudo auto-install not required)'
     );
   });
 });

@@ -11,21 +11,26 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.79 — 統一錯誤回報機制 + dirty tree 自動處理（IR-038, 回報者 vin-windows-test 第三輪）
+ * v1.17.79 — unified error-reporting mechanism + dirty-tree auto-recovery
+ * (IR-038, third round from reporter vin-windows-test)
  *
- * Root cause：
- *   - install / upgrade 中段任何 fatal error 都 exit 1，end-of-file self-check 跑不到 → admin 看不到根因
- *   - vin-windows-test 案例：他的 AI 編輯了 mcp/start.cmd 沒 commit，下次 git pull --ff-only 直接拒絕
- *     → upgrade fail，user 卡住，server 完全沒紀錄
- *   - 整個 client 端缺一個「失敗就自動回報」的統一機制
+ * Root cause:
+ *   - Any mid-stream fatal error during install / upgrade exits 1, so the end-of-file
+ *     self-check never runs and admin sees no root cause.
+ *   - vin-windows-test case: their AI edited mcp/start.cmd without committing, so the
+ *     next `git pull --ff-only` was rejected → upgrade fails, user stuck, server has
+ *     zero record.
+ *   - The whole client side lacked a unified "auto-report on failure" mechanism.
  *
- * 修法（兩件事）：
- *   1. errors/ spool 機制：所有失敗點 drop JSON 到 ~/.ownmind/logs/errors/
- *      self-check drainErrorSpool() 統一上傳到 /api/debug/install-check (v1.17.78 已放寬)
- *   2. interactive-upgrade.{sh,ps1}：偵測 dirty working tree → drop error report → git reset --hard origin/main → 繼續升級
+ * Fix (two pieces):
+ *   1. errors/ spool: every failure point drops a JSON into ~/.ownmind/logs/errors/.
+ *      drainErrorSpool() in self-check uploads them uniformly to /api/debug/install-check
+ *      (already relaxed in v1.17.78).
+ *   2. interactive-upgrade.{sh,ps1}: detect dirty working tree → drop error report
+ *      → git reset --hard origin/main → resume upgrade.
  */
 
-describe('report-error.cjs helper（寫 errors/ spool 檔）', () => {
+describe('report-error.cjs helper (writes the errors/ spool file)', () => {
   const tmpHome = path.join(os.tmpdir(), `ownmind-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const errorsDir = path.join(tmpHome, '.ownmind', 'logs', 'errors');
   const helper = path.join(repoRoot, 'scripts/install-helpers/report-error.cjs');
@@ -38,7 +43,7 @@ describe('report-error.cjs helper（寫 errors/ spool 檔）', () => {
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  it('helper 寫出 <ts>-<kind>.json 檔到 errors/ 目錄', () => {
+  it('helper writes <ts>-<kind>.json into the errors/ directory', () => {
     execFileSync('node', [
       helper,
       '--kind=upgrade_dirty_tree',
@@ -55,7 +60,7 @@ describe('report-error.cjs helper（寫 errors/ spool 檔）', () => {
     assert.ok(obj.ts);
   });
 
-  it('detail 帶特殊字元（換行、引號）也能安全寫入', () => {
+  it('detail with special chars (newlines, quotes) writes safely', () => {
     execFileSync('node', [
       helper,
       '--kind=npm_fail',
@@ -67,7 +72,7 @@ describe('report-error.cjs helper（寫 errors/ spool 檔）', () => {
     assert.equal(obj.detail, 'line1\nline2 with "quotes" and \\backslash');
   });
 
-  it('--context-file 帶 log 檔時，檔尾 30 行進 context 欄位（HOME 路徑去掉）', () => {
+  it('with --context-file, last 30 lines go into context field (HOME path scrubbed)', () => {
     const logFile = path.join(tmpHome, 'fake.log');
     const lines = Array.from({ length: 50 }, (_, i) => `line ${i} ${tmpHome}/some/path`);
     fs.writeFileSync(logFile, lines.join('\n'));
@@ -81,12 +86,12 @@ describe('report-error.cjs helper（寫 errors/ spool 檔）', () => {
 
     const files = fs.readdirSync(errorsDir);
     const obj = JSON.parse(fs.readFileSync(path.join(errorsDir, files[0]), 'utf8'));
-    assert.ok(obj.context.includes('line 49'), 'context 必須包含 log 尾行');
-    assert.ok(!obj.context.includes(tmpHome), `HOME 路徑應 sanitize 成 ~：context=${obj.context.slice(0, 200)}`);
+    assert.ok(obj.context.includes('line 49'), 'context must include the log tail');
+    assert.ok(!obj.context.includes(tmpHome), `HOME path should be sanitized to ~; context=${obj.context.slice(0, 200)}`);
   });
 });
 
-describe('drainErrorSpool — self-check 把 errors/ 的檔案上傳並刪除', () => {
+describe('drainErrorSpool — self-check uploads files from errors/ and deletes them', () => {
   let tmpHome;
   let errorsDir;
   const fakeServer = { received: [], status: 200 };
@@ -121,7 +126,7 @@ describe('drainErrorSpool — self-check 把 errors/ 的檔案上傳並刪除', 
     });
   }
 
-  it('讀完 errors/*.json 一一上傳，成功就刪檔', async () => {
+  it('uploads each errors/*.json, deletes the file on success', async () => {
     fs.writeFileSync(path.join(errorsDir, '1700000001-foo.json'),
       JSON.stringify({ ts: '2026-05-08T17:00:00Z', kind: 'foo', detail: 'd1' }));
     fs.writeFileSync(path.join(errorsDir, '1700000002-bar.json'),
@@ -141,10 +146,10 @@ describe('drainErrorSpool — self-check 把 errors/ 的檔案上傳並刪除', 
     assert.equal(fakeServer.received.length, 2);
     const triggers = fakeServer.received.map((r) => r.trigger).sort();
     assert.deepEqual(triggers, ['error_bar', 'error_foo']);
-    assert.equal(fs.readdirSync(errorsDir).length, 0, '上傳成功的檔案應已刪除');
+    assert.equal(fs.readdirSync(errorsDir).length, 0, 'successfully uploaded files should be deleted');
   });
 
-  it('上傳失敗（5xx）保留檔案下次再試', async () => {
+  it('upload failure (5xx) keeps the file for the next attempt', async () => {
     fs.writeFileSync(path.join(errorsDir, '1700000003-keep.json'),
       JSON.stringify({ ts: '2026-05-08T17:00:00Z', kind: 'keep', detail: 'd' }));
 
@@ -156,10 +161,10 @@ describe('drainErrorSpool — self-check 把 errors/ 的檔案上傳並刪除', 
       assert.equal(result.failed, 1);
     });
 
-    assert.equal(fs.readdirSync(errorsDir).length, 1, '上傳失敗檔案應保留');
+    assert.equal(fs.readdirSync(errorsDir).length, 1, 'failed-upload files should be retained');
   });
 
-  it('沒 apiUrl/apiKey 時 skip 不爆，retain 全部檔案', async () => {
+  it('no apiUrl/apiKey → skip without crashing, retain every file', async () => {
     fs.writeFileSync(path.join(errorsDir, '1700000004-x.json'),
       JSON.stringify({ ts: '2026-05-08T17:00:00Z', kind: 'x', detail: 'd' }));
 
@@ -169,7 +174,7 @@ describe('drainErrorSpool — self-check 把 errors/ 的檔案上傳並刪除', 
     assert.equal(fs.readdirSync(errorsDir).length, 1);
   });
 
-  it('errors/ 不存在不爆，回 0', async () => {
+  it('errors/ missing → no crash, returns zero', async () => {
     fs.rmSync(errorsDir, { recursive: true, force: true });
     const { drainErrorSpool } = await import('../scripts/install-helpers/self-check.cjs');
     const result = await drainErrorSpool('http://x', 'k', { errorsDir });
@@ -181,15 +186,15 @@ describe('drainErrorSpool — self-check 把 errors/ 的檔案上傳並刪除', 
 describe('interactive-upgrade.sh — dirty tree auto-recover', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'scripts/interactive-upgrade.sh'), 'utf8');
 
-  it('偵測 git status --porcelain 非空（dirty tree）', () => {
+  it('detects non-empty git status --porcelain (dirty tree)', () => {
     assert.match(content, /git status --porcelain/);
   });
 
-  it('dirty 時送 upgrade_dirty_tree error report', () => {
+  it('when dirty, sends an upgrade_dirty_tree error report', () => {
     assert.match(content, /upgrade_dirty_tree/);
   });
 
-  it('dirty 時用 git fetch + git reset --hard origin/main 強制對齊（backup 保險絲已先做）', () => {
+  it('when dirty, force-aligns with git fetch + git reset --hard origin/main (backup safety net runs first)', () => {
     assert.match(content, /git\s+fetch/);
     assert.match(content, /git\s+reset\s+--hard\s+origin\/main/);
   });
@@ -198,26 +203,26 @@ describe('interactive-upgrade.sh — dirty tree auto-recover', () => {
 describe('interactive-upgrade.ps1 — dirty tree auto-recover (Windows)', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'scripts/interactive-upgrade.ps1'), 'utf8');
 
-  it('偵測 git status --porcelain 非空', () => {
+  it('detects non-empty git status --porcelain', () => {
     assert.match(content, /git\s+status\s+--porcelain/);
   });
 
-  it('dirty 時送 upgrade_dirty_tree error report', () => {
+  it('when dirty, sends an upgrade_dirty_tree error report', () => {
     assert.match(content, /upgrade_dirty_tree/);
   });
 
-  it('dirty 時 git fetch + reset --hard origin/main', () => {
+  it('when dirty, runs git fetch + reset --hard origin/main', () => {
     assert.match(content, /git\s+fetch/);
     assert.match(content, /git\s+reset\s+--hard\s+origin\/main/);
   });
 });
 
-describe('mcp/start.cmd — 找不到 node 時寫 errors/ spool 檔', () => {
+describe('mcp/start.cmd — writes an errors/ spool file when node is missing', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'mcp/start.cmd'), 'utf8');
 
-  it('包含寫 errors/ 目錄的 echo 指令（cmd 把 plain text 寫到 .txt）', () => {
-    // start.cmd 找不到 node 時，把錯誤資訊 echo 到 errors\<random>-mcp_start_no_node.txt
-    assert.match(content, /errors\\/i, 'cmd 必須 redirect 到 logs\\errors\\ 目錄');
-    assert.match(content, /mcp_start_no_node/, 'kind 必須是 mcp_start_no_node');
+  it('includes an echo into the errors/ directory (cmd writes plain text to .txt)', () => {
+    // When start.cmd cannot find node, it echoes the error to errors\<random>-mcp_start_no_node.txt
+    assert.match(content, /errors\\/i, 'cmd must redirect to the logs\\errors\\ directory');
+    assert.match(content, /mcp_start_no_node/, 'kind must be mcp_start_no_node');
   });
 });

@@ -10,35 +10,35 @@ import {
 } from '../src/utils/bug-report-helpers.js';
 
 // ============================================================
-// validateConfirmString — 驗 confirm_string="送出"
+// validateConfirmString — verify confirm_string="送出"
 // ============================================================
 
-test('confirm_string 正確值「送出」通過', () => {
+test('confirm_string with the correct value "送出" passes', () => {
   assert.equal(validateConfirmString('送出').ok, true);
 });
 
-test('confirm_string 缺漏 → 不通過、有錯誤訊息', () => {
+test('confirm_string missing → fails with an error message', () => {
   const r = validateConfirmString(undefined);
   assert.equal(r.ok, false);
   assert.match(r.error, /送出/);
 });
 
-test('confirm_string 為其他字串 → 不通過', () => {
+test('confirm_string with any other string → fails', () => {
   assert.equal(validateConfirmString('yes').ok, false);
   assert.equal(validateConfirmString('').ok, false);
   assert.equal(validateConfirmString('送出aaa').ok, false);
 });
 
-test('confirm_string 非字串型別 → 不通過', () => {
+test('confirm_string with a non-string type → fails', () => {
   assert.equal(validateConfirmString(123).ok, false);
   assert.equal(validateConfirmString(null).ok, false);
 });
 
 // ============================================================
-// withReportSuggestion — 加 suggest_report 旗標到錯誤 body
+// withReportSuggestion — adds the suggest_report flag to an error body
 // ============================================================
 
-test('withReportSuggestion 加旗標到 body', () => {
+test('withReportSuggestion adds the flag to the body', () => {
   const result = withReportSuggestion(
     { error: '寫入失敗' },
     'mem_blocked_secret_keyword'
@@ -46,18 +46,18 @@ test('withReportSuggestion 加旗標到 body', () => {
   assert.equal(result.suggest_report, true);
   assert.equal(result.bug_fingerprint, 'mem_blocked_secret_keyword');
   assert.match(result.report_hint, /回報/);
-  // 原欄位保留
+  // Original field preserved
   assert.equal(result.error, '寫入失敗');
 });
 
-test('withReportSuggestion 對未註冊指紋丟錯（防誤用）', () => {
+test('withReportSuggestion throws on an unregistered fingerprint (defensive)', () => {
   assert.throws(
     () => withReportSuggestion({ error: 'x' }, 'not_a_registered_fingerprint'),
     /未註冊|invalid/i
   );
 });
 
-test('withReportSuggestion 預設 hint 可被選項覆寫', () => {
+test('withReportSuggestion default hint can be overridden by an option', () => {
   const r = withReportSuggestion({ error: 'x' }, 'mem_blocked_secret_keyword', {
     hint: '客製提示文字',
   });
@@ -72,26 +72,26 @@ test('v1.26.1: withReportSuggestion accepts clt_user_reported_other', () => {
 });
 
 // ============================================================
-// isUserInSpamBlock — 查使用者是否在 24h 封鎖期
+// isUserInSpamBlock — check whether a user is in the 24h block window
 // ============================================================
 
-test('isUserInSpamBlock：DB 查到未過期記錄 → 回 true', async () => {
+test('isUserInSpamBlock: DB returns an un-expired record → true', async () => {
   const mockQuery = async () => ({
     rows: [{ blocked_until: new Date(Date.now() + 3600 * 1000) }],
   });
   assert.equal(await isUserInSpamBlock(mockQuery, 1), true);
 });
 
-test('isUserInSpamBlock：DB 查無記錄 → 回 false', async () => {
+test('isUserInSpamBlock: DB has no record → false', async () => {
   const mockQuery = async () => ({ rows: [] });
   assert.equal(await isUserInSpamBlock(mockQuery, 1), false);
 });
 
 // ============================================================
-// hasDeclinedRecently — 查使用者過去 24h 是否拒絕過該指紋
+// hasDeclinedRecently — has the user declined this fingerprint in the last 24h?
 // ============================================================
 
-test('hasDeclinedRecently：有 24h 內拒絕紀錄 → 回 true', async () => {
+test('hasDeclinedRecently: decline record within 24h → true', async () => {
   const mockQuery = async () => ({
     rows: [{ declined_at: new Date(Date.now() - 3600 * 1000) }],
   });
@@ -101,7 +101,7 @@ test('hasDeclinedRecently：有 24h 內拒絕紀錄 → 回 true', async () => {
   );
 });
 
-test('hasDeclinedRecently：無記錄 → 回 false', async () => {
+test('hasDeclinedRecently: no record → false', async () => {
   const mockQuery = async () => ({ rows: [] });
   assert.equal(
     await hasDeclinedRecently(mockQuery, 1, 'mem_blocked_secret_keyword'),
@@ -110,38 +110,38 @@ test('hasDeclinedRecently：無記錄 → 回 false', async () => {
 });
 
 // ============================================================
-// countSameFingerprintInLastHour — 計同 user + 同指紋過去 1h 幾筆
+// countSameFingerprintInLastHour — count same user + same fingerprint in the last 1h
 // ============================================================
 
-test('countSameFingerprintInLastHour：回 DB 計數', async () => {
+test('countSameFingerprintInLastHour: returns DB count', async () => {
   const mockQuery = async () => ({ rows: [{ count: '4' }] });
   const n = await countSameFingerprintInLastHour(mockQuery, 1, 'fp_x');
   assert.equal(n, 4);
 });
 
-test('countSameFingerprintInLastHour：無記錄回 0', async () => {
+test('countSameFingerprintInLastHour: no records returns 0', async () => {
   const mockQuery = async () => ({ rows: [{ count: '0' }] });
   assert.equal(await countSameFingerprintInLastHour(mockQuery, 1, 'fp_x'), 0);
 });
 
 // ============================================================
-// shouldRejectByFingerprintRateLimit — 第 3 筆同指紋直接 429
+// shouldRejectByFingerprintRateLimit — return 429 on the 3rd same-fingerprint hit
 // ============================================================
 
-test('shouldRejectByFingerprintRateLimit：1h 內 2 筆 → 不擋（要建第 3 筆）', async () => {
+test('shouldRejectByFingerprintRateLimit: 2 in 1h → not blocked (allow the 3rd)', async () => {
   const mockQuery = async () => ({ rows: [{ count: '2' }] });
   const r = await shouldRejectByFingerprintRateLimit(mockQuery, 1, 'fp_x');
   assert.equal(r.reject, false);
 });
 
-test('shouldRejectByFingerprintRateLimit：1h 內已 3 筆 → 擋第 4 筆', async () => {
+test('shouldRejectByFingerprintRateLimit: already 3 in 1h → block the 4th', async () => {
   const mockQuery = async () => ({ rows: [{ count: '3' }] });
   const r = await shouldRejectByFingerprintRateLimit(mockQuery, 1, 'fp_x');
   assert.equal(r.reject, true);
   assert.match(r.message, /同類|429|頻繁/);
 });
 
-test('shouldRejectByFingerprintRateLimit：1h 內 10 筆（已超）→ 仍擋', async () => {
+test('shouldRejectByFingerprintRateLimit: 10 in 1h (over limit) → still blocks', async () => {
   const mockQuery = async () => ({ rows: [{ count: '10' }] });
   const r = await shouldRejectByFingerprintRateLimit(mockQuery, 1, 'fp_x');
   assert.equal(r.reject, true);
