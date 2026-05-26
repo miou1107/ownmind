@@ -117,8 +117,11 @@ async function main() {
   let detectPrivacyLeak;
   let writeLintEvent, extractViolatedWords;
   let isOff, incrementTickCount;
+  // v1.21.0：validator 註冊表（規則驅動 lint）
+  let findValidator, extractEnabledValidators;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
+    ({ findValidator, extractEnabledValidators } = await import('../shared/validators/index.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
     ({ getTierFromRules } = await import('../shared/iron-rule-tier.js'));
     ({ buildComplianceEvents } = await import('./lib/build-compliance-events.js'));
@@ -185,25 +188,37 @@ async function main() {
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
 
-  let lintResult;
-  try { lintResult = lintReply(lastAssistantText, historicalAssistantCorpus || ''); }
-  catch { process.exit(0); return; }
-
-  // v1.19.7 引入、v1.19.10 中性化：加掛隱私偵測、事件名 'privacy_check'
-  // 此事件由各使用者自己的鐵律判斷要不要擋（Vin 設了 IR-041 對應此事件、其他使用者
-  // 可自行設定要不要寫成鐵律啟用）
-  let privacyResult = { detected: false, matches: [] };
+  // v1.21.0：規則驅動 — 從 user 鐵律快取找啟用的 validator
+  // 沒任何 user 啟用 → 鉤子完全不擋（白話：使用者沒設規則、OwnMind 安靜）
+  let resolvedValidators = [];
   try {
-    privacyResult = detectPrivacyLeak(lastAssistantText, { userPrompts });
-  } catch { /* 偵測本身錯不該擋主流程 */ }
-  const violations = Array.isArray(lintResult.violations) ? [...lintResult.violations] : [];
-  if (privacyResult.detected) {
-    violations.push({
-      rule: 'privacy_check',
-      message: `偵測到個資外洩樣式 — ${privacyResult.matches.length} 處（${formatPrivacySummary(privacyResult.matches)}）。請改寫掉、或改用代稱`,
-      detail: { matches: privacyResult.matches },
+    const rulesForValidator = readIronRulesCache();
+    if (typeof extractEnabledValidators === 'function') {
+      const enabled = extractEnabledValidators(rulesForValidator);
+      resolvedValidators = enabled
+        .map((entry) => {
+          const v = typeof findValidator === 'function' ? findValidator(entry.validator) : null;
+          if (!v || typeof v.check !== 'function') return null;
+          return {
+            rule: entry.rule,
+            validator: entry.validator,
+            params: entry.params,
+            check: v.check,
+          };
+        })
+        .filter(Boolean);
+    }
+  } catch { /* fail-open：找不到 validator 就視為沒啟用 */ }
+
+  let lintResult = { ok: true, violations: [] };
+  try {
+    lintResult = lintReply(lastAssistantText, resolvedValidators, {
+      historicalCorpus: historicalAssistantCorpus || '',
+      userPrompts,
     });
-  }
+  } catch { process.exit(0); return; }
+
+  const violations = Array.isArray(lintResult.violations) ? [...lintResult.violations] : [];
 
   const combinedOk = violations.length === 0;
   if (combinedOk) {

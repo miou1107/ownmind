@@ -56,6 +56,26 @@ function setupTmpHome() {
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
+
+  // v1.21.0：規則驅動架構需要 user 鐵律快取宣告啟用哪些 validator
+  // 測試環境一律寫 fake cache 啟用全部 3 個 validator（模擬「user 全開」場景）
+  const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const cachePath = path.join(cacheDir, 'iron_rules.json');
+  fs.writeFileSync(cachePath, JSON.stringify([
+    {
+      code: 'TEST-JARGON',
+      metadata: { lint_validator: { name: 'jargon_explanation', params: {} } },
+    },
+    {
+      code: 'TEST-MIXED',
+      metadata: { lint_validator: { name: 'language_mixed_ratio', params: { threshold: 0.15 } } },
+    },
+    {
+      code: 'TEST-PRIVACY',
+      metadata: { lint_validator: { name: 'privacy_detect', params: {} } },
+    },
+  ]));
 }
 
 function cleanupTmpHome() {

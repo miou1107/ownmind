@@ -1,5 +1,49 @@
 # OwnMind 更新紀錄
 
+## v1.21.0 — Lint 驗證器架構（規則驅動、user 自選啟用）
+
+**背景**：v1.20.4 雖然把 user-facing 訊息中性化（IR-036 字串改成「行話品質」）、但根本問題沒解：lint 判斷邏輯仍硬寫在 `shared/language-lint.js`、所有 user 都被強迫跑「中英混雜」「行話」檢查。Vin 抓到「中英混雜檢查、行話檢查本身就是我個人的鐵律、不該強迫每個 user 都跑」。
+
+**改動**：
+
+1. **新 `shared/validators/` 目錄**：3 個 validator 模組
+   - `jargon-explanation.js`（包裝既有行話檢查邏輯）
+   - `language-mixed-ratio.js`（中英混雜檢查、threshold 可由 params 調）
+   - `privacy-detect.js`（隱私偵測、從 hook 抽出）
+   - `index.js`：註冊表 + `findValidator` / `listAvailableValidators` / `extractEnabledValidators`
+
+2. **改 `shared/language-lint.js` lintReply**：
+   - 新 API：`lintReply(content, resolvedValidators, context)`、規則驅動
+   - 舊 API：`lintReply(content, historicalCorpus)`、向後相容（傳字串走 fallback）
+   - 不再硬寫兩個 check、改用 caller 解析好的 validator 函式列表
+   - violations 加 `sourceRule` 欄位、對應到觸發的個人鐵律編號
+
+3. **改 `hooks/ownmind-reply-lint.js`**：
+   - 從規則快取掃出 enabledValidators（透過 extractEnabledValidators）
+   - 解析每個 validator 的 check 函式（透過 findValidator）
+   - 餵 resolvedValidators 給 lintReply
+   - 拿掉內部 privacy_check 直跑、改走 validator 介面
+
+4. **個人鐵律 metadata 新欄位 `lint_validator`**：
+   - IR-036 (id=300)：`{ name: 'jargon_explanation', params: {} }`
+   - IR-037 (id=312)：`{ name: 'language_mixed_ratio', params: { threshold: 0.15 } }`
+
+5. **新測試** `tests/validators/registry.test.js`：16 個守備 case 涵蓋註冊表 / 查找 / 抽取啟用 validator / 介面合約
+
+6. **既有測試**：reply-lint-hook-v197.test.js 加 fake iron_rules.json fixture 啟用 3 個 validator
+
+7. **版號** 1.20.4 → 1.21.0（minor、新架構）、三語 README 同步
+
+**效果**：
+
+- 沒設 `lint_validator` 的 user（包含 Eric 之類新 user）→ 鉤子完全不擋 → 安靜
+- Vin 設了 metadata → 行為跟 v1.20.4 一樣 enforce
+- 其他 user 可自由選擇要不要啟用哪個 validator、不被強迫接受 Vin 的個人偏好
+
+**測試**：npm test 1938/1938 全綠
+
+**架構意義**：lint 邏輯從「OwnMind 系統內建」變成「user 鐵律驅動」、符合 OwnMind 核心理念「記憶屬於使用者」。lint 行為也是。
+
 ## v1.20.4 — Lint 規則中性化（產品碼去個人鐵律編號）
 
 **背景**：Eric（另一個 AI session）看到自己對話裡出現「上一版違反 IR-036」字眼、Vin 抓到。grep 後發現 OwnMind 產品程式碼裡寫死了 Vin 的個人鐵律編號（IR-036 / IR-037）、會洩漏給其他 user 看到。違反 IR-050（個人鐵律編號不能寫進產品程式碼跟公開文件）。
