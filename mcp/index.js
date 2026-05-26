@@ -15,6 +15,7 @@ import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
+import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import {
   detectTriggerFromContext,
   sanitizeErrorMessage,
@@ -348,7 +349,7 @@ async function sendMcpHeartbeat() {
   } catch { /* silent fail — heartbeat is best-effort */ }
 }
 
-async function callApi(method, path, body) {
+async function callApi(method, path, body, _retried = false) {
   const url = `${API_URL}${path}`;
   const headers = {
     "Content-Type": "application/json",
@@ -378,10 +379,40 @@ async function callApi(method, path, body) {
       typeof data === "object" && data !== null
         ? data.error || data.message || JSON.stringify(data)
         : text;
+
+    // v1.20.2 follow-up #2：寫入操作收到 409 sync_token 過時 → 自動拿新 token 重試 1 次
+    // 背景：user 同時開多個 AI session 時、A session 的 token 會被 B session 寫入 bump、
+    // A 再寫就 409。原本 AI 要手動 ownmind_init 再重試、UX 差。
+    if (!_retried && shouldRetryForSyncToken({ method, status: res.status, errorMessage: msg })) {
+      const newToken = await refreshSyncToken();
+      if (newToken && applyNewToken(body, newToken)) {
+        return callApi(method, path, body, true);
+      }
+    }
+
     throw new Error(`API ${res.status}: ${msg}`);
   }
 
   return data;
+}
+
+/**
+ * v1.20.2 follow-up #2：打 GET /api/memory/sync-token 拿最新 token、更新 currentSyncToken
+ * 給 callApi 自動 retry 時用、副作用最小（不會 reset complianceEvents 等 init 副作用）
+ *
+ * @returns {Promise<string|null>} 新 token 或 null（失敗）
+ */
+async function refreshSyncToken() {
+  try {
+    const data = await callApi('GET', '/api/memory/sync-token');
+    if (data?.sync_token) {
+      currentSyncToken = data.sync_token;
+      return data.sync_token;
+    }
+  } catch {
+    // refresh 失敗就放棄 retry、讓原本的 409 錯誤丟出去給 caller
+  }
+  return null;
 }
 
 // --- Tool definitions ---

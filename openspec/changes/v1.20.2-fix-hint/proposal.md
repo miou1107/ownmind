@@ -54,7 +54,25 @@ post-commit 鉤子寫得清清楚楚：`failures: ["還沒做 code review，請�
 - **未改 MCP schema、AI 還是可能誤帶 rule_code 觸發備援**：靠 hint 提示治標、不治本。後續可以開 backlog 改 schema 加 `event` 欄位、根治。
 - **本機已安裝鉤子訊息不會自動更新**：要等 user 升級 OwnMind 才會拿到。Vin 本機可以手動同步 `~/.ownmind/shared/verification.js`。
 
-## Follow-up patch（同版本內、不另開版號）
+## Follow-up patch #2（同版本內、不另開版號）
+
+Vin 在工作期間遇到「每次寫 OwnMind 都要先 init 拿 token、不然 409」的 UX 痛點。AI 在本次工作中也連續踩 3 次。
+
+**根本原因**：`sync_token` 設計防 stale write（白話：防止用過時資料覆蓋）、但對「user 同時開多個 AI session」太嚴格。本次 session 期間 active_handoff 從 id=68 跳到 id=70、表示另一 session 建了 handoff、bump 了 token、這個 session 的 token 失效。
+
+**修法**：MCP 端 callApi 函式自動攔 409 sync_token 錯誤 → 打輕量端點 GET /api/memory/sync-token 拿新 token → retry 1 次。對 AI 透明。
+
+**改動**：
+- `mcp/lib/sync-token-retry.js`（新）：兩個純函式 helper、獨立可測
+- `mcp/index.js`：callApi 加 `_retried` 防無限循環、加 `refreshSyncToken()` 輕量端點呼叫
+- `tests/auto-retry-sync-token.test.js`（新）：17 個 case 涵蓋 GET 不 retry / 500 不 retry / 非 sync_token 訊息不 retry 等防呆
+
+**限制**：
+- 只 retry 1 次
+- 只對寫入操作（非 GET / HEAD）
+- 必須訊息含 sync_token 字眼
+
+## Follow-up patch #1（同版本內、不另開版號）
 
 主 fix 上線後實測（2026-05-26 commit `de3a74f` 後）發現副作用 bug：
 

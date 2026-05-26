@@ -86,7 +86,9 @@ openspec/changes/v1.20.1-portal-pages/tasks.md                — 同上 task st
 openspec/changes/v1.20.2-fix-hint/proposal.md                 — 提案：鉤子 recent_event_exists 失敗訊息加上具體 ownmind_report_compliance 呼叫範例
 openspec/changes/v1.20.2-fix-hint/spec.md                     — 規格：5 個 GIVEN/WHEN/THEN scenario
 openspec/changes/v1.20.2-fix-hint/tasks.md                    — 任務清單
-tests/auto-comply-reads-file.test.js                          — v1.20.2 follow-up：3 個守備 case（in-memory 空 + 檔案有資料 / 反證 / 合併情境）證明 autoComply 應讀檔案
+tests/auto-comply-reads-file.test.js                          — v1.20.2 follow-up #1：3 個守備 case（in-memory 空 + 檔案有資料 / 反證 / 合併情境）證明 autoComply 應讀檔案
+mcp/lib/sync-token-retry.js                                   — v1.20.2 follow-up #2：兩個純函式 helper（shouldRetryForSyncToken + applyNewToken）給 callApi 自動 retry 用
+tests/auto-retry-sync-token.test.js                           — v1.20.2 follow-up #2：17 個守備 case（GET 不 retry / 500 不 retry / 非 sync_token 訊息不 retry / newToken null 防呆等）
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
