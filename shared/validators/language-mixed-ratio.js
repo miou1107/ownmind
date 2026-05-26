@@ -1,13 +1,15 @@
 /**
- * v1.21.0：中英混雜比例 validator
+ * v1.21.0: Mixed-Chinese/English ratio validator.
  *
- * 偵測「中文句子裡英文詞比例超過閾值」、可由 user metadata 調整 threshold。
+ * Flags Chinese sentences whose English-word ratio exceeds a threshold.
+ * The threshold can be configured per user via rule metadata.
  *
- * user 啟用：
+ * User enables via:
  *   { name: 'language_mixed_ratio', params: { threshold: 0.15 } }
  *
  * params:
- *   - threshold (number、預設 0.15)：中英混雜比例上限、超過視為違反
+ *   - threshold (number, default 0.15): upper bound for English ratio; anything
+ *     above is considered a violation.
  */
 
 import { checkMixedLanguage } from '../language-lint.js';

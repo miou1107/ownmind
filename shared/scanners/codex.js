@@ -1,19 +1,24 @@
 /**
  * shared/scanners/codex.js
  *
- * Codex JSONL adapter — 掃 `~/.codex/sessions/**` + `~/.codex/archived_sessions/**`
+ * Codex JSONL adapter — scans `~/.codex/sessions/**` plus
+ * `~/.codex/archived_sessions/**`.
  *
- * 關鍵差異 vs Claude Code（spec P5）：
- *   - Token 資料在 `event_msg/token_count`，**不在** response_item（response_item 無 usage）
- *   - Codex 無 native message_id，用 server+client 共用的 codexMessageId() 算 fingerprint
- *   - Model 來自 `turn_context.payload.model`（scanner 維護 currentModel 狀態）
- *   - 禁止 line_offset（檔案 compact/rewrite 會破壞 dedupe）；只用 byte_offset
- *   - 用 `info.last_token_usage` 當該 event 的增量 tokens（不是 total_token_usage）
+ * Key differences vs Claude Code (spec P5):
+ *   - Token data lives in `event_msg/token_count`, NOT in response_item
+ *     (response_item has no usage).
+ *   - Codex has no native message_id; the fingerprint is computed via the
+ *     shared codexMessageId() used by both client and server.
+ *   - Model comes from `turn_context.payload.model` (the scanner tracks
+ *     currentModel as state).
+ *   - No line_offset (file compact/rewrite would break dedupe); byte_offset only.
+ *   - Per-event delta tokens come from `info.last_token_usage` (NOT
+ *     total_token_usage).
  *
- * Codex token schema → OwnMind event schema 映射：
+ * Codex token schema → OwnMind event schema mapping:
  *   input_tokens          = last_token_usage.input_tokens - cached_input_tokens (pure new input)
  *   output_tokens         = last_token_usage.output_tokens
- *   cache_creation_tokens = 0   (Codex 無此概念)
+ *   cache_creation_tokens = 0   (Codex has no such concept)
  *   cache_read_tokens     = last_token_usage.cached_input_tokens
  *   reasoning_tokens      = last_token_usage.reasoning_output_tokens
  *   cumulative_total_tokens = total_token_usage.total_tokens
@@ -74,7 +79,7 @@ export function createCodexAdapter({
             continue;
           }
 
-          // turn_context: 更新 currentModel
+          // turn_context: refresh currentModel.
           if (obj.type === 'turn_context' && obj.payload?.model) {
             currentModel = obj.payload.model;
             continue;
@@ -94,14 +99,15 @@ export function createCodexAdapter({
       }
 
       const heartbeat = { tool: TOOL, scanner_version: scannerVersion, machine };
-      // Codex 的 cumulative 從 material.total_cumulative 直接來，不需要 session_cumulative map
+      // Codex's cumulative comes directly from material.total_cumulative;
+      // no session_cumulative map needed.
       return { events, offsetPatch, cumulativePatch: {}, heartbeat };
     }
   };
 }
 
 // ────────────────────────────────────────────────────────────
-// Helpers（純函式）
+// Helpers (pure functions)
 // ────────────────────────────────────────────────────────────
 
 export function extractSessionId(filePath) {
@@ -110,15 +116,16 @@ export function extractSessionId(filePath) {
 }
 
 /**
- * 把 Codex event_msg/token_count 的原始 line 轉成 OwnMind event。
- * 不符合（非 token_count / 缺 info / 缺 last_token_usage）→ 回 null。
+ * Turn a raw Codex event_msg/token_count line into an OwnMind event.
+ * Mismatches (not token_count / missing info / missing last_token_usage)
+ * return null.
  */
 export function buildEventFromTokenCount(obj, { sessionId, model, sourceFile }) {
   if (!obj || obj.type !== 'event_msg') return null;
   if (obj.payload?.type !== 'token_count') return null;
 
   const info = obj.payload?.info;
-  if (!info) return null;  // null info = 無統計（如 rate_limits-only）
+  if (!info) return null;  // null info = no stats (e.g. rate_limits-only)
 
   const last = info.last_token_usage;
   const total = info.total_token_usage;
@@ -127,7 +134,7 @@ export function buildEventFromTokenCount(obj, { sessionId, model, sourceFile }) 
   const ts = obj.timestamp;
   if (!ts || Number.isNaN(new Date(ts).getTime())) return null;
 
-  // Codex input_tokens 包含 cached；pure new = input - cached
+  // Codex input_tokens includes cached; pure new = input - cached.
   const codexInputRaw = Number(last.input_tokens || 0);
   const codexCached = Number(last.cached_input_tokens || 0);
   const pureInput = Math.max(0, codexInputRaw - codexCached);
@@ -167,15 +174,15 @@ export function buildEventFromTokenCount(obj, { sessionId, model, sourceFile }) 
 }
 
 /**
- * 遞迴列出 baseDir 底下所有 .jsonl
- * Codex 依 yyyy/mm/dd 分目錄存，要遞迴。
+ * Recursively list all .jsonl files under baseDir.
+ * Codex stores them in yyyy/mm/dd subdirectories, so recursion is required.
  */
 async function defaultListJsonlFilesRecursive(baseDir) {
   const out = [];
   async function walk(dir) {
     let entries;
     try { entries = await fs.readdir(dir, { withFileTypes: true }); }
-    catch { return; }  // 不存在或無權限：乾淨環境跳過
+    catch { return; }  // missing or unreadable: clean env, skip
     for (const e of entries) {
       const full = path.join(dir, e.name);
       if (e.isDirectory()) await walk(full);

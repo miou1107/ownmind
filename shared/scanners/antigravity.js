@@ -1,8 +1,8 @@
 /**
- * shared/scanners/antigravity.js — Tier 2 session_count（無 token）
+ * shared/scanners/antigravity.js — Tier 2 session_count (no token data).
  *
- * Antigravity 與 Cursor 同樣 VSCode-based，state.vscdb 結構一致，共用
- * createVscodeAdapter。只是 DB 路徑不同。
+ * Antigravity is VSCode-based like Cursor and shares the state.vscdb layout,
+ * so both reuse createVscodeAdapter. Only the DB path differs.
  */
 
 import path from 'path';

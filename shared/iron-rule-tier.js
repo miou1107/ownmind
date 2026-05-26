@@ -1,16 +1,16 @@
 /**
- * OwnMind Iron Rule Tier — 鐵律分級純函式模組
+ * OwnMind Iron Rule Tier — pure-function module for rule tiering.
  *
- * 對應 OpenSpec 提案 v1.19-iron-rule-tier。
+ * Corresponds to OpenSpec proposal v1.19-iron-rule-tier.
  *
- * 三級設計：
- *   - critical（核心硬規則）— v1.20 起會被直接卡控
- *   - default  （預設規則）  — 跳警告 + 寫違反紀錄
- *   - advisory（純參考提示）— v1.20 起只寫紀錄、不跳警告
+ * Three tiers:
+ *   - critical (hard core rules)    — blocked outright starting v1.20
+ *   - default  (default rules)      — warn + record violation
+ *   - advisory (informational hint) — record only, no warning from v1.20
  *
- * 本檔零外部依賴，被 server route、MCP、各 hook、shared/verification.js 共用。
- * 任何不認得的 tier 值都自動 fallback 為 default（IR-005 不要 blind edit 的延伸：
- * 寧可保守降級到 default、也不要把規則當 advisory 默默忽略）。
+ * Zero external deps. Shared by server routes, MCP, hooks, shared/verification.js.
+ * Any unknown tier value falls back to default (extension of IR-005 "no blind edit":
+ * better to conservatively demote to default than silently treat as advisory).
  */
 
 export const VALID_TIERS = ['critical', 'default', 'advisory'];
@@ -21,6 +21,7 @@ export const TIER_EMOJI = {
   advisory: '⚪',
 };
 
+// Bilingual tier labels — kept Chinese deliberately for digest rendering.
 export const TIER_LABEL_ZH = {
   critical: 'Critical 核心硬規則',
   default: 'Default 預設規則',

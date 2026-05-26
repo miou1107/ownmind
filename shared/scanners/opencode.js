@@ -1,25 +1,30 @@
 /**
  * shared/scanners/opencode.js
  *
- * OpenCode SQLite adapter — 讀 `~/.local/share/opencode/opencode.db`
+ * OpenCode SQLite adapter — reads `~/.local/share/opencode/opencode.db`.
  *
- * 實際 schema（vs plan spec 假設）：
- *   message.id        TEXT PRIMARY KEY  — 非整數！是 ULID-ish msg_xxx
- *   message.session_id TEXT
+ * Actual schema (vs plan spec assumption):
+ *   message.id           TEXT PRIMARY KEY  — NOT integer! ULID-ish msg_xxx
+ *   message.session_id   TEXT
  *   message.time_created INTEGER (ms since epoch)
- *   message.data      TEXT (JSON)
+ *   message.data         TEXT (JSON)
  *
- * ⚠️ Plan P5 原本假設 id 是 INTEGER（會用 `id > ?` 數字比較）；實際是 TEXT。
- * 為避免 `"9" > "10"` 字典序 bug，本 adapter 採 **composite cursor**：
- *   (high_water_time, high_water_id)，WHERE (time_created > ? OR (time_created = ? AND id > ?))
+ * ⚠️ Plan P5 originally assumed id was INTEGER (would use `id > ?` numeric
+ * comparison); actually TEXT. To avoid `"9" > "10"` lexicographic bugs,
+ * this adapter uses a **composite cursor**:
+ *   (high_water_time, high_water_id),
+ *   WHERE (time_created > ? OR (time_created = ? AND id > ?))
  *
- * time_created 是 INTEGER 單調遞增，ties 時退回 id 字串比較（此處退回字典序是 OK 的，
- * 因為只在同一毫秒內發生的 msg 之間排序，且 server UNIQUE 做最終 dedupe）。
+ * time_created is a monotonically increasing INTEGER; on ties we fall back
+ * to id string comparison (lexicographic is OK here because it only orders
+ * messages produced within the same millisecond, and the server's UNIQUE
+ * does the final dedupe).
  *
- * cumulative_total_tokens（D7）：scanner 維護 session → running_total map。
- * 按 global (time_created, id) ORDER BY 讀時用 session_id 獨立累加，session 切換不 reset。
+ * cumulative_total_tokens (D7): the scanner keeps a session → running_total
+ * map. Iteration order is global (time_created, id); per session_id the
+ * total accumulates independently and does not reset across sessions.
  *
- * sqlite3 CLI via `-json` 模式，零新 deps（plan P5 要求）。
+ * Uses the sqlite3 CLI in `-json` mode — zero new deps (per plan P5).
  */
 
 import { execFile } from 'child_process';
@@ -28,7 +33,8 @@ import path from 'path';
 import os from 'os';
 
 const execFileP = promisify(execFile);
-// v1.17.14 — 補 win32 path（OpenCode Windows 版放 AppData/Roaming/opencode/）
+// v1.17.14 — added win32 path (OpenCode for Windows lives under
+// AppData/Roaming/opencode/).
 const DEFAULT_DB_PATHS = {
   darwin: path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db'),
   linux: path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db'),
@@ -36,7 +42,7 @@ const DEFAULT_DB_PATHS = {
 };
 const DEFAULT_DB = DEFAULT_DB_PATHS[process.platform] ?? DEFAULT_DB_PATHS.linux;
 const TOOL = 'opencode';
-const SOURCE_KEY = 'opencode';  // 全域單一 cursor，不按檔分
+const SOURCE_KEY = 'opencode';  // single global cursor; not per-file
 
 export function createOpenCodeAdapter({
   dbPath = DEFAULT_DB,
@@ -55,8 +61,9 @@ export function createOpenCodeAdapter({
         ? Number(cursor.high_water_time) : 0;
       const highWaterId = typeof cursor.high_water_id === 'string' ? cursor.high_water_id : '';
 
-      // Composite cursor：避免同 ms 內 tie 遺漏 / 重送
-      // ORDER BY 與 cursor 條件 同鍵順序，確保下一輪接續
+      // Composite cursor: avoid losing/duplicating events tied on the same ms.
+      // ORDER BY matches the cursor condition's key order so the next round
+      // continues from exactly where we stopped.
       const sql = `
         SELECT id, session_id, time_created, data
         FROM message
@@ -70,14 +77,17 @@ export function createOpenCodeAdapter({
       try {
         rows = await runSqlite({ sqlitePath, dbPath, sql });
       } catch (err) {
-        // ENOENT = sqlite3 CLI 不存在（Windows 預設、minimal Linux container）
-        // 區別出來讓 installer / user 馬上知道要裝 sqlite3 或傳 sqlitePath
+        // ENOENT = sqlite3 CLI missing (default on Windows, on minimal Linux
+        // containers). Distinguish this so installer / user knows to install
+        // sqlite3 or pass sqlitePath.
         if (err.code === 'ENOENT') {
           logger?.warn?.(
             `[opencode scanner] sqlite3 CLI not found at '${sqlitePath}'. ` +
-            `裝法：Windows 跑 \`winget install SQLite.SQLite\`、Linux 跑 \`apt install sqlite3\`、` +
-            `或從 https://www.sqlite.org/download.html 下載。裝完重開 terminal。` +
-            `不裝的話 OpenCode Tier 2 usage 永遠無法收集（Mac/Linux 多半已內建）。`
+            `Install: Windows \`winget install SQLite.SQLite\`, ` +
+            `Linux \`apt install sqlite3\`, or download from ` +
+            `https://www.sqlite.org/download.html — reopen terminal afterwards. ` +
+            `Without it, OpenCode Tier 2 usage can never be collected ` +
+            `(Mac/Linux usually have it built in).`
           );
         } else {
           logger?.warn?.(`[opencode scanner] sqlite query failed: ${err.message}`);
@@ -122,7 +132,7 @@ export function createOpenCodeAdapter({
 }
 
 // ────────────────────────────────────────────────────────────
-// Helpers（純函式可單測）
+// Helpers (pure, individually testable)
 // ────────────────────────────────────────────────────────────
 
 function makeHeartbeat(scannerVersion, machine) {
@@ -134,8 +144,9 @@ function sqlQuote(s) {
 }
 
 /**
- * 把單筆 SQLite row + session cumulative map 轉成 event（純函式）。
- * data 解析失敗或非 assistant role → null。
+ * Turn one SQLite row plus the per-session cumulative map into an event
+ * (pure function). Returns null when data fails to parse or role isn't
+ * assistant.
  */
 export function buildEventFromRow(row, sessionCumulative, { logger } = {}) {
   if (!row || !row.id || !row.session_id) return null;
@@ -184,8 +195,8 @@ export function buildEventFromRow(row, sessionCumulative, { logger } = {}) {
 }
 
 /**
- * 預設的 sqlite3 CLI runner — 用 `-json` 模式取 array-of-objects。
- * 可注入 runSqlite 方便 test 模擬（帶預設 fixture）。
+ * Default sqlite3 CLI runner — `-json` mode returns array-of-objects.
+ * runSqlite can be injected for tests (with a pre-built fixture).
  */
 async function defaultRunSqlite({ sqlitePath, dbPath, sql }) {
   const { stdout } = await execFileP(sqlitePath, [

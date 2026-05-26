@@ -1,15 +1,19 @@
 /**
  * shared/scanners/base.js
  *
- * Scanner orchestrator — 所有 IDE adapter 共用同一條流程（spec S4 D11）：
- *   1. 讀取 offset 檔（不存在 = 從 0 開始，無 first-run 分支）
+ * Scanner orchestrator — every IDE adapter shares the same pipeline
+ * (spec S4 D11):
+ *   1. Read offsets file (missing = start from 0; no first-run branch).
  *   2. adapter.readSince(state) → { events, offsetPatch, cumulativePatch, heartbeat }
- *   3. 分批 POST /api/usage/events（每批 500）
- *   4. 任何批次失敗 → throw，不更新 offset；server UNIQUE 做 dedupe，重送安全
- *   5. 所有批次成功 → atomic rename 寫回新 offsets + cumulative
+ *   3. POST /api/usage/events in batches (500 per batch).
+ *   4. Any batch failing → throw, don't advance offsets; the server's UNIQUE
+ *      constraint deduplicates and replay is safe.
+ *   5. All batches succeed → atomic rename writes the new offsets + cumulative.
  *
- * 失敗模式：events 已入 server 但 offset 沒推進 → 下次重跑，重複事件被 UNIQUE 擋，
- *           session_cumulative 重新累加。保證 「server 擁有 ≥ 本地 offset 以前所有 events」。
+ * Failure mode: events landed on the server but the offset didn't advance →
+ * next run replays, repeats are blocked by UNIQUE, session_cumulative
+ * re-accumulates. Invariant: "the server holds ≥ every event before the
+ * local offset."
  */
 
 import fs from 'fs/promises';
@@ -23,7 +27,7 @@ export const BATCH_SIZE = 500;
 export const POST_TIMEOUT_MS = 30_000;
 
 /**
- * 讀取 offset 檔；不存在或損毀時回傳 {}
+ * Read the offsets file; returns {} when missing or corrupted.
  */
 export async function readOffsets(cachePath = DEFAULT_CACHE_PATH) {
   try {
@@ -35,8 +39,8 @@ export async function readOffsets(cachePath = DEFAULT_CACHE_PATH) {
 }
 
 /**
- * 原子化寫入：先寫 tmp、再 rename。
- * 若中途 crash，原檔不變；rename 是 POSIX 原子操作。
+ * Atomic write: write to tmp, then rename.
+ * On crash mid-write the original file is intact; rename is POSIX-atomic.
  */
 export async function writeOffsetsAtomic(cachePath, offsets) {
   await fs.mkdir(path.dirname(cachePath), { recursive: true });
@@ -52,8 +56,8 @@ export function chunk(arr, size = BATCH_SIZE) {
 }
 
 /**
- * POST /api/usage/events — 失敗 throw。
- * 可注入 fetchFn 方便測試。
+ * POST /api/usage/events — throws on failure.
+ * fetchFn is injectable for tests.
  */
 export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = POST_TIMEOUT_MS }, payload) {
   const controller = new AbortController();
@@ -79,10 +83,10 @@ export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = P
 }
 
 /**
- * 單一 adapter 的完整 scan → post → commit-offset 流程。
+ * Full scan → post → commit-offset pipeline for a single adapter.
  *
  * @param {object} deps
- * @param {object} deps.adapter - 要有 tool + readSince(state)
+ * @param {object} deps.adapter - must have tool + readSince(state)
  * @param {string} deps.apiUrl
  * @param {string} deps.apiKey
  * @param {string} [deps.cachePath]
@@ -100,17 +104,17 @@ export async function runScan(deps) {
   const state = await readOffsets(cachePath);
   const {
     events, offsetPatch, cumulativePatch, heartbeat,
-    sessions = []        // Tier 2 adapters 會帶；Tier 1 預設空
+    sessions = []        // Tier 2 adapters supply this; Tier 1 defaults to empty
   } = await adapter.readSince(state);
 
-  // 空 scan：送 heartbeat + 任何 sessions
+  // Empty scan: still send heartbeat + any sessions.
   if (events.length === 0) {
     if (heartbeat || sessions.length > 0) {
       const payload = { events: [], heartbeat };
       if (sessions.length > 0) payload.sessions = sessions;
       await postBatch({ apiUrl, apiKey, fetchFn }, payload);
     }
-    // 仍需原子寫回 offset（Tier 2 session_date 可能推進）
+    // Still need to atomic-write offsets (Tier 2 session_date may advance).
     if (Object.keys(offsetPatch).length > 0) {
       const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
       await writeOffsetsAtomic(cachePath, newState);
@@ -138,7 +142,7 @@ export async function runScan(deps) {
       `accepted=${resp.accepted} dup=${resp.duplicated} rejected=${resp.rejected?.length || 0}`);
   }
 
-  // 全部 batch 成功 → 合併並原子寫回
+  // All batches succeeded → merge and atomic write.
   const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
   await writeOffsetsAtomic(cachePath, newState);
 
@@ -152,7 +156,7 @@ export async function runScan(deps) {
 }
 
 /**
- * 合併 offset + session_cumulative 到 state。純函式。
+ * Merge offsetPatch + session_cumulative into state. Pure function.
  */
 export function mergeState(state, tool, offsetPatch = {}, cumulativePatch = {}) {
   const next = { ...state };

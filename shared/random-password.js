@@ -1,14 +1,15 @@
 /**
- * 隨機密碼產生器 — v1.19.10
+ * Random password generator — v1.19.10
  *
- * 從 v1.19.9 admin-password-reset.js 抽出來、給多處共用（admin 建 user、seed 預設密碼）。
+ * Extracted from v1.19.9 admin-password-reset.js so multiple places can share it
+ * (admin user creation, default-password seeding).
  *
- * 規則：
- *   - 預設 12 字、可指定長度
- *   - 字符集去掉容易混淆的 0/O/I/l/1
- *   - 強制至少含 1 個大寫、1 個小寫、1 個數字
- *   - 用 crypto.randomBytes 確保隨機性（非 Math.random）
- *   - Fisher-Yates 洗牌避免前 3 位固定為 upper/lower/digit
+ * Rules:
+ *   - Default 12 chars, configurable length
+ *   - Character set drops easily-confused 0/O/I/l/1
+ *   - Forces at least 1 uppercase, 1 lowercase, 1 digit
+ *   - Uses crypto.randomBytes for randomness (not Math.random)
+ *   - Fisher-Yates shuffle avoids fixing the first 3 chars to upper/lower/digit
  */
 import { randomBytes } from 'crypto';
 
@@ -16,17 +17,17 @@ const DEFAULT_LEN = 12;
 const MIN_LEN = 8;
 
 /**
- * 產隨機密碼
+ * Generate a random password.
  *
- * @param {number} [len=12] - 長度、最少 8
+ * @param {number} [len=12] - Length, minimum 8
  * @returns {string}
  */
 export function generateRandomPassword(len = DEFAULT_LEN) {
   if (typeof len !== 'number' || len < MIN_LEN) len = DEFAULT_LEN;
 
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // 去 I / O
-  const lower = 'abcdefghjkmnpqrstuvwxyz';   // 去 i / l / o
-  const digit = '23456789';                  // 去 0 / 1
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // drops I / O
+  const lower = 'abcdefghjkmnpqrstuvwxyz';   // drops i / l / o
+  const digit = '23456789';                  // drops 0 / 1
   const alphabet = upper + lower + digit;
 
   const bytes = randomBytes(len);

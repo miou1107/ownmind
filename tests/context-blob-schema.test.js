@@ -101,7 +101,7 @@ test('validateConversationSnippets：混合字串 + 截斷物件合法（聯合�
 test('validateConversationSnippets：含數字陣列項回 ok=false', () => {
   const result = validateConversationSnippets(['ok', 123]);
   assert.equal(result.ok, false);
-  assert.match(result.error, /型別/);
+  assert.match(result.error, /型別|wrong type/);
 });
 
 test('validateConversationSnippets：含 null 項回 ok=false', () => {

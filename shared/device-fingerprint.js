@@ -1,24 +1,29 @@
 /**
- * device-fingerprint — 算「來源機器指紋」（白話：給後台分辨「這筆回報是
- * 從哪台電腦送來的」用的穩定識別碼、不暴露主機名或 MAC）
+ * device-fingerprint — compute a stable "origin machine fingerprint"
+ * (so the server can tell which machine a report came from without
+ * exposing hostname or MAC).
  *
- * 對應 OpenSpec 提案 v1.19.14-bug-report-tool（規格 §2.6、§四、場景 28-32）。
+ * Corresponds to OpenSpec proposal v1.19.14-bug-report-tool (§2.6, §IV,
+ * scenarios 28-32).
  *
- * 為什麼用作業系統機器 ID 而不是主機名 + MAC：
- *   - 第四輪 Gemini 對抗審查指出 Docker / VPN / 虛擬機環境下主機名 + MAC 會
- *     頻繁變動：容器主機名是隨機 container ID、Tailscale / WireGuard 等
- *     虛擬網卡會塞進去打亂主網卡偵測
- *   - 作業系統機器 ID 由 OS 管理、跨重啟穩定：
- *     - macOS：IOPlatformUUID（系統永久 ID）
- *     - Linux：/etc/machine-id（首次開機設定、之後不變）
- *     - Windows：登錄檔 MachineGuid
+ * Why the OS machine ID instead of hostname + MAC:
+ *   - The fourth Gemini adversarial review pointed out that under
+ *     Docker / VPN / VM, hostname + MAC churn frequently: container
+ *     hostnames are random container IDs, and virtual NICs from
+ *     Tailscale / WireGuard etc. confuse main-NIC detection.
+ *   - The OS-managed machine ID is stable across reboots:
+ *     - macOS: IOPlatformUUID (permanent system ID)
+ *     - Linux: /etc/machine-id (set at first boot, never changes)
+ *     - Windows: registry MachineGuid
  *
- * 設計重點：
- *   - 每次啟動即時算、不寫檔（不會被同步資料夾帶走）
- *   - 同機器同安裝路徑 → 必算同一個指紋
- *   - 不同機器（OS ID 不同）→ 必算不同指紋
- *   - 抓不到 OS ID 時 fallback 用主機名 + 安裝路徑、帶 fingerprint_source 標記
- *   - 純函式（吃 options 注入、好測試）
+ * Design points:
+ *   - Computed on the fly each startup; not persisted (won't be carried
+ *     away by a sync folder).
+ *   - Same machine + same install path → always the same fingerprint.
+ *   - Different machines (different OS IDs) → always different fingerprints.
+ *   - When the OS ID is unavailable, fall back to hostname + install path
+ *     and emit a fingerprint_source marker.
+ *   - Pure function (options-injected for testability).
  */
 
 import crypto from 'node:crypto';
@@ -30,13 +35,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 /**
- * 預設的 OS 機器 ID 取得器：用 node-machine-id 套件
- * 抓不到回 null（不丟例外、讓 fallback 接管）
+ * Default OS-machine-ID provider: uses the node-machine-id package.
+ * Returns null on failure (does not throw; the fallback takes over).
  */
 async function defaultMachineIdProvider() {
   try {
     const machineIdModule = await import('node-machine-id');
-    // 套件可能 export default、也可能直接 export 函式
+    // The package may export default or directly export the function.
     const fn = machineIdModule.machineId || machineIdModule.default?.machineId;
     if (typeof fn !== 'function') return null;
     const id = await fn();
@@ -55,7 +60,7 @@ function defaultHostnameProvider() {
 }
 
 /**
- * 算 SHA-256 雜湊、取前 16 字
+ * Compute the SHA-256 hash and take the first 16 hex characters.
  * @param {string} input
  * @returns {string}
  */
@@ -64,12 +69,15 @@ function sha256First16(input) {
 }
 
 /**
- * 算「來源機器指紋」
+ * Compute the "origin machine fingerprint."
  *
  * @param {Object} [options]
- * @param {Function} [options.machineIdProvider] - async function 回 OS 機器 ID 字串、抓不到回 null/empty
- * @param {Function} [options.hostnameProvider] - sync function 回主機名（fallback 用）
- * @param {string} [options.installPath] - OwnMind 安裝路徑（預設用本檔目錄）
+ * @param {Function} [options.machineIdProvider] - async function returning the
+ *   OS machine-ID string; returns null/empty when unavailable
+ * @param {Function} [options.hostnameProvider] - sync function returning the
+ *   hostname (used by the fallback)
+ * @param {string} [options.installPath] - OwnMind install path (defaults to
+ *   this file's directory)
  * @returns {Promise<{ device_fingerprint: string, fingerprint_source: 'os_machine_id' | 'no_machine_id' }>}
  */
 export async function generateDeviceFingerprint(options = {}) {
@@ -91,7 +99,7 @@ export async function generateDeviceFingerprint(options = {}) {
     };
   }
 
-  // Fallback：用主機名 + 安裝路徑
+  // Fallback: hostname + install path.
   const hostname = hostnameProvider();
   return {
     device_fingerprint: sha256First16(`hostname:${hostname}|${installPath}`),
@@ -99,7 +107,7 @@ export async function generateDeviceFingerprint(options = {}) {
   };
 }
 
-// 給測試用的內部 export（不對外公開 API）
+// Internal exports for tests (not part of the public API).
 export const _internals = {
   sha256First16,
   defaultMachineIdProvider,

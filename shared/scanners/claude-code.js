@@ -1,17 +1,20 @@
 /**
  * shared/scanners/claude-code.js
  *
- * Claude Code JSONL adapter — 掃 `~/.claude/projects/<project>/<session>.jsonl`，
- * 每則 type='assistant' 且 message.usage 非空的訊息 → 一筆 raw event。
+ * Claude Code JSONL adapter — scans
+ * `~/.claude/projects/<project>/<session>.jsonl`. Every type='assistant'
+ * message with a non-empty message.usage becomes one raw event.
  *
- * Cursor：檔案路徑 → byte_offset（INT）。只推進不回頭。
- * message_id：直接用 JSONL 的 `uuid`（native，每則必有）。
+ * Cursor: file path → byte_offset (INT). Only advances, never rewinds.
+ * message_id: uses the JSONL's `uuid` (native, always present).
  *
- * cumulative_total_tokens（D7）：
- *   scanner 維護 session → running_total map
- *   每 event：new = prev + input + output + cache_creation + cache_read
- *   整批 upload 成功後，byte_offset 和 cumulative map 一起原子寫回 offsets 檔
- *   重啟後從檔案 load map → running total 接續，不誤報 regression
+ * cumulative_total_tokens (D7):
+ *   The scanner keeps a session → running_total map.
+ *   For each event: new = prev + input + output + cache_creation + cache_read.
+ *   Once a batch uploads successfully, byte_offset and the cumulative map
+ *   are atomically written back to the offsets file.
+ *   After a restart, loading the map lets the running total resume without
+ *   false regressions.
  */
 
 import fs from 'fs/promises';
@@ -37,7 +40,7 @@ export function createClaudeCodeAdapter({
       const events = [];
       const offsetPatch = {};
       const cumulativePatch = {};
-      // 從 state load session → running_total map
+      // Load session → running_total map from state.
       const sessionCumulative = {
         ...(state.session_cumulative?.[TOOL] || {})
       };
@@ -99,16 +102,18 @@ export function createClaudeCodeAdapter({
 }
 
 // ────────────────────────────────────────────────────────────
-// Helpers（純函式 — 單元測試直接打）
+// Helpers (pure — directly unit-testable)
 // ────────────────────────────────────────────────────────────
 
 /**
- * 解析單行 JSONL，只回傳 type='assistant' 且 message.usage 非空的 event。
- * 失敗 (invalid JSON / 非 assistant / 無 usage) → 回傳 null。
+ * Parse one JSONL line; returns an event only when type='assistant' with a
+ * non-empty message.usage. On failure (invalid JSON / non-assistant /
+ * missing usage) returns null.
  *
  * @param {string} line
- * @param {{logger?: {warn?: Function}}} [opts] - 只在 JSON.parse 失敗時 warn（幫助排查
- *        「這個 session 為何少 tokens」）。非 assistant / 缺欄位為正常現象，靜默略過。
+ * @param {{logger?: {warn?: Function}}} [opts] - warns only when JSON.parse
+ *        fails (helps debug "why is this session missing tokens").
+ *        Non-assistant / missing fields are normal and skipped silently.
  */
 export function parseAssistantLine(line, opts = {}) {
   if (!line || typeof line !== 'string') return null;
@@ -122,7 +127,7 @@ export function parseAssistantLine(line, opts = {}) {
   if (!obj || obj.type !== 'assistant') return null;
   const u = obj.message?.usage;
   if (!u) return null;
-  if (!obj.uuid) return null;             // native id 必存在
+  if (!obj.uuid) return null;             // native id is required
   if (!obj.timestamp) return null;
   if (!obj.sessionId) return null;
 
@@ -151,24 +156,25 @@ async function defaultListJsonlFiles(baseDir) {
         for (const f of files) {
           if (f.endsWith('.jsonl')) out.push(path.join(projectDir, f));
         }
-      } catch { /* 單一 project dir 無法讀就跳過 */ }
+      } catch { /* a single project dir we cannot read: skip */ }
     }
-  } catch { /* baseDir 不存在：乾淨環境，回空 */ }
+  } catch { /* baseDir does not exist: clean env, return empty */ }
   return out;
 }
 
 /**
- * 從 byte_offset 讀到 EOF，切 lines；最後若沒有 \n 結尾表示還有 partial line，
- * 此行不採用、offset 停在該行開頭，等下次 scan 再讀完整。
+ * Read from byte_offset to EOF and split into lines. A trailing partial
+ * line (no \n) is not consumed; the offset stops at its start so the next
+ * scan can complete it.
  *
- * 若 byte_offset > file size（檔案被截斷/輪轉）→ 從 0 重新開始。
+ * If byte_offset > file size (file truncated/rotated) → restart from 0.
  */
 export async function defaultReadIncremental(filePath, byteOffset) {
   const handle = await fs.open(filePath, 'r');
   try {
     const stat = await handle.stat();
     let start = byteOffset;
-    if (start > stat.size) start = 0;  // 檔案被截斷
+    if (start > stat.size) start = 0;  // file truncated
     const length = stat.size - start;
     if (length <= 0) return { lines: [], nextOffset: start };
 
@@ -178,8 +184,8 @@ export async function defaultReadIncremental(filePath, byteOffset) {
 
     const endsWithNewline = text.endsWith('\n');
     const parts = text.split('\n');
-    // 最後一個 element：若是 '' 代表正常 \n 結尾；否則是 partial line
-    // parts.slice(0, -1) 永遠排除最後一個
+    // Last element: '' means a clean \n ending; otherwise it's a partial line.
+    // parts.slice(0, -1) always excludes the last element.
     const lines = parts.slice(0, -1);
     const lastPartial = endsWithNewline ? '' : parts[parts.length - 1];
     const consumed = length - Buffer.byteLength(lastPartial, 'utf8');

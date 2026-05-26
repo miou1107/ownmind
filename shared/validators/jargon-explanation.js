@@ -1,13 +1,16 @@
 /**
- * v1.21.0：行話品質 validator
+ * v1.21.0: Jargon-quality validator.
  *
- * 偵測「非白名單英文詞第一次出現時、後面 80 字內沒附白話說明」。
- * 包裝既有 checkJargonExplanation 純函式邏輯、加上 validator 介面。
+ * Detects "non-whitelisted English term appearing for the first time with no
+ * plain-Chinese explanation within the next 80 characters."
+ * Wraps the existing checkJargonExplanation pure function with the validator
+ * interface.
  *
- * user 在自己的鐵律 metadata.lint_validator 啟用：
+ * User enables via:
  *   { name: 'jargon_explanation', params: {} }
  *
- * params 目前無設定項、未來可加：window_chars / extra_whitelist 等。
+ * params currently has no options; future candidates: window_chars,
+ * extra_whitelist, etc.
  */
 
 import { checkJargonExplanation } from '../language-lint.js';
@@ -17,7 +20,7 @@ export const name = 'jargon_explanation';
 
 /**
  * @param {string} content
- * @param {object} [params={}] - user metadata 帶進來的設定
+ * @param {object} [params={}] - settings passed in via user metadata
  * @param {object} [context={}] - { historicalCorpus, userPrompts, ... }
  * @returns {{ ok: boolean, violation?: { event, message, detail } }}
  */

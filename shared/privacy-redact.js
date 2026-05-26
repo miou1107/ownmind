@@ -1,26 +1,33 @@
 /**
- * privacy-redact — 把文字中的個資樣式替換成代稱（白話：把信箱、身分證、
- * 手機號碼這些可以辨識特定人的字串、換成 `<信箱-001>` 這種匿名標籤）
+ * privacy-redact — replace privacy patterns in text with anonymous labels
+ * (e.g. turn email addresses, ID numbers, phone numbers into `<信箱-001>`
+ * style placeholders).
  *
- * 對應 OpenSpec 提案 v1.19.14-bug-report-tool（規格 §2.10、§3、§4 場景 23、23b）。
+ * Corresponds to OpenSpec proposal v1.19.14-bug-report-tool (§2.10, §3,
+ * §4 scenarios 23 / 23b).
  *
- * 設計重點：
- *   - 用既有 `shared/privacy-detect.js` 的偵測結果
- *   - 同一個值多次出現時、共用同一個編號（同值同代稱）
- *   - 不同類型獨立編號（信箱從 001、手機從 001、身分證從 001）
- *   - 純函式、不碰 IO
- *   - 不丟例外（崩潰由 caller 用 try/catch fail-closed）
+ * Design points:
+ *   - Reuses detection results from `shared/privacy-detect.js`.
+ *   - The same value appearing multiple times reuses the same number
+ *     (same value → same label).
+ *   - Each type counts independently (email starts at 001, phone starts at
+ *     001, ID starts at 001).
+ *   - Pure function; no IO.
+ *   - Never throws (callers wrap with try/catch and fail closed).
  *
- * 為什麼放共用層：
- *   - 後端 `ownmind_report_bug` 寫入前要強制套用（v4 設計、不靠 AI 自律）
- *   - 客戶端預覽顯示也可以用、雙重保險
+ * Why this lives in the shared layer:
+ *   - The server's `ownmind_report_bug` must enforce it before writing
+ *     (v4 design — don't rely on AI self-discipline).
+ *   - The client preview can use it too as belt-and-suspenders.
  *
- * 代稱格式：`<類型中文-NNN>` 三位數字、由 001 開始遞增。
+ * Label format: `<chinese-type-NNN>` — three-digit number starting at 001.
  */
 
 import { detectPrivacyLeak } from './privacy-detect.js';
 
-// 偵測類型 → 顯示用代稱前綴的對照表
+// Detection type → display-label prefix mapping. Chinese labels are kept
+// deliberately because the redacted text is user-facing per the bug-report
+// localized output convention.
 const TYPE_LABEL_ZH = {
   email: '信箱',
   phone_tw_mobile: '手機',
@@ -28,15 +35,16 @@ const TYPE_LABEL_ZH = {
 };
 
 /**
- * 把文字中的個資樣式替換成代稱
+ * Replace privacy patterns in text with anonymous labels.
  *
- * @param {string} text - 要處理的原始文字
+ * @param {string} text - the original text to process
  * @param {Object} [options]
- * @param {string[]} [options.userPrompts] - 使用者最近的提問字串（沿用 privacy-detect 例外）
+ * @param {string[]} [options.userPrompts] - recent user prompts (reused from
+ *   privacy-detect exceptions)
  * @returns {{ text: string, replacements: Array<{ type: string, original: string, label: string }> }}
  */
 export function redactPrivacyPatterns(text, options = {}) {
-  // 非字串或空字串：原樣回傳、不處理
+  // Non-string or empty: return as-is.
   if (typeof text !== 'string' || text.length === 0) {
     return { text, replacements: [] };
   }
@@ -46,14 +54,14 @@ export function redactPrivacyPatterns(text, options = {}) {
     return { text, replacements: [] };
   }
 
-  // 按類型分組 + 為「同值」配發同一個代稱編號
-  const counters = {}; // type → 已配發過的最高編號
+  // Group by type and assign a per-type sequence to "same value".
+  const counters = {}; // type → highest issued number
   const labelMap = new Map(); // `${type}:${value}` → label
   const replacements = [];
 
   for (const { type, value } of detection.matches) {
     const key = `${type}:${value}`;
-    if (labelMap.has(key)) continue; // 同值已經配過代稱
+    if (labelMap.has(key)) continue; // same value already labeled
 
     counters[type] = (counters[type] || 0) + 1;
     const prefix = TYPE_LABEL_ZH[type] || type;
@@ -62,8 +70,8 @@ export function redactPrivacyPatterns(text, options = {}) {
     replacements.push({ type, original: value, label });
   }
 
-  // 替換：依「原始字串長度」從長到短處理、避免短的先替換造成切碎長的
-  // （例：若 'a@b.com' 跟 'b.com' 同時是命中值、要先換長的）
+  // Replace longest-first to avoid shorter values fragmenting longer ones
+  // (e.g. if both 'a@b.com' and 'b.com' match, replace the longer one first).
   const ordered = [...labelMap.entries()].sort((a, b) => {
     const valA = a[0].split(':').slice(1).join(':');
     const valB = b[0].split(':').slice(1).join(':');
@@ -73,7 +81,8 @@ export function redactPrivacyPatterns(text, options = {}) {
   let resultText = text;
   for (const [key, label] of ordered) {
     const value = key.split(':').slice(1).join(':');
-    // 用 split-join 避免 regex 特殊字元（@ . 等不是 regex 元字元，但保守一點）
+    // split/join avoids regex meta-character concerns (@ . are not regex
+    // metacharacters, but keep it conservative).
     resultText = resultText.split(value).join(label);
   }
 
