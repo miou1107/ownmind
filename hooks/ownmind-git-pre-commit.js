@@ -153,7 +153,13 @@ function formatBlockMessage(failures) {
   for (const f of failures) {
     lines.push(`  ❌ ${f}`);
   }
-  lines.push('請先完成上述步驟再 commit。', '');
+  lines.push('請先完成上述步驟再 commit。');
+  // v1.20.2 follow-up #3：附帶 bug report 路徑、AI 認為鉤子擋下不對時可送回報
+  lines.push(
+    '[OwnMind bug report] 認為這次擋下不對嗎？可呼叫 ownmind_report_bug 送回報。' +
+    'bug_fingerprint: mem_iron_rule_blocking_commit_no_fingerprint, suggest_report: true'
+  );
+  lines.push('');
   return lines.join('\n');
 }
 

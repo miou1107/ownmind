@@ -101,6 +101,20 @@ export const BUG_FINGERPRINT_REGISTRY = {
     category: 'lint',
     description: 'reply-lint hook 內部錯誤、未能正常擋下違規',
   },
+  lint_context_memory_missing: {
+    category: 'lint',
+    description: 'IR-036 jargon 判斷未實作跨 reply 詞彙記憶、已解釋過的詞被重複擋（v1.20.2 follow-up #3 修正）',
+  },
+  lint_hook_no_suggest_report_path: {
+    category: 'lint',
+    description: 'reply-lint hook 失敗時 stderr 沒帶 suggest_report 旗標跟 bug_fingerprint、AI 拿不到指紋無法送 bug report',
+  },
+
+  // ── 鐵律鉤子擋下相關（mem_*）───────────────────────
+  mem_iron_rule_blocking_commit_no_fingerprint: {
+    category: 'mem',
+    description: 'pre-commit hook 因鐵律 verification 條件未滿足擋下 commit、但 stderr 沒帶 bug_fingerprint、AI 無法送 bug report',
+  },
 };
 
 /**

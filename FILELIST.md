@@ -89,6 +89,7 @@ openspec/changes/v1.20.2-fix-hint/tasks.md                    — 任務清單
 tests/auto-comply-reads-file.test.js                          — v1.20.2 follow-up #1：3 個守備 case（in-memory 空 + 檔案有資料 / 反證 / 合併情境）證明 autoComply 應讀檔案
 mcp/lib/sync-token-retry.js                                   — v1.20.2 follow-up #2：兩個純函式 helper（shouldRetryForSyncToken + applyNewToken）給 callApi 自動 retry 用
 tests/auto-retry-sync-token.test.js                           — v1.20.2 follow-up #2：17 個守備 case（GET 不 retry / 500 不 retry / 非 sync_token 訊息不 retry / newToken null 防呆等）
+tests/jargon-context-memory.test.js                           — v1.20.2 follow-up #3：11 個守備 case（IR-036 跨 reply 詞彙記憶、4 種解釋格式 / 向後相容 / null 防呆）
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
