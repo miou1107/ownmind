@@ -1,24 +1,25 @@
 /**
- * log-mcp-call.js — v1.18.9 latency 埋點 helper
+ * log-mcp-call.js — v1.18.9 latency instrumentation helper.
  *
- * 為什麼存在（解 v1.18.6 漏作項 + Gemini r3 C4 觀測缺口）：
- *   先前 mcp/index.js 主流程沒量「使用者看到 result 的真實感受時間」，
- *   admin dashboard 看不到 p95、無法判斷誰拖慢誰、調效。
+ * Why this exists (closing v1.18.6's missed item + Gemini r3 C4 observability gap):
+ *   Earlier, the main flow in mcp/index.js didn't measure "the latency the user actually
+ *   feels before seeing the result". The admin dashboard had no p95, so we couldn't tell
+ *   which path slowed down which call, and couldn't tune.
  *
- * 為什麼抽 helper：
- *   邏輯雖簡單，但「不能因為 logEvent throw 就讓 tool call 失敗」這個不變式
- *   值得獨立 unit test、未來改動有保護網。
+ * Why extract a helper:
+ *   The logic is simple, but the invariant "a logEvent throw must never fail the tool call"
+ *   deserves its own unit test so future changes have a safety net.
  *
- * 跟 enrich-error.js 同 pattern — pure module、好測。
+ * Same pattern as enrich-error.js — a pure module, easy to test.
  */
 
 /**
- * 安全寫一筆 mcp_call event。任何 logEvent 失敗都被吞掉、不拋。
+ * Safely write an mcp_call event. Any logEvent failure is swallowed; never throws.
  *
  * @param {Object} args
- * @param {Function} args.logEvent - logEvent 函式 (event, details)
- * @param {string} args.tool - tool 名稱（不要傳 null/undefined、用 'unknown' 替）
- * @param {number} args.latencyMs - tool call 耗時 ms（已用 Date.now 算好）
+ * @param {Function} args.logEvent - the logEvent function (event, details)
+ * @param {string} args.tool - tool name (do not pass null/undefined; use 'unknown' instead)
+ * @param {number} args.latencyMs - tool call duration in ms (caller computes via Date.now)
  * @param {string} args.status - 'ok' | 'error'
  */
 export function logMcpCallSafe({ logEvent, tool, latencyMs, status }) {
@@ -29,9 +30,9 @@ export function logMcpCallSafe({ logEvent, tool, latencyMs, status }) {
       status,
     });
   } catch (e) {
-    // 不阻塞 response 主流程
+    // Must not block the main response flow.
     try {
       console.error('[log-mcp-call] logEvent failed:', e?.message || String(e));
-    } catch { /* 連 console.error 都壞、放棄 */ }
+    } catch { /* even console.error is broken — give up */ }
   }
 }

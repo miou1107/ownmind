@@ -1,12 +1,13 @@
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'node:crypto';
-// Node 18+ 有 global fetch、不需 node-fetch 套件（v1.17.99 移除依賴）
+// Node 18+ has global fetch — node-fetch is not required (dependency removed in v1.17.99).
 
 const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
-// v1.18.4: fallback 從 'unknown' 改 'claude-code'，避免大量 activity_logs
-// 標成 'unknown' 導致跨工具分群失效。對齊 mcp/index.js:167 CLIENT_TOOL 設計。
-// OWNMIND_TOOL 環境變數仍優先生效，向後相容。
+// v1.18.4: fallback changed from 'unknown' to 'claude-code', so we don't end up with a flood
+// of activity_logs tagged 'unknown' that would break per-tool grouping. Aligned with the
+// CLIENT_TOOL design at mcp/index.js:167. The OWNMIND_TOOL env var still takes priority —
+// backward compatible.
 const TOOL_NAME = process.env.OWNMIND_TOOL
   || process.env.OWNMIND_CLIENT_TOOL
   || 'claude-code';
@@ -55,23 +56,24 @@ process.on('beforeExit', () => {
 });
 
 // Signal hooks: best-effort flush before process is killed
-// 不呼叫 process.exit()，讓 index.js 的 shutdown handler 接手
+// Do not call process.exit() — let index.js's shutdown handler take over.
 for (const sig of ['SIGTERM', 'SIGINT']) {
   process.on(sig, () => {
     flushToServer();
   });
 }
 
-// 重要事件類型：立即 flush，不等 buffer 滿
+// Important event types: flush immediately, do not wait for the buffer to fill.
 const IMMEDIATE_FLUSH_EVENTS = new Set([
   'iron_rule_compliance',
   'session_log',
 ]);
 
-// v1.20.1: 抽出來避免 test 跟 logEvent 對「今天」用不同時區（test 原本用
-// toISOString().slice(0,10) = UTC、logEvent 用 local time getFullYear/Month/Date）
-// 跨午夜 UTC vs 台北 8 小時差時、test 找不到 logEvent 寫的檔導致 flake。
-// 按 IR-032 時區強制定標準、OwnMind 站在 user 的本地時區看「今天」。
+// v1.20.1: extracted to keep the test and logEvent from disagreeing on what "today" means.
+// Originally the test used toISOString().slice(0,10) (UTC), while logEvent used local-time
+// getFullYear/Month/Date. Around midnight, the 8-hour UTC-vs-Taipei gap caused the test to
+// look at the wrong file and flake. Per IR-032 (timezone discipline), OwnMind defines "today"
+// in the user's local timezone.
 export function localDateOnly(date) {
   return date.getFullYear() + '-' +
     String(date.getMonth() + 1).padStart(2, '0') + '-' +
@@ -104,11 +106,11 @@ export function logEvent(event, details = {}) {
     const source = details.source || 'mcp';
     const { tool: _t, source: _s, ...rest } = details;
 
-    // v1.17.99: 給每筆事件生 client_event_id (UUID v4)、server 端用
-    // (user_id, client_event_id) partial unique index dedup
-    // 場景：同一個 logEvent() 因 buffer / scheduleFlush / signal flush 多條
-    // path 重複 POST 同事件 → server 對相同 id 跳過。本機 JSONL 寫入跟 buffer
-    // push 用同一份 entry 物件、id 一致。
+    // v1.17.99: generate a client_event_id (UUID v4) per event so the server can dedup with
+    // a (user_id, client_event_id) partial unique index.
+    // Scenario: the same logEvent() can re-POST the same event via multiple paths (buffer /
+    // scheduleFlush / signal flush) → the server skips by matching id. The local JSONL write
+    // and the buffer push share the same entry object, so the id is consistent.
     const entry = { ts, event, tool, source, client_event_id: randomUUID(), details: rest };
 
     // Write local

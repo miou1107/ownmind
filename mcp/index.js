@@ -6,7 +6,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-// Node 18+ 有 global fetch、不需 node-fetch 套件（v1.17.99 移除依賴）
+// Node 18+ has global fetch — node-fetch is not required (dependency removed in v1.17.99).
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -83,10 +83,11 @@ function extractSessionChecks(conditions) {
 }
 
 /**
- * Session 結束稽核（L6）
- * 只檢查 recent_event_exists 類型的前置依賴條件。
- * git context 類的檢查（staged_files、commit_message）由 L1 git pre-commit hook 在動作前負責，
- * 此處不重複檢查——如果 commit 已完成代表 L1 通過了（或被 --no-verify 跳過）。
+ * End-of-session audit (L6).
+ * Only checks the recent_event_exists family of precondition rules.
+ * Git-context checks (staged_files, commit_message) are handled by the L1 git pre-commit hook
+ * before the action; we don't duplicate them here — if the commit completed, L1 either passed
+ * (or was bypassed with --no-verify).
  */
 async function auditSession() {
   try {
@@ -159,7 +160,7 @@ const API_KEY = process.env.OWNMIND_API_KEY || "";
 // --- Version & Sync Token (in-memory, per session) ---
 const CLIENT_VERSION = (() => {
   try {
-    // 統一從根目錄 package.json 讀取版號（單一來源）
+    // Read the version uniformly from the root package.json (single source of truth).
     const rootPkg = new URL('../package.json', import.meta.url);
     const pkg = JSON.parse(fs.readFileSync(rootPkg, 'utf8'));
     return pkg.version || '0.0.0';
@@ -246,8 +247,8 @@ function getRandomTip() {
 }
 
 // --- Session tracking (for emergency shutdown log) ---
-// v1.18.4: fallback 從 'unknown' 改 'claude-code'，跟 mcp/ownmind-log.js 同步。
-// OWNMIND_TOOL 仍優先生效，向後相容。
+// v1.18.4: fallback changed from 'unknown' to 'claude-code', matching mcp/ownmind-log.js.
+// OWNMIND_TOOL still takes priority — backward compatible.
 const TOOL_NAME = process.env.OWNMIND_TOOL
   || process.env.OWNMIND_CLIENT_TOOL
   || 'claude-code';
@@ -257,9 +258,10 @@ let complianceEvents = [];
 const COMPLIANCE_EVENTS_MAX = 500;
 const AUTO_COMPLY_DEDUP_TTL_MS = 60_000;
 let sessionLogged = false;
-// v1.17.37: 自動偵測 project 名稱（IR-027「邏輯才有效」— 不要叫 user 每次手動跟 AI 講）
-// CLAUDE_PROJECT_DIR 是 Claude Code 在啟動 MCP 時帶進來的專案根目錄；
-// 若 user 沒在 git repo 或別的工具就用 cwd basename 當 fallback。
+// v1.17.37: auto-detect project name (IR-027 "only logic works" — don't make the user repeat
+// it to the AI every time). CLAUDE_PROJECT_DIR is the project root passed in by Claude Code
+// when it launches the MCP. If the user isn't in a git repo or is using another tool, fall
+// back to the cwd basename.
 const AUTO_PROJECT = (() => {
   try {
     const dir = process.env.CLAUDE_PROJECT_DIR
@@ -271,14 +273,15 @@ const AUTO_PROJECT = (() => {
 })();
 
 // --- v1.17.0 P4: Broadcast fetch + render ---
-// 不 block tool call、失敗靜默、逾時 2s
+// Never block the tool call; failures stay silent; 2s timeout.
 async function fetchBroadcastsSafely() {
   if (!API_KEY) return '';
   try {
     const controller = new AbortController();
     const to = setTimeout(() => controller.abort(), 2000);
-    // v1.17.18: 用 package.json 讀出的 CLIENT_VERSION（process.env.OWNMIND_VERSION
-    // 從未被設定，導致 broadcast inject 永遠不帶版本，semver filter 跳過）
+    // v1.17.18: use CLIENT_VERSION read from package.json (process.env.OWNMIND_VERSION was
+    // never being set, so broadcast inject never carried a version and the semver filter
+    // skipped everything).
     const clientVersion = CLIENT_VERSION || process.env.OWNMIND_VERSION || '';
     const res = await fetch(`${API_URL}/api/broadcast/inject`, {
       method: 'POST',
@@ -296,7 +299,7 @@ async function fetchBroadcastsSafely() {
     if (bcList.length === 0) return '';
     return renderBroadcasts(bcList);
   } catch {
-    return '';  // 網路異常 / timeout → 靜默
+    return '';  // network error / timeout → stay silent
   }
 }
 
@@ -381,9 +384,10 @@ async function callApi(method, path, body, _retried = false) {
         ? data.error || data.message || JSON.stringify(data)
         : text;
 
-    // v1.20.2 follow-up #2：寫入操作收到 409 sync_token 過時 → 自動拿新 token 重試 1 次
-    // 背景：user 同時開多個 AI session 時、A session 的 token 會被 B session 寫入 bump、
-    // A 再寫就 409。原本 AI 要手動 ownmind_init 再重試、UX 差。
+    // v1.20.2 follow-up #2: on write 409 sync_token stale → auto-fetch a new token and retry once.
+    // Background: when the user has multiple AI sessions open, session A's token gets bumped
+    // by session B's writes; A's next write then 409s. Previously the AI had to manually call
+    // ownmind_init and retry — bad UX.
     if (!_retried && shouldRetryForSyncToken({ method, status: res.status, errorMessage: msg })) {
       const newToken = await refreshSyncToken();
       if (newToken && applyNewToken(body, newToken)) {
@@ -398,10 +402,11 @@ async function callApi(method, path, body, _retried = false) {
 }
 
 /**
- * v1.20.2 follow-up #2：打 GET /api/memory/sync-token 拿最新 token、更新 currentSyncToken
- * 給 callApi 自動 retry 時用、副作用最小（不會 reset complianceEvents 等 init 副作用）
+ * v1.20.2 follow-up #2: GET /api/memory/sync-token to fetch the latest token and refresh
+ * currentSyncToken — used by callApi's auto-retry. Side effects are minimal (no reset of
+ * complianceEvents or other init-time side effects).
  *
- * @returns {Promise<string|null>} 新 token 或 null（失敗）
+ * @returns {Promise<string|null>} new token, or null on failure
  */
 async function refreshSyncToken() {
   try {
@@ -411,7 +416,7 @@ async function refreshSyncToken() {
       return data.sync_token;
     }
   } catch {
-    // refresh 失敗就放棄 retry、讓原本的 409 錯誤丟出去給 caller
+    // Refresh failed → give up the retry and let the original 409 propagate to the caller.
   }
   return null;
 }
@@ -741,7 +746,7 @@ async function handleTool(name, args) {
 
   switch (name) {
     case "ownmind_init": {
-      // Reset session state（MCP 進程可能跨 session 存活）
+      // Reset session state (the MCP process may outlive a single session).
       complianceEvents = [];
       let data;
       try {
@@ -775,7 +780,7 @@ async function handleTool(name, args) {
         data._upgrade_notice = `⚠️ ${data.upgrade_action.message}\nRun: ${data.upgrade_action.command}`;
       }
       data._client_version = CLIENT_VERSION;
-      // Enforcement Alerts 已由 server 端嵌入 iron_rules_digest，不需 client 重複格式化
+      // Enforcement Alerts are already embedded in iron_rules_digest by the server — no need to re-format on the client.
       // E4: Sync verifiable rules to local cache
       try {
         const verifiableRules = (data.iron_rules || []).filter(r => r.metadata?.verification);
@@ -826,8 +831,8 @@ async function handleTool(name, args) {
 
     case "ownmind_get": {
       const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
-      // v1.17.13 Michelle case: session_log 存 session_logs 獨立表而非 memories，
-      // 轉呼 /api/session/recent 讓使用者寫 (ownmind_log_session) 讀 (ownmind_get) 一致
+      // v1.17.13 Michelle case: session_log lives in its own session_logs table rather than memories,
+      // so we proxy to /api/session/recent — keeping write (ownmind_log_session) and read (ownmind_get) consistent.
       if (args.type === 'session_log') {
         try {
           const rows = await callApi("GET", `/api/session/recent?days=30&include_compressed=true`);
@@ -868,7 +873,7 @@ async function handleTool(name, args) {
     case "ownmind_search": {
       const searchTokenParam = currentSyncToken ? `&sync_token=${currentSyncToken}` : '';
       try {
-        // v1.17.13 同時搜 memories + session_logs 合併（Michelle case）
+        // v1.17.13: search memories + session_logs together and merge (Michelle case).
         const [memoryRows, sessionRows] = await Promise.all([
           callApi("GET", `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`)
             .catch(() => []),
@@ -917,14 +922,14 @@ async function handleTool(name, args) {
       if (args.code !== undefined) body.code = args.code;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
-      // v1.19: 鐵律分級 — server 端會 validate 非鐵律不能設 tier
+      // v1.19: iron rule tiering — the server validates that non-iron-rule entries cannot set a tier.
       if (args.tier !== undefined) body.tier = args.tier;
 
-      // v1.18.2: iron_rule 自動 capture + 注入 origin_context (時空背景)
-      // - 技術部分 (cwd/git_branch/captured_at) 由 client 自動帶
-      // - 事件描述 (event/user_quote/confidence) 由 AI 主動帶 (透過 args.origin_event 等)
-      // - 沒帶 → confidence='unknown'、寫進 metadata 但不擋
-      // - body 自動 inject「## 起源」段落 (給未來 AI 看脈絡)
+      // v1.18.2: iron_rule auto-capture + inject origin_context (situational context).
+      // - Technical fields (cwd / git_branch / captured_at) are filled in by the client.
+      // - Event description (event / user_quote / confidence) is supplied by the AI via args.origin_event etc.
+      // - If absent → confidence='unknown'; written into metadata but not blocked.
+      // - The body is auto-injected with a "## Origin" section so future AIs see the context.
       if (args.type === 'iron_rule') {
         const oc = captureClientOriginContext({
           confidence: args.origin_confidence || (args.origin_event ? 'high' : 'unknown'),
@@ -932,7 +937,7 @@ async function handleTool(name, args) {
           userQuote: args.user_quote,
           relatedRules: args.related_rules,
         });
-        // git branch (best effort、git 沒裝就 skip)
+        // git branch (best-effort; skip if git is not installed)
         try {
           const branch = execSync('git rev-parse --abbrev-ref HEAD', {
             encoding: 'utf8', timeout: 1000, stdio: ['ignore', 'pipe', 'ignore'],
@@ -940,11 +945,11 @@ async function handleTool(name, args) {
           if (branch) oc.git_branch = branch;
         } catch { /* not a git repo */ }
 
-        // 寫進 metadata
+        // Write into metadata.
         body.metadata = body.metadata || {};
         body.metadata.origin_context = oc;
 
-        // 注入 body「## 起源」段落 (render from oc)
+        // Inject the "## Origin" body section (rendered from oc).
         body.content = injectOriginSection(body.content, oc);
       }
 
@@ -973,7 +978,7 @@ async function handleTool(name, args) {
       if (args.content !== undefined) body.content = args.content;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
-      // v1.19: 鐵律分級 — server 端會 validate 非鐵律不能改 tier
+      // v1.19: iron rule tiering — the server validates that non-iron-rule entries cannot change tier.
       if (args.tier !== undefined) body.tier = args.tier;
       try {
         const data = await callApi("PUT", `/api/memory/${args.id}`, body);
@@ -1074,14 +1079,15 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_delete_secret": {
-      // v1.17.91: 永久刪除一筆 secret。server 端會寫 activity_log audit
-      // （IR-002 不洩漏 value、只記 key 跟動作）
+      // v1.17.91: permanently delete a single secret. The server writes an activity_log audit
+      // entry (IR-002 — do not leak the value; only record the key and the action).
       return await callApi("DELETE", `/api/secret/${encodeURIComponent(args.key)}`);
     }
 
     case "ownmind_report_bug": {
-      // 兩階段確認流程：AI 在預覽前不該呼叫；後端會驗 confirm_string="送出"
-      // device_fingerprint 由本地動態算（白話：用作業系統提供的機器 ID 算雜湊）
+      // Two-stage confirmation flow: the AI must not call this before the preview;
+      // the server verifies confirm_string="送出".
+      // device_fingerprint is computed locally on demand (a hash of OS-provided machine identifiers).
       let deviceFingerprint = 'unknown';
       let fingerprintSource = 'unavailable';
       try {
@@ -1148,11 +1154,14 @@ async function handleTool(name, args) {
             const rules = getCachedVerifiableRules().filter(r =>
               r.metadata?.verification?.trigger?.includes(trigger)
             );
-            // v1.20.2 follow-up：讀檔案而非僅記憶體（in-memory）變數
-            // 背景：MCP 進程 ownmind_init 會把 complianceEvents 變數歸零、session 重啟（白話：MCP 進程重新啟動）就清空。
-            // pre-commit 鉤子讀 jsonl 檔案、不受 session 重啟影響。兩者用不同資料來源會導致行為不一致：
-            // 鉤子放行、但 ownmind_report_compliance 工具卻 status: blocked。
-            // 解法：把記憶體變數跟檔案合併、檔案是唯一可靠來源、記憶體只當當前 session 的 cache（白話：暫存）。
+            // v1.20.2 follow-up: read from the file rather than only the in-memory variable.
+            // Background: ownmind_init resets the complianceEvents variable in the MCP process,
+            // so anything in memory is wiped whenever the MCP process restarts. The pre-commit
+            // hook reads the jsonl file and is unaffected by restarts. Using two different
+            // sources leads to inconsistent behavior — the hook lets things through while
+            // ownmind_report_compliance reports status: blocked.
+            // Fix: merge the in-memory variable with the file; the file is the source of truth,
+            // memory is just a session-scoped cache.
             const fileEvents = readComplianceEvents();
             const mergedEvents = [...complianceEvents, ...fileEvents];
 
@@ -1222,7 +1231,7 @@ async function handleTool(name, args) {
         throw new Error(`No pending upload found (Session ID: ${args.session_id})`);
       }
       
-      // TTL 檢查 (10 分鐘)
+      // TTL check (10 minutes).
       if (Date.now() - pending.created_at > 10 * 60 * 1000) {
         pendingUploads.delete(args.session_id);
         throw new Error(`Upload session expired (Session ID: ${args.session_id}). Please call ownmind_upload_standard again.`);
@@ -1244,7 +1253,7 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_session_off": {
-      // v1.20.3：暫時關閉本 session 的 OwnMind 鉤子（lint + pre-commit）
+      // v1.20.3: temporarily disable this session's OwnMind hooks (lint + pre-commit).
       const sessionId = sessionStartTime ? String(sessionStartTime) : `noinit_${Date.now()}`;
       const existing = readSessionOffState();
       const alreadyOff = existing && existing.session_id === sessionId;
@@ -1253,7 +1262,7 @@ async function handleTool(name, args) {
       if (!ok) {
         return {
           status: 'error',
-          message: '寫狀態檔失敗、OwnMind 仍維持原狀（白話：沒關成功、鉤子還是會跑）',
+          message: 'Failed to write state file — OwnMind remains in its current state (in other words: the disable did not take effect, the hooks will still run).',
         };
       }
 
@@ -1263,14 +1272,14 @@ async function handleTool(name, args) {
         status: 'ok',
         already_off: !!alreadyOff,
         message: alreadyOff
-          ? 'OwnMind 已經是關閉狀態。新 session 自動恢復、或呼叫 ownmind_session_on 立即重開。'
-          : 'OwnMind 已暫時關閉（lint + commit 前檢查跳過）。新 session 自動恢復、或呼叫 ownmind_session_on 立即重開。關閉狀態下每 10 輪 AI 回應會在終端機提醒。',
+          ? 'OwnMind is already disabled. A new session will auto-restore, or call ownmind_session_on to re-enable immediately.'
+          : 'OwnMind is now temporarily disabled (lint + pre-commit check skipped). A new session will auto-restore, or call ownmind_session_on to re-enable immediately. While disabled, every 10 AI responses you will see a terminal reminder.',
         session_id: sessionId,
       };
     }
 
     case "ownmind_session_on": {
-      // v1.20.3：重新開啟本 session 的 OwnMind 鉤子
+      // v1.20.3: re-enable this session's OwnMind hooks.
       const existing = readSessionOffState();
       const wasOff = !!existing;
       clearSessionOffState();
@@ -1281,8 +1290,8 @@ async function handleTool(name, args) {
         status: 'ok',
         was_off: wasOff,
         message: wasOff
-          ? 'OwnMind 已重新開啟。下次 AI 回話 / git commit 鉤子恢復正常運作。'
-          : 'OwnMind 本來就是開啟狀態、無動作。',
+          ? 'OwnMind is re-enabled. The next AI response / git commit will run the hooks normally.'
+          : 'OwnMind was already enabled; no action taken.',
       };
     }
 
@@ -1301,20 +1310,22 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: TOOLS,
 }));
 
-// v1.17.41 — Codex round 4 review 修補：
-// 之前 v1.17.40 把 system 觀測寫成 action='comply' 是自欺，誠信問題。
-// 改成 action='observed_trigger'：誠實標示「系統觀測到 tool 被呼叫」，
-// 不假裝「已驗證遵守鐵律」。
-// 同時移除 handoff_create → IR-008/009/024 的過度推論（commit 規則該靠 git hook）。
+// v1.17.41 — Codex round 4 review fix:
+// In v1.17.40 we wrote system observations as action='comply', which is self-deceptive — an
+// integrity issue. Changed to action='observed_trigger': honestly says "the system observed
+// a tool being called", instead of pretending "iron rule compliance has been verified".
+// Also removed the handoff_create → IR-008/009/024 overreach (commit rules should be enforced
+// by the git hook).
 //
-// 三層語意：
-//   - observed_trigger（系統自動）= 系統看到觸發點，不證明遵守
-//   - comply（AI 主動 ownmind_report_compliance）= AI 聲稱遵守
-//   - verified_comply（未來預留）= git hook 等程式驗證過
+// Three-layer semantics:
+//   - observed_trigger (system-automatic) = the system saw a trigger point; it does NOT prove compliance.
+//   - comply (AI-initiated ownmind_report_compliance) = the AI claims compliance.
+//   - verified_comply (reserved for future) = independently verified by a git hook or similar.
 //
-// In-memory dedup：滑動時間窗（60s 內同 rule + tool 不重複算）
-// v1.17.59 改：原本用「分鐘 bucket」當 key，:59 → :00 邊界連打會被分到不同 bucket、
-// 兩次都通過。改成 Map<key, first_seen_ts> + sliding window，避免邊界 bug。
+// In-memory dedup: sliding time window (same rule + tool within 60s counts once).
+// v1.17.59 change: the original used a "minute bucket" as the key; :59 → :00 boundary hits
+// would land in different buckets and both pass. Switched to Map<key, first_seen_ts> +
+// sliding window to avoid the boundary bug.
 const _autoComplyDedup = new Map();
 function _dedupKey(name, ruleCode) {
   return `${ruleCode}|${name}`;
@@ -1322,15 +1333,16 @@ function _dedupKey(name, ruleCode) {
 
 async function autoComplyForToolCall(name, args, result) {
   const triggers = [];
-  // ownmind_disable rule → IR-006「學到東西必須全層同步更新」
-  // 觀測到「鐵律記憶被停用」這個 trigger，但不能證明 OpenSpec/skill 等其他層也同步
+  // ownmind_disable rule → IR-006 "anything learned must be synced across all layers".
+  // We observe the "iron rule memory was disabled" trigger, but cannot prove that other
+  // layers (OpenSpec, skills, etc.) were synced as well.
   if (name === 'ownmind_disable' &&
       (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule')) {
     triggers.push({
       rule_code: 'IR-006',
       rule_title: '學到東西必須全層同步更新',
       action: 'observed_trigger',
-      context: `停用鐵律 id=${args.id}（系統觀測到觸發點，未驗證全層同步）`,
+      context: `Iron rule disabled (id=${args.id}) — system observed the trigger; cross-layer sync not verified.`,
     });
   }
   // ownmind_save / ownmind_update with type=iron_rule
@@ -1341,19 +1353,19 @@ async function autoComplyForToolCall(name, args, result) {
       rule_code: 'IR-006',
       rule_title: '學到東西必須全層同步更新',
       action: 'observed_trigger',
-      context: `${name === 'ownmind_save' ? '新增' : '更新'}鐵律 id=${args.id || result?.id || '?'}（系統觀測，未驗證）`,
+      context: `Iron rule ${name === 'ownmind_save' ? 'added' : 'updated'} (id=${args.id || result?.id || '?'}) — system observed; not verified.`,
     });
   }
-  // 移除 handoff_create → IR-008/009/024 的過度推論
-  // Codex review：建立交接不能證明 commit 守了那些鐵律
-  // 那些是 git hook 該抓的，不是 MCP handoff handler 自動聲稱
+  // Removed the handoff_create → IR-008/009/024 overreach.
+  // Codex review: creating a handoff does NOT prove the commit followed those iron rules.
+  // Those belong to the git hook, not to the MCP handoff handler self-claiming compliance.
 
   for (const trig of triggers) {
-    // 去重：同一鐵律 60s 內同一 tool 只算一次（滑動視窗）
+    // Dedup: same iron rule + same tool within 60s counts once (sliding window).
     const key = _dedupKey(name, trig.rule_code);
     if (shouldSkipDuplicate(_autoComplyDedup, key, AUTO_COMPLY_DEDUP_TTL_MS)) continue;
 
-    // logEvent 失敗會自己寫 stderr，這裡額外 try/catch 不吞錯誤訊息
+    // logEvent writes to stderr on its own failure; the extra try/catch here MUST NOT swallow the message.
     try {
       logEvent('iron_rule_compliance', {
         rule_code: trig.rule_code,
@@ -1367,7 +1379,7 @@ async function autoComplyForToolCall(name, args, result) {
       console.error('[autoComply] logEvent failed:', sanitizeErrorMessage(e?.message));
     }
     try {
-      // 對齊 manual ownmind_report_compliance path（mcp/index.js:907）
+      // Aligned with the manual ownmind_report_compliance path (mcp/index.js:907).
       appendCompliance({
         event: trig.rule_code,
         action: trig.action,
@@ -1390,13 +1402,14 @@ async function autoComplyForToolCall(name, args, result) {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  // v1.18.9：量「user 看到 result 的真實感受時間」、含 broadcast / autoComply / compose
+  // v1.18.9: measure "the latency the user actually feels before seeing the result",
+  // including broadcast / autoComply / compose.
   const startedAt = Date.now();
 
   try {
     const result = await handleTool(name, args || {});
-    // v1.17.40: 自動代呼 iron_rule_compliance（不阻擋主流程）
-    // v1.17.41: 不再 silent — 錯誤寫 stderr 至少能 debug
+    // v1.17.40: auto-invoke iron_rule_compliance on the side (never blocks the main flow).
+    // v1.17.41: no longer silent — errors go to stderr so at least debugging is possible.
     autoComplyForToolCall(name, args || {}, result).catch((e) => {
       console.error('[autoComply] failed:', sanitizeErrorMessage(e?.message));
     });
@@ -1404,17 +1417,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const tag = formatTag(typeName);
     const body = typeof result === "string" ? result : JSON.stringify(result, null, 2);
 
-    // v1.17.0 P4：每次 ownmind_* tool call 後 ping server 要廣播注入
-    // 不 block 主流程：fetch 失敗 → 靜默 skip（不該因廣播掛掉 tool）
+    // v1.17.0 P4: after every ownmind_* tool call, ping the server to request broadcast injection.
+    // Never block the main flow: fetch failure → silent skip (a broadcast must not break the tool).
     const broadcastText = await fetchBroadcastsSafely();
 
-    // v1.18.9：成功 path 寫 mcp_call event 含 latency_ms
+    // v1.18.9: success path writes an mcp_call event including latency_ms.
     logMcpCallSafe({ logEvent, tool: name, latencyMs: Date.now() - startedAt, status: 'ok' });
 
-    // v1.17.69：合併成單一 text part。v1.17.0~v1.17.68 用 4 個獨立 part（broadcast /
-    // 前綴行 / body / tip），多數 client 順序合併能看到全部，但 Claude Code 的 UI
-    // 摺疊卡片會吃掉多 part 之間的視覺、最後一段的 tip 完全藏起來。改成一段所有
-    // client 一致。語意：v1.17.7 起 tip 每次都附（不是每 10 次一次）。
+    // v1.17.69: combine into a single text part. v1.17.0–v1.17.68 used 4 separate parts
+    // (broadcast / prefix line / body / tip); most clients render them in order so the user
+    // sees everything, but Claude Code's UI folds the card and visually swallows the gap
+    // between parts — the final tip is completely hidden. Combining into one part is
+    // consistent across all clients. Semantics: since v1.17.7 the tip is attached every time
+    // (not once every 10 calls).
     return composeToolResponse({
       broadcastText,
       tag,
@@ -1423,11 +1438,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       tipTag: formatTag('Tip'),
     });
   } catch (error) {
-    // v1.18.9：error path 也帶 latency_ms（既有 enrichErrorDetails 結果再 spread 進去）
+    // v1.18.9: error path also carries latency_ms (spread alongside the existing enrichErrorDetails result).
     const latencyMs = Date.now() - startedAt;
     logEvent('error', { ...enrichErrorDetails(error, name, args), latency_ms: latencyMs });
     logMcpCallSafe({ logEvent, tool: name, latencyMs, status: 'error' });
-    const tag = formatTag('錯誤回報');
+    const tag = formatTag('Error report');
     return {
       content: [
         {
@@ -1441,12 +1456,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // --- Auto-update check (background, non-blocking) ---
-// v1.17.22 修：Eric (Windows LAPTOP-G95HIQ3V) / Adam 卡舊版的 root cause
-//   1. process.env.HOME 在 Windows 是 undefined，OWNMIND_DIR 變相對路徑 → 整段 silent skip
-//      → 改用 os.homedir()（跨平台 — Windows 自動讀 USERPROFILE）
-//   2. exec(bashScript) 的 bash 語法在 Windows cmd 解釋失敗 → 即使路徑對也不會升
-//      → 改用 execFile 走 git/npm 二進位，跨平台
-//   3. 條件不成立時原本 silent return → 加 update_skipped event 提供觀測
+// v1.17.22 fix: root cause of Eric (Windows LAPTOP-G95HIQ3V) / Adam being stuck on old versions:
+//   1. process.env.HOME is undefined on Windows; OWNMIND_DIR became a relative path, so the
+//      whole block silently skipped. → switched to os.homedir() (cross-platform — reads
+//      USERPROFILE on Windows automatically).
+//   2. exec(bashScript) — the bash syntax can't be interpreted by Windows cmd, so even
+//      when the path resolved correctly, no upgrade happened. → switched to execFile on
+//      the git/npm binaries, cross-platform.
+//   3. The branch where no condition holds originally did a silent return → added an
+//      update_skipped event for observability.
 const OWNMIND_DIR = path.join(os.homedir(), '.ownmind');
 const MARKER_FILE = path.join(OWNMIND_DIR, '.last-mcp-update-check');
 const LOCK_FILE = path.join(OWNMIND_DIR, '.update-lock');
@@ -1457,9 +1475,10 @@ import { execFile as _execFile } from 'child_process';
 import { promisify } from 'util';
 const execFile = promisify(_execFile);
 
-// v1.17.60: 用 module-scope 旗標讓「runAutoUpdate 內部」與「外層 catch」共享狀態。
-// 之前外層 catch 一律 unlinkSync(LOCK_FILE)，未來若引入「acquire lock 之前 throw」
-// 的路徑，會誤刪別 process 的 lock。改成只在自己持有時才 cleanup。
+// v1.17.60: use a module-scope flag so "inside runAutoUpdate" and "the outer catch" share state.
+// Previously the outer catch unconditionally called unlinkSync(LOCK_FILE). If a future path
+// introduces a "throw before acquiring the lock" case, this would delete another process's
+// lock. Now we only cleanup if we actually hold the lock ourselves.
 let _lockHeld = false;
 
 async function runAutoUpdate() {
@@ -1476,7 +1495,8 @@ async function runAutoUpdate() {
     } catch {}
   }
 
-  // Skip-reason 觀測 — 先前 silent skip 讓 Eric/Adam 卡舊版完全沒人發現
+  // Skip-reason observability — earlier silent-skip behavior meant Eric/Adam stayed on
+  // old versions and nobody noticed.
   if (lastCheck === today) {
     logEvent('update_skipped', { source: 'mcp', reason: 'marker_today' });
     return;
@@ -1486,8 +1506,9 @@ async function runAutoUpdate() {
     return;
   }
 
-  // v1.17.23: atomic lock acquire — 之前 existsSync + writeFileSync 有 TOCTOU race
-  // openSync 'wx' = exclusive create，已存在會拋 EEXIST（可區分 lock_held vs disk error）
+  // v1.17.23: atomic lock acquire — the previous existsSync + writeFileSync had a TOCTOU race.
+  // openSync 'wx' = exclusive create; if the file already exists it throws EEXIST
+  // (lets us distinguish lock_held vs disk error).
   try {
     const fd = fs.openSync(LOCK_FILE, 'wx');
     fs.closeSync(fd);
@@ -1496,8 +1517,7 @@ async function runAutoUpdate() {
     if (e.code === 'EEXIST') {
       logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
     } else {
-      // v1.18.8: 重構用 errorAliasFields helper、跟 'error' event 共用結構化邏輯
-      // error: e.code || e.message 保留原 fallback（向後相容）
+      // v1.18.8: use errorAliasFields helper (shared with 'error' event); legacy `error` field preserved.
       logEvent('update_failed', {
         source: 'mcp',
         step: 'lock',
@@ -1532,7 +1552,7 @@ async function runAutoUpdate() {
       return fail('fetch', e);
     }
 
-    // 看有沒有新 commit
+    // Check whether there are new commits.
     let updates = '';
     try {
       const { stdout } = await execFile(
@@ -1551,12 +1571,14 @@ async function runAutoUpdate() {
       return;
     }
 
-    // 有新版，繼續
-    // v1.17.23: 用 --autostash（git 2.6+）取代手動 stash／無 pop 流程
-    // 之前手動 stash 但沒 pop，user 未提交變更會永遠卡 stash 裡
-    // v1.17.65: fallback 不再帶 --autostash（之前主路徑跟 fallback 都帶 --autostash，
-    // git < 2.6 兩條都失敗等於沒 fallback）。改 --ff-only：dirty tree 會拒絕並 logEvent，
-    // user 看 log 自己處理；絕不做手動 stash（v1.17.22 已驗證沒 pop 會吞變更）。
+    // New version detected, continue.
+    // v1.17.23: use --autostash (git 2.6+) instead of the manual-stash / no-pop flow.
+    // The old manual stash never popped, so uncommitted user changes got stuck in the stash forever.
+    // v1.17.65: the fallback no longer passes --autostash. Previously both the main path and
+    // the fallback used --autostash, so on git < 2.6 both failed — there was effectively no
+    // fallback. Switched to --ff-only: a dirty tree is rejected and we logEvent it so the user
+    // can fix it themselves. We must NEVER do a manual stash (v1.17.22 proved it eats changes
+    // when not popped).
     try {
       await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
         { cwd: OWNMIND_DIR, timeout: 30000 });
@@ -1569,10 +1591,11 @@ async function runAutoUpdate() {
       }
     }
 
-    // npm install — Windows 必須用 npm.cmd 並走 shell。
-    // v1.17.62: Node v18.20.2 / v20.12.2 / v21.7.3 起為 CVE-2024-27980 修補，禁止 execFile
-    // 直接跑 .cmd / .bat 檔，要 shell:true 才行。Adam 的 update_failed step=npm error=EINVAL
-    // 就是這個。Mac / Linux 不受影響，所以只在 Windows 開 shell。
+    // npm install — on Windows we must use npm.cmd and go through the shell.
+    // v1.17.62: as of Node v18.20.2 / v20.12.2 / v21.7.3 (CVE-2024-27980 patch), execFile
+    // can no longer run .cmd / .bat files directly — shell:true is required. Adam's
+    // update_failed step=npm error=EINVAL was exactly this. Mac / Linux are unaffected,
+    // so we only enable the shell on Windows.
     try {
       await execFile(NPM_CMD, ['install', '-q'], {
         cwd: path.join(OWNMIND_DIR, 'mcp'),
@@ -1584,7 +1607,7 @@ async function runAutoUpdate() {
       return fail('npm', e);
     }
 
-    // 同步 skill / hook：Unix 跑 update.sh、Windows 跑 update.ps1
+    // Sync skill / hook: run update.sh on Unix, update.ps1 on Windows.
     try {
       if (IS_WINDOWS) {
         await execFile(
@@ -1605,12 +1628,15 @@ async function runAutoUpdate() {
     try { fs.writeFileSync(MARKER_FILE, today); } catch {}
     logEvent('update_applied', { source: 'mcp' });
 
-    // v1.17.62: 升級成功後重發一次心跳，讀磁碟上**新版** package.json，
-    // 不等 user 重啟 AI 工具就讓 server 看到新版號。
-    // 為什麼要這樣：CLIENT_VERSION 是 module-load 時 cache 的常數，自動更新後磁碟更新但
-    // 這個 process 記憶體裡還是舊值。先前的 sendMcpHeartbeat 用 cached 值且 heartbeatSent
-    // 旗標每個 process 只送一次心跳 → 長跑的 MCP process 永遠回報舊版號（Michelle / Eric 卡住的原因）。
-    // 跑 5 秒 timeout（callApi 本身沒 timeout）；失敗就 log 一個觀測 event。
+    // v1.17.62: after a successful upgrade, re-send one heartbeat that reads the **new**
+    // package.json from disk, so the server sees the new version without waiting for the user
+    // to restart their AI tool.
+    // Why: CLIENT_VERSION is a constant cached at module-load time; after auto-update the disk
+    // is fresh but this process's in-memory value is still old. The previous sendMcpHeartbeat
+    // used the cached value, and the heartbeatSent flag only fires once per process — so a
+    // long-running MCP process would forever report the old version (the root cause of
+    // Michelle / Eric being stuck).
+    // 5-second timeout (callApi itself has no timeout); on failure, log an observation event.
     try {
       const rootPkg = new URL('../package.json', import.meta.url);
       const freshVersion = JSON.parse(fs.readFileSync(rootPkg, 'utf8')).version;
@@ -1629,7 +1655,7 @@ async function runAutoUpdate() {
         ]);
       }
     } catch (e) {
-      // 失敗就 log，方便 dashboard 監看新版補心跳的有效性
+      // Log on failure so the dashboard can monitor how reliable the post-upgrade heartbeat is.
       try {
         logEvent('update_heartbeat_failed', {
           source: 'mcp',
@@ -1642,9 +1668,9 @@ async function runAutoUpdate() {
   }
 }
 
-// fire-and-forget — 不阻塞 MCP 啟動
-// v1.17.23: catch 不再 silent — 任何意外都寫 update_failed step=outer
-// v1.17.60: 只在自己持有 lock 時才 cleanup，避免誤刪別 process 的 lock
+// Fire-and-forget — must not block MCP startup.
+// v1.17.23: the catch is no longer silent — any unexpected error writes update_failed step=outer.
+// v1.17.60: only cleanup when we actually hold the lock, to avoid deleting another process's lock.
 runAutoUpdate().catch((e) => {
   try {
     logEvent('update_failed', {
@@ -1659,29 +1685,29 @@ runAutoUpdate().catch((e) => {
   }
 });
 
-// --- Emergency shutdown: 保存 session log ---
+// --- Emergency shutdown: persist the session log ---
 async function emergencySessionLog(reason = 'mcp_shutdown') {
   if (sessionLogged || !sessionStartTime) return;
   const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);
-  if (totalCalls <= 1) return; // 只有 init，不記錄
-  sessionLogged = true; // 防止重複觸發
+  if (totalCalls <= 1) return; // only init was called — don't log
+  sessionLogged = true; // prevent repeated triggers
 
   const summary = `[auto] ${AUTO_PROJECT ? AUTO_PROJECT + ' · ' : ''}${Object.entries(toolCallCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
-  // v1.17.37: 自動帶 project + duration_turns 讓報告頁能歸類專案
-  const turns = Math.max(1, Math.round(totalCalls / 2));  // 估算對話輪次（每 turn 約 2 個 tool call）
+  // v1.17.37: auto-attach project + duration_turns so the report page can group by project.
+  const turns = Math.max(1, Math.round(totalCalls / 2));  // estimate conversation turns (~2 tool calls per turn)
   const details = {
     _recovery: reason,
-    project: AUTO_PROJECT || undefined,  // ⚠️ undefined 會被 sanitizeDetails 移除
+    project: AUTO_PROJECT || undefined,  // ⚠️ undefined gets stripped by sanitizeDetails
     duration_ms: Date.now() - sessionStartTime,
     duration_turns: turns,
     tool_calls: { ...toolCallCounts },
     compliance: [...complianceEvents],
   };
 
-  // 1. 寫入本地日誌 JSONL（防斷電、網路中斷）
+  // 1. Write to the local JSONL log (resilient to power loss / network outage).
   logEvent('session_log_emergency', { summary, ...details });
 
-  // 2. best-effort POST to server，加逾時
+  // 2. best-effort POST to server, with timeout
   try {
     await Promise.race([
       callApi('POST', '/api/session', {
@@ -1698,15 +1724,16 @@ async function emergencySessionLog(reason = 'mcp_shutdown') {
   }
 }
 
-// v1.17.37: 多種退出 signal 都觸發 — SIGTERM/SIGINT 是 graceful，
-// SIGHUP 是 terminal close、process.on('exit') 是同步保險最後機會
+// v1.17.37: trigger on multiple exit signals — SIGTERM/SIGINT for graceful exit,
+// SIGHUP for terminal close, process.on('exit') as the synchronous last-chance fallback.
 for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP', 'SIGQUIT']) {
   process.on(sig, async () => {
     await emergencySessionLog('signal_' + sig);
     process.exit(0);
   });
 }
-// 'exit' 是同步事件，async 寫入沒法完成；只能 fire-and-forget logEvent (本地 JSONL)
+// 'exit' is a synchronous event — async writes can't complete; we can only fire-and-forget
+// logEvent (which writes to the local JSONL).
 process.on('exit', () => {
   if (!sessionLogged && sessionStartTime) {
     const totalCalls = Object.values(toolCallCounts).reduce((a, b) => a + b, 0);

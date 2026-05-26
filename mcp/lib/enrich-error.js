@@ -1,19 +1,21 @@
 /**
  * mcp/lib/enrich-error.js — v1.18.6
  *
- * 為什麼：
- *   過去 error event 只記 { tool_name, error }、缺結構化欄位（http_status / stack /
- *   payload type 等）→ 觀測缺口。改成豐富 details、保留 error 欄位向後相容。
+ * Why:
+ *   Previously the error event only recorded { tool_name, error } and lacked structured fields
+ *   (http_status / stack / payload type, etc.) → observability gap. Switched to richer details
+ *   while keeping the `error` field for backward compatibility.
  *
- * 設計：純 function、好測試、不依賴外部狀態。
+ * Design: pure functions, test-friendly, no external state.
  */
 
 /**
- * v1.18.8：抽出共用 helper。
+ * v1.18.8: extracted as a shared helper.
  *
- * 任何「err → 結構化欄位」邏輯都用這個、給多個 logEvent 寫入點共用（error event /
- * update_failed event / 未來其他）。回傳的物件不含 error / tool_name 等 caller-specific
- * 欄位、由 caller 自己組裝。
+ * Any "err → structured fields" logic should go through this helper so multiple logEvent
+ * call sites can share it (the error event, the update_failed event, future events).
+ * The returned object does NOT contain caller-specific fields like `error` / `tool_name` —
+ * callers compose those themselves.
  *
  * @param {Error|string|null} error
  * @returns {object} - { error_message, error_name, error_code?, stack?, http_status? }
@@ -34,21 +36,21 @@ export function errorAliasFields(error) {
 }
 
 /**
- * 把 Error 物件變成豐富的 details object 給 MCP tool error event 用。
+ * Turn an Error object into a rich details object for the MCP tool error event.
  *
- * @param {Error|string|null} error - 原 error 物件（Error / string / null）
- * @param {string} toolName - MCP 工具名（ownmind_save / ownmind_update / ...）
- * @param {object|null} args - MCP tool 呼叫的 args（用來算 payload_summary）
+ * @param {Error|string|null} error - original error object (Error / string / null)
+ * @param {string} toolName - MCP tool name (ownmind_save / ownmind_update / ...)
+ * @param {object|null} args - MCP tool call args (used to compute payload_summary)
  * @returns {object} - { error, error_message, error_name, tool_name, stack?, http_status?, payload_summary? }
  */
 export function enrichErrorDetails(error, toolName, args) {
   const fields = errorAliasFields(error);
   const details = {
-    error: fields.error_message,           // 向後相容（v1.17.x~v1.18.5 都用這欄）
+    error: fields.error_message,           // backward compatible (used by v1.17.x ~ v1.18.5)
     ...fields,
     tool_name: toolName,
   };
-  // payload summary（不洩漏敏感資料、只記結構欄位）
+  // payload summary (do not leak sensitive content — only record structural fields)
   if (args && typeof args === 'object') {
     const summary = {};
     if (args.type) summary.type = args.type;
