@@ -36,7 +36,29 @@
 - **一般使用者**：等下一輪 OwnMind 廣播升級（`/ownmind upgrade` 或互動式升級腳本）會自動拿到新訊息。
 - **本機急用**：可手動同步 `cp shared/verification.js ~/.ownmind/shared/verification.js`（只影響自己這台、不影響廣播）。
 
-**Follow-up patch（同 v1.20.2 版本內、不另開版號）：**
+**Follow-up patch #2（同 v1.20.2 版本內、不另開版號）：**
+
+Vin 報 bug：每次寫 OwnMind 都會碰到 `API 409: 請先呼叫 ownmind_init 取得 sync_token 後再進行寫入操作`、要手動 init 再重試。AI 在本次工作中也連續踩 3 次同樣的坑。
+
+**根本原因**：`sync_token`（白話：每個 user 在伺服器端的版本標記、每次寫操作會被遞增）的設計用意是防止「拿過時資料覆蓋伺服器」。但 user 同時開多個 AI session 時、A session 的 token 會被 B session 的寫入 bump（白話：版本標記前進、舊的就失效）、A 再寫就 409。
+
+**證據**：本次 session 期間 active_handoff 從 id=68 跳到 id=70、表示另一個 AI session 建了新 handoff、bump 了伺服器 token、這個 session 的 currentSyncToken 變過時。
+
+**修法**：MCP 端 `callApi` 函式內部加自動重試邏輯（mcp/index.js）：寫入操作收到 409 且訊息含 `sync_token` 字眼時、自動打輕量端點 `GET /api/memory/sync-token` 拿新 token、更新 body、retry 一次。對 AI 完全透明、不用手動 init。
+
+**改動**：
+- **`mcp/lib/sync-token-retry.js`**（新）：抽出兩個純函式 helper `shouldRetryForSyncToken` 跟 `applyNewToken`、可獨立測試
+- **`mcp/index.js`**：`callApi` 加 `_retried` 參數防無限循環、攔 409 sync_token 錯誤自動 retry；加 `refreshSyncToken()` 用 GET 端點拿新 token、副作用零（不會 reset complianceEvents 等 init 副作用）
+- **`tests/auto-retry-sync-token.test.js`**（新）：17 個 case 守備 helper 邏輯（含 GET 不該 retry、500 不該 retry、訊息不含 sync_token 不該 retry、newToken null 不該覆蓋等防呆 case）
+
+**限制**：
+- 只 retry 1 次、避免無限循環
+- 只對寫入操作（非 GET / HEAD）
+- 必須真的是 sync_token 過時錯誤（訊息含 `sync_token` 字眼）、其他 409 不會誤 retry
+
+測試: `npm test` 1912/1912 全綠（v1.20.2 主 fix 1892 + follow-up #1 3 個 + follow-up #2 17 個 = 1912）。
+
+**Follow-up patch #1（同 v1.20.2 版本內、不另開版號）：**
 
 修主 fix 上線後實測發現的副作用 bug — MCP 工具 `ownmind_report_compliance` 的 autoComply（白話：合規呼叫後自動再跑一次鉤子檢查的機制）用記憶體變數 `complianceEvents`、session 重啟（白話：MCP 進程重新啟動）就清空。pre-commit 鉤子讀 jsonl 檔案、不受影響。兩者資料來源不一致導致：鉤子放行、但 `ownmind_report_compliance` 工具回 `status: blocked`。
 
