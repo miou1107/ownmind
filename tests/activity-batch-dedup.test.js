@@ -7,35 +7,37 @@ import { insertActivityLog, normalizeClientEventId, UUID_V4_REGEX }
   from '../src/utils/activity-insert.js';
 
 /**
- * v1.17.98 — POST /api/activity/batch dedup 測試
+ * v1.17.98 — POST /api/activity/batch dedup tests
  *
- * v1.17.99 update：原本 simplified copy 改用真 handler 的 helper（src/utils/activity-insert.js）
- * — 同一份 dedup INSERT 邏輯被真 handler 跟測試共用、徹底解掉 v1.17.98 review I1 limitation
- * （test 跟 prod 邏輯漂移風險）。
+ * v1.17.99 update: the simplified copy was replaced with the real handler's
+ * helper (src/utils/activity-insert.js) so the dedup INSERT logic is shared
+ * between the real handler and the tests — this fully resolves the
+ * v1.17.98 review I1 limitation (drift risk between test and prod logic).
  *
- * 直接 stub query 函式驗證 SQL 行為：
- *   - INSERT 含 client_event_id 欄位
- *   - 用 ON CONFLICT (user_id, client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING
- *   - 沒帶 client_event_id 的事件 → NULL、不會被 unique index 卡（partial index）
- *   - 重複 client_event_id → server 跳過、回 deduped 計數
- *   - 非合法 UUID v4 → 當 NULL 處理（防 client 亂塞 string）
+ * Stub the query function and verify the SQL behavior directly:
+ *   - INSERT contains the client_event_id column
+ *   - Uses ON CONFLICT (user_id, client_event_id) WHERE client_event_id IS NOT NULL DO NOTHING
+ *   - Events with no client_event_id → NULL, not blocked by the unique index (partial index)
+ *   - Repeated client_event_id → server skips, returns the deduped count
+ *   - Invalid UUID v4 → treated as NULL (so a client cannot stuff in a random string)
  */
 
-// 模擬 PG row format
+// Mimic the PG row format.
 function ok(rows) { return { rows }; }
 
 /**
- * 把假 query 注入 router 用的 query function
- *   state.inserted: 已存的 (user_id, client_event_id) 集合（模擬 unique index）
- *   state.captured: 每次 INSERT 的 SQL + params（給斷言檢查）
+ * Build the fake `query` function the router consumes.
+ *   state.inserted: the set of (user_id, client_event_id) already stored
+ *                   (mimics the unique index)
+ *   state.captured: every INSERT's SQL + params (used by assertions)
  */
 function makeFakeQuery(state) {
   return async (sql, params) => {
     if (/INSERT INTO activity_logs/.test(sql)) {
       state.captured.push({ sql, params });
-      // v1.17.98 兩條 path：
-      //   無 ON CONFLICT 子句 → 一定 insert（NULL client_event_id path）
-      //   有 ON CONFLICT 子句 → 第 7 個 param 是 client_event_id、模擬 partial unique
+      // v1.17.98 has two paths:
+      //   no ON CONFLICT clause      → always insert (NULL client_event_id path)
+      //   ON CONFLICT clause present → 7th param is client_event_id; mimic partial unique
       const hasOnConflict = /ON CONFLICT/.test(sql);
       if (!hasOnConflict) {
         return ok([{ id: state.captured.length }]);
@@ -47,7 +49,7 @@ function makeFakeQuery(state) {
       state.inserted.add(`${params[0]}::${clientId}`);
       return ok([{ id: state.captured.length }]);
     }
-    // memoryLookup 返回 null 讓 enrich 走 fallback
+    // memoryLookup returns null so enrich falls through to the fallback.
     if (/SELECT type, code, title FROM memories/.test(sql)) {
       return ok([]);
     }
@@ -56,10 +58,11 @@ function makeFakeQuery(state) {
 }
 
 /**
- * 建一個只掛 batch 路由的 mini app — 直接呼叫真 helper（v1.17.99）
+ * Build a mini Express app that mounts only the batch route, calling the real
+ * helper (v1.17.99).
  *
- * Handler 用真 helper insertActivityLog + normalizeClientEventId、
- * 確保 test 走的程式跟 prod handler 100% 一致（解 v1.17.98 review I1）。
+ * The handler uses the real helper insertActivityLog + normalizeClientEventId so
+ * the test exercises 100% of the prod-handler code path (closes v1.17.98 review I1).
  */
 async function buildApp(state) {
   const router = Router();
@@ -115,9 +118,9 @@ async function postBatch(app, events) {
   });
 }
 
-// v1.17.99 — 直接打真 helper 的單元測試（最快、不用 spin 整個 express）
-describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handler 同程式）', () => {
-  it('clientEventId === null → 純 INSERT、不帶 ON CONFLICT、6 個 params', async () => {
+// v1.17.99 — direct unit test against the real helper (fastest; no full Express spin-up).
+describe('v1.17.99 — insertActivityLog helper (called directly, same code as prod handler)', () => {
+  it('clientEventId === null → plain INSERT, no ON CONFLICT, 6 params', async () => {
     const state = { inserted: new Set(), captured: [] };
     const fakeQuery = makeFakeQuery(state);
     const r = await insertActivityLog(fakeQuery, {
@@ -126,11 +129,11 @@ describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handle
     });
     assert.equal(r.inserted, true);
     assert.equal(state.captured.length, 1);
-    assert.ok(!/ON CONFLICT/.test(state.captured[0].sql), 'NULL path 不該帶 ON CONFLICT');
+    assert.ok(!/ON CONFLICT/.test(state.captured[0].sql), 'NULL path must not include ON CONFLICT');
     assert.equal(state.captured[0].params.length, 6);
   });
 
-  it('合法 UUID v4 → ON CONFLICT path、7 個 params、第一次 inserted=true', async () => {
+  it('valid UUID v4 → ON CONFLICT path, 7 params, first call inserted=true', async () => {
     const state = { inserted: new Set(), captured: [] };
     const fakeQuery = makeFakeQuery(state);
     const id = '11111111-2222-4333-8444-555555555555';
@@ -144,7 +147,7 @@ describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handle
     assert.equal(state.captured[0].params[6], id);
   });
 
-  it('同 (userId, clientEventId) 第二次 → inserted=false（dedup）', async () => {
+  it('same (userId, clientEventId) twice → inserted=false (dedup)', async () => {
     const state = { inserted: new Set(), captured: [] };
     const fakeQuery = makeFakeQuery(state);
     const id = '22222222-3333-4444-8555-666666666666';
@@ -155,24 +158,24 @@ describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handle
     const r1 = await insertActivityLog(fakeQuery, args);
     const r2 = await insertActivityLog(fakeQuery, args);
     assert.equal(r1.inserted, true);
-    assert.equal(r2.inserted, false, '第二次同 id 必須 inserted=false');
+    assert.equal(r2.inserted, false, 'second call with the same id must be inserted=false');
   });
 
-  it('normalizeClientEventId — 空 string / 非 string / 非 UUID → null', () => {
+  it('normalizeClientEventId — empty string / non-string / non-UUID → null', () => {
     assert.equal(normalizeClientEventId(null), null);
     assert.equal(normalizeClientEventId(undefined), null);
     assert.equal(normalizeClientEventId(''), null);
     assert.equal(normalizeClientEventId(123), null);
     assert.equal(normalizeClientEventId({}), null);
     assert.equal(normalizeClientEventId('not-a-uuid'), null);
-    // UUID v1（位置 13 不是 4）
+    // UUID v1 (position 13 is not 4).
     assert.equal(normalizeClientEventId('11111111-2222-1111-8444-555555555555'), null);
-    // UUID v3 / v5 也不接（只接 v4）
+    // UUID v3 / v5 are also rejected (only v4 is accepted).
     assert.equal(normalizeClientEventId('11111111-2222-3333-8444-555555555555'), null);
     assert.equal(normalizeClientEventId('11111111-2222-5333-8444-555555555555'), null);
   });
 
-  it('normalizeClientEventId — 合法 UUID v4（含大寫 / 混合大小寫）→ 原樣回', () => {
+  it('normalizeClientEventId — valid UUID v4 (upper / mixed case) → returned as-is', () => {
     const v4lower = '11111111-2222-4333-8444-555555555555';
     const v4upper = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
     const v4mixed = 'Aa1Bb2Cc-3333-4abc-8DEF-aaaaaaaaaaaa';
@@ -181,7 +184,7 @@ describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handle
     assert.equal(normalizeClientEventId(v4mixed), v4mixed);
   });
 
-  it('UUID_V4_REGEX export 對齊（給其他 module 重用）', () => {
+  it('UUID_V4_REGEX export aligned (reused by other modules)', () => {
     assert.ok(UUID_V4_REGEX instanceof RegExp);
     assert.ok(UUID_V4_REGEX.test('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'));
     assert.ok(!UUID_V4_REGEX.test('aaaaaaaa-bbbb-1ccc-8ddd-eeeeeeeeeeee'));  // v1
@@ -189,36 +192,36 @@ describe('v1.17.99 — insertActivityLog helper（直接呼叫、與 prod handle
 });
 
 describe('v1.17.98 — POST /api/activity/batch client_event_id dedup', () => {
-  it('有 client_event_id 時 — SQL 含欄位 + ON CONFLICT 子句', async () => {
+  it('with client_event_id — SQL contains the column + ON CONFLICT clause', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const id = '11111111-2222-4333-8444-555555555555';
     await postBatch(app, [{ ts: '2026-05-13T00:00:00Z', event: 'iron_rule_compliance', client_event_id: id }]);
 
     assert.equal(state.captured.length, 1);
-    assert.match(state.captured[0].sql, /client_event_id/, 'SQL 必須含 client_event_id 欄位');
+    assert.match(state.captured[0].sql, /client_event_id/, 'SQL must contain the client_event_id column');
     assert.match(state.captured[0].sql, /ON CONFLICT[\s\S]*client_event_id[\s\S]*DO NOTHING/i,
-      'SQL 必須有 ON CONFLICT DO NOTHING 子句');
+      'SQL must contain the ON CONFLICT DO NOTHING clause');
     assert.match(state.captured[0].sql, /WHERE client_event_id IS NOT NULL/i,
-      'ON CONFLICT 必須限定 client_event_id IS NOT NULL（partial unique index）');
-    assert.equal(state.captured[0].params[6], id, '第 7 個 param 必須是 client_event_id');
+      'ON CONFLICT must restrict to client_event_id IS NOT NULL (partial unique index)');
+    assert.equal(state.captured[0].params[6], id, 'the 7th param must be the client_event_id');
   });
 
-  // v1.17.98 review B1 — NULL client_event_id 必須走純 INSERT、不能帶 ON CONFLICT
-  it('沒帶 client_event_id 時 — SQL 不該帶 ON CONFLICT 子句（避免 partial index inference 邊界）', async () => {
+  // v1.17.98 review B1 — NULL client_event_id must go through plain INSERT, never ON CONFLICT.
+  it('without client_event_id — SQL must not contain ON CONFLICT (avoid partial-index inference edge cases)', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     await postBatch(app, [{ ts: '2026-05-13T00:00:00Z', event: 'memory_save' }]);
 
     assert.equal(state.captured.length, 1);
     assert.ok(!/ON CONFLICT/.test(state.captured[0].sql),
-      'NULL client_event_id 必須走純 INSERT、不帶 ON CONFLICT — 即使理論上 partial index 該排除 NULL row、保守起見不依賴 inference 邊界');
+      'NULL client_event_id must go through plain INSERT, no ON CONFLICT — even though the partial index theoretically excludes NULL rows, we do not rely on inference edge cases');
     assert.ok(!/client_event_id/.test(state.captured[0].sql),
-      'NULL path 也不該寫 client_event_id 欄位（讓 DB default NULL）');
-    assert.equal(state.captured[0].params.length, 6, 'NULL path 應該只有 6 個 params');
+      'NULL path must not even write the client_event_id column (let the DB default to NULL)');
+    assert.equal(state.captured[0].params.length, 6, 'NULL path should have only 6 params');
   });
 
-  it('合法 UUID v4 重複送 → 第二次 dedup、回 deduped=1', async () => {
+  it('valid UUID v4 sent twice → second is deduped; returns deduped=1', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -229,11 +232,11 @@ describe('v1.17.98 — POST /api/activity/batch client_event_id dedup', () => {
     assert.equal(r1.body.deduped, 0);
 
     const r2 = await postBatch(app, [ev]);
-    assert.equal(r2.body.inserted, 0, '第二次同 id 必須被 dedup');
+    assert.equal(r2.body.inserted, 0, 'second call with the same id must be deduped');
     assert.equal(r2.body.deduped, 1);
   });
 
-  it('沒帶 client_event_id（舊 client）→ 走純 INSERT path、每次都 insert', async () => {
+  it('no client_event_id (legacy client) → plain INSERT path, inserts every time', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const ev = { ts: '2026-05-13T00:00:00Z', event: 'iron_rule_compliance' };
@@ -241,34 +244,34 @@ describe('v1.17.98 — POST /api/activity/batch client_event_id dedup', () => {
     const r1 = await postBatch(app, [ev]);
     const r2 = await postBatch(app, [ev]);
     assert.equal(r1.body.inserted, 1);
-    assert.equal(r2.body.inserted, 1, '沒帶 client_event_id 的事件不該被 dedup');
-    // NULL path：純 INSERT、不帶 ON CONFLICT、不寫 client_event_id 欄位
+    assert.equal(r2.body.inserted, 1, 'events without a client_event_id must not be deduped');
+    // NULL path: plain INSERT, no ON CONFLICT, no client_event_id column.
     assert.ok(!/ON CONFLICT/.test(state.captured[0].sql));
     assert.equal(state.captured[0].params.length, 6);
   });
 
-  it('非合法 UUID 字串（亂塞）→ 走純 INSERT path（當 NULL）', async () => {
+  it('invalid UUID string (random garbage) → plain INSERT path (treated as NULL)', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const ev = { ts: '2026-05-13T00:00:00Z', event: 'x', client_event_id: 'not-a-real-uuid' };
 
     await postBatch(app, [ev]);
     await postBatch(app, [ev]);
-    assert.ok(!/ON CONFLICT/.test(state.captured[0].sql), '非合法 UUID 必須走純 INSERT path');
+    assert.ok(!/ON CONFLICT/.test(state.captured[0].sql), 'invalid UUID must go through plain INSERT path');
     assert.equal(state.captured[0].params.length, 6);
   });
 
-  it('UUID v1（非 v4）→ 走純 INSERT path（regex 限定 v4）', async () => {
+  it('UUID v1 (not v4) → plain INSERT path (regex restricts to v4)', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const v1 = '11111111-2222-1111-8444-555555555555';
     await postBatch(app, [{ ts: '2026-05-13T00:00:00Z', event: 'x', client_event_id: v1 }]);
     assert.ok(!/ON CONFLICT/.test(state.captured[0].sql),
-      '只接受 v4 UUID（dedup 來源是 crypto.randomUUID）');
+      'only v4 UUIDs are accepted (dedup source is crypto.randomUUID)');
     assert.equal(state.captured[0].params.length, 6);
   });
 
-  it('混合 batch — 有 id + 沒 id 各 1 條 → 各走各的 path', async () => {
+  it('mixed batch — 1 with id + 1 without → each takes its own path', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const id = 'cccccccc-dddd-4eee-8fff-000000000000';
@@ -278,13 +281,13 @@ describe('v1.17.98 — POST /api/activity/batch client_event_id dedup', () => {
     ]);
     assert.equal(r.body.inserted, 2);
     assert.equal(r.body.deduped, 0);
-    assert.match(state.captured[0].sql, /ON CONFLICT/, '有 id 的事件走 ON CONFLICT path');
+    assert.match(state.captured[0].sql, /ON CONFLICT/, 'event with id takes the ON CONFLICT path');
     assert.equal(state.captured[0].params[6], id);
-    assert.ok(!/ON CONFLICT/.test(state.captured[1].sql), '沒 id 的事件走純 INSERT path');
+    assert.ok(!/ON CONFLICT/.test(state.captured[1].sql), 'event without id takes the plain INSERT path');
     assert.equal(state.captured[1].params.length, 6);
   });
 
-  it('batch 內同 id 重複 → 第二筆 dedup', async () => {
+  it('duplicate id within the same batch → second row deduped', async () => {
     const state = { inserted: new Set(), captured: [] };
     const app = await buildApp(state);
     const id = 'eeeeeeee-ffff-4111-8222-333333333333';

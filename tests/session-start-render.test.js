@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 
 const { renderSessionContext } = await import('../hooks/lib/render-session-context.js');
 
-describe('renderSessionContext — 廣播', () => {
-  it('無廣播時輸出不含通知 section', () => {
+describe('renderSessionContext — broadcasts', () => {
+  it('no broadcasts → output omits the notification section', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, []);
     assert.doesNotMatch(out, /OwnMind broadcast/);
     assert.match(out, /OwnMind v1\.17\.0/);
   });
 
-  it('廣播被放在最前面（memory 之前）', () => {
+  it('broadcasts appear at the top (before memory)', () => {
     const out = renderSessionContext(
       { server_version: '1.17.0' },
       [{ title: '維護通知', body: '週五晚 10pm', severity: 'warning' }]
@@ -18,10 +18,10 @@ describe('renderSessionContext — 廣播', () => {
     const bcIdx = out.indexOf('OwnMind broadcast');
     const memIdx = out.indexOf('Memory loaded');
     assert.ok(bcIdx >= 0 && memIdx >= 0);
-    assert.ok(bcIdx < memIdx, '廣播應在 memory 前');
+    assert.ok(bcIdx < memIdx, 'broadcast should be before memory');
   });
 
-  it('render 升級提醒含 CTA + snooze hint', () => {
+  it('rendered upgrade reminder includes the CTA + snooze hint', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: 'OwnMind 有新版本', body: '落後請升級',
       severity: 'warning', cta_text: '我要升級', cta_action: 'upgrade_ownmind',
@@ -32,58 +32,58 @@ describe('renderSessionContext — 廣播', () => {
     assert.match(out, /defer for 24 hours/);
   });
 
-  it('最多顯示 3 則廣播，其餘摘要', () => {
+  it('renders at most 3 broadcasts; the rest are summarized', () => {
     const many = Array.from({ length: 5 }, (_, i) => ({
       title: `廣播 ${i}`, body: 'x'.repeat(50), severity: 'info'
     }));
     const out = renderSessionContext({ server_version: '1.17.0' }, many);
     assert.ok(out.includes('廣播 0'));
     assert.ok(out.includes('廣播 2'));
-    assert.ok(!out.includes('廣播 3'), '第 4 則不該渲染 body');
+    assert.ok(!out.includes('廣播 3'), 'the 4th broadcast body should not render');
     assert.match(out, /2 more broadcast\(s\) not shown/);
   });
 
-  it('body 超過 400 字會被截斷，避免 context 爆炸', () => {
+  it('body longer than 400 chars is truncated to keep context from exploding', () => {
     const longBody = 'x'.repeat(1000);
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '長廣播', body: longBody, severity: 'info'
     }]);
-    // 400 字截斷後應不含完整 1000 字
-    assert.ok(out.length < 2000, '整段 output 不該超過 2000 字');
+    // After 400-char truncation, the full 1000 chars must not be present.
+    assert.ok(out.length < 2000, 'total output should not exceed 2000 chars');
   });
 
-  it('multi-line body 折疊成 5 行以內', () => {
+  it('multi-line body folds into 5 lines or fewer', () => {
     const multiline = Array.from({ length: 10 }, (_, i) => `Line ${i}`).join('\n');
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '多行', body: multiline, severity: 'info'
     }]);
-    // 只取前 5 行合併
+    // Only the first 5 lines are kept.
     assert.ok(out.includes('Line 4'));
     assert.ok(!out.includes('Line 5'));
   });
 
-  it('error 等級廣播附加 SYSTEM 強制指令 block', () => {
+  it('error-severity broadcasts append a SYSTEM action-required block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '嚴重錯誤', body: '請立即處理', severity: 'error'
     }]);
     assert.match(out, /\[SYSTEM\] Action required/);
   });
 
-  it('warning 等級廣播附加 SYSTEM 強制指令 block', () => {
+  it('warning-severity broadcasts append a SYSTEM action-required block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '安全更新', body: '請盡快升級', severity: 'warning'
     }]);
     assert.match(out, /\[SYSTEM\] Action required/);
   });
 
-  it('upgrade_reminder 類型廣播附加 SYSTEM 強制指令 block', () => {
+  it('upgrade_reminder type broadcast appends a SYSTEM action-required block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: 'OwnMind 有新版本', body: '請升級', severity: 'info', type: 'upgrade_reminder'
     }]);
     assert.match(out, /\[SYSTEM\] Action required/);
   });
 
-  it('info 等級且非 upgrade_reminder 不附加強制指令', () => {
+  it('info severity that is not upgrade_reminder does not append the action-required block', () => {
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '一般公告', body: '系統維護', severity: 'info', type: 'announcement'
     }]);
@@ -92,12 +92,12 @@ describe('renderSessionContext — 廣播', () => {
 });
 
 describe('renderSessionContext — memory', () => {
-  it('輸出 server_version 佔位符（data 無 version）', () => {
+  it('renders a server_version placeholder when data has no version', () => {
     const out = renderSessionContext({}, []);
     assert.match(out, /OwnMind v\?/);
   });
 
-  it('顯示 profile / iron_rules_digest / principles / active_handoff', () => {
+  it('shows profile / iron_rules_digest / principles / active_handoff', () => {
     const out = renderSessionContext({
       server_version: '1.17.0',
       profile: { title: '身份', content: 'Vin' },
@@ -112,23 +112,23 @@ describe('renderSessionContext — memory', () => {
     assert.match(out, /Project: ownmind/);
   });
 
-  it('missing sections 不 crash', () => {
+  it('missing sections do not crash', () => {
     const out = renderSessionContext({}, []);
     assert.ok(out.length > 0);
     assert.match(out, /OwnMind/);
   });
 });
 
-describe('renderSessionContext — 結尾固定訊息', () => {
-  it('結尾含 MCP tool hint', () => {
+describe('renderSessionContext — fixed trailer', () => {
+  it('trailer contains the MCP tool hint', () => {
     const out = renderSessionContext({}, []);
     assert.match(out, /ownmind_\* MCP tools/);
   });
 });
 
-// v1.19: 鐵律 tier 分佈 summary
-describe('renderSessionContext — v1.19 tier 分佈 summary', () => {
-  it('有 tier_counts 時、鐵律段標題加上分佈', () => {
+// v1.19: iron-rule tier distribution summary
+describe('renderSessionContext — v1.19 tier distribution summary', () => {
+  it('with tier_counts present, the iron-rule heading shows the distribution', () => {
     const out = renderSessionContext({
       server_version: '1.19.0',
       iron_rules_digest: 'IR-002: test',
@@ -140,21 +140,21 @@ describe('renderSessionContext — v1.19 tier 分佈 summary', () => {
     assert.match(out, /⚪ Advisory 6/);
   });
 
-  it('沒有 tier_counts（舊 server）時、鐵律段標題回到舊版格式', () => {
+  it('without tier_counts (older server), the iron-rule heading falls back to the legacy format', () => {
     const out = renderSessionContext({
       server_version: '1.18.0',
       iron_rules_digest: 'IR-002: test',
     }, []);
     assert.match(out, /## Iron rules \(strictly enforced\)\n/);
-    assert.ok(!out.includes('0 total'), '不該顯示假計數');
+    assert.ok(!out.includes('0 total'), 'must not show a fake count');
   });
 
-  it('total 為 0 時、不顯示 summary 數字', () => {
+  it('with total === 0, no summary number is shown', () => {
     const out = renderSessionContext({
       server_version: '1.19.0',
       iron_rules_digest: 'IR-002: test',
       iron_rules_tier_counts: { critical: 0, default: 0, advisory: 0, total: 0 },
     }, []);
-    assert.ok(!out.includes('0 total'), 'total 0 不該顯示計數');
+    assert.ok(!out.includes('0 total'), 'total 0 should not display the count');
   });
 });

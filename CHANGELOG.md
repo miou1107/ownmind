@@ -1,5 +1,27 @@
 # OwnMind 更新紀錄
 
+## v1.26.9 — 國際化第十期 Part 2：tests/ 中型 14 檔英文化（軌道 B）
+
+**範圍**：翻 `tests/*.test.js` 下 14 個中型檔（每檔 39–56 行中文），共約 680 行中文中的「真註解 + describe/it 標題 + assertion hint」翻成英文。剩餘 fixture 模擬使用者中文輸入按 CLAUDE.md 規則保留。
+
+**拆批策略**：tests/ 翻譯分三個 patch：
+- **v1.26.6** = 前 25 大檔（≥ 56 行中文）✅ 已完成
+- **v1.26.9（本次）** = 接下來 14 個中型檔（39–55 行中文）
+- **v1.26.10** = 剩餘約 97 個小檔（< 39 行中文）
+
+**處理的 14 檔**：
+- 50~56 行：`activity-batch-dedup` (56)、`templates` (54)、`reply-lint` (52)、`admin-reset-password` (52)
+- 45~49 行：`sweep-old-backups` (49)、`pre-commit-secret` (49)、`session-start-render` (47)、`me-profile-put` (47)、`jargon-context-memory` (46)
+- 39~44 行：`iron-rule-suggest` (44)、`reply-lint-pending-spool` (43)、`auth-401-observability` (43)、`reply-lint-hook-v1911` (41)、`migration-016-bug-reports` (39)
+
+**翻譯規則**：跟 v1.26.6 完全一致的 5 分類（JSDoc / `//` 註解 / describe-it 標題 / assertion hint 翻；fixture 字串與比對字面值保留）。
+
+**v1.26.7 hotfix 順手案例**：`pre-commit-secret.test.js` 內含 GitHub PAT 跟 OpenAI key 樣式 fixture、改用字串拼接（`'ghp_' + 'abc...'`）避免 dev 機器 pre-commit hook 把 fixture 抓成真實密鑰。
+
+**測試**：1999 pass / 0 fail（無斷言改動、無 baseline 變化）
+**版本**：1.26.8 → 1.26.9
+**OpenSpec change**：`openspec/changes/v1.26.9-i18n-tests-internal-part2/`
+
 ## v1.26.8 — 修 secret-detect 路徑誤判 + pre-commit hook 動態指紋分派
 
 **回報者**：Vin（bug-report id=4、2026-05-26 v1.26.7 commit 時撞到）

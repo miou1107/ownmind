@@ -1,5 +1,34 @@
 # OwnMind 檔案結構
 
+## v1.26.9 修改（國際化第十期 Part 2：tests/ 中型 14 檔英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.9-i18n-tests-internal-part2/proposal.md       — v1.26.9 提案
+openspec/changes/v1.26.9-i18n-tests-internal-part2/tasks.md          — v1.26.9 任務清單
+```
+
+修改檔（14 個 tests/*.test.js + 版號 + 三語文件）：
+```
+tests/activity-batch-dedup.test.js         — 56 行（含 v1.17.99 helper round-trip + dedup ON CONFLICT path）
+tests/templates.test.js                    — 54 行（含 matchTemplate / extractTriggers 完整覆蓋）
+tests/reply-lint.test.js                   — 52 行（含 IR-037 + IR-036 純函式 lint）
+tests/admin-reset-password.test.js         — 52 行（含 v1.19.9 7 個場景 + bcrypt 端到端驗證）
+tests/sweep-old-backups.test.js            — 49 行（含 find -mtime + IR-027 邏輯卡控）
+tests/pre-commit-secret.test.js            — 49 行（含 PAT / OpenAI key fixture 改字串拼接避誤判）
+tests/session-start-render.test.js         — 47 行（含廣播 / memory / tier summary 三大區塊）
+tests/me-profile-put.test.js               — 47 行（含 PUT /profile 11 條斷言、隱私 + 競態防護）
+tests/jargon-context-memory.test.js        — 46 行（含 IR-036 跨 reply 詞彙記憶）
+tests/iron-rule-suggest.test.js            — 44 行（含 suggestSkillMdFormat round-trip）
+tests/reply-lint-pending-spool.test.js     — 43 行（含 hook 條件 spool + 1MB rotate + UUID v4 dedup）
+tests/auth-401-observability.test.js       — 43 行（含 maskApiKey + 401 path logger 形狀）
+tests/reply-lint-hook-v1911.test.js        — 41 行（含分級顯示 + log 保底）
+tests/migration-016-bug-reports.test.js    — 39 行（含 SQL schema 五表 + 索引齊全）
+package.json                               — 1.26.8 → 1.26.9
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md / FILELIST.md                 — v1.26.9 條目
+```
+
 ## v1.26.8 修改（修 secret-detect 路徑誤判 + pre-commit hook 動態指紋分派）
 
 新增檔：
