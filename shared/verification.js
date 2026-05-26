@@ -1,46 +1,46 @@
 /**
- * OwnMind Verification Engine
+ * OwnMind Verification Engine.
  *
- * 純函式模組，零外部依賴，不綁定任何執行環境。
- * 被 git hook（L1/L5）、PreToolUse hook（L2）、MCP（L3）三處共用。
+ * Pure-function module with zero external deps and no runtime binding.
+ * Shared by the git hooks (L1/L5), the PreToolUse hook (L2) and MCP (L3).
  *
- * 核心 API：
+ * Core API:
  *   evaluateConditions(conditions, context) → { pass: boolean, failures: string[] }
  *
- * 四大核心理念：
- *   1. 永不信賴 LLM — 由 harness 層級呼叫，非 AI 自主呼叫
- *   2. 不依賴單一機制 — 同一引擎被三處共用
- *   3. 裝後即忘 — 自動從快取讀取規則
- *   4. 事後補救 — 失敗記錄用於升級警告
+ * Four guiding principles:
+ *   1. Never trust the LLM — invoked by the harness, not by AI itself.
+ *   2. Don't rely on a single mechanism — one engine, three entry points.
+ *   3. Install and forget — automatically reads rules from cache.
+ *   4. Remediate after the fact — failures feed upgrade warnings.
  */
 
 // ============================================================
-// Simple glob matcher (避免外部依賴 minimatch)
-// 支援 * (單層) 和 ** (跨目錄)
+// Simple glob matcher (avoids the minimatch dependency).
+// Supports * (single segment) and ** (cross-directory).
 // ============================================================
 
 function globMatch(file, pattern) {
-  // 完全相等
+  // Exact match.
   if (file === pattern) return true;
 
   const regex = pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape 特殊字元（保留 * 和 ?）
-    .replace(/\*\*/g, '§§')               // 暫存 **
-    .replace(/\*/g, '[^/]*')              // * = 單層
-    .replace(/§§/g, '.*')                 // ** = 跨目錄
-    .replace(/\?/g, '[^/]');              // ? = 單一字元
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex meta-chars (keep * and ?)
+    .replace(/\*\*/g, '§§')               // stash **
+    .replace(/\*/g, '[^/]*')              // * = single segment
+    .replace(/§§/g, '.*')                 // ** = cross-directory
+    .replace(/\?/g, '[^/]');              // ? = single character
 
   return new RegExp(`^${regex}$`).test(file);
 }
 
 // ============================================================
-// CHECK_HANDLERS — 每個檢查類型一個純函式
+// CHECK_HANDLERS — one pure function per check type.
 // ============================================================
 
 const CHECK_HANDLERS = {
   /**
-   * staged 檔案必須包含指定 pattern
-   * context 缺失 stagedFiles → return true（跳過檢查）
+   * Staged files must include every pattern.
+   * Missing ctx.stagedFiles → return true (skip the check).
    */
   staged_files_include: (params, ctx) => {
     if (!ctx.stagedFiles) return true;
@@ -51,8 +51,8 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * staged 檔案不能包含指定 pattern
-   * context 缺失 → return true
+   * Staged files must not include any of the patterns.
+   * Missing ctx → return true.
    */
   staged_files_exclude: (params, ctx) => {
     if (!ctx.stagedFiles) return true;
@@ -63,8 +63,8 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * commit message 必須包含指定文字（任一匹配即可）
-   * context 缺失 → return true
+   * Commit message must contain at least one of the given strings.
+   * Missing ctx → return true.
    */
   commit_message_contains: (params, ctx) => {
     if (!ctx.commitMessage) return true;
@@ -72,8 +72,8 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * commit message 不能包含指定文字
-   * context 缺失 → return true
+   * Commit message must not contain any of the given strings.
+   * Missing ctx → return true.
    */
   commit_message_not_contains: (params, ctx) => {
     if (!ctx.commitMessage) return true;
@@ -81,8 +81,8 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * session 內必須有某個 comply 記錄
-   * context 缺失 complianceEvents → return true（跳過，讓其他層補檢查）
+   * The session must have a matching comply record.
+   * Missing ctx.complianceEvents → return true (skip; another layer checks).
    */
   recent_event_exists: (params, ctx) => {
     if (!ctx.complianceEvents) return true;
@@ -92,8 +92,8 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * 特定原始碼是否被修改
-   * context 缺失 → return false（語義：「有原始碼被改嗎？」不確定時不觸發）
+   * Did any source-code file change?
+   * Missing ctx → return false (semantics: when uncertain, don't trigger).
    */
   source_files_changed: (params, ctx) => {
     if (!ctx.changedSourceFiles) return false;
@@ -103,10 +103,10 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * Bash 指令字串必須符合任一 regex pattern（v1.19.20）
-   * 用於「指令裡必須出現某樣式」的卡控、例如 docker build 必須含 --no-cache
-   * context 缺失 command → return true（沒指令時跳過、讓其他層補檢查）
-   * 無效 regex pattern → 視為不符合（保守處理）
+   * Bash command must match at least one regex pattern (v1.19.20).
+   * Use case: "the command must contain X" — e.g. docker build must include
+   * --no-cache. Missing ctx.command → return true (no command, skip).
+   * Invalid regex pattern → treated as a non-match (conservative).
    */
   command_matches: (params, ctx) => {
     if (!ctx.command) return true;
@@ -120,10 +120,10 @@ const CHECK_HANDLERS = {
   },
 
   /**
-   * Bash 指令字串不能符合任何 regex pattern（v1.19.20）
-   * 用於「指令裡不能出現某樣式」的卡控、例如不能用 sshpass
-   * context 缺失 command → return true
-   * 無效 regex pattern → 視為不符合（即不違反）
+   * Bash command must NOT match any regex pattern (v1.19.20).
+   * Use case: "the command must not contain X" — e.g. no sshpass.
+   * Missing ctx.command → return true.
+   * Invalid regex pattern → treated as a non-match (i.e. no violation).
    */
   command_not_matches: (params, ctx) => {
     if (!ctx.command) return true;
@@ -138,7 +138,12 @@ const CHECK_HANDLERS = {
 };
 
 // ============================================================
-// FIX_HINTS — 每種檢查類型的修復指引
+// FIX_HINTS — actionable remediation message per check type.
+//
+// Hint strings are deliberately kept in Chinese because:
+//   1. They are shown directly to the user/AI as actionable guidance.
+//   2. Tests assert on the exact Chinese substrings
+//      (`'，請 git add ... 後重試'`, `'不要帶 rule_code'`).
 // ============================================================
 
 const FIX_HINTS = {
@@ -158,9 +163,11 @@ const FIX_HINTS = {
   },
   commit_message_contains: () => '，請修改 commit message',
   commit_message_not_contains: () => '，請修改後重試',
-  // 註：目前所有規則的 params.action 都用 'comply'；若未來出現 'violate' / 'skip' 等其他值、
-  // 提示文字會直接套用、可能讀起來語意有點怪（例：「請呼叫... action: 'violate'」）、屆時再評估。
-  // JSON.stringify 用於把 event / action 字面值安全嵌入（避免單引號等特殊字元破壞 JS literal）。
+  // Today every rule's params.action is 'comply'; if 'violate' / 'skip' show
+  // up later the hint will still apply but read slightly oddly (e.g. "please
+  // call ... action: 'violate'") — revisit then.
+  // JSON.stringify safely embeds the event / action literal (avoids single
+  // quotes / special chars breaking the JS literal).
   recent_event_exists: (params) => {
     const event = JSON.stringify(params.event);
     const action = JSON.stringify(params.action);
@@ -172,37 +179,37 @@ const FIX_HINTS = {
 };
 
 // ============================================================
-// evaluateConditions — 遞迴評估條件樹
+// evaluateConditions — recursively walks the condition tree.
 // ============================================================
 
 /**
- * 評估 verification 條件
+ * Evaluate a verification condition.
  *
- * 支援三種節點：
- *   1. 葉節點 — { type, params, message }
- *   2. 組合節點 — { operator: "AND"|"OR", checks: [...] }
- *   3. 條件式 — { when: {...}, then: {...} }
+ * Three node shapes are supported:
+ *   1. Leaf       — { type, params, message }
+ *   2. Composite  — { operator: "AND"|"OR", checks: [...] }
+ *   3. Conditional — { when: {...}, then: {...} }
  *
- * @param {object} conditions - verification.conditions 區塊
- * @param {object} context - 執行環境提供的資料
+ * @param {object} conditions - the verification.conditions block
+ * @param {object} context - data supplied by the runtime
  * @returns {{ pass: boolean, failures: string[] }}
  */
 function evaluateConditions(conditions, context) {
-  // when/then 條件式
+  // when/then conditional.
   if (conditions.when) {
     const whenResult = evaluateConditions(conditions.when, context);
     if (!whenResult.pass) {
-      // when 為 false → 條件不適用 → pass
+      // when is false → not applicable → pass.
       return { pass: true, failures: [] };
     }
-    // when 為 true → 評估 then
+    // when is true → evaluate then.
     return evaluateConditions(conditions.then, context);
   }
 
-  // 葉節點：單一檢查
+  // Leaf: single check.
   if (conditions.type) {
     const handler = CHECK_HANDLERS[conditions.type];
-    if (!handler) return { pass: true, failures: [] }; // 未知類型安全跳過
+    if (!handler) return { pass: true, failures: [] }; // unknown type, safe skip
     const pass = handler(conditions.params, context);
     if (pass) return { pass: true, failures: [] };
     const baseMsg = conditions.message || conditions.type;
@@ -211,9 +218,9 @@ function evaluateConditions(conditions, context) {
     return { pass: false, failures: [baseMsg + hint] };
   }
 
-  // 組合節點：AND / OR
+  // Composite: AND / OR.
   if (!conditions.checks || !Array.isArray(conditions.checks)) {
-    return { pass: true, failures: [] }; // 無效結構安全跳過
+    return { pass: true, failures: [] }; // invalid shape, safe skip
   }
 
   const results = conditions.checks.map(c => evaluateConditions(c, context));
@@ -223,7 +230,7 @@ function evaluateConditions(conditions, context) {
     return { pass: !allFail, failures: allFail ? results.flatMap(r => r.failures) : [] };
   }
 
-  // 預設 AND（包含未指定 operator 的情況）
+  // Default AND (also covers cases where operator is missing).
   const failures = results.flatMap(r => r.failures);
   return { pass: failures.length === 0, failures };
 }

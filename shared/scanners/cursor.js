@@ -1,8 +1,9 @@
 /**
- * shared/scanners/cursor.js — Tier 2 session_count（無 token）
+ * shared/scanners/cursor.js — Tier 2 session_count (no token data).
  *
- * 讀取 Cursor 的 state.vscdb telemetry 欄位推斷「今天有沒有用 Cursor」，
- * upsert 一筆 session_count record。server UNIQUE(user, tool, date) 擋重複。
+ * Reads Cursor's state.vscdb telemetry to infer "did the user open Cursor today",
+ * then upserts one session_count record. The server's UNIQUE(user, tool, date)
+ * constraint deduplicates.
  */
 
 import path from 'path';

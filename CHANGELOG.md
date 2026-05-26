@@ -1,5 +1,30 @@
 # OwnMind 更新紀錄
 
+## v1.26.4 — 國際化第八期：shared/ 內部註解英文化（軌道 B）
+
+**範圍**：翻 `shared/` 下 26 個檔（10 個 top-level + 8 個 `scanners/` + 4 個 `validators/`）共 746 行中文 JSDoc + line comments。延續 v1.26.0 / v1.26.2 / v1.26.3 同樣 pattern、零行為改動。
+
+**含軌道 A 補洞**：
+- `shared/context-blob-schema.js` validation 錯誤訊息（`context_blob 必須是物件` / `conversation_snippets 必須是陣列` / `型別不對` 等）英化、給 server 5xx handler 回應更一致
+- `shared/bug-fingerprints.js` 全 17 條 `description` 翻成英文、跟 v1.26.1 加的 `clt_user_reported_other` 對齊
+
+**刻意保留**（已在 proposal §Out of Scope 列出）：
+- `shared/language-lint.js` 行 380 + 393 兩條 AI-facing lint 回饋訊息（提醒 AI「改成白話中文」、翻成英文反而自相矛盾）
+- `shared/language-lint.js` `/(即|也就是|意思是|簡稱)/` 偵測 regex（中文上下文解釋語標籤）
+- `shared/secret-detect.js` 內 `reason` 字串（`'value 符合 ... 格式'` / `'賦值樣式'` 等、被 `tests/secret-detect-unit.test.js:173` 比對；留待 Track A pass）
+- `shared/secret-detect.js` `SECRET_KEYWORDS_CJK` 中文密鑰關鍵字陣列
+- `shared/privacy-detect.js` `PRIVACY_TYPE_LABELS` / `shared/privacy-redact.js` `TYPE_LABEL_ZH` 中文 banner 標籤（user-facing 在地化輸出）
+- `shared/iron-rule-tier.js` `TIER_LABEL_ZH` 三層中英雙語標題
+- `shared/verification.js` `FIX_HINTS` 全部中文（`，請 git add ... 後重試` / `不要帶 rule_code` 等被測試硬編碼比對）
+- `shared/helpers.js` `detectTriggerFromContext` 內 `部署` / `刪除` 中文 trigger 詞（跟 `deploy` / `delete` 並列、用於 OR-match）
+
+**測試更新**：
+- `tests/context-blob-schema.test.js:104` 斷言 `/型別/` → `/型別|wrong type/`（接受中英文錯誤訊息）
+
+**測試**：1956 pass / 0 fail
+**版本**：1.26.3 → 1.26.4
+**OpenSpec change**：`openspec/changes/v1.26.4-i18n-shared-internal/`
+
 ## v1.26.3 — 國際化第七期：scripts/ 內部註解英文化（軌道 B）
 
 **範圍**：翻 `scripts/` 下 21 個檔（.js / .sh / .cjs）共 314 行中文註解。延續 v1.26.2 mcp/ 同樣 pattern、零行為改動。

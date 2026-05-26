@@ -1,14 +1,15 @@
 /**
- * v1.21.0：Validator 註冊表
+ * v1.21.0: Validator registry.
  *
- * 集中匯入所有內建 validator 模組、提供統一查找介面。
- * 規則驅動 lint 流程的核心：lint 鉤子讀 user 鐵律的 lint_validator.name、
- * 來這找對應 validator 跑 check。
+ * Centralizes the built-in validator modules and exposes a unified lookup API.
+ * Core of the rule-driven lint pipeline: the lint hook reads
+ * `metadata.lint_validator.name` on the user's iron rule and resolves it here
+ * to the matching validator's check function.
  *
- * 未來新增 validator 流程：
- *   1. 在本目錄新 module、export { name, check }
- *   2. 加進下方 VALIDATOR_REGISTRY
- *   3. 文件補一筆
+ * Adding a new validator:
+ *   1. Add a module under this directory exporting { name, check }
+ *   2. Register it in VALIDATOR_REGISTRY below
+ *   3. Document it
  */
 
 import * as jargon from './jargon-explanation.js';
@@ -16,7 +17,7 @@ import * as mixed from './language-mixed-ratio.js';
 import * as privacy from './privacy-detect.js';
 
 /**
- * Validator 註冊表：name → module
+ * Validator registry: name → module.
  */
 export const VALIDATOR_REGISTRY = {
   [jargon.name]: jargon,
@@ -25,7 +26,7 @@ export const VALIDATOR_REGISTRY = {
 };
 
 /**
- * 找對應 name 的 validator module。找不到回 null。
+ * Look up a validator module by name. Returns null when not found.
  * @param {string} validatorName
  * @returns {{name: string, check: Function} | null}
  */
@@ -35,7 +36,7 @@ export function findValidator(validatorName) {
 }
 
 /**
- * 列出所有可用 validator name（給 user dashboard / 文件用）
+ * List all available validator names (for the user dashboard / docs).
  * @returns {string[]}
  */
 export function listAvailableValidators() {
@@ -43,12 +44,13 @@ export function listAvailableValidators() {
 }
 
 /**
- * 從 user 鐵律快取掃出所有啟用的 validator。
+ * Extract all enabled validators from the user's iron-rule cache.
  *
- * 每條鐵律 metadata 可有 `lint_validator: { name, params }`：有設 → 啟用。
- * 同 validator name 被多條鐵律啟用 → 全部都回（一個 reply 可能因多條鐵律違反）。
+ * Each rule may carry `metadata.lint_validator: { name, params }` — if present,
+ * the validator is enabled. The same validator name can be enabled by multiple
+ * rules, and all of them are returned (one reply can violate via several rules).
  *
- * @param {Array<object>} rules - iron rules cache 內容
+ * @param {Array<object>} rules - iron rules cache contents
  * @returns {Array<{rule: string, validator: string, params: object}>}
  */
 export function extractEnabledValidators(rules) {

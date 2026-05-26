@@ -1,7 +1,7 @@
 /**
- * OwnMind Shared Helpers
+ * OwnMind Shared Helpers.
  *
- * 純函式模組，零外部依賴。被 hooks 和 MCP 共用。
+ * Pure-function module, zero external deps. Shared by hooks and MCP.
  */
 
 import fs from 'fs';
@@ -22,16 +22,17 @@ const DEFAULT_SETTINGS_PATH = path.join(HOME, '.claude', 'settings.json');
 // ============================================================
 
 /**
- * 去掉字串開頭的 UTF-8 BOM (\uFEFF)。
- * v1.17.12：Windows installer (PS 5.1) 用 `Set-Content -Encoding UTF8` 寫 JSON
- * 時會加 BOM，Node 的 JSON.parse 會炸。
+ * Strip a leading UTF-8 BOM (﻿) from a string.
+ * v1.17.12: the Windows installer (PS 5.1) writes JSON with
+ * `Set-Content -Encoding UTF8`, which prepends a BOM that crashes
+ * Node's JSON.parse.
  */
 function stripBom(s) {
   return typeof s === 'string' && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
 }
 
 /**
- * 安全讀取 JSON 檔案，失敗回傳 null。容忍 UTF-8 BOM。
+ * Safely read a JSON file; returns null on failure. Tolerates UTF-8 BOM.
  */
 export function readJsonSafe(filePath) {
   try {
@@ -42,7 +43,7 @@ export function readJsonSafe(filePath) {
 }
 
 /**
- * 過濾出 source 檔案（匹配 patterns）
+ * Filter to source files matching the configured patterns.
  */
 export function getChangedSourceFiles(files, patterns = SOURCE_PATTERNS) {
   return files.filter(f =>
@@ -51,12 +52,12 @@ export function getChangedSourceFiles(files, patterns = SOURCE_PATTERNS) {
 }
 
 /**
- * 讀取 MCP client 版本號
+ * Read the MCP client version.
  */
 export function getClientVersion() {
   try {
-    // 統一從根目錄 package.json 讀取版號（單一來源）
-    // v1.17.12 同樣 stripBom 防 Windows 編輯器吐的 BOM
+    // Single source of truth: the root package.json version field.
+    // v1.17.12 same stripBom guard against BOM emitted by Windows editors.
     const pkg = JSON.parse(stripBom(fs.readFileSync(path.join(HOME, '.ownmind', 'package.json'), 'utf8')));
     return pkg.version || '?';
   } catch {
@@ -65,14 +66,15 @@ export function getClientVersion() {
 }
 
 /**
- * 從 Claude Code settings.json 讀取 OwnMind credentials
- * @param {string} [settingsPath] — 預設 ~/.claude/settings.json
+ * Read OwnMind credentials from Claude Code's settings.json.
+ * @param {string} [settingsPath] — defaults to ~/.claude/settings.json
  */
 export function readCredentials(settingsPath = DEFAULT_SETTINGS_PATH) {
   try {
-    // v1.17.12 — stripBom 防 Windows PS 5.1 用 Set-Content -Encoding UTF8 寫出
-    // 的 BOM-prefixed JSON。沒 stripBom 時 Adam/Eric 的 scanner 會在這裡 throw，
-    // 被 catch 成空 creds，scanner 提早退出，Admin 看到的就是「未裝」+ 用量 0。
+    // v1.17.12 — stripBom guards against BOM-prefixed JSON written by
+    // Windows PS 5.1 `Set-Content -Encoding UTF8`. Without stripBom,
+    // Adam/Eric's scanner throws here, gets caught into empty creds,
+    // exits early, and Admin sees "not installed" + zero usage.
     const s = JSON.parse(stripBom(fs.readFileSync(settingsPath, 'utf8')));
     const env = s.mcpServers?.ownmind?.env || {};
     return { apiKey: env.OWNMIND_API_KEY || '', apiUrl: env.OWNMIND_API_URL || '' };
@@ -82,7 +84,7 @@ export function readCredentials(settingsPath = DEFAULT_SETTINGS_PATH) {
 }
 
 /**
- * 從 PreToolUse hook 的 command 偵測觸發類型
+ * Detect the trigger type from a PreToolUse hook command.
  * @param {string} command — bash command
  * @returns {'commit' | 'deploy' | 'delete' | null}
  */
@@ -97,7 +99,8 @@ export function detectCommandTrigger(command) {
 }
 
 /**
- * 從 MCP report_compliance 的 context 偵測觸發類型
+ * Detect the trigger type from the free-form context passed to MCP
+ * report_compliance.
  * @param {string} context — free-form text
  * @returns {'commit' | 'deploy' | 'delete' | null}
  */
@@ -110,8 +113,9 @@ export function detectTriggerFromContext(context) {
 }
 
 /**
- * 把錯誤訊息變安全：替換家目錄路徑為 ~、抹掉 sk-/Bearer 樣式 token、截長度。
- * 用在 console.error stderr 訊息，避免噴使用者本機路徑或 API key。
+ * Sanitize an error message: replace the home directory with `~`, redact
+ * sk-/Bearer-style tokens, truncate length.
+ * Used on console.error stderr to avoid leaking local paths or API keys.
  * @param {unknown} msg
  * @param {number} [maxLen=80]
  * @returns {string}
@@ -130,13 +134,14 @@ export function sanitizeErrorMessage(msg, maxLen = 80) {
 }
 
 /**
- * 把元素推入陣列並維持上限長度，超過就丟最舊的（環形緩衝）。
- * 用在會在 long session 一直累積的 in-memory 陣列。
+ * Push an item onto an array while enforcing a max length, dropping the
+ * oldest when full (ring buffer). Used for in-memory arrays that grow
+ * over long sessions.
  * @template T
  * @param {T[]} arr
  * @param {T} item
  * @param {number} maxSize
- * @returns {T[]} 同一個陣列引用（原地修改）
+ * @returns {T[]} the same array reference (mutated in place)
  */
 export function pushBounded(arr, item, maxSize) {
   arr.push(item);
@@ -145,14 +150,15 @@ export function pushBounded(arr, item, maxSize) {
 }
 
 /**
- * 滑動時間窗去重：回傳 true 代表 ttlMs 內看過、應該跳過。
- * 順手 GC 掉地圖內所有過期項目。第一次出現會記下時間戳；
- * 後續呼叫不會 slide 時間戳（沿用第一次時間，所以最終會過期）。
- * @param {Map<string, number>} map - 紀錄 key → first_seen_ts
+ * Sliding time-window dedupe: returns true when the key has been seen
+ * within ttlMs and should be skipped. Also GCs expired entries. The first
+ * occurrence records its timestamp; subsequent calls do not slide the
+ * timestamp (the original is reused, so entries eventually expire).
+ * @param {Map<string, number>} map - records key → first_seen_ts
  * @param {string} key
  * @param {number} ttlMs
- * @param {number} [now=Date.now()] - 注入時間方便測試
- * @returns {boolean} 是否該跳過此筆
+ * @param {number} [now=Date.now()] - injected time for testability
+ * @returns {boolean} whether this entry should be skipped
  */
 export function shouldSkipDuplicate(map, key, ttlMs, now = Date.now()) {
   for (const [k, ts] of map) {

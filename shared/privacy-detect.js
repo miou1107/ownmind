@@ -1,27 +1,34 @@
 /**
- * privacy-detect — 偵測「使用者隱私（個資）樣式」純函式
+ * privacy-detect — pure-function detector for user privacy (PII) patterns.
  *
- * v1.19.7 引入。v1.19.10 中性化、不綁特定使用者的鐵律編號。
+ * Introduced in v1.19.7. Neutralized in v1.19.10 (no longer tied to a
+ * specific user's iron-rule code).
  *
- * 適用 reply-lint hook：每輪 AI 回話結束時掃一次回應內容、
- * 命中即發出 'privacy_check' 事件。實際要不要擋下、由使用者自己的鐵律決定
- * （例如 Vin 設了 IR-041 對應此事件；其他使用者可選擇要不要寫類似鐵律）。
+ * Used by the reply-lint hook: scans each AI reply at end of turn and
+ * emits a 'privacy_check' event when something matches. Whether to block
+ * is decided by the user's own iron rule (e.g. Vin's IR-041 binds to this
+ * event; other users can opt in by writing a similar rule).
  *
- * 例外（白話：什麼情況不算命中）：
- *   當「使用者自己的提問」內容也含同樣字串時、表示是使用者主動分享、
- *   AI 回覆引用屬必要溝通、不算個資洩漏。
+ * Exception (when a match doesn't count):
+ *   When the user's own prompt also contains the same string, the user
+ *   themselves shared it; quoting it back is necessary communication and
+ *   not a leak.
  *
- * 設計原則：
- * - 保守偵測（寧可漏掉也不誤擋）：reply-lint 是高頻通道、誤判等於強迫 AI 重寫無意義內容
- * - Pure function（純函式）：不碰 IO、不丟例外、好測試
- * - 偵測樣式：台灣身分證（含檢碼算式）、電子信箱、台灣手機（09 開頭）
+ * Design points:
+ * - Conservative detection (prefers misses over false positives): the
+ *   reply-lint pipeline is high-frequency, so a wrong block means forcing
+ *   the AI to rewrite content for nothing.
+ * - Pure function: no IO, no throws, easily tested.
+ * - Patterns: Taiwan national ID (with checksum), email, Taiwan mobile
+ *   (09 prefix).
  *
- * @param {string|*} text - 要掃的 AI 回應文字
+ * @param {string|*} text - the AI reply text to scan
  * @param {Object} [options]
- * @param {string[]} [options.userPrompts] - 使用者最近的提問字串陣列，用於例外比對
+ * @param {string[]} [options.userPrompts] - recent user prompts, used for
+ *   the exception described above
  * @returns {{ detected: boolean, matches: Array<{type, value}> }}
- *   - detected: 是否命中
- *   - matches: 命中的項目（去重後）；type 為 'tw_id' / 'email' / 'phone_tw_mobile'
+ *   - detected: whether anything matched
+ *   - matches: matched items (deduped); type is 'tw_id' / 'email' / 'phone_tw_mobile'
  */
 export function detectPrivacyLeak(text, options = {}) {
   if (typeof text !== 'string' || text.length === 0) {
@@ -37,15 +44,16 @@ export function detectPrivacyLeak(text, options = {}) {
   const matches = [];
 
   for (const { name, pattern, validate } of PRIVACY_PATTERNS) {
-    // 每個 pattern 都是新的 RegExp（避免 lastIndex 共享）
+    // Each pattern gets a fresh RegExp (avoid lastIndex sharing).
     const re = new RegExp(pattern.source, pattern.flags);
     let m;
     while ((m = re.exec(text)) !== null) {
       const value = m[0];
       if (validate && !validate(value)) continue;
       if (userHaystack && userHaystack.includes(value)) continue;
-      // v1.19.7 code-review I-2：信箱類額外過 allowlist
-      // （example.com / localhost / noreply 等開發/文件常見假信箱不算個資）
+      // v1.19.7 code-review I-2: emails get an extra allowlist pass
+      // (example.com / localhost / noreply etc. are common dev/doc fake
+      // addresses and do not count as PII).
       if (name === 'email' && isAllowlistedEmail(value)) continue;
       const dedupKey = `${name}:${value}`;
       if (seen.has(dedupKey)) continue;
@@ -58,17 +66,20 @@ export function detectPrivacyLeak(text, options = {}) {
 }
 
 /**
- * v1.19.7 code-review I-2：信箱白名單
+ * v1.19.7 code-review I-2: email allowlist.
  *
- * 排除以下情境（白話：這些不算「個人聯絡資料」）：
- *   - 假網域：example.com / example.org / example.net / .test / .invalid / .local / localhost
- *   - 系統發信前綴：noreply / no-reply / donotreply（這些不會回信、不是真人聯絡點）
+ * Excludes (i.e. not "personal contact info"):
+ *   - Fake domains: example.com / example.org / example.net / .test /
+ *     .invalid / .local / localhost.
+ *   - System sender prefixes: noreply / no-reply / donotreply (these don't
+ *     reply, so they aren't real contact points).
  *
- * 目的：避免 AI 在解釋程式碼、Git 紀錄（如 Co-Authored-By 標籤）、文件範例時誤觸 privacy_check。
- * 留 v1.19.10 觀察期收集真實誤判紀錄、再決定要不要擴充清單。
+ * Goal: avoid triggering privacy_check when AI explains code, git records
+ * (e.g. Co-Authored-By tags), or documentation examples. Left for v1.19.10
+ * observation; expand later based on real false-positive reports.
  *
- * @param {string} email - 已通過 regex 命中的信箱字串
- * @returns {boolean} true = 在白名單、應視為非個資
+ * @param {string} email - email string that already matched the regex
+ * @returns {boolean} true = on allowlist, treat as non-PII
  */
 function isAllowlistedEmail(email) {
   const lower = email.toLowerCase();
@@ -106,18 +117,23 @@ const EMAIL_ALLOWLIST_LOCAL = [
 ];
 
 /**
- * 隱私樣式表
+ * Privacy pattern table.
  *
- * 設計：
- * - 身分證用台灣官方檢碼演算法二次驗證，幾乎沒誤判
- * - 電子信箱用標準格式（前綴 + @ + 網域 + 至少 2 字 TLD）
- * - 手機只抓台灣 09 開頭格式（國際碼版本 +886-9... 不在範圍內、避免誤判電話號碼類技術詞）
+ * Design:
+ * - National ID uses the official Taiwan checksum, virtually eliminating
+ *   false positives.
+ * - Email uses the standard shape (local + @ + domain + ≥2-char TLD).
+ * - Mobile only matches the Taiwan 09 form (international +886-9... is
+ *   out of scope to avoid matching unrelated phone-number-style strings).
  */
 /**
- * Privacy 類型顯示標籤（給 banner / reason 字串用）
+ * Privacy-type display labels (used in banners / reason strings).
  *
- * v1.19.12 把這份 export 出來、跟 PRIVACY_PATTERNS 並列。
- * 加新偵測類型時、必須同時更新此標籤對應、否則 banner 會顯示原始類型代號（如 'tw_id'）。
+ * v1.19.12 exposed this as a sibling export of PRIVACY_PATTERNS.
+ * When adding a new detection type, update this map too — otherwise the
+ * banner shows the raw type code (e.g. 'tw_id').
+ *
+ * Chinese labels kept intentionally to match the localized banner output.
  */
 export const PRIVACY_TYPE_LABELS = Object.freeze({
   tw_id: '身分證',
@@ -128,33 +144,34 @@ export const PRIVACY_TYPE_LABELS = Object.freeze({
 const PRIVACY_PATTERNS = [
   {
     name: 'tw_id',
-    // 開頭英文 1 碼 + 性別碼 1 或 2 + 數字 8 碼
+    // One letter + gender digit 1/2 + 8 digits.
     pattern: /\b[A-Z][12]\d{8}\b/g,
     validate: validateTwId,
   },
   {
     name: 'email',
-    // 簡化版 RFC：[字／數／.+%-]+@[字／數／.-]+\.[字]{2,}
-    // 用 \b 邊界 + TLD 至少 2 字、降低誤判
+    // Simplified RFC: [letters/digits/.+%-]+@[letters/digits/.-]+\.[letters]{2,}.
+    // \b plus a ≥2-char TLD reduces false positives.
     pattern: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g,
   },
   {
     name: 'phone_tw_mobile',
-    // 台灣手機：09 開頭 + 8 碼數字，中間可有 - 或空白分隔
-    // 例：0912345678 / 0912-345-678 / 0912 345 678
+    // Taiwan mobile: 09 prefix + 8 digits, optional - or whitespace separator.
+    // Examples: 0912345678 / 0912-345-678 / 0912 345 678.
     pattern: /\b09\d{2}[-\s]?\d{3}[-\s]?\d{3}\b/g,
     validate: validateTwMobile,
   },
 ];
 
 /**
- * 台灣身分證檢碼算式（官方）：
- *   1. 第 1 字英文字母對應 2 位數（A=10、B=11、…）
- *   2. 取十位數 ×1、個位數 ×9，加總到 sum
- *   3. 第 2~9 碼依序乘 8、7、6、5、4、3、2、1，累加到 sum
- *   4. 第 10 碼為檢查碼，sum + 檢查碼 mod 10 == 0 即合法
+ * Taiwan national-ID official checksum:
+ *   1. First letter maps to a two-digit number (A=10, B=11, …).
+ *   2. tens digit ×1, ones digit ×9, summed into `sum`.
+ *   3. Digits 2..9 weighted 8, 7, 6, 5, 4, 3, 2, 1, added to `sum`.
+ *   4. Digit 10 is the check digit: sum + check_digit mod 10 == 0 → valid.
  *
- * 這個算式精準到誤判機率約 1/10，配合格式比對後實務上幾乎不會誤命中。
+ * Accuracy ≈ 1/10 false positive rate, combined with the format match this
+ * almost never misfires in practice.
  */
 function validateTwId(id) {
   if (!/^[A-Z][12]\d{8}$/.test(id)) return false;
@@ -175,14 +192,15 @@ function validateTwId(id) {
 }
 
 /**
- * 台灣手機額外檢查（避免「0911111111」這種全同數字測試碼）：
- *   - 全部同一個數字（0900000000 / 0911111111）視為假號碼，不算違反
+ * Extra check for Taiwan mobile numbers (filters out fakes like
+ * 0911111111 made of repeated digits):
+ *   - All-same trailing digits (0900000000 / 0911111111) → treated as fake.
  */
 function validateTwMobile(raw) {
   const digits = raw.replace(/[^\d]/g, '');
   if (digits.length !== 10) return false;
   if (!digits.startsWith('09')) return false;
-  // 後 8 碼全相同（測試碼） → 不算個資
+  // Trailing 8 digits all equal (test pattern) → not PII.
   const tail = digits.slice(2);
   if (/^(\d)\1{7}$/.test(tail)) return false;
   return true;

@@ -1,15 +1,17 @@
 /**
  * shared/scanners/vscode-telemetry.js
  *
- * Cursor / Antigravity 都是 VSCode-based，使用相同結構的 state.vscdb：
+ * Cursor and Antigravity are both VSCode-based and use the same state.vscdb
+ * shape:
  *   ItemTable(key TEXT, value TEXT)
  *   - telemetry.firstSessionDate
  *   - telemetry.lastSessionDate
  *   - telemetry.currentSessionDate
  *
- * Value 是 RFC 2822 字串（e.g. "Wed, 04 Mar 2026 09:21:36 GMT"）。
+ * Value is an RFC 2822 string (e.g. "Wed, 04 Mar 2026 09:21:36 GMT").
  *
- * 這裡抽共用讀取函式，以及把 Date → Asia/Taipei YYYY-MM-DD 的純函式。
+ * This module provides the shared reader and a pure function turning Date
+ * into Asia/Taipei YYYY-MM-DD.
  */
 
 import { execFile } from 'child_process';
@@ -24,7 +26,7 @@ export const TELEMETRY_KEYS = [
 ];
 
 /**
- * 讀取 state.vscdb 三個 telemetry key 成 Date 物件。
+ * Read the three telemetry keys from state.vscdb as Date objects.
  *
  * @param {{ dbPath: string, sqlitePath?: string, runSqlite?: Function, logger?: object }}
  * @returns {{ firstSessionDate?: Date, lastSessionDate?: Date, currentSessionDate?: Date }}
@@ -42,9 +44,11 @@ export async function readVscodeTelemetry({
     if (err.code === 'ENOENT') {
       logger?.warn?.(
         `[vscode-telemetry] sqlite3 CLI not found at '${sqlitePath}'. ` +
-        `裝法：Windows 跑 \`winget install SQLite.SQLite\`、Linux 跑 \`apt install sqlite3\`、` +
-        `或從 https://www.sqlite.org/download.html 下載。裝完重開 terminal。` +
-        `不裝的話 Cursor/Antigravity Tier 2 session_count 無法收集（Mac 已內建）。`
+        `Install: Windows \`winget install SQLite.SQLite\`, ` +
+        `Linux \`apt install sqlite3\`, or download from ` +
+        `https://www.sqlite.org/download.html — reopen terminal afterwards. ` +
+        `Without it, Cursor/Antigravity Tier 2 session_count cannot be collected ` +
+        `(Mac has it built in).`
       );
     } else {
       logger?.warn?.(`[vscode-telemetry] sqlite query failed (${dbPath}): ${err.message}`);
@@ -62,7 +66,7 @@ export async function readVscodeTelemetry({
 }
 
 /**
- * Asia/Taipei 的 YYYY-MM-DD。純函式。
+ * Asia/Taipei YYYY-MM-DD. Pure function.
  */
 export function toTaipeiYmd(date) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
@@ -74,10 +78,11 @@ export function toTaipeiYmd(date) {
 }
 
 /**
- * 通用 session_count adapter：
- *   - 讀取 currentSessionDate 對應的 Taipei 日期
- *   - 若跟 state[sourceKey].last_session_date 不同 → emit 1 筆 session record
- *   - 與 last 無變化 → 不重發（UPSERT idempotent，無害）
+ * Generic session_count adapter:
+ *   - Read the Taipei-local date matching currentSessionDate.
+ *   - If it differs from state[sourceKey].last_session_date → emit one
+ *     session record.
+ *   - No change → don't resend (UPSERT is idempotent and harmless).
  *
  * @param {object} opts - { tool, dbPath, sqlitePath, runSqlite, scannerVersion, machine, logger }
  * @returns {Promise<{tool, readSince}>}
@@ -95,14 +100,15 @@ export function createVscodeAdapter(opts) {
     tool,
 
     async readSince(state) {
-      const sourceKey = tool;  // 全域單一 cursor，不按檔分
+      const sourceKey = tool;  // single global cursor, not per-file
       const prev = state[sourceKey] || {};
       const prevSessionDate = prev.last_session_date || null;
 
       const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
       const cur = t.currentSessionDate ?? t.lastSessionDate ?? null;
       if (!cur) {
-        // DB 不存在或 telemetry 欄位全空 — 不 emit session，但仍送 heartbeat
+        // DB missing or telemetry fields empty — no session emitted, still
+        // send a heartbeat.
         return {
           events: [],
           sessions: [],
@@ -125,7 +131,7 @@ export function createVscodeAdapter(opts) {
       }
 
       return {
-        events: [],           // Tier 2 無 token
+        events: [],           // Tier 2 has no tokens
         sessions,
         offsetPatch,
         cumulativePatch: {},

@@ -1,12 +1,15 @@
 /**
- * v1.21.0：隱私偵測 validator
+ * v1.21.0: Privacy validator.
  *
- * 包裝既有 detectPrivacyLeak（白話：偵測電子郵件 / 身分證 / 手機號碼之類）。
- * user 啟用：
+ * Wraps the existing detectPrivacyLeak (detects email addresses, Taiwan ID
+ * numbers, mobile phone numbers, etc.).
+ *
+ * User enables via:
  *   { name: 'privacy_detect', params: {} }
  *
  * context:
- *   - userPrompts (array)：使用者最近的提問、含相同個資不算外洩（user 自己提到的）
+ *   - userPrompts (array): user's recent prompts — values they themselves typed
+ *     are not counted as leaks.
  */
 
 import { detectPrivacyLeak } from '../privacy-detect.js';

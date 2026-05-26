@@ -1,64 +1,70 @@
 /**
- * shared/language-lint.js — 語言品質檢查共用 lib（v1.17.95）
+ * shared/language-lint.js — language-quality lint shared library (v1.17.95).
  *
- * 為什麼存在：
- *   兩個事件判斷邏輯需要在兩個地方用：
- *     - 中英混雜比例過高（事件常數 LINT_LANGUAGE_MIXED_RATIO）
- *     - 行話沒附白話說明（事件常數 LINT_JARGON_EXPLANATION_REQUIRED）
- *   1. v1.17.94 鐵律品質 lint（寫鐵律時檢查）
- *   2. v1.17.95 回話 lint（AI 回話時檢查 — Stop hook 整合留下個版本）
+ * Why this exists:
+ *   The same two checks need to run in two places:
+ *     - mixed Chinese/English ratio too high (event LINT_LANGUAGE_MIXED_RATIO)
+ *     - jargon without a plain-Chinese explanation (event
+ *       LINT_JARGON_EXPLANATION_REQUIRED)
+ *   1. v1.17.94 iron-rule quality lint (when writing a rule)
+ *   2. v1.17.95 reply lint (when AI replies — Stop hook integration came later)
  *
- *   抽到 shared/、兩邊 import 同一份、避免邏輯漂移。
+ *   Lifted to shared/ so both call sites import the same module and the logic
+ *   never drifts.
  *
- *   v1.20.4：違反清單 rule 欄位改用中性事件常數、不再寫死個人鐵律編號（IR-XXX）。
- *   「事件 → 個人鐵律編號」對應由 caller 從規則快取查表處理。
+ *   v1.20.4: violation entries' `rule` field now uses neutral event constants
+ *   and no longer hardcodes personal iron-rule codes (IR-XXX). The
+ *   "event → personal rule code" mapping is resolved by callers via a rule
+ *   cache lookup.
  *
- * 主要 export：
- *   - TECH_WHITELIST: 80 個技術詞白名單（OwnMind 認可、不算中英混雜）
- *   - checkMixedLanguage(content, threshold): 中英混雜檢查
- *   - checkJargonExplanation(content): 行話檢查
- *   - lintReply(content): 兩個一起跑、回 {ok, violations}
+ * Main exports:
+ *   - TECH_WHITELIST: 80+ tech terms (OwnMind-approved, not counted as mixed)
+ *   - checkMixedLanguage(content, threshold): mixed-ratio check
+ *   - checkJargonExplanation(content): jargon check
+ *   - lintReply(content): run both and return {ok, violations}
  *
- * 設計原則：
- *   - 純函式、不碰 DB、好測試
- *   - 跨平台（Mac/Linux/Windows）— 純 JS、無 native binding
+ * Design:
+ *   - Pure functions, no IO, easy to test
+ *   - Cross-platform (Mac/Linux/Windows) — pure JS, no native bindings
  */
 
-// v1.20.4：lint 事件常數從中性模組 import、不再寫死個人鐵律編號
+// v1.20.4: lint event constants imported from the neutral module; we no
+// longer hardcode personal iron-rule codes.
 import {
   LINT_LANGUAGE_MIXED_RATIO,
   LINT_JARGON_EXPLANATION_REQUIRED,
 } from './lint-event-types.js';
 
-// 白名單：常見技術詞 / OwnMind 概念詞、不算中英混雜
-// 跟 v1.17.94 src/utils/iron-rule-quality.js 同一份
-// v1.19.3：基於 30 天 audit Top 30 詞、從 80 詞擴到 200+ 詞、分 8 類
+// Whitelist: common tech / OwnMind concept words, not counted as mixed.
+// Same list as v1.17.94's src/utils/iron-rule-quality.js.
+// v1.19.3: grown from 80 to 200+ words across 8 categories based on a
+//          30-day audit of the top-30 most-flagged terms.
 export const TECH_WHITELIST = new Set([
-  // ─── 1. 通用通訊協定 / 資料格式（v1.17.94 既有）───
+  // ─── 1. General protocols / data formats (v1.17.94 baseline) ───
   'API', 'SQL', 'SSH', 'URL', 'HTTP', 'HTTPS', 'JSON', 'JSONL', 'TSV', 'CSV', 'XML',
   'YAML', 'CLI', 'UI', 'UX', 'AI', 'LLM', 'MCP', 'CI', 'CD', 'PR',
   'TCP', 'UDP', 'WebSocket', 'SSE', 'OAuth', 'JWT', 'REST', 'GraphQL', 'gRPC',
-  // ─── 2. 平台 / 工具（v1.17.94 既有 + v1.19.3 擴充）───
+  // ─── 2. Platforms / tools (v1.17.94 baseline + v1.19.3 expansion) ───
   'OwnMind', 'GitHub', 'GitLab', 'Git', 'Docker', 'Dockerfile', 'Linux', 'Mac', 'Windows',
   'Node', 'npm', 'Postgres', 'PostgreSQL', 'Redis', 'AES', 'Caddy', 'Nginx',
   'Kubernetes', 'k8s', 'Apache', 'AWS', 'GCP', 'Azure', 'Vercel', 'Netlify',
-  // ─── 3. SQL 關鍵字（v1.17.94 既有）───
+  // ─── 3. SQL keywords (v1.17.94 baseline) ───
   'WHERE', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'JOIN', 'FROM', 'COPY',
   'COALESCE', 'NULL', 'IS', 'AS', 'ON', 'AND', 'OR', 'NOT',
-  // ─── 4. 開發動作 / 流程詞（v1.17.94 + v1.19.3 audit Top 30 大量擴充）───
+  // ─── 4. Dev actions / workflow terms (v1.17.94 + v1.19.3 top-30 expansion) ───
   'IR', 'commit', 'commits', 'deploy', 'edit', 'fix', 'bug', 'debug',
   'push', 'pull', 'force', 'build', 'cache', 'rebase', 'merge', 'checkout',
   'env', 'file', 'path', 'repo', 'hash', 'port', 'host', 'log', 'test', 'tests', 'run',
   'code', 'type', 'name', 'key', 'value', 'health', 'endpoint',
   'install', 'uninstall', 'update', 'upgrade', 'script', 'module',
   'import', 'export', 'require',
-  // v1.19.3：audit Top 30 — Git / 開發流程
+  // v1.19.3: audit Top 30 — Git / dev workflow
   'main', 'origin', 'branch', 'worktree', 'remote', 'tag', 'stash',
   'review', 'reviewer', 'prod', 'staging', 'spec', 'prompt', 'task', 'tasks',
   'pipeline', 'stage', 'chunk', 'monorepo', 'redirect', 'apply', 'archive',
   'container', 'fresh', 'trigger', 'success', 'failure',
   'plan', 'publish', 'deploy', 'rollback', 'hotfix', 'release',
-  // v1.19.3：audit Top 30 — 常見技術概念
+  // v1.19.3: audit Top 30 — common technical concepts
   'hook', 'render', 'retry', 'batch', 'topic', 'vertical', 'horizontal',
   'server', 'client', 'handoff', 'project', 'brand', 'token', 'title',
   'async', 'await', 'callback', 'promise', 'middleware', 'dispatcher',
@@ -68,80 +74,87 @@ export const TECH_WHITELIST = new Set([
   'queue', 'lock', 'mutex', 'throttle', 'debounce', 'polling',
   'request', 'response', 'header', 'body', 'query', 'param',
   'pagination', 'sorting', 'auth',
-  // ─── 5. 業務術語（v1.17.94 既有 + v1.19.3 擴充）───
+  // ─── 5. Business terms (v1.17.94 baseline + v1.19.3 expansion) ───
   'filter', 'cutoff', 'audit', 'admin', 'session', 'context',
   'fetch', 'sync', 'flush', 'spool', 'pool', 'event', 'events',
   'metric', 'metrics', 'tier', 'role',
-  // ─── 6. AI 工具名稱（v1.17.94 既有 + v1.19.3 大公司名）───
+  // ─── 6. AI tool names (v1.17.94 baseline + v1.19.3 big-company names) ───
   'Claude', 'Codex', 'Cursor', 'Copilot', 'Gemini', 'ChatGPT', 'Antigravity',
   'OpenCode', 'Windsurf',
-  // v1.19.3：audit Top 30 — 大公司 / 大平台名
+  // v1.19.3: audit Top 30 — big-company / big-platform names
   'Google', 'Meta', 'OpenAI', 'Anthropic', 'Microsoft', 'Apple', 'Amazon',
   'Chrome', 'Firefox', 'Safari', 'Edge', 'YouTube', 'Podcast', 'Imagen',
   'Llama', 'Perplexity', 'Remotion', 'Evernote', 'Sheets', 'Slides', 'Docs',
   'Drive', 'Gmail', 'Calendar', 'Slack', 'Discord', 'Telegram', 'LINE',
   'Notion', 'Figma', 'Looker', 'Tableau',
-  // ─── 7. OwnMind 內部文件 / 概念（v1.17.94 既有 + v1.19.3 擴充）───
+  // ─── 7. OwnMind internal docs / concepts (v1.17.94 baseline + v1.19.3) ───
   'README', 'CHANGELOG', 'FILELIST', 'SKILL', 'Skill', 'OpenSpec',
   'Spec', 'Memory', 'Project', 'Adapter', 'status', 'Status',
   'Format', 'Reference', 'reference',
   'Pipeline', 'Step', 'Phase', 'Stage', 'Notes', 'Research', 'Description',
-  // ─── 8. Vin 個人專案名（v1.19.3 新增、audit Top 30）───
+  // ─── 8. Vin's personal project names (v1.19.3 added, audit Top 30) ───
   'adog', 'fapa', 'fontrip', 'ring', 'ownmind', 'vincent',
   'auto', 'speech', 'ima', 'asir', 'funit', 'majitreats',
   'kkvin', 'tutorial', 'rescue', 'narrative',
-  // ─── 9. v1.19.5 漏字補充（真實踩坑暴露）───
-  // shell / terminal / console 系列：v1.19.4 測試 reply 自我介紹漏判踩坑
+  // ─── 9. v1.19.5 missing-word fixes (uncovered by real misses) ───
+  // shell / terminal / console family: v1.19.4 test reply self-introduction missed
   'terminal', 'shell', 'console', 'stdout', 'stderr', 'tty',
-  // 發版動詞
+  // Release verbs
   'bump',
-  // v1.19.4 測試 prompt 暴露的技術詞漏字
+  // Tech terms exposed by v1.19.4 test prompts
   'Suspense', 'Concurrent', 'Pod', 'Saga', 'Envoy', 'Istio',
   'sidecar', 'service mesh', 'kubernetes',
   'monad', 'functor', 'applicative', 'observable',
   'mergeMap', 'switchMap', 'concatMap', 'combineLatest',
   'ajax', 'fromEvent', 'subscribe', 'pipe',
-  // 微服務 / 分散式
+  // Microservices / distributed
   'choreography', 'orchestration', 'orchestrator',
-  // 函式編程
+  // Functional programming
   'Maybe', 'Either', 'Just', 'Nothing',
-  // React / 前端
+  // React / frontend
   'hydration', 'reactive', 'Reactive',
 ]);
 
-// v1.19.5：建構 lowercase 版本給 case-insensitive 比對
-// 為什麼存在：v1.19.3 原本寫 `TECH_WHITELIST.has(w.toLowerCase())` 看似有 normalize、
-// 但 Set.has 是精確字串比對。白名單存 'Claude' (PascalCase)、查 'claude' 都 false。
-// 真實踩坑：Vin v1.19.4 開新 session 自我介紹「我是 claude」、claude 漏判觸發違規。
+// v1.19.5: lowercase version of the whitelist for case-insensitive lookup.
+// Why it exists: v1.19.3 originally did `TECH_WHITELIST.has(w.toLowerCase())`
+// which looks normalized but Set.has is exact string match. The whitelist
+// holds 'Claude' (PascalCase), so lookups of 'claude' always returned false.
+// Real miss: Vin's v1.19.4 new-session intro "我是 claude" — claude slipped
+// through and triggered a violation.
 export const TECH_WHITELIST_LOWER = new Set(
   Array.from(TECH_WHITELIST).map(w => w.toLowerCase())
 );
 
 /**
- * v1.19.3：偵測「大寫開頭孤立詞」當作 proper noun（人名、品牌名）跳過
- * 規則：詞首大寫 + 後接 1 個以上小寫字母（例：Google、Eric、Phoebe）
- * 全大寫詞（AWS、IDE）已在 TECH_WHITELIST、會在前面攔下、不會走到這裡
+ * v1.19.3: detect "isolated capitalized word" as a proper noun (person
+ * name, brand) and skip it.
+ * Rule: leading uppercase + 1 or more lowercase letters (e.g. Google, Eric,
+ * Phoebe). All-caps words (AWS, IDE) are already in TECH_WHITELIST and
+ * caught earlier.
  */
 export function looksLikeProperNoun(word) {
   return /^[A-Z][a-z]+$/.test(word);
 }
 
 /**
- * v1.19.3：判斷內容是否含 code block / inline code（用來放寬 threshold）
+ * v1.19.3: detect whether content has code blocks / inline code (so we can
+ * loosen the threshold).
  */
 function hasCodeMarkers(content) {
   return /```[\s\S]*?```|`[^`]+`/.test(content);
 }
 
 /**
- * v1.19.3：判斷是否為 code review 場合（含 'code review' 或 'code-review' 字眼、不分大小寫）
+ * v1.19.3: detect whether this is a code-review context (contains
+ * 'code review' / 'code-review', case-insensitive).
  */
 function isCodeReviewContext(content) {
   return /\bcode[\s-]review\b/i.test(content);
 }
 
 /**
- * 把內容裡的程式碼區塊、URL、markdown link 拿掉、避免誤判
+ * Strip code blocks, URLs, and markdown links from the content to avoid
+ * false positives.
  */
 function stripCodeAndLinks(content) {
   return content
@@ -152,38 +165,44 @@ function stripCodeAndLinks(content) {
 }
 
 /**
- * 抓所有連續 4+ 英文字母詞、扣除白名單 + v1.19.3 扣除 proper noun
- * v1.19.5：白名單比對改用 TECH_WHITELIST_LOWER（修 case-insensitive bug）
+ * Find every 4+ contiguous Latin-letter word, minus the whitelist and
+ * v1.19.3 proper-noun filter.
+ * v1.19.5: whitelist lookup uses TECH_WHITELIST_LOWER (case-insensitive fix).
  */
 function extractNonWhitelistEnglishWords(cleaned) {
   const words = cleaned.match(/[A-Za-z]{4,}/g) || [];
   return words.filter(w => {
     if (TECH_WHITELIST_LOWER.has(w.toLowerCase())) return false;
-    // v1.19.3：大寫開頭孤立詞視為 proper noun（人名 / 公司名 / 品牌）、跳過
+    // v1.19.3: leading-uppercase isolated words are treated as proper nouns
+    // (person / company / brand) and skipped.
     if (looksLikeProperNoun(w)) return false;
     return true;
   });
 }
 
 /**
- * 中英混雜比例檢查（事件常數 LINT_LANGUAGE_MIXED_RATIO）
+ * Mixed Chinese/English ratio check (event LINT_LANGUAGE_MIXED_RATIO).
  *
- * v1.19.3 變更：
- *   - threshold 分情境：純對話 15%、含 code marker 25%、code review 豁免
- *   - extractNonWhitelistEnglishWords 內自動扣除 proper noun
+ * v1.19.3 changes:
+ *   - Threshold varies by context: pure chat 15%, with code marker 25%,
+ *     code review exempt.
+ *   - extractNonWhitelistEnglishWords filters out proper nouns automatically.
  *
  * @param {string} content
- * @param {number|object} thresholdOrOptions 數字 = 強制 threshold；物件 = { threshold } 選項
+ * @param {number|object} thresholdOrOptions number = forced threshold; object
+ *   = { threshold } options
  * @returns {{ok: boolean, ratio: number, mixedWords: string[]}}
  */
 export function checkMixedLanguage(content, thresholdOrOptions = undefined) {
-  // v1.19.3：code review 場合直接豁免（先於 strip、用原始內容判定）
+  // v1.19.3: code-review context is exempt outright (decided pre-strip on
+  // the original content).
   if (typeof content === 'string' && isCodeReviewContext(content)) {
     return { ok: true, ratio: 0, mixedWords: [] };
   }
 
-  // v1.19.3：含 code marker → threshold 從 0.15 寬鬆到 0.25
-  // caller 沒指定 threshold 才走動態判定；caller 給死值就用死值（向後相容測試）
+  // v1.19.3: code markers present → threshold relaxes from 0.15 to 0.25.
+  // Dynamic decision only kicks in when caller didn't supply a threshold;
+  // an explicit value wins (backward compatibility for tests).
   let threshold;
   if (typeof thresholdOrOptions === 'number') {
     threshold = thresholdOrOptions;
@@ -211,12 +230,18 @@ export function checkMixedLanguage(content, thresholdOrOptions = undefined) {
 }
 
 /**
- * 掃 text、把「後面 80 字內有解釋」的詞加進 seenWords（白話：把已解釋過的詞記下來）
+ * Scan text and add into seenWords every word that has an explanation
+ * within the next 80 characters (i.e. mark already-explained terms).
  *
- * v1.20.2 follow-up #3 抽出來、給跨 reply 詞彙記憶共用。
+ * Extracted in v1.20.2 follow-up #3 to be shared across the cross-reply
+ * vocabulary memory.
  *
- * @param {string} text - 已清過程式碼跟連結的 text
- * @param {Set<string>} seenWords - 累積的已解釋詞集合（會被 mutate）
+ * Note: the explanation-detector regexes deliberately keep the Chinese
+ * tokens "即|也就是|意思是|簡稱" because they identify explanation phrases in
+ * Chinese-language replies.
+ *
+ * @param {string} text - text already stripped of code blocks and links
+ * @param {Set<string>} seenWords - cumulative set of explained words (mutated)
  */
 function collectExplainedWords(text, seenWords) {
   const wordRegex = /[A-Za-z]{4,}/g;
@@ -243,28 +268,33 @@ function collectExplainedWords(text, seenWords) {
 }
 
 /**
- * 行話 / 專有名詞必須附白話說明（事件常數 LINT_JARGON_EXPLANATION_REQUIRED）
+ * Jargon / technical terms must have a plain-Chinese explanation
+ * (event LINT_JARGON_EXPLANATION_REQUIRED).
  *
- * 判斷邏輯：
- *   - 抓非白名單英文詞（連續 4+ 字母）
- *   - 同詞重複只算第一次出現
- *   - 第一次出現位置後 30 字內、要有「（白話說明）」或「：解釋」其中一種
- *   - 沒有 → 違反
+ * Logic:
+ *   - Find non-whitelist English words (≥4 contiguous letters).
+ *   - Same word repeated only counts on its first occurrence.
+ *   - Within 30 chars after the first occurrence, expect either a
+ *     "(plain explanation)" or a ": explanation" — anything else is a
+ *     violation.
  *
- * v1.20.2 follow-up #3：加跨 reply 詞彙記憶。
- *   - historicalCorpus 是「本 session 內前面所有 assistant reply 合併的 text」
- *   - 預先掃 historicalCorpus、把已解釋過的詞加進 seenWords
- *   - 規則內文寫的「上下文已說明過、可保留不改」終於有實作
+ * v1.20.2 follow-up #3: cross-reply vocabulary memory.
+ *   - historicalCorpus is the concatenated text of all earlier assistant
+ *     replies in the session.
+ *   - Pre-scan it to populate seenWords with already-explained terms.
+ *   - Finally implements the rule's "if explained upstream, skip" clause.
  *
- * @param {string} content - 當前要檢查的 reply
- * @param {string} [historicalCorpus=''] - 同 session 前面所有 assistant reply 合併（選填）
+ * @param {string} content - the current reply to check
+ * @param {string} [historicalCorpus=''] - concatenated earlier assistant
+ *   replies in the same session (optional)
  * @returns {{ok: boolean, jargonWithoutExplanation: string[]}}
  */
 export function checkJargonExplanation(content, historicalCorpus = '') {
   const cleaned = stripCodeAndLinks(content);
   const seenWords = new Set();
 
-  // v1.20.2 follow-up #3: 預先掃歷史 corpus、把已解釋過的詞加進 seenWords
+  // v1.20.2 follow-up #3: pre-scan the historical corpus and seed
+  // seenWords with explained terms.
   if (historicalCorpus && typeof historicalCorpus === 'string') {
     const historicalCleaned = stripCodeAndLinks(historicalCorpus);
     collectExplainedWords(historicalCleaned, seenWords);
@@ -272,37 +302,42 @@ export function checkJargonExplanation(content, historicalCorpus = '') {
 
   const jargonWithoutExplanation = [];
 
-  // 用 regex match 連續英文詞 + 位置
+  // Match contiguous English words and their positions.
   const wordRegex = /[A-Za-z]{4,}/g;
   let match;
   while ((match = wordRegex.exec(cleaned)) !== null) {
     const word = match[0];
     const pos = match.index;
 
-    // 白名單跳過（v1.19.5：用 LOWER set 修 case-insensitive bug）
+    // Whitelist skip (v1.19.5: uses LOWER set to fix case-insensitivity bug).
     if (TECH_WHITELIST_LOWER.has(word.toLowerCase())) {
       continue;
     }
 
-    // v1.19.3: proper noun（人名 / 公司名）跳過
+    // v1.19.3: proper noun (person / company name) skip.
     if (looksLikeProperNoun(word)) continue;
 
-    // 同詞只算第一次出現
+    // Same word only counts on first occurrence.
     const lowerWord = word.toLowerCase();
     if (seenWords.has(lowerWord)) continue;
     seenWords.add(lowerWord);
 
-    // v1.19.3：視窗從 50 字擴到 80 字（Codex 對抗審查指出中文語境 50 字太短、
-    // 解釋常在括號外被切掉）
+    // v1.19.3: window grown from 50 to 80 chars (Codex adversarial review
+    // noted Chinese context needs more room — explanations often spill past
+    // 50 chars).
     const afterEnd = pos + word.length;
     const window = cleaned.slice(afterEnd, afterEnd + 80);
 
-    // 認可的解釋形式：
-    // 1. 括號內白話：(...) 或 （...）
-    // 2. 冒號後解釋：:... 或 ：...
-    // 3. 「即」「也就是」開頭
-    // 4. 連字號「-」開頭的同位解釋（例：refactor - 重構但不改行為）
-    // v1.19.3：解釋不需貼著詞、可在 80 字內任意位置（中文語境補充常隔句出現）
+    // Accepted explanation forms:
+    // 1. Inside parens: (...) or （...）
+    // 2. After colon: :... or ：...
+    // 3. Leading "即" / "也就是" markers
+    // 4. Leading "-" same-position explanation (e.g. refactor - rewrite no behavior change)
+    // v1.19.3: explanation no longer needs to sit right after the term;
+    //          anywhere within 80 chars works (Chinese context often
+    //          spreads supplements across sentences).
+    // The Chinese tokens "即|也就是|意思是|簡稱" are kept on purpose: they
+    // identify explanation phrases in Chinese-language replies.
     const hasExplanation = /[\(（]/.test(window) ||
                            /[:：]/.test(window) ||
                            /-\s/.test(window) ||
@@ -320,21 +355,31 @@ export function checkJargonExplanation(content, historicalCorpus = '') {
 }
 
 /**
- * 跑兩個檢查、回統一格式
+ * Run both checks and return a unified result.
  *
- * v1.20.2 follow-up #3：加跨 reply 詞彙記憶。
- *   - historicalCorpus 是「本 session 內前面所有 assistant reply 合併的 text」
- *   - 傳進來才會啟用「已解釋過的詞跳過行話檢查」
+ * v1.20.2 follow-up #3: cross-reply vocabulary memory.
+ *   - historicalCorpus is the concatenated text of all earlier assistant
+ *     replies in the session.
+ *   - When provided, "previously explained terms skip the jargon check"
+ *     takes effect.
  *
- * @param {string} content - 當前要檢查的 reply
- * @param {string} [historicalCorpus=''] - 同 session 前面所有 assistant reply 合併（選填）
+ * Note: the legacy-fallback violation messages below are deliberately kept
+ * in Chinese — they are shown to the AI as guidance to "switch to plain
+ * Chinese." Translating them would be self-contradictory and weaken the
+ * feedback loop.
+ *
+ * @param {string} content - the current reply to check
+ * @param {string} [historicalCorpus=''] - concatenated earlier assistant
+ *   replies in the same session (optional)
  * @returns {{ok: boolean, violations: Array<{rule: string, message: string}>}}
  */
 export function lintReply(content, enabledValidatorsOrHistorical = [], context = {}) {
-  // v1.21.0：兩種呼叫方式
-  //   - 新 API：lintReply(content, resolvedValidators, context)
-  //     resolvedValidators 是 [{rule, validator, check, params}, ...]、caller 已解析好 check fn
-  //   - 舊 API：lintReply(content, historicalCorpus)  ← 向後相容、historicalCorpus 是字串
+  // v1.21.0: two calling conventions
+  //   - new API: lintReply(content, resolvedValidators, context)
+  //     resolvedValidators is [{rule, validator, check, params}, ...] —
+  //     the caller has already resolved the check fn.
+  //   - legacy API: lintReply(content, historicalCorpus) — backward
+  //     compatible; historicalCorpus is a string.
   let resolvedValidators = [];
   let mergedContext = { ...context };
   if (typeof enabledValidatorsOrHistorical === 'string') {
@@ -345,7 +390,8 @@ export function lintReply(content, enabledValidatorsOrHistorical = [], context =
 
   const violations = [];
 
-  // v1.21.0：規則驅動 — 只跑 caller 解析好的 validator check fn
+  // v1.21.0: rule-driven path — run only the caller-resolved validator
+  // check functions.
   if (resolvedValidators.length > 0) {
     for (const entry of resolvedValidators) {
       if (typeof entry.check !== 'function') continue;
@@ -359,12 +405,13 @@ export function lintReply(content, enabledValidatorsOrHistorical = [], context =
           detail: v.detail || {},
           sourceRule: entry.rule || '',
         });
-      } catch { /* validator 內部錯不擋主流程 */ }
+      } catch { /* validator internal failure must not break main flow */ }
     }
     return { ok: violations.length === 0, violations };
   }
 
-  // 舊 API fallback：給沒傳 enabledValidators 的 caller 用（向後相容）
+  // Legacy API fallback: callers that don't pass enabledValidators
+  // (backward compatibility).
   const mixed = checkMixedLanguage(content);
   if (!mixed.ok) {
     violations.push({

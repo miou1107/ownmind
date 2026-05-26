@@ -1,5 +1,51 @@
 # OwnMind 檔案結構
 
+## v1.26.4 修改（國際化第八期：shared/ 內部註解英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.4-i18n-shared-internal/proposal.md
+openspec/changes/v1.26.4-i18n-shared-internal/tasks.md
+```
+
+修改檔（26 個 shared/ 檔 + 1 個 test 斷言）：
+```
+shared/secret-detect.js          — 124 行註解英化（reason 字串保留中文）
+shared/language-lint.js          — 107 行（AI-facing lint 訊息 + 中文偵測 regex 保留）
+shared/verification.js           — 65 行（FIX_HINTS 全部保留中文，測試硬編碼比對）
+shared/privacy-detect.js         — 52 行（PRIVACY_TYPE_LABELS 中文標籤保留）
+shared/bug-fingerprints.js       — 48 行（含 17 條 description 翻英文）
+shared/helpers.js                — 29 行（部署 / 刪除 trigger 詞保留）
+shared/session-off-state.js      — 28 行
+shared/privacy-redact.js         — 27 行（TYPE_LABEL_ZH 保留）
+shared/device-fingerprint.js     — 27 行
+shared/context-blob-schema.js    — 27 行（含 validation 錯誤訊息英化）
+shared/scanners/opencode.js      — 24 行
+shared/scanners/claude-code.js   — 23 行
+shared/lint-event-types.js       — 21 行
+shared/scanners/id-helper.js     — 20 行
+shared/scanners/codex.js         — 19 行
+shared/scanners/base.js          — 19 行
+shared/validators/index.js       — 15 行
+shared/scanners/vscode-telemetry.js — 15 行
+shared/random-password.js        — 13 行
+shared/iron-rule-tier.js         — 12 行（TIER_LABEL_ZH 中英雙語標題保留）
+shared/compliance.js             — 10 行
+shared/validators/jargon-explanation.js — 7 行
+shared/validators/privacy-detect.js — 4 行
+shared/validators/language-mixed-ratio.js — 4 行
+shared/scanners/cursor.js        — 3 行
+shared/scanners/antigravity.js   — 3 行
+tests/context-blob-schema.test.js — 第 104 行斷言改成 /型別|wrong type/
+package.json                     — 1.26.3 → 1.26.4
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                     — v1.26.4 條目
+```
+
+**刻意保留**：見 proposal §Out of Scope（lint AI-facing 訊息 / Chinese trigger regex / 中文標籤 / `secret-detect.js` reason 字串等共 44 行）。
+
+**驗證**：`npm test` 1956 pass / 0 fail；`node --check` 全過。
+
 ## v1.26.3 修改（國際化第七期：scripts/ 內部註解英文化 — 軌道 B）
 
 新增檔：

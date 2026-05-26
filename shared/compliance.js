@@ -1,12 +1,12 @@
 /**
- * OwnMind Compliance Log — 統一格式讀寫
+ * OwnMind Compliance Log — unified read/write format.
  *
- * 純函式模組，零外部依賴。
- * 被 MCP report_compliance、git hooks、session audit 共用。
+ * Pure-function module, zero external deps.
+ * Shared by MCP report_compliance, git hooks, session audit.
  *
  * Schema:
  *   ts: ISO 8601
- *   event: rule_code（如 'IR-008'）
+ *   event: rule_code (e.g. 'IR-008')
  *   action: 'comply' | 'skip' | 'violate' | 'block' | 'bypass' | 'hook_internal_error'
  *   rule_code: string
  *   rule_title: string
@@ -14,7 +14,8 @@
  *   session_id?: string
  *   commit_hash?: string
  *   failures?: string[]
- *   tier?: 'critical' | 'default' | 'advisory' — v1.19 起、caller 從鐵律快取查好後傳入
+ *   tier?: 'critical' | 'default' | 'advisory' — since v1.19, caller resolves it
+ *           from the iron-rule cache and passes it in
  */
 
 import fs from 'fs';
@@ -29,8 +30,8 @@ function getLogPath() {
 }
 
 /**
- * 寫入一筆 compliance entry 到 compliance.jsonl
- * 自動補 ts（若未提供）
+ * Append one compliance entry to compliance.jsonl.
+ * Fills in ts automatically if not provided.
  */
 export function appendCompliance(entry) {
   try {
@@ -51,7 +52,8 @@ export function appendCompliance(entry) {
     if (entry.session_id) record.session_id = entry.session_id;
     if (entry.commit_hash) record.commit_hash = entry.commit_hash;
     if (entry.failures) record.failures = entry.failures;
-    // v1.19 tier 欄位（caller 已 normalize）— 不合法值不寫入避免污染查詢
+    // v1.19 tier field (caller has already normalized). Drop invalid values
+    // to avoid polluting queries.
     if (entry.tier && isValidTier(entry.tier)) record.tier = entry.tier;
 
     fs.appendFileSync(logPath, JSON.stringify(record) + '\n');
@@ -61,8 +63,8 @@ export function appendCompliance(entry) {
 }
 
 /**
- * 讀取 compliance.jsonl 中近 cutoffMs 毫秒內的事件
- * @param {number} [cutoffMs=86400000] — 預設 24 小時
+ * Read events from compliance.jsonl within the last cutoffMs milliseconds.
+ * @param {number} [cutoffMs=86400000] — default 24 hours
  */
 export function readComplianceEvents(cutoffMs = 24 * 60 * 60 * 1000) {
   try {

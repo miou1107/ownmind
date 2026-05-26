@@ -1,20 +1,24 @@
 /**
- * v1.20.3：Session 暫時關閉開關 — 狀態檔讀寫
+ * v1.20.3: Session temporary-off switch — state file read/write.
  *
- * 用途：
- *   user 可在本 session 內透過 /ownmind-off 暫時關閉 OwnMind 鉤子（lint + pre-commit）。
- *   狀態存在 `~/.ownmind/state/session-off.json`：
- *     { session_id, off_at (ISO 時間), tick_count }
+ * Purpose:
+ *   The user can temporarily disable OwnMind hooks (lint + pre-commit) in the
+ *   current session via /ownmind-off. State is stored at
+ *   `~/.ownmind/state/session-off.json`:
+ *     { session_id, off_at (ISO timestamp), tick_count }
  *
- * 跨 session 失效機制：
- *   - Stop hook：嚴格比對 session_id、不符就清掉
- *   - pre-commit hook：拿不到 session_id、只看 off_at 是否 24 小時內、過期就清掉
+ * Cross-session expiry:
+ *   - Stop hook: strictly matches session_id; clears the file on mismatch.
+ *   - Pre-commit hook: cannot see session_id, only checks whether off_at is
+ *     within 24 hours; clears the file on expiry.
  *
- * 失敗安全（fail-open）：
- *   - 檔案 parse 失敗 / IO 失敗 → 視為「沒關閉」、正常跑鉤子（不要無法寫狀態檔就當作關閉）
- *   - 目錄不存在自動建立
+ * Fail-open:
+ *   - Parse failure / IO failure → treat as "not off" and run the hooks
+ *     normally (do not treat write failures as "off").
+ *   - Auto-create the directory if it does not exist.
  *
- * 純函式設計：除了狀態檔 IO、無其他副作用、零外部依賴。
+ * Pure-function design aside from the state-file IO; no other side effects,
+ * zero external deps.
  */
 
 import fs from 'fs';
@@ -23,14 +27,14 @@ import os from 'os';
 
 const STATE_DIR = path.join(os.homedir(), '.ownmind', 'state');
 const STATE_FILE = path.join(STATE_DIR, 'session-off.json');
-const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 小時
+const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function getStatePath() {
   return process.env.__OWNMIND_SESSION_OFF_PATH || STATE_FILE;
 }
 
 /**
- * 讀狀態檔。失敗或不存在回 null。
+ * Read the state file. Returns null on failure or when the file is missing.
  * @returns {{session_id: string, off_at: string, tick_count: number} | null}
  */
 export function readSessionOffState() {
@@ -50,9 +54,10 @@ export function readSessionOffState() {
 }
 
 /**
- * 寫狀態檔。若已有同 session_id 狀態、保留 tick_count；否則初始化 tick_count=0。
+ * Write the state file. Preserves tick_count when an existing record matches
+ * session_id; otherwise initializes tick_count = 0.
  * @param {string} session_id
- * @returns {boolean} - 寫入成功與否
+ * @returns {boolean} write success
  */
 export function writeSessionOffState(session_id) {
   if (typeof session_id !== 'string' || !session_id) return false;
@@ -74,7 +79,7 @@ export function writeSessionOffState(session_id) {
 }
 
 /**
- * 清除狀態檔（刪檔）。已不存在也視為成功。
+ * Clear the state file (deletes it). A missing file is treated as success.
  * @returns {boolean}
  */
 export function clearSessionOffState() {
@@ -88,8 +93,9 @@ export function clearSessionOffState() {
 }
 
 /**
- * 增加 tick_count、回新值。狀態檔不存在則無動作回 0。
- * @returns {number} - 新 tick_count 值
+ * Increment tick_count and return the new value. Returns 0 with no effect
+ * when the state file does not exist.
+ * @returns {number} the new tick_count value
  */
 export function incrementTickCount() {
   const state = readSessionOffState();
@@ -104,19 +110,22 @@ export function incrementTickCount() {
 }
 
 /**
- * 判斷是否處於關閉狀態 — Stop hook + pre-commit hook 共用。
+ * Check whether OwnMind is in the off state — shared by the Stop hook and
+ * the pre-commit hook.
  *
- * 邏輯：狀態檔存在 + off_at 在 24 小時內 → 視為 off。
+ * Logic: state file exists AND off_at is within 24 hours → considered off.
  *
- * 為什麼不嚴格比對 session_id：
- *   - MCP 工具寫 state 時用 sessionStartTime（MCP 進程啟動時間戳）
- *   - Stop hook 收到的 payload.session_id 是 Claude session 編號
- *   - 兩者本質不同、嚴格比對會永遠失敗
+ * Why no strict session_id comparison:
+ *   - MCP tools write the state with sessionStartTime (MCP process start ts).
+ *   - The Stop hook receives payload.session_id (the Claude session id).
+ *   - These represent different things, so strict equality would always fail.
  *
- * 新 session 自動失效靠 SessionStart hook 主動清狀態檔達成（白話：開新對話時、
- * SessionStart hook 跑、自動把舊狀態檔刪掉）。
+ * New-session auto-clear is driven by SessionStart hook actively wiping the
+ * state file (when a new conversation starts, SessionStart runs and removes
+ * the stale state file).
  *
- * 過期自動清狀態檔（防呆：避免狀態檔殘留 N 天後生效）。
+ * Auto-clear on expiry (safety net: avoids a stale state file activating N
+ * days later).
  *
  * @returns {boolean}
  */

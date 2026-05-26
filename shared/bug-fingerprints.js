@@ -1,83 +1,88 @@
 /**
- * OwnMind Bug Fingerprints — 錯誤指紋註冊表（程式碼層級的列舉）
+ * OwnMind Bug Fingerprints — error-fingerprint registry (a code-level enum).
  *
- * 對應 OpenSpec 提案 v1.19.14-bug-report-tool（規格 §2.9）。
+ * Corresponds to OpenSpec proposal v1.19.14-bug-report-tool (§2.9).
  *
- * 用途：
- *   後端拋錯時、附 `suggest_report: true` + `bug_fingerprint: <某個註冊過的指紋>`、
- *   給客戶端跟使用者建議回報。指紋穩定（不含時間／使用者／請求 id），
- *   同一錯誤情境必生同一指紋、方便後端跨筆比對（spam 偵測、冷靜期）。
+ * Use case:
+ *   When the backend throws an error, it attaches `suggest_report: true`
+ *   plus `bug_fingerprint: <some registered fingerprint>`. The client and
+ *   user use that to file a report. Fingerprints are stable (no timestamp /
+ *   user / request id), so the same error situation always produces the
+ *   same fingerprint — allowing the backend to correlate reports
+ *   (spam detection, cool-down windows).
  *
- * 規則：
- *   1. 指紋名格式：<前綴>_<情境>，前綴需在 VALID_PREFIXES 內
- *   2. 只用小寫英文／數字／底線
- *   3. 不含時間戳／UUID／使用者 id
- *   4. 新指紋必須加進這份註冊表才能用（測試會擋未註冊的字串）
+ * Rules:
+ *   1. Fingerprint format: <prefix>_<situation>. Prefix must be in
+ *      VALID_PREFIXES.
+ *   2. Lowercase ASCII / digits / underscores only.
+ *   3. No timestamps / UUIDs / user ids.
+ *   4. New fingerprints must be added to this registry before use (tests
+ *      reject unregistered strings).
  *
- * 前綴分類：
- *   - mem      ：記憶寫入 / 更新相關（被擋下、欄位錯）
- *   - srv_err  ：後端內部錯誤（5xx 用、依錯誤類別細分）
- *   - clt      ：客戶端錯誤（請求格式錯、參數不齊）
- *   - lint     ：回話品質 lint hook 相關
- *   - sync     ：記憶同步相關
- *   - auth     ：認證 / 權限相關
+ * Prefix categories:
+ *   - mem      : memory write / update related (blocked, bad field)
+ *   - srv_err  : backend internal error (5xx, sub-categorized by error class)
+ *   - clt      : client-side error (malformed request, missing params)
+ *   - lint     : reply-quality lint hook related
+ *   - sync     : memory sync related
+ *   - auth     : authentication / authorization related
  */
 
 export const VALID_PREFIXES = ['mem', 'srv_err', 'clt', 'lint', 'sync', 'auth'];
 
 export const BUG_FINGERPRINT_REGISTRY = {
-  // ── 記憶寫入被擋（mem_blocked_*）─────────────────────────
+  // ── Memory write blocked (mem_blocked_*) ─────────────────────────
   mem_blocked_secret_keyword: {
     category: 'mem',
-    description: '記憶寫入因偵測到敏感關鍵字被擋（secret-detect keyword）',
+    description: 'Memory write blocked because a sensitive keyword was detected (secret-detect keyword)',
   },
   mem_blocked_secret_regex: {
     category: 'mem',
-    description: '記憶寫入因符合密鑰樣式 regex 被擋',
+    description: 'Memory write blocked because the value matched a secret-pattern regex',
   },
   mem_blocked_privacy_pattern: {
     category: 'mem',
-    description: '記憶寫入因偵測到個資（信箱／身分證／手機）被擋',
+    description: 'Memory write blocked because privacy data was detected (email / ID / phone)',
   },
   mem_blocked_iron_rule_quality: {
     category: 'mem',
-    description: '鐵律寫入因品質檢查（缺白話／無背景）失敗被擋',
+    description: 'Iron-rule write blocked because the quality check failed (missing plain-Chinese explanation / context)',
   },
   mem_blocked_invalid_type: {
     category: 'mem',
-    description: '記憶寫入因 type 不在 allowed_types 被擋',
+    description: 'Memory write blocked because the type is not in allowed_types',
   },
 
-  // ── 後端內部錯誤（srv_err_*、給 5xx handler 用）─────────
+  // ── Backend internal errors (srv_err_*, used by 5xx handlers) ────────
   srv_err_db_connection: {
     category: 'srv_err',
-    description: '資料庫連線失敗（5xx）',
+    description: 'Database connection failed (5xx)',
   },
   srv_err_db_query: {
     category: 'srv_err',
-    description: '資料庫查詢例外（5xx）',
+    description: 'Database query exception (5xx)',
   },
   srv_err_migration_failure: {
     category: 'srv_err',
-    description: 'migration 套用失敗、server 啟動阻斷',
+    description: 'Migration failed to apply; server startup blocked',
   },
   srv_err_unhandled_exception: {
     category: 'srv_err',
-    description: '其他未處理的後端例外（fallback 用）',
+    description: 'Other unhandled backend exception (fallback)',
   },
 
-  // ── 客戶端請求錯誤（clt_*）─────────────────────────────
+  // ── Client request errors (clt_*) ─────────────────────────────
   clt_invalid_payload: {
     category: 'clt',
-    description: '請求 body 格式錯誤、無法解析',
+    description: 'Request body is malformed and cannot be parsed',
   },
   clt_missing_required_field: {
     category: 'clt',
-    description: '請求缺必填欄位',
+    description: 'Request is missing a required field',
   },
   clt_sync_token_stale: {
     category: 'clt',
-    description: 'sync token 過期、需要重新 ownmind_init',
+    description: 'sync token is stale; ownmind_init needs to be called again',
   },
   // v1.26.1: free-form escape hatch — when a user discovers a new design issue
   // that has no matching registered fingerprint, this is the canonical fallback.
@@ -87,45 +92,45 @@ export const BUG_FINGERPRINT_REGISTRY = {
     description: 'User-initiated free-form report — for newly discovered design issues / categories not yet registered as a specific fingerprint.',
   },
 
-  // ── 同步相關（sync_*）─────────────────────────────────
+  // ── Sync related (sync_*) ─────────────────────────────────
   sync_memory_file_corrupt: {
     category: 'sync',
-    description: '本地記憶檔毀損、無法 parse',
+    description: 'Local memory file is corrupt and cannot be parsed',
   },
 
-  // ── 認證相關（auth_*）─────────────────────────────────
+  // ── Auth related (auth_*) ─────────────────────────────────
   auth_key_invalid: {
     category: 'auth',
-    description: 'api_key 無效或過期',
+    description: 'api_key is invalid or expired',
   },
   auth_permission_denied: {
     category: 'auth',
-    description: '操作權限不足（例如非 admin 打 admin API）',
+    description: 'Operation not permitted (e.g. a non-admin calling an admin API)',
   },
 
-  // ── 回話品質 lint（lint_*）────────────────────────────
+  // ── Reply-quality lint (lint_*) ────────────────────────────
   lint_hook_internal_error: {
     category: 'lint',
-    description: 'reply-lint hook 內部錯誤、未能正常擋下違規',
+    description: 'reply-lint hook internal error; failed to block a violation properly',
   },
   lint_context_memory_missing: {
     category: 'lint',
-    description: '行話 / 專有名詞判斷未實作跨 reply 詞彙記憶、已解釋過的詞被重複擋（v1.20.2 follow-up #3 修正）',
+    description: 'Jargon / technical-term check has no cross-reply vocabulary memory; previously explained terms were re-flagged (fixed in v1.20.2 follow-up #3)',
   },
   lint_hook_no_suggest_report_path: {
     category: 'lint',
-    description: 'reply-lint hook 失敗時 stderr 沒帶 suggest_report 旗標跟 bug_fingerprint、AI 拿不到指紋無法送 bug report',
+    description: 'reply-lint hook failure path did not include suggest_report + bug_fingerprint on stderr, so AI cannot send a bug report with a fingerprint',
   },
 
-  // ── 鐵律鉤子擋下相關（mem_*）───────────────────────
+  // ── Iron-rule hook blocking (mem_*) ───────────────────────
   mem_iron_rule_blocking_commit_no_fingerprint: {
     category: 'mem',
-    description: 'pre-commit hook 因鐵律 verification 條件未滿足擋下 commit、但 stderr 沒帶 bug_fingerprint、AI 無法送 bug report',
+    description: 'pre-commit hook blocked commit because an iron-rule verification failed, but stderr did not include a bug_fingerprint, so AI cannot send a bug report',
   },
 };
 
 /**
- * 取得某個指紋的元資料；找不到回 null
+ * Get a fingerprint's metadata; returns null when not found.
  * @param {string|null|undefined} fingerprint
  * @returns {{category: string, description: string} | null}
  */
@@ -135,7 +140,7 @@ export function getFingerprintMetadata(fingerprint) {
 }
 
 /**
- * 檢查指紋是否已註冊
+ * Check whether a fingerprint is registered.
  * @param {string|null|undefined} fingerprint
  * @returns {boolean}
  */
@@ -144,8 +149,8 @@ export function isValidFingerprint(fingerprint) {
 }
 
 /**
- * 取得某個分類下所有指紋名
- * @param {string} prefix - 前綴名（例：'mem'、'srv_err'）
+ * List every fingerprint under a given category.
+ * @param {string} prefix - prefix name (e.g. 'mem', 'srv_err')
  * @returns {string[]}
  */
 export function fingerprintsByPrefix(prefix) {

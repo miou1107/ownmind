@@ -1,38 +1,42 @@
 /**
- * v1.20.4：Lint 事件常數模組
+ * v1.20.4: Lint event constants module.
  *
- * 用途：
- *   把 lint 鉤子判斷的「事件」跟「個人鐵律編號」解耦。產品程式碼一律用中性事件常數、
- *   不寫死任何 user 的個人鐵律編號（避免違反 IR-050、白話：個人鐵律編號不能寫進產品碼）。
+ * Purpose:
+ *   Decouples the lint hooks' "event" from any specific user's iron-rule code.
+ *   Product code uses neutral event constants and never hardcodes a user's
+ *   personal iron-rule code (avoids IR-050: "personal iron-rule codes must not
+ *   appear in product code").
  *
- * 「事件 → 個人鐵律編號」對應靠規則快取（白話：user 自己的鐵律 metadata）內
- * `triggered_by_event` 欄位查表、由 `buildComplianceEvents` 等 caller 處理。
+ * The "event → iron-rule code" mapping is resolved at lookup time from the
+ * rule cache (the user's iron-rule metadata) via the `triggered_by_event`
+ * field, handled by callers such as `buildComplianceEvents`.
  *
- * 零外部依賴、純常數模組。
+ * Zero external deps, pure constants module.
  */
 
 /**
- * 中英混雜比例過高
- * （之前寫死成「IR-037」、現在中性化）
+ * Mixed Chinese/English ratio too high.
+ * (Previously hardcoded to "IR-037"; now neutral.)
  */
 export const LINT_LANGUAGE_MIXED_RATIO = 'lint_language_mixed_ratio';
 
 /**
- * 行話 / 專有名詞沒附白話說明
- * （之前寫死成「IR-036」、現在中性化）
+ * Jargon / technical term missing a plain-Chinese explanation.
+ * (Previously hardcoded to "IR-036"; now neutral.)
  */
 export const LINT_JARGON_EXPLANATION_REQUIRED = 'lint_jargon_explanation_required';
 
 /**
- * 隱私內容偵測（電子郵件 / 身分證 / 手機號碼等）
- * v1.19.10 中性化、已不是個人鐵律編號、本檔記錄供查表用
+ * Privacy content detector (email / Taiwan ID / mobile phone, etc.).
+ * Neutralized in v1.19.10; no longer tied to a personal iron-rule code.
+ * Recorded here for lookup purposes.
  */
 export const LINT_PRIVACY_CHECK = 'privacy_check';
 
 /**
- * 事件常數 → 中文事件名（給 user-facing 訊息渲染用）
+ * Event constant → display name (for rendering user-facing messages).
  *
- * 規則：不冠任何 IR-XXX 編號、純中性中文描述。
+ * Rule: no IR-XXX codes; purely neutral descriptions.
  */
 export const EVENT_DISPLAY_NAMES = {
   [LINT_LANGUAGE_MIXED_RATIO]: 'Mixed Chinese-English',
@@ -41,7 +45,8 @@ export const EVENT_DISPLAY_NAMES = {
 };
 
 /**
- * 拿事件常數對應的顯示名。未知事件 → 原樣回傳。
+ * Resolve an event constant to its display name. Unknown events are
+ * returned unchanged.
  *
  * @param {string} eventCode
  * @returns {string}
@@ -51,7 +56,7 @@ export function getEventDisplayName(eventCode) {
 }
 
 /**
- * 全部已知事件常數的陣列（給測試 / 工具列舉用）
+ * All known event constants (for tests / tooling enumeration).
  */
 export const ALL_LINT_EVENTS = [
   LINT_LANGUAGE_MIXED_RATIO,
@@ -60,12 +65,13 @@ export const ALL_LINT_EVENTS = [
 ];
 
 /**
- * 從 user 規則快取找對應「事件常數」的個人鐵律編號。
+ * Look up the user's iron-rule that corresponds to a given event constant.
  *
- * 規則需要在 metadata.triggered_by_event 宣告對應事件。找不到回 null。
+ * The rule must declare the matching event in metadata.triggered_by_event;
+ * returns null if no match.
  *
- * @param {Array<object>} rules — iron rules cache 內容（白話：user 個人鐵律陣列）
- * @param {string} eventCode — 事件常數
+ * @param {Array<object>} rules — iron rules cache contents (the user's iron rules)
+ * @param {string} eventCode — event constant
  * @returns {{ code: string, title: string } | null}
  */
 export function findUserRuleByEvent(rules, eventCode) {
