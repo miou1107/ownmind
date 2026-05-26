@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## v1.25.0 修改（國際化第四期：Server-side memory route + INSTRUCTIONS_SOP 英文化）
+
+新增檔：
+```
+openspec/changes/v1.25.0-i18n-memory-route/proposal.md   — i18n 第四期提案
+openspec/changes/v1.25.0-i18n-memory-route/tasks.md      — 任務分解
+```
+
+修改檔（user-facing 字串翻譯）：
+```
+src/routes/memory.js                        — UPDATE_PROMPT + checkSyncToken errors + INSTRUCTIONS_SOP 288 行 + 25 處 HTTP error response + iron rule lint error/hint + is_test guard + alertText + compliance digest section + detectedTool fallback
+tests/auto-retry-sync-token.test.js         — sync_token retry 訊息斷言英化
+tests/memory-upgrade-test.test.js           — name_prefix + is_test guard 斷言英化
+tests/init-compact-compliance-instruction.test.js — digest section 視窗放寬 800 → 1500（英文比中文長）
+package.json                                — version 1.24.0 → 1.25.0
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                                — v1.25.0 條目（含 Track A 總結）
+```
+
 ## v1.24.0 修改（國際化第三期：reply-lint + validator 訊息英文化）
 
 新增檔：

@@ -9,7 +9,7 @@ describe('v1.20.2 follow-up #2：sync_token 自動 retry helper', () => {
       assert.equal(shouldRetryForSyncToken({
         method: 'POST',
         status: 409,
-        errorMessage: 'API 409: 請先呼叫 ownmind_init 取得 sync_token 後再進行寫入操作'
+        errorMessage: 'API 409: Call ownmind_init first to obtain a sync_token before performing any write operation'
       }), true);
     });
 

@@ -1,5 +1,57 @@
 # OwnMind 更新紀錄
 
+## v1.25.0 — 國際化第四期：Server-side memory route + INSTRUCTIONS_SOP 英文化
+
+**背景**：v1.22/v1.23/v1.24 翻完 MCP / git hooks / SessionStart / reply-lint。最後一個 defer 項目：`src/routes/memory.js` server-side API response 全英化、含 288 行 INSTRUCTIONS_SOP（每次 init 送給 AI client 的 behavioral manual、極度行為敏感）。
+
+**改動**：
+
+1. **`src/routes/memory.js` INSTRUCTIONS_SOP（288 行）全英化**
+   - 招牌標籤 `【】` → `[]`
+   - 所有 37 個操作類別的 prompt format templates
+   - 28 條 TIPS（跟 mcp/index.js TIPS 陣列同步、文字一致）
+   - 鐵律主動防護段（保留 imperative 力度）
+   - Enforcement Alerts 三級處理（🚨 critical / ⚠️ warning / 📌 notice）
+   - 何時該儲存記憶 / 學習回顧機制 / 自動更新檢查 / 主動彙整觸發條件
+   - 記憶類型與使用時機表
+   - 鐵律 / Metadata 格式
+   - 交接 / 停用流程
+   - Session 記錄協定（JSON schema 不變、只翻 field 說明）
+   - 持續進化原則
+
+2. **HTTP error responses（~25 處）全英化**
+   - sync_token / init / cleanup / sync / query / search / disable / enable / restore / etc.
+   - Team standards admin-only guards
+   - Iron rule quality lint error + hint
+   - is_test upgrade verification guard
+
+3. **其他 user-facing constants 英化**
+   - `UPDATE_PROMPT` 升級提示
+   - `detectedTool` fallback 'AI tool'
+   - `alertText` enforcement alerts header
+   - 附加到 ironRulesDigest 的 compliance report 段
+
+**測試更新（3 個檔）**：
+- `auto-retry-sync-token.test.js`: sync_token retry 訊息斷言英化
+- `memory-upgrade-test.test.js`: name_prefix + is_test guard 斷言英化
+- `init-compact-compliance-instruction.test.js`: digest section 視窗 800 → 1500（英文比中文長）
+
+**Out of scope（明確 defer）**：
+- Track B（開發環境英文化）：~23 處 logger.* 中文訊息 + 所有中文程式碼註解
+- 程式碼 hardcoded user iron rule title `'學到東西必須全層同步更新'`（line 1054, 1421）— user data 寫進產品碼是 code smell、需專案層 follow-up（用 event code lookup 取代）
+- mcp/index.js 跟 src/routes/memory.js TIPS 重複 — 抽共用 module follow-up
+
+**版本**：1.24.0 → 1.25.0
+**測試**：1954 pass / 0 fail
+**OpenSpec change**：`openspec/changes/v1.25.0-i18n-memory-route/`
+
+**Track A 產品 i18n（user-facing）總結（v1.22→v1.25）**：
+- v1.22.0：MCP 19 個工具描述 + 兩個 git hook + brand banner [OwnMind v...]
+- v1.23.0：SessionStart hook + 廣播渲染
+- v1.24.0：reply-lint 行為性 prompt + 3 個 validator 訊息 + 共用事件名映射
+- v1.25.0：server-side memory route + 288 行 SOP + 25 處 HTTP error
+- **Track A 主要 surface 完工** ✅
+
 ## v1.24.0 — 國際化第三期：reply-lint 行為性 prompt 英文化
 
 **背景**：v1.22 + v1.23 翻完 MCP / git hooks / SessionStart。第三期處理最複雜的一塊：reply-lint hook 給 Claude 看的重寫指令（30+ 行行為性 prompt、imperative 力度必須保留）。同時翻譯 lint validator 的違規訊息（含中性事件常數的 display name）。

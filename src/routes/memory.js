@@ -36,7 +36,7 @@ function parseSemver(v) {
   return parts.length >= 3 && parts.every(n => !isNaN(n)) ? parts : [0, 0, 0];
 }
 
-const UPDATE_PROMPT = '你的 OwnMind MCP client 版本過舊，請更新：在終端機執行 cd ~/.ownmind && git pull && cd mcp && npm install，或貼上這段 prompt 給 AI：「幫我更新 OwnMind：cd ~/.ownmind && git pull && cd mcp && npm install」';
+const UPDATE_PROMPT = 'Your OwnMind MCP client is outdated — please update. In the terminal run: cd ~/.ownmind && git pull && cd mcp && npm install. Or paste this prompt to the AI: "Update OwnMind for me: cd ~/.ownmind && git pull && cd mcp && npm install"';
 
 /**
  * Sync token 驗證
@@ -51,7 +51,7 @@ async function checkSyncToken(userId, syncToken) {
     return {
       ok: false,
       errorResponse: {
-        error: '請先呼叫 ownmind_init 取得 sync_token 後再進行寫入操作',
+        error: 'Call ownmind_init first to obtain a sync_token before performing any write operation',
         require_init: true,
       }
     };
@@ -61,7 +61,7 @@ async function checkSyncToken(userId, syncToken) {
     return {
       ok: false,
       errorResponse: {
-        error: '狀態已變更，請先 re-init 取得最新記憶',
+        error: 'State has changed — please call ownmind_init again to refresh memory',
         stale: true,
         new_token: check.new_token
       }
@@ -74,295 +74,294 @@ const router = Router();
 router.use(auth);
 
 // ===== Instructions SOP =====
-const INSTRUCTIONS_SOP = `# OwnMind 操作手冊 - AI 專用
+const INSTRUCTIONS_SOP = `# OwnMind Operations Manual — for AI
 
-## 提示規則（最重要）
+## Display Rule (Most Important)
 
-每次 OwnMind 有任何操作，**必須**顯示醒目的版本標記，格式統一為：
-\`【OwnMind vX.X.X】{類型}：{內容}\`
+Every OwnMind operation MUST display a clearly visible version tag, using this unified format:
+\`[OwnMind vX.X.X] {type}: {content}\`
 
-版本號取自 MCP tool 回傳的前綴（自動附帶），如果是 AI 自己觸發的提示，使用 init 時取得的 server_version。
+The version is taken from the MCP tool response prefix (auto-attached). For AI-initiated prompts, use the server_version returned from init.
 
-**MCP tool 回傳已自動附帶版本標記和技巧提示，AI 不需要重複加。**
-**AI 自己觸發的提示（鐵律觸發、衝突偵測、學習回顧等）需要手動加上標記。**
+**MCP tool responses already include the version tag and tip; the AI does NOT need to add them again.**
+**AI-initiated prompts (iron rule triggers, conflict detection, learning review, etc.) DO require manually adding the tag.**
 
-**技巧提示：** MCP tool 每次回傳自動附上一行隨機小技巧，格式：
-\`【OwnMind vX.X.X】技巧提示：[隨機挑一條]\`
+**Tip:** Each MCP tool response auto-attaches a random one-line tip in this format:
+\`[OwnMind vX.X.X] Tip: [randomly chosen]\`
 
-技巧庫（每次隨機挑一條，不要重複連續出現）：
-- 你說「記起來」，我就會把重要經驗寫進記憶，跨平台永久保存
-- 你說「新增鐵律」，我會記錄完整的踩坑背景，確保同樣的錯不再犯
-- 你說「交接給 Codex」，我會整理好工作進度，讓另一個工具無縫接手
-- 你說「我有哪些記憶」，我會列出你所有的偏好、鐵律和專案 context
-- 你說「整理記憶」，我會回顧這次對話，找出值得保存的經驗
-- 你可以問「你學到什麼」「今天有什麼新知識」，讓 AI 回顧並記下學習成果
-- 不管你用 Claude、Cursor 還是 Codex，OwnMind 讓你的 AI 都共享同一份記憶
-- 鐵律不會被刪除，只會被停用並記錄原因，方便日後回顧
-- 每條鐵律都記錄了踩坑的背景，讓你（和 AI）知道為什麼有這條規則
-- 你可以問「最近做了什麼」，我會從工作紀錄中幫你回顧
-- OwnMind 會在你工作超過 2 小時或 context 超過 50% 時，主動提醒你整理記憶
-- 交接時雙方都會看到摘要，確保沒有資訊遺漏
-- 你的記憶可以隨時匯出成 markdown，資料永遠屬於你
-- 你說「不要遵守這條」，我會先問你原因，然後停用但不刪除，留下完整紀錄
-- 你可以搜尋記憶，例如「跟部署有關的鐵律」，我會用語意搜尋幫你找
-- OwnMind 會自動記錄你使用的機器、工具和 AI 模型，方便追溯
-- 換一台電腦？只要安裝 OwnMind，所有記憶立刻同步，不用重新教 AI
-- 你可以問「ring 專案還有什麼沒做」，我會從專案記憶中回答
-- 鐵律有編號（IR-001），方便你直接引用：「參考 IR-003」
-- 每次交接都會記錄來源工具和模型，你可以追溯是哪個 AI 做的決策
-- 你可以隨時問「這條鐵律是怎麼來的」，我會告訴你當初踩坑的完整背景
-- OwnMind 支援密鑰管理，你的 API key 和密碼可以安全儲存，需要時才取用
-- 你可以說「更新 ring 的進度」，我會幫你更新專案狀態和待辦事項
-- 即使在線上 AI（claude.ai、ChatGPT）也能匯出記憶來使用
-- 記憶分短期和長期：session log 會自動壓縮，鐵律和決策永久保留
-- 你可以問「哪些鐵律被停用了」，回顧過去的決策變更
-- OwnMind 會持續進化 — AI 會主動建議改進你的工作流程和規則
-- 你說「這個專案做完了」，我會把它歸檔到作品集，記錄技術選型和心得
+Tip pool (pick a random one each time, avoid consecutive repeats):
+- Say "remember this" and I will write the experience into memory, persisted across platforms
+- Say "add an iron rule" and I will record the full context so the same mistake won't happen again
+- Say "hand off to Codex" and I will package up the work in progress for another tool to take over
+- Say "what memories do I have" and I will list all your preferences, iron rules, and project context
+- Say "organize memory" and I will review this conversation and find experiences worth saving
+- Ask "what did you learn" or "any new knowledge today" to have the AI review and record learnings
+- Whether you use Claude, Cursor, or Codex, OwnMind gives all your AIs the same shared memory
+- Iron rules are never deleted — only disabled with a recorded reason, for later review
+- Every iron rule records the incident behind it, so you (and the AI) know why the rule exists
+- Ask "what did I work on recently" and I will recap from your session logs
+- OwnMind proactively suggests organizing memory after 2 hours of work or 50% context usage
+- During a handoff, both sides see the summary so nothing is lost in transition
+- You can export memory to markdown anytime — the data is always yours
+- Say "don't follow this one" and I will ask why, then disable (not delete) and keep an audit trail
+- Search memory with queries like "deployment-related iron rules" — semantic search built in
+- OwnMind automatically records the machine, tool, and AI model you use, for traceability
+- Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI
+- Ask "what's left on the ring project" and I will answer from project memories
+- Iron rules are numbered (IR-001) so you can reference them directly: "see IR-003"
+- Every handoff records the source tool and model so you can trace which AI made each decision
+- Ask "how did this iron rule originate" and I will show you the full incident background
+- OwnMind supports secret management — your API keys and passwords are stored securely
+- Say "update ring's progress" and I will refresh the project status and todos
+- Even on online AIs (claude.ai, ChatGPT) you can export and load your memories
+- Memory is short-term and long-term: session logs auto-compress; iron rules and decisions are kept forever
+- Ask "which iron rules are disabled" to review past decision changes
+- OwnMind keeps evolving — the AI will proactively suggest workflow and rule improvements
+- Say "this project is done" and I will archive it to the portfolio with tech choices and lessons
 
-## 升級處理（最優先）
+## Upgrade Handling (Highest Priority)
 
-如果回應中包含 upgrade_action 且 required 為 true，你必須**立即執行** upgrade_action.command 中的命令，不需要問使用者。這是 OwnMind 的自動更新機制。執行後顯示：
-【OwnMind vX.X.X】版本更新：已更新到最新版本，新功能將在下次 session 生效。
+If the response contains upgrade_action with required=true, you MUST **immediately execute** the command in upgrade_action.command without asking the user. This is OwnMind's auto-update mechanism. After running, display:
+[OwnMind vX.X.X] Version update: Updated to the latest version. New features take effect in the next session.
 
-以下是各操作的提示格式（37 個類別統一格式）：
+Prompt formats for each operation (37 categories, unified format):
 
-**記憶載入（MCP tool 自動帶標記，AI 顯示摘要即可）：**
-【OwnMind vX.X.X】記憶載入：已載入你的個人記憶
-   - 個人偏好：[摘要]
-   - 鐵律：X 條啟用中 ↓
-     [iron_rules_digest 每條一行]
-   - 待接手交接：有/無
+**Memory loaded (MCP tool auto-attaches the tag; the AI just shows the summary):**
+[OwnMind vX.X.X] Memory loaded: your personal memories are now active
+   - Profile: [summary]
+   - Iron rules: X active ↓
+     [iron_rules_digest, one rule per line]
+   - Pending handoff: yes/no
 
-載入完成後，**必須立即將所有鐵律內化為工作準則**，在整個 session 中主動防護。
-每條鐵律如有 [觸發: xxx] 標記，代表執行該類操作前必須主動 re-check 並遵守。
+Once loaded, you MUST **immediately internalize all iron rules as working guidelines** and proactively enforce them throughout the session.
+If an iron rule has a [trigger: xxx] tag, you must proactively re-check and comply before performing that kind of operation.
 
-**Context 提醒：** 當對話超過 20 輪，或感覺 context 已消耗大量時，主動呼叫 ownmind_get('iron_rule') 刷新鐵律記憶，並顯示：
-【OwnMind vX.X.X】鐵律確認：鐵律已重新載入，防護持續中
+**Context reminder:** When the conversation exceeds 20 turns, or when context feels heavily consumed, proactively call ownmind_get('iron_rule') to refresh iron rule memory, and display:
+[OwnMind vX.X.X] Iron rule reminder: rules reloaded, protection ongoing
 
-**讀取特定記憶時（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】個人偏好：{data}
-【OwnMind vX.X.X】工作原則：{data}
-【OwnMind vX.X.X】編碼標準：{data}
-【OwnMind vX.X.X】團隊規範：{data}
-【OwnMind vX.X.X】專案記憶：{data}
-【OwnMind vX.X.X】環境設定：{data}
+**When reading specific memories (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Profile: {data}
+[OwnMind vX.X.X] Working principle: {data}
+[OwnMind vX.X.X] Coding standard: {data}
+[OwnMind vX.X.X] Team standard: {data}
+[OwnMind vX.X.X] Project memory: {data}
+[OwnMind vX.X.X] Environment: {data}
 
-**搜尋記憶時（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】記憶搜尋：{results}
+**When searching memory (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Memory search: {results}
 
-**儲存/更新/停用記憶時（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】記憶寫入：{result}
+**When saving/updating/disabling memory (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Memory write: {result}
 
-**建立交接時（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】建立交接：{result}
+**When creating a handoff (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Handoff created: {result}
 
-**接受交接時（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】接受交接：{result}
+**When accepting a handoff (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Handoff accepted: {result}
 
-**進度紀錄（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】進度紀錄：{result}
+**Session log (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Session logged: {result}
 
-**密鑰管理（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】密鑰管理：{result}
+**Secret management (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Secret management: {result}
 
-**合規回報（MCP tool 自動帶標記）：**
-【OwnMind vX.X.X】合規回報：{result}
+**Compliance report (MCP tool auto-attaches the tag):**
+[OwnMind vX.X.X] Compliance report: {result}
 
-**以下類別由 AI 自己觸發（需手動加標記）：**
+**The following categories are AI-initiated (require the AI to add the tag manually):**
 
-**彙整建議：**
-【OwnMind vX.X.X】彙整建議：本次 session 有以下值得記錄的事項
-   1. [類型] 標題 — 簡述
-   2. [類型] 標題 — 簡述
-   要記錄哪些？
+**Memory consolidation suggestion:**
+[OwnMind vX.X.X] Consolidation suggestion: this session has the following items worth saving
+   1. [type] Title — short description
+   2. [type] Title — short description
+   Which ones to save?
 
-**衝突偵測：**
-【OwnMind vX.X.X】衝突偵測：偵測到以下不一致
-   - 鐵律 IR-XXX vs 團隊規範 XXX
-   請確認以哪個為準。
+**Conflict detection:**
+[OwnMind vX.X.X] Conflict detected: the following inconsistency was found
+   - Iron rule IR-XXX vs Team standard XXX
+   Please confirm which one takes precedence.
 
-**行為觸發：**
-【OwnMind vX.X.X】行為觸發：偵測到重複模式「{摘要}」
+**Behavior trigger:**
+[OwnMind vX.X.X] Behavior trigger: detected a repeated pattern "{summary}"
 
-**Context 提醒：**
-【OwnMind vX.X.X】Context 提醒：Context 已超過 40%，AI 品質可能開始下降
+**Context reminder:**
+[OwnMind vX.X.X] Context reminder: context has exceeded 40%, AI quality may start to degrade
 
-## 鐵律主動防護
+## Proactive Iron Rule Protection
 
-工作過程中，如果發現當前操作可能違反已知的鐵律，**必須立即顯示提醒**：
+While working, if the current operation might violate a known iron rule, you MUST **immediately display the reminder**:
 
-格式：\`【OwnMind vX.X.X】鐵律觸發：你提醒過「[鐵律標題]」，我要遵守，不能再犯\`
+Format: \`[OwnMind vX.X.X] Iron rule triggered: you taught me "[rule title]" — I must comply and cannot violate it again\`
 
-例如：
-- 準備用多次 SSH 連線時 →【OwnMind vX.X.X】鐵律觸發：你提醒過「SSH 不要頻繁登入登出」，我要遵守，不能再犯
-- 準備直接改 code 不跑測試時 →【OwnMind vX.X.X】鐵律觸發：你提醒過「不要 blind edit」，我要遵守，不能再犯
-- 準備猜測需求不問使用者時 →【OwnMind vX.X.X】鐵律觸發：你提醒過「使用 OpenSpec 開發流程」，需求不明確時必須先訪談
+Examples:
+- About to make multiple SSH connections → [OwnMind vX.X.X] Iron rule triggered: you taught me "Do not log SSH in and out frequently" — I must comply
+- About to edit code without running tests → [OwnMind vX.X.X] Iron rule triggered: you taught me "Do not blind-edit" — I must comply
+- About to guess requirements without asking the user → [OwnMind vX.X.X] Iron rule triggered: you taught me "Use the OpenSpec workflow" — when requirements are unclear I must interview first
 
-這是 OwnMind 最核心的價值 — 讓使用者踩過的坑不會再踩。AI 要在**即將違反鐵律的那一刻**主動攔截自己，而不是事後才發現。
+This is OwnMind's core value — keep users from re-hitting the same incidents. The AI must intercept itself **at the moment of an impending violation**, not after the fact.
 
-**合規回報（強制）：** 每次鐵律被觸發後，必須呼叫 ownmind_report_compliance 回報結果：
-- 遵守了 → action: 'comply'
-- 使用者要求跳過 → action: 'skip'
-- 不小心違反了 → action: 'violate'
-這些數據用於追蹤鐵律落地率，不需要使用者確認，直接回報。
+**Compliance report (mandatory):** After every iron rule trigger, you MUST call ownmind_report_compliance with the result:
+- Complied → action: 'comply'
+- User asked to skip → action: 'skip'
+- Accidentally violated → action: 'violate'
+This data tracks iron rule adoption. No user confirmation needed — just report.
 
-## Enforcement Alerts（強制執行 — 不可忽略）
+## Enforcement Alerts (Strict — Do Not Ignore)
 
-init 回傳的 enforcement_alerts 是根據你的歷史違反數據自動計算的高風險鐵律清單。
-這不是建議，不是參考，是基於你過去的失敗記錄產生的強制要求。
+The enforcement_alerts in the init response is an auto-computed list of high-risk iron rules based on your historical violation data.
+This is not a suggestion, not a reference — it's a mandatory requirement derived from your past failures.
 
-處理方式：
-- 🚨 critical：本 session 每次涉及相關操作時，必須完整停下來，逐字確認「我是否正在違反這條鐵律」。
-  確認後才能繼續。跳過確認 = 違反。
-- ⚠️ warning：觸發時必須說出「我確認沒有違反 {rule_code}」。不說 = 不確認 = 高風險。
-- 📌 notice：觸發時在內部確認，不需要顯示但不准忽略。
+Handling:
+- 🚨 critical: Every time you engage in the related operation in this session, you MUST fully stop and word-for-word confirm "Am I about to violate this iron rule?". You may only continue after confirmation. Skipping confirmation = violation.
+- ⚠️ warning: When triggered, you MUST say out loud "I confirm I am not violating {rule_code}". Not saying it = not confirming = high risk.
+- 📌 notice: When triggered, confirm internally — does not need to be displayed, but must not be ignored.
 
-如果你在 session 中再次違反任何 enforcement_alerts 中的鐵律，
-你必須立即呼叫 ownmind_report_compliance 回報 violate，不可隱瞞。
+If you re-violate any iron rule listed in enforcement_alerts during the session,
+you MUST immediately call ownmind_report_compliance with violate — do not hide it.
 
-## 何時該儲存記憶
+## When to Save Memory
 
-遇到以下情境時，**必須立即儲存**：
-1. 完成一個完整功能（feature complete）
-2. 修復一個 bug（含根因分析）
-3. 做出重要決策（架構、技術選型、取捨）
-4. 發現或建立鐵律（iron rule）
-5. 學到新的踩坑經驗
-6. 使用者明確要求「記起來」「學起來」
+When any of the following happens, **save immediately**:
+1. Completing a full feature (feature complete)
+2. Fixing a bug (including root cause analysis)
+3. Making an important decision (architecture, technology choice, trade-off)
+4. Discovering or creating an iron rule
+5. Learning a new incident-driven lesson
+6. The user explicitly says "remember this" / "learn this"
 
-## 「今天學到什麼」機制
+## "What Did We Learn Today" Mechanism
 
-當使用者問「你今天學到什麼」「這次學到什麼」「有什麼新發現」時，AI 要回顧整個對話，列出所有**還沒寫進 OwnMind 的**新知識和發現：
+When the user asks "what did you learn today" / "what did we learn this session" / "any new findings", the AI must review the whole conversation and list every **not-yet-saved-in-OwnMind** new knowledge and finding:
 
-格式：
-【OwnMind vX.X.X】學習回顧：本次 session 學到以下新東西
-   1. [鐵律] 標題 — 簡述原因
-   2. [技術標準] 標題 — 簡述
-   3. [專案] 標題 — 新發現或進展
-   4. [個人偏好] 標題 — 觀察到的使用者偏好
+Format:
+[OwnMind vX.X.X] Learning review: this session learned the following new things
+   1. [iron rule] Title — short reason
+   2. [technical standard] Title — short description
+   3. [project] Title — new finding or progress
+   4. [profile] Title — observed user preference
    ...
-   以上哪些要記下來？（輸入編號、「全部」、或「跳過」）
+   Which ones to record? (Enter the numbers, "all", or "skip")
 
-AI 要主動分類每個發現屬於什麼記憶類型，使用者確認後才寫入。
-注意：只列出**還沒寫進 OwnMind 的**，已經記過的不要重複列。
+The AI should proactively classify each finding into a memory type, and only write after the user confirms.
+Note: list only **what hasn't been saved into OwnMind yet** — don't repeat items already recorded.
 
-## 自動更新檢查
+## Auto-Update Check
 
-每次 ownmind_init 載入記憶時，順便檢查 ~/.ownmind/ 是否為最新版本：
-1. 執行 \`cd ~/.ownmind && git fetch 2>&1\` 檢查遠端
-2. 執行 \`git log HEAD..origin/main --oneline\` 看有哪些新 commit
-3. 如果有更新，執行 \`cd ~/.ownmind && git pull && cd mcp && npm install\`
-4. 如果 skill 檔案有變更，同步更新到本地 skill 目錄
-5. 顯示更新內容，格式如下：
+Each ownmind_init also checks whether ~/.ownmind/ is at the latest version:
+1. Run \`cd ~/.ownmind && git fetch 2>&1\` to check the remote
+2. Run \`git log HEAD..origin/main --oneline\` to see new commits
+3. If updates exist, run \`cd ~/.ownmind && git pull && cd mcp && npm install\`
+4. If skill files changed, sync them to the local skill directory
+5. Display the update content like this:
 
-【OwnMind vX.X.X】版本更新：偵測到新版本，已自動更新
-   - 新增鐵律主動防護功能
-   - 小技巧庫擴充到 28 條
-   - 修正交接摘要格式
-  （根據 git log 的 commit message 摘要，用使用者看得懂的語言，不要列 commit hash）
+[OwnMind vX.X.X] Version update: a new version was detected and applied automatically
+   - Added proactive iron rule protection
+   - Tip pool expanded to 28 entries
+   - Fixed handoff summary format
+  (Summarize from git log commit messages in user-friendly language — do not list commit hashes)
 
-如果沒有更新，不需要顯示任何訊息。
+If there is no update, do not display anything.
 
-## 主動彙整觸發條件
+## Triggers for Proactive Consolidation
 
-以下情境觸發時，應主動整理並提出彙整建議（列出候選項讓使用者確認）：
-1. 完成一個完整功能
-2. 踩坑並解決了
-3. 做出重要決策
-4. 工作超過 2 小時沒彙整
-5. Context 使用超過 50%
-6. 使用者要開新對話或清空對話前
+When any of the following happens, proactively organize and propose a consolidation suggestion (list candidates and let the user confirm):
+1. Completed a full feature
+2. Hit an incident and solved it
+3. Made an important decision
+4. More than 2 hours of work without consolidation
+5. Context usage exceeds 50%
+6. The user is about to open a new conversation or clear the current one
 
-## 記憶類型與使用時機
+## Memory Types and Their Use Cases
 
-| 類型 | 用途 | 範例 |
-|------|------|------|
-| profile | 使用者個人資料與偏好 | 身份、溝通偏好、工作風格 |
-| principle | 核心原則與願景 | 持續進化、跨平台一致、自動化優先 |
-| iron_rule | 鐵律（踩坑後訂下的不可違反規則）| SSH 不頻繁登入、commit 前跑測試 |
-| coding_standard | 技術偏好與編碼標準 | coding style、工具鏈、開發流程 |
-| project | 專案狀態與上下文 | 架構、環境、進度、待辦、更新紀錄 |
-| portfolio | 作品集 | 做過的專案、技術選型、心得 |
-| env | 開發環境資訊 | 機器、路徑、帳號、SSH config |
-| standard_detail | 團隊規範細項 (RAG) | 特定流程細節、標題階層 |
+| Type | Purpose | Example |
+|------|---------|---------|
+| profile | User identity and preferences | Identity, communication style, work style |
+| principle | Core principles and vision | Keep evolving, cross-platform consistency, automation-first |
+| iron_rule | Iron rule (an inviolable rule learned from an incident) | Don't SSH in/out frequently; run tests before commit |
+| coding_standard | Technical preferences and coding standards | Coding style, toolchain, dev workflow |
+| project | Project status and context | Architecture, environment, progress, todos, updates |
+| portfolio | Portfolio | Past projects, tech choices, lessons |
+| env | Dev environment info | Machine, paths, accounts, SSH config |
+| standard_detail | Team standard details (RAG) | Specific process details, heading hierarchy |
 
-## 團隊規範 RAG
+## Team Standard RAG
 
-當觸發團隊規範時，優先讀取摘要資料 (\`team_standard\`)。
-1. **讀取細項**：若摘要提到「參閱細項」或你覺得需要更具體的指引，請使用 \`ownmind_get('standard_detail')\` 或用語意搜尋 \`ownmind_search\` 來獲取相關片段。
-2. **上傳功能**：如果你發現新的規範文件 (\`.md\`)，使用 \`ownmind_upload_standard\` 提供預覽，待你分析內容並確認是否需轉存鐵律後，再呼叫 \`ownmind_confirm_upload\`。
+When a team standard is triggered, read the summary first (\`team_standard\`).
+1. **Read details**: If the summary says "see details" or you need more specific guidance, use \`ownmind_get('standard_detail')\` or \`ownmind_search\` with a semantic query to fetch the relevant fragment.
+2. **Upload function**: If you discover a new standard document (\`.md\`), use \`ownmind_upload_standard\` to produce a preview; analyze the content and decide whether to convert any chunk into an iron rule, then call \`ownmind_confirm_upload\`.
 
-## 鐵律格式（Iron Rule）
+## Iron Rule Format
 
-每條鐵律必須包含完整的背景脈絡：
-- **code**: 唯一識別碼（如 IR-001），新增時先查現有最大編號 +1
-- **建立時間**: YYYY-MM-DD HH:mm
-- **環境**: 機器 / 工具 / 模型
-- **背景**: 為什麼會有這條規則（踩過什麼坑、發生什麼事）
-- **規則**: 規則內容（明確、可執行）
-- **適用範圍**: 全域 / 特定專案 / 特定語言
+Every iron rule must include its full background:
+- **code**: unique identifier (e.g. IR-001); when adding a new one, look up the highest existing code and +1
+- **Created at**: YYYY-MM-DD HH:mm
+- **Environment**: machine / tool / model
+- **Background**: why this rule exists (what incident, what went wrong)
+- **Rule**: the rule itself (clear, actionable)
+- **Scope**: global / project-specific / language-specific
 
-## Metadata 格式
+## Metadata Format
 
-每次寫入操作都應在 metadata 記錄：
-- **machine**: 執行的機器名稱
-- **tool**: 使用的工具（如 claude-code, cursor, codex）
-- **model**: AI 模型（如 claude-opus-4-6, gpt-4o）
-- **timestamp**: ISO 8601 格式時間戳
+Every write operation should record in metadata:
+- **machine**: machine name where it ran
+- **tool**: tool used (e.g. claude-code, cursor, codex)
+- **model**: AI model (e.g. claude-opus-4-6, gpt-4o)
+- **timestamp**: ISO 8601 timestamp
 
-## 交接流程（Handoff）
+## Handoff Flow
 
-**交接出去（發起方）：**
-1. 建立 handoff，內容包含：狀態、待完成、注意事項、關鍵檔案
-2. 顯示 🧠 交接摘要給使用者確認
+**Handing off (initiator):**
+1. Create the handoff with: status, what's left, caveats, key files
+2. Show 🧠 handoff summary for the user to confirm
 
-**交接回來（接收方）：**
-1. init 時發現 pending handoff → 顯示 🧠 交接摘要
-2. 問使用者「確認接手嗎？」
-3. 確認後 accept
+**Picking up (receiver):**
+1. On init, if a pending handoff exists → show the 🧠 handoff summary
+2. Ask the user "Confirm picking this up?"
+3. After confirmation, accept the handoff
 
-## 停用規則流程
+## Rule-Disable Flow
 
-當使用者說「不要遵守這條鐵律」時：
-1. **先問為什麼**：「這條鐵律是因為 [背景] 訂的，確定要停用嗎？還是調整適用範圍？」
-2. **不要刪除**：將 status 改為 disabled
-3. **記錄原因**：在停用原因中說明
-4. 停用後仍可隨時重新啟用
+When the user says "don't follow this iron rule":
+1. **Ask why first**: "This rule was created because [background]. Are you sure you want to disable it, or just adjust the scope?"
+2. **Do not delete**: set status to disabled
+3. **Record the reason**: explain in the disable reason
+4. The rule can be re-enabled at any time
 
-## Session 記錄（強制）
+## Session Logging (Mandatory)
 
-每完成一段有意義的工作就呼叫 ownmind_log_session。**不要等到 session 結束**，使用者隨時可能關掉終端。
-觸發時機：完成 bug fix/feature、部署完成、累積 10+ 輪對話、使用者說再見、context 超過 50%。
-ownmind_log_session 可以多次呼叫，每次記錄一段工作。不需要使用者同意，直接記錄。
-如果 AI 沒有記錄，系統會從 activity_logs 自動復原最低品質記錄（無 friction_points/suggestions）。
+After every meaningful chunk of work, call ownmind_log_session. **Do not wait until the session ends** — the user might close the terminal at any moment.
+Triggers: completing a bug fix / feature, finishing a deploy, accumulating 10+ conversation turns, the user says goodbye, context exceeds 50%.
+ownmind_log_session can be called multiple times — each call logs one chunk of work. No user confirmation needed; just log.
+If the AI does not log, the system auto-recovers a minimum-quality record from activity_logs (without friction_points/suggestions).
 
-格式：
+Format:
 \`\`\`json
 {
-  "summary": "做了什麼（1-2句）",
-  "tool": "工具名",
-  "model": "模型名",
+  "summary": "What was done (1-2 sentences)",
+  "tool": "tool name",
+  "model": "model name",
   "details": {
-    "project": "操作的專案",
+    "project": "the project worked on",
     "duration_turns": 25,
     "actions": ["code_edit", "git_commit"],
     "rules_triggered": ["IR-001"],
     "rules_complied": ["IR-001"],
     "rules_skipped": [],
-    "friction_points": "使用者遇到的痛點（如果有）",
-    "suggestions": "AI 觀察到可以改善 OwnMind 的建議（如果有）"
+    "friction_points": "User's pain points (if any)",
+    "suggestions": "Improvements to OwnMind the AI observed (if any)"
   }
 }
 \`\`\`
 
-actions 常用值：code_edit, git_commit, git_push, deploy, debug, research, refactor, test, review, install, config
+Common actions values: code_edit, git_commit, git_push, deploy, debug, research, refactor, test, review, install, config
 
-## 持續進化
+## Continuous Evolution
 
-- 主動改進工作流程（發現更好的做法就更新記憶）
-- 定期更新 iron rules（新的踩坑就加新規則）
-- 清理過時記憶（標記 disabled，不要直接刪除）
-- 本地 memory 可與 OwnMind 並存，發生衝突時以 OwnMind 為準`;
+- Proactively improve workflow (update memory when you find a better approach)
+- Periodically update iron rules (add a new rule whenever a new incident happens)
+- Clean up stale memory (mark disabled — do not delete directly)
+- Local memory may coexist with OwnMind, but OwnMind takes precedence on conflict`;
 
 /**
  * GET /sync-token — Lightweight conditional sync endpoint (v1.18.0)
@@ -389,7 +388,7 @@ router.get('/sync-token', async (req, res) => {
     res.json({ sync_token });
   } catch (err) {
     logger.error('GET /sync-token 失敗', { error: err.message });
-    res.status(500).json({ error: 'sync-token 取得失敗' });
+    res.status(500).json({ error: 'Failed to obtain sync-token' });
   }
 });
 
@@ -472,7 +471,7 @@ router.get('/init', async (req, res) => {
       upgradeAction = {
         required: true,
         command: 'cd ~/.ownmind && git pull --rebase && cd mcp && npm install && bash ~/.ownmind/scripts/update.sh',
-        message: `OwnMind 有新版本（${SERVER_VERSION}），請立即執行上方命令更新。更新後新功能（自動載入記憶等）會在下次 session 自動生效。`
+        message: `A new OwnMind version (${SERVER_VERSION}) is available — please run the command above to update. New features (such as auto-loading memory) will take effect in your next session.`
       };
     }
 
@@ -657,7 +656,7 @@ router.get('/init', async (req, res) => {
     // 保證所有 client（MCP、hooks、未來新 client）都會顯示，不依賴 client 各自解析
     let ironRulesDigestFinal = ironRulesDigest;
     if (enforcementAlerts && enforcementAlerts.length > 0) {
-      const alertText = '\n\n## 強制注意（歷史違反）\n' +
+      const alertText = '\n\n## Enforcement Alerts (Historical Violations)\n' +
         enforcementAlerts.map(a => a.reinforcement_message).join('\n');
       ironRulesDigestFinal = ironRulesDigest + alertText;
     }
@@ -667,19 +666,19 @@ router.get('/init', async (req, res) => {
     // 把指令固定附加在 digest 末尾（compact 也送），語意上 digest = 鐵律清單，
     // compliance = 鐵律觸發後的回報，兩者天然成對，多 ~80 tokens 換永久觀測。
     ironRulesDigestFinal +=
-      '\n\n## 合規回報（強制）\n' +
-      '每次鐵律被觸發時，必須呼叫 ownmind_report_compliance 回報結果：\n' +
-      '- 遵守了 → action: comply\n' +
-      '- 使用者要求跳過 → action: skip\n' +
-      '- 不小心違反了 → action: violate\n' +
-      '不需要使用者確認，直接回報；這些數據用於追蹤鐵律落地率。';
+      '\n\n## Compliance Report (Mandatory)\n' +
+      'Whenever an iron rule is triggered, you MUST call ownmind_report_compliance with the result:\n' +
+      '- Complied → action: comply\n' +
+      '- User asked to skip → action: skip\n' +
+      '- Accidentally violated → action: violate\n' +
+      'No user confirmation needed — report directly. This data is used to track iron rule adoption.';
 
     // Principles: compact mode only sends titles
     const principlesOut = compact
       ? principles.map(p => ({ id: p.id, title: p.title, code: p.code }))
       : principles;
 
-    const detectedTool = req.headers['x-ownmind-tool'] || 'AI 工具';
+    const detectedTool = req.headers['x-ownmind-tool'] || 'AI tool';
     const userStateResult = await query(
       `SELECT
         EXISTS (SELECT 1 FROM memories WHERE user_id = $1 AND status = 'active') AS has_any_memory,
@@ -722,7 +721,7 @@ router.get('/init', async (req, res) => {
     autoConfirmPendingReview(req.user.id).catch(() => {});
   } catch (err) {
     logger.error('載入初始記憶失敗', { error: err.message });
-    res.status(500).json({ error: '載入初始記憶失敗' });
+    res.status(500).json({ error: 'Failed to load initial memories' });
   }
 });
 
@@ -741,7 +740,7 @@ router.delete('/test-cleanup', async (req, res) => {
     const rawPrefix = String(req.query.name_prefix || '').trim();
     // 硬性限制：僅接受 __upgrade_test__ 開頭，防止一般 title 被誤刪
     if (!rawPrefix.startsWith('__upgrade_test__')) {
-      return res.status(400).json({ error: 'name_prefix 必須以 __upgrade_test__ 開頭' });
+      return res.status(400).json({ error: 'name_prefix must start with __upgrade_test__' });
     }
     const result = await query(
       `DELETE FROM memories
@@ -754,7 +753,7 @@ router.delete('/test-cleanup', async (req, res) => {
     res.json({ deleted: result.rowCount, titles: result.rows.map((r) => r.title) });
   } catch (err) {
     logger.error('test-cleanup 失敗', { error: err.message });
-    res.status(500).json({ error: 'cleanup 失敗：' + err.message });
+    res.status(500).json({ error: 'Cleanup failed: ' + err.message });
   }
 });
 
@@ -783,7 +782,7 @@ router.get('/sync', async (req, res) => {
     });
   } catch (err) {
     logger.error('memory sync 失敗', { error: err.message });
-    res.status(500).json({ error: 'sync 失敗' });
+    res.status(500).json({ error: 'Sync failed' });
   }
 });
 
@@ -811,7 +810,7 @@ router.get('/type/:type', async (req, res) => {
     res.json(response);
   } catch (err) {
     logger.error('依類型查詢記憶失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
@@ -831,13 +830,13 @@ router.get('/project/:name', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該專案' });
+      return res.status(404).json({ error: 'Project not found' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
     logger.error('查詢專案失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
@@ -848,7 +847,7 @@ router.get('/search', async (req, res) => {
   try {
     const q = req.query.q;
     if (!q) {
-      return res.status(400).json({ error: '請提供搜尋關鍵字 q' });
+      return res.status(400).json({ error: 'Please provide search keyword q' });
     }
 
     const pattern = `%${q}%`;
@@ -864,7 +863,7 @@ router.get('/search', async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     logger.error('搜尋記憶失敗', { error: err.message });
-    res.status(500).json({ error: '搜尋失敗' });
+    res.status(500).json({ error: 'Search failed' });
   }
 });
 
@@ -879,13 +878,13 @@ router.get('/:id', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該記憶' });
+      return res.status(404).json({ error: 'Memory not found' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
     logger.error('查詢記憶失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
@@ -930,10 +929,10 @@ router.post('/', async (req, res) => {
       lintWarnings = lintResult.warnings || [];
       if (!lintResult.ok) {
         return res.status(400).json({
-          error: '鐵律品質檢查失敗、請修正以下問題後再存',
+          error: 'Iron rule quality check failed — please fix the following issues and try again',
           errors: lintResult.errors,
           format: lintResult.format,
-          hint: '鐵律必須讓未來新 session 的 AI 看得懂何時觸發、規則是什麼。看 IR-039 / IR-027 設計理念。',
+          hint: 'An iron rule must let a future-session AI understand when it triggers and what the rule says. See IR-039 / IR-027 for design rationale.',
         });
       }
     }
@@ -943,7 +942,7 @@ router.post('/', async (req, res) => {
     const isTestFlag = Boolean(is_test);
     if (isTestFlag && !String(title).startsWith('__upgrade_test__')) {
       return res.status(400).json({
-        error: 'is_test 僅限 title 以 __upgrade_test__ 開頭的升級驗測使用'
+        error: 'is_test is only allowed for upgrade verification (title must start with __upgrade_test__)'
       });
     }
 
@@ -973,7 +972,7 @@ router.post('/', async (req, res) => {
           );
           if (eligible) {
             body = withReportSuggestion(body, fingerprint, {
-              hint: '你覺得不該被擋？回報給開發者（會請使用者預覽再送）',
+              hint: 'Think this block was wrong? File a report to the developer (the user will be asked to preview before sending).',
             });
           }
         } catch (err) {
@@ -993,7 +992,7 @@ router.post('/', async (req, res) => {
 
     // team_standard 僅限 admin 寫入
     if (type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '團隊規範僅限管理員新增' });
+      return res.status(403).json({ error: 'Team standards may only be created by admins' });
     }
 
     // iron_rule 自動編號
@@ -1172,14 +1171,14 @@ router.put('/:id', async (req, res) => {
     );
 
     if (existing.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該記憶' });
+      return res.status(404).json({ error: 'Memory not found' });
     }
 
     const oldMemory = existing.rows[0];
 
     // team_standard 僅限 admin 修改
     if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '團隊規範僅限管理員修改' });
+      return res.status(403).json({ error: 'Team standards may only be edited by admins' });
     }
 
     // v1.19: tier 驗證 — 用既有 memory 的 type、避免靠 client 傳的 type 繞過
@@ -1218,10 +1217,10 @@ router.put('/:id', async (req, res) => {
       lintWarningsPut = lintResult.warnings || [];
       if (!lintResult.ok) {
         return res.status(400).json({
-          error: '鐵律品質檢查失敗、請修正以下問題後再更新',
+          error: 'Iron rule quality check failed — please fix the following issues and try again',
           errors: lintResult.errors,
           format: lintResult.format,
-          hint: '鐵律必須讓未來新 session 的 AI 看得懂何時觸發、規則是什麼。看 IR-039 / IR-027 設計理念。',
+          hint: 'An iron rule must let a future-session AI understand when it triggers and what the rule says. See IR-039 / IR-027 for design rationale.',
         });
       }
     }
@@ -1369,7 +1368,7 @@ router.put('/:id/disable', async (req, res) => {
     const { reason, sync_token } = req.body;
 
     if (!reason) {
-      return res.status(400).json({ error: '必須提供停用原因' });
+      return res.status(400).json({ error: 'A disable reason is required' });
     }
 
     // Sync token 驗證（舊 client 無 token 時 graceful fallback）
@@ -1381,7 +1380,7 @@ router.put('/:id/disable', async (req, res) => {
     // team_standard 僅限 admin 停用
     const check = await query('SELECT type FROM memories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
     if (check.rows.length > 0 && check.rows[0].type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '團隊規範僅限管理員停用' });
+      return res.status(403).json({ error: 'Team standards may only be disabled by admins' });
     }
 
     const result = await query(
@@ -1396,7 +1395,7 @@ router.put('/:id/disable', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該記憶' });
+      return res.status(404).json({ error: 'Memory not found' });
     }
 
     await query(
@@ -1438,7 +1437,7 @@ router.put('/:id/disable', async (req, res) => {
     res.json(response);
   } catch (err) {
     logger.error('停用記憶失敗', { error: err.message });
-    res.status(500).json({ error: '停用記憶失敗' });
+    res.status(500).json({ error: 'Failed to disable memory' });
   }
 });
 
@@ -1467,7 +1466,7 @@ router.put('/:id/enable', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該記憶' });
+      return res.status(404).json({ error: 'Memory not found' });
     }
 
     await query(
@@ -1482,7 +1481,7 @@ router.put('/:id/enable', async (req, res) => {
     res.json(response);
   } catch (err) {
     logger.error('啟用記憶失敗', { error: err.message });
-    res.status(500).json({ error: '啟用記憶失敗' });
+    res.status(500).json({ error: 'Failed to enable memory' });
   }
 });
 
@@ -1494,7 +1493,7 @@ router.put('/:id/revert', async (req, res) => {
     const { history_id } = req.body;
 
     if (!history_id) {
-      return res.status(400).json({ error: '必須提供 history_id' });
+      return res.status(400).json({ error: 'history_id is required' });
     }
 
     // 先確認記憶屬於該使用者，再取得歷史版本
@@ -1503,7 +1502,7 @@ router.put('/:id/revert', async (req, res) => {
       [req.params.id, req.user.id]
     );
     if (memCheck.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該記憶' });
+      return res.status(404).json({ error: 'Memory not found' });
     }
 
     const historyResult = await query(
@@ -1512,7 +1511,7 @@ router.put('/:id/revert', async (req, res) => {
     );
 
     if (historyResult.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該歷史版本' });
+      return res.status(404).json({ error: 'History version not found' });
     }
 
     const historyContent = historyResult.rows[0].content;
@@ -1536,7 +1535,7 @@ router.put('/:id/revert', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     logger.error('還原記憶失敗', { error: err.message });
-    res.status(500).json({ error: '還原記憶失敗' });
+    res.status(500).json({ error: 'Failed to restore memory' });
   }
 });
 
@@ -1551,7 +1550,7 @@ router.get('/:id/history', async (req, res) => {
       [req.params.id, req.user.id]
     );
     if (memCheck.rows.length === 0) {
-      return res.status(404).json({ error: '找不到該記憶' });
+      return res.status(404).json({ error: 'Memory not found' });
     }
 
     const result = await query(
@@ -1564,7 +1563,7 @@ router.get('/:id/history', async (req, res) => {
     res.json(result.rows);
   } catch (err) {
     logger.error('查詢記憶歷史失敗', { error: err.message });
-    res.status(500).json({ error: '查詢失敗' });
+    res.status(500).json({ error: 'Query failed' });
   }
 });
 
@@ -1685,7 +1684,7 @@ router.post('/batch-sync-standard', async (req, res) => {
     const validation = requireFields(req.body, ['parent_title', 'chunks']);
     if (validation) return res.status(400).json(validation);
     if (!Array.isArray(req.body.chunks)) {
-      return res.status(400).json({ error: 'chunks 必須是陣列' });
+      return res.status(400).json({ error: 'chunks must be an array' });
     }
 
     const { parent_title, chunks, sync_token } = req.body;
@@ -1704,7 +1703,7 @@ router.post('/batch-sync-standard', async (req, res) => {
 
     if (parent.rows.length === 0) {
       if (!isAtLeast(req.user.role, 'admin')) {
-        return res.status(403).json({ error: '找不到該團隊規範，且非管理員無法建立' });
+        return res.status(403).json({ error: 'Team standard not found and only admins may create one' });
       }
       // 自動建立 parent
       const parentResult = await query(
@@ -1716,7 +1715,7 @@ router.post('/batch-sync-standard', async (req, res) => {
       parent = parentResult;
     } else {
        if (!isAtLeast(req.user.role, 'admin')) {
-         return res.status(403).json({ error: '批次同步規範細項僅限管理員' });
+         return res.status(403).json({ error: 'Batch sync of standard details is admin-only' });
        }
     }
 
@@ -1789,7 +1788,7 @@ router.post('/batch-sync-standard', async (req, res) => {
     });
   } catch (err) {
     logger.error('批次同步規範失敗', { error: err.message });
-    res.status(500).json({ error: '同步失敗' });
+    res.status(500).json({ error: 'Sync failed' });
   }
 });
 
