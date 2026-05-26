@@ -111,10 +111,12 @@ async function main() {
   // dynamic import shared/* 包在 try：失敗也不外漏（review A2）
   // v1.19: 全部 shared/* 與 hooks/lib/* 統一 catch → exit 0、不再 inline fallback（review M-2）
   // v1.19.3: 新增 session-counter
+  // v1.20.3: 新增 session-off-state（session 暫時關閉開關）
   let lintReply, readCredentials, getClientVersion, getTierFromRules, buildComplianceEvents;
   let incrementCounter, cleanupStale, incrementBlockCount, readBlockCount, resetBlockCount;
   let detectPrivacyLeak;
   let writeLintEvent, extractViolatedWords;
+  let isOff, incrementTickCount;
   try {
     ({ lintReply } = await import('../shared/language-lint.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
@@ -132,6 +134,7 @@ async function main() {
       writeEvent: writeLintEvent,
       extractViolatedWords,
     } = await import('./lib/lint-event-logger.js'));
+    ({ isOff, incrementTickCount } = await import('../shared/session-off-state.js'));
   } catch {
     process.exit(0); return;
   }
@@ -147,6 +150,25 @@ async function main() {
   // → 立刻退出避免無限迴圈（Claude Code Stop hook 規格）
   // v1.19.3：這也保證 Claude 重寫過程的 Stop 不會被重複計數
   if (payload.stop_hook_active === true) { process.exit(0); return; }
+
+  // v1.20.3：user 用 /ownmind-off 暫時關閉鉤子 → 跳過 lint、每 10 輪終端機提醒
+  // 新 session 開啟時、SessionStart 鉤子會主動清狀態檔、自動恢復
+  if (typeof isOff === 'function' && isOff()) {
+    try {
+      const tick = incrementTickCount();
+      if (tick > 0 && tick % 10 === 0) {
+        const reminder = [
+          '',
+          `【OwnMind v${getClientVersion()}】⚠️ OwnMind 目前關閉中（已 ${tick} 輪 AI 回應沒檢查 lint）`,
+          '  → 請記得用 /ownmind-on 重新打開、或開新對話會自動恢復',
+          '',
+        ].join('\n');
+        const wrote = !FORCE_FALLBACK && writeToTty(reminder);
+        if (!wrote) writeFallback(reminder);
+      }
+    } catch { /* 提醒失敗不擋主流程 */ }
+    process.exit(0); return;
+  }
 
   const transcriptPath = sanitizeTranscriptPath(payload.transcript_path);
   if (!transcriptPath) { process.exit(0); return; }

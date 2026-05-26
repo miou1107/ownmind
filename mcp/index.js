@@ -16,6 +16,7 @@ import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
+import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import {
   detectTriggerFromContext,
   sanitizeErrorMessage,
@@ -710,6 +711,26 @@ const TOOLS = [
       required: ["title", "description", "bug_fingerprint", "confirm_string"],
     },
   },
+  {
+    name: "ownmind_session_off",
+    description: "暫時關閉本 session 的 OwnMind 鉤子（回話品質 lint + commit 前檢查）。AI 回話不會被擋下重寫、git commit 不會被鐵律擋。新 session 開啟時自動恢復（白話：開新對話自動重新打開）、或呼叫 ownmind_session_on 立即重開。關閉狀態下每 10 輪 AI 回應、會在終端機提醒 user「OwnMind 目前關閉中」。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reason: { type: "string", description: "關閉原因（選填、給稽核紀錄用）" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "ownmind_session_on",
+    description: "重新開啟本 session 的 OwnMind 鉤子（回話品質 lint + commit 前檢查）。狀態檔被刪除、下次 AI 回話 / git commit 鉤子恢復正常運作。",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // --- Tool handlers ---
@@ -1218,8 +1239,51 @@ async function handleTool(name, args) {
       
       pendingUploads.delete(args.session_id);
       logEvent('memory_sync_standard', { title: pending.parent_title, stats: data.stats });
-      
+
       return data;
+    }
+
+    case "ownmind_session_off": {
+      // v1.20.3：暫時關閉本 session 的 OwnMind 鉤子（lint + pre-commit）
+      const sessionId = sessionStartTime ? String(sessionStartTime) : `noinit_${Date.now()}`;
+      const existing = readSessionOffState();
+      const alreadyOff = existing && existing.session_id === sessionId;
+
+      const ok = writeSessionOffState(sessionId);
+      if (!ok) {
+        return {
+          status: 'error',
+          message: '寫狀態檔失敗、OwnMind 仍維持原狀（白話：沒關成功、鉤子還是會跑）',
+        };
+      }
+
+      logEvent('session_off', { session_id: sessionId, reason: args.reason || null });
+
+      return {
+        status: 'ok',
+        already_off: !!alreadyOff,
+        message: alreadyOff
+          ? 'OwnMind 已經是關閉狀態。新 session 自動恢復、或呼叫 ownmind_session_on 立即重開。'
+          : 'OwnMind 已暫時關閉（lint + commit 前檢查跳過）。新 session 自動恢復、或呼叫 ownmind_session_on 立即重開。關閉狀態下每 10 輪 AI 回應會在終端機提醒。',
+        session_id: sessionId,
+      };
+    }
+
+    case "ownmind_session_on": {
+      // v1.20.3：重新開啟本 session 的 OwnMind 鉤子
+      const existing = readSessionOffState();
+      const wasOff = !!existing;
+      clearSessionOffState();
+
+      logEvent('session_on', { was_off: wasOff });
+
+      return {
+        status: 'ok',
+        was_off: wasOff,
+        message: wasOff
+          ? 'OwnMind 已重新開啟。下次 AI 回話 / git commit 鉤子恢復正常運作。'
+          : 'OwnMind 本來就是開啟狀態、無動作。',
+      };
     }
 
     default:

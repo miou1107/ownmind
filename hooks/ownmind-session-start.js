@@ -11,6 +11,7 @@ import https from 'https';
 import http from 'http';
 import os from 'os';
 import { readCredentials, getClientVersion } from '../shared/helpers.js';
+import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 
 const HOME = os.homedir();
 const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
@@ -40,6 +41,16 @@ function httpGet(url, headers) {
 }
 
 async function main() {
+  // v1.20.3：新 session 開啟時、清掉舊的「session 暫時關閉」狀態檔
+  // 達成 spec 寫的「新 session 自動恢復」（白話：開新對話、OwnMind 鉤子自動重新啟用）
+  try {
+    const prev = readSessionOffState();
+    if (prev) {
+      clearSessionOffState();
+      logEvent('session_off_cleared_on_new_session', { prev_session_id: prev.session_id });
+    }
+  } catch { /* fail-open */ }
+
   const { apiKey, apiUrl } = readCredentials();
   if (!apiKey || !apiUrl) process.exit(0);
 

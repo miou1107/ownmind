@@ -17,6 +17,7 @@ import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials 
 import { readComplianceEvents } from '../shared/compliance.js';
 import { detectSecretLike } from '../shared/secret-detect.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
+import { isOff as isSessionOff } from '../shared/session-off-state.js';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
@@ -174,6 +175,16 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0) {
 // ============================================================
 
 async function main() {
+  // v1.20.3：user 用 /ownmind-off 暫時關閉鉤子 → 跳過所有鐵律檢查、直接放行 commit
+  // 24 小時內有效、過期或新 session 開啟（SessionStart 清狀態檔）自動恢復
+  try {
+    if (isSessionOff()) {
+      console.error(`【OwnMind v${VERSION}】⚠️ OwnMind 目前關閉中、commit 鉤子跳過所有鐵律檢查。請記得用 /ownmind-on 重開、或開新對話自動恢復。`);
+      process.exit(0);
+      return;
+    }
+  } catch { /* 讀狀態檔失敗、fail-open 正常跑 */ }
+
   // 1. Load iron rules from local cache (with staleness check)
   let rules = readJsonSafe(CACHE_FILE);
   let cacheStale = false;

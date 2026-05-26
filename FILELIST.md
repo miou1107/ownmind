@@ -90,6 +90,11 @@ tests/auto-comply-reads-file.test.js                          — v1.20.2 follow
 mcp/lib/sync-token-retry.js                                   — v1.20.2 follow-up #2：兩個純函式 helper（shouldRetryForSyncToken + applyNewToken）給 callApi 自動 retry 用
 tests/auto-retry-sync-token.test.js                           — v1.20.2 follow-up #2：17 個守備 case（GET 不 retry / 500 不 retry / 非 sync_token 訊息不 retry / newToken null 防呆等）
 tests/jargon-context-memory.test.js                           — v1.20.2 follow-up #3：11 個守備 case（IR-036 跨 reply 詞彙記憶、4 種解釋格式 / 向後相容 / null 防呆）
+shared/session-off-state.js                                   — v1.20.3：session 暫時關閉開關狀態檔讀寫（read / write / clear / increment tick / isOff 共 5 個純函式、24 小時 TTL）
+tests/session-off-state.test.js                               — v1.20.3：15 個守備 case（read / write / clear / increment / isOff / 24h 過期 / 損毀防呆）
+openspec/changes/v1.20.3-session-toggle/proposal.md           — 提案：/ownmind-off + /ownmind-on slash 指令、暫時關閉鉤子
+openspec/changes/v1.20.3-session-toggle/spec.md               — 規格：8 個 GIVEN/WHEN/THEN scenario
+openspec/changes/v1.20.3-session-toggle/tasks.md              — 任務清單
 openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
 openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
 openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
