@@ -4,31 +4,35 @@ import express from 'express';
 import { createDebugRouter } from '../src/routes/debug.js';
 
 /**
- * v1.17.86 — upgrade_complete beacon（IR-038 觀測管道補洞）
+ * v1.17.86 — upgrade_complete beacon (IR-038 observability gap fix)
  *
- * 背景：v1.17.85 的 FAIL fallback 只覆蓋「升級流程被 FAIL() 中斷」的 case，
- * 但 Adam / Michelle 是另一種場景：**升級實際完成（client 在 1.17.84，
- * collector_heartbeat 證實）但 post_install self-check 上傳沒成功**。可能原因：
- *   - self-check 跑了但 upload 401 / 5xx → 寫 .upload-spool.jsonl、等下次 retry，
- *     可是 user 升完就 quit Claude Code、永遠沒下次觸發 self-check 來 drain spool
- *   - Windows 環境特殊問題讓 self-check process 被中斷
- *   - 跨多版升級時 self-check 邏輯卡某步
+ * Background: the v1.17.85 FAIL fallback only covered the case where the upgrade flow was
+ * interrupted by FAIL(); Adam / Michelle hit a different scenario — the upgrade actually
+ * succeeded (the client was on 1.17.84, confirmed by collector_heartbeat) but the
+ * post_install self-check upload never succeeded. Possible causes:
+ *   - self-check ran but the upload 401 / 5xx'd → wrote .upload-spool.jsonl and waited for
+ *     the next retry, but the user quit Claude Code right after upgrading, so self-check
+ *     never re-fires to drain the spool.
+ *   - Windows-specific issues caused the self-check process to be interrupted.
+ *   - Self-check logic got stuck mid-step when crossing multiple versions in a single upgrade.
  *
- * 結果：`install_check_logs` 沒任何 post_install row → admin 從 install_check_logs
- * 看「user 在哪版」會誤判（要交叉看 `collector_heartbeat`）。
+ * Net result: install_check_logs had no post_install rows → an admin reading
+ * install_check_logs to see "which version is the user on" would misjudge (cross-reference
+ * with collector_heartbeat).
  *
- * 修法：升級成功末段先打一個輕量 `upgrade_complete` beacon（fire-and-forget +
- * spool fallback），payload 只帶真版號 + ts + machine，**不包含完整 checks**。
- * 比 self-check report 早送、簡單到不會卡住。Server 收到後 install_check_logs
- * 有 row + 真版號（不像 install_started / update_started 走 sentinel）。
+ * Fix: at the tail of a successful upgrade, fire a lightweight `upgrade_complete` beacon
+ * (fire-and-forget + spool fallback); the payload only carries the real version + ts + machine,
+ * not the full checks. It is sent before the self-check report and is simple enough not to stall.
+ * Once the server receives it, install_check_logs has a row + the real version (unlike
+ * install_started / update_started, which use a sentinel).
  *
- * 這條 beacon 跟現有 install_started / update_started 並存：
- *   install_started → 升級「開始」訊號（client_version = sentinel）
- *   upgrade_complete → 升級「完成」訊號（client_version = 真版號）
- *   post_upgrade self-check → 升級「驗證」訊號（完整 checks）
+ * This beacon coexists with the existing install_started / update_started:
+ *   install_started → "upgrade starting" signal (client_version = sentinel)
+ *   upgrade_complete → "upgrade complete" signal (client_version = real version)
+ *   post_upgrade self-check → "upgrade verified" signal (full checks)
  *
- * 即使 self-check 三步驟全部失敗，server 至少看得到 upgrade_complete 證明
- * user 升上去了、現在版本是 X。
+ * Even if all three self-check steps fail, the server still sees upgrade_complete proving
+ * the user upgraded to X.
  */
 
 function setupTestApp() {
@@ -78,7 +82,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
-describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon 行為', () => {
+describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon behavior', () => {
   let tmpHome;
 
   function setup() {
@@ -86,7 +90,7 @@ describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon 行�
     const claudeDir = path.join(tmpHome, '.claude');
     fs.mkdirSync(claudeDir, { recursive: true });
     fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
-    // 寫假 settings.json 但用 invalid URL → 強制 curl 失敗 → 走 spool fallback
+    // Write a fake settings.json with an invalid URL → forces curl to fail → exercises the spool fallback.
     fs.writeFileSync(
       path.join(claudeDir, 'settings.json'),
       JSON.stringify({
@@ -94,7 +98,7 @@ describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon 行�
           ownmind: {
             env: {
               OWNMIND_API_KEY: 'test-key',
-              OWNMIND_API_URL: 'http://127.0.0.1:1/ownmind',  // port 1 → 必失敗
+              OWNMIND_API_URL: 'http://127.0.0.1:1/ownmind',  // port 1 → must fail
             },
           },
         },
@@ -106,13 +110,13 @@ describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon 行�
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 
-  it('bash: send_upgrade_complete_beacon 失敗時 spool fallback、payload 含真版號 + upgrade_complete trigger', () => {
+  it('bash: send_upgrade_complete_beacon spools on failure; payload contains the real version + upgrade_complete trigger', () => {
     setup();
     try {
       const fakeScript = `
         #!/usr/bin/env bash
         set -u
-        # 抽真實 send_upgrade_complete_beacon function 從 interactive-upgrade.sh
+        # Pull the real send_upgrade_complete_beacon function from interactive-upgrade.sh.
         eval "$(sed -n '/^send_upgrade_complete_beacon()/,/^}/p' "${path.join(repoRoot, 'scripts/interactive-upgrade.sh')}")"
         send_upgrade_complete_beacon "1.17.86-test"
       `;
@@ -120,55 +124,56 @@ describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon 行�
         env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome, OSTYPE: 'darwin' },
         encoding: 'utf8',
       });
-      assert.equal(r.status, 0, 'beacon function 失敗也要 exit 0、不擋升級');
+      assert.equal(r.status, 0, 'beacon function must exit 0 even on failure; never block the upgrade');
 
       const spoolPath = path.join(tmpHome, '.ownmind', 'logs', '.upload-spool.jsonl');
-      assert.ok(fs.existsSync(spoolPath), 'curl 失敗應該 spool fallback');
+      assert.ok(fs.existsSync(spoolPath), 'curl failure should fall back to the spool');
 
       const line = fs.readFileSync(spoolPath, 'utf8').trim();
       const rec = JSON.parse(line);
       assert.equal(rec.trigger, 'upgrade_complete');
       assert.equal(rec.client_version, '1.17.86-test',
-        '真版號要直接放、不是 sentinel');
+        'real version is sent directly; not a sentinel');
       assert.ok(rec.ts);
       assert.ok(rec.machine);
     } finally { cleanup(); }
   });
 
-  it('bash: interactive-upgrade.sh 末段有呼叫 send_upgrade_complete_beacon', () => {
+  it('bash: interactive-upgrade.sh calls send_upgrade_complete_beacon at the end', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'scripts/interactive-upgrade.sh'), 'utf8');
     assert.match(content, /^send_upgrade_complete_beacon\s+"\$\{?VERSION\}?"/m,
-      'interactive-upgrade.sh 必須在升級成功末段 call beacon 帶 $VERSION');
+      'interactive-upgrade.sh must call the beacon with $VERSION at the tail of a successful upgrade');
   });
 
-  it('SessionStart hook 也跑 retrySpool drain（reviewer I1 修法：縮短「user 升完→server 看到」延遲）', () => {
-    // 場景：v1.17.86 加 upgrade_complete beacon 解決 self-check upload 失敗時
-    // server 看不到 user 升完。但 beacon 自己上傳失敗也會 spool、原本要等下次
-    // self-check 才 drain。user 升完就 quit Claude Code 永遠沒下次 → 卡死。
-    // 修法：SessionStart 也呼叫 retrySpool，任何新 session 起來都會 drain。
+  it('SessionStart hook also runs retrySpool drain (reviewer I1 fix: shorten "user-upgrade-to-server-visible" latency)', () => {
+    // Scenario: v1.17.86 added upgrade_complete beacon to fix the case where the server cannot
+    // see a completed upgrade after self-check upload fails. But the beacon's own upload can
+    // also fail and spool — originally it would wait for the next self-check to drain.
+    // The user quit Claude Code immediately after upgrading → no next run → stuck.
+    // Fix: SessionStart also calls retrySpool; any new session starts the drain.
     const content = fs.readFileSync(path.join(repoRoot, 'hooks/ownmind-session-start.sh'), 'utf8');
     assert.match(content, /retrySpool/,
-      'SessionStart hook 必須呼叫 retrySpool drain 累積的 spool record');
+      'SessionStart hook must call retrySpool to drain accumulated spool records');
     assert.match(content, /\.upload-spool/,
-      'SessionStart 註解或邏輯應提到 .upload-spool 來源');
-    // fire-and-forget：必須以 `&` 背景跑，不擋 SessionStart
+      'SessionStart comments / logic should reference the .upload-spool source');
+    // fire-and-forget: must run in the background with `&`; must not block SessionStart.
     assert.match(content, /retrySpool[\s\S]{0,500}&/,
-      'drain 必須 fire-and-forget 背景跑、不擋 SessionStart');
+      'drain must be fire-and-forget in the background; never block SessionStart');
   });
 
-  it('ps1: interactive-upgrade.ps1 含 Send-UpgradeCompleteBeacon function + 呼叫', () => {
+  it('ps1: interactive-upgrade.ps1 contains Send-UpgradeCompleteBeacon function + call', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'scripts/interactive-upgrade.ps1'), 'utf8');
     assert.match(content, /function Send-UpgradeCompleteBeacon/,
-      'PS1 必須定義 Send-UpgradeCompleteBeacon function');
+      'PS1 must define the Send-UpgradeCompleteBeacon function');
     assert.match(content, /Send-UpgradeCompleteBeacon\s+-ClientVersion\s+\$Version/,
-      'PS1 必須末段呼叫 Send-UpgradeCompleteBeacon -ClientVersion $Version');
+      'PS1 must call Send-UpgradeCompleteBeacon -ClientVersion $Version at the end');
     assert.match(content, /trigger\s*=\s*'upgrade_complete'/,
-      'PS1 beacon payload trigger 必須是 upgrade_complete');
+      "PS1 beacon payload trigger must be 'upgrade_complete'");
   });
 });
 
-describe('v1.17.86 — upgrade_complete beacon: server 端認得且保留真版號', () => {
-  it('upgrade_complete + 真版號 → client_version 寫真版號（不被當 beacon-sentinel 過濾）', async () => {
+describe('v1.17.86 — upgrade_complete beacon: server recognizes it and keeps the real version', () => {
+  it('upgrade_complete + real version → client_version is stored as the real version (not filtered as beacon-sentinel)', async () => {
     const { app, insertedRows } = setupTestApp();
     const r = await post(app, {
       ts: '2026-05-11T10:00:00Z',
@@ -180,13 +185,13 @@ describe('v1.17.86 — upgrade_complete beacon: server 端認得且保留真版�
     assert.equal(r.status, 200);
     assert.equal(insertedRows.length, 1);
     assert.equal(insertedRows[0].client_version, '1.17.86',
-      'upgrade_complete 是升級「完成」訊號、真版號必須保留');
+      'upgrade_complete is the "upgrade complete" signal; the real version must be kept');
     assert.equal(insertedRows[0].trigger_kind, 'upgrade_complete');
   });
 
-  it('upgrade_complete 跟 install_started / update_started 行為相反', async () => {
-    // install_started 用 sentinel "install-script" → 過濾成 NULL
-    // upgrade_complete 用真版號 → 保留
+  it('upgrade_complete behaves opposite to install_started / update_started', async () => {
+    // install_started uses the sentinel "install-script" → filtered to NULL.
+    // upgrade_complete uses the real version → kept.
     const { app, insertedRows } = setupTestApp();
 
     await post(app, {
@@ -203,23 +208,23 @@ describe('v1.17.86 — upgrade_complete beacon: server 端認得且保留真版�
     });
 
     assert.equal(insertedRows[0].client_version, null,
-      'install_started sentinel 被過濾');
+      'install_started sentinel should be filtered');
     assert.equal(insertedRows[1].client_version, '1.17.86',
-      'upgrade_complete 真版號保留');
+      'upgrade_complete real version should be kept');
   });
 
-  it('upgrade_complete + sentinel 字串（不該發生但防呆）→ 也寫進去不過濾', async () => {
-    // 設計選擇：trigger 是 upgrade_complete 就信任 client 給的 client_version
-    // 升級完成時 client 必然知道真版號（reads package.json post-pull）
+  it('upgrade_complete + sentinel string (should not happen but defended) → still stored, not filtered', async () => {
+    // Design choice: when trigger is upgrade_complete, trust the client_version the client sent.
+    // After a completed upgrade the client necessarily knows the real version (reads package.json post-pull).
     const { app, insertedRows } = setupTestApp();
     const r = await post(app, {
       ts: '2026-05-11T10:00:00Z',
       trigger: 'upgrade_complete',
-      client_version: 'install-script',  // 不該發生但防呆
+      client_version: 'install-script',  // should not happen but defended
       platform: 'win32',
     });
     assert.equal(r.status, 200);
     assert.equal(insertedRows[0].client_version, 'install-script',
-      'trigger 不是 beacon-sentinel-trigger 系列、不過濾 client_version');
+      'trigger is not in the beacon-sentinel-trigger family; do not filter client_version');
   });
 });

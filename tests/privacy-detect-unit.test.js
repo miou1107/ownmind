@@ -1,23 +1,25 @@
 /**
- * v1.19.7 — privacy-detect 純函式測試
+ * v1.19.7 — privacy-detect pure-function tests
  *
- * 對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md 場景 17。
+ * Tracks openspec/changes/v1.20-iron-rule-enforcement/spec.md scenario 17.
  *
- * 偵測 AI 回應中的個資外洩（白話：身分／聯絡資料）、
- * 並對「使用者自己 prompt 過的內容」放行（白話：使用者主動分享過、不算外洩）。
- * v1.19.10：事件名中性化為 privacy_check、不綁特定使用者的鐵律編號。
+ * Detects personal-information leaks (identity / contact data) in AI replies,
+ * while allowing content the user themselves has prompted (the user proactively
+ * shared it, so it does not count as a leak).
+ * v1.19.10: event name is neutralized to privacy_check; no longer tied to a
+ * specific user's iron-rule code.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectPrivacyLeak } from '../shared/privacy-detect.js';
 
 // ============================================================
-// 基本命中
+// Basic hits
 // ============================================================
 
-describe('detectPrivacyLeak — 台灣身分證', () => {
-  it('合法身分證命中（含檢碼）', () => {
-    // A123456789 是經典範例、檢碼合法
+describe('detectPrivacyLeak — Taiwan national ID', () => {
+  it('valid national ID hits (with check digit)', () => {
+    // A123456789 is a canonical example with a valid check digit.
     const r = detectPrivacyLeak('使用者身分證是 A123456789。');
     assert.equal(r.detected, true);
     assert.equal(r.matches.length, 1);
@@ -25,69 +27,69 @@ describe('detectPrivacyLeak — 台灣身分證', () => {
     assert.equal(r.matches[0].value, 'A123456789');
   });
 
-  it('格式像身分證但檢碼錯 → 不命中（防誤判）', () => {
-    // A123456788 與 A123456789 只差最後一碼、檢碼算式失敗
+  it('looks like an ID but check digit is wrong → no hit (avoid false positive)', () => {
+    // A123456788 differs from A123456789 in the last digit; check-digit math fails.
     const r = detectPrivacyLeak('代號 A123456788 是內部代碼。');
     assert.equal(r.detected, false);
   });
 
-  it('小寫字母開頭 → 不命中（不符台灣身分證格式）', () => {
+  it('lowercase letter prefix → no hit (does not match TW ID format)', () => {
     const r = detectPrivacyLeak('檔名 a123456789 是測試。');
     assert.equal(r.detected, false);
   });
 });
 
-describe('detectPrivacyLeak — 電子信箱', () => {
-  it('一般信箱命中', () => {
+describe('detectPrivacyLeak — email', () => {
+  it('plain email hits', () => {
     const r = detectPrivacyLeak('請寄到 vincent@fontrip.com 收件。');
     assert.equal(r.detected, true);
     assert.equal(r.matches[0].type, 'email');
     assert.equal(r.matches[0].value, 'vincent@fontrip.com');
   });
 
-  it('含子網域信箱命中', () => {
+  it('email with subdomain hits', () => {
     const r = detectPrivacyLeak('admin@mail.fontrip.com 是管理者。');
     assert.equal(r.detected, true);
     assert.equal(r.matches[0].value, 'admin@mail.fontrip.com');
   });
 
-  it('沒 TLD 的 @ 字串 → 不命中（避免 user.email 物件路徑誤判）', () => {
+  it('@ string without TLD → no hit (avoid false positive on user.email object paths)', () => {
     const r = detectPrivacyLeak('變數 user@local 沒網域。');
     assert.equal(r.detected, false);
   });
 });
 
-describe('detectPrivacyLeak — 台灣手機', () => {
-  it('純數字手機命中（0912345678）', () => {
+describe('detectPrivacyLeak — Taiwan mobile', () => {
+  it('plain digits mobile hits (0912345678)', () => {
     const r = detectPrivacyLeak('我的手機 0912345678 隨時可聯絡。');
     assert.equal(r.detected, true);
     assert.equal(r.matches[0].type, 'phone_tw_mobile');
     assert.equal(r.matches[0].value, '0912345678');
   });
 
-  it('hyphen 分隔手機命中（0912-345-678）', () => {
+  it('hyphen-separated mobile hits (0912-345-678)', () => {
     const r = detectPrivacyLeak('客服 0912-345-678 來電。');
     assert.equal(r.detected, true);
     assert.equal(r.matches[0].type, 'phone_tw_mobile');
   });
 
-  it('全同尾碼測試號 0911111111 → 不命中（避免假號碼誤判）', () => {
+  it('all-same-digit test number 0911111111 → no hit (avoid mock-number false positive)', () => {
     const r = detectPrivacyLeak('測試碼 0911111111 用於 mock。');
     assert.equal(r.detected, false);
   });
 
-  it('非 09 開頭數字 → 不命中（市話／一般 ID）', () => {
+  it('digits not starting with 09 → no hit (landline / generic ID)', () => {
     const r = detectPrivacyLeak('編號 0212345678 是公司代碼。');
     assert.equal(r.detected, false);
   });
 });
 
 // ============================================================
-// 使用者提問例外
+// User-prompt exception
 // ============================================================
 
-describe('detectPrivacyLeak — 使用者提問例外', () => {
-  it('AI 回覆引用使用者提問裡的信箱 → 不算違反', () => {
+describe('detectPrivacyLeak — user-prompt exception', () => {
+  it('AI quoting an email the user shared → not a violation', () => {
     const r = detectPrivacyLeak('好的，我寄到 vincent@fontrip.com', {
       userPrompts: ['請寄到 vincent@fontrip.com 給我'],
     });
@@ -95,21 +97,21 @@ describe('detectPrivacyLeak — 使用者提問例外', () => {
     assert.equal(r.matches.length, 0);
   });
 
-  it('AI 回覆引用使用者提問裡的身分證 → 不算違反', () => {
+  it('AI quoting a national ID the user shared → not a violation', () => {
     const r = detectPrivacyLeak('A123456789 的查詢結果如下。', {
       userPrompts: ['幫我查 A123456789 這筆資料'],
     });
     assert.equal(r.detected, false);
   });
 
-  it('AI 回覆引用使用者提問裡的手機 → 不算違反', () => {
+  it('AI quoting a mobile the user shared → not a violation', () => {
     const r = detectPrivacyLeak('已撥打 0912345678。', {
       userPrompts: ['幫我打 0912345678 看看'],
     });
     assert.equal(r.detected, false);
   });
 
-  it('使用者提問裡是「另一個」信箱、AI 給出新的信箱 → 仍算違反', () => {
+  it('user shared a different email; AI introduces a new email → still a violation', () => {
     const r = detectPrivacyLeak('建議改寄到 new@fontrip.com', {
       userPrompts: ['原本是 old@fontrip.com'],
     });
@@ -117,12 +119,12 @@ describe('detectPrivacyLeak — 使用者提問例外', () => {
     assert.equal(r.matches[0].value, 'new@fontrip.com');
   });
 
-  it('userPrompts 為空陣列 → 一律照樣偵測', () => {
+  it('userPrompts empty array → always detected as usual', () => {
     const r = detectPrivacyLeak('信箱 abc@fontrip.com', { userPrompts: [] });
     assert.equal(r.detected, true);
   });
 
-  it('userPrompts 含非字串雜質 → 安全略過、其他字串仍用於例外比對', () => {
+  it('userPrompts containing non-string noise → safely ignored; other strings still used for exception matching', () => {
     const r = detectPrivacyLeak('信箱 abc@fontrip.com', {
       userPrompts: [null, 123, 'abc@fontrip.com'],
     });
@@ -131,11 +133,11 @@ describe('detectPrivacyLeak — 使用者提問例外', () => {
 });
 
 // ============================================================
-// 邊界與防呆
+// Edge cases and defense in depth
 // ============================================================
 
-describe('detectPrivacyLeak — 邊界輸入', () => {
-  it('空字串 → detected=false、matches 空陣列', () => {
+describe('detectPrivacyLeak — edge inputs', () => {
+  it('empty string → detected=false, matches empty array', () => {
     const r = detectPrivacyLeak('');
     assert.equal(r.detected, false);
     assert.deepEqual(r.matches, []);
@@ -146,25 +148,25 @@ describe('detectPrivacyLeak — 邊界輸入', () => {
     assert.equal(r.detected, false);
   });
 
-  it('非字串輸入 → detected=false（不丟錯）', () => {
+  it('non-string input → detected=false (no throw)', () => {
     const r = detectPrivacyLeak({ foo: 'bar' });
     assert.equal(r.detected, false);
   });
 
-  it('沒傳 options → 視為無例外、照樣偵測', () => {
+  it('no options → no exception list; detected normally', () => {
     const r = detectPrivacyLeak('A123456789');
     assert.equal(r.detected, true);
   });
 
-  it('同一筆個資出現多次 → 去重、只報一次', () => {
+  it('same personal info appearing multiple times → deduplicated; reported once', () => {
     const r = detectPrivacyLeak(
       '請寄 abc@fontrip.com 給 A123456789，副本也寄 abc@fontrip.com'
     );
     const emails = r.matches.filter((m) => m.type === 'email');
-    assert.equal(emails.length, 1, '重複信箱該去重');
+    assert.equal(emails.length, 1, 'duplicate emails should be deduplicated');
   });
 
-  it('同時命中多種類型 → 全部列出', () => {
+  it('hits across multiple types → all listed', () => {
     const r = detectPrivacyLeak(
       'A123456789 / abc@fontrip.com / 0912345678'
     );
@@ -175,58 +177,58 @@ describe('detectPrivacyLeak — 邊界輸入', () => {
 });
 
 // ============================================================
-// v1.19.7 code-review I-2：信箱白名單（example.com / noreply 等不算個資）
+// v1.19.7 code-review I-2: email whitelist (example.com / noreply etc. are not personal info)
 // ============================================================
 
-describe('detectPrivacyLeak — 信箱白名單', () => {
-  it('example.com 結尾 → 不命中', () => {
+describe('detectPrivacyLeak — email whitelist', () => {
+  it('example.com suffix → no hit', () => {
     const r = detectPrivacyLeak('參考 user@example.com 範例');
     assert.equal(r.detected, false);
   });
 
-  it('example.org / example.net 同樣放行', () => {
+  it('example.org / example.net are also allowed', () => {
     assert.equal(detectPrivacyLeak('foo@example.org').detected, false);
     assert.equal(detectPrivacyLeak('bar@example.net').detected, false);
   });
 
-  it('子網域結尾在白名單也放行（mail.example.com）', () => {
+  it('subdomain ending in the whitelist also allowed (mail.example.com)', () => {
     const r = detectPrivacyLeak('信箱 admin@mail.example.com');
     assert.equal(r.detected, false);
   });
 
-  it('.test / .invalid / .local 結尾放行', () => {
+  it('.test / .invalid / .local suffix allowed', () => {
     assert.equal(detectPrivacyLeak('a@x.test').detected, false);
     assert.equal(detectPrivacyLeak('b@y.invalid').detected, false);
     assert.equal(detectPrivacyLeak('c@z.local').detected, false);
   });
 
-  it('localhost 結尾放行', () => {
+  it('localhost suffix allowed', () => {
     assert.equal(detectPrivacyLeak('admin@anything.localhost').detected, false);
   });
 
-  it('noreply / no-reply / donotreply 開頭放行', () => {
+  it('noreply / no-reply / donotreply prefix allowed', () => {
     assert.equal(detectPrivacyLeak('noreply@anthropic.com').detected, false);
     assert.equal(detectPrivacyLeak('no-reply@github.com').detected, false);
     assert.equal(detectPrivacyLeak('donotreply@apple.com').detected, false);
   });
 
-  it('noreply 後接點／底線／hyphen 仍視為前綴', () => {
+  it('noreply followed by dot/underscore/hyphen is still treated as the prefix', () => {
     assert.equal(detectPrivacyLeak('noreply.team@github.com').detected, false);
     assert.equal(detectPrivacyLeak('noreply-team@github.com').detected, false);
     assert.equal(detectPrivacyLeak('noreply_team@github.com').detected, false);
   });
 
-  it('白名單大小寫不敏感', () => {
+  it('whitelist is case-insensitive', () => {
     assert.equal(detectPrivacyLeak('NoReply@EXAMPLE.com').detected, false);
     assert.equal(detectPrivacyLeak('USER@Example.Org').detected, false);
   });
 
-  it('白名單不該擋真實信箱（一般域名）', () => {
+  it('whitelist must not block real emails (generic domains)', () => {
     assert.equal(detectPrivacyLeak('vincent@fontrip.com').detected, true);
     assert.equal(detectPrivacyLeak('hello@gmail.com').detected, true);
   });
 
-  it('CHANGELOG 常見：Co-Authored-By Claude noreply@anthropic.com → 不命中', () => {
+  it('common CHANGELOG case: Co-Authored-By Claude noreply@anthropic.com → no hit', () => {
     const text = 'Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>';
     const r = detectPrivacyLeak(text);
     assert.equal(r.detected, false);
@@ -234,22 +236,22 @@ describe('detectPrivacyLeak — 信箱白名單', () => {
 });
 
 // ============================================================
-// 誤判防呆（白話：寧可漏、別誤擋）
+// False-positive defense (better to miss than to over-block)
 // ============================================================
 
-describe('detectPrivacyLeak — 誤判防呆', () => {
-  it('程式碼變數 user_id 不含 @ 不該命中 email', () => {
+describe('detectPrivacyLeak — false-positive defense', () => {
+  it('source code variable user_id without @ must not match email', () => {
     const r = detectPrivacyLeak('const user_id = 12345; const email = "x";');
     assert.equal(r.detected, false);
   });
 
-  it('OpenAI 金鑰樣式 sk-proj-... 不該被誤判為信箱', () => {
+  it('OpenAI key sk-proj-... must not be miscategorized as an email', () => {
     const r = detectPrivacyLeak('Key: sk-proj-abc123XYZdef456ghi789jkl');
-    // 金鑰由 secret-detect 負責、privacy-detect 不該命中
+    // Keys are handled by secret-detect; privacy-detect must not match.
     assert.equal(r.detected, false);
   });
 
-  it('一般 10 碼數字（不是 09 開頭）不該誤判為手機', () => {
+  it('generic 10-digit number (not starting with 09) must not be miscategorized as a mobile', () => {
     const r = detectPrivacyLeak('訂單編號 1234567890 處理中。');
     assert.equal(r.detected, false);
   });

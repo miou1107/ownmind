@@ -1,5 +1,45 @@
 # OwnMind 檔案結構
 
+## v1.26.6 修改（國際化第十期 Part 1：tests/ 前 25 大檔英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.6-i18n-tests-internal-part1/proposal.md
+openspec/changes/v1.26.6-i18n-tests-internal-part1/tasks.md
+```
+
+修改檔（25 個 tests/*.test.js + 版號 + 三語文件）：
+```
+tests/iron-rule-quality.test.js              — 150 行（含 5 個 describe 註解 + dogfood 範例 ir027/ir006/ir039 fixture 保留）
+tests/verification.test.js                   — 141 行（含 CHECK_HANDLERS 5 種 / evaluateConditions / IR-008/012/002/009 場景）
+tests/secret-detect-unit.test.js             — 132 行（regex/keyword/heuristic 三層、含 v1.19.13 assignment-style 收緊）
+tests/ownmind-tty-echo.test.js               — 120 行（含 v1.17.73 結構性合約 8 種 contract case）
+tests/reply-lint-hook.test.js                — 98 行（含 v1.17.96 Stop hook 整合 + activity POST schema）
+tests/disable-details-snapshot.test.js       — 95 行（含 enrichActivityDetails + me.js pitfalls SQL 整合）
+tests/memory-secret-guard.test.js            — 93 行（含 v1.19.13 matched_text / bot.kkvin.com regression）
+tests/self-check.test.js                     — 91 行（含 v1.17.66 collectEnv + v1.17.68 checkApiKeyFormat）
+tests/ps1-windows-compat.test.js             — 87 行（含 v1.17.66 Bug #1/#6/#7 / Bug #4 try-finally）
+tests/iron-rule-quality-skill-md.test.js     — 81 行（含 v1.18.0 S1-S9 schema lint）
+tests/privacy-detect-unit.test.js            — 79 行（含 TW ID / email / phone + whitelist + false-positive defense）
+tests/mcp-auto-update-cross-platform.test.js — 78 行（含 v1.17.23 update.ps1 + autostash fallback regression）
+tests/me-pitfalls.test.js                    — 74 行（含 /api/me/pitfalls endpoint + memory.js system_auto compliance log）
+tests/secret-mgmt.test.js                    — 68 行（含 upsert + delete tool + activity_log audit 不洩 value）
+tests/iron-rule-origin-context.test.js       — 68 行（含 validate / render / inject / lint metadata round-trip）
+tests/p3-update-event-semantics.test.js      — 67 行（含 update_applied/clean/failed 三分流 + lock atomic）
+tests/reply-lint-hook-v1193-block.test.js    — 66 行（含 progressive block + MODE fallback + reason 寫 stderr）
+tests/setup-wizard.test.js                   — 58 行（含 first-run detector + advisory lock + cache 行為）
+tests/enrich-error.test.js                   — 58 行（含 stack 截短 + http_status regex + payload_summary 隱私）
+tests/reply-lint-hook-v197.test.js           — 57 行（含 BLOCK_DOWNGRADE_LIMIT + block_count reset + privacy_check）
+tests/upgrade-complete-beacon.test.js        — 56 行（含 IR-038 觀測補洞 + bash/PS1 beacon + retrySpool drain）
+tests/me-report.test.js                      — 56 行（含 user-accessible /me/ + bcrypt + must_change_password）
+tests/language-lint-v1193.test.js            — 56 行（含 Top 30 白名單 / proper noun / threshold by context / 80-char window）
+tests/iron-rule-sync.test.js                 — 56 行（含 buildBigSkillMd + buildReferenceFile + syncToAllTools 6 個 target）
+tests/flush-compliance-spool.test.js         — 56 行（含 SessionStart helper + 嚴格 stdout/stderr 空白契約）
+package.json                                 — 1.26.5 → 1.26.6
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md / FILELIST.md                   — v1.26.6 條目
+```
+
 ## v1.26.5 修改（國際化第九期：src/routes/ 內部註解 + user-facing 字串英文化 — 軌道 B + A）
 
 新增檔：

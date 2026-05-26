@@ -1,10 +1,11 @@
 /**
- * v1.19.7 — reply-lint hook 新行為測試
+ * v1.19.7 — reply-lint hook new-behavior tests
  *
- * 對應 openspec/changes/v1.20-iron-rule-enforcement/spec.md：
- *   - 場景 13~15：reply-lint block 改用 exit 2 + stderr
- *   - 場景 16：連續 block 達 BLOCK_DOWNGRADE_LIMIT 後降警告 exit 1
- *   - 場景 17：privacy 偵測身分證 / email；user prompt 例外（事件名 privacy_check、v1.19.10 中性化）
+ * Tracks openspec/changes/v1.20-iron-rule-enforcement/spec.md:
+ *   - scenarios 13~15: reply-lint block switches to exit 2 + stderr
+ *   - scenario 16: after consecutive blocks hit BLOCK_DOWNGRADE_LIMIT, downgrade to a warning exit 1
+ *   - scenario 17: privacy detects national ID / email; user prompt is an exception
+ *     (event name privacy_check; v1.19.10 neutralization)
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,8 +47,8 @@ function setupTmpHome() {
   counterPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-session-counter.json');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
 
-  // v1.21.0：規則驅動架構需要 user 鐵律快取啟用 validator
-  // 測試環境一律寫 fake cache 啟用全部 3 個 validator
+  // v1.21.0: the rule-driven architecture needs a user iron-rule cache to enable validators.
+  // Tests always write a fake cache enabling all 3 validators.
   const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
   fs.mkdirSync(cacheDir, { recursive: true });
   fs.writeFileSync(path.join(cacheDir, 'iron_rules.json'), JSON.stringify([
@@ -92,64 +93,64 @@ const VIOLATING_TEXT = 'I think we should monomorphism the whole codeapp using a
 const CLEAN_TEXT = '好、我來把那段改成白話中文、不夾英文。';
 
 // ============================================================
-// 場景 16：連續擋 3 次降警告
+// Scenario 16: consecutive blocks downgrade to a warning
 // ============================================================
 
-describe('v1.19.7 場景 16 — 連續 block 達 3 次後第 4 次降警告 exit 1', () => {
+describe('v1.19.7 scenario 16 — after 3 consecutive blocks, the 4th downgrades to exit 1', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('違規 4+3 次後第 8 次降警告 exit 1（前 3 次累積、第 4~6 次 block、第 7 次降警告）', () => {
+  it('after 4+3 violations, the 7th downgrades to exit 1 (first 3 accumulate; 4th–6th block; 7th downgrades)', () => {
     writeTranscript([{ role: 'assistant', text: VIOLATING_TEXT }]);
     const sessionId = 'sess-downgrade';
     const payload = stopPayload({ session_id: sessionId });
 
-    // 第 1~3 次違規：累積、exit 0
+    // Violations 1~3: accumulate, exit 0.
     for (let i = 1; i <= 3; i++) {
       const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-      assert.equal(r.status, 0, `第 ${i} 次該 exit 0`);
+      assert.equal(r.status, 0, `attempt ${i} should exit 0`);
     }
-    // 第 4 次違規：block_count 變 1，exit 2
+    // Violation 4: block_count becomes 1, exit 2.
     let r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r.status, 2, '第 4 次該 exit 2');
+    assert.equal(r.status, 2, 'attempt 4 should exit 2');
     let counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 1);
 
-    // 第 5 次：block_count → 2
+    // Attempt 5: block_count → 2.
     r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2);
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 2);
 
-    // 第 6 次：block_count → 3
+    // Attempt 6: block_count → 3.
     r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2);
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 3);
 
-    // 第 7 次：block_count 已 3，降警告 exit 1、不再 increment block_count
+    // Attempt 7: block_count is already 3; downgrade to exit 1; do not increment block_count.
     r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r.status, 1, `第 7 次該降警告 exit 1、stderr=${r.stderr}`);
-    assert.match(r.stderr, /blocked .* times in a row/, 'stderr 該含降警告訊息');
+    assert.equal(r.status, 1, `attempt 7 should downgrade to exit 1; stderr=${r.stderr}`);
+    assert.match(r.stderr, /blocked .* times in a row/, 'stderr should include the downgrade message');
     assert.match(r.stderr, /break the loop/);
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
-    assert.equal(counter[sessionId].block_count, 3, '降警告時不該 increment block_count');
+    assert.equal(counter[sessionId].block_count, 3, 'downgrade must not increment block_count');
   });
 
-  it('降警告時 compliance event action=repeated_violation_softblock', () => {
+  it('on downgrade, compliance event action=repeated_violation_softblock', () => {
     writeTranscript([{ role: 'assistant', text: VIOLATING_TEXT }]);
     const sessionId = 'sess-softblock-event';
     const payload = stopPayload({ session_id: sessionId });
 
-    // 跑到第 7 次違規（降警告）
+    // Drive to the 7th violation (downgrade).
     for (let i = 1; i <= 6; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
     runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
 
-    // 讀檔抓最後一筆 event
+    // Read the archive and grab the last event.
     const archive = path.join(tmpHome, '.ownmind', 'logs', `${new Date().toISOString().slice(0, 10)}.jsonl`);
-    assert.ok(fs.existsSync(archive), 'archive 該存在');
+    assert.ok(fs.existsSync(archive), 'archive should exist');
     const lines = fs.readFileSync(archive, 'utf8').trim().split('\n').filter(Boolean);
     const lastEvent = JSON.parse(lines[lines.length - 1]);
     assert.equal(lastEvent.details.action, 'repeated_violation_softblock');
@@ -157,14 +158,14 @@ describe('v1.19.7 場景 16 — 連續 block 達 3 次後第 4 次降警告 exit
 });
 
 // ============================================================
-// 通過時清零 block_count
+// Pass clears block_count
 // ============================================================
 
-describe('v1.19.7 — 通過 lint 時清零 block_count', () => {
+describe('v1.19.7 — passing the lint clears block_count', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('違規累積 4 次（block_count=1）後 AI 改寫乾淨 → block_count 重設為 0', () => {
+  it('after 4 violations (block_count=1), an all-clean rewrite resets block_count to 0', () => {
     const sessionId = 'sess-reset';
     const payload = stopPayload({ session_id: sessionId });
 
@@ -175,25 +176,25 @@ describe('v1.19.7 — 通過 lint 時清零 block_count', () => {
     let counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 1);
 
-    // AI 改寫成乾淨回應
+    // AI rewrites with a clean reply.
     writeTranscript([{ role: 'assistant', text: CLEAN_TEXT }]);
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0);
 
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
-    assert.equal(counter[sessionId].block_count, 0, '通過時 block_count 該清零');
+    assert.equal(counter[sessionId].block_count, 0, 'pass should clear block_count');
   });
 });
 
 // ============================================================
-// Privacy 偵測整合（場景 17、事件名 privacy_check）
+// Privacy detection integration (scenario 17; event name privacy_check)
 // ============================================================
 
-describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）', () => {
+describe('v1.19.7 scenario 17 — privacy detection integration (event name privacy_check)', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('AI 回應含信箱（user 沒提）→ 第 4 次累積後 exit 2、reason 提到隱私', () => {
+  it('AI reply contains an email (user did not provide it) → after 4 accumulations, exit 2; reason mentions privacy', () => {
     const sessionId = 'sess-privacy';
     const payload = stopPayload({ session_id: sessionId });
 
@@ -207,35 +208,35 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
       assert.equal(r.status, 0);
     }
     const r4 = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r4.status, 2, '隱私違規累積到第 4 次該 block');
+    assert.equal(r4.status, 2, 'after the privacy violation accumulates to 4, it should block');
     assert.match(r4.stderr, /privacy|email|Privacy content/i);
   });
 
-  it('AI 回應引用 user prompt 裡的身分證 → 不算違反、exit 0', () => {
-    // 用身分證測 privacy 例外（純數字+1 字母、不會被 IR-037 中英混雜抓到）
+  it('AI reply quotes a national ID the user shared → not a violation; exit 0', () => {
+    // Use national ID to test the privacy exception (only digits + 1 letter; IR-037 mixed-language does not match).
     writeTranscript([
       { role: 'user', text: '請幫我查身分證 A123456789 的資料' },
       { role: 'assistant', text: '查到了，A123456789 是測試帳號的編號。' },
     ]);
     const r = runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0, `stderr=${r.stderr}`);
-    assert.equal(fs.existsSync(pendingFile), false, '使用者自己提的個資不該觸發 banner');
+    assert.equal(fs.existsSync(pendingFile), false, 'PII shared by the user themselves should not trigger a banner');
   });
 
-  it('banner 含 privacy_check 標識（v1.19.10 中性化）', () => {
+  it('banner contains the privacy_check identifier (v1.19.10 neutralization)', () => {
     writeTranscript([
       { role: 'assistant', text: '聯絡 leaked@fontrip.com' },
     ]);
     runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.ok(fs.existsSync(pendingFile), 'privacy 違反該寫 banner');
+    assert.ok(fs.existsSync(pendingFile), 'privacy violation should write a banner');
     const banner = fs.readFileSync(pendingFile, 'utf8');
     assert.match(banner, /privacy_check/);
   });
 
-  it('privacy 單獨命中時 reason 從「1.」開始（v1.19.7 code-review I-5 修正）', () => {
-    // 用身分證觸發（privacy_check）且不要中英混雜（避免 IR-037 同步觸發影響編號驗證）
-    // A123456789 純大寫字母+數字、不被 IR-037 抓
-    // v1.19.11 修：只跑到「第 4 次違規（第 1 次擋下）」才是完整訊息、不能跑第 5 次（分級簡短訊息）
+  it('when privacy hits alone, reason numbering starts from "1." (v1.19.7 code-review I-5 fix)', () => {
+    // Trigger via national ID (privacy_check) without mixed-language (so IR-037 does not co-fire).
+    // A123456789 is uppercase + digits and is not caught by IR-037.
+    // v1.19.11 note: only drive to "the 4th violation (1st block)" for the full message; not the 5th (tiered short msg).
     const sessionId = 'sess-numbering';
     const payload = stopPayload({ session_id: sessionId });
     writeTranscript([
@@ -245,13 +246,13 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r.status, 2, `期望 exit 2、stderr=${r.stderr}`);
-    assert.match(r.stderr, /^1\. /m, 'privacy 單獨命中時編號該從 1. 開始、不該是 3.');
-    assert.ok(!r.stderr.includes('3. 回應疑似'), '不該出現孤立的 3. 編號');
+    assert.equal(r.status, 2, `expected exit 2; stderr=${r.stderr}`);
+    assert.match(r.stderr, /^1\. /m, 'when privacy hits alone, numbering should start at 1., not 3.');
+    assert.ok(!r.stderr.includes('3. 回應疑似'), 'must not produce an orphan numbered "3." line');
   });
 
-  it('block 觸發時 stderr 不應「再次列出」命中的個資（避免 AI 重寫又帶一次）', () => {
-    // v1.19.11 修：只跑到第 1 次擋下、才會走完整訊息分支（含「代稱」提示）
+  it('when block fires, stderr should not "relist" the matched PII (avoid the AI re-including it on rewrite)', () => {
+    // v1.19.11 note: only drive to the 1st block; that path produces the full message (including "use a placeholder").
     const sessionId = 'sess-privacy-reason';
     const payload = stopPayload({ session_id: sessionId });
     writeTranscript([
@@ -264,8 +265,8 @@ describe('v1.19.7 場景 17 — 隱私偵測整合（事件名 privacy_check）'
     assert.equal(r.status, 2);
     assert.ok(
       !r.stderr.includes('leaked-secret-mail@fontrip.com'),
-      'block reason 不該再列原個資字串'
+      'block reason should not re-list the original PII string'
     );
-    assert.match(r.stderr, /\[email\]|placeholders|Rewrite that segment/i, 'block reason 該提示用代稱');
+    assert.match(r.stderr, /\[email\]|placeholders|Rewrite that segment/i, 'block reason should hint at using a placeholder');
   });
 });

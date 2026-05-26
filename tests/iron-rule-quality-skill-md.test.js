@@ -5,16 +5,18 @@ import { lintIronRule, lintSkillMdRule } from '../src/utils/iron-rule-quality.js
 import { detectFrontmatter } from '../src/utils/iron-rule-frontmatter.js';
 
 /**
- * v1.18.0 — SKILL.md schema lint S1-S9 測試（spec.md §1.3）
+ * v1.18.0 — SKILL.md schema lint S1-S9 tests (spec.md §1.3)
  *
- * 設計：lintIronRule 偵測 frontmatter → 走 schema lint
- *      沒 frontmatter → 走 v1.17.94 regex lint（既有 tests/iron-rule-quality.test.js 蓋了）
+ * Design: lintIronRule detects frontmatter → routes through schema lint.
+ *         No frontmatter → falls through to v1.17.94 regex lint (already covered
+ *         by tests/iron-rule-quality.test.js).
  *
- * 本檔只蓋 SKILL.md path。
+ * This file only covers the SKILL.md path.
  */
 
-// VALID_SKILL_MD 範例 body 必須避免 IR-037 中英混雜（< 15% 英文詞）
-// description 是 SKILL.md 標準英文寫法、被 lintSkillMdRule 排除不算混雜
+// VALID_SKILL_MD example body must avoid IR-037 mixed-language (< 15% English).
+// The description is the standard English SKILL.md style; lintSkillMdRule excludes
+// it from the mixed-language check.
 const VALID_SKILL_MD = `---
 name: ir-002-no-commit-secrets
 description: |
@@ -46,7 +48,7 @@ description: |
 
 立刻清掉歷史、輪換所有暴露的 key、改密碼、通知可能受影響的人。`;
 
-// 共用合法 body — 含規則關鍵字、中文 130+ 字、避免 IR-037 卡關
+// Shared valid body — contains the rule keyword, ≥ 130 Chinese chars, dodges IR-037.
 const VALID_BODY = `這條鐵律的應用方式說明：每次準備提交程式碼前先檢查、確認沒有把敏感資訊放進去、再正式提交。應該做的事項包括：使用工具檢查、人工 review、最後確認。必須遵守上述步驟、不要跳過任何一步、避免事後補救。如果不小心違反、立刻補救處理、輪換密碼、通知相關人員。`;
 
 function buildRule(content, tags = ['trigger:commit']) {
@@ -58,18 +60,18 @@ function buildRule(content, tags = ['trigger:commit']) {
 }
 
 describe('v1.18.0 — lintIronRule SKILL.md format detection + dispatch', () => {
-  it('合法 SKILL.md → format=skill_md + ok=true', () => {
+  it('valid SKILL.md → format=skill_md + ok=true', () => {
     const r = lintIronRule(buildRule(VALID_SKILL_MD));
     assert.equal(r.format, 'skill_md');
     assert.equal(r.ok, true, `errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('純文字（無 frontmatter）→ format=legacy_text', () => {
+  it('plain text (no frontmatter) → format=legacy_text', () => {
     const r = lintIronRule(buildRule('IR-002: 純文字鐵律。\n\n適用情境：commit 前。\n\n規則：不要 commit .env、必須先檢查、避免暴露密碼到 public repo。'));
     assert.equal(r.format, 'legacy_text');
   });
 
-  it('return shape 永遠含 errors / warnings / format', () => {
+  it('return shape always contains errors / warnings / format', () => {
     const r = lintIronRule(buildRule(VALID_SKILL_MD));
     assert.ok(Array.isArray(r.errors));
     assert.ok(Array.isArray(r.warnings));
@@ -77,12 +79,12 @@ describe('v1.18.0 — lintIronRule SKILL.md format detection + dispatch', () => 
   });
 });
 
-describe('v1.18.0 — S1 YAML 解析（B1 修正後 fallback 到 legacy 而非直接 reject）', () => {
-  // v1.18.0 review B1: YAML 解析失敗 → fallback 到 legacy lint + warning
-  // 原本 expect S1 reject 的測試改 verify「fallback warning 出現」+「走 legacy lint 結果」
-  // 直接呼叫 lintSkillMdRule (skip dispatch) 才能驗 S1 行為
+describe('v1.18.0 — S1 YAML parsing (after B1 fix: fall back to legacy instead of rejecting outright)', () => {
+  // v1.18.0 review B1: YAML parse failure → fall back to legacy lint + warning.
+  // The original "S1 reject" test now verifies "fallback warning appears" + "legacy lint outcome."
+  // Call lintSkillMdRule directly (skip dispatch) to validate S1 behavior.
 
-  it('lintSkillMdRule 直接呼叫、parseError 仍會 reject + S1 error', () => {
+  it('lintSkillMdRule called directly: parseError still rejects + emits S1 error', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       parseError: 'YAML 解析失敗: bad mapping',
@@ -93,7 +95,7 @@ describe('v1.18.0 — S1 YAML 解析（B1 修正後 fallback 到 legacy 而非�
     assert.equal(r.format, 'skill_md');
   });
 
-  it('lintIronRule dispatch (B1)：YAML 非法 + legacy lint 也不過 → ok=false + fallback warning', () => {
+  it('lintIronRule dispatch (B1): YAML invalid + legacy lint also fails → ok=false + fallback warning', () => {
     const content = `---
 name: x
 description: : invalid : :
@@ -101,13 +103,13 @@ description: : invalid : :
 
 太短`;
     const r = lintIronRule(buildRule(content));
-    assert.equal(r.format, 'legacy_text', 'fallback 到 legacy');
-    assert.equal(r.ok, false, 'legacy lint 內容也不過');
+    assert.equal(r.format, 'legacy_text', 'falls back to legacy');
+    assert.equal(r.ok, false, 'legacy lint content also fails');
     assert.ok(r.warnings.some(w => w.includes('frontmatter marker')),
-      `應有 fallback warning、實際 warnings: ${JSON.stringify(r.warnings)}`);
+      `should emit fallback warning, actual warnings: ${JSON.stringify(r.warnings)}`);
   });
 
-  it('lintIronRule dispatch (B1)：frontmatter null + legacy 過 → ok=true + fallback warning', () => {
+  it('lintIronRule dispatch (B1): null frontmatter + legacy passes → ok=true + fallback warning', () => {
     const content = `---
 
 ---
@@ -119,14 +121,14 @@ IR-X: 範例鐵律的內容說明、適用情境是測試環境、規則必須�
       tags: ['trigger:edit'],
     });
     assert.equal(r.format, 'legacy_text');
-    assert.equal(r.ok, true, `legacy 應過、errors: ${JSON.stringify(r.errors)}`);
+    assert.equal(r.ok, true, `legacy should pass, errors: ${JSON.stringify(r.errors)}`);
     assert.ok(r.warnings.some(w => w.includes('frontmatter marker')),
-      `應有 fallback warning、實際 warnings: ${JSON.stringify(r.warnings)}`);
+      `should emit fallback warning, actual warnings: ${JSON.stringify(r.warnings)}`);
   });
 });
 
-describe('v1.18.0 — S2/S3 name 規則', () => {
-  it('缺 name → reject S2', () => {
+describe('v1.18.0 — S2/S3 name rules', () => {
+  it('missing name → reject S2', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { description: 'Use when committing code with proper handling and care' },
@@ -136,7 +138,7 @@ describe('v1.18.0 — S2/S3 name 規則', () => {
     assert.ok(r.errors.some(e => e.startsWith('S2 frontmatter 缺 name')));
   });
 
-  it('name 含大寫 → reject S2 (非 kebab-case)', () => {
+  it('name contains uppercase → reject S2 (not kebab-case)', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'IR-002', description: 'Use when committing code with proper handling and care' },
@@ -146,7 +148,7 @@ describe('v1.18.0 — S2/S3 name 規則', () => {
     assert.ok(r.errors.some(e => e.startsWith('S2')));
   });
 
-  it('name 含底線 → reject S2', () => {
+  it('name contains underscore → reject S2', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'ir_002_test', description: 'Use when committing code with proper handling and care' },
@@ -156,7 +158,7 @@ describe('v1.18.0 — S2/S3 name 規則', () => {
     assert.ok(r.errors.some(e => e.startsWith('S2')));
   });
 
-  it('name 開頭結尾是 - → reject S2', () => {
+  it('name starts/ends with - → reject S2', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: '-bad-', description: 'Use when committing code with proper handling and care' },
@@ -166,7 +168,7 @@ describe('v1.18.0 — S2/S3 name 規則', () => {
     assert.ok(r.errors.some(e => e.startsWith('S2')));
   });
 
-  it('name 太短 < 3 → reject S3', () => {
+  it('name too short (< 3) → reject S3', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'ab', description: 'Use when committing code with proper handling and care' },
@@ -176,7 +178,7 @@ describe('v1.18.0 — S2/S3 name 規則', () => {
     assert.ok(r.errors.some(e => e.startsWith('S3')));
   });
 
-  it('name 太長 > 60 → reject S3', () => {
+  it('name too long (> 60) → reject S3', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'a' + '-rule'.repeat(20), description: 'Use when committing code with proper handling and care' },
@@ -187,8 +189,8 @@ describe('v1.18.0 — S2/S3 name 規則', () => {
   });
 });
 
-describe('v1.18.0 — S4 description 必填 + 字數', () => {
-  it('缺 description → reject S4', () => {
+describe('v1.18.0 — S4 description required + length bounds', () => {
+  it('missing description → reject S4', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'ir-002-test' },
@@ -198,7 +200,7 @@ describe('v1.18.0 — S4 description 必填 + 字數', () => {
     assert.ok(r.errors.some(e => e.startsWith('S4 frontmatter 缺 description')));
   });
 
-  it('description < 20 字 → reject S4', () => {
+  it('description < 20 chars → reject S4', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'ir-002-test', description: '太短' },
@@ -208,7 +210,7 @@ describe('v1.18.0 — S4 description 必填 + 字數', () => {
     assert.ok(r.errors.some(e => e.startsWith('S4 description 太短')));
   });
 
-  it('description > 500 字 → reject S4', () => {
+  it('description > 500 chars → reject S4', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: { name: 'ir-002-test', description: 'when ' + 'a'.repeat(600) },
@@ -219,8 +221,8 @@ describe('v1.18.0 — S4 description 必填 + 字數', () => {
   });
 });
 
-describe('v1.18.0 — S5 description 含觸發詞', () => {
-  it('description 沒含觸發詞 → reject S5', () => {
+describe('v1.18.0 — S5 description must include trigger keyword', () => {
+  it('description without a trigger keyword → reject S5', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
@@ -233,7 +235,7 @@ describe('v1.18.0 — S5 description 含觸發詞', () => {
     assert.ok(r.errors.some(e => e.startsWith('S5')));
   });
 
-  it('description 含 "Use when" → 過 S5', () => {
+  it('description containing "Use when" → passes S5', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
@@ -245,7 +247,7 @@ describe('v1.18.0 — S5 description 含觸發詞', () => {
     assert.ok(!r.errors.some(e => e.startsWith('S5')), `errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('description 含 "何時" → 過 S5', () => {
+  it('description containing 何時 → passes S5', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
@@ -258,8 +260,8 @@ describe('v1.18.0 — S5 description 含觸發詞', () => {
   });
 });
 
-describe('v1.18.0 — S6/S7 body 字數 + 規則段落', () => {
-  it('body 太短（< 100 字）→ reject S6', () => {
+describe('v1.18.0 — S6/S7 body length + rule section', () => {
+  it('body too short (< 100 chars) → reject S6', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
@@ -272,21 +274,21 @@ describe('v1.18.0 — S6/S7 body 字數 + 規則段落', () => {
     assert.ok(r.errors.some(e => e.startsWith('S6')));
   });
 
-  it('body 缺規則段落關鍵字 → reject S7', () => {
+  it('body missing rule-section keywords → reject S7', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
         name: 'ir-002-test',
         description: 'Use when about to commit code with secrets review carefully each time',
       },
-      // 純故事敘述、不能含 規則/該做/不該做/禁止/必須/應該/不可/不要 任一字
+      // Pure narrative; must not contain any of 規則/該做/不該做/禁止/必須/應該/不可/不要
       body: '這條鐵律的歷史背景說明：起因是有一次的事件、當時遇到問題、後來檢討為什麼會發生這個情況、最後得到一個結論寫進來變成鐵律、過程中學到了什麼經驗、整理起來放在這裡作為記錄之用、給未來看到的人參考、避免類似事件再次發生、累積經驗成為團隊智慧。',
     });
     assert.equal(r.ok, false);
     assert.ok(r.errors.some(e => e.startsWith('S7')), `errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('body 含「該做」→ 過 S7', () => {
+  it('body containing 該做 → passes S7', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
@@ -299,13 +301,13 @@ describe('v1.18.0 — S6/S7 body 字數 + 規則段落', () => {
   });
 });
 
-describe('v1.18.0 — S9 description warning（< 50 字、不 reject）', () => {
-  it('description 32 字 → warning、不 reject', () => {
+describe('v1.18.0 — S9 description warning (< 50 chars; warn, do not reject)', () => {
+  it('description 32 chars → warning, not reject', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
         name: 'ir-002-test',
-        description: 'Use when about to commit secrets',  // 32 字
+        description: 'Use when about to commit secrets',  // 32 chars
       },
       body: VALID_BODY,
     });
@@ -313,12 +315,12 @@ describe('v1.18.0 — S9 description warning（< 50 字、不 reject）', () => 
     assert.ok(r.warnings.some(w => w.startsWith('S9')), `warnings: ${JSON.stringify(r.warnings)}`);
   });
 
-  it('description >= 50 字 → 不該有 S9 warning', () => {
+  it('description >= 50 chars → no S9 warning', () => {
     const r = lintSkillMdRule(buildRule('placeholder'), {
       has: true,
       frontmatter: {
         name: 'ir-002-test',
-        description: 'Use when about to commit code containing secrets, passwords, env files or API keys, essential check',  // 100+ 字
+        description: 'Use when about to commit code containing secrets, passwords, env files or API keys, essential check',  // 100+ chars
       },
       body: VALID_BODY,
     });
@@ -327,12 +329,12 @@ describe('v1.18.0 — S9 description warning（< 50 字、不 reject）', () => 
   });
 });
 
-describe('v1.18.0 — 完整 valid SKILL.md 規範範例 round-trip', () => {
-  it('IR-002 範例 SKILL.md 過 lint', () => {
+describe('v1.18.0 — full valid SKILL.md exemplar round-trip', () => {
+  it('IR-002 exemplar SKILL.md passes lint', () => {
     const r = lintIronRule(buildRule(VALID_SKILL_MD));
     assert.equal(r.ok, true, `errors: ${JSON.stringify(r.errors)}`);
     assert.equal(r.format, 'skill_md');
-    // description 100+ 字、不該有 S9 warning
+    // description is 100+ chars; no S9 warning expected.
     assert.ok(!r.warnings.some(w => w.startsWith('S9')));
   });
 });
