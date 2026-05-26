@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.2 修改（國際化第六期：mcp/ 內部註解英文化 — 軌道 B）
+
+新增檔：
+```
+openspec/changes/v1.26.2-i18n-mcp-internal/proposal.md   — i18n 第六期提案
+openspec/changes/v1.26.2-i18n-mcp-internal/tasks.md      — 任務分解
+```
+
+修改檔（6 個 mcp/ 檔 + 軌道 A 補洞 4 條 user-facing 訊息）：
+```
+mcp/index.js                          — JSDoc 大頭 + 自動更新邏輯 + session-off/on 訊息英化（137 行翻完、保留 confirm_string="送出" + 個人鐵律 title）
+mcp/ownmind-log.js                    — JSDoc + buffer / signal hook / client_event_id dedup 註解
+mcp/lib/sync-token-retry.js           — JSDoc + 設計理由（多 session 寫入 409 自動 retry）
+mcp/lib/compose-tool-response.js      — JSDoc + 視覺規則
+mcp/lib/log-mcp-call.js               — JSDoc + helper 設計
+mcp/lib/enrich-error.js               — JSDoc + 兩個函式說明
+package.json                          — version 1.26.1 → 1.26.2
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 三語版號同步
+CHANGELOG.md                          — v1.26.2 條目
+```
+
+**驗證**：`rg '\p{Han}' mcp/` 剩 3 行刻意保留（confirm_string 字面值 + 個人鐵律 title）；`node --check` 全過；`npm test` 1956 pass / 0 fail。
+
 ## v1.26.1 修改（修復 ownmind_report_bug 設計缺陷 — 自由回報路徑）
 
 新增檔：
