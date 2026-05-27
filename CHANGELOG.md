@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.26.12 — 修兩個 user 回報 bug：pre-commit 誤擋刪除 + MCP secret tool 缺 key 噴 404
+
+**Bug 1 — pre-commit hook 把 `git rm --cached` 誤判成新增敏感檔案**
+- 場景：repo 過去誤把 `*.pem` / `credentials*.json` commit 進去，跑 `git rm --cached <files>` + 更新 `.gitignore` 想清掉，hook 擋下要求 `--no-verify` 才能過。
+- 根因：`hooks/ownmind-git-pre-commit.js` 的 `getStagedFiles()` 用 `git diff --cached --name-only`，新增/修改/刪除全混在一起。`staged_files_exclude` 比對檔名 pattern 不看 status，所以「刪除敏感檔案」（正是修復行為）也被當成「commit 了敏感檔案」擋掉。
+- 修正：改用 `--name-status -z`，過濾掉 status='D'（pure deletion），rename 取新檔名。
+- Regression test：`tests/pre-commit-secret.test.js` 新增「staged deletion of sensitive file → exit 0」。
+
+**Bug 2 — `ownmind_get_secret` 對存在的 key 持續回 404**
+- 場景：`ownmind_list_secrets` 看得到 key、`ownmind_set_secret` 回 success+id、隨後 `ownmind_get_secret(name="...")` 卻 404。
+- 根因：MCP `ownmind_get_secret` 的 inputSchema 是 `key`，呼叫端傳 `name=`（跟 memory tool ownmind_get / ownmind_update 同名混淆）。MCP SDK 不嚴驗 required，`args.key` 變 undefined → URL `/api/secret/undefined` → server 找不到 → 404。不是 server set/get 不同步。
+- 修正：`mcp/index.js` 三個 secret handler（get / set / delete）都接受 `name` 當 fallback alias，缺 key 時丟出明確錯誤訊息指出參數名稱混淆。set 缺 value 也丟錯。
+
+**測試**：1999 + 1 = 2000 pass / 0 fail
+**版本**：1.26.11 → 1.26.12
+
 ## v1.26.11 — 國際化第十期 Part 4：tests/ 接續 30 檔英文化（軌道 B）
 
 **範圍**：翻 `tests/*.test.js` 下 30 個檔（每檔 20–31 中文行），接續 v1.26.6 / v1.26.9 / v1.26.10。約 770 行中文中的「真註解 + describe/it 標題 + assertion hint」翻成英文。fixture 模擬 user 中文輸入、iron-rule title literal、production output 比對字面值按 CLAUDE.md 規則保留。

@@ -254,4 +254,17 @@ describe('v1.19.7 pre-commit — edge cases', () => {
     // No rules — skip every check; fail-open.
     assert.equal(r.status, 0, `empty cache should fail-open; stderr=${r.stderr}`);
   });
+
+  // Regression: `git rm --cached file.pem` stages a deletion. The repo is
+  // *removing* the sensitive file from index — the desired cleanup action —
+  // and must not be blocked by IR-002's staged_files_exclude filename match.
+  it('staged deletion of sensitive file (git rm --cached) → exit 0', () => {
+    // First commit the .pem so we have something to delete.
+    stage('secrets/key.pem', 'PRIVATE\n');
+    runGit(['-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'seed']);
+    // Now stage its deletion from index.
+    runGit(['rm', '--cached', 'secrets/key.pem']);
+    const r = runHook();
+    assert.equal(r.status, 0, `deletion of .pem must pass; stderr=${r.stderr}`);
+  });
 });

@@ -32,9 +32,33 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 // ============================================================
 
 function getStagedFiles() {
+  // Exclude pure deletions (status 'D'): `git rm --cached file.pem` is the
+  // desired cleanup action — removing a sensitive file from the index — and
+  // must not trip staged_files_exclude filename matches. For renames ('R'),
+  // git emits both the old and new path; the new path is what's being added,
+  // so we keep that.
   try {
-    const raw = execSync('git diff --cached --name-only', { encoding: 'utf8' }).trim();
-    return raw ? raw.split('\n').filter(Boolean) : [];
+    const raw = execSync('git diff --cached --name-status -z', { encoding: 'utf8' });
+    if (!raw) return [];
+    const out = [];
+    const tokens = raw.split('\0');
+    for (let i = 0; i < tokens.length; i++) {
+      const status = tokens[i];
+      if (!status) continue;
+      const code = status[0];
+      if (code === 'R' || code === 'C') {
+        // R<score>\0<old>\0<new>
+        i += 2;
+        if (tokens[i]) out.push(tokens[i]);
+      } else {
+        i += 1;
+        const file = tokens[i];
+        if (!file) continue;
+        if (code === 'D') continue; // skip deletions
+        out.push(file);
+      }
+    }
+    return out;
   } catch {
     return [];
   }

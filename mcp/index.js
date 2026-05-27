@@ -1066,14 +1066,30 @@ async function handleTool(name, args) {
       return data;
     }
 
-    case "ownmind_get_secret":
-      return await callApi("GET", `/api/secret/${encodeURIComponent(args.key)}`);
+    case "ownmind_get_secret": {
+      // Accept `name` as a fallback alias — AIs frequently confuse this with
+      // the memory tools (ownmind_get / ownmind_update) which key off `name`.
+      // Without this, a `name=...` call would silently send /api/secret/undefined
+      // and return a misleading 404.
+      const key = args.key || args.name;
+      if (!key) {
+        throw new Error("ownmind_get_secret: missing required argument `key` (string). The parameter is `key`, not `name` — `name` is used by the memory tools.");
+      }
+      return await callApi("GET", `/api/secret/${encodeURIComponent(key)}`);
+    }
 
     case "ownmind_list_secrets":
       return await callApi("GET", "/api/secret");
 
     case "ownmind_set_secret": {
-      const body = { key: args.key, value: args.value };
+      const key = args.key || args.name;
+      if (!key) {
+        throw new Error("ownmind_set_secret: missing required argument `key` (string).");
+      }
+      if (args.value === undefined || args.value === null) {
+        throw new Error("ownmind_set_secret: missing required argument `value` (string).");
+      }
+      const body = { key, value: args.value };
       if (args.description !== undefined) body.description = args.description;
       return await callApi("POST", "/api/secret", body);
     }
@@ -1081,7 +1097,11 @@ async function handleTool(name, args) {
     case "ownmind_delete_secret": {
       // v1.17.91: permanently delete a single secret. The server writes an activity_log audit
       // entry (IR-002 — do not leak the value; only record the key and the action).
-      return await callApi("DELETE", `/api/secret/${encodeURIComponent(args.key)}`);
+      const key = args.key || args.name;
+      if (!key) {
+        throw new Error("ownmind_delete_secret: missing required argument `key` (string).");
+      }
+      return await callApi("DELETE", `/api/secret/${encodeURIComponent(key)}`);
     }
 
     case "ownmind_report_bug": {
