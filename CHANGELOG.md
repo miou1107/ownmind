@@ -1,5 +1,15 @@
 # OwnMind 更新紀錄
 
+## v1.26.14 — 補 Windows 版本檢查 — scripts/check-sync.ps1
+
+**背景**：Eric 在 Windows 機器跑 OwnMind、想查版本同步狀況時、`scripts/` 只有 `check-sync.sh`、PowerShell 不能直接執行。除非他裝 Git Bash 否則走不過去 — 是 OwnMind 跨平台原則的漏項。
+
+**修正**：
+- 新增 `scripts/check-sync.ps1`、跟 `.sh` 等價的三層健檢（L1 git HEAD vs origin、L2 client package.json vs server SERVER_VERSION、L3 ~/.ownmind source vs ~/.claude deployed）、輸出格式 100% 相同、ownmind-upgrade skill parser 不用改。
+- 更新 `skills/ownmind-upgrade.md`：模式 A 加 PowerShell 呼叫範例、依 OS 選對 .sh / .ps1。
+
+**版本**：1.26.13 → 1.26.14
+
 ## v1.26.13 — 修 reply-lint 規則驅動 fallback 漏洞：沒掛 lint_validator 的 user 也被擋
 
 **Bug**：Eric 回報跑 v1.26.12 還是被行話 lint 擋下、即使他帳號完全沒有 IR-036/037、cache 裡也沒掛任何 `lint_validator` metadata。
