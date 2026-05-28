@@ -24,8 +24,16 @@ User 說：
 **流程**：
 
 ```bash
+# Mac / Linux / Git Bash
 bash ~/.ownmind/scripts/check-sync.sh
 ```
+
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File "$HOME\.ownmind\scripts\check-sync.ps1"
+```
+
+依 OS 選對版本（`uname -s` Darwin/Linux 用 .sh、Windows_NT / 找不到 uname 用 .ps1）。輸出格式兩邊相同。
 
 > 若 `~/.ownmind` 不存在 → 直接回「尚未安裝 OwnMind，可說『裝 OwnMind』一鍵安裝」，走模式 D。
 
@@ -167,7 +175,7 @@ POST /api/broadcast/dismiss
   - 正常升級：`~/.ownmind.bak.<timestamp>`（3 天內不刪）
   - 壞掉修復：`~/.ownmind.broken.<timestamp>`（3 天內手動清）
 - **跨平台**：Windows 走 `.ps1` + `powershell -ExecutionPolicy Bypass`，不要 hardcode bash
-- **首次安裝情境**：`~/.ownmind` 不存在時，**不要跑 `check-sync.sh`**（它會 error out），直接走 remote curl/iwr
+- **首次安裝情境**：`~/.ownmind` 不存在時，**不要跑 `check-sync.sh` / `check-sync.ps1`**（它會 error out），直接走 remote curl/iwr
 - **失敗時明確告知**：不要靜默失敗，對照錯誤碼表給 user 下一步
 
 ---
@@ -176,7 +184,7 @@ POST /api/broadcast/dismiss
 
 - `scripts/bootstrap.sh` / `scripts/bootstrap.ps1` — **v1.17.6 新增**，universal 入口，三分支處理
 - `scripts/interactive-upgrade.sh` / `.ps1` — 正常升級腳本，bootstrap 的 Branch 3 delegate 過來
-- `scripts/check-sync.sh` — 模式 A 的版本檢查（三層 L1/L2/L3 比對）
+- `scripts/check-sync.sh` / `scripts/check-sync.ps1` — 模式 A 的版本檢查（三層 L1/L2/L3 比對），Mac/Linux 走 .sh、Windows 走 .ps1
 - `install.sh` / `install.ps1` — fresh install 時由 bootstrap 呼叫
 - `hooks/ownmind-session-start.sh` — SessionStart 顯示升級廣播
 - `mcp/index.js` `fetchBroadcastsSafely` — 每次 MCP call 都附廣播
