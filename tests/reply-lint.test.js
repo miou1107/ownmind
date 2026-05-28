@@ -23,6 +23,27 @@ import { lintReply } from '../shared/language-lint.js';
  *   iron_rule lint + reply lint share one copy.
  */
 
+// v1.26.13 regression: rule-driven path was only taken when
+// resolvedValidators.length > 0. An EMPTY array (user has no lint_validator
+// rules) silently fell through to the legacy fallback which ran every built-in
+// check unconditionally — so users without any opt-in jargon/mixed rule still
+// got blocked. Fix: an Array second arg means "new API"; empty list means
+// "user opted in to nothing" and the lint must return ok=true.
+describe('v1.26.13 — rule-driven path: empty validators must skip every check', () => {
+  it('empty validators array + content full of bare English jargon → ok (no built-ins fire)', () => {
+    const text = '我們用 webpack 跟 vite 來 bundle 程式碼，整體 throughput 改善很多。';
+    const r = lintReply(text, [], { historicalCorpus: '', userPrompts: [] });
+    assert.equal(r.ok, true, `empty opt-in must skip every check; got violations=${JSON.stringify(r.violations)}`);
+    assert.equal(r.violations.length, 0);
+  });
+
+  it('empty validators array + heavy mixed-language content → ok (no built-ins fire)', () => {
+    const text = 'I think we should refactor the codebase because performance is bad.';
+    const r = lintReply(text, [], {});
+    assert.equal(r.ok, true);
+  });
+});
+
 describe('v1.17.95 — IR-037 mixed-language check (reply side)', () => {
   it('all-Chinese reply is ok', () => {
     const r = lintReply('好、那我來修這個問題、先寫測試再實作。');

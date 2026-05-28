@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.26.13 — 修 reply-lint 規則驅動 fallback 漏洞：沒掛 lint_validator 的 user 也被擋
+
+**Bug**：Eric 回報跑 v1.26.12 還是被行話 lint 擋下、即使他帳號完全沒有 IR-036/037、cache 裡也沒掛任何 `lint_validator` metadata。
+
+**根因**：v1.21.0 把 reply-lint 改成「user 掛 lint_validator 鐵律才跑」、但 `shared/language-lint.js` 的 `lintReply()` 寫成「`resolvedValidators.length > 0` 才走新版路徑、否則 fall through 到 legacy 無條件路徑」。結果只要 user 沒掛任何 validator 鐵律，反而會掉到 legacy 跑全部內建檢查 — 跟「沒掛 = 不跑」的設計完全相反。Vin 自己機器 cache 也是空的、但因為這個 bug 一直在跑 jargon lint、誤以為正常。
+
+**修正**：
+- `shared/language-lint.js` lintReply 改用 `usingNewAPI` flag 區分「caller 傳了 array（即使空）」vs「caller 完全沒傳第二個參數」。傳空 array → 新版路徑、跑 0 個 validator → ok=true。沒傳 → 才走 legacy 跑全部。
+- 預設參數從 `= []` 改回 `undefined`、避免破壞單參數 legacy 呼叫的回溯相容。
+
+**測試**：
+- 新增 `tests/reply-lint.test.js` 兩條 regression — 空 array + 行話內容 / 中英混雜都必須 ok=true。
+- 4 個既有 integration 測試（reply-lint-hook-v1193-block / v1911 / pending-spool）原本靠 buggy fallback 才會擋下，補上 cache fixture 掛 jargon + mixed 兩個 validator 才會觸發。
+
+**檢測**：2002 pass / 0 fail
+**版本**：1.26.12 → 1.26.13
+
 ## v1.26.12 — 修兩個 user 回報 bug：pre-commit 誤擋刪除 + MCP secret tool 缺 key 噴 404
 
 **Bug 1 — pre-commit hook 把 `git rm --cached` 誤判成新增敏感檔案**
