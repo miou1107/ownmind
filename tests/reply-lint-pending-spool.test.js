@@ -36,6 +36,13 @@ function setupTmpHome() {
   archiveDir = path.join(tmpHome, '.ownmind', 'logs');
   pendingSpoolPath = path.join(archiveDir, 'reply-lint-pending.jsonl');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
+  // v1.26.13: seed validator cache so violations actually fire (rule-driven).
+  const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(path.join(cacheDir, 'iron_rules.json'), JSON.stringify([
+    { code: 'TEST-JARGON', metadata: { lint_validator: { name: 'jargon_explanation', params: {} } } },
+    { code: 'TEST-MIXED', metadata: { lint_validator: { name: 'language_mixed_ratio', params: { threshold: 0.15 } } } },
+  ]));
 }
 function cleanupTmpHome() { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 

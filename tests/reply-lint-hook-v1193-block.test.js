@@ -41,6 +41,15 @@ function setupTmpHome() {
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   counterPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-session-counter.json');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
+  // v1.26.13: the rule-driven architecture now requires an explicit cache.
+  // An empty cache means "user opted in to no validators" → no lint fires.
+  // These tests assert block behavior on violations, so seed both validators.
+  const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
+  fs.mkdirSync(cacheDir, { recursive: true });
+  fs.writeFileSync(path.join(cacheDir, 'iron_rules.json'), JSON.stringify([
+    { code: 'TEST-JARGON', metadata: { lint_validator: { name: 'jargon_explanation', params: {} } } },
+    { code: 'TEST-MIXED', metadata: { lint_validator: { name: 'language_mixed_ratio', params: { threshold: 0.15 } } } },
+  ]));
 }
 
 function cleanupTmpHome() {

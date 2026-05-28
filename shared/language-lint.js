@@ -373,7 +373,7 @@ export function checkJargonExplanation(content, historicalCorpus = '') {
  *   replies in the same session (optional)
  * @returns {{ok: boolean, violations: Array<{rule: string, message: string}>}}
  */
-export function lintReply(content, enabledValidatorsOrHistorical = [], context = {}) {
+export function lintReply(content, enabledValidatorsOrHistorical, context = {}) {
   // v1.21.0: two calling conventions
   //   - new API: lintReply(content, resolvedValidators, context)
   //     resolvedValidators is [{rule, validator, check, params}, ...] —
@@ -382,17 +382,26 @@ export function lintReply(content, enabledValidatorsOrHistorical = [], context =
   //     compatible; historicalCorpus is a string.
   let resolvedValidators = [];
   let mergedContext = { ...context };
+  // v1.26.13: track whether the caller actually used the new API. The old
+  // code only switched to the rule-driven path when resolvedValidators was
+  // non-empty, so callers that passed an empty array (user opted in to no
+  // validators) silently fell through to the legacy fallback below and ran
+  // every built-in check unconditionally. That blocked users like Eric who
+  // never enabled any jargon/mixed-language rule but still got linted.
+  let usingNewAPI = false;
   if (typeof enabledValidatorsOrHistorical === 'string') {
     mergedContext.historicalCorpus = enabledValidatorsOrHistorical;
   } else if (Array.isArray(enabledValidatorsOrHistorical)) {
     resolvedValidators = enabledValidatorsOrHistorical;
+    usingNewAPI = true;
   }
 
   const violations = [];
 
   // v1.21.0: rule-driven path — run only the caller-resolved validator
-  // check functions.
-  if (resolvedValidators.length > 0) {
+  // check functions. v1.26.13: also entered when the array is empty, so an
+  // empty opt-in means "skip every check" instead of "run every built-in."
+  if (usingNewAPI) {
     for (const entry of resolvedValidators) {
       if (typeof entry.check !== 'function') continue;
       try {
@@ -411,7 +420,9 @@ export function lintReply(content, enabledValidatorsOrHistorical = [], context =
   }
 
   // Legacy API fallback: callers that don't pass enabledValidators
-  // (backward compatibility).
+  // (backward compatibility — second arg is a string historicalCorpus or
+  // undefined). This path is preserved for older callers / tests, not used
+  // by the production reply-lint hook since v1.21.0.
   const mixed = checkMixedLanguage(content);
   if (!mixed.ok) {
     violations.push({
