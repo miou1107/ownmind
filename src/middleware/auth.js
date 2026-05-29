@@ -11,7 +11,7 @@ import defaultLogger from '../utils/logger.js';
  *   - length < 12 → '<too-short:N>'
  *   - length ≥ 12 → 'first4...last4 (len=N)'
  *
- * Why 12 and not 8: for an 8-char key (like Adam's leftover "--update"), slice(0,4)+slice(-4)
+ * Why 12 and not 8: for an 8-char key (like Bob's leftover "--update"), slice(0,4)+slice(-4)
  * would equal the whole original (nothing is masked between the dots), and the admin would
  * see the full key directly in docker logs. 12 is the minimum where "at least 4 chars in the
  * middle are masked". A key with len < 12 is not a valid OwnMind key (UUID is 36, custom
@@ -28,7 +28,7 @@ export function maskApiKey(key) {
  * API Key authentication middleware
  *
  * v1.17.68: the 401 path adds logger.warn('auth_failed', {...}).
- * Background: Adam got 401s from 2026-03-26 to 2026-05-08 (settings.json had a leftover
+ * Background: Bob got 401s from 2026-03-26 to 2026-05-08 (settings.json had a leftover
  * "--update"), because the old auth 401 path kept no structured log, so the admin only
  * saw the access log "POST /api/usage/events 401 3ms" in docker logs — no way to tell
  * who it was, and no key prefix recorded.

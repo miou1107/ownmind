@@ -7,7 +7,7 @@ import { createDebugRouter } from '../src/routes/debug.js';
  * v1.17.86 — upgrade_complete beacon (IR-038 observability gap fix)
  *
  * Background: the v1.17.85 FAIL fallback only covered the case where the upgrade flow was
- * interrupted by FAIL(); Adam / Michelle hit a different scenario — the upgrade actually
+ * interrupted by FAIL(); Bob / Dana hit a different scenario — the upgrade actually
  * succeeded (the client was on 1.17.84, confirmed by collector_heartbeat) but the
  * post_install self-check upload never succeeded. Possible causes:
  *   - self-check ran but the upload 401 / 5xx'd → wrote .upload-spool.jsonl and waited for

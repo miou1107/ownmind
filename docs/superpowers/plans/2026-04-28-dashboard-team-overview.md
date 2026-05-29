@@ -268,7 +268,7 @@ describe('GET /api/usage/admin/team-overview', () => {
 
   it('rate is null when no session triggers rules', async () => {
     const queryFn = async () => ({ rows: [{
-      user_id: 2, user_name: 'Adam', last_active_at: '2026-04-28T01:00:00Z',
+      user_id: 2, user_name: 'Bob', last_active_at: '2026-04-28T01:00:00Z',
       session_count: 1, sessions_json: [{ details: { project: 'ownmind' } }]
     }]});
     const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
@@ -439,7 +439,7 @@ describe('GET /api/usage/admin/team-overview/:user_id/sessions', () => {
   it('returns session rows shape', async () => {
     const fakeRows = [{
       id: 248, created_at: '2026-04-28T01:00:00Z',
-      tool: 'claude-code', model: 'claude-opus-4-7', machine: 'Vincent.local',
+      tool: 'claude-code', model: 'claude-opus-4-7', machine: 'Vin.local',
       summary: 'OwnMind 連發版',
       details: { project: 'ownmind', duration_turns: 60,
                  rules_complied: ['IR-003'], rules_skipped: [] },
@@ -454,7 +454,7 @@ describe('GET /api/usage/admin/team-overview/:user_id/sessions', () => {
     const s = r.body.sessions[0];
     assert.equal(s.id, 248);
     assert.equal(s.tool, 'claude-code');
-    assert.equal(s.machine, 'Vincent.local');
+    assert.equal(s.machine, 'Vin.local');
     assert.deepEqual(s.machine_meta, { os: 'macos', scanner_version: '0.4.1' });
     assert.equal(s.project, 'ownmind');
     assert.equal(s.duration_turns, 60);
@@ -1030,7 +1030,7 @@ Expected: `"version": "1.17.17",`
 - 前端日期篩選器預設帶最近 7 天
 - 前端「成員詳情」卡新增「最近對話」摺疊區
 - 「Audit Log」改名「資料品質警示」+ 加說明列說明它不是團隊活動紀錄
-- 機器名旁加 OS · scanner_version 副資訊（避免 Adam 機器叫「after」這類短名造成 UX 混淆）
+- 機器名旁加 OS · scanner_version 副資訊（避免 Bob 機器叫「after」這類短名造成 UX 混淆）
 
 **新增測試**
 
@@ -1142,7 +1142,7 @@ session_log #248 friction_points 提到「broadcast 通知在已升級到最新�
 |---|---|
 | §1.1 命名誤解（Audit Log） | Task 7 |
 | §1.2 缺漏功能（成績單 / 流水帳） | Task 1-3, 5-6 |
-| §1.3 machine UX（Adam case） | Task 3, 6（machine_meta） |
+| §1.3 machine UX（Bob case） | Task 3, 6（machine_meta） |
 | §3.2 鐵律遵守率算法 | Task 1（pure func） |
 | §3.5 票選專案 | Task 1（pure func） |
 | §4.1 scoreboard API | Task 2 |

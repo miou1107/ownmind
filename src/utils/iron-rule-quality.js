@@ -251,7 +251,7 @@ export function lintLegacyTextRule(rule) {
   //   "AI replies"; the reply-lint Stop hook (v1.17.96) already handles that.
   //
   //   Iron-rule content itself is a "technical note for the AI" — having tech terms like
-  //   docker / Python / OpenSpec / Adam / Eric is natural. Applying IR-037 to iron-rule
+  //   docker / Python / OpenSpec / Bob / Alice is natural. Applying IR-037 to iron-rule
   //   lint is "the right rule in the wrong place", not "the rule being too strict".
   //
   //   Evidence: the v1.18.1 audit script ran 35 prod iron rules, 26 failed (74%), 17 of

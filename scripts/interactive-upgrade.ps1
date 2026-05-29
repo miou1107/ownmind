@@ -3,7 +3,7 @@
 # 用法：powershell -ExecutionPolicy Bypass -File ~/.ownmind/scripts/interactive-upgrade.ps1
 # stdout 格式與 bash 版相同（INFO / OK / ERROR / ASK 前綴）
 #
-# v1.17.66 變更（Eric / Adam Windows 升級失敗劇本）：
+# v1.17.66 變更（Alice / Bob Windows 升級失敗劇本）：
 #   1. 三處 bash 改走 Find-GitBash helper（避開 System32\bash.exe WSL relay）
 #   2. 所有 Out-File / 重導向加 -Encoding utf8（避免 UTF-16 BOM 中文 garbled）
 #   3. 流程包進 try/finally，self-check.cjs 觀測在 finally 區塊保證執行（IR-038）
@@ -12,7 +12,7 @@
 Set-StrictMode -Version Latest
 Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction SilentlyContinue
 
-# 環境正規化（v1.17.9, 回報者 Adam）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+# 環境正規化（v1.17.9, 回報者 Bob）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
 if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
   Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
 }
@@ -288,7 +288,7 @@ OK "done" "Upgrade complete -> version $Version. Backup kept at $BackupDir (auto
 
 # v1.17.86 — upgrade_complete beacon（IR-038 觀測管道補洞，跟 .sh 對稱）
 # 比 self-check 早一步、payload 簡單 + 5 秒 timeout + spool fallback，
-# 場景：升完了但 self-check 上傳沒成功（Adam / Michelle 案例）→ server
+# 場景：升完了但 self-check 上傳沒成功（Bob / Dana 案例）→ server
 # 至少看得到 upgrade_complete row 證明 user 升上去了、版本 X。
 function Send-UpgradeCompleteBeacon {
   param([string]$ClientVersion)

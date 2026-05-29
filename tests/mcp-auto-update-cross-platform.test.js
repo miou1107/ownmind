@@ -2,7 +2,7 @@
  * Reproduction tests: MCP auto-update silently fails on Windows
  *
  * Background (discovered 2026-05-07 while reviewing work logs):
- *   Eric (LAPTOP-G95HIQ3V) stuck on v1.17.17; Adam stuck on v1.17.16.
+ *   Alice (LAPTOP-G95HIQ3V) stuck on v1.17.17; Bob stuck on v1.17.16.
  *   Neither had any update_check / update_failed event after 4/21.
  *   Root cause: mcp/index.js used process.env.HOME, which is undefined on Windows,
  *   so OWNMIND_DIR became the relative path '.ownmind' → fs.existsSync('.ownmind/.git')

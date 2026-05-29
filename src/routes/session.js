@@ -67,7 +67,7 @@ router.post('/', async (req, res) => {
  * ?days=7                   - last N days (default 7)
  * ?tool=cursor              - filter by tool
  * ?include_compressed=true  - include monthly summaries
- * ?q=keyword                - v1.17.13 ILIKE search over summary + details (Michelle case)
+ * ?q=keyword                - v1.17.13 ILIKE search over summary + details (Dana case)
  */
 router.get('/recent', async (req, res) => {
   try {

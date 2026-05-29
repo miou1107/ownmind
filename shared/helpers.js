@@ -73,7 +73,7 @@ export function readCredentials(settingsPath = DEFAULT_SETTINGS_PATH) {
   try {
     // v1.17.12 — stripBom guards against BOM-prefixed JSON written by
     // Windows PS 5.1 `Set-Content -Encoding UTF8`. Without stripBom,
-    // Adam/Eric's scanner throws here, gets caught into empty creds,
+    // Bob/Alice's scanner throws here, gets caught into empty creds,
     // exits early, and Admin sees "not installed" + zero usage.
     const s = JSON.parse(stripBom(fs.readFileSync(settingsPath, 'utf8')));
     const env = s.mcpServers?.ownmind?.env || {};

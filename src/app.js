@@ -172,7 +172,7 @@ app.get('/health', (req, res) => {
 // (b) served content is guaranteed to match the deployed commit (no hot-reload
 // drift); (c) zero disk I/O per request.
 import { readFileSync } from 'fs';
-// v1.17.10 reporter Adam: bootstrap.ps1 keeps a UTF-8 BOM on disk to support `powershell -File`
+// v1.17.10 reporter Bob: bootstrap.ps1 keeps a UTF-8 BOM on disk to support `powershell -File`
 // (PS 5.1 needs the BOM to read Chinese correctly), but the `iwr | iex` path treats the leading U+FEFF as a cmdlet
 // call and emits a warning. On serve, strip the leading BOM so iex runs quietly.
 function stripBom(s) {

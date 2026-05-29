@@ -89,7 +89,7 @@ async function getContextAnalysis(userId, fromDate) {
 // "logic over reminders").
 // The earlier client-side autoComplyForToolCall in mcp/index.js required
 // every user to upgrade to v1.17.40+; in practice some users get stuck on
-// old versions (e.g. Adam on 1.17.16). Move the logic to the server: when
+// old versions (e.g. Bob on 1.17.16). Move the logic to the server: when
 // activity arrives, if the event is high-risk, automatically emit an
 // observed_trigger compliance event — independent of client version.
 async function autoEmitObservedTrigger(userId, event) {

@@ -142,7 +142,7 @@ describe('v1.17.66 — collectEnv environment collection (IR-038)', () => {
   });
 });
 
-// v1.17.64 reproduction tests — Adam/Eric/Michelle after upgrading to v1.17.63:
+// v1.17.64 reproduction tests — Bob/Alice/Dana after upgrading to v1.17.63:
 // (1) checkApiCredentials hits /api/init → server has no such route, returns 404 → always fails.
 // (2) self-check sends X-OwnMind-API-Key header → auth middleware expects Authorization Bearer, returns 401.
 // Both tests fail before the fix and pass after.
@@ -183,13 +183,13 @@ describe('checkApiCredentials (v1.17.64 regression)', () => {
 });
 
 // ============================================================================
-// v1.17.66 reproduction tests — Eric / Adam upgrade-to-v1.17.65 failure scenarios
+// v1.17.66 reproduction tests — Alice / Bob upgrade-to-v1.17.65 failure scenarios
 // ============================================================================
 
 describe('v1.17.66 — Bug #2 self-check scheduler must not pass shell:true', () => {
   // shell:true on Windows wraps the call inside cmd.exe; the `|` pipe is eaten
   // by cmd, so PowerShell commands like `Get-ScheduledTask | Select-Object` always fail.
-  // Live evidence: Eric/Adam logs verbatim "'Select-Object' is not recognized as ...".
+  // Live evidence: Alice/Bob logs verbatim "'Select-Object' is not recognized as ...".
   it('self-check.cjs calls to powershell.exe must not include { shell: true }', () => {
     const content = fs.readFileSync(selfCheckPath, 'utf8');
     // Grab every powershell.exe spawn / execFile call's options block.
@@ -211,7 +211,7 @@ describe('v1.17.66 — Bug #2 self-check scheduler must not pass shell:true', ()
 });
 
 describe('v1.17.66 — Bug #4 self-check uploadReport spool mechanism', () => {
-  // Adam's case: API key 401 → upload fails → report dropped → server install_check_logs
+  // Bob's case: API key 401 → upload fails → report dropped → server install_check_logs
   // receives nothing. Fix: on failure, append to a spool jsonl and replay at the start of the next run.
 
   it('module must export uploadReport / appendSpool / retrySpool', () => {
@@ -306,7 +306,7 @@ describe('check functions (smoke)', () => {
 // v1.17.68 — checkApiKeyFormat (IR-007 same-mine defense)
 // ============================================================================
 //
-// Background: from 2026-03-26 (account creation) to 2026-05-08, Adam kept hitting 401
+// Background: from 2026-03-26 (account creation) to 2026-05-08, Bob kept hitting 401
 // because his settings.json had OWNMIND_API_KEY left as the literal string "--update"
 // (pre-v1.17.9 install.ps1 did not filter flag-like args from the legacy slot).
 // During that window, token_events were 0 / install_check_logs were 0 / scanner was always 401,
@@ -319,7 +319,7 @@ describe('v1.17.68 — checkApiKeyFormat (client-side format validation; does no
     assert.equal(typeof selfCheck.checkApiKeyFormat, 'function');
   });
 
-  it('Adam\'s "--update" should fail and detail must reference the historical regression', () => {
+  it('Bob\'s "--update" should fail and detail must reference the historical regression', () => {
     const r = selfCheck.checkApiKeyFormat('--update');
     assert.equal(r.status, 'fail');
     assert.match(r.detail, /--update/);
@@ -379,7 +379,7 @@ describe('v1.17.68 — checkApiKeyFormat (client-side format validation; does no
     assert.match(r.detail, /len=36/);
   });
 
-  it('legal custom prefix (Vincent id=1 vin-...) → pass', () => {
+  it('legal custom prefix (Vin id=1 vin-...) → pass', () => {
     const r = selfCheck.checkApiKeyFormat('vin-abcdef0123456789-2026');
     assert.equal(r.status, 'pass');
   });

@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.10 — install.ps1 Copy-Item self-overwrite guard (reported by Adam)
+ * v1.17.10 — install.ps1 Copy-Item self-overwrite guard (reported by Bob)
  *
  * $OwnmindDir = $HOME\.ownmind and dest $HOME\.ownmind\shared\ are the same
  * location after git clone — Copy-Item tries to "copy itself onto itself" and

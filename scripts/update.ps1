@@ -6,7 +6,7 @@
 #    bootstrap 會自動判斷 install / upgrade / repair 並走對應流程。
 #
 # 適用場景：git pull 後 / install.ps1 尾端，把 ~/.ownmind/ 內檔同步到各工具目錄。
-# v1.17.22 新增（修 Eric / Adam 卡舊版的根因）。
+# v1.17.22 新增（修 Alice / Bob 卡舊版的根因）。
 # v1.17.81 修 StackOverflow + 加觀測管道（vin-windows-test 第五輪）：
 #   - 4 處 @"..."@ heredoc 改 @'...'@ 單引號 — 雙引號會觸發 PS 對 JS code 內 $var 做展開，
 #     某些路徑會遞迴展開 → StackOverflowException 整個 process 死。單引號完全 disable 展開。

@@ -128,8 +128,8 @@ export const TECH_WHITELIST_LOWER = new Set(
 /**
  * v1.19.3: detect "isolated capitalized word" as a proper noun (person
  * name, brand) and skip it.
- * Rule: leading uppercase + 1 or more lowercase letters (e.g. Google, Eric,
- * Phoebe). All-caps words (AWS, IDE) are already in TECH_WHITELIST and
+ * Rule: leading uppercase + 1 or more lowercase letters (e.g. Google, Alice,
+ * Carol). All-caps words (AWS, IDE) are already in TECH_WHITELIST and
  * caught earlier.
  */
 export function looksLikeProperNoun(word) {
@@ -386,7 +386,7 @@ export function lintReply(content, enabledValidatorsOrHistorical, context = {}) 
   // code only switched to the rule-driven path when resolvedValidators was
   // non-empty, so callers that passed an empty array (user opted in to no
   // validators) silently fell through to the legacy fallback below and ran
-  // every built-in check unconditionally. That blocked users like Eric who
+  // every built-in check unconditionally. That blocked users like Alice who
   // never enabled any jargon/mixed-language rule but still got linted.
   let usingNewAPI = false;
   if (typeof enabledValidatorsOrHistorical === 'string') {

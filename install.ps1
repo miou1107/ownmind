@@ -8,7 +8,7 @@ try {
   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue
 } catch { }
 
-# --- 環境正規化（v1.17.9, 回報者 Adam）---
+# --- 環境正規化（v1.17.9, 回報者 Bob）---
 # 從 Git Bash / MSYS / Cygwin 呼叫 powershell 時，$HOME 會是 POSIX 格式 /c/Users/xxx，
 # 跟 Windows path 串接變 C:\c\Users\xxx 怪路徑。強制把 $HOME 指向 $env:USERPROFILE。
 if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
@@ -207,7 +207,7 @@ if (-not (Get-Command sqlite3 -ErrorAction SilentlyContinue)) {
   Write-Host "       Skipping does not affect Claude Code / Codex usage; only Tier 2 (Cursor / Antigravity / OpenCode) session counts are unavailable" -ForegroundColor Gray
 }
 
-# --- Write-Utf8NoBom helper (v1.17.12, 回報者 Adam/Eric root cause) ---
+# --- Write-Utf8NoBom helper (v1.17.12, 回報者 Bob/Alice root cause) ---
 # PS 5.1 的 `Set-Content -Encoding UTF8` 會加 UTF-8 BOM (EF BB BF)，下游 Node
 # JSON.parse / /bin/sh / cmd 讀到 BOM 直接爆。統一用 [System.IO.File]::WriteAllText
 # 寫 BOM-less UTF-8。注意該 API 只接受絕對路徑 — 所以內部 Resolve-Path。
@@ -218,7 +218,7 @@ function Write-Utf8NoBom {
   [System.IO.File]::WriteAllText($full, $Content, $utf8NoBom)
 }
 
-# --- Copy-AsLf helper (v1.17.15, 回報者 Eric) ---
+# --- Copy-AsLf helper (v1.17.15, 回報者 Alice) ---
 # Windows git checkout 在 core.autocrlf=true 時會把 LF 轉 CRLF。我們的 sh hook 一旦
 # 變 CRLF，shebang `#!/bin/sh\r` 找不到 `/bin/sh\r` 這支 → "Exec format error"。
 # 從 source 讀 bytes、過濾 0x0D（CR）、無 BOM 寫出，保證 LF on disk。
@@ -236,7 +236,7 @@ function Copy-AsLf {
   return $true
 }
 
-# --- Test-ShAvailable (v1.17.15, 回報者 Eric) ---
+# --- Test-ShAvailable (v1.17.15, 回報者 Alice) ---
 # Windows git 跑 sh hook 必須能 spawn sh.exe。Git for Windows 自帶在 usr\bin\，
 # 但 VS Code Bundled Git / Microsoft.Git (WinGet) / Scoop git-with-openssh 都沒。
 # 沒 sh.exe 時，git hook 會回 "Exec format error"。
@@ -462,7 +462,7 @@ foreach ($dir in $GitHookDirs) {
 
 # Helper：src 跟 destDir\<leaf> 同路徑時就 skip copy
 # （install.sh 用 `-ef` 比 inode；PS 改比 GetFullPath 解析後字串）
-# v1.17.10 修 Adam 回報的 "Copy-Item cannot overwrite with itself ×4"
+# v1.17.10 修 Bob 回報的 "Copy-Item cannot overwrite with itself ×4"
 function Copy-IfDifferent {
   param([string]$Src, [string]$DestDir, [string]$Label)
   if (-not (Test-Path $Src)) { return }
@@ -490,7 +490,7 @@ foreach ($jsFile in $GitHookJsFiles) {
 }
 
 # Windows: 安裝 sh wrapper（與 Mac/Linux 對齊；含 chain existing hooks 邏輯）
-# 實作改點（v1.17.15, 回報者 Eric）：
+# 實作改點（v1.17.15, 回報者 Alice）：
 # 1. 不再 inline 生 wrapper 內容（缺 chain 邏輯），改 copy source（hooks/ownmind-git-{pre,post}-commit）
 # 2. Copy-AsLf 強制 LF 行尾，防 Windows core.autocrlf 把 sh script 轉 CRLF 導致 "Exec format error"
 # 3. 偵測 sh.exe（Git for Windows 才有）；找不到時 fail-fast 並提示安裝來源

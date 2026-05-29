@@ -24,7 +24,7 @@
 
 $ErrorActionPreference = "Stop"
 
-# 環境正規化（v1.17.9, 回報者 Adam）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+# 環境正規化（v1.17.9, 回報者 Bob）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
 if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
   Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
 }

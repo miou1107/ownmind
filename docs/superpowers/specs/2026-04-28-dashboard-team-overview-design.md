@@ -16,7 +16,7 @@ admin 沒辦法在 dashboard 看到「最近 7 天，每位成員整體在做什
 - 前端對應欄位 / 流水帳區塊
 
 ### 1.3 UX 細節（memory #281 E）
-collector heartbeat 顯示的機器名很短時（例如 Adam 的機器叫 `after`，4 個字母）會看起來像被截斷，需要副資訊（OS、scanner 版本）輔助判讀。
+collector heartbeat 顯示的機器名很短時（例如 Bob 的機器叫 `after`，4 個字母）會看起來像被截斷，需要副資訊（OS、scanner 版本）輔助判讀。
 
 ## 二、設計範圍與非目標
 
@@ -133,7 +133,7 @@ LIMIT 1
       "created_at": "2026-04-28T01:26:09Z",
       "tool": "claude-code",
       "model": "claude-opus-4-7",
-      "machine": "Vincent.local",
+      "machine": "Vin.local",
       "machine_meta": {
         "os": "darwin",
         "scanner_version": "0.4.1"

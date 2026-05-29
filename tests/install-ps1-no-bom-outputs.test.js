@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.12 — install.ps1 must not use Set-Content to write files that need parsing (reported by Adam/Eric)
+ * v1.17.12 — install.ps1 must not use Set-Content to write files that need parsing (reported by Bob/Alice)
  *
  * Root cause: PS 5.1's `Set-Content -Encoding UTF8` adds a UTF-8 BOM (EF BB BF).
  * Downstream Node `JSON.parse` / `sh` / `cmd` blow up on a BOM. Mac install.sh uses

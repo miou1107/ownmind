@@ -14,7 +14,7 @@ const repoRoot = path.resolve(__dirname, '..');
  * v1.17.85 — interactive-upgrade FAIL function uniformly adds report_error
  * (IR-038 observability gap patch).
  *
- * Background: Adam (id=3) and Michelle (id=6) ran update_started beacons on 5/10-11
+ * Background: Bob (id=3) and Dana (id=6) ran update_started beacons on 5/10-11
  * and produced no post_install report afterwards — the upgrade clearly failed, but
  * the errors/ spool had zero entries. Tracing showed that interactive-upgrade.sh,
  * while most FAIL paths called report_error first, still had a few uncovered

@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 const { buildSessionRecentQuery } = await import('../src/lib/session-query.js');
 
 /**
- * v1.17.13 — GET /api/session/recent adds a `q` parameter (reported by Michelle)
+ * v1.17.13 — GET /api/session/recent adds a `q` parameter (reported by Dana)
  *
- * Michelle used `ownmind_search` to search "ai_kol" / "Selenium" / "趨勢" and all returned empty.
+ * Dana used `ownmind_search` to search "ai_kol" / "Selenium" / "趨勢" and all returned empty.
  * Root cause: the search endpoint only queries the memories table, but session_logs (written by
  * ownmind_log_session) is a separate table, so it always misses.
  *

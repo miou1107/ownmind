@@ -829,7 +829,7 @@ async function handleTool(name, args) {
 
     case "ownmind_get": {
       const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
-      // v1.17.13 Michelle case: session_log lives in its own session_logs table rather than memories,
+      // v1.17.13 Dana case: session_log lives in its own session_logs table rather than memories,
       // so we proxy to /api/session/recent — keeping write (ownmind_log_session) and read (ownmind_get) consistent.
       if (args.type === 'session_log') {
         try {
@@ -871,7 +871,7 @@ async function handleTool(name, args) {
     case "ownmind_search": {
       const searchTokenParam = currentSyncToken ? `&sync_token=${currentSyncToken}` : '';
       try {
-        // v1.17.13: search memories + session_logs together and merge (Michelle case).
+        // v1.17.13: search memories + session_logs together and merge (Dana case).
         const [memoryRows, sessionRows] = await Promise.all([
           callApi("GET", `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`)
             .catch(() => []),
@@ -1474,7 +1474,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 // --- Auto-update check (background, non-blocking) ---
-// v1.17.22 fix: root cause of Eric (Windows LAPTOP-G95HIQ3V) / Adam being stuck on old versions:
+// v1.17.22 fix: root cause of Alice (Windows LAPTOP-G95HIQ3V) / Bob being stuck on old versions:
 //   1. process.env.HOME is undefined on Windows; OWNMIND_DIR became a relative path, so the
 //      whole block silently skipped. → switched to os.homedir() (cross-platform — reads
 //      USERPROFILE on Windows automatically).
@@ -1513,7 +1513,7 @@ async function runAutoUpdate() {
     } catch {}
   }
 
-  // Skip-reason observability — earlier silent-skip behavior meant Eric/Adam stayed on
+  // Skip-reason observability — earlier silent-skip behavior meant Alice/Bob stayed on
   // old versions and nobody noticed.
   if (lastCheck === today) {
     logEvent('update_skipped', { source: 'mcp', reason: 'marker_today' });
@@ -1611,7 +1611,7 @@ async function runAutoUpdate() {
 
     // npm install — on Windows we must use npm.cmd and go through the shell.
     // v1.17.62: as of Node v18.20.2 / v20.12.2 / v21.7.3 (CVE-2024-27980 patch), execFile
-    // can no longer run .cmd / .bat files directly — shell:true is required. Adam's
+    // can no longer run .cmd / .bat files directly — shell:true is required. Bob's
     // update_failed step=npm error=EINVAL was exactly this. Mac / Linux are unaffected,
     // so we only enable the shell on Windows.
     try {
@@ -1653,7 +1653,7 @@ async function runAutoUpdate() {
     // is fresh but this process's in-memory value is still old. The previous sendMcpHeartbeat
     // used the cached value, and the heartbeatSent flag only fires once per process — so a
     // long-running MCP process would forever report the old version (the root cause of
-    // Michelle / Eric being stuck).
+    // Dana / Alice being stuck).
     // 5-second timeout (callApi itself has no timeout); on failure, log an observation event.
     try {
       const rootPkg = new URL('../package.json', import.meta.url);

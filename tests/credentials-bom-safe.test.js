@@ -7,7 +7,7 @@ import os from 'node:os';
 const { readCredentials, readJsonSafe } = await import('../shared/helpers.js');
 
 /**
- * v1.17.12 — readCredentials must tolerate a UTF-8 BOM (reported by Adam/Eric, root cause)
+ * v1.17.12 — readCredentials must tolerate a UTF-8 BOM (reported by Bob/Alice, root cause)
  *
  * On PS 5.1, install.ps1 wrote settings.json with `Set-Content -Encoding UTF8`,
  * which adds a UTF-8 BOM (EF BB BF). Node.js JSON.parse does not accept a BOM and
@@ -38,7 +38,7 @@ describe('readCredentials — BOM tolerance', () => {
     assert.equal(r.apiUrl, 'u1');
   });
 
-  it('settings.json with a UTF-8 BOM still parses (Adam/Eric victims)', () => {
+  it('settings.json with a UTF-8 BOM still parses (Bob/Alice victims)', () => {
     const p = path.join(tmpDir, 'settings.json');
     fs.writeFileSync(p, '\uFEFF' + JSON.stringify({
       mcpServers: { ownmind: { env: { OWNMIND_API_KEY: 'k2', OWNMIND_API_URL: 'u2' } } }

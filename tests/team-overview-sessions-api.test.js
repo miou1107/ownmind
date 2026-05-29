@@ -46,7 +46,7 @@ describe('GET /:user_id/sessions', () => {
   it('returns session rows shape', async () => {
     const fakeRows = [{
       id: 248, created_at: '2026-04-28T01:00:00Z',
-      tool: 'claude-code', model: 'claude-opus-4-7', machine: 'Vincent.local',
+      tool: 'claude-code', model: 'claude-opus-4-7', machine: 'Vin.local',
       summary: 'OwnMind 連發版',
       details: { project: 'ownmind', duration_turns: 60,
                  rules_complied: ['IR-003'], rules_skipped: [] },
@@ -61,7 +61,7 @@ describe('GET /:user_id/sessions', () => {
     const s = r.body.sessions[0];
     assert.equal(s.id, 248);
     assert.equal(s.tool, 'claude-code');
-    assert.equal(s.machine, 'Vincent.local');
+    assert.equal(s.machine, 'Vin.local');
     assert.deepEqual(s.machine_meta, { os: 'darwin', scanner_version: '0.4.1' });
     assert.equal(s.project, 'ownmind');
     assert.equal(s.duration_turns, 60);

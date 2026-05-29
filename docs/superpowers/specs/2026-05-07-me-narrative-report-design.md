@@ -9,7 +9,7 @@
 
 ## 1. 目標
 
-在 `/ownmind/me` 加一個「📊 敘事報告」分頁，照 Vincent 在 HackMD 寫過的那份 14 天分析報告結構，自動產出**一份所有登入者都看得到**的全團隊敘事報告。
+在 `/ownmind/me` 加一個「📊 敘事報告」分頁，照 Vin 在 HackMD 寫過的那份 14 天分析報告結構，自動產出**一份所有登入者都看得到**的全團隊敘事報告。
 
 機械段（表格、mermaid 圖）開頁即顯示；LLM 段（白話講、洞察、下一步）user 點按鈕才跑。
 
@@ -57,7 +57,7 @@ GET /api/me/narrative/insights?range=14d
     cached: true | false,
     summary_one_line,
     section_explanations: { ranking: '白話講...', ... },
-    project_friction: { 'funit-v2': ['踩坑1', '踩坑2'], ... },
+    project_friction: { 'exampleclient-v2': ['踩坑1', '踩坑2'], ... },
     insights_for_admin: ['洞察1', '洞察2', '洞察3'],
     next_actions: ['動作1', '動作2', '動作3']
   }

@@ -48,8 +48,8 @@ describe('v1.19.3 scenario 9 — whitelist expansion: every Top 30 violation wor
 });
 
 describe('v1.19.3 scenario 10 — proper-noun detection: isolated capitalized names are not violations', () => {
-  it("'Eric 跟 Phoebe 都同意' does not violate IR-037", () => {
-    const text = 'Eric 跟 Phoebe 都同意這個方向、繼續推進。';
+  it("'Alice 跟 Carol 都同意' does not violate IR-037", () => {
+    const text = 'Alice 跟 Carol 都同意這個方向、繼續推進。';
     const r = checkMixedLanguage(text);
     assert.equal(r.ok, true, `proper noun should be skipped; actual: ${JSON.stringify(r.mixedWords)}`);
   });

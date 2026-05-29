@@ -627,7 +627,7 @@ function _displayEventName(code) {
 function formatBlockReason(violations, opts = {}) {
   const priorBlockCount = typeof opts.priorBlockCount === 'number' ? opts.priorBlockCount : 0;
   // v1.20.4: assemble using display names; no longer leak personal iron rule numbers
-  // (so e.g. another user like Eric never sees "IR-036" in their banner).
+  // (so e.g. another user like Alice never sees "IR-036" in their banner).
   const ruleCodes = violations.map(v => _displayEventName(v.rule)).join(' + ');
 
   // v1.19.11 graded display: for 2nd–3rd consecutive block show a brief message to avoid user fatigue.
