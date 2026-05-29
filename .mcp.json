@@ -1,10 +1,10 @@
 {
-  "_comment": "v1.19.10：API key 不再硬寫進 repo 公開檔。本機跑時、Claude Code 會自動讀 ~/.ownmind/credentials 取金鑰；或可建立 .mcp.local.json（已加進 .gitignore）覆蓋。",
+  "_comment": "v1.19.10：API key 不再硬寫進 repo 公開檔。本機跑時、Claude Code 會自動讀 ~/.ownmind/credentials 取金鑰；或可建立 .mcp.local.json（已加進 .gitignore）覆蓋。範本見 .mcp.local.json.example。",
   "mcpServers": {
     "ownmind": {
       "command": "node",
       "args": [
-        "/Users/vincentkao/.ownmind/mcp/index.js"
+        "${HOME}/.ownmind/mcp/index.js"
       ],
       "env": {
         "OWNMIND_API_URL": "https://YOUR_OWNMIND_URL/ownmind",
