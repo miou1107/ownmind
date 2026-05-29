@@ -1,5 +1,17 @@
 # OwnMind 更新紀錄
 
+## v1.26.25 — 去識別化補漏（Gemini 雙審查抓到的 2 處）
+
+**背景**：v1.26.24 後請 Gemini 獨立驗證「升級到 1.26.24 對用戶（尤其 Windows）安不安全」。Gemini 確認 Windows 相容性（BOM/CRLF/邏輯）4 項全 PASS，但抓到 2 處我之前用「大寫字首+詞界」掃描漏掉的小寫／嵌入真名變體。
+
+**補掉的 2 處**：
+- `tests/upgrade-complete-beacon.test.js`：fixture `machine: 'adam-laptop'` → `'bob-laptop'`（小寫 adam、無斷言比對、行為不變）。
+- `.github/CODEOWNERS`：中文註解英文化（軌道 B）。`@ericzhuang-Ft` 是共同維護者、依 Vin 決定保留（CODEOWNERS 帳號本就公開、非洩漏）。
+
+**驗證**：全 repo 真名掃描歸零（除保留的維護者帳號）；測試維持全綠。
+
+**版本**：1.26.24 → 1.26.25
+
 ## v1.26.24 — 新增 .mcp.local.json 範本給自架者參考
 
 **背景**：v1.26.23 把 `.mcp.json` 的主機網址改成佔位、真值改走 gitignore 的 `.mcp.local.json`。但自架者 clone repo 後沒有可照抄的範本。
