@@ -180,7 +180,7 @@ describe('v1.17.86 — upgrade_complete beacon: server recognizes it and keeps t
       trigger: 'upgrade_complete',
       client_version: '1.17.86',
       platform: 'win32',
-      machine: 'adam-laptop',
+      machine: 'bob-laptop',
     });
     assert.equal(r.status, 200);
     assert.equal(insertedRows.length, 1);

@@ -1,5 +1,9 @@
 # OwnMind 檔案結構
 
+## v1.26.25 修改（去識別化補漏 — Gemini 雙審查）
+
+修改檔：`tests/upgrade-complete-beacon.test.js`（fixture adam-laptop→bob-laptop）、`.github/CODEOWNERS`（中文註解英文化、維護者帳號保留）。
+
 ## v1.26.24 修改（新增 .mcp.local.json 範本）
 
 新增檔：`.mcp.local.json.example`（自架者複製成 gitignore 的 `.mcp.local.json` 填真值的參考範本）。
