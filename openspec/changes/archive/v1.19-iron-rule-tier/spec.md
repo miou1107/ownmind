@@ -1,36 +1,36 @@
-# v1.19 — 鐵律分級規格（GIVEN / WHEN / THEN）
+# v1.19 — Iron-rule tier spec (GIVEN / WHEN / THEN)
 
-> 本檔規格採用 BDD 三段式描述（白話：前提 / 動作 / 預期結果），對應 OpenSpec CONVENTIONS.md 第 1 條。
-
----
-
-## 場景 1：migration 不破壞既有鐵律
-
-**GIVEN（前提）**
-
-- 資料庫已有 41 條鐵律（IR-002 ~ IR-042）、`memories.type = 'iron_rule'`
-- 尚未跑 014 migration
-
-**WHEN（動作）**
-
-- 跑 `db/014_iron_rule_tier.sql`
-
-**THEN（預期結果）**
-
-- `memories` 表新增 `tier VARCHAR(20) DEFAULT 'default'` 欄位
-- 既有 41 條鐵律的 `tier` 全部為 `'default'`
-- `idx_memories_iron_rule_tier` 索引建立成功、只覆蓋 `type='iron_rule'` 的列（部分索引 PARTIAL INDEX）
-- 既有的 title / content / code / status / metadata 完全沒被動到
-- migration 可重跑（IF NOT EXISTS）、跑第二次無 error
+> This spec uses the BDD three-part description (plainly: precondition / action / expected result), per CONVENTIONS.md item 1 of OpenSpec.
 
 ---
 
-## 場景 2：API 寫入 tier
+## Scenario 1: migration doesn't break existing iron rules
+
+**GIVEN (precondition)**
+
+- The database already has 41 iron rules (IR-002 ~ IR-042), `memories.type = 'iron_rule'`
+- The 014 migration has not been run yet
+
+**WHEN (action)**
+
+- Run `db/014_iron_rule_tier.sql`
+
+**THEN (expected result)**
+
+- The `memories` table adds a `tier VARCHAR(20) DEFAULT 'default'` field
+- The `tier` of all 41 existing iron rules is `'default'`
+- The `idx_memories_iron_rule_tier` index is created successfully, covering only rows with `type='iron_rule'` (PARTIAL INDEX)
+- The existing title / content / code / status / metadata are completely untouched
+- The migration is re-runnable (IF NOT EXISTS), no error on the second run
+
+---
+
+## Scenario 2: API writes tier
 
 **GIVEN**
 
-- API server 已部署 v1.19
-- 已登入的管理員帳號
+- The API server has deployed v1.19
+- A logged-in admin account
 
 **WHEN**
 
@@ -44,18 +44,18 @@ Content-Type: application/json
 
 **THEN**
 
-- 回應 200
-- `memories.tier` 欄位被更新為 `'critical'`
-- 寫入 `memory_history`、`change_type = 'update'`、`changed_by` 為管理員 user
-- API 回應 body 包含更新後的 tier 值
+- Response 200
+- The `memories.tier` field is updated to `'critical'`
+- Writes `memory_history`, `change_type = 'update'`, `changed_by` is the admin user
+- The API response body contains the updated tier value
 
 ---
 
-## 場景 3：tier 值驗證
+## Scenario 3: tier value validation
 
 **GIVEN**
 
-- API server 已部署 v1.19
+- The API server has deployed v1.19
 
 **WHEN**
 
@@ -66,18 +66,18 @@ PUT /api/memory/123
 
 **THEN**
 
-- 回應 400 Bad Request
-- 錯誤訊息明確指出可用值：`tier must be one of: critical, default, advisory`
-- `memories` 表沒被改動
+- Response 400 Bad Request
+- The error message clearly states the allowed values: `tier must be one of: critical, default, advisory`
+- The `memories` table is not changed
 
 ---
 
-## 場景 4：非鐵律不能設 tier
+## Scenario 4: non-iron-rule cannot set tier
 
 **GIVEN**
 
-- API server 已部署 v1.19
-- `memories.id=99` 是 `type='project'` 的專案記憶
+- The API server has deployed v1.19
+- `memories.id=99` is a `type='project'` project memory
 
 **WHEN**
 
@@ -88,18 +88,18 @@ PUT /api/memory/99
 
 **THEN**
 
-- 回應 400 Bad Request
-- 錯誤訊息：`tier can only be set on type='iron_rule' memories`
-- `memories.id=99.tier` 維持原值（NULL 或 default）
+- Response 400 Bad Request
+- Error message: `tier can only be set on type='iron_rule' memories`
+- `memories.id=99.tier` keeps its original value (NULL or default)
 
 ---
 
-## 場景 5：MCP 工具支援 tier 參數
+## Scenario 5: MCP tools support the tier parameter
 
 **GIVEN**
 
-- AI 工具透過 OwnMind MCP server 連線
-- 已認證
+- An AI tool connects via the OwnMind MCP server
+- Authenticated
 
 **WHEN**
 
@@ -115,27 +115,27 @@ await ownmind_save({
 
 **THEN**
 
-- 鐵律建立成功
-- 回傳 `memory.tier === 'critical'`
-- 同步寫入 `~/.ownmind/cache/iron_rules.json` 帶 tier 欄位
-- 沒帶 `tier` 參數時、預設為 `'default'`
+- The iron rule is created successfully
+- Returns `memory.tier === 'critical'`
+- Synchronously writes `~/.ownmind/cache/iron_rules.json` with the tier field
+- When no `tier` parameter is passed, defaults to `'default'`
 
 ---
 
-## 場景 6：SessionStart 載入按 tier 分組
+## Scenario 6: SessionStart load grouped by tier
 
 **GIVEN**
 
-- 使用者開啟 Claude Code、觸發 SessionStart hook
-- 雲端有 10 條 critical、20 條 default、10 條 advisory 鐵律
+- The user opens Claude Code, triggering the SessionStart hook
+- The cloud has 10 critical, 20 default, 10 advisory iron rules
 
 **WHEN**
 
-- SessionStart hook 執行、跑 `ownmind_init`、讀 `iron_rules_digest`
+- The SessionStart hook runs, runs `ownmind_init`, reads `iron_rules_digest`
 
 **THEN**
 
-顯示順序與格式：
+Display order and format:
 
 ```
 ## 鐵律（必須嚴格遵守）
@@ -153,27 +153,27 @@ IR-003: 修 bug 前先寫 reproduction test [觸發: edit]
 （這層級規則不顯示細節，需要時用 `ownmind_get("iron_rule")` 完整列出）
 ```
 
-- Critical 永遠展開、加紅色 emoji
-- Default 永遠展開、加黃色 emoji
-- Advisory **不列規則細節**、只顯示計數 + 取得詳細列表的方式（減少初始載入字數、避免稀釋 AI 注意力）
+- Critical is always expanded, with a red emoji
+- Default is always expanded, with a yellow emoji
+- Advisory **does not list rule details**, only shows the count + how to get the detailed list (reduces initial load word count, avoids diluting the AI's attention)
 
 ---
 
-## 場景 7：違反 Critical 鐵律的 compliance event
+## Scenario 7: compliance event for violating a Critical iron rule
 
 **GIVEN**
 
-- 使用者 commit 包含 `.env.production` 檔案（違反 IR-002，tier=critical）
-- v1.19 已部署
+- The user commits a `.env.production` file (violating IR-002, tier=critical)
+- v1.19 is deployed
 
 **WHEN**
 
-- pre-commit hook 偵測到違反
-- 寫 compliance event 到 `~/.ownmind/logs/YYYY-MM-DD.jsonl`
+- The pre-commit hook detects the violation
+- Writes a compliance event to `~/.ownmind/logs/YYYY-MM-DD.jsonl`
 
 **THEN**
 
-event 物件結構：
+The event object structure:
 
 ```json
 {
@@ -191,57 +191,57 @@ event 物件結構：
 }
 ```
 
-- `tier` 欄位**必須**出現在 details
-- 寫不出網路 / spool 也要把 tier 帶上
-- **本版不擋 commit**——hook 仍然回 exit 0（v1.20 才擋）
+- The `tier` field **must** appear in details
+- Even when the network / spool write fails, tier must still be carried
+- **This version does not block the commit** — the hook still returns exit 0 (v1.20 blocks it)
 
 ---
 
-## 場景 8：Admin UI 編輯 tier
+## Scenario 8: Admin UI edits tier
 
 **GIVEN**
 
-- Admin 開啟 `https://kkvin.com/ownmind/admin/memories`
-- 點開 IR-002 編輯頁面
+- The admin opens `https://kkvin.com/ownmind/admin/memories`
+- Opens the IR-002 edit page
 
 **WHEN**
 
-- Admin 把 tier 從 `default` 改為 `critical`
-- 按「儲存」
+- The admin changes tier from `default` to `critical`
+- Clicks "儲存"
 
 **THEN**
 
-- 頁面顯示「儲存成功」
-- 後台 PUT /api/memory/{id}、body 帶 `tier: 'critical'`
-- 列表頁立即反映新 tier、紅點顯示
-- audit log 記錄：誰、何時、tier 從 default → critical
+- The page shows "儲存成功"
+- The backend PUTs /api/memory/{id} with body carrying `tier: 'critical'`
+- The list page immediately reflects the new tier, shown with a red dot
+- The audit log records: who, when, tier from default → critical
 
 ---
 
-## 場景 9：舊客戶端 fallback
+## Scenario 9: old-client fallback
 
 **GIVEN**
 
-- Server 已升級到 v1.19、API 回傳鐵律帶 `tier` 欄位
-- 使用者的 Cursor 還是舊版客戶端、不認得 tier 欄位
+- The server has been upgraded to v1.19, the API returns iron rules with the `tier` field
+- The user's Cursor is still an old client that doesn't recognize the tier field
 
 **WHEN**
 
-- 舊客戶端讀 `GET /api/memory/type/iron_rule`
+- The old client reads `GET /api/memory/type/iron_rule`
 
 **THEN**
 
-- 舊客戶端正常運作（JSON 多一個欄位不會壞）
-- 鐵律全部按舊邏輯處理（等同 default）
-- 不需要強制升級客戶端
+- The old client works normally (one extra JSON field doesn't break it)
+- All iron rules are handled by the old logic (equivalent to default)
+- No forced client upgrade needed
 
 ---
 
-## 場景 10：shared/iron-rule-tier.js helper
+## Scenario 10: shared/iron-rule-tier.js helper
 
 **GIVEN**
 
-- 鐵律快取陣列（從 API 或 `~/.ownmind/cache/iron_rules.json` 取得）
+- The iron-rule cache array (obtained from the API or `~/.ownmind/cache/iron_rules.json`)
 
 **WHEN**
 
@@ -252,40 +252,40 @@ const tier = getTierFromRules(rules, 'IR-002');
 
 **THEN**
 
-- 命中規則時回傳該規則的 `tier`（已 normalize 過、保證是合法值）
-- 找不到 / tier 缺失 / tier 非法值 / rules 非陣列 → 回傳 `'default'`（fallback）
-- 不會丟 exception
+- On a rule hit, returns that rule's `tier` (normalized, guaranteed to be a valid value)
+- Not found / tier missing / tier invalid value / rules not an array → returns `'default'` (fallback)
+- Does not throw an exception
 
 ---
 
-## 場景 11：rule_code 缺失時的行為
+## Scenario 11: behavior when rule_code is missing
 
 **GIVEN**
 
-- 自訂鐵律沒有 `code` 欄位（例如使用者手動建的）
+- A custom iron rule has no `code` field (e.g. one the user created manually)
 
 **WHEN**
 
-- compliance hook 偵測到該鐵律違反
+- The compliance hook detects a violation of that iron rule
 
 **THEN**
 
-- compliance event 的 `rule_code` 為 `null`、`tier` 仍取自 `memories.tier`
-- 不會因為 rule_code 缺失而丟錯
-- log 正常寫入
+- The compliance event's `rule_code` is `null`, `tier` is still taken from `memories.tier`
+- It doesn't throw an error due to the missing rule_code
+- The log is written normally
 
 ---
 
-## 場景 12：發版完成的驗收條件
+## Scenario 12: release acceptance criteria
 
 **GIVEN**
 
-- v1.19.0 已 tag、push、部署 prod
-- prod 跑了 24 小時
+- v1.19.0 has been tagged, pushed, deployed to prod
+- prod has run for 24 hours
 
 **WHEN**
 
-- 跑驗收 SQL：
+- Run the acceptance SQL:
 
 ```sql
 SELECT tier, COUNT(*) FROM memories
@@ -295,17 +295,17 @@ GROUP BY tier;
 
 **THEN**
 
-- `critical` 計數 = 10（人工分級完成）
-- `default` 計數 ≈ 30 ± 2（剩餘）
-- `advisory` 計數 = 0（待 v1.19.1）
-- 沒有 NULL tier 的鐵律
-- admin dashboard 「鐵律分級」分頁可正常顯示分佈圖
+- `critical` count = 10 (manual tiering done)
+- `default` count ≈ 30 ± 2 (remaining)
+- `advisory` count = 0 (pending v1.19.1)
+- No iron rule with a NULL tier
+- The admin dashboard "iron-rule tiers" tab can display the distribution chart normally
 
 ---
 
-## 非場景（明確不做的事）
+## Non-scenarios (things explicitly not done)
 
-- ❌ **AI 自動建議 tier**：v1.19 不做、v1.20+ 評估
-- ❌ **per-user 客製分級**：永遠不做（違反跨工具一致性）
-- ❌ **Critical 違反真的擋下來**：v1.20 處理
-- ❌ **Advisory 段列出細節**：v1.19 只顯示計數 + `ownmind_get('iron_rule')` 取得方式（SessionStart 是文字輸出、沒有「點開」按鈕能做）
+- ❌ **AI auto-suggests tier**: not in v1.19, evaluated in v1.20+
+- ❌ **per-user custom tiering**: never (violates cross-tool consistency)
+- ❌ **Critical violation actually blocked**: handled in v1.20
+- ❌ **Advisory section lists details**: v1.19 only shows the count + how to get them via `ownmind_get('iron_rule')` (SessionStart is text output, there's no "expand" button to do it)

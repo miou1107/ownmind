@@ -1,127 +1,127 @@
-# v1.20.0 — 前端基礎建設（藍綠並存的「藍」打地基）
+# v1.20.0 — Frontend foundation (laying the "blue" foundation of blue-green coexistence)
 
 - **Author**: Vin
 - **Date**: 2026-05-24
-- **Status**: 動工中
-- **預估版次**: v1.20.0
-- **對應 GitHub issue**: [#44](https://github.com/miou1107/ownmind/issues/44)（系列起點）
-- **設計稿來源**: Gemini Antigravity 高保真原型（`/Users/vincentkao/.gemini/antigravity/scratch/ownmind-new-ui`）— 僅作 UX／視覺設計參考、不入倉、不照搬程式碼
+- **Status**: in progress
+- **Estimated version**: v1.20.0
+- **Corresponding GitHub issue**: [#44](https://github.com/miou1107/ownmind/issues/44) (series starting point)
+- **Design source**: Gemini Antigravity high-fidelity prototype (`~/.gemini/antigravity/scratch/ownmind-new-ui`) — used only as a UX / visual design reference, not checked into the repo, code not copied verbatim
 
 ---
 
-## 0. 一句話總結
+## 0. One-sentence summary
 
-在主倉庫建 `client/` 目錄、設定編譯打包流程、做出可訪問但只顯示「重構中」空殼的 `/dashboard/` 路由、為後續 v1.20.1~4 的功能 release 建好地基。**舊 `/admin/` 跟 `/me/` 完全不動**。
+In the main repo, create a `client/` directory, set up the compile/bundle flow, and produce a `/dashboard/` route that is accessible but only shows a "重構中" empty shell, laying the foundation for the subsequent v1.20.1~4 feature releases. **The old `/admin/` and `/me/` are completely untouched.**
 
 ---
 
-## 1. 設計緣由
+## 1. Design rationale
 
-### 1.1 v1.20 系列的版控策略（Vin 2026-05-24 拍板）
+### 1.1 Version-control strategy for the v1.20 series (Vin decided 2026-05-24)
 
-v1.20 是「後台前端整套重構」的大主題、依路線 3 拆成 5 個 patch release：
+v1.20 is the major theme "full backend-frontend rebuild", split per route 3 into 5 patch releases:
 
-| 版本 | scope |
+| Version | scope |
 |---|---|
-| **v1.20.0**（本提案）| 基礎建設（client + build + i18n 機制 + 中英混雜 lint）|
-| v1.20.1 | dashboard 個人版（Portal 4 頁 + Preference 3 頁 + API 對接） |
-| v1.20.2 | dashboard 管理員版（Team + Bugs） |
-| v1.20.3 | dashboard 超管版（Config + Broadcast + Audit） |
-| v1.20.4 | 舊 `/admin/` + `/me/` 退役（藍綠切換） |
+| **v1.20.0** (this proposal) | foundation (client + build + i18n mechanism + mixed Chinese/English lint) |
+| v1.20.1 | dashboard personal edition (Portal 4 pages + Preference 3 pages + API integration) |
+| v1.20.2 | dashboard admin edition (Team + Bugs) |
+| v1.20.3 | dashboard super-admin edition (Config + Broadcast + Audit) |
+| v1.20.4 | retire the old `/admin/` + `/me/` (blue-green switch) |
 
-### 1.2 為什麼 v1.20.0 純做基礎建設
+### 1.2 Why v1.20.0 is pure foundation
 
-- **立刻可發**：基礎建設零破壞性、舊版完全不動、今天就可走品管三步驟發版
-- **建好地基後續才好施工**：i18n 機制 + 中英混雜 lint 是後續每個 release 都要用的工具、先建好
-- **避免「v1.20.0 永遠發不了」**：scope 鎖定基礎建設、不被功能蔓延
+- **Shippable immediately**: the foundation is zero-breaking, the old version is completely untouched, it can go through the QA three-step release today
+- **Building the foundation first makes later construction easier**: the i18n mechanism + mixed Chinese/English lint are tools every later release needs, build them first
+- **Avoid "v1.20.0 never ships"**: lock the scope to the foundation, avoid feature creep
 
-### 1.3 三條核心設計原則（最高約束、貫穿整個 v1.20 系列）
+### 1.3 Three core design principles (highest constraint, threading through the whole v1.20 series)
 
-來自 Vin 2026-05-24 動工前明確下達：
+Explicitly issued by Vin before starting on 2026-05-24:
 
-1. **純白話中文、零中英混雜**（CI lint 強制）
-2. **保留 Gemini 原型的風格、文案、UX 巧思**（重寫、不照搬程式碼）
-3. **可長期維護、不 hardcode、不疊床架屋**（元件拆分 + 前端路由 + i18n 自動翻譯 + Context 拆狀態 + 統一 API client + 設計 token）
+1. **Pure plain Chinese, zero mixed Chinese/English** (CI lint enforced)
+2. **Preserve the Gemini prototype's style, copy, and UX touches** (rewrite, do not copy code verbatim)
+3. **Long-term maintainable, no hardcoding, no over-engineering** (component splitting + frontend routing + i18n auto-translation + Context state splitting + unified API client + design tokens)
 
-詳見 OwnMind 記憶 id=481。
-
----
-
-## 2. 本提案範圍（v1.20.0）
-
-### 2.1 範圍內
-
-#### 前端編譯打包基礎建設
-- `client/` 目錄：React 19 + Vite 8 + Tailwind v4 + Recharts + Lucide + react-router-dom
-- `client/vite.config.js`：base 用相對路徑 `./`、輸出到 `../src/public/dashboard/`
-- `client/src/main.jsx`：BrowserRouter 自動偵測 basename
-- `client/src/App.jsx`：路由骨架 + 三角色守衛預留位
-- `client/src/index.css`：Tailwind v4 @theme 北歐色票
-- `client/src/design-tokens/colors.js`：JS 端設計 token
-
-#### i18n 機制（路線 C：編譯時自動翻譯）
-- `client/src/i18n/`：`index.js` + `zh.json` 唯一真實來源 + `en.json` / `ja.json` 編譯產出 + `glossary.json` 術語表 + `*.override.json` 人工覆寫 + `README.md`
-- `client/src/scripts/translate.mjs`：增量翻譯腳本（接 Anthropic Claude Haiku、temperature=0、prompt 帶 glossary）
-- 第一次跑、翻完 zh.json 30 個起手 key、commit en.json / ja.json
-- `scripts/lint-zh-only.js`：中英混雜 lint、加入 `npm test` pipeline
-
-#### 主倉庫整合
-- `package.json`：加 `build:client` / `dev:client` / `translate:client` script
-- `Dockerfile`：multi-stage build、stage 1 編譯前端 → stage 2 COPY 進 `./src/public/dashboard/`
-- `.dockerignore`：新建
-- `.gitignore`：加 `client/node_modules` / `client/dist` / `src/public/dashboard/`
-- `install.sh` / `install.ps1`：加「執行 `npm run build:client`」步驟
-- `src/app.js`：新增 `/dashboard` 路由 + SPA fallback（**保留舊 /admin 跟 /me 不動**）
-
-#### 文件與發版
-- 三語系 README + CHANGELOG + FILELIST 同步
-- 版號 1.19.20 → 1.20.0（三處同步）
-- 部署 kkvin.com + 瀏覽器實測
-
-### 2.2 範圍外（給 v1.20.1+ 處理）
-
-- ❌ Portal 4 頁實際內容（v1.20.1）
-- ❌ Preference 3 頁實際內容（v1.20.1）
-- ❌ Admin 頁面（v1.20.2）
-- ❌ Super 頁面（v1.20.3）
-- ❌ 後端 API 對接（v1.20.1+ 逐步補）
-- ❌ 元件拆分（dashboard 內部結構在 v1.20.1+ 補）
-- ❌ 舊版退役（v1.20.4）
+See OwnMind memory id=481 for details.
 
 ---
 
-## 3. 工作量
+## 2. Scope of this proposal (v1.20.0)
 
-| 項目 | 預估 |
+### 2.1 In scope
+
+#### Frontend compile/bundle foundation
+- `client/` directory: React 19 + Vite 8 + Tailwind v4 + Recharts + Lucide + react-router-dom
+- `client/vite.config.js`: base uses the relative path `./`, output to `../src/public/dashboard/`
+- `client/src/main.jsx`: BrowserRouter auto-detects basename
+- `client/src/App.jsx`: routing skeleton + placeholders for the three-role guards
+- `client/src/index.css`: Tailwind v4 @theme Nordic color palette
+- `client/src/design-tokens/colors.js`: JS-side design tokens
+
+#### i18n mechanism (route C: compile-time auto-translation)
+- `client/src/i18n/`: `index.js` + `zh.json` single source of truth + `en.json` / `ja.json` compile output + `glossary.json` glossary + `*.override.json` manual override + `README.md`
+- `client/src/scripts/translate.mjs`: incremental translation script (calls Anthropic Claude Haiku, temperature=0, prompt carries the glossary)
+- First run: translate the initial 30 keys of zh.json, commit en.json / ja.json
+- `scripts/lint-zh-only.js`: mixed Chinese/English lint, added to the `npm test` pipeline
+
+#### Main-repo integration
+- `package.json`: add the `build:client` / `dev:client` / `translate:client` scripts
+- `Dockerfile`: multi-stage build, stage 1 compiles the frontend → stage 2 COPY into `./src/public/dashboard/`
+- `.dockerignore`: newly created
+- `.gitignore`: add `client/node_modules` / `client/dist` / `src/public/dashboard/`
+- `install.sh` / `install.ps1`: add the "run `npm run build:client`" step
+- `src/app.js`: add the `/dashboard` route + SPA fallback (**keep the old /admin and /me untouched**)
+
+#### Docs and release
+- Trilingual README + CHANGELOG + FILELIST synced
+- Version 1.19.20 → 1.20.0 (three places synced)
+- Deploy kkvin.com + browser verification
+
+### 2.2 Out of scope (handled in v1.20.1+)
+
+- ❌ Actual content of the Portal 4 pages (v1.20.1)
+- ❌ Actual content of the Preference 3 pages (v1.20.1)
+- ❌ Admin pages (v1.20.2)
+- ❌ Super pages (v1.20.3)
+- ❌ Backend API integration (filled in gradually in v1.20.1+)
+- ❌ Component splitting (the dashboard's internal structure is filled in v1.20.1+)
+- ❌ Legacy retirement (v1.20.4)
+
+---
+
+## 3. Effort
+
+| Item | Estimate |
 |---|---|
-| client/ 目錄結構與設定 | 已完成 |
-| i18n 翻譯腳本 + lint | 半天 |
-| 文件 + 升版 + 部署 + 實測 | 半天 |
-| **總計** | **約 1 個工作天** |
+| client/ directory structure and config | done |
+| i18n translation script + lint | half a day |
+| docs + version bump + deploy + verification | half a day |
+| **Total** | **~1 working day** |
 
 ---
 
-## 4. 風險與檢查點
+## 4. Risks and checkpoints
 
-### 風險
-1. **multi-stage Dockerfile build 時間**：stage 1 編譯前端會多花 ~30 秒、prod build 時間可接受
-2. **translate.mjs 第一次跑需要 LLM API key**：若無 key 自動退回 manual 模式、提示人工貼進 Claude Code 翻
-3. **react-router fallback 在 nginx prefix 環境**：base 用相對路徑 `./` 應該已處理、實測驗證
+### Risks
+1. **Multi-stage Dockerfile build time**: stage 1 compiling the frontend adds ~30 seconds, the prod build time is acceptable
+2. **translate.mjs first run needs an LLM API key**: with no key, it auto-falls back to manual mode and prompts a human to paste into Claude Code to translate
+3. **react-router fallback in an nginx prefix environment**: base using the relative path `./` should already handle it, verify in testing
 
-### 部署前必過 checklist
-- [ ] 中英混雜 lint 0 fail
-- [ ] `vite build` 產出 dist 並 serve 成功
-- [ ] localhost:5173 渲染成功、console 零錯誤
-- [ ] `npm audit` 0 漏洞
-- [ ] 既有 1827+ 測試全綠
-- [ ] 三語系 README 版號同步 v1.20.0
-- [ ] db/ migration 跑完
-- [ ] Dockerfile COPY 路徑正確
+### Pre-deploy must-pass checklist
+- [ ] Mixed Chinese/English lint 0 fail
+- [ ] `vite build` produces dist and serves successfully
+- [ ] localhost:5173 renders successfully, zero console errors
+- [ ] `npm audit` 0 vulnerabilities
+- [ ] The existing 1827+ tests all green
+- [ ] Trilingual README version synced to v1.20.0
+- [ ] db/ migration run
+- [ ] Dockerfile COPY paths correct
 
 ---
 
-## 5. 升級後續
+## 5. Post-upgrade follow-up
 
-- 關 GitHub issue #44 留言「v1.20.0 基礎建設完成、後續 v1.20.1~4 接續」（issue 不關、整個 v1.20.4 退役才關）
-- 把本資料夾搬到 `openspec/changes/archive/v1.20.0-frontend-foundation/`
-- 下個 release 開動 v1.20.1：把 `openspec/changes/v1.20.1-portal-pages/` 的 stub 展開為完整提案
+- Close GitHub issue #44 with the comment "v1.20.0 foundation done, v1.20.1~4 to follow" (do not close the issue, only close it when the whole v1.20.4 retirement is done)
+- Move this folder to `openspec/changes/archive/v1.20.0-frontend-foundation/`
+- Kick off the next release v1.20.1: expand the stub in `openspec/changes/v1.20.1-portal-pages/` into a full proposal

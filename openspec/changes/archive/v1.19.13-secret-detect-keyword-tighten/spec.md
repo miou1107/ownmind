@@ -1,231 +1,231 @@
-# v1.19.13 — 規格（GIVEN / WHEN / THEN）
+# v1.19.13 — spec (GIVEN / WHEN / THEN)
 
-對應 `proposal.md` §2。
+Maps to `proposal.md` §2.
 
 ---
 
-## S1：value-side keyword 偵測 — 賦值樣式才命中
+## S1: value-side keyword detection — only matches on the assignment pattern
 
-### S1.1 點分隔識別字含 password 字樣應放行（regression 重點）
+### S1.1 A dot-separated identifier containing the word password should pass (key regression)
 
 ```
-GIVEN  detectSecretLike() 第一個參數 value = "anydesk.bot_kkvin.unattended_password"
-       options 未設 skip_keyword（即 false）
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 { detected: false }
+GIVEN  detectSecretLike()'s first argument value = "anydesk.bot_example.unattended_password"
+       options doesn't set skip_keyword (i.e. false)
+WHEN   call detectSecretLike(value)
+THEN   returns { detected: false }
 ```
 
-### S1.2 一般描述句含 password 字樣應放行
+### S1.2 A general descriptive sentence containing the word password should pass
 
 ```
 GIVEN  value = "the password is in the vault"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 { detected: false }
+WHEN   call detectSecretLike(value)
+THEN   returns { detected: false }
 ```
 
-### S1.3 多層點分隔 reference 含 token 字樣應放行
+### S1.3 A multi-level dot-separated reference containing the word token should pass
 
 ```
 GIVEN  value = "hermes.telegram.bot_token"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 { detected: false }
+WHEN   call detectSecretLike(value)
+THEN   returns { detected: false }
 ```
 
-### S1.4 程式碼風格的 env reference 應放行
+### S1.4 A code-style env reference should pass
 
 ```
 GIVEN  value = "process.env.MY_PASSWORD"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 { detected: false }
+WHEN   call detectSecretLike(value)
+THEN   returns { detected: false }
 ```
 
-### S1.5 賦值樣式（冒號）含值 ≥ 8 應命中
+### S1.5 An assignment pattern (colon) with a value ≥ 8 should match
 
 ```
 GIVEN  value = "password: MyP@ssw0rd123"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 detected = true
-       rule 以 "keyword:" 開頭
-       reason 含「賦值樣式」字樣
-       matched_text 為觸發片段（≤ 80 字）
+WHEN   call detectSecretLike(value)
+THEN   returns detected = true
+       rule begins with "keyword:"
+       reason contains the wording 「賦值樣式」
+       matched_text is the triggering fragment (≤ 80 chars)
 ```
 
-### S1.6 賦值樣式（等號）含值 ≥ 8 應命中
+### S1.6 An assignment pattern (equals) with a value ≥ 8 should match
 
 ```
 GIVEN  value = "API_TOKEN=abc123XYZ987"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 detected = true
+WHEN   call detectSecretLike(value)
+THEN   returns detected = true
        rule = "keyword:token"
-       matched_text 含 "API_TOKEN=abc123XYZ987"（截 80）
+       matched_text contains "API_TOKEN=abc123XYZ987" (truncated to 80)
 ```
 
-### S1.7 賦值樣式但值 < 8 應放行（form label / placeholder）
+### S1.7 An assignment pattern but value < 8 should pass (form label / placeholder)
 
 ```
 GIVEN  value = "password: hi"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 { detected: false }
+WHEN   call detectSecretLike(value)
+THEN   returns { detected: false }
 ```
 
-### S1.8 賦值樣式含引號值應命中
+### S1.8 An assignment pattern with a quoted value should match
 
 ```
 GIVEN  value = 'secret = "supersecretvalue"'
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 detected = true
+WHEN   call detectSecretLike(value)
+THEN   returns detected = true
        rule = "keyword:secret"
 ```
 
-### S1.9 賦值樣式但 token 字樣**字母前綴**複合詞應放行
+### S1.9 An assignment pattern but a **letter-prefixed** compound word for the token keyword should pass
 
 ```
-GIVEN  value = "mypassword=12345678"   // 「mypassword」整個是一個變數名、字母前綴
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 { detected: false }
+GIVEN  value = "mypassword=12345678"   // the whole "mypassword" is a variable name, letter prefix
+WHEN   call detectSecretLike(value)
+THEN   returns { detected: false }
 ```
 
-> 理由：賦值 regex 用 `(?<![A-Za-z])` 負向 lookbehind、`mypassword` 中 `p` 前面是 `y`（字母）→ lookbehind 失敗 → 不命中、放行。
+> Reason: the assignment regex uses a `(?<![A-Za-z])` negative lookbehind; in `mypassword`, the character before `p` is `y` (a letter) → lookbehind fails → no match → pass.
 >
-> **注意此 lookbehind 刻意不對稱**：只擋字母前綴、不擋底線／hyphen／數字前綴。理由：snake_case／kebab-case 的 env var 名稱（`foo_password=`、`reset_password_token=`、`-token=`、`123token=`）通常確實在賦值真實密鑰、擋是正確的；只有英文複合詞（`mypassword`、`mytoken`）才是「整個字本身是描述、不是密鑰名稱」、需要保護。
+> **Note this lookbehind is deliberately asymmetric**: it only blocks a letter prefix, not an underscore / hyphen / digit prefix. Reason: snake_case / kebab-case env var names (`foo_password=`, `reset_password_token=`, `-token=`, `123token=`) genuinely tend to assign a real key, so blocking them is correct; only English compound words (`mypassword`, `mytoken`) are "the whole word itself is a description, not a key name" and need protection.
 >
-> **同註**：本 spec S1.9 用 `mypassword=12345678` 而非 `mypassword=hello12345`、避免總長 ≥ 20 字觸發長度啟發式、混淆 keyword 階段的測試焦點。
+> **Same note**: this spec's S1.9 uses `mypassword=12345678` rather than `mypassword=hello12345`, to avoid a total length ≥ 20 chars triggering the length heuristic and confusing the keyword-stage test focus.
 
-### S1.10 賦值樣式 + snake_case 前綴 → 命中（設計意圖）
+### S1.10 Assignment pattern + snake_case prefix → match (design intent)
 
 ```
 GIVEN  value = "foo_password=secretvalue123"   // snake_case env var
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 detected = true
+WHEN   call detectSecretLike(value)
+THEN   returns detected = true
        rule = "keyword:password"
 ```
 
-> 補強 S1.9 的對稱說明：snake_case env var 命名落到「賦值賦真實值」場景、仍要擋。
+> Reinforces S1.9's symmetric note: snake_case env var naming falls into the "assigning a real value" scenario, still to be blocked.
 
 ---
 
-## S2：matched_text 回傳
+## S2: matched_text return
 
-### S2.1 keyword 命中時帶 matched_text
+### S2.1 On keyword match, carry matched_text
 
 ```
 GIVEN  value = "password: MyP@ssw0rd123"
-WHEN   呼叫 detectSecretLike(value)
-THEN   回傳 result.matched_text 為字串
+WHEN   call detectSecretLike(value)
+THEN   returns result.matched_text as a string
        result.matched_text.length ≤ 80
-       result.matched_text 含「password: MyP@ssw0rd」（前綴比對即可）
+       result.matched_text contains "password: MyP@ssw0rd" (prefix match is enough)
 ```
 
-### S2.2 regex 命中時也帶 matched_text
+### S2.2 On regex match, also carry matched_text
 
 ```
 GIVEN  value = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB"
-WHEN   呼叫 detectSecretLike(value)
+WHEN   call detectSecretLike(value)
 THEN   result.rule = "regex:github_pat"
-       result.matched_text 為字串、≤ 80 字
-       result.matched_text 含 "ghp_abc"（前綴比對即可）
+       result.matched_text is a string, ≤ 80 chars
+       result.matched_text contains "ghp_abc" (prefix match is enough)
 ```
 
-### S2.3 length heuristic 命中時也帶 matched_text
+### S2.3 On length heuristic match, also carry matched_text
 
 ```
-GIVEN  value 為 30 字純英數字（無中文、無賦值樣式）
-WHEN   呼叫 detectSecretLike(value)
+GIVEN  value is 30 pure-alphanumeric chars (no Chinese, no assignment pattern)
+WHEN   call detectSecretLike(value)
 THEN   result.rule = "heuristic:long_alnum"
-       result.matched_text 為字串、≤ 80 字
+       result.matched_text is a string, ≤ 80 chars
 ```
 
-### S2.4 detected = false 時不帶 matched_text
+### S2.4 When detected = false, no matched_text
 
 ```
 GIVEN  value = "hello world"
-WHEN   呼叫 detectSecretLike(value)
+WHEN   call detectSecretLike(value)
 THEN   result.matched_text === undefined
 ```
 
 ---
 
-## S3：memory-secret-guard 400 回應加 matched_text
+## S3: memory-secret-guard 400 response adds matched_text
 
-### S3.1 命中時 400 body 含 matched_text
+### S3.1 On match, the 400 body contains matched_text
 
 ```
-GIVEN  type = 'env'、title = 'test'、content = 'password: MyP@ssw0rd123'
-WHEN   呼叫 validateMemoryContent({ type, title, content })
-THEN   回傳 ok = false
+GIVEN  type = 'env', title = 'test', content = 'password: MyP@ssw0rd123'
+WHEN   call validateMemoryContent({ type, title, content })
+THEN   returns ok = false
        status = 400
-       body.detected_by 以 "keyword:" 開頭
-       body.matched_text 為非空字串
+       body.detected_by begins with "keyword:"
+       body.matched_text is a non-empty string
 ```
 
-### S3.2 沒命中時 matched_text 不存在
+### S3.2 On no match, matched_text doesn't exist
 
 ```
-GIVEN  type = 'env'、title = 'test'、content = 'anydesk.bot_kkvin.unattended_password'
-WHEN   呼叫 validateMemoryContent({ type, title, content })
-THEN   回傳 ok = true（regression 重點）
+GIVEN  type = 'env', title = 'test', content = 'anydesk.bot_example.unattended_password'
+WHEN   call validateMemoryContent({ type, title, content })
+THEN   returns ok = true (key regression)
 ```
 
 ---
 
-## S4：bot.kkvin.com 整段內容 regression
+## S4: bot.example.com full-content regression
 
-### S4.1 完整原案例放行
+### S4.1 The full original case passes
 
 ```
 GIVEN  type = 'env'
-       title = 'bot.kkvin.com 遠端訪問方式總覽'
-       content 為 2026-05-24 對話中 AI 試著存的全文（含 AnyDesk ID、
-              Tailscale IP、ssh.bot.kkvin.com.vin.password 等密鑰名稱）
-WHEN   呼叫 validateMemoryContent({ type, title, content })
-THEN   回傳 ok = true
+       title = 'bot.example.com 遠端訪問方式總覽'
+       content is the full text the AI tried to save in the 2026-05-24 conversation (including the AnyDesk ID,
+              Tailscale IP, ssh.bot.example.com.vin.password and other key names)
+WHEN   call validateMemoryContent({ type, title, content })
+THEN   returns ok = true
 ```
 
 ---
 
-## S5：既有行為不變
+## S5: existing behavior unchanged
 
-### S5.1 Regex 偵測仍命中已知格式
+### S5.1 Regex detection still matches known formats
 
 ```
 GIVEN  value = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB"
-WHEN   呼叫 detectSecretLike(value)
+WHEN   call detectSecretLike(value)
 THEN   result.detected = true
        result.rule = "regex:github_pat"
 ```
 
-### S5.2 Title／description keyword 仍命中
+### S5.2 Title / description keyword still matches
 
 ```
-GIVEN  value = "abc"、title = "production password"
-WHEN   呼叫 detectSecretLike(value, { title })
+GIVEN  value = "abc", title = "production password"
+WHEN   call detectSecretLike(value, { title })
 THEN   result.detected = true
        result.rule = "keyword:password"
 ```
 
-### S5.3 Length heuristic 仍命中
+### S5.3 Length heuristic still matches
 
 ```
-GIVEN  value 為 30 字純英數字
-WHEN   呼叫 detectSecretLike(value)
+GIVEN  value is 30 pure-alphanumeric chars
+WHEN   call detectSecretLike(value)
 THEN   result.detected = true
        result.rule = "heuristic:long_alnum"
 ```
 
-### S5.4 bypass flag 仍生效
+### S5.4 The bypass flag still works
 
 ```
-GIVEN  value = "password: MyP@ssw0rd123"、allow_bypass = true
-WHEN   呼叫 detectSecretLike(value, { allow_bypass: true })
+GIVEN  value = "password: MyP@ssw0rd123", allow_bypass = true
+WHEN   call detectSecretLike(value, { allow_bypass: true })
 THEN   result.detected = false
 ```
 
-### S5.5 narrative type 仍跳 keyword 偵測
+### S5.5 narrative types still skip keyword detection
 
 ```
-GIVEN  type = 'iron_rule'、content = 'password: hello12345'
-WHEN   呼叫 validateMemoryContent({ type, title, content })
-THEN   回傳 ok = true   // skip_keyword = true、不跑 keyword
+GIVEN  type = 'iron_rule', content = 'password: hello12345'
+WHEN   call validateMemoryContent({ type, title, content })
+THEN   returns ok = true   // skip_keyword = true, keyword doesn't run
 ```
 
-> 即 v1.19.13 不破壞 narrative 類型的 opt-out 例外。
+> I.e. v1.19.13 doesn't break the narrative types' opt-out exception.

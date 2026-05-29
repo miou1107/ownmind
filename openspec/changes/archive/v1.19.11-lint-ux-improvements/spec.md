@@ -1,115 +1,115 @@
-# v1.19.11 — Lint UX 改善規格
+# v1.19.11 — Lint UX improvements spec
 
-## 一、方案 A：敘述型記憶跳過關鍵字比對
+## 1. Approach A: narrative memory skips keyword matching
 
-### 場景 1：寫 project 記憶含 `random-password.js` 字串 → 不被擋
+### Scenario 1: write project memory containing the string `random-password.js` → not blocked
 
-**GIVEN** type=project 的記憶寫入請求、content 含 `shared/random-password.js`
-
-**WHEN** POST `/api/memory`
-
-**THEN**
-- HTTP 200、寫入成功
-- 不會被 detectSecretLike 的 keyword 偵測攔下
-
-### 場景 2：寫 project 記憶含真的金鑰樣式 → 仍被擋
-
-**GIVEN** type=project 的記憶 content 含 `sk-proj-abc123XYZdef456ghi789jkl`
+**GIVEN** a type=project memory write request, content containing `shared/random-password.js`
 
 **WHEN** POST `/api/memory`
 
 **THEN**
-- HTTP 400、被 regex 偵測攔下（樣式比對仍跑）
+- HTTP 200, write succeeds
+- Not blocked by detectSecretLike's keyword detection
 
-### 場景 3：寫 iron_rule 含 `password` 詞 → 不被擋（既有行為）
+### Scenario 2: write project memory containing a real key pattern → still blocked
 
-**GIVEN** type=iron_rule 寫入、content 含 `不要 commit password 進 git`
-
-**WHEN** POST `/api/memory`
-
-**THEN** 200、不被擋（向後相容、既有行為）
-
-### 場景 4：寫 memory（一般記憶）含 `password` 詞 → 仍被擋
-
-**GIVEN** type=memory 或未列入敘述型清單的類型、content 含敏感 keyword
+**GIVEN** type=project memory content containing `sk-proj-abc123XYZdef456ghi789jkl`
 
 **WHEN** POST `/api/memory`
 
-**THEN** 400、仍走原 keyword 偵測
+**THEN**
+- HTTP 400, blocked by regex detection (pattern matching still runs)
+
+### Scenario 3: write iron_rule containing the word `password` → not blocked (existing behavior)
+
+**GIVEN** type=iron_rule write, content containing `不要 commit password 進 git`
+
+**WHEN** POST `/api/memory`
+
+**THEN** 200, not blocked (backward compatibility, existing behavior)
+
+### Scenario 4: write memory (regular memory) containing the word `password` → still blocked
+
+**GIVEN** type=memory or a type not on the narrative list, content containing a sensitive keyword
+
+**WHEN** POST `/api/memory`
+
+**THEN** 400, still goes through the original keyword detection
 
 ---
 
-## 二、AI 自我標註
+## 2. AI self-annotation
 
-### 場景 5：擋下時指令文字含「請開頭加標註」要求
+### Scenario 5: on block, the instruction text contains the "please add an annotation at the start" requirement
 
-**GIVEN** session_id=X 違反 IR-036 累積到第 4 次
+**GIVEN** session_id=X has violated IR-036, accumulated to the 4th time
 
-**WHEN** hook 擋下、stderr 寫指令文字
+**WHEN** the hook blocks and writes the instruction text to stderr
 
-**THEN** stderr 內容含：
-- 「重寫時開頭必須加一段標註」字眼
-- markdown 引述格式範例（`> ⚠️ 上一版違反 IR-XXX`）
-- 分隔線範例（`---`）
+**THEN** the stderr content contains:
+- The phrase "the rewrite must start with an annotation block"
+- A markdown quote-format example (`> ⚠️ 上一版違反 IR-XXX`)
+- A divider example (`---`)
 
-### 場景 6：指令文字不強制驗證 AI 標註
+### Scenario 6: the instruction text does not enforce verification of AI annotation
 
-**GIVEN** AI 收到指令後重寫、但沒加標註
+**GIVEN** the AI receives the instruction and rewrites, but does not add an annotation
 
-**WHEN** 下次 hook 跑
+**WHEN** the next hook run
 
 **THEN**
-- 不二次擋下（hook 沒法看 AI 重寫的內容是否照做、只能信任）
-- 不寫額外的「沒照做」紀錄
+- No second block (the hook cannot see whether the AI's rewritten content follows the instruction, it can only trust)
+- No extra "did not comply" record is written
 
 ---
 
-## 三、分級顯示
+## 3. Tiered display
 
-### 場景 7：第 1 次擋下、完整標註
+### Scenario 7: 1st block, full annotation
 
-**GIVEN** session_id=X 達到 BLOCK_THRESHOLD（第 4 次違規）、`block_count_in_session=0`
+**GIVEN** session_id=X reaches BLOCK_THRESHOLD (4th violation), `block_count_in_session=0`
 
-**WHEN** hook 擋下
+**WHEN** the hook blocks
 
-**THEN** stderr 內容含完整訊息：
-- 違反規則編號清單
-- 違規詞清單
-- 改寫格式範例
-- 標註要求（含 markdown 引述範例）
+**THEN** the stderr content contains the full message:
+- The list of violated rule codes
+- The violated-word list
+- The rewrite-format example
+- The annotation requirement (including a markdown quote example)
 
-### 場景 8：第 2-3 次擋下、簡短訊息
+### Scenario 8: 2nd-3rd block, short message
 
-**GIVEN** session_id=X、`block_count_in_session=1` 或 `2`
+**GIVEN** session_id=X, `block_count_in_session=1` or `2`
 
-**WHEN** hook 擋下
+**WHEN** the hook blocks
 
-**THEN** stderr 內容含簡短訊息：
-- 「↻ 上版違反 IR-XXX、已被指示重寫」
-- 不重複列違規詞細節（避免疲勞）
+**THEN** the stderr content contains a short message:
+- "↻ 上版違反 IR-XXX、已被指示重寫"
+- Does not repeat the violated-word details (avoids fatigue)
 
-### 場景 9：第 4 次擋下、達 downgrade limit、降警告
+### Scenario 9: 4th block, reaches the downgrade limit, downgrade to warning
 
-**GIVEN** session_id=X、`block_count_in_session=3`
+**GIVEN** session_id=X, `block_count_in_session=3`
 
-**WHEN** hook 處理
+**WHEN** the hook processes
 
 **THEN**
-- exit code = 1（warning、非 block）
-- stderr 含完整警告訊息：「reply-lint 連續擋下 N 次、降警告避免死循環」
-- 不再 increment block_count
+- exit code = 1 (warning, not block)
+- stderr contains the full warning message: "reply-lint 連續擋下 N 次、降警告避免死循環"
+- block_count is no longer incremented
 
 ---
 
-## 四、結構化擋下紀錄
+## 4. Structured block record
 
-### 場景 10：擋下時寫一筆到 reply-lint-events.jsonl
+### Scenario 10: on block, write one row to reply-lint-events.jsonl
 
-**GIVEN** hook 擋下事件
+**GIVEN** a hook block event
 
-**WHEN** 處理完 stderr 寫入後
+**WHEN** after the stderr write is processed
 
-**THEN** `~/.ownmind/logs/reply-lint-events.jsonl` append 一筆 JSON：
+**THEN** `~/.ownmind/logs/reply-lint-events.jsonl` appends one JSON row:
 ```json
 {
   "ts": "<ISO8601>",
@@ -124,40 +124,40 @@
 }
 ```
 
-### 場景 11：紀錄檔超過 5MB 自動 rotate
+### Scenario 11: the record file auto-rotates over 5MB
 
-**GIVEN** `reply-lint-events.jsonl` 大小 > 5MB
+**GIVEN** `reply-lint-events.jsonl` size > 5MB
 
-**WHEN** hook 即將寫新一筆
-
-**THEN**
-- 把現有檔 rename 成 `reply-lint-events.jsonl.old`
-- 新一筆寫進空的 `reply-lint-events.jsonl`
-- 舊 .old 檔保留供查詢
-
-### 場景 12：紀錄檔寫入失敗不擋主流程
-
-**GIVEN** 磁碟滿 / 權限問題、寫入失敗
-
-**WHEN** hook 處理
+**WHEN** the hook is about to write a new row
 
 **THEN**
-- 擋下訊息仍正常寫 stderr（給 Claude）
-- log 寫入失敗只記在 logger.warn、不丟例外
-- exit code 仍依擋下邏輯回 2 或 1
+- Rename the current file to `reply-lint-events.jsonl.old`
+- The new row is written into an empty `reply-lint-events.jsonl`
+- The old .old file is kept for lookup
 
-### 場景 13：未擋下時不寫紀錄
+### Scenario 12: a record write failure does not block the main flow
 
-**GIVEN** AI 回應通過 lint、不需擋下
+**GIVEN** disk full / permission issue, write fails
 
-**WHEN** hook 跑完
+**WHEN** the hook processes
 
-**THEN** `reply-lint-events.jsonl` 不新增任何資料
+**THEN**
+- The block message is still written normally to stderr (for Claude)
+- The log write failure is only recorded in logger.warn, no exception is thrown
+- The exit code still returns 2 or 1 according to the block logic
 
-### 場景 14：降警告事件也寫紀錄
+### Scenario 13: no record is written when not blocked
 
-**GIVEN** session 已連續擋 3 次、第 4 次降警告
+**GIVEN** the AI response passes lint, no block needed
 
-**WHEN** hook 處理
+**WHEN** the hook finishes
 
-**THEN** 紀錄一筆 `event: "downgraded_to_warning"`、`downgraded_to_warning: true`
+**THEN** `reply-lint-events.jsonl` gets no new data
+
+### Scenario 14: a downgrade-to-warning event is also recorded
+
+**GIVEN** the session has been blocked 3 times in a row, the 4th is downgraded to warning
+
+**WHEN** the hook processes
+
+**THEN** record one row with `event: "downgraded_to_warning"`, `downgraded_to_warning: true`

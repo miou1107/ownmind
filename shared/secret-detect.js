@@ -23,7 +23,7 @@
  *   word password" to "block only when the value matches an assignment
  *   pattern (KEY: VALUE or KEY=VALUE) and the value is ≥8 chars". Reason:
  *   reference documents mention secret names (e.g.
- *   anydesk.bot_kkvin.unattended_password) heavily; the old logic mis-
+ *   anydesk.bot_example.unattended_password) heavily; the old logic mis-
  *   flagged those, but those are "the name of the key," not "the key
  *   itself". See openspec/changes/v1.19.13-secret-detect-keyword-tighten/
  *   proposal.md.
@@ -121,7 +121,7 @@ export function detectSecretLike(value, options = {}) {
     // v1.19.13: value-side keyword detection requires an assignment shape
     // (KEY: VALUE or KEY=VALUE).
     //   The old "value.includes(keyword) → block" misfired on:
-    //     - secret-name references like "anydesk.bot_kkvin.unattended_password"
+    //     - secret-name references like "anydesk.bot_example.unattended_password"
     //     - generic prose like "the password is in the vault"
     //   New logic demands keyword followed by :/= separator + ≥8-char
     //   "value-looking" string, separating "discussing passwords" from
@@ -142,7 +142,7 @@ export function detectSecretLike(value, options = {}) {
   // 5. Length heuristic (last-resort safety net).
   //    Pure alphanumerics (plus -, _, +, /, =) ≥ 20 chars and no CJK → match.
   //    v1.19.13: dot-separated identifier paths (e.g.
-  //    anydesk.bot_kkvin.unattended_password, process.env.MY_PASSWORD)
+  //    anydesk.bot_example.unattended_password, process.env.MY_PASSWORD)
   //    are not "key/token-shaped" and skip this heuristic.
   //    v1.26.8: slash-separated paths (e.g. openspec/changes/v1.x/proposal.md,
   //    src/routes/admin/audit.js) follow the same logic — 3+ identifier
@@ -282,7 +282,7 @@ const SECRET_KEYWORDS_CJK = [
  *      non-whitespace non-quote characters.
  *
  * Non-matches (false-positive forms we want to drop):
- *   - 'anydesk.bot_kkvin.unattended_password' has no :/= suffix.
+ *   - 'anydesk.bot_example.unattended_password' has no :/= suffix.
  *   - 'the password is in the vault' has no :/=.
  *   - 'password: hi' value length < 8 (avoids form-label false positives).
  *   - 'mypassword=xxx' the leading 'm' breaks the word boundary
@@ -320,7 +320,7 @@ const KEYWORD_ASSIGNMENT_REGEX =
  * Reason: a JWT with its signature chopped off (`eyJhbGc...eyJzdW...`) is
  * exactly a 2-segment form made of letters/digits and would be treated as
  * an identifier path and skipped. Real key-name references
- * (`anydesk.bot_kkvin.unattended_password`, `process.env.MY_PASSWORD`)
+ * (`anydesk.bot_example.unattended_password`, `process.env.MY_PASSWORD`)
  * have 3+ segments and aren't affected. 2-segment shapes like
  * `lodash.merge` / `package.json` are typically < 20 chars and don't reach
  * the length heuristic.

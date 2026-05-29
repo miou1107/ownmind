@@ -1,40 +1,40 @@
-# v1.20.3 — 任務清單
+# v1.20.3 — Task list
 
-1. **寫 shared/session-off-state.js helper**
-   - 純函式：read / write / clear / increment tick / isOffForSession / isOffForPreCommit
-   - 24 小時過期邏輯
-   - 檔案損毀 / 目錄不存在防呆
-   - 配合 `tests/session-off-state.test.js`：8+ 個守備 case
+1. **Write shared/session-off-state.js helper**
+   - Pure functions: read / write / clear / increment tick / isOffForSession / isOffForPreCommit
+   - 24-hour expiry logic
+   - Safeguards for corrupted file / missing directory
+   - Paired with `tests/session-off-state.test.js`: 8+ guard cases
 
-2. **新增兩個 MCP 工具到 mcp/index.js**
-   - `ownmind_session_off`：取 session_id 寫狀態檔
-   - `ownmind_session_on`：刪狀態檔
-   - 兩個工具呼叫都回中文 ack + 解釋下一步
+2. **Add two MCP tools to mcp/index.js**
+   - `ownmind_session_off`: get session_id and write the state file
+   - `ownmind_session_on`: delete the state file
+   - Both tool calls return a Chinese ack + explain the next step
 
-3. **改 hooks/ownmind-reply-lint.js**
-   - main 開頭讀狀態檔、若本 session 關閉中：
-     - tick_count 增加
-     - 每 10 輪用 writeToTty 寫提醒、fallback stderr
-     - exit 0 跳過 lint
-   - 新 session 偵測：session_id 不符就清狀態檔
+3. **Change hooks/ownmind-reply-lint.js**
+   - At the start of main, read the state file; if this session is off:
+     - increment tick_count
+     - every 10 turns use writeToTty to write a reminder, fallback stderr
+     - exit 0 to skip lint
+   - New-session detection: if session_id does not match, clear the state file
 
-4. **改 hooks/ownmind-git-pre-commit.js**
-   - 開頭讀狀態檔（pre-commit 無 session_id、只看 off_at 是否 24 小時內）
-   - 若是 → 印提示 + exit 0
-   - 24 小時過期 → 清狀態檔、正常跑
+4. **Change hooks/ownmind-git-pre-commit.js**
+   - Read the state file at the start (pre-commit has no session_id, only checks whether off_at is within 24 hours)
+   - If so → print a hint + exit 0
+   - 24-hour expiry → clear the state file, run normally
 
-5. **slash 指令檔**
-   - `~/.claude/commands/ownmind-off.md`：引導 AI 呼叫 `ownmind_session_off`
-   - `~/.claude/commands/ownmind-on.md`：引導 AI 呼叫 `ownmind_session_on`
+5. **Slash command files**
+   - `~/.claude/commands/ownmind-off.md`: guide the AI to call `ownmind_session_off`
+   - `~/.claude/commands/ownmind-on.md`: guide the AI to call `ownmind_session_on`
 
-6. **版號 + 文件**
+6. **Version + docs**
    - package.json + client/package.json: 1.20.2 → 1.20.3
-   - CHANGELOG.md 加 v1.20.3 條目
-   - FILELIST.md 加新檔
-   - 三份 README 版本標示 v1.20.2 → v1.20.3
+   - CHANGELOG.md add v1.20.3 entry
+   - FILELIST.md add new files
+   - Three README version markers v1.20.2 → v1.20.3
 
-7. **品管 + commit + push + 同步本機**
-   - npm test 全綠
-   - cp 同步 ~/.ownmind/
-   - verification + code-review 合規記錄
+7. **Quality control + commit + push + sync local**
+   - npm test all green
+   - cp sync ~/.ownmind/
+   - verification + code-review compliance records
    - commit + push

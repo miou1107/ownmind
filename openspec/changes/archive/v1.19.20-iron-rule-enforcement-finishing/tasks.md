@@ -1,137 +1,137 @@
-# Critical 鐵律卡控 — 5 個小版本任務清單
+# Critical iron-rule enforcement — task list for 5 sub-versions
 
-> 依 IR-003（TDD）：每個實作 task 前面先寫測試。
-> 依 IR-012（品管三步驟）：驗證 → 請評審 → 處理回饋。
-> 依 IR-008（commit 同步更新 README/FILELIST/CHANGELOG）。
+> Per IR-003 (TDD): write the test before each implementation task.
+> Per IR-012 (the quality gates): verify → request review → handle feedback.
+> Per IR-008 (commit syncs README/FILELIST/CHANGELOG).
 
 ---
 
-## 進度表（2026-05-24 重新規劃）
+## Progress table (re-planned 2026-05-24)
 
-| 規格小版本 | 實際發版 | 內容 | 狀態 |
+| Spec sub-version | Actual release | Content | Status |
 |---|---|---|---|
-| 第 1 版 | **v1.19.6** | 共用判定核心 + 放行通道 + 審計擴充 | ✅ 完工 2026-05-22 |
-| 第 2 版 | **v1.19.7** | IR-041 + IR-002 + reply-lint 切擋下 | ✅ 完工 |
-| 第 3 版 | **v1.19.20** | 指令樣式 5 條：IR-044/023/018/046/043 | ⏳ 待動工（本批次） |
-| 第 4 版 | **v1.19.21** | 靜態檢查：IR-009/024/031 git hook 整合 | ⏳ 待動工 |
-| 第 5 版 | **v1.19.22** | 兩週觀察期 + 誤判紀錄調校 | ⏳ 待動工 |
+| Version 1 | **v1.19.6** | shared decision core + bypass channel + audit extension | ✅ Done 2026-05-22 |
+| Version 2 | **v1.19.7** | IR-041 + IR-002 + reply-lint switched to block | ✅ Done |
+| Version 3 | **v1.19.20** | 5 command-pattern rules: IR-044/023/018/046/043 | ⏳ To do (this batch) |
+| Version 4 | **v1.19.21** | static checks: IR-009/024/031 git hook integration | ⏳ To do |
+| Version 5 | **v1.19.22** | two-week observation period + false-positive tuning | ⏳ To do |
 
-> **下方原始任務清單保留作歷史脈絡**；實際版號對應請以上表為準。
-> 原 v1.19.20 = 已完工於 v1.19.6
-> 原 v1.19.21 = 已完工於 v1.19.7
-> 原 v1.19.22 = 重編為 v1.19.20（本批次）
-> 原 v1.19.23 = 重編為 v1.19.21
-> 原 v1.19.24 = 重編為 v1.19.22
+> **The original task list below is kept for historical context**; for the actual version mapping use the table above.
+> original v1.19.20 = already done in v1.19.6
+> original v1.19.21 = already done in v1.19.7
+> original v1.19.22 = renumbered to v1.19.20 (this batch)
+> original v1.19.23 = renumbered to v1.19.21
+> original v1.19.24 = renumbered to v1.19.22
 
 ---
 
-## v1.19.20 — 共用判定核心 + 放行通道 + 審計擴充（本批次）
+## v1.19.20 — shared decision core + bypass channel + audit extension (this batch)
 
-> 純基礎建設、不擋任何規則。目標是讓後續 v1.19.21~9 hook 層只需要組合。
+> Pure infrastructure, doesn't block any rule. The goal is to let the later v1.19.21~ hook layers just compose.
 
-- [ ] **A1. 寫測試** `tests/rule-enforcer-core.test.js`（預估 12+ case）
-  - `enforceRule(ruleCode, context, options)` 各分支
-  - 規則不在快取 → `action: 'allow'`、`reason: 'rule_not_in_cache'`
-  - critical 規則違反 → `action: 'block'`
-  - default 規則違反 → `action: 'warn'`
-  - advisory 規則違反 → `action: 'log_only'`
-  - critical 規則通過 → `action: 'allow'`
-  - bypass 設定生效 → `action: 'bypass'`
-  - bypass=all → 任何規則 `action: 'bypass'`
-  - 鐵律沒 conditions → `action: 'allow'`、`reason: 'no_conditions'`
-  - 批次 `enforceRules` 多條獨立判定
-  - context 缺欄位 fallback（依 verification handler 行為）
-  - hook_internal_error fallback：handler 拋例外 → fail-open + 標記
-- [ ] **A2. 新檔** `hooks/lib/rule-enforcer.js`
-  - 純函式入口 `enforceRule` / `enforceRules`
-  - 內部包 `shared/verification.js` 的 `evaluateConditions`
-  - 依 tier 決定 action：critical → block、default → warn、advisory → log_only
-  - bypass set 取代 process.env 解析（測試友善）
-- [ ] **B1. 寫測試** `tests/bypass-handler.test.js`（預估 8+ case）
-  - `parseBypass(env)` 空 / 單條 / 多條 / `all`
-  - `isBypassed` 命中 / 沒命中 / null
-  - bypass=all 涵蓋所有規則
-  - bypass scope 是 process（解析時不修改 env）
-  - `logBypass` 寫 audit、action='bypass'
-- [ ] **B2. 新檔** `hooks/lib/bypass-handler.js`
-  - `parseBypass(env): Set<string>` 解析環境變數
+- [ ] **A1. Write tests** `tests/rule-enforcer-core.test.js` (estimated 12+ cases)
+  - the various branches of `enforceRule(ruleCode, context, options)`
+  - rule not in cache → `action: 'allow'`, `reason: 'rule_not_in_cache'`
+  - critical rule violated → `action: 'block'`
+  - default rule violated → `action: 'warn'`
+  - advisory rule violated → `action: 'log_only'`
+  - critical rule passes → `action: 'allow'`
+  - bypass setting takes effect → `action: 'bypass'`
+  - bypass=all → any rule `action: 'bypass'`
+  - iron rule has no conditions → `action: 'allow'`, `reason: 'no_conditions'`
+  - batch `enforceRules` judges multiple rules independently
+  - context missing fields fallback (per verification handler behavior)
+  - hook_internal_error fallback: handler throws → fail-open + mark
+- [ ] **A2. New file** `hooks/lib/rule-enforcer.js`
+  - pure-function entry points `enforceRule` / `enforceRules`
+  - internally wraps `evaluateConditions` from `shared/verification.js`
+  - decides action by tier: critical → block, default → warn, advisory → log_only
+  - bypass set replaces process.env parsing (test-friendly)
+- [ ] **B1. Write tests** `tests/bypass-handler.test.js` (estimated 8+ cases)
+  - `parseBypass(env)` empty / single / multiple / `all`
+  - `isBypassed` hit / miss / null
+  - bypass=all covers all rules
+  - bypass scope is the process (doesn't modify env when parsing)
+  - `logBypass` writes audit, action='bypass'
+- [ ] **B2. New file** `hooks/lib/bypass-handler.js`
+  - `parseBypass(env): Set<string>` parses the environment variable
   - `isBypassed(ruleCode, bypassSet): boolean`
-  - `logBypass({ ruleCode, source, context })` 寫 audit
-- [ ] **C1. 改 shared/compliance.js**
-  - `appendCompliance` 接受 `action='block' | 'bypass' | 'hook_internal_error'` 新值
-  - schema 不變（純新增合法值），不破壞既有測試
-- [ ] **C2. 補測試** `tests/compliance.test.js`
-  - 新 action 三個值都能寫入並讀回
-- [ ] **D. 跑全測試 + 品管三步驟**
-  - `npm test` 全綠
+  - `logBypass({ ruleCode, source, context })` writes audit
+- [ ] **C1. Change shared/compliance.js**
+  - `appendCompliance` accepts the new `action='block' | 'bypass' | 'hook_internal_error'` values
+  - schema unchanged (purely adding legal values), doesn't break existing tests
+- [ ] **C2. Add tests** `tests/compliance.test.js`
+  - all three new action values can be written and read back
+- [ ] **D. Run all tests + the quality gates**
+  - `npm test` all green
   - `superpowers:verification-before-completion`
   - `superpowers:requesting-code-review`
-- [ ] **E. 文件 + 版號同步**
-  - `README.md` Iron Rule Enforcement Engine 段加 v1.19.20 一段
-  - `docs/README.zh-TW.md` / `docs/README.ja.md`（IR-032 三語系同步）
-  - `CHANGELOG.md` v1.19.20 條目
-  - `FILELIST.md` 加 `hooks/lib/rule-enforcer.js`、`hooks/lib/bypass-handler.js`、新測試檔
-  - 三處版號同步（IR-031）：`package.json` 1.19.5 → 1.19.6
-  - 預備打 tag `v1.19.20`
+- [ ] **E. Docs + version sync**
+  - `README.md` Iron Rule Enforcement Engine section adds a v1.19.20 paragraph
+  - `docs/README.zh-TW.md` / `docs/README.ja.md` (IR-032 tri-lingual sync)
+  - `CHANGELOG.md` v1.19.20 entry
+  - `FILELIST.md` adds `hooks/lib/rule-enforcer.js`, `hooks/lib/bypass-handler.js`, new test files
+  - three version numbers in sync (IR-031): `package.json` 1.19.5 → 1.19.6
+  - prepare to create tag `v1.19.20`
 
-### v1.19.20 驗收
+### v1.19.20 acceptance
 
-- [ ] `npm test` 0 failure
-- [ ] `enforceRule('IR-002', { stagedFiles: ['.env'] }, { rules: [...] })` 回傳 `action: 'block'`
-- [ ] `OWNMIND_BYPASS=IR-002 enforceRule(...)` 回傳 `action: 'bypass'`
-- [ ] 鐵律 cache 為空時 `enforceRule` fail-open（action: 'allow'）
-- [ ] 沒任何既有 hook 被破壞
-
----
-
-## v1.19.21 — IR-041 + IR-002 + reply-lint 切擋下（下批次）
-
-- [ ] 寫 IR-041 隱私 detector（身分證／信箱／電話樣式 + user prompt 例外）
-- [ ] 寫 IR-002 pre-commit 整合（用 v1.19.1 secret-detect + 新 rule-enforcer）
-- [ ] reply-lint hook 切擋下模式（exit 2）+ 連續 3 次降警告
-- [ ] 兩週觀察期、根據誤判紀錄調規則
+- [ ] `npm test` 0 failures
+- [ ] `enforceRule('IR-002', { stagedFiles: ['.env'] }, { rules: [...] })` returns `action: 'block'`
+- [ ] `OWNMIND_BYPASS=IR-002 enforceRule(...)` returns `action: 'bypass'`
+- [ ] when the iron-rule cache is empty, `enforceRule` fails open (action: 'allow')
+- [ ] no existing hook is broken
 
 ---
 
-## v1.19.22 — 指令樣式類 5 條
+## v1.19.21 — IR-041 + IR-002 + reply-lint switched to block (next batch)
 
-- [ ] PreToolUse 整合 rule-enforcer
-- [ ] IR-023 / IR-018 / IR-044 / IR-046 / IR-043 detector
-
----
-
-## v1.19.23 — 靜態檢查收尾
-
-- [ ] IR-009 git user.name 檢查
-- [ ] IR-024 commit-msg Co-Authored-By 檢查
-- [ ] IR-031 pre-tag 三處版號檢查
+- [ ] Write the IR-041 privacy detector (national-ID / email / phone patterns + user prompt exception)
+- [ ] Write the IR-002 pre-commit integration (using v1.19.1 secret-detect + the new rule-enforcer)
+- [ ] reply-lint hook switched to block mode (exit 2) + downgrade to warning after 3 consecutive
+- [ ] Two-week observation period, tune rules based on false-positive records
 
 ---
 
-## v1.19.24 — 觀察期 + 調校
+## v1.19.22 — 5 command-pattern rules
 
-- [ ] 收集兩週誤判紀錄
-- [ ] 根據 bypass audit log 調 detector 規則
-- [ ] 評估是否需要 admin UI Bypass 紀錄分頁
-
----
-
-## 非任務（明確不做）
-
-- ❌ IR-005（blind edit）跨工具追蹤 — Gemini 對抗審查批：MCP 無狀態、user 手動點開檔案會大量誤判；維持警告
-- ❌ IR-008（三文件同步）硬擋 — Gemini 批：改錯字也擋會逼人 bypass；維持警告
-- ❌ IR-048（部署前 DB migration）硬擋 — Gemini 批：連外部狀態太脆；維持警告
-- ❌ Advisory tier 邏輯（v1.21+）
-- ❌ 動態升降級（v1.22+）
-- ❌ AI 輔助分類
-- ❌ per-user 客製分級
-- ❌ Cursor PreToolUse 卡控（Cursor 沒 hook 點）
+- [ ] PreToolUse integrates rule-enforcer
+- [ ] IR-023 / IR-018 / IR-044 / IR-046 / IR-043 detectors
 
 ---
 
-## 風險檢查點（每階段結束時 review）
+## v1.19.23 — static-check wrap-up
 
-- [ ] v1.19.20 結束：跑一次 dogfood、用 rule-enforcer 自己 commit v1.19.20 程式碼、確認沒卡死
-- [ ] v1.19.21 結束：跑一次 reply-lint 硬擋、確認 AI 能正確重做
-- [ ] v1.19.22 結束：在另一台機器跑 migrate-hooks、驗證升級流程
-- [ ] v1.19.24 結束：發版前再跑一次完整 e2e、自己違反每條 critical、確認都被擋
+- [ ] IR-009 git user.name check
+- [ ] IR-024 commit-msg Co-Authored-By check
+- [ ] IR-031 pre-tag three-version-number check
+
+---
+
+## v1.19.24 — observation period + tuning
+
+- [ ] Collect two weeks of false-positive records
+- [ ] Tune detector rules based on the bypass audit log
+- [ ] Assess whether an admin UI Bypass record tab is needed
+
+---
+
+## Non-tasks (explicitly not done)
+
+- ❌ IR-005 (blind edit) cross-tool tracking — Gemini adversarial review's critique: MCP is stateless, a user manually opening a file causes mass false positives; keep as warning
+- ❌ IR-008 (three-doc sync) hard block — Gemini's critique: blocking even a typo fix would force people to bypass; keep as warning
+- ❌ IR-048 (pre-deploy DB migration) hard block — Gemini's critique: depending on external state is too fragile; keep as warning
+- ❌ Advisory tier logic (v1.21+)
+- ❌ Dynamic promotion/demotion (v1.22+)
+- ❌ AI-assisted classification
+- ❌ per-user custom tiering
+- ❌ Cursor PreToolUse enforcement (Cursor has no hook point)
+
+---
+
+## Risk checkpoints (review at the end of each phase)
+
+- [ ] End of v1.19.20: run a dogfood once, commit the v1.19.20 code using rule-enforcer itself, confirm no deadlock
+- [ ] End of v1.19.21: run a reply-lint hard block once, confirm the AI can redo correctly
+- [ ] End of v1.19.22: run migrate-hooks on another machine, verify the upgrade flow
+- [ ] End of v1.19.24: before release, run a full e2e once more, violate each critical rule yourself, confirm all are blocked

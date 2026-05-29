@@ -1,201 +1,201 @@
-# v1.19.9 — 忘記密碼救援規格（GIVEN / WHEN / THEN）
+# v1.19.9 — Forgot-password recovery spec (GIVEN / WHEN / THEN)
 
 ---
 
-## 一、方案 3：後台他人重設密碼
+## 1. Option 3: admin reset of others' passwords
 
-### 場景 1：super_admin 重設另一個 admin 密碼 → 成功
+### Scenario 1: super_admin resets another admin's password → success
 
 **GIVEN**
-- 系統有 super_admin A 跟 admin B
-- A 已登入
+- The system has super_admin A and admin B
+- A is logged in
 
 **WHEN**
 - `POST /api/admin/users/<B.id>/reset-password`
 
 **THEN**
 - HTTP 200
-- Body：`{ id, email, temporary_password: '<12 字隨機>', must_change_password: true }`
-- DB：B.password_hash 更新、B.must_change_password = TRUE
-- audit_log 寫一筆：actor=A, action='reset_password_by_admin', target=B
+- Body: `{ id, email, temporary_password: '<12 random chars>', must_change_password: true }`
+- DB: B.password_hash updated, B.must_change_password = TRUE
+- audit_log writes one row: actor=A, action='reset_password_by_admin', target=B
 
 ---
 
-### 場景 2：admin 重設 user 密碼 → 成功
+### Scenario 2: admin resets a user's password → success
 
 **GIVEN**
-- 系統有 admin C 跟 user D
+- The system has admin C and user D
 
 **WHEN**
-- C 呼叫 `POST /api/admin/users/<D.id>/reset-password`
+- C calls `POST /api/admin/users/<D.id>/reset-password`
 
 **THEN**
-- HTTP 200、temporary_password 回傳
-- audit_log 寫入
+- HTTP 200, temporary_password returned
+- audit_log written
 
 ---
 
-### 場景 3：admin 試圖重設其他 admin 密碼 → 拒絕
+### Scenario 3: admin tries to reset another admin's password → rejected
 
 **GIVEN**
-- 系統有 admin C 跟 admin E
+- The system has admin C and admin E
 
 **WHEN**
-- C 呼叫 `POST /api/admin/users/<E.id>/reset-password`
+- C calls `POST /api/admin/users/<E.id>/reset-password`
 
 **THEN**
 - HTTP 403
-- 訊息：`admin 只能重設 user 角色帳號`
-- DB 不變、audit_log 不寫
+- Message: `admin 只能重設 user 角色帳號`
+- DB unchanged, audit_log not written
 
 ---
 
-### 場景 4：使用者試圖重設自己密碼 → 拒絕、引導去 me/change-password
+### Scenario 4: a user tries to reset their own password → rejected, guided to me/change-password
 
 **GIVEN**
-- A 已登入
+- A is logged in
 
 **WHEN**
 - `POST /api/admin/users/<A.id>/reset-password`
 
 **THEN**
 - HTTP 400
-- 訊息：`不能重設自己的密碼、請走 /api/me/change-password`
+- Message: `不能重設自己的密碼、請走 /api/me/change-password`
 
 ---
 
-### 場景 5：重設不存在的 user → 404
+### Scenario 5: reset a nonexistent user → 404
 
 **GIVEN**
-- super_admin A 已登入
+- super_admin A is logged in
 
 **WHEN**
 - `POST /api/admin/users/99999/reset-password`
 
 **THEN**
 - HTTP 404
-- 訊息：`找不到指定使用者`
+- Message: `找不到指定使用者`
 
 ---
 
-### 場景 6：未登入 → 401
+### Scenario 6: not logged in → 401
 
 **GIVEN**
-- 無 auth token
+- No auth token
 
 **WHEN**
 - `POST /api/admin/users/1/reset-password`
 
 **THEN**
-- HTTP 401（標準 adminAuth 行為）
+- HTTP 401 (standard adminAuth behavior)
 
 ---
 
-### 場景 7：user 角色登入後試圖呼叫 → 403
+### Scenario 7: a user-role account tries to call after logging in → 403
 
 **GIVEN**
-- 一般 user F 已登入
+- An ordinary user F is logged in
 
 **WHEN**
-- F 呼叫 `POST /api/admin/users/<other-user.id>/reset-password`
+- F calls `POST /api/admin/users/<other-user.id>/reset-password`
 
 **THEN**
-- HTTP 403（adminAuth 擋下）
+- HTTP 403 (blocked by adminAuth)
 
 ---
 
-### 場景 8：臨時密碼具備足夠強度
+### Scenario 8: the temporary password has sufficient strength
 
 **GIVEN**
-- super_admin A 重設 user 密碼
+- super_admin A resets a user's password
 
 **WHEN**
-- 觀察 temporary_password
+- Observe temporary_password
 
 **THEN**
-- 長度 = 12
-- 包含大小寫英數字（不含可混淆字 0/O/I/l）
-- 每次呼叫都不同（隨機產生）
+- Length = 12
+- Contains upper/lowercase letters and digits (no confusable characters 0/O/I/l)
+- Different on every call (randomly generated)
 
 ---
 
-## 二、方案 2：CLI 救援腳本
+## 2. Option 2: CLI recovery script
 
-### 場景 9：腳本互動式列出 super_admin
+### Scenario 9: the script interactively lists super_admins
 
 **GIVEN**
-- DB 中有 2 位 super_admin、3 位 admin、1 位 user
+- The DB has 2 super_admins, 3 admins, 1 user
 
 **WHEN**
-- 跑 `node scripts/reset-admin-password.js`
+- Run `node scripts/reset-admin-password.js`
 
 **THEN**
-- 終端機印出 2 位 super_admin 的清單（編號、email、最後登入時間）
-- 不列 admin / user（只能重設 super_admin、避免被當後門用）
-- 提示使用者輸入編號選擇
+- The terminal prints a list of the 2 super_admins (number, email, last login time)
+- Doesn't list admin / user (can only reset super_admin, to avoid being used as a backdoor)
+- Prompts the user to enter a number to choose
 
 ---
 
-### 場景 10：腳本要求雙重確認
+### Scenario 10: the script requires double confirmation
 
 **GIVEN**
-- 使用者輸入編號 1
+- The user enters number 1
 
 **WHEN**
-- 腳本繼續
+- The script continues
 
 **THEN**
-- 印出「即將把 admin@example.com 的密碼設為 NULL、確定要繼續？輸入 'yes' 確認」
-- 輸入 yes 才執行、其他輸入取消
+- Prints "即將把 admin@example.com 的密碼設為 NULL、確定要繼續？輸入 'yes' 確認"
+- Only runs if yes is entered, any other input cancels
 
 ---
 
-### 場景 11：執行成功印出新 SETUP_TOKEN
+### Scenario 11: on success it prints the new SETUP_TOKEN
 
 **GIVEN**
-- 使用者確認 yes
+- The user confirms yes
 
 **WHEN**
-- 腳本執行
+- The script runs
 
 **THEN**
 - UPDATE users SET password_hash = NULL WHERE id = ...
-- 產隨機 SETUP_TOKEN（32 字 hex）
-- 印出：
-  - 「✅ 密碼已清除」
-  - 「請執行：export SETUP_TOKEN=<token>」
-  - 「然後重啟 server、開 /admin/setup 重設密碼」
-- 寫 audit_log：actor_id=被重設的 user, action='cli_reset_password', source='cli'
+- Generate a random SETUP_TOKEN (32-char hex)
+- Print:
+  - "✅ 密碼已清除"
+  - "請執行：export SETUP_TOKEN=<token>"
+  - "然後重啟 server、開 /admin/setup 重設密碼"
+- Write audit_log: actor_id=the reset user, action='cli_reset_password', source='cli'
 
 ---
 
-### 場景 12：DB 連不上時報錯
+### Scenario 12: errors out when the DB is unreachable
 
 **GIVEN**
-- DB 連線失敗（環境變數錯）
+- DB connection fails (wrong environment variables)
 
 **WHEN**
-- 跑腳本
+- Run the script
 
 **THEN**
 - exit code != 0
-- 印出「DB 連線失敗、請確認 DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD」
-- 不會誤改任何 user
+- Prints "DB 連線失敗、請確認 DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD"
+- Doesn't mistakenly change any user
 
 ---
 
-## 三、方案 1：UI 強制引導
+## 3. Option 1: UI mandatory guidance
 
-### 場景 13：setup wizard 完成頁加強建議
+### Scenario 13: the setup wizard completion page strengthens the recommendation
 
 **GIVEN**
-- 使用者剛建好第一個 super_admin
+- The user just created the first super_admin
 
 **WHEN**
-- 看到成功頁
+- They see the success page
 
 **THEN**
-- 除了原本的 api_key + 安裝指令、額外顯示警告框：
+- Besides the original api_key + install command, an additional warning box is shown:
   ```
   ⚠️ 建議馬上建立第二位 admin
   否則你忘記密碼時、會需要 SSH 進伺服器跑救援腳本。
@@ -204,31 +204,31 @@
 
 ---
 
-### 場景 14：後台單 admin 警告 banner
+### Scenario 14: single-admin warning banner in the admin
 
 **GIVEN**
-- 已登入後台、admin + super_admin 角色合計只有 1 位
+- Logged into the admin, the admin + super_admin roles total only 1
 
 **WHEN**
-- 開後台任何頁
+- Open any admin page
 
 **THEN**
-- 頂部顯示橘色 banner：
+- An orange banner is shown at the top:
   ```
   ⚠️ 你是唯一的管理員、忘記密碼將難以救援。建議到「使用者管理」新增第二位 admin。
   [新增第二位 admin →]
   ```
-- 點按鈕跳到 /admin/users 並開啟「新增使用者」對話框
+- Clicking the button jumps to /admin/users and opens the "add user" dialog
 
 ---
 
-### 場景 15：有兩位以上 admin 時 banner 自動消失
+### Scenario 15: the banner auto-disappears when there are two or more admins
 
 **GIVEN**
-- 已有 2 位以上 admin/super_admin
+- There are already 2 or more admin/super_admin
 
 **WHEN**
-- 開後台任何頁
+- Open any admin page
 
 **THEN**
-- 不顯示 banner
+- The banner is not shown

@@ -1,86 +1,125 @@
-# OpenSpec 提案資料夾慣例（CONVENTIONS）
+# OpenSpec proposal-folder conventions (CONVENTIONS)
 
-> 這份文件是 OwnMind 內部對 OpenSpec（規格驅動開發流程）的資料夾慣例。
-> OpenSpec 即「先寫一份提案 proposal、把規格 spec 跟任務 tasks 也定下來，再開始改程式」的開發流程。
+> This document is OwnMind's internal convention for OpenSpec (spec-driven
+> development workflow) folder layout.
+> OpenSpec means the workflow of "write a proposal first, pin down the spec and
+> tasks too, then start changing code."
 
-本檔是政策宣告——規範**從現在起**所有 OpenSpec 提案搬遷該怎麼做。
-與本檔同期、PR #37（archive 首次搬遷）會把三份已 release 的提案搬到 `archive/`、是本慣例的第一個實際案例。
+This file is a policy declaration — it governs how every OpenSpec proposal
+migration should be done **from now on**.
+Alongside this file, PR #37 (the first archive migration) moves three already
+released proposals into `archive/`, which is the first concrete instance of
+this convention.
 
 ---
 
-## 1. 資料夾結構
+## 1. Folder structure
 
-下圖是本慣例規範的**目標結構**（`archive/` 子目錄在第一次搬遷時建立、之前不存在）：
+The diagram below is the **target structure** this convention defines (the
+`archive/` subdirectory is created at the first migration; it did not exist
+before):
 
 ```
 openspec/
-├── CONVENTIONS.md              # 本檔，OpenSpec 慣例
-└── changes/                    # 所有提案都放在這裡
-    ├── <version>-<topic>/      # 進行中的提案（每個版本一個資料夾）
-    │   ├── proposal.md         # 提案內容：背景、動機、決策
-    │   ├── spec.md             # 規格：GIVEN/WHEN/THEN 場景
-    │   │                       # （白話即「前提／動作／預期結果」三段式 BDD 描述）
-    │   └── tasks.md            # 任務拆解：執行清單與進度
-    └── archive/                # 已 release 或棄用的提案（凍結快照）
-        └── <version>-<topic>/  # 同上結構，但內容不再變動
+├── CONVENTIONS.md              # this file, OpenSpec conventions
+└── changes/                    # all proposals live here
+    ├── <version>-<topic>/      # in-progress proposals (one folder per version)
+    │   ├── proposal.md         # proposal: background, motivation, decisions
+    │   ├── spec.md             # spec: GIVEN/WHEN/THEN scenarios
+    │   │                       # (plainly, a three-part precondition/action/
+    │   │                       #  expected-result BDD description)
+    │   └── tasks.md            # task breakdown: execution checklist & progress
+    └── archive/                # released or deprecated proposals (frozen snapshots)
+        └── <version>-<topic>/  # same structure, but contents no longer change
 ```
 
-說明（白話）：
+Notes (plain language):
 
-- `openspec/changes/`：放**還在進行中**的提案，每個版本（例如 `v1.18.0-iron-rule-schema`）一個資料夾。
-- `openspec/changes/archive/`：放**已經完工**的提案、視為歷史快照、不再改動。第一次搬遷時才會建立這個子目錄。
-
----
-
-## 2. 進入 archive 的時機
-
-提案進到 `archive/` 必須符合以下其中一個條件：
-
-1. **該版本已正式 release**——`CHANGELOG.md` 有對應的版本條目。
-2. **該提案被正式棄用**——`proposal.md` 內部有明確的棄用聲明（例如 v1.18.9 提案把 Phase 2、Phase 3 棄用，只收斂為 latency 埋點純 release）。
-   - 棄用即「決定不做了」，不一定是壞掉，可能是策略改變或範圍縮小。
-
-只要不符合上述兩個條件，就**繼續留在 `openspec/changes/` 根目錄**，不要提前搬。
+- `openspec/changes/`: holds proposals **still in progress**, one folder per
+  version (e.g. `v1.18.0-iron-rule-schema`).
+- `openspec/changes/archive/`: holds **completed** proposals, treated as
+  historical snapshots, no longer modified. This subdirectory is created only
+  at the first migration.
 
 ---
 
-## 3. 搬遷規則
+## 2. When a proposal enters the archive
 
-把提案從 `changes/` 搬到 `changes/archive/` 時：
+A proposal may move into `archive/` only if it meets one of these conditions:
 
-1. **一律用 `git mv`**——保留檔案歷史。
-   - `git blame`（查每一行誰改的）跟 `git log --follow`（跟著 rename 一路追歷史）都要靠 git 的 rename 紀錄。
-   - 不可用 `mv` 或 IDE 拖拉、那會被 git 當成「刪掉舊檔 + 新建一個檔」、丟失 rename 紀錄。
-2. **資料夾正名**：如果資料夾名跟內部 `proposal.md` 標題不一致、搬遷時順手改名。
-   - 例：v1.18.9 release 收斂為 latency 埋點、但資料夾名還是原先規劃的 `v1.18.5-block-feedback-and-safety-alerts`。搬遷時順手改成 `v1.18.9-mcp-latency-tracking`。
-   - 正名（白話）即「把資料夾改成符合實際內容的名字」。
-3. **同步檢查外部引用**：搬完之後 grep 一輪以下幾個位置、把舊路徑全部改到新路徑：
+1. **The version is officially released** — `CHANGELOG.md` has a matching
+   version entry.
+2. **The proposal is officially deprecated** — `proposal.md` contains an
+   explicit deprecation statement (e.g. the v1.18.9 proposal deprecated Phase 2
+   and Phase 3, narrowing down to a latency-instrumentation-only release).
+   - Deprecated means "decided not to do it"; not necessarily broken — it may
+     be a strategy change or a scope reduction.
+
+If neither condition is met, **keep the proposal in the `openspec/changes/`
+root** and do not migrate it early.
+
+---
+
+## 3. Migration rules
+
+When moving a proposal from `changes/` to `changes/archive/`:
+
+1. **Always use `git mv`** — to preserve file history.
+   - `git blame` (who changed each line) and `git log --follow` (follow history
+     across renames) both rely on git's rename records.
+   - Do not use `mv` or IDE drag-and-drop; git would treat that as "delete the
+     old file + create a new file" and lose the rename record.
+2. **Folder renaming**: if the folder name does not match the internal
+   `proposal.md` title, rename it during the migration.
+   - Example: the v1.18.9 release narrowed down to latency instrumentation, but
+     the folder was still the originally planned
+     `v1.18.5-block-feedback-and-safety-alerts`. Rename it to
+     `v1.18.9-mcp-latency-tracking` during migration.
+   - Renaming (plain language) means "rename the folder to match its actual
+     contents."
+3. **Sync-check external references**: after migrating, grep the following
+   locations and update every old path to the new path:
    - `CHANGELOG.md`
    - `FILELIST.md`
-   - `tests/` 底下的測試與註解
-   - 其他在 repo 內以絕對路徑引用該提案的檔案（例如 README、docs/）
+   - tests and comments under `tests/`
+   - any other file in the repo that references the proposal by absolute path
+     (e.g. README, docs/)
 
 ---
 
-## 4. archive 凍結政策
+## 4. Archive freeze policy
 
-`archive/` 內部的所有檔案視為**歷史快照**：
+All files inside `archive/` are treated as **historical snapshots**:
 
-- 內容在搬進去那一刻**就凍結**，後續不再變動。
-- 即使資料夾名再次改名、或外部結構大改，**也不再追改 archive 內部檔案中的舊路徑或舊資料夾名引用**。
-- 這些舊引用屬於「當時的歷史紀錄」、刻意保留，反映該提案在被定案時的真實樣貌。
+- Contents **freeze** the moment they are moved in, and do not change afterward.
+- Even if the folder is renamed again, or the external structure changes
+  drastically, **do not retroactively edit old path or old folder-name
+  references inside archive files**.
+- Those old references are part of "the historical record at that time," kept
+  intentionally, reflecting how the proposal actually looked when it was
+  finalized.
 
-**為什麼這樣做？**
+**Why do this?**
 
-如果每次外部結構變動都要回頭去改 archive 裡所有檔案，archive 就失去「歷史快照」的意義；而且這些檔案不會再被執行或讀取、只是給未來看歷史的人參考，舊路徑反而是當時時空背景的一部分。
+If every external structure change required going back to edit all files in the
+archive, the archive would lose its meaning as a "historical snapshot"; besides,
+these files are never executed or read again — they only serve future readers
+looking at history, and the old paths are actually part of the context of that
+time.
 
-**例外**：如果 archive 內部的引用會造成**真實的壞連結**（例如 archive 內某個檔案連到 repo 內**已被刪除**的程式碼、讀者點過去 404）、再評估是否補修。但「路徑或資料夾名字本身過期」**不算壞連結**、不必修——舊資料夾名沒人會點、只是文字紀錄。
+**Exception**: if a reference inside the archive would cause a **real broken
+link** (e.g. some archive file links to code in the repo that has been
+**deleted**, so a reader clicking through hits a 404), reassess whether to
+repair it. But "the path or folder name itself being outdated" does **not**
+count as a broken link and need not be fixed — nobody clicks an old folder name,
+it is just a textual record.
 
 ---
 
-## 5. 驗證流程
+## 5. Verification flow
 
-每次搬遷後、用以下 grep 範本確認 archive 之外**沒有殘留**舊路徑：
+After each migration, use the grep template below to confirm there is **no
+leftover** old path outside the archive:
 
 ```bash
 grep -rn "openspec/changes/<old-name>" \
@@ -88,19 +127,25 @@ grep -rn "openspec/changes/<old-name>" \
   . | grep -v "archive/"
 ```
 
-替換 `<old-name>` 為實際搬遷的資料夾名稱（例：`v1.17.66-windows-hardening`）。
+Replace `<old-name>` with the actual migrated folder name (e.g.
+`v1.17.66-windows-hardening`).
 
-預期輸出：**零筆**（archive 外無殘留）。
+Expected output: **zero results** (no leftovers outside the archive).
 
-如果有命中、就把那幾處改到新路徑，再重跑一次 grep 直到歸零為止。
+If there are hits, update those few spots to the new path, then rerun the grep
+until it reaches zero.
 
-> 注意：grep 末段刻意 `grep -v "archive/"` 把 archive 內部的舊引用過濾掉——按第 4 條凍結政策、那些是歷史快照、不需要修。
+> Note: the trailing `grep -v "archive/"` deliberately filters out the old
+> references inside the archive — per the freeze policy in section 4, those are
+> historical snapshots and need not be fixed.
 
 ---
 
-## 參考紀錄
+## Reference records
 
-- **PR #37**（首次把已發版提案搬到 archive、定下凍結政策）：
+- **PR #37** (first migration of released proposals into the archive, which set
+  the freeze policy):
   https://github.com/miou1107/ownmind/pull/37
-- **CONVENTIONS.md 本身的成立 PR**：https://github.com/miou1107/ownmind/pull/38
-  本檔以後若有修訂、在這裡持續補連結。
+- **The PR that established CONVENTIONS.md itself**:
+  https://github.com/miou1107/ownmind/pull/38
+  If this file is revised later, keep appending links here.

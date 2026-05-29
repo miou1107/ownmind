@@ -1,18 +1,18 @@
-# v1.19.1 — 密碼/Token 不寫進記憶 規格（GIVEN / WHEN / THEN）
+# v1.19.1 — Passwords/tokens not written to memory spec (GIVEN / WHEN / THEN)
 
-> BDD 三段式描述（前提 / 動作 / 預期結果），對應 OpenSpec CONVENTIONS.md。
-> Detector 規則與分流邏輯定義在 proposal §2，本檔只描述外部可觀察行為。
+> BDD three-part description (precondition / action / expected result), per OpenSpec CONVENTIONS.md.
+> The detector rules and routing logic are defined in proposal §2; this file only describes externally observable behavior.
 
 ---
 
-## 場景 1：偵測到 WP Application Password 格式 → 擋下
+## Scenario 1: WP Application Password format detected → blocked
 
-**GIVEN（前提）**
+**GIVEN (precondition)**
 
-- API server 已部署 v1.19.1
-- 已登入的使用者帳號
+- The API server has deployed v1.19.1
+- A logged-in user account
 
-**WHEN（動作）**
+**WHEN (action)**
 
 ```http
 POST /api/memory
@@ -20,16 +20,16 @@ Content-Type: application/json
 
 {
   "type": "reference",
-  "title": "好好玩 FUNIT WP password",
+  "title": "Example Client WP password",
   "content": "iXEN ops5 pJcy 8PJI lVFM heaH",
   "description": "WordPress Application Password"
 }
 ```
 
-**THEN（預期結果）**
+**THEN (expected result)**
 
-- 回應 **400 Bad Request**
-- body：
+- Response **400 Bad Request**
+- body:
   ```json
   {
     "error": "偵測到此內容看起來是敏感資料（密碼／token／API key）",
@@ -38,16 +38,16 @@ Content-Type: application/json
     "detected_by": "regex:wp_application_password"
   }
   ```
-- `memories` 表**沒**寫入新列
-- 不寫 history 紀錄
+- The `memories` table writes **no** new row
+- No history record written
 
 ---
 
-## 場景 2：偵測到 JWT 格式 → 擋下
+## Scenario 2: JWT format detected → blocked
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
+- The API server has deployed v1.19.1
 
 **WHEN**
 
@@ -63,15 +63,15 @@ POST /api/memory
 **THEN**
 
 - 400 + `detected_by: "regex:jwt"`
-- 同場景 1 結構
+- Same structure as scenario 1
 
 ---
 
-## 場景 3：keyword 命中（title/description 含 "password"）→ 擋下
+## Scenario 3: keyword hit (title/description contains "password") → blocked
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
+- The API server has deployed v1.19.1
 
 **WHEN**
 
@@ -87,15 +87,15 @@ POST /api/memory
 **THEN**
 
 - 400 + `detected_by: "keyword:password"`
-- 即使 content 不符任何 regex、只要 title/description 含敏感關鍵字仍擋
+- Even if content matches no regex, it's still blocked as long as title/description contains a sensitive keyword
 
 ---
 
-## 場景 4：長度啟發式（length ≥ 20 純英數字、無中文）→ 擋下
+## Scenario 4: length heuristic (length ≥ 20 pure alphanumeric, no Chinese) → blocked
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
+- The API server has deployed v1.19.1
 
 **WHEN**
 
@@ -114,11 +114,11 @@ POST /api/memory
 
 ---
 
-## 場景 5：正常記憶（含中文）→ 不擋
+## Scenario 5: normal memory (contains Chinese) → not blocked
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
+- The API server has deployed v1.19.1
 
 **WHEN**
 
@@ -126,26 +126,26 @@ POST /api/memory
 POST /api/memory
 {
   "type": "project",
-  "title": "好好玩 FUNIT 接手後緊急事項",
+  "title": "Example Client 接手後緊急事項",
   "content": "2026-05-07 接手後第一週需要處理的緊急事項清單：1. WP backup ..."
 }
 ```
 
 **THEN**
 
-- 回應 **201 Created**
-- detector 因為 content 含 CJK 字元、不進入長度啟發式判定
-- 也沒有命中任何 regex 或 keyword
-- 正常寫入 `memories` + `memory_history`
+- Response **201 Created**
+- Because content contains CJK characters, the detector doesn't enter the length-heuristic check
+- It also matches no regex or keyword
+- Normally written to `memories` + `memory_history`
 
 ---
 
-## 場景 6：bypass flag → 允許寫入但記 audit
+## Scenario 6: bypass flag → allow write but record audit
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
-- 使用者明確要記「我把 key 存在 vault 了」這種指向性記憶
+- The API server has deployed v1.19.1
+- The user explicitly wants to record a pointer-type memory like "I stored the key in the vault"
 
 **WHEN**
 
@@ -153,30 +153,30 @@ POST /api/memory
 POST /api/memory
 {
   "type": "reference",
-  "title": "FUNIT WP password 存放位置",
-  "content": "存在 1Password 的 'FUNIT-prod' vault、entry name='wp-vin'",
+  "title": "ExampleClient WP password 存放位置",
+  "content": "存在 1Password 的 'example-prod' vault、entry name='wp-user'",
   "metadata": { "allow_secret_like": true }
 }
 ```
 
 **THEN**
 
-- 回應 201
-- `memories.metadata.lint_warnings` 含一筆：
+- Response 201
+- `memories.metadata.lint_warnings` contains one entry:
   ```json
   { "type": "bypass_secret_detect", "ts": "<ISO timestamp>" }
   ```
-- 即使 content 命中 keyword "password"（標題出現）也照寫
-- admin UI 列表頁顯示警告徽章「⚠️ 跳過敏感偵測」
+- Even if content hits the keyword "password" (appearing in the title), it's still written
+- The admin UI list page shows a warning badge "⚠️ 跳過敏感偵測"
 
 ---
 
-## 場景 7：PUT（update）也走相同 detector
+## Scenario 7: PUT (update) also goes through the same detector
 
 **GIVEN**
 
-- 既有記憶 id=200、type=`reference`、content=「研究 OAuth 流程」
-- API server 已部署 v1.19.1
+- An existing memory id=200, type=`reference`, content="研究 OAuth 流程"
+- The API server has deployed v1.19.1
 
 **WHEN**
 
@@ -190,36 +190,36 @@ PUT /api/memory/200
 
 **THEN**
 
-- 回應 **400**、`detected_by: "regex:openai_api_key"`
-- 既有 id=200 的 content **沒被改動**（仍為「研究 OAuth 流程」）
-- 不寫 history（因為 update 失敗）
+- Response **400**, `detected_by: "regex:openai_api_key"`
+- The existing id=200 content is **not changed** (still "研究 OAuth 流程")
+- No history written (because the update failed)
 
 ---
 
-## 場景 8：MCP 工具描述含警語
+## Scenario 8: MCP tool description contains a warning
 
 **GIVEN**
 
-- AI 透過 OwnMind MCP 連線、查可用工具
+- The AI connects via OwnMind MCP and queries available tools
 
 **WHEN**
 
-- AI 呼叫 `tools/list`
+- The AI calls `tools/list`
 
 **THEN**
 
-- `ownmind_save` 的 description 開頭含「⚠️ 含密碼／token／API key 請改用 `ownmind_set_secret`，不要寫進記憶」
-- `ownmind_update` 同上
-- `ownmind_set_secret` 的 description 不變
-- AI 在挑工具前就讀到警語、優先選對工具
+- The description of `ownmind_save` starts with "⚠️ 含密碼／token／API key 請改用 `ownmind_set_secret`，不要寫進記憶"
+- `ownmind_update` same
+- The description of `ownmind_set_secret` is unchanged
+- The AI reads the warning before selecting a tool and prefers the right one
 
 ---
 
-## 場景 9：500 → 4xx 改造（validation error）
+## Scenario 9: 500 → 4xx rework (validation error)
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
+- The API server has deployed v1.19.1
 
 **WHEN**
 
@@ -230,17 +230,17 @@ PUT /api/memory/123
 
 **THEN**
 
-- 回應 **400**（之前是「驗證早返回」、本來就是 400；本場景驗證 catch-all 改造**不退化**）
-- 既有的 tier validation 400 行為維持
+- Response **400** (it was a "validation early-return", already 400; this scenario verifies the catch-all rework **does not regress**)
+- The existing tier validation 400 behavior is preserved
 
 ---
 
-## 場景 10：500 → 4xx 改造（內部 DB error）
+## Scenario 10: 500 → 4xx rework (internal DB error)
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
-- DB 暫時掛掉、PUT 觸發 query 拋 `DatabaseConnectionError`
+- The API server has deployed v1.19.1
+- The DB is temporarily down, the PUT triggers a query that throws `DatabaseConnectionError`
 
 **WHEN**
 
@@ -251,18 +251,18 @@ PUT /api/memory/123
 
 **THEN**
 
-- 回應 **500** + body `{ "error": "更新記憶失敗" }`
-- server log 寫 error.stack（便於除錯）
-- **不退化**到把 DB 錯誤誤判為 400
+- Response **500** + body `{ "error": "更新記憶失敗" }`
+- The server log writes error.stack (for debugging)
+- **Does not regress** to misclassifying the DB error as 400
 
 ---
 
-## 場景 11：500 → 4xx 改造（auth error）
+## Scenario 11: 500 → 4xx rework (auth error)
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
-- 使用者試圖修改不屬於自己的記憶 id=999
+- The API server has deployed v1.19.1
+- The user tries to modify memory id=999 that doesn't belong to them
 
 **WHEN**
 
@@ -273,58 +273,58 @@ PUT /api/memory/999
 
 **THEN**
 
-- 回應 **404 「找不到該記憶」**（既有行為、本提案不動）
-- 或 403（若是 team_standard 非 admin）（既有行為、本提案不動）
-- 本提案的 catch-all 改造不影響這兩個既有的 early-return 路徑
+- Response **404 "找不到該記憶"** (existing behavior, this proposal doesn't change it)
+- Or 403 (if team_standard, non-admin) (existing behavior, this proposal doesn't change it)
+- This proposal's catch-all rework doesn't affect these two existing early-return paths
 
 ---
 
-## 場景 12：新鐵律生效
+## Scenario 12: new iron rule takes effect
 
 **GIVEN**
 
-- v1.19.1 已部署
-- 新鐵律「敏感資料一律走 ownmind_set_secret、不寫進 memory／對話／commit」已透過 admin UI 建立、`tier='critical'`
+- v1.19.1 is deployed
+- The new iron rule "敏感資料一律走 ownmind_set_secret、不寫進 memory／對話／commit" has been created via the admin UI, `tier='critical'`
 
 **WHEN**
 
-- AI 在新 session 啟動、SessionStart hook 跑 `ownmind_init`
+- The AI starts a new session, the SessionStart hook runs `ownmind_init`
 
 **THEN**
 
-- 鐵律出現在 Critical 分組底下
-- 含明確觸發場景描述、IR-002 的延伸關係
-- AI 後續呼叫 `ownmind_save`/`update` 試圖寫密碼時、被 server 擋下、同時鐵律提醒它走 `ownmind_set_secret`
+- The iron rule appears under the Critical group
+- Contains a clear trigger-scenario description and the extension relationship to IR-002
+- When the AI later calls `ownmind_save`/`update` trying to write a password, it's blocked by the server, and the iron rule reminds it to use `ownmind_set_secret`
 
 ---
 
-## 場景 13：偵測規則對 secret API 本身不生效
+## Scenario 13: the detection rule does not apply to the secret API itself
 
 **GIVEN**
 
-- API server 已部署 v1.19.1
+- The API server has deployed v1.19.1
 
 **WHEN**
 
 ```http
 POST /api/secret
 {
-  "key": "gofunit_wp_app_password",
+  "key": "exampleclient_wp_app_password",
   "value": "iXEN ops5 pJcy 8PJI lVFM heaH"
 }
 ```
 
 **THEN**
 
-- 回應 200
-- secret 正常存入
-- detector **不適用** `/api/secret` 路由（這就是「正確的工具」、本來就是用來存敏感資料的）
+- Response 200
+- The secret is stored normally
+- The detector **does not apply** to the `/api/secret` route (this is "the correct tool", designed for storing sensitive data)
 
 ---
 
-## 非場景（明確不做）
+## Non-scenarios (explicitly not done)
 
-- ❌ **AI 回話偵測**：reply-lint 掃 AI 回應含密碼——v1.19.2 另開
-- ❌ **既有記憶 DB scan**：找出已經寫進去的密碼並 redact——v1.19.2 處理
-- ❌ **加密儲存**：secret API 仍走既有儲存路徑（明文+RLS）——加密是另一個專案
-- ❌ **Detector 100% 完美**：本提案接受 false negative；目標是「本次事件不重演 + 大多數常見格式擋下」
+- ❌ **AI reply detection**: reply-lint scanning AI replies for passwords — separate scope in v1.19.2
+- ❌ **Existing memory DB scan**: finding passwords already written in and redacting them — handled in v1.19.2
+- ❌ **Encrypted storage**: the secret API still uses the existing storage path (plaintext + RLS) — encryption is a separate project
+- ❌ **Detector 100% perfection**: this proposal accepts false negatives; the goal is "this incident doesn't recur + most common formats are blocked"

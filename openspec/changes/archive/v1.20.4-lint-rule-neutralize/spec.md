@@ -1,58 +1,58 @@
-# v1.20.4 — 規格：Lint 規則中性化
+# v1.20.4 — Spec: Lint rule neutralization
 
-## Scenario 1：lintReply 違反清單用中性事件常數
+## Scenario 1: lintReply violation list uses neutral event constants
 
-**GIVEN** content 含中英混雜超過 15%
-**WHEN** lintReply(content) 被呼叫
-**THEN** 違反清單第一筆 `rule` 欄位 = 字串 `'lint_language_mixed_ratio'`
-**AND NOT** 含字串 `'IR-037'`
+**GIVEN** content with a Chinese-English mix over 15%
+**WHEN** lintReply(content) is called
+**THEN** the first entry's `rule` field in the violation list = the string `'lint_language_mixed_ratio'`
+**AND NOT** contains the string `'IR-037'`
 
-## Scenario 2：lintReply 違反清單行話事件
+## Scenario 2: lintReply violation list jargon event
 
-**GIVEN** content 含未解釋的行話
-**WHEN** lintReply(content) 被呼叫
-**THEN** 違反清單該筆 `rule` 欄位 = 字串 `'lint_jargon_explanation_required'`
-**AND NOT** 含字串 `'IR-036'`
+**GIVEN** content with unexplained jargon
+**WHEN** lintReply(content) is called
+**THEN** that entry's `rule` field in the violation list = the string `'lint_jargon_explanation_required'`
+**AND NOT** contains the string `'IR-036'`
 
-## Scenario 3：訊息渲染不含個人鐵律編號
+## Scenario 3: message rendering contains no personal iron-rule number
 
-**GIVEN** lint 鉤子偵測違反、要 block
-**WHEN** formatBlockReason(violations) 被呼叫
-**THEN** 回的字串不含「IR-036」也不含「IR-037」
-**AND** 含中文事件描述（例如「行話品質」/「中英混雜」）
+**GIVEN** the lint hook detects a violation and is about to block
+**WHEN** formatBlockReason(violations) is called
+**THEN** the returned string contains neither "IR-036" nor "IR-037"
+**AND** contains a Chinese event description (e.g. 「行話品質」/「中英混雜」)
 
-## Scenario 4：合規記錄透過規則對應到個人編號
+## Scenario 4: compliance record maps to the personal number via the rule
 
-**GIVEN** 規則快取有 Vin 的 IR-036、metadata.triggered_by_event = 'lint_jargon_explanation_required'
-**AND** 違反清單有 `{ rule: 'lint_jargon_explanation_required' }`
-**WHEN** buildComplianceEvents(violations, rules, getTier) 被呼叫
-**THEN** 回的事件 details.rule_code = 'IR-036'
-**AND** details.tier 從規則快取查得
+**GIVEN** the rule cache has Vin's IR-036, metadata.triggered_by_event = 'lint_jargon_explanation_required'
+**AND** the violation list has `{ rule: 'lint_jargon_explanation_required' }`
+**WHEN** buildComplianceEvents(violations, rules, getTier) is called
+**THEN** the returned event details.rule_code = 'IR-036'
+**AND** details.tier is looked up from the rule cache
 
-## Scenario 5：規則快取無對應 → fallback 留空
+## Scenario 5: no match in the rule cache → fallback leaves empty
 
-**GIVEN** 規則快取沒任何規則有 triggered_by_event 欄位
-**AND** 違反清單有 `{ rule: 'lint_jargon_explanation_required' }`
-**WHEN** buildComplianceEvents 被呼叫
-**THEN** 回的事件 details.rule_code = '' （空字串）
-**AND** details.message 含中文事件描述
-**AND** 不 crash
+**GIVEN** no rule in the rule cache has a triggered_by_event field
+**AND** the violation list has `{ rule: 'lint_jargon_explanation_required' }`
+**WHEN** buildComplianceEvents is called
+**THEN** the returned event details.rule_code = '' (empty string)
+**AND** details.message contains the Chinese event description
+**AND** does not crash
 
-## Scenario 6：bug-fingerprints 描述不含個人編號
+## Scenario 6: bug-fingerprints description contains no personal number
 
-**GIVEN** 讀 `shared/bug-fingerprints.js` 的 `lint_context_memory_missing` 註冊項
-**THEN** description 不含「IR-036」字串
-**AND** 仍清楚描述問題（用中性名「行話判斷」）
+**GIVEN** reading the `lint_context_memory_missing` registration entry in `shared/bug-fingerprints.js`
+**THEN** the description does not contain the "IR-036" string
+**AND** still clearly describes the problem (using the neutral name 「行話判斷」)
 
-## Scenario 7：lint-event-logger 寫入用事件常數
+## Scenario 7: lint-event-logger writes using event constants
 
-**GIVEN** 違反清單 rule 用常數 `'lint_jargon_explanation_required'`
-**WHEN** writeLintEvent({ ruleCodes: ['lint_jargon_explanation_required'], ... }) 被呼叫
-**THEN** jsonl 寫入的 rule_codes 欄位 = 該常數
-**AND** parser / 統計工具能識別
+**GIVEN** the violation list rule uses the constant `'lint_jargon_explanation_required'`
+**WHEN** writeLintEvent({ ruleCodes: ['lint_jargon_explanation_required'], ... }) is called
+**THEN** the rule_codes field written to jsonl = that constant
+**AND** the parser / stats tools can recognize it
 
-## 非功能性需求
+## Non-functional requirements
 
-- **零外部依賴**：`lint-event-types.js` 純常數模組、無 IO
-- **向後相容測試**：所有既有測試經改動後 npm test 全綠
-- **本機鉤子立即生效**：cp 5 個檔案到 ~/.ownmind/ 即生效（hook 是 spawn 新進程）
+- **Zero external dependencies**: `lint-event-types.js` is a pure constant module, no IO
+- **Backward-compatible tests**: after all existing tests are updated, npm test is all green
+- **Local hook takes effect immediately**: cp 5 files to ~/.ownmind/ and it takes effect (the hook spawns a new process)

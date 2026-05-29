@@ -1,51 +1,51 @@
-# v1.19.9 — 忘記密碼救援任務清單
+# v1.19.9 — Forgot-password recovery task list
 
-## v1.19.9 範圍
+## v1.19.9 scope
 
-### 方案 3：後台他人重設密碼
-- [ ] 新增 `POST /api/admin/users/:id/reset-password`（src/routes/admin.js）
-- [ ] 寫 helper 產 12 字隨機臨時密碼（避開混淆字）
-- [ ] 寫 tests/admin-reset-password.test.js（場景 1-7、約 10 case）
+### Option 3: admin reset of others' passwords
+- [ ] Add `POST /api/admin/users/:id/reset-password` (src/routes/admin.js)
+- [ ] Write a helper to generate a 12-char random temporary password (avoiding confusable characters)
+- [ ] Write tests/admin-reset-password.test.js (scenarios 1-7, ~10 cases)
 
-### 方案 2：CLI 救援腳本
-- [ ] 寫 `scripts/reset-admin-password.js`
-- [ ] 列出 super_admin / 互動式選擇 / 雙重確認 / 寫 audit log
-- [ ] 寫 tests/cli-reset-script.test.js（用 mock db、模擬 stdin、場景 9-12）
+### Option 2: CLI recovery script
+- [ ] Write `scripts/reset-admin-password.js`
+- [ ] List super_admins / interactive selection / double confirmation / write audit log
+- [ ] Write tests/cli-reset-script.test.js (with mock db, simulated stdin, scenarios 9-12)
 
-### 方案 1：UI 強制引導
-- [ ] 改 src/public/setup.html 成功頁加警告框（場景 13）
-- [ ] 改 src/public/index.html 加單 admin banner（場景 14、15）
-- [ ] 提供 GET /api/admin/health 或在登入回應加 single_admin_warning 旗標
+### Option 1: UI mandatory guidance
+- [ ] Change src/public/setup.html, add a warning box to the success page (scenario 13)
+- [ ] Change src/public/index.html, add a single-admin banner (scenarios 14, 15)
+- [ ] Provide GET /api/admin/health or add a single_admin_warning flag to the login response
 
-### 文件 + 同步
+### Docs + sync
 - [ ] package.json 1.19.8 → 1.19.9
-- [ ] CHANGELOG 加 v1.19.9 段
-- [ ] FILELIST 加新檔
-- [ ] 三語系 README FAQ「忘記密碼怎麼辦」新加一條（位置在「首次安裝」段下方）
-- [ ] npm test 全套綠
-- [ ] 走 superpowers:requesting-code-review
+- [ ] CHANGELOG add v1.19.9 section
+- [ ] FILELIST add new files
+- [ ] Add a "what to do if you forget your password" FAQ entry to the three-language README (placed below the "first install" section)
+- [ ] npm test full suite green
+- [ ] Run superpowers:requesting-code-review
 
-## 風險檢查點
+## Risk checkpoints
 
-- [ ] 跑端到端：建 A、B 兩個 admin、A 重設 B 密碼、B 用臨時密碼登入並強制改
-- [ ] 跑端到端：CLI 腳本對單一 super_admin 重設、走 SETUP_TOKEN 重新設密碼
-- [ ] admin 不能重設其他 admin（403）
-- [ ] reset-password endpoint 不能改自己（400）
-- [ ] audit log 三個動作（reset_password_by_admin / cli_reset_password / setup_password）都正確
-- [ ] 既有 /admin/setup + SETUP_TOKEN 路徑不破壞
-- [ ] CLI 腳本 DB 連不上時不會誤改任何 user
+- [ ] Run end-to-end: create two admins A and B, A resets B's password, B logs in with the temporary password and is forced to change it
+- [ ] Run end-to-end: the CLI script resets a single super_admin, goes through SETUP_TOKEN to set a new password
+- [ ] admin cannot reset other admins (403)
+- [ ] reset-password endpoint cannot change self (400)
+- [ ] The audit log writes all three actions correctly (reset_password_by_admin / cli_reset_password / setup_password)
+- [ ] The existing /admin/setup + SETUP_TOKEN path isn't broken
+- [ ] When the CLI script can't connect to the DB it doesn't mistakenly change any user
 
-## 非任務（明確不做）
+## Non-tasks (explicitly not done)
 
-- ❌ Email 重設流程（依賴 SMTP、留 v1.20+）
-- ❌ Recovery code（一次性救援碼）
+- ❌ Email reset flow (depends on SMTP, left for v1.20+)
+- ❌ Recovery code (one-time recovery code)
 - ❌ 2FA / TOTP
-- ❌ 自助式「忘記密碼」網頁
+- ❌ Self-service "forgot password" page
 
-## 完成定義
+## Definition of done
 
-1. 任一 admin 忘記密碼、5 分鐘內可被另一 admin 救回（場景 1-2）
-2. 唯一 admin 忘記密碼、可透過 CLI 腳本 + SETUP_TOKEN 救回
-3. 單 admin 狀態下、後台明顯提示建立第二位
-4. `npm test` 1622+ 全綠（含新加測試）
-5. 通過 code review
+1. Any admin who forgets their password can be recovered by another admin within 5 minutes (scenarios 1-2)
+2. The sole admin forgetting their password can be recovered via the CLI script + SETUP_TOKEN
+3. In the single-admin state, the admin clearly prompts to create a second one
+4. `npm test` 1622+ all green (including the newly added tests)
+5. Passes code review

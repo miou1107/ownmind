@@ -143,8 +143,8 @@ describe('detectSecretLike — keyword rules', () => {
 
 describe('v1.19.13 — value-side keyword requires assignment style (S1)', () => {
   // S1.1 real-world regression
-  it('S1.1: dotted identifier anydesk.bot_kkvin.unattended_password → allow', () => {
-    const r = detectSecretLike('anydesk.bot_kkvin.unattended_password');
+  it('S1.1: dotted identifier anydesk.bot_example.unattended_password → allow', () => {
+    const r = detectSecretLike('anydesk.bot_example.unattended_password');
     assert.equal(r.detected, false, `should not block, actual rule=${r.rule}`);
   });
 
@@ -213,8 +213,8 @@ describe('v1.19.13 — value-side keyword requires assignment style (S1)', () =>
   it('extra: reference doc containing multiple secret names (no assignment) → all allowed', () => {
     const refDoc =
       '相關 OwnMind secret：\n' +
-      '- ssh.bot.kkvin.com.vin.password\n' +
-      '- anydesk.bot_kkvin.unattended_password\n' +
+      '- ssh.bot.example.com.vin.password\n' +
+      '- anydesk.bot_example.unattended_password\n' +
       '- hermes.telegram.bot_token';
     const r = detectSecretLike(refDoc);
     assert.equal(r.detected, false, `reference doc should not block, actual rule=${r.rule}`);
@@ -321,8 +321,8 @@ describe('v1.19.13 review I-2: dotted identifier requires ≥ 3 segments', () =>
     assert.equal(r.rule, 'heuristic:long_alnum');
   });
 
-  it('3-segment identifier path anydesk.bot_kkvin.unattended_password → allow (unchanged)', () => {
-    const r = detectSecretLike('anydesk.bot_kkvin.unattended_password');
+  it('3-segment identifier path anydesk.bot_example.unattended_password → allow (unchanged)', () => {
+    const r = detectSecretLike('anydesk.bot_example.unattended_password');
     assert.equal(r.detected, false);
   });
 
@@ -374,7 +374,7 @@ describe('detectSecretLike — length heuristic', () => {
   it('contains Chinese → no hit (scenario 5)', () => {
     const result = detectSecretLike(
       '2026-05-07 接手後第一週需要處理的緊急事項清單：1. WP backup ...',
-      { title: '好好玩 FUNIT 接手後緊急事項' }
+      { title: 'Example Client 接手後緊急事項' }
     );
     assert.equal(result.detected, false);
   });

@@ -1,62 +1,62 @@
-# v1.19.3 — Reply-lint 漸進式 block + 白名單擴充 + threshold 分情境
+# v1.19.3 — Reply-lint progressive block + whitelist expansion + context-aware threshold
 
 - **Author**: Vin
 - **Date**: 2026-05-22
-- **Status**: 動工中
-- **Worktree**: 無（main、改動可控）
+- **Status**: In progress
+- **Worktree**: None (main, change is controllable)
 - **Branch**: `main`
 
 ---
 
-## 0. 一句話總結
+## 0. One-line summary
 
-reply-lint hook（IR-037 中英混雜 / IR-036 行話沒解釋）從「只警告」升級成「漸進式卡控」：前 2 次警告、第 3 次預告、第 4 次 block + 要求 Claude 重寫。同時根據 30 天 audit 數據擴白名單到 200+ 詞、threshold 分情境（純對話 15%、含 code 25%、純 code review 豁免）、加 `OWNMIND_REPLY_LINT_MODE` opt-in。對應 IR-027「邏輯才有效」。
+The reply-lint hook (IR-037 Chinese-English mixing / IR-036 jargon without explanation) is upgraded from "warn only" to "progressive enforcement": the first 2 times warn, the 3rd previews, the 4th blocks + asks Claude to rewrite. At the same time, based on 30 days of audit data the whitelist is expanded to 200+ words, the threshold is made context-aware (pure conversation 15%, with code 25%, pure code review exempt), and an `OWNMIND_REPLY_LINT_MODE` opt-in is added. Maps to IR-027 "only logic works".
 
-> 白話：以前提醒沒用、Claude 看不到也不會改。現在違規累積到一定次數會被擋下、Claude 收到指令重寫。但先給緩衝（避免第一次誤判就毀對話）+ 預設 warn（要 user 主動 opt-in 才開 block）。
-
----
-
-## 1. 設計緣由
-
-### 1.1 真實事件（持續性）
-
-OwnMind 在 SessionStart hook 帶 5 條「強制注意」、其中 3 條（IR-037 100%、IR-036 100%、解說偏好 100%）對當前 AI 違反率 100%——警告對 AI 完全無效、user 看到警告也只能下次注意。
-
-### 1.2 為什麼這是 IR-027 的典型失效
-
-IR-027「邏輯才有效」的同款情境：reply-lint 偵測到了、寫了 banner、AI 一無所知（hook 故意不寫 stdout 避免被 AI 通道吃）。產生了「規範了卻沒落地」的純擺設。
-
-要破這個局：把 banner 從「事後通知 user」升級成「事前卡控 + 餵 Claude 重寫指令」。
-
-### 1.3 為什麼是 v1.19.3 + 漸進式 + opt-in（不是直接 block 預設）
-
-**Codex 對抗審查發現 3 大破口、修正後的方案**：
-
-1. **誤判率高**：30 天 audit 顯示 Top 30 違規詞 80% 是「專案名 / 大公司名 / 標準技術詞」而非真正行話。直接上 block 會誤殺正常對話
-2. **stop_hook_active 防呆不夠**：原本以為「Claude 重寫又違規就被防呆放行」、實際是「stop_hook_active 只防同一個 Stop 事件內遞迴、不防 Claude 重寫後又違規」
-3. **跨工具相容性**：Stop hook 只在 Claude Code 跑、Codex / Cursor / Antigravity 都不會觸發。Block 模式會給「全 AI 都卡控」的錯覺、實際只擋 1 家
-
-**Codex 實證 Claude Code Stop hook spec 後**：
-- 確認 `{decision:'block', reason}` JSON 寫 stdout 是標準作法
-- 確認 Claude Code 內建 **8 次連續 block 上限**自動防無限迴圈
-- 確認 reason 被當「下一個 prompt」餵 Claude→ reason 要寫**指令型**（「請重寫」）而非**報告型**（「你違反了」）
+> Plain language: previously reminders did nothing, Claude couldn't see them and wouldn't change. Now once violations accumulate to a certain count it gets blocked, and Claude receives an instruction to rewrite. But there's a buffer first (to avoid wrecking the conversation on the first false positive) + warn by default (the user has to opt in to turn on block).
 
 ---
 
-## 2. 設計方案
+## 1. Design rationale
 
-### 2.1 漸進式 block（mode=block 時的累積行為）
+### 1.1 Real incident (ongoing)
 
-session 內維護違規計數、每次違規加 1：
+OwnMind carries 5 "must-heed" items in the SessionStart hook, of which 3 (IR-037 100%, IR-036 100%, explanation preference 100%) have a 100% violation rate against the current AI — warnings are completely useless against the AI, and the user seeing the warning can only do better next time.
 
-| 計數 | 行為 |
+### 1.2 Why this is a classic IR-027 failure
+
+The same situation as IR-027 "only logic works": reply-lint detected it, wrote a banner, the AI knows nothing (the hook deliberately doesn't write stdout to avoid being consumed by the AI channel). It produced something that "was regulated but never landed", pure decoration.
+
+To break this: upgrade the banner from "notify the user after the fact" to "enforce up front + feed Claude a rewrite instruction".
+
+### 1.3 Why v1.19.3 + progressive + opt-in (not block-by-default directly)
+
+**Three big holes found by Codex adversarial review, the corrected plan**:
+
+1. **High false-positive rate**: the 30-day audit shows 80% of the Top 30 violation words are "project names / big-company names / standard technical terms" rather than real jargon. Going straight to block would kill normal conversations
+2. **stop_hook_active safeguard insufficient**: we originally thought "if Claude rewrites and violates again the safeguard lets it through", but in fact "stop_hook_active only prevents recursion within the same Stop event, not Claude violating again after a rewrite"
+3. **Cross-tool compatibility**: the Stop hook only runs in Claude Code, Codex / Cursor / Antigravity won't trigger it. Block mode gives the illusion of "all AIs enforced" while actually only blocking 1 vendor
+
+**After Codex verified the Claude Code Stop hook spec**:
+- Confirmed that writing `{decision:'block', reason}` JSON to stdout is the standard approach
+- Confirmed Claude Code has a built-in **limit of 8 consecutive blocks** that automatically prevents infinite loops
+- Confirmed the reason is fed to Claude as "the next prompt" → the reason should be written as an **instruction** ("please rewrite") rather than a **report** ("you violated")
+
+---
+
+## 2. Design
+
+### 2.1 Progressive block (accumulation behavior when mode=block)
+
+Maintain a violation count within the session, +1 on each violation:
+
+| Count | Behavior |
 |---|---|
-| 1 | 寫 tty banner、寫 compliance event、**不 block**（給第一次誤判緩衝）|
-| 2 | 寫 tty banner、寫 compliance event、**不 block** |
-| 3 | 寫 tty banner（含「下次違規會 block」預告）、寫 compliance event、**不 block** |
-| 4+ | 寫 tty banner、寫 compliance event、**輸出 block JSON 到 stdout**、Claude 收到重寫指令 |
+| 1 | Write tty banner, write compliance event, **don't block** (buffer for the first false positive) |
+| 2 | Write tty banner, write compliance event, **don't block** |
+| 3 | Write tty banner (with a "next violation will block" preview), write compliance event, **don't block** |
+| 4+ | Write tty banner, write compliance event, **output block JSON to stdout**, Claude receives the rewrite instruction |
 
-計數存在 `~/.ownmind/logs/reply-lint-session-counter.json`：
+The count is stored in `~/.ownmind/logs/reply-lint-session-counter.json`:
 ```json
 {
   "<session_id>": {
@@ -66,27 +66,27 @@ session 內維護違規計數、每次違規加 1：
   }
 }
 ```
-- session_id 從 Stop hook stdin 取得
-- 30 天前的 session 自動清掉（runner 自掃）
+- session_id is obtained from the Stop hook stdin
+- Sessions older than 30 days are auto-cleaned (the runner self-cleans)
 
-### 2.2 三種 MODE（OWNMIND_REPLY_LINT_MODE 環境變數）
+### 2.2 Three MODEs (OWNMIND_REPLY_LINT_MODE environment variable)
 
-| MODE | 行為 |
+| MODE | Behavior |
 |---|---|
-| `warn`（預設） | 完全照舊：只寫 tty banner + compliance event、永遠不 block |
-| `block` | 漸進式：計數 < 4 同 warn、計數 ≥ 4 寫 block JSON |
-| `disable` | 完全跳過 lint（=OWNMIND_REPLY_LINT_DISABLE=1 的等效） |
+| `warn` (default) | Exactly as before: only write tty banner + compliance event, never block |
+| `block` | Progressive: count < 4 same as warn, count ≥ 4 write block JSON |
+| `disable` | Skip lint entirely (equivalent to OWNMIND_REPLY_LINT_DISABLE=1) |
 
-不在白名單的值預設當 `warn` 處理（fail-open）。
+Values not in the whitelist are treated as `warn` by default (fail-open).
 
-### 2.3 Block reason 寫成指令型
+### 2.3 Block reason written as an instruction
 
-Codex 警告：reason 是「下一個 prompt」、不是「修正指令」。所以：
+Codex warning: the reason is "the next prompt", not "a correction instruction". So:
 
-❌ 不能寫：「你違反 IR-037、比例 32%、找到 5 個英文詞」
-✅ 要寫：「請重寫剛才那則回應、用白話中文、把英文技術詞用括號附中文解釋」
+❌ Don't write: "you violated IR-037, ratio 32%, found 5 English words"
+✅ Do write: "please rewrite that response, in plain Chinese, with English technical terms annotated in parentheses with a Chinese explanation"
 
-實際格式：
+Actual format (verbatim product string fed to Claude — preserved in Chinese):
 ```
 請重寫你剛才的回應、改善以下品質問題（不改變原意、只改語言風格）：
 
@@ -101,25 +101,25 @@ Codex 警告：reason 是「下一個 prompt」、不是「修正指令」。所
 如果你判斷上述詞已經有相關上下文、或屬於變數名 / 函式名等程式碼引用、可以保留不改。重寫時請回到原本的對話脈絡、不要重新確認問題、直接給新答案。
 ```
 
-### 2.4 白名單擴充（基於 30 天 audit）
+### 2.4 Whitelist expansion (based on the 30-day audit)
 
-從 80 詞擴到 ~200 詞、分類：
+Expand from 80 words to ~200, categorized:
 
-**新增類別 A：大公司 / 大平台名（不是行話）**
-Google, Meta, OpenAI, Chrome, OAuth, YouTube, Podcast, Imagen, Llama, Perplexity, Remotion, Evernote, Sheets, GitHub Actions, Jenkins...（35+ 詞）
+**New category A: big-company / big-platform names (not jargon)**
+Google, Meta, OpenAI, Chrome, OAuth, YouTube, Podcast, Imagen, Llama, Perplexity, Remotion, Evernote, Sheets, GitHub Actions, Jenkins... (35+ words)
 
-**新增類別 B：Vin 個人專案名**
-adog, fapa, fontrip, ring, ownmind, vincent...（10+ 詞）
+**New category B: Vin's personal project names**
+Google, Acme, ownmind, ... (10+ words)
 
-**新增類別 C：Git / 開發流程詞**
-main, origin, branch, worktree, commits, rebase, merge, conflict, stash, cherry-pick, hook, Hook, review, reviewer, prod, staging, spec, prompt, tasks, task, tests, pipeline, Pipeline, Stage, stage, chunk, monorepo, redirect, apply, archive, container, fresh, trigger, success, container, render, retry, batch, topic, server, handoff, project, brand, plan, publish, Research, Notes, redirect, payload, handler, router, service, factory, singleton, instance, function, class, interface, schema, array, string, boolean, number, error, exception, timeout...（80+ 詞）
+**New category C: Git / dev-flow words**
+main, origin, branch, worktree, commits, rebase, merge, conflict, stash, cherry-pick, hook, Hook, review, reviewer, prod, staging, spec, prompt, tasks, task, tests, pipeline, Pipeline, Stage, stage, chunk, monorepo, redirect, apply, archive, container, fresh, trigger, success, container, render, retry, batch, topic, server, handoff, project, brand, plan, publish, Research, Notes, redirect, payload, handler, router, service, factory, singleton, instance, function, class, interface, schema, array, string, boolean, number, error, exception, timeout... (80+ words)
 
-**新增類別 D：常見技術概念**
-async, await, callback, promise, middleware, endpoint, dispatcher, websocket, sse, polling, throttle, debounce, cache, queue, lock, mutex...（25+ 詞）
+**New category D: common technical concepts**
+async, await, callback, promise, middleware, endpoint, dispatcher, websocket, sse, polling, throttle, debounce, cache, queue, lock, mutex... (25+ words)
 
-### 2.5 Threshold 分情境
+### 2.5 Context-aware threshold
 
-`checkMixedLanguage(content, options)` 行為：
+`checkMixedLanguage(content, options)` behavior:
 
 ```js
 const hasCodeBlock = /```|`[^`]+`/.test(content);
@@ -127,98 +127,98 @@ const isCodeReview = /code review|code-review/.test(content);
 
 let threshold = 0.15;
 if (isCodeReview) {
-  return { ok: true, ratio: 0, mixedWords: [] }; // 豁免
+  return { ok: true, ratio: 0, mixedWords: [] }; // exempt
 }
 if (hasCodeBlock) {
   threshold = 0.25;
 }
 ```
 
-### 2.6 IR-036 視窗從 50 字擴到 80 字
+### 2.6 IR-036 window expanded from 50 to 80 characters
 
-Codex 指出：中文語境 50 字符約等於 25 中文字、解釋常常在括號外又被切掉。改 80 字符讓緊接的補充能被抓到。
+Codex pointed out: in a Chinese context 50 characters is roughly 25 Chinese characters, and the explanation often gets cut off outside the parentheses. Changing to 80 characters lets the immediately following supplement be caught.
 
-### 2.7 Proper noun 偵測（大寫開頭孤立詞）
+### 2.7 Proper noun detection (capitalized isolated words)
 
-新增規則：詞首大寫（capitalize first letter）且符合英文姓氏 / 公司名常見 pattern 的、視為 proper noun、不算違規：
+New rule: a word with a capitalized first letter that matches the common pattern of English surnames / company names is treated as a proper noun, not a violation:
 
 ```js
 function looksLikeProperNoun(word) {
-  return /^[A-Z][a-z]+$/.test(word);  // 例：Google, Eric, Phoebe
+  return /^[A-Z][a-z]+$/.test(word);  // e.g. Google, Alice, Carol
 }
 ```
 
-注意：全大寫詞（AWS, IDE）已在白名單。
+Note: all-caps words (AWS, IDE) are already in the whitelist.
 
 ---
 
-## 3. 範圍 vs 不範圍
+## 3. In scope vs out of scope
 
-### 3.1 範圍內
+### 3.1 In scope
 
-- ✅ `shared/language-lint.js`：擴白名單到 200+ 詞、threshold 分情境、IR-036 視窗 80 字、proper noun 偵測
-- ✅ `hooks/ownmind-reply-lint.js`：加 `OWNMIND_REPLY_LINT_MODE` env、漸進式計數、session counter 持久化、block JSON 輸出
-- ✅ 新增 `hooks/lib/session-counter.js`：純函式、計數讀寫 + 自掃 30 天前 session
-- ✅ 改測試 + 新增 mode / counter / block 測試
-- ✅ Banner 加「目前計數 / 距 block 還幾次」資訊
-- ✅ 文件三件套同步（IR-008 + IR-026 + IR-032）
-- ✅ 版號 v1.19.3（IR-031）
+- ✅ `shared/language-lint.js`: expand whitelist to 200+ words, context-aware threshold, IR-036 window 80 chars, proper noun detection
+- ✅ `hooks/ownmind-reply-lint.js`: add `OWNMIND_REPLY_LINT_MODE` env, progressive counting, session counter persistence, block JSON output
+- ✅ Add `hooks/lib/session-counter.js`: pure functions, counter read/write + auto-clean sessions older than 30 days
+- ✅ Update tests + add mode / counter / block tests
+- ✅ Banner adds "current count / how many more until block" info
+- ✅ Sync the docs trio (IR-008 + IR-026 + IR-032)
+- ✅ Version number v1.19.3 (IR-031)
 
-### 3.2 不範圍
+### 3.2 Out of scope
 
-- ❌ 跨工具相容（Codex / Cursor 等的 hook 機制不同、留下個版本）
-- ❌ Pre-tool hook 替代方案（架構翻修、本版只動 Stop hook）
-- ❌ session 計數寫進 DB（純檔案夠用、避免依賴 server）
-- ❌ Admin UI 顯示 lint 觸發歷史（已有 activity log、足夠）
+- ❌ Cross-tool compatibility (Codex / Cursor etc. have different hook mechanisms, left for a later version)
+- ❌ Pre-tool hook alternative (architectural overhaul, this version only touches the Stop hook)
+- ❌ Writing the session count into the DB (a plain file is enough, avoids depending on the server)
+- ❌ Admin UI showing lint trigger history (the activity log already exists, sufficient)
 
 ---
 
-## 4. 影響範圍
+## 4. Blast radius
 
-| 檔案 | 改動 |
+| File | Change |
 |------|------|
-| `shared/language-lint.js` | 擴白名單、threshold 分情境、視窗 80、proper noun 偵測 |
-| `hooks/ownmind-reply-lint.js` | MODE env、漸進計數、block JSON、reason 指令型 |
-| `hooks/lib/session-counter.js` | **新檔** — 純函式 session 計數讀寫 + 自掃 |
-| `tests/language-lint.test.js`（如果已存在）/ 新檔 | 白名單、threshold、proper noun 測試 |
-| `tests/reply-lint-hook.test.js` | 14+ 處 status===0 改成 mode-aware；新增 block / counter / no-loop 測試 |
-| `tests/session-counter.test.js` | **新檔** — counter 純函式測試 |
-| README / docs/zh-TW / docs/ja | Reply Lint 段加「漸進式 block + MODE」 |
-| CHANGELOG / FILELIST | v1.19.3 條目 |
+| `shared/language-lint.js` | Expand whitelist, context-aware threshold, window 80, proper noun detection |
+| `hooks/ownmind-reply-lint.js` | MODE env, progressive count, block JSON, instruction-style reason |
+| `hooks/lib/session-counter.js` | **New file** — pure-function session counter read/write + auto-clean |
+| `tests/language-lint.test.js` (if it exists) / new file | Whitelist, threshold, proper noun tests |
+| `tests/reply-lint-hook.test.js` | 14+ status===0 spots changed to mode-aware; add block / counter / no-loop tests |
+| `tests/session-counter.test.js` | **New file** — counter pure-function tests |
+| README / docs/zh-TW / docs/ja | Add "progressive block + MODE" to the Reply Lint section |
+| CHANGELOG / FILELIST | v1.19.3 entry |
 | package.json | v1.19.3 |
 
 ---
 
-## 5. 風險與緩解
+## 5. Risks and mitigations
 
-| 風險 | 機率 | 影響 | 緩解 |
+| Risk | Likelihood | Impact | Mitigation |
 |------|------|------|------|
-| 白名單擴 200 詞、漏抓真正行話 | 中 | 中 | 預設 warn、跑 1 週看 audit 再決定要不要再縮白名單 |
-| Session counter 檔毀損 | 低 | 小 | try/catch 包、毀損視為計數歸零、不影響其他流程 |
-| Claude 重寫品質差 / 死循環 | 低 | 中 | Claude Code 內建 8 次連續 block 上限；reason 指令型寫法降低品質風險 |
-| User opt-in block 後體驗差 | 中 | 中 | 預設 warn、要 user 自己改 env 才開 block、退場成本零 |
-| 跨機器 session counter 不一致 | 中 | 低 | counter 是 per-machine、不需要跨機同步、合理 |
+| Whitelist expanded to 200 words, misses real jargon | Medium | Medium | Warn by default, run for 1 week and check the audit before deciding whether to shrink the whitelist again |
+| Session counter file corrupted | Low | Small | Wrapped in try/catch, corruption is treated as count zero, doesn't affect other flows |
+| Poor Claude rewrite quality / infinite loop | Low | Medium | Claude Code has a built-in limit of 8 consecutive blocks; the instruction-style reason reduces quality risk |
+| Poor experience after a user opts into block | Medium | Medium | Warn by default, the user has to change the env themselves to turn on block, zero exit cost |
+| Session counter inconsistent across machines | Medium | Low | The counter is per-machine, no cross-machine sync needed, reasonable |
 
 ---
 
-## 6. 拍板紀錄
+## 6. Decision record
 
-| # | 議題 | 待拍板選項 | Vin 拍板 |
+| # | Topic | Options to decide | Vin's decision |
 |---|------|-----------|----------|
-| 1 | 漸進式門檻 | A. 2/3/4（建議）/ B. 1/2/3 / C. 3/5/7 | A |
-| 2 | 預設 MODE | A. warn opt-in block（建議）/ B. block 直上 | A |
-| 3 | session counter 存放 | A. ~/.ownmind/logs/json 檔（建議）/ B. SQLite / C. DB | A |
-| 4 | proper noun 偵測 | A. `^[A-Z][a-z]+$` 簡單規則（建議）/ B. 不做 | A |
-| 5 | reason 風格 | A. 指令型（建議）/ B. 報告型 | A |
+| 1 | Progressive thresholds | A. 2/3/4 (recommended) / B. 1/2/3 / C. 3/5/7 | A |
+| 2 | Default MODE | A. warn, opt-in block (recommended) / B. block straight away | A |
+| 3 | Session counter storage | A. ~/.ownmind/logs/json file (recommended) / B. SQLite / C. DB | A |
+| 4 | Proper noun detection | A. `^[A-Z][a-z]+$` simple rule (recommended) / B. don't do it | A |
+| 5 | reason style | A. instruction (recommended) / B. report | A |
 
 ---
 
-## 7. 下一步
+## 7. Next steps
 
-1. ✅ Audit 30 天 log + Codex 對抗審查 + 實證 hook spec（已完成）
-2. ⏳ 寫 `spec.md` + `tasks.md`
-3. ⏳ 走 TDD：先寫測試、跑紅、實作、跑綠
-4. ⏳ Local install + dogfooding 確認不誤殺
-5. ⏳ 文件三件套同步
-6. ⏳ Commit + tag v1.19.3 + push（client-side hook、不用 deploy server）
-7. ⏳ 跑 1 週 warn 模式 audit、確認誤判率降到可接受才考慮翻 block 預設
+1. ✅ Audit 30 days of log + Codex adversarial review + verify the hook spec (done)
+2. ⏳ Write `spec.md` + `tasks.md`
+3. ⏳ Follow TDD: write test first, run red, implement, run green
+4. ⏳ Local install + dogfooding to confirm no false kills
+5. ⏳ Sync the docs trio
+6. ⏳ Commit + tag v1.19.3 + push (client-side hook, no server deploy needed)
+7. ⏳ Run 1 week of warn mode audit, confirm the false-positive rate has dropped to acceptable before considering flipping block to default

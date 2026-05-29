@@ -1,52 +1,52 @@
-# v1.19.19 — 全站 requireFields helper（API 必填欄位錯誤訊息可偵錯化）
+# v1.19.19 — Site-wide requireFields helper (debuggable error messages for required API fields)
 
 - **Author**: Vin
 - **Date**: 2026-05-24
-- **Status**: 動工中
-- **預估版次**: v1.19.19（內部重構 + DX 改善、patch 級）
+- **Status**: in progress
+- **Estimated version**: v1.19.19 (internal refactor + DX improvement, patch level)
 
 ---
 
-## 0. 一句話總結
+## 0. One-sentence summary
 
-把全站 6 個 endpoint 各自手寫的「必填欄位：x, y, z」400 樣板抽成共用 `requireFields()` helper、回的錯誤 payload 含 `missing` / `received` / `expected`、AI 跟其他客戶端踩到時能立刻知道哪邊掉了。
+Extract the hand-written "required fields: x, y, z" 400 boilerplate from each of the site's 6 endpoints into a shared `requireFields()` helper; the returned error payload contains `missing` / `received` / `expected`, so the AI and other clients can immediately tell what got dropped when they hit it.
 
 ---
 
-## 1. 設計緣由
+## 1. Design rationale
 
-### 1.1 v1.19.18 release 後的踩坑
+### 1.1 The pitfall after the v1.19.18 release
 
-v1.19.18 release 完想跑 `ownmind_log_session` 記錄、connect 兩次都收到：
+After the v1.19.18 release, when trying to run `ownmind_log_session` to record, both connects received:
 
 ```
 API 400: 必填欄位：tool, model, summary
 ```
 
-但實際傳了三個欄位。debug 後發現是 AI 寫 tool call 時把 `antml:parameter` 寫成 `parameter`（少了命名空間前綴）、MCP server 解析時只認得第一個欄位、其他三個被丟掉、client send 出去缺欄位的 body、server 正確回 400。
+But three fields were actually sent. After debugging, it turned out the AI wrote the tool call with `parameter` instead of `antml:parameter` (missing the namespace prefix); when the MCP server parsed it, it only recognized the first field, the other three were dropped, the client sent a body missing fields, and the server correctly returned 400.
 
-問題：**錯誤訊息無法 self-correct**。AI 看到「必填欄位：tool, model, summary」、會覺得「我明明三個都填了啊」、無從判斷是 args parse 階段就掉了、還是 transport 階段、還是 server 端的問題。
+The problem: **the error message cannot self-correct**. The AI sees "required fields: tool, model, summary" and thinks "but I clearly filled in all three", with no way to tell whether they were dropped at the args-parse stage, the transport stage, or it's a server-side problem.
 
-### 1.2 為什麼長久應該做、不是只 patch session.js 一個 endpoint
+### 1.2 Why this should be a long-term fix, not just patching the one session.js endpoint
 
-盤點全站、共有 **6 個 endpoint** 用同樣的「必填欄位：x, y, z」generic 樣板（[grep 結果](#42-涵蓋範圍盤點)）。每一個都會踩同樣的坑、AI 換到另一個 endpoint 又要重新猜。
+Surveying the whole site, there are **6 endpoints** using the same "required fields: x, y, z" generic boilerplate ([grep result](#32-coverage-survey)). Each one will hit the same pit, and when the AI moves to another endpoint it has to guess all over again.
 
-長久解法：寫個 `requireFields()` helper、全站套用、錯誤格式統一、客戶端能可靠地解析跟回應。
+Long-term solution: write a `requireFields()` helper, apply it site-wide, unify the error format, and let clients parse and respond reliably.
 
-### 1.3 為什麼選 server-side helper 而非 client-side schema validation
+### 1.3 Why choose a server-side helper over client-side schema validation
 
-兩條腿都應該做（見 [§5 後續腿 B](#5-腿-b-mcp-客戶端-schema-pre-validation已記成-backlog)）。本版先做 server-side 因為：
+Both legs should be done (see [§5 follow-up leg B](#5-leg-b-mcp-client-side-schema-pre-validation-recorded-as-backlog)). This version does server-side first because:
 
-- **影響面廣**：server-side fix 對所有客戶端都生效（MCP / admin UI / 第三方腳本）、不只 MCP
-- **改動小**：6 個 endpoint 改一行、加一個共用 helper、~150 行
-- **不依賴 client 升級**：客戶端 v1.19.x 都還在現場、不用所有人重新 update.sh
-- **腿 B（MCP client schema validate）規模較大**：要動 MCP framework 跟 tool dispatch 層、估 3-5 天、先列 backlog
+- **Broad impact**: a server-side fix takes effect for all clients (MCP / admin UI / third-party scripts), not just MCP
+- **Small change**: 6 endpoints change one line each, plus one shared helper, ~150 lines
+- **Does not depend on a client upgrade**: client v1.19.x are all still in the field, no need for everyone to re-run update.sh
+- **Leg B (MCP client schema validate) is larger**: it touches the MCP framework and tool dispatch layer, estimated 3-5 days, listed as backlog first
 
 ---
 
-## 2. 設計
+## 2. Design
 
-### 2.1 Helper 簽名
+### 2.1 Helper signature
 
 ```js
 // src/utils/require-fields.js
@@ -57,7 +57,7 @@ export function requireFields(body, required, options = {}) {
     return v === undefined || v === null || v === '';
   });
 
-  if (missing.length === 0) return null; // 通過
+  if (missing.length === 0) return null; // passes
 
   return {
     error: '必填欄位缺少',
@@ -68,9 +68,9 @@ export function requireFields(body, required, options = {}) {
 }
 ```
 
-### 2.2 Endpoint 用法
+### 2.2 Endpoint usage
 
-舊：
+Old:
 
 ```js
 const { tool, model, summary } = req.body;
@@ -79,7 +79,7 @@ if (!tool || !model || !summary) {
 }
 ```
 
-新：
+New:
 
 ```js
 const validation = requireFields(req.body, ['tool', 'model', 'summary']);
@@ -87,14 +87,14 @@ if (validation) return res.status(400).json(validation);
 const { tool, model, summary } = req.body;
 ```
 
-### 2.3 錯誤 payload 範例
+### 2.3 Error payload example
 
-舊（前一版）：
+Old (previous version):
 ```json
 { "error": "必填欄位：tool, model, summary" }
 ```
 
-新（v1.19.19）：
+New (v1.19.19):
 ```json
 {
   "error": "必填欄位缺少",
@@ -104,79 +104,79 @@ const { tool, model, summary } = req.body;
 }
 ```
 
-AI / 客戶端看到 `missing` + `received` 就立刻知道：
-- 我傳了 summary、但 tool / model 不見了
-- → args parse 階段就掉了、不是 server 端 bug
+The AI / client, seeing `missing` + `received`, immediately knows:
+- I sent summary, but tool / model are gone
+- → they were dropped at the args-parse stage, not a server-side bug
 
-### 2.4 安全：received 自動遮蔽敏感欄位
+### 2.4 Security: received auto-redacts sensitive fields
 
-`received` 中的 password / token / api_key / secret 等欄位自動遮蔽成 `<REDACTED>`、避免錯誤回應洩漏敏感資料。`options.sensitiveKeys` 可加客製欄位。
+Fields in `received` like password / token / api_key / secret are auto-redacted to `<REDACTED>`, to avoid the error response leaking sensitive data. `options.sensitiveKeys` can add custom fields.
 
 ---
 
-## 3. 涵蓋範圍盤點
+## 3. Coverage survey
 
-### 3.1 要移植的 6 個 endpoint
+### 3.1 The 6 endpoints to migrate
 
-| 檔案 | 行 | 必填欄位 |
+| File | Line | Required fields |
 |---|---|---|
 | `src/routes/session.js` | 44 | tool, model, summary |
 | `src/routes/admin.js` | 147 | email |
 | `src/routes/handoff.js` | 17 | project, from_tool, from_model, content |
 | `src/routes/memory.js` | 899 | type, title, content |
 | `src/routes/memory.js` | 1688 | parent_title, chunks (array) |
-| `src/routes/secret.js` | 79 | key, value（**敏感**、value 要遮蔽） |
+| `src/routes/secret.js` | 79 | key, value (**sensitive**, value must be redacted) |
 
-### 3.2 已有部分 self-correct 但格式不一致的
+### 3.2 Those that already partly self-correct but have an inconsistent format
 
-| 檔案 | 行 | 現況 |
+| File | Line | Current state |
 |---|---|---|
-| `src/routes/usage/pricing.js` | 62 | 用 `必填欄位缺少：${missing.join(',')}` — 已說缺哪個、但格式 unstructured、本版統一過去 |
+| `src/routes/usage/pricing.js` | 62 | uses `必填欄位缺少：${missing.join(',')}` — already says which is missing, but the format is unstructured; this version unifies it |
 
-### 3.3 範圍外（本版不動）
+### 3.3 Out of scope (untouched this version)
 
-- 約 80 個其他 400 回應（業務邏輯各自 inline、不是必填欄位 generic 樣板）
-- MCP client-side schema pre-validation（→ backlog 腿 B）
-- 既有客戶端對舊錯誤格式的解析（**Breaking change 評估**：MCP client / admin UI 都只看 res.ok 跟 res.status、不解析錯誤 payload 內容、本版屬於 **backward-compatible 強化**、不會打破現有 client）
+- ~80 other 400 responses (business logic each inline, not the required-fields generic boilerplate)
+- MCP client-side schema pre-validation (→ backlog leg B)
+- Existing clients' parsing of the old error format (**Breaking change assessment**: the MCP client / admin UI both only look at res.ok and res.status, do not parse the error payload content, so this version is a **backward-compatible** enhancement that does not break existing clients)
 
 ---
 
-## 4. 工作量
+## 4. Effort
 
-| 項目 | 行數 |
+| Item | Lines |
 |---|---|
-| `src/utils/require-fields.js`（含 sensitive key 遮蔽） | 50 |
-| `tests/require-fields.test.js`（unit tests、~10 cases） | 100 |
-| 6 個 endpoint 移植（每個 ~3 行 diff） | 18 |
-| pricing.js 統一過去（順手） | 5 |
-| reproduction test：session.js 缺欄位回新格式 | 30 |
-| 版號 + CHANGELOG + FILELIST + 三語系 README | 50 |
-| **總計** | 約 250 行 |
+| `src/utils/require-fields.js` (incl. sensitive-key redaction) | 50 |
+| `tests/require-fields.test.js` (unit tests, ~10 cases) | 100 |
+| 6 endpoint migrations (~3-line diff each) | 18 |
+| pricing.js unified over (in passing) | 5 |
+| reproduction test: session.js missing fields returns the new format | 30 |
+| version + CHANGELOG + FILELIST + trilingual README | 50 |
+| **Total** | ~250 lines |
 
-工程時間：約 1-2 小時（含部署 + 驗證）。
-
----
-
-## 5. 腿 B（MCP 客戶端 schema pre-validation）已記成 backlog
-
-本版只做腿 A（server-side helper）。腿 B（MCP client 用 inputSchema 強制 validate args、缺欄位直接 client-side throw）規模較大、列為獨立 backlog 項目：
-
-- 觸發信號：v1.19.19 release 後追蹤 generic 400 是否仍頻繁發生；若 AI 仍頻繁踩到（即使新訊息已含 missing），就動工腿 B
-- 估時：3-5 天
-- 範圍：mcp/index.js 的 dispatch 層加 schema validator、所有 tool call 進入 case 前驗、缺則 throw 含 args dump
-
-→ 寫入 OwnMind project 記憶（待辦清單偏好慣例）。
+Engineering time: ~1-2 hours (incl. deploy + verification).
 
 ---
 
-## 6. 風險檢查點
+## 5. Leg B (MCP client-side schema pre-validation) recorded as backlog
 
-- [ ] `requireFields()` 對 `body=null` / `body=undefined` 安全處理（不會 throw）
-- [ ] 對 `body={}` 回所有 missing
-- [ ] 對 array required 欄位（如 chunks）正確驗（陣列空字串、空陣列怎麼判？）
-- [ ] `secret.js` 的 value 在 received 中被遮蔽（**最關鍵的安全檢查**）
-- [ ] 全套既有 1827 個測試綠
-- [ ] 新增 unit tests + reproduction test 綠
-- [ ] 部署後 MCP `ownmind_log_session` 用缺欄位的 body 打去、回新格式（含 missing/received/expected）
-- [ ] 部署後 admin UI 既有功能不受影響（用 admin UI 跑一次新增記憶、看不會壞）
-- [ ] 三語系版號 1.19.19
+This version only does leg A (server-side helper). Leg B (the MCP client uses inputSchema to enforce-validate args, throwing client-side directly when fields are missing) is larger, listed as a standalone backlog item:
+
+- Trigger signal: after the v1.19.19 release, track whether generic 400s still occur frequently; if the AI still hits them often (even though the new message already includes missing), start leg B
+- Estimate: 3-5 days
+- Scope: add a schema validator to the dispatch layer of mcp/index.js, validate before every tool call enters its case, and throw with an args dump if missing
+
+→ Write into OwnMind project memory (the to-do-list preference convention).
+
+---
+
+## 6. Risk checkpoints
+
+- [ ] `requireFields()` safely handles `body=null` / `body=undefined` (does not throw)
+- [ ] For `body={}` it returns all missing
+- [ ] For array required fields (e.g. chunks) it validates correctly (how to judge an array empty string, empty array?)
+- [ ] `secret.js`'s value is redacted in received (**the most critical security check**)
+- [ ] The full existing 1827 tests green
+- [ ] The new unit tests + reproduction test green
+- [ ] After deploy, MCP `ownmind_log_session` sent with a missing-fields body returns the new format (incl. missing/received/expected)
+- [ ] After deploy, the admin UI's existing features are unaffected (run an add-memory once via the admin UI, confirm it does not break)
+- [ ] Trilingual version 1.19.19

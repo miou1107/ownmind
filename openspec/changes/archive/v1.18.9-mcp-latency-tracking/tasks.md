@@ -1,213 +1,213 @@
-# v1.18.9 — 實作 Tasks
+# v1.18.9 — Implementation tasks
 
-> 拍板完成（2026-05-14），按以下順序實作。worktree 名保留 `determined-bouman-20c22a`。
-> 估算量約 4~6 天（含 TDD + 品管 + 部署 + latency 埋點）。
+> Decision completed (2026-05-14), implement in the following order. The worktree name is kept as `determined-bouman-20c22a`.
+> Estimated effort about 4~6 days (including TDD + quality gates + deployment + latency instrumentation).
 
 ---
 
-## ⛔ Phase 1：規則阻擋誤殺率（C6）— 棄用（2026-05-14 part 2）
+## ⛔ Phase 1: rule-block false-positive rate (C6) — deprecated (2026-05-14 part 2)
 
-> **棄用原因：** 拍板「網頁連結 → 1 秒確認」實作時撞牆——hook 無法簽 sig（沒 server secret）+ 網頁要登入違反 1 秒目標。三個替代方案 Vin 都拒絕、整個功能放棄。
+> **Reason for deprecation:** The decision "web link → 1-second confirmation" hit a wall during implementation — the hook cannot sign the sig (no server secret) + the web page requires login, violating the 1-second goal. Vin rejected all three alternatives, so the entire feature was abandoned.
 >
-> Phase 1 server 端程式（feedback-sig / block-feedback handler / 兩個 route / 兩個 test）已從 commit 8bcfc69 全部刪除，git 歷史保留作「曾嘗試」紀錄。
+> The Phase 1 server-side code (feedback-sig / block-feedback handler / two routes / two tests) was all deleted from commit 8bcfc69; git history is kept as an "attempted" record.
 >
-> 以下原 T1.1~T1.7 規格保留作歷史記錄，**不再實作**。
+> The original T1.1~T1.7 specs below are kept as a historical record, **no longer implemented**.
 
-## Phase 1（已棄用）：規則阻擋誤殺率（C6）— 原估 1.5~2 天
+## Phase 1 (deprecated): rule-block false-positive rate (C6) — originally estimated 1.5~2 days
 
-### T1.1 寫 reproduction test（IR-003）
+### T1.1 Write reproduction test (IR-003)
 - `tests/block-feedback.test.js`
-- 涵蓋：
-  - POST /api/feedback/block + 合法 sig → 200，寫 block_feedback event
-  - POST + Bearer token → 200（CLI 路徑）
-  - sig 過期（25h 前）→ 410 Gone
-  - sig 簽名錯誤 → 401
-  - 5 分鐘內同 (event_id, user_id) 重複回報 → 409
-  - 缺 event_id → 400
-  - reason 超 500 字截斷
-  - 不存在的 event_id → 404
-- 預期：所有 test 紅燈、實作後綠燈
+- Covers:
+  - POST /api/feedback/block + valid sig → 200, writes block_feedback event
+  - POST + Bearer token → 200 (CLI path)
+  - sig expired (25h ago) → 410 Gone
+  - sig signature wrong → 401
+  - duplicate report of same (event_id, user_id) within 5 minutes → 409
+  - missing event_id → 400
+  - reason over 500 chars truncated
+  - non-existent event_id → 404
+- Expected: all tests red, green after implementation
 
-### T1.2 HMAC 簽名 helper
-- `src/utils/feedback-sig.js`：`signFeedback(eventId, userId)` / `verifyFeedback(eventId, userId, sig)`
-- secret 從 `HMAC-SHA256(ENCRYPTION_KEY, 'ownmind-feedback-sig-v1')` derive，不新增環境變數
-- day_bucket = floor(unix_ts / 86400)，24h 內有效
-- pure module、secret derive 結果可注入測試
+### T1.2 HMAC signing helper
+- `src/utils/feedback-sig.js`: `signFeedback(eventId, userId)` / `verifyFeedback(eventId, userId, sig)`
+- The secret is derived from `HMAC-SHA256(ENCRYPTION_KEY, 'ownmind-feedback-sig-v1')`, no new environment variable
+- day_bucket = floor(unix_ts / 86400), valid within 24h
+- pure module, the secret-derive result can be injected for testing
 
-### T1.3 後端 endpoint
-- `src/routes/block-feedback.js`：
-  - POST /api/feedback/block — 兩種授權擇一（sig query body 或 Bearer header）
-  - 寫 `activity_logs.event='block_feedback'`、`details: {original_event_id, reason?, source}`
-  - 用 client_event_id partial unique index dedup（既有機制）
+### T1.3 Backend endpoint
+- `src/routes/block-feedback.js`:
+  - POST /api/feedback/block — one of two authorizations (sig query body or Bearer header)
+  - writes `activity_logs.event='block_feedback'`, `details: {original_event_id, reason?, source}`
+  - dedup via the client_event_id partial unique index (existing mechanism)
 
-### T1.4 網頁確認頁
-- `src/routes/feedback-page.js`：GET /feedback/block 渲染 spec.md A.2.1 的 HTML（inline、無模板）
-- 接收 query: event_id, sig
-- 不需登入
+### T1.4 Web confirmation page
+- `src/routes/feedback-page.js`: GET /feedback/block renders the HTML from spec.md A.2.1 (inline, no template)
+- Accepts query: event_id, sig
+- No login needed
 
-### T1.5 客戶端 CLI（並存通道）
-- `bin/ownmind`：bash wrapper（依平台選 cmd / sh）
-- subcommand：`report-false-positive --event-id=xxx [--reason="..."]`
-- 底層 fetch POST 加 `Authorization: Bearer ${OWNMIND_API_KEY}`
-- IR-042：必須同步更新 install.sh / install.ps1 / update.sh / update.ps1 以安裝 bin/ownmind
+### T1.5 Client CLI (parallel channel)
+- `bin/ownmind`: bash wrapper (chooses cmd / sh by platform)
+- subcommand: `report-false-positive --event-id=xxx [--reason="..."]`
+- under the hood fetch POST with `Authorization: Bearer ${OWNMIND_API_KEY}`
+- IR-042: must sync-update install.sh / install.ps1 / update.sh / update.ps1 to install bin/ownmind
 
-### T1.6 reply-lint Stop hook 加 markdown 連結
-- `hooks/ownmind-reply-lint.js` 違反時印：
+### T1.6 reply-lint Stop hook adds a markdown link
+- `hooks/ownmind-reply-lint.js` prints on violation:
   ```
   [👎 擋錯了？點這](https://kkvin.com/ownmind/feedback/block?event_id=xxx&sig=yyy)
   ```
-- sig 由 reply-lint hook 跑 server side call (`POST /api/feedback/sign`) 取得；或預先共享 secret 在 client 端算（先選後者、避免每次擋下都打 server）
-- client_event_id 已由 mcp/ownmind-log.js 生成、傳進 details
+- The sig is obtained by the reply-lint hook making a server-side call (`POST /api/feedback/sign`); or computed on the client with a pre-shared secret (choose the latter first, to avoid hitting the server on every block)
+- client_event_id is already generated by mcp/ownmind-log.js and passed into details
 
-### T1.7 SQL 算誤殺率 + 紅燈閾值
-- `scripts/health-report-daily.sh` 加 section 7：誤殺率
-- 公式見 spec.md A.3
-- 紅燈閾值 30%（拍板決策 5）
+### T1.7 SQL to compute false-positive rate + red-line threshold
+- `scripts/health-report-daily.sh` adds section 7: false-positive rate
+- Formula see spec.md A.3
+- Red-line threshold 30% (decision 5)
 
 ---
 
-## ⛔ Phase 2：4 種安全告警 — 棄用（2026-05-14 part 3）
+## ⛔ Phase 2: 4 security alerts — deprecated (2026-05-14 part 3)
 
-> Vin 拍板：「我不需要這種功能」。OwnMind 個人用、ROI 不夠（主要 user 就 Vin + Adam + Eric，被攻擊機率低）。
+> Vin's decision: "I don't need this feature". OwnMind is personal use, ROI is too low (the main users are just Vin + Bob + Alice, low chance of being attacked).
 >
-> Phase 2 part 1 已 commit 127b740 的純函式 + helper（safety-detect.js / safety-audit.js + 兩個 test）part 3 全部刪除。git 歷史保留作「曾規劃」紀錄。
+> The Phase 2 part 1 pure functions + helpers already committed in 127b740 (safety-detect.js / safety-audit.js + two tests) were all deleted in part 3. Git history is kept as a "once planned" record.
 >
-> 以下 T2.1~T2.5 規格保留作歷史記錄，**不再實作**。
+> The T2.1~T2.5 specs below are kept as a historical record, **no longer implemented**.
 
-## Phase 2（已棄用）：4 種安全告警 — 原估 2~2.5 天
+## Phase 2 (deprecated): 4 security alerts — originally estimated 2~2.5 days
 
-### T2.1 寫 reproduction test（IR-003）
+### T2.1 Write reproduction test (IR-003)
 - `tests/safety-alerts.test.js`
-- 涵蓋 4 種告警觸發 + 不觸發的邊界
-- 模擬 cross_user_access：跑 fake middleware 看 audit_log 有寫入
+- Covers the trigger of the 4 alerts + the non-trigger boundaries
+- Simulate cross_user_access: run a fake middleware and check the audit_log is written
 
-### T2.2 偵測 middleware
+### T2.2 Detection middleware
 - `src/middleware/safety-alerts.js`
-- 4 個獨立函式：
-  - `checkPrivateMemoryLeak(req, res)` — 用 res.json wrap
-  - `checkSecretInLogs(logMessage)` — 用 winston format hook
+- 4 independent functions:
+  - `checkPrivateMemoryLeak(req, res)` — wrap with res.json
+  - `checkSecretInLogs(logMessage)` — use a winston format hook
   - `checkCrossUserAccess(req, res, memories)` — middleware
-  - `checkBulkRead(userId, apiKey)` — async 後台檢查、閾值 1000/h（拍板決策 4）
+  - `checkBulkRead(userId, apiKey)` — async background check, threshold 1000/h (decision 4)
 
-### T2.3 寫 audit log helper
-- `src/utils/safety-audit.js`：`writeAudit(type, userId, details)`
-- 統一介面、避免每處各寫一遍
+### T2.3 Write audit log helper
+- `src/utils/safety-audit.js`: `writeAudit(type, userId, details)`
+- A unified interface, to avoid writing it separately in each place
 
-### T2.4 super_admin email 通知（拍板決策 3 = 只通知）
-- `src/jobs/safety-alert-notifier.js`：cron 每 5 分鐘掃 audit log、新告警 email
-- 用既有 nodemailer 設定（或 SMTP）
-- email 範本：純文字、敏感資料用占位符
-- **不**自動暫停帳號
+### T2.4 super_admin email notification (decision 3 = notify only)
+- `src/jobs/safety-alert-notifier.js`: cron scans the audit log every 5 minutes, emails new alerts
+- Uses the existing nodemailer config (or SMTP)
+- Email template: plain text, sensitive data uses placeholders
+- Does **not** auto-suspend the account
 
 ### T2.5 secrets value cache
-- 為 `checkSecretInLogs` 提供 secrets value 清單
-- 5 分鐘 TTL、不要每次 query DB
-- 注意：cache 本身的 logs 不能 dump value
+- Provides the secrets value list for `checkSecretInLogs`
+- 5-minute TTL, don't query DB every time
+- Note: the cache's own logs must not dump the value
 
 ---
 
-## ⛔ Phase 3：管理員儀表板「健康度」分頁 — 棄用（2026-05-14 part 3）
+## ⛔ Phase 3: admin dashboard "Health" tab — deprecated (2026-05-14 part 3)
 
-> 上面只剩「合規數字 + latency p95」單一指標、不值得做新分頁。Vin 自己用既有後台或 SQL 看就好。
+> Only the single "compliance numbers + latency p95" metric remains above, not worth a new tab. Vin can just use the existing admin panel or SQL to look.
 >
-> 以下 T3.1~T3.3 規格保留作歷史記錄，**不再實作**。
+> The T3.1~T3.3 specs below are kept as a historical record, **no longer implemented**.
 
-## Phase 3（已棄用）：管理員儀表板「健康度」分頁 — 原估 1 天
+## Phase 3 (deprecated): admin dashboard "Health" tab — originally estimated 1 day
 
-### T3.1 後端 endpoint
-- `src/routes/admin-health.js`：GET /admin/api/health
-- 回傳 JSON：
-  - 阻擋誤殺率（7 天）+ 紅燈閾值 30%
-  - 4 種告警件數
-  - 違反/遵守/觸發覆蓋率（複用 health-report-daily SQL）
-  - mcp_call latency p50/p95/p99（new！見 Phase A）
+### T3.1 Backend endpoint
+- `src/routes/admin-health.js`: GET /admin/api/health
+- Returns JSON:
+  - block false-positive rate (7 days) + red-line threshold 30%
+  - 4 alert counts
+  - violation/compliance/trigger coverage (reuse health-report-daily SQL)
+  - mcp_call latency p50/p95/p99 (new! see Phase A)
 
-### T3.2 前端 tab
-- `src/public/index.html` 加「健康度」分頁
-- 純 HTML + JS、複用既有 admin auth 機制
-- 6 個指標卡（誤殺率 / 4 告警 / 違反 / 遵守 / 覆蓋率 / latency p95）
-- 7 天趨勢 sparkline（chart.js 太重、用 SVG 手繪）
+### T3.2 Frontend tab
+- `src/public/index.html` adds a "Health" tab
+- Pure HTML + JS, reuse the existing admin auth mechanism
+- 6 metric cards (false-positive rate / 4 alerts / violations / compliance / coverage / latency p95)
+- 7-day trend sparkline (chart.js is too heavy, hand-draw with SVG)
 
-### T3.3 隱私邊界檢查
-- < 10 user 群組不顯示細節（按 Gemini r3 建議）
-- 「擋錯了」reason 內容不顯示給非 super_admin
-- 寫 `scripts/privacy-audit.js`、每季手動跑
+### T3.3 Privacy boundary check
+- Groups with < 10 users don't show details (per Gemini r3 suggestion)
+- The "wrongly blocked" reason content is not shown to non-super_admin
+- Write `scripts/privacy-audit.js`, run manually each quarter
 
 ---
 
-## Phase A：MCP API latency_ms 埋點（合併原 v1.18.6 漏作）— 估 0.5 天
+## Phase A: MCP API latency_ms instrumentation (merging the originally-missed v1.18.6 item) — estimated 0.5 day
 
-### TA.1 寫 reproduction test
+### TA.1 Write reproduction test
 - `mcp/tests/latency-instrumentation.test.js`
-- 涵蓋：
-  - 成功 tool call 寫 `mcp_call` event 含 `latency_ms` 整數
-  - 失敗 tool call 寫 `error` event 含 `latency_ms`
-  - latency_ms 不阻塞 response（mock logEvent throw 不影響回傳）
+- Covers:
+  - successful tool call writes `mcp_call` event with integer `latency_ms`
+  - failed tool call writes `error` event with `latency_ms`
+  - latency_ms does not block response (mocking logEvent to throw does not affect the return)
 
-### TA.2 mcp/index.js 埋點
-- 見 spec.md E.1
-- 只動 setRequestHandler 主流程
-- 配合既有 enrichErrorDetails（v1.18.6/.7 加的）
+### TA.2 mcp/index.js instrumentation
+- See spec.md E.1
+- Only touch the setRequestHandler main flow
+- Works with the existing enrichErrorDetails (added in v1.18.6/.7)
 
-### TA.3 server 端 SQL
-- `scripts/health-report-daily.sh` 加 section 8：latency p50/p95/p99 by tool
-- 公式見 spec.md E.2
-- 紅燈閾值 p95 > 3000ms
+### TA.3 Server-side SQL
+- `scripts/health-report-daily.sh` adds section 8: latency p50/p95/p99 by tool
+- Formula see spec.md E.2
+- Red-line threshold p95 > 3000ms
 
 ---
 
-## Phase 4：發版 + 部署 — 估 1 天
+## Phase 4: release + deployment — estimated 1 day
 
-### T4.1 品管三步驟（IR-012/045）
-- `superpowers:verification-before-completion` — 跑全測試 + browser 實測
-- `superpowers:requesting-code-review` — 找 Codex / Gemini review
-- `superpowers:receiving-code-review` — 嚴謹回應 review feedback
+### T4.1 Three quality-gate steps (IR-012/045)
+- `superpowers:verification-before-completion` — run all tests + browser testing
+- `superpowers:requesting-code-review` — get Codex / Gemini review
+- `superpowers:receiving-code-review` — respond rigorously to review feedback
 
-### T4.2 同步文件（IR-008/026/032）
+### T4.2 Sync docs (IR-008/026/032)
 - package.json: 1.18.8 → **1.18.9**
 - mcp/package.json: 1.18.8 → **1.18.9**
-- README.md / docs/README.zh-TW.md / docs/README.ja.md 版號（IR-031/032 三處同步）
-- CHANGELOG.md 加 v1.18.9 entry
-- FILELIST.md 加新檔列表
-- IR-034：新增 Server 讀檔路徑時同步 Dockerfile COPY
+- README.md / docs/README.zh-TW.md / docs/README.ja.md version (IR-031/032 three places in sync)
+- CHANGELOG.md add v1.18.9 entry
+- FILELIST.md add new file list
+- IR-034: when adding a new server file-read path, sync the Dockerfile COPY
 
-### T4.3 部署（IR-018/023）
+### T4.3 Deployment (IR-018/023)
 - `docker compose build --no-cache api`
 - `docker compose up -d api`
 - health endpoint check
-- 跑一次 health-report-daily.sh、確認新指標（誤殺率 + 4 告警 + latency p95）正常出來
+- run health-report-daily.sh once, confirm the new metrics (false-positive rate + 4 alerts + latency p95) come out correctly
 
-### T4.4 browser 實測（IR-020）
-- admin 網頁「健康度」分頁實際打開看
-- reply-lint 故意觸發、實際點 markdown 連結看跳到確認頁
-- 跑 CLI ownmind report-false-positive 確認寫入 DB
-- 故意觸發 cross_user_access（test user 跑跨 user query）看 audit log 有寫
-- 故意跑慢的 mcp tool 看 mcp_call event 有 latency_ms
+### T4.4 Browser testing (IR-020)
+- actually open and view the admin web "Health" tab
+- deliberately trigger reply-lint, actually click the markdown link to see it jump to the confirmation page
+- run CLI ownmind report-false-positive to confirm the DB write
+- deliberately trigger cross_user_access (test user runs a cross-user query) to see the audit log is written
+- deliberately run a slow mcp tool to see the mcp_call event has latency_ms
 
 ### T4.5 Tag + push
-- `git tag v1.18.9`（IR-031：發版時 package.json / SERVER_VERSION / git tag 三處同步）
+- `git tag v1.18.9` (IR-031: at release, sync package.json / SERVER_VERSION / git tag in three places)
 - `git push origin main --tags`
-- nightly job 隔天 03:30 自動更新 broadcast 版號（不需手動）
+- the nightly job auto-updates the broadcast version the next day at 03:30 (no manual step)
 
 ---
 
-## Phase 5：清雲端過期記憶 — 估 5 分鐘
+## Phase 5: clean up expired cloud memory — estimated 5 minutes
 
-### T5.1 ownmind_update 標記過期
-- cloud_id=299「OwnMind v1.17.24+ backlog」— 三項已修完（autostash v1.17.65 / lock cleanup v1.17.60 / settings overwrite load-settings-safe.cjs），改 description 加「[2026-05-14 已全修完、可刪除]」或直接刪
-- cloud_id=342「OwnMind v1.17.95+ backlog」— 還有效（觸發條件未到、規則式 lint 仍夠用）、保留
+### T5.1 ownmind_update mark as expired
+- cloud_id=299 "OwnMind v1.17.24+ backlog" — all three items fixed (autostash v1.17.65 / lock cleanup v1.17.60 / settings overwrite load-settings-safe.cjs), change the description to add "[2026-05-14 all fixed, can be deleted]" or just delete it
+- cloud_id=342 "OwnMind v1.17.95+ backlog" — still valid (trigger condition not yet met, rule-based lint still sufficient), keep
 
 ---
 
-## 風險檢核清單（commit 前必跑）
+## Risk checklist (must run before commit)
 
-- [ ] reproduction test 全綠（IR-003）
-- [ ] 沒 blind edit、改動有對應的 test（IR-005）
-- [ ] README/FILELIST/CHANGELOG 三處同步（IR-008/026）
-- [ ] package.json / mcp/package.json / 三語 README 版號同步 v1.18.9（IR-031/032）
-- [ ] 4 種告警偵測規則跑模擬資料、寫進 audit log（IR-020）
-- [ ] 4 種告警觸發後 super_admin 收到 email、**沒**自動暫停帳號（拍板決策 3）
-- [ ] mcp_call event 寫 latency_ms 整數、不阻塞 response（TA.1）
-- [ ] 不在 logs 印 secrets value（B.2 secret_value_in_logs 偵測規則自己會擋）
-- [ ] 沒加 Co-Authored-By（IR-024）
-- [ ] commit message contributors 用 Vin、不用 Claude（IR-009）
+- [ ] reproduction tests all green (IR-003)
+- [ ] no blind edit, changes have corresponding tests (IR-005)
+- [ ] README/FILELIST/CHANGELOG synced in three places (IR-008/026)
+- [ ] package.json / mcp/package.json / trilingual README versions synced to v1.18.9 (IR-031/032)
+- [ ] the 4 alert detection rules run against simulated data and write to the audit log (IR-020)
+- [ ] after the 4 alerts trigger, super_admin receives an email and the account is **not** auto-suspended (decision 3)
+- [ ] mcp_call event writes integer latency_ms, does not block response (TA.1)
+- [ ] don't print secrets value in logs (the B.2 secret_value_in_logs detection rule blocks it itself)
+- [ ] no Co-Authored-By added (IR-024)
+- [ ] commit message contributors use Vin, not Claude (IR-009)

@@ -1,460 +1,460 @@
-# v1.19.14 — 錯誤回報工具規格（v4、三輪對抗審查後）
+# v1.19.14 — Bug report tool spec (v4, after three rounds of adversarial review)
 
-> 格式：GIVEN / WHEN / THEN。
-> v4 變動：砍掉 confirm-window hook 場景、新增 spam 偵測場景、主機指紋取代裝置代號、通知洗版控制、聯合型別。
+> Format: GIVEN / WHEN / THEN.
+> v4 changes: cut the confirm-window hook scenarios, add spam detection scenarios, machine fingerprint replaces device id, notification flooding control, union type.
 
 ---
 
-## 一、資料表
+## I. Tables
 
-### 場景 1：migration 建立資料表
+### Scenario 1: migration creates tables
 
-**GIVEN** v1.19.13 prod 資料庫、沒有相關表
+**GIVEN** the v1.19.13 prod database, with no related tables
 
-**WHEN** 執行 `db/0016_create_bug_reports.sql`
+**WHEN** running `db/0016_create_bug_reports.sql`
 
 **THEN**
-- 建立 `bug_reports` 表
-- 建立 `bug_report_declines` 表（冷靜期）
-- 🆕 建立 `bug_report_spam_suspects` 表
-- 🆕 建立 `bug_report_notification_mutes` 表
-- 🆕 建立 `bug_report_spam_blocks` 表（封鎖期）
-- 建立必要 index
-- 可 idempotent 重跑
+- create the `bug_reports` table
+- create the `bug_report_declines` table (cooldown)
+- 🆕 create the `bug_report_spam_suspects` table
+- 🆕 create the `bug_report_notification_mutes` table
+- 🆕 create the `bug_report_spam_blocks` table (block window)
+- create the necessary indexes
+- idempotent on rerun
 
-**`bug_reports` 主要欄位**：見 v3、加 `device_fingerprint`（取代 device_id）、加 `client_tool`（哪個 AI 工具報的、from MCP metadata）。
+**`bug_reports` main columns**: see v3, add `device_fingerprint` (replaces device_id), add `client_tool` (which AI tool reported, from MCP metadata).
 
-**🆕 `bug_report_spam_suspects` 欄位**：
+**🆕 `bug_report_spam_suspects` columns**:
 
-| 欄位 | 型別 | 必填 | 說明 |
+| Column | Type | Required | Description |
 |---|---|---|---|
-| `id` | bigserial PK | 是 | – |
-| `user_id` | int FK | 是 | – |
-| `triggered_at` | timestamptz | 是 | – |
-| `trigger_rule` | enum | 是 | high_volume_1h / high_volume_24h / repeated_fingerprint / similar_content |
-| `report_ids` | bigint[] | 是 | 觸發這次偵測的回報 id |
-| `status` | enum | 是 | pending / confirmed_spam / dismissed |
-| `reviewed_by` | int FK | 否 | 管理員 |
-| `reviewed_at` | timestamptz | 否 | – |
+| `id` | bigserial PK | yes | – |
+| `user_id` | int FK | yes | – |
+| `triggered_at` | timestamptz | yes | – |
+| `trigger_rule` | enum | yes | high_volume_1h / high_volume_24h / repeated_fingerprint / similar_content |
+| `report_ids` | bigint[] | yes | report ids that triggered this detection |
+| `status` | enum | yes | pending / confirmed_spam / dismissed |
+| `reviewed_by` | int FK | no | admin |
+| `reviewed_at` | timestamptz | no | – |
 
-**🆕 `bug_report_spam_blocks` 欄位**：
+**🆕 `bug_report_spam_blocks` columns**:
 
-| 欄位 | 型別 | 必填 | 說明 |
+| Column | Type | Required | Description |
 |---|---|---|---|
-| `id` | bigserial PK | 是 | – |
-| `user_id` | int FK | 是 | – |
-| `blocked_at` | timestamptz | 是 | – |
-| `blocked_until` | timestamptz | 是 | 預設 +24h |
-| `reason` | text | 否 | 管理員填 |
-| `blocked_by` | int FK | 是 | 管理員 |
+| `id` | bigserial PK | yes | – |
+| `user_id` | int FK | yes | – |
+| `blocked_at` | timestamptz | yes | – |
+| `blocked_until` | timestamptz | yes | default +24h |
+| `reason` | text | no | admin fills |
+| `blocked_by` | int FK | yes | admin |
 
-**🆕 `bug_report_notification_mutes` 欄位**：
+**🆕 `bug_report_notification_mutes` columns**:
 
-| 欄位 | 型別 | 必填 | 說明 |
+| Column | Type | Required | Description |
 |---|---|---|---|
-| `id` | bigserial PK | 是 | – |
-| `user_id` | int FK | 是 | – |
-| `mute_target` | enum | 是 | fingerprint / own_reports |
-| `target_value` | varchar(64) | 否 | 例如某個 bug_fingerprint |
-| `muted_until` | timestamptz | 是 | 預設 +30 天 |
+| `id` | bigserial PK | yes | – |
+| `user_id` | int FK | yes | – |
+| `mute_target` | enum | yes | fingerprint / own_reports |
+| `target_value` | varchar(64) | no | e.g. a specific bug_fingerprint |
+| `muted_until` | timestamptz | yes | default +30 days |
 
 ---
 
-## 二、後端 API
+## II. Backend API
 
-### 場景 2-14：建立、列出、權限、狀態流轉、通知、decline、頻率限制
+### Scenarios 2-14: create, list, permissions, status transitions, notifications, decline, rate limits
 
-維持 v3 場景 2-14、無變動。
+Keep v3 scenarios 2-14, unchanged.
 
-### 🆕 場景 15：取得 spam suspect 列表（管理員）
+### 🆕 Scenario 15: get spam suspect list (admin)
 
-**GIVEN** 管理員帶 `api_key`
+**GIVEN** admin with `api_key`
 
 **WHEN** GET `/api/bug-reports/spam-suspects?status=pending`
 
 **THEN**
-- HTTP 200、回傳 pending 的 spam suspect 列表
-- 每筆含 user_id、trigger_rule、報告 id 陣列、觸發時間
-- 依 triggered_at 倒序
+- HTTP 200, returns the list of pending spam suspects
+- each includes user_id, trigger_rule, report id array, trigger time
+- ordered by triggered_at descending
 
-### 🆕 場景 16：管理員確認 spam
+### 🆕 Scenario 16: admin confirms spam
 
-**GIVEN** 管理員看完 suspect id=5、決定是 spam
+**GIVEN** admin reviewed suspect id=5 and decides it's spam
 
-**WHEN** POST `/api/bug-reports/spam-suspects/5/confirm` 帶 `{ reason: "AI 腦補垃圾" }`
+**WHEN** POST `/api/bug-reports/spam-suspects/5/confirm` with `{ reason: "AI 腦補垃圾" }`
 
 **THEN**
 - HTTP 200
-- 更新 `bug_report_spam_suspects.status=confirmed_spam`、記 reviewed_by + reviewed_at
-- 自動在 `bug_report_spam_blocks` 寫一筆：user_id + blocked_until=+24h + reason
-- 該 user 之後 24 小時錯誤回應都不附 `suggest_report` 旗標
+- update `bug_report_spam_suspects.status=confirmed_spam`, record reviewed_by + reviewed_at
+- automatically write a row in `bug_report_spam_blocks`: user_id + blocked_until=+24h + reason
+- that user's error responses attach no `suggest_report` flag for the next 24 hours
 
-### 🆕 場景 17：管理員撤銷 spam suspect
+### 🆕 Scenario 17: admin dismisses spam suspect
 
-**GIVEN** 管理員看完 suspect id=5、決定不是 spam
+**GIVEN** admin reviewed suspect id=5 and decides it's not spam
 
 **WHEN** POST `/api/bug-reports/spam-suspects/5/dismiss`
 
 **THEN**
 - HTTP 200
-- 更新 `bug_report_spam_suspects.status=dismissed`
-- 不寫 `bug_report_spam_blocks`
-- 該 user 行為照常
+- update `bug_report_spam_suspects.status=dismissed`
+- don't write `bug_report_spam_blocks`
+- that user's behavior is unchanged
 
-### 🆕 場景 18：spam 封鎖期內、錯誤回應不附旗標
+### 🆕 Scenario 18: during spam block window, error response has no flag
 
-**GIVEN** 某 user 在 `bug_report_spam_blocks` 表有未過期紀錄
+**GIVEN** a user has an unexpired record in the `bug_report_spam_blocks` table
 
-**WHEN** 該 user 觸發任何錯誤（無論冷靜期狀態）
+**WHEN** that user triggers any error (regardless of cooldown state)
 
-**THEN** 錯誤回應 JSON **不含** `suggest_report` 欄位（spam 封鎖優先於冷靜期判斷）
+**THEN** the error response JSON **does not contain** the `suggest_report` field (spam block takes priority over the cooldown check)
 
-### 🆕 場景 19：spam 封鎖期過了、行為恢復
+### 🆕 Scenario 19: spam block window expired, behavior restored
 
-**GIVEN** 封鎖期 24 小時已過
+**GIVEN** the 24-hour block window has passed
 
-**WHEN** 該 user 再次觸發明確訊號錯誤
+**WHEN** that user triggers an explicit-signal error again
 
-**THEN** 錯誤回應依正常邏輯附旗標（受冷靜期影響）
+**THEN** the error response attaches the flag per normal logic (subject to cooldown)
 
-### 🆕 場景 20：批量標已讀通知
+### 🆕 Scenario 20: batch mark notifications as read
 
-**GIVEN** 使用者有 50 筆未讀通知
+**GIVEN** a user has 50 unread notifications
 
 **WHEN** POST `/api/bug-reports/notifications/mark-all-read?role=reporter`
 
 **THEN**
 - HTTP 200
-- 所有 `resolved_at IS NOT NULL AND notified_to_reporter=false` 的紀錄改成 true
-- 回 `{ marked_count: 50 }`
+- all records with `resolved_at IS NOT NULL AND notified_to_reporter=false` set to true
+- returns `{ marked_count: 50 }`
 
-### 🆕 場景 21：靜音某 fingerprint 的通知
+### 🆕 Scenario 21: mute notifications for a fingerprint
 
-**GIVEN** 使用者不想再收到 `mem_blocked_secret_keyword` 指紋的通知
+**GIVEN** a user no longer wants notifications for the `mem_blocked_secret_keyword` fingerprint
 
-**WHEN** POST `/api/bug-reports/notifications/mute` 帶 `{ mute_target: "fingerprint", target_value: "mem_blocked_secret_keyword" }`
-
-**THEN**
-- HTTP 201、`bug_report_notification_mutes` 新增一筆、`muted_until=+30 天`
-- 之後 30 天內 GET notifications 不會回傳該 fingerprint 的處理通知
-
-### 🆕 場景 22：管理員設定「不提醒自己送的回報」
-
-**GIVEN** 管理員自己也送過很多回報、不想自己洗自己版
-
-**WHEN** POST `/api/bug-reports/notifications/mute` 帶 `{ mute_target: "own_reports" }`
+**WHEN** POST `/api/bug-reports/notifications/mute` with `{ mute_target: "fingerprint", target_value: "mem_blocked_secret_keyword" }`
 
 **THEN**
-- HTTP 201、新增 mute 紀錄
-- 之後管理員啟動時 admin 通知不含「自己送的」回報
+- HTTP 201, `bug_report_notification_mutes` adds a row, `muted_until=+30 days`
+- for the next 30 days, GET notifications won't return resolution notifications for that fingerprint
+
+### 🆕 Scenario 22: admin sets "don't remind me of my own reports"
+
+**GIVEN** the admin has also sent many reports and doesn't want to flood themselves
+
+**WHEN** POST `/api/bug-reports/notifications/mute` with `{ mute_target: "own_reports" }`
+
+**THEN**
+- HTTP 201, adds a mute record
+- afterward, on admin startup the admin notifications don't include the admin's "own" reports
 
 ---
 
-## 三、🆕 後端 spam 偵測器
+## III. 🆕 Backend spam detector
 
-### 🆕 場景 23：1 小時內送 5 筆 + 3 筆內容相似 → 自動標 spam
+### 🆕 Scenario 23: 5 sent within 1 hour + 3 with similar content → auto-mark spam
 
-**GIVEN** user A 過去 1 小時送了 5 筆回報、其中 3 筆 (title + description) Levenshtein 相似度 > 80%
+**GIVEN** user A sent 5 reports in the past 1 hour, of which 3 have (title + description) Levenshtein similarity > 80%
 
-**WHEN** 新一筆寫入後觸發偵測（背景 task 或 post-write hook）
-
-**THEN**
-- `bug_report_spam_suspects` 新增一筆、`trigger_rule="similar_content"`、`report_ids=[那 5 筆 id]`
-- 後台首頁卡片數量 +1
-
-### 🆕 場景 24：24 小時內送 30 筆 → 自動標 spam（v4.1 門檻從 10 提高）
-
-**GIVEN** user A 過去 24 小時送了 30 筆回報
-
-**WHEN** 第 30 筆寫入後
+**WHEN** detection triggers after a new write (background task or post-write hook)
 
 **THEN**
-- 新增 spam suspect、`trigger_rule="high_volume_24h"`
+- `bug_report_spam_suspects` adds a row, `trigger_rule="similar_content"`, `report_ids=[those 5 ids]`
+- the admin home card count +1
 
-### 🆕 場景 25：同 fingerprint 1 小時內 5 筆 → 自動標（v4.1 門檻從 3 提高、因介面層已硬擋 3）
+### 🆕 Scenario 24: 30 sent within 24 hours → auto-mark spam (v4.1 raised threshold from 10)
 
-**GIVEN** user A 過去 1 小時送了 5 筆指紋皆 `mem_blocked_secret_keyword`（注意：介面層會在第 3 筆 429 擋下、所以實際很難跑到 5 筆、但若繞過介面層仍會被偵測）
+**GIVEN** user A sent 30 reports in the past 24 hours
 
-**WHEN** 第 5 筆寫入後
-
-**THEN**
-- 新增 spam suspect、`trigger_rule="repeated_fingerprint"`、`report_ids` 含這 5 筆
-
-### 🆕 場景 25b：同 fingerprint 1 小時內第 3 筆直接 429（介面層硬擋、v4.1 新增）
-
-**GIVEN** user A 過去 1 小時內已送 2 筆 fingerprint=`mem_blocked_secret_keyword`
-
-**WHEN** 嘗試 POST 第 3 筆同 fingerprint
+**WHEN** after the 30th write
 
 **THEN**
-- HTTP 429、訊息「同類錯誤回報太頻繁、請稍後再試」
-- **不寫入** `bug_reports` 表
-- **不觸發** spam 偵測流程
+- add a spam suspect, `trigger_rule="high_volume_24h"`
 
-### 🆕 場景 26：相似度計算
+### 🆕 Scenario 25: same fingerprint 5 within 1 hour → auto-mark (v4.1 raised threshold from 3, since the interface layer already hard-blocks at 3)
 
-**GIVEN** 兩筆回報 A、B
+**GIVEN** user A sent 5 reports in the past 1 hour all with fingerprint `mem_blocked_secret_keyword` (note: the interface layer 429-blocks at the 3rd, so in practice it's hard to reach 5, but if the interface layer is bypassed it's still detected)
 
-**WHEN** 後端計算相似度
+**WHEN** after the 5th write
 
 **THEN**
-- 把 `title + " " + description` 串接、轉小寫、去除多餘空白
-- 計算 Levenshtein 距離 / max(lenA, lenB) → 取 1 減去 → 相似度分數
-- 分數 ≥ 0.8 視為相似
+- add a spam suspect, `trigger_rule="repeated_fingerprint"`, `report_ids` includes these 5
 
-### 🆕 場景 27：偵測本身有頻率限制
+### 🆕 Scenario 25b: same fingerprint, the 3rd within 1 hour → 429 directly (interface-layer hard-block, added in v4.1)
 
-**GIVEN** 偵測器是 post-write hook
+**GIVEN** user A has already sent 2 reports with fingerprint=`mem_blocked_secret_keyword` in the past 1 hour
 
-**WHEN** 每筆新寫入觸發偵測
+**WHEN** attempting to POST a 3rd with the same fingerprint
 
 **THEN**
-- 偵測邏輯本身 ≤ 50ms（不卡建立流程）
-- 不在 critical path、寫入失敗不影響回報建立
-- 計算密集任務（相似度）背景跑、結果寫 spam_suspects 表
+- HTTP 429, message 「同類錯誤回報太頻繁、請稍後再試」
+- **does not write** the `bug_reports` table
+- **does not trigger** the spam detection flow
+
+### 🆕 Scenario 26: similarity computation
+
+**GIVEN** two reports A, B
+
+**WHEN** the backend computes similarity
+
+**THEN**
+- concatenate `title + " " + description`, lowercase, strip extra whitespace
+- compute Levenshtein distance / max(lenA, lenB) → take 1 minus it → similarity score
+- score ≥ 0.8 is considered similar
+
+### 🆕 Scenario 27: detection itself is rate-limited
+
+**GIVEN** the detector is a post-write hook
+
+**WHEN** each new write triggers detection
+
+**THEN**
+- the detection logic itself ≤ 50ms (doesn't block the create flow)
+- not on the critical path, a write failure doesn't affect report creation
+- compute-intensive work (similarity) runs in background, results written to the spam_suspects table
 
 ---
 
-## 四、🆕 主機指紋（v4.1：作業系統機器識別碼）
+## IV. 🆕 Machine fingerprint (v4.1: OS machine identifier)
 
-### 🆕 場景 28：每次啟動算出同樣的主機指紋
+### 🆕 Scenario 28: each startup computes the same machine fingerprint
 
-**GIVEN** 同一台機器、同一個 OwnMind 安裝路徑
+**GIVEN** the same machine, the same OwnMind install path
 
-**WHEN** OwnMind 客戶端啟動三次
-
-**THEN**
-- 每次都呼叫 `node-machine-id` 套件抓 OS 機器 ID：
-  - macOS：`IOPlatformUUID`
-  - Linux：`/etc/machine-id`
-  - Windows：登錄檔 `MachineGuid`
-- 串接「OS 機器 ID + OwnMind 安裝路徑」算 SHA-256、取前 16 字
-- 三次都得到同一個指紋字串
-- 不寫任何檔案
-
-### 🆕 場景 29：不同機器算出不同指紋
-
-**GIVEN** 兩台不同電腦、同一 OwnMind 帳號
-
-**WHEN** 各自啟動
+**WHEN** the OwnMind client starts three times
 
 **THEN**
-- 兩台機器 OS 機器 ID 不同 → 算出的指紋必不同
-- 後台看回報時能分辨「Vin 從 Mac 報的」vs「Vin 從 Windows 報的」
+- each time it calls the `node-machine-id` package to get the OS machine ID:
+  - macOS: `IOPlatformUUID`
+  - Linux: `/etc/machine-id`
+  - Windows: registry `MachineGuid`
+- concatenate "OS machine ID + OwnMind install path", SHA-256, take first 16 chars
+- all three times get the same fingerprint string
+- writes no file
 
-### 🆕 場景 30：Docker / VPN / 虛擬機環境穩定（v4.1 重點）
+### 🆕 Scenario 29: different machines compute different fingerprints
 
-**GIVEN** OwnMind 跑在 Docker 容器內、或啟用 Tailscale VPN（會塞虛擬網卡）、或在虛擬機裡
+**GIVEN** two different computers, the same OwnMind account
 
-**WHEN** 客戶端啟動
-
-**THEN**
-- 由於用 OS 機器 ID（不靠主機名、不靠 MAC）、即使容器主機名變動或虛擬網卡進出、指紋仍穩定
-- 兩次重啟（hostname 隨機變、MAC 順序不同）→ 仍同一個指紋
-
-### 🆕 場景 31：OS 機器 ID 抓不到時的 fallback
-
-**GIVEN** 容器特殊配置、`/etc/machine-id` 不存在、`node-machine-id` 套件回傳 error
-
-**WHEN** 客戶端嘗試生指紋
+**WHEN** each starts
 
 **THEN**
-- fallback 用「主機名 + 安裝路徑」算 SHA-256
-- 帶 `fingerprint_source: "no_machine_id"` 標記
-- 後台知道這台 OS 沒提供穩定 ID、可能不穩
+- the two machines have different OS machine IDs → the computed fingerprints must differ
+- when viewing reports in the admin, can distinguish "Vin reported from Mac" vs "Vin reported from Windows"
 
-### 🆕 場景 32：複製 OwnMind 安裝到新機器、指紋不同
+### 🆕 Scenario 30: stable in Docker / VPN / VM environments (v4.1 focus)
 
-**GIVEN** 把整個 OwnMind 安裝目錄複製到新機器
+**GIVEN** OwnMind runs in a Docker container, or with Tailscale VPN enabled (which adds a virtual NIC), or inside a VM
 
-**WHEN** 新機器啟動
+**WHEN** the client starts
 
 **THEN**
-- OS 機器 ID 不同 → 指紋必不同
-- 後台分得出兩台機器
+- since it uses the OS machine ID (not relying on hostname, not on MAC), even if the container hostname changes or virtual NICs come and go, the fingerprint stays stable
+- two reboots (hostname randomly changes, MAC ordering differs) → still the same fingerprint
+
+### 🆕 Scenario 31: fallback when OS machine ID can't be obtained
+
+**GIVEN** a special container config, `/etc/machine-id` doesn't exist, the `node-machine-id` package returns an error
+
+**WHEN** the client tries to generate a fingerprint
+
+**THEN**
+- fallback to SHA-256 of "hostname + install path"
+- with a `fingerprint_source: "no_machine_id"` marker
+- the admin knows this OS provides no stable ID and may be unstable
+
+### 🆕 Scenario 32: copy the OwnMind install to a new machine, fingerprint differs
+
+**GIVEN** the entire OwnMind install directory is copied to a new machine
+
+**WHEN** the new machine starts
+
+**THEN**
+- different OS machine ID → fingerprint must differ
+- the admin can tell the two machines apart
 
 ---
 
-## 五、MCP 工具 `ownmind_report_bug`
+## V. MCP tool `ownmind_report_bug`
 
-### 場景 32-35：見 v3 場景 19-23
+### Scenarios 32-35: see v3 scenarios 19-23
 
-包含建立、自動補環境、confirm_string 驗證、兩階段預覽、隱私強制遮蔽 fail-closed。
+Covers create, auto-fill environment, confirm_string validation, two-stage preview, privacy forced redaction fail-closed.
 
-**🚫 v4 砍掉 v3 場景 24-30**（confirm-window hook 相關）：多客戶端做不到、整層拿掉。
-
----
-
-## 六、錯誤回應整合 `suggest_report` 旗標
-
-### 場景 36：被擋 + 冷靜期外 + 非 spam 封鎖期 → 附旗標
-
-**GIVEN** 使用者寫入被擋、過去 24 小時沒拒絕過該指紋、不在 spam 封鎖期
-
-**WHEN** 後端拋 400
-
-**THEN** 回應 JSON 含 `suggest_report: true` + `bug_fingerprint`
-
-### 場景 37：冷靜期內 → 不附旗標
-
-**GIVEN** 過去 24 小時拒絕過該指紋
-
-**WHEN** 後端拋 400
-
-**THEN** 回應 JSON 不含 `suggest_report`
-
-### 🆕 場景 38：spam 封鎖期內 → 不附旗標（優先於冷靜期）
-
-**GIVEN** 該 user 在 `bug_report_spam_blocks` 有未過期紀錄
-
-**WHEN** 後端拋 400 / 5xx
-
-**THEN** 回應 JSON 不含 `suggest_report`、優先於冷靜期判斷
-
-### 場景 39：2xx 正常 → 不附旗標
-
-維持 v3。
+**🚫 v4 cuts v3 scenarios 24-30** (confirm-window hook related): can't be done across clients, the whole layer removed.
 
 ---
 
-## 七、AI 自動填欄位 + 對話片段截斷（聯合型別）
+## VI. Error response integration `suggest_report` flag
 
-### 場景 40：AI 填得齊所有欄位
+### Scenario 36: blocked + outside cooldown + not in spam block window → attach flag
 
-維持 v3。
+**GIVEN** the user's write is blocked, no decline of that fingerprint in the past 24 hours, not in the spam block window
 
-### 場景 41：AI 抓不到某欄位 → 佔位
+**WHEN** the backend throws 400
 
-維持 v3。
+**THEN** the response JSON contains `suggest_report: true` + `bug_fingerprint`
 
-### 🆕 場景 42：對話片段聯合型別（`string | TruncatedMessage`）
+### Scenario 37: during cooldown → no flag
 
-**GIVEN** 對話歷史含一條 100KB 的訊息
+**GIVEN** that fingerprint was declined in the past 24 hours
 
-**WHEN** 客戶端準備 `context_blob.conversation_snippets`
+**WHEN** the backend throws 400
 
-**THEN** 該條變成：
+**THEN** the response JSON does not contain `suggest_report`
+
+### 🆕 Scenario 38: during spam block window → no flag (priority over cooldown)
+
+**GIVEN** that user has an unexpired record in `bug_report_spam_blocks`
+
+**WHEN** the backend throws 400 / 5xx
+
+**THEN** the response JSON does not contain `suggest_report`, taking priority over the cooldown check
+
+### Scenario 39: 2xx normal → no flag
+
+Keep v3.
+
+---
+
+## VII. AI auto-fills fields + conversation snippet truncation (union type)
+
+### Scenario 40: AI fills all fields completely
+
+Keep v3.
+
+### Scenario 41: AI can't get a field → placeholder
+
+Keep v3.
+
+### 🆕 Scenario 42: conversation snippet union type (`string | TruncatedMessage`)
+
+**GIVEN** the conversation history contains a 100KB message
+
+**WHEN** the client prepares `context_blob.conversation_snippets`
+
+**THEN** that message becomes:
 ```json
 {
   "truncated": true,
   "original_size": 102400,
-  "head": "前 2KB 內容...",
-  "tail": "...後 2KB 內容"
+  "head": "first 2KB content...",
+  "tail": "...last 2KB content"
 }
 ```
 
-而其他條短訊息保持為 `string` 型別。整個陣列型別為 `(string | TruncatedMessage)[]`、共用 schema 在 `shared/context-blob-schema.js`。
+while other short messages stay as `string` type. The whole array type is `(string | TruncatedMessage)[]`, shared schema in `shared/context-blob-schema.js`.
 
-### 🆕 場景 43：後端解析聯合型別、不崩潰
+### 🆕 Scenario 43: backend parses the union type without crashing
 
-**GIVEN** 後端接收的 `conversation_snippets` 含混合 string 與 TruncatedMessage
+**GIVEN** the `conversation_snippets` the backend receives mixes string and TruncatedMessage
 
-**WHEN** 後端中間層處理（隱私遮蔽、寫入 DB）
-
-**THEN**
-- 對每條訊息判斷型別
-- string 直接套用 privacy-detect
-- TruncatedMessage 對 head + tail 個別套用 privacy-detect
-- 都不崩潰
-
-### 🆕 場景 44：後台解析聯合型別、顯示給管理員
-
-**GIVEN** 後台讀取一筆回報的 `conversation_snippets`
-
-**WHEN** 後台介面渲染
+**WHEN** the backend middleware processes (privacy redaction, write to DB)
 
 **THEN**
-- string 直接顯示
-- TruncatedMessage 顯示為摺疊區塊：「訊息已截斷（原長 100KB）」+ 可展開看 head/tail
+- judge the type of each message
+- string → apply privacy-detect directly
+- TruncatedMessage → apply privacy-detect to head + tail separately
+- neither crashes
 
-### 場景 45：50 條 + 1MB 上限
+### 🆕 Scenario 44: admin parses the union type, displays to the admin
 
-維持 v3。
+**GIVEN** the admin reads a report's `conversation_snippets`
+
+**WHEN** the admin interface renders
+
+**THEN**
+- string → display directly
+- TruncatedMessage → display as a collapsible block: "message truncated (original length 100KB)" + expandable to view head/tail
+
+### Scenario 45: 50 messages + 1MB limit
+
+Keep v3.
 
 ---
 
-## 八、後台介面
+## VIII. Admin interface
 
-### 場景 46-49：列表頁、詳細頁、權限擋下
+### Scenarios 46-49: list page, detail page, permission block
 
-維持 v3 場景 41-44。
+Keep v3 scenarios 41-44.
 
-### 🆕 場景 50：管理員首頁 spam suspect 卡片
+### 🆕 Scenario 50: admin home spam suspect card
 
-**GIVEN** 管理員開 `/admin`
+**GIVEN** the admin opens `/admin`
 
-**WHEN** 頁面載入
-
-**THEN**
-- 首頁多一張卡片：「疑似 spam：N 筆」
-- 點擊跳 `/admin/bug-reports/spam-suspects?status=pending`
-
-### 🆕 場景 51：spam suspect 列表頁
-
-**GIVEN** 管理員開 `/admin/bug-reports/spam-suspects`
-
-**WHEN** 頁面載入
+**WHEN** the page loads
 
 **THEN**
-- 表格顯示：user / triggered_at / trigger_rule / 報告數
-- 點 user 跳該 user 所有回報的列表
-- 每筆 suspect 兩個按鈕：「確認 spam」（紅）、「正常」（綠）
+- the home page gets an extra card: 「疑似 spam：N 筆」
+- clicking goes to `/admin/bug-reports/spam-suspects?status=pending`
 
-### 🆕 場景 52：管理員點「確認 spam」
+### 🆕 Scenario 51: spam suspect list page
 
-**GIVEN** 管理員點 suspect id=5 的「確認 spam」按鈕
+**GIVEN** the admin opens `/admin/bug-reports/spam-suspects`
 
-**WHEN** 跳出確認對話框、輸入封鎖理由、按確認
-
-**THEN**
-- 呼叫 POST `/api/bug-reports/spam-suspects/5/confirm`
-- 列表刷新、id=5 從 pending 消失
-- 該 user 被列入封鎖期
-
-### 🆕 場景 53：通知列表加批量已讀 + 靜音
-
-**GIVEN** 使用者啟動時看到通知列表
-
-**WHEN** 通知區渲染
+**WHEN** the page loads
 
 **THEN**
-- 列表頂端有「全部標已讀」按鈕
-- 每筆通知右側有「靜音同類」連結
-- 管理員額外有「不提醒我自己」開關
+- the table shows: user / triggered_at / trigger_rule / report count
+- clicking a user goes to that user's full report list
+- each suspect has two buttons: 「確認 spam」 (red), 「正常」 (green)
+
+### 🆕 Scenario 52: admin clicks 「確認 spam」
+
+**GIVEN** the admin clicks the 「確認 spam」 button on suspect id=5
+
+**WHEN** a confirm dialog pops up, enters a block reason, clicks confirm
+
+**THEN**
+- call POST `/api/bug-reports/spam-suspects/5/confirm`
+- the list refreshes, id=5 disappears from pending
+- that user is added to the block window
+
+### 🆕 Scenario 53: notification list adds batch read + mute
+
+**GIVEN** the user sees the notification list on startup
+
+**WHEN** the notification area renders
+
+**THEN**
+- a 「全部標已讀」 button at the top of the list
+- a 「靜音同類」 link on the right of each notification
+- the admin additionally has a 「不提醒我自己」 toggle
 
 ---
 
-## 九、啟動時通知整合
+## IX. Startup notification integration
 
-### 場景 54-57：見 v3 場景 45-48
+### Scenarios 54-57: see v3 scenarios 45-48
 
-雙軌通知顯示、沒有時不顯示。
+Dual-track notification display, not shown when there are none.
 
 ---
 
-## 十、降級與失敗模式
+## X. Degradation and failure modes
 
-### 場景 58：連不上後端 → 顯示錯誤、不暫存
+### Scenario 58: can't reach backend → show error, don't cache
 
-**GIVEN** 客戶端 AI 呼叫 `ownmind_report_bug`、後端 timeout / 5xx
+**GIVEN** the client AI calls `ownmind_report_bug`, the backend times out / 5xx
 
-**WHEN** 連線失敗
+**WHEN** the connection fails
 
 **THEN**
-- 客戶端顯示：「目前連不到 OwnMind 後端、回報未送出、請稍後再試」
-- **不寫**本地暫存、**不自動**重試
-- AI 用文字提示使用者「需要時請說『再試一次回報』」（純文字、不依賴按鈕）
+- the client shows: 「目前連不到 OwnMind 後端、回報未送出、請稍後再試」
+- **doesn't write** a local cache, **doesn't auto** retry
+- the AI prompts the user via text 「需要時請說『再試一次回報』」 (plain text, doesn't rely on a button)
 
-### 場景 59：通知 fetch 失敗 → 靜默略過
+### Scenario 59: notification fetch fails → silently skip
 
-維持 v3。
+Keep v3.
 
-### 🚫 v4 砍掉 v3 場景 51（confirm-window hook 攔截 AI 跳預覽）：hook 整層拿掉、不再相關
+### 🚫 v4 cuts v3 scenario 51 (confirm-window hook intercepting the AI to show the preview): the whole hook layer is removed, no longer relevant
 
 ---
 
-## 十一、隱私邊界
+## XI. Privacy boundaries
 
-### 場景 60-62：強制中間層遮蔽、預覽全文、勾掉所有片段仍可送
+### Scenarios 60-62: forced middleware redaction, preview full text, can still send with all snippets unchecked
 
-維持 v3 場景 52-54。
+Keep v3 scenarios 52-54.

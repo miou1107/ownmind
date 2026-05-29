@@ -1,45 +1,45 @@
-# v1.20.2 — 規格：recent_event_exists 失敗訊息加上具體呼叫範例
+# v1.20.2 — Spec: add a concrete call example to the recent_event_exists failure message
 
-## Scenario 1：失敗訊息含具體 ownmind_report_compliance 呼叫範例
+## Scenario 1: failure message contains a concrete ownmind_report_compliance call example
 
-**GIVEN** 一條 IR-025 verification 條件 `{ type: 'recent_event_exists', params: { event: 'verification', action: 'comply' } }`
-**AND** 合規記錄 `ctx.complianceEvents` 內沒有 `event='verification' AND action='comply'` 的記錄
-**WHEN** 跑 `evaluateConditions(conditions, ctx)`
-**THEN** 回傳 `{ pass: false, failures: [...] }`
-**AND** `failures[0]` 字串裡必須包含字面值：
+**GIVEN** an IR-025 verification condition `{ type: 'recent_event_exists', params: { event: 'verification', action: 'comply' } }`
+**AND** the compliance records `ctx.complianceEvents` contain no record with `event='verification' AND action='comply'`
+**WHEN** running `evaluateConditions(conditions, ctx)`
+**THEN** it returns `{ pass: false, failures: [...] }`
+**AND** the `failures[0]` string must contain the literals:
   - `ownmind_report_compliance`
-  - `rule_title: 'verification'`（或 `rule_title="verification"`）
-  - `action: 'comply'`（或 `action="comply"`）
-**AND** `failures[0]` 字串裡必須包含「不要帶 rule_code」這類提示字眼（白話提示 AI 不要誤帶 rule_code 觸發備援邏輯）
+  - `rule_title: 'verification'` (or `rule_title="verification"`)
+  - `action: 'comply'` (or `action="comply"`)
+**AND** the `failures[0]` string must contain a "do not pass rule_code" style hint (plainly telling the AI not to mistakenly pass rule_code and trigger the fallback logic)
 
-## Scenario 2：code-review 事件缺失也同樣產生具體呼叫範例
+## Scenario 2: a missing code-review event also produces a concrete call example
 
-**GIVEN** 一條條件 `{ type: 'recent_event_exists', params: { event: 'code-review', action: 'comply' } }`
-**AND** 合規記錄沒對應 event
-**WHEN** 跑 `evaluateConditions`
-**THEN** `failures[0]` 內含 `rule_title: 'code-review'` + `action: 'comply'` + 不要帶 rule_code 提示
+**GIVEN** a condition `{ type: 'recent_event_exists', params: { event: 'code-review', action: 'comply' } }`
+**AND** the compliance records have no matching event
+**WHEN** running `evaluateConditions`
+**THEN** `failures[0]` contains `rule_title: 'code-review'` + `action: 'comply'` + the do-not-pass-rule_code hint
 
-## Scenario 3：原本通過的條件不受影響
+## Scenario 3: previously passing conditions are unaffected
 
-**GIVEN** 合規記錄已有 `{ event: 'verification', action: 'comply' }`
-**WHEN** 跑 `evaluateConditions` 帶同樣條件
-**THEN** 回傳 `{ pass: true, failures: [] }`
+**GIVEN** the compliance records already contain `{ event: 'verification', action: 'comply' }`
+**WHEN** running `evaluateConditions` with the same condition
+**THEN** it returns `{ pass: true, failures: [] }`
 
-## Scenario 4：其他 CHECK_HANDLERS 的 hint 文字不變
+## Scenario 4: hint text of other CHECK_HANDLERS is unchanged
 
-**GIVEN** 一條 `staged_files_include` 條件失敗
-**WHEN** 跑 `evaluateConditions`
-**THEN** `failures[0]` 維持原本格式「，請 git add ... 後重試」、不被影響
+**GIVEN** a `staged_files_include` condition fails
+**WHEN** running `evaluateConditions`
+**THEN** `failures[0]` keeps the original format "..., please git add ... and retry", unaffected
 
-## Scenario 5：失敗訊息保留原本規則 message 開頭 + 長度上限
+## Scenario 5: failure message keeps the original rule message prefix + length cap
 
-**GIVEN** `recent_event_exists` 失敗
-**WHEN** 跑 `evaluateConditions`
-**THEN** `failures[0]` 開頭仍是規則本身的 `message`（例：「還沒做 verification」）、後面才接具體呼叫範例
-**AND** `failures[0].length <= 250`（單筆失敗訊息不超過 250 字）
+**GIVEN** `recent_event_exists` fails
+**WHEN** running `evaluateConditions`
+**THEN** `failures[0]` still starts with the rule's own `message` (e.g. "verification not done yet"), with the concrete call example appended after it
+**AND** `failures[0].length <= 250` (a single failure message does not exceed 250 chars)
 
-## 非功能性需求
+## Non-functional requirements
 
-- **零外部依賴**：`verification.js` 仍是純函式模組、不引入新套件
-- **向後相容**：context 缺失 complianceEvents 時、handler 仍 return true（跳過檢查）、行為不變
-- **其他 CHECK_HANDLERS 不受影響**：見 Scenario 4、`staged_files_include` / `staged_files_exclude` / `commit_message_*` 等 hint 文字維持原狀
+- **Zero external dependencies**: `verification.js` is still a pure-function module, no new packages introduced
+- **Backward compatible**: when the context is missing complianceEvents, the handler still returns true (skips the check), behavior unchanged
+- **Other CHECK_HANDLERS unaffected**: see Scenario 4; the hint text of `staged_files_include` / `staged_files_exclude` / `commit_message_*` etc. stays as-is

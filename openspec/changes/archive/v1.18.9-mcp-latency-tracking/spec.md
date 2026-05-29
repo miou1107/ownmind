@@ -1,22 +1,22 @@
-# v1.18.9 — 詳細規格
+# v1.18.9 — Detailed spec
 
-> 拍板結果見 proposal.md section 3。本檔為對應拍板結果的最終規格。
+> See proposal.md section 3 for the decisions. This file is the final spec corresponding to those decisions.
 >
-> 變更紀錄（2026-05-14）：
-> - 決策 1 改為「訊息流 markdown 連結 → 開瀏覽器確認頁」（原規劃 A：CLI echo + URL）
-> - 決策 2 改為「網頁確認頁面（按一次 1 秒完成）+ CLI 並存」
-> - 新增 E 章「latency_ms 埋點」（合併原 v1.18.6 漏作項）
-> - A.4「防誤點」維持不變（同 user 同 event 5 分鐘內 dedup）
+> Change log (2026-05-14):
+> - Decision 1 changed to "message-stream markdown link → open browser confirmation page" (original plan A: CLI echo + URL)
+> - Decision 2 changed to "web confirmation page (one click, done in 1 second) + CLI in parallel"
+> - Added chapter E "latency_ms instrumentation" (merging the originally-missed v1.18.6 item)
+> - A.4 "anti-misclick" unchanged (dedup per user per event within 5 minutes)
 >
-> **⛔ A 章棄用（2026-05-14 part 2）：** 整個 block_feedback 功能棄用，原因見 proposal.md 開頭。本 A 章保留作歷史記錄、不再實作。對應 C 章（健康度分頁）的「誤殺率指標卡」也跟著移除、D 章「場景 1」失效。
+> **⛔ Chapter A deprecated (2026-05-14 part 2):** The entire block_feedback feature is dropped; see the top of proposal.md for the reason. This chapter A is kept as a historical record and no longer implemented. The corresponding "false-positive metric card" in chapter C (health tab) is also removed, and "scenario 1" of chapter D is invalidated.
 
 ---
 
-## A. 規則阻擋誤殺率（C6）
+## A. Rule-block false-positive rate (C6)
 
-### A.1 客戶端提示（決策 1 = 訊息流 markdown 連結）
+### A.1 Client prompt (decision 1 = message-stream markdown link)
 
-`hooks/ownmind-reply-lint.js` 偵測違反時、結尾印：
+When `hooks/ownmind-reply-lint.js` detects a violation, it prints at the end:
 
 ```
 【OwnMind v1.18.9】鐵律觸發：IR-037（中英混雜超 15%）
@@ -24,18 +24,18 @@
     [👎 擋錯了？點這](https://kkvin.com/ownmind/feedback/block?event_id=evt_abc123&sig=4f8a2b1c)
 ```
 
-關鍵設計：
-- markdown 連結格式（`[文字](URL)`）— Cursor / Gemini / Codex / OpenCode 等正常 client 顯示為可點藍色連結；Claude Code 摺疊卡片時 user 可手動展開
-- `event_id` 由 reply-lint hook 從 `mcp/ownmind-log.js` 寫進 `activity_logs.client_event_id` 並注入連結 query
-- `sig` = HMAC-SHA256(`event_id|user_id|day_bucket`, secret) 取前 16 字元
-  - `day_bucket = floor(unix_ts / 86400)`、24h 內有效、過期回 410 Gone
-  - secret 從既有 `ENCRYPTION_KEY` 衍生（`HMAC-SHA256(ENCRYPTION_KEY, 'ownmind-feedback-sig-v1')`），不需新增環境變數、零部署成本
+Key design:
+- markdown link format (`[text](URL)`) — normal clients like Cursor / Gemini / Codex / OpenCode show it as a clickable blue link; in Claude Code the user can manually expand the collapsed card
+- `event_id` is written by the reply-lint hook from `mcp/ownmind-log.js` into `activity_logs.client_event_id` and injected into the link query
+- `sig` = HMAC-SHA256(`event_id|user_id|day_bucket`, secret) taking the first 16 characters
+  - `day_bucket = floor(unix_ts / 86400)`, valid within 24h, returns 410 Gone when expired
+  - the secret is derived from the existing `ENCRYPTION_KEY` (`HMAC-SHA256(ENCRYPTION_KEY, 'ownmind-feedback-sig-v1')`), no new environment variable needed, zero deployment cost
 
-### A.2 網頁確認頁面 + CLI 並存（決策 2 = 按一次 1 秒完成）
+### A.2 Web confirmation page + CLI in parallel (decision 2 = one click, done in 1 second)
 
-#### A.2.1 網頁確認頁面（主管道）
+#### A.2.1 Web confirmation page (main channel)
 
-`GET /feedback/block?event_id=xxx&sig=yyy`：
+`GET /feedback/block?event_id=xxx&sig=yyy`:
 
 ```html
 <!doctype html>
@@ -76,45 +76,45 @@
 </html>
 ```
 
-關鍵設計：
-- 不要任何表單欄位、不要 reason 輸入框 — 按一下就完成
-- `window.close()` 在多數瀏覽器不能關 user 主動開的 tab；網頁顯示「請手動關閉」也可接受
-- 不需登入（簽名 URL 本身就是授權）
+Key design:
+- No form fields at all, no reason input box — one click and it's done
+- `window.close()` cannot close a tab the user opened themselves in most browsers; showing "please close manually" on the page is acceptable
+- No login needed (the signed URL is itself the authorization)
 
-#### A.2.2 CLI 通道（並存、給 power user / AI agent）
+#### A.2.2 CLI channel (in parallel, for power users / AI agents)
 
 ```
 ~/.ownmind/bin/ownmind report-false-positive --event-id=xxx [--reason="..."]
 ```
 
-底層 POST `/api/feedback/block`、用 `Authorization: Bearer ${OWNMIND_API_KEY}` 取代 sig query param。
+Under the hood it POSTs to `/api/feedback/block`, using `Authorization: Bearer ${OWNMIND_API_KEY}` in place of the sig query param.
 
 #### A.2.3 server endpoint
 
-`POST /api/feedback/block`：
+`POST /api/feedback/block`:
 
-請求 body（兩種授權擇一）：
+Request body (one of two authorizations):
 ```json
 {
   "event_id": "evt_abc123",
-  "sig": "4f8a2b1c",                    // 網頁路徑
-  "client_event_id": "<uuid v4>"        // 自動產生、防 dedup race
+  "sig": "4f8a2b1c",                    // web path
+  "client_event_id": "<uuid v4>"        // auto-generated, prevents dedup race
 }
-// 或
+// or
 {
   "event_id": "evt_abc123",
-  "reason": "...",                       // 可選、僅 CLI 路徑提供
+  "reason": "...",                       // optional, only provided by the CLI path
   "client_event_id": "<uuid v4>"
 }
 ```
 
-server 邏輯：
-1. 驗證授權（sig 或 Bearer token）
-2. 校驗 `event_id` 確實存在於 `activity_logs` 且事件類型可被 false positive 標記
-3. 寫入 `activity_logs.event='block_feedback'`、`details: {original_event_id, reason?, source: 'web'|'cli'}`
-4. 回 200 `{ok: true}` 或 409（5 分鐘內已回報過）
+Server logic:
+1. Verify authorization (sig or Bearer token)
+2. Validate that `event_id` actually exists in `activity_logs` and that the event type can be marked as a false positive
+3. Write `activity_logs.event='block_feedback'`, `details: {original_event_id, reason?, source: 'web'|'cli'}`
+4. Return 200 `{ok: true}` or 409 (already reported within 5 minutes)
 
-### A.3 SQL 算誤殺率
+### A.3 SQL to compute the false-positive rate
 
 ```sql
 WITH blocks AS (
@@ -135,40 +135,40 @@ SELECT
 FROM blocks, feedbacks;
 ```
 
-### A.4 防誤點
+### A.4 Anti-misclick
 
-同 user 同 `original_event_id` 5 分鐘內：
-- 第 1 次：寫入 block_feedback
-- 第 2 次以後：return 409 + "already recorded"、不重複寫
+For the same user and same `original_event_id` within 5 minutes:
+- 1st time: write block_feedback
+- 2nd time onward: return 409 + "already recorded", don't write again
 
 ---
 
-## ⛔ B. 4 種安全告警 — 棄用（2026-05-14 part 3）
+## ⛔ B. 4 security alerts — deprecated (2026-05-14 part 3)
 
-> Vin：「我不需要這種功能」。OwnMind 個人用、ROI 不夠。已 commit 127b740 的 safety-detect.js + safety-audit.js + 兩個 test 全部刪除。本 B 章保留作歷史記錄、不再實作。
+> Vin: "I don't need this feature". OwnMind is personal use, ROI is too low. The safety-detect.js + safety-audit.js + two tests already committed in 127b740 were all deleted. This chapter B is kept as a historical record and no longer implemented.
 >
-> 對應 D.場景 2 也跟著失效。
+> The corresponding D.scenario 2 is also invalidated.
 
-## B（已棄用）. 4 種安全告警
+## B (deprecated). 4 security alerts
 
-### B.1 偵測規則（決策 3 = B：只通知、不自動暫停）
+### B.1 Detection rules (decision 3 = B: notify only, no auto-suspend)
 
-| 告警類型 | 偵測位置 | 條件 | 寫入 |
+| Alert type | Detection point | Condition | Written to |
 |---|---|---|---|
-| `private_memory_leak` | `src/middleware/auth.js` 之後、`/api/memory/sync` 回傳前 | 回傳 memory 集合內任一 `user_id` ≠ `req.user.id` | usage_audit_log |
-| `secret_value_in_logs` | winston transport 寫入時 | logs 內容 contains `secrets.value` 字串（從 cache 抓 secrets value 清單） | usage_audit_log |
-| `cross_user_access` | 所有 `/api/memory/*` 回傳前 | 回傳 memory.user_id ≠ req.user.id（同 `private_memory_leak`、廣義版） | usage_audit_log |
-| `bulk_read_alert` | `/api/memory/sync` rate limit | 同 user_id / api_key 1h 內成功讀取 > 1000 筆 memory | usage_audit_log |
+| `private_memory_leak` | after `src/middleware/auth.js`, before `/api/memory/sync` returns | any `user_id` in the returned memory set ≠ `req.user.id` | usage_audit_log |
+| `secret_value_in_logs` | when the winston transport writes | log content contains a `secrets.value` string (the secrets value list pulled from cache) | usage_audit_log |
+| `cross_user_access` | before all `/api/memory/*` responses | returned memory.user_id ≠ req.user.id (same as `private_memory_leak`, a generalized version) | usage_audit_log |
+| `bulk_read_alert` | `/api/memory/sync` rate limit | same user_id / api_key successfully reading > 1000 memory rows within 1h | usage_audit_log |
 
-### B.2 告警通知（決策 3 = B）
+### B.2 Alert notification (decision 3 = B)
 
-寫 usage_audit_log 後、不自動暫停帳號。改成：
+After writing usage_audit_log, do not auto-suspend the account. Instead:
 
-1. 管理員儀表板「健康度」分頁實時顯示告警列表
-2. 嚴重告警（4 種任一）：寄 email 給 super_admin 帳號（Vin 個人）
-3. Vin 看完後、admin 網頁手動「暫停帳號」按鈕（既有 disabled 機制）
+1. The admin dashboard "Health" tab shows the alert list in real time
+2. Severe alert (any of the 4): send an email to the super_admin account (Vin personally)
+3. After Vin reviews, use the admin web "suspend account" button manually (existing disabled mechanism)
 
-### B.3 大量資料外洩閾值（決策 4 = A：1h > 1000 筆）
+### B.3 Bulk data exfiltration threshold (decision 4 = A: 1h > 1000 rows)
 
 ```js
 // src/middleware/safety-alerts.js
@@ -193,10 +193,10 @@ async function checkBulkRead(userId, apiKey) {
 }
 ```
 
-### B.4 告警 SQL（管理員儀表板用）
+### B.4 Alert SQL (for the admin dashboard)
 
 ```sql
--- 過去 7 天嚴重告警件數（4 種）
+-- severe alert count over the past 7 days (4 types)
 SELECT
   event_type,
   COUNT(*) AS alerts,
@@ -217,17 +217,17 @@ ORDER BY COUNT(*) DESC;
 
 ---
 
-## ⛔ C. 管理員儀表板「健康度」分頁 — 棄用（2026-05-14 part 3）
+## ⛔ C. Admin dashboard "Health" tab — deprecated (2026-05-14 part 3)
 
-> 原本要顯示「誤殺率 + 4 種告警 + 違反/遵守/覆蓋率 + latency p95」。前兩項跟 block_feedback / 安全告警一起棄用、剩下「合規數字 + latency」單一指標、不值得新做一個分頁。Vin 自己是 super_admin、要看數字直接打開既有後台或跑 SQL 即可。
+> Originally meant to show "false-positive rate + 4 alerts + violations/compliance/coverage + latency p95". The first two were dropped along with block_feedback / security alerts, leaving a single "compliance numbers + latency" metric — not worth building a new tab. Vin himself is super_admin; to see the numbers he can just open the existing admin panel or run SQL.
 >
-> 對應 Phase 3 全部不做。
+> The corresponding Phase 3 is entirely dropped.
 
-## C（已棄用）. 管理員儀表板「健康度」分頁
+## C (deprecated). Admin dashboard "Health" tab
 
-`src/public/index.html` 既有 admin 網頁加新 tab：
+Add a new tab to the existing admin web page `src/public/index.html`:
 
-### C.1 顯示內容
+### C.1 Displayed content
 
 ```
 ╔══════════════════════════════════════════════════════╗
@@ -243,48 +243,48 @@ ORDER BY COUNT(*) DESC;
 ╚══════════════════════════════════════════════════════╝
 ```
 
-> **2026-05-14 移除：** 「📊 規則阻擋誤殺率」指標卡跟著 block_feedback 棄用一起拿掉、改加 MCP latency p95 指標卡（從 v1.18.9 latency 埋點來）。
+> **Removed 2026-05-14:** The "📊 rule-block false-positive rate" metric card was removed along with the block_feedback deprecation, replaced by an MCP latency p95 metric card (from the v1.18.9 latency instrumentation).
 
-### C.2 隱私邊界
+### C.2 Privacy boundary
 
-- 安全告警**不顯示**詳細 user_id、只顯示「N 個 user 受影響」（按 Gemini r3「最小樣本 10」未達標時隱藏）
-- 例外：Vin 自己（super_admin）可看完整 audit log
-
----
-
-## D. 端到端流程範例
-
-> 2026-05-14：場景 1（reply-lint 誤殺回饋）跟 A 章一起棄用、移除。
-
-### 場景 2：偵測到 user 越權存取
-
-1. user A 跑 `GET /api/memory/sync`、req.user.id = A
-2. 因 bug、回傳結果包含 user B 的 memory
-3. middleware 偵測 `回傳 memory.user_id ≠ req.user.id`、寫 `usage_audit_log.event_type='cross_user_access'`
-4. super_admin 收到 email 通知
-5. Vin 進管理員網頁看 audit log 細節、手動暫停 user A 或修 bug
+- Security alerts **do not show** the detailed user_id, only "N users affected" (hidden per Gemini r3's "minimum sample 10" when not met)
+- Exception: Vin himself (super_admin) can see the full audit log
 
 ---
 
-## E. MCP API latency_ms 埋點（合併原 v1.18.6 漏作項）
+## D. End-to-end flow examples
 
-### E.1 埋點位置
+> 2026-05-14: Scenario 1 (reply-lint false-positive feedback) was dropped and removed along with chapter A.
 
-`mcp/index.js` `setRequestHandler(CallToolRequestSchema, async (request) => { ... })` 主流程：
+### Scenario 2: unauthorized user access detected
+
+1. user A runs `GET /api/memory/sync`, req.user.id = A
+2. Due to a bug, the returned result contains user B's memory
+3. middleware detects `returned memory.user_id ≠ req.user.id`, writes `usage_audit_log.event_type='cross_user_access'`
+4. super_admin receives an email notification
+5. Vin opens the admin web page to view the audit log details, manually suspends user A or fixes the bug
+
+---
+
+## E. MCP API latency_ms instrumentation (merging the originally-missed v1.18.6 item)
+
+### E.1 Instrumentation point
+
+The main flow of `mcp/index.js` `setRequestHandler(CallToolRequestSchema, async (request) => { ... })`:
 
 ```js
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const startedAt = Date.now();   // ← 新增
+  const startedAt = Date.now();   // ← new
   try {
     const result = await handleTool(name, args || {});
-    const latencyMs = Date.now() - startedAt;   // ← 新增
+    const latencyMs = Date.now() - startedAt;   // ← new
     autoComplyForToolCall(name, args || {}, result).catch(...);
 
-    // 既有：fetch broadcast、組 response
+    // existing: fetch broadcast, compose response
     ...
 
-    // 新增：寫 latency event（fire-and-forget、不阻塞 response）
+    // new: write latency event (fire-and-forget, does not block response)
     try {
       logEvent('mcp_call', {
         tool: name,
@@ -295,14 +295,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     return composeToolResponse({...});
   } catch (error) {
-    const latencyMs = Date.now() - startedAt;   // ← 新增
+    const latencyMs = Date.now() - startedAt;   // ← new
     logEvent('error', { ...enrichErrorDetails(error, name, args), latency_ms: latencyMs });
     return { content: [...] };
   }
 });
 ```
 
-### E.2 Server 端 SQL（健康度日報加 section 8）
+### E.2 Server-side SQL (add section 8 to the health daily report)
 
 ```sql
 SELECT
@@ -320,10 +320,10 @@ GROUP BY details->>'tool'
 ORDER BY p95_ms DESC NULLS LAST;
 ```
 
-### E.3 紅燈閾值
+### E.3 Red-line threshold
 
-p95 > 3000ms 標紅燈（個別 tool）。觀測 1 個月後再調。
+p95 > 3000ms is marked red (per individual tool). Adjust after 1 month of observation.
 
-### E.4 為什麼放 client 端而非 server 端
+### E.4 Why on the client side rather than the server side
 
-server 端只能量「網路+server 處理時間」；client 端 (mcp/index.js) 量「user 看到 result 的真實感受時間」、包含 broadcast fetch、autoComply、composeToolResponse 等所有環節。後者更接近 user 體感、是 v1.18.5 提案 C4 指標的真實意圖。
+The server side can only measure "network + server processing time"; the client side (mcp/index.js) measures "the real perceived time until the user sees the result", including broadcast fetch, autoComply, composeToolResponse and all other stages. The latter is closer to the user's experience and is the true intent of the C4 metric in the v1.18.5 proposal.

@@ -1,183 +1,183 @@
-# v1.18.9 — latency_ms 埋點
+# v1.18.9 — latency_ms instrumentation
 
-> **🚫 全部「告警」與「分頁」功能棄用（2026-05-14 part 3）：**
+> **🚫 All "alert" and "tab" features dropped (2026-05-14 part 3):**
 >
-> 本提案歷經三次棄用、最終 v1.18.9 release 內容只剩 latency_ms 埋點：
+> This proposal went through three rounds of deprecation; the final v1.18.9 release content is just latency_ms instrumentation:
 >
-> | 棄用項 | 原因 | 棄用時機 |
+> | Dropped item | Reason | When dropped |
 > |---|---|---|
-> | block_feedback（誤殺回饋） | 網頁端要登入違反「按一次 1 秒完成」的拍板 | part 2 |
-> | 4 種安全告警偵測 | Vin：「我不需要這種功能」（OwnMind 個人用、ROI 不夠） | part 3 |
-> | 健康度分頁 | 上面只剩 latency p95、不值得做新分頁 | part 3 |
+> | block_feedback (false-positive feedback) | The web side requires login, violating the "one click, done in 1 second" decision | part 2 |
+> | 4 security alert detectors | Vin: "I don't need this feature" (OwnMind is personal use, ROI is too low) | part 3 |
+> | Health tab | Only latency p95 remains, not worth a new tab | part 3 |
 >
-> **v1.18.9 最終 release 範圍：** 只有 MCP API latency_ms 埋點（Phase A）。
-> 已 commit 127b740 的 Phase 2 純函式（safety-detect / safety-audit + 兩個 test）part 3 全部刪除。git 歷史保留作為「曾規劃」紀錄。
+> **v1.18.9 final release scope:** only MCP API latency_ms instrumentation (Phase A).
+> The Phase 2 pure functions already committed in 127b740 (safety-detect / safety-audit + two tests) were all deleted in part 3. Git history is kept as a "once planned" record.
 >
-> 提案的 B 章 / C 章 / Phase 2 / Phase 3 全部標棄用、保留作歷史。
->
-> ---
->
-> **block_feedback 功能棄用（2026-05-14 part 2）：** 拍板時設計成「訊息流 markdown 連結 → 開瀏覽器確認頁」、實作時撞牆：
-> - reply-lint hook 沒辦法在 client 端簽 sig（沒 server secret 也沒 user_id）
-> - OwnMind 沒 cookie/session 機制（純 Bearer api_key），網頁端要 POST 必須先登入
-> - 「網頁需登入」徹底違反拍板「按一次 1 秒完成」的 UX 目標
->
-> 三個替代方案（純 CLI / 連結+登入 / hook 等 server 簽 sig）Vin 都拒絕，整個 block_feedback 功能棄用。已 commit 8bcfc69 的 server 端程式（feedback-sig / block-feedback handler / 兩個 route / 兩個 test）下個 commit 全部刪除。git 歷史保留作為「曾嘗試」紀錄。
->
-> **本提案剩餘範圍：** 4 種安全告警 + 健康度分頁 + latency_ms 埋點。誤殺率指標卡（C6）也跟著移除（沒 block_feedback event 來源）。
+> Chapters B / C / Phase 2 / Phase 3 of the proposal are all marked deprecated and kept for history.
 >
 > ---
 >
-> **版號修正（2026-05-14）：** 原本以 v1.18.5 命名，但 v1.18.5/.6/.7/.8 已被前面 4 次 hotfix / 觀測補丁占用，本提案實際發版號為 **v1.18.9**。worktree 目錄名保留不變（`v1.18.5-block-feedback-and-safety-alerts`）以避免 git 路徑變動。
+> **block_feedback feature dropped (2026-05-14 part 2):** The decision designed it as "message-stream markdown link → open browser confirmation page", but hit a wall during implementation:
+> - The reply-lint hook cannot sign the sig on the client side (no server secret, no user_id)
+> - OwnMind has no cookie/session mechanism (pure Bearer api_key); the web side must log in first to POST
+> - "The web page requires login" completely violates the decision's "one click, done in 1 second" UX goal
 >
-> **範圍擴充（2026-05-14）：** 合併原規劃 v1.18.6 才做的 `latency_ms` 埋點（漏作項）一併在本版發。
+> Vin rejected all three alternatives (pure CLI / link + login / hook waits for server to sign sig), so the entire block_feedback feature was dropped. The server-side code already committed in 8bcfc69 (feedback-sig / block-feedback handler / two routes / two tests) is deleted in the next commit. Git history is kept as an "attempted" record.
+>
+> **Remaining scope of this proposal:** 4 security alerts + health tab + latency_ms instrumentation. The false-positive-rate metric card (C6) is also removed (no block_feedback event source).
+>
+> ---
+>
+> **Version correction (2026-05-14):** Originally named v1.18.5, but v1.18.5/.6/.7/.8 were already taken by the previous 4 hotfixes / observability patches, so this proposal's actual release number is **v1.18.9**. The worktree directory name is kept unchanged (`v1.18.5-block-feedback-and-safety-alerts`) to avoid git path changes.
+>
+> **Scope expansion (2026-05-14):** Merge in the `latency_ms` instrumentation originally planned for v1.18.6 (a missed item) to ship in this version too.
 
 - **Author**: Vin
-- **Date**: 2026-05-13（提案）/ 2026-05-14（三次棄用、最終 v1.18.9 = latency 埋點）
-- **Status**: 範圍縮到只剩 Phase A latency 埋點、part 3 收尾
+- **Date**: 2026-05-13 (proposal) / 2026-05-14 (three deprecations, final v1.18.9 = latency instrumentation)
+- **Status**: Scope narrowed to just Phase A latency instrumentation, part 3 wrap-up
 - **Worktree**: `determined-bouman-20c22a`
 - **Branch**: `vin/determined-bouman-20c22a`
 
 ---
 
-## 0. 設計緣由
+## 0. Design rationale
 
-v1.18.4 落地產品健康度日報雛形（路線 C 階段 A、只看絕對數字）。下一步要補 Phase 1 MVP 缺的兩個指標：
+v1.18.4 landed the prototype product-health daily report (route C stage A, looking only at absolute numbers). The next step is to fill the two metrics missing from the Phase 1 MVP:
 
-| Phase 1 MVP 指標 | 現況 | 缺什麼 |
+| Phase 1 MVP metric | Current state | What's missing |
 |---|---|---|
-| 24h 違反率（B2） | ✅ 已有 `iron_rule_compliance` event | — |
-| MCP API p95（C4） | ⚠️ 部分有 | 補 `latency_ms` 埋點（v1.18.6 處理） |
-| **規則阻擋誤殺率（C6）** | ❌ 完全沒收 | **新增「擋錯了」回饋機制** |
-| 阻擋後修正成功率（C8） | ⚠️ SQL 太難 | Phase 2 處理 |
-| WAU/MAU | ✅ 已有 activity_logs | — |
-| **4 種安全告警** | ❌ `usage_audit_log` 機制有但 0 偵測規則 | **新增 4 種偵測規則** |
+| 24h violation rate (B2) | ✅ already has `iron_rule_compliance` event | — |
+| MCP API p95 (C4) | ⚠️ partial | add `latency_ms` instrumentation (handled in v1.18.6) |
+| **rule-block false-positive rate (C6)** | ❌ not collected at all | **add a "wrongly blocked" feedback mechanism** |
+| post-block correction success rate (C8) | ⚠️ SQL too hard | handled in Phase 2 |
+| WAU/MAU | ✅ already has activity_logs | — |
+| **4 security alerts** | ❌ `usage_audit_log` mechanism exists but 0 detection rules | **add 4 detection rules** |
 
-這份 proposal 處理「規則阻擋誤殺率」+「4 種安全告警」兩件事。
+This proposal handles two things: "rule-block false-positive rate" + "4 security alerts".
 
 ---
 
-## 1. 為什麼要做
+## 1. Why do this
 
-### 1.1 規則誤殺率：沒有回饋管道、規則設計無法演進
+### 1.1 Rule false-positive rate: no feedback channel, rule design cannot evolve
 
-現況：reply-lint Stop hook（v1.17.96 起）或鐵律阻擋觸發時、AI 只看到警告、user 沒辦法說「擋錯了」。
+Current state: when the reply-lint Stop hook (since v1.17.96) or an iron-rule block triggers, the AI only sees a warning, and the user has no way to say "wrongly blocked".
 
-問題：
-- 規則太嚴 → user 默默 disable 鐵律或忽略警告、產品端看不到
-- Gemini r3 review 警告：誤殺率 > 30% 是 UX Score 紅燈閾值、現在連量都沒在量
+Problems:
+- Rules too strict → user silently disables the iron rule or ignores the warning, the product side can't see it
+- Gemini r3 review warning: false-positive rate > 30% is the UX Score red-line threshold, and right now we don't even measure it
 
-設計目標：
-- 阻擋發生時、客戶端顯示「擋錯了 👎」按鈕（reply-lint 警告 + 鐵律阻擋兩個來源）
-- 客戶端送 false positive 紀錄到 `block_feedback` 事件（用 `activity_logs.event='block_feedback'`、不新建表）
-- 管理員儀表板看誤殺率：`(擋錯了次數 / 總阻擋次數) × 100%`
+Design goals:
+- When a block happens, the client shows a "wrongly blocked 👎" button (two sources: reply-lint warning + iron-rule block)
+- The client sends a false-positive record to the `block_feedback` event (using `activity_logs.event='block_feedback'`, no new table)
+- The admin dashboard shows the false-positive rate: `(wrongly-blocked count / total block count) × 100%`
 
-### 1.2 安全告警：機制有、偵測規則 0 條
+### 1.2 Security alerts: the mechanism exists, 0 detection rules
 
-現況：
-- `usage_audit_log` 表已存在（007 migration）
-- `event_type` 欄位可承載任何告警類型
-- 但目前**只有 `unknown_model` 一種事件**（token pricing 對不上時寫的）
-- 真實安全告警（記憶誤同步、密鑰洩漏、越權存取）**從沒被偵測過**
+Current state:
+- The `usage_audit_log` table already exists (007 migration)
+- The `event_type` column can carry any alert type
+- But right now there is **only one event type, `unknown_model`** (written when token pricing doesn't match)
+- Real security alerts (memory mis-sync, secret leak, unauthorized access) have **never been detected**
 
-設計目標：4 種告警偵測規則、在現有 server 端加 hook：
+Design goal: 4 alert detection rules, adding hooks on the existing server side:
 
-| 告警 | 偵測時機 | 觸發條件 |
+| Alert | Detection point | Trigger condition |
 |---|---|---|
-| 私人記憶誤同步 | `GET /api/memory/sync` | 回傳 memory 的 `user_id` ≠ 請求者 `user_id` |
-| 密鑰洩漏 | response body 寫入 logs 時 | logs 內容 regex 比對 secrets 表 value |
-| 跨使用者越權存取 | 所有 `/api/memory/*` 回傳 | 回傳 memory.user_id ≠ req.user.id |
-| 大量資料外洩 | rate limit 中介層 | **單 user_id / api_key**（不用 IP、避免 NAT 共用誤殺）1h 內讀取 > 1000 筆 |
+| private memory mis-sync | `GET /api/memory/sync` | returned memory's `user_id` ≠ requester's `user_id` |
+| secret leak | when response body is written to logs | log content regex-matched against secrets-table value |
+| cross-user unauthorized access | all `/api/memory/*` responses | returned memory.user_id ≠ req.user.id |
+| bulk data exfiltration | rate-limit middleware | **per user_id / api_key** (not IP, to avoid NAT-shared false positives) reading > 1000 rows within 1h |
 
-按 Gemini r2 / r3 三輪 review 建議：
-- ✅ 用 user_id / api_key 維度、不用 IP（NAT 盲點）
-- ✅ 4 種都是 `Fatal` 級、觸發即立即暫停受影響帳號
-- ✅ 不顯示告警細節給管理員（只顯示 user_id + 告警類型、防隱私反查）
-
----
-
-## 2. 範圍 vs 不範圍
-
-### 範圍內
-- ✅ `block_feedback` event 寫入 + 客戶端按鈕（reply-lint hook + Claude Code 阻擋 UI）
-- ✅ 4 種安全告警偵測規則（server 端 middleware）
-- ✅ 管理員儀表板加「健康度」分頁、顯示誤殺率 + 安全告警件數
-- ✅ 安全告警觸發後的自動暫停帳號邏輯
-
-### 範圍擴充（2026-05-14 合併進 v1.18.9）
-- ✅ MCP API 延遲埋點（mcp/index.js 加 `latency_ms`）— 原規劃 v1.18.6 處理但漏作
-
-### 不範圍（v1.19.x+ 處理）
-- ❌ Phase 2 阻擋後修正成功率（SQL 需要關聯兩個 event、太難）
-- ❌ Phase 3 凍結 100 條鐵律 benchmark
-- ❌ 規則生效覆蓋率 < 10% 強制紅燈（依賴 Veto 機制、Gemini r3 警告 Veto 太嚴、設計層議題）
+Following the three rounds of Gemini r2 / r3 review suggestions:
+- ✅ Use the user_id / api_key dimension, not IP (NAT blind spot)
+- ✅ All 4 are `Fatal` level, suspend the affected account immediately on trigger
+- ✅ Do not show alert details to the admin (only show user_id + alert type, to prevent privacy reverse-lookup)
 
 ---
 
-## 3. 拍板決策（2026-05-14 完成）
+## 2. In scope vs out of scope
 
-| # | 議題 | 拍板結果 | 備註 |
+### In scope
+- ✅ `block_feedback` event write + client button (reply-lint hook + Claude Code block UI)
+- ✅ 4 security-alert detection rules (server-side middleware)
+- ✅ Add a "Health" tab to the admin dashboard, showing false-positive rate + security-alert count
+- ✅ Auto-suspend account logic after a security alert triggers
+
+### Scope expansion (2026-05-14, merged into v1.18.9)
+- ✅ MCP API latency instrumentation (add `latency_ms` to mcp/index.js) — originally planned for v1.18.6 but missed
+
+### Out of scope (handled in v1.19.x+)
+- ❌ Phase 2 post-block correction success rate (SQL needs to correlate two events, too hard)
+- ❌ Phase 3 frozen 100-iron-rule benchmark
+- ❌ Forced red light when rule-effective coverage < 10% (depends on the Veto mechanism; Gemini r3 warned Veto is too strict, a design-layer issue)
+
+---
+
+## 3. Decisions (completed 2026-05-14)
+
+| # | Issue | Decision | Notes |
 |---|---|---|---|
-| 1 | 「擋錯了」按鈕怎麼顯示 | **訊息流裡的 markdown 連結 → 開瀏覽器確認頁** | 原本 Vin 選「IDE 渲染按鈕」，但 [project_326](memory) 已驗證 Claude Code 架構不允許 MCP server 渲染按鈕，改成等價的「藍色 markdown 連結」方案。Cursor/Gemini/Codex 直接看得到、Claude Code 摺疊卡片時 user 可手動展開 |
-| 2 | false positive 回饋形式 | **網頁確認頁面（按一次確認、不要表單）+ CLI 並存** | 主管道是連結 → 確認頁，「按一次確認 1 秒完成」把多話降到最低；CLI `ownmind report-false-positive --event-id=xxx` 保留給 power user / AI agent |
-| 3 | 4 種告警觸發後 | **只通知 super_admin、不自動暫停帳號** | 自動暫停風險高、誤判封自己 user。一個月後看資料再決定要不要加自動暫停 |
-| 4 | 暫停閾值（大量資料外洩） | **單 user / api_key 1h 內讀取 > 1000 筆** | 合理上限，避免 AI agent 腳本誤觸 |
-| 5 | 規則阻擋誤殺率紅燈閾值 | **> 30%** | 先寬鬆、跑 1 個月看趨勢再調 |
+| 1 | How to show the "wrongly blocked" button | **markdown link in the message stream → open browser confirmation page** | Vin originally chose "IDE-rendered button", but [project_326](memory) already verified that Claude Code's architecture does not allow the MCP server to render buttons, so it was changed to the equivalent "blue markdown link" approach. Cursor/Gemini/Codex see it directly; in Claude Code the user can manually expand the collapsed card |
+| 2 | False-positive feedback form | **web confirmation page (one click to confirm, no form) + CLI in parallel** | The main channel is link → confirmation page; "one click to confirm, done in 1 second" minimizes chatter; the CLI `ownmind report-false-positive --event-id=xxx` is kept for power users / AI agents |
+| 3 | After the 4 alerts trigger | **only notify super_admin, do not auto-suspend the account** | Auto-suspend is high-risk and might wrongly lock out one's own user. Look at the data after a month, then decide whether to add auto-suspend |
+| 4 | Suspend threshold (bulk data exfiltration) | **per user / api_key reading > 1000 rows within 1h** | A reasonable cap, to avoid AI-agent scripts triggering it accidentally |
+| 5 | Rule-block false-positive-rate red-line threshold | **> 30%** | Loose at first; run for 1 month to watch the trend, then adjust |
 
-**衍生設計決定（基於拍板結果）：**
+**Derived design decisions (based on the decisions above):**
 
-- 連結 URL 帶 HMAC 簽名（防 URL 被盜用）：`https://kkvin.com/ownmind/feedback/block?event_id=xxx&sig=abc123`
-- 確認頁面只顯示一個 `[確認擋錯了]` 按鈕、按下 POST → 顯示「已回報」、1 秒後自動關閉。不要表單、不要原因欄位
-- CLI 通道（決策 2 並存）走同一個 server endpoint `POST /api/feedback/block`，但用 `Authorization: Bearer ${OWNMIND_API_KEY}` 而不是 sig query param
+- The link URL carries an HMAC signature (to prevent the URL from being hijacked): `https://kkvin.com/ownmind/feedback/block?event_id=xxx&sig=abc123`
+- The confirmation page shows only one `[確認擋錯了]` button; pressing it POSTs → shows "已回報", then auto-closes after 1 second. No form, no reason field
+- The CLI channel (decision 2, in parallel) goes through the same server endpoint `POST /api/feedback/block`, but uses `Authorization: Bearer ${OWNMIND_API_KEY}` instead of the sig query param
 
 ---
 
-## 4. 影響範圍
+## 4. Impact
 
-### 4.1 客戶端
-- `hooks/ownmind-reply-lint.js` 加「擋錯了」CLI 提示文字
-- 新增 mcp tool：`ownmind_report_false_positive(event_id, reason?)`
+### 4.1 Client
+- `hooks/ownmind-reply-lint.js` adds "wrongly blocked" CLI prompt text
+- New mcp tool: `ownmind_report_false_positive(event_id, reason?)`
 
 ### 4.2 Server
-- 新增 `src/middleware/safety-alerts.js`：4 種告警偵測規則
-- 新增 `src/routes/block-feedback.js`：接 false positive 回報
-- 新增 `src/routes/admin-health.js`：管理員儀表板 endpoint
-- 改 `src/routes/memory.js`：sync endpoint 加 user_id 比對
-- 改 `src/public/index.html`：admin 網頁加「健康度」分頁
+- New `src/middleware/safety-alerts.js`: 4 alert detection rules
+- New `src/routes/block-feedback.js`: receives false-positive reports
+- New `src/routes/admin-health.js`: admin dashboard endpoint
+- Change `src/routes/memory.js`: sync endpoint adds user_id comparison
+- Change `src/public/index.html`: admin web page adds a "Health" tab
 
-### 4.3 資料庫
-- **不新增表**（用既有 activity_logs + usage_audit_log）
-- 不需要 migration
+### 4.3 Database
+- **No new table** (uses existing activity_logs + usage_audit_log)
+- No migration needed
 
 ---
 
-## 5. 風險
+## 5. Risks
 
-| 風險 | 機率 | 影響 | 緩解 |
+| Risk | Probability | Impact | Mitigation |
 |---|---|---|---|
-| 「擋錯了」按鈕誤點率高、誤殺率假升 | 中 | 看板誤導 | 增加 reason 欄位、強制填短說明 |
-| 4 種告警誤判封 user 帳號 | 中 | user 被誤封 | 採用「只通知、人工決定」（決策 3 選 B）|
-| 安全告警 SQL 拖慢 API 回應 | 低 | API p95 上升 | 用 async 寫入 audit log、不擋主流程 |
-| user 看到「擋錯了」按鈕就一直點 | 低 | 數據污染 | 同 user 同 event 5 分鐘內只記一次 |
+| High mis-click rate on the "wrongly blocked" button, false-positive rate falsely inflated | Medium | Dashboard misleads | Add a reason field, force a short explanation |
+| The 4 alerts wrongly lock a user account | Medium | User wrongly locked | Use "notify only, decide manually" (decision 3, option B) |
+| Security-alert SQL slows down API response | Low | API p95 rises | Write the audit log async, don't block the main flow |
+| User keeps clicking once they see the "wrongly blocked" button | Low | Data pollution | Record only once per user per event within 5 minutes |
 
 ---
 
-## 6. 跟 v1.18.4 / 路線 C 的關係
+## 6. Relationship to v1.18.4 / route C
 
-| 階段 | 落地版本 | 內容 |
+| Stage | Landing version | Content |
 |---|---|---|
-| 路線 C 階段 A | **v1.18.4 已完成** | 健康度日報 SQL 雛形、4 個絕對數字 |
-| 路線 C 階段 A+ | v1.18.5 / .6 / .7 / .8 | sync hotfix + 錯誤觀測 enrichErrorDetails + 健康度日報 launchd 排程 |
-| 路線 C 階段 B | **本 proposal v1.18.9** | 阻擋誤殺回饋 + 4 種安全告警 + latency_ms 埋點（合併原 v1.18.6 漏作項） |
-| 路線 C 階段 C | v1.19.x | 等 user > 10、樣本 > 1000 後、再實作 v3 spec 完整綜合指標 |
+| Route C stage A | **v1.18.4 done** | Health daily-report SQL prototype, 4 absolute numbers |
+| Route C stage A+ | v1.18.5 / .6 / .7 / .8 | sync hotfix + error observability enrichErrorDetails + health daily-report launchd schedule |
+| Route C stage B | **this proposal v1.18.9** | Block false-positive feedback + 4 security alerts + latency_ms instrumentation (merging the originally-missed v1.18.6 item) |
+| Route C stage C | v1.19.x | After user > 10 and sample > 1000, implement the full composite metrics of the v3 spec |
 
 ---
 
-## 7. 拍板後下一步（執行中）
+## 7. Next steps after the decision (in progress)
 
-1. ✅ Vin 對 5 個決策議題拍板（2026-05-14）
-2. ✅ 更新 proposal.md / spec.md / tasks.md 反映拍板結果
-3. 走 TDD（按 IR-003）寫 reproduction test → 實作 → 測試
-4. browser 實測（按 IR-020）— 連結方案的網頁確認頁、安全告警觸發
-5. 走品管三步驟（按 IR-012/045）+ 同步 README/FILELIST/CHANGELOG（按 IR-008）
-6. Tag v1.18.9、push、提醒 Vin 部署 prod、跑兩週看資料
+1. ✅ Vin made decisions on the 5 issues (2026-05-14)
+2. ✅ Update proposal.md / spec.md / tasks.md to reflect the decisions
+3. Follow TDD (per IR-003): write reproduction test → implement → test
+4. Browser testing (per IR-020) — the link approach's web confirmation page, security-alert triggering
+5. Follow the three quality-gate steps (per IR-012/045) + sync README/FILELIST/CHANGELOG (per IR-008)
+6. Tag v1.18.9, push, remind Vin to deploy prod, run two weeks to watch the data

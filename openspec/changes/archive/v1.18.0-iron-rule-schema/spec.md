@@ -1,93 +1,93 @@
 # v1.18.0 — Spec
 
-GIVEN/WHEN/THEN 三段式正式規格 + 設計細節。對應 proposal.md 的 acceptance criteria。
+GIVEN/WHEN/THEN three-part formal spec + design details. Corresponds to proposal.md's acceptance criteria.
 
 ---
 
-## 1. SKILL.md 鐵律格式規格
+## 1. SKILL.md iron rule format spec
 
 ### 1.1 frontmatter schema
 
 ```yaml
 ---
-name: <kebab-case identifier>          # 必填、3-60 字、^[a-z0-9-]+$
-description: <pushy trigger sentence>  # 必填、20-500 字、必須含觸發詞
+name: <kebab-case identifier>          # required, 3-60 chars, ^[a-z0-9-]+$
+description: <pushy trigger sentence>  # required, 20-500 chars, must contain a trigger word
 ---
 ```
 
-只兩欄、對齊 Anthropic SKILL.md 標準、**不自創欄位**。
+Only two fields, aligned to the Anthropic SKILL.md standard, **no custom fields**.
 
-### 1.2 frontmatter 偵測
+### 1.2 frontmatter detection
 
-GIVEN 一筆鐵律 content
-WHEN 開頭是 `---\n` 且後續有對應的 `\n---\n`
-THEN 視為 SKILL.md 格式、走 schema lint
+GIVEN an iron rule content
+WHEN it starts with `---\n` and has a matching `\n---\n` afterward
+THEN treat as SKILL.md format, run schema lint
 
-GIVEN 一筆鐵律 content
-WHEN 開頭不是 `---\n` 或結尾找不到 `\n---\n`
-THEN 視為純文字、走 v1.17.94 regex lint（向後相容）
+GIVEN an iron rule content
+WHEN it doesn't start with `---\n` or no `\n---\n` is found at the end
+THEN treat as plain text, run v1.17.94 regex lint (backward compatible)
 
-### 1.3 schema lint（有 frontmatter 時）
+### 1.3 schema lint (when frontmatter present)
 
-| 規則 ID | 檢查 | 失敗行為 |
+| Rule ID | Check | Failure behavior |
 |---|---|---|
-| S1 | YAML frontmatter 解析合法 | reject 400 |
-| S2 | `name` 必填、kebab-case (`/^[a-z0-9-]+$/`) | reject 400 |
-| S3 | `name` 字數 3-60 | reject 400 |
-| S4 | `description` 必填、字數 20-500 | reject 400 |
-| S5 | `description` 含觸發詞（`/when|whenever|use\s+when|triggers\s+on|何時|觸發|情境|準備|要做/i`） | reject 400 |
-| S6 | body（frontmatter 後）字數 ≥ 100 | reject 400 |
-| S7 | body 含規則段落關鍵字（`/規則|該做|不該做|禁止|必須|應該|不可|不要/`） | reject 400 |
-| S8 | 中英混雜檢查（IR-037、沿用 v1.17.94） | reject 400 |
-| S9 | `description` 字數 < 50 | warning（**不 reject**） |
+| S1 | YAML frontmatter parses validly | reject 400 |
+| S2 | `name` required, kebab-case (`/^[a-z0-9-]+$/`) | reject 400 |
+| S3 | `name` length 3-60 | reject 400 |
+| S4 | `description` required, length 20-500 | reject 400 |
+| S5 | `description` contains a trigger word (`/when|whenever|use\s+when|triggers\s+on|何時|觸發|情境|準備|要做/i`) | reject 400 |
+| S6 | body (after frontmatter) length ≥ 100 | reject 400 |
+| S7 | body contains a rule-section keyword (`/規則|該做|不該做|禁止|必須|應該|不可|不要/`) | reject 400 |
+| S8 | mixed CJK-English check (IR-037, reuse v1.17.94) | reject 400 |
+| S9 | `description` length < 50 | warning (**not reject**) |
 
-### 1.4 regex lint（沒 frontmatter 時、向後相容）
+### 1.4 regex lint (when no frontmatter, backward compatible)
 
-GIVEN 鐵律 content 沒 frontmatter
-WHEN server 跑 lintIronRule
-THEN 走 v1.17.94 規則 #1-#7 完全不變
-
----
-
-## 2. MCP API 規格
-
-### 2.1 `ownmind_save` 接受 SKILL.md 格式
-
-GIVEN MCP client 呼叫 `ownmind_save({ type: 'iron_rule', title, content, tags })`
-WHEN content 是 `---\nname: ...\ndescription: ...\n---\n# 標題\n...`
-THEN
-- server 偵測 frontmatter、跑 schema lint
-- 過 lint → 寫 DB（content 欄位完整存 frontmatter + body）
-- 觸發 sync hook（見 §4）
-- 回應含 `format: 'skill_md'`
-
-### 2.2 `ownmind_save` 純文字 fallback
-
-GIVEN MCP client 呼叫 `ownmind_save({ type: 'iron_rule', ..., content })` 沒 frontmatter
-WHEN
-THEN
-- server 走 v1.17.94 regex lint
-- 過 lint → 寫 DB
-- 觸發 sync hook（也會 sync、但 reference 檔案直接放純文字、SKILL.md frontmatter 由 sync 自動補一個 minimal version）
-- 回應含 `format: 'legacy_text'`
-
-### 2.3 `ownmind_update` 同上
-
-GIVEN client 改鐵律 content
-WHEN
-THEN
-- 同 ownmind_save 規則：偵測 frontmatter → schema lint or regex lint
-- 改後若有 `previous_content` 欄位（決策 #4）→ 把改前 content 備份進去
+GIVEN iron rule content has no frontmatter
+WHEN server runs lintIronRule
+THEN use v1.17.94 rules #1-#7 entirely unchanged
 
 ---
 
-## 3. 升級助手 Web UI 規格
+## 2. MCP API spec
+
+### 2.1 `ownmind_save` accepts SKILL.md format
+
+GIVEN MCP client calls `ownmind_save({ type: 'iron_rule', title, content, tags })`
+WHEN content is `---\nname: ...\ndescription: ...\n---\n# 標題\n...`
+THEN
+- server detects frontmatter, runs schema lint
+- on pass → write DB (content field stores the full frontmatter + body)
+- trigger sync hook (see §4)
+- response includes `format: 'skill_md'`
+
+### 2.2 `ownmind_save` plain-text fallback
+
+GIVEN MCP client calls `ownmind_save({ type: 'iron_rule', ..., content })` with no frontmatter
+WHEN
+THEN
+- server uses v1.17.94 regex lint
+- on pass → write DB
+- trigger sync hook (also syncs, but the reference file holds the plain text directly; sync auto-fills a minimal SKILL.md frontmatter version)
+- response includes `format: 'legacy_text'`
+
+### 2.3 `ownmind_update` same as above
+
+GIVEN client edits an iron rule content
+WHEN
+THEN
+- same rules as ownmind_save: detect frontmatter → schema lint or regex lint
+- after edit, if a `previous_content` column exists (Decision #4) → back up the pre-edit content into it
+
+---
+
+## 3. Upgrade helper Web UI spec
 
 ### 3.1 GET `/api/admin/iron-rules/upgrade-status`
 
-GIVEN admin 登入後
-WHEN 呼叫此 endpoint
-THEN 回應：
+GIVEN admin logged in
+WHEN calling this endpoint
+THEN response:
 ```json
 {
   "total": 35,
@@ -108,85 +108,85 @@ THEN 回應：
 
 ### 3.2 POST `/api/admin/iron-rules/:id/suggest-skill-md`
 
-GIVEN admin 點 [Suggest SKILL.md format]
+GIVEN admin clicks [Suggest SKILL.md format]
 WHEN POST `/api/admin/iron-rules/5/suggest-skill-md`
 THEN
-- server 用 LLM（Claude API、走 OWNMIND_SUGGEST_API_KEY env、若無則 disable button）把鐵律 title + content + tags 推 SKILL.md format
-- 回應 `{ suggested: '---\nname: ...\n---\n...', warnings: [...] }`
-- **不寫 DB**
+- server uses an LLM (Claude API, via OWNMIND_SUGGEST_API_KEY env; if absent, disable the button) to derive SKILL.md format from the rule's title + content + tags
+- response `{ suggested: '---\nname: ...\n---\n...', warnings: [...] }`
+- **does not write DB**
 
 ### 3.3 PUT `/api/admin/iron-rules/:id/upgrade`
 
-GIVEN admin 在 Web UI 看 diff、按 [Confirm & Save]
+GIVEN admin reviews the diff in the Web UI and clicks [Confirm & Save]
 WHEN PUT `/api/admin/iron-rules/5/upgrade { content: '...' }`
 THEN
-- server 跑 schema lint（不過直接 reject 400）
-- 過 → 把舊 content 備份到 `previous_content`、新 content 寫進 content
-- 觸發 sync hook
-- 回應 `{ ok: true, format: 'skill_md' }`
+- server runs schema lint (on fail, reject 400 directly)
+- on pass → back up the old content into `previous_content`, write the new content into content
+- trigger sync hook
+- response `{ ok: true, format: 'skill_md' }`
 
-### 3.4 Web UI 行為規格
+### 3.4 Web UI behavior spec
 
-GIVEN admin 在 `/admin/iron-rule-upgrade` panel
-WHEN 列表顯示
+GIVEN admin on the `/admin/iron-rule-upgrade` panel
+WHEN the list displays
 THEN
-- 35 條鐵律列表、每條右側顯示 [Legacy] 或 [SKILL.md] tag
-- 預設按格式排序（Legacy 在上）
-- 每條有 [Suggest], [Edit], [Skip] 三按鈕
+- list of 35 iron rules, each showing a [Legacy] or [SKILL.md] tag on the right
+- sorted by format by default (Legacy on top)
+- each has three buttons: [Suggest], [Edit], [Skip]
 
-GIVEN admin 點 [Suggest]
+GIVEN admin clicks [Suggest]
 WHEN
 THEN
-- 顯示 diff view（左 original / 右 proposed）
-- 提供 [Edit Proposed] textarea 微調
-- [Confirm & Save] 把當前 textarea 內容 PUT 上去
+- show the diff view (left original / right proposed)
+- provide a [Edit Proposed] textarea for tweaking
+- [Confirm & Save] PUTs the current textarea content up
 
 ---
 
-## 4. Sync 機制規格（conditional pull、sync_token hash check）
+## 4. Sync mechanism spec (conditional pull, sync_token hash check)
 
-### 4.0 為什麼 conditional pull
+### 4.0 Why conditional pull
 
-OwnMind 已有 `sync_token` (`src/utils/syncToken.js`)：
-- 公式：`sha256(user_id : max(memory.updated_at) : max(team.updated_at)).slice(0, 12)`
-- 任何寫入操作會改 `updated_at` → `sync_token` 自動變
-- 既有用途：MCP client **寫入**操作必須帶 sync_token、server 不一致退回（防 stale client）
+OwnMind already has `sync_token` (`src/utils/syncToken.js`):
+- formula: `sha256(user_id : max(memory.updated_at) : max(team.updated_at)).slice(0, 12)`
+- any write operation changes `updated_at` → `sync_token` auto-changes
+- existing use: MCP client **write** operations must carry sync_token; server rejects on mismatch (guards against stale clients)
 
-v1.18.0 補完讀取端：SessionStart hook 用 `sync_token` 做 If-None-Match 風格 conditional pull。
+v1.18.0 completes the read side: the SessionStart hook uses `sync_token` for an If-None-Match-style conditional pull.
 
-### 4.1 新 endpoint：`GET /api/memory/sync-token`
+### 4.1 New endpoint: `GET /api/memory/sync-token`
 
-GIVEN client 需要快速判斷本地 cache 是否 stale
+GIVEN client needs to quickly judge whether the local cache is stale
 WHEN `GET /api/memory/sync-token` with Authorization Bearer
 THEN
-- server 跑 `generateSyncToken(userId)` (既有 helper)
-- 回 `{ "sync_token": "a1a785218482" }` (~50 bytes)
-- **不 query 任何鐵律 / 記憶內容**（lightweight）
+- server runs `generateSyncToken(userId)` (existing helper)
+- returns `{ "sync_token": "a1a785218482" }` (~50 bytes)
+- **does not query any iron rule / memory content** (lightweight)
 
 ### 4.2 SessionStart hook conditional sync flow
 
-GIVEN SessionStart hook 跑
+GIVEN SessionStart hook runs
 WHEN
 THEN
-1. 讀 local cache `~/.ownmind/cache/memories.json`
-2. 取出 `cache.sync_token` 跟 `cache.saved_at`
-3. **過期保險**：若 `Date.now() - cache.saved_at > 24hr` → 直接走全量 download path
-4. 否則：`GET /api/memory/sync-token`
-5. 比對：
-   - `local === server` → **跳過 init download**、用 local cache、no-op skill files（99% sessions 走這條）
-   - `local !== server` → 走全量 `GET /api/memory/init?compact=true`、寫新 cache（含新 sync_token + saved_at）、重寫 `~/.claude/skills/ownmind-iron-rules/`
-6. 失敗 fallback：sync-token endpoint 失敗 → 走全量 init（safe）；全量 init 失敗 → 用 local cache 跑（offline mode、`mcp/offline.js` 既有邏輯）
+1. read local cache `~/.ownmind/cache/memories.json`
+2. extract `cache.sync_token` and `cache.saved_at`
+3. **expiry safety**: if `Date.now() - cache.saved_at > 24hr` → go straight to the full download path
+4. otherwise: `GET /api/memory/sync-token`
+5. compare:
+   - `local === server` → **skip init download**, use local cache, no-op skill files (99% of sessions take this branch)
+   - `local !== server` → run full `GET /api/memory/init?compact=true`, write new cache (with new sync_token + saved_at), rewrite `~/.claude/skills/ownmind-iron-rules/`
+6. failure fallback: sync-token endpoint fails → go full init (safe); full init fails → run with local cache (offline mode, existing `mcp/offline.js` logic)
 
-### 4.3 寫入觸發
+### 4.3 Write trigger
 
-GIVEN `ownmind_save` / `ownmind_update` 寫鐵律成功
-WHEN MCP client 收到 server 200
+GIVEN `ownmind_save` / `ownmind_update` successfully writes an iron rule
+WHEN MCP client receives server 200
 THEN
-- server 端 `updated_at` 自動改 → sync_token 變
-- **不需 MCP client 主動 sync** — 下次 SessionStart 比 token 會發現變了、自動 refresh
-- **可選優化**：MCP client 寫成功後直接重寫該鐵律本地 reference file（即時生效、不等下次 SessionStart）
+- server-side `updated_at` auto-changes → sync_token changes
+- **MCP client need not sync proactively** — the next SessionStart compares tokens, finds the change, auto-refreshes
+- **optional optimization**: after a successful write, the MCP client rewrites that rule's local reference file directly (immediate effect, no need to wait for the next SessionStart)
 
-### 4.4 cache 檔格式
+### 4.4 cache file format
 
 ```json
 {
@@ -200,30 +200,30 @@ THEN
 }
 ```
 
-跟既有 `~/.ownmind/cache/memories.json` 格式完全一致（**不需新檔案、不需 ALTER**）— 只是 SessionStart hook 開始用它。
+Fully consistent with the existing `~/.ownmind/cache/memories.json` format (**no new file, no ALTER needed**) — the SessionStart hook just starts using it.
 
-### 4.5 對帳保險
+### 4.5 Reconcile safety
 
-GIVEN local cache `saved_at` 超過 24 hr
-WHEN SessionStart hook 跑
+GIVEN local cache `saved_at` older than 24 hr
+WHEN SessionStart hook runs
 THEN
-- 強制走全量 download path、即使 sync-token 比對相同
-- 防 sync_token 算錯導致永久 stale cache
-- 24 hr threshold 寫進 `hooks/lib/sync-iron-rules.js` 常數
+- force the full download path even if the sync-token comparison matches
+- guards against a miscomputed sync_token causing a permanently stale cache
+- the 24 hr threshold is a constant in `hooks/lib/sync-iron-rules.js`
 
-### 4.2 本地檔案結構
+### 4.2 Local file structure
 
 ```
 ~/.claude/skills/ownmind-iron-rules/
 ├── SKILL.md                                    # big skill metadata
 └── references/
-    ├── IR-001-XXX.md                            # 每條鐵律一檔
+    ├── IR-001-XXX.md                            # one file per iron rule
     ├── IR-002-no-commit-secrets.md
     ├── IR-003-bug-reproduction-test.md
-    └── ... (35 個)
+    └── ... (35 files)
 ```
 
-### 4.3 SKILL.md (big skill) 內容
+### 4.3 SKILL.md (big skill) content
 
 ```yaml
 ---
@@ -265,9 +265,9 @@ Vin 的個人鐵律集合 — 從歷史踩坑學來的、必須嚴格遵守的�
 拿到完整 do/dont 細節。
 ```
 
-### 4.4 references/IR-XXX.md 內容
+### 4.4 references/IR-XXX.md content
 
-每個 reference 檔就是該鐵律的完整 SKILL.md format：
+Each reference file is that rule's complete SKILL.md format:
 
 ```yaml
 ---
@@ -278,10 +278,10 @@ description: |
 
 # IR-002: 不要 commit .env 或密碼
 
-(完整 body)
+(full body)
 ```
 
-或對於 legacy 鐵律、直接放純文字 + 自動補 minimal frontmatter：
+Or for a legacy rule, plain text directly + auto-filled minimal frontmatter:
 
 ```yaml
 ---
@@ -291,45 +291,45 @@ description: |
   Triggers on: edit. (auto-generated from legacy text rule)
 ---
 
-(原 content 純文字)
+(original content, plain text)
 ```
 
-### 4.5 衝突處理
+### 4.5 Conflict handling
 
-GIVEN 本地 `references/IR-002-no-commit-secrets.md` 被 user 手改
-WHEN sync hook 偵測到本地內容跟 DB 不一致
+GIVEN local `references/IR-002-no-commit-secrets.md` is hand-edited by the user
+WHEN the sync hook detects local content differs from the DB
 THEN
-- DB 永遠贏、覆蓋本地（決策 #6）
-- log warning 到 `~/.ownmind/logs/sync-conflicts.jsonl` 記錄被覆蓋的內容
-- **不打斷 sync**
+- DB always wins, overwrites local (Decision #6)
+- log a warning to `~/.ownmind/logs/sync-conflicts.jsonl` recording the overwritten content
+- **does not interrupt sync**
 
-### 4.6 跨 AI 工具同步（沿用 install.sh:300 pattern）
+### 4.6 Cross-AI-tool sync (reuse install.sh:300 pattern)
 
-GIVEN 鐵律寫入觸發 sync
-WHEN sync hook 跑
-THEN 對下列工具、目錄存在才寫：
+GIVEN an iron rule write triggers sync
+WHEN the sync hook runs
+THEN for the following tools, write only if the directory exists:
 
-| 工具 | 寫法 |
+| Tool | How |
 |---|---|
-| Claude Code | `~/.claude/skills/ownmind-iron-rules/` 完整 skill folder（主路徑） |
-| Cursor | `~/.cursor/rules/ownmind-iron-rules.md` 把 SKILL.md + 35 reference inline 成單檔 |
-| Antigravity | `~/.antigravity/rules/ownmind-iron-rules.md` 同 Cursor |
-| OpenCode | `~/.opencode/AGENTS.md` 加 `<!-- ownmind-iron-rules -->` block 含 skill summary |
-| Codex | `~/.codex/AGENTS.md` 同 OpenCode |
-| Windsurf | `~/.windsurf/rules/ownmind-iron-rules.md` 同 Cursor |
-| Gemini | `~/.gemini/GEMINI.md` 同 OpenCode |
+| Claude Code | `~/.claude/skills/ownmind-iron-rules/` full skill folder (main path) |
+| Cursor | `~/.cursor/rules/ownmind-iron-rules.md` inlines SKILL.md + 35 references into a single file |
+| Antigravity | `~/.antigravity/rules/ownmind-iron-rules.md` same as Cursor |
+| OpenCode | `~/.opencode/AGENTS.md` add a `<!-- ownmind-iron-rules -->` block containing the skill summary |
+| Codex | `~/.codex/AGENTS.md` same as OpenCode |
+| Windsurf | `~/.windsurf/rules/ownmind-iron-rules.md` same as Cursor |
+| Gemini | `~/.gemini/GEMINI.md` same as OpenCode |
 
-決策 #5 若選縮減範圍、只實作 Claude Code + Codex / Gemini AGENTS.md style。
+If Decision #5 chooses the reduced scope, only implement Claude Code + Codex / Gemini AGENTS.md style.
 
 ---
 
-## 5. DB schema 動向
+## 5. DB schema direction
 
-### 5.1 不動 `memories.content`
+### 5.1 Don't touch `memories.content`
 
-content 仍是 TEXT 欄位、塞 SKILL.md frontmatter + body 也塞得進、不需 ALTER。
+content stays a TEXT column; SKILL.md frontmatter + body fits in too, no ALTER needed.
 
-### 5.2 加 `previous_content` 備援欄位（若決策 #4 = yes）
+### 5.2 Add a `previous_content` backup column (if Decision #4 = yes)
 
 ```sql
 -- db/013_iron_rule_previous_content.sql
@@ -337,75 +337,75 @@ ALTER TABLE memories
   ADD COLUMN IF NOT EXISTS previous_content TEXT;
 ```
 
-### 5.3 `format` 欄位（選填、不一定要）
+### 5.3 `format` column (optional, not necessarily needed)
 
-加 `format VARCHAR(20)` 紀錄 'skill_md' / 'legacy_text'？
-**v1.18.0 不做** — 直接由 content 偵測 frontmatter、避免 DB 跟 content 雙寫不一致。
+Add `format VARCHAR(20)` to record 'skill_md' / 'legacy_text'?
+**Not done in v1.18.0** — detect frontmatter from content directly, avoiding a DB-vs-content double-write inconsistency.
 
 ---
 
-## 6. Lint 行為總覽
+## 6. Lint behavior overview
 
 ```
 client write iron_rule
     ↓
 server: lintIronRule(content)
     ↓
-偵測 frontmatter？
-  ├─ 有 → schema lint (S1-S9) → 過/退
-  └─ 沒 → v1.17.94 regex lint (#1-#7) → 過/退
+detect frontmatter?
+  ├─ yes → schema lint (S1-S9) → pass/reject
+  └─ no  → v1.17.94 regex lint (#1-#7) → pass/reject
         ↓
-       過 → 寫 DB → 觸發 sync hook
+       pass → write DB → trigger sync hook
             ↓
-           sync 寫本地 + 跨工具
+           sync writes local + cross-tool
 ```
 
 ---
 
-## 7. 測試規格
+## 7. Test spec
 
-### 7.1 schema lint 測試
+### 7.1 schema lint tests
 
-- frontmatter parse 失敗 → reject
-- name 缺 / 太短 / 太長 / 非 kebab-case → reject
-- description 缺 / 太短 / 太長 / 沒觸發詞 → reject
-- body 太短 / 沒規則關鍵字 → reject
-- description 字數 < 50 → warning（不 reject）
-- 完整 valid SKILL.md → pass
+- frontmatter parse failure → reject
+- name missing / too short / too long / not kebab-case → reject
+- description missing / too short / too long / no trigger word → reject
+- body too short / no rule keyword → reject
+- description length < 50 → warning (not reject)
+- complete valid SKILL.md → pass
 
-### 7.2 regex lint 向後相容測試
+### 7.2 regex lint backward-compat tests
 
-- 既有 35 條鐵律每一條跑過 v1.17.94 lint 都不該被新版退（regression test）
-- 純文字鐵律寫入過得了 → 跑 schema lint 就不該被觸發
+- each of the existing 35 iron rules that passed v1.17.94 lint should not be rejected by the new version (regression test)
+- a plain-text iron rule that writes fine → schema lint should not be triggered
 
-### 7.3 Sync 測試
+### 7.3 Sync tests
 
-- 寫鐵律 → 本地 reference 檔自動建
-- 改鐵律 → 本地 reference 檔自動更新
-- disable 鐵律 → 本地 reference 檔自動刪
-- SessionStart 跑、本地 vs DB 不一致 → 對帳更新
-- 本地手改 → DB 為準覆蓋 + log warning
+- write iron rule → local reference file auto-created
+- edit iron rule → local reference file auto-updated
+- disable iron rule → local reference file auto-deleted
+- SessionStart runs, local vs DB differs → reconcile update
+- local hand-edit → DB wins, overwrites + log warning
 
-### 7.3b Conditional sync 測試（重要）
+### 7.3b Conditional sync tests (important)
 
-- `GET /api/memory/sync-token` 回 12 字 hex sync_token、< 100 bytes
-- SessionStart：local cache token === server token → **不打 init endpoint**（用 mock server 驗）
-- SessionStart：local cache token !== server token → 打 init + 重寫 cache + 重寫 skill files
-- SessionStart：local cache `saved_at` > 24hr → 強制走 init path、即使 token 相同
-- SessionStart：sync-token endpoint 失敗 → fallback 走全量 init
-- SessionStart：全量 init 失敗 → fallback 用 local cache（既有 `mcp/offline.js` 邏輯）
-- 寫鐵律 → 下次 SessionStart 該偵測到 sync_token 變
+- `GET /api/memory/sync-token` returns a 12-char hex sync_token, < 100 bytes
+- SessionStart: local cache token === server token → **don't hit init endpoint** (verify with mock server)
+- SessionStart: local cache token !== server token → hit init + rewrite cache + rewrite skill files
+- SessionStart: local cache `saved_at` > 24hr → force init path even if token matches
+- SessionStart: sync-token endpoint fails → fallback to full init
+- SessionStart: full init fails → fallback to local cache (existing `mcp/offline.js` logic)
+- write iron rule → next SessionStart should detect the sync_token change
 
-### 7.4 升級助手測試
+### 7.4 Upgrade helper tests
 
-- GET upgrade-status → 回 35 條 status
-- POST suggest-skill-md → 回 SKILL.md proposal（mock LLM）
-- PUT upgrade（valid SKILL.md）→ 過 lint + 寫 DB + 備份 previous_content + 觸發 sync
-- PUT upgrade（invalid）→ reject 400 + 不動 DB
+- GET upgrade-status → returns status of 35 rules
+- POST suggest-skill-md → returns a SKILL.md proposal (mock LLM)
+- PUT upgrade (valid SKILL.md) → pass lint + write DB + back up previous_content + trigger sync
+- PUT upgrade (invalid) → reject 400 + don't touch DB
 
-### 7.5 跨工具 sync 測試
+### 7.5 Cross-tool sync tests
 
-- Cursor 目錄存在 → 寫 ownmind-iron-rules.md
-- Cursor 目錄不存在 → skip
-- Codex `AGENTS.md` 已存在 → 加新 block、保留既有內容
-- Codex `AGENTS.md` 不存在 → 不寫（避免污染未裝工具）
+- Cursor directory exists → write ownmind-iron-rules.md
+- Cursor directory missing → skip
+- Codex `AGENTS.md` exists → add a new block, preserve existing content
+- Codex `AGENTS.md` missing → don't write (avoid polluting uninstalled tools)

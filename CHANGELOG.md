@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.26.21 — i18n 軌道 B：openspec 文件英文化 + 敏感資料清理
+
+**背景**：軌道 B（開發環境英文化）延伸到 OpenSpec 內部文件；同時順手做開源前的敏感資料清理。
+
+**openspec 文件英文化**：
+- `openspec/CONVENTIONS.md`（活的貢獻者慣例文件）整檔翻成英文。
+- `openspec/changes/archive/` 89 個封存提案的「說明散文」翻成英文。
+- 刻意保留：引用的鐵律內容／產品字串／比對 token／IR-NNN 編號／作者日期等中繼資料（這些是資料、不是說明）。openspec 中文從 5549 行降到 352 行（剩的都是刻意保留的資料）。
+
+**敏感資料清理（開源前，本版範圍 = openspec + 相關測試樣本）**：
+- openspec 範圍內：真實姓名改化名（Eric→Alice、Adam→Bob、Phoebe→Carol，移除全名），本機路徑 `/Users/vincentkao/...`→`~/...`，範例信箱→`user@example.com`，內部生態系名稱中性化（FUNIT→ExampleClient、RING/fapa/ima→泛稱等）。
+- 遠端存取事故樣本資料中性化（主機名 `bot.kkvin.com`→`bot.example.com`、AnyDesk/Tailscale 等假值）+ FUNIT 1Password vault 樣本（`FUNIT-prod`/`wp-vin`→泛稱），橫跨 openspec + `tests/memory-secret-guard`、`tests/secret-detect-unit` + `shared/secret-detect.js`，皆為行為不變的測試樣本。
+
+**本版未做、列為後續「開源前全倉去品牌化」一次處理**：散在約 40 個檔（tests/、src/、shared/、hooks/、scripts/）的「回報者 Adam/Eric/Michelle」單名註解、`shared/language-lint.js` 專案名白名單、`llm-narrative.js` 提示詞人名範例；以及公開安裝網址 `kkvin.com` 設定化（已有設計稿 `docs/superpowers/specs/2026-05-29-kkvin-config-extraction-design.md`）。
+
+**安全做法**：翻譯只動說明散文、清理只換特定字串，全程 `git diff` 自檢；測試套件維持 2012 全綠（0 fail / 0 skipped）。
+
+**版本**：1.26.20 → 1.26.21
+
 ## v1.26.20 — 清掉一處殘留在程式碼註解的個人鐵律編號（IR-050 清理起步）
 
 **背景**：i18n 軌道 B 收尾時全樹掃描，發現產品 JS 程式碼還殘留個人鐵律編號（違反「個人鐵律編號不該寫進產品程式碼」的慣例）。
@@ -1332,7 +1351,7 @@ Uncaught ReferenceError: login is not defined at HTMLButtonElement.onclick
 
 ## v1.19.13 — 掃密 keyword 偵測收緊、降低誤判
 
-**背景：** 2026-05-23 / 2026-05-24 連續 4 次 AI 想存 type=`env` 的「bot.kkvin.com 遠端訪問方式總覽」記憶被擋。追根究柢、被擋的內容只是「密鑰名稱字串」（如 `anydesk.bot_kkvin.unattended_password`）跟 IP／連線編號等非敏感資訊、實際密碼存在 OwnMind 密鑰管理工具裡。v1.19.1 引入的 value-side keyword 偵測太寬鬆（「只要出現 password 字樣就擋」）導致誤判率高。
+**背景：** 2026-05-23 / 2026-05-24 連續 4 次 AI 想存 type=`env` 的「bot.example.com 遠端訪問方式總覽」記憶被擋。追根究柢、被擋的內容只是「密鑰名稱字串」（如 `anydesk.bot_example.unattended_password`）跟 IP／連線編號等非敏感資訊、實際密碼存在 OwnMind 密鑰管理工具裡。v1.19.1 引入的 value-side keyword 偵測太寬鬆（「只要出現 password 字樣就擋」）導致誤判率高。
 
 ### 變更：value-side keyword 從寬鬆比對改賦值樣式
 
@@ -1342,7 +1361,7 @@ Uncaught ReferenceError: login is not defined at HTMLButtonElement.onclick
 
 | 內容 | v1.19.12 | v1.19.13 |
 |------|----------|----------|
-| `anydesk.bot_kkvin.unattended_password`（密鑰名稱 reference） | ❌ 誤擋 | ✅ 放行 |
+| `anydesk.bot_example.unattended_password`（密鑰名稱 reference） | ❌ 誤擋 | ✅ 放行 |
 | `the password is in the vault`（描述句） | ❌ 誤擋 | ✅ 放行 |
 | `process.env.MY_PASSWORD`（程式碼 reference） | ❌ 誤擋 | ✅ 放行 |
 | `password: MyP@ssw0rd123`（真實貼密碼） | ✅ 擋下 | ✅ 擋下 |
@@ -1352,7 +1371,7 @@ Uncaught ReferenceError: login is not defined at HTMLButtonElement.onclick
 
 ### 變更：點分隔識別字路徑跳過長度啟發式
 
-`process.env.MY_PASSWORD` 跟 `anydesk.bot_kkvin.unattended_password` 這類「點分隔識別字路徑」（每段是合法變數名、用 `.` 串接）也被長度啟發式（≥ 20 字純英數字）誤抓。v1.19.13 加負向條件、識別字路徑樣式直接放行。真實密鑰（JWT、AWS、GitHub PAT、OpenAI key）有專屬 regex 抓、不依賴此啟發式。
+`process.env.MY_PASSWORD` 跟 `anydesk.bot_example.unattended_password` 這類「點分隔識別字路徑」（每段是合法變數名、用 `.` 串接）也被長度啟發式（≥ 20 字純英數字）誤抓。v1.19.13 加負向條件、識別字路徑樣式直接放行。真實密鑰（JWT、AWS、GitHub PAT、OpenAI key）有專屬 regex 抓、不依賴此啟發式。
 
 ### 變更：400 回應加 `matched_text` 欄
 
@@ -1366,7 +1385,7 @@ Uncaught ReferenceError: login is not defined at HTMLButtonElement.onclick
 
 ### 驗證
 
-- `npm test` 1706 / 1706 全綠（+31 個 v1.19.13 新測試含 bot.kkvin.com 真實案例 regression、+ code review 後追加 I-1 PII 不洩漏 / I-2 雙段 base64 不放過 / I-3 snake_case 仍擋 共 11 條）
+- `npm test` 1706 / 1706 全綠（+31 個 v1.19.13 新測試含 bot.example.com 真實案例 regression、+ code review 後追加 I-1 PII 不洩漏 / I-2 雙段 base64 不放過 / I-3 snake_case 仍擋 共 11 條）
 - `tests/secret-detect-unit.test.js` `tests/memory-secret-guard.test.js` `tests/pre-commit-secret.test.js` 三檔合計 111 測試全綠
 - 追根究柢確認專案 469 規劃的「CGNAT IP 白名單」「9-10 位純數字白名單」實際非觸發點、本版不做
 

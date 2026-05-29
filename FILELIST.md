@@ -1,5 +1,19 @@
 # OwnMind 檔案結構
 
+## v1.26.21 修改（i18n 軌道 B：openspec 文件英文化 + 敏感資料清理）
+
+新增檔：
+```
+openspec/changes/v1.26.21-i18n-openspec-docs/proposal.md            — v1.26.21 提案
+openspec/changes/v1.26.21-i18n-openspec-docs/tasks.md               — v1.26.21 任務清單
+docs/superpowers/specs/2026-05-29-kkvin-config-extraction-design.md — kkvin.com 設定化重構設計稿（下一版用）
+```
+
+修改檔：
+- `openspec/CONVENTIONS.md`（整檔英文化）+ `openspec/changes/archive/` 89 個封存提案（只翻說明散文、保留引用資料）。
+- 敏感資料清理：真實姓名化名、本機路徑／範例信箱中性化、內部生態系名稱泛稱化（散在 archive 多檔）。
+- 遠端存取事故樣本中性化：`tests/memory-secret-guard.test.js`、`tests/secret-detect-unit.test.js`、`shared/secret-detect.js`（行為不變）+ `CHANGELOG.md`、`FILELIST.md` 同步。
+
 ## v1.26.20 修改（清掉一處程式碼註解殘留的個人鐵律編號）
 
 修改檔（純註解、零行為影響）：`src/utils/iron-rule-quality.js`（標題長度檢查註解，個人鐵律編號改成通用敘述）。
@@ -214,7 +228,7 @@ tests/secret-detect-unit.test.js             — 132 行（regex/keyword/heurist
 tests/ownmind-tty-echo.test.js               — 120 行（含 v1.17.73 結構性合約 8 種 contract case）
 tests/reply-lint-hook.test.js                — 98 行（含 v1.17.96 Stop hook 整合 + activity POST schema）
 tests/disable-details-snapshot.test.js       — 95 行（含 enrichActivityDetails + me.js pitfalls SQL 整合）
-tests/memory-secret-guard.test.js            — 93 行（含 v1.19.13 matched_text / bot.kkvin.com regression）
+tests/memory-secret-guard.test.js            — 93 行（含 v1.19.13 matched_text / bot.example.com regression）
 tests/self-check.test.js                     — 91 行（含 v1.17.66 collectEnv + v1.17.68 checkApiKeyFormat）
 tests/ps1-windows-compat.test.js             — 87 行（含 v1.17.66 Bug #1/#6/#7 / Bug #4 try-finally）
 tests/iron-rule-quality-skill-md.test.js     — 81 行（含 v1.18.0 S1-S9 schema lint）
@@ -847,7 +861,7 @@ openspec/changes/archive/v1.19.13-secret-detect-keyword-tighten/tasks.md     —
 shared/secret-detect.js                                              — value-side keyword 改賦值 regex；matched_text 截 80 字回傳；長度啟發式排除點分隔識別字
 src/utils/memory-secret-guard.js                                     — 400 body 加 matched_text
 tests/secret-detect-unit.test.js                                     — +27 case：S1 賦值樣式、S2 matched_text、review I-1 PII 不洩漏、I-2 雙段 base64 不放過、I-3 snake_case 仍擋
-tests/memory-secret-guard.test.js                                    — +4 case：S3 400 含 matched_text、S4 bot.kkvin.com 全文 regression
+tests/memory-secret-guard.test.js                                    — +4 case：S3 400 含 matched_text、S4 bot.example.com 全文 regression
 package.json                                                         — version 1.19.12 → 1.19.13
 README.md / docs/README.zh-TW.md / docs/README.ja.md                 — Current version → v1.19.13
 CHANGELOG.md                                                         — v1.19.13 條目

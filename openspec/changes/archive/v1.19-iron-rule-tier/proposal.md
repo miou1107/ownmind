@@ -1,218 +1,218 @@
-# v1.19 — 鐵律分級（3 級制：Critical / Default / Advisory）
+# v1.19 — Iron-rule tiers (3-tier system: Critical / Default / Advisory)
 
 - **Author**: Vin
-- **Date**: 2026-05-14（提案）
-- **Status**: 設計拍板完成（2026-05-14），待實作
+- **Date**: 2026-05-14 (proposal)
+- **Status**: Design decision completed (2026-05-14), pending implementation
 - **Worktree**: `stupefied-vaughan-4650ee`
 - **Branch**: `vin/stupefied-vaughan-4650ee`
 
 ---
 
-## 0. 一句話總結
+## 0. One-line summary
 
-把目前 41 條鐵律分成 **Critical（核心硬規則，10 條）/ Default（預設規則，約 20 條）/ Advisory（純參考提示，約 10 條）** 三級。本版只做**標籤層**——加 `tier` 欄位、改 admin UI、改 SessionStart 顯示分組，**不動執行邏輯**。執行邏輯（卡控）由 v1.20 接手。
+Divide the current 41 iron rules into three tiers: **Critical (core hard rules, 10) / Default (default rules, ~20) / Advisory (pure reference hints, ~10)**. This version does only the **label layer** — adds a `tier` field, changes the admin UI, changes the SessionStart display grouping, and **does not touch the execution logic**. The execution logic (enforcement) is handled by v1.20.
 
-> 白話：這版只是給每條鐵律掛個「重要程度」標籤，AI 還是照舊照所有規則跑、只是知道哪些是死線、哪些是建議。
-
----
-
-## 1. 設計緣由
-
-### 1.1 規則數量已逼近認知極限
-
-當前狀態（2026-05-14 / SessionStart 載入）：
-
-- 鐵律數量：**41 條**（IR-002 ~ IR-042，跳號為棄用過的）
-- 每次 session 啟動全部載入記憶
-- 新成員（包括新接手的 AI 工具）難以全部吸收
-- 重要規則被次要規則稀釋
-
-### 1.2 告警疲勞已經發生
-
-本次 session 啟動時跳了 **13 條** 回話品質警告（IR-036、IR-037）。
-反覆觸發同一條警告 = 提醒機制失靈，這正是 IR-027（提醒無效、邏輯才有效）警告的失效模式。
-
-### 1.3 v1.20 卡控需要分級當前置
-
-若無分級就做卡控，會兩種失敗模式擇一：
-
-- **無差別嚴格** → 所有規則都擋 → 工作流被擋到沒人用
-- **無差別寬鬆** → 沒有實質卡控 → 等於沒做
-
-只有「Critical 才卡控、其他維持提醒」這條路走得通，前提是要先分級。
+> In plain terms: this version just attaches an "importance level" label to each iron rule; the AI still follows all rules as before, it just knows which are deadlines and which are suggestions.
 
 ---
 
-## 2. 分級設計
+## 1. Design rationale
 
-### 2.1 三級定義
+### 1.1 The number of rules is approaching the cognitive limit
 
-| 級別 | 中文 | 違反處理（本版） | 違反處理（v1.20 後） |
+Current state (2026-05-14 / SessionStart load):
+
+- Iron-rule count: **41** (IR-002 ~ IR-042, with gaps from deprecated ones)
+- All loaded into memory at every session start
+- Hard for new members (including newly onboarded AI tools) to absorb all of them
+- Important rules are diluted by secondary rules
+
+### 1.2 Alert fatigue is already happening
+
+This session start triggered **13** reply-quality warnings (IR-036, IR-037).
+Repeatedly triggering the same warning = the reminder mechanism failing, which is exactly the failure mode that IR-027 (reminders don't work, only logic does) warns about.
+
+### 1.3 v1.20 enforcement needs tiers as a prerequisite
+
+Doing enforcement without tiers leads to one of two failure modes:
+
+- **Indiscriminate strictness** → all rules block → the workflow gets blocked so much no one uses it
+- **Indiscriminate looseness** → no real enforcement → equivalent to doing nothing
+
+Only the path "enforce Critical, keep the rest as reminders" works, and the prerequisite is to tier them first.
+
+---
+
+## 2. Tier design
+
+### 2.1 Three-tier definitions
+
+| Tier | Chinese | Violation handling (this version) | Violation handling (after v1.20) |
 |------|------|------------------|----------------------|
-| `critical` | 核心硬規則 | 跟 default 相同（**本版不動執行邏輯**） | 直接卡控：pre-commit 擋 commit、PreToolUse 擋工具呼叫、reply-lint 中斷回應 |
-| `default` | 預設規則 | 跳警告 + 寫違反紀錄 | 跳警告 + 寫違反紀錄（不變） |
-| `advisory` | 純參考提示 | 跟 default 相同（**本版不動執行邏輯**） | 只寫紀錄、不跳警告 |
+| `critical` | 核心硬規則 | same as default (**this version does not touch execution logic**) | direct enforcement: pre-commit blocks the commit, PreToolUse blocks the tool call, reply-lint interrupts the response |
+| `default` | 預設規則 | shows a warning + writes a violation record | shows a warning + writes a violation record (unchanged) |
+| `advisory` | 純參考提示 | same as default (**this version does not touch execution logic**) | only writes a record, no warning |
 
-> 本版只是**埋下分級的種子**。AI 行為、hook 行為、回報行為全部**跟 v1.18.9 一模一樣**，差別只在「資料層多了一個欄位 + admin UI 多了一個欄位」。
+> This version just **plants the seed of tiering**. AI behavior, hook behavior, and reporting behavior are all **identical to v1.18.9**; the only difference is "one extra field at the data layer + one extra field in the admin UI".
 
-### 2.2 Critical 名單（10 條，已拍板）
+### 2.2 Critical list (10, decided)
 
-| 編號 | 標題 | 為何 Critical |
+| Number | Title | Why Critical |
 |------|------|----------|
-| IR-002 | 不要 commit .env 或密碼 | 資安：密碼外洩無法回收 |
-| IR-005 | 不要不確認就改（不要 blind edit） | 品質：改錯地方破壞功能 |
-| IR-008 | commit 同步更新 README/FILELIST/CHANGELOG | 一致性：文件跟程式對不上等於沒文件 |
-| IR-009 | Git contributors 一律顯示 Vin | 身份：跟 IR-024 一組、商業需求 |
-| IR-012 | 品管三步驟（驗證、請評審、處理回饋） | 流程：跳過 = 半成品 |
-| IR-024 | Git commit 絕對不加 Co-Authored-By | 身份：商業需求 |
-| IR-027 | 提醒無效，邏輯才有效 | 後設規則：v1.20 卡控的設計指導原則 |
-| IR-031 | 發版時 package.json / SERVER_VERSION / git tag 三處版號同步 | 發版：版號錯了用戶會看到舊版本 |
-| IR-038 | 修 bug 前必須先確保有觀測資料 | 品質：沒觀測等於盲修 |
-| IR-041 | 不收集使用者隱私 | 隱私：個資外洩無法回收 |
+| IR-002 | 不要 commit .env 或密碼 | Security: a leaked password cannot be recovered |
+| IR-005 | 不要不確認就改（不要 blind edit） | Quality: editing the wrong place breaks functionality |
+| IR-008 | commit 同步更新 README/FILELIST/CHANGELOG | Consistency: docs that don't match code are as good as no docs |
+| IR-009 | Git contributors 一律顯示 Vin | Identity: paired with IR-024, a business requirement |
+| IR-012 | 品管三步驟（驗證、請評審、處理回饋） | Process: skipping = a half-finished product |
+| IR-024 | Git commit 絕對不加 Co-Authored-By | Identity: a business requirement |
+| IR-027 | 提醒無效，邏輯才有效 | Meta-rule: the design guiding principle for v1.20 enforcement |
+| IR-031 | 發版時 package.json / SERVER_VERSION / git tag 三處版號同步 | Release: a wrong version means users see an old version |
+| IR-038 | 修 bug 前必須先確保有觀測資料 | Quality: no observability means blind fixing |
+| IR-041 | 不收集使用者隱私 | Privacy: leaked personal data cannot be recovered |
 
-選擇標準：**違反會造成實際損失**（資料洩漏、版本錯亂、品質倒退、發版失敗、身份冒名、隱私違反）。
+Selection criterion: **a violation causes real loss** (data leak, version chaos, quality regression, release failure, identity misattribution, privacy violation).
 
-### 2.3 Default 預設
+### 2.3 Default by default
 
-migration 時 **全部 41 條鐵律預設為 `default`**，發版後**透過 admin UI 手動把這 10 條升為 `critical`**。
+At migration time **all 41 iron rules default to `default`**; after release, **manually promote these 10 to `critical` via the admin UI**.
 
-理由：
+Reasons:
 
-- 不自動分類，避免機器分錯
-- Critical 改動視為高風險、要走 admin audit log
-- 跑一週看穩定度，再評估 Advisory 名單
+- No automatic classification, to avoid the machine misclassifying
+- Critical changes are treated as high-risk and must go through the admin audit log
+- Run for a week to watch stability, then evaluate the Advisory list
 
-### 2.4 Advisory 名單（v1.19.1 處理）
+### 2.4 Advisory list (handled in v1.19.1)
 
-本版 release 後**先讓所有非 Critical 維持 default**，跑一週實際觀察哪些規則確實只是「參考用」。v1.19.1 hotfix 再把它們手動降為 advisory。
+After this version's release, **keep all non-Critical as default first**, and run for a week to actually observe which rules are truly just "for reference". The v1.19.1 hotfix then manually demotes them to advisory.
 
-理由：分級錯誤的成本不對稱——把 Critical 標成 Default 會少一條防線、但把 Default 標成 Advisory 等於關掉防線。寧可慢一週、別誤降。
-
----
-
-## 3. 範圍 vs 不範圍
-
-### 3.1 範圍內（v1.19）
-
-- ✅ DB migration：`memories` 表加 `tier` 欄位（default: 'default'）
-- ✅ Server API：`GET/POST/PUT/PATCH /memory` 支援 tier 欄位讀寫
-- ✅ MCP 工具：`ownmind_save` / `ownmind_update` 接受可選 `tier` 參數
-- ✅ Admin UI：鐵律列表顯示 tier、可編輯（單選 dropdown）
-- ✅ SessionStart 顯示：按 tier 分組（Critical 加粗放最上、Default 中間、Advisory 摺疊）
-- ✅ Compliance event：違反紀錄帶 `tier` 欄位（給 v1.20 用）
-- ✅ 共用 helper：`shared/verification.js` 加 `getTier(ruleCode)` 函式
-- ✅ Tests：新增 5~8 個測試覆蓋上述變動
-- ✅ 同步更新：README（三語系）、FILELIST、CHANGELOG（IR-008、IR-032）
-
-### 3.2 不範圍（v1.20 處理）
-
-- ❌ **告警卡控**：Critical 違反時真的擋下 commit / tool call / reply
-- ❌ **動態調整**：例如「Default 連續違反 N 次自動升 Critical」
-- ❌ **AI 輔助分類**：用 LLM 自動建議分級
-- ❌ **per-user 客製分級**：每個使用者可以覆寫團隊預設
-
-### 3.3 不範圍（v1.21 處理）
-
-- ❌ **拆 memory.js / mcp/index.js**（純重構）
-
-### 3.4 不範圍（永遠不做）
-
-- ❌ **跨平台 tier 差異化**：例如「在 Cursor 上 tier=critical 但在 Claude Code 上 tier=advisory」——複雜度爆炸、跟 OwnMind「跨工具一致記憶」的核心願景矛盾
+Reason: the cost of mis-tiering is asymmetric — marking a Critical as Default loses one line of defense, but marking a Default as Advisory turns off the defense entirely. Better to be a week slow than to wrongly demote.
 
 ---
 
-## 4. 影響範圍
+## 3. In scope vs out of scope
 
-### 4.1 資料庫
+### 3.1 In scope (v1.19)
 
-| 檔案 | 內容 |
+- ✅ DB migration: add a `tier` field to the `memories` table (default: 'default')
+- ✅ Server API: `GET/POST/PUT/PATCH /memory` supports reading/writing the tier field
+- ✅ MCP tools: `ownmind_save` / `ownmind_update` accept an optional `tier` parameter
+- ✅ Admin UI: the iron-rule list shows the tier and is editable (single-select dropdown)
+- ✅ SessionStart display: grouped by tier (Critical bolded at the top, Default in the middle, Advisory collapsed)
+- ✅ Compliance event: the violation record carries a `tier` field (for v1.20)
+- ✅ Shared helper: add a `getTier(ruleCode)` function to `shared/verification.js`
+- ✅ Tests: add 5~8 tests covering the above changes
+- ✅ Sync update: README (trilingual), FILELIST, CHANGELOG (IR-008, IR-032)
+
+### 3.2 Out of scope (handled in v1.20)
+
+- ❌ **Alert enforcement**: actually blocking commit / tool call / reply when a Critical is violated
+- ❌ **Dynamic adjustment**: e.g. "auto-promote a Default to Critical after N consecutive violations"
+- ❌ **AI-assisted classification**: using an LLM to auto-suggest tiers
+- ❌ **per-user custom tiering**: each user can override the team default
+
+### 3.3 Out of scope (handled in v1.21)
+
+- ❌ **Splitting memory.js / mcp/index.js** (pure refactor)
+
+### 3.4 Out of scope (never)
+
+- ❌ **Cross-platform tier differentiation**: e.g. "tier=critical on Cursor but tier=advisory on Claude Code" — complexity explosion, and contradicts OwnMind's core vision of "consistent memory across tools"
+
+---
+
+## 4. Impact
+
+### 4.1 Database
+
+| File | Content |
 |------|------|
-| `db/014_iron_rule_tier.sql` | 新增 migration（ADD COLUMN + INDEX） |
+| `db/014_iron_rule_tier.sql` | New migration (ADD COLUMN + INDEX) |
 
 ### 4.2 Server
 
-| 檔案 | 改動 |
+| File | Change |
 |------|------|
-| `src/routes/memory.js` | POST/PUT/PATCH 接受 tier 欄位；GET 回傳 tier；type='iron_rule' 才允許設 tier |
-| `src/public/index.html` | 鐵律列表加 tier 欄位顯示 + 編輯 dropdown |
-| `mcp/index.js` | `ownmind_save` / `ownmind_update` schema 加 tier 參數 |
+| `src/routes/memory.js` | POST/PUT/PATCH accept the tier field; GET returns tier; tier can only be set when type='iron_rule' |
+| `src/public/index.html` | the iron-rule list adds tier display + an edit dropdown |
+| `mcp/index.js` | `ownmind_save` / `ownmind_update` schema adds a tier parameter |
 
 ### 4.3 Hook / Client
 
-| 檔案 | 改動 |
+| File | Change |
 |------|------|
-| `hooks/ownmind-session-start.js` | 鐵律按 tier 分組顯示 |
-| `hooks/ownmind-reply-lint.js` | compliance event 帶 `tier` 欄位 |
-| `shared/verification.js` | 新增 `getTier(ruleCode)` helper |
-| `shared/compliance.js` | violation 物件加 `tier` 欄位 |
+| `hooks/ownmind-session-start.js` | iron rules displayed grouped by tier |
+| `hooks/ownmind-reply-lint.js` | compliance event carries a `tier` field |
+| `shared/verification.js` | add a `getTier(ruleCode)` helper |
+| `shared/compliance.js` | the violation object adds a `tier` field |
 
-### 4.4 測試
+### 4.4 Tests
 
-新增測試（預估 5~8 個檔）：
+New tests (estimated 5~8 files):
 
-- `tests/iron-rule-tier-migration.test.js` — migration 不會壞既有資料
-- `tests/iron-rule-tier-api.test.js` — 讀寫 tier 走 API
-- `tests/iron-rule-tier-mcp.test.js` — MCP 工具支援 tier 參數
-- `tests/iron-rule-tier-session-start.test.js` — SessionStart 分組顯示
-- `tests/iron-rule-tier-compliance.test.js` — violation event 帶 tier
-- `tests/iron-rule-tier-validation.test.js` — 非 iron_rule type 不准設 tier
-- `tests/iron-rule-tier-default.test.js` — migration 既有資料預設為 default
+- `tests/iron-rule-tier-migration.test.js` — migration doesn't break existing data
+- `tests/iron-rule-tier-api.test.js` — reading/writing tier via the API
+- `tests/iron-rule-tier-mcp.test.js` — MCP tools support the tier parameter
+- `tests/iron-rule-tier-session-start.test.js` — SessionStart grouped display
+- `tests/iron-rule-tier-compliance.test.js` — violation event carries tier
+- `tests/iron-rule-tier-validation.test.js` — non-iron_rule type cannot set tier
+- `tests/iron-rule-tier-default.test.js` — migration defaults existing data to default
 
-### 4.5 文件
+### 4.5 Docs
 
-| 檔案 | 改動 |
+| File | Change |
 |------|------|
-| `README.md` | 「Iron Rule Enforcement Engine」段落加 tier 系統說明 |
-| `docs/README.zh-TW.md` | 同上、繁中版 |
-| `docs/README.ja.md` | 同上、日文版 |
-| `CHANGELOG.md` | 加 v1.19 條目 |
-| `FILELIST.md` | 加 014 migration 與新測試檔 |
+| `README.md` | the "Iron Rule Enforcement Engine" section adds an explanation of the tier system |
+| `docs/README.zh-TW.md` | same, Traditional Chinese version |
+| `docs/README.ja.md` | same, Japanese version |
+| `CHANGELOG.md` | add a v1.19 entry |
+| `FILELIST.md` | add the 014 migration and new test files |
 
 ---
 
-## 5. 風險與緩解
+## 5. Risks and mitigations
 
-| 風險 | 機率 | 影響 | 緩解 |
+| Risk | Probability | Impact | Mitigation |
 |------|------|------|------|
-| migration 影響既有 41 條鐵律 | 極低 | 大 | 純 ADD COLUMN 預設值、不改既有資料、純 reversible |
-| 跨工具不同步（舊客戶端讀不到 tier） | 中 | 小 | API 回傳 tier 缺失時用 `default` fallback、hook 也用 fallback |
-| Admin UI 手動分級時誤選 | 中 | 中 | 編輯 tier 寫 audit log（誰、何時、從什麼改成什麼）；previous_content 機制已存在 |
-| Critical 數量太少、防護網太薄 | 低 | 中 | v1.19.1 hotfix 補；本版設計就是「先嚴後鬆」 |
-| 使用者覺得分級沒用、繼續所有規則一樣對待 | 中 | 小 | 本版只是埋種子，v1.20 才會看到真效果；先收資料 |
+| migration affects the existing 41 iron rules | Very low | Large | pure ADD COLUMN with a default, doesn't change existing data, fully reversible |
+| out-of-sync across tools (old clients can't read tier) | Medium | Small | use a `default` fallback when the API returns no tier; the hook also uses a fallback |
+| Mis-selection during manual tiering in the admin UI | Medium | Medium | editing the tier writes an audit log (who, when, from what to what); the previous_content mechanism already exists |
+| Too few Critical, the safety net is too thin | Low | Medium | filled by the v1.19.1 hotfix; this version is designed to be "strict first, loosen later" |
+| Users feel tiering is useless, keep treating all rules the same | Medium | Small | this version just plants a seed, the real effect shows in v1.20; collect data first |
 
 ---
 
-## 6. 跟既有專案的關係
+## 6. Relationship to existing projects
 
-| 項目 | 關係 |
+| Item | Relationship |
 |------|------|
-| project_373（OwnMind v3 spec 路線 C） | 本版屬於「路線 C 階段 C」的前置工作——分級資料是 100 條鐵律 benchmark 的前提 |
-| project_342（鐵律品質 lint 升級到 LLM 語意評分） | 不衝突，本版只動 tier、不動內容品質 lint |
-| IR-027（提醒無效、邏輯才有效） | 本版是 IR-027 的長期解法第一步 |
-| v1.18.9（latency 埋點） | 完全獨立、無相依 |
+| project_373 (OwnMind v3 spec route C) | this version is prerequisite work for "route C stage C" — the tier data is a prerequisite for the 100-iron-rule benchmark |
+| project_342 (upgrading iron-rule quality lint to LLM semantic scoring) | no conflict, this version only touches tier, not the content-quality lint |
+| IR-027 (reminders don't work, only logic does) | this version is the first step of the long-term solution to IR-027 |
+| v1.18.9 (latency instrumentation) | completely independent, no dependency |
 
 ---
 
-## 7. 拍板紀錄
+## 7. Decision record
 
-| # | 議題 | 拍板（2026-05-14） |
+| # | Issue | Decision (2026-05-14) |
 |---|------|--------------------|
-| 1 | 幾級分類 | **3 級**：Critical / Default / Advisory |
-| 2 | Critical 名單 | **10 條**：IR-002 / 005 / 008 / 009 / 012 / 024 / 027 / 031 / 038 / 041 |
-| 3 | migration 預設值 | **全部設為 `default`**、發版後 admin 手動升 Critical |
-| 4 | Advisory 名單時機 | **v1.19.1 hotfix 處理**、本版先讓所有非 Critical 維持 default |
-| 5 | 本版是否包含執行邏輯卡控 | **否**、純資料層 + UI、卡控等 v1.20 |
+| 1 | How many tiers | **3 tiers**: Critical / Default / Advisory |
+| 2 | Critical list | **10**: IR-002 / 005 / 008 / 009 / 012 / 024 / 027 / 031 / 038 / 041 |
+| 3 | migration default value | **all set to `default`**, admin manually promotes to Critical after release |
+| 4 | Advisory list timing | **handled in the v1.19.1 hotfix**, this version keeps all non-Critical as default first |
+| 5 | Does this version include execution-logic enforcement | **No**, pure data layer + UI, enforcement waits for v1.20 |
 
 ---
 
-## 8. 下一步
+## 8. Next steps
 
-1. 寫 `spec.md`（GIVEN/WHEN/THEN 場景）
-2. 寫 `tasks.md`（任務清單）
-3. 走 TDD（IR-003）：先寫測試 → 跑紅 → 實作 → 跑綠
-4. 品管三步驟（IR-012）：verification → request review → handle review
-5. 同步 README / FILELIST / CHANGELOG（IR-008、IR-032）
-6. browser 實測（IR-020）：admin UI 編輯 tier 流程
-7. 三處版號同步（IR-031）：package.json、SERVER_VERSION、git tag
-8. Tag v1.19.0、push（Vin 拍板）、提醒部署 prod、跑一週看分級穩定度
-9. v1.19.1：根據觀察補 Advisory 名單
+1. Write `spec.md` (GIVEN/WHEN/THEN scenarios)
+2. Write `tasks.md` (task list)
+3. Follow TDD (IR-003): write tests first → run red → implement → run green
+4. Three quality-gate steps (IR-012): verification → request review → handle review
+5. Sync README / FILELIST / CHANGELOG (IR-008, IR-032)
+6. Browser testing (IR-020): the admin UI tier-editing flow
+7. Sync the version in three places (IR-031): package.json, SERVER_VERSION, git tag
+8. Tag v1.19.0, push (Vin's decision), remind to deploy prod, run a week to watch tier stability
+9. v1.19.1: fill in the Advisory list based on observation

@@ -1,47 +1,47 @@
-# v1.19.11 — Lint UX 改善任務清單
+# v1.19.11 — Lint UX improvements task list
 
-## 範圍
+## Scope
 
-### 方案 A：誤判降低
-- [x] 改 `src/routes/memory.js` POST 流程、擴大 skip_keyword 適用類型
-- [x] 新測試：寫 project 記憶含程式碼路徑不被擋
+### Approach A: fewer false positives
+- [x] Change the POST flow of `src/routes/memory.js`, expand the types that skip_keyword applies to
+- [x] New test: writing project memory containing a code path is not blocked
 
-### AI 自我標註
-- [x] 改 `hooks/ownmind-reply-lint.js` 的 formatBlockReason、指令文字加標註要求 + markdown 引述範例
-- [x] 新測試：stderr 內容含「請開頭加標註」字眼
+### AI self-annotation
+- [x] Change `formatBlockReason` in `hooks/ownmind-reply-lint.js`, add the annotation requirement + markdown quote example to the instruction text
+- [x] New test: the stderr content contains the "please add an annotation at the start" phrase
 
-### 分級顯示
-- [x] 改 hook 主流程、根據 `block_count_in_session` 決定指令文字版本
-- [x] 新測試：連續擋下時、第 2-3 次訊息簡短、第 4 次降警告完整
+### Tiered display
+- [x] Change the hook main flow, decide the instruction-text version based on `block_count_in_session`
+- [x] New test: on consecutive blocks, the 2nd-3rd message is short, the 4th downgrades to a full warning
 
-### log 保底
-- [x] 寫 `hooks/lib/lint-event-logger.js`（純函式、好測試）
-- [x] 整合到 hook 主流程、擋下時 append 紀錄
-- [x] rotate 機制（5MB cap）
-- [x] 寫入失敗不擋主流程
-- [x] 新測試：擋下後檔內容檢查
+### Log backstop
+- [x] Write `hooks/lib/lint-event-logger.js` (pure function, easy to test)
+- [x] Integrate into the hook main flow, append a record on block
+- [x] Rotate mechanism (5MB cap)
+- [x] A write failure does not block the main flow
+- [x] New test: check the file content after a block
 
-### 文件
-- [x] package.json 版號 1.19.10 → 1.19.11
-- [x] CHANGELOG 加 v1.19.11 段
-- [x] FILELIST 加新檔
-- [x] 三語系 README FAQ 補一條「為什麼有時 AI 會看似說兩次」
+### Docs
+- [x] package.json version 1.19.10 → 1.19.11
+- [x] Add the v1.19.11 section to CHANGELOG
+- [x] Add the new files to FILELIST
+- [x] Add to the trilingual README FAQ an entry "why the AI sometimes seems to say things twice"
 
-### 驗證
-- [x] `npm test` 全套綠
-- [x] 走 superpowers:requesting-code-review
+### Verification
+- [x] `npm test` fully green
+- [x] Go through superpowers:requesting-code-review
 - [x] commit
 
-## 風險檢查點
+## Risk checkpoints
 
-- [x] 寫真實 project 記憶含 `random-password.js` 字串成功
-- [x] 跑 dogfood、看 Claude 重寫時是否加標註
-- [x] 連續觸發 4 次、確認分級顯示不同
-- [x] 確認 `reply-lint-events.jsonl` 有寫入
-- [x] 舊 reply-lint test（v1.19.3 / v1.19.7）全綠
+- [x] Write a real project memory containing the string `random-password.js` successfully
+- [x] Run dogfood, see whether Claude adds an annotation on rewrite
+- [x] Trigger 4 times in a row, confirm the tiered display differs
+- [x] Confirm `reply-lint-events.jsonl` has been written
+- [x] The old reply-lint tests (v1.19.3 / v1.19.7) are all green
 
-## 非任務
+## Non-tasks
 
-- ❌ 自動套用優化建議（v2.0 才做）
-- ❌ ML 誤判辨識（資料量不夠）
-- ❌ 強制驗證 AI 是否加標註（接受 best-effort）
+- ❌ Auto-applying optimization suggestions (only in v2.0)
+- ❌ ML false-positive recognition (not enough data)
+- ❌ Force-verifying whether the AI adds an annotation (accept best-effort)

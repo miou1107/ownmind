@@ -1,234 +1,234 @@
-# v1.19.3 — Reply-lint Progressive Block 規格（GIVEN / WHEN / THEN）
+# v1.19.3 — Reply-lint Progressive Block spec (GIVEN / WHEN / THEN)
 
-> BDD 三段式。涵蓋漸進式 block、3 種 MODE、session counter、白名單擴充行為。
+> BDD three-part form. Covers progressive block, the 3 MODEs, session counter, whitelist expansion behavior.
 
 ---
 
-## 場景 1：MODE=warn（預設） — 違規只警告、永不 block
+## Scenario 1: MODE=warn (default) — violation only warns, never blocks
 
 **GIVEN**
-- `OWNMIND_REPLY_LINT_MODE` 未設或設為 `warn`
-- transcript 最後一輪 assistant text 含 「我用 refactor 跟 hook 重寫整個 codebase 的 middleware」（明顯違規）
+- `OWNMIND_REPLY_LINT_MODE` unset or set to `warn`
+- The last turn's assistant text contains "我用 refactor 跟 hook 重寫整個 codebase 的 middleware" (an obvious violation)
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- stdout **完全空白**（不寫 block JSON、不寫任何文字）
-- /dev/tty 寫 banner（含 IR-037/036 違規清單）
+- stdout is **completely empty** (no block JSON, no text at all)
+- /dev/tty writes a banner (with the IR-037/036 violation list)
 - compliance event spool / POST
 - exit 0
 
 ---
 
-## 場景 2：MODE=block + session 第 1 次違規 — 警告、不 block
+## Scenario 2: MODE=block + session's 1st violation — warn, don't block
 
 **GIVEN**
 - `OWNMIND_REPLY_LINT_MODE=block`
-- session counter 顯示本 session 違規 0 次
-- assistant text 違規
+- The session counter shows 0 violations for this session
+- assistant text violates
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- session counter +1 → 變 1
-- /dev/tty 寫 banner（含「目前 session 違規 1 次、累積 4 次會 block」）
-- stdout **不寫** block JSON
+- session counter +1 → becomes 1
+- /dev/tty writes a banner (containing "目前 session 違規 1 次、累積 4 次會 block")
+- stdout **doesn't write** block JSON
 - exit 0
 
 ---
 
-## 場景 3：MODE=block + session 第 4 次違規 — 觸發 block
+## Scenario 3: MODE=block + session's 4th violation — triggers block
 
 **GIVEN**
 - `OWNMIND_REPLY_LINT_MODE=block`
-- session counter 顯示本 session 違規 3 次
-- assistant text 違規
+- The session counter shows 3 violations for this session
+- assistant text violates
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- session counter +1 → 變 4
-- /dev/tty 寫 banner（含「⚠️ 已觸發 block、Claude 將收到重寫指令」）
-- stdout 輸出 `{"decision":"block","reason":"請重寫你剛才的回應..."}` JSON
-- reason 內容為指令型、含具體問題詞、含改寫格式說明
+- session counter +1 → becomes 4
+- /dev/tty writes a banner (containing "⚠️ 已觸發 block、Claude 將收到重寫指令")
+- stdout outputs `{"decision":"block","reason":"請重寫你剛才的回應..."}` JSON
+- The reason content is instruction-style, contains the specific problem words, contains rewrite-format guidance
 - exit 0
 
 ---
 
-## 場景 4：MODE=block + Claude 重寫後又違規 — 計數繼續累積、Claude Code 內建 8 次上限保護
+## Scenario 4: MODE=block + Claude violates again after rewriting — count keeps accumulating, Claude Code's built-in 8-time limit protects
 
 **GIVEN**
-- 已達第 4 次違規、hook block 過
-- Claude 收到 reason、重寫、新回應依然違規
-- 此時 `stop_hook_active` 由 Claude Code 設為 true
+- Already reached the 4th violation, the hook has blocked
+- Claude received the reason, rewrote, and the new response still violates
+- At this point `stop_hook_active` is set to true by Claude Code
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- 偵測到 `stop_hook_active: true` → **立刻 exit 0、不跑 lint、不寫 banner、不寫 stdout**
-- session counter **不增加**（這次不算 user 違規、是 hook 自己 retry 造成）
-- 後續真正的 user 新對話 stop_hook_active=false、計數恢復累積
+- Detecting `stop_hook_active: true` → **immediately exit 0, don't run lint, don't write banner, don't write stdout**
+- session counter **does not increment** (this doesn't count as a user violation, it's caused by the hook's own retry)
+- A subsequent genuine new user turn has stop_hook_active=false, and the count resumes accumulating
 
 ---
 
-## 場景 5：MODE=disable — 完全跳過
+## Scenario 5: MODE=disable — fully skip
 
 **GIVEN**
-- `OWNMIND_REPLY_LINT_MODE=disable`（或 `OWNMIND_REPLY_LINT_DISABLE=1`）
+- `OWNMIND_REPLY_LINT_MODE=disable` (or `OWNMIND_REPLY_LINT_DISABLE=1`)
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- 不讀 transcript、不跑 lint、不寫任何東西
+- Doesn't read the transcript, doesn't run lint, doesn't write anything
 - exit 0
 
 ---
 
-## 場景 6：MODE 未知值（fail-open） — 當 warn 處理
+## Scenario 6: MODE unknown value (fail-open) — treated as warn
 
 **GIVEN**
-- `OWNMIND_REPLY_LINT_MODE=foo`（誤拼）
+- `OWNMIND_REPLY_LINT_MODE=foo` (a typo)
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- 視為 `warn`、行為同場景 1
-- /dev/tty banner 加一行「⚠️ MODE 值 'foo' 不認識、fallback 到 warn」（讓 user 注意到）
+- Treated as `warn`, behavior same as scenario 1
+- /dev/tty banner adds a line "⚠️ MODE 值 'foo' 不認識、fallback 到 warn" (so the user notices)
 
 ---
 
-## 場景 7：Session counter 檔不存在 — 視為計數 0
+## Scenario 7: Session counter file doesn't exist — treated as count 0
 
 **GIVEN**
-- `~/.ownmind/logs/reply-lint-session-counter.json` 不存在
-- MODE=block、違規
+- `~/.ownmind/logs/reply-lint-session-counter.json` doesn't exist
+- MODE=block, violation
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- counter 視為 0、加 1 後寫入新建檔
-- 行為同場景 2（第 1 次違規、警告不 block）
+- The counter is treated as 0, after +1 it's written to a newly created file
+- Behavior same as scenario 2 (1st violation, warn, don't block)
 
 ---
 
-## 場景 8：Session counter 檔毀損 — 計數歸零、不擋流程
+## Scenario 8: Session counter file corrupted — count reset to zero, doesn't block the flow
 
 **GIVEN**
-- counter 檔內容不是合法 JSON
-- MODE=block、違規
+- The counter file content isn't valid JSON
+- MODE=block, violation
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- 視為計數 0、覆寫檔（從乾淨狀態重來）
-- 行為同場景 2
+- Treated as count 0, overwrite the file (start fresh from a clean state)
+- Behavior same as scenario 2
 
 ---
 
-## 場景 9：白名單擴充 — Top 30 違規詞應該全部被白名單吸收
+## Scenario 9: Whitelist expansion — the Top 30 violation words should all be absorbed by the whitelist
 
 **GIVEN**
-- assistant text 含「Google」、「main」、「branch」、「worktree」、「review」、「hook」（Top 30 詞）
+- assistant text contains "Google", "main", "branch", "worktree", "review", "hook" (Top 30 words)
 
 **WHEN**
-跑 `checkMixedLanguage`
+running `checkMixedLanguage`
 
 **THEN**
-- 回 `{ok: true, ratio: 0, mixedWords: []}` — 都在新擴白名單
+- Returns `{ok: true, ratio: 0, mixedWords: []}` — all in the newly expanded whitelist
 
 ---
 
-## 場景 10：Proper noun 偵測 — 大寫開頭孤立詞不算違規
+## Scenario 10: Proper noun detection — capitalized isolated words don't count as violations
 
 **GIVEN**
-- assistant text 含「Eric 跟 Phoebe 都同意」（人名）
+- assistant text contains "Alice 跟 Carol 都同意" (personal names)
 
 **WHEN**
-跑 `checkMixedLanguage`
+running `checkMixedLanguage`
 
 **THEN**
-- `Eric`、`Phoebe` 符合 `^[A-Z][a-z]+$` pattern → 視為 proper noun、不算違規
-- 回 `{ok: true, ratio: 0, mixedWords: []}`
+- `Alice`, `Carol` match the `^[A-Z][a-z]+$` pattern → treated as proper nouns, not violations
+- Returns `{ok: true, ratio: 0, mixedWords: []}`
 
 ---
 
-## 場景 11：Threshold 分情境 — 含 code block 寬鬆到 25%
+## Scenario 11: Context-aware threshold — with a code block, relaxed to 25%
 
 **GIVEN**
-- assistant text 含 ` ```code``` ` 區塊
-- 中英混雜比例 22%（一般情境會違規、含 code 應放行）
+- assistant text contains a ` ```code``` ` block
+- Chinese-English mixing ratio 22% (would violate in a general context, with code should pass)
 
 **WHEN**
-跑 `checkMixedLanguage`
+running `checkMixedLanguage`
 
 **THEN**
-- 偵測到 ` ``` ` → threshold=0.25
+- Detecting ` ``` ` → threshold=0.25
 - 22% < 25% → `{ok: true, ratio: 0.22}`
 
 ---
 
-## 場景 12：Code review 豁免 — 含「code review」字眼直接放行
+## Scenario 12: Code review exemption — containing the phrase "code review" passes directly
 
 **GIVEN**
-- assistant text 開頭含「## Code Review」或「code-review 結果」
+- assistant text begins with "## Code Review" or "code-review 結果"
 
 **WHEN**
-跑 `checkMixedLanguage`
+running `checkMixedLanguage`
 
 **THEN**
-- 偵測到 code review 字眼 → 直接回 `{ok: true, ratio: 0, mixedWords: []}`
+- Detecting the code review phrase → returns `{ok: true, ratio: 0, mixedWords: []}` directly
 
 ---
 
-## 場景 13：IR-036 視窗從 50 字擴到 80 字
+## Scenario 13: IR-036 window expanded from 50 to 80 characters
 
 **GIVEN**
-- assistant text 含「我們的 dispatcher 設計、     也就是把訊息分派出去的元件」
-（dispatcher 後第一個有意義字距離 > 50 但 < 80）
+- assistant text contains "我們的 dispatcher 設計、     也就是把訊息分派出去的元件"
+(the first meaningful character after dispatcher is at distance > 50 but < 80)
 
 **WHEN**
-跑 `checkJargonExplanation`
+running `checkJargonExplanation`
 
 **THEN**
-- 80 字內找到「也就是」→ 不算違規
-- 同樣 text 在舊 50 字視窗下會違規、新 80 字下放行
+- "也就是" found within 80 characters → not a violation
+- The same text would violate under the old 50-character window, passes under the new 80
 
 ---
 
-## 場景 14：Session counter 自掃 — 30 天前的 session 自動清
+## Scenario 14: Session counter auto-clean — sessions older than 30 days are auto-removed
 
 **GIVEN**
-- counter 檔含 100 個 session 紀錄、其中 60 個 `started_at` > 30 天前
-- MODE=block、新 session 違規
+- The counter file contains 100 session records, of which 60 have `started_at` > 30 days ago
+- MODE=block, new session violation
 
 **WHEN**
-hook 被觸發
+the hook is triggered
 
 **THEN**
-- 寫入時自掃、60 個過期紀錄被刪除
-- 最終檔只剩 41 個 session（40 個未過期 + 1 個新觸發的）
+- Auto-clean on write, the 60 stale records are deleted
+- The final file has only 41 sessions left (40 not stale + 1 newly triggered)
 
 ---
 
-## 場景 15：Reason 寫法為指令型、含改寫格式建議
+## Scenario 15: Reason is written as an instruction, with rewrite-format suggestions
 
 **GIVEN**
-- MODE=block、第 4 次違規、違規詞含「refactor」、「codebase」
+- MODE=block, 4th violation, violation words include "refactor", "codebase"
 
 **WHEN**
-hook 輸出 block JSON
+the hook outputs block JSON
 
 **THEN**
-- `reason` 字串以「請重寫」開頭（指令動詞）
-- 含「refactor」、「codebase」實際詞列出
-- 含「用括號附中文解釋」「：」「（）」等具體格式範例
-- 含「如果你判斷上述詞已經有相關上下文、或屬於變數名 / 函式名等程式碼引用、可以保留不改」這類例外指引
-- 不含「你違反了」、「你做錯了」這類報告式語氣
+- The `reason` string begins with "請重寫" (an instruction verb)
+- Contains "refactor", "codebase" listed as actual words
+- Contains specific format examples such as "用括號附中文解釋", "：", "（）"
+- Contains exception guidance like "如果你判斷上述詞已經有相關上下文、或屬於變數名 / 函式名等程式碼引用、可以保留不改"
+- Doesn't contain report-style tone such as "你違反了", "你做錯了"

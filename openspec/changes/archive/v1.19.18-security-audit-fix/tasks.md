@@ -1,49 +1,49 @@
-# v1.19.18 — 安全漏洞修補任務清單
+# v1.19.18 — Security vulnerability patch task list
 
-## 範圍
+## Scope
 
-- [x] 寫 proposal.md
-- [ ] 確認 `npm audit fix --dry-run` 預覽（已做、結果：qs 6.15.2、ip-address 10.2.0、express-rate-limit 8.5.2）
-- [ ] 執行 `npm audit fix`
-- [ ] 跑 `npm audit` 確認 0 漏洞
-- [ ] 跑 `node --test` 全套測試、必須全綠
-- [ ] 看 `package.json` + `package-lock.json` diff、確認只升三個套件
-- [ ] 版號 1.19.17 → 1.19.18（`package.json`）
-- [ ] SERVER_VERSION 同步更新（grep 確認所有 hard-coded 位置）
-- [ ] CHANGELOG.md 加 v1.19.18 段
-- [ ] FILELIST.md 加 v1.19.18 段（如果有新增檔案）
-- [ ] 三語系 README 版號更新（zh-TW / en / ja）
-- [ ] commit（IR-009 contributor=Vin、IR-024 不加 Co-Authored-By）
+- [x] Write proposal.md
+- [ ] Confirm `npm audit fix --dry-run` preview (done, result: qs 6.15.2, ip-address 10.2.0, express-rate-limit 8.5.2)
+- [ ] Run `npm audit fix`
+- [ ] Run `npm audit` to confirm 0 vulnerabilities
+- [ ] Run `node --test` full suite, must be all green
+- [ ] Review the `package.json` + `package-lock.json` diff, confirm only the three packages are bumped
+- [ ] Version 1.19.17 → 1.19.18 (`package.json`)
+- [ ] SERVER_VERSION synced (grep to confirm all hard-coded locations)
+- [ ] CHANGELOG.md add v1.19.18 section
+- [ ] FILELIST.md add v1.19.18 section (if new files added)
+- [ ] Tri-language README version update (zh-TW / en / ja)
+- [ ] commit (IR-009 contributor=Vin, IR-024 no Co-Authored-By)
 - [ ] tag v1.19.18 + push origin main + push tag
-- [ ] kkvin.com 部署：
+- [ ] kkvin.com deploy:
   - [ ] ssh kkvin.com
   - [ ] cd /VinService/ownmind && git pull
-  - [ ] 跑 db/ 下未套用的 migration（IR-048、本版應為 0 條）
-  - [ ] `docker compose build --no-cache`（IR-018 + IR-023）
+  - [ ] Run unapplied migrations under db/ (IR-048, should be 0 for this version)
+  - [ ] `docker compose build --no-cache` (IR-018 + IR-023)
   - [ ] `docker compose up -d`
-  - [ ] 看 log 確認伺服器起來、無錯誤
-- [ ] 部署後實測（IR-020）：
-  - [ ] 瀏覽器開 admin 後台、登入成功
-  - [ ] `curl https://kkvin.com/ownmind/api/clients/version` 回 1.19.18
-  - [ ] `curl POST /api/bug-reports` 確認 qs 升級後查詢字串解析正常
+  - [ ] Check logs to confirm the server is up, no errors
+- [ ] Post-deploy test (IR-020):
+  - [ ] Open the admin backend in a browser, login succeeds
+  - [ ] `curl https://kkvin.com/ownmind/api/clients/version` returns 1.19.18
+  - [ ] `curl POST /api/bug-reports` to confirm query string parsing works after the qs upgrade
 - [ ] `git mv openspec/changes/v1.19.18-security-audit-fix openspec/changes/archive/`
-- [ ] commit archive、push
-- [ ] 關 GitHub issue #43（附 release commit 連結）
+- [ ] commit archive, push
+- [ ] Close GitHub issue #43 (attach the release commit link)
 
-## 非任務
+## Non-tasks
 
-- ❌ 升 major 版本套件（npm audit fix 不會做、本版也不打算）
-- ❌ 改任何業務邏輯或新增功能
-- ❌ 客戶端 `~/.ownmind` 升級（本版伺服器端純依賴升級、不影響客戶端）
-- ❌ 寫 spec.md（純依賴升級、沒有 BDD 場景要定義）
+- ❌ Upgrading major version packages (npm audit fix won't do it, this version doesn't intend to)
+- ❌ Changing any business logic or adding features
+- ❌ Client `~/.ownmind` upgrade (this version is a pure server-side dependency upgrade, does not affect the client)
+- ❌ Writing spec.md (pure dependency upgrade, no BDD scenarios to define)
 
-## 鐵律觸發 checklist
+## Iron-rule trigger checklist
 
-- [x] IR-021 開始前 git pull（已做、已是最新）
-- [ ] IR-003 修 bug 先寫 reproduction test —— **跳過、理由**：本版不是修 bug、是升級已知有漏洞的依賴；漏洞 reproduction test 應該由套件作者寫、不是 OwnMind 的責任。OwnMind 既有測試 + `npm audit` 是雙重把關。
-- [ ] IR-008 + IR-026 commit 前同步 README/FILELIST/CHANGELOG
-- [ ] IR-018 + IR-023 部署用 docker compose build --no-cache
-- [ ] IR-020 部署後瀏覽器實測
-- [ ] IR-031 三處版號同步（package.json / SERVER_VERSION / git tag）
-- [ ] IR-032 三語系 README 同步
-- [ ] IR-048 deploy 前跑 migration（本版應為 0 條、仍要確認）
+- [x] IR-021 git pull before starting (done, already up to date)
+- [ ] IR-003 write a reproduction test before fixing a bug —— **skipped, reason**: this version is not a bug fix but an upgrade of known-vulnerable dependencies; the vulnerability reproduction test should be written by the package authors, not OwnMind's responsibility. OwnMind's existing tests + `npm audit` are a double safeguard.
+- [ ] IR-008 + IR-026 sync README/FILELIST/CHANGELOG before commit
+- [ ] IR-018 + IR-023 deploy with docker compose build --no-cache
+- [ ] IR-020 post-deploy browser test
+- [ ] IR-031 three-way version sync (package.json / SERVER_VERSION / git tag)
+- [ ] IR-032 tri-language README sync
+- [ ] IR-048 run migrations before deploy (should be 0 for this version, still confirm)
