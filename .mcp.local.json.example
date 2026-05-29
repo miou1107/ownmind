@@ -1,0 +1,16 @@
+{
+  "_comment": "Copy this file to .mcp.local.json (gitignored) and fill in your own values. It overrides .mcp.json so your local OwnMind MCP connects to YOUR server. Steps: (1) set OWNMIND_API_URL to your OwnMind server base URL; (2) set OWNMIND_API_KEY to the key your admin issued you (or leave the placeholder and let Claude Code read ~/.ownmind/credentials); (3) point args at your installed mcp/index.js absolute path.",
+  "mcpServers": {
+    "ownmind": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/.ownmind/mcp/index.js"
+      ],
+      "env": {
+        "OWNMIND_API_URL": "https://YOUR_OWNMIND_URL/ownmind",
+        "OWNMIND_API_KEY": "YOUR_API_KEY",
+        "OWNMIND_TOOL": "claude-code"
+      }
+    }
+  }
+}

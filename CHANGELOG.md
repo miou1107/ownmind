@@ -1,5 +1,17 @@
 # OwnMind 更新紀錄
 
+## v1.26.24 — 新增 .mcp.local.json 範本給自架者參考
+
+**背景**：v1.26.23 把 `.mcp.json` 的主機網址改成佔位、真值改走 gitignore 的 `.mcp.local.json`。但自架者 clone repo 後沒有可照抄的範本。
+
+**本次**：
+- 新增 `.mcp.local.json.example`（可追蹤、附說明）：自架者複製成 `.mcp.local.json` 填自己的 OWNMIND_API_URL / API key / mcp 路徑即可。
+- `.mcp.json`（committed 模板）的 args 路徑從寫死的個人 home 改成通用 `${HOME}/.ownmind/mcp/index.js`，`_comment` 指向範本。
+
+**零功能影響**：測試維持 2008 全綠（測試不讀真實 .mcp.json）。
+
+**版本**：1.26.23 → 1.26.24
+
 ## v1.26.23 — 主機網址設定化 + 開源前去品牌化收尾
 
 **背景**：開源前最後一關。把作者私人主機網址、公司網域、內部專案代號從原始碼裡清掉；其中「功能性」的主機引用改成讀環境變數，讓既有使用者與作者自己的部署都不受影響。

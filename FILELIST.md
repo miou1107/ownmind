@@ -1,5 +1,10 @@
 # OwnMind 檔案結構
 
+## v1.26.24 修改（新增 .mcp.local.json 範本）
+
+新增檔：`.mcp.local.json.example`（自架者複製成 gitignore 的 `.mcp.local.json` 填真值的參考範本）。
+修改檔：`.mcp.json`（args 路徑改通用 `${HOME}/.ownmind/mcp/index.js`、`_comment` 指向範本）。
+
 ## v1.26.23 修改（主機網址設定化 + 去品牌化收尾）
 
 新增檔：
