@@ -200,7 +200,7 @@ describe('v1.19.7 scenario 17 — privacy detection integration (event name priv
 
     writeTranscript([
       { role: 'user', text: '幫我寫封信' },
-      { role: 'assistant', text: '寄到 leaked@fontrip.com 即可' },
+      { role: 'assistant', text: '寄到 leaked@acme.com 即可' },
     ]);
 
     for (let i = 1; i <= 3; i++) {
@@ -225,7 +225,7 @@ describe('v1.19.7 scenario 17 — privacy detection integration (event name priv
 
   it('banner contains the privacy_check identifier (v1.19.10 neutralization)', () => {
     writeTranscript([
-      { role: 'assistant', text: '聯絡 leaked@fontrip.com' },
+      { role: 'assistant', text: '聯絡 leaked@acme.com' },
     ]);
     runHook(stopPayload(), { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.ok(fs.existsSync(pendingFile), 'privacy violation should write a banner');
@@ -256,7 +256,7 @@ describe('v1.19.7 scenario 17 — privacy detection integration (event name priv
     const sessionId = 'sess-privacy-reason';
     const payload = stopPayload({ session_id: sessionId });
     writeTranscript([
-      { role: 'assistant', text: '請聯絡 leaked-secret-mail@fontrip.com' },
+      { role: 'assistant', text: '請聯絡 leaked-secret-mail@acme.com' },
     ]);
     for (let i = 1; i <= 3; i++) {
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
@@ -264,7 +264,7 @@ describe('v1.19.7 scenario 17 — privacy detection integration (event name priv
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2);
     assert.ok(
-      !r.stderr.includes('leaked-secret-mail@fontrip.com'),
+      !r.stderr.includes('leaked-secret-mail@acme.com'),
       'block reason should not re-list the original PII string'
     );
     assert.match(r.stderr, /\[email\]|placeholders|Rewrite that segment/i, 'block reason should hint at using a placeholder');

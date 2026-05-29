@@ -265,13 +265,13 @@ init 回傳的 enforcement_alerts 是使用者最常違反的鐵律，根據歷�
    ─── 暫存區（之前 session 上傳，待確認）───
    | # | 分類 | 標題 | 來源 | 說明 |
    |---|------|------|------|------|
-   | 1 | 🚫 鐵律 | SSH 連線規則 | RING / Claude Code 3/27 14:30 | 踩到被 ban 的坑 |
+   | 1 | 🚫 鐵律 | SSH 連線規則 | ProjectR / Claude Code 3/27 14:30 | 踩到被 ban 的坑 |
    | 2 | 🔧 技術標準 | ESLint 新規則 | fontrends / Cursor 3/26 10:00 | 統一 import 排序 |
 
    ─── 本次 session（尚未上傳）───
    | # | 分類 | 標題 | 來源 | 說明 |
    |---|------|------|------|------|
-   | 3 | 📁 專案 | RING v2.3 進度 | 本次 session | 完成對話測試模組 |
+   | 3 | 📁 專案 | ProjectR v2.3 進度 | 本次 session | 完成對話測試模組 |
    | 4 | 👤 個人偏好 | 報告語言偏好 | 本次 session | 圖表英文、文字中文 |
 
    要正式寫入哪些？（輸入編號、「全部」、或「跳過」）
@@ -291,14 +291,14 @@ init 回傳的 enforcement_alerts 是使用者最常違反的鐵律，根據歷�
 | 昨天學到什麼 | 昨天 | `metadata.timestamp` |
 | 最近學到什麼 | 最近 7 天 | `metadata.timestamp` |
 | 這週學到什麼 | 本週（週一起算） | `metadata.timestamp` |
-| RING 專案學到什麼 | RING | `metadata.project` |
+| ProjectR 專案學到什麼 | ProjectR | `metadata.project` |
 | 用 Cursor 學到什麼 | Cursor | `metadata.tool` |
 | 伺服器管理學到什麼 | 模糊匹配 title/content | `title` + `content` |
 | 鐵律學到什麼 | iron_rule | `type` |
 | 今天記了哪些帳密/key | 今天 | `secrets` table（`ownmind_list_secrets`） |
 
 - 過濾在本地做（API 查回全部 `pending_review` 後，AI 按條件篩選）
-- 可組合：「今天 RING 專案學到什麼」→ 同時過濾時間 + 專案
+- 可組合：「今天 ProjectR 專案學到什麼」→ 同時過濾時間 + 專案
 - **主題/領域過濾**：沒有精確欄位匹配時，AI 用 title + content 模糊匹配（如「伺服器管理」「部署相關」「資料庫」）
 - **密鑰查詢**：user 問帳密/key 相關時，呼叫 `ownmind_list_secrets` 列出密鑰清單（只顯示 key name + description，**不顯示 value**）
 - 如果過濾結果為空 → 提示「沒有符合條件的暫存項目」，並問要不要看全部

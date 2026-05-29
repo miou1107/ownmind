@@ -430,7 +430,7 @@ router.get('/report', async (req, res) => {
     // case variants.
     // v1.17.36: multi-source merge — session_logs (quantitative data) +
     //   handoffs (also a signal of activity; some work has handoffs but
-    //   no session_log, e.g. the RING project).
+    //   no session_log, e.g. the ProjectR project).
     // v1.17.56: REGEXP_REPLACE strips trailing "(...)" descriptions.
     const projectContribQ = await query(`
       SELECT LOWER(TRIM(REGEXP_REPLACE(details->>'project', '\\s*[\\(（].*$', ''))) AS project_key,

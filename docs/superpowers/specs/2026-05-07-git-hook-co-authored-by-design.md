@@ -22,7 +22,7 @@ OwnMind repo 內，任何含 `Co-Authored-By` trailer 的 commit message 在本�
 
 ## 非目標
 
-- 不擋使用者其他 repo（RING、auto_speech 等）— 保留 install 腳本給未來增量做（B 選項）
+- 不擋使用者其他 repo（ProjectR、ProjectS 等）— 保留 install 腳本給未來增量做（B 選項）
 - 不修改任何 server-side 行為（這是 client-side 強卡）
 - 不阻擋 `git commit --no-verify` — git 標準逃生口保留
 
