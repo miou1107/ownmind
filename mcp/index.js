@@ -386,7 +386,7 @@ async function callApi(method, path, body, _retried = false) {
     // Background: when the user has multiple AI sessions open, session A's token gets bumped
     // by session B's writes; A's next write then 409s. Previously the AI had to manually call
     // ownmind_init and retry — bad UX.
-    if (!_retried && shouldRetryForSyncToken({ method, status: res.status, errorMessage: msg })) {
+    if (!_retried && shouldRetryForSyncToken({ method, status: res.status, errorMessage: msg, body: data })) {
       const newToken = await refreshSyncToken();
       if (newToken && applyNewToken(body, newToken)) {
         return callApi(method, path, body, true);

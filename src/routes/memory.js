@@ -53,6 +53,7 @@ async function checkSyncToken(userId, syncToken) {
       errorResponse: {
         error: 'Call ownmind_init first to obtain a sync_token before performing any write operation',
         require_init: true,
+        code: 'sync_token_required',
       }
     };
   }
@@ -63,7 +64,8 @@ async function checkSyncToken(userId, syncToken) {
       errorResponse: {
         error: 'State has changed — please call ownmind_init again to refresh memory',
         stale: true,
-        new_token: check.new_token
+        new_token: check.new_token,
+        code: 'sync_token_stale',
       }
     };
   }

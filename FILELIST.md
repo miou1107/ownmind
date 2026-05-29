@@ -1,5 +1,13 @@
 # OwnMind 檔案結構
 
+## v1.26.17 修改（修 sync_token 過時時自動重試失效）
+
+新增檔：
+```
+openspec/changes/v1.26.17-sync-token-stale-retry/proposal.md   — v1.26.17 提案
+openspec/changes/v1.26.17-sync-token-stale-retry/tasks.md      — v1.26.17 任務清單
+```
+
 ## v1.26.16 修改（修 MCP client 吞掉 API 結構化錯誤細節）
 
 新增檔：

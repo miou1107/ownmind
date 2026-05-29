@@ -8,30 +8,42 @@
  * then 409s and the AI has to manually re-run ownmind_init to fetch a fresh token. This is a
  * bad UX and happens in practice on every write.
  *
- * Fix: the MCP client intercepts a 409 whose message mentions sync_token, GETs
- * /api/memory/sync-token to fetch the new token, updates body.sync_token, and retries once.
- * Completely transparent to the AI.
+ * Fix: the MCP client intercepts a sync_token 409 (identified by the response
+ * body's code — sync_token_stale / sync_token_required — with a message-text
+ * fallback for older servers that don't send a code), GETs /api/memory/sync-token
+ * to fetch the new token, updates body.sync_token, and retries once. Completely
+ * transparent to the AI.
  *
  * Constraints:
  *   - Only retry once — avoid infinite loops.
  *   - Only for write operations (not GET / HEAD).
- *   - Must genuinely be a sync_token stale error (message must contain "sync_token") —
- *     not every 409 should retry.
+ *   - Must genuinely be a sync_token 409 — detected via body.code, falling back
+ *     to a message match. Not every 409 should retry.
  */
 
 /**
  * Decide whether the error should be auto-retried.
- * @param {object} param - { method, status, errorMessage }
+ * @param {object} param - { method, status, errorMessage, body }
+ *   - body: the parsed 409 response body, if available. Preferred signal.
  * @returns {boolean}
  */
-export function shouldRetryForSyncToken({ method, status, errorMessage }) {
+export function shouldRetryForSyncToken({ method, status, errorMessage, body }) {
   // GET / HEAD are reads and don't touch sync_token logic — never retry.
   if (method === 'GET' || method === 'HEAD') return false;
 
   // Must be a 409 conflict.
   if (status !== 409) return false;
 
-  // Must be a sync_token-related error (avoid retrying unrelated 409s).
+  // Preferred: the server tags sync_token 409s with an explicit code, so
+  // detection does not depend on message wording. This is what catches the
+  // stale-token case, whose message ("State has changed …") contains no
+  // "sync_token" substring.
+  if (body && (body.code === 'sync_token_stale' || body.code === 'sync_token_required')) {
+    return true;
+  }
+
+  // Backward-compat fallback for older servers that don't send a code: match
+  // the message text (avoid retrying unrelated 409s).
   return /sync_token/i.test(errorMessage || '');
 }
 
