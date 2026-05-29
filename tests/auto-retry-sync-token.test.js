@@ -84,6 +84,38 @@ describe('v1.20.2 follow-up #2: sync_token auto-retry helper', () => {
         errorMessage: 'Sync_Token mismatch'
       }), true);
     });
+
+    // Bug fix: stale-token detection must not depend on message text. The real
+    // server stale-409 message ("State has changed — please call ownmind_init
+    // again to refresh memory") contains NO "sync_token" substring, so the old
+    // text-only check missed it — even though stale is the primary scenario this
+    // retry was built for. Detect via the structured body.code instead.
+    it('stale-token 409: body.code = sync_token_stale, message has NO "sync_token" → true', () => {
+      assert.equal(shouldRetryForSyncToken({
+        method: 'POST',
+        status: 409,
+        errorMessage: 'API 409: State has changed — please call ownmind_init again to refresh memory',
+        body: { stale: true, code: 'sync_token_stale' }
+      }), true);
+    });
+
+    it('missing-token 409: body.code = sync_token_required → true', () => {
+      assert.equal(shouldRetryForSyncToken({
+        method: 'POST',
+        status: 409,
+        errorMessage: 'whatever the message says',
+        body: { require_init: true, code: 'sync_token_required' }
+      }), true);
+    });
+
+    it('unrelated 409 with a different code → false (code-based check must not over-trigger)', () => {
+      assert.equal(shouldRetryForSyncToken({
+        method: 'POST',
+        status: 409,
+        errorMessage: 'API 409: duplicate entry',
+        body: { code: 'duplicate_entry' }
+      }), false);
+    });
   });
 
   describe('applyNewToken', () => {

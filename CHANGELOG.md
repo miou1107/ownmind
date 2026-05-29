@@ -1,5 +1,20 @@
 # OwnMind 更新紀錄
 
+## v1.26.17 — 修 sync_token 過時時自動重試失效（改用結構化 code 判斷）
+
+**Bug**：MCP client 的 sync_token 409 自動重試只在「沒帶 token」時觸發，對「token 過時(stale)」失效——而過時正是這機制設計的主要場景（多 AI session 並發寫、token 被互相 bump）。
+
+**根因**：`mcp/lib/sync-token-retry.js` 用 `/sync_token/i` 比對錯誤訊息文字判斷是否重試。server 的 stale-409 訊息是「State has changed — please call ownmind_init again to refresh memory」、**不含 "sync_token"**，所以重試從不觸發；只有 no-token 的 409 訊息含 "sync_token" 才會重試。
+
+**修正**：
+- server `checkSyncToken`（`src/routes/memory.js`）兩個 409 回應加明確 `code`：`sync_token_required`（沒帶）/ `sync_token_stale`（過時）；既有欄位保留。
+- `shouldRetryForSyncToken` 改成優先用 `body.code` 判斷（不依賴文字），舊 server 無 code 時降級用訊息比對。
+- callApi 把 response body 傳給判斷函式。
+
+**測試**：`tests/auto-retry-sync-token.test.js` +3 case（stale code 重試 reproduction、required code 重試、不相關 code 不重試）。TDD 先紅後綠。確認 PG unique_violation(23505) 的 409 不會誤觸發重試。全套 2012 全綠。
+
+**版本**：1.26.16 → 1.26.17
+
 ## v1.26.16 — 修 MCP client 吞掉 API 結構化錯誤細節（鐵律品質檢查拒絕看不到原因）
 
 **Bug**（使用者回報）：用 `ownmind_save` 存 `type=iron_rule` 被品質檢查擋下時，回 400「Iron rule quality check failed — please fix the following issues」但**沒列出具體是哪幾項**，使用者／AI 無從修起、只能盲猜（試 5 種寫法全擋）。同內容存 `type=principle` 一次成功（不走鐵律 lint）。
