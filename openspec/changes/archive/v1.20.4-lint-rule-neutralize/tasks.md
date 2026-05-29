@@ -1,12 +1,12 @@
-# v1.20.4 — 任務清單
+# v1.20.4 — Task list
 
-1. 寫 `shared/lint-event-types.js`（事件常數 + 中文事件名對應表）
-2. 改 `shared/language-lint.js`：違反清單 rule 用常數、註解去 IR-036/IR-037
-3. 改 `hooks/ownmind-reply-lint.js`：訊息渲染 formatBlockReason / formatViolations 用中性事件名
-4. 改 `hooks/lib/build-compliance-events.js`：透過規則 metadata 對應事件 → rule_code
-5. 改 `hooks/lib/lint-event-logger.js`：事件欄位用常數
-6. 清 `shared/bug-fingerprints.js:106` 描述去 IR-036
-7. 改測試（lint-event-logger / build-compliance-events / reply-lint-hook / reply-lint-pending-spool / flush-compliance-spool / iron-rule-origin-context）對應新常數
-8. 改 Vin 個人鐵律 IR-036 + IR-037 metadata 加 `triggered_by_event`
-9. 版號 1.20.3 → 1.20.4 + CHANGELOG + FILELIST + 三語 README
-10. cp 同步 ~/.ownmind/ + verification + code-review 合規 + commit + push
+1. Write `shared/lint-event-types.js` (event constants + Chinese event name mapping table)
+2. Change `shared/language-lint.js`: violation list rule uses constants, comments remove IR-036/IR-037
+3. Change `hooks/ownmind-reply-lint.js`: message rendering formatBlockReason / formatViolations uses neutral event names
+4. Change `hooks/lib/build-compliance-events.js`: map events to rule_code via rule metadata
+5. Change `hooks/lib/lint-event-logger.js`: event field uses constants
+6. Clean `shared/bug-fingerprints.js:106` description to remove IR-036
+7. Update tests (lint-event-logger / build-compliance-events / reply-lint-hook / reply-lint-pending-spool / flush-compliance-spool / iron-rule-origin-context) for the new constants
+8. Update Vin's personal iron rules IR-036 + IR-037 metadata to add `triggered_by_event`
+9. Version 1.20.3 → 1.20.4 + CHANGELOG + FILELIST + tri-language README
+10. cp sync ~/.ownmind/ + verification + code-review compliance + commit + push

@@ -1,27 +1,27 @@
-# v1.20.2 — Dashboard 管理員版（Team + Bugs）
+# v1.20.2 — Dashboard admin version (Team + Bugs)
 
-- **Status**: stub（待 v1.20.1 release 後展開）
-- **依賴**: v1.20.1（個人版完工、共用元件已抽出）
+- **Status**: stub (pending expansion after the v1.20.1 release)
+- **Depends on**: v1.20.1 (personal version complete, shared components extracted)
 
-## 一句話總結
+## One-line summary
 
-填 `/dashboard/admin/*` 兩個管理員頁面：團隊與成員管理、錯誤回報分流。
+Build the two admin pages under `/dashboard/admin/*`: team and member management, bug report triage.
 
-## 範圍內
-- Team 頁：成員列表、用量排行、API 金鑰管理、新增使用者（API key 由 server 端產出）
-- Bugs 頁：行內三鈕分類（已修 / 處理中 / 忽略）、官方回覆編輯、排他性顯示（不混 IR 鐵律日誌）
-- Admin role 守衛
-- 後端 API：補缺的 admin endpoints
+## In scope
+- Team page: member list, usage ranking, API key management, add user (API key generated server-side)
+- Bugs page: inline three-button classification (fixed / in progress / ignored), official reply editing, exclusive display (does not mix with the IR iron-rule log)
+- Admin role guard
+- Backend API: add the missing admin endpoints
 
-## 範圍外
-- ❌ 超管專區（v1.20.3）
-- ❌ 個人版（v1.20.1 已完工）
+## Out of scope
+- ❌ Super-admin area (v1.20.3)
+- ❌ Personal version (v1.20.1 complete)
 
-## 主要 task
-1. Team 頁實作（列表 + 排序 + 篩選 + Modal 新增）
-2. Bugs 頁實作（行內分類 + 排他性 + 官方回覆）
-3. API 對接
-4. 角色守衛測試（非 admin 看不到）
-5. 升版 v1.20.2、發版、實測
+## Main tasks
+1. Implement the Team page (list + sort + filter + add Modal)
+2. Implement the Bugs page (inline classification + exclusivity + official reply)
+3. API integration
+4. Role guard tests (non-admin cannot see it)
+5. Bump to v1.20.2, release, test
 
-詳細任務在 v1.20.2 開動時展開。
+Detailed tasks expand when v1.20.2 starts.

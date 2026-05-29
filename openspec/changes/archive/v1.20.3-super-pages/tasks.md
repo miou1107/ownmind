@@ -1,11 +1,11 @@
-# v1.20.3 — Dashboard 超管版任務清單
+# v1.20.3 — Dashboard super-admin version task list
 
-> stub、v1.20.3 開動時展開。
+> stub, expands when v1.20.3 starts.
 
-## 高階階段
-1. Config 頁實作
-2. Broadcast 頁實作
-3. Audit 頁實作
-4. 後端 super API endpoints 補缺
-5. 角色守衛 e2e 測試
-6. 文件 + 升版 + 部署 + 實測
+## High-level phases
+1. Implement the Config page
+2. Implement the Broadcast page
+3. Implement the Audit page
+4. Add the missing backend super API endpoints
+5. Role guard e2e tests
+6. Docs + version bump + deploy + test

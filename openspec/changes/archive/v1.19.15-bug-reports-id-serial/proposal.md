@@ -1,51 +1,51 @@
-# v1.19.15 — bug_reports 系列 id 從 BIGSERIAL 改 SERIAL
+# v1.19.15 — bug_reports series id changed from BIGSERIAL to SERIAL
 
 - **Author**: Vin
 - **Date**: 2026-05-24
-- **Status**: 動工中
-- **預估版次**: v1.19.15（hotfix-class patch）
+- **Status**: In progress
+- **Estimated version**: v1.19.15 (hotfix-class patch)
 
 ---
 
-## 0. 一句話總結
+## 0. One-line summary
 
-把 v1.19.14 引入的 bug_reports 五張表 id 欄位從 BIGSERIAL（64 位元自動編號）改成 SERIAL（32 位元自動編號）、避免 node-pg 套件把 id 預設回字串、且跟既有 memories 表一致。
+Change the id column of the five bug_reports tables introduced in v1.19.14 from BIGSERIAL (64-bit auto-increment) to SERIAL (32-bit auto-increment), to avoid the node-pg package returning the id as a string by default, and to stay consistent with the existing memories table.
 
 ---
 
-## 1. 設計緣由
+## 1. Design rationale
 
-### 1.1 v1.19.14 smoke test 發現的不一致
+### 1.1 Inconsistency found in v1.19.14 smoke test
 
-v1.19.14 部署後跑 smoke test、發現：
+After deploying v1.19.14 and running the smoke test, we found:
 
 ```bash
 $ curl -X POST /api/bug-reports ...
-{"id": "1", "status": "new"}  ← id 是字串
+{"id": "1", "status": "new"}  ← id is a string
 ```
 
-對比既有 memories 表：
+Compared with the existing memories table:
 
 ```bash
 $ curl /api/memory/init
-{"profile": {"id": 3, ...}}  ← id 是數字
+{"profile": {"id": 3, ...}}  ← id is a number
 ```
 
-差別在 `BIGSERIAL`（64 位元、PostgreSQL 型別 oid 20）：node-pg 套件預設把 bigint 回字串、避免超過 JS Number 安全整數上限（2^53 - 1、約 9 × 10^15）失精。`SERIAL`（32 位元、oid 23）則自動轉成 Number。
+The difference is `BIGSERIAL` (64-bit, PostgreSQL type oid 20): the node-pg package returns bigint as a string by default, to avoid precision loss beyond the JS Number safe-integer limit (2^53 - 1, about 9 × 10^15). `SERIAL` (32-bit, oid 23) is automatically converted to a Number.
 
-### 1.2 為什麼選 SERIAL（不是設 type parser 全域轉）
+### 1.2 Why choose SERIAL (instead of setting a global type parser)
 
-- 全域 `pg.types.setTypeParser(20, parseInt)` 會影響既有 token_usage 表的 BIGINT 計數欄位（token 數累積可能超過 Number 安全範圍、需要保留字串）
-- 改 schema 比改 parser 風險低、影響面小
-- bug_reports 表用 SERIAL（21 億上限）絕對夠用（一天 1 萬筆要燒 575 年）
+- A global `pg.types.setTypeParser(20, parseInt)` would affect the existing token_usage table's BIGINT counter columns (accumulated token counts may exceed the Number safe range and need to stay strings)
+- Changing the schema is lower-risk and smaller-impact than changing the parser
+- The bug_reports tables using SERIAL (2.1 billion limit) are more than enough (10,000 rows/day would take 575 years to exhaust)
 
 ---
 
-## 2. 設計範圍
+## 2. Design scope
 
-### 2.1 改 5 張表的 id 欄位
+### 2.1 Change the id column of 5 tables
 
-| 表 | 原型別 | 新型別 |
+| Table | Old type | New type |
 |---|---|---|
 | `bug_reports.id` | BIGSERIAL | SERIAL |
 | `bug_report_declines.id` | BIGSERIAL | SERIAL |
@@ -53,13 +53,13 @@ $ curl /api/memory/init
 | `bug_report_spam_blocks.id` | BIGSERIAL | SERIAL |
 | `bug_report_notification_mutes.id` | BIGSERIAL | SERIAL |
 
-### 2.2 順便改 report_ids 從 BIGINT[] 改 INT[]
+### 2.2 Also change report_ids from BIGINT[] to INT[]
 
-`bug_report_spam_suspects.report_ids` 是 `BIGINT[]`、應該對齊 `bug_reports.id` 的新型別 INT、改成 `INT[]`。
+`bug_report_spam_suspects.report_ids` is `BIGINT[]`; it should align with the new INT type of `bug_reports.id` and be changed to `INT[]`.
 
-### 2.3 安全保證
+### 2.3 Safety guarantee
 
-migration 017 開頭加 sanity check：
+Add a sanity check at the start of migration 017:
 
 ```sql
 DO $$
@@ -74,34 +74,34 @@ BEGIN
 END $$;
 ```
 
-表非空就直接拒絕、不冒風險。
+If a table is non-empty, reject outright and take no risk.
 
-### 2.4 實作做法
+### 2.4 Implementation approach
 
-PostgreSQL 不能直接 ALTER BIGSERIAL → SERIAL（sequence 型別綁死）、且這次表確定是空的、選最簡單做法：DROP + CREATE。
+PostgreSQL cannot directly ALTER BIGSERIAL → SERIAL (the sequence type is locked in), and this time the tables are confirmed empty, so we pick the simplest approach: DROP + CREATE.
 
 ---
 
-## 3. 工作量
+## 3. Workload
 
-| 項目 | 行數 |
+| Item | Lines |
 |---|---|
 | migration 017 SQL | 200 |
-| migration 017 測試 | 100 |
-| 修 spec/proposal 對 BIGSERIAL 的描述 | 0（保留 v1.19.14 歷史） |
-| 版號 + CHANGELOG + FILELIST + 三語系 README | 50 |
-| **總計** | 約 350 行 |
+| migration 017 tests | 100 |
+| Fix spec/proposal descriptions of BIGSERIAL | 0 (preserve v1.19.14 history) |
+| Version + CHANGELOG + FILELIST + tri-lingual README | 50 |
+| **Total** | about 350 lines |
 
-工程時間：約 30-45 分鐘（含部署 + 驗證）。
+Engineering time: about 30-45 minutes (including deploy + verification).
 
 ---
 
-## 4. 風險檢查點
+## 4. Risk checkpoints
 
-- [ ] migration 017 在表非空時拒絕跑（sanity check 生效）
-- [ ] migration 017 在表空時順利執行
-- [ ] 跑完後五張表的 id 是 INT、不是 BIGINT
-- [ ] CHECK constraint 跟 index 全部重建
-- [ ] 全套測試（含原 v1.19.14 的測試）綠
-- [ ] prod 部署後 curl POST /api/bug-reports 看回應 id 是數字、不是字串
-- [ ] 三語系版號 1.19.15
+- [ ] migration 017 refuses to run when tables are non-empty (sanity check works)
+- [ ] migration 017 runs smoothly when tables are empty
+- [ ] After running, the id of all five tables is INT, not BIGINT
+- [ ] CHECK constraints and indexes are all rebuilt
+- [ ] Full test suite (including the original v1.19.14 tests) is green
+- [ ] After prod deploy, curl POST /api/bug-reports and verify the response id is a number, not a string
+- [ ] Tri-lingual version 1.19.15

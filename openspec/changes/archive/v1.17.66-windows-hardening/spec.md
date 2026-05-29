@@ -1,6 +1,6 @@
 # v1.17.66 — Spec
 
-正式規格與 acceptance criteria。每個改動都用 GIVEN/WHEN/THEN 三段式描述。
+Formal spec and acceptance criteria. Each change is described in GIVEN/WHEN/THEN form.
 
 ---
 
@@ -9,62 +9,62 @@
 ### 1.1 `scripts/windows/lib/find-git-bash.ps1`
 
 ```powershell
-# Find-GitBash — 找出可用的 Git Bash 執行檔，避開 WSL relay
+# Find-GitBash — find a usable Git Bash executable, avoiding the WSL relay
 #
-# 回傳：完整路徑（string），或 $null 如找不到
+# Returns: full path (string), or $null if not found
 #
-# 偵測順序：
-#   1. ~/.ownmind/.git-bash-path cache（若存在且檔案還在）
-#   2. 常見路徑：
+# Detection order:
+#   1. ~/.ownmind/.git-bash-path cache (if it exists and the file is still there)
+#   2. common paths:
 #      - $env:ProgramFiles\Git\bin\bash.exe
 #      - ${env:ProgramFiles(x86)}\Git\bin\bash.exe
 #      - $env:LOCALAPPDATA\Programs\Git\bin\bash.exe
-#   3. where.exe bash 結果，過濾掉 C:\Windows\System32\bash.exe（WSL relay）
-#   4. 都找不到 → 回 $null
+#   3. where.exe bash result, filtering out C:\Windows\System32\bash.exe (WSL relay)
+#   4. none found → return $null
 #
-# 找到後：
-#   - 用 `bash --version` 確認真的是 Git Bash（含 "Microsoft Corporation" 字串代表 WSL → 跳過）
-#   - 寫 cache 到 ~/.ownmind/.git-bash-path
+# After finding:
+#   - use `bash --version` to confirm it really is Git Bash (containing "Microsoft Corporation" means WSL → skip)
+#   - write cache to ~/.ownmind/.git-bash-path
 function Find-GitBash { ... }
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** Windows 環境只有 `C:\Windows\System32\bash.exe`（WSL relay）和 `C:\Program Files\Git\bin\bash.exe`
-- **WHEN** 呼叫 `Find-GitBash`
-- **THEN** 回傳 `C:\Program Files\Git\bin\bash.exe`，**不**回 System32 的
+- **GIVEN** a Windows environment with only `C:\Windows\System32\bash.exe` (WSL relay) and `C:\Program Files\Git\bin\bash.exe`
+- **WHEN** calling `Find-GitBash`
+- **THEN** returns `C:\Program Files\Git\bin\bash.exe`, **not** the System32 one
 
-- **GIVEN** Windows 環境只有 `C:\Windows\System32\bash.exe`（沒裝 Git Bash）
-- **WHEN** 呼叫 `Find-GitBash`
-- **THEN** 回傳 `$null`，並 log warning：「找不到 Git Bash，請安裝 https://git-scm.com/」
+- **GIVEN** a Windows environment with only `C:\Windows\System32\bash.exe` (no Git Bash installed)
+- **WHEN** calling `Find-GitBash`
+- **THEN** returns `$null`, and logs a warning: "Git Bash not found, please install https://git-scm.com/"
 
 ### 1.2 `scripts/install-helpers/safe-spawn.cjs`
 
 ```js
 /**
- * safeSpawn — execFile 的 Windows-friendly 包裝
+ * safeSpawn — a Windows-friendly wrapper around execFile
  *
- * 預設值（可被 options override，但會 log warning）：
- *   - shell: false      （絕不過 shell — Windows 上會被 cmd 解 |）
- *   - windowsHide: true （絕不顯示 console window）
+ * Defaults (overridable via options, but logs a warning):
+ *   - shell: false      (never go through a shell — on Windows cmd interprets |)
+ *   - windowsHide: true (never show a console window)
  *   - timeout: 5000ms
  *
- * 額外功能：
- *   - 自動 sanitize stderr/stdout（去掉 $HOME 路徑）
- *   - 失敗回 { ok: false, error, code, stderr_tail } 而非 throw
+ * Extra features:
+ *   - auto-sanitize stderr/stdout (strip $HOME paths)
+ *   - on failure returns { ok: false, error, code, stderr_tail } instead of throwing
  */
 async function safeSpawn(file, args, options = {}) { ... }
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** 在 Windows 上 `safeSpawn('powershell.exe', ['-Command', 'echo a | findstr a'])`
-- **WHEN** 呼叫
-- **THEN** PowerShell 接到完整字串 `echo a | findstr a` 並由 PowerShell 自己解 `|`，**不**經 cmd.exe
+- **GIVEN** on Windows `safeSpawn('powershell.exe', ['-Command', 'echo a | findstr a'])`
+- **WHEN** called
+- **THEN** PowerShell receives the full string `echo a | findstr a` and interprets `|` itself, **not** via cmd.exe
 
-- **GIVEN** `safeSpawn` 任何呼叫
-- **WHEN** 跑起來
-- **THEN** 不開任何 console window（即使是 console subsystem binary）
+- **GIVEN** any `safeSpawn` call
+- **WHEN** it runs
+- **THEN** no console window opens (even for a console-subsystem binary)
 
 ### 1.3 `scripts/install-helpers/path-to-win32.cjs`
 
@@ -73,49 +73,49 @@ async function safeSpawn(file, args, options = {}) { ... }
  * toWin32Path — MSYS path → Win32 path
  *
  * /c/Users/X/.ownmind  → C:\Users\X\.ownmind
- * C:\already\win32     → C:\already\win32（直接回）
- * /Users/x/foo (macOS) → /Users/x/foo（非 Windows 不動）
+ * C:\already\win32     → C:\already\win32 (returned as-is)
+ * /Users/x/foo (macOS) → /Users/x/foo (untouched on non-Windows)
  */
 function toWin32Path(p) { ... }
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** Git Bash 給的 `$HOME = /c/Users/Adam`
+- **GIVEN** Git Bash provides `$HOME = /c/Users/Bob`
 - **WHEN** `toWin32Path(homedir())`
-- **THEN** 回 `C:\Users\Adam`（用於餵 `node -p require(...)`）
+- **THEN** returns `C:\Users\Bob` (used to feed `node -p require(...)`)
 
 ### 1.4 `scripts/windows/run-hidden.vbs`
 
 ```vbs
-' run-hidden.vbs — 把後面的命令隱藏視窗背景跑
-' 用法：wscript.exe run-hidden.vbs <executable> [args...]
+' run-hidden.vbs — run the following command hidden, in the background
+' Usage: wscript.exe run-hidden.vbs <executable> [args...]
 Set sh = CreateObject("WScript.Shell")
 cmd = ""
 For i = 0 To WScript.Arguments.Count - 1
   cmd = cmd & " """ & WScript.Arguments(i) & """"
 Next
-sh.Run Trim(cmd), 0, False   ' 0 = SW_HIDE，False = 不等待回傳
+sh.Run Trim(cmd), 0, False   ' 0 = SW_HIDE, False = do not wait for return
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** Task Scheduler 跑 `wscript.exe run-hidden.vbs node.exe scanner.js`
-- **WHEN** trigger 觸發
-- **THEN** 完全沒有任何 console window 出現（不論 console subsystem binary 如 `node.exe`、`cmd.exe`）
+- **GIVEN** Task Scheduler runs `wscript.exe run-hidden.vbs node.exe scanner.js`
+- **WHEN** the trigger fires
+- **THEN** no console window appears at all (regardless of console-subsystem binaries like `node.exe`, `cmd.exe`)
 
 ---
 
-## 2. Bug 修法 acceptance criteria
+## 2. Bug fix acceptance criteria
 
-### 2.1 Bug #1 — interactive-upgrade.ps1 不再 bare `bash`
+### 2.1 Bug #1 — interactive-upgrade.ps1 no longer uses bare `bash`
 
-**修改前**（line 120, 125, 130）：
+**Before** (line 120, 125, 130):
 ```powershell
 bash $verifyScript --local 2>&1 | Out-File -Append $LogFile
 ```
 
-**修改後**：
+**After**:
 ```powershell
 . (Join-Path $OwnMindDir 'scripts\windows\lib\find-git-bash.ps1')
 $BashExe = Find-GitBash
@@ -126,88 +126,88 @@ if (-not $BashExe) {
 }
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** 使用者在 Windows 跑 `bootstrap.ps1` 升級
-- **WHEN** 走到 verify_local 階段
-- **THEN** 用 Git Bash 跑 verify-upgrade.sh，**不**會看到 `<3>WSL ... execvpe failed` 錯誤
+- **GIVEN** the user runs `bootstrap.ps1` to upgrade on Windows
+- **WHEN** reaching the verify_local stage
+- **THEN** verify-upgrade.sh runs via Git Bash and the `<3>WSL ... execvpe failed` error is **not** seen
 
-- **GIVEN** 使用者沒裝 Git Bash
-- **WHEN** 走到 verify_local 階段
-- **THEN** 跳過 verify 但**不擋升級**，記 warning，繼續往下做 self-check 上傳
+- **GIVEN** the user has no Git Bash installed
+- **WHEN** reaching the verify_local stage
+- **THEN** verify is skipped but the upgrade is **not blocked**; a warning is logged and self-check upload continues
 
-### 2.2 Bug #2 — self-check.cjs scheduler 拿掉 `shell:true`
+### 2.2 Bug #2 — self-check.cjs scheduler removes `shell:true`
 
-**修改前**（self-check.cjs:195-197）：
+**Before** (self-check.cjs:195-197):
 ```js
 const { stdout } = await execFileAsync('powershell.exe',
   ['-NoProfile', '-Command', "Get-ScheduledTask ... | Select-Object ..."],
   { timeout: TIMEOUT_MS, shell: true });
 ```
 
-**修改後**（用 safeSpawn）：
+**After** (using safeSpawn):
 ```js
 const { stdout } = await safeSpawn('powershell.exe',
   ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"]);
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** Windows 上 Task Scheduler 確實有 `OwnMind Usage Scanner` task 且 state=Ready
-- **WHEN** self-check 跑 `checkScheduler`
-- **THEN** 回 `pass('scheduler', 'Task Scheduler state=Ready')`
+- **GIVEN** Task Scheduler on Windows really has the `OwnMind Usage Scanner` task with state=Ready
+- **WHEN** self-check runs `checkScheduler`
+- **THEN** returns `pass('scheduler', 'Task Scheduler state=Ready')`
 
-- **GIVEN** Task Scheduler **沒有** `OwnMind Usage Scanner`
-- **WHEN** self-check 跑 `checkScheduler`
-- **THEN** 回 `fail('scheduler', 'Task Scheduler 找不到...')`，**不**回 `Select-Object` 找不到的偽陽性
+- **GIVEN** Task Scheduler **does not have** `OwnMind Usage Scanner`
+- **WHEN** self-check runs `checkScheduler`
+- **THEN** returns `fail('scheduler', 'Task Scheduler 找不到...')`, **not** the false positive of `Select-Object` not being found
 
-### 2.3 Bug #4 — self-check 觀測管道保證執行 + 失敗 spool
+### 2.3 Bug #4 — self-check observability pipeline guaranteed to run + failure spool
 
-**interactive-upgrade.ps1 修改**：
+**interactive-upgrade.ps1 change**:
 
-把 self-check 從 line 172 的「升級成功才跑」改成 try/finally 結構：
+Change self-check from "only run on upgrade success" at line 172 to a try/finally structure:
 
 ```powershell
 $selfCheckRan = $false
 try {
-  # ... 原本的升級流程 (verify, dismiss broadcast, 等等) ...
+  # ... the original upgrade flow (verify, dismiss broadcast, etc.) ...
   OK "done" "升級完成 → 版本：$Version"
 }
 finally {
-  # 不論升級成功失敗，self-check 一定要跑（觀測 IR-038）
+  # Regardless of upgrade success or failure, self-check must run (observability IR-038)
   if (-not $selfCheckRan -and (Test-Path $SelfCheckScript)) {
     try {
       & node $SelfCheckScript --trigger=post_upgrade
       $selfCheckRan = $true
     } catch {
-      # self-check 自己 crash 不能影響上層 exit code
+      # self-check crashing itself must not affect the upper-level exit code
     }
   }
 }
 ```
 
-**self-check.cjs uploadReport 修改**：
+**self-check.cjs uploadReport change**:
 
-新增 spool 機制：
+Add a spool mechanism:
 
 ```js
 const SPOOL_FILE = path.join(OWNMIND_DIR, 'logs', '.upload-spool.jsonl');
 
 async function uploadReport(report, apiUrl, apiKey) {
-  // 先嘗試補傳 spool 裡的舊報告
+  // First try to re-send the old reports in the spool
   await retrySpool(apiUrl, apiKey);
 
-  // 再傳這次的
+  // Then send this one
   if (fs.existsSync(NO_UPLOAD_FLAG)) return { skipped: true, reason: 'opt_out_flag' };
   if (!apiUrl || !apiKey) {
-    appendSpool(report);   // 沒 credentials 就先存
+    appendSpool(report);   // no credentials, so store it for now
     return { skipped: true, reason: 'no_credentials_spooled' };
   }
   try {
     const r = await fetchWithTimeout(...);
     if (r.ok) return { ok: true };
     if (r.status === 401 || r.status === 403) {
-      appendSpool(report);   // auth 壞掉先存著，下次 user 重設 key 後補傳
+      appendSpool(report);   // auth broken, store it; re-send after the user resets the key
       return { ok: false, status: r.status, spooled: true };
     }
     appendSpool(report);
@@ -219,68 +219,68 @@ async function uploadReport(report, apiUrl, apiKey) {
 }
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** 升級走到 verify_local 失敗
-- **WHEN** interactive-upgrade.ps1 結束
-- **THEN** self-check.cjs 仍被呼叫，server 收到 `trigger=post_upgrade` + 失敗證據
+- **GIVEN** the upgrade hits a verify_local failure
+- **WHEN** interactive-upgrade.ps1 ends
+- **THEN** self-check.cjs is still called, and the server receives `trigger=post_upgrade` + failure evidence
 
-- **GIVEN** API key 401（如 Adam 案例）
-- **WHEN** self-check 嘗試上傳
-- **THEN** 報告寫進 `~/.ownmind/logs/.upload-spool.jsonl`，console 印「上傳：暫存（待重試）」
+- **GIVEN** API key 401 (like Bob's case)
+- **WHEN** self-check attempts upload
+- **THEN** the report is written to `~/.ownmind/logs/.upload-spool.jsonl`, and the console prints "上傳：暫存（待重試）"
 
-- **GIVEN** spool 檔有舊報告，user 重跑 bootstrap 換新 key 後再跑 self-check
-- **WHEN** self-check 開始
-- **THEN** 先補傳所有 spool 內容（成功則刪 spool 行），再傳這次的
+- **GIVEN** the spool file has old reports, and the user re-runs bootstrap with a new key then runs self-check again
+- **WHEN** self-check starts
+- **THEN** it first re-sends all spool contents (deleting spool lines on success), then sends this one
 
-### 2.4 Bug #6 — 全部 Out-File 加 `-Encoding utf8`
+### 2.4 Bug #6 — add `-Encoding utf8` to all Out-File
 
-**Grep 範圍**：所有 `*.ps1` 檔案。
+**Grep scope**: all `*.ps1` files.
 
-**修改規則**：
+**Change rules**:
 - `Out-File ...` → `Out-File ... -Encoding utf8`
 - `Set-Content ...` → `Set-Content ... -Encoding utf8`
 - `Add-Content ...` → `Add-Content ... -Encoding utf8`
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** Windows 跑完整升級流程
-- **WHEN** 讀 `~/.ownmind/logs/upgrade-*.log`
-- **THEN** 用 UTF-8 解碼正確顯示中文，沒有 0x00 NUL 字元、沒有 BOM 前綴
+- **GIVEN** the full upgrade flow runs on Windows
+- **WHEN** reading `~/.ownmind/logs/upgrade-*.log`
+- **THEN** Chinese displays correctly when decoded as UTF-8, with no 0x00 NUL characters and no BOM prefix
 
-### 2.5 Bug #7-a — Scanner task 用 VBS launcher 隱藏視窗
+### 2.5 Bug #7-a — Scanner task uses a VBS launcher to hide windows
 
-**register-scanner-task.ps1 修改**：
+**register-scanner-task.ps1 change**:
 
 ```powershell
-# 改前：
+# Before:
 $Action = New-ScheduledTaskAction `
   -Execute $NodeBin `
   -Argument "`"$ScannerJs`""
 
-# 改後：
+# After:
 $VbsLauncher = Join-Path $OwnMindDir 'scripts\windows\run-hidden.vbs'
 $Action = New-ScheduledTaskAction `
   -Execute "wscript.exe" `
   -Argument "`"$VbsLauncher`" `"$NodeBin`" `"$ScannerJs`""
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** Task Scheduler 觸發 `OwnMind Usage Scanner`
-- **WHEN** task 開始執行
-- **THEN** 螢幕**完全不**閃任何 console / PowerShell window
+- **GIVEN** Task Scheduler triggers `OwnMind Usage Scanner`
+- **WHEN** the task starts executing
+- **THEN** the screen flashes **no** console / PowerShell window at all
 
-- **GIVEN** task 跑完後
-- **WHEN** 看 `~/.ownmind/logs/scanner-*.log`
-- **THEN** scanner 確實有跑、log 正常寫入
+- **GIVEN** after the task finishes
+- **WHEN** looking at `~/.ownmind/logs/scanner-*.log`
+- **THEN** the scanner really ran and the log was written normally
 
-### 2.6 Bug #7-b — Scanner task settings 加 battery + 頻率
+### 2.6 Bug #7-b — Scanner task settings add battery + frequency
 
-**register-scanner-task.ps1 修改**：
+**register-scanner-task.ps1 change**:
 
 ```powershell
-# 改前（line 89-98）：
+# Before (line 89-98):
 $Trigger = New-ScheduledTaskTrigger `
   -Once -At (Get-Date).AddMinutes(5) `
   -RepetitionInterval (New-TimeSpan -Minutes 30) `
@@ -289,7 +289,7 @@ $Settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable -DontStopOnIdleEnd `
   -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
-# 改後：
+# After:
 $Trigger = New-ScheduledTaskTrigger `
   -Once -At (Get-Date).AddMinutes(5) `
   -RepetitionInterval (New-TimeSpan -Minutes 120) `
@@ -299,32 +299,32 @@ $Settings = New-ScheduledTaskSettingsSet `
   -DontStartIfOnBatteries `
   -StopIfGoingOnBatteries `
   -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-# 注意：WakeToRun 預設 false，不顯式寫
+# Note: WakeToRun defaults to false, not written explicitly
 ```
 
-**Acceptance：**
+**Acceptance:**
 
-- **GIVEN** 筆電拔電源（電池模式）
-- **WHEN** task trigger 時間到
-- **THEN** task **不執行**；接電源後下一次 trigger 才補跑
+- **GIVEN** the laptop is unplugged (battery mode)
+- **WHEN** the task trigger time arrives
+- **THEN** the task **does not run**; it catches up at the next trigger after being plugged in
 
-- **GIVEN** task 跑到一半 user 拔電源
-- **WHEN** 進入電池模式
-- **THEN** task 立即停止
+- **GIVEN** the user unplugs power mid-task
+- **WHEN** entering battery mode
+- **THEN** the task stops immediately
 
-- **GIVEN** 24 小時內
-- **WHEN** 統計 task 觸發次數
-- **THEN** ≤ 12 次（每 2 小時一次），對比舊版 48 次 / 24 小時
+- **GIVEN** within 24 hours
+- **WHEN** counting task trigger occurrences
+- **THEN** ≤ 12 times (once every 2 hours), compared to the old 48 times / 24 hours
 
 ---
 
-## 3. 環境資訊收集 schema（IR-038 落實）
+## 3. Environment info collection schema (IR-038 implementation)
 
-### 3.1 `install_check_logs.full_log` JSON 擴充
+### 3.1 `install_check_logs.full_log` JSON extension
 
 ```ts
 type InstallCheckFullLog = {
-  // 既有欄位（v1.17.63 已有）
+  // existing fields (since v1.17.63)
   ts: string;
   trigger: 'post_install' | 'post_upgrade' | 'manual' | 'manual_after_failure';
   client_version: string;
@@ -334,7 +334,7 @@ type InstallCheckFullLog = {
   checks: Array<{ name: string; status: 'pass'|'warn'|'fail'; detail: string; fix?: string }>;
   summary: { pass: number; warn: number; fail: number };
 
-  // v1.17.66 新增
+  // added in v1.17.66
   env: {
     os_release: string;                              // os.release()
     arch: string;                                    // os.arch()
@@ -342,32 +342,32 @@ type InstallCheckFullLog = {
     // shell / process chain
     shell_chain: string[];                           // ['powershell.exe', 'wscript.exe', 'node.exe']
 
-    // bash 偵測（Windows）
+    // bash detection (Windows)
     bash_resolution: {
       where_results: string[];                       // ["C:\\Windows\\System32\\bash.exe", ...]
       selected: 'WSL_RELAY' | 'GIT_BASH' | 'WSL_DISTRO' | 'NOT_FOUND';
       git_bash_path: string | null;
-    } | null;                                        // 非 Windows 為 null
+    } | null;                                        // null on non-Windows
 
-    // node 環境
+    // node environment
     node: {
-      exec_path: string;                             // process.execPath（只回 basename + 是否 native）
+      exec_path: string;                             // process.execPath (returns only basename + whether native)
       version: string;
     };
 
     // path / encoding
     home_format: {
-      value: string;                                 // sanitize 過的 ~
-      is_msys: boolean;                              // 開頭是 / 還是 C:\
+      value: string;                                 // sanitized ~
+      is_msys: boolean;                              // starts with / or C:\
     };
     msystem: string | null;                          // process.env.MSYSTEM
     encoding: {
       lang: string;                                  // process.env.LANG / LC_ALL
-      console_codepage: string | null;               // chcp（Windows）
-      default_outfile_encoding: string | null;       // PS 偵測（Windows）
+      console_codepage: string | null;               // chcp (Windows)
+      default_outfile_encoding: string | null;       // PS detection (Windows)
     };
 
-    // task scheduler 真實狀態（Windows）
+    // task scheduler real state (Windows)
     scheduler_detail: {
       task_name: string;
       state: string;                                 // Ready / Running / Disabled
@@ -377,15 +377,15 @@ type InstallCheckFullLog = {
     } | null;
   };
 
-  // 升級 trace（只在 trigger=post_upgrade 有）
+  // upgrade trace (only present when trigger=post_upgrade)
   upgrade_trace?: Array<{
     step: string;                                    // git_pull / npm_install / install / reschedule / verify_local / ...
     status: 'ok' | 'fail' | 'skipped';
     duration_ms: number;
-    stderr_tail?: string;                            // 最後 500 字元
+    stderr_tail?: string;                            // last 500 characters
   }>;
 
-  // file lock 偵測（Windows，只在 trigger=manual_after_failure 或 rollback 失敗有）
+  // file lock detection (Windows, only present when trigger=manual_after_failure or rollback failed)
   file_locks?: Array<{
     path: string;
     held_by: string;                                 // 'node.exe (PID 12345)' or 'unknown'
@@ -393,60 +393,60 @@ type InstallCheckFullLog = {
 };
 ```
 
-**大小估算**：基本 ~3KB，含 upgrade_trace ~5KB，含 file_locks ~6KB。遠低於 64KB server 上限。
+**Size estimate**: ~3KB baseline, ~5KB with upgrade_trace, ~6KB with file_locks. Far below the 64KB server limit.
 
-### 3.2 PII 處理
+### 3.2 PII handling
 
-- `machine`：保留 hostname（已有先例，admin 需要）
-- `home_format.value`：用 `sanitizePath` 把 `$HOME` 換成 `~`
-- `bash_resolution.where_results`：保留完整路徑（不含使用者名）
-- `path` in file_locks：用 `sanitizePath`
-- 不傳 `process.env.PATH` 全文（資安、太大）
+- `machine`: keep hostname (existing precedent, admin needs it)
+- `home_format.value`: use `sanitizePath` to replace `$HOME` with `~`
+- `bash_resolution.where_results`: keep full path (without username)
+- `path` in file_locks: use `sanitizePath`
+- do not send the full `process.env.PATH` (security, too large)
 
 ### 3.3 Acceptance
 
-- **GIVEN** Eric / Adam 任一台升級失敗
-- **WHEN** self-check.cjs 上傳
-- **THEN** server `install_check_logs.full_log` 含 `env.bash_resolution.selected = 'WSL_RELAY'`，admin 看 dashboard 一眼看出根因
+- **GIVEN** an upgrade failure on either Alice's or Bob's machine
+- **WHEN** self-check.cjs uploads
+- **THEN** the server `install_check_logs.full_log` contains `env.bash_resolution.selected = 'WSL_RELAY'`, and the admin can spot the root cause at a glance on the dashboard
 
-- **GIVEN** 任何使用者跑 self-check
-- **WHEN** 看 `full_log` JSON
-- **THEN** 沒有 absolute home path、沒有完整 PATH、沒有 API key
+- **GIVEN** any user runs self-check
+- **WHEN** looking at the `full_log` JSON
+- **THEN** there is no absolute home path, no full PATH, no API key
 
 ---
 
 ## 4. Admin dashboard view spec
 
-### 4.1 路由：`/ownmind/admin/install-check`
+### 4.1 Route: `/ownmind/admin/install-check`
 
-只開 super_admin role 看。
+Visible to the super_admin role only.
 
-### 4.2 列表 view
+### 4.2 List view
 
-- 預設顯示最近 7 天，所有 user × 最近 5 次紀錄
-- 欄：使用者 / 時間 / 客戶端版本 / 平台 / trigger / pass-warn-fail 數 / 動作
-- 篩選：trigger=post_upgrade only / 只看含 fail 的 / 特定 user
-- 排序：時間倒序（預設）
+- Defaults to the last 7 days, all users × last 5 records
+- Columns: user / time / client version / platform / trigger / pass-warn-fail counts / action
+- Filters: trigger=post_upgrade only / only those with a fail / a specific user
+- Sort: by time descending (default)
 
-### 4.3 詳細 view
+### 4.3 Detail view
 
-點某筆 → modal 顯示：
+Click a row → modal shows:
 
-- 7 個 check 結果（含 fix 建議）
-- env section（shell_chain、bash_resolution 等）
-- upgrade_trace（如果有）— 用時間軸 + 失敗高亮
-- file_locks（如果有）
+- 7 check results (with fix suggestions)
+- env section (shell_chain, bash_resolution, etc.)
+- upgrade_trace (if present) — as a timeline + failure highlight
+- file_locks (if present)
 
 ### 4.4 Acceptance
 
-- **GIVEN** Eric 升級失敗，self-check 已上傳
-- **WHEN** admin 開 `/ownmind/admin/install-check` 找 Eric 的紀錄
-- **THEN** 看到「scheduler fail（Select-Object 找不到）」+ env 區塊顯示 `bash_resolution.selected=WSL_RELAY`，可直接判斷修法
+- **GIVEN** Alice's upgrade failed and self-check uploaded
+- **WHEN** the admin opens `/ownmind/admin/install-check` and finds Alice's record
+- **THEN** they see "scheduler fail (Select-Object not found)" + the env section shows `bash_resolution.selected=WSL_RELAY`, allowing the fix to be determined directly
 
 ---
 
-## 5. 測試策略
+## 5. Test strategy
 
-詳細測試清單在 [tasks.md](./tasks.md) §3。每個 bug 對應一條 reproduction test，加進既有 `tests/ps1-windows-compat.test.js` 和 `tests/self-check.test.js`，**不**新建測試檔。
+The detailed test list is in [tasks.md](./tasks.md) §3. Each bug corresponds to one reproduction test, added to the existing `tests/ps1-windows-compat.test.js` and `tests/self-check.test.js`, **not** new test files.
 
-實作前 reproduction test 必須**先紅**（重現 bug）；修完後**轉綠**。中間不允許「綠了再寫 test」（IR-003）。
+Before implementation, each reproduction test must **fail first** (reproducing the bug); after the fix it must **turn green**. No "write the test after it's green" in between (IR-003).

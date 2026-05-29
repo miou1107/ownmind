@@ -1,281 +1,281 @@
-# v1.19.14 — 錯誤回報工具（使用者 ⇄ 開發者雙向通知）
+# v1.19.14 — Bug report tool (user ⇄ developer two-way notification)
 
 - **Author**: Vin
-- **Date**: 2026-05-24（v1 → v4，經三輪 Gemini 對抗審查）
-- **Status**: v4 拍板、等動工
-- **預估版次**: v1.19.14
+- **Date**: 2026-05-24 (v1 → v4, through three rounds of Gemini adversarial review)
+- **Status**: v4 decided, awaiting implementation
+- **Estimated version**: v1.19.14
 
 ---
 
-## 0. 一句話總結
+## 0. One-line summary
 
-讓使用者在 OwnMind 出狀況或設計不合理時、能用一致的方式回報給開發者；開發者拿到回報處理完、回報者也會收到通知。
+Let users report to the developer in a consistent way when OwnMind misbehaves or has an unreasonable design; once the developer resolves the report, the reporter also gets notified.
 
-> 白話：以前使用者覺得「OwnMind 怎麼擋了我不該擋的東西」時沒地方反映、只能口頭跟 Vin 講；這版做一個正式管道、AI 主動偵測 + 雙向通知。
+> Plain version: previously when a user felt "why is OwnMind blocking something it shouldn't?" there was nowhere to raise it, only verbally to Vin; this version builds a formal channel, AI proactive detection + two-way notification.
 
 ---
 
-## 1. 設計緣由
+## 1. Design rationale
 
-### 1.1 現況缺口
+### 1.1 Current gap
 
-OwnMind 目前**沒有**專門用來「使用者回報程式錯誤或設計問題」的管道：
+OwnMind currently **has no** dedicated channel for "users reporting program bugs or design problems":
 
-| 現有機制 | 用途 | 為什麼不夠 |
+| Existing mechanism | Purpose | Why it's insufficient |
 |---|---|---|
-| `ownmind_report_compliance` | 記鐵律遵守狀況 | 語意不對、不是錯誤回報 |
-| `ownmind_save` type=project | 記專案待辦 | 語意混雜 |
-| 口頭跟 Vin 講 | – | 跨多人時不可擴展、無紀錄、無進度追蹤 |
-| GitHub Issues | – | 沒設使用者帳號、外部使用者沒辦法直接報 |
+| `ownmind_report_compliance` | record iron-rule compliance | wrong semantics, not bug reporting |
+| `ownmind_save` type=project | record project todos | mixed semantics |
+| verbally telling Vin | – | not scalable across many people, no record, no progress tracking |
+| GitHub Issues | – | no user accounts set up, external users can't report directly |
 
-實際踩坑案例：使用者寫專案記憶被擋「掃密誤判」、目前是 Vin 自己記 + 開 patch 處理、其他使用者沒這條路。
+Real incident: a user writing project memory got blocked by a "secret-scan false positive"; currently Vin records it himself + opens a patch, other users have no such path.
 
-### 1.2 為什麼現在做
+### 1.2 Why now
 
-- v1.19.11 落地的 `reply-lint-events.jsonl` 是錯誤回報的資料根基、但缺「使用者明確說『這是 bug』」這層
-- OwnMind 倉庫已公開、未來會有更多使用者、口頭管道擴展不起來
+- v1.19.11's landed `reply-lint-events.jsonl` is the data foundation for bug reporting, but lacks the "user explicitly says 'this is a bug'" layer
+- the OwnMind repo is now public, there will be more users in the future, the verbal channel doesn't scale
 
 ---
 
-## 2. 設計範圍（v4 — 經三輪對抗審查重定）
+## 2. Design scope (v4 — re-set through three rounds of adversarial review)
 
-### 2.1 主動偵測範圍
+### 2.1 Proactive detection scope
 
-**第一階段只做明確訊號**：
+**First phase only handles explicit signals**:
 
-- 工具呼叫被擋（例如 `ownmind_save` 回 400「敏感資料」）
-- 工具呼叫報錯（例如 5xx、連線失敗、逾時）
+- tool call blocked (e.g. `ownmind_save` returns 400 「敏感資料」)
+- tool call errors (e.g. 5xx, connection failure, timeout)
 
-**下一階段做**：
+**Next phase**:
 
-- 語意偵測（從使用者抱怨的語氣判斷）→ 容易誤判、本版不做
+- semantic detection (judging from the tone of a user's complaint) → easily misjudged, not done in this version
 
-### 2.2 儲存位置
+### 2.2 Storage location
 
-**送中央伺服器**、送之前讓使用者預覽確認。
+**Sent to the central server**, with a user preview confirmation before sending.
 
-### 2.3 附帶資料與查詢權限
+### 2.3 Attached data and query permissions
 
-**回報資料預設附**：
+**Report data attaches by default**:
 
-- 觸發回報的前後對話片段（強制經中間層遮蔽、見 2.10）
-- 環境資訊（作業系統、AI 工具版本、OwnMind 版本）
-- 當前專案路徑（不含內容、只含路徑）
-- 觸發時間 + 回報者識別碼 + 來源機器指紋（見 2.6）
+- the surrounding conversation snippets that triggered the report (forced through middleware redaction, see 2.10)
+- environment info (OS, AI tool version, OwnMind version)
+- current project path (path only, no content)
+- trigger time + reporter identifier + source machine fingerprint (see 2.6)
 
-**查詢權限**：
+**Query permissions**:
 
-- 一般使用者：只看自己的回報
-- 管理員（後台 admin 以上）：看全部回報
+- regular user: sees only their own reports
+- admin (admin level and above): sees all reports
 
-### 2.4 跟回話品質紀錄檔的關係
+### 2.4 Relationship with the reply-quality log file
 
-兩套保留、用 id 引用、不重複存。回報資料帶 `related_lint_event_ids`（陣列）。
+Both kept, referenced by id, not stored twice. Report data carries `related_lint_event_ids` (array).
 
-### 2.5 跨多 AI 工具的觸發機制（v4：接受不完美 + 後台 spam 防護）
+### 2.5 Cross-AI-tool trigger mechanism (v4: accept imperfection + backend spam protection)
 
-**v3 設計缺陷（第三輪 Gemini 指出）**：客戶端 `confirm-window hook` 需要 transcript 監聽 + pre-tool 攔截、只在 Claude Code 完整可用；OwnMind 同時支援 Cursor、Codex、Windsurf、Copilot、OpenCode、Gemini CLI 等、其他客戶端做不到。
+**v3 design flaw (pointed out in round three by Gemini)**: the client `confirm-window hook` needs transcript monitoring + pre-tool interception, fully available only in Claude Code; OwnMind also supports Cursor, Codex, Windsurf, Copilot, OpenCode, Gemini CLI, etc., and other clients can't do it.
 
-**v4 改成「接受不完美 + 後台 spam 防護」**：
+**v4 changes to "accept imperfection + backend spam protection"**:
 
-#### 第一層（後端 `confirm_string` 守門）
+#### Layer 1 (backend `confirm_string` gatekeeper)
 
-- AI 呼叫 `ownmind_report_bug` 必填 `confirm_string="送出"`
-- 沒帶或不等於「送出」一律 400 拒絕
-- **承認** AI 可能腦補填上「送出」、不指望這層 100% 防
+- AI calling `ownmind_report_bug` must provide `confirm_string="送出"`
+- absent or not equal to 「送出」 → reject 400
+- **acknowledged** the AI might hallucinate filling in 「送出」, don't expect this layer to be 100% effective
 
-#### 第二層（介面層硬擋同指紋連送）— v4.1 新增
+#### Layer 2 (interface layer hard-blocks repeated same-fingerprint sends) — added in v4.1
 
-- POST `/api/bug-reports` 加入「同 user + 同 bug_fingerprint 過去 1 小時內 ≥ 3 筆」→ 直接 HTTP 429
-- 不寫紀錄、不啟動 spam 偵測流程、直接拒絕
-- 擋掉「AI 腦補同樣的錯誤狂送」99% 情況
+- POST `/api/bug-reports` adds "same user + same bug_fingerprint ≥ 3 within the past 1 hour" → HTTP 429 directly
+- no record written, no spam detection started, rejected outright
+- blocks 99% of "AI hallucinating the same error and spamming"
 
-#### 第三層（後端 spam 偵測 + 自動降級）— v4.1 提高門檻
+#### Layer 3 (backend spam detection + auto degrade) — v4.1 raised the thresholds
 
-後端持續分析每個使用者的回報模式、自動標 spam suspect：
+The backend continuously analyzes each user's reporting pattern and auto-marks spam suspects:
 
-| 觸發條件 | 動作 |
+| Trigger condition | Action |
 |---|---|
-| 同 user 過去 1 小時送 ≥ 5 筆、其中 ≥ 3 筆內容相似度 > 80% | 標 `spam_suspect_auto` |
-| 同 user 過去 24 小時送 ≥ **30 筆**（v4.1 從 10 提高、原值會誤判正常開發者）| 標 `spam_suspect_auto` |
-| 同 user + 同 bug_fingerprint 1 小時內送 ≥ **5 筆**（v4.1 從 3 提高，因介面層已硬擋 3 筆）| 標 `spam_suspect_auto` |
+| same user sent ≥ 5 in the past 1 hour, of which ≥ 3 have content similarity > 80% | mark `spam_suspect_auto` |
+| same user sent ≥ **30** in the past 24 hours (v4.1 raised from 10; the original value misjudged normal developers) | mark `spam_suspect_auto` |
+| same user + same bug_fingerprint sent ≥ **5** within 1 hour (v4.1 raised from 3, since the interface layer already hard-blocks at 3) | mark `spam_suspect_auto` |
 
-**相似度算法**：title + description 串接後做 Levenshtein 距離、轉成 0-1 相似度分數。
+**Similarity algorithm**: concatenate title + description, compute Levenshtein distance, convert to a 0-1 similarity score.
 
-**spam suspect 後果**：
+**spam suspect consequences**:
 
-- 後台首頁顯示「N 筆疑似 spam」、管理員可點進去看
-- 管理員一鍵「確認 spam」→ 後端對該 user 啟用 24 小時 `suggest_report` 旗標封鎖、客戶端錯誤回應不再附旗標
-- 管理員一鍵「正常」→ 撤銷 spam_suspect 標記、繼續看
+- the admin home page shows 「N 筆疑似 spam」, admin can click in to view
+- admin one-click "confirm spam" → backend enables a 24-hour `suggest_report` flag block on that user, client error responses no longer attach the flag
+- admin one-click "normal" → revoke the spam_suspect mark, keep watching
 
-#### 顯式手動入口（始終保留）
+#### Explicit manual entry (always kept)
 
-使用者隨時可以打 `/ownmind report` 主動回報、繞過自動偵測、繞過冷靜期。
+The user can run `/ownmind report` anytime to report proactively, bypassing auto-detection and the cooldown.
 
-### 2.6 回報者身分識別（v4.1：改用作業系統機器識別碼）
+### 2.6 Reporter identity (v4.1: switch to OS machine identifier)
 
-**v3 設計缺陷**：device-id 寫到 tmpdir 會被清。
-**v4 設計缺陷（第四輪 Gemini 指出）**：用主機名 + 主網卡 MAC 在 Docker / VPN / 虛擬機環境會頻繁變動（容器內主機名是隨機 container ID、虛擬網卡讓 MAC 順序不穩）、指紋天天變、通知靜音跟冷靜期失效。
+**v3 design flaw**: device-id written to tmpdir gets cleared.
+**v4 design flaw (pointed out in round four by Gemini)**: using hostname + primary NIC MAC changes frequently in Docker / VPN / VM environments (the in-container hostname is a random container ID, virtual NICs make MAC ordering unstable), the fingerprint changes daily, notification muting and the cooldown break.
 
-**v4.1 改成「作業系統層級機器識別碼」**：
+**v4.1 changes to "OS-level machine identifier"**:
 
-- 用 npm 套件 `node-machine-id` 抓 OS 提供的穩定 ID：
-  - macOS：`IOPlatformUUID`（系統永久 ID）
-  - Linux：`/etc/machine-id`（首次開機時設定、之後不變）
-  - Windows：登錄檔 `MachineGuid`
-- 這些值由作業系統管理、跨重啟穩定、不受網卡或主機名變動影響
-- 再串上「OwnMind 安裝路徑」算 SHA-256 → 同機器不同安裝可分辨
-- 取 SHA-256 前 16 字當 `device_fingerprint`
-- 每次啟動即時算、不寫檔
-- 抓不到 OS ID 時（極罕見、容器特殊配置）→ fallback 用主機名 + 安裝路徑 + `fingerprint_source: "no_machine_id"` 標記
+- use the npm package `node-machine-id` to get the stable ID the OS provides:
+  - macOS: `IOPlatformUUID` (system permanent ID)
+  - Linux: `/etc/machine-id` (set on first boot, unchanged after)
+  - Windows: registry `MachineGuid`
+- these values are OS-managed, stable across reboots, unaffected by NIC or hostname changes
+- then concatenate "OwnMind install path" and SHA-256 → distinguish different installs on the same machine
+- take the first 16 chars of SHA-256 as `device_fingerprint`
+- computed fresh on each startup, not written to a file
+- when the OS ID can't be obtained (very rare, special container config) → fallback to hostname + install path + `fingerprint_source: "no_machine_id"` marker
 
-`api_key` 識別「是誰」、`device_fingerprint` 識別「來源機器」。
+`api_key` identifies "who", `device_fingerprint` identifies "the source machine".
 
-**需要新增 npm 依賴 `node-machine-id`**、依鐵律加同步更新 install/update 腳本（IR-042）。
+**Requires adding npm dependency `node-machine-id`**, and per iron rule, sync-update the install/update scripts (IR-042).
 
-### 2.7 冷靜期（整合到原始錯誤回應、後端內聯查詢）
+### 2.7 Cooldown (integrated into the original error response, backend inline query)
 
-維持 v3 的設計：
+Keep the v3 design:
 
-1. 後端在拋 400 / 5xx 時、內聯查 `bug_report_declines` 表
-2. 該使用者過去 24 小時對該指紋的拒絕記錄存在 → **不附** `suggest_report` 旗標
-3. 不存在且不在 spam 封鎖期 → 附 `suggest_report: true` + `bug_fingerprint`
+1. when throwing 400 / 5xx, the backend inline-queries the `bug_report_declines` table
+2. a decline record for that user against that fingerprint exists within the past 24 hours → **don't attach** the `suggest_report` flag
+3. doesn't exist and not in the spam block window → attach `suggest_report: true` + `bug_fingerprint`
 
-拒絕寫入仍是獨立 API：`POST /api/bug-reports/decline`。
+Writing a decline is still a separate API: `POST /api/bug-reports/decline`.
 
-### 2.8 通知堆積與洗版控制（v4 新增控制機制）
+### 2.8 Notification pileup and flooding control (v4 added control mechanism)
 
-**v3 設計缺陷（第三輪 Gemini 指出）**：管理員兼回報者時通知無限堆積會洗版、缺乏批量處理機制。
+**v3 design flaw (pointed out in round three by Gemini)**: when an admin is also a reporter, notifications pile up infinitely and flood, and there's no batch-handling mechanism.
 
-**v4 改成**：
+**v4 changes to**:
 
-- 管理員啟動：「有 N 筆未處理回報」+ 最近 10 筆列表 + **「全部標為查看過」按鈕**
-- 回報者啟動：「有 M 筆你的回報已處理」+ 最近 10 筆 + **「全部標已讀」按鈕**
-- 通知列表每筆加「靜音此類」連結（針對 bug_fingerprint）：
-  - 點下 → 該使用者 30 天內不再收到「同指紋」的通知
-  - 寫到 `bug_report_notification_mutes` 表
-- **管理員額外設定**：「不要提醒我自己送的回報」開關（avoid 自製洗版）
+- admin startup: "N unhandled reports" + a list of the latest 10 + a **"mark all as viewed" button**
+- reporter startup: "M of your reports resolved" + the latest 10 + a **"mark all read" button**
+- each notification gets a "mute this kind" link (targeting bug_fingerprint):
+  - click → that user no longer receives "same fingerprint" notifications for 30 days
+  - written to the `bug_report_notification_mutes` table
+- **extra admin setting**: a "don't remind me of my own reports" toggle (avoid self-flooding)
 
-### 2.9 錯誤指紋生成（後端統一）
+### 2.9 Error fingerprint generation (unified on backend)
 
-維持 v3：後端列舉表程式碼層級維護、客戶端不參與解析。
+Keep v3: the enumeration table is maintained at the backend code level, the client doesn't participate in parsing.
 
-| 來源 | 格式 | 範例 |
+| Source | Format | Example |
 |---|---|---|
-| 業務邏輯擋下 | `<業務代碼>_<情境>` | `mem_blocked_secret_keyword` |
-| 5xx | `srv_err_<錯誤類別>` | `srv_err_db_connection` |
-| 客戶端錯誤 | `clt_<情境>` | `clt_invalid_payload` |
+| business logic block | `<business code>_<situation>` | `mem_blocked_secret_keyword` |
+| 5xx | `srv_err_<error class>` | `srv_err_db_connection` |
+| client error | `clt_<situation>` | `clt_invalid_payload` |
 
-### 2.10 隱私強制遮蔽（後端做、fail-closed）
+### 2.10 Privacy forced redaction (done on backend, fail-closed)
 
-維持 v3：
+Keep v3:
 
-- `shared/privacy-detect.js` 中間層強制執行
-- 信箱／身分證／手機 → 代稱
-- **fail-closed**：遮蔽崩潰 → 500、不寫 DB
+- `shared/privacy-detect.js` middleware enforces it
+- email / national ID / phone → placeholder
+- **fail-closed**: redaction crashes → 500, don't write DB
 
-### 2.11 必填欄位 + 對話片段大小上限 + JSON 聯合型別（v4 補完、v4.1 強化文件）
+### 2.11 Required fields + conversation snippet size limit + JSON union type (v4 completion, v4.1 doc reinforcement)
 
-**v3 設計缺陷（第三輪 Gemini 指出）**：JSON 結構截斷會讓單條訊息從 `string` 變 `object`、前後端不一致會崩潰。
+**v3 design flaw (pointed out in round three by Gemini)**: JSON structural truncation turns a single message from `string` into `object`; a front/back mismatch crashes.
 
-**v4 解法**：
+**v4 solution**:
 
-- `context_blob.conversation_snippets` 欄位明定為「`(string | TruncatedMessage)[]`」聯合型別
-- `TruncatedMessage` schema：`{ truncated: true, original_size: number, head: string, tail: string }`
-- 後端與後台解析器都明確處理兩種型別
-- 客戶端、後端、後台共用一份 schema 定義（`shared/context-blob-schema.js`）
+- the `context_blob.conversation_snippets` field is explicitly defined as a `(string | TruncatedMessage)[]` union type
+- `TruncatedMessage` schema: `{ truncated: true, original_size: number, head: string, tail: string }`
+- both the backend and admin parsers explicitly handle the two types
+- client, backend, and admin share one schema definition (`shared/context-blob-schema.js`)
 
-**v4.1 補強**：要寫客製 MCP 客戶端的進階使用者（特別是用 Go / Rust 等強型別語言對接的）需要在 README API 串接段明白告知聯合型別、否則反序列化會失敗：
+**v4.1 reinforcement**: advanced users writing a custom MCP client (especially integrating in strongly-typed languages like Go / Rust) need the README API integration section to clearly state the union type, otherwise deserialization fails:
 
-- README 加一段「API 串接注意事項」、明寫 `conversation_snippets` 是 `(string | TruncatedMessage)[]` 聯合型別
-- 附 JSON Schema 範例
-- 三語系同步
+- add an "API integration notes" section to the README, explicitly stating `conversation_snippets` is a `(string | TruncatedMessage)[]` union type
+- include a JSON Schema example
+- sync across the three languages
 
-**大小上限**：
+**Size limits**:
 
-- 客戶端先截斷：50 條訊息、每條 5KB、總計 1MB
-- 超過條數：保留「最後 49 條 + 第 1 條」、中間用 `{ truncated_messages: N, summary: "已省略 N 條" }` 取代
-- 超過單條：用 `{ truncated: true, original_size, head, tail }` 包
-- 後端再驗一次 1MB（雙重保險）
+- client truncates first: 50 messages, 5KB each, 1MB total
+- over the count: keep "the last 49 + the 1st", replace the middle with `{ truncated_messages: N, summary: "已省略 N 條" }`
+- over per-message: wrap with `{ truncated: true, original_size, head, tail }`
+- backend re-validates 1MB again (double safety)
 
-### 2.12 API 頻率限制
+### 2.12 API rate limits
 
-維持 v3：
+Keep v3:
 
-| API | 限制 |
+| API | Limit |
 |---|---|
-| POST `/api/bug-reports` | 20 筆 / 小時 / 使用者 |
-| POST `/api/bug-reports/decline` | 50 筆 / 小時 / 使用者 |
-| GET `/api/bug-reports/notifications` | 30 筆 / 小時 / 使用者 |
-| PATCH `/api/bug-reports/:id/status` | 100 筆 / 小時 / 管理員 |
-| POST `/api/bug-reports/notifications/mark-all-read` | 10 筆 / 小時 / 使用者 |
-| POST `/api/bug-reports/notifications/mute` | 30 筆 / 小時 / 使用者 |
+| POST `/api/bug-reports` | 20 / hour / user |
+| POST `/api/bug-reports/decline` | 50 / hour / user |
+| GET `/api/bug-reports/notifications` | 30 / hour / user |
+| PATCH `/api/bug-reports/:id/status` | 100 / hour / admin |
+| POST `/api/bug-reports/notifications/mark-all-read` | 10 / hour / user |
+| POST `/api/bug-reports/notifications/mute` | 30 / hour / user |
 
-### 2.13 不做
+### 2.13 Out of scope
 
-- ❌ 本地持久化 retry queue（v3 砍掉）
-- ❌ should-prompt 獨立 API（v3 砍掉）
-- ❌ 客戶端 confirm-window hook（v4 砍掉、多客戶端做不到）
-- ❌ device-id 檔案持久化（v4 改主機指紋、即時算）
-- ❌ 自動回填修復建議（v2.0+）
-- ❌ 跟 GitHub Issues 雙向同步（v2.0+）
-- ❌ 自動截圖（隱私風險）
+- ❌ Local persistent retry queue (cut in v3)
+- ❌ should-prompt standalone API (cut in v3)
+- ❌ Client confirm-window hook (cut in v4, can't be done across clients)
+- ❌ device-id file persistence (v4 switches to machine fingerprint, computed live)
+- ❌ Auto-filled fix suggestions (v2.0+)
+- ❌ Two-way sync with GitHub Issues (v2.0+)
+- ❌ Auto screenshots (privacy risk)
 
 ---
 
-## 3. 工作量估計（v4）
+## 3. Effort estimate (v4)
 
-| 項目 | v3 | v4 |
+| Item | v3 | v4 |
 |---|---|---|
-| 資料表 + migration（含 mutes 表）| 80 | 100 |
-| 後端 API（含 spam suspect API）| 280 | 350 |
-| MCP 工具 | 80 | 80 |
-| 錯誤回應整合（含 spam 封鎖 + 冷靜期內聯）| 80 | 100 |
-| 後端指紋生成器 | 60 | 60 |
-| **🆕 後端 spam 偵測器** | – | 150 |
-| 後端隱私強制遮蔽（含 fail-closed）| 70 | 70 |
-| 客戶端 hook：通知 fetch（含批量讀 + 靜音）| 100 | 130 |
-| 客戶端主機指紋（取代裝置代號）| 60 | 30 |
-| **🚫 客戶端 confirm-window hook（v4 砍掉）**| 150 | 0 |
-| 客戶端兩階段確認預覽 | 80 | 80 |
-| **共用 context_blob schema（v4 新加）** | – | 30 |
-| 後台介面（含 spam suspect 頁 + 靜音管理）| 600 | 750 |
-| 啟動通知（含批量已讀按鈕）| 100 | 130 |
-| 後端測試（含 spam 偵測 + 聯合型別）| 350 | 450 |
-| 客戶端測試（不含 confirm-window）| 280 | 200 |
-| 文件 | 150 | 150 |
+| Tables + migration (incl. mutes table) | 80 | 100 |
+| Backend API (incl. spam suspect API) | 280 | 350 |
+| MCP tool | 80 | 80 |
+| Error response integration (incl. spam block + cooldown inline) | 80 | 100 |
+| Backend fingerprint generator | 60 | 60 |
+| **🆕 Backend spam detector** | – | 150 |
+| Backend privacy forced redaction (incl. fail-closed) | 70 | 70 |
+| Client hook: notification fetch (incl. batch read + mute) | 100 | 130 |
+| Client machine fingerprint (replaces device id) | 60 | 30 |
+| **🚫 Client confirm-window hook (cut in v4)** | 150 | 0 |
+| Client two-stage confirm preview | 80 | 80 |
+| **Shared context_blob schema (new in v4)** | – | 30 |
+| Admin interface (incl. spam suspect page + mute management) | 600 | 750 |
+| Startup notifications (incl. batch-read button) | 100 | 130 |
+| Backend tests (incl. spam detection + union type) | 350 | 450 |
+| Client tests (excl. confirm-window) | 280 | 200 |
+| Docs | 150 | 150 |
 | openspec | 400 | 400 |
-| **總計** | **2,920** | **約 3,260** |
+| **Total** | **2,920** | **~3,260** |
 
-工程時間：**約 3.5-4 個工作天**。
+Engineering time: **~3.5-4 working days**.
 
-> v4 比 v3 略多：砍掉 confirm-window hook（-150）但加 spam 防護（+150）+ 後台 spam 頁（+150）+ 靜音控制（+80）+ 聯合型別共用 schema（+30）+ 測試強化（+100），淨 +340。
+> v4 is slightly more than v3: cut the confirm-window hook (-150) but added spam protection (+150) + admin spam page (+150) + mute control (+80) + shared union-type schema (+30) + test reinforcement (+100), net +340.
 
 ---
 
-## 4. 風險檢查點
+## 4. Risk checkpoints
 
-- [ ] migration 可 idempotent 重跑
-- [ ] 後端 API 全套測試綠
-- [ ] MCP 工具 `ownmind_report_bug` 可從 Claude Code、Cursor、Codex 各自呼叫成功
-- [ ] 一般使用者用自己金鑰看不到別人的回報
-- [ ] 管理員看得到全部回報
-- [ ] `suggest_report` 旗標：冷靜期外附、冷靜期內不附
-- [ ] `suggest_report` 旗標：spam 封鎖期內不附
-- [ ] 跨裝置冷靜期同步
-- [ ] 啟動通知雙軌（admin + reporter）
-- [ ] **🆕 spam 偵測**：1 小時 5 筆 + 3 筆相似度 > 80% 自動標 suspect
-- [ ] **🆕 spam 確認**：管理員點「確認 spam」後該 user 24h 不附旗標
-- [ ] **🆕 通知批量已讀**：點按鈕後該 user 通知全清
-- [ ] **🆕 通知靜音**：點靜音後同 fingerprint 30 天內不再通知
-- [ ] **🆕 管理員「不提醒自己」**：管理員開關後不收自己送的回報通知
-- [ ] **🆕 主機指紋穩定**：同機器多次啟動算出同一個值
-- [ ] **🆕 主機指紋差異**：不同機器算出不同值
-- [ ] **🆕 context_blob 聯合型別**：後端與後台都能解析 `string` 跟 `TruncatedMessage`
-- [ ] 對話片段超過 1MB 被 413 擋下
-- [ ] 對話片段個資寫入前已遮蔽
-- [ ] 隱私遮蔽崩潰時 fail-closed（500、不寫 DB）
-- [ ] 沒帶 `confirm_string="送出"` 一律被 400 擋下
-- [ ] 跟 `reply-lint-events.jsonl` 用 id 關聯
-- [ ] 連不上後端：不寫暫存、顯示「稍後重試」訊息
-- [ ] 三語系文件同步更新
+- [ ] migration is idempotent on rerun
+- [ ] backend API full test suite green
+- [ ] MCP tool `ownmind_report_bug` can be called successfully from Claude Code, Cursor, Codex each
+- [ ] a regular user with their own key can't see others' reports
+- [ ] admin can see all reports
+- [ ] `suggest_report` flag: attached outside cooldown, not attached during cooldown
+- [ ] `suggest_report` flag: not attached during the spam block window
+- [ ] cross-device cooldown sync
+- [ ] startup notifications dual-track (admin + reporter)
+- [ ] **🆕 spam detection**: 5 within 1 hour + 3 with similarity > 80% auto-marks suspect
+- [ ] **🆕 spam confirm**: after admin clicks "confirm spam", that user gets no flag for 24h
+- [ ] **🆕 notification batch read**: after clicking the button, that user's notifications all clear
+- [ ] **🆕 notification mute**: after clicking mute, same fingerprint no longer notifies for 30 days
+- [ ] **🆕 admin "don't remind me"**: after the admin toggle, no notifications for the admin's own reports
+- [ ] **🆕 machine fingerprint stable**: multiple startups on the same machine compute the same value
+- [ ] **🆕 machine fingerprint differs**: different machines compute different values
+- [ ] **🆕 context_blob union type**: both backend and admin can parse `string` and `TruncatedMessage`
+- [ ] conversation snippets over 1MB blocked with 413
+- [ ] conversation snippet PII redacted before writing
+- [ ] privacy redaction crash is fail-closed (500, don't write DB)
+- [ ] missing `confirm_string="送出"` always blocked with 400
+- [ ] correlated with `reply-lint-events.jsonl` by id
+- [ ] can't reach backend: don't write a cache, show a "retry later" message
+- [ ] three-language docs synced

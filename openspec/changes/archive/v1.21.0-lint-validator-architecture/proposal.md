@@ -1,56 +1,56 @@
-# v1.21.0 — Lint 驗證器架構（規則驅動、user 自選啟用）
+# v1.21.0 — Lint validator architecture (rule-driven, user opt-in)
 
-## 一句話總結
+## One-sentence summary
 
-把 lint 邏輯從「OwnMind 系統硬寫」改成「user 鐵律驅動」。每個 user 在自己的鐵律 metadata 宣告要啟用哪個 validator 套件、OwnMind 鉤子只跑該 user 啟用的檢查。其他 user 不會被 Vin 的個人語言偏好強迫。
+Change the lint logic from "hard-coded into the OwnMind system" to "driven by the user's iron rules". Each user declares in their own iron-rule metadata which validator package to enable, and the OwnMind hook only runs the checks that user enabled. Other users are not forced into Vin's personal language preferences.
 
-## 背景
+## Background
 
-2026-05-26 Vin 抓到 v1.20.4 雖然把 user-facing 訊息中性化（IR-036 字串改成「行話品質」）、但根本問題沒解：
+On 2026-05-26 Vin caught that, although v1.20.4 made the user-facing messages neutral (the IR-036 string was changed to "jargon quality"), the root problem was not solved:
 
-**`shared/language-lint.js` 硬寫 `checkJargonExplanation` 跟 `checkMixedLanguage` 兩個檢查函式、所有 user 都被強迫跑**。
+**`shared/language-lint.js` hard-codes the two check functions `checkJargonExplanation` and `checkMixedLanguage`, and all users are forced to run them**.
 
-Eric 之類其他 user 沒「中英混雜」「行話品質」這兩條鐵律、但 OwnMind 鉤子還是會擋他們的回話。這違反 OwnMind 核心理念「記憶屬於使用者」 — lint 邏輯也該屬於使用者、不是系統內建。
+Other users like Alice do not have the "mixed Chinese/English" and "jargon quality" iron rules, but the OwnMind hook still blocks their replies. This violates OwnMind's core principle "memory belongs to the user" — the lint logic should also belong to the user, not be system built-in.
 
-## 範圍內
+## In scope
 
-- 新 `shared/validators/` 目錄、3 個 validator 模組：
-  - `jargon-explanation.js`（行話品質檢查、原 checkJargonExplanation 邏輯包裝）
-  - `language-mixed-ratio.js`（中英混雜檢查、原 checkMixedLanguage 邏輯包裝）
-  - `privacy-detect.js`（隱私偵測、從 hooks/ownmind-reply-lint.js 抽出）
-- 新 `shared/validators/index.js`：註冊表 + `findValidator` / `listAvailableValidators`
-- 改 `shared/language-lint.js` 的 `lintReply`：接受 `enabledValidators` 參數、規則驅動
-- 改 `hooks/ownmind-reply-lint.js`：從規則快取掃出有 `lint_validator` 設定的鐵律、跑對應檢查
-- user 鐵律 metadata 新欄位 `lint_validator: { name, params }`
-- Vin 自己的 IR-036 / IR-037 加 lint_validator 啟用、向後維持相同行為
-- 既有測試對應新架構
+- New `shared/validators/` directory with 3 validator modules:
+  - `jargon-explanation.js` (jargon quality check, wrapping the original checkJargonExplanation logic)
+  - `language-mixed-ratio.js` (mixed Chinese/English check, wrapping the original checkMixedLanguage logic)
+  - `privacy-detect.js` (privacy detection, extracted from hooks/ownmind-reply-lint.js)
+- New `shared/validators/index.js`: registry + `findValidator` / `listAvailableValidators`
+- Change `lintReply` in `shared/language-lint.js`: accept an `enabledValidators` parameter, rule-driven
+- Change `hooks/ownmind-reply-lint.js`: scan the rule cache for iron rules that have a `lint_validator` setting and run the corresponding checks
+- New field `lint_validator: { name, params }` in user iron-rule metadata
+- Add lint_validator enablement to Vin's own IR-036 / IR-037, keeping backward-identical behavior
+- Align existing tests to the new architecture
 
-## 範圍外
+## Out of scope
 
-- ❌ 自動轉移既有規則：user 沒手動加 `lint_validator` 就不啟用、不替 user 推斷
-- ❌ Dashboard / UI 提供「validator 套件目錄」給 user 選用：留下版本做
-- ❌ 第三方自訂 validator：本版只支援內建 3 個套件、未來再開放外掛
-- ❌ validator 套件市集：太遠、不在範圍
+- ❌ Auto-migrating existing rules: if a user does not manually add `lint_validator` it is not enabled, do not infer on the user's behalf
+- ❌ Dashboard / UI offering a "validator package catalog" for users to choose: leave for a later version
+- ❌ Third-party custom validators: this version only supports the 3 built-in packages, plugins are opened up later
+- ❌ Validator package marketplace: too far off, not in scope
 
-## 設計重點
+## Design points
 
-### validator 套件介面
+### Validator package interface
 
-每個 validator 是純函式 module、export：
+Each validator is a pure-function module that exports:
 
 ```js
 export const name = 'jargon_explanation';
 export function check(content, params = {}, context = {}) {
-  // params: user 從 metadata 傳進來的設定（可選）
+  // params: the settings the user passed in from metadata (optional)
   // context: { historicalCorpus, userPrompts, ... }
-  // return: { ok: true } 或 { ok: false, violation: { event, message, detail } }
+  // return: { ok: true } or { ok: false, violation: { event, message, detail } }
 }
 ```
 
-### user 鐵律 metadata 設計
+### User iron-rule metadata design
 
 ```json
-// IR-036（Vin 的「行話品質」鐵律）
+// IR-036 (Vin's "jargon quality" iron rule)
 {
   "lint_validator": {
     "name": "jargon_explanation",
@@ -59,7 +59,7 @@ export function check(content, params = {}, context = {}) {
   "triggered_by_event": "lint_jargon_explanation_required"
 }
 
-// IR-037（中英混雜）
+// IR-037 (mixed Chinese/English)
 {
   "lint_validator": {
     "name": "language_mixed_ratio",
@@ -68,44 +68,44 @@ export function check(content, params = {}, context = {}) {
   "triggered_by_event": "lint_language_mixed_ratio"
 }
 
-// 沒設 lint_validator 的鐵律 → 鉤子完全不跑那個檢查
+// a rule with no lint_validator set → the hook does not run that check at all
 ```
 
-### 鉤子流程改造
+### Hook flow rework
 
-舊（v1.20.4）：
+Old (v1.20.4):
 ```
 lintReply(content, historicalCorpus)
-  → 硬跑 checkMixedLanguage + checkJargonExplanation
-  → 回 violations
+  → hard-runs checkMixedLanguage + checkJargonExplanation
+  → returns violations
 ```
 
-新（v1.21.0）：
+New (v1.21.0):
 ```
 extractEnabledValidators(rulesCache)
-  → 掃 user 鐵律找 lint_validator 設定
-  → 回 [{rule, validator, params}, ...]
+  → scans the user's iron rules for lint_validator settings
+  → returns [{rule, validator, params}, ...]
 lintReply(content, enabledValidators, context)
-  → loop 跑每個 validator.check
-  → 回 violations + sourceRule 對應
+  → loops and runs each validator.check
+  → returns violations + sourceRule mapping
 ```
 
-### 向後相容
+### Backward compatibility
 
-- 對 Vin：透過 `ownmind_update` 改 IR-036 / IR-037 加 `lint_validator` metadata、行為跟 v1.20.4 一樣
-- 對其他 user（Eric / 未來新增）：沒設 metadata = 鉤子完全不擋 = 安靜
-- 鉤子本身：找不到任何 enabledValidator → exit 0、不擋
+- For Vin: via `ownmind_update`, add `lint_validator` metadata to IR-036 / IR-037, behavior is the same as v1.20.4
+- For other users (Alice / future additions): no metadata set = the hook does not block at all = silent
+- The hook itself: when no enabledValidator is found → exit 0, do not block
 
-## 版號決策
+## Version decision
 
-v1.21.0、不是 patch 而是 minor。理由：
-- 這是架構大改、新 validator 介面 + 規則驅動流程
-- 既有 user 要手動加 metadata 才會繼續 enforce（破壞既有預設行為）
-- 符合 semver：minor 表示「新功能 + 可能改變預設行為但不破壞 API」
+v1.21.0, a minor rather than a patch. Reasons:
+- This is a major architectural change, a new validator interface + a rule-driven flow
+- Existing users must manually add metadata to keep enforcing (breaks the existing default behavior)
+- Matches semver: minor means "new feature + may change the default behavior but does not break the API"
 
-## 風險
+## Risks
 
-- **既有 lint enforcement 暫時靜默**：Vin 自己的 IR-036 / IR-037 要加 metadata、不然 v1.21 上線後 lint 不擋 Vin。手動更新可控
-- **規則快取讀失敗**：fail-open（白話：讀不到 user 鐵律就視為沒啟用 validator、安靜）
-- **validator 套件升級難**：套件 API 改變要兼顧 user metadata 的 `params` 格式、新版加欄位但不刪舊欄位
-- **測試重寫**：既有 6 個測試檔要對應「規則驅動」風格、工程量中等
+- **Existing lint enforcement temporarily silent**: Vin's own IR-036 / IR-037 need metadata added, otherwise lint won't block Vin after v1.21 ships. Manual updating is controllable
+- **Rule cache read failure**: fail-open (in plain terms: if the user's iron rules can't be read, treat it as no validator enabled, silent)
+- **Validator package upgrades are hard**: an API change in a package must accommodate the `params` format in user metadata, a new version adds fields but does not remove old ones
+- **Test rewrite**: the existing 6 test files must align to the "rule-driven" style, a medium amount of engineering

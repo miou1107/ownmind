@@ -1,209 +1,209 @@
 # v1.17.66 — Tasks
 
-執行清單。順序強制：helpers → reproduction tests → 修 bug → 觀測擴充 → admin view → 驗證 → 三同步 → review → commit。
+Execution list. Order is enforced: helpers → reproduction tests → fix bugs → observability extension → admin view → verification → tri-sync → review → commit.
 
 ---
 
-## 0. 前置（等 Eric 工作排程器歷程截圖）
+## 0. Prerequisite (await Alice's Task Scheduler history screenshot)
 
-- [ ] **驗證 Bug #7 假設**：Eric 截圖「OwnMind Usage Scanner」task 歷程
-  - 預期看到：每 30 分鐘準時 + 偶有 catch-up 連續紀錄
-  - 若不是：暫停 #7 修法，回頭 grep 其他可能來源
+- [ ] **Verify the Bug #7 hypothesis**: Alice's screenshot of the "OwnMind Usage Scanner" task history
+  - Expected: on time every 30 minutes + occasional catch-up consecutive records
+  - If not: pause the #7 fix, go back and grep for other possible sources
 
 ---
 
-## 1. Helpers（先建底層，後面所有 bug 都用 helper）
+## 1. Helpers (build the foundation first; all subsequent bugs use helpers)
 
 ### 1.1 `scripts/windows/lib/find-git-bash.ps1`
 
-- [ ] 建檔，實作 `Find-GitBash` function（spec.md §1.1）
-- [ ] 偵測順序：cache → 常見路徑 → where bash 過濾 WSL relay
-- [ ] 用 `bash --version` 確認真的是 Git Bash（避免 WSL distro 也回）
-- [ ] 寫 cache 到 `~/.ownmind/.git-bash-path`
+- [ ] Create the file, implement the `Find-GitBash` function (spec.md §1.1)
+- [ ] Detection order: cache → common paths → where bash filtering out the WSL relay
+- [ ] Use `bash --version` to confirm it really is Git Bash (avoid a WSL distro also matching)
+- [ ] Write cache to `~/.ownmind/.git-bash-path`
 
 ### 1.2 `scripts/install-helpers/safe-spawn.cjs`
 
-- [ ] 建檔，export `safeSpawn(file, args, options)`
-- [ ] 預設 `shell:false` + `windowsHide:true` + `timeout:5000`
-- [ ] 失敗回 `{ok:false, error, stderr_tail}`，不 throw
-- [ ] options 傳 `shell:true` 時 log warning（不擋）
+- [ ] Create the file, export `safeSpawn(file, args, options)`
+- [ ] Default `shell:false` + `windowsHide:true` + `timeout:5000`
+- [ ] On failure return `{ok:false, error, stderr_tail}`, don't throw
+- [ ] Log a warning when options passes `shell:true` (don't block)
 
 ### 1.3 `scripts/install-helpers/path-to-win32.cjs`
 
-- [ ] 建檔，export `toWin32Path(p)` 和 `toMsysPath(p)`
-- [ ] `/c/X` ↔ `C:\X` 雙向
-- [ ] 非 Windows 平台 no-op
+- [ ] Create the file, export `toWin32Path(p)` and `toMsysPath(p)`
+- [ ] `/c/X` ↔ `C:\X` bidirectional
+- [ ] No-op on non-Windows platforms
 
 ### 1.4 `scripts/windows/run-hidden.vbs`
 
-- [ ] 建檔（spec.md §1.4 內容）
-- [ ] install.ps1 把這檔複製到 `~/.ownmind/scripts/windows/`
+- [ ] Create the file (content from spec.md §1.4)
+- [ ] install.ps1 copies this file to `~/.ownmind/scripts/windows/`
 
 ---
 
-## 2. Reproduction tests（IR-003：先紅，後面才能轉綠）
+## 2. Reproduction tests (IR-003: fail first, only then turn green)
 
-加進既有測試檔，不新建。
+Add to existing test files, no new files.
 
-### 2.1 `tests/ps1-windows-compat.test.js` 新增 case
+### 2.1 New cases in `tests/ps1-windows-compat.test.js`
 
-- [ ] **#1 reproduction**：mock PATH 含 `C:\Windows\System32\bash.exe` 在前、Git Bash 在後 → expect `Find-GitBash` 不回 System32 那個
-- [ ] **#1 fallback**：mock PATH 只有 System32 → expect 回 `$null`
-- [ ] **#6 reproduction**：跑 `Out-File` 寫中文 → expect 預設 UTF-16 BOM（紅）→ 修完 expect UTF-8 無 BOM（綠）
+- [ ] **#1 reproduction**: mock PATH with `C:\Windows\System32\bash.exe` first and Git Bash after → expect `Find-GitBash` not to return the System32 one
+- [ ] **#1 fallback**: mock PATH with only System32 → expect `$null`
+- [ ] **#6 reproduction**: run `Out-File` to write Chinese → expect the default UTF-16 BOM (red) → after fix expect UTF-8 with no BOM (green)
 
-### 2.2 `tests/self-check.test.js` 新增 case
+### 2.2 New cases in `tests/self-check.test.js`
 
-- [ ] **#2 reproduction**：mock spawn 攔截 → expect args 不被 cmd shell 包；對 PowerShell pipeline 命令確認 `|` 不會被當 cmd pipe
-- [ ] **#4 reproduction (a)**：mock 升級失敗（throw）→ expect self-check.cjs 仍被呼叫
-- [ ] **#4 reproduction (b)**：mock fetch 401 → expect 報告寫進 spool 而非丟掉
-- [ ] **#4 reproduction (c)**：給定 spool 內容 + mock fetch 200 → expect spool 被清空且報告全傳完
-- [ ] **#7 acceptance**：register-scanner-task.ps1 dry-run 輸出含 `wscript.exe` 和 `run-hidden.vbs`，**不**含 bare `node.exe -Execute`
+- [ ] **#2 reproduction**: mock-intercept spawn → expect args not wrapped by a cmd shell; for a PowerShell pipeline command confirm `|` is not treated as a cmd pipe
+- [ ] **#4 reproduction (a)**: mock upgrade failure (throw) → expect self-check.cjs still called
+- [ ] **#4 reproduction (b)**: mock fetch 401 → expect the report written to the spool instead of dropped
+- [ ] **#4 reproduction (c)**: given spool content + mock fetch 200 → expect the spool emptied and all reports sent
+- [ ] **#7 acceptance**: register-scanner-task.ps1 dry-run output contains `wscript.exe` and `run-hidden.vbs`, **not** bare `node.exe -Execute`
 
-### 2.3 確認所有 reproduction tests 都先紅
+### 2.3 Confirm all reproduction tests fail first
 
-- [ ] 跑 `npm test` 看七條新測試全紅，老測試全綠
+- [ ] Run `npm test` and see the seven new tests all red, old tests all green
 
 ---
 
-## 3. 修 bug（每個 bug 一個 commit，按順序）
+## 3. Fix bugs (one commit per bug, in order)
 
-### 3.1 Bug #1 — interactive-upgrade.ps1 三處 bare `bash`
+### 3.1 Bug #1 — interactive-upgrade.ps1 three bare `bash`
 
-- [ ] line 120, 125, 130 改用 `Find-GitBash` helper
-- [ ] 加 fallback：找不到 Git Bash → 跳過 verify 但不擋升級
-- [ ] 跑 #1 reproduction 轉綠
+- [ ] Change line 120, 125, 130 to use the `Find-GitBash` helper
+- [ ] Add fallback: no Git Bash found → skip verify but don't block the upgrade
+- [ ] Run #1 reproduction and turn green
 
-### 3.2 Bug #2 — self-check.cjs 拿掉 `shell:true`
+### 3.2 Bug #2 — self-check.cjs remove `shell:true`
 
-- [ ] [scripts/install-helpers/self-check.cjs:195-197](../../../scripts/install-helpers/self-check.cjs) 改用 `safeSpawn`
-- [ ] 移除 `{ shell: true }`
-- [ ] 跑 #2 reproduction 轉綠
+- [ ] [scripts/install-helpers/self-check.cjs:195-197](../../../scripts/install-helpers/self-check.cjs) change to use `safeSpawn`
+- [ ] Remove `{ shell: true }`
+- [ ] Run #2 reproduction and turn green
 
-### 3.3 Bug #4 — self-check 觀測管道保證執行 + 失敗 spool
+### 3.3 Bug #4 — self-check observability pipeline guaranteed to run + failure spool
 
-- [ ] interactive-upgrade.ps1：把 self-check 從 line 172 改成 try/finally 結構
-- [ ] interactive-upgrade.sh：同步加 `trap` 保證執行
-- [ ] self-check.cjs：實作 `appendSpool` + `retrySpool` 兩個 function
-- [ ] uploadReport：401/403/network 失敗時寫 spool
-- [ ] uploadReport：每次跑 self-check 開頭先試補傳 spool
-- [ ] 跑 #4 reproduction 三條全綠
+- [ ] interactive-upgrade.ps1: change self-check from line 172 to a try/finally structure
+- [ ] interactive-upgrade.sh: sync, add `trap` to guarantee execution
+- [ ] self-check.cjs: implement the two functions `appendSpool` + `retrySpool`
+- [ ] uploadReport: write spool on 401/403/network failure
+- [ ] uploadReport: at the start of each self-check run, first try to re-send the spool
+- [ ] Run #4 reproduction, all three green
 
-### 3.4 Bug #6 — Out-File 加 `-Encoding utf8`
+### 3.4 Bug #6 — Out-File add `-Encoding utf8`
 
-- [ ] grep 全 repo 所有 `Out-File`、`Set-Content`、`Add-Content` 沒指定 -Encoding 的
-- [ ] 全部加 `-Encoding utf8`
-- [ ] 跑 #6 reproduction 轉綠
+- [ ] grep the whole repo for all `Out-File`, `Set-Content`, `Add-Content` without -Encoding
+- [ ] Add `-Encoding utf8` to all
+- [ ] Run #6 reproduction and turn green
 
 ### 3.5 Bug #7-a — Scanner VBS launcher
 
-- [ ] [scripts/windows/register-scanner-task.ps1](../../../scripts/windows/register-scanner-task.ps1) Action 改 `wscript.exe run-hidden.vbs ...`
-- [ ] install.ps1 確保 `run-hidden.vbs` 被複製到 `~/.ownmind/scripts/windows/`
+- [ ] [scripts/windows/register-scanner-task.ps1](../../../scripts/windows/register-scanner-task.ps1) change Action to `wscript.exe run-hidden.vbs ...`
+- [ ] install.ps1 ensures `run-hidden.vbs` is copied to `~/.ownmind/scripts/windows/`
 
 ### 3.6 Bug #7-b — Scanner task settings
 
-- [ ] [scripts/windows/register-scanner-task.ps1:89-98](../../../scripts/windows/register-scanner-task.ps1) trigger interval 30 → 120 分鐘
-- [ ] settings 加 `-DontStartIfOnBatteries -StopIfGoingOnBatteries`
-- [ ] 跑 #7 acceptance 轉綠
+- [ ] [scripts/windows/register-scanner-task.ps1:89-98](../../../scripts/windows/register-scanner-task.ps1) trigger interval 30 → 120 minutes
+- [ ] settings add `-DontStartIfOnBatteries -StopIfGoingOnBatteries`
+- [ ] Run #7 acceptance and turn green
 
 ---
 
-## 4. 環境資訊收集擴充（IR-038 落實）
+## 4. Environment info collection extension (IR-038 implementation)
 
-### 4.1 self-check.cjs `buildReport` 擴充
+### 4.1 self-check.cjs `buildReport` extension
 
-- [ ] 新增 `collectEnv()` function，收集 spec.md §3.1 所有欄位
-- [ ] Windows 才跑 `bash_resolution`（呼叫 where.exe）
-- [ ] Windows 才跑 `scheduler_detail`（用 safeSpawn 跑 PowerShell）
-- [ ] 全部用 `sanitizePath` redact $HOME
+- [ ] Add a `collectEnv()` function, collecting all fields in spec.md §3.1
+- [ ] Run `bash_resolution` only on Windows (call where.exe)
+- [ ] Run `scheduler_detail` only on Windows (run PowerShell via safeSpawn)
+- [ ] Redact $HOME everywhere with `sanitizePath`
 
-### 4.2 Upgrade trace 收集（trigger=post_upgrade）
+### 4.2 Upgrade trace collection (trigger=post_upgrade)
 
-- [ ] interactive-upgrade.ps1 寫 step trace 到 `~/.ownmind/logs/.last-upgrade-trace.json`
-- [ ] interactive-upgrade.sh 同步
-- [ ] self-check.cjs 讀 `.last-upgrade-trace.json` 加進 `full_log.upgrade_trace`
+- [ ] interactive-upgrade.ps1 writes the step trace to `~/.ownmind/logs/.last-upgrade-trace.json`
+- [ ] interactive-upgrade.sh sync
+- [ ] self-check.cjs reads `.last-upgrade-trace.json` into `full_log.upgrade_trace`
 
-### 4.3 File lock 偵測（Windows）
+### 4.3 File lock detection (Windows)
 
-- [ ] 新增 `scripts/install-helpers/check-file-locks.cjs`，用 `Get-Process` + `handle.exe` 偵測
-- [ ] 只在 trigger=manual_after_failure 或偵測到 rollback 失敗時跑
-- [ ] handle.exe 沒裝就 skip（不擋）
+- [ ] Add `scripts/install-helpers/check-file-locks.cjs`, detecting via `Get-Process` + `handle.exe`
+- [ ] Run only when trigger=manual_after_failure or a rollback failure is detected
+- [ ] Skip if handle.exe isn't installed (don't block)
 
-### 4.4 Server 端確認
+### 4.4 Server-side confirmation
 
-- [ ] [src/routes/debug.js:30-33](../../../src/routes/debug.js) 確認 `env`、`upgrade_trace`、`file_locks` 都被 64KB validator 接受
-- [ ] 新欄位在 `install_check_logs.full_log` JSONB 內，不需要 migration（已是 JSONB）
+- [ ] [src/routes/debug.js:30-33](../../../src/routes/debug.js) confirm `env`, `upgrade_trace`, `file_locks` are all accepted by the 64KB validator
+- [ ] New fields are inside the `install_check_logs.full_log` JSONB, no migration needed (already JSONB)
 
 ---
 
-## 5. Admin dashboard view（spec.md §4）
+## 5. Admin dashboard view (spec.md §4)
 
-### 5.1 後端
+### 5.1 Backend
 
-- [ ] [src/routes/admin.js](../../../src/routes/admin.js) 新增 `GET /api/admin/install-check`
-- [ ] 支援篩選：`?user_id=...&trigger=...&has_fail=true&days=7`
+- [ ] [src/routes/admin.js](../../../src/routes/admin.js) add `GET /api/admin/install-check`
+- [ ] Support filters: `?user_id=...&trigger=...&has_fail=true&days=7`
 - [ ] super_admin role check
-- [ ] 預設取最近 7 天，limit 100
+- [ ] Default to the last 7 days, limit 100
 
-### 5.2 前端
+### 5.2 Frontend
 
-- [ ] 加 `/ownmind/admin/install-check.html`（或既有 admin SPA route）
-- [ ] 列表 + 詳細 modal
-- [ ] 失敗高亮（紅色標籤）
-- [ ] 點某筆 → 顯示完整 `full_log` JSON 結構化展開
+- [ ] Add `/ownmind/admin/install-check.html` (or an existing admin SPA route)
+- [ ] List + detail modal
+- [ ] Failure highlight (red label)
+- [ ] Click a row → show the full `full_log` JSON expanded in structured form
 
 ### 5.3 Acceptance test
 
-- [ ] `tests/admin-install-check.test.js`（新檔）：mock 兩筆紀錄（一 pass 一 fail）→ 確認列表 + 詳細 view 正確
+- [ ] `tests/admin-install-check.test.js` (new file): mock two records (one pass, one fail) → confirm list + detail view are correct
 
 ---
 
-## 6. 驗證（superpowers:verification-before-completion）
+## 6. Verification (superpowers:verification-before-completion)
 
-- [ ] 7 條 reproduction test 全綠
-- [ ] 既有 60+ tests 全綠（不允許 regression）
-- [ ] 跑 `npm run lint` 無 warning
-- [ ] **手動測**：在 Windows VM（或 Eric 機器）跑 `bootstrap.ps1` 升級到本版
-  - 預期：升級 OK、不跳視窗、self-check 上傳成功、upgrade_trace 有寫入
-- [ ] **手動測**：拔電源（電池模式）→ 等 2 小時 → scanner 不跑
-- [ ] **手動測**：故意把 API key 改錯 → self-check 上傳 401 → 看 spool 有寫
-  - 改回正確 key → 重跑 self-check → spool 被清空、server 收到舊紀錄
-
----
-
-## 7. Code review（superpowers:requesting-code-review）
-
-- [ ] 把 diff 給 codex/code-reviewer agent 跑一次
-- [ ] 重點問：
-  - VBS launcher 在企業防毒環境會不會被誤殺？
-  - safeSpawn 的 default override 邏輯是不是太寬鬆？
-  - spool 機制有沒有 race condition（兩個 self-check 同時跑）？
-  - admin install-check view 有沒有 PII 洩漏風險？
-- [ ] 收 review 後走 superpowers:receiving-code-review，**不盲改**
+- [ ] 7 reproduction tests all green
+- [ ] Existing 60+ tests all green (no regression allowed)
+- [ ] Run `npm run lint` with no warnings
+- [ ] **Manual test**: on a Windows VM (or Alice's machine) run `bootstrap.ps1` to upgrade to this version
+  - Expected: upgrade OK, no popup windows, self-check uploads successfully, upgrade_trace written
+- [ ] **Manual test**: unplug power (battery mode) → wait 2 hours → scanner doesn't run
+- [ ] **Manual test**: deliberately set the API key wrong → self-check uploads 401 → check the spool has a write
+  - Set the correct key back → re-run self-check → spool emptied, server received the old records
 
 ---
 
-## 8. 三同步（IR-008）+ 三處版號（IR-031）+ 三語 README（IR-032）
+## 7. Code review (superpowers:requesting-code-review)
 
-### 8.1 三處版號同步到 1.17.66
+- [ ] Run the diff once through the codex/code-reviewer agent
+- [ ] Key questions:
+  - Will the VBS launcher be false-killed in an enterprise antivirus environment?
+  - Is safeSpawn's default-override logic too lax?
+  - Does the spool mechanism have a race condition (two self-checks running at once)?
+  - Does the admin install-check view have a PII leak risk?
+- [ ] After receiving the review go through superpowers:receiving-code-review, **no blind changes**
+
+---
+
+## 8. Tri-sync (IR-008) + three version numbers (IR-031) + tri-lingual README (IR-032)
+
+### 8.1 Sync three version numbers to 1.17.66
 
 - [ ] `package.json` `"version": "1.17.66"`
-- [ ] `mcp/index.js` SERVER_VERSION 常數（如有）
-- [ ] git tag `v1.17.66`（commit 時打）
+- [ ] `mcp/index.js` SERVER_VERSION constant (if any)
+- [ ] git tag `v1.17.66` (tagged at commit time)
 
-### 8.2 README 三語
+### 8.2 README tri-lingual
 
-- [ ] `README.md`（繁中）— 加「v1.17.66 Windows 平台硬化」段
-- [ ] `README.en.md`（如存在）
-- [ ] `README.ja.md`（如存在）
+- [ ] `README.md` (zh-TW) — add a "v1.17.66 Windows platform hardening" section
+- [ ] `README.en.md` (if it exists)
+- [ ] `README.ja.md` (if it exists)
 
 ### 8.3 CHANGELOG.md
 
-- [ ] 新增 v1.17.66 條目，依現有格式
-- [ ] 列七個 bug 修法 + 環境資訊收集 + admin view + 三個 helper
+- [ ] Add a v1.17.66 entry, following the existing format
+- [ ] List the seven bug fixes + environment info collection + admin view + three helpers
 
 ### 8.4 FILELIST.md
 
-- [ ] 新增條目：
+- [ ] Add entries:
   - `scripts/windows/lib/find-git-bash.ps1`
   - `scripts/windows/run-hidden.vbs`
   - `scripts/install-helpers/safe-spawn.cjs`
@@ -215,45 +215,45 @@
 
 ## 9. Commit + PR
 
-- [ ] 走 IR-009：contributors 顯示 Vin
-- [ ] 走 IR-024：commit message 不加 `Co-Authored-By`
-- [ ] commit message 格式對齊既有：`feat(windows): v1.17.66 Windows 平台硬化 + IR-038 觀測管道擴充`
-- [ ] PR 描述含：七個 bug 列表 + 修法摘要 + 給 Eric/Adam 的「請重跑 bootstrap」備註
+- [ ] Follow IR-009: contributors show Vin
+- [ ] Follow IR-024: commit message has no `Co-Authored-By`
+- [ ] commit message format aligned with existing: `feat(windows): v1.17.66 Windows platform hardening + IR-038 observability pipeline extension`
+- [ ] PR description includes: the seven-bug list + fix summary + a "please re-run bootstrap" note for Alice/Bob
 
 ---
 
-## 10. 收尾
+## 10. Wrap-up
 
-- [ ] `ownmind_save` IR-038 候選鐵律寫入雲端記憶
-- [ ] 知會 Eric / Adam 升級
-- [ ] 記下：v1.17.66 部署後 24~48h 開始撈 install_check_logs，看是否有新 bug 浮出 → 規劃 v1.17.67（修 #3 + #5）
+- [ ] `ownmind_save` the IR-038 candidate iron rule into cloud memory
+- [ ] Notify Alice / Bob to upgrade
+- [ ] Note: start pulling install_check_logs 24~48h after v1.17.66 deploys, see if any new bug surfaces → plan v1.17.67 (fix #3 + #5)
 
 ---
 
-## 順序強制依賴圖
+## Enforced dependency graph
 
 ```
-[0] Eric 截圖驗證 #7
+[0] Alice screenshot verifies #7
        ↓
-[1] Helpers (1.1 ~ 1.4) ← 必須先建
+[1] Helpers (1.1 ~ 1.4) ← must be built first
        ↓
-[2] Reproduction tests (先紅)
+[2] Reproduction tests (fail first)
        ↓
-[3] 修 bug (#1, #2, #4, #6, #7-a, #7-b)（每條 commit 後跑對應 test 轉綠）
+[3] Fix bugs (#1, #2, #4, #6, #7-a, #7-b) (after each commit, run the corresponding test and turn it green)
        ↓
-[4] 環境資訊收集擴充
+[4] Environment info collection extension
        ↓
 [5] Admin view
        ↓
-[6] verification-before-completion（全跑一次）
+[6] verification-before-completion (run everything once)
        ↓
 [7] requesting-code-review
        ↓
-[8] 三同步 + 三處版號 + 三語 README
+[8] Tri-sync + three version numbers + tri-lingual README
        ↓
 [9] Commit + PR
        ↓
-[10] 收尾
+[10] Wrap-up
 ```
 
-**不可跳階段。** 每個階段沒過不能進下一個（IR-007 Persistent Bug Protocol + 軟體開發品管三步驟）。
+**No skipping stages.** A stage must pass before entering the next (IR-007 Persistent Bug Protocol + the software-development quality gates).

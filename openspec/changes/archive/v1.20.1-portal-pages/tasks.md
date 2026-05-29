@@ -1,254 +1,254 @@
-# v1.20.1 — Dashboard 個人版任務清單
+# v1.20.1 — Dashboard personal edition task list
 
-> **For agentic workers:** REQUIRED SUB-SKILL — 用 `superpowers:subagent-driven-development` 或 `superpowers:executing-plans` 逐個子任務實作。每個子任務都以「寫測試 → 跑測試確認失敗 → 寫實作 → 跑測試確認通過 → commit」TDD 流程進行。
+> **For agentic workers:** REQUIRED SUB-SKILL — use `superpowers:subagent-driven-development` or `superpowers:executing-plans` to implement each subtask one by one. Each subtask follows the TDD flow "write test → run test to confirm failure → write implementation → run test to confirm pass → commit".
 
-**Goal**：把 7 個個人版頁面（Portal 4 頁 + Preference 3 頁）+ 登入頁從 PlaceholderPage 換成真實接後端 API 的實作。
+**Goal**: convert the 7 personal-edition pages (Portal 4 + Preference 3) + the login page from PlaceholderPage into real implementations connected to the backend API.
 
-**Architecture**：
-- 前端：React 19 + Vite 8 + Tailwind v4 + react-router-dom v7 + recharts + lucide-react
-- 後端：Express 5 既有 routes（`src/routes/*.js`）
-- API client：新建 `client/src/api/` 統一封裝 fetch + Bearer header + 錯誤處理
-- 認證：localStorage 存 api_key，route guard 沒登入就導 `/login`
+**Architecture**:
+- Frontend: React 19 + Vite 8 + Tailwind v4 + react-router-dom v7 + recharts + lucide-react
+- Backend: Express 5 existing routes (`src/routes/*.js`)
+- API client: new `client/src/api/` unifying fetch + Bearer header + error handling
+- Auth: localStorage stores api_key, route guard redirects to `/login` when not logged in
 
-**Tech Stack**：node --test（後端）、lint:zh-only（前端中文殘留檢查）、preview_* 工具（手動 UI 驗證）、Playwright（步驟 4 才引入）
-
----
-
-## 高階階段
-
-- [x] **步驟 1**：拆共用元件（Sidebar / TopBar / FilterBar / Footer / Modal / RoleBadge / StatCard / Layout）— commit `6cbaf52`
-- [x] **步驟 2**：i18n LocaleContext（語系切換的全域狀態管理工具）+ 三語系檔（zh/en/ja）+ 自動翻譯腳本 — commit `6cbaf52`
-- [ ] **步驟 3**：實作 11 個子任務（3.0~3.10）— 把 PlaceholderPage 換成真實頁面 + 接 API
-- [ ] **步驟 4**：Playwright e2e 測試（登入 + 看用量 + 接手交接）
-- [ ] **步驟 5**：文件（README/FILELIST/CHANGELOG）+ 升版 v1.20.1 + 部署 + 瀏覽器實測
-
-## 開動前確認（done）
-
-- [x] v1.20.0 release 後實際運作狀況確認（deploy 成功、Dockerfile 路徑已修正）
-- [x] 對照原型 UX：以舊版 me.html 為實質規格（既有 GET /api/me/report shape 完整覆蓋用量頁需求）
-- [x] 列出本版要補的 API endpoint：缺 `PUT /api/me/profile`（其他都齊）
+**Tech Stack**: node --test (backend), lint:zh-only (frontend Chinese-residue check), preview_* tools (manual UI verification), Playwright (introduced only in step 4)
 
 ---
 
-## 步驟 3 子任務分解
+## High-level stages
 
-### 子任務 3.0：API client base（前端 fetch 封裝）
+- [x] **Step 1**: split shared components (Sidebar / TopBar / FilterBar / Footer / Modal / RoleBadge / StatCard / Layout) — commit `6cbaf52`
+- [x] **Step 2**: i18n LocaleContext (global state-management tool for language switching) + trilingual files (zh/en/ja) + auto-translation script — commit `6cbaf52`
+- [ ] **Step 3**: implement 11 subtasks (3.0~3.10) — convert PlaceholderPage into real pages + connect the API
+- [ ] **Step 4**: Playwright e2e tests (login + view usage + accept handoff)
+- [ ] **Step 5**: docs (README/FILELIST/CHANGELOG) + bump to v1.20.1 + deploy + browser verification
 
-**Files：**
-- Create：`client/src/api/client.js` — fetch wrapper（自動帶 `Authorization: Bearer <api_key>`、JSON parse、錯誤處理）
-- Create：`client/src/api/index.js` — 對外 export
-- Create：`client/src/api/README.md` — 用法說明
-- Create：`client/src/api/auth.js` — `getApiKey()` / `setApiKey()` / `clearApiKey()`（localStorage）
+## Pre-kickoff confirmation (done)
 
-**Acceptance：**
-- [ ] `apiGet('/api/me/profile')` 自動帶 Bearer header、回 `{ ok, data, error }`
-- [ ] `apiPost('/api/me/login', { email, password })` 不帶 Bearer header（白名單）
-- [ ] 401 自動清掉 localStorage 並回 `{ ok: false, error: 'unauthorized' }`（不做 redirect，交給 caller）
-- [ ] lint:zh-only 通過（程式內不能殘留中文字、註解可中文）
-
-**Why no test：** 前端沒測試框架，靠 lint + 手動瀏覽器測（3.2 起的頁面接 API 時順便驗）。
+- [x] Confirm actual operation after the v1.20.0 release (deploy succeeded, Dockerfile path fixed)
+- [x] Compare against the prototype UX: treat the old me.html as the de facto spec (the existing GET /api/me/report shape fully covers the usage page's needs)
+- [x] List the API endpoints to add this version: missing `PUT /api/me/profile` (everything else is present)
 
 ---
 
-### 子任務 3.1：補後端 `PUT /api/me/profile` endpoint
+## Step 3 subtask breakdown
 
-**Files：**
-- Modify：`src/routes/me.js` — 在 `GET /profile` 後加 `router.put('/profile', ...)`
-- Create：`tests/me-profile-put.test.js` — 整合測試（mini express app + fetch）
+### Subtask 3.0: API client base (frontend fetch wrapper)
 
-**Acceptance：**
-- [ ] `PUT /profile { name }` 更新 name，回 `{ id, name, email, role, created_at, must_change_password }`
-- [ ] name 必填、trim 後不能空字串、長度 1-100
-- [ ] **不能改 email / role**（即使 body 帶這兩個也忽略）
-- [ ] 沒帶 api_key → 401
-- [ ] DB update 失敗 → 500，記 logger.error
-- [ ] `npm test` 全綠
+**Files:**
+- Create: `client/src/api/client.js` — fetch wrapper (auto-attaches `Authorization: Bearer <api_key>`, JSON parse, error handling)
+- Create: `client/src/api/index.js` — outward export
+- Create: `client/src/api/README.md` — usage notes
+- Create: `client/src/api/auth.js` — `getApiKey()` / `setApiKey()` / `clearApiKey()` (localStorage)
 
-**TDD steps：**
-1. 寫 4 個失敗測試（路由存在、name 必填、合法更新、忽略 email/role）
-2. 跑 `node --test tests/me-profile-put.test.js` 確認 FAIL
-3. me.js 加 PUT handler
-4. 重跑確認 PASS
-5. 跑整個 `npm test` 確認沒打破其他測試
+**Acceptance:**
+- [ ] `apiGet('/api/me/profile')` auto-attaches the Bearer header, returns `{ ok, data, error }`
+- [ ] `apiPost('/api/me/login', { email, password })` does not attach the Bearer header (whitelist)
+- [ ] 401 auto-clears localStorage and returns `{ ok: false, error: 'unauthorized' }` (no redirect, leave it to the caller)
+- [ ] lint:zh-only passes (no Chinese characters allowed in code, comments may be Chinese)
+
+**Why no test:** the frontend has no test framework; rely on lint + manual browser testing (verify in passing when pages from 3.2 onward connect the API).
+
+---
+
+### Subtask 3.1: add the backend `PUT /api/me/profile` endpoint
+
+**Files:**
+- Modify: `src/routes/me.js` — add `router.put('/profile', ...)` after `GET /profile`
+- Create: `tests/me-profile-put.test.js` — integration test (mini express app + fetch)
+
+**Acceptance:**
+- [ ] `PUT /profile { name }` updates name, returns `{ id, name, email, role, created_at, must_change_password }`
+- [ ] name is required, cannot be an empty string after trim, length 1-100
+- [ ] **Cannot change email / role** (even if the body carries these two, ignore them)
+- [ ] No api_key → 401
+- [ ] DB update failure → 500, log logger.error
+- [ ] `npm test` fully green
+
+**TDD steps:**
+1. Write 4 failing tests (route exists, name required, valid update, ignore email/role)
+2. Run `node --test tests/me-profile-put.test.js` to confirm FAIL
+3. Add the PUT handler in me.js
+4. Re-run to confirm PASS
+5. Run the whole `npm test` to confirm no other tests are broken
 6. Commit
 
 ---
 
-### 子任務 3.2：Portal `/portal/usage` 用量分析頁 ✅
+### Subtask 3.2: Portal `/portal/usage` usage analysis page ✅
 
-**Files：**
-- Create：`client/src/pages/Portal/UsagePage.jsx` — 主頁
-- Create：`client/src/pages/Portal/UsageMine.jsx` — 個人區塊
-- Create：`client/src/pages/Portal/UsageTeam.jsx` — 團隊區塊（含 trend chart）
-- Create：`client/src/pages/Portal/UsageProjects.jsx` — 專案區塊
-- Modify：`client/src/App.jsx` — 把 `/portal/usage` 路由從 PlaceholderPage 換成 UsagePage
-- Modify：`client/src/i18n/zh.json`、`en.json`、`ja.json` — 補頁面字串
-- Reuse：`StatCard`、`FilterBar`（既有共用元件）
+**Files:**
+- Create: `client/src/pages/Portal/UsagePage.jsx` — main page
+- Create: `client/src/pages/Portal/UsageMine.jsx` — personal section
+- Create: `client/src/pages/Portal/UsageTeam.jsx` — team section (with trend chart)
+- Create: `client/src/pages/Portal/UsageProjects.jsx` — projects section
+- Modify: `client/src/App.jsx` — switch the `/portal/usage` route from PlaceholderPage to UsagePage
+- Modify: `client/src/i18n/zh.json`, `en.json`, `ja.json` — add page strings
+- Reuse: `StatCard`, `FilterBar` (existing shared components)
 
-**API：** `GET /api/me/report?range=14d` 或 `?start=YYYY-MM-DD&end=YYYY-MM-DD`
+**API:** `GET /api/me/report?range=14d` or `?start=YYYY-MM-DD&end=YYYY-MM-DD`
 
-**Acceptance：**
-- [x] 三個 tab：個人 / 團隊 / 專案
-- [x] 切換 range（7d/14d/30d/all）— 實作為獨立小元件「時段切換條」、不用 FilterBar（介面對不上）
-- [x] Trend chart 用 recharts（日折線 / 時段棒 / 星期棒）
-- [x] Loading state、error state、empty state 都有處理
-- [x] 瀏覽器手動 mock fetch 驗證三分頁 + Modal 流程、console.error 0 條
-
----
-
-### 子任務 3.3：Portal `/portal/project-history` 專案歷程頁
-
-**Files：**
-- Create：`client/src/pages/Portal/ProjectHistoryPage.jsx`
-- Modify：`client/src/App.jsx`、i18n 三檔
-
-**API：** `GET /api/memory?type=project`
-
-**Acceptance：**
-- [ ] List view，每個 project 顯示 title、updated_at、description（截斷）
-- [ ] 點 row 開 Modal 看完整 content
-- [ ] FilterBar 搜尋 title
+**Acceptance:**
+- [x] Three tabs: personal / team / projects
+- [x] Switch range (7d/14d/30d/all) — implemented as a standalone small component "range switcher bar", not FilterBar (the interface doesn't match)
+- [x] Trend chart uses recharts (daily line / range bar / weekday bar)
+- [x] Loading state, error state, empty state are all handled
+- [x] Browser manual mock-fetch verification of the three tabs + Modal flow, 0 console.error
 
 ---
 
-### 子任務 3.4：Portal `/portal/handoffs` 工作交接頁
+### Subtask 3.3: Portal `/portal/project-history` project history page
 
-**Files：**
-- Create：`client/src/pages/Portal/HandoffsPage.jsx`
-- Create：`client/src/pages/Portal/HandoffCard.jsx` — 單筆交接卡片
-- Modify：`client/src/App.jsx`、i18n 三檔
+**Files:**
+- Create: `client/src/pages/Portal/ProjectHistoryPage.jsx`
+- Modify: `client/src/App.jsx`, the three i18n files
 
-**API：** `GET /api/handoff/pending`（列待接手）+ `PUT /api/handoff/:id/accept`（接手）
+**API:** `GET /api/memory?type=project`
 
-**Acceptance：**
-- [ ] Pending 交接列表 + 接手按鈕
-- [ ] 接手成功後從 list 移除（不 reload 整頁）
-- [ ] 空列表顯示「沒有待處理交接」
-
----
-
-### 子任務 3.5：Portal `/portal/reports` 回報紀錄頁
-
-**Files：**
-- Create：`client/src/pages/Portal/ReportsPage.jsx`
-- Modify：`client/src/App.jsx`、i18n 三檔
-
-**API：** `GET /api/bug-reports`（個人 own filter 後端會自動套）+ `GET /api/bug-reports/:id`
-
-**Acceptance：**
-- [ ] List：時間、title、status（待修 / 已修）
-- [ ] 點 row 開 Modal 顯示完整內容
+**Acceptance:**
+- [ ] List view, each project shows title, updated_at, description (truncated)
+- [ ] Click a row to open a Modal and see the full content
+- [ ] FilterBar searches title
 
 ---
 
-### 子任務 3.6：Preference `/preference/profile` 個人資料頁
+### Subtask 3.4: Portal `/portal/handoffs` work handoff page
 
-**Files：**
-- Create：`client/src/pages/Preference/ProfilePage.jsx`
-- Modify：`client/src/App.jsx`、i18n 三檔
-- 依賴：3.1（PUT 端點）
+**Files:**
+- Create: `client/src/pages/Portal/HandoffsPage.jsx`
+- Create: `client/src/pages/Portal/HandoffCard.jsx` — single handoff card
+- Modify: `client/src/App.jsx`, the three i18n files
 
-**API：** `GET /api/me/profile`（載入）+ `PUT /api/me/profile`（存檔）
+**API:** `GET /api/handoff/pending` (list pending) + `PUT /api/handoff/:id/accept` (accept)
 
-**Acceptance：**
-- [ ] 顯示 email / role / created_at（read-only）+ name（可編輯）
-- [ ] 存檔成功 toast、失敗 toast
-- [ ] name 必填驗證在前端先擋
-
----
-
-### 子任務 3.7：Preference `/preference/security` 帳密修改頁
-
-**Files：**
-- Create：`client/src/pages/Preference/SecurityPage.jsx`
-- Modify：`client/src/App.jsx`、i18n 三檔
-
-**API：** `POST /api/me/change-password`
-
-**Acceptance：**
-- [ ] 舊密碼 / 新密碼 / 新密碼確認三欄
-- [ ] 新密碼長度 ≥ 8、新舊不同（前端先擋）
-- [ ] 後端拒絕（舊密碼錯）→ 顯示錯誤訊息
-- [ ] 成功後清空表單 + toast
+**Acceptance:**
+- [ ] Pending handoff list + accept button
+- [ ] After a successful accept, remove from the list (without reloading the whole page)
+- [ ] An empty list shows "沒有待處理交接"
 
 ---
 
-### 子任務 3.8：Preference `/preference/vault` 密鑰管理頁
+### Subtask 3.5: Portal `/portal/reports` report records page
 
-**Files：**
-- Create：`client/src/pages/Preference/VaultPage.jsx`
-- Create：`client/src/pages/Preference/SecretRow.jsx`
-- Modify：`client/src/App.jsx`、i18n 三檔
+**Files:**
+- Create: `client/src/pages/Portal/ReportsPage.jsx`
+- Modify: `client/src/App.jsx`, the three i18n files
 
-**API：** `GET /api/secret`、`POST /api/secret`、`PUT /api/secret/:key`、`DELETE /api/secret/:key`
+**API:** `GET /api/bug-reports` (the personal "own" filter is auto-applied by the backend) + `GET /api/bug-reports/:id`
 
-**Acceptance：**
-- [ ] List 列出所有 secret key（不顯示 value，要點「顯示」才 fetch + 顯示）
-- [ ] 新增 / 編輯 / 刪除（紅色按鈕 + 確認 dialog — IR-046）
-- [ ] preview_click 測試 CRUD 流程
+**Acceptance:**
+- [ ] List: time, title, status (待修 / 已修)
+- [ ] Click a row to open a Modal showing the full content
 
 ---
 
-### 子任務 3.9：登入頁 `/login`
+### Subtask 3.6: Preference `/preference/profile` personal profile page
 
-**Files：**
-- Create：`client/src/pages/LoginPage.jsx`
-- Modify：`client/src/App.jsx` — 加 `/login` 路由（不包 Layout）
+**Files:**
+- Create: `client/src/pages/Preference/ProfilePage.jsx`
+- Modify: `client/src/App.jsx`, the three i18n files
+- Depends on: 3.1 (PUT endpoint)
 
-**API：** `POST /api/me/login { email, password }` → 拿到 `{ api_key, must_change_password }` → 存 localStorage → 導 `/portal/usage`（若 must_change_password=true 則導 `/preference/security`）
+**API:** `GET /api/me/profile` (load) + `PUT /api/me/profile` (save)
 
-**Acceptance：**
-- [ ] Email + 密碼欄
-- [ ] 錯誤顯示後端回的 error 訊息
-- [ ] 成功後 redirect 邏輯正確
-- [ ] preview_fill + preview_click 跑通流程
-
----
-
-### 子任務 3.10：Route guard（沒登入導 `/login`）
-
-**Files：**
-- Create：`client/src/components/common/RequireAuth.jsx`
-- Modify：`client/src/App.jsx` — 用 RequireAuth 包住所有 `/portal/*`、`/preference/*`、`/admin/*`、`/super/*` 路由
-- Modify：`client/src/api/client.js` — 401 時觸發 event 或直接 `window.location.href='/login'`
-
-**Acceptance：**
-- [ ] 未登入訪問任何 `/portal/*` → 立即 redirect `/login`
-- [ ] 登入後 redirect 回原本想去的頁面（state 記下 from path）
-- [ ] api_key 過期（401）→ 自動 redirect `/login`
+**Acceptance:**
+- [ ] Show email / role / created_at (read-only) + name (editable)
+- [ ] Save success toast, failure toast
+- [ ] name-required validation is blocked on the frontend first
 
 ---
 
-## 子任務依賴圖
+### Subtask 3.7: Preference `/preference/security` account/password change page
+
+**Files:**
+- Create: `client/src/pages/Preference/SecurityPage.jsx`
+- Modify: `client/src/App.jsx`, the three i18n files
+
+**API:** `POST /api/me/change-password`
+
+**Acceptance:**
+- [ ] Three fields: old password / new password / new password confirmation
+- [ ] New password length ≥ 8, new differs from old (blocked on the frontend first)
+- [ ] Backend rejection (old password wrong) → show error message
+- [ ] On success, clear the form + toast
+
+---
+
+### Subtask 3.8: Preference `/preference/vault` secret management page
+
+**Files:**
+- Create: `client/src/pages/Preference/VaultPage.jsx`
+- Create: `client/src/pages/Preference/SecretRow.jsx`
+- Modify: `client/src/App.jsx`, the three i18n files
+
+**API:** `GET /api/secret`, `POST /api/secret`, `PUT /api/secret/:key`, `DELETE /api/secret/:key`
+
+**Acceptance:**
+- [ ] List all secret keys (do not show the value; only fetch + show after clicking "顯示")
+- [ ] Add / edit / delete (red button + confirmation dialog — IR-046)
+- [ ] preview_click tests the CRUD flow
+
+---
+
+### Subtask 3.9: login page `/login`
+
+**Files:**
+- Create: `client/src/pages/LoginPage.jsx`
+- Modify: `client/src/App.jsx` — add the `/login` route (not wrapped in Layout)
+
+**API:** `POST /api/me/login { email, password }` → get `{ api_key, must_change_password }` → store in localStorage → redirect to `/portal/usage` (if must_change_password=true, redirect to `/preference/security`)
+
+**Acceptance:**
+- [ ] Email + password fields
+- [ ] Errors show the error message returned by the backend
+- [ ] Redirect logic after success is correct
+- [ ] preview_fill + preview_click run the flow successfully
+
+---
+
+### Subtask 3.10: route guard (redirect to `/login` when not logged in)
+
+**Files:**
+- Create: `client/src/components/common/RequireAuth.jsx`
+- Modify: `client/src/App.jsx` — wrap all `/portal/*`, `/preference/*`, `/admin/*`, `/super/*` routes with RequireAuth
+- Modify: `client/src/api/client.js` — on 401, trigger an event or directly `window.location.href='/login'`
+
+**Acceptance:**
+- [ ] Visiting any `/portal/*` while not logged in → immediately redirect to `/login`
+- [ ] After login, redirect back to the page originally intended (state records the from path)
+- [ ] api_key expired (401) → auto-redirect to `/login`
+
+---
+
+## Subtask dependency graph
 
 ```
 3.0 (API client base)
- ├─→ 3.2 ~ 3.8 (七頁都依賴)
- ├─→ 3.9 (登入頁)
+ ├─→ 3.2 ~ 3.8 (all seven pages depend on it)
+ ├─→ 3.9 (login page)
  └─→ 3.10 (route guard)
 
-3.1 (補 PUT) ─→ 3.6 (個人資料頁)
+3.1 (add PUT) ─→ 3.6 (personal profile page)
 
-3.9 (登入頁) ─→ 3.10 (route guard) — 但 3.10 可在 3.9 完成後立即接著做
+3.9 (login page) ─→ 3.10 (route guard) — but 3.10 can follow immediately after 3.9 is done
 ```
 
-## 預計推進順序
+## Planned order
 
-1. **3.0** → 2. **3.1** → 3. **3.9** → 4. **3.10** → 5. **3.6** → 6. **3.7** → 7. **3.2**（最複雜） → 8. **3.3** → 9. **3.4** → 10. **3.5** → 11. **3.8**
+1. **3.0** → 2. **3.1** → 3. **3.9** → 4. **3.10** → 5. **3.6** → 6. **3.7** → 7. **3.2** (most complex) → 8. **3.3** → 9. **3.4** → 10. **3.5** → 11. **3.8**
 
-（前 4 個是地基，做完後其他 7 頁可以平行或快速串）
+(The first 4 are the foundation; once done the other 7 pages can be done in parallel or chained quickly)
 
 ---
 
-## 步驟 4：e2e 測試
+## Step 4: e2e tests
 
-- 引入 Playwright（待 v1.20.1 開動時決定具體 setup）
-- 至少 3 個 scenario：登入 / 看用量 / 接手交接
+- Introduce Playwright (decide the concrete setup when v1.20.1 kicks off)
+- At least 3 scenarios: login / view usage / accept handoff
 
-## 步驟 5：發版
+## Step 5: release
 
-- README / FILELIST / CHANGELOG 更新（IR-020、IR-121）
-- README 三語系同步（IR-131）
-- package.json / SERVER_VERSION / git tag 三處版號同步（IR-130）
-- 部署後 OwnMind 首頁瀏覽器實測（IR-058）
-- archive openspec change 到 openspec/changes/archive/
+- README / FILELIST / CHANGELOG updates (IR-020, IR-121)
+- README trilingual sync (IR-131)
+- package.json / SERVER_VERSION / git tag — three version numbers synced (IR-130)
+- Browser verification of the OwnMind homepage after deploy (IR-058)
+- archive the openspec change to openspec/changes/archive/

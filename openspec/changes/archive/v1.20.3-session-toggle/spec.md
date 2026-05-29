@@ -1,67 +1,67 @@
-# v1.20.3 — 規格：session 暫時關閉開關
+# v1.20.3 — Spec: session temporary off switch
 
-## Scenario 1：寫狀態檔 → lint hook 在同 session 跳過
+## Scenario 1: write state file → lint hook skips in the same session
 
 **GIVEN** session_id = "S1"
-**AND** `ownmind_session_off` 被呼叫（帶 session_id="S1"）
-**WHEN** Stop hook 跑、payload.session_id = "S1"
-**THEN** hook 跳過 lint 檢查
-**AND** hook exit code = 0
-**AND** 狀態檔 `tick_count` 從 0 增加到 1
+**AND** `ownmind_session_off` is called (with session_id="S1")
+**WHEN** the Stop hook runs, payload.session_id = "S1"
+**THEN** the hook skips the lint check
+**AND** the hook exit code = 0
+**AND** the state file `tick_count` increments from 0 to 1
 
-## Scenario 2：新 session 自動失效
+## Scenario 2: new session auto-invalidates
 
-**GIVEN** 狀態檔含 session_id="S1"
-**WHEN** Stop hook 跑、payload.session_id = "S2"（不同 session）
-**THEN** hook 視為已失效、正常跑 lint
-**AND** 狀態檔被清除（白話：刪掉）
+**GIVEN** the state file contains session_id="S1"
+**WHEN** the Stop hook runs, payload.session_id = "S2" (different session)
+**THEN** the hook treats it as invalidated and runs lint normally
+**AND** the state file is cleared (plain English: deleted)
 
-## Scenario 3：每 10 輪提醒
+## Scenario 3: remind every 10 turns
 
-**GIVEN** 狀態檔的 tick_count = 9
-**WHEN** Stop hook 跑、同 session
-**THEN** tick_count 增加到 10
-**AND** 嘗試用 `writeToTty` 寫提醒「⚠️ OwnMind 目前關閉中、請記得 /ownmind-on 重開（已關閉 10 輪）」
+**GIVEN** the state file's tick_count = 9
+**WHEN** the Stop hook runs, same session
+**THEN** tick_count increments to 10
+**AND** it attempts to use `writeToTty` to write the reminder "⚠️ OwnMind 目前關閉中、請記得 /ownmind-on 重開（已關閉 10 輪）"
 
-## Scenario 4：未達 10 輪不提醒
+## Scenario 4: do not remind before reaching 10 turns
 
-**GIVEN** 狀態檔的 tick_count = 5
-**WHEN** Stop hook 跑、同 session
-**THEN** tick_count 增加到 6
-**AND** 不寫提醒
+**GIVEN** the state file's tick_count = 5
+**WHEN** the Stop hook runs, same session
+**THEN** tick_count increments to 6
+**AND** no reminder is written
 
-## Scenario 5：pre-commit hook 跳過
+## Scenario 5: pre-commit hook skips
 
-**GIVEN** 狀態檔存在、off_at 是 1 小時前
-**WHEN** pre-commit hook 跑
-**THEN** 跳過所有鐵律檢查
-**AND** 印「⚠️ OwnMind 目前關閉中、commit 放行」
-**AND** exit code = 0（放行 commit）
+**GIVEN** the state file exists, off_at is 1 hour ago
+**WHEN** the pre-commit hook runs
+**THEN** all iron-rule checks are skipped
+**AND** it prints "⚠️ OwnMind 目前關閉中、commit 放行"
+**AND** exit code = 0 (commit allowed)
 
-## Scenario 6：狀態檔過期（24 小時前）
+## Scenario 6: state file expired (24 hours ago)
 
-**GIVEN** 狀態檔的 off_at 是 25 小時前
-**WHEN** pre-commit hook 跑
-**THEN** 視為失效、正常跑檢查
-**AND** 狀態檔被清除
+**GIVEN** the state file's off_at is 25 hours ago
+**WHEN** the pre-commit hook runs
+**THEN** it is treated as invalidated and checks run normally
+**AND** the state file is cleared
 
-## Scenario 7：ownmind_session_on 清除狀態
+## Scenario 7: ownmind_session_on clears state
 
-**GIVEN** 狀態檔存在
-**WHEN** `ownmind_session_on` 被呼叫
-**THEN** 狀態檔被刪除
-**AND** 回 ack 含「OwnMind 已重新開啟」
+**GIVEN** the state file exists
+**WHEN** `ownmind_session_on` is called
+**THEN** the state file is deleted
+**AND** the ack returned contains "OwnMind 已重新開啟"
 
-## Scenario 8：ownmind_session_off 已經是關閉狀態
+## Scenario 8: ownmind_session_off when already off
 
-**GIVEN** 狀態檔已存在、session_id="S1"
-**WHEN** `ownmind_session_off` 又被呼叫（同 session_id="S1"）
-**THEN** 狀態檔不變（tick_count 保留）
-**AND** 回 ack 含「OwnMind 已經是關閉狀態」
+**GIVEN** the state file already exists, session_id="S1"
+**WHEN** `ownmind_session_off` is called again (same session_id="S1")
+**THEN** the state file is unchanged (tick_count preserved)
+**AND** the ack returned contains "OwnMind 已經是關閉狀態"
 
-## 非功能性需求
+## Non-functional requirements
 
-- **零外部依賴**：`session-off-state.js` 純函式、不引入新套件
-- **檔案損毀防呆**：狀態檔 parse 失敗 → 視為失效、不 crash
-- **目錄不存在自動建立**：`~/.ownmind/state/` 不存在時自動建（mkdir -p）
-- **失敗安全**：所有 IO 失敗一律「fail open」（白話：寫不進去就當沒關閉、正常跑 lint）
+- **Zero external dependencies**: `session-off-state.js` is pure functions, no new packages introduced
+- **Corrupted-file safeguard**: if state file parse fails → treat as invalidated, do not crash
+- **Auto-create missing directory**: if `~/.ownmind/state/` does not exist, create it automatically (mkdir -p)
+- **Fail safe**: all IO failures "fail open" (plain English: if it can't be written, treat as not-off and run lint normally)

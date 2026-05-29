@@ -1,15 +1,15 @@
-# v1.20.4 — 舊版退役任務清單
+# v1.20.4 — Legacy retirement task list
 
-> stub、v1.20.3 release + 2 週觀察期後展開。
+> stub, expands after the v1.20.3 release + a 2-week observation period.
 
-## 退役前必過
-- [ ] 新版 `/dashboard/` 觀察期通過
-- [ ] Vin 拍板「可退役」
+## Pre-retirement must-pass
+- [ ] The new `/dashboard/` passes the observation period
+- [ ] Vin gives the go-ahead "ready to retire"
 
-## 退役動作
-1. `src/app.js` 301 轉址
-2. 舊靜態檔搬到 legacy- 前綴
-3. 新版頁尾「看舊版」連結拿掉
-4. CHANGELOG / FILELIST 同步
-5. 升版 v1.20.4、發版、實測
-6. 關 GitHub issue #44
+## Retirement actions
+1. `src/app.js` 301 redirect
+2. Move old static files to the legacy- prefix
+3. Remove the new footer's "view legacy" link
+4. CHANGELOG / FILELIST sync
+5. Bump to v1.20.4, release, test
+6. Close GitHub issue #44

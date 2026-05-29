@@ -1,23 +1,23 @@
-# v1.20.4 — 舊版 /admin/ 與 /me/ 退役（藍綠切換）
+# v1.20.4 — Retire the old /admin/ and /me/ (blue-green switch)
 
-- **Status**: stub（待 v1.20.3 release + 2 週觀察期後展開）
-- **依賴**: v1.20.0~v1.20.3 全部 release + Vin 拍板「可退役」
+- **Status**: stub (pending expansion after the v1.20.3 release + a 2-week observation period)
+- **Depends on**: all of v1.20.0~v1.20.3 released + Vin's go-ahead "ready to retire"
 
-## 一句話總結
+## One-line summary
 
-把藍綠並存了一段時間的舊 `/admin/` 跟 `/me/` 路由 301 轉址到新 `/dashboard/`、舊靜態檔搬到 legacy 資料夾保留歷史快照、新版頁尾的「⚠️ 看舊版」連結拿掉。
+301-redirect the old `/admin/` and `/me/` routes (which ran blue-green alongside for a while) to the new `/dashboard/`, move the old static files to a legacy folder to keep a historical snapshot, and remove the new footer's "⚠️ 看舊版" link.
 
-## 退役前必過 checklist
-- [ ] 新版 `/dashboard/` 上線運作 2 週、零重大 bug
-- [ ] Vin（Super Admin）每日用 `/dashboard/` 半天無感
-- [ ] 舊版功能在新版都對得上（逐項對照表打勾、含三角色 + 三語系 + 響應式）
-- [ ] 跨 3 種瀏覽器 + 行動裝置實測
-- [ ] Vin 明確拍板「可退役」
+## Pre-retirement must-pass checklist
+- [ ] The new `/dashboard/` runs live for 2 weeks, zero major bugs
+- [ ] Vin (Super Admin) uses `/dashboard/` daily for half a day with no friction
+- [ ] All old features are matched in the new version (item-by-item comparison table checked off, including all three roles + tri-language + responsive)
+- [ ] Tested across 3 browsers + mobile device
+- [ ] Vin explicitly gives the go-ahead "ready to retire"
 
-## 退役動作
-- [ ] `src/app.js` 改：`/admin/` 跟 `/me/` 改為 `res.redirect(301, '/dashboard/')`
-- [ ] `src/public/index.html` → `src/public/legacy-admin-v1.html`（檔頭加註解）
-- [ ] `src/public/me/` → `src/public/legacy-me-v1/`（同上）
-- [ ] 新版頁尾「⚠️ 看舊版」連結拿掉
-- [ ] CHANGELOG / FILELIST 同步
-- [ ] 關 GitHub issue #44（整個 v1.20 系列收尾）
+## Retirement actions
+- [ ] Change `src/app.js`: `/admin/` and `/me/` become `res.redirect(301, '/dashboard/')`
+- [ ] `src/public/index.html` → `src/public/legacy-admin-v1.html` (add a header comment)
+- [ ] `src/public/me/` → `src/public/legacy-me-v1/` (same as above)
+- [ ] Remove the new footer's "⚠️ 看舊版" link
+- [ ] CHANGELOG / FILELIST sync
+- [ ] Close GitHub issue #44 (wrap up the whole v1.20 series)

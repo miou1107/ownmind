@@ -1,91 +1,91 @@
-# v1.19.3 — Reply-lint Progressive Block 任務清單
+# v1.19.3 — Reply-lint Progressive Block task list
 
-> 依 IR-003（TDD）：每個實作 task 前面先寫測試
-> 依 IR-012（品管三步驟）：驗證 → 請評審 → 處理回饋
-> 依 IR-008（commit 同步更新 README/FILELIST/CHANGELOG）
-
----
-
-## 階段 A：language-lint.js 擴白名單 + threshold + proper noun + 視窗
-
-- [ ] A1. 寫測試（場景 9 / 10 / 11 / 12 / 13）
-  - Top 30 違規詞全部進白名單後不再觸發
-  - Proper noun pattern 跳過
-  - 含 code block → threshold 25%
-  - 含 code review → 完全豁免
-  - IR-036 視窗 80 字
-- [ ] A2. 改 `shared/language-lint.js`
-  - `TECH_WHITELIST` 從 80 詞擴到 200+ 詞（分 5 類加註）
-  - `checkMixedLanguage(content, options)`：偵測 code block / code review、動態 threshold
-  - `looksLikeProperNoun(word)` 純函式
-  - `checkJargonExplanation`：窗口 50→80
+> Per IR-003 (TDD): write the test before each implementation task
+> Per IR-012 (quality gate three steps): verify → request review → handle feedback
+> Per IR-008 (commit syncs README/FILELIST/CHANGELOG)
 
 ---
 
-## 階段 B：Session counter 純函式
+## Phase A: language-lint.js expand whitelist + threshold + proper noun + window
 
-- [ ] B1. 寫測試 `tests/session-counter.test.js`（場景 7 / 8 / 14）
-  - 檔不存在 → 視為 0
-  - 檔毀損 → 視為 0、覆寫
-  - 30 天前自掃
+- [ ] A1. Write tests (scenarios 9 / 10 / 11 / 12 / 13)
+  - The Top 30 violation words no longer trigger once all in the whitelist
+  - Proper noun pattern is skipped
+  - With code block → threshold 25%
+  - With code review → fully exempt
+  - IR-036 window 80 chars
+- [ ] A2. Change `shared/language-lint.js`
+  - `TECH_WHITELIST` expanded from 80 words to 200+ (annotated in 5 categories)
+  - `checkMixedLanguage(content, options)`: detect code block / code review, dynamic threshold
+  - `looksLikeProperNoun(word)` pure function
+  - `checkJargonExplanation`: window 50→80
+
+---
+
+## Phase B: Session counter pure functions
+
+- [ ] B1. Write tests `tests/session-counter.test.js` (scenarios 7 / 8 / 14)
+  - File doesn't exist → treat as 0
+  - File corrupted → treat as 0, overwrite
+  - Auto-clean entries older than 30 days
   - increment / read / write
-- [ ] B2. 新檔 `hooks/lib/session-counter.js`
+- [ ] B2. New file `hooks/lib/session-counter.js`
   - `readCounter(sessionId)`
   - `incrementCounter(sessionId)`
   - `cleanupStale(maxAgeMs)`
 
 ---
 
-## 階段 C：Hook 整合 MODE + 漸進 block
+## Phase C: Hook integration MODE + progressive block
 
-- [ ] C1. 寫測試 `tests/reply-lint-hook.test.js` 補新 case（場景 1 ~ 6 + 15）
-  - 改既有 14+ status===0 斷言：依 MODE 分流
-  - MODE=warn 行為不變
-  - MODE=block 第 1/2/3 次不 block、第 4 次 block JSON
-  - MODE=block stop_hook_active=true 不增計數
-  - MODE=disable 完全跳過
-  - MODE 未知值 fallback warn
-  - reason 為指令型、含具體詞、含改寫範例
-- [ ] C2. 改 `hooks/ownmind-reply-lint.js`
-  - 新增 `OWNMIND_REPLY_LINT_MODE` env 讀取
-  - 違規時呼叫 `incrementCounter` 拿新計數
-  - 計數 < 4：原本 banner + spool + POST + exit 0
-  - 計數 ≥ 4 && MODE=block：寫 stdout block JSON + banner（含 ⚠️ 標記）+ spool + POST + exit 0
-  - 新增 `formatBlockReason(violations)` 指令型格式
-  - Banner 多一行「目前 session 違規 N 次、累積 4 次會 block」
-
----
-
-## 階段 D：端對端驗證
-
-- [ ] D1. 本機 install 新版 hook、開個 Claude session、手動回個明顯違規的話、看 banner 行為
-- [ ] D2. 切 `OWNMIND_REPLY_LINT_MODE=block`、連續違規 4 次、實測 block JSON 觸發 + Claude 收到 reason 後重寫
-- [ ] D3. 確認 stop_hook_active 防呆生效（不會跑 8 次連續 block 才停）
-- [ ] D4. 跑 npm test 全測試、確認既有 case + 新 case 全綠
+- [ ] C1. Write tests `tests/reply-lint-hook.test.js`, add new cases (scenarios 1 ~ 6 + 15)
+  - Change the existing 14+ status===0 assertions: branch by MODE
+  - MODE=warn behavior unchanged
+  - MODE=block 1st/2nd/3rd time don't block, 4th block JSON
+  - MODE=block stop_hook_active=true doesn't increment count
+  - MODE=disable fully skips
+  - MODE unknown value falls back to warn
+  - reason is instruction-style, contains specific words, contains rewrite example
+- [ ] C2. Change `hooks/ownmind-reply-lint.js`
+  - Add reading the `OWNMIND_REPLY_LINT_MODE` env
+  - On violation call `incrementCounter` to get the new count
+  - Count < 4: original banner + spool + POST + exit 0
+  - Count ≥ 4 && MODE=block: write stdout block JSON + banner (with ⚠️ marker) + spool + POST + exit 0
+  - Add `formatBlockReason(violations)` instruction-style format
+  - Banner gets one more line "current session N violations, accumulating 4 will block"
 
 ---
 
-## 階段 E：文件同步（IR-008 + IR-026 + IR-032）
+## Phase D: end-to-end verification
 
-- [ ] E1. `README.md` Reply Lint 段：新增 MODE 說明 + 漸進式 block 流程
-- [ ] E2. `docs/README.zh-TW.md`、`docs/README.ja.md` 同步
-- [ ] E3. `CHANGELOG.md` 加 v1.19.3 條目
-- [ ] E4. `FILELIST.md` 加 session-counter.js + 新測試檔
+- [ ] D1. Locally install the new hook, open a Claude session, manually reply with an obvious violation, observe the banner behavior
+- [ ] D2. Switch `OWNMIND_REPLY_LINT_MODE=block`, violate 4 times in a row, live-test that block JSON triggers + Claude rewrites after receiving the reason
+- [ ] D3. Confirm the stop_hook_active safeguard works (doesn't run 8 consecutive blocks before stopping)
+- [ ] D4. Run npm test, the full suite, confirm existing cases + new cases all green
 
 ---
 
-## 階段 F：版號 + commit + tag + push（client-side、不用 deploy server）
+## Phase E: docs sync (IR-008 + IR-026 + IR-032)
 
-- [ ] F1. `package.json` v1.19.3（SERVER_VERSION 動態讀、不用改）
-- [ ] F2. 品管三步驟（IR-012）：verification → request review → handle review
-- [ ] F3. Commit（IR-009 Vin contributor + IR-024 no Co-Authored-By）
+- [ ] E1. `README.md` Reply Lint section: add MODE explanation + progressive block flow
+- [ ] E2. `docs/README.zh-TW.md`, `docs/README.ja.md` synced
+- [ ] E3. `CHANGELOG.md` add v1.19.3 entry
+- [ ] E4. `FILELIST.md` add session-counter.js + new test file
+
+---
+
+## Phase F: version number + commit + tag + push (client-side, no server deploy)
+
+- [ ] F1. `package.json` v1.19.3 (SERVER_VERSION read dynamically, no change needed)
+- [ ] F2. Quality gate three steps (IR-012): verification → request review → handle review
+- [ ] F3. Commit (IR-009 Vin contributor + IR-024 no Co-Authored-By)
 - [ ] F4. Tag v1.19.3 + push origin main + tag
 
 ---
 
-## 階段 G：跑 1 週 audit + 決定是否翻 block 預設
+## Phase G: run 1 week of audit + decide whether to flip block to default
 
-- [ ] G1. 本機 update OwnMind 到 v1.19.3、保持 `MODE=warn` 預設（不改 env）
-- [ ] G2. 跑 1 週、紀錄違規數變化（擴白名單後應大幅下降）
-- [ ] G3. 評估是否：a) 翻 block 預設、b) 再縮白名單、c) 維持現狀
-- [ ] G4. （後續版本）archive openspec change 資料夾
+- [ ] G1. Locally update OwnMind to v1.19.3, keep `MODE=warn` default (don't change env)
+- [ ] G2. Run for 1 week, record the change in violation counts (should drop sharply after the whitelist expansion)
+- [ ] G3. Evaluate whether to: a) flip block to default, b) shrink the whitelist further, c) keep as-is
+- [ ] G4. (later version) archive the openspec change folder

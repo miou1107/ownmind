@@ -1,15 +1,15 @@
-# v1.19.2 — Auto Migration 規格（GIVEN / WHEN / THEN）
+# v1.19.2 — Auto Migration spec (GIVEN / WHEN / THEN)
 
-> BDD 三段式（前提 / 動作 / 預期結果）。Runner 行為、表結構、整合點的外部可觀察行為。
+> BDD three-part form (precondition / action / expected result). Runner behavior, table structure, externally observable behavior of the integration point.
 
 ---
 
-## 場景 1：首次跑 runner、schema_migrations 表還不存在 → 自動建表
+## Scenario 1: first runner run, schema_migrations table doesn't exist yet → auto-create table
 
 **GIVEN**
 
-- 全新 OwnMind 部署（fresh install）、`schema_migrations` 表不存在
-- `db/` 目錄有 `001_init.sql` ~ `015_schema_migrations_table.sql` 共 15 個 SQL
+- A brand-new OwnMind deployment (fresh install), the `schema_migrations` table doesn't exist
+- The `db/` directory has `001_init.sql` ~ `015_schema_migrations_table.sql`, 15 SQL files total
 
 **WHEN**
 
@@ -19,19 +19,19 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- `schema_migrations` 表建立成功（由 `015_schema_migrations_table.sql` 建）
-- 15 個 SQL 全部跑過、`schema_migrations` 有 15 筆記錄
+- The `schema_migrations` table is created successfully (created by `015_schema_migrations_table.sql`)
+- All 15 SQL files have run, `schema_migrations` has 15 records
 - exit code = 0
-- stdout 含每條 migration 的「→ applying NNN_xxx.sql」訊息
+- stdout contains the "→ applying NNN_xxx.sql" message for each migration
 
 ---
 
-## 場景 2：runner 二次跑、所有 migration 都已套用 → 全部 skip
+## Scenario 2: runner runs a second time, all migrations already applied → all skipped
 
 **GIVEN**
 
-- `schema_migrations` 表已存在、含 15 筆紀錄
-- `db/*.sql` 沒新增
+- The `schema_migrations` table already exists, containing 15 records
+- No additions to `db/*.sql`
 
 **WHEN**
 
@@ -41,20 +41,20 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- 不跑任何 `psql -f`
-- stdout 含「✓ skip NNN_xxx.sql（already applied）」x15
-- stdout 結尾「✅ 沒有新 migration、DB schema 是最新」
+- Doesn't run any `psql -f`
+- stdout contains "✓ skip NNN_xxx.sql (already applied)" x15
+- stdout ends with "✅ no new migration, DB schema is up to date"
 - exit code = 0
-- `schema_migrations` 行數仍為 15
+- `schema_migrations` row count is still 15
 
 ---
 
-## 場景 3：新增一個 migration → 只跑新的那一個
+## Scenario 3: add one migration → run only that new one
 
 **GIVEN**
 
-- `schema_migrations` 表含 015 筆紀錄
-- 開發者新增 `db/016_add_user_avatar.sql`
+- The `schema_migrations` table contains 015 records
+- The developer adds `db/016_add_user_avatar.sql`
 
 **WHEN**
 
@@ -64,21 +64,21 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- 1 ~ 15 號全部 skip（已有紀錄）
-- 16 號跑 `psql -f db/016_add_user_avatar.sql`
-- 跑完 `INSERT INTO schema_migrations(filename) VALUES('016_add_user_avatar.sql')`
-- `schema_migrations` 行數 = 16
+- 1 ~ 15 all skipped (records already present)
+- 16 runs `psql -f db/016_add_user_avatar.sql`
+- After running, `INSERT INTO schema_migrations(filename) VALUES('016_add_user_avatar.sql')`
+- `schema_migrations` row count = 16
 - exit code = 0
 
 ---
 
-## 場景 4：某條 migration SQL 失敗 → runner 失敗即停、不寫紀錄
+## Scenario 4: some migration SQL fails → runner stops on failure, doesn't write a record
 
 **GIVEN**
 
-- `schema_migrations` 含 015 筆紀錄
-- 開發者新增 `db/016_broken.sql`（內含語法錯誤）
-- 開發者新增 `db/017_should_not_run.sql`
+- `schema_migrations` contains 015 records
+- The developer adds `db/016_broken.sql` (containing a syntax error)
+- The developer adds `db/017_should_not_run.sql`
 
 **WHEN**
 
@@ -88,20 +88,20 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- 016 嘗試 `psql -f`、psql 回 exit code != 0
-- runner 立刻 exit、不跑 017
-- `schema_migrations` 不寫 016 那筆（也不寫 017）
+- 016 attempts `psql -f`, psql returns exit code != 0
+- The runner exits immediately, doesn't run 017
+- `schema_migrations` doesn't write the 016 row (nor 017)
 - exit code = 1
-- stderr 含「❌ migration 016_broken.sql 失敗、後續停止」
+- stderr contains "❌ migration 016_broken.sql failed, stopping"
 
 ---
 
-## 場景 5：Backfill 後再跑 runner → 既有 SQL 不重跑
+## Scenario 5: after backfill, run the runner again → existing SQL not re-run
 
 **GIVEN**
 
-- Prod 已運行多時、`memories` 等表已存在、但 `schema_migrations` 不存在
-- 執行 backfill SQL（INSERT 14 筆 001 ~ 014）+ 跑 `015_schema_migrations_table.sql`
+- Prod has been running for a while, tables like `memories` already exist, but `schema_migrations` doesn't
+- Run the backfill SQL (INSERT 14 records 001 ~ 014) + run `015_schema_migrations_table.sql`
 
 **WHEN**
 
@@ -111,19 +111,19 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- 001 ~ 015 全部 skip（已有紀錄、含剛 backfill 的 14 筆 + 015 表自身建立時也 INSERT 自己）
-- 沒有新 migration → 「✅ 沒有新 migration、DB schema 是最新」
+- 001 ~ 015 all skipped (records present, including the 14 just backfilled + 015 also INSERTs itself when the table is created)
+- No new migration → "✅ no new migration, DB schema is up to date"
 - exit code = 0
-- 既有資料完全沒動
+- Existing data is completely untouched
 
 ---
 
-## 場景 6：runner 自動建 schema_migrations 表也算一次 migration
+## Scenario 6: the runner auto-creating the schema_migrations table also counts as a migration
 
 **GIVEN**
 
-- 全新 DB、`schema_migrations` 不存在
-- `db/015_schema_migrations_table.sql` 存在
+- Brand-new DB, `schema_migrations` doesn't exist
+- `db/015_schema_migrations_table.sql` exists
 
 **WHEN**
 
@@ -133,60 +133,60 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- 015 跑時建表 + 自己 INSERT 015 那筆紀錄（self-recording）
-- 015 跑完後、後續 016+ 才能用 `INSERT INTO schema_migrations`
-- 順序確保：runner 先跑 001 ~ 014（用 try-catch、表還沒建時 INSERT 會失敗、所以 001 ~ 014 跑完都不寫表）→ 跑 015 建表 + 補寫 001 ~ 015 共 15 筆
+- When 015 runs it creates the table + INSERTs its own 015 record (self-recording)
+- After 015 has run, 016+ can use `INSERT INTO schema_migrations`
+- Order guaranteed: the runner first runs 001 ~ 014 (with try-catch; the INSERT fails when the table isn't yet created, so 001 ~ 014 don't write the table after running) → runs 015 to create the table + back-fill 001 ~ 015, 15 records total
 
-**設計簡化**：避免 chicken-and-egg、改為 runner 一開始就 `psql -f 015_schema_migrations_table.sql`（用 `IF NOT EXISTS`、safe）、然後才開始正常迴圈。
+**Design simplification**: to avoid the chicken-and-egg problem, the runner instead `psql -f 015_schema_migrations_table.sql` (with `IF NOT EXISTS`, safe) right at the start, then begins the normal loop.
 
 ---
 
-## 場景 7：interactive-upgrade 整合 — migration 失敗 → 不重啟 API
+## Scenario 7: interactive-upgrade integration — migration fails → don't restart API
 
 **GIVEN**
 
-- Prod 跑 `interactive-upgrade.sh`
-- 拉到含 broken migration 的版本
+- Prod runs `interactive-upgrade.sh`
+- Pulls a version containing a broken migration
 
 **WHEN**
 
-upgrade 走到 `run-migrations.sh` 步驟
+upgrade reaches the `run-migrations.sh` step
 
 **THEN**
 
-- runner 失敗、exit 1
-- interactive-upgrade.sh 偵測 runner 失敗、輸出 `ERROR:migration:某條 migration 失敗`
-- **不執行** `docker restart ownmind-api`
-- 留下舊版本 api 繼續服務（避免新 code 配舊 schema）
-- 寫日誌到 `logs/upgrade-<timestamp>.log` 含 migration 失敗 stack
+- The runner fails, exit 1
+- interactive-upgrade.sh detects the runner failure, outputs `ERROR:migration:some migration failed`
+- **Does not run** `docker restart ownmind-api`
+- Leaves the old version api still serving (avoids new code with old schema)
+- Writes a log to `logs/upgrade-<timestamp>.log` containing the migration failure stack
 
 ---
 
-## 場景 8：interactive-upgrade 整合 — migration 成功 → 正常重啟
+## Scenario 8: interactive-upgrade integration — migration succeeds → normal restart
 
 **GIVEN**
 
-- Prod 跑 `interactive-upgrade.sh`
-- 拉到含新 migration 的版本
+- Prod runs `interactive-upgrade.sh`
+- Pulls a version containing a new migration
 
 **WHEN**
 
-upgrade 走到 `run-migrations.sh` 步驟
+upgrade reaches the `run-migrations.sh` step
 
 **THEN**
 
-- runner 跑完、exit 0
-- 輸出 `OK:migration:N 個 migration 套用完成`（N 為實際套用數）
-- 繼續執行 `docker restart ownmind-api`
-- upgrade 流程正常完成
+- The runner finishes, exit 0
+- Outputs `OK:migration:N migrations applied` (N is the actual number applied)
+- Continues to `docker restart ownmind-api`
+- The upgrade flow completes normally
 
 ---
 
-## 場景 9：non-migration SQL（如 backfill-iron-rule-codes.sql）→ runner 跳過
+## Scenario 9: non-migration SQL (such as backfill-iron-rule-codes.sql) → runner skips it
 
 **GIVEN**
 
-- `db/` 目錄含 `backfill-iron-rule-codes.sql`（沒有 NNN_ 前綴、是工具腳本）
+- The `db/` directory contains `backfill-iron-rule-codes.sql` (no NNN_ prefix, it's a tool script)
 
 **WHEN**
 
@@ -196,18 +196,18 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- runner 只掃符合 `db/[0-9][0-9][0-9]_*.sql` glob 的檔案
-- `backfill-iron-rule-codes.sql` 被忽略、不跑、不寫 schema_migrations
+- The runner only scans files matching the `db/[0-9][0-9][0-9]_*.sql` glob
+- `backfill-iron-rule-codes.sql` is ignored, not run, not written to schema_migrations
 - exit code = 0
 
 ---
 
-## 場景 10：runner 使用 DB 連線參數從環境變數讀
+## Scenario 10: the runner reads DB connection parameters from environment variables
 
 **GIVEN**
 
-- 環境變數 `DB_HOST=ownmind-db`, `DB_USER=ownmind`, `DB_NAME=ownmind`, `DB_PORT=5432`
-- 或在 docker 環境下、runner 用 `docker exec ownmind-db psql -U ownmind -d ownmind`
+- Environment variables `DB_HOST=ownmind-db`, `DB_USER=ownmind`, `DB_NAME=ownmind`, `DB_PORT=5432`
+- Or in a docker environment, the runner uses `docker exec ownmind-db psql -U ownmind -d ownmind`
 
 **WHEN**
 
@@ -217,6 +217,6 @@ bash scripts/run-migrations.sh
 
 **THEN**
 
-- runner 優先用 `docker exec ownmind-db`（檢測 container 存在）
-- 否則 fallback 用 `psql` 直連（讀 `DB_HOST` 等環境變數）
-- 兩種模式都能跑、便於本機與 prod 統一
+- The runner prefers `docker exec ownmind-db` (detecting the container exists)
+- Otherwise falls back to `psql` direct connection (reading `DB_HOST` and other environment variables)
+- Both modes work, unifying local and prod

@@ -1,53 +1,53 @@
-# v1.20.4 — Lint 規則中性化（產品碼去個人鐵律編號）
+# v1.20.4 — Lint rule neutralization (remove personal iron-rule numbers from product code)
 
-## 一句話總結
+## One-line summary
 
-OwnMind 產品程式碼裡寫死了 Vin 的個人鐵律編號（`IR-036` / `IR-037`）、會洩漏給其他 user 看到（白話：別人用 OwnMind、不該看到 Vin 私有的編號）。改用中性事件常數、規則跟產品碼解耦。違反 Vin 的 IR-050（個人鐵律編號不能寫進產品程式碼跟公開文件）。
+The OwnMind product code hardcodes Vin's personal iron-rule numbers (`IR-036` / `IR-037`), which leak to other users (plain English: when others use OwnMind, they should not see Vin's private numbers). Switch to neutral event constants and decouple the rules from the product code. This violates Vin's IR-050 (personal iron-rule numbers must not be written into product code or public docs).
 
-## 背景
+## Background
 
-2026-05-26 Eric（另一個 AI session）看到自己對話裡出現「上一版違反 IR-036」字眼、Vin 抓到。grep 後發現：
+On 2026-05-26, Alice (another AI session) saw the phrase "previous response violated IR-036" appear in his own conversation, which Vin caught. After grepping, the findings were:
 
-- `shared/language-lint.js`：`rule: 'IR-037'` / `rule: 'IR-036'` 寫死在違反清單
-- `hooks/ownmind-reply-lint.js`：`if (v.rule === 'IR-037')` / `if (v.rule === 'IR-036')` 訊息渲染分支
-- `hooks/lib/lint-event-logger.js`：事件紀錄欄位
-- `shared/bug-fingerprints.js:106`：v1.20.2 follow-up #3 我新加的指紋描述也寫了 IR-036（我的責任）
+- `shared/language-lint.js`: `rule: 'IR-037'` / `rule: 'IR-036'` hardcoded in the violation list
+- `hooks/ownmind-reply-lint.js`: `if (v.rule === 'IR-037')` / `if (v.rule === 'IR-036')` message rendering branches
+- `hooks/lib/lint-event-logger.js`: event record field
+- `shared/bug-fingerprints.js:106`: the fingerprint description I newly added in v1.20.2 follow-up #3 also wrote IR-036 (my responsibility)
 
-整個鏈路：lint 鉤子吐標準錯誤訊息含「IR-036」→ AI 收到指示寫重寫標註時複製「IR-036」→ 其他 user 看到莫名其妙的編號。
+The whole chain: the lint hook emits a standard error message containing "IR-036" → the AI receives the instruction and copies "IR-036" when writing the rewrite annotation → other users see a baffling number.
 
-v1.19.10 已修過一輪（清掉「IR-041」字串）、但 IR-036 / IR-037 沒清乾淨。本提案徹底修。
+v1.19.10 fixed one round (cleaned up the "IR-041" string), but IR-036 / IR-037 were not fully cleaned. This proposal fixes it thoroughly.
 
-## 範圍內
+## In scope
 
-- 新 `shared/lint-event-types.js` 定義兩個中性事件常數
-- 改 `shared/language-lint.js` 違反清單 rule 欄位用常數
-- 改 `hooks/ownmind-reply-lint.js` 訊息渲染中性化（去 IR-XXX 編號）
-- 改 `hooks/lib/build-compliance-events.js` 用規則 metadata 對應事件 → 個人鐵律編號
-- 改 `hooks/lib/lint-event-logger.js` 用事件常數
-- 清 `shared/bug-fingerprints.js:106` 描述
-- 改測試對應新常數
-- Vin 個人鐵律 IR-036 / IR-037 metadata 加 `triggered_by_event` 欄位（給合規對應用、不影響其他 user）
+- New `shared/lint-event-types.js` defining two neutral event constants
+- Change the rule field in the `shared/language-lint.js` violation list to use the constants
+- Change `hooks/ownmind-reply-lint.js` message rendering to be neutral (remove the IR-XXX number)
+- Change `hooks/lib/build-compliance-events.js` to map events to personal iron-rule numbers via rule metadata
+- Change `hooks/lib/lint-event-logger.js` to use the event constants
+- Clean the `shared/bug-fingerprints.js:106` description
+- Update tests for the new constants
+- Add a `triggered_by_event` field to the metadata of Vin's personal iron rules IR-036 / IR-037 (for compliance mapping, does not affect other users)
 
-## 範圍外
+## Out of scope
 
-- ❌ 其他個人鐵律編號的 leak（例如 IR-008 / IR-025 在訊息模板出現）：分開處理、留 backlog
-- ❌ 把規則本身從 IR-036 編號改成中性命名：規則編號是 Vin 個人記憶結構、不動
+- ❌ Leaks of other personal iron-rule numbers (e.g. IR-008 / IR-025 appearing in message templates): handle separately, leave as backlog
+- ❌ Renaming the rules themselves from IR-036 numbers to neutral names: rule numbers are Vin's personal memory structure, leave untouched
 
-## 設計重點
+## Design highlights
 
-### 中性事件常數命名
+### Neutral event constant naming
 
-用兩個常數：
-- `lint_jargon_explanation_required`（行話沒附白話）
-- `lint_language_mixed_ratio`（中英混雜比例過高）
+Use two constants:
+- `lint_jargon_explanation_required` (jargon without a plain explanation)
+- `lint_language_mixed_ratio` (Chinese-English mix ratio too high)
 
-蛇形命名（lowercase + 底線）、跟 bug-fingerprints.js 既有命名風格一致。
+Snake_case (lowercase + underscores), consistent with the existing naming style in bug-fingerprints.js.
 
-### 「事件 → 個人鐵律編號」對應
+### "Event → personal iron-rule number" mapping
 
-`buildComplianceEvents` 從規則快取找 `metadata.triggered_by_event === eventName` 的規則、用其 `code` 當 rule_code。找不到 → rule_code 空 + 用事件中文名當 rule_title。
+`buildComplianceEvents` finds the rule with `metadata.triggered_by_event === eventName` from the rule cache and uses its `code` as the rule_code. If not found → empty rule_code + use the event's Chinese name as rule_title.
 
-Vin 個人鐵律 IR-036 / IR-037 加 metadata：
+Add metadata to Vin's personal iron rules IR-036 / IR-037:
 ```json
 {
   "triggered_by_event": "lint_jargon_explanation_required"   // IR-036
@@ -55,21 +55,21 @@ Vin 個人鐵律 IR-036 / IR-037 加 metadata：
 }
 ```
 
-其他 user 沒設、不影響（合規記錄寫事件中文名、user dashboard 還能查）。
+Other users do not set this, no impact (the compliance record writes the event's Chinese name, and the user dashboard can still query it).
 
-### 訊息渲染
+### Message rendering
 
-舊：`⚠️  IR-036: 行話 / 專有名詞沒附白話說明 — ...`
-新：`⚠️  行話品質：行話 / 專有名詞沒附白話說明 — ...`
+Old: `⚠️  IR-036: 行話 / 專有名詞沒附白話說明 — ...`
+New: `⚠️  行話品質：行話 / 專有名詞沒附白話說明 — ...`
 
-完全去掉「IR-036」字眼。AI 重寫標註只看到中性名、不會引用個人編號。
+Completely removes the "IR-036" phrase. The AI's rewrite annotation only sees the neutral name and won't reference the personal number.
 
-## 版號決策
+## Version decision
 
-v1.20.4、繼承 v1.20.3 系列。是「修舊設計缺陷」、不是新功能、用 patch 版號。
+v1.20.4, continuing the v1.20.3 series. This is "fixing an old design flaw", not a new feature, so a patch version is used.
 
-## 風險
+## Risks
 
-- **既有測試大改**：39 處 `'IR-036'` / `'IR-037'` 字串引用要改成新常數。改錯易導致測試紅
-- **合規記錄欄位改動**：rule_code 可能變空（user 沒設 triggered_by_event）、影響 dashboard 既有查詢。但 Vin 自己會加 metadata、其他 user 還沒安裝 dashboard 機制、影響可控
-- **本機 hook 同步**：要 cp 5+ 個檔案、重啟 Claude Code 才完整生效
+- **Large test changes**: 39 occurrences of `'IR-036'` / `'IR-037'` string references need to be changed to the new constants. Getting it wrong easily turns tests red.
+- **Compliance record field change**: rule_code may become empty (user did not set triggered_by_event), affecting existing dashboard queries. But Vin will add the metadata himself, and other users have not installed the dashboard mechanism, so the impact is controllable.
+- **Local hook sync**: need to cp 5+ files and restart Claude Code for it to fully take effect.
