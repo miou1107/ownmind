@@ -186,7 +186,7 @@ describe('v1.18.3 — lintIronRule must receive metadata to check origin_context
       },
     });
     const ocWarning = (r.warnings || []).find(w =>
-      w.includes('建議補 metadata.origin_context')
+      w.includes('Consider adding metadata.origin_context')
     );
     assert.equal(ocWarning, undefined,
       `metadata with origin_context should not warn, actual warnings: ${JSON.stringify(r.warnings)}`);
@@ -200,7 +200,7 @@ describe('v1.18.3 — lintIronRule must receive metadata to check origin_context
       tags: ['trigger:edit'],
     });
     const ocWarning = (r.warnings || []).find(w =>
-      w.includes('建議補 metadata.origin_context')
+      w.includes('Consider adding metadata.origin_context')
     );
     assert.ok(ocWarning, `no metadata should warn, actual warnings: ${JSON.stringify(r.warnings)}`);
   });
@@ -214,7 +214,7 @@ describe('v1.18.3 — lintIronRule must receive metadata to check origin_context
       metadata: { tool: 'claude-code' },  // metadata present but no origin_context
     });
     const ocWarning = (r.warnings || []).find(w =>
-      w.includes('建議補 metadata.origin_context')
+      w.includes('Consider adding metadata.origin_context')
     );
     assert.ok(ocWarning, 'tool-only metadata without origin_context should warn');
   });

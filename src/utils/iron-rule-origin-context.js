@@ -1,70 +1,72 @@
 /**
- * iron-rule-origin-context.js — 鐵律時空背景 origin_context (v1.18.2)
+ * iron-rule-origin-context.js — iron-rule backstory origin_context (v1.18.2)
  *
- * 為什麼存在 (Vin 提的需求):
- *   鐵律建立時應該記錄「為什麼當時要建立」的時空背景：
- *   - 正在執行什麼專案
- *   - 遇到什麼事件才建立
- *   - 信心程度 (high / user_direct / unknown)
+ * Why it exists (a need Vin raised):
+ *   When an iron rule is created it should record the backstory of "why it was
+ *   created at the time":
+ *   - which project was being worked on
+ *   - what event prompted creating it
+ *   - confidence level (high / user_direct / unknown)
  *
- *   現況 (v1.18.1) 鐵律 metadata 沒這欄位、AI 看 content 看不到歷史脈絡、
- *   未來 session AI 不知道「為什麼當時 Vin 寫這條鐵律」。
+ *   As of v1.18.1 the iron-rule metadata had no such field, so the AI could not
+ *   see the history from the content, and a future-session AI would not know
+ *   "why Vin wrote this iron rule at the time".
  *
- * 設計 (走 1C / 2a+b / 3 鬆 / 4 既有 backfill+助手補):
- *   - metadata.origin_context: 結構化 (給 admin 統計 / 過濾 / sync 用)
- *   - SKILL.md body 自動 render「## 起源」段落 (給 AI 看)
- *   - 雙寫由本 helper 控制、避免不同步
- *   - lint warning (不擋、鼓勵新鐵律補)
+ * Design (option 1C / 2a+b / 3 lenient / 4 existing backfill + assistant):
+ *   - metadata.origin_context: structured (for admin stats / filtering / sync)
+ *   - SKILL.md body auto-renders a 「## 起源」 section (for the AI)
+ *   - the dual write is controlled by this helper to avoid drift
+ *   - lint warning (non-blocking, encourages new rules to fill it in)
  *
  * Schema:
  *   metadata.origin_context = {
- *     captured_at: ISO 8601 string (必填、寫入時間)
- *     confidence: 'high' | 'user_direct' | 'unknown' (必填)
- *     project: string (選填、cwd 或 user 講)
- *     cwd: string (選填、MCP client capture)
- *     git_branch: string (選填、MCP client capture)
- *     event: string (選填、AI 從對話推 / user 講)
- *     user_quote: string (選填、user 原話)
- *     related_rules: string[] (選填、AI 推)
+ *     captured_at: ISO 8601 string (required, write time)
+ *     confidence: 'high' | 'user_direct' | 'unknown' (required)
+ *     project: string (optional, cwd or what the user said)
+ *     cwd: string (optional, MCP client capture)
+ *     git_branch: string (optional, MCP client capture)
+ *     event: string (optional, AI inferred from the conversation / user said)
+ *     user_quote: string (optional, the user's original words)
+ *     related_rules: string[] (optional, AI inferred)
  *   }
  *
- * Pure functions — 無 IO、好測試。
+ * Pure functions — no IO, easy to test.
  */
 
 /**
- * 驗證 origin_context schema
+ * Validate the origin_context schema
  * @returns {{ ok: boolean, errors: string[] }}
  */
 export function validateOriginContext(oc) {
   const errors = [];
-  if (oc === null || oc === undefined) return { ok: true, errors }; // 沒帶 OK (warning by lint)
+  if (oc === null || oc === undefined) return { ok: true, errors }; // absent is OK (warning by lint)
   if (typeof oc !== 'object' || Array.isArray(oc)) {
-    return { ok: false, errors: ['origin_context 必須是 object'] };
+    return { ok: false, errors: ['origin_context must be an object'] };
   }
 
   const VALID_CONFIDENCE = new Set(['high', 'user_direct', 'unknown']);
 
   if (!oc.captured_at) {
-    errors.push('origin_context 缺 captured_at');
+    errors.push('origin_context is missing captured_at');
   } else if (typeof oc.captured_at !== 'string' || Number.isNaN(Date.parse(oc.captured_at))) {
-    errors.push('origin_context.captured_at 必須是 ISO 8601 string');
+    errors.push('origin_context.captured_at must be an ISO 8601 string');
   }
 
   if (!oc.confidence) {
-    errors.push('origin_context 缺 confidence');
+    errors.push('origin_context is missing confidence');
   } else if (!VALID_CONFIDENCE.has(oc.confidence)) {
-    errors.push(`origin_context.confidence 必須是 ${[...VALID_CONFIDENCE].join('/')}`);
+    errors.push(`origin_context.confidence must be one of ${[...VALID_CONFIDENCE].join('/')}`);
   }
 
-  // 選填欄位的型別檢查
+  // Type check for optional fields
   for (const k of ['project', 'cwd', 'git_branch', 'event', 'user_quote']) {
     if (oc[k] !== undefined && oc[k] !== null && typeof oc[k] !== 'string') {
-      errors.push(`origin_context.${k} 必須是 string (or null/undefined)`);
+      errors.push(`origin_context.${k} must be a string (or null/undefined)`);
     }
   }
   if (oc.related_rules !== undefined && oc.related_rules !== null) {
     if (!Array.isArray(oc.related_rules) || !oc.related_rules.every(r => typeof r === 'string')) {
-      errors.push('origin_context.related_rules 必須是 string[]');
+      errors.push('origin_context.related_rules must be a string[]');
     }
   }
 
@@ -72,9 +74,9 @@ export function validateOriginContext(oc) {
 }
 
 /**
- * 把 origin_context 渲染成 markdown body 段落
+ * Render origin_context into a markdown body section
  * @param {object} oc — validated origin_context
- * @returns {string} markdown 段落 (前後不加空行、由 caller 控制 spacing)
+ * @returns {string} markdown section (no leading/trailing blank lines; caller controls spacing)
  */
 export function renderOriginContextSection(oc) {
   if (!oc) return '';
@@ -83,13 +85,13 @@ export function renderOriginContextSection(oc) {
   lines.push('## 起源（自動 render from metadata.origin_context）');
   lines.push('');
 
-  // 時間
+  // time
   if (oc.captured_at) {
     const ts = formatTimestamp(oc.captured_at);
     lines.push(`- **時間**：${ts}`);
   }
 
-  // 信心程度
+  // confidence level
   if (oc.confidence) {
     const label = {
       high: 'high（從對話脈絡推斷、可信）',
@@ -99,18 +101,18 @@ export function renderOriginContextSection(oc) {
     lines.push(`- **信心**：${label}`);
   }
 
-  // 專案 / 環境
+  // project / environment
   if (oc.project) lines.push(`- **專案**：${oc.project}`);
   if (oc.cwd) lines.push(`- **目錄**：\`${oc.cwd}\``);
   if (oc.git_branch) lines.push(`- **Git 分支**：\`${oc.git_branch}\``);
 
-  // 事件
+  // event
   if (oc.event) {
     lines.push('');
     lines.push(`**事件**：${oc.event}`);
   }
 
-  // user 原話
+  // user's original words
   if (oc.user_quote) {
     lines.push('');
     lines.push(`**User 原話**：`);
@@ -119,7 +121,7 @@ export function renderOriginContextSection(oc) {
     }
   }
 
-  // 相關鐵律
+  // related rules
   if (Array.isArray(oc.related_rules) && oc.related_rules.length > 0) {
     lines.push('');
     lines.push(`**相關鐵律**：${oc.related_rules.join(', ')}`);
@@ -132,7 +134,7 @@ function formatTimestamp(iso) {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
-    // 顯示 yyyy-mm-dd HH:MM (timezone 維持原樣)
+    // show yyyy-mm-dd HH:MM (timezone kept as-is)
     return iso.replace('T', ' ').replace(/(:\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/, '$1 $3');
   } catch {
     return iso;
@@ -140,12 +142,13 @@ function formatTimestamp(iso) {
 }
 
 /**
- * 從現有 content 中抽 / 替換「## 起源」段落
- * 若已有 → 替換；沒有 → append 到 body 末尾
+ * Extract / replace the 「## 起源」 section in existing content
+ * If present -> replace; if absent -> append to the end of the body
  *
- * 用法：sync helper 在寫鐵律前、把 body 中既有的「## 起源」block 換成新版
+ * Usage: the sync helper swaps the existing 「## 起源」 block in the body for the
+ * new version before writing the iron rule
  *
- * @param {string} content — 原 content (可能含 frontmatter 也可能沒)
+ * @param {string} content — original content (may or may not have frontmatter)
  * @param {object} originContext — validated origin_context
  * @returns {string} content with origin section
  */
@@ -155,9 +158,10 @@ export function injectOriginSection(content, originContext) {
   const newSection = renderOriginContextSection(originContext);
   if (!newSection) return content;
 
-  // 找既有「## 起源」block 的範圍
-  // 策略：split by lines、找 ## 起源 開頭、收到下個 ## 為止 (或檔尾)
-  // 純 string ops 比 regex 對 JS 沒 \Z 的限制安全
+  // Find the range of the existing 「## 起源」 block
+  // Strategy: split by lines, find the line starting with ## 起源, stop at the
+  // next ## (or end of file)
+  // Pure string ops are safer than regex given JS has no \Z
   const lines = content.split('\n');
   let originStart = -1;
   let originEnd = lines.length;
@@ -171,27 +175,27 @@ export function injectOriginSection(content, originContext) {
   }
 
   if (originStart !== -1) {
-    // 替換 [originStart, originEnd)
+    // replace [originStart, originEnd)
     const before = lines.slice(0, originStart);
     const after = lines.slice(originEnd);
-    // 移除 before 末尾空行 (避免越改越多空行)
+    // remove trailing blank lines from before (avoid accumulating blank lines)
     while (before.length > 0 && before[before.length - 1] === '') before.pop();
     const sectionLines = newSection.split('\n');
     const merged = [...before, '', ...sectionLines, '', ...after];
     return merged.join('\n');
   }
 
-  // 沒有 → append 到末尾
+  // absent -> append to the end
   const trimmed = content.replace(/\n+$/, '');
   return trimmed + '\n\n' + newSection + '\n';
 }
 
 /**
- * 從 MCP client 端 capture 自動 origin_context (技術部分)
+ * Auto-capture origin_context from the MCP client side (technical part)
  *
  * @param {object} options
- * @param {string} [options.userQuote] — user 原話 (選填)
- * @param {string} [options.event] — AI 從對話推的事件描述 (選填)
+ * @param {string} [options.userQuote] — the user's original words (optional)
+ * @param {string} [options.event] — event description the AI inferred from the conversation (optional)
  * @param {'high'|'user_direct'|'unknown'} [options.confidence] — default 'unknown'
  * @returns {object} origin_context
  */
@@ -205,7 +209,7 @@ export function captureClientOriginContext(options = {}) {
   if (typeof process !== 'undefined' && process.cwd) {
     try {
       oc.cwd = process.cwd();
-      // 從 cwd 推 project name (basename)
+      // derive project name from cwd (basename)
       const parts = oc.cwd.split(/[\\/]/);
       oc.project = parts[parts.length - 1];
     } catch { /* ignore */ }

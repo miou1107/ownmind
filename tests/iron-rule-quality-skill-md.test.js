@@ -135,7 +135,7 @@ describe('v1.18.0 — S2/S3 name rules', () => {
       body: VALID_BODY,
     });
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some(e => e.startsWith('S2 frontmatter 缺 name')));
+    assert.ok(r.errors.some(e => e.startsWith('S2 frontmatter is missing the name')));
   });
 
   it('name contains uppercase → reject S2 (not kebab-case)', () => {
@@ -197,7 +197,7 @@ describe('v1.18.0 — S4 description required + length bounds', () => {
       body: VALID_BODY,
     });
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some(e => e.startsWith('S4 frontmatter 缺 description')));
+    assert.ok(r.errors.some(e => e.startsWith('S4 frontmatter is missing the description')));
   });
 
   it('description < 20 chars → reject S4', () => {
@@ -207,7 +207,7 @@ describe('v1.18.0 — S4 description required + length bounds', () => {
       body: VALID_BODY,
     });
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some(e => e.startsWith('S4 description 太短')));
+    assert.ok(r.errors.some(e => e.startsWith('S4 description too short')));
   });
 
   it('description > 500 chars → reject S4', () => {
@@ -217,7 +217,7 @@ describe('v1.18.0 — S4 description required + length bounds', () => {
       body: VALID_BODY,
     });
     assert.equal(r.ok, false);
-    assert.ok(r.errors.some(e => e.startsWith('S4 description 太長')));
+    assert.ok(r.errors.some(e => e.startsWith('S4 description too long')));
   });
 });
 

@@ -208,7 +208,7 @@ describe('v1.17.94 — length check', () => {
       tags: ['trigger:edit'],
     });
     assert.equal(r.ok, false);
-    assert.match(r.errors.join('|'), /太短|資訊不足|字數/);
+    assert.match(r.errors.join('|'), /too short|not enough information/);
   });
 
   it('content > 3000 chars → fail (points unclear)', () => {
@@ -218,7 +218,7 @@ describe('v1.17.94 — length check', () => {
       tags: ['trigger:edit'],
     });
     assert.equal(r.ok, false);
-    assert.match(r.errors.join('|'), /太長|要點不明|字數/);
+    assert.match(r.errors.join('|'), /too long|point gets lost/);
   });
 });
 

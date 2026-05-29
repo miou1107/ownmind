@@ -1,20 +1,22 @@
 /**
- * iron-rule-suggest.js — 鐵律 SKILL.md 升級建議產生器 (v1.18.0)
+ * iron-rule-suggest.js — iron-rule SKILL.md upgrade suggestion generator (v1.18.0)
  *
- * 為什麼存在：
- *   v1.18.0 升級助手 Web UI 要把 35 條 legacy 鐵律一條條轉成 SKILL.md 格式。
- *   每條轉換流程：admin 點 [Suggest] → server 推 SKILL.md proposal → diff view
- *   → admin review → [Confirm] 寫 DB。
+ * Why it exists:
+ *   The v1.18.0 upgrade-assistant Web UI converts the 35 legacy iron rules into
+ *   SKILL.md format one by one.
+ *   Each conversion flow: admin clicks [Suggest] -> server pushes a SKILL.md
+ *   proposal -> diff view -> admin review -> [Confirm] writes to the DB.
  *
- *   v1.18.0 不接 LLM API（避免新依賴 + key 管理 + LLM 失敗 path 複雜）、
- *   用 template-based 機械式拼裝。理由：
- *     1. AI 提案常常歪、Vin 都會手改、template-based 也夠
- *     2. v1.18.x 要加 LLM 容易（介面已定）
- *     3. 35 條 × 1 min review = 35 min、不靠 LLM 也跑得完
+ *   v1.18.0 does not call an LLM API (avoids a new dependency + key management +
+ *   complex LLM failure paths); it uses template-based mechanical assembly. Reasons:
+ *     1. AI proposals often drift, Vin edits them anyway, template-based is enough
+ *     2. adding an LLM in v1.18.x is easy (the interface is fixed)
+ *     3. 35 rules x 1 min review = 35 min, doable without an LLM
  *
- *   未來可選擇切到 LLM：偵測 OWNMIND_SUGGEST_API_KEY env、有就走 LLM、沒就走 template。
+ *   Future option to switch to an LLM: detect the OWNMIND_SUGGEST_API_KEY env;
+ *   if present go LLM, otherwise use the template.
  *
- * Pure function — 純字串轉換、好測試。
+ * Pure function — pure string transformation, easy to test.
  */
 
 import crypto from 'node:crypto';
@@ -22,14 +24,14 @@ import { detectFrontmatter } from './iron-rule-frontmatter.js';
 import { lintIronRule } from './iron-rule-quality.js';
 
 /**
- * 把 legacy iron_rule 推成 SKILL.md proposal
+ * Turn a legacy iron_rule into a SKILL.md proposal
  *
- * 邏輯：
- *   - 已是 SKILL.md → 原樣回（提示「已升級、無需改」）
- *   - Legacy → 從 title + content + tags 機械式拼 frontmatter + body
+ * Logic:
+ *   - already SKILL.md -> return as-is (note "already upgraded, no change needed")
+ *   - legacy -> mechanically assemble frontmatter + body from title + content + tags
  *     - name = ir-XXX-{slug(title)} (kebab-case)
- *     - description = pushy 三句話：用途 + 觸發點 + 後果
- *     - body = 加結構化段落（為什麼存在 / 該做 / 不該做 / 萬一犯了）抽 content
+ *     - description = pushy three sentences: purpose + trigger point + consequence
+ *     - body = add structured sections (why it exists / do / don't / if violated) extracted from content
  *
  * @param {Object} rule { id, code, title, content, tags }
  * @returns {{ already_skill_md: boolean, proposed_content: string, notes: string[] }}
@@ -40,13 +42,13 @@ export function suggestSkillMdFormat(rule) {
   const code = rule?.code || `id-${rule?.id || 'unknown'}`;
   const tags = Array.isArray(rule?.tags) ? rule.tags : [];
 
-  // 已是 SKILL.md
+  // already SKILL.md
   const fm = detectFrontmatter(content);
   if (fm.has && !fm.parseError) {
     return {
       already_skill_md: true,
       proposed_content: content,
-      notes: ['已是 SKILL.md 格式、不需升級'],
+      notes: ['Already in SKILL.md format, no upgrade needed'],
     };
   }
 
@@ -56,16 +58,16 @@ export function suggestSkillMdFormat(rule) {
 
   const notes = [];
 
-  // 1. name — 用 code（先正規化）
+  // 1. name — use code (normalize first)
   const name = normalizeName(code, title);
 
-  // 2. description — pushy 三段
+  // 2. description — pushy three parts
   const description = buildDescription({ code, title, triggers });
 
-  // 3. body — 拆既有 content 推結構化段落（盡量保留原文）
+  // 3. body — split the existing content into structured sections (keep the original text as much as possible)
   const body = buildBody({ code, title, content });
 
-  // 組 frontmatter + body
+  // assemble frontmatter + body
   const proposed = [
     '---',
     `name: ${name}`,
@@ -76,26 +78,26 @@ export function suggestSkillMdFormat(rule) {
     body,
   ].join('\n');
 
-  notes.push('Template-based 建議：description 用 pushy 三句話寫法、body 從原 content 推結構化段落');
-  notes.push('LLM suggest 未啟用 (沒設 OWNMIND_SUGGEST_API_KEY)、template 結果可能需 admin 微調');
+  notes.push('Template-based suggestion: description uses the pushy three-sentence style; body is structured from the original content');
+  notes.push('LLM suggest is not enabled (OWNMIND_SUGGEST_API_KEY not set); the template result may need admin fine-tuning');
   if (triggers.length === 0) {
-    notes.push('原鐵律無 trigger:xxx tag、description 用 general 觸發 — 強烈建議補 trigger tag');
+    notes.push('The original iron rule has no trigger:xxx tag; description uses a general trigger — strongly recommend adding a trigger tag');
   }
 
-  // v1.18.1 A: round-trip lint self-check — helper 自己驗證輸出是否過 lint
-  // 之前 (rc3) 沒做、IR-004 升級助手點下去才被 server 退回、IR-007 fixture/prod mismatch
-  // 現在 helper 內自己跑 lint、過不了在 notes 加 warning 給 admin
+  // v1.18.1 A: round-trip lint self-check — the helper validates its own output against lint
+  // Previously (rc3) it did not; the IR-004 upgrade assistant only got rejected by the server on click, an IR-007 fixture/prod mismatch
+  // Now the helper runs lint itself and, if it fails, adds a warning to notes for the admin
   const lintCheck = lintIronRule({
     title: rule.title,
     content: proposed,
     tags: rule.tags,
   });
   if (!lintCheck.ok) {
-    notes.push(`⚠️ Template 提案沒過 lint (將被 server reject)：${lintCheck.errors.join(' / ')}`);
-    notes.push('Admin 必須手動修正才能儲存、不要直接按確認');
+    notes.push(`⚠️ Template proposal did not pass lint (will be rejected by the server): ${lintCheck.errors.join(' / ')}`);
+    notes.push('Admin must fix it manually before saving; do not just click confirm');
   }
   if (lintCheck.warnings && lintCheck.warnings.length > 0) {
-    for (const w of lintCheck.warnings) notes.push(`提示：${w}`);
+    for (const w of lintCheck.warnings) notes.push(`Hint: ${w}`);
   }
 
   return {
@@ -108,25 +110,25 @@ export function suggestSkillMdFormat(rule) {
 }
 
 /**
- * 把 IR-XXX code 跟 title 組成 kebab-case ASCII name
+ * Combine an IR-XXX code and title into a kebab-case ASCII name
  *   IR-002 + 不要 commit .env → ir-002-cmt-a1b2c3
  *   id-339 + 修報表... → id-339-rpt-d4e5f6
  *
- * v1.18.0-rc3 review I4 修正：之前用中文 title slug、跨平台 fs 危險
- *   (macOS NFC/NFD normalize 不一致、Linux 跨平台 git path 壞)
- *   → 改 ASCII only：保留 title 開頭 ASCII 詞 (取最多 6 字) + 6 字 title hash
+ * v1.18.0-rc3 review I4 fix: previously used a Chinese title slug, dangerous for
+ *   cross-platform fs (macOS NFC/NFD normalize mismatch, Linux cross-platform git path breaks)
+ *   -> changed to ASCII only: keep the leading ASCII words of the title (up to 6 chars) + a 6-char title hash
  */
 function normalizeName(code, title) {
   const codeLower = code.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 
-  // 抓 title 中的 ASCII 詞（commit / env / build 之類）給人類辨識用
+  // Grab the ASCII words in the title (commit / env / build etc.) for human recognition
   const asciiHint = (title.toLowerCase().match(/[a-z0-9]+/g) || [])
     .filter(w => w.length >= 3)
     .slice(0, 2)
     .join('-')
     .slice(0, 12);
 
-  // 6 字 hash 確保 collision 機率夠低且 deterministic
+  // 6-char hash keeps the collision probability low enough and stays deterministic
   const hash = crypto.createHash('sha1').update(title).digest('hex').slice(0, 6);
 
   if (asciiHint) {
@@ -136,8 +138,8 @@ function normalizeName(code, title) {
 }
 
 /**
- * 推 pushy description (約 100-200 字)
- * 三段式：use when ... required because ... triggers on ...
+ * Build a pushy description (~100-200 chars)
+ * Three-part form: use when ... required because ... triggers on ...
  */
 function buildDescription({ code, title, triggers }) {
   const triggerStr = triggers.length > 0 ? triggers.join(', ') : 'general';
@@ -149,12 +151,14 @@ function buildDescription({ code, title, triggers }) {
 }
 
 /**
- * 推 body：保留原 content + markdown comment 提示 (不放 placeholder 段落)
+ * Build the body: keep the original content + a markdown comment hint (no placeholder sections)
  *
- * v1.18.0-rc3 review I1 修正：之前 body 放「（從原內容拆出該做事項）」placeholder
- *   段落、會通過 lint S6/S7、admin 沒手填就送 → 35 條 placeholder 寫進 DB
- *   → 改成只放原 content + HTML comment 提示、admin 自己決定要不要結構化
- *   markdown comment `<!-- -->` 不會被 render、不算 placeholder
+ * v1.18.0-rc3 review I1 fix: the body previously held a 「（從原內容拆出該做事項）」
+ *   placeholder section that passed lint S6/S7, and admins shipped it without filling
+ *   it in -> 35 placeholders got written to the DB
+ *   -> changed to keep only the original content + an HTML comment hint, letting the
+ *   admin decide whether to structure it
+ *   a markdown comment `<!-- -->` is not rendered and does not count as a placeholder
  */
 function buildBody({ code, title, content }) {
   const lines = [];

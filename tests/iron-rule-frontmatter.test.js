@@ -59,7 +59,7 @@ description: : invalid : yaml :
 body`;
     const r = detectFrontmatter(content);
     assert.equal(r.has, true);
-    assert.match(r.parseError, /YAML 解析失敗/);
+    assert.match(r.parseError, /YAML parse failed/);
     assert.equal(r.body, 'body');
   });
 
@@ -71,7 +71,7 @@ body`;
 body`;
     const r = detectFrontmatter(content);
     assert.equal(r.has, true);
-    assert.match(r.parseError, /frontmatter 不能為空/);
+    assert.match(r.parseError, /frontmatter cannot be empty/);
   });
 
   it('frontmatter is an array (not object) → parseError', () => {
@@ -83,7 +83,7 @@ body`;
 body`;
     const r = detectFrontmatter(content);
     assert.equal(r.has, true);
-    assert.match(r.parseError, /必須是 key-value object/);
+    assert.match(r.parseError, /must be a key-value object/);
   });
 
   it('frontmatter is a scalar string → parseError', () => {
@@ -94,7 +94,7 @@ just a string
 body`;
     const r = detectFrontmatter(content);
     assert.equal(r.has, true);
-    assert.match(r.parseError, /必須是 key-value object/);
+    assert.match(r.parseError, /must be a key-value object/);
   });
 
   it('leading blank line (leading \\n) → rejected (strict ---\\n start)', () => {

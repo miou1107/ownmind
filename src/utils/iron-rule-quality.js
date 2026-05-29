@@ -2,22 +2,23 @@ import { detectFrontmatter } from './iron-rule-frontmatter.js';
 import { validateOriginContext } from './iron-rule-origin-context.js';
 
 /**
- * lintIronRule — 鐵律品質檢查（程式邏輯卡控、IR-027 落地）
+ * lintIronRule — iron-rule quality check (program-level enforcement of IR-027).
  *
- * v1.18.0 升級：偵測 SKILL.md frontmatter
- *   - 有 frontmatter → 走 schema lint S1-S9（spec.md §1.3）
- *   - 沒 frontmatter → 走 v1.17.94 regex lint（向後相容、既有 35 條鐵律不爆）
+ * v1.18.0 upgrade: detect SKILL.md frontmatter
+ *   - has frontmatter   -> schema lint S1-S9 (spec.md §1.3)
+ *   - no frontmatter    -> v1.17.94 regex lint (backward compatible, the 35
+ *     existing iron rules still pass)
  *
- * v1.17.94 規則（沒 frontmatter 走這條）：
- *   1. title 字數 5~100
- *   2. content 字數 50~3000
- *   3. 必須有至少一個 trigger:xxx tag
- *   4. content 必須有「適用情境段落」關鍵字
- *   5. content 必須有「規則段落」關鍵字
- *   6. 禁止依賴 context 的詞
- *   7. 中英混雜檢查（IR-037）
+ * v1.17.94 rules (used when there is no frontmatter):
+ *   1. title length 5~100
+ *   2. content length 50~3000
+ *   3. must have at least one trigger:xxx tag
+ *   4. content must contain "scenario section" keywords
+ *   5. content must contain "rule section" keywords
+ *   6. context-dependent phrases are forbidden
+ *   7. mixed Chinese-English check (IR-037)
  *
- * Pure function — 不碰 DB、好測試、好重用。
+ * Pure function — does not touch the DB; easy to test and reuse.
  *
  * @param {Object} rule - { title, content, tags }
  * @returns {{
@@ -26,25 +27,26 @@ import { validateOriginContext } from './iron-rule-origin-context.js';
  *   warnings?: string[],
  *   format?: 'skill_md' | 'legacy_text'
  * }}
- *   - ok: errors 為空才 true（warnings 不算）
- *   - format: 給 server response 用、客戶端可顯示「這條走哪個 lint path」
+ *   - ok: true only when errors is empty (warnings do not count)
+ *   - format: for the server response, so the client can show which lint path ran
  */
 export function lintIronRule(rule) {
   const content = (rule?.content || '').trim();
 
-  // v1.18.0: 先偵測 frontmatter — 有就走 schema lint
+  // v1.18.0: detect frontmatter first — if present, run schema lint
   const fm = detectFrontmatter(content);
   let result;
   if (fm.has) {
-    // v1.18.0 review B1 修正：YAML parse 失敗 → fallback 到 legacy regex lint
-    //   理由：user 可能寫 `---` 當分隔線（不是真的要寫 SKILL.md）、parseError
-    //   直接 reject 會困惑。fallback + warning 通知 user「偵測到但解析失敗」。
+    // v1.18.0 review B1 fix: YAML parse failure -> fall back to legacy regex lint.
+    //   Rationale: a user may write `---` as a divider (not really a SKILL.md),
+    //   so rejecting outright on parseError is confusing. Fall back + warn the
+    //   user "detected but failed to parse".
     if (fm.parseError) {
       const legacyResult = lintLegacyTextRule(rule);
       const warnings = [...(legacyResult.warnings || [])];
       warnings.push(
-        `偵測到 frontmatter marker（---）但 YAML 解析失敗（${fm.parseError}）— ` +
-        `退回 free-text lint。若刻意寫 SKILL.md 格式、請修 YAML 語法；若 --- 是內文分隔線、忽略此警告即可。`
+        `Detected a frontmatter marker (---) but YAML parsing failed (${fm.parseError}) — ` +
+        `falling back to free-text lint. If you meant to write SKILL.md format, fix the YAML syntax; if --- is just a content divider, ignore this warning.`
       );
       result = { ...legacyResult, warnings };
     } else {
@@ -54,13 +56,13 @@ export function lintIronRule(rule) {
     result = lintLegacyTextRule(rule);
   }
 
-  // v1.18.2: origin_context check (鬆設計、warning 不 reject)
+  // v1.18.2: origin_context check (lenient design — warning, not a reject)
   const originCheck = checkOriginContext(rule);
   if (originCheck.warnings.length > 0) {
     result.warnings = [...(result.warnings || []), ...originCheck.warnings];
   }
   if (originCheck.errors.length > 0) {
-    // 只有 origin_context 結構非法 (有寫但寫壞) 才報 error
+    // Only an invalid origin_context structure (present but malformed) is an error
     result.errors = [...(result.errors || []), ...originCheck.errors];
     result.ok = false;
   }
@@ -68,17 +70,17 @@ export function lintIronRule(rule) {
 }
 
 /**
- * v1.18.2: 檢查 metadata.origin_context
- *   - 沒 origin_context → warning「鼓勵補時空背景」
- *   - 有但結構非法 → error
- *   - 有且合法 → silent
+ * v1.18.2: check metadata.origin_context
+ *   - no origin_context     -> warning ("encourage recording the backstory")
+ *   - present but malformed  -> error
+ *   - present and valid      -> silent
  */
 function checkOriginContext(rule) {
   const oc = rule?.metadata?.origin_context;
   if (oc === undefined || oc === null) {
     return {
       warnings: [
-        '建議補 metadata.origin_context 記錄時空背景（為什麼建立這條鐵律 / 在哪個專案 / user 原話）— 不擋、但未來 AI 看不懂歷史脈絡時會回頭問。'
+        'Consider adding metadata.origin_context to record the backstory (why this iron rule was created / in which project / the user\'s original words) — not blocking, but a future AI will come back asking when it cannot follow the history.'
       ],
       errors: [],
     };
@@ -91,87 +93,91 @@ function checkOriginContext(rule) {
 }
 
 /**
- * v1.18.0 — SKILL.md frontmatter schema lint（規則 S1-S9）
- * 對齊 spec.md §1.3
+ * v1.18.0 — SKILL.md frontmatter schema lint (rules S1-S9)
+ * Aligned with spec.md §1.3
  *
  * @param {Object} rule
  * @param {{ has: boolean, frontmatter?: object, body?: string, parseError?: string }} fm
- *   detectFrontmatter() 結果
+ *   detectFrontmatter() result
  */
 export function lintSkillMdRule(rule, fm) {
   const errors = [];
   const warnings = [];
   const tags = Array.isArray(rule?.tags) ? rule.tags : [];
 
-  // S1 — YAML 解析合法
+  // S1 — YAML parses successfully
   if (fm.parseError) {
-    errors.push(`S1 frontmatter YAML 解析失敗：${fm.parseError}`);
+    errors.push(`S1 frontmatter YAML parse failed: ${fm.parseError}`);
     return { ok: false, errors, warnings, format: 'skill_md' };
   }
 
   const frontmatter = fm.frontmatter;
   const body = (fm.body || '').trim();
 
-  // S2 — name 必填、kebab-case ASCII only
+  // S2 — name required, kebab-case, ASCII only
   //
-  // v1.18.0-rc3 review I4 修正：之前曾擴充接受中文 BMP、但跨平台 fs 危險
-  //   (macOS NFC/NFD normalize 不一致、Linux git path 跨平台壞)
-  //   → 收緊回 ASCII only。suggest helper 改用「title hash + ASCII hint」推 name
+  // v1.18.0-rc3 review I4 fix: we briefly accepted Chinese BMP chars, but that
+  //   is dangerous for cross-platform fs (macOS NFC/NFD normalize mismatch,
+  //   Linux git path breaks across platforms)
+  //   -> tightened back to ASCII only. The suggest helper now derives name from
+  //   "title hash + ASCII hint".
   //
-  // 對齊 Anthropic SKILL.md 官方範例 (pdf, xlsx, skill-creator) 全 ASCII
+  // Aligned with the official Anthropic SKILL.md examples (pdf, xlsx,
+  // skill-creator), which are all ASCII.
   const name = typeof frontmatter.name === 'string' ? frontmatter.name.trim() : '';
   if (!name) {
-    errors.push('S2 frontmatter 缺 name 欄位（必填）');
+    errors.push('S2 frontmatter is missing the name field (required)');
   } else if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(name)) {
-    errors.push(`S2 name "${name}" 不是 kebab-case（必須 ^[a-z0-9-]+$、頭尾不可 -、ASCII only）`);
+    errors.push(`S2 name "${name}" is not kebab-case (must match ^[a-z0-9-]+$, no leading/trailing -, ASCII only)`);
   }
 
-  // S3 — name 字數 3-60
+  // S3 — name length 3-60
   if (name) {
-    if (name.length < 3) errors.push(`S3 name 太短（${name.length} 字、最少 3）`);
-    else if (name.length > 60) errors.push(`S3 name 太長（${name.length} 字、上限 60）`);
+    if (name.length < 3) errors.push(`S3 name too short (${name.length} chars, min 3)`);
+    else if (name.length > 60) errors.push(`S3 name too long (${name.length} chars, max 60)`);
   }
 
-  // S4 — description 必填、20-500 字
+  // S4 — description required, 20-500 chars
   const description = typeof frontmatter.description === 'string' ? frontmatter.description.trim() : '';
   if (!description) {
-    errors.push('S4 frontmatter 缺 description 欄位（必填、必須寫「何時觸發」）');
+    errors.push('S4 frontmatter is missing the description field (required — must state when it triggers / 「何時觸發」)');
   } else {
-    if (description.length < 20) errors.push(`S4 description 太短（${description.length} 字、最少 20）— 寫不清楚 AI 不會觸發這條鐵律`);
-    else if (description.length > 500) errors.push(`S4 description 太長（${description.length} 字、上限 500）— 摘要不該超過 500 字、細節寫進 body`);
+    if (description.length < 20) errors.push(`S4 description too short (${description.length} chars, min 20) — if it is unclear the AI will not trigger this iron rule`);
+    else if (description.length > 500) errors.push(`S4 description too long (${description.length} chars, max 500) — a summary should not exceed 500 chars; put details in the body`);
   }
 
-  // S5 — description 含觸發詞
+  // S5 — description contains a trigger word
   if (description && description.length >= 20) {
     if (!/when|whenever|use\s+when|triggers\s+on|何時|觸發|情境|準備|要做/i.test(description)) {
-      errors.push('S5 description 沒寫「何時觸發」— 必須含「when / 何時 / 觸發 / 情境 / 準備」之類觸發詞、AI 才知道何時 invoke 這條鐵律');
+      errors.push('S5 description does not state when it triggers — must contain a trigger word such as 「when / 何時 / 觸發 / 情境 / 準備」, so the AI knows when to invoke this iron rule');
     }
   }
 
-  // S6 — body 字數 ≥ 100
+  // S6 — body length ≥ 100
   if (body.length < 100) {
-    errors.push(`S6 body 太短（${body.length} 字、最少 100）— body 是給 AI 看細節、太短失去鐵律的 do/dont 教訓價值`);
+    errors.push(`S6 body too short (${body.length} chars, min 100) — the body is the detail the AI reads; too short loses the do/don't lesson of the iron rule`);
   }
 
-  // S7 — body 含規則段落關鍵字（沿用 v1.17.94 #5）
+  // S7 — body contains rule-section keywords (carried over from v1.17.94 #5)
   if (body.length >= 100 && !/規則|該做|不該做|禁止|必須|應該|不可|不要/.test(body)) {
-    errors.push('S7 body 缺規則段落 — 必須寫明「規則該做什麼 / 不該做什麼 / 禁止 / 必須」、否則 AI 看不懂該做啥');
+    errors.push('S7 body is missing a rule section — must spell out 「規則該做什麼 / 不該做什麼 / 禁止 / 必須」, otherwise the AI cannot tell what to do');
   }
 
-  // S8 — v1.18.1 移除 — IR-037 中英混雜不該套到 SKILL.md body
-  // 同 lintLegacyTextRule 規則 #7 移除理由：
-  //   IR-037 是給「AI 回話」用的、reply-lint Stop hook 已專門做這事。
-  //   鐵律 body 是給 AI 看的「技術筆記」、含技術詞天經地義。
-  //   實證 35 條 prod 鐵律 26 條 fail (74%)、17 條都是 IR-037 — 設計錯誤、不是規則太嚴。
+  // S8 — removed in v1.18.1 — IR-037 mixed Chinese-English should not apply to SKILL.md body.
+  // Same reason as removing rule #7 in lintLegacyTextRule:
+  //   IR-037 is for "AI replies"; the reply-lint Stop hook already handles that.
+  //   An iron-rule body is a "technical note" for the AI — having tech terms is natural.
+  //   Evidence: 26 of 35 prod iron rules failed (74%), 17 of them on IR-037 — a design
+  //   error, not an over-strict rule.
 
-  // S9 — description 字數 < 50 → warning（不 reject）
+  // S9 — description length < 50 -> warning (not a reject)
   if (description && description.length >= 20 && description.length < 50) {
-    warnings.push(`S9 description ${description.length} 字偏短（建議 50+ 寫得更 pushy、AI 觸發率更高）`);
+    warnings.push(`S9 description is a bit short at ${description.length} chars (50+ recommended — more pushy, higher AI trigger rate)`);
   }
 
-  // tags 結構檢查（保留 v1.17.94 reviewer Minor 3 行為）
+  // tags structure check (preserves v1.17.94 reviewer Minor 3 behaviour)
   if (rule?.tags !== undefined && rule?.tags !== null && !Array.isArray(rule.tags)) {
-    errors.push(`tags 必須是陣列、收到 ${typeof rule.tags}`);
+    errors.push(`tags must be an array, got ${typeof rule.tags}`);
   }
 
   return {
@@ -183,77 +189,78 @@ export function lintSkillMdRule(rule, fm) {
 }
 
 /**
- * v1.17.94 — legacy free-text lint（沒 frontmatter 走這條）
+ * v1.17.94 — legacy free-text lint (used when there is no frontmatter)
  */
 export function lintLegacyTextRule(rule) {
   const errors = [];
   const title = (rule?.title || '').trim();
   const content = (rule?.content || '').trim();
 
-  // v1.17.94 reviewer Minor 3：tags 必須是陣列、其他類型給明確訊息
+  // v1.17.94 reviewer Minor 3: tags must be an array; give a clear message for other types
   if (rule?.tags !== undefined && rule?.tags !== null && !Array.isArray(rule.tags)) {
-    errors.push(`tags 必須是陣列、收到 ${typeof rule.tags}（值：${JSON.stringify(rule.tags).slice(0, 50)}）`);
+    errors.push(`tags must be an array, got ${typeof rule.tags} (value: ${JSON.stringify(rule.tags).slice(0, 50)})`);
   }
   const tags = Array.isArray(rule?.tags) ? rule.tags : [];
 
-  // (1) title 字數（下限 5 字、讓既有 IR-011「時區強制定標準」7字 過、保留 100 字上限）
+  // (1) title length (min 5 so the existing IR-011 "時區強制定標準" at 7 chars passes; keep 100 max)
   if (title.length < 5) {
-    errors.push(`title 太短（${title.length} 字）— 標題最少 5 字、寫明適用情境`);
+    errors.push(`title too short (${title.length} chars) — title needs at least 5 chars and should state the scenario`);
   } else if (title.length > 100) {
-    errors.push(`title 太長（${title.length} 字）— 標題上限 100 字、過長會讓鐵律列表難讀`);
+    errors.push(`title too long (${title.length} chars) — title max is 100 chars; too long makes the iron-rule list hard to read`);
   }
 
-  // (2) content 字數（下限降到 50 字、讓既有 IR-020 48字 接近通過；新鐵律建議 100+）
+  // (2) content length (min lowered to 50 so the existing IR-020 at 48 chars is close to passing; new rules 100+ recommended)
   if (content.length < 50) {
-    errors.push(`content 太短（${content.length} 字）— 內容資訊不足、字數最少 50（建議 100+）`);
+    errors.push(`content too short (${content.length} chars) — not enough information, min 50 chars (100+ recommended)`);
   } else if (content.length > 3000) {
-    errors.push(`content 太長（${content.length} 字）— 內容超過 3000 字、要點不明、請精簡`);
+    errors.push(`content too long (${content.length} chars) — over 3000 chars, the point gets lost, please trim`);
   }
 
   // (3) trigger:xxx tag
   const triggers = tags.filter(t => typeof t === 'string' && t.startsWith('trigger:'));
   if (triggers.length === 0) {
-    errors.push('缺 trigger:xxx tag — 沒觸發詞、AI 不知道何時該想到這條鐵律。tags 至少含一個 trigger:edit / trigger:commit / trigger:deploy 之類');
+    errors.push('missing a trigger:xxx tag — without a trigger word the AI does not know when to recall this iron rule. tags must contain at least one of trigger:edit / trigger:commit / trigger:deploy etc.');
   }
 
-  // (4) 適用情境段落（v1.17.94 reviewer Important 1：擴充關鍵字）
-  // 接受的寫法：「什麼時候適用」「觸發情境」「使用時機」「在什麼場合」「適用場景」「用於」「用在」
+  // (4) scenario section (v1.17.94 reviewer Important 1: expanded keywords)
+  // Accepted phrasings: 「什麼時候適用」「觸發情境」「使用時機」「在什麼場合」「適用場景」「用於」「用在」
   const hasScenarioSection = /適用|觸發|情境|何時|什麼時候|時機|場合|場景|用於|用在/.test(content);
   if (!hasScenarioSection) {
-    errors.push('缺適用情境段落 — 內容必須說明「什麼時候適用 / 觸發情境 / 使用時機 / 適用場景」、否則未來 AI 看不懂何時該觸發');
+    errors.push('missing a scenario section — the content must explain 「什麼時候適用 / 觸發情境 / 使用時機 / 適用場景」, otherwise a future AI cannot tell when to trigger it');
   }
 
-  // (5) 規則段落
+  // (5) rule section
   const hasRuleSection = /規則|該做|不該做|禁止|必須|應該|不可|不要/.test(content);
   if (!hasRuleSection) {
-    errors.push('缺規則段落 — 內容必須寫明「規則該做什麼 / 不該做什麼 / 禁止 / 必須」、否則看了不知道要幹嘛');
+    errors.push('missing a rule section — the content must spell out 「規則該做什麼 / 不該做什麼 / 禁止 / 必須」, otherwise the reader cannot tell what to do');
   }
 
-  // (6) 禁止依賴 context 的詞
+  // (6) context-dependent phrases are forbidden
   const contextPhrases = ['上次', '之前那個', '剛剛', '這次 session', '這次對話', '剛才那個', '剛才那條'];
   const foundContextPhrases = contextPhrases.filter(p => content.includes(p));
   if (foundContextPhrases.length > 0) {
     errors.push(
-      `依賴 context 的詞會讓未來 AI 看不懂 — 找到：${foundContextPhrases.join('、')}。請改寫成不依賴當下脈絡的描述（例：用「v1.17.92 的修法」取代「上次的修法」）`
+      `Context-dependent phrases make a future AI lose the thread — found: ${foundContextPhrases.join('、')}. Please rewrite without relying on the current context (e.g. use 「v1.17.92 的修法」 instead of 「上次的修法」)`
     );
   }
 
-  // (7) v1.18.1 移除 — IR-037 中英混雜檢查不該套在「鐵律 content」
+  // (7) removed in v1.18.1 — the IR-037 mixed Chinese-English check should not apply to "iron-rule content"
   //
-  // 為什麼移除：
-  //   IR-037「回話一律白話中文不要中英文混雜」設計初衷是針對「AI 回話」、
-  //   reply-lint Stop hook (v1.17.96) 已專門做這件事。
+  // Why it was removed:
+  //   IR-037 ("replies must be plain Chinese, no mixed Chinese-English") was designed for
+  //   "AI replies"; the reply-lint Stop hook (v1.17.96) already handles that.
   //
-  //   鐵律 content 本身是「給 AI 看的技術筆記」、含 docker / Python / OpenSpec
-  //   /  Adam / Eric 等技術詞天經地義。把 IR-037 套到鐵律 lint 是「規則用錯地方」、
-  //   不是「規則太嚴」。
+  //   Iron-rule content itself is a "technical note for the AI" — having tech terms like
+  //   docker / Python / OpenSpec / Adam / Eric is natural. Applying IR-037 to iron-rule
+  //   lint is "the right rule in the wrong place", not "the rule being too strict".
   //
-  //   實證：v1.18.1 audit script 跑 35 條 prod 鐵律、26 條 fail (74%)、
-  //   17 條都是 IR-037 中英混雜超標 — 證明把 IR-037 套到鐵律 content 是
-  //   錯誤的設計、不是個別 case。
+  //   Evidence: the v1.18.1 audit script ran 35 prod iron rules, 26 failed (74%), 17 of
+  //   them on the IR-037 mixed-language threshold — proving that applying IR-037 to
+  //   iron-rule content is a design error, not an isolated case.
   //
-  //   v1.17.94 上線 6 個月沒人發現是因為 lint 只對 POST/PUT 跑、不對既有 row
-  //   反向校驗、被掩蓋。這次升級助手把問題炸開、是好事。
+  //   v1.17.94 shipped for 6 months without anyone noticing because lint only ran on
+  //   POST/PUT, never back-validating existing rows, which masked it. The upgrade
+  //   assistant blew the problem open, which is a good thing.
 
   return {
     ok: errors.length === 0,
@@ -264,49 +271,50 @@ export function lintLegacyTextRule(rule) {
 }
 
 /**
- * 中英混雜檢查
- * 規則：抓連續英文詞、扣白名單（技術詞、程式碼）、佔總字數 > 10% 失敗
+ * Mixed Chinese-English check
+ * Rule: collect runs of English words, subtract a whitelist (tech terms, code);
+ * fail if they exceed 10% of the total character count.
  */
 function checkMixedLanguage(content) {
-  // 白名單：常見技術詞、不算混雜
-  // v1.17.94 reviewer Important 2：擴充避免 false-positive 卡住合理鐵律
+  // Whitelist: common tech terms that do not count as mixed
+  // v1.17.94 reviewer Important 2: expanded to avoid false-positives blocking reasonable rules
   const techWhitelist = new Set([
-    // 通用通訊協定 / 資料格式
+    // General protocols / data formats
     'API', 'SQL', 'SSH', 'URL', 'HTTP', 'HTTPS', 'JSON', 'TSV', 'CSV', 'XML',
     'YAML', 'CLI', 'UI', 'UX', 'AI', 'LLM', 'MCP', 'CI', 'CD', 'PR',
-    // 平台 / 工具
+    // Platforms / tools
     'OwnMind', 'GitHub', 'GitLab', 'Git', 'Docker', 'Dockerfile', 'Linux', 'Mac', 'Windows',
     'Node', 'npm', 'Postgres', 'PostgreSQL', 'Redis', 'AES', 'Caddy', 'Nginx',
-    // SQL 關鍵字
+    // SQL keywords
     'WHERE', 'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'JOIN', 'FROM', 'COPY',
     'COALESCE', 'NULL', 'IS', 'AS', 'ON', 'AND', 'OR', 'NOT',
-    // 開發動作 / 流程詞
+    // Dev actions / workflow terms
     'IR', 'commit', 'deploy', 'edit', 'fix', 'bug', 'debug', 'PR',
     'push', 'pull', 'force', 'build', 'cache', 'rebase', 'merge', 'checkout',
     'env', 'file', 'path', 'repo', 'hash', 'port', 'host', 'log', 'test', 'run',
     'code', 'type', 'name', 'key', 'value', 'health', 'endpoint',
-    // 業務術語（討論藏資料 / 觀測時常用）
+    // Business terms (common when discussing hidden data / observability)
     'filter', 'cutoff', 'audit', 'admin', 'session', 'context',
-    // AI 工具名稱
+    // AI tool names
     'Claude', 'Codex', 'Cursor', 'Copilot', 'Gemini', 'ChatGPT', 'Antigravity',
     'OpenCode', 'Windsurf',
-    // OwnMind 內部文件 / 概念
+    // OwnMind internal docs / concepts
     'README', 'CHANGELOG', 'FILELIST', 'SKILL', 'Skill', 'OpenSpec',
     'Spec', 'Memory', 'Project', 'Adapter', 'status', 'Status',
     'Format', 'Reference', 'reference',
   ]);
 
-  // 移除程式碼區塊（``` ... ```）跟 inline code（`...`）跟連結
+  // Strip code blocks (``` ... ```), inline code (`...`), and links
   let cleaned = content
     .replace(/```[\s\S]*?```/g, '')
     .replace(/`[^`]+`/g, '')
     .replace(/https?:\/\/\S+/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');  // markdown link 保留 text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');  // keep the text of a markdown link
 
-  // 抓所有連續 4+ 英文字母的詞
+  // Collect all runs of 4+ English letters
   const words = cleaned.match(/[A-Za-z]{4,}/g) || [];
 
-  // 扣除白名單（case-insensitive）
+  // Subtract the whitelist (case-insensitive)
   const mixedWords = words.filter(w => {
     const lower = w.toLowerCase();
     const upper = w.toUpperCase();
@@ -315,15 +323,16 @@ function checkMixedLanguage(content) {
 
   if (mixedWords.length === 0) return null;
 
-  // 計算佔比：英文字母總數 / 內容總字數
+  // Compute the ratio: total English letters / total content chars
   const englishCharCount = mixedWords.reduce((sum, w) => sum + w.length, 0);
   const totalCharCount = cleaned.replace(/\s/g, '').length;
   const ratio = totalCharCount > 0 ? englishCharCount / totalCharCount : 0;
 
-  // v1.17.94 reviewer Important 2 折衷：threshold 從 10% 提到 15%
-  // 給合理空間吸收 1-2 個 missing 技術詞、但仍能擋下「整段英文」這種明顯違反
+  // v1.17.94 reviewer Important 2 compromise: threshold raised from 10% to 15%
+  // Gives reasonable room to absorb 1-2 missing tech terms, while still blocking
+  // an obvious violation like "a whole English paragraph"
   if (ratio > 0.15) {
-    return `中英混雜比例 ${(ratio * 100).toFixed(1)}% > 15%（IR-037 違反）— 找到非白名單英文詞 ${mixedWords.length} 個（前 5 個：${mixedWords.slice(0, 5).join(', ')}）。請改成白話中文、技術詞可保留（如 SQL/API/IR-XXX）`;
+    return `Mixed Chinese-English ratio ${(ratio * 100).toFixed(1)}% > 15% (IR-037 violation) — found ${mixedWords.length} non-whitelisted English words (first 5: ${mixedWords.slice(0, 5).join(', ')}). Please rewrite in plain Chinese; tech terms may stay (e.g. SQL/API/IR-XXX)`;
   }
 
   return null;
