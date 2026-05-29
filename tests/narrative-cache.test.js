@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { createNarrativeCache } from '../src/lib/narrative-cache.js';
 
 describe('narrativeCache', () => {
-  it('set 後立刻 get 拿得到', () => {
+  it('get immediately after set returns the value', () => {
     const c = createNarrativeCache({ ttlMs: 1000 });
     c.set('k1', { foo: 1 });
     assert.deepEqual(c.get('k1'), { foo: 1 });
   });
 
-  it('過期後 get 回 null', () => {
+  it('get returns null after expiry', () => {
     let now = 0;
     const c = createNarrativeCache({ ttlMs: 1, now: () => now });
     c.set('k2', 'v');
@@ -17,14 +17,14 @@ describe('narrativeCache', () => {
     assert.equal(c.get('k2'), null);
   });
 
-  it('不同 key 互不影響', () => {
+  it('different keys do not affect each other', () => {
     const c = createNarrativeCache({ ttlMs: 1000 });
     c.set('a', 1); c.set('b', 2);
     assert.equal(c.get('a'), 1);
     assert.equal(c.get('b'), 2);
   });
 
-  it('過期 entry get 後從 store 移除', () => {
+  it('expired entry is removed from store after get', () => {
     let now = 0;
     const c = createNarrativeCache({ ttlMs: 10, now: () => now });
     c.set('x', 1);

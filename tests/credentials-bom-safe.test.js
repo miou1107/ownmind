@@ -7,15 +7,16 @@ import os from 'node:os';
 const { readCredentials, readJsonSafe } = await import('../shared/helpers.js');
 
 /**
- * v1.17.12 — readCredentials 必須容忍 UTF-8 BOM（回報者 Adam/Eric root cause）
+ * v1.17.12 — readCredentials must tolerate a UTF-8 BOM (reported by Adam/Eric, root cause)
  *
- * install.ps1 在 PS 5.1 用 `Set-Content -Encoding UTF8` 寫 settings.json，會
- * 加 UTF-8 BOM (EF BB BF)。Node.js 的 JSON.parse 不吃 BOM，直接 throw
- * SyntaxError → readCredentials() catch 後回空字串 → scanner 提早 exit 無任
- * 何 heartbeat / event。Windows × 4 使用者全部卡這個。
+ * On PS 5.1, install.ps1 wrote settings.json with `Set-Content -Encoding UTF8`,
+ * which adds a UTF-8 BOM (EF BB BF). Node.js JSON.parse does not accept a BOM and
+ * throws a SyntaxError → readCredentials() catches it and returns an empty string →
+ * the scanner exits early with no heartbeat / event. 4 Windows users were all stuck on this.
  *
- * install.ps1 已在 v1.17.12 改 WriteAllText 避免 BOM，但現有受害者的
- * settings.json 已有 BOM → Node 讀取端必須防禦性 strip。Defense in depth。
+ * install.ps1 was changed to WriteAllText in v1.17.12 to avoid the BOM, but existing
+ * victims' settings.json already has a BOM → the Node read side must defensively strip it.
+ * Defense in depth.
  */
 
 let tmpDir;
@@ -27,7 +28,7 @@ afterEach(() => {
 });
 
 describe('readCredentials — BOM tolerance', () => {
-  it('無 BOM settings.json 正常 parse', () => {
+  it('settings.json without a BOM parses normally', () => {
     const p = path.join(tmpDir, 'settings.json');
     fs.writeFileSync(p, JSON.stringify({
       mcpServers: { ownmind: { env: { OWNMIND_API_KEY: 'k1', OWNMIND_API_URL: 'u1' } } }
@@ -37,7 +38,7 @@ describe('readCredentials — BOM tolerance', () => {
     assert.equal(r.apiUrl, 'u1');
   });
 
-  it('帶 UTF-8 BOM 的 settings.json 仍能 parse（Adam/Eric 受害者）', () => {
+  it('settings.json with a UTF-8 BOM still parses (Adam/Eric victims)', () => {
     const p = path.join(tmpDir, 'settings.json');
     fs.writeFileSync(p, '\uFEFF' + JSON.stringify({
       mcpServers: { ownmind: { env: { OWNMIND_API_KEY: 'k2', OWNMIND_API_URL: 'u2' } } }
@@ -47,7 +48,7 @@ describe('readCredentials — BOM tolerance', () => {
     assert.equal(r.apiUrl, 'u2');
   });
 
-  it('壞 JSON 仍回空 creds（不 crash）', () => {
+  it('broken JSON still returns empty creds (no crash)', () => {
     const p = path.join(tmpDir, 'settings.json');
     fs.writeFileSync(p, 'not json');
     const r = readCredentials(p);
@@ -55,20 +56,20 @@ describe('readCredentials — BOM tolerance', () => {
     assert.equal(r.apiUrl, '');
   });
 
-  it('不存在的檔案回空 creds', () => {
+  it('a non-existent file returns empty creds', () => {
     const r = readCredentials(path.join(tmpDir, 'nope.json'));
     assert.equal(r.apiKey, '');
   });
 });
 
 describe('readJsonSafe — BOM tolerance', () => {
-  it('無 BOM 正常', () => {
+  it('parses normally without a BOM', () => {
     const p = path.join(tmpDir, 'a.json');
     fs.writeFileSync(p, '{"foo":"bar"}');
     assert.deepEqual(readJsonSafe(p), { foo: 'bar' });
   });
 
-  it('帶 BOM 仍能 parse', () => {
+  it('still parses with a BOM', () => {
     const p = path.join(tmpDir, 'a.json');
     fs.writeFileSync(p, '\uFEFF{"foo":"baz"}');
     assert.deepEqual(readJsonSafe(p), { foo: 'baz' });

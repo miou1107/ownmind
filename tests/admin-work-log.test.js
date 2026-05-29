@@ -37,7 +37,7 @@ async function request(app, { method, path }) {
 }
 
 describe('admin-work-log route', () => {
-  it('GET / 拒絕非 super_admin（admin 也不行）', async () => {
+  it('GET / rejects non-super_admin (admin not allowed either)', async () => {
     const app = buildApp({
       queryFn: async () => ({ rows: [] }),
       user: { id: 1, role: 'admin' },
@@ -46,7 +46,7 @@ describe('admin-work-log route', () => {
     assert.equal(r.status, 403);
   });
 
-  it('GET / 拒絕未登入', async () => {
+  it('GET / rejects unauthenticated requests', async () => {
     const app = buildApp({
       queryFn: async () => ({ rows: [] }),
       user: null,
@@ -55,7 +55,7 @@ describe('admin-work-log route', () => {
     assert.equal(r.status, 403);
   });
 
-  it('GET / 預設拉 30 天 100 筆，三來源 union', async () => {
+  it('GET / defaults to last 30 days, 100 rows, union of three sources', async () => {
     const captured = [];
     const app = buildApp({
       queryFn: async (sql, params) => {
@@ -79,7 +79,7 @@ describe('admin-work-log route', () => {
     assert.match(sql, /LIMIT \$\d+ OFFSET \$\d+/, 'limit/offset 走 placeholder');
   });
 
-  it('GET / source=activity 只 query activity_logs（不含 compliance / session）', async () => {
+  it('GET / source=activity only queries activity_logs (excludes compliance / session)', async () => {
     let captured = null;
     const app = buildApp({
       queryFn: async (sql, params) => {
@@ -95,7 +95,7 @@ describe('admin-work-log route', () => {
     assert.doesNotMatch(sql, /session_logs/);
   });
 
-  it('GET / user_id 過濾會帶入 SQL 參數', async () => {
+  it('GET / user_id filter is passed as a SQL parameter', async () => {
     let captured = null;
     const app = buildApp({
       queryFn: async (sql, params) => {
@@ -108,7 +108,7 @@ describe('admin-work-log route', () => {
     assert.ok(captured.params.includes(42), 'params 必須含 user_id=42');
   });
 
-  it('GET / q 搜尋會 ILIKE 包成 %q%', async () => {
+  it('GET / q search wraps the term as %q% for ILIKE', async () => {
     let captured = null;
     const app = buildApp({
       queryFn: async (sql, params) => {
@@ -122,7 +122,7 @@ describe('admin-work-log route', () => {
     assert.match(captured.sql, /ILIKE/);
   });
 
-  it('GET / limit > 500 自動 cap 到 500', async () => {
+  it('GET / limit > 500 is automatically capped at 500', async () => {
     let captured = null;
     const app = buildApp({
       queryFn: async (sql, params) => {
@@ -135,7 +135,7 @@ describe('admin-work-log route', () => {
     assert.equal(r.body.limit, 500);
   });
 
-  it('GET / 回傳 rows 帶 total（用 COUNT() OVER）', async () => {
+  it('GET / returns rows with total (via COUNT() OVER)', async () => {
     const app = buildApp({
       queryFn: async () => ({
         rows: [
@@ -151,7 +151,7 @@ describe('admin-work-log route', () => {
     assert.equal(r.body.rows[0].total_count, undefined, 'total_count 不該洩漏到 rows');
   });
 
-  it('GET /filters 回傳 users / tools / event_types', async () => {
+  it('GET /filters returns users / tools / event_types', async () => {
     const app = buildApp({
       queryFn: async (sql) => {
         if (sql.includes('FROM users')) return { rows: [{ id: 1, name: 'Vin', email: 'v@v' }] };

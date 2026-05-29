@@ -103,7 +103,7 @@ describe('codexMessageId', () => {
   });
 
   it('cache_creation distinction catches the schema-coverage issue', () => {
-    // 兩筆只差 cache_creation → 必須不同 id（否則會被誤 dedupe）
+    // Two records differing only in cache_creation → must have different ids (otherwise wrongly deduped)
     const a = canonicalizeCodexMaterial({ ...fullMaterial, cache_creation: 100 });
     const b = canonicalizeCodexMaterial({ ...fullMaterial, cache_creation: 200 });
     assert.notEqual(codexMessageId('s1', a), codexMessageId('s1', b));

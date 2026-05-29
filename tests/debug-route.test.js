@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { createDebugRouter } from '../src/routes/debug.js';
 
-// 直接呼叫 router 的 handler、繞過 express 的 body-parser。
-// 跟 tests/admin-work-log.test.js 同 pattern。
+// Call the router's handler directly, bypassing express's body-parser.
+// Same pattern as tests/admin-work-log.test.js.
 function buildHandler({ queryFn, user }) {
   const fakeAuth = (req, res, next) => {
     if (!user) return res.status(401).json({ error: 'unauthenticated' });
@@ -57,13 +57,13 @@ const validBody = {
 };
 
 describe('POST /api/debug/install-check', () => {
-  it('未登入回 401', async () => {
+  it('returns 401 when unauthenticated', async () => {
     const router = buildHandler({ queryFn: async () => ({ rows: [] }), user: null });
     const r = await callRoute(router, validBody, null);
     assert.equal(r.status, 401);
   });
 
-  it('成功寫入回 ok=true', async () => {
+  it('returns ok=true on successful write', async () => {
     let captured = null;
     const queryFn = async (sql, args) => {
       captured = { sql, args };
@@ -81,20 +81,20 @@ describe('POST /api/debug/install-check', () => {
     assert.equal(captured.args[5], 'test-host');
   });
 
-  it('缺欄位回 400', async () => {
+  it('returns 400 when fields are missing', async () => {
     const router = buildHandler({ queryFn: async () => ({ rows: [] }), user: { id: 1 } });
     const r = await callRoute(router, { ts: 'x' });
     assert.equal(r.status, 400);
   });
 
-  it('ts 不是合法日期回 400', async () => {
+  it('returns 400 when ts is not a valid date', async () => {
     const router = buildHandler({ queryFn: async () => ({ rows: [] }), user: { id: 1 } });
     const r = await callRoute(router, { ...validBody, ts: 'not-a-date' });
     assert.equal(r.status, 400);
     assert.match(r.body.error, /ts/);
   });
 
-  it('checks 含未知 status 回 400', async () => {
+  it('returns 400 when checks contain an unknown status', async () => {
     const bad = { ...validBody, checks: [{ name: 'x', status: 'weird', detail: 'd' }] };
     const router = buildHandler({ queryFn: async () => ({ rows: [] }), user: { id: 1 } });
     const r = await callRoute(router, bad);
@@ -102,14 +102,14 @@ describe('POST /api/debug/install-check', () => {
     assert.match(r.body.error, /status/);
   });
 
-  it('payload 超過 64KB 回 413', async () => {
+  it('returns 413 when payload exceeds 64KB', async () => {
     const huge = { ...validBody, padding: 'x'.repeat(70 * 1024) };
     const router = buildHandler({ queryFn: async () => ({ rows: [] }), user: { id: 1 } });
     const r = await callRoute(router, huge);
     assert.equal(r.status, 413);
   });
 
-  it('DB 失敗回 500', async () => {
+  it('returns 500 on DB failure', async () => {
     const queryFn = async () => { throw new Error('connection refused'); };
     const router = buildHandler({ queryFn, user: { id: 1 } });
     const r = await callRoute(router, validBody);

@@ -9,11 +9,12 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.10 — register-scanner-task.ps1 Duration 修正（回報者 Adam）
+ * v1.17.10 — register-scanner-task.ps1 Duration fix (reported by Adam)
  *
- * `[TimeSpan]::MaxValue` 在某些 Windows build 超出 Task Scheduler 可接受範圍，
- * 導致 Register-ScheduledTask 吐「Duration 格式錯誤」→ usage scanner 排程沒註冊上。
- * 推薦改成「足夠大的有限值」例如 36500 天（~100 年），符合 Microsoft docs 建議。
+ * `[TimeSpan]::MaxValue` exceeds the range Task Scheduler accepts on some Windows builds,
+ * causing Register-ScheduledTask to throw "Duration format error" → the usage scanner
+ * schedule never registers. Recommended fix: use a "sufficiently large finite value" such
+ * as 36500 days (~100 years), per Microsoft docs guidance.
  */
 
 describe('register-scanner-task.ps1 — Duration', () => {
@@ -22,7 +23,7 @@ describe('register-scanner-task.ps1 — Duration', () => {
     'utf8'
   );
 
-  it('不能用 [TimeSpan]::MaxValue 當 RepetitionDuration', () => {
+  it('must not use [TimeSpan]::MaxValue as RepetitionDuration', () => {
     assert.doesNotMatch(
       content,
       /RepetitionDuration[\s\S]{0,80}\[TimeSpan\]::MaxValue/,
@@ -30,7 +31,7 @@ describe('register-scanner-task.ps1 — Duration', () => {
     );
   });
 
-  it('Days 介於 1000 ~ 9999 之間（v1.17.11 Eric 實測上限）', () => {
+  it('Days is between 1000 and 9999 (v1.17.11 Eric tested upper bound)', () => {
     const match = content.match(
       /RepetitionDuration\s+\(New-TimeSpan\s+-Days\s+(\d+)\)/
     );

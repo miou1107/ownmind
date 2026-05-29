@@ -137,7 +137,7 @@ describe('pricing-lookup — edge cases', () => {
   });
 
   it('breaks ties by id DESC when two rows share effective_date (defense-in-depth)', () => {
-    // UNIQUE(tool, model, effective_date) 理論上擋同日；這裡測 helper 本身的 tiebreaker
+    // UNIQUE(tool, model, effective_date) should block same-day rows in theory; here we test the helper's own tiebreaker
     const rows = [
       { id: 10, tool: 'a', model: 'b', input_per_1m: 1,
         output_per_1m: 0, cache_write_per_1m: 0, cache_read_per_1m: 0,
@@ -151,24 +151,24 @@ describe('pricing-lookup — edge cases', () => {
   });
 
   it('normalizes pg DATE-as-UTC-midnight correctly regardless of host TZ', () => {
-    // pg driver 回傳 DATE 時會產生 UTC 午夜 Date 物件
+    // The pg driver produces a UTC-midnight Date object when returning DATE
     const pgDate = new Date(Date.UTC(2025, 2, 1));  // 2025-03-01 UTC midnight
     const rows = [
       { id: 1, tool: 't', model: 'm', input_per_1m: 5,
         output_per_1m: 0, cache_write_per_1m: 0, cache_read_per_1m: 0,
         effective_date: pgDate }
     ];
-    // 查 2025-03-01 應該命中（不因 local TZ 被誤算到前一天）
+    // Querying 2025-03-01 should match (not miscomputed to the previous day due to local TZ)
     const picked = pickPricing(rows, 't', 'm', '2025-03-01');
     assert.equal(picked.input_per_1m, 5);
-    // 查 2025-02-28 不應命中
+    // Querying 2025-02-28 should not match
     const miss = pickPricing(rows, 't', 'm', '2025-02-28');
     assert.equal(miss, null);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// Route-level CRUD tests — 用 mock.module 替換 db.query，不依賴真實 DB
+// Route-level CRUD tests — replace db.query with mock.module, no dependency on a real DB
 // ═══════════════════════════════════════════════════════════════════════
 
 function buildApp({ queryFn, user }) {
@@ -238,7 +238,7 @@ describe('POST /api/usage/pricing — route validation + auth', () => {
     });
     const res = await request(app, {
       method: 'POST', path: '/api/usage/pricing',
-      body: { tool: 'claude-code' } // 缺 model / input / output / effective_date
+      body: { tool: 'claude-code' } // missing model / input / output / effective_date
     });
     assert.equal(res.status, 400);
     assert.match(res.body.error, /必填欄位缺少/);

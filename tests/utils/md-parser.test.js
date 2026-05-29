@@ -66,7 +66,7 @@ test('parseStandardMarkdown should handle plain text before first header', (t) =
 # First Header
 Body...`;
   const chunks = parseStandardMarkdown(md, 3);
-  // 現行邏輯：前導文字會被切為一個 title 為空字串的 chunk
+  // Current logic: leading text is split into a chunk with an empty-string title
   assert.strictEqual(chunks[0].title, '');
   assert.strictEqual(chunks[0].content, 'This is some preamble.');
   assert.strictEqual(chunks[1].title, 'First Header');

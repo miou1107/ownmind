@@ -24,9 +24,10 @@ test('tip gating modulo (% 10) is removed — tip fires on every call', () => {
 });
 
 test('random tip is included in every tool response (unconditional)', () => {
-  // v1.17.69 起改用 composeToolResponse({ ..., tip: getRandomTip(), tipTag: ... })
-  // 取代原本的 contentParts.push。主要動機：把多個 text part 合併成單一 part，
-  // 避免 Claude Code UI 摺疊卡片把後段 part 藏起來。tip 仍必須無條件帶上。
+  // Since v1.17.69 we use composeToolResponse({ ..., tip: getRandomTip(), tipTag: ... })
+  // instead of the original contentParts.push. Main motivation: merge multiple text parts into
+  // a single part, so the Claude Code UI's collapsing cards don't hide the later parts.
+  // The tip must still be attached unconditionally.
   const composeCallMatch = mcpSource.match(
     /return\s+composeToolResponse\(\s*\{[\s\S]*?\}\s*\)\s*;/
   );
@@ -44,7 +45,7 @@ test('random tip is included in every tool response (unconditional)', () => {
     '預期 tipTag 用 formatTag("Tip")，跟版號標籤對齊'
   );
 
-  // 同樣不能再退回 % 10 那種閘門
+  // Likewise, must not regress back to the % 10 kind of gating
   const blockStart = mcpSource.indexOf(composeCall);
   const precedingSlice = mcpSource.slice(Math.max(0, blockStart - 400), blockStart);
   const hasGuard = /if\s*\([^)]*%[^)]*\)/.test(precedingSlice.split('\n').slice(-10).join('\n'));

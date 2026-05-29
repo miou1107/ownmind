@@ -90,7 +90,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
         ] };
       }
       if (/FROM session_count\s+WHERE date/.test(sql)) {
-        // Tier-2 aggregate per user（此測試沒 Cursor/Antigravity 資料）
+        // Tier-2 aggregate per user (this test has no Cursor/Antigravity data)
         return { rows: [] };
       }
       throw new Error('unexpected SQL: ' + sql);
@@ -111,8 +111,8 @@ describe('GET /api/usage/team-stats (admin+)', () => {
   });
 
   it('P2 regression: user with no activity shows cost_usd=0 (not null from LEFT JOIN)', async () => {
-    // 回 cost_usd: 0 代表 bool_or 已正確排除 LEFT JOIN 的 NULL 列
-    // （實測 staging 曾回 null，因 bool_or(NULL IS NULL)=true 誤判）
+    // Returning cost_usd: 0 means bool_or correctly excluded the NULL rows from the LEFT JOIN
+    // (staging once returned null because bool_or(NULL IS NULL)=true caused a misjudgment)
     const fakeQuery = async (sql) => {
       if (/user_status AS/.test(sql)) return { rows: [] };
       if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
@@ -152,7 +152,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.users[0].totals.cost_usd, null,
       '有任一日 cost=NULL → 整筆回 null（不再 COALESCE→0）');
-    // tokens 仍照算
+    // tokens are still counted
     assert.equal(res.body.users[0].totals.input_tokens, '500');
   });
 
@@ -162,12 +162,12 @@ describe('GET /api/usage/team-stats (admin+)', () => {
       if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [
-          // User 1：有 Tier-1 資料
+          // User 1: has Tier-1 data
           { id: 1, name: 'U1', email: '1@x.com',
             cost_usd: 0.5, input_tokens: '10', output_tokens: '5',
             cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
             message_count: 3, wall_seconds: 600, active_seconds: 300, session_count: 2 },
-          // User 2：只有 Tier-2（只用 Cursor/Antigravity）
+          // User 2: Tier-2 only (uses only Cursor/Antigravity)
           { id: 2, name: 'U2', email: '2@x.com',
             cost_usd: 0, input_tokens: '0', output_tokens: '0',
             cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
@@ -187,10 +187,10 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     assert.equal(res.status, 200);
     const u1 = res.body.users.find((u) => u.user.id === 1);
     const u2 = res.body.users.find((u) => u.user.id === 2);
-    // User 1：Tier-1 session=2 + Tier-2 session=3 = 5
+    // User 1: Tier-1 session=2 + Tier-2 session=3 = 5
     assert.equal(u1.totals.session_count, 5, 'Tier-1 + Tier-2 sessions 合併');
     assert.equal(u1.totals.wall_seconds, 720, '600 + 120');
-    // User 2：只有 Tier-2
+    // User 2: Tier-2 only
     assert.equal(u2.totals.session_count, 5,
       'Tier-2-only user 也要計入 session_count，不是 0');
   });

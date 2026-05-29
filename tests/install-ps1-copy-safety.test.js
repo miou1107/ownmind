@@ -9,19 +9,20 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.10 — install.ps1 Copy-Item self-overwrite 防護（回報者 Adam）
+ * v1.17.10 — install.ps1 Copy-Item self-overwrite guard (reported by Adam)
  *
- * $OwnmindDir = $HOME\.ownmind 跟 dest $HOME\.ownmind\shared\ 是 git clone 後
- * 的同一位置 — Copy-Item 會嘗試「複製自己到自己」並吐 4 個紅字警告（雖無害但吵，
- * 且讓使用者誤以為安裝失敗）。install.sh 用 `-ef` 防護，install.ps1 沒做。
+ * $OwnmindDir = $HOME\.ownmind and dest $HOME\.ownmind\shared\ are the same
+ * location after git clone — Copy-Item tries to "copy itself onto itself" and
+ * emits 4 red warnings (harmless but noisy, and makes users think the install
+ * failed). install.sh guards with `-ef`; install.ps1 does not.
  */
 
 describe('install.ps1 — Copy-Item self-overwrite guard', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('verification.js 複製前必須比對解析後路徑', () => {
-    // 接受兩種常見寫法：GetFullPath 比較 OR 用 if($src -ne $dst) 加 Resolve-Path
-    // 也接受直接移除該 Copy-Item（因為 git clone 本來就在那）
+  it('verification.js must compare resolved paths before copying', () => {
+    // Accept two common forms: GetFullPath comparison OR if($src -ne $dst) with Resolve-Path
+    // Also accept simply removing the Copy-Item (git clone already put it there)
     const hasGuard =
       /GetFullPath|Resolve-Path.*\$VerificationSrc|\$VerificationSrc\s+-ne|SrcFull\s*=|\$srcResolved/.test(content);
     const copyLineRegex = /Copy-Item\s+\$VerificationSrc/;
@@ -32,13 +33,13 @@ describe('install.ps1 — Copy-Item self-overwrite guard', () => {
     );
   });
 
-  it('git hook JS 檔複製前必須比對解析後路徑', () => {
-    // 找 foreach 迴圈裡的 Copy-Item $src 前有沒有比對
+  it('git hook JS files must compare resolved paths before copying', () => {
+    // Check whether the Copy-Item $src inside the foreach loop has a comparison
     const loopBlock = content.match(
       /foreach\s*\(\s*\$jsFile[^)]+\)\s*\{[\s\S]*?Copy-Item[\s\S]*?\}/
     );
     if (!loopBlock) {
-      // 找不到 loop 代表被重構掉了，OK
+      // No loop found means it was refactored away, OK
       return;
     }
     const block = loopBlock[0];

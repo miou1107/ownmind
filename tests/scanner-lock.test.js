@@ -5,9 +5,10 @@ import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
 
-// 這支 test 只驗證 lock file 的 stale-handling 行為，不跑 scanner 本身。
-// 因為 acquireLock 硬編路徑為 ~/.ownmind/cache/scanner.lock，我們只驗證 spawn 另一
-// 個 node process 寫 lock、然後模擬 stale（讓它退出）、重新 acquire 應成功。
+// This test only verifies the lock file's stale-handling behavior, not the scanner itself.
+// Because acquireLock hard-codes the path to ~/.ownmind/cache/scanner.lock, we only verify
+// spawning another node process to write the lock, then simulating stale (making it exit),
+// and re-acquiring should succeed.
 
 const LOCK_PATH = path.join(os.homedir(), '.ownmind', 'cache', 'scanner.lock');
 
@@ -39,7 +40,7 @@ describe('scanner lock', () => {
       `../hooks/ownmind-usage-scanner.js?cb=${Date.now()}`
     );
 
-    // 建一個真的在跑的 child process，寫其 PID 進 lock
+    // Create a genuinely running child process and write its PID into the lock
     const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 3000)'], { stdio: 'ignore' });
     await fs.mkdir(path.dirname(LOCK_PATH), { recursive: true });
     await fs.writeFile(LOCK_PATH, String(child.pid));
@@ -47,7 +48,7 @@ describe('scanner lock', () => {
     try {
       const got = await acquireLock();
       assert.equal(got, false, '活 PID 擁有 lock → acquire 應失敗');
-      // lock 不該被覆寫
+      // lock should not be overwritten
       const raw = await fs.readFile(LOCK_PATH, 'utf8');
       assert.equal(raw.trim(), String(child.pid));
     } finally {
@@ -62,11 +63,11 @@ describe('scanner lock', () => {
       `../hooks/ownmind-usage-scanner.js?cb=${Date.now()}`
     );
 
-    // 找一個「幾乎不可能活著」的 PID（已結束的 child）
+    // Find a PID that is "almost impossible to be alive" (an already-exited child)
     const child = spawn(process.execPath, ['-e', '']);
     await new Promise((r) => child.once('exit', r));
     const deadPid = child.pid;
-    // 確認真的 dead
+    // Confirm it is really dead
     assert.throws(() => process.kill(deadPid, 0), { code: 'ESRCH' });
 
     await fs.mkdir(path.dirname(LOCK_PATH), { recursive: true });
@@ -85,7 +86,7 @@ describe('scanner lock', () => {
       `../hooks/ownmind-usage-scanner.js?cb=${Date.now()}`
     );
 
-    // 寫自己的 PID 進去，但把 mtime 設為 7 小時前
+    // Write our own PID, but set mtime to 7 hours ago
     await fs.mkdir(path.dirname(LOCK_PATH), { recursive: true });
     await fs.writeFile(LOCK_PATH, String(process.pid));
     const ancient = new Date(Date.now() - 7 * 60 * 60 * 1000);

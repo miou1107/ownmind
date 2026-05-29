@@ -11,23 +11,24 @@ const repoRoot = path.resolve(__dirname, '..');
 /**
  * v1.17.88 — /me trailing slash redirect
  *
- * Vin 回報：https://kkvin.com/ownmind/me 連不上、必須打 /ownmind/me/。
+ * Vin reported: https://kkvin.com/ownmind/me does not load; you must hit /ownmind/me/.
  *
- * 根因：Express `app.use('/me', express.static(...))` 對 mount path 本身不
- * 自動加 trailing slash redirect — 只對「目錄請求」做。
- * `/me`（沒尾斜線）會直接 404、`/me/` 才會 hit index.html。
+ * Root cause: Express `app.use('/me', express.static(...))` does not auto-add a
+ * trailing slash redirect for the mount path itself — only for "directory requests".
+ * `/me` (no trailing slash) just 404s; only `/me/` hits index.html.
  *
- * 修法：在 static mount 前加 `app.get('/me', (req,res) => res.redirect(301, 'me/'))`。
- * 用相對路徑 'me/' 避免 nginx reverse proxy strip /ownmind prefix 後 Location
- * 變絕對路徑的問題（相對 'me/' 對當前 URL /ownmind/me 來說瀏覽器會拼出 /ownmind/me/）。
+ * Fix: before the static mount add `app.get('/me', (req,res) => res.redirect(301, 'me/'))`.
+ * Use the relative path 'me/' to avoid the problem where, after the nginx reverse proxy
+ * strips the /ownmind prefix, the Location becomes an absolute path (relative 'me/' against
+ * the current URL /ownmind/me makes the browser resolve to /ownmind/me/).
  */
 
-describe('v1.17.88 — /me 沒 trailing slash 自動 301 redirect', () => {
-  // Mini Express app 模擬 src/app.js 結構
+describe('v1.17.88 — /me without trailing slash auto 301 redirect', () => {
+  // Mini Express app mirroring the src/app.js structure
   function makeApp() {
     const app = express();
     app.disable('x-powered-by');
-    // 鏡像 src/app.js 的 mount 順序
+    // Mirror the mount order of src/app.js
     app.get('/me', (req, res, next) => {
       if (req.originalUrl.endsWith('/')) return next();
       res.redirect(301, 'me/');
@@ -47,20 +48,20 @@ describe('v1.17.88 — /me 沒 trailing slash 自動 301 redirect', () => {
     });
   }
 
-  it('GET /me 回 301 + Location: me/（相對路徑）', async () => {
+  it('GET /me returns 301 + Location: me/ (relative path)', async () => {
     const app = makeApp();
     const r = await getResponse(app, '/me');
     assert.equal(r.status, 301, '應該 301 永久重定向');
     assert.equal(r.location, 'me/', 'Location 必須是相對路徑 me/，避免 nginx prefix 問題');
   });
 
-  it('GET /me/ 直接回 200（serve index.html）', async () => {
+  it('GET /me/ returns 200 directly (serves index.html)', async () => {
     const app = makeApp();
     const r = await getResponse(app, '/me/');
     assert.equal(r.status, 200, '/me/ 應該直接 200 serve index.html');
   });
 
-  it('source code 含 conditional trailing slash redirect', async () => {
+  it('source code contains a conditional trailing slash redirect', async () => {
     const fs = await import('node:fs');
     const src = fs.readFileSync(path.join(repoRoot, 'src/app.js'), 'utf8');
     assert.match(src,

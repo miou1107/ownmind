@@ -16,13 +16,13 @@ describe('computeTimeSpans', () => {
   });
 
   it('wall = last - first, active sums gaps <= threshold', () => {
-    // t0, +30s, +60s, +900s (超過 600s 視為離線), +120s
+    // t0, +30s, +60s, +900s (over 600s counts as offline), +120s
     const base = new Date('2026-04-21T09:00:00Z').getTime();
     const ts = [0, 30_000, 90_000, 990_000, 1_110_000].map((d) => new Date(base + d));
     const r = computeTimeSpans(ts, 600);
     // wall = 1110s
     assert.equal(r.wall_seconds, 1110);
-    // active = 30 + 60 + 120 = 210 (900s gap 被跳過)
+    // active = 30 + 60 + 120 = 210 (900s gap is skipped)
     assert.equal(r.active_seconds, 210);
   });
 
@@ -98,7 +98,7 @@ describe('buildDailyRow', () => {
     assert.equal(row.message_count, 2);
     // opus input: 15 + sonnet output: 15 = 30 USD
     assert.equal(Number(row.cost_usd.toFixed(6)), 30);
-    // latestModel 用最晚 ts 的 model
+    // latestModel uses the model of the latest ts
     assert.equal(row.model, 'sonnet');
   });
 
@@ -125,9 +125,9 @@ describe('buildDailyRow', () => {
       { user_id: 1, tool: 'claude-code', session_id: 's1', date: '2026-04-21' },
       events, pricingRows
     );
-    // 政策：partial cost 比 null 危險；任何 unknown pricing → 整筆 null
+    // Policy: partial cost is more dangerous than null; any unknown pricing → whole row null
     assert.equal(row.cost_usd, null);
-    // tokens 仍照算
+    // tokens are still counted
     assert.equal(row.input_tokens, 1_001_000);
   });
 
@@ -151,31 +151,31 @@ describe('buildDailyRow', () => {
         input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0 },
       { model: 'opus', ts: '2026-04-21T09:05:00Z',  // +300s
         input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0 },
-      { model: 'opus', ts: '2026-04-21T09:30:00Z',  // +1500s （超過）
+      { model: 'opus', ts: '2026-04-21T09:30:00Z',  // +1500s (over threshold)
         input_tokens: 0, output_tokens: 0, cache_creation_tokens: 0, cache_read_tokens: 0 }
     ];
     const row = buildDailyRow(
       { user_id: 1, tool: 'claude-code', session_id: 's1', date: '2026-04-21' },
       events, pricingRows);
     assert.equal(row.wall_seconds, 1800);    // 30 min
-    assert.equal(row.active_seconds, 300);   // 只算第一段
+    assert.equal(row.active_seconds, 300);   // only the first segment counts
   });
 });
 
 describe('deriveTouchedCombos', () => {
   it('dedupes combos and converts ts to Asia/Taipei date', () => {
     const events = [
-      { tool: 'claude-code', session_id: 's1', ts: '2026-04-21T01:00:00Z' },  // 台灣 09:00
-      { tool: 'claude-code', session_id: 's1', ts: '2026-04-21T10:00:00Z' },  // 台灣 18:00
-      { tool: 'codex',       session_id: 's2', ts: '2026-04-21T16:30:00Z' },  // 台灣 00:30 → 2026-04-22
-      { tool: 'claude-code', session_id: 's1', ts: '2026-04-20T15:30:00Z' }   // 台灣 23:30 → 2026-04-20
+      { tool: 'claude-code', session_id: 's1', ts: '2026-04-21T01:00:00Z' },  // Taiwan 09:00
+      { tool: 'claude-code', session_id: 's1', ts: '2026-04-21T10:00:00Z' },  // Taiwan 18:00
+      { tool: 'codex',       session_id: 's2', ts: '2026-04-21T16:30:00Z' },  // Taiwan 00:30 → 2026-04-22
+      { tool: 'claude-code', session_id: 's1', ts: '2026-04-20T15:30:00Z' }   // Taiwan 23:30 → 2026-04-20
     ];
     const combos = deriveTouchedCombos(events);
     const set = new Set(combos.map((c) => `${c.tool}::${c.session_id}::${c.date}`));
     assert.ok(set.has('claude-code::s1::2026-04-21'));
     assert.ok(set.has('codex::s2::2026-04-22'));
     assert.ok(set.has('claude-code::s1::2026-04-20'));
-    assert.equal(combos.length, 3);  // 2026-04-21 重複 dedupe
+    assert.equal(combos.length, 3);  // 2026-04-21 duplicate is deduped
   });
 });
 

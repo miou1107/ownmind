@@ -122,7 +122,7 @@ describe('loadClients — needs_upgrade', () => {
       rows: [
         mkRow(1, 'A', 'a@x.com', 'user', 'claude-code', '1.16.0', 3600_000),
         mkRow(2, 'B', 'b@x.com', 'user', 'claude-code', '1.17.0', 3600_000),
-        mkRow(3, 'C', 'c@x.com', 'user', 'claude-code', '1.18.0', 3600_000)  // 比 server 新
+        mkRow(3, 'C', 'c@x.com', 'user', 'claude-code', '1.18.0', 3600_000)  // newer than server
       ]
     });
     const data = await loadClients({ query, serverVersion: '1.17.0', now });
@@ -173,15 +173,15 @@ describe('loadClients — coverage summary', () => {
     const H = 60 * 60 * 1000;
     const query = async () => ({
       rows: [
-        // user 1: active + 新版
+        // user 1: active + new version
         mkRow(1, 'A', 'a@x.com', 'user', 'claude-code', '1.17.0', 2 * H),
-        // user 2: active + 舊版
+        // user 2: active + old version
         mkRow(2, 'B', 'b@x.com', 'user', 'claude-code', '1.16.0', 2 * H),
         // user 3: stale
         mkRow(3, 'C', 'c@x.com', 'user', 'claude-code', '1.17.0', 30 * H),
         // user 4: offline
         mkRow(4, 'D', 'd@x.com', 'user', 'claude-code', '1.17.0', 60 * H),
-        // user 5: 未裝
+        // user 5: not installed
         mkRow(5, 'E', 'e@x.com', 'user')
       ]
     });

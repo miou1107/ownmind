@@ -37,7 +37,7 @@ function fakeQuery() {
 }
 
 describe('GET /api/me/narrative', () => {
-  it('回傳 schema 含 range / generated_at / sections', async () => {
+  it('response schema includes range / generated_at / sections', async () => {
     const app = buildApp({ query: fakeQuery() });
     const res = await get(app, '/api/me/narrative?range=14d');
     assert.equal(res.status, 200);
@@ -46,7 +46,7 @@ describe('GET /api/me/narrative', () => {
     assert.ok(res.body.sections);
   });
 
-  it('sections 含全部 11 個 keys（即使資料空）', async () => {
+  it('sections includes all 11 keys (even when data is empty)', async () => {
     const app = buildApp({ query: fakeQuery() });
     const res = await get(app, '/api/me/narrative?range=14d');
     const expected = [
@@ -59,13 +59,13 @@ describe('GET /api/me/narrative', () => {
     }
   });
 
-  it('range 缺省時 default 14d', async () => {
+  it('defaults to 14d when range is omitted', async () => {
     const app = buildApp({ query: fakeQuery() });
     const res = await get(app, '/api/me/narrative');
     assert.equal(res.body.range, '14d');
   });
 
-  it('SQL 失敗回 500 + 友善訊息', async () => {
+  it('SQL failure returns 500 + a friendly message', async () => {
     const app = buildApp({ query: async () => { throw new Error('db down'); } });
     const res = await get(app, '/api/me/narrative?range=14d');
     assert.equal(res.status, 500);
@@ -74,7 +74,7 @@ describe('GET /api/me/narrative', () => {
 });
 
 describe('GET /api/me/narrative/insights', () => {
-  it('沒設 LLM_SWITCH_API_KEY 回 503', async () => {
+  it('returns 503 when LLM_SWITCH_API_KEY is not set', async () => {
     const router = createNarrativeRouter({
       query: async () => ({ rows: [] }),
       auth: fakeAuth,
@@ -87,7 +87,7 @@ describe('GET /api/me/narrative/insights', () => {
     assert.equal(res.body.code, 'no_api_key');
   });
 
-  it('資料 hash 相同時走 cache、第二次不打 LLM', async () => {
+  it('uses the cache when the data hash matches; the second call does not hit the LLM', async () => {
     let llmCalls = 0;
     const fakeLLM = async () => {
       llmCalls++;
@@ -118,7 +118,7 @@ describe('GET /api/me/narrative/insights', () => {
     assert.equal(llmCalls, 1, 'LLM should be called only once');
   });
 
-  it('LLM 失敗回 502', async () => {
+  it('LLM failure returns 502', async () => {
     const router = createNarrativeRouter({
       query: async () => ({ rows: [] }),
       auth: fakeAuth,
@@ -131,7 +131,7 @@ describe('GET /api/me/narrative/insights', () => {
     assert.equal(res.status, 502);
   });
 
-  it('PII (email) 在送 LLM 前被 redact', async () => {
+  it('PII (email) is redacted before being sent to the LLM', async () => {
     let received;
     const fakeLLM = async ({ messages }) => {
       received = messages[1].content;

@@ -4,18 +4,18 @@ import assert from 'node:assert/strict';
 const { buildSessionRecentQuery } = await import('../src/lib/session-query.js');
 
 /**
- * v1.17.13 — GET /api/session/recent 加 `q` 參數（回報者 Michelle）
+ * v1.17.13 — GET /api/session/recent adds a `q` parameter (reported by Michelle)
  *
- * Michelle 用 `ownmind_search` 搜 "ai_kol" / "Selenium" / "趨勢" 全部回空。
- * Root cause：search endpoint 只查 memories 表，但 session_logs（由
- * ownmind_log_session 寫入）是獨立表，永遠 miss。
+ * Michelle used `ownmind_search` to search "ai_kol" / "Selenium" / "趨勢" and all returned empty.
+ * Root cause: the search endpoint only queries the memories table, but session_logs (written by
+ * ownmind_log_session) is a separate table, so it always misses.
  *
- * 修法：在 /api/session/recent 加 q query，可 ILIKE search summary+details。
- * MCP 端 ownmind_search 再同時呼叫兩個 endpoint 合併結果。
+ * Fix: add a q query to /api/session/recent that can ILIKE-search summary+details.
+ * On the MCP side, ownmind_search then calls both endpoints and merges the results.
  */
 
-describe('buildSessionRecentQuery — 純函式', () => {
-  it('無 q — 照舊行為：user_id + days 過濾', () => {
+describe('buildSessionRecentQuery — pure function', () => {
+  it('no q — legacy behavior: filter by user_id + days', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 7 });
     assert.match(q.text, /WHERE user_id = \$1/);
     assert.match(q.text, /created_at >= NOW\(\) - INTERVAL '1 day' \* \$2/);
@@ -23,13 +23,13 @@ describe('buildSessionRecentQuery — 純函式', () => {
     assert.deepEqual(q.values, [6, 7]);
   });
 
-  it('has q — 加 ILIKE 過濾 summary + details', () => {
+  it('has q — adds ILIKE filter on summary + details', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 30, q: 'ai_kol' });
     assert.match(q.text, /ILIKE/);
-    // summary 或 details::text 要 match（details 是 JSONB 需 cast）
+    // summary or details::text must match (details is JSONB, needs a cast)
     assert.match(q.text, /summary\s+ILIKE/);
     assert.match(q.text, /details::text[\s\S]{0,20}ILIKE/);
-    // q 以 %...% pattern 傳進 values
+    // q is passed into values as a %...% pattern
     const qIdx = q.values.findIndex((v) => typeof v === 'string' && v.startsWith('%') && v.endsWith('%'));
     assert.ok(qIdx >= 0, `expected pattern, got: ${JSON.stringify(q.values)}`);
     assert.equal(q.values[qIdx], '%ai_kol%');
@@ -41,12 +41,12 @@ describe('buildSessionRecentQuery — 純函式', () => {
     assert.ok(q.values.includes('cursor'));
   });
 
-  it('includeCompressed=false 時過濾 compressed', () => {
+  it('filters compressed when includeCompressed=false', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 7, includeCompressed: false });
     assert.match(q.text, /AND compressed = false/);
   });
 
-  it('includeCompressed=true 時不過濾', () => {
+  it('does not filter when includeCompressed=true', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 7, includeCompressed: true });
     assert.doesNotMatch(q.text, /compressed\s*=\s*false/);
   });
@@ -56,7 +56,7 @@ describe('buildSessionRecentQuery — 純函式', () => {
     assert.match(q.text, /ORDER BY created_at DESC/);
   });
 
-  it('q + tool 組合', () => {
+  it('q + tool combination', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 7, q: 'Spec', tool: 'cursor' });
     assert.match(q.text, /ILIKE/);
     assert.match(q.text, /AND tool = \$\d+/);
@@ -64,13 +64,13 @@ describe('buildSessionRecentQuery — 純函式', () => {
     assert.ok(q.values.includes('cursor'));
   });
 
-  it('q 被 wrap 成 %q% pattern，不 unwrap original', () => {
+  it('q is wrapped into a %q% pattern, original not unwrapped', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 7, q: '50%' });
-    // % 在 ILIKE 是 wildcard，使用者輸入的 % 照樣 pass（已記入 ILIKE spec）
+    // % is a wildcard in ILIKE; user-entered % passes through as-is (documented in the ILIKE spec)
     assert.ok(q.values.includes('%50%%'));
   });
 
-  it('空 q 當沒 q', () => {
+  it('empty q is treated as no q', () => {
     const q = buildSessionRecentQuery({ userId: 6, days: 7, q: '' });
     assert.doesNotMatch(q.text, /ILIKE/);
   });

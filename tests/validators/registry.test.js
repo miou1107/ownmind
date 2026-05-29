@@ -10,13 +10,13 @@ import {
 describe('v1.21.0 validator registry', () => {
 
   describe('VALIDATOR_REGISTRY', () => {
-    it('含內建 3 個 validator', () => {
+    it('includes the 3 built-in validators', () => {
       assert.ok(VALIDATOR_REGISTRY.jargon_explanation);
       assert.ok(VALIDATOR_REGISTRY.language_mixed_ratio);
       assert.ok(VALIDATOR_REGISTRY.privacy_detect);
     });
 
-    it('每個 validator 都有 name + check function', () => {
+    it('every validator has a name + check function', () => {
       for (const [key, mod] of Object.entries(VALIDATOR_REGISTRY)) {
         assert.equal(mod.name, key, `${key} module 的 name 屬性該等於 registry key`);
         assert.equal(typeof mod.check, 'function', `${key} 該有 check function`);
@@ -25,28 +25,28 @@ describe('v1.21.0 validator registry', () => {
   });
 
   describe('findValidator', () => {
-    it('找到 → 回 module', () => {
+    it('found → returns module', () => {
       const v = findValidator('jargon_explanation');
       assert.ok(v);
       assert.equal(v.name, 'jargon_explanation');
     });
 
-    it('找不到 → 回 null', () => {
+    it('not found → returns null', () => {
       assert.equal(findValidator('nonexistent'), null);
     });
 
-    it('空字串 → 回 null', () => {
+    it('empty string → returns null', () => {
       assert.equal(findValidator(''), null);
     });
 
-    it('null / undefined → 回 null 不 crash', () => {
+    it('null / undefined → returns null without crashing', () => {
       assert.equal(findValidator(null), null);
       assert.equal(findValidator(undefined), null);
     });
   });
 
   describe('listAvailableValidators', () => {
-    it('列出 3 個內建 validator name', () => {
+    it('lists the 3 built-in validator names', () => {
       const list = listAvailableValidators();
       assert.ok(list.includes('jargon_explanation'));
       assert.ok(list.includes('language_mixed_ratio'));
@@ -56,7 +56,7 @@ describe('v1.21.0 validator registry', () => {
   });
 
   describe('extractEnabledValidators', () => {
-    it('規則含 lint_validator → 抽出', () => {
+    it('rule with lint_validator → extracted', () => {
       const rules = [
         { code: 'IR-036', metadata: { lint_validator: { name: 'jargon_explanation', params: {} } } },
         { code: 'IR-037', metadata: { lint_validator: { name: 'language_mixed_ratio', params: { threshold: 0.2 } } } },
@@ -68,17 +68,17 @@ describe('v1.21.0 validator registry', () => {
       assert.deepEqual(enabled[1].params, { threshold: 0.2 });
     });
 
-    it('規則沒設 lint_validator → 跳過', () => {
+    it('rule without lint_validator → skipped', () => {
       const rules = [
-        { code: 'IR-001', metadata: { /* 沒 lint_validator */ } },
+        { code: 'IR-001', metadata: { /* no lint_validator */ } },
         { code: 'IR-002', metadata: null },
-        { code: 'IR-003' /* 沒 metadata */ },
+        { code: 'IR-003' /* no metadata */ },
       ];
       const enabled = extractEnabledValidators(rules);
       assert.equal(enabled.length, 0);
     });
 
-    it('規則 lint_validator.name 非字串 → 跳過', () => {
+    it('rule with non-string lint_validator.name → skipped', () => {
       const rules = [
         { code: 'IR-X', metadata: { lint_validator: { name: 123 } } },
         { code: 'IR-Y', metadata: { lint_validator: { name: '' } } },
@@ -88,29 +88,29 @@ describe('v1.21.0 validator registry', () => {
       assert.equal(enabled.length, 0);
     });
 
-    it('rules 為非陣列 → 回空陣列不 crash', () => {
+    it('rules is not an array → returns empty array without crashing', () => {
       assert.deepEqual(extractEnabledValidators(null), []);
       assert.deepEqual(extractEnabledValidators(undefined), []);
       assert.deepEqual(extractEnabledValidators('not-array'), []);
     });
 
-    it('params 為 undefined → 預設空物件', () => {
+    it('params is undefined → defaults to empty object', () => {
       const rules = [
-        { code: 'IR-X', metadata: { lint_validator: { name: 'jargon_explanation' /* 沒 params */ } } },
+        { code: 'IR-X', metadata: { lint_validator: { name: 'jargon_explanation' /* no params */ } } },
       ];
       const enabled = extractEnabledValidators(rules);
       assert.deepEqual(enabled[0].params, {});
     });
   });
 
-  describe('validator.check 介面合約', () => {
-    it('jargon_explanation 通過 → ok=true', () => {
+  describe('validator.check interface contract', () => {
+    it('jargon_explanation passes → ok=true', () => {
       const v = findValidator('jargon_explanation');
       const result = v.check('好的、了解。', {}, {});
       assert.equal(result.ok, true);
     });
 
-    it('jargon_explanation 違反 → ok=false + violation 物件', () => {
+    it('jargon_explanation violated → ok=false + violation object', () => {
       const v = findValidator('jargon_explanation');
       const result = v.check('我們要 refactor 這個 hook 不然會壞掉。', {}, {});
       assert.equal(result.ok, false);
@@ -119,18 +119,18 @@ describe('v1.21.0 validator registry', () => {
       assert.ok(result.violation.message);
     });
 
-    it('language_mixed_ratio 用 user params 的 threshold', () => {
+    it('language_mixed_ratio uses the threshold from user params', () => {
       const v = findValidator('language_mixed_ratio');
-      // 低 threshold → 比較容易違反
+      // Lower threshold → easier to violate
       const result = v.check('我們 think 該 refactor。', { threshold: 0.05 }, {});
       assert.equal(result.ok, false);
       assert.ok(result.violation.message.includes('5%') || result.violation.message.includes('15%'));
     });
 
-    it('privacy_detect 沒 context.userPrompts → 仍能跑', () => {
+    it('privacy_detect without context.userPrompts → still runs', () => {
       const v = findValidator('privacy_detect');
       const result = v.check('沒個資的句子', {}, {});
-      // 沒違反 → ok=true
+      // No violation → ok=true
       assert.equal(result.ok, true);
     });
   });

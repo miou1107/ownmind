@@ -24,7 +24,7 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
-  it('settings.json 不存在 → status=created', () => {
+  it('settings.json does not exist → status=created', () => {
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'created');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -34,7 +34,7 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
     assert.match(s.hooks.PostToolUse[0].hooks[0].command, /ownmind-tty-echo\.cjs/);
   });
 
-  it('settings.json 存在但無 hooks 區塊 → status=added、保留既有設定', () => {
+  it('settings.json exists but has no hooks block → status=added, existing config preserved', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({
       mcpServers: { ownmind: { command: 'node', args: ['x'] } },
       theme: 'dark',
@@ -47,7 +47,7 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
     assert.ok(Array.isArray(s.hooks.PostToolUse));
   });
 
-  it('已有其他 PostToolUse hook → 加在 array 末尾不影響既有', () => {
+  it('other PostToolUse hooks already exist → append to end of array without affecting existing', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({
       hooks: {
         PostToolUse: [
@@ -63,7 +63,7 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
     assert.equal(s.hooks.PostToolUse[1].matcher, 'mcp__ownmind__.*');
   });
 
-  it('已有 OwnMind hook → status=skipped、不重複加', () => {
+  it('OwnMind hook already exists → status=skipped, no duplicate added', () => {
     helper.addHook(settingsPath, OWNMIND_DIR);
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'skipped');
@@ -71,28 +71,28 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
     assert.equal(s.hooks.PostToolUse.length, 1, 'idempotent — 不重複加');
   });
 
-  it('壞掉的 JSON → status=error，settings.json 不被改', () => {
+  it('broken JSON → status=error, settings.json is not modified', () => {
     fs.writeFileSync(settingsPath, '{ this is not valid json');
     const original = fs.readFileSync(settingsPath, 'utf8');
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'error');
     assert.match(r.message, /JSON parse/);
-    // 原檔不該被改
+    // Original file should not be modified
     assert.equal(fs.readFileSync(settingsPath, 'utf8'), original);
   });
 
-  it('成功 add 時要 backup 既有檔', () => {
+  it('backs up the existing file on successful add', () => {
     fs.writeFileSync(settingsPath, JSON.stringify({ existing: 'data' }));
     const r = helper.addHook(settingsPath, OWNMIND_DIR);
     assert.equal(r.status, 'added');
-    // backup 應該存在於同目錄、檔名 settings.json.bak.*
+    // Backup should exist in the same directory, filename settings.json.bak.*
     const backups = fs.readdirSync(tmpDir).filter((f) => f.startsWith('settings.json.bak.'));
     assert.equal(backups.length, 1, '應該有恰好 1 個 backup');
     const backupContent = JSON.parse(fs.readFileSync(path.join(tmpDir, backups[0]), 'utf8'));
     assert.equal(backupContent.existing, 'data', 'backup 應含原始內容');
   });
 
-  it('hook command 用絕對 path（避免 PATH 解析爛掉）', () => {
+  it('hook command uses absolute path (avoids broken PATH resolution)', () => {
     const r = helper.addHook(settingsPath, '/abs/path/.ownmind');
     assert.equal(r.status, 'created');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
@@ -101,7 +101,7 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
     assert.ok(cmd.startsWith('node '), 'command 應以 node 開頭');
   });
 
-  it('matcher 是 mcp__ownmind__.*（只攔 OwnMind 工具，不影響其他 MCP）', () => {
+  it('matcher is mcp__ownmind__.* (only intercepts OwnMind tools, does not affect other MCPs)', () => {
     helper.addHook(settingsPath, OWNMIND_DIR);
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     assert.equal(s.hooks.PostToolUse[0].matcher, 'mcp__ownmind__.*');
