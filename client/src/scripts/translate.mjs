@@ -2,7 +2,7 @@
 // 編譯時自動翻譯腳本（路線 C）
 //
 // 環境變數（任一組可用）：
-//   TRANSLATE_API_BASE  — OpenAI 相容 API base URL（預設 https://kkvin.com/llm-switch/v1）
+//   TRANSLATE_API_BASE  — OpenAI 相容 API base URL（必填，例如 https://your-host/llm-switch/v1）
 //   TRANSLATE_API_KEY   — 對應 API key
 //   TRANSLATE_MODEL     — 翻譯模型（預設 gpt-4o-mini）
 //
@@ -22,7 +22,7 @@ import { createHash } from 'crypto';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const I18N_DIR = join(__dirname, '..', 'i18n');
 
-const API_BASE = process.env.TRANSLATE_API_BASE || 'https://kkvin.com/llm-switch/v1';
+const API_BASE = process.env.TRANSLATE_API_BASE || '';
 const API_KEY = process.env.TRANSLATE_API_KEY;
 const MODEL = process.env.TRANSLATE_MODEL || 'gpt-4o-mini';
 
@@ -153,7 +153,7 @@ async function main() {
     console.log('');
     console.log('   或設定環境變數啟用自動翻譯：');
     console.log('   export TRANSLATE_API_KEY=<llm-switch 或 OpenAI key>');
-    console.log('   export TRANSLATE_API_BASE=<api base、預設 https://kkvin.com/llm-switch/v1>');
+    console.log('   export TRANSLATE_API_BASE=<api base、例如 https://your-host/llm-switch/v1>');
     console.log('   export TRANSLATE_MODEL=<model 名、預設 gpt-4o-mini>');
     // 仍套用 override（即使 LLM 沒跑、override 字典還是要 apply）
     applyOverride(en, enOverride);

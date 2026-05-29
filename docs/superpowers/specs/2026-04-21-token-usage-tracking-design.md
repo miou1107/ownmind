@@ -679,7 +679,7 @@ Server 端：
 
 ```json
 {
-  "user": { "id": 1, "name": "Vin Kao", "email": "vincent@fontrip.com" },
+  "user": { "id": 1, "name": "Vin", "email": "vin@example.com" },
   "tokens": { ... },
   "cost_usd": 2.45
 }

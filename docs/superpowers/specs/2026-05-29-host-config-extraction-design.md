@@ -1,4 +1,4 @@
-# Extract hardcoded `kkvin.com` into config — design
+# Extract hardcoded `example.com` into config — design
 
 **Date:** 2026-05-29
 **Author:** Vin
@@ -7,40 +7,40 @@
 ## Goal
 
 OwnMind is going open-source. Today the author's personal server host
-`kkvin.com` is hardcoded in ~60 places across source, docs, tests, and history.
+`example.com` is hardcoded in ~60 places across source, docs, tests, and history.
 Make every reference come from configuration so that:
 
 1. **Existing users are unaffected** — their installed client keeps working.
 2. **People who clone the public repo never see the author's private host** —
    they see placeholders and fill in their own.
-3. The author can still run one hosted server (`kkvin.com`) for themselves and
+3. The author can still run one hosted server (`example.com`) for themselves and
    friends, and still onboard new friends as users.
 
 ## Requirements as personas
 
 - **小明 (existing user):** installed months ago; his `~/.ownmind` already holds
   his own `OWNMIND_API_URL`. Changing the repo must not touch him. His old
-  upgrade one-liner that hits `kkvin.com` must keep working.
+  upgrade one-liner that hits `example.com` must keep working.
 - **阿華 (stranger who clones to self-host):** opens the repo, sees
-  `YOUR_OWNMIND_URL` placeholders, fills his own host. No `kkvin.com` anywhere
+  `YOUR_OWNMIND_URL` placeholders, fills his own host. No `example.com` anywhere
   in what he reads.
 - **阿明 (friend who becomes a user):** the author privately hands him one
-  install command containing the real `kkvin.com` API URL + his API key. This
+  install command containing the real `example.com` API URL + his API key. This
   command is NOT in the public repo.
-- **admin = the author deploying to kkvin.com:** real values live in a
+- **admin = the author deploying to example.com:** real values live in a
   gitignored `.env` on the host; deployment reads them at runtime.
 
 ## Decisions (locked with Vin)
 
 - **D2** — open-source / self-host model; the repo is generic.
 - **E2** — the install script is fetched from the public **GitHub repo**, not
-  from `kkvin.com`. The author's "serve bootstrap" route stays alive for
+  from `example.com`. The author's "serve bootstrap" route stays alive for
   backward compatibility (小明), but the public README points at GitHub.
 - **Approach A** — env vars + `.env.example` (no new config-file mechanism;
   OwnMind already uses env vars; `.env` is already gitignored, `.env.example`
   already tracked).
 - **Historical files included** — `CHANGELOG.md`, `docs/superpowers/**`, and
-  `openspec/changes/archive/**` also get `kkvin.com` → `example.com`.
+  `openspec/changes/archive/**` also get the real host genericized to a placeholder.
 
 ## Mechanism
 
@@ -65,15 +65,15 @@ placeholders. Runtime code reads env; docs/comments/tests use placeholders or
 
 ### ① OwnMind API URL (client)
 - `hooks/ownmind-iron-rule-check.sh:97-98` — drop the hardcoded
-  `|| 'https://kkvin.com/ownmind'` fallback; if env missing, no-op (小明 has it).
+  `|| 'https://example.com/ownmind'` fallback; if env missing, no-op (小明 has it).
 - `hooks/lib/conditional-sync.js:69` — JSDoc example → `https://your-host/ownmind`.
 
 ### ② llm-switch (server + translate script)
 - `src/lib/llm-narrative.js:81` — read `process.env.OWNMIND_LLM_API_BASE`; no
-  `kkvin.com` default; error clearly if unset.
+  `example.com` default; error clearly if unset.
 - `client/src/scripts/translate.mjs:25,156` — default → placeholder; require env.
 - `.env.example` — document `OWNMIND_LLM_API_BASE` (replaces the
-  `kkvin.com/llm-switch/dashboard` comment at line 25).
+  `example.com/llm-switch/dashboard` comment at line 25).
 
 ### ③ SSH deploy host (ops)
 - `scripts/health-report-daily.sh:20` — default → `root@YOUR_HOST`.
@@ -89,10 +89,10 @@ placeholders. Runtime code reads env; docs/comments/tests use placeholders or
 - `skills/ownmind-upgrade.md` — upgrade commands → GitHub raw.
 - `src/app.js:167` — comment → generic.
 - **Keep** `src/app.js:183-186` (`/bootstrap.sh`, `/bootstrap.ps1` routes) —
-  domain-agnostic, so 小明's old `kkvin.com` one-liner keeps working untouched.
+  domain-agnostic, so 小明's old `example.com` one-liner keeps working untouched.
 
 ### ⑤ brand display
-- `src/public/me/index.html:555` — "資料即時取自 kkvin.com" → inject
+- `src/public/me/index.html:555` — "資料即時取自 example.com" → inject
   `OWNMIND_PUBLIC_URL` host, or generic "你的 OwnMind 伺服器".
 
 ### ⑥ comments / tests / history
@@ -102,14 +102,14 @@ placeholders. Runtime code reads env; docs/comments/tests use placeholders or
   `tests/me-trailing-slash.test.js`, `tests/bootstrap-strip-bom.test.js`) →
   `example.com` fixtures. Behavioral assertions, so the suite stays green.
 - History: `CHANGELOG.md`, `docs/superpowers/**`, `openspec/changes/archive/**`
-  → `kkvin.com` → `example.com` (and `root@kkvin.com` → `root@example.com`).
+  → real host genericized to `example.com` (incl. `root@<host>` SSH lines).
 
 ## Backward compatibility
 
 - 小明's client reads his own `~/.ownmind` env → unaffected by repo changes.
-- The bootstrap-serving route stays, so his old `kkvin.com` upgrade one-liner
+- The bootstrap-serving route stays, so his old `example.com` upgrade one-liner
   still works.
-- The hosted `kkvin.com` service keeps running; only its references leave the
+- The hosted `example.com` service keeps running; only its references leave the
   source. Real values move to the host's gitignored `.env`.
 
 ## Repo-wide de-identification — DONE in v1.26.22
@@ -123,9 +123,8 @@ copies + the sensitive test fixtures. v1.26.22 finished the rest repo-wide:
   lockstep (input + assertion), suite stays green.
 - `src/lib/llm-narrative.js` prompt examples → real names genericized.
 - The `shared/language-lint.js` proper-noun whitelist of internal project
-  codenames was intentionally LEFT (functional allowlist; changing it alters
-  lint behavior and the tokens are low-exposure). Revisit during the kkvin
-  config pass if full de-branding is wanted.
+  codenames was trimmed to generic/product terms only (personal project names
+  removed), with the paired test fixture updated in lockstep.
 - The pseudonym mapping itself is NOT recorded in any committed file (recording
   "real→alias" would defeat the pseudonymization). It lives only in the private
   task instruction.
@@ -135,14 +134,14 @@ private mapping; `npm test` green at the 2012 baseline.
 
 ## Out of scope
 
-- Renaming/retiring the actual `kkvin.com` domain (it keeps running).
+- Renaming/retiring the actual `example.com` domain (it keeps running).
 - The author's private friend-onboarding snippet (lives outside the repo).
-- The remote-access incident data + FUNIT vault fixture (already scrubbed in v1.26.21).
+- The remote-access incident data + the client-project vault fixture (already scrubbed in v1.26.21).
 
 ## Verification
 
 - `npm test` stays green (test fixtures behavioral; `example.com` is inert).
-- After the change: `grep -rn 'kkvin' . --include=... | grep -v node_modules`
+- After the change: `grep -rn '<prod-host>' . --include=... | grep -v node_modules`
   returns **zero** outside the gitignored `.env` (which is untracked).
 - Manual: on a host with `.env` set, `setup.html` and `me` render the real URL;
   with env unset, they show placeholder/generic without crashing.

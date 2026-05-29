@@ -155,7 +155,7 @@ describe('checkApiCredentials (v1.17.64 regression)', () => {
       return { ok: true, status: 200 };
     };
     try {
-      const r = await selfCheck.checkApiCredentials('https://kkvin.com/ownmind', 'k_test_apikey');
+      const r = await selfCheck.checkApiCredentials('https://example.com/ownmind', 'k_test_apikey');
       assert.equal(r.status, 'pass');
       assert.equal(captured.length, 1);
       assert.match(captured[0].url, /\/api\/memory\/init$/,
@@ -173,7 +173,7 @@ describe('checkApiCredentials (v1.17.64 regression)', () => {
     const orig = globalThis.fetch;
     globalThis.fetch = async () => ({ ok: false, status: 401 });
     try {
-      const r = await selfCheck.checkApiCredentials('https://kkvin.com/ownmind', 'bad');
+      const r = await selfCheck.checkApiCredentials('https://example.com/ownmind', 'bad');
       assert.equal(r.status, 'fail');
       assert.match(r.detail, /401/);
     } finally {

@@ -22,7 +22,7 @@
 - [ ] Update tri-lingual README version
 - [ ] Run the full `node --test`, must be all green
 - [ ] commit + push + tag v1.19.15
-- [ ] kkvin.com deploy (pull / migration / build / up / smoke test confirming id is a number)
+- [ ] example.com deploy (pull / migration / build / up / smoke test confirming id is a number)
 
 ## Non-tasks
 

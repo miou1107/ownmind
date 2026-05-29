@@ -11,7 +11,7 @@ const repoRoot = path.resolve(__dirname, '..');
 /**
  * v1.17.88 — /me trailing slash redirect
  *
- * Vin reported: https://kkvin.com/ownmind/me does not load; you must hit /ownmind/me/.
+ * Vin reported: https://example.com/ownmind/me does not load; you must hit /ownmind/me/.
  *
  * Root cause: Express `app.use('/me', express.static(...))` does not auto-add a
  * trailing slash redirect for the mount path itself — only for "directory requests".

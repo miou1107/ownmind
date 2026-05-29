@@ -15,8 +15,8 @@
 - [ ] Tri-language README version update (zh-TW / en / ja)
 - [ ] commit (IR-009 contributor=Vin, IR-024 no Co-Authored-By)
 - [ ] tag v1.19.18 + push origin main + push tag
-- [ ] kkvin.com deploy:
-  - [ ] ssh kkvin.com
+- [ ] example.com deploy:
+  - [ ] ssh example.com
   - [ ] cd /VinService/ownmind && git pull
   - [ ] Run unapplied migrations under db/ (IR-048, should be 0 for this version)
   - [ ] `docker compose build --no-cache` (IR-018 + IR-023)
@@ -24,7 +24,7 @@
   - [ ] Check logs to confirm the server is up, no errors
 - [ ] Post-deploy test (IR-020):
   - [ ] Open the admin backend in a browser, login succeeds
-  - [ ] `curl https://kkvin.com/ownmind/api/clients/version` returns 1.19.18
+  - [ ] `curl https://example.com/ownmind/api/clients/version` returns 1.19.18
   - [ ] `curl POST /api/bug-reports` to confirm query string parsing works after the qs upgrade
 - [ ] `git mv openspec/changes/v1.19.18-security-audit-fix openspec/changes/archive/`
 - [ ] commit archive, push

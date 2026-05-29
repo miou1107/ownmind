@@ -126,7 +126,7 @@ Following the three rounds of Gemini r2 / r3 review suggestions:
 
 **Derived design decisions (based on the decisions above):**
 
-- The link URL carries an HMAC signature (to prevent the URL from being hijacked): `https://kkvin.com/ownmind/feedback/block?event_id=xxx&sig=abc123`
+- The link URL carries an HMAC signature (to prevent the URL from being hijacked): `https://example.com/ownmind/feedback/block?event_id=xxx&sig=abc123`
 - The confirmation page shows only one `[確認擋錯了]` button; pressing it POSTs → shows "已回報", then auto-closes after 1 second. No form, no reason field
 - The CLI channel (decision 2, in parallel) goes through the same server endpoint `POST /api/feedback/block`, but uses `Authorization: Bearer ${OWNMIND_API_KEY}` instead of the sig query param
 

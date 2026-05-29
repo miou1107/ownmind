@@ -66,7 +66,7 @@ export function shouldRefreshCache(cache, serverSyncToken, now = Date.now()) {
 /**
  * Fetch the server sync_token (lightweight ~50 bytes, 3s timeout).
  *
- * @param {string} apiUrl - https://kkvin.com/ownmind
+ * @param {string} apiUrl - https://example.com/ownmind
  * @param {string} apiKey
  * @param {Function} [fetchFn=globalThis.fetch] — injected for tests
  * @returns {Promise<string|null>} 12-char hex, or null on failure.

@@ -6,7 +6,7 @@
 
 **Architecture:** 兩個 endpoint — `GET /api/me/narrative` 純 SQL 重組 + 補 2 個新查詢；`GET /api/me/narrative/insights` 呼叫 llm-switch（OpenAI-compatible）+ in-memory hash cache。Frontend 新 tab 平行 fetch 兩 endpoint，機械段先 render、LLM placeholder 等回填。
 
-**Tech Stack:** Node.js + Express + node:test + PostgreSQL + Mermaid (CDN) + llm-switch (https://kkvin.com/llm-switch/v1，OpenAI-compatible，model='auto')
+**Tech Stack:** Node.js + Express + node:test + PostgreSQL + Mermaid (CDN) + llm-switch (https://example.com/llm-switch/v1，OpenAI-compatible，model='auto')
 
 **Spec:** [docs/superpowers/specs/2026-05-07-me-narrative-report-design.md](../specs/2026-05-07-me-narrative-report-design.md)
 
@@ -225,7 +225,7 @@ export async function callLLMSwitch({ apiKey, messages, fetchImpl = fetch, timeo
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl('https://kkvin.com/llm-switch/v1/chat/completions', {
+    const res = await fetchImpl('https://example.com/llm-switch/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -814,7 +814,7 @@ git commit -m "feat(narrative): add /me 敘事報告 tab — auto-trigger LLM in
 ```bash
 # .env.example 末尾加：
 # LLM Switch — 用於 /me 敘事報告 LLM 洞察
-# 管理者請到 https://kkvin.com/llm-switch/dashboard 申請 key
+# 管理者請到 https://example.com/llm-switch/dashboard 申請 key
 LLM_SWITCH_API_KEY=
 ```
 
@@ -825,10 +825,10 @@ git add .env.example
 git commit -m "chore: document LLM_SWITCH_API_KEY in .env.example"
 ```
 
-- [ ] **Step 3（部署時人工）：到 kkvin.com 主機 `.env` 加真 key**
+- [ ] **Step 3（部署時人工）：到 example.com 主機 `.env` 加真 key**
 
 ```bash
-ssh kkvin 'echo "LLM_SWITCH_API_KEY=<從 user 對話拿到的 key>" >> /path/to/ownmind/.env'
+ssh <prod-host> 'echo "LLM_SWITCH_API_KEY=<從 user 對話拿到的 key>" >> /path/to/ownmind/.env'
 # 然後 docker compose build --no-cache && docker compose up -d
 ```
 
@@ -930,7 +930,7 @@ git status                          # 沒有忘記 add 的檔
 - [ ] **Step 3：把真的 LLM_SWITCH_API_KEY 補到 production `.env`**
 
 ```bash
-ssh <kkvin host>
+ssh <prod-host>
 cd /path/to/ownmind
 echo "LLM_SWITCH_API_KEY=<key>" >> .env  # 從這次對話拿、不入 git
 docker compose build --no-cache
@@ -940,7 +940,7 @@ docker compose logs -f --tail=50  # 確認起得來
 
 - [ ] **Step 4：瀏覽器實測（IR-020）**
 
-到 https://kkvin.com/ownmind/me：
+到 https://example.com/ownmind/me：
 - [ ] 切到「📊 敘事報告」tab，12 section 機械段是否都 render
 - [ ] 看是否「⏳ 產生洞察中…」placeholder 在跑
 - [ ] 3-15 秒後白話講是否填入
@@ -950,7 +950,7 @@ docker compose logs -f --tail=50  # 確認起得來
 
 - [ ] **Step 5：rotate API key**
 
-提醒 Vin 到 https://kkvin.com/llm-switch dashboard rotate 之前在 conversation 貼出來的 key，然後改 production `.env` + restart。
+提醒 Vin 到 https://example.com/llm-switch dashboard rotate 之前在 conversation 貼出來的 key，然後改 production `.env` + restart。
 
 - [ ] **Step 6：完工 commit + push（已透過前述 task 累積，這步只是確認）**
 

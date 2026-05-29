@@ -64,7 +64,7 @@ GET /api/me/narrative/insights?range=14d
 ```
 
 * 開頁時 frontend 自動觸發（不需按鈕）
-* 走 OpenAI-compatible LLM Switch — `https://kkvin.com/llm-switch/v1/chat/completions`，`model: 'auto'`，Bearer auth
+* 走 OpenAI-compatible LLM Switch — `https://example.com/llm-switch/v1/chat/completions`，`model: 'auto'`，Bearer auth
 * 強制 `response_format: { type: 'json_object' }` 拿結構化輸出
 * Server 端 cache by data hash：
   * Key = `me:narrative:insights:<range>:<sha256(narrative_data)>`
@@ -93,7 +93,7 @@ GET /api/me/narrative/insights?range=14d
 
 呼叫方式（OpenAI-compatible）：
 ```js
-POST https://kkvin.com/llm-switch/v1/chat/completions
+POST https://example.com/llm-switch/v1/chat/completions
 Authorization: Bearer <LLM_SWITCH_API_KEY>
 {
   model: 'auto',
@@ -149,7 +149,7 @@ User 切到「敘事報告」tab
   * 機械 endpoint 回傳 schema 完整、各 section 都有
   * 沒 API key 時 LLM endpoint 回 503
   * Hash 一樣時走 cache、不二度打 LLM
-* 手動驗測（IR-020）：部署後 kkvin.com/ownmind/me 切到敘事報告 tab，確認 12 section 都 render、按鈕能觸發 LLM、刷新走 cache
+* 手動驗測（IR-020）：部署後 example.com/ownmind/me 切到敘事報告 tab，確認 12 section 都 render、按鈕能觸發 LLM、刷新走 cache
 
 ## 7. 安全
 
@@ -162,7 +162,7 @@ User 切到「敘事報告」tab
 
 * Server 端 v1.17.47 — 新 routes + 前端 HTML
 * `.env.example` 加 `LLM_SWITCH_API_KEY=` 註記（值留空）
-* Production env 由 Vin 手動補 key 到 kkvin.com 主機 `.env`，不寫進任何 git-tracked 檔案
+* Production env 由 Vin 手動補 key 到 example.com 主機 `.env`，不寫進任何 git-tracked 檔案
 
 ## 9. 開放問題
 

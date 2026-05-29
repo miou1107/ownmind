@@ -36,7 +36,7 @@
 - [ ] Trilingual README version updated (zh-TW / en / ja)
 - [ ] commit (IR-009 / IR-024)
 - [ ] tag v1.19.19 + push origin main + push tag
-- [ ] kkvin.com deploy:
+- [ ] example.com deploy:
   - [ ] `git pull --rebase`
   - [ ] `docker compose build --no-cache api` (IR-018 + IR-023)
   - [ ] `docker compose up -d api`

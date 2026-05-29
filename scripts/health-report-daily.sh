@@ -17,7 +17,7 @@
 set -euo pipefail
 
 DATE=$(date +%F)
-HOST="${OWNMIND_PROD_HOST:-root@kkvin.com}"
+HOST="${OWNMIND_PROD_HOST:-root@YOUR_PROD_HOST}"
 
 cat <<HEADER
 # OwnMind health report — $DATE

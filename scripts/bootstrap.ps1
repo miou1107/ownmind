@@ -3,10 +3,10 @@
 # Usage:
 #   Already installed (upgrade only):
 #     powershell -ExecutionPolicy Bypass -File $HOME\.ownmind\scripts\bootstrap.ps1
-#     iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+#     iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 #   Fresh install / repair (needs API key + URL via args or env):
 #     $env:OWNMIND_API_KEY='xxx'; $env:OWNMIND_API_URL='https://your-server.com/ownmind'
-#     iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+#     iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 #
 # Branches:
 #   1. ~/.ownmind not present         → fresh clone + install.ps1 (needs API key args/env)

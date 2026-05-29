@@ -14,7 +14,7 @@ import { LocaleProvider, useT } from './i18n/LocaleContext.jsx';
 //
 // 三種部署實際對照：
 //   - 本機 docker：http://localhost:3100/dashboard/ → basename = '/dashboard'
-//   - 線上反向代理：https://kkvin.com/ownmind/dashboard/ → basename = '/ownmind/dashboard'
+//   - 線上反向代理：https://example.com/ownmind/dashboard/ → basename = '/ownmind/dashboard'
 //   - vite dev (port 5173)：http://localhost:5173/ → basename = ''（空字串等同無 basename）
 //
 // 原理：HTML 沒有 <base> tag 時、document.baseURI 等於 document.URL（瀏覽器當前

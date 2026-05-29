@@ -104,7 +104,7 @@ describe('callLLMSwitch', () => {
 
   it('200 OK parses response as JSON', async () => {
     const fakeFetch = async (url, opts) => {
-      assert.equal(url, 'https://kkvin.com/llm-switch/v1/chat/completions');
+      assert.equal(url, 'https://example.com/llm-switch/v1/chat/completions');
       assert.equal(opts.method, 'POST');
       assert.match(opts.headers.Authorization, /^Bearer sk-/);
       const body = JSON.parse(opts.body);
@@ -119,6 +119,7 @@ describe('callLLMSwitch', () => {
       apiKey: 'sk-test',
       messages: [{ role: 'user', content: 'x' }],
       fetchImpl: fakeFetch,
+      apiBase: 'https://example.com/llm-switch/v1',
     });
     assert.equal(out.summary_one_line, 'hi');
   });
@@ -130,7 +131,7 @@ describe('callLLMSwitch', () => {
       text: async () => 'service unavailable',
     });
     await assert.rejects(
-      () => callLLMSwitch({ apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch }),
+      () => callLLMSwitch({ apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: 'https://example.com/llm-switch/v1' }),
       /503/
     );
   });

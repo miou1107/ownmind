@@ -167,7 +167,7 @@
         apiKeyText.textContent = data.api_key;
         const host = window.location.origin;
         installCmd.textContent =
-          `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- ${data.api_key} ${host}`;
+          `curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- ${data.api_key} ${host}`;
         formSection.style.display = 'none';
         successSection.classList.add('show');
       } catch (err) {

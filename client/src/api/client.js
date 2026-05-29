@@ -18,7 +18,7 @@ import { getApiKey, clearApiKey } from './auth.js';
 const NO_AUTH_PATHS = ['/api/me/login'];
 
 // API base 動態偵測：跟 main.jsx 的 basename 同源邏輯、抽 dashboard 之前的部分
-// 線上 https://kkvin.com/ownmind/dashboard/* → API base = '/ownmind'（nginx /ownmind/ 前綴）
+// 線上 https://example.com/ownmind/dashboard/* → API base = '/ownmind'（nginx /ownmind/ 前綴）
 // 本機 docker http://localhost:3100/dashboard/* → API base = ''（同 host root）
 // vite dev http://localhost:5173/* → API base = ''（vite proxy /api 到 :3000）
 //

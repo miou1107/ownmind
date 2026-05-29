@@ -4,9 +4,9 @@
 # Usage:
 #   Already installed (upgrade only):
 #     bash ~/.ownmind/scripts/bootstrap.sh
-#     curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+#     curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash
 #   Fresh install / repair (needs API key + URL):
-#     curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+#     curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 #
 # Branches:
 #   1. ~/.ownmind not present         → fresh clone + install.sh "$@" (requires API key args)

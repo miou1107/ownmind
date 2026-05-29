@@ -92,10 +92,8 @@ export const TECH_WHITELIST = new Set([
   'Spec', 'Memory', 'Project', 'Adapter', 'status', 'Status',
   'Format', 'Reference', 'reference',
   'Pipeline', 'Step', 'Phase', 'Stage', 'Notes', 'Research', 'Description',
-  // ─── 8. Vin's personal project names (v1.19.3 added, audit Top 30) ───
-  'adog', 'fapa', 'fontrip', 'ring', 'ownmind', 'vincent',
-  'auto', 'speech', 'ima', 'asir', 'funit', 'majitreats',
-  'kkvin', 'tutorial', 'rescue', 'narrative',
+  // ─── 8. Product / generic feature terms (v1.19.3 added, audit Top 30) ───
+  'ownmind', 'auto', 'speech', 'tutorial', 'rescue', 'narrative',
   // ─── 9. v1.19.5 missing-word fixes (uncovered by real misses) ───
   // shell / terminal / console family: v1.19.4 test reply self-introduction missed
   'terminal', 'shell', 'console', 'stdout', 'stderr', 'tty',

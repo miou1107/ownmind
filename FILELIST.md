@@ -1,5 +1,18 @@
 # OwnMind 檔案結構
 
+## v1.26.23 修改（主機網址設定化 + 去品牌化收尾）
+
+新增檔：
+```
+openspec/changes/v1.26.23-host-config-extraction/proposal.md  — v1.26.23 提案
+openspec/changes/v1.26.23-host-config-extraction/tasks.md     — v1.26.23 任務清單
+```
+
+改名：`docs/superpowers/specs/2026-05-29-host-config-extraction-design.md`（原檔名含主機名，已改為中性）。
+
+修改檔（功能性）：`src/lib/llm-narrative.js`（讀 `OWNMIND_LLM_API_BASE`）、`tests/llm-narrative.test.js`、`hooks/ownmind-iron-rule-check.sh`、`scripts/health-report-daily.sh`、`client/src/scripts/translate.mjs`、`src/public/setup.html`、`src/public/me/index.html`、`.mcp.json`、`shared/language-lint.js`（白名單）+ `tests/language-lint-v1193.test.js`、`.env.example`、README ×3、`scripts/bootstrap.*`、`skills/ownmind-upgrade.md`。
+修改檔（去品牌化）：CHANGELOG / FILELIST / docs / openspec 多檔的主機、公司網域、工作信箱、專案代號泛稱化；偵測器測試 email fixture 改 `acme.com`。
+
 ## v1.26.22 修改（開源前全倉貢獻者去識別化）
 
 新增檔：
@@ -8,7 +21,7 @@ openspec/changes/v1.26.22-deidentify-contributors/proposal.md  — v1.26.22 提�
 openspec/changes/v1.26.22-deidentify-contributors/tasks.md     — v1.26.22 任務清單
 ```
 
-修改檔：約 49 個檔的真實貢獻者姓名改為一致代稱、FUNIT 系列中性化（tests/、src/、shared/、hooks/、scripts/、docs/、CHANGELOG.md、FILELIST.md）；另把 3 處先前記錄對照表的文件改寫成不揭露真名↔代稱。測試 fixture 輸入與斷言同步改名、行為不變。
+修改檔：約 49 個檔的真實貢獻者姓名改為一致代稱、內部專案代號中性化（tests/、src/、shared/、hooks/、scripts/、docs/、CHANGELOG.md、FILELIST.md）；另把 3 處先前記錄對照表的文件改寫成不揭露真名↔代稱。測試 fixture 輸入與斷言同步改名、行為不變。
 
 ## v1.26.21 修改（i18n 軌道 B：openspec 文件英文化 + 敏感資料清理）
 
@@ -16,7 +29,7 @@ openspec/changes/v1.26.22-deidentify-contributors/tasks.md     — v1.26.22 任�
 ```
 openspec/changes/v1.26.21-i18n-openspec-docs/proposal.md            — v1.26.21 提案
 openspec/changes/v1.26.21-i18n-openspec-docs/tasks.md               — v1.26.21 任務清單
-docs/superpowers/specs/2026-05-29-kkvin-config-extraction-design.md — kkvin.com 設定化重構設計稿（下一版用）
+docs/superpowers/specs/2026-05-29-host-config-extraction-design.md — 主機網址設定化重構設計稿（下一版用）
 ```
 
 修改檔：

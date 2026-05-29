@@ -17,7 +17,7 @@ real first names should not be exposed.
 
 Replace every real contributor name with a consistent pseudonym across the whole
 repo (code comments, test labels/fixtures, CHANGELOG, FILELIST, docs/plans).
-Also genericize the remaining internal project-name references (FUNIT family).
+Also genericize the remaining internal project-name references.
 
 ## Hard rules
 
@@ -25,7 +25,7 @@ Also genericize the remaining internal project-name references (FUNIT family).
   "real → alias" anywhere (CHANGELOG, design doc, tasks) would let a reader
   reverse the pseudonymization, defeating the point. The mapping lives only in
   the private task instruction. Files that previously documented the mapping
-  (v1.26.21 CHANGELOG entry, the kkvin design doc, v1.26.21 tasks) were rewritten
+  (v1.26.21 CHANGELOG entry, the host-config design doc, v1.26.21 tasks) were rewritten
   to drop the real→alias correspondence.
 - **`Vin` is kept** — it is the owner's public handle (author fields, IR-009).
   The longer form of the owner's own name is normalized to that handle.
@@ -33,9 +33,9 @@ Also genericize the remaining internal project-name references (FUNIT family).
   unchanged.
 - **Left intentionally**: `shared/language-lint.js` proper-noun whitelist of
   internal project codenames (functional allowlist; low exposure) — revisit in
-  the kkvin config pass.
+  the host-config pass.
 - **Out of scope**: local path `/Users/<user>/...` and `.mcp.json` host (those
-  belong to the kkvin.com config-extraction pass; `.mcp.json` is functional).
+  belong to the example.com config-extraction pass; `.mcp.json` is functional).
 
 ## Verification
 

@@ -94,8 +94,8 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
   API_URL=$(node -e "
     try {
       const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
-      console.log(s.mcpServers?.ownmind?.env?.OWNMIND_API_URL || 'https://kkvin.com/ownmind');
-    } catch { console.log('https://kkvin.com/ownmind'); }
+      console.log(s.mcpServers?.ownmind?.env?.OWNMIND_API_URL || '');
+    } catch { console.log(''); }
   " 2>/dev/null)
 fi
 

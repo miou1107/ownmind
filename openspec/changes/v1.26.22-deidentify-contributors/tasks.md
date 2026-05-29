@@ -7,14 +7,14 @@
 
 ## Phase 0: Inventory
 - [x] Full repo scan for real names (reliable Python scan; grep mis-flagged
-      CHANGELOG as binary). Found 7 real people + FUNIT across ~50 files.
-- [x] Confirm extra names (Sunny / pitt / Vincent) with Vin; agree mapping.
+      CHANGELOG as binary). Found 7 real people + a client project name across ~50 files.
+- [x] Confirm extra names with Vin; agree mapping.
 
 ## Phase 1: Scrub
-- [x] Apply consistent pseudonyms + FUNIT→ExampleClient repo-wide (49 files),
+- [x] Apply consistent pseudonyms + internal project names → placeholders repo-wide (49 files),
       excluding the mapping-documentation files.
 - [x] Rewrite the 3 mapping-documentation spots (v1.26.21 CHANGELOG entry,
-      kkvin design doc, v1.26.21 tasks) to drop the real→alias correspondence.
+      host-config design doc, v1.26.21 tasks) to drop the real→alias correspondence.
 - [x] Re-scan whole repo → 0 real-name hits.
 
 ## Phase 2: Verify

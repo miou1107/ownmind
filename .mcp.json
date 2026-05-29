@@ -7,7 +7,7 @@
         "/Users/vincentkao/.ownmind/mcp/index.js"
       ],
       "env": {
-        "OWNMIND_API_URL": "https://kkvin.com/ownmind",
+        "OWNMIND_API_URL": "https://YOUR_OWNMIND_URL/ownmind",
         "OWNMIND_API_KEY": "__SET_VIA_LOCAL_CREDENTIALS_OR_ENV__",
         "OWNMIND_TOOL": "claude-code"
       }

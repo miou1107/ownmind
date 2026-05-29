@@ -45,10 +45,10 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS weekly_summary_sent_at TIMESTAMPTZ DEFAULT NULL;
 ```
 
-- [ ] **Step 2：在 kkvin.com 執行 migration**
+- [ ] **Step 2：在 example.com 執行 migration**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && docker exec ownmind-db psql -U ownmind -d ownmind -f /dev/stdin" < db/004_weekly_summary_marker.sql
+ssh root@example.com "cd /VinService/ownmind && docker exec ownmind-db psql -U ownmind -d ownmind -f /dev/stdin" < db/004_weekly_summary_marker.sql
 ```
 
 預期輸出：`ALTER TABLE`
@@ -56,7 +56,7 @@ ssh root@kkvin.com "cd /VinService/ownmind && docker exec ownmind-db psql -U own
 - [ ] **Step 3：確認欄位存在**
 
 ```bash
-ssh root@kkvin.com "docker exec ownmind-db psql -U ownmind -d ownmind -c '\d users'"
+ssh root@example.com "docker exec ownmind-db psql -U ownmind -d ownmind -c '\d users'"
 ```
 
 確認輸出中有 `weekly_summary_sent_at | timestamp with time zone`
@@ -174,7 +174,7 @@ describe('computeReportData', () => {
 - [ ] **Step 3：確認測試失敗（在 VPS 上執行）**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && git pull && npm test"
+ssh root@example.com "cd /VinService/ownmind && git pull && npm test"
 ```
 
 預期：`ERR_MODULE_NOT_FOUND` 或 `SyntaxError`（report.js 尚未建立）
@@ -292,7 +292,7 @@ export function computeReportData(sessionRows, newMemoriesCount, periodLabel) {
 - [ ] **Step 5：跑測試確認通過（在 VPS 上）**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && npm test"
+ssh root@example.com "cd /VinService/ownmind && npm test"
 ```
 
 預期：所有 tests pass，`groupFrictions`、`computePeriodRange`、`computeReportData` 測試都綠燈
@@ -400,15 +400,15 @@ git add src/routes/session.js
 git commit -m "feat: GET /api/session/report — weekly/monthly report API"
 ```
 
-- [ ] **Step 4：部署到 kkvin.com 並驗證**
+- [ ] **Step 4：部署到 example.com 並驗證**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"
+ssh root@example.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"
 ```
 
 驗證（換成實際 api_key）：
 ```bash
-curl "http://kkvin.com:3100/api/session/report?period=week&offset=1" \
+curl "http://example.com:3100/api/session/report?period=week&offset=1" \
   -H "Authorization: Bearer <your_api_key>"
 ```
 
@@ -685,7 +685,7 @@ git commit -m "feat: weekly/monthly report cron job with friction-issue auto-cre
 - [ ] **Step 4：部署並確認 job 啟動**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api && docker logs ownmind-api --tail=20"
+ssh root@example.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api && docker logs ownmind-api --tail=20"
 ```
 
 預期 log 含：`週/月報 job 已啟動`
@@ -800,12 +800,12 @@ git commit -m "feat: init API returns weekly_summary (once per week per user)"
 - [ ] **Step 3：部署並驗證**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"
+ssh root@example.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"
 ```
 
 驗證：
 ```bash
-curl "http://kkvin.com:3100/api/memory/init?compact=true" \
+curl "http://example.com:3100/api/memory/init?compact=true" \
   -H "Authorization: Bearer <your_api_key>" | jq '.weekly_summary'
 ```
 
@@ -939,10 +939,10 @@ git commit -m "feat: dashboard 週/月報頁籤 — friction + suggestion 列表
 - [ ] **Step 5：部署並瀏覽器實測**
 
 ```bash
-ssh root@kkvin.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"
+ssh root@example.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"
 ```
 
-開瀏覽器到 `http://kkvin.com:3100/admin`，點「週/月報」頁籤，選期間，點「載入」，確認資料顯示正確。
+開瀏覽器到 `http://example.com:3100/admin`，點「週/月報」頁籤，選期間，點「載入」，確認資料顯示正確。
 
 ---
 

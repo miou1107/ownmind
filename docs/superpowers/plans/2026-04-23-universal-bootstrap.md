@@ -6,7 +6,7 @@
 
 **Architecture:**
 - Two cross-platform bootstrap scripts (`scripts/bootstrap.sh`, `scripts/bootstrap.ps1`) with three-branch logic: no install → clone+install; broken (no .git) → backup+reclone; normal → delegate to `interactive-upgrade.*`.
-- Express route serving the scripts at `https://kkvin.com/ownmind/bootstrap.sh|.ps1` for one-line curl/iwr install on fresh machines.
+- Express route serving the scripts at `https://example.com/ownmind/bootstrap.sh|.ps1` for one-line curl/iwr install on fresh machines.
 - `skills/ownmind-upgrade.md` expanded: new trigger vocabulary (`裝`, `重裝`, `修`, `OwnMind 壞了`), new mode D (fresh install), auto OS detection, falls back to curl/iwr when `~/.ownmind/scripts/bootstrap.sh` not yet present.
 
 **Tech Stack:** Bash / PowerShell bootstrap scripts; Express static-file route; skill markdown.
@@ -127,7 +127,7 @@ test('bootstrap.ps1 uses INFO/OK/ERROR logging convention', () => {
 #
 # Usage:
 #   Local:  bash ~/.ownmind/scripts/bootstrap.sh
-#   Remote: curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+#   Remote: curl -fsSL https://example.com/ownmind/bootstrap.sh | bash
 #
 # Branches:
 #   1. ~/.ownmind not present         → fresh clone + install
@@ -227,7 +227,7 @@ git commit -m "feat(scripts): add bootstrap.sh for unified install/upgrade/repai
 #
 # Usage:
 #   Local:  powershell -ExecutionPolicy Bypass -File $HOME\.ownmind\scripts\bootstrap.ps1
-#   Remote: iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+#   Remote: iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex
 #
 # Branches:
 #   1. ~/.ownmind not present         → fresh clone + install
@@ -397,7 +397,7 @@ app.get('/health', (req, res) => {
 });
 
 // Public bootstrap scripts — served without auth so fresh machines can
-// `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash` before they
+// `curl -fsSL https://example.com/ownmind/bootstrap.sh | bash` before they
 // have an API key. See docs/superpowers/plans/2026-04-23-universal-bootstrap.md.
 app.get('/bootstrap.sh', (req, res) => {
   res.type('text/x-shellscript; charset=utf-8');
@@ -449,7 +449,7 @@ git commit -m "feat(server): serve bootstrap.sh and bootstrap.ps1 as public rout
 Add a new "Mode D: Fresh install / repair" section that:
 - Triggers on: 「裝 OwnMind」「重裝」「修 OwnMind」「OwnMind 壞了」「安裝 OwnMind」
 - Detects: `~/.ownmind/` doesn't exist → fresh install via curl-pipe-bash
-- Runs: `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash` (Mac/Linux) or `iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex` (Windows)
+- Runs: `curl -fsSL https://example.com/ownmind/bootstrap.sh | bash` (Mac/Linux) or `iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex` (Windows)
 - Falls through to Mode B (upgrade) if `~/.ownmind/` already exists
 
 Update Mode B to call the local `scripts/bootstrap.sh` instead of directly `interactive-upgrade.sh` (which bootstrap delegates to) — this way Mode B handles broken-state repair too.
@@ -510,12 +510,12 @@ AI 自動判斷並執行。
 
 Mac / Linux：
 \`\`\`bash
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+curl -fsSL https://example.com/ownmind/bootstrap.sh | bash
 \`\`\`
 
 Windows PowerShell：
 \`\`\`powershell
-iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex
 \`\`\`
 
 ---
@@ -546,9 +546,9 @@ Dispatch superpowers:code-reviewer subagent. BASE=823531b (v1.17.5), HEAD=curren
 - [ ] `git push origin main`
 - [ ] `git push origin v1.17.6`
 - [ ] Cleanup worktree + branch
-- [ ] SSH deploy: `ssh root@kkvin.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"`
+- [ ] SSH deploy: `ssh root@example.com "cd /VinService/ownmind && git pull && docker compose build --no-cache api && docker compose up -d api"`
 - [ ] Verify `/api/memory/init` returns `server_version: 1.17.6`
-- [ ] Smoke test: `curl -sS https://kkvin.com/ownmind/bootstrap.sh | head -5` — should stream the bash script
+- [ ] Smoke test: `curl -sS https://example.com/ownmind/bootstrap.sh | head -5` — should stream the bash script
 - [ ] Revoke old v1.17.4 broadcast (id=4) + send new v1.17.6 broadcast with updated text recommending the one-prompt flow
 
 ---
@@ -559,7 +559,7 @@ Dispatch superpowers:code-reviewer subagent. BASE=823531b (v1.17.5), HEAD=curren
 - One-prompt trigger → Task 4 skill ✓
 - Auto-detect environment → scripts branch logic (Task 1/2) + skill OS detection (Task 4) ✓
 - Auto-detect state → scripts branch logic (Task 1/2) ✓
-- Host at kkvin.com → Express route (Task 3) ✓
+- Host at example.com → Express route (Task 3) ✓
 - Skill keeps name `ownmind-upgrade` (non-breaking) → Task 4 ✓
 - Backup on repair → Task 1/2 ✓
 - IR-008 CHANGELOG + README + FILELIST → Task 5 ✓

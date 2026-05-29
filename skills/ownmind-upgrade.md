@@ -90,9 +90,9 @@ os=$(uname -s 2>/dev/null)
 | OS | 有 `~/.ownmind/scripts/bootstrap.sh`？ | 執行 |
 |----|-------------------------------------|------|
 | Darwin / Linux | 是 | `bash ~/.ownmind/scripts/bootstrap.sh` |
-| Darwin / Linux | 否（首次安裝 or pre-v1.17.6） | `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh \| bash` |
+| Darwin / Linux | 否（首次安裝 or pre-v1.17.6） | `curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh \| bash` |
 | Windows_NT / 找不到 uname | 是 | `powershell -ExecutionPolicy Bypass -File $HOME\.ownmind\scripts\bootstrap.ps1` |
-| Windows_NT / 找不到 uname | 否 | `iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 \| iex` |
+| Windows_NT / 找不到 uname | 否 | `iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 \| iex` |
 
 **關鍵**：即使 user 說「升級」，若 `~/.ownmind` 不存在就走 remote curl/iwr；即使 user 說「裝」，若 `~/.ownmind` 已存在就走 local bootstrap（它會決定是升級還是修復）。一句指令 = 一個入口 = 對的行為。
 

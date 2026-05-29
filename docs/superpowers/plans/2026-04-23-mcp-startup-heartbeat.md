@@ -246,14 +246,14 @@ curl -sS -X POST \
   -H "Authorization: Bearer $OWNMIND_SUPER_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d @broadcast-payload.json \
-  https://kkvin.com/ownmind/api/broadcast/admin
+  https://example.com/ownmind/api/broadcast/admin
 ```
 
 Expected: 201 Created with the broadcast row as JSON.
 
 - [ ] **Step 3: Verify in Admin UI**
 
-Open `https://kkvin.com/ownmind/admin`, scroll to 廣播管理, confirm the new row appears with severity=warning.
+Open `https://example.com/ownmind/admin`, scroll to 廣播管理, confirm the new row appears with severity=warning.
 
 - [ ] **Step 4: Optional — wait 24h and re-check `裝機狀況`**
 

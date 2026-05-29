@@ -21,7 +21,7 @@ When `hooks/ownmind-reply-lint.js` detects a violation, it prints at the end:
 ```
 【OwnMind v1.18.9】鐵律觸發：IR-037（中英混雜超 15%）
     ⚠️ 偵測到 26.3% 中英混雜、超過 15% 閾值
-    [👎 擋錯了？點這](https://kkvin.com/ownmind/feedback/block?event_id=evt_abc123&sig=4f8a2b1c)
+    [👎 擋錯了？點這](https://example.com/ownmind/feedback/block?event_id=evt_abc123&sig=4f8a2b1c)
 ```
 
 Key design:

@@ -20,8 +20,8 @@ describe('v1.19.3 scenario 9 — whitelist expansion: every Top 30 violation wor
   const top30Words = [
     // big companies / platforms
     'Google', 'Meta', 'OpenAI', 'Chrome', 'OAuth', 'YouTube', 'Podcast',
-    // Vin's personal projects / orgs
-    'adog', 'fapa', 'fontrip', 'ring', 'ownmind',
+    // product name
+    'ownmind',
     // Git / dev workflow
     'main', 'origin', 'branch', 'worktree', 'commits', 'hook', 'Hook',
     'review', 'reviewer', 'prod', 'spec', 'prompt', 'tasks', 'tests',

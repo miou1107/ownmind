@@ -132,7 +132,7 @@ Align to the SKILL.md standard + iron-rule-specific reinforcements:
 
 ### 4.1 DB ↔ local file sync (conditional pull, relies on existing sync_token)
 
-**The source of truth is always the DB** (kkvin.com Postgres). Local `~/.claude/skills/ownmind-iron-rules/` is a read-only mirror.
+**The source of truth is always the DB** (example.com Postgres). Local `~/.claude/skills/ownmind-iron-rules/` is a read-only mirror.
 
 **Key design**: use OwnMind's existing `sync_token` (`src/utils/syncToken.js`) for a hash check, so 99% of sessions skip the download.
 

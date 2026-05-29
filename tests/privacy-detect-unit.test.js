@@ -41,16 +41,16 @@ describe('detectPrivacyLeak — Taiwan national ID', () => {
 
 describe('detectPrivacyLeak — email', () => {
   it('plain email hits', () => {
-    const r = detectPrivacyLeak('請寄到 vincent@fontrip.com 收件。');
+    const r = detectPrivacyLeak('請寄到 contact@gmail.com 收件。');
     assert.equal(r.detected, true);
     assert.equal(r.matches[0].type, 'email');
-    assert.equal(r.matches[0].value, 'vincent@fontrip.com');
+    assert.equal(r.matches[0].value, 'contact@gmail.com');
   });
 
   it('email with subdomain hits', () => {
-    const r = detectPrivacyLeak('admin@mail.fontrip.com 是管理者。');
+    const r = detectPrivacyLeak('admin@mail.acme.com 是管理者。');
     assert.equal(r.detected, true);
-    assert.equal(r.matches[0].value, 'admin@mail.fontrip.com');
+    assert.equal(r.matches[0].value, 'admin@mail.acme.com');
   });
 
   it('@ string without TLD → no hit (avoid false positive on user.email object paths)', () => {
@@ -90,8 +90,8 @@ describe('detectPrivacyLeak — Taiwan mobile', () => {
 
 describe('detectPrivacyLeak — user-prompt exception', () => {
   it('AI quoting an email the user shared → not a violation', () => {
-    const r = detectPrivacyLeak('好的，我寄到 vincent@fontrip.com', {
-      userPrompts: ['請寄到 vincent@fontrip.com 給我'],
+    const r = detectPrivacyLeak('好的，我寄到 contact@gmail.com', {
+      userPrompts: ['請寄到 contact@gmail.com 給我'],
     });
     assert.equal(r.detected, false);
     assert.equal(r.matches.length, 0);
@@ -112,21 +112,21 @@ describe('detectPrivacyLeak — user-prompt exception', () => {
   });
 
   it('user shared a different email; AI introduces a new email → still a violation', () => {
-    const r = detectPrivacyLeak('建議改寄到 new@fontrip.com', {
-      userPrompts: ['原本是 old@fontrip.com'],
+    const r = detectPrivacyLeak('建議改寄到 new@acme.com', {
+      userPrompts: ['原本是 old@acme.com'],
     });
     assert.equal(r.detected, true);
-    assert.equal(r.matches[0].value, 'new@fontrip.com');
+    assert.equal(r.matches[0].value, 'new@acme.com');
   });
 
   it('userPrompts empty array → always detected as usual', () => {
-    const r = detectPrivacyLeak('信箱 abc@fontrip.com', { userPrompts: [] });
+    const r = detectPrivacyLeak('信箱 abc@acme.com', { userPrompts: [] });
     assert.equal(r.detected, true);
   });
 
   it('userPrompts containing non-string noise → safely ignored; other strings still used for exception matching', () => {
-    const r = detectPrivacyLeak('信箱 abc@fontrip.com', {
-      userPrompts: [null, 123, 'abc@fontrip.com'],
+    const r = detectPrivacyLeak('信箱 abc@acme.com', {
+      userPrompts: [null, 123, 'abc@acme.com'],
     });
     assert.equal(r.detected, false);
   });
@@ -160,7 +160,7 @@ describe('detectPrivacyLeak — edge inputs', () => {
 
   it('same personal info appearing multiple times → deduplicated; reported once', () => {
     const r = detectPrivacyLeak(
-      '請寄 abc@fontrip.com 給 A123456789，副本也寄 abc@fontrip.com'
+      '請寄 abc@acme.com 給 A123456789，副本也寄 abc@acme.com'
     );
     const emails = r.matches.filter((m) => m.type === 'email');
     assert.equal(emails.length, 1, 'duplicate emails should be deduplicated');
@@ -168,7 +168,7 @@ describe('detectPrivacyLeak — edge inputs', () => {
 
   it('hits across multiple types → all listed', () => {
     const r = detectPrivacyLeak(
-      'A123456789 / abc@fontrip.com / 0912345678'
+      'A123456789 / abc@acme.com / 0912345678'
     );
     assert.equal(r.matches.length, 3);
     const types = r.matches.map((m) => m.type).sort();
@@ -224,7 +224,7 @@ describe('detectPrivacyLeak — email whitelist', () => {
   });
 
   it('whitelist must not block real emails (generic domains)', () => {
-    assert.equal(detectPrivacyLeak('vincent@fontrip.com').detected, true);
+    assert.equal(detectPrivacyLeak('contact@gmail.com').detected, true);
     assert.equal(detectPrivacyLeak('hello@gmail.com').detected, true);
   });
 

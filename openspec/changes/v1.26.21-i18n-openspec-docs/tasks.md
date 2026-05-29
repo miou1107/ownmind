@@ -47,17 +47,17 @@
 - [x] ③ Real names → consistent pseudonyms (full real name removed), local path
       → `~/...`, sample email → `user@example.com`. (Mapping not recorded here on
       purpose — recording real→alias would defeat the pseudonymization.)
-- [x] ④ Internal ecosystem names neutralized in openspec (FUNIT→ExampleClient,
-      RING/fapa/ima→"other internal projects", whitelist example list genericized,
-      gofunit_/FUNIT-prod/wp-vin vault tokens neutralized).
+- [x] ④ Internal ecosystem names neutralized in openspec (client project name → ExampleClient,
+      internal project names → "other internal projects", whitelist example list genericized,
+      vault-name tokens neutralized).
 - [x] Verify: only openspec .md changed; npm test 2012/0/0; ①/② left untouched.
 - [x] ① remote-access incident data scrubbed across openspec + tests + shared +
-      FILELIST + CHANGELOG: bot.kkvin.com→bot.example.com, app.kkvin.com→
-      app.example.com, AnyDesk ID 1901091212→123456789, Tailscale 100.72.72.60→
-      100.64.0.1, bot_kkvin→bot_example, bot-kkvin→bot-example. Behavioral test
-      fixtures only; npm test stays 2012/0/0. Public endpoint kkvin.com NOT touched.
+      FILELIST + CHANGELOG: internal hostnames, the AnyDesk connection id, and the
+      Tailscale address were all replaced with neutral placeholder values. (The
+      real→placeholder mapping is intentionally NOT recorded here.) Behavioral
+      test fixtures only; npm test stays 2012/0/0.
 - [ ] DEFERRED (Vin still deciding):
-      ② `kkvin.com` bare public install endpoint (README / .mcp.json) — it is the
+      ② `example.com` bare public install endpoint (README / .mcp.json) — it is the
          published service URL, not a leak; global de-brand would be a separate
          product decision.
 

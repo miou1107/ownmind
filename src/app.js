@@ -14,7 +14,7 @@ const app = express();
 // v1.19.12: trust the reverse proxy's (nginx / caddy) X-Forwarded-For header
 // Without this, express-rate-limit counts by socket IP, treats all requests as the
 // same client, and false-positives.
-// "1" means trust only the nearest 1 proxy layer (kkvin.com's nginx). Multi-layer CDN
+// "1" means trust only the nearest 1 proxy layer (example.com's nginx). Multi-layer CDN
 // environments need adjusting.
 // Addresses the ERR_ERL_UNEXPECTED_X_FORWARDED_FOR warning in the v1.19.11 prod container log
 app.set('trust proxy', 1);
@@ -164,7 +164,7 @@ app.get('/health', (req, res) => {
 });
 
 // Public bootstrap scripts — served without auth so fresh machines can
-// `curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash` before they
+// `curl -fsSL https://example.com/ownmind/bootstrap.sh | bash` before they
 // have an API key. See docs/superpowers/plans/2026-04-23-universal-bootstrap.md.
 //
 // Read once at boot instead of per-request sendFile: (a) avoids needing the

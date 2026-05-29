@@ -11,7 +11,7 @@ const repoRoot = path.resolve(__dirname, '..');
 /**
  * v1.17.10 — bootstrap.ps1 public route must strip BOM (reported by Bob)
  *
- * With `iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex`, the response body's
+ * With `iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex`, the response body's
  * first character U+FEFF (after UTF-8 BOM decode) gets treated by iex as a cmdlet call,
  * producing a "not a valid cmdlet" warning. Although Bob reported it as "no impact",
  * Alice / other users might be scared into thinking the install failed.

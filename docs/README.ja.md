@@ -201,20 +201,20 @@ macOS または Linux：
 
 ```bash
 # 新規インストール
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
 # アップグレード
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
 # 新規インストール
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 
 # アップグレード
-iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 ```
 
 > **Windows 注意**：OwnMind は Git for Windows 同梱の Bash シェル（sh.exe）に依存して Git hook を実行します。フル版の Git for Windows をインストール（Lite や Portable は不可）、さもないと commit 時にエラー発生。

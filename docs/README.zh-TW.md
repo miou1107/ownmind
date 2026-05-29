@@ -200,20 +200,20 @@ macOS 或 Linux：
 
 ```bash
 # 全新安裝
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
 # 升級
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
 # 全新安裝
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 
 # 升級
-iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 ```
 
 > **Windows 用戶請注意**：OwnMind 依賴 Windows 版 Git 隨附的 Shell 執行環境（sh.exe）跑 Git hook。請確保安裝完整版 Git for Windows、避免簡易版或精簡版、否則代碼提交時會報錯。

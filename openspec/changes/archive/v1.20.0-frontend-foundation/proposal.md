@@ -76,7 +76,7 @@ See OwnMind memory id=481 for details.
 #### Docs and release
 - Trilingual README + CHANGELOG + FILELIST synced
 - Version 1.19.20 → 1.20.0 (three places synced)
-- Deploy kkvin.com + browser verification
+- Deploy example.com + browser verification
 
 ### 2.2 Out of scope (handled in v1.20.1+)
 

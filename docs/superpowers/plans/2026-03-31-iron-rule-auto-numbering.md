@@ -82,7 +82,7 @@ Expected: 5 tests PASS
 
 ```bash
 git add tests/auto-numbering.test.js src/utils/auto-numbering.js
-git commit --author="Vin <vincent@fontrip.com>" -m "feat: add iron rule auto-numbering helper with tests"
+git commit --author="Vin <vin@example.com>" -m "feat: add iron rule auto-numbering helper with tests"
 ```
 
 ### Task 3: 整合到 POST /api/memory
@@ -129,7 +129,7 @@ import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 
 ```bash
 git add src/routes/memory.js
-git commit --author="Vin <vincent@fontrip.com>" -m "feat: integrate iron rule auto-numbering into POST /api/memory"
+git commit --author="Vin <vin@example.com>" -m "feat: integrate iron rule auto-numbering into POST /api/memory"
 ```
 
 ### Task 4: 補齊現有缺編號的鐵律
@@ -177,7 +177,7 @@ ORDER BY new_num;
 
 ```bash
 git add db/backfill-iron-rule-codes.sql
-git commit --author="Vin <vincent@fontrip.com>" -m "chore: add backfill SQL for missing iron rule codes"
+git commit --author="Vin <vin@example.com>" -m "chore: add backfill SQL for missing iron rule codes"
 ```
 
 ### Task 5: 更新文件
@@ -210,5 +210,5 @@ git commit --author="Vin <vincent@fontrip.com>" -m "chore: add backfill SQL for 
 
 ```bash
 git add CHANGELOG.md FILELIST.md
-git commit --author="Vin <vincent@fontrip.com>" -m "docs: update CHANGELOG and FILELIST for auto-numbering feature"
+git commit --author="Vin <vin@example.com>" -m "docs: update CHANGELOG and FILELIST for auto-numbering feature"
 ```

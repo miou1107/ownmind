@@ -1,16 +1,37 @@
 # OwnMind 更新紀錄
 
+## v1.26.23 — 主機網址設定化 + 開源前去品牌化收尾
+
+**背景**：開源前最後一關。把作者私人主機網址、公司網域、內部專案代號從原始碼裡清掉；其中「功能性」的主機引用改成讀環境變數，讓既有使用者與作者自己的部署都不受影響。
+
+**功能性（主機 → 環境變數，Vin 選「乾淨派」）**：
+- `src/lib/llm-narrative.js` 的 `callLLMSwitch` 改讀 `OWNMIND_LLM_API_BASE`（不再寫死主機；未設則丟明確錯誤）；測試同步改傳 `apiBase`。
+- `hooks/ownmind-iron-rule-check.sh` 拿掉寫死的 API URL fallback（讀使用者自己的 `OWNMIND_API_URL`）。
+- `scripts/health-report-daily.sh` 預設主機 → `root@YOUR_PROD_HOST`；`translate.mjs` 拿掉寫死預設。
+- `src/public/setup.html` 安裝指令改從 GitHub 公開倉庫抓 bootstrap（E2）、API 網址用管理者伺服器自己的 origin；`me/index.html` 頁尾品牌字改通用。
+- `.mcp.json` 的 `OWNMIND_API_URL` → 佔位（真值走 `.mcp.local.json` / 環境變數）。
+- README ×3 / `bootstrap.*` / `skills/ownmind-upgrade.md` 安裝＋升級指令改從 GitHub raw 抓。
+- `shared/language-lint.js` 專有名詞白名單砍掉個人專案代號、只留通用/產品詞；配套測試 fixture 同步（移除 4 個過時詞案例 → 測試基準 2012 → 2008）。
+
+**去品牌化（文件/註解/歷史）**：全倉把私人主機、公司網域、工作信箱、內部專案代號（RING、auto_speech、客戶專案等）泛稱化；先前「記錄對照表」的文件改寫成不揭露真名↔代稱（含把設計稿檔名裡的主機名拿掉）。
+
+**⚠️ 部署前必設環境變數**（否則對應功能會壞）：`OWNMIND_LLM_API_BASE`（敘事報告 LLM 端點）、`OWNMIND_PROD_HOST`（health-report）；本機開發把真主機放 `.mcp.local.json`。
+
+**驗證**：全倉掃描真名/主機/公司網域/專案代號歸零（對照表不留檔）；測試 2008 全綠（0 fail / 0 skipped，4 個過時白名單詞案例刻意移除）。
+
+**版本**：1.26.22 → 1.26.23
+
 ## v1.26.22 — 開源前全倉貢獻者去識別化
 
 **背景**：v1.26.21 只清了 openspec 跟少數敏感測試樣本。Code review 發現真實貢獻者姓名還散在約 50 個檔（程式註解、測試標籤/fixture、CHANGELOG 歷史、設計文件）。開源後這些真名不該外露，本版一次清乾淨。
 
 **做了什麼**：
-- 全倉把真實貢獻者姓名改為一致代稱、內部專案代號（FUNIT 系列）中性化，涵蓋程式註解、測試、CHANGELOG/FILELIST 歷史、docs/plans。
+- 全倉把真實貢獻者姓名改為一致代稱、內部專案代號中性化，涵蓋程式註解、測試、CHANGELOG/FILELIST 歷史、docs/plans。
 - 測試 fixture 的輸入與斷言同步改名（行為不變）。
-- 把先前「記錄真名↔代稱對照」的三處文件（v1.26.21 CHANGELOG 條目、kkvin 設計稿、v1.26.21 tasks）改寫成不揭露對照關係——**代稱對照表不寫進任何 commit 檔**，否則讀者可反推、化名形同白做。
+- 把先前「記錄真名↔代稱對照」的三處文件（v1.26.21 CHANGELOG 條目、主機設定化設計稿、v1.26.21 tasks）改寫成不揭露對照關係——**代稱對照表不寫進任何 commit 檔**，否則讀者可反推、化名形同白做。
 - 保留 `Vin`（公開代號）。
 
-**刻意未做**：`shared/language-lint.js` 的內部專案代號白名單（功能性 allowlist、低曝險）、本機路徑與 `.mcp.json` 主機（屬 `kkvin.com` 設定化那版、`.mcp.json` 是功能設定）。
+**刻意未做**：`shared/language-lint.js` 的內部專案代號白名單（功能性 allowlist、低曝險）、本機路徑與 `.mcp.json` 主機（屬 `example.com` 設定化那版、`.mcp.json` 是功能設定）。
 
 **驗證**：全倉掃描真名歸零（對照表不留檔）；測試維持 2012 全綠（0 fail / 0 skipped）。
 
@@ -27,9 +48,9 @@
 
 **敏感資料清理（開源前，本版範圍 = openspec + 相關測試樣本）**：
 - openspec 範圍內：移除真實姓名（改為一致代稱）、本機路徑→`~/...`、範例信箱→`user@example.com`、內部專案代號中性化（→泛稱）。
-- 遠端存取事故樣本資料中性化（主機名 `bot.kkvin.com`→`bot.example.com`、AnyDesk/Tailscale 等假值）+ FUNIT 1Password vault 樣本（`FUNIT-prod`/`wp-vin`→泛稱），橫跨 openspec + `tests/memory-secret-guard`、`tests/secret-detect-unit` + `shared/secret-detect.js`，皆為行為不變的測試樣本。
+- 遠端存取事故樣本資料中性化（主機名、AnyDesk/Tailscale 等改為佔位值）+ 1Password vault 樣本，橫跨 openspec + `tests/memory-secret-guard`、`tests/secret-detect-unit` + `shared/secret-detect.js`，皆為行為不變的測試樣本。
 
-**v1.26.21 當下未做、留待後續「開源前全倉去品牌化」**：散在約 40 個檔（tests/、src/、shared/、hooks/、scripts/）的回報者單名註解、`shared/language-lint.js` 專案名白名單、`llm-narrative.js` 提示詞人名範例（→ 人名部分已於 v1.26.22 完成）；以及公開安裝網址 `kkvin.com` 設定化（已有設計稿 `docs/superpowers/specs/2026-05-29-kkvin-config-extraction-design.md`，仍待辦）。
+**v1.26.21 當下未做、留待後續「開源前全倉去品牌化」**：散在約 40 個檔（tests/、src/、shared/、hooks/、scripts/）的回報者單名註解、`shared/language-lint.js` 專案名白名單、`llm-narrative.js` 提示詞人名範例（→ 人名部分已於 v1.26.22 完成）；以及公開安裝網址 `example.com` 設定化（已有設計稿 `docs/superpowers/specs/2026-05-29-host-config-extraction-design.md`，仍待辦）。
 
 **安全做法**：翻譯只動說明散文、清理只換特定字串，全程 `git diff` 自檢；測試套件維持 2012 全綠（0 fail / 0 skipped）。
 
@@ -1042,7 +1063,7 @@ Vin 報 bug：每次寫 OwnMind 都會碰到 `API 409: 請先呼叫 ownmind_init
 - 用量分析頁未來若加「日期區間自訂」（後端已支援 `?start=&end=`）、評估 FilterBar 重塑成 preset + custom range 兩種模式跟 ProjectHistoryPage 共用
 - 補 db healthcheck + api `depends_on: service_healthy`（v1.20.1 docker-compose 修補 reviewer 提的、避免 db 慢起時 api 第一次 bootstrap 撞 ECONNREFUSED、現況 restart 會自動修復但會有 1-2 秒下線）
 - fresh deploy E2E smoke test（down -v → up → setup wizard → login → /api/me/report 接口通、整套自動化、對應 IR-027 邏輯卡控）
-- prod 部署到 https://kkvin.com/ownmind/dashboard/ 後手動 smoke test `document.baseURI` 拿到預期值（reviewer 建議、basename 動態偵測理論上 nginx reverse proxy 不會干擾 baseURI、但實測 30 秒 100% 安心）
+- prod 部署到 https://example.com/ownmind/dashboard/ 後手動 smoke test `document.baseURI` 拿到預期值（reviewer 建議、basename 動態偵測理論上 nginx reverse proxy 不會干擾 baseURI、但實測 30 秒 100% 安心）
 
 ---
 
@@ -1071,7 +1092,7 @@ API base fix（commit 33c915e）push 上 prod 後再實測：填表單按登入�
 正解：`client/index.html` head 加 `<base href="./">`、瀏覽器解析後 `baseURI` 就會等於「index.html 所在資料夾的絕對 URL」、不含當前 SPA route。main.jsx 的 basename + client.js 的 API_BASE 邏輯不用動、加 base tag 之後就推得對：
 
 - 本機 docker `/dashboard/login` → baseURI `http://localhost:3100/dashboard/` → basename `/dashboard`
-- 線上 `/ownmind/dashboard/login` → baseURI `https://kkvin.com/ownmind/dashboard/` → basename `/ownmind/dashboard`
+- 線上 `/ownmind/dashboard/login` → baseURI `https://example.com/ownmind/dashboard/` → basename `/ownmind/dashboard`
 
 驗證：本機 docker rebuild 後直接訪問 `/dashboard/login`（非 root path、模擬 prod 場景）、baseURI 顯示為 `http://localhost:3100/dashboard/`（不含 /login）、SPA 正常渲染、登入頁顯示「登入 OwnMind」。
 
@@ -1081,11 +1102,11 @@ API base fix（commit 33c915e）push 上 prod 後再實測：填表單按登入�
 
 **Hotfix：API base 寫死導致 prod fetch 缺 /ownmind/ 前綴登入失敗**
 
-v1.20.1 prod deploy 後 Claude in Chrome 線上實測登入立即踩到：填表單按登入後沒反應、停留在 /login 頁、無錯誤訊息。直接 curl `https://kkvin.com/ownmind/api/me/login` 成功拿到 api_key、確認後端正常 → 前端 fetch URL 錯。
+v1.20.1 prod deploy 後 Claude in Chrome 線上實測登入立即踩到：填表單按登入後沒反應、停留在 /login 頁、無錯誤訊息。直接 curl `https://example.com/ownmind/api/me/login` 成功拿到 api_key、確認後端正常 → 前端 fetch URL 錯。
 
-原因：`client/src/api/client.js` 直接 `fetch('/api/me/login')`、瀏覽器解析成 `https://kkvin.com/api/me/login`（同 host 絕對路徑）、不會自動帶 nginx 反向代理的 `/ownmind/` 前綴。線上 endpoint 在 `/ownmind/api/...`、所以打到不存在的 URL、靜默失敗。本機 docker 部署在 `/dashboard/`（無 /ownmind 前綴）/api 同 host root 就 work、沒踩到。
+原因：`client/src/api/client.js` 直接 `fetch('/api/me/login')`、瀏覽器解析成 `https://example.com/api/me/login`（同 host 絕對路徑）、不會自動帶 nginx 反向代理的 `/ownmind/` 前綴。線上 endpoint 在 `/ownmind/api/...`、所以打到不存在的 URL、靜默失敗。本機 docker 部署在 `/dashboard/`（無 /ownmind 前綴）/api 同 host root 就 work、沒踩到。
 
-修：跟 main.jsx basename 動態偵測同源邏輯、`client/src/api/client.js` 新增 `API_BASE` 從 `document.baseURI` 抽 dashboard 之前的 pathname、`resolveUrl()` helper 對 `/api/...` 開頭的 path 自動加前綴。線上 baseURI `https://kkvin.com/ownmind/dashboard/...` → API_BASE = `/ownmind`、fetch 拼成 `/ownmind/api/me/login`。本機 docker baseURI `http://localhost:3100/dashboard/...` → API_BASE = ''、行為不變。
+修：跟 main.jsx basename 動態偵測同源邏輯、`client/src/api/client.js` 新增 `API_BASE` 從 `document.baseURI` 抽 dashboard 之前的 pathname、`resolveUrl()` helper 對 `/api/...` 開頭的 path 自動加前綴。線上 baseURI `https://example.com/ownmind/dashboard/...` → API_BASE = `/ownmind`、fetch 拼成 `/ownmind/api/me/login`。本機 docker baseURI `http://localhost:3100/dashboard/...` → API_BASE = ''、行為不變。
 
 教訓：v1.20.1 basename fix（commit 3396031）只修了 SPA route 前綴問題、漏掉 API call 同根本原因。**「前綴寫死」這類 bug 要全面掃**、不能修一處就以為清乾淨。Backlog 加進 IR 候選：未來新增 fetch / Router 設定時、要 grep 全 repo 確認沒同樣 pattern 寫死。
 
@@ -1130,7 +1151,7 @@ v1.20.1 release deploy 到本機 docker（路徑 /dashboard/、無 /ownmind/ 前
 - 設計：寫繁中、dev 端跑 `npm run build` 含自動翻譯成 EN / JA、結果 commit 進 git（不每次發版重翻、不每次使用者切語言打 LLM）
 - Dockerfile prod build 走 `build:no-translate`、用已 commit 的字典（避免 Docker build 時依賴 LLM API key）
 - `client/src/i18n/`：`zh.json` 為唯一真實來源（30 個起手 key）+ `glossary.json` 術語固定對照（20 個品牌專業詞）+ `{locale}.override.json` 人工強制覆寫
-- `client/src/scripts/translate.mjs`：增量翻譯腳本、支援 OpenAI 相容 API（kkvin.com llm-switch / OpenAI / Anthropic）、`temperature=0` 降低隨機性、hash 比對未變動就跳過
+- `client/src/scripts/translate.mjs`：增量翻譯腳本、支援 OpenAI 相容 API（example.com llm-switch / OpenAI / Anthropic）、`temperature=0` 降低隨機性、hash 比對未變動就跳過
 - 4 機制控制翻譯一致性：(1) git 快取、(2) temperature=0、(3) 術語表、(4) 人工覆寫
 - 額度成本估算：每次發版增量翻譯約 0.001 美金、一年 50 次發版約 1.6 台幣
 - 無 API key 時自動退到 manual mode、列出待翻 key 提示人工貼進外部翻譯工具
@@ -1307,7 +1328,7 @@ API 400: 必填欄位：tool, model, summary
 
 ## v1.19.16 — hotfix：admin 後台登入頁 SyntaxError、所有人登不進去
 
-**P0 緊急修補。** v1.19.14/15 部署後 Vin 從瀏覽器打開 `https://kkvin.com/ownmind/admin/`、輸入帳密按登入沒反應。打開 DevTools 看 console 顯示：
+**P0 緊急修補。** v1.19.14/15 部署後 Vin 從瀏覽器打開 `https://example.com/ownmind/admin/`、輸入帳密按登入沒反應。打開 DevTools 看 console 顯示：
 
 ```
 Uncaught SyntaxError: Identifier 'cached' has already been declared (admin/:1948)
@@ -1967,7 +1988,7 @@ Gemini 對抗審查 + Claude 自評後修了 4 個 review 意見：
 
 3. **白名單從 80 詞擴到 200+ 詞**（基於 30 天 audit Top 30 真實違規詞）
    - 大公司 / 平台名：Google、Meta、OpenAI、Chrome、OAuth、YouTube、Imagen、Llama 等 35+ 詞
-   - Vin 個人專案名：adog、fapa、fontrip、ring、ownmind、auto、speech、ima、funit 等
+   - Vin 個人專案名（多個內部專案）
    - Git / dev 流程詞：main、origin、branch、worktree、commits、hook、Hook、review、prod、spec、prompt、tasks、tests、pipeline、Pipeline、Stage、chunk、monorepo、render、retry、batch、async、await、middleware、dispatcher、payload、handler、router 等 80+ 詞
    - 常見技術概念：promise、callback、queue、lock、debounce、polling、cache、timeout 等 25+ 詞
 
@@ -2013,7 +2034,7 @@ Gemini 對抗審查 + Claude 自評後修了 4 個 review 意見：
 
 **Prod backfill：** 既有 14 條 migration (001~014) 已透過 `INSERT INTO schema_migrations(filename, applied_by) VALUES (..., 'backfill')` 一次性 backfill、所以新版上線後 runner 看到 15 條全套用、什麼也不做、純驗證 idempotent。
 
-**新增鐵律 IR-048：** deploy OwnMind / RING / 任何 server 前必須跑 db/ 下所有未套用 migration（人工版本、適用所有專案）。本版 OwnMind 自動化後、IR-048 在 OwnMind 場景降為 advisory、但對 RING / fapa / ima 等專案仍是 default 強度。
+**新增鐵律 IR-048：** deploy OwnMind / 任何 server 前必須跑 db/ 下所有未套用 migration（人工版本、適用所有專案）。本版 OwnMind 自動化後、IR-048 在 OwnMind 場景降為 advisory、但對其他內部專案仍是 default 強度。
 
 **新增測試 22 case** — 涵蓋 SQL idempotent、bash runner 結構、Node migrator 行為、src/index.js 整合順序。
 
@@ -2420,7 +2441,7 @@ Audit 發現：
 **鐵律觸發**: IR-006 / IR-007 (重複漏 hook 安裝、user 端 client 跑舊行為) / IR-008 / IR-022 / IR-027 / IR-031 / IR-036 (本版觸發點) / IR-038 (audit 觀測資料)
 
 **升級指引**:
-1. SSH prod: `ssh root@kkvin.com`
+1. SSH prod: `ssh root@example.com`
 2. `cd /VinService/ownmind && git pull origin main`
 3. **不需 migration** (純邏輯 + 安裝腳本修)
 4. `docker compose build --no-cache api && docker compose up -d api`
@@ -2506,7 +2527,7 @@ metadata.origin_context:
 **測試**：1157 → 1176 (+19) 全綠。
 
 **升級指引**：
-1. SSH prod: `ssh root@kkvin.com`
+1. SSH prod: `ssh root@example.com`
 2. `cd /VinService/ownmind && git pull origin main`
 3. **不需 migration** (用既有 metadata JSONB 欄位)
 4. `docker compose build --no-cache api && docker compose up -d api`
@@ -2559,7 +2580,7 @@ Vin 質疑：「規矩太嚴 OR suggest 提案本身品質不對？」
 **測試**：1156 → 1157 (+1) 全綠。
 
 **升級指引（這版部署 server）**：
-1. SSH prod: `ssh root@kkvin.com`
+1. SSH prod: `ssh root@example.com`
 2. `cd /VinService/ownmind && git pull origin main`
 3. **不需 migration** (純 lint 邏輯改)
 4. `docker compose build --no-cache api && docker compose up -d api`
@@ -2645,7 +2666,7 @@ Vin 質疑：「規矩太嚴 OR suggest 提案本身品質不對？」
 IR-008 / IR-022 / IR-027 (本版核心目標) / IR-031 / IR-032。
 
 **升級指引（這版部署 server）**：
-1. SSH prod: `ssh root@kkvin.com`
+1. SSH prod: `ssh root@example.com`
 2. `cd /VinService/ownmind && git pull origin main`
 3. **手動 apply migration**: `docker compose exec -T db psql -U ownmind -d ownmind < db/013_iron_rule_previous_content.sql`
 4. `docker compose build --no-cache api && docker compose up -d api` (IR-018 + IR-023)
@@ -2715,7 +2736,7 @@ v1.17.99 一起解。
 **驗證**：本地 `npm test` 1054/1054 pass（v1.17.98 是 1045、+9）。
 
 **升級指引**（**這版部署 server**）：
-1. SSH 到 prod：`ssh root@kkvin.com`
+1. SSH 到 prod：`ssh root@example.com`
 2. `cd /VinService/ownmind && git pull origin main`
 3. **不需 migration**（schema 沒動）
 4. `docker compose build --no-cache api && docker compose up -d api`（IR-018 + IR-023）
@@ -2764,7 +2785,7 @@ v1.17.99 一起解。
 **驗證**：本地 `npm test` 1045/1045 pass（v1.17.97 是 1034、+11：8 server dedup + 2 client uuid + 1 flush preserve）。
 
 **升級指引**（**這版部署 server**）：
-1. SSH 到 prod：`ssh root@kkvin.com`
+1. SSH 到 prod：`ssh root@example.com`
 2. `cd /VinService/ownmind && git pull origin main`
 3. **手動 apply migration**：`docker compose exec -T db psql -U ownmind -d ownmind < db/012_activity_event_dedup.sql`
 4. `docker compose build --no-cache api && docker compose up -d api`（IR-018 + IR-023）
@@ -3153,7 +3174,7 @@ WHERE a.ts ${timeFilter}
 
 ## v1.17.88 — `/me` trailing slash redirect 小修
 
-**背景**：Vin 回報 `https://kkvin.com/ownmind/me`（沒尾斜線）連不上、必須打 `/ownmind/me/`。Express `app.use('/me', express.static(...))` 對 mount path 本身不自動補 trailing slash — `/me` 直接 404、`/me/` 才 hit index.html。
+**背景**：Vin 回報 `https://example.com/ownmind/me`（沒尾斜線）連不上、必須打 `/ownmind/me/`。Express `app.use('/me', express.static(...))` 對 mount path 本身不自動補 trailing slash — `/me` 直接 404、`/me/` 才 hit index.html。
 
 **修法**：[src/app.js](src/app.js) static mount 前加條件式 redirect handler。原本想直接 `app.get('/me', res.redirect(301, 'me/'))` 但 Express 預設 strict routing=false、`/me/` 也會 match 變成無限循環。改成：
 
@@ -3164,7 +3185,7 @@ app.get('/me', (req, res, next) => {
 });
 ```
 
-**為什麼相對路徑**：用 `'me/'` 而非 `'/me/'`。kkvin.com 跑 nginx 反代到 `/ownmind`、Express 內部 URL 看不到 `/ownmind` prefix。如果用絕對 `/me/`、Location header 會是 `/me/`、user browser 拼到 origin 變成 `https://kkvin.com/me/`（沒 prefix）。用相對 `me/` 對當前 URL `/ownmind/me` 來說、browser 拼出 `/ownmind/me/`。
+**為什麼相對路徑**：用 `'me/'` 而非 `'/me/'`。example.com 跑 nginx 反代到 `/ownmind`、Express 內部 URL 看不到 `/ownmind` prefix。如果用絕對 `/me/`、Location header 會是 `/me/`、user browser 拼到 origin 變成 `https://example.com/me/`（沒 prefix）。用相對 `me/` 對當前 URL `/ownmind/me` 來說、browser 拼出 `/ownmind/me/`。
 
 **Reproduction tests 3 條（IR-003）**：
 - [tests/me-trailing-slash.test.js](tests/me-trailing-slash.test.js)
@@ -3443,7 +3464,7 @@ OwnMind self-check
 [ OK ]  mcp_files            ~/.ownmind/mcp/index.js
 [ OK ]  package_version      v1.17.82
 [ OK ]  mcp_node_modules     99 modules
-[ OK ]  server_health        https://kkvin.com/ownmind/health -> 200
+[ OK ]  server_health        https://example.com/ownmind/health -> 200
 [ OK ]  api_key_format       valid (len=22)
 [ OK ]  api_credentials      authenticated
 [ OK ]  git_hooks            3 hooks installed
@@ -4144,7 +4165,7 @@ catch {
 
 - 新表 `install_check_logs`。Deploy 時要手動跑 migration（OwnMind 沒有 auto-migration runner）：
   ```
-  ssh root@kkvin.com "docker exec -i ownmind-db psql -U ownmind -d ownmind" < db/011_install_check_logs.sql
+  ssh root@example.com "docker exec -i ownmind-db psql -U ownmind -d ownmind" < db/011_install_check_logs.sql
   ```
 
 **Dashboard UI 留下個 PR**：本 PR 先把資料收集起來。Admin 想看哪個 user 哪個 component 壞掉，目前用 SQL 直接查 `install_check_logs`：
@@ -4418,7 +4439,7 @@ v1.17.47 部署後實測抓到問題：
 **LLM 段（開頁自動觸發、伺服器端 cache 1 小時）**
 
 - 一句話結論 + 各段「白話講」 + 給管理者的洞察 + 下一步動作 + 各專案踩坑萃取
-- 走 llm-switch（OpenAI-compatible）`https://kkvin.com/llm-switch/v1`，`model='auto'`，`response_format=json_object`
+- 走 llm-switch（OpenAI-compatible）`https://example.com/llm-switch/v1`，`model='auto'`，`response_format=json_object`
 - Server 端 cache by `sha256(narrative_data)`，TTL 1 小時，全團隊每 range 每小時最多打 1 次 LLM
 - friction notes 給 LLM 前 redactPII（email / IP）
 
@@ -4665,18 +4686,18 @@ Vin 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
   觸發；只能寫本地 JSONL（async upload 不及完成）
 - 防重複：emergencySessionLog 一進就 set sessionLogged
 
-**對 RING 等專案的影響**
+**對 ProjectR 等專案的影響**
 
 未來 user 在 ring-linebot 目錄開 Claude Code → MCP 啟動 → AUTO_PROJECT='ring-linebot'
 → 不論怎麼結束都會寫帶 project 的 session_log → 報告頁正確歸類。
 
-## v1.17.36 — 專案來源加 handoffs（修 RING 看不到）
+## v1.17.36 — 專案來源加 handoffs（修 ProjectR 看不到）
 
-**Vin 反饋**：「RING 為什麼沒在專案裡？」
+**Vin 反饋**：「ProjectR 為什麼沒在專案裡？」
 
 **Root cause**：之前專案來源只看 `session_logs.details.project`，但 Vin
-做 RING 時都只寫 handoff（交接）給下個 session，沒走「結束總結」流程，
-所以 RING 在 session_logs 裡 0 筆。
+做 ProjectR 時都只寫 handoff（交接）給下個 session，沒走「結束總結」流程，
+所以 ProjectR 在 session_logs 裡 0 筆。
 
 **修法**
 
@@ -4804,7 +4825,7 @@ Vin 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 **症狀**：登入畫面按「登入」吐 `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`
 
 **Root cause**：`src/public/me/index.html` 用 `/api/me/...` 直接打 root，
-但 nginx 只 rewrite `/ownmind/...` → `/...`。前端打 `https://kkvin.com/api/me/login`
+但 nginx 只 rewrite `/ownmind/...` → `/...`。前端打 `https://example.com/api/me/login`
 沒對應 route，nginx 回 default HTML 頁，前端 `r.json()` 解析失敗。
 
 **修法**：所有 fetch 從 `/api/me/...` 改 `/ownmind/api/me/...`，跟 admin 一致。
@@ -4845,7 +4866,7 @@ Vin 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 **user 流程**
 
-1. 開 https://kkvin.com/ownmind/me/
+1. 開 https://example.com/ownmind/me/
 2. 輸入 Email + 預設密碼 `Password42760988`
 3. 系統強制顯示「改密碼」表單，輸入舊密碼 + 新密碼（≥8 字元）
 4. 改完直接看報告，下次只要 Email + 新密碼
@@ -4885,7 +4906,7 @@ HackMD 那份手動整理的版本，但即時資料、自助登入。
 
 **對 user 的影響**
 
-Alice / Dana / Bob（user role）現在可以開 https://kkvin.com/ownmind/me/，
+Alice / Dana / Bob（user role）現在可以開 https://example.com/ownmind/me/，
 貼上自己的 api_key（從 `~/.claude/settings.json` 找 `OWNMIND_API_KEY`），看自己
 的活動 + 全團隊聚合資料。Vin / Alice（admin）也能用此頁，但他們也保留 admin
 後台原有功能。
@@ -5399,7 +5420,7 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\register-scanner-task.p
 Remove-Item -Recurse -Force $HOME\.ownmind
 $env:OWNMIND_API_KEY='你的 key'
 $env:OWNMIND_API_URL='你的 API URL'
-iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex
 ```
 Bootstrap 會抓到含 BOM + 環境正規化 + flag 過濾的 v1.17.9 乾淨 clone，之後升級自動走新路徑。
 
@@ -5487,22 +5508,22 @@ AI 自動偵測 OS + 狀態後執行正確動作。
 
 Mac / Linux / Git Bash（**已安裝、只升級**）：
 ```bash
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash
+curl -fsSL https://example.com/ownmind/bootstrap.sh | bash
 ```
 
 Mac / Linux / Git Bash（**首次安裝**，要提供 API key + URL）：
 ```bash
-curl -fsSL https://kkvin.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
+curl -fsSL https://example.com/ownmind/bootstrap.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 ```
 
 Windows PowerShell（**已安裝、只升級**）：
 ```powershell
-iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex
 ```
 
 Windows PowerShell（**首次安裝**）：
 ```powershell
-$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex
+$env:OWNMIND_API_KEY='YOUR_API_KEY'; $env:OWNMIND_API_URL='YOUR_API_URL'; iwr -useb https://example.com/ownmind/bootstrap.ps1 | iex
 ```
 
 **新增測試**
@@ -6291,7 +6312,7 @@ bash ~/.ownmind/scripts/interactive-upgrade.sh
 ## 2026-03-26 — v1.0.0 初版發布
 
 ### 核心功能
-- API Server（Node.js + Express）上線，部署於 kkvin.com
+- API Server（Node.js + Express）上線，部署於 example.com
 - PostgreSQL + pgvector 資料庫，支援語意搜尋
 - 記憶 CRUD：profile、principle、iron_rule、coding_standard、project、portfolio、env
 - 記憶歷史紀錄與回滾功能
@@ -6302,7 +6323,7 @@ bash ~/.ownmind/scripts/interactive-upgrade.sh
 
 ### MCP Server
 - 12 個 MCP tools，供 Claude Code、Cursor 等工具使用
-- 預設 API URL 指向 https://kkvin.com/ownmind
+- 預設 API URL 指向 https://example.com/ownmind
 
 ### Skill
 - ownmind-memory skill：記憶管理的完整操作手冊
@@ -6327,7 +6348,7 @@ bash ~/.ownmind/scripts/interactive-upgrade.sh
 
 ### 部署
 - Docker Compose 部署
-- nginx reverse proxy（https://kkvin.com/ownmind/）
+- nginx reverse proxy（https://example.com/ownmind/）
 - port 只綁 localhost，不對外暴露
 
 ### 記憶遷移

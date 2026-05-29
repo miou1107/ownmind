@@ -201,7 +201,7 @@ The event object structure:
 
 **GIVEN**
 
-- The admin opens `https://kkvin.com/ownmind/admin/memories`
+- The admin opens `https://example.com/ownmind/admin/memories`
 - Opens the IR-002 edit page
 
 **WHEN**

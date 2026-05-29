@@ -41,8 +41,8 @@
 - [ ] tag v1.20.0
 - [ ] push origin main + push tag
 
-### Deploy kkvin.com
-- [ ] ssh kkvin.com, git pull, run migration, docker compose build --no-cache, up -d
+### Deploy example.com
+- [ ] ssh example.com, git pull, run migration, docker compose build --no-cache, up -d
 - [ ] Browser-verify the old /admin/ /me/ still work (coexistence verification)
 - [ ] Browser-verify the new /dashboard/ is accessible
 - [ ] `curl /api/clients/version` returns 1.20.0

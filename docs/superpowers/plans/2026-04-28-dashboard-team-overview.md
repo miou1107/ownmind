@@ -1106,16 +1106,16 @@ git tag v1.17.17
 git push origin v1.17.17
 ```
 
-如果走 PR + review 流程，先開 PR、merge 後再 tag。tag 推上去觸發 CI/CD 部署到 kkvin.com。
+如果走 PR + review 流程，先開 PR、merge 後再 tag。tag 推上去觸發 CI/CD 部署到 example.com。
 
 - [ ] **Step 3: 等 server 部署完成，IR-019 + IR-020 雙重驗證**
 
 IR-019：版本檢查不能只看本地 origin。
 
 ```bash
-curl -s https://kkvin.com/api/health | grep version
+curl -s https://example.com/api/health | grep version
 # 或
-curl -s https://kkvin.com/api/memory/init -H "x-api-key: ..." | jq .server_version
+curl -s https://example.com/api/memory/init -H "x-api-key: ..." | jq .server_version
 ```
 
 Expected: `1.17.17`。

@@ -51,7 +51,7 @@ Running `npm audit` in the Antigravity environment found 3 moderate vulnerabilit
 - Run `npm audit` to confirm 0 vulnerabilities
 - Version 1.19.17 → 1.19.18 (pure security patch, patch level)
 - Update CHANGELOG.md / FILELIST.md / tri-language README
-- Deploy to kkvin.com and test in the browser
+- Deploy to example.com and test in the browser
 
 ### 2.2 Out of scope
 
@@ -80,8 +80,8 @@ Engineering time: about 15-30 minutes (including deploy + verification).
 - [ ] `node --test` all green (1825 or more)
 - [ ] After the `express-rate-limit` upgrade, the existing rate-limit config still works (restart the server and check logs for no errors)
 - [ ] After the `qs` upgrade, query string parsing works (endpoints like POST /api/bug-reports work normally)
-- [ ] After deploy, https://kkvin.com/ownmind/admin/ logs in normally
-- [ ] After deploy, https://kkvin.com/ownmind/api/clients/version returns v1.19.18
+- [ ] After deploy, https://example.com/ownmind/admin/ logs in normally
+- [ ] After deploy, https://example.com/ownmind/api/clients/version returns v1.19.18
 - [ ] Tri-language version 1.19.18
 
 ---

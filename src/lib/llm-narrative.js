@@ -73,12 +73,13 @@ function stableStringify(obj) {
   return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
 }
 
-export async function callLLMSwitch({ apiKey, messages, fetchImpl = fetch, timeoutMs = 30_000 }) {
+export async function callLLMSwitch({ apiKey, messages, fetchImpl = fetch, timeoutMs = 30_000, apiBase = process.env.OWNMIND_LLM_API_BASE }) {
   if (!apiKey) throw new Error('LLM_SWITCH_API_KEY not set');
+  if (!apiBase) throw new Error('OWNMIND_LLM_API_BASE not set (the OpenAI-compatible LLM endpoint base URL)');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl('https://kkvin.com/llm-switch/v1/chat/completions', {
+    const res = await fetchImpl(`${apiBase.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
