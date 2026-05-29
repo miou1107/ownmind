@@ -9,22 +9,22 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.12 — install.ps1 不得用 Set-Content 寫需要被 parse 的檔（回報者 Adam/Eric）
+ * v1.17.12 — install.ps1 must not use Set-Content to write files that need parsing (reported by Adam/Eric)
  *
- * Root cause：PS 5.1 的 `Set-Content -Encoding UTF8` 會加 UTF-8 BOM (EF BB BF)。
- * 下游 Node `JSON.parse` / `sh` / `cmd` 遇到 BOM 會炸。Mac install.sh 走 heredoc
- * 不帶 BOM，所以 Mac 沒事、Windows 全壞。
+ * Root cause: PS 5.1's `Set-Content -Encoding UTF8` adds a UTF-8 BOM (EF BB BF).
+ * Downstream Node `JSON.parse` / `sh` / `cmd` blow up on a BOM. Mac install.sh uses
+ * a heredoc without a BOM, so Mac is fine while Windows is fully broken.
  *
- * 本檔強制 install.ps1 對以下場景改用 `[System.IO.File]::WriteAllText`
- * （PS 5.1/7 都吐 BOM-less UTF-8）：
- *   1. settings.json / mcp.json（JSON.parse 會炸）
- *   2. git hook shell wrapper（/bin/sh 遇到 BOM 首行會炸）
+ * This file forces install.ps1 to switch to `[System.IO.File]::WriteAllText`
+ * (both PS 5.1/7 emit BOM-less UTF-8) for the following cases:
+ *   1. settings.json / mcp.json (JSON.parse would blow up)
+ *   2. git hook shell wrapper (/bin/sh blows up on a BOM in the first line)
  */
 
-describe('install.ps1 — 不用 Set-Content 寫敏感檔', () => {
+describe('install.ps1 — do not use Set-Content to write sensitive files', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('不得 `ConvertTo-Json | Set-Content`（JSON 會被 BOM 污染）', () => {
+  it('must not `ConvertTo-Json | Set-Content` (JSON would be polluted by a BOM)', () => {
     assert.doesNotMatch(
       content,
       /ConvertTo-Json[\s\S]{0,60}\|\s*Set-Content/,
@@ -32,7 +32,7 @@ describe('install.ps1 — 不用 Set-Content 寫敏感檔', () => {
     );
   });
 
-  it('不得 heredoc + Set-Content 寫 shell wrapper', () => {
+  it('must not use heredoc + Set-Content to write the shell wrapper', () => {
     assert.doesNotMatch(
       content,
       /"@\s*\|\s*Set-Content[^|\n]+(PreCommit|PostCommit)[^|\n]*-Encoding\s+UTF8/,
@@ -40,7 +40,7 @@ describe('install.ps1 — 不用 Set-Content 寫敏感檔', () => {
     );
   });
 
-  it('有用 [System.IO.File]::WriteAllText (BOM-less UTF-8 寫法)', () => {
+  it('uses [System.IO.File]::WriteAllText (BOM-less UTF-8 write)', () => {
     assert.match(
       content,
       /\[System\.IO\.File\]::WriteAllText/,

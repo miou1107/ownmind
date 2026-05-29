@@ -1,15 +1,15 @@
 /**
- * v1.19.9 — scripts/reset-admin-password.js smoke 測試
+ * v1.19.9 — scripts/reset-admin-password.js smoke test
  *
- * 對應 openspec/changes/v1.19.9-password-recovery/spec.md 場景 9-12。
+ * Corresponds to openspec/changes/v1.19.9-password-recovery/spec.md scenarios 9-12.
  *
- * 完整 e2e 測試（建假 DB、模擬 stdin、驗 UPDATE）成本高、價值低；
- * 這層只驗：
- *   - --help 退出碼 0、印出說明
- *   - 沒環境變數時 DB 連線失敗、退出碼 1
- *   - 腳本檔存在、可跑
+ * A full e2e test (set up a fake DB, mock stdin, verify the UPDATE) is high-cost and low-value;
+ * this layer only verifies:
+ *   - --help exits 0 and prints usage
+ *   - DB connection fails and exits 1 when env vars are missing
+ *   - the script file exists and is runnable
  *
- * 真正的 e2e 留手動驗證（部署前）。
+ * The real e2e is left to manual verification (before deploy).
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,11 +24,11 @@ const repoRoot = path.resolve(
 const scriptPath = path.join(repoRoot, 'scripts', 'reset-admin-password.js');
 
 describe('v1.19.9 — reset-admin-password.js smoke', () => {
-  it('腳本檔存在', () => {
+  it('script file exists', () => {
     assert.equal(fs.existsSync(scriptPath), true);
   });
 
-  it('--help 顯示說明、退出碼 0', () => {
+  it('--help shows usage and exits 0', () => {
     const r = spawnSync('node', [scriptPath, '--help'], {
       encoding: 'utf8',
       timeout: 5000,
@@ -38,7 +38,7 @@ describe('v1.19.9 — reset-admin-password.js smoke', () => {
     assert.match(r.stdout, /DB_HOST|DB_USER/);
   });
 
-  it('-h 也走 help', () => {
+  it('-h also triggers help', () => {
     const r = spawnSync('node', [scriptPath, '-h'], {
       encoding: 'utf8',
       timeout: 5000,
@@ -46,21 +46,21 @@ describe('v1.19.9 — reset-admin-password.js smoke', () => {
     assert.equal(r.status, 0);
   });
 
-  it('DB 連線失敗時退出碼 1、訊息明確', () => {
+  it('exits 1 with a clear message when DB connection fails', () => {
     const r = spawnSync('node', [scriptPath], {
       encoding: 'utf8',
       timeout: 10000,
       env: {
         ...process.env,
         DB_HOST: '127.0.0.1',
-        DB_PORT: '15432', // 確保不會撞到本機 postgres
+        DB_PORT: '15432', // ensure it does not hit a local postgres
         DB_NAME: 'nonexistent_test_db',
         DB_USER: 'nonexistent_user',
         DB_PASSWORD: 'nope',
       },
     });
     assert.notEqual(r.status, 0, '應該失敗退出（非 0）');
-    // 訊息含關鍵字（中文「DB 連線失敗」或英文 ECONNREFUSED）
+    // message contains a keyword (Chinese "DB 連線失敗" or English ECONNREFUSED)
     const combined = (r.stdout || '') + (r.stderr || '');
     assert.ok(
       /連線失敗|ECONNREFUSED|connect/i.test(combined),

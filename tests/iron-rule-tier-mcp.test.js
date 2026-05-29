@@ -5,13 +5,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * v1.19 — mcp/index.js source-level 驗證 tier 欄位整合
+ * v1.19 — source-level verification of the tier field integration in mcp/index.js
  *
- * mcp/index.js 載入時會自動連接 stdio MCP server，無法在測試中 import。
- * 採用 source-level 驗證：讀檔 + regex 驗證 tier 出現在合適位置。
+ * mcp/index.js auto-connects to the stdio MCP server on load and cannot be imported in tests.
+ * Use source-level verification: read the file + regex-check that tier appears in the right place.
  *
- * 這只是品質保險：避免有人重構 mcp/index.js 時意外移除 tier 整合。
- * 完整端對端測試靠後續 B 階段的 server API 整合測試覆蓋。
+ * This is only a quality safeguard: prevent someone refactoring mcp/index.js from accidentally
+ * removing the tier integration. Full end-to-end coverage comes from the later phase B server
+ * API integration tests.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +22,7 @@ const MCP_SOURCE = fs.readFileSync(MCP_INDEX_PATH, 'utf8');
 function extractToolBlock(toolName) {
   const startIdx = MCP_SOURCE.indexOf(`name: "${toolName}"`);
   assert.ok(startIdx > 0, `找不到 tool "${toolName}" 的定義`);
-  // 簡單切片：從這個 tool 開始往後找下一個 name: 或 ];
+  // Simple slice: from this tool, scan forward to the next name: or ];
   const rest = MCP_SOURCE.slice(startIdx);
   const nextNameIdx = rest.indexOf('\n    name: "', 5);
   const nextEndIdx = rest.indexOf('\n];');
@@ -34,26 +35,26 @@ function extractCaseBlock(toolName) {
   const startIdx = MCP_SOURCE.indexOf(`case "${toolName}":`);
   assert.ok(startIdx > 0, `找不到 case "${toolName}" 的 handler`);
   const rest = MCP_SOURCE.slice(startIdx);
-  // 切到下一個 case 或 } 結尾
+  // Slice up to the next case or the closing }
   const nextCaseIdx = rest.indexOf('\n    case "', 5);
   return rest.slice(0, nextCaseIdx > 0 ? nextCaseIdx : 3000);
 }
 
-describe('v1.19 — MCP tier 整合', () => {
+describe('v1.19 — MCP tier integration', () => {
   describe('ownmind_save schema', () => {
     const saveBlock = extractToolBlock('ownmind_save');
 
-    it('inputSchema 含 tier 欄位', () => {
+    it('inputSchema includes the tier field', () => {
       assert.match(saveBlock, /tier:\s*\{/);
     });
 
-    it('tier 欄位列出三個合法 enum 值', () => {
+    it('tier field lists three valid enum values', () => {
       assert.match(saveBlock, /tier:[\s\S]*?enum:[\s\S]*?critical/);
       assert.match(saveBlock, /tier:[\s\S]*?enum:[\s\S]*?default/);
       assert.match(saveBlock, /tier:[\s\S]*?enum:[\s\S]*?advisory/);
     });
 
-    it('tier 欄位有描述、提到 critical / default / advisory 用途', () => {
+    it('tier field has a description mentioning critical / default / advisory usage', () => {
       const tierSchema = saveBlock.slice(saveBlock.indexOf('tier:'));
       assert.match(tierSchema, /critical/);
       assert.match(tierSchema, /default/);
@@ -64,11 +65,11 @@ describe('v1.19 — MCP tier 整合', () => {
   describe('ownmind_update schema', () => {
     const updateBlock = extractToolBlock('ownmind_update');
 
-    it('inputSchema 含 tier 欄位', () => {
+    it('inputSchema includes the tier field', () => {
       assert.match(updateBlock, /tier:\s*\{/);
     });
 
-    it('tier 欄位列出三個合法 enum 值', () => {
+    it('tier field lists three valid enum values', () => {
       assert.match(updateBlock, /tier:[\s\S]*?enum:[\s\S]*?critical/);
       assert.match(updateBlock, /tier:[\s\S]*?enum:[\s\S]*?default/);
       assert.match(updateBlock, /tier:[\s\S]*?enum:[\s\S]*?advisory/);
@@ -78,7 +79,7 @@ describe('v1.19 — MCP tier 整合', () => {
   describe('ownmind_save case handler', () => {
     const saveCase = extractCaseBlock('ownmind_save');
 
-    it('把 args.tier 傳到 body.tier（有帶才傳）', () => {
+    it('passes args.tier to body.tier (only when provided)', () => {
       assert.match(saveCase, /if\s*\(\s*args\.tier\s*!==\s*undefined\s*\)\s*body\.tier\s*=\s*args\.tier/);
     });
   });
@@ -86,7 +87,7 @@ describe('v1.19 — MCP tier 整合', () => {
   describe('ownmind_update case handler', () => {
     const updateCase = extractCaseBlock('ownmind_update');
 
-    it('把 args.tier 傳到 body.tier（有帶才傳）', () => {
+    it('passes args.tier to body.tier (only when provided)', () => {
       assert.match(updateCase, /if\s*\(\s*args\.tier\s*!==\s*undefined\s*\)\s*body\.tier\s*=\s*args\.tier/);
     });
   });

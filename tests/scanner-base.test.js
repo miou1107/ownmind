@@ -52,7 +52,7 @@ describe('mergeState', () => {
     assert.equal(next.session_cumulative['claude-code'].s1, 150);
     assert.equal(next.session_cumulative['claude-code'].s2, 50, 's2 未變');
     assert.equal(next.session_cumulative['claude-code'].s3, 5, '新 session');
-    // 原 state 不應被改
+    // the original state must not be mutated
     assert.equal(state['claude-code:/a.jsonl'].byte_offset, 10);
   });
 
@@ -86,12 +86,12 @@ describe('readOffsets / writeOffsetsAtomic', () => {
   });
 
   it('writes to .tmp then renames (no half-written state visible)', async () => {
-    // 寫一個初始值
+    // write an initial value
     await writeOffsetsAtomic(CACHE_PATH, { v: 1 });
-    // 再寫第二次
+    // write a second time
     await writeOffsetsAtomic(CACHE_PATH, { v: 2 });
     const entries = await fs.readdir(TMP_DIR);
-    // 不應留下任何 .tmp
+    // no .tmp should remain
     assert.ok(!entries.some((e) => e.endsWith('.tmp')), '不應有 .tmp 殘留');
     assert.deepEqual(await readOffsets(CACHE_PATH), { v: 2 });
   });
@@ -233,7 +233,7 @@ describe('runScan', () => {
     assert.deepEqual(calls[0].body.events, []);
     assert.equal(calls[0].body.sessions.length, 1);
     assert.ok(calls[0].body.heartbeat);
-    // offsetPatch 即使 events 空也要寫回
+    // offsetPatch must be written back even when events is empty
     const saved = await readOffsets(CACHE_PATH);
     assert.equal(saved.cursor.last_session_date, '2026-04-21');
   });

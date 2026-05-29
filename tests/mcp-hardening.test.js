@@ -119,8 +119,8 @@ describe('shouldSkipDuplicate', () => {
 
   it('minute-boundary edge case (was the bug it fixes)', () => {
     const m = new Map();
-    // 同一 key 在 :59 跟 :00 連打：原本分鐘 bucket 會分成兩 bucket、兩次都算
-    // 滑動視窗：只要 < 60s 就一律 skip
+    // Same key hit at :59 and :00 back-to-back: the old minute bucket split into two buckets and counted both
+    // Sliding window: anything < 60s apart is always skipped
     shouldSkipDuplicate(m, 'k1', TTL, 59000);
     assert.equal(shouldSkipDuplicate(m, 'k1', TTL, 60000), true);
   });

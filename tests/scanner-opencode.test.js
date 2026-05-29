@@ -111,7 +111,7 @@ describe('createOpenCodeAdapter.readSince', () => {
   });
 
   it('numeric time comparison — prior scan at time=9 does not skip time=10', async () => {
-    // 這是 spec P5 特別強調的字典序 bug 防範
+    // Guards against the lexicographic-ordering bug specifically emphasized in spec P5
     const captured = [];
     const adapter = createOpenCodeAdapter({
       runSqlite: makeFakeSqlite([], { captureSql: (s) => captured.push(s) })
@@ -120,7 +120,7 @@ describe('createOpenCodeAdapter.readSince', () => {
       opencode: { high_water_time: 9, high_water_id: 'msg_x' }
     });
     assert.match(captured[0], /time_created > 9/);
-    // 若是字串比較會變成 `time_created > '9'` 把 time=10 誤判為已讀
+    // A string comparison would become `time_created > '9'`, wrongly treating time=10 as already read
     assert.doesNotMatch(captured[0], /time_created > '9'/);
   });
 
@@ -138,7 +138,7 @@ describe('createOpenCodeAdapter.readSince', () => {
     const adapter = createOpenCodeAdapter({ runSqlite: makeFakeSqlite(rows) });
     const r = await adapter.readSince({});
     assert.equal(r.events.length, 5);
-    // session A 的三筆 cumulative 依序 10/20/30（不被 B 干擾）
+    // session A's three cumulative values are 10/20/30 in order (not disturbed by B)
     const sessionACums = r.events.filter((e) => e.session_id === 'A')
       .map((e) => e.cumulative_total_tokens);
     assert.deepEqual(sessionACums, [10, 20, 30],
@@ -146,7 +146,7 @@ describe('createOpenCodeAdapter.readSince', () => {
     const sessionBCums = r.events.filter((e) => e.session_id === 'B')
       .map((e) => e.cumulative_total_tokens);
     assert.deepEqual(sessionBCums, [100, 200]);
-    // cumulative patch 只保留 A、B 的最終值
+    // cumulative patch keeps only the final values of A and B
     assert.equal(r.cumulativePatch.A, 30);
     assert.equal(r.cumulativePatch.B, 200);
   });
@@ -157,7 +157,7 @@ describe('createOpenCodeAdapter.readSince', () => {
     ];
     const adapter = createOpenCodeAdapter({ runSqlite: makeFakeSqlite(rows) });
     const r = await adapter.readSince({
-      session_cumulative: { opencode: { A: 1000 } }  // 假設重啟前 A 已累到 1000
+      session_cumulative: { opencode: { A: 1000 } }  // assume A had accumulated to 1000 before restart
     });
     assert.equal(r.events[0].cumulative_total_tokens, 1005, '1000 + 5');
   });
@@ -219,7 +219,7 @@ describe('createOpenCodeAdapter.readSince', () => {
     await adapter.readSince({
       opencode: { high_water_time: 1, high_water_id: "msg_a'; DROP TABLE message;--" }
     });
-    // sqlQuote 應該把 ' escape 為 ''，整個 cursor 還是 string literal
+    // sqlQuote should escape ' as '', keeping the entire cursor a string literal
     assert.match(captured[0], /id > 'msg_a''; DROP TABLE message;--'/);
   });
 });

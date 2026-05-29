@@ -96,14 +96,14 @@ describe('buildEventFromTokenCount', () => {
     assert.equal(e.cache_read_tokens, 3456);
     assert.equal(e.reasoning_tokens, 133);
     assert.equal(e.cumulative_total_tokens, 11663);
-    // fingerprint material 完整 8 key
+    // fingerprint material has all 8 keys
     for (const k of ['ts_iso', 'total_cumulative', 'last_total', 'input',
                      'output', 'cache_creation', 'cache_read', 'reasoning']) {
       assert.ok(Object.prototype.hasOwnProperty.call(e.codex_fingerprint_material, k));
     }
-    // message_id 必為 64-hex sha256
+    // message_id must be a 64-hex sha256
     assert.match(e.message_id, /^[a-f0-9]{64}$/);
-    // 同一 material 再跑一次 → 同 message_id
+    // running the same material again → same message_id
     const e2 = buildEventFromTokenCount(obj, baseArgs);
     assert.equal(e2.message_id, e.message_id);
   });
@@ -169,7 +169,7 @@ describe('createCodexAdapter.readSince', () => {
     assert.equal(r.events[0].model, 'gpt-5.3-codex');
     assert.equal(r.events[0].cumulative_total_tokens, 100);
     assert.equal(r.events[1].cumulative_total_tokens, 200);
-    // 每個 event 都有 material 和 message_id
+    // every event has material and a message_id
     for (const e of r.events) {
       assert.ok(e.codex_fingerprint_material);
       assert.match(e.message_id, /^[a-f0-9]{64}$/);
@@ -214,9 +214,9 @@ describe('createCodexAdapter.readSince', () => {
   });
 
   it('file compact simulation — same event at different byte offset, same message_id', async () => {
-    // Codex scanner 禁止用 line_offset，但允許 byte_offset 重置。
-    // 此 test 驗證：同一 ts + material 的 event 無論出現在 file 哪個位置，
-    // message_id 都相同（由 canonical material 算，與 offset 無關）。
+    // The Codex scanner forbids line_offset but allows byte_offset reset.
+    // This test verifies: an event with the same ts + material has the same message_id
+    // regardless of where it appears in the file (computed from canonical material, independent of offset).
     const ts = '2026-03-03T09:00:01.000Z';
     const material = canonicalizeCodexMaterial({
       ts_iso: ts, total_cumulative: 100, last_total: 100,
@@ -278,7 +278,7 @@ describe('createCodexAdapter.readSince', () => {
     const adapter = createCodexAdapter({ baseDirs: [FIXTURE_DIR, archived] });
     const r = await adapter.readSince({});
     assert.equal(r.events.length, 2);
-    // 不在 fixture 的 archived dir 也不 throw
+    // an archived dir not present in the fixture also does not throw
   });
 
   it('empty baseDir → empty events', async () => {
@@ -293,7 +293,7 @@ describe('createCodexAdapter.readSince', () => {
     const adapter = createCodexAdapter({ baseDirs: [FIXTURE_DIR] });
     const r = await adapter.readSince({});
     assert.equal(r.events.length, 0, 'turn_context 不是 event，不該產 event');
-    // offsetPatch 要記 model（給下一次 scan 接續）
+    // offsetPatch must record the model (for the next scan to resume from)
     const key = Object.keys(r.offsetPatch)[0];
     assert.ok(key, '檔案若有任何變動（byte_offset 前進）應寫 patch');
     assert.equal(r.offsetPatch[key].model, 'custom-model-x',
@@ -301,7 +301,7 @@ describe('createCodexAdapter.readSince', () => {
   });
 
   it('resume scan reads persisted model from state (no turn_context in incremental read)', async () => {
-    // Step 1：寫 turn_context + 1 筆 token_count
+    // Step 1: write turn_context + 1 token_count
     const file = await writeFixture('2026/03/03', SESSION_UUID, [
       turnContextLine('model-A'),
       tokenCountLine({ ts: '2026-03-03T09:00:00Z', totalTokens: 10,
@@ -311,7 +311,7 @@ describe('createCodexAdapter.readSince', () => {
     const r1 = await adapter.readSince({});
     assert.equal(r1.events[0].model, 'model-A');
 
-    // Step 2：append 一筆新的 token_count（無新 turn_context）
+    // Step 2: append a new token_count (no new turn_context)
     await fs.appendFile(file, tokenCountLine({
       ts: '2026-03-03T09:00:05Z', totalTokens: 20,
       lastInput: 5, lastCached: 0, lastOutput: 5, lastReasoning: 0

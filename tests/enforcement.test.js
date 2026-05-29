@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { computeEnforcementAlerts } from '../src/utils/enforcement.js';
 
 describe('computeEnforcementAlerts', () => {
-  it('violation_rate >= 50% 回傳 critical', () => {
+  it('violation_rate >= 50% returns critical', () => {
     const complianceData = [
       { rule_title: 'IR-009', rule_code: 'IR-009', action: 'violate', count: 3 },
       { rule_title: 'IR-009', rule_code: 'IR-009', action: 'comply', count: 2 },
@@ -15,7 +15,7 @@ describe('computeEnforcementAlerts', () => {
     assert.ok(result[0].reinforcement_message.includes('嚴重警告'));
   });
 
-  it('violation_rate >= 25% 回傳 warning', () => {
+  it('violation_rate >= 25% returns warning', () => {
     const complianceData = [
       { rule_title: 'IR-012', rule_code: 'IR-012', action: 'violate', count: 1 },
       { rule_title: 'IR-012', rule_code: 'IR-012', action: 'comply', count: 3 },
@@ -25,7 +25,7 @@ describe('computeEnforcementAlerts', () => {
     assert.ok(result[0].reinforcement_message.includes('警告'));
   });
 
-  it('低頻違反回傳 notice', () => {
+  it('low-frequency violations return notice', () => {
     const complianceData = [
       { rule_title: 'IR-001', rule_code: 'IR-001', action: 'violate', count: 1 },
       { rule_title: 'IR-001', rule_code: 'IR-001', action: 'comply', count: 10 },
@@ -35,7 +35,7 @@ describe('computeEnforcementAlerts', () => {
     assert.ok(result[0].reinforcement_message.includes('注意'));
   });
 
-  it('沒有違反記錄回傳空陣列', () => {
+  it('returns an empty array when there are no violation records', () => {
     const complianceData = [
       { rule_title: 'IR-001', rule_code: 'IR-001', action: 'comply', count: 5 },
     ];
@@ -43,7 +43,7 @@ describe('computeEnforcementAlerts', () => {
     assert.equal(result.length, 0);
   });
 
-  it('連續 2 session 違反升級為 critical', () => {
+  it('violations in 2 consecutive sessions escalate to critical', () => {
     const complianceData = [
       { rule_title: 'IR-012', rule_code: 'IR-012', action: 'violate', count: 1 },
       { rule_title: 'IR-012', rule_code: 'IR-012', action: 'comply', count: 8 },
@@ -53,7 +53,7 @@ describe('computeEnforcementAlerts', () => {
     assert.equal(result[0].severity, 'critical');
   });
 
-  it('依 severity 排序：critical > warning > notice', () => {
+  it('sorts by severity: critical > warning > notice', () => {
     const complianceData = [
       { rule_title: 'A', rule_code: 'A', action: 'violate', count: 1 },
       { rule_title: 'A', rule_code: 'A', action: 'comply', count: 10 },

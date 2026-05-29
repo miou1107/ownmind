@@ -11,19 +11,21 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.78 — install_started beacon 觀測管道（IR-038, 回報者 vin-windows-test）
+ * v1.17.78 — install_started beacon observability channel (IR-038, reported by vin-windows-test)
  *
- * Root cause：v1.17.77 之前 install_check_logs.user_id=8 整個 0 row。
- * 排查後 root cause = install.ps1 中段 npm install 被 ExecutionPolicy 擋住 exit 1，
- * end-of-file 的 self-check.cjs 永遠跑不到 → admin 看不到「user 試過安裝」。
- * v1.17.76 修了 ExecutionPolicy，但中段任何其他失敗（winget 失敗、git clone 失敗
- * 等）一樣會 exit 1 → 同樣盲點。
+ * Root cause: before v1.17.77, install_check_logs.user_id=8 had 0 rows entirely.
+ * Investigation found the root cause = the mid-script npm install in install.ps1 was
+ * blocked by ExecutionPolicy and exited 1, so the end-of-file self-check.cjs never ran
+ * → admin could not see "user attempted install".
+ * v1.17.76 fixed ExecutionPolicy, but any other mid-script failure (winget failure,
+ * git clone failure, etc.) would still exit 1 → same blind spot.
  *
- * 結構性修法：install.ps1 / install.sh 在 API key 確認後立刻送 install_started
- * beacon。要送出的話 server endpoint 必須接受沒有 checks/summary 的 minimal body。
+ * Structural fix: install.ps1 / install.sh send an install_started beacon immediately
+ * after the API key is confirmed. To send it, the server endpoint must accept a minimal
+ * body without checks/summary.
  */
 
-describe('debug route — install-check 接受 minimal beacon (v1.17.78)', () => {
+describe('debug route — install-check accepts a minimal beacon (v1.17.78)', () => {
   let app;
   let server;
   let baseUrl;
@@ -56,7 +58,7 @@ describe('debug route — install-check 接受 minimal beacon (v1.17.78)', () =>
     });
   });
 
-  // 每個 it 結束後關 server，否則 node --test 整支不退出
+  // Close the server after each it, otherwise node --test never exits
   async function post(body) {
     try {
       const res = await fetch(baseUrl, {
@@ -70,7 +72,7 @@ describe('debug route — install-check 接受 minimal beacon (v1.17.78)', () =>
     }
   }
 
-  it('beacon 只帶 ts + trigger 也接受（沒 checks / summary）', async () => {
+  it('accepts a beacon with only ts + trigger (no checks / summary)', async () => {
     const r = await post({
       ts: '2026-05-08T17:00:00Z',
       trigger: 'install_started',
@@ -84,7 +86,7 @@ describe('debug route — install-check 接受 minimal beacon (v1.17.78)', () =>
     assert.equal(inserted[0].params[4], 'install_started'); // trigger_kind
   });
 
-  it('完整 self-check report 仍照常接受（向後相容）', async () => {
+  it('still accepts a full self-check report as before (backward compatible)', async () => {
     const r = await post({
       ts: '2026-05-08T17:00:00Z',
       trigger: 'post_install',
@@ -98,17 +100,17 @@ describe('debug route — install-check 接受 minimal beacon (v1.17.78)', () =>
     assert.equal(inserted.length, 1);
   });
 
-  it('沒 ts 仍 reject（只有 ts 是強制）', async () => {
+  it('still rejects when ts is missing (only ts is mandatory)', async () => {
     const r = await post({ trigger: 'install_started' });
     assert.equal(r.status, 400);
   });
 
-  it('checks 給了但不是 array 仍 reject', async () => {
+  it('still rejects when checks is provided but not an array', async () => {
     const r = await post({ ts: '2026-05-08T17:00:00Z', checks: 'oops' });
     assert.equal(r.status, 400);
   });
 
-  it('checks[*].status 不合法仍 reject', async () => {
+  it('still rejects when checks[*].status is invalid', async () => {
     const r = await post({
       ts: '2026-05-08T17:00:00Z',
       checks: [{ name: 'x', status: 'whatever' }],
@@ -118,15 +120,15 @@ describe('debug route — install-check 接受 minimal beacon (v1.17.78)', () =>
   });
 });
 
-describe('install scripts — 一定要送 install_started beacon (v1.17.78)', () => {
-  it('install.ps1 內含 Send-InstallBeacon 呼叫', () => {
+describe('install scripts — must send the install_started beacon (v1.17.78)', () => {
+  it('install.ps1 contains a Send-InstallBeacon call', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
     assert.match(content, /Send-InstallBeacon/);
     assert.match(content, /install_started/);
     assert.match(content, /\/api\/debug\/install-check/);
   });
 
-  it('install.sh 內含 send_install_beacon 呼叫', () => {
+  it('install.sh contains a send_install_beacon call', () => {
     const content = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
     assert.match(content, /send_install_beacon/);
     assert.match(content, /install_started/);

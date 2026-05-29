@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## v1.26.19 修改（i18n 軌道 B：tests/ 註解與測試描述英文化）
+
+新增檔：
+```
+openspec/changes/v1.26.19-i18n-tests/proposal.md   — v1.26.19 提案
+openspec/changes/v1.26.19-i18n-tests/tasks.md      — v1.26.19 任務清單
+```
+
+修改檔（只翻 `//`/`/* */`/JSDoc 註解 + describe/it/test 測試標籤；斷言值／fixture／測試資料保留中文）：47 支 `tests/` 測試檔（如 `tests/aggregation.test.js`、`tests/broadcast.test.js`、`tests/scanner-*.test.js`、`tests/iron-rule-tier-*.test.js`、`tests/validators/registry.test.js`、`tests/utils/md-parser.test.js` 等）。
+
 ## v1.26.18 修改（i18n 軌道 B：src/ 其餘檔案內部英文化）
 
 新增檔：

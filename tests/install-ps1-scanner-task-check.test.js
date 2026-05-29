@@ -9,19 +9,19 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.12 — install.ps1 呼叫 register-scanner-task.ps1 後必須驗證真的註冊上
+ * v1.17.12 — install.ps1 must verify the task really registered after calling register-scanner-task.ps1
  *
- * Codex adversarial review 指出：install.ps1 當前 call `register-scanner-task.ps1`
- * 後 silently 印「Task Scheduler 已註冊」，不管 child exit code / Get-ScheduledTask。
- * Adam 當時 Duration 格式錯誤，安裝端看起來 OK 但 task 根本沒上。
+ * Codex adversarial review pointed out: install.ps1 currently calls `register-scanner-task.ps1`
+ * then silently prints "Task Scheduler registered", ignoring the child exit code / Get-ScheduledTask.
+ * Adam once had a bad Duration format; the install side looked OK but the task was never created.
  */
 
-describe('install.ps1 — scanner task registration 檢查', () => {
+describe('install.ps1 — scanner task registration check', () => {
   const content = fs.readFileSync(path.join(repoRoot, 'install.ps1'), 'utf8');
 
-  it('呼叫 register-scanner-task.ps1 後要驗 $LASTEXITCODE', () => {
-    // 找出現 `register-scanner-task.ps1` 的 block，往後 400 字元內要檢查 exit code
-    // 或有 Get-ScheduledTask 驗證
+  it('must check $LASTEXITCODE after calling register-scanner-task.ps1', () => {
+    // Find the block where `register-scanner-task.ps1` appears; within the next 400 chars it must check the exit code
+    // or have a Get-ScheduledTask verification
     const callSite = content.indexOf('register-scanner-task.ps1');
     assert.ok(callSite > 0, 'install.ps1 要呼叫 register-scanner-task.ps1');
     const window = content.slice(callSite, callSite + 600);

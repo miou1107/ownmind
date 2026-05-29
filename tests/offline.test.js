@@ -4,12 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// 用暫存目錄隔離測試
+// Isolate the test with a temporary directory
 const TEST_DIR = path.join(os.tmpdir(), 'ownmind-test-' + Date.now());
 const CACHE_PATH = path.join(TEST_DIR, 'cache/memories.json');
 const QUEUE_PATH = path.join(TEST_DIR, 'queue.jsonl');
 
-// 讓 offline.js 可以接受自訂路徑
+// Let offline.js accept custom paths
 import { makeOfflineHelpers } from '../mcp/offline.js';
 const { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue } = makeOfflineHelpers(CACHE_PATH, QUEUE_PATH);
 

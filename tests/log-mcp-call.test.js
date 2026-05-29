@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 const { logMcpCallSafe } = await import('../mcp/lib/log-mcp-call.js');
 
 describe('logMcpCallSafe', () => {
-  it('成功時呼叫 logEvent 一次、payload 含 tool / latency_ms / status', () => {
+  it('on success calls logEvent once; payload includes tool / latency_ms / status', () => {
     const calls = [];
     const fakeLog = (event, details) => calls.push({ event, details });
     logMcpCallSafe({ logEvent: fakeLog, tool: 'ownmind_save', latencyMs: 123, status: 'ok' });
@@ -15,14 +15,14 @@ describe('logMcpCallSafe', () => {
     });
   });
 
-  it('error status 時 status 寫 "error"', () => {
+  it('writes status "error" when the status is error', () => {
     const calls = [];
     const fakeLog = (event, details) => calls.push({ event, details });
     logMcpCallSafe({ logEvent: fakeLog, tool: 'ownmind_get', latencyMs: 5000, status: 'error' });
     assert.equal(calls[0].details.status, 'error');
   });
 
-  it('tool 是 null/undefined 時用 "unknown"', () => {
+  it('uses "unknown" when tool is null/undefined', () => {
     const calls = [];
     const fakeLog = (event, details) => calls.push({ event, details });
     logMcpCallSafe({ logEvent: fakeLog, tool: null, latencyMs: 50, status: 'ok' });
@@ -33,21 +33,21 @@ describe('logMcpCallSafe', () => {
     assert.equal(calls[0].details.tool, 'unknown');
   });
 
-  it('logEvent throw 不會 escalate（最關鍵不變式）', () => {
+  it('does not escalate when logEvent throws (the key invariant)', () => {
     const throwingLog = () => { throw new Error('disk full'); };
     assert.doesNotThrow(() => {
       logMcpCallSafe({ logEvent: throwingLog, tool: 'ownmind_save', latencyMs: 100, status: 'ok' });
     });
   });
 
-  it('logEvent throw 非 Error 物件也不 escalate', () => {
+  it('does not escalate even when logEvent throws a non-Error object', () => {
     const throwingLog = () => { throw 'string error'; };
     assert.doesNotThrow(() => {
       logMcpCallSafe({ logEvent: throwingLog, tool: 'ownmind_save', latencyMs: 100, status: 'ok' });
     });
   });
 
-  it('latency_ms 是 0 也照寫（不過濾、避免漏量）', () => {
+  it('writes latency_ms even when it is 0 (no filtering, avoid losing measurements)', () => {
     const calls = [];
     const fakeLog = (event, details) => calls.push({ event, details });
     logMcpCallSafe({ logEvent: fakeLog, tool: 'ownmind_init', latencyMs: 0, status: 'ok' });

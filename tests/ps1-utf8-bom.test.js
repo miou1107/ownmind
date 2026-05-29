@@ -9,15 +9,16 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * Windows PowerShell 5.1（仍然是 Windows 10 預設）讀 .ps1 檔時，無 BOM 會以系統
- * codepage 解譯。繁中 Windows 的 CP950 碰到 UTF-8 中文字節會錯誤對應，輕則亂碼，
- * 重則撞到 PowerShell 的保留字元（如反引號、引號）導致 parser 直接失敗。
+ * When Windows PowerShell 5.1 (still the Windows 10 default) reads a .ps1 file, a missing BOM
+ * causes it to interpret the file with the system codepage. On Traditional-Chinese Windows,
+ * CP950 mis-maps UTF-8 Chinese bytes — at best producing garbled text, at worst hitting
+ * PowerShell reserved characters (like backticks or quotes) and failing the parser outright.
  *
- * 任何含中文的 .ps1 都必須是 UTF-8 BOM（EF BB BF）。PowerShell 7+ 預設就吃
- * UTF-8 無 BOM，但 PowerShell 5.1 需要 BOM 來「強制」走 UTF-8 路徑。BOM 對 7+
- * 是 no-op 不會造成副作用，所以統一加 BOM 最安全。
+ * Any .ps1 containing Chinese must be UTF-8 with BOM (EF BB BF). PowerShell 7+ defaults to
+ * UTF-8 without BOM, but PowerShell 5.1 needs the BOM to "force" the UTF-8 path. The BOM is a
+ * no-op for 7+ with no side effects, so always adding the BOM is the safest choice.
  *
- * 本檔以 Buffer 讀 bytes 後檢查前三個字節，避免字串解析繞過問題。
+ * This file reads the bytes via Buffer and checks the first three bytes to avoid string-parsing bypass issues.
  */
 
 const UTF8_BOM = Buffer.from([0xef, 0xbb, 0xbf]);
@@ -50,10 +51,10 @@ function hasChinese(buf) {
   return false;
 }
 
-describe('PS1 UTF-8 BOM 強制規範', () => {
+describe('PS1 UTF-8 BOM enforcement', () => {
   const ps1Files = collectPs1Files(repoRoot);
 
-  it('repo 內至少找得到 .ps1 檔', () => {
+  it('at least one .ps1 file is found in the repo', () => {
     assert.ok(ps1Files.length > 0, `no .ps1 found in ${repoRoot}`);
   });
 
@@ -61,9 +62,9 @@ describe('PS1 UTF-8 BOM 強制規範', () => {
     const rel = path.relative(repoRoot, file);
     const buf = fs.readFileSync(file);
 
-    it(`${rel} — 起始必須是 UTF-8 BOM`, () => {
+    it(`${rel} — must start with a UTF-8 BOM`, () => {
       if (!hasChinese(buf)) {
-        // 只含英文不強求，但一旦將來加入中文就會失敗
+        // English-only files are not required to have a BOM, but this will fail once Chinese is added
         return;
       }
       const actualHead = buf.slice(0, 3);

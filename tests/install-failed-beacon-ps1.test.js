@@ -11,14 +11,15 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.85 — interactive-upgrade.ps1 Fail 函式 PowerShell smoke test
+ * v1.17.85 — interactive-upgrade.ps1 Fail function PowerShell smoke test
  *
- * 對應 install-failed-beacon.test.js（bash 版）— 兩端對稱（IR-022）。
- * PowerShell 不可用環境（pwsh 沒裝）→ skip，不擋 CI。
+ * Mirrors install-failed-beacon.test.js (bash version) — symmetric on both ends (IR-022).
+ * Environments where PowerShell is unavailable (pwsh not installed) → skip, don't block CI.
  *
- * 真實意圖：確認 ps1 Fail throw 前真的 call Report-Error，避免 PS 端漏網。
- * 抽 Fail function 的方法跟 bash 版類似 — 從真實 interactive-upgrade.ps1 抽 +
- * dot-source 一個 mock Report-Error stub 紀錄呼叫。
+ * Real intent: confirm the ps1 Fail really calls Report-Error before throwing, so the PS
+ * side doesn't slip through. The way we extract the Fail function is similar to the bash
+ * version — pull it from the real interactive-upgrade.ps1 + dot-source a mock Report-Error
+ * stub that records calls.
  */
 
 const PWSH = (() => {
@@ -26,7 +27,7 @@ const PWSH = (() => {
   return r.status === 0 ? 'pwsh' : null;
 })();
 
-describe('v1.17.85 — interactive-upgrade.ps1 Fail 觀測（pwsh 可用時跑）', { skip: !PWSH }, () => {
+describe('v1.17.85 — interactive-upgrade.ps1 Fail observation (runs when pwsh is available)', { skip: !PWSH }, () => {
   let tmpDir;
   let recordFile;
 
@@ -39,12 +40,12 @@ describe('v1.17.85 — interactive-upgrade.ps1 Fail 觀測（pwsh 可用時跑�
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('Fail 函式 throw 前先 call Report-Error（不依賴 caller 先 call）', () => {
-    // 抽真實的 Fail function 定義 + mock Report-Error 把呼叫寫進 record file
+  it('the Fail function calls Report-Error before throwing (does not depend on the caller calling first)', () => {
+    // Extract the real Fail function definition + mock Report-Error to write calls into the record file
     const ps1Path = path.join(repoRoot, 'scripts', 'interactive-upgrade.ps1');
     const ps1Content = fs.readFileSync(ps1Path, 'utf8');
 
-    // 抓真實的 Fail function 定義（從 'function Fail' 到 closing brace）
+    // Grab the real Fail function definition (from 'function Fail' to the closing brace)
     const failMatch = ps1Content.match(/function Fail\([^)]*\)\s*\{[\s\S]*?\n\}/);
     if (!failMatch) {
       assert.fail('找不到 interactive-upgrade.ps1 裡的 function Fail 定義');
@@ -56,7 +57,7 @@ describe('v1.17.85 — interactive-upgrade.ps1 Fail 觀測（pwsh 可用時跑�
       '$ErrorActionPreference = "Continue"',
       `$LogFile = "${tmpDir.replace(/\\/g, '\\\\')}\\fake.log"`,
       '"" | Out-File -FilePath $LogFile -Encoding utf8',
-      // Mock Report-Error: 把參數寫進 record file
+      // Mock Report-Error: write the args into the record file
       'function Report-Error {',
       '  param($Kind, $Detail, $ContextFile = "")',
       `  Add-Content -LiteralPath "${recordFileEscaped}" -Value "kind=$Kind|detail=$Detail|context=$ContextFile" -Encoding utf8`,

@@ -60,8 +60,8 @@ describe('appendCompliance', () => {
     assert.equal(entry.session_id, '123');
   });
 
-  // v1.19 — tier 欄位
-  it('v1.19: 合法 tier 寫入 record', () => {
+  // v1.19 — tier field
+  it('v1.19: valid tier is written to the record', () => {
     appendCompliance({
       event: 'IR-002',
       action: 'violate',
@@ -74,7 +74,7 @@ describe('appendCompliance', () => {
     assert.equal(entry.tier, 'critical');
   });
 
-  it('v1.19: tier 缺失時不寫 tier 欄位', () => {
+  it('v1.19: tier field is omitted when tier is missing', () => {
     appendCompliance({
       event: 'IR-002',
       action: 'comply',
@@ -86,7 +86,7 @@ describe('appendCompliance', () => {
     assert.equal(entry.tier, undefined);
   });
 
-  it('v1.19: 非法 tier 值不寫入避免污染查詢', () => {
+  it('v1.19: invalid tier value is not written, to avoid polluting queries', () => {
     appendCompliance({
       event: 'IR-002',
       action: 'comply',
@@ -99,8 +99,8 @@ describe('appendCompliance', () => {
     assert.equal(entry.tier, undefined);
   });
 
-  // v1.19.6 — Critical 鐵律卡控新增的 action 值
-  it('v1.19.6: action=block 可寫入（hook 擋下時用）', () => {
+  // v1.19.6 — action values added for Critical iron-rule enforcement
+  it('v1.19.6: action=block can be written (used when the hook blocks)', () => {
     appendCompliance({
       event: 'IR-002',
       action: 'block',
@@ -116,7 +116,7 @@ describe('appendCompliance', () => {
     assert.deepEqual(entry.failures, ['偵測到 .env.production 進入 commit']);
   });
 
-  it('v1.19.6: action=bypass 可寫入（OWNMIND_BYPASS 用）', () => {
+  it('v1.19.6: action=bypass can be written (used by OWNMIND_BYPASS)', () => {
     appendCompliance({
       event: 'IR-008',
       action: 'bypass',
@@ -130,7 +130,7 @@ describe('appendCompliance', () => {
     assert.equal(entry.commit_hash, 'abc1234');
   });
 
-  it('v1.19.6: action=hook_internal_error 可寫入（fail-open 通報用）', () => {
+  it('v1.19.6: action=hook_internal_error can be written (used for fail-open reporting)', () => {
     appendCompliance({
       event: 'IR-002',
       action: 'hook_internal_error',

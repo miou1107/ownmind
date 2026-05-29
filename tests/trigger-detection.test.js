@@ -84,13 +84,13 @@ describe('detectTriggerFromContext', () => {
   it('context mentioning deploy → deploy', () => {
     assert.equal(detectTriggerFromContext('about to deploy to production'), 'deploy');
   });
-  it('context mentioning 部署 → deploy', () => {
+  it('context mentioning Chinese "部署" → deploy', () => {
     assert.equal(detectTriggerFromContext('準備部署到伺服器'), 'deploy');
   });
   it('context mentioning delete → delete', () => {
     assert.equal(detectTriggerFromContext('will delete old records'), 'delete');
   });
-  it('context mentioning 刪除 → delete', () => {
+  it('context mentioning Chinese "刪除" → delete', () => {
     assert.equal(detectTriggerFromContext('準備刪除舊資料'), 'delete');
   });
   it('null context → null', () => {

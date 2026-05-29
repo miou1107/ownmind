@@ -28,11 +28,11 @@ describe('v1.20.3 session-off-state', () => {
   });
 
   describe('read / write / clear', () => {
-    it('檔案不存在 → readSessionOffState 回 null', () => {
+    it('file does not exist → readSessionOffState returns null', () => {
       assert.equal(readSessionOffState(), null);
     });
 
-    it('writeSessionOffState 寫入 + readSessionOffState 讀回一致', () => {
+    it('writeSessionOffState writes + readSessionOffState reads back consistently', () => {
       const ok = writeSessionOffState('S1');
       assert.equal(ok, true);
       const state = readSessionOffState();
@@ -41,7 +41,7 @@ describe('v1.20.3 session-off-state', () => {
       assert.ok(typeof state.off_at === 'string');
     });
 
-    it('重複寫同 session_id → tick_count 保留', () => {
+    it('rewriting the same session_id → tick_count preserved', () => {
       writeSessionOffState('S1');
       incrementTickCount();
       incrementTickCount();
@@ -51,7 +51,7 @@ describe('v1.20.3 session-off-state', () => {
         '同 session_id 再寫應保留 tick_count');
     });
 
-    it('寫不同 session_id → tick_count 歸零', () => {
+    it('writing a different session_id → tick_count resets to zero', () => {
       writeSessionOffState('S1');
       incrementTickCount();
       incrementTickCount();
@@ -59,35 +59,35 @@ describe('v1.20.3 session-off-state', () => {
       assert.equal(readSessionOffState().tick_count, 0);
     });
 
-    it('clearSessionOffState 後讀回 null', () => {
+    it('reads back null after clearSessionOffState', () => {
       writeSessionOffState('S1');
       assert.equal(clearSessionOffState(), true);
       assert.equal(readSessionOffState(), null);
     });
 
-    it('檔案損毀（非 JSON）→ readSessionOffState 回 null 不 crash', () => {
+    it('corrupted file (non-JSON) → readSessionOffState returns null without crashing', () => {
       fs.writeFileSync(TMP_FILE, 'not-a-json{{{');
       assert.equal(readSessionOffState(), null);
     });
 
-    it('檔案缺欄位 → readSessionOffState 回 null', () => {
-      fs.writeFileSync(TMP_FILE, JSON.stringify({ session_id: 'S1' })); // 缺 off_at / tick_count
+    it('file missing fields → readSessionOffState returns null', () => {
+      fs.writeFileSync(TMP_FILE, JSON.stringify({ session_id: 'S1' })); // missing off_at / tick_count
       assert.equal(readSessionOffState(), null);
     });
 
-    it('writeSessionOffState 空字串 session_id → 回 false 不寫', () => {
+    it('writeSessionOffState with empty-string session_id → returns false, no write', () => {
       assert.equal(writeSessionOffState(''), false);
       assert.equal(readSessionOffState(), null);
     });
   });
 
   describe('incrementTickCount', () => {
-    it('沒狀態檔 → 回 0 不創建', () => {
+    it('no state file → returns 0, does not create', () => {
       assert.equal(incrementTickCount(), 0);
       assert.equal(readSessionOffState(), null);
     });
 
-    it('有狀態檔 → 每次呼叫 +1', () => {
+    it('state file exists → +1 per call', () => {
       writeSessionOffState('S1');
       assert.equal(incrementTickCount(), 1);
       assert.equal(incrementTickCount(), 2);
@@ -96,17 +96,17 @@ describe('v1.20.3 session-off-state', () => {
     });
   });
 
-  describe('isOff（Stop hook + pre-commit hook 共用）', () => {
-    it('沒狀態檔 → false', () => {
+  describe('isOff (shared by Stop hook + pre-commit hook)', () => {
+    it('no state file → false', () => {
       assert.equal(isOff(), false);
     });
 
-    it('剛寫入（off_at 為現在）→ true', () => {
+    it('just written (off_at is now) → true', () => {
       writeSessionOffState('S1');
       assert.equal(isOff(), true);
     });
 
-    it('off_at 是 25 小時前（過期）→ false 且自動清掉', () => {
+    it('off_at is 25 hours ago (expired) → false and auto-cleared', () => {
       const expired = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
       fs.writeFileSync(TMP_FILE, JSON.stringify({
         session_id: 'S1',
@@ -117,7 +117,7 @@ describe('v1.20.3 session-off-state', () => {
       assert.equal(readSessionOffState(), null);
     });
 
-    it('off_at 無法 parse → false 且自動清掉', () => {
+    it('off_at cannot be parsed → false and auto-cleared', () => {
       fs.writeFileSync(TMP_FILE, JSON.stringify({
         session_id: 'S1',
         off_at: 'not-a-date',
@@ -127,7 +127,7 @@ describe('v1.20.3 session-off-state', () => {
       assert.equal(readSessionOffState(), null);
     });
 
-    it('off_at 是 1 小時前（仍在 24 小時內）→ true', () => {
+    it('off_at is 1 hour ago (still within 24 hours) → true', () => {
       const recent = new Date(Date.now() - 60 * 60 * 1000).toISOString();
       fs.writeFileSync(TMP_FILE, JSON.stringify({
         session_id: 'S1',

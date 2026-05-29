@@ -132,7 +132,7 @@ describe('GET /api/usage/stats totals', () => {
     const app = buildApp({
       queryFn: makeFakeStatsQuery({
         tier1Totals: {
-          cost_usd: null,   // SQL 回 null 代表有任一日 pricing 缺漏
+          cost_usd: null,   // SQL returning null means at least one day had missing pricing
           input_tokens: '100', output_tokens: '50',
           cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
           message_count: 7, wall_seconds: 600, active_seconds: 300, session_count: 2
@@ -144,7 +144,7 @@ describe('GET /api/usage/stats totals', () => {
     const res = await request(app, { path: '/api/usage/stats' });
     assert.equal(res.body.totals.cost_usd, null,
       'cost_usd=null 必須保留；不要被 COALESCE→0 偽裝成完整總額');
-    // Tokens 仍要照數顯示
+    // Tokens must still be shown as-is
     assert.equal(res.body.totals.input_tokens, '100');
   });
 

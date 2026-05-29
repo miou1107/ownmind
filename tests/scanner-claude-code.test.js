@@ -165,7 +165,7 @@ describe('createClaudeCodeAdapter.readSince', () => {
     ]);
     const adapter = createClaudeCodeAdapter({ baseDir: FIXTURE_DIR });
     const state = {
-      session_cumulative: { 'claude-code': { 's1': 1000 } }  // 既有 running total
+      session_cumulative: { 'claude-code': { 's1': 1000 } }  // existing running total
     };
     const { events, cumulativePatch } = await adapter.readSince(state);
     // 1000 + 50 + 50 = 1100
@@ -217,11 +217,11 @@ describe('createClaudeCodeAdapter.readSince', () => {
   });
 
   it('crash-resume: if state not persisted, replay from 0 yields same final DB (via UNIQUE)', async () => {
-    // 此 test 模擬「scanner 讀了 3 行、送到 server、但 offset 沒寫回」的情境：
-    //   - scan 1：讀 3 行 → 所有 event 被 server 接收
-    //   - scan 2：state={}（模擬 crash）→ 再讀同 3 行 → event 的 message_id 與 ts 與 scan 1 相同
-    // 結論：crash resume 等於 replay；server 端 UNIQUE 擋重複；本 test 確認 adapter 端
-    //      產出 deterministic（同一個檔案不論幾次從 0 scan，event list 相同）
+    // This test simulates "scanner read 3 lines, sent them to server, but the offset was not written back":
+    //   - scan 1: read 3 lines → all events accepted by the server
+    //   - scan 2: state={} (simulating a crash) → read the same 3 lines → event message_id and ts match scan 1
+    // Conclusion: crash resume equals replay; the server-side UNIQUE blocks duplicates; this test confirms
+    //      the adapter side produces deterministic output (the same file scanned from 0 any number of times yields the same event list)
     await writeFixture('p', 's1', [
       assistantEvent('s1', 'm1', { input_tokens: 1, output_tokens: 0,
         cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }),
@@ -235,7 +235,7 @@ describe('createClaudeCodeAdapter.readSince', () => {
     const b = await adapter.readSince({});
     assert.deepEqual(a.events.map((e) => e.message_id), b.events.map((e) => e.message_id),
       'crash-resume 後同一 state 再跑 → event list 相同，server UNIQUE 做 dedupe');
-    // Cumulative 也相同
+    // Cumulative is also the same
     assert.deepEqual(a.events.map((e) => e.cumulative_total_tokens),
       b.events.map((e) => e.cumulative_total_tokens));
   });

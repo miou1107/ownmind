@@ -324,13 +324,13 @@ describe('PATCH /api/broadcast/admin/:id', () => {
 });
 
 // ============================================================
-// POST /api/broadcast/dismiss — snooze / dismiss（已改走 filterVisibleBroadcasts）
+// POST /api/broadcast/dismiss — snooze / dismiss (now routed through filterVisibleBroadcasts)
 // ============================================================
 describe('POST /api/broadcast/dismiss', () => {
   // Mock filterVisibleBroadcasts output via DB
   function dismissQuery(visibleBroadcasts) {
     return async (sql, params) => {
-      // filterVisibleBroadcasts 內部 query（SELECT b.*, s.dismissed_at FROM broadcast_messages ... LEFT JOIN user_broadcast_state）
+      // filterVisibleBroadcasts internal query (SELECT b.*, s.dismissed_at FROM broadcast_messages ... LEFT JOIN user_broadcast_state)
       if (/FROM broadcast_messages b/i.test(sql) && /LEFT JOIN user_broadcast_state/i.test(sql)) {
         return { rows: visibleBroadcasts };
       }
@@ -340,9 +340,9 @@ describe('POST /api/broadcast/dismiss', () => {
   }
 
   it('rejects dismiss on broadcast NOT in user visibility (Critical fix)', async () => {
-    // User 嘗試 dismiss 一個他看不到的 broadcast_id
+    // User tries to dismiss a broadcast_id they cannot see
     const app = buildApp({
-      queryFn: dismissQuery([]), // filterVisibleBroadcasts 回傳空
+      queryFn: dismissQuery([]), // filterVisibleBroadcasts returns empty
       user: { id: 5, role: 'user' }
     });
     const res = await request(app, {
@@ -420,7 +420,7 @@ describe('POST /api/broadcast/dismiss', () => {
 });
 
 // ============================================================
-// GET /api/broadcast/active — user 可見廣播
+// GET /api/broadcast/active — broadcasts visible to the user
 // ============================================================
 describe('GET /api/broadcast/active', () => {
   it('requires tool parameter', async () => {
@@ -476,7 +476,7 @@ describe('GET /api/broadcast/active', () => {
   });
 
   it('skips semver filter when client_version absent (back-compat)', async () => {
-    // 不帶 version 時保持 fail-open（不破壞舊 client）— 改 fail-closed 屬 Task 5 設計決策
+    // Stay fail-open when no version is passed (don't break old clients) — switching to fail-closed is a Task 5 design decision
     const app = buildApp({
       queryFn: async () => ({ rows: [
         { id: 1, title: 'old upgrade reminder', min_version: null, max_version: '1.17.17-prev' },
@@ -573,7 +573,7 @@ describe('filterInjectable (cooldown)', () => {
 // ensureUpgradeReminder (nightly job)
 // ============================================================
 // ============================================================
-// POST /api/broadcast/inject — MCP 注入 endpoint (P4)
+// POST /api/broadcast/inject — MCP injection endpoint (P4)
 // ============================================================
 describe('POST /api/broadcast/inject', () => {
   function mkAdminQuery({ seenRow = null, visibleRows = [], upsertCaptures = [] } = {}) {
@@ -745,13 +745,13 @@ describe('ensureUpgradeReminder', () => {
   });
 
   it('rebuilds when existing reminder was revoked (ends_at in past)', async () => {
-    // Fix M2: job 只看 active（ends_at IS NULL OR > NOW()）reminders
-    // 之前被撤銷的 (ends_at 已過) → 不算 existing → 允許重建
+    // Fix M2: the job only looks at active reminders (ends_at IS NULL OR > NOW())
+    // Previously revoked ones (ends_at already past) → not counted as existing → allow rebuild
     const calls = [];
     const query = async (sql, params) => {
       calls.push({ sql, params });
       if (/role = 'super_admin'/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
-      // SELECT 只匹配 active，這裡回傳 empty
+      // SELECT only matches active, returns empty here
       if (/SELECT id FROM broadcast_messages/.test(sql)) {
         assert.match(sql, /ends_at IS NULL OR ends_at > NOW/);
         return { rowCount: 0, rows: [] };
@@ -765,7 +765,7 @@ describe('ensureUpgradeReminder', () => {
   });
 
   it('handles SQLSTATE 23505 race (concurrent cron fires)', async () => {
-    // Fix M1: 用 err.code 而非 err.message 字串匹配
+    // Fix M1: match on err.code instead of the err.message string
     const query = async (sql) => {
       if (/role = 'super_admin'/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
       if (/SELECT id FROM broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
