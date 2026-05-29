@@ -202,7 +202,7 @@ export function lintLegacyTextRule(rule) {
   }
   const tags = Array.isArray(rule?.tags) ? rule.tags : [];
 
-  // (1) title length (min 5 so the existing IR-011 "時區強制定標準" at 7 chars passes; keep 100 max)
+  // (1) title length (min 5 so a short real title like "時區強制定標準" at 7 chars passes; keep 100 max)
   if (title.length < 5) {
     errors.push(`title too short (${title.length} chars) — title needs at least 5 chars and should state the scenario`);
   } else if (title.length > 100) {
