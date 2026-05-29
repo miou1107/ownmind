@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.26.16 — 修 MCP client 吞掉 API 結構化錯誤細節（鐵律品質檢查拒絕看不到原因）
+
+**Bug**（使用者回報）：用 `ownmind_save` 存 `type=iron_rule` 被品質檢查擋下時，回 400「Iron rule quality check failed — please fix the following issues」但**沒列出具體是哪幾項**，使用者／AI 無從修起、只能盲猜（試 5 種寫法全擋）。同內容存 `type=principle` 一次成功（不走鐵律 lint）。
+
+**根因**：server（`src/routes/memory.js`）其實有回結構化錯誤 `{ error, errors:[具體項], hint }`，但 MCP client 的通用錯誤處理（`mcp/index.js` callApi）只取 `data.error`、把 `errors` 陣列和 `hint` 丟掉。這是通用路徑，所有回結構化 `errors` 的 API 錯誤都受影響、不只鐵律。
+
+**修正**：
+- 新增 `mcp/lib/api-error-message.js` 純函式 `buildApiErrorMessage`，把 `error` + 逐條 `errors` + `hint` 組進訊息（`error` 保留在開頭，sync_token 409 重試的字串比對不受影響）。
+- `callApi` 改用它。
+
+**測試**：新增 `tests/api-error-message.test.js` 6 case（TDD 先紅後綠）。全套 2009 全綠、sync_token 重試 17 測試未破壞。
+
+**附帶發現（另立任務）**：sync_token 過時時的自動重試因 server 訊息不含 "sync_token" 而失效——既有問題、與本修復無關。
+
+**版本**：1.26.15 → 1.26.16
+
 ## v1.26.15 — i18n 軌道 B：src/ 鐵律家族工具內部英文化
 
 **背景**：國際化雙軌中的軌道 B（開發環境英文化）持續推進。`src/utils/iron-rule-*.js` 共 7 支工具還留著 346 行中文（註解 + 訊息），是「讓全球工程師讀懂程式碼」的一環。

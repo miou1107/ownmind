@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## v1.26.16 修改（修 MCP client 吞掉 API 結構化錯誤細節）
+
+新增檔：
+```
+mcp/lib/api-error-message.js                              — buildApiErrorMessage（組 error + errors + hint，修錯誤細節被吞）
+tests/api-error-message.test.js                           — 6 case reproduction test
+openspec/changes/v1.26.16-mcp-error-detail/proposal.md    — v1.26.16 提案
+openspec/changes/v1.26.16-mcp-error-detail/tasks.md       — v1.26.16 任務清單
+```
+
 ## v1.26.15 修改（i18n 軌道 B：src/ 鐵律家族工具內部英文化）
 
 新增檔：

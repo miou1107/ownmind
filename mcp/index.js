@@ -16,6 +16,7 @@ import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
+import { buildApiErrorMessage } from './lib/api-error-message.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import {
   detectTriggerFromContext,
@@ -379,10 +380,7 @@ async function callApi(method, path, body, _retried = false) {
   }
 
   if (!res.ok) {
-    const msg =
-      typeof data === "object" && data !== null
-        ? data.error || data.message || JSON.stringify(data)
-        : text;
+    const msg = buildApiErrorMessage(data, text);
 
     // v1.20.2 follow-up #2: on write 409 sync_token stale → auto-fetch a new token and retry once.
     // Background: when the user has multiple AI sessions open, session A's token gets bumped
