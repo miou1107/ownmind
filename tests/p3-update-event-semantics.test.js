@@ -1,7 +1,7 @@
 /**
  * P3: update_ok event-semantics tests
  *
- * Background (Adam case, 2026-04-26): Adam's client was 1.17.10; the dashboard showed
+ * Background (Bob case, 2026-04-26): Bob's client was 1.17.10; the dashboard showed
  * `update_check + update_ok` events for him on 4/26, yet the client was actually still 1.17.10.
  *
  * Root cause: mcp/index.js's background-update exec callback wrote `update_ok` whenever
@@ -74,7 +74,7 @@ test('P3: mcp/index.js must branch update_applied / update_clean explicitly (no 
 });
 
 test('P3: mcp/index.js must explicitly write update_failed when any key step fails (no silent swallow)', () => {
-  // v1.17.22 refactored to Node-native after the Eric/Adam Windows silent-skip incident.
+  // v1.17.22 refactored to Node-native after the Alice/Bob Windows silent-skip incident.
   // Any step failure (fetch / log / pull / npm / update_sh) flows through fail() helper,
   // which writes update_failed with the step name.
   assert.match(

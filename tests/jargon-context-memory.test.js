@@ -6,7 +6,7 @@ import { checkJargonExplanation, lintReply } from '../shared/language-lint.js';
  * v1.20.2 follow-up #3: IR-036 cross-reply vocabulary memory.
  *
  * Background: the rule text says "if it was already explained in context, you
- * may leave it unchanged," but the lint logic never implemented that. Eric's
+ * may leave it unchanged," but the lint logic never implemented that. Alice's
  * bug: after explaining "actor" / "source" once in a session, later replies
  * were still being blocked by lint.
  *

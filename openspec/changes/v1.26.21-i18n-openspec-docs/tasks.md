@@ -44,9 +44,9 @@
 
 - [x] Audit openspec for PII / secrets / personal-rule prefs (no real secrets found;
       the ghp_/JWT/sk-proj fixtures are fake detector samples).
-- [x] ③ Real names → pseudonyms (Eric→Alice, Adam→Bob, Phoebe→Carol; full name
-      "Tsung-Ting Chuang" removed), local path `/Users/vincentkao/...`→`~/...`,
-      sample email `vincent@gmail.com`→`user@example.com`.
+- [x] ③ Real names → consistent pseudonyms (full real name removed), local path
+      → `~/...`, sample email → `user@example.com`. (Mapping not recorded here on
+      purpose — recording real→alias would defeat the pseudonymization.)
 - [x] ④ Internal ecosystem names neutralized in openspec (FUNIT→ExampleClient,
       RING/fapa/ima→"other internal projects", whitelist example list genericized,
       gofunit_/FUNIT-prod/wp-vin vault tokens neutralized).

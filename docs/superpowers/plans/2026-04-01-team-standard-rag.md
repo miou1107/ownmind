@@ -15,8 +15,8 @@
 **Goal:** Update the database and constants to support the new `standard_detail` memory type.
 
 **Files:**
-- Create: `c:\Users\Eric\ownmind\db\005_add_standard_detail.sql`
-- Modify: `c:\Users\Eric\ownmind\src\constants.js`
+- Create: `c:\Users\Alice\ownmind\db\005_add_standard_detail.sql`
+- Modify: `c:\Users\Alice\ownmind\src\constants.js`
 
 - [ ] **Step 1: Create DB Migration**
   Create `db/005_add_standard_detail.sql` to add the new type to the `memories_type_check` constraint.
@@ -51,8 +51,8 @@
 **Goal:** Build a robust Markdown parser that splits content by headers (H1-H3) and inherits parent context.
 
 **Files:**
-- Create: `c:\Users\Eric\ownmind\src\utils\md-parser.js`
-- Create: `c:\Users\Eric\ownmind\tests\utils\md-parser.test.js`
+- Create: `c:\Users\Alice\ownmind\src\utils\md-parser.js`
+- Create: `c:\Users\Alice\ownmind\tests\utils\md-parser.test.js`
 
 - [ ] **Step 1: Implement `parseStandardMarkdown`**
   ```javascript
@@ -91,7 +91,7 @@
 **Goal:** Create an endpoint to handle batch saving of standards and their details with incremental update logic.
 
 **Files:**
-- Modify: `c:\Users\Eric\ownmind\src\routes\memory.js`
+- Modify: `c:\Users\Alice\ownmind\src\routes\memory.js`
 
 - [ ] **Step 1: Add `POST /api/memory/batch-sync-standard`**
   Logic:
@@ -115,7 +115,7 @@
 **Goal:** Expose the upload functionality to AI agents via new MCP tools.
 
 **Files:**
-- Modify: `c:\Users\Eric\ownmind\mcp\index.js`
+- Modify: `c:\Users\Alice\ownmind\mcp\index.js`
 
 - [ ] **Step 1: Register `ownmind_upload_standard`**
   Description: Reads a local `.md` file, returns a preview list of chunks for review.
@@ -142,7 +142,7 @@
 **Goal:** Update the instructions so AI knows how to leverage the new RAG capability.
 
 **Files:**
-- Modify: `c:\Users\Eric\ownmind\src\routes\memory.js`
+- Modify: `c:\Users\Alice\ownmind\src\routes\memory.js`
 
 - [ ] **Step 1: Update `INSTRUCTIONS_SOP`**
   Add a section:

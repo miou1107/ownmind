@@ -1,5 +1,5 @@
 -- 009: collector_heartbeat 加 os 欄位
--- 用於 dashboard 顯示機器副資訊（macOS/Linux/Windows），避免短機器名（如 Adam 的 "after"）造成 UX 混淆。
+-- 用於 dashboard 顯示機器副資訊（macOS/Linux/Windows），避免短機器名（如 Bob 的 "after"）造成 UX 混淆。
 -- 與 scanner_version 同層級，由 client 主動上送。
 
 ALTER TABLE collector_heartbeat

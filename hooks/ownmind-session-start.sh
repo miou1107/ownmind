@@ -101,7 +101,7 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
   if [ "$LAST_CHECK" != "$TODAY" ]; then
     log_event "update_check"
     # 背景執行更新，不阻塞記憶載入
-    # P3 修正（Adam case 2026-04-26）：原本 silent 吞失敗後無條件寫 update_applied，
+    # P3 修正（Bob case 2026-04-26）：原本 silent 吞失敗後無條件寫 update_applied，
     # 即使 git pull / npm / update.sh 任一失敗都會誤報「已更新」。對齊 mcp/index.js
     # 的修法：每步顯式檢查；分流寫 update_applied / update_clean / update_failed。
     (

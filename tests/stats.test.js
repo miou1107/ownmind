@@ -221,20 +221,20 @@ describe('GET /api/usage/stats totals', () => {
   it('admin can query another user via ?user_id=N', async () => {
     const app = buildApp({
       queryFn: makeFakeStatsQuery({
-        userBasics: { id: 5, name: 'Sunny', email: 's@x.com' }
+        userBasics: { id: 5, name: 'Erin', email: 's@x.com' }
       }),
       user: { id: 9, role: 'admin', name: 'Admin', email: 'a@x.com' }
     });
     const res = await request(app, { path: '/api/usage/stats?user_id=5' });
     assert.equal(res.status, 200);
     assert.equal(res.body.user.id, 5);
-    assert.equal(res.body.user.name, 'Sunny');
+    assert.equal(res.body.user.name, 'Erin');
   });
 
   it('super_admin can query another user', async () => {
     const app = buildApp({
       queryFn: makeFakeStatsQuery({
-        userBasics: { id: 5, name: 'Sunny', email: 's@x.com' }
+        userBasics: { id: 5, name: 'Erin', email: 's@x.com' }
       }),
       user: { id: 1, role: 'super_admin', name: 'Vin', email: 'v@x.com' }
     });

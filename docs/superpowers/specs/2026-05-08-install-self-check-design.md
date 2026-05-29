@@ -1,4 +1,4 @@
-# 安裝/升級自動 self-check + 上傳 log（Adam 類 silent fail 早期偵測）
+# 安裝/升級自動 self-check + 上傳 log（Bob 類 silent fail 早期偵測）
 
 **Date**: 2026-05-08
 **Status**: Approved → ready for implementation plan
@@ -6,7 +6,7 @@
 
 ## 背景
 
-Adam 用 OwnMind 用了一個多月，伺服器端從來沒收到他的 token 事件。挖到 root cause：他 Windows 上 Task Scheduler（工作排程器）沒註冊，scanner 從未跑過，但 install.ps1 沒檢查、Adam 自己也不知道。同樣狀況可能也在其他人身上潛伏。
+Bob 用 OwnMind 用了一個多月，伺服器端從來沒收到他的 token 事件。挖到 root cause：他 Windows 上 Task Scheduler（工作排程器）沒註冊，scanner 從未跑過，但 install.ps1 沒檢查、Bob 自己也不知道。同樣狀況可能也在其他人身上潛伏。
 
 當前設計的盲點：
 - `install.sh` / `install.ps1` 跑完印 ✅，但 ✅ 只代表這個區塊**沒 throw**，不代表後續的元件**真的會運作**
@@ -68,7 +68,7 @@ db/migration NNN                         # 新表 install_check_logs
   "client_version": "1.17.62",
   "platform": "darwin",
   "node_version": "v22.5.0",
-  "machine": "Vincent.local",
+  "machine": "Vin.local",
   "checks": [
     { "name": "mcp_files", "status": "pass", "detail": "..." },
     { "name": "scheduler", "status": "fail", "detail": "...", "fix": "..." }

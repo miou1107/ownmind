@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.26.22 — 開源前全倉貢獻者去識別化
+
+**背景**：v1.26.21 只清了 openspec 跟少數敏感測試樣本。Code review 發現真實貢獻者姓名還散在約 50 個檔（程式註解、測試標籤/fixture、CHANGELOG 歷史、設計文件）。開源後這些真名不該外露，本版一次清乾淨。
+
+**做了什麼**：
+- 全倉把真實貢獻者姓名改為一致代稱、內部專案代號（FUNIT 系列）中性化，涵蓋程式註解、測試、CHANGELOG/FILELIST 歷史、docs/plans。
+- 測試 fixture 的輸入與斷言同步改名（行為不變）。
+- 把先前「記錄真名↔代稱對照」的三處文件（v1.26.21 CHANGELOG 條目、kkvin 設計稿、v1.26.21 tasks）改寫成不揭露對照關係——**代稱對照表不寫進任何 commit 檔**，否則讀者可反推、化名形同白做。
+- 保留 `Vin`（公開代號）。
+
+**刻意未做**：`shared/language-lint.js` 的內部專案代號白名單（功能性 allowlist、低曝險）、本機路徑與 `.mcp.json` 主機（屬 `kkvin.com` 設定化那版、`.mcp.json` 是功能設定）。
+
+**驗證**：全倉掃描真名歸零（對照表不留檔）；測試維持 2012 全綠（0 fail / 0 skipped）。
+
+**版本**：1.26.21 → 1.26.22
+
 ## v1.26.21 — i18n 軌道 B：openspec 文件英文化 + 敏感資料清理
 
 **背景**：軌道 B（開發環境英文化）延伸到 OpenSpec 內部文件；同時順手做開源前的敏感資料清理。
@@ -10,10 +26,10 @@
 - 刻意保留：引用的鐵律內容／產品字串／比對 token／IR-NNN 編號／作者日期等中繼資料（這些是資料、不是說明）。openspec 中文從 5549 行降到 352 行（剩的都是刻意保留的資料）。
 
 **敏感資料清理（開源前，本版範圍 = openspec + 相關測試樣本）**：
-- openspec 範圍內：真實姓名改化名（Eric→Alice、Adam→Bob、Phoebe→Carol，移除全名），本機路徑 `/Users/vincentkao/...`→`~/...`，範例信箱→`user@example.com`，內部生態系名稱中性化（FUNIT→ExampleClient、RING/fapa/ima→泛稱等）。
+- openspec 範圍內：移除真實姓名（改為一致代稱）、本機路徑→`~/...`、範例信箱→`user@example.com`、內部專案代號中性化（→泛稱）。
 - 遠端存取事故樣本資料中性化（主機名 `bot.kkvin.com`→`bot.example.com`、AnyDesk/Tailscale 等假值）+ FUNIT 1Password vault 樣本（`FUNIT-prod`/`wp-vin`→泛稱），橫跨 openspec + `tests/memory-secret-guard`、`tests/secret-detect-unit` + `shared/secret-detect.js`，皆為行為不變的測試樣本。
 
-**本版未做、列為後續「開源前全倉去品牌化」一次處理**：散在約 40 個檔（tests/、src/、shared/、hooks/、scripts/）的「回報者 Adam/Eric/Michelle」單名註解、`shared/language-lint.js` 專案名白名單、`llm-narrative.js` 提示詞人名範例；以及公開安裝網址 `kkvin.com` 設定化（已有設計稿 `docs/superpowers/specs/2026-05-29-kkvin-config-extraction-design.md`）。
+**v1.26.21 當下未做、留待後續「開源前全倉去品牌化」**：散在約 40 個檔（tests/、src/、shared/、hooks/、scripts/）的回報者單名註解、`shared/language-lint.js` 專案名白名單、`llm-narrative.js` 提示詞人名範例（→ 人名部分已於 v1.26.22 完成）；以及公開安裝網址 `kkvin.com` 設定化（已有設計稿 `docs/superpowers/specs/2026-05-29-kkvin-config-extraction-design.md`，仍待辦）。
 
 **安全做法**：翻譯只動說明散文、清理只換特定字串，全程 `git diff` 自檢；測試套件維持 2012 全綠（0 fail / 0 skipped）。
 
@@ -121,7 +137,7 @@
 
 **版本**：1.26.14 → 1.26.15
 
-**背景**：Eric 在 Windows 機器跑 OwnMind、想查版本同步狀況時、`scripts/` 只有 `check-sync.sh`、PowerShell 不能直接執行。除非他裝 Git Bash 否則走不過去 — 是 OwnMind 跨平台原則的漏項。
+**背景**：Alice 在 Windows 機器跑 OwnMind、想查版本同步狀況時、`scripts/` 只有 `check-sync.sh`、PowerShell 不能直接執行。除非他裝 Git Bash 否則走不過去 — 是 OwnMind 跨平台原則的漏項。
 
 **修正**：
 - 新增 `scripts/check-sync.ps1`、跟 `.sh` 等價的三層健檢（L1 git HEAD vs origin、L2 client package.json vs server SERVER_VERSION、L3 ~/.ownmind source vs ~/.claude deployed）、輸出格式 100% 相同、ownmind-upgrade skill parser 不用改。
@@ -131,7 +147,7 @@
 
 ## v1.26.13 — 修 reply-lint 規則驅動 fallback 漏洞：沒掛 lint_validator 的 user 也被擋
 
-**Bug**：Eric 回報跑 v1.26.12 還是被行話 lint 擋下、即使他帳號完全沒有 IR-036/037、cache 裡也沒掛任何 `lint_validator` metadata。
+**Bug**：Alice 回報跑 v1.26.12 還是被行話 lint 擋下、即使他帳號完全沒有 IR-036/037、cache 裡也沒掛任何 `lint_validator` metadata。
 
 **根因**：v1.21.0 把 reply-lint 改成「user 掛 lint_validator 鐵律才跑」、但 `shared/language-lint.js` 的 `lintReply()` 寫成「`resolvedValidators.length > 0` 才走新版路徑、否則 fall through 到 legacy 無條件路徑」。結果只要 user 沒掛任何 validator 鐵律，反而會掉到 legacy 跑全部內建檢查 — 跟「沒掛 = 不跑」的設計完全相反。Vin 自己機器 cache 也是空的、但因為這個 bug 一直在跑 jargon lint、誤以為正常。
 
@@ -728,7 +744,7 @@
 
 **效果**：
 
-- 沒設 `lint_validator` 的 user（包含 Eric 之類新 user）→ 鉤子完全不擋 → 安靜
+- 沒設 `lint_validator` 的 user（包含 Alice 之類新 user）→ 鉤子完全不擋 → 安靜
 - Vin 設了 metadata → 行為跟 v1.20.4 一樣 enforce
 - 其他 user 可自由選擇要不要啟用哪個 validator、不被強迫接受 Vin 的個人偏好
 
@@ -738,7 +754,7 @@
 
 ## v1.20.4 — Lint 規則中性化（產品碼去個人鐵律編號）
 
-**背景**：Eric（另一個 AI session）看到自己對話裡出現「上一版違反 IR-036」字眼、Vin 抓到。grep 後發現 OwnMind 產品程式碼裡寫死了 Vin 的個人鐵律編號（IR-036 / IR-037）、會洩漏給其他 user 看到。違反 IR-050（個人鐵律編號不能寫進產品程式碼跟公開文件）。
+**背景**：Alice（另一個 AI session）看到自己對話裡出現「上一版違反 IR-036」字眼、Vin 抓到。grep 後發現 OwnMind 產品程式碼裡寫死了 Vin 的個人鐵律編號（IR-036 / IR-037）、會洩漏給其他 user 看到。違反 IR-050（個人鐵律編號不能寫進產品程式碼跟公開文件）。
 
 **改動**：
 
@@ -776,7 +792,7 @@
 - `npm test` 1938/1938 全綠
 
 **效果**：
-- Eric 之類其他 user 對話裡不再看到「IR-036 / IR-037」字眼
+- Alice 之類其他 user 對話裡不再看到「IR-036 / IR-037」字眼
 - 訊息改成中文事件名「中英混雜」「行話品質」、user-friendly
 - Vin 自己合規記錄仍能透過 metadata 對應到 IR-036 / IR-037（dashboard 不受影響）
 - 其他 user 沒設 metadata 也能用、合規記錄走中文事件名 fallback
@@ -849,11 +865,11 @@
 
 **Follow-up patch #3（同 v1.20.2 版本內、不另開版號）：**
 
-Eric（另一個 AI session）報 bug：「actor」「source」這兩個專有名詞、同 session 第一次解釋過、後續 reply 仍被 IR-036 lint 擋。規則內文寫「上下文已說明過、可保留不改」、但 lint 程式沒實作這個記憶。順手把整個 bug report 流程串起來修。
+Alice（另一個 AI session）報 bug：「actor」「source」這兩個專有名詞、同 session 第一次解釋過、後續 reply 仍被 IR-036 lint 擋。規則內文寫「上下文已說明過、可保留不改」、但 lint 程式沒實作這個記憶。順手把整個 bug report 流程串起來修。
 
 **修了什麼**：
 
-1. **IR-036 跨 reply 詞彙記憶**（Eric 報的 bug）：
+1. **IR-036 跨 reply 詞彙記憶**（Alice 報的 bug）：
    - `shared/language-lint.js`：`checkJargonExplanation` 跟 `lintReply` 加 optional 第二參數 `historicalCorpus`、預先掃歷史 corpus、把已解釋過的詞加進 seenWords
    - 抽出新 helper `collectExplainedWords` 給歷史 corpus 跟當前 reply 共用
    - 規則內文寫的「上下文已說明過、可保留不改」終於有實作
@@ -1960,7 +1976,7 @@ Gemini 對抗審查 + Claude 自評後修了 4 個 review 意見：
    - 含 code block（偵測 \`...\` 或 \`\`\`）：放寬到 25%
    - 含「code review / code-review」字眼：直接豁免
    - IR-036 解釋查找視窗從 50 字擴到 80 字（Codex 對抗審查指出中文語境 50 字太短）
-   - Proper noun 偵測：大寫開頭孤立詞（`^[A-Z][a-z]+$`、例：Eric、Phoebe、Google）視為人名 / 公司名、跳過
+   - Proper noun 偵測：大寫開頭孤立詞（`^[A-Z][a-z]+$`、例：Alice、Carol、Google）視為人名 / 公司名、跳過
 
 **新增鐵律：** 無（v1.19.2 已加 IR-048、本版只動 hook 行為、不需新鐵律）
 
@@ -2007,7 +2023,7 @@ Gemini 對抗審查 + Claude 自評後修了 4 個 review 意見：
 
 ## v1.19.1 — 密碼／Token 不寫進記憶、AI 自動走 set_secret
 
-**背景：** 2026-05-18 Vin 嘗試用 ownmind_update 存好好玩 FUNIT 的 WordPress 應用程式密碼、記憶 API 回 500「更新記憶失敗」黑盒、AI 不知道分流規則。對應 IR-027「提醒無效、邏輯才有效」的失效情境——光在記憶系統提示「密碼請走密鑰管理」是不夠的、要靠程式邏輯卡控。
+**背景：** 2026-05-18 Vin 嘗試用 ownmind_update 存Example Client 的 WordPress 應用程式密碼、記憶 API 回 500「更新記憶失敗」黑盒、AI 不知道分流規則。對應 IR-027「提醒無效、邏輯才有效」的失效情境——光在記憶系統提示「密碼請走密鑰管理」是不夠的、要靠程式邏輯卡控。
 
 **三層防護：**
 
@@ -2508,7 +2524,7 @@ Vin 質疑：「規矩太嚴 OR suggest 提案本身品質不對？」
 
 **Audit baseline (v1.18.1 hotfix B)**：寫 `scripts/audit-real-iron-rules-lint.js` 拿 prod 真實 35 條鐵律跑 lint：
 - **26/35 fail (74%)** — 不是個案、是設計錯誤
-- 17 條 fail 是 IR-037 中英混雜 (docker / openspec / Adam / Eric / MacBook / claude / opus / review / 等技術詞 / 人名)
+- 17 條 fail 是 IR-037 中英混雜 (docker / openspec / Bob / Alice / MacBook / claude / opus / review / 等技術詞 / 人名)
 - 9 條缺適用情境段落 / 6 條缺 trigger / 3 條缺規則段落 / 1 條太短
 
 **根本原因**：IR-037「回話一律白話中文不要中英文混雜」設計初衷是「**AI 回話**」、reply-lint Stop hook (v1.17.96) 已專門做這件事。鐵律 content 本身是「**給 AI 看的技術筆記**」、含技術詞天經地義。**把 IR-037 套到鐵律 lint 是「規則用錯場景」、不是「規則太嚴」**。v1.17.94 上線 6 個月沒人發現是因為 lint 只對 POST/PUT 跑、不對既有 row 反向校驗、被掩蓋。升級助手把問題炸開、是好事。
@@ -2534,7 +2550,7 @@ Vin 質疑：「規矩太嚴 OR suggest 提案本身品質不對？」
   - Diff modal 進場時若 lint_ok=false → 預先在錯誤 box 顯示
 - `tests/iron-rule-quality.test.js`:
   - 改 IR-037 測試反映新行為（合理 mixed content 應 pass）
-  - 加新測試「鐵律含 docker/openspec/Adam/Eric → 通過」
+  - 加新測試「鐵律含 docker/openspec/Bob/Alice → 通過」
 
 **Audit 結果 (D 修完後)**：26 fail → **16 fail**、10 條鐵律從 fail 變 pass。剩 16 都是合理結構性問題（缺 trigger / 缺段落 / 太短）、Vin 之後手動補。
 
@@ -3070,7 +3086,7 @@ WHERE a.ts ${timeFilter}
 
 **背景**：v1.17.89 ship 完之後、Vin 要繼續挖 pitfalls。SSH 進 prod DB 撈那 30 筆「漏觀測」實際資料、發現**只有 8 筆是真的 iron_rule 缺 compliance、其他 22 筆全是 team_standard / standard_detail / project disable 被誤算進 sensitive 列表（誤報率 73%）**。
 
-**Eric 5/11 09:50 那 11 秒 11 連發 disable 全是合理使用**：他停用 `team_standard` id=199（GitLab 移交規範）+ 它底下 10 個 `standard_detail` children、不是異常 pattern。pitfalls 把它列出來是邏輯 bug、不是 Eric 行為問題。
+**Alice 5/11 09:50 那 11 秒 11 連發 disable 全是合理使用**：他停用 `team_standard` id=199（GitLab 移交規範）+ 它底下 10 個 `standard_detail` children、不是異常 pattern。pitfalls 把它列出來是邏輯 bug、不是 Alice 行為問題。
 
 **根因**：[me.js:770-779](src/routes/me.js) sensitive CTE 兩條 OR：
 - `memory_save AND details->>'type' = 'iron_rule'` ✓ 有過濾
@@ -3133,7 +3149,7 @@ WHERE a.ts ${timeFilter}
 
 **升級指引**：server 端重新部署即可。Client 不變、deploy 後新發生的 disable 事件就會自動帶 snapshot。歷史 30 筆「(找不到)」會在 14 天 retention window 後自然過期。
 
-**已知未解**：Eric 在 2026/5/11 09:50:00-09:50:11 連發 11 條 disable（11 秒內），這個異常 pattern 跟本次修法無關、留作 v1.17.90 調查（需先確認 Eric 客戶端版號 + 為何短時間連停 11 條鐵律）。
+**已知未解**：Alice 在 2026/5/11 09:50:00-09:50:11 連發 11 條 disable（11 秒內），這個異常 pattern 跟本次修法無關、留作 v1.17.90 調查（需先確認 Alice 客戶端版號 + 為何短時間連停 11 條鐵律）。
 
 ## v1.17.88 — `/me` trailing slash redirect 小修
 
@@ -3223,14 +3239,14 @@ app.get('/me', (req, res, next) => {
 
 ## v1.17.86 — `upgrade_complete` beacon：升完不靠 self-check 就能確認真版號（IR-038）
 
-**背景**：v1.17.85 修了 FAIL fallback，但 Vin 從 `/me` 用量報告（撈 `collector_heartbeat.scanner_version`）看到 Adam / Eric / Michelle 都在 1.17.84，**而 `install_check_logs` 那個表卻沒任何他們的 post_install / post_upgrade self-check report**。
+**背景**：v1.17.85 修了 FAIL fallback，但 Vin 從 `/me` 用量報告（撈 `collector_heartbeat.scanner_version`）看到 Bob / Alice / Dana 都在 1.17.84，**而 `install_check_logs` 那個表卻沒任何他們的 post_install / post_upgrade self-check report**。
 
 兩個 source 對不上 → 升級完成的事實只在 `collector_heartbeat` 看得到，`install_check_logs`（admin dashboard 主要查詢來源）完全沒紀錄。可能原因：
 - self-check 跑了但 upload 401 / 5xx → 寫 `.upload-spool.jsonl` 等下次 retry，但 user 升完就 quit Claude Code，永遠沒下次觸發 self-check 來 drain spool
 - 跨多版升級（v1.17.66 → ... → 1.17.84）self-check 中途某步卡住
 - Windows 環境特殊問題讓 self-check process 被中斷
 
-v1.17.85 FAIL fallback 不解決這個 — Adam / Michelle 的場景沒被 FAIL() 中斷、是「升完了但 self-check 上傳這條最後一步沒成功」。
+v1.17.85 FAIL fallback 不解決這個 — Bob / Dana 的場景沒被 FAIL() 中斷、是「升完了但 self-check 上傳這條最後一步沒成功」。
 
 **修法**：升級成功末段（`OK done` 之後、`self-check.cjs` 之前）先打一個輕量 `upgrade_complete` beacon：
 
@@ -3266,10 +3282,10 @@ v1.17.85 FAIL fallback 不解決這個 — Adam / Michelle 的場景沒被 FAIL(
 
 ## v1.17.85 — install_failed 觀測盲點補強 + beacon trigger 不污染 client_version（IR-038 + IR-022）
 
-**背景**：Vin 跑 admin query 看用戶版本分布，看到 Adam (id=3) / Michelle (id=6) 的 `last_known_version` 是字串 **`"update-script"`** 不是版號，第一眼以為資料污染。深入查發現：
+**背景**：Vin 跑 admin query 看用戶版本分布，看到 Bob (id=3) / Dana (id=6) 的 `last_known_version` 是字串 **`"update-script"`** 不是版號，第一眼以為資料污染。深入查發現：
 1. `"update-script"` 是 v1.17.78 加的 `update_started` beacon 的 **sentinel 值**（升級剛開始時不知道目標版號，用字面字串占位）— 這是預期行為
 2. 但這個 sentinel 直接寫進 `install_check_logs.client_version` column → admin query 撈到的 last_version 就是 sentinel、不是真版號
-3. **更嚴重的觀測盲點**：Adam 5/11 03:50 跑 `update_started` beacon 之後**沒任何 post_install / manual / errors spool 紀錄**。升級顯然失敗、但完全沒留任何錯誤證據。Trace 發現 `interactive-upgrade.sh` 雖然多數 FAIL path 之前有 call `report_error`，但仍有漏網（`no_ownmind` / `no_git` / `cd_failed` / `install` / `verify_local` 等），加上 unexpected exit（syntax error / SIGTERM）完全沒人攔
+3. **更嚴重的觀測盲點**：Bob 5/11 03:50 跑 `update_started` beacon 之後**沒任何 post_install / manual / errors spool 紀錄**。升級顯然失敗、但完全沒留任何錯誤證據。Trace 發現 `interactive-upgrade.sh` 雖然多數 FAIL path 之前有 call `report_error`，但仍有漏網（`no_ownmind` / `no_git` / `cd_failed` / `install` / `verify_local` 等），加上 unexpected exit（syntax error / SIGTERM）完全沒人攔
 
 **修法（兩端對稱、IR-022）**：
 
@@ -3892,13 +3908,13 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
 
 ## v1.17.68 — settings.json `--update` 殘留地雷 + 401 觀測管道（IR-007 + IR-038）
 
-**背景**：v1.17.67 修完 Windows scanner task 註冊問題後，Adam 用量報告 token 還是 0，scanner 跑出來全 5 個 client 一起回 401「無效的 API Key」。深入查 server 發現 Adam 的 `~/.claude/settings.json` 裡 `OWNMIND_API_KEY` 整個值是字串 `"--update"`（8 字元），不是合法的 API key。
+**背景**：v1.17.67 修完 Windows scanner task 註冊問題後，Bob 用量報告 token 還是 0，scanner 跑出來全 5 個 client 一起回 401「無效的 API Key」。深入查 server 發現 Bob 的 `~/.claude/settings.json` 裡 `OWNMIND_API_KEY` 整個值是字串 `"--update"`（8 字元），不是合法的 API key。
 
-**根因**：v1.17.9 之前 `install.ps1` 沒過濾 flag-like positional args，**舊版 `interactive-upgrade.ps1` 把 `--update` 當位置參數傳給 `install.ps1`，被當成 API key 寫進 `settings.json`**。Adam 是 2026-03-26 建帳號的早期用戶，當時版本沒有 args 過濾，他的 settings.json 從那天起就壞了。v1.17.9 之後修了 args 過濾，**讓未來不會再寫壞**，但**沒寫 migration 把已經中招的存量挖出來**。
+**根因**：v1.17.9 之前 `install.ps1` 沒過濾 flag-like positional args，**舊版 `interactive-upgrade.ps1` 把 `--update` 當位置參數傳給 `install.ps1`，被當成 API key 寫進 `settings.json`**。Bob 是 2026-03-26 建帳號的早期用戶，當時版本沒有 args 過濾，他的 settings.json 從那天起就壞了。v1.17.9 之後修了 args 過濾，**讓未來不會再寫壞**，但**沒寫 migration 把已經中招的存量挖出來**。
 
 **為什麼 6 週沒人發現**：
-- Adam 的 token_events 表 0 筆（從建帳號到現在沒成功上傳一次）
-- Adam 的 install_check_logs 表也是 0 筆 —— self-check 上傳本身吃 401，連 self-check 「我有問題」這個訊號都傳不到 server
+- Bob 的 token_events 表 0 筆（從建帳號到現在沒成功上傳一次）
+- Bob 的 install_check_logs 表也是 0 筆 —— self-check 上傳本身吃 401，連 self-check 「我有問題」這個訊號都傳不到 server
 - 自我檢查的 `api_credentials` check 只看 server 回 200/401，不看 key 字串本身格式 → red 但訊息只說「auth 401」，沒指出根因
 - server 端 auth.js 401 path 沒留結構化 log，admin 從 docker logs 只看到「POST /api/usage/events 401 3ms」這種 access log，看不出是誰、key prefix 也沒留
 
@@ -3918,7 +3934,7 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
    - auth.js 第 4 個參數加 `deps={}` 給測試注入 logger / query，不影響 production 呼叫
 
 3. **Reproduction tests 17 條（IR-003）**：
-   - [tests/self-check.test.js](tests/self-check.test.js) 加 10 條 `checkApiKeyFormat` 測試（含 Adam 的 `--update`、各種已知壞值、flag-like、太短、含空白 / BOM、合法 UUID、合法 custom prefix）
+   - [tests/self-check.test.js](tests/self-check.test.js) 加 10 條 `checkApiKeyFormat` 測試（含 Bob 的 `--update`、各種已知壞值、flag-like、太短、含空白 / BOM、合法 UUID、合法 custom prefix）
    - [tests/auth-401-observability.test.js](tests/auth-401-observability.test.js) 新增 7 條（`maskApiKey` 邊界 + auth middleware 401 / no-bearer log shape）
 
 **鐵律觸發**：IR-003 / IR-005 / IR-007 / IR-008 / IR-022 / IR-026 / IR-031 / IR-032 / IR-038。
@@ -3926,14 +3942,14 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
 **驗證**：本地 `npm test` 768/768 pass / 0 fail（v1.17.67 是 750，+18 新 test）。
 
 **Code review 抓到的修正**（superpowers:code-reviewer）：
-- **Important（info-leak）**：`maskApiKey` 原本門檻 `< 8` 走 `<too-short:N>`，但 8 char key（如 Adam 的 `--update`）走到 `slice(0,4) + '...' + slice(-4)` 路徑會產生 `--up...date` —— admin 從 docker logs 把三個點移掉就拿到原文。提高門檻到 12（中間至少還有 4 char 被遮掉）；8 char 改走 `<too-short:8>`，自我檢查的 `checkApiKeyFormat` 會在 client 端先抓出來，server log 端不負責顯示這種 key 的 prefix。
+- **Important（info-leak）**：`maskApiKey` 原本門檻 `< 8` 走 `<too-short:N>`，但 8 char key（如 Bob 的 `--update`）走到 `slice(0,4) + '...' + slice(-4)` 路徑會產生 `--up...date` —— admin 從 docker logs 把三個點移掉就拿到原文。提高門檻到 12（中間至少還有 4 char 被遮掉）；8 char 改走 `<too-short:8>`，自我檢查的 `checkApiKeyFormat` 會在 client 端先抓出來，server log 端不負責顯示這種 key 的 prefix。
 - **Minor**：`x-forwarded-for` 取第一個 IP（forensics 要的是 client、不是 proxy chain）；`KNOWN_BAD` 加 `/help` `/?` 防 cmd 風格 flag 誤傳；auth.js 多加一行 comment 鎖 `fn.length === 3` 不變式（避免未來改 signature 把 middleware 變 Express error handler）。
 
 **升級指引**：受影響用戶（v1.17.9 之前裝過、後來只升級沒重灌、settings.json 殘留 `--update`）跑 `~/.ownmind/install.ps1` 升到 v1.17.68 後，self-check 會在 `api_key_format` 欄位直接紅燈、訊息明確指向修法路徑。Admin 端 docker logs 也會看到 `auth_failed` 結構化 log，能主動發現未升級的用戶。
 
 ## v1.17.67 — v1.17.66 Windows scanner task hotfix + IR-007 防同類雷
 
-**背景**：v1.17.66 上線後 Adam / Eric 兩位 Windows 用戶獨立回報 OwnMind 用量報告 token 數卡 0。診斷發現背景 token scanner 的 Task Scheduler 在他們機器上根本沒註冊。`self-check` 跑出 `scheduler ❌`，手動跑 `register-scanner-task.ps1` 才看到 PowerShell 直接 `throw`。
+**背景**：v1.17.66 上線後 Bob / Alice 兩位 Windows 用戶獨立回報 OwnMind 用量報告 token 數卡 0。診斷發現背景 token scanner 的 Task Scheduler 在他們機器上根本沒註冊。`self-check` 跑出 `scheduler ❌`，手動跑 `register-scanner-task.ps1` 才看到 PowerShell 直接 `throw`。
 
 **根因**：[scripts/windows/register-scanner-task.ps1:103-107](scripts/windows/register-scanner-task.ps1)（修法前）v1.17.66 想加電池友善設定，用了 `-DontStartIfOnBatteries` 和 `-StopIfGoingOnBatteries` 兩個參數 —— 但這兩個都不是 `New-ScheduledTaskSettingsSet` 的合法參數名（正確名是 `-DisallowStartIfOnBatteries` 和反向 switch `-DontStopIfGoingOnBatteries`）。在 PS 5.1 + PS 7 都會直接 `throw`、整個 register 動作中斷、task 完全沒註冊。
 
@@ -3966,7 +3982,7 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
 
 ## v1.17.66 — Windows 平台硬化 + 觀測管道修補（IR-038）
 
-**背景**：2026-05-07~05-08 連續兩天 Eric/Adam 升 v1.17.65 都遭遇相同失敗劇本：升級主流程全 OK，但 `verify_local` 失敗連帶 `rollback` 失敗，仰賴雙重失敗才保住新版本。額外回報「OwnMind 觸發時不定時跳出 console 視窗，沒用 Claude 也跳」。深入調查發現是七個獨立 bug 累積，根因都在「shell / path / process spawn 假設了 Unix 行為」。這是第三波同類踩坑（v1.17.62 / v1.17.65 / v1.17.66），啟動 systematic-debugging Phase 4.5 架構性修補。
+**背景**：2026-05-07~05-08 連續兩天 Alice/Bob 升 v1.17.65 都遭遇相同失敗劇本：升級主流程全 OK，但 `verify_local` 失敗連帶 `rollback` 失敗，仰賴雙重失敗才保住新版本。額外回報「OwnMind 觸發時不定時跳出 console 視窗，沒用 Claude 也跳」。深入調查發現是七個獨立 bug 累積，根因都在「shell / path / process spawn 假設了 Unix 行為」。這是第三波同類踩坑（v1.17.62 / v1.17.65 / v1.17.66），啟動 systematic-debugging Phase 4.5 架構性修補。
 
 完整 spec：[openspec/changes/v1.17.66-windows-hardening/](openspec/changes/v1.17.66-windows-hardening/)。
 
@@ -3979,17 +3995,17 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
 
 2. **#2 `execFile + shell:true` 在 Windows 被 cmd 包**（P0）
    - 觸發點：[scripts/install-helpers/self-check.cjs:195-197](scripts/install-helpers/self-check.cjs)
-   - 根因：cmd.exe 把 PowerShell `Get-ScheduledTask | Select-Object` 的 `|` 當自己的 pipe operator，找 `Select-Object` 當外部命令失敗（Eric/Adam 兩台一字不差錯誤訊息）
+   - 根因：cmd.exe 把 PowerShell `Get-ScheduledTask | Select-Object` 的 `|` 當自己的 pipe operator，找 `Select-Object` 當外部命令失敗（Alice/Bob 兩台一字不差錯誤訊息）
    - 修法：新增 [scripts/install-helpers/safe-spawn.cjs](scripts/install-helpers/safe-spawn.cjs) helper（強制 `shell:false` + `windowsHide:true` + 5s timeout），self-check.cjs 改用 safeSpawn
 
 3. **#4 升級失敗時 self-check 不被觸發、上傳 401 不重試**（P0）
    - 觸發點：[scripts/interactive-upgrade.ps1:122](scripts/interactive-upgrade.ps1) `Fail` exit 早於 line 172 self-check 呼叫；self-check.cjs 上傳失敗即丟
-   - 根因：失敗路徑沒走 `try/finally` 結構；Adam 401 案例 server `install_check_logs` 表完全沒收到資料（最該收的時候反而靜默）
+   - 根因：失敗路徑沒走 `try/finally` 結構；Bob 401 案例 server `install_check_logs` 表完全沒收到資料（最該收的時候反而靜默）
    - 修法：interactive-upgrade.ps1 整個流程包進 `try { ... } finally { Run-SelfCheckOnce }`；self-check.cjs 新增 `appendSpool` / `retrySpool` 機制（401 / 網路 / 5xx 寫進 `~/.ownmind/logs/.upload-spool.jsonl`，下次跑 self-check 開頭先補傳）
 
 4. **#6 PowerShell `Out-File` 預設 UTF-16 BOM**（P1）
    - 觸發點：interactive-upgrade.ps1 六處 `| Out-File -Append $LogFile`
-   - 根因：PS 5.x 預設編碼 Unicode（UTF-16 LE BOM），現代工具預期 UTF-8。Eric 的 upgrade log 中文 garbled
+   - 根因：PS 5.x 預設編碼 Unicode（UTF-16 LE BOM），現代工具預期 UTF-8。Alice 的 upgrade log 中文 garbled
    - 修法：所有 `Out-File` 加 `-Encoding utf8`
 
 5. **#7 Scanner Task Scheduler 跳 console 視窗**（P0）
@@ -4024,7 +4040,7 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
 
 **鐵律觸發**：IR-003、IR-004、IR-005、IR-007、IR-008、IR-022、IR-027、IR-031、IR-032，並新增 IR-038 候選：「修 bug 前必須先確保有足夠的觀測資料能持續追蹤該 bug」。
 
-**Eric / Adam 升級時請對照真機驗證的清單**（PR 描述會附）：
+**Alice / Bob 升級時請對照真機驗證的清單**（PR 描述會附）：
 1. Find-GitBash 確實過濾 System32 WSL relay
 2. interactive-upgrade.ps1 try/finally 保證 self-check 在升級失敗時仍跑
 3. VBS launcher 真的隱藏 console 視窗
@@ -4060,7 +4076,7 @@ catch {
 
 ## v1.17.64 — self-check 兩個小 bug 修正：endpoint 404 + auth header 401
 
-**Vincent 反饋**：v1.17.63 上線後實測發現 self-check 的 `api_credentials` 檢查永遠 fail、上傳 log 也永遠失敗。Adam / Eric / Michelle 升完只會看到自己的本機被標壞，但其實是 self-check 寫錯了 — 不是他們的環境壞了。
+**Vin 反饋**：v1.17.63 上線後實測發現 self-check 的 `api_credentials` 檢查永遠 fail、上傳 log 也永遠失敗。Bob / Alice / Dana 升完只會看到自己的本機被標壞，但其實是 self-check 寫錯了 — 不是他們的環境壞了。
 
 **根因**：
 
@@ -4080,17 +4096,17 @@ catch {
 
 **驗證**：`node --test tests/self-check.test.js tests/debug-route.test.js` → 22 / 22 pass。
 
-**升級指引**：v1.17.63 用戶（Adam / Eric / Michelle / Vincent）升 v1.17.64 後跑一次 `~/.ownmind/scripts/interactive-upgrade.{sh,ps1}` 或手動 `node ~/.ownmind/scripts/install-helpers/self-check.cjs --trigger=manual`，self-check log 會正確上傳 server，admin dashboard 才看得到誰真的有問題。
+**升級指引**：v1.17.63 用戶（Bob / Alice / Dana / Vin）升 v1.17.64 後跑一次 `~/.ownmind/scripts/interactive-upgrade.{sh,ps1}` 或手動 `node ~/.ownmind/scripts/install-helpers/self-check.cjs --trigger=manual`，self-check log 會正確上傳 server，admin dashboard 才看得到誰真的有問題。
 
 ## v1.17.63 — 安裝/升級結尾自動 self-check + 上傳 log
 
-**Vincent 反饋**：v1.17.62 修了 Adam 的 npm EINVAL，但發現 Adam 還有另一個 silent fail — 他的 Task Scheduler（Windows 排程器）從一開始就沒註冊好，scanner 從來沒跑、伺服器端從來沒收到他的 token 事件，使用一個多月才被發現。原因是 install.ps1 跑完印 ✅，但 ✅ 只代表「這個區塊沒 throw」、不代表後續元件真的會運作。需要一個自動驗證機制，每次安裝/升級後抓本機真實狀態。
+**Vin 反饋**：v1.17.62 修了 Bob 的 npm EINVAL，但發現 Bob 還有另一個 silent fail — 他的 Task Scheduler（Windows 排程器）從一開始就沒註冊好，scanner 從來沒跑、伺服器端從來沒收到他的 token 事件，使用一個多月才被發現。原因是 install.ps1 跑完印 ✅，但 ✅ 只代表「這個區塊沒 throw」、不代表後續元件真的會運作。需要一個自動驗證機制，每次安裝/升級後抓本機真實狀態。
 
 **根因**：
 
 1. `install.sh` / `install.ps1` 各區塊的 ✅ 印出來只表示該區塊執行到底，沒有實際驗證 launchd / Task Scheduler / systemd 真的收到註冊、scanner 能不能跑、git hooks 有沒有 +x。
 2. 從 server 視角看不到使用者本機到底裝了什麼，只能等使用者主動回報才知道哪邊壞掉。
-3. Adam 那種「以為裝好了、實際沒裝好」的 silent fail 在現有架構下要等很久才會被發現。
+3. Bob 那種「以為裝好了、實際沒裝好」的 silent fail 在現有架構下要等很久才會被發現。
 
 **修法**：每次安裝/升級結尾跑一遍 self-check，把當下本機所有元件的真實狀態抓下來。
 
@@ -4141,15 +4157,15 @@ ORDER BY u.name, l.ts DESC;
 
 **升級方式**：v1.17.63 上線後，使用者下次跑 bootstrap 就會自動跑 self-check + 上傳。已經升到 v1.17.62 但還沒升 v1.17.63 的使用者要再跑一次 bootstrap 才會啟用。
 
-## v1.17.62 — 修自動更新兩個 silent fail（Adam Windows / Michelle 心跳）
+## v1.17.62 — 修自動更新兩個 silent fail（Bob Windows / Dana 心跳）
 
-**Vincent 反饋**：production heartbeat 顯示 Adam（1.17.24 / win32）、Eric（1.17.45）、Michelle（1.17.20 / Mac）三個 user 卡很久沒上來。Server 已經 1.17.61，他們各卡 16~37 個版本之前。本來 backlog 是「等他們自己升級才能切 broadcast-filter fail-closed」（`project_290`），結果根本不會自己升級。
+**Vin 反饋**：production heartbeat 顯示 Bob（1.17.24 / win32）、Alice（1.17.45）、Dana（1.17.20 / Mac）三個 user 卡很久沒上來。Server 已經 1.17.61，他們各卡 16~37 個版本之前。本來 backlog 是「等他們自己升級才能切 broadcast-filter fail-closed」（`project_290`），結果根本不會自己升級。
 
 **根因**：
 
-1. **Windows npm.cmd `EINVAL`（Adam 卡 1.17.24）**：Node v18.20.2 / v20.12.2 / v21.7.3 起為 CVE-2024-27980 安全修補，禁止 `child_process.execFile` 直接呼叫 `.cmd` / `.bat`，要 `shell: true` 才行。`mcp/index.js:1286` 的 `execFile(NPM_CMD, ['install', '-q'], ...)` 在 Adam 那邊就吃這個 EINVAL，整個自動更新中斷。從 activity log 看到 `update_failed step=npm error=EINVAL`。
+1. **Windows npm.cmd `EINVAL`（Bob 卡 1.17.24）**：Node v18.20.2 / v20.12.2 / v21.7.3 起為 CVE-2024-27980 安全修補，禁止 `child_process.execFile` 直接呼叫 `.cmd` / `.bat`，要 `shell: true` 才行。`mcp/index.js:1286` 的 `execFile(NPM_CMD, ['install', '-q'], ...)` 在 Bob 那邊就吃這個 EINVAL，整個自動更新中斷。從 activity log 看到 `update_failed step=npm error=EINVAL`。
 
-2. **MCP process cached `CLIENT_VERSION`（Michelle 卡 1.17.20）**：`mcp/index.js:154` 把 `CLIENT_VERSION` 在 module-load 時當常數讀進來。MCP 是長跑 process，user 不關 AI 工具就一直開著。自動更新成功 → 磁碟上 package.json 是新版 → 但這個 process 記憶體裡還是舊 `CLIENT_VERSION`。`sendMcpHeartbeat` 用 cached 值且 `heartbeatSent` 旗標每個 process 只送一次心跳 → 長跑 process 永遠回報舊版號。Michelle 02:19 有 `update_applied`、09:11 五個工具同時心跳回報 1.17.20，就是這個。
+2. **MCP process cached `CLIENT_VERSION`（Dana 卡 1.17.20）**：`mcp/index.js:154` 把 `CLIENT_VERSION` 在 module-load 時當常數讀進來。MCP 是長跑 process，user 不關 AI 工具就一直開著。自動更新成功 → 磁碟上 package.json 是新版 → 但這個 process 記憶體裡還是舊 `CLIENT_VERSION`。`sendMcpHeartbeat` 用 cached 值且 `heartbeatSent` 旗標每個 process 只送一次心跳 → 長跑 process 永遠回報舊版號。Dana 02:19 有 `update_applied`、09:11 五個工具同時心跳回報 1.17.20，就是這個。
 
 **修法**：
 
@@ -4160,7 +4176,7 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.61 — /me 報告頁加 MCP 通道盲點提示
 
-**Vincent 反饋**：`project_310` 第 5 項（非 MCP 介面盲點標示）。OwnMind 的 client 是 MCP server，只能看到走 MCP 通道的 AI 工具呼叫。但實際工作上很多 AI 使用是走網頁版（claude.ai / ChatGPT / Gemini Web 等）或非 MCP 終端，這些活動 OwnMind 完全看不到。報告頁卻沒有任何說明，使用者誤以為看到的就是全部活動。
+**Vin 反饋**：`project_310` 第 5 項（非 MCP 介面盲點標示）。OwnMind 的 client 是 MCP server，只能看到走 MCP 通道的 AI 工具呼叫。但實際工作上很多 AI 使用是走網頁版（claude.ai / ChatGPT / Gemini Web 等）或非 MCP 終端，這些活動 OwnMind 完全看不到。報告頁卻沒有任何說明，使用者誤以為看到的就是全部活動。
 
 **根因**：先前 `/me` 報告頁的 audit findings 只有在「14 天 0 activity」才觸發 `unobservable_source` finding，但實際上即使有少量 MCP activity，使用者可能一半時間在網頁版 AI、那半也是不可觀測。沒有固定提示說「我只看 MCP 通道」。
 
@@ -4175,7 +4191,7 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.60 — update.sh / update.ps1 settings.json 安全讀取 + 自動更新 lock 旗標
 
-**Vincent 反饋**：v1.17.59 之後 `project_299` 還剩兩項技術債（第 2 跟第 3）一起清掉。第 1 項（`--autostash` fallback 對 2015 年前的 git 失效）太邊角不做。
+**Vin 反饋**：v1.17.59 之後 `project_299` 還剩兩項技術債（第 2 跟第 3）一起清掉。第 1 項（`--autostash` fallback 對 2015 年前的 git 失效）太邊角不做。
 
 **根因**：
 1. **settings.json 損壞會被洗掉**：`update.sh` / `update.ps1` 各有四個 `node -e` 區塊在裝 hook 時讀使用者的 IDE 設定檔（Claude / Gemini / Copilot / Cursor）。其中 Gemini / Copilot / Cursor 三個用 `try { JSON.parse(...) } catch {}` 吃掉錯誤後帶著空 `{}` 繼續走，最後 `writeFileSync` 把空物件寫回原檔，使用者損壞但有資料的設定會被洗掉、無法救回。中等嚴重，沒實際 bug 報案但風險真的存在。
@@ -4191,7 +4207,7 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.59 — `mcp/index.js` 三項硬化（記憶體上限 + 錯誤訊息消毒 + 滑動時間窗去重）
 
-**Vincent 反饋**：v1.17.58 的 Codex review 之後 ack 過、留下的 5 項技術債清掉前三項（`project_310` 第 2 / 3 / 4）。
+**Vin 反饋**：v1.17.58 的 Codex review 之後 ack 過、留下的 5 項技術債清掉前三項（`project_310` 第 2 / 3 / 4）。
 
 **根因**：
 1. `complianceEvents` 陣列只在 init 時清空，long session 持續累積，理論上會無限大、最後吃光記憶體。
@@ -4208,7 +4224,7 @@ ORDER BY u.name, l.ts DESC;
 **升級方式**：純內部硬化，無 API 行為改變。Server / client 升到 1.17.59 即可。
 ## v1.17.58 — IR-024 邏輯卡控（commit-msg hook 阻擋 `Co-Authored-By`）
 
-**Vincent 反饋**：IR-024（Git commit 絕對不加 `Co-Authored-By`）目前只在 dashboard 上顯示提醒，依賴 AI 自覺。違反 IR-027「提醒無效，邏輯才有效」。要求改成 git hook 強卡。
+**Vin 反饋**：IR-024（Git commit 絕對不加 `Co-Authored-By`）目前只在 dashboard 上顯示提醒，依賴 AI 自覺。違反 IR-027「提醒無效，邏輯才有效」。要求改成 git hook 強卡。
 
 **根因**：之前 IR-024 是軟性規則 — 寫在 OwnMind dashboard 的鐵律列表，靠 AI 看到提醒主動避免。但實際上 AI 經常忘記、寫 commit 訊息時還是會加 `Co-Authored-By` trailer。沒有任何技術機制阻擋。
 
@@ -4225,21 +4241,21 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.57 — 整體分析報告改正面肯定 + 拿掉冗餘描述句
 
-**Vincent 反饋**：
-1. 報告寫「Adam 一個人做了 491 輪，他如果離職這個專案會接不下去」這種把個人當風險的話不 OK，應該寫成正面肯定（貢獻極大、認真開發）。
+**Vin 反饋**：
+1. 報告寫「Bob 一個人做了 491 輪，他如果離職這個專案會接不下去」這種把個人當風險的話不 OK，應該寫成正面肯定（貢獻極大、認真開發）。
 2. 「📊 整體分析」標題下「過去 N 天的全團隊使用分析。機械段秒回；AI 洞察開頁自動觸發、伺服器端 cache 1 小時。」這句技術細節描述拿掉。
 
-**根因（個人風險評價）**：`src/lib/llm-narrative.js` SYSTEM_PROMPT rule 3 的「✓ 具體」範例就是「Adam 離職這個專案會接不下去」，rule 6 也允許「指出某人扛太多」這類風險。LLM 直接照範例輸出。違反 Vin 的工作原則「分析報告若會被被分析者看到，預設要對事不對人」。
+**根因（個人風險評價）**：`src/lib/llm-narrative.js` SYSTEM_PROMPT rule 3 的「✓ 具體」範例就是「Bob 離職這個專案會接不下去」，rule 6 也允許「指出某人扛太多」這類風險。LLM 直接照範例輸出。違反 Vin 的工作原則「分析報告若會被被分析者看到，預設要對事不對人」。
 
 **修法**：
-1. `src/lib/llm-narrative.js` rule 3 範例改正面肯定 — 「funit-v2 全部 491 輪由 Adam 一個人完成，是這個專案最主要的開發者，貢獻極大、開發很認真」。
+1. `src/lib/llm-narrative.js` rule 3 範例改正面肯定 — 「exampleclient-v2 全部 491 輪由 Bob 一個人完成，是這個專案最主要的開發者，貢獻極大、開發很認真」。
 2. rule 6 強化：明確禁止「某人扛太多」「某人離職就接不下去」「bus factor」這種把個人當風險的話；高貢獻者用「主要開發者、貢獻極大、開發認真」這類肯定語氣。
 3. `src/public/me/index.html` 拿掉「過去 N 天的全團隊使用分析…」描述句（標題 📊 整體分析 已自說明）。
 4. `tests/llm-narrative.test.js` 加新 test pin 正面肯定詞 + 個人風險禁用詞。
 
 ## v1.17.56 — 修 v1.17.55 的兩個顯示問題（Tokens 全空 + 長專案名）
 
-**Vincent 反饋**：「為何沒有數字」「ai_kol (kol_content_system 新版：...) 的專案名稱還是太長」。
+**Vin 反饋**：「為何沒有數字」「ai_kol (kol_content_system 新版：...) 的專案名稱還是太長」。
 
 **根因 1（Tokens 全空）**：v1.17.55 用 `(user_id, tool, session_id)` JOIN `token_usage_daily`，但 prod DB `session_logs.session_id` **過去 60 天 0 筆有值**（writer 沒填）。token_events / token_usage_daily 由獨立的 token-collector 寫入，session_id 是真實 UUID 但跟 session_logs 對不上 — JOIN 永遠 NULL。
 
@@ -4255,7 +4271,7 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.55 — 各專案活動量排行表加 Tokens + 成本欄
 
-**Vincent 反饋**：「9. 各專案活動量排行 應該要有期間累計消耗的 token 數」。原表只顯示 sessions / 輪次 / 貢獻者，看不出哪些專案燒最多 token、最花錢。
+**Vin 反饋**：「9. 各專案活動量排行 應該要有期間累計消耗的 token 數」。原表只顯示 sessions / 輪次 / 貢獻者，看不出哪些專案燒最多 token、最花錢。
 
 **修法**：
 1. `src/routes/me-narrative.js` 9.project_ranking SQL 加一個 CTE，從 `token_usage_daily` 用 `(user_id, tool, session_id)` JOIN，按 `last_ts ${tfTs}` 過濾期間，加總 5 種 tokens（input + output + cache_creation + cache_read + reasoning）和 `cost_usd`。
@@ -4270,8 +4286,8 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.54 — 整體分析 LLM prompt 改寫（友善白話 + 踩坑三段式）
 
-**Vincent 反饋**（v1.17.53 ship 後）：
-1. 「第二名 Michelle 是潛在大使人選」— 「大使」是行銷術語管理者看不懂
+**Vin 反饋**（v1.17.53 ship 後）：
+1. 「第二名 Dana 是潛在大使人選」— 「大使」是行銷術語管理者看不懂
 2. 「10. 各專案最常踩什麼坑」每條只有一句話，沒講影響也沒講怎麼改善
 3. AI 把自己的流程心得（「我觸發了完整 brainstorming skill」）當成「踩坑」寫進報告
 
@@ -4282,7 +4298,7 @@ ORDER BY u.name, l.ts DESC;
 
 **修法**：
 - `src/lib/llm-narrative.js` SYSTEM_PROMPT：
-  - Rule 2 範例改寫：「第一名 Vin 用了 40% 的 AI 工作量，第二名 Michelle 也很常用，用了 25%，是在團隊中最常用 AI 完成工作的人」
+  - Rule 2 範例改寫：「第一名 Vin 用了 40% 的 AI 工作量，第二名 Dana 也很常用，用了 25%，是在團隊中最常用 AI 完成工作的人」
     （加排名 + 給實際比例 + 把名次轉成角色定位 + 不用「大使」「分流」「扛」這類行話）
   - Rule 5 schema 改三段式：`{ what, impact, mitigation }`，明確指定每段要寫什麼，
     沒明確證據時填「影響不確定」/「需找 PM 釐清根因」（不要編）
@@ -4299,7 +4315,7 @@ ORDER BY u.name, l.ts DESC;
 
 ## v1.17.53 — 誠信表 UX 強化（問題優先排序 + 雜訊過濾 + 違反高亮）
 
-**Vincent 反饋**（v1.17.52 ship 後）：「per-user 拆完後表變得很長，
+**Vin 反饋**（v1.17.52 ship 後）：「per-user 拆完後表變得很長，
 按使用者字母排還是要自己掃；應該讓問題第一眼看到。」
 
 **問題**：v1.17.52 把誠信表拆 per-user 後，30 條鐵律 × 多 user 時：
@@ -4318,7 +4334,7 @@ per-user title JOIN 邏輯沿用 v1.17.52，不動。
 
 ## v1.17.52 — 整體分析誠信表加「使用者」欄
 
-**Vincent 反饋**（v1.17.51 ship 後）：「如果每個人的 IR 都不一樣，應該要列出是哪位 user 的 IR。」
+**Vin 反饋**（v1.17.51 ship 後）：「如果每個人的 IR 都不一樣，應該要列出是哪位 user 的 IR。」
 
 **問題**：v1.17.51 雖然帶上了 IR title，但仍是團隊合計（GROUP BY rule_code），
 然後用 `DISTINCT ON` 任意挑某個 user 的 title 當共用。當不同 user 的同 code
@@ -4334,7 +4350,7 @@ per-user title JOIN 邏輯沿用 v1.17.52，不動。
 
 ## v1.17.51 — 整體分析誠信表 IR 代號加白話說明
 
-**Vincent 反饋**（v1.17.50 ship 後）：「這些 IR 是每個人都不同？可以多寫一句話去說明，這樣沒頭沒尾看不懂。」
+**Vin 反饋**（v1.17.50 ship 後）：「這些 IR 是每個人都不同？可以多寫一句話去說明，這樣沒頭沒尾看不懂。」
 
 **問題**：v1.17.47 的整體分析（敘事）誠信表只列 `IR-024` 這種代號，
 讀者沒看過鐵律本人會完全不懂指什麼。個人分析早就有 title 顯示，
@@ -4351,7 +4367,7 @@ per-user title JOIN 邏輯沿用 v1.17.52，不動。
 
 ## v1.17.50 — 整體分析事件代號加白話說明
 
-**Vincent 反饋**：「這些英文代號可以加上簡短說明嗎？例如 `update_check`（檢查 OwnMind 版本）」
+**Vin 反饋**：「這些英文代號可以加上簡短說明嗎？例如 `update_check`（檢查 OwnMind 版本）」
 
 新增 `EVENT_LABELS` 對照表，整體分析的「動作類型」「軟體更新健康度」兩段
 表格從 1 欄改 2 欄：左邊 `<code>` 顯示原始代號（給 debug／搜 log 用），
@@ -4362,7 +4378,7 @@ update_* / sync_conflict / verification / error）。
 
 ## v1.17.49 — security: 預設密碼不再公開洩漏
 
-**Vincent 反饋**：「登入頁不應該把預設密碼寫在畫面上。」
+**Vin 反饋**：「登入頁不應該把預設密碼寫在畫面上。」
 
 **問題**：登入頁副標 + 改密碼頁 input placeholder 直接把 `Password42760988`
 寫死在 HTML 裡。任何人打開 `/ownmind/me/` 就看得到，新建帳號的初始保護等於零。
@@ -4420,7 +4436,7 @@ v1.17.47 部署後實測抓到問題：
 
 ## v1.17.46 — /me 專案排行 UI 精簡
 
-**Vincent 反饋**：「我的份這欄位拿掉，另外也不用說什麼偶發測試。」
+**Vin 反饋**：「我的份這欄位拿掉，另外也不用說什麼偶發測試。」
 
 **修法**
 
@@ -4431,8 +4447,8 @@ v1.17.47 部署後實測抓到問題：
 
 ## v1.17.45 — 自動觀測搬到伺服器端（不再依賴客戶端版本）
 
-**Vincent 反饋**：「我的本機 OwnMind 還是 v1.17.22，自動觀測只寫在客戶端，
-所以最近 14 天 6 個高風險動作都沒被觀測到。其他人也卡舊版（Adam 1.17.16），
+**Vin 反饋**：「我的本機 OwnMind 還是 v1.17.22，自動觀測只寫在客戶端，
+所以最近 14 天 6 個高風險動作都沒被觀測到。其他人也卡舊版（Bob 1.17.16），
 這個邏輯應該搬到伺服器端。」
 
 **修法**
@@ -4455,7 +4471,7 @@ v1.17.47 部署後實測抓到問題：
 
 **好處**
 
-不再依賴客戶端版本：即使 Adam 卡 1.17.16、Vincent 本機沒升，他們的活動只要
+不再依賴客戶端版本：即使 Bob 卡 1.17.16、Vin 本機沒升，他們的活動只要
 傳到伺服器，伺服器就會自動補觀測紀錄。徹底落實 IR-027「邏輯卡控不靠端版本」。
 
 ## v1.17.44 — 前端 unverified label 對齊後端中性文案
@@ -4491,7 +4507,7 @@ AND **`rule_code = ANY(expected_rules)`** 的紀錄才算數。
 
 ## v1.17.42 — Compliance gap 拆兩種等級（漏觀測 vs 未驗證）
 
-**Vincent 反饋**：拆 vs 不拆對比後選拆，理由：
+**Vin 反饋**：拆 vs 不拆對比後選拆，理由：
 > 「不拆等於系統幫 AI 擦屁股，跟『不靠 AI 自覺』訴求矛盾」
 
 **修法**
@@ -4546,7 +4562,7 @@ AND **`rule_code = ANY(expected_rules)`** 的紀錄才算數。
 
 ## v1.17.40 — Compliance call 從 AI 自覺改成系統強制（IR-027 邏輯卡控落地）
 
-**Vincent 反饋**：
+**Vin 反饋**：
 > 「我每次跟你 commit、停用 memory、新增 IR-036、新增 backlog memory… 都該主動呼叫
 > ownmind_report_compliance 但我沒有。」「把 compliance call 變成系統強制。」
 
@@ -4579,7 +4595,7 @@ AI 自報」，但 audit 端兩者都算數（gap 偵測會關掉）。
 
 ## v1.17.39 — Codex round 3 review 後 audit 全面修補（P1+P2+P3）
 
-**Vincent 指示**：「P1/P2/P3 全都修」
+**Vin 指示**：「P1/P2/P3 全都修」
 
 **修法（5 項對應 Codex review）**
 
@@ -4608,14 +4624,14 @@ AI 自報」，但 audit 端兩者都算數（gap 偵測會關掉）。
 
 **背景**：Codex adversarial review 指出 compliance / token_events / session_log
 本質都是「靠 client 自首」，AI/scanner/process 任一環節失敗就漏。
-Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
+Vin 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 **新增 5 個 server-side audit（在 `/api/me/report` 即時計算，回 `me.audit_findings`）**
 
 1. **`compliance_gap`** — 高風險 activity（handoff_create / memory_disable /
    memory_update）前後 ±10 分鐘沒對應 iron_rule_compliance event → 標 medium/high
 2. **`heartbeat_absent`** — 最近 7 天有該工具的 activity 但 collector_heartbeat
-   超過 24 小時沒回報 → 標 high（直指 Adam Windows scanner 失靈場景）
+   超過 24 小時沒回報 → 標 high（直指 Bob Windows scanner 失靈場景）
 3. **`source_inconsistent`** — 某天有 activity_logs 但 0 token_events → 標 low/medium
 4. **`orphan_session`** — session_logs 對話輪次 ≥5 但 details.compliance 是空陣列
    → 標 low（AI 整段沒回報合規）
@@ -4629,7 +4645,7 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 ## v1.17.37 — Session log 自動帶 project + 多種退出 signal 都記錄（IR-027 邏輯卡控）
 
-**Vincent 反饋**：「叫 user 每次跟 AI 講『寫 session_log』違反 IR-027 邏輯才有效。
+**Vin 反饋**：「叫 user 每次跟 AI 講『寫 session_log』違反 IR-027 邏輯才有效。
 系統應該自己處理。」
 
 **問題**
@@ -4656,9 +4672,9 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 ## v1.17.36 — 專案來源加 handoffs（修 RING 看不到）
 
-**Vincent 反饋**：「RING 為什麼沒在專案裡？」
+**Vin 反饋**：「RING 為什麼沒在專案裡？」
 
-**Root cause**：之前專案來源只看 `session_logs.details.project`，但 Vincent
+**Root cause**：之前專案來源只看 `session_logs.details.project`，但 Vin
 做 RING 時都只寫 handoff（交接）給下個 session，沒走「結束總結」流程，
 所以 RING 在 session_logs 裡 0 筆。
 
@@ -4673,7 +4689,7 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 ## v1.17.35 — 團隊趨勢圖支援切換 metric（Session / Token / 對話輪次）
 
-**Vincent 反饋**：團隊頁趨勢圖只能看 Session 數，希望可以切換看 Token 量或對話輪次。
+**Vin 反饋**：團隊頁趨勢圖只能看 Session 數，希望可以切換看 Token 量或對話輪次。
 
 **修法**
 
@@ -4688,7 +4704,7 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 ## v1.17.34 — 自訂日期範圍 + 專案名稱大小寫合併
 
-**Vincent 反饋兩點**：
+**Vin 反饋兩點**：
 1. 想自己指定起訖日（不只 7d/14d/30d/all preset）
 2. 「ownmind」跟「OwnMind」明明同一個專案，被拆兩列
 
@@ -4706,7 +4722,7 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 ## v1.17.33 — 鐵律/活動紀錄分頁 30 筆 + 活動範圍內全列出
 
-**Vincent 反饋**：
+**Vin 反饋**：
 1. 鐵律 31 條、活動 200+ 筆，捲不完
 2. 活動紀錄應該時間範圍內全列出，不要硬截 200 筆
 
@@ -4720,7 +4736,7 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 
 ## v1.17.32 — 個人 tab 加活動紀錄區塊 + 鐵律遵守列出全部 + 遵守率
 
-**Vincent 反饋兩點**：
+**Vin 反饋兩點**：
 1. 想看自己過去這段期間的「全部活動」流水，個人 tab 最下方加一塊
 2. 鐵律遵守表只列觸發過的，希望列**所有 active 鐵律**並算遵守率
 
@@ -4736,22 +4752,22 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
   - 個人 tab 最下加「我的活動紀錄」card，列時間 / 事件 / 工具 / 來源 / details
     （依時間倒序、最多 200 筆）
 
-## v1.17.31 — 專案「其他貢獻者」過濾偶發測試（Vincent 回報）
+## v1.17.31 — 專案「其他貢獻者」過濾偶發測試（Vin 回報）
 
-**Vincent 反饋**：「Adam 是 user 不是開發者，為什麼算他進 OwnMind 貢獻者？」
+**Vin 反饋**：「Bob 是 user 不是開發者，為什麼算他進 OwnMind 貢獻者？」
 
-**Root cause**：Adam 4/24 寫了 1 筆 session_log 標 project='ownmind' 8 輪
+**Root cause**：Bob 4/24 寫了 1 筆 session_log 標 project='ownmind' 8 輪
 （可能測試或誤標）。前一版只要寫過 session_log 就算協作，semantic 不準。
 
 **修法**：「其他貢獻者」加門檻 `max(20 輪, 專案總輪次 × 10%)`，低於視為偶發測試。
-- OwnMind 148 輪 → 門檻 20 → Adam 8 輪略過、UI 標「+1 位偶發測試略過」
-- funit-v2 491 輪 → Adam 是主要負責人，正常顯示
+- OwnMind 148 輪 → 門檻 20 → Bob 8 輪略過、UI 標「+1 位偶發測試略過」
+- exampleclient-v2 491 輪 → Bob 是主要負責人，正常顯示
 
-## v1.17.30 — bar chart 加平均線 + 專案改顯示主要 vs 其他貢獻者（Vincent 回報）
+## v1.17.30 — bar chart 加平均線 + 專案改顯示主要 vs 其他貢獻者（Vin 回報）
 
-**Vincent 反饋兩點**：
+**Vin 反饋兩點**：
 1. bar chart 沒平均值參考 → 看不出「這天比平均高還低」
-2. 「OwnMind 是 Vincent 的專案，為什麼 owners 列出 Adam？」
+2. 「OwnMind 是 Vin 的專案，為什麼 owners 列出 Bob？」
 
 **修法**
 
@@ -4761,14 +4777,14 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 2. **專案表改成「主要負責人」+「其他貢獻者」兩欄**：
    - 後端 API 改回傳 `contributors: [{name, sessions, turns}]`（依 turns 排序）
    - 前端取第 1 名當主要負責人、其他人列為「協作」
-   - 例：OwnMind 專案 → 主要 Vincent (140 輪)，其他 Adam (8 輪)
+   - 例：OwnMind 專案 → 主要 Vin (140 輪)，其他 Bob (8 輪)
 
-## v1.17.29 — bar chart 加數字標籤（Vincent 回報）
+## v1.17.29 — bar chart 加數字標籤（Vin 回報）
 
 每根 bar 上方顯示數值（0 值不顯示避免雜訊）。`.bar-chart` 高度從 220 → 240px、
 新增 `padding-top: 18px` 留數字空間。
 
-## v1.17.28 — hotfix /ownmind/me/ bar chart 全空（Vincent 截圖回報）
+## v1.17.28 — hotfix /ownmind/me/ bar chart 全空（Vin 截圖回報）
 
 **症狀**：登入進報告頁後，「每日活動量」「時段分布」「一週節奏」三張柱狀圖
 都只有底部的標籤、沒有任何 bar。
@@ -4783,7 +4799,7 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 - `.bar-label` 改 absolute position 在 row 下方（不佔 bar 的高度）
 - `.bar-chart` 加 `padding-bottom: 24px` 留 label 空間
 
-## v1.17.27 — hotfix /ownmind/me/ API path 寫錯（Vincent 截圖回報）
+## v1.17.27 — hotfix /ownmind/me/ API path 寫錯（Vin 截圖回報）
 
 **症狀**：登入畫面按「登入」吐 `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`
 
@@ -4839,10 +4855,10 @@ Vincent 要求「不能靠 user 主動處理，AI 要能主動判斷追蹤」。
 ## v1.17.24 — 用戶用量報告頁（/ownmind/me/）
 
 **背景**：之前後台只有 admin / super_admin 能登入，user role 完全看不到自己 / 團隊
-的活動量。Vincent 表示要開放讓 user 也能看「個人 + 團隊」用量報告，內容比照
+的活動量。Vin 表示要開放讓 user 也能看「個人 + 團隊」用量報告，內容比照
 HackMD 那份手動整理的版本，但即時資料、自助登入。
 
-**設計決策**（跟 Vincent brainstorm 4 題拍板）
+**設計決策**（跟 Vin brainstorm 4 題拍板）
 
 - Q1 = C：完全開放，互看活動 / 版本，不匿名化
 - Q2 = B：全團隊專案都看得到（不含對話內容、只看數量）
@@ -4869,9 +4885,9 @@ HackMD 那份手動整理的版本，但即時資料、自助登入。
 
 **對 user 的影響**
 
-Eric / Michelle / Adam（user role）現在可以開 https://kkvin.com/ownmind/me/，
+Alice / Dana / Bob（user role）現在可以開 https://kkvin.com/ownmind/me/，
 貼上自己的 api_key（從 `~/.claude/settings.json` 找 `OWNMIND_API_KEY`），看自己
-的活動 + 全團隊聚合資料。Vincent / Eric（admin）也能用此頁，但他們也保留 admin
+的活動 + 全團隊聚合資料。Vin / Alice（admin）也能用此頁，但他們也保留 admin
 後台原有功能。
 
 ## v1.17.23 — Codex review 抓到的 v1.17.22 後續修補（5 項）
@@ -4905,11 +4921,11 @@ adversarial review 又抓到 5 個問題，整理在這個 patch 一次處理。
 
 **測試**：631/631 pass，新增 5 個 reproduction case。
 
-## v1.17.22 — 修「Windows 用戶 MCP auto-update silent skip」（Eric / Adam case）
+## v1.17.22 — 修「Windows 用戶 MCP auto-update silent skip」（Alice / Bob case）
 
 **背景**（從工作紀錄分析報告 2026-05-07 發現）
 
-Eric (LAPTOP-G95HIQ3V) 卡 v1.17.17、Adam 卡 v1.17.16，
+Alice (LAPTOP-G95HIQ3V) 卡 v1.17.17、Bob 卡 v1.17.16，
 但 server 已經 v1.17.21。兩人 4/21 後完全沒有 update_check / update_failed
 event，只有 init / memory_* 正常進 DB。
 
@@ -4941,7 +4957,7 @@ event，只有 init / memory_* 正常進 DB。
 
 **測試**：626/626 pass
 
-**對 Eric / Adam 的影響**
+**對 Alice / Bob 的影響**
 
 下次 MCP 啟動時：
 - 路徑解析正確 → 進入 auto-update 流程（之前永遠跳過）
@@ -5071,7 +5087,7 @@ SessionStart hook race。實務碰到機率低，但對齊 P3「每步顯式 tra
 - 前端日期篩選器預設帶最近 7 天
 - 前端「成員詳情」卡新增「最近對話」摺疊區（lazy load + race guard）
 - 「Audit Log」改名「資料品質警示」+ 加說明列說明它不是團隊活動紀錄
-- 機器名旁加 OS · scanner_version 副資訊（避免 Adam 機器叫「after」這類短名造成 UX 混淆；前端把 darwin/linux/win32 轉成 macOS/Linux/Windows）
+- 機器名旁加 OS · scanner_version 副資訊（避免 Bob 機器叫「after」這類短名造成 UX 混淆；前端把 darwin/linux/win32 轉成 macOS/Linux/Windows）
 
 **新增測試**
 
@@ -5084,9 +5100,9 @@ SessionStart hook race。實務碰到機率低，但對齊 P3「每步顯式 tra
 
 **鐵律對應**：IR-022（Server + Client 兩端同改）、IR-031（package.json 同步推 1.17.17）、IR-008 / IR-026（CHANGELOG / README / FILELIST 同步）、IR-020（部署後瀏覽器實測）、IR-034（新 db/009_*.sql 由 Dockerfile `COPY db/` 自動涵蓋）。
 
-## v1.17.16 — 修 update_ok 假陽性事件（dashboard 數據誠信問題，回報者 Adam case）
+## v1.17.16 — 修 update_ok 假陽性事件（dashboard 數據誠信問題，回報者 Bob case）
 
-**背景**：Adam (Windows) 4/26 dashboard 顯示有 `update_check + update_ok` 兩個 event，看起來升級成功，但實際 client 還是 1.17.10（沒升）。追下去發現 OwnMind 的自動更新機制在兩個地方有同款 silent-fail bug：
+**背景**：Bob (Windows) 4/26 dashboard 顯示有 `update_check + update_ok` 兩個 event，看起來升級成功，但實際 client 還是 1.17.10（沒升）。追下去發現 OwnMind 的自動更新機制在兩個地方有同款 silent-fail bug：
 
 1. `mcp/index.js`（每次 MCP server 啟動跑一次）
 2. `hooks/ownmind-session-start.sh`（每個 SessionStart 跑一次，頻率更高）
@@ -5126,7 +5142,7 @@ SessionStart hook race。實務碰到機率低，但對齊 P3「每步顯式 tra
 
 **對使用者**
 - 升級到 1.17.16 後，dashboard 上「Audit Log」看到的事件名稱會更精確：實際升級成功才是「已更新」、沒新版是「無新版」、失敗是「升級失敗」+ 具體哪個 step 出錯
-- Adam 場景：升 1.17.16 後就不會再看到「假陽性 update_ok」誤導你以為他升級成功
+- Bob 場景：升 1.17.16 後就不會再看到「假陽性 update_ok」誤導你以為他升級成功
 
 **為什麼 v1.17.15 的 fix 漏了 hook**：v1.17.15 只 review MCP 路徑，沒注意到 hook 有同款 pattern。本次 code review 階段被 superpowers code-reviewer 抓到。learning：未來 review 涉及自動更新邏輯時，必查 `mcp/` + `hooks/` + `scripts/` 三個地方的對偶實作。
 
@@ -5134,11 +5150,11 @@ SessionStart hook race。實務碰到機率低，但對齊 P3「每步顯式 tra
 
 ---
 
-## v1.17.15 — 修 Windows pre-commit hook "Exec format error"（回報者 Eric）+ 修 verify-upgrade.sh server round-trip
+## v1.17.15 — 修 Windows pre-commit hook "Exec format error"（回報者 Alice）+ 修 verify-upgrade.sh server round-trip
 
-**背景一：Eric 在 Windows 上 commit 時跳錯**
+**背景一：Alice 在 Windows 上 commit 時跳錯**
 ```
-error: cannot spawn C:\Users\Eric\.ownmind\git-hooks/pre-commit: Exec format error
+error: cannot spawn C:\Users\Alice\.ownmind\git-hooks/pre-commit: Exec format error
 ```
 
 OwnMind 的 git hook 安裝邏輯有三個累積問題：
@@ -5171,7 +5187,7 @@ OwnMind 的 git hook 安裝邏輯有三個累積問題：
 
 **驗證**
 - Mac 端 `bash verify-upgrade.sh --local / --server / --cleanup` 三模式全綠
-- Windows 端待 Eric 重跑 `iwr .../install.ps1 | iex` 後實測 commit 不再爆
+- Windows 端待 Alice 重跑 `iwr .../install.ps1 | iex` 後實測 commit 不再爆
 
 **為什麼選「fail-fast 而非自動裝 Git for Windows」**：Git for Windows 是大型 installer (~50MB)，沒有可靠的 silent install 流程；明確訊息 + 文件指引比黑魔法更符合「使用者零負擔」原則。
 
@@ -5211,9 +5227,9 @@ OwnMind 的 git hook 安裝邏輯有三個累積問題：
 
 ---
 
-## v1.17.13 — 修 session_log 寫讀不一致（回報者 Michelle）
+## v1.17.13 — 修 session_log 寫讀不一致（回報者 Dana）
 
-**背景**：Michelle 用 `ownmind_log_session` 寫入 id=221 後，用 `ownmind_get("session_log")` / `ownmind_search` 試搜 `ai_kol` / `Selenium` / `趨勢` 全部回空。追查發現**單一 root cause，兩個症狀**：
+**背景**：Dana 用 `ownmind_log_session` 寫入 id=221 後，用 `ownmind_get("session_log")` / `ownmind_search` 試搜 `ai_kol` / `Selenium` / `趨勢` 全部回空。追查發現**單一 root cause，兩個症狀**：
 
 | 動作 | 實際操作 |
 |---|---|
@@ -5226,14 +5242,14 @@ OwnMind 的 git hook 安裝邏輯有三個累積問題：
 **修法**（server + MCP 端分叉整合，不動 `session_logs` 表避免 migration）
 
 **Server — `src/routes/session.js` + 新 `src/lib/session-query.js`**
-- `GET /api/session/recent` 加 `?q=` 參數，ILIKE search `summary` + `details::text`（Michelle 那類 session-topic 搜尋）
+- `GET /api/session/recent` 加 `?q=` 參數，ILIKE search `summary` + `details::text`（Dana 那類 session-topic 搜尋）
 - SQL builder 拆成純函式 `buildSessionRecentQuery`，新 `tests/session-recent-query.test.js` 9 tests 守住
 
 **MCP — `mcp/index.js`**
 - `ownmind_get('session_log')`：偵測到 type 轉呼 `/api/session/recent?days=30&include_compressed=true`（讀到剛寫的 session_logs 內容）
 - `ownmind_search`：`Promise.all` 同時查 `/api/memory/search` + `/api/session/recent?q=` → 合併成單一 `data` 陣列，session_logs 項目標 `_source: 'session_logs'` + `type: 'session_log'` 方便區分。新回應含 `memory_hits` / `session_hits` 計數給 AI 看清楚
 
-**對 Michelle / 所有使用者**
+**對 Dana / 所有使用者**
 升 v1.17.13 後下次 `ownmind_search "ai_kol"` 會同時搜 memories + session_logs，她的 session id=221（summary 含 ai_kol）會現身。`ownmind_get("session_log")` 會列最近 30 天的 session 紀錄。
 
 **為什麼不動 `session_logs` 表**：activity / weeklyReport / report 都依賴此表 schema，migrate 進 memories 會 cascading break。MCP 端分叉是最小風險路徑。
@@ -5249,7 +5265,7 @@ OwnMind 的 git hook 安裝邏輯有三個累積問題：
 
 ## v1.17.12 — 修 Windows usage scanner 全體卡關的 root cause（回報者 Vin observes）
 
-**背景**：Admin 後台「團隊用量排行榜」顯示 Mac 使用者 ×2（Vincent, Michelle）用量正常，Windows 使用者 ×4（Sunny, Adam, Eric, pitt）**全部 0**。Eric 的 Task Scheduler 明明已排程，為何用量還是 0？Codex adversarial review 找到 smoking gun：
+**背景**：Admin 後台「團隊用量排行榜」顯示 Mac 使用者 ×2（Vin, Dana）用量正常，Windows 使用者 ×4（Erin, Bob, Alice, Frank）**全部 0**。Alice 的 Task Scheduler 明明已排程，為何用量還是 0？Codex adversarial review 找到 smoking gun：
 
 **Root cause — `install.ps1` 寫 BOM-prefixed settings.json**
 
@@ -5275,7 +5291,7 @@ PS 5.1 的 `Set-Content -Encoding UTF8` 在 Windows 10 預設環境會加 UTF-8 
 - 未來再出現 BOM 污染（編輯器/其他 tool）也會被吸收
 
 **C. `install.ps1`：註冊 Task Scheduler 後驗證 `$LASTEXITCODE + Get-ScheduledTask`**
-- Adam 當時 Duration bug，`Register-ScheduledTask` 失敗但 install 印「已註冊」silent lie
+- Bob 當時 Duration bug，`Register-ScheduledTask` 失敗但 install 印「已註冊」silent lie
 - 現在失敗會清楚顯示 `(exit=N, task_exists=False)` + 給 debug 指令
 
 **新增測試**
@@ -5284,7 +5300,7 @@ PS 5.1 的 `Set-Content -Encoding UTF8` 在 Windows 10 預設環境會加 UTF-8 
 - `tests/install-ps1-scanner-task-check.test.js` — install.ps1 驗證 scanner task 真的註冊（1 test）
 - 全 suite 549/549 綠
 
-**對 Eric/Adam/Sunny/pitt**
+**對 Alice/Bob/Erin/Frank**
 升到 v1.17.12：
 ```
 cd ~/.ownmind
@@ -5301,9 +5317,9 @@ cd .. && powershell -ExecutionPolicy Bypass -File scripts\windows\register-scann
 
 ---
 
-## v1.17.11 — Task Scheduler Duration 再調小（回報者 Eric）
+## v1.17.11 — Task Scheduler Duration 再調小（回報者 Alice）
 
-**背景**：v1.17.10 把 `RepetitionDuration` 從 `[TimeSpan]::MaxValue` 改成 `36500 天（100 年）`，以為解決了問題。Eric 實測回報：
+**背景**：v1.17.10 把 `RepetitionDuration` 從 `[TimeSpan]::MaxValue` 改成 `36500 天（100 年）`，以為解決了問題。Alice 實測回報：
 
 > Task Scheduler：原本註冊 P36500D（100 年）超出 Windows 允許範圍失敗，但已自動 fallback 成「每 30 分鐘觸發」，功能正常
 
@@ -5325,9 +5341,9 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\register-scanner-task.p
 
 ---
 
-## v1.17.10 — 修 v1.17.9 遺漏的三個 Windows 安裝警告（回報者 Adam）
+## v1.17.10 — 修 v1.17.9 遺漏的三個 Windows 安裝警告（回報者 Bob）
 
-**背景**：Adam 裝完 v1.17.9 回報三個警告。檔案都在（驗證通過），但警告嚇人且暴露三個真 bug：
+**背景**：Bob 裝完 v1.17.9 回報三個警告。檔案都在（驗證通過），但警告嚇人且暴露三個真 bug：
 1. **`Copy-Item cannot overwrite with itself ×4`** — install.ps1 把 `$OwnmindDir\shared\verification.js` 複製到 `$HOME\.ownmind\shared\`，但 `$OwnmindDir` 本來就是 `$HOME\.ownmind`，等於自己複製到自己。git hook JS 檔（3 個）同樣問題。install.sh 用 `-ef` 檢查 inode 避開，install.ps1 漏做
 2. **`Register-ScheduledTask Duration 格式錯誤`** — `[TimeSpan]::MaxValue` 在某些 Windows build 超出 Task Scheduler 可接受範圍，整個 task 註冊失敗 → usage scanner 排程沒上 → heartbeat 每 30 分鐘送不出去（只剩 MCP startup heartbeat 能送）
 3. **`首行 BOM 字元被誤解讀為命令`** — `iwr -useb bootstrap.ps1 | iex` 時，response 首字 `\uFEFF` 被 iex 當 cmdlet 呼叫，吐「不是有效命令」warning。雖無害但會嚇到使用者以為安裝失敗
@@ -5343,18 +5359,18 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\register-scanner-task.p
 - `tests/bootstrap-strip-bom.test.js` — 靜態檢查 src/app.js 有 stripBom 且磁碟 bootstrap.ps1 仍有 BOM
 - 全 suite 539/539 綠，零 regression
 
-**Adam 實測驗證**
+**Bob 實測驗證**
 裝完 v1.17.10 應該三個警告全消失；usage scanner 排程 30 分鐘會正常執行 → `collector_heartbeat` 更新 → Admin 「裝機狀況」看得到。
 
 **IR-022 server + client 兩端皆觸及**：server 改 `src/app.js` serve 邏輯（需 deploy）；client 改 install.ps1 + register-scanner-task.ps1。
 
 ---
 
-## v1.17.9 — 修 Windows 兩個獨立問題（回報者 Eric + Adam）
+## v1.17.9 — 修 Windows 兩個獨立問題（回報者 Alice + Bob）
 
-**背景 #1（Eric）**：Windows PowerShell 5.1（Windows 10 預設）讀 `.ps1` 時用系統 codepage（繁中 Windows 是 CP950）而非 UTF-8，中文字節被誤解讀，部分序列撞到 PowerShell 保留字元（反引號、引號）造成 parser 失敗。PowerShell 7+ 沒事，但不能預期每個使用者都升 pwsh。
+**背景 #1（Alice）**：Windows PowerShell 5.1（Windows 10 預設）讀 `.ps1` 時用系統 codepage（繁中 Windows 是 CP950）而非 UTF-8，中文字節被誤解讀，部分序列撞到 PowerShell 保留字元（反引號、引號）造成 parser 失敗。PowerShell 7+ 沒事，但不能預期每個使用者都升 pwsh。
 
-**背景 #2（Adam）**：從 Git Bash / MSYS 呼叫 `install.ps1` 時，`$HOME` 被污染成 POSIX 格式 `/c/Users/Adam`，跟 Windows path 串接後變 `C:\c\Users\Adam\.gemini\settings.json.tmp` 怪路徑（多了一層 `c\`），node 寫檔到錯地方，設定檔全寫到不存在的目錄。另外 Adam 的 `install.ps1 --update` 走了舊版路徑，`--update` 被當成 API key。
+**背景 #2（Bob）**：從 Git Bash / MSYS 呼叫 `install.ps1` 時，`$HOME` 被污染成 POSIX 格式 `/c/Users/Bob`，跟 Windows path 串接後變 `C:\c\Users\Bob\.gemini\settings.json.tmp` 怪路徑（多了一層 `c\`），node 寫檔到錯地方，設定檔全寫到不存在的目錄。另外 Bob 的 `install.ps1 --update` 走了舊版路徑，`--update` 被當成 API key。
 
 **修正 #1 — UTF-8 BOM**
 - `install.ps1` / `scripts/bootstrap.ps1` / `scripts/interactive-upgrade.ps1` / `scripts/windows/register-scanner-task.ps1` 全部加上 UTF-8 BOM（`EF BB BF`）
@@ -6013,7 +6029,7 @@ bash ~/.ownmind/scripts/interactive-upgrade.sh
 
 ## 2026-03-30 — v1.10.0 越用越聰明 + 數據驅動進化
 
-### Windows 安裝修復（Eric 回報）
+### Windows 安裝修復（Alice 回報）
 - **install.ps1 ParserError** — 移除 `param()` block 和 here-string `@"..."@`（`irm | iex` pipeline 不支援），改用 `$args` + array join
 - **ENOENT 目錄不存在** — 提前用 `foreach` 建立 `~/.claude/`、skills、hooks 等所有目錄
 - **curl vs PowerShell 衝突** — README 和 Dashboard 安裝指令改用 `irm | iex`（PowerShell 原生），不再使用 `curl`

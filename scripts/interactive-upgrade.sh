@@ -31,7 +31,7 @@ OWNMIND_DIR_WIN="$(to_win_path "${OWNMIND_DIR}")"
 STEP() { echo "INFO:$1:$2"; }
 OK()   { echo "OK:$1:$2"; }
 # v1.17.85 IR-038: FAIL uniformly appends a fallback report_error so any "uncovered FAIL path"
-# leaves observability data behind. Adam (id=3) / Michelle (id=6) ran update_started beacons
+# leaves observability data behind. Bob (id=3) / Dana (id=6) ran update_started beacons
 # on 2026-05-10 and 2026-05-11 but produced neither a post_install record nor any errors-spool
 # entry — this was that observability gap.
 # Use the _terminal suffix on `kind` so admins can tell it's a "terminal observation" (callers
@@ -273,7 +273,7 @@ OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} 
 # v1.17.86 — upgrade_complete beacon (IR-038 observability backfill).
 # Earlier than self-check, with a small payload that can't stall — the server at least sees
 # "this user finished upgrading, version X".
-# Scenario: Adam / Michelle reached 1.17.84 but install_check_logs had no post_install row
+# Scenario: Bob / Dana reached 1.17.84 but install_check_logs had no post_install row
 # (collector_heartbeat confirmed the upgrade landed). Possible cause: self-check ran, upload
 # failed and spooled for the next drain, but the user quit Claude Code right after the
 # upgrade — so the next drain never happened. upgrade_complete sends earlier + simple

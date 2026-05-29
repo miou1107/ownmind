@@ -7,7 +7,7 @@
 
 $ErrorActionPreference = 'Stop'
 
-# 環境正規化（v1.17.9, 回報者 Adam）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+# 環境正規化（v1.17.9, 回報者 Bob）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
 if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
   Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
 }
@@ -76,7 +76,7 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 
 # --- 3. 註冊新 task ---
 # v1.17.66 — 改用 wscript.exe + run-hidden.vbs 包 node.exe，避免每次跑都跳 console window
-# （Eric 回報：每 30 分鐘閃 PowerShell/console 視窗 + 補跑造成連跳，影響工作體驗）
+# （Alice 回報：每 30 分鐘閃 PowerShell/console 視窗 + 補跑造成連跳，影響工作體驗）
 $VbsLauncher = Join-Path $OwnMindDir 'scripts\windows\run-hidden.vbs'
 $Action = New-ScheduledTaskAction `
   -Execute "wscript.exe" `
@@ -85,12 +85,12 @@ $Action = New-ScheduledTaskAction `
 # 開機後 5 分鐘首次跑，之後每 120 分鐘；無限重複。
 # 重要：使用單一 "Once" trigger + Repetition，不要對 AtLogOn trigger 指派
 # .Repetition 屬性（某些 Windows build 的 CimInstance 會 reject re-assignment）。
-# v1.17.11 — Eric 回報 36500 天仍超出 Task Scheduler COM validator 範圍
+# v1.17.11 — Alice 回報 36500 天仍超出 Task Scheduler COM validator 範圍
 # （validator 上限約 9999 天，超過會吐 warning "超出允許範圍" 再 fallback）。
 # 改用 9999 天（~27 年，PowerShell 社群公認的 safe-forever 值），保證 Win10/11
 # 所有 build 都接受不吐 warning。task 在 ~27 年內手動重裝過很多次，實務上等於永久。
 # v1.17.66 — 30 分鐘 → 120 分鐘：scanner 撈的是過去 log，2hr 延遲完全可接受；
-#            降頻 4× 後背景負載大幅下降（Eric/Adam 筆電友善）。
+#            降頻 4× 後背景負載大幅下降（Alice/Bob 筆電友善）。
 $Trigger = New-ScheduledTaskTrigger `
   -Once `
   -At (Get-Date).AddMinutes(5) `
@@ -101,7 +101,7 @@ $Trigger = New-ScheduledTaskTrigger `
 # -StopIfGoingOnBatteries 做電池友善，但這兩個都不是
 # New-ScheduledTaskSettingsSet 的合法參數（正確名是 -DisallowStartIfOnBatteries
 # 和反向 switch -DontStopIfGoingOnBatteries），在 PS 5.1 + PS 7 都會直接 throw、
-# task 完全沒註冊（Adam / Eric 兩台 v1.17.66 升級踩到）。
+# task 完全沒註冊（Bob / Alice 兩台 v1.17.66 升級踩到）。
 #
 # 解法：直接刪掉 — Windows Task Scheduler 預設行為本來就是
 #   1. 電池上不啟動（要顯式 -AllowStartIfOnBatteries 才會反向）

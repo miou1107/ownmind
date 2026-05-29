@@ -3,10 +3,10 @@
 // Bidirectional MSYS / Cygwin path ↔ Win32 path conversion. No-op on non-Windows.
 //
 // Why this helper exists:
-//   Git Bash's $HOME is in MSYS format (e.g. /c/Users/Adam). Win32 native binaries
+//   Git Bash's $HOME is in MSYS format (e.g. /c/Users/Bob). Win32 native binaries
 //   (node.exe, powershell.exe) don't recognize the /c/ prefix in their path resolver, so
 //   something like verify-upgrade.sh:49's `node -p "require('${HOME}/.ownmind/...')"` would
-//   spit MODULE_NOT_FOUND under Git Bash (Adam's case). Normalize the path with
+//   spit MODULE_NOT_FOUND under Git Bash (Bob's case). Normalize the path with
 //   toWin32Path before passing it to a native binary.
 
 'use strict';

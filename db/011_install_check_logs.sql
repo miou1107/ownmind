@@ -1,6 +1,6 @@
 -- v1.17.63: 安裝/升級 self-check 上傳的紀錄
 -- 每次 install.sh / install.ps1 / interactive-upgrade.* 跑完都會 POST 一筆，
--- 用來追蹤每個使用者的安裝健康度（特別是 silent fail 案例如 Adam 的 Task Scheduler 沒註冊）。
+-- 用來追蹤每個使用者的安裝健康度（特別是 silent fail 案例如 Bob 的 Task Scheduler 沒註冊）。
 
 CREATE TABLE IF NOT EXISTS install_check_logs (
   id              BIGSERIAL PRIMARY KEY,

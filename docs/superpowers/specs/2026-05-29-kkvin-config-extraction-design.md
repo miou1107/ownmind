@@ -112,29 +112,26 @@ placeholders. Runtime code reads env; docs/comments/tests use placeholders or
 - The hosted `kkvin.com` service keeps running; only its references leave the
   source. Real values move to the host's gitignored `.env`.
 
-## Also in scope — repo-wide de-identification (folded in 2026-05-29)
+## Repo-wide de-identification — DONE in v1.26.22
 
-The same pre-open-source de-branding effort. v1.26.21 only scrubbed the openspec
-copies + the sensitive test fixtures (incident data, FUNIT vault). A code review
-found real identifiers still scattered across ~40 files. Handle them in this
-pass:
+The same pre-open-source de-branding effort. v1.26.21 scrubbed only the openspec
+copies + the sensitive test fixtures. v1.26.22 finished the rest repo-wide:
 
-- **Real first names in bug-attribution comments** (Adam / Eric / Michelle /
-  Phoebe), e.g. "reported by Adam", "Eric/Adam Windows failure", "Michelle
-  case" — across `tests/`, `src/`, `shared/`, `hooks/`, `scripts/`. Pseudonymize
-  consistently (Eric→Alice, Adam→Bob, Phoebe→Carol, Michelle→Dana). Most are
-  comments; a few are test labels/data (`tests/language-lint-v1193.test.js`
-  `'Eric 跟 Phoebe 都同意'`, `tests/team-overview-api.test.js` `user_name:'Adam'`)
-  — behavioral, safe to rename.
-- **Project-name proper-noun whitelist** `shared/language-lint.js:97`
-  (`'ima','asir','funit','majitreats'...`) — this is FUNCTIONAL (the lint's
-  proper-noun allowlist). Decide: keep (these are just whitelist tokens, low
-  exposure) or genericize. Needs care + test run.
-- **`src/lib/llm-narrative.js:27-34`** prompt examples contain real names
-  (Vin/Michelle/Adam/Eric) and `funit-v2`. Genericize the prompt examples.
+- Real contributor first names in bug-attribution comments / test
+  labels / fixtures (across `tests/`, `src/`, `shared/`, `hooks/`, `scripts/`,
+  CHANGELOG, docs) → consistent pseudonyms. Behavioral test fixtures renamed in
+  lockstep (input + assertion), suite stays green.
+- `src/lib/llm-narrative.js` prompt examples → real names genericized.
+- The `shared/language-lint.js` proper-noun whitelist of internal project
+  codenames was intentionally LEFT (functional allowlist; changing it alters
+  lint behavior and the tokens are low-exposure). Revisit during the kkvin
+  config pass if full de-branding is wanted.
+- The pseudonym mapping itself is NOT recorded in any committed file (recording
+  "real→alias" would defeat the pseudonymization). It lives only in the private
+  task instruction.
 
-Verification for this part: `grep -rnE '\b(Eric|Adam|Michelle|Phoebe)\b'` over
-the repo (minus node_modules) returns only intended pseudonyms; `npm test` green.
+Verification: a repo-wide scan for the real names returns zero outside the
+private mapping; `npm test` green at the 2012 baseline.
 
 ## Out of scope
 

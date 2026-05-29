@@ -5,7 +5,7 @@
  * Runs 7 local checks, writes a log, uploads to the server. Invoked at the end of the install /
  * upgrade scripts.
  *
- * Why this exists: silent-fail cases like Adam's (install.ps1 printed ✅, but Task Scheduler
+ * Why this exists: silent-fail cases like Bob's (install.ps1 printed ✅, but Task Scheduler
  * never actually registered, so the scanner never ran) are invisible on the server side, and
  * users almost never report them proactively. Self-check captures each component's real state,
  * keeps the log locally, and uploads to the server so admins have a way to track these.
@@ -32,7 +32,7 @@ const OWNMIND_DIR = path.join(HOME, '.ownmind');
 const LOG_DIR = path.join(OWNMIND_DIR, 'logs');
 const NO_UPLOAD_FLAG = path.join(OWNMIND_DIR, '.no-self-check-upload');
 // v1.17.66 — when upload fails (401 / network / 5xx), park the report in this jsonl. The next
-// self-check run starts by retrying it. Adam's 401 case was caused by the absence of this layer
+// self-check run starts by retrying it. Bob's 401 case was caused by the absence of this layer
 // — the server never received anything.
 const SPOOL_FILENAME = '.upload-spool.jsonl';
 const PLATFORM = process.platform;
@@ -125,7 +125,7 @@ async function checkServerHealth(apiUrl) {
 
 // v1.17.68 IR-007 same-class-bug prevention: before v1.17.9, install.ps1 did not filter
 // flag-like args, so older interactive-upgrade.ps1 passed `--update` as a positional arg —
-// which got written into settings.json as the API key. Adam ate 401s from 2026-03-26 to
+// which got written into settings.json as the API key. Bob ate 401s from 2026-03-26 to
 // 2026-05-08 (0 token_events / 0 install_check_logs / scanner always 401) and nobody
 // noticed, because self-check only hit the server and looked at 200/401 rather than at
 // the key string itself. This check does NOT hit the server — it just inspects the
@@ -248,7 +248,7 @@ async function checkScheduler() {
   if (PLATFORM === 'win32') {
     // v1.17.66: passing a shell flag used to wrap the command in cmd.exe, which would eat
     // the `|` and produce a false "Select-Object is not recognized" failure (hit on both
-    // Eric's and Adam's machines). Now we go through safeSpawn — no shell, with windowsHide.
+    // Alice's and Bob's machines). Now we go through safeSpawn — no shell, with windowsHide.
     const r = await safeSpawn('powershell.exe',
       ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
       { timeout: TIMEOUT_MS });
@@ -303,7 +303,7 @@ function detectShellChain() {
   // Windows would need WMIC or native APIs — deferred to v1.17.67 evaluation.
   const chain = [];
   if (process.env.MSYSTEM) chain.push(`msys/git-bash:${process.env.MSYSTEM}`);
-  // v1.17.66 review fix — WSL_DISTRO_NAME can include a user-chosen name (e.g. "Adam-Ubuntu");
+  // v1.17.66 review fix — WSL_DISTRO_NAME can include a user-chosen name (e.g. "Bob-Ubuntu");
   // switched to a boolean marker to avoid PII leakage.
   if (process.env.WSL_DISTRO_NAME) chain.push('wsl');
   // PSModulePath only exists inside a PowerShell session; cmd.exe doesn't have it.
@@ -468,7 +468,7 @@ async function runAllChecks() {
   checks.push(await safeCheck('package_version', checkPackageVersion));
   checks.push(await safeCheck('mcp_node_modules', checkMcpNodeModules));
   checks.push(await safeCheck('server_health', () => checkServerHealth(apiUrl)));
-  // v1.17.68: validate the key format first (no server hit) to catch Adam-class latent
+  // v1.17.68: validate the key format first (no server hit) to catch Bob-class latent
   // issues where settings.json contains the literal "--update". Putting this before
   // api_credentials makes the fail message more specific (format vs. server reject).
   checks.push(await safeCheck('api_key_format', () => checkApiKeyFormat(apiKey)));
@@ -742,7 +742,7 @@ async function uploadReport(report, apiUrl, apiKey, opts = {}) {
   if (fs.existsSync(NO_UPLOAD_FLAG)) {
     return { skipped: true, reason: 'opt_out_flag' };
   }
-  // First try to retransmit any previously spooled reports (this is where Adam's reports
+  // First try to retransmit any previously spooled reports (this is where Bob's reports
   // catch up after he replaces the bad key and re-runs).
   const retryResult = await retrySpool(apiUrl, apiKey, opts);
 

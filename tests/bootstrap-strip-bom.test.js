@@ -9,15 +9,15 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * v1.17.10 — bootstrap.ps1 public route must strip BOM (reported by Adam)
+ * v1.17.10 — bootstrap.ps1 public route must strip BOM (reported by Bob)
  *
  * With `iwr -useb https://kkvin.com/ownmind/bootstrap.ps1 | iex`, the response body's
  * first character U+FEFF (after UTF-8 BOM decode) gets treated by iex as a cmdlet call,
- * producing a "not a valid cmdlet" warning. Although Adam reported it as "no impact",
- * Eric / other users might be scared into thinking the install failed.
+ * producing a "not a valid cmdlet" warning. Although Bob reported it as "no impact",
+ * Alice / other users might be scared into thinking the install failed.
  *
  * Fix: strip the leading `\uFEFF` when the server serves it. The on-disk bootstrap.ps1
- * still keeps the BOM to support the PowerShell 5.1 `-File` read path (v1.17.9 Eric fix).
+ * still keeps the BOM to support the PowerShell 5.1 `-File` read path (v1.17.9 Alice fix).
  */
 
 describe('src/app.js — bootstrap public route strip BOM', () => {

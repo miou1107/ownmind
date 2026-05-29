@@ -169,8 +169,8 @@ describe('v1.18.1 — iron-rule lint no longer enforces IR-037 mixed-language ch
   // The v1.18.1 audit of 35 prod rules showed 26 failing (74%), proving the
   // check was applied to the wrong scope.
   //
-  // After removal: reasonable rules containing docker / openspec / Adam /
-  // Eric (technical terms / names) are no longer rejected.
+  // After removal: reasonable rules containing docker / openspec / Bob /
+  // Alice (technical terms / names) are no longer rejected.
   it('lots of English words in a row (reasonable tech note) → pass (v1.18.1 no longer rejects)', () => {
     const r = lintIronRule({
       title: '混雜的鐵律',
@@ -181,10 +181,10 @@ describe('v1.18.1 — iron-rule lint no longer enforces IR-037 mixed-language ch
       `v1.18.1: rule lint no longer runs IR-037 on content; reasonable mixed content should pass, errors: ${JSON.stringify(r.errors)}`);
   });
 
-  it('rule containing docker / openspec / Adam / Eric tech terms → pass', () => {
+  it('rule containing docker / openspec / Bob / Alice tech terms → pass', () => {
     const r = lintIronRule({
       title: 'OwnMind 部署流程',
-      content: '## 什麼時候適用\n部署到 prod\n## 規則\n必須用 docker compose build --no-cache、不能用 docker build。Adam / Eric 在 Windows 上跑要先檢查 openspec init 是否成功、走 propose → apply → archive 流程。' + '字'.repeat(50),
+      content: '## 什麼時候適用\n部署到 prod\n## 規則\n必須用 docker compose build --no-cache、不能用 docker build。Bob / Alice 在 Windows 上跑要先檢查 openspec init 是否成功、走 propose → apply → archive 流程。' + '字'.repeat(50),
       tags: ['trigger:deploy'],
     });
     assert.equal(r.ok, true, `errors: ${JSON.stringify(r.errors)}`);

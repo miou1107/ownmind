@@ -13,7 +13,7 @@ const repoRoot = path.resolve(__dirname, '..');
  *
  * Codex adversarial review pointed out: install.ps1 currently calls `register-scanner-task.ps1`
  * then silently prints "Task Scheduler registered", ignoring the child exit code / Get-ScheduledTask.
- * Adam once had a bad Duration format; the install side looked OK but the task was never created.
+ * Bob once had a bad Duration format; the install side looked OK but the task was never created.
  */
 
 describe('install.ps1 — scanner task registration check', () => {
@@ -30,7 +30,7 @@ describe('install.ps1 — scanner task registration check', () => {
       /Get-ScheduledTask[\s\S]{0,120}(OwnMind|Usage\s+Scanner)/.test(window);
     assert.ok(
       hasCheck,
-      'install.ps1 未檢查 register-scanner-task.ps1 的 exit code 或 Get-ScheduledTask，silent fail 讓 Adam 類問題很難診斷'
+      'install.ps1 未檢查 register-scanner-task.ps1 的 exit code 或 Get-ScheduledTask，silent fail 讓 Bob 類問題很難診斷'
     );
   });
 });

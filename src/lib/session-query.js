@@ -4,7 +4,7 @@
  * Pure function: builds the SQL query for GET /api/session/recent. Extracted for
  * easy unit testing.
  * v1.17.13 added the `q` parameter (search summary + details ILIKE), fixing the
- * "ownmind_search can't find a session topic that was just logged" bug Michelle
+ * "ownmind_search can't find a session topic that was just logged" bug Dana
  * reported (session_logs are separate from memories, so memory search doesn't cover them).
  */
 

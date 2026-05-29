@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 /**
  * v1.17.68 — auth.js 401 observability pipe (IR-038)
  *
- * Background: from 2026-03-26 (account creation) to 2026-05-08 Adam kept hitting
+ * Background: from 2026-03-26 (account creation) to 2026-05-08 Bob kept hitting
  * 401 because his settings.json had OWNMIND_API_KEY set to the literal string
  * "--update" (a pre-v1.17.9 install.ps1 issue: it did not filter flag-like args
  * out of the legacy slot). During that window token_events / install_check_logs
@@ -39,7 +39,7 @@ describe('v1.17.68 — auth.js maskApiKey() pure function', () => {
     assert.equal(maskApiKey('12345678901'), '<too-short:11>');
   });
 
-  it("Adam's --update (8 chars) takes the too-short branch, no full text leakage", async () => {
+  it("Bob's --update (8 chars) takes the too-short branch, no full text leakage", async () => {
     const { maskApiKey } = await import('../src/middleware/auth.js');
     const out = maskApiKey('--update');
     // v1.17.68 reviewer note: the original len < 8 threshold let an 8-char key

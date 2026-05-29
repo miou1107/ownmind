@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## v1.26.22 修改（開源前全倉貢獻者去識別化）
+
+新增檔：
+```
+openspec/changes/v1.26.22-deidentify-contributors/proposal.md  — v1.26.22 提案
+openspec/changes/v1.26.22-deidentify-contributors/tasks.md     — v1.26.22 任務清單
+```
+
+修改檔：約 49 個檔的真實貢獻者姓名改為一致代稱、FUNIT 系列中性化（tests/、src/、shared/、hooks/、scripts/、docs/、CHANGELOG.md、FILELIST.md）；另把 3 處先前記錄對照表的文件改寫成不揭露真名↔代稱。測試 fixture 輸入與斷言同步改名、行為不變。
+
 ## v1.26.21 修改（i18n 軌道 B：openspec 文件英文化 + 敏感資料清理）
 
 新增檔：
@@ -1379,8 +1389,8 @@ OwnMind/
 │   ├── tip-every-call.test.js       # MCP 技巧提示每次都顯示（移除 tipCallCount % 10 gating，v1.17.7）
 │   ├── memory-sync-endpoint.test.js # v1.17.8 — /api/memory/sync 參數解析 + SQL builder（16 tests）
 │   ├── sync-memory-files.test.js    # v1.17.8 — 本地 md 同步 / tombstone / fail mode / backup（22 tests）
-│   ├── ps1-utf8-bom.test.js         # v1.17.9 — 所有 .ps1 必須 UTF-8 BOM（Eric case）
-│   ├── ps1-windows-compat.test.js   # v1.17.9 — .ps1 環境正規化 preamble + install flag 過濾（Adam case）
+│   ├── ps1-utf8-bom.test.js         # v1.17.9 — 所有 .ps1 必須 UTF-8 BOM（Alice case）
+│   ├── ps1-windows-compat.test.js   # v1.17.9 — .ps1 環境正規化 preamble + install flag 過濾（Bob case）
 │   ├── install-ps1-copy-safety.test.js  # v1.17.10 — install.ps1 Copy-Item self-overwrite guard
 │   ├── scheduled-task-duration.test.js  # v1.17.10 — Task Scheduler Duration 不能用 TimeSpan.MaxValue
 │   ├── bootstrap-strip-bom.test.js  # v1.17.10 — bootstrap public route strip BOM（iwr|iex 相容）
@@ -1403,7 +1413,7 @@ OwnMind/
 │   ├── me-trailing-slash.test.js            # v1.17.88 — /me 沒尾斜線 301 redirect 到 me/（相對路徑避開 nginx prefix 問題、條件式避開 strict routing=false 無限循環）（3 條）
 │   ├── session-recent-query.test.js # v1.17.13 — buildSessionRecentQuery 含 q= search 支援
 │   ├── tier2-windows-fix.test.js    # v1.17.14 — Tier 2 Windows 支援（opencode win32 + sqlite3 偵測）
-│   ├── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Adam case；mcp/index.js + hook 對偶；11 tests）
+│   ├── p3-update-event-semantics.test.js # v1.17.16 — update_ok 假陽性 fix（Bob case；mcp/index.js + hook 對偶；11 tests）
 │   ├── team-overview-api.test.js         # v1.17.17 — 鐵律遵守率算法、票選專案、scoreboard endpoint（16 cases）
 │   └── team-overview-sessions-api.test.js # v1.17.17 — sessions endpoint、machine_meta fallback、limit 邊界（7 cases）
 │
@@ -1920,7 +1930,7 @@ src/middleware/auth.js                    — 401 path 加 logger.warn('auth_fai
 scripts/install-helpers/self-check.cjs    — 新增 checkApiKeyFormat 純函式（不打 server，
                                             純看 key 字串長相），抓 v1.17.9 之前 install.ps1
                                             沒過濾 flag-like args 殘留的 settings.json 存量問題
-                                            （Adam 從 2026-03-26 到 2026-05-08 都吃 401 的根因）；
+                                            （Bob 從 2026-03-26 到 2026-05-08 都吃 401 的根因）；
                                             排在 api_credentials 之前，fail 訊息明確指向修法
 tests/auth-401-observability.test.js      — 新增（7 條：maskApiKey 邊界 + auth middleware
                                             401 / no-bearer logger.warn shape）
@@ -1997,9 +2007,9 @@ CHANGELOG.md                             — v1.17.63 條目
 ## v1.17.62 修改（修自動更新兩個 silent fail）
 
 ```
-mcp/index.js                              — execFile(NPM_CMD,...) 加 shell: IS_WINDOWS（修 Adam Windows EINVAL）
+mcp/index.js                              — execFile(NPM_CMD,...) 加 shell: IS_WINDOWS（修 Bob Windows EINVAL）
                                             update_applied 後重發心跳、讀 disk package.json 新版號
-                                            （修 Michelle 長跑 MCP cached 舊版回報）
+                                            （修 Dana 長跑 MCP cached 舊版回報）
 package.json                              — 1.17.61 → 1.17.62
 README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.17.61 → 1.17.62
 CHANGELOG.md                              — v1.17.62 條目

@@ -9,11 +9,11 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 /**
- * Windows compatibility checks (v1.17.9; reporters Adam + Eric)
+ * Windows compatibility checks (v1.17.9; reporters Bob + Alice)
  *
- * Adam's case: when calling install.ps1 from Git Bash, $HOME is POSIX-style
- * `/c/Users/Adam`. Concatenating with Windows paths yields odd results like
- * `C:\c\Users\Adam\...` and node writes files in the wrong place. Root cause:
+ * Bob's case: when calling install.ps1 from Git Bash, $HOME is POSIX-style
+ * `/c/Users/Bob`. Concatenating with Windows paths yields odd results like
+ * `C:\c\Users\Bob\...` and node writes files in the wrong place. Root cause:
  * Git Bash environment variables contaminate the child PowerShell process.
  *
  * Fix: every .ps1 must start with a normalization preamble that forces $HOME
@@ -56,7 +56,7 @@ describe('PS1 Windows environment normalization preamble', () => {
   }
 });
 
-describe('install.ps1 — flag-like args filtering (Adam / Eric workflow compatibility)', () => {
+describe('install.ps1 — flag-like args filtering (Bob / Alice workflow compatibility)', () => {
   const content = readPs1('install.ps1');
 
   it('filters out args starting with - (e.g. --update / -u)', () => {
@@ -79,7 +79,7 @@ describe('install.ps1 — flag-like args filtering (Adam / Eric workflow compati
 });
 
 // ============================================================================
-// v1.17.66 reproduction tests — Eric / Adam upgrade-to-v1.17.65 failure scenarios
+// v1.17.66 reproduction tests — Alice / Bob upgrade-to-v1.17.65 failure scenarios
 // ============================================================================
 //
 // Live evidence (logs + code) for the seven bugs is recorded in:
@@ -122,7 +122,7 @@ describe('v1.17.66 — Bug #1 PowerShell must not bare `bash` (sidestep WSL rela
 });
 
 describe('v1.17.66 — Bug #6 PowerShell Out-File must use UTF-8 encoding', () => {
-  // Eric's upgrade-20260508-094901.log had garbled Chinese because Out-File defaults
+  // Alice's upgrade-20260508-094901.log had garbled Chinese because Out-File defaults
   // to UTF-16 LE with BOM. Every Out-File / Set-Content / Add-Content in .ps1 must
   // pass -Encoding utf8.
   for (const rel of PS1_FILES) {
@@ -165,7 +165,7 @@ describe('v1.17.66 — Bug #7 Scanner hidden window + battery settings', () => {
   // -DontStartIfOnBatteries and -StopIfGoingOnBatteries are not valid parameters
   // of New-ScheduledTaskSettingsSet (the real names are -DisallowStartIfOnBatteries /
   // -DontStopIfGoingOnBatteries). Both PS 5.1 and PS 7 throw immediately → the task
-  // is never registered (Adam and Eric both hit this). Since PowerShell's defaults
+  // is never registered (Bob and Alice both hit this). Since PowerShell's defaults
   // already give us "do not start on battery" + "stop when switching to battery",
   // setting these explicitly is redundant — just remove them.
   it('register-scanner-task.ps1 must not contain the two misspelled battery params from v1.17.66', () => {

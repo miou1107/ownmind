@@ -139,7 +139,7 @@ describe('GET /api/usage/admin/team-overview', () => {
 
   it('rate is null when no session triggers rules', async () => {
     const queryFn = async () => ({ rows: [{
-      user_id: 2, user_name: 'Adam', last_active_at: '2026-04-28T01:00:00Z',
+      user_id: 2, user_name: 'Bob', last_active_at: '2026-04-28T01:00:00Z',
       session_count: 1, sessions_json: [{ details: { project: 'ownmind' } }]
     }]});
     const app = buildApp({ queryFn, user: { id: 1, role: 'admin' } });
