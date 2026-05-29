@@ -1,18 +1,18 @@
 /**
- * bug-report-helpers — v1.19.14 錯誤回報工具用的純函式 helpers
+ * bug-report-helpers — pure-function helpers for the v1.19.14 bug-report tool
  *
- * 對應 OpenSpec 提案 v1.19.14-bug-report-tool（規格 §2.5、§2.7、§五、§六）。
+ * Implements OpenSpec proposal v1.19.14-bug-report-tool (spec §2.5, §2.7, §5, §6).
  *
- * 設計重點：
- *   - 純函式（不直接動 req / res）、由 route handler 呼叫
- *   - 跟 DB 互動的函式都吃外部傳入的 query function（測試好 mock）
- *   - 旗標附加邏輯統一在這、避免散落多個 route 拼錯
+ * Design notes:
+ *   - pure functions (don't touch req / res directly), called by the route handler
+ *   - functions that interact with the DB take an externally-passed query function (easy to mock in tests)
+ *   - the flag-attaching logic lives here in one place, to avoid getting it wrong across multiple routes
  */
 
 import { isValidFingerprint } from '../../shared/bug-fingerprints.js';
 
 /**
- * 驗 confirm_string 必須是字串「送出」（v4 設計、後端守門）
+ * Validate that confirm_string is the exact string "送出" (v4 design, server-side gate)
  *
  * @param {unknown} value
  * @returns {{ ok: true } | { ok: false, error: string }}
@@ -28,18 +28,18 @@ export function validateConfirmString(value) {
 }
 
 /**
- * 把 suggest_report 旗標加到既有的錯誤 body
+ * Add the suggest_report flag to an existing error body
  *
- * @param {Object} body - 原本要回給 client 的 JSON body
- * @param {string} fingerprint - 註冊過的指紋
+ * @param {Object} body - the JSON body originally being returned to the client
+ * @param {string} fingerprint - a registered fingerprint
  * @param {Object} [options]
- * @param {string} [options.hint] - 客製提示文字（覆寫預設）
- * @returns {Object} 加完旗標的新 body
+ * @param {string} [options.hint] - custom hint text (overrides the default)
+ * @returns {Object} a new body with the flag added
  */
 export function withReportSuggestion(body, fingerprint, options = {}) {
   if (!isValidFingerprint(fingerprint)) {
     throw new Error(
-      `withReportSuggestion：未註冊或 invalid 的指紋「${fingerprint}」、請先在 shared/bug-fingerprints.js 註冊`
+      `withReportSuggestion: unregistered or invalid fingerprint "${fingerprint}"; register it first in shared/bug-fingerprints.js`
     );
   }
   const hint = options.hint || '你覺得不該被擋？回報給開發者';
@@ -52,9 +52,9 @@ export function withReportSuggestion(body, fingerprint, options = {}) {
 }
 
 /**
- * 查使用者是否在 24h spam 封鎖期內
+ * Check whether the user is within a 24h spam block window
  *
- * @param {Function} query - DB 查詢函式 (text, params) => Promise<{ rows }>
+ * @param {Function} query - DB query function (text, params) => Promise<{ rows }>
  * @param {number} userId
  * @returns {Promise<boolean>}
  */
@@ -69,7 +69,7 @@ export async function isUserInSpamBlock(query, userId) {
 }
 
 /**
- * 查使用者過去 24h 是否拒絕過該指紋（冷靜期）
+ * Check whether the user declined this fingerprint in the past 24h (cooldown)
  *
  * @param {Function} query
  * @param {number} userId
@@ -89,7 +89,7 @@ export async function hasDeclinedRecently(query, userId, fingerprint) {
 }
 
 /**
- * 計使用者過去 1h 內同 fingerprint 的回報筆數
+ * Count the user's reports with the same fingerprint in the past 1h
  *
  * @param {Function} query
  * @param {number} userId
@@ -108,8 +108,8 @@ export async function countSameFingerprintInLastHour(query, userId, fingerprint)
 }
 
 /**
- * 判斷是否該因「同指紋 1h 內已 3 筆」直接 429 擋下
- * （介面層第一道防線、避免 AI 腦補狂送同樣的錯）
+ * Decide whether to reject with a 429 because "3 reports with the same fingerprint within 1h"
+ * (the interface layer's first line of defense, to stop the AI from over-eagerly resending the same error)
  *
  * @param {Function} query
  * @param {number} userId
@@ -129,8 +129,8 @@ export async function shouldRejectByFingerprintRateLimit(query, userId, fingerpr
 }
 
 /**
- * 綜合判斷：要不要在錯誤回應中附 suggest_report 旗標
- * 需通過：未在 spam 封鎖期 AND 過去 24h 未拒絕過該指紋
+ * Combined check: whether to attach the suggest_report flag to an error response.
+ * Must pass: not within a spam block AND has not declined this fingerprint in the past 24h
  *
  * @param {Function} query
  * @param {number} userId

@@ -7,7 +7,7 @@ export function isAtLeast(userRole, required) {
 }
 
 /**
- * adminAuth — 允許 admin + super_admin
+ * adminAuth — allows admin + super_admin
  */
 export default function adminAuth(req, res, next) {
   auth(req, res, (err) => {
@@ -22,7 +22,7 @@ export default function adminAuth(req, res, next) {
 }
 
 /**
- * superAdminAuth — 只允許 super_admin
+ * superAdminAuth — allows super_admin only
  */
 export function superAdminAuth(req, res, next) {
   auth(req, res, (err) => {

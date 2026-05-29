@@ -1,23 +1,25 @@
 /**
- * memory-error-classifier — 把 catch-all error 拆成有意義的 HTTP 狀態
+ * memory-error-classifier — split a catch-all error into a meaningful HTTP status
  *
- * v1.19.1 引入。對應 openspec/changes/v1.19.1-secret-tool-routing/proposal.md §2.3
+ * Introduced in v1.19.1. See openspec/changes/v1.19.1-secret-tool-routing/proposal.md §2.3
  *
- * 設計緣由：
- *   之前 src/routes/memory.js POST/PUT 的 catch 直接回 500「建立記憶失敗」/「更新
- *   記憶失敗」，caller 跟 AI 都不知道為什麼錯。例如 PG check constraint 違反、tier
- *   不合法、JSON 格式錯，全部變成 generic 500。本 helper 依錯誤類別分流：
+ * Design rationale:
+ *   Previously the POST/PUT catch in src/routes/memory.js returned a 500 "create memory
+ *   failed" / "update memory failed" directly, so neither the caller nor the AI knew why
+ *   it failed. For example a PG check constraint violation, an invalid tier, or bad JSON
+ *   all turned into a generic 500. This helper routes by error category:
  *
- *   - PG constraint violation (23xxx)：400／409 + 帶 hint
- *   - PG connection exception (08xxx)：503 + hint「請稍候重試」
- *   - JS SyntaxError：400「資料格式錯誤」
- *   - 其他未分類：500 + log stack（給除錯）
+ *   - PG constraint violation (23xxx): 400 / 409 + a hint
+ *   - PG connection exception (08xxx): 503 + a "please retry shortly" hint
+ *   - JS SyntaxError: 400 "data format error"
+ *   - otherwise unclassified: 500 + log stack (for debugging)
  *
- * Pure function — 不丟、不 log（log 由 caller 用回傳的 logLevel/logStack 決定）。
+ * Pure function — does not throw or log (logging is decided by the caller using the
+ * returned logLevel/logStack).
  *
- * @param {*} err - 任何錯誤（含 null/undefined/非 Error）
+ * @param {*} err - any error (including null/undefined/non-Error)
  * @param {Object} [options]
- * @param {'create'|'update'|undefined} [options.context] - 操作情境、影響預設訊息
+ * @param {'create'|'update'|undefined} [options.context] - operation context, affects the default message
  * @returns {{
  *   status: number,
  *   body: { error: string, hint?: string, code?: string },
@@ -32,7 +34,7 @@ export function classifyMemoryError(err, options = {}) {
     : context === 'update' ? '更新記憶失敗'
     : '處理記憶失敗';
 
-  // 邊界：err 不是物件（null / undefined / 字串 / 數字）→ 500 fallback
+  // edge case: err is not an object (null / undefined / string / number) → 500 fallback
   if (!err || typeof err !== 'object') {
     return {
       status: 500,
@@ -42,7 +44,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 1. caller 明確帶 .status → 沿用（給 helper 拋自訂 status 用）
+  // 1. caller explicitly carries .status → reuse it (for helpers that throw a custom status)
   if (typeof err.status === 'number' && err.status >= 400 && err.status < 600) {
     return {
       status: err.status,
@@ -54,7 +56,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 2. PG SQLSTATE 分類
+  // 2. PG SQLSTATE classification
   const code = typeof err.code === 'string' ? err.code : null;
 
   // unique_violation → 409 (Conflict)
@@ -100,7 +102,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // check_violation → 400（含 tier CHECK 等）
+  // check_violation → 400 (including the tier CHECK etc.)
   if (code === '23514') {
     const constraint = err.constraint ? `（constraint：${err.constraint}）` : '';
     return {
@@ -115,7 +117,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 其他 23xxx integrity constraint → 400
+  // other 23xxx integrity constraints → 400
   if (code && code.startsWith('23')) {
     return {
       status: 400,
@@ -129,7 +131,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 22xxx data exception → 400（含字串太長、parse 失敗等）
+  // 22xxx data exception → 400 (including string too long, parse failure, etc.)
   if (code && code.startsWith('22')) {
     return {
       status: 400,
@@ -143,7 +145,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 3. Connection 類錯誤 → 503
+  // 3. connection-type errors → 503
   //    PG: 08xxx connection exception
   //    Node: ECONNREFUSED / ETIMEDOUT / EHOSTUNREACH / ENETUNREACH
   if (
@@ -165,7 +167,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 4. JS 內建錯誤
+  // 4. JS built-in errors
   if (err instanceof SyntaxError) {
     return {
       status: 400,
@@ -178,7 +180,7 @@ export function classifyMemoryError(err, options = {}) {
     };
   }
 
-  // 5. 其他未分類（含 TypeError、ReferenceError、generic Error）→ 500
+  // 5. otherwise unclassified (including TypeError, ReferenceError, generic Error) → 500
   return {
     status: 500,
     body: { error: baseErrorMessage },

@@ -4,10 +4,10 @@ import { query } from '../utils/db.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import logger from '../utils/logger.js';
 
-const FRICTION_THRESHOLD = 3; // >= 3 次才建 issue
+const FRICTION_THRESHOLD = 3; // only create an issue at >= 3 occurrences
 
 /**
- * 建立高頻 friction 的 project 記憶（去重）
+ * Create a project memory for high-frequency friction (deduplicated)
  */
 async function createFrictionIssues(userId, topFrictions, periodLabel) {
   let created = 0;
@@ -15,12 +15,12 @@ async function createFrictionIssues(userId, topFrictions, periodLabel) {
     if (f.count < FRICTION_THRESHOLD) continue;
 
     const key = f.text.toLowerCase().trim().slice(0, 20);
-    // 逸脫 LIKE 特殊字元，避免 % 和 _ 干擾匹配
+    // escape LIKE special chars so % and _ don't interfere with matching
     const escapedKey = key.replace(/%/g, '\\%').replace(/_/g, '\\_');
     const titlePrefix = `⚠️ 高頻 friction：`;
     const titleSnippet = f.text.slice(0, 50);
 
-    // 檢查是否已存在（避免重複）
+    // check whether it already exists (avoid duplicates)
     const existing = await query(
       `SELECT id FROM memories
        WHERE user_id = $1
@@ -49,7 +49,7 @@ async function createFrictionIssues(userId, topFrictions, periodLabel) {
 }
 
 /**
- * 建立高頻 suggestion 的 principle 記憶（去重）
+ * Create a principle memory for high-frequency suggestions (deduplicated)
  */
 async function createSuggestionActions(userId, topSuggestions, periodLabel) {
   let created = 0;
@@ -61,7 +61,7 @@ async function createSuggestionActions(userId, topSuggestions, periodLabel) {
     const titlePrefix = `💡 高頻建議：`;
     const titleSnippet = s.text.slice(0, 50);
 
-    // 檢查是否已存在（避免重複）
+    // check whether it already exists (avoid duplicates)
     const existing = await query(
       `SELECT id FROM memories
        WHERE user_id = $1
@@ -90,14 +90,14 @@ async function createSuggestionActions(userId, topSuggestions, periodLabel) {
 }
 
 /**
- * 執行週報 job（可傳入 userId 做單使用者處理，預設處理全部）
+ * Run the weekly report job (pass a userId for single-user processing; defaults to all)
  */
 export async function runWeeklyReport(targetUserId = null) {
-  logger.info('週報 job 開始執行');
-  const { start, end, label } = computePeriodRange('week', 1); // 上週
+  logger.info('Weekly report job started');
+  const { start, end, label } = computePeriodRange('week', 1); // last week
 
   try {
-    // 取所有 active users（或指定 user）
+    // get all active users (or the specified user)
     const usersResult = await query(
       targetUserId
         ? `SELECT id FROM users WHERE id = $1`
@@ -108,7 +108,7 @@ export async function runWeeklyReport(targetUserId = null) {
     for (const user of usersResult.rows) {
       const userId = user.id;
 
-      // 取上週 session logs
+      // get last week's session logs
       const sessions = await query(
         `SELECT details FROM session_logs
          WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
@@ -117,7 +117,7 @@ export async function runWeeklyReport(targetUserId = null) {
         [userId, start, end]
       );
 
-      // 收集 friction / suggestions
+      // collect friction / suggestions
       const frictions = sessions.rows
         .map(r => r.details?.friction_points)
         .filter(Boolean);
@@ -128,11 +128,11 @@ export async function runWeeklyReport(targetUserId = null) {
       const topFrictions = groupFrictions(frictions).slice(0, 10);
       const topSuggestions = groupFrictions(suggestions).slice(0, 10);
 
-      // 建立高頻 friction issues + suggestion actions
+      // create high-frequency friction issues + suggestion actions
       const frictionIssuesCreated = await createFrictionIssues(userId, topFrictions, label);
       const suggestionActionsCreated = await createSuggestionActions(userId, topSuggestions, label);
 
-      // Compliance 統計
+      // Compliance stats
       const complianceResult = await query(
         `SELECT details->>'rule_title' as rule_title,
                 details->>'action' as action,
@@ -159,7 +159,7 @@ export async function runWeeklyReport(targetUserId = null) {
         .slice(0, 3)
         .map(([title, v]) => ({ title, violate: v.violate, comply: v.comply }));
 
-      // 統計新增記憶數
+      // count newly added memories
       const memoriesResult = await query(
         `SELECT COUNT(*) as cnt FROM memories
          WHERE user_id = $1 AND created_at >= $2 AND created_at <= $3
@@ -168,14 +168,14 @@ export async function runWeeklyReport(targetUserId = null) {
       );
       const newMemories = parseInt(memoriesResult.rows[0].cnt, 10);
 
-      // 建週報快照（存 session_logs）
-      // 轉成 Taipei 時間再算週數（start 是 UTC Sunday 16:00 = Taipei Monday 00:00）
+      // build the weekly report snapshot (stored in session_logs)
+      // convert to Taipei time before computing the week number (start is UTC Sunday 16:00 = Taipei Monday 00:00)
       const taipeiStart = new Date(start.getTime() + 8 * 3600000);
       const weekNum = getWeekNumber(taipeiStart);
       const year = taipeiStart.getUTCFullYear();
       const title = `週報 ${year}-W${String(weekNum).padStart(2, '0')}`;
 
-      // 去重：同 title 的週報不重複建立
+      // dedup: don't recreate a weekly report with the same title
       const existingReport = await query(
         `SELECT id FROM session_logs WHERE user_id = $1 AND summary = $2 LIMIT 1`,
         [userId, title]
@@ -203,20 +203,20 @@ export async function runWeeklyReport(targetUserId = null) {
             }),
           ]
         );
-        logger.info(`週報建立完成: ${title}`, { userId, frictionIssuesCreated, suggestionActionsCreated, newMemories });
+        logger.info(`Weekly report created: ${title}`, { userId, frictionIssuesCreated, suggestionActionsCreated, newMemories });
       }
     }
   } catch (err) {
-    logger.error('週報 job 失敗', { error: err.message });
+    logger.error('Weekly report job failed', { error: err.message });
   }
 }
 
 /**
- * 月報 job：聚合當月所有週報快照
+ * Monthly report job: aggregate all weekly report snapshots for the month
  */
 export async function runMonthlyReport(targetUserId = null) {
-  logger.info('月報 job 開始執行');
-  const { start, end, label } = computePeriodRange('month', 1); // 上月
+  logger.info('Monthly report job started');
+  const { start, end, label } = computePeriodRange('month', 1); // last month
 
   const year = new Date(start.getTime() + 8 * 3600000).getUTCFullYear();
   const month = new Date(start.getTime() + 8 * 3600000).getUTCMonth() + 1;
@@ -233,14 +233,14 @@ export async function runMonthlyReport(targetUserId = null) {
     for (const user of usersResult.rows) {
       const userId = user.id;
 
-      // 去重
+      // dedup
       const existing = await query(
         `SELECT id FROM session_logs WHERE user_id = $1 AND summary = $2 LIMIT 1`,
         [userId, title]
       );
       if (existing.rows.length > 0) continue;
 
-      // 聚合當月週報
+      // aggregate this month's weekly reports
       const weeklyReports = await query(
         `SELECT details FROM session_logs
          WHERE user_id = $1 AND tool = 'system' AND model = 'weekly-job'
@@ -260,7 +260,7 @@ export async function runMonthlyReport(targetUserId = null) {
         newMemories += d.new_memories || 0;
         frictionIssuesCreated += d.friction_issues_created || 0;
         suggestionActionsCreated += d.suggestion_actions_created || 0;
-        // 保留 count：將 text 重複 count 次再 group，以正確加總
+        // preserve count: repeat text count times then group, to sum correctly
         if (Array.isArray(d.top_frictions)) {
           for (const f of d.top_frictions) {
             for (let i = 0; i < (f.count || 1); i++) allFrictions.push(f.text);
@@ -289,10 +289,10 @@ export async function runMonthlyReport(targetUserId = null) {
           }),
         ]
       );
-      logger.info(`月報建立完成: ${title}`, { userId });
+      logger.info(`Monthly report created: ${title}`, { userId });
     }
   } catch (err) {
-    logger.error('月報 job 失敗', { error: err.message });
+    logger.error('Monthly report job failed', { error: err.message });
   }
 }
 
@@ -305,20 +305,20 @@ function getWeekNumber(date) {
 }
 
 /**
- * 啟動定時 job（統一使用 Asia/Taipei 時區）
- * 週報：每週一 00:00
- * 月報：每月 1 號 00:00
+ * Start the scheduled jobs (all using the Asia/Taipei timezone)
+ * Weekly report: every Monday 00:00
+ * Monthly report: the 1st of each month 00:00
  */
 export function startJobs() {
-  // 週報：每週一 00:00 Asia/Taipei
+  // weekly report: every Monday 00:00 Asia/Taipei
   cron.schedule('0 0 * * 1', () => {
-    runWeeklyReport().catch(err => logger.error('週報 cron 失敗', { error: err.message }));
+    runWeeklyReport().catch(err => logger.error('Weekly report cron failed', { error: err.message }));
   }, { timezone: 'Asia/Taipei' });
 
-  // 月報：每月 1 號 00:00 Asia/Taipei
+  // monthly report: the 1st of each month 00:00 Asia/Taipei
   cron.schedule('0 0 1 * *', () => {
-    runMonthlyReport().catch(err => logger.error('月報 cron 失敗', { error: err.message }));
+    runMonthlyReport().catch(err => logger.error('Monthly report cron failed', { error: err.message }));
   }, { timezone: 'Asia/Taipei' });
 
-  logger.info('週/月報 job 已啟動');
+  logger.info('Weekly/monthly report jobs started');
 }

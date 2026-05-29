@@ -1,27 +1,29 @@
 /**
  * First-run redirect middleware — v1.19.8
  *
- * 對應 openspec/changes/v1.19.8-setup-wizard/spec.md 場景 1、2、3。
+ * Implements openspec/changes/v1.19.8-setup-wizard/spec.md scenarios 1, 2, 3.
  *
- * 行為：
- *   - users 表為空（first_run=true） → /admin/* 自動 redirect 到 /setup
- *   - users 表有 admin（first_run=false） → /setup 自動 redirect 到 /admin/login
- *   - 兩種狀態的另一邊路徑保持正常（不額外攔截）
+ * Behavior:
+ *   - users table empty (first_run=true) → /admin/* auto-redirects to /setup
+ *   - users table has an admin (first_run=false) → /setup auto-redirects to /admin/login
+ *   - the opposite path in each state stays normal (no extra interception)
  *
- * 設計：
- *   - 純 redirect、不擋 API（/api/setup/* 自己 router 處理）
- *   - 失敗時 fail-open：DB 查詢出錯、視為非 first_run、不誤導使用者到 wizard
- *   - 不快取結果：每次請求都查 DB；若效能成問題、未來可加 in-memory 1 秒 cache
- *     （v1.19.8 範圍內預期 first_run 期非常短、不會被頻繁打）
- *   - Factory pattern（v1.19.8 code-review I-2）：依賴可注入、方便整合測試
+ * Design:
+ *   - pure redirect, does not block the API (/api/setup/* is handled by its own router)
+ *   - fail-open on error: if the DB query fails, treat as not first_run, so users
+ *     aren't misled into the wizard
+ *   - no result caching: queries the DB on every request; if this becomes a perf issue,
+ *     an in-memory 1-second cache could be added later (within v1.19.8 scope the
+ *     first_run window is expected to be very short and not hit frequently)
+ *   - Factory pattern (v1.19.8 code-review I-2): dependencies are injectable for easy integration testing
  */
 import { detectFirstRun as defaultDetectFirstRun } from '../routes/setup.js';
 
 /**
- * 建立 first-run redirect middleware
+ * Create the first-run redirect middleware
  *
  * @param {object} [deps]
- * @param {() => Promise<{firstRun: boolean}>} [deps.detectFirstRun] - 偵測函式（測試時注入）
+ * @param {() => Promise<{firstRun: boolean}>} [deps.detectFirstRun] - detection function (injected in tests)
  * @returns {(req, res, next) => Promise<void>}
  */
 export function createFirstRunRedirect(deps = {}) {
@@ -30,7 +32,7 @@ export function createFirstRunRedirect(deps = {}) {
   return async function firstRunRedirectImpl(req, res, next) {
     const path = req.path;
 
-    // 只攔特定路徑、其他直接 next
+    // only intercept specific paths; everything else passes straight to next
     const isAdminPath = path === '/admin' || path === '/admin/' || path.startsWith('/admin/');
     const isSetupPath = path === '/setup' || path === '/setup/';
 
@@ -38,31 +40,31 @@ export function createFirstRunRedirect(deps = {}) {
       return next();
     }
 
-    // 註：/api/* 路徑不會走到這（前面條件已排除）、不需要額外 guard
-    // （v1.19.8 code-review M-1 拿掉 dead code）
+    // Note: /api/* paths never reach here (already excluded above), so no extra guard needed
+    // (v1.19.8 code-review M-1 removed the dead code)
 
     let firstRun;
     try {
       ({ firstRun } = await detectFirstRun());
     } catch {
-      // fail-open：DB 失敗時不轉向、讓使用者看到原本的頁
+      // fail-open: on DB failure, don't redirect; let the user see the original page
       return next();
     }
 
     if (firstRun && isAdminPath) {
-      // users 表為空、使用者開 admin → 引導去 wizard
+      // users table empty, user opened admin → guide them to the wizard
       return res.redirect(302, '/setup');
     }
 
     if (!firstRun && isSetupPath) {
-      // 已設定完成、wizard 永久關閉、引導回登入頁
+      // setup already done, wizard permanently closed, guide back to the login page
       return res.redirect(302, '/admin/login');
     }
 
-    // 其他情況（first_run + setup 路徑、或非 first_run + admin 路徑）正常通過
+    // other cases (first_run + setup path, or non-first_run + admin path) pass normally
     return next();
   };
 }
 
-// Default export：給 production app.js 直接 mount 用（使用真實的 detectFirstRun）
+// Default export: for production app.js to mount directly (uses the real detectFirstRun)
 export const firstRunRedirect = createFirstRunRedirect();

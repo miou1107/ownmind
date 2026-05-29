@@ -1,11 +1,11 @@
 /**
- * nightly-recompute.js — 每日 3:00 AM Asia/Taipei 跑完整 recompute
+ * nightly-recompute.js — full recompute run daily at 3:00 AM Asia/Taipei
  *
- * 目的（per spec S3）：
- *   - 處理 pricing 變更後歷史成本重算
- *   - 修補因 aggregation 失敗造成的漏算
+ * Purpose (per spec S3):
+ *   - handle historical cost recomputation after a pricing change
+ *   - patch up missed computations caused by aggregation failures
  *
- * 範圍：近 7 天（可由 WINDOW_DAYS 調整）
+ * Scope: the last 7 days (adjustable via WINDOW_DAYS)
  */
 
 import cron from 'node-cron';
@@ -16,11 +16,11 @@ import logger from '../utils/logger.js';
 const WINDOW_DAYS = 7;
 
 /**
- * 挑出近 WINDOW_DAYS 有 token_events 活動的 (user, tool, session, date) 組合
- * 並對每個組合重新 recomputeDaily。
+ * Pick the (user, tool, session, date) combos with token_events activity in the last
+ * WINDOW_DAYS and re-run recomputeDaily for each combo.
  */
 export async function runNightlyRecompute({ query = defaultQuery } = {}) {
-  logger.info('nightly token usage recompute 開始', { window_days: WINDOW_DAYS });
+  logger.info('nightly token usage recompute started', { window_days: WINDOW_DAYS });
 
   const res = await query(
     `SELECT user_id, tool, session_id,
@@ -43,23 +43,23 @@ export async function runNightlyRecompute({ query = defaultQuery } = {}) {
       ok += 1;
     } catch (err) {
       fail += 1;
-      logger.error('nightly recompute 單筆失敗', {
+      logger.error('nightly recompute failed for one row', {
         user_id: r.user_id, tool: r.tool, session_id: r.session_id, error: err.message
       });
     }
   }
 
-  logger.info('nightly recompute 完成', { ok, fail, total: res.rows.length });
+  logger.info('nightly recompute finished', { ok, fail, total: res.rows.length });
   return { ok, fail, total: res.rows.length };
 }
 
 export function startNightlyRecomputeJob() {
   cron.schedule('0 3 * * *', () => {
     runNightlyRecompute().catch((err) =>
-      logger.error('nightly recompute cron 失敗', { error: err.message }));
+      logger.error('nightly recompute cron failed', { error: err.message }));
   }, { timezone: 'Asia/Taipei' });
 
-  logger.info('nightly token usage recompute job 已啟動（每日 03:00 Asia/Taipei）');
+  logger.info('nightly token usage recompute job started (daily 03:00 Asia/Taipei)');
 }
 
 function toYmd(date) {

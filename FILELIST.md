@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## v1.26.18 修改（i18n 軌道 B：src/ 其餘檔案內部英文化）
+
+新增檔：
+```
+openspec/changes/v1.26.18-i18n-src-rest/proposal.md   — v1.26.18 提案
+openspec/changes/v1.26.18-i18n-src-rest/tasks.md      — v1.26.18 任務清單
+```
+
+修改檔（中文註解 + 內部訊息翻英文；user-facing 字串保留）：約 30 支 src/ 檔，含 `src/app.js`、`src/index.js`、`src/middleware/{auth,adminAuth,first-run-redirect}.js`、`src/lib/{broadcast-filter,session-query,memory-sync}.js`、`src/jobs/{weeklyReport,nightly-recompute,nightly-upgrade-reminder,seed-default-passwords,usage-aggregation}.js`、`src/services/bug-report-spam-detector.js`、`src/utils/{semver,syncToken,run-migrations,report,pricing-lookup,enrich-activity,activity-insert,auto-numbering,crypto,db,md-parser,require-fields,memory-secret-guard,memory-error-classifier,templates,bug-report-helpers}.js`、`src/constants.js`。
+
 ## v1.26.17 修改（修 sync_token 過時時自動重試失效）
 
 新增檔：

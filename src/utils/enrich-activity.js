@@ -1,44 +1,46 @@
 /**
- * enrichActivityDetails — 在 activity_logs 落 DB 前 enrich event.details
+ * enrichActivityDetails — enrich event.details before activity_logs hits the DB
  *
- * 為什麼存在：
- *   v1.17.88 前 client MCP 在 ownmind_disable / ownmind_update 時只送 { id, reason }
- *   到 /api/activity/batch，server 直接寫 activity_logs.details。
- *   之後 admin 看 /api/me/pitfalls 要 JOIN memories 補 title/code，
- *   JOIN 失敗就顯示「(找不到)」。30 筆漏觀測幾乎都長這樣。
+ * Why it exists:
+ *   Before v1.17.88, the client MCP sent only { id, reason } to /api/activity/batch
+ *   for ownmind_disable / ownmind_update, and the server wrote it straight into
+ *   activity_logs.details. Later, when admin viewed /api/me/pitfalls it had to JOIN
+ *   memories to fill in title/code, and a failed JOIN showed "(not found)".
+ *   Nearly all 30 missing-observation records looked like this.
  *
- *   修法：server 收到 activity 時，若是 memory_disable / memory_update 且
- *   target 是 iron_rule，立刻 lookup memories 把 code+title snapshot 到
- *   event.details。未來看 activity_log 自帶完整脈絡、不用 JOIN。
+ *   Fix: when the server receives an activity that is memory_disable / memory_update
+ *   and the target is an iron_rule, immediately look up memories and snapshot
+ *   code+title into event.details. Future activity_log views carry full context
+ *   without needing a JOIN.
  *
- * Pure function — lookup 透過 callback 注入、方便單元測試（不碰 DB）。
+ * Pure function — lookup is injected via a callback for easy unit testing (no DB).
  *
  * @param {Object} event - { event, details, ... }
- * @param {(id) => Promise<{type, code, title}|null>} lookup - memory 查詢函數
- * @returns {Promise<Object>} enrich 後的 details（永遠回 object、不會丟錯）
+ * @param {(id) => Promise<{type, code, title}|null>} lookup - memory lookup function
+ * @returns {Promise<Object>} the enriched details (always returns an object, never throws)
  */
 export async function enrichActivityDetails(event, lookup) {
   const baseDetails = event?.details && typeof event.details === 'object'
     ? event.details
     : {};
 
-  // 只 enrich 這兩個事件
+  // only enrich these two events
   if (event?.event !== 'memory_disable' && event?.event !== 'memory_update') {
     return baseDetails;
   }
 
-  // 缺 id → 沒得 lookup
+  // no id → nothing to look up
   if (baseDetails.id === undefined || baseDetails.id === null) {
     return baseDetails;
   }
 
-  // id 必須是數字或可轉成數字（regex 同 me.js pitfalls）
+  // id must be numeric or convertible to a number (same regex as me.js pitfalls)
   const idStr = String(baseDetails.id);
   if (!/^\d+$/.test(idStr)) {
     return baseDetails;
   }
 
-  // lookup 丟錯一律吞掉 — enrich 失敗不能阻擋主 INSERT
+  // always swallow lookup errors — an enrich failure must not block the main INSERT
   let row = null;
   try {
     row = await lookup(parseInt(idStr, 10));
@@ -50,27 +52,30 @@ export async function enrichActivityDetails(event, lookup) {
     return baseDetails;
   }
 
-  // v1.17.90: 不管什麼 type 都 snapshot disabled_type
-  //   背景：v1.17.88 pitfalls 顯示 30 筆漏觀測 prod 驗證有 22 筆（73%）是
-  //   team_standard / standard_detail / project disable 被誤算進 iron_rule sensitive。
-  //   me.js pitfalls SQL 需要 disabled_type 才能過濾出真正 iron_rule disable。
+  // v1.17.90: snapshot disabled_type regardless of type
+  //   Background: of the 30 missing-observation records in v1.17.88 pitfalls, prod
+  //   verification found 22 (73%) were team_standard / standard_detail / project
+  //   disables miscounted as iron_rule sensitive. The me.js pitfalls SQL needs
+  //   disabled_type to filter out the genuine iron_rule disables.
   //
-  // Snapshot 語意是「lookup 當下」、不是「事件發生當下」：
-  //   - memory_disable 事件：disable 操作完成後才寫 activity log，lookup 出來的
-  //     title/code/type 就是當下值 → 跟事件意圖一致
-  //   - memory_update 事件：UPDATE 完才落 log、lookup 拿到的是 post-update 值。
-  //     對 pitfalls 顯示用途（admin 想知道「這條鐵律叫什麼」）是正確的、但若未來
-  //     有人預期這欄是 "title at moment of trigger" 則會誤判
+  // Snapshot semantics are "at lookup time", not "at the moment the event occurred":
+  //   - memory_disable event: the activity log is written after the disable completes,
+  //     so the looked-up title/code/type is the current value → consistent with intent
+  //   - memory_update event: the log is written after the UPDATE, so lookup gets the
+  //     post-update value. This is correct for pitfalls display (admin wants to know
+  //     "what is this iron rule called"), but anyone expecting this field to be the
+  //     "title at moment of trigger" would be misled.
   //
-  // 用 || null 而非 || '' — JSONB NULL 才會讓 me.js 的 COALESCE fallback JOIN
-  // 正確被觸發（'' 不是 NULL、會吃掉 fallback）
+  // Use || null rather than || '' — only a JSONB NULL makes me.js's COALESCE fallback
+  // JOIN fire correctly ('' is not NULL and would swallow the fallback)
   const enriched = {
     ...baseDetails,
     disabled_type: row.type || null,
   };
 
-  // disabled_code / disabled_title 是給 admin 看「停了哪條鐵律」的、只 iron_rule 寫
-  //（其他 type 沒 IR-XXX code、title 也通常較長不適合 inline 顯示）
+  // disabled_code / disabled_title are for admins to see "which iron rule was disabled";
+  // written only for iron_rule (other types have no IR-XXX code, and their titles are
+  // usually too long for inline display)
   if (row.type === 'iron_rule') {
     enriched.disabled_code = row.code || null;
     enriched.disabled_title = row.title || null;

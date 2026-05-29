@@ -1,10 +1,11 @@
 /**
  * src/lib/session-query.js
  *
- * 純函式：構 GET /api/session/recent 的 SQL query。拆出來方便單元測試。
- * v1.17.13 新增 `q` 參數（search summary + details ILIKE），修 Michelle 回報的
- * 「ownmind_search 搜不到剛 log 的 session 主題」bug（session_logs 獨立於 memories，
- * memory search 涵蓋不到）。
+ * Pure function: builds the SQL query for GET /api/session/recent. Extracted for
+ * easy unit testing.
+ * v1.17.13 added the `q` parameter (search summary + details ILIKE), fixing the
+ * "ownmind_search can't find a session topic that was just logged" bug Michelle
+ * reported (session_logs are separate from memories, so memory search doesn't cover them).
  */
 
 export function buildSessionRecentQuery({

@@ -1,8 +1,9 @@
 /**
  * Iron Rule Verification Templates
  *
- * 定義鐵律的自動化驗證模板，用於 pre-commit / pre-deploy 等 hook 檢查。
- * matchTemplate() 根據 rule 的 trigger tags + keywords 自動匹配最佳模板。
+ * Defines automated verification templates for iron rules, used by hook checks
+ * such as pre-commit / pre-deploy.
+ * matchTemplate() auto-matches the best template based on the rule's trigger tags + keywords.
  */
 
 const RULE_TEMPLATES = {
@@ -119,7 +120,7 @@ const RULE_TEMPLATES = {
 };
 
 /**
- * 從 tags 陣列提取 trigger 名稱
+ * Extract trigger names from the tags array
  * @param {string[]|null} tags
  * @returns {string[]}
  */
@@ -131,9 +132,9 @@ function extractTriggers(tags) {
 }
 
 /**
- * 根據 rule 的 trigger tags 與 content/title keywords 匹配最佳模板
+ * Match the best template based on the rule's trigger tags and content/title keywords
  * @param {Object} rule - { title, content, tags }
- * @returns {string|null} 匹配的 template ID，無匹配回傳 null
+ * @returns {string|null} the matched template ID, or null if none match
  */
 function matchTemplate(rule) {
   const triggers = extractTriggers(rule.tags);
@@ -144,11 +145,11 @@ function matchTemplate(rule) {
   let bestScore = 0;
 
   for (const [templateId, template] of Object.entries(RULE_TEMPLATES)) {
-    // trigger 必須符合（至少一個交集）
+    // trigger must match (at least one in common)
     const triggerMatch = template.match.triggers.some(t => triggers.includes(t));
     if (!triggerMatch) continue;
 
-    // keywords 計分
+    // score keywords
     const score = template.match.keywords.filter(kw =>
       contentLower.includes(kw.toLowerCase())
     ).length;

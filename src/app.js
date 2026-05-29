@@ -11,17 +11,19 @@ const __dirname = dirname(__filename);
 
 const app = express();
 
-// v1.19.12：信任反向代理（nginx / caddy）的 X-Forwarded-For header
-// 不開的話、express-rate-limit 會用 socket IP 算次數、所有請求都被當同一個 client、誤判
-// "1" 代表只信任最近 1 層 proxy（kkvin.com 的 nginx）。多層 CDN 環境要調整。
-// 對應 v1.19.11 prod 容器 log 的 ERR_ERL_UNEXPECTED_X_FORWARDED_FOR 警告
+// v1.19.12: trust the reverse proxy's (nginx / caddy) X-Forwarded-For header
+// Without this, express-rate-limit counts by socket IP, treats all requests as the
+// same client, and false-positives.
+// "1" means trust only the nearest 1 proxy layer (kkvin.com's nginx). Multi-layer CDN
+// environments need adjusting.
+// Addresses the ERR_ERL_UNEXPECTED_X_FORWARDED_FOR warning in the v1.19.11 prod container log
 app.set('trust proxy', 1);
 
-// 安全性與基本中介層
+// security and basic middleware
 app.use(helmet({ contentSecurityPolicy: false }));
-// CORS：只允許 CORS_ORIGIN 環境變數指定的 origin；未設定則禁止跨域
+// CORS: only allow the origin specified by the CORS_ORIGIN env var; if unset, block cross-origin
 app.use(cors({ origin: process.env.CORS_ORIGIN || false }));
-// JSON body limit 10MB 以容納 scanner 500-event batch（單 event 可達 ~2KB）
+// JSON body limit 10MB to fit a scanner 500-event batch (a single event can be ~2KB)
 app.use(express.json({ limit: '10mb' }));
 
 // Rate limiting
@@ -41,31 +43,32 @@ const authLimiter = rateLimit({
 });
 app.use('/api/admin/login', authLimiter);
 app.use('/api/admin/setup', authLimiter);
-// v1.19.8 code-review I-1：跟 /api/admin/setup 對齊、避免被誤打
-// （first_run 階段不會擋使用者試錯、因為這個限制是 15 分鐘 10 次、夠他試密碼格式；
-// 建好 admin 後 endpoint 自動回 403、rate limit 只是防誤打的後盾）
+// v1.19.8 code-review I-1: align with /api/admin/setup to avoid being hit by mistake
+// (during first_run this won't block a user's trial-and-error, because the limit is
+// 10 times per 15 minutes, enough to try password formats; once an admin exists the
+// endpoint auto-returns 403, and the rate limit is just a backstop against stray hits)
 app.use('/api/setup/init', authLimiter);
 app.use('/api', apiLimiter);
 
-// v1.19.8：first-run redirect middleware
-// users 表為空 → /admin/* 自動 redirect 到 /setup（首次安裝引導）
-// users 表非空 → /setup 自動 redirect 到 /admin/login（避免使用者誤入已關閉的 wizard）
-// 掛在 /admin static 之前才能截到 GET /admin/login
+// v1.19.8: first-run redirect middleware
+// users table empty → /admin/* auto-redirects to /setup (first-install guide)
+// users table non-empty → /setup auto-redirects to /admin/login (avoid users wandering into the closed wizard)
+// must be mounted before the /admin static handler to intercept GET /admin/login
 import { firstRunRedirect } from './middleware/first-run-redirect.js';
 app.use(firstRunRedirect);
 
-// 靜態檔案（Admin 後台）
+// static files (Admin backend)
 app.use('/admin', express.static(join(__dirname, 'public')));
 
-// v1.20：新版統合後台（並存於舊 /admin 與 /me、單一入口含三角色分流）
-// SPA fallback 用 middleware（Express 5 path-to-regexp 不再接受 /dashboard/* 舊式 wildcard）
-// 流程：express.static 先試找檔案、找不到才走 fallback 回 index.html 讓 react-router 接管
+// v1.20: the new unified backend (coexists with the old /admin and /me; a single entry with three-role routing)
+// SPA fallback uses middleware (Express 5's path-to-regexp no longer accepts the old /dashboard/* wildcard)
+// Flow: express.static tries to find the file first; only on miss does the fallback return index.html for react-router to take over
 app.use('/dashboard', express.static(join(__dirname, 'public', 'dashboard')));
 app.use('/dashboard', (req, res, next) => {
-  // 只對 GET 請求做 SPA fallback、其他方法（POST 等）走原本錯誤處理
+  // only do SPA fallback for GET requests; other methods (POST etc.) go to the normal error handling
   if (req.method !== 'GET') return next();
-  // 排除帶副檔名的請求（asset/image/font 等）— 找不到就讓它正常 404、不要回 HTML
-  // 否則瀏覽器收到 HTML 當圖片解析、快取會壞
+  // exclude requests with a file extension (asset/image/font etc.) — on miss, let it 404 normally, don't return HTML
+  // otherwise the browser parses HTML as an image and the cache breaks
   if (req.path.includes('.')) return next();
   const filePath = join(__dirname, 'public', 'dashboard', 'index.html');
   res.sendFile(filePath, (err) => {
@@ -73,26 +76,27 @@ app.use('/dashboard', (req, res, next) => {
   });
 });
 
-// v1.19.8：setup wizard 靜態頁（serve src/public/setup.html）
-// 直接吃 / 路徑下的 setup.html、不需要獨立資料夾
+// v1.19.8: setup wizard static page (serves src/public/setup.html)
+// serves setup.html directly under the / path, no separate folder needed
 app.get('/setup', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'setup.html'));
 });
 
-// v1.17.24: 用戶用量報告頁（user role 也可看，路徑 /ownmind/me/）
-// v1.17.88: 加 trailing slash redirect — /me 沒尾斜線直接 404，現在 301 → me/
-// 用相對路徑 redirect（'me/' 而非 '/me/'）避免 nginx reverse proxy strip 掉
-// /ownmind prefix 後 Location header 變絕對路徑、把使用者導到沒 prefix 的 /me/。
-// 相對 'me/' 對當前 URL /ownmind/me 而言會被瀏覽器拼成 /ownmind/me/ ✓
-// 條件式：只在 originalUrl 不以 / 結尾時 redirect，否則 next() 給 static middleware。
-// （Express 預設 strict routing=false，/me 跟 /me/ 都會 match 這條 route）
+// v1.17.24: user usage report page (the user role can view it too, path /ownmind/me/)
+// v1.17.88: added a trailing-slash redirect — /me without a trailing slash 404'd directly, now 301 → me/
+// Use a relative redirect ('me/' not '/me/') to avoid nginx reverse proxy stripping it:
+// after the /ownmind prefix the Location header would become absolute and send the user
+// to a /me/ without the prefix.
+// Relative 'me/' against the current URL /ownmind/me is joined by the browser into /ownmind/me/ ✓
+// Conditional: only redirect when originalUrl does not end with /, otherwise next() to the static middleware.
+// (Express defaults to strict routing=false, so both /me and /me/ match this route)
 app.get('/me', (req, res, next) => {
   if (req.originalUrl.endsWith('/')) return next();
   res.redirect(301, 'me/');
 });
 app.use('/me', express.static(join(__dirname, 'public', 'me')));
 
-// 請求日誌
+// request logging
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -102,7 +106,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// 掛載路由
+// mount routes
 import memoryRoutes from './routes/memory.js';
 import sessionRoutes from './routes/session.js';
 import handoffRoutes from './routes/handoff.js';
@@ -123,38 +127,38 @@ import bugReportsRoutes from './routes/bug-reports.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
 
-// v1.19.8：setup wizard API endpoints（公開、無需 auth）
-// 必須在 /api/admin 之前 mount，避免 /api/admin 吃掉
+// v1.19.8: setup wizard API endpoints (public, no auth needed)
+// must be mounted before /api/admin to avoid /api/admin swallowing them
 app.use('/api/setup', setupRoutes);
 
-// v1.19.9：admin 緊急重設他人密碼（必須在 /api/admin 之前 mount）
-// path 是 /api/admin/users/:id/reset-password
+// v1.19.9: admin emergency reset of another user's password (must be mounted before /api/admin)
+// the path is /api/admin/users/:id/reset-password
 app.use('/api/admin/users', adminPasswordResetRoutes);
 
 app.use('/api/memory', memoryRoutes);
 app.use('/api/session', sessionRoutes);
 app.use('/api/handoff', handoffRoutes);
-// 子路徑要在 /api/admin 之前 mount，否則 adminRoutes 會吃掉
+// sub-paths must be mounted before /api/admin, otherwise adminRoutes swallows them
 app.use('/api/admin/work-log', adminWorkLogRoutes);
-app.use('/api/admin/iron-rules', adminIronRuleUpgradeRoutes);  // v1.18.0 升級助手
+app.use('/api/admin/iron-rules', adminIronRuleUpgradeRoutes);  // v1.18.0 upgrade assistant
 app.use('/api/admin', adminRoutes);
 app.use('/api/secret', secretRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/usage', usageRoutes);
 app.use('/api/broadcast', broadcastRoutes);
-// 子路徑要在 /api/me 之前 mount，否則 meRoutes 會先接到請求並回 404
+// sub-paths must be mounted before /api/me, otherwise meRoutes receives the request first and 404s
 app.use('/api/me/narrative', createNarrativeRouter({ query, auth }));
 app.use('/api/me', meRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
 app.use('/api/debug', createDebugRouter({ query, auth }));
 
-// 根路徑導向 Admin
+// root path redirects to Admin
 app.get('/', (req, res) => {
   res.redirect('/ownmind/admin/');
 });
 
-// 健康檢查
+// health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
@@ -168,9 +172,9 @@ app.get('/health', (req, res) => {
 // (b) served content is guaranteed to match the deployed commit (no hot-reload
 // drift); (c) zero disk I/O per request.
 import { readFileSync } from 'fs';
-// v1.17.10 回報者 Adam：bootstrap.ps1 在磁碟保留 UTF-8 BOM 支援 `powershell -File`
-// (PS 5.1 需要 BOM 才能正確讀中文)，但 `iwr | iex` 路徑會把開頭 \uFEFF 當 cmdlet
-// 呼叫，吐 warning。serve 時 strip 首字元 BOM 讓 iex 安靜執行。
+// v1.17.10 reporter Adam: bootstrap.ps1 keeps a UTF-8 BOM on disk to support `powershell -File`
+// (PS 5.1 needs the BOM to read Chinese correctly), but the `iwr | iex` path treats the leading U+FEFF as a cmdlet
+// call and emits a warning. On serve, strip the leading BOM so iex runs quietly.
 function stripBom(s) {
   return s.length > 0 && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s;
 }
@@ -183,9 +187,9 @@ app.get('/bootstrap.ps1', (req, res) => {
   res.type('text/plain; charset=utf-8').send(bootstrapPs1);
 });
 
-// 錯誤處理中介層
+// error-handling middleware
 app.use((err, req, res, next) => {
-  logger.error('未捕獲的錯誤', { error: err.message, stack: err.stack });
+  logger.error('Uncaught error', { error: err.message, stack: err.stack });
   res.status(err.status || 500).json({
     error: err.message || '伺服器內部錯誤'
   });

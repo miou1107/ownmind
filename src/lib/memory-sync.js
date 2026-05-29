@@ -1,6 +1,6 @@
 /**
- * Memory sync 純函式：parse query params + build SQL。
- * Routes handler (src/routes/memory.js) 用這些拼出 delta sync endpoint。
+ * Memory sync pure functions: parse query params + build SQL.
+ * The routes handler (src/routes/memory.js) uses these to assemble the delta sync endpoint.
  */
 
 export const SYNCABLE_TYPES = Object.freeze(['iron_rule', 'project', 'feedback']);

@@ -1,20 +1,21 @@
 /**
- * broadcast-filter.js — 單一 source of truth 決定 (user, tool) 該看到哪些廣播
+ * broadcast-filter.js — single source of truth deciding which broadcasts a (user, tool) should see
  *
- * 被以下兩處使用：
- *   - P2: `GET /api/broadcast/active?tool=X` → 回傳 user 當下應看到的
- *   - P4: MCP response middleware → 決定要不要 prepend 到 response text
+ * Used in two places:
+ *   - P2: `GET /api/broadcast/active?tool=X` → returns what the user should currently see
+ *   - P4: MCP response middleware → decides whether to prepend it to the response text
  *
- * 過濾規則（Spec S5）：
- *   1. starts_at ≤ now 且 (ends_at IS NULL 或 ends_at > now)
- *   2. target_users IS NULL 或 user_id ∈ target_users
- *   3. min_version IS NULL 或 client_version ≥ min_version（semver）
- *   4. max_version IS NULL 或 client_version ≤ max_version（semver）
- *   5. 無 dismissed_at
- *   6. snooze_until IS NULL 或 snooze_until ≤ now
+ * Filter rules (Spec S5):
+ *   1. starts_at ≤ now and (ends_at IS NULL or ends_at > now)
+ *   2. target_users IS NULL or user_id ∈ target_users
+ *   3. min_version IS NULL or client_version ≥ min_version (semver)
+ *   4. max_version IS NULL or client_version ≤ max_version (semver)
+ *   5. no dismissed_at
+ *   6. snooze_until IS NULL or snooze_until ≤ now
  *
- * Cooldown（只在 P4 injection 用）在回傳後另外處理，**不放在這裡**，
- * 因為 /active 端點是「列出所有目前生效」，不該因為剛 inject 過就跳過。
+ * Cooldown (used only for P4 injection) is handled separately after the return,
+ * **not here**, because the /active endpoint "lists everything currently active" and
+ * should not skip a broadcast just because it was recently injected.
  */
 
 import { isLower, isHigher } from '../utils/semver.js';
@@ -24,7 +25,7 @@ import { isLower, isHigher } from '../utils/semver.js';
  * @param {Object} ctx
  * @param {number} ctx.user_id
  * @param {string} ctx.tool
- * @param {string} [ctx.client_version]  — 若 undefined / null，min/max_version 兩檢查一律通過
+ * @param {string} [ctx.client_version]  — if undefined / null, both min/max_version checks always pass
  * @param {Date}   [ctx.now=new Date()]
  * @returns {Promise<Array<BroadcastWithState>>}
  */
@@ -33,7 +34,7 @@ export async function filterVisibleBroadcasts(query, ctx) {
   if (!Number.isInteger(user_id) || user_id <= 0) return [];
   if (typeof tool !== 'string' || !tool) return [];
 
-  // SQL 處理時間 + target_users + dismiss/snooze；semver 在 JS 做（避免 SQL 複雜度）
+  // SQL handles time + target_users + dismiss/snooze; semver is done in JS (avoids SQL complexity)
   const sql = `
     SELECT
       b.id, b.type, b.severity, b.title, b.body,
@@ -72,11 +73,11 @@ export async function filterVisibleBroadcasts(query, ctx) {
 }
 
 /**
- * filterInjectable — 在 filterVisibleBroadcasts 的結果上再套 cooldown（P4 inject 用）
+ * filterInjectable — applies cooldown on top of the filterVisibleBroadcasts result (for P4 inject)
  *
- * @param {Array} broadcasts  已經過 filterVisibleBroadcasts 的
+ * @param {Array} broadcasts  the result already filtered by filterVisibleBroadcasts
  * @param {Object} opts
- * @param {boolean} opts.forceInject  true 時覆蓋 cooldown（首次 / 隔 4h 時 pass true）
+ * @param {boolean} opts.forceInject  when true, overrides cooldown (pass true on first / every 4h)
  * @param {Date} [opts.now=new Date()]
  */
 export function filterInjectable(broadcasts, { forceInject = false, now = new Date() } = {}) {

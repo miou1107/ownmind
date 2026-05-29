@@ -1,36 +1,40 @@
 /**
- * Activity log INSERT 共用 helper（v1.17.99）
+ * Shared activity log INSERT helper (v1.17.99)
  *
- * 為什麼存在（解 v1.17.98 review I1）：
- *   v1.17.98 的 dedup INSERT 邏輯（NULL path 純 INSERT、有 id path ON CONFLICT）
- *   寫在 src/routes/activity.js 的 router handler 內。tests/activity-batch-dedup.test.js
- *   只能用 simplified copy 測、無法直接打到真 handler — 真 handler 跟邏輯漂移時測不出。
+ * Why it exists (resolves v1.17.98 review I1):
+ *   v1.17.98's dedup INSERT logic (NULL path = plain INSERT, has-id path = ON CONFLICT)
+ *   lived inside the router handler in src/routes/activity.js. tests/activity-batch-dedup.test.js
+ *   could only test a simplified copy and could not hit the real handler — so logic
+ *   drift between them was untestable.
  *
- *   v1.17.99 把 dedup INSERT 抽到這個 pure module、handler import 它、test 也 import
- *   同一份。從此 test 跟真 handler 跑同一份程式、I1 limitation 解掉。
+ *   v1.17.99 extracts the dedup INSERT into this pure module; the handler imports it
+ *   and the test imports the same copy. From now on the test and the real handler run
+ *   the same code, resolving the I1 limitation.
  *
- * Pure module — 無副作用（query function 由 caller 注入）、好測試、跨平台。
+ * Pure module — no side effects (the query function is injected by the caller),
+ * easy to test, cross-platform.
  */
 
-// UUID v4 形式檢查（client_event_id 必須是合法 UUID 否則當沒帶處理）
-// 防 client 亂塞 string、避免污染 (user_id, client_event_id) unique index
+// UUID v4 format check (client_event_id must be a valid UUID, otherwise treated as absent)
+// Guards against clients stuffing in arbitrary strings and polluting the
+// (user_id, client_event_id) unique index
 export const UUID_V4_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 /**
- * 把 client 傳的 client_event_id normalize 成「合法 UUID v4」或 null。
- * 非合法 UUID（包含空字串、非 string、v1/v3/v5、亂塞）一律當 NULL。
+ * Normalize a client-supplied client_event_id into a "valid UUID v4" or null.
+ * Invalid UUIDs (empty string, non-string, v1/v3/v5, garbage) are all treated as NULL.
  */
 export function normalizeClientEventId(raw) {
   return (typeof raw === 'string' && UUID_V4_REGEX.test(raw)) ? raw : null;
 }
 
 /**
- * 寫一筆 activity_logs。
+ * Write one activity_logs row.
  *
- * 拆兩條 path（v1.17.98 review B1）：
- *   - clientEventId === null → 純 INSERT（不帶 ON CONFLICT 子句、避免依賴
- *     partial unique index inference 對 NULL row 的邊界行為）
- *   - clientEventId 為合法 UUID v4 → INSERT 帶 ON CONFLICT DO NOTHING dedup
+ * Two separate paths (v1.17.98 review B1):
+ *   - clientEventId === null → plain INSERT (no ON CONFLICT clause, to avoid relying
+ *     on partial unique index inference's edge behavior for NULL rows)
+ *   - clientEventId is a valid UUID v4 → INSERT with ON CONFLICT DO NOTHING dedup
  *
  * @param {Function} query - PG query function (sql, params) → {rows: [...]}
  * @param {Object} args
@@ -40,14 +44,14 @@ export function normalizeClientEventId(raw) {
  * @param {string|null} args.tool
  * @param {string|null} args.source
  * @param {Object} args.details   - JSONB column
- * @param {string|null} args.clientEventId - normalize 過的 UUID v4 或 null
- * @returns {Promise<{inserted: boolean}>} inserted=false 代表 dedup 跳過
+ * @param {string|null} args.clientEventId - the normalized UUID v4, or null
+ * @returns {Promise<{inserted: boolean}>} inserted=false means dedup skipped it
  */
 export async function insertActivityLog(query, args) {
   const { userId, ts, event, tool, source, details, clientEventId } = args;
 
   if (clientEventId === null) {
-    // NULL path：純 INSERT、不帶 client_event_id 欄位
+    // NULL path: plain INSERT, no client_event_id column
     const r = await query(
       `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -57,7 +61,7 @@ export async function insertActivityLog(query, args) {
     return { inserted: r.rows.length > 0 };
   }
 
-  // 有 id path：ON CONFLICT DO NOTHING、partial unique index dedup
+  // has-id path: ON CONFLICT DO NOTHING, partial unique index dedup
   const r = await query(
     `INSERT INTO activity_logs (user_id, ts, event, tool, source, details, client_event_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -66,6 +70,6 @@ export async function insertActivityLog(query, args) {
      RETURNING id`,
     [userId, ts, event, tool, source, details, clientEventId]
   );
-  // ON CONFLICT 跳過時 RETURNING 0 rows
+  // when ON CONFLICT skips, RETURNING yields 0 rows
   return { inserted: r.rows.length > 0 };
 }

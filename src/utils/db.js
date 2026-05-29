@@ -12,35 +12,36 @@ const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  logger.error('資料庫連線池發生錯誤', { error: err.message });
+  logger.error('Database connection pool error', { error: err.message });
 });
 
 /**
- * 執行 SQL 查詢
- * @param {string} text - SQL 語句
- * @param {Array} params - 參數
+ * Run a SQL query
+ * @param {string} text - the SQL statement
+ * @param {Array} params - parameters
  * @returns {Promise<pg.QueryResult>}
  */
 export async function query(text, params) {
   const start = Date.now();
   const result = await pool.query(text, params);
   const duration = Date.now() - start;
-  logger.debug('執行查詢', { text, duration: `${duration}ms`, rows: result.rowCount });
+  logger.debug('Query executed', { text, duration: `${duration}ms`, rows: result.rowCount });
   return result;
 }
 
 /**
- * v1.19.8 — 在一個 transaction 內跑多個查詢
+ * v1.19.8 — run multiple queries inside a single transaction
  *
- * 用法：
+ * Usage:
  *   const result = await withTransaction(async (client) => {
  *     await client.query('SELECT pg_advisory_xact_lock(123)');
  *     await client.query('INSERT INTO ...');
  *     return { success: true };
  *   });
  *
- * 任何 throw 都會 ROLLBACK；正常 return 才 COMMIT。
- * 並發鎖 / 序列化動作（如 setup wizard 的單一寫入保證）必須走這條。
+ * Any throw triggers ROLLBACK; only a normal return COMMITs.
+ * Concurrency locks / serialized actions (e.g. the setup wizard's single-write
+ * guarantee) must go through this.
  *
  * @template T
  * @param {(client: pg.PoolClient) => Promise<T>} fn

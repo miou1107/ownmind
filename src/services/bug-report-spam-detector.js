@@ -1,50 +1,52 @@
 /**
- * bug-report-spam-detector — 自動標出疑似 spam（白話：自動抓出可能在亂送
- * 回報的人、由管理員審查確認是否封鎖）
+ * bug-report-spam-detector — automatically flags suspected spam (in plain terms:
+ * automatically catch people who may be submitting junk reports, for an admin to
+ * review and decide whether to block)
  *
- * 對應 OpenSpec 提案 v1.19.14-bug-report-tool（規格 §三：spam 偵測器、
- * 場景 23-27）。
+ * Implements OpenSpec proposal v1.19.14-bug-report-tool (spec §3: spam detector,
+ * scenarios 23-27).
  *
- * 三條規則（v4.1 門檻）：
+ * Three rules (v4.1 thresholds):
  *
- *   規則 1：similar_content
- *     1 小時內送 ≥ 5 筆 + 其中 ≥ 3 筆 (title + description) 相似度 > 80%
+ *   Rule 1: similar_content
+ *     ≥ 5 reports within 1 hour + ≥ 3 of them have (title + description) similarity > 80%
  *
- *   規則 2：high_volume_24h
- *     24 小時內送 ≥ 30 筆
+ *   Rule 2: high_volume_24h
+ *     ≥ 30 reports within 24 hours
  *
- *   規則 3：repeated_fingerprint
- *     1 小時內同 bug_fingerprint ≥ 5 筆
- *     （注意：介面層會在第 3 筆 429、實際很少能到 5、但偵測器仍抓）
+ *   Rule 3: repeated_fingerprint
+ *     ≥ 5 reports with the same bug_fingerprint within 1 hour
+ *     (note: the interface layer 429s on the 3rd, so 5 is rarely reached in practice,
+ *      but the detector still catches it)
  *
- * 設計重點：
- *   - 純函式 + DB 查詢（query 由 caller 注入、好測試）
- *   - 計算密集任務（相似度）背景跑、不卡建立 API
- *   - 偵測本身有頻率限制（每筆寫入觸發一次、最多耗 50ms）
+ * Design notes:
+ *   - pure function + DB query (query is injected by the caller, easy to test)
+ *   - the compute-heavy task (similarity) runs in the background, not blocking the create API
+ *   - the detection itself is rate-limited (triggered once per write, costs at most 50ms)
  */
 
 export const SPAM_THRESHOLDS = {
   HIGH_VOLUME_24H_COUNT: 30,
   HIGH_VOLUME_1H_COUNT: 5,
   REPEATED_FINGERPRINT_1H_COUNT: 5,
-  SIMILAR_CONTENT_PAIR_COUNT: 3, // 5 筆中至少 3 筆相似
+  SIMILAR_CONTENT_PAIR_COUNT: 3, // at least 3 of the 5 are similar
   SIMILARITY_RATIO: 0.8,
 };
 
 /**
- * Levenshtein 距離：兩個字串「最少要改幾個字才能變相同」
- * 用標準 dynamic programming 解（O(L_a * L_b)）
+ * Levenshtein distance: the minimum number of character edits to make two strings equal.
+ * Solved with standard dynamic programming (O(L_a * L_b)).
  *
  * @param {string} a
  * @param {string} b
- * @returns {number} 編輯距離
+ * @returns {number} edit distance
  */
 function levenshteinDistance(a, b) {
   if (a === b) return 0;
   if (a.length === 0) return b.length;
   if (b.length === 0) return a.length;
 
-  // dp[i][j] = a[0..i] 改成 b[0..j] 的最少步數
+  // dp[i][j] = the minimum steps to turn a[0..i] into b[0..j]
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
     const cur = [i];
@@ -61,8 +63,8 @@ function levenshteinDistance(a, b) {
 }
 
 /**
- * Levenshtein 相似度 = 1 - (距離 / max(長度))
- * 範圍 0-1、1 表完全一樣
+ * Levenshtein similarity = 1 - (distance / max(length))
+ * Range 0-1, where 1 means identical
  *
  * @param {string} a
  * @param {string} b
@@ -78,11 +80,11 @@ export function calculateLevenshteinSimilarity(a, b) {
 }
 
 /**
- * 在一組報告中找相似的群（cluster）：
- * 若有 ≥ pairThreshold 筆之間兩兩相似度 ≥ similarityThreshold、回那些 id
+ * Find similar clusters within a set of reports:
+ * if ≥ pairThreshold reports have pairwise similarity ≥ similarityThreshold, return their ids
  *
- * 簡化做法：對每筆配對計算相似度、用 union-find 把高度相似的併群、
- * 找最大群是否達 pairThreshold。
+ * Simplified approach: compute similarity for each pair, use union-find to merge highly
+ * similar ones into clusters, then check whether the largest cluster reaches pairThreshold.
  *
  * @param {Array<{ id: number, title: string, description: string }>} reports
  * @param {number} similarityThreshold
@@ -94,10 +96,10 @@ export function detectSimilarPairs(reports, similarityThreshold, pairThreshold =
     return { has_cluster: false, cluster_ids: [] };
   }
 
-  // 串接 title + description 當比對字串
+  // concatenate title + description as the comparison string
   const texts = reports.map((r) => `${r.title || ''} ${r.description || ''}`);
 
-  // union-find 結構
+  // union-find structure
   const parent = reports.map((_, i) => i);
   const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
   const union = (i, j) => {
@@ -115,14 +117,14 @@ export function detectSimilarPairs(reports, similarityThreshold, pairThreshold =
     }
   }
 
-  // 統計各群大小
+  // tally each cluster's size
   const groupSize = new Map();
   for (let i = 0; i < reports.length; i++) {
     const root = find(i);
     groupSize.set(root, (groupSize.get(root) || 0) + 1);
   }
 
-  // 找最大群、若達 pairThreshold 即觸發
+  // find the largest cluster; trigger if it reaches pairThreshold
   let bestRoot = null;
   let bestSize = 0;
   for (const [root, size] of groupSize) {
@@ -144,14 +146,14 @@ export function detectSimilarPairs(reports, similarityThreshold, pairThreshold =
 }
 
 /**
- * 偵測使用者是否觸發 spam 規則
+ * Detect whether a user triggers a spam rule
  *
  * @param {Function} query - DB query (text, params) => Promise<{ rows }>
  * @param {number} userId
  * @returns {Promise<{ triggered: false } | { triggered: true, trigger_rule: string, report_ids: number[] }>}
  */
 export async function detectSpam(query, userId) {
-  // ── 規則 2 先檢（最便宜、只計數）─────────────────────
+  // ── Check Rule 2 first (cheapest, count only) ─────────────────────
   const reports24h = (await query(
     `SELECT id, title, description, bug_fingerprint
        FROM bug_reports
@@ -169,8 +171,8 @@ export async function detectSpam(query, userId) {
     };
   }
 
-  // ── 規則 3：1h 同 fingerprint ─────────────────────────
-  // 對每個 fingerprint 計數
+  // ── Rule 3: same fingerprint within 1h ─────────────────────────
+  // count per fingerprint
   const reports1h = (await query(
     `SELECT id, title, description, bug_fingerprint
        FROM bug_reports
@@ -197,7 +199,7 @@ export async function detectSpam(query, userId) {
     }
   }
 
-  // ── 規則 1：1h ≥ 5 筆 + ≥ 3 筆相似 ────────────────────
+  // ── Rule 1: ≥ 5 reports within 1h + ≥ 3 similar ────────────────────
   if (reports1h.length >= SPAM_THRESHOLDS.HIGH_VOLUME_1H_COUNT) {
     const cluster = detectSimilarPairs(
       reports1h,
@@ -217,7 +219,7 @@ export async function detectSpam(query, userId) {
 }
 
 /**
- * 把偵測結果寫進 bug_report_spam_suspects 表（待管理員審查）
+ * Write the detection result into the bug_report_spam_suspects table (pending admin review)
  *
  * @param {Function} query
  * @param {number} userId

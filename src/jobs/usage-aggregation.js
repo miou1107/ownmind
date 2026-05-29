@@ -1,13 +1,14 @@
 /**
- * usage-aggregation.js — token_events → token_usage_daily 重算邏輯
+ * usage-aggregation.js — token_events → token_usage_daily recomputation logic
  *
- * Aggregation 由 server 全權負責（D1）：
- *   - Cost 一律 server-side 從 model_pricing 算，client 的 native_cost_usd 只是 advisory
+ * Aggregation is fully owned by the server (D1):
+ *   - Cost is always computed server-side from model_pricing; the client's
+ *     native_cost_usd is only advisory
  *   - Wall seconds = last_ts - first_ts
- *   - Active seconds = 相鄰 event 時距 ≤ 600s 者累加
+ *   - Active seconds = sum of adjacent-event gaps ≤ 600s
  *
- * 冪等：對同一 (user_id, tool, session_id, date) 重跑結果相同，
- *      因為一律 `SELECT ... GROUP BY model` 重算再 UPSERT。
+ * Idempotent: rerunning for the same (user_id, tool, session_id, date) yields the
+ *      same result, because it always recomputes via `SELECT ... GROUP BY model` then UPSERTs.
  */
 
 import { pickPricing, computeCost } from '../utils/pricing-lookup.js';
@@ -15,9 +16,9 @@ import { pickPricing, computeCost } from '../utils/pricing-lookup.js';
 export const DEFAULT_ACTIVE_GAP_SECONDS = 600;
 
 /**
- * 從一串 timestamps 計算 wall / active seconds。純函式。
- * @param {Array<Date|string>} timestamps - 未排序即可
- * @param {number} gapSeconds - 間距超過此值視為離線（預設 600 = 10 分鐘）
+ * Compute wall / active seconds from a list of timestamps. Pure function.
+ * @param {Array<Date|string>} timestamps - may be unsorted
+ * @param {number} gapSeconds - a gap larger than this is treated as offline (default 600 = 10 minutes)
  */
 export function computeTimeSpans(timestamps, gapSeconds = DEFAULT_ACTIVE_GAP_SECONDS) {
   if (!Array.isArray(timestamps) || timestamps.length === 0) {
@@ -52,8 +53,8 @@ export function computeTimeSpans(timestamps, gapSeconds = DEFAULT_ACTIVE_GAP_SEC
 }
 
 /**
- * 把 events 按 model 分組，累加 tokens 與 message_count。純函式。
- * @param {Array} events - 每個元素要有 model + *_tokens 欄位
+ * Group events by model, summing tokens and message_count. Pure function.
+ * @param {Array} events - each element must have a model + *_tokens fields
  * @returns {Map<string, object>} - model → { tokens, message_count }
  */
 export function groupByModel(events) {
@@ -83,11 +84,11 @@ export function groupByModel(events) {
 }
 
 /**
- * 從 events + 所有相關 pricing rows 算出 daily row。純函式。
+ * Compute a daily row from events + all relevant pricing rows. Pure function.
  * @param {{user_id, tool, session_id, date}} keys
  * @param {Array} events
- * @param {Array} pricingRows - 所有可能的 pricing（同 tool、可能多 model、多 effective_date）
- * @returns {object} 準備好 UPSERT 的 token_usage_daily row
+ * @param {Array} pricingRows - all possible pricing (same tool, possibly multiple models / effective_dates)
+ * @returns {object} a token_usage_daily row ready to UPSERT
  */
 export function buildDailyRow(keys, events, pricingRows) {
   const { user_id, tool, session_id, date } = keys;
@@ -116,13 +117,14 @@ export function buildDailyRow(keys, events, pricingRows) {
     else cost_usd += groupCost;
   }
 
-  // 政策：任何 model 查不到 pricing → 整筆 cost_usd = null
-  // 理由：部分 cost 看起來像真數字比 null 更危險（讀者以為總額完整）
+  // Policy: if pricing is missing for any model → the whole cost_usd = null
+  // Reason: a partial cost looking like a real number is more dangerous than null
+  // (the reader assumes the total is complete)
   if (anyUnknownPricing) cost_usd = null;
 
   const spans = computeTimeSpans(events.map((e) => e.ts));
 
-  // 取最晚 event 的 model 做為 daily.model（單值欄位）
+  // use the latest event's model as daily.model (single-value column)
   let latestModel = null;
   let latestTs = -Infinity;
   for (const e of events) {
@@ -143,11 +145,11 @@ export function buildDailyRow(keys, events, pricingRows) {
 }
 
 /**
- * DB 版：重算 (user, tool, session, date) 的 daily aggregate 並 UPSERT。
- * 冪等：重跑不會 double count。
+ * DB-backed: recompute the daily aggregate for (user, tool, session, date) and UPSERT.
+ * Idempotent: rerunning does not double count.
  *
  * @param {{query: Function}} deps
- * @param {{userId, tool, sessionId, date}} keys - date 為 YYYY-MM-DD
+ * @param {{userId, tool, sessionId, date}} keys - date is YYYY-MM-DD
  */
 export async function recomputeDaily({ query }, keys) {
   const { userId, tool, sessionId, date } = keys;
@@ -163,10 +165,10 @@ export async function recomputeDaily({ query }, keys) {
     [userId, tool, sessionId, date]
   );
 
-  // 沒 event 就不寫（也不刪既存 row，留給上游判斷）
+  // no events → don't write (and don't delete an existing row; leave that to the caller)
   if (eventsRes.rows.length === 0) return { skipped: true };
 
-  // 撈該 tool 可能用到的 pricing（一次查完，純函式 pick）
+  // fetch the pricing this tool might use (one query, then pick via pure function)
   const models = [...new Set(eventsRes.rows.map((e) => e.model).filter(Boolean))];
   const pricingRes = models.length === 0
     ? { rows: [] }
@@ -219,8 +221,8 @@ export async function recomputeDaily({ query }, keys) {
 }
 
 /**
- * 根據 event timestamps 推導出該批次涉及的 (session, date) 組合。
- * ts 的 date 以 Asia/Taipei 時區切分（IR-011）。
+ * Derive the (session, date) combos this batch touches from the event timestamps.
+ * A ts's date is split using the Asia/Taipei timezone (project timezone standard).
  */
 export function deriveTouchedCombos(events) {
   const combos = new Map();
@@ -236,7 +238,7 @@ export function deriveTouchedCombos(events) {
 
 function toTaipeiYmd(ts) {
   const d = ts instanceof Date ? ts : new Date(ts);
-  // Asia/Taipei = UTC+8；用 Intl 格式避免手刻時區偏移
+  // Asia/Taipei = UTC+8; use Intl formatting to avoid hand-rolling timezone offsets
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Taipei',
     year: 'numeric', month: '2-digit', day: '2-digit'
