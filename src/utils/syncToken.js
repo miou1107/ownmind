@@ -6,10 +6,11 @@ import { query as defaultQuery } from './db.js';
  * Token = hash of (user_id + max updated_at of user memories + max updated_at of team_standards)
  * Any write operation changes updated_at → token changes → stale clients detected.
  *
- * v1.18.0: query 改成可注入（向後相容、default 用 db.js）
- *   原因：寫 GET /sync-token endpoint 整合測試需要 mock query、不重構就要 spin
- *   integration test。最小改動 — 接受 queryFn = defaultQuery、既有所有呼叫者
- *   不用改、新測試可注入 fake。
+ * v1.18.0: query is now injectable (backward compatible; defaults to db.js)
+ *   Reason: integration-testing the GET /sync-token endpoint needs to mock query;
+ *   without refactoring it would require spinning up an integration test. Minimal
+ *   change — accept queryFn = defaultQuery so all existing callers stay unchanged
+ *   while new tests can inject a fake.
  */
 export async function generateSyncToken(userId, queryFn = defaultQuery) {
   const result = await queryFn(

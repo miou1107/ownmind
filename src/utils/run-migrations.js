@@ -1,26 +1,28 @@
 /**
  * Node-based DB migration runner (v1.19.2)
  *
- * 跑在 src/index.js 啟動時、確保 schema 跟 code 對齊才開始 listen。
+ * Runs at src/index.js startup, ensuring the schema is aligned with the code
+ * before it starts listening.
  *
- * 為什麼這支存在：
- *   v1.19.0 加了 db/014_iron_rule_tier.sql 但 deploy 時沒人手動 psql -f、prod
- *   memories 表少 tier 欄位、所有 POST /api/memory 回 500。對應 IR-027「邏輯
- *   才有效」+ IR-048「deploy 必須跑 db/ 下未套用 migration」。
+ * Why this exists:
+ *   v1.19.0 added db/014_iron_rule_tier.sql, but on deploy nobody ran psql -f
+ *   manually, so the prod memories table was missing the tier column and every
+ *   POST /api/memory returned 500. This addresses the "logic, not reminders"
+ *   principle and the "deploy must run unapplied migrations under db/" rule.
  *
- *   把 migration 跑在 server 啟動最前面：
- *   - 每次 docker restart ownmind-api 都自動套未跑的 migration
- *   - 失敗就 throw、process exit 1、container 不會 start listen（避免新 code
- *     配舊 schema）
- *   - 無 deploy 流程改動、Vin 既有「git pull + docker compose build +
- *     docker restart api」工作流不變
+ *   Running migrations at the very start of server boot means:
+ *   - every docker restart of ownmind-api automatically applies unrun migrations
+ *   - a failure throws, process exits 1, and the container never starts listening
+ *     (avoiding new code paired with an old schema)
+ *   - no deploy-flow changes; Vin's existing "git pull + docker compose build +
+ *     docker restart api" workflow stays the same
  *
- * 跟 scripts/run-migrations.sh 的關係：
- *   - 這支是 server 啟動時自動跑（safety net、必跑）
- *   - shell 版是 CLI 手動跑（dev 環境 / fresh deploy debug 用）
- *   - 兩支跑同一個 schema_migrations 表、結果一致
+ * Relationship to scripts/run-migrations.sh:
+ *   - this one runs automatically at server startup (safety net, always runs)
+ *   - the shell version is run manually via CLI (for dev env / fresh-deploy debugging)
+ *   - both use the same schema_migrations table and produce consistent results
  *
- * 對應規格：openspec/changes/v1.19.2-auto-migration/spec.md
+ * Spec: openspec/changes/v1.19.2-auto-migration/spec.md
  */
 
 import { readdir, readFile } from 'node:fs/promises';
@@ -34,19 +36,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_DIR = resolve(__dirname, '..', '..', 'db');
 const BOOTSTRAP_SQL = '015_schema_migrations_table.sql';
 
-// 只跑 NNN_*.sql（NNN = 3 位數字）；忽略 backfill-iron-rule-codes.sql 等工具 SQL
+// only run NNN_*.sql (NNN = 3 digits); ignore tooling SQL like backfill-iron-rule-codes.sql
 const MIGRATION_PATTERN = /^\d{3}_.+\.sql$/;
 
 /**
- * 跑所有未套用的 migration、依檔名排序
+ * Run all unapplied migrations, ordered by filename.
  *
  * @returns {Promise<{applied: string[], skipped: string[]}>}
- * @throws Error — 任何一條 migration 失敗就 throw、不繼續跑下一條
+ * @throws Error — if any migration fails, throw and do not run the next one
  */
 export async function runMigrations() {
   logger.info('[migrations] DB migration runner starting');
 
-  // 1. 確保 schema_migrations 表存在（chicken-and-egg）
+  // 1. ensure the schema_migrations table exists (chicken-and-egg)
   const bootstrapPath = join(DB_DIR, BOOTSTRAP_SQL);
   try {
     const bootstrapSql = await readFile(bootstrapPath, 'utf8');
@@ -57,18 +59,18 @@ export async function runMigrations() {
     throw new Error(`Migration bootstrap (015) failed: ${err.message}`);
   }
 
-  // 2. 撈已套用清單
+  // 2. fetch the applied list
   const { rows: appliedRows } = await pool.query(
     'SELECT filename FROM schema_migrations ORDER BY filename'
   );
   const appliedSet = new Set(appliedRows.map(r => r.filename));
   logger.info('[migrations] Already applied', { count: appliedSet.size });
 
-  // 3. 列 db/ 下符合 NNN_*.sql 的檔、排序
+  // 3. list files under db/ matching NNN_*.sql, sorted
   const allFiles = await readdir(DB_DIR);
   const migrationFiles = allFiles
     .filter(f => MIGRATION_PATTERN.test(f))
-    .sort(); // NNN_ 前綴保證 lexical = numerical
+    .sort(); // the NNN_ prefix guarantees lexical = numerical
 
   if (migrationFiles.length === 0) {
     logger.warn('[migrations] No migration files found', { dir: DB_DIR });
@@ -78,7 +80,7 @@ export async function runMigrations() {
   const appliedThisRun = [];
   const skippedThisRun = [];
 
-  // 4. 跑未套用的
+  // 4. run the unapplied ones
   for (const filename of migrationFiles) {
     if (appliedSet.has(filename)) {
       skippedThisRun.push(filename);
@@ -89,7 +91,7 @@ export async function runMigrations() {
     try {
       const sql = await readFile(sqlPath, 'utf8');
       await pool.query(sql);
-      // 記錄到追蹤表
+      // record into the tracking table
       await pool.query(
         `INSERT INTO schema_migrations (filename, applied_by)
          VALUES ($1, $2)
@@ -103,7 +105,7 @@ export async function runMigrations() {
         filename,
         error: err.message,
       });
-      // 失敗即停、不繼續跑下一條（避免 schema 半套用）
+      // stop on failure, don't run the next one (avoids a half-applied schema)
       throw new Error(`Migration ${filename} failed: ${err.message}`);
     }
   }

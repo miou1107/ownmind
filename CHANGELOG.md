@@ -1,5 +1,26 @@
 # OwnMind 更新紀錄
 
+## v1.26.18 — i18n 軌道 B：src/ 其餘檔案內部英文化（接續 v1.26.15）
+
+**背景**：國際化雙軌中的軌道 B（開發環境英文化）持續推進。v1.26.15 完成 `src/utils/iron-rule-*.js` 鐵律家族 7 支；本期把 src/ 其餘約 30 支檔案剩下的中文註解 + 確認過的內部字串翻成英文，讓全球工程師能讀懂程式碼。
+
+**範圍（翻成英文）**：
+- 全部中文註解、JSDoc。
+- 開發者／維運面向的訊息：`logger.*` 記錄訊息、`console.error` 啟動訊息、開發者面向的內部 `throw new Error`。
+
+**刻意保留中文（屬軌道 A，需後端 i18n 機制、尚未建）**：
+- 回給 client／人類的 API 錯誤／hint／message 字串（me/admin/setup/activity/bug-reports/memory 等 route、`require-fields`、`memory-secret-guard`、`auth`、`memory-error-classifier` 等）。
+- `lib/llm-narrative.js` 的 SYSTEM_PROMPT（中文 prompt、要求模型輸出繁中）。
+- 人類面向的週/月報、廣播標題/內文/CTA、自動建立的記憶內容。
+- 拿來比對使用者內容的 regex／陣列／SQL-LIKE 字面值（如 `送出`、`超過`、`週報%`、`## 起源`）。
+- AI 面向的 enforcement／onboarding 訊息。
+
+**安全做法**：逐檔翻、翻完即跑 `npm test` 比對 pass 數；不改任何識別字、邏輯、比對字面值；每檔 `git diff` 自檢只動註解／已確認內部字串。順帶把殘留在註解的個人鐵律編號改寫成白話描述。
+
+**測試**：全套維持 2012 全綠（與翻譯前 baseline 一致），0 fail / 0 skipped。
+
+**版本**：1.26.17 → 1.26.18
+
 ## v1.26.17 — 修 sync_token 過時時自動重試失效（改用結構化 code 判斷）
 
 **Bug**：MCP client 的 sync_token 409 自動重試只在「沒帶 token」時觸發，對「token 過時(stale)」失效——而過時正是這機制設計的主要場景（多 AI session 並發寫、token 被互相 bump）。

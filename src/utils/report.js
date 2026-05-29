@@ -1,22 +1,22 @@
 /**
- * 週/月報計算工具
- * 所有計算邏輯抽成純函式，方便測試
+ * Weekly/monthly report computation utilities
+ * All computation logic is extracted into pure functions for easy testing.
  */
 
 /**
- * 計算指定 period 的時間範圍（Asia/Taipei，UTC+8）
+ * Compute the time range for a given period (Asia/Taipei, UTC+8)
  * @param {'week'|'month'} period
- * @param {number} offset - 0=本期, 1=上一期
- * @param {Date} [now] - 可注入，方便測試
+ * @param {number} offset - 0=current period, 1=previous period
+ * @param {Date} [now] - injectable for testing
  * @returns {{ start: Date, end: Date, label: string }}
  */
 export function computePeriodRange(period, offset = 0, now = new Date()) {
-  // 轉成 UTC+8 時間
+  // convert to UTC+8 time
   const tz = 8 * 60 * 60 * 1000;
   const local = new Date(now.getTime() + tz);
 
   if (period === 'week') {
-    // 週一為一週開始
+    // Monday is the start of the week
     const day = local.getUTCDay(); // 0=Sunday
     const daysFromMonday = day === 0 ? 6 : day - 1;
     const monday = new Date(local);
@@ -27,7 +27,7 @@ export function computePeriodRange(period, offset = 0, now = new Date()) {
     sunday.setUTCDate(monday.getUTCDate() + 6);
     sunday.setUTCHours(23, 59, 59, 999);
 
-    // 轉回 UTC
+    // convert back to UTC
     const start = new Date(monday.getTime() - tz);
     const end = new Date(sunday.getTime() - tz);
     const label = `${monday.toISOString().slice(0, 10)} ~ ${sunday.toISOString().slice(0, 10)}`;
@@ -51,9 +51,9 @@ export function computePeriodRange(period, offset = 0, now = new Date()) {
 }
 
 /**
- * 把 friction_points 字串陣列群組化（前 20 字元 key，不分大小寫）
+ * Group an array of friction_points strings (key = first 20 chars, case-insensitive)
  * @param {string[]} frictions
- * @returns {{ text: string, count: number }[]} 降序排列
+ * @returns {{ text: string, count: number }[]} sorted descending
  */
 export function groupFrictions(frictions) {
   const map = new Map();
@@ -69,8 +69,8 @@ export function groupFrictions(frictions) {
 }
 
 /**
- * 從已查好的 DB rows 計算報表資料（純函式）
- * @param {object[]} sessionRows - session_logs rows（含 details）
+ * Compute report data from already-queried DB rows (pure function)
+ * @param {object[]} sessionRows - session_logs rows (including details)
  * @param {number} newMemoriesCount
  * @param {string} periodLabel
  * @returns {object} report data
@@ -96,7 +96,7 @@ export function computeReportData(sessionRows, newMemoriesCount, periodLabel) {
   return {
     period: periodLabel,
     new_memories: newMemoriesCount,
-    friction_issues_created: 0, // 由 job 填入，API 即時計算時為 0
+    friction_issues_created: 0, // filled in by the job; 0 when the API computes on the fly
     top_frictions: topFrictions,
     top_suggestions: topSuggestions,
     generated_at: new Date().toISOString(),

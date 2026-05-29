@@ -2,19 +2,21 @@ import { query as defaultQuery } from '../utils/db.js';
 import defaultLogger from '../utils/logger.js';
 
 /**
- * 把 api_key mask 成可辨識但不洩漏全文的字串。
- * 用於 401 觀測 log，admin 看 prefix-suffix 能跟 users 表反查、又不會把 key 寫進 docker logs。
+ * Mask an api_key into an identifiable string that doesn't leak the full value.
+ * Used in 401 observation logs: an admin can cross-reference the prefix-suffix against
+ * the users table without the key being written into docker logs.
  *
- * 格式：
+ * Format:
  *   - ''/null/undefined → '<empty>'
- *   - 長度 < 12 → '<too-short:N>'
- *   - 長度 ≥ 12 → '前4...後4 (len=N)'
+ *   - length < 12 → '<too-short:N>'
+ *   - length ≥ 12 → 'first4...last4 (len=N)'
  *
- * 為什麼 12 不是 8：對 8 char key（如 Adam 殘留的 "--update"），slice(0,4)+slice(-4)
- * 會等於整串原文（三個點之間沒遮到任何字元），admin 從 docker logs 直接看到 key 全文。
- * 12 是「中間至少還有 4 char 被遮掉」的最低值。len < 12 的 key 不算合法 OwnMind key
- * （UUID 36、custom prefix ≥ 20），這種 case 由 self-check 的 checkApiKeyFormat 在
- * client 端先抓出來，這裡只負責不在 server log 上洩漏全文即可。
+ * Why 12 and not 8: for an 8-char key (like Adam's leftover "--update"), slice(0,4)+slice(-4)
+ * would equal the whole original (nothing is masked between the dots), and the admin would
+ * see the full key directly in docker logs. 12 is the minimum where "at least 4 chars in the
+ * middle are masked". A key with len < 12 is not a valid OwnMind key (UUID is 36, custom
+ * prefix ≥ 20); that case is caught client-side first by the self-check's checkApiKeyFormat,
+ * so here we just need to not leak the full value in the server log.
  */
 export function maskApiKey(key) {
   if (typeof key !== 'string' || key === '') return '<empty>';
@@ -23,19 +25,21 @@ export function maskApiKey(key) {
 }
 
 /**
- * API Key 認證中介層
+ * API Key authentication middleware
  *
- * v1.17.68 IR-038：401 path 加 logger.warn('auth_failed', {...})。
- * 背景：Adam 從 2026-03-26 到 2026-05-08 都吃 401（settings.json 殘留 "--update"），
- * 因為舊版 auth 401 path 沒留結構化 log，admin 從 docker logs 只看到 access log
- * 「POST /api/usage/events 401 3ms」，看不出是誰、key prefix 也沒留。
+ * v1.17.68: the 401 path adds logger.warn('auth_failed', {...}).
+ * Background: Adam got 401s from 2026-03-26 to 2026-05-08 (settings.json had a leftover
+ * "--update"), because the old auth 401 path kept no structured log, so the admin only
+ * saw the access log "POST /api/usage/events 401 3ms" in docker logs — no way to tell
+ * who it was, and no key prefix recorded.
  *
- * 第 4 個參數 `deps` 為測試注入點：tests 可傳 { logger, query } 覆蓋預設依賴，
- * 不影響 production 呼叫者（route handler 仍以 (req, res, next) 三個參數呼叫）。
+ * The 4th parameter `deps` is the test injection point: tests can pass { logger, query }
+ * to override the default dependencies, without affecting production callers (the route
+ * handler still calls with the three (req, res, next) parameters).
  *
- * NB: deps 必須用 default param（`= {}`），不能寫成 positional，這樣 fn.length === 3，
- *     Express 不會把這支 middleware 當 error handler 來叫（error handler 是 4 args
- *     `(err, req, res, next)`）。改 signature 時保留這個不變式。
+ * NB: deps must use a default param (`= {}`), not positional, so that fn.length === 3 and
+ *     Express does not call this middleware as an error handler (error handlers have 4 args
+ *     `(err, req, res, next)`). Preserve this invariant when changing the signature.
  */
 export default async function auth(req, res, next, deps = {}) {
   const logger = deps.logger || defaultLogger;
@@ -43,8 +47,8 @@ export default async function auth(req, res, next, deps = {}) {
 
   const logAuthFailure = (maskedKey) => {
     try {
-      // x-forwarded-for 可能是 'client, proxy1, proxy2' 鏈，
-      // 401 forensics 要的是最左邊那個 client IP（reviewer M3）。
+      // x-forwarded-for may be a 'client, proxy1, proxy2' chain;
+      // 401 forensics wants the leftmost client IP (reviewer M3).
       const xff = req.headers?.['x-forwarded-for'];
       const xffFirst = xff ? String(xff).split(',')[0].trim() : null;
       logger.warn('auth_failed', {
@@ -56,7 +60,7 @@ export default async function auth(req, res, next, deps = {}) {
           .slice(0, 80),
       });
     } catch {
-      // log 失敗不能影響 auth 回應
+      // a logging failure must not affect the auth response
     }
   };
 
@@ -83,7 +87,7 @@ export default async function auth(req, res, next, deps = {}) {
     req.user = result.rows[0];
     next();
   } catch (err) {
-    logger.error('認證失敗', { error: err.message });
+    logger.error('Authentication error', { error: err.message });
     res.status(500).json({ error: '認證過程發生錯誤' });
   }
 }

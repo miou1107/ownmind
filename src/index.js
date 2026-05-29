@@ -10,9 +10,10 @@ import { seedDefaultPasswords } from './jobs/seed-default-passwords.js';
 const PORT = process.env.PORT || 3000;
 
 async function start() {
-  // v1.19.2 IR-048：server 啟動前自動套未跑的 DB migration、確保 schema 跟
-  // code 對齊。失敗就 process.exit(1)、container 不會開始 listen（避免新
-  // code 配舊 schema 對外服務、像 v1.19.0 → v1.19.1 那次踩坑）。
+  // v1.19.2: automatically apply unrun DB migrations before the server starts, to
+  // ensure the schema is aligned with the code. On failure, process.exit(1) so the
+  // container never starts listening (avoiding new code serving against an old schema,
+  // like the v1.19.0 → v1.19.1 incident).
   try {
     await runMigrations();
   } catch (err) {
@@ -21,11 +22,11 @@ async function start() {
   }
 
   app.listen(PORT, () => {
-    logger.info(`OwnMind API 伺服器已啟動，監聽埠號 ${PORT}`);
+    logger.info(`OwnMind API server started, listening on port ${PORT}`);
     startJobs();
     startNightlyRecomputeJob();
     startNightlyUpgradeReminderJob();
-    // v1.17.25: 補預設密碼給沒 password_hash 的 user（idempotent）
+    // v1.17.25: seed a default password for users without a password_hash (idempotent)
     seedDefaultPasswords();
   });
 }

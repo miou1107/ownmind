@@ -1,17 +1,17 @@
 /**
- * Semver 工具 — 統一版本比對邏輯
- * v1.17.0 起被多處使用（admin-clients、broadcast-filter、inject-broadcast）
+ * Semver utility — unified version comparison logic
+ * Used in many places since v1.17.0 (admin-clients, broadcast-filter, inject-broadcast)
  *
- * 規則：
- *  - 正規：`X.Y.Z` 三段數字
- *  - Pre-release：`X.Y.Z-<tag>`（如 `1.17.0-beta`、`1.17.0-dev`）視為**低於**對應 stable
- *    （遵守 SemVer 2.0.0：pre-release < release；讓 beta client 被標為需升級）
- *  - Build metadata：`X.Y.Z+<build>` 的 `+` 後段忽略
- *  - 非法格式（null / 'unknown' / 亂字串）→ fallback [0, 0, 0, 0]，自動被視為最舊
+ * Rules:
+ *  - Canonical: `X.Y.Z` three numeric segments
+ *  - Pre-release: `X.Y.Z-<tag>` (e.g. `1.17.0-beta`, `1.17.0-dev`) is treated as **lower** than the corresponding stable
+ *    (follows SemVer 2.0.0: pre-release < release; so a beta client gets flagged as needing an upgrade)
+ *  - Build metadata: the part after `+` in `X.Y.Z+<build>` is ignored
+ *  - Invalid format (null / 'unknown' / garbage string) -> fallback [0, 0, 0, 0], automatically treated as the oldest
  *
- * Return shape：`[major, minor, patch, preFlag]`
- *  - preFlag = 1 代表 stable，0 代表 prerelease
- *  - compareSemver 以 numeric diff 排；stable（1）> prerelease（0），所以 stable 贏
+ * Return shape: `[major, minor, patch, preFlag]`
+ *  - preFlag = 1 means stable, 0 means prerelease
+ *  - compareSemver sorts by numeric diff; stable (1) > prerelease (0), so stable wins
  */
 
 export function parseSemver(v) {

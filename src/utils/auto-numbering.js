@@ -1,7 +1,7 @@
 /**
- * 從現有 code 列表產生下一個 IR-XXX 編號
- * @param {Array<string|null>} existingCodes - 現有的 code 值（可能含 null）
- * @returns {string} 下一個編號，如 'IR-014'
+ * Generate the next IR-XXX code from a list of existing codes.
+ * @param {Array<string|null>} existingCodes - existing code values (may contain null)
+ * @returns {string} the next code, e.g. 'IR-014'
  */
 export function generateNextIronRuleCode(existingCodes) {
   const nums = (existingCodes || [])

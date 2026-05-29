@@ -1,12 +1,14 @@
 /**
- * v1.17.25: Server boot 時補預設密碼給沒有 password_hash 的 user
- * v1.19.10: 固定預設密碼 'Password42760988' 被移除（repo 公開後外洩）。
- *           改成「每個 user 各別產隨機密碼」、寫入 server log 一次（含 user email 跟臨時密碼）、
- *           不存任何固定字串。admin 看 server log 才能拿到、轉告對方後該行紀錄即作廢。
+ * v1.17.25: at server boot, seed a default password for users without a password_hash
+ * v1.19.10: the fixed default password was removed (it leaked once the repo went public).
+ *           Changed to "generate a random password per user", written to the server log
+ *           once (including user email and the temporary password), with no fixed string
+ *           stored anywhere. The admin can only obtain it from the server log; once relayed
+ *           to the person, that log line is void.
  *
- * 已有 password_hash 的 user（之前 admin 自己設過密碼）不動。
+ * Users that already have a password_hash (the admin set one previously) are untouched.
  *
- * 跑一次性、idempotent：只 UPDATE password_hash IS NULL 的 row。
+ * One-shot, idempotent: only UPDATEs rows where password_hash IS NULL.
  */
 
 import bcrypt from 'bcrypt';
@@ -22,10 +24,10 @@ export async function seedDefaultPasswords() {
       `SELECT id, email, name FROM users WHERE password_hash IS NULL`
     );
     if (noPwd.rows.length === 0) {
-      return; // 沒人需要補
+      return; // nobody needs seeding
     }
 
-    // v1.19.10：每個 user 各別產隨機密碼、逐一 UPDATE
+    // v1.19.10: generate a random password per user, UPDATE one by one
     const generated = [];
     for (const u of noPwd.rows) {
       const password = generateRandomPassword();
@@ -40,13 +42,14 @@ export async function seedDefaultPasswords() {
       generated.push({ email: u.email, password });
     }
 
-    // 寫進 server log（一次性、不存其他地方）給 admin 查
-    // ⚠️ log 是 sensitive 資訊、部署環境的 log 收集器要留意（建議只在 stdout、不另送雲端）
+    // write to the server log (one-shot, not stored anywhere else) for the admin to read
+    // ⚠️ this log contains sensitive info; be careful with the deploy environment's log
+    // collector (recommend stdout only, do not forward to the cloud)
     logger.warn(
-      `已補隨機臨時密碼給 ${generated.length} 位 user（必須改密碼）。請從本機 server log 取得、轉告對方後該行 log 即作廢：`,
+      `Seeded a random temporary password for ${generated.length} user(s) (must change password). Obtain it from the local server log; once relayed to the person, this log line is void:`,
       { entries: generated }
     );
   } catch (err) {
-    logger.error('seedDefaultPasswords 失敗', { error: err.message });
+    logger.error('seedDefaultPasswords failed', { error: err.message });
   }
 }

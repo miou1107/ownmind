@@ -1,19 +1,19 @@
 import { createHash } from 'crypto';
 
 /**
- * 將 Markdown 按標題階層 (H1, H2, H3) 切分為 Chunk
- * 子標題會繼承父標題路徑，例如 "Parent > Sub > Detail"
- * 
- * @param {string} content Markdown 原始內容
- * @param {number} maxDepth 切分深度，預設 3
- * @returns {Array} 切分後的物件清單
+ * Split Markdown into chunks by heading hierarchy (H1, H2, H3).
+ * Sub-headings inherit the parent heading path, e.g. "Parent > Sub > Detail".
+ *
+ * @param {string} content raw Markdown content
+ * @param {number} maxDepth split depth, default 3
+ * @returns {Array} list of chunk objects
  */
 export function parseStandardMarkdown(content, maxDepth = 3) {
   const lines = content.split(/\r?\n/);
   const chunks = [];
   
   let currentPath = [];
-  let currentSections = []; // 用於暫存同一個路徑下的多個區塊內容（如果有）
+  let currentSections = []; // buffers multiple section bodies under the same path (if any)
   let currentLines = [];
 
   function flush() {
@@ -39,10 +39,10 @@ export function parseStandardMarkdown(content, maxDepth = 3) {
       const title = headerMatch[2].trim();
 
       if (level <= maxDepth) {
-        // 先把目前的內容存進去
+        // flush the current content first
         flush();
 
-        // 調整路徑深度
+        // adjust path depth
         currentPath = currentPath.slice(0, level - 1);
         currentPath[level - 1] = title;
         continue;
@@ -51,7 +51,7 @@ export function parseStandardMarkdown(content, maxDepth = 3) {
     currentLines.push(line);
   }
 
-  // 處理最後一個區塊
+  // handle the final section
   flush();
 
   return chunks;

@@ -1,6 +1,6 @@
 /**
- * OwnMind 共用常數
- * DB CHECK constraint (memories_type_check) 必須與此同步
+ * OwnMind shared constants
+ * The DB CHECK constraint (memories_type_check) must stay in sync with this.
  */
 export const SESSION_RETENTION_DAYS = 90;
 
