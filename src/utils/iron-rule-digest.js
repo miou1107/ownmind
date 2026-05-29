@@ -1,12 +1,12 @@
 /**
- * Iron Rule Digest — 鐵律精簡摘要（SessionStart hook 用）
+ * Iron Rule Digest — concise iron-rule summary (used by the SessionStart hook)
  *
- * v1.19 起按 tier 分組顯示：
- *   - 🔴 Critical：核心硬規則，全部列出，給 AI 載入時最高優先
- *   - 🟡 Default： 預設規則，全部列出
- *   - ⚪ Advisory：純參考提示，只顯示計數，避免稀釋 AI 注意力
+ * Since v1.19, displayed grouped by tier:
+ *   - 🔴 Critical: core hard rules, all listed, highest priority when the AI loads them
+ *   - 🟡 Default:  default rules, all listed
+ *   - ⚪ Advisory: pure reference hints, count only, to avoid diluting the AI's attention
  *
- * 對應規格：openspec/changes/v1.19-iron-rule-tier/spec.md 場景 6
+ * Corresponding spec: openspec/changes/v1.19-iron-rule-tier/spec.md scenario 6
  */
 
 import { TIER_EMOJI, TIER_LABEL_ZH, normalizeTier, groupByTier } from '../../shared/iron-rule-tier.js';
@@ -23,10 +23,10 @@ function formatRuleLine(rule) {
 }
 
 /**
- * 組裝鐵律分組 digest 給 SessionStart 顯示
+ * Assemble the grouped iron-rule digest for SessionStart display
  *
  * @param {Array<{ code?: string, title: string, tier?: string, tags?: string[] }>} rules
- * @returns {string} — 分組好的 markdown 字串、空陣列回空字串
+ * @returns {string} — the grouped markdown string; empty array returns an empty string
  */
 export function buildIronRulesDigest(rules) {
   if (!Array.isArray(rules) || rules.length === 0) return '';
@@ -58,12 +58,12 @@ export function buildIronRulesDigest(rules) {
     sections.push('');
   }
 
-  // 去掉最後一個空行
+  // drop the trailing blank line
   return sections.join('\n').trimEnd();
 }
 
 /**
- * 統計三 tier 的計數（給 admin dashboard / 健康度監控用）
+ * Count the three tiers (for the admin dashboard / health monitoring)
  */
 export function countByTier(rules) {
   const counts = { critical: 0, default: 0, advisory: 0, total: 0 };

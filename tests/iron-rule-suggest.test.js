@@ -27,7 +27,7 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
     const r = suggestSkillMdFormat(skillMdRule);
     assert.equal(r.already_skill_md, true);
     assert.equal(r.proposed_content, skillMdRule.content);
-    assert.match(r.notes.join(' '), /已是 SKILL.md 格式/);
+    assert.match(r.notes.join(' '), /Already in SKILL.md format/);
   });
 
   it('Legacy → already_skill_md=false; proposed has valid frontmatter', () => {
@@ -71,7 +71,7 @@ describe('v1.18.0 — suggestSkillMdFormat', () => {
       tags: [],
     };
     const r = suggestSkillMdFormat(legacy);
-    assert.match(r.notes.join(' '), /無 trigger:xxx tag/);
+    assert.match(r.notes.join(' '), /no trigger:xxx tag/);
     assert.match(r.proposed_content, /general/i);
   });
 

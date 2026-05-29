@@ -1,11 +1,19 @@
 # OwnMind 檔案結構
 
+## v1.26.15 修改（i18n 軌道 B：src/ 鐵律家族工具內部英文化）
+
+新增檔：
+```
+openspec/changes/v1.26.15-i18n-src-iron-rules/proposal.md   — v1.26.15 提案
+openspec/changes/v1.26.15-i18n-src-iron-rules/tasks.md      — v1.26.15 任務清單
+```
+
 ## v1.26.11 修改（國際化第十期 Part 4：tests/ 接續 30 檔英文化 — 軌道 B）
 
 新增檔：
 ```
-openspec/changes/v1.26.11-i18n-tests-internal-part4/proposal.md      — v1.26.11 提案
-openspec/changes/v1.26.11-i18n-tests-internal-part4/tasks.md         — v1.26.11 任務清單
+openspec/changes/archive/v1.26.11-i18n-tests-internal-part4/proposal.md      — v1.26.11 提案
+openspec/changes/archive/v1.26.11-i18n-tests-internal-part4/tasks.md         — v1.26.11 任務清單
 ```
 
 修改檔（30 個 tests/*.test.js + 版號 + 三語文件）：
@@ -49,8 +57,8 @@ CHANGELOG.md / FILELIST.md                         — v1.26.11 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.10-i18n-tests-internal-part3/proposal.md      — v1.26.10 提案
-openspec/changes/v1.26.10-i18n-tests-internal-part3/tasks.md         — v1.26.10 任務清單
+openspec/changes/archive/v1.26.10-i18n-tests-internal-part3/proposal.md      — v1.26.10 提案
+openspec/changes/archive/v1.26.10-i18n-tests-internal-part3/tasks.md         — v1.26.10 任務清單
 ```
 
 修改檔（15 個 tests/*.test.js + 版號 + 三語文件）：
@@ -79,8 +87,8 @@ CHANGELOG.md / FILELIST.md                         — v1.26.10 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.9-i18n-tests-internal-part2/proposal.md       — v1.26.9 提案
-openspec/changes/v1.26.9-i18n-tests-internal-part2/tasks.md          — v1.26.9 任務清單
+openspec/changes/archive/v1.26.9-i18n-tests-internal-part2/proposal.md       — v1.26.9 提案
+openspec/changes/archive/v1.26.9-i18n-tests-internal-part2/tasks.md          — v1.26.9 任務清單
 ```
 
 修改檔（14 個 tests/*.test.js + 版號 + 三語文件）：
@@ -110,8 +118,8 @@ CHANGELOG.md / FILELIST.md                 — v1.26.9 條目
 ```
 hooks/lib/select-block-fingerprint.js                                       — 純函式 helper：根據攔下原因動態選 bug-report 指紋
 tests/git-pre-commit-fingerprint.test.js                                    — selectBlockFingerprint 11 條單元測試
-openspec/changes/v1.26.8-fix-secret-detect-and-hook-fingerprint/proposal.md — v1.26.8 提案
-openspec/changes/v1.26.8-fix-secret-detect-and-hook-fingerprint/tasks.md    — v1.26.8 任務清單
+openspec/changes/archive/v1.26.8-fix-secret-detect-and-hook-fingerprint/proposal.md — v1.26.8 提案
+openspec/changes/archive/v1.26.8-fix-secret-detect-and-hook-fingerprint/tasks.md    — v1.26.8 任務清單
 ```
 
 修改檔（2 個核心檔 + 1 個測試 + 版號 + 三語文件）：
@@ -131,8 +139,8 @@ CHANGELOG.md / FILELIST.md               — v1.26.8 條目
 scripts/install-helpers/path-helpers.sh                              — 新增、提供 to_win_path() bash function（cygpath -m fallback to identity）
 tests/path-to-win32.test.js                                          — 新增、17 個 unit test、mock process.platform=win32 驗 toWin32Path/toMsysPath round-trip
 tests/path-helpers-bash.test.js                                      — 新增、7 個整合 test、spawn bash + 模擬 cygpath 驗 to_win_path() 行為
-openspec/changes/v1.26.7-hotfix-msys-path/proposal.md       — v1.26.7 hotfix 提案
-openspec/changes/v1.26.7-hotfix-msys-path/tasks.md          — v1.26.7 hotfix 任務清單
+openspec/changes/archive/v1.26.7-hotfix-msys-path/proposal.md       — v1.26.7 hotfix 提案
+openspec/changes/archive/v1.26.7-hotfix-msys-path/tasks.md          — v1.26.7 hotfix 任務清單
 ```
 
 修改檔（4 個 sh 檔 + 版號 + 三語文件）：
@@ -152,8 +160,8 @@ CHANGELOG.md / FILELIST.md               — v1.26.7 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.6-i18n-tests-internal-part1/proposal.md
-openspec/changes/v1.26.6-i18n-tests-internal-part1/tasks.md
+openspec/changes/archive/v1.26.6-i18n-tests-internal-part1/proposal.md
+openspec/changes/archive/v1.26.6-i18n-tests-internal-part1/tasks.md
 ```
 
 修改檔（25 個 tests/*.test.js + 版號 + 三語文件）：
@@ -192,8 +200,8 @@ CHANGELOG.md / FILELIST.md                   — v1.26.6 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.5-i18n-src-routes-internal/proposal.md
-openspec/changes/v1.26.5-i18n-src-routes-internal/tasks.md
+openspec/changes/archive/v1.26.5-i18n-src-routes-internal/proposal.md
+openspec/changes/archive/v1.26.5-i18n-src-routes-internal/tasks.md
 ```
 
 修改檔（24 個 src/routes/ 檔 + 4 條 test 斷言 + package.json 補修）：
@@ -237,8 +245,8 @@ CHANGELOG.md                             — v1.26.5 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.4-i18n-shared-internal/proposal.md
-openspec/changes/v1.26.4-i18n-shared-internal/tasks.md
+openspec/changes/archive/v1.26.4-i18n-shared-internal/proposal.md
+openspec/changes/archive/v1.26.4-i18n-shared-internal/tasks.md
 ```
 
 修改檔（26 個 shared/ 檔 + 1 個 test 斷言）：
@@ -283,8 +291,8 @@ CHANGELOG.md                     — v1.26.4 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.3-i18n-scripts-internal/proposal.md
-openspec/changes/v1.26.3-i18n-scripts-internal/tasks.md
+openspec/changes/archive/v1.26.3-i18n-scripts-internal/proposal.md
+openspec/changes/archive/v1.26.3-i18n-scripts-internal/tasks.md
 ```
 
 修改檔（21 個 scripts/ 檔 + 2 個 test 斷言）：
@@ -313,8 +321,8 @@ CHANGELOG.md                             — v1.26.3 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.2-i18n-mcp-internal/proposal.md   — i18n 第六期提案
-openspec/changes/v1.26.2-i18n-mcp-internal/tasks.md      — 任務分解
+openspec/changes/archive/v1.26.2-i18n-mcp-internal/proposal.md   — i18n 第六期提案
+openspec/changes/archive/v1.26.2-i18n-mcp-internal/tasks.md      — 任務分解
 ```
 
 修改檔（6 個 mcp/ 檔 + 軌道 A 補洞 4 條 user-facing 訊息）：
@@ -336,8 +344,8 @@ CHANGELOG.md                          — v1.26.2 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.1-bug-report-free-form/proposal.md   — 設計提案（escape hatch 指紋）
-openspec/changes/v1.26.1-bug-report-free-form/tasks.md      — 任務分解
+openspec/changes/archive/v1.26.1-bug-report-free-form/proposal.md   — 設計提案（escape hatch 指紋）
+openspec/changes/archive/v1.26.1-bug-report-free-form/tasks.md      — 任務分解
 ```
 
 修改檔（5 個產品檔 + 2 個測試）：
@@ -360,8 +368,8 @@ CHANGELOG.md                             — v1.26.1 條目
 
 新增檔：
 ```
-openspec/changes/v1.26.0-i18n-hooks-internal/proposal.md   — i18n 第五期提案（軌道 B 首發）
-openspec/changes/v1.26.0-i18n-hooks-internal/tasks.md      — 任務分解
+openspec/changes/archive/v1.26.0-i18n-hooks-internal/proposal.md   — i18n 第五期提案（軌道 B 首發）
+openspec/changes/archive/v1.26.0-i18n-hooks-internal/tasks.md      — 任務分解
 ```
 
 修改檔（軌道 B 內部註解英化、20 個 hooks 檔）：
@@ -397,8 +405,8 @@ CHANGELOG.md                             — v1.26.0 條目
 
 新增檔：
 ```
-openspec/changes/v1.25.0-i18n-memory-route/proposal.md   — i18n 第四期提案
-openspec/changes/v1.25.0-i18n-memory-route/tasks.md      — 任務分解
+openspec/changes/archive/v1.25.0-i18n-memory-route/proposal.md   — i18n 第四期提案
+openspec/changes/archive/v1.25.0-i18n-memory-route/tasks.md      — 任務分解
 ```
 
 修改檔（user-facing 字串翻譯）：
@@ -416,8 +424,8 @@ CHANGELOG.md                                — v1.25.0 條目（含 Track A 總
 
 新增檔：
 ```
-openspec/changes/v1.24.0-i18n-reply-lint/proposal.md   — i18n 第三期提案
-openspec/changes/v1.24.0-i18n-reply-lint/tasks.md      — 任務分解
+openspec/changes/archive/v1.24.0-i18n-reply-lint/proposal.md   — i18n 第三期提案
+openspec/changes/archive/v1.24.0-i18n-reply-lint/tasks.md      — 任務分解
 ```
 
 修改檔（user-facing 字串 + Claude 行為性 prompt 翻譯）：
@@ -441,8 +449,8 @@ CHANGELOG.md                                — v1.24.0 條目
 
 新增檔：
 ```
-openspec/changes/v1.23.0-i18n-session-start/proposal.md   — i18n 第二期提案
-openspec/changes/v1.23.0-i18n-session-start/tasks.md      — 任務分解
+openspec/changes/archive/v1.23.0-i18n-session-start/proposal.md   — i18n 第二期提案
+openspec/changes/archive/v1.23.0-i18n-session-start/tasks.md      — 任務分解
 ```
 
 修改檔（user-facing 字串翻譯：中文 → 英文）：
@@ -460,9 +468,9 @@ CHANGELOG.md                                — v1.23.0 條目
 新增檔：
 ```
 CLAUDE.md                                                — repo 根目錄 dev 指引、雙軌國際化規則文件（v1.21.0 後加）
-openspec/changes/v1.22.0-i18n-user-facing/proposal.md   — i18n 第一期提案
-openspec/changes/v1.22.0-i18n-user-facing/tasks.md      — 任務分解
-openspec/changes/v1.22.0-i18n-user-facing/spec.md       — 規格 + scenarios + style examples
+openspec/changes/archive/v1.22.0-i18n-user-facing/proposal.md   — i18n 第一期提案
+openspec/changes/archive/v1.22.0-i18n-user-facing/tasks.md      — 任務分解
+openspec/changes/archive/v1.22.0-i18n-user-facing/spec.md       — 規格 + scenarios + style examples
 ```
 
 修改檔（user-facing 字串翻譯：中文 → 英文、CJK 標點 → ASCII）：
@@ -535,7 +543,7 @@ tests/mcp-log-event-uuid.test.js               — import localDateOnly 用同�
 client/src/main.jsx                            — 包 LocaleProvider、加 TitleSync 連動 doc title、createRoot 加 window cache 修 HMR 警告、basename 改用 document.baseURI 動態偵測（hotfix 寫死 /ownmind/dashboard 導致本機 docker 部署 SPA 不渲染）
 client/index.html                              — 加 <base href="./"> 讓 baseURI = 「index.html 所在資料夾絕對 URL」、basename / API_BASE 動態偵測得以正確排除 SPA sub-route
 client/src/i18n/zh.json                        — 補新增的 i18n key（30 → 74 個 → 加 usage.* ~40 個鍵 / tab / range / col / weekday / mine / team / projects 分群）
-openspec/changes/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
+openspec/changes/archive/v1.20.1-portal-pages/tasks.md — 從 stub 展開成 11 個子任務（3.0~3.10）含 TDD steps、依賴圖、推進順序
 docker-compose.yml                             — 拿掉 db/001_init.sql 到 docker-entrypoint-initdb.d 的 mount、由 migration runner 統管（fix 既有設計衝突、獨立 commit 15d1d26）；加 postgres healthcheck + api depends_on 長形式 condition: service_healthy 卡控啟動順序（v1.20.1-db-healthcheck hotfix）
 package.json                                   — version 1.20.0 → 1.20.1
 client/package.json                            — version 1.20.0 → 1.20.1
@@ -569,40 +577,40 @@ client/src/i18n/README.md                                     — i18n 維護流
 client/src/scripts/translate.mjs                              — 編譯時自動翻譯腳本（OpenAI 相容 API + manual fallback）
 scripts/lint-zh-only.js                                       — 中英混雜 lint（掃 client/src JSX/JS、抓寫死英文文案）
 .dockerignore                                                 — Docker build 排除清單
-openspec/changes/v1.20.0-frontend-foundation/proposal.md      — 本版規格（藍綠並存 + 三原則）
-openspec/changes/v1.20.0-frontend-foundation/tasks.md         — 本版任務清單
-openspec/changes/v1.20.1-portal-pages/proposal.md             — 下版規格 stub（Portal + Preference 共 7 頁）
-openspec/changes/v1.20.1-portal-pages/tasks.md                — 同上 task stub
-openspec/changes/v1.20.2-fix-hint/proposal.md                 — 提案：鉤子 recent_event_exists 失敗訊息加上具體 ownmind_report_compliance 呼叫範例
-openspec/changes/v1.20.2-fix-hint/spec.md                     — 規格：5 個 GIVEN/WHEN/THEN scenario
-openspec/changes/v1.20.2-fix-hint/tasks.md                    — 任務清單
+openspec/changes/archive/v1.20.0-frontend-foundation/proposal.md      — 本版規格（藍綠並存 + 三原則）
+openspec/changes/archive/v1.20.0-frontend-foundation/tasks.md         — 本版任務清單
+openspec/changes/archive/v1.20.1-portal-pages/proposal.md             — 下版規格 stub（Portal + Preference 共 7 頁）
+openspec/changes/archive/v1.20.1-portal-pages/tasks.md                — 同上 task stub
+openspec/changes/archive/v1.20.2-fix-hint/proposal.md                 — 提案：鉤子 recent_event_exists 失敗訊息加上具體 ownmind_report_compliance 呼叫範例
+openspec/changes/archive/v1.20.2-fix-hint/spec.md                     — 規格：5 個 GIVEN/WHEN/THEN scenario
+openspec/changes/archive/v1.20.2-fix-hint/tasks.md                    — 任務清單
 tests/auto-comply-reads-file.test.js                          — v1.20.2 follow-up #1：3 個守備 case（in-memory 空 + 檔案有資料 / 反證 / 合併情境）證明 autoComply 應讀檔案
 mcp/lib/sync-token-retry.js                                   — v1.20.2 follow-up #2：兩個純函式 helper（shouldRetryForSyncToken + applyNewToken）給 callApi 自動 retry 用
 tests/auto-retry-sync-token.test.js                           — v1.20.2 follow-up #2：17 個守備 case（GET 不 retry / 500 不 retry / 非 sync_token 訊息不 retry / newToken null 防呆等）
 tests/jargon-context-memory.test.js                           — v1.20.2 follow-up #3：11 個守備 case（IR-036 跨 reply 詞彙記憶、4 種解釋格式 / 向後相容 / null 防呆）
 shared/session-off-state.js                                   — v1.20.3：session 暫時關閉開關狀態檔讀寫（read / write / clear / increment tick / isOff 共 5 個純函式、24 小時 TTL）
 tests/session-off-state.test.js                               — v1.20.3：15 個守備 case（read / write / clear / increment / isOff / 24h 過期 / 損毀防呆）
-openspec/changes/v1.20.3-session-toggle/proposal.md           — 提案：/ownmind-off + /ownmind-on slash 指令、暫時關閉鉤子
-openspec/changes/v1.20.3-session-toggle/spec.md               — 規格：8 個 GIVEN/WHEN/THEN scenario
-openspec/changes/v1.20.3-session-toggle/tasks.md              — 任務清單
+openspec/changes/archive/v1.20.3-session-toggle/proposal.md           — 提案：/ownmind-off + /ownmind-on slash 指令、暫時關閉鉤子
+openspec/changes/archive/v1.20.3-session-toggle/spec.md               — 規格：8 個 GIVEN/WHEN/THEN scenario
+openspec/changes/archive/v1.20.3-session-toggle/tasks.md              — 任務清單
 shared/lint-event-types.js                                    — v1.20.4：lint 事件常數模組（LINT_LANGUAGE_MIXED_RATIO / LINT_JARGON_EXPLANATION_REQUIRED / LINT_PRIVACY_CHECK）+ findUserRuleByEvent 查表工具
-openspec/changes/v1.20.4-lint-rule-neutralize/proposal.md     — 提案：產品碼去個人鐵律編號、改用中性事件常數
-openspec/changes/v1.20.4-lint-rule-neutralize/spec.md         — 規格：7 個 GIVEN/WHEN/THEN scenario
-openspec/changes/v1.20.4-lint-rule-neutralize/tasks.md        — 任務清單
+openspec/changes/archive/v1.20.4-lint-rule-neutralize/proposal.md     — 提案：產品碼去個人鐵律編號、改用中性事件常數
+openspec/changes/archive/v1.20.4-lint-rule-neutralize/spec.md         — 規格：7 個 GIVEN/WHEN/THEN scenario
+openspec/changes/archive/v1.20.4-lint-rule-neutralize/tasks.md        — 任務清單
 shared/validators/jargon-explanation.js                       — v1.21.0 validator：包裝既有行話檢查邏輯
 shared/validators/language-mixed-ratio.js                     — v1.21.0 validator：中英混雜檢查、threshold 可調
 shared/validators/privacy-detect.js                           — v1.21.0 validator：隱私偵測（從 lint hook 抽出）
 shared/validators/index.js                                    — v1.21.0：validator 註冊表 + findValidator / extractEnabledValidators
 tests/validators/registry.test.js                             — v1.21.0：16 個守備 case（註冊表 / 查找 / 抽取啟用 / 介面合約）
-openspec/changes/v1.21.0-lint-validator-architecture/proposal.md — 提案：lint 規則驅動架構
-openspec/changes/v1.21.0-lint-validator-architecture/spec.md   — 規格：8 個 GIVEN/WHEN/THEN scenario
-openspec/changes/v1.21.0-lint-validator-architecture/tasks.md  — 任務清單
-openspec/changes/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
-openspec/changes/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
-openspec/changes/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
-openspec/changes/v1.20.3-super-pages/tasks.md                 — 同上 task stub
-openspec/changes/v1.20.4-legacy-retire/proposal.md            — 規格 stub（舊版 301 轉址退役）
-openspec/changes/v1.20.4-legacy-retire/tasks.md               — 同上 task stub
+openspec/changes/archive/v1.21.0-lint-validator-architecture/proposal.md — 提案：lint 規則驅動架構
+openspec/changes/archive/v1.21.0-lint-validator-architecture/spec.md   — 規格：8 個 GIVEN/WHEN/THEN scenario
+openspec/changes/archive/v1.21.0-lint-validator-architecture/tasks.md  — 任務清單
+openspec/changes/archive/v1.20.2-admin-pages/proposal.md              — 規格 stub（Team + Bugs）
+openspec/changes/archive/v1.20.2-admin-pages/tasks.md                 — 同上 task stub
+openspec/changes/archive/v1.20.3-super-pages/proposal.md              — 規格 stub（Config + Broadcast + Audit）
+openspec/changes/archive/v1.20.3-super-pages/tasks.md                 — 同上 task stub
+openspec/changes/archive/v1.20.4-legacy-retire/proposal.md            — 規格 stub（舊版 301 轉址退役）
+openspec/changes/archive/v1.20.4-legacy-retire/tasks.md               — 同上 task stub
 ```
 
 修改檔：
@@ -787,9 +795,9 @@ CHANGELOG.md                                              — v1.19.14 條目
 
 新增檔：
 ```
-openspec/changes/v1.19.13-secret-detect-keyword-tighten/proposal.md  — 提案：value-side keyword 從寬鬆比對改賦值樣式
-openspec/changes/v1.19.13-secret-detect-keyword-tighten/spec.md      — 規格：S1～S5 共 20+ 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19.13-secret-detect-keyword-tighten/tasks.md     — 任務拆解：Phase 0～6
+openspec/changes/archive/v1.19.13-secret-detect-keyword-tighten/proposal.md  — 提案：value-side keyword 從寬鬆比對改賦值樣式
+openspec/changes/archive/v1.19.13-secret-detect-keyword-tighten/spec.md      — 規格：S1～S5 共 20+ 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19.13-secret-detect-keyword-tighten/tasks.md     — 任務拆解：Phase 0～6
 ```
 
 修改的既有檔：
@@ -833,9 +841,9 @@ CHANGELOG.md                                                  — v1.19.12 條�
 hooks/lib/lint-event-logger.js                                — writeEvent 寫擋下事件、extractViolatedWords 抽違反詞統計（privacy 不存原值）；5MB cap rotate
 tests/lint-event-logger.test.js                               — 12 case 純函式覆蓋
 tests/reply-lint-hook-v1911.test.js                           — 7 case：分級訊息 + log 寫入整合
-openspec/changes/v1.19.11-lint-ux-improvements/proposal.md    — 提案：UX 改善三條 + 自學鋪路
-openspec/changes/v1.19.11-lint-ux-improvements/spec.md        — 14 個場景規格
-openspec/changes/v1.19.11-lint-ux-improvements/tasks.md       — 任務清單
+openspec/changes/archive/v1.19.11-lint-ux-improvements/proposal.md    — 提案：UX 改善三條 + 自學鋪路
+openspec/changes/archive/v1.19.11-lint-ux-improvements/spec.md        — 14 個場景規格
+openspec/changes/archive/v1.19.11-lint-ux-improvements/tasks.md       — 任務清單
 ```
 
 修改的既有檔：
@@ -855,8 +863,8 @@ CHANGELOG.md                                                  — v1.19.11 條�
 新增檔：
 ```
 shared/random-password.js                                     — 從 v1.19.9 generateTempPassword 抽出來、給多處共用（admin 建 user / seed job / reset-password）
-openspec/changes/v1.19.10-credential-hygiene/proposal.md      — 變更提案：預設密碼隨機化跟設定檔最佳實踐
-openspec/changes/v1.19.10-credential-hygiene/tasks.md         — 任務清單
+openspec/changes/archive/v1.19.10-credential-hygiene/proposal.md      — 變更提案：預設密碼隨機化跟設定檔最佳實踐
+openspec/changes/archive/v1.19.10-credential-hygiene/tasks.md         — 任務清單
 ```
 
 修改的既有檔：
@@ -882,9 +890,9 @@ src/routes/admin-password-reset.js                            — POST /api/admi
 scripts/reset-admin-password.js                               — CLI 救援腳本；互動式列 super_admin、雙重確認、產 SETUP_TOKEN、寫 audit log
 tests/admin-reset-password.test.js                            — 16 case：權限規則 + 不能改自己 + 404 + 401 + audit log + bcrypt 端到端
 tests/reset-admin-password-script.test.js                     — 4 case：腳本 smoke test（--help / DB 失敗）
-openspec/changes/v1.19.9-password-recovery/proposal.md        — 提案：三條防線設計 + 安全性分析
-openspec/changes/v1.19.9-password-recovery/spec.md            — 規格：15 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19.9-password-recovery/tasks.md           — 任務清單
+openspec/changes/archive/v1.19.9-password-recovery/proposal.md        — 提案：三條防線設計 + 安全性分析
+openspec/changes/archive/v1.19.9-password-recovery/spec.md            — 規格：15 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19.9-password-recovery/tasks.md           — 任務清單
 ```
 
 修改的既有檔：
@@ -908,9 +916,9 @@ src/middleware/first-run-redirect.js                          — users 表為�
 src/public/setup.html                                         — 純 HTML wizard：表單 + 成功頁顯示 api_key + 一鍵複製 + install.sh 範例
 tests/setup-wizard.test.js                                    — 19 case：first-run 偵測 / 欄位驗證 / race condition / cache 行為 / fail-open
 tests/first-run-redirect.test.js                              — 8 case：middleware 整合測試（code-review I-2 補的覆蓋缺口）
-openspec/changes/v1.19.8-setup-wizard/proposal.md             — 提案：chicken-and-egg 問題分析 + 解法選型（B+C 推薦、Codex Rescue 評估）
-openspec/changes/v1.19.8-setup-wizard/spec.md                 — 規格：16 個場景（GIVEN/WHEN/THEN）
-openspec/changes/v1.19.8-setup-wizard/tasks.md                — 任務清單
+openspec/changes/archive/v1.19.8-setup-wizard/proposal.md             — 提案：chicken-and-egg 問題分析 + 解法選型（B+C 推薦、Codex Rescue 評估）
+openspec/changes/archive/v1.19.8-setup-wizard/spec.md                 — 規格：16 個場景（GIVEN/WHEN/THEN）
+openspec/changes/archive/v1.19.8-setup-wizard/tasks.md                — 任務清單
 ```
 
 修改的既有檔：
@@ -961,8 +969,8 @@ tests/bypass-handler.test.js                                  — 15 case：pars
 ```
 shared/compliance.js                                          — schema 註解新增 block / bypass / hook_internal_error 三個合法 action
 tests/compliance.test.js                                      — 補 3 case：新 action 三個值都能寫入 + 讀回
-openspec/changes/v1.20-iron-rule-enforcement/proposal.md      — 重寫：反映 Gemini 對抗審查拍板（剔 IR-005/008/048）+ 漸進切法 v1.19.6~10
-openspec/changes/v1.20-iron-rule-enforcement/tasks.md         — 重寫：v1.19.6 範圍清單 + v1.19.7~10 後續預告
+openspec/changes/archive/v1.20-iron-rule-enforcement/proposal.md      — 重寫：反映 Gemini 對抗審查拍板（剔 IR-005/008/048）+ 漸進切法 v1.19.6~10
+openspec/changes/archive/v1.20-iron-rule-enforcement/tasks.md         — 重寫：v1.19.6 範圍清單 + v1.19.7~10 後續預告
 README.md / docs/README.zh-TW.md / docs/README.ja.md          — Iron Rule Enforcement Engine 段加 v1.19.6 兩條（rule-enforcer / bypass-handler）
 CHANGELOG.md                                                  — v1.19.6 條目
 package.json                                                  — version 1.19.5 → 1.19.6
@@ -1009,9 +1017,9 @@ hooks/lib/session-counter.js                                  — Claude session
 tests/language-lint-v1193.test.js                             — 55 case：Top 30 詞、proper noun、threshold 分情境、code review 豁免、IR-036 視窗 80
 tests/session-counter.test.js                                 — 10 case：純函式 + 防呆（檔不存在 / 毀損 / 自掃 / 無權限）
 tests/reply-lint-hook-v1193-block.test.js                     — 8 case：MODE=warn / block / disable / 未知值、漸進累積、stop_hook_active、reason 指令型
-openspec/changes/v1.19.3-reply-lint-progressive-block/proposal.md   — 提案 + Codex 對抗審查結論
-openspec/changes/v1.19.3-reply-lint-progressive-block/spec.md       — 15 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19.3-reply-lint-progressive-block/tasks.md      — 7 階段任務拆解（A-G）
+openspec/changes/archive/v1.19.3-reply-lint-progressive-block/proposal.md   — 提案 + Codex 對抗審查結論
+openspec/changes/archive/v1.19.3-reply-lint-progressive-block/spec.md       — 15 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19.3-reply-lint-progressive-block/tasks.md      — 7 階段任務拆解（A-G）
 ```
 
 修改的既有檔：
@@ -1036,9 +1044,9 @@ db/015_schema_migrations_table.sql                       — schema_migrations �
 scripts/run-migrations.sh                                — CLI 版 migration runner（bash、docker exec ownmind-db 或直連 psql、INFO/OK/ERROR 輸出）
 src/utils/run-migrations.js                              — Node 版 migration runner（在 src/index.js 啟動時自動跑、失敗 process.exit(1)）
 tests/run-migrations.test.js                             — 22 case：SQL idempotent、bash 結構、Node migrator 行為、src/index.js 整合順序
-openspec/changes/v1.19.2-auto-migration/proposal.md      — 提案
-openspec/changes/v1.19.2-auto-migration/spec.md          — 10 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19.2-auto-migration/tasks.md         — 7 階段任務拆解（A-G）
+openspec/changes/archive/v1.19.2-auto-migration/proposal.md      — 提案
+openspec/changes/archive/v1.19.2-auto-migration/spec.md          — 10 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19.2-auto-migration/tasks.md         — 7 階段任務拆解（A-G）
 ```
 
 修改的既有檔：
@@ -1065,9 +1073,9 @@ tests/secret-detect-unit.test.js                         — 26 case：5 regex�
 tests/memory-secret-guard.test.js                        — 24 case：偵測、bypass、narrative 跳 keyword 但 regex 仍跑
 tests/memory-error-classifier.test.js                    — 21 case：PG SQLSTATE / Node 連線 / JS 內建錯誤分類
 tests/mcp-tool-description-secret-warning.test.js        — 10 case：source-level 驗證警語在前 80 字內
-openspec/changes/v1.19.1-secret-tool-routing/proposal.md — 提案
-openspec/changes/v1.19.1-secret-tool-routing/spec.md     — 13 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19.1-secret-tool-routing/tasks.md    — 6 階段任務拆解（A-F）
+openspec/changes/archive/v1.19.1-secret-tool-routing/proposal.md — 提案
+openspec/changes/archive/v1.19.1-secret-tool-routing/spec.md     — 13 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19.1-secret-tool-routing/tasks.md    — 6 階段任務拆解（A-F）
 ```
 
 修改的既有檔：
@@ -1105,9 +1113,9 @@ tests/iron-rule-tier-validator.test.js                   — 10 條 validator �
 tests/iron-rule-tier-digest.test.js                      — 12 條 digest 測試
 tests/iron-rule-tier-mcp.test.js                         — 7 條 MCP source-level 測試
 tests/build-compliance-events.test.js                    — 9 條 compliance event 測試
-openspec/changes/v1.19-iron-rule-tier/proposal.md        — 提案
-openspec/changes/v1.19-iron-rule-tier/spec.md            — 12 個 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.19-iron-rule-tier/tasks.md           — 任務拆解
+openspec/changes/archive/v1.19-iron-rule-tier/proposal.md        — 提案
+openspec/changes/archive/v1.19-iron-rule-tier/spec.md            — 12 個 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.19-iron-rule-tier/tasks.md           — 任務拆解
 ```
 
 修改的既有檔：

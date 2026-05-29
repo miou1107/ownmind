@@ -1,18 +1,19 @@
 /**
- * iron-rule-sync.js — 鐵律 → 本地 file system sync helpers (v1.18.0)
+ * iron-rule-sync.js — iron-rule -> local file system sync helpers (v1.18.0)
  *
- * 為什麼存在：
- *   v1.18.0 把鐵律 export 成 1 big skill 到 ~/.claude/skills/ownmind-iron-rules/
- *   讓 Claude Code 平台級主動 invoke、不只靠 SessionStart 塞列表。
+ * Why it exists:
+ *   v1.18.0 exports iron rules as one big skill to ~/.claude/skills/ownmind-iron-rules/
+ *   so Claude Code can invoke them at the platform level, not just via a SessionStart list.
  *
- *   跨工具 sync：Cursor/Codex/Antigravity 等也讀對應路徑（沿用 install.sh:300 既有 pattern）。
+ *   Cross-tool sync: Cursor/Codex/Antigravity etc. read their corresponding paths
+ *   (reusing the existing install.sh:300 pattern).
  *
- * 設計：
- *   - Pure builders（buildBigSkillMd / buildReferenceFile）— 只組字串、零 IO
- *   - syncToFilesystem(rules, target, options) — 寫檔、可注入 fs（測試用）
- *   - 偵測目錄存在才寫（沿用 install.sh:300 「append_upgrade_rule_if_exists」pattern）
+ * Design:
+ *   - Pure builders (buildBigSkillMd / buildReferenceFile) — only assemble strings, zero IO
+ *   - syncToFilesystem(rules, target, options) — writes files, fs can be injected (for tests)
+ *   - only writes if the directory exists (reusing the install.sh:300 "append_upgrade_rule_if_exists" pattern)
  *
- * 跟 OwnMind 既有 ownmind-memory big skill 同模式（user 認知負擔 0）。
+ * Same pattern as the existing OwnMind ownmind-memory big skill (zero cognitive load for the user).
  */
 
 import fs from 'node:fs';
@@ -20,16 +21,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { detectFrontmatter } from './iron-rule-frontmatter.js';
 
-// 跨 AI 工具的 skill / rule 路徑（沿用 install.sh:300 已維護的目錄列表）
-// path 是 user-home-relative、handler 寫入時自己 join HOME
+// Skill / rule paths across AI tools (reusing the directory list maintained in install.sh:300)
+// path is user-home-relative; the handler joins HOME itself when writing
 export const TOOL_TARGETS = {
-  // Claude Code: 完整 skill folder（主路徑）
+  // Claude Code: full skill folder (primary path)
   claude: { kind: 'skill_folder', dir: '.claude/skills/ownmind-iron-rules', parentDir: '.claude/skills' },
-  // Cursor / Antigravity / Windsurf: inline 單檔（沒 skill 概念、塞 rules/ 目錄）
+  // Cursor / Antigravity / Windsurf: a single inline file (no skill concept; placed in the rules/ dir)
   cursor: { kind: 'inline_md', path: '.cursor/rules/ownmind-iron-rules.md', parentDir: '.cursor/rules' },
   antigravity: { kind: 'inline_md', path: '.antigravity/rules/ownmind-iron-rules.md', parentDir: '.antigravity/rules' },
   windsurf: { kind: 'inline_md', path: '.windsurf/rules/ownmind-iron-rules.md', parentDir: '.windsurf/rules' },
-  // Codex / OpenCode / Gemini: AGENTS.md / GEMINI.md append 含 marker 的 block
+  // Codex / OpenCode / Gemini: append a marker-wrapped block to AGENTS.md / GEMINI.md
   codex: { kind: 'agents_md_block', path: '.codex/AGENTS.md', parentDir: '.codex' },
   opencode: { kind: 'agents_md_block', path: '.opencode/AGENTS.md', parentDir: '.opencode' },
   gemini: { kind: 'agents_md_block', path: '.gemini/GEMINI.md', parentDir: '.gemini' },
@@ -39,7 +40,7 @@ const BLOCK_MARKER_START = '<!-- ownmind-iron-rules:start -->';
 const BLOCK_MARKER_END = '<!-- ownmind-iron-rules:end -->';
 
 /**
- * 從鐵律 list 推 trigger 分類索引、回 Map<trigger, rule[]>
+ * Build a trigger-category index from the iron-rule list; returns Map<trigger, rule[]>
  */
 function buildTriggerIndex(rules) {
   const index = new Map();
@@ -49,7 +50,7 @@ function buildTriggerIndex(rules) {
       .filter(t => typeof t === 'string' && t.startsWith('trigger:'))
       .map(t => t.slice('trigger:'.length));
     if (triggers.length === 0) {
-      // 無 trigger 的鐵律歸 'general'
+      // rules without a trigger go to 'general'
       const list = index.get('general') || [];
       list.push(rule);
       index.set('general', list);
@@ -65,13 +66,13 @@ function buildTriggerIndex(rules) {
 }
 
 function ruleSlug(rule) {
-  // IR-002 → ir-002 / 無 code 用 id
+  // IR-002 -> ir-002 / use id when there is no code
   const code = rule.code || `id-${rule.id}`;
   return code.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 }
 
 function ruleReferenceRelativePath(rule) {
-  // 用 title slug 加可讀性、code prefix 排序友善
+  // use a title slug for readability; the code prefix is sort-friendly
   const slug = ruleSlug(rule);
   const titleSlug = String(rule.title || '')
     .toLowerCase()
@@ -85,14 +86,14 @@ function ruleReferenceRelativePath(rule) {
 /**
  * Build the big SKILL.md content (frontmatter + index body)
  *
- * @param {Array<{id, code, title, content, tags, status}>} rules — active iron_rule 列表
- * @returns {string} SKILL.md 完整內容（給 ~/.claude/skills/ownmind-iron-rules/SKILL.md 用）
+ * @param {Array<{id, code, title, content, tags, status}>} rules — active iron_rule list
+ * @returns {string} full SKILL.md content (for ~/.claude/skills/ownmind-iron-rules/SKILL.md)
  */
 export function buildBigSkillMd(rules) {
   const total = rules.length;
   const triggerIndex = buildTriggerIndex(rules);
 
-  // pushy description — 對齊 SKILL.md 標準寫法（spec.md §4.3）
+  // pushy description — aligned with the standard SKILL.md style (spec.md §4.3)
   const description =
     `Use whenever you do ANY action covered by Vin's iron rules: code edits, ` +
     `git commits, deploys, debugging, doc updates, AI quality issues, secret handling. ` +
@@ -117,7 +118,7 @@ export function buildBigSkillMd(rules) {
   lines.push('## 觸發索引（按 trigger 分類）');
   lines.push('');
 
-  // 排序 trigger keys（讓輸出 deterministic、test 友善）
+  // sort the trigger keys (makes the output deterministic and test-friendly)
   const sortedTriggers = [...triggerIndex.keys()].sort();
   for (const trig of sortedTriggers) {
     const rulesInTrig = triggerIndex.get(trig);
@@ -142,19 +143,19 @@ export function buildBigSkillMd(rules) {
 /**
  * Build a single rule reference file content
  *
- * 已是 SKILL.md format → 原樣回 content
- * Legacy free-text → 自動補 minimal frontmatter（auto-generated 標記）
+ * already SKILL.md format -> return content as-is
+ * legacy free-text -> auto-add a minimal frontmatter (auto-generated marker)
  */
 export function buildReferenceFile(rule) {
   const content = String(rule.content || '');
   const fm = detectFrontmatter(content);
 
   if (fm.has && !fm.parseError) {
-    // 已是合法 SKILL.md、原樣 export
+    // already valid SKILL.md, export as-is
     return content;
   }
 
-  // Legacy → 自動包 frontmatter
+  // legacy -> auto-wrap with frontmatter
   const code = rule.code || `id-${rule.id}`;
   const tags = Array.isArray(rule.tags) ? rule.tags : [];
   const triggers = tags
@@ -191,11 +192,11 @@ export function buildReferenceFile(rule) {
  * @param {Array} rules - active iron_rule list
  * @param {keyof TOOL_TARGETS} targetKey - 'claude' / 'cursor' / 'codex' / ...
  * @param {Object} options
- * @param {string} [options.home] - HOME dir override (測試用)
- * @param {object} [options.fsModule] - fs module override (測試用 mock fs)
+ * @param {string} [options.home] - HOME dir override (for tests)
+ * @param {object} [options.fsModule] - fs module override (mock fs for tests)
  * @returns {{ written: boolean, reason?: string, files?: string[] }}
- *   - written: false if 父目錄不存在（沒裝該工具、skip）
- *   - files: 寫入的檔案 path 列表
+ *   - written: false if the parent dir does not exist (tool not installed, skip)
+ *   - files: list of written file paths
  */
 export function syncToFilesystem(rules, targetKey, options = {}) {
   const target = TOOL_TARGETS[targetKey];
@@ -204,7 +205,7 @@ export function syncToFilesystem(rules, targetKey, options = {}) {
   const home = options.home || os.homedir();
   const fsMod = options.fsModule || fs;
 
-  // 偵測父目錄存在才寫（沿用 install.sh:300 pattern「目錄存在才裝、跳過未裝的」）
+  // only write if the parent dir exists (reusing the install.sh:300 pattern "install only if the dir exists, skip uninstalled ones")
   const parentAbs = path.join(home, target.parentDir);
   if (!fsMod.existsSync(parentAbs)) {
     return { written: false, reason: `parent dir not found: ${target.parentDir} (tool not installed)` };
@@ -218,12 +219,12 @@ export function syncToFilesystem(rules, targetKey, options = {}) {
     const refDir = path.join(skillDir, 'references');
     fsMod.mkdirSync(refDir, { recursive: true });
 
-    // 寫 big SKILL.md
+    // write the big SKILL.md
     const bigSkillPath = path.join(skillDir, 'SKILL.md');
     atomicWriteFileSync(fsMod, bigSkillPath, buildBigSkillMd(rules));
     filesWritten.push(bigSkillPath);
 
-    // 清掉舊的 reference files（避免 disabled 鐵律殘留）
+    // clear old reference files (avoid leftovers from disabled iron rules)
     try {
       const existing = fsMod.readdirSync(refDir);
       for (const f of existing) {
@@ -231,16 +232,16 @@ export function syncToFilesystem(rules, targetKey, options = {}) {
           try { fsMod.unlinkSync(path.join(refDir, f)); } catch { /* ignore */ }
         }
       }
-    } catch { /* refDir 剛建可能還沒檔 */ }
+    } catch { /* refDir was just created, may have no files yet */ }
 
-    // 寫每條 reference
+    // write each reference
     for (const rule of rules) {
       const refPath = path.join(refDir, ruleReferenceRelativePath(rule));
       atomicWriteFileSync(fsMod, refPath, buildReferenceFile(rule));
       filesWritten.push(refPath);
     }
   } else if (target.kind === 'inline_md') {
-    // Cursor / Antigravity / Windsurf: 一個檔、把 big skill + 所有 reference 串起來
+    // Cursor / Antigravity / Windsurf: one file, concatenating the big skill + all references
     const fileAbs = path.join(home, target.path);
     fsMod.mkdirSync(path.dirname(fileAbs), { recursive: true });
     const inlineLines = [];
@@ -258,12 +259,12 @@ export function syncToFilesystem(rules, targetKey, options = {}) {
     atomicWriteFileSync(fsMod, fileAbs, inlineLines.join('\n'));
     filesWritten.push(fileAbs);
   } else if (target.kind === 'agents_md_block') {
-    // Codex / OpenCode / Gemini: append 含 marker 的 block 到既有 AGENTS.md / GEMINI.md
+    // Codex / OpenCode / Gemini: append a marker-wrapped block to an existing AGENTS.md / GEMINI.md
     const fileAbs = path.join(home, target.path);
     let existing = '';
-    try { existing = fsMod.readFileSync(fileAbs, 'utf8'); } catch { /* 檔不存在、之後 write 會建 */ }
+    try { existing = fsMod.readFileSync(fileAbs, 'utf8'); } catch { /* file does not exist; the later write will create it */ }
 
-    // 移除舊 block（重新寫）
+    // remove the old block (rewrite)
     const re = new RegExp(`${escapeRegExp(BLOCK_MARKER_START)}[\\s\\S]*?${escapeRegExp(BLOCK_MARKER_END)}\\n?`, 'g');
     const cleaned = existing.replace(re, '');
 
@@ -290,7 +291,7 @@ function escapeRegExp(s) {
 
 /**
  * Atomic file write: writeFileSync + rename
- * 避免 multi-window Claude Code 並發 SessionStart 時讀到半寫狀態 (review I1)
+ * Avoids reading a half-written state during concurrent multi-window Claude Code SessionStart (review I1)
  */
 function atomicWriteFileSync(fsMod, filePath, content) {
   const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
@@ -298,7 +299,7 @@ function atomicWriteFileSync(fsMod, filePath, content) {
     fsMod.writeFileSync(tmp, content);
     fsMod.renameSync(tmp, filePath);
   } catch (e) {
-    // rollback：tmp 清掉
+    // rollback: clean up tmp
     try { fsMod.unlinkSync(tmp); } catch { /* ignore */ }
     throw e;
   }

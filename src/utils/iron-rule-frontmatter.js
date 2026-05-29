@@ -1,84 +1,85 @@
 /**
- * iron-rule-frontmatter.js — 鐵律 SKILL.md frontmatter 偵測 + 解析（v1.18.0）
+ * iron-rule-frontmatter.js — iron-rule SKILL.md frontmatter detection + parsing (v1.18.0)
  *
- * 為什麼存在：
- *   v1.18.0 把鐵律從 free-text 升級成 Anthropic SKILL.md 格式
- *   (frontmatter name + description + body)、需要先有偵測 + parser 基礎。
+ * Why it exists:
+ *   v1.18.0 upgraded iron rules from free-text to the Anthropic SKILL.md format
+ *   (frontmatter name + description + body), which needs a detection + parser base first.
  *
- * 設計：
- *   - 偵測：content 開頭是 `---\n` 且後續找得到 `\n---\n` → 視為 SKILL.md
- *   - 沒 frontmatter → 視為純文字、走 v1.17.94 regex lint（向後相容）
- *   - YAML 解析失敗 → 視為非法 SKILL.md（lint 會 reject）
+ * Design:
+ *   - Detection: content starts with `---\n` and a later `\n---\n` is found -> treat as SKILL.md
+ *   - No frontmatter -> treat as plain text, run v1.17.94 regex lint (backward compatible)
+ *   - YAML parse failure -> treat as invalid SKILL.md (lint will reject)
  *
- * 純函式、跨平台、零副作用。
+ * Pure function, cross-platform, zero side effects.
  */
 
 import yaml from 'js-yaml';
 
 /**
- * 偵測 + 解析鐵律 content 的 SKILL.md frontmatter。
+ * Detect + parse the SKILL.md frontmatter of an iron-rule content.
  *
- * 接受格式：
+ * Accepted format:
  *   ---\n
  *   <yaml>\n
  *   ---\n
  *   <markdown body...>
  *
- * @param {string} content 鐵律的 content 欄位
+ * @param {string} content the iron rule's content field
  * @returns {{ has: boolean, frontmatter?: object, body?: string, parseError?: string }}
- *   - has: 是否偵測到完整 frontmatter（開頭 + 結尾 marker 都在）
- *   - frontmatter: 解析後的 object（YAML parse 成功時）
- *   - body: marker 後的純 markdown
- *   - parseError: YAML parse 錯誤訊息（has=true 但解析失敗時）
+ *   - has: whether a complete frontmatter was detected (both opening + closing markers present)
+ *   - frontmatter: the parsed object (when YAML parse succeeds)
+ *   - body: the plain markdown after the marker
+ *   - parseError: the YAML parse error message (when has=true but parsing failed)
  */
 export function detectFrontmatter(content) {
   if (typeof content !== 'string' || content.length === 0) {
     return { has: false };
   }
 
-  // 嚴格要求 `---\n` 開頭（不接受前導空白、避免誤判）
+  // Strictly require a `---\n` start (no leading whitespace, to avoid false positives)
   if (!content.startsWith('---\n')) {
     return { has: false };
   }
 
-  // 找結尾 marker `\n---\n`（不接受 `---` 在檔尾無 trailing newline、避免邊界）
+  // Find the closing marker `\n---\n` (do not accept `---` at EOF without a trailing newline, to avoid edge cases)
   const closeIdx = content.indexOf('\n---\n', 4);
   if (closeIdx === -1) {
-    // 開頭有 marker 但結尾找不到 → 不算合法 frontmatter
+    // opening marker present but no closing one -> not a valid frontmatter
     return { has: false };
   }
 
   const yamlText = content.slice(4, closeIdx);
-  // close marker `\n---\n` 後面通常跟一個空行（標準 SKILL.md 風格）→ 把 body
-  // 開頭的 leading newlines 吃掉、跟 gray-matter / Jekyll 行為對齊
+  // The closing marker `\n---\n` is usually followed by a blank line (standard
+  // SKILL.md style) -> strip the body's leading newlines, matching gray-matter /
+  // Jekyll behaviour
   const body = content.slice(closeIdx + 5).replace(/^\n+/, '');
 
   let frontmatter;
   try {
     frontmatter = yaml.load(yamlText, {
-      // 安全模式：不允許執行任意 JS（防 yaml exploit）
+      // safe mode: do not allow executing arbitrary JS (prevents yaml exploits)
       schema: yaml.JSON_SCHEMA,
     });
   } catch (e) {
     return {
       has: true,
-      parseError: `YAML 解析失敗: ${e.message || String(e)}`,
+      parseError: `YAML parse failed: ${e.message || String(e)}`,
       body,
     };
   }
 
-  // 解析結果必須是 object（不能是 null / array / scalar）
+  // The parse result must be an object (not null / array / scalar)
   if (frontmatter === null || frontmatter === undefined) {
     return {
       has: true,
-      parseError: 'frontmatter 不能為空',
+      parseError: 'frontmatter cannot be empty',
       body,
     };
   }
   if (typeof frontmatter !== 'object' || Array.isArray(frontmatter)) {
     return {
       has: true,
-      parseError: 'frontmatter 必須是 key-value object',
+      parseError: 'frontmatter must be a key-value object',
       body,
     };
   }
