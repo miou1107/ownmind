@@ -1,5 +1,9 @@
 # OwnMind 檔案結構
 
+## v1.26.26 修改（MCP client 觀測性修正 — 必填欄位缺少診斷細節）
+
+修改檔：`mcp/lib/api-error-message.js`（補渲染伺服器回傳的 `missing` / `received`，空 body 時白話提示可能是 MCP 程式卡住）、`tests/api-error-message.test.js`（+2 重現測試）。
+
 ## v1.26.25 修改（去識別化補漏 — Gemini 雙審查）
 
 修改檔：`tests/upgrade-complete-beacon.test.js`（fixture adam-laptop→bob-laptop）、`.github/CODEOWNERS`（中文註解英文化、維護者帳號保留）。

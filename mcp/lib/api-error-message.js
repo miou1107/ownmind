@@ -29,5 +29,22 @@ export function buildApiErrorMessage(data, text) {
 
   if (data.hint) parts.push(`Hint: ${data.hint}`);
 
+  // requireFields() (src/utils/require-fields.js) returns { error, missing, expected, received }.
+  // Surfacing only `error` ("必填欄位缺少") hid the actionable detail and left the AI
+  // blind-retrying. The missing list plus which keys actually arrived distinguishes the two
+  // root causes: an empty `received` means the body never arrived (stale MCP process /
+  // transport issue), whereas partial keys mean a genuine argument-mapping problem.
+  if (Array.isArray(data.missing) && data.missing.length > 0) {
+    parts.push(`Missing required fields: ${data.missing.join(', ')}`);
+    if (data.received && typeof data.received === 'object' && !Array.isArray(data.received)) {
+      const receivedKeys = Object.keys(data.received);
+      parts.push(
+        receivedKeys.length > 0
+          ? `Received fields: ${receivedKeys.join(', ')}`
+          : 'Received fields: (none — the request body was empty; this usually means a stale MCP process or a transport issue, not a missing argument)'
+      );
+    }
+  }
+
   return parts.length > 0 ? parts.join('\n') : JSON.stringify(data);
 }
