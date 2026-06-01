@@ -50,4 +50,38 @@ describe('buildApiErrorMessage — surface structured API error detail to the AI
     const msg = buildApiErrorMessage(data, '');
     assert.equal(msg, 'bad request');
   });
+
+  test('required-fields rejection with empty body: surfaces missing fields AND that the body was empty', () => {
+    // Reproduction of the reported ownmind_save bug: server's requireFields() returns
+    // { error, missing, expected, received }, but the client surfaced only `error`
+    // ("必填欄位缺少"), hiding the fact that the body arrived empty — leaving the AI
+    // to blind-retry 18 times. The missing/received detail is what makes it diagnosable.
+    const data = {
+      error: '必填欄位缺少',
+      missing: ['type', 'title', 'content'],
+      expected: ['type', 'title', 'content'],
+      received: {},
+    };
+    const msg = buildApiErrorMessage(data, JSON.stringify(data));
+
+    assert.ok(msg.includes('必填欄位缺少'), 'should keep the top-level error');
+    assert.ok(msg.includes('type') && msg.includes('title') && msg.includes('content'),
+      'should list every missing field');
+    assert.ok(/empty/i.test(msg),
+      'should explicitly state the request body was empty (the actionable signal)');
+  });
+
+  test('required-fields rejection with a partial body: lists missing fields and which keys arrived', () => {
+    const data = {
+      error: '必填欄位缺少',
+      missing: ['content'],
+      expected: ['type', 'title', 'content'],
+      received: { type: 'principle', title: 'x' },
+    };
+    const msg = buildApiErrorMessage(data, JSON.stringify(data));
+
+    assert.ok(msg.includes('content'), 'should name the missing field');
+    assert.ok(msg.includes('type') && msg.includes('title'),
+      'should report which keys actually arrived');
+  });
 });

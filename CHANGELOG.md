@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## v1.26.26 — 修 MCP client 吞掉「必填欄位缺少」的診斷細節（觀測性修正）
+
+**背景**：有人在 ima session 回報 `ownmind_save` 連續 18 次失敗、一律回「API 400: 必填欄位缺少」，而 `ownmind_report_compliance` 正常。查證後發現：
+
+- `ownmind_save` 本身沒壞——同版本（v1.26.25）、同伺服器，存記憶可正常成功（已實測）。`report_compliance` 只寫本機檔案、根本不連伺服器，所以拿它當「正常對照組」是無效推論。
+- 伺服器其實有回傳 `missing` / `received` 等診斷欄位（`src/utils/require-fields.js`），但 MCP client 的 `buildApiErrorMessage` 只渲染 `error` / `errors[]` / `hint`，把 `missing` / `received` 整個吞掉——所以回報者只看到「必填欄位缺少」六字，盲試 18 次都不知道發生什麼。違反 IR-038（修 bug 前要先有足夠觀測資料）。
+
+**本次修正**（MCP client only）：
+- `mcp/lib/api-error-message.js`：當錯誤含 `missing` 陣列時，補出「缺哪些欄位 + 實際收到哪些 key」。`received` 為空時直接白話提示「請求內容是空的，通常是 MCP 程式卡住或連線問題，不是少給參數」。
+- 走 TDD：先寫 2 條重現測試（空 body / 部分 body）紅燈，再實作轉綠。
+
+**效果**：同類狀況下次會自我診斷——分得出「MCP 程式卡住該重連」vs「真的少給欄位」。原本回報的 ima session 失敗最可能是該 session 內 MCP 常駐程式為舊版卡住（重連即恢復）；本修正不回溯救舊 session，但讓未來可追。
+
+**伺服器**：不需重新部署（純 client 端）。
+**驗證**：`npm test` 2010 全綠（含新增 2 測試）、0 失敗。
+
+**版本**：1.26.25 → 1.26.26
+
 ## v1.26.25 — 去識別化補漏（Gemini 雙審查抓到的 2 處）
 
 **背景**：v1.26.24 後請 Gemini 獨立驗證「升級到 1.26.24 對用戶（尤其 Windows）安不安全」。Gemini 確認 Windows 相容性（BOM/CRLF/邏輯）4 項全 PASS，但抓到 2 處我之前用「大寫字首+詞界」掃描漏掉的小寫／嵌入真名變體。
