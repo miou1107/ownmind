@@ -17,6 +17,7 @@ import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueue
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
+import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import {
   detectTriggerFromContext,
@@ -741,6 +742,18 @@ async function handleTool(name, args) {
   // Session tracking
   if (!sessionStartTime) sessionStartTime = Date.now();
   toolCallCounts[name] = (toolCallCounts[name] || 0) + 1;
+
+  // Client-side required-argument guard (mirrors src/utils/require-fields.js).
+  // Reject an incomplete call before any network round-trip, so a caller that
+  // delivers a partial arguments object gets a fast, actionable error instead of
+  // a confusing server-side 400 that looks like OwnMind dropped the fields.
+  // `required` is derived from each tool's own inputSchema, so new tools are
+  // covered automatically.
+  const requiredArgs = TOOLS.find((t) => t.name === name)?.inputSchema?.required;
+  const missingArgs = findMissingArgs(name, args, requiredArgs);
+  if (missingArgs.length > 0) {
+    throw new Error(buildMissingArgsError(name, missingArgs, args));
+  }
 
   switch (name) {
     case "ownmind_init": {

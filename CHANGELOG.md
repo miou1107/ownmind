@@ -1,5 +1,24 @@
 # OwnMind 更新紀錄
 
+## v1.26.27 — MCP client 加上「必填參數」前置防呆（治本，避免同類誤判再發）
+
+**背景**：繼 v1.26.26 的 `ownmind_save` 後，又有人回報 `ownmind_log_session` 一律 400「必填欄位缺少 tool / model」，但伺服器只收到 `summary` 跟一個 `sync_token`。
+
+**查證（非 OwnMind 程式碼 bug）**：
+
+- 直接實測呼叫 `ownmind_log_session`（帶 summary + tool + model）→ 成功寫入，tool / model 都正確存進去。
+- 部署的 `~/.ownmind/mcp/index.js` 與 repo 一字不差（v1.26.26）；`git blame` 顯示這支 handler 從 2026-03-26 誕生起就一直正確帶上 tool / model / machine / details，歷史上沒有任何版本會吞掉它們。
+- 結論：那次呼叫進到 MCP 的 arguments 本身就只有 `summary`，tool / model 在送進 OwnMind「之前」就掉了（呼叫端 / 傳輸層），`sync_token` 則是 client 自動補的。欄位不是被 OwnMind 吃掉、是根本沒送進來。
+
+**本次改進**（MCP client only，治本防呆）：
+
+- 新增 `mcp/lib/required-args.js`：在 `handleTool` 進入各工具前，依每支工具自己宣告的 `required`（直接取自 inputSchema，DRY、新工具自動涵蓋）做前置檢查。缺欄位就**在連線前**丟出明確、可自我診斷的錯誤（列出缺哪些 + 實際收到哪些 key），不再送半套 body 讓伺服器回模稜兩可的 400。
+- 判定標準與伺服器 `src/utils/require-fields.js` 完全鏡像（undefined / null / 空字串 / 空陣列 皆算缺），兩端不會標準不一。
+- 別名處理：secret 工具的 `name`→`key` 別名不會被誤殺。
+- 豁免閘門：`ownmind_report_bug` 的 `confirm_string` 是人為確認閘門（AI 不得自填、伺服器驗證精確片語），不納入此防呆，以免誘導亂填。
+- 錯誤訊息只列欄位名稱、絕不帶值，secret 不會外洩。
+- 走 TDD：先寫 20 條測試（含真實 bug 情境：log_session 只帶 summary）紅燈，再實作轉綠；全套件 2030 條綠燈。經 code review 一輪、處理回饋後複驗。
+
 ## v1.26.26 — 修 MCP client 吞掉「必填欄位缺少」的診斷細節（觀測性修正）
 
 **背景**：有人在 ima session 回報 `ownmind_save` 連續 18 次失敗、一律回「API 400: 必填欄位缺少」，而 `ownmind_report_compliance` 正常。查證後發現：
