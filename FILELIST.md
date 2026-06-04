@@ -1,5 +1,10 @@
 # OwnMind 檔案結構
 
+## v1.26.27 修改（MCP client 必填參數前置防呆）
+
+新增檔：`mcp/lib/required-args.js`（依工具 inputSchema.required 在連線前檢查缺漏必填參數、丟出可自我診斷的錯誤；鏡像伺服器 require-fields 判定，含 name→key 別名與 report_bug confirm_string 豁免）、`tests/required-args.test.js`（20 條測試）。
+修改檔：`mcp/index.js`（`handleTool` 進 switch 前接上必填參數 guard）。
+
 ## v1.26.26 修改（MCP client 觀測性修正 — 必填欄位缺少診斷細節）
 
 修改檔：`mcp/lib/api-error-message.js`（補渲染伺服器回傳的 `missing` / `received`，空 body 時白話提示可能是 MCP 程式卡住）、`tests/api-error-message.test.js`（+2 重現測試）。
