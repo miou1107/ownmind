@@ -31,7 +31,8 @@
       proposal test-count reworded; truncation-test suggestion superseded by
       the masking test.
 
-## Phase 4: Release
+## Phase 4: Release (done)
 
-- [ ] package.json 1.26.27 → 1.26.28; CHANGELOG entry; FILELIST check; tag v1.26.28.
-- [ ] Mark bug-report id=6 fixed (and id=4, already fixed by v1.26.8) via API.
+- [x] package.json 1.26.27 → 1.26.28; CHANGELOG entry; FILELIST check;
+      trilingual README version lines; commit 21a2a3a; tag v1.26.28; pushed.
+- [x] Marked bug-report id=6 fixed (and id=4, already fixed by v1.26.8) via API.
