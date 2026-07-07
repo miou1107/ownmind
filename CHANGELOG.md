@@ -1,5 +1,22 @@
 # OwnMind 更新紀錄
 
+## v1.26.28 — 密鑰掃描不再誤判「純標點分隔線」+ 擋下訊息顯示實際命中文字
+
+**背景**（bug report id=6，2026-07-07）：funpass 分析 repo 的一次 commit 被 pre-commit 密鑰掃描擋下，但檔案裡沒有任何硬編碼帳密。回報者當時猜是 `env['DATAFORSEO_PASSWORD']` 這類環境變數引用被誤判，只能 `--no-verify` 硬過。
+
+**查證（回報的病因是錯的、但 bug 是真的）**：
+
+- 把被擋 commit 的全部 39,031 行新增內容重跑 `detectSecretLike`（`skip_keyword: true`）：回報引用的 env 引用行、`Authorization Basic`、`c.client_secret` **全都不會命中**。
+- 真正命中的是**純破折號分隔線**（54～66 個 `-` 的水平線）：長度 ≥20、無中文、`-` 在 heuristic 字元集裡 → 被 `heuristic:long_alnum` 當成 key/token。報表 .md / .py 檔滿地都是這種行。
+- 回報者會誤診，是因為擋下訊息只印「檔名＋規則名」、不印命中片段——偵測器早就回傳 `matched_text`（v1.19.13 起、截斷 80 字），但 hook 丟掉了。
+
+**修正**：
+
+- `shared/secret-detect.js`：length heuristic 新增排除條件 `PUNCTUATION_ONLY_REGEX = /^[-_+/=.]+$/`——零英數字的純標點值毫無 key 樣貌（JWT / AWS / GitHub PAT / OpenAI 都是英數為主的單一 token），不會引入漏抓。與既有的點路徑（v1.19.13）、斜線路徑（v1.26.8）排除同一設計。
+- `hooks/ownmind-git-pre-commit.js`：擋下訊息尾端加 ` matched="<命中片段>"`，使用者可直接定位問題行、不用猜。依 code review 補強：`regex:*` 命中（已知真密鑰格式、極可能是真 key）遮罩成 `頭8字…尾4字`，避免真 key 完整落入終端機／session 逐字稿／雲端 bug report；`heuristic:*` 命中（多半是誤判、正是要給使用者看的）保留全文。
+
+**驗證**：TDD 先紅後綠（單元 8 條＋hook 整合 3 條）；全套件 2041 綠；當初被擋的 funpass commit 39,031 行重掃 → 0 誤判；code review 一輪（1 Important 已修＋4 Minor 已處理）。
+
 ## v1.26.27 — MCP client 加上「必填參數」前置防呆（治本，避免同類誤判再發）
 
 **背景**：繼 v1.26.26 的 `ownmind_save` 後，又有人回報 `ownmind_log_session` 一律 400「必填欄位缺少 tool / model」，但伺服器只收到 `summary` 跟一個 `sync_token`。

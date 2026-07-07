@@ -268,3 +268,55 @@ describe('v1.19.7 pre-commit — edge cases', () => {
     assert.equal(r.status, 0, `deletion of .pem must pass; stderr=${r.stderr}`);
   });
 });
+
+// ============================================================
+// v1.26.28 — separator-line false positive + actionable block message
+// (bug-report id=6, 2026-07-07)
+// ============================================================
+
+describe('v1.26.28 pre-commit — separator lines pass, block message shows matched text', () => {
+  beforeEach(setupSandbox);
+  afterEach(cleanupSandbox);
+
+  it('staged analysis file with dash separator lines → exit 0', () => {
+    // Reproduces the funpass block: report .md files with horizontal rules.
+    const content = [
+      '# DataForSEO pull',
+      '-'.repeat(66),
+      'env-var references only, no hardcoded values:',
+      `auth = base64.b64encode(f"{env['DF_LOGIN']}:{env['DF_PASSWORD']}".encode()).decode()`,
+      '-'.repeat(66),
+    ].join('\n');
+    stage('analysis/86_report.md', content);
+    const r = runHook();
+    assert.equal(r.status, 0,
+      `separator lines must not block; stderr=${r.stderr}`);
+  });
+
+  it('regex hit (known real-key format) → block message shows a MASKED fragment', () => {
+    // A regex:* hit is very likely a real secret. Echoing it in full would
+    // land the key in the terminal + session transcript, right next to the
+    // "call ownmind_report_bug" call-to-action — a path to the cloud.
+    // head(8) + '…' + tail(4) is still enough to grep for the line.
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
+    stage('src/config.js', `const key = "${fakeKey}";\n`);
+    const r = runHook();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /matched="sk-proj-…9jkl"/,
+      `block message must include the masked fragment; stderr=${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /abc123XYZdef456ghi789jkl/,
+      `full key must never be echoed; stderr=${r.stderr}`);
+  });
+
+  it('heuristic hit (probably a false positive) → block message shows the FULL fragment', () => {
+    // heuristic:long_alnum hits are exactly the ones users need to locate
+    // (bug-report id=6 was misdiagnosed for lack of this), and by definition
+    // they are only "key-shaped", not a known secret format.
+    const token = 'a1B2c3D4e5F6g7H8i9J0kL';
+    stage('data/checksums.txt', token + '\n');
+    const r = runHook();
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, new RegExp(`matched="${token}"`),
+      `heuristic fragment must be shown in full; stderr=${r.stderr}`);
+  });
+});

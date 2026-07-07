@@ -1,5 +1,14 @@
 # OwnMind 檔案結構
 
+## v1.26.28 修改（密鑰掃描分隔線誤判 + 擋下訊息可行動化）
+
+新增檔：
+```
+openspec/changes/v1.26.28-secret-scan-separator-lines/proposal.md  — v1.26.28 提案
+openspec/changes/v1.26.28-secret-scan-separator-lines/tasks.md     — v1.26.28 任務清單
+```
+修改檔：`shared/secret-detect.js`（length heuristic 加 `PUNCTUATION_ONLY_REGEX` 排除純標點分隔線）、`hooks/ownmind-git-pre-commit.js`（擋下訊息附 `matched="…"` 命中片段；`regex:*` 命中遮罩頭8…尾4、`heuristic:*` 保留全文）、`tests/secret-detect-unit.test.js`（+8 條）、`tests/pre-commit-secret.test.js`（+3 條）。
+
 ## v1.26.27 修改（MCP client 必填參數前置防呆）
 
 新增檔：`mcp/lib/required-args.js`（依工具 inputSchema.required 在連線前檢查缺漏必填參數、丟出可自我診斷的錯誤；鏡像伺服器 require-fields 判定，含 name→key 別名與 report_bug confirm_string 豁免）、`tests/required-args.test.js`（20 條測試）。
