@@ -24,9 +24,13 @@
       titleChanged), M3 documented in proposal + CHANGELOG. All fixes TDD
       red→green; full suite 2049 pass / 0 fail.
 
-## Phase 3: Release
+## Phase 3: Release (done)
 
-- [ ] package.json 1.26.28 → 1.26.29; CHANGELOG; FILELIST; trilingual README
-      version lines; commit; tag; push.
-- [ ] Deploy server (docker compose build --no-cache) + upgrade local client.
-- [ ] Live verification: rename a memory title via ownmind_update.
+- [x] package.json 1.26.28 → 1.26.29; CHANGELOG; FILELIST; trilingual README
+      version lines; commit 622e0b0; tag v1.26.29; pushed.
+- [x] Deploy server (docker compose build --no-cache, health ok) + upgrade
+      local client (self-check 8/8, check-sync L1/L2/L3 in_sync).
+- [x] Live verification against prod: rename with trailing space → 200 +
+      trimmed title; empty title → 400; renaming a real memory into the
+      __upgrade_test__ prefix → 400; fixture removed via test-cleanup
+      (deleted=1).
