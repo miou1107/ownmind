@@ -1,5 +1,16 @@
 # OwnMind 檔案結構
 
+## v1.26.29 修改（開放透過 ownmind_update 修改記憶標題）
+
+新增檔：
+```
+openspec/changes/v1.26.29-memory-title-edit/proposal.md  — v1.26.29 提案
+openspec/changes/v1.26.29-memory-title-edit/tasks.md     — v1.26.29 任務清單
+tests/memory-title-update.test.js                        — 8 條 source-level 測試
+```
+修改檔：`mcp/index.js`（`ownmind_update` schema 加選填 `title` + handler 轉發）、`src/routes/memory.js`（PUT 空/非字串標題 400、trim 正規化、禁改名成 `__upgrade_test__` 前綴、掃密門涵蓋標題變更、history 記 `title_change`）。
+歸檔：`openspec/changes/` 下 9 個已完成 change（v1.26.15～28）移入 `archive/`。
+
 ## v1.26.28 修改（密鑰掃描分隔線誤判 + 擋下訊息可行動化）
 
 新增檔：

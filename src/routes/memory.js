@@ -1185,7 +1185,7 @@ router.post('/', async (req, res) => {
  */
 router.put('/:id', async (req, res) => {
   try {
-    const { title, content, tags, metadata, update_reason, sync_token, rule_stats, tier } = req.body;
+    const { title: rawTitle, content, tags, metadata, update_reason, sync_token, rule_stats, tier } = req.body;
 
     // Sync token check (graceful fallback for old clients without a token).
     const tokenResult = await checkSyncToken(req.user.id, sync_token);
@@ -1204,6 +1204,27 @@ router.put('/:id', async (req, res) => {
     }
 
     const oldMemory = existing.rows[0];
+
+    // v1.26.29: a present-but-empty title would lint an empty title and log a
+    // history change while COALESCE('' -> null) silently keeps the old title —
+    // an inconsistent no-op. Reject it up front. This also turns title:null
+    // (previously a silent keep-old fallthrough) into a 400.
+    if (rawTitle !== undefined && (typeof rawTitle !== 'string' || rawTitle.trim() === '')) {
+      return res.status(400).json({ error: 'title must be a non-empty string' });
+    }
+    // Stored trimmed, so "Foo" -> "Foo " is not a phantom rename (it would
+    // pollute history and churn the local memory-file slug).
+    const title = typeof rawTitle === 'string' ? rawTitle.trim() : undefined;
+
+    // v1.26.29 review I1: the __upgrade_test__ prefix disarms the iron-rule
+    // lint and the secret guard below. Now that clients can send titles,
+    // renaming a real memory INTO the prefix must be rejected — the upgrade
+    // helper itself never renames, so nothing legitimate is blocked.
+    if (title !== undefined
+        && title.startsWith('__upgrade_test__')
+        && !String(oldMemory.title).startsWith('__upgrade_test__')) {
+      return res.status(400).json({ error: 'title may not be renamed to the reserved __upgrade_test__ prefix' });
+    }
 
     // team_standard edits are admin-only.
     if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
@@ -1263,7 +1284,10 @@ router.put('/:id', async (req, res) => {
     //   Only runs when content actually changes (metadata-only updates skip).
     //   __upgrade_test__ prefix → skip.
     let secretGuardWarningPut = null;
-    if (contentChanged && !String(merged.title).startsWith('__upgrade_test__')) {
+    // v1.26.29 review M2: the title is part of the keyword haystack, so a
+    // title-only change must re-run the guard too (content regex re-scan on
+    // unchanged content is a no-op cost).
+    if ((contentChanged || titleChanged) && !String(merged.title).startsWith('__upgrade_test__')) {
       const guardResult = validateMemoryContent({
         type: oldMemory.type,
         title: merged.title,
@@ -1331,6 +1355,12 @@ router.put('/:id', async (req, res) => {
       update_reason: update_reason || null,
       ...(tierChanged && {
         tier_change: { from: oldMemory.tier || 'default', to: tier },
+      }),
+      // v1.26.29: title renames are audited the same way as tier changes —
+      // history only archives the old content, so without this the old title
+      // would be unrecoverable.
+      ...(titleChanged && {
+        title_change: { from: oldMemory.title, to: title },
       }),
     };
     await query(

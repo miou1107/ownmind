@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.26.29 — 開放透過 ownmind_update 修改記憶／鐵律標題
+
+**背景**（Vin，2026-07-08）：鐵律標題想改名只能整條刪掉重建，會弄丟 id、代號（IR-NNN）、歷史跟統計。查證後發現伺服器 `PUT /api/memory/:id` 一直都支援改標題（`COALESCE` + 合併後標題照跑品質 lint），卡住的只是 MCP tool `ownmind_update` 的 schema 從來沒開 `title` 欄位——而 MCP 是唯一的使用者編輯入口。
+
+**修正**：
+
+- `mcp/index.js`：`ownmind_update` schema 新增選填 `title`、handler 轉發（照既有 `!== undefined` 慣例；離線佇列同樣涵蓋）。
+- `src/routes/memory.js` PUT 四項強化（含 code review 修正）：
+  - 空字串／非字串 `title` 直接 400——否則會對空標題跑 lint、history 記了變更、DB 卻因 `COALESCE` 默默保留舊標題（不一致的假更新）。**API 行為變更**：`title: null` 以前是「默默保留舊標題」、現在回 400（掃過 repo 內所有呼叫端、沒人送 null）。
+  - 標題存入前 `trim()`——避免尾端空白造成假改名（污染 history、本機記憶檔 slug 空轉）。
+  - 禁止把一般記憶改名成保留前綴 `__upgrade_test__`（400）——該前綴會同時跳過鐵律 lint 跟掃密門，開放標題後等於一次 PUT 就能繞過兩道檢查；升級工具本身從不改名、不影響正常流程。
+  - 掃密門從「內容有變才跑」改成「內容或標題有變就跑」——標題本身就是關鍵字偵測的一部分。
+- 改名會照既有 `tier_change` 慣例在 memory_history metadata 記 `title_change: {from, to}`，可審計。鐵律身分是 `code` 欄位、改標題不影響統計跟引用；本機記憶檔下次 session 同步時自動換檔名、舊檔由既有清理機制掃掉。
+
+**驗證**：TDD 先紅後綠兩輪（初版 4 條＋review 修正 4 條、共 8 條 source-level 測試）；red-green replay（暫存實作 → 4 紅、還原 → 全綠）；全套件 2049 綠；code review 一輪（approve-with-fixes：2 Important＋3 Minor 全數處理）。
+
 ## v1.26.28 — 密鑰掃描不再誤判「純標點分隔線」+ 擋下訊息顯示實際命中文字
 
 **背景**（bug report id=6，2026-07-07）：funpass 分析 repo 的一次 commit 被 pre-commit 密鑰掃描擋下，但檔案裡沒有任何硬編碼帳密。回報者當時猜是 `env['DATAFORSEO_PASSWORD']` 這類環境變數引用被誤判，只能 `--no-verify` 硬過。

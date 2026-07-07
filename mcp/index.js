@@ -509,6 +509,7 @@ const TOOLS = [
       type: "object",
       properties: {
         id: { type: "number", description: "Memory ID" },
+        title: { type: "string", description: "Updated title (optional; keeps existing title if omitted). Must be non-empty when provided. Iron rule titles still go through the quality check." },
         content: { type: "string", description: "Updated content (optional; keeps existing content if omitted)" },
         update_reason: { type: "string", description: "Reason for the update (required)" },
         tags: {
@@ -986,6 +987,7 @@ async function handleTool(name, args) {
 
     case "ownmind_update": {
       const body = { update_reason: args.update_reason, sync_token: currentSyncToken };
+      if (args.title !== undefined) body.title = args.title;
       if (args.content !== undefined) body.content = args.content;
       if (args.tags !== undefined) body.tags = args.tags;
       if (args.metadata !== undefined) body.metadata = args.metadata;
