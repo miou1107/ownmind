@@ -99,6 +99,26 @@ function getStagedAddedLines(file) {
 }
 
 /**
+ * v1.26.28: mask the middle of a matched fragment before display.
+ *
+ * Used for regex:* hits only — those match known real-key formats (JWT /
+ * PAT / AWS / OpenAI…), so the fragment very likely IS a secret. The
+ * detector truncates matched_text to 80 chars, but most real keys are
+ * shorter than that and would be echoed in full — into the terminal, the
+ * session transcript, and potentially a cloud bug report (the block
+ * message ends with a "call ownmind_report_bug" call-to-action).
+ * head(8) + '…' + tail(4) keeps the line locatable via grep without
+ * leaking the key. heuristic:* hits stay unmasked: they are only
+ * "key-shaped" and are exactly the fragments users need to see in full
+ * to diagnose a false positive (bug-report id=6).
+ */
+function maskSecretFragment(text) {
+  if (typeof text !== 'string') return '';
+  if (text.length <= 12) return text.slice(0, 4) + '…';
+  return text.slice(0, 8) + '…' + text.slice(-4);
+}
+
+/**
  * v1.19.7: scan each staged file's diff content; a detectSecretLike hit is reported as a violation.
  *
  * Design:
@@ -108,7 +128,7 @@ function getStagedAddedLines(file) {
  * - For a single file, only report the first hit (avoid being too noisy).
  * - Text and binary files both run (git's diff already handles binaries — they usually emit no '+' lines).
  *
- * @returns {Array<{file, rule, reason, sample}>} list of hits
+ * @returns {Array<{file, rule, reason, matched_text}>} list of hits
  */
 function checkStagedDiffForSecrets(stagedFiles) {
   const hits = [];
@@ -121,6 +141,14 @@ function checkStagedDiffForSecrets(stagedFiles) {
           file,
           rule: r.rule,
           reason: r.reason,
+          // v1.26.28: surface the matched fragment so the user can locate
+          // the exact line instead of guessing — bug-report id=6 was
+          // misdiagnosed precisely because the block message hid what
+          // matched. regex:* hits (known real-key formats) are masked;
+          // see maskSecretFragment above.
+          matched_text: r.rule && r.rule.startsWith('regex:')
+            ? maskSecretFragment(r.matched_text)
+            : r.matched_text,
         });
         break; // one hit per file — keep the message concise
       }
@@ -319,7 +347,8 @@ async function main() {
     if (ruleCode === 'IR-002') {
       const secretHits = checkStagedDiffForSecrets(stagedFiles);
       for (const hit of secretHits) {
-        failures.push(`${hit.file}: ${hit.reason} (detected_by=${hit.rule})`);
+        const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
+        failures.push(`${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
         secretHit = true;
       }
     }

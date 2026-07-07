@@ -564,3 +564,66 @@ describe('v1.26.8 — slash-separated path exclusion (heuristic regression)', ()
     assert.equal(r.detected, false);
   });
 });
+
+// ============================================================
+// v1.26.28 — punctuation-only separator-line exclusion (bug-report id=6, 2026-07-07)
+//
+// Background: a funpass analysis-repo commit was blocked because output .md /
+// .py files contained horizontal-rule separator lines (e.g. 66 dashes).
+// A line of pure punctuation from the heuristic charset (- _ + / = .) has
+// zero alphanumeric characters — nothing key-like about it — yet passed
+// LONG_ALNUM_REGEX and was flagged as heuristic:long_alnum. Real keys
+// (JWT / PAT / AWS / OpenAI) are alnum-dominant, so excluding zero-alnum
+// values introduces no false negatives.
+// ============================================================
+
+describe('v1.26.28 — punctuation-only separator lines (heuristic regression)', () => {
+  it('reproduces the bug-report case: 66-dash separator line → allow', () => {
+    const r = detectSecretLike('-'.repeat(66), { skip_keyword: true });
+    assert.equal(r.detected, false,
+      `dash separator line should not hit heuristic; actual rule=${r.rule}`);
+  });
+
+  it('equals-sign heading underline (markdown H1) → allow', () => {
+    const r = detectSecretLike('='.repeat(56), { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  it('underscore separator line → allow', () => {
+    const r = detectSecretLike('_'.repeat(30), { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  it('dot leader line → allow', () => {
+    const r = detectSecretLike('.'.repeat(25), { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  it('mixed punctuation separator (-=-=-=…) → allow', () => {
+    const r = detectSecretLike('-='.repeat(15), { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  it('random 20+ char alnum string → still blocked by heuristic', () => {
+    const r = detectSecretLike('a1B2c3D4e5F6g7H8i9J0kL', { skip_keyword: true });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'heuristic:long_alnum');
+  });
+
+  it('key-like string padded with dashes → still blocked', () => {
+    // Punctuation-only exclusion must not release values that merely
+    // *contain* punctuation alongside key-like alnum runs.
+    const r = detectSecretLike('----a1B2c3D4e5F6g7H8i9J0----', { skip_keyword: true });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'heuristic:long_alnum');
+  });
+
+  it('real GitHub PAT → still blocked (regex runs before heuristic)', () => {
+    // Split the literal across concat so the dev-machine pre-commit hook's
+    // staged-diff scanner does not catch this fixture as a real secret.
+    const fakePat = 'ghp_' + 'abcdefghij' + 'klmnopqrst' + 'uvwxyz0123' + '456789AB';
+    const r = detectSecretLike(fakePat, { skip_keyword: true });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'regex:github_pat');
+  });
+});

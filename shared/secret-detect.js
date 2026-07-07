@@ -154,7 +154,8 @@ export function detectSecretLike(value, options = {}) {
     !CJK_REGEX.test(value) &&
     LONG_ALNUM_REGEX.test(value) &&
     !DOT_SEPARATED_IDENTIFIER_REGEX.test(value) &&
-    !SLASH_SEPARATED_PATH_REGEX.test(value)
+    !SLASH_SEPARATED_PATH_REGEX.test(value) &&
+    !PUNCTUATION_ONLY_REGEX.test(value)
   ) {
     return {
       detected: true,
@@ -356,8 +357,26 @@ const SLASH_SEPARATED_PATH_REGEX =
   /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){2,}$/;
 
 /**
+ * v1.26.28 — punctuation-only separator lines (e.g. 66 dashes as a horizontal
+ * rule, `====` markdown heading underlines, `-=-=-=` banners).
+ *
+ * Used as a negative condition for the length heuristic. A value composed
+ * entirely of the heuristic charset's symbols (- _ + / = .) with zero
+ * alphanumeric characters has nothing key-like about it: JWT / AWS / GitHub
+ * PAT / OpenAI keys are all alnum-dominant single tokens. Report .md and .py
+ * files routinely emit such separator lines at column 0, which previously
+ * tripped heuristic:long_alnum and blocked legitimate commits (bug-report
+ * id=6, 2026-07-07).
+ */
+const PUNCTUATION_ONLY_REGEX = /^[-_+/=.]+$/;
+
+/**
  * Pure alphanumerics plus a few symbols (used by the length heuristic).
  * Includes: A-Z a-z 0-9 - _ + / = .
+ *
+ * Keep the symbol subset in lockstep with PUNCTUATION_ONLY_REGEX above —
+ * if you add a symbol here, add it there too, or separator lines built
+ * from the new symbol will regress into heuristic:long_alnum hits.
  *
  * Does NOT include whitespace — code-review I-1 fix: the original included
  * \s, which mis-flagged plain English notes like "Working on JWT
