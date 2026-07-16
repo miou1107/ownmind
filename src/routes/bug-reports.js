@@ -229,7 +229,7 @@ router.get('/notifications', auth, async (req, res) => {
     const isAdmin = isAtLeast(req.user.role, 'admin');
 
     if ((role === 'admin' || role === 'both') && !isAdmin) {
-      return res.status(403).json({ error: '需要管理員權限' });
+      return res.status(403).json({ error: 'Admin permission required' });
     }
 
     const result = {};
@@ -374,7 +374,7 @@ router.get('/', auth, async (req, res) => {
     const offset = (page - 1) * size;
 
     if (scope === 'all' && !isAdmin) {
-      return res.status(403).json({ error: '權限不足' });
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     const conds = [];
@@ -414,7 +414,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/spam-suspects', auth, async (req, res) => {
   try {
     if (!isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '需要管理員權限' });
+      return res.status(403).json({ error: 'Admin permission required' });
     }
     const status = req.query.status || 'pending';
     const rows = await query(
@@ -438,7 +438,7 @@ router.get('/spam-suspects', auth, async (req, res) => {
 router.post('/spam-suspects/:id/confirm', auth, async (req, res) => {
   try {
     if (!isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '需要管理員權限' });
+      return res.status(403).json({ error: 'Admin permission required' });
     }
     const suspectId = parseInt(req.params.id, 10);
     const reason = (req.body && req.body.reason) || null;
@@ -477,7 +477,7 @@ router.post('/spam-suspects/:id/confirm', auth, async (req, res) => {
 router.post('/spam-suspects/:id/dismiss', auth, async (req, res) => {
   try {
     if (!isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '需要管理員權限' });
+      return res.status(403).json({ error: 'Admin permission required' });
     }
     const suspectId = parseInt(req.params.id, 10);
     const result = await query(
@@ -513,7 +513,7 @@ router.get('/:id', auth, async (req, res) => {
     }
     const report = result.rows[0];
     if (!isAdmin && report.user_id !== req.user.id) {
-      return res.status(403).json({ error: '權限不足' });
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
     res.json(report);
   } catch (err) {
@@ -528,7 +528,7 @@ router.get('/:id', auth, async (req, res) => {
 router.patch('/:id/status', auth, async (req, res) => {
   try {
     if (!isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: '需要管理員權限' });
+      return res.status(403).json({ error: 'Admin permission required' });
     }
     const id = parseInt(req.params.id, 10);
     const { status, status_reason, status_reason_note } = req.body || {};

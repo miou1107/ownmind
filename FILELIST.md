@@ -1,5 +1,14 @@
 # OwnMind 檔案結構
 
+## v1.26.31 修改（bug 回報路由錯誤訊息英文化）
+
+新增檔：
+```
+openspec/changes/v1.26.31-bug-reports-error-strings-en/proposal.md  — v1.26.31 提案
+openspec/changes/v1.26.31-bug-reports-error-strings-en/tasks.md     — v1.26.31 任務清單
+```
+修改檔：`src/routes/bug-reports.js`（7 個中文權限錯誤字串英文化：`Admin permission required` ×5、`Insufficient permissions` ×2）。
+
 ## v1.26.30 修改（bug 回報 status_reason 枚舉驗證）
 
 新增檔：

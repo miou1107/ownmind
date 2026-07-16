@@ -1,5 +1,18 @@
 # OwnMind 更新紀錄
 
+## v1.26.31 — bug 回報路由錯誤訊息英文化（開發環境國際化）
+
+**背景**：依 CLAUDE.md 軌道 B（開發環境英文化：server error message 一律英文），`src/routes/bug-reports.js` 內還剩幾個中文權限錯誤字串，跟同檔案其他已英文化的錯誤訊息不一致。這批是 v1.26.30 刻意延後的收尾（避免在 bug 修正裡順手做出不一致的半套翻譯）。
+
+**修正**：
+
+- `src/routes/bug-reports.js`:`需要管理員權限` → `Admin permission required`（5 處）、`權限不足` → `Insufficient permissions`（2 處）。
+- 保留兩處刻意的中文:`confirm_string="送出"` 註解（指的是 client 實際送出的確認字串、屬產品字串）、`/1MB|超過|exceeds/` 相容 regex（刻意比對 `validateContextBlob` 的舊中文輸出）。
+
+**範圍**:只動這一檔。`src/middleware/adminAuth.js` 與測試 mock 內相同的中文字串是各自獨立的複本、留給計畫性的全 repo 翻譯,不在此次。
+
+**驗證**:先確認全 repo（client/src、src/public、tests、shared）沒有任何程式碼比對這兩個字串,且無 route 層測試斷言 bug-reports.js 的回應內容,故翻譯行為安全;全套件 2052 綠;code review 一輪（verdict merge、一項 Minor 已採納：單數改複數）。
+
 ## v1.26.30 — Bug 回報狀態更新：`status_reason` 送錯值改回可行動的 400（不再是通用 500）
 
 **背景**（Vin，2026-07-07 結案 bug #5 時踩到）：`PATCH /api/bug-reports/:id/status` 只驗證 `status`，沒驗證 `status_reason` 本身。送了不在枚舉內的值 → DB 的 `bug_reports_status_reason_check` 約束擋下 → 例外被 catch 成通用的 `500 Failed to update status`，看不出到底哪裡錯。跟 bug #5（鐵律 lint 不給原因）同一種病：伺服器明知問題、卻回了無法行動的錯誤。
