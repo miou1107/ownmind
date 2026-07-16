@@ -1,5 +1,15 @@
 # OwnMind 更新紀錄
 
+## v1.26.30 — Bug 回報狀態更新：`status_reason` 送錯值改回可行動的 400（不再是通用 500）
+
+**背景**（Vin，2026-07-07 結案 bug #5 時踩到）：`PATCH /api/bug-reports/:id/status` 只驗證 `status`，沒驗證 `status_reason` 本身。送了不在枚舉內的值 → DB 的 `bug_reports_status_reason_check` 約束擋下 → 例外被 catch 成通用的 `500 Failed to update status`，看不出到底哪裡錯。跟 bug #5（鐵律 lint 不給原因）同一種病：伺服器明知問題、卻回了無法行動的錯誤。
+
+**修正**：
+
+- `src/routes/bug-reports.js`：新增 `ALLOWED_STATUS_REASONS` 常數（`by_design` / `duplicate` / `low_priority` / `cannot_reproduce` / `wontfix_other`），與 DB CHECK 約束一字不差。PATCH handler 在 `status` 驗證之後、UPDATE 之前加枚舉守門：`status_reason` 有值但不在集合內 → 400、並列出允許值；NULL／未帶維持有效（欄位可為空）。
+
+**驗證**：TDD 先紅後綠（source-level 測試，3 紅 → 3 綠）；red-green replay（暫存實作 → 0/3、還原 → 3/0）；全套件 2052 綠。code review 一輪（merge-with-fixes）：Important 一項——原測試宣稱能抓「常數與 DB 約束漂移」但其實只做子集比對、沒讀 `db/017`；已改成同時解析常數與 db/017 的 `IN(...)` 清單、比對排序後的集合是否完全相等，並用「抽掉一個值 → 測試變紅、還原 → 變綠」的注入 replay 證明守得住。Minor 兩項：source-level 測試無法跑 runtime（沿用既有慣例、由部署後 live 驗證補上）；檔案內既有中文錯誤字串另立計畫翻譯（避免不一致的順手改）。
+
 ## v1.26.29 — 開放透過 ownmind_update 修改記憶／鐵律標題
 
 **背景**（Vin，2026-07-08）：鐵律標題想改名只能整條刪掉重建，會弄丟 id、代號（IR-NNN）、歷史跟統計。查證後發現伺服器 `PUT /api/memory/:id` 一直都支援改標題（`COALESCE` + 合併後標題照跑品質 lint），卡住的只是 MCP tool `ownmind_update` 的 schema 從來沒開 `title` 欄位——而 MCP 是唯一的使用者編輯入口。
