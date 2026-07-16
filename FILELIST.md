@@ -1,5 +1,15 @@
 # OwnMind 檔案結構
 
+## v1.26.30 修改（bug 回報 status_reason 枚舉驗證）
+
+新增檔：
+```
+openspec/changes/v1.26.30-bug-report-status-reason-validation/proposal.md  — v1.26.30 提案
+openspec/changes/v1.26.30-bug-report-status-reason-validation/tasks.md     — v1.26.30 任務清單
+tests/bug-report-status-reason.test.js                                     — source-level 測試（含 DB 漂移比對）
+```
+修改檔：`src/routes/bug-reports.js`（新增 `ALLOWED_STATUS_REASONS` 常數 + PATCH `/:id/status` 枚舉守門，送錯值回 400 而非 500）。
+
 ## v1.26.29 修改（開放透過 ownmind_update 修改記憶標題）
 
 新增檔：

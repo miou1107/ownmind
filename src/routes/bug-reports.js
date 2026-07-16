@@ -46,6 +46,16 @@ import {
 
 const router = Router();
 
+// Allowed status_reason values, kept in lockstep with the
+// bug_reports_status_reason_check DB constraint (db/017_bug_reports_id_to_serial.sql).
+const ALLOWED_STATUS_REASONS = [
+  'by_design',
+  'duplicate',
+  'low_priority',
+  'cannot_reproduce',
+  'wontfix_other',
+];
+
 // ============================================================
 // POST / — create a report.
 // ============================================================
@@ -526,6 +536,14 @@ router.patch('/:id/status', auth, async (req, res) => {
     const validStatuses = ['new', 'triaged', 'in_progress', 'fixed', 'wontfix'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `status must be one of ${validStatuses.join(' / ')}` });
+    }
+    // Mirror the bug_reports_status_reason_check DB constraint (db/017). Without
+    // this, an out-of-enum status_reason trips the constraint at UPDATE time and
+    // surfaces as a bare 500; validating here returns an actionable 400 instead.
+    if (status_reason && !ALLOWED_STATUS_REASONS.includes(status_reason)) {
+      return res.status(400).json({
+        error: `status_reason must be one of ${ALLOWED_STATUS_REASONS.join(' / ')} (or omitted)`,
+      });
     }
     if (status === 'wontfix' && !status_reason) {
       return res
