@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.26.33 — pre-commit 密鑰防護去識別化（修對其他使用者的密鑰外洩缺口）
+
+**背景（安全性，非只是整潔）**：git pre-commit hook 會對 staged 內容做密鑰掃描（`checkStagedDiffForSecrets`），但這段只在「攔阻規則的編號剛好是 `IR-002`」時才跑（`if (ruleCode === 'IR-002')`）。IR-002 是某一位使用者的個人「不 commit 密鑰」鐵律編號。**對第 2 條不是這條的其他使用者，內容掃描根本不會觸發** ~ 把密鑰貼進一般檔名的檔案（例如 `src/config.js`）就會被 commit 進去。這跟 v1.26.32 同一種病（產品行為綁死個人編號），但這條有實際外洩後果。
+
+**做法**：密鑰防護規則的 verification 來自語意化的 `commit_no_secrets` 範本，其 `conditions.type === 'staged_files_exclude'` ~ 這個訊號已存在每一條匹配規則裡、以範本身分為 key、不綁編號，所以對所有使用者（含既有資料）都有效、不需 migration。
+
+- 新增純函式 `hooks/lib/secret-guard-rule.js` 的 `isSecretGuardRule(verification)`。
+- `hooks/ownmind-git-pre-commit.js`：內容掃描改用 `isSecretGuardRule(verification)` 判斷、不再看 `IR-002`；blockReasons 帶 `isSecretRule` 語意旗標。
+- `hooks/lib/select-block-fingerprint.js`：密鑰類 fingerprint 改用 `isSecretRule || secretHit`、拿掉寫死的 `SECRET_RULE_CODES=['IR-002']`。
+
+**檔名排除行為不變**（本來就與編號無關、對所有人都擋 `.env`）。
+
+**延後（不在此次）**：fingerprint 的「品管類」分類仍寫死 IR-005/006/027（純遙測、非安全路徑、且那些規則沒有可辨識的語意訊號），留待計畫性的個人編號大掃除。
+
+**驗證**：TDD（先紅後綠）；新增 `tests/secret-guard-rule.test.js` + `tests/pre-commit-secret.test.js` 整合 reproduction（非 IR-002 規則 + 內容密鑰、修前漏、修後擋）；全套件 2064 綠。Code review 一輪「ready to proceed」（無 Critical/Important，並回溯 server 寫入路徑確認語意 key 對所有使用者權威有效）。部署時要做一次實機 commit 驗證。
+
 ## v1.26.32 — 鐵律合規觀測去識別化（拿掉寫死的個人鐵律編號）
 
 **背景**：「鐵律合規觀測」這套機制（使用者存／停用／更新鐵律時，系統自動記一筆合規觀測），發射端與期望端兩邊都寫死了某一位使用者的個人鐵律編號 `IR-006`（以及該使用者的鐵律原文標題）。對其他 OwnMind 使用者而言，第 6 條鐵律是別的東西，所以自動記下的合規資料、以及跨使用者的 `/api/me/pitfalls` 頁面，都被標成一條不屬於他們的鐵律（多人資料污染）。此舉也違反產品自己在 `shared/lint-event-types.js` 已明訂的原則：個人鐵律編號不得出現在產品程式碼。

@@ -7,7 +7,7 @@
  * ownmind_report_bug calls with the placeholder fingerprint return 400.
  *
  * Dispatch (most-specific wins):
- *   1. IR-002 (secrets) → mem_blocked_secret_regex
+ *   1. Secret-guard rule / secret hit → mem_blocked_secret_regex
  *   2. Iron-rule quality lint codes → mem_blocked_iron_rule_quality
  *   3. Any other rule → clt_user_reported_other
  *   4. Empty / malformed → placeholder fallback
@@ -16,7 +16,9 @@
  * never worse than before this change.
  */
 
-const SECRET_RULE_CODES = new Set(['IR-002']);
+// v1.26.33: the secret category is keyed on the semantic signal carried in
+// each reason (isSecretRule, set from the rule's verification shape, or a
+// concrete secretHit), not on a personal iron-rule code.
 
 // Iron-rule "quality lint" family — rules whose verification primarily checks
 // the structure / contents of an iron-rule write (length, sections, etc.),
@@ -38,14 +40,18 @@ export function selectBlockFingerprint(reasons) {
 
   for (const r of reasons) {
     if (!r || typeof r !== 'object') continue;
+    // Secret category is keyed on the de-identified semantic signal, so it is
+    // checked before the (still code-based) quality family.
+    if (r.isSecretRule === true || r.secretHit === true) {
+      hasSecret = true;
+      continue;
+    }
     const code = typeof r.ruleCode === 'string' ? r.ruleCode : '';
     if (!code) {
       hasOther = true;
       continue;
     }
-    if (SECRET_RULE_CODES.has(code) || r.secretHit === true) {
-      hasSecret = true;
-    } else if (IRON_RULE_QUALITY_CODES.has(code)) {
+    if (IRON_RULE_QUALITY_CODES.has(code)) {
       hasQuality = true;
     } else {
       hasOther = true;

@@ -18,6 +18,7 @@ import { readComplianceEvents } from '../shared/compliance.js';
 import { detectSecretLike } from '../shared/secret-detect.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
 import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
+import { isSecretGuardRule } from './lib/secret-guard-rule.js';
 import { isOff as isSessionOff } from '../shared/session-off-state.js';
 
 const HOME = os.homedir();
@@ -74,7 +75,7 @@ function getStagedFiles() {
  * v1.19.7 code-review I-3: pass the filename as an argv element to execFileSync to avoid shell parsing.
  * That way filenames containing $, backticks, whitespace, or backslashes are all safe (the previous
  * execSync string concatenation only escaped double quotes — filenames with backslash / dollar /
- * backtick would either explode or silently swallow IR-002 violations).
+ * backtick would either explode or silently swallow secret-guard violations).
  *
  * Any failure returns empty (fail-open, never block the commit).
  */
@@ -317,7 +318,7 @@ async function main() {
   }
 
   // 6. Evaluate each rule
-  // v1.19.7: integrate the OWNMIND_BYPASS env var + IR-002 secret-detect double check.
+  // v1.19.7: integrate the OWNMIND_BYPASS env var + secret-guard content double check.
   const bypassSet = parseBypass(process.env);
   const blockFailures = [];
   const blockReasons = [];  // v1.26.8: parallel to blockFailures, used for fingerprint dispatch
@@ -342,9 +343,14 @@ async function main() {
     const result = evaluateConditions(verification.conditions, context);
     const failures = Array.isArray(result.failures) ? [...result.failures] : [];
 
-    // v1.19.7: IR-002 additionally scans the staged diff content; a detectSecretLike hit counts as a violation.
+    // v1.19.7: the secret-guard rule additionally scans the staged diff
+    // content; a detectSecretLike hit counts as a violation.
+    // v1.26.33: keyed on the rule's semantic identity (the commit_no_secrets
+    // template's conditions.type), not a personal code — so the content scan
+    // runs for every user's secret rule regardless of its number.
     let secretHit = false;
-    if (ruleCode === 'IR-002') {
+    const secretGuard = isSecretGuardRule(verification);
+    if (secretGuard) {
       const secretHits = checkStagedDiffForSecrets(stagedFiles);
       for (const hit of secretHits) {
         const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
@@ -359,7 +365,7 @@ async function main() {
       for (const f of failures) {
         blockFailures.push(`    → ${f}`);
       }
-      blockReasons.push({ ruleCode, ruleTitle, secretHit });
+      blockReasons.push({ ruleCode, ruleTitle, secretHit, isSecretRule: secretGuard });
     }
   }
 

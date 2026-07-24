@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.26.33 修改（pre-commit 密鑰防護去識別化）
+
+新增檔：
+```
+openspec/changes/v1.26.33-deidentify-secret-guard-hook/proposal.md  — v1.26.33 提案
+openspec/changes/v1.26.33-deidentify-secret-guard-hook/tasks.md     — v1.26.33 任務清單
+hooks/lib/secret-guard-rule.js                                      — isSecretGuardRule 純函式（語意判斷密鑰防護規則）
+tests/secret-guard-rule.test.js                                    — 純函式單元測試
+```
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js       — 內容掃描改綁 isSecretGuardRule、不再看 IR-002；blockReasons 帶 isSecretRule
+hooks/lib/select-block-fingerprint.js — 密鑰類改用 isSecretRule/secretHit、拿掉 SECRET_RULE_CODES
+package.json                          — version 1.26.32 → 1.26.33
+tests/git-pre-commit-fingerprint.test.js — secret case 改用語意旗標 + 非 IR-002 案例
+tests/pre-commit-secret.test.js       — 新增非 IR-002 規則 + 內容密鑰整合 reproduction
+```
+
 ## v1.26.32 修改（鐵律合規觀測去識別化）
 
 新增檔：
