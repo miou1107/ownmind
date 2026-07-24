@@ -15,6 +15,7 @@ import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
 import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
+import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
@@ -1366,14 +1367,20 @@ function _dedupKey(name, ruleCode) {
 
 async function autoComplyForToolCall(name, args, result) {
   const triggers = [];
-  // ownmind_disable rule → IR-006 "anything learned must be synced across all layers".
+  // v1.26.32: de-identified. Keys on the neutral event RULE_FULL_LAYER_SYNC
+  // instead of one user's personal rule code (the "anything learned must be
+  // synced across all layers" discipline). rule_code is left empty;
+  // cache-holding callers resolve the user's own code.
+  const ruleTitle = getEventDisplayName(RULE_FULL_LAYER_SYNC);
+  // ownmind_disable rule → full-layer-sync trigger.
   // We observe the "iron rule memory was disabled" trigger, but cannot prove that other
   // layers (OpenSpec, skills, etc.) were synced as well.
   if (name === 'ownmind_disable' &&
       (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule')) {
     triggers.push({
-      rule_code: 'IR-006',
-      rule_title: '學到東西必須全層同步更新',
+      triggered_by_event: RULE_FULL_LAYER_SYNC,
+      rule_code: '',
+      rule_title: ruleTitle,
       action: 'observed_trigger',
       context: `Iron rule disabled (id=${args.id}) — system observed the trigger; cross-layer sync not verified.`,
     });
@@ -1383,8 +1390,9 @@ async function autoComplyForToolCall(name, args, result) {
       (name === 'ownmind_update' &&
        (result?.type === 'iron_rule' || result?.memory?.type === 'iron_rule'))) {
     triggers.push({
-      rule_code: 'IR-006',
-      rule_title: '學到東西必須全層同步更新',
+      triggered_by_event: RULE_FULL_LAYER_SYNC,
+      rule_code: '',
+      rule_title: ruleTitle,
       action: 'observed_trigger',
       context: `Iron rule ${name === 'ownmind_save' ? 'added' : 'updated'} (id=${args.id || result?.id || '?'}) — system observed; not verified.`,
     });
@@ -1394,8 +1402,8 @@ async function autoComplyForToolCall(name, args, result) {
   // Those belong to the git hook, not to the MCP handoff handler self-claiming compliance.
 
   for (const trig of triggers) {
-    // Dedup: same iron rule + same tool within 60s counts once (sliding window).
-    const key = _dedupKey(name, trig.rule_code);
+    // Dedup: same trigger event + same tool within 60s counts once (sliding window).
+    const key = _dedupKey(name, trig.triggered_by_event);
     if (shouldSkipDuplicate(_autoComplyDedup, key, AUTO_COMPLY_DEDUP_TTL_MS)) continue;
 
     // logEvent writes to stderr on its own failure; the extra try/catch here MUST NOT swallow the message.
@@ -1403,6 +1411,7 @@ async function autoComplyForToolCall(name, args, result) {
       logEvent('iron_rule_compliance', {
         rule_code: trig.rule_code,
         rule_title: trig.rule_title,
+        triggered_by_event: trig.triggered_by_event,
         action: trig.action,
         context: trig.context,
         source: 'system_auto',
@@ -1414,10 +1423,11 @@ async function autoComplyForToolCall(name, args, result) {
     try {
       // Aligned with the manual ownmind_report_compliance path (mcp/index.js:907).
       appendCompliance({
-        event: trig.rule_code,
+        event: trig.triggered_by_event,
         action: trig.action,
         rule_code: trig.rule_code,
         rule_title: trig.rule_title,
+        triggered_by_event: trig.triggered_by_event,
         source: 'system_auto',
         tool_call: name,
         context: trig.context,

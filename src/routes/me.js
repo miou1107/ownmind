@@ -16,6 +16,13 @@ import bcrypt from 'bcrypt';
 import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import { RULE_FULL_LAYER_SYNC } from '../../shared/lint-event-types.js';
+
+// v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
+// keys on the neutral event constant; the legacy IR-006 literal below is kept
+// ONLY as a backward-compat match for historical production rows that predate
+// the neutralization (a destructive data migration is out of scope).
+const LEGACY_FULL_LAYER_SYNC_CODE = 'IR-006';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
@@ -530,11 +537,11 @@ router.get('/report', async (req, res) => {
         -- autoEmitObservedTrigger design choice — handoff content is the
         -- user's subjective input and should not be treated as a compliance
         -- trigger). The two remaining events are clear "modifying iron
-        -- rules" triggers for IR-006.
+        -- rules" triggers, keyed on the neutral full-layer-sync event.
         SELECT id, ts,
           CASE
-            WHEN event = 'memory_disable' THEN ARRAY['IR-006']
-            WHEN event = 'memory_save' AND details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
+            WHEN event = 'memory_disable' THEN ARRAY['${RULE_FULL_LAYER_SYNC}']
+            WHEN event = 'memory_save' AND details->>'type' = 'iron_rule' THEN ARRAY['${RULE_FULL_LAYER_SYNC}']
           END AS expected_rules
         FROM activity_logs
         WHERE user_id = $1 AND ts ${timeFilter}
@@ -557,7 +564,12 @@ router.get('/report', async (req, res) => {
               AND c.details->>'action' = 'comply'
               -- v1.17.45: exclude any system_* automatic source (client + server).
               AND COALESCE(c.details->>'source', '') NOT LIKE 'system_%'
-              AND c.details->>'rule_code' = ANY(s.expected_rules)
+              -- v1.26.32: match on the neutral event; fall back to the legacy
+              -- personal code for historical rows written before neutralization.
+              AND (
+                c.details->>'triggered_by_event' = ANY(s.expected_rules)
+                OR c.details->>'rule_code' = '${LEGACY_FULL_LAYER_SYNC_CODE}'
+              )
           ) AS has_matching_manual_comply
         FROM sensitive s
       )
@@ -882,7 +894,8 @@ router.get('/pitfalls', async (req, res) => {
     // v1.17.90: memory_disable branch adds an iron_rule type filter.
     //   Background: of the 30 unobserved rows in v1.17.88, 22 (73%) were
     //   team_standard / standard_detail / project disables miscounted as
-    //   sensitive. team_standard etc. disables should not trigger IR-006.
+    //   sensitive. team_standard etc. disables must not trigger the
+    //   full-layer-sync compliance event.
     //   First read details->>'disabled_type' (written by v1.17.89+
     //   enrichActivityDetails); fall back to JOIN memories for older data
     //   from before v1.17.89 (which naturally expires within 14 days).
@@ -890,8 +903,8 @@ router.get('/pitfalls', async (req, res) => {
       WITH sensitive AS (
         SELECT a.id, a.ts, a.user_id, a.event, a.details,
           CASE
-            WHEN a.event = 'memory_disable' THEN ARRAY['IR-006']
-            WHEN a.event = 'memory_save' AND a.details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
+            WHEN a.event = 'memory_disable' THEN ARRAY['${RULE_FULL_LAYER_SYNC}']
+            WHEN a.event = 'memory_save' AND a.details->>'type' = 'iron_rule' THEN ARRAY['${RULE_FULL_LAYER_SYNC}']
           END AS expected_rules
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
@@ -938,8 +951,8 @@ router.get('/pitfalls', async (req, res) => {
       WITH sensitive AS (
         SELECT a.id, a.ts, a.user_id, a.event, a.details,
           CASE
-            WHEN a.event = 'memory_disable' THEN ARRAY['IR-006']
-            WHEN a.event = 'memory_save' AND a.details->>'type' = 'iron_rule' THEN ARRAY['IR-006']
+            WHEN a.event = 'memory_disable' THEN ARRAY['${RULE_FULL_LAYER_SYNC}']
+            WHEN a.event = 'memory_save' AND a.details->>'type' = 'iron_rule' THEN ARRAY['${RULE_FULL_LAYER_SYNC}']
           END AS expected_rules
         FROM activity_logs a
         WHERE a.ts ${timeFilter}
@@ -977,7 +990,12 @@ router.get('/pitfalls', async (req, res) => {
           AND c2.ts BETWEEN s.ts - INTERVAL '10 minutes' AND s.ts + INTERVAL '10 minutes'
           AND c2.details->>'action' = 'comply'
           AND COALESCE(c2.details->>'source', '') NOT LIKE 'system_%'
-          AND c2.details->>'rule_code' = ANY(s.expected_rules)
+          -- v1.26.32: match on the neutral event; fall back to the legacy
+          -- personal code for historical rows written before neutralization.
+          AND (
+            c2.details->>'triggered_by_event' = ANY(s.expected_rules)
+            OR c2.details->>'rule_code' = '${LEGACY_FULL_LAYER_SYNC_CODE}'
+          )
       )
       ORDER BY s.ts DESC`);
 

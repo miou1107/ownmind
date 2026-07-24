@@ -5,6 +5,7 @@ import adminAuth from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
 import { enrichActivityDetails } from '../utils/enrich-activity.js';
 import { insertActivityLog, normalizeClientEventId } from '../utils/activity-insert.js';
+import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-event-types.js';
 
 // v1.17.89: enrich lookup — injected DB query for enrichActivityDetails.
 // Wrapped as a module-level function so the batch handler can reuse it for
@@ -92,14 +93,20 @@ async function getContextAnalysis(userId, fromDate) {
 // old versions (e.g. Bob on 1.17.16). Move the logic to the server: when
 // activity arrives, if the event is high-risk, automatically emit an
 // observed_trigger compliance event — independent of client version.
-async function autoEmitObservedTrigger(userId, event) {
-  // memory_save with type=iron_rule → IR-006
+// v1.26.32: de-identified. The compliance loop keys on the neutral event
+// constant RULE_FULL_LAYER_SYNC instead of one user's personal rule code.
+// rule_code is left empty on the server side — cache-holding callers resolve
+// the user's own code (see buildComplianceEvents).
+export async function autoEmitObservedTrigger(userId, event) {
+  const ruleTitle = getEventDisplayName(RULE_FULL_LAYER_SYNC);
+  // memory_save with type=iron_rule → full-layer-sync trigger.
   if (event.event === 'memory_save' && event.details?.type === 'iron_rule') {
     return {
-      rule_code: 'IR-006',
-      rule_title: '學到東西必須全層同步更新',
+      triggered_by_event: RULE_FULL_LAYER_SYNC,
+      rule_code: '',
+      rule_title: ruleTitle,
       tool_call: 'memory_save',
-      context: `新增鐵律 "${event.details.title || ''}"`,
+      context: `Added iron rule "${event.details.title || ''}"`,
     };
   }
   // memory_disable: need to look up memories.type to know if it's an iron_rule.
@@ -110,10 +117,11 @@ async function autoEmitObservedTrigger(userId, event) {
     );
     if (r.rows[0]?.type === 'iron_rule') {
       return {
-        rule_code: 'IR-006',
-        rule_title: '學到東西必須全層同步更新',
+        triggered_by_event: RULE_FULL_LAYER_SYNC,
+        rule_code: '',
+        rule_title: ruleTitle,
         tool_call: 'memory_disable',
-        context: `停用鐵律 ${r.rows[0].code || ''}: ${r.rows[0].title || ''}`,
+        context: `Disabled iron rule ${r.rows[0].code || ''}: ${r.rows[0].title || ''}`,
       };
     }
   }
@@ -125,10 +133,11 @@ async function autoEmitObservedTrigger(userId, event) {
     );
     if (r.rows[0]?.type === 'iron_rule') {
       return {
-        rule_code: 'IR-006',
-        rule_title: '學到東西必須全層同步更新',
+        triggered_by_event: RULE_FULL_LAYER_SYNC,
+        rule_code: '',
+        rule_title: ruleTitle,
         tool_call: 'memory_update',
-        context: `更新鐵律 ${r.rows[0].code || ''}`,
+        context: `Updated iron rule ${r.rows[0].code || ''}`,
       };
     }
   }
@@ -202,6 +211,7 @@ router.post('/batch', auth, async (req, res) => {
               JSON.stringify({
                 rule_code: trigger.rule_code,
                 rule_title: trigger.rule_title,
+                triggered_by_event: trigger.triggered_by_event,
                 action: 'observed_trigger',
                 source: 'system_server_auto',
                 tool_call: trigger.tool_call,

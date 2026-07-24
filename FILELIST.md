@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## v1.26.32 修改（鐵律合規觀測去識別化）
+
+新增檔：
+```
+openspec/changes/v1.26.32-deidentify-compliance-observability/proposal.md  — v1.26.32 提案
+openspec/changes/v1.26.32-deidentify-compliance-observability/tasks.md     — v1.26.32 任務清單
+tests/deidentify-compliance-observability.test.js                          — 去識別化 reproduction test（6 case）
+```
+修改檔：
+```
+shared/lint-event-types.js   — 新增中性事件常數 RULE_FULL_LAYER_SYNC + 顯示名 + ALL_LINT_EVENTS
+src/routes/activity.js       — autoEmitObservedTrigger 去識別化（3 分支）+ export + INSERT 寫 triggered_by_event
+src/routes/memory.js         — v1.17.87 backfill 發射端去識別化（存 + 停用兩處）
+mcp/index.js                 — autoComplyForToolCall 去識別化（2 處）+ dedup/logEvent/appendCompliance 改用 triggered_by_event
+src/routes/me.js             — expected_rules 改中性事件（3 查詢）+ complianceGapQ/unverifiedQ 比對述句改事件式 + IR-006 legacy shim
+package.json                 — version 1.26.31 → 1.26.32
+tests/me-pitfalls.test.js    — 更新 compliance-log 斷言（IR-006 → 中性事件）
+```
+
 ## v1.26.31 修改（bug 回報路由錯誤訊息英文化）
 
 新增檔：

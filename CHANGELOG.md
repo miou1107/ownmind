@@ -1,5 +1,19 @@
 # OwnMind 更新紀錄
 
+## v1.26.32 — 鐵律合規觀測去識別化（拿掉寫死的個人鐵律編號）
+
+**背景**：「鐵律合規觀測」這套機制（使用者存／停用／更新鐵律時，系統自動記一筆合規觀測），發射端與期望端兩邊都寫死了某一位使用者的個人鐵律編號 `IR-006`（以及該使用者的鐵律原文標題）。對其他 OwnMind 使用者而言，第 6 條鐵律是別的東西，所以自動記下的合規資料、以及跨使用者的 `/api/me/pitfalls` 頁面，都被標成一條不屬於他們的鐵律（多人資料污染）。此舉也違反產品自己在 `shared/lint-event-types.js` 已明訂的原則：個人鐵律編號不得出現在產品程式碼。
+
+**做法**：沿用產品既有、已上線驗證的中性事件模式（`shared/lint-event-types.js` + `metadata.triggered_by_event`，v1.19.10 `privacy_check`、v1.20.4 reply-lint）。
+
+- 新增中性事件常數 `RULE_FULL_LAYER_SYNC = 'rule_full_layer_sync'`（顯示名 `Full-layer sync on rule change`）。
+- **四個發射端全部去識別化**：`src/routes/activity.js`（client batch 路徑）、`mcp/index.js`（MCP client 路徑）、`src/routes/memory.js` 的存／停用（v1.17.87 server 端 backfill，多數使用者的主要路徑）。改寫 `triggered_by_event`、中性標題、`rule_code` 留空，並把順手碰到的中文字串英文化（軌道 B）。
+- **期望端** `src/routes/me.js`：三個查詢的 `expected_rules` 改用中性事件；兩個功能性比對述句（complianceGapQ + unverifiedQ）改比對 `triggered_by_event`，並保留 `IR-006` 當「歷史正式機資料」的向後相容 shim（不做破壞性 migration）。
+
+**不在範圍**：前端「鐵律遵守率」欄（走 `usage/team-overview.js`、本來就沒碰 IR-006）；多人的 gap **偵測**（既有限制：manual comply 尚未寫 `triggered_by_event`，目前只對 IR-006 使用者有效 ~ 已在提案標為 follow-up，屆時一併退休 legacy shim）。
+
+**驗證**：TDD（先紅後綠）；新增 `tests/deidentify-compliance-observability.test.js`（6 case，涵蓋四個發射端 + me.js 兩個述句）；全套件 2058 綠、lint:zh-only 過。Code review 抓到兩個 Critical（漏改 unverifiedQ 述句會誤標全體「未驗證」、漏掉 memory.js 第三/四個發射點），皆已修並補測試；re-review 確認無阻擋問題。
+
 ## v1.26.31 — bug 回報路由錯誤訊息英文化（開發環境國際化）
 
 **背景**：依 CLAUDE.md 軌道 B（開發環境英文化：server error message 一律英文），`src/routes/bug-reports.js` 內還剩幾個中文權限錯誤字串，跟同檔案其他已英文化的錯誤訊息不一致。這批是 v1.26.30 刻意延後的收尾（避免在 bug 修正裡順手做出不一致的半套翻譯）。
