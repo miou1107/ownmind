@@ -5,6 +5,7 @@ import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 import { isAtLeast } from '../middleware/adminAuth.js';
+import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-event-types.js';
 import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
@@ -1058,7 +1059,7 @@ router.post('/', async (req, res) => {
       [memory.id, metadata?.tool || 'api', content, finalMetadata]
     );
 
-    // v1.17.87 IR-038 observability backfill: creating an iron_rule is a
+    // v1.17.87 observability backfill: creating an iron_rule is a
     // high-risk sensitive event; the server writes a system_auto
     // observed_trigger compliance log immediately, without relying on the
     // client batch upload (the client may drop it, and the batch path can
@@ -1066,6 +1067,8 @@ router.post('/', async (req, res) => {
     // Tied to me.js compliance gap audit: 4 memory_save iron_rule events
     // were unobserved because this server route never wrote a compliance
     // log; now it does, so future events won't be missed.
+    // v1.26.32: de-identified — keys on the neutral RULE_FULL_LAYER_SYNC event
+    // instead of a personal rule code (see shared/lint-event-types.js).
     if (type === 'iron_rule') {
       try {
         await query(
@@ -1075,12 +1078,13 @@ router.post('/', async (req, res) => {
             req.user.id,
             metadata?.tool || 'server',
             JSON.stringify({
-              rule_code: 'IR-006',
-              rule_title: '學到東西必須全層同步更新',
+              rule_code: '',
+              rule_title: getEventDisplayName(RULE_FULL_LAYER_SYNC),
+              triggered_by_event: RULE_FULL_LAYER_SYNC,
               action: 'observed_trigger',
               source: 'system_server_auto',
               tool_call: 'memory_save',
-              context: `新增鐵律 "${title}"（id=${memory.id}）`,
+              context: `Added iron rule "${title}" (id=${memory.id})`,
             }),
           ]
         );
@@ -1472,12 +1476,13 @@ router.put('/:id/disable', async (req, res) => {
       [req.params.id, 'api', result.rows[0].content, JSON.stringify({ reason })]
     );
 
-    // v1.17.87 IR-038: disabling an iron_rule is a high-risk sensitive event;
+    // v1.17.87: disabling an iron_rule is a high-risk sensitive event;
     // the server writes a system_auto observed_trigger compliance log immediately
     // (same approach as save iron_rule).
     // Tied to me.js compliance gap audit: 3 memory_disable events went unobserved
     // because this server route never wrote one; now fixed. team_standard /
     // other types aren't sensitive, so skip them.
+    // v1.26.32: de-identified — keys on the neutral RULE_FULL_LAYER_SYNC event.
     if (result.rows[0].type === 'iron_rule') {
       try {
         await query(
@@ -1487,12 +1492,13 @@ router.put('/:id/disable', async (req, res) => {
             req.user.id,
             'server',
             JSON.stringify({
-              rule_code: 'IR-006',
-              rule_title: '學到東西必須全層同步更新',
+              rule_code: '',
+              rule_title: getEventDisplayName(RULE_FULL_LAYER_SYNC),
+              triggered_by_event: RULE_FULL_LAYER_SYNC,
               action: 'observed_trigger',
               source: 'system_server_auto',
               tool_call: 'memory_disable',
-              context: `停用鐵律 ${result.rows[0].code || ''} (id=${result.rows[0].id})：${reason.slice(0, 80)}`,
+              context: `Disabled iron rule ${result.rows[0].code || ''} (id=${result.rows[0].id}): ${reason.slice(0, 80)}`,
             }),
           ]
         );

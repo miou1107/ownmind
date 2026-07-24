@@ -34,6 +34,17 @@ export const LINT_JARGON_EXPLANATION_REQUIRED = 'lint_jargon_explanation_require
 export const LINT_PRIVACY_CHECK = 'privacy_check';
 
 /**
+ * Full-layer sync on rule change — the compliance observability trigger fired
+ * when a user saves / disables / updates an iron rule (the system observed a
+ * rule mutation; cross-layer sync is expected but not proven).
+ *
+ * Not a lint violation, but it lives here because this module is the single
+ * registry that decouples compliance events from any specific user's iron-rule
+ * code. (Neutralized in v1.26.32; previously tied to a personal rule code.)
+ */
+export const RULE_FULL_LAYER_SYNC = 'rule_full_layer_sync';
+
+/**
  * Event constant → display name (for rendering user-facing messages).
  *
  * Rule: no IR-XXX codes; purely neutral descriptions.
@@ -42,6 +53,7 @@ export const EVENT_DISPLAY_NAMES = {
   [LINT_LANGUAGE_MIXED_RATIO]: 'Mixed Chinese-English',
   [LINT_JARGON_EXPLANATION_REQUIRED]: 'Jargon quality',
   [LINT_PRIVACY_CHECK]: 'Privacy content',
+  [RULE_FULL_LAYER_SYNC]: 'Full-layer sync on rule change',
 };
 
 /**
@@ -62,6 +74,7 @@ export const ALL_LINT_EVENTS = [
   LINT_LANGUAGE_MIXED_RATIO,
   LINT_JARGON_EXPLANATION_REQUIRED,
   LINT_PRIVACY_CHECK,
+  RULE_FULL_LAYER_SYNC,
 ];
 
 /**

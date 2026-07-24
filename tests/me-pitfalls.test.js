@@ -132,10 +132,15 @@ describe('v1.17.87 — memory.js save iron_rule + disable writes system_auto com
       'disable handler must INSERT compliance log when type=iron_rule');
   });
 
-  it('compliance log carries rule_code=IR-006 (any new knowledge must propagate across all layers)', () => {
-    // Both save + disable use IR-006.
-    assert.match(memSource, /rule_code:\s*['"]IR-006['"]/,
-      'memory.js must include the IR-006 rule_code');
+  it('compliance log keys on the neutral full-layer-sync event, not a personal code (v1.26.32)', () => {
+    // v1.26.32 de-identified: the backfill previously hardcoded rule_code=IR-006
+    // (one user's personal rule). It now tags the neutral triggered_by_event and
+    // leaves rule_code empty so it is not tied to any single user's numbering.
+    assert.doesNotMatch(memSource, /rule_code:\s*['"]IR-\d+['"]/,
+      'memory.js must not hardcode a personal iron-rule code');
+    const emitCount = (memSource.match(/triggered_by_event:\s*RULE_FULL_LAYER_SYNC/g) || []).length;
+    assert.ok(emitCount >= 2,
+      'both save + disable backfills must tag the neutral RULE_FULL_LAYER_SYNC event');
   });
 
   it('compliance log action=observed_trigger (not comply)', () => {
