@@ -12,24 +12,35 @@ import { selectBlockFingerprint } from '../hooks/lib/select-block-fingerprint.js
  * by which rule actually blocked.
  *
  * Dispatch table (most-specific wins, in this order):
- *   1. IR-002 with a secret-detect hit  → mem_blocked_secret_regex
+ *   1. Secret-guard rule (semantic) or secret-detect hit → mem_blocked_secret_regex
  *   2. Iron-rule quality lint failure  → mem_blocked_iron_rule_quality
  *   3. Any other block_on_fail rule    → clt_user_reported_other
  *   4. Empty / unknown                 → mem_iron_rule_blocking_commit_no_fingerprint
+ *
+ * v1.26.33: the secret category is keyed on the de-identified `isSecretRule` /
+ * `secretHit` signals, not on the personal code IR-002.
  */
 
 describe('v1.26.8 — selectBlockFingerprint', () => {
-  it('IR-002 secret-detect hit → mem_blocked_secret_regex (most specific)', () => {
+  it('secret-detect hit → mem_blocked_secret_regex (most specific)', () => {
     const reasons = [
-      { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', secretHit: true },
+      { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', isSecretRule: true, secretHit: true },
     ];
     assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_secret_regex');
   });
 
-  it('IR-002 condition fail (no secret hit) → still secret category', () => {
-    // Even without an inline secret-detect hit, IR-002 triggering means "secrets" topic.
+  it('secret-guard rule, condition fail (no inline hit) → still secret category', () => {
+    // The secret-guard rule triggering means "secrets" topic even without an
+    // inline detectSecretLike hit — keyed on isSecretRule, not a rule code.
     const reasons = [
-      { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', secretHit: false },
+      { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', isSecretRule: true, secretHit: false },
+    ];
+    assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_secret_regex');
+  });
+
+  it('non-IR-002 secret-guard rule → still secret category (de-identified)', () => {
+    const reasons = [
+      { ruleCode: 'IR-099', ruleTitle: "this user's secret rule", isSecretRule: true, secretHit: false },
     ];
     assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_secret_regex');
   });
@@ -50,7 +61,7 @@ describe('v1.26.8 — selectBlockFingerprint', () => {
 
   it('mixed reasons: secret + quality → secret wins (most specific)', () => {
     const reasons = [
-      { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', secretHit: true },
+      { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', isSecretRule: true, secretHit: true },
       { ruleCode: 'IR-005', ruleTitle: 'iron-rule quality check', secretHit: false },
     ];
     assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_secret_regex');

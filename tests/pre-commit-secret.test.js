@@ -320,3 +320,55 @@ describe('v1.26.28 pre-commit — separator lines pass, block message shows matc
       `heuristic fragment must be shown in full; stderr=${r.stderr}`);
   });
 });
+
+// ============================================================
+// v1.26.33: the content scan must be de-identified — it must fire for the
+// secret-guard rule based on its semantic identity (the commit_no_secrets
+// template's conditions.type), NOT on the personal code IR-002. Otherwise a
+// user whose secret rule has a different number gets no content scan and
+// secrets slip through.
+// ============================================================
+
+const SECRET_RULE_NON_IR002 = {
+  code: 'IR-099',
+  title: "no secrets in commits (this user's numbering)",
+  tier: 'default',
+  metadata: {
+    verification: {
+      trigger: ['commit'],
+      block_on_fail: true,
+      conditions: {
+        type: 'staged_files_exclude',
+        params: {
+          patterns: ['.env', '*.pem', '**/*.pem', '*.key', '**/*.key', 'credentials.*'],
+        },
+        message: 'staged contains sensitive files',
+      },
+    },
+  },
+};
+
+function writeRulesCache(rules) {
+  fs.writeFileSync(
+    path.join(tmpHome, '.ownmind', 'cache', 'iron_rules.json'),
+    JSON.stringify(rules)
+  );
+}
+
+describe('v1.26.33 pre-commit — secret content scan is code-agnostic', () => {
+  beforeEach(() => { setupSandbox(); writeRulesCache([SECRET_RULE_NON_IR002]); });
+  afterEach(cleanupSandbox);
+
+  it('non-IR-002 secret-guard rule + secret in file content → still blocked', () => {
+    // src/config.js does not match any filename-exclude pattern, so ONLY the
+    // content scan can block it. Pre-fix that scan is gated on ruleCode==='IR-002',
+    // so this IR-099 rule lets the secret through (the bug).
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
+    stage('src/config.js', `const key = "${fakeKey}";\n`);
+    const r = runHook();
+    assert.equal(r.status, 1,
+      `content secret must be blocked regardless of the rule's personal code; stderr=${r.stderr}`);
+    assert.match(r.stderr, /detected_by|openai_api_key/,
+      `block must originate from the content scan; stderr=${r.stderr}`);
+  });
+});
