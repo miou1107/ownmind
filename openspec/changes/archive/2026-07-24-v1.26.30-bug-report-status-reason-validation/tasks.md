@@ -24,6 +24,6 @@
 
 ## Phase 3: Release
 
-- [ ] package.json 1.26.29 → 1.26.30; CHANGELOG; FILELIST; trilingual README
+- [x] package.json 1.26.29 → 1.26.30; CHANGELOG; FILELIST; trilingual README
       version lines; commit; tag; push.
-- [ ] Deploy server + verify live (bogus status_reason → 400).
+- [x] Deploy server + verify live (bogus status_reason → 400).

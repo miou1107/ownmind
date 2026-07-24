@@ -19,6 +19,6 @@
 
 ## Phase 3: Release
 
-- [ ] package.json 1.26.30 → 1.26.31; CHANGELOG; FILELIST; trilingual README
+- [x] package.json 1.26.30 → 1.26.31; CHANGELOG; FILELIST; trilingual README
       version lines; commit; tag; push.
-- [ ] Deploy server + verify live (non-admin hit → English message).
+- [x] Deploy server + verify live (non-admin hit → English message).
