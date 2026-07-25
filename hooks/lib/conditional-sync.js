@@ -2,7 +2,7 @@
 /**
  * hooks/lib/conditional-sync.js — Conditional sync helper (v1.18.0)
  *
- * Why this exists (addresses Vin's "should use a hash check, only sync when needed"):
+ * Why this exists (addresses the "should use a hash check, only sync when needed" request):
  *   Since v1.17.x the SessionStart hook always called /api/memory/init?compact=true in full,
  *   regardless of whether iron rules / memories had changed; 99% of sessions pulled the same
  *   30KB payload.

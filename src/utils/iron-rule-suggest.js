@@ -9,7 +9,7 @@
  *
  *   v1.18.0 does not call an LLM API (avoids a new dependency + key management +
  *   complex LLM failure paths); it uses template-based mechanical assembly. Reasons:
- *     1. AI proposals often drift, Vin edits them anyway, template-based is enough
+ *     1. AI proposals often drift, the user edits them anyway, template-based is enough
  *     2. adding an LLM in v1.18.x is easy (the interface is fixed)
  *     3. 35 rules x 1 min review = 35 min, doable without an LLM
  *

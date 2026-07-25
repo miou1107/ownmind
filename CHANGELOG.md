@@ -1,5 +1,17 @@
 # OwnMind 更新紀錄
 
+## v1.26.36 — 程式碼註解人名去識別化 + 名字守門測試
+
+**背景**：v1.26.35 清掉了「使用者可見產出」裡的人名「Vin」後，產品碼還有 12 處**開發註解**提到 Vin（像 `// Per Vin's spec`、`Vin's 3 specs`、`a need Vin raised`、範例路徑 `/c/Users/Vin/.ownmind`）。這些不是多人洩漏（是準確的專案歷史、開發者才看得到），但為了國際化/開源、讓外部貢獻者讀 code 時不撞到特定擁有者名字，一併清掉。
+
+**做法**：
+- 11 個檔、12 處註解改成去名保義（`Vin's spec` → `spec`、`a need Vin raised` → `a need the user raised`、範例路徑 → `/c/Users/<user>/.ownmind` 等）。
+- 擴充 `tests/no-hardcoded-names-in-output.test.js`：新增 source-scan，掃 src/mcp/hooks/shared/client-src 的程式碼檔，出現 `\bVin\b`/`\bVincent\b` 即 fail（邏輯卡控、防回歸）。
+
+**保留**：`mcp/package.json` 的 `author: "Vin (miou1107)"` 與 `github.com/miou1107/ownmind` 安裝/repo URL 是正當作者與發布資訊（`.json` 不列入掃描）。
+
+**驗證**：名字守門綠、grep 確認程式碼檔已無 Vin；全套件 2070 綠。純註解變更 + 純新增守門測試、無邏輯風險，故以 grep + 守門 + 全套件通過作為驗證。
+
 ## v1.26.35 — 使用者可見產出去識別化（拿掉寫死的人名「Vin」）
 
 **背景**：SKILL.md 產生器、鐵律建議文字、報告 LLM prompt、以及前端預設 layout profile 都寫死了擁有者的名字「Vin」~ 於是**其他 OwnMind 使用者會在自己的產出裡看到別人的名字**。這跟 v1.26.32~34 的鐵律編號大掃除是同一類多人洩漏，只是換到「人名」軸。已確認是使用者可見的：`buildBigSkillMd` 寫進每位使用者的 `~/.claude/skills/ownmind-iron-rules/SKILL.md`；前端 `layoutProps` 餵給 `<Layout>` → `TopBar` 直接顯示 `profile.name`（連頭像縮寫都變成「V」），所有人都看到「Vin」。

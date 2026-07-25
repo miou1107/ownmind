@@ -849,7 +849,7 @@ router.get('/report', async (req, res) => {
 // Why visible to any user:
 //   - These are "system bugs or AI behavior problems", not individual privacy.
 //   - The patterns only emerge across users (9 rows all from 3 handlers).
-//   - Per Vin's spec: every user should see "OwnMind's overall audit health".
+//   - Per spec: every user should see "OwnMind's overall audit health".
 //
 // Query params:
 //   - window: 7d / 30d / 90d / all (default 30d)

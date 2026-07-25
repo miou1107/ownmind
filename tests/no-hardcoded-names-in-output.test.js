@@ -57,3 +57,43 @@ describe('v1.26.35 — no hardcoded personal name in generated output', () => {
     assert.doesNotMatch(src, /name:\s*'Vin'/, 'the default layout profile must not hardcode a personal name');
   });
 });
+
+/**
+ * Source-scan guard: no owner personal name in product CODE files (comments
+ * included). The `author` field in package.json (legitimate authorship) is not
+ * a code file and is intentionally not scanned. Test fixtures are excluded.
+ */
+describe('v1.26.36 — no hardcoded owner name in product code files', () => {
+  const SCAN_DIRS = ['src', 'mcp', 'hooks', 'shared', 'client/src'];
+  const NAME_RE = /\b(Vin|Vincent)\b/;
+  const SKIP_PATH = /node_modules|\.min\.|\/dist\/|\/assets\/|\/bundle/;
+  const SCAN_EXT = /\.(js|jsx|ts|tsx|cjs|mjs|cmd|sh|html)$/;
+
+  function walk(dir, acc) {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (SKIP_PATH.test(full)) continue;
+      if (entry.isDirectory()) walk(full, acc);
+      else if (SCAN_EXT.test(entry.name)) acc.push(full);
+    }
+    return acc;
+  }
+
+  it('no product code file embeds the owner name (use generic phrasing / example names)', () => {
+    const files = SCAN_DIRS
+      .map((d) => path.join(repoRoot, d))
+      .filter((d) => fs.existsSync(d))
+      .flatMap((d) => walk(d, []));
+
+    const violations = [];
+    for (const file of files) {
+      const rel = path.relative(repoRoot, file);
+      fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
+        if (NAME_RE.test(line)) violations.push(`${rel}:${i + 1}: ${line.trim().slice(0, 110)}`);
+      });
+    }
+    assert.equal(violations.length, 0,
+      `Found the owner name in product code (use generic "your"/second-person, ` +
+      `or a placeholder example name):\n${violations.join('\n')}`);
+  });
+});

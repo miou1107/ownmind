@@ -14,7 +14,7 @@
  *   - every docker restart of ownmind-api automatically applies unrun migrations
  *   - a failure throws, process exits 1, and the container never starts listening
  *     (avoiding new code paired with an old schema)
- *   - no deploy-flow changes; Vin's existing "git pull + docker compose build +
+ *   - no deploy-flow changes; the existing "git pull + docker compose build +
  *     docker restart api" workflow stays the same
  *
  * Relationship to scripts/run-migrations.sh:

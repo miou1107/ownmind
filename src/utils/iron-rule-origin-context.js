@@ -1,7 +1,7 @@
 /**
  * iron-rule-origin-context.js — iron-rule backstory origin_context (v1.18.2)
  *
- * Why it exists (a need Vin raised):
+ * Why it exists (a need the user raised):
  *   When an iron rule is created it should record the backstory of "why it was
  *   created at the time":
  *   - which project was being worked on
@@ -10,7 +10,7 @@
  *
  *   As of v1.18.1 the iron-rule metadata had no such field, so the AI could not
  *   see the history from the content, and a future-session AI would not know
- *   "why Vin wrote this iron rule at the time".
+ *   "why the user wrote this iron rule at the time".
  *
  * Design (option 1C / 2a+b / 3 lenient / 4 existing backfill + assistant):
  *   - metadata.origin_context: structured (for admin stats / filtering / sync)

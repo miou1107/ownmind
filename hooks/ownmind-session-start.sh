@@ -10,7 +10,7 @@ LOG_DIR="$OWNMIND_DIR/logs"
 UPDATE_MSG=""
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
-# Without this, $OWNMIND_DIR=/c/Users/Vin/.ownmind makes require() fail with
+# Without this, $OWNMIND_DIR=/c/Users/<user>/.ownmind makes require() fail with
 # MODULE_NOT_FOUND. See path-helpers.sh.
 if [ -f "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh" ]; then
   # shellcheck disable=SC1091

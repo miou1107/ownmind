@@ -15,7 +15,7 @@
  *     2. Writes a compliance event to ~/.ownmind/logs/YYYY-MM-DD.jsonl (picked up by MCP buffer)
  *        + best-effort POST /api/activity/batch (spool is the fallback, POST is the fast path)
  *
- * Vin's 3 specs (inherited from v1.17.71 ownmind-tty-echo.cjs):
+ * 3 specs (inherited from v1.17.71 ownmind-tty-echo.cjs):
  *   1. MUST NOT be filtered or swallowed by the AI — never write stderr / stdout / additionalContext
  *   2. Primary path writes to /dev/tty (mac/linux) or \\.\CONOUT$ (Windows), bypassing the Claude Code hook output channel
  *   3. Fallback writes to ~/.ownmind/logs/banner-pending.jsonl; next SessionStart flushes it
