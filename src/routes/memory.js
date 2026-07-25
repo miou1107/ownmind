@@ -19,6 +19,7 @@ import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js'
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
+import { tokenize, buildSearchWhere } from '../utils/memory-search-query.js';
 import {
   withReportSuggestion,
   isSuggestReportEligible,
@@ -107,7 +108,7 @@ Tip pool (pick a random one each time, avoid consecutive repeats):
 - During a handoff, both sides see the summary so nothing is lost in transition
 - You can export memory to markdown anytime — the data is always yours
 - Say "don't follow this one" and I will ask why, then disable (not delete) and keep an audit trail
-- Search memory with queries like "deployment-related iron rules" — semantic search built in
+- Search memory with multi-keyword queries — matches against title, content, tags, and code
 - OwnMind automatically records the machine, tool, and AI model you use, for traceability
 - Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI
 - Ask "what's left on the ring project" and I will answer from project memories
@@ -291,7 +292,7 @@ When any of the following happens, proactively organize and propose a consolidat
 ## Team Standard RAG
 
 When a team standard is triggered, read the summary first (\`team_standard\`).
-1. **Read details**: If the summary says "see details" or you need more specific guidance, use \`ownmind_get('standard_detail')\` or \`ownmind_search\` with a semantic query to fetch the relevant fragment.
+1. **Read details**: If the summary says "see details" or you need more specific guidance, use \`ownmind_get('standard_detail')\` or \`ownmind_search\` with the relevant keywords to fetch the fragment.
 2. **Upload function**: If you discover a new standard document (\`.md\`), use \`ownmind_upload_standard\` to produce a preview; analyze the content and decide whether to convert any chunk into an iron rule, then call \`ownmind_confirm_upload\`.
 
 ## Iron Rule Format
@@ -863,19 +864,21 @@ router.get('/project/:name', async (req, res) => {
  */
 router.get('/search', async (req, res) => {
   try {
-    const q = req.query.q;
-    if (!q) {
+    const rawQ = req.query.q;
+    const tokens = tokenize(rawQ);
+    if (tokens.length === 0) {
       return res.status(400).json({ error: 'Please provide search keyword q' });
     }
 
-    const pattern = `%${q}%`;
+    // user_id is $1, tokens start at $2.
+    const built = buildSearchWhere(tokens, 2);
     const result = await query(
       `SELECT * FROM memories
        WHERE user_id = $1
          AND status = 'active'
-         AND (content ILIKE $2 OR title ILIKE $2)
-       ORDER BY updated_at DESC`,
-      [req.user.id, pattern]
+         AND ${built.whereClause}
+       ORDER BY ${built.orderClause}`,
+      [req.user.id, ...built.params]
     );
 
     res.json(result.rows);

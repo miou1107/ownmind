@@ -163,7 +163,7 @@ Because static rule files are fragile — AI hallucinations bypass them silently
 ### Infrastructure
 
 - **Secret management** — Securely store API keys and passwords with double encryption (master key + per-row salt)
-- **Semantic search** — Powered by pgvector (PostgreSQL vector search extension: search memories by semantic similarity)
+- **Keyword search** — Multi-keyword AND search across title, content, tags, and code fields (a pgvector column is provisioned for a future semantic-similarity upgrade, not yet in use)
 - **Tiered compression** — Short-term memory auto-compresses, long-term memory persists forever
 - **Native Windows support** — `install.ps1` and `start.cmd` included, no WSL (Windows Subsystem for Linux) needed
 

@@ -89,6 +89,46 @@ describe('localSearch', () => {
   it('returns empty array if cache is null', () => {
     assert.deepEqual(localSearch(null, 'anything'), []);
   });
+
+  // v1.26.37 — parity with the online /search rewrite (Bug #7). Offline used to
+  // do title|content substring only; now it tokenizes + ANDs + matches title /
+  // content / code / tags.
+  it('v1.26.37 — matches by tag element', () => {
+    const c = {
+      data: { project: [{ id: 10, title: 'unrelated', content: 'unrelated',
+                          tags: ['deploy', 'kkvin'] }] },
+    };
+    assert.equal(localSearch(c, 'kkvin').length, 1);
+    assert.equal(localSearch(c, 'kkvin').length, 1);
+  });
+
+  it('v1.26.37 — matches by code column', () => {
+    const c = {
+      data: { iron_rule: [{ id: 11, title: 't', content: 'c', code: 'IR-042' }] },
+    };
+    assert.equal(localSearch(c, 'IR-042').length, 1);
+  });
+
+  it('v1.26.37 — multi-token ANDs across fields', () => {
+    const c = {
+      data: {
+        iron_rule: [
+          { id: 20, title: 'iron rule about deploy', content: 'body' },
+          { id: 21, title: 'iron rule', content: 'body without the second term' },
+        ],
+      },
+    };
+    const hits = localSearch(c, 'iron deploy');
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].id, 20);
+  });
+
+  it('v1.26.37 — empty / single-char-only query returns empty', () => {
+    const c = { data: { iron_rule: [{ id: 30, title: 'anything', content: 'x' }] } };
+    assert.deepEqual(localSearch(c, ''), []);
+    assert.deepEqual(localSearch(c, '   '), []);
+    assert.deepEqual(localSearch(c, 'a b'), []);
+  });
 });
 
 describe('enqueueOperation / readQueue / clearQueue', () => {

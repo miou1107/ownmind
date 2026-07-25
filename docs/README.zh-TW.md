@@ -162,7 +162,7 @@ graph LR
 ### 基礎設施
 
 - **密鑰管理** — 安全儲存 API 金鑰跟密碼、雙重加密（master key + per-row salt）
-- **語意搜尋** — 用 pgvector（PostgreSQL 的向量搜尋擴充：可以用「意思相近」搜記憶）做模糊比對、找到關聯記憶
+- **關鍵字搜尋** — 多關鍵字 AND 搜尋，涵蓋標題、內容、標籤、程式碼欄位（資料庫已預留 pgvector 欄位，語意相似度搜尋是未來升級項目、目前尚未啟用）
 - **分層壓縮** — 短期記憶自動壓縮、長期記憶永久保存
 - **Windows 原生支援** — `install.ps1` 跟 `start.cmd` 都附、不需要 WSL（Windows 子系統 for Linux）
 

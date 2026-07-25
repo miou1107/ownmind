@@ -226,7 +226,7 @@ const TIPS = [
   'During a handoff, both sides see the summary so nothing is lost in transition',
   'You can export memory to markdown anytime — the data is always yours',
   'Say "don\'t follow this one" and I will ask why, then disable (not delete) and keep an audit trail',
-  'Search memory with queries like "deployment-related iron rules" — semantic search built in',
+  'Search memory with multi-keyword queries — matches against title, content, tags, and code',
   'OwnMind automatically records the machine, tool, and AI model you use, for traceability',
   'Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI',
   'Ask "what\'s left on the ring project" and I will answer from project memories',
@@ -918,7 +918,7 @@ async function handleTool(name, args) {
           return {
             data: results,
             _offline: true,
-            _offline_notice: `[OwnMind offline mode] Local keyword search (${results.length} results) — semantic search not available offline`,
+            _offline_notice: `[OwnMind offline mode] Local keyword search on cached memories (${results.length} results)`,
           };
         }
         throw err;

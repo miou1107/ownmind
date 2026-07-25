@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.37 修改（Bug #7 修：關鍵字搜尋改進 + 下架 semantic 口號）
+
+新增檔：
+```
+openspec/changes/v1.26.37-improve-keyword-search/proposal.md   — v1.26.37 提案
+openspec/changes/v1.26.37-improve-keyword-search/tasks.md      — v1.26.37 任務清單
+shared/memory-search-tokens.js                                 — 共用：tokenize + itemMatchesTokens（online 跟 offline 都用同一份）
+src/utils/memory-search-query.js                               — SQL builder：buildSearchWhere + LIKE metacharacter escape
+tests/memory-search-query.test.js                              — 15 tests：tokenize / builder / LIKE escape / route wiring
+```
+修改檔：
+```
+src/routes/memory.js       — /search 改用 buildSearchWhere；tip + SOP 移除 "semantic" 字樣
+mcp/index.js               — session-start tip 改為描述關鍵字搜尋；offline notice 拿掉「semantic」
+mcp/offline.js             — localSearch 改用共用 tokenize + itemMatchesTokens（offline 跟 online 語意對齊）
+tests/offline.test.js      — 加 4 個 tests：tag/code/multi-token/空查詢覆蓋新 localSearch 行為
+README.md                  — 語意搜尋 bullet 改為「關鍵字搜尋」+ 註明 pgvector 是預留
+docs/README.zh-TW.md       — 同上（中文）
+docs/README.ja.md          — 同上（日文）
+package.json               — version 1.26.36 → 1.26.37
+CHANGELOG.md               — v1.26.37 條目
+FILELIST.md                — 本檔
+```
+
 ## v1.26.36 修改（程式碼註解人名去識別化 + 名字守門）
 
 新增檔：
