@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OwnMind IR-024 enforcement: reject commits adding Co-Authored-By trailer.
+# OwnMind commit-trailer guard: reject commits adding Co-Authored-By trailer.
 # Bypass (not recommended): git commit --no-verify
 set -e
 
@@ -9,8 +9,8 @@ if [ -z "$MSG_FILE" ] || [ ! -f "$MSG_FILE" ]; then
 fi
 
 if grep -qiE '^[[:space:]]*Co-Authored-By:' "$MSG_FILE"; then
-  echo "❌ IR-024 violation: commit message contains 'Co-Authored-By' trailer." >&2
-  echo "   Vin 的鐵律：git commit 不加 Co-Authored-By。" >&2
+  echo "❌ Commit-trailer violation: commit message contains 'Co-Authored-By' trailer." >&2
+  echo "   你的鐵律：git commit 不加 Co-Authored-By。" >&2
   echo "   如需強制覆蓋（不建議），用 git commit --no-verify。" >&2
   exit 1
 fi

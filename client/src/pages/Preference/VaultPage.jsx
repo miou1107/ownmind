@@ -5,7 +5,7 @@ import { apiGet, apiPost, apiPut, apiDelete } from '../../api';
 import { Modal } from '../../components/common';
 
 // 密鑰管理頁 — list 所有 secret key、點「顯示」才 GET /:key 解密 value
-// 新增 / 編輯 / 刪除（紅色按鈕 + 確認 dialog、IR-046）
+// 新增 / 編輯 / 刪除（紅色按鈕 + 確認 dialog）
 //
 // 安全設計：
 //   - List 不帶 value、避免 React state / DevTools 殘留明文
@@ -280,7 +280,7 @@ export default function VaultPage() {
                     </div>
                   ) : null}
                 </div>
-                {/* 按鈕區：顯示 / 編輯 / 刪除；刪除按鈕紅色並跟編輯保持距離 IR-046 */}
+                {/* 按鈕區：顯示 / 編輯 / 刪除；刪除按鈕紅色並跟編輯保持距離 */}
                 <div className="shrink-0 flex items-center gap-2">
                   <button
                     type="button"
@@ -301,7 +301,7 @@ export default function VaultPage() {
                   >
                     <Pencil size={16} />
                   </button>
-                  {/* IR-046: 刪除按鈕紅色、跟編輯隔開 ml-4 */}
+                  {/* 刪除按鈕紅色、跟編輯隔開 ml-4 */}
                   <button
                     type="button"
                     onClick={() => setPendingDelete(s)}
@@ -423,7 +423,7 @@ export default function VaultPage() {
           >
             {t('vault.cancel')}
           </button>
-          {/* IR-046 紅色刪除確認按鈕、跟取消保持距離 */}
+          {/* 紅色刪除確認按鈕、跟取消保持距離 */}
           <button
             type="button"
             onClick={handleConfirmDelete}

@@ -5,7 +5,7 @@ REM 2. C:\Program Files\nodejs — winget OpenJS.NodeJS.LTS 預設位置
 REM 3. %ProgramFiles%\nodejs — 系統碟不是 C: 的環境
 REM 4. %LOCALAPPDATA%\Programs\nodejs — winget --scope user 偶爾走這
 REM Claude Code spawn cmd.exe 時繼承的 PATH 可能 stale；fallback 守住空窗期。
-REM v1.17.79: 全部失敗時，把錯誤資訊 echo 到 errors\ spool 檔（IR-038 觀測管道）。
+REM v1.17.79: 全部失敗時，把錯誤資訊 echo 到 errors\ spool 檔（觀測管道）。
 REM   下次 self-check.cjs 跑時 drainErrorSpool 會把這個 .txt 上傳到 server，
 REM   admin dashboard 看得到「user X 的 MCP 起不來」事件，不必等 user 主動回報。
 

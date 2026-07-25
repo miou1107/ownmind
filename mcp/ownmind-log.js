@@ -72,7 +72,7 @@ const IMMEDIATE_FLUSH_EVENTS = new Set([
 // v1.20.1: extracted to keep the test and logEvent from disagreeing on what "today" means.
 // Originally the test used toISOString().slice(0,10) (UTC), while logEvent used local-time
 // getFullYear/Month/Date. Around midnight, the 8-hour UTC-vs-Taipei gap caused the test to
-// look at the wrong file and flake. Per IR-032 (timezone discipline), OwnMind defines "today"
+// look at the wrong file and flake. Per timezone discipline, OwnMind defines "today"
 // in the user's local timezone.
 export function localDateOnly(date) {
   return date.getFullYear() + '-' +

@@ -49,7 +49,7 @@ export default function HandoffsPage() {
 
   async function handleAccept(id) {
     if (acceptingId) return;
-    // 防護：profile 失敗時直接擋 — 不能送空字串或 'unknown' 污染 DB（IR-122 邏輯卡控）
+    // 防護：profile 失敗時直接擋 — 不能送空字串或 'unknown' 污染 DB（邏輯卡控）
     if (!myName) {
       setRowError((prev) => ({ ...prev, [id]: t('handoffs.profile_failed') }));
       return;

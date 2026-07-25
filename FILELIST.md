@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.34 修改（產品碼個人鐵律編號大掃除 + 守門測試）
+
+新增檔：
+```
+openspec/changes/v1.26.34-guard-personal-codes/proposal.md  — v1.26.34 提案
+openspec/changes/v1.26.34-guard-personal-codes/tasks.md     — v1.26.34 任務清單
+tests/no-personal-rule-codes.test.js                        — 守門測試（產品碼禁個人編號）
+```
+修改檔（去識別化，28 檔，多為註解/字串）：
+```
+hooks/lib/select-block-fingerprint.js  — 移除個人編號品管分類（功能性）
+hooks/ownmind-git-commit-msg           — 標籤中性化 +「Vin 的鐵律」→「你的鐵律」
+hooks/ownmind-reply-lint.js / bypass-handler.js / iron-rule-check.js / session-start.sh / secret-guard-rule.js / rule-enforcer.js
+src/routes/memory.js / secret.js / debug.js / me.js / activity.js
+src/utils/iron-rule-quality.js / iron-rule-suggest.js / iron-rule-sync.js / auto-numbering.js
+mcp/index.js / start.cmd / ownmind-log.js
+shared/lint-event-types.js / privacy-detect.js / iron-rule-tier.js / compliance.js
+client/src/pages/Preference/VaultPage.jsx / Portal/HandoffsPage.jsx / components/common/RequireFreshPassword.jsx
+src/public/index.html / me/index.html
+package.json                           — version 1.26.33 → 1.26.34
+tests/git-pre-commit-fingerprint.test.js / git-hook-co-authored-by.test.js — 配合去識別化更新斷言
+```
+
 ## v1.26.33 修改（pre-commit 密鑰防護去識別化）
 
 新增檔：

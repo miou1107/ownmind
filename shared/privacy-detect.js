@@ -6,7 +6,7 @@
  *
  * Used by the reply-lint hook: scans each AI reply at end of turn and
  * emits a 'privacy_check' event when something matches. Whether to block
- * is decided by the user's own iron rule (e.g. Vin's IR-041 binds to this
+ * is decided by the user's own iron rule (e.g. a privacy rule binds to this
  * event; other users can opt in by writing a similar rule).
  *
  * Exception (when a match doesn't count):

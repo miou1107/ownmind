@@ -85,7 +85,7 @@ export function suggestSkillMdFormat(rule) {
   }
 
   // v1.18.1 A: round-trip lint self-check — the helper validates its own output against lint
-  // Previously (rc3) it did not; the IR-004 upgrade assistant only got rejected by the server on click, an IR-007 fixture/prod mismatch
+  // Previously (rc3) it did not; the upgrade assistant only got rejected by the server on click, a fixture/prod mismatch
   // Now the helper runs lint itself and, if it fails, adds a warning to notes for the admin
   const lintCheck = lintIronRule({
     title: rule.title,
@@ -111,7 +111,7 @@ export function suggestSkillMdFormat(rule) {
 
 /**
  * Combine an IR-XXX code and title into a kebab-case ASCII name
- *   IR-002 + 不要 commit .env → ir-002-cmt-a1b2c3
+ *   IR-XXX + 不要 commit .env → ir-xxx-cmt-a1b2c3
  *   id-339 + 修報表... → id-339-rpt-d4e5f6
  *
  * v1.18.0-rc3 review I4 fix: previously used a Chinese title slug, dangerous for

@@ -6,7 +6,7 @@
  *
  * Schema:
  *   ts: ISO 8601
- *   event: rule_code (e.g. 'IR-008')
+ *   event: rule_code (e.g. 'IR-XXX')
  *   action: 'comply' | 'skip' | 'violate' | 'block' | 'bypass' | 'hook_internal_error'
  *   rule_code: string
  *   rule_title: string

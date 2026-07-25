@@ -230,7 +230,7 @@ const TIPS = [
   'OwnMind automatically records the machine, tool, and AI model you use, for traceability',
   'Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI',
   'Ask "what\'s left on the ring project" and I will answer from project memories',
-  'Iron rules are numbered (IR-001) so you can reference them directly: "see IR-003"',
+  'Iron rules are numbered so you can reference them directly by their code',
   'Every handoff records the source tool and model so you can trace which AI made each decision',
   'Ask "how did this iron rule originate" and I will show you the full incident background',
   'OwnMind supports secret management — your API keys and passwords are stored securely',
@@ -261,7 +261,7 @@ let complianceEvents = [];
 const COMPLIANCE_EVENTS_MAX = 500;
 const AUTO_COMPLY_DEDUP_TTL_MS = 60_000;
 let sessionLogged = false;
-// v1.17.37: auto-detect project name (IR-027 "only logic works" — don't make the user repeat
+// v1.17.37: auto-detect project name (only-logic-works — don't make the user repeat
 // it to the AI every time). CLAUDE_PROJECT_DIR is the project root passed in by Claude Code
 // when it launches the MCP. If the user isn't in a git repo or is using another tool, fall
 // back to the cwd basename.
@@ -477,7 +477,7 @@ const TOOLS = [
         // v1.18.2: iron_rule only — AI fills in time-and-place context
         origin_event: {
           type: "string",
-          description: "(iron_rule only) Event description inferred by the AI from conversation context. Example: \"Upgrade-helper testing surfaced an IR-037 misapplied scenario.\" If unknown, write \"user issued the rule directly, no work context.\"",
+          description: "(iron_rule only) Event description inferred by the AI from conversation context. Example: \"Upgrade-helper testing surfaced an IR-XXX misapplied scenario.\" If unknown, write \"user issued the rule directly, no work context.\"",
         },
         user_quote: {
           type: "string",
@@ -491,7 +491,7 @@ const TOOLS = [
         related_rules: {
           type: "array",
           items: { type: "string" },
-          description: "(iron_rule only) Related iron rule codes (optional). Example: ['IR-037', 'IR-007']",
+          description: "(iron_rule only) Related iron rule codes (optional). Example: ['IR-XXX', 'IR-YYY']",
         },
         // v1.19: iron rule tier
         tier: {
@@ -589,7 +589,7 @@ const TOOLS = [
             project: { type: "string", description: "Primary project name" },
             duration_turns: { type: "number", description: "Number of conversation turns" },
             actions: { type: "array", items: { type: "string" }, description: "Action types performed (e.g., code_edit, git_commit, deploy, debug, research)" },
-            rules_triggered: { type: "array", items: { type: "string" }, description: "Iron rule codes triggered (e.g., IR-001)" },
+            rules_triggered: { type: "array", items: { type: "string" }, description: "Iron rule codes triggered (e.g. IR-XXX)" },
             rules_complied: { type: "array", items: { type: "string" }, description: "Iron rule codes complied with" },
             rules_skipped: { type: "array", items: { type: "string" }, description: "Iron rule codes skipped" },
             friction_points: { type: "string", description: "Friction points the user encountered" },
@@ -651,7 +651,7 @@ const TOOLS = [
       type: "object",
       properties: {
         rule_title: { type: "string", description: "Iron rule title" },
-        rule_code: { type: "string", description: "Iron rule code (e.g., IR-001)" },
+        rule_code: { type: "string", description: "Iron rule code (e.g. IR-XXX)" },
         action: { type: "string", enum: ["comply", "skip", "violate"], description: "comply = complied; skip = user asked to skip; violate = violated" },
         context: { type: "string", description: "Operation context that triggered the rule (optional)" },
       },
@@ -1110,7 +1110,7 @@ async function handleTool(name, args) {
 
     case "ownmind_delete_secret": {
       // v1.17.91: permanently delete a single secret. The server writes an activity_log audit
-      // entry (IR-002 — do not leak the value; only record the key and the action).
+      // entry (secret hygiene — do not leak the value; only record the key and the action).
       const key = args.key || args.name;
       if (!key) {
         throw new Error("ownmind_delete_secret: missing required argument `key` (string).");
@@ -1348,7 +1348,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 // In v1.17.40 we wrote system observations as action='comply', which is self-deceptive — an
 // integrity issue. Changed to action='observed_trigger': honestly says "the system observed
 // a tool being called", instead of pretending "iron rule compliance has been verified".
-// Also removed the handoff_create → IR-008/009/024 overreach (commit rules should be enforced
+// Also removed the handoff_create → commit-rule overreach (commit rules should be enforced
 // by the git hook).
 //
 // Three-layer semantics:
@@ -1397,7 +1397,7 @@ async function autoComplyForToolCall(name, args, result) {
       context: `Iron rule ${name === 'ownmind_save' ? 'added' : 'updated'} (id=${args.id || result?.id || '?'}) — system observed; not verified.`,
     });
   }
-  // Removed the handoff_create → IR-008/009/024 overreach.
+  // Removed the handoff_create → commit-rule overreach.
   // Codex review: creating a handoff does NOT prove the commit followed those iron rules.
   // Those belong to the git hook, not to the MCP handoff handler self-claiming compliance.
 

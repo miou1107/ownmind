@@ -2,7 +2,7 @@ import { detectFrontmatter } from './iron-rule-frontmatter.js';
 import { validateOriginContext } from './iron-rule-origin-context.js';
 
 /**
- * lintIronRule — iron-rule quality check (program-level enforcement of IR-027).
+ * lintIronRule — iron-rule quality check (program-level enforcement of the logic-over-reminders principle).
  *
  * v1.18.0 upgrade: detect SKILL.md frontmatter
  *   - has frontmatter   -> schema lint S1-S9 (spec.md §1.3)
@@ -16,7 +16,7 @@ import { validateOriginContext } from './iron-rule-origin-context.js';
  *   4. content must contain "scenario section" keywords
  *   5. content must contain "rule section" keywords
  *   6. context-dependent phrases are forbidden
- *   7. mixed Chinese-English check (IR-037)
+ *   7. mixed Chinese-English check
  *
  * Pure function — does not touch the DB; easy to test and reuse.
  *
@@ -163,11 +163,11 @@ export function lintSkillMdRule(rule, fm) {
     errors.push('S7 body is missing a rule section — must spell out 「規則該做什麼 / 不該做什麼 / 禁止 / 必須」, otherwise the AI cannot tell what to do');
   }
 
-  // S8 — removed in v1.18.1 — IR-037 mixed Chinese-English should not apply to SKILL.md body.
+  // S8 — removed in v1.18.1 — the mixed Chinese-English check should not apply to SKILL.md body.
   // Same reason as removing rule #7 in lintLegacyTextRule:
-  //   IR-037 is for "AI replies"; the reply-lint Stop hook already handles that.
+  //   the mixed-Chinese-English lint is for "AI replies"; the reply-lint Stop hook already handles that.
   //   An iron-rule body is a "technical note" for the AI — having tech terms is natural.
-  //   Evidence: 26 of 35 prod iron rules failed (74%), 17 of them on IR-037 — a design
+  //   Evidence: 26 of 35 prod iron rules failed (74%), 17 of them on the mixed-language check — a design
   //   error, not an over-strict rule.
 
   // S9 — description length < 50 -> warning (not a reject)
@@ -209,7 +209,7 @@ export function lintLegacyTextRule(rule) {
     errors.push(`title too long (${title.length} chars) — title max is 100 chars; too long makes the iron-rule list hard to read`);
   }
 
-  // (2) content length (min lowered to 50 so the existing IR-020 at 48 chars is close to passing; new rules 100+ recommended)
+  // (2) content length (min lowered to 50 so the existing 48-char rule is close to passing; new rules 100+ recommended)
   if (content.length < 50) {
     errors.push(`content too short (${content.length} chars) — not enough information, min 50 chars (100+ recommended)`);
   } else if (content.length > 3000) {
@@ -244,18 +244,18 @@ export function lintLegacyTextRule(rule) {
     );
   }
 
-  // (7) removed in v1.18.1 — the IR-037 mixed Chinese-English check should not apply to "iron-rule content"
+  // (7) removed in v1.18.1 — the mixed Chinese-English check should not apply to "iron-rule content"
   //
   // Why it was removed:
-  //   IR-037 ("replies must be plain Chinese, no mixed Chinese-English") was designed for
+  //   the mixed-Chinese-English rule ("replies must be plain Chinese, no mixed Chinese-English") was designed for
   //   "AI replies"; the reply-lint Stop hook (v1.17.96) already handles that.
   //
   //   Iron-rule content itself is a "technical note for the AI" — having tech terms like
-  //   docker / Python / OpenSpec / Bob / Alice is natural. Applying IR-037 to iron-rule
+  //   docker / Python / OpenSpec / Bob / Alice is natural. Applying the mixed-language check to iron-rule
   //   lint is "the right rule in the wrong place", not "the rule being too strict".
   //
   //   Evidence: the v1.18.1 audit script ran 35 prod iron rules, 26 failed (74%), 17 of
-  //   them on the IR-037 mixed-language threshold — proving that applying IR-037 to
+  //   them on the mixed-language threshold — proving that applying the mixed-language check to
   //   iron-rule content is a design error, not an isolated case.
   //
   //   v1.17.94 shipped for 6 months without anyone noticing because lint only ran on
@@ -332,7 +332,7 @@ function checkMixedLanguage(content) {
   // Gives reasonable room to absorb 1-2 missing tech terms, while still blocking
   // an obvious violation like "a whole English paragraph"
   if (ratio > 0.15) {
-    return `Mixed Chinese-English ratio ${(ratio * 100).toFixed(1)}% > 15% (IR-037 violation) — found ${mixedWords.length} non-whitelisted English words (first 5: ${mixedWords.slice(0, 5).join(', ')}). Please rewrite in plain Chinese; tech terms may stay (e.g. SQL/API/IR-XXX)`;
+    return `Mixed Chinese-English ratio ${(ratio * 100).toFixed(1)}% > 15% — found ${mixedWords.length} non-whitelisted English words (first 5: ${mixedWords.slice(0, 5).join(', ')}). Please rewrite in plain Chinese; tech terms may stay (e.g. SQL/API/IR-XXX)`;
   }
 
   return null;

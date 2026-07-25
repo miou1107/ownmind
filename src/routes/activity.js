@@ -86,8 +86,8 @@ async function getContextAnalysis(userId, fromDate) {
  * Body: { events: [{ ts, event, tool, source, details }, ...] }
  * Requires regular auth (the user's own API key).
  */
-// v1.17.45: server-side auto observability (the final form of IR-027
-// "logic over reminders").
+// v1.17.45: server-side auto observability (the final form of the
+// logic-over-reminders principle).
 // The earlier client-side autoComplyForToolCall in mcp/index.js required
 // every user to upgrade to v1.17.40+; in practice some users get stuck on
 // old versions (e.g. Bob on 1.17.16). Move the logic to the server: when

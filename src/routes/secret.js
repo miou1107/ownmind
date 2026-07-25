@@ -103,7 +103,7 @@ router.post('/', async (req, res) => {
       [req.user.id, key, encryptedValue, description || null]
     );
 
-    // v1.17.91: write an activity_log audit (IR-002 — don't leak the value;
+    // v1.17.91: write an activity_log audit (secret hygiene — don't leak the value;
     // only log the key + action + whether it was an insert or update).
     const row = result.rows[0];
     try {
@@ -168,7 +168,7 @@ router.put('/:key', async (req, res) => {
 
     // v1.17.91: PUT must also write an activity_log audit (missed in the
     // first round of v1.17.91; reviewer I-1 caught it).
-    // Records which fields changed but not their values (IR-002 — never
+    // Records which fields changed but not their values (secret hygiene — never
     // leak secret material).
     const changedFields = [];
     if (req.body.value !== undefined) changedFields.push('value');
@@ -204,7 +204,7 @@ router.delete('/:key', async (req, res) => {
       return res.status(404).json({ error: 'Secret not found' });
     }
 
-    // v1.17.91: write an activity_log audit (IR-002 — don't leak the
+    // v1.17.91: write an activity_log audit (secret hygiene — don't leak the
     // value; only log key + action).
     try {
       await query(

@@ -1,5 +1,19 @@
 # OwnMind 更新紀錄
 
+## v1.26.34 — 產品碼個人鐵律編號大掃除 + 守門測試（B 類去識別化）
+
+**背景**：產品碼裡累積了約 80 處寫死的個人鐵律編號（`IR-NNN`）~ 散在註解、操作手冊/help 文字、schema 說明、顯示字串，以及一處功能性的 fingerprint 分類。每一處對「第 N 條鐵律是別的東西」的其他使用者都是錯的，也全都違反產品自訂原則（個人編號不進產品碼）。這是 v1.26.32（合規觀測）、v1.26.33（密鑰防護）同一類問題的最後、也最廣的一批。
+
+**做法（邏輯卡控、非靠提醒）**：靠提醒顯然擋不住漂移（這 80 處就是證據），所以改用**守門測試**~ 掃描產品碼、只要出現具體 `IR-\d` 編號就 fail。這就是「提醒無效、邏輯才有效」原則套用在 codebase 自己身上。
+
+- 新增 `tests/no-personal-rule-codes.test.js`：掃 src/mcp/hooks/shared/client-src，大小寫不敏感比對 `IR-\d{2,4}`；教學範例一律改用無數字的 `IR-XXX` 佔位；唯一白名單=me.js 那條有註解的 `LEGACY_FULL_LAYER_SYNC_CODE = 'IR-006'`（比對正式機歷史資料用）。
+- 28 個產品檔去識別化：註解/help/schema/顯示字串改成「描述規則用途、不寫編號」；泛用範例改 `IR-XXX`。
+- **功能性**：移除 fingerprint 的個人編號「品管類」分類（那些規則沒有 commit 觸發的 verification、該分支根本走不到，清單也跟真正的 commit 期品管規則對不上）~ 這類 block 現在歸到已註冊的通用 fingerprint `clt_user_reported_other`。順手把 commit-msg hook 的「Vin 的鐵律」改成「你的鐵律」。
+
+**延後（不在此次）**：產品產出的 SKILL.md 內容還有寫死的人名「Vin」（`iron-rule-sync.js` / `iron-rule-suggest.js`）~ 那是「人名」軸、不是編號軸，需要另外決定泛用寫法，已開成獨立待辦。
+
+**驗證**：守門測試先紅（列出全部 ~80 處）後綠；全套件 2064 綠。變更健全性檢查=除了刻意的 fingerprint 移除，其餘只動註解/字串、無邏輯風險。Code review 一輪「ready to proceed」（確認 `clt_user_reported_other` 已註冊、reply-lint 的執行期事件碼未被動到、守門測試無漏掃）；已採納 minor 建議（守門測試補掃無副檔名 hook + 大小寫/4 位數編號、清掉讀起來像沒填的範本字串）。
+
 ## v1.26.33 — pre-commit 密鑰防護去識別化（修對其他使用者的密鑰外洩缺口）
 
 **背景（安全性，非只是整潔）**：git pre-commit hook 會對 staged 內容做密鑰掃描（`checkStagedDiffForSecrets`），但這段只在「攔阻規則的編號剛好是 `IR-002`」時才跑（`if (ruleCode === 'IR-002')`）。IR-002 是某一位使用者的個人「不 commit 密鑰」鐵律編號。**對第 2 條不是這條的其他使用者，內容掃描根本不會觸發** ~ 把密鑰貼進一般檔名的檔案（例如 `src/config.js`）就會被 commit 進去。這跟 v1.26.32 同一種病（產品行為綁死個人編號），但這條有實際外洩後果。

@@ -702,7 +702,7 @@ router.get('/report', async (req, res) => {
       });
     }
 
-    // #5 IR-027 reverse audit (super_admin only):
+    // #5 logic-over-reminders reverse audit (super_admin only):
     // user created > 7 days ago, still on a default password
     // (must_change_password=TRUE).
     if (me.role === 'super_admin') {
@@ -878,7 +878,7 @@ router.get('/pitfalls', async (req, res) => {
     // v1.17.92 → v1.17.93: V17_87_SHIPPED cutoff revert.
     //   v1.17.92 added the cutoff as a workaround — hides 8 v1.17.87
     //   historical leftovers but the data still lives in the DB, which
-    //   violates "transparency" + IR-027 (reminders are useless, only logic
+    //   violates "transparency" + logic-over-reminders (reminders are useless, only logic
     //   counts). v1.17.93 reverts the cutoff and leaves the 8 visible.
     //   Use a fix_hint to explain clearly:
     //   - It's v1.17.87 pre-ship history (memory.js POST didn't write a

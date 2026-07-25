@@ -4,8 +4,8 @@
  * Purpose:
  *   Decouples the lint hooks' "event" from any specific user's iron-rule code.
  *   Product code uses neutral event constants and never hardcodes a user's
- *   personal iron-rule code (avoids IR-050: "personal iron-rule codes must not
- *   appear in product code").
+ *   personal iron-rule code (avoids putting personal iron-rule codes in
+ *   product code).
  *
  * The "event → iron-rule code" mapping is resolved at lookup time from the
  * rule cache (the user's iron-rule metadata) via the `triggered_by_event`
@@ -16,13 +16,13 @@
 
 /**
  * Mixed Chinese/English ratio too high.
- * (Previously hardcoded to "IR-037"; now neutral.)
+ * (Previously tied to a personal rule code; now neutral.)
  */
 export const LINT_LANGUAGE_MIXED_RATIO = 'lint_language_mixed_ratio';
 
 /**
  * Jargon / technical term missing a plain-Chinese explanation.
- * (Previously hardcoded to "IR-036"; now neutral.)
+ * (Previously tied to a personal rule code; now neutral.)
  */
 export const LINT_JARGON_EXPLANATION_REQUIRED = 'lint_jargon_explanation_required';
 

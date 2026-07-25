@@ -23,10 +23,10 @@ function runHook(message) {
   }
 }
 
-test('rejects Co-Authored-By trailer (IR-024 standard case)', () => {
+test('rejects Co-Authored-By trailer (standard case)', () => {
   const r = runHook('feat: x\n\nCo-Authored-By: Claude <a@b>\n');
   assert.strictEqual(r.code, 1);
-  assert.match(r.stderr, /IR-024/);
+  assert.match(r.stderr, /Co-Authored-By/);
 });
 
 test('rejects Co-authored-by trailer (git standard lowercase)', () => {

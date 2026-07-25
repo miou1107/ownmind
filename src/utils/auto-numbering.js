@@ -1,7 +1,7 @@
 /**
  * Generate the next IR-XXX code from a list of existing codes.
  * @param {Array<string|null>} existingCodes - existing code values (may contain null)
- * @returns {string} the next code, e.g. 'IR-014'
+ * @returns {string} the next code, e.g. 'IR-XXX'
  */
 export function generateNextIronRuleCode(existingCodes) {
   const nums = (existingCodes || [])
