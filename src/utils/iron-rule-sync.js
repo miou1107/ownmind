@@ -95,7 +95,7 @@ export function buildBigSkillMd(rules) {
 
   // pushy description — aligned with the standard SKILL.md style (spec.md §4.3)
   const description =
-    `Use whenever you do ANY action covered by Vin's iron rules: code edits, ` +
+    `Use whenever you do ANY action covered by your iron rules: code edits, ` +
     `git commits, deploys, debugging, doc updates, AI quality issues, secret handling. ` +
     `OwnMind has ${total} iron rules learned from real production incidents. ` +
     `ALWAYS consult this when about to commit, deploy, delete, edit code, or ` +
@@ -113,7 +113,7 @@ export function buildBigSkillMd(rules) {
   lines.push('');
   lines.push('# OwnMind Iron Rules');
   lines.push('');
-  lines.push(`Vin 個人鐵律集合 — 從歷史踩坑學來的、必須嚴格遵守的工作規則（共 ${total} 條）。`);
+  lines.push(`你的個人鐵律集合 — 從歷史踩坑學來的、必須嚴格遵守的工作規則（共 ${total} 條）。`);
   lines.push('');
   lines.push('## 觸發索引（按 trigger 分類）');
   lines.push('');
@@ -167,7 +167,7 @@ export function buildReferenceFile(rule) {
   const autoDesc =
     `${code}: ${rule.title}. ` +
     `Triggers on: ${triggers}. ` +
-    `(auto-generated frontmatter from legacy text rule — Vin can upgrade via /admin)`;
+    `(auto-generated frontmatter from legacy text rule — you can upgrade via /admin)`;
 
   const lines = [];
   lines.push('---');

@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.26.35 修改（使用者可見產出去識別化：拿掉人名 Vin）
+
+新增檔：
+```
+openspec/changes/v1.26.35-deidentify-names-in-output/proposal.md  — v1.26.35 提案
+openspec/changes/v1.26.35-deidentify-names-in-output/tasks.md     — v1.26.35 任務清單
+tests/no-hardcoded-names-in-output.test.js                        — 守門：產生器輸出禁人名
+```
+修改檔：
+```
+src/utils/iron-rule-sync.js     — SKILL.md 產生器「Vin」→ 泛用第二人稱（3 處）
+src/utils/iron-rule-suggest.js  — 建議說明「是 Vin...」→「是你...」
+src/lib/llm-narrative.js        — prompt 範例名 Vin → Alice
+client/src/App.jsx              — 預設 profile name 'Vin' → 'User'
+package.json                    — version 1.26.34 → 1.26.35
+tests/iron-rule-sync.test.js    — 斷言配合新文字更新
+```
+
 ## v1.26.34 修改（產品碼個人鐵律編號大掃除 + 守門測試）
 
 新增檔：
