@@ -57,7 +57,7 @@ export default function App() {
   const layoutProps = {
     role: currentRole,
     onRoleChange: setCurrentRole,
-    profile: { name: 'Vin' },
+    profile: { name: 'User' },
     version: 'v1.20.1',
     changelog: MOCK_CHANGELOG,
     onLogout: () => console.log('logout'),

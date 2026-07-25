@@ -145,7 +145,7 @@ function buildDescription({ code, title, triggers }) {
   const triggerStr = triggers.length > 0 ? triggers.join(', ') : 'general';
   const lines = [];
   lines.push(`Use this rule whenever you do work that may touch: ${triggerStr}.`);
-  lines.push(`${code}「${title}」是 Vin 從歷史踩坑學來的硬規定、必須嚴格遵守。`);
+  lines.push(`${code}「${title}」是你從歷史踩坑學來的硬規定、必須嚴格遵守。`);
   lines.push(`Triggers on: ${triggerStr}. ALWAYS consult body do/dont before action.`);
   return lines.join('\n');
 }

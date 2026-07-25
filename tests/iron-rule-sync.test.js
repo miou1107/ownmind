@@ -59,7 +59,7 @@ describe('v1.18.0 — buildBigSkillMd', () => {
     const md = buildBigSkillMd(SAMPLE_RULES);
     assert.match(md, /^---\nname: ownmind-iron-rules\n/, 'must start with SKILL.md frontmatter');
     assert.match(md, /description: \|/);
-    assert.match(md, /Use whenever you do ANY action covered by Vin's iron rules/);
+    assert.match(md, /Use whenever you do ANY action covered by your iron rules/);
     assert.match(md, /\n---\n/, 'must have a closing marker');
   });
 

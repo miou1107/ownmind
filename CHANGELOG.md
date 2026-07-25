@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## v1.26.35 — 使用者可見產出去識別化（拿掉寫死的人名「Vin」）
+
+**背景**：SKILL.md 產生器、鐵律建議文字、報告 LLM prompt、以及前端預設 layout profile 都寫死了擁有者的名字「Vin」~ 於是**其他 OwnMind 使用者會在自己的產出裡看到別人的名字**。這跟 v1.26.32~34 的鐵律編號大掃除是同一類多人洩漏，只是換到「人名」軸。已確認是使用者可見的：`buildBigSkillMd` 寫進每位使用者的 `~/.claude/skills/ownmind-iron-rules/SKILL.md`；前端 `layoutProps` 餵給 `<Layout>` → `TopBar` 直接顯示 `profile.name`（連頭像縮寫都變成「V」），所有人都看到「Vin」。
+
+**做法**：這些產生器拿不到使用者身分，所以正解是泛用第二人稱。
+
+- `src/utils/iron-rule-sync.js`：`Vin's iron rules` → `your iron rules`、`Vin 個人鐵律集合` → `你的個人鐵律集合`、`Vin can upgrade` → `you can upgrade`。
+- `src/utils/iron-rule-suggest.js`：產生的說明 `是 Vin 從歷史踩坑學來的` → `是你從歷史踩坑學來的`。
+- `src/lib/llm-narrative.js`：prompt 的少樣本範例名 `Vin` → `Alice`（沿用該檔既有的 Alice/Bob/Dana 範例名慣例）。
+- `client/src/App.jsx`：預設 `profile: { name: 'Vin' }` → `{ name: 'User' }`。
+- 新增 TDD 守門 `tests/no-hardcoded-names-in-output.test.js`：每個產生器的輸出都不得含 `\bVin\b`。
+
+**不在範圍**：程式碼「註解」裡提到 Vin 的地方（如「Vin's spec」「Vin 提的需求」）是準確的專案歷史、開發者可見、不會進到使用者產出，保留不動；`mcp/package.json` 的 `author` 是正當作者資訊，保留。
+
+**部署提醒**：dashboard 的建置產物（gitignore）在 `vite build` 前還帶舊值，所以執行中的 UI 要等部署重建 client 後才會拿掉「Vin」~ 部署流程本來就會重建 dashboard。
+
+**驗證**：TDD 先紅後綠；全套件 2069 綠。Code review 一輪「ready to proceed」（確認 App.jsx 是真的 TopBar 洩漏、沒有漏掉其他使用者可見的洩漏、測試確實走到有 Vin 的程式路徑）。
+
 ## v1.26.34 — 產品碼個人鐵律編號大掃除 + 守門測試（B 類去識別化）
 
 **背景**：產品碼裡累積了約 80 處寫死的個人鐵律編號（`IR-NNN`）~ 散在註解、操作手冊/help 文字、schema 說明、顯示字串，以及一處功能性的 fingerprint 分類。每一處對「第 N 條鐵律是別的東西」的其他使用者都是錯的，也全都違反產品自訂原則（個人編號不進產品碼）。這是 v1.26.32（合規觀測）、v1.26.33（密鑰防護）同一類問題的最後、也最廣的一批。
