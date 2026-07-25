@@ -1,5 +1,29 @@
 # OwnMind 更新紀錄
 
+## v1.26.37 — Bug #7 修：關鍵字搜尋改進 + 下架「語意搜尋」口號
+
+**背景**：Bug #7「新記憶存了但搜不到」實際根因不是原本猜的「embedding pipeline 壞掉」~ 而是**從來沒實作**。DB schema 有 `embedding vector(1536)` 欄位和 ivfflat 索引（`db/001_init.sql:42,111`），但寫入端從沒填 embedding 欄位、也沒有任何 embedding provider 整合（沒 OpenAI/Voyage/Anthropic embed 呼叫、沒 `<->`/`<=>` 距離運算子）。`/api/memory/search` 只做 `ILIKE '%q%'` 對 title/content 的**子字串比對**~ 多詞或概念查詢全都撈不到。同時多處使用者可見文案（session-start tip、SOP、README 三語）在賣「semantic search built in」~ 這是口號跟實作對不上、誤導使用者以為是搜尋壞掉。
+
+**Vin 拍板方向（B + C，A 排 backlog）**：真的做 semantic search（選項 A）要決定 embedding provider、預算、跑舊記憶的補資料 job~ 排入 backlog。這版先做 **B：改進 ILIKE 搜尋** + **C：下架不實口號**。
+
+**做法**：
+
+- **B — 關鍵字搜尋改進**（`src/routes/memory.js` GET /search）：
+  - 抽出純函式 `src/utils/memory-search-query.js`：`tokenize(q)` 拆詞、去空、上限 10 個 token；`buildSearchWhere(tokens, startIdx)` 產生 WHERE + ORDER BY 片段。
+  - 每個 token 命中 `title` / `content` / `code` / 任一 `tags` 元素其一即可（EXISTS + unnest）~ token 之間是 AND（每個詞都要出現在某欄位）。
+  - Rank：第一個 token 命中 title 的排前面、其餘 `updated_at DESC`。
+  - 空查詢或全空白 → 400（保留原行為）。
+- **C — 下架 semantic 口號**：`src/routes/memory.js:111` 的 tip、`mcp/index.js:229` 的 tip、`src/routes/memory.js:295` 的 SOP「semantic query」字樣、`mcp/index.js:921` 的 offline notice、README 三語（`README.md:166` / `docs/README.zh-TW.md:165` / `docs/README.ja.md:166`）都改成如實描述「多關鍵字搜尋、涵蓋 title/content/tags/code」~ 並註明 pgvector 欄位是預留、語意搜尋是未來升級。
+
+**不在範圍**：不寫 embedding 欄位、不叫 embedding provider、不改 `ownmind_search` MCP 工具簽章、不改 `/search` 回應形狀（依然回整筆 memory）。真的 semantic search 排入 Bug #7-A backlog。
+
+**Code review 補修（reviewer 抓的兩條 Important）**：
+- **LIKE 萬用字元跳脫**：token 含 `%` `_` `\` 沒跳脫、`ILIKE '%100%%'` 會被讀成「含 100 的任何字」~ 加 `escapeLikePattern`（`\` 轉義三個字元、Postgres LIKE 預設 escape char 就是 `\`）+ 對應測試（`100%`、`a_b`、`x\y`）。
+- **Offline 搜尋沒同步更新**：`mcp/offline.js localSearch` 之前是 lowercased `.includes(title||content)`~ 跟 v1.26.37 之前的線上搜尋一樣~ 也就是說 offline user 一直吃 Bug #7 的同一個症狀。抽 `shared/memory-search-tokens.js`（`tokenize` + `itemMatchesTokens`）讓 online SQL builder 跟 offline in-memory search 用同一份語意~ 加 4 個 tests 覆蓋 tag/code/multi-token/空查詢。
+- **Minor**：`tokenize` 順手加最短 2 字元、避免 `q=a` 觸發 seq-scan。
+
+**驗證**：TDD 先紅後綠~ 15 個新單元/整合測試涵蓋 tokenize（含 min-len、cap）/ builder / LIKE escape / route wiring~ 4 個新 offline 測試覆蓋新 localSearch 行為~ 全套件 2089 綠、無回歸。Code review 一輪、兩條 Important 都修好、Minor 有做 min-length、另兩條 Minor（silent-truncation 警告、integration test）暫緩。
+
 ## v1.26.36 — 程式碼註解人名去識別化 + 名字守門測試
 
 **背景**：v1.26.35 清掉了「使用者可見產出」裡的人名「Vin」後，產品碼還有 12 處**開發註解**提到 Vin（像 `// Per Vin's spec`、`Vin's 3 specs`、`a need Vin raised`、範例路徑 `/c/Users/Vin/.ownmind`）。這些不是多人洩漏（是準確的專案歷史、開發者才看得到），但為了國際化/開源、讓外部貢獻者讀 code 時不撞到特定擁有者名字，一併清掉。

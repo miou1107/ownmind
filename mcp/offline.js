@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
+import { tokenize, itemMatchesTokens } from '../shared/memory-search-tokens.js';
+
 const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/memories.json');
 const DEFAULT_QUEUE_PATH = path.join(os.homedir(), '.ownmind/queue.jsonl');
 
@@ -40,18 +42,19 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     } catch { /* silent fail */ }
   }
 
+  // v1.26.37 (Bug #7 fix): shares tokenize + itemMatchesTokens with the online
+  // /search path so offline and online return the same shape of hits (multi-
+  // token AND, matches title / content / code / tags). Pre-v1.26.37 this did a
+  // single lowercased `.includes()` over title|content only.
   function localSearch(cache, query) {
     if (!cache?.data) return [];
-    const q = query.toLowerCase();
+    const tokens = tokenize(query);
+    if (tokens.length === 0) return [];
     const results = [];
     for (const items of Object.values(cache.data)) {
       if (!Array.isArray(items)) continue;
       for (const item of items) {
-        const title = (item.title || '').toLowerCase();
-        const content = (item.content || '').toLowerCase();
-        if (title.includes(q) || content.includes(q)) {
-          results.push(item);
-        }
+        if (itemMatchesTokens(item, tokens)) results.push(item);
       }
     }
     return results;
