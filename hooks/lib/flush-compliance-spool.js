@@ -12,7 +12,7 @@
  *      - HTTP 2xx → delete the file (events have landed in the server DB).
  *      - Anything else → keep the file for the next SessionStart to retry.
  *
- * Vin spec #3: never write to stderr / stdout (SessionStart channel is visible to the user).
+ * Spec #3: never write to stderr / stdout (SessionStart channel is visible to the user).
  * Always exit 0; never block SessionStart.
  *
  * Environment variables (test):

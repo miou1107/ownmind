@@ -4,7 +4,7 @@
  * Why: v1.17.0 ~ v1.17.68 returned 4 separate `{ type: "text", text: ... }` parts.
  * Most MCP clients (Codex / Cursor / Antigravity) render them in order and the user sees
  * everything, but Claude Code's UI folds the tool result into a card that **visually swallows
- * the gap between parts** — the last part (the tip) ends up hidden. Vin's report "the tip used
+ * the gap between parts** — the last part (the tip) ends up hidden. A user report "the tip used
  * to show up, now Claude Code doesn't show it but other tools do" was exactly this bug.
  *
  * Fix: combine every section into a single text part, so rendering is consistent across clients.

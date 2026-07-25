@@ -117,7 +117,7 @@ export const TECH_WHITELIST = new Set([
 // Why it exists: v1.19.3 originally did `TECH_WHITELIST.has(w.toLowerCase())`
 // which looks normalized but Set.has is exact string match. The whitelist
 // holds 'Claude' (PascalCase), so lookups of 'claude' always returned false.
-// Real miss: Vin's v1.19.4 new-session intro "我是 claude" — claude slipped
+// Real miss: a v1.19.4 new-session intro "我是 claude" — claude slipped
 // through and triggered a violation.
 export const TECH_WHITELIST_LOWER = new Set(
   Array.from(TECH_WHITELIST).map(w => w.toLowerCase())

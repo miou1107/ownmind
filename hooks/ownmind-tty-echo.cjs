@@ -2,7 +2,7 @@
 /**
  * OwnMind TTY Echo Hook (v1.17.71)
  *
- * Purpose (Vin's 3 specs):
+ * Purpose (3 specs):
  *   1. Every OwnMind action (memory read/write, iron rule trigger, compliance report, broadcast)
  *      must be visible to the user.
  *   2. Multiple banners triggered in the same call are merged into one brand block (no prefix repetition).

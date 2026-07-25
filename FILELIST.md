@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## v1.26.36 修改（程式碼註解人名去識別化 + 名字守門）
+
+新增檔：
+```
+openspec/changes/v1.26.36-deidentify-name-comments/proposal.md  — v1.26.36 提案
+openspec/changes/v1.26.36-deidentify-name-comments/tasks.md     — v1.26.36 任務清單
+```
+修改檔（12 處註解去名，11 檔）：
+```
+src/utils/iron-rule-origin-context.js / run-migrations.js / iron-rule-suggest.js
+src/routes/me.js
+mcp/lib/compose-tool-response.js
+hooks/ownmind-tty-echo.cjs / ownmind-reply-lint.js / ownmind-session-start.sh
+hooks/lib/conditional-sync.js / flush-compliance-spool.js
+shared/language-lint.js
+package.json                              — version 1.26.35 → 1.26.36
+tests/no-hardcoded-names-in-output.test.js — 新增程式碼檔名字 source-scan 守門
+```
+
 ## v1.26.35 修改（使用者可見產出去識別化：拿掉人名 Vin）
 
 新增檔：
