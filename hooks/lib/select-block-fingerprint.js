@@ -8,9 +8,8 @@
  *
  * Dispatch (most-specific wins):
  *   1. Secret-guard rule / secret hit → mem_blocked_secret_regex
- *   2. Iron-rule quality lint codes → mem_blocked_iron_rule_quality
- *   3. Any other rule → clt_user_reported_other
- *   4. Empty / malformed → placeholder fallback
+ *   2. Any other blocking rule → clt_user_reported_other
+ *   3. Empty / malformed → placeholder fallback
  *
  * The placeholder is preserved as the last-resort fallback so behavior is
  * never worse than before this change.
@@ -19,15 +18,12 @@
 // v1.26.33: the secret category is keyed on the semantic signal carried in
 // each reason (isSecretRule, set from the rule's verification shape, or a
 // concrete secretHit), not on a personal iron-rule code.
-
-// Iron-rule "quality lint" family — rules whose verification primarily checks
-// the structure / contents of an iron-rule write (length, sections, etc.),
-// not commit hygiene. Conservative list — anything not here falls back to generic.
-const IRON_RULE_QUALITY_CODES = new Set([
-  'IR-005',  // do not blind edit
-  'IR-006',  // any new knowledge must propagate across all layers
-  'IR-027',  // reminders are ineffective; logic is what works (the design rule itself)
-]);
+//
+// v1.26.34: removed the personal-code "quality lint" heuristic (a hardcoded
+// list of individual rule numbers). Those rules carry no commit-triggered
+// verification, so that branch was unreachable, and the list did not match the
+// actual commit-time quality-process rule anyway. Quality-process blocks now
+// bucket as the generic category.
 
 export function selectBlockFingerprint(reasons) {
   if (!Array.isArray(reasons) || reasons.length === 0) {
@@ -35,31 +31,19 @@ export function selectBlockFingerprint(reasons) {
   }
 
   let hasSecret = false;
-  let hasQuality = false;
   let hasOther = false;
 
   for (const r of reasons) {
     if (!r || typeof r !== 'object') continue;
-    // Secret category is keyed on the de-identified semantic signal, so it is
-    // checked before the (still code-based) quality family.
+    // Secret category is keyed on the de-identified semantic signal.
     if (r.isSecretRule === true || r.secretHit === true) {
       hasSecret = true;
       continue;
     }
-    const code = typeof r.ruleCode === 'string' ? r.ruleCode : '';
-    if (!code) {
-      hasOther = true;
-      continue;
-    }
-    if (IRON_RULE_QUALITY_CODES.has(code)) {
-      hasQuality = true;
-    } else {
-      hasOther = true;
-    }
+    hasOther = true;
   }
 
   if (hasSecret) return 'mem_blocked_secret_regex';
-  if (hasQuality) return 'mem_blocked_iron_rule_quality';
   if (hasOther) return 'clt_user_reported_other';
   return 'mem_iron_rule_blocking_commit_no_fingerprint';
 }

@@ -140,7 +140,7 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
   fi
 fi
 
-# v1.17.86 IR-038：drain .upload-spool.jsonl（v1.17.85 reviewer I1 + IR-007 同類雷收尾）
+# v1.17.86 觀測性收尾：drain .upload-spool.jsonl（v1.17.85 reviewer I1 + fixture/prod mismatch 同類雷收尾）
 # 場景：升級成功末段的 upgrade_complete beacon / post_upgrade self-check 上傳失敗時
 # 寫進 .upload-spool.jsonl，原本要等下次 self-check.cjs 才 drain。但若 user 升完就
 # quit Claude Code，永遠沒下次 self-check 來觸發 → spool 卡在他本機、server 永遠

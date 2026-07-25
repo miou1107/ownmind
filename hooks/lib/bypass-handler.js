@@ -4,8 +4,8 @@
  * Parse the OWNMIND_BYPASS env var, decide whether a rule is bypassed, and write the audit log.
  *
  * Usage:
- *   OWNMIND_BYPASS=IR-008 git commit ...        # single rule
- *   OWNMIND_BYPASS=IR-008,IR-024 git commit ... # multiple rules
+ *   OWNMIND_BYPASS=IR-XXX git commit ...         # single rule
+ *   OWNMIND_BYPASS=IR-XXX,IR-YYY git commit ...  # multiple rules
  *   OWNMIND_BYPASS=all git commit ...           # all rules
  *
  * Design principles:

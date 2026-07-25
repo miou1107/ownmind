@@ -2,11 +2,11 @@
 /**
  * OwnMind Reply Lint — Claude Code Stop Hook (v1.17.96)
  *
- * Purpose (extends v1.17.95 + IR-027 "reminders don't work, only logic does"):
- *   v1.17.95 extracted the IR-037 (mixed Chinese-English) and IR-036 (jargon without
- *   plain-Chinese explanation) detection logic into shared/language-lint.js as a pure
+ * Purpose (extends v1.17.95 + the "reminders don't work, only logic does" principle):
+ *   v1.17.95 extracted the mixed-Chinese-English and jargon-without-plain-Chinese-explanation
+ *   detection logic into shared/language-lint.js as a pure
  *   function lib, but never wired it into any gating point — the AI still relied on
- *   self-discipline, so IR-027 never actually landed.
+ *   self-discipline, so the logic-over-reminders principle never actually landed.
  *
  *   v1.17.96 plugs into the Claude Code Stop hook (fires at the end of every AI turn),
  *   reads the transcript, extracts the last assistant text, runs lintReply, and on
@@ -48,7 +48,7 @@
  */
 
 // ============================================================
-// IR-027 spec #3 (absolute): never write stderr / stdout.
+// logic-over-reminders spec #3 (absolute): never write stderr / stdout.
 // Register process-wide handlers covering every sync / async exception,
 // including import-time failures, unhandled rejections, uncaughtException.
 // These MUST be installed before any other logic.
@@ -72,7 +72,7 @@ const DISABLED = process.env.OWNMIND_REPLY_LINT_DISABLE === '1';
 const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
 
 // v1.19.3: MODE env, gradual block
-// v1.19.4: default flipped from warn to block (IR-027 says logic-only — opt-in equals "not deployed")
+// v1.19.4: default flipped from warn to block (logic-over-reminders says logic-only — opt-in equals "not deployed")
 // v1.19.7: block path switched to exit 2 + stderr reason (replacing stdout JSON); also added
 //          downgrade to warning after BLOCK_DOWNGRADE_LIMIT consecutive blocks (avoid an AI loop
 //          and give the user a chance to step in manually)
@@ -184,11 +184,11 @@ async function main() {
   // (replaces v1.19.7's two statSync + readFileSync calls, halving I/O).
   // User prompts are passed to the privacy detector as an exemption source: personal data the user
   // typed themselves and the AI quotes back shouldn't count as a leak.
-  // Note: users with a matching privacy iron rule (e.g. Vin's IR-041) receive the event code
+  // Note: users with a matching privacy iron rule (the user's own privacy rule) receive the event code
   //       'privacy_check' and their rule decides whether to block; the hook itself is not bound
   //       to any specific user's rule number (v1.19.10 neutralization).
   // v1.20.2 follow-up #3: in addition to lastAssistantText / userPrompts, also extract historical
-  // assistant corpus for IR-036 cross-reply vocabulary memory (the rule's text says "if already
+  // assistant corpus for jargon-explanation cross-reply vocabulary memory (the rule's text says "if already
   // explained in context, may be kept" — now actually implemented).
   const { lastAssistantText, recentUserPrompts: userPrompts, historicalAssistantCorpus } = readTranscriptTail(transcriptPath);
   if (!lastAssistantText) { process.exit(0); return; }
@@ -454,7 +454,7 @@ function readTranscriptTail(transcriptPath, opts = {}) {
   let lastAssistantText = null;
   const recentUserPrompts = [];
   // v1.20.2 follow-up #3: extract all prior assistant text (excluding the latest turn)
-  // as the historical corpus for IR-036 lintReply — implements "if already explained in context, may be kept".
+  // as the historical corpus for jargon-explanation lintReply — implements "if already explained in context, may be kept".
   const historicalAssistantTexts = [];
 
   // Scan from the end backwards, simultaneously extracting last assistant + recent N user + all prior assistant history.
@@ -507,7 +507,7 @@ function readTranscriptTail(transcriptPath, opts = {}) {
  *
  * Example (warn mode):
  *   [OwnMind v1.19.3] Reply quality lint (warn mode, session count 1)
- *     ⚠️  IR-037: mixed Chinese-English ratio 32% > 15% — refactor, codebase, ...
+ *     ⚠️  lint_language_mixed_ratio: mixed Chinese-English ratio 32% > 15% — refactor, codebase, ...
  *
  * Example (block mode, 3rd warning):
  *   [OwnMind v1.19.3] Reply quality lint (block mode, session count 3, next violation will block)
@@ -604,7 +604,7 @@ function formatDowngradeNotice(priorBlockCount, violations) {
  * v1.19.3: package violations into a directive-style reason fed to Claude as the next prompt after a block.
  *
  * Codex review counter-warning: the reason is "the next prompt", not "a list of corrections".
- *   ❌ Report style: "You violated IR-037, ratio 32%, found 5 English words"
+ *   ❌ Report style: "You violated the mixed-Chinese-English rule, ratio 32%, found 5 English words"
  *   ✅ Directive style: "Please rewrite the previous response, using plain Chinese to replace the following English terms..."
  *
  * The rewrite directive must:
@@ -627,7 +627,7 @@ function _displayEventName(code) {
 function formatBlockReason(violations, opts = {}) {
   const priorBlockCount = typeof opts.priorBlockCount === 'number' ? opts.priorBlockCount : 0;
   // v1.20.4: assemble using display names; no longer leak personal iron rule numbers
-  // (so e.g. another user like Alice never sees "IR-036" in their banner).
+  // (so e.g. another user like Alice never sees a personal iron-rule code in their banner).
   const ruleCodes = violations.map(v => _displayEventName(v.rule)).join(' + ');
 
   // v1.19.11 graded display: for 2nd–3rd consecutive block show a brief message to avoid user fatigue.
@@ -670,7 +670,7 @@ function formatBlockReason(violations, opts = {}) {
       n += 1;
     } else if (v.rule === 'privacy_check') {
       // v1.19.7: on privacy match, don't tell Claude which substring matched (avoid echoing personal data in the rewrite).
-      // v1.19.10: event code neutralized from 'IR-041' to 'privacy_check' (no binding to a specific user's iron rule number).
+      // v1.19.10: event code neutralized to 'privacy_check' (no binding to a specific user's iron rule number).
       const matches = (v.detail && Array.isArray(v.detail.matches)) ? v.detail.matches : [];
       const summary = formatPrivacySummary(matches);
       lines.push(`${n}. The response appears to contain user privacy data (${summary}). Rewrite that segment using placeholders like "[email]" or "[mobile phone]" — do NOT repeat the personal data in the new response.`);

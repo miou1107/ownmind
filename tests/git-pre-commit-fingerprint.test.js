@@ -45,11 +45,13 @@ describe('v1.26.8 — selectBlockFingerprint', () => {
     assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_secret_regex');
   });
 
-  it('iron-rule quality lint failure → mem_blocked_iron_rule_quality', () => {
+  it('v1.26.34: a non-secret blocking rule → clt_user_reported_other (quality heuristic removed)', () => {
+    // The personal-code "quality" category was removed in v1.26.34; a non-secret
+    // block now buckets as the generic category regardless of the rule.
     const reasons = [
-      { ruleCode: 'IR-005', ruleTitle: 'iron-rule quality check', secretHit: false },
+      { ruleCode: 'IR-005', ruleTitle: 'some blocking rule', secretHit: false },
     ];
-    assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_iron_rule_quality');
+    assert.equal(selectBlockFingerprint(reasons), 'clt_user_reported_other');
   });
 
   it('other block_on_fail rule → clt_user_reported_other', () => {
@@ -59,20 +61,12 @@ describe('v1.26.8 — selectBlockFingerprint', () => {
     assert.equal(selectBlockFingerprint(reasons), 'clt_user_reported_other');
   });
 
-  it('mixed reasons: secret + quality → secret wins (most specific)', () => {
+  it('mixed reasons: secret + non-secret → secret wins (most specific)', () => {
     const reasons = [
       { ruleCode: 'IR-002', ruleTitle: 'do not commit secrets', isSecretRule: true, secretHit: true },
-      { ruleCode: 'IR-005', ruleTitle: 'iron-rule quality check', secretHit: false },
+      { ruleCode: 'IR-005', ruleTitle: 'some blocking rule', secretHit: false },
     ];
     assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_secret_regex');
-  });
-
-  it('mixed reasons: quality + generic → quality wins over generic', () => {
-    const reasons = [
-      { ruleCode: 'IR-005', ruleTitle: 'iron-rule quality check', secretHit: false },
-      { ruleCode: 'IR-008', ruleTitle: 'sync README/CHANGELOG', secretHit: false },
-    ];
-    assert.equal(selectBlockFingerprint(reasons), 'mem_blocked_iron_rule_quality');
   });
 
   it('empty reasons → placeholder fallback', () => {
@@ -95,10 +89,9 @@ describe('v1.26.8 — selectBlockFingerprint', () => {
     assert.equal(selectBlockFingerprint(reasons), 'clt_user_reported_other');
   });
 
-  it('IR-003 (iron-rule quality family by name pattern) → quality fingerprint', () => {
-    // The rule code prefix IR-### plus title hints aren't enough; we rely on
-    // a known list of "quality-lint" rule codes (IR-005 etc.). IR-003 is a
-    // different rule (reproduction-test rule), so it falls back to generic.
+  it('a non-secret rule with a code but no secret signal → generic', () => {
+    // Fingerprint dispatch no longer inspects rule codes at all (v1.26.34);
+    // only the secret signal is special-cased. Everything else is generic.
     const reasons = [
       { ruleCode: 'IR-003', ruleTitle: 'reproduction test before fix', secretHit: false },
     ];

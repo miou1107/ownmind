@@ -9,7 +9,7 @@
  *   - advisory (informational hint) — record only, no warning from v1.20
  *
  * Zero external deps. Shared by server routes, MCP, hooks, shared/verification.js.
- * Any unknown tier value falls back to default (extension of IR-005 "no blind edit":
+ * Any unknown tier value falls back to default (extension of the "no blind edit" principle:
  * better to conservatively demote to default than silently treat as advisory).
  */
 

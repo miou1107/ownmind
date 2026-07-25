@@ -66,7 +66,7 @@ function buildTriggerIndex(rules) {
 }
 
 function ruleSlug(rule) {
-  // IR-002 -> ir-002 / use id when there is no code
+  // IR-XXX -> ir-xxx / use id when there is no code
   const code = rule.code || `id-${rule.id}`;
   return code.toLowerCase().replace(/[^a-z0-9-]/g, '-');
 }

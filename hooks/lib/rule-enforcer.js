@@ -28,7 +28,7 @@ import { isBypassed } from './bypass-handler.js';
 
 /**
  * Evaluate a single iron rule.
- * @param {string} ruleCode - e.g. 'IR-002'
+ * @param {string} ruleCode - e.g. 'IR-XXX'
  * @param {object} context - environment data passed to verification handlers
  * @param {object} options
  * @param {Array} options.rules - iron rule array read from the cache

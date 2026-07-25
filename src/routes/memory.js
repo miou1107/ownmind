@@ -111,7 +111,7 @@ Tip pool (pick a random one each time, avoid consecutive repeats):
 - OwnMind automatically records the machine, tool, and AI model you use, for traceability
 - Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI
 - Ask "what's left on the ring project" and I will answer from project memories
-- Iron rules are numbered (IR-001) so you can reference them directly: "see IR-003"
+- Iron rules are numbered so you can reference them directly by their code
 - Every handoff records the source tool and model so you can trace which AI made each decision
 - Ask "how did this iron rule originate" and I will show you the full incident background
 - OwnMind supports secret management — your API keys and passwords are stored securely
@@ -297,7 +297,7 @@ When a team standard is triggered, read the summary first (\`team_standard\`).
 ## Iron Rule Format
 
 Every iron rule must include its full background:
-- **code**: unique identifier (e.g. IR-001); when adding a new one, look up the highest existing code and +1
+- **code**: unique identifier (e.g. IR-XXX); when adding a new one, look up the highest existing code and +1
 - **Created at**: YYYY-MM-DD HH:mm
 - **Environment**: machine / tool / model
 - **Background**: why this rule exists (what incident, what went wrong)
@@ -348,8 +348,8 @@ Format:
     "project": "the project worked on",
     "duration_turns": 25,
     "actions": ["code_edit", "git_commit"],
-    "rules_triggered": ["IR-001"],
-    "rules_complied": ["IR-001"],
+    "rules_triggered": ["IR-XXX"],
+    "rules_complied": ["IR-XXX"],
     "rules_skipped": [],
     "friction_points": "User's pain points (if any)",
     "suggestions": "Improvements to OwnMind the AI observed (if any)"
@@ -930,7 +930,7 @@ router.post('/', async (req, res) => {
     }
 
     // v1.17.94: iron_rule writes run a quality check; failures reject directly
-    // (IR-027 program-level enforcement). Ensures future-session AI knows when
+    // (logic-over-reminders program enforcement). Ensures future-session AI knows when
     // a rule triggers and what it says — rules can't be empty shells.
     // Skip __upgrade_test__ prefixed test memories.
     // v1.18.0: lintIronRule upgraded to detect SKILL.md frontmatter:
@@ -951,7 +951,7 @@ router.post('/', async (req, res) => {
           error: 'Iron rule quality check failed — please fix the following issues and try again',
           errors: lintResult.errors,
           format: lintResult.format,
-          hint: 'An iron rule must let a future-session AI understand when it triggers and what the rule says. See IR-039 / IR-027 for design rationale.',
+          hint: 'An iron rule must let a future-session AI understand when it triggers and what the rule says. See the rule-metadata design docs for rationale.',
         });
       }
     }
@@ -966,7 +966,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // v1.19.1: secret-detect gate (IR-027 "logic over reminders", IR-002 extension).
+    // v1.19.1: secret-detect gate (the logic-over-reminders principle, secret-detect extension).
     //   Before POST /api/memory inserts, detect whether value looks like a
     //   password / token / API key; on hit, 400 and direct caller to
     //   ownmind_set_secret (instead of a generic 500).
@@ -1278,12 +1278,12 @@ router.put('/:id', async (req, res) => {
           error: 'Iron rule quality check failed — please fix the following issues and try again',
           errors: lintResult.errors,
           format: lintResult.format,
-          hint: 'An iron rule must let a future-session AI understand when it triggers and what the rule says. See IR-039 / IR-027 for design rationale.',
+          hint: 'An iron rule must let a future-session AI understand when it triggers and what the rule says. See the rule-metadata design docs for rationale.',
         });
       }
     }
 
-    // v1.19.1: secret-detect gate (IR-027 "logic over reminders", IR-002 extension).
+    // v1.19.1: secret-detect gate (the logic-over-reminders principle, secret-detect extension).
     //   PUT must also block so update content cannot smuggle a key in.
     //   Only runs when content actually changes (metadata-only updates skip).
     //   __upgrade_test__ prefix → skip.

@@ -6,8 +6,8 @@
  * template (src/utils/templates.js), whose `conditions.type` is
  * `staged_files_exclude`. That signal is stored on every matched rule and is
  * keyed by template identity, not by a user's rule number — so keying on it
- * works for every user (previously the pre-commit content scan was gated on
- * `ruleCode === 'IR-002'`, which silently disabled the scan for anyone whose
+ * works for every user (previously the pre-commit content scan was keyed on
+ * the personal secret-rule code, which silently disabled the scan for anyone whose
  * secret rule had a different number).
  *
  * Zero external deps, pure function.

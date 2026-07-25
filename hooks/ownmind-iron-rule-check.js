@@ -46,7 +46,7 @@ async function main() {
   if (!command) process.exit(0);
 
   // v1.19.20: when no trigger is detected, fall back to 'command' so command-based iron rules
-  // (IR-018/023/043/046) always run verification and aren't filtered out by the trigger check.
+  // (command-based iron rules) always run verification and aren't filtered out by the trigger check.
   const detectedTrigger = detectCommandTrigger(command);
   const trigger = detectedTrigger || 'command';
 
