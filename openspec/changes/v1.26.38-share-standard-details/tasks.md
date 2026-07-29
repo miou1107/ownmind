@@ -62,14 +62,17 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 6 — Release and post-deploy verification
 
-- [ ] Commit (no `Co-Authored-By`, per IR-024)
-- [ ] Tag `v1.26.38` and deploy to kkvin.com
-- [ ] Run any pending migrations under `db/` first (IR-048) — expected: none,
+- [x] Commit (15aa931), no Co-Authored-By, author Vin
+- [x] Tag `v1.26.38` pushed with the commit; deploying to kkvin.com
+- [x] Migration runner invoked as part of the deploy script — expected no-op,
       this change adds no schema
-- [ ] Post-deploy check from a non-uploader account: a fragment under summary
-      135 is now readable, and one under disabled summary 173 is not
-- [ ] Report back to Vin, then draft the note for Eric explaining that his
-      uploaded standards were never shared and are now fixed
+- [x] Post-deploy check: 119 fragments now readable by a non-uploader (0 before),
+      parent_id=143 narrows to 36, fragments under disabled summary 173 return
+      none, a disabled fragment 404s by id, and an attempt to edit another
+      account's fragment 404s with the row left untouched
+- [x] Browser check on the admin console: page renders; surfaced an unrelated
+      pre-existing defect (memory-count card stuck at 0) now fixed in v1.26.39
+- [x] Reported back to Vin. Vin decided not to notify Eric, so no note drafted
 
 ## Phase 5b — Review fixes (all verified, RED first)
 

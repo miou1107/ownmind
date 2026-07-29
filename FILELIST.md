@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## v1.26.39 修改（後台「記憶總數」永遠顯示 0）
+
+新增檔：
+```
+openspec/changes/v1.26.39-admin-memory-count/proposal.md        — v1.26.39 提案
+openspec/changes/v1.26.39-admin-memory-count/spec.md            — v1.26.39 規格（GIVEN/WHEN/THEN，5 條 requirement）
+openspec/changes/v1.26.39-admin-memory-count/tasks.md           — v1.26.39 任務清單
+tests/admin-stats-memory-count.test.js                          — 12 tests：把 countExportedMemories 從 HTML 抽出來實跑（現行/退路格式、壞資料、0 值、非有限數、接線釘死元素、res.ok、標籤）
+```
+修改檔：
+```
+src/public/index.html      — 新增 countExportedMemories()；loadStats() 改用它並加 res.ok 檢查；卡片標籤 記憶總數 → 我的記憶（啟用中）
+package.json               — 版號 1.26.38 → 1.26.39
+CHANGELOG.md               — v1.26.39 條目
+FILELIST.md                — 本段
+```
+
 ## v1.26.38 修改（團隊規範細節終於真的共用）
 
 新增檔：

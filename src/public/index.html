@@ -241,7 +241,7 @@
     </div>
     <div class="stat-card">
       <div class="number" id="totalMemories">-</div>
-      <div class="label">記憶總數</div>
+      <div class="label">我的記憶（啟用中）</div>
     </div>
   </div>
 
@@ -1293,13 +1293,34 @@
     if (!e.target.closest('.action-menu')) closeActionMenu();
   });
 
+  // /export returns { exported_at, user_id, total_count, memories } where
+  // `memories` is grouped by type. Counting top-level arrays therefore always
+  // yielded 0. Read the authoritative total_count instead.
+  //
+  // The shape branches below are pure defence, NOT a compatibility path:
+  // total_count has been in the response since the first commit, and this page
+  // is served by the same process it calls, so client and server can never be
+  // different versions. They exist so that a future change to the payload
+  // degrades into a visible wrong-ish number rather than silently back into 0.
+  function countExportedMemories(data) {
+    if (!data || typeof data !== 'object') return 0;
+    if (Number.isFinite(data.total_count)) return data.total_count;
+    if (Array.isArray(data.memories)) return data.memories.length;
+    const groups = (data.memories && typeof data.memories === 'object') ? data.memories : data;
+    let count = 0;
+    Object.values(groups).forEach(arr => { if (Array.isArray(arr)) count += arr.length; });
+    return count;
+  }
+
   async function loadStats() {
     try {
       const res = await fetch(`${API}/export`, { headers: headers() });
+      // A 401 or 500 body still parses as JSON and would count as 0, which is
+      // the exact symptom this card is being fixed for. Match the rest of this
+      // page and treat a non-OK response as a failure.
+      if (!res.ok) throw new Error('stats request failed');
       const data = await res.json();
-      let count = 0;
-      Object.values(data).forEach(arr => { if (Array.isArray(arr)) count += arr.length; });
-      document.getElementById('totalMemories').textContent = count;
+      document.getElementById('totalMemories').textContent = countExportedMemories(data);
     } catch { document.getElementById('totalMemories').textContent = '-'; }
   }
 
