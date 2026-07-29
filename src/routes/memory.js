@@ -17,6 +17,7 @@ import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.j
 import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
+import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
 import { tokenize, buildSearchWhere } from '../utils/memory-search-query.js';
@@ -807,12 +808,27 @@ router.get('/sync', async (req, res) => {
 
 router.get('/type/:type', async (req, res) => {
   try {
-    // team_standard is shared across users; return all of them.
-    const sql = req.params.type === 'team_standard'
-      ? `SELECT * FROM memories WHERE type = 'team_standard' AND status = 'active' ORDER BY updated_at DESC`
+    // team_standard summaries and their standard_detail fragments are shared
+    // across users (v1.26.38); everything else stays owner-scoped. The shared
+    // branch still runs the readable predicate so a fragment under a retired
+    // or opted-out summary does not surface.
+    const shared = isSharedMemoryType(req.params.type);
+    // Unfiltered, standard_detail returns every fragment of every standard
+    // (119 in production), which is a lot of context to spend when the caller
+    // wants one standard. parent_id narrows it; omitting it keeps the old
+    // whole-corpus behaviour rather than silently truncating.
+    const parentId = typeof req.query.parent_id === 'string' ? req.query.parent_id.trim() : '';
+    const narrowToParent = shared && parentId !== '';
+    const sql = shared
+      ? `SELECT * FROM memories m
+          WHERE m.type = $1
+            AND m.status = 'active'
+            AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}
+            ${narrowToParent ? `AND m.metadata->>'parent_id' = $3` : ''}
+          ORDER BY m.updated_at DESC`
       : `SELECT * FROM memories WHERE type = $1 AND user_id = $2 AND status = 'active' ORDER BY updated_at DESC`;
-    const params = req.params.type === 'team_standard'
-      ? []
+    const params = narrowToParent
+      ? [req.params.type, req.user.id, parentId]
       : [req.params.type, req.user.id];
     const result = await query(sql, params);
 
@@ -872,10 +888,12 @@ router.get('/search', async (req, res) => {
 
     // user_id is $1, tokens start at $2.
     const built = buildSearchWhere(tokens, 2);
+    // v1.26.38: search is the documented way to find a team-standard fragment,
+    // so it must span shared rows rather than the caller's own rows only.
     const result = await query(
-      `SELECT * FROM memories
-       WHERE user_id = $1
-         AND status = 'active'
+      `SELECT * FROM memories m
+       WHERE m.status = 'active'
+         AND ${buildReadableWhere({ alias: 'm', userParam: '$1' })}
          AND ${built.whereClause}
        ORDER BY ${built.orderClause}`,
       [req.user.id, ...built.params]
@@ -893,8 +911,15 @@ router.get('/search', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
+    // v1.26.38: a fragment found through search must also be openable by id.
+    // The predicate constrains the parent's status, not the row's own, so the
+    // status check is explicit here: retiring a standard must retire it for
+    // everyone, while the owner keeps access to their own disabled rows.
     const result = await query(
-      'SELECT * FROM memories WHERE id = $1 AND user_id = $2',
+      `SELECT * FROM memories m
+        WHERE m.id = $1
+          AND (m.status = 'active' OR m.user_id = $2)
+          AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}`,
       [req.params.id, req.user.id]
     );
 
@@ -1015,9 +1040,13 @@ router.post('/', async (req, res) => {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // team_standard writes are admin-only.
-    if (type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: 'Team standards may only be created by admins' });
+    // Shared-type writes are admin-only. v1.26.38 widened this from
+    // team_standard to every shared type: now that standard_detail is readable
+    // across accounts, an ungated row would broadcast to every member's AI as
+    // authoritative team-standard text. Legitimate fragments are created only
+    // by batch-sync-standard, which carries its own admin gate.
+    if (isSharedMemoryType(type) && !isAtLeast(req.user.role, 'admin')) {
+      return res.status(403).json({ error: 'Team standards and their details may only be created by admins' });
     }
 
     // iron_rule auto-numbering.
@@ -1233,9 +1262,9 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'title may not be renamed to the reserved __upgrade_test__ prefix' });
     }
 
-    // team_standard edits are admin-only.
-    if (oldMemory.type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: 'Team standards may only be edited by admins' });
+    // Shared-type edits are admin-only (v1.26.38: covers standard_detail too).
+    if (isSharedMemoryType(oldMemory.type) && !isAtLeast(req.user.role, 'admin')) {
+      return res.status(403).json({ error: 'Team standards and their details may only be edited by admins' });
     }
 
     // v1.19: tier validation — use the existing memory's type to avoid the
@@ -1452,10 +1481,10 @@ router.put('/:id/disable', async (req, res) => {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // team_standard disables are admin-only.
+    // Shared-type disables are admin-only (v1.26.38: covers standard_detail too).
     const check = await query('SELECT type FROM memories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-    if (check.rows.length > 0 && check.rows[0].type === 'team_standard' && !isAtLeast(req.user.role, 'admin')) {
-      return res.status(403).json({ error: 'Team standards may only be disabled by admins' });
+    if (check.rows.length > 0 && isSharedMemoryType(check.rows[0].type) && !isAtLeast(req.user.role, 'admin')) {
+      return res.status(403).json({ error: 'Team standards and their details may only be disabled by admins' });
     }
 
     const result = await query(

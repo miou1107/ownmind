@@ -184,6 +184,7 @@ const TYPE_MAP = {
     profile: 'Profile', principle: 'Working principle', iron_rule: 'Iron rule reminder',
     coding_standard: 'Coding standard', team_standard: 'Team standard', project: 'Project memory',
     env: 'Environment', portfolio: 'Portfolio', session_log: 'Session log',
+    standard_detail: 'Team standard details',
   },
   ownmind_search: 'Memory search',
   ownmind_save: 'Memory write',
@@ -435,11 +436,12 @@ const TOOLS = [
   },
   {
     name: "ownmind_get",
-    description: "Retrieve memories of a given type.",
+    description: "Retrieve memories of a given type. Use standard_detail to pull the full text behind a team_standard summary.",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log"], description: "Memory type" },
+        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log", "standard_detail"], description: "Memory type" },
+        parent_id: { type: "string", description: "Optional. With type=standard_detail, return only the fragments of that one team_standard (its memory id). Omit to fetch every fragment of every standard." },
       },
       required: ["type"],
     },
@@ -864,7 +866,11 @@ async function handleTool(name, args) {
         }
       }
       try {
-        const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}`);
+        // v1.26.38: parent_id narrows standard_detail to one team standard.
+        const parentParam = args.parent_id
+          ? `${tokenParam ? '&' : '?'}parent_id=${encodeURIComponent(args.parent_id)}`
+          : '';
+        const data = await callApi("GET", `/api/memory/type/${encodeURIComponent(args.type)}${tokenParam}${parentParam}`);
         if (data.new_token) currentSyncToken = data.new_token;
         logEvent('memory_get', { type: args.type });
         return data;
