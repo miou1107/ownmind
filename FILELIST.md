@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.26.41 修改（相依套件安全警告 + root 相依版本門檻）
+
+新增檔：
+```
+openspec/changes/v1.26.41-dependency-security/proposal.md        — v1.26.41 提案（37 個警告的分類、PR #45 驗證、送不到使用者機器的根因）
+openspec/changes/v1.26.41-dependency-security/spec.md            — v1.26.41 規格（GIVEN/WHEN/THEN，6 條 requirement）
+openspec/changes/v1.26.41-dependency-security/tasks.md           — v1.26.41 任務清單（含「沒驗到的部分」獨立一段）
+scripts/install-helpers/dep-floor.mjs                            — 新增、root 相依版本門檻比對純函式庫（parseVersion / satisfiesFloor / readInstalledVersion，import 不觸發任何副作用）
+scripts/install-helpers/dep-floor-cli.mjs                        — 新增、給 shell 用的判斷式（exit 0 = 已達門檻、exit 1 = 要裝）。刻意獨立成檔、不做「我是不是被直接執行」判斷（那種判斷遇到 symlink 路徑會靜默跳過並 exit 0、被讀成「已達門檻」）
+tests/dep-floor-guard.test.js                                    — 27 tests：版本比對（數值/prerelease/壞輸入 fail safe）、CLI 契約（exit code、stdout 靜默、缺參數、symlink 路徑）、把 update.sh 的 needs_root_dep 真實函式抽出來實跑、六個漂移守門（CLI 有接線且沒直接 import 函式庫、資料夾檢查沒復活、判斷極性沒被反轉、log 目錄有先建、腳本門檻 ≥ manifest、安裝範圍 ≥ 門檻）
+```
+修改檔：
+```
+scripts/update.sh          — 資料夾存在檢查改成 needs_root_dep()（呼叫 dep-floor-cli.mjs）；js-yaml 門檻 4.3.0、node-machine-id 門檻 1.1.12；新增 mkdir -p ~/.ownmind/logs（redirect 失敗會讓判斷式每次同步都回報要裝，且既有 npm install 的 redirect 從 v1.18.5 就依賴這個目錄）；node stderr 導進 update-err.log 而非 /dev/null
+scripts/update.ps1         — 同上、改用 Test-RootDepNeeded()；用 *> $null 而非 2> $null（避免 stdout 汙染函式回傳值）；先明確檢查 helper 與 node 是否存在（StrictMode 下 $LASTEXITCODE 在第一個原生指令前不存在、node 不在時 & node 拋錯也不會設它）；改動區塊的中文註解翻成英文
+package.json               — 版號 1.26.40 → 1.26.41；js-yaml ^4.1.1 → ^4.3.0
+package-lock.json          — js-yaml 4.1.1 → 4.3.0（CVE-2026-59869）、body-parser 2.2.2 → 2.3.0
+client/package-lock.json   — react-router-dom / react-router 7.15.1 → 7.18.2（CVE-2026-53669 等 4 條）
+mcp/package-lock.json      — @modelcontextprotocol/sdk 1.28.0 → 1.30.0、@hono/node-server 1.19.14 → 2.0.12
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 版本行 v1.26.36 → v1.26.41（v1.26.37~40 漏更新、三語系一起補）
+CHANGELOG.md               — v1.26.41 條目
+FILELIST.md                — 本段
+```
+**未動**：`client/vite.config.js` 的 `sourcemap: true`（production build 會帶 3.2 MB 的 .map 進 image、已列 backlog）；`.github/workflows/`（這個 repo 沒有 CI、是 PR #45 掛一天沒人驗的原因、但要另案決定）
+
+**由 PR #45（`cc213fd`）帶進來**：`mcp/package-lock.json`（body-parser / fast-uri / hono / ip-address / qs）、`client/package.json` + `client/package-lock.json`（vite 8.0.14 → 8.1.5、postcss 8.5.15 → 8.5.24）
+
 ## v1.26.40 修改（Bug #8：密碼偵測誤判普通英文句子）
 
 新增檔：
@@ -1579,6 +1606,8 @@ OwnMind/
 │   ├── install-helpers/
 │   │   ├── add-post-tool-use-hook.cjs  # v1.17.71 — 把 ownmind-tty-echo PostToolUse hook idempotent 寫入 settings.json
 │   │   ├── add-stop-hook.cjs           # v1.17.96 — 把 ownmind-reply-lint Stop hook idempotent 寫入 settings.json
+│   │   ├── dep-floor.mjs               # v1.26.41 — root 相依版本門檻比對純函式庫（讀不出來一律當未達門檻）
+│   │   ├── dep-floor-cli.mjs           # v1.26.41 — 上面那支的 shell 判斷式（update.sh / update.ps1 共用）
 │   │   └── run-scanner.sh           # Usage scanner wrapper：動態找 node + v20+ 驗證（D12）
 │   ├── launchd/
 │   │   └── com.ownmind.usage-scanner.plist  # macOS launchd agent（30 分鐘 + RunAtLoad）

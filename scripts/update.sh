@@ -58,26 +58,56 @@ send_update_beacon 'update_started'
 echo "OwnMind sync (light path)"
 echo "─────────────────────────────────────────────"
 
-# --- 0. v1.18.5 fix: conditional-sync-cli.js needs js-yaml ---
-# Originally user installs only ran npm install in ~/.ownmind/mcp/, so the root-level deps
-# weren't installed and js-yaml was missing. conditional-sync-cli would crash at module
-# load with ERR_MODULE_NOT_FOUND, the SessionStart hook silently failed, and big skill
-# (~/.claude/skills/ownmind-iron-rules/) never updated after v1.18.0 shipped.
-# Fix: install js-yaml at the root (used by conditional-sync), idempotent (skip if installed).
-if [ ! -d "$OWNMIND_DIR/node_modules/js-yaml" ]; then
-  echo "   📦 Installing missing conditional-sync dependency: js-yaml..."
-  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.1.1 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
-    && echo "   ✅ js-yaml installed" \
+# --- 0. Root-level dependencies ---
+# install.sh and interactive-upgrade.sh only run `npm install` inside ~/.ownmind/mcp/,
+# so these explicit installs are the only path by which a root dependency reaches a
+# user machine.
+#
+# v1.26.41: the guard used to be "does node_modules/<pkg> exist?", which meant a
+# package was never touched again once present, so js-yaml stayed at 4.1.1 on
+# machines carrying CVE-2026-59869. The install command was never the problem:
+# `npm install js-yaml@^4.1.1` re-resolves and installs 4.3.0 even against a lock
+# pinning 4.1.1. The guard simply never let it run. Gate on the installed version
+# instead, so raising a floor here actually pushes the upgrade out.
+#
+# Anything unreadable counts as "below the floor" and triggers a reinstall: a
+# missing helper, a missing node, a corrupt manifest. The cost is a redundant
+# idempotent install; the cost of guessing the other way is a patch that never
+# arrives. node's own diagnostics go to the update log rather than /dev/null so a
+# permanently broken node leaves a trace instead of silently reinstalling forever.
+#
+# The log directory is created here rather than assumed. send_update_beacon above
+# only creates it on its spool fallback, so on a machine whose beacon succeeds it
+# may not exist — and a failed `2>>` redirect would make this function report
+# "needs install" on every single sync. The npm install redirects below have
+# depended on the same directory since v1.18.5.
+mkdir -p "${HOME}/.ownmind/logs" 2>/dev/null || true
+
+needs_root_dep() {
+  ! node "$OWNMIND_DIR/scripts/install-helpers/dep-floor-cli.mjs" "$OWNMIND_DIR" "$1" "$2" \
+    >/dev/null 2>>"${HOME}/.ownmind/logs/update-err.log"
+}
+
+# v1.18.5: conditional-sync-cli.js needs js-yaml. Without it the module fails to load
+# with ERR_MODULE_NOT_FOUND, the SessionStart hook silently fails, and the big skill
+# (~/.claude/skills/ownmind-iron-rules/) stops updating.
+# Floor 4.3.0 — CVE-2026-59869, quadratic CPU via YAML merge-key chains. Reachable
+# because iron-rule frontmatter is parsed on this machine and shared team standards
+# come from other accounts.
+if needs_root_dep js-yaml 4.3.0; then
+  echo "   📦 Installing / updating conditional-sync dependency: js-yaml..."
+  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.3.0 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+    && echo "   ✅ js-yaml ready" \
     || echo "   ⚠️ js-yaml install failed (see ~/.ownmind/logs/update-err.log); big skill sync will fall back to skip — other features unaffected"
 fi
 
-# --- 0b. v1.19.14 fix: device-fingerprint needs node-machine-id ---
-# Uses OS-level machine identifiers to compute a device fingerprint (stable "same machine" identifier).
-# Replaces the v3 design of "hostname + MAC" (unstable under Docker / VPN environments).
-if [ ! -d "$OWNMIND_DIR/node_modules/node-machine-id" ]; then
-  echo "   📦 Installing bug-report-tool dependency: node-machine-id..."
+# v1.19.14: device-fingerprint needs node-machine-id. Uses OS-level machine identifiers
+# for a stable "same machine" identifier, replacing the v3 "hostname + MAC" design that
+# was unstable under Docker / VPN.
+if needs_root_dep node-machine-id 1.1.12; then
+  echo "   📦 Installing / updating bug-report-tool dependency: node-machine-id..."
   (cd "$OWNMIND_DIR" && npm install node-machine-id@^1.1.12 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
-    && echo "   ✅ node-machine-id installed" \
+    && echo "   ✅ node-machine-id ready" \
     || echo "   ⚠️ node-machine-id install failed; ownmind_report_bug will use a fallback fingerprint (less stable, still functional)"
 fi
 

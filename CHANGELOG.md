@@ -1,5 +1,81 @@
 # OwnMind 更新紀錄
 
+## v1.26.41 — 清掉相依套件安全警告，順便修「升了版也送不到使用者機器」
+
+**背景**：這個 repo 是公開的，累積了 37 個未處理的相依套件安全警告，其中 10 個高風險，分散在三個 lock 檔。dependabot 開的 PR #45 從 2026-07-29 掛著沒人看。這個 repo **沒有 `.github/workflows/`**~ 所以 PR 上顯示「no checks reported」不是 CI 壞掉、是從來沒設過 CI。
+
+一條一條追下去之後，挖出第二個更大的問題：**在這個 repo 裡升一個 root 相依套件的版本，送不到任何一台已經安裝過的使用者機器。** 那才是這版真正的主體。
+
+**警告分類**（按「要怎麼修」分組）：
+
+| 類別 | 個數 | 修法 |
+|---|---|---|
+| `mcp/` 的傳遞相依（hono、fast-uri、ip-address、qs、body-parser） | 28 | PR #45 |
+| root 的 `js-yaml` | 2 | `^4.1.1` 就允許、只動 lock |
+| `client/` 的 `react-router` | 5 個中的 4 個 | `^7.10.0` 就允許、只動 lock |
+| root 的 `body-parser` | 1 | express 的 `^2.2.1` 就允許 |
+| `mcp/` 的 `@hono/node-server` | 1 | MCP SDK 升 1.30.0 把範圍放寬到 `^2.0.5` |
+| `react-router` 的 RSC CSRF | 1 | 沒有可用修法、見下方 |
+
+除了最後一條，其他全部都在 manifest 已經接受的範圍內，一個 package.json 都不用改。
+
+**PR #45 合之前先驗過**（因為不會有 CI 幫你驗）：拉到獨立 worktree 裡跑。`mcp/` 的 `npm ci` 乾淨、`index.js` 真的 import 得起來；`client/` 用 vite 8.1.5 build 成功，而且**先在 main 上建了一份 baseline 對比**~ CSS 產物 hash 一模一樣（`index-obDkY7bq.css`）、JS 差 0.02 kB。唯一新增的訊息是 `@tailwindcss/vite` 的 `SOURCEMAP_BROKEN` 提示，升級前沒有、純提示，記錄下來不動。合成 `cc213fd`。
+
+**真正的問題：版本升了，送不到使用者機器。**
+
+`js-yaml` 是 root 相依。它在 `src/utils/iron-rule-frontmatter.js` 解析鐵律的 frontmatter，客戶端經由 `hooks/lib/conditional-sync-cli.js` 走到。CVE-2026-59869 是靠 YAML merge key 鏈製造平方級 CPU 消耗的阻斷攻擊~ 而共用團隊規範來自別人的帳號，也就是被解析的內容不一定是使用者自己寫的。
+
+而 `install.sh` 跟 `interactive-upgrade.sh` **都只在 `mcp/` 底下跑 `npm install`**。root 相依要送到使用者機器，只有 `scripts/update.sh` 裡的一行：
+
+```sh
+if [ ! -d "$OWNMIND_DIR/node_modules/js-yaml" ]; then
+  npm install js-yaml@^4.1.1 --no-save ...
+fi
+```
+
+它問的是「資料夾在不在」、不是「裡面裝的是哪一版」。所以套件一旦裝過就再也不會被碰，後來才發布的安全修補送不到任何一個已安裝的人手上。
+
+**關鍵是：那行安裝指令本身從來沒有問題。** 實測 `npm install js-yaml@^4.1.1 --no-save` 會重新對 registry 解析、**裝下 4.3.0**，就算 lock 檔把 js-yaml 釘在 4.1.1 也一樣。也就是說舊指令早就能把修補送出去，是外層那個資料夾判斷從來不讓它跑。這台開發機的 `~/.ownmind/node_modules/js-yaml` 停在 4.1.1，原因就只有這個。
+
+（初版這段寫的是「repo lock 4.3.0 對比機器 4.1.1」。那個對比是錯的~ code review 抓出來：4.3.0 那半邊是這次改動自己造成的，HEAD 的 lock 一直都是 4.1.1，等於拿自己製造的落差去證明問題早就存在。上面這個說法才是真的、而且更有力，因為它同時解釋了為什麼修好判斷之後不用碰 lock 也會生效。）
+
+**做法**：改成看版本、不看資料夾，而且兩支腳本共用同一份判斷邏輯。
+
+- 新增 `scripts/install-helpers/dep-floor.mjs`：比對已安裝版本跟門檻的純函式庫，import 不會觸發任何動作。
+- 新增 `scripts/install-helpers/dep-floor-cli.mjs`：給 shell 用的判斷式，門檻達到就 exit 0（跳過）、否則 exit 1（安裝）。
+- `scripts/update.sh` 用 `needs_root_dep <套件> <門檻>`。
+- `scripts/update.ps1` 用 `Test-RootDepNeeded -Package <套件> -MinVersion <門檻>`。
+
+**為什麼判斷式要獨立成一支檔案。** 第一版是一支檔案，靠比對 `process.argv[1]` 跟 `import.meta.url` 決定要不要跑自己的主體。但 `path.resolve` 只做字串處理，而 node 會把主模組的路徑解到真實位置~ 所以路徑上只要有任何一段是 symlink，兩邊就對不起來、主體被跳過、process **exit 0**，而 shell 把 exit 0 讀成「已達門檻」。那就是這次要修的同一個 bug，而且更難察覺：不是停在舊版，是**從此再也不會安裝任何東西、還完全不出聲**。code review 抓出來、拿不可能達成的門檻 `9.9.9` 走 symlink 路徑實測回 exit 0，確認成立。拆成兩支檔案之後主體永遠會跑，出口就只剩那兩個 exit code。
+
+**兩個 root 相依都換掉、不只有警告那個。** 壞的是機制本身，`node-machine-id` 留著舊寫法等於把同一個陷阱留給下一個人。
+
+任何讀不出來的情況~ 套件不存在、沒有 version 欄位、JSON 壞掉、node 不在、pull 不完整導致 helper 還沒到~ 一律當成「未達門檻」。代價是多跑一次本來就 idempotent 的 `npm install`，而不是留一份有漏洞的舊版在原地。
+
+`package.json` 的 `js-yaml` 一併從 `^4.1.1` 提到 `^4.3.0`。光改 lock 對容器就夠了，但提高宣告的門檻才有東西讓漂移測試去比對腳本。
+
+**這次沒修的**：`GHSA-qwww-vcr4-c8h2`（React Router RSC 模式 CSRF 繞過，高風險）。官方說要升到 `react-router` 8.3.0，但 **npm 上沒有 `react-router-dom` 8.x**~ v8 把這層 shim 拿掉了，要清這條警告等於把 `client/src/` 每一個 import 都遷移掉。`npm audit fix --dry-run` 也確認沒有非破壞性的修法。
+
+而且它打不到我們。`client/` 是靜態 SPA：`src/main.jsx` 掛 `BrowserRouter`、`vite.config.js` 沒有任何 SSR / RSC plugin、把 `unstable_RSC`、`renderToString`、`renderToPipeableStream`、`createStaticHandler`、`StaticRouter`、`ServerRouter`、`deserializeErrors`、`RSCErrorHandler`、`createRequestHandler` 九個進入點在 `client/src/` 全掃過，一個都沒有。沒有伺服器端 runtime 可以讓 action 執行。五條 react-router 警告裡另外兩條同樣只在 SSR / RSC 下成立、對這裡也是空的，只是升到 7.18.2 順便一起清掉。真正對 SPA 成立的是 `CVE-2026-53669`~ `<Link>` 跟 `useNavigate` 用反斜線可以做開放轉址。
+
+**還修了兩個 review 抓出來的既有隱患**：
+
+- `package-lock.json` 自己的 root 區塊沒跟上（`packages[""].version` 還是 1.26.40、`js-yaml` 還是 `^4.1.1`）。歷史上每一版這兩個欄位都是同步的，用 `npm install --package-lock-only` 重產、並確認沒有其他套件被順手動到。
+- `scripts/update.ps1` 的判斷函式在 `Set-StrictMode -Version Latest` 下不安全。`& node` 是整支腳本第一個原生指令、在它之前 `$LASTEXITCODE` 根本不存在；而 node 不在 PATH 上時 `& node` 會拋 `CommandNotFoundException`、也不會設定它，於是在 StrictMode 下讀它是錯誤而不是取值。也就是說「node 不在就當未達門檻」這個保證在 Windows 上原本不成立。改成先明確檢查 helper 檔案跟 node 存在。**沒有**用「在函式裡設 `$LASTEXITCODE = 1`」來擋~ 那會建出一個 local 去遮蔽引擎設定的 global，後面每次讀都拿到過期的 local。
+
+**驗證**：TDD 先紅後綠（27 個測試），全套件綠。
+
+不只跑單元測試：
+- **八個變異測試逐一驗證守門真的會咬人**：manifest 降版 → 1 紅、shell 門檻降版 → 1 紅、把資料夾檢查改回去 → 3 紅、安裝範圍低於門檻 → 1 紅、shell 判斷極性反轉 → 2 紅、PowerShell 判斷極性反轉 → 1 紅、拿掉 log 目錄的 mkdir → 1 紅、把「自己判斷是否被直接執行」的寫法放回去 → 3 紅。之後全部還原回基準線。後四個是 review 指出來、原本測不到的。
+- **用 `sed` 從 `update.sh` 抽出 `needs_root_dep` 的真實函式本體**（不是手抄一份）對著假的安裝目錄跑：4.1.1 → 安裝、4.3.0 → 跳過、4.3.1 → 跳過、沒裝 → 安裝、helper 被刪 → 安裝，而且每一種情況 stderr 都要是空的。
+- `client/` 換 react-router 7.18.2 後重 build 成功、CSS hash 沒變；`mcp/` 換 SDK 1.30.0 後 `npm ci` 乾淨、真的 import 得起來；root 跟 `mcp/` 的 `npm audit` 都回報 0 個漏洞。
+
+**這個測試自己抓到一個新問題**：第一次跑行為測試時五種情況全部回報「要安裝」，包含應該跳過的那幾種。原因是判斷式把 stderr 導向 `~/.ownmind/logs/`，而那個目錄不保證存在（`send_update_beacon` 只在 spool 退路才建）。redirect 失敗會讓整條指令失敗、否定一翻就變成永遠要裝。也就是說在修好之前，第一個「4.1.1 → 安裝」是因為錯誤的理由才通過的。`update.sh` 現在會先建目錄，順手也把從 v1.18.5 就依賴這個目錄的 npm install redirect 補穩。測試那行 mkdir 是從腳本裡抽出來用、不是自己寫死，所以拿掉它測試會紅。
+
+**沒驗到的部分照實說**：`scripts/update.ps1` **沒有真的執行過**，這台機器沒有 PowerShell（`pwsh`、`powershell` 都不在）。逐行審了兩遍、也照上面說的補強了兩個隱患，但這段接線本身要等在 Windows 上跑過才算驗證。它的判斷極性有用原始碼比對釘住，那是務實的替代品、不是驗證的替代品。
+
+**要注意**：新的判斷邏輯是讓「下一次同步」能生效，它沒辦法回頭升級任何人。每個使用者還是要同步自己的 `~/.ownmind`，js-yaml 才會真的換掉。
+
 ## v1.26.40 — Bug #8：密碼偵測把普通英文句子當成密碼
 
 **背景**：commit 一份社群爬蟲資料時被擋下。一位菲律賓創作者的影片描述寫著「we hope that this vlog will help you on your Taiwan Journey」~ 其中「hope that this vlog will help」六個四字母單字，剛好命中 WordPress 應用程式密碼的格式。
