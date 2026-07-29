@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## v1.26.40 修改（Bug #8：密碼偵測誤判普通英文句子）
+
+新增檔：
+```
+openspec/changes/v1.26.40-wp-password-prose/proposal.md         — v1.26.40 提案（含四個候選規則的量測數據）
+openspec/changes/v1.26.40-wp-password-prose/spec.md             — v1.26.40 規格（GIVEN/WHEN/THEN，4 條 requirement）
+openspec/changes/v1.26.40-wp-password-prose/tasks.md            — v1.26.40 任務清單
+tests/secret-detect-wp-prose.test.js                            — 22 tests：真密碼召回（含 2000 組固定種子產生）、已知殘留漏抓釘住、五種散文放行、前綴 1~7 詞的重疊視窗、其餘規則不受影響
+```
+修改檔：
+```
+shared/secret-detect.js    — 新增 looksLikePlainWord() 與 findConfirmedMatch()（重疊掃描）；WP 密碼規則加 confirm 組成檢查；regex 迴圈改掃所有命中
+package.json               — 版號 1.26.39 → 1.26.40
+CHANGELOG.md               — v1.26.40 條目
+FILELIST.md                — 本段
+```
+
 ## v1.26.39 修改（後台「記憶總數」永遠顯示 0）
 
 新增檔：

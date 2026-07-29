@@ -74,14 +74,14 @@ export function detectSecretLike(value, options = {}) {
     options && typeof options.description === 'string' ? options.description : '';
 
   // 3. Regex detection (most precise, runs first).
-  for (const { name, pattern } of SECRET_REGEXES) {
-    const m = value.match(pattern);
-    if (m) {
+  for (const { name, pattern, confirm } of SECRET_REGEXES) {
+    const hit = confirm ? findConfirmedMatch(value, pattern, confirm) : value.match(pattern)?.[0];
+    if (hit !== undefined && hit !== null) {
       return {
         detected: true,
         rule: `regex:${name}`,
         reason: `value 符合 ${name} 格式`,
-        matched_text: truncateMatch(m[0]),
+        matched_text: truncateMatch(hit),
       };
     }
   }
@@ -169,6 +169,67 @@ export function detectSecretLike(value, options = {}) {
 }
 
 /**
+ * Does this 4-character alphanumeric group look like a plain word rather than
+ * part of a random string?
+ *
+ * Contract: callers pass one group of the WP password shape, i.e. exactly four
+ * ASCII alphanumerics. True for the three ways prose writes a word — all lower
+ * case, all upper case, or an initial capital. A digit anywhere means no, since
+ * words do not carry them.
+ *
+ * Every input outside that contract (empty string, punctuation, non-ASCII
+ * letters) answers false, which makes the caller treat the group as
+ * non-word-shaped and keep the match. That direction fails safe for a secret
+ * scanner, but a future caller should not read this as a general-purpose
+ * "is this a word" test.
+ *
+ * @param {string} token exactly four ASCII alphanumerics
+ * @returns {boolean}
+ */
+function looksLikePlainWord(token) {
+  if (/[0-9]/.test(token)) return false;
+  return /^[a-z]+$/.test(token) || /^[A-Z]+$/.test(token) || /^[A-Z][a-z]+$/.test(token);
+}
+
+/**
+ * Return the first match a rule's `confirm` predicate accepts, or null.
+ *
+ * Two things matter here, both about not trading a false positive for a false
+ * negative:
+ *
+ * 1. Every match is considered, not just the first. A file can hold prose that
+ *    fits the shape before the credential it also contains.
+ * 2. After a rejected match the scan resumes one character past its **start**,
+ *    not past its end. `matchAll` (and a bare `exec` loop) advances to the end,
+ *    which carves a contiguous run of four-character tokens into fixed
+ *    six-token windows and never looks at the ones that straddle a boundary.
+ *    With five prose words in front of a credential, window one is those five
+ *    plus the credential's first group; skipping to its end hides the whole
+ *    credential whenever that first group happens to be word-shaped — measured
+ *    at 8.98% of draws. Overlapping the scan removes that entirely.
+ *
+ * The `\b` anchor keeps candidate start positions at token boundaries, so the
+ * overlapping scan stays linear in practice.
+ *
+ * @param {string} value
+ * @param {RegExp} pattern
+ * @param {(match: string) => boolean} confirm
+ * @returns {string|null}
+ */
+function findConfirmedMatch(value, pattern, confirm) {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`;
+  const scanner = new RegExp(pattern.source, flags);
+  let m;
+  while ((m = scanner.exec(value)) !== null) {
+    if (confirm(m[0])) return m[0];
+    // +1 rather than the match end: overlap-safe, and it also guarantees
+    // progress if a pattern ever matches the empty string.
+    scanner.lastIndex = m.index + 1;
+  }
+  return null;
+}
+
+/**
  * v1.19.13: truncate a matched fragment to ≤ 80 chars so we never echo a
  * real key in full into console / log output.
  */
@@ -199,11 +260,30 @@ const SECRET_REGEXES = [
   // WordPress Application Password: 4 chars per group, exactly 6 groups,
   // whitespace separated.
   // Example: iXEN ops5 pJcy 8PJI lVFM heaH
-  // Uses {5} (exactly 5 separators = 6 groups) instead of {5,} to avoid
-  // matching ordinary English prose.
+  //
+  // This is the only rule here with no identifying prefix (jwt has `eyJ`,
+  // github_pat has `gh?_`, aws has `AKIA`, openai has `sk-`), so shape alone
+  // has to carry it — and English produces this shape readily, because
+  // four-letter words are common. "hope that this vlog will help" fits it
+  // exactly, which blocked a legitimate commit (bug report #8). An earlier
+  // attempt tightened {5,} to {5}; that constrained how many groups match, not
+  // what they are made of, so prose kept matching.
+  //
+  // WordPress generates these with wp_generate_password(24, false): 24
+  // characters drawn at random from upper case, lower case, and digits. Such a
+  // draw essentially never produces six groups that all look like plain words,
+  // while prose groups always do — so `confirm` requires at least one group
+  // that does not.
+  //
+  // Residual miss rate, since "essentially never" is not never: per group
+  // P(word-shaped) = 3·(26/62)^4 = 0.0928, so all six is 6.378e-7, about 1 in
+  // 1.57 million. `Abcd efgh Ijkl mnop QRST uvwx` is such a draw and is missed.
+  // Accepted deliberately — the next-best candidate ("contains a digit") missed
+  // 1.5%. A per-group entropy floor would close the gap if this ever matters.
   {
     name: 'wp_application_password',
     pattern: /\b[A-Za-z0-9]{4}(?:\s[A-Za-z0-9]{4}){5}\b/,
+    confirm: (match) => match.split(/\s+/).some((group) => !looksLikePlainWord(group)),
   },
   // JWT: header.payload.signature, three base64url segments.
   // Each segment ≥10 chars to reduce false positives.
