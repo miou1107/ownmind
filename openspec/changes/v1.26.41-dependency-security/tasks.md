@@ -193,10 +193,48 @@ against the actual code before anything was changed.
 
 ## Phase 12 — Release
 
-- [ ] Commit, no Co-Authored-By, author Vin
-- [ ] Tag `v1.26.41`, deploy, run migrations as the deploy step
-- [ ] Browser check after deploy
-- [ ] Re-read the alert list and confirm 37 → 1
+- [x] Commit `2235845`, no Co-Authored-By, author Vin
+- [x] Tag `v1.26.41` pushed
+- [x] Deployed to kkvin.com, pinned to the tag rather than a branch, with the
+      previous image kept as `ownmind-api:prev-v1.26.40` so it survives a prune
+- [x] Migrations run as a deploy step: 17 already applied, 0 new, "DB schema is up
+      to date" — the expected no-op, no schema change in this release
+- [x] `docker compose build --no-cache`, then `up -d`. The in-container client
+      build produced JS hash `index-iF1ipOZR.js`, byte-identical to the local
+      build, so the image is reproducible
+- [x] Verified inside the running container: js-yaml 4.3.0, body-parser 2.3.0
+- [x] Live `GET /api/memory/init` reports `server_version 1.26.41` and is already
+      advertising the upgrade to clients
+- [x] Browser check on the dashboard: loads clean, no console errors, and
+      client-side routing exercised across `/portal/usage`, `/portal/handoffs` and
+      `/admin/bugs` with `NavLink` active state tracking correctly — which is what
+      the react-router 7.18.2 upgrade actually touches
+- [x] Browser check on the legacy admin console: user count 9 and
+      我的記憶（啟用中） 388, so v1.26.39's fix is also good in production. An
+      earlier screenshot showing `-` was the pre-fetch state, not a failure:
+      `/api/export` returns 950 kB and takes about a second
+- [x] Alerts: 37 → 1 → 0 after dismissing the inapplicable one as `not_used` with
+      the reasoning recorded on the alert
+- [x] Cleaned up: deploy script and log removed from the server, plus a stale
+      `ownmind-deploy-v1.26.36.log` left behind by an earlier release
+
+## Phase 12b — Found during the post-deploy browser check, unrelated to this change
+
+Both confirmed pre-existing and left alone rather than folded in.
+
+- [ ] **A hard load of any dashboard sub-route renders a blank page.** Express
+      serves the SPA shell for `/ownmind/dashboard/portal/handoffs`, but
+      `client/index.html` carries `<base href="./">` and `client/vite.config.js`
+      sets `base: './'`, so the asset request resolves to
+      `/ownmind/dashboard/portal/assets/...` and 404s. Measured: that path returns
+      404 while `/ownmind/dashboard/assets/...` returns 200. Clicking through the
+      sidebar works, so this only bites on a bookmark, a refresh, or a shared link.
+      Introduced in v1.20.0 / v1.20.1 (`cd43c41`, `f4e1fc1`); `git diff
+      v1.26.40..v1.26.41` shows this change touched neither file.
+- [ ] **The dashboard footer and sidebar report v1.20.1.** `client/src/App.jsx:61`
+      hardcodes `version: 'v1.20.1'`, and the changelog entries above it are
+      hardcoded too. Stale for 21 releases. Should read the version the server
+      already returns rather than a literal.
 
 ## Phase 13 — Filed, not done here
 
