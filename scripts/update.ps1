@@ -71,38 +71,66 @@ Send-UpdateBeacon -Trigger 'update_started'
 Write-Host "OwnMind sync (light path)"
 Write-Host "─────────────────────────────────────────────"
 
-# --- 0. v1.18.5 補修：conditional-sync-cli.js 需要 js-yaml ---
-# 對應 update.sh 的 root deps 修補。idempotent：已裝就 skip。
-$JsYamlDir = Join-Path $OwnMindDir "node_modules\js-yaml"
-if (-not (Test-Path $JsYamlDir)) {
-  Write-Host "   📦 安裝 conditional-sync 缺的依賴 js-yaml..."
+# --- 0. Root-level dependencies (mirrors section 0 of update.sh) ---
+# v1.26.41: the guard used to be Test-Path on node_modules\<pkg>, so a package was
+# never touched again once present and a later security patch could not reach anyone
+# who had already installed. Gate on the installed version instead. Anything
+# unreadable counts as "below the floor" and triggers a reinstall.
+function Test-RootDepNeeded {
+  param([string]$Package, [string]$MinVersion)
+  $checker = Join-Path $OwnMindDir "scripts\install-helpers\dep-floor-cli.mjs"
+
+  # Check the preconditions here rather than inferring them from an exit code.
+  # This is the first native command the script runs, so $LASTEXITCODE does not
+  # exist yet, and if node is absent `& node` throws CommandNotFoundException
+  # without ever setting it -- reading it under the Set-StrictMode -Version Latest
+  # above would then be an error rather than a value. Assigning $LASTEXITCODE
+  # inside this function is not a fix either: it would create a local that shadows
+  # the global the engine sets, and every later read would return the stale local.
+  if (-not (Test-Path $checker)) { return $true }
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) { return $true }
+
+  # `*> $null` and not `2> $null`: a PowerShell function returns everything left on
+  # the pipeline, so any stray stdout from node would be returned alongside the
+  # boolean and make the `if` see a non-empty array -- always truthy, reinstalling
+  # every sync. dep-floor-cli.mjs is silent by contract; this keeps it true
+  # regardless. `*>` is available in PowerShell 3.0 and up, which covers the
+  # Windows PowerShell 5.1 that mcp/index.js invokes.
+  & node $checker $OwnMindDir $Package $MinVersion *> $null
+  return ($LASTEXITCODE -ne 0)
+}
+
+# v1.18.5: conditional-sync-cli.js needs js-yaml, otherwise the module fails to load
+# and the SessionStart hook silently stops updating the big skill.
+# Floor 4.3.0 — CVE-2026-59869, quadratic CPU via YAML merge-key chains.
+if (Test-RootDepNeeded -Package "js-yaml" -MinVersion "4.3.0") {
+  Write-Host "   📦 Installing / updating conditional-sync dependency: js-yaml..."
   Push-Location $OwnMindDir
   try {
     $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
-    & npm install js-yaml@^4.1.1 --no-save --silent --no-audit --no-fund 2>>$errLog
+    & npm install js-yaml@^4.3.0 --no-save --silent --no-audit --no-fund 2>>$errLog
     if ($LASTEXITCODE -eq 0) {
-      Write-Host "   [ OK ] js-yaml 安裝完成"
+      Write-Host "   [ OK ] js-yaml ready"
     } else {
-      Write-Host "   [ WARN ] js-yaml 安裝失敗 (詳見 $errLog)、big skill sync 仍會 fallback skip"
+      Write-Host "   [ WARN ] js-yaml install failed (see $errLog); big skill sync will fall back to skip"
     }
   } finally {
     Pop-Location
   }
 }
 
-# v1.19.14：device-fingerprint 需要 node-machine-id
-# 對應 update.sh 的 0b 區塊。idempotent：已裝就 skip。
-$MachineIdDir = Join-Path $OwnMindDir "node_modules\node-machine-id"
-if (-not (Test-Path $MachineIdDir)) {
-  Write-Host "   📦 安裝錯誤回報工具用的依賴 node-machine-id..."
+# v1.19.14: device-fingerprint needs node-machine-id for a stable "same machine"
+# identifier.
+if (Test-RootDepNeeded -Package "node-machine-id" -MinVersion "1.1.12") {
+  Write-Host "   📦 Installing / updating bug-report-tool dependency: node-machine-id..."
   Push-Location $OwnMindDir
   try {
     $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
     & npm install node-machine-id@^1.1.12 --no-save --silent --no-audit --no-fund 2>>$errLog
     if ($LASTEXITCODE -eq 0) {
-      Write-Host "   [ OK ] node-machine-id 安裝完成"
+      Write-Host "   [ OK ] node-machine-id ready"
     } else {
-      Write-Host "   [ WARN ] node-machine-id 安裝失敗、ownmind_report_bug 會用 fallback 指紋"
+      Write-Host "   [ WARN ] node-machine-id install failed; ownmind_report_bug will use a fallback fingerprint"
     }
   } finally {
     Pop-Location
