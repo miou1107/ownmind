@@ -1,5 +1,31 @@
 # OwnMind 更新紀錄
 
+## v1.26.38 — 團隊規範細節終於真的共用（修「共用了一半」的缺陷）
+
+**背景**：`ownmind_upload_standard` 把長規範拆兩層存~ 摘要層是 `team_standard`、細節層是 `standard_detail`。摘要層刻意做成跨帳號共用（`src/routes/memory.js:418-424` 的查詢明確不帶 user_id 過濾、註解也寫了 "team_standard is shared across users"）~ 但細節層沒跟著改~ 四條讀取路徑全都還在用呼叫者自己的 user_id 過濾（`/init:424` 的 rule_detail 排除是刻意的 lazy load、但 `/type/:type:813`、`/search:877`、`/:id:897` 都是 owner-only）。結果每個成員載進來一排規範標題、內容只有上傳者本人打得開。
+
+**線上實測（2026-07-29）**：7 條 active 摘要（135 / 143 / 152 / 161 / 183 / 210 / 345）底下共 119 筆 active 細節~ 全庫 127 筆 active `standard_detail` 全屬同一個帳號~ 自 2026-04-07 第一次上傳起、共用從來沒對其他人生效過。內容不是佔位垃圾（例如 135 是五層設定檔歸屬模型、152 是四節 git push 工作流）~ 所以「把摘要刪掉」的舊提案會讓 119 筆細節變成永久孤兒。
+
+**做法**：
+
+- 新增純函式模組 `src/utils/memory-visibility.js`：`SHARED_MEMORY_TYPES`（`team_standard` + `standard_detail`）、`isSharedMemoryType()`、`buildReadableWhere({ alias, userParam })` 產生「這個呼叫者可讀哪些列」的 SQL 片段。
+- 可讀條件：自己的列 OR `team_standard` OR（`standard_detail` 且母規範是 active 的 `team_standard`、且呼叫者沒退訂該母規範）。母規範用 `parent.id::text = metadata->>'parent_id'` 比對~ **不把 JSON 值 cast 成 int**~ 這樣壞掉或缺少的 parent_id 只是比不中、不會整條查詢炸掉。
+- 三個讀取路徑改用同一個述詞：`GET /type/:type`（`standard_detail` 走共用分支）、`GET /search`、`GET /:id`。
+- 因為條件要求母規範 active~ 停用摘要後底下的孤兒細節自動隱藏（線上 id 173 目前就有 8 筆這種孤兒）。
+- Client 端同步（功能改動要同時檢查 server 跟 client 兩端）：`mcp/index.js` 的 `ownmind_get` 型別 enum 補上 `standard_detail`（先前 SOP 教 AI 呼叫這個型別、但工具 enum 根本沒有、等於教你按不存在的按鈕）~ 加上選填的 `parent_id` 參數~ `TYPE_MAP.ownmind_get` 補上對應標籤（先前會落到通用的 "Memory loaded"、看不出調閱的是哪一類；`resolveType` 本來就有保底、不會印出 undefined）。
+
+**Code review 補修（reviewer 抓的一條 Critical + 三條 Important）**：
+
+- **Critical — 共用型別的建立/修改沒有 admin 卡控**：`POST /`（`src/routes/memory.js:1030`）、`PUT /:id`、disable 三處只擋 `team_standard`~ 但 `standard_detail` 也在 `ALLOWED_MEMORY_TYPES` 裡。細節層還是 owner-only 時這個洞是死的~ 一旦讀取放寬~ 任何一般使用者都能 POST 一筆 `metadata.parent_id` 指向任意規範的細節~ 內容就會被當成權威團隊規範送進**每個成員**的 AI context、而且作者永久保有編輯權。MCP enum 不是授權邊界（curl 或舊 client 可繞過）。三處改用 `isSharedMemoryType()`~ 正常上傳走 `batch-sync-standard`、本來就有 admin 卡控、不受影響。
+- **Important — `GET /:id` 少了狀態過濾**：述詞只限制母規範的 status、沒限制列本身。原本 owner-only 所以無害~ 放寬後非擁有者可以用 id 撈到已停用的規範或細節（線上有 41 筆 disabled 細節）。加上 `(m.status = 'active' OR m.user_id = $2)`~ 停用即對所有人隱藏、但擁有者仍看得到自己的。
+- **Important — `/type/standard_detail` 沒有上限也沒有篩選**：不帶條件會回全部細節（線上 119 筆、約 15~20k token）~ 而 SOP 正是叫 AI 呼叫這個。加上選填 `?parent_id=`（MCP 同步加 `parent_id` 參數）~ 不加 LIMIT、避免無聲截斷。
+- **Important — 測試斷言太鬆**：三條斷言會放行錯的實作（`/type = 'team_standard'/` 會被外層分支滿足、`metadata->>'parent_id'` 沒釘住關聯的哪一側、opt-out 沒釘 `optout.user_id`）。改成用 `parent.` / `optout.` 限定~ 並補上「呼叫者綁在第幾個參數」的位置測試。因為這三條是收緊既有斷言、寫完就綠、沒經過紅燈~ 另外跑**突變測試**證明有效：分別拿掉 `parent.type` 條件、把關聯改成不相關、拿掉 opt-out 的 user 範圍~ 三次都被對應的測試抓到。
+- **Minor（記錄不修）**：opt-out 對摘要層不生效（只擋細節、跟 `/init` 不一致）~ 全庫沒有任何地方寫入 opt-out（該分支目前是死碼）~ opt-out 鍵值比對方式與 `/init` 的 `::int` 不同~ `parent.id::text` 讓主鍵索引用不上（4k 筆規模下成本由既有 ILIKE 主導、暫不加索引）。四項都寫進 proposal 的 Known limitations。
+
+**不在範圍**：不動寫入路徑（`PUT /:id` 與 disable 維持 owner-only、能讀不等於能改~ 有測試釘住）~ 不把 `standard_detail` 加進 `ownmind_save` enum（細節只能由 `upload_standard` 產生、否則會出現沒有母規範的孤兒列）~ `/init` 繼續排除 `rule_detail`（兩層 lazy load 的意義就在這）~ 不做資料遷移、不刪任何一筆~ 不改自動產生的摘要佔位文案（另案）。
+
+**驗證**：TDD 先紅後綠。新增 `tests/memory-visibility.test.js` 34 個測試~ 涵蓋共用型別判定、述詞結構、參數化、alias、括號平衡、路由接線、參數綁定位置、共用型別寫入需 admin、寫入路徑沒被放寬、init 仍排除細節、MCP 兩端 enum。全套件 2123 綠、無回歸。另外拿**正式資料庫唯讀實跑**新述詞驗證真實行為：修前 Vin 看得到 0 筆、修後 119 筆~ 停用母規範 173 底下的孤兒 0 筆外洩~ 別人的非共用記憶 0 筆外洩~ 壞掉的 parent_id（`"abc"` / 缺欄位）判定為不可讀且查詢不報錯。退訂分支因線上目前沒有任何 opt-out 資料、改用合成資料驗證：退訂 143 後底下 36 筆降為 0、同時 210 底下 27 筆不受影響。
+
 ## v1.26.37 — Bug #7 修：關鍵字搜尋改進 + 下架「語意搜尋」口號
 
 **背景**：Bug #7「新記憶存了但搜不到」實際根因不是原本猜的「embedding pipeline 壞掉」~ 而是**從來沒實作**。DB schema 有 `embedding vector(1536)` 欄位和 ivfflat 索引（`db/001_init.sql:42,111`），但寫入端從沒填 embedding 欄位、也沒有任何 embedding provider 整合（沒 OpenAI/Voyage/Anthropic embed 呼叫、沒 `<->`/`<=>` 距離運算子）。`/api/memory/search` 只做 `ILIKE '%q%'` 對 title/content 的**子字串比對**~ 多詞或概念查詢全都撈不到。同時多處使用者可見文案（session-start tip、SOP、README 三語）在賣「semantic search built in」~ 這是口號跟實作對不上、誤導使用者以為是搜尋壞掉。

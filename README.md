@@ -94,7 +94,7 @@ Built-in **Super Admin** > **Admin** > **User** roles. The first two have absolu
 
 ### 2. One-click team standard broadcast
 
-Lead publishes a team rule once (e.g., "every response must include a request ID") via the admin console. The system slices it semantically via RAG (Retrieval-Augmented Generation: fetches external knowledge before AI answers). When any team member opens a new conversation, AI hard-loads and enforces it. Zero manual training, zero standard-sync cost.
+Lead publishes a team rule once (e.g., "every response must include a request ID") via the admin console. The system slices it semantically via RAG (Retrieval-Augmented Generation: fetches external knowledge before AI answers). When any team member opens a new conversation, AI hard-loads the rule summary and enforces it, pulling the sliced detail on demand. Zero manual training, zero standard-sync cost.
 
 ### 3. Local Git pre-commit hard gate
 

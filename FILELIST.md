@@ -1,5 +1,27 @@
 # OwnMind 檔案結構
 
+## v1.26.38 修改（團隊規範細節終於真的共用）
+
+新增檔：
+```
+openspec/changes/v1.26.38-share-standard-details/proposal.md   — v1.26.38 提案
+openspec/changes/v1.26.38-share-standard-details/spec.md       — v1.26.38 規格（GIVEN/WHEN/THEN，7 條 requirement）
+openspec/changes/v1.26.38-share-standard-details/tasks.md      — v1.26.38 任務清單
+src/utils/memory-visibility.js                                 — 共用讀取述詞：SHARED_MEMORY_TYPES / isSharedMemoryType / buildReadableWhere
+tests/memory-visibility.test.js                                — 34 tests：共用型別 / 述詞結構 / 參數綁定位置 / 路由接線 / 共用型別寫入需 admin / 寫入未放寬 / MCP 兩端
+```
+修改檔：
+```
+src/routes/memory.js       — /type/:type（加選填 parent_id）、/search、/:id（加狀態過濾）改用 buildReadableWhere；POST / + PUT /:id + disable 的 admin 卡控從 team_standard 擴到所有共用型別
+mcp/index.js               — ownmind_get enum 補 standard_detail + 選填 parent_id 參數；TYPE_MAP 補對應標籤（ownmind_save enum 刻意不加）
+README.md                  — 團隊標準推播段落改為「摘要強制載入、細節按需調閱」
+docs/README.zh-TW.md       — 同上（中文）
+docs/README.ja.md          — 同上（日文）
+package.json               — 版號 1.26.37 → 1.26.38
+CHANGELOG.md               — v1.26.38 條目
+FILELIST.md                — 本段
+```
+
 ## v1.26.37 修改（Bug #7 修：關鍵字搜尋改進 + 下架 semantic 口號）
 
 新增檔：
