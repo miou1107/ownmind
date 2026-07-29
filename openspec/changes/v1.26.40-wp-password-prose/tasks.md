@@ -102,8 +102,19 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 7 — Release
 
-- [ ] Commit (no Co-Authored-By)
-- [ ] Tag `v1.26.40`, push, deploy to kkvin.com
-- [ ] Run pending migrations first — expected none
-- [ ] Mark bug report #8 fixed
-- [ ] Note that the hook runs client-side, so users need the client update too
+- [x] Commit `4555ba6`, no Co-Authored-By, author Vin
+- [x] Tag `v1.26.40` pushed, deployed to kkvin.com
+- [x] Migrations run as deploy step 2 — no-op as expected, no schema change
+- [x] Mark bug report #8 fixed (all five reports now closed)
+- [x] End-to-end check on the live server: the reported sentence, which was
+      rejected 20 minutes earlier, now writes to memory successfully, while a
+      synthetic password-shaped string is still rejected with 400
+- [x] Browser check on the admin console
+- [x] Cleaned up: verification memory 732 disabled with a reason, deploy
+      scripts and logs removed from the server, scratch repo removed locally
+
+## Phase 8 — Still open
+
+- [ ] The hook runs client-side from `~/.ownmind`, so each user needs the
+      client update before their own commits stop being blocked. Server-side
+      memory writes are already fixed for everyone.
