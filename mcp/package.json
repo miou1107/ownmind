@@ -15,6 +15,6 @@
     "url": "https://github.com/miou1107/ownmind"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }
