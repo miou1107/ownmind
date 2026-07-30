@@ -4,9 +4,11 @@ import { useT } from '../../i18n/LocaleContext';
 // 資料品質警示 — 從舊的 /me/ 頁搬過來（第一次盤點漏掉的兩個功能之一）
 //
 // 來源：GET /api/me/report 的 me.audit_findings（src/routes/me.js）
-// 兩種 finding：
+// 目前伺服器實際會產出四種（v1.26.46 只讀到前兩種就下結論、正式機一看是四種）：
 //   heartbeat_absent    最近有活動但 collector 超過 24 小時沒回報 → token 數字可能不完整
 //   source_inconsistent 有 activity 但完全沒有 token_events → scanner 可能沒在跑
+//   ir027_candidate     有人帳號開超過 7 天還是預設密碼、可能根本沒登入過
+//   team_blindspot      有成員 14 天內完全沒有訊號、他的工作看不到
 //
 // 為什麼一定要搬：這是「頁面上的數字可不可信」的唯一提示。沒有它，一個 collector
 // 掛掉的人看到的用量會偏低，而且看起來完全正常 — 正是 Requirement 7 要避免的「沒有
@@ -16,6 +18,16 @@ const TONE = {
   high: 'border-rose-200 bg-rose-50 text-rose-800',
   medium: 'border-amber-200 bg-amber-50 text-amber-800',
   low: 'border-slate-200 bg-slate-50 text-slate-700',
+};
+
+// 型別到標題字典鍵的對照，刻意不直接拼 `audit.finding.${f.type}`：伺服器有一個型別叫
+// ir027_candidate、名字裡帶著個人鐵律編號（既有問題、已在 backlog），字典鍵不要幫它擴散。
+// 沒對到的型別會退回「用伺服器的訊息當標題」，不會把鍵名原文貼給使用者看。
+const TITLE_KEYS = {
+  heartbeat_absent: 'audit.finding.heartbeat_absent',
+  source_inconsistent: 'audit.finding.source_inconsistent',
+  ir027_candidate: 'audit.finding.default_password_unused',
+  team_blindspot: 'audit.finding.member_unobservable',
 };
 
 export default function AuditFindings({ findings }) {
@@ -29,10 +41,10 @@ export default function AuditFindings({ findings }) {
         const tone = TONE[f.severity] || TONE.low;
         const Icon = f.severity === 'high' ? TriangleAlert : Info;
         const tools = f.details?.tools;
-        // 伺服器只會產出 heartbeat_absent / source_inconsistent 兩種，但舊頁的對照表列了
-        // 九種（其餘在 v1.17.87 搬到踩坑紀錄）。真的冒出沒有標題的類型時只顯示訊息，
-        // 不要把 i18n key 原文貼給使用者看 — t() 找不到時會回 key 本身。
-        const titleKey = `audit.finding.${f.type}`;
+        // 沒有標題的型別只顯示訊息，不要把字典鍵原文貼給使用者看（t() 找不到會回鍵本身）。
+        // 舊頁的對照表列了九種，其中幾種在 v1.17.87 搬去踩坑紀錄了，但伺服器隨時可能再加，
+        // 所以這條退路要留著。
+        const titleKey = TITLE_KEYS[f.type] ?? `audit.finding.${f.type}`;
         const title = t(titleKey);
         const severityKey = `audit.severity.${f.severity}`;
         const severity = t(severityKey);
