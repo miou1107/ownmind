@@ -1,5 +1,67 @@
 # OwnMind 更新紀錄
 
+## v1.26.44 — 新後台直接開網址會全白（不是只有子頁面、是除了登入頁以外的每一頁）
+
+**背景**：v1.26.41 部署後做瀏覽器實測時發現的，確認是既有缺陷、`git diff v1.26.40..v1.26.41` 沒碰到相關檔案。直接開一個後台網址會渲染出全白的頁面，而且 **console 完全沒有錯誤**~ 因為 JS bundle 根本沒有被載入。
+
+正式機上量到的：
+
+```
+/ownmind/dashboard/portal/assets/index-iF1ipOZR.js   404
+/ownmind/dashboard/assets/index-iF1ipOZR.js          200
+```
+
+**根因**是三件事湊在一起：`src/app.js` 會把任何 `express.static` 找不到、又不帶副檔名的 `/dashboard` GET 請求回以 SPA 外殼；`client/vite.config.js` 設 `base: './'`，所以產出的外殼用 `./assets/index-*.js` 引用資產；`client/index.html` 帶著 `<base href="./">`。
+
+相對的 `<base href>` 是**對照文件自己的網址**去解析的。在 `/ownmind/dashboard/portal/handoffs` 上，文件所在目錄是 `/ownmind/dashboard/portal/`，於是 `./assets/index-*.js` 打到 `/ownmind/dashboard/portal/assets/index-*.js`~ 那裡沒有東西。
+
+**嚴重程度比回報時寫的「子路徑」更廣。** `client/src/App.jsx` 裡每一個真正的頁面都是兩段深（`/portal/usage`、`/preference/profile`、`/admin/team`、`/super/config`），所以**除了 `/login` 以外的每一頁，直接開都是全白**。一段深的路徑是靠算術巧合活下來的：`/ownmind/dashboard/login` 的所在目錄剛好就是 app 根目錄。這也解釋了為什麼 v1.20.1 當時測起來是好的~ 那時唯一的深路徑就是 `/dashboard/login`。
+
+同一個計算錯誤也污染了 `client/src/main.jsx` 的 `basename`（它是從 `document.baseURI` 推出來的），只是因為 bundle 從來沒執行到，所以看不出來。
+
+**設計上的兩難**：`base: './'`（v1.20.0）跟 `<base href="./">`（v1.20.1）都是刻意的。這個 app 必須能掛在 `/dashboard` 或 `/ownmind/dashboard` 而不寫死前綴，因為 **nginx 會在轉發前把 `/ownmind` 切掉、Express 根本看不到對外的前綴**。相對 base 正是「不綁前綴」能成立的原因，也正是深連結壞掉的原因。任何修法都必須保住前者。
+
+**評估過的四個選項**：讓 Express 注入絕對 base（否決：Express 不知道對外前綴，要靠 nginx 多送 `X-Forwarded-Prefix`，而且 header 沒送時會悄悄退化成錯的絕對路徑）、build 時用環境變數寫死絕對 base（否決：直接摧毀不綁前綴的特性，兩個掛載點要各建一份）、只在根目錄供應外殼、其餘轉址（否決：轉到根目錄就把使用者要去的頁面丟掉了，書籤跟分享連結還是到不了）、**Express 依請求路徑算出相對的 `../` base**（採用）。
+
+**做法**：Express 供應外殼時，把 `<base href>` 改寫成「從這條路徑爬回掛載根目錄要幾層 `../`」。
+
+Express 手上剛好就有需要的資訊：在掛載於 `/dashboard` 的 middleware 裡，`req.path` 是**相對於掛載點**的路徑，nginx 前綴跟掛載段都已經被剝掉了。實測對照：
+
+| 請求 | fallback 收到的 `req.path` | base href |
+|---|---|---|
+| `/dashboard/` | 到不了（static 直接給 index.html） | 檔案裡的 `./` |
+| `/dashboard` | 到不了（static 301 到 `/dashboard/`） | 不適用 |
+| `/dashboard/login` | `/login` | `./` |
+| `/dashboard/portal/handoffs` | `/portal/handoffs` | `../` |
+| `/dashboard/portal/handoffs/` | `/portal/handoffs/` | `../../` |
+
+送出去的值**保持純相對**，所以從頭到尾沒有任何絕對前綴被計算或假設，「不綁前綴」是靠寫法本身保住的、不是靠設定。
+
+一次修好資產路徑跟 `basename`，並且讓 `API_BASE` 維持正確。三者都是從 `document.baseURI` 推出來的，但**只有前兩個真的壞掉**：`client/src/api/client.js` 的比對式是 `^(.*)\/dashboard(\/.*)?$`、容許後面多帶路徑段，所以被污染的 `/ownmind/dashboard/portal/` 本來就會算出 `/ownmind`。前後都實測過、兩邊都是 `/ownmind`。初版的說法是「三個都修好」、code review 抓出來這句不成立。
+
+`withBaseHref` 在外殼裡找不到 base tag 時會**插入**一個、而不是靜靜地什麼都不做。因為外殼是 build 產物，一個只會取代字面值的改寫，哪天那個字面值變了就會無聲失效，而失效的表現正是這次要修掉的全白頁面。
+
+**驗證**：TDD 先紅後綠。先看它紅：第二次跑（純函式已在、還沒接線）是 19 綠 6 紅，而失敗訊息寫著 `./assets/index-*.js resolved to /dashboard/portal/assets/index-*.js and returned 404`~ 正式機的那個 bug，在測試裡被重現出來。
+
+測試不是比對字串、是**把送出去的 base 對著請求網址解析、斷言它落在掛載根目錄**，然後把外殼裡每一個資產引用照瀏覽器的方式解析、真的去 fetch。另外用一個會剝前綴的假 proxy（模擬 nginx）確認每條路徑都解到 `/ownmind/dashboard/`、資產全部 200，並用 CDP 開真的瀏覽器前後對照：修正前 `document.baseURI` 是 `…/dashboard/portal/`、`#root` 有 0 個子節點、全白；修正後是 `…/dashboard/`、`#root` 有 1 個、登入頁正常渲染。
+
+**接手收尾時補的兩件事**：
+
+- 原本有 9 個測試依賴 `src/public/dashboard/`，那是 gitignore 掉的 build 產物。實測把它移開（模擬剛 clone 還沒 build 的環境）會 9 紅，而且這是整個 repo 唯一有這種依賴的測試檔，等於這個改動會讓「剛 clone 就跑 `npm test`」變紅。改成加一組**自己造外殼跟資產的 fixture 測試**、不需要任何 build 就能跑，並且把真的需要 build 的那幾條標成條件跳過。實測：有 build 是 33 個測試全綠；沒 build 時 node 只會走到其中 26 個、21 綠 5 跳過 0 紅。（刻意這樣寫：node 只回報它走到的測試，講成「33 個裡跳過 5 個」會把沒 build 的覆蓋率多報 7 個。）
+- fixture 測試自己也先寫錯了：`withFixtureApp` 寫成同步函式，`finally` 會在非同步測試本體跑之前就把暫存目錄刪掉，於是每個請求都 404、但是為了錯的理由。改成 `async` + `await`。
+
+另外補了一條**證明這個修正不是空轉**的測試：用修正前的方式（直接 `sendFile` 原封不動的外殼）供應同一個 fixture，斷言資產必須 404、而且解析出來的路徑必須落在 `/dashboard/portal/assets/`。
+
+**Code review 又抓到一個真的算錯**：`relativeBaseHref` 原本用 `split('/').filter(Boolean)` 數層數，理由寫著「重複的斜線不算額外層級」~ 但那個前提是錯的，URL 解析器把 `//` 當成兩層。實測打真的 app：`/dashboard//portal//handoffs` 跟 `/dashboard/a//b` 都回了 `../`，資產解到不存在的目錄、404~ 就是這次要修掉的全白頁面，換一種路徑重現。拿 12 種路徑形狀對著 `new URL()` 檢查，舊公式錯 6 種。改成從 `split('/').length - 2` 數，12 種全對，而且原本就對的值一個都沒變。正式機因為 nginx 會合併斜線所以躲過了，但直接連 `localhost:3100/dashboard/` 的部署沒有這層保護。
+
+**而且有一條測試把那個錯誤釘住了**：它斷言 `relativeBaseHref('/portal//handoffs') === '../'`、名字還寫成好像那是正確行為，所以這個缺陷永遠不會浮出來。現在改成斷言 `'../../'`、名字寫明理由，並且另加一條直接驗**不變式**的測試（12 種形狀解析後都必須落在掛載根目錄），而不是比對預期字串。
+
+還有三件：我自己加的 suite 層級跳過標記，把三條**根本不需要 build** 的測試也一起跳掉了，其中一條正好是「外殼檔案不存在時要 fall through 而不是 500」~ 也就是剛 clone 的環境最該跑的那條，改成逐條標記；`text/html` 那條斷言永遠不會紅，因為 Express 自己的 404 頁面也是 `text/html`（這也是為什麼前面那次量到 9 紅而不是 10 紅），補上狀態碼 200 跟內容要含 `<base`；`res.send` 不會像被換掉的 `res.sendFile` 那樣送 `Cache-Control`，補回 `public, max-age=0`~ 否則快取要不要留這份外殼全看它自己決定，而留下來的外殼指向的是部署後已經不存在的雜湊檔名，又會變成全白。
+
+**已知限制**：改寫發生在 Express。如果哪天外殼改由靜態檔案主機自己做 SPA fallback，那台主機也得做同樣的改寫，否則深連結會用另一種方式再壞一次。目前 repo 裡沒有這種部署。
+
+**列了沒修**：`GET /ownmind/dashboard`（沒有結尾斜線）會 301 到 `/dashboard/`、把 `/ownmind` 前綴丟掉，因為 `serve-static` 是用 Express 看到的路徑去組那個轉址。實測正式機上 `https://kkvin.com/dashboard/` 也有被 proxy、會回 200，所以目前沒有使用者看得到的破口。`src/app.js` 對 `/me` 已經用相對的 `301 → 'me/'` 解掉同一種形狀。為了讓這次的 diff 只修一個缺陷，留著另辦。
+
 ## v1.26.43 — 新後台頁尾版號停在 v1.20.1，改成跟 server 拿
 
 **背景**：v1.26.41 部署後做瀏覽器實測時發現的。新後台的頁尾跟側邊欄都顯示 `v1.20.1`，而 server 已經在 1.26.41。`client/src/App.jsx` 把字串寫死：

@@ -63,18 +63,14 @@ app.use('/admin', express.static(join(__dirname, 'public')));
 // v1.20: the new unified backend (coexists with the old /admin and /me; a single entry with three-role routing)
 // SPA fallback uses middleware (Express 5's path-to-regexp no longer accepts the old /dashboard/* wildcard)
 // Flow: express.static tries to find the file first; only on miss does the fallback return index.html for react-router to take over
+import { createSpaShellHandler } from './utils/spa-shell.js';
+// v1.26.44: the fallback rewrites the shell's <base href> for the requested depth.
+// Serving the shell verbatim made every route deeper than one segment render blank,
+// because a relative base resolves against the document's own address and the asset
+// requests then 404ed. See src/utils/spa-shell.js.
 app.use('/dashboard', express.static(join(__dirname, 'public', 'dashboard')));
-app.use('/dashboard', (req, res, next) => {
-  // only do SPA fallback for GET requests; other methods (POST etc.) go to the normal error handling
-  if (req.method !== 'GET') return next();
-  // exclude requests with a file extension (asset/image/font etc.) — on miss, let it 404 normally, don't return HTML
-  // otherwise the browser parses HTML as an image and the cache breaks
-  if (req.path.includes('.')) return next();
-  const filePath = join(__dirname, 'public', 'dashboard', 'index.html');
-  res.sendFile(filePath, (err) => {
-    if (err) next();
-  });
-});
+app.use('/dashboard', createSpaShellHandler(
+  join(__dirname, 'public', 'dashboard', 'index.html')));
 
 // v1.19.8: setup wizard static page (serves src/public/setup.html)
 // serves setup.html directly under the / path, no separate folder needed
