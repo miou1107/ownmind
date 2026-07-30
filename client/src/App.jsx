@@ -22,22 +22,6 @@ function PlaceholderPage({ titleKey }) {
   );
 }
 
-// 暫時 mock 的版本紀錄資料 — 後續會改從 API 載入
-const MOCK_CHANGELOG = [
-  {
-    version: 'v1.20.1',
-    date: '2026-05-24',
-    title: 'Dashboard 個人版上線',
-    description: 'Portal + Preference 共 7 頁與後端 API 對接',
-  },
-  {
-    version: 'v1.20.0',
-    date: '2026-05-24',
-    title: '後台前端基礎建設',
-    description: 'React 19 + Vite 8 + Tailwind v4、藍綠並存路由',
-  },
-];
-
 export default function App() {
   // 角色狀態仍由 App 持有（locale 已抽到 LocaleProvider）
   // 未來會抽到 SessionProvider 統一管理使用者身分
@@ -58,8 +42,14 @@ export default function App() {
     role: currentRole,
     onRoleChange: setCurrentRole,
     profile: { name: 'User' },
-    version: 'v1.20.1',
-    changelog: MOCK_CHANGELOG,
+    // v1.26.43: `version` is no longer passed from here. Layout fetches it from
+    // the server itself, because Layout renders only after login while App does
+    // not. This used to be a hardcoded 'v1.20.1'.
+    //
+    // `changelog` is empty on purpose: Footer already renders a changelog.empty
+    // state in all three locales. It used to hold two mock entries frozen at
+    // v1.20.1. A real changelog feed is a separate piece of work.
+    changelog: [],
     onLogout: () => console.log('logout'),
     onOpenProfile: () => console.log('open profile'),
   };

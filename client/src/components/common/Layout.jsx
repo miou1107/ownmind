@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom';
 import { useT } from '../../i18n/LocaleContext';
+import useServerVersion from '../../hooks/useServerVersion';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Footer from './Footer';
@@ -29,13 +30,16 @@ export default function Layout({
   role,
   onRoleChange,
   profile,
-  version,
   changelog,
   onLogout,
   onOpenProfile,
 }) {
   const t = useT();
   const { pathname } = useLocation();
+  // v1.26.43: fetched here rather than passed down from App. Layout only renders
+  // beneath RequireAuth, so the request carries a key; App mounts before login
+  // and never unmounts, so a fetch there would 401 once and never retry.
+  const version = useServerVersion();
   const titleKey = PATH_TITLE_KEYS[pathname];
   const pageTitle = titleKey ? t(titleKey) : t('header.title');
 

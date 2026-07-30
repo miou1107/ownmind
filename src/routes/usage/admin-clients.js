@@ -1,18 +1,9 @@
 import { Router } from 'express';
-import { createRequire } from 'module';
 import { query as defaultQuery } from '../../utils/db.js';
 import defaultAdminAuth from '../../middleware/adminAuth.js';
 import logger from '../../utils/logger.js';
 import { isLower } from '../../utils/semver.js';
-
-const SERVER_VERSION = (() => {
-  try {
-    const require = createRequire(import.meta.url);
-    return require('../../../package.json').version || '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-})();
+import { SERVER_VERSION } from '../../utils/server-version.js';
 
 const ACTIVE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const STALE_WINDOW_MS = 48 * 60 * 60 * 1000;
