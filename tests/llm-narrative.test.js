@@ -136,3 +136,38 @@ describe('callLLMSwitch', () => {
     );
   });
 });
+
+// v1.26.47 — the prompt must not ask the model to count.
+//
+// v1.26.46 added a rule telling it to open the ranking note with
+// 「有 N 位成員從來沒有回報過、排名不含他們」. On production it then said that sentence even
+// though every member was instrumented, inventing "有 8 位成員從來沒有回報過任何資料" while
+// six of the nine were actively using OwnMind. The instruction meant to stop a confident
+// false statement produced one instead.
+//
+// The count is exact in the UI, which renders it from the same rows. Prose restating a
+// number it has to derive itself is the part that goes wrong, so the prompt now forbids it.
+describe('the ranking prompt does not ask the model to count members', () => {
+  const systemPrompt = () => buildMessages({ ranking: [] })[0].content;
+
+  it('still explains what measured=false means', () => {
+    const p = systemPrompt();
+    assert.match(p, /measured=false/, 'the model still has to know not to rank unmeasured members');
+    assert.match(p, /measured=true/, 'and that an in-period zero for an instrumented member is a real zero');
+  });
+
+  it('forbids counting and forbids claiming the ranking is complete or incomplete', () => {
+    const p = systemPrompt();
+    assert.match(p, /不要自己數/, 'the prompt must tell it not to count');
+    assert.match(p, /排名完整或不完整/, 'and not to characterise the ranking coverage');
+  });
+
+  it('no longer carries the template that produced the invented number', () => {
+    const p = systemPrompt();
+    assert.doesNotMatch(
+      p,
+      /有 N 位成員/,
+      'this template is what the model filled in with a number it made up',
+    );
+  });
+});

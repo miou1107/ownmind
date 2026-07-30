@@ -243,6 +243,8 @@
   "audit.severity.low": "提示",
   "audit.finding.heartbeat_absent": "用量資料可能不完整",
   "audit.finding.source_inconsistent": "掃描程式可能沒在跑",
+  "audit.finding.default_password_unused": "有人可能還沒開始用",
+  "audit.finding.member_unobservable": "有成員的使用狀況看不到",
   "audit.finding.tools": "受影響的工具：{tools}",
 
   "narrative.title": "整體分析",

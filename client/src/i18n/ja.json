@@ -218,6 +218,8 @@
   "audit.severity.low": "参考",
   "audit.finding.heartbeat_absent": "利用データが不完全な可能性があります",
   "audit.finding.source_inconsistent": "スキャナーが動いていない可能性があります",
+  "audit.finding.default_password_unused": "まだ使い始めていない人がいる可能性があります",
+  "audit.finding.member_unobservable": "一部のメンバーの利用状況が見えません",
   "audit.finding.tools": "影響を受けるツール：{tools}",
   "narrative.title": "全体分析",
   "narrative.subtitle": "チーム全体の利用状況の統計と、AI が生成した平易な説明",
