@@ -59,9 +59,24 @@ that surfaced them.
       was trivially green; event names were duplicated string literals; an identity error
       was indistinguishable from being logged out; the shell flashed an empty sidebar and
       a wrong role badge on every load. Suite 2271 pass / 0 fail
-- [ ] **Outstanding**: verify on the real server with a non-super_admin account. This
-      needs a member session, which cannot be arranged without handling someone's
-      password. Do it at the post-deploy browser check
+- [x] Released and deployed 2026-07-30. `v1.26.45` on `/VinService/ownmind`,
+      `docker compose build --no-cache api` then `up -d api`. No migrations in this range.
+      The served asset hash changed from `index-C86s0nQQ.js` to `index-CT4WxB9R.js`,
+      matching the local build byte for byte. Container up, no errors in the logs.
+      **Correcting two things I asserted earlier without checking**: this repo has no CI
+      at all, so pushing a v tag deploys nothing (I had assumed idaytour's v-tag pipeline
+      applied here); and `root@kkvin.com` accepts key-based SSH, so the earlier claim that
+      the production database was out of reach was also wrong. Recorded in OwnMind
+      memory 745
+- [x] Post-deploy browser check, super_admin path: the top bar shows the real name and the
+      real role badge instead of the hardcoded `'User'`; the role simulator is gone; the
+      footer and sidebar read v1.26.45. A cold hard load of `/dashboard/super/config` and
+      `/dashboard/admin/team` lands on the page rather than bouncing to `/portal/usage`,
+      which is the readiness gate working in production. No console errors on either.
+      `<base href="../">` still correct, so v1.26.44's fix is intact
+- [ ] **Outstanding, needs Vin**: verify with a non-super_admin account that the 管理 and
+      超級管理 sections are absent and that a typed `/dashboard/admin/team` bounces. This
+      requires a member's login, which is not something I should handle
 - [ ] **Outstanding, deferred with reason**: the api client has no request timeout, so a
       hung `/api/me/profile` leaves an admin route blank with nothing logged. It is a
       shared client affecting every request, so changing it reaches wider than this stage
