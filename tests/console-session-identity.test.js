@@ -149,36 +149,30 @@ describe('Stage 0 — routes are gated by role, not only by having a session', (
       + 'decision in session/roles.js where it is run');
   });
 
-  it('every admin and super route goes through the renderer for its own tier', () => {
-    const src = stripComments(read(APP));
-    const routes = [...src.matchAll(/<Route\s+path="(\/(?:admin|super)\/[^"]+)"\s+element=\{([\s\S]*?)\}\s*\/>/g)];
-    assert.ok(routes.length >= 5, `expected the admin and super routes, found ${routes.length}`);
-    for (const [, path, element] of routes) {
-      const expected = path.startsWith('/admin/') ? 'renderAdmin' : 'renderSuper';
-      assert.ok(
-        element.includes(expected),
-        `${path} should be rendered by ${expected}, got: ${element.trim().slice(0, 60)}`,
-      );
-    }
-  });
+  // v1.26.46 rewrote the three assertions that used to live here. They matched hand-listed
+  // <Route> elements and the named renderers renderAdmin / renderSuper, and read the
+  // required role from the *section*. Routes are now generated from the navigation and the
+  // role is per item, so those assertions could only be kept by keeping the shape they
+  // described. What they protected is stronger now and split across two files:
+  //   - "sidebar and guard agree" is true by construction: one minRole feeds both
+  //   - the agreement, the filtering and the fallback loop are executed in
+  //     tests/console-nav-structure.test.js
+  // The two below are what remains source-only, because App.jsx is JSX.
 
-  it('each tier renderer applies the guard at the right level', () => {
+  it('the gated renderer keeps all three guards, with the role passed through', () => {
     const src = stripComments(read(APP));
-    for (const [fn, min] of [['renderAdmin', 'admin'], ['renderSuper', 'super_admin']]) {
-      const at = src.indexOf(`const ${fn} =`);
-      assert.ok(at !== -1, `${fn} is missing`);
-      // Read to the end of the arrow body, i.e. up to the next top-level const or return.
-      const body = src.slice(at, src.indexOf('\n  const ', at + 10) === -1
-        ? src.indexOf('\n  return', at)
-        : src.indexOf('\n  const ', at + 10));
-      assert.match(body, /<RequireAuth>/, `${fn} must still require a session`);
-      assert.match(body, /<RequireFreshPassword>/, `${fn} must still force a password change`);
-      assert.match(
-        body,
-        new RegExp(`<RequireRole\\s+min="${min}"`),
-        `${fn} must gate on min="${min}"`,
-      );
-    }
+    const at = src.indexOf('const renderGated =');
+    assert.ok(at !== -1, 'renderGated is missing');
+    const body = src.slice(at, src.indexOf('\n  const ', at + 10) === -1
+      ? src.indexOf('\n  return', at)
+      : src.indexOf('\n  const ', at + 10));
+    assert.match(body, /<RequireAuth>/, 'renderGated must still require a session');
+    assert.match(body, /<RequireFreshPassword>/, 'renderGated must still force a password change');
+    assert.match(
+      body,
+      /<RequireRole\s+min=\{minRole\}/,
+      'renderGated must gate on the role it was given, not on a literal',
+    );
   });
 
   it('the ordinary renderer does not gate on role, so members keep their own pages', () => {
@@ -188,39 +182,36 @@ describe('Stage 0 — routes are gated by role, not only by having a session', (
     assert.doesNotMatch(body, /<RequireRole/, 'renderPage must not require a role');
   });
 
-  it('every nav item is gated at exactly the level its section claims', async () => {
-    const { NAV_SECTIONS, sectionMinRole } = await import('../client/src/components/common/nav-sections.js');
-    const src = stripComments(read(APP));
+  it('the gated renderer is used for exactly the items that need a role', async () => {
+    // The decision that picks a renderer per generated route. A reversed condition would
+    // gate every personal page and open every admin one, and the executable filtering
+    // tests would not notice, because they read the nav data rather than App.jsx.
+    //
+    // Review caught the first version of this test matching the ternary's source text,
+    // which is the antipattern the previous round removed from roles.js. The decision now
+    // lives in routeTierFor and is run here.
+    const { routeTierFor } = await import('../client/src/session/roles.js');
+    const { allNavItems } = await import('../client/src/components/common/nav-sections.js');
 
-    // renderer name -> the min role it enforces
-    const RENDERER_MIN = { renderPage: 'user', renderAdmin: 'admin', renderSuper: 'super_admin' };
-    const routeMin = new Map();
-    for (const [, path, element] of src.matchAll(/<Route\s+path="([^"]+)"\s+element=\{([\s\S]*?)\}\s*\/>/g)) {
-      const renderer = Object.keys(RENDERER_MIN).find((r) => element.includes(r));
-      if (renderer) routeMin.set(path, RENDERER_MIN[renderer]);
+    assert.equal(routeTierFor('user'), 'open');
+    assert.equal(routeTierFor('admin'), 'gated');
+    assert.equal(routeTierFor('super_admin'), 'gated');
+    // Fails closed: a typo in a nav item's minRole locks the page rather than opening it.
+    for (const bad of [null, undefined, '', 'users', 'valueOf']) {
+      assert.equal(routeTierFor(bad), 'gated', `${String(bad)} must not open a route`);
     }
 
-    const items = NAV_SECTIONS.flatMap((sec) =>
-      sec.items.map((it) => ({ path: it.path, expected: sectionMinRole(sec) })));
-    assert.ok(items.length >= 12, `expected the full nav, found ${items.length} items`);
-
-    for (const { path, expected } of items) {
-      assert.ok(routeMin.has(path), `${path} is in the sidebar but has no route in App.jsx`);
-      assert.equal(routeMin.get(path), expected,
-        `${path} is offered to ${expected}+ in the sidebar but its route enforces `
-        + `${routeMin.get(path)} — the sidebar and the guard must agree, or the sidebar `
-        + 'either hides a page the user may open or offers one they may not');
+    // Every real nav item lands on the tier its own minRole implies.
+    for (const item of allNavItems()) {
+      assert.equal(
+        routeTierFor(item.minRole),
+        item.minRole === 'user' ? 'open' : 'gated',
+        `${item.path} would be wrapped by the wrong renderer`,
+      );
     }
-  });
 
-  it('no admin or super route is reachable without a matching nav entry', async () => {
-    const { NAV_SECTIONS } = await import('../client/src/components/common/nav-sections.js');
-    const navPaths = new Set(NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.path)));
-    const src = stripComments(read(APP));
-    for (const [, path] of src.matchAll(/<Route\s+path="(\/(?:admin|super)\/[^"]+)"/g)) {
-      assert.ok(navPaths.has(path),
-        `${path} has a route but no sidebar entry, so it is reachable only by typing the URL`);
-    }
+    // And App.jsx delegates to it rather than restating the condition.
+    assert.match(stripComments(read(APP)), /routeTierFor\(item\.minRole\)/);
   });
 });
 
@@ -239,6 +230,47 @@ describe('Stage 0 — the session refreshes without a caller remembering to ask'
   it('the session listens for that notification', () => {
     const src = stripComments(read(SESSION));
     assert.match(src, /addEventListener/, 'the session must subscribe to key changes');
+  });
+
+  // v1.26.46, from code review. Executed, not read: this is about what is left behind in
+  // storage, and only running it can tell you.
+  it('logout clears the legacy console credential too, so logout means logout', async () => {
+    // A Map-backed stub is enough. auth.js touches nothing else browser-only at module
+    // scope, and its window.dispatchEvent is already guarded for a missing window.
+    const store = new Map();
+    globalThis.localStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    try {
+      const auth = await import('../client/src/api/auth.js');
+      const { LEGACY_STORAGE_KEYS } = await import('../client/src/api/legacy-keys.js');
+
+      auth.setApiKey('a-real-key');
+      auth.setMustChangePassword(true);
+      // Stand in for having followed a signpost, which writes exactly these four.
+      for (const key of Object.values(LEGACY_STORAGE_KEYS)) store.set(key, 'x');
+      assert.equal(store.size, 6, 'precondition: both consoles hold state');
+
+      auth.clearApiKey();
+
+      // The defect this covers: the signpost writes a usable om_api_key, and logout used
+      // to clear only the console's own key. The next person to open /admin/ in that
+      // browser was restored as the previous user by its restoreSession() IIFE, holding a
+      // key every adminAuth route accepts.
+      for (const [name, key] of Object.entries(LEGACY_STORAGE_KEYS)) {
+        assert.equal(
+          store.has(key), false,
+          `logout left ${name} (${key}) behind, so the old console can still restore that session`,
+        );
+      }
+      assert.equal(auth.getApiKey(), null);
+      assert.equal(auth.getMustChangePassword(), false);
+      assert.equal(store.size, 0, 'nothing at all should survive logout');
+    } finally {
+      delete globalThis.localStorage;
+    }
   });
 });
 

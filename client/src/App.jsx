@@ -2,7 +2,12 @@ import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useT } from './i18n/LocaleContext';
 import { AUTH_EXPIRED } from './api/events';
-import { Layout, RequireAuth, RequireFreshPassword, RequireRole } from './components/common';
+import {
+  Layout, RequireAuth, RequireFreshPassword, RequireRole, Signpost,
+} from './components/common';
+import { allNavItems } from './components/common/nav-sections';
+import { ROLE_DENIED_REDIRECT, routeTierFor } from './session/roles';
+import { isSignpost } from '@shared/legacy-console-manifest.js';
 import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
@@ -11,14 +16,42 @@ import UsagePage from './pages/Portal/UsagePage';
 import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
 import ReportsPage from './pages/Portal/ReportsPage';
+import NarrativePage from './pages/Portal/NarrativePage';
+import PitfallsPage from './pages/Portal/PitfallsPage';
 
-// 尚未實作的頁面 — 依整併計畫在階段 2 到 7 逐一換成真頁面
-function PlaceholderPage({ titleKey }) {
+// 已經在新後台跑起來的頁面。還在舊後台的功能不列在這裡 — 由功能清單
+// （shared/legacy-console-manifest.js）決定要畫指路牌，兩邊不會各說一套。
+const REAL_PAGES = {
+  '/portal/usage': <UsagePage />,
+  '/portal/project-history': <ProjectHistoryPage />,
+  '/portal/handoffs': <HandoffsPage />,
+  '/portal/reports': <ReportsPage />,
+  '/portal/narrative': <NarrativePage />,
+  '/portal/pitfalls': <PitfallsPage />,
+  '/preference/profile': <ProfilePage />,
+  '/preference/security': <SecurityPage />,
+  '/preference/vault': <VaultPage />,
+};
+
+// 導覽列有、但兩邊都沒對到東西的路徑 — 這是接線錯誤，不是「即將完工」。
+// 刻意寫得很難看：舊的空殼頁講「即將於後續階段完工」，那句話本身就是在騙人，
+// 換成明白說壞掉。整個 App 不 throw，壞掉的只有那一頁。
+function MissingPage({ path }) {
+  return (
+    <div role="alert" className="rounded-2xl border border-rose-300 bg-rose-50 p-8 text-rose-800">
+      <p className="font-bold">Route not wired: {path}</p>
+      <p className="mt-1 text-sm">
+        This path is in the navigation but has neither a page nor a signpost entry.
+      </p>
+    </div>
+  );
+}
+
+function NotFoundPage() {
   const t = useT();
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
-      <h1 className="text-2xl font-bold text-sage-700">{t(titleKey)}</h1>
-      <p className="text-slate-500 mt-2">{t('placeholder.coming_soon')}</p>
+      <h1 className="text-2xl font-bold text-sage-700">{t('error.not_found')}</h1>
     </div>
   );
 }
@@ -60,53 +93,51 @@ export default function App() {
     </RequireAuth>
   );
 
-  // 管理與超級管理頁面多包一層 RequireRole。側邊欄本來就按角色過濾，但那只擋住
+  // 需要角色的頁面多包一層 RequireRole。側邊欄本來就按角色過濾，但那只擋住
   // 「看得到入口」，擋不住直接打網址進來。伺服器端每支 API 仍各自把關，這裡是
   // 讓後台不要提供伺服器本來就會拒絕的東西。
-  const renderAdmin = (page) => (
+  const renderGated = (minRole, page) => (
     <RequireAuth>
       <RequireFreshPassword>
-        <RequireRole min="admin">
+        <RequireRole min={minRole}>
           <Layout {...layoutProps}>{page}</Layout>
         </RequireRole>
       </RequireFreshPassword>
     </RequireAuth>
   );
 
-  const renderSuper = (page) => (
-    <RequireAuth>
-      <RequireFreshPassword>
-        <RequireRole min="super_admin">
-          <Layout {...layoutProps}>{page}</Layout>
-        </RequireRole>
-      </RequireFreshPassword>
-    </RequireAuth>
-  );
+  // 路由直接由導覽列資料長出來，所以不會出現「側邊欄有這一項、但沒有對應路由」
+  // 或反過來的情形。守門的角色也讀同一份 minRole，跟側邊欄的過濾條件同源。
+  //
+  // 「要不要包守門員」由 routeTierFor 決定、不是寫在這裡的三元條件。理由跟
+  // decideRoleGate 一樣：條件寫反會把每一頁個人頁面鎖起來、每一頁管理頁面打開，
+  // 那種東西要用跑得起來的測試守，不能靠比對這一行的原始碼。
+  const featureRoutes = allNavItems().map((item) => {
+    const page = isSignpost(item.path)
+      ? <Signpost path={item.path} />
+      : (REAL_PAGES[item.path] ?? <MissingPage path={item.path} />);
+    return (
+      <Route
+        key={item.path}
+        path={item.path}
+        element={routeTierFor(item.minRole) === 'open'
+          ? renderPage(page)
+          : renderGated(item.minRole, page)}
+      />
+    );
+  });
 
   return (
     <Routes>
       {/* /login 不包 Layout、不包 RequireAuth — 唯一公開路由 */}
       <Route path="/login" element={<LoginPage />} />
 
-      <Route path="/" element={<Navigate to="/portal/usage" replace />} />
+      {/* 根路徑跟「角色不夠」導到同一頁，那一頁必須每個角色都進得去 */}
+      <Route path="/" element={<Navigate to={ROLE_DENIED_REDIRECT} replace />} />
 
-      <Route path="/portal/usage" element={renderPage(<UsagePage />)} />
-      <Route path="/portal/project-history" element={renderPage(<ProjectHistoryPage />)} />
-      <Route path="/portal/handoffs" element={renderPage(<HandoffsPage />)} />
-      <Route path="/portal/reports" element={renderPage(<ReportsPage />)} />
+      {featureRoutes}
 
-      <Route path="/preference/profile" element={renderPage(<ProfilePage />)} />
-      <Route path="/preference/security" element={renderPage(<SecurityPage />)} />
-      <Route path="/preference/vault" element={renderPage(<VaultPage />)} />
-
-      <Route path="/admin/team" element={renderAdmin(<PlaceholderPage titleKey="nav.team" />)} />
-      <Route path="/admin/bugs" element={renderAdmin(<PlaceholderPage titleKey="nav.bugs" />)} />
-
-      <Route path="/super/config" element={renderSuper(<PlaceholderPage titleKey="nav.config" />)} />
-      <Route path="/super/broadcast" element={renderSuper(<PlaceholderPage titleKey="nav.broadcast" />)} />
-      <Route path="/super/audit" element={renderSuper(<PlaceholderPage titleKey="nav.audit" />)} />
-
-      <Route path="*" element={renderPage(<PlaceholderPage titleKey="error.not_found" />)} />
+      <Route path="*" element={renderPage(<NotFoundPage />)} />
     </Routes>
   );
 }

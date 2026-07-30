@@ -1204,6 +1204,20 @@
 
     loadUsers();
     loadStats();
+
+    // v1.26.46：新後台的指路牌用 #<tab> 直接把人帶到對應的 tab，
+    // 否則每個指路牌都得寫成「進舊後台之後自己找第幾個頁籤」。
+    // 只認已經顯示出來的按鈕 — 角色不夠時 hash 無效、跟原本一樣留在預設 tab。
+    // 包 try/catch：hash 帶錯值最多回到預設 tab，不要讓整個後台掛掉。
+    try {
+      const wantedTab = (location.hash || '').replace(/^#/, '');
+      if (wantedTab) {
+        const tabBtn = document.querySelector(`.tab[data-tab="${CSS.escape(wantedTab)}"]`);
+        if (tabBtn && !tabBtn.classList.contains('hidden')) switchTab(wantedTab);
+      }
+    } catch (err) {
+      console.warn('deep-link tab failed', err);
+    }
   }
 
   function logout() {

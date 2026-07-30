@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useSession } from '../../session/SessionContext';
-import { decideRoleGate } from '../../session/roles';
+import { decideRoleGate, ROLE_DENIED_REDIRECT } from '../../session/roles';
 
 // Route guard for role, the companion to RequireAuth's guard for "is there a session".
 // RequireAuth answers "are you logged in"; this answers "are you allowed here".
@@ -22,7 +22,7 @@ export default function RequireRole({ min, children }) {
     case 'wait':
       return null;
     case 'deny':
-      return <Navigate to="/portal/usage" replace />;
+      return <Navigate to={ROLE_DENIED_REDIRECT} replace />;
     default:
       return children;
   }

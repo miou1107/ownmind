@@ -17,7 +17,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { apiGet, getApiKey, clearApiKey } from '../api';
 import { AUTH_EXPIRED, SESSION_CHANGED } from '../api/events';
 
-const EMPTY = { role: null, name: '', email: '', mustChangePassword: false };
+// `id` is carried because the legacy console restores its session from `om_user_id`
+// (src/public/index.html), so a signpost that hands the credential across needs it.
+const EMPTY = { id: null, role: null, name: '', email: '', mustChangePassword: false };
 
 const SessionContext = createContext(null);
 
@@ -55,6 +57,7 @@ export function SessionProvider({ children }) {
     setState({
       ready: true,
       error: false,
+      id: data.id ?? null,
       role: data.role ?? null,
       name: data.name ?? '',
       email: data.email ?? '',
@@ -77,6 +80,7 @@ export function SessionProvider({ children }) {
     setState({
       ready: true,
       error: false,
+      id: data.id ?? null,
       role: data.role ?? null,
       name: data.name ?? '',
       email: data.email ?? '',
