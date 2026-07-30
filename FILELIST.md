@@ -1,5 +1,46 @@
 # OwnMind 檔案結構
 
+## v1.26.46 修改（指路牌、舊後台功能清單、搬回 /me/ 缺的四塊 — 單一後台整併的階段 1a）
+
+新增檔：
+```
+shared/legacy-console-manifest.js                                — 新增、舊後台功能清單，整併的結構性卡控。每個功能記 signpost（還在舊後台）或 live（已重建），三個讀者共用同一份：後台的路由決定畫真頁面還是指路牌、導覽列決定標哪些項目、伺服器決定要不要掛 /admin。最後一個 signpost 翻成 live 的那一刻，/admin 就自動停止服務並開始轉址，不需要再改任何地方。放 shared/ 是刻意的：複製一份到 client/ 就變成兩份要同步的東西，而那正是這份清單要取代的失效模式。載入時就驗證，且對未知狀態失敗關閉（拼錯的 state 會被當成「不是 signpost」，等於提早退役、把還在用的功能弄下線，所以直接 throw）
+src/utils/relative-redirect.js                                   — 新增、算相對轉址目標。nginx 會把 /ownmind 前綴吃掉才轉給 Express，所以絕對路徑的 Location 在正式機會掉前綴。相對路徑由瀏覽器對「請求的目錄」解析，所以 ../ 要幾層取決於請求多深 — 算錯是無聲的，某個深度會通、另一個深度變 404。深度用 split('/').length - 2 算，不用 filter(Boolean)：後者會把連續斜線的空段一起丟掉、少算一層
+src/middleware/legacy-admin-mount.js                             — 新增、/admin 的二選一。還有 signpost 就靜態服務舊後台，沒有了就 301 轉到新後台。兩個分支同時裝好、轉址先睡著，避免「最後一頁搬完」到「有人想起要寫轉址」之間 /admin 變 404。抽成函式是為了讓測試能跑兩個方向：app.js 在載入時就從模組常數決定，測試改不動
+client/src/components/common/Signpost.jsx                        — 新增、指路牌，取代原本四個空殼頁的「此頁面正在重構中、即將於後續階段完工」。那句話不是實話：功能現在就在舊後台好好地跑著。標題跟導覽列共用同一個 i18n key、舊後台頁籤名稱來自功能清單，所以同一個功能不會在兩個地方叫兩個名字
+client/src/api/legacy-handoff.js                                 — 新增、跨到舊後台前把憑證交過去。三個後台的鍵名不同（om_api_key / ownmind_api_key / ownmind.api_key）所以互不覆蓋，但值是同一個 users.api_key，寫進舊鍵名舊後台就會自己還原 session、不用再登入。同源的 localStorage 寫入、沒有任何東西離開瀏覽器。即使路由已經擋過角色，這裡仍再檢查一次：POST /api/admin/login 只收 admin 以上，把可用憑證交給一般成員等於把人送到進不去的門口
+client/src/pages/Portal/NarrativePage.jsx                        — 新增、整體分析，從舊 /me/ 搬過來。機械段 GET /api/me/narrative 十個區塊必定拿得到，洞察段 GET /api/me/narrative/insights 是 LLM 產生的白話說明。兩支平行發、機械段先畫；洞察失敗只換掉說明文字不讓整頁空白（報告的價值在數字）。503 no_api_key（管理者沒設 LLM）跟其他錯誤分開講。沒有資料的成員單獨標示並在最上面說明排名不完整，不畫成 0
+client/src/pages/Portal/PitfallsPage.jsx                         — 新增、踩坑紀錄，從舊 /me/ 搬過來。GET /api/me/pitfalls 三個區塊（伺服器沒留紀錄／AI 沒回報／整段對話沒紀錄）。刻意對所有人開放、跟舊頁一樣：這些是系統或 AI 行為問題不是個人隱私，而且只有橫著看才看得出模式。每列一定顯示「怎麼處理」，因為多半是「歷史殘留、不用動」，不講清楚每個人都會想去手動補資料
+client/src/pages/Portal/AuditFindings.jsx                        — 新增、資料品質警示，第一次盤點漏掉的兩個功能之一。來源是 GET /api/me/report 的 me.audit_findings。這是「頁面上的數字可不可信」的唯一提示：collector 掛掉的人看到的用量會偏低而且看起來完全正常。訊息由伺服器組（含實際數量）照原文顯示。嚴重程度不只用顏色、另外標文字
+client/src/api/legacy-keys.js                                    — 新增、舊後台四個 localStorage 鍵名，刻意無 import。legacy-handoff 寫它們、auth 登出時清它們，放在任一邊都會讓另一邊 import，而 legacy-handoff 已經 import auth、迴圈會穿過憑證程式碼
+tests/legacy-console-manifest.test.js                            — 17 tests：清單形狀（狀態字彙、路徑與 id 唯一、退役由 signpost 數推導）、指路牌指向的頁籤真的存在於 src/public/index.html、沒有指路牌開放給進不了舊後台的角色、/admin 二選一的兩個方向都驗（有 signpost 要服務且不轉址、沒有要轉址且不服務，兩邊都要驗否則等於什麼都沒證明）、相對轉址各種深度與連續斜線、以及 app.js 不能繞過清單直接掛 /admin
+tests/console-nav-structure.test.js                              — 19 tests：每個導覽項目都對到真頁面或指路牌（稽核記錄那個缺陷：選單指向一個哪裡都不存在的功能）、清單每一筆都有位子、每一項都有圖示、沒有兩項共用同一個 label key（週/月報被誤認成回報紀錄就是這樣來的）、三語系都有字、角色過濾（含未知角色看不到任何東西）、路由由導覽資料長出來、被拒角色的預設頁自己不能被角色擋（否則身分讀不到時會無限轉圈）
+```
+修改檔：
+```
+src/app.js                                                       — /admin 改走 installLegacyAdminMount，掛不掛由功能清單決定，不再無條件 express.static
+src/public/index.html                                            — enterDashboard 結尾支援 #<tab> 深連結，讓指路牌直接把人帶到對應頁籤，否則每個指路牌都得寫成「進去之後自己找第幾個頁籤」。只認已顯示的按鈕（角色不夠時 hash 無效）、包 try/catch（hash 帶錯值最多回預設頁籤）
+src/routes/me-narrative.js                                       — ranking 加 measured 欄位。LEFT JOIN 讓「這段期間沒有這個人的資料」跟「這個人什麼都沒做」都變成 0，而這份 payload 會餵給 LLM，它會很自信地寫成「某人幾乎不用 OwnMind」。空白欄位會讓人起疑、一個句子會讓人相信，所以文字比表格更需要這個區分
+src/lib/llm-narrative.js                                         — 系統提示加第 9 條：measured=false 是「沒有資料」不是「用得少」，不要放進排名比較，ranking 的說明要先講排名不完整
+client/vite.config.js                                            — 加 @shared alias（指到 ../shared）與 dev server fs.allow，讓後台能 import 共用的功能清單
+Dockerfile                                                       — client-builder stage 加 COPY shared/ /shared/。WORKDIR 是 /client，alias 指到 /shared，沒複製進去 build 會直接失敗
+client/src/App.jsx                                               — 路由改由導覽資料（allNavItems）長出來，所以不會出現「側邊欄有這一項但沒路由」或反過來。守門層級讀同一份 minRole。三種 renderer 收成 renderPage／renderGated 兩種。導覽項目兩邊都沒對到東西時顯示明白的接線錯誤，不再是「即將完工」那種騙人的空殼
+client/src/components/common/nav-sections.js                      — 重組成 我的／團隊／偏好設定／管理／系統 五區，權限從「區塊」下降到「項目」。系統區同時有 系統設定（admin+，對應舊後台裝機狀況卡片）跟 廣播管理／工作紀錄（super_admin，對應 super-admin-only 標記與 superAdminAuth 路由），一個區塊只能挑一個角色的話必定犧牲其中一邊。移除 /super/audit（稽核記錄從來沒有頁面也沒有 API）。/super/* 改名 /system/*，因為那一區的角色是混的、叫 super 會誤導
+client/src/components/common/Sidebar.jsx                         — 改用 visibleSections（區塊只要還有一項看得到就出現）。還在舊後台的項目標一個琥珀色小點、不要讓人以為已經搬完
+client/src/components/common/Layout.jsx                          — 頁面標題改問導覽列（navLabelKey），移除自己維護的 PATH_TITLE_KEYS。原本註解就寫著「新頁面要在 NAV_SECTIONS 加路由、也要在這裡加標題對應」— 那就是第二個要記得改的地方，而且忘了改不會壞、只會靜靜顯示成「OwnMind 控制中心」
+client/src/components/common/RequireRole.jsx                     — 拒絕時的目的地改讀 ROLE_DENIED_REDIRECT 常數，跟路由表同源
+client/src/session/roles.js                                      — 新增 ROLE_DENIED_REDIRECT。目的地本身必須每個角色都進得去，否則身分查詢失敗的 session 會在預設頁之間無限轉圈；由測試拿導覽列的 minRole 驗
+client/src/session/SessionContext.jsx                            — 身分多帶 id。舊後台從 om_user_id 還原 session，指路牌交憑證時需要
+client/src/api/client.js                                         — export appBase()，讓 legacy-handoff 不用再寫一份一樣的前綴 regex
+client/src/api/auth.js                                           — clearApiKey 一併清舊後台那四個鍵。指路牌會把一把真的可用的憑證寫進 om_api_key，只清自己那一份的話，登出之後下一個打開 /admin/ 的人會被還原成上一個人的身分
+client/src/pages/Portal/UsagePage.jsx                            — 補自訂日期區間（伺服器早就支援 ?start=&end=、只有舊 /me/ 有介面）。effect 依賴算好的查詢字串，所以日期填一半不會打出半套請求。資料品質警示放在分頁標籤上面，因為它警告的是「下面的數字可能不完整」
+client/src/components/common/index.js                            — barrel 加 export Signpost
+client/src/i18n/{zh,en,ja}.json                                  — 新增五區塊名稱、七個新導覽項目、舊後台頁籤名稱、指路牌四句、整體分析與踩坑紀錄全部字串、資料品質警示、自訂區間。移除 nav.audit／nav.team／nav.section.{portal_analytics,personal,super}／placeholder.coming_soon 六個死鍵。nav.config 從「系統配置與計價」改成「系統設定」（計價依 Requirement 8 要移除）、nav.bugs／nav.members 對齊舊後台原本的頁籤名
+package.json                                                     — 版號 1.26.45 → 1.26.46
+README.md, docs/README.zh-TW.md, docs/README.ja.md               — 版號行 v1.26.45 → v1.26.46
+tests/console-session-identity.test.js                           — 三條斷言改寫。原本比對手寫的 <Route> 與 renderAdmin／renderSuper 這兩個名字，並從「區塊」讀所需角色；路由現在由導覽資料長出來、角色改成逐項，那些斷言只能靠維持它們描述的形狀才留得住。它們保護的東西現在更強：一致性變成結構上就成立（同一個 minRole 同時餵側邊欄跟守門員），一致性、過濾、預設頁迴圈都在 console-nav-structure.test.js 真的執行
+```
+
 ## v1.26.45 修改（後台角色控管 — 單一後台整併的階段 0）
 
 新增檔：
@@ -27,7 +68,7 @@ README.md, docs/README.zh-TW.md, docs/README.ja.md               — 版號行 v
 tests/dashboard-version-source.test.js                           — 放寬「每個 Layout 都在 RequireAuth 底下」的斷言，允許中間插入其他守門層。原本三層緊貼比對，插入 RequireRole 就失敗，但不變式沒被破壞
 ```
 
-## 單一後台整併規劃（跨版本專案，階段 0 已完成）
+## 單一後台整併規劃（跨版本專案，階段 0 與 1a 已完成）
 
 新增檔：
 ```

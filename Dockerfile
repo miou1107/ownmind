@@ -5,6 +5,9 @@ WORKDIR /client
 COPY client/package*.json ./
 RUN npm ci
 COPY client/ ./
+# v1.26.46: client 端 import '@shared/...'（vite.config.js 的 alias 指到 ../shared）。
+# WORKDIR 是 /client，所以要放在 /shared，否則 build 會找不到 module 直接失敗。
+COPY shared/ /shared/
 # build 內含 npm run translate（i18n 增量翻譯）、若無 LLM 金鑰會跳到 manual fallback
 RUN npm run build:no-translate
 

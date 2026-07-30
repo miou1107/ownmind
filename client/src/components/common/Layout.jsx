@@ -2,26 +2,15 @@ import { useLocation } from 'react-router-dom';
 import { useT } from '../../i18n/LocaleContext';
 import useServerVersion from '../../hooks/useServerVersion';
 import { useSession } from '../../session/SessionContext';
+import { navLabelKey } from './nav-sections';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import Footer from './Footer';
 
-// 頁面標題對照表 — 由 path 反查 i18n key
-// 新頁面要在 Sidebar NAV_SECTIONS 加路由、也要在這裡加標題對應
-const PATH_TITLE_KEYS = {
-  '/portal/usage': 'nav.usage',
-  '/portal/project-history': 'nav.project_history',
-  '/portal/handoffs': 'nav.handoffs',
-  '/portal/reports': 'nav.reports',
-  '/preference/profile': 'nav.profile',
-  '/preference/security': 'nav.security',
-  '/preference/vault': 'nav.vault',
-  '/admin/team': 'nav.team',
-  '/admin/bugs': 'nav.bugs',
-  '/super/config': 'nav.config',
-  '/super/broadcast': 'nav.broadcast',
-  '/super/audit': 'nav.audit',
-};
+// v1.26.46：頁面標題改成直接問導覽列（navLabelKey）。
+// 這裡原本自己維護一份 path → i18n key 的對照表，註解還寫著「新頁面要在 NAV_SECTIONS
+// 加路由、也要在這裡加標題對應」— 那就是第二個要記得改的地方，而且忘了改不會壞、
+// 只會靜靜地把標題顯示成「OwnMind 控制中心」。同一個功能的名字只留一個來源。
 
 // 頁面包裝 — sidebar + topbar + 內容 + footer
 // 由 App.jsx 包進路由內、所有頁面共用
@@ -35,10 +24,10 @@ export default function Layout({ children, changelog }) {
   const { pathname } = useLocation();
   const version = useServerVersion();
   const { role, name, error, ready, logout } = useSession();
-  const titleKey = PATH_TITLE_KEYS[pathname];
+  const titleKey = navLabelKey(pathname);
   const pageTitle = titleKey ? t(titleKey) : t('header.title');
 
-  // 身分還沒回來時不要先畫殼。role 這時是 null，側邊欄的四個區塊會全部過濾掉，
+  // 身分還沒回來時不要先畫殼。role 這時是 null，側邊欄的五個區塊會全部過濾掉，
   // 頭像顯示「?」跟「訪客」、角色徽章還會先顯示一般使用者才跳成正確的。等一個
   // 往返再畫，比先畫錯的再改好。
   if (!ready) {

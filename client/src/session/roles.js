@@ -63,4 +63,37 @@ export function decideRoleGate({ ready, role, min }) {
   return roleAtLeast(role, min) ? 'allow' : 'deny';
 }
 
+/** The role every authenticated member has. A route open to it needs no role guard. */
+export const BASE_ROLE = 'user';
+
+/**
+ * Which wrapper a route needs: 'open' for anyone with a session, 'gated' when a role is
+ * required.
+ *
+ * Extracted for the same reason as decideRoleGate. The first version was a ternary inside
+ * App.jsx, covered by a test that matched that ternary's source text — which verifies no
+ * behaviour, breaks when a local variable is renamed, and was the exact antipattern the
+ * previous round removed from this file. Reversing the condition would gate every personal
+ * page and open every admin one, so it is worth running.
+ *
+ * Anything that is not the base role is gated, including an unrecognised value, so a typo
+ * in a nav item's minRole yields a locked page rather than an open one.
+ *
+ * @param {string|null|undefined} minRole
+ * @returns {'open'|'gated'}
+ */
+export function routeTierFor(minRole) {
+  return minRole === BASE_ROLE ? 'open' : 'gated';
+}
+
+/**
+ * Where a denied role is sent.
+ *
+ * Lives here rather than inline in RequireRole so the route table and the guard read the
+ * same constant. The destination must itself be reachable by every role, or a session whose
+ * identity failed to resolve bounces from the fallback to the fallback forever. Asserted by
+ * tests/console-nav-structure.test.js against the navigation's own minRole for this path.
+ */
+export const ROLE_DENIED_REDIRECT = '/portal/usage';
+
 export { ROLE_RANK };

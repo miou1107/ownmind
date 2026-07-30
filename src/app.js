@@ -57,8 +57,18 @@ app.use('/api', apiLimiter);
 import { firstRunRedirect } from './middleware/first-run-redirect.js';
 app.use(firstRunRedirect);
 
-// static files (Admin backend)
-app.use('/admin', express.static(join(__dirname, 'public')));
+// v1.26.46: the legacy /admin console is served, or retired, by manifest.
+// While any feature is still marked `signpost` in shared/legacy-console-manifest.js the
+// new console links into this console, so it has to keep working. Once nothing does,
+// `/admin` stops answering and 301s to the new console instead. Both branches are
+// installed together, so there is no window where /admin 404s.
+// See src/middleware/legacy-admin-mount.js for why the decision lives in a function.
+import { isLegacyConsoleRetired } from '../shared/legacy-console-manifest.js';
+import { installLegacyAdminMount } from './middleware/legacy-admin-mount.js';
+installLegacyAdminMount(app, {
+  retired: isLegacyConsoleRetired(),
+  publicDir: join(__dirname, 'public'),
+});
 
 // v1.20: the new unified backend (coexists with the old /admin and /me; a single entry with three-role routing)
 // SPA fallback uses middleware (Express 5's path-to-regexp no longer accepts the old /dashboard/* wildcard)

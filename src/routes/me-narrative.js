@@ -91,11 +91,33 @@ async function collectSections({ query, range }) {
   const tfCreated = tf; // for session_logs.created_at
 
   // 1. ranking — per-user sessions/events over the last N days.
+  //
+  // v1.26.46: `measured` separates "we have never received anything from this member" from
+  // "this member was idle in this period". The LEFT JOIN produces zeros for both, and this
+  // payload is fed to an LLM which will happily turn an unmarked zero into the confident
+  // sentence "X hardly uses OwnMind". A blank cell invites suspicion; a sentence settles
+  // the question, so prose needs the distinction more than a table does.
+  //
+  // Review caught the first version defining it as "count in this period > 0", which is the
+  // mirror image of the bug it was meant to fix: a member on a week's leave would be
+  // reported as having no data at all. Both halves of Requirement 7 have to hold, and "a
+  // real zero still reads as zero" is the half that breaks.
+  //
+  // So it asks whether the member is instrumented at all, not whether they were busy:
+  //   - a collector_heartbeat row means OwnMind is installed and has reported. That table
+  //     holds current state, so it survives the activity_logs retention window
+  //   - any activity_logs row means the MCP server has seen them, which covers someone
+  //     using OwnMind through tools without ever running the token collector
+  // Instrumented and zero this period is a real zero. Neither is genuinely unmeasured.
   const ranking = (await query(`
     SELECT u.id, u.name, u.role,
       COUNT(*) FILTER (WHERE a.event='init') AS sessions,
       COUNT(a.id) AS events,
-      MAX(a.ts) AS last_activity
+      MAX(a.ts) AS last_activity,
+      (
+        EXISTS (SELECT 1 FROM collector_heartbeat h WHERE h.user_id = u.id)
+        OR EXISTS (SELECT 1 FROM activity_logs x WHERE x.user_id = u.id)
+      ) AS measured
     FROM users u
     LEFT JOIN activity_logs a ON a.user_id = u.id AND a.ts ${tfTs}
     GROUP BY u.id, u.name, u.role

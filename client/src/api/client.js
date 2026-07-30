@@ -31,6 +31,12 @@ const API_BASE = (() => {
   return m ? m[1] : '';
 })();
 
+// 同一個前綴也是「舊後台在哪」的答案（/ownmind/admin/），所以 export 出去給
+// legacy-handoff.js 用，不要在那邊再寫一份同樣的 regex。
+export function appBase() {
+  return API_BASE;
+}
+
 function resolveUrl(path) {
   // 只對 /api/... 加前綴；外部 URL（https://...）或非 /api 開頭不動
   if (path.startsWith('/api/')) return API_BASE + path;

@@ -98,41 +98,84 @@ that surfaced them.
 
 Order is load-bearing: signposts must exist before `/` is flipped in 1b.
 
-- [ ] Remove 稽核記錄 from `Sidebar.jsx`, its `'/super/audit'` entry in
-      `Layout.jsx:22` `PATH_TITLE_KEYS`, and the three `nav.audit` locale keys
-      (`zh.json:13`, `en.json:13`, `ja.json:13`)
-- [ ] Regroup the sidebar per the prototype: 我的 / 團隊 / 偏好設定 / 管理 / 系統.
-      團隊用量 moves out of 個人分析, which was never a personal view
-- [ ] Turn the four remaining placeholders into signposts naming where the feature
-      currently lives, plus a link across. Replaces the untrue "coming soon"
-- [ ] Add 工作紀錄 nav item and route **as a signpost** in this stage. It is the one
-      feature with no seat today; without one it stays invisible until Stage 4
-- [ ] Signpost routes are role-guarded exactly like the real pages they stand in for,
-      so a `user` cannot reach one and be handed a credential
-- [ ] Build the Requirement 5 manifest: one place holding each old-console feature's
-      state, read by the signpost routes, the nav items **and** the `/admin` decision
-- [ ] Make `/admin` an either/or driven by the manifest: while any signpost remains,
-      serve the old console statically; once none do, answer with the retirement
-      redirect. Install **both** branches now with the redirect dormant, so the switch
-      has no gap
-- [ ] Test both directions: zero signposts means `/admin/` is not served and does
-      redirect; one signpost means it is served and does not redirect
-- [ ] Hand the credential across when a signpost is followed, so the old console is
-      already authenticated. The three consoles use three different keys
-      (`om_api_key`, `ownmind_api_key`, `ownmind.api_key`) so they never clobber each
-      other, but the **value** is the same `users.api_key` row whichever endpoint
-      issued it. Write it plus `om_role` / `om_user_id` / `om_user_name`. Same-origin
-      only, and only after confirming the session's role qualifies
-- [ ] Port narrative analysis as its own route (`/api/me/narrative` +
-      `/narrative/insights`). Reproduce its 503 `no_api_key` degradation
-      (`src/routes/me-narrative.js:34-40`) rather than showing a broken page
-- [ ] Port 踩坑紀錄 as its own route (`/api/me/pitfalls`)
-- [ ] Port the two `/me/` features the first inventory missed: `audit_findings`
-      warning cards (returned by `GET /api/me/report`, `src/routes/me.js:801`,
-      rendered at `src/public/me/index.html:369,757-782`) and the custom date range
-      (`?start=&end=`, `src/routes/me.js:202-227`)
-- [ ] Confirm section by section that the new routes cover what `/me/` rendered
+Shipped as `v1.26.46`.
+
+- [x] Removed 稽核記錄 from the navigation, from `Layout.jsx`'s title map, and the three
+      `nav.audit` locale keys. A test now fails if a nav item resolves to neither a page
+      nor a signpost, which is the defect 稽核記錄 was
+- [x] Regrouped into 我的 / 團隊 / 偏好設定 / 管理 / 系統. **Permission moved from the
+      section to the item**, which the plan did not anticipate: 系統 holds 系統設定
+      (admin+, matching the legacy 裝機狀況 card) beside 廣播管理 and 工作紀錄
+      (super_admin, matching their `super-admin-only` markup and `superAdminAuth`
+      routes). One role per section would have had to take 系統設定 away from the admins
+      who use it today, or offer the other two to people the server refuses. A section
+      now appears when at least one of its items does
+- [x] Placeholders replaced with signposts. **Eight, not four.** The stage list said
+      工作紀錄 was "the one feature with no seat today"; that line predates the correction
+      that 統計儀表板, 團隊用量 and 週/月報 are also unbuilt. All eight get a seat, which
+      is also what "flip the manifest entry to `live`" in Stages 2 to 7 requires
+- [x] Signpost routes are role-guarded, with one rule the plan did not state: **the
+      guard is never lower than the legacy console's own login requirement.**
+      `POST /api/admin/login` filters `role IN ('admin','super_admin')`, so a signpost
+      shown to a `user` sends them to a door that will not open. 週報月報 is the one
+      feature where this bites: the report is per-user
+      (`GET /api/session/report` filters `WHERE user_id = $1`) so it belongs to every
+      member, but its signpost sits at admin until Stage 7 builds the real page.
+      Asserted by test against the navigation's own `minRole`
+- [x] `shared/legacy-console-manifest.js` holds each feature's state, read by the
+      routes, the nav items and the `/admin` decision. Validated at load and fails
+      closed: a misspelled state would read as "not a signpost", retiring the old
+      console while a feature still needs it, so it throws instead
+- [x] `/admin` is an either/or driven by the manifest, both branches installed with the
+      redirect dormant. Extracted to `src/middleware/legacy-admin-mount.js` because
+      `app.js` decides at import time from a module constant, which a test cannot vary
+- [x] Both directions tested, and mutation-verified: making the mount ignore the
+      retired flag turns the suite red
+- [x] Credential handed across in `client/src/api/legacy-handoff.js`, same-origin
+      localStorage writes only, with the role re-checked at the point of handover
+- [x] Also added `#<tab>` deep-linking to the legacy console, which is **not on this
+      list**. Without it every signpost reads "go to the old console and find the right
+      tab yourself". Only honours a tab whose button is visible for the role, and is
+      wrapped so a bad fragment falls back to the default tab
+- [x] Narrative ported as `/portal/narrative`, with the 503 `no_api_key` degradation
+      reproduced and distinguished from a transient failure
+- [x] 踩坑紀錄 ported as `/portal/pitfalls`
+- [x] `audit_findings` cards and the custom date range ported. The cards sit above the
+      tab bar, not inside the personal tab: they warn that the numbers below may be
+      incomplete, which applies to every tab
+- [x] Requirement 7 applied to the narrative at the data layer, not the CSS.
+      `collectSections()` now marks members with no data as unmeasured, because the
+      payload is fed to an LLM that will turn an unmarked zero into a confident
+      sentence. The system prompt gained a rule about it
+- [x] Confirmed section by section against `/me/`: the me / team / projects tabs were
+      already covered by `/portal/usage`; narrative's ten sections plus 給管理者的洞察
+      and 給你的下一步動作 are all present; pitfalls' three sections and window filter
+      are present. `renderProjectComplianceTable` in `/me/` is dead code, because
+      `project_compliance` is hardcoded to `[]` server-side
+- [x] Two second sources removed while here: `Layout.jsx`'s path-to-title map (its own
+      comment admitted it was a second place to remember) and the duplicated app-base
+      regex, now `appBase()` from the api client
+- [x] Code review round: 1 Critical, 5 Important, 10 Minor, each reproduced before acting.
+      **The Critical was that logout stopped working.** The signpost writes a usable
+      `om_api_key`, and `clearApiKey()` cleared only the console's own key, so after an
+      admin followed a signpost and logged out, the next person to open `/admin/` in that
+      browser was restored as them with a key every `adminAuth` route accepts. Before this
+      stage the browser held that credential in one place and the old console's logout
+      cleared it; adding a second writer without a second clear broke the invariant.
+      Also fixed: my fail-closed test never called the validator (deleting `validate()`
+      left it green); `measured` was defined as "count in this period > 0", the mirror
+      image of the bug it was meant to fix, so a member on leave read as having no data;
+      I verified a decision with a regex over App.jsx's source, the exact antipattern the
+      previous round removed from `roles.js`; the coverage banner said the ranking excluded
+      unmeasured members when the table lists them; and the test counts were wrong in three
+      documents. Suite 2304 pass / 0 fail
 - [ ] Browser check on production after deploy
+- [ ] **Needs Vin**: `/portal/narrative` is open to `user`, which is faithful to `/me/`
+      today and to Requirement 3's "same endpoints, unchanged", but it means a member sees
+      team-wide activity ranking and every colleague's per-rule compliance counts, while
+      the same class of data in the 團隊 section is admin-only. Not changed unilaterally,
+      because narrowing it would remove access members have today. Requirement 3 did not
+      anticipate the tension with the new section model
 
 **Done when**: nothing about where users land has changed, and everything 1b needs is
 in place. Shipping this alone is safe, which is the point of the split.
