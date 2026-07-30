@@ -17,7 +17,7 @@ openspec/changes/v1.26.44-spa-deep-link-base/proposal.md         — v1.26.44 �
 openspec/changes/v1.26.44-spa-deep-link-base/spec.md             — v1.26.44 規格（GIVEN/WHEN/THEN）
 openspec/changes/v1.26.44-spa-deep-link-base/tasks.md            — v1.26.44 任務清單（含已知限制與「列了沒修」）
 src/utils/spa-shell.js                                           — 新增、供應 SPA 外殼時依請求深度改寫 <base href>（relativeBaseHref / withBaseHref / createSpaShellHandler）。送出的值保持純相對，所以 nginx 的 /ownmind 前綴不需要也不假設
-tests/spa-deep-link-base.test.js                                 — 32 tests（無 build 環境 19 綠 2 跳過）：fixture 外殼的各深度 base href、資產照瀏覽器方式解析後真的 fetch 到 200、證明修正前確實 404 的反向測試、前綴不綁死、withBaseHref 找不到 base 會插入而非空轉、既有行為（資產 miss 仍 404 / 非 GET 不吃外殼 / 外殼不存在時 fall through 不 500）、drift 守門
+tests/spa-deep-link-base.test.js                                 — 33 tests（有 build 時 33 綠 0 跳過；無 build 時 node 只跑到 26 條、21 綠 5 跳過）：fixture 外殼的各深度 base href、資產照瀏覽器方式解析後真的 fetch 到 200、證明修正前確實 404 的反向測試、前綴不綁死、withBaseHref 找不到 base 會插入而非空轉、既有行為（資產 miss 仍 404 / 非 GET 不吃外殼 / 外殼不存在時 fall through 不 500）、drift 守門
 ```
 修改檔：
 ```
