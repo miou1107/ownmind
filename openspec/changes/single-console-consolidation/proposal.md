@@ -1,0 +1,245 @@
+# Single-console consolidation — collapse /admin/, /me/ and /dashboard/ into one
+
+**Type**: multi-stage program. Each stage below becomes its own version-prefixed
+OpenSpec change. This document is the umbrella that keeps them coherent.
+
+**Status**: designed, not started. Approved by Vin on 2026-07-30.
+
+## Goal
+
+One console. Today there are three authenticated web UIs plus an unauthenticated
+first-run wizard. The end state is a single console at `/dashboard/`, with
+`/admin/` and `/me/` retired to 301 redirects and their sources preserved as
+read-only historical snapshots.
+
+## Background — how we got three consoles
+
+The v1.20 series rebuilt the console as a React SPA at `/dashboard/`, deliberately
+running blue-green alongside the two older UIs. `v1.20.4-legacy-retire` was written
+to retire the old ones. It was written as a stub, gated on "feature parity plus
+Vin's go-ahead", and then **archived without being executed**. Sitting in
+`openspec/changes/archive/`, it reads as completed work. Nothing in the codebase
+prevented that.
+
+That is the failure mode this program is designed against, and it is why Requirement 5
+in `spec.md` makes retirement a structural consequence of finishing the work rather
+than a checklist item anyone has to remember.
+
+## Current inventory (measured 2026-07-30)
+
+| Surface | Source | Size | Auth |
+|---|---|---|---|
+| `/admin/` | `src/public/index.html` | 2985 lines, single file, inline JS | `/api/admin/login` |
+| `/me/` | `src/public/me/index.html` | 1470 lines, single file, inline JS | `/api/me/login` |
+| `/dashboard/` | `client/` React SPA | 8 routed pages across 11 component files | `/api/me/login` |
+| `/setup` | `src/public/setup.html` | 196 lines | none by design (users table empty) |
+
+`GET /` redirects to `/ownmind/admin/` (`src/app.js:155`), so the **old** console is
+the default landing page and the new one is effectively unreachable by navigation.
+
+### Feature mapping
+
+The old `/admin/` has eight tabs. The new console's sidebar has twelve nav items,
+seven backed by real pages and five placeholders.
+
+| Old `/admin/` tab | New home | State |
+|---|---|---|
+| 統計儀表板 (stats) | `/portal/usage` | done |
+| 團隊用量 (team-usage) | `/portal/usage` team tab | done |
+| 週/月報 (reports) | `/portal/reports` | done |
+| 使用者管理 (users) | `/admin/team` | placeholder — **build** |
+| 錯誤回報 (bug-reports) | `/admin/bugs` | placeholder — **build** |
+| 設定 (settings) → 成本設定, 裝機狀況 | `/super/config` | placeholder — **build** |
+| 設定 (settings) → 廣播管理 | `/super/broadcast` | placeholder — **build** |
+| 工作紀錄 (work-log) | no route exists | **build**, needs a new route + nav item |
+| 鐵律升級 (iron-rule-upgrade) | — | **drop**, see below |
+
+## Four findings that changed the scope
+
+These were measured during design, and each one moved the estimate. They are
+recorded because the naive framing ("port five placeholder pages") is wrong.
+
+**1. 廣播管理 is hidden inside the old 設定 tab.** The old settings tab holds three
+blocks: 廣播管理, 成本設定 (model pricing), and 裝機狀況. The new sidebar already
+splits broadcast into its own nav item. So "settings" is two pages of work, not one.
+Both hit the same `/broadcast/admin` API, so the split is cheap.
+
+**2. 稽核記錄 (`/super/audit`) is a nav item for a feature that never existed.** The
+old console has no audit tab, and there is no read API: `audit_logs` is written by
+`writeAdminAudit` but the only read reference in the codebase is an existence check
+at `src/routes/me.js:767`. It is not a migration target. Dropped from the sidebar
+per YAGNI; Vin's call.
+
+**3. `/me/` is not fully covered by the new usage page.** It calls five API groups.
+Three are already covered by pages that exist: `/api/me/login` (the console's
+`LoginPage`), `/api/me/change-password` (`SecurityPage`) and `/api/me/profile`
+(`ProfilePage`) — verified by reading those three components. The remaining two are
+not: `/api/me/narrative` (+ `/narrative/insights`) and `/api/me/pitfalls`. The new
+usage page calls only `GET /api/me/report?range=`. So retiring `/me/` as-is would
+lose exactly two features: the narrative analysis (the plain-language reading of ten
+questions, plus the manager insights and next-action sections) and 踩坑紀錄.
+Both APIs already work, so porting them is front-end-only.
+
+`/me/` keeps no state in the URL: `location.hash`, `history.pushState` and
+`searchParams` appear zero times in it, and section switching is in-page JavaScript.
+So no deep link exists to preserve and a blanket `/me/*` redirect breaks no bookmark.
+Measured, because an adversarial review predicted the opposite.
+
+**4. The new console has no role enforcement.** `Sidebar.jsx` gates its four
+sections by role correctly, but the role it reads comes from
+`useState('super_admin')` hardcoded in `App.jsx`. Every user who logs in sees the
+admin and super sections. Routes are wrapped in `RequireAuth` and
+`RequireFreshPassword` only — nothing checks *who* you are, so a typed URL reaches
+any page. No data leaks today (server-side `superAdminAuth` holds, and the pages are
+empty shells), but this becomes a real defect the moment the admin pages exist.
+This is why Stage 0 exists and blocks everything else.
+
+## Options considered
+
+| Option | Verdict |
+|---|---|
+| Port the remaining features into the React console, then retire the old ones | **Chosen.** |
+| Frame the old pages inside the new shell (iframe) to reach "one entry point" immediately | Rejected. `v1.20.4-legacy-retire` is the precedent: a "temporary" two-week coexistence was archived and forgotten. An iframe would pin a 2985-line single-file page with inline JS permanently inside the new console, and inherit auth, i18n and styling mismatches. |
+| Reverse direction: grow the old single-file console and delete the SPA | Rejected. Discards the tri-language i18n and the whole v1.20 investment, and keeps a 2985-line single file as the long-term maintenance surface. |
+| Retire `/me/` first as a quick win, port narrative + pitfalls later | Rejected by Vin. Losing features mid-consolidation is how consolidations get reverted. |
+| Leave `/` pointing at the old console; make the new one an opt-in link until coverage is 100%, then switch once | Raised by adversarial review, rejected by Vin. This is close to the arrangement that has been in force since v1.20 and it is what produced the current state: the new console was reachable but not default, so it went unused and its retirement plan was archived unexecuted. Flipping the entry point early is the forcing function. |
+
+## Chosen sequence
+
+Vin chose "unify the entry point first, then fill in the pages" over "finish
+everything, then switch once". The trade-off accepted: during Stages 2-4 he still
+visits the old console for user management.
+
+- **Stage 0 — real session identity.** Role, display name and logout come from the
+  server; routes gain role guards. Blocks every later stage. No new endpoint is
+  needed: `POST /api/me/login` already returns `role` (`src/routes/me.js:34`).
+- **Stage 1a — port the missing `/me/` features and put up the signposts.** Narrative
+  analysis and 踩坑紀錄 as their own routes; the four remaining placeholders become
+  signposts; 稽核記錄 leaves the sidebar; 工作紀錄 gains a seat. Changes nothing about
+  which console users land on, so it is safe to ship on its own.
+- **Stage 1b — flip the entry point and retire `/me/`.** `/` redirects to the console,
+  `/me/*` redirects to the usage route, the old `/me/` source is preserved.
+  Split from 1a on adversarial review: bundling the port, the signposts, the entry
+  flip and the retirement into one release means any one of them failing takes out
+  every user's way in. 1a must land first, or the new landing page has no route to
+  user management.
+- **Stage 2 — 使用者管理.** First, because it is the only feature whose absence
+  forces a trip back to the old console.
+- **Stage 3 — 系統設定 + 廣播管理.** One old tab split into two pages; done together.
+- **Stage 4 — 錯誤回報 + 工作紀錄.** Both read-only observability pages, lowest risk,
+  so last.
+- **Stage 5 — retire `/admin/`.** Redirect, preserve the source, drop the
+  whole-`src/public/` static mount.
+
+One stage per release.
+
+## Transition UX
+
+The placeholder pages currently say "coming soon", which is untrue. They become
+signposts: "this feature still lives in the old console" plus a link across. Chosen
+over a persistent footer link because a signpost is replaced by the real page as each
+stage lands, leaving nothing to remember to remove. The footer link in the original
+v1.20.4 plan is exactly the kind of item that gets forgotten.
+
+The signpost count after Stage 1a is five, though not the same five as today: 稽核記錄
+is removed, and 工作紀錄 gains a seat it does not have today. So 使用者管理, 錯誤回報,
+系統設定, 廣播管理 and 工作紀錄 each get a signpost, and the count falls to zero across
+Stages 2-4. Reaching zero is what retires the old console, per Requirement 5.
+
+## Known trap: redirects must be relative
+
+nginx strips the `/ownmind` prefix before proxying, so Express never sees it. An
+absolute `res.redirect(301, '/dashboard/')` sends the browser to
+`https://kkvin.com/dashboard/`, dropping the prefix. Redirects must be relative
+(`../dashboard/`), matching the existing `/me` → `me/` redirect at `src/app.js:89`.
+
+This repo has hit this class of bug twice already: the v1.20.1 `<base href>` fix and
+the v1.26.44 deep-link fix. `src/app.js:155` is a live instance — it hardcodes
+`/ownmind/admin/`, which means a direct `localhost:3100/` redirects to a path that
+does not exist locally. Stage 1b replaces it with a relative redirect.
+
+## Incidental cleanup
+
+`app.use('/admin', express.static(join(__dirname, 'public')))` exposes the **entire**
+`src/public/` directory, so `/admin/dashboard/…` and `/admin/me/…` are also reachable
+— several URLs for the same files. Stage 5 removes this mount, which resolves it.
+Preserved legacy sources must land outside any served path, and `Dockerfile` COPY
+directives need to follow the moves.
+
+## Non-goals
+
+- **`/setup` stays separate.** It runs when the users table is empty, before any
+  account exists, so it cannot live behind the console's login. It is a bootstrap
+  flow, not a fourth console.
+- **`/super/audit` is not built.** No API, no old-console counterpart, not requested.
+- **`鐵律升級` is not ported.** See the open item below.
+- No change to `client/vite.config.js` or the `<base href>` mechanism.
+- No redesign of the seven pages that already work.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| Stage 5 is forgotten, as v1.20.4 was | Requirement 5. The guard is structural, not a reminder: one manifest drives both the signpost routes and the `/admin` static mount, so the mount stops being registered once the last signpost becomes a real page. See the note on CI below |
+| Flipping `/` exposes the un-gated admin nav to regular users | Stage 0 precedes Stage 1a |
+| Redirects drop the `/ownmind` prefix | Requirement 4 tests both prefixed and unprefixed forms |
+| `/me/` retirement locks out regular members | Not a risk. The new console authenticates against the same `POST /api/me/login`, which selects from `users` with **no role filter**, so every role including `super_admin` can log in and no account or password migration is involved. Verified by reading `src/routes/me.js:34` and `client/src/pages/LoginPage.jsx` |
+| Feature loss during the transition | Requirement 3 pins the old feature inventory; narrative + pitfalls ship in Stage 1a, before `/me/` is redirected in 1b |
+| Following a signpost forces a second login | Real, and measured. The three consoles store the credential under three different keys (`om_api_key` for `/admin/`, `ownmind_api_key` for `/me/`, `ownmind.api_key` for the console), so they never clobber each other, but neither do they share a session. The **value** is identical: `/api/admin/login` and `/api/me/login` both return the `api_key` column of the same `users` row. So Stage 1a hands the credential across when a signpost is followed, and the old console is already authenticated. Same-origin only |
+
+## Adversarial review round
+
+An independent adversarial review was run against the first draft of these three
+documents, before commit. It returned three Critical and three Important findings.
+Each was checked against the code rather than accepted or dismissed on plausibility.
+
+**Accepted, and the design changed:**
+
+- **The retirement guard is toothless without CI.** Correct, and the strongest
+  finding. This repo has no `.github/workflows/`, so a red suite gates nothing, and
+  the person hitting a deliberately-red test at release time is being invited to
+  comment it out. The guard was redesigned to be structural: the manifest that
+  decides which features are still signposts is the same manifest that decides
+  whether the `/admin` static mount is registered at all, so retirement is a
+  consequence of finishing rather than a task to remember. The reviewer's own
+  suggestion (block server startup) was rejected: taking production down over a
+  pending cleanup step is a worse failure than the one being prevented.
+  Adding CI remains a separate, higher-priority piece of work; this guard is
+  stronger with it.
+- **Stage 1, as first drafted, bundled too much.** Correct. Porting two pages, raising signposts,
+  flipping the root and retiring `/me/` in one release means any single failure
+  removes every user's way in. Split into 1a and 1b.
+- **The transition friction was understated.** The conclusion was right, the
+  mechanism wrong: the reviewer predicted credentials overwriting each other and
+  forced logouts. Measured, the three consoles use three distinct storage keys, so
+  no clobbering occurs. The real cost is a second login, now mitigated by the
+  credential handoff described in the risk table.
+
+**Refuted by measurement, recorded so the question is not reopened:**
+
+- *"`super_admin` may be unable to log in to the console, since it uses the member
+  endpoint."* `POST /api/me/login` selects from `users` with no role filter and
+  returns `role` in its response (`src/routes/me.js:34`). Every role can log in.
+- *"Change-password and profile editing were left out of the inventory."* Both are
+  already built: `SecurityPage` calls `/api/me/change-password` and `ProfilePage`
+  calls `/api/me/profile`. The draft did not say so explicitly, which is what
+  invited the finding; finding 3 above now states the coverage.
+- *"Blanket-redirecting `/me/*` to the usage route breaks saved deep links."*
+  `/me/` holds no URL state at all: zero occurrences of `location.hash`,
+  `history.pushState` or `searchParams`. There are no deep links to break.
+
+## Open items needing Vin's decision
+
+1. **Version numbering.** Six stages of user-facing change. Whether this opens a
+   minor series or stays on patch releases is Vin's call, per the iron rule on
+   version bumps. No version numbers are pinned in this document.
+2. **`鐵律升級` deletion rationale is unverified against production.** Vin has already
+   decided to drop the feature because he does not use it, so this does not gate
+   anything. The supporting claim — that the legacy-text migration is complete — is
+   only verified locally: all 88 synced iron-rule files carry frontmatter. The
+   production number was **not** checked; there is no SSH access to the OwnMind host
+   (deployment goes through v-tag CI/CD) and the
+   `GET /api/admin/iron-rules/upgrade-status` endpoint needs admin credentials.
+   That endpoint reports `total / skill_md_format / legacy_text`, and the 鐵律升級 tab
+   being removed displays exactly those three numbers, so Vin can confirm in seconds
+   before Stage 5 deletes it.
