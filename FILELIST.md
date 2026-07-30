@@ -1,5 +1,27 @@
 # OwnMind 檔案結構
 
+## v1.26.44 修改（新後台直接開網址全白 — SPA 深連結的 base href）
+
+新增檔：
+```
+openspec/changes/v1.26.44-spa-deep-link-base/proposal.md         — v1.26.44 提案（含四個選項的評估與否決理由）
+openspec/changes/v1.26.44-spa-deep-link-base/spec.md             — v1.26.44 規格（GIVEN/WHEN/THEN）
+openspec/changes/v1.26.44-spa-deep-link-base/tasks.md            — v1.26.44 任務清單（含已知限制與「列了沒修」）
+src/utils/spa-shell.js                                           — 新增、供應 SPA 外殼時依請求深度改寫 <base href>（relativeBaseHref / withBaseHref / createSpaShellHandler）。送出的值保持純相對，所以 nginx 的 /ownmind 前綴不需要也不假設
+tests/spa-deep-link-base.test.js                                 — 32 tests（無 build 環境 19 綠 2 跳過）：fixture 外殼的各深度 base href、資產照瀏覽器方式解析後真的 fetch 到 200、證明修正前確實 404 的反向測試、前綴不綁死、withBaseHref 找不到 base 會插入而非空轉、既有行為（資產 miss 仍 404 / 非 GET 不吃外殼 / 外殼不存在時 fall through 不 500）、drift 守門
+```
+修改檔：
+```
+src/app.js                 — /dashboard 的 SPA fallback 從裸 res.sendFile 換成 createSpaShellHandler
+package.json / package-lock.json — 版號 1.26.43 → 1.26.44
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 版本行 → v1.26.44
+CHANGELOG.md               — v1.26.44 條目
+FILELIST.md                — 本段
+```
+**未動**：`client/vite.config.js` 的 `base: './'` 跟 `client/index.html` 的 `<base href="./">`（那是掛載點根目錄需要的正確預設值、也讓外殼直接開啟時仍可用）；路由、資產 404 行為、舊的 `/admin` 與 `/me` 介面
+
+**版號說明**：這件工作原本標 v1.26.42、但 v1.26.43 先發布了，所以改編為 1.26.44。
+
 ## v1.26.43 修改（新後台版號改跟 server 拿、SERVER_VERSION 收成一處）
 
 新增檔：
