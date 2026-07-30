@@ -169,7 +169,33 @@ Shipped as `v1.26.46`.
       previous round removed from `roles.js`; the coverage banner said the ranking excluded
       unmeasured members when the table lists them; and the test counts were wrong in three
       documents. Suite 2304 pass / 0 fail
-- [ ] Browser check on production after deploy
+- [x] Released and deployed 2026-07-30. **This host deploys by checking out a version tag,
+      detached** — `git pull` fails there because no branch upstream is configured, which is
+      how the first attempt ended up rebuilding v1.26.45. Recorded in OwnMind memory 745.
+      `v1.26.46` then `v1.26.47`; no migrations in either range; the served asset hash
+      matched the local build byte for byte both times; `shared/` landed in the runtime
+      image, so the new `COPY` works in both Dockerfile stages
+- [x] Post-deploy browser check, super_admin path: five sections in the documented order,
+      all seventeen items, amber markers on exactly the eight signposts. A signpost names
+      the destination tab, writes `om_api_key` / `om_role` / `om_user_id` / `om_user_name`
+      matching the console's own credential, and the legacy console restores the session
+      with no second login and opens the named tab. 整體分析 renders all ten sections plus
+      the AI notes; 踩坑紀錄 renders real rows each carrying its "怎麼處理" line; the four
+      audit findings render with titles; the custom range control is present. `/admin/` still
+      answers 200, so the manifest is on the serving branch. No console errors
+- [x] **Found by that browser check, fixed in v1.26.47**: the prompt rule added for
+      Requirement 7 made the model state "有 8 位成員從來沒有回報過任何資料" when every
+      member was instrumented and six were active. The instruction meant to prevent a
+      confident false statement produced one. The count is exact in the UI, so the prompt no
+      longer asks prose to restate it. Also added titles for the two audit-finding types the
+      code reading missed: production emits four, not two
+- [ ] **Needs Vin, surfaced by the browser check**: the three members with zero events
+      render as real zeros on 整體分析, which is the corrected behaviour after review's I2 —
+      they are instrumented, so an in-period zero is genuine. But the usage page's own
+      `team_blindspot` finding calls the same three "OwnMind 對其工作完全不可觀測". Two
+      pages tell two stories about the same people. The honest resolution is probably a
+      third state (instrumented, but no signal at all in the period), which neither
+      Requirement 7 nor the review anticipated
 - [ ] **Needs Vin**: `/portal/narrative` is open to `user`, which is faithful to `/me/`
       today and to Requirement 3's "same endpoints, unchanged", but it means a member sees
       team-wide activity ranking and every colleague's per-rule compliance counts, while
