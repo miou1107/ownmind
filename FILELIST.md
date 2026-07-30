@@ -1,5 +1,14 @@
 # OwnMind 檔案結構
 
+## 單一後台整併規劃（跨版本專案，僅規劃、尚未動工）
+
+新增檔：
+```
+openspec/changes/single-console-consolidation/proposal.md  — 把 /admin/、/me/、/dashboard/ 三個後台收成一個的提案。含現況盤點、四個改變估算的發現（廣播藏在設定分頁裡、稽核記錄是從沒做出來的功能、/me/ 有兩個功能新後台沒覆蓋、新後台完全沒有角色控管）、五個選項的評估與否決理由、以及對抗審查回合的完整紀錄（3 Critical 3 Important，兩條採納、三條實測駁回、一條結論對理由錯）
+openspec/changes/single-console-consolidation/spec.md      — 規格（GIVEN/WHEN/THEN，6 條 requirement）：單一入口、角色控管、不掉功能、轉址要能撐過反向代理前綴、退場靠結構而非提醒、舊檔留存但不可被服務
+openspec/changes/single-console-consolidation/tasks.md     — 七階段任務清單（Stage 0 真實身分 / 1a 搬頁面與指路牌 / 1b 換入口與收 /me/ / 2 使用者管理 / 3 設定與廣播 / 4 錯誤回報與工作紀錄 / 5 退場後清理）
+```
+
 ## v1.26.44 修改（新後台直接開網址全白 — SPA 深連結的 base href）
 
 新增檔：
