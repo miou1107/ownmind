@@ -16,40 +16,31 @@
   "nav.section.personal": "Personal",
   "nav.section.admin": "Admin",
   "nav.section.super": "Super Admin",
-
   "header.title": "OwnMind Control Center",
   "header.subtitle": "A clean, unified control center",
-  "header.role_simulator": "Simulate Role",
   "header.role.user": "User",
   "header.role.admin": "Admin",
   "header.role.super_admin": "Super Admin",
   "header.guest": "Guest",
-
   "menu.profile": "Profile",
-  "menu.preferences": "Preferences",
   "menu.logout": "Log Out",
-
+  "session.identity_unavailable": "Your identity could not be loaded, so the sidebar may be incomplete. Reload to retry; tell an administrator if it keeps happening.",
   "filter.title": "Records & Data Filter",
   "filter.subtitle": "Filter by report date, active project, or keyword for real-time analysis",
   "filter.all_projects": "All Projects",
   "filter.keyword_placeholder": "Search keyword",
   "filter.clear": "Clear filters",
-
   "kpi.compliance_rate": "Iron Rule Compliance Rate",
   "kpi.sessions": "AI Active Sessions",
   "kpi.sessions_unit": "sessions",
   "kpi.api_cost": "Estimated API Credit (USD)",
   "kpi.token_traffic": "Token Traffic Analysis",
-
   "footer.changelog": "Changelog",
   "footer.copyright": "OwnMind Open Source Project",
-
   "changelog.title": "Changelog",
   "changelog.empty": "No changelog entries yet",
-
   "placeholder.coming_soon": "This page is being rebuilt and will be completed in a later phase",
   "error.not_found": "Page not found",
-
   "login.title": "Log in to OwnMind",
   "login.subtitle": "Sign in to the control center with your email and password",
   "login.email_label": "Email",
@@ -59,7 +50,6 @@
   "login.submit": "Log In",
   "login.submitting": "Logging in…",
   "login.error_generic": "Login failed, please try again later",
-
   "security.title": "Change Password",
   "security.subtitle": "To protect your account, change your password regularly",
   "security.must_change_notice": "You're still using the default password. Change it before using other features",
@@ -75,7 +65,6 @@
   "security.error_same_as_old": "New password must differ from the old one",
   "security.error_too_short": "New password must be at least 8 characters",
   "security.error_generic": "Failed to change password, please try again later",
-
   "profile.title": "Profile",
   "profile.subtitle": "Manage your display name; other details are maintained by your admin",
   "profile.name_label": "Display name",
@@ -91,16 +80,13 @@
   "profile.error_load": "Failed to load profile",
   "profile.error_save": "Save failed, please try again later",
   "profile.loading": "Loading…",
-
   "common.loading": "Loading…",
   "common.error_load": "Load failed, please try again later",
   "common.empty": "No records yet",
   "common.close": "Close",
-
   "project_history.title": "Project History",
   "project_history.subtitle": "All your project memories, sorted by last updated",
   "project_history.detail_title": "Project Details",
-
   "handoffs.title": "Work Handoff",
   "handoffs.subtitle": "Handoffs left for you by other AI tools; once accepted, they're removed from the list",
   "handoffs.empty": "No pending handoffs",
@@ -110,7 +96,6 @@
   "handoffs.accept_success": "Accepted",
   "handoffs.accept_error": "Failed to accept, please try again later",
   "handoffs.profile_failed": "Couldn't load your account info, so accepting is paused. Please refresh the page or log in again",
-
   "reports.title": "Report History",
   "reports.subtitle": "Bug reports you've filed and their handling status",
   "reports.detail_title": "Report Details",
@@ -122,7 +107,6 @@
   "reports.status_reason_label": "Resolution note",
   "reports.description_label": "Description",
   "reports.error_forbidden": "You don't have permission to view this report",
-
   "vault.title": "Credentials Vault",
   "vault.subtitle": "Store API keys, passwords, and other sensitive data; encrypted and visible only to you",
   "vault.add": "Add credential",
@@ -153,7 +137,6 @@
   "vault.error_delete": "Delete failed, please try again later",
   "vault.error_key_required": "Please enter a key",
   "vault.error_value_required": "Please enter a value",
-
   "usage.title": "Usage Analytics",
   "usage.subtitle": "Your and your team's AI tool usage, active projects, and Iron Rule compliance",
   "usage.range.7d": "Last 7 days",
@@ -163,10 +146,8 @@
   "usage.tab.mine": "Mine",
   "usage.tab.team": "Team",
   "usage.tab.projects": "Projects",
-
   "usage.unit.sessions": "sessions",
   "usage.unit.events": "events",
-
   "usage.mine.sessions": "Sessions",
   "usage.mine.events": "Events",
   "usage.mine.last_activity": "Last active",
@@ -175,18 +156,15 @@
   "usage.mine.compliance_title": "Iron Rule Compliance Details",
   "usage.mine.versions_title": "Tool Versions",
   "usage.mine.activity_title": "Recent Activity",
-
   "usage.team.users_title": "Team Members",
   "usage.team.daily_title": "Daily Trend",
   "usage.team.hourly_title": "Hourly Distribution (24h)",
   "usage.team.weekday_title": "Weekday Distribution",
   "usage.team.events_title": "Event Types",
   "usage.team.versions_title": "Member Tool Versions",
-
   "usage.projects.title": "All Team Projects",
   "usage.projects.detail_title": "Project Details",
   "usage.projects.contributors_title": "Contributors",
-
   "usage.weekday.sun": "Sun",
   "usage.weekday.mon": "Mon",
   "usage.weekday.tue": "Tue",
@@ -194,7 +172,6 @@
   "usage.weekday.thu": "Thu",
   "usage.weekday.fri": "Fri",
   "usage.weekday.sat": "Sat",
-
   "usage.col.project": "Project",
   "usage.col.sessions": "Sessions",
   "usage.col.turns": "Turns",

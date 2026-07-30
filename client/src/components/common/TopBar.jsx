@@ -1,22 +1,27 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, User, LogOut, Settings } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ChevronDown, User, LogOut } from 'lucide-react';
 import { SUPPORTED_LOCALES } from '../../i18n';
 import { useLocale, useT } from '../../i18n/LocaleContext';
 import RoleBadge from './RoleBadge';
 
 const LOCALE_LABELS = { zh: '繁中', en: 'EN', ja: '日本語' };
-const ROLES = ['user', 'admin', 'super_admin'];
 
-// 上方列 — 標題 / 副標題 / 語系切換 / 角色模擬器 / 頭像選單
-// 角色模擬器只給 super_admin 看（其他角色傳 onRoleChange={null} 即隱藏）
+// 上方列 — 標題 / 副標題 / 語系切換 / 頭像選單
+//
+// 角色模擬器已移除。它讓 super_admin 在瀏覽器裡直接改 currentRole，在角色是寫死
+// 的時代只是個開發輔助；角色改成從伺服器來之後，它要嘛毫無作用、要嘛顯示一個跟
+// 伺服器不一致的畫面，兩種都比沒有更糟。
+//
+// 選單原本有「個人資料」跟「偏好設定」兩項，都呼叫同一個沒有實作的
+// onOpenProfile。側邊欄已經有整個「偏好設定」區塊，那兩項是重複的導覽，所以收成
+// 一項、直接連到既有的路由。
 export default function TopBar({
   pageTitle,
   pageSubtitle,
   currentRole,
-  onRoleChange,
-  profile,
+  userName,
   onLogout,
-  onOpenProfile,
 }) {
   const { locale, setLocale } = useLocale();
   const t = useT();
@@ -61,38 +66,17 @@ export default function TopBar({
           ))}
         </div>
 
-        {onRoleChange && (
-          <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-full p-0.5">
-            <span className="px-2 text-[11px] text-slate-500 font-medium">
-              {t('header.role_simulator')}
-            </span>
-            {ROLES.map((r) => (
-              <button
-                key={r}
-                onClick={() => onRoleChange(r)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors ${
-                  currentRole === r
-                    ? 'bg-white text-sage-600 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {t(`header.role.${r}`)}
-              </button>
-            ))}
-          </div>
-        )}
-
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setMenuOpen(!menuOpen)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-slate-100 transition-colors"
           >
             <div className="w-7 h-7 rounded-full bg-sage-500 text-white flex items-center justify-center font-bold text-xs">
-              {profile?.name?.[0]?.toUpperCase() || '?'}
+              {userName?.[0]?.toUpperCase() || '?'}
             </div>
             <div className="hidden sm:flex items-center gap-1.5">
               <span className="text-xs font-semibold text-slate-900">
-                {profile?.name || t('header.guest')}
+                {userName || t('header.guest')}
               </span>
               <RoleBadge role={currentRole} />
             </div>
@@ -101,24 +85,13 @@ export default function TopBar({
 
           {menuOpen && (
             <div className="absolute right-0 top-full mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-40">
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onOpenProfile?.();
-                }}
+              <Link
+                to="/preference/profile"
+                onClick={() => setMenuOpen(false)}
                 className="w-full flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 <User size={14} /> {t('menu.profile')}
-              </button>
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  onOpenProfile?.('preferences');
-                }}
-                className="w-full flex items-center gap-2 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-              >
-                <Settings size={14} /> {t('menu.preferences')}
-              </button>
+              </Link>
               <div className="h-px bg-slate-100" />
               <button
                 onClick={() => {

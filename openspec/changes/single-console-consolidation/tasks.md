@@ -19,23 +19,65 @@ that surfaced them.
 **Blocks every later stage.** Building any admin page on a hardcoded
 `'super_admin'` would show admin navigation to every member.
 
-- [ ] Source identity from `POST /api/me/login`, which already returns `role`
-      (`src/routes/me.js:61`). No new endpoint unless a gap is proven
-- [ ] Replace `useState('super_admin')` in `client/src/App.jsx` with server-sourced
-      identity; remove the `profile: { name: 'User' }` placeholder in the same block
-- [ ] Implement logout: clear the stored credential, return to `/login`, replacing
-      the `console.log('logout')` stub
-- [ ] Decide `onOpenProfile`: two call sites with different arguments, `()` and
-      `('preferences')` (`TopBar.jsx:110,120`), so this is two decisions. Implement
-      or remove per YAGNI
-- [ ] Resolve the role simulator at `TopBar.jsx:64-84`. It mutates `currentRole`
-      client-side and is passed only for `super_admin` (`Layout.jsx:52`). Once role
-      comes from the server it is either dead or actively misleading
-- [ ] Add route-level role guards. `RequireAuth` and `RequireFreshPassword` check
-      only whether a session exists; add the equivalent for *which* role
-- [ ] Tests: a `user`-role session sees neither 管理 nor 超級管理 in the sidebar;
-      a typed `/admin/team` URL does not render; identity is not a literal
-- [ ] Verify against the real server with a non-super_admin account, not a mocked role
+- [x] Identity comes from `GET /api/me/profile`, which returns `{ id, name, email,
+      role, must_change_password }` and resolves the user from the api_key server-side.
+      No new endpoint needed
+- [x] Replaced `useState('super_admin')` and the `profile: { name: 'User' }` placeholder
+      with a `SessionProvider`. **The role is deliberately not persisted**: the old
+      console kept it in the user-writable `om_role` key, so a member could edit it to
+      reveal admin cards. In memory only, refetched per load
+- [x] Logout clears the credential and dispatches the existing `auth-expired` event, so
+      logout and token expiry share one route back to `/login`
+- [x] `onOpenProfile` removed rather than implemented. Its two menu items both called an
+      unimplemented callback, and the sidebar already has the whole 偏好設定 section, so
+      they were duplicate navigation. Collapsed to one item linking to
+      `/preference/profile`
+- [x] Role simulator removed, with its `header.role_simulator` key deleted from all
+      three locales. A control that lets you change your own role is either dead or
+      shows a view the server disagrees with
+- [x] Added `RequireRole`. It checks readiness before deciding, so a hard load does not
+      bounce an admin out of an admin page while the identity is in flight
+- [x] Added `tests/console-session-identity.test.js`, 22 tests. The role ladder was
+      split into `client/src/session/roles.js` so the part that decides who gets in is
+      **executed** rather than read: five tests run `roleAtLeast`, including
+      fail-closed on an unknown role and on an unknown requirement
+- [x] Mutation-tested both new guards, confirming the mutation applied before trusting
+      the red. Full suite 2259 pass / 0 fail; client build exit 0
+- [x] Fixed a pre-existing assertion from v1.26.43 that pinned
+      `<RequireAuth><RequireFreshPassword><Layout>` as adjacent. Inserting a guard broke
+      the match without breaking the invariant. Relaxed to allow intervening guards, and
+      mutation-tested that it still catches a missing `RequireAuth`
+- [x] Code review round: 1 Critical, 7 Important, 7 Minor, each reproduced before acting.
+      The Critical was a deterministic defect, not a race: LoginPage calls `setApiKey` and
+      `navigate` in one synchronous block, so an admin arriving from a deep link always
+      landed on `/portal/usage`. Fixed by seeding the session from the login response,
+      which also removes a round trip. Two rounds of my own test-writing failed to catch
+      it — first a source-text ordering assertion that passes for the broken ordering,
+      then extracting `decideRoleGate` without testing it. Mutation testing found the
+      second miss. Also fixed: the ladder failed **open** on `Object.prototype` keys; the
+      sidebar-versus-guard test checked vocabulary rather than agreement; the logout test
+      was trivially green; event names were duplicated string literals; an identity error
+      was indistinguishable from being logged out; the shell flashed an empty sidebar and
+      a wrong role badge on every load. Suite 2271 pass / 0 fail
+- [ ] **Outstanding**: verify on the real server with a non-super_admin account. This
+      needs a member session, which cannot be arranged without handling someone's
+      password. Do it at the post-deploy browser check
+- [ ] **Outstanding, deferred with reason**: the api client has no request timeout, so a
+      hung `/api/me/profile` leaves an admin route blank with nothing logged. It is a
+      shared client affecting every request, so changing it reaches wider than this stage
+
+### Surfaced by review, needs its own stage
+
+- [ ] **`must_change_password` is enforced only in the browser.** `getMustChangePassword()`
+      (`client/src/api/auth.js`) reads a user-writable localStorage key and
+      `RequireFreshPassword` gates on it. **Nothing server-side blocks requests from an
+      account in that state** — grep of `src/middleware/` and `src/routes/` returns only
+      reads and writes of the column, never a gate. A member can delete the key in
+      devtools and keep using a default-password account indefinitely. Same class as the
+      `om_role` spoofing this stage removed, in the same file this stage edited.
+      `GET /api/me/profile` already returns the authoritative value and the session now
+      carries it, so the client half is one line; the server half needs a middleware that
+      refuses everything except the password-change endpoint
 
 ## Stage 1a — Port the missing `/me/` features, raise the signposts
 

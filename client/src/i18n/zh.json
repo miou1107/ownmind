@@ -19,15 +19,14 @@
 
   "header.title": "OwnMind 控制中心",
   "header.subtitle": "極簡清爽 統合控制中心",
-  "header.role_simulator": "模擬角色",
   "header.role.user": "一般使用者",
   "header.role.admin": "管理員",
   "header.role.super_admin": "超級管理員",
   "header.guest": "訪客",
 
   "menu.profile": "個人資料",
-  "menu.preferences": "偏好設定",
   "menu.logout": "登出",
+  "session.identity_unavailable": "暫時讀不到你的身分，所以側邊欄可能不完整。重新整理即可，若持續發生請通知管理員。",
 
   "filter.title": "紀錄與數據篩選",
   "filter.subtitle": "篩選特定的提報日期、活躍專案或搜尋關鍵字進行即時分析",
