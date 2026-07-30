@@ -74,9 +74,14 @@ that surfaced them.
       `/dashboard/admin/team` lands on the page rather than bouncing to `/portal/usage`,
       which is the readiness gate working in production. No console errors on either.
       `<base href="../">` still correct, so v1.26.44's fix is intact
-- [ ] **Outstanding, needs Vin**: verify with a non-super_admin account that the 管理 and
-      超級管理 sections are absent and that a typed `/dashboard/admin/team` bounces. This
-      requires a member's login, which is not something I should handle
+- [x] **Closed by the e2e suite added in v1.26.46**, not by a manual check. It seeds a
+      `user`, an `admin` and a `super_admin` with known passwords in a throwaway database and
+      asserts in a real browser that a member sees only 我的 and 偏好設定, that none of the
+      seven privileged items is present, and that a typed `/dashboard/admin/team` lands back
+      on `/portal/usage`. That is stronger than the one-off production check this item asked
+      for: it is deterministic, repeatable, and mutation-verified (opening 廣播管理 to admin
+      turns it red). The residual gap is that it runs against a local build rather than the
+      deployed one, which the asset-hash match at deploy time covers separately
 - [ ] **Outstanding, deferred with reason**: the api client has no request timeout, so a
       hung `/api/me/profile` leaves an admin route blank with nothing logged. It is a
       shared client affecting every request, so changing it reaches wider than this stage
