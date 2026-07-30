@@ -1,5 +1,59 @@
 # OwnMind 更新紀錄
 
+## v1.26.43 — 新後台頁尾版號停在 v1.20.1，改成跟 server 拿
+
+**背景**：v1.26.41 部署後做瀏覽器實測時發現的。新後台的頁尾跟側邊欄都顯示 `v1.20.1`，而 server 已經在 1.26.41。`client/src/App.jsx` 把字串寫死：
+
+```jsx
+version: 'v1.20.1',
+```
+
+這個值往下傳到 `Layout.jsx`、再到 `Footer.jsx` 跟 `Sidebar.jsx`，所以新後台每一頁都顯示凍結在 v1.20.1 的版號~ 到被發現時已經落後 42 個 tag。
+
+**有意思的地方不是那個值、是它的形狀**。「發版時 package.json / SERVER_VERSION / git tag 三處版號必須同步」這條規範沒有被違反~ 這個 bug 是在規範管不到的地方多開了**第四個**藏身處，而那裡沒有任何東西在看。
+
+而且 `SERVER_VERSION` 本身也不是一處。幾乎一樣的 IIFE 被複製貼上到 `src/routes/memory.js`、`src/jobs/nightly-upgrade-reminder.js`、`src/routes/usage/admin-clients.js` 三個檔案（不是完全一樣：`memory.js` 的 `catch` 寫成一行、`admin-clients.js` 多一層目錄所以路徑是 `../../../`；語意相同、三者都指到 repo 根的 manifest）。三份本身沒造成問題，但它建立了一個習慣：版號是每個使用者各自複述一次的東西。前端那個寫死的字串就是同一個習慣再往前一步、走進一個會爛掉沒人發現的檔案。
+
+其實還有第五處：`client/package.json` 自己寫著 `"version": "1.21.0"`。沒有任何東西讀它（`client/vite.config.js` 沒有 `define`），所以只是裝飾性的，這版不動、另外列待辦。
+
+所以這版是**把重複拿掉、不是把前端加進發版檢查清單**。清單是提醒，只有邏輯才有效。
+
+**做法**：
+
+- server 端只留一份定義：新增 `src/utils/server-version.js`，三個既有呼叫端改成 import，並且用測試把「本地定義數量 = 0」釘住。三個檔案的 `createRequire` import 也一併移除（確認過都只為了這件事而 import）。
+- 前端只有一個取得管道：新增 `GET /api/version`，只回 `{ version }`、不回其他東西。
+- 新增 `client/src/hooks/useServerVersion.js`，走 `apiGet`、初值是空字串。
+
+**這個 hook 要在 `Layout` 裡呼叫、不是 `App`。這個差別就是整個功能的成敗，而第一版寫錯了。** `App` 掛在 `BrowserRouter` 裡面、在 `RequireAuth` 外面、而且從頭到尾不會 unmount（`LoginPage` 存完金鑰是 SPA 導頁、不重新載入）。所以放在 `App` 的 `[]` 相依 effect 只會在冷開站那一次觸發、而那時候還沒有金鑰：吃一個 401，然後永遠不會再跑。頁尾會整個 session 都空白~ 等於把「顯示舊版號」換成「什麼都不顯示」，而且登入頁每次載入都會往 `auth_failed` 那個本來要用來抓「真的設定壞掉的 client」的觀測管道丟一筆雜訊。
+
+`Layout` 只在 `RequireAuth` 底下渲染，所以請求一定帶著金鑰。**這是 code review 抓到的；15 個綠燈測試沒抓到**，因為前端那幾條全是原始碼字串比對、只證明了「字面值不在了」、從來沒證明「值真的會到」。
+
+版號在模組層級快取。每個 `Route` 各自建一個 `<Layout>`，所以切頁會 remount、不快取就會每次切頁都重打。而「重新載入頁面」本來也是拿到新前端程式的唯一途徑，所以「一次頁面載入快取一份」不可能跟正在渲染它的 bundle 不一致。只快取成功的結果，失敗會重試、不會被記住。
+
+版號原本就有兩個管道拿得到，但都不適合一個「每個登入者都看得到」的頁尾：`/api/memory/init` 會把呼叫者的整份精簡記憶都回來、`/api/usage/admin/clients` 只有管理員能打而且要算裝機覆蓋率。
+
+新端點掛在 `auth` 後面。唯一的使用者是後台外殼、本來就被 `RequireAuth` 卡著，所以要求金鑰不花任何成本；而公開的版號端點在對外站點上主要是告訴掃描器該去查哪一版的漏洞。
+
+**為什麼是連線拿、不是編譯時寫進去**：編譯時注入也能修掉今天的落差（Dockerfile 的前端跟 server 是同一份 checkout 建出來的），但它會重現同一類問題~ 瀏覽器快取住的 bundle 會在 server 升版之後繼續報自己那份 build 的版號。頁尾的職責是告訴你「你現在在跟哪一個 OwnMind 說話」。
+
+初值空字串、失敗也維持空字串。什麼都不顯示是誠實的；顯示一個佔位版號正是這個 bug 的成因。
+
+**更新紀錄面板**：同一塊 `layoutProps` 還有兩筆寫死的 `MOCK_CHANGELOG`、停在 v1.20.1、註解寫著「暫時 mock 的版本紀錄資料 — 後續會改從 API 載入」。經 Vin 拍板先抽掉。`Footer.jsx` 本來就有 `changelog.length === 0` 的分支跟 `changelog.empty` 文案、三語系都在，所以面板會退成一個誠實的空狀態、不用寫新程式。真的要做更新紀錄另案處理~ CHANGELOG 每筆都是很長的中文，怎麼摘要、英日語使用者看到什麼，那是產品決定、不該當成這次修正的副作用。
+
+**不在範圍**（Vin 拍板只修版號、其餘另開）：同一塊還有三個 v1.20 的佔位程式~ `profile: { name: 'User' }` 讓後台把每個人都叫「User」（舊後台顯示的是真名）、`onLogout` 只有 `console.log` 沒真的登出、角色寫死 `super_admin` 導致每個人都看得到管理員跟超管專區。最後這個目前不是權限洞（那幾頁都還是空殼、而且 server 是每個 request 各自授權），但很誤導，而且等真的頁面放進去就會變成洞。
+
+**驗證**：TDD 先紅後綠（20 個測試），全套件綠，前端 build 過。
+
+**我自己的兩個守門測試一開始寫太寬**、抓到了 `nightly-upgrade-reminder.js` 裡一行說明用的註解（`SERVER_VERSION='1.17.0'`）。錯的是測試不是程式，兩個都改成先去掉註解再比對。
+
+**去註解的工具本身也有一個更嚴重的問題**、是 review 抓到的：用兩條正規表示式硬幹，會把 `src/utils/templates.js` 裡 `'src/**'` 這種 glob 字串中的 `/*` 當成註解開頭，一路吃到下一個 `*/`。實測 167 行被吃成 55 行、4 個 `patterns:` 只剩 1 個。今天沒有守門因此失效（那個檔案沒有 `SERVER_VERSION`），但只要有人在 glob 字串後面加一個本地宣告就會隱形。改成會辨識字串的單次掃描（字串內容要保留，因為有一條守門就是在找字串字面值）。
+
+**八個守門逐一做變異測試、全部會咬人**：把字串寫回 `App.jsx`（1 紅）、把本地 `SERVER_VERSION` 加回來（2 紅）、把路由取消掛載（1 紅）、初值改成佔位版號（1 紅）、改用裸 `fetch` 繞過 api client（1 紅）、把路由的 `auth` 拿掉（1 紅）、**把 hook 搬回 `App`（也就是 review 抓到的那個 bug，3 紅）**、把失敗也寫進快取（1 紅）。
+
+最後那個變異第一次跑回報「沒被抓到」，追下去發現是我的 perl 取代根本沒生效、檔案沒被改到。改用會回報「有沒有真的改到」的方式重跑，確認會咬人。變異測試自己也要驗證變異真的發生了。
+
+**沒驗到的**：這個 repo 沒有 React 的 render 測試環境（`client/` 沒有 testing-library 也沒有 jsdom），所以「值真的會到頁尾」目前是靠結構性斷言（hook 只能從 `Layout` 呼叫、每個 `<Layout>` 都在 `RequireAuth` 裡面、`LoginPage` 不渲染 `Layout`）加上部署後開無痕視窗重新登入實測，不是 render 測試。
+
 ## v1.26.41 — 清掉相依套件安全警告，順便修「升了版也送不到使用者機器」
 
 **背景**：這個 repo 是公開的，累積了 37 個未處理的相依套件安全警告，其中 10 個高風險，分散在三個 lock 檔。dependabot 開的 PR #45 從 2026-07-29 掛著沒人看。這個 repo **沒有 `.github/workflows/`**~ 所以 PR 上顯示「no checks reported」不是 CI 壞掉、是從來沒設過 CI。

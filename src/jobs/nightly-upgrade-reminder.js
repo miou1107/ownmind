@@ -22,18 +22,9 @@
  */
 
 import cron from 'node-cron';
-import { createRequire } from 'module';
 import { query as defaultQuery } from '../utils/db.js';
 import logger from '../utils/logger.js';
-
-const SERVER_VERSION = (() => {
-  try {
-    const require = createRequire(import.meta.url);
-    return require('../../package.json').version || '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
-})();
+import { SERVER_VERSION } from '../utils/server-version.js';
 
 export async function ensureUpgradeReminder({ query = defaultQuery, serverVersion = SERVER_VERSION, systemUserId } = {}) {
   // use `-prev` as the "any version lower than current" threshold (leveraging pre-release semver ordering)

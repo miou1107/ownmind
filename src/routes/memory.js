@@ -25,14 +25,7 @@ import {
   withReportSuggestion,
   isSuggestReportEligible,
 } from '../utils/bug-report-helpers.js';
-import { createRequire } from 'module';
-
-const SERVER_VERSION = (() => {
-  try {
-    const require = createRequire(import.meta.url);
-    return require('../../package.json').version || '0.0.0';
-  } catch { return '0.0.0'; }
-})();
+import { SERVER_VERSION } from '../utils/server-version.js';
 
 function parseSemver(v) {
   const parts = (v || '0.0.0').split('.').map(s => parseInt(s, 10));

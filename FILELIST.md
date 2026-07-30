@@ -1,5 +1,34 @@
 # OwnMind 檔案結構
 
+## v1.26.43 修改（新後台版號改跟 server 拿、SERVER_VERSION 收成一處）
+
+新增檔：
+```
+openspec/changes/v1.26.43-dashboard-version-source/proposal.md  — v1.26.43 提案（含「為什麼是連線拿不是編譯時寫死」的取捨）
+openspec/changes/v1.26.43-dashboard-version-source/spec.md      — v1.26.43 規格（GIVEN/WHEN/THEN，4 條 requirement）
+openspec/changes/v1.26.43-dashboard-version-source/tasks.md     — v1.26.43 任務清單
+src/utils/server-version.js                                     — 新增、SERVER_VERSION 的唯一定義（讀不到 package.json 回 0.0.0、不丟例外）
+src/routes/version.js                                           — 新增、GET /api/version 只回 { version }，factory 形式（比照 createDebugRouter）掛在 auth 後面
+client/src/hooks/useServerVersion.js                             — 新增、走 apiGet('/api/version')，初值空字串、失敗維持空字串。模組層級快取（只快取成功值）。**只能從 Layout 呼叫**：從 App 呼叫會在還沒登入時吃 401 且永不重試
+tests/dashboard-version-source.test.js                           — 20 tests：共用模組對得上 package.json、manifest 壞掉退 0.0.0、src/ 底下沒有本地 SERVER_VERSION 定義、使用者都 import 共用模組、端點回傳與 auth 卡控、client/src 沒有版號字面值、hook 只能從 Layout 呼叫且每個 Layout 都在 RequireAuth 裡、LoginPage 不渲染 Layout、hook 走 apiGet 不用裸 fetch、失敗不進快取、Footer 空狀態與三語系字串。去註解工具改成會辨識字串（原本會被 glob 裡的 /* 騙）
+```
+修改檔：
+```
+src/routes/memory.js                — 移除本地 SERVER_VERSION IIFE 與 createRequire import，改 import 共用模組
+src/jobs/nightly-upgrade-reminder.js — 同上
+src/routes/usage/admin-clients.js    — 同上
+src/app.js                           — 掛載 /api/version
+client/src/App.jsx                   — 拿掉寫死的 version: 'v1.20.1' 與 MOCK_CHANGELOG，changelog 傳 []，不再往下傳 version
+client/src/components/common/Layout.jsx — 改由這裡呼叫 useServerVersion（只在 RequireAuth 底下渲染、請求一定帶金鑰），props 移除 version
+package.json / package-lock.json     — 版號 1.26.41 → 1.26.43
+README.md / docs/README.zh-TW.md / docs/README.ja.md — 版本行 → v1.26.43
+CHANGELOG.md                         — v1.26.43 條目
+FILELIST.md                          — 本段
+```
+**未動**（Vin 拍板只修版號、其餘另開）：`client/src/App.jsx` 同一塊 layoutProps 的 `profile: { name: 'User' }`、`onLogout` 的 console.log、角色寫死 `super_admin`
+
+**版號跳號說明**：`v1.26.42` 由另一個同時進行的 session 佔用（SPA 子路徑直接開會空白那件），所以本次取 1.26.43。
+
 ## v1.26.41 修改（相依套件安全警告 + root 相依版本門檻）
 
 新增檔：
