@@ -11,7 +11,8 @@
     "lint:zh-only": "node scripts/lint-zh-only.js client/src",
     "build:client": "cd client && npm install && npm run build",
     "dev:client": "cd client && npm run dev",
-    "translate:client": "cd client && npm run translate"
+    "translate:client": "cd client && npm run translate",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.mjs"
   },
   "repository": {
     "type": "git",
@@ -40,5 +41,8 @@
     "pgvector": "^0.2.1",
     "uuid": "^14.0.0",
     "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.1"
   }
 }

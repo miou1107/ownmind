@@ -1,5 +1,26 @@
 # OwnMind 檔案結構
 
+## v1.26.46 追加：端對端（e2e）測試
+
+新增檔：
+```
+tests/e2e/harness.mjs                                            — 新增、丟棄式測試環境。開一個沒有 volume 的 pgvector 容器 + 用 node 直接跑 API（改程式不用重建映像），然後塞三個已知密碼、三種角色的帳號跟一筆孤兒 session。用丟棄式而不是開發環境：這套測試會建帳號，建在有真記憶的資料庫裡就會留垃圾。容器停掉資料就一起消失
+tests/e2e/global-setup.mjs                                       — 新增、Playwright globalSetup。回傳 teardown 函式，所以就算某條測試炸掉、環境也不會活過整次執行
+tests/e2e/playwright.config.mjs                                  — 新增、單一 worker、不平行：所有測試共用一個環境跟一個資料庫，而憑證接力那條會寫瀏覽器儲存空間、平行跑會互相看到。失敗才留截圖與 trace，而且寫到系統暫存目錄不進 repo（順帶避開一個誤判：commit 前檢查把 .gitignore 裡的 `tests/e2e/.artifacts/` 當成看起來像密鑰的長字串擋掉，這是那條長度啟發式的第四個誤判案例，已回報）
+tests/e2e/console.spec.mjs                                       — 新增、18 條。這些是 node --test 做不到的部分：它不能渲染 React，所以「一般成員只看得到自己的區塊」「憑證有交出去」以前都只是對原始碼字串的斷言，而原始碼看不出一個選單項目有沒有出現在畫面上
+```
+修改檔：
+```
+package.json                                                     — 加 devDependency @playwright/test 與 test:e2e 腳本。devDependency 不會進映像（Dockerfile 用 npm ci --production）
+(不需要改 .gitignore：失敗截圖與 trace 直接寫到系統暫存目錄、不進 repo)
+```
+
+**選 navItem 用「看得見的文字」而不是 accessible name**，這件事本身抓到一個假綠燈：指路牌的小圓點帶 aria-label，所以那些項目的 accessible name 是「系統設定 這個功能還在舊後台」這種複合字串，用 `exact: true` 比對永遠回 0 — 於是所有 `toHaveCount(0)` 的負向斷言都會過，就算項目真的出現在一般成員的畫面上也一樣。
+
+**踩坑紀錄那條原本也是假的**：全新資料庫三個區塊都是空的，頁面正確顯示「沒發現問題」，於是三個區塊根本沒渲染、等於什麼都沒驗。改成 harness 塞一筆六輪、沒有遵守紀錄的 session，讓三個區塊真的長出來、第三區真的有一列。
+
+四項突變測試（把廣播管理開放給 admin、登出不清舊鍵、憑證寫入改成空操作、拿掉路由角色守門）全部被抓到，每一項都先重建前端才跑，因為瀏覽器載的是打包後的檔案不是原始碼。
+
 ## v1.26.46 修改（指路牌、舊後台功能清單、搬回 /me/ 缺的四塊 — 單一後台整併的階段 1a）
 
 新增檔：
