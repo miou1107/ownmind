@@ -44,15 +44,21 @@ seven backed by real pages and five placeholders.
 
 | Old `/admin/` tab | New home | State |
 |---|---|---|
-| 統計儀表板 (stats) | `/portal/usage` | done |
-| 團隊用量 (team-usage) | `/portal/usage` team tab | done |
-| 週/月報 (reports) | `/portal/reports` | done |
-| 使用者管理 (users) | `/admin/team` | placeholder — **build** |
-| 錯誤回報 (bug-reports) | `/admin/bugs` | placeholder — **build** |
-| 設定 (settings) → 成本設定, 裝機狀況 | `/super/config` | placeholder — **build** |
-| 設定 (settings) → 廣播管理 | `/super/broadcast` | placeholder — **build** |
-| 工作紀錄 (work-log) | no route exists | **build**, needs a new route + nav item |
-| 鐵律升級 (iron-rule-upgrade) | — | **drop**, see below |
+| 使用者管理 (users) | `/admin/team` | placeholder — **build**, Stage 2 |
+| 設定 → 裝機狀況 | `/super/config` | placeholder — **build**, Stage 3 |
+| 設定 → 廣播管理 | `/super/broadcast` | placeholder — **build**, Stage 3 |
+| 錯誤回報 (bug-reports) | `/admin/bugs` | placeholder — **build**, Stage 4 |
+| 工作紀錄 (work-log) | no route exists | **build** + new nav seat, Stage 4 |
+| 統計儀表板 (stats) | no consumer of `/api/activity/*` | **build**, Stage 5 |
+| 團隊用量 (team-usage) | no consumer of `/api/usage/*` | **build**, Stage 6 |
+| 週/月報 (reports) | no consumer of `/api/session/report` | **build**, Stage 7 |
+| 設定 → 成本設定 | — | **drop**, Requirement 8 |
+| 鐵律升級 (iron-rule-upgrade) | — | **drop** |
+
+An earlier version of this table marked the last three rebuilds as "done". That was
+wrong, and it roughly doubled the real scope when corrected. The console calls none of
+`/api/activity/*`, `/api/usage/*` or `/api/session/*`. `/portal/reports` is 回報紀錄
+backed by `/api/bug-reports`; the shared `nav.reports` label is what caused the error.
 
 ## Four findings that changed the scope
 
@@ -64,11 +70,16 @@ blocks: 廣播管理, 成本設定 (model pricing), and 裝機狀況. The new si
 splits broadcast into its own nav item. So "settings" is two pages of work, not one.
 Both hit the same `/broadcast/admin` API, so the split is cheap.
 
-**2. 稽核記錄 (`/super/audit`) is a nav item for a feature that never existed.** The
-old console has no audit tab, and there is no read API: `audit_logs` is written by
-`writeAdminAudit` but the only read reference in the codebase is an existence check
-at `src/routes/me.js:767`. It is not a migration target. Dropped from the sidebar
-per YAGNI; Vin's call.
+**2. 稽核記錄 (`/super/audit`) is a nav item nobody built a page for.** Dropped from
+the sidebar per YAGNI; Vin's call. The first draft justified this by saying no read API
+existed, which was wrong: three tables were conflated. `GET /api/usage/admin/audit`
+(`src/routes/usage/admin-audit.js:14`) does read `usage_audit_log`, and a UI for it
+exists but is `hidden`, not absent (`src/public/index.html:508-535`, suppressed in
+v1.17.20 as "not needed day to day"). Separately, `writeAdminAudit`
+(`src/routes/admin-iron-rule-upgrade.js:34-40`) writes to `admin_audit_logs`, a table
+**no migration creates**, so those inserts have always failed silently into their
+try/catch. And `audit_logs` is written from five places but read only as a dedup
+`SELECT 1` at `src/routes/me.js:767`. The conclusion stands; the reasoning did not.
 
 **3. `/me/` is not fully covered by the new usage page.** It calls five API groups.
 Three are already covered by pages that exist: `/api/me/login` (the console's
@@ -90,9 +101,14 @@ sections by role correctly, but the role it reads comes from
 `useState('super_admin')` hardcoded in `App.jsx`. Every user who logs in sees the
 admin and super sections. Routes are wrapped in `RequireAuth` and
 `RequireFreshPassword` only — nothing checks *who* you are, so a typed URL reaches
-any page. No data leaks today (server-side `superAdminAuth` holds, and the pages are
-empty shells), but this becomes a real defect the moment the admin pages exist.
-This is why Stage 0 exists and blocks everything else.
+any page. This becomes a real defect the moment the admin pages exist, which is why
+Stage 0 blocks everything else.
+
+The first draft added "no data leaks today because server-side `superAdminAuth`
+holds". That was false. `GET /api/usage/pricing` was mounted with plain `auth`
+(`src/routes/usage/pricing.js:25`) while only `POST` was gated, and the old console hid
+its pricing card client-side using the user-writable `om_role` localStorage key. A
+`user`-role account could read it. Requirement 8 closes that by deleting the router.
 
 ## Options considered
 
@@ -110,26 +126,24 @@ Vin chose "unify the entry point first, then fill in the pages" over "finish
 everything, then switch once". The trade-off accepted: during Stages 2-4 he still
 visits the old console for user management.
 
-- **Stage 0 — real session identity.** Role, display name and logout come from the
-  server; routes gain role guards. Blocks every later stage. No new endpoint is
-  needed: `POST /api/me/login` already returns `role` (`src/routes/me.js:34`).
-- **Stage 1a — port the missing `/me/` features and put up the signposts.** Narrative
-  analysis and 踩坑紀錄 as their own routes; the four remaining placeholders become
-  signposts; 稽核記錄 leaves the sidebar; 工作紀錄 gains a seat. Changes nothing about
-  which console users land on, so it is safe to ship on its own.
-- **Stage 1b — flip the entry point and retire `/me/`.** `/` redirects to the console,
-  `/me/*` redirects to the usage route, the old `/me/` source is preserved.
-  Split from 1a on adversarial review: bundling the port, the signposts, the entry
-  flip and the retirement into one release means any one of them failing takes out
-  every user's way in. 1a must land first, or the new landing page has no route to
-  user management.
-- **Stage 2 — 使用者管理.** First, because it is the only feature whose absence
-  forces a trip back to the old console.
-- **Stage 3 — 系統設定 + 廣播管理.** One old tab split into two pages; done together.
-- **Stage 4 — 錯誤回報 + 工作紀錄.** Both read-only observability pages, lowest risk,
-  so last.
-- **Stage 5 — retire `/admin/`.** Redirect, preserve the source, drop the
-  whole-`src/public/` static mount.
+- **Stage 0 — real session identity.** Role, display name and logout from the server;
+  routes gain role guards. Blocks every later stage. No new endpoint needed:
+  `POST /api/me/login` already returns `role` (`src/routes/me.js:61`).
+- **Stage 1a — port the missing `/me/` features, raise the signposts.** Also builds the
+  Requirement 5 manifest and the credential handoff. Changes nothing about where users
+  land, so it ships safely alone.
+- **Stage 1b — flip the entry point, retire `/me/`.** Also fixes `firstRunRedirect`,
+  which today would leave a fresh install unable to reach the wizard.
+- **Stage 2 — 使用者管理.** First, because it is the only feature whose absence forces a
+  trip back to the old console.
+- **Stage 3 — 系統設定 (裝機狀況) + 廣播管理.** One old tab split across two pages.
+- **Stage 4 — 錯誤回報 + 工作紀錄.** Read-only observability, lowest risk.
+- **Stage 5 — 統計儀表板.** 17 blocks, a new `/api/activity/*` integration. Largest stage.
+- **Stage 6 — 團隊用量.** Includes replacing the heartbeat-based coverage metric.
+- **Stage 7 — 週報月報.** Absent from the console today. Fixes the count query rather
+  than porting it. Flipping its manifest entry is what retires the old console.
+- **Stage 8 — clean up.** Emergency-recovery login first, then the static mount, the
+  legacy snapshot, the breaking tests, and the backend dead code.
 
 One stage per release.
 
@@ -228,9 +242,42 @@ Each was checked against the code rather than accepted or dismissed on plausibil
   `/me/` holds no URL state at all: zero occurrences of `location.hash`,
   `history.pushState` or `searchParams`. There are no deep links to break.
 
+## Rounds two and three, and the prototype
+
+Two further adversarial rounds ran before implementation, one cross-model and one with
+repo access. Between them they overturned enough that the plan roughly doubled.
+
+**Accepted from the cross-model round:** the retirement guard as first designed coupled
+"last page ships" to "old console goes dark", removing the rollback path exactly when
+it is needed. The manifest now carries a third state so retirement follows verification
+rather than deployment. Stage 1 was split into 1a and 1b. The credential handoff gained
+a role check.
+
+**Accepted from the repo-access round, all verified directly:** three rows of the
+mapping table were wrong; retiring `/admin/` would delete the only UI for the
+documented sole-admin password recovery; `firstRunRedirect` breaks when the entry point
+moves; six test files break; the claim that "no data leaks because superAdminAuth
+holds" was false for `GET /api/usage/pricing`; `src/public/dashboard/` is gitignored so
+a fresh clone has no console after retirement; the Dockerfile has no per-file COPY, so
+the "sync COPY" tasks were premised on directives that do not exist.
+
+**Then a production measurement changed the shape again.** Asked to confirm scope, Vin
+said the features are all in use but "the presentation is poor and the data may be
+wrong". Measured on the live console: the coverage panel reported 8 of 9 members
+reporting while three real members had no usage data at all, because coverage counts
+collector heartbeats rather than data. Every member with data showed no cost. The
+weekly report's Suggestion Action count rendered empty while the list beneath it had a
+row. Those findings produced Requirement 7 and Requirement 8, and they are recorded in
+OwnMind memory 740 for the follow-up with the collector side.
+
+**A clickable prototype settled the presentation** before any code: sidebar regrouped
+into 我的 / 團隊 / 偏好設定 / 管理 / 系統 with 團隊用量 moved out of 個人分析,
+broadcast split out of settings, missing data marked rather than shown as zero, charts
+paired instead of full width, and the cost column removed.
+
 ## Open items needing Vin's decision
 
-1. **Version numbering.** Six stages of user-facing change. Whether this opens a
+1. **Version numbering.** Nine stages of user-facing change. Whether this opens a
    minor series or stays on patch releases is Vin's call, per the iron rule on
    version bumps. No version numbers are pinned in this document.
 2. **`鐵律升級` deletion rationale is unverified against production.** Vin has already
