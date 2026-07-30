@@ -6,7 +6,7 @@
 ```
 tests/e2e/harness.mjs                                            — 新增、丟棄式測試環境。開一個沒有 volume 的 pgvector 容器 + 用 node 直接跑 API（改程式不用重建映像），然後塞三個已知密碼、三種角色的帳號跟一筆孤兒 session。用丟棄式而不是開發環境：這套測試會建帳號，建在有真記憶的資料庫裡就會留垃圾。容器停掉資料就一起消失
 tests/e2e/global-setup.mjs                                       — 新增、Playwright globalSetup。回傳 teardown 函式，所以就算某條測試炸掉、環境也不會活過整次執行
-tests/e2e/playwright.config.mjs                                  — 新增、單一 worker、不平行：所有測試共用一個環境跟一個資料庫，而憑證接力那條會寫瀏覽器儲存空間、平行跑會互相看到。失敗才留截圖與 trace，而且寫到系統暫存目錄不進 repo（順帶避開一個誤判：commit 前檢查把 .gitignore 裡的 `tests/e2e/.artifacts/` 當成看起來像密鑰的長字串擋掉，這是那條長度啟發式的第四個誤判案例，已回報）
+tests/e2e/playwright.config.mjs                                  — 新增、單一 worker、不平行：所有測試共用一個環境跟一個資料庫，而憑證接力那條會寫瀏覽器儲存空間、平行跑會互相看到。失敗才留截圖與 trace，而且寫到系統暫存目錄不進 repo（順帶避開一個誤判：commit 前檢查把 .gitignore 裡的 `tests/e2e/.artifacts/` 當成看起來像密鑰的長字串擋掉，這是那條長度啟發式的第四個誤判案例，尚未回報 — 回報需要 Vin 親手打確認語句）
 tests/e2e/console.spec.mjs                                       — 新增、18 條。這些是 node --test 做不到的部分：它不能渲染 React，所以「一般成員只看得到自己的區塊」「憑證有交出去」以前都只是對原始碼字串的斷言，而原始碼看不出一個選單項目有沒有出現在畫面上
 ```
 修改檔：
