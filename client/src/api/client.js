@@ -13,6 +13,7 @@
 // 為什麼不用 axios：依賴最少化、fetch 已夠用、Bundle 小
 
 import { getApiKey, clearApiKey } from './auth.js';
+import { AUTH_EXPIRED } from './events.js';
 
 // 不需 Bearer header 的端點（公開）
 const NO_AUTH_PATHS = ['/api/me/login'];
@@ -72,13 +73,13 @@ async function request(method, path, body, opts = {}) {
   }
 
   // 401 — token 失效，清掉 localStorage 並廣播 event
-  // App.jsx 監聽 'ownmind:auth-expired' 跑 navigate('/login')、保留 SPA 體驗
+  // App.jsx 監聽 AUTH_EXPIRED 跑 navigate('/login')、保留 SPA 體驗
   // 不在 client.js 直接 window.location 硬跳：保留純函數性、方便單元測試
   if (resp.status === 401) {
     clearApiKey();
     if (typeof window !== 'undefined' && !authExpiredDispatched) {
       authExpiredDispatched = true;
-      window.dispatchEvent(new CustomEvent('ownmind:auth-expired'));
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED));
       // 1 秒後 reset flag、允許後續真實過期再次觸發
       setTimeout(() => { authExpiredDispatched = false; }, 1000);
     }

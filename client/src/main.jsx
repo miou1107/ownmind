@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import App from './App.jsx';
 import { LocaleProvider, useT } from './i18n/LocaleContext.jsx';
+import { SessionProvider } from './session/SessionContext.jsx';
 
 // basename 動態偵測：從 document.baseURI 抽 pathname、自動適應任何部署路徑
 //
@@ -36,9 +37,11 @@ function Root() {
   return (
     <LocaleProvider>
       <TitleSync />
-      <BrowserRouter basename={basename}>
-        <App />
-      </BrowserRouter>
+      <SessionProvider>
+        <BrowserRouter basename={basename}>
+          <App />
+        </BrowserRouter>
+      </SessionProvider>
     </LocaleProvider>
   );
 }

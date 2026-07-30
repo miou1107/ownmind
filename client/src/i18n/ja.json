@@ -16,40 +16,31 @@
   "nav.section.personal": "個人",
   "nav.section.admin": "管理者",
   "nav.section.super": "スーパー管理者",
-
   "header.title": "OwnMind コントロールセンター",
   "header.subtitle": "シンプルで統合されたコントロールセンター",
-  "header.role_simulator": "ロール切替",
   "header.role.user": "一般ユーザー",
   "header.role.admin": "管理者",
   "header.role.super_admin": "スーパー管理者",
   "header.guest": "ゲスト",
-
   "menu.profile": "プロフィール",
-  "menu.preferences": "設定",
   "menu.logout": "ログアウト",
-
+  "session.identity_unavailable": "ユーザー情報を読み込めなかったため、サイドバーが不完全な可能性があります。再読み込みしてください。続く場合は管理者にご連絡ください。",
   "filter.title": "記録とデータの絞り込み",
   "filter.subtitle": "報告日・アクティブなプロジェクト・キーワードで絞り込んでリアルタイム分析",
   "filter.all_projects": "すべてのプロジェクト",
   "filter.keyword_placeholder": "キーワード検索",
   "filter.clear": "絞り込みをクリア",
-
   "kpi.compliance_rate": "鉄則コンプライアンス率",
   "kpi.sessions": "AI セッション数",
   "kpi.sessions_unit": "セッション",
   "kpi.api_cost": "推定 API 換算クレジット (USD)",
   "kpi.token_traffic": "トークン流量分析",
-
   "footer.changelog": "変更履歴",
   "footer.copyright": "OwnMind オープンソースプロジェクト",
-
   "changelog.title": "変更履歴",
   "changelog.empty": "変更履歴はまだありません",
-
   "placeholder.coming_soon": "このページは再構築中です。今後の段階で完成予定です",
   "error.not_found": "ページが見つかりません",
-
   "login.title": "OwnMind にログイン",
   "login.subtitle": "メールとパスワードでコントロールセンターにログイン",
   "login.email_label": "メール",
@@ -59,7 +50,6 @@
   "login.submit": "ログイン",
   "login.submitting": "ログイン中…",
   "login.error_generic": "ログインに失敗しました。後でもう一度お試しください",
-
   "security.title": "パスワード変更",
   "security.subtitle": "アカウント保護のため、定期的なパスワード変更をおすすめします",
   "security.must_change_notice": "初期パスワードのままです。他の機能を使う前にパスワードを変更してください",
@@ -75,7 +65,6 @@
   "security.error_same_as_old": "新しいパスワードは以前のものと異なる必要があります",
   "security.error_too_short": "新しいパスワードは 8 文字以上にしてください",
   "security.error_generic": "パスワードの変更に失敗しました。後でもう一度お試しください",
-
   "profile.title": "プロフィール",
   "profile.subtitle": "表示名を管理できます。その他の情報は管理者が管理します",
   "profile.name_label": "表示名",
@@ -91,16 +80,13 @@
   "profile.error_load": "プロフィールの読み込みに失敗しました",
   "profile.error_save": "保存に失敗しました。後でもう一度お試しください",
   "profile.loading": "読み込み中…",
-
   "common.loading": "読み込み中…",
   "common.error_load": "読み込みに失敗しました。後でもう一度お試しください",
   "common.empty": "記録がまだありません",
   "common.close": "閉じる",
-
   "project_history.title": "プロジェクト履歴",
   "project_history.subtitle": "すべてのプロジェクト記憶を最終更新日時順に表示",
   "project_history.detail_title": "プロジェクト詳細",
-
   "handoffs.title": "作業引継ぎ",
   "handoffs.subtitle": "他の AI ツールから引き継がれた内容。引き継ぐとリストから削除されます",
   "handoffs.empty": "保留中の引継ぎはありません",
@@ -110,7 +96,6 @@
   "handoffs.accept_success": "引き継ぎました",
   "handoffs.accept_error": "引き継ぎに失敗しました。後でもう一度お試しください",
   "handoffs.profile_failed": "ユーザー情報を取得できないため、引き継ぎを一時停止しました。ページを再読み込みするか、再度ログインしてください",
-
   "reports.title": "報告履歴",
   "reports.subtitle": "あなたが作成したバグ報告と対応状況",
   "reports.detail_title": "報告の詳細",
@@ -122,7 +107,6 @@
   "reports.status_reason_label": "対応メモ",
   "reports.description_label": "詳細説明",
   "reports.error_forbidden": "この報告を閲覧する権限がありません",
-
   "vault.title": "認証情報管理",
   "vault.subtitle": "API キーやパスワードなどの機密情報を暗号化して保存。本人のみ閲覧可能",
   "vault.add": "認証情報を追加",
@@ -153,7 +137,6 @@
   "vault.error_delete": "削除に失敗しました。後でもう一度お試しください",
   "vault.error_key_required": "キーを入力してください",
   "vault.error_value_required": "値を入力してください",
-
   "usage.title": "使用量分析",
   "usage.subtitle": "あなたとチームの AI ツール使用量、アクティブなプロジェクト、鉄則の遵守状況",
   "usage.range.7d": "過去 7 日間",
@@ -163,10 +146,8 @@
   "usage.tab.mine": "個人",
   "usage.tab.team": "チーム",
   "usage.tab.projects": "プロジェクト",
-
   "usage.unit.sessions": "セッション",
   "usage.unit.events": "回",
-
   "usage.mine.sessions": "セッション数",
   "usage.mine.events": "イベント数",
   "usage.mine.last_activity": "最終アクティビティ",
@@ -175,18 +156,15 @@
   "usage.mine.compliance_title": "鉄則遵守の詳細",
   "usage.mine.versions_title": "ツールバージョン",
   "usage.mine.activity_title": "最近のアクティビティ",
-
   "usage.team.users_title": "チームメンバー",
   "usage.team.daily_title": "日次トレンド",
   "usage.team.hourly_title": "時間帯分布（24 時間）",
   "usage.team.weekday_title": "曜日分布",
   "usage.team.events_title": "イベント種別",
   "usage.team.versions_title": "メンバーのツールバージョン",
-
   "usage.projects.title": "チーム全体のプロジェクト",
   "usage.projects.detail_title": "プロジェクト詳細",
   "usage.projects.contributors_title": "貢献メンバー",
-
   "usage.weekday.sun": "日",
   "usage.weekday.mon": "月",
   "usage.weekday.tue": "火",
@@ -194,7 +172,6 @@
   "usage.weekday.thu": "木",
   "usage.weekday.fri": "金",
   "usage.weekday.sat": "土",
-
   "usage.col.project": "プロジェクト",
   "usage.col.sessions": "セッション",
   "usage.col.turns": "ターン数",

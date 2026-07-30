@@ -6,51 +6,25 @@ import {
   Sliders, Megaphone, FileSearch, Sparkles,
 } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
+import { NAV_SECTIONS } from './nav-sections';
 
-// 導航結構 — 4 區段、按角色決定能看到哪些
-// roles 為「至少一個符合就顯示」邏輯
-const NAV_SECTIONS = [
-  {
-    id: 'portal',
-    labelKey: 'nav.section.portal_analytics',
-    roles: ['user', 'admin', 'super_admin'],
-    items: [
-      { path: '/portal/usage', labelKey: 'nav.usage', icon: BarChart3 },
-      { path: '/portal/project-history', labelKey: 'nav.project_history', icon: FolderClock },
-      { path: '/portal/handoffs', labelKey: 'nav.handoffs', icon: GitBranch },
-      { path: '/portal/reports', labelKey: 'nav.reports', icon: Bug },
-    ],
-  },
-  {
-    id: 'preference',
-    labelKey: 'nav.section.preference',
-    roles: ['user', 'admin', 'super_admin'],
-    items: [
-      { path: '/preference/profile', labelKey: 'nav.profile', icon: UserCircle },
-      { path: '/preference/security', labelKey: 'nav.security', icon: Shield },
-      { path: '/preference/vault', labelKey: 'nav.vault', icon: Key },
-    ],
-  },
-  {
-    id: 'admin',
-    labelKey: 'nav.section.admin',
-    roles: ['admin', 'super_admin'],
-    items: [
-      { path: '/admin/team', labelKey: 'nav.team', icon: Users },
-      { path: '/admin/bugs', labelKey: 'nav.bugs', icon: AlertOctagon },
-    ],
-  },
-  {
-    id: 'super',
-    labelKey: 'nav.section.super',
-    roles: ['super_admin'],
-    items: [
-      { path: '/super/config', labelKey: 'nav.config', icon: Sliders },
-      { path: '/super/broadcast', labelKey: 'nav.broadcast', icon: Megaphone },
-      { path: '/super/audit', labelKey: 'nav.audit', icon: FileSearch },
-    ],
-  },
-];
+// 導覽結構已抽到 nav-sections.js（純資料、無 import），這樣「誰看得到哪一區」
+// 才有辦法被真的跑起來的測試拿去跟路由守門員比對。JSX 檔案 node --test 進不去。
+// 這裡只留 path 到圖示的對照。
+const ICONS = {
+  '/portal/usage': BarChart3,
+  '/portal/project-history': FolderClock,
+  '/portal/handoffs': GitBranch,
+  '/portal/reports': Bug,
+  '/preference/profile': UserCircle,
+  '/preference/security': Shield,
+  '/preference/vault': Key,
+  '/admin/team': Users,
+  '/admin/bugs': AlertOctagon,
+  '/super/config': Sliders,
+  '/super/broadcast': Megaphone,
+  '/super/audit': FileSearch,
+};
 
 function navLinkClass({ isActive }) {
   const base =
@@ -108,7 +82,7 @@ export default function Sidebar({ role = 'user', version }) {
             {openSections[section.id] && (
               <ul className="mt-1.5 space-y-1">
                 {section.items.map((item) => {
-                  const Icon = item.icon;
+                  const Icon = ICONS[item.path];
                   return (
                     <li key={item.path}>
                       <NavLink to={item.path} className={navLinkClass}>

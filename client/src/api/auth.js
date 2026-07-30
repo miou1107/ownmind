@@ -12,6 +12,19 @@
 const STORAGE_KEY = 'ownmind.api_key';
 const STORAGE_KEY_MUST_CHANGE = 'ownmind.must_change_password';
 
+import { SESSION_CHANGED } from './events.js';
+
+// Announce a key change so the session provider refetches the identity.
+//
+// Deliberately not left to callers: making LoginPage remember to call refresh() after
+// setApiKey() is exactly the kind of instruction that gets dropped when a second login
+// path appears. The project rule is to enforce with logic rather than memory, so the
+// write itself notifies.
+function notifySessionChanged() {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(SESSION_CHANGED));
+}
+
 export function getApiKey() {
   try {
     return localStorage.getItem(STORAGE_KEY) || null;
@@ -27,6 +40,7 @@ export function setApiKey(key) {
   } catch {
     // 隱私模式 / quota 滿 — 忽略，下次重新登入即可
   }
+  notifySessionChanged();
 }
 
 export function clearApiKey() {
@@ -37,6 +51,7 @@ export function clearApiKey() {
   } catch {
     // 同上
   }
+  notifySessionChanged();
 }
 
 // must_change_password 旗標：true 時 RequireFreshPassword 守門員會強制導 /preference/security

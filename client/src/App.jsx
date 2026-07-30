@@ -1,7 +1,8 @@
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useT } from './i18n/LocaleContext';
-import { Layout, RequireAuth, RequireFreshPassword } from './components/common';
+import { AUTH_EXPIRED } from './api/events';
+import { Layout, RequireAuth, RequireFreshPassword, RequireRole } from './components/common';
 import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
@@ -11,7 +12,7 @@ import ProjectHistoryPage from './pages/Portal/ProjectHistoryPage';
 import HandoffsPage from './pages/Portal/HandoffsPage';
 import ReportsPage from './pages/Portal/ReportsPage';
 
-// 階段 1 空殼 — 各頁面在階段 3（v1.20.1 步驟 3）拆出實作
+// 尚未實作的頁面 — 依整併計畫在階段 2 到 7 逐一換成真頁面
 function PlaceholderPage({ titleKey }) {
   const t = useT();
   return (
@@ -23,56 +24,61 @@ function PlaceholderPage({ titleKey }) {
 }
 
 export default function App() {
-  // 角色狀態仍由 App 持有（locale 已抽到 LocaleProvider）
-  // 未來會抽到 SessionProvider 統一管理使用者身分
-  const [currentRole, setCurrentRole] = useState('super_admin');
   const navigate = useNavigate();
 
   // 監聽 client.js 在 401 時 dispatch 的 auth-expired event、自動導 /login
   // 保留 SPA 體驗（不 hard reload）、router state reset 由 navigate 處理
+  //
+  // SessionContext 的 logout() 也 dispatch 同一個 event，所以「登出」跟
+  // 「token 失效」走同一條路徑，只有一個地方決定怎麼回到 /login
   useEffect(() => {
     function onAuthExpired() {
       navigate('/login', { replace: true });
     }
-    window.addEventListener('ownmind:auth-expired', onAuthExpired);
-    return () => window.removeEventListener('ownmind:auth-expired', onAuthExpired);
+    window.addEventListener(AUTH_EXPIRED, onAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED, onAuthExpired);
   }, [navigate]);
 
-  const layoutProps = {
-    role: currentRole,
-    onRoleChange: setCurrentRole,
-    profile: { name: 'User' },
-    // v1.26.43: `version` is no longer passed from here. Layout fetches it from
-    // the server itself, because Layout renders only after login while App does
-    // not. This used to be a hardcoded 'v1.20.1'.
-    //
-    // `changelog` is empty on purpose: Footer already renders a changelog.empty
-    // state in all three locales. It used to hold two mock entries frozen at
-    // v1.20.1. A real changelog feed is a separate piece of work.
-    changelog: [],
-    onLogout: () => console.log('logout'),
-    onOpenProfile: () => console.log('open profile'),
-  };
+  // Layout 自己從 SessionContext 讀身分、從 server 讀版號，所以這裡不再往下傳
+  // role / profile / onLogout / onOpenProfile。那四個原本是寫死的佔位值：角色寫死
+  // super_admin、姓名寫死 'User'、登出只 console.log、onOpenProfile 沒有實作。
+  // 寫死的角色會讓每一個登入者都看到「管理」跟「超級管理」區塊。
+  //
+  // changelog 刻意留空：Footer 三語系都有 changelog.empty 空狀態，真正的更新
+  // 紀錄來源是獨立的一件事。
+  const layoutProps = { changelog: [] };
 
-  // 所有實際頁面包兩層守門員：
+  // 一般頁面兩層守門員：
   //   RequireAuth — 沒登入直接導 /login
-  //   RequireFreshPassword — 登入了但 must_change_password=true 強制導 /preference/security
-  //     （/preference/security 本身會被 RequireFreshPassword 放行、避免無限循環）
-  const renderPlaceholder = (titleKey) => (
-    <RequireAuth>
-      <RequireFreshPassword>
-        <Layout {...layoutProps}>
-          <PlaceholderPage titleKey={titleKey} />
-        </Layout>
-      </RequireFreshPassword>
-    </RequireAuth>
-  );
-
-  // 實際頁面 wrapper：跟 renderPlaceholder 同樣守門結構、但顯示真實 page
+  //   RequireFreshPassword — 登入了但 must_change_password=true 強制導
+  //     /preference/security（該頁本身會被放行、避免無限循環）
   const renderPage = (page) => (
     <RequireAuth>
       <RequireFreshPassword>
         <Layout {...layoutProps}>{page}</Layout>
+      </RequireFreshPassword>
+    </RequireAuth>
+  );
+
+  // 管理與超級管理頁面多包一層 RequireRole。側邊欄本來就按角色過濾，但那只擋住
+  // 「看得到入口」，擋不住直接打網址進來。伺服器端每支 API 仍各自把關，這裡是
+  // 讓後台不要提供伺服器本來就會拒絕的東西。
+  const renderAdmin = (page) => (
+    <RequireAuth>
+      <RequireFreshPassword>
+        <RequireRole min="admin">
+          <Layout {...layoutProps}>{page}</Layout>
+        </RequireRole>
+      </RequireFreshPassword>
+    </RequireAuth>
+  );
+
+  const renderSuper = (page) => (
+    <RequireAuth>
+      <RequireFreshPassword>
+        <RequireRole min="super_admin">
+          <Layout {...layoutProps}>{page}</Layout>
+        </RequireRole>
       </RequireFreshPassword>
     </RequireAuth>
   );
@@ -93,14 +99,14 @@ export default function App() {
       <Route path="/preference/security" element={renderPage(<SecurityPage />)} />
       <Route path="/preference/vault" element={renderPage(<VaultPage />)} />
 
-      <Route path="/admin/team" element={renderPlaceholder('nav.team')} />
-      <Route path="/admin/bugs" element={renderPlaceholder('nav.bugs')} />
+      <Route path="/admin/team" element={renderAdmin(<PlaceholderPage titleKey="nav.team" />)} />
+      <Route path="/admin/bugs" element={renderAdmin(<PlaceholderPage titleKey="nav.bugs" />)} />
 
-      <Route path="/super/config" element={renderPlaceholder('nav.config')} />
-      <Route path="/super/broadcast" element={renderPlaceholder('nav.broadcast')} />
-      <Route path="/super/audit" element={renderPlaceholder('nav.audit')} />
+      <Route path="/super/config" element={renderSuper(<PlaceholderPage titleKey="nav.config" />)} />
+      <Route path="/super/broadcast" element={renderSuper(<PlaceholderPage titleKey="nav.broadcast" />)} />
+      <Route path="/super/audit" element={renderSuper(<PlaceholderPage titleKey="nav.audit" />)} />
 
-      <Route path="*" element={renderPlaceholder('error.not_found')} />
+      <Route path="*" element={renderPage(<PlaceholderPage titleKey="error.not_found" />)} />
     </Routes>
   );
 }

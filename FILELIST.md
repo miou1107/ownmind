@@ -1,6 +1,33 @@
 # OwnMind 檔案結構
 
-## 單一後台整併規劃（跨版本專案，僅規劃、尚未動工）
+## v1.26.45 修改（後台角色控管 — 單一後台整併的階段 0）
+
+新增檔：
+```
+client/src/session/SessionContext.jsx                            — 新增、登入後從 GET /api/me/profile 取真實身分（角色、姓名），由 SessionProvider 持有並提供 useSession()。角色刻意不寫進 localStorage（舊後台用 om_role 存、使用者改得動就看得到管理卡片），只放記憶體、每次載入重問伺服器。另提供 logout()：清憑證後發 auth-expired 事件，跟 token 失效走同一條回 /login 的路
+client/src/session/roles.js                                      — 新增、角色階梯與路由守門判斷純邏輯（roleAtLeast / decideRoleGate），刻意不含 JSX 所以 node --test 進得去。ROLE_RANK 用 Object.create(null)：物件實字會讓 ROLE_RANK['valueOf'] 是函式而非 undefined，實測 roleAtLeast('valueOf','valueOf') 回 true、失敗開放。decideRoleGate 先判就緒再判角色，這個順序讀原始碼驗不出來、必須執行
+client/src/components/common/RequireRole.jsx                     — 新增、角色路由守門員。RequireAuth 管「有沒有登入」、這支管「准不准進來」。先等身分確定才判斷，否則直接開網址時管理員會在身分還在路上時被踢走
+client/src/api/events.js                                         — 新增、跨層事件名稱常數（SESSION_CHANGED / AUTH_EXPIRED）。原本 session-changed 在 auth.js 跟 SessionContext 各寫一份、auth-expired 有三份，而測試只檢查「有 dispatchEvent」「有 addEventListener」，任一邊打錯一個字就會靜靜停止刷新而測試全綠
+client/src/components/common/nav-sections.js                     — 新增、導覽結構純資料（無 import、無 JSX），這樣「誰看得到哪一區」才能被真的跑起來的測試拿去跟路由守門層級比對。原本埋在 Sidebar.jsx 裡，唯一測得到的只有「檔案含 roles: [ 這個字串」，開放給錯的角色照樣會過。圖示改由 path 對照留在 Sidebar
+tests/console-session-identity.test.js                           — 34 tests：身分不是常數、角色不落地儲存、Layout 自己讀 session、守門員先等身分再導向、管理／超級管理路由各走對應的 renderAdmin／renderSuper、憑證變更會廣播、角色模擬器已移除且三語系無死鍵、選單指向既有路由。其中 14 條真的執行程式：角色階梯（含原型鍵的失敗關閉）、路由守門的三種判斷（等待／拒絕／放行，含「未就緒絕不拒絕」這條抓重排的斷言）、事件名稱兩邊相等、三語系字典鍵完全平行
+```
+修改檔：
+```
+client/src/App.jsx                                               — 移除寫死的 useState('super_admin')、姓名 'User'、console.log 登出、沒實作的 onOpenProfile。改成 renderPage／renderAdmin／renderSuper 三種 renderer，後兩者多包 RequireRole
+client/src/components/common/Layout.jsx                          — 角色與姓名改成自己從 useSession 讀，不再由 App 往下傳（同 v1.26.43 版號的理由：Layout 只在登入後渲染）
+client/src/pages/LoginPage.jsx                                   — 登入成功後把回應裡的身分直接餵進 session。navigate 跟 setApiKey 是同一個同步區塊，不餵的話目的頁會拿到「已解析但沒有角色」的身分，管理員從深連結登入每次都被導去用量頁
+client/src/components/common/Sidebar.jsx                         — 導覽結構移出到 nav-sections.js，本檔只留 path 到圖示的對照
+client/src/api/client.js                                         — auth-expired 改用共用常數
+client/src/components/common/TopBar.jsx                          — 移除角色模擬器；選單「個人資料」「偏好設定」兩項收成一項並改用 <Link> 連到 /preference/profile
+client/src/components/common/index.js                            — barrel 加 export RequireRole
+client/src/api/auth.js                                           — setApiKey / clearApiKey 發出 ownmind:session-changed，讓身分自動重載，不靠呼叫端記得 refresh
+client/src/main.jsx                                              — 在 BrowserRouter 外層包 SessionProvider
+client/src/i18n/{zh,en,ja}.json                                  — 移除 header.role_simulator 與 menu.preferences 兩個死鍵；新增 session.identity_unavailable（身分取得失敗時明講，不要靜靜降級成空側邊欄加「訪客」）
+README.md, docs/README.zh-TW.md, docs/README.ja.md               — 版號行 v1.26.44 → v1.26.45（三份都漏過，沒有任何卡控）
+tests/dashboard-version-source.test.js                           — 放寬「每個 Layout 都在 RequireAuth 底下」的斷言，允許中間插入其他守門層。原本三層緊貼比對，插入 RequireRole 就失敗，但不變式沒被破壞
+```
+
+## 單一後台整併規劃（跨版本專案，階段 0 已完成）
 
 新增檔：
 ```

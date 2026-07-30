@@ -247,9 +247,15 @@ describe('the version is fetched from a component that renders only after login'
 
     // Every Layout in App.jsx is wrapped in RequireAuth, so the hook cannot run
     // before a key exists.
+    //
+    // Further guards may sit between RequireFreshPassword and Layout — Stage 0 of the
+    // console consolidation added RequireRole for the admin and super tiers. The
+    // invariant is the ordering, not the exact nesting depth, so intervening
+    // <RequireX> wrappers are allowed. Pinning the depth instead made this fail on a
+    // change that preserved the guarantee it exists to protect.
     const app = stripComments(readFileSync(appPath, 'utf8'));
     const layoutUses = (app.match(/<Layout\b/g) || []).length;
-    const guarded = (app.match(/<RequireAuth>\s*<RequireFreshPassword>\s*<Layout\b/g) || []).length;
+    const guarded = (app.match(/<RequireAuth>\s*<RequireFreshPassword>\s*(?:<Require\w+[^>]*>\s*)*<Layout\b/g) || []).length;
     assert.equal(guarded, layoutUses,
       'every <Layout> must sit inside RequireAuth, otherwise the hook can fire unauthenticated');
   });
