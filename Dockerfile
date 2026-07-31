@@ -30,8 +30,9 @@ COPY scripts/bootstrap.ps1 ./scripts/bootstrap.ps1
 # server 端必須，其餘為 client scanner 共用同一份檔案的部署便利考量
 COPY shared/ ./shared/
 
-# v1.20：藍綠並存策略 — 新版 client build 產物放 dashboard/、舊 admin/ + me/ 維持不動
-# 等新版觀察期通過、Vin 拍板退役才會把舊版搬到 legacy-admin-v1.html 並 301 轉址
+# v1.20：藍綠並存策略 — 新版 client build 產物放 dashboard/
+# v1.26.48：/me 已退役，靜態 UI 搬到 repo 根目錄的 legacy/me-v1.19/（不打包進映像）。舊 admin/ 還在服務，
+# 等單一後台整併程式後續階段把 shared/legacy-console-manifest.js 的最後一個 signpost 翻成 live 就會自動 301 到新後台
 # 注意 vite outDir 設 '../src/public/dashboard'（相對 client/）、stage 1 cwd=/client、build 後寫到 /src/public/dashboard、不是預設的 /client/dist
 COPY --from=client-builder /src/public/dashboard/ ./src/public/dashboard/
 
