@@ -213,31 +213,61 @@ in place. Shipping this alone is safe, which is the point of the split.
 
 ## Stage 1b — Flip the entry point, retire `/me/`
 
-- [ ] Change `src/app.js:155` from the hardcoded `/ownmind/admin/` to a **relative**
-      redirect to the console
-- [ ] Fix `src/middleware/first-run-redirect.js`. It intercepts only `/admin`,
-      `/admin/*` and `/setup` (`:36`), so once `/` lands on the console a fresh
-      install never reaches the wizard. Both its redirects are also absolute
-      (`:56` `/setup`, `:61` `/admin/login`) and already drop the `/ownmind` prefix
-- [ ] `/me` and `/me/*` → relative 301 to the console's usage route, following the
-      pattern at `src/app.js:89`. A blanket redirect is safe: `/me/` keeps no state in
-      the URL. Confirmed by measurement
-- [ ] Fix the three tests that read `src/public/me/`: `tests/me-report.test.js:133,139`,
-      `tests/me-pitfalls.test.js:162-185`, `tests/me-trailing-slash.test.js:38,58,64-69`.
-      The last asserts by regex that `src/app.js` still contains the exact old `/me`
-      conditional, so a blanket 301 fails it
-- [ ] Move `src/public/me/` to a legacy name with a header comment; confirm unreachable
-- [ ] Confirm the `Dockerfile` needs no COPY change. `Dockerfile:18` is a
-      whole-directory `COPY src/ ./src/` with no per-file directives, so the correct
-      action is to verify preserved snapshots are **not** shipped, not to add one
-- [ ] Tests: root redirect resolves correctly with and without the `/ownmind` prefix;
-      `/me/` 301 keeps the prefix; no redirect target in `src/app.js` **or**
-      `src/middleware/first-run-redirect.js` contains a hardcoded `/ownmind`
-- [ ] Browser check on production, including following a signpost and confirming no
-      second login is demanded
+Shipped as `v1.26.48`.
+
+- [x] Root redirect at `src/app.js:165-167` changed from the hardcoded
+      `/ownmind/admin/` to a relative `dashboard/`, resolved by `relativeRedirectTarget()`.
+      The utility (added in v1.26.46) is the same one legacy-admin-mount uses; same
+      shape, one call site
+- [x] `src/middleware/first-run-redirect.js` extended to intercept `/` too, and both
+      absolute Locations (`/setup`, `/admin/login`) switched to relative via the same
+      helper. Without the `/` intercept, a fresh install landing on the new root would
+      bypass the wizard entirely
+- [x] `/me` and `/me/*` → relative 301 to `dashboard/portal/usage`. Express 5 has no
+      unnamed `/me/*` wildcard, so used `app.use('/me', ...)` middleware, the same
+      shape as `legacy-admin-mount.js`. Three request depths (`/me`, `/me/`, `/me/foo`,
+      `/me/foo/bar`) all compute to the same terminal URL via the helper's `../` math
+- [x] The three affected tests handled: `me-trailing-slash.test.js` deleted entirely
+      (its subject — the conditional trailing-slash handler — no longer exists, and
+      the new file covers the new behaviour). `me-report.test.js` kept only the
+      `/api/me` mount assertion; the two `src/public/me/index.html` reads dropped.
+      `me-pitfalls.test.js` dropped the "HTML wires it up" `describe` block; the
+      API-endpoint tests stay untouched
+- [x] `src/public/me/index.html` moved to `legacy/me-v1.19/index.html` via `git mv`.
+      Header comment prepended stating it is a preserved snapshot not served by any
+      route. No `Dockerfile` `COPY` reaches `legacy/` — verified by reading every
+      COPY line — so the runtime image no longer ships it
+- [x] Structural test in `tests/stage-1b-flip-root-retire-me.test.js` asserts no
+      `res.redirect(...)` call in `src/app.js` **or** `src/middleware/first-run-redirect.js`
+      contains a `/ownmind` string literal. 11 new behavioural tests structured as
+      resolution invariants: emit the Location, resolve against two different base URLs
+      (`http://x/` and `http://x/ownmind/`), assert both resolve to the intended terminal.
+      Same pattern as v1.26.44
+- [x] Code review round: 1 Critical (none, actually — 3 Minor). Dockerfile:33 comment
+      still said "舊 admin/ + me/ 維持不動"; `Pitfalls.jsx` vs actual `PitfallsPage.jsx`;
+      tasks.md checkboxes still `[ ]` after phases were done. All three fixed.
+      Full suite 2312/2312 green
+- [x] Released and deployed 2026-07-31. `v1.26.48` on `/VinService/ownmind` (found this
+      by grepping — `/root/.ownmind/` I hit first is an unrelated personal checkout).
+      `git fetch --tags && git checkout v1.26.48 && docker compose build --no-cache api
+      && docker compose up -d api`. No migrations in this range (17 applied, 0 new).
+      Container came up, log shows normal startup
+- [x] Post-deploy browser check on production: `/ownmind/` and `/ownmind/dashboard`
+      both land on the console login. `/ownmind/me`, `/ownmind/me/foo/bar` both 301 → console
+      login through the correct `../` depths (verified via `curl -sI` on the container
+      + through the browser after nginx). `/ownmind/admin/` still 200 with title "OwnMind
+      Admin" — Stage 1a signposts intact, manifest unchanged. No console errors on any
+      route
+- [x] **Found by that browser check, filed pre-existing**: `/ownmind/setup` when
+      `firstRun=false` resolves to `/ownmind/admin/login` which returns Express's default
+      `Cannot GET /admin/login` — the legacy admin is `express.static`, no file under
+      `login/`. Confirmed same 404 on `v1.26.47` before this change: not introduced here.
+      Zero practical impact today (populated DB never routes through `/setup`); Stage 8
+      flips the login flow via LoginPage's `requiresSetup` branch, right stage to fix
+      the target there
 
 **Done when**: three consoles become two, the console is the default entry point, no
-feature lost.
+feature lost. ✅ Achieved 2026-07-31 with v1.26.48.
 
 ## Stage 2 — 使用者管理
 

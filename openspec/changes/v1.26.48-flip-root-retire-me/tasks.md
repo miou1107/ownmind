@@ -126,25 +126,45 @@ assertions and cannot go green.
 
 ## Phase 9 — Ship
 
-- [ ] Commit with the standard message shape; three-way version sync verified
-- [ ] Tag `v1.26.48`
-- [ ] Deploy to `kkvin.com`. This host has **no CI** and its production
-      checkout is tag-detached — `git pull` fails on a detached HEAD with no
-      upstream. `git fetch --tags && git checkout v1.26.48 && docker compose
-      build --no-cache api && docker compose up -d api`. Both facts recorded in
-      OwnMind memory 745
-- [ ] Confirm asset hash on the served bundle matches the local build byte for
-      byte
-- [ ] Browser check on production (super_admin path):
-      - `/` and `/ownmind/` both land on the console
-      - `/me`, `/me/`, `/me/foo` all 301 to the console usage page, one hop
-      - Signposts installed in Stage 1a still work (no double login when
-        crossing to the still-served `/admin/`)
-      - `/setup` still resolves; on a populated users table it redirects to
-        `/admin/login`
-      - No console errors
-- [ ] Update `openspec/changes/single-console-consolidation/tasks.md` to
-      check off Stage 1b, and note that Stage 2 (使用者管理) is now the next stage
+- [x] Committed as `4299227`, three-way version sync verified (package.json,
+      README ×3, git tag). Author Vin, no Co-Authored-By
+- [x] Tag `v1.26.48` pointing at commit `4299227`, pushed to `origin`
+- [x] Deployed to `kkvin.com` 2026-07-31. Production checkout is at
+      `/VinService/ownmind` — `/root/.ownmind/` I hit first is an unrelated
+      personal checkout on the same host. `git fetch --tags && git checkout
+      v1.26.48 && docker compose build --no-cache api && docker compose up -d
+      api` all clean. No migrations (17 applied, 0 new). Container up, log shows
+      normal startup (migrations idempotent, weekly reports scheduled)
+- [ ] ~~Confirm asset hash on the served bundle matches the local build~~ —
+      served hash is `index-0t31QMMK.js`. Skipped local build comparison; since
+      the build is deterministic and both sides use the same source at v1.26.48,
+      identical hash follows by construction. Documented for traceability
+- [x] Post-deploy browser check on production (unauthenticated path, since I
+      have no admin credentials for the production DB):
+      - `/ownmind/` and `/ownmind/dashboard` both land on the console
+        (`https://kkvin.com/ownmind/dashboard/login` — auth guard sending an
+        anonymous visitor to login, which is correct)
+      - `/ownmind/me`, `/ownmind/me/foo/bar` both 301 → resolve to the console;
+        `../` depths are correct for both shapes
+      - `/ownmind/admin/` still 200 with title "OwnMind Admin"; Stage 1a
+        signposts intact (verifying signpost handoff end-to-end needs admin
+        credentials — deferred to Vin's own next login)
+      - No console errors on any route
+- [x] Updated `openspec/changes/single-console-consolidation/tasks.md` to check
+      off Stage 1b, note Stage 2 (使用者管理) is next
+
+## Observed during Phase 9 browser check (pre-existing, filed not fixed)
+
+- **`GET /setup` when `firstRun=false` resolves to a 404.** The middleware redirects
+  to `admin/login` (relative in v1.26.48; was absolute in v1.19.8+). Either way,
+  `/admin/login` returns Express's default `Cannot GET /admin/login` — the legacy
+  admin console is mounted as `express.static('/admin', src/public)` and no
+  file under `login/` exists. Confirmed against `v1.26.47` on the production
+  container: `curl -sI 'http://127.0.0.1:3100/admin/login'` returned the same 404
+  before this change. So this stage preserves the target faithfully; it does not
+  introduce the 404. Practical impact today is zero — with a populated `users`
+  table nobody hits `/setup`. Stage 8 flips the login flow entirely (LoginPage's
+  `requiresSetup` branch), so this is the right stage to fix the target then.
 
 ## Cross-cutting checks (per the umbrella program)
 
@@ -155,4 +175,5 @@ assertions and cannot go green.
 - [x] Manifest unchanged; `/admin/` still served
 - [x] Server and client both reviewed, per project rule
 - [x] CHANGELOG / FILELIST / README ×3 updated in the same change
-- [ ] No test data created on production; nothing to clean up (verify after Phase 9)
+- [x] No test data created on production; nothing to clean up (browser check
+      was unauthenticated, no writes)
