@@ -1,23 +1,30 @@
 /**
- * First-run redirect middleware — v1.19.8
+ * First-run redirect middleware — v1.19.8, extended in v1.26.48.
  *
- * Implements openspec/changes/v1.19.8-setup-wizard/spec.md scenarios 1, 2, 3.
+ * Implements openspec/changes/v1.19.8-setup-wizard/spec.md scenarios 1, 2, 3
+ * and openspec/changes/v1.26.48-flip-root-retire-me/spec.md Requirement 3.
  *
  * Behavior:
- *   - users table empty (first_run=true) → /admin/* auto-redirects to /setup
- *   - users table has an admin (first_run=false) → /setup auto-redirects to /admin/login
+ *   - users table empty (first_run=true) → GET /, /admin/* → /setup
+ *   - users table has an admin (first_run=false) → GET /setup → /admin/login
  *   - the opposite path in each state stays normal (no extra interception)
+ *
+ * v1.26.48 changes:
+ *   - GET / is also intercepted, so a fresh install landing on the new root
+ *     (which no longer points at /admin/) still reaches the wizard.
+ *   - Locations are relative (via relativeRedirectTarget), so the middleware
+ *     survives an /ownmind reverse-proxy prefix without a hardcoded string.
  *
  * Design:
  *   - pure redirect, does not block the API (/api/setup/* is handled by its own router)
  *   - fail-open on error: if the DB query fails, treat as not first_run, so users
  *     aren't misled into the wizard
  *   - no result caching: queries the DB on every request; if this becomes a perf issue,
- *     an in-memory 1-second cache could be added later (within v1.19.8 scope the
- *     first_run window is expected to be very short and not hit frequently)
- *   - Factory pattern (v1.19.8 code-review I-2): dependencies are injectable for easy integration testing
+ *     an in-memory 1-second cache could be added later
+ *   - Factory pattern (v1.19.8 code-review I-2): dependencies are injectable for testing
  */
 import { detectFirstRun as defaultDetectFirstRun } from '../routes/setup.js';
+import { relativeRedirectTarget } from '../utils/relative-redirect.js';
 
 /**
  * Create the first-run redirect middleware
@@ -33,15 +40,13 @@ export function createFirstRunRedirect(deps = {}) {
     const path = req.path;
 
     // only intercept specific paths; everything else passes straight to next
+    const isRootPath = path === '/';
     const isAdminPath = path === '/admin' || path === '/admin/' || path.startsWith('/admin/');
     const isSetupPath = path === '/setup' || path === '/setup/';
 
-    if (!isAdminPath && !isSetupPath) {
+    if (!isRootPath && !isAdminPath && !isSetupPath) {
       return next();
     }
-
-    // Note: /api/* paths never reach here (already excluded above), so no extra guard needed
-    // (v1.19.8 code-review M-1 removed the dead code)
 
     let firstRun;
     try {
@@ -51,17 +56,17 @@ export function createFirstRunRedirect(deps = {}) {
       return next();
     }
 
-    if (firstRun && isAdminPath) {
-      // users table empty, user opened admin → guide them to the wizard
-      return res.redirect(302, '/setup');
+    if (firstRun && (isRootPath || isAdminPath)) {
+      // users table empty, user opened the root or admin → guide them to the wizard
+      return res.redirect(302, relativeRedirectTarget(req.originalUrl, 'setup'));
     }
 
     if (!firstRun && isSetupPath) {
       // setup already done, wizard permanently closed, guide back to the login page
-      return res.redirect(302, '/admin/login');
+      return res.redirect(302, relativeRedirectTarget(req.originalUrl, 'admin/login'));
     }
 
-    // other cases (first_run + setup path, or non-first_run + admin path) pass normally
+    // other cases (first_run + setup path, or non-first_run + admin/root path) pass normally
     return next();
   };
 }

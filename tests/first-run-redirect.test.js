@@ -1,8 +1,10 @@
 /**
- * v1.19.8 — firstRunRedirect middleware integration tests
+ * firstRunRedirect middleware integration tests
  *
- * Maps to openspec/changes/v1.19.8-setup-wizard/spec.md scenarios 1, 2, 3.
- * Closes the coverage gap raised in code-review I-2 (previously verified only by reading code).
+ * Originally v1.19.8; scenarios 1 and 2 were rewritten in v1.26.48 to assert
+ * that Locations are relative (resolved against the request URL) rather than
+ * absolute strings. See openspec/changes/v1.26.48-flip-root-retire-me/spec.md
+ * Requirement 3.
  *
  * Uses the createFirstRunRedirect factory to inject a fake detector so the tests do not hit the DB.
  */
@@ -83,19 +85,29 @@ async function request(app, { method, path, headers = {} }) {
 // Scenario 1: empty DB + /admin/* → redirect to /setup
 // ============================================================
 
-describe('v1.19.8 scenario 1 — when first_run=true, /admin/* auto-redirects to /setup', () => {
-  it('/admin/login → 302 /setup', async () => {
+describe('scenario 1 — when first_run=true, /admin/* redirects to setup (v1.26.48: relative)', () => {
+  it('/admin/login → 302; Location resolves to setup one level up', async () => {
     const app = buildApp(fakeDetector({ firstRun: true }));
     const r = await request(app, { method: 'GET', path: '/admin/login' });
     assert.equal(r.status, 302);
-    assert.equal(r.redirect, '/setup');
+    assert.ok(r.redirect, 'Location must be set');
+    assert.ok(
+      !r.redirect.startsWith('/'),
+      `Location must be relative (v1.26.48), got "${r.redirect}"`,
+    );
+    // /admin/login sits inside the /admin/ directory, so climbing one level
+    // reaches the root; resolves to /setup under any prefix.
+    const resolved = new URL(r.redirect, 'http://x/ownmind/admin/login').href;
+    assert.equal(resolved, 'http://x/ownmind/setup');
   });
 
-  it('/admin/users (any /admin/* sub-path) → 302 /setup', async () => {
+  it('/admin/users → 302; Location resolves to setup one level up', async () => {
     const app = buildApp(fakeDetector({ firstRun: true }));
     const r = await request(app, { method: 'GET', path: '/admin/users' });
     assert.equal(r.status, 302);
-    assert.equal(r.redirect, '/setup');
+    assert.ok(!r.redirect.startsWith('/'));
+    const resolved = new URL(r.redirect, 'http://x/ownmind/admin/users').href;
+    assert.equal(resolved, 'http://x/ownmind/setup');
   });
 });
 
@@ -103,12 +115,14 @@ describe('v1.19.8 scenario 1 — when first_run=true, /admin/* auto-redirects to
 // Scenario 2: DB already has admins → /setup auto-redirects to /admin/login
 // ============================================================
 
-describe('v1.19.8 scenario 2 — when first_run=false, /setup auto-redirects to /admin/login', () => {
-  it('GET /setup → 302 /admin/login', async () => {
+describe('scenario 2 — when first_run=false, /setup redirects to admin/login (v1.26.48: relative)', () => {
+  it('GET /setup → 302; Location resolves to admin/login', async () => {
     const app = buildApp(fakeDetector({ firstRun: false }));
     const r = await request(app, { method: 'GET', path: '/setup' });
     assert.equal(r.status, 302);
-    assert.equal(r.redirect, '/admin/login');
+    assert.ok(!r.redirect.startsWith('/'));
+    const resolved = new URL(r.redirect, 'http://x/ownmind/setup').href;
+    assert.equal(resolved, 'http://x/ownmind/admin/login');
   });
 });
 
@@ -154,14 +168,43 @@ describe('v1.19.8 — fail-open: middleware lets requests through when the DB fa
   it('detectFirstRun throws, /admin/login is not redirected (fail-open)', async () => {
     const app = buildApp(fakeDetector({ throws: 'DB down' }));
     const r = await request(app, { method: 'GET', path: '/admin/login' });
-    assert.notEqual(r.redirect, '/setup');
+    assert.equal(r.redirect, null, 'fail-open must not redirect');
     assert.equal(r.status, 200, 'on failure, pass through and show the original admin page');
   });
 
   it('detectFirstRun throws, /setup also passes through', async () => {
     const app = buildApp(fakeDetector({ throws: 'DB down' }));
     const r = await request(app, { method: 'GET', path: '/setup' });
-    assert.notEqual(r.redirect, '/admin/login');
+    assert.equal(r.redirect, null);
     assert.equal(r.status, 200);
+  });
+});
+
+// ============================================================
+// v1.26.48 — the root path is intercepted too, so a fresh install landing
+// on / still reaches the wizard after Stage 1b flips the root redirect
+// away from /admin/.
+// ============================================================
+
+describe('v1.26.48 scenario 4 — first_run=true, GET / redirects to setup', () => {
+  it('GET / → 302; Location resolves to /setup at any prefix', async () => {
+    const app = buildApp(fakeDetector({ firstRun: true }));
+    // Need a fake / handler so pass-through would 200 rather than 404.
+    app.get('/', (req, res) => res.status(200).send('root-page'));
+    const r = await request(app, { method: 'GET', path: '/' });
+    assert.equal(r.status, 302, 'first_run=true must not fall through to the console redirect');
+    assert.ok(r.redirect, 'Location must be set');
+    assert.ok(!r.redirect.startsWith('/'), `Location must be relative, got "${r.redirect}"`);
+    assert.equal(new URL(r.redirect, 'http://x/ownmind/').href, 'http://x/ownmind/setup');
+    assert.equal(new URL(r.redirect, 'http://x/').href, 'http://x/setup');
+  });
+
+  it('GET / with first_run=false → passes through to the next handler', async () => {
+    const app = buildApp(fakeDetector({ firstRun: false }));
+    app.get('/', (req, res) => res.status(200).send('root-page'));
+    const r = await request(app, { method: 'GET', path: '/' });
+    assert.equal(r.redirect, null);
+    assert.equal(r.status, 200);
+    assert.equal(r.body, 'root-page');
   });
 });

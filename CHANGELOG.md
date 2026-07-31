@@ -1,5 +1,47 @@
 # OwnMind 更新紀錄
 
+## v1.26.48 — 根路徑翻到新後台、`/me/` 收掉（單一後台整併 階段 1b）
+
+**背景**：三個後台整併成一個的階段 1b。階段 1a（v1.26.46 / v1.26.47）把使用者在 `/me/` 用得到的功能全部搬進了新後台，並在新後台把還沒重建的舊 `/admin/` 功能都掛上了指路牌。所以現在動根路徑是安全的：把 `/` 從舊後台指到新後台、把 `/me/*` 全部 301 到新後台的用量頁 — 使用者昨天用得到的、今天都還在，只是入口換了地方。
+
+**三個後台變兩個。** `/admin/` 沒動，等階段 2~7 把功能一個一個重建完、Stage 1a 那份 manifest 空掉之後才會自動退役。
+
+### 兩處硬編碼 `/ownmind` 的絕對路徑改成相對
+
+以前 `src/app.js` 的根路徑寫 `res.redirect('/ownmind/admin/')`。這是這個 repo 只在 `/ownmind` 底下跑那個年代留下的假設。nginx 會在轉發前把 `/ownmind` 前綴切掉，Express 完全看不到，所以硬編碼 `/ownmind` 是在賭部署拓撲 — 這個賭其他地方（例如 v1.26.44 的 `<base href>`、legacy-admin-mount 的 301 目標）早就不做了。改成相對路徑 `dashboard/`，瀏覽器會按當下 URL 的目錄解析：`/ownmind/` 底下解成 `/ownmind/dashboard/`、直接掛 `/` 就解成 `/dashboard/`。同一個字串兩種部署都對。
+
+同一個病灶 `src/middleware/first-run-redirect.js` 有兩處：`/setup` 跟 `/admin/login` 都是絕對路徑。今天在 kkvin.com 沒事是因為 nginx 剛好連沒帶前綴的 `/setup` 也代理，但那是巧合而不是設計。這次一起改成相對。用同一個工具函式 `relativeRedirectTarget()` — 這是 v1.26.46 建立 legacy-admin-mount 時已經抽出來的、有 10 條單元測試背書。
+
+### first-run 攔的路徑要多攔 `/`
+
+以前 first-run middleware 只攔 `/admin*` 跟 `/setup`。根路徑之前也指到 `/admin/`、所以會被攔第二次；現在根路徑直接指到 `/dashboard/`、middleware 完全不看，全新安裝的使用者打開 `/` 會落到一個他還沒帳號的新後台。middleware 加上 `/` 的攔截：first_run=true 時把根路徑也導去 setup。
+
+### `/me/` 全家 301 到新後台用量頁
+
+以前 `/me` 是條件式：沒帶斜線就 301 加斜線、有斜線就服務靜態 HTML。現在整包退役：`/me`、`/me/`、`/me/foo`、`/me/foo/bar` 全部 301 到 `dashboard/portal/usage`。
+
+Express 的 `res.redirect(loc)` 是把 `loc` 原樣塞進 Location header、瀏覽器再按當下 URL 的目錄解析，所以三種請求形狀需要三種 `../` 步數。同樣用 `relativeRedirectTarget()` 逐一算。`/me/` 底下本來就沒帶狀態（實測過），所以深路徑丟掉直接落用量頁沒問題。
+
+### 舊 UI 搬到 `legacy/me-v1.19/`、正式機映像不再打包
+
+Dockerfile 是整包 `COPY src/ ./src/`，所以留在原地會繼續被打進正式機映像。搬到 repo 根目錄的 `legacy/me-v1.19/`（跟 `/admin/` 未來要搬的位置一致），檔頭加註明「這是保存的歷史快照、不被任何路由服務」。任何 COPY 都不會撿到它。
+
+### 三支既有測試處理
+
+`tests/me-trailing-slash.test.js` 整份刪掉：它測的條件式 trailing-slash handler 已經不存在，新行為由本次新加的 `tests/stage-1b-flip-root-retire-me.test.js` 覆蓋。
+
+`tests/me-report.test.js` 三條讀 `src/public/me/index.html` 的測試刪掉、`src/app.js` 服務 `/me` 靜態頁那條改成只驗 `/api/me` 還掛著。
+
+`tests/me-pitfalls.test.js` 那個讀 legacy HTML 驗 pitfalls 頁籤 wiring 的整個 describe 刪掉。API 端點測試在上面、沒被動到；console 端的 wiring 屬於 `client/src/pages/Portal/Pitfalls.jsx` 的測試領域、不歸這個後端檔管。
+
+### 新測試覆蓋
+
+`tests/stage-1b-flip-root-retire-me.test.js` — 11 條，起真實 `src/app.js`（照 v1.26.44 的做法設 `ENCRYPTION_KEY`），用「把 Location 拿去對兩個不同 base URL 解析、應該落在同一個終點」的方式驗，不用字串比對。三個/me 請求形狀（無斜線、有斜線、深路徑一層、深路徑兩層）都驗過、加一條「`/me/index.html` 不能再回 200」防止靜態掛載偷偷復活、加一條結構性檢查「兩個檔案的 `res.redirect(...)` 裡不能出現 `/ownmind` 字串」。
+
+`tests/first-run-redirect.test.js` — 原本兩條斷言絕對路徑的改成相對＋瀏覽器解析、加了「/ 這條路徑 first_run=true 走 setup、first_run=false 通過」兩條新場景。
+
+全套 2312 條全綠、跟改動前一樣。
+
 ## v1.26.47 — AI 說明自己編了一個人數出來（v1.26.46 部署後實測抓到）
 
 v1.26.46 上線之後用瀏覽器實測，整體分析的排名下面那句 AI 說明寫著：

@@ -74,6 +74,7 @@ installLegacyAdminMount(app, {
 // SPA fallback uses middleware (Express 5's path-to-regexp no longer accepts the old /dashboard/* wildcard)
 // Flow: express.static tries to find the file first; only on miss does the fallback return index.html for react-router to take over
 import { createSpaShellHandler } from './utils/spa-shell.js';
+import { relativeRedirectTarget } from './utils/relative-redirect.js';
 // v1.26.44: the fallback rewrites the shell's <base href> for the requested depth.
 // Serving the shell verbatim made every route deeper than one segment render blank,
 // because a relative base resolves against the document's own address and the asset
@@ -88,19 +89,17 @@ app.get('/setup', (req, res) => {
   res.sendFile(join(__dirname, 'public', 'setup.html'));
 });
 
-// v1.17.24: user usage report page (the user role can view it too, path /ownmind/me/)
-// v1.17.88: added a trailing-slash redirect — /me without a trailing slash 404'd directly, now 301 → me/
-// Use a relative redirect ('me/' not '/me/') to avoid nginx reverse proxy stripping it:
-// after the /ownmind prefix the Location header would become absolute and send the user
-// to a /me/ without the prefix.
-// Relative 'me/' against the current URL /ownmind/me is joined by the browser into /ownmind/me/ ✓
-// Conditional: only redirect when originalUrl does not end with /, otherwise next() to the static middleware.
-// (Express defaults to strict routing=false, so both /me and /me/ match this route)
-app.get('/me', (req, res, next) => {
-  if (req.originalUrl.endsWith('/')) return next();
-  res.redirect(301, 'me/');
+// v1.26.48: /me is retired. Everything under it 301s to the console usage page.
+// The legacy static UI moved to legacy/me-v1.19/ and is no longer served.
+// See openspec/changes/v1.26.48-flip-root-retire-me/spec.md Requirement 2.
+//
+// `app.use('/me', ...)` catches `/me`, `/me/`, and every path below. The number of
+// `../` steps to climb back to the root depends on the request depth, so the
+// Location is computed per-request by relativeRedirectTarget — the same helper the
+// legacy-admin-mount uses for the analogous /admin retirement.
+app.use('/me', (req, res) => {
+  res.redirect(301, relativeRedirectTarget(req.originalUrl, 'dashboard/portal/usage'));
 });
-app.use('/me', express.static(join(__dirname, 'public', 'me')));
 
 // request logging
 app.use((req, res, next) => {
@@ -161,9 +160,13 @@ app.use('/api/bug-reports', bugReportsRoutes);
 app.use('/api/debug', createDebugRouter({ query, auth }));
 app.use('/api/version', createVersionRouter({ auth }));
 
-// root path redirects to Admin
+// v1.26.48: root points at the console. Relative Location so the same emitted
+// value serves both a plain `/` deployment and the /ownmind reverse-proxy setup.
+// firstRunRedirect (mounted earlier) intercepts this route when the users table
+// is empty and sends the visitor to the setup wizard instead.
+// See openspec/changes/v1.26.48-flip-root-retire-me/spec.md Requirement 1.
 app.get('/', (req, res) => {
-  res.redirect('/ownmind/admin/');
+  res.redirect(relativeRedirectTarget(req.originalUrl, 'dashboard/'));
 });
 
 // health check

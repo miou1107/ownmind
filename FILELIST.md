@@ -1,5 +1,46 @@
 # OwnMind 檔案結構
 
+## v1.26.48 修改（根路徑翻到新後台、`/me/` 收掉 — 單一後台整併階段 1b）
+
+**背景**：三個後台整併成一個的階段 1b。階段 1a（v1.26.46 / v1.26.47）已經把 `/me/` 用得到的功能全部搬進新後台、把還沒重建的舊 `/admin/` 功能都掛上指路牌，所以現在動根路徑是安全的。
+
+新增檔：
+```
+openspec/changes/v1.26.48-flip-root-retire-me/proposal.md       — 新增、change folder（背景、根因、選項比較、非目標）
+openspec/changes/v1.26.48-flip-root-retire-me/spec.md           — 新增、五個 requirement 加 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.26.48-flip-root-retire-me/tasks.md          — 新增、九個 phase 對照這次做的每一步
+tests/stage-1b-flip-root-retire-me.test.js                      — 新增、11 條。起真實 src/app.js（照 v1.26.44 設 ENCRYPTION_KEY），用「把 Location 對兩個不同 base URL 解析、應該落在同一個終點」的方式驗、不用字串比對。三個 /me 請求形狀（無斜線、有斜線、深路徑）全驗過、加一條「/me/index.html 不能再回 200」防止靜態掛載偷偷復活、加一條結構性檢查「app.js 跟 first-run-redirect.js 的 res.redirect 裡不能有 /ownmind 字串」
+legacy/me-v1.19/index.html                                       — 從 src/public/me/index.html 搬過來的保存快照。Dockerfile 沒有任何 COPY 拉 legacy/，所以正式機映像不會再打包這個檔。檔頭加了 HTML 註解說明「保存快照、不被任何路由服務」
+```
+
+修改檔：
+```
+src/app.js                                                       — 兩處硬編碼 /ownmind 絕對路徑改相對：根路徑從 `res.redirect('/ownmind/admin/')` 改成 `res.redirect(relativeRedirectTarget(req.originalUrl, 'dashboard/'))`；/me 條件式 handler + `express.static(src/public/me)` 靜態掛載整包換成 `app.use('/me', ...)` middleware，用 relativeRedirectTarget 算深度、301 到 dashboard/portal/usage
+src/middleware/first-run-redirect.js                             — 加 `/` 攔截（以前只攔 /admin*、/setup；根路徑翻新之後全新安裝會跳過 middleware 直接到新後台）；兩處絕對 Location `/setup`、`/admin/login` 改用 relativeRedirectTarget
+tests/first-run-redirect.test.js                                 — 兩條 scenario 從斷言絕對字串改成「解析後應該落在正確終點」；加 v1.26.48 scenario 4：first_run=true 時 `/` 走 setup、first_run=false 時 `/` 通過。fail-open 場景改用 `redirect === null` 而不是 `notEqual`
+tests/me-report.test.js                                          — 三條讀 src/public/me/index.html 的測試刪掉；「serve /me 靜態頁」那條改成只驗 /api/me 還掛著（靜態頁已退役、行為由 stage-1b 檔覆蓋）
+tests/me-pitfalls.test.js                                        — 讀 legacy HTML 驗 pitfalls 頁籤 wiring 的 describe 整塊刪除。API 端點測試在上面、沒動；console 端 wiring 屬於 client/src/pages/Portal/PitfallsPage.jsx 的測試領域
+package.json, README.md, docs/README.{zh-TW,ja}.md               — 版號 1.26.47 → 1.26.48
+```
+
+搬移：
+```
+src/public/me/index.html → legacy/me-v1.19/index.html            — 舊 /me/ 靜態 UI 保存為歷史快照、搬出 src/ 避免被 Docker 打包進正式機。用 git mv 保留 history
+```
+
+刪除檔：
+```
+tests/me-trailing-slash.test.js                                  — 整份刪掉。測的條件式 `/me` → `me/` handler 已經不存在，新行為由 stage-1b-flip-root-retire-me.test.js 覆蓋。git history 保留
+```
+
+**選擇說明**：
+
+- 為什麼不直接讓 `/` 302 到寫死的 `/ownmind/dashboard/`：nginx 會把 `/ownmind` 前綴切掉才轉發、Express 完全看不到。硬編碼 `/ownmind` 是賭部署拓撲，這個賭其他地方（v1.26.44 的 `<base href>`、legacy-admin-mount 的 301 目標）都已經不做了。相對路徑 `dashboard/` 兩種部署（有前綴、沒前綴）都對。
+- 為什麼 `/me` 三種形狀不用同一個 Location：Express 的 `res.redirect(loc)` 是把 `loc` 原樣塞進 Location header、瀏覽器再按當前 URL 的目錄解析。`/ownmind/me`、`/ownmind/me/`、`/ownmind/me/foo` 的目錄不同，所以要往上退的層數也不同。`relativeRedirectTarget(req.originalUrl, target)` 從 originalUrl 算深度、逐次算對的層數。
+- 為什麼 `/me` 用 `app.use('/me', ...)` middleware 而不是 `app.get('/me/*', ...)`：Express 5 已經拿掉裸的 `/me/*` 這種 unnamed wildcard 語法。這也是 v1.26.46 的 legacy-admin-mount 為什麼用 `app.use('/admin', ...)`：同一個模式套過來。
+- 為什麼刪 me-trailing-slash 整份而不是改：整份測的都是條件式 `/me` → `me/` 這個特定 handler。它已經不存在，改任何一條都在維護死程式碼、不如全刪、新行為在 stage-1b 檔集中覆蓋。git history 找得到。
+- 為什麼保留 `src/public/me/index.html` 而不是直接刪掉：階段整併程式的其他階段還沒動、萬一 CI/CD 需要對照舊 UI 的 markup 或字串找對照，保存快照有實務價值。位置放 `legacy/` 是跟 `/admin/` 之後要搬的位置一致、一眼看得出來是歷史保存區。
+
 ## v1.26.47 修改（AI 說明自己編人數 — v1.26.46 部署後實測抓到）
 
 修改檔：

@@ -158,39 +158,13 @@ describe('v1.17.87 — memory.js save iron_rule + disable writes system_auto com
   });
 });
 
-describe('v1.17.87 — me.html adds the "pitfalls" tab', () => {
-  const html = fs.readFileSync(path.join(repoRoot, 'src/public/me/index.html'), 'utf8');
-
-  it('tab list includes the pitfalls button', () => {
-    assert.match(html, /<button data-tab="pitfalls"[^>]*>🕳️ 踩坑紀錄<\/button>/);
-  });
-
-  it('tab-pitfalls container + three sections exist', () => {
-    assert.match(html, /<div id="tab-pitfalls"/);
-    assert.match(html, /pitfalls-section-unobserved/);
-    assert.match(html, /pitfalls-section-unverified/);
-    assert.match(html, /pitfalls-section-orphan/);
-  });
-
-  it('time-window dropdown has the four options 7d / 30d / 90d / all', () => {
-    assert.match(html, /value="7d"/);
-    assert.match(html, /value="30d"\s+selected/);
-    assert.match(html, /value="90d"/);
-    assert.match(html, /value="all"/);
-  });
-
-  it('loadPitfalls function fetches from /api/me/pitfalls', () => {
-    assert.match(html, /async function loadPitfalls/);
-    assert.match(html, /fetch\(`\/ownmind\/api\/me\/pitfalls\?window=/);
-  });
-
-  it('renderPitfalls uses <details> + summary for the expandable UI', () => {
-    assert.match(html, /<details/);
-    assert.match(html, /<summary/);
-    // four field labels
-    for (const label of ['何時：', '誰：', '發生情況：', '造成影響：', '建議修法：']) {
-      assert.match(html, new RegExp(label),
-        `expanded content must include the "${label}" field`);
-    }
-  });
-});
+// v1.26.48: the "me.html adds the pitfalls tab" block that lived here read
+// src/public/me/index.html to assert tab wiring, section IDs, the time-window
+// dropdown, and the fetch call. That static UI was retired when the console
+// took over the pitfalls page at /portal/pitfalls in v1.26.46; the HTML file
+// itself moved to legacy/me-v1.19/ in v1.26.48.
+//
+// The /api/me/pitfalls endpoint is unchanged and stays covered by the
+// backend-side describe blocks above. The console-side wiring of the same
+// endpoint belongs to client/src/pages/Portal/PitfallsPage.jsx and its own
+// test file, not to this backend test.

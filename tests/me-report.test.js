@@ -114,38 +114,14 @@ test('src/routes/me.js: report must return three sections — me / team / projec
   }
 });
 
-test('src/app.js: must mount the me router + serve the /ownmind/me/ static page', () => {
+test('src/app.js: must mount the /api/me router', () => {
+  // v1.26.48: the /me static UI was retired; only the /api/me router remains,
+  // consumed by the console at /dashboard/. The legacy /me/* paths now 301 to
+  // the console; that behaviour is covered by tests/stage-1b-flip-root-retire-me.test.js.
   const appSource = readFileSync(join(repoRoot, 'src', 'app.js'), 'utf8');
   assert.match(
     appSource,
     /['"]\/api\/me['"]/,
     'src/app.js must mount the /api/me route'
   );
-  assert.match(
-    appSource,
-    /['"]\/me['"]|['"]\/ownmind\/me['"]/,
-    'src/app.js must serve the /me or /ownmind/me static path'
-  );
-});
-
-test('src/public/me/index.html: must exist', () => {
-  assert.ok(
-    existsSync(join(repoRoot, 'src', 'public', 'me', 'index.html')),
-    'src/public/me/index.html must exist — the user-facing report page'
-  );
-});
-
-test('src/public/me/index.html: email/password login + forced password change + three sections', () => {
-  const html = readFileSync(join(repoRoot, 'src', 'public', 'me', 'index.html'), 'utf8');
-  // v1.17.25 switched to email + password login.
-  assert.match(html, /type="email"/, 'must include an email input');
-  assert.match(html, /type="password"/, 'must include a password input');
-  assert.match(html, /\/api\/me\/login/, 'must call /api/me/login (POST email/password)');
-  assert.match(html, /\/api\/me\/change-password/, 'must call /change-password (forced password change)');
-  assert.match(html, /must_change_password/, 'must handle the must_change_password flag branch');
-  assert.match(html, /\/api\/me\/report/, 'must fetch /api/me/report for data');
-  assert.match(html, /localStorage/, 'must use localStorage for session storage');
-  for (const word of ['個人', '團隊', '專案']) {
-    assert.ok(html.includes(word), `me/index.html must contain the "${word}" section`);
-  }
 });
