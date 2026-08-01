@@ -49,7 +49,10 @@ export const LEGACY_CONSOLE_MIN_ROLE = 'admin';
  * feature went, and an empty list is what triggers retirement.
  */
 export const LEGACY_CONSOLE_FEATURES = [
-  { id: 'team-management', consolePath: '/admin/team', legacyTab: 'users', state: 'signpost' },
+  // v1.26.49: team-management rebuilt in the console. /admin/team now renders
+  // <TeamPage>; the amber dot next to 成員 in the sidebar disappears. /admin/
+  // stays served — the six other signposts still need it.
+  { id: 'team-management', consolePath: '/admin/team', legacyTab: 'users', state: 'live' },
   { id: 'bug-reports', consolePath: '/admin/bugs', legacyTab: 'bug-reports', state: 'signpost' },
   // system-config and broadcast were one legacy tab ("設定") split across two console
   // pages, so they share a legacyTab while having different permissions.

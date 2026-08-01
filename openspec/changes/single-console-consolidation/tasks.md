@@ -273,19 +273,30 @@ feature lost. ✅ Achieved 2026-07-31 with v1.26.48.
 
 First rebuild: the only feature whose absence forces a trip back to the old console.
 
-- [ ] Inventory the old `users` tab before building. It is more than a list: an
-      installer-prompt generator (`src/public/index.html:270-287`), add / password
-      reset / delete modals, and a single-admin warning banner (`:216-221`). Read
-      `src/routes/admin.js` and `src/routes/admin-password-reset.js`
-- [ ] Build `/admin/team` against existing APIs; add no endpoint unless proven missing
-- [ ] Add the 用量資料 column per the prototype. This is the only page where every
-      member is reviewed one by one, so it is the right place to surface whose data is
-      missing
-- [ ] Destructive actions per the project UI rule: delete is red and kept away from edit
-- [ ] Flip this feature's manifest entry to `live`, removing its signpost
-- [ ] Tests: `admin` and `super_admin` reach it, `user` does not; each inventoried
-      action works
-- [ ] Browser check on production
+Shipped as `v1.26.49`.
+
+- [x] Inventoried the old `users` tab before building. Eight UI blocks captured
+      including the installer-prompt generator and single-admin warning banner
+      that the umbrella spec called out. Emergency reset-password endpoint
+      surfaced as scope decision (Vin's call: don't wire it this stage)
+- [x] Built `/admin/team` against existing endpoints. No new endpoint —
+      `GET /api/admin/users` widened to include `must_change_password` (SELECT
+      list only, no new route). See openspec/changes/v1.26.49-team-management-page/
+- [x] Added 用量資料 column. Reads `/api/usage/team-stats`, merges on user id,
+      renders italic "尚無資料" for users with no stats row (not zero). `token_usage_daily`
+      is the actual source table (umbrella spec's `usage_metrics_daily` reference is stale)
+- [x] Destructive delete: red text, `border-t` divider above, kept away from edit.
+      RowMenu.jsx encodes it generically so a future stage adding another destructive
+      action doesn't need a rewrite
+- [x] Manifest entry flipped signpost → live. Only one entry changed; seven signposts
+      remain; `/admin/` still served; sidebar amber dot next to 成員 disappears
+- [x] Tests: three new Node --test files (28 assertions for the pure functions),
+      three updated e2e tests + three added e2e tests. Full suite 2340/2340 green
+- [x] Code review pass: 1 Critical (must_change_password missing from SELECT),
+      3 Important (e2e amber-dot scoping wrong, umbrella tasks not ticked, PasswordModal
+      onDone missing load()), all fixed. Docs count typo also fixed
+- [ ] Browser check on production — deferred to next SSH session (Vin's admin
+      credentials needed; can't test add/edit/delete/password flows without login)
 
 ## Stage 3 — 系統設定 + 廣播管理
 
