@@ -1,5 +1,42 @@
 # OwnMind 檔案結構
 
+## v1.26.49 修改（使用者管理搬到新後台 — 單一後台整併階段 2）
+
+新增檔：
+```
+openspec/changes/v1.26.49-team-management-page/proposal.md   — change folder。scope、四項 dropdown、為什麼保留 emergency endpoint 不接
+openspec/changes/v1.26.49-team-management-page/spec.md       — 8 個 requirement 加 GIVEN/WHEN/THEN
+openspec/changes/v1.26.49-team-management-page/tasks.md      — 9 個 phase 的實作進度
+client/src/pages/Admin/TeamPage.jsx                          — 使用者管理主頁。兩隻 apiGet 平行、合併、顯示、單一管理者警告條
+client/src/pages/Admin/RowMenu.jsx                           — 每列的操作 dropdown。click-outside / Escape 收起、動作可見性靠 visibleMenuItems 決定
+client/src/pages/Admin/AddUserModal.jsx                      — 新增使用者 modal。form + 若 server 回 default_password 就切成一次性密碼面板
+client/src/pages/Admin/EditUserModal.jsx                     — 改名字 / 角色 modal。走 PUT /api/admin/users/:id、email 唯讀
+client/src/pages/Admin/PasswordModal.jsx                     — 改密碼 modal。self / super-admin-reset 兩個形狀分支
+client/src/pages/Admin/DeleteUserModal.jsx                   — 確認刪除 modal。紅色 confirm、伺服器守門
+client/src/pages/Admin/menu-visibility.js                    — 純函式：visibleMenuItems(actor, row)。抽出來為了不用 React 就能測條件
+client/src/pages/Admin/user-merge.js                         — 純函式：mergeUsersWithUsage(users, stats)。missing 跟 zero 分開、cache tokens 排除
+client/src/utils/install-prompt.js                           — 純函式：buildInstallPrompt(user, apiUrl) 跟 currentApiUrl(location)。字串跟舊 UI 一字不差
+tests/team-install-prompt.test.js                            — 5 條斷言 install prompt 字串形狀、跟舊 UI parity
+tests/team-menu-visibility.test.js                           — 12 條斷言 dropdown 條件、含 self / super_admin / admin 三種 actor 對三種 row
+tests/team-user-merge.test.js                                — 11 條斷言 users + stats 合併行為、含「全 0 不等於 unmeasured」的邊界
+```
+
+修改檔：
+```
+client/src/App.jsx                                           — REAL_PAGES 加 /admin/team → TeamPage、import TeamPage from './pages/Admin/TeamPage'
+shared/legacy-console-manifest.js                            — team-management state signpost → live。/admin/ 還在服務（六個 signpost 未動）
+client/src/i18n/{zh,en,ja}.json                              — 加 45 個 team.* keys（欄位、按鈕、modal 標題、toast、錯誤訊息、common.* 補齊）
+tests/e2e/console.spec.mjs                                   — 更新 3 支跟 /admin/team 是 signpost 有關的斷言（改用 /admin/bugs、還是 signpost）、加 3 支新斷言驗真頁面（欄位、尚無資料標示、sidebar 無琥珀小點）
+package.json, README.md, docs/README.{zh-TW,ja}.md           — 版號 1.26.48 → 1.26.49
+```
+
+**選擇說明**：
+
+- 為什麼把 install prompt 收進每列 dropdown、不留獨立摺疊區：舊 UI 那個摺疊區還要另外選使用者。既然每一列本來就對到一個 API Key、放回那一列少一步。字串本身照抄、跟舊版一字不差確認過。
+- 為什麼把 pure functions 抽三支獨立檔（install-prompt、menu-visibility、user-merge）：這個 repo 沒有 React 測試環境（沒 jsdom、沒 Testing Library、沒 Vitest）、Node --test 只能測 pure module。抽出來三支之後、核心邏輯有 28 條 unit test 撐著、React 部分靠 Playwright e2e 驗（`tests/e2e/console.spec.mjs`、走真瀏覽器）。
+- 為什麼「用量資料」欄的 unmeasured 判斷用「有沒有 stats row」而不是「總數是否為 0」：有可能成員這週剛好沒用 AI、但機器有回報 heartbeat。那個是 real zero、不是 unmeasured。差別是有沒有 stats row 存在。team-user-merge.test.js 專門用 `全 0 stats row` 這一條 case 抓這個差異。
+- 為什麼 emergency reset-password endpoint 保留但 UI 不接：Vin 拍板、階段 2 先跟舊 UI 對齊、不引進新的安全流程。endpoint 沒動、將來哪一個 stage 專攻 account security 一起處理（proposal.md「Filed, not fixed here」有記）。
+
 ## v1.26.48 修改（根路徑翻到新後台、`/me/` 收掉 — 單一後台整併階段 1b）
 
 **背景**：三個後台整併成一個的階段 1b。階段 1a（v1.26.46 / v1.26.47）已經把 `/me/` 用得到的功能全部搬進新後台、把還沒重建的舊 `/admin/` 功能都掛上指路牌，所以現在動根路徑是安全的。

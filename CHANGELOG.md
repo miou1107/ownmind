@@ -1,5 +1,30 @@
 # OwnMind 更新紀錄
 
+## v1.26.49 — 使用者管理搬到新後台，六個指路牌變成五個（單一後台整併 階段 2）
+
+**背景**：三個後台整併成一個的階段 2。這是第一個真的**重建**、而不是掛指路牌的舊 tab。上線後 `/admin/team` 從指路牌變成真頁面，側邊欄「成員」旁邊的琥珀小點會消失、admin 不用再進舊後台就能新增使用者、改密碼、刪帳號。
+
+功能對照舊 tab、一比一有：使用者列表、單一管理者警告條、新增使用者 modal、刪除確認 modal、修改密碼 modal。此外多兩個新東西：
+
+**「用量資料（近 7 天）」欄** — 讀 `/api/usage/team-stats`、把 token 數跟對話數併進來。這是整個 console 裡唯一每個成員一列一列排開的地方，所以是最適合放「誰的資料掉了」的欄位。沒回報過的成員顯示斜體「尚無資料」、不是零。舊後台這欄根本不存在、有這問題的人得跳到別的頁面才看得到。
+
+**「複製安裝指令」收進每列的操作 dropdown** — 舊後台把安裝指令產生器藏在一個獨立的摺疊區、還要再選一次使用者。既然每一列本來就已經對到一個 API Key、把動作放回那一列少一步。字串跟舊版一字不差。
+
+**四個 dropdown 動作按角色顯示**（跟伺服器的守門一致，避免給你按了會被打回票的按鈕）：
+
+- 複製安裝指令 — 每個人都可以
+- 修改角色 / 名字 — 每個人都可以（走 `PUT /api/admin/users/:id`。這個 endpoint 舊 UI 一直沒接、要改別人角色只能刪掉重建）
+- 修改密碼 — 自己或 super_admin 改非 user 角色的
+- 刪除使用者 — 只有 super_admin、不能刪自己、不能刪 id=1
+
+**「密碼狀態」欄** — 新加的、顯示 `must_change_password`（待改／已改）。舊 UI 完全沒有這個訊息、admin 完全不知道誰還在用初始密碼。
+
+**刻意不做**：`POST /api/admin/users/:id/reset-password`（一次性 temp password + 強制改）這條 endpoint 保留、UI 不接。Vin 2026-07-31 拍板：這階段先跟舊 UI 行為對齊（admin 自己輸新密碼）、不引進新的安全流程。想改哪天再開一個 account-security stage 一起做。
+
+**架構層面**：唯一動到的 shared 檔是 `shared/legacy-console-manifest.js` 把 `team-management` state 從 `signpost` 翻成 `live`。翻完之後：sidebar 讀 `isSignpost()` 決定要不要畫琥珀小點、App.jsx 讀同一個東西決定要走 `<Signpost>` 還是 `REAL_PAGES`、server 讀同一個東西決定要不要掛 `/admin`。剩下的七個 signposts 還在、所以 `/admin/` 還在服務、v1.26.48 已經確認過的舊後台流程都沒動到。
+
+**測試**：新增三支 Node --test 檔（`team-install-prompt`、`team-menu-visibility`、`team-user-merge`），共 28 條、覆蓋抽出來的三個 pure function（安裝指令組字、下拉可見性、users + usage 合併）。突變測試思路：如果把「有 stats row 但全 0」的判斷寫錯、當作 unmeasured，會被 `does not treat a stats row of all zeros as unmeasured` 抓到。e2e 三支關於 `/admin/team` 是 signpost 的斷言更新過、有兩支搬到還是 signpost 的 `/admin/bugs`、加了三支新的真頁面斷言。全套 2340/2340 綠、client 建置 exit 0。
+
 ## v1.26.48 — 根路徑翻到新後台、`/me/` 收掉（單一後台整併 階段 1b）
 
 **背景**：三個後台整併成一個的階段 1b。階段 1a（v1.26.46 / v1.26.47）把使用者在 `/me/` 用得到的功能全部搬進了新後台，並在新後台把還沒重建的舊 `/admin/` 功能都掛上了指路牌。所以現在動根路徑是安全的：把 `/` 從舊後台指到新後台、把 `/me/*` 全部 301 到新後台的用量頁 — 使用者昨天用得到的、今天都還在，只是入口換了地方。

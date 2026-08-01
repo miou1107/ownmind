@@ -129,14 +129,17 @@ test.describe('route guards', () => {
 test.describe('signposts', () => {
   test('a signpost names where the feature is and does not claim to be a rebuild', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/admin/team'));
+    // v1.26.49: /admin/team is now the real page, so this test moved to /admin/bugs
+    // (still a signpost per shared/legacy-console-manifest.js). The invariant is the
+    // same: signposts name their destination, they do not claim to be a rebuild.
+    await page.goto(url('/dashboard/admin/bugs'));
 
     // The copy it replaced said "此頁面正在重構中、即將於後續階段完工", which was untrue:
     // the feature was working the whole time, in the old console.
     await expect(page.getByText('即將於後續階段完工')).toHaveCount(0);
     await expect(page.getByText('這個功能現在還在舊後台運作')).toBeVisible();
     // Names the destination tab rather than saying "go and find it".
-    await expect(page.getByRole('link', { name: /前往舊後台的「使用者管理」/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /前往舊後台的「錯誤回報」/ })).toBeVisible();
   });
 
   test('following a signpost carries the credential and lands on the right tab', async ({ page }) => {
@@ -168,10 +171,11 @@ test.describe('signposts', () => {
     // The defect this covers, found in review: the handoff writes a usable om_api_key and
     // logout cleared only the console's own key, so the next person to open /admin/ in this
     // browser was restored as the previous user, holding a key every adminAuth route takes.
+    // v1.26.49: moved from /admin/team (now real page) to /admin/bugs (still signpost).
     await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/admin/team'));
-    await page.getByRole('link', { name: /前往舊後台的「使用者管理」/ }).click();
-    await expect(page).toHaveURL(/\/admin\/#users$/);
+    await page.goto(url('/dashboard/admin/bugs'));
+    await page.getByRole('link', { name: /前往舊後台的「錯誤回報」/ }).click();
+    await expect(page).toHaveURL(/\/admin\/#bug-reports$/);
     expect(await page.evaluate(() => localStorage.getItem('om_api_key'))).toBeTruthy();
 
     // Back to the console and log out through the avatar menu.
@@ -183,6 +187,40 @@ test.describe('signposts', () => {
     const left = await page.evaluate(() => ['om_api_key', 'om_role', 'om_user_id', 'om_user_name',
       'ownmind.api_key'].filter((k) => localStorage.getItem(k) !== null));
     expect(left).toEqual([]);
+  });
+});
+
+test.describe('v1.26.49 team management page', () => {
+  test('admin sees the users table with expected columns and the add-user button', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/admin/team'));
+    await expect(pageHeading(page, '使用者管理')).toBeVisible();
+
+    // Column headers surface the two new columns (密碼狀態, 用量資料) that the legacy tab lacked.
+    for (const col of ['Email', 'API Key', '角色', '密碼狀態', '用量資料']) {
+      await expect(page.getByText(col).first()).toBeVisible();
+    }
+
+    // Add user is the only mutation the header exposes; row-level actions live in the dropdown.
+    await expect(page.getByRole('button', { name: /新增使用者/ })).toBeVisible();
+  });
+
+  test('users with no usage rows render 尚無資料, not zero', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/admin/team'));
+    // The harness seeds three accounts and no usage: every row should read as unmeasured.
+    await expect(page.getByText('尚無資料').first()).toBeVisible();
+  });
+
+  test('sidebar 成員 no longer carries the amber "still in legacy" marker', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/portal/usage'));
+    // The nav item exists but must not carry the aria-label the signpost uses.
+    // Scope the amber-dot check to the 成員 nav item — other signposts (bugs,
+    // config, broadcast, etc.) still carry it, so a page-wide search would fail.
+    const membersNavItem = page.getByRole('link', { name: /^成員/ });
+    await expect(membersNavItem).toBeVisible();
+    await expect(membersNavItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
   });
 });
 
