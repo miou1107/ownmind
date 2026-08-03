@@ -300,19 +300,32 @@ Shipped as `v1.26.49`.
 
 ## Stage 3 — 系統設定 + 廣播管理
 
-One old tab split across two pages. The pricing block is **not** ported; see Stage 8.
+Shipped as `v1.26.50`. One old tab split across two pages. The pricing block was
+**not** ported; see Stage 8.
 
-- [ ] `/super/config`: 裝機狀況 only. Per the prototype it leads with the
-      "heartbeat yes, data no" state, which is what the old coverage metric hid
-- [ ] Note the role error in the old tab: 設定 is revealed to admin+, not super_admin
-      only (`src/public/index.html:1185-1190`), and 裝機狀況 carries no
-      `super-admin-only` class. Mapping it to a super_admin-only section silently
-      removes it from `admin`. Decide deliberately and record the decision
-- [ ] `/super/broadcast` against `/broadcast/admin`, the same API the old console calls
-- [ ] Confirm nothing else was hiding in the old settings tab beyond the three blocks
-- [ ] Flip both manifest entries to `live`
-- [ ] Tests: role gating; creating, ending and listing broadcasts behave as before
-- [ ] Browser check on production
+- [x] `/system/config`: 裝機狀況 plus the banner surfacing the "heartbeat yes,
+      data no" state. Three states surfaced by name — flowing / silent /
+      not_installed / offline — the old "已裝" count hid the silent state.
+      Umbrella Requirement 7's first real application
+- [x] Role decision recorded: `/system/config` at admin+ (matching the legacy
+      裝機狀況 card, which has no super-admin-only class); `/system/broadcast`
+      at super_admin (matching the broadcast card's own super-admin-only markup
+      and the server's superAdminAuth on POST/PATCH/DELETE). Manifest and
+      nav-sections both encode this from v1.26.46 onward
+- [x] `/system/broadcast` against `/broadcast/admin`. Create, list, revoke.
+      is_auto rows unrevocable both in the UI and server-side. Same behaviour
+      as legacy card
+- [x] Confirmed no fourth block hiding in the settings tab — legacy tab has
+      exactly three cards (pricing, broadcast, installation-status), read
+      directly off `src/public/index.html:584-653`
+- [x] Both manifest entries flipped signpost → live. Five signposts remain;
+      `/admin/` still served
+- [x] Tests: role gating asserted via console-nav-structure; broadcast
+      pure-function tests cover isRevocable / isActive / snooze label / type &
+      severity classification; 系統設定 tests cover four states + null-stats
+      degradation. Suite 2388/2388 green
+- [ ] Browser check on production — pending SSH session (needs admin + super_admin
+      logins to verify banner counts and CRUD flows)
 
 ## Stage 4 — 錯誤回報 + 工作紀錄
 

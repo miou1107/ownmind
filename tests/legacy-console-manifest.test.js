@@ -115,6 +115,27 @@ describe('legacy-console manifest — shape', () => {
     assert.equal(legacyFeatureFor('/portal/usage'), null);
     assert.equal(isSignpost('/portal/usage'), false, 'a path with no entry is not a signpost');
   });
+
+  it('v1.26.50 — system-config and broadcast are live, not signposts', () => {
+    // Stage 3 flip. The pages are built in this release; the two amber dots on
+    // 系統設定 and 廣播管理 must be gone. If a future edit reverts either
+    // entry to signpost, this test fires so no one has to notice via UI.
+    const cfg = legacyFeatureFor('/system/config');
+    const brd = legacyFeatureFor('/system/broadcast');
+    assert.ok(cfg, 'system-config entry missing from manifest');
+    assert.ok(brd, 'broadcast entry missing from manifest');
+    assert.equal(cfg.state, 'live', 'system-config should be live after Stage 3');
+    assert.equal(brd.state, 'live', 'broadcast should be live after Stage 3');
+    assert.equal(isSignpost('/system/config'), false);
+    assert.equal(isSignpost('/system/broadcast'), false);
+  });
+
+  it('v1.26.50 — the legacy console is still served (five signposts remain)', () => {
+    // The whole point of Requirement 5 is that retirement is derived. Two more
+    // features going live is not enough to retire; five signposts still exist.
+    assert.equal(signpostFeatures().length, 5, 'five signposts remain after Stage 3');
+    assert.equal(isLegacyConsoleRetired(), false);
+  });
 });
 
 describe('legacy-console manifest — signposts point somewhere reachable', () => {

@@ -1,5 +1,42 @@
 # OwnMind 檔案結構
 
+## v1.26.50 修改（系統設定＋廣播管理搬到新後台 — 單一後台整併階段 3）
+
+新增檔：
+```
+openspec/changes/v1.26.50-system-config-broadcast/proposal.md       — change folder。三張 card 拆兩頁的權限對照、collector 靜默是 Requirement 7 首要應用場景、pricing 為什麼不搬
+openspec/changes/v1.26.50-system-config-broadcast/spec.md           — 7 個 requirement 加 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.26.50-system-config-broadcast/tasks.md          — 10 個 phase 的實作進度
+client/src/pages/System/SystemConfigPage.jsx                        — 系統設定主頁。兩支 apiGet 平行、observedUsers 併、三狀態統計條 + 裝機表格
+client/src/pages/System/BroadcastPage.jsx                           — 廣播管理主頁。列表、新增、撤銷 dialog、過期列 45% 透明、auto 廣播不畫撤銷鈕
+client/src/pages/System/NewBroadcastModal.jsx                       — 新增廣播 modal。舊 modal 欄位一比一：type / severity / title / body / cta / target / snooze / cooldown / ends_at；送前先跑 client 端 validate
+client/src/pages/System/RevokeConfirmDialog.jsx                     — 撤銷確認 dialog。紅色按鈕、遠離取消
+client/src/pages/System/observed-users.js                           — 純函式：observedUsers(clients, stats) + rollupCounts(rows)。四狀態分類 + banner 統計 + 靜默點名
+client/src/pages/System/broadcast-row-vm.js                         — 純函式：broadcastRowVm(row, now)。isActive / isRevocable / snoozeLabel / typeColor / severityColor / effectiveRange
+client/src/pages/System/broadcast-payload-validate.js               — 純函式：validateBroadcastFormClient(form)。鏡射伺服器 validateBroadcastPayload、送前先擋
+tests/observed-users.test.js                                        — 15 條斷言 flowing / silent / not_installed / offline 分類 + rollup + null stats 降級語意
+tests/broadcast-row-vm.test.js                                      — 20 條斷言 isRevocable 對 is_auto / 過期 / 生效範圍字串 / snooze 標籤 / type & severity 顏色
+tests/broadcast-payload-validate.test.js                            — 13 條斷言 title / body / type / severity / snooze / cooldown / ends_at / target_users 驗證
+```
+
+修改檔：
+```
+client/src/App.jsx                                                  — REAL_PAGES 加 /system/config 跟 /system/broadcast、import 兩支頁面
+shared/legacy-console-manifest.js                                   — system-config 跟 broadcast 兩條 state signpost → live、註解更新
+tests/legacy-console-manifest.test.js                               — 加兩條斷言：v1.26.50 兩條都是 live、五個 signposts 還在（如果未來手滑倒退成 signpost、這裡爆）
+client/src/i18n/{zh,en,ja}.json                                     — 加 80 個 system.config.* / system.broadcast.* keys（頁面標題、狀態、欄位、modal、錯誤訊息）
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.50 條目、版號 1.26.49 → 1.26.50
+package.json                                                        — 版號 1.26.49 → 1.26.50
+```
+
+**選擇說明**：
+
+- 為什麼銀行 pricing card 不搬：Vin 2026-07-30 拍板要把它跟背後的 `/api/usage/pricing` 一起在階段 8 直接刪掉、原因是每個 model 的價錢要人肉維護、其中一個沒填整欄就變 null（`src/jobs/usage-aggregation.js:123`）。這階段搬過來就是浪費工。
+- 為什麼 collector 靜默要另外挑出來、不融進整體狀態：舊「已裝」計數把 heartbeat 有回應就當作 OK、把「連線活但完全沒資料」的死角藏起來。umbrella spec Requirement 7 就是專門修這個。點名而不是只給計數的原因是操作者要能直接找到誰是靜默、去問。
+- 為什麼 stats fetch 失敗要降級成「大家都靜默」而不是「大家都正常」：Requirement 7 的精神是「不確定的時候不要偽裝成確定」。如果 stats 拉不到、把已裝的成員畫成正常等於在騙自己。降級成靜默、頁面繼續能用但操作者一看就知道有問題。`observed-users.test.js` 專門有一條 case 押這件事。
+- 為什麼 auto 廣播不畫撤銷鈕：`src/routes/broadcast.js:165-169` 會拒 auto row 的撤銷 request、nightly job 隔天又會再生一次。畫按鈕給操作者是給他一個按了會被打回票的按鈕。
+- 為什麼把 pure functions 抽三支獨立檔：跟 v1.26.49 同理 — 這個 repo 沒有 React 測試環境、Node --test 只能測 pure module。三支抽出來讓核心邏輯有 48 條 unit test 撐、React 部分靠將來 Playwright e2e。
+
 ## v1.26.49 修改（使用者管理搬到新後台 — 單一後台整併階段 2）
 
 新增檔：

@@ -1,5 +1,23 @@
 # OwnMind 更新紀錄
 
+## v1.26.50 — 系統設定＋廣播管理搬到新後台，五個指路牌變成三個（單一後台整併 階段 3）
+
+**背景**：三個後台整併成一個的階段 3。舊「設定」tab 一個 tab 裡放了三張 card、三張各有各的權限；這一版拆成兩個新後台頁面上線：`/system/config`（系統設定 / 裝機狀況、admin+）跟 `/system/broadcast`（廣播管理、super_admin only）。上線後這兩個側邊欄項目的琥珀小點會消失、剩下五個指路牌變成三個。
+
+第三張 card「成本設定 · Model 定價」**沒有**搬過來、Vin 2026-07-30 拍板：跟它背後的 `/api/usage/pricing` 一起等到階段 8 直接刪掉。這階段搬過來就是浪費工。
+
+**`/system/config` 的關鍵新東西 — collector 靜默的警示條**：舊「已裝」的計數把「collector 有連線、但完全沒送資料回來」當作已裝、把死角藏起來。這階段新頁面的頂端一定會顯示三種狀態的計數 — 正常運作 / collector 靜默 / 未裝 — 而且會**點名**是誰在靜默狀態。舊 UI 沒這件事。原因：umbrella spec Requirement 7 「missing data marked, not shown as zero」在這階段是首要應用場景 — 舊指標騙人的死角剛好就是這個。判斷邏輯抽成純函式 `observedUsers()` + `rollupCounts()`、用 15 條測試涵蓋 flowing / silent / not_installed / offline 四種狀態、以及 stats fetch 失敗時降級為「全部靜默」（不能靜默失敗 fallback 成「大家都正常」）。
+
+**`/system/broadcast`**：一比一對到舊卡片。列表（`GET /broadcast/admin?include_ended=true`）、新增 modal（跟舊 modal 的欄位完全一致：type / severity / title / body / cta / target user_id / snooze / cooldown / ends_at）、撤銷（`DELETE /broadcast/admin/:id`）。**auto 廣播不能撤**（server 也拒、UI 也不畫按鈕）— nightly job 會把它們再生出來、手動撤只是浪費時間。過期的列半透明、跟舊 UI 一樣。撤銷確認 dialog 遵守「紅色按鈕、遠離取消」的原則。
+
+**權限修正**：舊「設定」tab 對 admin+ 開放、但裡面的廣播卡片是 super_admin only、成本卡片是 super_admin only、只有裝機狀況真的是 admin+。「一個 tab 三個權限」的邏輯掛在客端 CSS class、伺服器不知情。這階段把這件事拆到路由層：`/system/config` 由 `RequireRole minRole="admin"` 守、`/system/broadcast` 由 `RequireRole minRole="super_admin"` 守、跟 `nav-sections.js` 的 minRole 同源。side bar 過濾跟直接打 URL 都會被卡住。
+
+**架構層面**：改到的 shared 檔還是只有 `shared/legacy-console-manifest.js`：`system-config` 跟 `broadcast` 兩條同時從 `signpost` 翻成 `live`。翻完之後：`/system/config` 跟 `/system/broadcast` 從指路牌變真頁面、side bar 兩顆琥珀小點消失。剩下五個 signposts（bug-reports、work-log、stats-dashboard、team-usage、periodic-reports）還在、`/admin/` 還在服務、Requirement 5 的「retirement 是結果、不是動作」規則守住。
+
+**測試**：新增三支 Node --test 檔（`observed-users`、`broadcast-row-vm`、`broadcast-payload-validate`），共 48 條、涵蓋三個抽出來的 pure function。突變測試思路：把 `silent` 分類的「有 heartbeat 但零使用」判斷寫成「有 heartbeat 就算 flowing」會被 `heartbeat + zero usage rows → silent` 抓到；把 auto 廣播的可撤銷判斷寫成 `isActive` 會被 `active is_auto row is NOT revocable` 抓到。`legacy-console-manifest.test.js` 加兩條斷言：`system-config` 跟 `broadcast` 都在 `state: 'live'`、剩下五個 signposts。全套 2388/2388 綠、client 建置 exit 0。
+
+**刻意不做**：`PATCH /api/broadcast/admin/:id`（更新既有廣播的 ends_at / target_users）舊 UI 也沒接、這階段保留伺服器功能、UI 不接。過期判斷用 `Date.now()`、server 跟 browser 的時鐘飄移可能讓臨界值的列前後版本讀不一致 — 這是舊卡片就有的 bug、不擴大這階段的修改範圍、記在 tasks.md followups 裡等它真的咬人。
+
 ## v1.26.49 — 使用者管理搬到新後台，六個指路牌變成五個（單一後台整併 階段 2）
 
 **背景**：三個後台整併成一個的階段 2。這是第一個真的**重建**、而不是掛指路牌的舊 tab。上線後 `/admin/team` 從指路牌變成真頁面，側邊欄「成員」旁邊的琥珀小點會消失、admin 不用再進舊後台就能新增使用者、改密碼、刪帳號。
