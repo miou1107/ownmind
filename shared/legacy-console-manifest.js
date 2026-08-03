@@ -54,10 +54,11 @@ export const LEGACY_CONSOLE_FEATURES = [
   // stays served — the six other signposts still need it.
   { id: 'team-management', consolePath: '/admin/team', legacyTab: 'users', state: 'live' },
   { id: 'bug-reports', consolePath: '/admin/bugs', legacyTab: 'bug-reports', state: 'signpost' },
-  // system-config and broadcast were one legacy tab ("設定") split across two console
-  // pages, so they share a legacyTab while having different permissions.
-  { id: 'system-config', consolePath: '/system/config', legacyTab: 'settings', state: 'signpost' },
-  { id: 'broadcast', consolePath: '/system/broadcast', legacyTab: 'settings', state: 'signpost' },
+  // v1.26.50: system-config and broadcast rebuilt in the console. Two more
+  // amber dots gone; the pricing card in the same legacy tab is not ported
+  // (Stage 8 deletion). The other five signposts still keep /admin/ served.
+  { id: 'system-config', consolePath: '/system/config', legacyTab: 'settings', state: 'live' },
+  { id: 'broadcast', consolePath: '/system/broadcast', legacyTab: 'settings', state: 'live' },
   { id: 'work-log', consolePath: '/system/work-log', legacyTab: 'work-log', state: 'signpost' },
   { id: 'stats-dashboard', consolePath: '/team/stats', legacyTab: 'stats', state: 'signpost' },
   { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'signpost' },
