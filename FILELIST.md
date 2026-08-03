@@ -1,5 +1,21 @@
 # OwnMind 檔案結構
 
+## v1.26.54 修改（修備份腳本的 pipefail 誤判）
+
+修改檔：
+```
+scripts/backup-db.sh                                                — schema 檢查改成暫時關掉 pipefail、判 grep 自己的退出碼
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.54 條目、版號 1.26.53 → 1.26.54
+package.json                                                        — 版號 1.26.53 → 1.26.54
+```
+
+**選擇說明**：
+
+- 為什麼要關 pipefail：`grep -q` 一命中就結束、關掉管線，上游的 gunzip 收到 SIGPIPE 死於 141，pipefail 把 141 當成整條管線的結果。PIPESTATUS 實測 `[141, 0]` — grep 自己是成功的。
+- 為什麼這比一般 bug 危險：它是競爭條件。gunzip 有沒有在 grep 關管線前寫完取決於檔案大小跟 page cache，小檔會過、真實 34MB dump 會掛。第一次隔離重現時是 PASS 的、差點誤導我往別的方向查。
+- 為什麼不改用 `grep -c`：`-c` 會讀完整個串流所以沒有 SIGPIPE 問題，但要付出解壓完整 34MB 的代價。關掉 pipefail 保留 `-q` 的提前結束、檢查一秒內就跑完。
+- 為什麼開新的 v1.26.54 而不是移動 v1.26.53 的 tag：tag 已經推上去了，移動它會變成兩棵不同的樹都自稱 v1.26.53。這個 repo 本來就有實測抓到 bug 就開新 patch 的前例（v1.26.47）。
+
 ## v1.26.53 修改（正式機資料庫每日備份）
 
 新增檔：
