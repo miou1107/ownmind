@@ -32,3 +32,8 @@ secrets/
 .env.local
 .env.production
 .env.staging
+
+# v1.26.53：scripts/backup-db.sh 的 pg_dump 產物
+# 這些檔含全部使用者的 api_key 明文、絕對不能進 repo
+backups/
+*.sql.gz
