@@ -18,7 +18,7 @@ export default function UsageProjects({ projects }) {
       <h2 className="text-sm font-bold text-slate-900 mb-2">
         {t('usage.projects.title')}
       </h2>
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-xs text-slate-600">
             <tr>
