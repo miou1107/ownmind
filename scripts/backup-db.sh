@@ -53,7 +53,12 @@ TMP="${TARGET}.tmp"
 log() { echo "[backup-db] $(date '+%F %T') $*"; }
 fail() { log "FAILED: $*"; exit 1; }
 
-cleanup() { [ -f "$TMP" ] && rm -f "$TMP"; }
+# `rm -f` on a path that no longer exists already exits 0, so no `[ -f ]` test.
+# The test was actively harmful: on the success path $TMP has been renamed, the
+# test is false, and — being the trap's last command — its status 1 became the
+# script's exit status. Every successful backup reported failure to cron, which
+# is the fastest way to train everyone to ignore the alert that matters.
+cleanup() { rm -f "$TMP"; }
 trap cleanup EXIT
 
 mkdir -p "$BACKUP_DIR"
