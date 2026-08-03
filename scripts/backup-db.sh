@@ -72,7 +72,18 @@ SIZE=$(wc -c < "$TMP")
 
 # Check 3: it actually contains schema. Guards the case where pg_dump succeeds
 # against the wrong or an empty database.
-gunzip -c "$TMP" | grep -q "CREATE TABLE" || fail "no CREATE TABLE in dump — wrong or empty database"
+#
+# pipefail is scoped OFF for this one pipeline, and grep's own status is what we
+# test. Reason, found by running this on production: `grep -q` exits the moment
+# it matches, which closes the pipe under gunzip; gunzip then dies of SIGPIPE
+# with status 141, and pipefail reports the *pipeline* as 141 even though grep
+# succeeded. Worse than a plain bug, it is a race — whether gunzip has finished
+# writing before grep closes the pipe depends on file size and page cache, so
+# the check passes on a small dump and fails on a real one.
+set +o pipefail
+gunzip -c "$TMP" | grep -q "CREATE TABLE" && HAS_SCHEMA=1 || HAS_SCHEMA=0
+set -o pipefail
+[ "$HAS_SCHEMA" -eq 1 ] || fail "no CREATE TABLE in dump — wrong or empty database"
 
 mv "$TMP" "$TARGET"
 log "ok: $(du -h "$TARGET" | cut -f1) $(basename "$TARGET")"
