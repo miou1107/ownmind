@@ -19,8 +19,10 @@ import ReportsPage from './pages/Portal/ReportsPage';
 import NarrativePage from './pages/Portal/NarrativePage';
 import PitfallsPage from './pages/Portal/PitfallsPage';
 import TeamPage from './pages/Admin/TeamPage';
+import BugReportsPage from './pages/Admin/BugReportsPage';
 import SystemConfigPage from './pages/System/SystemConfigPage';
 import BroadcastPage from './pages/System/BroadcastPage';
+import WorkLogPage from './pages/System/WorkLogPage';
 
 // 已經在新後台跑起來的頁面。還在舊後台的功能不列在這裡 — 由功能清單
 // （shared/legacy-console-manifest.js）決定要畫指路牌，兩邊不會各說一套。
@@ -35,8 +37,10 @@ const REAL_PAGES = {
   '/preference/security': <SecurityPage />,
   '/preference/vault': <VaultPage />,
   '/admin/team': <TeamPage />,
+  '/admin/bugs': <BugReportsPage />,
   '/system/config': <SystemConfigPage />,
   '/system/broadcast': <BroadcastPage />,
+  '/system/work-log': <WorkLogPage />,
 };
 
 // 導覽列有、但兩邊都沒對到東西的路徑 — 這是接線錯誤，不是「即將完工」。

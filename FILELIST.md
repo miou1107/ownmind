@@ -1,5 +1,46 @@
 # OwnMind 檔案結構
 
+## v1.26.51 修改（錯誤回報＋工作紀錄搬到新後台 — 單一後台整併階段 4）
+
+新增檔：
+```
+openspec/changes/v1.26.51-bug-reports-work-log/proposal.md          — change folder。兩頁的權限對照、封鎖期內使用者 card 為什麼不搬、pure fn 抽出策略
+openspec/changes/v1.26.51-bug-reports-work-log/spec.md              — 8 個 requirement 加 GIVEN/WHEN/THEN 場景
+openspec/changes/v1.26.51-bug-reports-work-log/tasks.md             — 6 個 phase 的實作進度
+client/src/pages/Admin/BugReportsPage.jsx                           — 錯誤回報主頁。兩張 stat card、兩個子分頁、status filter、reports 表 + spam 表
+client/src/pages/Admin/BugReportDetailModal.jsx                     — 詳細 modal。完整欄位 + conversation_snippets 三種 shape 渲染 + 狀態編輯器 + wontfix 分支
+client/src/pages/Admin/SpamSuspectModal.jsx                         — spam 確認 modal。紅色確認、灰色取消、遠離擺放
+client/src/pages/Admin/bug-report-row-vm.js                         — 純函式：bugReportRowVm(row, userMap)。severityColor / statusColor / userLabel 有 fallback / createdAtLabel minute 精度
+client/src/pages/Admin/bug-status-update-validate.js                — 純函式：validateBugStatusUpdate(form)。鏡射伺服器 status 列舉 + wontfix reason 必填 + wontfix_other note 必填
+client/src/pages/System/WorkLogPage.jsx                             — 工作紀錄主頁。六個篩選、三來源時間軸、offset 分頁、載入更多
+client/src/pages/System/work-log-query.js                           — 純函式：buildWorkLogQuery(filters, offset, limit)。空值省略、YYYY-MM-DD 廣化為全日 ISO
+client/src/pages/System/work-log-row-vm.js                          — 純函式：workLogRowVm(row)。三來源顏色、空 details 顯示 —、summary 勝過 details、200 字截斷
+tests/bug-report-row-vm.test.js                                     — 12 條斷言 severity / status / user resolution / timestamp slice / component fallback
+tests/bug-status-update-validate.test.js                            — 12 條斷言 status 列舉 / wontfix reason 必填 / wontfix_other note 必填 / 非 wontfix 忽略 reason
+tests/work-log-query.test.js                                        — 11 條斷言 分頁常存在 / 日期廣化 / 空文字略過 / q 去空白 / 型別強制字串
+tests/work-log-row-vm.test.js                                       — 12 條斷言 source 顏色 / user fallback / 空 details / summary 勝 details / 200 字截斷 / tool 空值
+```
+
+修改檔：
+```
+client/src/App.jsx                                                  — REAL_PAGES 加 /admin/bugs 跟 /system/work-log、import 兩支頁面
+client/src/api/index.js + client.js                                 — 加 apiPatch export、給 PATCH /:id/status 用
+shared/legacy-console-manifest.js                                   — bug-reports 跟 work-log 兩條 state signpost → live、註解更新
+tests/legacy-console-manifest.test.js                               — 加兩條斷言：v1.26.51 兩條都是 live、三個 signposts 還在
+client/src/i18n/{zh,en,ja}.json                                     — 加 80 個 bug_reports.* / work_log.* keys（頁面標題、狀態、欄位、modal、錯誤訊息）
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.51 條目、版號 1.26.50 → 1.26.51
+package.json                                                        — 版號 1.26.50 → 1.26.51
+openspec/changes/single-console-consolidation/tasks.md              — Stage 4 checkbox 打勾
+```
+
+**選擇說明**：
+
+- 為什麼舊卡片的第三張 stat card `封鎖期內使用者` 不搬：翻遍 `src/public/index.html` 沒有一行呼叫 `.textContent = ...` 給它、也沒有 GET 端點回這個計數。舊 UI 就是掛一個 `-` 佔位符然後永遠不動。Requirement 7 「不知道就不要畫、畫成 0 反而讓人誤以為今天沒人被封」直接適用。未來真要就加一支 `GET /api/bug-reports/spam-blocks/active-count`、這階段不假裝有。
+- 為什麼要多加 `apiPatch()` 到 API 客端而不是用 fetch 硬幹：整個 codebase 都走 `apiGet/apiPost/apiPut/apiDelete` 統一封裝、有 401 debounce、有 base URL 拼接、有 Bearer 自動加。多一支 PATCH 只是把封裝補齊、不要在一個地方例外。
+- 為什麼把純函式抽四支獨立檔：這個 repo 沒有 React 測試環境、Node --test 只能測 pure module。四支抽出來讓核心邏輯有 47 條 unit test 撐、React 部分靠將來 Playwright e2e。
+- 為什麼 details empty → `—` 而不是 `{}`：舊 JS 就是這規則（`src/public/index.html:2703-2707`）。原因：init 這種事件本來就不帶 payload、印 `{}` 是雜訊不是資訊。
+- 為什麼 work-log 的 summary 勝過 details：session_logs 每列同時有 summary（AI 產出的摘要）跟 details（原始欄位），要看哪個 UI 才有用。摘要是給人看的、details 是 debug 用。頁面預設給人看、需要 debug 的人 hover title 可看完整 JSON。
+
 ## v1.26.50 修改（系統設定＋廣播管理搬到新後台 — 單一後台整併階段 3）
 
 新增檔：

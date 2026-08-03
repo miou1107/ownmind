@@ -329,16 +329,31 @@ Shipped as `v1.26.50`. One old tab split across two pages. The pricing block was
 
 ## Stage 4 — 錯誤回報 + 工作紀錄
 
-Both read-only observability pages, lowest risk.
+Shipped as `v1.26.51`. Two more legacy tabs go real: bug-reports and work-log,
+the two read-only observability pages. Two amber dots vanish; three signposts
+remain (stats-dashboard, team-usage, periodic-reports).
 
-- [ ] `/admin/bugs` against `src/routes/bug-reports.js`, including the reports / spam
-      sub-tabs (`brSwitchSub`, `src/public/index.html:1556`)
-- [ ] Replace the `/super/work-log` signpost with the real page, against
-      `GET /api/admin/work-log` and `/filters`: the merged activity / compliance /
-      session timeline with the filters the API already supports
-- [ ] Flip both manifest entries to `live`
-- [ ] Tests: role gating for each; filters and pagination behave
-- [ ] Browser check on production
+- [x] `/admin/bugs` against `src/routes/bug-reports.js`, including the
+      reports / spam sub-tabs. Report list, detail-and-status modal with
+      wontfix + wontfix_other branches, spam-confirm modal with red danger
+      button separated from cancel per iron rule. `PATCH /:id/status` needed
+      a new `apiPatch()` on the API client (mirrors `apiPut`)
+- [x] Replaced the `/system/work-log` signpost with the real page against
+      `GET /api/admin/work-log` and `/filters`. Six filters, three-source
+      timeline (activity / compliance / session), load-more pagination
+- [x] The third stat card in the legacy 錯誤回報 tab — `封鎖期內使用者` — is
+      deliberately dropped. `document.getElementById('brSpamBlockedCount').textContent`
+      is never set anywhere in `src/public/index.html`, no endpoint returns an
+      active-block count, `bug_report_spam_blocks` is INSERT-only in the
+      codebase. Requirement 7 applies: don't render a number we don't measure.
+      Recorded in the proposal and the CHANGELOG
+- [x] Both manifest entries flipped signpost → live. Three signposts remain;
+      `/admin/` still served
+- [x] Tests: four new pure-fn test files (43 assertions across
+      `bug-report-row-vm`, `bug-status-update-validate`, `work-log-query`,
+      `work-log-row-vm`) plus two new manifest assertions
+- [ ] Browser check on production — pending SSH session (needs admin +
+      super_admin logins to exercise the two modals and the CRUD roundtrip)
 
 ## Stage 5 — 統計儀表板
 

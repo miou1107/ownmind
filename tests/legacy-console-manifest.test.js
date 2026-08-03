@@ -130,10 +130,23 @@ describe('legacy-console manifest — shape', () => {
     assert.equal(isSignpost('/system/broadcast'), false);
   });
 
-  it('v1.26.50 — the legacy console is still served (five signposts remain)', () => {
-    // The whole point of Requirement 5 is that retirement is derived. Two more
-    // features going live is not enough to retire; five signposts still exist.
-    assert.equal(signpostFeatures().length, 5, 'five signposts remain after Stage 3');
+  it('v1.26.51 — bug-reports and work-log are live, not signposts', () => {
+    // Stage 4 flip. The two amber dots on 錯誤回報 and 工作紀錄 must be gone.
+    // If a future edit reverts either entry, this test fires immediately.
+    const bugs = legacyFeatureFor('/admin/bugs');
+    const wlog = legacyFeatureFor('/system/work-log');
+    assert.ok(bugs, 'bug-reports entry missing from manifest');
+    assert.ok(wlog, 'work-log entry missing from manifest');
+    assert.equal(bugs.state, 'live', 'bug-reports should be live after Stage 4');
+    assert.equal(wlog.state, 'live', 'work-log should be live after Stage 4');
+    assert.equal(isSignpost('/admin/bugs'), false);
+    assert.equal(isSignpost('/system/work-log'), false);
+  });
+
+  it('v1.26.51 — the legacy console is still served (three signposts remain)', () => {
+    // Two more features going live is not enough to retire; three signposts
+    // still exist (stats-dashboard, team-usage, periodic-reports).
+    assert.equal(signpostFeatures().length, 3, 'three signposts remain after Stage 4');
     assert.equal(isLegacyConsoleRetired(), false);
   });
 });

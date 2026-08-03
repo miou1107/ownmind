@@ -1,5 +1,21 @@
 # OwnMind 更新紀錄
 
+## v1.26.51 — 錯誤回報＋工作紀錄搬到新後台，三個指路牌變成一個（單一後台整併 階段 4）
+
+**背景**：三個後台整併成一個的階段 4。舊「錯誤回報」跟「工作紀錄」兩個 tab 這一版都改成新後台的真頁面上線：`/admin/bugs`（錯誤回報、admin+）跟 `/system/work-log`（工作紀錄、super_admin only）。上線後這兩個側邊欄項目的琥珀小點會消失、剩下的指路牌從五個掉到三個。四、五、七三個階段都是「兩支只讀觀測頁」為主、風險最低的組合、所以先做。
+
+**`/admin/bugs` 的內容**：一比一對到舊 tab，分兩個子分頁。**回報列表** — status filter 跟 8 欄表格（ID / 標題 / 嚴重度 / 模組 / 狀態 / 使用者 / 建立時間 / 操作）；點「查看」開 detail modal，裡面帶完整欄位（fingerprint / device_fingerprint / client_tool / conversation_snippets ...）加狀態編輯器（`PATCH /api/bug-reports/:id/status`）。狀態變 wontfix 時展開理由 dropdown、選 `wontfix_other` 再展開補充說明；這些客端驗證的分支跟 server 的 guard（`src/routes/bug-reports.js:536-557`）一比一鏡射、抽成純函式 `validateBugStatusUpdate` 用 12 條測試鎖起來。**spam suspect 審查** — 表格 + confirm/dismiss modal；spam 確認的按鈕是紅色、跟取消按鈕分隔擺放、跟前面的 Delete 按鈕遵守同一條規則。
+
+**`/admin/bugs` 少做的一件事 — 舊卡片的第三張 stat card `封鎖期內使用者` 沒有搬過來**。原因不是「懶」而是「該 card 從產品上線那天起就是壞的」：翻遍 `src/public/index.html` 沒有任何一行呼叫 `document.getElementById('brSpamBlockedCount').textContent = ...`、也沒有 GET 端點回這個計數。舊 UI 只是掛了一個 `-` 佔位符然後永遠不動。Requirement 7「missing data marked, not shown as zero」直接適用：不知道就不要畫、畫成 0 反而讓人以為「今天沒人被封」— 未來真的要這個功能就加一支端點，這階段不假裝有。
+
+**`/system/work-log` 的內容**：一比一對到舊 tab。三來源合併時間軸（activity / compliance / session）、六個伺服器已經支援的篩選（from / to / source / user / tool / event_type / q）、`/api/admin/work-log/filters` 的三個 dropdown 資料、`共 N 筆、已顯示 M 筆` 的計數、預設近 30 天 100 筆一頁、按「載入更多」用 offset 讀下一批。日期到 ISO 的轉換（`YYYY-MM-DD` → `T00:00:00.000Z` / `T23:59:59.999Z`）跟「details 為空 {} 顯示 `—` 不是 `{}`」的規則抽成兩支純函式 `buildWorkLogQuery` + `workLogRowVm`、用 21 條測試鎖起來。
+
+**架構層面**：改到的 shared 檔還是只有 `shared/legacy-console-manifest.js`：`bug-reports` 跟 `work-log` 兩條同時從 `signpost` 翻成 `live`。翻完之後：`/admin/bugs` 跟 `/system/work-log` 從指路牌變真頁面、side bar 兩顆琥珀小點消失。剩下三個 signposts（stats-dashboard、team-usage、periodic-reports）還在、`/admin/` 還在服務。API 客端多一支 `apiPatch()` — 為了 `PATCH /:id/status`、把 fetch 封裝那層補齊。
+
+**測試**：新增四支 Node --test 檔（`bug-report-row-vm`、`bug-status-update-validate`、`work-log-query`、`work-log-row-vm`），共 43 條、涵蓋四個抽出來的 pure function。突變測試思路：把 wontfix 分支的「reason 必填」拿掉會被 `wontfix without status_reason is refused` 抓到；把 details empty 判斷寫成 `!!details` 會被 `empty {} details render — not {}` 抓到。`legacy-console-manifest.test.js` 加兩條斷言：`bug-reports` 跟 `work-log` 都在 `state: 'live'`、剩下三個 signposts。全套 2434/2434 綠、client 建置 exit 0。
+
+**刻意不做**：舊 UI 的通知系統（`GET /notifications`、`POST /:id/mark-notified`）沒動 — 那是回報者自己那邊的接收面、UsagePage 已經在處理、不是這個管理頁的責任。詳細頁的 `conversation_snippets` 保持舊有 render shape（字串塊 / truncated 展開 / truncated_messages 註解）但沒美化 JSON 展示，也沒加匯出功能 — 後者未來要就補一支。
+
 ## v1.26.50 — 系統設定＋廣播管理搬到新後台，五個指路牌變成三個（單一後台整併 階段 3）
 
 **背景**：三個後台整併成一個的階段 3。舊「設定」tab 一個 tab 裡放了三張 card、三張各有各的權限；這一版拆成兩個新後台頁面上線：`/system/config`（系統設定 / 裝機狀況、admin+）跟 `/system/broadcast`（廣播管理、super_admin only）。上線後這兩個側邊欄項目的琥珀小點會消失、剩下五個指路牌變成三個。

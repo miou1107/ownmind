@@ -53,13 +53,18 @@ export const LEGACY_CONSOLE_FEATURES = [
   // <TeamPage>; the amber dot next to 成員 in the sidebar disappears. /admin/
   // stays served — the six other signposts still need it.
   { id: 'team-management', consolePath: '/admin/team', legacyTab: 'users', state: 'live' },
-  { id: 'bug-reports', consolePath: '/admin/bugs', legacyTab: 'bug-reports', state: 'signpost' },
+  // v1.26.51: bug-reports rebuilt in the console. Report list + spam-suspect
+  // sub-tab + detail-and-status modal, all against the same /api/bug-reports
+  // routes the legacy tab called.
+  { id: 'bug-reports', consolePath: '/admin/bugs', legacyTab: 'bug-reports', state: 'live' },
   // v1.26.50: system-config and broadcast rebuilt in the console. Two more
   // amber dots gone; the pricing card in the same legacy tab is not ported
   // (Stage 8 deletion). The other five signposts still keep /admin/ served.
   { id: 'system-config', consolePath: '/system/config', legacyTab: 'settings', state: 'live' },
   { id: 'broadcast', consolePath: '/system/broadcast', legacyTab: 'settings', state: 'live' },
-  { id: 'work-log', consolePath: '/system/work-log', legacyTab: 'work-log', state: 'signpost' },
+  // v1.26.51: work-log rebuilt in the console. Three-source merged timeline
+  // (activity / compliance / session) against /api/admin/work-log.
+  { id: 'work-log', consolePath: '/system/work-log', legacyTab: 'work-log', state: 'live' },
   { id: 'stats-dashboard', consolePath: '/team/stats', legacyTab: 'stats', state: 'signpost' },
   { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'signpost' },
   // The one feature whose real permission is wider than its signpost's. The report is

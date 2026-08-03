@@ -123,6 +123,10 @@ export function apiPut(path, body, opts) {
   return request('PUT', path, body, opts);
 }
 
+export function apiPatch(path, body, opts) {
+  return request('PATCH', path, body, opts);
+}
+
 export function apiDelete(path, opts) {
   return request('DELETE', path, null, opts);
 }
