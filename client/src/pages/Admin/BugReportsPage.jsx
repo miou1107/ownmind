@@ -184,7 +184,7 @@ export default function BugReportsPage() {
           ) : vms.length === 0 ? (
             <p className="text-sm text-slate-500">{t('bug_reports.empty')}</p>
           ) : (
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-600">
                   <tr>
@@ -238,7 +238,7 @@ export default function BugReportsPage() {
           ) : suspects.length === 0 ? (
             <p className="text-sm text-slate-500">{t('bug_reports.spam.empty')}</p>
           ) : (
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-600">
                   <tr>

@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.26.52 修改（修表格右側欄位被裁掉、按鈕點不到）
+
+新增檔：
+```
+tests/console-table-overflow.test.js                                — 3 條斷言：沒有表格卡片是 overflow-hidden、每個都有宣告 overflow 行為、helper 至少找得到 10 個 wrapper（防假綠）
+```
+
+修改檔：
+```
+client/src/pages/Admin/BugReportsPage.jsx                           — 兩個表格 wrapper overflow-hidden → overflow-x-auto
+client/src/pages/System/BroadcastPage.jsx                           — 同上
+client/src/pages/System/SystemConfigPage.jsx                        — 同上
+client/src/pages/System/WorkLogPage.jsx                             — 同上
+client/src/pages/Portal/UsageMine.jsx                               — 四個 wrapper、既有問題順手修
+client/src/pages/Portal/UsageTeam.jsx                               — 三個 wrapper、既有問題順手修
+client/src/pages/Portal/UsageProjects.jsx                           — 一個 wrapper、既有問題順手修
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.52 條目、版號 1.26.51 → 1.26.52
+package.json                                                        — 版號 1.26.51 → 1.26.52
+```
+
+**選擇說明**：
+
+- 為什麼 TeamPage 不一起改：那頁每列有 RowMenu 下拉選單、需要溢出卡片才看得到。改成 `overflow-x-auto` 會變成裁掉選單而不是裁掉欄位、等於用一個點不到的東西換另一個。所以保持 `overflow-visible`、測試也明確允許這個選項並寫明理由。
+- 為什麼順手修 Portal 三支：同一個 pattern、同一個 bug、只是還沒有人在會裁的視窗寬度下用過。既然卡控是掃全 `client/src/pages`、不修就是留三個假綠的例外。
+- 為什麼容忍原始碼字串斷言：node --test 沒有 render 環境、class list 本身就是全部的行為。跟 `legacy-console-manifest.test.js` 裡那條「app.js 不准直接 mount /admin」同一類。已用突變測試驗過會爆。
+- 這條卡控的已知極限：只涵蓋用慣用類名（`border-slate-200` + `rounded-xl`）的表格卡片。寫法不同的列表逃得掉。這在測試檔的註解裡寫明、不假裝是完整證明。
+
 ## v1.26.51 修改（錯誤回報＋工作紀錄搬到新後台 — 單一後台整併階段 4）
 
 新增檔：

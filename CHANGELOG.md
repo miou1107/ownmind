@@ -1,5 +1,17 @@
 # OwnMind 更新紀錄
 
+## v1.26.52 — 修：後台表格右側欄位被裁掉、「查看」按鈕點不到
+
+**這是 v1.26.51 上線後瀏覽器實測抓到的 bug、不是計畫中的功能**。錯誤回報頁的表格有 8 欄、加起來 841px；但表格外層的卡片是 `overflow-hidden`、可用寬度只有 662px。結果最右邊的「建立時間」跟「操作」兩欄被硬裁掉、沒有捲軸、沒有任何方式能捲過去。「操作」欄裡面就是那頁唯一的「查看」按鈕 — 也就是說 **v1.26.51 的錯誤回報頁根本打不開詳細 modal**。頁面畫得出來、但用不了。
+
+實測數據（kkvin.com、視窗寬 968px）：wrapper clientWidth 662、table scrollWidth 841、「查看」按鈕的 x 座標 1079（在裁切區外）。
+
+**修法**：把 console 所有表格卡片的 `overflow-hidden` 換成 `overflow-x-auto`、讓寬表格在卡片內橫向捲動。波及 7 支頁面共 11 個 wrapper（BugReportsPage ×2、BroadcastPage、SystemConfigPage、WorkLogPage、UsageMine ×4、UsageTeam ×3、UsageProjects）— 後面那幾支 Portal 頁面是既有問題、同一個 pattern 早就在那、只是還沒有人在寬到會裁的視窗下用過。TeamPage 例外、保持 `overflow-visible`：那頁每列有 RowMenu 下拉、改成捲動會變成裁掉選單而不是裁掉欄位、等於換一個點不到的東西。
+
+**加了什麼卡控**：新增 `tests/console-table-overflow.test.js`、掃 `client/src/pages/**/*.jsx` 裡的表格卡片、任何一個是 `overflow-hidden` 就爆、沒宣告 overflow 行為也爆。這是原始碼字串斷言、這個 repo 平常對這種測試很保留；它在這裡站得住腳的理由跟 `legacy-console-manifest.test.js` 裡那條「app.js 不准直接 mount /admin」一樣：node --test 沒有 render 環境、class list 本身就是全部的行為。第三條測試押住 helper 至少要找到 10 個 wrapper、免得未來 JSX 形狀一改、helper 回空陣列、前兩條就假綠。已用突變測試驗過：把任一個 `overflow-x-auto` 改回 `overflow-hidden`、測試從 3 綠變 1 綠 2 紅。
+
+**沒修的**：這條卡控只涵蓋「用 console 表格卡片慣用類名（`border-slate-200` + `rounded-xl`）」的表格。用別的類名寫的列表逃得掉。要真的擋住得有 render 測試環境、那是另一件事。
+
 ## v1.26.51 — 錯誤回報＋工作紀錄搬到新後台，三個指路牌變成一個（單一後台整併 階段 4）
 
 **背景**：三個後台整併成一個的階段 4。舊「錯誤回報」跟「工作紀錄」兩個 tab 這一版都改成新後台的真頁面上線：`/admin/bugs`（錯誤回報、admin+）跟 `/system/work-log`（工作紀錄、super_admin only）。上線後這兩個側邊欄項目的琥珀小點會消失、剩下的指路牌從五個掉到三個。四、五、七三個階段都是「兩支只讀觀測頁」為主、風險最低的組合、所以先做。
