@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## v1.26.57 修改（修少尾斜線會掉出 /ownmind 前綴）
+
+新增檔：
+```
+src/middleware/bare-mount-redirect.js                               — 裸 mount 路徑轉到自己的目錄、用相對 Location
+tests/bare-mount-trailing-slash.test.js                             — 20 條，全部對兩個 base 各解析一次
+openspec/changes/v1.26.57-bare-mount-trailing-slash/{proposal,spec,tasks}.md
+```
+
+修改檔：
+```
+src/app.js                                                          — /dashboard static 之前先掛 redirectBareMountPath
+src/middleware/legacy-admin-mount.js                                — /admin static 之前同樣處理
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.57 條目、版號 1.26.56 → 1.26.57
+package.json                                                        — 版號 1.26.56 → 1.26.57
+```
+
+**選擇說明**：
+
+- 壞掉的轉址不是本專案寫的，是 `express.static` 內建 `redirect: true` 發的，所以 v1.26.48 那批「把自己寫的轉址改相對」碰不到。守衛掛在 static 前面、讓 serve-static 沒機會發，而不是關掉它的功能。
+- **不能只加 `{ redirect: false }`**：`/dashboard` 會落到 SPA shell handler，`<base href>` 深度算錯 → v1.26.44 的白畫面。
+- **用 middleware 不用 `app.get(mountPath)`**：Express 預設非嚴格路由，`app.get('/dashboard')` 也會吃到 `/dashboard/`，把它導向相對的 `dashboard/` 會解析成 `/dashboard/dashboard/` —— 無限迴圈，比原 bug 更糟。
+- **守衛的匹配面必須至少跟被守衛者一樣寬**。第一版分大小寫、比對原始字串，結果 `/Dashboard`、absolute-form 請求行、非 GET 三種形狀都溜過去掉回絕對轉址。改成正規化 pathname + case-fold + 方法過濾。深度也從正規化 pathname 算，不然 absolute-form 會被當兩層深。
+- `MOUNT_PATH` 收緊到 `/^\/[A-Za-z0-9][A-Za-z0-9._~-]*$/`：`/` 會讓根轉向自己、`/..` 會產生 `../` 的 target。這些都是寫死常數裡的手誤，值得在開機就炸掉（同 `shared/legacy-console-manifest.js` 的理由）。
+- 測試檔的 `srv.close()` 會等現有連線結束，光 destroy 用戶端不夠、要 `closeAllConnections()`，否則整檔被判 cancelled。
+
 ## v1.26.56 修改（統計儀表板搬進新後台 — 整併第 5 站）
 
 新增檔：

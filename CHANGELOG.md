@@ -1,5 +1,56 @@
 # OwnMind 更新紀錄
 
+## v1.26.57 — 修：後台網址少打尾斜線會被丟到別的網站
+
+`https://kkvin.com/ownmind/dashboard`（**沒有尾斜線**）回 `301 Location: /dashboard/`。那是絕對路徑，瀏覽器把 `/ownmind` 前綴丟掉、落到 `https://kkvin.com/dashboard/` —— 一個叫「Vin WorkSpace」、跟 OwnMind 毫無關係的頁面。而且它回 200，不是 404，所以使用者會以為自己到了某個真的存在的地方。`/ownmind/admin` 一模一樣。
+
+正式機實測四個入口：
+
+| 請求 | 狀態 | Location | |
+|---|---|---|---|
+| `/ownmind/dashboard` | 301 | `/dashboard/` | ✗ 掉出前綴 |
+| `/ownmind/admin` | 301 | `/admin/` | ✗ 掉出前綴 |
+| `/ownmind/setup` | 302 | `admin/login` | ✓ 相對 |
+| `/ownmind/me` | 301 | `dashboard/portal/usage` | ✓ 相對 |
+
+### 為什麼 v1.26.48 沒修到
+
+那兩個壞掉的轉址**不是這個專案寫的**，是 `express.static` 內建的 `redirect: true` 發的：請求剛好指到被服務的那個資料夾時，serve-static 用 `req.originalUrl.pathname + '/'` 產生 Location。nginx 已經把 `/ownmind` 切掉了，所以 Express 看到 `/dashboard`、寫出 `/dashboard/` —— 從 app 內部看完全正確，對瀏覽器來說錯的，因為瀏覽器手上還有前綴。
+
+v1.26.48 把**這個專案自己寫的**每一個轉址都改成相對路徑，碰不到藏在依賴裡的這兩個。跟 v1.26.44、v1.26.48 是同一類毛病，低一層。
+
+直打容器 `127.0.0.1:3100` 結果相同，確定不是 nginx。
+
+只有那個裸路徑會壞：`/ownmind/dashboard/` 是 200、`/ownmind/dashboard/portal/usage` 走 SPA fallback 也正常。但「少打尾斜線」正是大家打網址的方式。
+
+### 修法
+
+新增 `redirectBareMountPath(app, mountPath)`，掛在兩個 static 之前，讓 serve-static 根本沒機會發那個 Location。用同一支 `relativeRedirectTarget()`，所以「轉址要能穿過反向代理前綴」這件事只有一條規則、不是兩份。
+
+**不能只加 `{ redirect: false }`**：那樣 `/dashboard` 會落到 SPA shell handler，而它算出來的 `<base href>` 深度是錯的 —— 就是 v1.26.44 那個白畫面。
+
+### Code review 抓到：守衛的匹配面比它要遮的那層還窄
+
+沒有 Critical，但有三種請求形狀**從第一版守衛旁邊溜過去、直接掉回絕對轉址**。三個都是實際打真的 app 驗出來的，不是讀程式碼推的：
+
+- **大小寫變體**。Express 的 mount 預設不分大小寫，所以 `/Dashboard` 進得了 mount，但我那個分大小寫的比對放它過去。實測 `Location: /Dashboard/` → `http://x/Dashboard/`，原 bug 原封不動。差一個鍵盤大寫。
+- **absolute-form 請求行**。`GET http://evil.example/dashboard HTTP/1.1` 讓 serve-static 吐出 `Location: http://evil.example/dashboard/`，把用戶端給的 host 反射回去。
+- **非 GET 方法**。serve-static 只對 GET／HEAD 轉址，第一版卻讓 POST 回 301（原本 404）—— 修 bug 順手夾帶的行為改變。
+
+三個都改成走正規化後的 pathname、case-fold 比對、非 GET/HEAD 直接放行。順帶：`relativeRedirectTarget` 的深度也改從正規化 pathname 算，否則 absolute-form 會被當成兩層深、吐出 `../../dashboard/`。
+
+還修了兩支自己寫弱的測試：`/admin` 那條只斷言「相對、而且在前綴底下」，就算把 `/admin` 導去 `dashboard/` 也照樣綠；結構測試寫死兩個檔名，新檔案裡的 static mount 正好看不到 —— 那正是它唯一想防的事。
+
+**駁回一條建議**：加 `{ redirect: false }` 當第二道。匹配對了就沒有東西碰得到 serve-static 的轉址；匹配錯的時候它只是把「錯的轉址」換成「白畫面」。那是換一種壞法，不是變小。
+
+### 測試
+
+新增 20 條，全部把 Location 對**兩個 base** 各解析一次 —— 字串比對對這個 bug 是無效的，`/dashboard/` 看起來很正常，要拿去對 `http://x/ownmind/` 解析才會現形，這也正是它躲過 v1.26.48 的原因。
+
+十個 mutation 全部轉紅：大小寫比對、深度取原始 url、拿掉方法過濾、拿掉正規化、拿掉精確比對（會變無限迴圈）、退回絕對 Location、丟掉 query、放寬驗證、兩個安裝各拿掉一個。
+
+過程中還發現新測試檔漏了一個 server handle、讓整檔被判 cancelled：`srv.close()` 只是停止接受連線、會等現有連線結束，光 destroy 用戶端那半條不夠，要 `closeAllConnections()`。剩下的 60 秒是既有的 —— `tests/stage-1b-flip-root-retire-me.test.js` 單獨跑也是 60 秒，因為 import `src/app.js` 會留 handle。不在這次範圍。
+
 ## v1.26.56 — 統計儀表板搬進新後台（整併第 5 站）
 
 舊後台的「統計儀表板」在新後台 `/team/stats` 重建完成，manifest 翻 live。指路牌從 3 個減到 2 個（剩團隊用量、週報月報），`/admin/` 仍續留。
