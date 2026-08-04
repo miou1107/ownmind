@@ -29,15 +29,32 @@ export function mergeUsersWithUsage(users, stats) {
     if (!totals) {
       return { ...u, usage: { measured: false } };
     }
+    // v1.26.56: "no row at all" is not how the real endpoint reports a member
+    // who has never used AI. loadUsersAggregate is a LEFT JOIN with COALESCE on
+    // every column, so that member arrives as a row of zeros and the branch
+    // above never fires — which is how "0 tokens / 0 次對話" ended up on screen
+    // for exactly the people Requirement 7 is about. The server now says
+    // outright whether any usage row existed, and that is what decides.
+    //
+    // Absent flag means an older server: fall through to measured, so a version
+    // skew cannot flip every member to unmeasured.
+    if (totals.has_usage_data === false) {
+      return { ...u, usage: { measured: false } };
+    }
     const input = Number(totals.input_tokens) || 0;
     const output = Number(totals.output_tokens) || 0;
-    const messages = Number(totals.message_count) || 0;
+    // v1.26.56: was `message_count`, which is a count of messages, under a
+    // column the three locales label "sessions" / 次對話 / 回. It also excludes
+    // tier 2 (Cursor / Antigravity), so a Cursor-only member — who now passes
+    // the has_usage_data gate above — would have rendered "0 次對話" beside
+    // their real session count. `totals.session_count` is tier 1 + tier 2.
+    const sessions = Number(totals.session_count) || 0;
     return {
       ...u,
       usage: {
         measured: true,
         total_tokens: input + output,
-        session_count: messages,
+        session_count: sessions,
       },
     };
   });

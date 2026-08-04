@@ -357,27 +357,91 @@ remain (stats-dashboard, team-usage, periodic-reports).
 
 ## Stage 5 — 統計儀表板
 
-Vin uses this page and wants it ported in full. The largest single stage.
+Shipped as `v1.26.56`. Vin uses this page and wanted it ported in full. The largest
+single stage, and the only one that was a new integration rather than a move.
 
-- [ ] Port all 17 blocks. Sources: `/api/activity/stats/all`,
-      `/api/activity/stats?user_id=`, `/api/activity/stats/rules?user_id=`
-      (`src/public/index.html:2786,2812,2876`). The console currently calls **none** of
-      `/api/activity/*`, so this is a new integration, not a move
-- [ ] Two views as today: all-user overview and single-user detail, with the
-      7 / 30 / 90-day range
-- [ ] Blocks: 用戶活躍度總表, 記憶數量卡片, 記憶類型分布, 工具分布, 模型分布,
+- [x] All eighteen blocks ported against `/api/activity/stats/all`,
+      `/api/activity/stats?user_id=` and `/api/activity/stats/rules?user_id=`. The
+      console had never called `/api/activity/*` before, so this was new wiring.
+      `src/routes/activity.js` is untouched, per Requirement 3
+- [x] Two views as today, driven by one control bar: empty user select → cross-user
+      overview, a user id → that user's detail. Range 7 / 30 / 90, default 30
+- [x] Blocks: 用戶活躍度總表, 記憶數量卡片, 記憶類型分布, 工具分布, 模型分布,
       每日活動量, 鐵律合規率, 各規則落地率, 各工具落地率, 每條鐵律落地率表,
       從未被觸發的規則, 鐵律觸發 Top 5, 系統健康, 常用操作, 專案分布, 使用者痛點,
       AI 改善建議, 交接統計
-- [ ] 從未被觸發的規則 stays a separate statement, not folded into the rate. With 88
-      rules and few triggered per week, folding them produces a fake low score
-- [ ] The memory-search modal the friction and suggestion lists link to
-      (`src/public/index.html:1476-1500`, `/api/memory/search`) comes along or is
-      explicitly dropped
-- [ ] Per Requirement 7, blocks with three or four rows are laid out in pairs, not full
-      width, and the main column is capped
-- [ ] Flip the manifest entry to `live`
+- [x] 從未被觸發的規則 kept as its own statement. Asserted by a test that puts two
+      untriggered rules beside a 100% rule and requires the 100% to survive
+- [x] **This line was wrong, and the correction is the finding**: the memory-search
+      modal is not on this page. `data-search-text` appears at `src/public/index.html`
+      `:2750` and `:2761`, both inside `loadReport()` — the 週/月報 tab. The stats
+      tab's friction and suggestion lists render plain divs with no handler. It is
+      Stage 7's decision
+- [x] Requirement 7's layout rule applied, and **verified by measuring real bounding
+      boxes in the browser** rather than by asserting class names. Mutation-verified
+      both ways: stacking the pair, and removing the width cap, each turn it red
+- [x] **Requirement 7 defect in the legacy page, fixed not carried over**: 各規則落地率
+      and 各工具落地率 computed `t > 0 ? … : 0` and then banded, so a rule with no
+      events in the period was painted solid red at 0%. An absence of evidence rendered
+      as evidence of failure
+- [x] Three more Requirement 7 gaps closed while here: 尚無數據 split into named causes
+      (no compliance events / no sessions / no init events observed) instead of one
+      label for four different situations; the four context blocks always render and
+      state why they are empty rather than `classList.add('hidden')`; and the context
+      section states its denominator
+- [x] Manifest entry flipped signpost → live. Two signposts remain (team-usage,
+      periodic-reports); `/admin/` still served
+- [x] Code review: 1 Critical, 4 Important, 12 Minor, each reproduced before acting.
+      **The Critical was an unguarded response race.** Both selects refetch on change;
+      the overview is 3 queries and the detail is ~15, so the cheap one routinely lands
+      first, and because the overview branch nulls `detail` while the detail branch
+      nulls `overview`, a late reply from the abandoned request left the page rendering
+      nothing at all — no table, no spinner, no error. The user-to-user variant showed
+      one member's numbers under another member's name. Extracted to `request-gate.js`
+      so the guard is executed by a test rather than being two `if` lines in JSX.
+      Suite 2514 pass / 0 fail; e2e 26 pass / 0 fail; client build exit 0
 - [ ] Browser check on production
+
+### Found by this stage, fixed here, belonging to earlier stages
+
+- [x] **Stage 2's headline Requirement 7 fix never worked in production.**
+      `loadUsersAggregate` is `FROM users u LEFT JOIN token_usage_daily d` with
+      `COALESCE(…, 0)` on every column, so a member who has never reported still comes
+      back as a row of zeros and `mergeUsersWithUsage`'s `measured: false` branch was
+      unreachable. The 用量資料 column rendered "0 tokens / 0 次對話" for exactly the
+      members the requirement exists to protect. Server now emits `has_usage_data`
+      (tier 1 rows OR a tier 2 row); `bool_or(d.id IS NOT NULL)` returns FALSE rather
+      than NULL for a non-matching join — verified against postgres:16, because the
+      three-valued reading is the plausible-but-wrong one. Also: that column displayed
+      `message_count` under a label the three locales write as session / 次對話 / 回,
+      and excluding tier 2 meant a Cursor-only member saw "0 次對話" beside their real
+      session count. Reads `session_count` now
+- [x] **`Init 成功率 100%` was fabricated.** `src/routes/activity.js` computes
+      `(initS + initF) > 0 ? rate : 100`, so an account with no init event at all was
+      reported as flawless, in green. The endpoint is out of scope, but `by_event` is
+      `LIMIT 20`: below the limit nothing was truncated, so an absent `init` key is
+      proof of zero. Marked unmeasured under that condition; at the limit it falls back
+      to trusting the server, which is the status quo and so never worse
+- [x] **Four e2e tests had been silently red since v1.26.49 / v1.26.51.** Three
+      signpost specs hardcoded `/admin/bugs`, which Stage 4 made a live page; one looked
+      for a nav label `成員` when `nav.members` has always read 使用者管理, so the
+      locator matched nothing and every `toHaveCount(0)` passed for the wrong reason.
+      Nobody saw it because e2e is not part of `npm test`. Root cause was hardcoding the
+      subject, which breaks again at every stage, so it is now derived from the manifest
+      — **deliberately unfiltered by role**: the first draft took the first signpost at
+      `LEGACY_CONSOLE_MIN_ROLE`, which yields null the day no remaining signpost sits at
+      that tier and would green-skip three specs while `/admin/` is still served, the
+      same defect shape being fixed
+- [ ] **Backlog, not fixed here**: three sibling pages hardcode
+      `toLocaleDateString('zh-TW')` (`BroadcastPage.jsx`, `WorkLogPage.jsx`, and the
+      team page). The new page derives it from the active locale like `ProfilePage`
+      does; unifying the other three is a cross-cutting change that does not belong to
+      this stage
+- [ ] **Backlog**: `tests/console-table-overflow.test.js` does not reach the new rule
+      table — its `border-slate-200…rounded-xl` filter skips the `-mx-4 overflow-x-auto`
+      wrapper, and the real card class is a template literal in `charts.jsx` that the
+      `<div className="` scan cannot see. The code complies today; the guard just does
+      not cover it. The helper is documented as a floor, not a proof
 
 ## Stage 6 — 團隊用量
 

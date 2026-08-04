@@ -195,6 +195,57 @@ describe('GET /api/usage/team-stats (admin+)', () => {
       'Tier-2-only user 也要計入 session_count，不是 0');
   });
 
+  // v1.26.56 — the LEFT JOIN means every member comes back as a row whether or
+  // not they reported anything, so the payload has to say which. Without this
+  // the console rendered "0 tokens / 0 次對話" for members it had no data for,
+  // which is the failure umbrella Requirement 7 exists to stop.
+  it('has_usage_data distinguishes a reported zero from no data at all', async () => {
+    const fakeQuery = async (sql) => {
+      if (/user_status AS/.test(sql)) return { rows: [] };
+      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
+        return { rows: [
+          // Reported, and the numbers happen to be zero.
+          { id: 1, name: 'Quiet', email: 'q@x.com', cost_usd: 0,
+            input_tokens: '0', output_tokens: '0', cache_creation_tokens: '0',
+            cache_read_tokens: '0', reasoning_tokens: '0', message_count: 0,
+            wall_seconds: 0, active_seconds: 0, session_count: 0, has_tier1_data: true },
+          // Never reported. `d.id IS NOT NULL` is never itself NULL, so bool_or
+          // over the single non-matching LEFT JOIN row is FALSE — verified
+          // against postgres:16 rather than assumed, because the three-valued
+          // reading (null) is the plausible-but-wrong one.
+          { id: 2, name: 'Silent', email: 's@x.com', cost_usd: 0,
+            input_tokens: '0', output_tokens: '0', cache_creation_tokens: '0',
+            cache_read_tokens: '0', reasoning_tokens: '0', message_count: 0,
+            wall_seconds: 0, active_seconds: 0, session_count: 0, has_tier1_data: false },
+          // Defensive: should postgres ever hand back null here, it must still
+          // read as "no data", not as measured.
+          { id: 4, name: 'Null Flag', email: 'n@x.com', cost_usd: 0,
+            input_tokens: '0', output_tokens: '0', cache_creation_tokens: '0',
+            cache_read_tokens: '0', reasoning_tokens: '0', message_count: 0,
+            wall_seconds: 0, active_seconds: 0, session_count: 0, has_tier1_data: null },
+          // No tier-1 row, but Cursor sessions in tier 2 — still measured.
+          { id: 3, name: 'Cursor Only', email: 'c@x.com', cost_usd: 0,
+            input_tokens: '0', output_tokens: '0', cache_creation_tokens: '0',
+            cache_read_tokens: '0', reasoning_tokens: '0', message_count: 0,
+            wall_seconds: 0, active_seconds: 0, session_count: 0, has_tier1_data: null },
+        ] };
+      }
+      if (/FROM session_count\s+WHERE date/.test(sql)) {
+        return { rows: [{ user_id: 3, tier2_sessions: 4, tier2_wall_seconds: 300 }] };
+      }
+      throw new Error('unexpected SQL: ' + sql);
+    };
+    const app = buildApp({ queryFn: fakeQuery, user: { id: 9, role: 'admin' } });
+    const res = await request(app, { path: '/api/usage/team-stats?from=2026-04-01&to=2026-04-30' });
+    assert.equal(res.status, 200);
+    const byId = Object.fromEntries(res.body.users.map((u) => [u.user.id, u.totals]));
+    assert.equal(byId[1].has_usage_data, true, 'a reported zero is measured');
+    assert.equal(byId[2].has_usage_data, false, 'no row in either tier is not a zero');
+    assert.equal(byId[3].has_usage_data, true, 'tier-2-only still counts as measured');
+    assert.equal(byId[4].has_usage_data, false, 'a null flag must not read as measured');
+  });
+
   it('period defaults apply when from/to omitted', async () => {
     let captured = [];
     const fakeQuery = async (sql, params) => {

@@ -1,5 +1,56 @@
 # OwnMind 檔案結構
 
+## v1.26.56 修改（統計儀表板搬進新後台 — 整併第 5 站）
+
+新增檔：
+```
+client/src/pages/Team/StatsPage.jsx                                 — 控制列（使用者／時間範圍）+ 兩種檢視分岔
+client/src/pages/Team/StatsOverview.jsx                             — 用戶活躍度總表（八欄）
+client/src/pages/Team/StatsDetail.jsx                               — 單一使用者的 17 個區塊
+client/src/pages/Team/charts.jsx                                    — BarChart / DailyChart / Card / ChartPair / 顏色分帶
+client/src/pages/Team/stats-overview-vm.js                          — 總覽列 view-model（七天窗、pill 排序、null 落地率）
+client/src/pages/Team/stats-chart-data.js                           — 長條圖與每日圖的比例計算（含除以零的守衛）
+client/src/pages/Team/stats-compliance-vm.js                        — 落地率分帶、各規則／各工具、每條鐵律、從未觸發
+client/src/pages/Team/stats-detail-vm.js                            — 記憶卡片、系統健康、交接、工作脈絡
+client/src/pages/Team/stats-labels.js                               — 事件／類型標籤走字典查表、查不到回原字串
+client/src/pages/Team/request-gate.js                               — 只有最新的請求可以寫狀態（修 code review 的 Critical）
+tests/stats-overview-vm.test.js                                     — 14 assertions
+tests/stats-chart-data.test.js                                      — 10 assertions
+tests/stats-compliance-vm.test.js                                   — 22 assertions
+tests/stats-detail-vm.test.js                                       — 14 assertions
+tests/stats-labels.test.js                                          — 7 assertions（含三語系 key 對齊、en 不得殘留漢字）
+tests/stats-request-gate.test.js                                    — 5 assertions（含重現整頁空白的順序）
+openspec/changes/v1.26.56-stats-dashboard/{proposal,spec,tasks}.md   — 8 條需求含 GIVEN/WHEN/THEN
+```
+
+修改檔：
+```
+client/src/App.jsx                                                  — import StatsPage、REAL_PAGES 加 /team/stats
+shared/legacy-console-manifest.js                                   — stats-dashboard signpost → live（剩 2 個指路牌）
+client/src/i18n/{zh,en,ja}.json                                     — 122 個 stats.* key、三語系同步
+src/routes/usage/team-stats.js                                      — loadUsersAggregate 加 has_usage_data（tier1 有列 OR tier2 有列）
+client/src/pages/Admin/user-merge.js                                — 依 has_usage_data 判定未量測；顯示數字改讀 session_count
+tests/legacy-console-manifest.test.js                               — v1.26.56 flip 斷言、指路牌數 3 → 2
+tests/team-stats.test.js                                            — has_usage_data 三種情形（有回報的 0／完全沒列／只有 tier2）+ null flag 防禦
+tests/team-user-merge.test.js                                       — fixture 改用 session_count；加只有 tier2 的成員案例
+tests/e2e/console.spec.mjs                                          — 修 4 支長期紅掉的測試；新增 5 支統計頁測試
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.56 條目、版號 1.26.55 → 1.26.56
+package.json                                                        — 版號 1.26.55 → 1.26.56
+openspec/changes/single-console-consolidation/tasks.md              — Stage 5 勾完
+```
+
+**選擇說明**：
+
+- **「沒量到」不能畫成紅色 0%**。舊頁的各規則／各工具落地率是 `t > 0 ? 算 : 0` 之後再分帶，本期沒有任何合規事件的規則因此被畫成滿格紅色 0%。null 現在走自己的分帶、不給顏色也不畫條。這是 umbrella Requirement 7 的核心，也是這一站主要的行為修正。
+- **「尚無數據」拆成具名原因**。落地率算不出來、本期沒有 session、沒觀察到 init 事件，原本共用一個標籤，四種不同的成因變成同一句話。現在各有自己的說明句。
+- **工作脈絡四塊不整段消失**。舊頁 `context: null` 直接 `classList.add('hidden')`，看的人分不出功能壞了還是沒資料。四張卡片現在一定在。
+- **`initRateMeasured` 為什麼是可靠的推論而不是猜**：`by_event` 是 `GROUP BY event ORDER BY count DESC LIMIT 20`，不到 20 筆就代表沒有被截斷，缺 key 就是真的沒發生。到 20 筆就無法證明、退回信任伺服器（也就是維持現狀、絕不會比原本更差）。
+- **`bool_or(d.id IS NOT NULL)` 回 FALSE 不是 NULL** — 用 postgres:16 實測過，不是推的。三值邏輯的直覺答案（null）是錯的。
+- **e2e 指路牌測試刻意不按角色過濾**：第一版寫「取第一個 minRole 等於 admin 的」，那會在剩下的指路牌都不在 admin 層那天回傳 null、三支測試靜靜被 skip，而舊後台還在服務。那正是這批要修的同一種毛病。改成取第一個、登入帳號由它自己的 minRole 決定，只有完全沒有指路牌時才 skip。
+- **race guard 抽成模組而不是留兩行 `if`**：這個 repo 沒有 CI，藏在 JSX 裡的判斷只能被斷言、不能被執行。`request-gate.js` 讓「整頁變空白」那個順序有一支真的跑得起來的重現測試。
+- **已知限制**：`getContextAnalysis` 是 `catch { return null }`，「真的沒資料」跟「查詢炸了」到前端都是 `context: null`。頁面寫的是前者，那是比較可能的解讀、不是證明。要分辨得動端點。
+- 記憶搜尋 modal **不屬於這一站**：`data-search-text` 只出現在 `:2750` 與 `:2761`，兩處都在 `loadReport()`（週／月報 tab）內。umbrella tasks 把它列在 Stage 5 是寫錯了。
+
 ## v1.26.55 修改（修備份成功卻回報失敗）
 
 修改檔：

@@ -143,10 +143,23 @@ describe('legacy-console manifest — shape', () => {
     assert.equal(isSignpost('/system/work-log'), false);
   });
 
-  it('v1.26.51 — the legacy console is still served (three signposts remain)', () => {
-    // Two more features going live is not enough to retire; three signposts
-    // still exist (stats-dashboard, team-usage, periodic-reports).
-    assert.equal(signpostFeatures().length, 3, 'three signposts remain after Stage 4');
+  it('v1.26.56 — stats-dashboard is live, not a signpost', () => {
+    // Stage 5 flip. The amber dot on 統計儀表板 must be gone.
+    const stats = legacyFeatureFor('/team/stats');
+    assert.ok(stats, 'stats-dashboard entry missing from manifest');
+    assert.equal(stats.state, 'live', 'stats-dashboard should be live after Stage 5');
+    assert.equal(isSignpost('/team/stats'), false);
+  });
+
+  it('v1.26.56 — the legacy console is still served (two signposts remain)', () => {
+    // One more feature going live is not enough to retire; two signposts still
+    // exist (team-usage, periodic-reports).
+    assert.equal(signpostFeatures().length, 2, 'two signposts remain after Stage 5');
+    assert.deepEqual(
+      signpostFeatures().map((f) => f.id).sort(),
+      ['periodic-reports', 'team-usage'],
+      'the remaining signposts are Stage 6 and Stage 7',
+    );
     assert.equal(isLegacyConsoleRetired(), false);
   });
 });

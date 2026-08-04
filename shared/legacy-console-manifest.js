@@ -65,7 +65,11 @@ export const LEGACY_CONSOLE_FEATURES = [
   // v1.26.51: work-log rebuilt in the console. Three-source merged timeline
   // (activity / compliance / session) against /api/admin/work-log.
   { id: 'work-log', consolePath: '/system/work-log', legacyTab: 'work-log', state: 'live' },
-  { id: 'stats-dashboard', consolePath: '/team/stats', legacyTab: 'stats', state: 'signpost' },
+  // v1.26.56: stats-dashboard rebuilt in the console. Two views (cross-user
+  // overview and per-user detail) against /api/activity/stats/all, /stats and
+  // /stats/rules — endpoints the console had never called before, so this one
+  // was a new integration rather than a move.
+  { id: 'stats-dashboard', consolePath: '/team/stats', legacyTab: 'stats', state: 'live' },
   { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'signpost' },
   // The one feature whose real permission is wider than its signpost's. The report is
   // per-user (`GET /api/session/report` filters `WHERE user_id = $1`), so it belongs to

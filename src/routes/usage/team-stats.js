@@ -148,7 +148,12 @@ async function loadUsersAggregate({ query }, from, to) {
             COALESCE(SUM(d.message_count), 0)::int        AS message_count,
             COALESCE(SUM(d.wall_seconds), 0)::int         AS wall_seconds,
             COALESCE(SUM(d.active_seconds), 0)::int       AS active_seconds,
-            COUNT(DISTINCT d.session_id)::int             AS session_count
+            COUNT(DISTINCT d.session_id)::int             AS session_count,
+            -- v1.26.56: every column above is COALESCE'd to 0, so a member with
+            -- no token_usage_daily row is indistinguishable from one who reported
+            -- zeros. The console rendered both as "0 tokens", which is the exact
+            -- confusion umbrella Requirement 7 forbids. This says which it is.
+            bool_or(d.id IS NOT NULL)                     AS has_tier1_data
        FROM users u
        LEFT JOIN token_usage_daily d
          ON d.user_id = u.id AND d.date >= $1 AND d.date <= $2
@@ -183,7 +188,11 @@ async function loadUsersAggregate({ query }, from, to) {
         message_count: r.message_count,
         wall_seconds: Number(r.wall_seconds) + t2Wall,
         active_seconds: r.active_seconds,
-        session_count: Number(r.session_count) + t2Sessions
+        session_count: Number(r.session_count) + t2Sessions,
+        // True when this member reported anything at all in the window, from
+        // either tier. A Cursor-only user has no tier-1 row, so checking tier 1
+        // alone would call them unmeasured while their sessions are on screen.
+        has_usage_data: r.has_tier1_data === true || t2 !== undefined
       }
     };
   });

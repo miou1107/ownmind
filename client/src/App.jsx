@@ -20,6 +20,7 @@ import NarrativePage from './pages/Portal/NarrativePage';
 import PitfallsPage from './pages/Portal/PitfallsPage';
 import TeamPage from './pages/Admin/TeamPage';
 import BugReportsPage from './pages/Admin/BugReportsPage';
+import StatsPage from './pages/Team/StatsPage';
 import SystemConfigPage from './pages/System/SystemConfigPage';
 import BroadcastPage from './pages/System/BroadcastPage';
 import WorkLogPage from './pages/System/WorkLogPage';
@@ -38,6 +39,7 @@ const REAL_PAGES = {
   '/preference/vault': <VaultPage />,
   '/admin/team': <TeamPage />,
   '/admin/bugs': <BugReportsPage />,
+  '/team/stats': <StatsPage />,
   '/system/config': <SystemConfigPage />,
   '/system/broadcast': <BroadcastPage />,
   '/system/work-log': <WorkLogPage />,
