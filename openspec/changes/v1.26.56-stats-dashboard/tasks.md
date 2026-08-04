@@ -94,4 +94,10 @@
 - [x] `CHANGELOG.md`, `FILELIST.md`, `README.md` + `docs/README.zh-TW.md` +
       `docs/README.ja.md`
 - [x] Umbrella `tasks.md` Stage 5 ticked, with the corrections it surfaced
-- [ ] Commit, tag, push, deploy kkvin.com, browser check
+- [x] Commit `97659a8`, tag `v1.26.56`, pushed
+- [x] Deployed to kkvin.com and verified in the browser. Details and the two
+      production confirmations are in the umbrella ledger's Stage 5 section
+- [x] One pre-existing bug found by the check and filed rather than fixed inline:
+      `/ownmind/dashboard` without a trailing slash redirects off the `/ownmind`
+      prefix onto an unrelated site (`express.static`'s absolute redirect at
+      `src/app.js:82`). Predates this release; routing warrants its own change

@@ -400,7 +400,42 @@ single stage, and the only one that was a new integration rather than a move.
       one member's numbers under another member's name. Extracted to `request-gate.js`
       so the guard is executed by a test rather than being two `if` lines in JSX.
       Suite 2514 pass / 0 fail; e2e 26 pass / 0 fail; client build exit 0
-- [ ] Browser check on production
+- [x] Released and deployed 2026-08-04. `v1.26.56` on `/VinService/ownmind`,
+      `git fetch --tags && git checkout v1.26.56 && docker compose build --no-cache api
+      && docker compose up -d api`. No migrations in this range (17 applied, 0 new). The
+      served asset hash `index-hiB8EIMn.js` matched the local build. Container up, clean
+      startup log. The 04:30 backup cron added in v1.26.53 is still installed
+- [x] Post-deploy browser check, super_admin path, with a non-GET fetch guard installed
+      **before** navigating (nothing tried to write; `__omBlocked` stayed empty, so no
+      production row was touched this time). Sidebar and footer read v1.26.56; the amber
+      marker beside 統計儀表板 is gone while 團隊用量 and 週報月報 keep theirs; no
+      console errors. **Requirement 7 is visible on real data, which is the point**: for
+      an account with no compliance events, 整體落地率 reads 尚無數據 while 遵守 /
+      跳過 / 違反 read a genuine 0; 各規則落地率 and 各工具落地率 say "本期沒有合規回報
+      事件，所以算不出落地率"; 每條鐵律落地率 says the different and correct "這位使用者
+      沒有啟用中的鐵律"; and on the busiest account the ~75 rules with `0 0 0` render
+      尚無數據 where the legacy page would have painted every one of them solid red at
+      0%. Zero bare `0%` nodes anywhere on the page, checked by querying the DOM
+- [x] **Both out-of-scope fixes confirmed against production, not just fixtures.**
+      `initRateMeasured`: three real accounts (Joanna, Amiee Kuo, Vin-windows-test) have
+      `by_event: 0` and no init event, and the server reports a flawless 100% for each —
+      the page now says 尚無數據. Six accounts do have init events with `by_event` at 19
+      or fewer, so the guard passes them through untouched. `has_usage_data`: the same
+      three read 尚無資料 on 使用者管理 where they previously read "0 tokens / 0 次對話",
+      while Joanna — one session, zero tokens — correctly reads `0 tokens / 1 次對話`.
+      Before the fix all four looked identical
+- [ ] **Found by this browser check, filed, pre-existing**:
+      `https://kkvin.com/ownmind/dashboard` with **no trailing slash** 301s to the
+      absolute `/dashboard/`, which drops the `/ownmind` prefix and lands on an unrelated
+      page titled "Vin WorkSpace". Cause is `express.static`'s built-in `redirect: true`
+      at `src/app.js:82`, which emits a Location derived from the mount path and knows
+      nothing about nginx's `rewrite ^/ownmind/(.*)`. Same class as v1.26.44 and v1.26.48
+      but inside express.static rather than app code, so `relativeRedirectTarget()` never
+      reached it. Confirmed identical against the container directly, so it is not nginx.
+      `src/app.js` last changed in v1.26.48, and this release touches no routing, so it
+      is **not** introduced here. Not fixed inline: routing is where the last two
+      incidents happened and it deserves its own release with the resolve-against-two-
+      bases tests v1.26.48 established
 
 ### Found by this stage, fixed here, belonging to earlier stages
 
