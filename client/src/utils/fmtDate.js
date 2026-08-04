@@ -5,10 +5,14 @@
 //   - invalid date 回 '-'（不丟 'Invalid Date' 字串給 user）
 //   - 用 BCP-47 locale 字串、不依賴瀏覽器 default locale
 
+/** The app locale as a BCP-47 tag, for any Intl call. */
+export function bcp47Of(locale) {
+  return locale === 'zh' ? 'zh-TW' : locale === 'ja' ? 'ja-JP' : 'en-US';
+}
+
 export function fmtDate(iso, locale) {
   if (!iso) return '-';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '-';
-  const bcp47 = locale === 'zh' ? 'zh-TW' : locale === 'ja' ? 'ja-JP' : 'en-US';
-  return d.toLocaleString(bcp47);
+  return d.toLocaleString(bcp47Of(locale));
 }

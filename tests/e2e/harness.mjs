@@ -118,6 +118,11 @@ async function startApi(dbPort, dbPassword, encryptionKey) {
       LLM_SWITCH_API_KEY: '',
       OWNMIND_LLM_API_BASE: '',
       SETUP_TOKEN: '',
+      // The suite is one browser walking every page of the console inside a
+      // single rate-limit window, so the shipped ceiling of 200 per minute is
+      // reached partway through and the remaining specs fail at login with a
+      // 429 that looks like a bug in whatever they were testing.
+      API_RATE_LIMIT_MAX: '5000',
       LOG_LEVEL: 'error',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

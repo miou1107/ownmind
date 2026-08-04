@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 
-const { createTeamStatsRouter, parseParams } =
+const { createTeamStatsRouter, parseParams, buildCoverage } =
   await import('../src/routes/usage/team-stats.js');
 
 function buildApp({ queryFn, user }) {
@@ -49,6 +49,64 @@ describe('parseParams', () => {
   });
 });
 
+// v1.26.58 — coverage used to count collector_heartbeat rows, so a collector that
+// connected but never shipped a byte counted as covered. Measured on production
+// 2026-07-30: it claimed 8 of 9 members were reporting while three of them had no
+// usage data at all. The number now comes from the same `users` array the table is
+// built from, so the panel and the ranking cannot disagree.
+describe('buildCoverage', () => {
+  const user = (id, hasData) => ({
+    user: { id, name: `U${id}`, email: `${id}@x.com` },
+    totals: { has_usage_data: hasData },
+  });
+
+  it('counts members with usage data, not collectors that said hello', () => {
+    const c = buildCoverage([user(1, true), user(2, false), user(3, true)], new Set());
+    assert.equal(c.total_users, 3);
+    assert.equal(c.measured, 2);
+    assert.equal(c.unmeasured, 1);
+    assert.equal(c.opted_out, 0);
+    assert.deepEqual(c.unmeasured_users.map((u) => u.id), [2]);
+  });
+
+  it('names who is missing, because a count alone cannot be chased', () => {
+    const c = buildCoverage([user(1, false), user(2, true)], new Set());
+    assert.deepEqual(c.unmeasured_users, [{ id: 1, name: 'U1', email: '1@x.com' }]);
+  });
+
+  it('separates the deliberately exempt from the unexplained gap', () => {
+    const c = buildCoverage([user(1, false), user(2, false)], new Set([2]));
+    assert.equal(c.unmeasured, 1, 'only the non-exempt one is a gap to chase');
+    assert.equal(c.opted_out, 1);
+    assert.deepEqual(c.unmeasured_users.map((u) => u.id), [1]);
+    assert.deepEqual(c.exempt_users.map((u) => u.id), [2]);
+  });
+
+  // An exemption stops future ingestion; it does not delete what was already
+  // collected. A member exempted mid-window still has real data in it, and
+  // calling that "no data" would understate the coverage we actually have.
+  it('an exempt member who does have data in the window counts as measured', () => {
+    const c = buildCoverage([user(1, true)], new Set([1]));
+    assert.equal(c.measured, 1);
+    assert.equal(c.opted_out, 0);
+    assert.equal(c.exempt_users.length, 0);
+  });
+
+  it('every member lands in exactly one bucket', () => {
+    const users = [user(1, true), user(2, false), user(3, false), user(4, true)];
+    const c = buildCoverage(users, new Set([3]));
+    assert.equal(c.measured + c.unmeasured + c.opted_out, c.total_users,
+      'the three buckets must partition the team, or the denominator is a lie');
+  });
+
+  it('an empty team is not a division by zero', () => {
+    const c = buildCoverage([], new Set());
+    assert.equal(c.total_users, 0);
+    assert.equal(c.measured, 0);
+    assert.deepEqual(c.unmeasured_users, []);
+  });
+});
+
 describe('GET /api/usage/team-stats (admin+)', () => {
   it('rejects non-admin with 403', async () => {
     const app = buildApp({ queryFn: async () => { throw new Error('no-db'); }, user: { id: 2, role: 'user' } });
@@ -57,36 +115,28 @@ describe('GET /api/usage/team-stats (admin+)', () => {
   });
 
   it('returns coverage + users for admin', async () => {
-    // mock returns for the three queries: coverage CTE, per_tool, users aggregate
+    // Three members: one reporting, one silent, one exempt and silent.
     const fakeQuery = async (sql) => {
-      if (/user_status AS/.test(sql)) {
-        // Coverage: 1 active, 1 stale (48h+), 1 exempt
-        const now = new Date();
-        const recent = new Date(now.getTime() - 60_000);
-        const old = new Date(now.getTime() - 72 * 60 * 60 * 1000);
-        return {
-          rows: [
-            { id: 1, name: 'Active User', email: 'a@x.com',
-              latest_any_hb: recent, exempt_flag: null },
-            { id: 2, name: 'Stale User', email: 'b@x.com',
-              latest_any_hb: old, exempt_flag: null },
-            { id: 3, name: 'Exempt User', email: 'c@x.com',
-              latest_any_hb: null, exempt_flag: 1 }
-          ]
-        };
-      }
-      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) {
-        return { rows: [
-          { tool: 'claude-code', reporting: '1', stale: '0' },
-          { tool: 'codex', reporting: '0', stale: '1' }
-        ] };
+      if (/FROM usage_tracking_exemption/.test(sql)) {
+        return { rows: [{ user_id: 3 }] };
       }
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [
           { id: 1, name: 'Active User', email: 'a@x.com',
             cost_usd: 1.5, input_tokens: '100', output_tokens: '50',
             cache_creation_tokens: '0', cache_read_tokens: '10', reasoning_tokens: '5',
-            message_count: 10, wall_seconds: 3600, active_seconds: 1800, session_count: 3 }
+            message_count: 10, wall_seconds: 3600, active_seconds: 1800, session_count: 3,
+            has_tier1_data: true },
+          { id: 2, name: 'Silent User', email: 'b@x.com',
+            cost_usd: 0, input_tokens: '0', output_tokens: '0',
+            cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
+            message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0,
+            has_tier1_data: false },
+          { id: 3, name: 'Exempt User', email: 'c@x.com',
+            cost_usd: 0, input_tokens: '0', output_tokens: '0',
+            cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
+            message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0,
+            has_tier1_data: false }
         ] };
       }
       if (/FROM session_count\s+WHERE date/.test(sql)) {
@@ -99,13 +149,12 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     const res = await request(app, { path: '/api/usage/team-stats?from=2026-04-01&to=2026-04-30' });
     assert.equal(res.status, 200);
     assert.equal(res.body.coverage.total_users, 3);
-    assert.equal(res.body.coverage.reporting_today, 1);
-    assert.equal(res.body.coverage.stale, 1);
+    assert.equal(res.body.coverage.measured, 1);
+    assert.equal(res.body.coverage.unmeasured, 1);
     assert.equal(res.body.coverage.opted_out, 1);
-    assert.equal(res.body.coverage.stale_users[0].name, 'Stale User');
+    assert.equal(res.body.coverage.unmeasured_users[0].name, 'Silent User');
     assert.equal(res.body.coverage.exempt_users[0].name, 'Exempt User');
-    assert.ok(res.body.coverage.per_tool['claude-code']);
-    assert.equal(res.body.users.length, 1);
+    assert.equal(res.body.users.length, 3);
     assert.equal(res.body.users[0].totals.cost_usd, 1.5);
     assert.equal(res.body.users[0].totals.session_count, 3);
   });
@@ -114,8 +163,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     // Returning cost_usd: 0 means bool_or correctly excluded the NULL rows from the LEFT JOIN
     // (staging once returned null because bool_or(NULL IS NULL)=true caused a misjudgment)
     const fakeQuery = async (sql) => {
-      if (/user_status AS/.test(sql)) return { rows: [] };
-      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [{ id: 1, name: 'Fresh User', email: 'fresh@x.com',
           cost_usd: 0, input_tokens: '0', output_tokens: '0',
@@ -135,8 +183,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
   it('P2 regression: cost_usd is null when any day had unknown pricing', async () => {
     // Simulate DB returning NULL cost_usd (what Tier-1 SQL returns when bool_or kicks in)
     const fakeQuery = async (sql) => {
-      if (/user_status AS/.test(sql)) return { rows: [] };
-      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [{ id: 1, name: 'U', email: 'u@x.com',
           cost_usd: null,   // partial period → null per policy
@@ -158,8 +205,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
 
   it('P1 regression: Tier-2 session_count merges into user totals', async () => {
     const fakeQuery = async (sql) => {
-      if (/user_status AS/.test(sql)) return { rows: [] };
-      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [
           // User 1: has Tier-1 data
@@ -201,8 +247,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
   // which is the failure umbrella Requirement 7 exists to stop.
   it('has_usage_data distinguishes a reported zero from no data at all', async () => {
     const fakeQuery = async (sql) => {
-      if (/user_status AS/.test(sql)) return { rows: [] };
-      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [
           // Reported, and the numbers happen to be zero.
@@ -250,8 +295,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     let captured = [];
     const fakeQuery = async (sql, params) => {
       captured.push({ sql, params });
-      if (/user_status AS/.test(sql)) return { rows: [] };
-      if (/FROM collector_heartbeat\s+GROUP BY tool/.test(sql)) return { rows: [] };
+      if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
       if (/FROM session_count\s+WHERE date/.test(sql)) return { rows: [] };
       return { rows: [] };
     };

@@ -145,7 +145,11 @@ async function loadTotals({ query }, userId, from, to) {
        COALESCE(SUM(message_count), 0)::int AS message_count,
        COALESCE(SUM(wall_seconds), 0)::int AS wall_seconds,
        COALESCE(SUM(active_seconds), 0)::int AS active_seconds,
-       COUNT(DISTINCT session_id)::int AS session_count
+       COUNT(DISTINCT session_id)::int AS session_count,
+       -- v1.26.58: every column above is COALESCE'd, so an aggregate over zero
+       -- rows is indistinguishable from a member who reported zeros. This says
+       -- which it was; see has_usage_data below.
+       COUNT(*)::int AS row_count
      FROM token_usage_daily
      WHERE user_id = $1 AND date >= $2 AND date <= $3`,
     [userId, from, to]
@@ -153,17 +157,24 @@ async function loadTotals({ query }, userId, from, to) {
   // Tier 2: session_count (Cursor / Antigravity — only count + wall_seconds).
   const tier2 = await query(
     `SELECT COALESCE(SUM(count), 0)::int AS tier2_sessions,
-            COALESCE(SUM(wall_seconds), 0)::int AS tier2_wall_seconds
+            COALESCE(SUM(wall_seconds), 0)::int AS tier2_wall_seconds,
+            COUNT(*)::int AS row_count
        FROM session_count
       WHERE user_id = $1 AND date >= $2 AND date <= $3`,
     [userId, from, to]
   );
   const t1 = tier1.rows[0] ?? emptyTotals();
   const t2 = tier2.rows[0] ?? { tier2_sessions: 0, tier2_wall_seconds: 0 };
+  // Dropped rather than passed through: `row_count` is how the flag is decided,
+  // not a figure any page should be tempted to display.
+  const { row_count: _t1Rows, ...t1Totals } = t1;
   return {
-    ...t1,
+    ...t1Totals,
     session_count: Number(t1.session_count || 0) + Number(t2.tier2_sessions || 0),
-    wall_seconds: Number(t1.wall_seconds || 0) + Number(t2.tier2_wall_seconds || 0)
+    wall_seconds: Number(t1.wall_seconds || 0) + Number(t2.tier2_wall_seconds || 0),
+    // Tier 2 alone counts: a Cursor-only member has no token_usage_daily row,
+    // and calling them unmeasured would contradict the sessions on their screen.
+    has_usage_data: Number(t1.row_count || 0) > 0 || Number(t2.row_count || 0) > 0
   };
 }
 
@@ -255,10 +266,16 @@ export function buildGrouping(groupBy) {
     case 'model':
       return { selectKey: 'COALESCE(model, \'unknown\')', groupClause: 'GROUP BY model', orderClause: 'ORDER BY model ASC' };
     case 'session':
+      // v1.26.58: ranked by tokens, not by cost. `cost_usd` is null for a whole
+      // day as soon as one model in it lacks a price, and on production that is
+      // every member with data — so every group tied at null, and which hundred
+      // rows the LIMIT kept was left to the executor. Tokens are always present,
+      // so the busiest conversations are the ones that come back.
       return {
         selectKey: 'session_id',
         groupClause: 'GROUP BY session_id',
-        orderClause: 'ORDER BY SUM(cost_usd) DESC NULLS LAST LIMIT 100'
+        orderClause: 'ORDER BY SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)'
+          + ' + COALESCE(reasoning_tokens, 0)) DESC LIMIT 100'
       };
     case 'day':
     default:

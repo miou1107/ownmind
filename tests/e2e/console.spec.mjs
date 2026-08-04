@@ -358,6 +358,140 @@ test.describe('v1.26.56 statistics dashboard', () => {
   });
 });
 
+test.describe('v1.26.58 team usage', () => {
+  // The harness seeds three accounts, one session_log for the admin and no
+  // token_usage_daily rows at all, which is precisely the state that made the
+  // legacy page misleading: three members it had no data for, rendered as
+  // `0 tokens / 0 次對話 / $0.0000`.
+
+  test('members with no usage data are marked, not shown as zero', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+    await expect(pageHeading(page, '團隊用量')).toBeVisible();
+
+    const header = page.getByRole('row').first();
+    for (const col of ['成員', '最近活動', '對話場次', '最常做的專案', '鐵律遵守率',
+      '用量', '訊息', '活躍時長']) {
+      await expect(header.getByText(col, { exact: true })).toBeVisible();
+    }
+
+    // All three seeded members lack usage rows, so all three carry the badge.
+    // Scoped to the table: the coverage panel above names the same members, and
+    // getByText matches substrings, so a page-wide count reads one too many.
+    const table = page.getByRole('table').first();
+    await expect(table.getByText(zh['team_usage.badge.unmeasured'])).toHaveCount(3);
+    // And no cell in the table invented a zero for them.
+    await expect(table.getByText('0', { exact: true })).toHaveCount(0);
+  });
+
+  test('the seeded session still fills the activity columns', async ({ page }) => {
+    // The other half of the requirement: only what is genuinely missing may read
+    // as missing. The admin has one logged conversation, so their row must show
+    // it rather than joining the members with nothing.
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+    const row = page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name });
+    await expect(row.getByText('e2e-project')).toBeVisible();
+  });
+
+  test('no cost is displayed anywhere on the page', async ({ page }) => {
+    // Requirement 8. The endpoint still answers with cost_usd; nothing here may
+    // render it, and the legacy sort-by-cost option is gone with it.
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+    await expect(pageHeading(page, '團隊用量')).toBeVisible();
+
+    // `USD` deliberately not in the pattern: it matches member names and emails
+    // as readily as it matches a currency, and a spec that fails because someone
+    // is called usd@example.com teaches the reader to ignore it. A rendered cost
+    // in this codebase is `$` or the word 成本, both of which appear nowhere else
+    // on the page.
+    const body = await page.locator('main').innerText();
+    expect(body).not.toMatch(/\$|成本/);
+    expect(await page.locator('#team-sort option').allInnerTexts())
+      .toEqual(['依用量', '依訊息數', '依活躍時長']);
+  });
+
+  test('the coverage panel states its denominator and says who is missing', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+    await expect(page.getByText('全隊 3 人')).toBeVisible();
+    // Zero of three measured is well under the four-fifths mark.
+    await expect(page.getByText(/只涵蓋 0%/)).toBeVisible();
+    // Named, not just counted: a number alone cannot be chased up.
+    await expect(page.getByText(new RegExp(`沒有資料：.*${ACCOUNTS.admin.name}`))).toBeVisible();
+  });
+
+  test('clicking a member opens the drill-down against the same window', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+    await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
+
+    await expect(page.getByText(`成員明細：${ACCOUNTS.admin.name}`)).toBeVisible();
+    expect(await page.locator('#detail-group option').allInnerTexts())
+      .toEqual(['按日', '按工具', '按模型', '按對話']);
+    // No usage rows seeded, so every card reads as absent rather than as 0.
+    await expect(page.getByText(zh['team_usage.no_data']).first()).toBeVisible();
+
+    // The conversation list is loaded with the detail; the toggle only shows it.
+    await page.getByRole('button', { name: /最近對話/ }).click();
+    await expect(page.getByText('e2e orphan session')).toBeVisible();
+  });
+
+  test('opening a member on a reversed range says so instead of spinning', async ({ page }) => {
+    // Found in review. The ranking keeps rendering its last good payload while
+    // the dates are reversed, so there is still a row to click; the drill-down
+    // then mounted with `loading` true and returned early without clearing it.
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+    await page.locator('#team-from').fill('2026-08-10');
+    await page.locator('#team-to').fill('2026-08-01');
+    await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
+
+    await expect(page.getByText(zh['team_usage.filter.reversed']).nth(1)).toBeVisible();
+    await expect(page.getByText(zh['team_usage.loading'])).toHaveCount(0);
+  });
+
+  test('switching member does not leave the previous one\'s numbers on screen', async ({ page }) => {
+    // Found in review, and the same defect the stats page shipped with: the
+    // heading switches immediately while the cards below still hold the previous
+    // member, so one person's numbers appear under another person's name.
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/usage'));
+
+    await page.getByRole('row').filter({ hasText: ACCOUNTS.admin.name }).click();
+    await expect(page.getByText(`成員明細：${ACCOUNTS.admin.name}`)).toBeVisible();
+    await page.getByRole('button', { name: /最近對話/ }).click();
+    await expect(page.getByText('e2e orphan session')).toBeVisible();
+
+    // The defect only exists while the second member's requests are in flight,
+    // and against a local server that window is a few milliseconds — short
+    // enough that a retrying assertion sails past it and the spec passes with
+    // the fix removed, which is what the first draft of this test did. Holding
+    // the responses open makes the window observable; the assertion window is
+    // deliberately shorter than the delay, so a stale render cannot outwait it.
+    await page.route('**/api/usage/**', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await route.continue();
+    });
+
+    // The other member has no sessions at all, so the admin's conversation must
+    // be gone the moment the heading changes, not once the refetch returns.
+    await page.getByRole('row').filter({ hasText: ACCOUNTS.user.name }).click();
+    await expect(page.getByText(`成員明細：${ACCOUNTS.user.name}`)).toBeVisible();
+    await expect(page.getByText('e2e orphan session')).toHaveCount(0, { timeout: 1000 });
+    await page.unroute('**/api/usage/**');
+  });
+
+  test('sidebar 團隊用量 no longer carries the amber "still in legacy" marker', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/portal/usage'));
+    const navItem = page.getByRole('link', { name: new RegExp(`^${zh['nav.team_usage']}`) });
+    await expect(navItem).toBeVisible();
+    await expect(navItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
+  });
+});
+
 test.describe('the pages ported from /me/', () => {
   test('整體分析 renders its ten sections and says why there are no AI notes', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
