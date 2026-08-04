@@ -10,10 +10,42 @@
 // what the user actually sees.
 
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ACCOUNTS } from './harness.mjs';
+import { signpostFeatures } from '../../shared/legacy-console-manifest.js';
+import { navMinRole } from '../../client/src/components/common/nav-sections.js';
 
 const base = () => process.env.E2E_BASE_URL;
 const url = (path) => `${base()}${path}`;
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const zh = JSON.parse(readFileSync(join(repoRoot, 'client/src/i18n/zh.json'), 'utf8'));
+
+// The signpost specs below used to hardcode whichever path was signposted at the
+// time — /admin/team in v1.26.46, then /admin/bugs in v1.26.49. Both went live in
+// a later stage and left the specs asserting that a real page was a signpost. They
+// were red from v1.26.51 until v1.26.56 and nobody saw it, because e2e is not part
+// of `npm test`. So the subject is derived from the manifest instead.
+//
+// Deliberately NOT filtered by role. An earlier draft took the first signpost
+// whose navMinRole === LEGACY_CONSOLE_MIN_ROLE, which silently yields null the
+// day every remaining signpost sits at some other tier — and `test.skip` on null
+// would green-skip three specs while /admin/ is still being served. That is the
+// same shape of defect this block exists to fix. Take whatever is first and
+// choose the account from its own minRole; skip only when nothing is signposted,
+// which is the one condition under which the behaviour genuinely does not exist.
+const SIGNPOST = signpostFeatures()[0] ?? null;
+const signpostName = SIGNPOST ? zh[`legacy.tab.${SIGNPOST.legacyTab}`] : '';
+const signpostAccount = SIGNPOST
+  ? ({ user: ACCOUNTS.user, admin: ACCOUNTS.admin, super_admin: ACCOUNTS.superAdmin })[navMinRole(SIGNPOST.consolePath)]
+  : null;
+
+/** Regex-safe: a future tab label could contain `(`, `+` or `.`. */
+const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const signpostLink = (page) =>
+  page.getByRole('link', { name: new RegExp(`前往舊後台的「${rx(signpostName)}」`) });
 
 // Section headers are buttons; nav items are links. Both live inside the sidebar <aside>.
 const SECTIONS = ['我的', '團隊', '偏好設定', '管理', '系統'];
@@ -127,30 +159,31 @@ test.describe('route guards', () => {
 });
 
 test.describe('signposts', () => {
+  // Every spec here needs something still signposted. Skipping is the honest
+  // answer once the consolidation finishes — the behaviour will no longer exist.
+  test.skip(() => SIGNPOST === null, 'no signposts left; the legacy console is retired');
+
   test('a signpost names where the feature is and does not claim to be a rebuild', async ({ page }) => {
-    await login(page, ACCOUNTS.admin);
-    // v1.26.49: /admin/team is now the real page, so this test moved to /admin/bugs
-    // (still a signpost per shared/legacy-console-manifest.js). The invariant is the
-    // same: signposts name their destination, they do not claim to be a rebuild.
-    await page.goto(url('/dashboard/admin/bugs'));
+    await login(page, signpostAccount);
+    await page.goto(url(`/dashboard${SIGNPOST.consolePath}`));
 
     // The copy it replaced said "此頁面正在重構中、即將於後續階段完工", which was untrue:
     // the feature was working the whole time, in the old console.
     await expect(page.getByText('即將於後續階段完工')).toHaveCount(0);
     await expect(page.getByText('這個功能現在還在舊後台運作')).toBeVisible();
     // Names the destination tab rather than saying "go and find it".
-    await expect(page.getByRole('link', { name: /前往舊後台的「錯誤回報」/ })).toBeVisible();
+    await expect(signpostLink(page)).toBeVisible();
   });
 
   test('following a signpost carries the credential and lands on the right tab', async ({ page }) => {
-    await login(page, ACCOUNTS.admin);
+    await login(page, signpostAccount);
     const consoleKey = await page.evaluate(() => localStorage.getItem('ownmind.api_key'));
     expect(consoleKey).toBeTruthy();
 
-    await page.goto(url('/dashboard/admin/bugs'));
-    await page.getByRole('link', { name: /前往舊後台的「錯誤回報」/ }).click();
+    await page.goto(url(`/dashboard${SIGNPOST.consolePath}`));
+    await signpostLink(page).click();
 
-    await expect(page).toHaveURL(/\/admin\/#bug-reports$/);
+    await expect(page).toHaveURL(new RegExp(`/admin/#${SIGNPOST.legacyTab}$`));
 
     // Same value under the legacy name: three consoles, three key names, one users.api_key.
     const handed = await page.evaluate(() => ({
@@ -159,28 +192,27 @@ test.describe('signposts', () => {
       name: localStorage.getItem('om_user_name'),
     }));
     expect(handed.key).toBe(consoleKey);
-    expect(handed.role).toBe('admin');
-    expect(handed.name).toBe(ACCOUNTS.admin.name);
+    expect(handed.role).toBe(signpostAccount.role);
+    expect(handed.name).toBe(signpostAccount.name);
 
     // No second login: the legacy console restored the session and opened the asked-for tab.
     await expect(page.locator('#loginView')).toBeHidden();
-    await expect(page.locator('.tab[data-tab="bug-reports"]')).toHaveClass(/active/);
+    await expect(page.locator(`.tab[data-tab="${SIGNPOST.legacyTab}"]`)).toHaveClass(/active/);
   });
 
   test('logging out of the console clears the legacy credential too', async ({ page }) => {
     // The defect this covers, found in review: the handoff writes a usable om_api_key and
     // logout cleared only the console's own key, so the next person to open /admin/ in this
     // browser was restored as the previous user, holding a key every adminAuth route takes.
-    // v1.26.49: moved from /admin/team (now real page) to /admin/bugs (still signpost).
-    await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/admin/bugs'));
-    await page.getByRole('link', { name: /前往舊後台的「錯誤回報」/ }).click();
-    await expect(page).toHaveURL(/\/admin\/#bug-reports$/);
+    await login(page, signpostAccount);
+    await page.goto(url(`/dashboard${SIGNPOST.consolePath}`));
+    await signpostLink(page).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/#${SIGNPOST.legacyTab}$`));
     expect(await page.evaluate(() => localStorage.getItem('om_api_key'))).toBeTruthy();
 
     // Back to the console and log out through the avatar menu.
     await page.goto(url('/dashboard/portal/usage'));
-    await page.locator('header button').filter({ hasText: ACCOUNTS.admin.name }).click();
+    await page.locator('header button').filter({ hasText: signpostAccount.name }).click();
     await page.getByRole('button', { name: '登出' }).click();
     await expect(page).toHaveURL(/\/dashboard\/login$/);
 
@@ -212,15 +244,117 @@ test.describe('v1.26.49 team management page', () => {
     await expect(page.getByText('尚無資料').first()).toBeVisible();
   });
 
-  test('sidebar 成員 no longer carries the amber "still in legacy" marker', async ({ page }) => {
+  test('sidebar 使用者管理 no longer carries the amber "still in legacy" marker', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
     await page.goto(url('/dashboard/portal/usage'));
     // The nav item exists but must not carry the aria-label the signpost uses.
-    // Scope the amber-dot check to the 成員 nav item — other signposts (bugs,
-    // config, broadcast, etc.) still carry it, so a page-wide search would fail.
-    const membersNavItem = page.getByRole('link', { name: /^成員/ });
+    // Scoped to this one item — the remaining signposts still carry it, so a
+    // page-wide search would fail.
+    //
+    // v1.26.56: the label was written as 成員 here, but nav.members has read
+    // 使用者管理 the whole time, so getByRole matched nothing and the test was
+    // red from the day it was written.
+    const membersNavItem = page.getByRole('link', { name: new RegExp(`^${zh['nav.members']}`) });
     await expect(membersNavItem).toBeVisible();
     await expect(membersNavItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
+  });
+});
+
+test.describe('v1.26.56 statistics dashboard', () => {
+  // The harness seeds three accounts and no activity of any kind, which is
+  // exactly the state Requirement 7 is about: every rate is unmeasured rather
+  // than zero. A page that renders 0% here would be asserting a failure it
+  // never observed.
+
+  test('the overview lists the seeded users with unmeasured rates, not zeros', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/stats'));
+    await expect(pageHeading(page, '統計儀表板')).toBeVisible();
+
+    const header = page.getByRole('row').first();
+    for (const col of ['用戶', '記憶', 'Session', '使用工具', '使用模型', '落地率', '最後活躍']) {
+      await expect(header.getByText(col, { exact: true })).toBeVisible();
+    }
+
+    // No compliance events seeded ⇒ 尚無數據 in the rate column, and 從未 in
+    // last-active. Neither may render as 0% or as a date.
+    await expect(page.getByText('尚無數據').first()).toBeVisible();
+    await expect(page.getByText('從未').first()).toBeVisible();
+    // exact, because the default is substring and "100%" contains "0%".
+    await expect(page.getByText('0%', { exact: true })).toHaveCount(0);
+
+    // A NULL model column survives GROUP BY as the string "null". Found here
+    // rendering as `null 1` in a pill; it must resolve through the dictionary.
+    await expect(page.getByText('null', { exact: true })).toHaveCount(0);
+  });
+
+  test('selecting a user renders every detail block, each empty one saying so', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/stats'));
+
+    await page.locator('#stats-user').selectOption({ label: ACCOUNTS.admin.name });
+
+    for (const block of ['記憶類型分布', '工具使用分布', '模型使用分布', '每日活動量',
+      '鐵律合規率', '各規則落地率', '各工具落地率', '每條鐵律落地率', '鐵律觸發 Top 5',
+      '系統健康', '常用操作', '專案分布', '使用者痛點', 'AI 改善建議', '交接統計']) {
+      await expect(pageHeading(page, block)).toBeVisible();
+    }
+
+    // The harness seeds one session carrying a details payload, so the context
+    // section is available with every sub-list empty. Requirement 6's second
+    // scenario: an empty block states its own emptiness and its siblings still
+    // render. (The context-absent branch is unit-tested in stats-detail-vm; e2e
+    // cannot make the endpoint return null without changing the fixture.)
+    await expect(page.getByText('本期沒有回報痛點')).toBeVisible();
+    await expect(page.getByText('本期沒有改善建議')).toBeVisible();
+
+    // Nothing on a page with no compliance events may show a rate.
+    // exact, because the default is substring and "100%" contains "0%".
+    await expect(page.getByText('0%', { exact: true })).toHaveCount(0);
+  });
+
+  test('short charts sit beside a sibling and the bars are width-capped', async ({ page }) => {
+    // Umbrella Requirement 7's last scenario, which is a layout claim and so
+    // cannot be proved by a unit test: a three-row chart spanning the full page
+    // puts a two-digit count 1500px from its own label. Measured rather than
+    // asserted against class names, which would pass for a broken layout.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/stats'));
+    await page.locator('#stats-user').selectOption({ label: ACCOUNTS.admin.name });
+    await expect(pageHeading(page, '工具使用分布')).toBeVisible();
+
+    const card = (title) => page.getByRole('heading', { name: title }).locator('..');
+    const tools = await card('工具使用分布').boundingBox();
+    const models = await card('模型使用分布').boundingBox();
+
+    expect(Math.abs(tools.y - models.y)).toBeLessThan(4);
+    expect(models.x).toBeGreaterThan(tools.x + tools.width - 4);
+
+    // And the bar rows inside are capped, not stretched to the card.
+    const barRow = card('專案分布').locator('div.max-w-2xl').first();
+    const rowBox = await barRow.boundingBox();
+    expect(rowBox.width).toBeLessThanOrEqual(672 + 1); // Tailwind max-w-2xl = 42rem
+  });
+
+  test('the range select offers exactly 7 / 30 / 90 and defaults to 30', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/team/stats'));
+    const range = page.locator('#stats-days');
+    await expect(range).toHaveValue('30');
+    expect(await range.locator('option').allInnerTexts())
+      .toEqual(['最近 7 天', '最近 30 天', '最近 90 天']);
+  });
+
+  test('sidebar 統計儀表板 no longer carries the amber "still in legacy" marker', async ({ page }) => {
+    await login(page, ACCOUNTS.admin);
+    await page.goto(url('/dashboard/portal/usage'));
+    // Label read from the dictionary for the same reason as 使用者管理 above: a
+    // hardcoded one that drifts makes the locator match nothing, and a test that
+    // finds nothing passes every `toHaveCount(0)` for the wrong reason.
+    const statsNavItem = page.getByRole('link', { name: new RegExp(`^${zh['nav.team_stats']}`) });
+    await expect(statsNavItem).toBeVisible();
+    await expect(statsNavItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
   });
 });
 

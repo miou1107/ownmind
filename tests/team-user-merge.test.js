@@ -22,8 +22,8 @@ const USERS = [
 
 const STATS = {
   users: [
-    { user: { id: 1 }, totals: { input_tokens: 20_000, output_tokens: 22_300, message_count: 18 } },
-    { user: { id: 2 }, totals: { input_tokens: 10_000, output_tokens: 18_900, message_count: 12 } },
+    { user: { id: 1 }, totals: { input_tokens: 20_000, output_tokens: 22_300, session_count: 18 } },
+    { user: { id: 2 }, totals: { input_tokens: 10_000, output_tokens: 18_900, session_count: 12 } },
     // Cara (id 3) has no row → unmeasured
   ],
 };
@@ -61,13 +61,63 @@ describe('mergeUsersWithUsage — joins on user.id', () => {
 
   it('does not treat a stats row of all zeros as unmeasured (they DID report)', () => {
     // A member could have reported and simply not used AI this week. That is a
-    // valid `0` and should render as `0`, not as unmeasured. The distinction is
-    // whether their row exists at all.
-    const stats = { users: [{ user: { id: 3 }, totals: { input_tokens: 0, output_tokens: 0, message_count: 0 } }] };
+    // valid `0` and should render as `0`, not as unmeasured. `has_usage_data`
+    // is what carries the distinction; a row of zeros with the flag set true is
+    // a measured zero.
+    const stats = { users: [{ user: { id: 3 }, totals: {
+      input_tokens: 0, output_tokens: 0, session_count: 0, has_usage_data: true,
+    } }] };
     const rows = mergeUsersWithUsage([USERS[2]], stats);
     assert.equal(rows[0].usage.measured, true);
     assert.equal(rows[0].usage.total_tokens, 0);
     assert.equal(rows[0].usage.session_count, 0);
+  });
+
+  // v1.26.56 — found by the e2e suite, which had been red since v1.26.49.
+  //
+  // The "no stats row" case above cannot happen against the real endpoint:
+  // loadUsersAggregate is `FROM users u LEFT JOIN token_usage_daily d` with
+  // COALESCE(…, 0) on every column, so a member who has never reported still
+  // comes back as a row of zeros. `measured: false` was therefore unreachable
+  // in production, and the 用量資料 column rendered "0 tokens / 0 次對話" for
+  // exactly the members Requirement 7 exists to protect.
+  //
+  // The server now reports `has_usage_data`, and that is what decides.
+  it('a zero row flagged has_usage_data=false is unmeasured, not a zero', () => {
+    const stats = { users: [{ user: { id: 3 }, totals: {
+      input_tokens: 0, output_tokens: 0, session_count: 0, has_usage_data: false,
+    } }] };
+    const rows = mergeUsersWithUsage([USERS[2]], stats);
+    assert.equal(rows[0].usage.measured, false, 'a LEFT JOIN zero is not a reported zero');
+    assert.equal(rows[0].usage.total_tokens, undefined);
+    assert.equal(rows[0].usage.session_count, undefined);
+  });
+
+  it('a row with real numbers is measured even if the flag is absent', () => {
+    // Backwards compatibility: a client running against a server that predates
+    // the flag must not start calling every member unmeasured.
+    const stats = { users: [{ user: { id: 1 }, totals: {
+      input_tokens: 10, output_tokens: 5, session_count: 2,
+    } }] };
+    const rows = mergeUsersWithUsage([USERS[0]], stats);
+    assert.equal(rows[0].usage.measured, true);
+    assert.equal(rows[0].usage.total_tokens, 15);
+  });
+
+  it('a tier-2-only member shows their sessions, not a zero', () => {
+    // Cursor / Antigravity report sessions but no tokens, so they have no
+    // token_usage_daily row and message_count stays 0. Reading message_count
+    // would render "0 tokens / 0 次對話" for someone with four real sessions —
+    // the same lie has_usage_data was added to stop, one field along.
+    // loadUsersAggregate already folds tier 2 into totals.session_count.
+    const stats = { users: [{ user: { id: 2 }, totals: {
+      input_tokens: 0, output_tokens: 0, message_count: 0,
+      session_count: 4, has_usage_data: true,
+    } }] };
+    const rows = mergeUsersWithUsage([USERS[1]], stats);
+    assert.equal(rows[0].usage.measured, true);
+    assert.equal(rows[0].usage.session_count, 4);
+    assert.equal(rows[0].usage.total_tokens, 0, 'tier 2 genuinely reports no tokens');
   });
 
   it('cache tokens are excluded from the headline number', () => {
@@ -78,7 +128,7 @@ describe('mergeUsersWithUsage — joins on user.id', () => {
     const stats = { users: [{ user: { id: 1 }, totals: {
       input_tokens: 100, output_tokens: 200,
       cache_creation_tokens: 999_999, cache_read_tokens: 999_999,
-      message_count: 3,
+      session_count: 3,
     } }] };
     const rows = mergeUsersWithUsage([USERS[0]], stats);
     assert.equal(rows[0].usage.total_tokens, 300);
