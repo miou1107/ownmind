@@ -16,6 +16,7 @@
 
 import express from 'express';
 import { relativeRedirectTarget } from '../utils/relative-redirect.js';
+import { redirectBareMountPath } from './bare-mount-redirect.js';
 
 /**
  * @param {import('express').Express} app
@@ -36,6 +37,10 @@ export function installLegacyAdminMount(app, { retired, publicDir, consolePath =
     return 'redirect';
   }
 
+  // v1.26.57: before the static mount, for the same reason /dashboard needs it —
+  // express.static answers a bare `/admin` with an absolute `Location: /admin/`, which
+  // leaves the reverse-proxy prefix. See src/middleware/bare-mount-redirect.js.
+  redirectBareMountPath(app, '/admin');
   app.use('/admin', express.static(publicDir));
   return 'static';
 }

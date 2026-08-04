@@ -75,10 +75,16 @@ installLegacyAdminMount(app, {
 // Flow: express.static tries to find the file first; only on miss does the fallback return index.html for react-router to take over
 import { createSpaShellHandler } from './utils/spa-shell.js';
 import { relativeRedirectTarget } from './utils/relative-redirect.js';
+import { redirectBareMountPath } from './middleware/bare-mount-redirect.js';
 // v1.26.44: the fallback rewrites the shell's <base href> for the requested depth.
 // Serving the shell verbatim made every route deeper than one segment render blank,
 // because a relative base resolves against the document's own address and the asset
 // requests then 404ed. See src/utils/spa-shell.js.
+// v1.26.57: must come BEFORE the static mount. express.static's built-in redirect
+// answers a bare `/dashboard` with an absolute `Location: /dashboard/`, which drops the
+// /ownmind prefix nginx strips and lands the browser on an unrelated site. See
+// src/middleware/bare-mount-redirect.js.
+redirectBareMountPath(app, '/dashboard');
 app.use('/dashboard', express.static(join(__dirname, 'public', 'dashboard')));
 app.use('/dashboard', createSpaShellHandler(
   join(__dirname, 'public', 'dashboard', 'index.html')));
