@@ -70,6 +70,18 @@ export function groupFrictions(frictions) {
 
 /**
  * Compute report data from already-queried DB rows (pure function)
+ *
+ * `sessions_analyzed` exists because an empty `top_frictions` had four possible
+ * meanings and one sentence: no session at all, sessions without the reflection
+ * fields, a genuine absence of friction, or a period old enough that
+ * compressOldSessions deleted the rows. The caller pairs this with a count of every
+ * row in the window to tell those apart.
+ *
+ * The two auto-created counts are deliberately absent from this return value. They
+ * need their own database query, so a pure function cannot know them; emitting a
+ * hardcoded 0 meant any caller that forgot to overwrite it published a confident
+ * wrong number rather than an obviously missing one.
+ *
  * @param {object[]} sessionRows - session_logs rows (including details)
  * @param {number} newMemoriesCount
  * @param {string} periodLabel
@@ -96,7 +108,7 @@ export function computeReportData(sessionRows, newMemoriesCount, periodLabel) {
   return {
     period: periodLabel,
     new_memories: newMemoriesCount,
-    friction_issues_created: 0, // filled in by the job; 0 when the API computes on the fly
+    sessions_analyzed: sessionRows.length,
     top_frictions: topFrictions,
     top_suggestions: topSuggestions,
     generated_at: new Date().toISOString(),

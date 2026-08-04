@@ -159,16 +159,27 @@ describe('legacy-console manifest — shape', () => {
     assert.equal(isSignpost('/team/usage'), false);
   });
 
-  it('v1.26.58 — the legacy console is still served (one signpost remains)', () => {
-    // One more feature going live is not enough to retire: 週報月報 has not been
-    // built yet, and until it is, /admin/ must keep being served.
-    assert.equal(signpostFeatures().length, 1, 'one signpost remains after Stage 6');
-    assert.deepEqual(
-      signpostFeatures().map((f) => f.id),
-      ['periodic-reports'],
-      'the remaining signpost is Stage 7',
-    );
-    assert.equal(isLegacyConsoleRetired(), false);
+  it('v1.26.59 — 週報月報 is live', () => {
+    // Stage 7 flip, and the last one. The amber dot on 週報月報 must be gone.
+    const periodic = legacyFeatureFor('/portal/periodic-reports');
+    assert.ok(periodic, 'periodic-reports entry missing from manifest');
+    assert.equal(periodic.state, 'live', 'periodic-reports should be live after Stage 7');
+    assert.equal(isSignpost('/portal/periodic-reports'), false);
+  });
+
+  it('v1.26.59 — the manifest is empty, so the legacy console is retired', () => {
+    // This is the switch the whole file was built around: nothing points back at
+    // /admin any more, so it stops being served with no other edit anywhere. If a
+    // later change re-signposts something, this turns red and says so.
+    assert.deepEqual(signpostFeatures(), [], 'no feature may still live in /admin');
+    assert.equal(isLegacyConsoleRetired(), true);
+  });
+
+  it('every feature that ever lived in /admin is accounted for, not deleted', () => {
+    // Entries are flipped, never removed — the manifest is the record of where each
+    // feature went. An empty list must mean "all live", not "all forgotten".
+    assert.equal(LEGACY_CONSOLE_FEATURES.length, 8);
+    assert.ok(LEGACY_CONSOLE_FEATURES.every((f) => f.state === 'live'));
   });
 });
 

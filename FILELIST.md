@@ -1,5 +1,46 @@
 # OwnMind 檔案結構
 
+## v1.26.59 修改（週報月報搬進新後台，整併第 7 站，舊後台退場）
+
+新增檔：
+```
+client/src/pages/Portal/PeriodicReportsPage.jsx                     — 週報月報頁：週/月切換、往回三期、三張卡、兩份清單
+client/src/pages/Portal/periodic-report-vm.js                       — 純函式：四種「空」的分辨、保留期限判定、卡片值
+client/src/pages/Portal/MemorySearchModal.jsx                       — 點清單搜尋相關記憶（從舊後台搬過來）
+client/src/pages/login-outcome.js                                   — 登入回應三種結果（成功／要設定密碼／失敗），順序寫反會 prime 出一個沒有身分的 session
+src/utils/setup-recovery.js                                         — 誰會被提供設定密碼表單，以及三種登入失敗共用的那一句話（訊息不同等於在洩漏哪些 Email 是真帳號）。獨立成純函式，因為這是安全決策
+tests/periodic-report-vm.test.js                                    — 22 項，四種空狀態各自可分辨、保留期限含跨界與無法解析
+tests/setup-recovery.test.js                                        — 11 項，伺服器端「誰能拿到 requiresSetup」＋前端三種結果
+openspec/changes/v1.26.59-periodic-reports/                         — proposal / spec / tasks
+```
+
+修改檔：
+```
+src/utils/report.js                                                 — 補 sessions_analyzed；拿掉寫死的 friction_issues_created（路由才算得出來，回傳 0 會讓忘記覆寫的呼叫端publish一個自信的錯數字）
+src/routes/session.js                                               — 一句 SQL 用 FILTER 同時算 friction/suggestion 兩種自動建立；另一句分開算「還在的」跟「已被壓縮的」session 筆數；回傳 period_start/period_end/detail_retention_cutoff
+src/routes/me.js                                                    — 密碼是 NULL 時改用 setup-recovery 判斷，超管在救援視窗內回 requiresSetup
+client/src/pages/LoginPage.jsx                                      — 多一條設定密碼的路，收尾 scripts/reset-admin-password.js 開始的救援
+src/middleware/first-run-redirect.js                                — 已裝好時 /setup 導去 dashboard/login，原本寫的 admin/login 從來就不存在
+client/src/utils/request-gate.js                                    — 從 pages/Team/ 搬到 utils/（第三個使用者出現，不再是 Team 專屬）
+client/src/App.jsx, components/common/nav-sections.js               — 掛上真頁面；權限從 admin 降回 user（它本來就是個人資料）
+shared/legacy-console-manifest.js                                   — periodic-reports → live。清單空了，/admin 自己停止服務
+client/src/i18n/{zh,en,ja}.json                                     — periodic.* 27 鍵 + login.setup* 6 鍵
+scripts/reset-admin-password.js                                     — 救援步驟 2 不再叫人開 /admin/setup
+tests/e2e/harness.mjs                                               — 多種一個沒有密碼的超管帳號 + 設 SETUP_TOKEN，讓救援路徑可以真的跑一次
+tests/e2e/console.spec.mjs                                          — 退場鏡像 spec、週報月報 4 項、救援路徑 3 項；人數斷言改從 harness 推導
+tests/{report,legacy-console-manifest,bare-mount-trailing-slash}.test.js — 對應新行為
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.59 條目、版號 1.26.58 → 1.26.59、救援指示改寫
+package.json                                                        — 版號 1.26.58 → 1.26.59
+```
+
+這一版學到的：
+
+- **「查詢寫錯」跟「沒有查詢」要分清楚**。母計畫寫的是「計數的 SQL 條件寫錯」，實際去讀程式碼發現後端從來沒有輸出過那個欄位。修法完全不同：一個是改條件，一個是補一段對稱的計數。先量再修，不要照著待辦的描述動手。
+- **退場不是只有「不服務」這件事**。舊後台是唯一能收尾「超管忘記密碼」救援流程的介面。母計畫把這件事列在第 8 站的第一條、寫著「先做這個」，但第 8 站在退場之後 —— 順序本身就錯了。這一版把它提前，不然這個版本會帶著一個「唯一超管鎖死就再也進不來」的洞上線。
+- **e2e 種子人數不要寫死**。加一個 fixture 帳號打掉兩個斷言。改成從 harness 推導出來，斷言仍然有效（頁面數錯還是會紅），但不必手改。
+- **「防止舊回應寫進來」跟「切換當下不要顯示舊資料」是兩件事**。request-gate 只擋前者。下拉選單一改，畫面上的數字還是上一期的，這是同一個 Critical 的溫和版本。兩道防線各自被 mutation 測過，拿掉任何一道會有不同的 e2e 變紅。
+- **對抗審查說「Critical」也要查**。這次兩個 Critical 裡有一個是錯的（說少了 import，實際上第 5 行就有）。審查者只看得到 diff，看不到檔案其他部分。先回檔案確認再動手，不要照著改。
+
 ## v1.26.58 修改（團隊用量搬進新後台，整併第 6 站）
 
 新增檔：
@@ -81,7 +122,7 @@ client/src/pages/Team/stats-chart-data.js                           — 長條�
 client/src/pages/Team/stats-compliance-vm.js                        — 落地率分帶、各規則／各工具、每條鐵律、從未觸發
 client/src/pages/Team/stats-detail-vm.js                            — 記憶卡片、系統健康、交接、工作脈絡
 client/src/pages/Team/stats-labels.js                               — 事件／類型標籤走字典查表、查不到回原字串
-client/src/pages/Team/request-gate.js                               — 只有最新的請求可以寫狀態（修 code review 的 Critical）
+client/src/pages/Team/request-gate.js                               — 只有最新的請求可以寫狀態（修 code review 的 Critical）。v1.26.59 搬到 client/src/utils/
 tests/stats-overview-vm.test.js                                     — 14 assertions
 tests/stats-chart-data.test.js                                      — 10 assertions
 tests/stats-compliance-vm.test.js                                   — 22 assertions

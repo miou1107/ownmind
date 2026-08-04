@@ -9,7 +9,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeRequestGate } from '../client/src/pages/Team/request-gate.js';
+import { makeRequestGate } from '../client/src/utils/request-gate.js';
 
 describe('makeRequestGate', () => {
   it('a lone request is current', () => {

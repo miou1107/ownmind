@@ -115,14 +115,25 @@ describe('scenario 1 — when first_run=true, /admin/* redirects to setup (v1.26
 // Scenario 2: DB already has admins → /setup auto-redirects to /admin/login
 // ============================================================
 
-describe('scenario 2 — when first_run=false, /setup redirects to admin/login (v1.26.48: relative)', () => {
-  it('GET /setup → 302; Location resolves to admin/login', async () => {
+describe('scenario 2 — when first_run=false, /setup redirects to the console login', () => {
+  it('GET /setup → 302; Location resolves to dashboard/login under both bases', async () => {
     const app = buildApp(fakeDetector({ firstRun: false }));
     const r = await request(app, { method: 'GET', path: '/setup' });
     assert.equal(r.status, 302);
     assert.ok(!r.redirect.startsWith('/'));
-    const resolved = new URL(r.redirect, 'http://x/ownmind/setup').href;
-    assert.equal(resolved, 'http://x/ownmind/admin/login');
+    assert.equal(new URL(r.redirect, 'http://x/setup').href, 'http://x/dashboard/login');
+    assert.equal(new URL(r.redirect, 'http://x/ownmind/setup').href,
+      'http://x/ownmind/dashboard/login');
+  });
+
+  it('specifically does not send anyone at the retired console', async () => {
+    // v1.26.48 to v1.26.58 this pointed at `admin/login`, which answered
+    // `Cannot GET /admin/login` — express.static with no file under `login/`. Retiring
+    // /admin turned that into a redirect chain that lands somewhere right by accident.
+    // Named as its own assertion so a revert reads as itself rather than as a URL diff.
+    const app = buildApp(fakeDetector({ firstRun: false }));
+    const r = await request(app, { method: 'GET', path: '/setup' });
+    assert.ok(!r.redirect.includes('admin'), `still points at the old console: "${r.redirect}"`);
   });
 });
 

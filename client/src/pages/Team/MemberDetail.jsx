@@ -12,7 +12,7 @@ import { X, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import { useT, useLocale } from '../../i18n/LocaleContext';
 import { apiGet } from '../../api';
 import { fmtDate, bcp47Of } from '../../utils/fmtDate';
-import { makeRequestGate } from './request-gate.js';
+import { makeRequestGate } from '../../utils/request-gate.js';
 import { dayBoundsIso } from './team-usage-vm.js';
 import { detailTotalsVm, usageBarRows, sessionRowVm } from './member-detail-vm.js';
 import { Card, NoData, bandTextClass } from './charts.jsx';

@@ -18,6 +18,7 @@ import HandoffsPage from './pages/Portal/HandoffsPage';
 import ReportsPage from './pages/Portal/ReportsPage';
 import NarrativePage from './pages/Portal/NarrativePage';
 import PitfallsPage from './pages/Portal/PitfallsPage';
+import PeriodicReportsPage from './pages/Portal/PeriodicReportsPage';
 import TeamPage from './pages/Admin/TeamPage';
 import BugReportsPage from './pages/Admin/BugReportsPage';
 import StatsPage from './pages/Team/StatsPage';
@@ -35,6 +36,7 @@ const REAL_PAGES = {
   '/portal/reports': <ReportsPage />,
   '/portal/narrative': <NarrativePage />,
   '/portal/pitfalls': <PitfallsPage />,
+  '/portal/periodic-reports': <PeriodicReportsPage />,
   '/preference/profile': <ProfilePage />,
   '/preference/security': <SecurityPage />,
   '/preference/vault': <VaultPage />,

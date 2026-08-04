@@ -174,8 +174,16 @@ describe('v1.26.57 — request shapes that used to bypass the guard', () => {
         `${p} must stay in the prefix and normalise to the real path`,
       );
     }
+    // /Admin is guarded the same way, but its terminal depends on the manifest:
+    // the legacy directory while it is still served, the console once it is not.
+    // What must hold either way is that the Location stays relative and inside the
+    // prefix — that is the bug this suite exists for.
     const r = await fetchOnce(app, '/Admin');
-    assert.equal(resolveLocation('http://x/ownmind/Admin', r.location), 'http://x/ownmind/admin/');
+    assert.ok(!r.location.startsWith('/'), `/Admin: got absolute "${r.location}"`);
+    assert.equal(
+      resolveLocation('http://x/ownmind/Admin', r.location),
+      isLegacyConsoleRetired() ? 'http://x/ownmind/dashboard/' : 'http://x/ownmind/admin/',
+    );
   });
 
   it('an absolute-form request line cannot reflect its host into the Location', async () => {
@@ -223,10 +231,30 @@ describe('v1.26.57 — the handler matches the bare path only', () => {
     assert.match(r.body, /<base href=/, 'the SPA shell handler must still answer');
   });
 
-  it('/admin/ is still served by the legacy console', async () => {
+  // Which of these two runs is decided by the manifest, never by an edit here. They
+  // are exhaustive and mutually exclusive, so whichever state the manifest is in,
+  // exactly one of them is asserting something.
+  it('/admin/ is still served by the legacy console while signposts remain', async (t) => {
+    if (isLegacyConsoleRetired()) return t.skip('legacy console retired; see the paired case');
     const r = await fetchOnce(app, '/admin/');
     assert.equal(r.status, 200);
     assert.match(r.body, /data-tab="users"/);
+  });
+
+  it('/admin/ redirects once the legacy console is retired', async (t) => {
+    if (!isLegacyConsoleRetired()) return t.skip('legacy console still served; see the paired case');
+    const r = await fetchOnce(app, '/admin/');
+    assert.equal(r.status, 301, '/admin/ must redirect, not serve the retired console');
+    assert.ok(!r.body.includes('data-tab="users"'), 'the retired console must not be in the body');
+    assert.ok(
+      !r.location.startsWith('/'),
+      `Location must be relative or it cannot survive the proxy prefix, got "${r.location}"`,
+    );
+    // Resolved against the *request* URL, which is what a browser does. The bases
+    // differ from assertResolvesUnderBothBases because this request has a trailing
+    // slash, so its directory is one level deeper and the Location must climb out.
+    assert.equal(resolveLocation('http://x/admin/', r.location), 'http://x/dashboard/');
+    assert.equal(resolveLocation('http://x/ownmind/admin/', r.location), 'http://x/ownmind/dashboard/');
   });
 });
 

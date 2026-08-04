@@ -122,4 +122,34 @@ describe('computeReportData', () => {
     assert.deepEqual(result.top_suggestions, []);
     assert.equal(result.new_memories, 0);
   });
+
+  // v1.26.59: an empty list used to mean four different things at once. The count of
+  // rows the lists were computed from is what separates "we looked and there was
+  // nothing" from "we had nothing to look at".
+  it('reports how many session rows the lists were drawn from', () => {
+    const sessions = [
+      { details: { friction_points: 'a' } },
+      { details: { suggestions: 'b' } },
+      { details: {} },
+    ];
+    assert.equal(computeReportData(sessions, 0, 'x').sessions_analyzed, 3);
+  });
+
+  it('zero analysed sessions is distinguishable from analysed-and-found-nothing', () => {
+    const none = computeReportData([], 0, 'x');
+    const looked = computeReportData([{ details: { note: 'no friction field' } }], 0, 'x');
+    assert.equal(none.sessions_analyzed, 0);
+    assert.equal(looked.sessions_analyzed, 1);
+    // Both lists are empty; only sessions_analyzed tells them apart.
+    assert.deepEqual(none.top_frictions, looked.top_frictions);
+  });
+
+  // The route owns this count — it needs a database query the pure function cannot
+  // run. Returning a hardcoded 0 here meant a caller that forgot to overwrite it
+  // published a confident wrong number instead of an obviously missing one.
+  it('does not invent the auto-created counts', () => {
+    const result = computeReportData([], 0, 'x');
+    assert.ok(!('friction_issues_created' in result));
+    assert.ok(!('suggestion_actions_created' in result));
+  });
 });

@@ -192,19 +192,63 @@ router.get('/report', async (req, res) => {
     );
     const newMemoriesCount = parseInt(memoriesResult.rows[0].cnt, 10);
 
-    // Count auto-created friction issues in the period.
-    const frictionIssuesResult = await query(
-      `SELECT COUNT(*) as cnt FROM memories
+    // Count both kinds of auto-created memory in one pass. They are two cards side
+    // by side reading "created in this period", so they must be counted the same
+    // way; two queries drifting apart is how the suggestion card ended up with no
+    // query at all. Both are written by src/jobs/weeklyReport.js.
+    //
+    // Note what the number means: the weekly job runs on Monday for the *previous*
+    // week, so a creation lands in the window after the one that produced it. This
+    // is an honest count of creations during the period, not an attribution of the
+    // period's own frictions. The page says which. Attributing them back would need
+    // a period stamp the memories do not carry.
+    const autoCreatedResult = await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE tags @> ARRAY['friction-issue', 'auto-generated']) AS frictions,
+         COUNT(*) FILTER (WHERE tags @> ARRAY['suggestion-action', 'auto-generated']) AS suggestions
+       FROM memories
        WHERE user_id = $1
          AND created_at >= $2
-         AND created_at <= $3
-         AND tags @> ARRAY['friction-issue', 'auto-generated']`,
+         AND created_at <= $3`,
       [req.user.id, start, end]
     );
-    const frictionIssuesCreated = parseInt(frictionIssuesResult.rows[0].cnt, 10);
+
+    // Two counts, because an empty friction list has more than one innocent cause.
+    //
+    // `live` is every uncompressed row, whether or not it carried `details`, which is
+    // what separates "no session was logged" from "sessions were logged but carried no
+    // reflection fields".
+    //
+    // `compressed` is counted separately rather than folded into the total. Found in
+    // adversarial review: compressOldSessions replaces a month of sessions with one
+    // summary row carrying no `details`, stamped at the 1st of that month. Counting it
+    // as a live row made the page report a reporting gap — "records exist but nobody
+    // filled the fields in" — when the truth is the reverse, that the notes existed and
+    // retention discarded them.
+    const sessionCountsResult = await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE compressed = false) AS live,
+         COUNT(*) FILTER (WHERE compressed = true) AS compressed
+       FROM session_logs
+       WHERE user_id = $1
+         AND created_at >= $2
+         AND created_at <= $3`,
+      [req.user.id, start, end]
+    );
 
     const report = computeReportData(sessions.rows, newMemoriesCount, label);
-    report.friction_issues_created = frictionIssuesCreated;
+    report.friction_issues_created = parseInt(autoCreatedResult.rows[0].frictions, 10);
+    report.suggestion_actions_created = parseInt(autoCreatedResult.rows[0].suggestions, 10);
+    report.sessions_total = parseInt(sessionCountsResult.rows[0].live, 10);
+    report.sessions_compressed = parseInt(sessionCountsResult.rows[0].compressed, 10);
+    report.period_start = start.toISOString();
+    report.period_end = end.toISOString();
+    // Session detail older than this is not hidden, it is deleted: compressOldSessions
+    // merges those rows into one monthly summary carrying no `details` and drops the
+    // originals. 月報 + 三期前 reaches 60 to 120 days back, so the UI can ask for a
+    // window the data no longer covers, and has to say so.
+    report.detail_retention_cutoff =
+      new Date(Date.now() - SESSION_RETENTION_DAYS * 86400000).toISOString();
 
     res.json(report);
   } catch (err) {
