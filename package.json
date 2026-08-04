@@ -43,6 +43,6 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.53.1"
+    "@playwright/test": "^1.62.1"
   }
 }
