@@ -87,7 +87,25 @@ verified by probing the running app before being accepted, and each now has a te
 
 ## Phase 6 — Release
 
-- [ ] Version 1.26.57 in `package.json` and the three READMEs
-- [ ] `CHANGELOG.md`, `FILELIST.md`
-- [ ] Commit, tag, push, deploy kkvin.com
-- [ ] Verify the fixed paths on production with curl, including the case variants
+- [x] Version 1.26.57 in `package.json` and the three READMEs
+- [x] `CHANGELOG.md`, `FILELIST.md`
+- [x] Commit `26e7d4e`, tag `v1.26.57`, pushed, deployed to kkvin.com
+      (`checkout v1.26.57 && docker compose build --no-cache api && up -d api`,
+      no migrations — 17 applied, 0 new; container reports 1.26.57, clean startup)
+- [x] Verified on production. Every variant now stays inside the prefix:
+
+      /ownmind/dashboard            301  dashboard/              → /ownmind/dashboard/
+      /ownmind/Dashboard            301  dashboard/              → /ownmind/dashboard/
+      /ownmind/DASHBOARD            301  dashboard/              → /ownmind/dashboard/
+      /ownmind/admin                301  admin/                  → /ownmind/admin/
+      /ownmind/Admin                301  admin/                  → /ownmind/admin/
+      /ownmind/dashboard?tab=x&y=1  301  dashboard/?tab=x&y=1    → /ownmind/dashboard/?tab=x&y=1
+      /ownmind/setup                302  admin/login             → /ownmind/admin/login
+      /ownmind/me                   301  dashboard/portal/usage  → /ownmind/dashboard/portal/usage
+
+      Following the redirects, `/ownmind/dashboard` now ends on
+      `https://kkvin.com/ownmind/dashboard/` with `<title>OwnMind 控制中心</title>`
+      instead of the unrelated "Vin WorkSpace" page. The case variants normalise to the
+      canonical lowercase path. The query survives
+- [x] Browser check: the bare URL loads the real console, sidebar and footer read
+      v1.26.57

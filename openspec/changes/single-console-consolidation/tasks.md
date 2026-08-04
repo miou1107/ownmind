@@ -424,7 +424,7 @@ single stage, and the only one that was a new integration rather than a move.
       three read 尚無資料 on 使用者管理 where they previously read "0 tokens / 0 次對話",
       while Joanna — one session, zero tokens — correctly reads `0 tokens / 1 次對話`.
       Before the fix all four looked identical
-- [ ] **Found by this browser check, filed, pre-existing**:
+- [x] **Found by this browser check, fixed in v1.26.57**:
       `https://kkvin.com/ownmind/dashboard` with **no trailing slash** 301s to the
       absolute `/dashboard/`, which drops the `/ownmind` prefix and lands on an unrelated
       page titled "Vin WorkSpace". Cause is `express.static`'s built-in `redirect: true`
@@ -435,7 +435,12 @@ single stage, and the only one that was a new integration rather than a move.
       `src/app.js` last changed in v1.26.48, and this release touches no routing, so it
       is **not** introduced here. Not fixed inline: routing is where the last two
       incidents happened and it deserves its own release with the resolve-against-two-
-      bases tests v1.26.48 established
+      bases tests v1.26.48 established — which is what v1.26.57 is. Review of that fix
+      then found the first guard was **narrower than what it shadowed**: `/Dashboard`
+      still escaped, because Express mounts are case-insensitive while the comparison
+      was not, and an absolute-form request line let serve-static reflect a
+      client-supplied host into the Location. Both now closed; see
+      `openspec/changes/v1.26.57-bare-mount-trailing-slash/`
 
 ### Found by this stage, fixed here, belonging to earlier stages
 
