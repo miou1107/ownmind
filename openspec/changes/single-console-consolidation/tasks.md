@@ -586,6 +586,17 @@ Shipped as `v1.26.58`.
 - [x] **The legacy console's coverage panel was updated, not left reading undefined.**
       It is deleted in Stage 8, but it is still served until Stage 7 flips the last
       signpost, and the new response shape would have rendered `undefined` in it
+- [ ] **Backlog, not this stage: nothing tells anyone a collector went quiet.** The
+      panel now names who is missing, but only to whoever opens the page. Traced on
+      production 2026-08-04: one member's scanner stopped uploading on 07-15 and
+      nobody noticed for twenty days, because his MCP kept heartbeating daily and the
+      old metric counted that as covered. The two heartbeats have different writers
+      and that is the whole diagnostic: `mcp/index.js` sends `events: []` with an
+      `os` field for one tool, while `hooks/ownmind-usage-scanner.js` sends five
+      tools within the same second and no `os`. One row moving alone means the
+      scheduled scanner is dead while the MCP is fine. A "reporting nothing for N
+      days" broadcast would close the loop; see OwnMind memory 740 for the full trace
+      and the per-member state
 
 ## Stage 7 — 週報月報
 
