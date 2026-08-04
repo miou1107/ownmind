@@ -485,23 +485,78 @@ single stage, and the only one that was a new integration rather than a move.
 
 ## Stage 6 — 團隊用量
 
-- [ ] Port against `/api/usage/team-stats`, `/api/usage/admin/team-overview`,
+Shipped as `v1.26.58`.
+
+- [x] Ported against `/api/usage/team-stats`, `/api/usage/admin/team-overview`,
       `/api/usage/admin/team-overview/:id/sessions`
       (`src/public/index.html:2459,2460,2273`)
-- [ ] Replace the heartbeat-based coverage metric. `loadCoverage`
-      (`src/routes/usage/team-stats.js:66`) counts `collector_heartbeat`, so a
-      collector that connects but collects nothing counts as covered. Measured
-      2026-07-30: it reported 8/9 while 3 real members had no usage data at all. The
-      new metric counts members with usage data, and the page names who is missing
-- [ ] Member drill-down: date range, group by day / tool / model / session, usage
-      distribution, recent-conversation table
-- [ ] Requirement 7 throughout: missing data is never rendered as zero, and the 用量
-      column is labelled 新輸入＋產出 with the cache-inclusive total on a second line.
-      Cache is excluded from the headline because it is the same context re-read, and
-      the two differ by roughly 250 times
-- [ ] No cost column. Removed by decision; see Stage 8
-- [ ] Flip the manifest entry to `live`
-- [ ] Browser check on production
+- [x] Heartbeat-based coverage replaced. `loadCoverage` counted
+      `collector_heartbeat`, so a collector that connects but collects nothing
+      counted as covered; measured 2026-07-30 it reported 8/9 while 3 real members
+      had no usage data at all. Coverage is now derived from the same `users` array
+      the table is built from, so the panel and the ranking cannot disagree, and the
+      three buckets (measured / opted_out / unmeasured) partition the team so the
+      denominator is honest. The panel names who is missing. Whether a collector is
+      connected is a different question and stays on 系統設定
+- [x] Member drill-down: its own date range (reset to the ranking's window when a
+      different member is opened), group by day / tool / model / session, usage
+      distribution, recent-conversation table. **Deviation from the legacy page,
+      deliberate**: the conversation list is fetched with the totals rather than
+      lazily behind 展開. The lazy load saved one query and cost a cache that had to
+      be invalidated in three places (range change, member change, reload); the
+      toggle now only shows and hides what is already there
+- [x] Requirement 7 throughout: unmeasured members carry a badge, their four usage
+      cells read 尚無資料 with the reason on hover, and they sort last under every
+      metric rather than mixing with real zeros. Four distinct absences are named
+      separately (no usage reported / no session logged / no project on the sessions
+      / no rule triggered) instead of one dash. The 用量 column is 新輸入＋產出 with
+      the cache-inclusive total on a second line
+- [x] No cost column, and no cost anywhere on the page. Asserted by an e2e spec that
+      reads the rendered text, not by reviewing the JSX. The sort options are
+      用量 / 訊息數 / 活躍時長; 依成本 is gone with it. Supporting code deleted in Stage 8
+- [x] `GET /api/usage/stats` gained `has_usage_data`. Its columns are all COALESCE'd,
+      so "reported zeros" and "reported nothing" reached the drill-down looking
+      identical: the same hole team-stats closed in v1.26.56, one endpoint over.
+      `row_count` is dropped from the response rather than passed through
+- [x] Manifest entry flipped signpost → live. One signpost remains
+      (periodic-reports), so `/admin/` is still served — asserted, not assumed
+- [x] Code review: 0 Critical, 3 Important, 2 Minor, each reproduced before acting.
+      **The first Important is the v1.26.56 Critical in a new place**: clicking a
+      second row while a drill-down is open reuses the component, so the heading
+      switches immediately while the cards, the chart and the conversation list are
+      still the previous member's. Closed structurally with `key={selected.id}`
+      rather than by remembering to null four pieces of state. **The second**:
+      opening a member while the range is reversed left the spinner up for ever,
+      because the early return skipped `setLoading(false)` and the ranking still
+      renders its last good payload, so there is a row to click. **The third**: the
+      按對話 grouping ordered by `SUM(cost_usd)`, which is null for every member with
+      data, so all groups tied and `LIMIT 100` kept whichever hundred the executor
+      produced; it ranks by tokens now. Minors: the endpoint's own cost sort had
+      decayed into sorting by user id, and an e2e assertion matched `USD` inside
+      member names. Both Important UI fixes gained an e2e spec, **each verified red
+      then green** — the second one's first draft was a false pass, because against
+      a local server the stale window is a few milliseconds and a retrying assertion
+      sails straight past it; it holds the responses open for three seconds now
+- [ ] Browser check on production — pending deploy
+
+### Found by this stage
+
+- [x] **The legacy page could not show the current working day.** It passed
+      `2026-08-04`-style bare dates to the team-overview endpoints, which parse with
+      `new Date()`; a date-only string is UTC midnight by specification, which is
+      08:00 in Taipei. With `to` set to today, everything logged after 8am was
+      outside the window and 最近活動 never showed it. The new page sends explicit
+      `+08:00` bounds (`dayBoundsIso`), so the endpoint needed no change
+- [x] **The e2e suite was one spec away from failing for an unrelated reason.** It
+      drives one browser through every page inside a single rate-limit window and
+      crosses the 200/minute ceiling around the thirtieth spec, which surfaces as a
+      login failure in whichever spec is running at that moment. `API_RATE_LIMIT_MAX`
+      now overrides it; absent or unparseable keeps the shipped 200, so no deployment
+      changes behaviour. The harness sets it high. Stage 7 adds more specs and would
+      have hit this
+- [x] **The legacy console's coverage panel was updated, not left reading undefined.**
+      It is deleted in Stage 8, but it is still served until Stage 7 flips the last
+      signpost, and the new response shape would have rendered `undefined` in it
 
 ## Stage 7 — 週報月報
 

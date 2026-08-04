@@ -70,7 +70,12 @@ export const LEGACY_CONSOLE_FEATURES = [
   // /stats/rules — endpoints the console had never called before, so this one
   // was a new integration rather than a move.
   { id: 'stats-dashboard', consolePath: '/team/stats', legacyTab: 'stats', state: 'live' },
-  { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'signpost' },
+  // v1.26.58: team-usage rebuilt in the console. Ranking plus per-member
+  // drill-down against /api/usage/team-stats, /api/usage/admin/team-overview and
+  // /api/usage/stats. The Notional cost column is not ported (Requirement 8) and
+  // the coverage panel counts members with usage data instead of collector
+  // heartbeats. One signpost left, so /admin/ is still served.
+  { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'live' },
   // The one feature whose real permission is wider than its signpost's. The report is
   // per-user (`GET /api/session/report` filters `WHERE user_id = $1`), so it belongs to
   // every member, but no member below admin can reach the legacy tab that serves it

@@ -1,5 +1,47 @@
 # OwnMind 檔案結構
 
+## v1.26.58 修改（團隊用量搬進新後台，整併第 6 站）
+
+新增檔：
+```
+client/src/pages/Team/TeamUsagePage.jsx                             — 排行榜頁：兩支 API、覆蓋率面板、成員明細開合
+client/src/pages/Team/TeamUsageTable.jsx                            — 排行榜表格，9 欄（舊的 13 欄）
+client/src/pages/Team/MemberDetail.jsx                              — 成員明細：總計卡、用量分佈、最近對話
+client/src/pages/Team/team-usage-vm.js                              — 列的 view model、排序、覆蓋率、台北日界
+client/src/pages/Team/member-detail-vm.js                           — 明細的 view model：總計卡、分佈長條、對話列
+tests/team-usage-vm.test.js                                         — 21 條
+tests/member-detail-vm.test.js                                      — 17 條
+```
+
+修改檔：
+```
+src/routes/usage/team-stats.js                                      — 覆蓋率改從 users 陣列算，心跳查詢整段刪掉
+src/routes/usage/stats.js                                           — totals 補 has_usage_data（row_count 不外流）
+src/app.js                                                          — API 速率上限可用 API_RATE_LIMIT_MAX 調整
+src/public/index.html                                               — 舊頁面的 renderCoverage 跟著新的回應格式
+shared/legacy-console-manifest.js                                   — team-usage: signpost → live，只剩一個指路牌
+client/src/App.jsx                                                  — /team/usage 接上真的頁面
+client/src/utils/fmtDate.js                                         — 抽出 bcp47Of()，數字格式跟著介面語系
+client/src/i18n/{zh,en,ja}.json                                     — team_usage.* 72 個 key ×3 語系
+tests/{team-stats,stats,legacy-console-manifest}.test.js            — 跟著改
+tests/e2e/console.spec.mjs                                          — 團隊用量 6 條
+tests/e2e/harness.mjs                                               — 測試機速率上限放寬
+.env.example                                                        — API_RATE_LIMIT_MAX
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.58 條目、版號 1.26.57 → 1.26.58
+package.json                                                        — 版號 1.26.57 → 1.26.58
+openspec/changes/single-console-consolidation/tasks.md              — Stage 6 收尾
+```
+
+**選擇說明**：
+
+- **覆蓋率從畫面上那張表算出來，不是另外查一次**。心跳只證明收集器連上了，證明不了它送了東西；正式機實測回報 8/9，實際 3 人完全沒資料。同一份資料算兩件事，面板跟排行才不會各說一套。
+- **沒有資料的列排在最後，不是當成 0**。標記它們的重點就在這裡：我們沒有資料的人，不可以排在真的做了 0 件事的人後面，好像兩者是同一種觀察。
+- **成本欄是刪掉，不是留空**。理由見 CHANGELOG；排序選項因此改成依用量。
+- **明細的對話清單跟總計一起抓**。舊頁面做成點「展開」才載入，省一次查詢，代價是一份要在三個地方失效的快取（換日期、換成員、重新載入）。一起抓之後，展開只是顯示跟隱藏。
+- **兩支 API 缺資料的意思不一樣**。team-stats 是 users 的 LEFT JOIN，每個人都有列；team-overview 是 session_logs 的 inner join，只有有對話的人才在。所以「沒回報用量」跟「沒有對話紀錄」分開講、分開顯示原因。
+- **換成員用 key 重新掛載，不是逐一清狀態**。code review 抓到「前一個人的數字掛在後一個人名字下」，跟 v1.26.56 那個 Critical 同一類。用 `key={selected.id}` 讓 React 直接換一個新的，整類問題（快取、日期、展開狀態）一起消失，不必記得清四個地方。
+- **「按對話」改照 token 排序**。原本照 `SUM(cost_usd)`，正式機上有資料的人 cost 全 null，所以每組同分、`LIMIT 100` 留哪一百筆由資料庫決定。
+
 ## v1.26.57 修改（修少尾斜線會掉出 /ownmind 前綴）
 
 新增檔：

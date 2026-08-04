@@ -151,14 +151,22 @@ describe('legacy-console manifest — shape', () => {
     assert.equal(isSignpost('/team/stats'), false);
   });
 
-  it('v1.26.56 — the legacy console is still served (two signposts remain)', () => {
-    // One more feature going live is not enough to retire; two signposts still
-    // exist (team-usage, periodic-reports).
-    assert.equal(signpostFeatures().length, 2, 'two signposts remain after Stage 5');
+  it('v1.26.58 — team-usage is live, not a signpost', () => {
+    // Stage 6 flip. The amber dot on 團隊用量 must be gone.
+    const usage = legacyFeatureFor('/team/usage');
+    assert.ok(usage, 'team-usage entry missing from manifest');
+    assert.equal(usage.state, 'live', 'team-usage should be live after Stage 6');
+    assert.equal(isSignpost('/team/usage'), false);
+  });
+
+  it('v1.26.58 — the legacy console is still served (one signpost remains)', () => {
+    // One more feature going live is not enough to retire: 週報月報 has not been
+    // built yet, and until it is, /admin/ must keep being served.
+    assert.equal(signpostFeatures().length, 1, 'one signpost remains after Stage 6');
     assert.deepEqual(
-      signpostFeatures().map((f) => f.id).sort(),
-      ['periodic-reports', 'team-usage'],
-      'the remaining signposts are Stage 6 and Stage 7',
+      signpostFeatures().map((f) => f.id),
+      ['periodic-reports'],
+      'the remaining signpost is Stage 7',
     );
     assert.equal(isLegacyConsoleRetired(), false);
   });

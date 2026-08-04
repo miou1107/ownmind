@@ -2489,14 +2489,18 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
     }
   }
 
+  // v1.26.58: the coverage payload now counts members with usage data in the
+  // period instead of collectors that have sent a heartbeat. This page is
+  // deleted in the retirement stage; it is updated rather than left reading
+  // undefined fields off the new shape while it is still served.
   function renderCoverage(c) {
     if (!c) return;
-    const activePct = c.total_users > 0 ? (c.reporting_today / c.total_users * 100) : 0;
+    const activePct = c.total_users > 0 ? (c.measured / c.total_users * 100) : 0;
     const lines = [
-      `<div style="font-size:14px;">${c.total_users} 位成員中 <b>${c.reporting_today}</b> 位 24 小時內有回報；<span style="color:#d97706;">${c.stale}</span> 位超過 48 小時未回報；<span style="color:#86868b;">${c.opted_out}</span> 位已豁免</div>`
+      `<div style="font-size:14px;">${c.total_users} 位成員中 <b>${c.measured}</b> 位在這段期間有用量資料；<span style="color:#d97706;">${c.unmeasured}</span> 位沒有；<span style="color:#86868b;">${c.opted_out}</span> 位已豁免</div>`
     ];
-    if (c.stale_users && c.stale_users.length > 0) {
-      lines.push(`<div style="margin-top:6px;font-size:12px;color:#d97706;">⚠️ 未回報：${c.stale_users.map(u => escapeHtml(u.name || u.email)).join('、')}</div>`);
+    if (c.unmeasured_users && c.unmeasured_users.length > 0) {
+      lines.push(`<div style="margin-top:6px;font-size:12px;color:#d97706;">⚠️ 沒有資料：${c.unmeasured_users.map(u => escapeHtml(u.name || u.email)).join('、')}</div>`);
     }
     if (c.exempt_users && c.exempt_users.length > 0) {
       lines.push(`<div style="margin-top:4px;font-size:12px;color:#86868b;">✋ 已豁免：${c.exempt_users.map(u => escapeHtml(u.name || u.email)).join('、')}</div>`);

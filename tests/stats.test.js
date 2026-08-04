@@ -83,6 +83,19 @@ describe('buildGrouping', () => {
   it('defaults to day grouping for unknown', () => {
     assert.ok(buildGrouping('whatever').selectKey.includes('YYYY-MM-DD'));
   });
+
+  // v1.26.58 — the session grouping is the only one that truncates (LIMIT 100),
+  // so what it sorts by decides which conversations exist as far as the page is
+  // concerned. It used to sort by SUM(cost_usd), which is null for every member
+  // with data on production: all groups tie and the executor picks the hundred.
+  it('ranks conversations by tokens, so the LIMIT keeps the busiest', () => {
+    const { orderClause } = buildGrouping('session');
+    assert.match(orderClause, /input_tokens/);
+    assert.match(orderClause, /output_tokens/);
+    assert.equal(/cost_usd/.test(orderClause), false,
+      'a column that is null in production cannot decide which rows survive');
+    assert.match(orderClause, /LIMIT 100/);
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -109,6 +122,47 @@ describe('GET /api/usage/stats totals', () => {
     // 600 + 120
     assert.equal(res.body.totals.wall_seconds, 720);
     assert.equal(res.body.totals.cost_usd, 1.23);
+  });
+
+  // v1.26.58 — every column above is COALESCE'd to 0, so "reported zeros" and
+  // "reported nothing at all" arrive at the client looking identical. The team
+  // usage drill-down needs to tell them apart for the same reason the ranking
+  // does; it is the same Requirement 7 hole team-stats closed in v1.26.56, one
+  // endpoint over.
+  describe('has_usage_data', () => {
+    const zeros = {
+      cost_usd: 0, input_tokens: '0', output_tokens: '0',
+      cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
+      message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0
+    };
+    const ask = async (tier1Totals, tier2Totals) => {
+      const app = buildApp({
+        queryFn: makeFakeStatsQuery({ tier1Totals, tier2Totals }),
+        user: { id: 1, name: 'Vin', email: 'v@x.com' }
+      });
+      return (await request(app, { path: '/api/usage/stats' })).body.totals;
+    };
+
+    it('a member who reported zeros is measured', async () => {
+      const totals = await ask({ ...zeros, row_count: 3 }, { tier2_sessions: 0, tier2_wall_seconds: 0, row_count: 0 });
+      assert.equal(totals.has_usage_data, true);
+      assert.equal(totals.message_count, 0, 'and the zero is still a zero');
+    });
+
+    it('no row in either tier is not a zero', async () => {
+      const totals = await ask({ ...zeros, row_count: 0 }, { tier2_sessions: 0, tier2_wall_seconds: 0, row_count: 0 });
+      assert.equal(totals.has_usage_data, false);
+    });
+
+    it('a Cursor-only member has no tier-1 row and is still measured', async () => {
+      const totals = await ask({ ...zeros, row_count: 0 }, { tier2_sessions: 4, tier2_wall_seconds: 60, row_count: 2 });
+      assert.equal(totals.has_usage_data, true);
+    });
+
+    it('the row counts are not leaked into the response', async () => {
+      const totals = await ask({ ...zeros, row_count: 3 }, { tier2_sessions: 0, tier2_wall_seconds: 0, row_count: 1 });
+      assert.equal('row_count' in totals, false);
+    });
   });
 
   it('P1 regression: user with only Tier-2 usage shows non-zero session_count', async () => {

@@ -27,9 +27,17 @@ app.use(cors({ origin: process.env.CORS_ORIGIN || false }));
 app.use(express.json({ limit: '10mb' }));
 
 // Rate limiting
+//
+// v1.26.58: the API ceiling is configurable because the end-to-end suite drives
+// one browser through every page of the console in under a minute and crosses
+// 200 requests somewhere around the thirtieth spec — which shows up as an
+// unrelated-looking login failure in whichever spec happens to be running then.
+// Absent or unparseable leaves the shipped default exactly where it was, so no
+// deployment changes behaviour by upgrading.
+const apiRateLimitMax = Number.parseInt(process.env.API_RATE_LIMIT_MAX ?? '', 10);
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 200,
+  max: Number.isInteger(apiRateLimitMax) && apiRateLimitMax > 0 ? apiRateLimitMax : 200,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '請求太頻繁，請稍後再試' },

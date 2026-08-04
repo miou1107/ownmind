@@ -6,18 +6,19 @@ import logger from '../../utils/logger.js';
 /**
  * GET /api/usage/team-stats (admin+)
  *
- * Response (per spec S2):
+ * Response:
  *   {
  *     period: { from, to },
  *     coverage: {
- *       total_users, reporting_today, stale, opted_out,
- *       per_tool: { <tool>: { reporting, stale }, ... }
+ *       total_users, measured, unmeasured, opted_out,
+ *       unmeasured_users: [{ id, name, email }], exempt_users: [...]
  *     },
  *     users: [{ user: { id, name, email }, totals: {...} }, ...]
  *   }
  *
- * D5: coverage is always surfaced in the response so the dashboard can show
- * a watermark when coverage drops below 80%.
+ * Coverage is always surfaced so a page ranking members can state the
+ * denominator it is ranking over, rather than presenting a partial list as if
+ * it were the whole team.
  */
 export function createTeamStatsRouter(deps = {}) {
   const query = deps.query ?? defaultQuery;
@@ -29,15 +30,15 @@ export function createTeamStatsRouter(deps = {}) {
     try {
       const { from, to } = parseParams(req.query);
 
-      // 1. User totals + active / stale / exempt.
-      const coverage = await loadCoverage({ query });
-
-      // 2. Per-user aggregate (cost / tokens / hours per user).
+      // Per-user aggregate (tokens / hours per user), then coverage derived from
+      // it. Order matters: coverage is a summary of these same rows, not a
+      // second measurement of the same thing.
       const users = await loadUsersAggregate({ query }, from, to);
+      const exemptIds = await loadExemptUserIds({ query });
 
       res.json({
         period: { from, to },
-        coverage,
+        coverage: buildCoverage(users, exemptIds),
         users
       });
     } catch (err) {
@@ -63,71 +64,58 @@ function toYmd(date) {
   }).format(date);
 }
 
-async function loadCoverage({ query }) {
-  // Active = a heartbeat within 24h; stale = no heartbeat for 48h+;
-  // exempt = the user has an active exemption.
+/** The ids of every member whose tracking exemption is still in force. */
+async function loadExemptUserIds({ query }) {
   const res = await query(
-    `WITH latest_hb AS (
-       SELECT user_id, tool, MAX(last_reported_at) AS last_reported_at
-         FROM collector_heartbeat GROUP BY user_id, tool
-     ),
-     user_status AS (
-       SELECT u.id, u.name, u.email,
-              MAX(h.last_reported_at) AS latest_any_hb,
-              (SELECT 1 FROM usage_tracking_exemption e
-                 WHERE e.user_id = u.id
-                   AND (e.expires_at IS NULL OR e.expires_at > NOW())
-                 LIMIT 1) AS exempt_flag
-         FROM users u
-         LEFT JOIN latest_hb h ON h.user_id = u.id
-        GROUP BY u.id, u.name, u.email
-     )
-     SELECT id, name, email, latest_any_hb, exempt_flag
-       FROM user_status`
+    `SELECT user_id FROM usage_tracking_exemption
+      WHERE expires_at IS NULL OR expires_at > NOW()`
   );
+  return new Set(res.rows.map((r) => r.user_id));
+}
 
-  const now = Date.now();
-  const DAY = 24 * 60 * 60 * 1000;
-
-  let reporting_today = 0;
-  let stale = 0;
-  let opted_out = 0;
-  const stale_users = [];
+/**
+ * How much of the team the `users` array actually measures.
+ *
+ * v1.26.58: this used to be counted from `collector_heartbeat` — "has a collector
+ * checked in recently" — which answers a different question than the one the page
+ * asks. A collector can connect, heartbeat happily, and ship no usage at all.
+ * Measured on production 2026-07-30 the old metric reported 8 of 9 members
+ * covered while three of them had no usage data whatsoever. Counting the same
+ * rows the table is built from means the panel and the ranking cannot disagree;
+ * whether a collector is connected is a separate question, answered on 系統設定
+ * by /api/usage/admin/clients.
+ *
+ * The three buckets partition the team, so the denominator is honest:
+ *   measured   — reported something in the window, even if the numbers are zero
+ *   opted_out  — nothing in the window, and an exemption explains why
+ *   unmeasured — nothing in the window, and nothing explains it
+ *
+ * An exempt member with data in the window counts as measured: an exemption stops
+ * future ingestion, it does not delete what was already collected, and calling
+ * data we hold "no data" would understate real coverage.
+ *
+ * @param {Array<{user: {id: number, name: string, email: string}, totals: {has_usage_data: boolean}}>} users
+ * @param {Set<number>} exemptIds
+ */
+export function buildCoverage(users, exemptIds) {
+  let measured = 0;
+  const unmeasured_users = [];
   const exempt_users = [];
 
-  for (const r of res.rows) {
-    if (r.exempt_flag) {
-      opted_out += 1;
-      exempt_users.push({ id: r.id, name: r.name, email: r.email });
-      continue;
-    }
-    if (r.latest_any_hb) {
-      const age = now - new Date(r.latest_any_hb).getTime();
-      if (age <= DAY) { reporting_today += 1; continue; }
-      if (age > 2 * DAY) { stale += 1; stale_users.push({ id: r.id, name: r.name, email: r.email }); continue; }
-    }
-    // 24h–48h gray zone: count as reporting (loose) or stale (strict) — we
-    // chose loose, warning only at 48h+.
-  }
-
-  // Per-tool coverage.
-  const perToolRes = await query(
-    `SELECT tool,
-            COUNT(*) FILTER (WHERE last_reported_at > NOW() - INTERVAL '24 hours') AS reporting,
-            COUNT(*) FILTER (WHERE last_reported_at < NOW() - INTERVAL '48 hours') AS stale
-       FROM collector_heartbeat
-       GROUP BY tool`
-  );
-  const per_tool = {};
-  for (const r of perToolRes.rows) {
-    per_tool[r.tool] = { reporting: Number(r.reporting), stale: Number(r.stale) };
+  for (const row of users) {
+    const { id, name, email } = row.user;
+    if (row.totals?.has_usage_data) { measured += 1; continue; }
+    if (exemptIds.has(id)) { exempt_users.push({ id, name, email }); continue; }
+    unmeasured_users.push({ id, name, email });
   }
 
   return {
-    total_users: res.rows.length,
-    reporting_today, stale, opted_out,
-    stale_users, exempt_users,
-    per_tool
+    total_users: users.length,
+    measured,
+    unmeasured: unmeasured_users.length,
+    opted_out: exempt_users.length,
+    unmeasured_users,
+    exempt_users
   };
 }
 
@@ -197,11 +185,16 @@ async function loadUsersAggregate({ query }, from, to) {
     };
   });
 
-  // Sort: cost_usd DESC, null treated as -Infinity so it lands last.
+  // v1.26.58: ordered by tokens rather than by cost. Sorting by `cost_usd` had
+  // quietly become sorting by user id, because it is null for everyone with data
+  // (see Requirement 8), and every caller that wanted a ranking got insertion
+  // order dressed up as one. The console re-sorts client-side, but the other two
+  // pages calling this endpoint join by id and take what they are given.
   merged.sort((a, b) => {
-    const ac = a.totals.cost_usd ?? -Infinity;
-    const bc = b.totals.cost_usd ?? -Infinity;
-    if (bc !== ac) return bc - ac;
+    const usage = (t) => Number(t.input_tokens || 0) + Number(t.output_tokens || 0)
+      + Number(t.reasoning_tokens || 0);
+    const diff = usage(b.totals) - usage(a.totals);
+    if (diff !== 0) return diff;
     return a.user.id - b.user.id;
   });
   return merged;
