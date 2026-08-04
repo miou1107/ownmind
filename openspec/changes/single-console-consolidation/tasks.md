@@ -537,7 +537,36 @@ Shipped as `v1.26.58`.
       then green** — the second one's first draft was a false pass, because against
       a local server the stale window is a few milliseconds and a retrying assertion
       sails straight past it; it holds the responses open for three seconds now
-- [ ] Browser check on production — pending deploy
+- [x] Released and deployed 2026-08-04. `v1.26.58` on `/VinService/ownmind`,
+      `git fetch --tags && git checkout v1.26.58 && docker compose build --no-cache api
+      && docker compose up -d api`. No migrations in this range (17 applied, 0 new).
+      The served asset hash `index-DnczAjdB.js` matched the local
+      `build:no-translate` output, which is the same script the Dockerfile runs.
+      Container up, clean startup log, `/health` 200
+- [x] Post-deploy browser check, super_admin path, with a non-GET fetch and XHR guard
+      installed **before** navigating; `__omBlocked` stayed empty throughout, so
+      nothing on this page so much as attempted a write. `visibilityState` was
+      `hidden`, so every claim below is read from the DOM rather than from a
+      screenshot. **Requirement 7 is legible on real data, which is the point**:
+      of 9 members, 6 reported usage and 3 did not, so the panel reads 67% and names
+      Adam, Vin-windows-test and Amiee Kuo rather than only counting them. Adam has
+      session logs but no usage rows, so his activity columns are populated (7
+      conversations, multi-claude-switcher, 100%) while his four usage cells read
+      尚無資料 — the two endpoints' absences stay separate, which is the distinction
+      the legacy page collapsed. **And the converse holds**: Joanna, who has one
+      tier-2 row and genuinely zero tokens, reads a real `0`, not 尚無資料. Zero bare
+      `0%` nodes anywhere; no `$`, 成本 or cost column; the unmeasured rows sort last.
+      The amber marker is gone from 團隊用量 and 統計儀表板 and still present on 週報月報
+- [x] Drill-down checked on production for both cases: a measured member renders six
+      cards (35,371,954 fresh against 10,575,089,780 cached — the ~250x gap the
+      two-line layout exists for) plus a seven-day distribution and 64 conversations;
+      an unmeasured member renders six 尚無資料 cards under the sentence explaining
+      that this is not a zero, while still listing his 7 conversations. Switching
+      between the two left nothing of the first on screen
+- [x] **The 按對話 ordering fix confirmed against production**, not just a fixture:
+      38 conversations come back ordered by tokens descending, 12.9M at the top.
+      Before the fix every group tied at a null cost and the hundred kept was the
+      executor's choice
 
 ### Found by this stage
 
