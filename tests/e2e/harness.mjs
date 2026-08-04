@@ -225,6 +225,19 @@ async function seedAccounts(dbPort, dbPassword) {
       );
     }
 
+    // A memory the seeded friction text will find. Without it the search modal can only
+    // ever be seen in its empty state — which is what happened on the 2026-08-05
+    // production check, where no real friction line matched any memory, so the branch
+    // that actually renders results went unexercised everywhere.
+    await client.query(
+      `INSERT INTO memories (user_id, type, title, content, tags, status)
+       SELECT id, 'project', 'e2e friction: SSH kept timing out',
+              'Seeded so the periodic-report search modal has something to find.',
+              ARRAY['e2e'], 'active'
+         FROM users WHERE email = $1`,
+      [ACCOUNTS.superAdmin.email],
+    );
+
     // One orphan session, so the pitfalls page has something to render.
     //
     // Without it the page correctly shows its all-clear state and the three sections never

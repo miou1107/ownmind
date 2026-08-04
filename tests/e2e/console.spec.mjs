@@ -382,12 +382,29 @@ test.describe('v1.26.59 週報月報', () => {
     const shown = await modal.getByText(/^搜尋關鍵字：/).textContent();
     expect(shown).toContain('e2e friction: SSH kept timing');
     expect(shown).not.toContain('timing out');
-    // No memory matches the seeded text, and saying so is the point: the legacy modal
-    // had the same state and it must not read as a failure.
-    await expect(modal.getByText('沒有找到相關的記憶')).toBeVisible();
+    // A matching memory is seeded, so this covers the branch that renders results
+    // rather than only the empty state. The production check on 2026-08-05 could not
+    // reach it: no real friction line happened to match a memory there.
+    await expect(modal.getByText('沒有找到相關的記憶')).toHaveCount(0);
+    await expect(modal.locator('li')).toHaveCount(1);
+    await expect(modal.locator('li').first()).toContainText('e2e friction: SSH kept timing out');
+    // The type badge and date come from the same row; a shape change in
+    // /api/memory/search must fail here rather than render blanks.
+    await expect(modal.locator('li').first()).toContainText('project');
 
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('a row with no matching memory says so rather than showing an empty box', async ({ page }) => {
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+
+    // The suggestion text has no seeded counterpart, so this is the other branch.
+    await page.getByText('e2e suggestion: retry with backoff').click();
+    const modal = page.getByRole('dialog');
+    await expect(modal.getByText('相關記憶（建議）')).toBeVisible();
+    await expect(modal.getByText('沒有找到相關的記憶')).toBeVisible();
   });
 
   test('the previous period is cleared the moment the selection changes', async ({ page }) => {

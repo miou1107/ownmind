@@ -73,7 +73,16 @@
         monthly cron jobs that *write* data, and this change's proposal lists redesigning
         it as a non-goal. Recorded in the umbrella ledger instead of changing period
         maths in a release about presentation
-- [ ] Deploy + production browser check
+- [x] Deploy + production browser check — 2026-08-05, see the umbrella ledger
+
+## Found by the production browser check
+
+- [x] **The search modal's results branch had never been rendered anywhere.** Every
+      friction line on production is unique text from a session summary, and none of them
+      matched a memory, so the modal only ever showed 沒有找到相關的記憶 — and the e2e
+      seed had the same hole. A matching memory is now seeded, and the spec asserts the
+      row, its type badge and the absence of the empty message. Mutation-verified by
+      changing the seeded title so it no longer matches
 
 ## Found by my own review while the adversarial pass ran
 

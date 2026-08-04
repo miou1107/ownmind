@@ -639,7 +639,38 @@ retires the legacy console.
 - [x] The e2e signpost specs are written to skip when nothing is signposted, which is now
       every run. Added the mirror block that runs in exactly that condition, so the day
       the manifest empties is not the day three specs go quiet and nothing replaces them
-- [ ] Browser check on production
+- [x] Released and deployed 2026-08-05. `v1.26.59` on `/VinService/ownmind`,
+      `git fetch --tags && git checkout v1.26.59 && docker compose build --no-cache api
+      && docker compose up -d api`. No migrations in this range (17 applied, 0 new). The
+      served asset hash `index-DrzO_yhE.js` matched the local `build:no-translate`
+      output. Container up, clean startup log
+- [x] Post-deploy browser check, super_admin path, with a non-GET fetch and XHR guard
+      installed **before** navigating; `__omBlocked` stayed empty throughout, so nothing
+      was written to production. `visibilityState` was `hidden`, so every claim is read
+      from the DOM rather than from a screenshot.
+      **The retirement holds, and the prefix survives it** — which is the thing worth
+      checking, because relative redirects are where the last three incidents were.
+      `/ownmind/admin/`, `/ownmind/admin/anything/deeper`, `/ownmind/admin` with no
+      trailing slash and `/ownmind/Admin` all land on `/ownmind/dashboard/`, and so do
+      `/ownmind/admin/index.html`, `/admin/setup.html`, `/admin/me/index.html` and
+      `/admin/dashboard/index.html` — the four paths Stage 8 lists as the whole-`src/public/`
+      exposure. None of them serves `data-tab` markup any more. `/ownmind/`,
+      `/ownmind/dashboard`, `/ownmind/me` and `/ownmind/me/foo/bar` are unchanged.
+      Zero amber signpost markers anywhere in a super_admin's sidebar; footer v1.26.59
+- [x] **The page is right on real data.** 新增記憶 16 for the current week, and both
+      created-counts read a real `0` where the legacy card read `—` on every request it
+      ever served. That `0` was then checked rather than assumed: every friction and
+      suggestion on production occurs exactly once, the job's threshold is three, and a
+      memory search for the auto-created title prefix returns nothing — so zero is the
+      measurement, not the absence of one. The response carries all six new fields
+- [x] **The retention warning fired on the case it exists for**, and fired as the
+      *partial* one: 月報 + 三期前 is 2026-05-01 ~ 05-31, the 90-day cutoff falls around
+      05-07, so the window straddles it. That month also carries `sessions_compressed: 4`
+      against `sessions_total: 463` — four real compression summaries that the
+      pre-review code would have counted as live sessions. The review finding was not
+      hypothetical
+- [x] Memory-search modal opened from a real row, titled by list, query truncated to 30
+      characters as the legacy one did, and closed by Escape
 
 ### Found by this stage — an ordering error in this plan
 
