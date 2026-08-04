@@ -63,7 +63,16 @@ export function createFirstRunRedirect(deps = {}) {
 
     if (!firstRun && isSetupPath) {
       // setup already done, wizard permanently closed, guide back to the login page
-      return res.redirect(302, relativeRedirectTarget(req.originalUrl, 'admin/login'));
+      //
+      // v1.26.59: `dashboard/login`, not `admin/login`. That target never resolved —
+      // the legacy console is express.static and there is no file under `login/`, so
+      // it answered `Cannot GET /admin/login` (confirmed against v1.26.47, so it was
+      // never introduced by the consolidation). Retiring /admin would have turned it
+      // into a second hop that happens to land somewhere right, which is worse: it
+      // works by accident through a path that now exists only as a redirect. The
+      // console owns login, and as of this release it also owns the setup-recovery
+      // form that was the last reason to send anyone at the old one.
+      return res.redirect(302, relativeRedirectTarget(req.originalUrl, 'dashboard/login'));
     }
 
     // other cases (first_run + setup path, or non-first_run + admin/root path) pass normally

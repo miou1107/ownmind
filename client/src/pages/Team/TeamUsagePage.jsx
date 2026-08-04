@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Users, RefreshCw } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { apiGet } from '../../api';
-import { makeRequestGate } from './request-gate.js';
+import { makeRequestGate } from '../../utils/request-gate.js';
 import { teamUsageRowVm, sortTeamRows, coverageVm, dayBoundsIso, SORT_KEYS } from './team-usage-vm.js';
 import TeamUsageTable from './TeamUsageTable.jsx';
 import MemberDetail from './MemberDetail.jsx';

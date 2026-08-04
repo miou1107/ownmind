@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](README.md) | [繁體中文](docs/README.zh-TW.md) | [日本語](docs/README.ja.md)
 
-**Current version: v1.26.58** · see [CHANGELOG](CHANGELOG.md) for details
+**Current version: v1.26.59** · see [CHANGELOG](CHANGELOG.md) for details
 
 # OwnMind — Cross-platform AI Memory & Iron-Rule Enforcement System
 
@@ -303,7 +303,7 @@ If your deployment hits one of these scenarios, the wizard won't apply:
 
 | Scenario | Path to take |
 |:---|:---|
-| Restore from backup; `users` table has a super_admin but `password_hash IS NULL` | Set env `SETUP_TOKEN`, use `POST /admin/setup` |
+| Restore from backup; `users` table has a super_admin but `password_hash IS NULL` | Set env `SETUP_TOKEN`, then sign in at the console — it offers the password-setup form (`POST /api/admin/setup`) |
 | Admin forgot password, wants to reset | SSH into DB, `UPDATE users SET password_hash = NULL WHERE id = ...`, then use setup token path |
 | Migrating server, importing old DB | pg_dump / pg_restore + either rescue path above |
 
@@ -325,7 +325,7 @@ The right path depends on "are there other admins":
   ```
 - Script interactively: lists all super_admins, asks which one to reset, requires typing `yes` to confirm
 - Auto-generates a `SETUP_TOKEN`, prints it to your terminal
-- Then `export SETUP_TOKEN=<token>`, restart server, open `/admin/setup` in browser to set a new password
+- Then `export SETUP_TOKEN=<token>`, restart the server, open the console login page and enter that account's email with any password. The console detects the account has none and shows the setup form. (Before v1.26.59 this step said `/admin/setup`; the legacy console was retired in that release.)
 
 **Scenario C: No SSH access at all (cloud SaaS mode)**
 - Currently no built-in path — contact the service operator

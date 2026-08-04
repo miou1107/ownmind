@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.26.58** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.26.59** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -303,7 +303,7 @@ AI に普通の言葉で命令：
 
 | シナリオ | 経路 |
 |:---|:---|
-| バックアップから復元、`users` テーブルに super_admin はいるが `password_hash IS NULL` | 環境変数 `SETUP_TOKEN` 設定、`POST /admin/setup` 使用 |
+| バックアップから復元、`users` テーブルに super_admin はいるが `password_hash IS NULL` | 環境変数 `SETUP_TOKEN` を設定し、管理画面のログインページへ。パスワード設定フォームが表示されます（`POST /api/admin/setup`） |
 | 管理者がパスワードを忘れて再設定したい | DB に SSH、`UPDATE users SET password_hash = NULL WHERE id = ...`、その後 setup token パス利用 |
 | サーバー移行、旧 DB をインポート | pg_dump / pg_restore + 上記いずれかのレスキューパス |
 
@@ -325,7 +325,7 @@ AI に普通の言葉で命令：
   ```
 - スクリプトはインタラクティブ：全 super_admin を列挙、リセット対象を選択、`yes` 入力で確認
 - ランダム `SETUP_TOKEN` を生成・ターミナルに表示
-- 続いて `export SETUP_TOKEN=<token>`、サーバー再起動、ブラウザで `/admin/setup` を開いて新パスワード設定
+- 続いて `export SETUP_TOKEN=<token>`、サーバーを再起動し、管理画面のログインページで該当アカウントのメールと任意のパスワードを入力します。パスワード未設定と判定され、設定フォームが表示されます。（v1.26.59 より前は `/admin/setup` と記載していましたが、旧管理画面は同バージョンで廃止されました。）
 
 **シナリオ C：SSH 権限なし（クラウド SaaS モード）**
 - 現状ビルトイン経路なし — サービス提供者に連絡

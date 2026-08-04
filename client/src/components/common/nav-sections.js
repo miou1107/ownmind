@@ -40,10 +40,11 @@ export const NAV_SECTIONS = [
       { path: '/portal/reports', labelKey: 'nav.reports', minRole: 'user' },
       { path: '/portal/narrative', labelKey: 'nav.narrative', minRole: 'user' },
       { path: '/portal/pitfalls', labelKey: 'nav.pitfalls', minRole: 'user' },
-      // Personal by nature: GET /api/session/report filters WHERE user_id = $1. Sits at
-      // admin only while it is a signpost, because the legacy console it points at
-      // refuses a `user` at login. Drops to 'user' when the real page is built.
-      { path: '/portal/periodic-reports', labelKey: 'nav.periodic_reports', minRole: 'admin' },
+      // Personal by nature: GET /api/session/report filters WHERE user_id = $1. It sat
+      // at admin from v1.26.46 to v1.26.58 only because it was a signpost and the legacy
+      // console refuses a `user` at login — a signpost to a door that will not open is
+      // worse than none. v1.26.59 built the real page, so it drops to its true role.
+      { path: '/portal/periodic-reports', labelKey: 'nav.periodic_reports', minRole: 'user' },
     ],
   },
   {

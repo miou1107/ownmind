@@ -76,11 +76,15 @@ export const LEGACY_CONSOLE_FEATURES = [
   // the coverage panel counts members with usage data instead of collector
   // heartbeats. One signpost left, so /admin/ is still served.
   { id: 'team-usage', consolePath: '/team/usage', legacyTab: 'team-usage', state: 'live' },
-  // The one feature whose real permission is wider than its signpost's. The report is
-  // per-user (`GET /api/session/report` filters `WHERE user_id = $1`), so it belongs to
-  // every member, but no member below admin can reach the legacy tab that serves it
-  // today. The signpost stays at admin; the rebuilt page opens it to `user`.
-  { id: 'periodic-reports', consolePath: '/portal/periodic-reports', legacyTab: 'reports', state: 'signpost' },
+  // v1.26.59: 週報月報 rebuilt in the console, and with it the list is empty.
+  //
+  // This entry is the one that ends the migration: `isLegacyConsoleRetired()` now
+  // returns true, so `src/app.js` stops serving `/admin` and starts redirecting it,
+  // with no other edit anywhere. That is the whole design of this file — see the
+  // header. The feature's permission also widens here: the report is per-user
+  // (`GET /api/session/report` filters `WHERE user_id = $1`) and only sat at admin
+  // because no member below admin can log in to the legacy console it pointed at.
+  { id: 'periodic-reports', consolePath: '/portal/periodic-reports', legacyTab: 'reports', state: 'live' },
 ];
 
 /**

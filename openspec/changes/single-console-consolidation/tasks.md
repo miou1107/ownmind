@@ -600,39 +600,92 @@ Shipped as `v1.26.58`.
 
 ## Stage 7 — 週報月報
 
-Entirely absent from the console today.
+Shipped as `v1.26.59`. The last feature to leave, so this is also the release that
+retires the legacy console.
 
-- [ ] Port against `GET /api/session/report?period=week|month&offset=`
-      (`src/public/index.html:2724`). Note `/portal/reports` is **not** this page: it
-      is 回報紀錄, backed by `/api/bug-reports`. That name collision caused the first
-      inventory to mark 週/月報 as done
-- [ ] Blocks: 新增記憶, 自動建立 Friction Issue, 自動建立 Suggestion Action,
-      Top Frictions, Top Suggestions, week/month switch, three periods back
-- [ ] **Fix the count query rather than porting it.** Measured 2026-07-30: the
-      Suggestion Action count renders empty while the Top Suggestions list below it has
-      a row. The list proves the data exists, so the count query is wrong
-- [ ] Flip the manifest entry to `live`. This empties the manifest, so by Requirement 5
-      the old console stops being served and starts redirecting with no further edit.
-      Confirm by requesting `/admin/` rather than assuming
+- [x] Ported against `GET /api/session/report?period=week|month&offset=`
+      (`src/public/index.html:2724`) as `/portal/periodic-reports`. Note
+      `/portal/reports` is **not** this page: it is 回報紀錄, backed by
+      `/api/bug-reports`. That name collision caused the first inventory to mark 週/月報
+      as done
+- [x] All blocks: 新增記憶, 自動建立 Friction Issue, 自動建立 Suggestion Action,
+      Top Frictions, Top Suggestions, the week/month switch, three periods back, and the
+      memory-search modal Stage 5 left as this stage's decision (ported — Requirement 3
+      is that consolidation loses no feature, and without it the two lists become dead
+      text where they are clickable today)
+- [x] **The task above said "the count query is wrong". It was not wrong, it was
+      absent.** `computeReportData` never emitted `suggestion_actions_created`, so the
+      legacy `?? '—'` resolved to `undefined` on every request the card ever served. The
+      data is real — `src/jobs/weeklyReport.js:77-86` writes those memories, mirroring
+      the friction issues at `:36-45` — so the fix is the symmetric count. Both are now
+      one query with `COUNT(*) FILTER`, because two cards reading "created in this
+      period" drifting apart is how one of them ended up with no query at all
+- [x] Also stated, not silently carried: the two created-counts count creations **in**
+      the window, and the weekly job runs Monday over the *previous* week, so an issue
+      distilled from last week lands in this week's number. Attributing it back needs a
+      period stamp the memories do not carry, so the page says which it is
+- [x] Requirement 7: the legacy 本期無 friction 資料 covered four situations. Split into
+      four, using two new counts (`sessions_total`, `sessions_analyzed`), each naming the
+      denominator it is drawn from. Plus a fifth the legacy page could not have known:
+      the report query filters `compressed = false`, and `compressOldSessions` **deletes**
+      rows older than `SESSION_RETENTION_DAYS`, so 月報 + 三期前 asks for a window whose
+      detail no longer exists. The page says the lists are incomplete — including when the
+      window merely straddles the cutoff, which is the dangerous case, because the
+      surviving days return a partial list that looks whole
+- [x] Manifest entry flipped `signpost` → `live`. The list is now empty, so
+      `isLegacyConsoleRetired()` is true and `/admin` redirects with no further edit.
+      Verified by requesting it, in three places: a unit test against the real manifest,
+      an e2e spec, and production
+- [x] The e2e signpost specs are written to skip when nothing is signposted, which is now
+      every run. Added the mirror block that runs in exactly that condition, so the day
+      the manifest empties is not the day three specs go quiet and nothing replaces them
 - [ ] Browser check on production
+
+### Found by this stage — an ordering error in this plan
+
+- [x] **Stage 8's first bullet had to happen here, not there.** It is written as a
+      prerequisite ("do this first") that must precede retiring `/admin/`, but it sits in
+      the stage *after* the retirement. `scripts/reset-admin-password.js` sets a
+      super_admin's `password_hash` to NULL and the only UI that could finish the reset
+      was the legacy console's setup form; `POST /api/me/login` answered that state with
+      a flat 401 saying "contact your administrator", which for a sole super_admin names
+      nobody. Shipping the flip without it would have released a known lockout. Done here
+      instead: `src/utils/setup-recovery.js` decides who is offered the form, and the
+      console's login page finishes the flow. **Tightened while moving it**: the legacy
+      `/api/admin/login` announced `requiresSetup` to any caller, while this one requires
+      both a super_admin and a configured `SETUP_TOKEN` — outside a rescue window the
+      response is unchanged and says nothing about the account. Driven end to end against
+      a real database, mutation-verified. The three READMEs and the script's own printed
+      instructions, which all said "open /admin/setup", are corrected in the same change
+- [x] **`/setup` pointed at a URL that never resolved.** On an installed system it
+      redirected to `admin/login`; the legacy console is `express.static` with no file
+      under `login/`, so it answered `Cannot GET /admin/login`. Stage 1b found this and
+      filed it as pre-existing, and Stage 8 said the right moment to fix the target was
+      when the console's login gained the `requiresSetup` branch — which is now. Retiring
+      `/admin` would otherwise have converted a visible 404 into a redirect chain that
+      lands correctly by accident
+- [x] **Login had an account-enumeration tell**, found by the adversarial pass on this
+      release. `POST /api/me/login` answered a no-password account with a different string
+      from an unknown email, so probing addresses revealed which are real. Pre-existing,
+      but this release rewrites that exact branch. All three rejections are one constant now
+- [ ] **Backlog, not this stage: period bounds lose a microsecond.** `computePeriodRange`
+      ends a period at `…59.999` and every consumer compares `created_at <= end`, while
+      postgres keeps microseconds — a row at `…59.9995` falls out of both that period and
+      the next. Found by the same review. Not fixed here because the function is shared
+      with the weekly and monthly cron jobs, which **write** data from those bounds, so it
+      deserves its own release rather than a drive-by inside a presentation change
 
 ## Stage 8 — Clean up after the automatic retirement
 
 `/admin/` already stopped serving when Stage 7 emptied the manifest. This stage is the
 cleanup the redirect does not do by itself.
 
-- [ ] **Prerequisite, do this first.** Add the `requiresSetup` branch to the console's
-      login. `POST /api/admin/login` returns `{ requiresSetup: true }` when
-      `password_hash IS NULL` (`src/routes/admin.js:51-53`) and the old console's
-      `setupForm` consumes it (`src/public/index.html:159-166,1137-1152`).
-      `LoginPage.jsx` has no such branch and `POST /api/me/login` hard-rejects that
-      state with 401 (`src/routes/me.js:49-51`). This is the terminal step of the
-      documented sole-admin recovery path (`scripts/reset-admin-password.js:9,45,164`
-      and all three READMEs). Without it, retiring `/admin/` leaves a locked-out
-      super_admin unrecoverable through any UI
-- [ ] Update the recovery instructions in `scripts/reset-admin-password.js:164` and
-      `README.md:306,328` plus the zh-TW and ja mirrors, which all say "open
-      /admin/setup, NOT /setup"
+- [x] ~~**Prerequisite, do this first.** Add the `requiresSetup` branch to the console's
+      login.~~ **Done in Stage 7, because "do this first" and "the stage after the
+      retirement" cannot both be true.** See Stage 7's "Found by this stage"
+- [x] ~~Update the recovery instructions in `scripts/reset-admin-password.js:164` and
+      `README.md:306,328` plus the zh-TW and ja mirrors~~ — same release, for the same
+      reason: they described a URL that stopped resolving the moment the manifest emptied
 - [ ] Verify on production that `/admin/` and `/admin/*` redirect, relatively
 - [ ] Delete the now-unreachable `express.static(join(__dirname, 'public'))` branch
       (`src/app.js:61`), which also resolves the whole-`src/public/` exposure: today

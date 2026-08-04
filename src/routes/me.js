@@ -17,6 +17,7 @@ import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { RULE_FULL_LAYER_SYNC } from '../../shared/lint-event-types.js';
+import { noPasswordLoginResponse, LOGIN_REJECTED } from '../utils/setup-recovery.js';
 
 // v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
 // keys on the neutral event constant; the legacy IR-006 literal below is kept
@@ -43,15 +44,22 @@ router.post('/login', async (req, res) => {
       [email]
     );
     if (result.rows.length === 0) {
-      return res.status(401).json({ error: '帳號或密碼錯誤' });
+      return res.status(401).json({ ...LOGIN_REJECTED });
     }
     const user = result.rows[0];
     if (!user.password_hash) {
-      return res.status(401).json({ error: '此帳號尚未設定密碼，請聯絡管理員' });
+      // v1.26.59: this is the state scripts/reset-admin-password.js leaves behind, and
+      // the legacy console that used to finish it is retired in this release. See
+      // src/utils/setup-recovery.js for who is offered the setup form and why.
+      const { status, body } = noPasswordLoginResponse({
+        role: user.role,
+        setupTokenConfigured: !!process.env.SETUP_TOKEN,
+      });
+      return res.status(status).json(body);
     }
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
-      return res.status(401).json({ error: '帳號或密碼錯誤' });
+      return res.status(401).json({ ...LOGIN_REJECTED });
     }
     res.json({
       id: user.id,

@@ -13,7 +13,9 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ACCOUNTS } from './harness.mjs';
+import {
+  ACCOUNTS, LOCKED_SUPER_ADMIN, E2E_SETUP_TOKEN, SEEDED_USER_COUNT,
+} from './harness.mjs';
 import { signpostFeatures } from '../../shared/legacy-console-manifest.js';
 import { navMinRole } from '../../client/src/components/common/nav-sections.js';
 
@@ -94,13 +96,14 @@ test.describe('who sees what', () => {
       '廣播管理', '工作紀錄']) {
       await expect(navItem(page, label)).toHaveCount(0);
     }
-    // And their own pages are there.
-    for (const label of ['用量分析', '專案歷程', '工作交接', '回報紀錄', '整體分析', '踩坑紀錄']) {
+    // And their own pages are there. 週報月報 joined them in v1.26.59: it is personal by
+    // nature (GET /api/session/report filters WHERE user_id = $1) and sat at admin only
+    // while it was a signpost into a console that refuses a member at login — a signpost
+    // to a door that will not open is worse than none. The real page has no such problem.
+    for (const label of ['用量分析', '專案歷程', '工作交接', '回報紀錄', '整體分析', '踩坑紀錄',
+      '週報月報']) {
       await expect(navItem(page, label)).toHaveCount(1);
     }
-    // 週報月報 is personal by nature but signposted at admin, because the legacy console
-    // refuses a member at login. A signpost to a door that will not open is worse than none.
-    await expect(navItem(page, '週報月報')).toHaveCount(0);
   });
 
   test('an admin sees 系統設定 but not 廣播管理 or 工作紀錄', async ({ page }) => {
@@ -219,6 +222,222 @@ test.describe('signposts', () => {
     const left = await page.evaluate(() => ['om_api_key', 'om_role', 'om_user_id', 'om_user_name',
       'ownmind.api_key'].filter((k) => localStorage.getItem(k) !== null));
     expect(left).toEqual([]);
+  });
+});
+
+test.describe('v1.26.59 the legacy console is retired', () => {
+  // The mirror of the block above, and the reason it can afford to skip. Exactly one
+  // of the two runs on any given commit: `signposts` while something still lives in
+  // /admin, this one once nothing does. Without it the day the manifest empties is
+  // the day three specs go quiet and nothing takes their place.
+  test.skip(() => SIGNPOST !== null, 'signposts remain; the legacy console is still served');
+
+  test('/admin/ redirects to the console instead of serving the old one', async ({ page }) => {
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/admin/'));
+
+    // Followed the redirect out of /admin entirely.
+    await expect(page).not.toHaveURL(/\/admin\/?$/);
+    await expect(page).toHaveURL(/\/dashboard\//);
+    // The old console's markup must be gone, not merely hidden.
+    await expect(page.locator('[data-tab="users"]')).toHaveCount(0);
+  });
+
+  test('a path below /admin redirects too, not just the directory', async ({ page }) => {
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/admin/anything/deeper'));
+    await expect(page).toHaveURL(/\/dashboard\//);
+  });
+
+  test('no navigation item is marked as still living in the old console', async ({ page }) => {
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/dashboard/portal/usage'));
+    // The amber marker carries this aria-label; a super_admin sees every section, so
+    // zero here means zero anywhere.
+    await expect(page.locator('[aria-label="這個功能還在舊後台"]')).toHaveCount(0);
+  });
+});
+
+test.describe('v1.26.59 sole-admin recovery, now that /admin/ is gone', () => {
+  // The path scripts/reset-admin-password.js documents. Its last step used to be the
+  // legacy console's setup form, and this release stops serving it. Driven for real
+  // rather than asserted at the source, because "a locked-out super_admin can get back
+  // in" is the kind of claim that is worthless unless something actually did it.
+  //
+  // Runs last in file order on purpose: it sets the account's password, so the NULL
+  // state it depends on exists only once per stack.
+  test('a locked-out super_admin sets a new password and signs in', async ({ page }) => {
+    const newPassword = 'e2e-recovered-pass';
+
+    await page.goto(url('/dashboard/login'));
+    await page.locator('input[type=email]').fill(LOCKED_SUPER_ADMIN.email);
+    await page.locator('input[type=password]').fill('anything-at-all');
+    await page.locator('button[type=submit]').click();
+
+    // The server recognised the state instead of answering "contact your administrator",
+    // which for a sole super_admin names nobody.
+    await expect(page.locator('form[name=setup]')).toBeVisible();
+
+    await page.locator('input[type=text]').fill(E2E_SETUP_TOKEN);
+    await page.locator('input[type=password]').first().fill(newPassword);
+    await page.locator('input[type=password]').nth(1).fill(newPassword);
+    await page.locator('form[name=setup] button[type=submit]').click();
+
+    // Back to the ordinary login, not signed in from the setup form.
+    await expect(page.locator('form[name=login]')).toBeVisible();
+    await expect(page.getByRole('status')).toBeVisible();
+
+    await page.locator('input[type=email]').fill(LOCKED_SUPER_ADMIN.email);
+    await page.locator('input[type=password]').fill(newPassword);
+    await page.locator('button[type=submit]').click();
+    await expect(page).toHaveURL(/\/dashboard\/portal\/usage$/);
+  });
+
+  test('a wrong setup token is refused', async ({ page, request }) => {
+    // The form is a convenience; the endpoint is the gate. Checked directly so the
+    // assertion does not depend on the browser having reached the right screen.
+    const r = await request.post(url('/api/admin/setup'), {
+      data: { email: ACCOUNTS.superAdmin.email, setup_token: 'wrong', password: 'whatever-8' },
+    });
+    expect(r.status()).toBe(403);
+    void page;
+  });
+
+  test('an account that already has a password is never offered the form', async ({ page }) => {
+    await page.goto(url('/dashboard/login'));
+    await page.locator('input[type=email]').fill(ACCOUNTS.superAdmin.email);
+    await page.locator('input[type=password]').fill('definitely-wrong');
+    await page.locator('button[type=submit]').click();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.locator('form[name=setup]')).toHaveCount(0);
+  });
+});
+
+test.describe('v1.26.59 週報月報', () => {
+  test('a plain member reaches their own report', async ({ page }) => {
+    // It sat behind an admin guard from v1.26.46 only because the signpost pointed at
+    // a console that refuses a member at login. The data was always personal.
+    await login(page, ACCOUNTS.user);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+    await expect(page).toHaveURL(/\/dashboard\/portal\/periodic-reports$/);
+    await expect(pageHeading(page, '週報月報')).toBeVisible();
+  });
+
+  test('all three cards render, including the one that never had a query', async ({ page }) => {
+    await login(page, ACCOUNTS.user);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+
+    for (const label of ['新增記憶', '自動建立 Friction Issue', '自動建立 Suggestion Action']) {
+      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    }
+    // The defect: suggestion_actions_created was never emitted, so this card read the
+    // absent-data placeholder on every request. A seeded account has no auto-created
+    // memories, so the honest value now is a real 0 — the point is that it is a number
+    // the server measured, not a dash standing in for a query nobody wrote.
+    const card = page.locator('[data-card="suggestion_actions_created"]');
+    await expect(card).toBeVisible();
+    await expect(card.getByText('尚無資料')).toHaveCount(0);
+    await expect(card.locator('.tabular-nums')).toHaveText(/^\d+$/);
+
+    // And the two created-counts say which period they describe. The job runs Monday
+    // over the previous week, so without this line the number reads as "your friction
+    // this period produced N issues", which is not what it counts.
+    await expect(page.getByText(/系統是每週一凌晨回頭整理上一週/)).toBeVisible();
+  });
+
+  test('an empty list says which kind of empty it is', async ({ page }) => {
+    await login(page, ACCOUNTS.user);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+
+    // A seeded account logs no sessions, so both lists must name that cause rather
+    // than printing the legacy 本期無 friction 資料 for all four situations.
+    await expect(page.getByText('這段期間沒有任何工作紀錄').first()).toBeVisible();
+    await expect(page.getByText('本期無 friction 資料')).toHaveCount(0);
+  });
+
+  test('a populated list renders its rows with counts', async ({ page }) => {
+    // The super_admin has three seeded sessions carrying the same friction text, so
+    // this exercises the branch the other specs cannot: rows, not an empty state.
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+
+    await expect(page.getByText('e2e friction: SSH kept timing out')).toBeVisible();
+    await expect(page.getByText('e2e suggestion: retry with backoff')).toBeVisible();
+    await expect(page.getByText('3x').first()).toBeVisible();
+    // And with rows present, none of the four empty sentences may appear.
+    await expect(page.getByText('這段期間沒有任何工作紀錄')).toHaveCount(0);
+  });
+
+  test('clicking a row opens the memory search, as the legacy tab did', async ({ page }) => {
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+
+    await page.getByText('e2e friction: SSH kept timing out').click();
+    const modal = page.getByRole('dialog');
+    await expect(modal).toBeVisible();
+    // Names which list it came from, and shows the term it actually searched — the
+    // legacy modal truncated to 30 characters and so does this one.
+    await expect(modal.getByText('相關記憶（卡關）')).toBeVisible();
+    // Truncated to 30 characters, as the legacy modal was: the tail is absent.
+    const shown = await modal.getByText(/^搜尋關鍵字：/).textContent();
+    expect(shown).toContain('e2e friction: SSH kept timing');
+    expect(shown).not.toContain('timing out');
+    // No memory matches the seeded text, and saying so is the point: the legacy modal
+    // had the same state and it must not read as a failure.
+    await expect(modal.getByText('沒有找到相關的記憶')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('the previous period is cleared the moment the selection changes', async ({ page }) => {
+    // The other half of the staleness problem, and the one the request gate does not
+    // solve: while the refetch is in flight the selects have already moved, so leaving
+    // the old cards up puts one period's figures under another period's controls.
+    await login(page, ACCOUNTS.superAdmin);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+    await expect(page.locator('[data-card="new_memories"]')).toBeVisible();
+
+    // Installed after the first load, so there is something on screen to go stale.
+    await page.route('**/api/session/report**', async (route) => {
+      await new Promise((r) => setTimeout(r, 3000));
+      await route.continue();
+    });
+
+    await page.selectOption('#periodic-period', 'month');
+    // Well inside the 3s hold, so this is asserting the in-flight window itself.
+    await expect(page.locator('[data-card="new_memories"]')).toHaveCount(0, { timeout: 1500 });
+    await expect(page.getByText('e2e friction: SSH kept timing out')).toHaveCount(0);
+  });
+
+  test('a slow response for an abandoned period cannot overwrite the current one', async ({ page }) => {
+    await login(page, ACCOUNTS.user);
+    await page.goto(url('/dashboard/portal/periodic-reports'));
+
+    // Make the weekly request slow and the monthly one fast, so the abandoned reply
+    // is guaranteed to land after the wanted one. Without the request gate the late
+    // week payload overwrites the month report and the page shows one period's
+    // numbers under the other's label — the v1.26.56 Critical, third occurrence.
+    await page.route('**/api/session/report**', async (route) => {
+      if (route.request().url().includes('period=week')) {
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+      await route.continue();
+    });
+
+    // Kick off the slow weekly request, then switch away before it can land.
+    await page.selectOption('#periodic-offset', '1');
+    await page.selectOption('#periodic-period', 'month');
+
+    const label = page.locator('[data-period-label]');
+    // The monthly reply is not delayed, so it settles well inside this.
+    await expect(label).toHaveText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/, { timeout: 3000 });
+    const settled = await label.textContent();
+
+    // Now outlive the abandoned weekly response and confirm nothing rewrote the page.
+    await page.waitForTimeout(4000);
+    expect(await label.textContent()).toBe(settled);
+    await expect(page.locator('#periodic-period')).toHaveValue('month');
   });
 });
 
@@ -379,7 +598,7 @@ test.describe('v1.26.58 team usage', () => {
     // Scoped to the table: the coverage panel above names the same members, and
     // getByText matches substrings, so a page-wide count reads one too many.
     const table = page.getByRole('table').first();
-    await expect(table.getByText(zh['team_usage.badge.unmeasured'])).toHaveCount(3);
+    await expect(table.getByText(zh['team_usage.badge.unmeasured'])).toHaveCount(SEEDED_USER_COUNT);
     // And no cell in the table invented a zero for them.
     await expect(table.getByText('0', { exact: true })).toHaveCount(0);
   });
@@ -415,8 +634,8 @@ test.describe('v1.26.58 team usage', () => {
   test('the coverage panel states its denominator and says who is missing', async ({ page }) => {
     await login(page, ACCOUNTS.admin);
     await page.goto(url('/dashboard/team/usage'));
-    await expect(page.getByText('全隊 3 人')).toBeVisible();
-    // Zero of three measured is well under the four-fifths mark.
+    await expect(page.getByText(`全隊 ${SEEDED_USER_COUNT} 人`)).toBeVisible();
+    // None of them measured, which is well under the four-fifths mark.
     await expect(page.getByText(/只涵蓋 0%/)).toBeVisible();
     // Named, not just counted: a number alone cannot be chased up.
     await expect(page.getByText(new RegExp(`沒有資料：.*${ACCOUNTS.admin.name}`))).toBeVisible();
@@ -580,11 +799,13 @@ test.describe('the pages ported from /me/', () => {
   });
 });
 
-test.describe('the legacy console is still served while signposts remain', () => {
-  test('/admin/ answers with the old console, not a redirect', async ({ request }) => {
-    // The other half of the manifest either/or. Its retirement branch is covered by
-    // tests/legacy-console-manifest.test.js, which can vary the manifest; this checks the
-    // real app as configured today, with eight signposts outstanding.
+test.describe('the legacy console either/or, against the real app', () => {
+  test('/admin/ answers with the old console while signposts remain', async ({ request }) => {
+    // The other half of the manifest either/or. Both branches are covered against a
+    // synthetic manifest by tests/legacy-console-manifest.test.js; this pair checks the
+    // real app as configured on this commit. The retired branch is next door in
+    // 'v1.26.59 the legacy console is retired', and exactly one of them runs.
+    test.skip(SIGNPOST === null, 'legacy console retired; see the v1.26.59 block');
     const r = await request.get(url('/admin/'), { maxRedirects: 0 });
     expect(r.status()).toBe(200);
     expect(await r.text()).toContain('data-tab="users"');

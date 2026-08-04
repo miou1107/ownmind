@@ -6,7 +6,8 @@
  *
  * Purpose: when a super_admin forgets their password and no other admin can help recover it,
  *          run this script on the server host to set the chosen super_admin's password_hash
- *          to NULL, then reset the password via the legacy /admin/setup + SETUP_TOKEN flow.
+ *          to NULL, then set a new one through the console's setup form + SETUP_TOKEN.
+ *          (Until v1.26.59 that form lived in the legacy /admin console, which is retired.)
  *
  * Security: this script can only be run by someone with SSH access to the server (who already
  *           has the highest physical privilege). It doesn't lower the security level — it just
@@ -161,8 +162,12 @@ async function main() {
   console.log(`     export SETUP_TOKEN=${setupToken}`);
   console.log('     # then restart your server (e.g. docker compose restart or systemctl restart)');
   console.log();
-  console.log('  2. Open /admin/setup in a browser (NOT /setup) and enter:');
+  // v1.26.59: the legacy /admin console was retired, and with it the setup form this
+  // step used to name. The console's own login page answers the no-password state now.
+  console.log('  2. Open the console login page and sign in as this account with any password:');
   console.log(`     - email: ${target.email}`);
+  console.log('     The console detects the account has no password and shows a setup form.');
+  console.log('     Enter there:');
   console.log(`     - setup_token: ${setupToken}`);
   console.log('     - new password (at least 8 chars)');
   console.log();

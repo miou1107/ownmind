@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { BarChart3, RefreshCw } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { apiGet } from '../../api';
-import { makeRequestGate } from './request-gate.js';
+import { makeRequestGate } from '../../utils/request-gate.js';
 import StatsOverview from './StatsOverview.jsx';
 import StatsDetail from './StatsDetail.jsx';
 

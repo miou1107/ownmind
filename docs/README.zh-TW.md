@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.26.58** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.26.59** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -303,7 +303,7 @@ export OWNMIND_DISABLED=1
 
 | 情境 | 走哪條路 |
 |:---|:---|
-| 從備份還原時 `users` 表已有 super_admin 但 `password_hash IS NULL` | 設環境變數 `SETUP_TOKEN`、走 `POST /admin/setup` |
+| 從備份還原時 `users` 表已有 super_admin 但 `password_hash IS NULL` | 設環境變數 `SETUP_TOKEN`、然後到後台登入頁，它會出現設定密碼的表單（`POST /api/admin/setup`） |
 | 管理員忘記密碼、想重設 | SSH 進 DB、`UPDATE users SET password_hash = NULL WHERE id = ...`、然後走 setup token 路徑 |
 | 整個伺服器搬家、想直接匯入舊資料庫 | pg_dump / pg_restore + 上述任一救援路徑 |
 
@@ -325,7 +325,7 @@ export OWNMIND_DISABLED=1
   ```
 - 腳本互動式：列出所有 super_admin、選誰要重設、輸入 `yes` 確認
 - 自動產 `SETUP_TOKEN`、印給你
-- 接著設環境變數 `export SETUP_TOKEN=<token>`、重啟 server、開瀏覽器到 `/admin/setup` 重新設密碼
+- 接著設環境變數 `export SETUP_TOKEN=<token>`、重啟 server、開後台登入頁，輸入那個帳號的 Email 加任意密碼。後台發現這個帳號沒有密碼，就會出現設定密碼的表單。（v1.26.59 之前這一步寫的是 `/admin/setup`，舊後台已於該版退場。）
 
 **情境 C：完全沒 SSH 權限（雲端 SaaS 模式）**
 - 目前無解、必須聯絡服務提供方協助
