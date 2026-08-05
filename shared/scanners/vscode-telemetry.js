@@ -17,6 +17,9 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import {
+  OK, NO_NEW_ACTIVITY, NO_INSTALL, SQLITE_MISSING, UNREADABLE
+} from './reasons.js';
 
 const execFileP = promisify(execFile);
 
@@ -42,6 +45,9 @@ export async function readVscodeTelemetry({
   try {
     rows = await runSqlite({ sqlitePath, dbPath, sql });
   } catch (err) {
+    // v1.26.69 — the caller needs to tell "no sqlite3 on this machine" apart from "this
+    // database would not open". They are different problems with different fixes, and
+    // on Windows the first one is a single command. Both used to return the same {}.
     if (err.code === 'ENOENT') {
       logger?.warn?.(
         `[vscode-telemetry] sqlite3 CLI not found at '${sqlitePath}'. ` +
@@ -54,7 +60,7 @@ export async function readVscodeTelemetry({
     } else {
       logger?.warn?.(`[vscode-telemetry] sqlite query failed (${dbPath}): ${err.message}`);
     }
-    return {};
+    return { failure: err.code === 'ENOENT' ? SQLITE_MISSING : UNREADABLE };
   }
 
   const out = {};
@@ -124,18 +130,43 @@ export function createVscodeAdapter(opts) {
       const prev = state[sourceKey] || {};
       const prevSessionDate = prev.last_session_date || null;
 
-      const cur = await readFreshestSessionDate({
+      const { date: cur, failures, looked } = await readFreshestSessionDate({
         candidates, skipMissing, exists, sqlitePath, runSqlite, logger, extraDateSources
       });
+
+      // v1.26.69 — why there is nothing, when there is nothing. The four empty results
+      // below used to be one, and telling them apart on a colleague's machine took an
+      // hour of manual work on 2026-08-05.
+      //
+      // The `unreadable` case needs one more question asked. An adapter given a single
+      // `dbPath` queries it unfiltered by design (v1.26.66), so on a machine where the
+      // tool is simply not installed the CLI answers "unable to open database file" and
+      // that arrives here as a failure rather than as an absence. Cursor is such an
+      // adapter, so "you do not have Cursor" was reporting as "Cursor is broken".
+      let emptyReason = failures.includes(SQLITE_MISSING) ? SQLITE_MISSING
+        : failures.includes(UNREADABLE) ? UNREADABLE
+          : looked === 0 ? NO_INSTALL
+            : NO_NEW_ACTIVITY;
+
+      if (emptyReason === UNREADABLE && !skipMissing && candidates.length > 0) {
+        const present = await Promise.all(candidates.map((p) => exists(p)));
+        if (!present.some(Boolean)) emptyReason = NO_INSTALL;
+      }
+
+      const beat = (reason) => ({
+        tool, scanner_version: scannerVersion, machine, reason
+      });
+
       if (!cur) {
-        // DB missing or telemetry fields empty — no session emitted, still
-        // send a heartbeat.
+        // Nothing to report, and a heartbeat regardless: saying why a collector is
+        // quiet must never become a reason for it to go quiet.
         return {
           events: [],
           sessions: [],
           offsetPatch: {},
           cumulativePatch: {},
-          heartbeat: { tool, scanner_version: scannerVersion, machine }
+          reason: emptyReason,
+          heartbeat: beat(emptyReason)
         };
       }
 
@@ -151,12 +182,17 @@ export function createVscodeAdapter(opts) {
         };
       }
 
+      // A date was found. Either it is new (ok) or the day has simply not moved, which
+      // is the healthy quiet case and must be distinguishable from every failure.
+      const reason = sessions.length > 0 ? OK : NO_NEW_ACTIVITY;
+
       return {
         events: [],           // Tier 2 has no tokens
         sessions,
         offsetPatch,
         cumulativePatch: {},
-        heartbeat: { tool, scanner_version: scannerVersion, machine }
+        reason,
+        heartbeat: beat(reason)
       };
     }
   };
@@ -192,6 +228,11 @@ async function readFreshestSessionDate({
 }) {
   const ceiling = Date.now() + FUTURE_TOLERANCE_MS;
   let newest = null;
+  // v1.26.69 — `failures` is why a read did not happen, `looked` is how many places
+  // were actually consulted. Without the second one, "nothing installed here" and
+  // "installed and idle" are the same empty answer.
+  const failures = [];
+  let looked = 0;
 
   const consider = (d, origin) => {
     if (!d) return;
@@ -207,7 +248,9 @@ async function readFreshestSessionDate({
 
   for (const dbPath of candidates) {
     if (skipMissing && !(await exists(dbPath))) continue;
+    looked += 1;
     const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
+    if (t.failure) failures.push(t.failure);
     // v1.26.68 — both, rather than `currentSessionDate ?? lastSessionDate`. The
     // coalescing version picked the current one whenever it existed and only then let
     // the ceiling judge it, so a database holding a future currentSessionDate beside a
@@ -231,12 +274,22 @@ async function readFreshestSessionDate({
     } catch (err) {
       // One broken source must not cost the tool its telemetry answer or its heartbeat.
       logger?.warn?.(`[vscode-telemetry] extra session-date source failed: ${err.message}`);
+      failures.push(UNREADABLE);
       continue;
     }
-    consider(d, 'an additional session-date source');
+    // A source may answer with a bare Date, or with { date, looked } when it can say
+    // how many places it actually found. The second form is what stops an installed
+    // tool with an empty store from reading as "not installed".
+    if (d && typeof d === 'object' && !(d instanceof Date)) {
+      looked += Number(d.looked) || 0;
+      consider(d.date ?? null, 'an additional session-date source');
+    } else {
+      if (d) looked += 1;
+      consider(d, 'an additional session-date source');
+    }
   }
 
-  return newest;
+  return { date: newest, failures, looked };
 }
 
 /**

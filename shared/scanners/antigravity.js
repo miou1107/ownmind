@@ -19,7 +19,7 @@
 import path from 'path';
 import os from 'os';
 import { createVscodeAdapter } from './vscode-telemetry.js';
-import { geminiConversationDirs, newestConversationMtime } from './gemini-conversations.js';
+import { geminiConversationDirs, probeConversations } from './gemini-conversations.js';
 
 const TOOL = 'antigravity';
 
@@ -63,7 +63,11 @@ export function createAntigravityAdapter({
   // one: `dbPath` asserts which database to read, not that the database is the only
   // thing worth reading.
   const sources = extraDateSources ?? [
-    () => newestConversationMtime({
+    // Returns { date, looked } rather than a bare date. A conversation store that
+    // exists and is empty is an installed tool with nothing recorded yet; without
+    // `looked` that is indistinguishable from a machine where Antigravity has never
+    // been, and the collector would tell an operator to install what is installed.
+    () => probeConversations({
       dirs: conversationDirs ?? geminiConversationDirs(homeDir),
       logger: rest.logger ?? null
     })

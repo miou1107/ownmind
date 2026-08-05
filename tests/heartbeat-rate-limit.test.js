@@ -20,8 +20,13 @@ test('writeHeartbeatIfPresent UPSERT is rate-limited via WHERE clause', () => {
   // Locate writeHeartbeatIfPresent body
   const fnStart = eventsSource.indexOf('async function writeHeartbeatIfPresent');
   assert.ok(fnStart > 0, 'expected writeHeartbeatIfPresent declaration');
-  // Reasonable slice covering the full function + SQL
-  const body = eventsSource.slice(fnStart, fnStart + 1500);
+  // v1.26.69: this used to be a fixed 1500-character slice, and adding four comment
+  // lines and one OR condition to the SQL pushed the WHERE clause past the end of the
+  // window. The guard then failed while the thing it guards was still correct, which is
+  // the worst way for a test to fail. Cut at the function's closing brace instead.
+  const fnEnd = eventsSource.indexOf('\n}', fnStart);
+  assert.ok(fnEnd > fnStart, 'expected to find the end of writeHeartbeatIfPresent');
+  const body = eventsSource.slice(fnStart, fnEnd);
 
   // Expect ON CONFLICT ... DO UPDATE SET ... WHERE clause that compares
   // last_reported_at against NOW() minus a rate-limit interval.

@@ -53,15 +53,29 @@ describe('readVscodeTelemetry', () => {
     assert.equal(t.currentSessionDate.toISOString(), '2026-03-04T09:25:07.000Z');
   });
 
-  it('returns {} on sqlite error (not thrown)', async () => {
+  it('reports the failure instead of throwing on a sqlite error', async () => {
+    // v1.26.69 changed this contract on purpose. It used to return a bare {}, which is
+    // also what a database with no telemetry keys returns, so the caller could not tell
+    // "could not read" from "read fine, nothing in it". No date fields is still the
+    // signal not to emit a session; `failure` is the new part.
     const logs = [];
     const t = await readVscodeTelemetry({
       dbPath: '/x',
       runSqlite: async () => { throw new Error('db locked'); },
       logger: { warn: (m) => logs.push(m) }
     });
-    assert.deepEqual(t, {});
+    assert.deepEqual(t, { failure: 'unreadable' });
+    assert.equal(t.currentSessionDate, undefined, 'still no date to act on');
     assert.match(logs[0], /db locked/);
+  });
+
+  it('distinguishes a missing sqlite3 CLI from an unreadable database', async () => {
+    const enoent = new Error('spawn sqlite3 ENOENT');
+    enoent.code = 'ENOENT';
+    const t = await readVscodeTelemetry({
+      dbPath: '/x', runSqlite: async () => { throw enoent; }
+    });
+    assert.deepEqual(t, { failure: 'sqlite_missing' });
   });
 
   it('distinct ENOENT message for missing sqlite3 CLI', async () => {

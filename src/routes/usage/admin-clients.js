@@ -69,7 +69,7 @@ export async function loadClients({ query, serverVersion, now }) {
   // (Removed DISTINCT ON and the unused heartbeat_status column, per codex review.)
   const result = await query(
     `SELECT u.id AS user_id, u.name AS user_name, u.email, u.role,
-            h.tool, h.scanner_version, h.machine, h.last_reported_at
+            h.tool, h.scanner_version, h.machine, h.last_reported_at, h.reason
        FROM users u
        LEFT JOIN collector_heartbeat h ON h.user_id = u.id
       ORDER BY u.id, h.tool NULLS LAST`
@@ -111,6 +111,10 @@ export async function loadClients({ query, serverVersion, now }) {
         machine: row.machine,
         last_heartbeat_at: row.last_reported_at,
         status,
+        // v1.26.69 — `status` above is derived from heartbeat age and answers "is this
+        // collector talking". `reason` comes from the collector itself and answers
+        // "why did it have nothing to say". Null for anything older than v1.26.69.
+        reason: row.reason ?? null,
         needs_upgrade: needsUpgrade
       });
     }

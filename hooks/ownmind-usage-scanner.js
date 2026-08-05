@@ -14,7 +14,10 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { readCredentials, getClientVersion } from '../shared/helpers.js';
-import { runScan } from '../shared/scanners/base.js';
+import {
+  runScan, readOffsets, writeOffsetsAtomic,
+  accountFingerprint, cursorForAccount, DEFAULT_CACHE_PATH
+} from '../shared/scanners/base.js';
 import { createClaudeCodeAdapter } from '../shared/scanners/claude-code.js';
 import { createCodexAdapter } from '../shared/scanners/codex.js';
 import { createOpenCodeAdapter } from '../shared/scanners/opencode.js';
@@ -112,6 +115,20 @@ async function main() {
     const scannerVersion = getClientVersion() || 'unknown';
     const machine = os.hostname();
 
+    // v1.26.69 — the cursor file used to record no account, so a machine that changed
+    // credentials handed the new account the previous one's "already reported" state.
+    // Checked once per run rather than per adapter: a change invalidates every tool at
+    // the same moment, and reporting it on whichever adapter happened to go first would
+    // be worse than not reporting it at all.
+    const fingerprint = accountFingerprint({ apiUrl, apiKey });
+    const { state: scoped, changed: accountChanged } =
+      cursorForAccount(await readOffsets(DEFAULT_CACHE_PATH), fingerprint);
+    await writeOffsetsAtomic(DEFAULT_CACHE_PATH, scoped);
+    if (accountChanged) {
+      await log('[scanner] account changed on this machine; day cursors reset, '
+        + 'read positions kept so the new account starts from now, not from history');
+    }
+
     // OWNMIND_SKIP_TOOLS=tool1,tool2 skips the named adapters (for backfill / debug).
     const skip = new Set(
       (process.env.OWNMIND_SKIP_TOOLS || '')
@@ -135,7 +152,7 @@ async function main() {
 
     for (const adapter of adapters) {
       try {
-        const result = await runScan({ adapter, apiUrl, apiKey });
+        const result = await runScan({ adapter, apiUrl, apiKey, accountChanged });
         // v1.26.65: `files=` says how many source files were visible. Without it
         // `sent=0` cannot be read: nothing new and cannot see anything look the
         // same, and on 2026-08-05 that cost an hour of chasing the wrong cause.
@@ -152,9 +169,13 @@ async function main() {
         // it could not answer the question. That is how a dead antigravity adapter went
         // eleven weeks unnoticed.
         const days = ` sessions=${result.sessions ?? 0}`;
+        // v1.26.69: the counts say a scan produced nothing; `reason` says why. Reading
+        // all-zeros and having to work out which of five causes applied is what made
+        // diagnosing one machine take an hour on 2026-08-05.
+        const why = result.reason ? ` reason=${result.reason}` : '';
         await log(`[scanner] ${adapter.tool} ` +
           `sent=${result.sent} accepted=${result.accepted} duplicated=${result.duplicated} ` +
-          `batches=${result.batches}${days}${seen}${missed}`);
+          `batches=${result.batches}${days}${seen}${missed}${why}`);
       } catch (err) {
         await log(`[scanner] ${adapter.tool} failed: ${err.message}`);
       }

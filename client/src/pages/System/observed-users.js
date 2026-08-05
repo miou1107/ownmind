@@ -36,8 +36,25 @@ export function observedUsers(clients, stats) {
   return users.map((u) => {
     const state = classify(u, statsById.get(u.user_id));
     const usage = attachUsage(state, statsById.get(u.user_id));
-    return { ...u, state, usage };
+    return { ...u, state, usage, reasons: collectReasons(u) };
   });
+}
+
+/**
+ * v1.26.69 — what each collector said about why it had nothing.
+ *
+ * `silent` was the right diagnosis and the wrong stopping point: it says a person is
+ * working and the numbers are not arriving, and leaves five possible causes for someone
+ * to sort out by hand on that machine. The reason is an attribute of the state, not a
+ * fifth state, so the four-way vocabulary above is untouched.
+ *
+ * A collector too old to send one contributes nothing here rather than a guess.
+ */
+function collectReasons(u) {
+  const clients = Array.isArray(u.clients) ? u.clients : [];
+  return clients
+    .filter((c) => c && c.reason)
+    .map((c) => ({ tool: c.tool, reason: c.reason }));
 }
 
 function classify(u, totals) {

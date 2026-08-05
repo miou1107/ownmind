@@ -396,6 +396,50 @@ Origin: v1.26.68 investigation, 2026-08-05.
 
 ---
 
+### 20. Cursor's telemetry cannot be opened with `sqlite3 -readonly`, and has been silent since June
+
+Found within a minute of v1.26.69 landing, by reading its own new output:
+
+```
+[scanner] cursor sent=0 ... sessions=0 reason=unreadable
+```
+
+**Measured on Vin's Mac, 2026-08-06.** The database is present and readable
+(`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`, 1.2MB, mode
+`rw-r--r--`, owned by the running user). The query the collector issues fails:
+
+```
+$ sqlite3 -json -readonly "<path>" "SELECT ... FROM ItemTable ..."
+Error: in prepare, unable to open database file (14)
+```
+
+The same query against the same file succeeds when opened as an immutable URI:
+
+```
+$ sqlite3 -json "file:<path>?immutable=1" "SELECT ..."
+telemetry.currentSessionDate = Tue, 02 Jun 2026 12:43:13 GMT
+```
+
+So the data is there, the collector's opening mode is what fails, and Cursor usage has
+been invisible for this account since at least 2026-06-02. With no `reason` field it was
+indistinguishable from "Cursor was never opened", which is why it went unnoticed.
+
+There are no `-wal` or `-shm` files beside it; `state.vscdb.options.json` sits in the
+same directory, so Cursor may be opening it in a non-default mode.
+
+**Do not simply switch to `immutable=1`.** That tells SQLite the file cannot change, and
+reading a database an application is actively writing under that promise can return torn
+data. The safer shape is: try `-readonly`, and on SQLITE_CANTOPEN copy the file to a
+temporary path and read the copy. That needs its own tests, including one that proves
+the fallback does not fire on a healthy database.
+
+Worth checking whether the same failure explains any Tier 2 silence on other machines
+before assuming it is local to this one.
+
+Origin: v1.26.69, 2026-08-06.
+
+---
+
 ## Smaller cleanups
 
 ### 10. Three sibling pages hardcode `toLocaleDateString('zh-TW')`

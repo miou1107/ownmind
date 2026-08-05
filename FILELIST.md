@@ -2344,7 +2344,10 @@ OwnMind/
 │   ├── 005_admin_roles_password.sql  # password_hash、super_admin 角色、audit_logs 表
 │   ├── 006_add_standard_detail.sql   # memories type 加上 standard_detail
 │   ├── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
-│   └── 008_broadcast.sql             # v1.17.0 — broadcast_messages / user_broadcast_state / user_tool_last_seen / memories.is_test
+│   ├── 008_broadcast.sql             # v1.17.0 — broadcast_messages / user_broadcast_state / user_tool_last_seen / memories.is_test
+│   ├── …                             # 009-017 見各版本變更清單；這棵樹自 008 起未同步
+│   └── 018_collector_heartbeat_reason.sql # v1.26.69 — collector_heartbeat.reason（收集器為什麼沒東西；
+│                                     #   不重用 status，上一層 API 已有同名但不同義的欄位）
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -2419,6 +2422,8 @@ OwnMind/
 │       ├── vscode-telemetry.js      # Cursor/Antigravity 共用 helper（state.vscdb 讀取 + Taipei Ymd + 通用 adapter 工廠）
 │       ├── cursor.js                # Cursor Tier 2 adapter（session_count only）
 │       ├── antigravity.js           # Antigravity Tier 2 adapter（session_count only）
+│       ├── reasons.js               # v1.26.69 — 收集器「為什麼沒東西」的封閉原因碼（ok / no_new_activity /
+│                                    #   no_install / sqlite_missing / unreadable / account_changed）
 │       └── gemini-conversations.js  # v1.26.68 — Antigravity 三個介面的對話檔日期來源（管理器/編輯器/命令列，
 │                                    #   ~/.gemini/<介面>/conversations 只讀 mtime 不開內容、介面名單寫死不用萬用字元）
 │
@@ -2524,6 +2529,7 @@ OwnMind/
 │   ├── scanner-blind-scan.test.js   # v1.26.65 —「讀不到目錄」不得回報成「沒有檔案」；單一檔案讀不到只跳過該檔、心跳照送；readSince 回報 scanned / skipped
 │   ├── scanner-vscode-multipath.test.js # v1.26.66 — Antigravity 改資料夾名後要讀到新的那個；多候選挑最新、只有 ENOENT 算沒安裝、未來日期不得毒化游標、掃描紀錄要印 sessions=N
 │   ├── mcp-client-tool-attribution.test.js # v1.26.67 — 「跑在哪個工具裡」只能有一份規則；OWNMIND_TOOL 優先、空字串視同未設、四個呼叫點不得各自實作
+│   ├── collector-silence-reason.test.js # v1.26.69 — silent 要說出原因；六個原因碼封閉、換帳號丟掉「這天報過了」但保留讀取位置、舊版收集器不猜
 │   ├── scanner-antigravity-conversations.test.js # v1.26.68 — 非 VSCode 介面的用量要看得到；三個介面名單不含 backup、只讀 mtime 不開內容、未來日期逐檔擋、遙測較新時不得倒退
 │   ├── install-prerequisite-auto-install.test.js # v1.17.76 — 缺 node/git 時 install.ps1/sh 自動安裝（vin-windows-test 回報 7 條 contract test）
 │   ├── start-cmd-node-fallback.test.js     # v1.17.77 — start.cmd 多層 node fallback + install.ps1 寫 User PATH（vin-windows-test 第二輪 5 條）
