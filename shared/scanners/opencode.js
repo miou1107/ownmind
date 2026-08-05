@@ -27,12 +27,10 @@
  * Uses the sqlite3 CLI in `-json` mode — zero new deps (per plan P5).
  */
 
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
 import os from 'os';
-
-const execFileP = promisify(execFile);
+import { runSqliteCli, databaseExists } from './sqlite-cli.js';
+import { SQLITE_MISSING, UNREADABLE, NO_INSTALL } from './reasons.js';
 // v1.17.14 — added win32 path (OpenCode for Windows lives under
 // AppData/Roaming/opencode/).
 const DEFAULT_DB_PATHS = {
@@ -48,6 +46,7 @@ export function createOpenCodeAdapter({
   dbPath = DEFAULT_DB,
   sqlitePath = 'sqlite3',
   runSqlite = defaultRunSqlite,
+  exists = databaseExists,
   scannerVersion = 'unknown',
   machine = os.hostname(),
   logger = null
@@ -75,24 +74,40 @@ export function createOpenCodeAdapter({
 
       let rows;
       try {
-        rows = await runSqlite({ sqlitePath, dbPath, sql });
+        // The logger is what separates "the database is locked" from "the temporary
+        // directory is full" when the snapshot fallback in sqlite-cli.js also fails.
+        rows = await runSqlite({ sqlitePath, dbPath, sql, logger });
       } catch (err) {
         // ENOENT = sqlite3 CLI missing (default on Windows, on minimal Linux
         // containers). Distinguish this so installer / user knows to install
         // sqlite3 or pass sqlitePath.
+        let reason;
         if (err.code === 'ENOENT') {
+          reason = SQLITE_MISSING;
           logger?.warn?.(
             `[opencode scanner] sqlite3 CLI not found at '${sqlitePath}'. ` +
             `Install: Windows \`winget install SQLite.SQLite\`, ` +
             `Linux \`apt install sqlite3\`, or download from ` +
             `https://www.sqlite.org/download.html — reopen terminal afterwards. ` +
-            `Without it, OpenCode Tier 2 usage can never be collected ` +
+            `Without it, OpenCode Tier 1 usage can never be collected ` +
             `(Mac/Linux usually have it built in).`
           );
         } else {
-          logger?.warn?.(`[opencode scanner] sqlite query failed: ${err.message}`);
+          // v1.26.71 — `sqlite3` says "unable to open database file" both for a database
+          // whose application is closed and for a path with nothing at it. Asking makes
+          // "you do not run OpenCode" stop reporting as "your OpenCode is broken", the
+          // same question v1.26.69 added for Cursor.
+          reason = (await exists(dbPath)) ? UNREADABLE : NO_INSTALL;
+          logger?.warn?.(`[opencode scanner] sqlite query failed (${reason}): ${err.message}`);
         }
-        return { events: [], offsetPatch: {}, cumulativePatch: {}, heartbeat: makeHeartbeat(scannerVersion, machine) };
+        // v1.26.71 — without a reason the orchestrator's deriveReason sees no events, no
+        // sessions, no file count and no skipped list, and answers `no_new_activity`. A
+        // database that cannot be read reported as "he did not use it today" is the
+        // false-healthy signal v1.26.69 exists to prevent, and OpenCode never got it.
+        return {
+          events: [], offsetPatch: {}, cumulativePatch: {}, reason,
+          heartbeat: makeHeartbeat(scannerVersion, machine)
+        };
       }
 
       const events = [];
@@ -195,14 +210,24 @@ export function buildEventFromRow(row, sessionCumulative, { logger } = {}) {
 }
 
 /**
- * Default sqlite3 CLI runner — `-json` mode returns array-of-objects.
- * runSqlite can be injected for tests (with a pre-built fixture).
+ * A Tier 1 scan returns every assistant message since the cursor, which on a first scan
+ * is the entire history. Tier 2 reads three telemetry rows and allows 10 MB; the same
+ * ceiling here would truncate silently.
  */
-async function defaultRunSqlite({ sqlitePath, dbPath, sql }) {
-  const { stdout } = await execFileP(sqlitePath, [
-    '-json', '-readonly', dbPath, sql
-  ], { maxBuffer: 100 * 1024 * 1024 });
-  const text = stdout.trim();
-  if (!text) return [];
-  return JSON.parse(text);
+const MAX_BUFFER = 100 * 1024 * 1024;
+
+/**
+ * Default sqlite3 CLI runner. `runSqlite` can be injected for tests (with a pre-built
+ * fixture); this is what runs otherwise.
+ *
+ * v1.26.71 — this used to assemble its own `-readonly` invocation, which meant OpenCode
+ * could only be read while OpenCode was running. See `sqlite-cli.js`: the live file is
+ * still only ever opened `-readonly`, and a closed one is read from a private snapshot.
+ */
+export async function defaultRunSqlite(opts) {
+  // `?? MAX_BUFFER` rather than spreading `opts` over a default, because a caller that
+  // passes `maxBuffer: undefined` would spread that undefined straight through and land
+  // on the shared 10 MB default — a silent truncation on exactly the long first scan
+  // this ceiling exists for.
+  return runSqliteCli({ ...opts, maxBuffer: opts?.maxBuffer ?? MAX_BUFFER });
 }

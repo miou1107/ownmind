@@ -449,11 +449,48 @@ What shipped: copy the database **with its journal sidecars**, open the copy wit
 flags so SQLite can replay the WAL on a snapshot it owns, delete the temporary directory
 afterwards. The live file is only ever opened `-readonly`.
 
-Still open, recorded there rather than here: `shared/scanners/opencode.js` has its own
-copy of the same pattern and the same exposure, and nothing has run the fallback on
-Windows.
+`shared/scanners/opencode.js` had its own copy of the same pattern and the same
+exposure. **Closed by v1.26.71**, which moved the fallback into
+`shared/scanners/sqlite-cli.js` so both callers share one implementation and a third
+copy cannot appear.
 
-Origin: v1.26.69, 2026-08-06. Closed by v1.26.70 the same night.
+**Still open:** nothing has run the fallback on Windows. The logic is platform-neutral
+and every path is built with `path.join`, but no Windows machine has executed it. The
+cheapest proof is one manual scan on TANK with an editor closed, checking the collector
+reports `reason=ok` rather than `unreadable`.
+
+Origin: v1.26.69, 2026-08-06. Closed by v1.26.70 the same night; its follow-up closed by
+v1.26.71.
+
+---
+
+### 21. OpenCode's cursor can step over a message that shares a millisecond with another
+
+Raised by the v1.26.71 adversarial review, verified as a mechanism and measured as
+currently unreachable.
+
+`shared/scanners/opencode.js` resumes with
+`WHERE time_created > H OR (time_created = H AND id > 'HID')`. Two messages with the same
+`time_created`, committed separately, whose ids sort opposite to their commit order: a
+scan that sees the later one first advances the cursor past it, and the earlier one is
+then excluded by `id > 'HID'` on every subsequent scan. Not a duplicate the server's
+UNIQUE can absorb — a row that is never sent.
+
+**Why it is not firing.** Zero same-millisecond pairs across 1205 messages on the
+measured machine, which is what you would expect of assistant messages: they are LLM
+replies, seconds apart. **But the id is `msg_` plus a time-derived prefix plus a random
+suffix, so within a single millisecond the suffix decides the order and it really is
+arbitrary.** The mechanism is sound; only the trigger is missing.
+
+Not introduced by v1.26.71. A scan reading the live database between two same-millisecond
+commits does the same thing and always could.
+
+Closing it means the resume condition comparing `(time_created, id)` as a tuple against
+something monotonic, or resuming inclusively and letting the server's UNIQUE dedupe. Both
+change Tier 1 ingestion, which is the most load-bearing path in the product, so it is its
+own release with its own verification.
+
+Origin: v1.26.71 review, 2026-08-06.
 
 ---
 

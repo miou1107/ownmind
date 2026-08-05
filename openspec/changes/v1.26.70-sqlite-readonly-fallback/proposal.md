@@ -39,17 +39,26 @@ and it falsified the claim. The controlled copy test above is what replaced it.
 
 ## The fix
 
-Try `-readonly` first. On SQLITE_CANTOPEN, copy the database to a temporary directory,
-open the copy as `file://…?immutable=1`, and delete it afterwards.
+Try `-readonly` first. On SQLITE_CANTOPEN, copy the database **and its journal
+sidecars** to a temporary directory, open the copy **with no flags**, and delete it
+afterwards.
 
-**Both halves are required, and the first implementation got this wrong.** It copied the
-file and retried `-readonly` on the copy, which fails identically: what `-readonly` wants
-is the `-shm` sidecar and a copy has no sidecar either. The real-CLI test caught it
-before it shipped.
+**Two designs were measured wrong on the way to that, and both corrections are the
+useful part.**
 
-`immutable=1` on the live file would be worse than the bug, promising SQLite that a file
-an editor is writing cannot change and letting torn pages through as data. Copying is
-what makes the promise true: the snapshot is private and nothing else can write to it.
+- The first copied the file and retried `-readonly` on the copy. It fails identically:
+  what `-readonly` wants is the `-shm` sidecar and a bare copy has no sidecar either. The
+  real-CLI test caught it before it shipped.
+- The second opened the copy as `file://…?immutable=1`, which fixes that, and then a
+  measurement retired it. These databases are in WAL mode and a running editor really
+  does leave a `state.vscdb-wal` beside them. Copying only the main file drops whatever
+  has not been checkpointed, which is exactly the most recent activity a scan is looking
+  for, and `immutable=1` ignores the WAL by design.
+
+An unflagged open on a private copy has neither problem: SQLite owns the snapshot, so it
+may create the sidecars it needs and replay the WAL, and everything it writes is
+discarded with the temporary directory. The live file is only ever opened `-readonly`,
+and that is what keeps this safe.
 
 The cost is one file read of a few megabytes on the runs that need it, and nothing at all
 on the runs that do not.
@@ -58,7 +67,8 @@ on the runs that do not.
 
 `defaultRunSqlite` is shared by every Tier 2 adapter, so this covers Cursor and
 Antigravity, and `opencode` has its own copy of the same pattern which is left alone in
-this change and recorded.
+this change and recorded. **v1.26.71 closed that second copy** and moved the fallback
+into `shared/scanners/sqlite-cli.js` so there is only one of it.
 
 Antigravity is already insulated by accident: v1.26.68 gave it the `~/.gemini`
 conversation store, so it has a second source when the database will not open. Cursor

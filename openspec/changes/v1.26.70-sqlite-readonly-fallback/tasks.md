@@ -80,8 +80,18 @@ One round against a non-git copy outside the repo. Five findings, four acted on.
 
 ## Phase 6 — Out of scope, recorded
 
-- [ ] `shared/scanners/opencode.js` has its own copy of the same `sqlite3 -readonly`
+- [x] `shared/scanners/opencode.js` has its own copy of the same `sqlite3 -readonly`
       pattern and the same exposure. It was not touched here because it is a Tier 1
       adapter with a different cursor and deserves its own verification.
+      **Closed by v1.26.71**, which also moved the fallback into
+      `shared/scanners/sqlite-cli.js` so a third copy cannot appear.
 - [ ] Nothing proves the fallback is reached on Windows. The logic is platform-neutral
       and the paths are built with `path.join`, but no Windows machine ran it.
+
+## Phase 7 — Correction made in v1.26.71
+
+- [x] `spec.md` and `proposal.md` still described `immutable=1` and `pathToFileURL`, the
+      second of the three designs above. Phase 2 recorded that it was retired and the
+      spec never got the change, so the normative document for this release described an
+      implementation that does not exist. Both corrected, and the sidecar requirement
+      that actually shipped was added as its own scenario.
