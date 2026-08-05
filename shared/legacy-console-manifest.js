@@ -1,18 +1,21 @@
-// The single record of what still lives in the legacy `/admin` console.
+// The record of which features once lived in the legacy `/admin` console, and the switch
+// that retired it.
 //
 // Why this file exists instead of a checklist item: `v1.20.4-legacy-retire` was written,
 // archived, and never executed, so the old console outlived its replacement by months. A
 // checklist cannot be the guard, and neither can a test that merely turns red: this repo
 // has no CI, so a red suite blocks no release.
 //
-// So the guard is structural. Every reader derives feature state from here:
-//   - the console's routes decide whether to render the real page or a signpost
-//   - the console's navigation decides which items point at a signpost
-//   - the server decides whether to mount `/admin` at all
+// So the guard was structural. Every reader derived feature state from here — the
+// console's routes, its navigation, and the server's decision whether to mount `/admin`
+// at all — which made one invariant hold by construction: the console could not be
+// simultaneously finished and unretired. Flipping the last `signpost` to `live` stopped
+// `/admin` being served and started it redirecting, with no other edit anywhere.
 //
-// The invariant that follows: the console cannot be simultaneously finished and
-// unretired. Flipping the last `signpost` to `live` stops `/admin` being served and
-// starts it redirecting, with no other edit anywhere.
+// **That happened in v1.26.59, and it worked.** This file is now the record rather than
+// the mechanism: every entry is `live`, `signpost` is no longer a legal state, and
+// `isLegacyConsoleRetired()` is permanently true. Entries are kept, never deleted — an
+// empty list would read as "nothing was ever migrated" instead of "all of it was".
 //
 // Shared between server and client deliberately. Two copies would be two things to keep
 // in step, which is the failure mode this replaces. The client reaches it through the
@@ -20,33 +23,30 @@
 // directives in both Dockerfile stages.
 
 /**
- * `signpost` — the feature still lives in `/admin`; the console shows a page saying so
- *              and links across, carrying the credential so no second login is needed.
- * `live`     — the feature is rebuilt in the console and `/admin` is no longer needed
- *              for it.
- */
-export const FEATURE_STATES = ['signpost', 'live'];
-
-/**
- * The lowest role that can log in to the legacy console at all.
+ * `live` — the feature is rebuilt in the console.
  *
- * `POST /api/admin/login` filters `role IN ('admin', 'super_admin')` (src/routes/admin.js),
- * so a `user` cannot enter it whatever the feature's own permission is. A signpost shown
- * to someone who cannot use the destination is worse than no signpost, so every signpost
- * is gated at this role or higher. Asserted by tests/legacy-console-manifest.test.js.
+ * v1.26.60: `signpost` used to be the other value, meaning "still lives in `/admin`; the
+ * console shows a page saying so and links across". It is no longer accepted, and the
+ * validator below already throws on a state it does not recognise — the mechanism Stage
+ * 1a built for exactly this class of mistake.
+ *
+ * Why it is an error rather than merely unused: `/admin` is gone, so a signpost would
+ * link to `/admin/#tab`, which redirects to the console, which renders the signpost
+ * again. Putting a feature back in the old console is not a thing that can half-work
+ * any more, so it fails at import with a message instead of at runtime as a loop.
  */
-export const LEGACY_CONSOLE_MIN_ROLE = 'admin';
+export const FEATURE_STATES = ['live'];
 
 /**
- * One entry per feature that the consolidation moves out of `/admin`.
+ * One entry per feature the consolidation moved out of `/admin`.
  *
  * `consolePath` is the identity: it joins to the nav item and route of the same path in
  * `client/src/components/common/nav-sections.js`.
- * `legacyTab` is the `data-tab` value of the tab in `src/public/index.html`, used both to
- * deep-link and to name the destination for the user.
+ * `legacyTab` was the `data-tab` value of the tab in the old console, kept as the record
+ * of where each feature came from. The source it names now lives in
+ * `legacy/admin-v1.26/index.html` and is served by nothing.
  *
- * Entries are flipped to `live`, never deleted: the manifest is the record of where each
- * feature went, and an empty list is what triggers retirement.
+ * Entries are flipped to `live`, never deleted.
  */
 export const LEGACY_CONSOLE_FEATURES = [
   // v1.26.49: team-management rebuilt in the console. /admin/team now renders

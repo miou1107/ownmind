@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
  */
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const html = readFileSync(join(__dirname, '..', 'src', 'public', 'index.html'), 'utf8');
+const html = readFileSync(join(__dirname, '..', 'legacy', 'admin-v1.26', 'index.html'), 'utf8');
 
 /** Lift countExportedMemories out of the inline script so it can be executed. */
 function loadCounter() {

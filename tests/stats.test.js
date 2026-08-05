@@ -206,7 +206,7 @@ describe('GET /api/usage/stats totals', () => {
     const app = buildApp({
       queryFn: makeFakeStatsQuery({
         tier1Series: [
-          { key: 'claude-code', cost_usd: 1.5, input_tokens: '100', output_tokens: '50',
+          { key: 'claude-code', input_tokens: '100', output_tokens: '50',
             cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
             message_count: 5, wall_seconds: 600, active_seconds: 300 }
         ],
@@ -223,7 +223,9 @@ describe('GET /api/usage/stats totals', () => {
       'Tier-2-only tools 必須出現在 series');
     const cursor = res.body.series.find((s) => s.key === 'cursor');
     assert.equal(cursor.session_count, 3);
-    assert.equal(cursor.cost_usd, 0, 'Tier-2 tool 無 token → cost 為 0（非 null）');
+    // v1.26.60: this used to assert cost 0 for a Tier-2-only tool. There is no cost on
+    // any series row now, and the shape must not quietly reintroduce one.
+    assert.ok(!('cost_usd' in cursor), 'series rows must carry no cost');
   });
 
   it('series group_by=day merges Tier-1 + Tier-2 on overlapping dates', async () => {

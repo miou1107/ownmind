@@ -1,7 +1,7 @@
 // v1.26.56 — event and type keys are labelled through the locale dictionary,
 // not through a hardcoded Chinese map.
 //
-// The legacy console holds a literal `ZH` object at src/public/index.html:1055
+// The legacy console holds a literal `ZH` object at legacy/admin-v1.26/index.html:1055
 // mapping ~35 keys to Chinese. Copying it into the console would put Chinese
 // strings into a build that also serves `en` and `ja` — the exact thing the
 // project's i18n rule forbids.

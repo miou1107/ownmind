@@ -1,3 +1,19 @@
+<!--
+  PRESERVED SNAPSHOT — NOT SERVED BY ANY ROUTE.
+
+  This was the legacy /admin console, the last version of it (v1.26.58). The
+  single-console consolidation moved all eight of its features into the React console
+  under /dashboard; shared/legacy-console-manifest.js records which feature went where,
+  and its `legacyTab` values are the `data-tab` attributes in this file.
+
+  v1.26.59 retired /admin: the manifest emptied and the server switched from serving this
+  file to redirecting. v1.26.60 moved it here and deleted the branch that could serve it.
+  No Dockerfile COPY reaches legacy/, so it is not in the runtime image either.
+
+  Kept rather than deleted for the same reason the manifest entries are kept: it is the
+  record of what the console used to do, and several tests read it to check that the
+  provenance still lines up. Do not wire it back into a route.
+-->
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>

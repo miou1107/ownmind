@@ -72,7 +72,7 @@ describe('visibleMenuItems — password (item 3) visibility', () => {
     // and self-changes. User-role passwords are managed by the user themselves; a
     // super_admin who needs to help a user through a password issue uses the
     // add-user default_password flow (create fresh) or the emergency endpoint
-    // (unsurfaced this stage). This mirrors src/public/index.html:1250.
+    // (unsurfaced this stage). This mirrors legacy/admin-v1.26/index.html:1250.
     assert.equal(visibleMenuItems(SUPER, MEMBER).includes('password'), false);
   });
 

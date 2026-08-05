@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const mcpSource = readFileSync(join(__dirname, '..', 'mcp', 'index.js'), 'utf8');
 const hookSource = readFileSync(join(__dirname, '..', 'hooks', 'ownmind-session-start.sh'), 'utf8');
-const dashboardHtml = readFileSync(join(__dirname, '..', 'src', 'public', 'index.html'), 'utf8');
+const dashboardHtml = readFileSync(join(__dirname, '..', 'legacy', 'admin-v1.26', 'index.html'), 'utf8');
 
 test('P3: mcp/index.js no longer hardcodes update_ok (must split into update_applied / update_clean)', () => {
   // Before: ` logEvent('update_ok', { source: 'mcp' });` appeared in the callback else branch.
@@ -97,7 +97,7 @@ test('P3: dashboard label must include update_clean (previously only update_chec
   assert.match(
     dashboardHtml,
     /update_clean\s*:\s*['"][^'"]+['"]/,
-    'src/public/index.html ZH label map must include the Chinese label for update_clean'
+    'legacy/admin-v1.26/index.html ZH label map must include the Chinese label for update_clean'
   );
 });
 
@@ -105,7 +105,7 @@ test('P3: dashboard label must include update_failed (previously absent entirely
   assert.match(
     dashboardHtml,
     /update_failed\s*:\s*['"][^'"]+['"]/,
-    'src/public/index.html ZH label map must include update_failed; otherwise users see the raw key'
+    'legacy/admin-v1.26/index.html ZH label map must include update_failed; otherwise users see the raw key'
   );
 });
 

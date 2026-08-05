@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const htmlPath = join(__dirname, '..', 'src', 'public', 'index.html');
+const htmlPath = join(__dirname, '..', 'legacy', 'admin-v1.26', 'index.html');
 const html = readFileSync(htmlPath, 'utf8');
 
 /**

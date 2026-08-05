@@ -6,6 +6,7 @@ import adminAuth, { superAdminAuth, isAtLeast } from '../middleware/adminAuth.js
 import logger from '../utils/logger.js';
 import { generateRandomPassword } from '../../shared/random-password.js';
 import { requireFields } from '../utils/require-fields.js';
+import { writeAuditLog } from '../utils/audit-log.js';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
@@ -14,58 +15,14 @@ const BCRYPT_ROUNDS = 10;
 // password; admin sees it once and nothing fixed remains in code.
 // See openspec/changes/v1.19.10-secret-leak-hotfix/proposal.md.
 
-async function writeAuditLog(actorId, action, targetType, targetId, details) {
-  try {
-    await query(
-      `INSERT INTO audit_logs (actor_id, action, target_type, target_id, details)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [actorId, action, targetType, targetId, JSON.stringify(details)]
-    );
-  } catch (err) {
-    logger.error('audit_log write failed', { error: err.message });
-  }
-}
-
-/**
- * POST /login — admin email/password login (no auth middleware).
- */
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: '請輸入 Email 和密碼' });
-    }
-
-    const result = await query(
-      `SELECT id, email, name, role, api_key, password_hash
-       FROM users WHERE email = $1 AND role IN ('admin', 'super_admin')`,
-      [email]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({ error: '帳號或密碼錯誤' });
-    }
-
-    const user = result.rows[0];
-
-    // First-time password setup flow.
-    if (!user.password_hash) {
-      return res.status(200).json({ requiresSetup: true });
-    }
-
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return res.status(401).json({ error: '帳號或密碼錯誤' });
-    }
-
-    await writeAuditLog(user.id, 'login', 'user', user.id, { email: user.email });
-
-    res.json({ id: user.id, api_key: user.api_key, name: user.name, email: user.email, role: user.role });
-  } catch (err) {
-    logger.error('login failed', { error: err.message });
-    res.status(500).json({ error: '登入失敗' });
-  }
-});
+// v1.26.60: `POST /login` was here. It served the legacy console, which is retired, and
+// the console that replaced it authenticates through `POST /api/me/login`. Two things
+// moved rather than disappeared: the `audit_logs` login write (now in
+// src/utils/audit-log.js, called from me.js) and the brute-force rate limit (now on
+// /api/me/login in src/app.js, where it should have been since v1.20).
+//
+// `POST /setup` below stays. It is the terminal step of the documented sole-admin
+// recovery path and the console's login form drives it — see src/utils/setup-recovery.js.
 
 /**
  * POST /setup — set the super_admin password for the first time

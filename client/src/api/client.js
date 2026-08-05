@@ -32,7 +32,7 @@ const API_BASE = (() => {
 })();
 
 // 同一個前綴也是「舊後台在哪」的答案（/ownmind/admin/），所以 export 出去給
-// legacy-handoff.js 用，不要在那邊再寫一份同樣的 regex。
+// 曾經給 legacy-handoff.js 用（v1.26.60 隨舊後台一起刪掉），現在是 appBase() 的單一來源。
 export function appBase() {
   return API_BASE;
 }

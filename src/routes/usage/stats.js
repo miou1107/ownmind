@@ -15,8 +15,8 @@ import logger from '../../utils/logger.js';
  *   {
  *     user: { id, name, email },
  *     period: { from, to },
- *     totals: { cost_usd, input_tokens, ..., wall_seconds, active_seconds, message_count },
- *     series: [{ key, cost_usd, ... }]
+ *     totals: { input_tokens, ..., wall_seconds, active_seconds, message_count },
+ *     series: [{ key, ... }]
  *   }
  */
 export function createStatsRouter(deps = {}) {
@@ -128,15 +128,13 @@ async function isUserExempt({ query }, userId) {
 }
 
 async function loadTotals({ query }, userId, from, to) {
-  // Tier 1: token_usage_daily (with tokens + cost).
-  // cost_usd null policy: SUM skips NULL rows, and combined with COALESCE
-  // this would "hide" partial-NULL days behind a complete-looking number.
-  // Use bool_or(IS NULL) to detect any NULL → in that case the whole
-  // cost_usd response is null (aligned with buildDailyRow's policy).
+  // Tier 1: token_usage_daily.
+  // v1.26.60: cost_usd is no longer selected or returned. Requirement 8 removed the
+  // calculation, so summing the column would report historical values beside token
+  // figures that have no cost at all — a number that means something different for
+  // every day in the range.
   const tier1 = await query(
     `SELECT
-       CASE WHEN bool_or(cost_usd IS NULL) THEN NULL
-            ELSE COALESCE(SUM(cost_usd), 0)::float END AS cost_usd,
        COALESCE(SUM(input_tokens), 0)::bigint AS input_tokens,
        COALESCE(SUM(output_tokens), 0)::bigint AS output_tokens,
        COALESCE(SUM(cache_creation_tokens), 0)::bigint AS cache_creation_tokens,
@@ -180,7 +178,7 @@ async function loadTotals({ query }, userId, from, to) {
 
 function emptyTotals() {
   return {
-    cost_usd: 0, input_tokens: 0, output_tokens: 0,
+    input_tokens: 0, output_tokens: 0,
     cache_creation_tokens: 0, cache_read_tokens: 0, reasoning_tokens: 0,
     message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0
   };
@@ -188,11 +186,8 @@ function emptyTotals() {
 
 async function loadSeries({ query }, userId, from, to, groupBy) {
   const { selectKey, groupClause, orderClause } = buildGrouping(groupBy);
-  // cost_usd null-on-any-null policy (aligned with buildDailyRow).
   const res = await query(
     `SELECT ${selectKey} AS key,
-            CASE WHEN bool_or(cost_usd IS NULL) THEN NULL
-                 ELSE SUM(cost_usd)::float END AS cost_usd,
             SUM(input_tokens)::bigint AS input_tokens,
             SUM(output_tokens)::bigint AS output_tokens,
             SUM(cache_creation_tokens)::bigint AS cache_creation_tokens,
@@ -243,10 +238,9 @@ async function loadSeries({ query }, userId, from, to, groupBy) {
       existing.wall_seconds = Number(existing.wall_seconds || 0) + Number(r.wall_seconds || 0);
       existing.session_count = Number(existing.session_count || 0) + Number(r.session_count || 0);
     } else {
-      // Tier 2-only keys: fill tokens / cost with zeros.
+      // Tier 2-only keys: fill tokens with zeros.
       byKey.set(k, {
         key: k,
-        cost_usd: 0,
         input_tokens: 0, output_tokens: 0,
         cache_creation_tokens: 0, cache_read_tokens: 0, reasoning_tokens: 0,
         message_count: 0,

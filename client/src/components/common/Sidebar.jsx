@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { NAV_SECTIONS, visibleSections } from './nav-sections';
-import { isSignpost } from '@shared/legacy-console-manifest.js';
 
 // 導覽結構已抽到 nav-sections.js（純資料、無 JSX），這樣「誰看得到哪一項」才有辦法被
 // 真的跑起來的測試拿去跟路由守門員比對。JSX 檔案 node --test 進不去。
@@ -92,20 +91,13 @@ export default function Sidebar({ role = 'user', version }) {
               <ul className="mt-1.5 space-y-1">
                 {section.items.map((item) => {
                   const Icon = ICONS[item.path];
-                  // 還在舊後台的功能標一個小點、不要讓人以為已經搬完
-                  const pending = isSignpost(item.path);
+                  // v1.26.60: 這裡曾經有一個琥珀色小點，標「這個功能還在舊後台」。
+                  // 整併做完、舊後台退場之後，沒有任何一項還在那邊了。
                   return (
                     <li key={item.path}>
                       <NavLink to={item.path} className={navLinkClass}>
                         <Icon size={14} />
                         <span className="flex-1 truncate">{t(item.labelKey)}</span>
-                        {pending && (
-                          <span
-                            title={t('nav.still_in_legacy')}
-                            aria-label={t('nav.still_in_legacy')}
-                            className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
-                          />
-                        )}
                       </NavLink>
                     </li>
                   );

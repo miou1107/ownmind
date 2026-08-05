@@ -123,11 +123,9 @@ async function loadUsersAggregate({ query }, from, to) {
   // Tier 1 per-user aggregate (with null-cost policy).
   // bool_or must exclude rows that are purely NULL from the LEFT JOIN
   // (d.id IS NULL = no matching row); otherwise a user with no activity at
-  // all would be wrongly flagged as having unknown pricing → cost_usd=null.
+  // v1.26.60: cost_usd is no longer selected or returned (Requirement 8).
   const tier1 = await query(
     `SELECT u.id, u.name, u.email,
-            CASE WHEN bool_or(d.id IS NOT NULL AND d.cost_usd IS NULL) THEN NULL
-                 ELSE COALESCE(SUM(d.cost_usd), 0)::float END AS cost_usd,
             COALESCE(SUM(d.input_tokens), 0)::bigint      AS input_tokens,
             COALESCE(SUM(d.output_tokens), 0)::bigint     AS output_tokens,
             COALESCE(SUM(d.cache_creation_tokens), 0)::bigint AS cache_creation_tokens,
@@ -167,7 +165,6 @@ async function loadUsersAggregate({ query }, from, to) {
     return {
       user: { id: r.id, name: r.name, email: r.email },
       totals: {
-        cost_usd: r.cost_usd,   // may be null (policy)
         input_tokens: r.input_tokens,
         output_tokens: r.output_tokens,
         cache_creation_tokens: r.cache_creation_tokens,

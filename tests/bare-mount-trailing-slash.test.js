@@ -392,7 +392,9 @@ describe('v1.26.57 — no regression in the paths v1.26.48 made relative', () =>
     }
     assert.deepEqual(
       found.sort(),
-      ['src/app.js x1', 'src/middleware/legacy-admin-mount.js x1'],
+      // v1.26.60: legacy-admin-mount.js no longer has one. Its static branch served the
+      // whole of src/public under /admin and went with the retirement.
+      ['src/app.js x1'],
       'a new express.static mount needs redirectBareMountPath in front of it',
     );
   });
