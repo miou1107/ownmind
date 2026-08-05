@@ -35,7 +35,11 @@ export default function MemorySearchModal({ text, kind, onClose }) {
       if (!current) return;
       setLoading(false);
       if (!r.ok) { setLoadError(r.error || 'load_failed'); setRows(null); return; }
-      setRows(Array.isArray(r.data) ? r.data : []);
+      // v1.26.64: the endpoint answers `{ data, total, returned }` now, capped at 20
+      // rows. The array branch is kept so this page also works against a server that has
+      // not been updated yet; without the object branch it would render an empty list
+      // against a perfectly successful response.
+      setRows(Array.isArray(r.data) ? r.data : (r.data?.data ?? []));
     })();
     return () => { current = false; };
   }, [text]);

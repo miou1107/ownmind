@@ -26,55 +26,55 @@ TDD flow: failing tests before source, then docs, then the quality gates.
 
 ## Phase 1 — RED (failing tests before any source change)
 
-- [ ] `tests/memory-search-result.test.js` (new), Requirement 1:
-  - [ ] Long content truncates to `PREVIEW_CHARS`, with `content_length` and
+- [x] `tests/memory-search-result.test.js` (new), Requirement 1:
+  - [x] Long content truncates to `PREVIEW_CHARS`, with `content_length` and
         `content_truncated`
-  - [ ] Short content is returned whole, `content_truncated` false, no ellipsis
-  - [ ] `previous_content`, `metadata`, `embedding` are absent from the result
-  - [ ] An unknown extra column is also absent, proving the shape is allow-list not
+  - [x] Short content is returned whole, `content_truncated` false, no ellipsis
+  - [x] `previous_content`, `metadata`, `embedding` are absent from the result
+  - [x] An unknown extra column is also absent, proving the shape is allow-list not
         deny-list
-  - [ ] `total` versus `returned` when the list is cut and when it is not
-  - [ ] Empty input returns `{ data: [], total: 0, returned: 0 }`
-  - [ ] Null / non-array input does not throw
-- [ ] `tests/session-query.test.js` — extend for Requirement 3: the built SQL carries a
+  - [x] `total` versus `returned` when the list is cut and when it is not
+  - [x] Empty input returns `{ data: [], total: 0, returned: 0 }`
+  - [x] Null / non-array input does not throw
+- [x] `tests/session-query.test.js` — extend for Requirement 3: the built SQL carries a
       `LIMIT` and an explicit column list, not `SELECT *`
-- [ ] Run; confirm they fail for the right reason
+- [x] Run; confirm they fail for the right reason
 
 ## Phase 2 — GREEN (shared + server)
 
-- [ ] `shared/memory-search-result.js` (new) — `shapeSearchResults`, `PREVIEW_CHARS`,
+- [x] `shared/memory-search-result.js` (new) — `shapeSearchResults`, `PREVIEW_CHARS`,
       `SEARCH_ROW_LIMIT`
-- [ ] `src/routes/memory.js` — explicit column list, `LIMIT`, a count over the same
+- [x] `src/routes/memory.js` — explicit column list, `LIMIT`, a count over the same
       predicate, response `{ data, total, returned }`
-- [ ] `src/lib/session-query.js` — explicit column list and `LIMIT`
-- [ ] Tests pass
+- [x] `src/lib/session-query.js` — explicit column list and `LIMIT`
+- [x] Tests pass
 
 ## Phase 3 — GREEN (MCP)
 
-- [ ] `mcp/index.js` — `ownmind_get` gains optional `id`; `type` no longer required;
+- [x] `mcp/index.js` — `ownmind_get` gains optional `id`; `type` no longer required;
       neither present is an error naming both
-- [ ] `mcp/index.js` — `ownmind_search` description says results are previews and names
+- [x] `mcp/index.js` — `ownmind_search` description says results are previews and names
       `ownmind_get` with an id as the way to read one in full
-- [ ] `mcp/offline.js` — `localSearch` goes through the shared shaper
+- [x] `mcp/offline.js` — `localSearch` goes through the shared shaper
 
 ## Phase 4 — GREEN (console)
 
-- [ ] `client/src/pages/Portal/MemorySearchModal.jsx` — read the object shape. Without
+- [x] `client/src/pages/Portal/MemorySearchModal.jsx` — read the object shape. Without
       this the modal renders an empty list against a successful response
 
 ## Phase 5 — Docs and version
 
-- [ ] `package.json` → `1.26.64`
-- [ ] `CHANGELOG.md`, `FILELIST.md`, `README.md` three-locale check
-- [ ] Note in the release that Bug #11 is the shadow of Bug #7's fix, not a regression
+- [x] `package.json` → `1.26.64`
+- [x] `CHANGELOG.md`, `FILELIST.md`, `README.md` three-locale check
+- [x] Note in the release that Bug #11 is the shadow of Bug #7's fix, not a regression
 
 ## Phase 6 — Quality gates
 
-- [ ] `npm test` — full suite, zero failures
-- [ ] `cd client && npm run build` — exit 0
-- [ ] Adversarial review through the `agy` CLI, against a copy outside the repo
-- [ ] `superpowers:receiving-code-review`
-- [ ] `superpowers:verification-before-completion`
+- [x] `npm test` — full suite, zero failures
+- [x] `cd client && npm run build` — exit 0
+- [x] Adversarial review through the `agy` CLI, against a copy outside the repo
+- [x] `superpowers:receiving-code-review`
+- [x] `superpowers:verification-before-completion`
 - [ ] Verify against production by running the same query that reproduced it, once
       deployed. Read-only, so unlike the broadcast dialog this one can be checked live
 

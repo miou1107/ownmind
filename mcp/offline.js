@@ -3,6 +3,7 @@ import path from 'node:path';
 import os from 'node:os';
 
 import { tokenize, itemMatchesTokens } from '../shared/memory-search-tokens.js';
+import { shapeSearchResults } from '../shared/memory-search-result.js';
 
 const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/memories.json');
 const DEFAULT_QUEUE_PATH = path.join(os.homedir(), '.ownmind/queue.jsonl');
@@ -42,14 +43,35 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     } catch { /* silent fail */ }
   }
 
+  // v1.26.64 — the offline half of "read one result in full". Search hands back
+  // previews, so the follow-up fetch must work on both paths; the cache already holds
+  // whole memories, so this is a lookup rather than a new capability.
+  function findCachedMemory(cache, id) {
+    if (!cache?.data || id === undefined || id === null || id === '') return null;
+    const wanted = String(id);
+    for (const items of Object.values(cache.data)) {
+      if (!Array.isArray(items)) continue;
+      for (const item of items) {
+        if (item && String(item.id) === wanted) return item;
+      }
+    }
+    return null;
+  }
+
   // v1.26.37 (Bug #7 fix): shares tokenize + itemMatchesTokens with the online
   // /search path so offline and online return the same shape of hits (multi-
   // token AND, matches title / content / code / tags). Pre-v1.26.37 this did a
   // single lowercased `.includes()` over title|content only.
+  //
+  // v1.26.64 — shaped and capped through the same shared function as the online route.
+  // The cache holds whole memories, so an unbounded match here blows the caller's output
+  // ceiling exactly as the server did before Bug #11 was fixed. Returning
+  // `{data, total, returned}` also means an AI cannot tell which path answered it, apart
+  // from the offline notice, which is the point of putting the shaping in shared/.
   function localSearch(cache, query) {
-    if (!cache?.data) return [];
+    if (!cache?.data) return shapeSearchResults([]);
     const tokens = tokenize(query);
-    if (tokens.length === 0) return [];
+    if (tokens.length === 0) return shapeSearchResults([]);
     const results = [];
     for (const items of Object.values(cache.data)) {
       if (!Array.isArray(items)) continue;
@@ -57,7 +79,7 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
         if (itemMatchesTokens(item, tokens)) results.push(item);
       }
     }
-    return results;
+    return shapeSearchResults(results);
   }
 
   function enqueueOperation(op) {
@@ -118,7 +140,7 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     };
   }
 
-  return { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue, replayQueue };
+  return { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, clearQueue, replayQueue };
 }
 
 // Default export: pre-built instance with production paths
@@ -127,6 +149,7 @@ export const {
   readMemoryCache,
   writeMemoryCache,
   localSearch,
+  findCachedMemory,
   enqueueOperation,
   readQueue,
   clearQueue,
