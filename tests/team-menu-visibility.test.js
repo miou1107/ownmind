@@ -6,7 +6,7 @@
  * — no point offering a button the server would reject. Extracted from the page
  * component so the predicates can be tested without React.
  *
- * See openspec/changes/v1.26.49-team-management-page/spec.md Requirement 4.
+ * See openspec/changes/archive/v1.26.49-team-management-page/spec.md Requirement 4.
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';

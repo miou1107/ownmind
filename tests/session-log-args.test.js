@@ -6,7 +6,7 @@
 // far more cheaply than we can live without the entire session record, which is what
 // requiring it costs when it goes missing.
 //
-// See openspec/changes/v1.26.61-log-session-required-args/proposal.md.
+// See openspec/changes/archive/v1.26.61-log-session-required-args/proposal.md.
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';

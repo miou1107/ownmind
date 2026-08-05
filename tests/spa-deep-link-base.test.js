@@ -28,7 +28,7 @@ import { tmpdir } from 'node:os';
  * never sees) is neither needed nor assumed, and prefix-agnostic mounting is
  * preserved.
  *
- * See openspec/changes/v1.26.44-spa-deep-link-base/spec.md.
+ * See openspec/changes/archive/v1.26.44-spa-deep-link-base/spec.md.
  */
 
 // src/utils/crypto.js calls process.exit(1) when ENCRYPTION_KEY is unset at

@@ -1,6 +1,6 @@
 // Which dropdown items to render for a given (actor, row) pair.
 //
-// Requirement 4 of openspec/changes/v1.26.49-team-management-page/spec.md.
+// Requirement 4 of openspec/changes/archive/v1.26.49-team-management-page/spec.md.
 //
 // The item set is fixed at four ids in a fixed order; the visible subset is
 // derived per-row. The predicates mirror what the server enforces

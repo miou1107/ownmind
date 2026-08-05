@@ -1,5 +1,61 @@
 # OwnMind 檔案結構
 
+## 整理 — 22 個已發布的 OpenSpec 提案歸檔（housekeeping，無版號）
+
+> `openspec/changes/` 底下堆了 22 個早就發布的變更資料夾沒搬進 `archive/`，從 v1.26.32
+> 一路堆到 v1.26.61，含已完結的 `single-console-consolidation` 傘狀計畫。全部符合
+> CONVENTIONS.md 第 2 段的歸檔條件（CHANGELOG 有對應版本條目；v1.26.32～35 沒有
+> 獨立 tag，是跟 v1.26.36 同批發出去的）。照第 3 段用 `git mv` 搬、資料夾名都對得上
+> proposal 標題所以不需正名，第 5 段的殘留檢查為零。
+>
+> 傘狀計畫裡還有 12 條沒做完的待辦，搬進 archive 就會被凍結（第 4 段），所以**鏡射**一份
+> 到新的 `openspec/BACKLOG.md`。原檔的未勾項目不刪 —— 那是當時真的沒做的紀錄，刪掉等於
+> 竄改歷史。改成在原檔頂端加一段導覽，講明「這裡是凍結紀錄、live 清單在 BACKLOG.md」。
+
+新增：
+```
+openspec/BACKLOG.md                — 變更資料夾指認出來、刻意沒做、目前仍開著的工作
+                                      分三區：要自己一個 release 的 / 等 Vin 決定的 / 小掃除
+                                      每條標明出處，移除時要在 commit 訊息寫是做掉還是放棄
+                                      第 6 條是這次新增的（Vin 看正式機廣播視窗提的兩點）
+```
+
+搬遷（`git mv`，22 個資料夾）：
+```
+openspec/changes/{v1.26.32…v1.26.61 共 21 個, single-console-consolidation}
+  → openspec/changes/archive/ 底下同名
+```
+
+修改（路徑同步，共 70 處）：
+```
+FILELIST.md                        — 53 處歷史條目的路徑改指 archive/
+CHANGELOG.md                       — 2 處
+src/app.js                         — 2 處註解引用
+src/routes/admin.js、src/middleware/first-run-redirect.js、
+src/utils/spa-shell.js、src/utils/memory-search-query.js  — 各 1 處註解引用
+client/src/pages/Admin/{menu-visibility,user-merge}.js    — 各 1 處註解引用
+tests/{first-run-redirect,session-log-args,spa-deep-link-base,
+       stage-1b-flip-root-retire-me,team-install-prompt,
+       team-menu-visibility}.test.js                      — 各 1 處註解引用
+legacy/me-v1.19/index.html         — 封存時加的導覽註解。凍結政策保護的是歷史內容，
+                                      這行的用途是告訴讀者東西搬去哪，路徑失效等於註解廢掉
+openspec/changes/archive/single-console-consolidation/tasks.md
+                                   — 頂端加封存導覽（同上理由）：未勾的框是「當時刻意沒做」
+                                      的紀錄不是漏掉的工作，還開著的那些看 BACKLOG.md
+```
+
+> 對抗審查（agy / Gemini 3.1 Pro High）回 2 Critical、3 Important、2 Minor。逐條回原始
+> 資料查過：
+> - **Critical「50 幾個未發布提案被誤搬進 archive」—— 駁回。** 它拿「archive 只有 PR #37
+>   搬過 3 個」當前提去反推，但 `git ls-tree -d HEAD openspec/changes/archive/` 量到搬遷前
+>   就有 55 個，55 + 22 = 77，數字完全對得上。這是只看 diff、看不到搬遷前狀態造成的假陽性。
+> - **Critical「原檔沒刪等於重複計算」—— 成立，已處理。** 改成明講鏡射不是搬移，並在原檔
+>   頂端加導覽。原檔不刪的理由寫進兩邊。
+> - **3 條 Important 萃取失真 —— 全部成立，已照原文補回。** 第 4 條漏掉「只有一列在動＝
+>   排程掃描器死了但 MCP 還活著」這個判斷結論跟建議做法；第 8 條漏掉 Requirement 3 沒預料到
+>   這個張力；第 9 條的撤銷那半句原文沒有，改成標明是本次觀察、不是原條目的宣稱。
+> - 2 條 Minor 是確認不是缺陷（legacy 註解修改正當、第 3/4/5 段有遵守）。
+
 ## v1.26.61 修改（Eric 回報 #9：少一個 model 不該讓整份工作紀錄消失）
 
 新增檔：
@@ -7,7 +63,7 @@
 mcp/lib/session-log-body.js       — 決定一份工作紀錄可以缺什麼。tool 自己填、model 不編、summary 不給預設
 src/utils/session-buckets.js      — 空的 tool／model 歸到「未回報」，不要變成一個叫 null 的圖表分類
 tests/session-log-args.test.js    — 15 項，含重現 Eric 那次「只有 summary」的呼叫
-openspec/changes/v1.26.61-log-session-required-args/proposal.md
+openspec/changes/archive/v1.26.61-log-session-required-args/proposal.md
 ```
 
 修改檔：
@@ -46,7 +102,7 @@ src/utils/audit-log.js                                                          
 scripts/ensure-console-build.js                                                 — npm start 前確認後台 build 存在，沒有就跑一次
 tests/dockerfile-runtime-files.test.js                                          — start 會執行到的 scripts 檔必須進映像；legacy/ 不准進
 tests/login-rate-limit.test.js                                                  — 真的打 4 次登入確認第 4 次被擋（不是比對原始碼有沒有掛）
-openspec/changes/v1.26.60-legacy-cleanup/                                       — proposal / tasks
+openspec/changes/archive/v1.26.60-legacy-cleanup/                                       — proposal / tasks
 ```
 
 修改檔：
@@ -84,7 +140,7 @@ client/src/pages/login-outcome.js                                   — 登入�
 src/utils/setup-recovery.js                                         — 誰會被提供設定密碼表單，以及三種登入失敗共用的那一句話（訊息不同等於在洩漏哪些 Email 是真帳號）。獨立成純函式，因為這是安全決策
 tests/periodic-report-vm.test.js                                    — 22 項，四種空狀態各自可分辨、保留期限含跨界與無法解析
 tests/setup-recovery.test.js                                        — 11 項，伺服器端「誰能拿到 requiresSetup」＋前端三種結果
-openspec/changes/v1.26.59-periodic-reports/                         — proposal / spec / tasks
+openspec/changes/archive/v1.26.59-periodic-reports/                         — proposal / spec / tasks
 ```
 
 修改檔：
@@ -143,7 +199,7 @@ tests/e2e/harness.mjs                                               — 測試�
 .env.example                                                        — API_RATE_LIMIT_MAX
 CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.58 條目、版號 1.26.57 → 1.26.58
 package.json                                                        — 版號 1.26.57 → 1.26.58
-openspec/changes/single-console-consolidation/tasks.md              — Stage 6 收尾
+openspec/changes/archive/single-console-consolidation/tasks.md              — Stage 6 收尾
 ```
 
 **選擇說明**：
@@ -162,7 +218,7 @@ openspec/changes/single-console-consolidation/tasks.md              — Stage 6 
 ```
 src/middleware/bare-mount-redirect.js                               — 裸 mount 路徑轉到自己的目錄、用相對 Location
 tests/bare-mount-trailing-slash.test.js                             — 20 條，全部對兩個 base 各解析一次
-openspec/changes/v1.26.57-bare-mount-trailing-slash/{proposal,spec,tasks}.md
+openspec/changes/archive/v1.26.57-bare-mount-trailing-slash/{proposal,spec,tasks}.md
 ```
 
 修改檔：
@@ -202,7 +258,7 @@ tests/stats-compliance-vm.test.js                                   — 22 asser
 tests/stats-detail-vm.test.js                                       — 14 assertions
 tests/stats-labels.test.js                                          — 7 assertions（含三語系 key 對齊、en 不得殘留漢字）
 tests/stats-request-gate.test.js                                    — 5 assertions（含重現整頁空白的順序）
-openspec/changes/v1.26.56-stats-dashboard/{proposal,spec,tasks}.md   — 8 條需求含 GIVEN/WHEN/THEN
+openspec/changes/archive/v1.26.56-stats-dashboard/{proposal,spec,tasks}.md   — 8 條需求含 GIVEN/WHEN/THEN
 ```
 
 修改檔：
@@ -218,7 +274,7 @@ tests/team-user-merge.test.js                                       — fixture 
 tests/e2e/console.spec.mjs                                          — 修 4 支長期紅掉的測試；新增 5 支統計頁測試
 CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.56 條目、版號 1.26.55 → 1.26.56
 package.json                                                        — 版號 1.26.55 → 1.26.56
-openspec/changes/single-console-consolidation/tasks.md              — Stage 5 勾完
+openspec/changes/archive/single-console-consolidation/tasks.md              — Stage 5 勾完
 ```
 
 **選擇說明**：
@@ -317,9 +373,9 @@ package.json                                                        — 版號 1
 
 新增檔：
 ```
-openspec/changes/v1.26.51-bug-reports-work-log/proposal.md          — change folder。兩頁的權限對照、封鎖期內使用者 card 為什麼不搬、pure fn 抽出策略
-openspec/changes/v1.26.51-bug-reports-work-log/spec.md              — 8 個 requirement 加 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.26.51-bug-reports-work-log/tasks.md             — 6 個 phase 的實作進度
+openspec/changes/archive/v1.26.51-bug-reports-work-log/proposal.md          — change folder。兩頁的權限對照、封鎖期內使用者 card 為什麼不搬、pure fn 抽出策略
+openspec/changes/archive/v1.26.51-bug-reports-work-log/spec.md              — 8 個 requirement 加 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.26.51-bug-reports-work-log/tasks.md             — 6 個 phase 的實作進度
 client/src/pages/Admin/BugReportsPage.jsx                           — 錯誤回報主頁。兩張 stat card、兩個子分頁、status filter、reports 表 + spam 表
 client/src/pages/Admin/BugReportDetailModal.jsx                     — 詳細 modal。完整欄位 + conversation_snippets 三種 shape 渲染 + 狀態編輯器 + wontfix 分支
 client/src/pages/Admin/SpamSuspectModal.jsx                         — spam 確認 modal。紅色確認、灰色取消、遠離擺放
@@ -343,7 +399,7 @@ tests/legacy-console-manifest.test.js                               — 加兩�
 client/src/i18n/{zh,en,ja}.json                                     — 加 80 個 bug_reports.* / work_log.* keys（頁面標題、狀態、欄位、modal、錯誤訊息）
 CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md                  — v1.26.51 條目、版號 1.26.50 → 1.26.51
 package.json                                                        — 版號 1.26.50 → 1.26.51
-openspec/changes/single-console-consolidation/tasks.md              — Stage 4 checkbox 打勾
+openspec/changes/archive/single-console-consolidation/tasks.md              — Stage 4 checkbox 打勾
 ```
 
 **選擇說明**：
@@ -358,9 +414,9 @@ openspec/changes/single-console-consolidation/tasks.md              — Stage 4 
 
 新增檔：
 ```
-openspec/changes/v1.26.50-system-config-broadcast/proposal.md       — change folder。三張 card 拆兩頁的權限對照、collector 靜默是 Requirement 7 首要應用場景、pricing 為什麼不搬
-openspec/changes/v1.26.50-system-config-broadcast/spec.md           — 7 個 requirement 加 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.26.50-system-config-broadcast/tasks.md          — 10 個 phase 的實作進度
+openspec/changes/archive/v1.26.50-system-config-broadcast/proposal.md       — change folder。三張 card 拆兩頁的權限對照、collector 靜默是 Requirement 7 首要應用場景、pricing 為什麼不搬
+openspec/changes/archive/v1.26.50-system-config-broadcast/spec.md           — 7 個 requirement 加 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.26.50-system-config-broadcast/tasks.md          — 10 個 phase 的實作進度
 client/src/pages/System/SystemConfigPage.jsx                        — 系統設定主頁。兩支 apiGet 平行、observedUsers 併、三狀態統計條 + 裝機表格
 client/src/pages/System/BroadcastPage.jsx                           — 廣播管理主頁。列表、新增、撤銷 dialog、過期列 45% 透明、auto 廣播不畫撤銷鈕
 client/src/pages/System/NewBroadcastModal.jsx                       — 新增廣播 modal。舊 modal 欄位一比一：type / severity / title / body / cta / target / snooze / cooldown / ends_at；送前先跑 client 端 validate
@@ -395,9 +451,9 @@ package.json                                                        — 版號 1
 
 新增檔：
 ```
-openspec/changes/v1.26.49-team-management-page/proposal.md   — change folder。scope、四項 dropdown、為什麼保留 emergency endpoint 不接
-openspec/changes/v1.26.49-team-management-page/spec.md       — 8 個 requirement 加 GIVEN/WHEN/THEN
-openspec/changes/v1.26.49-team-management-page/tasks.md      — 9 個 phase 的實作進度
+openspec/changes/archive/v1.26.49-team-management-page/proposal.md   — change folder。scope、四項 dropdown、為什麼保留 emergency endpoint 不接
+openspec/changes/archive/v1.26.49-team-management-page/spec.md       — 8 個 requirement 加 GIVEN/WHEN/THEN
+openspec/changes/archive/v1.26.49-team-management-page/tasks.md      — 9 個 phase 的實作進度
 client/src/pages/Admin/TeamPage.jsx                          — 使用者管理主頁。兩隻 apiGet 平行、合併、顯示、單一管理者警告條
 client/src/pages/Admin/RowMenu.jsx                           — 每列的操作 dropdown。click-outside / Escape 收起、動作可見性靠 visibleMenuItems 決定
 client/src/pages/Admin/AddUserModal.jsx                      — 新增使用者 modal。form + 若 server 回 default_password 就切成一次性密碼面板
@@ -434,9 +490,9 @@ package.json, README.md, docs/README.{zh-TW,ja}.md           — 版號 1.26.48 
 
 新增檔：
 ```
-openspec/changes/v1.26.48-flip-root-retire-me/proposal.md       — 新增、change folder（背景、根因、選項比較、非目標）
-openspec/changes/v1.26.48-flip-root-retire-me/spec.md           — 新增、五個 requirement 加 GIVEN/WHEN/THEN 場景
-openspec/changes/v1.26.48-flip-root-retire-me/tasks.md          — 新增、九個 phase 對照這次做的每一步
+openspec/changes/archive/v1.26.48-flip-root-retire-me/proposal.md       — 新增、change folder（背景、根因、選項比較、非目標）
+openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md           — 新增、五個 requirement 加 GIVEN/WHEN/THEN 場景
+openspec/changes/archive/v1.26.48-flip-root-retire-me/tasks.md          — 新增、九個 phase 對照這次做的每一步
 tests/stage-1b-flip-root-retire-me.test.js                      — 新增、11 條。起真實 src/app.js（照 v1.26.44 設 ENCRYPTION_KEY），用「把 Location 對兩個不同 base URL 解析、應該落在同一個終點」的方式驗、不用字串比對。三個 /me 請求形狀（無斜線、有斜線、深路徑）全驗過、加一條「/me/index.html 不能再回 200」防止靜態掛載偷偷復活、加一條結構性檢查「app.js 跟 first-run-redirect.js 的 res.redirect 裡不能有 /ownmind 字串」
 legacy/me-v1.19/index.html                                       — 從 src/public/me/index.html 搬過來的保存快照。Dockerfile 沒有任何 COPY 拉 legacy/，所以正式機映像不會再打包這個檔。檔頭加了 HTML 註解說明「保存快照、不被任何路由服務」
 ```
@@ -573,18 +629,18 @@ tests/dashboard-version-source.test.js                           — 放寬「�
 
 新增檔：
 ```
-openspec/changes/single-console-consolidation/proposal.md  — 把 /admin/、/me/、/dashboard/ 三個後台收成一個的提案。含現況盤點、四個改變估算的發現（廣播藏在設定分頁裡、稽核記錄是從沒做出來的功能、/me/ 有兩個功能新後台沒覆蓋、新後台完全沒有角色控管）、五個選項的評估與否決理由、以及對抗審查回合的完整紀錄（3 Critical 3 Important，兩條採納、三條實測駁回、一條結論對理由錯）
-openspec/changes/single-console-consolidation/spec.md      — 規格（GIVEN/WHEN/THEN，6 條 requirement）：單一入口、角色控管、不掉功能、轉址要能撐過反向代理前綴、退場靠結構而非提醒、舊檔留存但不可被服務
-openspec/changes/single-console-consolidation/tasks.md     — 七階段任務清單（Stage 0 真實身分 / 1a 搬頁面與指路牌 / 1b 換入口與收 /me/ / 2 使用者管理 / 3 設定與廣播 / 4 錯誤回報與工作紀錄 / 5 退場後清理）
+openspec/changes/archive/single-console-consolidation/proposal.md  — 把 /admin/、/me/、/dashboard/ 三個後台收成一個的提案。含現況盤點、四個改變估算的發現（廣播藏在設定分頁裡、稽核記錄是從沒做出來的功能、/me/ 有兩個功能新後台沒覆蓋、新後台完全沒有角色控管）、五個選項的評估與否決理由、以及對抗審查回合的完整紀錄（3 Critical 3 Important，兩條採納、三條實測駁回、一條結論對理由錯）
+openspec/changes/archive/single-console-consolidation/spec.md      — 規格（GIVEN/WHEN/THEN，6 條 requirement）：單一入口、角色控管、不掉功能、轉址要能撐過反向代理前綴、退場靠結構而非提醒、舊檔留存但不可被服務
+openspec/changes/archive/single-console-consolidation/tasks.md     — 七階段任務清單（Stage 0 真實身分 / 1a 搬頁面與指路牌 / 1b 換入口與收 /me/ / 2 使用者管理 / 3 設定與廣播 / 4 錯誤回報與工作紀錄 / 5 退場後清理）
 ```
 
 ## v1.26.44 修改（新後台直接開網址全白 — SPA 深連結的 base href）
 
 新增檔：
 ```
-openspec/changes/v1.26.44-spa-deep-link-base/proposal.md         — v1.26.44 提案（含四個選項的評估與否決理由）
-openspec/changes/v1.26.44-spa-deep-link-base/spec.md             — v1.26.44 規格（GIVEN/WHEN/THEN）
-openspec/changes/v1.26.44-spa-deep-link-base/tasks.md            — v1.26.44 任務清單（含已知限制與「列了沒修」）
+openspec/changes/archive/v1.26.44-spa-deep-link-base/proposal.md         — v1.26.44 提案（含四個選項的評估與否決理由）
+openspec/changes/archive/v1.26.44-spa-deep-link-base/spec.md             — v1.26.44 規格（GIVEN/WHEN/THEN）
+openspec/changes/archive/v1.26.44-spa-deep-link-base/tasks.md            — v1.26.44 任務清單（含已知限制與「列了沒修」）
 src/utils/spa-shell.js                                           — 新增、供應 SPA 外殼時依請求深度改寫 <base href>（relativeBaseHref / withBaseHref / createSpaShellHandler）。送出的值保持純相對，所以 nginx 的 /ownmind 前綴不需要也不假設
 tests/spa-deep-link-base.test.js                                 — 33 tests（有 build 時 33 綠 0 跳過；無 build 時 node 只跑到 26 條、21 綠 5 跳過）：fixture 外殼的各深度 base href、資產照瀏覽器方式解析後真的 fetch 到 200、證明修正前確實 404 的反向測試、前綴不綁死、withBaseHref 找不到 base 會插入而非空轉、既有行為（資產 miss 仍 404 / 非 GET 不吃外殼 / 外殼不存在時 fall through 不 500）、drift 守門
 ```
@@ -604,9 +660,9 @@ FILELIST.md                — 本段
 
 新增檔：
 ```
-openspec/changes/v1.26.43-dashboard-version-source/proposal.md  — v1.26.43 提案（含「為什麼是連線拿不是編譯時寫死」的取捨）
-openspec/changes/v1.26.43-dashboard-version-source/spec.md      — v1.26.43 規格（GIVEN/WHEN/THEN，4 條 requirement）
-openspec/changes/v1.26.43-dashboard-version-source/tasks.md     — v1.26.43 任務清單
+openspec/changes/archive/v1.26.43-dashboard-version-source/proposal.md  — v1.26.43 提案（含「為什麼是連線拿不是編譯時寫死」的取捨）
+openspec/changes/archive/v1.26.43-dashboard-version-source/spec.md      — v1.26.43 規格（GIVEN/WHEN/THEN，4 條 requirement）
+openspec/changes/archive/v1.26.43-dashboard-version-source/tasks.md     — v1.26.43 任務清單
 src/utils/server-version.js                                     — 新增、SERVER_VERSION 的唯一定義（讀不到 package.json 回 0.0.0、不丟例外）
 src/routes/version.js                                           — 新增、GET /api/version 只回 { version }，factory 形式（比照 createDebugRouter）掛在 auth 後面
 client/src/hooks/useServerVersion.js                             — 新增、走 apiGet('/api/version')，初值空字串、失敗維持空字串。模組層級快取（只快取成功值）。**只能從 Layout 呼叫**：從 App 呼叫會在還沒登入時吃 401 且永不重試
@@ -633,9 +689,9 @@ FILELIST.md                          — 本段
 
 新增檔：
 ```
-openspec/changes/v1.26.41-dependency-security/proposal.md        — v1.26.41 提案（37 個警告的分類、PR #45 驗證、送不到使用者機器的根因）
-openspec/changes/v1.26.41-dependency-security/spec.md            — v1.26.41 規格（GIVEN/WHEN/THEN，6 條 requirement）
-openspec/changes/v1.26.41-dependency-security/tasks.md           — v1.26.41 任務清單（含「沒驗到的部分」獨立一段）
+openspec/changes/archive/v1.26.41-dependency-security/proposal.md        — v1.26.41 提案（37 個警告的分類、PR #45 驗證、送不到使用者機器的根因）
+openspec/changes/archive/v1.26.41-dependency-security/spec.md            — v1.26.41 規格（GIVEN/WHEN/THEN，6 條 requirement）
+openspec/changes/archive/v1.26.41-dependency-security/tasks.md           — v1.26.41 任務清單（含「沒驗到的部分」獨立一段）
 scripts/install-helpers/dep-floor.mjs                            — 新增、root 相依版本門檻比對純函式庫（parseVersion / satisfiesFloor / readInstalledVersion，import 不觸發任何副作用）
 scripts/install-helpers/dep-floor-cli.mjs                        — 新增、給 shell 用的判斷式（exit 0 = 已達門檻、exit 1 = 要裝）。刻意獨立成檔、不做「我是不是被直接執行」判斷（那種判斷遇到 symlink 路徑會靜默跳過並 exit 0、被讀成「已達門檻」）
 tests/dep-floor-guard.test.js                                    — 27 tests：版本比對（數值/prerelease/壞輸入 fail safe）、CLI 契約（exit code、stdout 靜默、缺參數、symlink 路徑）、把 update.sh 的 needs_root_dep 真實函式抽出來實跑、六個漂移守門（CLI 有接線且沒直接 import 函式庫、資料夾檢查沒復活、判斷極性沒被反轉、log 目錄有先建、腳本門檻 ≥ manifest、安裝範圍 ≥ 門檻）
@@ -660,9 +716,9 @@ FILELIST.md                — 本段
 
 新增檔：
 ```
-openspec/changes/v1.26.40-wp-password-prose/proposal.md         — v1.26.40 提案（含四個候選規則的量測數據）
-openspec/changes/v1.26.40-wp-password-prose/spec.md             — v1.26.40 規格（GIVEN/WHEN/THEN，4 條 requirement）
-openspec/changes/v1.26.40-wp-password-prose/tasks.md            — v1.26.40 任務清單
+openspec/changes/archive/v1.26.40-wp-password-prose/proposal.md         — v1.26.40 提案（含四個候選規則的量測數據）
+openspec/changes/archive/v1.26.40-wp-password-prose/spec.md             — v1.26.40 規格（GIVEN/WHEN/THEN，4 條 requirement）
+openspec/changes/archive/v1.26.40-wp-password-prose/tasks.md            — v1.26.40 任務清單
 tests/secret-detect-wp-prose.test.js                            — 22 tests：真密碼召回（含 2000 組固定種子產生）、已知殘留漏抓釘住、五種散文放行、前綴 1~7 詞的重疊視窗、其餘規則不受影響
 ```
 修改檔：
@@ -677,9 +733,9 @@ FILELIST.md                — 本段
 
 新增檔：
 ```
-openspec/changes/v1.26.39-admin-memory-count/proposal.md        — v1.26.39 提案
-openspec/changes/v1.26.39-admin-memory-count/spec.md            — v1.26.39 規格（GIVEN/WHEN/THEN，5 條 requirement）
-openspec/changes/v1.26.39-admin-memory-count/tasks.md           — v1.26.39 任務清單
+openspec/changes/archive/v1.26.39-admin-memory-count/proposal.md        — v1.26.39 提案
+openspec/changes/archive/v1.26.39-admin-memory-count/spec.md            — v1.26.39 規格（GIVEN/WHEN/THEN，5 條 requirement）
+openspec/changes/archive/v1.26.39-admin-memory-count/tasks.md           — v1.26.39 任務清單
 tests/admin-stats-memory-count.test.js                          — 12 tests：把 countExportedMemories 從 HTML 抽出來實跑（現行/退路格式、壞資料、0 值、非有限數、接線釘死元素、res.ok、標籤）
 ```
 修改檔：
@@ -694,9 +750,9 @@ FILELIST.md                — 本段
 
 新增檔：
 ```
-openspec/changes/v1.26.38-share-standard-details/proposal.md   — v1.26.38 提案
-openspec/changes/v1.26.38-share-standard-details/spec.md       — v1.26.38 規格（GIVEN/WHEN/THEN，7 條 requirement）
-openspec/changes/v1.26.38-share-standard-details/tasks.md      — v1.26.38 任務清單
+openspec/changes/archive/v1.26.38-share-standard-details/proposal.md   — v1.26.38 提案
+openspec/changes/archive/v1.26.38-share-standard-details/spec.md       — v1.26.38 規格（GIVEN/WHEN/THEN，7 條 requirement）
+openspec/changes/archive/v1.26.38-share-standard-details/tasks.md      — v1.26.38 任務清單
 src/utils/memory-visibility.js                                 — 共用讀取述詞：SHARED_MEMORY_TYPES / isSharedMemoryType / buildReadableWhere
 tests/memory-visibility.test.js                                — 34 tests：共用型別 / 述詞結構 / 參數綁定位置 / 路由接線 / 共用型別寫入需 admin / 寫入未放寬 / MCP 兩端
 ```
@@ -716,8 +772,8 @@ FILELIST.md                — 本段
 
 新增檔：
 ```
-openspec/changes/v1.26.37-improve-keyword-search/proposal.md   — v1.26.37 提案
-openspec/changes/v1.26.37-improve-keyword-search/tasks.md      — v1.26.37 任務清單
+openspec/changes/archive/v1.26.37-improve-keyword-search/proposal.md   — v1.26.37 提案
+openspec/changes/archive/v1.26.37-improve-keyword-search/tasks.md      — v1.26.37 任務清單
 shared/memory-search-tokens.js                                 — 共用：tokenize + itemMatchesTokens（online 跟 offline 都用同一份）
 src/utils/memory-search-query.js                               — SQL builder：buildSearchWhere + LIKE metacharacter escape
 tests/memory-search-query.test.js                              — 15 tests：tokenize / builder / LIKE escape / route wiring
@@ -740,8 +796,8 @@ FILELIST.md                — 本檔
 
 新增檔：
 ```
-openspec/changes/v1.26.36-deidentify-name-comments/proposal.md  — v1.26.36 提案
-openspec/changes/v1.26.36-deidentify-name-comments/tasks.md     — v1.26.36 任務清單
+openspec/changes/archive/v1.26.36-deidentify-name-comments/proposal.md  — v1.26.36 提案
+openspec/changes/archive/v1.26.36-deidentify-name-comments/tasks.md     — v1.26.36 任務清單
 ```
 修改檔（12 處註解去名，11 檔）：
 ```
@@ -759,8 +815,8 @@ tests/no-hardcoded-names-in-output.test.js — 新增程式碼檔名字 source-s
 
 新增檔：
 ```
-openspec/changes/v1.26.35-deidentify-names-in-output/proposal.md  — v1.26.35 提案
-openspec/changes/v1.26.35-deidentify-names-in-output/tasks.md     — v1.26.35 任務清單
+openspec/changes/archive/v1.26.35-deidentify-names-in-output/proposal.md  — v1.26.35 提案
+openspec/changes/archive/v1.26.35-deidentify-names-in-output/tasks.md     — v1.26.35 任務清單
 tests/no-hardcoded-names-in-output.test.js                        — 守門：產生器輸出禁人名
 ```
 修改檔：
@@ -777,8 +833,8 @@ tests/iron-rule-sync.test.js    — 斷言配合新文字更新
 
 新增檔：
 ```
-openspec/changes/v1.26.34-guard-personal-codes/proposal.md  — v1.26.34 提案
-openspec/changes/v1.26.34-guard-personal-codes/tasks.md     — v1.26.34 任務清單
+openspec/changes/archive/v1.26.34-guard-personal-codes/proposal.md  — v1.26.34 提案
+openspec/changes/archive/v1.26.34-guard-personal-codes/tasks.md     — v1.26.34 任務清單
 tests/no-personal-rule-codes.test.js                        — 守門測試（產品碼禁個人編號）
 ```
 修改檔（去識別化，28 檔，多為註解/字串）：
@@ -800,8 +856,8 @@ tests/git-pre-commit-fingerprint.test.js / git-hook-co-authored-by.test.js — �
 
 新增檔：
 ```
-openspec/changes/v1.26.33-deidentify-secret-guard-hook/proposal.md  — v1.26.33 提案
-openspec/changes/v1.26.33-deidentify-secret-guard-hook/tasks.md     — v1.26.33 任務清單
+openspec/changes/archive/v1.26.33-deidentify-secret-guard-hook/proposal.md  — v1.26.33 提案
+openspec/changes/archive/v1.26.33-deidentify-secret-guard-hook/tasks.md     — v1.26.33 任務清單
 hooks/lib/secret-guard-rule.js                                      — isSecretGuardRule 純函式（語意判斷密鑰防護規則）
 tests/secret-guard-rule.test.js                                    — 純函式單元測試
 ```
@@ -818,8 +874,8 @@ tests/pre-commit-secret.test.js       — 新增非 IR-002 規則 + 內容密鑰
 
 新增檔：
 ```
-openspec/changes/v1.26.32-deidentify-compliance-observability/proposal.md  — v1.26.32 提案
-openspec/changes/v1.26.32-deidentify-compliance-observability/tasks.md     — v1.26.32 任務清單
+openspec/changes/archive/v1.26.32-deidentify-compliance-observability/proposal.md  — v1.26.32 提案
+openspec/changes/archive/v1.26.32-deidentify-compliance-observability/tasks.md     — v1.26.32 任務清單
 tests/deidentify-compliance-observability.test.js                          — 去識別化 reproduction test（6 case）
 ```
 修改檔：
