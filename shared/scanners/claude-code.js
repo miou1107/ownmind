@@ -40,6 +40,7 @@ export function createClaudeCodeAdapter({
       const events = [];
       const offsetPatch = {};
       const cumulativePatch = {};
+      const skipped = [];
       // Load session → running_total map from state.
       const sessionCumulative = {
         ...(state.session_cumulative?.[TOOL] || {})
@@ -50,7 +51,21 @@ export function createClaudeCodeAdapter({
         const prev = state[sourceKey] || {};
         const prevOffset = Number(prev.byte_offset || 0);
 
-        let { lines, nextOffset } = await readIncremental(file, prevOffset);
+        // v1.26.65 — one file that cannot be opened used to end the whole scan for
+        // this tool, taking the heartbeat with it, because the heartbeat is built
+        // after this loop. The file is skipped instead, and its error code is
+        // carried out so the scanner log can say what happened.
+        let lines, nextOffset;
+        try {
+          ({ lines, nextOffset } = await readIncremental(file, prevOffset));
+        } catch (err) {
+          // `err` is not guaranteed to be an Error: a thrown string has no
+          // .message, and logging it raw prints the word "undefined" where the
+          // reason should be.
+          skipped.push(err?.code || 'UNKNOWN');
+          logger?.warn?.(`[claude-code scanner] skipped ${file}: ${err?.message || String(err)}`);
+          continue;
+        }
 
         for (const line of lines) {
           const parsed = parseAssistantLine(line, { logger });
@@ -96,7 +111,13 @@ export function createClaudeCodeAdapter({
         machine
       };
 
-      return { events, offsetPatch, cumulativePatch, heartbeat };
+      // v1.26.65 — `scanned` is how many session files were visible this run.
+      // Without it `sent=0` is unreadable: a machine that has nothing new and a
+      // machine whose data the scanner cannot reach produce the identical line,
+      // and on 2026-08-05 that ambiguity sent this investigation down a wrong
+      // path for an hour. `sent=0 files=0` and `sent=0 files=37` are different
+      // problems and should not look the same.
+      return { events, offsetPatch, cumulativePatch, heartbeat, scanned: files.length, skipped };
     }
   };
 }
@@ -143,22 +164,40 @@ export function parseAssistantLine(line, opts = {}) {
   };
 }
 
-async function defaultListJsonlFiles(baseDir) {
+/**
+ * List every session JSONL under baseDir.
+ *
+ * v1.26.65 — this used to wrap the whole thing in `catch { }` and return an empty
+ * array, with a comment asserting the cause was "baseDir does not exist: clean
+ * env". The code could not actually tell that apart from a permission failure or
+ * a home directory that resolved somewhere unexpected, and all three came out of
+ * the scanner as the single line `sent=0`.
+ *
+ * That is how a collector stays dead for twenty days while every layer above it
+ * reports success. A machine that has never run Claude Code is genuinely silent
+ * and stays silent here; anything else is now an error the caller can see.
+ */
+export async function defaultListJsonlFiles(baseDir) {
   const out = [];
+  let projects;
   try {
-    const projects = await fs.readdir(baseDir);
-    for (const p of projects) {
-      const projectDir = path.join(baseDir, p);
-      try {
-        const s = await fs.stat(projectDir);
-        if (!s.isDirectory()) continue;
-        const files = await fs.readdir(projectDir);
-        for (const f of files) {
-          if (f.endsWith('.jsonl')) out.push(path.join(projectDir, f));
-        }
-      } catch { /* a single project dir we cannot read: skip */ }
-    }
-  } catch { /* baseDir does not exist: clean env, return empty */ }
+    projects = await fs.readdir(baseDir);
+  } catch (err) {
+    if (err.code === 'ENOENT') return out;   // never used this tool: legitimately nothing
+    throw err;                               // could not look, which is not the same as nothing to see
+  }
+
+  for (const p of projects) {
+    const projectDir = path.join(baseDir, p);
+    try {
+      const s = await fs.stat(projectDir);
+      if (!s.isDirectory()) continue;
+      const files = await fs.readdir(projectDir);
+      for (const f of files) {
+        if (f.endsWith('.jsonl')) out.push(path.join(projectDir, f));
+      }
+    } catch { /* one unreadable project dir must not lose the rest */ }
+  }
   return out;
 }
 

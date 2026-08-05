@@ -68,13 +68,18 @@ New-Item -ItemType Directory -Path $OwnMindDir -Force | Out-Null
 New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
 [System.IO.File]::WriteAllText($NodePathCache, $NodeBin)
 
-# --- 2. 若 task 已存在先移除，避免 duplicate ---
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-  Write-Host "[ownmind] removed existing task"
-}
-
-# --- 3. 註冊新 task ---
+# --- 2. 註冊 task ---
+#
+# v1.26.65 — 這裡以前是「先 Unregister 舊的、再 Register 新的」。因為腳本開頭設了
+# $ErrorActionPreference = 'Stop'，中間任何一步出錯，使用者就會停在「舊的已經刪掉、
+# 新的還沒建立」的狀態，而且永遠不會自己恢復。
+#
+# 這不是假設。下面 v1.17.66 那段註解記著：兩個不存在的參數讓 Register 直接 throw，
+# 「task 完全沒註冊」，Bob 跟 Alice 兩台升級踩到。當時修掉參數，沒有修掉「把小錯誤
+# 放大成永久損壞」的結構。
+#
+# 2026-08-05 正式機追查：Adam 的掃描器從 07-15 之後一次都沒跑過，二十天沒有人發現。
+# Register-ScheduledTask -Force 直接覆蓋同名 task，一步完成，中間沒有空窗。
 # v1.17.66 — 改用 wscript.exe + run-hidden.vbs 包 node.exe，避免每次跑都跳 console window
 # （Alice 回報：每 30 分鐘閃 PowerShell/console 視窗 + 補跑造成連跳，影響工作體驗）
 $VbsLauncher = Join-Path $OwnMindDir 'scripts\windows\run-hidden.vbs'
@@ -124,6 +129,15 @@ Register-ScheduledTask `
   -Trigger $Trigger `
   -Settings $Settings `
   -Principal $Principal `
+  -Force `
   -Description 'OwnMind token usage scanner (every 120 minutes)' | Out-Null
+
+# --- 4. 確認真的建起來了 ---
+# Register-ScheduledTask 沒有 throw 是不錯的證據，但不是證明，而這個 repo 已經出過
+# 一次「以為註冊好了、實際上機器上什麼都沒有」。多問一次的成本是一個 call。
+if (-not (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)) {
+  Write-Error "[ownmind] task '$TaskName' is not present after registration; the usage scanner will not run."
+  exit 1
+}
 
 Write-Host "[ownmind] task '$TaskName' registered; first run in 5 min, then every 120 min."

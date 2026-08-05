@@ -104,7 +104,9 @@ export async function runScan(deps) {
   const state = await readOffsets(cachePath);
   const {
     events, offsetPatch, cumulativePatch, heartbeat,
-    sessions = []        // Tier 2 adapters supply this; Tier 1 defaults to empty
+    sessions = [],       // Tier 2 adapters supply this; Tier 1 defaults to empty
+    scanned = null,      // how many source files were visible; null = adapter does not report it
+    skipped = []         // error codes of files that could not be opened this run
   } = await adapter.readSince(state);
 
   // Empty scan: still send heartbeat + any sessions.
@@ -121,7 +123,7 @@ export async function runScan(deps) {
     }
     return {
       tool: adapter.tool, sent: 0, batches: 0, accepted: 0, duplicated: 0,
-      sessions: sessions.length
+      sessions: sessions.length, files: scanned, skipped
     };
   }
 
@@ -151,7 +153,9 @@ export async function runScan(deps) {
     sent: events.length,
     batches: batches.length,
     accepted, duplicated,
-    sessions: sessions.length
+    sessions: sessions.length,
+    files: scanned,
+    skipped
   };
 }
 

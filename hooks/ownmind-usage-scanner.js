@@ -97,8 +97,16 @@ async function main() {
   try {
     const { apiKey, apiUrl } = readCredentials();
     if (!apiKey || !apiUrl) {
-      await log('[scanner] credentials not found; skipping');
-      return;
+      // v1.26.65 — this used to `return`, so the process exited 0 and every layer
+      // above reported success: run-hidden.vbs, Task Scheduler's LastTaskResult,
+      // and the diagnostic that tells people to read it.
+      //
+      // The scanner cannot inherit an environment the way the MCP does; it has to
+      // find ~/.claude/settings.json itself. So this branch is exactly where the
+      // two components diverge, and it is the one place a broken scanner still
+      // gets to say so. Throwing makes the direct-run handler log and exit 1.
+      throw new Error('credentials not found in ~/.claude/settings.json '
+        + '(mcpServers.ownmind.env); the usage scanner cannot report anything');
     }
 
     const scannerVersion = getClientVersion() || 'unknown';
@@ -128,9 +136,18 @@ async function main() {
     for (const adapter of adapters) {
       try {
         const result = await runScan({ adapter, apiUrl, apiKey });
+        // v1.26.65: `files=` says how many source files were visible. Without it
+        // `sent=0` cannot be read: nothing new and cannot see anything look the
+        // same, and on 2026-08-05 that cost an hour of chasing the wrong cause.
+        const seen = result.files == null ? '' : ` files=${result.files}`;
+        // Skipped files used to end the whole tool's scan. They no longer do, which
+        // means they would now pass unnoticed unless the count says otherwise.
+        const missed = result.skipped?.length
+          ? ` skipped=${result.skipped.length}(${[...new Set(result.skipped)].join(',')})`
+          : '';
         await log(`[scanner] ${adapter.tool} ` +
           `sent=${result.sent} accepted=${result.accepted} duplicated=${result.duplicated} ` +
-          `batches=${result.batches}`);
+          `batches=${result.batches}${seen}${missed}`);
       } catch (err) {
         await log(`[scanner] ${adapter.tool} failed: ${err.message}`);
       }

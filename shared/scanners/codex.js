@@ -57,11 +57,32 @@ export function createCodexAdapter({
 
       const events = [];
       const offsetPatch = {};
+      const skipped = [];
 
       for (const file of allFiles) {
         const sourceKey = `${TOOL}:${file}`;
         const prevOffset = Number(state[sourceKey]?.byte_offset || 0);
-        const { lines, nextOffset } = await readIncremental(file, prevOffset);
+
+        // v1.26.65 — this call used to sit bare in the loop, so one file that could
+        // not be opened ended the scan for the whole tool and took the heartbeat
+        // with it, since the heartbeat is built after the loop.
+        //
+        // Codex triggers this routinely: it moves sessions from ~/.codex/sessions to
+        // ~/.codex/archived_sessions and this adapter walks both, so a file archived
+        // between the listing and the open is an ENOENT on a path that existed a
+        // moment earlier. On the server that showed up as a member with no `codex`
+        // heartbeat row at all, which nothing was reading.
+        let lines, nextOffset;
+        try {
+          ({ lines, nextOffset } = await readIncremental(file, prevOffset));
+        } catch (err) {
+          // `err` is not guaranteed to be an Error: a thrown string has no
+          // .message, and logging it raw prints the word "undefined" where the
+          // reason should be.
+          skipped.push(err?.code || 'UNKNOWN');
+          logger?.warn?.(`[codex scanner] skipped ${file}: ${err?.message || String(err)}`);
+          continue;
+        }
 
         const sessionId = extractSessionId(file);
         if (!sessionId) {
@@ -85,7 +106,26 @@ export function createCodexAdapter({
             continue;
           }
 
-          const event = buildEventFromTokenCount(obj, { sessionId, model: currentModel, sourceFile: file });
+          // v1.26.65 — this call used to sit bare, two lines below a `try` that already
+          // catches a malformed JSON line and skips it. buildEventFromTokenCount reaches
+          // canonicalizeCodexMaterial, which throws on any non-finite number, so a single
+          // bad `token_count` line ended the scan for the whole tool — including its
+          // heartbeat, which is built after the loop.
+          //
+          // That is deterministic: the same line fails on every run, forever. It matches
+          // a member on production whose `codex` row has never once existed, where the
+          // intermittent archival race would have let a check-in through eventually.
+          //
+          // The file offset still advances past the bad line, so it is stepped over once
+          // rather than re-tried until the end of time.
+          let event;
+          try {
+            event = buildEventFromTokenCount(obj, { sessionId, model: currentModel, sourceFile: file });
+          } catch (err) {
+            skipped.push('BADLINE');
+            logger?.warn?.(`[codex scanner] unusable token_count in ${file}: ${err?.message || String(err)}`);
+            continue;
+          }
           if (event) events.push(event);
         }
 
@@ -101,7 +141,8 @@ export function createCodexAdapter({
       const heartbeat = { tool: TOOL, scanner_version: scannerVersion, machine };
       // Codex's cumulative comes directly from material.total_cumulative;
       // no session_cumulative map needed.
-      return { events, offsetPatch, cumulativePatch: {}, heartbeat };
+      return { events, offsetPatch, cumulativePatch: {}, heartbeat,
+               scanned: allFiles.length, skipped };
     }
   };
 }
