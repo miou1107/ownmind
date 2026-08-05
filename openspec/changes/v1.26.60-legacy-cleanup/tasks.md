@@ -81,4 +81,9 @@
       - **Minor, a vacuous e2e text assertion — fair, fixed.** The amber marker lived in
         `title`/`aria-label`, never in visible text, so searching visible text for it
         proved nothing. Matches the attribute now, plus the signpost page's own copy
-- [ ] Deploy + production browser check
+- [x] Deploy + production browser check — 2026-08-05, shipped together with v1.26.61.
+      `v1.26.61` on `/VinService/ownmind`, no migrations (17 applied, 0 new), served asset
+      `index-DHoX7M1w.js` matched the local build. **`ls /app/legacy` returns
+      NOT-IN-IMAGE**, which is the Stage 8 claim checked against the runtime image rather
+      than against the Dockerfile. `/ownmind/admin/`, `/admin/setup.html` and `/setup` all
+      resolve as designed; zero amber markers anywhere; 17 nav items; no console errors
