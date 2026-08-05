@@ -19,12 +19,94 @@
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { createHash } from 'crypto';
+import { OK, NO_NEW_ACTIVITY, NO_INSTALL, UNREADABLE, ACCOUNT_CHANGED } from './reasons.js';
 
 export const DEFAULT_CACHE_PATH = path.join(
   os.homedir(), '.ownmind', 'cache', 'scanner-offsets.json'
 );
 export const BATCH_SIZE = 500;
 export const POST_TIMEOUT_MS = 30_000;
+
+/**
+ * Which account this machine's cursor belongs to.
+ *
+ * v1.26.69. `scanner-offsets.json` used to be keyed by tool and file and nothing else,
+ * so a machine that changed account handed the new account the previous one's
+ * "already reported" state. Observed on a Windows box on 2026-08-05: the cursor said
+ * antigravity was reported up to 2026-07-23, the account configured there had no such
+ * row, and the account that did have one could not have produced it from its own
+ * machine.
+ *
+ * A truncated digest, never the key. The raw key already sits in
+ * `~/.claude/settings.json` on the same machine, so this discloses nothing new; it is
+ * hashed so that a bookkeeping file never becomes a second place a credential lives.
+ *
+ * @param {{apiUrl: string, apiKey: string}} creds
+ * @returns {string}
+ */
+export function accountFingerprint({ apiUrl = '', apiKey = '' } = {}) {
+  // Normalised the same way postBatch normalises it before posting. Two configs that
+  // differ only by a trailing slash are the same account talking to the same server,
+  // and calling that an account change would drop every day cursor on the machine.
+  const server = String(apiUrl).replace(/\/+$/, '');
+  return createHash('sha256')
+    .update(`${server}\0${apiKey}`)
+    .digest('hex')
+    .slice(0, 32);
+}
+
+/**
+ * The cursor to scan with, given who is configured now.
+ *
+ * Three cases, and only one of them is an account change:
+ *
+ *   - the fingerprint matches            → carry on
+ *   - there is no fingerprint at all     → a cursor written before v1.26.69, or a first
+ *                                          install. Stamp it and carry on; calling this
+ *                                          a change would reset every existing install
+ *                                          on upgrade, and a first install should still
+ *                                          collect this machine's history.
+ *   - the fingerprint differs            → discard. The new account starts fresh.
+ *
+ * On a change, the two kinds of entry are treated differently, because they claim
+ * different things:
+ *
+ *   - `last_session_date` claims a particular day was already reported. That day
+ *     belongs to whoever worked it, so the claim is dropped and the new account gets
+ *     to report the day it finds.
+ *   - `byte_offset` is a position marker meaning "this file has been read this far".
+ *     It is kept, and keeping it *is* the policy: the new account starts from now.
+ *     Dropping it would replay the machine's whole history into the new account, which
+ *     is the misattribution this exists to prevent.
+ *
+ * @param {object} state - parsed offsets file
+ * @param {string} fingerprint
+ * @returns {{state: object, changed: boolean}}
+ */
+export function cursorForAccount(state, fingerprint) {
+  const prev = state?.account ?? null;
+  if (!prev || prev === fingerprint) {
+    return { state: { ...state, account: fingerprint }, changed: false };
+  }
+
+  const kept = { account: fingerprint };
+  for (const [key, value] of Object.entries(state)) {
+    if (key === 'account') continue;
+    if (!value || typeof value !== 'object' || !('last_session_date' in value)) {
+      kept[key] = value;
+      continue;
+    }
+    // Drop the day claim, not the entry. Today no single entry carries both a day claim
+    // and a read position, but dropping a whole object because of one field would
+    // silently take the read position with it the moment one does — and a lost read
+    // position replays the machine's history into the new account, which is the exact
+    // misattribution this is here to prevent.
+    const { last_session_date: _dropped, ...rest } = value;
+    if (Object.keys(rest).length > 0) kept[key] = rest;
+  }
+  return { state: kept, changed: true };
+}
 
 /**
  * Read the offsets file; returns {} when missing or corrupted.
@@ -98,7 +180,8 @@ export async function runScan(deps) {
     adapter, apiUrl, apiKey,
     cachePath = DEFAULT_CACHE_PATH,
     fetchFn = fetch,
-    logger = console
+    logger = console,
+    accountChanged = false
   } = deps;
 
   const state = await readOffsets(cachePath);
@@ -106,13 +189,21 @@ export async function runScan(deps) {
     events, offsetPatch, cumulativePatch, heartbeat,
     sessions = [],       // Tier 2 adapters supply this; Tier 1 defaults to empty
     scanned = null,      // how many source files were visible; null = adapter does not report it
-    skipped = []         // error codes of files that could not be opened this run
+    skipped = [],        // error codes of files that could not be opened this run
+    reason = null        // v1.26.69; Tier 1 adapters do not supply one, see deriveReason
   } = await adapter.readSince(state);
+
+  // v1.26.69 — an account change invalidates every tool's answer this run, so it wins
+  // over whatever the adapter concluded from a cursor that has just been reset.
+  const effectiveReason = accountChanged
+    ? ACCOUNT_CHANGED
+    : (reason ?? deriveReason({ events, sessions, scanned, skipped }));
+  const beat = heartbeat ? { ...heartbeat, reason: effectiveReason } : heartbeat;
 
   // Empty scan: still send heartbeat + any sessions.
   if (events.length === 0) {
-    if (heartbeat || sessions.length > 0) {
-      const payload = { events: [], heartbeat };
+    if (beat || sessions.length > 0) {
+      const payload = { events: [], heartbeat: beat };
       if (sessions.length > 0) payload.sessions = sessions;
       await postBatch({ apiUrl, apiKey, fetchFn }, payload);
     }
@@ -123,7 +214,7 @@ export async function runScan(deps) {
     }
     return {
       tool: adapter.tool, sent: 0, batches: 0, accepted: 0, duplicated: 0,
-      sessions: sessions.length, files: scanned, skipped
+      sessions: sessions.length, files: scanned, skipped, reason: effectiveReason
     };
   }
 
@@ -134,7 +225,7 @@ export async function runScan(deps) {
   for (let i = 0; i < batches.length; i += 1) {
     const isLast = i === batches.length - 1;
     const payload = { events: batches[i] };
-    if (isLast && heartbeat) payload.heartbeat = heartbeat;
+    if (isLast && beat) payload.heartbeat = beat;
     if (isLast && sessions.length > 0) payload.sessions = sessions;
 
     const resp = await postBatch({ apiUrl, apiKey, fetchFn }, payload);
@@ -155,8 +246,26 @@ export async function runScan(deps) {
     accepted, duplicated,
     sessions: sessions.length,
     files: scanned,
-    skipped
+    skipped,
+    reason: effectiveReason
   };
+}
+
+/**
+ * Why a Tier 1 adapter produced nothing.
+ *
+ * v1.26.69. Tier 2 adapters answer this themselves, because only they know whether the
+ * sqlite3 CLI was the problem. Tier 1 adapters do not, but they already report
+ * `scanned` and `skipped` (v1.26.65), which is enough to separate the three cases that
+ * matter: nothing to read, something unreadable, and nothing new.
+ *
+ * @returns {string} one of REASONS
+ */
+export function deriveReason({ events = [], sessions = [], scanned = null, skipped = [] }) {
+  if (events.length > 0 || sessions.length > 0) return OK;
+  if (skipped.length > 0) return UNREADABLE;
+  if (scanned === 0) return NO_INSTALL;
+  return NO_NEW_ACTIVITY;
 }
 
 /**

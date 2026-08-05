@@ -57,11 +57,28 @@ export function geminiConversationDirs(homeDir = os.homedir()) {
  * @param {{dirs: string[], readdir?: Function, stat?: Function, logger?: object}} opts
  * @returns {Promise<Date|null>}
  */
-export async function newestConversationMtime({
+export async function newestConversationMtime(opts = {}) {
+  return (await probeConversations(opts)).date;
+}
+
+/**
+ * The same read, plus how many conversation directories were actually there.
+ *
+ * v1.26.69. A date of null answers two different questions the same way: "this tool is
+ * not on this machine" and "this tool is here and has no conversations yet". The caller
+ * needs them apart, because one of them tells an operator to go and install something
+ * that is already installed.
+ *
+ * @param {{dirs: string[], readdir?: Function, stat?: Function, logger?: object,
+ *          notAfter?: number}} opts
+ * @returns {Promise<{date: Date|null, looked: number}>}
+ */
+export async function probeConversations({
   dirs, readdir = fsp.readdir, stat = fsp.stat, logger = null,
   notAfter = Date.now() + FUTURE_TOLERANCE_MS
 } = {}) {
   let newest = null;
+  let looked = 0;
 
   for (const dir of dirs ?? []) {
     let entries;
@@ -77,6 +94,9 @@ export async function newestConversationMtime({
       }
       continue;
     }
+    // The directory was there and could be listed. That is the fact the caller needs,
+    // whether or not it happens to hold anything yet.
+    looked += 1;
 
     for (const entry of entries) {
       if (!entry.isFile()) continue;
@@ -103,5 +123,5 @@ export async function newestConversationMtime({
     }
   }
 
-  return newest;
+  return { date: newest, looked };
 }

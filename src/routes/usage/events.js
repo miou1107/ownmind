@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { query as defaultQuery } from '../../utils/db.js';
 import defaultAuth from '../../middleware/auth.js';
 import logger from '../../utils/logger.js';
+import { isReason } from '../../../shared/scanners/reasons.js';
 import {
   recomputeDaily as defaultRecompute,
   deriveTouchedCombos
@@ -416,21 +417,41 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     // than HEARTBEAT_RATE_LIMIT_SECONDS, DO UPDATE is suppressed by the WHERE
     // clause → no write, zero audit noise. First-time inserts always land
     // because ON CONFLICT only fires when a matching row already exists.
+    // v1.26.69 — the reason is checked against the closed set here, at the boundary,
+    // so an unrecognised value never reaches a sized column inside the ingest path
+    // where the failure would cost the whole batch.
+    //
+    // "no reason field" and "a reason this server does not recognise" are different
+    // events and must not both mean null. The first is an older collector, or the MCP,
+    // which cannot say — leave whatever is stored alone. The second is a newer collector
+    // reporting a change, so the stale value has to go, or a collector that has started
+    // failing keeps displaying its last healthy state.
+    const reasonProvided = heartbeat.reason !== undefined && heartbeat.reason !== null;
+    const reason = isReason(heartbeat.reason) ? heartbeat.reason : null;
     await query(
       `INSERT INTO collector_heartbeat
-         (user_id, tool, last_reported_at, scanner_version, machine, os, status)
-       VALUES ($1, $2, NOW(), $3, $4, $5, 'active')
+         (user_id, tool, last_reported_at, scanner_version, machine, os, status, reason)
+       VALUES ($1, $2, NOW(), $3, $4, $5, 'active', $6)
        ON CONFLICT (user_id, tool) DO UPDATE SET
          last_reported_at = NOW(),
          scanner_version  = EXCLUDED.scanner_version,
          machine          = EXCLUDED.machine,
          os               = EXCLUDED.os,
-         status           = 'active'
-       WHERE collector_heartbeat.last_reported_at < NOW() - INTERVAL '${HEARTBEAT_RATE_LIMIT_SECONDS} seconds'`,
+         status           = 'active',
+         -- Only a heartbeat that actually carried a reason may write this column. The
+         -- MCP and the scanner share one row per (user_id, tool) and only the scanner
+         -- knows a reason; letting a reasonless MCP beat null it out would make the two
+         -- disagree on every beat, so the IS DISTINCT clause below would always be true
+         -- and the rate limit would stop working for the busiest tool on the machine.
+         reason           = CASE WHEN $7 THEN $6 ELSE collector_heartbeat.reason END
+       WHERE collector_heartbeat.last_reported_at < NOW() - INTERVAL '${HEARTBEAT_RATE_LIMIT_SECONDS} seconds'
+          OR ($7 AND collector_heartbeat.reason IS DISTINCT FROM $6)`,
       [userId, heartbeat.tool,
        heartbeat.scanner_version ?? null,
        heartbeat.machine ?? null,
-       heartbeat.os ?? null]
+       heartbeat.os ?? null,
+       reason,
+       reasonProvided]
     );
   } catch (err) {
     logger.error('heartbeat update failed', { error: err.message });
