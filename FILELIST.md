@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## 整理 — 修掉兩個既有的死連結（housekeeping，無版號）
+
+> 歸檔完做的全域掃描：FILELIST 與 CHANGELOG 裡共 57 個 openspec 路徑指不到東西。
+> 其中**只有 2 個是真的可點的 markdown 連結**，也就是慣例第 4 段所說「會 404 的真壞連結」
+> 那個例外，這次修掉。其餘 55 個是純文字檔案列表，第 4 段明講路徑或資料夾名過期不算
+> 壞連結、不必追改，維持原樣當歷史紀錄。
+>
+> - `v1.20-iron-rule-enforcement` 這個資料夾名從來沒進過 archive。它在 v1.20 計畫拆成
+>   v1.19.20~24 時就改過兩次名（→ `v1.19.20-rule-enforcer-core` →
+>   `v1.19.20-iron-rule-enforcement-finishing`），FILELIST 當初補 `archive/` 前綴時
+>   照著舊名補，等於補出一個從不存在的路徑。改指真正的資料夾，並標註原名。
+> - `v1.17.66-windows-hardening` 單純漏了 `archive/` 前綴，資料夾同名還在。
+
+修改：
+```
+FILELIST.md    — 2 行改指 archive/v1.19.20-iron-rule-enforcement-finishing/
+CHANGELOG.md   — 2 個連結：同上，以及補 archive/v1.17.66-windows-hardening/ 的前綴
+```
+
 ## 整理 — 22 個已發布的 OpenSpec 提案歸檔（housekeeping，無版號）
 
 > `openspec/changes/` 底下堆了 22 個早就發布的變更資料夾沒搬進 `archive/`，從 v1.26.32
@@ -1994,8 +2013,11 @@ tests/bypass-handler.test.js                                  — 15 case：pars
 ```
 shared/compliance.js                                          — schema 註解新增 block / bypass / hook_internal_error 三個合法 action
 tests/compliance.test.js                                      — 補 3 case：新 action 三個值都能寫入 + 讀回
-openspec/changes/archive/v1.20-iron-rule-enforcement/proposal.md      — 重寫：反映 Gemini 對抗審查拍板（剔 IR-005/008/048）+ 漸進切法 v1.19.6~10
-openspec/changes/archive/v1.20-iron-rule-enforcement/tasks.md         — 重寫：v1.19.6 範圍清單 + v1.19.7~10 後續預告
+openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/proposal.md
+                                                                       — 重寫：反映 Gemini 對抗審查拍板（剔 IR-005/008/048）+ 漸進切法 v1.19.6~10
+                                                                         （當時叫 v1.20-iron-rule-enforcement，v1.20 計畫拆成 v1.19.20~24 時改名）
+openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/tasks.md
+                                                                       — 重寫：v1.19.6 範圍清單 + v1.19.7~10 後續預告
 README.md / docs/README.zh-TW.md / docs/README.ja.md          — Iron Rule Enforcement Engine 段加 v1.19.6 兩條（rule-enforcer / bypass-handler）
 CHANGELOG.md                                                  — v1.19.6 條目
 package.json                                                  — version 1.19.5 → 1.19.6
