@@ -19,6 +19,7 @@
 import path from 'path';
 import os from 'os';
 import { createVscodeAdapter } from './vscode-telemetry.js';
+import { geminiConversationDirs, newestConversationMtime } from './gemini-conversations.js';
 
 const TOOL = 'antigravity';
 
@@ -53,13 +54,30 @@ export function antigravityDbCandidates(
     path.join(homeDir, prefix, name, 'User', 'globalStorage', 'state.vscdb'));
 }
 
-export function createAntigravityAdapter({ dbPath, dbPaths, ...rest } = {}) {
+export function createAntigravityAdapter({
+  dbPath, dbPaths, homeDir, conversationDirs, extraDateSources, ...rest
+} = {}) {
+  // v1.26.68 — state.vscdb only ever covers the editor. The agent manager and the CLI
+  // are not VSCode applications, so their days can only come from their conversation
+  // stores. This source is added for every construction path, including the explicit
+  // one: `dbPath` asserts which database to read, not that the database is the only
+  // thing worth reading.
+  const sources = extraDateSources ?? [
+    () => newestConversationMtime({
+      dirs: conversationDirs ?? geminiConversationDirs(homeDir),
+      logger: rest.logger ?? null
+    })
+  ];
+
   // An explicit dbPath stays an explicit dbPath: callers and tests that name one file
   // get exactly that file, unfiltered.
-  if (dbPath != null) return createVscodeAdapter({ tool: TOOL, dbPath, ...rest });
+  if (dbPath != null) {
+    return createVscodeAdapter({ tool: TOOL, dbPath, extraDateSources: sources, ...rest });
+  }
   return createVscodeAdapter({
     tool: TOOL,
     dbPaths: dbPaths ?? antigravityDbCandidates(),
+    extraDateSources: sources,
     ...rest
   });
 }

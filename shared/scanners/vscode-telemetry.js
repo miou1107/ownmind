@@ -107,6 +107,7 @@ export function createVscodeAdapter(opts) {
     tool, dbPath, dbPaths,
     sqlitePath = 'sqlite3', runSqlite = defaultRunSqlite,
     exists = defaultExists,
+    extraDateSources = [],
     scannerVersion = 'unknown',
     machine = null,
     logger = null
@@ -124,7 +125,7 @@ export function createVscodeAdapter(opts) {
       const prevSessionDate = prev.last_session_date || null;
 
       const cur = await readFreshestSessionDate({
-        candidates, skipMissing, exists, sqlitePath, runSqlite, logger
+        candidates, skipMissing, exists, sqlitePath, runSqlite, logger, extraDateSources
       });
       if (!cur) {
         // DB missing or telemetry fields empty — no session emitted, still
@@ -170,7 +171,7 @@ export function createVscodeAdapter(opts) {
  * and ordinary clock drift move things by hours; a rolled-forward system clock moves
  * them by months.
  */
-const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+export const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Latest session Date across the candidate databases, or null.
@@ -187,24 +188,54 @@ const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
  * which is worse than the bug this candidate list exists to fix.
  */
 async function readFreshestSessionDate({
-  candidates, skipMissing, exists, sqlitePath, runSqlite, logger
+  candidates, skipMissing, exists, sqlitePath, runSqlite, logger, extraDateSources = []
 }) {
   const ceiling = Date.now() + FUTURE_TOLERANCE_MS;
   let newest = null;
-  for (const dbPath of candidates) {
-    if (skipMissing && !(await exists(dbPath))) continue;
-    const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
-    const d = t.currentSessionDate ?? t.lastSessionDate ?? null;
-    if (!d) continue;
+
+  const consider = (d, origin) => {
+    if (!d) return;
     if (d.getTime() > ceiling) {
       logger?.warn?.(
         `[vscode-telemetry] ignoring future session date ${d.toISOString()} ` +
-        `from ${dbPath}; the clock that wrote it was wrong`
+        `from ${origin}; the clock that wrote it was wrong`
       );
-      continue;
+      return;
     }
     if (newest === null || d > newest) newest = d;
+  };
+
+  for (const dbPath of candidates) {
+    if (skipMissing && !(await exists(dbPath))) continue;
+    const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
+    // v1.26.68 — both, rather than `currentSessionDate ?? lastSessionDate`. The
+    // coalescing version picked the current one whenever it existed and only then let
+    // the ceiling judge it, so a database holding a future currentSessionDate beside a
+    // perfectly good lastSessionDate contributed nothing: a machine whose clock was
+    // wrong once had its telemetry silenced from then on, which is the outcome the
+    // ceiling exists to prevent. Offering both is safe because every value goes into
+    // one maximum; there is no precedence left to get wrong.
+    consider(t.currentSessionDate ?? null, dbPath);
+    consider(t.lastSessionDate ?? null, dbPath);
   }
+
+  // v1.26.68 — a tool may have surfaces that are not VSCode applications and write no
+  // telemetry at all. Antigravity has two of them. Extra sources answer the same
+  // question from somewhere else and are folded in under the same ceiling: a source
+  // that could return a bad date is exactly a source that could otherwise poison the
+  // cursor permanently.
+  for (const source of extraDateSources) {
+    let d = null;
+    try {
+      d = await source();
+    } catch (err) {
+      // One broken source must not cost the tool its telemetry answer or its heartbeat.
+      logger?.warn?.(`[vscode-telemetry] extra session-date source failed: ${err.message}`);
+      continue;
+    }
+    consider(d, 'an additional session-date source');
+  }
+
   return newest;
 }
 
