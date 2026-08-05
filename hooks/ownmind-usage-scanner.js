@@ -145,9 +145,16 @@ async function main() {
         const missed = result.skipped?.length
           ? ` skipped=${result.skipped.length}(${[...new Set(result.skipped)].join(',')})`
           : '';
+        // v1.26.66: `sent` counts token events, and a Tier 2 adapter has none by
+        // construction, so cursor and antigravity printed all zeros whether they had
+        // just recorded a day or recorded nothing at all. This is the line a human
+        // reads to decide whether collection is working, and for two of the five tools
+        // it could not answer the question. That is how a dead antigravity adapter went
+        // eleven weeks unnoticed.
+        const days = ` sessions=${result.sessions ?? 0}`;
         await log(`[scanner] ${adapter.tool} ` +
           `sent=${result.sent} accepted=${result.accepted} duplicated=${result.duplicated} ` +
-          `batches=${result.batches}${seen}${missed}`);
+          `batches=${result.batches}${days}${seen}${missed}`);
       } catch (err) {
         await log(`[scanner] ${adapter.tool} failed: ${err.message}`);
       }

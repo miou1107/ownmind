@@ -16,6 +16,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import fs from 'fs/promises';
 
 const execFileP = promisify(execFile);
 
@@ -84,17 +85,35 @@ export function toTaipeiYmd(date) {
  *     session record.
  *   - No change → don't resend (UPSERT is idempotent and harmless).
  *
- * @param {object} opts - { tool, dbPath, sqlitePath, runSqlite, scannerVersion, machine, logger }
- * @returns {Promise<{tool, readSince}>}
+ * v1.26.66 — a tool may write to more than one directory over its lifetime. Antigravity
+ * renamed its storage directory from `Antigravity` to `Antigravity IDE`, and the
+ * adapter kept reading the abandoned one: a date frozen in the past, no new session to
+ * emit, no error anywhere, and a healthy heartbeat every two hours for eleven weeks.
+ * Pass `dbPaths` to look in several places and use the freshest.
+ *
+ * `dbPath` and `dbPaths` mean different things on purpose. `dbPath` is a caller
+ * asserting "read this file" and is read directly, exactly as before. `dbPaths` is
+ * "find which of these is installed", so its entries are filtered by existence first —
+ * otherwise every single-install machine would log a failed query for the sibling
+ * directory on every scan, and a warning that fires on healthy machines stops being
+ * read.
+ *
+ * @param {object} opts - { tool, dbPath | dbPaths, sqlitePath, runSqlite, exists,
+ *                          scannerVersion, machine, logger }
+ * @returns {{tool: string, readSince: Function}}
  */
 export function createVscodeAdapter(opts) {
   const {
-    tool, dbPath,
+    tool, dbPath, dbPaths,
     sqlitePath = 'sqlite3', runSqlite = defaultRunSqlite,
+    exists = defaultExists,
     scannerVersion = 'unknown',
     machine = null,
     logger = null
   } = opts;
+
+  const candidates = dbPaths ?? (dbPath == null ? [] : [dbPath]);
+  const skipMissing = dbPaths != null;
 
   return {
     tool,
@@ -104,8 +123,9 @@ export function createVscodeAdapter(opts) {
       const prev = state[sourceKey] || {};
       const prevSessionDate = prev.last_session_date || null;
 
-      const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
-      const cur = t.currentSessionDate ?? t.lastSessionDate ?? null;
+      const cur = await readFreshestSessionDate({
+        candidates, skipMissing, exists, sqlitePath, runSqlite, logger
+      });
       if (!cur) {
         // DB missing or telemetry fields empty — no session emitted, still
         // send a heartbeat.
@@ -144,6 +164,68 @@ export function createVscodeAdapter(opts) {
 // ────────────────────────────────────────────────────────────
 // helpers
 // ────────────────────────────────────────────────────────────
+
+/**
+ * How far ahead of now a session date may be and still be believed. Timezone handling
+ * and ordinary clock drift move things by hours; a rolled-forward system clock moves
+ * them by months.
+ */
+const FUTURE_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Latest session Date across the candidate databases, or null.
+ *
+ * The `currentSessionDate ?? lastSessionDate` fallback is applied *per candidate*
+ * before comparing. Comparing currentSessionDate across all candidates first and only
+ * then falling back would let a stale install with a currentSessionDate beat a live one
+ * that happens to expose only lastSessionDate.
+ *
+ * A date beyond FUTURE_TOLERANCE_MS is discarded. Taking the maximum blindly means one
+ * abandoned database holding a future timestamp wins every comparison forever: it is
+ * emitted once, the cursor advances to it, and the live install's real dates are
+ * silently suppressed from then on. That converts one dead directory into a dead tool,
+ * which is worse than the bug this candidate list exists to fix.
+ */
+async function readFreshestSessionDate({
+  candidates, skipMissing, exists, sqlitePath, runSqlite, logger
+}) {
+  const ceiling = Date.now() + FUTURE_TOLERANCE_MS;
+  let newest = null;
+  for (const dbPath of candidates) {
+    if (skipMissing && !(await exists(dbPath))) continue;
+    const t = await readVscodeTelemetry({ dbPath, sqlitePath, runSqlite, logger });
+    const d = t.currentSessionDate ?? t.lastSessionDate ?? null;
+    if (!d) continue;
+    if (d.getTime() > ceiling) {
+      logger?.warn?.(
+        `[vscode-telemetry] ignoring future session date ${d.toISOString()} ` +
+        `from ${dbPath}; the clock that wrote it was wrong`
+      );
+      continue;
+    }
+    if (newest === null || d > newest) newest = d;
+  }
+  return newest;
+}
+
+/**
+ * Whether a candidate database is installed on this machine.
+ *
+ * Only ENOENT counts as "not installed". Any other failure — a permission wall on a
+ * parent directory, an I/O error, a home directory that resolved onto a regular file —
+ * means the question could not be answered, and answering "absent" would drop the
+ * candidate before sqlite is ever invoked, taking the warning with it. Letting it
+ * through costs one failed query and one log line on a machine that is genuinely
+ * broken, which is the right side to be wrong on.
+ */
+export async function defaultExists(p) {
+  try {
+    await fs.access(p);
+    return true;
+  } catch (err) {
+    return err?.code !== 'ENOENT';
+  }
+}
 
 function keyToCamel(key) {
   switch (key) {
