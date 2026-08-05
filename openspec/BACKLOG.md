@@ -70,25 +70,6 @@ shared client affecting every request, so the change reaches wider than any one 
 
 Origin: `archive/single-console-consolidation/tasks.md`, Stage 0.
 
-### 6. The 新增廣播 dialog is written for whoever built the schema
-
-Two fixes, one release. Both raised by Vin 2026-08-05 from the production dialog, against
-the project rule that UI and copy target non-technical users.
-
-**Recipients should be usernames with autocomplete.** The field is labelled 「指定收件人
-user_id（選填、逗號分隔；空=全員）」 and placeholdered `1, 2, 3`. Nobody knows their
-colleagues' database ids, so targeting a broadcast today means opening 使用者管理 in
-another tab, reading ids off, and typing them back. Needs a member-lookup endpoint
-(name/email prefix, admin-only) plus a multi-select input, resolving to ids client-side
-before the POST. The `target_user_ids` API contract can stay as it is.
-
-**結束時間 should default to 30 days out.** It is an optional ISO 8601 field that means
-"forever" when blank, and blank is what everyone leaves it. The result is visible in the
-current list: broadcast after broadcast reading 生效區間 … — 永久, so nothing ever ages
-out on its own. Prefill 30 days ahead; keep 永久 reachable by clearing the field.
-
-Origin: `archive/v1.26.50-system-config-broadcast/`, plus this session.
-
 ---
 
 ## Needs Vin's decision

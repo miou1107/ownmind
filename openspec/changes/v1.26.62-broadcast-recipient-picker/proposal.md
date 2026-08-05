@@ -69,6 +69,42 @@ The alternative was falling back to the old free-text id box. Rejected: it means
 two input paths and two validation stories alive permanently to cover a rare window, and
 the fallback is exactly the interface this release exists to remove.
 
+## Found while doing it
+
+`cooldown_minutes` was built as `Number(form.cooldown_minutes) || 1440`. Zero is falsy,
+the field accepts zero, and the validator rejects only negatives — so an admin typing 0
+for "repeatable immediately" saw 0 on screen and sent 1440. Wrong since v1.26.50. Fixed
+here rather than filed, because it is three lines from the two fields this release is
+about, and because extracting the payload builder is what made it visible at all.
+
+## Review round
+
+Adversarial review through the `agy` CLI, against a copy outside the repo. Five findings,
+all five verified against the code before acting, all five real — though two arrived with
+the wrong severity attached:
+
+- **Minor, the 30-day default drifts an hour across a DST boundary — correct.**
+  `now + 30 * 86400000` adds 720 hours, not 30 days. Fixed with `setDate`. The guard is a
+  test asserting the local hours and minutes are preserved; it was confirmed to fail
+  against the old implementation under `TZ=America/New_York` and pass after, which is the
+  only way to see it from a machine in Taipei.
+- **Critical, a cooldown of 0 is silently replaced by 1440 — correct, and pre-existing.**
+  See above. The severity is right; the attribution is not, and the release notes say so.
+- **Important, the `onBlur` `setTimeout` is fragile — correct, with a different reason
+  than the one given.** The reviewer argued it breaks scrollbar dragging, which could not
+  be reproduced. The real damage is to keyboard users: the timer fires after Tab moves
+  focus into the list and removes the button being focused. Now keyed on `relatedTarget`.
+  The timer never protected the click path in the first place — the option's
+  `onMouseDown` prevents default, so clicking cannot blur the input.
+- **Minor, holding Enter adds the same person twice — correct.** The handler outruns the
+  re-render, so `suggestions[active]` is still that member. `pick` now ignores an id it
+  already holds.
+- **Critical, no arrow keys and no ARIA roles — correct, but not Critical.** Refining the
+  query reaches most rows, so it is not the total block the review claimed. It *is* a
+  block when one name is a prefix of another, which is reachable in a real team. Arrow
+  keys, `role="combobox"`/`listbox"`/`option"`, `aria-expanded` and `aria-activedescendant`
+  added.
+
 ## Non-goals
 
 - No server-side member search. A dozen rows filter client-side.
