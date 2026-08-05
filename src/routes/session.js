@@ -6,6 +6,7 @@ import { SESSION_RETENTION_DAYS } from '../constants.js';
 import { computePeriodRange, computeReportData } from '../utils/report.js';
 import { buildSessionRecentQuery } from '../lib/session-query.js';
 import { requireFields } from '../utils/require-fields.js';
+import { bucketLabel } from '../utils/session-buckets.js';
 
 const router = Router();
 router.use(auth);
@@ -38,7 +39,12 @@ function sanitizeDetails(details) {
  */
 router.post('/', async (req, res) => {
   try {
-    const validation = requireFields(req.body, ['tool', 'model', 'summary']);
+    // v1.26.61: only `summary` is required. `tool` is defaulted by the MCP client from
+    // the tool hosting it, and `model` is genuinely optional — nothing in the client
+    // knows it, and requiring it discarded the entire session record to protect one
+    // string. Both columns have always been nullable (db/001_init.sql:65-66); this makes
+    // the endpoint agree with its own schema. See Eric's bug #9.
+    const validation = requireFields(req.body, ['summary']);
     if (validation) return res.status(400).json(validation);
 
     const { session_id, tool, model, machine, details } = req.body;
@@ -116,7 +122,11 @@ export async function compressOldSessions(userId) {
     }
 
     for (const [month, sessions] of Object.entries(byMonth)) {
-      const lines = sessions.map(s => `- [${s.tool}] ${s.summary}`);
+      // v1.26.61: bucketLabel, not the raw column. `tool` became nullable for direct API
+      // callers in this release, and a template literal turns a NULL into the four
+      // characters "null" — permanently, because this text replaces the rows it
+      // summarises and they are then deleted.
+      const lines = sessions.map(s => `- [${bucketLabel(s.tool)}] ${s.summary}`);
       const summary = `月摘要 — ${month}（${sessions.length} sessions）\n\n${lines.join('\n')}`;
       const ids = sessions.map(s => s.id);
 

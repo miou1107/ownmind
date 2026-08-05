@@ -2,53 +2,53 @@
 
 ## A — close the exposure, make going back impossible
 
-- [ ] `legacy-admin-mount.js` always redirects; the static branch and `publicDir` go
-- [ ] `signpost` removed from `FEATURE_STATES`, so the existing validator throws on it
-- [ ] Tests updated: manifest, bare-mount
+- [x] `legacy-admin-mount.js` always redirects; the static branch and `publicDir` go
+- [x] `signpost` removed from `FEATURE_STATES`, so the existing validator throws on it
+- [x] Tests updated: manifest, bare-mount
 
 ## B — retire the legacy console source
 
-- [ ] `git mv src/public/index.html legacy/admin-v1.26/index.html` + header comment
-- [ ] Fix the 7 tests that read it (the ledger named 3)
-- [ ] `COPY src/ ./src/` no longer carries it into the image — confirm
+- [x] `git mv src/public/index.html legacy/admin-v1.26/index.html` + header comment
+- [x] Fix the 7 tests that read it (the ledger named 3)
+- [x] `COPY src/ ./src/` no longer carries it into the image — confirm
 
 ## C — remove the signpost UI
 
-- [ ] `Signpost.jsx`, the credential handoff, the amber sidebar marker
-- [ ] Locale keys: `signpost.*`, `legacy.tab.*`, `nav.still_in_legacy` ×3
-- [ ] `App.jsx` renders the real page or a wiring error, nothing else
-- [ ] e2e: the signpost block goes; the retirement block stays
+- [x] `Signpost.jsx`, the credential handoff, the amber sidebar marker
+- [x] Locale keys: `signpost.*`, `legacy.tab.*`, `nav.still_in_legacy` ×3
+- [x] `App.jsx` renders the real page or a wiring error, nothing else
+- [x] e2e: the signpost block goes; the retirement block stays
 
 ## D — backend dead code
 
-- [ ] Delete `/api/admin/login` and its `authLimiter` line
-- [ ] Move the `audit_logs` login write into `/api/me/login`
-- [ ] Delete `writeAdminAudit` — `admin_audit_logs` exists in no migration and does not
+- [x] Delete `/api/admin/login` and its `authLimiter` line
+- [x] Move the `audit_logs` login write into `/api/me/login`
+- [x] Delete `writeAdminAudit` — `admin_audit_logs` exists in no migration and does not
       exist on production, so every one of those inserts has always failed into a catch
-- [ ] Keep `/api/admin/setup` (the recovery path) and `/api/admin/iron-rules/*` (Vin)
+- [x] Keep `/api/admin/setup` (the recovery path) and `/api/admin/iron-rules/*` (Vin)
 
 ## E — remove the cost calculation (Requirement 8)
 
-- [ ] `src/routes/usage/pricing.js`, `src/utils/pricing-lookup.js`, `tests/pricing.test.js`
-- [ ] `pickPricing` / `computeCost` out of `src/jobs/usage-aggregation.js`
-- [ ] `cost_usd` out of the responses that still carry it
-- [ ] Column stays
+- [x] `src/routes/usage/pricing.js`, `src/utils/pricing-lookup.js`, `tests/pricing.test.js`
+- [x] `pickPricing` / `computeCost` out of `src/jobs/usage-aggregation.js`
+- [x] `cost_usd` out of the responses that still carry it
+- [x] Column stays
 
 ## F — exemptions
 
-- [ ] Delete the CRUD routes; keep the table and every read of it
+- [x] Delete the CRUD routes; keep the table and every read of it
 
 ## G — a fresh clone can start
 
-- [ ] `npm start` builds the console when it is missing
+- [x] `npm start` builds the console when it is missing
 
 ## H — finish
 
-- [ ] Dockerfile comments describe what is actually there
-- [ ] Confirm `/setup` still resolves
-- [ ] Close the loop on `openspec/changes/archive/v1.20.4-legacy-retire/`
-- [ ] Confirm the Requirement 5 guard did real work
-- [ ] CHANGELOG / FILELIST / README ×3 / package.json / umbrella ledger
+- [x] Dockerfile comments describe what is actually there
+- [x] Confirm `/setup` still resolves
+- [x] Close the loop on `openspec/changes/archive/v1.20.4-legacy-retire/`
+- [x] Confirm the Requirement 5 guard did real work
+- [x] CHANGELOG / FILELIST / README ×3 / package.json / umbrella ledger
 - [x] `superpowers:verification-before-completion` — suite 2606/0, client build exit 0,
       e2e 41/0
 - [x] `superpowers:requesting-code-review` — adversarial pass, one bundled file

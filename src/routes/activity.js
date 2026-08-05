@@ -4,6 +4,7 @@ import auth from '../middleware/auth.js';
 import adminAuth from '../middleware/adminAuth.js';
 import logger from '../utils/logger.js';
 import { enrichActivityDetails } from '../utils/enrich-activity.js';
+import { bucketLabel } from '../utils/session-buckets.js';
 import { insertActivityLog, normalizeClientEventId } from '../utils/activity-insert.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-event-types.js';
 
@@ -284,8 +285,14 @@ router.get('/stats', adminAuth, async (req, res) => {
     for (const row of sessionStats.rows) {
       sessionsTotal += parseInt(row.count);
       if (row.compressed) sessionsCompressed += parseInt(row.count);
-      sessionsByTool[row.tool] = (sessionsByTool[row.tool] || 0) + parseInt(row.count);
-      sessionsByModel[row.model] = (sessionsByModel[row.model] || 0) + parseInt(row.count);
+      // v1.26.61: bucketLabel, not the raw column. `model` became optional when
+      // requiring it started discarding whole session records, and `byModel[null]`
+      // produces a chart category literally named "null" — an absence rendered as a
+      // value, which is the defect Requirement 7 exists to prevent.
+      const toolKey = bucketLabel(row.tool);
+      const modelKey = bucketLabel(row.model);
+      sessionsByTool[toolKey] = (sessionsByTool[toolKey] || 0) + parseInt(row.count);
+      sessionsByModel[modelKey] = (sessionsByModel[modelKey] || 0) + parseInt(row.count);
     }
 
     // Recovery session statistics.
@@ -591,8 +598,11 @@ router.get('/stats/all', adminAuth, async (req, res) => {
     const userToolModels = {};
     for (const r of toolModelResult.rows) {
       if (!userToolModels[r.user_id]) userToolModels[r.user_id] = { tools: {}, models: {} };
-      userToolModels[r.user_id].tools[r.tool] = (userToolModels[r.user_id].tools[r.tool] || 0) + parseInt(r.count);
-      userToolModels[r.user_id].models[r.model] = (userToolModels[r.user_id].models[r.model] || 0) + parseInt(r.count);
+      // Same reason as the per-user grouping above.
+      const tKey = bucketLabel(r.tool);
+      const mKey = bucketLabel(r.model);
+      userToolModels[r.user_id].tools[tKey] = (userToolModels[r.user_id].tools[tKey] || 0) + parseInt(r.count);
+      userToolModels[r.user_id].models[mKey] = (userToolModels[r.user_id].models[mKey] || 0) + parseInt(r.count);
     }
 
     const userToolComp = {};

@@ -19,6 +19,7 @@ import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
+import { buildSessionLogBody } from './lib/session-log-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import {
   detectTriggerFromContext,
@@ -581,8 +582,8 @@ const TOOLS = [
       type: "object",
       properties: {
         summary: { type: "string", description: "Session summary (1-2 sentences describing what was done)" },
-        tool: { type: "string", description: "Tool used (e.g., claude-code, cursor, codex)" },
-        model: { type: "string", description: "Model used (e.g., claude-opus-4-6, gpt-5)" },
+        tool: { type: "string", description: "(optional) Tool used (e.g., claude-code, cursor, codex). Defaults to the tool hosting this MCP." },
+        model: { type: "string", description: "(optional) Model used (e.g., claude-opus-5, gpt-5). Supply it when you know it; it is recorded as unreported rather than guessed." },
         machine: { type: "string", description: "Machine the session ran on (optional)" },
         details: {
           type: "object",
@@ -599,7 +600,7 @@ const TOOLS = [
           },
         },
       },
-      required: ["summary", "tool", "model"],
+      required: ["summary"],
     },
   },
   {
@@ -713,7 +714,7 @@ const TOOLS = [
         },
         confirm_string: {
           type: "string",
-          description: "Required. Must be the exact submit confirmation phrase typed verbatim by the user. The AI MUST NOT auto-fill this field.",
+          description: "Required, and the AI MUST NOT auto-fill or guess it — this is a human-in-the-loop gate. Pass back only what the user typed, verbatim. If you do not know the exact phrase, call this tool with your best attempt: the server refuses with an error that names the required phrase, and you then show the user that phrase and ask them to type it. Do not ask the user to guess.",
         },
       },
       required: ["title", "description", "bug_fingerprint", "confirm_string"],
@@ -1064,11 +1065,13 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_log_session": {
-      const body = { summary: args.summary, sync_token: currentSyncToken };
-      if (args.tool !== undefined) body.tool = args.tool;
-      if (args.model !== undefined) body.model = args.model;
-      if (args.machine !== undefined) body.machine = args.machine;
-      if (args.details !== undefined) body.details = args.details;
+      // v1.26.61: `tool` defaults to this client and `model` may be absent, so a call
+      // that arrives carrying only `summary` still records the session. See
+      // mcp/lib/session-log-body.js and Eric's bug #9.
+      const body = {
+        ...buildSessionLogBody(args, { clientTool: CLIENT_TOOL }),
+        sync_token: currentSyncToken,
+      };
 
       // E5: Session audit (L6) — check commits against compliance events
       try {
