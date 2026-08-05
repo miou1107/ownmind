@@ -2529,6 +2529,7 @@ OwnMind/
 │   ├── scanner-blind-scan.test.js   # v1.26.65 —「讀不到目錄」不得回報成「沒有檔案」；單一檔案讀不到只跳過該檔、心跳照送；readSince 回報 scanned / skipped
 │   ├── scanner-vscode-multipath.test.js # v1.26.66 — Antigravity 改資料夾名後要讀到新的那個；多候選挑最新、只有 ENOENT 算沒安裝、未來日期不得毒化游標、掃描紀錄要印 sessions=N
 │   ├── mcp-client-tool-attribution.test.js # v1.26.67 — 「跑在哪個工具裡」只能有一份規則；OWNMIND_TOOL 優先、空字串視同未設、四個呼叫點不得各自實作
+│   ├── sqlite-readonly-fallback.test.js # v1.26.70 — 編輯器關著時 state.vscdb 讀不到；複本要連 -wal 一起帶、複本不帶參數開、原檔只用 -readonly、暫存一定刪掉
 │   ├── collector-silence-reason.test.js # v1.26.69 — silent 要說出原因；六個原因碼封閉、換帳號丟掉「這天報過了」但保留讀取位置、舊版收集器不猜
 │   ├── scanner-antigravity-conversations.test.js # v1.26.68 — 非 VSCode 介面的用量要看得到；三個介面名單不含 backup、只讀 mtime 不開內容、未來日期逐檔擋、遙測較新時不得倒退
 │   ├── install-prerequisite-auto-install.test.js # v1.17.76 — 缺 node/git 時 install.ps1/sh 自動安裝（vin-windows-test 回報 7 條 contract test）
