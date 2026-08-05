@@ -396,7 +396,7 @@ Origin: v1.26.68 investigation, 2026-08-05.
 
 ---
 
-### 20. Tier 2 can only read `state.vscdb` while the editor is running
+### 20. Tier 2 could only read `state.vscdb` while the editor was running — FIXED in v1.26.70
 
 Found within a minute of v1.26.69 landing, by reading its own new output:
 
@@ -437,13 +437,23 @@ rather than wrong, which is why nothing ever flagged it.
 Antigravity is insulated by accident: v1.26.68 gave it the `~/.gemini` conversation
 store, so it has a second source when the database will not open. Cursor has no fallback.
 
-**Do not simply switch to `immutable=1`.** That promises SQLite the file cannot change,
-and reading a database an application is actively writing under that promise can return
-torn data. The safer shape is: try `-readonly`, and on SQLITE_CANTOPEN copy the file to
-a temporary path and read the copy. Needs a test proving the fallback does not fire on a
-healthy database, and one proving the copy is removed.
+**Fixed in v1.26.70**, and the plan written here was wrong twice on the way:
 
-Origin: v1.26.69, 2026-08-06.
+- "copy the file and read the copy" fails identically. What `-readonly` wants is the
+  `-shm` sidecar and a bare copy has none either.
+- `immutable=1` on the copy fixes that but drops the WAL, and these databases are in WAL
+  mode with a live `-wal` beside them. The uncheckpointed part is exactly the newest
+  activity.
+
+What shipped: copy the database **with its journal sidecars**, open the copy with no
+flags so SQLite can replay the WAL on a snapshot it owns, delete the temporary directory
+afterwards. The live file is only ever opened `-readonly`.
+
+Still open, recorded there rather than here: `shared/scanners/opencode.js` has its own
+copy of the same pattern and the same exposure, and nothing has run the fallback on
+Windows.
+
+Origin: v1.26.69, 2026-08-06. Closed by v1.26.70 the same night.
 
 ---
 

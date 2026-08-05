@@ -17,6 +17,8 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import {
   OK, NO_NEW_ACTIVITY, NO_INSTALL, SQLITE_MISSING, UNREADABLE
 } from './reasons.js';
@@ -324,11 +326,114 @@ function sqlQuote(s) {
   return `'${String(s).replace(/'/g, "''")}'`;
 }
 
-async function defaultRunSqlite({ sqlitePath, dbPath, sql }) {
-  const { stdout } = await execFileP(sqlitePath, [
-    '-json', '-readonly', dbPath, sql
-  ], { maxBuffer: 10 * 1024 * 1024 });
-  const text = stdout.trim();
-  if (!text) return [];
-  return JSON.parse(text);
+/**
+ * sqlite3's complaint when it cannot open the database file at all.
+ *
+ * This is the one failure worth retrying. It is what an editor's `state.vscdb` produces
+ * whenever the editor is closed: measured on a Mac on 2026-08-06, `-readonly` succeeds
+ * against Cursor's live database while Cursor is running and a `state.vscdb-shm`
+ * sidecar sits beside it, and fails on the same bytes copied into an empty directory.
+ */
+function isCantOpen(err) {
+  // stderr when there is one, because `err.message` from execFile begins with the whole
+  // command line, path included. A database living under a directory someone named
+  // "unable to open database file" would otherwise match on its own path and send every
+  // ordinary failure down the fallback.
+  const stderr = typeof err?.stderr === 'string' ? err.stderr : '';
+  const text = stderr.trim() ? stderr : String(err?.message ?? '');
+  return /unable to open database file/i.test(text);
+}
+
+/**
+ * Run one query with the sqlite3 CLI, falling back to a copy of the database.
+ *
+ * Tier 2 collection used to depend on the editor happening to be open when the
+ * scheduled scan fired: partly luck on the 30-minute Mac schedule, mostly luck on the
+ * 120-minute Windows one. The days it missed were absent rather than wrong, so nothing
+ * ever reported a problem.
+ *
+ * The fallback copies the database, with any journal sidecars, and opens the copy with
+ * no flags at all. Two measurements shaped that, and neither was the obvious answer:
+ *
+ *   - A copy retried with `-readonly` fails exactly like the original. What `-readonly`
+ *     wants is the `-shm` sidecar, and a bare copy has none either. The first version of
+ *     this fix did that and a test against the real CLI caught it.
+ *   - These databases are in WAL mode, and the live file really does carry a `-wal`.
+ *     Copying only the main file drops whatever has not been checkpointed, which is
+ *     precisely the most recent activity a scan is looking for. `immutable=1` has the
+ *     same flaw from the other direction: it ignores the WAL by design.
+ *
+ * An unflagged open on a private copy has neither problem. SQLite owns the snapshot, so
+ * it can create the sidecars it needs and replay the WAL, and everything it writes is
+ * discarded with the temporary directory. The live file is only ever opened `-readonly`,
+ * and that is what keeps this safe.
+ *
+ * @param {{sqlitePath: string, dbPath: string, sql: string,
+ *          execFileFn?: Function, logger?: object}} opts
+ */
+export async function defaultRunSqlite({
+  sqlitePath, dbPath, sql, execFileFn = execFileP, logger = null
+}) {
+  // `readonly` is never anything but true for the live file. The copy is opened without
+  // it so SQLite may create the sidecars it needs and replay the WAL, which it can only
+  // do on a database it owns.
+  const run = async (target, { readonly = true } = {}) => {
+    const args = readonly
+      ? ['-json', '-readonly', target, sql]
+      : ['-json', target, sql];
+    const { stdout } = await execFileFn(sqlitePath, args, { maxBuffer: 10 * 1024 * 1024 });
+    const text = String(stdout ?? '').trim();
+    if (!text) return [];
+    return JSON.parse(text);
+  };
+
+  try {
+    return await run(dbPath);
+  } catch (err) {
+    // ENOENT is the CLI itself missing, which v1.26.69 reports as `sqlite_missing` and
+    // which on Windows is a one-command fix. Retrying it would take that answer away.
+    if (err?.code === 'ENOENT' || !isCantOpen(err)) throw err;
+    return await runFromCopy({ run, dbPath, original: err, logger });
+  }
+}
+
+/**
+ * Journal sidecars worth bringing along with a snapshot. A `-wal` left behind by an
+ * editor that did not checkpoint holds the newest commits, and a copy without it is a
+ * copy of yesterday.
+ */
+const JOURNAL_SIDECARS = ['-wal', '-shm', '-journal'];
+
+async function runFromCopy({ run, dbPath, original, logger }) {
+  let dir = null;
+  try {
+    // Under the system temporary directory, never beside the original. The collector
+    // reads other applications' data; it does not write into their directories.
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ownmind-vscdb-'));
+    const copy = path.join(dir, 'snapshot.db');
+    await fs.copyFile(dbPath, copy);
+    for (const suffix of JOURNAL_SIDECARS) {
+      // Absent is the ordinary case: this runs when the editor is closed, and a clean
+      // shutdown checkpoints and removes them. A crash does not, and that is the case
+      // worth carrying them for.
+      await fs.copyFile(`${dbPath}${suffix}`, `${copy}${suffix}`).catch(() => {});
+    }
+    return await run(copy, { readonly: false });
+  } catch (err) {
+    // ENOENT here means the source was not there to copy, and that one has to surface as
+    // the original: the adapter asks `exists` and turns it into `no_install`, and an fs
+    // ENOENT raised from here would be read as "the sqlite3 CLI is missing" instead,
+    // because that is what an ENOENT means one level up.
+    //
+    // Anything else — a full disk, a permission wall on the temp directory, a torn copy
+    // that will not parse — is a real failure of its own and says more than a repeated
+    // "cannot open" would. It still classifies as `unreadable`; it just says why.
+    logger?.warn?.(
+      `[vscode-telemetry] ${dbPath} could not be opened read-only, and reading a copy ` +
+      `failed too: ${err.message}`
+    );
+    throw err?.code === 'ENOENT' ? original : err;
+  } finally {
+    if (dir) await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
 }
