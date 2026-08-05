@@ -25,72 +25,72 @@ TDD flow: failing tests before source, then docs, then the quality gates.
 
 ## Phase 1 — RED (failing tests before any source change)
 
-- [ ] `tests/login-outcome.test.js` — extend for Requirement 3:
-  - [ ] `{ mustSetPassword: true }` → `{ kind: 'first_password' }`
-  - [ ] `{ mustSetPassword: 'yes' }` → `{ kind: 'error' }`
-  - [ ] `requiresSetup` still wins where both could apply
-  - [ ] the three existing outcomes unchanged
-- [ ] `tests/first-password.test.js` (new) — Requirements 1 and 2 against the pure policy
+- [x] `tests/login-outcome.test.js` — extend for Requirement 3:
+  - [x] `{ mustSetPassword: true }` → `{ kind: 'first_password' }`
+  - [x] `{ mustSetPassword: 'yes' }` → `{ kind: 'error' }`
+  - [x] `requiresSetup` still wins where both could apply
+  - [x] the three existing outcomes unchanged
+- [x] `tests/first-password.test.js` (new) — Requirements 1 and 2 against the pure policy
       in `src/utils/first-password.js`, following `src/utils/setup-recovery.js`. Not
       against the route: `me.js` has no dependency injection, and the source-regex style
       of `tests/me-change-password-status.test.js` is too weak for a credential path:
-  - [ ] Login with the flag `TRUE` → 200, `mustSetPassword`, no `api_key` key present
-  - [ ] Login with the flag `TRUE` and a wrong password → 401, generic body
-  - [ ] Login with the flag `FALSE` → unchanged response including `api_key`
-  - [ ] `first-password` happy path → 200 with `api_key`, hash replaced, flag cleared,
+  - [x] Login with the flag `TRUE` → 200, `mustSetPassword`, no `api_key` key present
+  - [x] Login with the flag `TRUE` and a wrong password → 401, generic body
+  - [x] Login with the flag `FALSE` → unchanged response including `api_key`
+  - [x] `first-password` happy path → 200 with `api_key`, hash replaced, flag cleared,
         audit row written
-  - [ ] `first-password` with a wrong current password → 401, flag still `TRUE`
-  - [ ] `first-password` against an account with the flag `FALSE` → 401, password
+  - [x] `first-password` with a wrong current password → 401, flag still `TRUE`
+  - [x] `first-password` against an account with the flag `FALSE` → 401, password
         unchanged
-  - [ ] `first-password` with a short new password → 400
-  - [ ] `first-password` with `new_password === current_password` → 400
-  - [ ] `first-password` with a missing field → 400
-- [ ] Run both; confirm they fail for the right reason
+  - [x] `first-password` with a short new password → 400
+  - [x] `first-password` with `new_password === current_password` → 400
+  - [x] `first-password` with a missing field → 400
+- [x] Run both; confirm they fail for the right reason
 
 ## Phase 2 — GREEN (server)
 
-- [ ] `src/utils/first-password.js` (new) — the pure policy: what login answers for a
+- [x] `src/utils/first-password.js` (new) — the pure policy: what login answers for a
       given user row, and what `first-password` refuses and why
-- [ ] `src/routes/me.js`: login asks the policy instead of building its own response when
+- [x] `src/routes/me.js`: login asks the policy instead of building its own response when
       the flag is `TRUE`
-- [ ] `src/routes/me.js`: `POST /first-password`, mounted above `router.use(auth)`
-- [ ] `src/app.js`: `authLimiter` on `/api/me/first-password`, plus a structural test that
+- [x] `src/routes/me.js`: `POST /first-password`, mounted above `router.use(auth)`
+- [x] `src/app.js`: `authLimiter` on `/api/me/first-password`, plus a structural test that
       it is mounted, since forgetting it is the one mistake that would not show up in any
       behavioural test
-- [ ] Tests pass
+- [x] Tests pass
 
 ## Phase 3 — GREEN (console)
 
-- [ ] `client/src/pages/login-outcome.js`: the fourth kind, before the `api_key` check
-- [ ] `client/src/pages/LoginPage.jsx`: `mode === 'first-password'` form, keeping the
+- [x] `client/src/pages/login-outcome.js`: the fourth kind, before the `api_key` check
+- [x] `client/src/pages/LoginPage.jsx`: `mode === 'first-password'` form, keeping the
       email and the typed temporary password; on success `setApiKey`, `prime`, navigate
       to the original destination
-- [ ] Confirm `RequireFreshPassword` is untouched and still covers the admin-reset case
+- [x] Confirm `RequireFreshPassword` is untouched and still covers the admin-reset case
 
 ## Phase 4 — i18n
 
-- [ ] `zh.json`: new keys for the third mode's title, explanation, submit and back
-- [ ] `en.json` and `ja.json` carry the same key set
-- [ ] Grep `LoginPage.jsx` for every `t()` key; confirm each exists in all three
+- [x] `zh.json`: new keys for the third mode's title, explanation, submit and back
+- [x] `en.json` and `ja.json` carry the same key set
+- [x] Grep `LoginPage.jsx` for every `t()` key; confirm each exists in all three
 
 ## Phase 5 — Docs and version
 
-- [ ] `package.json` → `1.26.63`
-- [ ] `CHANGELOG.md` entry, including what is *not* closed
-- [ ] `FILELIST.md`
-- [ ] `README.md` three-locale check
-- [ ] `openspec/BACKLOG.md`: item 1 goes, replaced by an entry for the admin-reset path
+- [x] `package.json` → `1.26.63`
+- [x] `CHANGELOG.md` entry, including what is *not* closed
+- [x] `FILELIST.md`
+- [x] `README.md` three-locale check
+- [x] `openspec/BACKLOG.md`: item 1 goes, replaced by an entry for the admin-reset path
       and the `api_key` rotation decision, which is what remains open
 
 ## Phase 6 — Quality gates
 
-- [ ] `npm test` — full suite, zero failures
-- [ ] `cd client && npm run build` — exit 0
-- [ ] Adversarial review through the `agy` CLI, against a copy outside the repo. This one
+- [x] `npm test` — full suite, zero failures
+- [x] `cd client && npm run build` — exit 0
+- [x] Adversarial review through the `agy` CLI, against a copy outside the repo. This one
       is a credential path, so the review prompt asks specifically about oracles, timing,
       rate-limit bypass, and any response shape that leaks account state
-- [ ] `superpowers:receiving-code-review`
-- [ ] `superpowers:verification-before-completion`
+- [x] `superpowers:receiving-code-review`
+- [x] `superpowers:verification-before-completion`
 - [ ] Not verified against production. Testing this path means logging in as somebody
       else's account, and the only account with the flag set is a real colleague's
 

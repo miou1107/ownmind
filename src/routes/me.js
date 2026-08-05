@@ -18,6 +18,7 @@ import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { RULE_FULL_LAYER_SYNC } from '../../shared/lint-event-types.js';
 import { noPasswordLoginResponse, LOGIN_REJECTED } from '../utils/setup-recovery.js';
+import { loginResponseFor, firstPasswordRefusal } from '../utils/first-password.js';
 import { writeAuditLog } from '../utils/audit-log.js';
 
 // v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
@@ -28,6 +29,19 @@ const LEGACY_FULL_LAYER_SYNC_CODE = 'IR-006';
 
 const router = Router();
 const BCRYPT_ROUNDS = 10;
+
+// v1.26.63: something valid to compare against when POST /first-password is handed an
+// email nobody has, so the handler runs the same bcrypt work whatever the answer will be
+// and does not branch on account existence.
+//
+// Computed at boot rather than written as a literal: a bcrypt hash in source is a long
+// random-looking string, and the pre-commit secret scanner has flagged exactly that shape
+// before. The cost is one hash at startup.
+//
+// Not a claim that this endpoint is timing-safe overall. POST /login above still returns
+// early for an unknown email without hashing anything, and that predates this release.
+// The control on both is the 10-per-15-minutes limiter in src/app.js.
+const DUMMY_HASH = bcrypt.hashSync('ownmind-timing-placeholder', BCRYPT_ROUNDS);
 
 /**
  * POST /api/me/login — email + password login (from v1.17.25, accepts any role).
@@ -66,18 +80,72 @@ router.post('/login', async (req, res) => {
     // zero of them in sixty days, because everyone was already logging in here instead.
     // Awaited, but it cannot fail the login: writeAuditLog swallows its own errors, on
     // the grounds that a record of something that already happened must not undo it.
-    await writeAuditLog(user.id, 'login', 'user', user.id, { email: user.email });
-    res.json({
-      id: user.id,
-      api_key: user.api_key,
-      name: user.name,
+    // v1.26.63: an account still on the temporary password gets no api_key here. See
+    // src/utils/first-password.js for why the requirement moved from the browser to this
+    // response.
+    const { status, body } = loginResponseFor(user);
+    // `issued_key` because the action stays 'login' either way — the password was
+    // verified — but from this release a verified password does not always mean the
+    // caller walked away with a credential, and an audit row that cannot tell the two
+    // apart is a record of something that did not happen.
+    await writeAuditLog(user.id, 'login', 'user', user.id, {
       email: user.email,
-      role: user.role,
-      must_change_password: !!user.must_change_password,
+      issued_key: !!body.api_key,
     });
+    res.status(status).json(body);
   } catch (err) {
     logger.error('me/login failed', { error: err.message });
     res.status(500).json({ error: '登入失敗' });
+  }
+});
+
+/**
+ * POST /api/me/first-password — replace the temporary password and receive the api_key.
+ * Body: { email, current_password, new_password }
+ *
+ * Unauthenticated by necessity: the caller has no key yet, because POST /login refused to
+ * issue one. Mounted behind the same authLimiter as /login in src/app.js, since it
+ * verifies a password.
+ *
+ * Every decision about what to refuse, and what a refusal may reveal, is in
+ * src/utils/first-password.js.
+ */
+router.post('/first-password', async (req, res) => {
+  try {
+    const { email, current_password, new_password } = req.body || {};
+    const result = await query(
+      `SELECT id, email, name, role, api_key, password_hash, must_change_password
+       FROM users WHERE LOWER(email) = LOWER($1)`,
+      [String(email ?? '')]
+    );
+    const user = result.rows[0] || null;
+
+    // Compared even when the row is missing or the flag is already clear, so the endpoint
+    // takes about the same time whatever the answer turns out to be. bcrypt.compare
+    // against a syntactically valid hash is the standard way to avoid handing out an
+    // account-exists oracle through response timing.
+    const passwordOk = await bcrypt.compare(
+      String(current_password ?? ''),
+      user?.password_hash || DUMMY_HASH
+    );
+
+    const refusal = firstPasswordRefusal({
+      user, passwordOk, currentPassword: current_password, newPassword: new_password,
+    });
+    if (refusal) return res.status(refusal.status).json(refusal.body);
+
+    const hash = await bcrypt.hash(new_password, BCRYPT_ROUNDS);
+    await query(
+      `UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2`,
+      [hash, user.id]
+    );
+    await writeAuditLog(user.id, 'first_password', 'user', user.id, { email: user.email });
+
+    const { status, body } = loginResponseFor({ ...user, must_change_password: false });
+    res.status(status).json(body);
+  } catch (err) {
+    logger.error('me/first-password failed', { error: err.message });
+    res.status(500).json({ error: '設定密碼失敗' });
   }
 });
 
