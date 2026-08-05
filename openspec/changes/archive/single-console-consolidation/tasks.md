@@ -2,6 +2,12 @@
 
 Legend: `[ ]` pending · `[x]` done
 
+> **Archived 2026-08-05.** Every stage shipped; the program is closed. The `[ ]` boxes
+> below are not forgotten work — they record what each stage deliberately did not do,
+> and they stay unticked because that is what actually happened. The ones still open
+> are mirrored into `openspec/BACKLOG.md`, which is the live list. Track them there;
+> this file is a frozen record and does not get updated when they ship.
+
 Nine stages. Each ships as its own release with its own version-prefixed OpenSpec
 change folder carrying the detailed task list. This file is the program ledger.
 

@@ -7,7 +7,7 @@
  * run behind an `/ownmind` reverse proxy (nginx strips it before proxying) and
  * also plain at `/`, so a hardcoded prefix is not an option.
  *
- * See openspec/changes/v1.26.48-flip-root-retire-me/spec.md.
+ * See openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md.
  */
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';

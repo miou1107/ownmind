@@ -3,7 +3,7 @@
  *
  * Originally v1.19.8; scenarios 1 and 2 were rewritten in v1.26.48 to assert
  * that Locations are relative (resolved against the request URL) rather than
- * absolute strings. See openspec/changes/v1.26.48-flip-root-retire-me/spec.md
+ * absolute strings. See openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md
  * Requirement 3.
  *
  * Uses the createFirstRunRedirect factory to inject a fake detector so the tests do not hit the DB.

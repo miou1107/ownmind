@@ -502,7 +502,7 @@ npm run test:e2e
 
 ## v1.26.46 — 空殼頁換成指路牌、舊後台功能清單、搬回 /me/ 缺的四塊
 
-**背景**：三個後台整併成一個的階段 1a。規劃見 `openspec/changes/single-console-consolidation/`。這一階段刻意不改任何人登入後會落在哪一頁，所以單獨上線是安全的；它要做的是把階段 1b（換入口、收掉 `/me/`）需要的東西全部先備好。
+**背景**：三個後台整併成一個的階段 1a。規劃見 `openspec/changes/archive/single-console-consolidation/`。這一階段刻意不改任何人登入後會落在哪一頁，所以單獨上線是安全的；它要做的是把階段 1b（換入口、收掉 `/me/`）需要的東西全部先備好。
 
 ### 1. 空殼頁在騙人
 
@@ -595,7 +595,7 @@ npm run test:e2e
 
 ## v1.26.45 — 後台角色控管：任何人登入都看得到管理區塊
 
-**背景**：這是「三個後台整併成一個」的階段 0。規劃見 `openspec/changes/single-console-consolidation/`。之所以排在最前面，是因為它是後面每一個階段的前置條件。
+**背景**：這是「三個後台整併成一個」的階段 0。規劃見 `openspec/changes/archive/single-console-consolidation/`。之所以排在最前面，是因為它是後面每一個階段的前置條件。
 
 **問題**：新後台的側邊欄有按角色過濾的邏輯，但角色是從 `client/src/App.jsx` 的 `useState('super_admin')` 寫死的常數來的。所以**任何人登入新後台，都會看到「管理」跟「超級管理」兩個區塊**。目前那些頁面是空殼，所以沒有資料外流，但只要開始補真頁面，一般成員就會看到管理功能。
 

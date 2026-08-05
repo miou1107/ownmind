@@ -86,7 +86,7 @@ router.get('/users', async (req, res) => {
       // v1.26.49: added must_change_password so the team-management page can
       // show whether each user is still on their initial password. Widening the
       // SELECT is safe — no writers rely on the shape and the field carries no
-      // secret. See openspec/changes/v1.26.49-team-management-page/spec.md
+      // secret. See openspec/changes/archive/v1.26.49-team-management-page/spec.md
       // Requirement 2.
       'SELECT id, name, email, role, api_key, must_change_password, created_at, updated_at FROM users ORDER BY created_at DESC'
     );

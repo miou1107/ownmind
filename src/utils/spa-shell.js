@@ -19,7 +19,7 @@
 // stripped. Because the emitted value never contains a prefix, no prefix can be
 // wrong, and prefix-agnostic mounting is preserved by construction.
 //
-// See openspec/changes/v1.26.44-spa-deep-link-base/ for the options considered, and
+// See openspec/changes/archive/v1.26.44-spa-deep-link-base/ for the options considered, and
 // the iron rule on pairing SPA install-path detection with a <base href> tag.
 
 import { readFile } from 'node:fs/promises';

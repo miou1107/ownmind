@@ -1,6 +1,6 @@
 // Join /api/admin/users with /api/usage/team-stats.
 //
-// Requirement 2 in openspec/changes/v1.26.49-team-management-page/spec.md:
+// Requirement 2 in openspec/changes/archive/v1.26.49-team-management-page/spec.md:
 // missing data must never render as 0. The distinction — did this user report
 // nothing, or did they report zeros? — must survive the merge, because the UI
 // renders different strings for each ("尚無資料" italic vs "0 tokens").

@@ -108,7 +108,7 @@ app.get('/setup', (req, res) => {
 
 // v1.26.48: /me is retired. Everything under it 301s to the console usage page.
 // The legacy static UI moved to legacy/me-v1.19/ and is no longer served.
-// See openspec/changes/v1.26.48-flip-root-retire-me/spec.md Requirement 2.
+// See openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md Requirement 2.
 //
 // `app.use('/me', ...)` catches `/me`, `/me/`, and every path below. The number of
 // `../` steps to climb back to the root depends on the request depth, so the
@@ -181,7 +181,7 @@ app.use('/api/version', createVersionRouter({ auth }));
 // value serves both a plain `/` deployment and the /ownmind reverse-proxy setup.
 // firstRunRedirect (mounted earlier) intercepts this route when the users table
 // is empty and sends the visitor to the setup wizard instead.
-// See openspec/changes/v1.26.48-flip-root-retire-me/spec.md Requirement 1.
+// See openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md Requirement 1.
 app.get('/', (req, res) => {
   res.redirect(relativeRedirectTarget(req.originalUrl, 'dashboard/'));
 });

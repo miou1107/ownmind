@@ -4,7 +4,7 @@
  * Consumed by GET /api/memory/search (src/routes/memory.js). Pure function so
  * the test suite can exercise the builder without a live Postgres.
  *
- * See openspec/changes/v1.26.37-improve-keyword-search/proposal.md for
+ * See openspec/changes/archive/v1.26.37-improve-keyword-search/proposal.md for
  * background: the pre-v1.26.37 handler did a single ILIKE '%q%' over title OR
  * content only, so multi-word or tag-only or code-only hits were invisible.
  *

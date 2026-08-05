@@ -2,7 +2,7 @@
  * v1.26.49 — buildInstallPrompt() emits the same install string the legacy
  * /admin/ users tab emits at legacy/admin-v1.26/index.html:1474-1480.
  *
- * See openspec/changes/v1.26.49-team-management-page/spec.md Requirement 5.
+ * See openspec/changes/archive/v1.26.49-team-management-page/spec.md Requirement 5.
  *
  * Extracted to a pure function so this test doesn't need a React renderer. The
  * page component calls it via a click handler that also writes to the clipboard

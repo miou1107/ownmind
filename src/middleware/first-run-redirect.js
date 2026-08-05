@@ -2,7 +2,7 @@
  * First-run redirect middleware — v1.19.8, extended in v1.26.48.
  *
  * Implements openspec/changes/v1.19.8-setup-wizard/spec.md scenarios 1, 2, 3
- * and openspec/changes/v1.26.48-flip-root-retire-me/spec.md Requirement 3.
+ * and openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md Requirement 3.
  *
  * Behavior:
  *   - users table empty (first_run=true) → GET /, /admin/* → /setup
