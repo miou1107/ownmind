@@ -199,8 +199,12 @@ async function collectSections({ query, range }) {
   `)).rows;
 
   // 9. project_ranking — ranking across projects.
-  // v1.17.55: added tokens + cost_usd (tried JOIN via session_id but
-  // session_logs.session_id is all NULL — failed).
+  // v1.17.55: added tokens (tried JOIN via session_id but session_logs.session_id is
+  // all NULL — failed).
+  // v1.26.60: the cost half went with Requirement 8. It mattered more here than in a
+  // table: this payload is fed to an LLM, and a per-project dollar figure derived from
+  // an unmaintained price list is exactly the kind of number prose turns into a
+  // confident claim.
   // v1.17.56: use (user_id, tool) as a bridge — values are estimates
   // (allocated by turn ratio); project names are normalized with
   // REGEXP_REPLACE that strips the trailing "(...)" description, so
@@ -210,8 +214,7 @@ async function collectSections({ query, range }) {
       SELECT user_id, tool,
         SUM(COALESCE(input_tokens,0) + COALESCE(output_tokens,0)
             + COALESCE(cache_creation_tokens,0) + COALESCE(cache_read_tokens,0)
-            + COALESCE(reasoning_tokens,0)) AS tokens,
-        SUM(COALESCE(cost_usd, 0)) AS cost_usd
+            + COALESCE(reasoning_tokens,0)) AS tokens
       FROM token_usage_daily
       WHERE last_ts ${tfTs}
       GROUP BY user_id, tool
@@ -244,12 +247,7 @@ async function collectSections({ query, range }) {
         CASE WHEN utt.total_turns > 0 AND ut.tokens IS NOT NULL
           THEN ut.tokens::numeric * p.turns / utt.total_turns
           ELSE 0 END
-      ), 0)::bigint AS tokens,
-      COALESCE(SUM(
-        CASE WHEN utt.total_turns > 0 AND ut.cost_usd IS NOT NULL
-          THEN ut.cost_usd * p.turns / utt.total_turns
-          ELSE 0 END
-      ), 0)::numeric(12,4) AS cost_usd
+      ), 0)::bigint AS tokens
     FROM proj p
     LEFT JOIN usr_tok ut ON ut.user_id = p.user_id AND ut.tool = p.tool
     LEFT JOIN ut_turns utt ON utt.user_id = p.user_id AND utt.tool = p.tool

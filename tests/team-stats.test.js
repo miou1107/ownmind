@@ -123,17 +123,17 @@ describe('GET /api/usage/team-stats (admin+)', () => {
       if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
         return { rows: [
           { id: 1, name: 'Active User', email: 'a@x.com',
-            cost_usd: 1.5, input_tokens: '100', output_tokens: '50',
+            input_tokens: '100', output_tokens: '50',
             cache_creation_tokens: '0', cache_read_tokens: '10', reasoning_tokens: '5',
             message_count: 10, wall_seconds: 3600, active_seconds: 1800, session_count: 3,
             has_tier1_data: true },
           { id: 2, name: 'Silent User', email: 'b@x.com',
-            cost_usd: 0, input_tokens: '0', output_tokens: '0',
+            input_tokens: '0', output_tokens: '0',
             cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
             message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0,
             has_tier1_data: false },
           { id: 3, name: 'Exempt User', email: 'c@x.com',
-            cost_usd: 0, input_tokens: '0', output_tokens: '0',
+            input_tokens: '0', output_tokens: '0',
             cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
             message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0,
             has_tier1_data: false }
@@ -155,52 +155,44 @@ describe('GET /api/usage/team-stats (admin+)', () => {
     assert.equal(res.body.coverage.unmeasured_users[0].name, 'Silent User');
     assert.equal(res.body.coverage.exempt_users[0].name, 'Exempt User');
     assert.equal(res.body.users.length, 3);
-    assert.equal(res.body.users[0].totals.cost_usd, 1.5);
     assert.equal(res.body.users[0].totals.session_count, 3);
   });
 
-  it('P2 regression: user with no activity shows cost_usd=0 (not null from LEFT JOIN)', async () => {
-    // Returning cost_usd: 0 means bool_or correctly excluded the NULL rows from the LEFT JOIN
-    // (staging once returned null because bool_or(NULL IS NULL)=true caused a misjudgment)
+  it('v1.26.60: no cost is returned at all, for anyone', async () => {
+    // These two P2 regressions used to pin the cost null policy: 0 for a member with no
+    // activity, null when any day in the range had an unpriced model. Requirement 8
+    // removed the calculation, so what has to hold now is that neither value appears.
+    // Both members are exercised, because the old bug was that they looked identical.
+    const rows = [
+      { id: 1, name: 'Fresh User', email: 'fresh@x.com',
+        input_tokens: '0', output_tokens: '0',
+        cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
+        message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0 },
+      { id: 2, name: 'Busy User', email: 'busy@x.com',
+        input_tokens: '500', output_tokens: '300',
+        cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
+        message_count: 5, wall_seconds: 600, active_seconds: 300, session_count: 2 },
+    ];
+    const seenSql = [];
     const fakeQuery = async (sql) => {
+      seenSql.push(sql);
       if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
-      if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
-        return { rows: [{ id: 1, name: 'Fresh User', email: 'fresh@x.com',
-          cost_usd: 0, input_tokens: '0', output_tokens: '0',
-          cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
-          message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0 }] };
-      }
+      if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) return { rows };
       if (/FROM session_count\s+WHERE date/.test(sql)) return { rows: [] };
       throw new Error('unexpected SQL');
     };
     const app = buildApp({ queryFn: fakeQuery, user: { id: 9, role: 'admin' } });
     const res = await request(app, { path: '/api/usage/team-stats' });
     assert.equal(res.status, 200);
-    assert.equal(res.body.users[0].totals.cost_usd, 0,
-      '完全沒 activity 的 user 應顯示 0，不是 null');
-  });
-
-  it('P2 regression: cost_usd is null when any day had unknown pricing', async () => {
-    // Simulate DB returning NULL cost_usd (what Tier-1 SQL returns when bool_or kicks in)
-    const fakeQuery = async (sql) => {
-      if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
-      if (/FROM users u\s+LEFT JOIN token_usage_daily/.test(sql)) {
-        return { rows: [{ id: 1, name: 'U', email: 'u@x.com',
-          cost_usd: null,   // partial period → null per policy
-          input_tokens: '500', output_tokens: '300',
-          cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
-          message_count: 5, wall_seconds: 600, active_seconds: 300, session_count: 2 }] };
-      }
-      if (/FROM session_count\s+WHERE date/.test(sql)) return { rows: [] };
-      throw new Error('unexpected SQL');
-    };
-    const app = buildApp({ queryFn: fakeQuery, user: { id: 9, role: 'admin' } });
-    const res = await request(app, { path: '/api/usage/team-stats' });
-    assert.equal(res.status, 200);
-    assert.equal(res.body.users[0].totals.cost_usd, null,
-      '有任一日 cost=NULL → 整筆回 null（不再 COALESCE→0）');
-    // tokens are still counted
-    assert.equal(res.body.users[0].totals.input_tokens, '500');
+    for (const u of res.body.users) {
+      assert.ok(!('cost_usd' in u.totals), `${u.user.name} still carries cost_usd`);
+    }
+    // And the SQL does not ask for it either, so nothing can leak back in via a rename.
+    assert.equal(seenSql.some((q) => /cost_usd/.test(q)), false,
+      'team-stats must not select cost_usd');
+    // Tokens are untouched. Found by name, not index: the response is ranked by tokens.
+    const busy = res.body.users.find((u) => u.user.name === 'Busy User');
+    assert.equal(busy.totals.input_tokens, '500');
   });
 
   it('P1 regression: Tier-2 session_count merges into user totals', async () => {
@@ -215,7 +207,7 @@ describe('GET /api/usage/team-stats (admin+)', () => {
             message_count: 3, wall_seconds: 600, active_seconds: 300, session_count: 2 },
           // User 2: Tier-2 only (uses only Cursor/Antigravity)
           { id: 2, name: 'U2', email: '2@x.com',
-            cost_usd: 0, input_tokens: '0', output_tokens: '0',
+            input_tokens: '0', output_tokens: '0',
             cache_creation_tokens: '0', cache_read_tokens: '0', reasoning_tokens: '0',
             message_count: 0, wall_seconds: 0, active_seconds: 0, session_count: 0 }
         ] };

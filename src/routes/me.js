@@ -18,6 +18,7 @@ import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { RULE_FULL_LAYER_SYNC } from '../../shared/lint-event-types.js';
 import { noPasswordLoginResponse, LOGIN_REJECTED } from '../utils/setup-recovery.js';
+import { writeAuditLog } from '../utils/audit-log.js';
 
 // v1.26.32: personal rule codes are no longer hardcoded. The compliance loop
 // keys on the neutral event constant; the legacy IR-006 literal below is kept
@@ -61,6 +62,11 @@ router.post('/login', async (req, res) => {
     if (!valid) {
       return res.status(401).json({ ...LOGIN_REJECTED });
     }
+    // v1.26.60: the audit row the retired /api/admin/login used to write. Production had
+    // zero of them in sixty days, because everyone was already logging in here instead.
+    // Awaited, but it cannot fail the login: writeAuditLog swallows its own errors, on
+    // the grounds that a record of something that already happened must not undo it.
+    await writeAuditLog(user.id, 'login', 'user', user.id, { email: user.email });
     res.json({
       id: user.id,
       api_key: user.api_key,

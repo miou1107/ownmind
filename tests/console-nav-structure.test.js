@@ -30,24 +30,24 @@ const SIDEBAR = 'client/src/components/common/Sidebar.jsx';
 const ROLES = ['user', 'admin', 'super_admin'];
 
 describe('nav structure — every item resolves to something real', () => {
-  it('each item is either a built page or a signposted legacy feature, never neither', () => {
+  it('every item is a built page — there is no other kind left', () => {
     // The App module lists the pages it has built. Read as source because App.jsx is JSX.
+    //
+    // v1.26.60: an item used to be allowed to be *either* a built page or a signpost into
+    // the legacy console. That second option is gone with the console, so the assertion
+    // tightens: anything in the navigation must have a page, or App.jsx renders it as a
+    // visible "Route not wired" error. This is the 稽核記錄 defect — a menu item for a
+    // feature that exists nowhere — and it now has exactly one way to be avoided.
     const app = read(APP);
     const realPaths = [...app.matchAll(/'(\/[\w/-]+)':\s*<\w+Page\s*\/>/g)].map((m) => m[1]);
 
     for (const item of allNavItems()) {
-      const built = realPaths.includes(item.path);
-      const signposted = isSignpost(item.path);
       assert.ok(
-        built || signposted,
-        `${item.path} is in the navigation but has neither an entry in REAL_PAGES nor a `
-        + 'signpost in shared/legacy-console-manifest.js. This is the 稽核記錄 defect: a '
-        + 'menu item for a feature that exists nowhere',
+        realPaths.includes(item.path),
+        `${item.path} is in the navigation but has no entry in App.jsx's REAL_PAGES`,
       );
-      assert.ok(
-        !(built && signposted),
-        `${item.path} is both built and signposted; flip its manifest entry to 'live'`,
-      );
+      assert.equal(isSignpost(item.path), false,
+        `${item.path} is signposted, which is no longer a thing that can work`);
     }
   });
 
@@ -237,4 +237,27 @@ describe('nav structure — page titles have one source', () => {
     }
     assert.equal(navLabelKey('/nope'), null);
   });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v1.26.60 — the signpost vocabulary is gone from every locale
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('v1.26.60 — no locale still describes the legacy console', () => {
+  // The e2e suite used to assert "this nav item carries no amber marker" by looking for
+  // the marker's aria-label. Deleting the label made those assertions unfailable, so the
+  // claim moves here, where it is about the thing that actually has to stay deleted: the
+  // strings. A future edit that reintroduces a signpost has to reintroduce these first.
+  const LOCALES = ['zh', 'en', 'ja'];
+  const GONE = [/^signpost\./, /^legacy\.tab\./, /^nav\.still_in_legacy$/];
+
+  for (const loc of LOCALES) {
+    it(`${loc} has no signpost keys`, () => {
+      const dict = JSON.parse(
+        readFileSync(join(repoRoot, `client/src/i18n/${loc}.json`), 'utf8'),
+      );
+      const left = Object.keys(dict).filter((k) => GONE.some((re) => re.test(k)));
+      assert.deepEqual(left, [], `${loc}.json still carries signpost vocabulary`);
+    });
+  }
 });

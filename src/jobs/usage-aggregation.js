@@ -2,8 +2,8 @@
  * usage-aggregation.js — token_events → token_usage_daily recomputation logic
  *
  * Aggregation is fully owned by the server (D1):
- *   - Cost is always computed server-side from model_pricing; the client's
- *     native_cost_usd is only advisory
+ *   - v1.26.60: cost is no longer computed. `cost_usd` is written NULL; see
+ *     buildDailyRow and Requirement 8 of the single-console consolidation
  *   - Wall seconds = last_ts - first_ts
  *   - Active seconds = sum of adjacent-event gaps ≤ 600s
  *
@@ -11,7 +11,6 @@
  *      same result, because it always recomputes via `SELECT ... GROUP BY model` then UPSERTs.
  */
 
-import { pickPricing, computeCost } from '../utils/pricing-lookup.js';
 
 export const DEFAULT_ACTIVE_GAP_SECONDS = 600;
 
@@ -84,13 +83,18 @@ export function groupByModel(events) {
 }
 
 /**
- * Compute a daily row from events + all relevant pricing rows. Pure function.
+ * Compute a daily row from a day's events. Pure function.
  * @param {{user_id, tool, session_id, date}} keys
  * @param {Array} events
- * @param {Array} pricingRows - all possible pricing (same tool, possibly multiple models / effective_dates)
+ * v1.26.60: the third parameter used to be the tool's pricing rows. Requirement 8 of the
+ * consolidation removed the cost calculation rather than fixing it — pricing had to be
+ * maintained by hand per model, and the policy below blanked the whole column when any
+ * one model lacked a price, so the figure was null for every member who actually used
+ * the product and $0.0000 for everyone who did not. `cost_usd` is written NULL from here
+ * on; the column stays, and the historical values in it are left alone.
  * @returns {object} a token_usage_daily row ready to UPSERT
  */
-export function buildDailyRow(keys, events, pricingRows) {
+export function buildDailyRow(keys, events) {
   const { user_id, tool, session_id, date } = keys;
 
   const totals = {
@@ -98,9 +102,6 @@ export function buildDailyRow(keys, events, pricingRows) {
     cache_creation_tokens: 0, cache_read_tokens: 0,
     reasoning_tokens: 0, message_count: 0
   };
-  let cost_usd = 0;
-  let anyUnknownPricing = false;
-
   const byModel = groupByModel(events);
 
   for (const group of byModel.values()) {
@@ -110,17 +111,7 @@ export function buildDailyRow(keys, events, pricingRows) {
     totals.cache_read_tokens += group.cache_read_tokens;
     totals.reasoning_tokens += group.reasoning_tokens;
     totals.message_count += group.message_count;
-
-    const pricing = pickPricing(pricingRows, tool, group.model, date);
-    const groupCost = computeCost(pricing, group);
-    if (groupCost == null) anyUnknownPricing = true;
-    else cost_usd += groupCost;
   }
-
-  // Policy: if pricing is missing for any model → the whole cost_usd = null
-  // Reason: a partial cost looking like a real number is more dangerous than null
-  // (the reader assumes the total is complete)
-  if (anyUnknownPricing) cost_usd = null;
 
   const spans = computeTimeSpans(events.map((e) => e.ts));
 
@@ -136,7 +127,7 @@ export function buildDailyRow(keys, events, pricingRows) {
     user_id, tool, session_id, date,
     model: latestModel,
     ...totals,
-    cost_usd,
+    cost_usd: null,
     wall_seconds: spans.wall_seconds,
     active_seconds: spans.active_seconds,
     first_ts: spans.first_ts,
@@ -168,22 +159,9 @@ export async function recomputeDaily({ query }, keys) {
   // no events → don't write (and don't delete an existing row; leave that to the caller)
   if (eventsRes.rows.length === 0) return { skipped: true };
 
-  // fetch the pricing this tool might use (one query, then pick via pure function)
-  const models = [...new Set(eventsRes.rows.map((e) => e.model).filter(Boolean))];
-  const pricingRes = models.length === 0
-    ? { rows: [] }
-    : await query(
-        `SELECT id, tool, model, input_per_1m, output_per_1m,
-                cache_write_per_1m, cache_read_per_1m, effective_date
-           FROM model_pricing
-          WHERE tool = $1 AND model = ANY($2::text[])`,
-        [tool, models]
-      );
-
   const row = buildDailyRow(
     { user_id: userId, tool, session_id: sessionId, date },
-    eventsRes.rows,
-    pricingRes.rows
+    eventsRes.rows
   );
 
   await query(
@@ -202,7 +180,12 @@ export async function recomputeDaily({ query }, keys) {
        cache_read_tokens = EXCLUDED.cache_read_tokens,
        reasoning_tokens = EXCLUDED.reasoning_tokens,
        message_count = EXCLUDED.message_count,
-       cost_usd = EXCLUDED.cost_usd,
+       -- cost_usd is deliberately NOT updated. v1.26.60 stopped computing it, so
+       -- EXCLUDED.cost_usd is always NULL; assigning it here would erase the historical
+       -- values this release promised to leave alone. nightly-recompute.js re-runs the
+       -- last seven days every night and ingestion re-runs any day that gets new events,
+       -- so "we simply stopped writing it" would have blanked a rolling window on the
+       -- first night. Found in adversarial review. New rows still insert NULL below.
        wall_seconds = EXCLUDED.wall_seconds,
        active_seconds = EXCLUDED.active_seconds,
        first_ts = EXCLUDED.first_ts,

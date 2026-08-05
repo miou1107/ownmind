@@ -147,6 +147,10 @@ async function startApi(dbPort, dbPassword, encryptionKey) {
       // reached partway through and the remaining specs fail at login with a
       // 429 that looks like a bug in whatever they were testing.
       API_RATE_LIMIT_MAX: '5000',
+      // v1.26.60: /api/me/login gained the brute-force limiter (10 per 15 minutes),
+      // which every spec would hit — nearly all of them log in. Raised for the same
+      // reason and in the same way as the ceiling above; absent leaves the shipped 10.
+      AUTH_RATE_LIMIT_MAX: '5000',
       LOG_LEVEL: 'error',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

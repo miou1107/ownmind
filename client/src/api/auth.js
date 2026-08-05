@@ -49,14 +49,13 @@ export function clearApiKey() {
   try {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem(STORAGE_KEY_MUST_CHANGE);
-    // v1.26.46：連舊後台那四個鍵一起清。
+    // v1.26.46：連舊後台那四個鍵一起清。當時是因為指路牌會把一把真的能用的憑證寫進
+    // om_api_key 交給舊後台，只清自己那一份的話，登出等於沒登出 —— 下一個在同一台
+    // 瀏覽器打開舊後台的人會被還原成上一個人。
     //
-    // 指路牌會把一把「真的可以用」的憑證寫進 om_api_key 交給舊後台（見
-    // legacy-handoff.js）。只清自己那一份的話，一個點過指路牌的管理員在新後台登出之後
-    // om_api_key 還留著，下一個在同一台瀏覽器打開 /admin/ 的人會被舊後台的
-    // restoreSession() 直接還原成他的身分，而且那把 key 每一支 adminAuth API 都通。
-    // 改之前瀏覽器裡只有一個地方放這個憑證、而且舊後台的登出會清它；多寫一個地方就
-    // 必須連同這裡一起清，否則登出等於沒登出。
+    // v1.26.60：舊後台跟指路牌都沒了，已經沒有東西會寫這四個鍵。但**照清不誤**：用過
+    // 舊後台的瀏覽器裡還留著，而 om_api_key 是一把每一支 adminAuth API 都通的憑證。
+    // 見 legacy-keys.js。
     for (const key of Object.values(LEGACY_STORAGE_KEYS)) {
       localStorage.removeItem(key);
     }

@@ -3,11 +3,10 @@ import { useEffect } from 'react';
 import { useT } from './i18n/LocaleContext';
 import { AUTH_EXPIRED } from './api/events';
 import {
-  Layout, RequireAuth, RequireFreshPassword, RequireRole, Signpost,
+  Layout, RequireAuth, RequireFreshPassword, RequireRole,
 } from './components/common';
 import { allNavItems } from './components/common/nav-sections';
 import { ROLE_DENIED_REDIRECT, routeTierFor } from './session/roles';
-import { isSignpost } from '@shared/legacy-console-manifest.js';
 import LoginPage from './pages/LoginPage';
 import SecurityPage from './pages/Preference/SecurityPage';
 import ProfilePage from './pages/Preference/ProfilePage';
@@ -27,8 +26,8 @@ import SystemConfigPage from './pages/System/SystemConfigPage';
 import BroadcastPage from './pages/System/BroadcastPage';
 import WorkLogPage from './pages/System/WorkLogPage';
 
-// 已經在新後台跑起來的頁面。還在舊後台的功能不列在這裡 — 由功能清單
-// （shared/legacy-console-manifest.js）決定要畫指路牌，兩邊不會各說一套。
+// 後台的每一頁。v1.26.60 之前這裡只放「已經搬過來的」，還沒搬的由功能清單畫指路牌；
+// 整併做完之後沒有「還沒搬的」了，所以導覽列上的每一項都必須在這裡找得到，找不到就是接線錯誤。
 const REAL_PAGES = {
   '/portal/usage': <UsagePage />,
   '/portal/project-history': <ProjectHistoryPage />,
@@ -49,7 +48,7 @@ const REAL_PAGES = {
   '/system/work-log': <WorkLogPage />,
 };
 
-// 導覽列有、但兩邊都沒對到東西的路徑 — 這是接線錯誤，不是「即將完工」。
+// 導覽列上有、但這裡沒有對應頁面的路徑 — 這是接線錯誤。
 // 刻意寫得很難看：舊的空殼頁講「即將於後續階段完工」，那句話本身就是在騙人，
 // 換成明白說壞掉。整個 App 不 throw，壞掉的只有那一頁。
 function MissingPage({ path }) {
@@ -57,7 +56,7 @@ function MissingPage({ path }) {
     <div role="alert" className="rounded-2xl border border-rose-300 bg-rose-50 p-8 text-rose-800">
       <p className="font-bold">Route not wired: {path}</p>
       <p className="mt-1 text-sm">
-        This path is in the navigation but has neither a page nor a signpost entry.
+        This path is in the navigation but no page is wired to it.
       </p>
     </div>
   );
@@ -129,9 +128,7 @@ export default function App() {
   // decideRoleGate 一樣：條件寫反會把每一頁個人頁面鎖起來、每一頁管理頁面打開，
   // 那種東西要用跑得起來的測試守，不能靠比對這一行的原始碼。
   const featureRoutes = allNavItems().map((item) => {
-    const page = isSignpost(item.path)
-      ? <Signpost path={item.path} />
-      : (REAL_PAGES[item.path] ?? <MissingPage path={item.path} />);
+    const page = REAL_PAGES[item.path] ?? <MissingPage path={item.path} />;
     return (
       <Route
         key={item.path}

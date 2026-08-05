@@ -42,14 +42,23 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: '請求太頻繁，請稍後再試' },
 });
+// v1.26.60: configurable for the same reason as the API ceiling above. The end-to-end
+// suite logs in on nearly every spec, well past ten in fifteen minutes, and until now it
+// never hit this because the console's own login was not behind it — see below.
+const authRateLimitMax = Number.parseInt(process.env.AUTH_RATE_LIMIT_MAX ?? '', 10);
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: Number.isInteger(authRateLimitMax) && authRateLimitMax > 0 ? authRateLimitMax : 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: '登入嘗試太頻繁，請 15 分鐘後再試' },
 });
-app.use('/api/admin/login', authLimiter);
+// v1.26.60: the console's login gains the brute-force limiter, and /api/admin/login is
+// deleted. Those are the same change seen from two sides. The retired console's login was
+// behind this limiter from the beginning; the console that replaced it never was, so
+// every login moved to an unthrottled endpoint and nobody noticed — `/api` alone allows
+// 200 a minute, which is a throughput ceiling, not a password-guessing one.
+app.use('/api/me/login', authLimiter);
 app.use('/api/admin/setup', authLimiter);
 // v1.19.8 code-review I-1: align with /api/admin/setup to avoid being hit by mistake
 // (during first_run this won't block a user's trial-and-error, because the limit is
@@ -65,18 +74,12 @@ app.use('/api', apiLimiter);
 import { firstRunRedirect } from './middleware/first-run-redirect.js';
 app.use(firstRunRedirect);
 
-// v1.26.46: the legacy /admin console is served, or retired, by manifest.
-// While any feature is still marked `signpost` in shared/legacy-console-manifest.js the
-// new console links into this console, so it has to keep working. Once nothing does,
-// `/admin` stops answering and 301s to the new console instead. Both branches are
-// installed together, so there is no window where /admin 404s.
-// See src/middleware/legacy-admin-mount.js for why the decision lives in a function.
-import { isLegacyConsoleRetired } from '../shared/legacy-console-manifest.js';
+// v1.26.46: the legacy /admin console was served, or retired, by manifest.
+// v1.26.59 retired it; v1.26.60 removed the branch that served it. Everything under
+// /admin now 301s to the console, relatively, so the /ownmind reverse-proxy prefix
+// survives. See src/middleware/legacy-admin-mount.js.
 import { installLegacyAdminMount } from './middleware/legacy-admin-mount.js';
-installLegacyAdminMount(app, {
-  retired: isLegacyConsoleRetired(),
-  publicDir: join(__dirname, 'public'),
-});
+installLegacyAdminMount(app);
 
 // v1.20: the new unified backend (coexists with the old /admin and /me; a single entry with three-role routing)
 // SPA fallback uses middleware (Express 5's path-to-regexp no longer accepts the old /dashboard/* wildcard)

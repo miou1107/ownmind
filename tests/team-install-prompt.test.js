@@ -1,6 +1,6 @@
 /**
  * v1.26.49 — buildInstallPrompt() emits the same install string the legacy
- * /admin/ users tab emits at src/public/index.html:1474-1480.
+ * /admin/ users tab emits at legacy/admin-v1.26/index.html:1474-1480.
  *
  * See openspec/changes/v1.26.49-team-management-page/spec.md Requirement 5.
  *
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { buildInstallPrompt } from '../client/src/utils/install-prompt.js';
 
 describe('buildInstallPrompt — legacy parity', () => {
-  it('emits the same shape as src/public/index.html updatePrompt()', () => {
+  it('emits the same shape as legacy/admin-v1.26/index.html updatePrompt()', () => {
     const out = buildInstallPrompt({ api_key: 'sk-abc123' }, 'https://kkvin.com/ownmind');
 
     assert.ok(out.startsWith('幫我安裝 OwnMind：'), 'must open with the same header the legacy tab uses');

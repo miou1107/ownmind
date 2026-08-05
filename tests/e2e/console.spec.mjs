@@ -16,38 +16,18 @@ import { fileURLToPath } from 'node:url';
 import {
   ACCOUNTS, LOCKED_SUPER_ADMIN, E2E_SETUP_TOKEN, SEEDED_USER_COUNT,
 } from './harness.mjs';
-import { signpostFeatures } from '../../shared/legacy-console-manifest.js';
-import { navMinRole } from '../../client/src/components/common/nav-sections.js';
-
-const base = () => process.env.E2E_BASE_URL;
-const url = (path) => `${base()}${path}`;
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const zh = JSON.parse(readFileSync(join(repoRoot, 'client/src/i18n/zh.json'), 'utf8'));
 
-// The signpost specs below used to hardcode whichever path was signposted at the
-// time — /admin/team in v1.26.46, then /admin/bugs in v1.26.49. Both went live in
-// a later stage and left the specs asserting that a real page was a signpost. They
-// were red from v1.26.51 until v1.26.56 and nobody saw it, because e2e is not part
-// of `npm test`. So the subject is derived from the manifest instead.
-//
-// Deliberately NOT filtered by role. An earlier draft took the first signpost
-// whose navMinRole === LEGACY_CONSOLE_MIN_ROLE, which silently yields null the
-// day every remaining signpost sits at some other tier — and `test.skip` on null
-// would green-skip three specs while /admin/ is still being served. That is the
-// same shape of defect this block exists to fix. Take whatever is first and
-// choose the account from its own minRole; skip only when nothing is signposted,
-// which is the one condition under which the behaviour genuinely does not exist.
-const SIGNPOST = signpostFeatures()[0] ?? null;
-const signpostName = SIGNPOST ? zh[`legacy.tab.${SIGNPOST.legacyTab}`] : '';
-const signpostAccount = SIGNPOST
-  ? ({ user: ACCOUNTS.user, admin: ACCOUNTS.admin, super_admin: ACCOUNTS.superAdmin })[navMinRole(SIGNPOST.consolePath)]
-  : null;
+const base = () => process.env.E2E_BASE_URL;
+const url = (path) => `${base()}${path}`;
 
-/** Regex-safe: a future tab label could contain `(`, `+` or `.`. */
-const rx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const signpostLink = (page) =>
-  page.getByRole('link', { name: new RegExp(`前往舊後台的「${rx(signpostName)}」`) });
+// v1.26.60: this file used to derive a SIGNPOST subject from the manifest, because three
+// specs drove the "this feature still lives in /admin" page and the credential handoff
+// behind it. `signpost` is no longer a legal manifest state and the page is deleted, so
+// those specs went with it. What replaced them is the block that asserts /admin redirects,
+// which used to be their mutually-exclusive mirror and is now simply the behaviour.
 
 // Section headers are buttons; nav items are links. Both live inside the sidebar <aside>.
 const SECTIONS = ['我的', '團隊', '偏好設定', '管理', '系統'];
@@ -71,12 +51,11 @@ async function visibleSections(page) {
 
 /** The sidebar link whose visible label is exactly this text. */
 function navItem(page, label) {
-  // Matched on visible text, not on the accessible name. The signpost marker carries an
-  // aria-label, so a signposted item's accessible name is compound — "系統設定 這個功能還在
-  // 舊後台" — and `getByRole('link', { name, exact: true })` reports 0 for an item that is
-  // plainly on screen. The first version of this helper did exactly that, which made every
-  // `toHaveCount(0)` below pass for the wrong reason: they would have passed even if the
-  // items were visible to a member.
+  // Matched on visible text rather than the accessible name. It mattered while items
+  // could carry a signpost marker whose aria-label made the accessible name compound;
+  // `getByRole('link', { name, exact: true })` then reported 0 for an item plainly on
+  // screen, which made every `toHaveCount(0)` below pass for the wrong reason. Kept
+  // because visible text is what the requirement is actually about.
   return page.locator('aside a').filter({ hasText: new RegExp(`^${label}$`) });
 }
 
@@ -161,76 +140,9 @@ test.describe('route guards', () => {
   });
 });
 
-test.describe('signposts', () => {
-  // Every spec here needs something still signposted. Skipping is the honest
-  // answer once the consolidation finishes — the behaviour will no longer exist.
-  test.skip(() => SIGNPOST === null, 'no signposts left; the legacy console is retired');
-
-  test('a signpost names where the feature is and does not claim to be a rebuild', async ({ page }) => {
-    await login(page, signpostAccount);
-    await page.goto(url(`/dashboard${SIGNPOST.consolePath}`));
-
-    // The copy it replaced said "此頁面正在重構中、即將於後續階段完工", which was untrue:
-    // the feature was working the whole time, in the old console.
-    await expect(page.getByText('即將於後續階段完工')).toHaveCount(0);
-    await expect(page.getByText('這個功能現在還在舊後台運作')).toBeVisible();
-    // Names the destination tab rather than saying "go and find it".
-    await expect(signpostLink(page)).toBeVisible();
-  });
-
-  test('following a signpost carries the credential and lands on the right tab', async ({ page }) => {
-    await login(page, signpostAccount);
-    const consoleKey = await page.evaluate(() => localStorage.getItem('ownmind.api_key'));
-    expect(consoleKey).toBeTruthy();
-
-    await page.goto(url(`/dashboard${SIGNPOST.consolePath}`));
-    await signpostLink(page).click();
-
-    await expect(page).toHaveURL(new RegExp(`/admin/#${SIGNPOST.legacyTab}$`));
-
-    // Same value under the legacy name: three consoles, three key names, one users.api_key.
-    const handed = await page.evaluate(() => ({
-      key: localStorage.getItem('om_api_key'),
-      role: localStorage.getItem('om_role'),
-      name: localStorage.getItem('om_user_name'),
-    }));
-    expect(handed.key).toBe(consoleKey);
-    expect(handed.role).toBe(signpostAccount.role);
-    expect(handed.name).toBe(signpostAccount.name);
-
-    // No second login: the legacy console restored the session and opened the asked-for tab.
-    await expect(page.locator('#loginView')).toBeHidden();
-    await expect(page.locator(`.tab[data-tab="${SIGNPOST.legacyTab}"]`)).toHaveClass(/active/);
-  });
-
-  test('logging out of the console clears the legacy credential too', async ({ page }) => {
-    // The defect this covers, found in review: the handoff writes a usable om_api_key and
-    // logout cleared only the console's own key, so the next person to open /admin/ in this
-    // browser was restored as the previous user, holding a key every adminAuth route takes.
-    await login(page, signpostAccount);
-    await page.goto(url(`/dashboard${SIGNPOST.consolePath}`));
-    await signpostLink(page).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/#${SIGNPOST.legacyTab}$`));
-    expect(await page.evaluate(() => localStorage.getItem('om_api_key'))).toBeTruthy();
-
-    // Back to the console and log out through the avatar menu.
-    await page.goto(url('/dashboard/portal/usage'));
-    await page.locator('header button').filter({ hasText: signpostAccount.name }).click();
-    await page.getByRole('button', { name: '登出' }).click();
-    await expect(page).toHaveURL(/\/dashboard\/login$/);
-
-    const left = await page.evaluate(() => ['om_api_key', 'om_role', 'om_user_id', 'om_user_name',
-      'ownmind.api_key'].filter((k) => localStorage.getItem(k) !== null));
-    expect(left).toEqual([]);
-  });
-});
-
-test.describe('v1.26.59 the legacy console is retired', () => {
-  // The mirror of the block above, and the reason it can afford to skip. Exactly one
-  // of the two runs on any given commit: `signposts` while something still lives in
-  // /admin, this one once nothing does. Without it the day the manifest empties is
-  // the day three specs go quiet and nothing takes their place.
-  test.skip(() => SIGNPOST !== null, 'signposts remain; the legacy console is still served');
+test.describe('the legacy console is retired', () => {
+  // Was the mirror of a `signposts` block that ran while something still lived in /admin.
+  // v1.26.60 deleted that block along with the feature, so this is now unconditional.
 
   test('/admin/ redirects to the console instead of serving the old one', async ({ page }) => {
     await login(page, ACCOUNTS.superAdmin);
@@ -249,12 +161,18 @@ test.describe('v1.26.59 the legacy console is retired', () => {
     await expect(page).toHaveURL(/\/dashboard\//);
   });
 
-  test('no navigation item is marked as still living in the old console', async ({ page }) => {
+  test('the sidebar offers only real pages, and never mentions the old console', async ({ page }) => {
+    // "Every nav item has a page" is asserted against the source in
+    // tests/console-nav-structure.test.js, which is where it belongs — walking all
+    // seventeen routes in a browser tripled this suite's wall clock and destabilised
+    // the timing-sensitive specs around it. What is left here is the part only a browser
+    // can answer: the rendered sidebar names no feature as living somewhere else.
     await login(page, ACCOUNTS.superAdmin);
     await page.goto(url('/dashboard/portal/usage'));
-    // The amber marker carries this aria-label; a super_admin sees every section, so
-    // zero here means zero anywhere.
-    await expect(page.locator('[aria-label="這個功能還在舊後台"]')).toHaveCount(0);
+    const aside = page.locator('aside');
+    await expect(aside.locator('a')).toHaveCount(17);
+    await expect(aside.getByText('舊後台')).toHaveCount(0);
+    await expect(page.getByText(/^Route not wired:/)).toHaveCount(0);
   });
 });
 
@@ -480,20 +398,6 @@ test.describe('v1.26.49 team management page', () => {
     await expect(page.getByText('尚無資料').first()).toBeVisible();
   });
 
-  test('sidebar 使用者管理 no longer carries the amber "still in legacy" marker', async ({ page }) => {
-    await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/portal/usage'));
-    // The nav item exists but must not carry the aria-label the signpost uses.
-    // Scoped to this one item — the remaining signposts still carry it, so a
-    // page-wide search would fail.
-    //
-    // v1.26.56: the label was written as 成員 here, but nav.members has read
-    // 使用者管理 the whole time, so getByRole matched nothing and the test was
-    // red from the day it was written.
-    const membersNavItem = page.getByRole('link', { name: new RegExp(`^${zh['nav.members']}`) });
-    await expect(membersNavItem).toBeVisible();
-    await expect(membersNavItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
-  });
 });
 
 test.describe('v1.26.56 statistics dashboard', () => {
@@ -582,16 +486,6 @@ test.describe('v1.26.56 statistics dashboard', () => {
       .toEqual(['最近 7 天', '最近 30 天', '最近 90 天']);
   });
 
-  test('sidebar 統計儀表板 no longer carries the amber "still in legacy" marker', async ({ page }) => {
-    await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/portal/usage'));
-    // Label read from the dictionary for the same reason as 使用者管理 above: a
-    // hardcoded one that drifts makes the locator match nothing, and a test that
-    // finds nothing passes every `toHaveCount(0)` for the wrong reason.
-    const statsNavItem = page.getByRole('link', { name: new RegExp(`^${zh['nav.team_stats']}`) });
-    await expect(statsNavItem).toBeVisible();
-    await expect(statsNavItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
-  });
 });
 
 test.describe('v1.26.58 team usage', () => {
@@ -719,13 +613,6 @@ test.describe('v1.26.58 team usage', () => {
     await page.unroute('**/api/usage/**');
   });
 
-  test('sidebar 團隊用量 no longer carries the amber "still in legacy" marker', async ({ page }) => {
-    await login(page, ACCOUNTS.admin);
-    await page.goto(url('/dashboard/portal/usage'));
-    const navItem = page.getByRole('link', { name: new RegExp(`^${zh['nav.team_usage']}`) });
-    await expect(navItem).toBeVisible();
-    await expect(navItem.getByLabel('這個功能還在舊後台')).toHaveCount(0);
-  });
 });
 
 test.describe('the pages ported from /me/', () => {
@@ -816,18 +703,7 @@ test.describe('the pages ported from /me/', () => {
   });
 });
 
-test.describe('the legacy console either/or, against the real app', () => {
-  test('/admin/ answers with the old console while signposts remain', async ({ request }) => {
-    // The other half of the manifest either/or. Both branches are covered against a
-    // synthetic manifest by tests/legacy-console-manifest.test.js; this pair checks the
-    // real app as configured on this commit. The retired branch is next door in
-    // 'v1.26.59 the legacy console is retired', and exactly one of them runs.
-    test.skip(SIGNPOST === null, 'legacy console retired; see the v1.26.59 block');
-    const r = await request.get(url('/admin/'), { maxRedirects: 0 });
-    expect(r.status()).toBe(200);
-    expect(await r.text()).toContain('data-tab="users"');
-  });
-
+test.describe('the console shell', () => {
   test('the console shell still resolves at depth, so deep links are not blank', async ({ page }) => {
     // v1.26.44's base-href rewrite. A regression here renders every route deeper than one
     // segment as a white page, which no source-level test would catch.

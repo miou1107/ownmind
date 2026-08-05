@@ -2,7 +2,7 @@
  * nightly-recompute.js — full recompute run daily at 3:00 AM Asia/Taipei
  *
  * Purpose (per spec S3):
- *   - handle historical cost recomputation after a pricing change
+ *   - v1.26.60: no longer recomputes cost; pricing was removed (Requirement 8)
  *   - patch up missed computations caused by aggregation failures
  *
  * Scope: the last 7 days (adjustable via WINDOW_DAYS)

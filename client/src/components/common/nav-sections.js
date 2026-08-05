@@ -24,10 +24,10 @@ import { roleAtLeast } from '../../session/roles.js';
  * `minRole` is the lowest role that may see the item, and must equal the `min` passed to
  * RequireRole for the same path in App.jsx. Asserted by tests/console-nav-structure.test.js.
  *
- * Items whose feature still lives in the legacy console render a signpost rather than a
- * real page; which ones is decided by shared/legacy-console-manifest.js, not here. Their
- * `minRole` is additionally floored at the legacy console's own login requirement, because
- * a signpost shown to someone who cannot log in there is a dead end.
+ * Until v1.26.60 some items rendered a signpost into the legacy console instead of a real
+ * page, and their `minRole` was floored at that console's own login requirement so nobody
+ * was sent to a door that would not open. Every item is a real page now, so each one
+ * carries the role its own endpoints require and nothing else.
  */
 export const NAV_SECTIONS = [
   {
@@ -113,7 +113,7 @@ export function navMinRole(path) {
 /**
  * The i18n key naming a path, or null when the path is not in the navigation.
  *
- * Signposts read their heading from here rather than taking a `titleKey` prop, so a page
+ * Pages read their heading from here rather than taking a `titleKey` prop, so a page
  * and its nav item cannot end up calling the same feature two different things.
  */
 export function navLabelKey(path) {

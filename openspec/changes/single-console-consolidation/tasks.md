@@ -708,57 +708,92 @@ retires the legacy console.
 
 ## Stage 8 — Clean up after the automatic retirement
 
-`/admin/` already stopped serving when Stage 7 emptied the manifest. This stage is the
-cleanup the redirect does not do by itself.
+Shipped as `v1.26.60`. `/admin/` already stopped serving when Stage 7 emptied the
+manifest; this is the cleanup the redirect does not do by itself, plus one feature
+removed by decision rather than by orphaning.
+
+Four items were marked "needs Vin". Each was measured on production 2026-08-05 **before**
+asking, and two of the measurements overturned the obvious answer.
 
 - [x] ~~**Prerequisite, do this first.** Add the `requiresSetup` branch to the console's
-      login.~~ **Done in Stage 7, because "do this first" and "the stage after the
-      retirement" cannot both be true.** See Stage 7's "Found by this stage"
-- [x] ~~Update the recovery instructions in `scripts/reset-admin-password.js:164` and
-      `README.md:306,328` plus the zh-TW and ja mirrors~~ — same release, for the same
-      reason: they described a URL that stopped resolving the moment the manifest emptied
-- [ ] Verify on production that `/admin/` and `/admin/*` redirect, relatively
-- [ ] Delete the now-unreachable `express.static(join(__dirname, 'public'))` branch
-      (`src/app.js:61`), which also resolves the whole-`src/public/` exposure: today
-      `/admin/setup.html`, `/admin/me/index.html` and `/admin/dashboard/index.html` all
-      resolve
-- [ ] Move `src/public/index.html` to a legacy name with a header comment
-- [ ] Fix the three tests that read it: `tests/admin-html-no-duplicate-const.test.js:8`,
-      `tests/admin-stats-memory-count.test.js:23` (it lifts and executes
-      `countExportedMemories` out of the inline script),
-      `tests/p3-update-event-semantics.test.js:31`
-- [ ] Confirm `/setup` still resolves; it is served by an explicit route
-      (`src/app.js:77-79`), not by the removed mount
-- [ ] Update `Dockerfile:30-31`, which documents the blue-green strategy and names
-      `legacy-admin-v1.html`
-- [ ] **Backend dead code.** Delete what the retirement makes unused, and state
-      explicitly what must stay for the console:
-      - `/api/admin/login` and its `authLimiter` line (`src/app.js:44`): the console
-        authenticates via `/api/me/login`. It also writes an `audit_logs` 'login' row
-        (`src/routes/admin.js:60`) which me-login does not, so removing it ends login
-        auditing. Decide whether to move that write
-      - `/api/admin/iron-rules/*` (`src/routes/admin-iron-rule-upgrade.js`) with the
-        鐵律升級 feature
-      - `writeAdminAudit` (`src/routes/admin-iron-rule-upgrade.js:34-40`) writes to
-        `admin_audit_logs`, a table **no migration creates**, so those inserts have
-        always failed silently into their try/catch. Remove or fix
-- [ ] **Remove the cost calculation entirely.** Vin's decision 2026-07-30: it needs a
-      human to maintain every model's price, and `src/jobs/usage-aggregation.js:123`
-      sets `cost_usd = null` when any model in a batch has no price, so one gap blanks
-      the whole column. Delete `/api/usage/pricing` (`src/routes/usage/pricing.js`),
-      `src/utils/pricing-lookup.js`, the `pickPricing` / `computeCost` calls in
-      `src/jobs/usage-aggregation.js:14,101-139`, and `tests/pricing.test.js`. Leave
-      the `usage_metrics_daily.cost_usd` column; dropping it needs a migration for no
-      benefit. This also closes an open authorization gap: `GET /api/usage/pricing` was
-      mounted with plain `auth` while only `POST` was `superAdminAuth`
-      (`src/routes/usage/pricing.js:25,48`), and the old console hid the card
-      client-side using the user-writable `om_role` key
-- [ ] Decide `/api/usage/exemptions` (`src/routes/usage/exemptions.js`): a super_admin
-      CRUD API with no UI anywhere. In scope or explicitly out
-- [ ] Confirm the Requirement 5 guard did real work: check out the Stage 6 state and
-      observe that `/admin/` was still served then
-- [ ] Close the loop on `openspec/changes/archive/v1.20.4-legacy-retire/`
+      login.~~ **Done in Stage 7**, because "do this first" and "the stage after the
+      retirement" cannot both be true. See Stage 7's "Found by this stage"
+- [x] ~~Update the recovery instructions~~ — same release, same reason
+- [x] Verified on production that `/admin/` and `/admin/*` redirect, relatively — Stage 7's
+      browser check, four request shapes plus the four exposed file paths
+- [x] **Deleted the `express.static` branch over the whole of `src/public/`.** It was not
+      installed, but it was one manifest edit away from being installed, so `signpost` is
+      no longer a state the manifest accepts: the validator Stage 1a built for misspelled
+      states now throws on it. That turns "put a feature back in the old console" into a
+      boot failure rather than a redirect loop — a signpost would link to `/admin/#tab`,
+      which redirects to the console, which renders the signpost again
+- [x] `src/public/index.html` → `legacy/admin-v1.26/index.html` with a header saying it is
+      served by nothing. `COPY src/ ./src/` no longer carries it into the image; a new test
+      asserts no COPY reaches `legacy/` at all
+- [x] Fixed the tests that read it. **Seven, not the three this list named** — four more
+      only referenced it in comments, which were repointed so the provenance still resolves
+- [x] The signpost UI went with the state: the page, the credential handoff into the old
+      console's localStorage keys, the amber sidebar marker, and three locale groups. The
+      logout clear of `om_api_key` **stays** — nothing writes those keys now, but browsers
+      that used the old console still hold one, and it is a credential every `adminAuth`
+      route accepts
+- [x] Confirmed `/setup` still resolves; it is an explicit route, not the removed mount
+- [x] `Dockerfile` comments describe what is actually there
+- [x] **Backend dead code**, with the two decisions taken on production data:
+      - `/api/admin/login` deleted. It held the only `audit_logs` login write, and the
+        ledger flagged that removing it "ends login auditing" — **measured: zero login rows
+        in sixty days.** Auditing did not end here, it ended two months ago when everyone
+        moved to `/api/me/login`, which never wrote one. The write moved to
+        `src/utils/audit-log.js` and is called from the endpoint people use
+      - `/api/admin/iron-rules/*` **kept**, no UI (Vin's call). Measured: 72 of one user's
+        109 active iron rules are still legacy free text, and every other user's are — the
+        migration it reports on is nowhere near done, so deleting the only thing that can
+        see that would hide it
+      - `writeAdminAudit` deleted. `admin_audit_logs` is created by no migration and
+        `to_regclass` returns null on production, so every insert since v1.18.0 has thrown
+        into its own catch. The one call with a real purpose — which admin upgraded which
+        rule — was retargeted to `audit_logs`, a table that exists
+- [x] **Cost calculation removed entirely** (Requirement 8). Endpoint, lookup, tests, the
+      `pickPricing`/`computeCost` calls, and `cost_usd` out of every response that still
+      carried it — including the narrative payload, where a per-project dollar figure
+      derived from an unmaintained price list is exactly what prose turns into a confident
+      claim. The column stays; historical rows are left alone. This also closed the
+      authorization gap: `GET /api/usage/pricing` was mounted with plain `auth` while only
+      `POST` was `superAdminAuth`
+- [x] `/api/usage/exemptions` deleted (Vin's call), table kept — 0 rows on production, no
+      UI anywhere, and `team-stats.js` still reads the table for the coverage denominator
+- [x] **Confirmed the Requirement 5 guard did real work**, by reading the Stage 6 state
+      rather than trusting the story: at `v1.26.58` the manifest held exactly one
+      `signpost` and `legacy-admin-mount.js` still contained the static branch. `/admin/`
+      was genuinely served then, and the flip alone retired it
+- [x] Closed the loop on `openspec/changes/archive/v1.20.4-legacy-retire/`: a header
+      marking it superseded, with a table of where each of its actions actually happened.
+      It was written, archived and never executed, which is why the manifest exists
 - [ ] Browser check on production
+
+### Found by this stage
+
+- [x] **The console's login has had no brute-force limit since v1.20.** `authLimiter` (10
+      per 15 minutes) was mounted on `/api/admin/login` from the beginning; `/api/me/login`,
+      which replaced it, was never added. Every login moved to an unthrottled endpoint and
+      nobody noticed — `/api` alone allows 200 a minute, which is a throughput ceiling, not
+      a password-guessing one. Found by deleting the old endpoint and asking what it did
+- [x] **The setup wizard linked to a URL that never resolved.** `src/public/setup.html`'s
+      "go to the console" button pointed at `/admin/login`, which the legacy console had no
+      file for. Same defect as the `/setup` redirect target fixed in Stage 7, in the other
+      half of the same flow
+- [x] **A fresh clone could not start.** `src/public/dashboard/` is gitignored, and until
+      Stage 8 there was always a checked-in HTML file to fall back on. `npm start` now
+      builds the console when it is missing; the artefact stays out of git
+- [ ] **Backlog: `unknown_model` now checks against a table nothing can populate.**
+      `src/routes/usage/events.js` decides whether a model is "known" by looking it up in
+      `model_pricing`, and the CRUD that maintained that table is deleted. The signal was
+      always "not in the price list", which is why it already fires for nearly every model;
+      it now cannot be anything else. Not changed here because it sits in the ingestion
+      path, which is the most load-bearing code in the product and deserves its own release
+- [ ] **Backlog: the `kpi.*` locale keys are dead.** No component reads any of them; they
+      are leftovers from the v1.20 prototype. `kpi.api_cost` was removed with the cost
+      feature, the rest were left rather than widening this change into a locale audit
 
 **Done when**: one console.
 

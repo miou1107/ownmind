@@ -19,7 +19,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   LEGACY_CONSOLE_FEATURES,
-  LEGACY_CONSOLE_MIN_ROLE,
   FEATURE_STATES,
   signpostFeatures,
   legacyFeatureFor,
@@ -73,7 +72,7 @@ describe('legacy-console manifest — shape', () => {
     // touched the validator at all: deleting the whole validate() body left it green. The
     // fail-closed claim is what Requirement 5 rests on, and this repo has no CI, so it has
     // to be executed rather than described.
-    const ok = { id: 'a', consolePath: '/a', legacyTab: 'a', state: 'signpost' };
+    const ok = { id: 'a', consolePath: '/a', legacyTab: 'a', state: 'live' };
     const cases = [
       ['unknown state', [{ ...ok, state: 'signpst' }], /unknown state/],
       ['missing legacyTab', [{ ...ok, legacyTab: '' }], /incomplete entry/],
@@ -88,12 +87,24 @@ describe('legacy-console manifest — shape', () => {
     assert.doesNotThrow(() => validateFeatures(LEGACY_CONSOLE_FEATURES));
   });
 
-  it('a misspelled state would otherwise have read as live', () => {
-    // Why the throw matters rather than a warning: the predicate every reader uses is
-    // "state === 'signpost'", so a typo silently means "already rebuilt" and retires the
-    // old console while the feature is still only there.
-    assert.equal('signpst' === 'signpost', false);
-    assert.equal(FEATURE_STATES.includes('signpst'), false);
+  it('v1.26.60 — "signpost" is no longer a state the manifest accepts', () => {
+    // The old console is gone, so a signpost would link to /admin/#tab, which redirects
+    // to the console, which renders the signpost again. Putting a feature back is not
+    // something that can half-work any more, so it fails at import rather than at
+    // runtime as a loop. Executed, not described: this calls the validator.
+    assert.equal(FEATURE_STATES.includes('signpost'), false);
+    assert.throws(
+      () => validateFeatures([{ id: 'a', consolePath: '/a', legacyTab: 'a', state: 'signpost' }]),
+      /unknown state/,
+      'reintroducing a signpost must be a boot failure',
+    );
+  });
+
+  it('retirement can no longer be undone by editing the manifest', () => {
+    // There is no legal state that produces a signpost, so the predicate the server
+    // reads is permanently true whatever anyone writes in the entry list.
+    assert.equal(isLegacyConsoleRetired(), true);
+    assert.deepEqual(signpostFeatures(), []);
   });
 
   it('console paths and ids are unique', () => {
@@ -183,60 +194,38 @@ describe('legacy-console manifest — shape', () => {
   });
 });
 
-describe('legacy-console manifest — signposts point somewhere reachable', () => {
-  it('every signposted legacy tab exists in src/public/index.html', () => {
-    // A signpost naming a tab that is not there would send the user to a console that
-    // cannot show them the feature. Checked against the file rather than a list, so
-    // renaming a tab in the legacy console fails here.
-    const html = readFileSync(join(repoRoot, 'src/public/index.html'), 'utf8');
-    for (const f of signpostFeatures()) {
+describe('legacy-console manifest — the record it leaves behind', () => {
+  it('every entry still names the tab it came from', () => {
+    // The manifest is the record of where each feature went, so the provenance has to
+    // survive the source file being retired. Checked against the preserved snapshot
+    // rather than the served tree, because nothing serves it any more.
+    const html = readFileSync(join(repoRoot, 'legacy/admin-v1.26/index.html'), 'utf8');
+    for (const f of LEGACY_CONSOLE_FEATURES) {
       assert.ok(
         html.includes(`data-tab="${f.legacyTab}"`),
-        `${f.id} points at legacy tab "${f.legacyTab}", which src/public/index.html has no button for`,
+        `${f.id} records legacy tab "${f.legacyTab}", which the preserved console has no button for`,
       );
     }
   });
 
-  it('no signpost is offered to a role that cannot log in to the legacy console', () => {
-    // POST /api/admin/login filters role IN ('admin','super_admin'), so a `user` following
-    // a signpost would be rejected at the door. The nav guard for every signposted path
-    // must therefore be at least LEGACY_CONSOLE_MIN_ROLE. Read from the nav module rather
-    // than restated here, so the two cannot drift.
-    const floor = ROLE_RANK[LEGACY_CONSOLE_MIN_ROLE];
-    for (const f of signpostFeatures()) {
-      const min = navMinRole(f.consolePath);
-      assert.ok(min, `${f.consolePath} has no nav item, so nothing declares its minimum role`);
+  it('every migrated feature has a nav item in the console it moved to', () => {
+    // The other half of the same claim: the feature did not merely stop being in /admin,
+    // it arrived somewhere. A path with no nav item would be a feature that vanished.
+    for (const f of LEGACY_CONSOLE_FEATURES) {
       assert.ok(
-        ROLE_RANK[min] >= floor,
-        `${f.id} is signposted at minRole "${min}" but the legacy console needs `
-          + `"${LEGACY_CONSOLE_MIN_ROLE}"; a lower role would be handed a dead end`,
+        navMinRole(f.consolePath),
+        `${f.id} claims to be live at ${f.consolePath}, but the console has no nav item there`,
       );
     }
   });
 });
 
-describe('/admin either/or — both directions', () => {
-  it('with one signpost remaining, /admin/ is served and not redirected', async () => {
+describe('/admin after retirement — it can only redirect', () => {
+  it('/admin/ is not served and does redirect', async () => {
     const dir = makeLegacyDir();
     try {
       const app = express();
-      const branch = installLegacyAdminMount(app, { retired: false, publicDir: dir });
-      assert.equal(branch, 'static');
-
-      const root = await fetchOnce(app, '/admin/');
-      assert.equal(root.status, 200, '/admin/ must still serve the legacy console');
-      assert.match(root.body, /legacy console/);
-      assert.equal(root.location, null, 'must not redirect while a signpost remains');
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('with no signposts left, /admin/ is not served and does redirect', async () => {
-    const dir = makeLegacyDir();
-    try {
-      const app = express();
-      const branch = installLegacyAdminMount(app, { retired: true, publicDir: dir });
+      const branch = installLegacyAdminMount(app);
       assert.equal(branch, 'redirect');
 
       const root = await fetchOnce(app, '/admin/');
@@ -248,42 +237,47 @@ describe('/admin either/or — both directions', () => {
     }
   });
 
-  it('the retirement redirect covers every depth below /admin', async () => {
-    const dir = makeLegacyDir();
-    try {
-      const app = express();
-      installLegacyAdminMount(app, { retired: true, publicDir: dir });
+  it('the redirect covers every depth below /admin', async () => {
+    const app = express();
+    installLegacyAdminMount(app);
 
-      const cases = [
-        ['/admin', 'dashboard/'],
-        ['/admin/', '../dashboard/'],
-        ['/admin/setup.html', '../dashboard/'],
-        ['/admin/me/index.html', '../../dashboard/'],
-      ];
-      for (const [url, expected] of cases) {
-        const r = await fetchOnce(app, url);
-        assert.equal(r.status, 301, `${url} should redirect`);
-        assert.equal(r.location, expected, `${url} resolved to the wrong relative target`);
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+    const cases = [
+      ['/admin', 'dashboard/'],
+      ['/admin/', '../dashboard/'],
+      ['/admin/setup.html', '../dashboard/'],
+      ['/admin/me/index.html', '../../dashboard/'],
+    ];
+    for (const [url, expected] of cases) {
+      const r = await fetchOnce(app, url);
+      assert.equal(r.status, 301, `${url} should redirect`);
+      assert.equal(r.location, expected, `${url} resolved to the wrong relative target`);
     }
   });
 
-  it('src/app.js derives the mount from the manifest instead of mounting unconditionally', () => {
-    // The structural half of the guard. Without this, a future edit could restore the
-    // hardcoded `app.use('/admin', express.static(...))` and the manifest would stop
-    // deciding anything, with every behavioural test above still green.
+  it('nothing can serve the legacy console any more', () => {
+    // v1.26.60. The either/or is gone: the helper has one branch, and it holds no
+    // reference to a directory to serve. Previously this suite proved both directions
+    // worked; what has to be proved now is that only one of them exists, because the
+    // deleted branch was express.static over the whole of src/public.
+    const src = readFileSync(join(repoRoot, 'src/middleware/legacy-admin-mount.js'), 'utf8');
+    // A call, not a mention: the header comment explains what was removed and why, and
+    // the first version of this assertion matched its own documentation.
+    assert.doesNotMatch(src, /express\.static\s*\(/, 'the static branch must stay deleted');
+    assert.doesNotMatch(src, /^\s*import .*from ['"]express['"]/m, 'express is no longer needed here');
+    assert.doesNotMatch(src, /publicDir/, 'nothing should name a directory to serve');
+  });
+
+  it('src/app.js does not mount /admin outside the helper', () => {
+    // The structural half of the guard. Without this, a future edit could restore a
+    // hardcoded `app.use('/admin', express.static(...))` with every behavioural test
+    // above still green.
     const appSrc = readFileSync(join(repoRoot, 'src/app.js'), 'utf8');
-    // Quote-agnostic and tolerant of a variable for the directory: the point is that
-    // nothing mounts /admin outside the manifest-driven helper.
     assert.doesNotMatch(
       appSrc,
       /app\.use\(\s*['"`]\/admin['"`]\s*,\s*express\.static/,
       'src/app.js must not mount /admin directly; go through installLegacyAdminMount',
     );
     assert.match(appSrc, /installLegacyAdminMount\(/);
-    assert.match(appSrc, /isLegacyConsoleRetired\(\)/);
   });
 });
 

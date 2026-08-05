@@ -1,5 +1,53 @@
 # OwnMind 檔案結構
 
+## v1.26.60 修改（收尾，整併第 8 站；單一後台整併結束）
+
+刪除檔：
+```
+src/routes/usage/pricing.js, src/utils/pricing-lookup.js, tests/pricing.test.js — 成本計算（Requirement 8）
+src/routes/usage/exemptions.js, tests/exemptions.test.js                        — 沒有介面的 CRUD，正式機 0 筆
+client/src/components/common/Signpost.jsx                                       — 指路牌頁
+client/src/api/legacy-handoff.js                                                — 把憑證交給舊後台的那段
+```
+
+搬移檔：
+```
+src/public/index.html → legacy/admin-v1.26/index.html                           — 舊後台原始檔，加保存說明，沒有 COPY 指到 legacy/
+```
+
+新增檔：
+```
+src/utils/audit-log.js                                                          — 稽核寫入器。從 admin.js 抽出來，因為現在兩個 router 都要用
+scripts/ensure-console-build.js                                                 — npm start 前確認後台 build 存在，沒有就跑一次
+tests/dockerfile-runtime-files.test.js                                          — start 會執行到的 scripts 檔必須進映像；legacy/ 不准進
+tests/login-rate-limit.test.js                                                  — 真的打 4 次登入確認第 4 次被擋（不是比對原始碼有沒有掛）
+openspec/changes/v1.26.60-legacy-cleanup/                                       — proposal / tasks
+```
+
+修改檔：
+```
+shared/legacy-console-manifest.js        — 「還在舊後台」不再是合法狀態，寫進去伺服器開不起來（會變成無窮導向迴圈）
+src/middleware/legacy-admin-mount.js     — 只剩導向一條路；那段送出整個 src/public 的靜態掛載刪除
+src/app.js                               — /api/admin/login 的限流改掛 /api/me/login（真正在用的那支從來沒有防護）
+src/routes/admin.js                      — POST /login 刪除；writeAuditLog 抽到 utils
+src/routes/me.js                         — 登入補寫稽核紀錄（正式機 60 天 0 筆，因為沒人在寫）
+src/routes/admin-iron-rule-upgrade.js    — 刪掉寫進「不存在的資料表」的稽核；有意義的那筆改寫到真的存在的表
+src/jobs/usage-aggregation.js            — 不再算成本，cost_usd 寫 null；欄位保留
+src/routes/usage/{index,stats,team-stats}.js, src/routes/me-narrative.js — 回應不再帶 cost_usd
+client/src/{App,components/common/Sidebar}.jsx, api/{auth,legacy-keys,client}.js — 指路牌相關拆除
+client/src/i18n/{zh,en,ja}.json          — signpost.* / legacy.tab.* / nav.still_in_legacy / kpi.api_cost 移除
+src/public/setup.html                    — 「前往登入後台」原本指向從來不存在的 /admin/login
+Dockerfile                               — 註解對齊現況；prestart 腳本進映像（避免有人把 CMD 改成 npm start 就炸）
+package.json                             — prestart 掛上；版號 1.26.59 → 1.26.60
+openspec/changes/archive/v1.20.4-legacy-retire/proposal.md — 標記 superseded，對照表寫清楚每一項最後在哪一版真的做掉
+```
+
+這一版學到的：
+
+- **決定要有數字撐。** 四個「要問 Vin」的項目，全部先去正式機量過再問。結果有兩個把預設答案推翻了：登入稽核看起來像「刪掉就沒了」，實際上 60 天 0 筆、兩個月前就斷了；鐵律升級看起來像沒人用的死程式，實際上它報的遷移 109 條裡有 72 條沒做完。
+- **刪東西的時候會撞見旁邊的洞。** 這一版真正的資安修正不是刪成本 API，是發現新後台的登入從 v1.20 起就沒有防暴力破解 —— 舊的有，搬家的時候沒跟著搬，而且沒人發現。刪一支端點逼你去看它到底做了什麼。
+- **「不再使用」跟「不可能再回來」是兩回事。** 靜態掛載沒被裝上，但改一個字就會回來。把那個狀態變成開不起來的錯誤，比刪掉程式碼更有用。
+
 ## v1.26.59 修改（週報月報搬進新後台，整併第 7 站，舊後台退場）
 
 新增檔：

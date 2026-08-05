@@ -29,19 +29,23 @@ import { lintIronRule } from '../utils/iron-rule-quality.js';
 import { suggestSkillMdFormat } from '../utils/iron-rule-suggest.js';
 import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
 import { injectOriginSection } from '../utils/iron-rule-origin-context.js';
+import { writeAuditLog } from '../utils/audit-log.js';
 
-// Audit log writer — same schema as src/routes/admin.js writeAuditLog.
-async function writeAdminAudit(actorId, action, targetType, targetId, details) {
-  try {
-    await query(
-      `INSERT INTO admin_audit_logs (actor_id, action, target_type, target_id, details, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [actorId, action, targetType, String(targetId), JSON.stringify(details || {})]
-    );
-  } catch (e) {
-    logger.warn('admin audit log write failed; main flow not blocked', { error: e.message, action, targetId });
-  }
-}
+// v1.26.60 kept this router deliberately, with no UI. The legacy console's 鐵律升級 tab
+// was its only caller and went with the retirement, but the migration it reports on is
+// far from done: measured on production 2026-08-05, 72 of 109 of one user's active iron
+// rules are still legacy free text, and every other user's are. Deleting the only thing
+// that can see an unfinished migration would have hidden it.
+
+// v1.26.60: `writeAdminAudit` was here. It inserted into `admin_audit_logs`, a table no
+// migration under db/ ever created — confirmed absent on production, where
+// `to_regclass('public.admin_audit_logs')` returns null. So every one of those inserts
+// had always thrown straight into its own catch and warned, since v1.18.0.
+//
+// Removed rather than fixed. Creating the table now would start collecting an audit
+// trail nobody asked for, of a feature with no UI; the honest options were to write the
+// rows somewhere real or to stop pretending, and the calls below were the pretence.
+// The general-purpose writer that does work is src/utils/audit-log.js.
 
 const router = Router();
 
@@ -264,7 +268,11 @@ router.put('/:id/upgrade', async (req, res) => {
 
     // v1.18.0-rc3 review I2 fix: write an admin audit log so we can trace
     // "which admin updated which iron rule".
-    await writeAdminAudit(req.user.id, 'iron_rule_upgrade', 'memory', ruleId, {
+    //
+    // v1.26.60: retargeted from `admin_audit_logs` to `audit_logs`. The intent was right
+    // and the destination was not — no migration ever created the other table, so this
+    // trace has never once been written. Same shape, a table that exists.
+    await writeAuditLog(req.user.id, 'iron_rule_upgrade', 'memory', ruleId, {
       code: oldRule.code,
       title: oldRule.title,
       old_format: 'legacy_text',
