@@ -17,17 +17,23 @@ decided against; say which in the commit message.
 
 ## Needs a release of its own
 
-### 1. `must_change_password` is enforced only in the browser
+### 1. Resetting a password does not cut off the person's access
 
-`getMustChangePassword()` (`client/src/api/auth.js`) reads a user-writable
-localStorage key and `RequireFreshPassword` gates on it. Nothing server-side blocks
-requests from an account in that state: a grep of `src/middleware/` and `src/routes/`
-finds only reads and writes of the column, never a gate. A member can delete the key
-in devtools and keep using a default-password account indefinitely. Same class as the
-`om_role` spoofing that Stage 0 removed. `GET /api/me/profile` already returns the
-authoritative value.
+What remains of the original entry after v1.26.63, which closed the half where a
+temporary password was exchanged for a permanent `api_key` at login.
 
-Origin: `archive/single-console-consolidation/tasks.md`, Stage 0.
+An admin resetting someone's password (`src/routes/admin-password-reset.js:88`) sets
+`must_change_password` back to `TRUE` and leaves the `api_key` untouched. That person's
+open browser session and their installed MCP keep working exactly as before, so a reset
+performed *because* a password leaked revokes nothing. `RequireFreshPassword` still nudges
+them in the console, and it is still only a localStorage flag they can delete.
+
+Closing it means rotating the `api_key` on a password change. That invalidates the
+person's installed MCP configuration and requires them to re-run the installer, probably
+without knowing why it stopped working, so it needs a story for how they find out. Vin
+deferred the decision on 2026-08-05 rather than rejecting it.
+
+Origin: `archive/single-console-consolidation/tasks.md`, Stage 0, narrowed by v1.26.63.
 
 ### 2. Period bounds lose a microsecond
 

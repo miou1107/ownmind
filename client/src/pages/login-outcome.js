@@ -13,6 +13,7 @@
  * @param {{ ok: boolean, data?: object, error?: string }} response
  * @returns {{ kind: 'authenticated', data: object }
  *          | { kind: 'setup' }
+ *          | { kind: 'first_password' }
  *          | { kind: 'error', error?: string }}
  */
 export function decideLoginOutcome(response) {
@@ -22,6 +23,12 @@ export function decideLoginOutcome(response) {
   // value means the server said something this client does not understand, and guessing
   // "setup" would show a password-setting form on a hunch.
   if (data?.requiresSetup === true) return { kind: 'setup' };
+  // v1.26.63: the password was right, but the account is still on the temporary one the
+  // admin relayed, so the server issued no key. Ahead of the api_key branch for the same
+  // reason `setup` is: a 200 carrying no key is no longer only a client-server mismatch.
+  // Behind `setup` because "no password at all" is a different, older state than
+  // "has a temporary one", and only the setup form can finish it.
+  if (data?.mustSetPassword === true) return { kind: 'first_password' };
   if (!data?.api_key) return { kind: 'error' };
   return { kind: 'authenticated', data };
 }

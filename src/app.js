@@ -59,6 +59,10 @@ const authLimiter = rateLimit({
 // every login moved to an unthrottled endpoint and nobody noticed — `/api` alone allows
 // 200 a minute, which is a throughput ceiling, not a password-guessing one.
 app.use('/api/me/login', authLimiter);
+// v1.26.63: same limiter, same reason — /api/me/first-password verifies a password and is
+// unauthenticated by necessity, because login now refuses to issue a key while the
+// account is still on the temporary one.
+app.use('/api/me/first-password', authLimiter);
 app.use('/api/admin/setup', authLimiter);
 // v1.19.8 code-review I-1: align with /api/admin/setup to avoid being hit by mistake
 // (during first_run this won't block a user's trial-and-error, because the limit is

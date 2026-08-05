@@ -1,5 +1,48 @@
 # OwnMind 檔案結構
 
+## v1.26.63 修改（臨時密碼不再一用就變成永久鑰匙）
+
+新增檔：
+```
+src/utils/first-password.js       — 兩個安全決策的純函式：登入該回什麼、新端點該拒絕什麼。
+                                    照 setup-recovery.js 的既有做法，因為 me.js 是 1119 行
+                                    的模組級 router、沒有依賴注入，為了測一支端點重構它風險太大
+tests/first-password.test.js      — 15 項，含「四種拒絕必須產生完全相同的答案」跟限流器結構檢查
+tests/login-outcome.test.js       — 9 項，新的第四種結果 + 既有三種原封不動
+openspec/changes/v1.26.63-first-password-before-key/{proposal,spec,tasks}.md
+```
+
+修改檔：
+```
+src/routes/me.js                     — 登入改問 first-password 政策；新增 POST /first-password；
+                                       開機算一個 DUMMY_HASH（不寫死在原始碼，那個形狀會被密鑰掃描誤判）；
+                                       登入的稽核紀錄加 issued_key 欄位
+src/app.js                           — authLimiter 掛上 /api/me/first-password
+client/src/pages/login-outcome.js    — 第四種結果 first_password，排在 api_key 檢查之前
+client/src/pages/LoginPage.jsx       — 第三種模式，沿用既有 mode 狀態的形狀
+client/src/i18n/{zh,en,ja}.json      — 5 個新 key
+CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.63
+openspec/BACKLOG.md                  — 第 1 條出去，換成「管理員重設那條路 + 要不要輪換 api_key」
+```
+
+沒改的檔（刻意）：
+```
+src/middleware/                      — 沒有加任何擋 must_change_password 的中介層。那個旗標是開機
+                                       種子程式給「所有沒密碼的帳號」設的，也就是所有沒登入過後台
+                                       的人，而他們天天在用 MCP。中介層一擋，他們全停
+client/src/components/common/RequireFreshPassword.jsx — 留著。登入那條路它已經不再是唯一防線，
+                                       但管理員重設密碼那條路還需要它做提醒
+src/routes/me.js POST /change-password — 已登入的人改自己選的密碼，跟這件事無關
+```
+
+這一版學到的：
+
+- **「旗標是 TRUE 的人有多少」決定了修法。** backlog 條目暗示在中介層擋，聽起來合理，查完才發現那會讓整隊人的 MCP 停掉。修安全問題前要先量受影響的族群，不能只讀條目描述。
+- **繞道要用清空的，不要用堵的。** localStorage 那個鍵之所以能被繞過，是因為伺服器早就把鑰匙給出去了。把發鑰匙的時機往後挪，那個鍵就自然失去價值，不需要再多一道檢查。
+- **拒絕訊息的一致性要用測試釘死。** 四種拒絕理由完全不同，但外面看到的必須是同一個答案，這件事光靠讀程式碼看不出來，要斷言 `Set(bodies).size === 1`。
+- **零發現的審查要自己抽驗。** 這次對抗審查回零，我自己另外查了稽核欄位有沒有列舉限制、簽章對不對，那是審查者不可能知道的事。
+- **提示詞寫成「攻擊它」會被拒答。** agy 第一次直接不做，換成「上線前的防禦性審查」才跑。
+
 ## v1.26.62 修改（發廣播不用再去別的分頁抄 user_id）
 
 新增檔：

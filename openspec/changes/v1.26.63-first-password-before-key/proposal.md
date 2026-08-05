@@ -72,6 +72,37 @@ person's installed MCP configuration and requires them to re-run the installer, 
 without knowing why it broke. Vin's call on 2026-08-05 was to keep this release to the
 source and decide rotation separately.
 
+## Review round
+
+Adversarial review through the `agy` CLI, against a copy outside the repo. **Zero
+findings**, which on a credential path is a result to be suspicious of rather than pleased
+by, so three things were checked independently afterwards. All three are things the
+reviewer had no way to know:
+
+- **`audit_logs.action` accepts the new value.** `db/005_admin_roles_password.sql:21`
+  declares it `VARCHAR(50)` with no CHECK constraint, and nothing maps action strings to
+  display text, so `'first_password'` stores and renders fine.
+- **`writeAuditLog`'s signature matches the call.** `(actorId, action, targetType,
+  targetId, details)`.
+- **Nothing else reads the login response shape.** The full suite passes, and the e2e
+  harness seeds its accounts with `must_change_password = FALSE`.
+
+The reviewer's own confirmations worth recording, because they are the claims the spec
+makes: every credential refusal is one indistinguishable 401; the shape checks run first
+so a 400 cannot be read as "your guess was right"; mounting the *same* `authLimiter`
+instance on both paths means an address gets ten attempts across the two combined, not ten
+each; and the client returns out of the submit handler before `setApiKey`, so no
+credential is stored on the new path.
+
+**Found while writing it up.** The login audit row said `login` whether or not a key was
+issued, so from this release a row could record something that did not happen. It now
+carries `issued_key`.
+
+**The review had to be asked twice.** Phrased as "attack this and construct attack
+sequences", `agy` declined outright. Rephrased as a pre-merge defensive review of the
+project's own code, it ran. Worth remembering: the framing changes whether the tool works
+at all, and the second framing is also the more accurate description of what this is.
+
 ## Non-goals
 
 - No `api_key` rotation, per above.

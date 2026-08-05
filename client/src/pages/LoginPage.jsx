@@ -57,6 +57,15 @@ export default function LoginPage() {
       setMode('setup');
       return;
     }
+    // v1.26.63: the password was right, but it is the temporary one the admin relayed and
+    // the server issued no key. The email and that password stay in state so the next
+    // form does not ask for them again.
+    if (outcome.kind === 'first_password') {
+      setMode('first-password');
+      setNewPassword('');
+      setNewPassword2('');
+      return;
+    }
 
     setApiKey(r.data.api_key);
     // 直接把登入回應裡的身分餵進 session。下面的 navigate 跟這裡是同一個同步區塊，
@@ -105,6 +114,114 @@ export default function LoginPage() {
     setNewPassword2('');
     setError('');
     setNotice(t('login.setup_done'));
+  }
+
+  // v1.26.63 — the first-login step. Sends the temporary password back with the new one;
+  // the server verifies it again and only then issues the api_key, so nothing in this
+  // browser holds a credential until the password has actually been replaced.
+  async function handleFirstPassword(e) {
+    e.preventDefault();
+    if (busy) return;
+    if (newPassword !== newPassword2) {
+      setError(t('security.error_mismatch'));
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError(t('security.error_too_short'));
+      return;
+    }
+    setBusy(true);
+    setError('');
+    const r = await apiPost('/api/me/first-password', {
+      email, current_password: password, new_password: newPassword,
+    });
+    setBusy(false);
+    if (!r.ok || !r.data?.api_key) {
+      setError(r.error || t('login.error_generic'));
+      return;
+    }
+    setApiKey(r.data.api_key);
+    prime(r.data);
+    // No flag to write and no detour to /preference/security: the password was just set.
+    setMustChangePassword(false);
+    navigate(location.state?.from?.pathname || '/portal/usage', { replace: true });
+  }
+
+  if (mode === 'first-password') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-linen-100 px-4">
+        <form
+          name="first-password"
+          onSubmit={handleFirstPassword}
+          className="bg-white border border-slate-200 rounded-2xl p-8 shadow-sm w-full max-w-md"
+        >
+          <h1 className="text-2xl font-bold text-sage-700">{t('login.first_password_title')}</h1>
+          <p className="text-slate-500 mt-2 text-sm">{t('login.first_password_subtitle', { email })}</p>
+
+          <label className="block mt-6">
+            <span className="block text-sm font-medium text-slate-700">
+              {t('security.new_label')}
+            </span>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+              required
+              disabled={busy}
+              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-slate-50"
+            />
+            <span className="mt-1 block text-xs text-slate-500">{t('login.first_password_hint')}</span>
+          </label>
+
+          <label className="block mt-4">
+            <span className="block text-sm font-medium text-slate-700">
+              {t('security.new_confirm_label')}
+            </span>
+            <input
+              type="password"
+              value={newPassword2}
+              onChange={(e) => setNewPassword2(e.target.value)}
+              autoComplete="new-password"
+              required
+              disabled={busy}
+              className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sage-500 disabled:bg-slate-50"
+            />
+          </label>
+
+          {error ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"
+            >
+              {error}
+            </div>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={busy || !newPassword || !newPassword2}
+            className="mt-6 w-full rounded-lg bg-sage-600 px-4 py-2 text-white font-medium hover:bg-sage-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+          >
+            {busy ? t('security.submitting') : t('login.first_password_submit')}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMode('login');
+              setPassword('');
+              setNewPassword('');
+              setNewPassword2('');
+              setError('');
+            }}
+            className="mt-3 w-full rounded-lg px-4 py-2 text-sm text-slate-500 hover:bg-slate-50"
+          >
+            {t('login.first_password_back')}
+          </button>
+        </form>
+      </div>
+    );
   }
 
   if (mode === 'setup') {
