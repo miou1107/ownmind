@@ -20,8 +20,23 @@ client/src/pages/System/NewBroadcastModal.jsx — 收件人改人名多選、結
                                                 對抗審查後補上下鍵與 ARIA、選單關閉改看 relatedTarget、
                                                 重複挑同一人擋掉、cooldown 0 不再被吃掉
 client/src/i18n/{zh,en,ja}.json               — 兩個 key 換說法、五個新 key、刪掉 ends_at_placeholder
+package-lock.json                             — ip-address 10.2.0→10.4.0（3 個通報）、playwright 1.53→1.62
+mcp/package-lock.json                         — hono 4.12.32→4.13.0、fast-uri 3.1.4→3.1.5
 CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.62
 ```
+
+相依套件漏洞（只動 lockfile、沒改任何版本範圍宣告）：
+
+| 套件 | 位置 | 正式路徑上？ |
+|---|---|---|
+| `ip-address` | `express-rate-limit` → IP 限流的鍵 | **是**。前導零 IP 解讀不一致，有機會繞過限流 |
+| `playwright` | root devDependency | 否 |
+| `fast-uri` | mcp `ajv` → JSON schema `$ref` | 否 |
+| `hono` | mcp SDK 的 HTTP transport（本專案走 stdio） | 否 |
+
+沒修 `react-router` 的 RSC CSRF 通報：修補版是 8.3.0、7.x 無修補版，等於跨大版本。
+`client/src/main.jsx` 只用 `BrowserRouter`，沒有 RSC、data router、loader、action，
+該路徑在此不存在。判定為打不到、不值得跨大版本，`npm audit` 會持續顯示這一條。
 
 沒改的檔（刻意）：
 ```
