@@ -249,6 +249,63 @@ Origin: v1.26.65 investigation.
 
 ---
 
+### 18. Antigravity is now two applications and OwnMind can only see one of them
+
+Antigravity ships as an agent manager (`Antigravity.app`, `com.google.antigravity`) and
+a separate editor (`Antigravity IDE.app`, `com.google.antigravity-ide`, VSCode OSS
+1.107.0). The manager's window has an "Open IDE" button; they are two components of one
+product, not two versions of it.
+
+Only the editor leaves a trace OwnMind can read. v1.26.66 fixed the collector to find
+the editor's `state.vscdb`, so editor usage is now recorded. **Work done in the manager
+is invisible in every channel.**
+
+**Measured on Vin's Mac, 2026-08-05.** He ran a real conversation in the manager at
+22:35 while both applications were running. Afterwards:
+
+- `Antigravity/User/globalStorage/state.vscdb` — untouched. `currentSessionDate` still
+  2026-05-18, file mtime still 2026-05-20. Launching and using the manager does not
+  write it.
+- Files written under the manager's directory in the following ten minutes — Chromium
+  and Electron infrastructure only (`Code Cache`, `GPUCache`, `Session Storage`, `DIPS`,
+  `Network Persistent State`) plus `app_storage.json`, which holds seven UI preference
+  keys and no dates. No session or conversation data appeared locally.
+- `user_tool_last_seen` on production — no MCP call at 22:35. The only row for that user
+  is `claude-code` at 13:07 UTC.
+
+The manager still recites the iron rules, because `install.sh` writes
+`~/.antigravity/rules/ownmind.md` (line 352). Its own reply said it was reading "系統環境
+與設定檔". So memory delivery works and usage collection does not.
+
+**No OwnMind MCP process runs under either Antigravity application.** Checked by parent
+process: every `~/.ownmind/mcp/index.js` process on that machine is a child of
+`Claude.app`. `~/.codeium/windsurf/mcp_config.json` does list `ownmind`, but nothing is
+launching it. The installer writes rules files for Antigravity and Windsurf and never an
+MCP config (`install.sh` lines 780-782, 713-716).
+
+**Why this is worth doing.** A heavy manager user looks completely idle. It is the same
+shape as the bug that produced v1.26.66: the person is working, the collector sees
+nothing, and no layer reports an error.
+
+**What is unknown.** Where the manager stores its conversation history. Nothing local
+was written during the ten-minute window, which is consistent with cloud storage but is
+not proof; it may also flush on quit. Determining this means reading its LevelDB store,
+which holds conversation content, so it was not done without Vin present.
+
+**Sequence if picked up:**
+
+1. Quit the manager, then re-check whether `Local Storage/leveldb` or `Session Storage`
+   gained the 22:35 conversation. That settles flush-on-quit versus cloud.
+2. If local, find a timestamp field usable as a session date and add a Tier 2 source.
+3. If cloud-only, the remaining option is wiring the MCP into Antigravity so at least
+   the heartbeat and `user_tool_last_seen` fire. That needs its canonical MCP config
+   path, verified from Google's documentation rather than inferred from the Windsurf
+   directory that happens to exist on this machine.
+
+Origin: v1.26.66 / v1.26.67 investigation, 2026-08-05.
+
+---
+
 ## Smaller cleanups
 
 ### 10. Three sibling pages hardcode `toLocaleDateString('zh-TW')`

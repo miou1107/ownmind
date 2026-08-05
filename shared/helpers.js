@@ -66,6 +66,30 @@ export function getClientVersion() {
 }
 
 /**
+ * Which AI tool is hosting this MCP process.
+ *
+ * v1.26.67 — this rule used to be written out three times, and one copy dropped
+ * `OWNMIND_TOOL`: the variable `install.sh` actually writes into the Cursor MCP config.
+ * Nothing in this repository has ever set `OWNMIND_CLIENT_TOOL`, so the copy that read
+ * only that variable always resolved to `claude-code`. It was the copy used for the
+ * heartbeat, the `x-ownmind-tool` header and the session log.
+ *
+ * `collector_heartbeat` is UNIQUE (user_id, tool), so a Cursor heartbeat labelled
+ * `claude-code` lands on top of the row the claude-code scanner maintains and replaces
+ * its machine, version and os. Two tools on one machine become one row that reports
+ * whichever wrote last.
+ *
+ * An empty value counts as unset: an empty `tool` would create a row no report groups
+ * by and no human recognises.
+ *
+ * @param {object} [env] — defaults to process.env
+ * @returns {string}
+ */
+export function resolveClientTool(env = process.env) {
+  return env.OWNMIND_TOOL || env.OWNMIND_CLIENT_TOOL || 'claude-code';
+}
+
+/**
  * Read OwnMind credentials from Claude Code's settings.json.
  * @param {string} [settingsPath] — defaults to ~/.claude/settings.json
  */
