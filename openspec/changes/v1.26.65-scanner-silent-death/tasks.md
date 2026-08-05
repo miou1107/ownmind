@@ -89,8 +89,15 @@ change, no schema change, no migration, no console change.
 
 ## Phase 5 — After release
 
-- [ ] Get one line from the affected machine to identify which of the five defects
+- [ ] Get one line from the affected machine to identify which of the seven defects
       fired. Server data cannot answer this
+- [x] Verified the Codex collection path end to end on Vin's Mac as a positive control:
+      a live session's two events reached the server in ten seconds, local and server
+      newest timestamps matching to the second, both counts +2
+- [x] Probed that machine's whole Codex history (83 files, 10,084 `token_count` lines):
+      zero throws, zero unreadable files. So defect 7 does not fire on ordinary data
+- [ ] The second affected member's `codex` adapter has never checked in. Deferred by Vin
+      2026-08-05, tracked as `BACKLOG.md` item 17 with the one command that settles it
 
 ## Out of scope
 
