@@ -295,8 +295,17 @@ Shipped as `v1.26.49`.
 - [x] Code review pass: 1 Critical (must_change_password missing from SELECT),
       3 Important (e2e amber-dot scoping wrong, umbrella tasks not ticked, PasswordModal
       onDone missing load()), all fixed. Docs count typo also fixed
-- [ ] Browser check on production — deferred to next SSH session (Vin's admin
-      credentials needed; can't test add/edit/delete/password flows without login)
+- [x] Browser check on production — **done 2026-08-05**, sixteen months of "next SSH
+      session" closed. Full CRUD driven through the UI against production: created a
+      marked test account, renamed it, deleted it, back to nine rows, and the account
+      confirmed gone from the database afterwards. Exactly three writes, all mine, all
+      cleaned up. Two things confirmed on a genuinely fresh row that fixtures cannot show:
+      its 用量資料 reads 尚無資料 rather than "0 tokens" (the v1.26.56 correction to this
+      stage's own Requirement 7 fix), and its 密碼狀態 reads 待改. The delete confirmation
+      names the account, says it cannot be undone and that the memories go too, and its
+      button is red while cancel is not. **Password reset was not tested because it was
+      never built** — Vin's scope decision recorded above, so the row menu has three items
+      and none of them is a password action
 
 ## Stage 3 — 系統設定 + 廣播管理
 
@@ -324,8 +333,16 @@ Shipped as `v1.26.50`. One old tab split across two pages. The pricing block was
       pure-function tests cover isRevocable / isActive / snooze label / type &
       severity classification; 系統設定 tests cover four states + null-stats
       degradation. Suite 2388/2388 green
-- [ ] Browser check on production — pending SSH session (needs admin + super_admin
-      logins to verify banner counts and CRUD flows)
+- [x] Browser check on production — **系統設定 done 2026-08-05**, and it is doing the job
+      the stage was written for. On real data it reads: 「2 位近 7 天沒任何 token 使用紀錄，
+      但 collector 都還在跟 server 打卡：Adam、Amiee Kuo。這是舊版「已裝」數字沒有告訴你的
+      死角」— the silent state named, counted, and the people listed. It independently
+      corroborates what OwnMind memory 740 recorded about Adam. No pricing card anywhere on
+      the page, confirming v1.26.60's removal reached the UI
+- [ ] **廣播管理 create/revoke still untested, deliberately.** The page renders its 43
+      existing broadcasts cleanly, but creating one puts a message in front of every
+      member's AI session. That is outward-facing, so it is Vin's call rather than
+      something to run as a test
 
 ## Stage 4 — 錯誤回報 + 工作紀錄
 
@@ -352,8 +369,13 @@ remain (stats-dashboard, team-usage, periodic-reports).
 - [x] Tests: four new pure-fn test files (43 assertions across
       `bug-report-row-vm`, `bug-status-update-validate`, `work-log-query`,
       `work-log-row-vm`) plus two new manifest assertions
-- [ ] Browser check on production — pending SSH session (needs admin +
-      super_admin logins to exercise the two modals and the CRUD roundtrip)
+- [x] Browser check on production — **done 2026-08-05, using real work rather than test
+      data.** 錯誤回報 lists six reports with both sub-tabs; the detail modal for Eric's #9
+      opened, and its status was moved `new` → `fixed` through the UI, which is true as of
+      the release deployed the same day. One PATCH, no test rows created. 工作紀錄 renders
+      100 rows across its four filters. **Found while there**: the bug-report detail modal
+      is a fixed overlay with no `role="dialog"`, so it is not announced as a dialog —
+      minor, filed rather than fixed here
 
 ## Stage 5 — 統計儀表板
 
@@ -769,7 +791,7 @@ asking, and two of the measurements overturned the obvious answer.
 - [x] Closed the loop on `openspec/changes/archive/v1.20.4-legacy-retire/`: a header
       marking it superseded, with a table of where each of its actions actually happened.
       It was written, archived and never executed, which is why the manifest exists
-- [ ] Browser check on production
+- [x] Browser check on production — done 2026-08-05; see the v1.26.60 change folder
 
 ### Found by this stage
 
