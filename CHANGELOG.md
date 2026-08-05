@@ -52,9 +52,17 @@
 [scanner] cursor ... sessions=0 reason=unreadable
 ```
 
-Cursor 的 `state.vscdb` 檔案在、權限正常、資料也在（`currentSessionDate` 是 2026-06-02），但收集器用的 `sqlite3 -readonly` 開不起來，換成 `file:...?immutable=1` 就讀得到。也就是 Cursor 的用量從 6 月初就靜靜地沒了，而在有原因碼之前，它跟「從來沒開過 Cursor」完全同形。
+Cursor 的 `state.vscdb` 檔案在、權限正常、資料也在，但收集器用的 `sqlite3 -readonly` 開不起來，換成 `file:...?immutable=1` 就讀得到。
 
-這一條沒有在這版一起修，已經帶著診斷跟驗證過的解法列進 backlog 第 20 條。直接改成 `immutable=1` 是不對的，那等於跟 SQLite 保證檔案不會變，而應用程式正在寫的時候這樣讀會拿到撕裂的資料。
+**第一次判讀這條時下錯結論，更正的過程比結論本身有用。** 當時看到裡面的日期是 2026-06-02、檔案修改時間也是那天，就寫成「Cursor 用量從 6 月初就沒了」。兩個觀察都是真的，但都不代表那件事。一小時後 Vin 打開 Cursor，檔案時間跟裡面的日期同時變成當下，收集器回報 `cursor sessions=1 reason=ok`。2026-06-02 只是他上一次用 Cursor 的日子。
+
+真正的缺陷用對照實驗釘出來了：把資料庫複製到空目錄，旁邊什麼都沒有，`-readonly` 就開不起來；同一份位元組用 `immutable=1` 讀得到。對著正在執行的 Cursor，`-readonly` 又是好的，而且旁邊會多一個 `state.vscdb-shm`。
+
+也就是說 **Tier 2 目前只有在編輯器剛好開著的時候才讀得到**。30 分鐘一輪算碰運氣，Windows 上 120 分鐘一輪就更靠運氣。漏掉的那些天不會出錯，只會消失，所以從來沒有任何一層察覺。
+
+Antigravity 是誤打誤撞不受影響：v1.26.68 給了它 `~/.gemini` 那個對話檔來源，資料庫打不開的時候還有第二條路。Cursor 沒有。
+
+這一條沒有在這版一起修，已經帶著對照實驗跟解法列進 backlog 第 20 條。直接改成 `immutable=1` 是不對的，那等於跟 SQLite 保證檔案不會變，而應用程式正在寫的時候這樣讀會拿到撕裂的資料。
 
 ## v1.26.68 — Antigravity 有三個介面，我們只看得到其中一個
 

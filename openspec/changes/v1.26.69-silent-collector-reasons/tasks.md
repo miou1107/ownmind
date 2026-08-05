@@ -81,12 +81,19 @@ test made the flaw obvious: `byte_offset` and `last_session_date` claim differen
 [scanner] antigravity ... sessions=1 reason=ok
 ```
 
-- [x] **The `unreadable` was true and new.** Cursor's `state.vscdb` is present, readable
-      and holds `currentSessionDate = 2026-06-02`, but `sqlite3 -readonly` fails on it
-      with SQLITE_CANTOPEN while `file:...?immutable=1` succeeds. Cursor usage has been
-      silently missing since June and looked exactly like "never opened". Recorded as
-      backlog item 20 with the diagnosis and the reason `immutable=1` is not a safe fix
-      on its own.
+- [x] **The `unreadable` was true and new**, and my first reading of it was wrong.
+      `sqlite3 -readonly` fails on Cursor's `state.vscdb` with SQLITE_CANTOPEN while
+      `file:...?immutable=1` succeeds. From that plus a `currentSessionDate` of
+      2026-06-02 I concluded Cursor usage had been missing since June, and told Vin so.
+      He then opened Cursor: the date and the file mtime both became current and the
+      scanner reported `cursor sessions=1 reason=ok`. June 2 was the last day he had
+      used it, nothing more. A zero read as a finding with no positive control, which is
+      the thing iron rule 770 exists to stop; his opening the app *was* the control.
+- [x] Isolated the real trigger with a controlled test instead: a copy of the database
+      in an empty directory fails `-readonly` and reads fine as `immutable=1`, while the
+      live file succeeds under `-readonly` whenever Cursor is running and a
+      `state.vscdb-shm` sidecar exists. Tier 2 can therefore only read the database
+      while the editor happens to be open. Corrected in backlog item 20.
 
 ## Phase 5 — Sync
 

@@ -396,7 +396,7 @@ Origin: v1.26.68 investigation, 2026-08-05.
 
 ---
 
-### 20. Cursor's telemetry cannot be opened with `sqlite3 -readonly`, and has been silent since June
+### 20. Tier 2 can only read `state.vscdb` while the editor is running
 
 Found within a minute of v1.26.69 landing, by reading its own new output:
 
@@ -404,37 +404,44 @@ Found within a minute of v1.26.69 landing, by reading its own new output:
 [scanner] cursor sent=0 ... sessions=0 reason=unreadable
 ```
 
-**Measured on Vin's Mac, 2026-08-06.** The database is present and readable
-(`~/Library/Application Support/Cursor/User/globalStorage/state.vscdb`, 1.2MB, mode
-`rw-r--r--`, owned by the running user). The query the collector issues fails:
+**The first version of this entry drew the wrong conclusion, and the correction is the
+useful part.** It said Cursor usage had been "invisible since at least 2026-06-02",
+because the telemetry read `2026-06-02` and the file's mtime was the same day. Both were
+true and neither meant that. Vin opened Cursor an hour later, the file's mtime became
+current, `currentSessionDate` became current, and the collector reported
+`cursor sessions=1 reason=ok`. 2026-06-02 was simply the last time he had used Cursor.
+
+That is iron-rule 770 exactly: a zero was read as a finding without a positive control.
+The positive control arrived when the user went and used the tool.
+
+**The real defect, isolated with a controlled test on 2026-08-06.** Copy the database to
+an empty directory so nothing sits beside it:
 
 ```
-$ sqlite3 -json -readonly "<path>" "SELECT ... FROM ItemTable ..."
+$ sqlite3 -json -readonly "<copy>" "SELECT key FROM ItemTable LIMIT 1;"
 Error: in prepare, unable to open database file (14)
+
+$ sqlite3 -json "file:<copy>?immutable=1" "SELECT key FROM ItemTable LIMIT 1;"
+[{"key":"HostColorSchemeData"}]
 ```
 
-The same query against the same file succeeds when opened as an immutable URI:
+Same bytes, two outcomes. Against the *live* file the same `-readonly` command succeeds
+while Cursor is running, and a `state.vscdb-shm` sidecar is present. With Cursor closed
+there is no sidecar and the open fails.
 
-```
-$ sqlite3 -json "file:<path>?immutable=1" "SELECT ..."
-telemetry.currentSessionDate = Tue, 02 Jun 2026 12:43:13 GMT
-```
+So Tier 2 collection currently depends on the editor being open at the moment the
+scheduled scan fires. On a 30-minute schedule that is partly luck; on Windows, where the
+task repeats every 120 minutes, it is mostly luck. The days it misses are invisible
+rather than wrong, which is why nothing ever flagged it.
 
-So the data is there, the collector's opening mode is what fails, and Cursor usage has
-been invisible for this account since at least 2026-06-02. With no `reason` field it was
-indistinguishable from "Cursor was never opened", which is why it went unnoticed.
+Antigravity is insulated by accident: v1.26.68 gave it the `~/.gemini` conversation
+store, so it has a second source when the database will not open. Cursor has no fallback.
 
-There are no `-wal` or `-shm` files beside it; `state.vscdb.options.json` sits in the
-same directory, so Cursor may be opening it in a non-default mode.
-
-**Do not simply switch to `immutable=1`.** That tells SQLite the file cannot change, and
-reading a database an application is actively writing under that promise can return torn
-data. The safer shape is: try `-readonly`, and on SQLITE_CANTOPEN copy the file to a
-temporary path and read the copy. That needs its own tests, including one that proves
-the fallback does not fire on a healthy database.
-
-Worth checking whether the same failure explains any Tier 2 silence on other machines
-before assuming it is local to this one.
+**Do not simply switch to `immutable=1`.** That promises SQLite the file cannot change,
+and reading a database an application is actively writing under that promise can return
+torn data. The safer shape is: try `-readonly`, and on SQLITE_CANTOPEN copy the file to
+a temporary path and read the copy. Needs a test proving the fallback does not fire on a
+healthy database, and one proving the copy is removed.
 
 Origin: v1.26.69, 2026-08-06.
 
