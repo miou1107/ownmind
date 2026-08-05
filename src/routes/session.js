@@ -83,6 +83,9 @@ router.get('/recent', async (req, res) => {
       tool: req.query.tool || null,
       includeCompressed: req.query.include_compressed === 'true',
       q: req.query.q || null,
+      // v1.26.64: the builder clamps this to SESSION_MAX_LIMIT, so a caller can ask for
+      // fewer than the default but cannot ask for an unbounded answer.
+      limit: parseInt(req.query.limit, 10) || undefined,
     });
     const result = await query(text, values);
     res.json(result.rows);

@@ -66,6 +66,34 @@ answering the same question differently.
   and would silently render an empty list. It is updated in the same release. The modal
   reads only `id`, `title`, `type` and `created_at`, all of which survive.
 
+## Review round
+
+Adversarial review through the `agy` CLI, against a copy outside the repo. Four findings.
+Two were real defects in this change, one was my packaging error, one was half right.
+
+- **Critical, capping `/api/session/recent` broke a second caller — correct, and the
+  severity is right.** That endpoint has two callers: `ownmind_search`, which wants a few
+  hits to merge with memories, and `ownmind_get('session_log')`, which is a *listing* of a
+  month's work. The first version hard-coded `LIMIT 20` for both, so the listing silently
+  lost most of a month. I had only looked at the search path. The limit is a parameter
+  now, clamped to a ceiling so no caller can ask for an unbounded answer, with the listing
+  passing 50 explicitly.
+- **Important, `ownmind_get(id)` had no offline fallback — correct.** Every other branch of
+  that tool degrades to the local cache when the network is gone; the branch I added sat
+  outside the `try` entirely and would have thrown. It now falls back through
+  `findCachedMemory`, which works because the cache holds whole memories, so the follow-up
+  to a truncated search result survives an outage.
+- **Minor, the SQL could not be verified — my fault, not the code's.** The `sed` range I
+  used to build the review bundle grabbed the wrong region, so the reviewer never saw the
+  route it was asked to check. Re-bundled and re-run.
+- **Minor, no tests for the offline path — half right.** `tests/offline.test.js` was
+  already updated to assert the new shape; that file was missing from the bundle, so the
+  reviewer could not see it. The other half was correct: `ownmind_get(id)` had no test,
+  and neither did the limit parameter. Both now do.
+
+The pattern worth keeping: both real findings were about a **second caller I had not
+looked at**. The defect was never in the code I wrote, it was in the code I did not read.
+
 ## Non-goals
 
 - No caller-controlled page size or offset. Nobody has asked to page through search

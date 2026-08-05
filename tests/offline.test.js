@@ -11,7 +11,7 @@ const QUEUE_PATH = path.join(TEST_DIR, 'queue.jsonl');
 
 // Let offline.js accept custom paths
 import { makeOfflineHelpers } from '../mcp/offline.js';
-const { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, clearQueue } = makeOfflineHelpers(CACHE_PATH, QUEUE_PATH);
+const { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, clearQueue } = makeOfflineHelpers(CACHE_PATH, QUEUE_PATH);
 
 before(() => fs.mkdirSync(path.join(TEST_DIR, 'cache'), { recursive: true }));
 after(() => fs.rmSync(TEST_DIR, { recursive: true, force: true }));
@@ -61,6 +61,11 @@ describe('readMemoryCache / writeMemoryCache', () => {
 });
 
 describe('localSearch', () => {
+  // v1.26.64 — localSearch answers `{ data, total, returned }` now, shaped by the same
+  // shared function as the online route, so the offline path cannot blow the caller's
+  // output ceiling either. These cases are about *matching*, which did not change, so
+  // they reach through .data rather than being rewritten.
+  const rows = (cacheArg, q) => localSearch(cacheArg, q).data;
   const cache = {
     saved_at: '2026-04-01T00:00:00Z',
     data: {
@@ -69,25 +74,25 @@ describe('localSearch', () => {
     }
   };
   it('matches by title', () => {
-    const results = localSearch(cache, 'SSH');
+    const results = rows(cache, 'SSH');
     assert.equal(results.length, 1);
     assert.equal(results[0].id, 1);
   });
   it('matches by content', () => {
-    const results = localSearch(cache, 'UTC+8');
+    const results = rows(cache, 'UTC+8');
     assert.equal(results.length, 1);
     assert.equal(results[0].id, 2);
   });
   it('case-insensitive', () => {
-    const results = localSearch(cache, 'ssh');
+    const results = rows(cache, 'ssh');
     assert.equal(results.length, 1);
   });
   it('no match returns empty array', () => {
-    const results = localSearch(cache, 'nonexistent_xyz');
+    const results = rows(cache, 'nonexistent_xyz');
     assert.equal(results.length, 0);
   });
   it('returns empty array if cache is null', () => {
-    assert.deepEqual(localSearch(null, 'anything'), []);
+    assert.deepEqual(localSearch(null, 'anything'), { data: [], total: 0, returned: 0 });
   });
 
   // v1.26.37 — parity with the online /search rewrite (Bug #7). Offline used to
@@ -98,15 +103,15 @@ describe('localSearch', () => {
       data: { project: [{ id: 10, title: 'unrelated', content: 'unrelated',
                           tags: ['deploy', 'kkvin'] }] },
     };
-    assert.equal(localSearch(c, 'kkvin').length, 1);
-    assert.equal(localSearch(c, 'kkvin').length, 1);
+    assert.equal(rows(c, 'kkvin').length, 1);
+    assert.equal(rows(c, 'kkvin').length, 1);
   });
 
   it('v1.26.37 — matches by code column', () => {
     const c = {
       data: { iron_rule: [{ id: 11, title: 't', content: 'c', code: 'IR-042' }] },
     };
-    assert.equal(localSearch(c, 'IR-042').length, 1);
+    assert.equal(rows(c, 'IR-042').length, 1);
   });
 
   it('v1.26.37 — multi-token ANDs across fields', () => {
@@ -118,16 +123,17 @@ describe('localSearch', () => {
         ],
       },
     };
-    const hits = localSearch(c, 'iron deploy');
+    const hits = rows(c, 'iron deploy');
     assert.equal(hits.length, 1);
     assert.equal(hits[0].id, 20);
   });
 
   it('v1.26.37 — empty / single-char-only query returns empty', () => {
     const c = { data: { iron_rule: [{ id: 30, title: 'anything', content: 'x' }] } };
-    assert.deepEqual(localSearch(c, ''), []);
-    assert.deepEqual(localSearch(c, '   '), []);
-    assert.deepEqual(localSearch(c, 'a b'), []);
+    const empty = { data: [], total: 0, returned: 0 };
+    assert.deepEqual(localSearch(c, ''), empty);
+    assert.deepEqual(localSearch(c, '   '), empty);
+    assert.deepEqual(localSearch(c, 'a b'), empty);
   });
 });
 
@@ -216,5 +222,37 @@ describe('replayQueue', () => {
     assert.equal(result.remaining, 2);
     assert.ok(/partially failed/i.test(result.message));
     assert.equal(helpers.readQueue().length, 2);
+  });
+});
+
+describe('findCachedMemory', () => {
+  // v1.26.64 — the offline half of "read one search result in full". Review caught that
+  // the online ownmind_get(id) branch had no offline fallback at all, unlike every other
+  // branch of that tool: it would have thrown instead of degrading.
+  const cache = {
+    data: {
+      iron_rule: [{ id: 1, title: 'a', content: 'x'.repeat(3000) }],
+      project: [{ id: 692, title: 'multi-claude-switcher', content: 'long body' }],
+    },
+  };
+
+  it('finds a memory across type buckets', () => {
+    assert.equal(findCachedMemory(cache, 692).title, 'multi-claude-switcher');
+  });
+
+  it('returns the whole memory, not a preview — that is the point of the follow-up', () => {
+    assert.equal(findCachedMemory(cache, 1).content.length, 3000);
+  });
+
+  it('matches a numeric id given as a string, since tool arguments arrive as strings', () => {
+    assert.equal(findCachedMemory(cache, '692').id, 692);
+  });
+
+  it('returns null rather than throwing for a miss or a bad cache', () => {
+    assert.equal(findCachedMemory(cache, 99999), null);
+    assert.equal(findCachedMemory(null, 1), null);
+    assert.equal(findCachedMemory({ data: null }, 1), null);
+    assert.equal(findCachedMemory(cache, ''), null);
+    assert.equal(findCachedMemory(cache, undefined), null);
   });
 });

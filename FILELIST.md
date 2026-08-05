@@ -1,5 +1,47 @@
 # OwnMind 檔案結構
 
+## v1.26.64 修改（搜尋不再把找到的東西全部倒出來，Bug #11）
+
+新增檔：
+```
+shared/memory-search-result.js        — 搜尋結果的塑形：允許清單式的欄位挑選、內容截成
+                                        400 字預覽、附上原長度與截斷旗標、回報總數與實回數。
+                                        放 shared/ 是因為離線快取搜尋同一個毛病，比照 tokenize
+tests/memory-search-result.test.js    — 12 項，含「未知的新欄位也不可以漏出去」
+tests/session-query-bounds.test.js    — 8 項，LIMIT 要在 ORDER BY 之後，且欄位要具名
+openspec/changes/v1.26.64-bounded-search-results/{proposal,spec,tasks}.md
+```
+
+修改檔：
+```
+src/routes/memory.js                  — GET /search 改具名欄位 + LIMIT + 另跑一次 COUNT，
+                                        回 { data, total, returned }
+src/lib/session-query.js              — 具名欄位 + LIMIT。上限改成參數並夾在 50 以內，因為這支
+                                        builder 有兩個呼叫者：搜尋要少少幾筆、ownmind_get 的
+                                        工作紀錄列表要看得到一個月（審查抓到的）
+src/routes/session.js                 — /recent 接受 ?limit=，由 builder 夾上限
+mcp/offline.js                        — 新增 findCachedMemory，讓斷網時也讀得回完整的那一則
+mcp/index.js                          — ownmind_get 加 id（type 改非必填、handler 自己擋兩者皆空）；
+                                        ownmind_search 說明改寫成「這是預覽」；回應加 memory_total /
+                                        memory_returned
+mcp/offline.js                        — localSearch 改走共用塑形，離線線上同形狀
+client/src/pages/Portal/MemorySearchModal.jsx — 認得新的物件形狀（保留陣列分支，對舊伺服器也能用）
+tests/offline.test.js                 — 7 項改成透過 .data 取列（比對邏輯沒變、只是取法變了）
+tests/memory-visibility.test.js       — schema 窗口從 600 放寬到 1400（描述變長，切不到不是行為問題）；
+                                        新增一項盯「type 不再必填之後 handler 有自己擋」
+CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.64
+openspec/BACKLOG.md                   — 新增第 13 條（footer 版本更新紀錄永遠是空的）
+```
+
+這一版學到的：
+
+- **修好一個 bug 會讓下一個 bug 顯形。** v1.26.37 把「搜不到」修成「搜得到」，於是「回太多」才變成問題。這不是退步，是原本被蓋住的第二個缺陷。發布修補之後要回頭看它解鎖了什麼。
+- **截斷一定要配一條讀全文的路。** 只做截斷是把「太多」換成「不夠」。這次是 `ownmind_get` 加 `id`，如果沒發現它只吃類型不吃編號，這個修補會變成另一個 bug。
+- **欄位要用允許清單，不要用排除清單。** `previous_content` 之所以會被送到每一個搜尋結果裡，就是因為 `SELECT *`。排除清單漏掉一個是安靜的，允許清單漏掉一個會馬上被測試抓到。
+- **既有測試變紅要先分辨是行為變了還是窗口切不到。** 這次 11 支紅的裡面，2 支只是描述變長導致 `slice(idx, idx+600)` 切不到，跟行為無關；真的行為變的那一支，我補了替代的保護（type 不再必填，就要有測試盯 handler 自己擋）。
+- **對抗審查抓到的兩條，都是「我沒去讀的那個呼叫者」。** 加 LIMIT 時只看了搜尋那條路，沒發現同一支 builder 還被工作紀錄列表用著；加 `ownmind_get(id)` 時沒去看旁邊每一個分支都有離線退路。**缺陷不在我寫的程式碼裡，在我沒讀的那段。** 動到共用函式，要先數清楚有幾個呼叫者。
+- **打包給審查者的東西自己要檢查。** 這次 `sed` 範圍抓錯，最關鍵的那段 SQL 根本沒進去，審查者只能回報「看不到、無法驗證」。等於白跑一輪。
+
 ## v1.26.63 修改（臨時密碼不再一用就變成永久鑰匙）
 
 新增檔：

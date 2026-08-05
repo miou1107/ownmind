@@ -218,8 +218,25 @@ describe('GET /type/standard_detail can be narrowed to one parent', () => {
 
   it('parent_id is optional — it must not join the required list', () => {
     const idx = mcpSrc.indexOf('name: "ownmind_get"');
-    const block = mcpSrc.slice(idx, idx + 900);
-    assert.match(block, /required: \["type"\]/);
+    const block = mcpSrc.slice(idx, idx + 1400);
+    const required = block.match(/required: \[([^\]]*)\]/);
+    assert.ok(required, 'ownmind_get has no required list at all');
+    assert.doesNotMatch(required[1], /parent_id/);
+  });
+
+  it('type stopped being required, so the handler has to check for itself', () => {
+    // v1.26.64 made `type` optional, because a call carrying `id` does not need one.
+    // The schema no longer refuses a call with neither, so the handler must. Without
+    // this the tool would silently fetch something arbitrary.
+    const idx = mcpSrc.indexOf('name: "ownmind_get"');
+    const required = mcpSrc.slice(idx, idx + 1400).match(/required: \[([^\]]*)\]/);
+    assert.doesNotMatch(required[1], /type/);
+
+    // Window sized to reach past the id branch and its offline fallback. A tighter one
+    // fails on the length of the code above the guard rather than on the guard.
+    const handlerIdx = mcpSrc.indexOf('case "ownmind_get"');
+    const handler = mcpSrc.slice(handlerIdx, handlerIdx + 2600);
+    assert.match(handler, /if \(!args\.type\)/, 'nothing refuses a call with neither id nor type');
   });
 });
 
@@ -284,7 +301,9 @@ describe('MCP client exposes the type (server and client must move together)', (
 
   it('ownmind_get accepts standard_detail', () => {
     const idx = mcpSrc.indexOf('name: "ownmind_get"');
-    const block = mcpSrc.slice(idx, idx + 600);
+    // 1400, not 600: v1.26.64 lengthened the description to explain the id argument, and
+    // a window that tight fails on prose rather than on behaviour.
+    const block = mcpSrc.slice(idx, idx + 1400);
     assert.match(block, /"standard_detail"/);
   });
 

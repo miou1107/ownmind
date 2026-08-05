@@ -6,6 +6,7 @@ import logger from '../utils/logger.js';
 import { ALLOWED_MEMORY_TYPES } from '../constants.js';
 import { isAtLeast } from '../middleware/adminAuth.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-event-types.js';
+import { shapeSearchResults, SEARCH_ROW_LIMIT } from '../../shared/memory-search-result.js';
 import { compressOldSessions } from './session.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
@@ -69,6 +70,18 @@ async function checkSyncToken(userId, syncToken) {
 }
 
 const router = Router();
+
+// v1.26.64 — the columns GET /search reads. Named rather than `*`, matching the
+// allow-list in shared/memory-search-result.js: `*` was dragging `previous_content` (a
+// second complete copy of the text, kept so an edit can be undone), `metadata` (an iron
+// rule's whole origin_context, including the quote that produced it) and `embedding`
+// into every search response. `content` is here because the shaper turns it into a
+// preview; the rest of the row is discarded there too, so this list is the cheaper half
+// of the same decision.
+const SEARCH_COLUMNS = [
+  'm.id', 'm.type', 'm.title', 'm.content', 'm.code', 'm.tags',
+  'm.status', 'm.tier', 'm.created_at', 'm.updated_at',
+].join(', ');
 router.use(auth);
 
 // ===== Instructions SOP =====
@@ -883,16 +896,34 @@ router.get('/search', async (req, res) => {
     const built = buildSearchWhere(tokens, 2);
     // v1.26.38: search is the documented way to find a team-standard fragment,
     // so it must span shared rows rather than the caller's own rows only.
-    const result = await query(
-      `SELECT * FROM memories m
-       WHERE m.status = 'active'
+    const predicate =
+      `WHERE m.status = 'active'
          AND ${buildReadableWhere({ alias: 'm', userParam: '$1' })}
-         AND ${built.whereClause}
-       ORDER BY ${built.orderClause}`,
-      [req.user.id, ...built.params]
-    );
+         AND ${built.whereClause}`;
+    const params = [req.user.id, ...built.params];
 
-    res.json(result.rows);
+    // v1.26.64 — Bug #11. Was `SELECT *` with no LIMIT, so a common keyword answered
+    // with every match in full: about a quarter of a million characters, past the
+    // caller's output ceiling, which meant it received nothing usable.
+    //
+    // Two queries rather than one. The count runs over the same predicate so the caller
+    // learns the real match total, while the row query stays capped — the server never
+    // reads the text of rows it will not send.
+    const [rows, counted] = await Promise.all([
+      query(
+        `SELECT ${SEARCH_COLUMNS} FROM memories m
+         ${predicate}
+         ORDER BY ${built.orderClause}
+         LIMIT ${SEARCH_ROW_LIMIT}`,
+        params
+      ),
+      query(`SELECT COUNT(*)::int AS n FROM memories m ${predicate}`, params),
+    ]);
+
+    res.json(shapeSearchResults(rows.rows, {
+      limit: SEARCH_ROW_LIMIT,
+      total: counted.rows[0]?.n ?? rows.rows.length,
+    }));
   } catch (err) {
     logger.error('memory search failed', { error: err.message });
     res.status(500).json({ error: 'Search failed' });

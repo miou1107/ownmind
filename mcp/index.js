@@ -13,7 +13,7 @@ import os from 'os';
 import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
-import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, enqueueOperation, readQueue, replayQueue } from './offline.js';
+import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
@@ -437,19 +437,20 @@ const TOOLS = [
   },
   {
     name: "ownmind_get",
-    description: "Retrieve memories of a given type. Use standard_detail to pull the full text behind a team_standard summary.",
+    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. Use standard_detail to pull the full text behind a team_standard summary.",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log", "standard_detail"], description: "Memory type" },
+        id: { type: "string", description: "Optional. A single memory id, returned in full including content and metadata. Use this after a search result shows content_truncated: true." },
+        type: { type: "string", enum: ["profile", "principle", "iron_rule", "coding_standard", "team_standard", "project", "portfolio", "env", "session_log", "standard_detail"], description: "Memory type. Required unless id is given." },
         parent_id: { type: "string", description: "Optional. With type=standard_detail, return only the fragments of that one team_standard (its memory id). Omit to fetch every fragment of every standard." },
       },
-      required: ["type"],
+      required: [],
     },
   },
   {
     name: "ownmind_search",
-    description: "Search memories by keyword. Returns matching memory entries.",
+    description: "Search memories and session logs by keyword. Results are previews: content is cut to 400 characters, with content_length and content_truncated on each row. Call ownmind_get with that row's id to read one in full. The response carries memory_total and memory_returned; when they differ the list was capped and a narrower query will reach the rest.",
     inputSchema: {
       type: "object",
       properties: {
@@ -847,11 +848,44 @@ async function handleTool(name, args) {
 
     case "ownmind_get": {
       const tokenParam = currentSyncToken ? `?sync_token=${currentSyncToken}` : '';
+      // v1.26.64 — the way back to a full memory. Search answers with 400-character
+      // previews now, and without this there would be no way to read the one you wanted:
+      // this tool took a type and never an id. Truncation without a fetch-one path trades
+      // "too much" for "not enough".
+      if (args.id !== undefined && args.id !== null && args.id !== '') {
+        try {
+          const row = await callApi("GET", `/api/memory/${encodeURIComponent(args.id)}`);
+          logEvent('memory_get', { by_id: true });
+          return { data: row ? [row] : [] };
+        } catch (err) {
+          // Every other branch in this tool degrades to the cache when the network is
+          // gone; the first version of this one did not, and would have thrown instead.
+          // Caught in review of this release. The cache holds whole memories, so offline
+          // the follow-up to a truncated search result still works.
+          if (isNetworkError(err)) {
+            const cached = findCachedMemory(readMemoryCache(), args.id);
+            logEvent('memory_get', { by_id: true, offline: true });
+            return {
+              data: cached ? [cached] : [],
+              _offline: true,
+              _offline_notice: cached
+                ? '[OwnMind offline mode] Served from the local cache; it may be behind the server'
+                : `[OwnMind offline mode] Memory ${args.id} is not in the local cache`,
+            };
+          }
+          throw err;
+        }
+      }
+      if (!args.type) {
+        return { error: 'Provide either id (one memory in full) or type (all memories of that type).' };
+      }
       // v1.17.13 Dana case: session_log lives in its own session_logs table rather than memories,
       // so we proxy to /api/session/recent — keeping write (ownmind_log_session) and read (ownmind_get) consistent.
       if (args.type === 'session_log') {
         try {
-          const rows = await callApi("GET", `/api/session/recent?days=30&include_compressed=true`);
+          // v1.26.64: an explicit limit. This is a listing, not a search, so the search
+          // default of 20 would hide most of a month; 50 is the server's ceiling.
+          const rows = await callApi("GET", `/api/session/recent?days=30&include_compressed=true&limit=50`);
           logEvent('memory_get', { type: args.type, from_session_logs: true });
           return { data: Array.isArray(rows) ? rows : [] };
         } catch (err) {
@@ -916,16 +950,29 @@ async function handleTool(name, args) {
         const merged = [...memoryData, ...sessionAsMemory];
         if (memoryRows?.new_token) currentSyncToken = memoryRows.new_token;
         logEvent('memory_search', { query: args.query, memory_hits: memoryData.length, session_hits: sessionData.length });
-        return { data: merged, memory_hits: memoryData.length, session_hits: sessionData.length };
+        // v1.26.64: memory_total is what matched, memory_returned is what came back. A
+        // caller that cannot tell the two apart reads twenty of two hundred results as
+        // the whole picture.
+        return {
+          data: merged,
+          memory_hits: memoryData.length,
+          session_hits: sessionData.length,
+          memory_total: memoryRows?.total ?? memoryData.length,
+          memory_returned: memoryRows?.returned ?? memoryData.length,
+        };
       } catch (err) {
         if (isNetworkError(err)) {
           const cache = readMemoryCache();
+          // v1.26.64: localSearch now answers in the same {data, total, returned} shape
+          // as the server, so the two paths hand back the same thing.
           const results = localSearch(cache, args.query);
           logEvent('memory_search', { query: args.query, offline: true });
           return {
-            data: results,
+            data: results.data,
+            memory_total: results.total,
+            memory_returned: results.returned,
             _offline: true,
-            _offline_notice: `[OwnMind offline mode] Local keyword search on cached memories (${results.length} results)`,
+            _offline_notice: `[OwnMind offline mode] Local keyword search on cached memories (${results.returned} of ${results.total} matches; content is a preview)`,
           };
         }
         throw err;
