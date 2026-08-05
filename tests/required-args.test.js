@@ -34,7 +34,13 @@ describe('findMissingArgs — mirrors server require-fields "missing" semantics'
     assert.deepEqual(missing, []);
   });
 
-  it('the actual bug: log_session with only summary → tool, model missing', () => {
+  it('reports every absent required field, whatever the tool declares', () => {
+    // Historical note: this used to be titled "the actual bug: log_session with only
+    // summary". v1.26.61 stopped log_session requiring tool and model — requiring them
+    // discarded the whole session record over one missing string — so that is no longer
+    // the shape of a real call. The `required` list is a parameter here, so the case
+    // still exercises the guard's logic; see tests/session-log-args.test.js for what
+    // log_session actually asks for now.
     const missing = findMissingArgs(
       'ownmind_log_session',
       { summary: 's' },

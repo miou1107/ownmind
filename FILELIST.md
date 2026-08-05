@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.26.61 修改（Eric 回報 #9：少一個 model 不該讓整份工作紀錄消失）
+
+新增檔：
+```
+mcp/lib/session-log-body.js       — 決定一份工作紀錄可以缺什麼。tool 自己填、model 不編、summary 不給預設
+src/utils/session-buckets.js      — 空的 tool／model 歸到「未回報」，不要變成一個叫 null 的圖表分類
+tests/session-log-args.test.js    — 15 項，含重現 Eric 那次「只有 summary」的呼叫
+openspec/changes/v1.26.61-log-session-required-args/proposal.md
+```
+
+修改檔：
+```
+mcp/index.js                      — log_session 只剩 summary 必填；confirm_string 說明改成請 AI 把「送出」唸給使用者聽、但照樣禁止自己填
+src/routes/session.js             — POST /api/session 只要求 summary（資料表本來就允許空值，是 API 比自己的表還嚴）
+src/routes/activity.js            — 兩處分組改用 bucketLabel
+tests/required-args.test.js       — 一個測試名稱會誤導（它叫「the actual bug」，但那個 bug 已經不是那個形狀了）
+CHANGELOG.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.61
+```
+
+這一版學到的：
+
+- **同一個形狀第三次出現，就不要再改訊息了。** 前兩次的修法是「把錯誤訊息寫得更清楚」，第三次照樣發生、而且對方重試三次都沒救回來。IR-027 的實例：提醒無效，邏輯才有效。
+- **「必填」要問它保護了什麼、代價是什麼。** 這裡是為了一個欄位丟掉整份紀錄，而那個欄位本來就沒有。划不來。
+- **放寬一個欄位會把「沒有值」推到下游。** 改成選填的同一版就要處理它會在哪裡冒出來，不然就是在修一個 bug 的同時種一個新的。
+
 ## v1.26.60 修改（收尾，整併第 8 站；單一後台整併結束）
 
 刪除檔：
