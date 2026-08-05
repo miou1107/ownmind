@@ -1,5 +1,43 @@
 # OwnMind 檔案結構
 
+## v1.26.62 修改（發廣播不用再去別的分頁抄 user_id）
+
+新增檔：
+```
+client/src/pages/System/broadcast-recipient-filter.js — 收件人選單的過濾規則。純函式，不含 React 也不打網路
+client/src/pages/System/broadcast-ends-at.js          — datetime-local 的無時區字串 ↔ ISO 8601 兩向轉換
+client/src/pages/System/broadcast-payload-build.js    — 把表單狀態組成請求內容。從送出函式裡抽出來，
+                                                        因為兩個欄位現在都是「算出來的」而不是「打出來的」
+tests/broadcast-recipient-filter.test.js              — 8 項，含「名單還沒回來就先 render」那次呼叫
+tests/broadcast-ends-at.test.js                       — 8 項，斷言全部寫成不綁時區
+tests/broadcast-payload-build.test.js                 — 10 項，含 cooldown 填 0 的迴歸測試
+openspec/changes/v1.26.62-broadcast-recipient-picker/{proposal,spec,tasks}.md
+```
+
+修改檔：
+```
+client/src/pages/System/NewBroadcastModal.jsx — 收件人改人名多選、結束時間改日期選擇器並預設 30 天後；
+                                                對抗審查後補上下鍵與 ARIA、選單關閉改看 relatedTarget、
+                                                重複挑同一人擋掉、cooldown 0 不再被吃掉
+client/src/i18n/{zh,en,ja}.json               — 兩個 key 換說法、五個新 key、刪掉 ends_at_placeholder
+CHANGELOG.md, FILELIST.md, README.md, docs/README.{zh-TW,ja}.md, package.json — v1.26.62
+```
+
+沒改的檔（刻意）：
+```
+client/src/pages/System/broadcast-payload-validate.js — 它的 target_users_invalid 分支從此不可能被 UI 觸發，
+                                                        但它是伺服器規則的鏡子，留著、測試也留著
+src/routes/broadcast.js                              — API 契約完全沒動，伺服器收到的東西跟以前一樣
+```
+
+這一版學到的：
+
+- **寫進待辦的「需要新增 X」如果沒查證，就是一個假設。** 待辦第 6 條寫著要新增一支查成員的 API，實際上 `/api/admin/users` 早就存在、也早就有三個頁面在用。花三分鐘查，省掉一支路由。
+- **好的介面會讓一整條驗證路徑消失，而不是多一條。** 收件人改成從名單挑之後，「填了非整數」這件事在 UI 上不可能發生，所以不是多寫一個檢查，是那個檢查用不到了。
+- **時間的測試不要寫死時區。** 斷言寫成「差距大約 30 天、時分不變」而不是某個字串，換台機器跑才不會紅。而那條「時分不變」要在 `TZ=America/New_York` 底下才驗得出紅綠 —— 本機在台北，沒有日光節約，兩種寫法都會過。
+- **`Number(x) || 預設值` 在 0 是合法值的地方一律是錯的。** cooldown 那條藏了三個版本，是把送出邏輯抽出來寫測試才浮出來的。抽函式的價值不只在於好測，在於它逼你把每個欄位唸過一遍。
+- **審查者標的嚴重度要自己重判。** 這次五條全中，但一條 Critical 其實是既有 bug、另一條 Critical 有繞路可走。照單全收會把「既有問題」寫成「這次改壞」。
+
 ## 整理 — 修掉兩個既有的死連結（housekeeping，無版號）
 
 > 歸檔完做的全域掃描：FILELIST 與 CHANGELOG 裡共 57 個 openspec 路徑指不到東西。

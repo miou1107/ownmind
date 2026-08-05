@@ -42,26 +42,33 @@ The module holds no React and no network code, so it is testable on its own.
 `client/src/pages/System/broadcast-ends-at.js` exports two functions.
 
 `defaultEndsAtLocal(now)` returns the `YYYY-MM-DDTHH:mm` string, in the browser's local
-zone, for the instant 30 days after `now`. It takes `now` as an argument so the test can
-pin it.
+zone, for the same time of day 30 calendar days after `now`. It takes `now` as an
+argument so the test can pin it.
+
+Thirty **calendar days**, not 30 × 86,400,000 milliseconds. The two differ wherever
+daylight saving applies: adding a fixed span of milliseconds adds exactly 720 hours, so a
+dialog opened at 09:15 would prefill 10:15 across a spring transition. The field is
+labelled 30 days, and the arithmetic has to mean what the label says. Taipei and Tokyo
+have no DST; the console also ships in English.
 
 `localToIso(local)` converts that format to a full ISO 8601 string with an offset, and
 returns `null` for an empty, whitespace-only, or unparseable input, so the caller can use
 one falsy check to mean "permanent".
 
-### Scenario: the default is thirty days out, in local time
+### Scenario: the default is thirty days out, at the same time of day
 
 - **GIVEN** `now` is `new Date('2026-08-05T09:15:00+08:00')`
 - **WHEN** `defaultEndsAtLocal(now)` is called
 - **THEN** the result matches `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/` and carries no timezone
   suffix, because `<input type="datetime-local">` rejects a value that does
-- **AND** `new Date(result) - now` is exactly 30 days in milliseconds
+- **AND** `new Date(result)` has the same local hours and minutes as `now`
+- **AND** `new Date(result) - now` is 30 days give or take an hour
 
-The assertion is written as a difference rather than a literal string on purpose. A
-literal would pin the test to whatever zone the machine running it happens to be in, and
-would go red on a runner set to UTC. `new Date(result)` reads the zone-less string as
-local, which is the same reading the browser gives the input element, so the difference
-holds in every zone.
+No assertion is a literal date string. A literal would pin the test to whatever zone the
+machine running it happens to be in and go red on a runner set to UTC. `new Date(result)`
+reads the zone-less string as local, which is the same reading the browser gives the input
+element, so both assertions hold in every zone — and the hour of tolerance in the second
+is exactly the DST transition the first one is there to catch.
 
 ### Scenario: a zone-less local string becomes a real instant
 
@@ -119,6 +126,30 @@ the count when something is.
 - **WHEN** the dialog renders
 - **THEN** no chips are present
 
+### Scenario: reaching the second suggestion without a mouse
+
+- **GIVEN** two members whose names share a prefix, so no query narrows the list to one
+  — 'Amiee' and 'Amiee Kuo'
+- **WHEN** the admin presses ArrowDown to move to the second row and Enter
+- **THEN** the second member is chosen
+
+Typing more is not an answer here: one name is a prefix of the other, so the second row
+is unreachable by refining the query. Without arrow keys it would be unreachable by
+keyboard entirely. The input carries `role="combobox"` with `aria-expanded` and
+`aria-activedescendant`, and the list `role="listbox"` with `aria-selected` on the active
+row, so a screen reader announces the row the arrow keys moved to.
+
+### Scenario: tabbing into the list does not destroy it
+
+- **GIVEN** the suggestion list is open
+- **WHEN** the admin presses Tab, moving focus to the first suggestion button
+- **THEN** the list is still open and the button still has focus
+
+The blur handler closes the list only when focus has actually left it, read from
+`relatedTarget`. An earlier draft closed it on a 120ms timer, which guarded nothing —
+clicking a suggestion cannot blur the input, because the option's `onMouseDown` prevents
+default — while pulling the list out from under anyone who arrived by keyboard.
+
 ## Requirement 4 — The end time defaults to thirty days out
 
 The end-time field is `<input type="datetime-local">`, prefilled on open with
@@ -149,7 +180,39 @@ permanent.
   because the initial form state is computed per open rather than held in a module
   constant
 
-## Requirement 5 — The API contract is unchanged
+## Requirement 5 — The payload is built by a function a test can reach
+
+`client/src/pages/System/broadcast-payload-build.js` exports
+`buildBroadcastPayload(form, selected)`, returning the body for
+`POST /api/broadcast/admin`. Optional fields are omitted rather than sent empty, because
+the server reads an absent `target_users` as "everyone" and an absent `ends_at` as
+"permanent".
+
+It is a separate module rather than inline in the submit handler because both changed
+fields are now *derived* — recipients from a chosen list, the end time from a zone-less
+string — and derivation is where a payload quietly stops matching the form.
+
+### Scenario: a cooldown of zero survives
+
+- **GIVEN** an admin typed `0` into the cooldown field, which the input allows and the
+  validator accepts, since it rejects only negatives
+- **WHEN** the payload is built
+- **THEN** `cooldown_minutes` is `0`, not `1440`
+
+This was already wrong before this release: the handler read
+`Number(form.cooldown_minutes) || 1440`, and `0` is falsy, so the screen said 0 and the
+server was told 1440. Fixed here because it sits three lines from the two fields this
+release is about, and because extracting the builder is what made it visible.
+
+### Scenario: the same person cannot be added twice
+
+- **GIVEN** the admin holds the Enter key on a suggestion
+- **WHEN** the handler fires again before React has re-rendered, so `suggestions[active]`
+  is still the same member
+- **THEN** the selection is unchanged the second time, and `target_users` carries that id
+  once
+
+## Requirement 6 — The API contract is unchanged
 
 `POST /api/broadcast/admin` receives the same shapes it receives today:
 `target_users` as an array of positive integers when present, `ends_at` as an ISO 8601
@@ -168,7 +231,7 @@ own rule and its tests pin that.
   is indistinguishable from one created by the old dialog with the same values typed by
   hand
 
-## Requirement 6 — All three locales carry the new wording
+## Requirement 7 — All three locales carry the new wording
 
 `zh.json` is the source; `en.json` and `ja.json` carry the same key set. Keys that
 described ids or ISO formats are replaced, and the placeholder key for the end-time field
