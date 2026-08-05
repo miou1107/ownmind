@@ -3024,7 +3024,7 @@ Gemini 對抗審查後三條被從候選剔除（降警告）：
 - **IR-008**（同步三文件）— 改錯字也擋會逼人塞廢話或關 hook
 - **IR-048**（部署前查 DB migration）— 連外部狀態太脆、緊急修復會死
 
-最終 10 條 + 漸進排程詳見 [v1.20 提案](openspec/changes/v1.20-iron-rule-enforcement/proposal.md)。
+最終 10 條 + 漸進排程詳見 [v1.20 提案](openspec/changes/archive/v1.19.20-iron-rule-enforcement-finishing/proposal.md)（提案當時叫 v1.20-iron-rule-enforcement，後來 v1.20 計畫拆成 v1.19.20~24 而改名，現已歸檔）。
 
 **v1.19.6 本批次只做基礎建設**：
 
@@ -5169,7 +5169,7 @@ leg 路徑 mutation 多抓 4 條（kind / tip / broadcast / broadcast+banner / m
 
 **背景**：2026-05-07~05-08 連續兩天 Alice/Bob 升 v1.17.65 都遭遇相同失敗劇本：升級主流程全 OK，但 `verify_local` 失敗連帶 `rollback` 失敗，仰賴雙重失敗才保住新版本。額外回報「OwnMind 觸發時不定時跳出 console 視窗，沒用 Claude 也跳」。深入調查發現是七個獨立 bug 累積，根因都在「shell / path / process spawn 假設了 Unix 行為」。這是第三波同類踩坑（v1.17.62 / v1.17.65 / v1.17.66），啟動 systematic-debugging Phase 4.5 架構性修補。
 
-完整 spec：[openspec/changes/v1.17.66-windows-hardening/](openspec/changes/v1.17.66-windows-hardening/)。
+完整 spec：[openspec/changes/archive/v1.17.66-windows-hardening/](openspec/changes/archive/v1.17.66-windows-hardening/)。
 
 **七個 bug + 修法**：
 
