@@ -2419,6 +2419,10 @@ OwnMind/
 │       ├── claude-code.js           # Claude Code JSONL adapter（session cumulative running total、byte_offset cursor）
 │       ├── codex.js                 # Codex JSONL adapter（event_msg/token_count → canonical material → message_id）
 │       ├── opencode.js              # OpenCode SQLite adapter（sqlite3 CLI、composite (time_created, id) cursor）
+│       ├── sqlite-cli.js            # v1.26.71 — 所有 sqlite3 CLI 查詢的唯一入口。別人的檔案一律只用 -readonly 開；
+│                                    #   開不起來（應用程式沒開著）才連 -wal/-shm/-journal 一起複製到暫存目錄、
+│                                    #   不帶任何參數開複本讓 SQLite 重播 WAL，讀完刪掉。另含 databaseExists
+│                                    #   （分辨「讀不到」跟「根本沒裝」，只有 ENOENT 算沒裝）
 │       ├── vscode-telemetry.js      # Cursor/Antigravity 共用 helper（state.vscdb 讀取 + Taipei Ymd + 通用 adapter 工廠）
 │       ├── cursor.js                # Cursor Tier 2 adapter（session_count only）
 │       ├── antigravity.js           # Antigravity Tier 2 adapter（session_count only）

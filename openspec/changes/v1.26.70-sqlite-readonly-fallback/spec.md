@@ -14,29 +14,38 @@ thing that breaks the runs that were working.
 
 - **GIVEN** `sqlite3 -readonly` fails with `unable to open database file`
 - **WHEN** the collector retries
-- **THEN** the database is copied to a temporary directory, the copy is opened as
-  `file://…?immutable=1`, and the same rows are returned
+- **THEN** the database is copied to a temporary directory **with its journal sidecars**,
+  the copy is opened **with no flags at all**, and the same rows are returned
 
 ### Scenario: both halves are required
 
-- **THEN** the live file is never opened immutable, and the copy is never opened
+- **THEN** the live file is only ever opened read-only, and the copy is never opened
   read-only
 
-Neither half works alone, which was measured rather than assumed. A plain copy fails
-exactly like the original: what `-readonly` wants is the `-shm` sidecar, and the copy has
-no sidecar either. The first implementation of this change did exactly that and the
-real-CLI test caught it. `immutable=1` against the live file is worse than the bug, since
-it promises SQLite that a file an editor is actively writing cannot change.
+Neither half works alone, which was measured rather than assumed. A plain copy retried
+with `-readonly` fails exactly like the original: what `-readonly` wants is the `-shm`
+sidecar, and the copy has no sidecar either. The first implementation of this change did
+exactly that and the real-CLI test caught it.
 
-Copying is what makes the promise true. The snapshot is private, nothing else can write
-to it, and `immutable=1` becomes a statement of fact.
+An unflagged open is what makes the copy readable. SQLite owns the snapshot, so it may
+create the sidecars it needs and replay the WAL, and everything it writes goes away with
+the temporary directory. The live file must never be opened that way, because it belongs
+to another application.
 
-### Scenario: the copy is addressed as a URI
+### Scenario: the journal sidecars come along
 
-- **THEN** the path is converted with `pathToFileURL`
+- **THEN** `-wal`, `-shm` and `-journal` are copied beside the snapshot when they exist,
+  and their absence is not an error
 
-A Windows drive letter, a backslash, or a directory with a space in it all have to
-survive being put inside a `file:` URI.
+These databases are in WAL mode and a running editor really does leave a `-wal`. Copying
+only the main file drops whatever has not been checkpointed, which is exactly the most
+recent activity a scan is looking for. Absent is the ordinary case, since a clean
+shutdown checkpoints and removes them; a crash does not, and that is the case worth
+carrying them for.
+
+**This replaces `file://…?immutable=1`, which was the second of three designs.** It fixed
+the sidecar problem and then measurement retired it: `immutable=1` ignores the WAL by
+design, so it has the same flaw from the other direction. `pathToFileURL` went with it.
 
 ### Scenario: the copy is removed
 
@@ -86,6 +95,7 @@ The fallback only runs when the editor appears to be closed, so a torn copy is u
 It is not impossible: nothing stops the application from starting mid-copy. The failure
 mode is a read that errors, and an errored read is already handled.
 
-This is why `immutable=1` is only ever applied to the snapshot. On the live file the same
-flag would let torn pages through as data, silently, which is a worse outcome than the
+This is why the unflagged open is only ever applied to the snapshot. Opening the live
+file that way would let another application's in-progress writes through as data, and
+would put this collector's writes into a file it does not own — a worse outcome than the
 missing days this change fixes.
