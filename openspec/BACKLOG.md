@@ -113,6 +113,32 @@ observation, not the original entry's.
 
 Origin: `archive/single-console-consolidation/tasks.md`, Stage 3.
 
+### 13. The footer's 版本更新紀錄 button always says there is nothing
+
+Raised by Vin 2026-08-05 from production: clicking it opens a dialog reading
+「目前尚無版本紀錄」, and it always will.
+
+Not broken. Never connected. `client/src/App.jsx:97` passes `changelog: []` as a literal,
+and the comment above it says so on purpose: 「changelog 刻意留空⋯⋯真正的更新紀錄來源是
+獨立的一件事」. The button, the glass dialog and the timeline rendering are all finished
+and correct; there is no data behind them. Every visitor who clicks it learns that this
+product has no release history, which is the opposite of true.
+
+Three ways out, and the choice is the point:
+
+- **Serve it.** `CHANGELOG.md` is the source of truth but it is roughly seven thousand
+  lines and written for developers; it cannot be shipped to the browser whole. An endpoint
+  returning the last N parsed entries would work, and would have to answer what to do
+  about the fact that the file is Chinese only while the console ships in three languages.
+- **Curate it.** A small hand-written data file of user-facing releases, which is what
+  idaytour does. Cheap, but it is a second thing to remember to update at release time,
+  and this project already has three version numbers to keep in step.
+- **Remove the button.** A control that has never once shown content is worse than no
+  control.
+
+Removing it is a few minutes; either of the others is a release. Doing nothing is the
+option that keeps lying to whoever clicks.
+
 ---
 
 ## Smaller cleanups
