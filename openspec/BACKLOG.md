@@ -139,6 +139,63 @@ Three ways out, and the choice is the point:
 Removing it is a few minutes; either of the others is a release. Doing nothing is the
 option that keeps lying to whoever clicks.
 
+### 14. One person's two machines overwrite each other's collector status
+
+`collector_heartbeat` is `UNIQUE (user_id, tool)`, so a member has exactly five slots
+however many computers they own, and the UPSERT overwrites `machine`, `scanner_version`
+and `os` every time. Two machines belonging to one account continuously erase each other.
+
+Watched happen on production 2026-08-05. At 11:50 Vin's rows read `claude-code` on
+`TANK` and the other four on `Vincent.local`. After a manual scan on the Windows box at
+12:30, all five read `TANK`, and the Mac's status was gone from the database with no
+record it had ever reported.
+
+The consequence is not cosmetic. **A dead collector on one machine is invisible while
+another machine of the same person is alive**, because the heartbeat is fresh and the
+usage is flowing. 系統設定 also shows only the last writer, so the second machine does not
+appear at all.
+
+Blast radius today is one account: nine machine names map one-to-one onto nine users
+except for Vin. It grows the moment anyone else runs a laptop and a desktop.
+
+Fixing it means the uniqueness moving to `(user_id, tool, machine)`, which reaches the
+console, `admin-clients.js`, and anything that counts installs. Its own release.
+
+Origin: v1.26.65 investigation.
+
+### 15. `renderBroadcasts` tells everyone to say "snooze upgrade"
+
+`mcp/index.js` renders the snooze hint as `Say "snooze upgrade" to defer` for **any**
+broadcast with `allow_snooze`, not just upgrade reminders. An admin creating a
+snoozeable announcement in 廣播管理 today produces a message instructing the reader to
+snooze an upgrade that is not being offered.
+
+One line, but it is in the injection path that every member sees, so it wants its own
+verification rather than a drive-by edit.
+
+Origin: v1.26.65 investigation, found while checking what a new auto-broadcast would
+render as.
+
+### 16. A hung scan can outlive the task that started it
+
+`run-hidden.vbs` launches node through `WScript.Shell.Run`, which does not place the
+child in a Windows Job Object. When Task Scheduler enforces the task's 10-minute
+`ExecutionTimeLimit` it kills `wscript.exe`; the `node.exe` underneath survives and
+keeps running.
+
+`acquireLock` stops a survivor from being scanned over: the lock holds the live PID, so
+later runs skip until the six-hour mtime rule takes over. So the cost is up to six hours
+of missed scans, not corruption.
+
+Not introduced by v1.26.65 and not made worse by it. Before that release the launcher
+returned immediately, so the execution limit never applied and a hung node ran unbounded
+with the task reporting success. Waiting is what makes the limit meaningful at all.
+
+Closing it properly means node imposing its own deadline, since VBScript cannot create a
+Job Object. Raised by the v1.26.65 adversarial review.
+
+Origin: v1.26.65 review.
+
 ---
 
 ## Smaller cleanups

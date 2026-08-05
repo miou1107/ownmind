@@ -197,7 +197,15 @@ if (Test-Path $taskScript) {
   Step "reschedule" "Re-registering Task Scheduler"
   & powershell -ExecutionPolicy Bypass -File $taskScript 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -eq 0) { OK "reschedule" "Task Scheduler re-registered" }
-  else { Step "reschedule" "Task Scheduler re-register failed; upgrade itself complete" }
+  else {
+    # v1.26.65 — 這裡以前印一句「upgrade itself complete」就繼續，最後回報升級成功。
+    # 使用者看到綠燈，但用量收集已經停掉，而且沒有任何地方會講。Adam 因此斷了二十天。
+    #
+    # 不做 Rollback：檔案本身升級是好的，壞的只有排程。Fail 會 throw 並且送一筆
+    # Report-Error 到 server，讓這件事在正式機留下紀錄，而不是只留在使用者螢幕上。
+    Pop-Location
+    Fail "reschedule" "Upgrade applied but the usage scanner schedule could not be registered; usage collection is stopped until it is (see $LogFile)"
+  }
 }
 
 # --- 6. 驗測 + 清理 ---
