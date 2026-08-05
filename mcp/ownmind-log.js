@@ -1,16 +1,17 @@
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'node:crypto';
+import { resolveClientTool } from '../shared/helpers.js';
 // Node 18+ has global fetch — node-fetch is not required (dependency removed in v1.17.99).
 
 const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
-// v1.18.4: fallback changed from 'unknown' to 'claude-code', so we don't end up with a flood
-// of activity_logs tagged 'unknown' that would break per-tool grouping. Aligned with the
-// CLIENT_TOOL design at mcp/index.js:167. The OWNMIND_TOOL env var still takes priority —
-// backward compatible.
-const TOOL_NAME = process.env.OWNMIND_TOOL
-  || process.env.OWNMIND_CLIENT_TOOL
-  || 'claude-code';
+// v1.18.4: fallback is 'claude-code' rather than 'unknown', so activity_logs does not
+// fill with 'unknown' and break per-tool grouping.
+//
+// v1.26.67: this used to be its own copy of the rule, with a comment claiming it was
+// aligned with mcp/index.js. It was not — that copy had dropped OWNMIND_TOOL. Sharing
+// the resolver makes the alignment true by construction instead of by assertion.
+const TOOL_NAME = resolveClientTool();
 const API_URL = (process.env.OWNMIND_API_URL || '').replace(/\/$/, '');
 const API_KEY = process.env.OWNMIND_API_KEY || '';
 

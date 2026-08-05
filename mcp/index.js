@@ -26,6 +26,7 @@ import {
   sanitizeErrorMessage,
   pushBounded,
   shouldSkipDuplicate,
+  resolveClientTool,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
@@ -170,10 +171,14 @@ const CLIENT_VERSION = (() => {
     return pkg.version || '0.0.0';
   } catch { return '0.0.0'; }
 })();
-// Which AI tool is hosting this MCP. Cursor / Codex / Antigravity / OpenCode
-// users should set OWNMIND_CLIENT_TOOL in their MCP config so heartbeat +
-// broadcast targeting identify them correctly. Defaults to claude-code.
-const CLIENT_TOOL = process.env.OWNMIND_CLIENT_TOOL || 'claude-code';
+// Which AI tool is hosting this MCP. Cursor / Codex / Antigravity / OpenCode configs
+// set OWNMIND_TOOL (what install.sh writes) or OWNMIND_CLIENT_TOOL; the resolver knows
+// the precedence. Defaults to claude-code.
+//
+// v1.26.67 — this line read only OWNMIND_CLIENT_TOOL, which nothing in this repository
+// sets, while install.sh writes OWNMIND_TOOL. Every non-Claude-Code client therefore
+// sent its heartbeat as claude-code.
+const CLIENT_TOOL = resolveClientTool();
 
 let serverVersion = null;
 let currentSyncToken = null;
@@ -252,11 +257,9 @@ function getRandomTip() {
 }
 
 // --- Session tracking (for emergency shutdown log) ---
-// v1.18.4: fallback changed from 'unknown' to 'claude-code', matching mcp/ownmind-log.js.
-// OWNMIND_TOOL still takes priority — backward compatible.
-const TOOL_NAME = process.env.OWNMIND_TOOL
-  || process.env.OWNMIND_CLIENT_TOOL
-  || 'claude-code';
+// v1.26.67: this was TOOL_NAME, a second constant resolving to the same value as
+// CLIENT_TOOL. Two names for one answer in one file is how the two rules drifted apart
+// in the first place, so there is now one.
 let sessionStartTime = null;
 const toolCallCounts = {};
 let complianceEvents = [];
@@ -295,7 +298,7 @@ async function fetchBroadcastsSafely() {
         'Authorization': `Bearer ${API_KEY}`,
         ...(clientVersion ? { 'x-ownmind-version': clientVersion } : {})
       },
-      body: JSON.stringify({ tool: TOOL_NAME, client_version: clientVersion || null }),
+      body: JSON.stringify({ tool: CLIENT_TOOL, client_version: clientVersion || null }),
       signal: controller.signal
     }).finally(() => clearTimeout(to));
     if (!res.ok) return '';
@@ -1210,7 +1213,7 @@ async function handleTool(name, args) {
           : null,
         confirm_string: args.confirm_string,
         device_fingerprint: deviceFingerprint,
-        client_tool: process.env.OWNMIND_CLIENT_TOOL || 'claude-code',
+        client_tool: CLIENT_TOOL,
       };
 
       return await callApi('POST', '/api/bug-reports', body);
@@ -1811,7 +1814,7 @@ async function emergencySessionLog(reason = 'mcp_shutdown') {
     await Promise.race([
       callApi('POST', '/api/session', {
         summary,
-        tool: TOOL_NAME,
+        tool: CLIENT_TOOL,
         model: 'unknown',
         details,
         sync_token: currentSyncToken,

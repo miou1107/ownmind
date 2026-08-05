@@ -1,5 +1,67 @@
 # OwnMind 更新紀錄
 
+## v1.26.67 — 「我是哪個工具」在四個地方各算一次，其中兩個算錯
+
+### 起因
+
+追 Antigravity 為什麼收不到資料時，讀到判斷工具身分的程式碼發現的。結果不是 Antigravity 的原因，但這個缺陷本身是真的。
+
+MCP 需要知道自己跑在哪個編輯器裡。這件事在程式碼裡被寫了四次，用了兩套規則：
+
+| 位置 | 規則 |
+|---|---|
+| `mcp/index.js` 的 `TOOL_NAME` | `OWNMIND_TOOL` → `OWNMIND_CLIENT_TOOL` → claude-code |
+| `mcp/ownmind-log.js` 的 `TOOL_NAME` | 同上 |
+| `mcp/index.js` 的 `CLIENT_TOOL` | **只有** `OWNMIND_CLIENT_TOOL` → claude-code |
+| bug report 裡的 `client_tool` | **只有** `OWNMIND_CLIENT_TOOL` → claude-code |
+
+後面兩個漏掉了 `OWNMIND_TOOL`，而 **`OWNMIND_TOOL` 正是安裝程式真的會寫的那個**（`install.sh` 給 Cursor 寫 `OWNMIND_TOOL: 'cursor'`）。整個專案裡沒有任何地方寫過 `OWNMIND_CLIENT_TOOL`，儘管程式碼的註解叫使用者去設它。
+
+### 為什麼這個很重要
+
+`CLIENT_TOOL` 不是次要的那個。它被用在：
+
+- MCP 心跳的工具欄位
+- 每一次 API 請求的 `x-ownmind-tool` 標頭
+- session 紀錄
+
+所以一個設定完全正確的 Cursor，心跳還是會寫成 claude-code。而 `collector_heartbeat` 是 `(使用者, 工具)` 唯一鍵，這一筆會**直接蓋掉 claude-code 掃描器維護的那一列**，把機器名稱、版本、作業系統換成 Cursor 的。同一台機器上的兩個工具被壓成一列，內容取決於誰最後寫。
+
+### 比一開始看到的更嚴重
+
+對抗審查指出我低估了。這兩套規則並不是切在「重要的」跟「不重要的」呼叫之間，而是切在**同一個 session 的不同路徑**上。一個設定了 `OWNMIND_TOOL=cursor` 的使用者實際送出的是：
+
+| 呼叫 | 用哪一份 | 實際送出 |
+|---|---|---|
+| 廣播抓取（會寫入「最後看到這個工具」的紀錄） | `TOOL_NAME` | cursor |
+| **異常結束**時的 session 紀錄 | `TOOL_NAME` | cursor |
+| 心跳、`x-ownmind-tool` 標頭、**正常結束**的 session 紀錄、bug 回報 | `CLIENT_TOOL` | claude-code |
+
+也就是說，**同一個 session 正常結束跟異常結束，會回報兩個不同的工具身分**。這已經回程式碼逐行確認過。
+
+### 這是同一種病
+
+`ownmind-log.js` 那份的註解寫著「Aligned with the CLIENT_TOOL design at mcp/index.js:167」。**它沒有對齊，這就是缺陷本身。** 註解宣稱了程式碼做不到的事，然後審查的人讀註解、不讀程式碼，就這樣活下來。跟 v1.26.65 那個 `catch { /* baseDir does not exist */ }` 一模一樣。
+
+### 升級後看資料要注意一件事
+
+有設 `OWNMIND_TOOL` 的使用者，他們的 claude-code 那一列原本是被標錯的 MCP 心跳在維持新鮮的。修好之後，那一列只剩真正的 claude-code 掃描器在寫，如果他們其實不用 Claude Code，那一列就會停止更新。
+
+這是正確的行為，但也是個陷阱：**升級後看到某人的 claude-code 心跳停住，可能是收集器死了，也可能只是那一列本來就不是他的 claude-code 在寫。** 這正好是 v1.26.65、v1.26.66 在做的排查工作，先寫在這裡。
+
+### 修法
+
+規則收斂成 `shared/helpers.js` 裡的一個函式，四個地方共用，並加測試擋住第五份出現。**重複本身才是缺陷**，只刪掉錯的那一份、不處理重複，下一份照樣會分岔。
+
+行為只對「有設 `OWNMIND_TOOL`、沒設 `OWNMIND_CLIENT_TOOL`」的情況改變，那正是安裝程式寫給 Cursor 的設定，也正是今天算錯的那個。純 Claude Code 安裝兩個都沒設，結果不變。
+
+同一個檔案裡 `TOOL_NAME` 跟 `CLIENT_TOOL` 修完後變成同一個值，一併收成一個。同一件事在同一個檔案裡有兩個名字，就是當初會分岔的原因。
+
+### 不在這次範圍
+
+- **讓 Antigravity 被看見**：它根本沒有接 MCP（實測本機沒有任何 Antigravity 底下的 MCP 行程），而且它拆成兩個元件、只有編輯器那半留得下痕跡。已列入 backlog。
+- **把預設值從 claude-code 改成 unknown**：v1.18.4 是刻意從 unknown 改成 claude-code 的，要反過來需要自己的理由跟自己的一次變更。
+
 ## v1.26.66 — Antigravity 改了資料夾名字，收集器還在讀舊的那個
 
 ### 起因
