@@ -3,6 +3,17 @@
  *
  * Antigravity is VSCode-based like Cursor and shares the state.vscdb layout,
  * so both reuse createVscodeAdapter. Only the DB path differs.
+ *
+ * v1.26.66 — the application writes to more than one directory name. Measured on a Mac
+ * on 2026-08-05: `com.google.antigravity` under `Antigravity` held telemetry ending
+ * 2026-05-18, while `com.google.antigravity-ide` under `Antigravity IDE` held telemetry
+ * starting 2026-05-20 and running to that day. One stops where the other starts, which
+ * is a migration rather than two products in parallel.
+ *
+ * The adapter was pointed at the abandoned side and had been for eleven weeks. Because
+ * Tier 2 emits no token events by construction, its only possible symptom was "no new
+ * day", which is also what every ordinary scan produces — so nothing looked wrong at
+ * any layer. Both names are candidates now, and the freshest wins.
  */
 
 import path from 'path';
@@ -11,16 +22,44 @@ import { createVscodeAdapter } from './vscode-telemetry.js';
 
 const TOOL = 'antigravity';
 
-const DEFAULT_DB_PATHS = {
-  darwin: path.join(os.homedir(),
-    'Library/Application Support/Antigravity/User/globalStorage/state.vscdb'),
-  linux: path.join(os.homedir(), '.config/Antigravity/User/globalStorage/state.vscdb'),
-  win32: path.join(os.homedir(), 'AppData/Roaming/Antigravity/User/globalStorage/state.vscdb')
+/**
+ * Directory names Antigravity has used, oldest first. A future rename is one entry
+ * here; nothing else needs to change.
+ */
+const DIR_NAMES = ['Antigravity', 'Antigravity IDE'];
+
+/** Where a VSCode-based editor keeps per-user storage, by platform. */
+const USER_DATA_PREFIX = {
+  darwin: 'Library/Application Support',
+  linux: '.config',
+  win32: 'AppData/Roaming'
 };
 
-export function createAntigravityAdapter({
-  dbPath = DEFAULT_DB_PATHS[process.platform] ?? DEFAULT_DB_PATHS.darwin,
-  ...rest
-} = {}) {
-  return createVscodeAdapter({ tool: TOOL, dbPath, ...rest });
+/**
+ * Every state.vscdb Antigravity might be writing to on this platform.
+ *
+ * @param {string} [platform] - process.platform value
+ * @param {string} [homeDir]
+ * @returns {string[]}
+ */
+export function antigravityDbCandidates(
+  platform = process.platform,
+  homeDir = os.homedir()
+) {
+  // Unknown platforms fall back to the darwin layout, which is what the single-path
+  // version did before this change.
+  const prefix = USER_DATA_PREFIX[platform] ?? USER_DATA_PREFIX.darwin;
+  return DIR_NAMES.map((name) =>
+    path.join(homeDir, prefix, name, 'User', 'globalStorage', 'state.vscdb'));
+}
+
+export function createAntigravityAdapter({ dbPath, dbPaths, ...rest } = {}) {
+  // An explicit dbPath stays an explicit dbPath: callers and tests that name one file
+  // get exactly that file, unfiltered.
+  if (dbPath != null) return createVscodeAdapter({ tool: TOOL, dbPath, ...rest });
+  return createVscodeAdapter({
+    tool: TOOL,
+    dbPaths: dbPaths ?? antigravityDbCandidates(),
+    ...rest
+  });
 }

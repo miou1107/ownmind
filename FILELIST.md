@@ -2520,6 +2520,7 @@ OwnMind/
 │   ├── install-ps1-scanner-task-check.test.js # v1.17.12 — install.ps1 驗證 scanner task 真的註冊
 │   ├── scanner-task-durability.test.js # v1.26.65 — 排程不可先刪再建 / 註冊後回查 / VBS 回傳真 exit code / 升級失敗要響 / 缺金鑰非 0 退出
 │   ├── scanner-blind-scan.test.js   # v1.26.65 —「讀不到目錄」不得回報成「沒有檔案」；單一檔案讀不到只跳過該檔、心跳照送；readSince 回報 scanned / skipped
+│   ├── scanner-vscode-multipath.test.js # v1.26.66 — Antigravity 改資料夾名後要讀到新的那個；多候選挑最新、只有 ENOENT 算沒安裝、未來日期不得毒化游標、掃描紀錄要印 sessions=N
 │   ├── install-prerequisite-auto-install.test.js # v1.17.76 — 缺 node/git 時 install.ps1/sh 自動安裝（vin-windows-test 回報 7 條 contract test）
 │   ├── start-cmd-node-fallback.test.js     # v1.17.77 — start.cmd 多層 node fallback + install.ps1 寫 User PATH（vin-windows-test 第二輪 5 條）
 │   ├── install-started-beacon.test.js     # v1.17.78 — install_started beacon + 接受 minimal payload（IR-038 觀測管道補洞 7 條）
