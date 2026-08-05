@@ -196,6 +196,57 @@ Job Object. Raised by the v1.26.65 adversarial review.
 
 Origin: v1.26.65 review.
 
+### 17. One member's `codex` collector has never once checked in
+
+Amiee Kuo (user 9) has **no `codex` row in `collector_heartbeat` at all**, on a server
+where the other eight members do, including members who almost certainly never run
+Codex. Her four sibling adapters on the same machine have rows. Her usage stops at
+2026-05-05.
+
+The heartbeat is built *after* the file loop in `readSince`, so anything that throws
+inside the loop costs that tool its check-in as well as its data. A missing row is
+therefore a permanent, server-visible marker of a permanently-throwing adapter, and
+nothing was reading it.
+
+**Ruled out on 2026-08-05, so the next session does not repeat it:**
+
+- *Not the Codex path.* Verified end to end on Vin's Mac: a live Codex session produced
+  two events that reached the server in ten seconds, local and server newest timestamps
+  matching to the second, and both counts moving by exactly +2.
+- *Not the throw path firing on ordinary data.* A probe over that machine's whole Codex
+  history — 83 files, 10,084 `token_count` lines — threw zero times and found zero
+  unreadable files.
+- *Not a different account.* Nine machine names map one-to-one onto nine users with no
+  overlap, so her scanner is not succeeding under someone else's key.
+
+**What v1.26.65 changed.** It closed two mechanisms that produce exactly this shape:
+a file that cannot be opened (defect 6) and a line that cannot be turned into an event
+(defect 7). Neither is confirmed as *her* cause, and **the fix only reaches her once she
+upgrades** — her tools report 1.26.26, except claude-code at 1.26.57.
+
+**Which of the two is more likely.** "Never" is not "sometimes". Defect 6's trigger is
+the archival race, which is intermittent, so across months at least one run should have
+got a check-in through. Defect 7 is deterministic: the same bad line fails every run.
+That said, the probe above shows defect 7 does not fire on normal current-version Codex
+data, so if it is her cause the data itself is unusual — an older format, or a corrupted
+file.
+
+**The one command that settles it.** Read-only, sends nothing, uses her own installed
+adapter against her own files:
+
+```powershell
+node -e "const os=require('os'),path=require('path'),url=require('url');const p=path.join(os.homedir(),'.ownmind','shared','scanners','codex.js');import(url.pathToFileURL(p).href).then(async m=>{const a=m.createCodexAdapter({});try{const r=await a.readSince({});console.log('OK events='+r.events.length+' heartbeat='+!!r.heartbeat)}catch(e){console.log('THROWS: '+((e&&e.message)||e))}})"
+```
+
+`THROWS:` followed by `canonicalize: invalid …` is defect 7. `THROWS:` followed by an
+`ENOENT`/`EACCES` path is defect 6. `OK` means both hypotheses are wrong and the search
+starts again — the next place to look would be `OWNMIND_SKIP_TOOLS` in her environment,
+then whether her scanner reaches the codex adapter at all.
+
+Vin deferred the investigation on 2026-08-05; it needs access to her machine.
+
+Origin: v1.26.65 investigation.
+
 ---
 
 ## Smaller cleanups
