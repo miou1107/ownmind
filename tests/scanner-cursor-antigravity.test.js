@@ -178,7 +178,11 @@ describe('createAntigravityAdapter', () => {
       dbPath: '/x',
       runSqlite: makeFakeSqlite([
         { key: 'telemetry.currentSessionDate', value: 'Tue, 21 Apr 2026 09:00:00 GMT' }
-      ])
+      ]),
+      // v1.26.68: without this the adapter reads ~/.gemini on the machine running the
+      // suite. This test passes either way, which is exactly why it is worth pinning —
+      // a test whose result depends on the developer's own tool usage is not a test.
+      conversationDirs: []
     });
     assert.equal(a.tool, 'antigravity');
     const r = await a.readSince({});

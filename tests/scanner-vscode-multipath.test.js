@@ -287,6 +287,34 @@ describe('a stale install must not be able to poison the live one', () => {
     assert.deepEqual(logs, []);
   });
 
+  it('falls back to lastSessionDate when currentSessionDate is the bad one', async () => {
+    // Found in the v1.26.68 adversarial review; the defect is v1.26.66's.
+    //
+    // `currentSessionDate ?? lastSessionDate` picks the current one whenever it is
+    // present, and only then does the ceiling judge it. So a database holding a
+    // future currentSessionDate AND a perfectly good lastSessionDate contributes
+    // nothing at all: the good date is never looked at. A machine whose clock was
+    // wrong once has its telemetry silenced from then on, which is precisely the
+    // outcome the ceiling was added to prevent.
+    const { run } = fakeSqlite({
+      [OLD]: [current(at(400 * day)), last('Tue, 04 Aug 2026 01:11:28 GMT')],
+    });
+    const logs = [];
+    const adapter = createVscodeAdapter({
+      tool: 'antigravity',
+      dbPaths: [OLD],
+      runSqlite: run,
+      exists: existsOnly(OLD),
+      logger: { warn: (m) => logs.push(m) },
+    });
+
+    const r = await adapter.readSince({});
+    assert.equal(r.sessions[0]?.date, '2026-08-04',
+      'the believable date in the same database must still be used');
+    assert.equal(logs.length, 1, 'and the bad one is still reported');
+    assert.match(logs[0], /future/i);
+  });
+
   it('emits nothing rather than a future date when that is all there is', async () => {
     const { run } = fakeSqlite({ [OLD]: [current(at(400 * day))] });
     const adapter = createVscodeAdapter({
@@ -399,6 +427,12 @@ describe('the existing injection contract is preserved', () => {
       dbPath: '/explicit/state.vscdb',
       runSqlite: run,
       exists: existsOnly('/explicit/state.vscdb'),
+      // v1.26.68 gave this adapter a second date source, the conversation stores under
+      // ~/.gemini. Left at its default it reads the real home directory of whoever runs
+      // the suite, so this test would assert the developer's own Antigravity usage.
+      // The claim here is about which databases are queried; the new source is covered
+      // in tests/scanner-antigravity-conversations.test.js.
+      conversationDirs: [],
     });
 
     const r = await adapter.readSince({});

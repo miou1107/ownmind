@@ -249,7 +249,61 @@ Origin: v1.26.65 investigation.
 
 ---
 
-### 18. Antigravity is now two applications and OwnMind can only see one of them
+### 18. Antigravity: usage collection fixed in v1.26.68, MCP wiring still missing
+
+**Most of this item is done, and one of its measurements was wrong.** Kept in full
+because the wrong measurement is the useful part.
+
+v1.26.68 gave the collector a second date source: the per-conversation files under
+`~/.gemini/<surface>/conversations/`. All three surfaces write there, so manager and CLI
+days are now recorded. What follows is the original entry, corrected inline.
+
+**The correction.** The entry below concluded that using the manager wrote no session or
+conversation data locally. That was measured under
+`~/Library/Application Support/Antigravity`, where the Electron shell lives. The
+conversation store is under `~/.gemini/antigravity/conversations/`, and the 22:35
+conversation was there all along as `df8d3160-….db`, mtime 22:37. "I searched where this
+kind of application usually puts things and found nothing" got recorded as "the
+application writes nothing".
+
+There are also three surfaces, not two: the manager, the editor, and the CLI (`agy`),
+whose store is `~/.gemini/antigravity-cli/` and which is the busiest of the three
+(1489 conversation files).
+
+**What is still open.**
+
+`install.sh` writes no MCP config for Antigravity, only a rules file, so no heartbeat
+and no `user_tool_last_seen` will ever fire for it. Usage days now arrive through the
+scanner, so this is no longer a blind spot, but the tool still cannot report itself.
+
+The config path is confirmed three independent ways:
+
+- Official docs (`antigravity.google/docs/mcp`): `~/.gemini/config/mcp_config.json`
+  globally, `.agents/mcp_config.json` per workspace
+- The manager binary (`Antigravity.app/Contents/Resources/bin/language_server`) contains
+  the literal `/.gemini/config/mcp_config.json`; the editor 2.1.1 still contains the
+  pre-migration `.codeium/antigravity/mcp_config.json`
+- On the measured machine `~/.gemini/config/mcp_config.json` exists and is **0 bytes**,
+  next to a `.migrated` marker dated 2026-05-20, the same day the storage directory
+  rename in v1.26.66 happened
+
+So the whole product migrated on 2026-05-20: app support directory, config directory and
+conversation store together.
+
+Schema for a stdio server is `{ mcpServers: { name: { command, args, env } } }`, so the
+existing `MCP_ENTRY` shape fits. It needs `OWNMIND_TOOL: 'antigravity'` or the heartbeat
+lands on the `claude-code` row (v1.26.67).
+
+Note `~/.codeium/windsurf/mcp_config.json` on this machine lists `ownmind` with no
+`OWNMIND_TOOL`, so if Windsurf ever launches it, it reports as claude-code. That file is
+hand-written; `install.sh` has never written a Windsurf MCP config.
+
+**Also still open:** historical backfill. The adapter reports only the freshest day, so
+the ten days missing between 2026-05-18 and 2026-08-05 stay missing.
+
+---
+
+### 18a. Original entry, kept for the measurement error (superseded)
 
 Antigravity ships as an agent manager (`Antigravity.app`, `com.google.antigravity`) and
 a separate editor (`Antigravity IDE.app`, `com.google.antigravity-ide`, VSCode OSS
@@ -270,6 +324,11 @@ is invisible in every channel.**
   and Electron infrastructure only (`Code Cache`, `GPUCache`, `Session Storage`, `DIPS`,
   `Network Persistent State`) plus `app_storage.json`, which holds seven UI preference
   keys and no dates. No session or conversation data appeared locally.
+  **WRONG — the conclusion, not the observation.** Everything listed here is accurate for
+  `~/Library/Application Support/Antigravity`. The conversation went to
+  `~/.gemini/antigravity/conversations/df8d3160-….db` at 22:37, a tree that was never
+  looked at. Absence of evidence in one directory was written down as evidence of
+  absence.
 - `user_tool_last_seen` on production — no MCP call at 22:35. The only row for that user
   is `claude-code` at 13:07 UTC.
 
@@ -291,18 +350,49 @@ nothing, and no layer reports an error.
 was written during the ten-minute window, which is consistent with cloud storage but is
 not proof; it may also flush on quit. Determining this means reading its LevelDB store,
 which holds conversation content, so it was not done without Vin present.
+**ANSWERED, and the reasoning above is the lesson.** It is local, in `~/.gemini`, and no
+LevelDB read was needed: the file names and mtimes were enough. The plan had committed
+to opening a store full of conversation content to answer a question about *timestamps*,
+because it had already accepted a wrong premise about where to look.
 
-**Sequence if picked up:**
+**Sequence if picked up:** steps 1 and 2 are done (v1.26.68). Step 3, the MCP config, is
+still open and its path is now known; see item 18 above.
 
-1. Quit the manager, then re-check whether `Local Storage/leveldb` or `Session Storage`
-   gained the 22:35 conversation. That settles flush-on-quit versus cloud.
-2. If local, find a timestamp field usable as a session date and add a Tier 2 source.
-3. If cloud-only, the remaining option is wiring the MCP into Antigravity so at least
-   the heartbeat and `user_tool_last_seen` fire. That needs its canonical MCP config
-   path, verified from Google's documentation rather than inferred from the Windsurf
-   directory that happens to exist on this machine.
+Origin: v1.26.66 / v1.26.67 investigation, 2026-08-05. Superseded by v1.26.68 the same
+night.
 
-Origin: v1.26.66 / v1.26.67 investigation, 2026-08-05.
+---
+
+### 19. The installer's two Antigravity blocks write to two different paths, so the upgrade rule never arrives
+
+`install.sh` touches Antigravity twice and they disagree:
+
+- Line 352 appends the upgrade snippet to `~/.antigravity/rules/ownmind.md`, guarded by
+  `[ -d "$HOME/.antigravity/rules" ]`
+- Lines 780-801 write the memory rules to `~/.antigravity/rules.md`, a file, and never
+  create a `rules/` directory
+
+Nothing else creates `~/.antigravity/rules/`, so the guard never passes and Antigravity
+is the one tool that silently never receives the upgrade rule. `SKIPPED_TOOLS` is
+incremented and the installer prints a normal-looking count, so it reads as "not
+installed" rather than "misconfigured".
+
+**Measured 2026-08-05.** `~/.antigravity/` holds `antigravity/`, `argv.json`,
+`config.md`, `extensions/`, `rules.md`. There is no `rules/`. `rules.md` matches the
+heredoc at lines 787-798 exactly, so that half works, and the manager does recite the
+iron rules.
+
+Not a one-line fix. Pointing line 352 at `rules.md` would put the upgrade snippet in the
+same file section 11 writes, and section 11's guard is `grep -q 'OwnMind' rules.md` — if
+the snippet lands first, section 11 decides its own block is already there and skips the
+memory rules. The two blocks have to be reconciled together, with a test.
+
+Also worth settling in the same change: `~/.antigravity/rules.md` versus
+`~/.antigravity/rules/` is an assumption nobody has checked against Antigravity's own
+documentation. `rules.md` demonstrably works; whether `rules/*.md` is also read, or is
+the newer convention, is unknown.
+
+Origin: v1.26.68 investigation, 2026-08-05.
 
 ---
 
