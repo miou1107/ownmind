@@ -175,7 +175,8 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
       iron_rules_count: 2,
       profile: { id: 3, title: '基本偏好', content: '...' },
     };
-    writeCache({ sync_token: 'XYZ', data: initShape }, cachePath);
+    // v1.26.82: the cache must belong to the calling account, or it is (correctly) refused.
+    writeCache({ sync_token: 'XYZ', data: initShape }, cachePath, undefined, { apiUrl: 'http://api', apiKey: 'K' });
     let initCalled = false;
     const fakeFetch = makeFetch([
       ['sync-token', () => okJson({ sync_token: 'XYZ' })],
@@ -252,7 +253,8 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
   });
 
   it('init endpoint also fails + cache present → fallback to cache', async () => {
-    writeCache({ sync_token: 'X', data: { iron_rule: [{ id: 1 }] } }, cachePath);
+    // v1.26.82: stamped with the calling account — an unattributed cache is refused by design.
+    writeCache({ sync_token: 'X', data: { iron_rule: [{ id: 1 }] } }, cachePath, undefined, { apiUrl: 'http://api', apiKey: 'K' });
     const fakeFetch = makeFetch([
       ['sync-token', () => failJson(500)],
       ['init', () => failJson(500)],
