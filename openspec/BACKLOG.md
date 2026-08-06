@@ -139,29 +139,27 @@ Three ways out, and the choice is the point:
 Removing it is a few minutes; either of the others is a release. Doing nothing is the
 option that keeps lying to whoever clicks.
 
-### 14. One person's two machines overwrite each other's collector status
+### 14. One person's two machines overwrite each other's collector status — FIXED in v1.26.73
 
-`collector_heartbeat` is `UNIQUE (user_id, tool)`, so a member has exactly five slots
-however many computers they own, and the UPSERT overwrites `machine`, `scanner_version`
-and `os` every time. Two machines belonging to one account continuously erase each other.
+`collector_heartbeat` was `UNIQUE (user_id, tool)`, so a member had exactly five slots
+however many computers they owned, and the UPSERT overwrote `machine`, `scanner_version`
+and `os` every time.
 
 Watched happen on production 2026-08-05. At 11:50 Vin's rows read `claude-code` on
 `TANK` and the other four on `Vincent.local`. After a manual scan on the Windows box at
 12:30, all five read `TANK`, and the Mac's status was gone from the database with no
 record it had ever reported.
 
-The consequence is not cosmetic. **A dead collector on one machine is invisible while
-another machine of the same person is alive**, because the heartbeat is fresh and the
-usage is flowing. 系統設定 also shows only the last writer, so the second machine does not
-appear at all.
+**Fixed in v1.26.73:** the key is `(user_id, tool, machine)`, `machine` is `NOT NULL
+DEFAULT 'unknown'` so a NULL cannot silently create unbounded rows, and the `DO UPDATE`
+no longer assigns `machine` — that one assignment was the whole mechanism.
 
-Blast radius today is one account: nine machine names map one-to-one onto nine users
-except for Vin. It grows the moment anyone else runs a laptop and a desktop.
+**Still open, and it is a design question rather than a defect:** the 系統設定 panel now
+lists a tool once per machine. The machine name is in the data so the entries are
+tellable apart, but how two computers should be presented wants a mockup before any
+rendering changes.
 
-Fixing it means the uniqueness moving to `(user_id, tool, machine)`, which reaches the
-console, `admin-clients.js`, and anything that counts installs. Its own release.
-
-Origin: v1.26.65 investigation.
+Origin: v1.26.65 investigation. Closed by v1.26.73, 2026-08-06.
 
 ### 15. `renderBroadcasts` tells everyone to say "snooze upgrade"
 
@@ -491,6 +489,25 @@ change Tier 1 ingestion, which is the most load-bearing path in the product, so 
 own release with its own verification.
 
 Origin: v1.26.71 review, 2026-08-06.
+
+---
+
+### 22. Two computers with the same hostname are one machine to the server
+
+Raised by the v1.26.73 review. `machine` is a hostname, so two computers both named
+`MacBook-Pro` under one account are indistinguishable: each reads the other's heartbeat as
+its own, and the v1.26.72 self-check reports `confirmed` on a machine that is not
+reaching the server.
+
+Not introduced by v1.26.73 — before it, *all* of a person's computers shared one row, so
+this is strictly narrower than what was there. But it is the remaining hole in the same
+question.
+
+`shared/device-fingerprint.js` already generates a stable per-device id and is used
+elsewhere. Making it the identity means a schema column, a client change, and a story for
+rows written before it existed, so it is its own release.
+
+Origin: v1.26.73 review, 2026-08-06.
 
 ---
 

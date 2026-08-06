@@ -410,6 +410,38 @@ async function upsertSessionCount({ query }, userId, s) {
   }
 }
 
+/**
+ * The hostname a heartbeat identifies itself by.
+ *
+ * `machine` is part of the row identity since v1.26.73, so it has to be a definite value
+ * and it has to fit the column. Trimmed because a name arriving with surrounding space
+ * would otherwise be a second computer.
+ */
+const MACHINE_UNKNOWN = 'unknown';
+const MACHINE_MAX_LEN = 128;   // matches collector_heartbeat.machine VARCHAR(128)
+
+/**
+ * How many machines one person may register for one tool.
+ *
+ * v1.26.73 put a client-supplied string into the row identity. Before that the key had no
+ * client-controlled component and no client could make this table grow; now a machine
+ * whose hostname changes on every boot inserts a row each time, and the per-row rate
+ * limit cannot help because every one of them is a first insert.
+ *
+ * The cap bounds **new** machines only. A machine already on record keeps updating past
+ * it, so hitting the limit never silences a computer that is genuinely reporting.
+ *
+ * 20 is far above anything real — the largest account here runs two — and far below
+ * anything that matters to the database.
+ */
+const MAX_MACHINES_PER_TOOL = 20;
+
+export function normaliseMachine(raw) {
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  if (!name) return MACHINE_UNKNOWN;
+  return name.length > MACHINE_MAX_LEN ? name.slice(0, MACHINE_MAX_LEN) : name;
+}
+
 async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
   if (!heartbeat || typeof heartbeat !== 'object' || !heartbeat.tool) return;
   try {
@@ -428,18 +460,32 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     // failing keeps displaying its last healthy state.
     const reasonProvided = heartbeat.reason !== undefined && heartbeat.reason !== null;
     const reason = isReason(heartbeat.reason) ? heartbeat.reason : null;
+    // v1.26.73 — `machine` is part of the row identity now, and a NULL cannot be. Postgres
+    // treats NULLs as distinct in a unique index, so a client that sends no machine would
+    // insert a brand new row on every single heartbeat instead of conflicting with its own
+    // previous one. Anything old enough not to report a hostname is old enough that the
+    // answer genuinely is unknown.
+    const machine = normaliseMachine(heartbeat.machine);
     await query(
       `INSERT INTO collector_heartbeat
          (user_id, tool, last_reported_at, scanner_version, machine, os, status, reason)
-       VALUES ($1, $2, NOW(), $3, $4, $5, 'active', $6)
-       ON CONFLICT (user_id, tool) DO UPDATE SET
+       SELECT $1, $2, NOW(), $3, $4, $5, 'active', $6
+        WHERE EXISTS (
+                SELECT 1 FROM collector_heartbeat
+                 WHERE user_id = $1 AND tool = $2 AND machine = $4)
+           OR (SELECT count(*) FROM collector_heartbeat
+                WHERE user_id = $1 AND tool = $2) < ${MAX_MACHINES_PER_TOOL}
+       ON CONFLICT (user_id, tool, machine) DO UPDATE SET
          last_reported_at = NOW(),
          scanner_version  = EXCLUDED.scanner_version,
-         machine          = EXCLUDED.machine,
          os               = EXCLUDED.os,
          status           = 'active',
-         -- Only a heartbeat that actually carried a reason may write this column. The
-         -- MCP and the scanner share one row per (user_id, tool) and only the scanner
+         -- machine is deliberately not assigned: it is the conflict target, so writing
+         -- it would be writing the key. Before v1.26.73 it was assigned here, and that
+         -- assignment is exactly how one person's two computers erased each other.
+         --
+         -- Only a heartbeat that actually carried a reason may write this column. The MCP
+         -- and the scanner share one row per (user_id, tool, machine) and only the scanner
          -- knows a reason; letting a reasonless MCP beat null it out would make the two
          -- disagree on every beat, so the IS DISTINCT clause below would always be true
          -- and the rate limit would stop working for the busiest tool on the machine.
@@ -448,7 +494,7 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
           OR ($7 AND collector_heartbeat.reason IS DISTINCT FROM $6)`,
       [userId, heartbeat.tool,
        heartbeat.scanner_version ?? null,
-       heartbeat.machine ?? null,
+       machine,
        heartbeat.os ?? null,
        reason,
        reasonProvided]

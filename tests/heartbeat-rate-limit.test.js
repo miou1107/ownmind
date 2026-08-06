@@ -39,7 +39,11 @@ test('writeHeartbeatIfPresent UPSERT is rate-limited via WHERE clause', () => {
   assert.match(
     body,
     new RegExp(
-      'ON\\s+CONFLICT\\s*\\(\\s*user_id\\s*,\\s*tool\\s*\\)\\s*DO\\s+UPDATE\\s+SET[\\s\\S]+?WHERE\\s+collector_heartbeat\\.last_reported_at\\s*<\\s*NOW\\s*\\(\\s*\\)\\s*-\\s*INTERVAL\\s*' +
+      // v1.26.73: the conflict target gained `machine` and this pattern named the two
+      // columns literally, so a test about the rate limit failed over a change to the
+      // key. Which columns form the key is asserted by tests/heartbeat-per-machine.js;
+      // this one only cares that a DO UPDATE is guarded by the interval.
+      'ON\\s+CONFLICT\\s*\\([^)]*\\)\\s*DO\\s+UPDATE\\s+SET[\\s\\S]+?WHERE\\s+collector_heartbeat\\.last_reported_at\\s*<\\s*NOW\\s*\\(\\s*\\)\\s*-\\s*INTERVAL\\s*' +
       intervalPattern.source,
       'i'
     ),

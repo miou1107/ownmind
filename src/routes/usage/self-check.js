@@ -53,7 +53,7 @@ export function createSelfCheckRouter(deps = {}) {
                   last_reported_at, last_event_ts, reason
              FROM collector_heartbeat
             WHERE user_id = $1
-            ORDER BY tool`,
+            ORDER BY tool, machine`,
           [userId]
         ),
         query(
