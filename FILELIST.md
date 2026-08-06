@@ -35,7 +35,9 @@ src/jobs/install-check-alerts.js              — 把 evaluateFailures 跟 rende
                                                  l.ts，免得一台時鐘設到明年的機器從此永遠不會再報）、
                                                  讀已知狀態、寫回 resolved／detail 變動、
                                                  新失敗先「認領」（條件式 upsert + RETURNING）再發廣播，
-                                                 廣播寫失敗就把認領放掉再往上拋、
+                                                 認領迴圈到寫廣播全在同一個 try 裡，中間任何一步失敗就把
+                                                 「這一輪真的認領到的那些」放掉再往上拋（沒認領到的不動，
+                                                 那可能屬於上一次真的成功的公告）；releaseClaims 保證不拋、
                                                  只發給最舊的一位 super_admin（id 最小）、有效期 48 小時
 tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派（同 tests/broadcast.test.js 手法）：
                                                  首次公告回傳 broadcast id、廣播鎖定唯一 super_admin、
@@ -43,8 +45,10 @@ tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派
                                                  修好的檢查標記 resolved 但不發廣播、沒有 super_admin 時
                                                  狀態照寫但不硬發廣播、讀取 SQL 真的排除空 checks 報告、
                                                  排序用 l.id、有效期 48 小時；另有一份會記住狀態的假 DB，
-                                                 用來驗廣播失敗時認領有放掉、下一輪會重發，以及兩支
-                                                 同時起跑的評估只會產生一則廣播
+                                                 用來驗廣播失敗時認領有放掉、第二筆認領炸掉時第一筆也會
+                                                 放掉且下一輪兩筆都會發、放掉的只有這一輪認領到的（上一次
+                                                 成功的公告不受影響），以及兩支同時起跑的評估只會產生
+                                                 一則廣播
 tests/install-check-alerts-wiring.test.js     — 驗證接線本身：報告存好後真的觸發評估、評估失敗不影響
                                                  200 回應也不擋報告落地、400（缺 ts）不觸發評估；另讀
                                                  src/index.js 原始碼確認開機補跑一次且失敗被 catch 住
