@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { accountFingerprint } from '../../shared/scanners/base.js';
 
 const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind', 'cache', 'memories.json');
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;  // 24 hours
@@ -33,12 +34,31 @@ const SYNC_TOKEN_TIMEOUT_MS = 3000;
 const INIT_TIMEOUT_MS = 8000;
 
 /**
- * Read the local cache; returns { sync_token, saved_at, data } or null.
+ * Read the local cache; returns { sync_token, saved_at, account, data } or null.
+ *
+ * v1.26.82 — `account` is new, and a cache belonging to a different one is refused.
+ *
+ * This file holds the whole init payload: profile, principles, iron rules. Before this
+ * version it recorded nothing about whose it was, so changing credentials left the previous
+ * account's memories on disk to be read, with nothing anywhere showing it. Adam installed
+ * somebody else's key once; that is what prompted the check.
+ *
+ * The scanner fixed the same hazard in v1.26.69 for its cursor file. This is the other half.
+ *
+ * A cache with no `account` at all is treated as someone else's, not as ours. Every machine
+ * has one of those right now, and claiming it for whoever asks is precisely the bug. The
+ * cost of being wrong the safe way is one extra download, once.
+ *
+ * @param {object} [account] — { apiUrl, apiKey }; omit to skip the check
  */
-export function readCache(cachePath = DEFAULT_CACHE_PATH, fsModule = fs) {
+export function readCache(cachePath = DEFAULT_CACHE_PATH, fsModule = fs, account) {
   try {
     if (!fsModule.existsSync(cachePath)) return null;
-    return JSON.parse(fsModule.readFileSync(cachePath, 'utf8'));
+    const cache = JSON.parse(fsModule.readFileSync(cachePath, 'utf8'));
+    if (account) {
+      if (cache?.account !== accountFingerprint(account)) return null;
+    }
+    return cache;
   } catch {
     return null;
   }
@@ -119,14 +139,21 @@ export async function fetchInitFull(apiUrl, apiKey, fetchFn = globalThis.fetch) 
 
 /**
  * Write the cache.
+ *
+ * v1.26.82 — stamps which account it belongs to. The fingerprint is a hash of server + key,
+ * so the file identifies an account without becoming somewhere to read a key from.
+ *
+ * @param {object} [account] — { apiUrl, apiKey }; omit and the cache stays unattributed,
+ *                             which `readCache` will then refuse on the next run
  */
-export function writeCache(payload, cachePath = DEFAULT_CACHE_PATH, fsModule = fs) {
+export function writeCache(payload, cachePath = DEFAULT_CACHE_PATH, fsModule = fs, account) {
   try {
     const dir = path.dirname(cachePath);
     if (!fsModule.existsSync(dir)) fsModule.mkdirSync(dir, { recursive: true });
     const wrapped = {
       sync_token: payload.sync_token || '',
       saved_at: new Date().toISOString(),
+      ...(account ? { account: accountFingerprint(account) } : {}),
       data: payload.data || payload,
     };
     fsModule.writeFileSync(cachePath, JSON.stringify(wrapped, null, 2));
@@ -153,7 +180,14 @@ export async function runConditionalSync({
   fsModule = fs,
   now = Date.now(),
 }) {
-  const cache = readCache(cachePath, fsModule);
+  // v1.26.82 — the account is passed in, so a cache written under a different key is
+  // refused rather than served. Adam installed somebody else's key once; without this the
+  // profile and iron rules downloaded then would still be on disk and still be read.
+  //
+  // No key at all → no account to compare against, and nothing new can be downloaded
+  // either; the offline fallback keeps its old behaviour of serving whatever is there.
+  const account = apiKey ? { apiUrl, apiKey } : undefined;
+  const cache = readCache(cachePath, fsModule, account);
 
   // step 1: expired after 24hr → force refresh outright, don't waste a sync-token call.
   const cacheStale24hr = cache && cache.saved_at &&
@@ -171,7 +205,7 @@ export async function runConditionalSync({
   // step 3: full init download.
   const fullInit = await fetchInitFull(apiUrl, apiKey, fetchFn);
   if (fullInit) {
-    writeCache(fullInit, cachePath, fsModule);
+    writeCache(fullInit, cachePath, fsModule, account);
     return { source: 'init_refreshed', data: fullInit.data || fullInit, refreshed: true };
   }
 

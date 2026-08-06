@@ -40,6 +40,11 @@ hooks/ownmind-usage-scanner.js              — v1.26.82 找不到金鑰的錯�
                                               （原本只寫 settings.json，把人指去最不可能的地方）；
                                               金鑰只在環境變數時明白警告
 tests/resolve-credentials.test.js           — 新增。含一個直接重現 Adam 狀況的案例
+hooks/lib/conditional-sync.js               — v1.26.82 記憶快取蓋帳號指紋（伺服器+金鑰雜湊，
+                                              不存金鑰）。對不上整份拒收重新下載；沒指紋的
+                                              舊快取一律當別人的。掃描器 v1.26.69 修過同一個
+                                              危險，這是漏掉的另一半
+tests/cache-account-fingerprint.test.js     — 新增。含「別人的快取被拒收」「金鑰不落地」
 scripts/install-helpers/self-check.cjs      — v1.26.82 改用共用解析器；加 --quick 模式（自動更新每天跑，跳過唯一會掃描
                                               所有本機資料庫的那一項）；加第十項 memory_load：
                                               記憶到底有沒有真的載入。
