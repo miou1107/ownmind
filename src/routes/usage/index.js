@@ -17,10 +17,12 @@ import teamStatsRoutes from './team-stats.js';
 import adminAuditRoutes from './admin-audit.js';
 import adminClientsRoutes from './admin-clients.js';
 import teamOverviewRoutes from './team-overview.js';
+import selfCheckRoutes from './self-check.js';
 
 const router = Router();
 
 router.use('/events', eventsRoutes);
+router.use('/self-check', selfCheckRoutes);
 router.use('/stats', statsRoutes);
 router.use('/team-stats', teamStatsRoutes);
 router.use('/admin/audit', adminAuditRoutes);

@@ -2,8 +2,15 @@
 /**
  * OwnMind install/upgrade self-check.
  *
- * Runs 7 local checks, writes a log, uploads to the server. Invoked at the end of the install /
+ * Runs 9 checks, writes a log, uploads to the server. Invoked at the end of the install /
  * upgrade scripts.
+ *
+ * v1.26.72 — eight of them ask "is everything installed and can I authenticate". The
+ * ninth, `usage_roundtrip`, asks the question none of the others could: **is the data
+ * actually arriving**. It runs a scan and then reads back from the server, because the
+ * POST's own response says a request succeeded, not that the server ended up holding
+ * anything — and says nothing at all on the runs with nothing to send, which is every
+ * run on a broken machine.
  *
  * Why this exists: silent-fail cases like Bob's (install.ps1 printed ✅, but Task Scheduler
  * never actually registered, so the scanner never ran) are invisible on the server side, and
@@ -73,7 +80,7 @@ async function fetchWithTimeout(url, opts = {}, timeoutMs = TIMEOUT_MS) {
 }
 
 // ============================================================
-// The 7 checks
+// The checks
 // ============================================================
 
 async function checkMcpFiles() {
@@ -192,6 +199,175 @@ async function checkApiCredentials(apiUrl, apiKey) {
     return fail('api_credentials', sanitizePath(e?.message || String(e)),
       'Check server connectivity');
   }
+}
+
+/**
+ * v1.26.72 — the only check that asks whether the data is arriving.
+ *
+ * The eight checks above ask "is everything installed and can I authenticate". Every
+ * collector defect found in the week this was written got past all of them: the scanner
+ * ran, reported success, and the server received nothing. Eleven weeks in one case.
+ *
+ * So this one runs a scan and then **reads back from the server**. The POST's own
+ * response is not evidence: it says a request succeeded, and it says nothing at all on
+ * the runs with nothing to send, which is every run on a broken machine.
+ *
+ * It can never fail an install. Anything that stops it from answering — no credentials,
+ * an unreachable or older server, a scan already running, a scan that takes too long —
+ * is a `warn`. Only a machine that scanned and demonstrably is not reaching the server
+ * is a `fail`.
+ */
+// Measured on a Mac with 160 claude-code files and 84 codex files: a full scan takes a
+// few seconds. 60s is a ceiling for a machine with a much longer history, not a target —
+// and a person is watching an installer, so it must not be generous enough to read as a
+// hang.
+const ROUNDTRIP_TIMEOUT_MS = 60 * 1000;
+
+async function checkUsageRoundtrip({
+  apiUrl, apiKey, scan, fetchSelfCheck,
+  timeoutMs = ROUNDTRIP_TIMEOUT_MS, notify = false
+} = {}) {
+  const NAME = 'usage_roundtrip';
+  const hide = (s) => redactKey(sanitizePath(String(s ?? '')), apiKey);
+
+  if (!apiUrl || !apiKey) {
+    return warn(NAME, 'no credentials, so nothing can be confirmed',
+      'Connect OwnMind to a server first, then re-run the installer');
+  }
+
+  const ownmind = await loadSelfCheckModules({ scan, fetchSelfCheck });
+  if (ownmind.error) {
+    return warn(NAME, `could not load the collector: ${hide(ownmind.error)}`,
+      'Re-run install.sh / install.ps1 to restore ~/.ownmind');
+  }
+
+  let local;
+  try {
+    // The only check that can take more than a moment, and the installer is in the
+    // foreground. Say what is happening rather than looking hung.
+    if (notify) process.stderr.write('Checking:  usage data reaches the server (running one scan)\n');
+    local = await withTimeout(ownmind.scan(), timeoutMs);
+  } catch (e) {
+    return e?.__timeout
+      ? warn(NAME, `the scan took too long (over ${Math.round(timeoutMs / 1000)}s), so the round-trip was not confirmed`,
+        'Run `node ~/.ownmind/hooks/ownmind-selfcheck.js` when the machine is idle')
+      : warn(NAME, `the scan did not finish: ${hide(e?.message || e)}`,
+        'See ~/.ownmind/logs/scanner.log');
+  }
+  if (!local) {
+    return warn(NAME, 'another scan is already running on this machine, so this one was skipped',
+      'Run `node ~/.ownmind/hooks/ownmind-selfcheck.js` in a minute');
+  }
+
+  const answer = await ownmind.fetchSelfCheck({ apiUrl, apiKey });
+  if (!answer || !answer.ok) {
+    return warn(NAME, `could not ask the server: ${hide(answer && answer.error)}`,
+      'The scan itself ran; only the confirmation is missing. Check the network and retry');
+  }
+
+  const report = ownmind.buildSelfCheckReport({
+    machine: local.machine || os.hostname(),
+    scanned: local.scanned || [],
+    serverTools: answer.data.tools,
+    serverTime: answer.data.server_time
+  });
+
+  const tools = report.rows.map((r) => ({
+    tool: r.tool, verdict: r.verdict, reason: r.reason,
+    sent: r.sent, accepted: r.accepted, server_machine: r.server_machine
+  }));
+
+  const named = (verdicts) => report.rows
+    .filter((r) => verdicts.includes(r.verdict)).map((r) => r.tool).join(', ');
+
+  if (!report.ok) {
+    const blocked = report.rows.filter((r) => r.verdict === 'blocked');
+    const missing = named(['not_recorded']);
+    const detail = [
+      missing && `${missing}: scanned here, no recent record on the server`,
+      blocked.length && `${blocked.map((r) => `${r.tool} (${r.reason})`).join(', ')}: could not be read on this machine`
+    ].filter(Boolean).join('; ');
+    const fix = blocked.some((r) => r.reason === 'sqlite_missing')
+      ? 'Install sqlite3 (Windows: `winget install SQLite.SQLite`, Linux: `apt install sqlite3`), '
+        + 'reopen the terminal, then run `node ~/.ownmind/hooks/ownmind-selfcheck.js`'
+      : 'Run `node ~/.ownmind/hooks/ownmind-selfcheck.js` for the per-tool detail, '
+        + 'and send ~/.ownmind/logs/scanner.log if it persists';
+    return Object.assign(fail(NAME, detail, fix), { tools });
+  }
+
+  if (report.warnings > 0) {
+    const elsewhere = report.rows.filter((r) => r.verdict === 'other_machine');
+    const unknown = named(['unattributed']);
+    const detail = [
+      elsewhere.length && `${elsewhere.map((r) => r.tool).join(', ')}: `
+        + `the server records this against another computer (${elsewhere[0].server_machine})`,
+      unknown && `${unknown}: the server has a recent check-in but no record of which `
+        + 'computer sent it'
+    ].filter(Boolean).join('; ');
+    return Object.assign(
+      warn(NAME, detail,
+        elsewhere.length
+          ? 'Nothing to fix on this machine; usage still counts for you'
+          : 'Upgrade every computer on this account, then run '
+            + '`node ~/.ownmind/hooks/ownmind-selfcheck.js`'),
+      { tools }
+    );
+  }
+
+  const confirmed = report.rows.filter((r) => r.verdict === 'confirmed').length;
+  return Object.assign(
+    pass(NAME, `the server has this machine's data for ${confirmed} tool(s)`),
+    { tools }
+  );
+}
+
+/**
+ * The collector is ESM and this file is CommonJS, so the modules load dynamically.
+ * Injected in tests; imported from `~/.ownmind` in production.
+ */
+async function loadSelfCheckModules({ scan, fetchSelfCheck }) {
+  // Relative to this file, not to OWNMIND_DIR. `~/.ownmind` is the repo clone, so the two
+  // are the same in production — and resolving relatively also works from a checkout,
+  // which is where the tests run and where anyone debugging this will be.
+  const toUrl = (...seg) =>
+    require('url').pathToFileURL(path.resolve(__dirname, '..', '..', ...seg)).href;
+  try {
+    const shared = await import(toUrl('shared', 'scanners', 'selfcheck.js'));
+    if (scan && fetchSelfCheck) {
+      return { scan, fetchSelfCheck, buildSelfCheckReport: shared.buildSelfCheckReport };
+    }
+    const scanner = await import(toUrl('hooks', 'ownmind-usage-scanner.js'));
+    return {
+      scan: scanner.main,
+      fetchSelfCheck: shared.fetchSelfCheck,
+      buildSelfCheckReport: shared.buildSelfCheckReport
+    };
+  } catch (e) {
+    return { error: e?.message || String(e) };
+  }
+}
+
+function withTimeout(promise, ms) {
+  let timer;
+  const bomb = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`timed out after ${ms}ms`);
+      err.__timeout = true;
+      reject(err);
+    }, ms);
+  });
+  return Promise.race([promise, bomb]).finally(() => clearTimeout(timer));
+}
+
+/** Long enough that a match is the key and not a coincidence. */
+const MIN_REDACTABLE_KEY = 8;
+
+function redactKey(text, apiKey) {
+  let out = String(text ?? '');
+  if (apiKey && String(apiKey).length >= MIN_REDACTABLE_KEY) {
+    out = out.split(apiKey).join('***');
+  }
+  return out.replace(/([?&](?:api[-_]?key|key|token)=)[^&\s]+/gi, '$1***');
 }
 
 async function checkGitHooks() {
@@ -475,6 +651,10 @@ async function runAllChecks() {
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
   checks.push(await safeCheck('scheduler', checkScheduler));
+  // v1.26.72 — last, because it runs a real scan and is the slowest. Also the only one
+  // that asks whether the data is arriving rather than whether things are installed.
+  checks.push(await safeCheck('usage_roundtrip',
+    () => checkUsageRoundtrip({ apiUrl, apiKey, notify: true })));
   return { checks, apiKey, apiUrl };
 }
 
@@ -820,6 +1000,8 @@ async function main() {
 module.exports = {
   checkMcpFiles, checkPackageVersion, checkMcpNodeModules,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
+  // v1.26.72 — the round-trip: scan, then read back from the server.
+  checkUsageRoundtrip, redactKey,
   buildReport, summarize, sanitizePath, parseArgs,
   // v1.17.66 — spool mechanism (IR-038 observability pipeline).
   uploadReport, appendSpool, retrySpool,

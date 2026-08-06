@@ -150,9 +150,21 @@ async function main() {
       .filter((spec) => !skip.has(spec.tool))
       .map((spec) => spec.factory({ scannerVersion, machine }));
 
+    // v1.26.72 — collected and returned, so the self-check can compare "what this
+    // machine just did" against "what the server says it now holds". Until now this loop
+    // wrote its findings only to a log file on the machine with the problem.
+    const scanned = [];
+
     for (const adapter of adapters) {
       try {
         const result = await runScan({ adapter, apiUrl, apiKey, accountChanged });
+        scanned.push({
+          tool: adapter.tool,
+          sent: result.sent ?? 0,
+          accepted: result.accepted ?? 0,
+          sessions: result.sessions ?? 0,
+          reason: result.reason ?? null
+        });
         // v1.26.65: `files=` says how many source files were visible. Without it
         // `sent=0` cannot be read: nothing new and cannot see anything look the
         // same, and on 2026-08-05 that cost an hour of chasing the wrong cause.
@@ -178,8 +190,19 @@ async function main() {
           `batches=${result.batches}${days}${seen}${missed}${why}`);
       } catch (err) {
         await log(`[scanner] ${adapter.tool} failed: ${err.message}`);
+        // A thrown adapter sent nothing and cannot say why, which is not the same as
+        // "nothing to send". Recorded so the self-check reports it rather than skipping
+        // the tool entirely.
+        scanned.push({
+          tool: adapter.tool, sent: 0, accepted: 0, sessions: 0,
+          reason: null, error: err.message
+        });
       }
     }
+
+    // No credentials in here. The caller that needs them reads them itself; a secret
+    // that travels in a return value ends up in somebody's log eventually.
+    return { machine, scannerVersion, scanned };
   } finally {
     await releaseLock();
   }

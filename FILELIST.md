@@ -2369,6 +2369,9 @@ OwnMind/
 │   │       ├── pricing.js           # GET 所有 model pricing；POST 新增（super_admin only, append-only）
 │   │       ├── events.js            # POST raw events（exempt check / codex fingerprint / heartbeat / D7 / dedupe / trigger aggregation）
 │   │       ├── stats.js             # GET 個人 stats（from / to / group_by=day|tool|model|session）
+│   │       ├── self-check.js        # v1.26.72 — GET 伺服器手上有這個帳號的哪些收集器紀錄（含 server_time
+│   │                                #   讓 client 不用自己的時鐘判斷新鮮度）。一般成員可用、只看得到自己，
+│   │                                #   不吃任何 user 參數、不 join users 表
 │   │       ├── exemptions.js        # GET / POST / DELETE usage_tracking_exemption（super_admin only）
 │   │       ├── admin-audit.js       # GET usage_audit_log（admin+；可 filter event_type / user_id）
 │   │       ├── admin-clients.js     # v1.17.0 — GET 裝機狀況（admin+；per user+tool heartbeat + needs_upgrade + coverage）
@@ -2428,6 +2431,9 @@ OwnMind/
 │       ├── antigravity.js           # Antigravity Tier 2 adapter（session_count only）
 │       ├── reasons.js               # v1.26.69 — 收集器「為什麼沒東西」的封閉原因碼（ok / no_new_activity /
 │                                    #   no_install / sqlite_missing / unreadable / account_changed）
+│       ├── selfcheck.js            # v1.26.72 — 「我送了」跟「伺服器真的有」是兩件事。比對本機掃描結果
+│                                    #   跟伺服器回報，產出 confirmed / not_installed / other_machine /
+│                                    #   not_recorded / blocked 五種判定 + 給人看的說明
 │       └── gemini-conversations.js  # v1.26.68 — Antigravity 三個介面的對話檔日期來源（管理器/編輯器/命令列，
 │                                    #   ~/.gemini/<介面>/conversations 只讀 mtime 不開內容、介面名單寫死不用萬用字元）
 │
@@ -2447,6 +2453,9 @@ OwnMind/
 │   ├── ownmind-git-commit-msg      # commit-msg shell wrapper（IR-024 阻擋 Co-Authored-By）
 │   ├── ownmind-verify-trigger.js   # deploy/delete 驗證輔助腳本
 │   ├── ownmind-usage-scanner.js    # Token 用量 scanner 主 entry（P4；P6 由 launchd/systemd 每 30 分鐘呼叫）
+│   ├── ownmind-selfcheck.js        # v1.26.72 — 跑一次掃描、再回頭問伺服器有沒有收到，印人看得懂的結果。
+│                                    #   安裝/升級結束時自動跑，也可以手動跑來診斷單一台機器。
+│                                    #   絕不會弄壞安裝（網路問題一律 exit 0），但真的沒送到會 exit 1
 │   └── lib/                        # v1.17.0 P3 — hook 共用純函式
 │       ├── render-session-context.js   # renderSessionContext(data, broadcasts) → additionalContext 字串
 │       ├── session-start-output.js     # Node CLI wrapper，讓 bash hook 呼叫
