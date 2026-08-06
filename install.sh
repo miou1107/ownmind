@@ -531,14 +531,29 @@ else
       mkdir -p "$LAUNCH_AGENTS"
       PLIST_PATH="$LAUNCH_AGENTS/com.ownmind.usage-scanner.plist"
       # 把 {HOME} 佔位符替換成實際 $HOME
-      sed "s|{HOME}|$HOME|g" "$OWNMIND_DIR/scripts/launchd/com.ownmind.usage-scanner.plist" > "$PLIST_PATH"
+      # v1.26.79 — 兩層跳脫，缺一不可。目標是 XML，所以 & < > 要先變成實體，不然
+      # plist 根本無法解析；接著才是 sed 自己的替換語法：`&` 代表「剛才配對到的整段」、
+      # 反斜線是跳脫字元、`|` 會提早結束 s 指令。順序不能反：XML 那層產出的 `&amp;`
+      # 本身含 `&`，要靠 sed 那層保護。
+      HOME_XML=$(printf '%s' "$HOME" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')
+      HOME_ESCAPED=$(printf '%s' "$HOME_XML" | sed 's/[\\&|]/\\&/g')
+      sed "s|{HOME}|$HOME_ESCAPED|g" "$OWNMIND_DIR/scripts/launchd/com.ownmind.usage-scanner.plist" > "$PLIST_PATH"
 
       # unload 舊的（如果存在）再 load 新的，確保變更生效
       launchctl unload "$PLIST_PATH" 2>/dev/null || true
-      if launchctl load -w "$PLIST_PATH" 2>/dev/null; then
+      launchctl load -w "$PLIST_PATH" 2>/dev/null || true
+
+      # v1.26.79 — 問 launchd 一次，不要只信 load 的 exit code。
+      # register-scanner-task.ps1 從 v1.17.12 就會驗證自己的成果，macOS 這邊一直沒有。
+      # 上面是 unload-then-load：中間失敗就會停在「舊的已刪、新的沒建」，而原本的寫法
+      # 只印一行 WARN 到安裝畫面上，之後永遠不會有人發現。Adam 的掃描器就是這樣死了
+      # 三個星期（那台是 Windows，同一個形狀）。
+      if launchctl list "com.ownmind.usage-scanner" >/dev/null 2>&1; then
         echo "   ✅ launchd agent loaded (30 min interval)"
       else
-        echo "[WARN] launchctl load failed; check $PLIST_PATH manually"
+        echo "[WARN] launchd has no com.ownmind.usage-scanner after loading $PLIST_PATH;"
+        echo "       usage collection will not run. Retry: launchctl load -w $PLIST_PATH"
+        report_error "scanner_schedule_install_failed" "launchctl list has no com.ownmind.usage-scanner after load" 2>/dev/null || true
       fi
       ;;
     linux*)
@@ -549,10 +564,18 @@ else
         cp "$OWNMIND_DIR/scripts/systemd/ownmind-usage-scanner.timer" "$SYSTEMD_USER_DIR/"
 
         systemctl --user daemon-reload 2>/dev/null || true
-        if systemctl --user enable --now ownmind-usage-scanner.timer 2>/dev/null; then
+        systemctl --user enable --now ownmind-usage-scanner.timer 2>/dev/null || true
+
+        # v1.26.79 — 同 darwin 分支：問 systemd 一次，不要只信 enable 的 exit code。
+        # is-active 跟 is-enabled 問的是兩件事：現在有沒有在跑、重開機後會不會回來。
+        # 只有其中一個成立的 timer，等於是一個延後發作的同型缺陷。
+        if systemctl --user is-active ownmind-usage-scanner.timer >/dev/null 2>&1 \
+           && systemctl --user is-enabled ownmind-usage-scanner.timer >/dev/null 2>&1; then
           echo "   ✅ systemd user timer enabled (30 min interval)"
         else
-          echo "[WARN] systemd user timer enable failed; run: systemctl --user enable --now ownmind-usage-scanner.timer"
+          echo "[WARN] ownmind-usage-scanner.timer is not both active and enabled;"
+          echo "       usage collection will not run. Retry: systemctl --user enable --now ownmind-usage-scanner.timer"
+          report_error "scanner_schedule_install_failed" "ownmind-usage-scanner.timer not active+enabled after enable" 2>/dev/null || true
         fi
       else
         echo "[WARN] systemctl not found; configure cron or scheduler manually"
