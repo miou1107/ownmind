@@ -37,10 +37,21 @@ NULL.
 
 ### Scenario: sorting
 
-- **THEN** the `ORDER BY` uses the same expression that is displayed
+- **THEN** the `ORDER BY` names the output column rather than repeating the expression
 
 Ordering by `MAX(session_logs.created_at)` while displaying something else would put the
 top row in the wrong place, which is a second defect wearing the first one's clothes.
+Naming the output column makes the two the same value by construction, and stops the
+subqueries from being evaluated a second time.
+
+### Scenario: the cost of the extra sources
+
+- **THEN** each extra source is read once per person, not once per work log
+
+A `LEFT JOIN LATERAL` sits after `JOIN session_logs` and is evaluated for every work-log
+row that survives the window: somebody with 50 sessions in the period costs 50 `MAX(ts)`
+lookups per source, against `token_events`, the largest table in the product. Scalar
+subqueries in the select list of a grouped query run once per output group.
 
 ### Scenario: the window
 

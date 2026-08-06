@@ -75,11 +75,30 @@ describe('what 最近活動 is measured from', () => {
 
   it('orders the list by that same value, not by the session log alone', async () => {
     // The column and the sort order have to agree, or the top row is not the most recent.
+    // Sorting by the output name rather than repeating the expression makes them the same
+    // value by construction — repeating it would also evaluate both subqueries twice.
     const { app, seen } = run();
     await get(app);
     const order = seen[0].sql.slice(seen[0].sql.search(/ORDER BY/i));
-    assert.match(order, /GREATEST/i,
+    assert.match(order, /last_active_at/i,
       'ordering by MAX(session_logs) while displaying something else puts the rows in the wrong order');
+  });
+
+  it('reads the extra sources once per person, not once per work log', async () => {
+    // A LEFT JOIN LATERAL sits after JOIN session_logs, so it is evaluated for every
+    // work-log row that survives the window: somebody with 50 sessions in the period costs
+    // 50 MAX(ts) lookups per source instead of one, against token_events, the largest
+    // table in the product. A scalar subquery in the SELECT of a grouped query is computed
+    // once per output group. Found by adversarial review of this change, 2026-08-06.
+    const { app, seen } = run();
+    await get(app);
+    const sql = seen[0].sql;
+    assert.doesNotMatch(sql, /LATERAL/i,
+      'a lateral join here re-runs per session_logs row, not per person');
+    assert.match(sql, /\(\s*SELECT\s+MAX\(\s*a\.ts\s*\)\s+FROM\s+activity_logs/i);
+    assert.match(sql, /\(\s*SELECT\s+MAX\(\s*e\.ts\s*\)\s+FROM\s+token_events/i);
+    assert.doesNotMatch(sql.slice(sql.search(/GROUP BY/i), sql.search(/ORDER BY/i)),
+      /last_ts/i, 'nothing from the extra sources needs to be grouped by any more');
   });
 
   it('still decides who appears from the session logs', async () => {

@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.74 修改（收集器可靠性連續十版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.75 修改（收集器可靠性連續十一版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -52,8 +52,12 @@ mcp/index.js, mcp/ownmind-log.js            — v1.26.67 四個呼叫點改用�
 src/routes/usage/events.js                  — v1.26.69 收原因碼；v1.26.73 三欄鍵值 + 每人每工具 20 台上限
 src/routes/usage/admin-clients.js           — v1.26.69 回原因；v1.26.73 回 os
 src/routes/usage/index.js                   — v1.26.72 掛上 /self-check
-src/routes/usage/team-overview.js           — v1.26.74 最近活動改讀三個來源取最新
-src/routes/activity.js                      — v1.26.74 統計儀表板同一個口徑
+src/routes/usage/team-overview.js           — v1.26.74 最近活動改讀三個來源取最新；v1.26.75 額外兩個
+                                              來源改用 SELECT 裡的純量子查詢、一個人算一次（寫成
+                                              LATERAL 會跟著工作紀錄筆數跑），排序改指名輸出欄名
+src/routes/activity.js                      — v1.26.74 統計儀表板同一組來源；v1.26.75 補上「這一欄
+                                              刻意不套時間區間」的理由：那頁列所有人，套了會讓
+                                              「這期間沒動靜的人」變空白，而那正是要找的人
 src/routes/me.js, src/routes/me-narrative.js — v1.26.73 一人多台時版本取最新那台（DISTINCT ON）
 scripts/install-helpers/self-check.cjs      — v1.26.72 安裝後自我檢查加第九項：回頭跟伺服器對帳
 scripts/windows/{register-scanner-task.ps1,run-hidden.vbs}, scripts/interactive-upgrade.ps1
