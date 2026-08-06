@@ -66,7 +66,9 @@ describe('POST /api/debug/install-check', () => {
   it('returns ok=true on successful write', async () => {
     let captured = null;
     const queryFn = async (sql, args) => {
-      captured = { sql, args };
+      // v1.26.87: the route now also runs the alert evaluator after the insert
+      // (against the same query fn), so only capture the write we're asserting on.
+      if (sql.includes('INSERT INTO install_check_logs')) captured = { sql, args };
       return { rows: [] };
     };
     const router = buildHandler({ queryFn, user: { id: 99 } });
