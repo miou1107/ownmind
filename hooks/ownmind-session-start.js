@@ -40,6 +40,48 @@ function httpGet(url, headers) {
   });
 }
 
+/**
+ * v1.26.83 — report an event to the server as well as the local JSONL.
+ *
+ * The bash hook has always POSTed each event to /api/activity/batch; this file's port
+ * dropped that line, so a Windows machine whose hook worked was indistinguishable,
+ * server-side, from one whose hook was dead. Found while verifying the v1.26.82 rollout:
+ * Adam restarted, his MCP showed up, and the hook-sourced init this whole repair is judged
+ * by could never have appeared. Worse, the memory_load self-check reads exactly that
+ * event, so every healthy Windows machine would be reported broken forever.
+ *
+ * Fire-and-forget with a short timeout: session start must never wait on telemetry, and
+ * the pending request keeps the process alive just long enough to finish on its own.
+ */
+function reportEvent(apiUrl, apiKey, event, extra = {}) {
+  logEvent(event, extra);
+  try {
+    const url = `${String(apiUrl).replace(/\/$/, '')}/api/activity/batch`;
+    const body = JSON.stringify({
+      events: [{
+        ts: new Date().toISOString(),
+        event,
+        tool: 'claude-code',
+        source: 'hook',
+        ...extra,
+      }],
+    });
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.request(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+      timeout: 3000,
+    }, (res) => { res.resume(); });
+    req.on('error', () => {});
+    req.on('timeout', () => req.destroy());
+    req.end(body);
+  } catch { /* telemetry must never break session start */ }
+}
+
 async function main() {
   // v1.20.3: when a new session starts, clear the legacy "session temporarily disabled" state file.
   // Implements the spec's "new session auto-resumes" — opening a new conversation re-enables the OwnMind hooks.
@@ -63,11 +105,11 @@ async function main() {
     });
     initData = JSON.parse(raw);
   } catch {
-    logEvent('init_fail', { status: 'api_timeout' });
+    reportEvent(apiUrl, apiKey, 'init_fail', { status: 'api_timeout' });
     process.exit(0);
   }
 
-  logEvent('init', { status: 'ok' });
+  reportEvent(apiUrl, apiKey, 'init', { status: 'ok' });
 
   const lines = [];
   lines.push(`[OwnMind v${initData.server_version || '?'}] Memory loaded: your personal memories are now active`);
