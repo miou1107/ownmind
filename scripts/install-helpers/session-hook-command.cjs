@@ -105,6 +105,11 @@ function needsRewrite(existingEntries, opts) {
   // installer that silently undoes a deliberate edit on every update, forever, and the
   // user would have no way to win. Leave it and let them own it; ~/.ownmind/.no-session-hook
   // remains the way to opt out entirely.
+  //
+  // Deliberately, "ours" is decided by the hook FILENAME, wherever the file sits: a
+  // same-named script in the wrong directory is what every broken machine looked like
+  // (the dead copy under ~/.claude/hooks), so path differences are drift to repair, not
+  // customisation to respect. Customisation = a different script or extra arguments.
   const allCommandsAreOurs = existingEntries.every(
     (e) => e.hooks?.every((h) => isGeneratedCommand(h.command)),
   );
@@ -137,7 +142,12 @@ function isGeneratedCommand(command) {
   if (!c) return false;
   // <runtime> <path-to-our-hook>, and nothing else. The path may be bare, "quoted" or
   // 'quoted'; `~` is left as-is because the shell, not us, expands it.
-  const m = c.match(/^(node|bash)\s+(?:"([^"]+)"|'([^']+)'|(\S+))$/);
+  //
+  // The bare branch is `.+`, not `\S+`: a Windows home directory routinely contains a
+  // space ("C:\Users\Jane Doe"), and an unquoted command with a space is still just our
+  // hook. The basename check below still rejects deliberate edits — trailing arguments
+  // make the last path segment stop being exactly our filename.
+  const m = c.match(/^(node|bash)\s+(?:"([^"]+)"|'([^']+)'|(.+))$/);
   if (!m) return false;
   const runtime = m[1];
   const target = m[2] || m[3] || m[4];

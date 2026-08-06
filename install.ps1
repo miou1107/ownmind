@@ -408,42 +408,6 @@ if (-not $hookSettings.hooks) {
   $hookSettings | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{})
 }
 
-# SessionStart hook
-if (-not $hookSettings.hooks.SessionStart) {
-  $hookSettings.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue @()
-}
-# v1.26.80 — 原本只判斷「有沒有」，有就跳過。所有壞掉的機器都「有」，只是內容是錯的，
-# 所以這支腳本永遠修不到任何一台。而 bootstrap → interactive-upgrade 走的正是這裡，
-# 不會經過 update.ps1。使用者手動跑升級卻沒被修好，就是這個原因。
-$sessionEntries = @($hookSettings.hooks.SessionStart | Where-Object {
-  $_.hooks | Where-Object { $_.command -match "ownmind-session-start" }
-})
-$sessionNeedsRepair = $false
-if ($sessionEntries.Count -gt 0) {
-  $entriesJson = ($sessionEntries | ConvertTo-Json -Depth 6 -Compress)
-  if ($entriesJson -notmatch '^\[') { $entriesJson = "[$entriesJson]" }
-  $sessionNeedsRepair = (& node -e "const h=require(process.argv[1]);process.stdout.write(String(h.needsRewrite(JSON.parse(process.argv[2]),{platform:process.platform,ownmindDir:process.argv[3]})))" "$HookCmdHelper" "$entriesJson" "$OwnmindDir") -eq "true"
-  if ($sessionNeedsRepair) {
-    $hookSettings.hooks.SessionStart = @($hookSettings.hooks.SessionStart | Where-Object {
-      -not ($_.hooks | Where-Object { $_.command -match "ownmind-session-start" })
-    })
-    Write-Host "[ OK ] Removed stale SessionStart hook entries (wrong command for this platform)"
-  }
-}
-$sessionExists = ($sessionEntries.Count -gt 0) -and (-not $sessionNeedsRepair)
-if (-not $sessionExists) {
-  $sessionCmd = & node -e "const h=require(process.argv[1]);process.stdout.write(h.sessionStartCommand({platform:process.platform,ownmindDir:process.argv[2]}))" "$HookCmdHelper" "$OwnmindDir"
-  # 四個 matcher 全註冊，跟 update.ps1 一致。只註冊 startup 的話，resume / clear /
-  # compact 進來時掛勾不會跑，AI 就在沒有鐵律的狀態下繼續工作。
-  foreach ($matcher in @("startup", "resume", "clear", "compact")) {
-    $hookSettings.hooks.SessionStart += [pscustomobject]@{
-      matcher = $matcher
-      hooks = @([pscustomobject]@{ type = "command"; command = $sessionCmd; timeout = 10 })
-    }
-  }
-  Write-Host "[ OK ] Added SessionStart hook (4 matchers): $sessionCmd"
-}
-
 # PreToolUse hook
 if (-not $hookSettings.hooks.PreToolUse) {
   $hookSettings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @()
@@ -466,6 +430,27 @@ if (-not $preExists) {
 }
 
 Write-Utf8NoBom -Path $ClaudeSettings -Content ($hookSettings | ConvertTo-Json -Depth 10)
+
+# SessionStart hook — v1.26.86, delegated to ensure-session-hook.cjs (single implementation
+# with behavioral tests). The old PowerShell version filtered entries, ConvertTo-Json'd
+# them into a node -e argument and read a string back; that round trip silently never
+# executed from v1.26.82 on (measured 2026-08-06: a machine upgraded to v1.26.84 still had
+# its single null matcher afterwards). When the argument did not survive, the result was
+# merely "not true" — no error, so nobody knew.
+#
+# This block must stay AFTER the Write-Utf8NoBom above: the helper edits settings.json on
+# disk, and any later write of the stale $hookSettings snapshot would revert its work.
+$EnsureHook = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-session-hook.cjs'
+if (Test-Path $EnsureHook) {
+  $hookResult = & node $EnsureHook --ownmind-dir $OwnmindDir 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "[ OK ] SessionStart hook: $hookResult"
+  } else {
+    Write-Host "[FAIL] SessionStart hook: $hookResult"
+  }
+} else {
+  Write-Host "[WARN] ensure-session-hook.cjs not found; SessionStart hook left as-is"
+}
 
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
 Write-Host "[INFO] Installing Git hooks (Iron Rule Verification Engine)"

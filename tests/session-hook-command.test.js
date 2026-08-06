@@ -237,6 +237,11 @@ describe('isOwnmindSessionEntry / isGeneratedCommand — what counts as ours', (
       'node "C:/Users/Celia/.claude/hooks/ownmind-session-start.js"',
       "node 'C:/x/ownmind-session-start.js'",
       'bash ~/.claude/hooks/ownmind-session-start.sh',
+      // A Windows home directory routinely contains a space. An unquoted command with a
+      // space is still just our hook — reading it as a customisation would exclude exactly
+      // the users this repair exists for.
+      'node C:/Users/Jane Doe/.claude/hooks/ownmind-session-start.js',
+      'node C:\\Users\\Jane Doe\\.ownmind\\hooks\\ownmind-session-start.js',
     ]) {
       assert.equal(isGeneratedCommand(c), true, c);
     }
@@ -260,29 +265,34 @@ describe('isOwnmindSessionEntry / isGeneratedCommand — what counts as ours', (
 });
 
 describe('the scripts that write settings.json all go through the helper', () => {
+  // v1.26.86 — the updaters no longer touch SessionStart themselves at all: they run
+  // ensure-session-hook.cjs (which consumes session-hook-command.cjs and has behavioural
+  // tests of its own). "Asks the helper" now means that delegation.
   it('update.ps1 no longer hardcodes the bash command', () => {
     const src = read('scripts/update.ps1');
     assert.doesNotMatch(src, /const ownmindCmd = 'bash ~\/\.claude/,
       'this literal is what overwrote the Node hook on every Windows machine, daily');
-    assert.match(src, /session-hook-command/, 'update.ps1 must ask the helper');
+    assert.match(src, /ensure-session-hook\.cjs/, 'update.ps1 must delegate to the helper');
   });
 
   it('update.sh no longer hardcodes the bash command', () => {
     const src = read('scripts/update.sh');
     assert.doesNotMatch(src, /const ownmindCmd = 'bash ~\/\.claude/);
-    assert.match(src, /session-hook-command/, 'update.sh must ask the helper');
+    assert.match(src, /ensure-session-hook\.cjs/, 'update.sh must delegate to the helper');
   });
 
   it('install.ps1 no longer decides by probing for bash', () => {
     const src = read('install.ps1');
     assert.doesNotMatch(src, /\$HasBash\s*=\s*\$null -ne \(Get-Command bash/,
       'a bash on PATH is usually WSL, whose ~ is a different home directory');
-    assert.match(src, /session-hook-command/, 'install.ps1 must ask the helper');
+    assert.match(src, /ensure-session-hook\.cjs/, 'install.ps1 must delegate to the helper');
   });
 
   it('install.sh keeps working through the helper too', () => {
-    const src = read('install.sh');
-    assert.match(src, /session-hook-command/, 'install.sh must ask the helper');
+    // v1.26.86 — the installers no longer reason about entries themselves; they run
+    // ensure-session-hook.cjs, which is where session-hook-command.cjs is consumed and
+    // which has behavioural tests of its own (tests/ensure-session-hook.test.js).
+    assert.match(read('install.sh'), /ensure-session-hook\.cjs/);
   });
 
   // The installers must REPAIR, not only ADD. Found while working out how 采瑤 could
@@ -296,16 +306,15 @@ describe('the scripts that write settings.json all go through the helper', () =>
   // skips when anything exists cannot fix any of them, and the only path that can is the
   // auto-update, which on 采瑤's machine has run twice in a month. The repair would have
   // sat on a road she does not travel. Same defect this whole day has been about.
-  it('install.ps1 repairs an existing broken entry, not only a missing one', () => {
-    const src = read('install.ps1');
-    assert.match(src, /needsRewrite/,
-      'install.ps1 skips when any entry exists, so it can never fix a wrong one');
-  });
+  // v1.26.86 — "repair, not only add" now lives in ensure-session-hook.cjs for every
+  // caller. The PowerShell version of this logic was never once executed on a real machine:
+  // 采瑤 upgraded to v1.26.84 and her single null matcher survived it untouched.
+  for (const rel of ['install.ps1', 'install.sh']) {
+    it(`${rel} delegates the repair to the shared script`, () => {
+      assert.match(read(rel), /ensure-session-hook\.cjs/);
+    });
+  }
 
-  it('install.sh repairs an existing broken entry too', () => {
-    const src = read('install.sh');
-    assert.match(src, /needsRewrite/);
-  });
 });
 
 describe('the Node hook the Windows command points at', () => {

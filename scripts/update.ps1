@@ -247,7 +247,6 @@ if (Test-Path $EnsureSchedule) {
 
 # --- 3. Claude Code settings.json：注入 hooks ---
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
-$NoSessionFlag = Join-Path $OwnMindDir ".no-session-hook"
 if (Test-Path $ClaudeSettings) {
   # v1.17.81：單引號 heredoc — JS code 內所有 $var / $(...) 原樣保留，不被 PS 展開
   $nodeScript = @'
@@ -257,44 +256,14 @@ if (Test-Path $ClaudeSettings) {
     const { loadOrSkip } = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/load-settings-safe.cjs'));
     // v1.17.23: argv[0]=node, argv[1]=script path, argv[2]+=user args
     const settingsPath = process.argv[2];
-    const noSessionHook = process.argv[3] === 'true';
     const s = loadOrSkip(settingsPath, {});
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
 
-    // v1.26.80: this used to hardcode 'bash ~/.claude/hooks/ownmind-session-start.sh'.
-    // install.ps1 writes the Node command on Windows; this block recognised that entry,
-    // saw it lacked the four matchers, deleted it, and wrote bash back. Every Windows
-    // machine runs an update daily, so the correct command survived until the first one,
-    // and the hook then never fired again — 0 loads across 6 machines in 90 days.
-    //
-    // Wrapped: on the update that *delivers* this helper, an uncaught MODULE_NOT_FOUND
-    // would kill this node script and skip every hook below it.
-    let hookCmd = null;
-    try {
-      hookCmd = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/session-hook-command.cjs'));
-    } catch { hookCmd = null; }
-
-    if (!noSessionHook && hookCmd) {
-      if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-      const newEntries = hookCmd.sessionStartEntries({
-        platform: process.platform,
-        ownmindDir: path.join(os.homedir(), '.ownmind'),
-      });
-      const isOwnmindEntry = hookCmd.isOwnmindSessionEntry;
-      const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
-      // Matchers complete is not the same question as command correct. Every Windows
-      // machine today has all four matchers, all running bash; judging by matchers alone
-      // would call them healthy and repair nobody.
-      if (hookCmd.needsRewrite(existing, { platform: process.platform, ownmindDir: path.join(os.homedir(), '.ownmind') })) {
-        s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !isOwnmindEntry(h));
-        s.hooks.SessionStart.push(...newEntries);
-        changed = true;
-      } else if (existing.length === 0 && s.hooks.SessionStart.length === 0) {
-        s.hooks.SessionStart.push(...newEntries);
-        changed = true;
-      }
-    }
+    // v1.26.86 — SessionStart is handled by ensure-session-hook.cjs in section 3.4 below
+    // (single implementation with behavioral tests; it also honors the
+    // ~/.ownmind/.no-session-hook opt-out). This script used to make that decision inline,
+    // one divergent copy per installer, and the daily one always won.
 
     if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
     if (!s.hooks.PreToolUse.some(h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-iron-rule-check')))) {
@@ -317,13 +286,23 @@ if (Test-Path $ClaudeSettings) {
 '@
   $tmpScript = Join-Path $env:TEMP "ownmind-update-settings.js"
   Set-Content -Path $tmpScript -Value $nodeScript -Encoding UTF8
-  $noFlag = if (Test-Path $NoSessionFlag) { 'true' } else { 'false' }
   try {
-    & node $tmpScript $ClaudeSettings $noFlag 2>>$ErrLog
+    & node $tmpScript $ClaudeSettings 2>>$ErrLog
   } catch {
     Report-Error -Kind "update_settings_inject_failed" -Detail "Claude settings hook 注入 node 腳本失敗：$_" -ContextFile $ErrLog
   }
   Remove-Item $tmpScript -ErrorAction SilentlyContinue
+}
+
+# --- 3.4 SessionStart hook (v1.26.86, delegated to the shared implementation) ---
+$EnsureHook = Join-Path $OwnMindDir "scripts\install-helpers\ensure-session-hook.cjs"
+if (Test-Path $EnsureHook) {
+  $hookResult = & node $EnsureHook --ownmind-dir $OwnMindDir 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "   SessionStart hook: $hookResult"
+  } else {
+    Write-Host "   [FAIL] SessionStart hook: $hookResult"
+  }
 }
 
 # --- 3.5 v1.18.3 補修：補裝 Stop reply-lint hook + PostToolUse banner hook ---

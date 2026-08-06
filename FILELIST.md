@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.80 修改（收集器可靠性連續十六版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.86 修改（收集器可靠性連續二十二版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -68,7 +68,9 @@ src/routes/usage/self-check.js              — 多回 memory_load：最近一�
                                               不算功能會動
 tests/self-check-memory-load.test.js        — 新增。伺服器端測 SQL 形狀與空值語意，用戶端測
                                               三種降級路徑，最後一項跑真的 settings.json
-scripts/install-helpers/session-hook-command.cjs    — v1.26.85 Windows 掛勾改指 ~/.ownmind/hooks
+scripts/install-helpers/session-hook-command.cjs    — v1.26.86 未加引號、路徑含空格的舊設定
+                                              也認得出是我們的（Jane Doe 型家目錄漏修問題）；
+                                              v1.26.85 Windows 掛勾改指 ~/.ownmind/hooks
                                               （.claude/hooks 那份的相對 import 解不開、
                                               Node 直接 ERR_MODULE_NOT_FOUND，一行都沒跑）；
                                               v1.26.80 SessionStart 掛勾的指令怎麼下，
@@ -100,7 +102,19 @@ tests/activity-source-width.test.js         — v1.26.78
 tests/scanner-schedule-repair.test.js       — v1.26.79 Unix 那支是真的執行（暫時 HOME + 假的
                                               launchctl / systemctl），Windows 那支只能讀文字
 tests/session-hook-command.test.js          — v1.26.80 把 update.sh 裡那段 node 程式碼抽出來
-                                              真的跑，platform 假造成 win32
+                                              真的跑，platform 假造成 win32；v1.26.86 改配合
+                                              ensure-session-hook.cjs 的新呼叫方式
+scripts/install-helpers/ensure-session-hook.cjs — v1.26.86 SessionStart 設定修復的唯一實作。
+                                              原本 install.ps1 用 PowerShell 字串傳遞鏈做這件事，
+                                              從 v1.26.82 起一次都沒真的執行過（采瑤升到 84 之後
+                                              設定仍是舊的單一 null matcher，就是鐵證）。
+                                              自己讀寫設定檔、原子寫入、讀不懂或不是設定物件
+                                              就拒改並回報錯誤；.no-session-hook 開關由它遵守
+tests/ensure-session-hook.test.js           — v1.26.86 把修復程式當獨立程序真的跑，餵采瑤跟 Adam
+                                              兩台機器逐字真實的壞設定；「安裝腳本忘記呼叫它」
+                                              用破壞法驗過會紅
+tests/post-commit-version-reminder.test.js  — v1.26.86 在臨時 git repo 實跑 post-commit 掛勾：
+                                              沒有 package.json 的專案必須安靜（bug #13）
 openspec/changes/v1.26.{65,66,67,68,69,70,71,72,73,74,76,77,78,79,80}-*/{proposal,spec,tasks}.md
 ```
 
@@ -136,13 +150,23 @@ scripts/update.sh, scripts/update.ps1       — v1.26.79 自動更新每次檢�
                                               修不好不會讓整個更新算失敗，但一定回報伺服器；
                                               v1.26.80 掛勾指令改問 session-hook-command.cjs
                                               （原本寫死 bash，每天把 Windows 的 node 版蓋掉），
-                                              update.ps1 另外開始同步 node 版掛勾檔
+                                              update.ps1 另外開始同步 node 版掛勾檔；
+                                              v1.26.86 設定修復改成呼叫 ensure-session-hook.cjs，
+                                              結果一行印在升級畫面上，失敗看得見
 install.ps1                                 — v1.26.80 不再用 Get-Command bash 判斷（那會抓到
                                               WSL 的 bash），改問共用 helper；SessionStart 補齊
-                                              四個 matcher
+                                              四個 matcher；v1.26.86 刪掉那段從未真的執行過的
+                                              PowerShell 修復塊，改呼叫 ensure-session-hook.cjs，
+                                              且呼叫點在最後一次寫 settings.json 之後（審查抓到
+                                              原本會用舊快照把修好的檔案蓋回去）
+hooks/ownmind-git-post-commit.js            — v1.26.86 版號提醒改讀「正在 commit 的專案」的
+                                              package.json，沒有就整段閉嘴（原本讀 OwnMind 自己的
+                                              版本去管別人的 repo，Go 專案每次 commit 都被
+                                              叫去打錯的 tag，bug #13）
 install.sh                                  — v1.26.71 scanner 模組清單改成用掃的；v1.26.79 註冊完
                                               回頭問 launchd / systemd 一次，不再只信註冊指令沒報錯
-                                              （Windows 從 v1.17.12 就這樣做，Unix 這邊一直沒有）
+                                              （Windows 從 v1.17.12 就這樣做，Unix 這邊一直沒有）；
+                                              v1.26.86 設定修復同樣改呼叫 ensure-session-hook.cjs
 client/src/pages/System/SystemConfigPage.jsx — v1.26.73 依電腦分組（舊的 key={c.tool} 會撞號）
 client/src/pages/System/observed-users.js   — v1.26.69 靜默附原因；v1.26.73 附機器名
 client/src/i18n/{zh,en,ja}.json             — v1.26.73 系統設定頁的機器分組字串，三語系同步

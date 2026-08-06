@@ -8,7 +8,7 @@
  */
 
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
 import os from 'os';
 import { readJsonSafe, getChangedSourceFiles, getClientVersion } from '../shared/helpers.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
@@ -111,11 +111,19 @@ async function main() {
   }
 
   // Version-tag sync check: does the version have a corresponding tag?
+  // The version must come from the repo being committed, not from OwnMind's own
+  // package.json — in a repo without one (Go, Rust, ...) this says nothing at all.
   try {
-    const pkgVersion = VERSION !== '?' ? VERSION : null;
+    const repoTop = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
+    const repoPkg = readJsonSafe(path.join(repoTop, 'package.json'));
+    // That package.json is UNTRUSTED input — any cloned repo can put anything in it, and
+    // this string ends up in a git argument and a printed suggestion. Accept only a plain
+    // version shape, and never hand it to a shell (execFileSync, not execSync).
+    const rawVersion = typeof repoPkg?.version === 'string' ? repoPkg.version : null;
+    const pkgVersion = rawVersion && /^[0-9A-Za-z._+-]{1,64}$/.test(rawVersion) ? rawVersion : null;
     if (pkgVersion) {
       const expectedTag = `v${pkgVersion}`;
-      const tagOutput = execSync(`git tag -l ${expectedTag}`, { encoding: 'utf8' }).trim();
+      const tagOutput = execFileSync('git', ['tag', '-l', expectedTag], { encoding: 'utf8' }).trim();
       if (!tagOutput) {
         console.warn('');
         console.warn(`[OwnMind v${VERSION}]Version reminder: package.json version is ${pkgVersion}, but no matching git tag exists yet`);
