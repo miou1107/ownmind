@@ -50,6 +50,19 @@ const MATCHERS = ['startup', 'resume', 'clear', 'compact'];
 describe('session-hook-command.cjs — one place decides how the hook is invoked', () => {
   const { sessionStartCommand, sessionStartEntries } = require_(path.join(repoRoot, HELPER));
 
+  it('points at the copy under ~/.ownmind, the only one whose imports resolve', () => {
+    // Found on Adam's machine, 2026-08-06, after everything else was correct: four
+    // matchers, Node, the file present — and still zero loads. The hook imports
+    // `../shared/helpers.js`. From ~/.claude/hooks/ that resolves to ~/.claude/shared/,
+    // which does not exist, and the process dies with ERR_MODULE_NOT_FOUND before it can
+    // report anything. 采瑤's machine worked only because her AI had happened to write a
+    // path under ~/.ownmind/hooks/, where the imports do resolve.
+    const cmd = sessionStartCommand({ platform: 'win32', ownmindDir: 'C:/Users/Adam/.ownmind' });
+    assert.match(cmd, /\.ownmind\/hooks\/ownmind-session-start\.js/);
+    assert.doesNotMatch(cmd, /\.claude[\\/]hooks/,
+      'the copy under ~/.claude/hooks cannot resolve its own imports');
+  });
+
   it('Windows runs Node directly, never bash', () => {
     const cmd = sessionStartCommand({ platform: 'win32', hookDir: 'C:\\Users\\adam\\.claude\\hooks' });
     assert.match(cmd, /^node /, 'Windows must invoke node, not a shell');
@@ -161,15 +174,22 @@ describe('needsRewrite — the check that decides whether any Windows machine ge
     assert.equal(needsRewrite(hers, opts), true);
   });
 
-  it("leaves Adam's already-correct machine untouched", () => {
-    // Four matchers, the exact command install.ps1 v1.26.82 wrote. Nothing to do — and a
-    // rewrite here would churn his settings.json on every daily update.
-    const opts = { platform: 'win32', hookDir: 'C:/Users/Adam/.claude/hooks' };
+  it("repairs Adam's machine, whose command pointed at a copy that cannot run", () => {
+    // Everything looked right here: four matchers, Node, the file present. The path was
+    // ~/.claude/hooks, where the hook's own `../shared/helpers.js` import cannot resolve,
+    // so it died on startup and reported nothing. v1.26.84 called this healthy.
+    const opts = { platform: 'win32', ownmindDir: 'C:/Users/Adam/.ownmind' };
     const his = MATCHERS.map((matcher) => ({
       matcher,
       hooks: [{ type: 'command', command: 'node "C:/Users/Adam/.claude/hooks/ownmind-session-start.js"', timeout: 10 }],
     }));
-    assert.equal(needsRewrite(his, opts), false);
+    assert.equal(needsRewrite(his, opts), true);
+  });
+
+  it('leaves a machine already on the working path alone', () => {
+    const opts = { platform: 'win32', ownmindDir: 'C:/Users/Celia/.ownmind' };
+    const hers = sessionStartEntries(opts);
+    assert.equal(needsRewrite(hers, opts), false, 'a daily rewrite would churn settings.json');
   });
 
   it('leaves a command the user edited themselves alone', () => {

@@ -422,7 +422,7 @@ $sessionNeedsRepair = $false
 if ($sessionEntries.Count -gt 0) {
   $entriesJson = ($sessionEntries | ConvertTo-Json -Depth 6 -Compress)
   if ($entriesJson -notmatch '^\[') { $entriesJson = "[$entriesJson]" }
-  $sessionNeedsRepair = (& node -e "const h=require(process.argv[1]);process.stdout.write(String(h.needsRewrite(JSON.parse(process.argv[2]),{platform:process.platform,hookDir:process.argv[3]})))" "$HookCmdHelper" "$entriesJson" "$HookDir") -eq "true"
+  $sessionNeedsRepair = (& node -e "const h=require(process.argv[1]);process.stdout.write(String(h.needsRewrite(JSON.parse(process.argv[2]),{platform:process.platform,ownmindDir:process.argv[3]})))" "$HookCmdHelper" "$entriesJson" "$OwnmindDir") -eq "true"
   if ($sessionNeedsRepair) {
     $hookSettings.hooks.SessionStart = @($hookSettings.hooks.SessionStart | Where-Object {
       -not ($_.hooks | Where-Object { $_.command -match "ownmind-session-start" })
@@ -432,7 +432,7 @@ if ($sessionEntries.Count -gt 0) {
 }
 $sessionExists = ($sessionEntries.Count -gt 0) -and (-not $sessionNeedsRepair)
 if (-not $sessionExists) {
-  $sessionCmd = & node -e "const h=require(process.argv[1]);process.stdout.write(h.sessionStartCommand({platform:process.platform,hookDir:process.argv[2]}))" "$HookCmdHelper" "$HookDir"
+  $sessionCmd = & node -e "const h=require(process.argv[1]);process.stdout.write(h.sessionStartCommand({platform:process.platform,ownmindDir:process.argv[2]}))" "$HookCmdHelper" "$OwnmindDir"
   # 四個 matcher 全註冊，跟 update.ps1 一致。只註冊 startup 的話，resume / clear /
   # compact 進來時掛勾不會跑，AI 就在沒有鐵律的狀態下繼續工作。
   foreach ($matcher in @("startup", "resume", "clear", "compact")) {

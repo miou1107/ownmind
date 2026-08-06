@@ -386,7 +386,7 @@ node -e "
   // v1.26.80：原本只判斷「有沒有」，有就跳過。所有壞掉的機器都「有」，只是內容錯的，
   // 所以這支腳本永遠修不到任何一台，而使用者手動跑升級走的正是這裡。
   const hookCmd = require(nodePath.join(os.homedir(), '.ownmind/scripts/install-helpers/session-hook-command.cjs'));
-  const hookOpts = { platform: process.platform, hookDir: nodePath.join(os.homedir(), '.claude', 'hooks') };
+  const hookOpts = { platform: process.platform, ownmindDir: nodePath.join(os.homedir(), '.ownmind') };
   const existingSession = s.hooks.SessionStart.filter(hookCmd.isOwnmindSessionEntry);
   if (hookCmd.needsRewrite(existingSession, hookOpts)) {
     s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !hookCmd.isOwnmindSessionEntry(h));

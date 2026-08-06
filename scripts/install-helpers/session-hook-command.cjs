@@ -45,15 +45,28 @@ const UNIX_COMMAND = 'bash ~/.claude/hooks/ownmind-session-start.sh';
  * @param {string} [opts.hookDir]  absolute path of ~/.claude/hooks — required on Windows
  * @returns {string}
  */
-function sessionStartCommand({ platform, hookDir } = {}) {
+function sessionStartCommand({ platform, hookDir, ownmindDir } = {}) {
   if (platform !== 'win32') return UNIX_COMMAND;
 
-  // Forward slashes: Node accepts them on Windows, and they survive a round trip through
-  // JSON without the double-escaping that backslashes invite.
-  const dir = String(hookDir || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  // v1.26.85 — run the copy under ~/.ownmind/hooks, never the one under ~/.claude/hooks.
+  //
+  // The hook is an ES module that imports `../shared/helpers.js`. From ~/.claude/hooks/
+  // that resolves to ~/.claude/shared/, which does not exist, so Node exits with
+  // ERR_MODULE_NOT_FOUND before a single line runs — silently, since nothing is watching a
+  // hook's exit code. Found on Adam's machine after everything else had been made correct:
+  // four matchers, Node, the file present, and still not one load.
+  //
+  // 采瑤's machine worked throughout only because her AI had happened to write a path under
+  // ~/.ownmind/hooks/, where the imports resolve. That accident was the control group.
+  const base = ownmindDir
+    ? `${String(ownmindDir).replace(/\\/g, '/').replace(/\/+$/, '')}/hooks`
+    // Derive it when only the Claude hooks dir is known: <home>/.claude/hooks →
+    // <home>/.ownmind/hooks. Callers should pass ownmindDir; this keeps older ones correct.
+    : String(hookDir || '').replace(/\\/g, '/').replace(/\/+$/, '')
+      .replace(/\/\.claude\/hooks$/, '/.ownmind/hooks');
   // Quoted because a Windows home directory routinely contains a space
   // ("C:\Users\Jane Doe\"), and unquoted it would arrive as two arguments.
-  return `node "${dir}/ownmind-session-start.js"`;
+  return `node "${base}/ownmind-session-start.js"`;
 }
 
 /**
