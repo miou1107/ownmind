@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.75 修改（收集器可靠性連續十一版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.76 修改（收集器可靠性連續十二版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -49,7 +49,9 @@ shared/scanners/vscode-telemetry.js         — v1.26.66 多候選；v1.26.70 �
 shared/scanners/opencode.js                 — v1.26.71 自己的資料庫也是 WAL，同一條退路
 shared/helpers.js                           — v1.26.67 「跑在哪個工具裡」收成一份規則
 mcp/index.js, mcp/ownmind-log.js            — v1.26.67 四個呼叫點改用共用規則
-src/routes/usage/events.js                  — v1.26.69 收原因碼；v1.26.73 三欄鍵值 + 每人每工具 20 台上限
+src/routes/usage/events.js                  — v1.26.69 收原因碼；v1.26.73 三欄鍵值 + 每人每工具 20 台上限；
+                                              v1.26.76 心跳那句 SELECT 的每個參數都要標型別（不標的話
+                                              同一個參數會被認出兩種型別，Postgres 整句拒收）
 src/routes/usage/admin-clients.js           — v1.26.69 回原因；v1.26.73 回 os
 src/routes/usage/index.js                   — v1.26.72 掛上 /self-check
 src/routes/usage/team-overview.js           — v1.26.74 最近活動改讀三個來源取最新；v1.26.75 額外兩個
