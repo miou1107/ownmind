@@ -580,6 +580,7 @@ client/src/pages/System/NewBroadcastModal.jsx                       — 新增�
 client/src/pages/System/RevokeConfirmDialog.jsx                     — 撤銷確認 dialog。紅色按鈕、遠離取消
 client/src/pages/System/observed-users.js                           — 純函式：observedUsers(clients, stats) + rollupCounts(rows)。四狀態分類 + banner 統計 + 靜默點名
 client/src/pages/System/machine-groups.js                           — 純函式：groupClientsByMachine(clients) + osLabel(os)。v1.26.73 把收集器依電腦分組（狀態取最糟的工具、心跳取最新、壞的排前面）
+tests/team-overview-last-active.test.js                              — v1.26.74 最近活動改讀三個來源取最新（工作紀錄 / MCP 活動 / token 用量），兩個頁面口徑一致
 client/src/pages/System/broadcast-row-vm.js                         — 純函式：broadcastRowVm(row, now)。isActive / isRevocable / snoozeLabel / typeColor / severityColor / effectiveRange
 client/src/pages/System/broadcast-payload-validate.js               — 純函式：validateBroadcastFormClient(form)。鏡射伺服器 validateBroadcastPayload、送前先擋
 tests/observed-users.test.js                                        — 15 條斷言 flowing / silent / not_installed / offline 分類 + rollup + null stats 降級語意

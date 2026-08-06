@@ -575,7 +575,17 @@ router.get('/stats/all', adminAuth, async (req, res) => {
         (SELECT COUNT(*) FROM activity_logs WHERE user_id = u.id AND ts >= $1) as activity_count,
         (SELECT COUNT(*) FROM activity_logs WHERE user_id = u.id AND event = 'iron_rule_compliance' AND details->>'action' = 'comply' AND ts >= $1) as comply_count,
         (SELECT COUNT(*) FROM activity_logs WHERE user_id = u.id AND event = 'iron_rule_compliance' AND ts >= $1) as compliance_total,
-        (SELECT MAX(ts) FROM activity_logs WHERE user_id = u.id) as last_active
+        -- v1.26.74 — the same correction as team-overview.js, for the same reason. This
+        -- was MAX(activity_logs.ts) alone, which only moves when the AI calls an ownmind
+        -- tool; a long coding session may never call one, so somebody working right now
+        -- read as last active hours ago. Two pages answering the same question with
+        -- different numbers is its own defect, so both use the newest of the three
+        -- sources. GREATEST ignores NULLs and is NULL only when every source is.
+        GREATEST(
+          (SELECT MAX(ts) FROM activity_logs WHERE user_id = u.id),
+          (SELECT MAX(ts) FROM token_events WHERE user_id = u.id),
+          (SELECT MAX(created_at) FROM session_logs WHERE user_id = u.id)
+        ) as last_active
       FROM users u ORDER BY last_active DESC NULLS LAST
     `, [fromDate]);
 
