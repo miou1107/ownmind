@@ -98,18 +98,29 @@ async function main() {
   }
 
   try {
-    const { apiKey, apiUrl } = readCredentials();
+    const { apiKey, apiUrl, source, background_safe: backgroundSafe } = readCredentials();
     if (!apiKey || !apiUrl) {
       // v1.26.65 — this used to `return`, so the process exited 0 and every layer
       // above reported success: run-hidden.vbs, Task Scheduler's LastTaskResult,
       // and the diagnostic that tells people to read it.
       //
       // The scanner cannot inherit an environment the way the MCP does; it has to
-      // find ~/.claude/settings.json itself. So this branch is exactly where the
-      // two components diverge, and it is the one place a broken scanner still
-      // gets to say so. Throwing makes the direct-run handler log and exit 1.
-      throw new Error('credentials not found in ~/.claude/settings.json '
-        + '(mcpServers.ownmind.env); the usage scanner cannot report anything');
+      // find the credentials itself. So this branch is exactly where the two
+      // components diverge, and it is the one place a broken scanner still gets to
+      // say so. Throwing makes the direct-run handler log and exit 1.
+      //
+      // v1.26.82 — the message used to name ~/.claude/settings.json alone, which sent
+      // whoever read it to look in the one place the key increasingly is not.
+      throw new Error('credentials not found in ~/.claude/settings.json, '
+        + '~/.claude.json (mcpServers.ownmind.env) or the OWNMIND_API_KEY / '
+        + 'OWNMIND_API_URL environment variables; the usage scanner cannot report anything');
+    }
+    // v1.26.82 — the key exists but only in an environment variable. The MCP is handed
+    // that environment by Claude Code; this process is started by Task Scheduler / launchd
+    // and is not. It happens to have inherited one here, and will not next time.
+    if (backgroundSafe === false) {
+      await log(`[scanner] WARNING: credentials came from ${source?.key}, which a scheduled `
+        + 'run does not inherit. Re-run the installer so they are written to a file.');
     }
 
     const scannerVersion = getClientVersion() || 'unknown';

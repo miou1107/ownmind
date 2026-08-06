@@ -62,11 +62,16 @@ function readJsonSafe(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+// v1.26.82 — this used to read ~/.claude/settings.json and nothing else. On Adam's machine
+// the key is not there: Claude Code keeps MCP config in ~/.claude.json now, and his key
+// arrives as an environment variable. The MCP is handed that environment, so it kept
+// working while this check reported "OWNMIND_API_KEY is empty" and the scanner and the
+// memory hook quietly stopped. Same wrong lookup, four components.
+const { resolveCredentials } = require('./resolve-credentials.cjs');
+
 function readCredentials() {
-  const settingsPath = path.join(HOME, '.claude', 'settings.json');
-  const s = readJsonSafe(settingsPath);
-  const env = s?.mcpServers?.ownmind?.env || {};
-  return { apiKey: env.OWNMIND_API_KEY || '', apiUrl: env.OWNMIND_API_URL || '' };
+  const r = resolveCredentials();
+  return { apiKey: r.apiKey, apiUrl: r.apiUrl, source: r.source, background_safe: r.background_safe, checked: r.checked };
 }
 
 async function fetchWithTimeout(url, opts = {}, timeoutMs = TIMEOUT_MS) {

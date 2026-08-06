@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { createRequire } from 'module';
 
 // ============================================================
 // Constants
@@ -90,10 +91,27 @@ export function resolveClientTool(env = process.env) {
 }
 
 /**
- * Read OwnMind credentials from Claude Code's settings.json.
- * @param {string} [settingsPath] — defaults to ~/.claude/settings.json
+ * Read OwnMind credentials.
+ *
+ * v1.26.82 — this used to read `~/.claude/settings.json` and nothing else. On Adam's
+ * machine the key is not there: Claude Code keeps MCP config in `~/.claude.json` now, and
+ * his key arrives as an `OWNMIND_API_KEY` environment variable. The MCP is handed that
+ * environment and kept working, while the usage scanner and both SessionStart hooks — all
+ * of which call this function and give up when it returns empty — went silent for weeks
+ * and nothing said so.
+ *
+ * Delegates to `resolve-credentials.cjs` so the installer's self-check and these hooks
+ * cannot drift apart on the answer. Explicitly passing `settingsPath` keeps the old
+ * single-file behaviour, which is what the existing tests pin.
+ *
+ * @param {string} [settingsPath] — when given, only this file is read (legacy behaviour)
  */
-export function readCredentials(settingsPath = DEFAULT_SETTINGS_PATH) {
+export function readCredentials(settingsPath) {
+  if (settingsPath === undefined) {
+    const { resolveCredentials } = createRequire(import.meta.url)('../scripts/install-helpers/resolve-credentials.cjs');
+    const r = resolveCredentials();
+    return { apiKey: r.apiKey, apiUrl: r.apiUrl, source: r.source, background_safe: r.background_safe };
+  }
   try {
     // v1.17.12 — stripBom guards against BOM-prefixed JSON written by
     // Windows PS 5.1 `Set-Content -Encoding UTF8`. Without stripBom,
