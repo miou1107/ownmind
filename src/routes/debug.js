@@ -33,6 +33,9 @@ export function createDebugRouter({ query, auth, onReportStored }) {
   const router = Router();
   // Injected so the wiring is testable without a database. In production this is
   // the real evaluator, reading the same pool the route writes through.
+  // `query` alone no longer makes the evaluator database-free: when it has new
+  // failures to announce it opens a transaction on the module-level pool. A route
+  // test that wants no database at all has to pass `onReportStored`.
   const evaluateAlerts = onReportStored || (() => runInstallCheckAlerts({ query }));
 
   router.post('/install-check', auth, async (req, res) => {

@@ -14,12 +14,17 @@
  *   1. claim each new failure (conditional upsert, RETURNING) — only the rows
  *      this run actually claimed may be announced, so two overlapping sweeps
  *      cannot both announce the same failure;
- *   2. write the broadcast from exactly those claimed rows;
- *   3. if the broadcast write fails, release the claims and rethrow, so nothing
- *      ends up marked announced without a broadcast to show for it.
+ *   2. write the broadcast from exactly those claimed rows.
+ *
+ * Both steps run inside one transaction, so a claim without its broadcast is not
+ * a state the database can be left in. Undoing the claims from the client (the
+ * previous design) could not cover the case where a claim commits server-side
+ * and the response is then lost: the client sees a failure, holds no record of
+ * the claim, and the row stays marked announced with nothing to show for it.
+ * ROLLBACK is decided by the server, which is the only place that knows.
  */
 
-import { query as defaultQuery } from '../utils/db.js';
+import { query as defaultQuery, withTransaction as defaultWithTransaction } from '../utils/db.js';
 import logger from '../utils/logger.js';
 import { evaluateFailures } from '../lib/install-check-alerts.js';
 import { renderAlertMessage } from '../lib/install-check-alert-message.js';
@@ -82,16 +87,6 @@ const CLAIM_SQL = `
   RETURNING user_id, machine, check_name
 `;
 
-// Undo a claim whose broadcast never got written. Clearing announced_at (rather
-// than deleting the row) puts the key back in the state the evaluator reads as
-// "never announced", so the next sweep tries again, while first_seen_at keeps
-// recording when the problem actually started.
-const RELEASE_CLAIM_SQL = `
-  UPDATE install_check_alert_state
-  SET announced_at = NULL
-  WHERE user_id = $1 AND machine = $2 AND check_name = $3
-`;
-
 // Oldest super_admin, matching src/jobs/nightly-upgrade-reminder.js. Not "any
 // super_admin": production has two, and only id 1 is the person who acts on this.
 const SUPER_ADMIN_SQL = `SELECT id FROM users WHERE role = 'super_admin' ORDER BY id ASC LIMIT 1`;
@@ -109,7 +104,25 @@ const BROADCAST_SQL = `
   RETURNING id
 `;
 
-export async function runInstallCheckAlerts({ query = defaultQuery } = {}) {
+/**
+ * Evaluate the stored self-check reports and announce what is newly failing.
+ *
+ * @param {object} [deps]
+ * @param {(sql: string, params?: Array) => Promise<import('pg').QueryResult>} [deps.query]
+ *   Runs one statement outside any transaction. Used for the reads and for the
+ *   resolve / detail-change updates, which are independent of the claim pair.
+ * @param {(fn: (client: import('pg').PoolClient) => Promise<any>) => Promise<any>} [deps.withTransaction]
+ *   Runs `fn` against a dedicated client wrapped in BEGIN / COMMIT, rolling back
+ *   on any throw. Injectable so the claim-and-announce pair can be tested with a
+ *   fake client that can simulate a rollback. Callers are not expected to pass
+ *   it; the default is the real pool transaction. Named after the dependency it
+ *   stands for, the same way `src/routes/setup.js` injects it.
+ * @returns {Promise<{announced: number, omitted: number, broadcast_id: number|null}>}
+ */
+export async function runInstallCheckAlerts({
+  query = defaultQuery,
+  withTransaction = defaultWithTransaction,
+} = {}) {
   const [reportsResult, stateResult] = await Promise.all([
     query(LATEST_REPORTS_SQL),
     query(KNOWN_STATE_SQL),
@@ -120,6 +133,12 @@ export async function runInstallCheckAlerts({ query = defaultQuery } = {}) {
     knownState: stateResult.rows,
   });
 
+  // Deliberately outside the transaction below. These two updates are not part
+  // of the claim-and-announce pair: they touch keys nobody is about to announce,
+  // each one stands alone, and they must still run on the far more common path
+  // where there is nothing new to announce and no transaction is opened at all.
+  // Folding them in would only make an unrelated failure discard them and would
+  // hold a pool client open for writes that never needed one.
   for (const row of resolved) {
     await query(RESOLVE_SQL, [row.user_id, row.machine, row.check_name]);
   }
@@ -131,92 +150,92 @@ export async function runInstallCheckAlerts({ query = defaultQuery } = {}) {
     return { announced: 0, omitted: 0, broadcast_id: null };
   }
 
-  // Read the recipient before claiming anything. If this lookup throws, no claim
-  // exists yet and the next sweep starts from a clean state.
+  // Read the recipient before opening the transaction. If this lookup throws, no
+  // claim exists yet and the next sweep starts from a clean state; keeping it
+  // out also keeps the transaction down to the writes that must agree.
   const admin = await query(SUPER_ADMIN_SQL);
 
-  // Claim first, then broadcast, and release on failure. Claiming first is what
-  // stops two overlapping sweeps announcing the same failure twice; releasing on
-  // failure is what stops a broadcast that never got written from silencing
-  // those failures forever.
+  // Claim first, then broadcast, both on the same connection inside one
+  // transaction. Claiming first is what stops two overlapping sweeps announcing
+  // the same failure twice: the second sweep's conditional upsert waits for the
+  // first to commit and then matches nothing. The transaction is what stops a
+  // claim from outliving the broadcast it was made for — including the case
+  // where the failure is a lost response rather than a rejected statement,
+  // which no client-side undo can see.
   //
-  // Every write from the first claim to the broadcast insert lives in one try.
-  // A claim that commits and is then followed by a failed claim is the same
-  // defect one query earlier: nothing was announced, but that key now reads as
-  // announced and no later sweep will ever pick it up again.
-  const claimed = [];
-  let result;
+  // The claims are taken in a fixed order. Each one now holds its row lock until
+  // the transaction ends, instead of for a single auto-committed statement, so
+  // two sweeps that lock the same pair of keys in opposite orders would deadlock
+  // and Postgres would kill one of them. The order of `newFailures` follows the
+  // `checks` array the client uploaded, which is to say it is decided outside
+  // this server; sorting by the key itself takes that decision back.
+  const claimOrder = [...newFailures].sort((a, b) => (
+    a.user_id - b.user_id
+    || String(a.machine).localeCompare(String(b.machine))
+    || String(a.check_name).localeCompare(String(b.check_name))
+  ));
 
-  try {
-    for (const failure of newFailures) {
-      const claim = await query(CLAIM_SQL, [
+  const { result, log } = await withTransaction(async (client) => {
+    const claimed = [];
+
+    for (const failure of claimOrder) {
+      const claim = await client.query(CLAIM_SQL, [
         failure.user_id, failure.machine, failure.check_name, failure.detail,
       ]);
       if (claim.rowCount > 0) claimed.push(failure);
     }
 
     if (claimed.length === 0) {
-      logger.info('install-check-alerts: every new failure was claimed by another run', {
-        count: newFailures.length,
-      });
-      return { announced: 0, omitted: 0, broadcast_id: null };
+      return {
+        result: { announced: 0, omitted: 0, broadcast_id: null },
+        log: {
+          level: 'info',
+          message: 'install-check-alerts: every new failure was claimed by another run',
+          meta: { count: newFailures.length },
+        },
+      };
     }
 
+    // The one place a claim is allowed to outlive its broadcast, deliberately.
+    // Returning normally here COMMITs the claims with nothing announced, because
+    // having no recipient is not a failure: rolling them back would leave every
+    // later sweep re-evaluating the same failures forever.
     if (admin.rowCount === 0) {
-      logger.warn('install-check-alerts: no super_admin, state recorded but nothing announced', {
-        count: claimed.length,
-      });
-      return { announced: claimed.length, omitted: 0, broadcast_id: null };
+      return {
+        result: { announced: claimed.length, omitted: 0, broadcast_id: null },
+        log: {
+          level: 'warn',
+          message: 'install-check-alerts: no super_admin, state recorded but nothing announced',
+          meta: { count: claimed.length },
+        },
+      };
     }
 
     const adminId = admin.rows[0].id;
     const { title, body, omitted } = renderAlertMessage(claimed);
-    const inserted = await query(BROADCAST_SQL, [title, body, [adminId], adminId]);
+    const inserted = await client.query(BROADCAST_SQL, [title, body, [adminId], adminId]);
 
-    result = { announced: claimed.length, omitted, broadcast_id: inserted.rows[0].id };
-  } catch (err) {
-    // `claimed` holds exactly the keys this run took, in the order it took them.
-    // A failure that was never claimed keeps its announced_at: it may belong to
-    // an earlier announcement that really did happen, and clearing it would
-    // announce the same problem twice.
-    await releaseClaims(query, claimed);
-    throw err;
-  }
-
-  logger.info('install-check-alerts announced', {
-    count: result.announced,
-    omitted: result.omitted,
-    broadcast_id: result.broadcast_id,
+    return {
+      result: { announced: claimed.length, omitted, broadcast_id: inserted.rows[0].id },
+      log: {
+        level: 'info',
+        message: 'install-check-alerts announced',
+        meta: { count: claimed.length, omitted, broadcast_id: inserted.rows[0].id },
+      },
+    };
   });
 
-  return result;
-}
+  // Logging happens after the commit, not inside it. A line written from inside
+  // the transaction survives a rollback that undid everything it describes,
+  // which is exactly the kind of record that sends the next reader hunting for
+  // a broadcast that does not exist.
+  // Literal call sites, not logger[log.level]: a level that is not a method
+  // would throw here, after the commit, and turn a run that fully succeeded into
+  // one the caller records as failed.
+  if (log.level === 'warn') logger.warn(log.message, log.meta);
+  else logger.info(log.message, log.meta);
 
-/**
- * Put claimed keys back so the next sweep re-announces them.
- *
- * This function never throws. The caller runs it from a catch block and is
- * about to rethrow the error that actually matters, so a failure in here must
- * neither replace that error nor abandon the claims still waiting to be
- * released — one unreleased claim is one failure nobody ever hears about.
- */
-async function releaseClaims(query, claimed) {
-  for (const failure of claimed) {
-    try {
-      await query(RELEASE_CLAIM_SQL, [failure.user_id, failure.machine, failure.check_name]);
-    } catch (releaseErr) {
-      try {
-        logger.error('install-check-alerts: could not release a claim', {
-          user_id: failure.user_id,
-          machine: failure.machine,
-          check_name: failure.check_name,
-          error: releaseErr.message,
-        });
-      } catch {
-        // A logger that throws must not cost the remaining releases.
-      }
-    }
-  }
+  return result;
 }
 
 export default runInstallCheckAlerts;
