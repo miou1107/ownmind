@@ -28,6 +28,16 @@ client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClient
 scripts/install-helpers/ensure-scanner-schedule.sh  — v1.26.79 排程死了就接回去（macOS launchd /
                                               Linux systemd）。活著就完全不碰；修完回頭問系統，
                                               不信註冊指令自己的 exit code；修不好往伺服器回報
+scripts/install-helpers/self-check.cjs      — 加第十項 memory_load：記憶到底有沒有真的載入。
+                                              結論問伺服器（本機對自己的健康報告最不能信），
+                                              本機負責附證據：設定裡那行指令原文、指令指向的
+                                              檔案在不在、bash 跟 node 各解析到哪（bash 在
+                                              System32 就是 WSL，特別標出來）
+src/routes/usage/self-check.js              — 多回 memory_load：最近一次自動載入時間、七天內
+                                              次數。hook 自動載入跟 AI 自己呼叫分開算，後者
+                                              不算功能會動
+tests/self-check-memory-load.test.js        — 新增。伺服器端測 SQL 形狀與空值語意，用戶端測
+                                              三種降級路徑，最後一項跑真的 settings.json
 scripts/install-helpers/session-hook-command.cjs    — v1.26.80 SessionStart 掛勾的指令怎麼下，
                                               四支安裝／更新腳本共用這一份。Windows 走 node
                                               絕對路徑（bash 在那邊會被 WSL 接走）；判斷要不要
