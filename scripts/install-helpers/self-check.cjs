@@ -784,7 +784,25 @@ async function collectEnv() {
   return env;
 }
 
-async function runAllChecks() {
+/**
+ * v1.26.81 — which checks run, without running them.
+ *
+ * Exists so the quick/full split can be asserted directly. Deriving it from a real run
+ * would need credentials, a reachable server and a scan, and a test that needs all three
+ * is a test that gets deleted.
+ */
+const QUICK_SKIP = ['usage_roundtrip'];
+
+async function checkNamesFor({ quick = false } = {}) {
+  const all = [
+    'mcp_files', 'package_version', 'mcp_node_modules', 'server_health',
+    'api_key_format', 'api_credentials', 'git_hooks', 'scheduler', 'memory_load',
+    'usage_roundtrip',
+  ];
+  return quick ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
+}
+
+async function runAllChecks({ quick = false } = {}) {
   const { apiKey, apiUrl } = readCredentials();
   const checks = [];
   checks.push(await safeCheck('mcp_files', checkMcpFiles));
@@ -802,8 +820,14 @@ async function runAllChecks() {
   checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey })));
   // v1.26.72 — last, because it runs a real scan and is the slowest. Also the only one
   // that asks whether the data is arriving rather than whether things are installed.
-  checks.push(await safeCheck('usage_roundtrip',
-    () => checkUsageRoundtrip({ apiUrl, apiKey, notify: true })));
+  //
+  // v1.26.81 — skipped on the daily auto-update run. Scanning every local database once
+  // during an upgrade the user is watching is fine; doing it every day in the background
+  // is not, and the scanner has its own schedule for that anyway.
+  if (!quick) {
+    checks.push(await safeCheck('usage_roundtrip',
+      () => checkUsageRoundtrip({ apiUrl, apiKey, notify: true })));
+  }
   return { checks, apiKey, apiUrl };
 }
 
@@ -1092,10 +1116,12 @@ async function uploadReport(report, apiUrl, apiKey, opts = {}) {
 }
 
 function parseArgs(argv) {
-  const args = { trigger: 'manual' };
+  const args = { trigger: 'manual', quick: false };
   for (const a of argv.slice(2)) {
     const m = a.match(/^--trigger=(.+)$/);
     if (m) args.trigger = m[1];
+    // v1.26.81 — the daily auto-update run skips the full scan.
+    if (a === '--quick') args.quick = true;
   }
   return args;
 }
@@ -1106,7 +1132,7 @@ async function main() {
   const clientVersion = pkg?.version || 'unknown';
   const machine = os.hostname();
 
-  const { checks, apiKey, apiUrl } = await runAllChecks();
+  const { checks, apiKey, apiUrl } = await runAllChecks({ quick: args.quick });
   // v1.17.66 — IR-038 observability pipeline: collect the current execution environment.
   const env = await collectEnv();
   const report = buildReport({ checks, trigger: args.trigger, clientVersion, machine, env });
@@ -1153,7 +1179,7 @@ module.exports = {
   checkUsageRoundtrip, redactKey,
   // v1.26.81 — did memories actually load? Verdict from the server, evidence from here.
   checkMemoryLoad, collectMemoryLoadEvidence,
-  buildReport, summarize, sanitizePath, parseArgs,
+  buildReport, summarize, sanitizePath, parseArgs, checkNamesFor,
   // v1.17.66 — spool mechanism (IR-038 observability pipeline).
   uploadReport, appendSpool, retrySpool,
   // v1.17.79 — error spool drain (broad client-side failure pipeline).

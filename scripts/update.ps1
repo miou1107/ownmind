@@ -221,6 +221,21 @@ if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }
 # whole run would make mcp/index.js log update_failed and retry. The failure is not
 # swallowed either: ensure-scanner-schedule.ps1 sends a Report-Error, so it shows up on
 # the server rather than only in a console window that nobody sees.
+# --- 2d. 讓機器自己回報健康狀況（v1.26.81）---
+# 完整的自我檢查以前只在安裝跟手動升級時跑。Adam 上一次完整回報是 2026-05-29，之後兩個月
+# 每天自動更新、什麼都沒說，而他的掃描器早就死了。而且他五月那份回報裡就已經有答案
+# （bash_resolution.selected = WSL_RELAY），只是沒有人看。
+#
+# --quick 拿掉唯一會掃描所有本機資料庫的那一項。背景執行、不擋更新。
+$SelfCheck = Join-Path $OwnMindDir "scripts\install-helpers\self-check.cjs"
+if (Test-Path $SelfCheck) {
+  try {
+    Start-Process -FilePath "node" `
+      -ArgumentList @($SelfCheck, "--trigger=auto_update", "--quick") `
+      -WindowStyle Hidden -ErrorAction SilentlyContinue | Out-Null
+  } catch { }
+}
+
 $EnsureSchedule = Join-Path $OwnMindDir "scripts\install-helpers\ensure-scanner-schedule.ps1"
 if (Test-Path $EnsureSchedule) {
   $scheduleResult = & powershell -NoProfile -ExecutionPolicy Bypass -File $EnsureSchedule 2>&1
