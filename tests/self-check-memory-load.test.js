@@ -225,3 +225,49 @@ describe('the installer runs the new check', () => {
       'a check nothing calls is a check nobody runs');
   });
 });
+
+// The self-check has only ever run during install and manual upgrade. Adam's last full
+// report is dated 2026-05-29; his machine has auto-updated daily ever since and told us
+// nothing. His scheduled scanner died in July and the diagnosis sat on his disk.
+//
+// Worse, the report he *did* send in May already contained the answer to the question that
+// took this week to work out: `env.bash_resolution.selected === 'WSL_RELAY'`. Four of six
+// Windows machines say the same thing. The data was never missing. Nothing ran often
+// enough, and nothing looked.
+describe('the auto-update path runs the self-check too', () => {
+  const { parseArgs } = selfCheck;
+
+  it('accepts --quick', () => {
+    assert.equal(parseArgs(['node', 'x', '--quick']).quick, true);
+    assert.equal(parseArgs(['node', 'x']).quick, false);
+  });
+
+  it('quick mode keeps the checks that catch this class of failure', async () => {
+    const names = await selfCheck.checkNamesFor({ quick: true });
+    for (const required of ['scheduler', 'memory_load', 'package_version']) {
+      assert.ok(names.includes(required), `quick mode dropped ${required}`);
+    }
+  });
+
+  it('quick mode drops the one that runs a full scan', async () => {
+    // usage_roundtrip scans every local database. Acceptable once during an upgrade the
+    // user is watching; not acceptable every day in the background.
+    const names = await selfCheck.checkNamesFor({ quick: true });
+    assert.ok(!names.includes('usage_roundtrip'));
+    const full = await selfCheck.checkNamesFor({ quick: false });
+    assert.ok(full.includes('usage_roundtrip'), 'the full run must still do it');
+  });
+
+  // Two assertions rather than one pattern: the path goes through a variable in both
+  // scripts, so "the filename and the trigger appear on the same line" is not true of
+  // correct code. Both facts still have to hold.
+  for (const script of ['scripts/update.sh', 'scripts/update.ps1']) {
+    it(`${script} runs it on every update`, () => {
+      const src = fs.readFileSync(path.join(repoRoot, script), 'utf8');
+      assert.match(src, /self-check\.cjs/,
+        'a machine that only reports during a manual upgrade reports once a quarter');
+      assert.match(src, /--trigger=auto_update/, 'the report must be labelled with why it ran');
+      assert.match(src, /--quick/, 'the daily run must not scan every local database');
+    });
+  }
+});

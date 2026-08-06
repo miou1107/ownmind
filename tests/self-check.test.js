@@ -13,8 +13,12 @@ const selfCheckPath = path.join(repoRoot, 'scripts/install-helpers/self-check.cj
 const selfCheck = require(selfCheckPath);
 
 describe('parseArgs', () => {
-  it('default trigger is manual', () => {
-    assert.deepEqual(selfCheck.parseArgs(['node', 'self-check.cjs']), { trigger: 'manual' });
+  it('default trigger is manual, and the run is the full one', () => {
+    // v1.26.81 added `quick`. Asserting the whole object pinned the shape rather than the
+    // behaviour, so adding a flag broke a test that has no opinion about flags. Both
+    // defaults are still asserted, individually.
+    assert.deepEqual(selfCheck.parseArgs(['node', 'self-check.cjs']),
+      { trigger: 'manual', quick: false });
   });
 
   it('reads --trigger=post_install', () => {
@@ -32,10 +36,13 @@ describe('parseArgs', () => {
   });
 
   it('ignores unknown arguments', () => {
-    assert.deepEqual(
-      selfCheck.parseArgs(['node', 'x', '--unknown=foo', '--trigger=manual']),
-      { trigger: 'manual' }
-    );
+    const args = selfCheck.parseArgs(['node', 'x', '--unknown=foo', '--trigger=manual']);
+    assert.equal(args.trigger, 'manual', 'an unknown argument must not become the trigger');
+    assert.equal(args.quick, false, 'an unknown argument must not turn on quick mode');
+  });
+
+  it('--quick opts into the daily short run', () => {
+    assert.equal(selfCheck.parseArgs(['node', 'x', '--quick']).quick, true);
   });
 });
 

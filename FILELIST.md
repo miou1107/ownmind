@@ -28,7 +28,9 @@ client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClient
 scripts/install-helpers/ensure-scanner-schedule.sh  — v1.26.79 排程死了就接回去（macOS launchd /
                                               Linux systemd）。活著就完全不碰；修完回頭問系統，
                                               不信註冊指令自己的 exit code；修不好往伺服器回報
-scripts/install-helpers/self-check.cjs      — 加第十項 memory_load：記憶到底有沒有真的載入。
+scripts/install-helpers/self-check.cjs      — 加 --quick 模式（自動更新每天跑，跳過唯一會掃描
+                                              所有本機資料庫的那一項）；加第十項 memory_load：
+                                              記憶到底有沒有真的載入。
                                               結論問伺服器（本機對自己的健康報告最不能信），
                                               本機負責附證據：設定裡那行指令原文、指令指向的
                                               檔案在不在、bash 跟 node 各解析到哪（bash 在
