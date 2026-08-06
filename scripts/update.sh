@@ -213,8 +213,6 @@ fi
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 ERR_LOG="$HOME/.ownmind/logs/update-errors.log"
 mkdir -p "$(dirname "$ERR_LOG")"
-# User opt-out sentinel: touch ~/.ownmind/.no-session-hook to disable auto-install of SessionStart.
-NO_SESSION_HOOK_FLAG="$HOME/.ownmind/.no-session-hook"
 if [ -f "$CLAUDE_SETTINGS" ]; then
   node -e "
     const fs = require('fs');
@@ -222,61 +220,14 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     const os = require('os');
     const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
     const s = loadOrSkip('$CLAUDE_SETTINGS', {});
-    const noSessionHook = fs.existsSync('$NO_SESSION_HOOK_FLAG');
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
 
-    // SessionStart hook — auto-load memory (startup/resume/clear/compact all need loading).
-    // Respect user opt-out: if ~/.ownmind/.no-session-hook exists, skip this whole block.
-    // v1.26.80: the command used to be hardcoded to bash here. On Windows that entry
-    // replaced the Node one install.ps1 had correctly written, every single day, and the
-    // hook then never fired at all. The choice lives in one place now.
-    //
-    // Wrapped: on the update that *delivers* this helper, or after a half-finished git
-    // pull, an uncaught MODULE_NOT_FOUND would kill this whole node script and skip every
-    // hook below — PreToolUse, Stop, WorktreeCreate. Rather than guess a command, skip the
-    // SessionStart block and leave settings.json untouched; the next update has the file.
-    let hookCmd = null;
-    try {
-      hookCmd = require('$OWNMIND_DIR/scripts/install-helpers/session-hook-command.cjs');
-    } catch { hookCmd = null; }
+    // v1.26.86 — SessionStart is handled by ensure-session-hook.cjs in section 3.4 below
+    // (single implementation with behavioral tests; it also honors the
+    // ~/.ownmind/.no-session-hook opt-out). This script used to make that decision inline,
+    // one divergent copy per installer, and the daily one always won.
 
-    if (!noSessionHook && hookCmd) {
-      if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-      const newEntries = hookCmd.sessionStartEntries({
-        platform: process.platform,
-        ownmindDir: path.join(os.homedir(), '.ownmind'),
-      });
-      const isOwnmindEntry = hookCmd.isOwnmindSessionEntry;
-      const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
-      // Matchers complete is not the same question as command correct. Every Windows
-      // machine today has all four matchers, all running bash; judging by matchers alone
-      // would call them healthy and repair nobody.
-      const mustRewrite = hookCmd.needsRewrite(existing, {
-        platform: process.platform,
-        ownmindDir: path.join(os.homedir(), '.ownmind'),
-      });
-      // Two cases write entries:
-      // 1. No ownmind SessionStart entry at all (fresh install).
-      // 2. An entry exists but matchers are incomplete (legacy migration).
-      // If the user already has all 4 matchers, don't touch it; if they manually removed them
-      // and left it blank, treat that as opt-out.
-      if (mustRewrite) {
-        // Migration: drop old entries, rebuild 4 complete matchers.
-        s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !isOwnmindEntry(h));
-        s.hooks.SessionStart.push(...newEntries);
-        changed = true;
-        console.log('   ✅ SessionStart hook upgraded to 4 complete matchers (startup/resume/clear/compact)');
-      } else if (existing.length === 0 && s.hooks.SessionStart.length === 0) {
-        // Fresh install: no SessionStart in settings — add the 4 matchers.
-        s.hooks.SessionStart.push(...newEntries);
-        changed = true;
-        console.log('   ✅ SessionStart hook installed (4 matchers)');
-      }
-      // Other cases (already complete, or user removed but kept other SessionStart entries): leave alone.
-    }
-
-    // PreToolUse hook — iron rule check.
     if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
     const preExists = s.hooks.PreToolUse.some(h =>
       h.hooks?.some(hh => (hh.command || '').includes('ownmind-iron-rule-check'))
@@ -310,6 +261,16 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       fs.renameSync(tmp, '$CLAUDE_SETTINGS');
     }
   " 2>>"$ERR_LOG"
+fi
+
+# --- 3.4 SessionStart hook (v1.26.86, delegated to the shared implementation) ---
+ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
+if [ -f "$ENSURE_HOOK" ]; then
+  if hook_result=$(node "$ENSURE_HOOK" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "   SessionStart hook: $hook_result"
+  else
+    echo "   [FAIL] SessionStart hook: $hook_result"
+  fi
 fi
 
 # --- 3.5 v1.18.3 fix: existing v1.17.96 users were missing the reply-lint Stop hook on upgrade ---

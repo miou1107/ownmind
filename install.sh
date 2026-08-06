@@ -379,27 +379,9 @@ node -e "
   const s = JSON.parse(fs.readFileSync(path, 'utf8'));
   if (!s.hooks) s.hooks = {};
 
-  // SessionStart hook — 自動載入記憶
-  // v1.26.80：指令由 session-hook-command.cjs 決定，四支腳本共用一份答案。
-  // 之前每支各寫各的，而每天都會跑的那一支贏了。
-  if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-  // v1.26.80：原本只判斷「有沒有」，有就跳過。所有壞掉的機器都「有」，只是內容錯的，
-  // 所以這支腳本永遠修不到任何一台，而使用者手動跑升級走的正是這裡。
-  const hookCmd = require(nodePath.join(os.homedir(), '.ownmind/scripts/install-helpers/session-hook-command.cjs'));
-  const hookOpts = { platform: process.platform, ownmindDir: nodePath.join(os.homedir(), '.ownmind') };
-  const existingSession = s.hooks.SessionStart.filter(hookCmd.isOwnmindSessionEntry);
-  if (hookCmd.needsRewrite(existingSession, hookOpts)) {
-    s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !hookCmd.isOwnmindSessionEntry(h));
-    existingSession.length = 0;
-    console.log('   移除舊的 SessionStart hook 設定（這台電腦的指令不對）');
-  }
-  const sessionExists = existingSession.length > 0;
-  if (!sessionExists) {
-    s.hooks.SessionStart.push(...hookCmd.sessionStartEntries(hookOpts));
-    console.log('   加入 SessionStart hook（自動載入記憶，4 個 matcher）');
-  }
-
-  // PreToolUse hook — 鐵律檢查
+  // SessionStart is handled by ensure-session-hook.cjs (v1.26.86, see that file), which
+  // runs as its own step after this block. All four install/update scripts share it.
+  // PreToolUse hook — iron rule check
   if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
   const preExists = s.hooks.PreToolUse.some(h =>
     h.hooks?.some(hh => hh.command?.includes('ownmind-iron-rule-check'))
@@ -426,6 +408,18 @@ node -e "
 
   fs.writeFileSync(path, JSON.stringify(s, null, 2));
 " 2>/dev/null
+
+# --- 4c-2. SessionStart hook (v1.26.86, delegated to the shared implementation) ---
+ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
+if [ -f "$ENSURE_HOOK" ]; then
+  if hook_result=$(node "$ENSURE_HOOK" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "[ OK ] SessionStart hook: $hook_result"
+  else
+    echo "[FAIL] SessionStart hook: $hook_result"
+  fi
+else
+  echo "[WARN] ensure-session-hook.cjs not found; SessionStart hook left as-is"
+fi
 
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
 echo "[INFO] Installing Git hooks (Iron Rule Verification Engine)"
