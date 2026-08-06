@@ -106,3 +106,27 @@ one of them by measuring instead of coding.
 
 - [ ] Nothing proves the fallback is reached on Windows. Carried forward from v1.26.70
       and now the only open half of backlog item 20.
+
+## Phase 7 — Proven in the field, 2026-08-06
+
+Until this date the fix had only ever been shown to **read** a closed database and find
+nothing new. It had never collected a single event, because nobody had used OpenCode since
+2026-07-31. Vin ran two sessions on request, and the two halves were measured separately
+rather than assumed together.
+
+- [x] **With OpenCode running** (its `-shm`/`-wal` present, so a plain `-readonly` works
+      and the fallback is not reached): 9 events landed, model `big-pickle`, 102,669
+      tokens. The end-to-end path works. It says nothing about the fallback.
+- [x] **With OpenCode closed** — the condition this change exists for, and all three
+      preconditions checked *before* scanning rather than after:
+      - `sqlite3 -readonly opencode.db` → `unable to open database file (14)`. The old
+        code path genuinely cannot read it.
+      - No sidecar files present, so the probe had not created the condition it measures.
+      - Three new messages in the local database against the server's newest at 04:23, so
+        a result of zero would have meant something.
+      Result: 2 events accepted, server went 935 → 937, newest 04:26, heartbeat reason
+      flipped from `no_new_activity` to `ok`, and no sidecar was left behind — the copy
+      fallback read a copy and did not touch the original.
+
+The measurement discipline mattered here: the first run looked like a proof and was not
+one, because the application was open and the fallback never executed.
