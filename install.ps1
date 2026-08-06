@@ -393,8 +393,14 @@ foreach ($hook in $NodeHooks) {
 Write-Host "[ OK ] Installed hook scripts"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
-# 偵測是否有 bash（WSL / Git Bash）
-$HasBash = $null -ne (Get-Command bash -ErrorAction SilentlyContinue)
+# v1.26.80 — 原本用 `Get-Command bash` 判斷要註冊 bash 版還是 node 版。
+# 那個判斷在 Windows 上是錯的：Win10/11 的 System32\bash.exe 是 WSL 啟動器，
+# 找得到不代表跑得動 —— 指令會進 WSL 執行，`~` 是 WSL 的家目錄，掛勾檔根本不在那裡，
+# 然後靜靜地失敗。正式機資料：六台 Windows、90 天、SessionStart 掛勾觸發 0 次。
+# 這個 repo 早就知道（scripts\windows\lib\find-git-bash.ps1 就是為了避開 WSL relay
+# 寫的），但只用在升級驗證那一步，沒用在真正需要它的掛勾上。
+# 現在 Windows 一律走 node：OwnMind 本來就要求 Node 20+，絕對路徑也沒有殼層可以再解讀。
+$HookCmdHelper = Join-Path $OwnmindDir "scripts\install-helpers\session-hook-command.cjs"
 
 $settingsContent = Get-Content $ClaudeSettings -Raw
 $hookSettings = $settingsContent | ConvertFrom-Json
@@ -410,16 +416,16 @@ $sessionExists = $hookSettings.hooks.SessionStart | Where-Object {
   $_.hooks | Where-Object { $_.command -match "ownmind" }
 }
 if (-not $sessionExists) {
-  if ($HasBash) {
-    $sessionCmd = "bash ~/.claude/hooks/ownmind-session-start.sh"
-  } else {
-    $sessionCmd = "node `"$($HookDir -replace '\\','/')/ownmind-session-start.js`""
+  $sessionCmd = & node -e "const h=require(process.argv[1]);process.stdout.write(h.sessionStartCommand({platform:process.platform,hookDir:process.argv[2]}))" "$HookCmdHelper" "$HookDir"
+  # 四個 matcher 全註冊，跟 update.ps1 一致。只註冊 startup 的話，resume / clear /
+  # compact 進來時掛勾不會跑，AI 就在沒有鐵律的狀態下繼續工作。
+  foreach ($matcher in @("startup", "resume", "clear", "compact")) {
+    $hookSettings.hooks.SessionStart += [pscustomobject]@{
+      matcher = $matcher
+      hooks = @([pscustomobject]@{ type = "command"; command = $sessionCmd; timeout = 10 })
+    }
   }
-  $newSessionHook = [pscustomobject]@{
-    hooks = @([pscustomobject]@{ type = "command"; command = $sessionCmd; timeout = 10 })
-  }
-  $hookSettings.hooks.SessionStart += $newSessionHook
-  Write-Host "[ OK ] Added SessionStart hook"
+  Write-Host "[ OK ] Added SessionStart hook (4 matchers): $sessionCmd"
 }
 
 # PreToolUse hook

@@ -619,6 +619,39 @@ Unknown and to be measured before designing anything:
 
 Origin: 2026-08-06, while explaining the blank columns on the team usage page.
 
+### 26. The Node SessionStart hook does eight fewer things than the bash one
+
+v1.26.80 routes Windows to `hooks/ownmind-session-start.js` because the bash command had
+never once fired there. That fixes the thing that matters most — memories and iron rules
+now load — but the Node hook is 143 lines against the shell script's 226, and the
+difference is not comments:
+
+| bash hook does | Node hook |
+|---|---|
+| flush pending banners from the last session | missing |
+| flush the reply-lint compliance spool | missing |
+| daily update check | missing |
+| drain the self-check upload spool | missing |
+| conditional sync via `sync_token` (skips ~95% of downloads) | missing |
+| **fetch and show broadcasts** | **missing** |
+| render through `lib/session-start-output.js` | builds its own lines |
+| **sync memory files into the project dir** | **missing** |
+
+Two of those are user-visible on Windows: **broadcasts never appear**, and **memory files
+are never written into the project directory**. The update check is not lost — `mcp/index.js`
+runs its own.
+
+The shell script is mostly a thin orchestrator over `hooks/lib/*.js`, so parity is largely
+a matter of calling the same modules rather than reimplementing anything. It was not done
+in v1.26.80 because that release was already unverifiable on Windows and widening it would
+have made the unverifiable part larger.
+
+Do not close this by declaring the Node hook "good enough". The measure is a Windows
+machine showing a broadcast.
+
+Origin: v1.26.80, 2026-08-06, found by adversarial review of that change. Depends on
+item 24 for verification.
+
 ---
 
 ## Smaller cleanups
