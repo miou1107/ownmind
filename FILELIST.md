@@ -38,7 +38,39 @@ tests/upgrade-complete-beacon.test.js           — 抽出函式測試時一併 
                                                    否則測到的是一個實際上不存在的版本
 ```
 
-**未動**：`install.ps1`。它在 Windows 上跑得完、跟 `install.sh` 走的是兩條不同的路，但升級只走 sh。兩者對齊記進 backlog。
+審查後追加的修改：
+```
+hooks/ownmind-iron-rule-check.sh                — 接上 path-helpers.sh；讀金鑰／設定的三處
+                                                   node -e 路徑改走 to_win_path。這一支在
+                                                   Windows 上是實際被註冊的掛勾（install.sh 寫死
+                                                   bash 版、沒有平台分支），所以金鑰一直讀回空字串
+hooks/ownmind-session-start.sh                  — resolve-credentials.cjs、settings.json、
+                                                   self-check.cjs 三個路徑改走 to_win_path
+hooks/ownmind-worktree-setup.sh                 — 同上接線；settings.json、.mcp.json、
+                                                   settings.local.json 三處
+install.ps1                                     — 複製 hooks\lib\*.js（本來只有 update.ps1 有，
+                                                   ps1 裝完沒更新過的機器，bash 掛勾在、
+                                                   它要呼叫的 lib 不在）
+install.sh                                      — set -e 改 set -eE（少了 E，函式裡的失敗不會觸發
+                                                   ERR trap）；產出物檢查改回傳 2 而非 1；
+                                                   傳 --home 給檢查器
+scripts/interactive-upgrade.sh                  — 認得結束碼 2：回報但不回滾（回滾只還原
+                                                   ~/.ownmind，~/.claude 早就改成新的了）；
+                                                   日誌目錄退路改 mktemp -d，不再退回會被刪的目錄；
+                                                   beacon 的 node 錯誤不再丟掉
+scripts/install-helpers/install-artifacts.cjs   — locate 改回傳候選清單（任一存在即可），
+                                                   讓 install.ps1 與 install.sh 兩種實作都算數；
+                                                   hook_lib 加 applies（只有裝了 bash 掛勾才需要）；
+                                                   目錄改檢查裡面的檔案；CLI 收 --home
+scripts/install-helpers/path-helpers.sh         — 補上限制說明：結果是塞進單引號 JS 字串，
+                                                   家目錄含單引號會壞（既有問題，$API_URL 同樣形狀）
+tests/installer-node-paths.test.js              — 掃描範圍改成 git ls-files '*.sh'（手寫清單正是
+                                                   hooks/ 漏掉的原因）；認得 --eval／--print；
+                                                   拿掉「照變數名放行」，改成必須找得到經過
+                                                   to_win_path 的賦值
+```
+
+**未動**：`install.ps1` 與 `install.sh` 在 Windows 上仍是兩條不同的路，升級只走 sh。兩者對齊記進 backlog 第 28 項。
 
 ## v1.26.87 修改（安裝檢測警告機制）
 

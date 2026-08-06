@@ -73,6 +73,32 @@ in a second place that can drift.
 - **WHEN** the artifact assertion executes
 - **THEN** it names the missing hook and exits non-zero
 
+### Scenario: an incomplete install must not be rolled back
+
+- **GIVEN** `interactive-upgrade.sh` invoking `install.sh`
+- **WHEN** `install.sh` reaches its end and the artifact assertion fails
+- **THEN** it exits 2, distinct from any other failure
+- **AND** the caller reports the condition and does NOT call `rollback()`
+- **AND** any other non-zero exit still rolls back
+
+Rationale: `rollback()` replaces `${OWNMIND_DIR}` and nothing else, while `install.sh` has
+already rewritten `~/.claude/settings.json`, the hook scripts, the skill files and git's
+`core.hooksPath`. Rolling back would pair old code with new configuration, and it cannot
+produce the missing artifacts either way.
+
+### Scenario: the two Windows installers produce different files
+
+- **GIVEN** a machine installed by `install.ps1`, which registers the Node hooks
+- **WHEN** the artifact check runs
+- **THEN** the Node implementation satisfies the hook artifacts
+- **AND** `hooks/lib` is required only when the bash SessionStart hook is the one installed
+
+### Scenario: HOME is supplied, not inferred
+
+- **GIVEN** Git Bash where `$HOME` and `USERPROFILE` differ
+- **WHEN** `install.sh` runs the artifact check
+- **THEN** it passes `--home "$HOME"` and the check uses it
+
 ### Scenario: version alone is not treated as proof
 
 - **GIVEN** a machine whose `package.json` reports the current version
@@ -86,11 +112,27 @@ A test MUST parse `install.sh` and `scripts/update.sh`, locate every inline Node
 invocation, and fail if any of them interpolates a shell variable holding a path without
 `to_win_path`, or redirects stderr to `/dev/null`.
 
+The guard covers every shell script in the repository, discovered with `git ls-files`, not
+a list maintained by hand. A variable is cleared only by an assignment in the same file
+that passes it through `to_win_path` — never by its name.
+
 ### Scenario: someone adds a new unconverted block
 
 - **GIVEN** a new `node -e` block interpolating `'$SOME_CONFIG'`
 - **WHEN** the test suite runs
 - **THEN** it fails, naming the file and line
+
+### Scenario: the block uses a different spelling of the flag
+
+- **GIVEN** a `node --eval "…"` block interpolating a path
+- **WHEN** the test suite runs
+- **THEN** it fails — `-e`, `-p`, `--eval` and `--print` are all recognised
+
+### Scenario: an already-shipped fix is reverted
+
+- **GIVEN** an interpolated path whose `to_win_path` assignment is removed
+- **WHEN** the test suite runs
+- **THEN** it fails, with no name-based exemption able to hide it
 
 ### Scenario: a block cannot be parsed
 

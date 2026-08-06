@@ -2,7 +2,7 @@
 # OwnMind 一鍵安裝腳本
 # 用法: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
-set -e
+set -eE  # -E so the ERR trap below also fires inside shell functions
 
 API_KEY="${1:-}"
 API_URL="${2:-}"
@@ -933,17 +933,31 @@ SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
 # self-check then reports the same condition to the server.
 ARTIFACT_CHECK="$OWNMIND_DIR/scripts/install-helpers/install-artifacts.cjs"
 if [ -f "$ARTIFACT_CHECK" ]; then
-  if artifact_result=$(node "$ARTIFACT_CHECK" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+  # --home is passed explicitly. Every path this script writes derives from the shell's
+  # $HOME, but node resolves os.homedir() from USERPROFILE on Windows and from the passwd
+  # entry on POSIX. Under Git Bash those can differ (MSYS2 defaults HOME to /home/<user>),
+  # and a mismatch would report all six artifacts missing on a perfectly healthy install.
+  if artifact_result=$(node "$ARTIFACT_CHECK" --ownmind-dir "$OWNMIND_DIR" --home "$HOME" 2>&1); then
     echo "[ OK ] $artifact_result"
   else
+    # EXIT CODE 2, NOT 1 — deliberately.
+    #
+    # interactive-upgrade.sh treats a non-zero install.sh as "the install blew up" and calls
+    # rollback(), which is `rm -rf ~/.ownmind` + `mv backup ~/.ownmind`. That restores the
+    # code and nothing else: ~/.claude/settings.json, the hook scripts, the skill files and
+    # git's core.hooksPath all keep the new values. Rolling back here would leave old code
+    # wired to new configuration — strictly worse than the truncated install we are
+    # reporting, and it cannot create the missing artifacts either way.
+    #
+    # 2 means "it ran, and it is incomplete". The caller reports it and leaves the machine
+    # alone. The self-check below has already told the server, which is how a human hears
+    # about it.
     echo "[FAIL] Installation did not complete."
     printf '%s\n' "$artifact_result" | sed 's/^/       /'
     echo "       Log: $INSTALL_LOG"
     report_error "install_incomplete" "$artifact_result" "$INSTALL_LOG" 2>/dev/null || true
-    # Still run the self-check: it uploads this machine's state, which is how the failure
-    # reaches anybody who can act on it.
     [ -f "$SELF_CHECK_SCRIPT" ] && { node "$SELF_CHECK_SCRIPT" --trigger=post_install || true; }
-    exit 1
+    exit 2
   fi
 fi
 

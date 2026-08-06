@@ -390,6 +390,17 @@ foreach ($hook in $NodeHooks) {
   $src = Join-Path $OwnmindDir "hooks\$hook"
   if (Test-Path $src) { Copy-Item $src $HookDir -Force }
 }
+# v1.26.88 — hooks\lib. The bash SessionStart hook (copied just above, and registered
+# below whenever $HasBash) runs `$SCRIPT_DIR/lib/session-start-output.js`, resolved next to
+# itself. Only update.ps1 ever copied this directory, so a machine installed by this script
+# and never updated had the hook and not the code it calls — it rendered nothing, silently.
+# install.sh has done this since v1.17.x; this is the ps1 side catching up.
+$HookLibDir = Join-Path $HookDir "lib"
+$HookLibSrc = Join-Path $OwnmindDir "hooks\lib"
+if (Test-Path $HookLibSrc) {
+  New-Item -ItemType Directory -Force -Path $HookLibDir | Out-Null
+  Copy-Item (Join-Path $HookLibSrc "*.js") $HookLibDir -Force
+}
 Write-Host "[ OK ] Installed hook scripts"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---

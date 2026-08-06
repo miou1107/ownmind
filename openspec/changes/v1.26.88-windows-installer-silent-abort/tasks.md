@@ -42,7 +42,7 @@ Legend: `[ ]` pending · `[x]` done
 - [x] `scripts/install-helpers/install-artifacts.cjs` — one list, two consumers. Fails closed
       on any artifact whose presence cannot be determined.
 - [x] `install.sh` asserts it before the closing self-check; on failure prints `[FAIL]`, still
-      runs the self-check so the state reaches the server, then exits 1.
+      runs the self-check so the state reaches the server, then exits 2 (see Phase 5b).
 - [x] `self-check.cjs` gains `install_complete`, so a truncated install reaches a human
       through the v1.26.87 alerting rather than waiting to be noticed.
 - [x] `checkNamesFor` updated — a check that runs but is not declared breaks the existing
@@ -69,6 +69,58 @@ Legend: `[ ]` pending · `[x]` done
 - [ ] Windows: not verified on a real machine. The change is identity on macOS, so a local
       run proves no regression and proves nothing about the fix. Needs the test account.
 - [ ] Ask Vin before tagging or deploying.
+
+## Phase 5b — Code review round
+
+Eleven findings. All six Critical/Important reproduced against the codebase before any were
+acted on; none were taken on the reviewer's word.
+
+- [x] **Critical.** `exit 1` from the artifact assertion made `interactive-upgrade.sh` call
+      `rollback()`, which replaces `~/.ownmind` and nothing else — `~/.claude/settings.json`,
+      the hook scripts, the skill files and `core.hooksPath` all keep their new values. Old
+      code wired to new configuration, and rollback cannot create the missing artifacts
+      anyway. Now `exit 2`, handled as its own branch that reports and leaves the machine
+      alone. Covered by a test that also asserts the `else` branch still rolls back.
+- [x] `set -e` does not carry the `ERR` trap into shell functions; verified locally both
+      ways. Now `set -eE`, so a failure inside `append_upgrade_rule_if_exists` — the exact
+      silent-abort shape this release is named after — prints something.
+- [x] The guard was evadable twice, both reproduced by the reviewer and re-reproduced here:
+      `node --eval` was invisible to the opener regex, and `claude_settings` was exempted by
+      name with a comment claiming the assignment test covered it. It did not: reverting the
+      `update.sh` fix verbatim left the suite green. The name exemption is gone — a variable
+      is cleared only by an assignment in the same file that runs it through `to_win_path`.
+- [x] The "derived, never hand-written" script list was a literal. Now `git ls-files '*.sh'`.
+      That immediately surfaced **the same live defect in `hooks/`**: `ownmind-iron-rule-check.sh`
+      reads the credentials through a raw `$CLAUDE_SETTINGS` inside `node -e`, and `install.sh`
+      registers it on Windows with no platform branch — so on every Windows machine the key
+      came back empty and the iron-rule check exited 0 silently. Fixed there and in
+      `ownmind-session-start.sh` and `ownmind-worktree-setup.sh`.
+- [x] `--home` is passed explicitly. `os.homedir()` reads `USERPROFILE` on Windows and the
+      passwd entry on POSIX; under Git Bash those can differ from `$HOME`, and a mismatch
+      would have reported all six artifacts missing on a healthy machine — which, before the
+      Critical fix, would then have rolled the upgrade back.
+- [x] The artifact list named one implementation per hook, so a healthy `install.ps1`
+      machine would have failed and broadcast a fix that changes nothing. `locate` now
+      returns every path that satisfies the artifact. `hook_lib` gained an `applies`
+      predicate: the bash hook resolves `lib/` next to itself, the Node hook runs out of
+      `~/.ownmind/hooks/` and needs nothing there.
+- [x] Real bug found underneath that one: `install.ps1` copies the bash SessionStart hook
+      but never copied `hooks/lib`. Only `update.ps1` did. A machine installed by ps1 and
+      never updated had the hook and not the code it calls. Fixed in `install.ps1`.
+- [x] `git-hooks` and `hooks/lib` are checked by a file inside them, not by the directory —
+      both directories are created by an unconditional `mkdir -p` that runs before the copy
+      that fills them, so an empty one proved only that the script reached that line.
+- [x] The upgrade-log fallback fell back to `${OWNMIND_DIR}/logs`, silently restoring the
+      bug, and the covering test only reads the `LOG_FILE=` line so it would still have
+      passed. Now `mktemp -d`.
+- [x] `send_upgrade_complete_beacon` still discarded its own stderr — the one place where
+      that is hardest to justify, since this beacon's failure was invisible for months for
+      exactly that reason.
+- [x] The apostrophe-in-path limit of interpolating into a single-quoted JS literal is now
+      stated in `path-helpers.sh` rather than left to be rediscovered. Pre-existing class;
+      `$API_URL` and `$API_KEY` have the same shape.
+- [ ] Not done: `update.sh` writes to both `update-err.log` and `update-errors.log`. Both
+      pre-date this change; consolidating is cosmetic.
 
 ## Phase 6 — Not done, deliberately
 

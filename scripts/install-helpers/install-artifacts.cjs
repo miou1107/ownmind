@@ -27,13 +27,32 @@ const os = require('os');
 const path = require('path');
 
 /**
+ * Two things this list deliberately does NOT do.
+ *
+ * It does not name a single blessed implementation of a hook. Windows has two installers
+ * that produce different sets of files — `install.ps1` registers the Node hooks, Git Bash
+ * `install.sh` registers the `.sh` ones — so `locate` returns every path that would satisfy
+ * the artifact and presence of any one of them counts. Naming only one would report a
+ * healthy `install.ps1` machine as broken, and this check feeds the v1.26.87 alerting: a
+ * false `fail` is a broadcast telling someone to re-run an installer that will not change
+ * anything.
+ *
+ * It does not check a directory when it can check a file inside it. `~/.claude/hooks/lib`
+ * and `~/.ownmind/git-hooks` are both created by an unconditional `mkdir -p` that runs
+ * *before* the copies that fill them, so an empty directory would pass while describing
+ * itself as "git hooks (iron-rule verification at commit time)".
+ *
  * @typedef {Object} Artifact
  * @property {string} id            stable identifier, used in messages
  * @property {string} describe      what a human should understand is missing
- * @property {(ctx: {home: string, ownmindDir: string}) => string} locate  absolute path
+ * @property {(ctx: Ctx) => string[]} locate  candidate paths; any one present satisfies it
  * @property {'file'|'dir'} kind
- * @property {(ctx: {home: string, ownmindDir: string}) => boolean} [applies]
+ * @property {(ctx: Ctx) => boolean} [applies]  skip the artifact entirely when false
+ *
+ * @typedef {{home: string, ownmindDir: string}} Ctx
  */
+
+const claudeHooks = ({ home }) => path.join(home, '.claude', 'hooks');
 
 /** @type {Artifact[]} */
 const ARTIFACTS = [
@@ -41,37 +60,51 @@ const ARTIFACTS = [
     id: 'session_start_hook',
     describe: 'SessionStart hook (this is what loads your memories automatically)',
     kind: 'file',
-    locate: ({ home }) => path.join(home, '.claude', 'hooks', 'ownmind-session-start.sh'),
+    // The Node hook is registered by absolute path into ~/.ownmind/hooks/ (see
+    // session-hook-command.cjs), so that copy counts too.
+    locate: (ctx) => [
+      path.join(claudeHooks(ctx), 'ownmind-session-start.sh'),
+      path.join(claudeHooks(ctx), 'ownmind-session-start.js'),
+      path.join(ctx.ownmindDir, 'hooks', 'ownmind-session-start.js'),
+    ],
   },
   {
     id: 'iron_rule_hook',
     describe: 'PreToolUse iron-rule hook',
     kind: 'file',
-    locate: ({ home }) => path.join(home, '.claude', 'hooks', 'ownmind-iron-rule-check.sh'),
+    locate: (ctx) => [
+      path.join(claudeHooks(ctx), 'ownmind-iron-rule-check.sh'),
+      path.join(claudeHooks(ctx), 'ownmind-iron-rule-check.js'),
+    ],
   },
   {
     id: 'hook_lib',
-    describe: 'hooks/lib (the SessionStart hook cannot render without it)',
-    kind: 'dir',
-    locate: ({ home }) => path.join(home, '.claude', 'hooks', 'lib'),
+    describe: 'hooks/lib next to the bash SessionStart hook (it cannot render without it)',
+    kind: 'file',
+    // The bash hook resolves `lib/` relative to its own location
+    // (`$SCRIPT_DIR/lib/session-start-output.js`), so this is required exactly when that
+    // hook is the one installed. The Node hook runs out of ~/.ownmind/hooks/, where lib/
+    // ships with the repo, and needs nothing here.
+    applies: (ctx) => fs.existsSync(path.join(claudeHooks(ctx), 'ownmind-session-start.sh')),
+    locate: (ctx) => [path.join(claudeHooks(ctx), 'lib', 'session-start-output.js')],
   },
   {
     id: 'git_hooks',
     describe: 'git hooks (iron-rule verification at commit time)',
-    kind: 'dir',
-    locate: ({ ownmindDir }) => path.join(ownmindDir, 'git-hooks'),
+    kind: 'file',
+    locate: ({ ownmindDir }) => [path.join(ownmindDir, 'git-hooks', 'pre-commit')],
   },
   {
     id: 'memory_skill',
     describe: 'ownmind-memory skill',
     kind: 'file',
-    locate: ({ home }) => path.join(home, '.claude', 'skills', 'ownmind-memory', 'SKILL.md'),
+    locate: ({ home }) => [path.join(home, '.claude', 'skills', 'ownmind-memory', 'SKILL.md')],
   },
   {
     id: 'mcp_entry',
     describe: 'MCP server entry point',
     kind: 'file',
-    locate: ({ ownmindDir }) => path.join(ownmindDir, 'mcp', 'index.js'),
+    locate: ({ ownmindDir }) => [path.join(ownmindDir, 'mcp', 'index.js')],
   },
 ];
 
@@ -96,16 +129,17 @@ function checkInstallArtifacts(opts = {}) {
   for (const artifact of ARTIFACTS) {
     if (typeof artifact.applies === 'function' && !artifact.applies(ctx)) continue;
     checked += 1;
-    const target = artifact.locate(ctx);
-    let present = false;
-    try {
-      const st = fs.statSync(target);
-      present = artifact.kind === 'dir' ? st.isDirectory() : st.isFile();
-    } catch {
-      present = false;
-    }
+    const candidates = artifact.locate(ctx);
+    const present = candidates.some((target) => {
+      try {
+        const st = fs.statSync(target);
+        return artifact.kind === 'dir' ? st.isDirectory() : st.isFile();
+      } catch {
+        return false;
+      }
+    });
     if (!present) {
-      missing.push({ id: artifact.id, describe: artifact.describe, path: target });
+      missing.push({ id: artifact.id, describe: artifact.describe, path: candidates[0] });
     }
   }
 
@@ -117,10 +151,17 @@ module.exports = { ARTIFACTS, checkInstallArtifacts };
 // CLI: used by install.sh at the end of a run. Exit 1 and name what is missing.
 if (require.main === module) {
   const args = process.argv.slice(2);
-  const dirArg = args.indexOf('--ownmind-dir');
-  const ownmindDir = dirArg >= 0 ? args[dirArg + 1] : undefined;
-  const result = checkInstallArtifacts({ ownmindDir });
-  const home = os.homedir();
+  const valueOf = (flag) => {
+    const i = args.indexOf(flag);
+    return i >= 0 ? args[i + 1] : undefined;
+  };
+  // --home is accepted because every path install.sh writes derives from the shell's $HOME,
+  // while os.homedir() reads USERPROFILE on Windows and the passwd entry on POSIX. Under
+  // Git Bash those can differ, and the difference would report every artifact missing on a
+  // healthy machine.
+  const ownmindDir = valueOf('--ownmind-dir');
+  const home = valueOf('--home') || os.homedir();
+  const result = checkInstallArtifacts({ home, ownmindDir });
   const tilde = (p) => p.split(home).join('~');
 
   if (result.ok) {
