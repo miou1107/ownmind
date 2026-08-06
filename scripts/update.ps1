@@ -279,14 +279,14 @@ if (Test-Path $ClaudeSettings) {
       if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
       const newEntries = hookCmd.sessionStartEntries({
         platform: process.platform,
-        hookDir: path.join(os.homedir(), '.claude', 'hooks'),
+        ownmindDir: path.join(os.homedir(), '.ownmind'),
       });
       const isOwnmindEntry = hookCmd.isOwnmindSessionEntry;
       const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
       // Matchers complete is not the same question as command correct. Every Windows
       // machine today has all four matchers, all running bash; judging by matchers alone
       // would call them healthy and repair nobody.
-      if (hookCmd.needsRewrite(existing, { platform: process.platform, hookDir: path.join(os.homedir(), '.claude', 'hooks') })) {
+      if (hookCmd.needsRewrite(existing, { platform: process.platform, ownmindDir: path.join(os.homedir(), '.ownmind') })) {
         s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !isOwnmindEntry(h));
         s.hooks.SessionStart.push(...newEntries);
         changed = true;

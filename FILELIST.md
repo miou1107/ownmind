@@ -68,7 +68,10 @@ src/routes/usage/self-check.js              — 多回 memory_load：最近一�
                                               不算功能會動
 tests/self-check-memory-load.test.js        — 新增。伺服器端測 SQL 形狀與空值語意，用戶端測
                                               三種降級路徑，最後一項跑真的 settings.json
-scripts/install-helpers/session-hook-command.cjs    — v1.26.80 SessionStart 掛勾的指令怎麼下，
+scripts/install-helpers/session-hook-command.cjs    — v1.26.85 Windows 掛勾改指 ~/.ownmind/hooks
+                                              （.claude/hooks 那份的相對 import 解不開、
+                                              Node 直接 ERR_MODULE_NOT_FOUND，一行都沒跑）；
+                                              v1.26.80 SessionStart 掛勾的指令怎麼下，
                                               四支安裝／更新腳本共用這一份。Windows 走 node
                                               絕對路徑（bash 在那邊會被 WSL 接走）；判斷要不要
                                               重寫時連指令內容一起看，只看 matcher 齊不齊的話

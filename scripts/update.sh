@@ -245,7 +245,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
       const newEntries = hookCmd.sessionStartEntries({
         platform: process.platform,
-        hookDir: path.join(os.homedir(), '.claude', 'hooks'),
+        ownmindDir: path.join(os.homedir(), '.ownmind'),
       });
       const isOwnmindEntry = hookCmd.isOwnmindSessionEntry;
       const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
@@ -254,7 +254,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       // would call them healthy and repair nobody.
       const mustRewrite = hookCmd.needsRewrite(existing, {
         platform: process.platform,
-        hookDir: path.join(os.homedir(), '.claude', 'hooks'),
+        ownmindDir: path.join(os.homedir(), '.ownmind'),
       });
       // Two cases write entries:
       // 1. No ownmind SessionStart entry at all (fresh install).
