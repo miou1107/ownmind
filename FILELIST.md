@@ -579,6 +579,7 @@ client/src/pages/System/BroadcastPage.jsx                           — 廣播�
 client/src/pages/System/NewBroadcastModal.jsx                       — 新增廣播 modal。舊 modal 欄位一比一：type / severity / title / body / cta / target / snooze / cooldown / ends_at；送前先跑 client 端 validate
 client/src/pages/System/RevokeConfirmDialog.jsx                     — 撤銷確認 dialog。紅色按鈕、遠離取消
 client/src/pages/System/observed-users.js                           — 純函式：observedUsers(clients, stats) + rollupCounts(rows)。四狀態分類 + banner 統計 + 靜默點名
+client/src/pages/System/machine-groups.js                           — 純函式：groupClientsByMachine(clients) + osLabel(os)。v1.26.73 把收集器依電腦分組（狀態取最糟的工具、心跳取最新、壞的排前面）
 client/src/pages/System/broadcast-row-vm.js                         — 純函式：broadcastRowVm(row, now)。isActive / isRevocable / snoozeLabel / typeColor / severityColor / effectiveRange
 client/src/pages/System/broadcast-payload-validate.js               — 純函式：validateBroadcastFormClient(form)。鏡射伺服器 validateBroadcastPayload、送前先擋
 tests/observed-users.test.js                                        — 15 條斷言 flowing / silent / not_installed / offline 分類 + rollup + null stats 降級語意
