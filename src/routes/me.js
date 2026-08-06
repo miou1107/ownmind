@@ -320,11 +320,15 @@ router.get('/report', async (req, res) => {
     );
     const myStats = myStatsQ.rows[0];
 
+    // v1.26.73 — collector_heartbeat is one row per (user, tool, machine) now, so a
+    // person with two computers has two rows per tool. The version somebody is
+    // effectively on is the one their most recently active machine reports.
     const myVersionsQ = await query(`
-      SELECT tool, scanner_version AS version, last_reported_at
+      SELECT DISTINCT ON (tool)
+             tool, scanner_version AS version, last_reported_at, machine
       FROM collector_heartbeat
       WHERE user_id = $1
-      ORDER BY tool`,
+      ORDER BY tool, last_reported_at DESC`,
       [me.id]
     );
 
@@ -504,12 +508,19 @@ router.get('/report', async (req, res) => {
       GROUP BY event ORDER BY count DESC LIMIT 15`
     );
 
+    // v1.26.73 — newest machine per (user, tool); see the note on myVersionsQ. The outer
+    // ORDER BY is what the consumer wants, the inner one is what DISTINCT ON needs.
     const allVersionsQ = await query(`
-      SELECT u.name, u.id AS user_id, h.tool, h.scanner_version AS version, h.last_reported_at
-      FROM collector_heartbeat h
-      JOIN users u ON u.id = h.user_id
-      WHERE h.last_reported_at >= NOW() - INTERVAL '14 days'
-      ORDER BY u.name, h.tool`
+      SELECT * FROM (
+        SELECT DISTINCT ON (h.user_id, h.tool)
+               u.name, u.id AS user_id, h.tool, h.scanner_version AS version,
+               h.last_reported_at, h.machine
+        FROM collector_heartbeat h
+        JOIN users u ON u.id = h.user_id
+        WHERE h.last_reported_at >= NOW() - INTERVAL '14 days'
+        ORDER BY h.user_id, h.tool, h.last_reported_at DESC
+      ) v
+      ORDER BY v.name, v.tool`
     );
 
     // ── Project section (Q2=B all team projects visible) ──

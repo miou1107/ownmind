@@ -72,7 +72,7 @@ export async function loadClients({ query, serverVersion, now }) {
             h.tool, h.scanner_version, h.machine, h.last_reported_at, h.reason
        FROM users u
        LEFT JOIN collector_heartbeat h ON h.user_id = u.id
-      ORDER BY u.id, h.tool NULLS LAST`
+      ORDER BY u.id, h.tool NULLS LAST, h.machine NULLS LAST`
   );
 
   // Group by user_id.

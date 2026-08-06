@@ -132,8 +132,21 @@ export function buildSelfCheckReport({
   // you cannot ask.
   const serverNow = new Date(serverTime).getTime();
 
+  // v1.26.73 — the server now holds one row per (tool, machine), so a tool can come back
+  // several times for one account. **This machine's own row is the only one that answers
+  // the question**, and picking by tool alone would let a sibling computer's fresh
+  // heartbeat stand in for a silence here. Keep any other machine's row as the fallback,
+  // so a tool with nothing from this machine still reports `other_machine` rather than
+  // "the server has never heard of it".
   const byTool = new Map();
-  for (const row of serverTools) if (row?.tool) byTool.set(row.tool, row);
+  for (const row of serverTools) {
+    if (!row?.tool) continue;
+    const held = byTool.get(row.tool);
+    if (!held || (sameMachine(row.machine, machine) === true
+      && sameMachine(held.machine, machine) !== true)) {
+      byTool.set(row.tool, row);
+    }
+  }
 
   const rows = scanned.map((s) => {
     const server = byTool.get(s.tool) ?? null;

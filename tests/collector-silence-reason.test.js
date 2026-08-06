@@ -392,7 +392,24 @@ describe('the console shows the reason beside silent', () => {
   it('attaches the reason to a silent user', () => {
     const rows = observedUsers({ users: [userRow()] }, { users: [] });
     assert.equal(rows[0].state, 'silent');
-    assert.deepEqual(rows[0].reasons, [{ tool: 'antigravity', reason: 'sqlite_missing' }]);
+    // v1.26.73 — the machine rides along, because one row per (tool, machine) means the
+    // same tool can now appear twice for a person saying two different things, and
+    // "antigravity: sqlite_missing" twice with no way to tell the computers apart is
+    // worse than not showing it.
+    assert.deepEqual(rows[0].reasons,
+      [{ tool: 'antigravity', reason: 'sqlite_missing', machine: null }]);
+  });
+
+  it('keeps a tool once per machine, not once per row', () => {
+    const rows = observedUsers({ users: [userRow({ clients: [
+      { tool: 'cursor', status: 'active', reason: 'ok', machine: 'Vincent.local' },
+      { tool: 'cursor', status: 'active', reason: 'unreadable', machine: 'TANK' },
+      { tool: 'cursor', status: 'active', reason: 'unreadable', machine: 'TANK' }
+    ] })] }, { users: [] });
+    assert.deepEqual(rows[0].reasons, [
+      { tool: 'cursor', reason: 'ok', machine: 'Vincent.local' },
+      { tool: 'cursor', reason: 'unreadable', machine: 'TANK' }
+    ]);
   });
 
   it('leaves the four states exactly as they were', () => {

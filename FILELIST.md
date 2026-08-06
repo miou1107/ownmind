@@ -2431,7 +2431,7 @@ OwnMind/
 │       ├── antigravity.js           # Antigravity Tier 2 adapter（session_count only）
 │       ├── reasons.js               # v1.26.69 — 收集器「為什麼沒東西」的封閉原因碼（ok / no_new_activity /
 │                                    #   no_install / sqlite_missing / unreadable / account_changed）
-│       ├── selfcheck.js            # v1.26.72 — 「我送了」跟「伺服器真的有」是兩件事。比對本機掃描結果
+│       ├── selfcheck.js            # v1.26.72（v1.26.73 起會在同一個工具的多台機器裡挑自己那台） — 「我送了」跟「伺服器真的有」是兩件事。比對本機掃描結果
 │                                    #   跟伺服器回報，產出 confirmed / not_installed / other_machine /
 │                                    #   not_recorded / blocked 五種判定 + 給人看的說明
 │       └── gemini-conversations.js  # v1.26.68 — Antigravity 三個介面的對話檔日期來源（管理器/編輯器/命令列，

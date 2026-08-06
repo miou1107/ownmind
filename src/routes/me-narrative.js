@@ -125,10 +125,15 @@ async function collectSections({ query, range }) {
   `)).rows;
 
   // 2. versions — collector_heartbeat per-user per-tool version.
+  //
+  // v1.26.73 — one row per (user, tool, machine) now, so DISTINCT ON collapses a person's
+  // computers back to one answer per tool: the one their most recently active machine
+  // reports. Without it every two-machine member appears twice in the version list.
   const versions = (await query(`
-    SELECT user_id, tool, scanner_version AS version, last_reported_at
+    SELECT DISTINCT ON (user_id, tool)
+           user_id, tool, scanner_version AS version, last_reported_at, machine
     FROM collector_heartbeat
-    ORDER BY user_id, tool
+    ORDER BY user_id, tool, last_reported_at DESC
   `)).rows;
 
   // 3. daily — activity count per day.
