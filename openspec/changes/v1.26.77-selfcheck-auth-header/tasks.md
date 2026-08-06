@@ -34,8 +34,19 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 5 — Deploy and re-run the check that failed
 
-- [ ] Production rebuilt on v1.26.77, Vin's machine upgraded again, and the ninth check
-      reports confirmed rather than a status code.
+- [x] Production rebuilt on v1.26.77, zero errors since restart.
+- [x] Vin's Mac upgraded again. **9 passed, 0 warnings, 0 failed**, with the ninth reading
+      `the server has this machine's data for 5 tool(s)`. The check that has never worked
+      since it was written now answers the question it was built to answer.
+- [x] Server-side confirmation of the whole line of work, from the heartbeat table:
+      all five tools at `scanner_version 1.26.77`, and for the first time a **reason** on
+      each row — `ok` for claude-code, `no_new_activity` for the other four.
+      Two things follow from that, neither of which was visible before today:
+      - v1.26.69's reason codes are arriving. The column was NULL under the old scanner.
+      - OpenCode reports `no_new_activity`, not `unreadable`. Its database cannot be
+        opened `-readonly` on this machine right now; the collector read it anyway through
+        the v1.26.71 copy fallback and found nothing new. The fix works on a machine that
+        actually exhibits the condition.
 
 ## What this and v1.26.76 have in common
 
