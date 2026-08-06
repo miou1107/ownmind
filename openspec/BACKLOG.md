@@ -652,6 +652,46 @@ machine showing a broadcast.
 Origin: v1.26.80, 2026-08-06, found by adversarial review of that change. Depends on
 item 24 for verification.
 
+### 27. The loop's last link: check results arrive and nobody is looking
+
+Vin, 2026-08-06, stating the product requirement: 「每次在安裝、升級的時候都要做完整的
+檢測，檢測如果有問題就要自己 repair 並且回報給 ownmind 做紀錄，讓開發者可以分析問題並
+發新版解決。這樣才是完整閉環」.
+
+Where each link stands after this week:
+
+| link | state |
+|---|---|
+| detect | **done** — 10 checks at install/upgrade, 9 daily via auto-update (v1.26.81) |
+| repair | **partial** — dead schedule (v1.26.79), wrong hook command (v1.26.80); key-only-in-env warns but does not repair (writing a secret to disk needs care) |
+| report | **done** — reports upload to `install_check_logs`, repair failures via report-error |
+| analyze | **broken — this item** |
+| release | manual, fine |
+
+Evidence the analyze link is the broken one, twice in one week:
+
+- Every Windows machine's report has said `bash_resolution: WSL_RELAY` since May. The
+  answer to "why do six machines never load memories" sat in the database for two months
+  while the question took a week of hand-digging.
+- Adam's May report showed his credentials lookup failing. Nobody saw that either.
+
+What "analyze" needs, concretely:
+
+1. **An admin page reading `install_check_logs`**: latest report per machine, fail/warn
+   items surfaced, trend (was this failing last week too?). The data model already exists.
+2. **Push, not pull, for new failures**: a fail status that was pass yesterday should
+   reach Vin (broadcast to his account, or the existing notification path) — a dashboard
+   nobody opens is this same defect again.
+3. **Fingerprint rollup**: group identical failures across machines so "6 machines,
+   same WSL bash" reads as one row, not six.
+
+Do not close this with "the data is uploaded". Uploaded-and-unread is the state that cost
+three months. The measure is: a check that fails on any machine tomorrow is something Vin
+hears about without asking.
+
+Origin: 2026-08-06, Vin's closed-loop requirement, stated while the credential-resolver
+fix was in progress.
+
 ---
 
 ## Smaller cleanups
