@@ -69,7 +69,7 @@ export async function loadClients({ query, serverVersion, now }) {
   // (Removed DISTINCT ON and the unused heartbeat_status column, per codex review.)
   const result = await query(
     `SELECT u.id AS user_id, u.name AS user_name, u.email, u.role,
-            h.tool, h.scanner_version, h.machine, h.last_reported_at, h.reason
+            h.tool, h.scanner_version, h.machine, h.os, h.last_reported_at, h.reason
        FROM users u
        LEFT JOIN collector_heartbeat h ON h.user_id = u.id
       ORDER BY u.id, h.tool NULLS LAST, h.machine NULLS LAST`
@@ -109,6 +109,10 @@ export async function loadClients({ query, serverVersion, now }) {
         tool: row.tool,
         version,
         machine: row.machine,
+        // v1.26.73 — the console groups by computer now, and "TANK" alone does not say
+        // which kind of computer it is. One row per (tool, machine) makes that worth
+        // showing; before, every row was the same machine anyway.
+        os: row.os ?? null,
         last_heartbeat_at: row.last_reported_at,
         status,
         // v1.26.69 — `status` above is derived from heartbeat age and answers "is this

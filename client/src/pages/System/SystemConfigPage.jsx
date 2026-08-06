@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useT } from '../../i18n/LocaleContext';
 import { apiGet } from '../../api';
 import { observedUsers, rollupCounts } from './observed-users.js';
+import { groupClientsByMachine, osLabel } from './machine-groups.js';
 
 // v1.26.50 — 系統設定 (裝機狀況).
 //
@@ -183,15 +184,41 @@ export default function SystemConfigPage() {
                     {(!row.clients || row.clients.length === 0) ? (
                       <span className="text-slate-400">—</span>
                     ) : (
-                      <div className="space-y-1">
-                        {row.clients.map((c) => (
-                          <div key={c.tool} className="flex items-center gap-2">
-                            <b className="text-slate-700">{c.tool}</b>
-                            <code className={statusColor(c.status)}>{c.version || t('system.config.version.unknown')}</code>
-                            {c.needs_upgrade && (
-                              <span className="text-[10px] text-amber-700">↑ {t('system.config.tool.needs_upgrade')}</span>
-                            )}
-                            <span className="text-slate-500">· {formatAgo(c.last_heartbeat_at, t)}</span>
+                      /* v1.26.73 — grouped by computer. One row per (tool, machine) means
+                         the same tool can appear twice for one person, and two lines both
+                         reading `claude-code` with no way to tell the machines apart is
+                         worse than the single row it replaced. The computer is also the
+                         thing somebody can act on: "TANK has not reported for three days"
+                         is a sentence with a next step in it. */
+                      <div className="space-y-2">
+                        {groupClientsByMachine(row.clients).map((g) => (
+                          <div key={g.machine ?? '(unknown)'}>
+                            <div className="flex items-center gap-2">
+                              <b className="text-slate-700">
+                                {g.machine || t('system.config.machine.unknown')}
+                              </b>
+                              {osLabel(g.os) && (
+                                <span className="text-slate-500">{osLabel(g.os)}</span>
+                              )}
+                              <span className={statusColor(g.status)}>
+                                · {formatAgo(g.last_heartbeat_at, t)}
+                              </span>
+                            </div>
+                            <div className="pl-4 space-y-0.5">
+                              {g.tools.map((c) => (
+                                <div key={c.tool} className="flex items-center gap-2">
+                                  <span className="text-slate-600">{c.tool}</span>
+                                  <code className={statusColor(c.status)}>
+                                    {c.version || t('system.config.version.unknown')}
+                                  </code>
+                                  {c.needs_upgrade && (
+                                    <span className="text-[10px] text-amber-700">
+                                      ↑ {t('system.config.tool.needs_upgrade')}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         ))}
                       </div>

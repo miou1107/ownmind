@@ -79,10 +79,18 @@ one wrong and worth saying why.
 - [x] `package.json` 1.26.73, `README.md` ×3
 - [x] `CHANGELOG.md`, `FILELIST.md`, `openspec/BACKLOG.md` item 14 closed, item 22 added
 
-## Phase 6 — Out of scope, recorded
+## Phase 6 — The panel, after the mockup
 
-- [ ] **The 系統設定 panel needs a mockup.** It will now list a tool once per machine. The
-      data carries the machine name so they are tellable apart, but how two computers
-      should be presented is a design question, and the rule is that UI is agreed before
-      it is built.
+Three options were drawn and Vin picked **A, grouped by machine**, on 2026-08-06.
+
+- [x] `client/src/pages/System/machine-groups.js` — pure grouping, 13 tests. A machine's
+      status is its **worst** tool's, not an average: one dead collector on an otherwise
+      busy computer is the case this whole change exists to make visible. Its heartbeat is
+      the freshest, because that is when the computer last spoke. Worst first in the list,
+      because somebody reading this column is looking for what is broken.
+- [x] `SystemConfigPage.jsx` renders it. The old `key={c.tool}` would have collided the
+      moment a person had two computers.
+- [x] `admin-clients.js` selects and returns `h.os` — the header says "TANK" and needed to
+      say what kind of computer that is.
+- [x] Three locale files together, per the rule that they never drift.
 - [ ] The environment and debug snapshot, which this change was the prerequisite for.
