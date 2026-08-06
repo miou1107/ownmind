@@ -2524,6 +2524,9 @@ OwnMind/
 │   ├── ps1-utf8-bom.test.js         # v1.17.9 — 所有 .ps1 必須 UTF-8 BOM（Alice case）
 │   ├── ps1-windows-compat.test.js   # v1.17.9 — .ps1 環境正規化 preamble + install flag 過濾（Bob case）
 │   ├── install-ps1-copy-safety.test.js  # v1.17.10 — install.ps1 Copy-Item self-overwrite guard
+│   ├── install-scanner-module-list.test.js # v1.26.71 — install.sh 不准手寫 scanner 檔名清單
+│                                    #   （寫死五個、實際十一個，三個半月沒人發現；那段複製其實是
+│                                    #   死碼，來源=目的地會被 safe_cp 跳過，檔案是 git clone 帶的）
 │   ├── scheduled-task-duration.test.js  # v1.17.10 — Task Scheduler Duration 不能用 TimeSpan.MaxValue
 │   ├── bootstrap-strip-bom.test.js  # v1.17.10 — bootstrap public route strip BOM（iwr|iex 相容）
 │   ├── credentials-bom-safe.test.js # v1.17.12 — readCredentials / readJsonSafe 容忍 BOM-prefixed JSON
