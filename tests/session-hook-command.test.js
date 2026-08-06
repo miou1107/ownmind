@@ -152,6 +152,26 @@ describe('needsRewrite — the check that decides whether any Windows machine ge
     assert.equal(needsRewrite([], winOpts), false);
   });
 
+  it("repairs 采瑤's real machine: one unquoted entry becomes four", () => {
+    // Her exact settings on 2026-08-06. Her AI hand-wrote a working Node command without
+    // quotes; v1.26.82 read that as a customisation and left her on a single matcher, so
+    // memories loaded on a new conversation and not on resume, clear or compact.
+    const opts = { platform: 'win32', hookDir: 'C:/Users/Celia/.claude/hooks' };
+    const hers = [{ matcher: null, hooks: [{ type: 'command', command: 'node C:/Users/Celia/.ownmind/hooks/ownmind-session-start.js' }] }];
+    assert.equal(needsRewrite(hers, opts), true);
+  });
+
+  it("leaves Adam's already-correct machine untouched", () => {
+    // Four matchers, the exact command install.ps1 v1.26.82 wrote. Nothing to do — and a
+    // rewrite here would churn his settings.json on every daily update.
+    const opts = { platform: 'win32', hookDir: 'C:/Users/Adam/.claude/hooks' };
+    const his = MATCHERS.map((matcher) => ({
+      matcher,
+      hooks: [{ type: 'command', command: 'node "C:/Users/Adam/.claude/hooks/ownmind-session-start.js"', timeout: 10 }],
+    }));
+    assert.equal(needsRewrite(his, opts), false);
+  });
+
   it('leaves a command the user edited themselves alone', () => {
     // Without this the updater silently undoes a deliberate edit every day, forever, and
     // the user has no way to win the argument.
@@ -185,11 +205,35 @@ describe('isOwnmindSessionEntry / isGeneratedCommand — what counts as ours', (
     }
   });
 
-  it('recognises only commands we generate', () => {
-    assert.equal(isGeneratedCommand('bash ~/.claude/hooks/ownmind-session-start.sh'), true);
-    assert.equal(isGeneratedCommand('node "C:/Users/a/.claude/hooks/ownmind-session-start.js"'), true);
-    assert.equal(isGeneratedCommand('bash ~/.claude/hooks/ownmind-session-start.sh --verbose'), false);
-    assert.equal(isGeneratedCommand('node C:/x/ownmind-session-start.js'), false, 'unquoted is not a form we emit');
+  // Measured on 采瑤's machine, 2026-08-06. Her AI hand-wrote a working Node command
+  // without quotes. `isGeneratedCommand` said no, `needsRewrite` said no, and the upgrade
+  // left her with one matcher instead of four — memories load on a new conversation and
+  // not on resume, clear or compact. Quoting is spelling, not intent: a command whose
+  // whole job is running our own hook file is ours to maintain however it was written.
+  // Extra flags or a different program are what make it somebody's deliberate edit.
+  it('claims a command that runs our hook file even when it is written differently', () => {
+    for (const c of [
+      'node C:/Users/Celia/.ownmind/hooks/ownmind-session-start.js',
+      'node "C:/Users/Celia/.claude/hooks/ownmind-session-start.js"',
+      "node 'C:/x/ownmind-session-start.js'",
+      'bash ~/.claude/hooks/ownmind-session-start.sh',
+    ]) {
+      assert.equal(isGeneratedCommand(c), true, c);
+    }
+  });
+
+  it('still leaves a genuinely customised command alone', () => {
+    for (const c of [
+      'bash ~/.claude/hooks/ownmind-session-start.sh --verbose',
+      'node C:/x/ownmind-session-start.js --debug',
+      'my-wrapper node C:/x/ownmind-session-start.js',
+      'node C:/x/some-other-hook.js',
+    ]) {
+      assert.equal(isGeneratedCommand(c), false, c);
+    }
+  });
+
+  it('handles absent and empty commands', () => {
     assert.equal(isGeneratedCommand(''), false);
     assert.equal(isGeneratedCommand(undefined), false);
   });

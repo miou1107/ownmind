@@ -52,7 +52,7 @@ function sessionStartCommand({ platform, hookDir } = {}) {
   // JSON without the double-escaping that backslashes invite.
   const dir = String(hookDir || '').replace(/\\/g, '/').replace(/\/+$/, '');
   // Quoted because a Windows home directory routinely contains a space
-  // ("C:\Users\Vin Kao\"), and unquoted it would arrive as two arguments.
+  // ("C:\Users\Jane Doe\"), and unquoted it would arrive as two arguments.
   return `node "${dir}/ownmind-session-start.js"`;
 }
 
@@ -105,12 +105,33 @@ function needsRewrite(existingEntries, opts) {
   return !hasAllMatchers || !allCommandsCurrent;
 }
 
-/** Did we write this command, in this or any earlier version? */
+/**
+ * Is this command ours to maintain?
+ *
+ * True when its whole job is running our own SessionStart hook — whatever the quoting,
+ * whichever runtime. False as soon as there are extra arguments, a wrapper program, or a
+ * different script: that is somebody's deliberate edit and overwriting it daily would be
+ * an argument the user cannot win.
+ *
+ * v1.26.82 matched only the exact strings we emit, which meant quoting decided ownership.
+ * On 采瑤's machine her AI had hand-written a working but unquoted Node command; we read
+ * that as a customisation and left her on one matcher instead of four, so memories loaded
+ * on a new conversation and not on resume, clear or compact. Quoting is spelling, not
+ * intent.
+ */
 function isGeneratedCommand(command) {
   const c = String(command || '').trim();
-  if (c === UNIX_COMMAND) return true;
-  // Every Windows form we have ever emitted: `node "<abs path>/ownmind-session-start.js"`.
-  return /^node "[^"]*\/ownmind-session-start\.js"$/.test(c);
+  if (!c) return false;
+  // <runtime> <path-to-our-hook>, and nothing else. The path may be bare, "quoted" or
+  // 'quoted'; `~` is left as-is because the shell, not us, expands it.
+  const m = c.match(/^(node|bash)\s+(?:"([^"]+)"|'([^']+)'|(\S+))$/);
+  if (!m) return false;
+  const runtime = m[1];
+  const target = m[2] || m[3] || m[4];
+  const file = target.split(/[/\\]/).pop();
+  return runtime === 'node'
+    ? file === 'ownmind-session-start.js'
+    : file === 'ownmind-session-start.sh';
 }
 
 module.exports = {

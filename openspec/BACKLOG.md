@@ -619,7 +619,7 @@ Unknown and to be measured before designing anything:
 
 Origin: 2026-08-06, while explaining the blank columns on the team usage page.
 
-### 26. The Node SessionStart hook does eight fewer things than the bash one
+### 26. ~~The Node SessionStart hook does eight fewer things than the bash one~~ — CLOSED in v1.26.83
 
 v1.26.80 routes Windows to `hooks/ownmind-session-start.js` because the bash command had
 never once fired there. That fixes the thing that matters most — memories and iron rules
@@ -646,8 +646,12 @@ a matter of calling the same modules rather than reimplementing anything. It was
 in v1.26.80 because that release was already unverifiable on Windows and widening it would
 have made the unverifiable part larger.
 
-Do not close this by declaring the Node hook "good enough". The measure is a Windows
-machine showing a broadcast.
+Closed in v1.26.83: all eight ported, reusing the same `hooks/lib/*` modules rather than
+reimplementing them, and covered by a behavioural test that runs the real hook against a
+local server and asserts on the requests made and the files written.
+
+Still true, and the reason this stays readable rather than deleted: the final measure is a
+Windows machine showing a broadcast. That waits on item 24.
 
 Origin: v1.26.80, 2026-08-06, found by adversarial review of that change. Depends on
 item 24 for verification.
