@@ -21,14 +21,32 @@ else
   report_error() { :; }
 fi
 
+# v1.26.88 — Windows path normalization. Under Git Bash a POSIX path interpolated into
+# `node -e` / `node -p` source reaches node.exe unconverted and resolves against the drive
+# root. See install.sh and path-helpers.sh; bug report #15 (2026-08-06).
+if [ -f "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+OWNMIND_DIR_WIN="$(to_win_path "$OWNMIND_DIR")"
+
+# The log directory has to exist before anything below redirects into it. A failed `2>>`
+# makes the command itself fail, which would turn "no log directory" into "the beacon
+# never sends" — the same class of silent breakage this release is about. Created again
+# further down for the same reason; both are idempotent.
+mkdir -p "${HOME}/.ownmind/logs" 2>/dev/null || true
+
 # v1.17.81 — update_started beacon (fire-and-forget + spool fallback).
 send_update_beacon() {
   local trigger="$1"
-  local claude_settings="$HOME/.claude/settings.json"
-  [ -f "$claude_settings" ] || return
+  local claude_settings
+  claude_settings="$(to_win_path "$HOME/.claude/settings.json")"
+  [ -f "$HOME/.claude/settings.json" ] || return
   local api_key api_url
-  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>/dev/null)
-  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>/dev/null)
+  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>>"${HOME}/.ownmind/logs/update-err.log")
+  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>>"${HOME}/.ownmind/logs/update-err.log")
   [ -n "$api_key" ] && [ -n "$api_url" ] || return
   local ts machine platform body
   ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
@@ -137,7 +155,7 @@ if [ -f "$UPGRADE_SNIPPET" ]; then
           let c = fs.readFileSync(p, 'utf8');
           c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
           fs.writeFileSync(p, c);
-        " "$target_file" 2>/dev/null || true
+        " "$(to_win_path "$target_file")" 2>>"${HOME}/.ownmind/logs/update-err.log" || true
       fi
       { echo ''; echo '<!-- ownmind-upgrade-rule -->'; cat "$UPGRADE_SNIPPET"; echo '<!-- /ownmind-upgrade-rule -->'; } >> "$target_file"
     fi
@@ -211,6 +229,7 @@ fi
 
 # --- 3. Ensure Claude Code settings.json has every hook entry ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 ERR_LOG="$HOME/.ownmind/logs/update-errors.log"
 mkdir -p "$(dirname "$ERR_LOG")"
 if [ -f "$CLAUDE_SETTINGS" ]; then
@@ -218,8 +237,8 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     const fs = require('fs');
     const path = require('path');
     const os = require('os');
-    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
-    const s = loadOrSkip('$CLAUDE_SETTINGS', {});
+    const { loadOrSkip } = require('$OWNMIND_DIR_WIN/scripts/install-helpers/load-settings-safe.cjs');
+    const s = loadOrSkip('$CLAUDE_SETTINGS_WIN', {});
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
 
@@ -256,9 +275,9 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
 
     if (changed) {
       // Atomic write: write to temp file then rename to prevent corruption
-      const tmp = '$CLAUDE_SETTINGS' + '.tmp';
+      const tmp = '$CLAUDE_SETTINGS_WIN' + '.tmp';
       fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
-      fs.renameSync(tmp, '$CLAUDE_SETTINGS');
+      fs.renameSync(tmp, '$CLAUDE_SETTINGS_WIN');
     }
   " 2>>"$ERR_LOG"
 fi
@@ -305,10 +324,11 @@ fi
 # --- 4. Gemini CLI hooks ---
 if [ -d "$HOME/.gemini" ]; then
   GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+  GEMINI_SETTINGS_WIN="$(to_win_path "$GEMINI_SETTINGS")"
   node -e "
     const fs = require('fs');
-    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
-    const path = '$GEMINI_SETTINGS';
+    const { loadOrSkip } = require('$OWNMIND_DIR_WIN/scripts/install-helpers/load-settings-safe.cjs');
+    const path = '$GEMINI_SETTINGS_WIN';
     const s = loadOrSkip(path, {});
     if (!s.hooks) s.hooks = {};
     if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
@@ -333,11 +353,12 @@ fi
 if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
   GH_HOOKS_DIR="$HOME/.github/hooks"
   GH_HOOKS_FILE="$GH_HOOKS_DIR/hooks.json"
+  GH_HOOKS_FILE_WIN="$(to_win_path "$GH_HOOKS_FILE")"
   mkdir -p "$GH_HOOKS_DIR"
   node -e "
     const fs = require('fs');
-    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
-    const path = '$GH_HOOKS_FILE';
+    const { loadOrSkip } = require('$OWNMIND_DIR_WIN/scripts/install-helpers/load-settings-safe.cjs');
+    const path = '$GH_HOOKS_FILE_WIN';
     const s = loadOrSkip(path, { version: 1, hooks: {} });
     if (!s.hooks) s.hooks = {};
     if (!s.hooks.sessionStart) s.hooks.sessionStart = [];
@@ -355,10 +376,11 @@ fi
 # --- 6. Cursor hooks ---
 if [ -d "$HOME/.cursor" ]; then
   CURSOR_HOOKS="$HOME/.cursor/hooks.json"
+  CURSOR_HOOKS_WIN="$(to_win_path "$CURSOR_HOOKS")"
   node -e "
     const fs = require('fs');
-    const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
-    const path = '$CURSOR_HOOKS';
+    const { loadOrSkip } = require('$OWNMIND_DIR_WIN/scripts/install-helpers/load-settings-safe.cjs');
+    const path = '$CURSOR_HOOKS_WIN';
     const s = loadOrSkip(path, { version: 1, hooks: {} });
     if (!s.hooks) s.hooks = {};
     if (!s.hooks['session-start']) s.hooks['session-start'] = [];

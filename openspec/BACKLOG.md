@@ -706,6 +706,35 @@ live, undecided question, not a rejected one.
 Origin: 2026-08-06, Vin's closed-loop requirement, stated while the credential-resolver
 fix was in progress.
 
+### 28. Windows has two installers that do different things, and upgrades only run the broken one
+
+`install.ps1` is a native PowerShell implementation. `install.sh` is the Git Bash one.
+They are not translations of each other: they configure different sets of tools, in a
+different order, with different repair steps.
+
+That divergence stayed invisible while both appeared to work. v1.26.88 made it visible:
+`install.sh` had been aborting halfway through on Windows since some v1.19.x release, and
+`install.ps1` had not. Machine TANK reported a clean 11-passed self-check throughout,
+because it had once been installed by `install.ps1` — the components were there, just
+never updated by any later upgrade. **Upgrades only ever run `install.sh`.**
+
+So on Windows, "installed" and "upgraded" can mean two different sets of components, and
+the self-check cannot tell them apart. The v1.26.88 `install_complete` item narrows this:
+it now catches a machine that never got the parts at all. It does not catch a machine
+holding a stale version of them.
+
+What this would take: pick one implementation as authoritative and make the other call
+it, or extract the per-tool configuration into helpers both drive. The second is closer
+to how `ensure-session-hook.cjs` / `ensure-key-file.cjs` already work — those are the
+only steps the two installers genuinely share today, and they are shared precisely
+because they were extracted.
+
+Do not treat this as cosmetic. Every future Windows fix has to be written twice, and the
+one nobody remembers to write is the one the upgrade path runs.
+
+Origin: 2026-08-06, bug report #15 from `Vin-windows-test`, item 5 of its suggested
+fixes; deliberately left out of v1.26.88's scope so that release stayed a bug fix.
+
 ---
 
 ## Smaller cleanups

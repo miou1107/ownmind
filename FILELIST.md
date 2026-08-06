@@ -1,5 +1,45 @@
 # OwnMind 檔案結構
 
+## v1.26.88 修改（Windows 升級中途靜默中止）
+
+新增檔：
+```
+scripts/install-helpers/install-artifacts.cjs   — 「裝完了」的唯一定義。列出安裝該產出的東西
+                                                   （SessionStart 掛勾、鐵律掛勾、hooks/lib、git-hooks、
+                                                   技能檔、MCP 進入點），install.sh 收尾時斷言、
+                                                   self-check.cjs 當成 install_complete 項目報上去。
+                                                   查不到狀態一律算「缺」，不算「大概沒事」。
+                                                   直接執行時是 CLI：完整 exit 0、缺件 exit 1 並列出缺什麼
+tests/install-artifacts.test.js                 — 全在、單缺、多缺、把目錄放成檔案、路徑讀不到（EACCES）；
+                                                   CLI 兩個結束碼；以及「清單只有一份」的來源守衛
+tests/installer-node-paths.test.js              — 從腳本本身長出清單的四道守衛：node -e 裡不得有沒轉過的
+                                                   路徑、_WIN 變數必須由 to_win_path 產生、node 錯誤不得丟給
+                                                   /dev/null、升級日誌不得寫在回滾會刪掉的目錄。
+                                                   解析不出來的 node -e 區塊算失敗，不算跳過
+```
+
+修改檔：
+```
+install.sh                                      — 接上 path-helpers.sh（缺檔時退回恆等函式）；
+                                                   十處寫死在 node 程式碼裡的路徑改走 to_win_path；
+                                                   node 錯誤改寫進 ~/.ownmind-logs/install-<時間>.log；
+                                                   加 ERR trap 印出停在哪一行 + 日誌位置 + 最後幾行錯誤；
+                                                   收尾前跑 install-artifacts 斷言，缺件就 [FAIL] + exit 1
+                                                   （仍會先跑 self-check 把狀態送上伺服器）
+scripts/update.sh                               — 同上接線；五處路徑改走 to_win_path（含四個
+                                                   require('.../load-settings-safe.cjs')）；三處 node
+                                                   錯誤改寫進 update-err.log；日誌目錄提前建立，
+                                                   否則 `2>>` 失敗會讓 beacon 永遠送不出去
+scripts/interactive-upgrade.sh                  — 升級日誌搬到 ~/.ownmind-logs/（回滾動不到的地方）；
+                                                   send_upgrade_complete_beacon 的設定檔路徑改走 to_win_path
+scripts/install-helpers/self-check.cjs          — 新增 install_complete 檢查項（呼叫 install-artifacts.cjs，
+                                                   不自己再列一份清單）；checkNamesFor 同步
+tests/upgrade-complete-beacon.test.js           — 抽出函式測試時一併 source path-helpers.sh，
+                                                   否則測到的是一個實際上不存在的版本
+```
+
+**未動**：`install.ps1`。它在 Windows 上跑得完、跟 `install.sh` 走的是兩條不同的路，但升級只走 sh。兩者對齊記進 backlog。
+
 ## v1.26.87 修改（安裝檢測警告機制）
 
 新增檔：
