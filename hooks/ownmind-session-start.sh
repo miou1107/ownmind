@@ -19,6 +19,7 @@ else
   to_win_path() { echo "$1"; }
 fi
 OWNMIND_DIR_WIN="$(to_win_path "$OWNMIND_DIR")"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 
 # v1.17.71：補印上次 session 因 tty 不可用沒寫成的 banner（規格 #3 不被 AI 過濾）。
 # SessionStart 的 stderr → user terminal，是 user-visible 通道。
@@ -76,10 +77,11 @@ log_event() {
 # on every single session, and memories silently never loaded. Now it asks the shared
 # resolver, so this hook, the Node hook, the scanner and the self-check cannot disagree.
 CREDS_RESOLVER="$OWNMIND_DIR/scripts/install-helpers/resolve-credentials.cjs"
+CREDS_RESOLVER_WIN="$(to_win_path "$CREDS_RESOLVER")"
 if [ -f "$CREDS_RESOLVER" ]; then
   CREDS=$(node -e "
     try {
-      const r = require('$CREDS_RESOLVER').resolveCredentials();
+      const r = require('$CREDS_RESOLVER_WIN').resolveCredentials();
       console.log((r.apiKey || '') + '\n' + (r.apiUrl || ''));
     } catch { console.log('\n'); }
   " 2>/dev/null)
@@ -87,7 +89,7 @@ elif [ -f "$CLAUDE_SETTINGS" ]; then
   # Fallback for the one update that delivers the resolver.
   CREDS=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
       const o = s.mcpServers?.ownmind?.env || {};
       console.log((o.OWNMIND_API_KEY || '') + '\n' + (o.OWNMIND_API_URL || ''));
     } catch { console.log('\n'); }
@@ -165,9 +167,10 @@ fi
 # 縮短「user 升完 → server 看到」的延遲到「下次開 Claude Code」即可。
 # Fire-and-forget、3 秒 timeout、絕不擋 SessionStart。
 SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+SELF_CHECK_SCRIPT_WIN="$(to_win_path "$SELF_CHECK_SCRIPT")"
 if [ -f "$SELF_CHECK_SCRIPT" ] && [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
   timeout 3 node -e "
-    const sc = require('$SELF_CHECK_SCRIPT');
+    const sc = require('$SELF_CHECK_SCRIPT_WIN');
     if (sc.retrySpool) {
       sc.retrySpool('$API_URL', '$API_KEY').catch(() => {});
     }

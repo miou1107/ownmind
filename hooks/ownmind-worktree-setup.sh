@@ -34,14 +34,26 @@ if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
 fi
 
 # 讀取全域 MCP 設定（從 ~/.claude/settings.json 取 ownmind server config）
+# v1.26.88 — Windows path normalization. Under Git Bash a POSIX path interpolated into
+# `node -e` source reaches node.exe unconverted and resolves against the drive root.
+# This hook IS installed on Windows (install.sh registers it with no platform branch), so
+# without this every credential read below came back empty and the hook exited silently.
+if [ -f "$HOME/.ownmind/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$HOME/.ownmind/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 if [ ! -f "$CLAUDE_SETTINGS" ]; then
   exit 0
 fi
 
 HAS_OWNMIND=$(node -e "
   try {
-    const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+    const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
     process.stdout.write(s.mcpServers?.ownmind ? 'yes' : 'no');
   } catch { process.stdout.write('no'); }
 " 2>/dev/null)
@@ -52,19 +64,21 @@ fi
 
 # --- 注入 .mcp.json ---
 MCP_FILE="$WORKTREE_PATH/.mcp.json"
+MCP_FILE_WIN="$(to_win_path "$MCP_FILE")"
 if [ ! -f "$MCP_FILE" ]; then
   node -e "
     const fs = require('fs');
-    const s = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+    const s = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
     const srv = s.mcpServers.ownmind;
     const out = { mcpServers: { ownmind: srv } };
-    fs.writeFileSync('$MCP_FILE', JSON.stringify(out, null, 2));
+    fs.writeFileSync('$MCP_FILE_WIN', JSON.stringify(out, null, 2));
   " 2>/dev/null
 fi
 
 # --- 注入 .claude/settings.local.json（enableAllProjectMcpServers）---
 WORKTREE_CLAUDE_DIR="$WORKTREE_PATH/.claude"
 WORKTREE_SETTINGS="$WORKTREE_CLAUDE_DIR/settings.local.json"
+WORKTREE_SETTINGS_WIN="$(to_win_path "$WORKTREE_SETTINGS")"
 mkdir -p "$WORKTREE_CLAUDE_DIR"
 
 if [ ! -f "$WORKTREE_SETTINGS" ]; then
@@ -72,7 +86,7 @@ if [ ! -f "$WORKTREE_SETTINGS" ]; then
 elif ! grep -q '"enableAllProjectMcpServers"' "$WORKTREE_SETTINGS" 2>/dev/null; then
   node -e "
     const fs = require('fs');
-    const path = '$WORKTREE_SETTINGS';
+    const path = '$WORKTREE_SETTINGS_WIN';
     let s = {};
     try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
     s.enableAllProjectMcpServers = true;

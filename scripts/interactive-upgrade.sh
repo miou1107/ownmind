@@ -23,7 +23,10 @@ BACKUP_DIR="${HOME}/.ownmind.bak.${TS}"
 # Measured on TANK, 2026-08-06: 0 bytes, on the one failure anybody wanted to read.
 # Bug report #15.
 LOG_DIR="${HOME}/.ownmind-logs"
-mkdir -p "${LOG_DIR}" 2>/dev/null || LOG_DIR="${OWNMIND_DIR}/logs"
+# The fallback must also be outside ${OWNMIND_DIR}. Falling back to ${OWNMIND_DIR}/logs
+# would quietly restore the exact bug this block removes, and the covering test only reads
+# the LOG_FILE= line — it would still pass.
+mkdir -p "${LOG_DIR}" 2>/dev/null || LOG_DIR="$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}")"
 LOG_FILE="${LOG_DIR}/upgrade-${TS}.log"
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
@@ -174,8 +177,19 @@ if [ -z "${API_KEY}" ] || [ -z "${API_URL}" ]; then
   fi
 else
   cd "${OWNMIND_DIR}"
-  if bash install.sh "${API_KEY}" "${API_URL}" >>"${LOG_FILE}" 2>&1; then
+  # v1.26.88 — exit 2 means "install.sh ran to the end and found itself incomplete".
+  # Do NOT roll back on 2: rollback() only replaces ${OWNMIND_DIR}, while install.sh has
+  # already rewritten ~/.claude/settings.json, the hook scripts, the skill files and
+  # git's core.hooksPath. Restoring the code alone would pair old code with new
+  # configuration, and it cannot produce the missing artifacts anyway. The self-check
+  # inside install.sh has already reported the condition to the server.
+  install_status=0
+  bash install.sh "${API_KEY}" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
+  if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
+  elif [ "${install_status}" -eq 2 ]; then
+    report_error "install_incomplete" "install.sh exited 2 (artifacts missing); not rolled back" "${LOG_FILE}"
+    STEP "install" "Installation finished but is incomplete — see ${LOG_FILE}. Not rolled back (rollback cannot create the missing parts). Re-run: bash ~/.ownmind/scripts/bootstrap.sh"
   else
     rollback
     FAIL "install" "install.sh failed (see ${LOG_FILE}); backup restored"
@@ -295,8 +309,8 @@ send_upgrade_complete_beacon() {
   claude_settings="$(to_win_path "$HOME/.claude/settings.json")"
   [ -f "$HOME/.claude/settings.json" ] || return
   local api_key api_url
-  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>/dev/null)
-  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>/dev/null)
+  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>>"${LOG_FILE:-/dev/null}")
+  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>>"${LOG_FILE:-/dev/null}")
   [ -n "$api_key" ] && [ -n "$api_url" ] || return
   local ts machine platform body
   ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"

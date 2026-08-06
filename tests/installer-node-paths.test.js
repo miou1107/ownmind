@@ -19,7 +19,24 @@ import { execFileSync } from 'node:child_process';
  * themselves so nobody has to remember, and fail closed on anything they cannot parse.
  */
 
-const SCRIPTS = ['install.sh', 'scripts/update.sh', 'scripts/interactive-upgrade.sh'];
+/**
+ * Every shell script in the repo that can invoke node inline. Discovered rather than
+ * listed: a hand-written list is how `hooks/ownmind-iron-rule-check.sh` — which install.sh
+ * registers on Windows with no platform branch — carried the identical defect through the
+ * release that was named after it.
+ */
+function shellScripts() {
+  const root = new URL('..', import.meta.url).pathname;
+  const out = execFileSync('git', ['ls-files', '*.sh'], { cwd: root, encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    // Fixtures deliberately contain broken shapes; they are not shipped to a machine.
+    .filter((f) => !f.startsWith('tests/'));
+  assert.ok(out.length >= 8, `expected to discover the shell scripts, found ${out.length}`);
+  return out;
+}
+
+const SCRIPTS = shellScripts();
 
 /** Shell variables that are known NOT to hold a filesystem path. */
 const NON_PATH_VARS = new Set([
@@ -28,6 +45,8 @@ const NON_PATH_VARS = new Set([
   'OSTYPE', 'HOSTNAME',
   'ts', 'trigger', 'platform', 'machine', 'version',
   'api_key', 'api_url',
+  // version strings and event names, not paths
+  'VERSION', 'PKG_VER', 'CLIENT_VER', 'SERVER_VER', 'TRIGGER',
 ]);
 
 /**
@@ -41,14 +60,21 @@ function inlineNodeBlocks(file) {
   const lines = text.split('\n');
   const blocks = [];
 
+  // Every spelling of "evaluate this string": -e, -p, --eval, --print, and the long forms
+  // with an `=`. `node --eval "…"` slipped straight past the first version of this guard.
+  const INLINE_FLAG = String.raw`(?:-[ep]|--eval|--print)(?:\s+|=)`;
+
   for (let i = 0; i < lines.length; i += 1) {
-    const open = /(?:^|[^#])\bnode\s+-[ep]\s+"/.exec(lines[i]);
+    // Comment lines are documentation, not code — path-helpers.sh's own usage example is
+    // a `node -p "require('${OWNMIND_DIR}/package.json')…"` illustrating the bug.
+    if (/^\s*#/.test(lines[i])) continue;
+    const open = new RegExp(String.raw`(?:^|[^#])\bnode\s+${INLINE_FLAG}"`).exec(lines[i]);
     if (!open) continue;
 
     // Single-line form: `node -p "…"` opens and closes on the same line. Match the shell
     // double-quoted string itself so a following `2>>"$LOG"` redirect is not swallowed
     // into the body — that mistake made this guard report the redirect as an offender.
-    const single = /\bnode\s+-[ep]\s+"((?:[^"\\]|\\.)*)"/.exec(lines[i]);
+    const single = new RegExp(String.raw`\bnode\s+${INLINE_FLAG}"((?:[^"\\]|\\.)*)"`).exec(lines[i]);
     if (single) {
       blocks.push({ file, line: i + 1, body: single[1], tail: lines[i] });
       continue;
@@ -71,16 +97,26 @@ function inlineNodeBlocks(file) {
 describe('paths inside inline Node source are Windows-native', () => {
   for (const file of SCRIPTS) {
     it(`${file} converts every interpolated path`, () => {
+      const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
       const offenders = [];
       for (const block of inlineNodeBlocks(file)) {
         const vars = block.body.match(/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g) || [];
         for (const raw of vars) {
           const name = raw.replace(/[${}]/g, '');
           if (NON_PATH_VARS.has(name)) continue;
-          if (name.endsWith('_WIN') || name.endsWith('_win')) continue;
-          // `claude_settings` and friends are locals already assigned via to_win_path;
-          // the assignment test below is what proves that.
-          if (/^(claude_settings|p|c|target_file)$/.test(name)) continue;
+          // Names are not evidence. The only thing that clears a variable is an assignment
+          // in this same file that runs it through to_win_path. An earlier version of this
+          // test exempted `claude_settings` by name with a comment claiming the assignment
+          // test covered it; the assignment test only looked at `*_WIN`, so reverting that
+          // very fix left the suite green.
+          const assigned = new RegExp(
+            String.raw`^\s*(?:local\s+)?${name}=.*to_win_path`, 'm'
+          ).test(text);
+          if (assigned) continue;
+          // A `*_WIN` name is already-converted by construction; the separate assignment
+          // test below is what holds that construction to account.
+          if (/_win$/i.test(name)) continue;
+          if (/^(p|c)$/.test(name)) continue;  // process.argv locals inside the JS itself
           offenders.push(`${block.file}:${block.line} interpolates $${name}`);
         }
         // A bare $HOME/... literal inside the Node source is the original defect.
@@ -96,14 +132,14 @@ describe('paths inside inline Node source are Windows-native', () => {
   it('every _WIN variable is produced by to_win_path, not by hand', () => {
     for (const file of SCRIPTS) {
       const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-      const assigns = text.match(/^\s*[A-Za-z_][A-Za-z0-9_]*_WIN=.*$/gm) || [];
+      const assigns = text.match(/^\s*(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*_(?:WIN|win)=.*$/gm) || [];
       for (const line of assigns) {
         // OWNMIND_DIR_WIN in install.sh predates this change and uses `cygpath -w` on
         // purpose: it is embedded in a backslash-escaped Windows command string, not read
         // by node's fs. START_CMD_WIN is then built from it. Everything else must use the
         // shared helper.
         if (/cygpath -w/.test(line)) continue;
-        if (/=\s*"?\$\{?[A-Za-z_][A-Za-z0-9_]*_WIN\}?/.test(line)) continue;
+        if (/=\s*"?\$\{?[A-Za-z_][A-Za-z0-9_]*_(?:WIN|win)\}?/.test(line)) continue;
         assert.match(line, /to_win_path/, `${file}: ${line.trim()}`);
       }
     }
