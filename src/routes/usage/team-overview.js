@@ -87,28 +87,34 @@ export function createTeamOverviewRouter(deps = {}) {
       // Membership of the list is deliberately still decided by session_logs. What the
       // timestamp means and who the page is about are separate questions; widening the
       // JOIN would quietly change the second one.
+      //
+      // The two extra sources are scalar subqueries in the SELECT, not lateral joins.
+      // A lateral sits after `JOIN session_logs` and is therefore evaluated once per
+      // work-log row that survives the window — somebody with 50 sessions in the period
+      // would cost 50 MAX(ts) lookups per source, against token_events, the largest table
+      // in the product. In the select list of a grouped query they run once per person.
+      // (Adversarial review of this change, 2026-08-06.)
+      //
+      // ORDER BY names the output column rather than repeating the expression, so the
+      // sort and the display cannot drift apart, and neither subquery runs twice.
       const sql = `
         SELECT u.id AS user_id,
                u.name AS user_name,
-               GREATEST(MAX(sl.created_at), act.last_ts, tok.last_ts) AS last_active_at,
+               GREATEST(
+                 MAX(sl.created_at),
+                 (SELECT MAX(a.ts) FROM activity_logs a
+                   WHERE a.user_id = u.id AND a.ts >= $1 AND a.ts <= $2),
+                 (SELECT MAX(e.ts) FROM token_events e
+                   WHERE e.user_id = u.id AND e.ts >= $1 AND e.ts <= $2)
+               ) AS last_active_at,
                COUNT(sl.id)::int AS session_count,
                jsonb_agg(jsonb_build_object('details', sl.details)
                          ORDER BY sl.created_at DESC) AS sessions_json
           FROM users u
           JOIN session_logs sl ON sl.user_id = u.id
-          LEFT JOIN LATERAL (
-                 SELECT MAX(a.ts) AS last_ts
-                   FROM activity_logs a
-                  WHERE a.user_id = u.id AND a.ts >= $1 AND a.ts <= $2
-               ) act ON TRUE
-          LEFT JOIN LATERAL (
-                 SELECT MAX(e.ts) AS last_ts
-                   FROM token_events e
-                  WHERE e.user_id = u.id AND e.ts >= $1 AND e.ts <= $2
-               ) tok ON TRUE
          WHERE sl.created_at >= $1 AND sl.created_at <= $2
-         GROUP BY u.id, u.name, act.last_ts, tok.last_ts
-         ORDER BY GREATEST(MAX(sl.created_at), act.last_ts, tok.last_ts) DESC`;
+         GROUP BY u.id, u.name
+         ORDER BY last_active_at DESC NULLS LAST`;
       const result = await query(sql, [from.toISOString(), to.toISOString()]);
 
       const members = result.rows.map(row => {

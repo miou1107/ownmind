@@ -581,6 +581,12 @@ router.get('/stats/all', adminAuth, async (req, res) => {
         -- read as last active hours ago. Two pages answering the same question with
         -- different numbers is its own defect, so both use the newest of the three
         -- sources. GREATEST ignores NULLs and is NULL only when every source is.
+        --
+        -- Deliberately NOT bounded by $1, unlike the counts above it. This page lists
+        -- everybody, so the column has always meant "when did we last hear from this
+        -- person at all"; bounding it would blank the answer for exactly the people
+        -- somebody opens this page to find. 團隊用量 bounds all three because that page
+        -- only lists people who worked inside the chosen period in the first place.
         GREATEST(
           (SELECT MAX(ts) FROM activity_logs WHERE user_id = u.id),
           (SELECT MAX(ts) FROM token_events WHERE user_id = u.id),

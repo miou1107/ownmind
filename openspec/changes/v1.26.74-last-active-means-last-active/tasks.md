@@ -50,7 +50,36 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 5 — Review
 
-- [x] One round against a non-git copy outside the repo.
+One round against a non-git copy outside the repo. Four findings: one fixed, one kept and
+explained, two confirming the change was right.
+
+The fix ships as **v1.26.75** rather than being folded back into v1.26.74: the pre-commit
+gate requires a code change to carry a version, and v1.26.74 was already written into
+CHANGELOG and the three READMEs by the time the review came back. Same change folder,
+because it is the same piece of work.
+
+- [x] **The extra sources were read once per work log, not once per person.** The sharpest
+      one and correct. Two `LEFT JOIN LATERAL`s sat after `JOIN session_logs`, so each was
+      evaluated for every work-log row inside the window — 50 sessions in a period meant
+      50 `MAX(ts)` lookups per source, against `token_events`. Rewritten as scalar
+      subqueries in the select list, which run once per output group, and `ORDER BY` now
+      names the output column so neither subquery is evaluated twice. This also removed
+      `act.last_ts` / `tok.last_ts` from the `GROUP BY`, which the reviewer separately
+      flagged as leaning on data being constant per user.
+- [x] **`activity.js` does not bound `last_active` by the window while its counts are
+      bounded.** True, deliberate, and now said out loud in the code rather than left to
+      be read as an oversight. That page lists everybody, so the column has always meant
+      "when did we last hear from this person at all"; bounding it would blank the answer
+      for exactly the people somebody opens the page to find. 團隊用量 bounds all three
+      because it only lists people who worked inside the chosen period at all.
+- [x] **The `GROUP BY` was legal and `GREATEST`'s NULL handling correct** — confirmed,
+      no action. The rewrite removed the question anyway.
+- [x] **Parameterisation is clean** — `$1`/`$2` throughout, no interpolation.
+
+Process note: `agy -p` ignores the shell's working directory. The first run spent fifteen
+minutes looking for the files in its own install directory and answered "I cannot find
+them", which reads at a glance like a review that found nothing. It needs `--add-dir` plus
+absolute paths in the prompt.
 
 ## Phase 6 — Sync
 
