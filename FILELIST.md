@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.76 修改（收集器可靠性連續十二版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.77 修改（收集器可靠性連續十三版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -13,7 +13,9 @@ shared/scanners/reasons.js                  — v1.26.69 六個原因碼的唯�
 shared/scanners/gemini-conversations.js     — v1.26.68 Antigravity 三個介面的對話檔日期來源
 shared/scanners/sqlite-cli.js               — v1.26.71 所有 sqlite3 CLI 查詢的唯一入口（-readonly
                                               開不起來就退回複本，複本要連 -wal / -shm 一起帶）
-shared/scanners/selfcheck.js                — v1.26.72 本機掃到的 vs 伺服器手上有的，比對成五種結論
+shared/scanners/selfcheck.js                — v1.26.72 本機掃到的 vs 伺服器手上有的，比對成五種結論；
+                                              v1.26.77 改用 Authorization: Bearer（伺服器只認這個，
+                                              原本送 X-API-Key，從 v1.26.72 起每一次都 401）
 hooks/ownmind-selfcheck.js                  — v1.26.72 升級後自測的獨立入口
 src/routes/usage/self-check.js              — v1.26.72 GET /api/usage/self-check（只回自己的列）
 client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClientsByMachine + osLabel。
