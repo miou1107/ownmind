@@ -205,6 +205,24 @@ if (Test-Path $ClaudeDir) {
 $ScannerJs = Join-Path $OwnMindDir "hooks\ownmind-usage-scanner.js"
 if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }
 
+# --- 2c. Repair the scanner's scheduled task if it has died (v1.26.79) ---
+# Having a current scanner on disk says nothing about whether anything still runs it.
+# Adam's machine had both the files and the auto-update working, and no scheduled task,
+# for three weeks.
+#
+# The exit code is deliberately not propagated. The sync itself succeeded, and failing the
+# whole run would make mcp/index.js log update_failed and retry. The failure is not
+# swallowed either: ensure-scanner-schedule.ps1 sends a Report-Error, so it shows up on
+# the server rather than only in a console window that nobody sees.
+$EnsureSchedule = Join-Path $OwnMindDir "scripts\install-helpers\ensure-scanner-schedule.ps1"
+if (Test-Path $EnsureSchedule) {
+  $scheduleResult = & powershell -NoProfile -ExecutionPolicy Bypass -File $EnsureSchedule 2>&1
+  Write-Host "   Usage scanner schedule: $scheduleResult"
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "   [ WARN ] scanner schedule is not running and could not be repaired; reported to server"
+  }
+}
+
 # --- 3. Claude Code settings.json：注入 hooks ---
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
 $NoSessionFlag = Join-Path $OwnMindDir ".no-session-hook"

@@ -175,6 +175,26 @@ if [ -f "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" ]; then
   echo "[ OK ] Usage scanner ready"
 fi
 
+# --- 2c. Repair the scanner's schedule if it has died (v1.26.79) ---
+# Syncing the scanner file says nothing about whether anything still runs it. Adam's
+# machine had a current scanner on disk and no live schedule for three weeks.
+#
+# The exit code is deliberately not propagated. The update itself succeeded — files are
+# synced — and failing the whole run would mislead mcp/index.js into logging update_failed
+# and retrying. A failed repair is not swallowed either: the helper reports it to the
+# server, so it lands on the error-report page instead of a terminal nobody is watching.
+ENSURE_SCHEDULE="$OWNMIND_DIR/scripts/install-helpers/ensure-scanner-schedule.sh"
+if [ -f "$ENSURE_SCHEDULE" ]; then
+  # Captured rather than let through, so the helper's machine-readable line does not land
+  # at column 0 in the middle of this script's own output.
+  if SCHEDULE_RESULT="$(bash "$ENSURE_SCHEDULE" 2>&1)"; then
+    echo "   Usage scanner schedule: $SCHEDULE_RESULT"
+  else
+    echo "   [ WARN ] $SCHEDULE_RESULT"
+    echo "   [ WARN ] scanner schedule is not running and could not be repaired; reported to server"
+  fi
+fi
+
 # --- 3. Ensure Claude Code settings.json has every hook entry ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 ERR_LOG="$HOME/.ownmind/logs/update-errors.log"

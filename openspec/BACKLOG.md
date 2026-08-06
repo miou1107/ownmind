@@ -577,6 +577,48 @@ reports `reason=ok` rather than `unreadable`, closes item 20's remaining half to
 
 Origin: v1.26.78, 2026-08-06. Vin: 「這先列為代辦，我現在沒 win 電腦」.
 
+### 25. Four of nine users have never once produced a real session log
+
+The team usage page shows `尚無資料` under **最常做的專案** and **鐵律遵守率** for Michelle,
+Phoebe, 采瑤 and Vin-windows-test. Those two columns read `details.project` and
+`details.rules_triggered` / `rules_complied`, which only `ownmind_log_session` writes.
+Nobody's collector is at fault: their usage numbers are fine.
+
+Measured on production, `session_logs.details` keys over the last 7 days:
+
+| user | real log_session rows | `_recovery` placeholder rows |
+|---|---|---|
+| Vincent Kao | 19 | 46 |
+| Eric | 15 | 0 |
+| Adam | 4 | 0 |
+| Michelle | **0** | 14 |
+| Phoebe | **0** | 33 |
+| 采瑤 | **0** | 128 |
+| Vin-windows-test | **0** | 2 |
+
+采瑤 is the sharpest case: 128 sessions in a week, not one of them logged. Every row she
+has is a placeholder written by the fallback in `mcp/index.js:1801` / `:1846`
+(`_recovery: 'process_exit'`) or `src/routes/memory.js:1771`
+(`_recovery: 'from_activity_logs'`), and a placeholder carries no project and no rule
+counts by construction.
+
+**Do not fix this by rewording the empty cell.** Vin, 2026-08-06: 「不是改文案寫清楚，而是
+要抓到根本原因並修復才對」. The deliverable is those cells holding values, not a better
+label for their being blank. See IR-130.
+
+Unknown and to be measured before designing anything:
+
+- Is `ownmind_log_session` never called, or called and rejected? `activity_logs` has a
+  `session_log` event; compare its count per user against the real-row count above.
+- Does the skill text actually instruct the AI to call it at end of session, and do these
+  four have the current skill on disk? Michelle is on 1.26.59, 采瑤 on 1.26.37.
+- Vincent has both shapes, so on this machine it fires sometimes. What distinguishes the
+  19 that logged from the 46 that fell back?
+- If the answer is "the AI has to remember to call it", that is the root cause, and the
+  fix is a mechanism rather than a stronger instruction (IR-042: 提醒無效，邏輯才有效).
+
+Origin: 2026-08-06, while explaining the blank columns on the team usage page.
+
 ---
 
 ## Smaller cleanups

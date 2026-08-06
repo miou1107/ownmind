@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.78 修改（收集器可靠性連續十四版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.79 修改（收集器可靠性連續十五版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -25,6 +25,12 @@ hooks/ownmind-selfcheck.js                  — v1.26.72 升級後自測的獨�
 src/routes/usage/self-check.js              — v1.26.72 GET /api/usage/self-check（只回自己的列）
 client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClientsByMachine + osLabel。
                                               狀態取最糟的工具、心跳取最新、壞的排前面
+scripts/install-helpers/ensure-scanner-schedule.sh  — v1.26.79 排程死了就接回去（macOS launchd /
+                                              Linux systemd）。活著就完全不碰；修完回頭問系統，
+                                              不信註冊指令自己的 exit code；修不好往伺服器回報
+scripts/install-helpers/ensure-scanner-schedule.ps1 — v1.26.79 同上的 Windows 版。被停用的工作也算
+                                              壞掉（查得到、永遠不會跑）。註冊邏輯只有一份，
+                                              轉呼叫 register-scanner-task.ps1，這裡不複製
 tests/scanner-task-durability.test.js       — v1.26.65
 tests/scanner-blind-scan.test.js            — v1.26.65
 tests/scanner-vscode-multipath.test.js      — v1.26.66
@@ -41,7 +47,10 @@ tests/self-check-usage-roundtrip.test.js    — v1.26.72
 tests/heartbeat-per-machine.test.js         — v1.26.73
 tests/machine-groups.test.js                — v1.26.73
 tests/team-overview-last-active.test.js     — v1.26.74
-openspec/changes/v1.26.{65,66,67,68,69,70,71,72,73,74}-*/{proposal,spec,tasks}.md
+tests/activity-source-width.test.js         — v1.26.78
+tests/scanner-schedule-repair.test.js       — v1.26.79 Unix 那支是真的執行（暫時 HOME + 假的
+                                              launchctl / systemctl），Windows 那支只能讀文字
+openspec/changes/v1.26.{65,66,67,68,69,70,71,72,73,74,76,77,78,79}-*/{proposal,spec,tasks}.md
 ```
 
 修改檔：
@@ -71,7 +80,12 @@ src/routes/me.js, src/routes/me-narrative.js — v1.26.73 一人多台時版本�
 scripts/install-helpers/self-check.cjs      — v1.26.72 安裝後自我檢查加第九項：回頭跟伺服器對帳
 scripts/windows/{register-scanner-task.ps1,run-hidden.vbs}, scripts/interactive-upgrade.ps1
                                             — v1.26.65 排程不可先刪再建、VBS 要回傳真的 exit code
-install.sh                                  — v1.26.71 scanner 模組清單改成用掃的
+scripts/update.sh, scripts/update.ps1       — v1.26.79 自動更新每次檢查排程還活著（原本只有手動
+                                              升級才會，而沒有人手動升級，所以修復從來沒生效過）。
+                                              修不好不會讓整個更新算失敗，但一定回報伺服器
+install.sh                                  — v1.26.71 scanner 模組清單改成用掃的；v1.26.79 註冊完
+                                              回頭問 launchd / systemd 一次，不再只信註冊指令沒報錯
+                                              （Windows 從 v1.17.12 就這樣做，Unix 這邊一直沒有）
 client/src/pages/System/SystemConfigPage.jsx — v1.26.73 依電腦分組（舊的 key={c.tool} 會撞號）
 client/src/pages/System/observed-users.js   — v1.26.69 靜默附原因；v1.26.73 附機器名
 client/src/i18n/{zh,en,ja}.json             — v1.26.73 系統設定頁的機器分組字串，三語系同步
