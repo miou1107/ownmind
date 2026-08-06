@@ -220,6 +220,28 @@ describe('the scripts that write settings.json all go through the helper', () =>
     const src = read('install.sh');
     assert.match(src, /session-hook-command/, 'install.sh must ask the helper');
   });
+
+  // The installers must REPAIR, not only ADD. Found while working out how 采瑤 could
+  // verify this release on her own machine, and it would have made the release
+  // unverifiable by exactly the people it is for:
+  //
+  //   bootstrap.ps1 → interactive-upgrade.ps1 → install.ps1   (never runs update.ps1)
+  //   install.ps1: `if (-not $sessionExists) { … }`           (she has entries, so: skip)
+  //
+  // Every affected user already has a SessionStart entry — a broken one. An installer that
+  // skips when anything exists cannot fix any of them, and the only path that can is the
+  // auto-update, which on 采瑤's machine has run twice in a month. The repair would have
+  // sat on a road she does not travel. Same defect this whole day has been about.
+  it('install.ps1 repairs an existing broken entry, not only a missing one', () => {
+    const src = read('install.ps1');
+    assert.match(src, /needsRewrite/,
+      'install.ps1 skips when any entry exists, so it can never fix a wrong one');
+  });
+
+  it('install.sh repairs an existing broken entry too', () => {
+    const src = read('install.sh');
+    assert.match(src, /needsRewrite/);
+  });
 });
 
 describe('the Node hook the Windows command points at', () => {

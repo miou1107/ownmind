@@ -383,13 +383,19 @@ node -e "
   // v1.26.80：指令由 session-hook-command.cjs 決定，四支腳本共用一份答案。
   // 之前每支各寫各的，而每天都會跑的那一支贏了。
   if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
+  // v1.26.80：原本只判斷「有沒有」，有就跳過。所有壞掉的機器都「有」，只是內容錯的，
+  // 所以這支腳本永遠修不到任何一台，而使用者手動跑升級走的正是這裡。
   const hookCmd = require(nodePath.join(os.homedir(), '.ownmind/scripts/install-helpers/session-hook-command.cjs'));
-  const sessionExists = s.hooks.SessionStart.some(hookCmd.isOwnmindSessionEntry);
+  const hookOpts = { platform: process.platform, hookDir: nodePath.join(os.homedir(), '.claude', 'hooks') };
+  const existingSession = s.hooks.SessionStart.filter(hookCmd.isOwnmindSessionEntry);
+  if (hookCmd.needsRewrite(existingSession, hookOpts)) {
+    s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !hookCmd.isOwnmindSessionEntry(h));
+    existingSession.length = 0;
+    console.log('   移除舊的 SessionStart hook 設定（這台電腦的指令不對）');
+  }
+  const sessionExists = existingSession.length > 0;
   if (!sessionExists) {
-    s.hooks.SessionStart.push(...hookCmd.sessionStartEntries({
-      platform: process.platform,
-      hookDir: nodePath.join(os.homedir(), '.claude', 'hooks'),
-    }));
+    s.hooks.SessionStart.push(...hookCmd.sessionStartEntries(hookOpts));
     console.log('   加入 SessionStart hook（自動載入記憶，4 個 matcher）');
   }
 

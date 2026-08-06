@@ -96,6 +96,24 @@ one recorded as follow-up work.
       rather than taken on trust. Backlog item 26. This release still takes Windows from
       nothing to memories-and-iron-rules; it does not make it whole.
 
+## Phase 4b — The repair was on a road the affected users do not travel
+
+Found while working out how 采瑤 could verify this release herself. It would have made the
+release unverifiable by exactly the people it exists for.
+
+- [x] `bootstrap.ps1` → `interactive-upgrade.ps1` → `install.ps1`, and **never**
+      `update.ps1`. The repair only lived in `update.ps1`, which runs from the MCP
+      auto-update. 采瑤's MCP has started twice in a month.
+- [x] `install.ps1` gated on `if (-not $sessionExists)`. Every broken machine *has* an
+      entry; it is the contents that are wrong. That gate can never repair anything.
+- [x] Both installers now ask `needsRewrite` and replace a wrong entry instead of skipping.
+- [x] Verified by executing the real `install.sh` node block against 采瑤's exact settings
+      shape with `process.platform` forced to `win32`: four bash entries removed, four Node
+      entries written. Run again as darwin: no output, no change.
+- [x] Third time today the same shape appeared: v1.26.79 (the scheduler repair only on the
+      manual upgrade path), the Windows hook itself, and now my own fix for it. Recorded as
+      IR-132.
+
 ## Phase 5 — Sync
 
 - [x] `package.json` 1.26.80, `README.md` ×3, `CHANGELOG.md`, `FILELIST.md`

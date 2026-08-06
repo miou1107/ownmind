@@ -412,9 +412,25 @@ if (-not $hookSettings.hooks) {
 if (-not $hookSettings.hooks.SessionStart) {
   $hookSettings.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue @()
 }
-$sessionExists = $hookSettings.hooks.SessionStart | Where-Object {
-  $_.hooks | Where-Object { $_.command -match "ownmind" }
+# v1.26.80 — 原本只判斷「有沒有」，有就跳過。所有壞掉的機器都「有」，只是內容是錯的，
+# 所以這支腳本永遠修不到任何一台。而 bootstrap → interactive-upgrade 走的正是這裡，
+# 不會經過 update.ps1。使用者手動跑升級卻沒被修好，就是這個原因。
+$sessionEntries = @($hookSettings.hooks.SessionStart | Where-Object {
+  $_.hooks | Where-Object { $_.command -match "ownmind-session-start" }
+})
+$sessionNeedsRepair = $false
+if ($sessionEntries.Count -gt 0) {
+  $entriesJson = ($sessionEntries | ConvertTo-Json -Depth 6 -Compress)
+  if ($entriesJson -notmatch '^\[') { $entriesJson = "[$entriesJson]" }
+  $sessionNeedsRepair = (& node -e "const h=require(process.argv[1]);process.stdout.write(String(h.needsRewrite(JSON.parse(process.argv[2]),{platform:process.platform,hookDir:process.argv[3]})))" "$HookCmdHelper" "$entriesJson" "$HookDir") -eq "true"
+  if ($sessionNeedsRepair) {
+    $hookSettings.hooks.SessionStart = @($hookSettings.hooks.SessionStart | Where-Object {
+      -not ($_.hooks | Where-Object { $_.command -match "ownmind-session-start" })
+    })
+    Write-Host "[ OK ] Removed stale SessionStart hook entries (wrong command for this platform)"
+  }
 }
+$sessionExists = ($sessionEntries.Count -gt 0) -and (-not $sessionNeedsRepair)
 if (-not $sessionExists) {
   $sessionCmd = & node -e "const h=require(process.argv[1]);process.stdout.write(h.sessionStartCommand({platform:process.platform,hookDir:process.argv[2]}))" "$HookCmdHelper" "$HookDir"
   # 四個 matcher 全註冊，跟 update.ps1 一致。只註冊 startup 的話，resume / clear /
