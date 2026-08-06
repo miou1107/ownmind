@@ -28,7 +28,19 @@ client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClient
 scripts/install-helpers/ensure-scanner-schedule.sh  — v1.26.79 排程死了就接回去（macOS launchd /
                                               Linux systemd）。活著就完全不碰；修完回頭問系統，
                                               不信註冊指令自己的 exit code；修不好往伺服器回報
-scripts/install-helpers/self-check.cjs      — 加 --quick 模式（自動更新每天跑，跳過唯一會掃描
+scripts/install-helpers/resolve-credentials.cjs — v1.26.82 金鑰跟網址到底放在哪，一份答案。
+                                              依序找 settings.json、settings.local.json、
+                                              ~/.claude.json、環境變數。多回一個
+                                              background_safe：金鑰只在環境變數時，排程叫起來的
+                                              掃描器讀不到，那是 Adam 掃描器死掉的真正原因
+shared/helpers.js                           — v1.26.82 readCredentials 改問上面那支（不帶參數時）。
+                                              帶 settingsPath 維持只讀單一檔案的舊行為
+hooks/ownmind-session-start.sh              — v1.26.82 內嵌的找金鑰改問共用解析器
+hooks/ownmind-usage-scanner.js              — v1.26.82 找不到金鑰的錯誤訊息列出全部三個位置
+                                              （原本只寫 settings.json，把人指去最不可能的地方）；
+                                              金鑰只在環境變數時明白警告
+tests/resolve-credentials.test.js           — 新增。含一個直接重現 Adam 狀況的案例
+scripts/install-helpers/self-check.cjs      — v1.26.82 改用共用解析器；加 --quick 模式（自動更新每天跑，跳過唯一會掃描
                                               所有本機資料庫的那一項）；加第十項 memory_load：
                                               記憶到底有沒有真的載入。
                                               結論問伺服器（本機對自己的健康報告最不能信），

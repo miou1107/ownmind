@@ -70,7 +70,21 @@ log_event() {
 }
 
 # --- 讀取設定（一次 node 呼叫取 KEY + URL）---
-if [ -f "$CLAUDE_SETTINGS" ]; then
+# v1.26.82 — this used to read only $CLAUDE_SETTINGS. Claude Code keeps MCP config in
+# ~/.claude.json now, and some machines get the key from an OWNMIND_API_KEY environment
+# variable instead. On those machines this block came back empty, the `exit 0` below fired
+# on every single session, and memories silently never loaded. Now it asks the shared
+# resolver, so this hook, the Node hook, the scanner and the self-check cannot disagree.
+CREDS_RESOLVER="$OWNMIND_DIR/scripts/install-helpers/resolve-credentials.cjs"
+if [ -f "$CREDS_RESOLVER" ]; then
+  CREDS=$(node -e "
+    try {
+      const r = require('$CREDS_RESOLVER').resolveCredentials();
+      console.log((r.apiKey || '') + '\n' + (r.apiUrl || ''));
+    } catch { console.log('\n'); }
+  " 2>/dev/null)
+elif [ -f "$CLAUDE_SETTINGS" ]; then
+  # Fallback for the one update that delivers the resolver.
   CREDS=$(node -e "
     try {
       const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
@@ -78,6 +92,8 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
       console.log((o.OWNMIND_API_KEY || '') + '\n' + (o.OWNMIND_API_URL || ''));
     } catch { console.log('\n'); }
   " 2>/dev/null)
+fi
+if [ -n "${CREDS:-}" ]; then
   API_KEY=$(echo "$CREDS" | head -1)
   API_URL=$(echo "$CREDS" | tail -1)
 fi
