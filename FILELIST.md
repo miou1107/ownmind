@@ -4,6 +4,9 @@
 
 新增檔：
 ```
+db/021_install_check_alert_state.sql          — 記錄哪些 (user_id, machine, check_name) 失敗已經公告過，
+                                                 unique 唯一鍵防重複紀錄，含 first_seen_at／announced_at／
+                                                 resolved_at／detail
 src/lib/install-check-alerts.js                — 決定哪些自我檢測失敗是「新的」、值得公告。
                                                  一次呼叫裡每台機器只用最新報告（processedMachines）；
                                                  其他舊報告一律跳過。明確文件化呼叫端責任：

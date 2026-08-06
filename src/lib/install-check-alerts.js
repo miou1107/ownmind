@@ -6,8 +6,8 @@
  * asserted directly rather than inferred from a live table.
  *
  * A failure is identified by (user_id, machine, check_name). One upgrade uploads
- * several reports (one per machine), and the same machine may report multiple
- * times. This function processes only the first (most-recent) report for each
+ * several reports, and the same machine may report multiple times. This
+ * function processes only the first (most-recent) report for each
  * machine and ignores all subsequent reports for that machine. The newest report
  * is the machine's current state; older reports are stale and contribute no
  * checks to the announcement decision.

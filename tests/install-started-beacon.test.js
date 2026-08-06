@@ -49,7 +49,9 @@ describe('debug route — install-check accepts a minimal beacon (v1.17.78)', ()
     inserted = [];
     app = express();
     app.use(express.json());
-    app.use('/api/debug', createDebugRouter({ query: makeQuery(), auth: makeAuth(8) }));
+    // onReportStored: skip the real install-check-alerts evaluator — these tests
+    // exercise the beacon endpoint with a fake `query` it isn't built for.
+    app.use('/api/debug', createDebugRouter({ query: makeQuery(), auth: makeAuth(8), onReportStored: async () => {} }));
     await new Promise((resolve) => {
       server = app.listen(0, () => {
         baseUrl = `http://127.0.0.1:${server.address().port}/api/debug/install-check`;

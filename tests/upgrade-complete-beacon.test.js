@@ -51,7 +51,9 @@ function setupTestApp() {
   const fakeAuth = (req, res, next) => { req.user = { id: 99 }; next(); };
   const app = express();
   app.use(express.json());
-  app.use('/api/debug', createDebugRouter({ query: fakeQuery, auth: fakeAuth }));
+  // onReportStored: skip the real install-check-alerts evaluator — these tests
+  // exercise beacon handling with a fake `query` it isn't built for.
+  app.use('/api/debug', createDebugRouter({ query: fakeQuery, auth: fakeAuth, onReportStored: async () => {} }));
   return { app, insertedRows };
 }
 
