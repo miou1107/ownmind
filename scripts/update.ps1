@@ -305,6 +305,19 @@ if (Test-Path $EnsureHook) {
   }
 }
 
+# --- 3.4b Background credentials (v1.26.87, delegated to the shared implementation) ---
+# The key can be valid, the MCP can be uploading, and every scheduled run can still be
+# blind — Task Scheduler does not inherit a shell's environment.
+$EnsureKeyFile = Join-Path $OwnMindDir "scripts\install-helpers\ensure-key-file.cjs"
+if (Test-Path $EnsureKeyFile) {
+  $keyResult = & node $EnsureKeyFile --ownmind-dir $OwnMindDir 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "   Background credentials: $keyResult"
+  } else {
+    Write-Host "   [FAIL] Background credentials: $keyResult"
+  }
+}
+
 # --- 3.5 v1.18.3 補修：補裝 Stop reply-lint hook + PostToolUse banner hook ---
 # 同 update.sh 修法：v1.17.71/96 的 install.sh 有跑、但 update.ps1 沒、
 # 既有 user 升級時漏裝。Idempotent helper、多裝一次安全。

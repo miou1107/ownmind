@@ -2,8 +2,9 @@
 /**
  * OwnMind install/upgrade self-check.
  *
- * Runs 9 checks, writes a log, uploads to the server. Invoked at the end of the install /
- * upgrade scripts.
+ * Runs the checks listed in `checkNamesFor`, writes a log, uploads to the server. Invoked
+ * at the end of the install / upgrade scripts. (The count used to be written here and went
+ * stale twice; the list is the list.)
  *
  * v1.26.72 — eight of them ask "is everything installed and can I authenticate". The
  * ninth, `usage_roundtrip`, asks the question none of the others could: **is the data
@@ -68,6 +69,8 @@ function readJsonSafe(p) {
 // working while this check reported "OWNMIND_API_KEY is empty" and the scanner and the
 // memory hook quietly stopped. Same wrong lookup, four components.
 const { resolveCredentials } = require('./resolve-credentials.cjs');
+// v1.26.87 — the repair for the half of that story this file used to drop on the floor.
+const { ensureKeyFile, OPT_OUT_FILE: NO_KEY_FILE } = require('./ensure-key-file.cjs');
 
 function readCredentials() {
   const r = resolveCredentials();
@@ -180,6 +183,47 @@ function checkApiKeyFormat(apiKey) {
       'Reissue API key (avoid copying from BOM-prefixed files)');
   }
   return pass('api_key_format', `valid (len=${apiKey.length})`);
+}
+
+/**
+ * v1.26.87 — can anything other than the MCP find the key?
+ *
+ * `resolve-credentials.cjs` has answered this since v1.26.82 and nothing acted on the
+ * answer. When the key is only in the process environment, the MCP works (the AI tool
+ * hands it that environment) and everything else does not: the usage scanner runs from
+ * Task Scheduler / launchd, the SessionStart hooks run from the hook runner, and neither
+ * inherits a shell. The single line the scanner wrote to its own log was the entire
+ * consequence — a log on a machine whose scanner had already gone quiet.
+ *
+ * So this check does not merely report. It runs the repair, then reports what happened,
+ * which is why the pass detail says *which* of the two ways it passed.
+ *
+ * The status split matters beyond wording: v1.26.87's alerting broadcasts new `fail`
+ * items and deliberately ignores `warn`. A repair that failed has to reach a person; a
+ * deliberate opt-out must never nag them.
+ */
+function checkBackgroundCredentials(opts = {}) {
+  const NAME = 'background_credentials';
+  const r = ensureKeyFile(opts);
+
+  switch (r.outcome) {
+    case 'already_safe':
+    case 'repaired':
+      return pass(NAME, r.summary);
+    case 'opted_out':
+      return warn(NAME, r.summary,
+        `Delete ~/.ownmind/${NO_KEY_FILE} and re-run the installer if you want the usage `
+        + 'scanner and memory loading to work in the background');
+    case 'no_credentials':
+      // Deliberately not a fail: api_key_format already fails on an empty key, and a
+      // second alert about the same missing key buys nothing but noise.
+      return warn(NAME, r.summary, 'Re-run bootstrap with a valid API key');
+    default:
+      return fail(NAME, r.summary,
+        'Add your API key by hand to ~/.claude/settings.json under '
+        + 'mcpServers.ownmind.env.OWNMIND_API_KEY, or fix the file named above and re-run '
+        + 'the installer');
+  }
 }
 
 async function checkApiCredentials(apiUrl, apiKey) {
@@ -801,8 +845,8 @@ const QUICK_SKIP = ['usage_roundtrip'];
 async function checkNamesFor({ quick = false } = {}) {
   const all = [
     'mcp_files', 'package_version', 'mcp_node_modules', 'server_health',
-    'api_key_format', 'api_credentials', 'git_hooks', 'scheduler', 'memory_load',
-    'usage_roundtrip',
+    'api_key_format', 'background_credentials', 'api_credentials', 'git_hooks', 'scheduler',
+    'memory_load', 'usage_roundtrip',
   ];
   return quick ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
 }
@@ -818,6 +862,9 @@ async function runAllChecks({ quick = false } = {}) {
   // issues where settings.json contains the literal "--update". Putting this before
   // api_credentials makes the fail message more specific (format vs. server reject).
   checks.push(await safeCheck('api_key_format', () => checkApiKeyFormat(apiKey)));
+  // v1.26.87: the key can be valid and still invisible to every scheduled run. This one
+  // repairs that and says which way it ended up passing.
+  checks.push(await safeCheck('background_credentials', () => checkBackgroundCredentials()));
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
   checks.push(await safeCheck('scheduler', checkScheduler));
@@ -1180,6 +1227,8 @@ async function main() {
 module.exports = {
   checkMcpFiles, checkPackageVersion, checkMcpNodeModules,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
+  // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
+  checkBackgroundCredentials,
   // v1.26.72 — the round-trip: scan, then read back from the server.
   checkUsageRoundtrip, redactKey,
   // v1.26.81 — did memories actually load? Verdict from the server, evidence from here.

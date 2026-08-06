@@ -273,6 +273,18 @@ if [ -f "$ENSURE_HOOK" ]; then
   fi
 fi
 
+# --- 3.4b Background credentials (v1.26.87, delegated to the shared implementation) ---
+# The key can be valid, the MCP can be uploading, and every scheduled run can still be
+# blind — launchd / Task Scheduler do not inherit a shell's environment.
+ENSURE_KEY_FILE="$OWNMIND_DIR/scripts/install-helpers/ensure-key-file.cjs"
+if [ -f "$ENSURE_KEY_FILE" ]; then
+  if key_result=$(node "$ENSURE_KEY_FILE" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "   Background credentials: $key_result"
+  else
+    echo "   [FAIL] Background credentials: $key_result"
+  fi
+fi
+
 # --- 3.5 v1.18.3 fix: existing v1.17.96 users were missing the reply-lint Stop hook on upgrade ---
 # install.sh originally ran add-stop-hook, but update.sh didn't. Users upgrading v1.17.95 →
 # v1.17.96 (Vin's machine included) never had Stop hook registered — reply-lint never caught
