@@ -68,18 +68,47 @@ export function createTeamOverviewRouter(deps = {}) {
         return res.status(400).json({ error: 'from/to must be valid ISO dates' });
       }
 
+      // v1.26.74 — 最近活動 used to be MAX(session_logs.created_at), and a session_log is
+      // only written when the AI calls ownmind_log_session, which its own description says
+      // happens "before a conversation ends". So one long working session showed the time
+      // it *started* and did not move again until it finished. Raised from production on
+      // 2026-08-06: the column read 00:20 while the person was working in Claude at 08:20.
+      //
+      // Three sources, three different delays, and the newest of them is the honest answer:
+      //   session_logs  — lands when a conversation ends
+      //   activity_logs — lands when the AI calls an ownmind tool, which a long coding
+      //                   session may never do
+      //   token_events  — lands on the scanner's schedule, and is the only one that moves
+      //                   while somebody is in the middle of working
+      //
+      // Postgres GREATEST ignores NULLs and returns NULL only if every argument is, so a
+      // member with no rows in one source simply does not contribute one.
+      //
+      // Membership of the list is deliberately still decided by session_logs. What the
+      // timestamp means and who the page is about are separate questions; widening the
+      // JOIN would quietly change the second one.
       const sql = `
         SELECT u.id AS user_id,
                u.name AS user_name,
-               MAX(sl.created_at) AS last_active_at,
+               GREATEST(MAX(sl.created_at), act.last_ts, tok.last_ts) AS last_active_at,
                COUNT(sl.id)::int AS session_count,
                jsonb_agg(jsonb_build_object('details', sl.details)
                          ORDER BY sl.created_at DESC) AS sessions_json
           FROM users u
           JOIN session_logs sl ON sl.user_id = u.id
+          LEFT JOIN LATERAL (
+                 SELECT MAX(a.ts) AS last_ts
+                   FROM activity_logs a
+                  WHERE a.user_id = u.id AND a.ts >= $1 AND a.ts <= $2
+               ) act ON TRUE
+          LEFT JOIN LATERAL (
+                 SELECT MAX(e.ts) AS last_ts
+                   FROM token_events e
+                  WHERE e.user_id = u.id AND e.ts >= $1 AND e.ts <= $2
+               ) tok ON TRUE
          WHERE sl.created_at >= $1 AND sl.created_at <= $2
-         GROUP BY u.id, u.name
-         ORDER BY MAX(sl.created_at) DESC`;
+         GROUP BY u.id, u.name, act.last_ts, tok.last_ts
+         ORDER BY GREATEST(MAX(sl.created_at), act.last_ts, tok.last_ts) DESC`;
       const result = await query(sql, [from.toISOString(), to.toISOString()]);
 
       const members = result.rows.map(row => {
