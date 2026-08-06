@@ -105,21 +105,43 @@ describe('renderAlertMessage — nothing to say', () => {
 
 describe('renderAlertMessage — truncation algorithm correctness', () => {
   it('does not spuriously truncate when all entries fit', () => {
-    // Reproduction case from bug report: large first entry + tiny second entry.
-    // When entries fit fully, the algorithm must not reserve optimistic footer space
-    // that causes it to reject the second entry prematurely.
-    // Build entries that, when joined, fit under limit but pessimistic reservation fails.
-    const smallLimit = 3000;
-    const entry1 = failure({ detail: 'x'.repeat(1400), machine: 'M1', user_id: 1 });
-    const entry2 = failure({ detail: 'tiny', machine: 'M2', user_id: 2 });
+    // Bug: old algorithm pessimistically reserved footer space for remaining entries.
+    // Even when all entries fit, it would reject entry[0] if entry[0] + footer > limit,
+    // causing spurious truncation of content that would have fit whole.
+    //
+    // This test uses minimal names (short check_name, machine, user_name, fix) to construct:
+    // - entry[0] rendered to ~1981 chars (large detail, minimal overhead)
+    // - entry[1] rendered to ~13 chars (empty detail, empty fix/version)
+    // - entry[0] + footer(1,2) = 1981 + 20 = 2001 > 2000 (old algo rejects)
+    // - entry[0] + sep + entry[1] = 1981 + 2 + 13 = 1996 < 2000 (would fit)
 
-    const { body, omitted } = renderAlertMessage([entry1, entry2], { limit: smallLimit });
+    const failures = [
+      failure({
+        detail: 'x'.repeat(1953),
+        check_name: 'c',
+        machine: 'M1',
+        user_name: 'A',
+        user_id: 1,
+        fix: ''  // Empty fix to reduce entry size
+      }),
+      failure({
+        detail: '',  // Empty detail to keep entry minimal
+        check_name: 'c',
+        machine: 'M2',
+        user_name: 'B',
+        user_id: 2,
+        fix: '',  // Empty fix
+        client_version: ''  // Empty version
+      })
+    ];
 
-    // Both entries should appear, no truncation.
-    assert.equal(omitted, 0, 'no entries should be omitted when they all fit');
+    const { body, omitted } = renderAlertMessage(failures);
+
+    // Both entries should fit and appear whole (no spurious truncation)
+    assert.equal(omitted, 0, 'entries should not be omitted when they fit');
     assert.ok(body.includes('M1'), 'first machine missing');
     assert.ok(body.includes('M2'), 'second machine missing');
-    assert.ok(body.length <= smallLimit, `body was ${body.length}`);
+    assert.ok(body.length <= BROADCAST_BODY_LIMIT, `body was ${body.length}`);
   });
 
   it('cuts single oversized entry with visible marker', () => {
