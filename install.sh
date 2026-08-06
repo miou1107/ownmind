@@ -487,12 +487,20 @@ else
   OWNMIND_BIN_DIR="$HOME/.ownmind/bin"
   mkdir -p "$OWNMIND_BIN_DIR"
 
-  # 4e-1 複製 scanner entry + 所有 shared 模組（safe_cp 處理 source==dest 升級情境）
+  # 4e-1 複製 scanner entry + 所有 shared 模組
+  #
+  # 正常情況下這一整段什麼都不做：OWNMIND_DIR 就是 ~/.ownmind，來源跟目的地是同一個
+  # 檔案，safe_cp 用 -ef 比對之後直接跳過。真正把檔案送到位的是上面那個 git clone /
+  # git pull。這段是留給 OWNMIND_DIR 不等於 ~/.ownmind 的情況。
+  #
+  # 用 glob 不用手寫檔名：這裡原本寫死五個檔名，是 2026-04-22 跟用量追蹤一起寫的，
+  # 之後 shared/scanners/ 長到十一個檔案都沒有人回來加。手寫清單不會報錯，它只會
+  # 安靜地漏。tests/install-scanner-module-list.test.js 盯著這件事。
   safe_cp "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" "$HOME/.ownmind/hooks/"
   chmod +x "$HOME/.ownmind/hooks/ownmind-usage-scanner.js"
   mkdir -p "$HOME/.ownmind/shared/scanners"
-  for f in id-helper.js base.js claude-code.js codex.js opencode.js; do
-    safe_cp "$OWNMIND_DIR/shared/scanners/$f" "$HOME/.ownmind/shared/scanners/"
+  for f in "$OWNMIND_DIR"/shared/scanners/*.js; do
+    [ -f "$f" ] && safe_cp "$f" "$HOME/.ownmind/shared/scanners/"
   done
   # scanner 也依賴 shared/helpers.js（readCredentials、getClientVersion）
   safe_cp "$OWNMIND_DIR/shared/helpers.js" "$HOME/.ownmind/shared/"
