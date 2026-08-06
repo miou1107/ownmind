@@ -421,6 +421,21 @@ else
   echo "[WARN] ensure-session-hook.cjs not found; SessionStart hook left as-is"
 fi
 
+# --- 4c-3. Background credentials (v1.26.87) ---
+# A key that lives only in the environment works for the MCP and for nothing else: the
+# usage scanner runs from launchd / Task Scheduler and cannot inherit a shell. Copy it into
+# a file. Opt out with `touch ~/.ownmind/.no-key-file`.
+ENSURE_KEY_FILE="$OWNMIND_DIR/scripts/install-helpers/ensure-key-file.cjs"
+if [ -f "$ENSURE_KEY_FILE" ]; then
+  if key_result=$(node "$ENSURE_KEY_FILE" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "[ OK ] Background credentials: $key_result"
+  else
+    echo "[FAIL] Background credentials: $key_result"
+  fi
+else
+  echo "[WARN] ensure-key-file.cjs not found; credentials left as-is"
+fi
+
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
 echo "[INFO] Installing Git hooks (Iron Rule Verification Engine)"
 

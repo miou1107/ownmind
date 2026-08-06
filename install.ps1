@@ -452,6 +452,23 @@ if (Test-Path $EnsureHook) {
   Write-Host "[WARN] ensure-session-hook.cjs not found; SessionStart hook left as-is"
 }
 
+# Background credentials — v1.26.87. A key that lives only in the environment works for the
+# MCP (the AI tool hands it that environment) and for nothing else: the usage scanner runs
+# from Task Scheduler, which does not inherit a shell. Same placement rule as the block
+# above — it must come after the last write of settings.json.
+# Opt out: create ~\.ownmind\.no-key-file
+$EnsureKeyFile = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-key-file.cjs'
+if (Test-Path $EnsureKeyFile) {
+  $keyResult = & node $EnsureKeyFile --ownmind-dir $OwnmindDir 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "[ OK ] Background credentials: $keyResult"
+  } else {
+    Write-Host "[FAIL] Background credentials: $keyResult"
+  }
+} else {
+  Write-Host "[WARN] ensure-key-file.cjs not found; credentials left as-is"
+}
+
 # --- 4d. 安裝 Git Hooks（Iron Rule Verification Engine）---
 Write-Host "[INFO] Installing Git hooks (Iron Rule Verification Engine)"
 
