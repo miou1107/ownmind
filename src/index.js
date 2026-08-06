@@ -6,6 +6,7 @@ import { startJobs } from './jobs/weeklyReport.js';
 import { startNightlyRecomputeJob } from './jobs/nightly-recompute.js';
 import { startNightlyUpgradeReminderJob } from './jobs/nightly-upgrade-reminder.js';
 import { seedDefaultPasswords } from './jobs/seed-default-passwords.js';
+import { runInstallCheckAlerts } from './jobs/install-check-alerts.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -28,6 +29,11 @@ async function start() {
     startNightlyUpgradeReminderJob();
     // v1.17.25: seed a default password for users without a password_hash (idempotent)
     seedDefaultPasswords();
+    // Evaluate the reports already in the table once per boot, so failures that
+    // predate this release surface instead of waiting for each machine to check
+    // in again. Idempotent via install_check_alert_state.
+    runInstallCheckAlerts().catch((err) =>
+      logger.error('install-check startup sweep failed', { error: err.message }));
   });
 }
 

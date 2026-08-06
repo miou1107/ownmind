@@ -155,7 +155,7 @@ Because static rule files are fragile — AI hallucinations bypass them silently
 - **Reply quality lint** — Stop hook scans for Chinese-English mixing (IR-037), unexplained jargon (IR-036), privacy patterns (`privacy_check` event; user's own iron rule decides whether to block). 4th violation per session → `process.exit(2)` with directive-style rewrite prompt on stderr. After 3 consecutive hard blocks, auto-downgrades to warning to prevent rewrite deadlock `v1.19.7`
 - **Forced version check** — Each new conversation calls API to verify client / server version. Prevents using outdated versions with already-fixed bugs `v1.19.4`
 - **Install-check failure rendering** — Pure function renders grouped install-check failures into a readable message. Multiple machines with the same problem collapse into one row; messages exceeding broadcast limits auto-truncate with an omitted-count footer `v1.26.87`
-- **Install-check alert job** — `runInstallCheckAlerts` reads each machine's newest self-check report, records new/resolved failures, and drafts the broadcast for the oldest super admin. Not yet called by any route or startup path `v1.26.87`
+- **Install-check alert job** — `runInstallCheckAlerts` reads each machine's newest self-check report, records new/resolved failures, and drafts the broadcast for the oldest super admin. Runs after every stored report (`POST /api/debug/install-check`, failures logged not thrown) and once per server boot to sweep pre-existing reports `v1.26.87`
 
 ### Iron Rule Enforcement Engine
 

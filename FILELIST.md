@@ -20,13 +20,26 @@ src/jobs/install-check-alerts.js              — 把 evaluateFailures 跟 rende
                                                  job：讀最新報告（DISTINCT ON + jsonb_array_length 排除
                                                  beacon 列）、讀已知狀態、寫回 resolved／detail 變動、
                                                  新失敗 upsert 進 install_check_alert_state、
-                                                 只發給最舊的一位 super_admin（id 最小）。尚未被任何路由
-                                                 或啟動流程呼叫，接線是下一個任務
+                                                 只發給最舊的一位 super_admin（id 最小）
 tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派（同 tests/broadcast.test.js 手法）：
                                                  首次公告回傳 broadcast id、廣播鎖定唯一 super_admin、
                                                  狀態寫入用 ON CONFLICT 冪等、已公告過的失敗不再吵、
                                                  修好的檢查標記 resolved 但不發廣播、沒有 super_admin 時
                                                  狀態照寫但不硬發廣播、讀取 SQL 真的排除空 checks 報告
+tests/install-check-alerts-wiring.test.js     — 驗證接線本身：報告存好後真的觸發評估、評估失敗不影響
+                                                 200 回應也不擋報告落地、400（缺 ts）不觸發評估；另讀
+                                                 src/index.js 原始碼確認開機補跑一次且失敗被 catch 住
+```
+
+修改檔：
+```
+src/routes/debug.js                           — createDebugRouter 新增可選參數 onReportStored（預設是真正
+                                                 的 runInstallCheckAlerts）；報告寫入成功、回應 200 之前
+                                                 呼叫它，包在 try/catch，失敗只記日誌不影響回應。既有呼叫
+                                                 端（src/app.js）不用改，因為參數是可選的
+src/index.js                                  — app.listen callback 內、seedDefaultPasswords() 之後補一次
+                                                 runInstallCheckAlerts()，讓上版前已存在的舊報告也被評估；
+                                                 失敗同樣只記日誌，不擋伺服器啟動
 ```
 
 ## v1.26.65 ～ v1.26.86 修改（收集器可靠性連續二十二版；每一版的來龍去脈見 CHANGELOG）
