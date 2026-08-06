@@ -177,7 +177,7 @@ function checkApiKeyFormat(apiKey) {
       'Remove whitespace in settings.json or reissue the key');
   }
   // No non-printable ASCII (BOM / control chars)
-  if (/[\x00-\x1F\x7F-\x9F﻿]/.test(apiKey)) {
+  if (/[\x00-\x1F\x7F-\x9F\uFEFF]/.test(apiKey)) {
     return fail('api_key_format',
       'OWNMIND_API_KEY contains non-printable characters (BOM / control)',
       'Reissue API key (avoid copying from BOM-prefixed files)');

@@ -28,11 +28,39 @@ function jsFilesUnder(dir, root = dir, found = []) {
   return found;
 }
 
+// Invisible characters that are not control bytes, so grep still reads the file,
+// but that any "normalise whitespace" editor pass will silently delete or convert.
+// A regex character class carrying one of these changes meaning when that happens,
+// and nothing about the diff looks alarming. Written as escapes, never literals.
+const INVISIBLE = /[\uFEFF\u200B-\u200D\u2060\u00A0]/; // escapes, never literals
+
+// Directories whose sources must stay both searchable and editor-safe. The
+// installer helpers earn their place here: two of them have already shipped with
+// a literal NUL inside a comment (v1.26.87) and a literal U+FEFF inside a regex.
+const SCANNED = ['../src', '../scripts/install-helpers', '../hooks'];
+
 describe('source files stay searchable', () => {
-  it('no file under src/ contains a control byte', () => {
-    const root = new URL('../src', import.meta.url).pathname;
-    const offenders = jsFilesUnder(root)
-      .filter((file) => FORBIDDEN.test(readFileSync(file, 'utf8')));
-    assert.deepEqual(offenders, [], `control bytes make grep skip these files: ${offenders.join(', ')}`);
-  });
+  for (const rel of SCANNED) {
+    it(`no file under ${rel.replace('../', '')}/ contains a control byte`, () => {
+      const root = new URL(rel, import.meta.url).pathname;
+      const offenders = jsFilesUnder(root)
+        .filter((file) => FORBIDDEN.test(readFileSync(file, 'utf8')));
+      assert.deepEqual(offenders, [], `control bytes make grep skip these files: ${offenders.join(', ')}`);
+    });
+  }
+});
+
+describe('source files survive an editor that normalises invisible characters', () => {
+  for (const rel of SCANNED) {
+    it(`no file under ${rel.replace('../', '')}/ carries a literal invisible character`, () => {
+      const root = new URL(rel, import.meta.url).pathname;
+      const offenders = jsFilesUnder(root)
+        .filter((file) => INVISIBLE.test(readFileSync(file, 'utf8')));
+      assert.deepEqual(
+        offenders,
+        [],
+        `write these as escapes (\\uFEFF etc) so an editor pass cannot change their meaning: ${offenders.join(', ')}`
+      );
+    });
+  }
 });

@@ -19,6 +19,7 @@ import { detectSecretLike } from '../shared/secret-detect.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
 import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
 import { isSecretGuardRule } from './lib/secret-guard-rule.js';
+import { parseIronRulesResponse, shouldOverwriteCache } from './lib/iron-rule-sync.js';
 import { isOff as isSessionOff } from '../shared/session-off-state.js';
 
 const HOME = os.homedir();
@@ -191,13 +192,19 @@ async function fetchAndCacheRules() {
     const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
       'Authorization': `Bearer ${apiKey}`
     });
-    const allRules = JSON.parse(raw);
-    const verifiable = (Array.isArray(allRules) ? allRules : []).filter(r => r.metadata?.verification);
+    // The endpoint answers with a { data: [...] } envelope. Reading it as a bare
+    // array yielded zero rules on every sync, which then overwrote the cache and
+    // let the next commit through unchecked and unannounced.
+    const verifiable = parseIronRulesResponse(raw).filter(r => r.metadata?.verification);
 
-    // Write to cache
-    const cacheDir = path.dirname(CACHE_FILE);
-    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(verifiable, null, 2));
+    // Never replace a cache with nothing: an empty result almost always means the
+    // sync went wrong, and a stale cache still enforces something while an empty
+    // one enforces nothing.
+    if (shouldOverwriteCache(verifiable.length)) {
+      const cacheDir = path.dirname(CACHE_FILE);
+      if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(verifiable, null, 2));
+    }
 
     return verifiable;
   } catch {

@@ -81,6 +81,79 @@ src/index.js                                  — app.listen callback 內、seed
                                                  失敗同樣只記日誌，不擋伺服器啟動
 ```
 
+## v1.26.87 修改（金鑰只在環境變數裡：自動補寫成檔案）
+
+新增檔：
+```
+scripts/install-helpers/ensure-key-file.cjs   — 金鑰只存在於環境變數時，自動補寫進
+                                                 ~/.claude/settings.json 的 mcpServers.ownmind.env，
+                                                 讓排程（launchd／工作排程器）跟 SessionStart 掛勾也讀得到。
+                                                 resolve-credentials.cjs 從 v1.26.82 起就把這件事回報成
+                                                 background_safe: false，但唯一的下場只是掃描器自己的
+                                                 log 多一行、而那台機器的掃描器早就沒在回報了。
+                                                 寫法比照 ensure-session-hook.cjs：先寫 .tmp 再 rename、
+                                                 讀不懂或不是設定物件就拒改並回報原因、
+                                                 ~/.ownmind/.no-key-file 是使用者的退出開關。
+                                                 五種結果：repaired／already_safe／opted_out／
+                                                 no_credentials／error，一行機器可讀 + 一句人話，
+                                                 而且那句話只講位置、不會印出金鑰本身
+tests/ensure-key-file.test.js                 — 把修復程式當獨立程序真的跑（子程序的環境是重新造的，
+                                                 免得開發機自己的 OWNMIND_API_KEY 讓「完全沒有金鑰」
+                                                 那個案例偷偷變成別的案例）：環境變數限定、已在檔案裡、
+                                                 URL 已由別的檔案設定就不再複製一份、壞掉的 JSON、
+                                                 合法 JSON 但不是物件、退出開關、完全沒有金鑰、BOM、
+                                                 重複執行不改檔。「先 .tmp 再 rename」用佔住 .tmp 路徑
+                                                 的方式驗（沒有殘骸這件事直接寫檔也成立、分不出來）。
+                                                 另含自我檢測五種結果對應 pass／warn／fail 的斷言，
+                                                 以及四支安裝腳本真的有呼叫；四支各刪一次呼叫、
+                                                 helper 五處各壞一次、自我檢測三處各壞一次，全部驗過會紅
+```
+
+修改檔：
+```
+scripts/install-helpers/self-check.cjs        — 新增 background_credentials 檢查項：先跑修復、再回報
+                                                 結果。已經在檔案裡或這次補寫成功都是 pass（detail 會說
+                                                 是哪一種）、使用者自己退出是 warn（v1.26.87 的警告機制
+                                                 只廣播 fail、故意不吵 warn）、修復失敗是 fail 並帶原因
+                                                 跟可執行的 fix；完全沒有金鑰也是 warn，因為
+                                                 api_key_format 已經在報同一件事了。
+                                                 檔頭那個會過期的「9 項檢查」數字改成指向清單本身
+install.sh / install.ps1 / scripts/update.sh / scripts/update.ps1
+                                              — 四支都照 ensure-session-hook.cjs 既有寫法呼叫
+                                                 ensure-key-file.cjs 並印出那一行摘要，標籤跟著結束碼走
+                                                 （失敗不會印成 [ OK ]）。install.ps1 那段一樣放在自己
+                                                 最後一次寫 settings.json 之後，否則修復會被舊快照蓋回去
+```
+
+## v1.26.87 修改（讀鐵律的三個地方，只有一個跟得上 API 換格式）
+
+新增檔：
+```
+hooks/lib/iron-rule-sync.js                   — 兩個純函式：把 API 回傳解成鐵律陣列、決定要不要
+                                                 覆蓋快取。API 回的是 { data: [...] }，pre-commit 掛勾
+                                                 卻用「是陣列才算數」去讀，所以每次同步都拿到零條，
+                                                 還把這個零條寫回快取蓋掉好資料；呼叫端看到零條就
+                                                 直接放行、一個字都不印。快取只要過期一次，下一次
+                                                 commit 就是 27 條規則全部不檢查而畫面全靜音。
+                                                 shouldOverwriteCache 因此規定：抓不到資料絕不覆蓋，
+                                                 舊快取至少還擋得住東西、空快取什麼都擋不住
+tests/iron-rule-sync.test.js                  — 用正式機真實回傳格式當素材驗解析；驗空結果不覆蓋；
+                                                 另外三條原始碼守衛，防止有人把那段 Array.isArray
+                                                 寫回去、或把共用解析器晾在旁邊不用
+tests/iron-rule-check-response-shape.test.js  — 把 .sh 裡那段解析抽出來當獨立程序真的跑，餵包裝過
+                                                 跟沒包裝的兩種格式；並重現舊寫法會丟 TypeError
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js               — 改用共用解析器；快取寫入加上「抓不到就不覆蓋」的守衛
+hooks/ownmind-iron-rule-check.sh              — 同一個格式問題的第三個受害者，而且是實際安裝在使用者
+                                                 settings.json 裡的那一支。它對包裝過的回應直接丟
+                                                 TypeError、整段 node -e 死掉，輸出又被 $( ) 吃掉，
+                                                 所以 PreToolUse 的鐵律提醒從 API 換格式之後就沒再出現過。
+                                                 .js 版本在 v1.19.20 修過同一個問題，這份被漏掉
+```
+
 ## v1.26.65 ～ v1.26.86 修改（收集器可靠性連續二十二版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
