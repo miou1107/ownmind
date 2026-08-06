@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.77 修改（收集器可靠性連續十三版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.78 修改（收集器可靠性連續十四版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -9,6 +9,11 @@
 ```
 db/018_collector_heartbeat_reason.sql       — v1.26.69 收集器為什麼沒東西（封閉原因碼）
 db/019_collector_heartbeat_per_machine.sql  — v1.26.73 心跳鍵值改 (user_id, tool, machine)
+db/020_activity_source_width.sql            — v1.26.78 activity_logs.source 從 10 字放寬到 64 字
+                                              （system_auto 11 字、system_server_auto 18 字，
+                                              從建表以來一次都沒進去過，而且會害整批被退回）
+src/routes/activity.js                      — v1.26.78 每一筆活動紀錄各自處理，一筆被拒不再退整批；
+                                              回應多一個 failed 計數、日誌記下是哪種事件
 shared/scanners/reasons.js                  — v1.26.69 六個原因碼的唯一定義，client / server 共用
 shared/scanners/gemini-conversations.js     — v1.26.68 Antigravity 三個介面的對話檔日期來源
 shared/scanners/sqlite-cli.js               — v1.26.71 所有 sqlite3 CLI 查詢的唯一入口（-readonly
