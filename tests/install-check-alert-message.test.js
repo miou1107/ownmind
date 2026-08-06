@@ -102,3 +102,58 @@ describe('renderAlertMessage — nothing to say', () => {
     assert.equal(omitted, 0);
   });
 });
+
+describe('renderAlertMessage — truncation algorithm correctness', () => {
+  it('does not spuriously truncate when all entries fit', () => {
+    // Reproduction case from bug report: large first entry + tiny second entry.
+    // When entries fit fully, the algorithm must not reserve optimistic footer space
+    // that causes it to reject the second entry prematurely.
+    // Build entries that, when joined, fit under limit but pessimistic reservation fails.
+    const smallLimit = 3000;
+    const entry1 = failure({ detail: 'x'.repeat(1400), machine: 'M1', user_id: 1 });
+    const entry2 = failure({ detail: 'tiny', machine: 'M2', user_id: 2 });
+
+    const { body, omitted } = renderAlertMessage([entry1, entry2], { limit: smallLimit });
+
+    // Both entries should appear, no truncation.
+    assert.equal(omitted, 0, 'no entries should be omitted when they all fit');
+    assert.ok(body.includes('M1'), 'first machine missing');
+    assert.ok(body.includes('M2'), 'second machine missing');
+    assert.ok(body.length <= smallLimit, `body was ${body.length}`);
+  });
+
+  it('cuts single oversized entry with visible marker', () => {
+    const huge = failure({ detail: 'x'.repeat(5000) });
+    const { body, omitted } = renderAlertMessage([huge]);
+
+    assert.ok(body.length <= BROADCAST_BODY_LIMIT, `body was ${body.length}`);
+    assert.ok(body.length > 0, 'body must not be empty');
+    assert.match(body, /…/, 'cut marker should be present');
+    assert.equal(omitted, 0, 'no entries omitted when only one entry');
+  });
+
+  it('reports omitted count equal to entries left out of body', () => {
+    // Create enough entries to force truncation and verify omitted count
+    // matches the number of entries actually not shown in the body.
+    const many = Array.from({ length: 50 }, (_, i) =>
+      failure({ machine: `Machine${i}`, user_id: 400 + i, detail: `reason_${i}` })
+    );
+    const { body, omitted } = renderAlertMessage(many);
+
+    // Count how many distinct machine names appear in the body.
+    const shown = many.reduce((sum, m) => {
+      return sum + (body.includes(m.machine) ? 1 : 0);
+    }, 0);
+
+    assert.equal(shown + omitted, many.length, 'shown + omitted must equal total');
+    assert.ok(omitted > 0, 'this fixture should overflow');
+  });
+
+  it('handles client_version empty string gracefully', () => {
+    const { body, omitted } = renderAlertMessage([failure({ client_version: '' })]);
+
+    assert.equal(omitted, 0);
+    // Empty version string should not appear in body (not added to Set)
+    assert.ok(!body.includes('版本 '));
+  });
+});

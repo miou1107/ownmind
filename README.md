@@ -154,7 +154,7 @@ Because static rule files are fragile — AI hallucinations bypass them silently
 - **Compliance dashboard** — Tracks per-member, per-AI-model compliance / trigger / violation counts per rule; plots trend charts
 - **Reply quality lint** — Stop hook scans for Chinese-English mixing (IR-037), unexplained jargon (IR-036), privacy patterns (`privacy_check` event; user's own iron rule decides whether to block). 4th violation per session → `process.exit(2)` with directive-style rewrite prompt on stderr. After 3 consecutive hard blocks, auto-downgrades to warning to prevent rewrite deadlock `v1.19.7`
 - **Forced version check** — Each new conversation calls API to verify client / server version. Prevents using outdated versions with already-fixed bugs `v1.19.4`
-- **Install-check broadcast alerts** — After each install/upgrade, system scans health and broadcasts failures to admin. Multiple machines with the same problem collapse into one alert row; long alerts indicate omitted entries. Super admin gets a summary they can act on immediately `v1.26.87`
+- **Install-check failure rendering** — Pure function renders grouped install-check failures into a readable message. Multiple machines with the same problem collapse into one row; messages exceeding broadcast limits auto-truncate with an omitted-count footer `v1.26.87`
 
 ### Iron Rule Enforcement Engine
 

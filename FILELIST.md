@@ -11,8 +11,11 @@ src/lib/install-check-alerts.js                — 決定哪些自我檢測失�
 tests/install-check-alerts.test.js             — 純函式測試：首次失敗、重複靜默、修復重臂、改文案不再問、
                                                  同機器混合狀態時只用最新報告、不同機器各算一次
 src/lib/install-check-alert-message.js         — 把新失敗渲染成管理員能讀的通知。多台同因合併一行、
-                                                 超限說明有幾項沒列出、單項超限也送但截斷標記
-tests/install-check-alert-message.test.js     — 純函式測試：基本欄位、失敗合併、截斷計數、邊界情況
+                                                 超限說明有幾項沒列出、單項超限也送但截斷標記。
+                                                 截斷演算法改用「全部試、二分法找、單項切」三步，
+                                                 杜絕虛假截斷
+tests/install-check-alert-message.test.js     — 純函式測試：基本欄位、失敗合併、截斷計數、邊界情況、
+                                                 演算法正確性（全部能裝、超限計數、單項切、empty版本）
 ```
 
 ## v1.26.65 ～ v1.26.86 修改（收集器可靠性連續二十二版；每一版的來龍去脈見 CHANGELOG）
