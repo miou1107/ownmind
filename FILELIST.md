@@ -28,6 +28,13 @@ client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClient
 scripts/install-helpers/ensure-scanner-schedule.sh  — v1.26.79 排程死了就接回去（macOS launchd /
                                               Linux systemd）。活著就完全不碰；修完回頭問系統，
                                               不信註冊指令自己的 exit code；修不好往伺服器回報
+hooks/ownmind-session-start.js              — v1.26.83 補齊 bash 版的八件事（廣播、記憶檔同步、
+                                              共用排版模組、conditional sync、三種補送、每日更新
+                                              檢查），並補上「回報給伺服器」那一行——少了它，
+                                              一台正常的 Windows 在伺服器上跟壞掉的一模一樣
+tests/node-hook-parity.test.js              — 新增。起假伺服器、實際執行掛勾，斷言送出的請求
+                                              與寫出的檔案
+tests/node-hook-reports-init.test.js        — 新增。釘住「載入成功要讓伺服器看得到」
 scripts/install-helpers/resolve-credentials.cjs — v1.26.82 金鑰跟網址到底放在哪，一份答案。
                                               依序找 settings.json、settings.local.json、
                                               ~/.claude.json、環境變數。多回一個

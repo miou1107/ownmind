@@ -10,8 +10,15 @@ import path from 'path';
 import https from 'https';
 import http from 'http';
 import os from 'os';
+import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { readCredentials, getClientVersion } from '../shared/helpers.js';
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
+import { runConditionalSync } from './lib/conditional-sync.js';
+import { renderSessionContext } from './lib/render-session-context.js';
+import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
+
+const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const HOME = os.homedir();
 const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
@@ -82,6 +89,113 @@ function reportEvent(apiUrl, apiKey, event, extra = {}) {
   } catch { /* telemetry must never break session start */ }
 }
 
+/**
+ * v1.26.83 — run one of the hooks/lib CLI scripts the way the shell hook does.
+ *
+ * Detached and unwatched: none of these may delay session start, and a failure in any of
+ * them must not stop the memories from loading.
+ */
+function runLibScript(script, { stdinFile, env } = {}) {
+  try {
+    const file = path.join(LIB_DIR, 'lib', script);
+    if (!fs.existsSync(file)) return;
+    const stdio = ['ignore', 'ignore', 'ignore'];
+    let input = null;
+    if (stdinFile) {
+      if (!fs.existsSync(stdinFile) || fs.statSync(stdinFile).size === 0) return;
+      input = fs.readFileSync(stdinFile);
+    }
+    const child = spawn(process.execPath, [file], {
+      stdio: input ? ['pipe', 'ignore', 'ignore'] : stdio,
+      env: { ...process.env, ...(env || {}) },
+      detached: true,
+      windowsHide: true,
+    });
+    if (input) { child.stdin.end(input); }
+    child.unref();
+  } catch { /* never block session start */ }
+}
+
+/**
+ * v1.26.83 — the flushes and drains the shell hook has always done and this one never did.
+ *
+ * Each is a spool of things that failed to reach the server earlier. On Windows nothing has
+ * ever drained them, so they have simply been accumulating on disk.
+ */
+function drainSpools(apiUrl, apiKey) {
+  const logDir = path.join(HOME, '.ownmind', 'logs');
+  const bannerFile = path.join(logDir, 'banner-pending.jsonl');
+  if (fs.existsSync(bannerFile) && fs.statSync(bannerFile).size > 0) {
+    // The shell hook prints these to stderr, which is the user-visible channel.
+    try {
+      process.stderr.write('\n📥 OwnMind messages queued from your last session:\n');
+      runLibScript('flush-pending-banners.js', { stdinFile: bannerFile });
+      fs.writeFileSync(bannerFile, '');
+    } catch { /* best effort */ }
+  }
+
+  const complianceSpool = path.join(logDir, 'reply-lint-pending.jsonl');
+  if (fs.existsSync(complianceSpool) && fs.statSync(complianceSpool).size > 0) {
+    runLibScript('flush-compliance-spool.js');
+  }
+
+  // The self-check upload spool: reports parked when an upload failed. Without this the
+  // server never learns a machine finished upgrading.
+  try {
+    const selfCheck = path.join(HOME, '.ownmind', 'scripts', 'install-helpers', 'self-check.cjs');
+    if (fs.existsSync(selfCheck) && apiKey && apiUrl) {
+      const child = spawn(process.execPath, [
+        '-e',
+        `const sc=require(${JSON.stringify(selfCheck)});`
+        + `if(sc.retrySpool)sc.retrySpool(process.argv[1],process.argv[2]).catch(()=>{});`,
+        apiUrl, apiKey,
+      ], { stdio: 'ignore', detached: true, windowsHide: true });
+      child.unref();
+    }
+  } catch { /* best effort */ }
+}
+
+/**
+ * v1.26.83 — the daily update check, which on this hook did not exist.
+ *
+ * Shares `.update-lock` and `.last-update-check` with the shell hook and the MCP, so the
+ * three of them cannot run a `git pull` over each other.
+ */
+function maybeCheckForUpdates(apiUrl, apiKey) {
+  try {
+    const dir = path.join(HOME, '.ownmind');
+    if (!fs.existsSync(path.join(dir, '.git'))) return;
+    const lock = path.join(dir, '.update-lock');
+    const marker = path.join(dir, '.last-update-check');
+
+    if (fs.existsSync(lock)) {
+      const ageMs = Date.now() - fs.statSync(lock).mtimeMs;
+      if (ageMs < 5 * 60 * 1000) return;
+      try { fs.unlinkSync(lock); } catch {}
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    let last = '';
+    try { last = fs.readFileSync(marker, 'utf8').trim(); } catch {}
+    if (last === today) return;
+
+    reportEvent(apiUrl, apiKey, 'update_check', {});
+    const updateScript = path.join(dir, 'scripts',
+      process.platform === 'win32' ? 'update.ps1' : 'update.sh');
+    if (!fs.existsSync(updateScript)) return;
+
+    // The MCP does the git pull itself; this only re-syncs skills, hooks and the scheduler,
+    // which is the part that repairs a machine rather than upgrading it.
+    const child = process.platform === 'win32'
+      ? spawn('powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updateScript],
+        { stdio: 'ignore', detached: true, windowsHide: true, cwd: dir })
+      : spawn('bash', [updateScript], { stdio: 'ignore', detached: true, cwd: dir });
+    child.unref();
+    try { fs.writeFileSync(marker, today); } catch {}
+  } catch { /* never block session start */ }
+}
+
 async function main() {
   // v1.20.3: when a new session starts, clear the legacy "session temporarily disabled" state file.
   // Implements the spec's "new session auto-resumes" — opening a new conversation re-enables the OwnMind hooks.
@@ -98,46 +212,43 @@ async function main() {
 
   logEvent('init', { status: 'starting' });
 
+  // v1.26.83 — everything the shell hook does around the load, and this one did not.
+  drainSpools(apiUrl, apiKey);
+  maybeCheckForUpdates(apiUrl, apiKey);
+
+  // v1.26.83 — conditional sync rather than an unconditional full download. Skips the
+  // payload when the server's sync_token matches the cache (~95% of sessions), and stamps
+  // the cache with the account so another account's memories can never be served from it.
   let initData;
   try {
-    const raw = await httpGet(`${apiUrl}/api/memory/init?compact=true`, {
-      'Authorization': `Bearer ${apiKey}`
-    });
-    initData = JSON.parse(raw);
-  } catch {
+    const result = await runConditionalSync({ apiUrl, apiKey });
+    initData = result?.data || null;
+  } catch { initData = null; }
+
+  if (!initData) {
     reportEvent(apiUrl, apiKey, 'init_fail', { status: 'api_timeout' });
     process.exit(0);
   }
 
   reportEvent(apiUrl, apiKey, 'init', { status: 'ok' });
 
-  const lines = [];
-  lines.push(`[OwnMind v${initData.server_version || '?'}] Memory loaded: your personal memories are now active`);
-  lines.push('');
+  // v1.26.83 — broadcasts. The shell hook has always fetched these; this one never did, so
+  // every announcement sent from the admin console was invisible to the Windows half of the team.
+  let broadcasts = [];
+  try {
+    const clientVersion = getClientVersion() || '';
+    let url = `${apiUrl}/api/broadcast/active?tool=claude-code`;
+    if (clientVersion) url += `&client_version=${encodeURIComponent(clientVersion)}`;
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    if (clientVersion) headers['X-Ownmind-Version'] = clientVersion;
+    const raw = await httpGet(url, headers);
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) broadcasts = parsed;
+  } catch { /* no broadcasts is a normal state; never block the load */ }
 
-  if (initData.profile) {
-    lines.push('## Profile');
-    lines.push(`- ${initData.profile.title || ''}: ${(initData.profile.content || '').substring(0, 200)}`);
-    lines.push('');
-  }
-
-  if (initData.iron_rules_digest) {
-    lines.push('## Iron rules (strictly enforced)');
-    lines.push(initData.iron_rules_digest);
-    lines.push('');
-  }
-
-  if (initData.principles && initData.principles.length > 0) {
-    lines.push('## Working principles');
-    initData.principles.forEach(p => lines.push(`- ${p.title}`));
-    lines.push('');
-  }
-
-  if (initData.active_handoff) {
-    lines.push('## Pending handoff');
-    lines.push(`Project: ${initData.active_handoff.project || '?'}`);
-    lines.push('');
-  }
+  // v1.26.83 — render through the shared renderer instead of a second, drifting copy of
+  // the layout. Windows and macOS now read identically.
+  const lines = [renderSessionContext(initData, broadcasts)];
 
   // v1.19.14: bug report notifications (two channels — admin sees new reports, reporter sees resolutions).
   // Fetch failure / unreachable → silently skip (do not block startup, see spec scenario 50).
@@ -173,6 +284,28 @@ async function main() {
   }
 
   lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
+
+  // v1.26.83 — write the memories into this project's directory, as the shell hook does.
+  // Without it the AI reads whatever snapshot was last written, which on Windows was never.
+  try {
+    const memoryDir = resolveMemoryDir({
+      claudeProjectDir: process.env.CLAUDE_PROJECT_DIR,
+      home: HOME,
+    });
+    if (memoryDir) {
+      try {
+        const raw = await httpGet(
+          `${apiUrl}/api/memory/sync?types=iron_rule,project,feedback`,
+          { Authorization: `Bearer ${apiKey}` }
+        );
+        syncMemoryFiles({ memoryDir, data: JSON.parse(raw) });
+      } catch {
+        // Mark the index as stale rather than leaving yesterday's copy looking current.
+        syncMemoryFiles({ memoryDir, sync_failed: true });
+        reportEvent(apiUrl, apiKey, 'memory_sync_fail', {});
+      }
+    }
+  } catch { /* never block session start */ }
 
   console.log(JSON.stringify({
     hookSpecificOutput: {
