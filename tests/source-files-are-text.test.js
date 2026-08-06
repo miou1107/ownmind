@@ -11,12 +11,18 @@ const FORBIDDEN = /[\x00-\x08\x0e-\x1f]/; // escapes, never a literal byte
 // .gitignore: "src/public/dashboard/" - the compiled frontend bundle for the
 // admin dashboard). It is machine-generated, not hand-written source, so
 // grep-searchability of its minified bundle is not a concern this test cares
-// about; skip it the same way node_modules and .git are skipped.
-function jsFilesUnder(dir, found = []) {
+// about; skip it the same way node_modules and .git are skipped. Matched by
+// full relative path, not by directory name, so a future hand-written
+// directory that happens to also be called "dashboard" still gets scanned.
+const SKIPPED_DIR = join('public', 'dashboard'); // relative to src/
+
+function jsFilesUnder(dir, root = dir, found = []) {
   for (const entry of readdirSync(dir)) {
-    if (entry === 'node_modules' || entry === '.git' || entry === 'dashboard') continue;
+    if (entry === 'node_modules' || entry === '.git') continue;
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) jsFilesUnder(full, found);
+    const relativeToRoot = full.slice(root.length + 1);
+    if (relativeToRoot === SKIPPED_DIR) continue;
+    if (statSync(full).isDirectory()) jsFilesUnder(full, root, found);
     else if (entry.endsWith('.js') || entry.endsWith('.cjs')) found.push(full);
   }
   return found;

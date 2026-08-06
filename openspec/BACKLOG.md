@@ -669,7 +669,7 @@ Where each link stands after this week:
 | detect | **done** — 10 checks at install/upgrade, 9 daily via auto-update (v1.26.81) |
 | repair | **partial** — dead schedule (v1.26.79), wrong hook command (v1.26.80); key-only-in-env warns but does not repair (writing a secret to disk needs care) |
 | report | **done** — reports upload to `install_check_logs`, repair failures via report-error |
-| analyze | **broken — this item** |
+| analyze | **partial — push shipped (v1.26.87), admin page still open** |
 | release | manual, fine |
 
 Evidence the analyze link is the broken one, twice in one week:
@@ -679,19 +679,29 @@ Evidence the analyze link is the broken one, twice in one week:
   while the question took a week of hand-digging.
 - Adam's May report showed his credentials lookup failing. Nobody saw that either.
 
-What "analyze" needs, concretely:
+What "analyze" needed, concretely, and where each stands now:
 
-1. **An admin page reading `install_check_logs`**: latest report per machine, fail/warn
-   items surfaced, trend (was this failing last week too?). The data model already exists.
-2. **Push, not pull, for new failures**: a fail status that was pass yesterday should
-   reach Vin (broadcast to his account, or the existing notification path) — a dashboard
-   nobody opens is this same defect again.
-3. **Fingerprint rollup**: group identical failures across machines so "6 machines,
-   same WSL bash" reads as one row, not six.
+1. **Push, not pull, for new failures** — **shipped, v1.26.87.** `evaluateFailures` /
+   `renderAlertMessage` / `runInstallCheckAlerts` decide which failures are new (per
+   `(user_id, machine, check_name)`, state tracked in `install_check_alert_state`),
+   roll identical failures across machines into one entry, and broadcast to the oldest
+   `super_admin`. Runs after every stored report and once at server startup. Verified
+   against a real production report set: 12 machines, found the known Adam / TANK
+   `memory_load` WSL failure, rolled up to one entry.
+2. **Fingerprint rollup** — **shipped as part of the above**, same commit.
+3. **An admin page reading `install_check_logs`** — **not built. Deliberately deferred.**
+   The push (#1) is the cheaper, higher-leverage half: it puts a failing check in front of
+   Vin without him opening anything. Whether a browsable page is still worth building once
+   the push is running is an open question, not a foregone one — build it now and it may
+   turn out redundant with the broadcast; skip it and a real gap (history, trend-over-time,
+   browsing without waiting for a new failure) may show up once the push has been live for
+   a while. The decision is deferred until the push has run in production long enough to
+   show whether people still reach for a page.
 
-Do not close this with "the data is uploaded". Uploaded-and-unread is the state that cost
-three months. The measure is: a check that fails on any machine tomorrow is something Vin
-hears about without asking.
+Do not close this item. Its own text warned against closing it on "the data is
+uploaded" — the same discipline applies to "the alert is sent". The push shipping does
+not retire this item; it narrows what is still open to the admin page, which stays a
+live, undecided question, not a rejected one.
 
 Origin: 2026-08-06, Vin's closed-loop requirement, stated while the credential-resolver
 fix was in progress.

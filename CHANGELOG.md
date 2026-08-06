@@ -80,7 +80,30 @@
 
 註解那一處單純改寫成文字描述（「rejects NUL bytes」取代原本嵌入的位元組）。第 85 行不是註解，是實際在跑的清理邏輯：正則字面量裡的原始 NUL 位元組換成跳脫序列 `\x00`，在 JS 正則裡兩者比對的是同一個位元組（U+0000），行為不變；既有的 null-byte sanitize 測試（`tests/install-check-null-byte-sanitize.test.js`）原封不動通過即為證明。
 
-新增 `tests/source-files-are-text.test.js` 當回歸守門：遞迴掃 `src/` 底下所有 `.js`／`.cjs`，禁止出現會讓 grep 跳過檔案的控制位元組（`\x00`–`\x08`、`\x0e`–`\x1f`；保留 tab／LF／CR）。掃描時排除 `src/public/dashboard/`（`.gitignore` 標記的前端編譯產物，非手寫原始碼，裡面的 minified bundle 本來就可能含控制字元，不在此測試的關注範圍內）。
+新增 `tests/source-files-are-text.test.js` 當回歸守門：遞迴掃 `src/` 底下所有 `.js`／`.cjs`，禁止出現會讓 grep 跳過檔案的控制位元組（`\x00`–`\x08`、`\x0e`–`\x1f`；保留 tab／LF／CR）。掃描時排除 `src/public/dashboard/`（`.gitignore` 標記的前端編譯產物，非手寫原始碼，裡面的 minified bundle 本來就可能含控制字元，不在此測試的關注範圍內）。掃描路徑比對完整相對路徑而非目錄名稱，避免以後 `src/` 底下若真的出現另一個手寫的 `dashboard` 目錄被誤跳過。
+
+### 第六部分：393 筆檢測回報躺在資料庫裡，從來沒有程式讀過
+
+前五部分是怎麼做的；這部分是為什麼做——backlog 項目 27 認定的閉環缺口「analyze：broken」。
+
+正式機的 `install_check_logs` 累積了 393 筆自我檢測回報，橫跨 9 位使用者、13 台機器，時間從 2026-05-08 到 2026-08-06，`grep install_check_logs src/ client/ mcp/ hooks/` 除了建表的 migration 之外沒有任何程式碼讀過這張表。Adam 的回報從五月起就寫著 `memory_load` 失敗、附完整的 WSL（Windows Subsystem for Linux）成因說明，這三個月裡沒有人看到。
+
+改法：本次新增的 `evaluateFailures` / `renderAlertMessage` / `runInstallCheckAlerts` 就是把「有資料但沒人看」變成「新失敗自動找上門」的那一段——決定哪些失敗是新的、合併同一原因的多台機器、渲染成一則管理員讀得懂的訊息、廣播給資歷最久的 `super_admin`。上傳當下跑一次、伺服器開機再補跑一次舊資料。
+
+驗證：對正式機 12 台機器的真實回報整套跑過一次，程式自己找出 Adam 五月就存在、沒人看到的那個 WSL 失敗，輸出如下：
+
+```
+檢測出現 1 個新問題
+
+memory_load 失敗 — Adam（after）、Vin-windows-test（TANK）
+  memories have never loaded automatically on this account (`bash` on this machine is the WSL launcher, whose home directory is not this one)
+  修法：Re-run the installer, then fully restart your AI tool and open a new conversation
+  版本 1.26.84、1.26.86
+```
+
+12 台機器讀入（393 筆回報橫跨的是 13 台機器；讀取條件要求該機器最新一筆回報帶非空 `checks` 陣列，見 `src/jobs/install-check-alerts.js` 的 `LATEST_REPORTS_SQL`，最新一筆若是還沒跑檢測的 beacon 列，那台機器這次就不在讀入的 12 台裡）、2 筆新失敗（Adam、Vin-windows-test）、合併成 1 條（同 `check_name` 同 `detail`）、`omitted: 0`、內文 301 字，遠低於 2000 字上限。兩道防線（「已公告過」guard、截斷計數）都先故意拆掉、確認對應測試真的變紅，再復原確認轉綠。
+
+這只是 backlog 27 三件事裡的「推播」一半。管理員頁面（瀏覽 `install_check_logs`、看趨勢）刻意沒做——先讓推播上線一段時間，才知道有了推播之後頁面還值不值得做；backlog 27 本身留著不關，見 `openspec/BACKLOG.md` 項目 27。
 
 ## v1.26.86 — 修理工自己從來沒上過工，以及版號提醒管到別人家
 
