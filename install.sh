@@ -373,20 +373,24 @@ echo "[INFO] Installed hook scripts (session-start + iron-rule-check + worktree-
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "
   const fs = require('fs');
+  const nodePath = require('path');
+  const os = require('os');
   const path = '$CLAUDE_SETTINGS';
   const s = JSON.parse(fs.readFileSync(path, 'utf8'));
   if (!s.hooks) s.hooks = {};
 
   // SessionStart hook — 自動載入記憶
+  // v1.26.80：指令由 session-hook-command.cjs 決定，四支腳本共用一份答案。
+  // 之前每支各寫各的，而每天都會跑的那一支贏了。
   if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-  const sessionExists = s.hooks.SessionStart.some(h =>
-    h.hooks?.some(hh => hh.command?.includes('ownmind-session-start'))
-  );
+  const hookCmd = require(nodePath.join(os.homedir(), '.ownmind/scripts/install-helpers/session-hook-command.cjs'));
+  const sessionExists = s.hooks.SessionStart.some(hookCmd.isOwnmindSessionEntry);
   if (!sessionExists) {
-    s.hooks.SessionStart.push({
-      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-session-start.sh', timeout: 10 }]
-    });
-    console.log('   加入 SessionStart hook（自動載入記憶）');
+    s.hooks.SessionStart.push(...hookCmd.sessionStartEntries({
+      platform: process.platform,
+      hookDir: nodePath.join(os.homedir(), '.claude', 'hooks'),
+    }));
+    console.log('   加入 SessionStart hook（自動載入記憶，4 個 matcher）');
   }
 
   // PreToolUse hook — 鐵律檢查

@@ -193,6 +193,13 @@ if (Test-Path $ClaudeDir) {
   New-Item -ItemType Directory -Force -Path $HookLibDir | Out-Null
   Get-ChildItem -Path (Join-Path $OwnMindDir "hooks") -Filter "*.sh" -ErrorAction SilentlyContinue |
     ForEach-Object { Copy-Item -Force -Path $_.FullName -Destination $HookDir }
+  # v1.26.80 — 只同步 *.sh 的話，Windows 使用者手上的 node 版掛勾永遠停在安裝那天。
+  # 跟排程那個缺陷同一個形狀：安裝時是對的，之後沒有任何地方維護它。
+  # 逐一指名而不是抓 *.js —— hooks\ 底下其他 .js 是給 ~/.ownmind 執行的，不屬於這裡。
+  foreach ($nodeHook in @("ownmind-session-start.js", "ownmind-iron-rule-check.js")) {
+    $nodeHookSrc = Join-Path $OwnMindDir "hooks\$nodeHook"
+    if (Test-Path $nodeHookSrc) { Copy-Item -Force -Path $nodeHookSrc -Destination $HookDir }
+  }
   $LibSrc = Join-Path $OwnMindDir "hooks\lib"
   if (Test-Path $LibSrc) {
     Get-ChildItem -Path $LibSrc -Filter "*.js" -ErrorAction SilentlyContinue |
@@ -240,23 +247,36 @@ if (Test-Path $ClaudeSettings) {
     let changed = false;
     if (!s.hooks) { s.hooks = {}; changed = true; }
 
-    if (!noSessionHook) {
+    // v1.26.80: this used to hardcode 'bash ~/.claude/hooks/ownmind-session-start.sh'.
+    // install.ps1 writes the Node command on Windows; this block recognised that entry,
+    // saw it lacked the four matchers, deleted it, and wrote bash back. Every Windows
+    // machine runs an update daily, so the correct command survived until the first one,
+    // and the hook then never fired again — 0 loads across 6 machines in 90 days.
+    //
+    // Wrapped: on the update that *delivers* this helper, an uncaught MODULE_NOT_FOUND
+    // would kill this node script and skip every hook below it.
+    let hookCmd = null;
+    try {
+      hookCmd = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/session-hook-command.cjs'));
+    } catch { hookCmd = null; }
+
+    if (!noSessionHook && hookCmd) {
       if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-      const ownmindCmd = 'bash ~/.claude/hooks/ownmind-session-start.sh';
-      const isOwnmindEntry = h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-session-start'));
+      const newEntries = hookCmd.sessionStartEntries({
+        platform: process.platform,
+        hookDir: path.join(os.homedir(), '.claude', 'hooks'),
+      });
+      const isOwnmindEntry = hookCmd.isOwnmindSessionEntry;
       const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
-      const matchers = ['startup', 'resume', 'clear', 'compact'];
-      const hasAll = matchers.every(m => existing.some(h => h.matcher === m));
-      if (existing.length > 0 && !hasAll) {
+      // Matchers complete is not the same question as command correct. Every Windows
+      // machine today has all four matchers, all running bash; judging by matchers alone
+      // would call them healthy and repair nobody.
+      if (hookCmd.needsRewrite(existing, { platform: process.platform, hookDir: path.join(os.homedir(), '.claude', 'hooks') })) {
         s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !isOwnmindEntry(h));
-        for (const matcher of matchers) {
-          s.hooks.SessionStart.push({ matcher, hooks: [{ type: 'command', command: ownmindCmd, timeout: 10 }] });
-        }
+        s.hooks.SessionStart.push(...newEntries);
         changed = true;
       } else if (existing.length === 0 && s.hooks.SessionStart.length === 0) {
-        for (const matcher of matchers) {
-          s.hooks.SessionStart.push({ matcher, hooks: [{ type: 'command', command: ownmindCmd, timeout: 10 }] });
-        }
+        s.hooks.SessionStart.push(...newEntries);
         changed = true;
       }
     }

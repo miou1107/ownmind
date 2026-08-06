@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.65 ～ v1.26.79 修改（收集器可靠性連續十五版；每一版的來龍去脈見 CHANGELOG）
+## v1.26.65 ～ v1.26.80 修改（收集器可靠性連續十六版；每一版的來龍去脈見 CHANGELOG）
 
 這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
 每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
@@ -28,6 +28,12 @@ client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClient
 scripts/install-helpers/ensure-scanner-schedule.sh  — v1.26.79 排程死了就接回去（macOS launchd /
                                               Linux systemd）。活著就完全不碰；修完回頭問系統，
                                               不信註冊指令自己的 exit code；修不好往伺服器回報
+scripts/install-helpers/session-hook-command.cjs    — v1.26.80 SessionStart 掛勾的指令怎麼下，
+                                              四支安裝／更新腳本共用這一份。Windows 走 node
+                                              絕對路徑（bash 在那邊會被 WSL 接走）；判斷要不要
+                                              重寫時連指令內容一起看，只看 matcher 齊不齊的話
+                                              六台壞掉的機器一台都修不到；使用者自己改過的
+                                              指令不覆蓋
 scripts/install-helpers/ensure-scanner-schedule.ps1 — v1.26.79 同上的 Windows 版。被停用的工作也算
                                               壞掉（查得到、永遠不會跑）。註冊邏輯只有一份，
                                               轉呼叫 register-scanner-task.ps1，這裡不複製
@@ -50,7 +56,9 @@ tests/team-overview-last-active.test.js     — v1.26.74
 tests/activity-source-width.test.js         — v1.26.78
 tests/scanner-schedule-repair.test.js       — v1.26.79 Unix 那支是真的執行（暫時 HOME + 假的
                                               launchctl / systemctl），Windows 那支只能讀文字
-openspec/changes/v1.26.{65,66,67,68,69,70,71,72,73,74,76,77,78,79}-*/{proposal,spec,tasks}.md
+tests/session-hook-command.test.js          — v1.26.80 把 update.sh 裡那段 node 程式碼抽出來
+                                              真的跑，platform 假造成 win32
+openspec/changes/v1.26.{65,66,67,68,69,70,71,72,73,74,76,77,78,79,80}-*/{proposal,spec,tasks}.md
 ```
 
 修改檔：
@@ -82,7 +90,13 @@ scripts/windows/{register-scanner-task.ps1,run-hidden.vbs}, scripts/interactive-
                                             — v1.26.65 排程不可先刪再建、VBS 要回傳真的 exit code
 scripts/update.sh, scripts/update.ps1       — v1.26.79 自動更新每次檢查排程還活著（原本只有手動
                                               升級才會，而沒有人手動升級，所以修復從來沒生效過）。
-                                              修不好不會讓整個更新算失敗，但一定回報伺服器
+                                              修不好不會讓整個更新算失敗，但一定回報伺服器；
+                                              v1.26.80 掛勾指令改問 session-hook-command.cjs
+                                              （原本寫死 bash，每天把 Windows 的 node 版蓋掉），
+                                              update.ps1 另外開始同步 node 版掛勾檔
+install.ps1                                 — v1.26.80 不再用 Get-Command bash 判斷（那會抓到
+                                              WSL 的 bash），改問共用 helper；SessionStart 補齊
+                                              四個 matcher
 install.sh                                  — v1.26.71 scanner 模組清單改成用掃的；v1.26.79 註冊完
                                               回頭問 launchd / systemd 一次，不再只信註冊指令沒報錯
                                               （Windows 從 v1.17.12 就這樣做，Unix 這邊一直沒有）

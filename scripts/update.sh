@@ -204,6 +204,8 @@ NO_SESSION_HOOK_FLAG="$HOME/.ownmind/.no-session-hook"
 if [ -f "$CLAUDE_SETTINGS" ]; then
   node -e "
     const fs = require('fs');
+    const path = require('path');
+    const os = require('os');
     const { loadOrSkip } = require('$HOME/.ownmind/scripts/install-helpers/load-settings-safe.cjs');
     const s = loadOrSkip('$CLAUDE_SETTINGS', {});
     const noSessionHook = fs.existsSync('$NO_SESSION_HOOK_FLAG');
@@ -212,33 +214,48 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
 
     // SessionStart hook — auto-load memory (startup/resume/clear/compact all need loading).
     // Respect user opt-out: if ~/.ownmind/.no-session-hook exists, skip this whole block.
-    if (!noSessionHook) {
+    // v1.26.80: the command used to be hardcoded to bash here. On Windows that entry
+    // replaced the Node one install.ps1 had correctly written, every single day, and the
+    // hook then never fired at all. The choice lives in one place now.
+    //
+    // Wrapped: on the update that *delivers* this helper, or after a half-finished git
+    // pull, an uncaught MODULE_NOT_FOUND would kill this whole node script and skip every
+    // hook below — PreToolUse, Stop, WorktreeCreate. Rather than guess a command, skip the
+    // SessionStart block and leave settings.json untouched; the next update has the file.
+    let hookCmd = null;
+    try {
+      hookCmd = require('$OWNMIND_DIR/scripts/install-helpers/session-hook-command.cjs');
+    } catch { hookCmd = null; }
+
+    if (!noSessionHook && hookCmd) {
       if (!s.hooks.SessionStart) s.hooks.SessionStart = [];
-      const ownmindCmd = 'bash ~/.claude/hooks/ownmind-session-start.sh';
-      const isOwnmindEntry = h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-session-start'));
+      const newEntries = hookCmd.sessionStartEntries({
+        platform: process.platform,
+        hookDir: path.join(os.homedir(), '.claude', 'hooks'),
+      });
+      const isOwnmindEntry = hookCmd.isOwnmindSessionEntry;
       const existing = s.hooks.SessionStart.filter(isOwnmindEntry);
-      const expectedMatchers = ['startup', 'resume', 'clear', 'compact'];
-      const hasAllMatchers = expectedMatchers.every(m =>
-        existing.some(h => h.matcher === m)
-      );
+      // Matchers complete is not the same question as command correct. Every Windows
+      // machine today has all four matchers, all running bash; judging by matchers alone
+      // would call them healthy and repair nobody.
+      const mustRewrite = hookCmd.needsRewrite(existing, {
+        platform: process.platform,
+        hookDir: path.join(os.homedir(), '.claude', 'hooks'),
+      });
       // Two cases write entries:
       // 1. No ownmind SessionStart entry at all (fresh install).
       // 2. An entry exists but matchers are incomplete (legacy migration).
       // If the user already has all 4 matchers, don't touch it; if they manually removed them
       // and left it blank, treat that as opt-out.
-      if (existing.length > 0 && !hasAllMatchers) {
+      if (mustRewrite) {
         // Migration: drop old entries, rebuild 4 complete matchers.
         s.hooks.SessionStart = s.hooks.SessionStart.filter(h => !isOwnmindEntry(h));
-        for (const matcher of expectedMatchers) {
-          s.hooks.SessionStart.push({ matcher, hooks: [{ type: 'command', command: ownmindCmd, timeout: 10 }] });
-        }
+        s.hooks.SessionStart.push(...newEntries);
         changed = true;
         console.log('   ✅ SessionStart hook upgraded to 4 complete matchers (startup/resume/clear/compact)');
       } else if (existing.length === 0 && s.hooks.SessionStart.length === 0) {
         // Fresh install: no SessionStart in settings — add the 4 matchers.
-        for (const matcher of expectedMatchers) {
-          s.hooks.SessionStart.push({ matcher, hooks: [{ type: 'command', command: ownmindCmd, timeout: 10 }] });
-        }
+        s.hooks.SessionStart.push(...newEntries);
         changed = true;
         console.log('   ✅ SessionStart hook installed (4 matchers)');
       }
