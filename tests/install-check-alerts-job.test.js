@@ -25,13 +25,80 @@ function makeQuery({ reports = [ADAM_ROW], state = [], admins = [{ id: 1 }] } = 
     if (sql.includes("role='super_admin'") || sql.includes("role = 'super_admin'")) {
       return { rows: admins, rowCount: admins.length };
     }
+    // The claim upsert returns the rows it actually claimed.
+    if (sql.includes('INSERT INTO install_check_alert_state')) {
+      const [user_id, machine, check_name] = params;
+      return { rows: [{ user_id, machine, check_name }], rowCount: 1 };
+    }
     if (sql.includes('INSERT INTO broadcast_messages')) return { rows: [{ id: 99 }], rowCount: 1 };
     return { rows: [], rowCount: 0 };
   };
   return { query, calls };
 }
 
+/**
+ * A fake that actually keeps the state table, so the claim upsert's conflict
+ * clause and the release path can be exercised across more than one run.
+ * Two sweeps sharing one of these read and write the same rows, which is the
+ * whole point: it is the only way to tell "claimed it" from "somebody else did".
+ */
+function makeStatefulDb({ reports = [ADAM_ROW], admins = [{ id: 1 }] } = {}) {
+  const rows = new Map();
+  const calls = [];
+  const key = (userId, machine, checkName) => JSON.stringify([userId, machine, checkName]);
+  let broadcastError = null;
+  let nextBroadcastId = 99;
+
+  const query = async (sql, params = []) => {
+    calls.push({ sql, params });
+
+    if (sql.includes('FROM install_check_logs')) return { rows: reports, rowCount: reports.length };
+    if (sql.includes('FROM install_check_alert_state')) {
+      const all = [...rows.values()].map((r) => ({ ...r }));
+      return { rows: all, rowCount: all.length };
+    }
+    if (sql.includes("role = 'super_admin'")) return { rows: admins, rowCount: admins.length };
+
+    if (sql.includes('INSERT INTO install_check_alert_state')) {
+      const [userId, machine, checkName, detail] = params;
+      const k = key(userId, machine, checkName);
+      const prev = rows.get(k);
+      // ON CONFLICT ... DO UPDATE ... WHERE announced_at IS NULL OR resolved_at IS NOT NULL
+      if (prev && prev.announced_at && !prev.resolved_at) return { rows: [], rowCount: 0 };
+      rows.set(k, {
+        user_id: userId, machine, check_name: checkName, detail,
+        announced_at: new Date(), resolved_at: null,
+      });
+      return { rows: [{ user_id: userId, machine, check_name: checkName }], rowCount: 1 };
+    }
+
+    if (sql.includes('SET announced_at = NULL')) {
+      const [userId, machine, checkName] = params;
+      const k = key(userId, machine, checkName);
+      const prev = rows.get(k);
+      if (prev) rows.set(k, { ...prev, announced_at: null });
+      return { rows: [], rowCount: prev ? 1 : 0 };
+    }
+
+    if (sql.includes('INSERT INTO broadcast_messages')) {
+      if (broadcastError) throw broadcastError;
+      return { rows: [{ id: nextBroadcastId += 1 }], rowCount: 1 };
+    }
+
+    return { rows: [], rowCount: 0 };
+  };
+
+  return {
+    query,
+    calls,
+    rows,
+    breakBroadcast(err) { broadcastError = err; },
+    fixBroadcast() { broadcastError = null; },
+  };
+}
+
 const broadcastInsert = (calls) => calls.find((c) => c.sql.includes('INSERT INTO broadcast_messages'));
+const stateInserts = (calls) => calls.filter((c) => c.sql.includes('INSERT INTO install_check_alert_state'));
 
 describe('runInstallCheckAlerts', () => {
   it('announces a new failure and returns the broadcast id', async () => {
@@ -107,5 +174,135 @@ describe('runInstallCheckAlerts', () => {
     const read = calls.find((c) => c.sql.includes('FROM install_check_logs'));
     assert.match(read.sql, /jsonb_array_length/);
     assert.match(read.sql, /DISTINCT ON/);
+  });
+
+  it('picks the newest report by server-assigned id, not the client clock', async () => {
+    // A machine whose clock is set to next year would otherwise upload one
+    // report that outranks every later one and never announce again.
+    const { query, calls } = makeQuery();
+    await runInstallCheckAlerts({ query });
+    const read = calls.find((c) => c.sql.includes('FROM install_check_logs'));
+
+    assert.match(read.sql, /ORDER BY[\s\S]*l\.id DESC/);
+    assert.ok(!/l\.ts DESC/.test(read.sql), 'recency must not come from the client-supplied ts');
+  });
+
+  it('keeps the alert on screen for 48 hours, not a week', async () => {
+    // severity='warning' + allow_snooze=FALSE means this leads the AI's first
+    // sentence in every new conversation until it expires.
+    const { query, calls } = makeQuery();
+    await runInstallCheckAlerts({ query });
+
+    assert.match(broadcastInsert(calls).sql, /INTERVAL '48 hours'/);
+  });
+});
+
+describe('runInstallCheckAlerts — a broadcast that never got written must not silence anything', () => {
+  const poolTimeout = () => new Error('timeout exceeded when trying to connect');
+
+  it('propagates the broadcast error instead of swallowing it', async () => {
+    const db = makeStatefulDb();
+    db.breakBroadcast(poolTimeout());
+
+    await assert.rejects(
+      () => runInstallCheckAlerts({ query: db.query }),
+      /timeout exceeded/,
+      'the caller (the route) is what decides to swallow this'
+    );
+  });
+
+  it('leaves no failure marked announced when the broadcast fails', async () => {
+    const db = makeStatefulDb();
+    db.breakBroadcast(poolTimeout());
+
+    await assert.rejects(() => runInstallCheckAlerts({ query: db.query }));
+
+    const announced = [...db.rows.values()].filter((r) => r.announced_at);
+    assert.deepEqual(announced, [], 'a claim outlived the broadcast it was made for');
+    assert.ok(db.calls.some((c) => c.sql.includes('SET announced_at = NULL')),
+      'the claim was never released');
+  });
+
+  it('re-announces on the next sweep once the broadcast works again', async () => {
+    // The failure scenario in full: the sweep marks the failure announced, the
+    // broadcast insert dies, and the failure is invisible from then on.
+    const db = makeStatefulDb();
+    db.breakBroadcast(poolTimeout());
+    await assert.rejects(() => runInstallCheckAlerts({ query: db.query }));
+
+    db.fixBroadcast();
+    const second = await runInstallCheckAlerts({ query: db.query });
+
+    assert.equal(second.announced, 1, 'the failure was silenced by the failed run');
+    assert.ok(second.broadcast_id, 'no broadcast on the retry');
+  });
+});
+
+describe('runInstallCheckAlerts — two overlapping sweeps announce once between them', () => {
+  it('two sweeps started together produce one broadcast between them', async () => {
+    // Both sweeps read the state table before either writes to it, so both
+    // compute the same new failure. Only the one that wins the claim may speak.
+    const db = makeStatefulDb();
+
+    const [first, second] = await Promise.all([
+      runInstallCheckAlerts({ query: db.query }),
+      runInstallCheckAlerts({ query: db.query }),
+    ]);
+
+    const broadcasts = db.calls.filter((c) => c.sql.includes('INSERT INTO broadcast_messages'));
+    assert.equal(broadcasts.length, 1, 'the same failure was announced twice');
+    assert.equal(first.announced + second.announced, 1, 'exactly one sweep may claim it');
+    assert.equal([first.broadcast_id, second.broadcast_id].filter(Boolean).length, 1);
+  });
+
+  it('a later sweep over an already-announced failure stays silent', async () => {
+    const db = makeStatefulDb();
+
+    const first = await runInstallCheckAlerts({ query: db.query });
+    const second = await runInstallCheckAlerts({ query: db.query });
+
+    assert.equal(first.announced, 1);
+    assert.ok(first.broadcast_id);
+    assert.equal(second.announced, 0, 'the same failure was announced twice');
+    assert.equal(second.broadcast_id, null);
+  });
+
+  it('claims each failure before the broadcast, never after', async () => {
+    const { query, calls } = makeQuery();
+    await runInstallCheckAlerts({ query });
+
+    const claimAt = calls.indexOf(stateInserts(calls)[0]);
+    const broadcastAt = calls.indexOf(broadcastInsert(calls));
+    assert.ok(claimAt >= 0 && broadcastAt >= 0);
+    assert.ok(claimAt < broadcastAt, 'the claim must be the thing that wins the race');
+    assert.match(stateInserts(calls)[0].sql, /RETURNING/);
+    assert.match(stateInserts(calls)[0].sql, /announced_at IS NULL/);
+  });
+
+  it('announces only the rows it actually claimed', async () => {
+    // One failure is already announced and unresolved; a concurrent sweep that
+    // still sees it as new must not put it in its broadcast.
+    const twoChecks = {
+      ...ADAM_ROW,
+      checks: [
+        { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
+        { name: 'scheduler', status: 'fail', detail: 'not registered' },
+      ],
+    };
+    const db = makeStatefulDb({ reports: [twoChecks] });
+    await runInstallCheckAlerts({ query: db.query });
+
+    // Re-open one key the way a resolve-then-fail-again cycle would.
+    for (const [k, row] of db.rows) {
+      if (row.check_name === 'scheduler') db.rows.set(k, { ...row, announced_at: null });
+    }
+
+    const again = await runInstallCheckAlerts({ query: db.query });
+    assert.equal(again.announced, 1, 'only the re-opened key should be announced');
+
+    const broadcasts = db.calls.filter((c) => c.sql.includes('INSERT INTO broadcast_messages'));
+    const body = broadcasts[broadcasts.length - 1].params[1];
+    assert.ok(body.includes('scheduler'), 'the claimed failure is missing from the body');
+    assert.ok(!body.includes('memory_load'), 'an unclaimed failure leaked into the body');
   });
 });
