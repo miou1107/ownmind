@@ -28,7 +28,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 // v1.17.66 — on Windows, every spawn goes through safeSpawn (forces shell:false + windowsHide:true).
@@ -394,6 +394,153 @@ async function checkGitHooks() {
   return pass('git_hooks', `${expected.length} hooks installed`);
 }
 
+/**
+ * v1.26.81 — did this person's memories and iron rules actually load?
+ *
+ * The nine checks before this one confirm that things are *installed*. None of them asked
+ * whether the product's central feature works. It did not, on six Windows machines, for
+ * three months, and the server held the evidence the whole time.
+ *
+ * The verdict comes from the server, like `usage_roundtrip` and for the same reason: a
+ * machine reporting on its own health is the machine you cannot trust. The local evidence
+ * is collected regardless of the verdict, because it is what says *why* — and every field
+ * below is one this week's investigation actually needed and had to dig out by hand.
+ */
+async function checkMemoryLoad({
+  apiUrl, apiKey,
+  fetchSelfCheck,
+  settingsPath = path.join(HOME, '.claude', 'settings.json'),
+  resolveBinary = defaultResolveBinary,
+  staleDays = 30,
+  now = () => new Date(),
+} = {}) {
+  const NAME = 'memory_load';
+  const evidence = collectMemoryLoadEvidence({ settingsPath, resolveBinary });
+
+  const withEvidence = (result) => ({ ...result, evidence });
+
+  if (!apiUrl || !apiKey) {
+    return withEvidence(warn(NAME, 'no credentials, so the server cannot be asked whether memories ever loaded',
+      'Connect OwnMind to a server, then re-run the installer'));
+  }
+
+  let body;
+  try {
+    body = fetchSelfCheck
+      ? await fetchSelfCheck({ apiUrl, apiKey })
+      : await defaultFetchSelfCheck(apiUrl, apiKey);
+  } catch (e) {
+    // Offline is not broken. Calling it broken teaches people to ignore the check.
+    return withEvidence(warn(NAME, `could not reach the server: ${sanitizePath(e?.message || e)}`,
+      'Re-run the check when the machine is online'));
+  }
+
+  const load = body?.memory_load;
+  if (!load) {
+    return withEvidence(warn(NAME, 'this server is too old to answer whether memories loaded',
+      'Upgrade the OwnMind server to v1.26.81 or later'));
+  }
+
+  const reasons = [];
+  if (!evidence.session_start_command) {
+    reasons.push('no SessionStart hook is registered in Claude Code');
+  } else if (evidence.hook_file_exists === false) {
+    reasons.push(`the file it runs is missing: ${evidence.hook_file}`);
+  }
+  if (evidence.bash_is_wsl) {
+    // The one fact that explains six machines at a glance, and the reason a bash command
+    // can look perfectly fine and still never run: WSL's `~` is a different home.
+    reasons.push('`bash` on this machine is the WSL launcher, whose home directory is not this one');
+  }
+  const why = reasons.length ? ` (${reasons.join('; ')})` : '';
+
+  if (!load.last_hook_init_at) {
+    return withEvidence(fail(NAME,
+      `memories have never loaded automatically on this account${why}`,
+      'Re-run the installer, then fully restart your AI tool and open a new conversation'));
+  }
+
+  const ageDays = (now() - new Date(load.last_hook_init_at)) / 86400000;
+  if (ageDays > staleDays) {
+    return withEvidence(warn(NAME,
+      `memories last loaded ${Math.round(ageDays)} days ago${why}`,
+      'Open a new conversation; if it stays stale, re-run the installer'));
+  }
+
+  return withEvidence(pass(NAME,
+    `memories loaded ${load.hook_inits_7d} time(s) in the last 7 days`));
+}
+
+/**
+ * Gathered whether or not the verdict needs it. When this check fails on somebody else's
+ * machine, this is the entire diagnosis, and there is no second chance to ask.
+ */
+function collectMemoryLoadEvidence({ settingsPath, resolveBinary }) {
+  const evidence = {
+    platform: PLATFORM,
+    settings_path: sanitizePath(settingsPath),
+    session_start_command: null,
+    session_start_matchers: [],
+    hook_file: null,
+    hook_file_exists: null,
+    bash_path: null,
+    bash_is_wsl: false,
+    node_path: null,
+  };
+
+  try {
+    const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const entries = (s?.hooks?.SessionStart || []).filter((h) =>
+      h?.hooks?.some((hh) => (hh.command || '').includes('ownmind-session-start')));
+    if (entries.length) {
+      evidence.session_start_command = entries[0].hooks[0].command;
+      evidence.session_start_matchers = entries.map((e) => e.matcher ?? null);
+    }
+  } catch { /* an unreadable settings file is itself reported by the null command */ }
+
+  const cmd = evidence.session_start_command;
+  if (cmd) {
+    // `bash ~/x/y.sh` or `node "C:/x/y.js"` — the last token is the file either way.
+    const m = cmd.match(/"([^"]+)"\s*$/) || cmd.match(/(\S+)\s*$/);
+    if (m) {
+      const raw = m[1].replace(/^~(?=[/\\])/, HOME);
+      evidence.hook_file = sanitizePath(raw);
+      try { evidence.hook_file_exists = fs.existsSync(raw); } catch { evidence.hook_file_exists = null; }
+    }
+  }
+
+  try {
+    evidence.bash_path = resolveBinary('bash');
+    evidence.node_path = resolveBinary('node');
+  } catch { /* resolution failures are reported as null, not as a crash */ }
+
+  // System32\bash.exe is Windows' WSL entry point. Present, runnable, and pointed at a
+  // different filesystem — which is exactly why it fails without an error.
+  evidence.bash_is_wsl = Boolean(
+    evidence.bash_path && /system32[\\/]bash(\.exe)?$/i.test(evidence.bash_path)
+  );
+
+  if (evidence.bash_path) evidence.bash_path = sanitizePath(evidence.bash_path);
+  if (evidence.node_path) evidence.node_path = sanitizePath(evidence.node_path);
+  return evidence;
+}
+
+function defaultResolveBinary(bin) {
+  const finder = PLATFORM === 'win32' ? 'where' : 'which';
+  try {
+    const out = execFileSync(finder, [bin], { encoding: 'utf8', timeout: TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] });
+    return String(out).split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] || null;
+  } catch { return null; }
+}
+
+async function defaultFetchSelfCheck(apiUrl, apiKey) {
+  const res = await fetchWithTimeout(`${String(apiUrl).replace(/\/$/, '')}/api/usage/self-check`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 async function checkScheduler() {
   if (PLATFORM === 'darwin') {
     try {
@@ -651,6 +798,8 @@ async function runAllChecks() {
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
   checks.push(await safeCheck('scheduler', checkScheduler));
+  // v1.26.81 — the one that asks whether the product's central feature works at all.
+  checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey })));
   // v1.26.72 — last, because it runs a real scan and is the slowest. Also the only one
   // that asks whether the data is arriving rather than whether things are installed.
   checks.push(await safeCheck('usage_roundtrip',
@@ -1002,6 +1151,8 @@ module.exports = {
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   // v1.26.72 — the round-trip: scan, then read back from the server.
   checkUsageRoundtrip, redactKey,
+  // v1.26.81 — did memories actually load? Verdict from the server, evidence from here.
+  checkMemoryLoad, collectMemoryLoadEvidence,
   buildReport, summarize, sanitizePath, parseArgs,
   // v1.17.66 — spool mechanism (IR-038 observability pipeline).
   uploadReport, appendSpool, retrySpool,
