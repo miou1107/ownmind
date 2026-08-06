@@ -74,6 +74,14 @@
 
 伺服器啟動時額外補跑一次 `runInstallCheckAlerts()`，讓上版之前就已存在、還沒被算過的舊報告一併評估，不用等每台機器下一次自我檢查才觸發。同樣只記日誌、不擋伺服器啟動；`install_check_alert_state` 的 upsert 保證這條路徑跟上傳路徑重疊時不會重複公告。
 
+### 第五部分：兩個 NUL 位元組害整個檔案被 grep 當二進位跳過
+
+`src/routes/debug.js` 裡有兩個原始 NUL 位元組（U+0000），一個埋在第 77 行的註解裡、一個直接嵌在第 85 行 `sanitizeNullBytes` 的正則表達式字面量中。`file` 因此把整支檔案判定成 `data`，`grep` 把它當二進位檔跳過 —— 在 `src/` 底下搜這支路由自己的檔名或路由字串都搜不到，看起來像這個 endpoint 根本不存在。
+
+註解那一處單純改寫成文字描述（「rejects NUL bytes」取代原本嵌入的位元組）。第 85 行不是註解，是實際在跑的清理邏輯：正則字面量裡的原始 NUL 位元組換成跳脫序列 `\x00`，在 JS 正則裡兩者比對的是同一個位元組（U+0000），行為不變；既有的 null-byte sanitize 測試（`tests/install-check-null-byte-sanitize.test.js`）原封不動通過即為證明。
+
+新增 `tests/source-files-are-text.test.js` 當回歸守門：遞迴掃 `src/` 底下所有 `.js`／`.cjs`，禁止出現會讓 grep 跳過檔案的控制位元組（`\x00`–`\x08`、`\x0e`–`\x1f`；保留 tab／LF／CR）。掃描時排除 `src/public/dashboard/`（`.gitignore` 標記的前端編譯產物，非手寫原始碼，裡面的 minified bundle 本來就可能含控制字元，不在此測試的關注範圍內）。
+
 ## v1.26.86 — 修理工自己從來沒上過工，以及版號提醒管到別人家
 
 ### 缺陷一：設定修復程式從來沒有真的執行過

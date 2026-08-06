@@ -29,6 +29,10 @@ tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派
 tests/install-check-alerts-wiring.test.js     — 驗證接線本身：報告存好後真的觸發評估、評估失敗不影響
                                                  200 回應也不擋報告落地、400（缺 ts）不觸發評估；另讀
                                                  src/index.js 原始碼確認開機補跑一次且失敗被 catch 住
+tests/source-files-are-text.test.js           — 回歸守門：遞迴掃 src/ 下所有 .js／.cjs，禁止出現會讓
+                                                 grep 把檔案當二進位跳過的控制位元組（保留 tab／LF／CR）。
+                                                 排除 src/public/dashboard/（gitignore 標記的前端編譯
+                                                 產物，非手寫原始碼）
 ```
 
 修改檔：
@@ -36,7 +40,10 @@ tests/install-check-alerts-wiring.test.js     — 驗證接線本身：報告存
 src/routes/debug.js                           — createDebugRouter 新增可選參數 onReportStored（預設是真正
                                                  的 runInstallCheckAlerts）；報告寫入成功、回應 200 之前
                                                  呼叫它，包在 try/catch，失敗只記日誌不影響回應。既有呼叫
-                                                 端（src/app.js）不用改，因為參數是可選的
+                                                 端（src/app.js）不用改，因為參數是可選的。另外移除檔案
+                                                 中兩個原始 NUL 位元組（曾讓整支檔案被 file/grep 判定成
+                                                 二進位），一處改寫註解文字、一處把正則字面量換成 \x00
+                                                 跳脫序列（行為不變）
 src/index.js                                  — app.listen callback 內、seedDefaultPasswords() 之後補一次
                                                  runInstallCheckAlerts()，讓上版前已存在的舊報告也被評估；
                                                  失敗同樣只記日誌，不擋伺服器啟動

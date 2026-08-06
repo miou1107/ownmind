@@ -168,6 +168,7 @@ Because static rule files are fragile — AI hallucinations bypass them silently
 - **Keyword search** — Multi-keyword AND search across title, content, tags, and code fields (a pgvector column is provisioned for a future semantic-similarity upgrade, not yet in use)
 - **Tiered compression** — Short-term memory auto-compresses, long-term memory persists forever
 - **Native Windows support** — `install.ps1` and `start.cmd` included, no WSL (Windows Subsystem for Linux) needed
+- **Source-file hygiene guard** — Test suite fails if any file under `src/` contains a raw control byte (e.g. NUL) that would make `grep`/`file` treat it as binary and skip it silently `v1.26.87`
 
 ---
 
