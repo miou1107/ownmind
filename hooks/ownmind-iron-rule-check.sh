@@ -109,7 +109,12 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
     const trigger = '$TRIGGER';
     const version = '$VERSION';
     try {
-      const rules = JSON.parse(d);
+      // v1.26.87: the API wraps responses as { data: [...] }. Calling .filter on
+      // the envelope throws, the whole snippet dies, and the surrounding \$( )
+      // swallows it — so this hook has been silently producing no reminders.
+      // The .js sibling was fixed for this in v1.19.20; this copy was missed.
+      const parsed = JSON.parse(d);
+      const rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
       const relevant = rules.filter(r => {
         if (!r.tags || r.tags.length === 0) return true;
         return r.tags.some(t =>
