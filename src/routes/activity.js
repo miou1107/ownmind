@@ -159,78 +159,99 @@ router.post('/batch', auth, async (req, res) => {
     let inserted = 0;
     let deduped = 0;
     let autoObserved = 0;
+    let failed = 0;
 
     for (const e of batch) {
       if (!e.ts || !e.event) continue;
 
-      // v1.17.99: dedup INSERT logic moved to src/utils/activity-insert.js
-      // so the handler and tests/activity-batch-dedup.test.js share the same
-      // implementation (addressing v1.17.98 review I1).
-      // normalizeClientEventId handles: non-string / non-UUID v4 → null.
-      const clientEventId = normalizeClientEventId(e.client_event_id);
-
-      // v1.17.89: enrich details before insert — fill in code+title snapshot
-      // for disable/update iron_rule events so future pitfalls queries can
-      // show full context without JOINing memories. Enrich failure swallows
-      // its own errors (pure function with built-in try/catch) and returns
-      // the original details.
-      const enrichedDetails = await enrichActivityDetails(e, memoryLookup);
-
-      // Use the v1.17.99 shared helper — internally it splits into two paths
-      // (pure INSERT for NULL client id; ON CONFLICT path for present id).
-      const { inserted: didInsert } = await insertActivityLog(query, {
-        userId: req.user.id,
-        ts: e.ts,
-        event: e.event,
-        tool: e.tool || null,
-        source: e.source || null,
-        details: enrichedDetails,
-        clientEventId,
-      });
-      if (!didInsert) {
-        deduped++;
-        continue;  // Don't run the auto-observe trigger — avoid generating
-                   // duplicate derived events when the same event is replayed.
-      }
-      inserted++;
-
-      // v1.17.45 server-side auto observability: high-risk events also get
-      // an observed_trigger row. The source can be either the client's
-      // system_auto or "client didn't upgrade"; the server writes it either way.
+      // v1.26.78 — one event may not take the batch down with it. Until now the only try
+      // sat around the whole loop, so a single bad row 500'd the request and every other
+      // event in it was lost. Measured on production: `source: 'system_auto'` against a
+      // VARCHAR(10) column did exactly that, and had been doing it since the column was
+      // created. The column is wider now (db/020); this is so the next unforeseen row
+      // costs one event instead of a batch.
       try {
-        const trigger = await autoEmitObservedTrigger(req.user.id, e);
-        if (trigger) {
-          await query(
-            `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [
-              req.user.id,
-              e.ts,  // Reuse the same ts so the ±10 minute window still matches.
-              'iron_rule_compliance',
-              e.tool || 'server',
-              'system_server_auto',
-              JSON.stringify({
-                rule_code: trigger.rule_code,
-                rule_title: trigger.rule_title,
-                triggered_by_event: trigger.triggered_by_event,
-                action: 'observed_trigger',
-                source: 'system_server_auto',
-                tool_call: trigger.tool_call,
-                context: trigger.context,
-              }),
-            ]
-          );
-          autoObserved++;
+
+        // v1.17.99: dedup INSERT logic moved to src/utils/activity-insert.js
+        // so the handler and tests/activity-batch-dedup.test.js share the same
+        // implementation (addressing v1.17.98 review I1).
+        // normalizeClientEventId handles: non-string / non-UUID v4 → null.
+        const clientEventId = normalizeClientEventId(e.client_event_id);
+
+        // v1.17.89: enrich details before insert — fill in code+title snapshot
+        // for disable/update iron_rule events so future pitfalls queries can
+        // show full context without JOINing memories. Enrich failure swallows
+        // its own errors (pure function with built-in try/catch) and returns
+        // the original details.
+        const enrichedDetails = await enrichActivityDetails(e, memoryLookup);
+
+        // Use the v1.17.99 shared helper — internally it splits into two paths
+        // (pure INSERT for NULL client id; ON CONFLICT path for present id).
+        const { inserted: didInsert } = await insertActivityLog(query, {
+          userId: req.user.id,
+          ts: e.ts,
+          event: e.event,
+          tool: e.tool || null,
+          source: e.source || null,
+          details: enrichedDetails,
+          clientEventId,
+        });
+        if (!didInsert) {
+          deduped++;
+          continue;  // Don't run the auto-observe trigger — avoid generating
+                     // duplicate derived events when the same event is replayed.
+        }
+        inserted++;
+
+        // v1.17.45 server-side auto observability: high-risk events also get
+        // an observed_trigger row. The source can be either the client's
+        // system_auto or "client didn't upgrade"; the server writes it either way.
+        try {
+          const trigger = await autoEmitObservedTrigger(req.user.id, e);
+          if (trigger) {
+            await query(
+              `INSERT INTO activity_logs (user_id, ts, event, tool, source, details)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                req.user.id,
+                e.ts,  // Reuse the same ts so the ±10 minute window still matches.
+                'iron_rule_compliance',
+                e.tool || 'server',
+                'system_server_auto',
+                JSON.stringify({
+                  rule_code: trigger.rule_code,
+                  rule_title: trigger.rule_title,
+                  triggered_by_event: trigger.triggered_by_event,
+                  action: 'observed_trigger',
+                  source: 'system_server_auto',
+                  tool_call: trigger.tool_call,
+                  context: trigger.context,
+                }),
+              ]
+            );
+            autoObserved++;
+          }
+        } catch (err) {
+          logger.warn('server-side auto observability failed (main flow not blocked)', {
+            error: err.message,
+            event: e.event,
+          });
         }
       } catch (err) {
-        logger.warn('server-side auto observability failed (main flow not blocked)', {
+        // This event is lost and the rest of the batch is not. Logged per event with the
+        // event type, because the whole point is being able to tell which kind of event
+        // the client cannot get through — the old behaviour reported one 500 and named
+        // nothing.
+        failed++;
+        logger.error('activity event rejected (rest of batch continues)', {
           error: err.message,
           event: e.event,
+          source: e.source ?? null,
         });
       }
     }
 
-    res.json({ inserted, deduped, total: batch.length, auto_observed: autoObserved });
+    res.json({ inserted, deduped, failed, total: batch.length, auto_observed: autoObserved });
   } catch (err) {
     logger.error('activity log batch upload failed', { error: err.message });
     res.status(500).json({ error: 'Upload failed' });

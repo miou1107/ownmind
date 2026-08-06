@@ -509,6 +509,24 @@ rows written before it existed, so it is its own release.
 
 Origin: v1.26.73 review, 2026-08-06.
 
+### 23. `POST /api/activity/batch` cannot be driven from a test
+
+The handler imports `query` from `src/utils/db.js` at module level, so no test can make one
+event fail inside the real loop. `createEventsRouter`, `createTeamOverviewRouter` and
+`loadClients` all take an injected `query`; this route predates that pattern.
+
+The consequence showed up in v1.26.78: a defect that rejected **every** batch containing an
+auto-compliance event survived for the life of the table, and the fix for it (per-event
+isolation) can only be asserted by reading the source rather than by driving the handler.
+`tests/activity-batch-dedup.test.js` works around it by re-implementing the loop, which
+tests a copy of the code rather than the code.
+
+Closing it means converting the module-level router into `createActivityRouter(deps)` and
+updating its mount point. Mechanical, but the file carries several other routes and is on
+the ingestion path, so it wants its own release rather than riding along with a fix.
+
+Origin: v1.26.78, 2026-08-06.
+
 ---
 
 ## Smaller cleanups
