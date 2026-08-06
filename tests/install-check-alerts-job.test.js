@@ -48,6 +48,9 @@ function makeStatefulDb({ reports = [ADAM_ROW], admins = [{ id: 1 }] } = {}) {
   const key = (userId, machine, checkName) => JSON.stringify([userId, machine, checkName]);
   let broadcastError = null;
   let nextBroadcastId = 99;
+  let claimError = null;
+  let claimsBeforeError = 0;
+  let claimCount = 0;
 
   const query = async (sql, params = []) => {
     calls.push({ sql, params });
@@ -60,6 +63,12 @@ function makeStatefulDb({ reports = [ADAM_ROW], admins = [{ id: 1 }] } = {}) {
     if (sql.includes("role = 'super_admin'")) return { rows: admins, rowCount: admins.length };
 
     if (sql.includes('INSERT INTO install_check_alert_state')) {
+      claimCount += 1;
+      if (claimError && claimCount > claimsBeforeError) {
+        const err = claimError;
+        claimError = null; // the connection recovers; only this claim dies
+        throw err;
+      }
       const [userId, machine, checkName, detail] = params;
       const k = key(userId, machine, checkName);
       const prev = rows.get(k);
@@ -94,6 +103,8 @@ function makeStatefulDb({ reports = [ADAM_ROW], admins = [{ id: 1 }] } = {}) {
     rows,
     breakBroadcast(err) { broadcastError = err; },
     fixBroadcast() { broadcastError = null; },
+    /** Let `n` claims succeed, then throw `err` on the next one, once. */
+    breakClaimAfter(n, err) { claimsBeforeError = n; claimError = err; claimCount = 0; },
   };
 }
 
@@ -221,6 +232,58 @@ describe('runInstallCheckAlerts — a broadcast that never got written must not 
     assert.deepEqual(announced, [], 'a claim outlived the broadcast it was made for');
     assert.ok(db.calls.some((c) => c.sql.includes('SET announced_at = NULL')),
       'the claim was never released');
+  });
+
+  it('releases the claims already taken when a later claim throws', async () => {
+    // The claim loop is a write loop. A claim that commits and is then followed
+    // by a failing claim is the same defect as a failed broadcast, one query
+    // earlier: nothing was announced, yet those keys read as announced.
+    const twoChecks = {
+      ...ADAM_ROW,
+      checks: [
+        { name: 'memory_load', status: 'fail', detail: 'WSL launcher' },
+        { name: 'scheduler', status: 'fail', detail: 'not registered' },
+      ],
+    };
+    const db = makeStatefulDb({ reports: [twoChecks] });
+    db.breakClaimAfter(1, poolTimeout());
+
+    await assert.rejects(() => runInstallCheckAlerts({ query: db.query }), /timeout exceeded/);
+
+    const announced = [...db.rows.values()].filter((r) => r.announced_at);
+    assert.deepEqual(announced, [], 'the claim taken before the failure was never released');
+    assert.equal(broadcastInsert(db.calls), undefined, 'nothing should have been announced');
+
+    const second = await runInstallCheckAlerts({ query: db.query });
+    assert.equal(second.announced, 2, 'the next sweep must announce both failures');
+
+    const body = db.calls.filter((c) => c.sql.includes('INSERT INTO broadcast_messages')).pop().params[1];
+    assert.ok(body.includes('memory_load'), 'the released claim is missing from the retry');
+    assert.ok(body.includes('scheduler'), 'the failure that threw is missing from the retry');
+  });
+
+  it('releases only what it claimed, leaving an earlier announcement alone', async () => {
+    // A key this run never claimed may belong to an announcement that really
+    // happened. Clearing its announced_at would announce the same thing twice.
+    const report = {
+      ...ADAM_ROW,
+      checks: [{ name: 'memory_load', status: 'fail', detail: 'WSL launcher' }],
+    };
+    const db = makeStatefulDb({ reports: [report] });
+    await runInstallCheckAlerts({ query: db.query });
+
+    report.checks.push({ name: 'scheduler', status: 'fail', detail: 'not registered' });
+    report.checks.push({ name: 'hook_wiring', status: 'fail', detail: 'not installed' });
+    db.breakClaimAfter(1, poolTimeout());
+
+    await assert.rejects(() => runInstallCheckAlerts({ query: db.query }), /timeout exceeded/);
+
+    const byCheck = new Map([...db.rows.values()].map((r) => [r.check_name, r]));
+    assert.ok(byCheck.get('memory_load').announced_at,
+      'an earlier, successful announcement was undone');
+    assert.equal(byCheck.get('scheduler').announced_at, null,
+      'the claim this run took was not released');
+    assert.ok(!byCheck.has('hook_wiring'), 'the claim that threw must leave no row behind');
   });
 
   it('re-announces on the next sweep once the broadcast works again', async () => {

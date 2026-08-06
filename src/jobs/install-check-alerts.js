@@ -139,64 +139,82 @@ export async function runInstallCheckAlerts({ query = defaultQuery } = {}) {
   // stops two overlapping sweeps announcing the same failure twice; releasing on
   // failure is what stops a broadcast that never got written from silencing
   // those failures forever.
+  //
+  // Every write from the first claim to the broadcast insert lives in one try.
+  // A claim that commits and is then followed by a failed claim is the same
+  // defect one query earlier: nothing was announced, but that key now reads as
+  // announced and no later sweep will ever pick it up again.
   const claimed = [];
-  for (const failure of newFailures) {
-    const claim = await query(CLAIM_SQL, [
-      failure.user_id, failure.machine, failure.check_name, failure.detail,
-    ]);
-    if (claim.rowCount > 0) claimed.push(failure);
-  }
+  let result;
 
-  if (claimed.length === 0) {
-    logger.info('install-check-alerts: every new failure was claimed by another run', {
-      count: newFailures.length,
-    });
-    return { announced: 0, omitted: 0, broadcast_id: null };
-  }
-
-  if (admin.rowCount === 0) {
-    logger.warn('install-check-alerts: no super_admin, state recorded but nothing announced', {
-      count: claimed.length,
-    });
-    return { announced: claimed.length, omitted: 0, broadcast_id: null };
-  }
-
-  const adminId = admin.rows[0].id;
-  const { title, body, omitted } = renderAlertMessage(claimed);
-
-  let inserted;
   try {
-    inserted = await query(BROADCAST_SQL, [title, body, [adminId], adminId]);
+    for (const failure of newFailures) {
+      const claim = await query(CLAIM_SQL, [
+        failure.user_id, failure.machine, failure.check_name, failure.detail,
+      ]);
+      if (claim.rowCount > 0) claimed.push(failure);
+    }
+
+    if (claimed.length === 0) {
+      logger.info('install-check-alerts: every new failure was claimed by another run', {
+        count: newFailures.length,
+      });
+      return { announced: 0, omitted: 0, broadcast_id: null };
+    }
+
+    if (admin.rowCount === 0) {
+      logger.warn('install-check-alerts: no super_admin, state recorded but nothing announced', {
+        count: claimed.length,
+      });
+      return { announced: claimed.length, omitted: 0, broadcast_id: null };
+    }
+
+    const adminId = admin.rows[0].id;
+    const { title, body, omitted } = renderAlertMessage(claimed);
+    const inserted = await query(BROADCAST_SQL, [title, body, [adminId], adminId]);
+
+    result = { announced: claimed.length, omitted, broadcast_id: inserted.rows[0].id };
   } catch (err) {
+    // `claimed` holds exactly the keys this run took, in the order it took them.
+    // A failure that was never claimed keeps its announced_at: it may belong to
+    // an earlier announcement that really did happen, and clearing it would
+    // announce the same problem twice.
     await releaseClaims(query, claimed);
     throw err;
   }
 
   logger.info('install-check-alerts announced', {
-    count: claimed.length,
-    omitted,
-    broadcast_id: inserted.rows[0].id,
+    count: result.announced,
+    omitted: result.omitted,
+    broadcast_id: result.broadcast_id,
   });
 
-  return { announced: claimed.length, omitted, broadcast_id: inserted.rows[0].id };
+  return result;
 }
 
 /**
  * Put claimed keys back so the next sweep re-announces them.
- * A release that itself fails is logged and never rethrown: the caller is about
- * to rethrow the broadcast error, which is the one worth reporting.
+ *
+ * This function never throws. The caller runs it from a catch block and is
+ * about to rethrow the error that actually matters, so a failure in here must
+ * neither replace that error nor abandon the claims still waiting to be
+ * released — one unreleased claim is one failure nobody ever hears about.
  */
 async function releaseClaims(query, claimed) {
   for (const failure of claimed) {
     try {
       await query(RELEASE_CLAIM_SQL, [failure.user_id, failure.machine, failure.check_name]);
     } catch (releaseErr) {
-      logger.error('install-check-alerts: could not release a claim after a failed broadcast', {
-        user_id: failure.user_id,
-        machine: failure.machine,
-        check_name: failure.check_name,
-        error: releaseErr.message,
-      });
+      try {
+        logger.error('install-check-alerts: could not release a claim', {
+          user_id: failure.user_id,
+          machine: failure.machine,
+          check_name: failure.check_name,
+          error: releaseErr.message,
+        });
+      } catch {
+        // A logger that throws must not cost the remaining releases.
+      }
     }
   }
 }
