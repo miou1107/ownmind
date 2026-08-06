@@ -457,6 +457,15 @@ and every path is built with `path.join`, but no Windows machine has executed it
 cheapest proof is one manual scan on TANK with an editor closed, checking the collector
 reports `reason=ok` rather than `unreadable`.
 
+Since v1.26.78 this is no longer the only Windows gap; it is one item inside the larger
+one recorded as **backlog 24**. Verify them together.
+
+The macOS half is now closed. Proven on 2026-08-06 with the three preconditions checked
+before the scan rather than after: OpenCode shut so `-readonly` genuinely failed, no
+sidecar present so the probe had not created the condition, and three unsent messages so
+a result of zero would have meant something. Two events landed and no sidecar was left
+behind.
+
 Origin: v1.26.69, 2026-08-06. Closed by v1.26.70 the same night; its follow-up closed by
 v1.26.71.
 
@@ -526,6 +535,47 @@ updating its mount point. Mechanical, but the file carries several other routes 
 the ingestion path, so it wants its own release rather than riding along with a fix.
 
 Origin: v1.26.78, 2026-08-06.
+
+### 24. Eleven versions have shipped without ever running on Windows
+
+**Blocked, not deferred.** Vin has no Windows machine available as of 2026-08-06; this
+waits for one rather than for a decision.
+
+Every change from v1.26.68 to v1.26.78 has been verified on one Mac and nowhere else. The
+heartbeat table says so plainly:
+
+```
+Vincent Kao       Vincent.local   1.26.78    ← every verification happened here
+Vin-windows-test  TANK            1.26.67    ← stopped before any of it
+```
+
+TANK is also under a **different account**, which is why it cannot be checked in passing.
+
+What is unverified, worst first:
+
+- **v1.26.65** rewrote the Windows scheduled task registration and the VBS wrapper's exit
+  code, and the defect it fixed was "the Windows scanner can die silently and report itself
+  healthy". The fix for silent Windows failure has never run on Windows.
+- **v1.26.70 / v1.26.71** — the sqlite copy fallback. Platform-neutral logic, `path.join`
+  throughout, but never executed there. Was the "still open" half of item 20.
+- **v1.26.73** — machine identity. `os.hostname()` behaves differently enough on Windows to
+  be worth seeing rather than assuming.
+- **v1.26.72** — the upgrade self-check, whose whole job is to report on the machine it
+  runs on.
+- **v1.26.76 / v1.26.77 / v1.26.78** are server-side and already proven against production,
+  so they do not need a Windows machine.
+
+Cheapest proof, one command on TANK once a machine exists:
+
+```
+bash ~/.ownmind/scripts/bootstrap.sh
+```
+
+Nine checks pass and the ninth reads "the server has this machine's data for 5 tool(s)" →
+the whole chain works there. Then one scan with the editors closed, checking the collector
+reports `reason=ok` rather than `unreadable`, closes item 20's remaining half too.
+
+Origin: v1.26.78, 2026-08-06. Vin: 「這先列為代辦，我現在沒 win 電腦」.
 
 ---
 
