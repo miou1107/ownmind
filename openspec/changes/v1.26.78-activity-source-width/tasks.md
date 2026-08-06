@@ -35,9 +35,16 @@ Legend: `[ ]` pending · `[x]` done
 ## Phase 3 — Verify
 
 - [x] Full suite: 2954 tests, 2952 pass, 0 fail, 2 skipped.
-- [ ] After deploy: the column type on production, and a real event with
-      `source: 'system_auto'` stored rather than rejected. Any row created to prove it gets
-      deleted afterwards.
+- [x] Deployed to production 04:06. `db/020` applied on boot; `information_schema` now
+      reports `character_maximum_length = 64`.
+- [x] **Positive control through the real API, not a query.** Posted a two-event batch with
+      `source: 'system_auto'` and `source: 'system_server_auto'` — the two values that had
+      never once been stored in the product's history. Response
+      `{"inserted":2,"deduped":0,"failed":0,"total":2}`, and both rows present with their
+      full source values. Before this deploy that same request would have 500'd and stored
+      neither.
+- [x] Both probe rows deleted afterwards, verified zero left, and the source distribution
+      is back to what it was.
 
 ## Phase 4 — Sync
 
