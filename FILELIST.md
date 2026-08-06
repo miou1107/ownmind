@@ -16,6 +16,17 @@ src/lib/install-check-alert-message.js         — 把新失敗渲染成管理�
                                                  杜絕虛假截斷
 tests/install-check-alert-message.test.js     — 純函式測試：基本欄位、失敗合併、截斷計數、邊界情況、
                                                  演算法正確性（全部能裝、超限計數、單項切、empty版本）
+src/jobs/install-check-alerts.js              — 把 evaluateFailures 跟 renderAlertMessage 接成一支可執行的
+                                                 job：讀最新報告（DISTINCT ON + jsonb_array_length 排除
+                                                 beacon 列）、讀已知狀態、寫回 resolved／detail 變動、
+                                                 新失敗 upsert 進 install_check_alert_state、
+                                                 只發給最舊的一位 super_admin（id 最小）。尚未被任何路由
+                                                 或啟動流程呼叫，接線是下一個任務
+tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派（同 tests/broadcast.test.js 手法）：
+                                                 首次公告回傳 broadcast id、廣播鎖定唯一 super_admin、
+                                                 狀態寫入用 ON CONFLICT 冪等、已公告過的失敗不再吵、
+                                                 修好的檢查標記 resolved 但不發廣播、沒有 super_admin 時
+                                                 狀態照寫但不硬發廣播、讀取 SQL 真的排除空 checks 報告
 ```
 
 ## v1.26.65 ～ v1.26.86 修改（收集器可靠性連續二十二版；每一版的來龍去脈見 CHANGELOG）
