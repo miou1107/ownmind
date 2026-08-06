@@ -279,6 +279,38 @@ describe('a client-supplied hostname is part of the key now', () => {
       'an already-registered machine must bypass the cap');
   });
 
+  it('every parameter in the INSERT ... SELECT list carries an explicit type', () => {
+    // v1.26.76. Production, eight seconds after v1.26.75 started:
+    //   heartbeat update failed {"error":"inconsistent types deduced for parameter $2"}
+    //
+    // v1.26.73 changed this write from `INSERT ... VALUES` to `INSERT ... SELECT ... WHERE`
+    // so the machine cap could ride in the same round trip. In the VALUES form Postgres
+    // takes each parameter's type from the column it is being written into. In the SELECT
+    // form the query is analysed on its own first, so a bare `$2` in the select list is
+    // `unknown` and settles as text — while the same `$2` in `WHERE tool = $2` is deduced
+    // as varchar from the column. Two deductions for one parameter, and the statement
+    // cannot be prepared at all. Every heartbeat failed.
+    //
+    // Nothing in this suite could have caught it: every test here hands the route a fake
+    // `query`, so the statement is never parsed by anything that knows SQL. This asserts
+    // the property that makes it parseable, and the fix was additionally checked with
+    // PREPARE against the production database before shipping.
+    const src = fs.readFileSync(
+      path.join(repoRoot, 'src', 'routes', 'usage', 'events.js'), 'utf8');
+    // Strip SQL comments first. The comment explaining this rule quotes the error
+    // message, which contains a "$2" that is not a parameter at all.
+    const stmt = src.slice(src.indexOf('INSERT INTO collector_heartbeat'))
+      .replace(/--[^\n]*/g, '');
+    const selectList = stmt.slice(stmt.search(/SELECT/), stmt.search(/WHERE EXISTS/i));
+    const params = selectList.match(/\$\d+(?:::[a-z]+)?/gi) ?? [];
+    assert.ok(params.length >= 6, `expected the inserted values, found ${params.length}`);
+    for (const p of params) {
+      assert.match(p, /::/,
+        `${p} is written into a column but compared elsewhere; without a cast Postgres `
+        + 'deduces two types for it and refuses the statement');
+    }
+  });
+
   it('trims and bounds the hostname before it becomes an identity', async () => {
     const { normaliseMachine } = await import('../src/routes/usage/events.js');
     assert.equal(normaliseMachine('  TANK  '), 'TANK', 'space must not make a second machine');

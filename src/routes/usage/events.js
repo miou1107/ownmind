@@ -469,7 +469,15 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     await query(
       `INSERT INTO collector_heartbeat
          (user_id, tool, last_reported_at, scanner_version, machine, os, status, reason)
-       SELECT $1, $2, NOW(), $3, $4, $5, 'active', $6
+       -- Every parameter here is cast. This is INSERT ... SELECT, not INSERT ... VALUES,
+       -- so the SELECT is analysed on its own and a bare parameter in the list is
+       -- unknown-typed, settling as text, while the same parameter in the WHERE below is
+       -- deduced as varchar from the column it is compared against. Two deductions for one
+       -- parameter and Postgres refuses to prepare the statement at all:
+       -- "inconsistent types deduced for parameter $2", which is what production said
+       -- about every heartbeat on 2026-08-06.
+       SELECT $1::int, $2::varchar, NOW(), $3::varchar, $4::varchar, $5::varchar,
+              'active', $6::varchar
         WHERE EXISTS (
                 SELECT 1 FROM collector_heartbeat
                  WHERE user_id = $1 AND tool = $2 AND machine = $4)
