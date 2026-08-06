@@ -1,5 +1,69 @@
 # OwnMind 檔案結構
 
+## v1.26.65 ～ v1.26.74 修改（收集器可靠性連續十版；每一版的來龍去脈見 CHANGELOG）
+
+這十版是同一條線：**「後台說沒資料」到底是真的沒工作，還是收集器壞了沒人知道。**
+每一版的完整說明在 CHANGELOG.md，這裡只列動到哪些檔。
+
+新增檔：
+```
+db/018_collector_heartbeat_reason.sql       — v1.26.69 收集器為什麼沒東西（封閉原因碼）
+db/019_collector_heartbeat_per_machine.sql  — v1.26.73 心跳鍵值改 (user_id, tool, machine)
+shared/scanners/reasons.js                  — v1.26.69 六個原因碼的唯一定義，client / server 共用
+shared/scanners/gemini-conversations.js     — v1.26.68 Antigravity 三個介面的對話檔日期來源
+shared/scanners/sqlite-cli.js               — v1.26.71 所有 sqlite3 CLI 查詢的唯一入口（-readonly
+                                              開不起來就退回複本，複本要連 -wal / -shm 一起帶）
+shared/scanners/selfcheck.js                — v1.26.72 本機掃到的 vs 伺服器手上有的，比對成五種結論
+hooks/ownmind-selfcheck.js                  — v1.26.72 升級後自測的獨立入口
+src/routes/usage/self-check.js              — v1.26.72 GET /api/usage/self-check（只回自己的列）
+client/src/pages/System/machine-groups.js   — v1.26.73 純函式：groupClientsByMachine + osLabel。
+                                              狀態取最糟的工具、心跳取最新、壞的排前面
+tests/scanner-task-durability.test.js       — v1.26.65
+tests/scanner-blind-scan.test.js            — v1.26.65
+tests/scanner-vscode-multipath.test.js      — v1.26.66
+tests/mcp-client-tool-attribution.test.js   — v1.26.67
+tests/scanner-antigravity-conversations.test.js — v1.26.68
+tests/collector-silence-reason.test.js      — v1.26.69
+tests/sqlite-readonly-fallback.test.js      — v1.26.70
+tests/scanner-opencode-closed.test.js       — v1.26.71
+tests/install-scanner-module-list.test.js   — v1.26.71
+tests/selfcheck-report.test.js              — v1.26.72
+tests/selfcheck-endpoint.test.js            — v1.26.72
+tests/selfcheck-entry.test.js               — v1.26.72
+tests/self-check-usage-roundtrip.test.js    — v1.26.72
+tests/heartbeat-per-machine.test.js         — v1.26.73
+tests/machine-groups.test.js                — v1.26.73
+tests/team-overview-last-active.test.js     — v1.26.74
+openspec/changes/v1.26.{65,66,67,68,69,70,71,72,73,74}-*/{proposal,spec,tasks}.md
+```
+
+修改檔：
+```
+hooks/ownmind-usage-scanner.js              — v1.26.65 讀不到目錄不得回報成沒有檔案；v1.26.66 多候選
+                                              路徑；v1.26.69 送出原因碼；v1.26.72 回傳掃描結果供自測用
+shared/scanners/base.js                     — v1.26.65 readSince 回報 scanned / skipped；v1.26.69 原因碼
+shared/scanners/{claude-code,codex}.js      — v1.26.65 同上
+shared/scanners/antigravity.js              — v1.26.66 資料夾改名；v1.26.68 三個介面；v1.26.69 原因碼
+shared/scanners/vscode-telemetry.js         — v1.26.66 多候選；v1.26.70 關著也要讀得到；v1.26.71 改用
+                                              共用的 sqlite-cli.js
+shared/scanners/opencode.js                 — v1.26.71 自己的資料庫也是 WAL，同一條退路
+shared/helpers.js                           — v1.26.67 「跑在哪個工具裡」收成一份規則
+mcp/index.js, mcp/ownmind-log.js            — v1.26.67 四個呼叫點改用共用規則
+src/routes/usage/events.js                  — v1.26.69 收原因碼；v1.26.73 三欄鍵值 + 每人每工具 20 台上限
+src/routes/usage/admin-clients.js           — v1.26.69 回原因；v1.26.73 回 os
+src/routes/usage/index.js                   — v1.26.72 掛上 /self-check
+src/routes/usage/team-overview.js           — v1.26.74 最近活動改讀三個來源取最新
+src/routes/activity.js                      — v1.26.74 統計儀表板同一個口徑
+src/routes/me.js, src/routes/me-narrative.js — v1.26.73 一人多台時版本取最新那台（DISTINCT ON）
+scripts/install-helpers/self-check.cjs      — v1.26.72 安裝後自我檢查加第九項：回頭跟伺服器對帳
+scripts/windows/{register-scanner-task.ps1,run-hidden.vbs}, scripts/interactive-upgrade.ps1
+                                            — v1.26.65 排程不可先刪再建、VBS 要回傳真的 exit code
+install.sh                                  — v1.26.71 scanner 模組清單改成用掃的
+client/src/pages/System/SystemConfigPage.jsx — v1.26.73 依電腦分組（舊的 key={c.tool} 會撞號）
+client/src/pages/System/observed-users.js   — v1.26.69 靜默附原因；v1.26.73 附機器名
+client/src/i18n/{zh,en,ja}.json             — v1.26.73 系統設定頁的機器分組字串，三語系同步
+```
+
 ## v1.26.64 修改（搜尋不再把找到的東西全部倒出來，Bug #11）
 
 新增檔：
@@ -579,8 +643,6 @@ client/src/pages/System/BroadcastPage.jsx                           — 廣播�
 client/src/pages/System/NewBroadcastModal.jsx                       — 新增廣播 modal。舊 modal 欄位一比一：type / severity / title / body / cta / target / snooze / cooldown / ends_at；送前先跑 client 端 validate
 client/src/pages/System/RevokeConfirmDialog.jsx                     — 撤銷確認 dialog。紅色按鈕、遠離取消
 client/src/pages/System/observed-users.js                           — 純函式：observedUsers(clients, stats) + rollupCounts(rows)。四狀態分類 + banner 統計 + 靜默點名
-client/src/pages/System/machine-groups.js                           — 純函式：groupClientsByMachine(clients) + osLabel(os)。v1.26.73 把收集器依電腦分組（狀態取最糟的工具、心跳取最新、壞的排前面）
-tests/team-overview-last-active.test.js                              — v1.26.74 最近活動改讀三個來源取最新（工作紀錄 / MCP 活動 / token 用量），兩個頁面口徑一致
 client/src/pages/System/broadcast-row-vm.js                         — 純函式：broadcastRowVm(row, now)。isActive / isRevocable / snoozeLabel / typeColor / severityColor / effectiveRange
 client/src/pages/System/broadcast-payload-validate.js               — 純函式：validateBroadcastFormClient(form)。鏡射伺服器 validateBroadcastPayload、送前先擋
 tests/observed-users.test.js                                        — 15 條斷言 flowing / silent / not_installed / offline 分類 + rollup + null stats 降級語意
@@ -2348,8 +2410,12 @@ OwnMind/
 │   ├── 007_token_usage.sql           # Token 用量追蹤 7 張表 + 初始 model pricing
 │   ├── 008_broadcast.sql             # v1.17.0 — broadcast_messages / user_broadcast_state / user_tool_last_seen / memories.is_test
 │   ├── …                             # 009-017 見各版本變更清單；這棵樹自 008 起未同步
-│   └── 018_collector_heartbeat_reason.sql # v1.26.69 — collector_heartbeat.reason（收集器為什麼沒東西；
-│                                     #   不重用 status，上一層 API 已有同名但不同義的欄位）
+│   ├── 018_collector_heartbeat_reason.sql # v1.26.69 — collector_heartbeat.reason（收集器為什麼沒東西；
+│   │                                 #   不重用 status，上一層 API 已有同名但不同義的欄位）
+│   └── 019_collector_heartbeat_per_machine.sql # v1.26.73 — 心跳的鍵改成 (user_id, tool, machine)。
+│                                     #   machine 先補值再設 NOT NULL（Postgres 認為兩個 NULL 互不相同，
+│                                     #   留 NULL 會讓不報主機名的客戶端每次心跳都插新列）；先建新索引
+│                                     #   再拆舊約束，撞號時整筆交易失敗、不會留下沒有唯一性的表
 │
 ├── src/                             # API Server 原始碼
 │   ├── app.js                       # Express app 設定、路由掛載
@@ -2550,6 +2616,16 @@ OwnMind/
 │   ├── sqlite-readonly-fallback.test.js # v1.26.70 — 編輯器關著時 state.vscdb 讀不到；複本要連 -wal 一起帶、複本不帶參數開、原檔只用 -readonly、暫存一定刪掉
 │   ├── collector-silence-reason.test.js # v1.26.69 — silent 要說出原因；六個原因碼封閉、換帳號丟掉「這天報過了」但保留讀取位置、舊版收集器不猜
 │   ├── scanner-antigravity-conversations.test.js # v1.26.68 — 非 VSCode 介面的用量要看得到；三個介面名單不含 backup、只讀 mtime 不開內容、未來日期逐檔擋、遙測較新時不得倒退
+│   ├── scanner-opencode-closed.test.js # v1.26.71 — OpenCode 自己的資料庫也是 WAL；-readonly 開不起來要退回複本，
+│                                    #   複本要連 -wal / -shm 一起帶；含一條真的跑 sqlite3 CLI、先驗證前提再驗證結論
+│   ├── selfcheck-report.test.js     # v1.26.72 — 本機掃到的跟伺服器手上有的比對成五種結論；
+│                                    #   機器名未知不算「別台」、同一工具多台時挑自己那台（v1.26.73）
+│   ├── selfcheck-endpoint.test.js   # v1.26.72 — GET /api/usage/self-check 只回自己的列、不 join users、順序固定
+│   ├── selfcheck-entry.test.js      # v1.26.72 — 獨立入口；查不到就當沒查（exit 0），真的沒送到才 exit 1；金鑰遮蔽
+│   ├── self-check-usage-roundtrip.test.js # v1.26.72 — 安裝後自我檢查的第九項：不信 POST 自己的回應，回頭跟伺服器對帳
+│   ├── heartbeat-per-machine.test.js # v1.26.73 — 一台電腦一列；machine 進鍵值、更新時不得改寫它、
+│                                    #   每個 (人, 工具) 最多 20 台（客戶端字串進了鍵值就是新的攻擊面）
+│   ├── machine-groups.test.js       # v1.26.73 — 系統設定頁依電腦分組；狀態取最糟的工具、心跳取最新、壞的排前面
 │   ├── install-prerequisite-auto-install.test.js # v1.17.76 — 缺 node/git 時 install.ps1/sh 自動安裝（vin-windows-test 回報 7 條 contract test）
 │   ├── start-cmd-node-fallback.test.js     # v1.17.77 — start.cmd 多層 node fallback + install.ps1 寫 User PATH（vin-windows-test 第二輪 5 條）
 │   ├── install-started-beacon.test.js     # v1.17.78 — install_started beacon + 接受 minimal payload（IR-038 觀測管道補洞 7 條）
