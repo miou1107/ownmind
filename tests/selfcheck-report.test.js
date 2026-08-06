@@ -268,4 +268,41 @@ describe('asking the server', () => {
     assert.equal(r.ok, false);
     assert.match(r.error, /self-check endpoint/);
   });
+
+  // ──────────────────────────────────────────────────────────
+  // v1.26.77 — the header the server actually reads
+  // ──────────────────────────────────────────────────────────
+
+  it('authenticates with the header the server reads', async () => {
+    // Measured on production 2026-08-06, straight after the upgrade that installed this
+    // check: "Could not ask the server: the server answered 401". The scan itself uploaded
+    // fine. This call sent `X-API-Key`, and src/middleware/auth.js reads only
+    // `Authorization: Bearer`. The self-check could never have succeeded against a server
+    // that had the endpoint — v1.26.72 through v1.26.76 shipped it broken, and the one
+    // real-world run before this had answered 404, which hid it.
+    let seen = null;
+    await fetchSelfCheck({
+      apiUrl: 'https://x', apiKey: KEY,
+      fetchFn: async (_url, opts) => { seen = opts?.headers ?? {}; return { ok: false, status: 500 }; }
+    });
+    const names = Object.keys(seen).map((k) => k.toLowerCase());
+    assert.ok(names.includes('authorization'),
+      `sent ${JSON.stringify(names)}; the server reads Authorization and nothing else`);
+    assert.equal(seen.Authorization ?? seen.authorization, `Bearer ${KEY}`);
+  });
+
+  it('sends what the middleware parses, checked against the middleware itself', async () => {
+    // The two sides were faked independently: this file stubs fetch, and the endpoint's
+    // own tests stub auth. Neither could see that they disagreed. This reads the real
+    // middleware so the pair cannot drift apart again.
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const auth = fs.readFileSync(path.join(repoRoot, 'src/middleware/auth.js'), 'utf8');
+    assert.match(auth, /req\.headers\.authorization/,
+      'if the middleware stopped reading Authorization, this check is sending the wrong header');
+    assert.match(auth, /startsWith\(\s*['"`]Bearer /,
+      'the scheme the client sends must be the scheme the middleware requires');
+  });
 });

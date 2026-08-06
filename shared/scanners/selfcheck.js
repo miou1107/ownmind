@@ -59,7 +59,11 @@ export async function fetchSelfCheck({
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchFn(url, {
-      headers: { 'X-API-Key': apiKey },
+      // `Authorization: Bearer` is the only thing src/middleware/auth.js reads. This sent
+      // `X-API-Key` from v1.26.72 to v1.26.76 and every real call answered 401; the one
+      // run before that had hit a server old enough to answer 404, which looked like a
+      // different problem and hid this one.
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal
     });
     if (!res.ok) {
