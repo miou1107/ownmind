@@ -67,29 +67,33 @@ export function renderAlertMessage(newFailures = [], { limit = BROADCAST_BODY_LI
 
   if (total === 0) return { title, body: '', omitted: 0 };
 
-  const kept = [];
-  for (let i = 0; i < total; i += 1) {
-    const remainingAfterThis = total - i - 1;
-    const footer = remainingAfterThis > 0 ? footerFor(remainingAfterThis, total) : '';
-    const candidate = [...kept, entries[i]].join(SEPARATOR);
-
-    if (candidate.length + footer.length <= limit) {
-      kept.push(entries[i]);
-      continue;
-    }
-
-    const omitted = total - i;
-    if (kept.length === 0) {
-      // Even the first entry does not fit. Deliver a cut version rather than
-      // nothing — an empty body is rejected by the broadcast validator.
-      const cutFooter = footerFor(omitted - 1 > 0 ? omitted - 1 : 0, total);
-      const room = Math.max(1, limit - cutFooter.length);
-      return { title, body: entries[0].slice(0, room) + cutFooter, omitted: omitted - 1 };
-    }
-    return { title, body: kept.join(SEPARATOR) + footerFor(omitted, total), omitted };
+  // Step 1: Try to fit all entries. If they fit, return with no truncation.
+  const fullBody = entries.join(SEPARATOR);
+  if (fullBody.length <= limit) {
+    return { title, body: fullBody, omitted: 0 };
   }
 
-  return { title, body: kept.join(SEPARATOR), omitted: 0 };
+  // Step 2: Find the largest k in [1, total-1] such that entries[0..k-1]
+  // joined with footer fits within the limit.
+  for (let k = total - 1; k >= 1; k -= 1) {
+    const kept = entries.slice(0, k);
+    const omitted = total - k;
+    const footer = footerFor(omitted, total);
+    const candidate = kept.join(SEPARATOR) + footer;
+
+    if (candidate.length <= limit) {
+      return { title, body: candidate, omitted };
+    }
+  }
+
+  // Step 3: Even one entry plus footer does not fit. Deliver a cut version
+  // of entries[0] with a cut marker and omitted count.
+  const CUT_MARKER = '\n…（内容已截斷）';
+  const footer = footerFor(total - 1, total);
+  const room = Math.max(1, limit - footer.length - CUT_MARKER.length);
+  const cutBody = entries[0].slice(0, room) + CUT_MARKER + footer;
+
+  return { title, body: cutBody, omitted: total - 1 };
 }
 
 export default renderAlertMessage;
