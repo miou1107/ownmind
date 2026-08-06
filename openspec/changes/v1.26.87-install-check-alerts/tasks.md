@@ -98,3 +98,21 @@ restored and confirmed green.
       filter and adding a grounded one-clause explanation, not a guess.
 - [x] `superpowers:receiving-code-review` on the feedback.
 - [ ] Ask Vin before tagging or deploying. A previous release is not standing authorisation.
+
+## Phase 8 — The claim and the broadcast in one transaction
+
+- [x] Put every claim and the broadcast insert inside one transaction via
+      `withTransaction`, injected under that same name (matching `src/routes/setup.js`) so
+      tests can simulate a rollback. Callers keep calling `runInstallCheckAlerts` as before.
+- [x] Claim in a fixed key order. Locks are now held to commit, and the previous order came
+      from the client's uploaded `checks` array, which is a deadlock waiting for two sweeps
+      to disagree.
+- [x] One test reads the source to confirm the seam still defaults to the real
+      `withTransaction` — every other test injects a fake and cannot see that line.
+- [x] Delete `releaseClaims` and `RELEASE_CLAIM_SQL`. Client-side undo cannot see a claim
+      that commits while its response is lost, and leaving it in would imply a second
+      safety net that does not cover the case it is most needed for.
+- [x] Keep the resolve / detail updates outside the transaction: independent of the claim
+      pair, and they must still run on the path where nothing new is failing.
+- [x] Three new tests (broadcast throws, claim throws mid-loop, happy path in one
+      transaction) run against `3698823` first — 4 red — then green.

@@ -170,30 +170,83 @@ Matches `nightly-upgrade-reminder`'s existing behaviour rather than inventing a 
 ## ADDED Requirement: nothing is marked announced without a broadcast to show for it
 
 The evaluator SHALL claim each new failure before writing the broadcast, SHALL put in the
-broadcast exactly the failures it claimed, and SHALL release its claims if the broadcast write
-fails.
+broadcast exactly the failures it claimed, and SHALL perform every claim and the broadcast
+insert inside a single database transaction, so that either all of them are visible or none
+of them are.
 
 A claim is a conditional upsert that only matches a row whose `announced_at` is NULL or whose
 `resolved_at` is set, and it returns the rows it matched. A key that returns nothing was
 claimed by somebody else.
 
+Undoing the claims from the client is not sufficient and SHALL NOT be relied on. A claim can
+commit on the server while the response back to the client is lost; the client then believes
+that claim failed, holds no record of it, and undoes nothing, leaving the key marked announced
+forever. Only the server can decide that outcome, which is what ROLLBACK is.
+
 ### Scenario: the broadcast write fails
 
 - **GIVEN** new failures have been claimed
 - **WHEN** the broadcast insert raises
-- **THEN** every claim is released and the error propagates to the caller
+- **THEN** the transaction rolls back, leaving no key marked announced by this run
+- **AND** the error propagates to the caller
 - **AND** the next sweep announces those failures
 
 Recording state first and broadcasting second means one transient pool timeout silences those
 failures permanently — the two-month-old WSL failures again, this time caused by us.
+
+### Scenario: a claim fails partway through the loop
+
+- **GIVEN** several new failures, the first of which has already been claimed
+- **WHEN** a later claim raises
+- **THEN** the transaction rolls back, so the earlier claim is not visible either
+- **AND** the next sweep announces every one of those failures
+
+A claim that lands and is then followed by a failing claim is the same defect one statement
+earlier: nothing was announced, yet that key reads as announced from then on.
+
+### Scenario: a rollback leaves other runs' announcements alone
+
+- **GIVEN** a key announced and committed by an earlier sweep
+- **WHEN** a later sweep rolls back
+- **THEN** that earlier key keeps its `announced_at`
+
+A rollback undoes this transaction's writes and nothing else. Re-opening a key somebody else
+announced would announce the same problem twice.
+
+### Scenario: no super_admin exists
+
+- **GIVEN** new failures have been claimed and there is no recipient
+- **THEN** the transaction commits the claims and creates no broadcast
+
+No recipient is not a failure. Rolling the claims back here would make every later sweep
+re-evaluate the same failures forever.
 
 ### Scenario: two sweeps run at once
 
 - **GIVEN** two sweeps that both read the state table before either writes to it
 - **THEN** exactly one broadcast is created between them
 
-Every upload runs a sweep inline, so two uploads arriving together is the normal case, not an
-exotic one.
+The second sweep's conditional upsert waits for the first transaction to commit and then
+matches nothing, so it has nothing to announce. Every upload runs a sweep inline, so two
+uploads arriving together is the normal case, not an exotic one.
+
+### Scenario: two sweeps claim the same keys in the same order
+
+- **GIVEN** two sweeps whose new failures overlap
+- **THEN** each claims them ordered by `(user_id, machine, check_name)`
+
+Inside a transaction a claim holds its row lock until commit, so two sweeps taking the same
+keys in opposite orders would deadlock and Postgres would kill one of them. The natural order
+is the client's uploaded `checks` array — an order decided outside this server. Sorting by the
+key takes that decision back.
+
+### Scenario: resolutions and detail updates are not part of the pair
+
+- **GIVEN** a sweep with resolutions or detail changes to record
+- **THEN** those updates are written outside the announce transaction
+
+They touch keys nobody is about to announce, each one stands alone, and they must still run on
+the common path where nothing new is failing and no transaction is opened at all.
 
 ## ADDED Requirement: recency comes from the server, not the client
 

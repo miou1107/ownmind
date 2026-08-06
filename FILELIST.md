@@ -35,9 +35,14 @@ src/jobs/install-check-alerts.js              — 把 evaluateFailures 跟 rende
                                                  l.ts，免得一台時鐘設到明年的機器從此永遠不會再報）、
                                                  讀已知狀態、寫回 resolved／detail 變動、
                                                  新失敗先「認領」（條件式 upsert + RETURNING）再發廣播，
-                                                 認領迴圈到寫廣播全在同一個 try 裡，中間任何一步失敗就把
-                                                 「這一輪真的認領到的那些」放掉再往上拋（沒認領到的不動，
-                                                 那可能屬於上一次真的成功的公告）；releaseClaims 保證不拋、
+                                                 認領迴圈到寫廣播全在同一個資料庫交易裡（withTransaction
+                                                 可注入，預設就是 db.js 那一支），認領順序照鍵值排過、
+                                                 不跟著客戶端上傳的 checks 陣列走（鎖要撐到交易結束，
+                                                 順序不固定就會死鎖），
+                                                 中間任何一步失敗就整批回滾，連「認領已寫進資料庫、回應在
+                                                 半路掉了」也蓋得到；別人已經 commit 的公告不受影響；
+                                                 resolved／detail 兩種更新刻意留在交易外（跟認領無關，
+                                                 而且沒有新失敗時根本不會開交易）；
                                                  只發給最舊的一位 super_admin（id 最小）、有效期 48 小時
 tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派（同 tests/broadcast.test.js 手法）：
                                                  首次公告回傳 broadcast id、廣播鎖定唯一 super_admin、
@@ -45,10 +50,14 @@ tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派
                                                  修好的檢查標記 resolved 但不發廣播、沒有 super_admin 時
                                                  狀態照寫但不硬發廣播、讀取 SQL 真的排除空 checks 報告、
                                                  排序用 l.id、有效期 48 小時；另有一份會記住狀態的假 DB，
-                                                 用來驗廣播失敗時認領有放掉、第二筆認領炸掉時第一筆也會
-                                                 放掉且下一輪兩筆都會發、放掉的只有這一輪認領到的（上一次
-                                                 成功的公告不受影響），以及兩支同時起跑的評估只會產生
-                                                 一則廣播
+                                                 附一個會在拋錯時把整張表還原的假交易，用來驗認領跟廣播
+                                                 真的在同一個交易裡、廣播炸掉時整批回滾（表上不留任何
+                                                 認領痕跡）、第二筆認領炸掉時第一筆也一起回滾且下一輪兩筆
+                                                 都會發、回滾只動自己寫的（上一次已成功的公告不受影響）、
+                                                 沒有 super_admin 時認領照樣 commit、認領順序不受客戶端
+                                                 上傳順序影響，以及兩支同時起跑的評估只會產生一則廣播；
+                                                 另有一筆讀原始碼的守門測試，確認沒注入時預設真的是
+                                                 db.js 的 withTransaction（假交易看不到這件事）
 tests/install-check-alerts-wiring.test.js     — 驗證接線本身：報告存好後真的觸發評估、評估失敗不影響
                                                  200 回應也不擋報告落地、400（缺 ts）不觸發評估；另讀
                                                  src/index.js 原始碼確認開機補跑一次且失敗被 catch 住
