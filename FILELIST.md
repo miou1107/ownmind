@@ -35,6 +35,10 @@ scripts/install-helpers/resolve-credentials.cjs — v1.26.82 金鑰跟網址到�
                                               掃描器讀不到，那是 Adam 掃描器死掉的真正原因
 shared/helpers.js                           — v1.26.82 readCredentials 改問上面那支（不帶參數時）。
                                               帶 settingsPath 維持只讀單一檔案的舊行為
+hooks/ownmind-session-start.js              — v1.26.83 載入成功/失敗補上傳伺服器（bash 版一直有、
+                                              Node 版漏了；沒有這筆，Windows 掛勾好壞在伺服器端
+                                              分不出來，memory_load 檢測會永遠誤判）
+tests/node-hook-reports-init.test.js        — 新增。起假伺服器跑真掛勾，斷言事件真的送達
 hooks/ownmind-session-start.sh              — v1.26.82 內嵌的找金鑰改問共用解析器
 hooks/ownmind-usage-scanner.js              — v1.26.82 找不到金鑰的錯誤訊息列出全部三個位置
                                               （原本只寫 settings.json，把人指去最不可能的地方）；
