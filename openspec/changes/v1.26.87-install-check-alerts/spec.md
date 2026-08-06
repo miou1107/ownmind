@@ -113,15 +113,52 @@ message SHALL include the count of entries omitted.
 A cut that does not announce itself reads as "that was everything", which is the defect this
 release exists to remove.
 
+## ADDED Requirement: the message is written to fit what the reader is shown
+
+Both delivery paths — `hooks/lib/render-session-context.js` and `mcp/index.js` — reduce a
+broadcast body with `body.split('\n').slice(0, 5).join(' ').slice(0, 400)` before the reader
+sees it. The rendered message SHALL fit that envelope: at most 5 lines, and at most 400
+characters once those lines are joined with single spaces. Each entry SHALL occupy exactly
+one line, and when entries are left out the footer SHALL be the last line.
+
+2000 characters is what the server stores. 400 is what the reader receives.
+
+### Scenario: two failures, one delivery
+
+- **GIVEN** two entries rendered into the body
+- **WHEN** the delivery transform is applied
+- **THEN** both check names and both machine names are present in the result
+
+### Scenario: the footer is what survives, not what is cut
+
+- **GIVEN** more entries than fit
+- **WHEN** the delivery transform is applied
+- **THEN** the omitted-count sentence is present in the result
+
+Rendering to the 2000-character storage cap while the reader is shown 5 lines and 400
+characters reproduces the exact defect this release exists to remove: entry 2 onward, and the
+sentence saying how much was left out, never arrive.
+
+### Scenario: an entry too long for its share
+
+- **GIVEN** one entry whose text exceeds the room available to it
+- **THEN** that entry is shortened with a visible marker
+- **AND** no footer is rendered when nothing was actually omitted
+
 ## ADDED Requirement: the broadcast reaches Vin and only Vin
 
 The broadcast SHALL be created with `type='announcement'`, `severity='warning'`,
 `is_auto=TRUE`, `allow_snooze=FALSE`, `target_users=[<oldest super_admin id>]` and
-`ends_at = now + 7 days`.
+`ends_at = now + 48 hours`.
 
 `severity='warning'` is load-bearing: `hooks/lib/render-session-context.js` injects the
 action-required block for warnings, so the AI raises it in its first reply rather than
 rendering it passively.
+
+48 hours, not seven days, follows from that: a warning that cannot be snoozed and has no
+session-start cooldown leads the AI's first sentence in every new conversation until it
+expires. Two days of that is a reminder. A week of it is something the reader learns to
+scroll past, which is the same silence this release exists to break.
 
 ### Scenario: no super_admin exists
 
@@ -129,6 +166,48 @@ rendering it passively.
 - **THEN** evaluation records state as usual but creates no broadcast, and logs the reason
 
 Matches `nightly-upgrade-reminder`'s existing behaviour rather than inventing a second rule.
+
+## ADDED Requirement: nothing is marked announced without a broadcast to show for it
+
+The evaluator SHALL claim each new failure before writing the broadcast, SHALL put in the
+broadcast exactly the failures it claimed, and SHALL release its claims if the broadcast write
+fails.
+
+A claim is a conditional upsert that only matches a row whose `announced_at` is NULL or whose
+`resolved_at` is set, and it returns the rows it matched. A key that returns nothing was
+claimed by somebody else.
+
+### Scenario: the broadcast write fails
+
+- **GIVEN** new failures have been claimed
+- **WHEN** the broadcast insert raises
+- **THEN** every claim is released and the error propagates to the caller
+- **AND** the next sweep announces those failures
+
+Recording state first and broadcasting second means one transient pool timeout silences those
+failures permanently — the two-month-old WSL failures again, this time caused by us.
+
+### Scenario: two sweeps run at once
+
+- **GIVEN** two sweeps that both read the state table before either writes to it
+- **THEN** exactly one broadcast is created between them
+
+Every upload runs a sweep inline, so two uploads arriving together is the normal case, not an
+exotic one.
+
+## ADDED Requirement: recency comes from the server, not the client
+
+`DISTINCT ON (user_id, machine)` SHALL pick the newest report by `install_check_logs.id`.
+
+### Scenario: a machine with a skewed clock
+
+- **GIVEN** a machine that uploads a passing report carrying a `ts` a year in the future
+- **WHEN** it later uploads a failing report
+- **THEN** the failing report is the one that decides that machine's current state
+
+`ts` is whatever the client put in the payload and is only validated as parseable. Ordering by
+it lets one wrong clock silence a machine forever, silently. `id` is assigned by the database
+and only goes up.
 
 ## ADDED Requirement: alerting never costs a report
 

@@ -20,6 +20,14 @@ function failure(overrides = {}) {
   };
 }
 
+/**
+ * The transform every delivery path applies to a broadcast body before the
+ * reader sees it. Copied verbatim from hooks/lib/render-session-context.js and
+ * mcp/index.js — if this line ever stops matching those two, these tests are
+ * measuring something the reader never sees.
+ */
+const deliver = (body) => String(body || '').split('\n').slice(0, 5).join(' ').slice(0, 400);
+
 describe('renderAlertMessage — one entry carries everything needed to act', () => {
   const { title, body, omitted } = renderAlertMessage([failure()]);
 
@@ -87,11 +95,95 @@ describe('renderAlertMessage — truncation says so', () => {
   });
 
   it('a single oversized entry is still delivered, marked as cut', () => {
+    // Two entries now share the delivery window: the oversized one is shortened
+    // rather than pushing the other one out, so nothing is omitted.
     const huge = failure({ detail: 'x'.repeat(5000) });
     const out = renderAlertMessage([huge, failure({ machine: 'TANK' })]);
     assert.ok(out.body.length <= BROADCAST_BODY_LIMIT);
     assert.ok(out.body.length > 0);
-    assert.equal(out.omitted, 1);
+    assert.match(out.body, /…/, 'the cut must be visible');
+    assert.equal(out.omitted, 0);
+    assert.ok(deliver(out.body).includes('TANK'), 'the second entry must still be delivered');
+  });
+});
+
+describe('renderAlertMessage — what the reader actually receives', () => {
+  // The body is stored whole, but hooks/lib/render-session-context.js and
+  // mcp/index.js only ever show the first 5 lines and the first 400 characters
+  // of them joined. Everything below asserts on the delivered text, not the
+  // stored text, because the stored text is not what anyone reads.
+
+  it('the second entry survives delivery', () => {
+    const { body } = renderAlertMessage([
+      failure(),
+      failure({
+        check_name: 'scheduler',
+        machine: 'TANK',
+        user_name: 'Bob',
+        user_id: 4,
+        detail: 'launchd job is not registered',
+      }),
+    ]);
+    const delivered = deliver(body);
+
+    assert.ok(delivered.includes('memory_load'), 'first check name missing');
+    assert.ok(delivered.includes('LAPTOP-MBGGLV2J'), 'first machine missing');
+    assert.ok(delivered.includes('scheduler'), 'second check name missing');
+    assert.ok(delivered.includes('TANK'), 'second machine missing');
+  });
+
+  it('every delivered entry still names its client version', () => {
+    const { body } = renderAlertMessage([
+      failure({ client_version: '1.26.84' }),
+      failure({
+        check_name: 'scheduler',
+        machine: 'TANK',
+        user_name: 'Bob',
+        user_id: 4,
+        detail: 'launchd job is not registered',
+        client_version: '1.26.85',
+      }),
+    ]);
+    const delivered = deliver(body);
+
+    assert.ok(delivered.includes('1.26.84'), "the first entry's version missing");
+    assert.ok(delivered.includes('1.26.85'), "the second entry's version missing");
+  });
+
+  it('the omitted-count footer survives delivery, with the right count', () => {
+    const many = Array.from({ length: 60 }, (_, i) =>
+      failure({ machine: `M${i}`, user_id: 200 + i, detail: `${WSL_DETAIL} #${i}` }));
+    const { body, omitted } = renderAlertMessage(many);
+    const delivered = deliver(body);
+
+    assert.ok(omitted > 0, 'this fixture is meant to overflow');
+    assert.ok(delivered.includes(`另有 ${omitted} 項未列出`),
+      `the footer was cut off; delivered text was: ${delivered}`);
+    assert.ok(delivered.includes('總共 60 項'), 'the total was cut off');
+
+    const shown = many.reduce((n, f) => n + (delivered.includes(`（${f.machine}）`) ? 1 : 0), 0);
+    assert.equal(shown + omitted, 60, 'shown + omitted must equal the total');
+  });
+
+  it('a body with several entries stays inside the delivery envelope', () => {
+    const many = Array.from({ length: 12 }, (_, i) =>
+      failure({ machine: `M${i}`, user_id: 300 + i, detail: `${WSL_DETAIL} #${i}` }));
+    const { body } = renderAlertMessage(many);
+
+    assert.ok(body.split('\n').length <= 5, `body used ${body.split('\n').length} lines`);
+    assert.ok(deliver(body).length <= 400, 'delivered text overflowed 400 characters');
+    // Nothing was thrown away by the transform: what is stored is what is shown.
+    assert.equal(deliver(body), body.split('\n').join(' '));
+  });
+
+  it('a multi-line detail cannot spend another entry\'s line', () => {
+    const { body } = renderAlertMessage([
+      failure({ detail: 'line one\nline two\nline three\nline four\nline five' }),
+      failure({ check_name: 'scheduler', machine: 'TANK', detail: 'short' }),
+    ]);
+
+    assert.equal(body.split('\n').length, 2, 'each entry must occupy exactly one line');
+    assert.ok(deliver(body).includes('TANK'));
   });
 });
 
@@ -152,6 +244,8 @@ describe('renderAlertMessage — truncation algorithm correctness', () => {
     assert.ok(body.length > 0, 'body must not be empty');
     assert.match(body, /…/, 'cut marker should be present');
     assert.equal(omitted, 0, 'no entries omitted when only one entry');
+    assert.ok(!body.includes('未列出'),
+      'a footer that announces zero omissions is worse than no footer');
   });
 
   it('reports omitted count equal to entries left out of body', () => {

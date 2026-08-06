@@ -6,7 +6,11 @@
 ```
 db/021_install_check_alert_state.sql          — 記錄哪些 (user_id, machine, check_name) 失敗已經公告過，
                                                  unique 唯一鍵防重複紀錄，含 first_seen_at／announced_at／
-                                                 resolved_at／detail
+                                                 resolved_at／detail。唯一鍵同時是「認領」用的條件式
+                                                 upsert 依據，兩支同時跑的評估只有一支搶得到
+tests/install-check-alert-migration.test.js   — 讀 db/021 的 SQL 文字驗證：建表冪等、唯一鍵是
+                                                 (user_id, machine, check_name)、user 刪除時連動刪除、
+                                                 三個時間欄位都在
 src/lib/install-check-alerts.js                — 決定哪些自我檢測失敗是「新的」、值得公告。
                                                  一次呼叫裡每台機器只用最新報告（processedMachines）；
                                                  其他舊報告一律跳過。明確文件化呼叫端責任：
@@ -15,20 +19,32 @@ tests/install-check-alerts.test.js             — 純函式測試：首次失�
                                                  同機器混合狀態時只用最新報告、不同機器各算一次
 src/lib/install-check-alert-message.js         — 把新失敗渲染成管理員能讀的通知。多台同因合併一行、
                                                  超限說明有幾項沒列出、單項超限也送但截斷標記。
-                                                 截斷演算法改用「全部試、二分法找、單項切」三步，
-                                                 杜絕虛假截斷
+                                                 尺寸標準是「使用者真的看得到的那一段」：兩支投遞端
+                                                 （hooks/lib/render-session-context.js、mcp/index.js）
+                                                 都只取前 5 行、接起來取前 400 字，所以一項就是一行、
+                                                 最多 4 行內容 + 1 行遺漏數，欄位順序照「被砍掉時誰該
+                                                 先活下來」排（檢查名／人機／版本在前，長敘述在後）
 tests/install-check-alert-message.test.js     — 純函式測試：基本欄位、失敗合併、截斷計數、邊界情況、
-                                                 演算法正確性（全部能裝、超限計數、單項切、empty版本）
+                                                 演算法正確性（全部能裝、超限計數、單項切、empty版本）；
+                                                 另有一組「使用者真的收到什麼」測試，在測試裡套用投遞端
+                                                 那一行轉換後才斷言，驗證第二項、遺漏數那行、每項的版本
+                                                 都活得下來
 src/jobs/install-check-alerts.js              — 把 evaluateFailures 跟 renderAlertMessage 接成一支可執行的
                                                  job：讀最新報告（DISTINCT ON + jsonb_array_length 排除
-                                                 beacon 列）、讀已知狀態、寫回 resolved／detail 變動、
-                                                 新失敗 upsert 進 install_check_alert_state、
-                                                 只發給最舊的一位 super_admin（id 最小）
+                                                 beacon 列，用伺服器給的 l.id 排新舊、不用客戶端送來的
+                                                 l.ts，免得一台時鐘設到明年的機器從此永遠不會再報）、
+                                                 讀已知狀態、寫回 resolved／detail 變動、
+                                                 新失敗先「認領」（條件式 upsert + RETURNING）再發廣播，
+                                                 廣播寫失敗就把認領放掉再往上拋、
+                                                 只發給最舊的一位 super_admin（id 最小）、有效期 48 小時
 tests/install-check-alerts-job.test.js        — 假 query 依 SQL 文字分派（同 tests/broadcast.test.js 手法）：
                                                  首次公告回傳 broadcast id、廣播鎖定唯一 super_admin、
                                                  狀態寫入用 ON CONFLICT 冪等、已公告過的失敗不再吵、
                                                  修好的檢查標記 resolved 但不發廣播、沒有 super_admin 時
-                                                 狀態照寫但不硬發廣播、讀取 SQL 真的排除空 checks 報告
+                                                 狀態照寫但不硬發廣播、讀取 SQL 真的排除空 checks 報告、
+                                                 排序用 l.id、有效期 48 小時；另有一份會記住狀態的假 DB，
+                                                 用來驗廣播失敗時認領有放掉、下一輪會重發，以及兩支
+                                                 同時起跑的評估只會產生一則廣播
 tests/install-check-alerts-wiring.test.js     — 驗證接線本身：報告存好後真的觸發評估、評估失敗不影響
                                                  200 回應也不擋報告落地、400（缺 ts）不觸發評估；另讀
                                                  src/index.js 原始碼確認開機補跑一次且失敗被 catch 住
