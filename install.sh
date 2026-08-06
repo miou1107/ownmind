@@ -181,6 +181,46 @@ if ! npm install -q 2>/dev/null; then
   exit 1
 fi
 
+# --- v1.26.88 Windows path normalization + a place for Node's stderr to go ---
+#
+# Under Git Bash, $HOME is a POSIX path (/c/Users/Vin). Paths passed to node as ARGUMENTS
+# are converted by the MSYS runtime, but paths interpolated into the source text of
+# `node -e` are not: node.exe resolves the leading slash against the drive root and fails
+# with ENOENT. Bug report #15 (2026-08-06) traced a silent, complete abort of this script
+# to exactly that, on the block that writes the PreToolUse hook.
+#
+# path-helpers.sh has existed since v1.26.7 for this reason and was only ever wired into
+# interactive-upgrade.sh. Everything below that embeds a path in Node source must use it.
+if [ -f "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+
+# Node stderr from the blocks below goes here, never to /dev/null. `set -e` plus a
+# discarded stderr is how a fatal error produced no output at all for four months.
+# This lives outside ~/.ownmind so an upgrade rollback cannot delete it.
+INSTALL_LOG_DIR="$HOME/.ownmind-logs"
+mkdir -p "$INSTALL_LOG_DIR" 2>/dev/null || true
+INSTALL_LOG="$INSTALL_LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
+: > "$INSTALL_LOG" 2>/dev/null || INSTALL_LOG="/dev/stderr"
+
+# Report the step that just failed, then let `set -e` do its job. Without this the user
+# sees a script that simply stops.
+on_install_error() {
+  local line="$1"
+  echo "[FAIL] install.sh aborted at line ${line}"
+  echo "       Details: $INSTALL_LOG"
+  if [ -s "$INSTALL_LOG" ]; then
+    echo "       Last error:"
+    tail -n 5 "$INSTALL_LOG" | sed 's/^/         /'
+  fi
+  report_error "install_aborted" "install.sh aborted at line ${line}" "$INSTALL_LOG" 2>/dev/null || true
+}
+trap 'on_install_error "$LINENO"' ERR
+
+
 # --- 決定 MCP command / args ---
 if [ "$IS_WINDOWS" = true ]; then
   # Windows: 用 cmd.exe 透過 start.cmd 啟動，避免 Claude Code 找不到 node
@@ -191,14 +231,19 @@ if [ "$IS_WINDOWS" = true ]; then
     console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', p] }));
   ")
 else
+  # Unreachable on Windows (that is the branch above), but routed through to_win_path all
+  # the same: it is identity off Windows, and one uniform rule is cheaper to hold than an
+  # exception nobody remembers is safe.
+  MCP_ENTRY_PATH_WIN="$(to_win_path "$OWNMIND_DIR/mcp/index.js")"
   MCP_ENTRY=$(node -e "
-    const p = '$OWNMIND_DIR/mcp/index.js';
+    const p = '$MCP_ENTRY_PATH_WIN';
     console.log(JSON.stringify({ command: 'node', args: [p] }));
   ")
 fi
 
 # --- 2. Claude Code MCP 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 if [ -f "$CLAUDE_SETTINGS" ]; then
   if grep -q '"ownmind"' "$CLAUDE_SETTINGS" 2>/dev/null; then
     echo "[INFO] Claude Code MCP already configured, skipping"
@@ -207,7 +252,7 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     node -e "
       const fs = require('fs');
       const entry = $MCP_ENTRY;
-      const settings = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+      const settings = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
       if (!settings.mcpServers) settings.mcpServers = {};
       settings.mcpServers.ownmind = {
         ...entry,
@@ -217,9 +262,9 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
           OWNMIND_TOOL: 'claude-code'
         }
       };
-      const _tmp = '$CLAUDE_SETTINGS' + '.tmp';
+      const _tmp = '$CLAUDE_SETTINGS_WIN' + '.tmp';
       fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
-      fs.renameSync(_tmp, '$CLAUDE_SETTINGS');
+      fs.renameSync(_tmp, '$CLAUDE_SETTINGS_WIN');
     "
   fi
 else
@@ -240,7 +285,7 @@ else
         }
       }
     };
-    fs.writeFileSync('$CLAUDE_SETTINGS', JSON.stringify(settings, null, 2));
+    fs.writeFileSync('$CLAUDE_SETTINGS_WIN', JSON.stringify(settings, null, 2));
   "
 fi
 
@@ -333,7 +378,7 @@ append_upgrade_rule_if_exists() {
         let c = fs.readFileSync(p, 'utf8');
         c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
         fs.writeFileSync(p, c);
-      " "$target_file" 2>/dev/null || true
+      " "$(to_win_path "$target_file")" 2>>"$INSTALL_LOG" || true
     fi
     {
       echo ""
@@ -375,7 +420,7 @@ node -e "
   const fs = require('fs');
   const nodePath = require('path');
   const os = require('os');
-  const path = '$CLAUDE_SETTINGS';
+  const path = '$CLAUDE_SETTINGS_WIN';
   const s = JSON.parse(fs.readFileSync(path, 'utf8'));
   if (!s.hooks) s.hooks = {};
 
@@ -407,7 +452,7 @@ node -e "
   }
 
   fs.writeFileSync(path, JSON.stringify(s, null, 2));
-" 2>/dev/null
+" 2>>"$INSTALL_LOG"
 
 # --- 4c-2. SessionStart hook (v1.26.86, delegated to the shared implementation) ---
 ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
@@ -609,6 +654,7 @@ fi
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"
+  CURSOR_MCP_WIN="$(to_win_path "$CURSOR_MCP")"
   if [ -f "$CURSOR_MCP" ] && grep -q '"ownmind"' "$CURSOR_MCP" 2>/dev/null; then
     echo "[INFO] Cursor MCP already configured, skipping"
   else
@@ -617,7 +663,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
       node -e "
         const fs = require('fs');
         const entry = $MCP_ENTRY;
-        const settings = JSON.parse(fs.readFileSync('$CURSOR_MCP', 'utf8'));
+        const settings = JSON.parse(fs.readFileSync('$CURSOR_MCP_WIN', 'utf8'));
         if (!settings.mcpServers) settings.mcpServers = {};
         settings.mcpServers.ownmind = {
           ...entry,
@@ -627,7 +673,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
             OWNMIND_TOOL: 'cursor'
           }
         };
-        fs.writeFileSync('$CURSOR_MCP', JSON.stringify(settings, null, 2));
+        fs.writeFileSync('$CURSOR_MCP_WIN', JSON.stringify(settings, null, 2));
       "
     else
       mkdir -p "$HOME/.cursor"
@@ -646,22 +692,23 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
             }
           }
         };
-        const _t2 = '$HOME/.cursor/mcp.json.tmp';
+        const _t2 = '$CURSOR_MCP_WIN' + '.tmp';
         fs.writeFileSync(_t2, JSON.stringify(settings, null, 2));
-        fs.renameSync(_t2, '$HOME/.cursor/mcp.json');
+        fs.renameSync(_t2, '$CURSOR_MCP_WIN');
       "
     fi
   fi
 
   # Cursor hooks（beforeShellExecution 作為 session-start workaround）
   CURSOR_HOOKS="$HOME/.cursor/hooks.json"
+  CURSOR_HOOKS_WIN="$(to_win_path "$CURSOR_HOOKS")"
   if [ -f "$CURSOR_HOOKS" ] && grep -q 'ownmind' "$CURSOR_HOOKS" 2>/dev/null; then
     echo "[INFO] Cursor hooks already configured, skipping"
   else
     echo "[INFO] Configuring Cursor hooks"
     node -e "
       const fs = require('fs');
-      const path = '$CURSOR_HOOKS';
+      const path = '$CURSOR_HOOKS_WIN';
       let s = { version: 1, hooks: {} };
       if (fs.existsSync(path)) {
         try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -678,7 +725,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
       const _t = path + '.tmp';
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
-    " 2>/dev/null
+    " 2>>"$INSTALL_LOG"
   fi
 fi
 
@@ -686,11 +733,12 @@ fi
 if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
   echo "[INFO] Configuring Gemini CLI"
   GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+  GEMINI_SETTINGS_WIN="$(to_win_path "$GEMINI_SETTINGS")"
   mkdir -p "$HOME/.gemini"
 
   node -e "
     const fs = require('fs');
-    const path = '$GEMINI_SETTINGS';
+    const path = '$GEMINI_SETTINGS_WIN';
     let s = {};
     if (fs.existsSync(path)) {
       try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -711,7 +759,7 @@ if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
       console.log('   加入 Gemini CLI SessionStart hook');
     }
     fs.writeFileSync(path, JSON.stringify(s, null, 2));
-  " 2>/dev/null
+  " 2>>"$INSTALL_LOG"
 
   # Gemini GEMINI.md
   GEMINI_MD="$HOME/.gemini/GEMINI.md"
@@ -738,11 +786,12 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
   echo "[INFO] Configuring GitHub Copilot hooks"
   GH_HOOKS_DIR="$HOME/.github/hooks"
   GH_HOOKS_FILE="$GH_HOOKS_DIR/hooks.json"
+  GH_HOOKS_FILE_WIN="$(to_win_path "$GH_HOOKS_FILE")"
   mkdir -p "$GH_HOOKS_DIR"
 
   node -e "
     const fs = require('fs');
-    const path = '$GH_HOOKS_FILE';
+    const path = '$GH_HOOKS_FILE_WIN';
     let s = { version: 1, hooks: {} };
     if (fs.existsSync(path)) {
       try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -757,7 +806,7 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
       console.log('   加入 GitHub Copilot sessionStart hook');
     }
     fs.writeFileSync(path, JSON.stringify(s, null, 2));
-  " 2>/dev/null
+  " 2>>"$INSTALL_LOG"
 fi
 
 # --- 8. Windsurf 設定（如果有 .windsurf 目錄）---
@@ -776,6 +825,7 @@ fi
 
 # --- 9. OpenCode 設定 ---
 OPENCODE_CONFIG="$HOME/.opencode.json"
+OPENCODE_CONFIG_WIN="$(to_win_path "$OPENCODE_CONFIG")"
 if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
   echo "[INFO] Configuring OpenCode"
   if [ -f "$OPENCODE_CONFIG" ] && grep -q 'ownmind' "$OPENCODE_CONFIG" 2>/dev/null; then
@@ -783,7 +833,7 @@ if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
   else
     node -e "
       const fs = require('fs');
-      const path = '$OPENCODE_CONFIG';
+      const path = '$OPENCODE_CONFIG_WIN';
       let s = {};
       if (fs.existsSync(path)) {
         try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -795,13 +845,14 @@ if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
       const _t = path + '.tmp';
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
-    " 2>/dev/null
+    " 2>>"$INSTALL_LOG"
     echo "[ OK ] Added OpenCode instructions"
   fi
 fi
 
 # --- 10. OpenClaw 設定 ---
 OPENCLAW_CONFIG="$HOME/.openclaw.json"
+OPENCLAW_CONFIG_WIN="$(to_win_path "$OPENCLAW_CONFIG")"
 if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
   echo "[INFO] Configuring OpenClaw"
   if [ -f "$OPENCLAW_CONFIG" ] && grep -q 'ownmind' "$OPENCLAW_CONFIG" 2>/dev/null; then
@@ -809,7 +860,7 @@ if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
   else
     node -e "
       const fs = require('fs');
-      const path = '$OPENCLAW_CONFIG';
+      const path = '$OPENCLAW_CONFIG_WIN';
       let s = {};
       if (fs.existsSync(path)) {
         try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -821,7 +872,7 @@ if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
       const _t = path + '.tmp';
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
-    " 2>/dev/null
+    " 2>>"$INSTALL_LOG"
     echo "[ OK ] Added OpenClaw bootstrap"
   fi
 fi
@@ -873,9 +924,31 @@ echo "  [ OK ] Claude Code        SessionStart hook"
 echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
 echo ""
 
+SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+
+# --- v1.26.88: did this run actually finish? ---
+# Everything above can abort halfway and leave a machine that reports the right version
+# and has none of the parts. See install-artifacts.cjs and bug report #15. This runs
+# before the self-check so a truncated install says so in its own words, and the
+# self-check then reports the same condition to the server.
+ARTIFACT_CHECK="$OWNMIND_DIR/scripts/install-helpers/install-artifacts.cjs"
+if [ -f "$ARTIFACT_CHECK" ]; then
+  if artifact_result=$(node "$ARTIFACT_CHECK" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
+    echo "[ OK ] $artifact_result"
+  else
+    echo "[FAIL] Installation did not complete."
+    printf '%s\n' "$artifact_result" | sed 's/^/       /'
+    echo "       Log: $INSTALL_LOG"
+    report_error "install_incomplete" "$artifact_result" "$INSTALL_LOG" 2>/dev/null || true
+    # Still run the self-check: it uploads this machine's state, which is how the failure
+    # reaches anybody who can act on it.
+    [ -f "$SELF_CHECK_SCRIPT" ] && { node "$SELF_CHECK_SCRIPT" --trigger=post_install || true; }
+    exit 1
+  fi
+fi
+
 # v1.17.63: 跑 self-check 把所有元件的真實狀態抓下來、寫 log + 上傳。
 # 包 || true 保證 self-check 出錯不擋安裝完成的訊息。
-SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
 if [ -f "$SELF_CHECK_SCRIPT" ]; then
   node "$SELF_CHECK_SCRIPT" --trigger=post_install || true
 fi

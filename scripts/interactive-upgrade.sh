@@ -15,7 +15,16 @@ set -u  # do not set -e; we want to control error paths ourselves
 OWNMIND_DIR="${HOME}/.ownmind"
 TS=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="${HOME}/.ownmind.bak.${TS}"
-LOG_FILE="${OWNMIND_DIR}/logs/upgrade-${TS}.log"
+
+# v1.26.88 — the log lives OUTSIDE ${OWNMIND_DIR}.
+# rollback() is `rm -rf "${OWNMIND_DIR}"` followed by `mv "${BACKUP_DIR}" "${OWNMIND_DIR}"`.
+# While this file lived under ${OWNMIND_DIR}/logs/, every failure message that said
+# "see ~/.ownmind/logs/upgrade-<TS>.log" named a file the same function had just deleted.
+# Measured on TANK, 2026-08-06: 0 bytes, on the one failure anybody wanted to read.
+# Bug report #15.
+LOG_DIR="${HOME}/.ownmind-logs"
+mkdir -p "${LOG_DIR}" 2>/dev/null || LOG_DIR="${OWNMIND_DIR}/logs"
+LOG_FILE="${LOG_DIR}/upgrade-${TS}.log"
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
 # Without this, ${OWNMIND_DIR}=/c/Users/Vin/.ownmind makes require() fail with
@@ -280,8 +289,11 @@ OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} 
 # fail-fast 5s timeout + spool fallback, sidestepping that race.
 send_upgrade_complete_beacon() {
   local version="$1"
-  local claude_settings="$HOME/.claude/settings.json"
-  [ -f "$claude_settings" ] || return
+  # v1.26.88 — to_win_path, or node.exe never finds it under Git Bash and this beacon
+  # silently returns empty credentials on every Windows machine. Bug report #15.
+  local claude_settings
+  claude_settings="$(to_win_path "$HOME/.claude/settings.json")"
+  [ -f "$HOME/.claude/settings.json" ] || return
   local api_key api_url
   api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>/dev/null)
   api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>/dev/null)

@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.26.87** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.26.88** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -167,7 +167,10 @@ graph LR
 - **關鍵字搜尋** — 多關鍵字 AND 搜尋，涵蓋標題、內容、標籤、程式碼欄位（資料庫已預留 pgvector 欄位，語意相似度搜尋是未來升級項目、目前尚未啟用）
 - **分層壓縮** — 短期記憶自動壓縮、長期記憶永久保存
 - **Windows 原生支援** — `install.ps1` 跟 `start.cmd` 都附、不需要 WSL（Windows 子系統 for Linux）
-- **原始碼可搜尋性守門** — `src/` 底下任何檔案若含有原始控制位元組（例如 NUL），會讓 `grep`／`file` 誤判成二進位檔而悄悄跳過；測試套件會直接抓出來擋下 `v1.26.87`
+- **原始碼可搜尋性守門** — `src/`、`scripts/install-helpers/`、`hooks/` 底下任何檔案若含有原始控制位元組（例如 NUL）或真的隱形字元，會讓 `grep`／`file` 誤判成二進位檔而悄悄跳過；測試套件會直接抓出來擋下 `v1.26.87`
+- **node -e 裡的路徑一律轉成 Windows 格式** — Git Bash 底下把 POSIX 路徑（`/c/Users/...`）寫進 `node -e` 的程式碼字串，node.exe 拿到不會轉，開頭那個斜線被當成磁碟根目錄，安裝腳本因此在中途整支死掉、而且一個字都不印。現在全部走共用的 `to_win_path`（`cygpath -m`，Mac／Linux 上原封不動回傳），守衛測試從腳本本身長出清單，解析不出來的區塊算失敗、不算跳過 `v1.26.88`
+- **安裝腳本不准把 node 的錯誤丟掉** — `set -e` 的腳本配上 `2>/dev/null`，致命錯誤就變成「腳本莫名停住」。node 的錯誤改寫進日誌，ERR trap 印出停在哪一行，升級日誌搬到回滾動不到的地方——「請看日誌」不再指向回滾剛刪掉的檔案 `v1.26.88`
+- **裝完了沒有，要用產出物判斷** — 版本號不能當成「裝好了」的證據：安裝腳本中途死掉、另一個機制把工作目錄拉到新版本，機器就會回報一個從沒裝完的版本。一份共用清單（SessionStart 掛勾、鐵律掛勾、`hooks/lib`、git hooks、技能檔、MCP 進入點）在每次安裝收尾時斷言，同一份也是自我檢查的 `install_complete` 項目，所以「裝到一半」會自己找上門 `v1.26.88`
 
 ---
 
