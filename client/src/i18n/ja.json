@@ -358,7 +358,7 @@
   "system.config.col.email": "Email",
   "system.config.col.role": "Role",
   "system.config.col.overall": "全体状態",
-  "system.config.col.tools": "ツール別バージョン / 最終 heartbeat",
+  "system.config.col.tools": "マシン別ツールバージョン / 最終 heartbeat",
   "system.config.version.unknown": "不明",
   "system.config.tool.needs_upgrade": "アップグレード",
   "system.config.time.just_now": "たった今",
@@ -705,5 +705,7 @@
   "team_usage.card.messages": "メッセージ数",
   "team_usage.card.wall": "総時間",
   "team_usage.card.active": "稼働時間",
-  "team_usage.card.sessions": "会話数"
+  "team_usage.card.sessions": "会話数",
+  "system.config.machine.unknown": "不明なマシン",
+  "system.config.machine.count": "{n} 台のマシン"
 }

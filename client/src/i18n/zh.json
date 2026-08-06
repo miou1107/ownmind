@@ -21,39 +21,29 @@
   "nav.section.preference": "偏好設定",
   "nav.section.admin": "管理",
   "nav.section.system": "系統",
-
-
-
   "header.title": "OwnMind 控制中心",
   "header.subtitle": "極簡清爽 統合控制中心",
   "header.role.user": "一般使用者",
   "header.role.admin": "管理員",
   "header.role.super_admin": "超級管理員",
   "header.guest": "訪客",
-
   "menu.profile": "個人資料",
   "menu.logout": "登出",
   "session.identity_unavailable": "暫時讀不到你的身分，所以側邊欄可能不完整。重新整理即可，若持續發生請通知管理員。",
-
   "filter.title": "紀錄與數據篩選",
   "filter.subtitle": "篩選特定的提報日期、活躍專案或搜尋關鍵字進行即時分析",
   "filter.all_projects": "所有專案",
   "filter.keyword_placeholder": "搜尋關鍵字",
   "filter.clear": "清除篩選",
-
   "kpi.compliance_rate": "鐵律合規率",
   "kpi.sessions": "AI 互動場次",
   "kpi.sessions_unit": "場對話",
   "kpi.token_traffic": "Token 流量分析",
-
   "footer.changelog": "系統版本更新紀錄",
   "footer.copyright": "OwnMind 開源計畫",
-
   "changelog.title": "版本更新紀錄",
   "changelog.empty": "目前尚無版本紀錄",
-
   "error.not_found": "找不到此頁面",
-
   "login.title": "登入 OwnMind",
   "login.subtitle": "用你的 Email 與密碼登入控制中心",
   "login.email_label": "Email",
@@ -74,7 +64,6 @@
   "login.setup_token_hint": "這串是執行救援腳本時印出來、並設在伺服器環境變數裡的那一組。",
   "login.setup_submit": "設定密碼",
   "login.setup_done": "密碼已設定，請用新密碼登入。",
-
   "security.title": "修改密碼",
   "security.subtitle": "為保護你的帳號、建議定期更換密碼",
   "security.must_change_notice": "你還在使用預設密碼、請先改密碼才能用其他功能",
@@ -90,7 +79,6 @@
   "security.error_same_as_old": "新密碼不能跟舊密碼相同",
   "security.error_too_short": "新密碼長度至少 8 個字元",
   "security.error_generic": "密碼修改失敗、請稍後再試",
-
   "profile.title": "個人資料",
   "profile.subtitle": "管理你的顯示名稱、其他資料由管理員維護",
   "profile.name_label": "顯示名稱",
@@ -106,16 +94,13 @@
   "profile.error_load": "載入個人資料失敗",
   "profile.error_save": "儲存失敗、請稍後再試",
   "profile.loading": "載入中…",
-
   "common.loading": "載入中…",
   "common.error_load": "載入失敗、請稍後再試",
   "common.empty": "目前沒有紀錄",
   "common.close": "關閉",
-
   "project_history.title": "專案歷程",
   "project_history.subtitle": "你的所有專案記憶、按最後更新時間排序",
   "project_history.detail_title": "專案內容",
-
   "handoffs.title": "工作交接",
   "handoffs.subtitle": "其他 AI 工具留給你的交接內容、接手後從清單移除",
   "handoffs.empty": "沒有待處理的交接",
@@ -125,7 +110,6 @@
   "handoffs.accept_success": "已接手",
   "handoffs.accept_error": "接手失敗、請稍後再試",
   "handoffs.profile_failed": "無法取得使用者資料、接手功能暫停。請重新整理頁面或重新登入",
-
   "reports.title": "回報紀錄",
   "reports.subtitle": "你建立的錯誤回報、可看處理狀態",
   "reports.detail_title": "回報詳情",
@@ -137,7 +121,6 @@
   "reports.status_reason_label": "處理說明",
   "reports.description_label": "詳細描述",
   "reports.error_forbidden": "你沒有權限看這筆回報",
-
   "vault.title": "密鑰管理",
   "vault.subtitle": "存 API key、密碼等敏感資料、加密儲存、僅本人可見",
   "vault.add": "新增密鑰",
@@ -168,7 +151,6 @@
   "vault.error_delete": "刪除失敗、請稍後再試",
   "vault.error_key_required": "請輸入 Key",
   "vault.error_value_required": "請輸入 Value",
-
   "usage.title": "用量分析",
   "usage.subtitle": "你跟團隊的 AI 工具使用量、活躍專案、鐵律遵守狀況",
   "usage.range.7d": "近 7 天",
@@ -183,10 +165,8 @@
   "usage.tab.mine": "個人",
   "usage.tab.team": "團隊",
   "usage.tab.projects": "專案",
-
   "usage.unit.sessions": "場",
   "usage.unit.events": "次",
-
   "usage.mine.sessions": "互動場次",
   "usage.mine.events": "事件數",
   "usage.mine.last_activity": "最後活動時間",
@@ -195,18 +175,15 @@
   "usage.mine.compliance_title": "鐵律遵守明細",
   "usage.mine.versions_title": "工具版本",
   "usage.mine.activity_title": "近期活動",
-
   "usage.team.users_title": "團隊成員",
   "usage.team.daily_title": "日趨勢",
   "usage.team.hourly_title": "時段分布（24 小時）",
   "usage.team.weekday_title": "星期分布",
   "usage.team.events_title": "事件類型",
   "usage.team.versions_title": "成員工具版本",
-
   "usage.projects.title": "全團隊專案",
   "usage.projects.detail_title": "專案明細",
   "usage.projects.contributors_title": "貢獻成員",
-
   "usage.weekday.sun": "日",
   "usage.weekday.mon": "一",
   "usage.weekday.tue": "二",
@@ -214,7 +191,6 @@
   "usage.weekday.thu": "四",
   "usage.weekday.fri": "五",
   "usage.weekday.sat": "六",
-
   "usage.col.project": "專案",
   "usage.col.sessions": "場次",
   "usage.col.turns": "回合數",
@@ -234,7 +210,6 @@
   "usage.col.event": "事件",
   "usage.col.count": "次數",
   "usage.col.time": "時間",
-
   "audit.severity.high": "嚴重",
   "audit.severity.medium": "注意",
   "audit.severity.low": "提示",
@@ -243,7 +218,6 @@
   "audit.finding.default_password_unused": "有人可能還沒開始用",
   "audit.finding.member_unobservable": "有成員的使用狀況看不到",
   "audit.finding.tools": "受影響的工具：{tools}",
-
   "narrative.title": "整體分析",
   "narrative.subtitle": "全團隊的使用狀況統計、加上 AI 產生的白話說明",
   "narrative.summary_label": "一句話結論",
@@ -268,7 +242,6 @@
   "narrative.s.project_friction": "各專案最常踩什麼坑",
   "narrative.s.insights": "給管理者的觀察",
   "narrative.s.next_actions": "建議的下一步",
-
   "pitfalls.title": "踩坑紀錄",
   "pitfalls.subtitle": "系統跟 AI 行為上被發現的問題。全體成員共用同一份、因為這些狀況只有橫著看才看得出模式",
   "pitfalls.window.7d": "近 7 天",
@@ -314,7 +287,6 @@
   "periodic.search.title_suggestion": "相關記憶（建議）",
   "periodic.search.query": "搜尋關鍵字：{q}",
   "periodic.search.empty": "沒有找到相關的記憶",
-
   "team.title": "使用者管理",
   "team.subtitle": "管理團隊成員的存取權限、密碼、以及安裝 OwnMind 到自己電腦的指令。",
   "team.add_button": "新增使用者",
@@ -366,7 +338,6 @@
   "common.save": "儲存",
   "common.actions": "操作",
   "common.copy": "複製",
-
   "system.config.title": "系統設定",
   "system.config.subtitle": "看團隊成員的 OwnMind 收集器裝機狀況、以及誰只有 heartbeat 但實際上沒有回傳任何資料。",
   "system.config.refresh": "重新載入",
@@ -387,7 +358,7 @@
   "system.config.col.email": "Email",
   "system.config.col.role": "Role",
   "system.config.col.overall": "整體狀態",
-  "system.config.col.tools": "各工具版本 / 最後 heartbeat",
+  "system.config.col.tools": "各電腦的工具版本 / 最後 heartbeat",
   "system.config.version.unknown": "未知",
   "system.config.tool.needs_upgrade": "升級",
   "system.config.time.just_now": "剛才",
@@ -395,7 +366,6 @@
   "system.config.time.minutes_ago": "{n} 分鐘前",
   "system.config.time.hours_ago": "{n} 小時前",
   "system.config.time.days_ago": "{n} 天前",
-
   "system.broadcast.title": "廣播管理",
   "system.broadcast.subtitle": "發布維護通知、公告、規則變更。使用者端在 Claude Code SessionStart 或 MCP 呼叫時會看到。",
   "system.broadcast.refresh": "重新載入",
@@ -456,7 +426,6 @@
   "system.broadcast.revoke.title": "確認撤銷這則廣播？",
   "system.broadcast.revoke.body": "撤銷後、使用者端就不會再看到這則廣播；已看過的成員不受影響。",
   "system.broadcast.revoke.confirm": "確認撤銷",
-
   "bug_reports.title": "錯誤回報",
   "bug_reports.subtitle": "使用者透過 ownmind_report_bug 工具回報的 OwnMind 本身問題。這裡看清單、改狀態、審查系統偵測到的疑似 spam。",
   "bug_reports.refresh": "重新載入",
@@ -515,7 +484,6 @@
   "bug_reports.spam.modal.reason_placeholder": "例：AI 腦補連送 5 筆假回報",
   "bug_reports.spam.toast.confirmed": "已確認 spam、使用者封鎖 24 小時",
   "bug_reports.spam.toast.dismissed": "已撤銷 spam 疑慮",
-
   "work_log.title": "工作紀錄",
   "work_log.subtitle": "三來源合併時間軸：activity（初始化 / 更新 / 工具呼叫）、compliance（鐵律違反 / 遵守）、session（AI session 摘要）。",
   "work_log.notice": "預設看最近 30 天、每頁 100 筆。變更任何篩選、按查詢重新載入。捲到底可載入更多。",
@@ -544,7 +512,6 @@
   "work_log.col.tool": "工具",
   "work_log.col.event": "Event",
   "work_log.col.details": "內容",
-
   "stats.title": "統計儀表板",
   "stats.subtitle": "團隊與個人的記憶、活動、鐵律落地狀況",
   "stats.loading": "載入中",
@@ -738,5 +705,7 @@
   "team_usage.card.messages": "訊息數",
   "team_usage.card.wall": "總時長",
   "team_usage.card.active": "活躍時長",
-  "team_usage.card.sessions": "場次"
+  "team_usage.card.sessions": "場次",
+  "system.config.machine.unknown": "未知電腦",
+  "system.config.machine.count": "{n} 台電腦"
 }

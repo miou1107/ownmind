@@ -358,7 +358,7 @@
   "system.config.col.email": "Email",
   "system.config.col.role": "Role",
   "system.config.col.overall": "Overall",
-  "system.config.col.tools": "Per-tool version / last heartbeat",
+  "system.config.col.tools": "Per-machine tool versions / last heartbeat",
   "system.config.version.unknown": "unknown",
   "system.config.tool.needs_upgrade": "upgrade",
   "system.config.time.just_now": "just now",
@@ -705,5 +705,7 @@
   "team_usage.card.messages": "Messages",
   "team_usage.card.wall": "Total time",
   "team_usage.card.active": "Active time",
-  "team_usage.card.sessions": "Sessions"
+  "team_usage.card.sessions": "Sessions",
+  "system.config.machine.unknown": "unknown machine",
+  "system.config.machine.count": "{n} machines"
 }
