@@ -45,5 +45,16 @@ Legend: `[ ]` pending · `[x]` done
 
 ## Phase 5 — Deploy and confirm on the thing that failed
 
-- [ ] Rebuild and restart production, then confirm the error is gone **and** that a
-      heartbeat row actually moves. A quiet log is not evidence; the row is.
+- [x] Production rebuilt and restarted on v1.26.76, 03:24 on 2026-08-06. Zero
+      `heartbeat update failed` lines since.
+- [x] **Positive control, because a quiet log is not evidence.** Read this account's five
+      heartbeat rows (02:53–03:03), ran the installed scanner, read them again: all five
+      at 03:26:25. The write works; the silence was not a second way of failing.
+- [x] Browser check of both pages this line of work touched:
+      - 團隊用量 — 最近活動 for a person working right now reads the current minute, which
+        is the entire point of v1.26.74. Others in the team show times inside their live
+        sessions rather than when those sessions began.
+      - 系統設定 — the column is grouped by computer, headed 各電腦的工具版本 / 最後
+        heartbeat, with the OS beside the machine name (`TANK Windows · 3 小時前`).
+      Read from the DOM rather than a screenshot: the tab reported
+      `visibilityState: hidden`, and a screenshot of a hidden tab can show a stale frame.
