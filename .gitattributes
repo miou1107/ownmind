@@ -4,8 +4,10 @@
 # These files must be LF on disk regardless of platform.
 
 *.sh                              text eol=lf
-hooks/ownmind-git-pre-commit      text eol=lf
-hooks/ownmind-git-post-commit     text eol=lf
+# v1.26.96: a glob, not one line per file. ownmind-git-commit-msg was added later and
+# nobody remembered to list it, so on a Windows checkout it was the one hook of the three
+# that arrived CRLF. A hand-maintained list does not report the file it is missing.
+hooks/ownmind-git-*               text eol=lf
 hooks/ownmind-iron-rule-check.sh  text eol=lf
 hooks/ownmind-session-start.sh    text eol=lf
 hooks/ownmind-worktree-setup.sh   text eol=lf
@@ -14,6 +16,14 @@ git-hooks/post-commit             text eol=lf
 scripts/*.sh                      text eol=lf
 # bin/ 之後可能放 binary（如 sqlite-vec 之類），只規範 *.sh 避免破壞二進位
 bin/*.sh                          text eol=lf
+
+# Anything with a shebang may be executed directly, and a CRLF shebang makes the kernel
+# look for an interpreter whose name ends in a carriage return. tests/shebang-eol.test.js
+# derives the list from `git ls-files` and fails when a shebang file is not covered here,
+# so the next one added cannot slip through the way commit-msg did.
+*.js                              text eol=lf
+*.cjs                             text eol=lf
+*.mjs                             text eol=lf
 
 # PowerShell and batch files are Windows-native, keep CRLF
 *.ps1                             text eol=crlf
