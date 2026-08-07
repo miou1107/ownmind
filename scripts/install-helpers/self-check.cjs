@@ -226,6 +226,35 @@ function checkBackgroundCredentials(opts = {}) {
   }
 }
 
+/**
+ * Do the places that hold a key agree on which key it is?
+ *
+ * `resolveCredentials` takes the first key it finds and every other check runs on that one,
+ * so a second file holding a different key produced an all-green report while the component
+ * reading that other file acted as a different account. The installer only ever writes
+ * ~/.claude/settings.json; Claude Code keeps its MCP config in ~/.claude.json. Switching
+ * accounts updates one and leaves the other.
+ *
+ * warn, not fail: the resolved key works, and v1.26.87 alerting broadcasts new fails. This
+ * needs to reach the person at the keyboard, not page the admin.
+ */
+function checkCredentialAgreement(resolved) {
+  const NAME = 'credential_agreement';
+  const key = resolved?.conflicts?.key || [];
+  const url = resolved?.conflicts?.url || [];
+  if (key.length === 0 && url.length === 0) {
+    return pass(NAME, 'all config locations agree');
+  }
+  const parts = [];
+  if (key.length) parts.push(`API key differs in ${key.join(', ')}`);
+  if (url.length) parts.push(`API URL differs in ${url.join(', ')}`);
+  return warn(NAME, parts.join('; '),
+    `OwnMind is using the value from ${resolved.source.key || 'an unknown source'}, but the `
+    + 'file(s) named above hold a different one. Whichever component reads those instead — '
+    + 'Claude Code launches the MCP server from ~/.claude.json — will act as the other '
+    + 'account. Make them match, then restart Claude Code');
+}
+
 async function checkApiCredentials(apiUrl, apiKey) {
   if (!apiUrl || !apiKey) {
     return fail('api_credentials', 'apiUrl or apiKey is empty',
@@ -868,7 +897,7 @@ const QUICK_SKIP = ['usage_roundtrip'];
 async function checkNamesFor({ quick = false } = {}) {
   const all = [
     'mcp_files', 'package_version', 'mcp_node_modules', 'server_health',
-    'api_key_format', 'background_credentials', 'api_credentials', 'git_hooks',
+    'api_key_format', 'credential_agreement', 'background_credentials', 'api_credentials', 'git_hooks',
     'install_complete', 'scheduler',
     'memory_load', 'usage_roundtrip',
   ];
@@ -886,6 +915,10 @@ async function runAllChecks({ quick = false } = {}) {
   // issues where settings.json contains the literal "--update". Putting this before
   // api_credentials makes the fail message more specific (format vs. server reject).
   checks.push(await safeCheck('api_key_format', () => checkApiKeyFormat(apiKey)));
+  // v1.26.91: a valid key that some other config file disagrees with. Runs right after the
+  // format check because every check below it is about the resolved key, and this is the
+  // one that says the resolved key may not be the one actually in use.
+  checks.push(await safeCheck('credential_agreement', () => checkCredentialAgreement(resolveCredentials())));
   // v1.26.87: the key can be valid and still invisible to every scheduled run. This one
   // repairs that and says which way it ended up passing.
   checks.push(await safeCheck('background_credentials', () => checkBackgroundCredentials()));
@@ -1257,6 +1290,8 @@ module.exports = {
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
   checkBackgroundCredentials,
+  // v1.26.91 — two config files, two different keys, one all-green report.
+  checkCredentialAgreement,
   // v1.26.72 — the round-trip: scan, then read back from the server.
   checkUsageRoundtrip, redactKey,
   // v1.26.81 — did memories actually load? Verdict from the server, evidence from here.
