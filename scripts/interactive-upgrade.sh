@@ -75,7 +75,10 @@ fi
 is_file_lock_error() {
   local log="$1"
   [ -f "$log" ] || return 1
-  grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy' "$log" 2>/dev/null
+  # v1.26.98 — 'it is in use' / 'being used by another' added: PowerShell's own wording when
+  # Remove-Item cannot delete a locked directory is "... because it is in use.", which matched
+  # none of the previous patterns. Kept identical to $script:FileLockPattern in the .ps1 (IR-022).
+  grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied|it is in use|being used by another' "$log"
 }
 
 # --- 0. Pre-check ---
@@ -91,10 +94,44 @@ else
   FAIL "backup_failed" "Backup failed (check disk space)"
 fi
 
+# v1.26.98 — rollback() used to report success by accident: `mv ... && OK` simply printed
+# nothing when the move failed, and `rm -rf` was never checked at all, while every caller
+# went on to emit a hard-coded "backup restored". FAIL forwards that same string to the
+# server as the Detail of upgrade_failed_terminal_*, so a failed rollback produced a
+# diagnostic record asserting a restore that never happened. Kept symmetric with the .ps1
+# side (IR-022), where the Windows file-lock case makes this the common failure, not a rare one.
+ROLLBACK_FAILED=0
+
 rollback() {
   STEP "rollback" "Restoring backup ${BACKUP_DIR} -> ${OWNMIND_DIR}"
-  rm -rf "${OWNMIND_DIR}"
-  mv "${BACKUP_DIR}" "${OWNMIND_DIR}" && OK "rollback" "Restored previous version"
+  ROLLBACK_FAILED=0
+  if ! rm -rf "${OWNMIND_DIR}" >>"${LOG_FILE}" 2>&1; then
+    ROLLBACK_FAILED=1
+  elif ! mv "${BACKUP_DIR}" "${OWNMIND_DIR}" >>"${LOG_FILE}" 2>&1; then
+    ROLLBACK_FAILED=1
+  fi
+  if [ "${ROLLBACK_FAILED}" -eq 1 ]; then
+    if is_file_lock_error "${LOG_FILE}"; then
+      ROLLBACK_KIND="rollback_file_locked"
+    else
+      ROLLBACK_KIND="rollback_failed"
+    fi
+    echo "ERROR:${ROLLBACK_KIND}:could not restore ${BACKUP_DIR} -> ${OWNMIND_DIR}"
+    report_error "upgrade_${ROLLBACK_KIND}" "Rollback failed; backup left at ${BACKUP_DIR}" "${LOG_FILE}"
+  else
+    OK "rollback" "Restored previous version"
+  fi
+}
+
+# The tail every rollback caller appends to its failure message, so the message describes the
+# machine's real state instead of the state the rollback was supposed to produce.
+rollback_note() {
+  if [ "${ROLLBACK_FAILED}" -eq 1 ]; then
+    printf 'ROLLBACK ALSO FAILED - %s may be half-updated and the backup is still at %s; restore it manually' \
+      "${OWNMIND_DIR}" "${BACKUP_DIR}"
+  else
+    printf 'backup restored'
+  fi
 }
 
 # --- 2. git pull ---
@@ -117,14 +154,18 @@ if [ -n "${DIRTY}" ]; then
   else
     report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed" "${LOG_FILE}"
     rollback
-    FAIL "git_pull" "Force-align failed (network or permissions); backup restored"
+    FAIL "git_pull" "Force-align failed (network or permissions); $(rollback_note)"
   fi
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull complete"
 else
-  report_error "upgrade_git_pull_failed" "git pull --ff-only failed (network or non-ff merge)" "${LOG_FILE}"
+  # v1.26.98 — carry git's own words into the report. "(network or non-ff merge)" was a guess,
+  # and a guess is all the server ever received, so no failed upgrade could be diagnosed from
+  # the record alone. The log already holds the real output; quote its tail into the Detail.
+  GIT_SAID=$(tail -n 5 "${LOG_FILE}" 2>&1 | tr '\n' ' ')
+  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: ${GIT_SAID}" "${LOG_FILE}"
   rollback
-  FAIL "git_pull" "git pull failed; backup restored. Manual check: cd ~/.ownmind && git status"
+  FAIL "git_pull" "git pull failed (${GIT_SAID}); $(rollback_note). Manual check: cd ~/.ownmind && git status"
 fi
 
 # --- 3. npm install (MCP deps) ---
@@ -137,11 +178,11 @@ if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
     if is_file_lock_error "${LOG_FILE}"; then
       report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running)" "${LOG_FILE}"
       rollback
-      FAIL "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
+      FAIL "file_locked" "Files in use by another process (likely Claude Code); $(rollback_note). Close Claude Code completely, then re-run upgrade."
     fi
     report_error "upgrade_npm_install_failed" "MCP npm install failed" "${LOG_FILE}"
     rollback
-    FAIL "npm_install" "MCP npm install failed; backup restored. Check ${LOG_FILE}"
+    FAIL "npm_install" "MCP npm install failed; $(rollback_note). Check ${LOG_FILE}"
   fi
 fi
 
@@ -173,7 +214,7 @@ if [ -z "${API_KEY}" ] || [ -z "${API_URL}" ]; then
     OK "install" "update.sh complete (scheduler not re-registered; run install.sh manually if needed)"
   else
     rollback
-    FAIL "install" "scripts/update.sh also failed; backup restored"
+    FAIL "install" "scripts/update.sh also failed; $(rollback_note)"
   fi
 else
   cd "${OWNMIND_DIR}"
@@ -192,7 +233,7 @@ else
     STEP "install" "Installation finished but is incomplete — see ${LOG_FILE}. Not rolled back (rollback cannot create the missing parts). Re-run: bash ~/.ownmind/scripts/bootstrap.sh"
   else
     rollback
-    FAIL "install" "install.sh failed (see ${LOG_FILE}); backup restored"
+    FAIL "install" "install.sh failed (see ${LOG_FILE}); $(rollback_note)"
   fi
 fi
 
@@ -224,8 +265,11 @@ if [ -x "${OWNMIND_DIR}/scripts/verify-upgrade.sh" ]; then
   if bash "${OWNMIND_DIR}/scripts/verify-upgrade.sh" --local >>"${LOG_FILE}" 2>&1; then
     OK "verify_local" "Local components present"
   else
+    # NOTE: the .ps1 side stopped rolling back here in v1.17.66 ("verify is a post-hoc health
+    # check, it does not gate the upgrade") but this side still does. Left as-is rather than
+    # changed silently — see the PR discussion; only the message is made truthful here.
     rollback
-    FAIL "verify_local" "Local verification failed (missing files). See ${LOG_FILE}"
+    FAIL "verify_local" "Local verification failed (missing files); $(rollback_note). See ${LOG_FILE}"
   fi
 
   STEP "verify_server" "Verifying server connectivity (write/read + iron rule)"

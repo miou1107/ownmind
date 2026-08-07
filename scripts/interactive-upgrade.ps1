@@ -20,7 +20,14 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 $OwnMindDir = Join-Path $HOME ".ownmind"
 $Ts = Get-Date -Format "yyyyMMdd-HHmmss"
 $BackupDir = Join-Path $HOME ".ownmind.bak.$Ts"
-$LogDir = Join-Path $OwnMindDir "logs"
+# v1.26.98 — the log lives OUTSIDE $OwnMindDir, matching interactive-upgrade.sh (bug #15).
+# Rollback is `Remove-Item -Recurse -Force $OwnMindDir` followed by `Move-Item`, so while this
+# file lived under $OwnMindDir\logs\ every failure message that said "see $LogFile" named a
+# file the same function had just deleted. The .sh side moved in v1.26.88; the Windows side
+# was left behind, which is why the Windows half of the team still had no readable log.
+$LogDir = Join-Path $HOME ".ownmind-logs"
+try { New-Item -ItemType Directory -Force -Path $LogDir -ErrorAction Stop | Out-Null }
+catch { $LogDir = [System.IO.Path]::GetTempPath() }
 $LogFile = Join-Path $LogDir "upgrade-$Ts.log"
 
 function Step($code, $msg) { Write-Host "INFO:${code}:$msg" }
@@ -55,11 +62,22 @@ if (Test-Path $reportErrorHelper) {
 # OwnMind MCP node process 持有 ~/.ownmind/mcp/node_modules/*.js handle 時，
 # git pull / npm install 會吃 EBUSY / EACCES。掃 log 找 lock pattern，中了就改錯誤碼為
 # file_locked 並給明確提示。
+# v1.26.98 — 'it is in use' added. PowerShell's own wording when Remove-Item cannot delete a
+# locked directory is "Cannot remove the item at '...' because it is in use.", which matched
+# none of the previous patterns. Measured on TANK, 2026-08-07.
+$script:FileLockPattern = 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied|it is in use|being used by another'
+
 function Test-FileLockError {
   param([string]$LogPath)
   if (-not (Test-Path $LogPath)) { return $false }
-  $patterns = 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied'
-  return $null -ne (Select-String -Path $LogPath -Pattern $patterns -CaseSensitive:$false -Quiet)
+  return $null -ne (Select-String -Path $LogPath -Pattern $script:FileLockPattern -CaseSensitive:$false -Quiet)
+}
+
+# Same test against an in-memory string (an exception message), not a file on disk.
+function Test-FileLockErrorText {
+  param([string]$Text)
+  if ([string]::IsNullOrEmpty($Text)) { return $false }
+  return $Text -imatch $script:FileLockPattern
 }
 
 # --- v1.17.66 Self-check 觀測管道保證執行（IR-038） ---
@@ -88,13 +106,45 @@ Step "backup" "Backing up to $BackupDir"
 try { Copy-Item -Recurse -Path $OwnMindDir -Destination $BackupDir; OK "backup" "Backup complete" }
 catch { Fail "backup_failed" "Backup failed: $_" }
 
+# v1.26.98 — Rollback used to swallow its own failure: the catch printed one line and
+# execution continued, with no flag and no report. Every caller then emitted a hard-coded
+# "backup restored", so the user was told the machine had been restored when it had not.
+# Fail() forwards that same string to the server as the Detail of upgrade_failed_terminal_*,
+# which means the diagnostic record admins read was asserting a restore that never happened.
+#
+# On Windows this is the common case, not an exotic one: Remove-Item cannot delete
+# $OwnMindDir while the MCP node process (or Claude Code itself) holds a handle under
+# mcp\node_modules — precisely the condition Test-FileLockError was written for, which had
+# never been wired into this path. Observed on TANK, 2026-08-07:
+#   ERROR:rollback_failed:Cannot remove the item at 'C:\Users\Vin\.ownmind' because it is in use.
+#   ERROR:git_pull:git pull failed; backup restored
+#
+# Rollback now records what actually happened; RollbackNote renders it for the caller.
+$script:RollbackFailed = $false
+
 function Rollback {
   Step "rollback" "Restoring backup $BackupDir -> $OwnMindDir"
+  $script:RollbackFailed = $false
   try {
     Remove-Item -Recurse -Force $OwnMindDir -ErrorAction Stop
-    Move-Item -Path $BackupDir -Destination $OwnMindDir
+    Move-Item -Path $BackupDir -Destination $OwnMindDir -ErrorAction Stop
     OK "rollback" "Restored previous version"
-  } catch { Write-Host "ERROR:rollback_failed:$_" }
+  } catch {
+    $script:RollbackFailed = $true
+    $detail = "$_"
+    $kind = if (Test-FileLockErrorText $detail) { "rollback_file_locked" } else { "rollback_failed" }
+    Write-Host "ERROR:${kind}:$detail"
+    try { Report-Error -Kind "upgrade_$kind" -Detail "Rollback failed: $detail" -ContextFile $LogFile } catch { }
+  }
+}
+
+# The tail every rollback caller appends to its failure message, so the message describes the
+# machine's real state instead of the state the rollback was supposed to produce.
+function RollbackNote {
+  if ($script:RollbackFailed) {
+    return "ROLLBACK ALSO FAILED - $OwnMindDir may be half-updated and the backup is still at $BackupDir. Close Claude Code completely, then restore it manually"
+  }
+  return "backup restored"
 }
 
 # --- 2. git pull ---
@@ -119,16 +169,24 @@ if ($dirty) {
     Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "Force-align failed (network or permissions); backup restored"
+    Fail "git_pull" "Force-align failed (network or permissions); $(RollbackNote)"
   }
   OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
 } else {
   $pullOut = git pull --ff-only 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed (network or non-ff merge)" -ContextFile $LogFile
+  $pullCode = $LASTEXITCODE
+  # v1.26.98 — $pullOut used to be captured and then dropped on the floor: it was never written
+  # to $LogFile and never reached the server, so the only record of a failed pull was the
+  # guess "network or non-ff merge". The .sh side redirects into ${LOG_FILE} and has always
+  # kept git's own words; Windows threw them away. That asymmetry is why the 2026-08-07 19:26
+  # failure on TANK produced no upgrade log at all — nothing on this path ever wrote one.
+  $pullOut | Out-File -Append $LogFile -Encoding utf8
+  if ($pullCode -ne 0) {
+    $gitSaid = ($pullOut | Out-String).Trim()
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $gitSaid" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "git pull failed; backup restored"
+    Fail "git_pull" "git pull failed ($gitSaid); $(RollbackNote)"
   }
   OK "pull" "git pull complete"
 }
@@ -144,12 +202,12 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
       Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running)" -ContextFile $LogFile
       Pop-Location
       Rollback
-      Fail "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
+      Fail "file_locked" "Files in use by another process (likely Claude Code); $(RollbackNote). Close Claude Code completely, then re-run upgrade."
     }
     Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "npm_install" "MCP npm install failed; backup restored"
+    Fail "npm_install" "MCP npm install failed; $(RollbackNote)"
   }
   OK "npm_install" "MCP dependencies updated"
   Set-Location $OwnMindDir
@@ -186,7 +244,7 @@ if (-not (Test-Path $installScript)) {
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback
-    Fail "install" "install.ps1 failed (see $LogFile); backup restored"
+    Fail "install" "install.ps1 failed (see $LogFile); $(RollbackNote)"
   }
   OK "install" "Setup complete"
 }
