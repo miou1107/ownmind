@@ -12,7 +12,7 @@ import https from 'https';
 import http from 'http';
 import os from 'os';
 import { execSync } from 'child_process';
-import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger } from '../shared/helpers.js';
+import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger, ruleMatchesTrigger } from '../shared/helpers.js';
 import { readComplianceEvents } from '../shared/compliance.js';
 
 const HOME = os.homedir();
@@ -93,14 +93,10 @@ async function main() {
     }
   }
 
-  const relevant = rules.filter(r => {
-    if (!r.tags || r.tags.length === 0) return true;
-    return r.tags.some(t =>
-      t === 'trigger:' + trigger ||
-      t === 'trigger:command' ||  // v1.19.20: command-based iron rules are always relevant
-      (trigger === 'commit' && t === 'trigger:git')
-    );
-  });
+  // v1.26.91: was an inline match on 'trigger:<trigger>' plus a commit/git special case,
+  // which meant a rule tagged in any other vocabulary could never match. See
+  // TRIGGER_TAG_ALIASES for why that silently stranded whole rule sets.
+  const relevant = rules.filter(r => ruleMatchesTrigger(r, trigger));
 
   // v1.19.20: even without any reminder-relevant rule, the verification engine block may still
   // fire — do not early-return here.

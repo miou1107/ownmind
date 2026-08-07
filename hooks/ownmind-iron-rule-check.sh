@@ -146,12 +146,20 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
       // The .js sibling was fixed for this in v1.19.20; this copy was missed.
       const parsed = JSON.parse(d);
       const rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
+      // v1.26.91: this used to match only 'trigger:' + trigger (plus commit/git), so a rule
+      // tagged in any other vocabulary was dropped here and the hook exited without a word.
+      // KEEP IN SYNC with TRIGGER_TAG_ALIASES in shared/helpers.js — duplicated on purpose,
+      // see the comment there. Widens which rules match; does not widen when this hook runs.
+      const ALIASES = {
+        commit: ['commit', 'git', '提交', 'checkin'],
+        deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
+        delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore']
+      };
+      const accepted = new Set((ALIASES[trigger] || [trigger]).map(w => 'trigger:' + w));
+      accepted.add('trigger:command');
       const relevant = rules.filter(r => {
         if (!r.tags || r.tags.length === 0) return true;
-        return r.tags.some(t =>
-          t === 'trigger:' + trigger ||
-          (trigger === 'commit' && t === 'trigger:git')
-        );
+        return r.tags.some(t => accepted.has(String(t).toLowerCase()));
       });
       if (relevant.length === 0) process.exit(0);
       // commit trigger（頻率高）：精簡模式；deploy/delete（頻率低風險高）：完整模式
