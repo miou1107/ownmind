@@ -1,5 +1,64 @@
 # OwnMind 檔案結構
 
+## v1.26.98 修改（那把「一次只准一個人更新」的鎖，其實鎖不住）
+
+新增檔：
+```
+shared/update-lock.js                           — 更新鎖協定唯一的一份實作，MCP 與 Node 掛勾
+                                                   共用。獨佔式建檔取得；接手死掉的鎖要先排隊、
+                                                   拿到後再確認一次年齡才刪
+tests/update-lock-mutual-exclusion.test.js      — 八個並行只能有一個拿到（shell 與 Node 各跑
+                                                   一次）；含陽性對照證明測試抓得到競爭；接手
+                                                   排隊與二次確認各有一個決定性測試
+openspec/changes/v1.26.98-update-lock-not-a-lock/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — 新增 lock_age_seconds / create_exclusive /
+                                                   acquire_update_lock；原本是「檢查檔案不存在」
+                                                   隔十行才 touch，兩個問題都不成鎖。改成先拿鎖
+                                                   才記 update_check；搶輸記 update_skipped
+                                                   （lock_held）而非 update_failed
+hooks/ownmind-session-start.js                  — 原本檢查完鎖之後什麼都沒建立，改用共用實作真的
+                                                   取得；沒東西可跑時立刻釋放
+mcp/index.js                                    — 改用共用實作，移除自己那份 openSync wx 與
+                                                   會誤刪的 stale 清除
+tests/node-hook-parity.test.js                  — Windows 那份掛勾的鎖行為：搶輸要記 skip、
+                                                   不能動別人的鎖、拿到鎖才宣告、沒東西可跑
+                                                   時要把鎖還回去
+tests/p3-update-event-semantics.test.js         — 兩條原本釘在舊寫法上的斷言改釘需求本身
+tests/mcp-auto-update-cross-platform.test.js    — 同上，acquire 搬到共用檔後跟著改
+.gitignore                                      — 忽略 .update-lock 系列。未追蹤檔案會讓
+                                                   interactive-upgrade.sh 判定工作目錄髒掉、
+                                                   直接 git reset --hard
+scripts/interactive-upgrade.sh / .ps1           — 每個錯誤回報都附上失敗指令的日誌尾巴，
+                                                   取代原本寫死的猜測；摺一行、去控制字元、
+                                                   上限 300 字（兩邊同一個上限）
+tests/upgrade-error-reason.test.js              — 呼叫點清單用掃的不用寫的；換行、上限、
+                                                   取尾不取頭、沒日誌時要講清楚
+shared/secret-detect.js                         — 長度啟發式改成量「有沒有單字結構」；刪掉
+                                                   點分隔／斜線分隔兩個例外（量過之後多餘），
+                                                   順便補上含斜線金鑰抓不到的漏洞
+tests/secret-detect-word-shape.test.js          — 保證寫成比率（對整個倉庫掃過）不是清單；
+                                                   13 種真金鑰逐一驗
+shared/helpers.js                               — 新增 resolveProjectName()，專案名稱推導唯一
+                                                   一份（只回資料夾名、不回路徑）
+mcp/ownmind-log.js / mcp/index.js               — 每個活動事件都帶專案；MCP 自己那份推導刪掉
+hooks/ownmind-session-start.sh / .js            — 同上，兩支掛勾送出的事件都帶
+src/routes/memory.js                            — 事後重建工作記錄時挑出現最多次的專案
+tests/activity-carries-project.test.js          — 三個送出端各驗一次；shell 那份手拼 JSON，
+                                                   特別測資料夾名有引號時仍是合法 JSON
+src/routes/usage/team-overview.js               — 遵守率改成也讀伺服器重建那種寫法
+                                                   （details.compliance）；兩種都有時不重複計
+tests/team-overview-api.test.js                 — 重建寫法、不重複計、violate 不計入、
+                                                   壞資料不炸、真的沒資料仍顯示一槓
+openspec/BACKLOG.md                             — 新增 37（context 欄位為什麼是空的，未證實）、
+                                                   38（違規記錄沒地方顯示）、39（重建的場次
+                                                   沒有專案名稱）
+package.json / README ×3                        — 版號 1.26.98
+```
+
 ## v1.26.97 修改（那道確認關卡從來沒有在擋）
 
 新增檔：
