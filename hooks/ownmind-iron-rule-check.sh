@@ -4,6 +4,21 @@
 # 附帶：一次性自動升級檢查（搭便車機制）
 
 LOG_DIR="$HOME/.ownmind/logs"
+
+# v1.26.88 — Windows path normalization. Under Git Bash a POSIX path interpolated into
+# `node -e` source reaches node.exe unconverted and resolves against the drive root.
+# This hook IS installed on Windows (install.sh registers it with no platform branch), so
+# without this every credential read below came back empty and the hook exited silently.
+if [ -f "$HOME/.ownmind/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$HOME/.ownmind/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+# Assigned here, not next to its first use: the upgrade block near the top reads it too.
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
+
 # 統一從根目錄 package.json 讀取版號（單一來源）
 VERSION=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.ownmind/package.json','utf8')).version)}catch{console.log('?')}" 2>/dev/null || echo '?')
 log_event() {
@@ -34,7 +49,7 @@ if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
   # 檢查 settings.json 是否已有 SessionStart hook
   HAS_SESSION_HOOK=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$HOME/.claude/settings.json', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
       const has = (s.hooks?.SessionStart || []).some(h =>
         h.hooks?.some(hh => (hh.command || '').includes('ownmind'))
       );
@@ -87,13 +102,13 @@ API_KEY=""
 if [ -f "$CLAUDE_SETTINGS" ]; then
   API_KEY=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
       console.log(s.mcpServers?.ownmind?.env?.OWNMIND_API_KEY || '');
     } catch { console.log(''); }
   " 2>/dev/null)
   API_URL=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
       console.log(s.mcpServers?.ownmind?.env?.OWNMIND_API_URL || '');
     } catch { console.log(''); }
   " 2>/dev/null)

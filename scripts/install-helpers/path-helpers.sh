@@ -27,6 +27,14 @@
 #   - On Mac / Linux, `cygpath` does not exist, so the helper returns the input
 #     unchanged — fully cross-platform safe.
 #
+# Limitation, stated so nobody assumes otherwise: the result is interpolated into a
+# single-quoted JavaScript string literal at every call site. `cygpath -m` output cannot
+# contain a newline or a backslash, so the common cases are safe — but a home directory
+# containing an apostrophe (C:\Users\O'Brien) would break the generated source. Passing the
+# path as an argv element and reading process.argv is the escape-proof shape; install.sh
+# does that where the block was already written for it. Pre-existing class: $API_URL and
+# $API_KEY are interpolated the same way.
+#
 # This helper is intentionally a thin bash function (not a Node module) because
 # the call sites NEED a working path before they can even invoke Node — invoking
 # Node to translate the path is the chicken-and-egg problem that left

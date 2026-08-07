@@ -1163,20 +1163,37 @@ router.post('/', async (req, res) => {
       [req.user.id]
     );
 
-    // Auto-match an iron_rule to a verification template.
+    // v1.26.89 — a matched template is now a SUGGESTION. It is never written.
+    //
+    // This used to attach `metadata.verification` to the stored rule, silently. Every
+    // template in the set carries `block_on_fail: true`, so the effect was: you write a
+    // reminder, the server hands back a rule that will stop your work, and nothing in the
+    // response says so unless you compare every field of it.
+    //
+    // Matching needed only one keyword hit anywhere in the rule's text. Bug report #16
+    // (2026-08-06): a rule titled 「失敗處理不能毀掉診斷線索」— about not deleting logs
+    // during rollback — was tagged `trigger:deploy` and contained the word 測試 once, so it
+    // was given `deploy_requires_test`. Being blocked by it would have said 「還沒跑測試」,
+    // which matches nothing the author wrote.
+    //
+    // The same mechanism explains the eight rules found carrying the docs-staging condition
+    // on 2026-08-06, only two of which were about docs. Those were assumed to be
+    // hand-copied. They were not; this did it.
+    //
+    // Asked on 2026-08-06 whether to keep auto-applying non-blocking templates only, the
+    // product decision was to stop auto-applying entirely. Every template blocks, so that
+    // was the whole set anyway.
+    //
+    // The suggestion is still returned, because the matching is a reasonable hint and the
+    // caller can act on it. What changed is that it takes a decision to become real.
     let matched_template = null;
     if (type === 'iron_rule' && !memory.metadata?.verification) {
       const templateId = matchTemplate({ title, content, tags });
       if (templateId) {
         matched_template = templateId;
-        const verification = RULE_TEMPLATES[templateId].verification;
-        const updatedMetadata = { ...(memory.metadata || {}), verification };
-        await query(
-          `UPDATE memories SET metadata = $1 WHERE id = $2`,
-          [JSON.stringify(updatedMetadata), memory.id]
-        );
-        memory.metadata = updatedMetadata;
-        logger.info('iron rule auto-matched verification template', { memory_id: memory.id, template: templateId });
+        logger.info('iron rule matched a verification template (suggestion only, not applied)', {
+          memory_id: memory.id, template: templateId,
+        });
       }
     }
 
@@ -1208,7 +1225,23 @@ router.post('/', async (req, res) => {
     // Return a fresh sync token (state changed after the write).
     const newToken = await generateSyncToken(req.user.id);
     const response = { ...memory, sync_token: newToken };
-    if (matched_template) response.matched_template = matched_template;
+    // v1.26.89 — `matched_template` stays for callers that already read it, but on its own
+    // it is a bare id buried in a large object, which is how the old behaviour went
+    // unnoticed. `template_suggestion` says what it is and that nothing was done, in words
+    // an AI caller can pass straight to the person who wrote the rule.
+    if (matched_template) {
+      response.matched_template = matched_template;
+      response.template_suggestion = {
+        template: matched_template,
+        name: RULE_TEMPLATES[matched_template]?.name || matched_template,
+        applied: false,
+        blocks_work: Boolean(RULE_TEMPLATES[matched_template]?.verification?.block_on_fail),
+        message:
+          `這條規則看起來符合「${RULE_TEMPLATES[matched_template]?.name || matched_template}」`
+          + '這個現成的自動驗證範本，但沒有自動套用。'
+          + '要的話再說一聲，我幫你加上去；不需要的話就這樣放著，它不會做任何事。',
+      };
+    }
     if (tokenResult.warning) response.update_warning = tokenResult.warning;
 
     // v1.18.0: iron_rule write result returns lint format + warnings so the
