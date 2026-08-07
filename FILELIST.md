@@ -1,5 +1,33 @@
 # OwnMind 檔案結構
 
+## v1.26.96 修改（手寫的清單不會告訴你它漏了哪一個）
+
+新增檔：
+```
+tests/shebang-eol.test.js                       — 從 git ls-files 長出「有 shebang 的檔案」清
+                                                   單，斷言每一個都被 .gitattributes 的
+                                                   eol=lf 涵蓋、且 index 裡不是 CRLF。清單太
+                                                   短就當失敗（避免掃描壞掉時報平安）。另含
+                                                   安裝腳本去 CR 的實跑驗證
+```
+
+修改檔：
+```
+.gitattributes                                  — 從白名單改成黑名單：一行 * text=auto eol=lf
+                                                   加 Windows 原生格式例外。text=auto 不可省，
+                                                   單寫 eol= 會關掉二進位嗅探並改壞檔案
+.editorconfig                                   — 新增。.gitattributes 管 git，管不到編輯器
+                                                   存檔，兩邊要一致
+install.sh                                      — 複製 git 掛勾改用 install_git_hook()，用
+                                                   tr -d 去掉 CR 並寫暫存檔再搬移。
+                                                   .gitattributes 只管簽出，已經是 CRLF 的
+                                                   機器 git 永遠不會自己修
+scripts/update.sh                               — 沒有憑證時 interactive-upgrade 會退回這
+                                                   支，而它從來不碰 git 掛勾。補上就地去 CR
+client/src/pages/System/observed-users.js       — 組合鍵的分隔字元從原始 NUL 改成 \0 跳脫，
+                                                   等價，但讓 git 不再把整個檔案當二進位
+```
+
 ## v1.26.95 修改（掛勾寫的欄位到伺服器都被丟掉）
 
 新增檔：

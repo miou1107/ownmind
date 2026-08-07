@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.26.95** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.26.96** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -40,6 +40,7 @@ AI 雖然強大、但因為它**天生沒有長期記憶**、且不同 AI 模型
 
 ### 痛點一：每次開新視窗都要「重新交代偏好」
 
+- **手寫的清單，不會告訴你它漏了哪一個** — `.gitattributes` 一行一個檔案把 git 掛勾釘成 LF，而 `hooks/ownmind-git-commit-msg` 是後來才加的、沒人記得補。在 Windows 上 clone 下來，三支掛勾裡只有它是 CRLF。往整個程式碼庫掃，有 32 個帶 shebang 的被追蹤檔案沒有 `eol=lf` 規則。目前影響是零（Git for Windows 對 CRLF 的 shebang 兩種寫法都執行得起來，用 `GIT_TRACE=1` 驗過），但換 shell 提供者的那天就會變成活的故障。現在規則改用萬用字元，並加一條測試從 `git ls-files` 長出清單、沒被涵蓋就紅；`install.sh` 複製掛勾時會去掉 CR —— 因為 `.gitattributes` 只管簽出，已經是 CRLF 的機器 git 永遠不會重寫它，正規化比對讓它對 `status` 跟 `pull` 都是隱形的 `v1.26.96`
 - **安裝前**：你開啟新對話、想寫一段代碼、AI 又寫出過時的舊語法、或忘了你特定的程式碼風格。你只好重複打字解釋：「別忘了、我們專案的寫法是這樣這樣...」
 - **安裝後**：對話開啟的瞬間、OwnMind 已經自動把你的偏好、風格、剛性限制注入給 AI。你直接寫需求、AI 一次就寫出合規的代碼。
 
