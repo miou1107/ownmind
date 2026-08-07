@@ -11,6 +11,10 @@ tests/iron-rule-trigger-aliases.test.js         — 用實際出事的那組 tag
                                                    的重現，以及 .sh 內嵌表與 shared/helpers.js
                                                    匯出值的逐項比對——把 .sh 裡的表抽出來真的
                                                    執行再比，不是比字串
+tests/readme-version-sync.test.js               — 三份 README（en / zh-TW / ja）的版號要跟
+                                                   package.json 一致，且標了本版版號的條目
+                                                   三份都要有、或三份都沒有。連兩版只更新英文
+                                                   版，沒有任何東西會紅
 ```
 
 修改檔：
@@ -21,6 +25,8 @@ shared/helpers.js                               — 新增 TRIGGER_TAG_ALIASES �
 hooks/ownmind-iron-rule-check.js                — 內嵌的 tags.some(...) 換成 ruleMatchesTrigger
 hooks/ownmind-iron-rule-check.sh                — 同一份表寫在 node -e 裡（不 import，避免再從
                                                    Git Bash 遞路徑給 node）。比對前轉小寫
+docs/README.zh-TW.md                            — 補上本版版號與條目（原本停在 v1.26.90）
+docs/README.ja.md                               — 同上
 ```
 
 ## v1.26.90 修改（鐵律提醒掛勾從來沒觸發過，全平台）
