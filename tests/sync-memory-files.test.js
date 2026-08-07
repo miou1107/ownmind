@@ -12,6 +12,7 @@ const {
   allocateIndexBudget,
   MEMORY_INDEX_MAX_LINES,
   MEMORY_INDEX_MAX_ENTRY_CHARS,
+  IRON_RULE_INDEX_CAP,
 } = await import('../hooks/lib/sync-memory-files.js');
 
 let tmpDir;
@@ -534,6 +535,48 @@ describe('buildMemoryIndex — the same data always produces the same file', () 
     const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
     const order = entryLines(md).map((l) => l.match(/project_(\d+)_/)[1]);
     assert.deepEqual(order, ['3', '2', '1']);
+  });
+});
+
+describe('buildMemoryIndex — a type that already reaches the session another way takes little', () => {
+  it('iron rules take a small fixed share so projects get the rest', () => {
+    // The SessionStart hook injects every iron rule into the session in full, with its
+    // trigger conditions, so an index line for one adds only the link to its local file.
+    // Projects have no second channel: a project not listed here is not in the session at
+    // all. Sharing purely by entry count spent about half the budget on the duplicate.
+    const entries = [
+      ...makeMemories('iron_rule', 143),
+      ...makeMemories('project', 130),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const listed = entryLines(md);
+    const iron = listed.filter((l) => l.includes('iron_rule_')).length;
+    const projects = listed.filter((l) => l.includes('project_')).length;
+
+    assert.ok(iron <= IRON_RULE_INDEX_CAP, `iron rules took ${iron} lines`);
+    assert.ok(
+      projects > 100,
+      `projects only got ${projects} lines; the freed iron_rule budget was not handed over`,
+    );
+    assert.ok(md.split('\n').length <= MEMORY_INDEX_MAX_LINES);
+  });
+
+  it('the omission note still counts everything that was left out, not just past the cap', () => {
+    const md = buildMemoryIndex(makeMemories('iron_rule', 143), '2026-08-08T00:00:00Z', false);
+    const listed = entryLines(md).length;
+    assert.match(omissionLines(md)[0], new RegExp(`${143 - listed} more not listed here`));
+  });
+
+  it('a user with fewer iron rules than the cap keeps all of them', () => {
+    const md = buildMemoryIndex(
+      [...makeMemories('iron_rule', 5), ...makeMemories('project', 300)],
+      '2026-08-08T00:00:00Z', false,
+    );
+    assert.equal(entryLines(md).filter((l) => l.includes('iron_rule_')).length, 5);
+    assert.deepEqual(
+      omissionLines(md).filter((l) => l.includes('iron_rule_*')), [],
+      'nothing was left out, so nothing should be claimed',
+    );
   });
 });
 
