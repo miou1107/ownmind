@@ -1,39 +1,31 @@
-# Force LF line endings for shell scripts and git hooks.
-# Reason: Windows checkout with core.autocrlf=true would convert LF→CRLF, which
-# breaks `#!/bin/sh` (the shell sees `/bin/sh\r` and fails with "Exec format error").
-# These files must be LF on disk regardless of platform.
+# Line endings: default everything to LF, and list the exceptions.
+#
+# v1.26.96 — this used to be a whitelist, one rule per file or extension. That shape
+# guarantees a repeat: 906 tracked files, 28 covered, and the file that broke
+# (hooks/ownmind-git-commit-msg) was simply added after the list was written. A list does
+# not report what it is missing. Reported as bugs #17 and #19.
+#
+# `text=auto` is load-bearing and must not be dropped. Writing `* eol=lf` on its own sets
+# `text` unconditionally, which switches OFF git's binary sniffing — measured on a file
+# containing 0x0D 0x0A: 13 bytes in, 11 bytes out, corrupted. With `text=auto`, git detects
+# binary content and leaves it alone. This repository has two such files today, one of them
+# CHANGELOG.md, which carries four literal NUL bytes from an old entry about handling NUL
+# bytes.
+#
+# Why it matters at all: a CRLF shebang makes the kernel look for an interpreter whose name
+# ends in a carriage return. Git for Windows tolerates it; WSL's sh and busybox do not.
+* text=auto eol=lf
 
-*.sh                              text eol=lf
-# v1.26.96: a glob, not one line per file. ownmind-git-commit-msg was added later and
-# nobody remembered to list it, so on a Windows checkout it was the one hook of the three
-# that arrived CRLF. A hand-maintained list does not report the file it is missing.
-hooks/ownmind-git-*               text eol=lf
-hooks/ownmind-iron-rule-check.sh  text eol=lf
-hooks/ownmind-session-start.sh    text eol=lf
-hooks/ownmind-worktree-setup.sh   text eol=lf
-git-hooks/pre-commit              text eol=lf
-git-hooks/post-commit             text eol=lf
-scripts/*.sh                      text eol=lf
-# bin/ 之後可能放 binary（如 sqlite-vec 之類），只規範 *.sh 避免破壞二進位
-bin/*.sh                          text eol=lf
+# Windows-native formats keep CRLF. These come after the global rule on purpose — last
+# match wins.
+*.ps1  text eol=crlf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.vbs  text eol=crlf
 
-# Anything with a shebang may be executed directly, and a CRLF shebang makes the kernel
-# look for an interpreter whose name ends in a carriage return. tests/shebang-eol.test.js
-# derives the list from `git ls-files` and fails when a shebang file is not covered here,
-# so the next one added cannot slip through the way commit-msg did.
-*.js                              text eol=lf
-*.cjs                             text eol=lf
-*.mjs                             text eol=lf
-
-# An explicit `text` attribute overrides git's binary auto-detection — conversion then
-# happens without guessing the content type. This fixture carries deliberate NUL bytes and
-# exists to pin exact content, so leaving it under the rule above would let git rewrite a
-# CRLF inside it on some future commit: the same silent rewrite this file is here to stop.
-# `-eol` as well as `-text`: setting `eol` on its own enables conversion and effectively
-# sets `text`, so unsetting only `text` would leave the rule above still in force.
+# Deliberate NUL bytes, and the file's whole purpose is to pin exact content. `text=auto`
+# would already skip it, so this is belt and braces — but it also documents the intent, and
+# it survives someone narrowing the rule above.
+# `-eol` as well as `-text`: setting `eol` alone enables conversion and effectively sets
+# `text`, so unsetting only `text` would leave it converted.
 tests/install-check-null-byte-sanitize.test.js  -text -eol
-
-# PowerShell and batch files are Windows-native, keep CRLF
-*.ps1                             text eol=crlf
-*.bat                             text eol=crlf
-*.cmd                             text eol=crlf

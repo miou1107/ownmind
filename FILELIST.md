@@ -13,9 +13,11 @@ tests/shebang-eol.test.js                       — 從 git ls-files 長出「�
 
 修改檔：
 ```
-.gitattributes                                  — 掛勾改用萬用字元 hooks/ownmind-git-*，並補
-                                                   上 *.js / *.cjs / *.mjs（另外 31 個帶
-                                                   shebang 的檔案在那裡）
+.gitattributes                                  — 從白名單改成黑名單：一行 * text=auto eol=lf
+                                                   加 Windows 原生格式例外。text=auto 不可省，
+                                                   單寫 eol= 會關掉二進位嗅探並改壞檔案
+.editorconfig                                   — 新增。.gitattributes 管 git，管不到編輯器
+                                                   存檔，兩邊要一致
 install.sh                                      — 複製 git 掛勾改用 install_git_hook()，用
                                                    tr -d 去掉 CR 並寫暫存檔再搬移。
                                                    .gitattributes 只管簽出，已經是 CRLF 的
