@@ -95,17 +95,47 @@ export const MEMORY_INDEX_MAX_ENTRY_CHARS = 200;
 // Header block, plus the worst case for every type that is present: heading, omission note,
 // trailing blank. Reserving the omission line even for types that turn out to fit costs at
 // most one line each and keeps the arithmetic a single pass instead of a fixed point.
+//
+// The header count always includes the failure marker, whether or not this run is a failed
+// one. applyFailMode() inserts that line into an already-written file without going through
+// this builder, so a normal sync that filled its budget exactly would be pushed one line
+// over the moment the next sync failed. Reserving it costs one entry, permanently.
 const INDEX_HEADER_LINES = 7;
+const FAIL_MARKER_RESERVED_LINES = 1;
 const PER_SECTION_LINES = 3;
+
+// Cut to a UTF-16 budget without splitting a character. `slice` counts code units, so a
+// title made of astral characters (emoji, some rarer CJK) gets cut through the middle of a
+// surrogate pair whenever the budget lands on an odd offset, leaving a lone surrogate that
+// renders as a replacement glyph. Measured before this was added: 12 of 24 filename lengths
+// produced one. Iterating the string yields whole code points, so the cut is always legal.
+function truncateToWidth(text, maxUnits) {
+  if (text.length <= maxUnits) return text;
+  let out = '';
+  for (const ch of text) {
+    if (out.length + ch.length > maxUnits) break;
+    out += ch;
+  }
+  return out;
+}
 
 function indexEntryLine(entry) {
   const date = shortDate(entry.updated_at);
   const tail = `](${entry.filename})${date ? ` — updated ${date}` : ''}`;
+  // A title carrying a newline turns one pushed element into several physical lines, and the
+  // line budget is counted in pushes. Sixty titles with two newlines each produced a
+  // 189-line index. yamlQuote() in this same file already flattens titles for the same
+  // reason; this path was missed. The server only trims the ends (src/routes/memory.js), so
+  // an interior newline arrives intact.
+  const flatTitle = String(entry.title || '').replace(/[\r\n\t\f\v]+/g, ' ').trim();
   // The title is the only part that may be trimmed: a truncated filename would point the
-  // reader at a file that does not exist, which is worse than a shortened title.
+  // reader at a file that does not exist, which is worse than a shortened title. That is
+  // also why a filename long enough to eat the whole budget on its own is left over-length
+  // rather than cut — memoryFilename() caps the slug at 60, so the longest name it can
+  // produce is 84 characters and this cannot happen through the real caller.
   const room = MEMORY_INDEX_MAX_ENTRY_CHARS - '- ['.length - tail.length;
-  let title = entry.title || '(untitled)';
-  if (title.length > room) title = room > 1 ? `${title.slice(0, room - 1)}…` : '…';
+  let title = flatTitle || '(untitled)';
+  if (title.length > room) title = room > 1 ? `${truncateToWidth(title, room - 1)}…` : '…';
   return `- [${title}${tail}`;
 }
 
@@ -159,8 +189,14 @@ function byNewestFirst(a, b) {
   const tb = Date.parse(b.updated_at) || 0;
   if (tb !== ta) return tb - ta;
   // Stable tiebreak so the same memories produce the same file byte for byte, which keeps
-  // an unchanged sync from looking like a change.
-  return Number(b.id || 0) - Number(a.id || 0);
+  // an unchanged sync from looking like a change. Ids are serial integers today; the
+  // filename comparison is the fallback for anything that is not a number, where the
+  // subtraction would yield NaN and leave the order at whatever the caller happened to
+  // pass in.
+  const na = Number(a.id);
+  const nb = Number(b.id);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return nb - na;
+  return String(a.filename || '').localeCompare(String(b.filename || ''));
 }
 
 export function buildMemoryIndex(entries, serverTime, syncFailed) {
@@ -183,7 +219,7 @@ export function buildMemoryIndex(entries, serverTime, syncFailed) {
   const counts = {};
   for (const t of present) counts[t] = byType[t].length;
 
-  const overhead = INDEX_HEADER_LINES + (syncFailed ? 1 : 0) + present.length * PER_SECTION_LINES;
+  const overhead = INDEX_HEADER_LINES + FAIL_MARKER_RESERVED_LINES + present.length * PER_SECTION_LINES;
   const alloc = allocateIndexBudget(counts, MEMORY_INDEX_MAX_LINES - overhead);
 
   for (const type of present) {
