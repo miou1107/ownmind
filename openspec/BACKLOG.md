@@ -735,6 +735,27 @@ one nobody remembers to write is the one the upgrade path runs.
 Origin: 2026-08-06, bug report #15 from `Vin-windows-test`, item 5 of its suggested
 fixes; deliberately left out of v1.26.88's scope so that release stayed a bug fix.
 
+### 29. No supported way to clear a verification block from a rule
+
+v1.26.89 stopped the server attaching `metadata.verification` to iron rules on a template
+match. It did not give anybody a way to remove one that was applied while that was live.
+
+Today the only route is `ownmind_update` overwriting the whole `metadata` object — which
+means the caller has to know the internal shape of `metadata.verification`, and has to
+remember to carry `origin_context` back or lose it. The bug report that prompted v1.26.89
+is right that a normal user cannot do this, and an AI doing it on their behalf is one
+forgotten field away from destroying the rule's provenance.
+
+Candidates: a `clear_verification: true` flag on `ownmind_update`, or a documented
+procedure. The flag is small; the reason it is not in v1.26.89 is that the release was a
+bug fix and this is a new capability.
+
+Related and unmeasured: nobody has audited other accounts for rules carrying a template
+applied during that window. Eight were found and cleared by hand on one account on
+2026-08-06. There is no reason to think that account was special.
+
+Origin: 2026-08-06, bug report #16 from `Vin-windows-test`, item 5 of its suggested fixes.
+
 ---
 
 ## Smaller cleanups
