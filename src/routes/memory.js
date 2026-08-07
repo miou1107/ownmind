@@ -1783,13 +1783,24 @@ async function recoverOrphanSession(userId) {
   const eventCounts = {};
   const tools = new Set();
   const compliance = [];
+  const projectCounts = new Map();
   for (const r of activities.rows) {
     eventCounts[r.event] = (eventCounts[r.event] || 0) + 1;
     if (r.tool) tools.add(r.tool);
     if (r.event === 'iron_rule_compliance' && r.details) {
       compliance.push({ rule: r.details.rule_title, action: r.details.action });
     }
+    // v1.26.98 — a recovered session used to have no project, so the team page's "most
+    // common project" column was blank for everyone whose AI never called
+    // ownmind_log_session. The clients now put it on every event they send; this reads it
+    // back. Most common wins, so one stray event from another directory cannot relabel a
+    // whole session.
+    const project = typeof r.details?.project === 'string' ? r.details.project.trim() : '';
+    if (project) projectCounts.set(project, (projectCounts.get(project) || 0) + 1);
   }
+
+  const topProject = [...projectCounts.entries()]
+    .sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0], 'en'))[0]?.[0];
 
   const summary = `[server-recovered] ${Object.entries(eventCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`;
 
@@ -1804,6 +1815,10 @@ async function recoverOrphanSession(userId) {
         _recovery: 'from_activity_logs',
         event_counts: eventCounts,
         compliance,
+        // Omitted rather than written as null when no event carried one: pickTopProject in
+        // the team route ignores non-strings either way, and an explicit null in the record
+        // would read as "we asked and the answer was none".
+        ...(topProject ? { project: topProject } : {}),
         recovered_at: new Date().toISOString(),
       }),
     ]

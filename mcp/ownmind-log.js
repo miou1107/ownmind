@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'node:crypto';
-import { resolveClientTool } from '../shared/helpers.js';
+import { resolveClientTool, resolveProjectName } from '../shared/helpers.js';
 // Node 18+ has global fetch — node-fetch is not required (dependency removed in v1.17.99).
 
 const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
@@ -12,6 +12,11 @@ const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
 // aligned with mcp/index.js. It was not — that copy had dropped OWNMIND_TOOL. Sharing
 // the resolver makes the alignment true by construction instead of by assertion.
 const TOOL_NAME = resolveClientTool();
+// v1.26.98 — resolved once per process, like TOOL_NAME. Every event carries it, so a session
+// the server has to rebuild from activity still knows which project it belonged to. Before
+// this, "most common project" on the team page was blank for anyone whose AI did not call
+// ownmind_log_session. Directory name only, never the path — see resolveProjectName.
+const PROJECT_NAME = resolveProjectName();
 const API_URL = (process.env.OWNMIND_API_URL || '').replace(/\/$/, '');
 const API_KEY = process.env.OWNMIND_API_KEY || '';
 
@@ -106,6 +111,9 @@ export function logEvent(event, details = {}) {
     const tool = details.tool || TOOL_NAME;
     const source = details.source || 'mcp';
     const { tool: _t, source: _s, ...rest } = details;
+    // An explicit project in `details` wins: a caller that knows better than the process-wide
+    // guess should not have it overwritten.
+    if (PROJECT_NAME && rest.project === undefined) rest.project = PROJECT_NAME;
 
     // v1.17.99: generate a client_event_id (UUID v4) per event so the server can dedup with
     // a (user_id, client_event_id) partial unique index.

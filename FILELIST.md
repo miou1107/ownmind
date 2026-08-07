@@ -42,6 +42,13 @@ shared/secret-detect.js                         — 長度啟發式改成量「�
                                                    順便補上含斜線金鑰抓不到的漏洞
 tests/secret-detect-word-shape.test.js          — 保證寫成比率（對整個倉庫掃過）不是清單；
                                                    13 種真金鑰逐一驗
+shared/helpers.js                               — 新增 resolveProjectName()，專案名稱推導唯一
+                                                   一份（只回資料夾名、不回路徑）
+mcp/ownmind-log.js / mcp/index.js               — 每個活動事件都帶專案；MCP 自己那份推導刪掉
+hooks/ownmind-session-start.sh / .js            — 同上，兩支掛勾送出的事件都帶
+src/routes/memory.js                            — 事後重建工作記錄時挑出現最多次的專案
+tests/activity-carries-project.test.js          — 三個送出端各驗一次；shell 那份手拼 JSON，
+                                                   特別測資料夾名有引號時仍是合法 JSON
 src/routes/usage/team-overview.js               — 遵守率改成也讀伺服器重建那種寫法
                                                    （details.compliance）；兩種都有時不重複計
 tests/team-overview-api.test.js                 — 重建寫法、不重複計、violate 不計入、
