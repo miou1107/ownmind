@@ -140,3 +140,133 @@ describe('node SessionStart hook — parity with the shell hook', () => {
     assert.ok(hit.has('/api/activity/batch'), 'a working hook must be visible server-side');
   });
 });
+
+/**
+ * v1.26.98 — the update lock, on the copy Windows runs.
+ *
+ * `maybeCheckForUpdates` used to read `.update-lock`, return if it was fresh, delete it if
+ * it was stale, and then create nothing at all — so every concurrent hook found no lock and
+ * ran the update script together. These assert the observable consequences rather than the
+ * shape of the code: what lands in the activity log, and what is left on disk.
+ */
+describe('node SessionStart hook — the update lock', () => {
+  let server;
+  let baseUrl;
+
+  before(async () => {
+    server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.setHeader('content-type', 'application/json');
+        res.end('{}');   // enough for the update check, which runs before the memory load
+      });
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(() => server?.close());
+
+  /** A HOME that looks like an install: a git checkout, and optionally an update script. */
+  function makeHome({ withUpdateScript }) {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lock-hook-'));
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.ownmind', '.git'), { recursive: true });
+    if (withUpdateScript) {
+      fs.mkdirSync(path.join(home, '.ownmind', 'scripts'), { recursive: true });
+      for (const name of ['update.sh', 'update.ps1']) {
+        fs.writeFileSync(path.join(home, '.ownmind', 'scripts', name), 'exit 0\n');
+      }
+    }
+    return home;
+  }
+
+  function runHook(home) {
+    return new Promise((resolve) => {
+      execFile('node', [HOOK], {
+        env: {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          OWNMIND_API_KEY: 'test-key-0123456789abcdef',
+          OWNMIND_API_URL: baseUrl,
+        },
+        timeout: 25000,
+      }, () => resolve());   // the hook must never fail the session; its exit code is not the subject
+    });
+  }
+
+  /** Events the hook wrote locally, in order. */
+  function events(home) {
+    const dir = path.join(home, '.ownmind', 'logs');
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.jsonl'))
+      .flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim().split('\n'))
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
+  }
+
+  it('stands down when somebody else holds the lock, and calls it a skip', async () => {
+    const home = makeHome({ withUpdateScript: true });
+    try {
+      // Somebody else is mid-update. Fresh, so it is not reclaimable.
+      fs.writeFileSync(path.join(home, '.ownmind', '.update-lock'), 'another-process');
+      await runHook(home);
+
+      const names = events(home).map((e) => e.event);
+      assert.ok(names.includes('update_skipped'), `expected a skip, got: ${names.join(', ')}`);
+      assert.equal(
+        events(home).find((e) => e.event === 'update_skipped').details.reason, 'lock_held');
+      // Both of these were the bug: announcing a check it is not going to do, and reporting
+      // somebody else's turn as this machine's failure.
+      assert.ok(!names.includes('update_check'), 'announced a check while standing down');
+      assert.ok(!names.includes('update_failed'), 'a held lock is not a failed upgrade');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves the other process\'s lock alone', async () => {
+    const home = makeHome({ withUpdateScript: true });
+    try {
+      const lock = path.join(home, '.ownmind', '.update-lock');
+      fs.writeFileSync(lock, 'another-process');
+      await runHook(home);
+      assert.equal(fs.readFileSync(lock, 'utf8'), 'another-process',
+        'released a lock it never held');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('takes the lock before announcing the check', async () => {
+    const home = makeHome({ withUpdateScript: true });
+    try {
+      await runHook(home);
+      const names = events(home).map((e) => e.event);
+      assert.ok(names.includes('update_check'), `no check ran: ${names.join(', ')}`);
+      assert.equal(names.filter((n) => n === 'update_check').length, 1);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('hands the lock back when there is no update script to run', async () => {
+    const home = makeHome({ withUpdateScript: false });
+    try {
+      await runHook(home);
+      assert.ok(!fs.existsSync(path.join(home, '.ownmind', '.update-lock')),
+        'held a lock for five minutes over work it never started');
+
+      const names = events(home).map((e) => e.event);
+      assert.ok(names.includes('update_failed'), 'a broken install must be visible');
+      // Once a day, not once a session: the marker has to be stamped on this path too, or
+      // the pair repeats on every conversation and `update_failed` stops meaning anything.
+      assert.ok(fs.existsSync(path.join(home, '.ownmind', '.last-update-check')),
+        'without the marker this fires on every session start');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+});

@@ -27,10 +27,12 @@ import {
   pushBounded,
   shouldSkipDuplicate,
   resolveClientTool,
+  resolveProjectName,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
 import { enrichErrorDetails, errorAliasFields } from './lib/enrich-error.js';
+import { tryAcquireUpdateLock, releaseUpdateLock } from '../shared/update-lock.js';
 import { logMcpCallSafe } from './lib/log-mcp-call.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
@@ -270,15 +272,10 @@ let sessionLogged = false;
 // it to the AI every time). CLAUDE_PROJECT_DIR is the project root passed in by Claude Code
 // when it launches the MCP. If the user isn't in a git repo or is using another tool, fall
 // back to the cwd basename.
-const AUTO_PROJECT = (() => {
-  try {
-    const dir = process.env.CLAUDE_PROJECT_DIR
-      || process.env.OWNMIND_PROJECT_DIR
-      || process.cwd();
-    if (!dir || dir === '/' || dir === os.homedir()) return null;
-    return path.basename(dir);
-  } catch { return null; }
-})();
+// v1.26.98 — this derivation moved to shared/helpers.js so the activity logger can use the
+// same one. Two copies would have been two answers to "which project is this" on the same
+// machine, which is exactly the confusion the team page column was showing.
+const AUTO_PROJECT = resolveProjectName();
 
 // --- v1.17.0 P4: Broadcast fetch + render ---
 // Never block the tool call; failures stay silent; 2s timeout.
@@ -1599,14 +1596,6 @@ async function runAutoUpdate() {
     ? fs.readFileSync(MARKER_FILE, 'utf8').trim()
     : '';
 
-  // Stale lock detection
-  if (fs.existsSync(LOCK_FILE)) {
-    try {
-      const lockAge = Date.now() - fs.statSync(LOCK_FILE).mtimeMs;
-      if (lockAge > 5 * 60 * 1000) fs.unlinkSync(LOCK_FILE);
-    } catch {}
-  }
-
   // Skip-reason observability — earlier silent-skip behavior meant Alice/Bob stayed on
   // old versions and nobody noticed.
   if (lastCheck === today) {
@@ -1619,32 +1608,33 @@ async function runAutoUpdate() {
   }
 
   // v1.17.23: atomic lock acquire — the previous existsSync + writeFileSync had a TOCTOU race.
-  // openSync 'wx' = exclusive create; if the file already exists it throws EEXIST
-  // (lets us distinguish lock_held vs disk error).
-  try {
-    const fd = fs.openSync(LOCK_FILE, 'wx');
-    fs.closeSync(fd);
-    _lockHeld = true;
-  } catch (e) {
-    if (e.code === 'EEXIST') {
+  // v1.26.98: moved into shared/update-lock.js, which the Node SessionStart hook now uses too,
+  // and which also closed the race in the stale-lock reclaim that used to sit above this
+  // (stat, unlink, create — two processes could both unlink, the second deleting the fresh
+  // lock the first had just taken). `reason` distinguishes a held lock from a disk error;
+  // they mean different things to whoever reads the log.
+  const acquired = tryAcquireUpdateLock(LOCK_FILE);
+  if (!acquired.acquired) {
+    if (acquired.reason === 'lock_held') {
       logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
     } else {
       // v1.18.8: use errorAliasFields helper (shared with 'error' event); legacy `error` field preserved.
       logEvent('update_failed', {
         source: 'mcp',
         step: 'lock',
-        error: e.code || e.message,
-        ...errorAliasFields(e),
+        error: acquired.reason,
+        ...errorAliasFields(acquired.error),
       });
     }
     return;
   }
+  _lockHeld = true;
 
   logEvent('update_check', { source: 'mcp' });
 
   const cleanup = () => {
     if (!_lockHeld) return;
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    releaseUpdateLock(LOCK_FILE);
     _lockHeld = false;
   };
   const fail = (step, err) => {
@@ -1792,7 +1782,7 @@ runAutoUpdate().catch((e) => {
     });
   } catch {}
   if (_lockHeld) {
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    releaseUpdateLock(LOCK_FILE);
     _lockHeld = false;
   }
 });

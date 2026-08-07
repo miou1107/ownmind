@@ -86,6 +86,39 @@ export function getClientVersion() {
  * @param {object} [env] — defaults to process.env
  * @returns {string}
  */
+/**
+ * v1.26.98 — the name of the project the caller is working in, or null.
+ *
+ * The team page has a "most common project" column that was blank for most people. The
+ * reason was not that the value is unknown: `mcp/index.js` has computed it since v1.17.37
+ * and puts it on the session log the AI writes. It just never travelled with anything else.
+ *
+ * When the AI does not call `ownmind_log_session` — which, measured on 2026-08-07, is most
+ * sessions, including 76 of one heavy user's 95 — the server rebuilds the session from the
+ * activity log, and no activity event carried a project. So the column was blank for four
+ * people entirely and four fifths of the fifth, and the fix is to send it, not to recover it.
+ *
+ * **Only the last path segment is returned, never the full path.** A directory name is
+ * work context; the path to it says where someone keeps their files, which is not something
+ * this product needs in order to group work by project.
+ *
+ * Returns null at the filesystem root and at the home directory, where the basename would
+ * describe the machine's owner rather than any project.
+ *
+ * @param {object} [env] — defaults to process.env
+ * @returns {string|null}
+ */
+export function resolveProjectName(env = process.env) {
+  try {
+    const dir = env.CLAUDE_PROJECT_DIR || env.OWNMIND_PROJECT_DIR || process.cwd();
+    if (!dir || dir === '/' || dir === os.homedir()) return null;
+    const name = path.basename(dir);
+    return name && name !== '.' && name !== '/' ? name : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveClientTool(env = process.env) {
   return env.OWNMIND_TOOL || env.OWNMIND_CLIENT_TOOL || 'claude-code';
 }

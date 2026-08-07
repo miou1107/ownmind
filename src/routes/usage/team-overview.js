@@ -7,12 +7,40 @@ import logger from '../../utils/logger.js';
  * Compute iron-rule compliance from a single session_logs.details.
  * Returns { complied, skipped, triggered }; triggered = complied + skipped.
  * When details is null or missing the relevant fields, all three are 0.
+ *
+ * v1.26.98 — a session row is written in one of two shapes, and this only read one of them.
+ *
+ * When the AI calls `ownmind_log_session` it may pass `context.rules_complied` and
+ * `context.rules_skipped`, which land here as arrays of rule codes. When it never calls it,
+ * the server rebuilds the session from the activity log (`_recovery: from_activity_logs` in
+ * src/routes/memory.js) and records the same information as `compliance`: one
+ * `{ rule, action }` entry per `iron_rule_compliance` event, where action is comply / skip /
+ * violate.
+ *
+ * Reading only the first shape meant the recovered sessions reported "no data" while their
+ * compliance was sitting in the row. Measured on 2026-08-07: two accounts held 52 and 33
+ * recorded entries respectively, and the team page showed a dash for both.
  */
 export function extractRuleCounts(details) {
   if (!details || typeof details !== 'object') return { complied: 0, skipped: 0, triggered: 0 };
+
   const complied = Array.isArray(details.rules_complied) ? details.rules_complied.length : 0;
   const skipped = Array.isArray(details.rules_skipped) ? details.rules_skipped.length : 0;
-  return { complied, skipped, triggered: complied + skipped };
+  if (complied + skipped > 0) return { complied, skipped, triggered: complied + skipped };
+
+  // Server-recovered shape. Only consulted when the explicit arrays say nothing, so a
+  // session carrying both cannot be counted twice.
+  if (!Array.isArray(details.compliance)) return { complied, skipped, triggered: 0 };
+  let c = 0, s = 0;
+  for (const entry of details.compliance) {
+    // `violate` is deliberately not counted as either. It belongs in the denominator of a
+    // compliance rate, but this function's `triggered` is defined as complied + skipped and
+    // the ranking downstream reads `complied / triggered`; folding violations in here would
+    // silently redefine the number the page has always shown. Backlog 38.
+    if (entry?.action === 'comply') c += 1;
+    else if (entry?.action === 'skip') s += 1;
+  }
+  return { complied: c, skipped: s, triggered: c + s };
 }
 
 /**
