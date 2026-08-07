@@ -37,6 +37,11 @@ scripts/interactive-upgrade.sh / .ps1           — 每個錯誤回報都附上�
                                                    上限 300 字（兩邊同一個上限）
 tests/upgrade-error-reason.test.js              — 呼叫點清單用掃的不用寫的；換行、上限、
                                                    取尾不取頭、沒日誌時要講清楚
+shared/secret-detect.js                         — 長度啟發式改成量「有沒有單字結構」；刪掉
+                                                   點分隔／斜線分隔兩個例外（量過之後多餘），
+                                                   順便補上含斜線金鑰抓不到的漏洞
+tests/secret-detect-word-shape.test.js          — 保證寫成比率（對整個倉庫掃過）不是清單；
+                                                   13 種真金鑰逐一驗
 openspec/BACKLOG.md                             — 新增 37（context 欄位為什麼是空的，未證實）
 package.json / README ×3                        — 版號 1.26.98
 ```
