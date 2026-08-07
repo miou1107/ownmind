@@ -143,7 +143,19 @@ rollback_note() {
 STEP "pull" "Pulling latest OwnMind"
 cd "${OWNMIND_DIR}" || FAIL "cd_failed" "Cannot enter ${OWNMIND_DIR}"
 
-DIRTY=$(git status --porcelain 2>/dev/null)
+# v1.26.98 — the `2>/dev/null` here turned a broken git into a silent "clean tree" (IR-002).
+# `git status --porcelain` prints nothing when the tree is clean AND prints nothing when git
+# itself fails, so an empty DIRTY was ambiguous — and the ambiguity always resolved the unsafe
+# way, straight into `git pull --ff-only` on a tree whose state was never established.
+# The exit code is the only thing that separates the two cases, so check it. Kept symmetric
+# with the .ps1 side (IR-022).
+DIRTY=$(git status --porcelain)
+STATUS_CODE=$?
+if [ "${STATUS_CODE}" -ne 0 ]; then
+  report_error "upgrade_git_status_failed" "git status --porcelain exited ${STATUS_CODE}" "${LOG_FILE}"
+  # No rollback: nothing has been modified yet. The backup copy stays for sweep-old-backups.
+  FAIL "git_status" "git status failed (exit ${STATUS_CODE}); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
+fi
 if [ -n "${DIRTY}" ]; then
   STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"

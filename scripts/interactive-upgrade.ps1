@@ -155,7 +155,28 @@ function RollbackNote {
 Step "pull" "Pulling latest OwnMind"
 Push-Location $OwnMindDir
 
-$dirty = git status --porcelain 2>$null
+# v1.26.98 — the `2>$null` here turned a broken git into a silent "clean tree" (IR-002).
+# `git status --porcelain` prints nothing when the tree is clean AND prints nothing when git
+# itself dies, so an empty $dirty was ambiguous — and the ambiguity always resolved the unsafe
+# way, straight into `git pull --ff-only` on a tree whose state was never established.
+# The exit code is the only thing that separates the two cases, so check it.
+# Prompted by a real observation on a Windows 10 box (git 2.54.0.windows.1) where
+# `git status --porcelain` exited -1073741674 (0xC0000096) with no output on stdout or stderr,
+# in a fresh empty repo as well as in ~/.ownmind, while add / diff / log / push all worked.
+# The root cause was not established and is not the point: whatever makes git fail, an empty
+# string must not be read as a verdict about the working tree.
+# stderr is deliberately left alone rather than merged into $dirty: git emits CRLF warnings
+# there, and folding those into the value would make a clean tree look dirty and trigger an
+# unnecessary reset --hard.
+$dirty = git status --porcelain
+$statusCode = $LASTEXITCODE
+if ($statusCode -ne 0) {
+  Report-Error -Kind "upgrade_git_status_failed" -Detail "git status --porcelain exited $statusCode" -ContextFile $LogFile
+  Pop-Location
+  # No Rollback: nothing has been modified yet, so restoring would only risk the file-lock
+  # failure above for no gain. The backup copy stays put for sweep-old-backups to retire.
+  Fail "git_status" "git status failed (exit $statusCode); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
+}
 if ($dirty) {
   Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
