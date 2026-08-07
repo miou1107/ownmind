@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.26.98 修改（那把「一次只准一個人更新」的鎖，其實鎖不住）
+
+新增檔：
+```
+shared/update-lock.js                           — 更新鎖協定唯一的一份實作，MCP 與 Node 掛勾
+                                                   共用。獨佔式建檔取得；接手死掉的鎖要先排隊、
+                                                   拿到後再確認一次年齡才刪
+tests/update-lock-mutual-exclusion.test.js      — 八個並行只能有一個拿到（shell 與 Node 各跑
+                                                   一次）；含陽性對照證明測試抓得到競爭；接手
+                                                   排隊與二次確認各有一個決定性測試
+openspec/changes/v1.26.98-update-lock-not-a-lock/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — 新增 lock_age_seconds / create_exclusive /
+                                                   acquire_update_lock；原本是「檢查檔案不存在」
+                                                   隔十行才 touch，兩個問題都不成鎖。改成先拿鎖
+                                                   才記 update_check；搶輸記 update_skipped
+                                                   （lock_held）而非 update_failed
+hooks/ownmind-session-start.js                  — 原本檢查完鎖之後什麼都沒建立，改用共用實作真的
+                                                   取得；沒東西可跑時立刻釋放
+mcp/index.js                                    — 改用共用實作，移除自己那份 openSync wx 與
+                                                   會誤刪的 stale 清除
+package.json / README ×3                        — 版號 1.26.98
+```
+
 ## v1.26.97 修改（那道確認關卡從來沒有在擋）
 
 新增檔：

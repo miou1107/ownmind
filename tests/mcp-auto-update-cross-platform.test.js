@@ -134,13 +134,24 @@ test('v1.17.23 update.ps1: Node script uses argv[2]/argv[3], not argv[1]/argv[2]
   );
 });
 
-test('v1.17.23 mcp/index.js: lock acquire must be atomic (openSync wx)', () => {
+test('v1.17.23 mcp/index.js: lock acquire must be atomic', () => {
   // v1.17.22 used existsSync + writeFileSync — TOCTOU race; two MCPs could both pass existsSync.
   // Fix: fs.openSync(LOCK_FILE, 'wx') — exclusive create; existing file yields EEXIST.
+  // v1.26.98: moved into shared/update-lock.js, because the two SessionStart hooks were
+  //   guarding the same file with no exclusive create at all — the shell one tested for
+  //   absence and then ran `touch`, which succeeds on an existing file. Matching on the
+  //   syscall at this call site failed on the move while the property still held, so the
+  //   assertion now follows the import. The behaviour itself is exercised, rather than read,
+  //   in tests/update-lock-mutual-exclusion.test.js: eight concurrent processes, one winner.
   assert.match(
     mcpSource,
-    /fs\.openSync\(LOCK_FILE,\s*['"]wx['"]\)/,
-    'lock acquire must use openSync wx flag for atomicity (prevent concurrent races)'
+    /import \{[^}]*tryAcquireUpdateLock[^}]*\} from '\.\.\/shared\/update-lock\.js'/,
+    'lock acquire must go through the shared exclusive-create helper (prevent concurrent races)'
+  );
+  assert.match(
+    readFileSync(join(repoRoot, 'shared', 'update-lock.js'), 'utf8'),
+    /fs\.openSync\(file,\s*['"]wx['"]\)/,
+    'the shared helper must use the wx flag for atomicity'
   );
 });
 

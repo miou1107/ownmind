@@ -17,6 +17,7 @@ import { clearSessionOffState, readSessionOffState } from '../shared/session-off
 import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
+import { acquireUpdateLock, releaseUpdateLock } from '../shared/update-lock.js';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -174,21 +175,34 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
     const lock = path.join(dir, '.update-lock');
     const marker = path.join(dir, '.last-update-check');
 
-    if (fs.existsSync(lock)) {
-      const ageMs = Date.now() - fs.statSync(lock).mtimeMs;
-      if (ageMs < 5 * 60 * 1000) return;
-      try { fs.unlinkSync(lock); } catch {}
-    }
-
     const today = new Date().toISOString().slice(0, 10);
     let last = '';
     try { last = fs.readFileSync(marker, 'utf8').trim(); } catch {}
     if (last === today) return;
 
+    // v1.26.98 — actually take the lock. This used to read the file, return if it was fresh,
+    // delete it if it was stale, and then create nothing at all: every concurrent hook found
+    // no lock and ran the update script together. The shared helper is the same one the MCP
+    // uses, so the three programs cannot disagree about what holding the lock means.
+    if (!acquireUpdateLock(lock)) {
+      reportEvent(apiUrl, apiKey, 'update_skipped', { reason: 'lock_held' });
+      return;
+    }
+    // The lock is deliberately not released here. The work happens in a detached child that
+    // outlives this process, so there is nobody left to release it; the five-minute staleness
+    // sweep reclaims it. Holding it that long costs nothing — the daily marker below already
+    // stops a second run today.
+
     reportEvent(apiUrl, apiKey, 'update_check', {});
     const updateScript = path.join(dir, 'scripts',
       process.platform === 'win32' ? 'update.ps1' : 'update.sh');
-    if (!fs.existsSync(updateScript)) return;
+    if (!fs.existsSync(updateScript)) {
+      // Nothing was started, so nothing is going to release it later — hand it back now
+      // rather than blocking the MCP for the next five minutes over a no-op.
+      releaseUpdateLock(lock);
+      reportEvent(apiUrl, apiKey, 'update_failed', { step: 'update_script_missing' });
+      return;
+    }
 
     // The MCP does the git pull itself; this only re-syncs skills, hooks and the scheduler,
     // which is the part that repairs a machine rather than upgrading it.
