@@ -50,8 +50,14 @@ describe('v1.26.96 — every shebang file is pinned to LF', () => {
   const files = shebangFiles();
 
   it('finds files to check (fails closed if the listing breaks)', () => {
-    // Without this, a broken `git ls-files` would make the real assertion below pass on an
-    // empty set and report a clean bill of health.
+    // A bare floor is weak — deleting most of the list still clears it. Name the three files
+    // that actually broke, so the scan has to reach them specifically; keep the count as a
+    // secondary net. Without this, a broken `git ls-files` would make the assertion below
+    // pass on an empty set and report a clean bill of health.
+    for (const must of ['hooks/ownmind-git-pre-commit', 'hooks/ownmind-git-post-commit',
+                        'hooks/ownmind-git-commit-msg']) {
+      assert.ok(files.includes(must), `${must} missing from the scan — is it still tracked?`);
+    }
     assert.ok(files.length > 20, `only found ${files.length} shebang files — is the scan working?`);
   });
 
@@ -60,7 +66,9 @@ describe('v1.26.96 — every shebang file is pinned to LF', () => {
       cwd: repoRoot, encoding: 'utf8',
     }).trim().split('\n');
 
-    const uncovered = eol.filter((line) => !/eol=lf/.test(line));
+    // Split on the tab: `git ls-files --eol` puts attributes before it and the path after,
+    // and a path that happened to contain "eol=lf" would otherwise false-pass.
+    const uncovered = eol.filter((line) => !/eol=lf/.test(line.split('\t')[0]));
     assert.deepEqual(
       uncovered.map((l) => l.trim().replace(/\s+/g, ' ')), [],
       'these carry a shebang but no `text eol=lf` rule — add one to .gitattributes'
@@ -73,8 +81,41 @@ describe('v1.26.96 — every shebang file is pinned to LF', () => {
       cwd: repoRoot, encoding: 'utf8',
     }).trim().split('\n');
 
-    const crlfInIndex = eol.filter((line) => /^i\/crlf/.test(line.trim()));
+    const crlfInIndex = eol.filter((line) => /^i\/crlf/.test(line.trim().split('\t')[0]));
     assert.deepEqual(crlfInIndex, [], 'a shebang file was committed with CRLF endings');
+  });
+});
+
+describe('v1.26.96 — files with deliberate NUL bytes stay out of the text rules', () => {
+  /**
+   * An explicit `text` attribute overrides git's binary auto-detection: conversion then
+   * happens without guessing the content type. `*.js text eol=lf` would therefore put a
+   * fixture whose whole purpose is exact byte content under line-ending conversion, and the
+   * next CR to land in it would be rewritten on commit — the same silent rewrite this file
+   * exists to prevent.
+   *
+   * `-eol` as well as `-text`: setting `eol` alone enables conversion and effectively sets
+   * `text`, so unsetting only `text` leaves the rule in force. Verified by appending a CRLF
+   * line in a throwaway clone — the fixture kept its bytes, an ordinary .js lost the CR.
+   */
+  it('the NUL fixture is exempt from text conversion', () => {
+    const out = execFileSync('git',
+      ['check-attr', 'text', 'eol', '--', 'tests/install-check-null-byte-sanitize.test.js'],
+      { cwd: repoRoot, encoding: 'utf8' });
+    assert.match(out, /text: unset/, 'an explicit text attribute would override binary detection');
+    assert.match(out, /eol: unset/, 'eol on its own re-enables conversion');
+  });
+
+  it('no other tracked JS file carries a raw NUL', () => {
+    // The composite-key separator in observed-users.js was a literal NUL; `\0` is identical
+    // and keeps the file out of git's binary classification. This stops the next one.
+    const tracked = execFileSync('git', ['ls-files', '*.js', '*.cjs', '*.mjs'],
+      { cwd: repoRoot, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+    const withNul = tracked.filter((f) => {
+      if (f === 'tests/install-check-null-byte-sanitize.test.js') return false;
+      return fs.readFileSync(path.join(repoRoot, f)).includes(0);
+    });
+    assert.deepEqual(withNul, [], 'use the \\0 escape instead of a raw NUL byte');
   });
 });
 
@@ -96,6 +137,7 @@ describe('v1.26.96 — the installer repairs a checkout that is already CRLF', (
     const end = src.indexOf('\n}\n', start);
     const fn = src.slice(start, end + 3);
     assert.match(fn, /tr -d/, 'the copy must strip CR, not plain cp');
+    assert.match(fn, /\.tmp.*&&.*mv/s, 'write-then-move, so a dead tr cannot leave a half-written hook');
 
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-crlf-'));
     try {

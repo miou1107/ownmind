@@ -56,6 +56,26 @@ installer is the one moment it can be put right for them.
 
 ## Not done
 
-`git add --renormalize` on the repository itself. Every tracked file is already LF in the
-index (the test asserts it), so there is nothing to renormalise — the problem was only ever
-what a Windows *checkout* produced.
+`git add --renormalize` on the repository itself. Every tracked file was already LF in the
+index when this was written — checked across all 913, and the new test asserts it for the
+50 shebang files — so there is nothing to renormalise. The problem was only ever what a
+Windows *checkout* produced.
+
+## Found in review
+
+An explicit `text` attribute **overrides** git's binary auto-detection, so `*.js text
+eol=lf` swept in two tracked files containing NUL bytes. One of them,
+`tests/install-check-null-byte-sanitize.test.js`, is a fixture whose entire purpose is exact
+byte content: the next CR to land in it would have been rewritten on commit — a new
+instance of the very class this change exists to remove.
+
+It is exempted with `-text -eol`; `-text` alone is not enough, because setting `eol`
+enables conversion and effectively sets `text`. The other file used a raw NUL as a
+composite-key separator and now uses the `\0` escape, which is identical to the engine and
+keeps the file out of git's binary classification. Both verified by appending a CRLF line in
+a throwaway clone: the fixture kept its bytes, an ordinary `.js` lost the CR.
+
+The repair also reaches one more path than first written. `interactive-upgrade.sh` re-runs
+`install.sh` only when it finds credentials; without them it falls back to
+`scripts/update.sh`, which never touched the git hooks. That path now repairs them in
+place.
