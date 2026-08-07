@@ -73,7 +73,13 @@ if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
 fi
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | node -e "
+# v1.26.92: two values now come out of the payload, so they are emitted as
+#   line 1  → tool_name
+#   line 2+ → command
+# in that order on purpose. A tool name is a bare identifier and can never contain a
+# newline; a command can (git commit -m with a multi-line message), so it has to be the one
+# that owns the tail.
+PAYLOAD=$(echo "$INPUT" | node -e "
   // v1.26.90: read fd 0, not '/dev/stdin'. Windows node resolves that POSIX path to
   // C:\\dev\\stdin and throws ENOENT before the try block, so the extracted command came
   // back empty and this hook exited at the empty-value guard below. Same failure class as
@@ -90,11 +96,27 @@ COMMAND=$(echo "$INPUT" | node -e "
     // Non-string values are dropped: a number or object is truthy, would clear the
     // empty-value guard, and would reach grep as '[object Object]'.
     const raw = (p.tool_input && p.tool_input.command) || p.command;
+    console.log(typeof p.tool_name === 'string' ? p.tool_name : '');
     console.log(typeof raw === 'string' ? raw : '');
-  } catch { console.log(''); }
+  } catch { console.log(''); console.log(''); }
 " 2>/dev/null)
 
-if [ -z "$COMMAND" ]; then exit 0; fi
+TOOL_NAME=$(printf '%s\n' "$PAYLOAD" | head -1)
+COMMAND=$(printf '%s\n' "$PAYLOAD" | tail -n +2)
+
+# v1.26.92: a file-editing tool carries no command, so this used to exit here — which is why
+# no rule tagged trigger:edit had ever fired. The edit path is delegated whole to
+# ownmind-edit-reminder.js, run by path exactly as ownmind-verify-trigger.js already is
+# below, so the one-hour window logic exists once rather than once per hook copy.
+# It never blocks: it emits a hookSpecificOutput envelope or nothing.
+if [ -z "$COMMAND" ]; then
+  case "$TOOL_NAME" in
+    Edit|Write|MultiEdit|NotebookEdit)
+      node "$HOME/.ownmind/hooks/ownmind-edit-reminder.js" 2>/dev/null
+      ;;
+  esac
+  exit 0
+fi
 
 # 偵測觸發關鍵字
 TRIGGER=""
@@ -151,6 +173,7 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
       // KEEP IN SYNC with TRIGGER_TAG_ALIASES in shared/helpers.js — duplicated on purpose,
       // see the comment there. Widens which rules match; does not widen when this hook runs.
       const ALIASES = {
+        edit: ['edit', 'write', '編輯', '寫檔', '改檔', 'modify'],
         commit: ['commit', 'git', '提交', 'checkin'],
         deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
         delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore']

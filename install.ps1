@@ -423,21 +423,28 @@ if (-not $hookSettings.hooks) {
 if (-not $hookSettings.hooks.PreToolUse) {
   $hookSettings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @()
 }
-$preExists = $hookSettings.hooks.PreToolUse | Where-Object {
-  $_.hooks | Where-Object { $_.command -match "ownmind" }
+if ($HasBash) {
+  $preCmd = "bash ~/.claude/hooks/ownmind-iron-rule-check.sh"
+} else {
+  $preCmd = "node `"$($HookDir -replace '\\','/')/ownmind-iron-rule-check.js`""
 }
-if (-not $preExists) {
-  if ($HasBash) {
-    $preCmd = "bash ~/.claude/hooks/ownmind-iron-rule-check.sh"
-  } else {
-    $preCmd = "node `"$($HookDir -replace '\\','/')/ownmind-iron-rule-check.js`""
+# v1.26.92 — two matchers, checked one at a time. The old test asked whether any PreToolUse
+# entry mentioned "ownmind", which is true on every existing install, so a second entry
+# added here would never reach anyone who already had the first. Upgrades are the whole
+# population. The editing tools carry no command, which is why no rule tagged trigger:edit
+# had ever fired; the hook throttles itself to one full listing per hour.
+foreach ($matcher in @("Bash", "Edit|Write|MultiEdit|NotebookEdit")) {
+  $exists = $hookSettings.hooks.PreToolUse | Where-Object {
+    $_.matcher -eq $matcher -and ($_.hooks | Where-Object { $_.command -match "ownmind-iron-rule-check" })
   }
-  $newPreHook = [pscustomobject]@{
-    matcher = "Bash"
-    hooks   = @([pscustomobject]@{ type = "command"; command = $preCmd })
+  if (-not $exists) {
+    $newPreHook = [pscustomobject]@{
+      matcher = $matcher
+      hooks   = @([pscustomobject]@{ type = "command"; command = $preCmd })
+    }
+    $hookSettings.hooks.PreToolUse += $newPreHook
+    Write-Host "[ OK ] Added PreToolUse hook ($matcher)"
   }
-  $hookSettings.hooks.PreToolUse += $newPreHook
-  Write-Host "[ OK ] Added PreToolUse hook"
 }
 
 Write-Utf8NoBom -Path $ClaudeSettings -Content ($hookSettings | ConvertTo-Json -Depth 10)
