@@ -41,8 +41,10 @@ async function main() {
   let command = '';
   try {
     // v1.26.90: Claude Code sends { tool_name, tool_input: { command } } — reading a
-    // top-level .command yielded undefined, so this hook exited at the !command guard
-    // on every call. A bare { command } is still accepted for direct/manual invocation.
+    // top-level .command yielded undefined on every platform, so this hook exited at the
+    // !command guard on every call, macOS included. The Windows-only half of the bug was
+    // the '/dev/stdin' read above; this half was never platform-specific.
+    // A bare { command } is still accepted for direct/manual invocation.
     const p = JSON.parse(input);
     command = (p.tool_input && p.tool_input.command) || p.command || '';
   } catch {}

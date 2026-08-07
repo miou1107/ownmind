@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.26.89** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.26.90** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -158,6 +158,7 @@ graph LR
 
 ### 鐵律執行引擎
 
+- **動手前的鐵律提醒現在才真的會出現** — 掛勾從最上層的 `.command` 取指令，但 Claude Code 送的是 `{ tool_name, tool_input: { command } }`。取值每次都是空的，掛勾走到空值檢查就「正常」結束，畫面上沒有任何異狀 — 所以不分作業系統，沒人看過這個提醒。Windows 還多錯一步：`readFileSync('/dev/stdin')` 會被解成 `C:\dev\stdin` 並在 `try` 之外拋錯，錯誤又被 `2>/dev/null` 丟掉。兩份掛勾都改成讀 fd 0、優先取 `tool_input.command`，舊格式保留給手動呼叫 `v1.26.90`
 - **比中的驗證範本只是建議，不會自己生效** — 存鐵律時伺服器會拿它比對現成範本，比中就把驗證條件寫進那條規則，而五個範本全部都是會擋住操作的。等於你寫了一條提醒，拿回來的是一條會攔你的規則，而且只用一個藏在回傳裡的欄位交代。條件寬到一個字就中：一條在講「回滾時不要刪掉日誌」的規則，因為貼了部署標籤、內文出現一次「測試」，就被套上「部署前跑測試」，以後擋人時顯示的理由跟作者寫的東西完全對不上。現在比對照跑，但改成 `template_suggestion` 回傳（名稱、`applied: false`、會不會擋人、一句可以直接轉述的話），沒有人開口就不會動到規則 `v1.26.89`
 
 - **共用判定核心** — 純函式 `enforceRule(ruleCode, context, options)`、依等級回 `allow` / `block` / `warn` / `log_only` / `bypass`。`v1.19.7` 已把 bypass-handler 接到 git pre-commit 跟 reply-lint（讓 `OWNMIND_BYPASS` 環境變數能放行）；完整整合留 v1.19.8 `v1.19.6`

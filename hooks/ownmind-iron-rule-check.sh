@@ -75,15 +75,18 @@ fi
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | node -e "
   // v1.26.90: read fd 0, not '/dev/stdin'. Windows node resolves that POSIX path to
-  // C:\\dev\\stdin and throws ENOENT before the try block, so COMMAND came back empty
-  // and this hook exited at the '[ -z \$COMMAND ]' guard on every single call — no
-  // iron rule reminder has ever fired on Windows. Same failure class as the install.sh
-  // CLAUDE_SETTINGS path fixed in v1.26.88.
+  // C:\\dev\\stdin and throws ENOENT before the try block, so the extracted command came
+  // back empty and this hook exited at the empty-value guard below. Same failure class as
+  // the install.sh CLAUDE_SETTINGS path fixed in v1.26.88.
+  // NOTE: keep shell variable references out of these comments. The v1.26.88 guard test
+  // scans this block for interpolated paths and cannot tell a comment from live source.
   const d = require('fs').readFileSync(0,'utf8');
   try {
     const p = JSON.parse(d);
-    // Claude Code sends { tool_name, tool_input: { command } }; a bare { command } is
-    // still accepted so direct/manual invocations and older callers keep working.
+    // Claude Code sends { tool_name, tool_input: { command } }. Reading a top-level
+    // .command yielded undefined on EVERY platform, not just Windows — so even where the
+    // stdin read worked, this hook still exited at the empty-value guard on every call.
+    // A bare { command } is still accepted so manual invocation keeps working.
     console.log((p.tool_input && p.tool_input.command) || p.command || '');
   } catch { console.log(''); }
 " 2>/dev/null)

@@ -1,16 +1,18 @@
 # OwnMind 更新紀錄
 
-## v1.26.90 — 動手前的鐵律提醒，在 Windows 上一次都沒出現過
+## v1.26.90 — 動手前的鐵律提醒，其實一次都沒出現過（不只 Windows）
 
 v1.26.88 修好了升級腳本的路徑問題，但同一個錯誤還躺在鐵律提醒掛勾裡，而且位置更前面。
 
 掛勾要先讀 Claude Code 送來的指令內容，才知道你正要做什麼。它用的是 `readFileSync('/dev/stdin')`。這是 macOS 和 Linux 的寫法，Windows 版 node 沒有這個路徑，會把它當成相對路徑解析成 `C:\dev\stdin`，然後拋出檔案不存在。
 
-拋出的位置在 `try` 之外，所以 `catch` 接不到；外面又包了 `2>/dev/null` 把錯誤丟掉。結果是掛勾拿到空字串、走到下一行的空值檢查就 `exit 0`。**每一次都是。Windows 使用者從來沒有看過任何一次鐵律提醒**，而且畫面上不會有任何異狀，因為它「正常地」結束了。
+拋出的位置在 `try` 之外，所以 `catch` 接不到；外面又包了 `2>/dev/null` 把錯誤丟掉。結果是掛勾拿到空字串、走到下一行的空值檢查就 `exit 0`。**每一次都是**，而且畫面上不會有任何異狀，因為它「正常地」結束了。
 
-### 第二個問題：取值路徑本來就錯
+### 第二個問題：取值路徑本來就錯，而且這個跟作業系統無關
 
 就算把讀取修好，下一行 `JSON.parse(d).command` 還是拿不到東西。Claude Code 送的是 `{ tool_name, tool_input: { command } }`，指令包在 `tool_input` 底下，最上層沒有 `command`。
+
+這一半沒有平台之分。**macOS 和 Linux 讀 stdin 是成功的，取值一樣拿到空的，一樣走到空值檢查就結束。** 也就是說鐵律提醒不是「Windows 上沒出現」，是所有人都沒看過。已在 macOS 實測：餵真實格式的 payload 靜默結束，餵舊格式 `{ command }` 才印得出提醒。
 
 同一個 repo 裡的 `ownmind-tty-echo.cjs` 早就知道這件事，它讀的是最上層的 `tool_response`，還註明「實測會送兩種形狀」並做了相容處理。鐵律掛勾這支沒跟上。
 
@@ -29,6 +31,8 @@ v1.26.88 修好了升級腳本的路徑問題，但同一個錯誤還躺在鐵�
 - 修正前：餵真實格式的 payload，`COMMAND=` 空值、`exit 0`
 - 修正後：`COMMAND='git commit -m test'`，判定觸發類型 commit，帶著金鑰查到伺服器，過濾與輸出都正常
 - 兩種 payload 形狀（`tool_input.command` 與最上層 `command`）都取得到
+
+另外補了自動測試 `tests/iron-rule-hook-payload.test.js`，把兩支掛勾真的跑起來、餵真實 payload、看它有沒有連到伺服器（空值檢查在讀金鑰之前，所以「有連出去」就證明指令有取到）。故意把修正還原過一次確認測試會紅：改回最上層 `command` → 兩支的真實 payload 測試轉紅；改回 `/dev/stdin` → 全 repo 掃描那條轉紅。
 
 ### 沒做
 
