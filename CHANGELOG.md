@@ -1,5 +1,40 @@
 # OwnMind 更新紀錄
 
+## v1.26.91 — 提醒接通了，但你的鐵律還是沒有一條會觸發
+
+v1.26.90 把掛勾修到會跑了。實際裝上去複驗，畫面還是什麼都沒有。
+
+追下去不是壞掉，是**規則全被過濾掉了**。掛勾判斷你正要做什麼，只會得到三個答案：`commit`、`deploy`、`delete`（`detectCommandTrigger` 就寫這三個）。然後它拿這個字去比對鐵律的 tag，要一模一樣是 `trigger:commit` 才算數。
+
+問題是沒有任何地方告訴你只有這三個字。`ownmind_save` 什麼 tag 都收，所以人就照自己腦中的說法標——`trigger:回滾`、`trigger:cleanup`、`trigger:升級`、`trigger:install`。存進去了，掛勾也跑了，比對這關全部落地，然後靜靜結束。**沒有一個地方會說為什麼。**
+
+實際帳號上是三條鐵律、沒有一條觸發得到。作者以為自己設好了。
+
+### 改法
+
+同義字表。`delete` 也認 `刪除` / `cleanup` / `清理` / `rollback` / `回滾` / `還原` / `restore`，`deploy` 也認 `部署` / `release` / `發布` / `上線` / `publish` / `upgrade` / `升級`，`commit` 也認 `git` / `提交` / `checkin`。比對前先轉小寫，所以 `trigger:Deploy` 也算。
+
+**只放寬「哪些規則對得上」，沒有動「掛勾什麼時候跑」。** 那還是 `detectCommandTrigger` 那三種高風險操作，一個字都沒改。所以不會變吵、也不會多擋——這版仍然只提醒。
+
+`trigger:install`、`trigger:config` 這類還是不會觸發，因為 `npm install` 本來就不在掛勾會跑的範圍內。要涵蓋那些得讓掛勾在每個指令都跑，那是另一件事，不混在這次做。
+
+### 為什麼表複製兩份
+
+`.sh` 那支的過濾寫在 `node -e` 裡面。要它 import `shared/helpers.js` 就得從 Git Bash 遞一個路徑給 node——這正是連兩版的靜默失敗來源（v1.26.88 的 `CLAUDE_SETTINGS`、v1.26.90 的 `/dev/stdin`）。寫死的字面值不會 ENOENT。
+
+代價是會走鐘，所以補了一條測試把 `.sh` 裡的表抽出來真的執行，跟 `shared/helpers.js` 的匯出逐項比對，不一致就紅。
+
+### 驗證
+
+Windows 10 + Git Bash + node v25.8.1，對真實帳號的真實 API：
+
+- `rm -rf` 的真實 payload → 印出 IR-003（那條標 `回滾`/`cleanup` 的規則），修改前是空的
+- `git push` → 印出 IR-003（標 `升級`），修改前是空的
+- `git commit` → 仍然安靜（該帳號確實沒有 commit 類規則），符合預期
+- `ls -la` → 沒有任何動作，掛勾根本沒跑到比對
+- 兩支掛勾都實跑過，輸出的都是 `hookSpecificOutput`，沒有 `decision: block`
+- 全套測試：本機 131 個失敗是既有的（要資料庫），我的分支同樣 131，新增 8 個測試全過
+
 ## v1.26.90 — 動手前的鐵律提醒，其實一次都沒出現過（不只 Windows）
 
 v1.26.88 修好了升級腳本的路徑問題，但同一個錯誤還躺在鐵律提醒掛勾裡，而且位置更前面。

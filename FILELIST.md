@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.91 修改（提醒接通了，規則卻全被過濾掉）
+
+新增檔：
+```
+tests/iron-rule-trigger-aliases.test.js         — 用實際出事的那組 tag 當樣本：標 回滾/
+                                                   cleanup/升級 的規則現在對得上 delete 與
+                                                   deploy，標 install/config 的仍然對不上
+                                                   （放寬不能變成什麼都提醒）。另含舊過濾邏輯
+                                                   的重現，以及 .sh 內嵌表與 shared/helpers.js
+                                                   匯出值的逐項比對——把 .sh 裡的表抽出來真的
+                                                   執行再比，不是比字串
+```
+
+修改檔：
+```
+shared/helpers.js                               — 新增 TRIGGER_TAG_ALIASES 與
+                                                   ruleMatchesTrigger()。同義字表是唯一真相，
+                                                   .sh 那份是受測管制的複本
+hooks/ownmind-iron-rule-check.js                — 內嵌的 tags.some(...) 換成 ruleMatchesTrigger
+hooks/ownmind-iron-rule-check.sh                — 同一份表寫在 node -e 裡（不 import，避免再從
+                                                   Git Bash 遞路徑給 node）。比對前轉小寫
+```
+
 ## v1.26.90 修改（鐵律提醒掛勾從來沒觸發過，全平台）
 
 新增檔：
