@@ -6,8 +6,14 @@
  * is switched off enforces nothing. One full listing per hour, a single line for every
  * edit after that.
  *
- * State lives at `~/.ownmind/state/edit-reminder.json`:
- *   { window_start_ms, occurrence, rule_count }
+ * State lives at `~/.ownmind/state/edit-reminder.json`, keyed by session:
+ *   { sessions: { "<session_id>": { window_start_ms, occurrence, rule_count, window_ms? } } }
+ *
+ * Keyed by session because the audience is a session. The listing exists to put the rules
+ * into one AI's context; a second session — or a subagent — that starts inside another
+ * session's window would otherwise be told "68 rules, occurrence 2" and never be shown the
+ * 68. A single shared window would also make two concurrent sessions take turns
+ * invalidating each other, so each one gets its own.
  *
  * Fail-open, in the direction of showing too much rather than too little: a missing,
  * unreadable or malformed file reads as "no window open", so the worst outcome is one
@@ -28,39 +34,71 @@ const STATE_FILE = path.join(os.homedir(), '.ownmind', 'state', 'edit-reminder.j
 /** One hour, measured from the listing that opened the window — not a clock boundary. */
 export const WINDOW_MS = 60 * 60 * 1000;
 
+/**
+ * How long to stay quiet after a failed lookup.
+ *
+ * Without a back-off, an unreachable server costs every single edit a 3s timeout for the
+ * length of the outage, and prints nothing to explain it — a silent 3s tax on the most
+ * frequent operation in the product. Five minutes is short enough that a brief outage does
+ * not cost the user their hourly listing, and long enough that a long one is not felt.
+ */
+export const FETCH_BACKOFF_MS = 5 * 60 * 1000;
+
+/** Sessions untouched for this long are dropped on the next write. */
+const PRUNE_MS = 24 * 60 * 60 * 1000;
+
 function getStatePath() {
   return process.env.__OWNMIND_EDIT_REMINDER_PATH || STATE_FILE;
 }
 
-/**
- * @returns {{window_start_ms: number, occurrence: number, rule_count: number} | null}
- */
-export function readEditReminderState() {
+function isEntry(e) {
+  return e !== null && typeof e === 'object'
+    && Number.isFinite(e.window_start_ms)
+    && Number.isFinite(e.occurrence)
+    && Number.isFinite(e.rule_count);
+}
+
+function readStore() {
   try {
-    const raw = fs.readFileSync(getStatePath(), 'utf8');
-    const data = JSON.parse(raw);
-    if (typeof data !== 'object' || data === null) return null;
-    if (typeof data.window_start_ms !== 'number' || !Number.isFinite(data.window_start_ms)) return null;
-    if (typeof data.occurrence !== 'number' || !Number.isFinite(data.occurrence)) return null;
-    if (typeof data.rule_count !== 'number' || !Number.isFinite(data.rule_count)) return null;
-    return data;
+    const data = JSON.parse(fs.readFileSync(getStatePath(), 'utf8'));
+    if (data === null || typeof data !== 'object') return {};
+    if (data.sessions === null || typeof data.sessions !== 'object') return {};
+    return data.sessions;
   } catch {
-    return null;
+    return {};
   }
 }
 
 /**
- * @param {{window_start_ms: number, occurrence: number, rule_count: number}} state
- * @returns {boolean} write success
+ * @param {string} sessionId
+ * @returns {{window_start_ms: number, occurrence: number, rule_count: number, window_ms?: number} | null}
  */
-export function writeEditReminderState(state) {
+export function readEditReminderState(sessionId) {
+  const entry = readStore()[sessionId || 'default'];
+  return isEntry(entry) ? entry : null;
+}
+
+/**
+ * @param {string} sessionId
+ * @param {{window_start_ms: number, occurrence: number, rule_count: number, window_ms?: number}} entry
+ * @returns {boolean} write success — callers must surface a failure rather than degrade quietly
+ */
+export function writeEditReminderState(sessionId, entry) {
   try {
     const p = getStatePath();
     fs.mkdirSync(path.dirname(p), { recursive: true });
+
+    const sessions = readStore();
+    sessions[sessionId || 'default'] = entry;
+    for (const [id, e] of Object.entries(sessions)) {
+      if (!isEntry(e) || (entry.window_start_ms - e.window_start_ms) > PRUNE_MS) delete sessions[id];
+    }
+
     // Write-then-rename: two sessions can edit at the same moment, and a torn file would
-    // read as malformed — recoverable, but it would cost a spurious full listing.
+    // read as malformed. Last writer wins on the map itself, which at worst costs the
+    // other session one extra listing.
     const tmp = `${p}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(state), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify({ sessions }), 'utf8');
     fs.renameSync(tmp, p);
     return true;
   } catch {
@@ -69,18 +107,25 @@ export function writeEditReminderState(state) {
 }
 
 /**
- * Decide what this edit should emit, given the stored state.
+ * Decide what this edit should emit, given this session's stored entry.
  *
  * Pure: takes the clock as an argument so the window boundary is testable without waiting
  * an hour or stubbing Date.
  *
- * @param {{window_start_ms: number, occurrence: number, rule_count: number} | null} state
+ * @param {{window_start_ms: number, occurrence: number, rule_count: number, window_ms?: number} | null} state
  * @param {number} nowMs
  * @returns {{mode: 'full' | 'line', occurrence: number, window_start_ms: number, rule_count: number}}
  */
 export function decideEditReminder(state, nowMs) {
-  const open = state !== null && (nowMs - state.window_start_ms) < WINDOW_MS
-    && nowMs >= state.window_start_ms;
+  // A failed lookup stores a short window instead of the usual hour, so the back-off is
+  // data rather than a second code path.
+  const windowMs = state && Number.isFinite(state.window_ms) && state.window_ms > 0
+    ? state.window_ms
+    : WINDOW_MS;
+
+  const open = state !== null
+    && nowMs >= state.window_start_ms
+    && (nowMs - state.window_start_ms) < windowMs;
 
   if (!open) {
     return { mode: 'full', occurrence: 1, window_start_ms: nowMs, rule_count: 0 };

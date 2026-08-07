@@ -22,6 +22,7 @@ import {
   writeEditReminderState,
   decideEditReminder,
   renderEditReminderLine,
+  FETCH_BACKOFF_MS,
 } from '../shared/edit-reminder-state.js';
 
 function httpGet(url, headers) {
@@ -44,26 +45,42 @@ function envelope(text) {
 }
 
 /**
- * @param {{version: string, apiKey: string, apiUrl: string, now: number}} opts
+ * Said out loud when the state file cannot be written.
+ *
+ * Without this the degradation is invisible and permanent: every edit re-lists and pays a
+ * network round trip, because nothing can remember that the listing already happened. The
+ * whole point of this release line is that a broken guard must not look like a working one.
+ */
+const STATE_WRITE_FAILED =
+  '（OwnMind 無法寫入 ~/.ownmind/state/，所以每次編輯都會重列一次。請檢查該目錄權限。）';
+
+/**
+ * @param {{version: string, apiKey: string, apiUrl: string, now: number, sessionId?: string}} opts
  * @returns {Promise<string|null>} the JSON envelope to print, or null to stay silent
  */
-export async function editReminder({ version, apiKey, apiUrl, now }) {
-  const decision = decideEditReminder(readEditReminderState(), now);
+export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) {
+  const decision = decideEditReminder(readEditReminderState(sessionId), now);
 
   if (decision.mode === 'line') {
     // No request on this path. The count is carried in the state file precisely so the
     // throttled case — the common one — puts no network round trip in front of an edit.
-    writeEditReminderState({
+    const wrote = writeEditReminderState(sessionId, {
       window_start_ms: decision.window_start_ms,
       occurrence: decision.occurrence,
       rule_count: decision.rule_count,
     });
-    return envelope(renderEditReminderLine(version, decision.rule_count, decision.occurrence));
+    // rule_count 0 means there is nothing to say: either this account has no rule matching
+    // an edit, or the last lookup failed and this is the back-off window. Saying "0 條"
+    // before every file write is noise with no content, and a brand new account — the
+    // population least willing to put up with it — is exactly where it would happen.
+    if (decision.rule_count <= 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
+    const line = renderEditReminderLine(version, decision.rule_count, decision.occurrence);
+    return envelope(wrote ? line : `${line}\n${STATE_WRITE_FAILED}`);
   }
 
   if (!apiKey || !apiUrl) return null;
 
-  let rules = [];
+  let rules = null;
   try {
     const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
       'Authorization': `Bearer ${apiKey}`,
@@ -72,20 +89,27 @@ export async function editReminder({ version, apiKey, apiUrl, now }) {
     // The API wraps responses as { data: [...] }; older shapes were a bare array.
     rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
   } catch {
-    // Leave the window closed: a failed fetch must not cost the user their listing for the
-    // next hour. The next edit tries again.
+    // Back off rather than retry on the next keystroke. An unreachable server would
+    // otherwise cost every edit a 3s timeout for the length of the outage, silently. A
+    // short window still leaves the hourly listing intact once the server is back.
+    writeEditReminderState(sessionId, {
+      window_start_ms: now,
+      occurrence: 1,
+      rule_count: 0,
+      window_ms: FETCH_BACKOFF_MS,
+    });
     return null;
   }
 
   const relevant = rules.filter(r => ruleMatchesTrigger(r, 'edit'));
 
-  writeEditReminderState({
+  const wrote = writeEditReminderState(sessionId, {
     window_start_ms: decision.window_start_ms,
     occurrence: decision.occurrence,
     rule_count: relevant.length,
   });
 
-  if (relevant.length === 0) return null;
+  if (relevant.length === 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
 
   const tag = `【OwnMind v${version}】AI 改檔案要遵守的鐵律 ${relevant.length} 條`;
   const lines = [
@@ -96,7 +120,20 @@ export async function editReminder({ version, apiKey, apiUrl, now }) {
     '',
     '完整清單每小時列一次，同一小時內之後的編輯只會顯示一行。這是提醒，不會擋下編輯。',
   ];
+  if (!wrote) lines.push(STATE_WRITE_FAILED);
   return envelope(lines.join('\n'));
+}
+
+/** Read the session id off the payload, when a caller pipes one in. */
+function readSessionId() {
+  try {
+    const raw = fs.readFileSync(0, 'utf8');
+    if (!raw) return '';
+    const p = JSON.parse(raw);
+    return typeof p.session_id === 'string' ? p.session_id : '';
+  } catch {
+    return '';
+  }
 }
 
 /** CLI entry — how the .sh hook calls this. */
@@ -107,6 +144,7 @@ async function main() {
     apiKey,
     apiUrl,
     now: Date.now(),
+    sessionId: readSessionId(),
   });
   if (out) console.log(out);
 }

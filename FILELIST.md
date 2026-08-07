@@ -4,10 +4,12 @@
 
 新增檔：
 ```
-shared/edit-reminder-state.js                   — 一小時節流的狀態讀寫與判斷。decide 是純
-                                                   函式、時鐘用參數傳，所以視窗邊界不用等一
-                                                   小時也測得出來。壞檔／缺檔一律當「沒有視
-                                                   窗」，代價是多列一次，不會少列
+shared/edit-reminder-state.js                   — 一小時節流的狀態讀寫與判斷，依 session 分開
+                                                   存。decide 是純函式、時鐘用參數傳，所以視窗
+                                                   邊界不用等一小時也測得出來。壞檔／缺檔一律
+                                                   當「沒有視窗」，代價是多列一次、不會少列。
+                                                   抓取失敗時存的是五分鐘的短視窗，避免斷線期
+                                                   間每次編輯都白等 3 秒
 hooks/ownmind-edit-reminder.js                  — edit 觸發的完整實作。.js 掛勾 import 它、
                                                    .sh 掛勾用絕對路徑跑它（跟既有的
                                                    ownmind-verify-trigger.js 同一個做法），
@@ -29,7 +31,14 @@ hooks/ownmind-iron-rule-check.sh                — 同上。payload 現在吐�
                                                    第二行起 command（指令可能含換行，工具名不會）
 install.sh / install.ps1                        — PreToolUse 多註冊一個 matcher；判斷改成逐個
                                                    matcher 檢查（舊的問「這支掛勾裝過沒」，對所有
-                                                   既有安裝都是「裝過」，新位置永遠裝不上去）
+                                                   既有安裝都是「裝過」，新位置永遠裝不上去）。
+                                                   install.ps1 另外把註冊指向 checkout 裡的 .js
+                                                   掛勾 —— 複製到 ~/.claude/hooks 的那份根本啟動
+                                                   不了（找不到 ../shared/）。這段沒有實跑過
+.gitignore                                      — 忽略執行期寫進 checkout 的 state/
+openspec/BACKLOG.md                             — 新增 32（觸發詞彙表該在存規則時就告訴作者）、
+                                                   33（Windows 無 bash 那條路要在真機驗）、
+                                                   34（兩支掛勾一個講中文一個講英文）
 ```
 
 ## v1.26.91 修改（提醒接通了，規則卻全被過濾掉）

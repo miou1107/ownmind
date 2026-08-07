@@ -37,3 +37,6 @@ secrets/
 # 這些檔含全部使用者的 api_key 明文、絕對不能進 repo
 backups/
 *.sql.gz
+
+# v1.26.92 — per-session edit-reminder throttle state, written into the checkout at runtime
+state/

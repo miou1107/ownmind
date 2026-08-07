@@ -164,7 +164,11 @@ export const TOOL_TRIGGERS = {
  */
 export function detectToolTrigger(toolName) {
   if (typeof toolName !== 'string') return null;
-  return TOOL_TRIGGERS[toolName] || null;
+  // hasOwn, not a plain lookup: 'constructor', 'toString', '__proto__' and friends resolve
+  // up the prototype chain to functions, which are truthy. Those five names would clear the
+  // caller's "did we get a trigger" guard and reach the reminder as a trigger named after
+  // native code.
+  return Object.hasOwn(TOOL_TRIGGERS, toolName) ? TOOL_TRIGGERS[toolName] : null;
 }
 
 /**

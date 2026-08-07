@@ -28,7 +28,13 @@ resolved by `detectCommandTrigger`, unchanged.
 - **WHEN** either hook runs
 - **THEN** it resolves the `commit` trigger exactly as in v1.26.91, ignoring `tool_name`
 
-## Requirement: the edit reminder is throttled to one full listing per hour
+## Requirement: the edit reminder is throttled to one full listing per hour, per session
+
+The window MUST be kept per session, keyed by the payload's `session_id`. The listing
+exists to put the rules into one AI's context; a session — or a subagent — that begins
+inside another session's window would otherwise be handed a count and never shown the
+rules it counts. A single shared window would also make two concurrent sessions take turns
+invalidating each other.
 
 The full listing MUST be emitted on the first edit of a one-hour window. Every subsequent
 edit in that window MUST emit a single line instead, carrying the rule count and the
@@ -56,12 +62,58 @@ full listing, never a suppressed one.
 - **WHEN** an `Edit` payload arrives
 - **THEN** the full listing is emitted again and the occurrence count restarts at 1
 
+### Scenario: a second session starts inside the first one's window
+
+- **GIVEN** session A was shown the full listing 10 minutes ago
+- **WHEN** an `Edit` payload arrives carrying session B
+- **THEN** session B gets its own full listing, and session A's occurrence count is
+  unaffected by it
+
 ### Scenario: a corrupt state file
 
 - **GIVEN** `edit-reminder.json` contains text that is not JSON
 - **WHEN** an `Edit` payload arrives
 - **THEN** the hook emits the full listing and rewrites the file, rather than exiting or
   suppressing the reminder
+
+## Requirement: a failed lookup backs off instead of taxing every edit
+
+A failed rule lookup MUST record a short window — minutes, not the full hour — and MUST
+emit nothing. Without it an unreachable server costs every single edit the full 3s HTTP
+timeout for the length of the outage, on the most frequent operation in the product, with
+no output to explain the delay. The short window means a brief outage does not also cost
+the user their hourly listing.
+
+### Scenario: the server is unreachable
+
+- **WHEN** two `Edit` payloads arrive in quick succession and the API cannot be reached
+- **THEN** the first records a back-off window and prints nothing, and the second makes no
+  request at all and also prints nothing
+
+## Requirement: nothing to say means say nothing
+
+When no rule matches an edit, the hook MUST stay silent — on the throttled path as well as
+the full one. A line reading "0 rules" before every file write is noise with no content,
+and a new account, the population least willing to tolerate it, is exactly where it would
+happen.
+
+### Scenario: an account whose rules are all about deploying
+
+- **WHEN** an `Edit` payload arrives and no stored rule matches `edit`
+- **THEN** the hook prints nothing, on that edit and on every edit for the rest of the hour
+
+## Requirement: a throttle that cannot work says so
+
+If the state file cannot be written, the hook MUST say so in its output. It cannot then
+remember that the listing already happened, so every edit re-lists and pays a network round
+trip — the "in the way, so it gets switched off" outcome the throttle exists to prevent.
+Degrading quietly here would reproduce the exact failure this release line is about.
+
+### Scenario: `~/.ownmind/state/` is not writable
+
+- **WHEN** an `Edit` payload arrives and the state write fails
+- **THEN** the listing is still emitted, and it carries a line naming the directory and the
+  permission problem
 
 ## Requirement: the one-line form names the AI as the party bound by the rules
 
@@ -109,3 +161,11 @@ upgrade over an existing install neither duplicates the entry nor drops the Bash
 - **WHEN** the installer runs again
 - **THEN** the editing-tool entry is added, the Bash entry is left as it was, and running
   the installer a second time adds nothing further
+
+### Known limitation: only the `install.sh` half of this is executed by a test
+
+The `install.ps1` change is written against the same rules but was authored on a machine
+with no PowerShell and has never been run. It also carries a second, separate fix: the
+registration now points at the checkout copy of the `.js` hook rather than the copy in
+`~/.claude/hooks`, which could never start because its `../shared/helpers.js` import has no
+target there. Both need a real Windows-without-bash run. Recorded as backlog 33.
