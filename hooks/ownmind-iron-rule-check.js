@@ -12,8 +12,9 @@ import https from 'https';
 import http from 'http';
 import os from 'os';
 import { execSync } from 'child_process';
-import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger, ruleMatchesTrigger } from '../shared/helpers.js';
+import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger, detectToolTrigger, ruleMatchesTrigger } from '../shared/helpers.js';
 import { readComplianceEvents } from '../shared/compliance.js';
+import { editReminder } from './ownmind-edit-reminder.js';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
@@ -52,6 +53,8 @@ async function main() {
   } catch {}
 
   let command = '';
+  let toolName = '';
+  let sessionId = '';
   try {
     // v1.26.90: Claude Code sends { tool_name, tool_input: { command } } — reading a
     // top-level .command yielded undefined on every platform, so this hook exited at the
@@ -61,17 +64,35 @@ async function main() {
     const p = JSON.parse(input);
     const raw = (p.tool_input && p.tool_input.command) || p.command;
     command = typeof raw === 'string' ? raw : '';
+    toolName = typeof p.tool_name === 'string' ? p.tool_name : '';
+    sessionId = typeof p.session_id === 'string' ? p.session_id : '';
   } catch {}
 
-  if (!command) process.exit(0);
-
-  // v1.19.20: when no trigger is detected, fall back to 'command' so command-based iron rules
-  // (command-based iron rules) always run verification and aren't filtered out by the trigger check.
-  const detectedTrigger = detectCommandTrigger(command);
-  const trigger = detectedTrigger || 'command';
+  // v1.26.92: a file-editing tool carries no command, so this used to exit here — which is
+  // why no rule tagged trigger:edit had ever fired. The command path keeps priority, so a
+  // payload carrying both is still resolved by detectCommandTrigger, unchanged.
+  let trigger;
+  if (command) {
+    // v1.19.20: when no trigger is detected, fall back to 'command' so command-based iron rules
+    // (command-based iron rules) always run verification and aren't filtered out by the trigger check.
+    trigger = detectCommandTrigger(command) || 'command';
+  } else {
+    trigger = detectToolTrigger(toolName);
+    if (!trigger) process.exit(0);
+  }
 
   const { apiKey, apiUrl } = readCredentials();
   if (!apiKey || !apiUrl) process.exit(0);
+
+  // v1.26.92: editing is the most frequent thing in a session, so the edit trigger takes
+  // its own path — throttled, and deliberately never reaching the verification engine
+  // below, which is the only code here that can emit `decision: block`. Its conditions are
+  // written for commit and deploy; none of them can be satisfied by an edit.
+  if (trigger === 'edit') {
+    const out = await editReminder({ version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId });
+    if (out) console.log(out);
+    process.exit(0);
+  }
 
   // v1.26.90: the fetched rules feed the reminder only, and the reminder block below skips
   // the 'command' fallback trigger entirely — so for an ordinary Bash command this request

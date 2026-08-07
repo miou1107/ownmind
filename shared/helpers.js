@@ -141,6 +141,37 @@ export function detectCommandTrigger(command) {
 }
 
 /**
+ * Tool names that change a file on disk, and the trigger each produces.
+ *
+ * v1.26.92: the hook was registered for `Bash` only, so a rule could fire only while a
+ * shell command ran. Editing a file is not a shell command, so no rule tagged
+ * `trigger:edit` had ever fired — on one real account that was 56 rules, the most-used tag
+ * on it, and 63 once the untagged rules that match everything are counted.
+ */
+export const TOOL_TRIGGERS = {
+  Edit: 'edit',
+  Write: 'edit',
+  MultiEdit: 'edit',
+  NotebookEdit: 'edit',
+};
+
+/**
+ * Detect the trigger type from the tool being called, for tools that carry no command.
+ * The command path keeps priority: callers consult `detectCommandTrigger` first, so a
+ * payload with both is resolved by the command exactly as before this change.
+ * @param {string} toolName — PreToolUse `tool_name`
+ * @returns {'edit' | null}
+ */
+export function detectToolTrigger(toolName) {
+  if (typeof toolName !== 'string') return null;
+  // hasOwn, not a plain lookup: 'constructor', 'toString', '__proto__' and friends resolve
+  // up the prototype chain to functions, which are truthy. Those five names would clear the
+  // caller's "did we get a trigger" guard and reach the reminder as a trigger named after
+  // native code.
+  return Object.hasOwn(TOOL_TRIGGERS, toolName) ? TOOL_TRIGGERS[toolName] : null;
+}
+
+/**
  * Tag values each trigger accepts, beyond the trigger name itself.
  *
  * v1.26.91: `detectCommandTrigger` only ever answers commit/deploy/delete, and the hooks
@@ -160,6 +191,11 @@ export function detectCommandTrigger(command) {
  * CLAUDE_SETTINGS in v1.26.88, /dev/stdin in v1.26.90). A duplicated literal cannot ENOENT.
  */
 export const TRIGGER_TAG_ALIASES = {
+  // v1.26.92: `edit` covers Edit / Write / MultiEdit / NotebookEdit, so a rule tagged
+  // `trigger:write` has to match it. Without this the Write tool would fire the edit
+  // trigger and then drop every rule the author filed under "write" — 23 of them on the
+  // account this was measured against, the second most-used tag there.
+  edit: ['edit', 'write', '編輯', '寫檔', '改檔', 'modify'],
   commit: ['commit', 'git', '提交', 'checkin'],
   deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
   delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
