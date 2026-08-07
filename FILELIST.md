@@ -1,5 +1,13 @@
 # OwnMind 檔案結構
 
+## v1.26.98 修改（回滾失敗時不要再回報「backup restored」）
+
+新增檔：
+```
+tests/upgrade-rollback-honesty.test.js          — 收 review 補的五項各有測試：目錄被刪掉仍要
+                                                   回報得出去（含對照組）、還原失敗只看自己的
+                                                   錯誤、訊息摺一行且有上限、Windows 少建的
+                                                   資料夾、git status 要留下原因
 ## v1.26.98 修改（那把「一次只准一個人更新」的鎖，其實鎖不住）
 
 新增檔：
@@ -15,6 +23,13 @@ openspec/changes/v1.26.98-update-lock-not-a-lock/ — proposal / spec / tasks
 
 修改檔：
 ```
+scripts/interactive-upgrade.sh / .ps1           — 還原失敗時誠實回報；記錄檔移出 ~/.ownmind
+                                                   （Windows 端補上）；git status 失敗就停住
+                                                   不再往下 pull；訊息摺一行、去控制字元、
+                                                   兩邊同一個上限
+scripts/install-helpers/report-error.sh / .ps1  — 可用 OWNMIND_REPORT_HELPER 指向 ~/.ownmind
+                                                   外面的副本，讓「目錄已被刪掉」那種失敗還
+                                                   回報得出去
 hooks/ownmind-session-start.sh                  — 新增 lock_age_seconds / create_exclusive /
                                                    acquire_update_lock；原本是「檢查檔案不存在」
                                                    隔十行才 touch，兩個問題都不成鎖。改成先拿鎖
