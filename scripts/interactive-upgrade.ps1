@@ -48,7 +48,7 @@ function OK($code, $msg)   { Write-Host "OK:${code}:$msg" }
 function Fail($code, $msg) {
   try {
     if (Get-Command Report-Error -ErrorAction SilentlyContinue) {
-      Report-Error -Kind "upgrade_failed_terminal_$code" -Detail $msg -ContextFile $LogFile
+      Report-Error -Kind "upgrade_failed_terminal_$code" -Detail "${msg}: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     }
   } catch { }
   throw "ERROR:${code}:$msg"
@@ -73,6 +73,32 @@ if (Test-Path $reportErrorHelper) {
 # none of the previous patterns. Measured on TANK, 2026-08-07.
 $script:FileLockPattern = 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied|it is in use|being used by another'
 
+# v1.26.98 — what the failing command actually said, folded onto one line for Detail.
+#
+# Every Report-Error call below passed a hand-written guess ("git pull --ff-only failed
+# (network or non-ff merge)"), and that guess is the same sentence whether the remote was
+# unreachable, the branch had diverged, or a file was locked. On 2026-08-07 DESKTOP-8DD75VJ
+# failed a pull and nobody could say why, because the guess was the only record of it.
+#
+# The log file is already passed as ContextFile, but that report arrived with an empty
+# context and we have no way to reproduce the Windows path from here. Detail is a plain
+# string that is known to arrive, so the reason goes there too. Mirrors last_log_lines in
+# interactive-upgrade.sh, including the 300-character cap.
+$script:ReasonMaxChars = 300
+function Get-LastLogLines {
+  param([string]$LogPath = "")
+  if (-not $LogPath -or -not (Test-Path $LogPath)) { return "no log file" }
+  try {
+    $lines = Get-Content $LogPath -Tail 5 -ErrorAction Stop
+  } catch { return "log unreadable" }
+  if (-not $lines) { return "log empty" }
+  # Control characters stripped: a newline here produces a line that is not valid JSON and
+  # the whole report is dropped on arrival.
+  $text = ($lines -join "|") -replace '[\x00-\x1f]', ' '
+  if ($text.Length -gt $script:ReasonMaxChars) { $text = $text.Substring(0, $script:ReasonMaxChars) }
+  return $text
+}
+
 function Test-FileLockError {
   param([string]$LogPath)
   if (-not (Test-Path $LogPath)) { return $false }
@@ -87,14 +113,13 @@ function Test-FileLockError {
 # `Write-Host "ERROR:<code>:<message>"`, and the caller reading this script parses one line
 # at a time — so a multi-line message silently breaks the contract the header documents.
 # ForEach-Object ToString takes the message itself rather than the formatted record.
-$script:ReasonChars = 200
 function ConvertTo-OneLine {
   param($InputObject)
   if ($null -eq $InputObject) { return "no detail captured" }
   $text = (@($InputObject) | ForEach-Object { $_.ToString() }) -join "|"
   $text = ($text -replace '[\x00-\x1f]', ' ').Trim()
   if ([string]::IsNullOrWhiteSpace($text)) { return "no detail captured" }
-  if ($text.Length -gt $script:ReasonChars) { $text = $text.Substring(0, $script:ReasonChars) }
+  if ($text.Length -gt $script:ReasonMaxChars) { $text = $text.Substring(0, $script:ReasonMaxChars) }
   return $text
 }
 
@@ -220,13 +245,13 @@ if ($dirty) {
   Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
   $dirty | Out-File -FilePath $dirtyLog -Encoding utf8
-  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain non-empty; auto reset --hard to origin/main" -ContextFile $dirtyLog
+  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(Get-LastLogLines $dirtyLog)" -ContextFile $dirtyLog
   git fetch origin 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -eq 0) {
     git reset --hard origin/main 2>&1 | Out-File -Append $LogFile -Encoding utf8
   }
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "git_pull" "Force-align failed (network or permissions); $(RollbackNote)"
@@ -234,18 +259,15 @@ if ($dirty) {
   OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
 } else {
   $pullOut = git pull --ff-only 2>&1
+  # Capture the exit code before anything else runs.
   $pullCode = $LASTEXITCODE
   # v1.26.98 — $pullOut used to be captured and then dropped on the floor: it was never written
-  # to $LogFile and never reached the server, so the only record of a failed pull was the
-  # guess "network or non-ff merge". The .sh side redirects into ${LOG_FILE} and has always
-  # kept git's own words; Windows threw them away. That asymmetry is why the 2026-08-07 19:26
-  # failure on TANK produced no upgrade log at all — nothing on this path ever wrote one.
+  # to $LogFile and never reached the server. That is why the 2026-08-07 19:26 failure produced
+  # no upgrade log at all on Windows — nothing on this path ever wrote one. Writing it here is
+  # what makes the log worth quoting; Get-LastLogLines below is what quotes it.
   $pullOut | Out-File -Append $LogFile -Encoding utf8
   if ($pullCode -ne 0) {
-    # Writing $pullOut to $LogFile above is the part that was missing on Windows, and it stays.
-    # Quoting it into the Detail is PR #59's change, which does it for every call site with a
-    # shared cap; a second copy here would only collide with it.
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "git_pull" "git pull failed; $(RollbackNote)"
@@ -261,12 +283,12 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
   npm install --silent 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
     if (Test-FileLockError $LogFile) {
-      Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running)" -ContextFile $LogFile
+      Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running): $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
       Pop-Location
       Rollback
       Fail "file_locked" "Files in use by another process (likely Claude Code); $(RollbackNote). Close Claude Code completely, then re-run upgrade."
     }
-    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "npm_install" "MCP npm install failed; $(RollbackNote)"

@@ -912,3 +912,72 @@ a change to the whole permission model rather than to this feature, which is why
 folded in. Until then, no control of this shape can be described as enforced.
 
 Origin: bug report #18 (2026-08-07), and the analysis of #18's proposed fix.
+
+### 37. The upgrade error report's `context` arrives empty, and we cannot say where it is lost
+
+On 2026-08-07 DESKTOP-8DD75VJ failed a `git pull --ff-only` during an upgrade, restored its
+backup, and self-checked clean seven seconds later. Working out **why** the pull failed was
+impossible: the only record was the hand-written guess in `detail`, `"git pull --ff-only
+failed (network or non-ff merge)"`, and the `context` field — which is supposed to carry the
+tail of the upgrade log — was the empty string.
+
+The path is `interactive-upgrade.ps1` → `Report-Error` (report-error.ps1) →
+`report-error.cjs --context-file=…` → errors spool → `self-check.cjs` → server. Reading it,
+`self-check.cjs:1188` forwards `report.context` faithfully and `report-error.cjs:101` fills
+it from `readContextTail(args.contextFile)`, so the value is either empty at source or the
+argument never arrives. Both are plausible and neither is demonstrated.
+
+There is a candidate: `Report-Error` in `scripts/install-helpers/report-error.ps1` declares
+`[Parameter(Mandatory=$true)]`, which makes it an advanced function, and then assigns to
+`$args` — an automatic variable. **This is a guess. It has not been run.** There is no
+Windows machine on this side to reproduce it on, and a cause that cannot be demonstrated is
+not one to write down as fact.
+
+v1.26.98 did not wait for that answer: it put the real command output into `detail` as well,
+which is a plain string already proven to arrive. So the next failure of this kind will be
+explicable even if `context` is still broken. Closing this item means either reproducing the
+empty context on a Windows machine and fixing it, or establishing that the context field is
+redundant now and removing it.
+
+Origin: DESKTOP-8DD75VJ upgrade failure, 2026-08-07 19:26 (Asia/Taipei).
+
+### 38. Rule violations are collected but never shown anywhere
+
+`extractRuleCounts` counts `comply` and `skip` and drops `violate`. That is deliberate as of
+v1.26.98: the team page divides complied by triggered, and `triggered` has always meant
+complied + skipped, so folding violations in would silently change a number people have been
+reading for months.
+
+But the violations are real data — `iron_rule_compliance` events with `action: 'violate'`,
+written by the post-commit audit — and nothing displays them. A rate of 98% currently means
+"98% of the rules I noticed, I followed", not "98% of the rules that applied".
+
+Deciding what to show is a product question, not a bug fix: a second column, a separate
+figure, or a redefinition of the existing rate with the label changed to match. It needs
+Vin's call because it changes the meaning of a number already in use.
+
+Origin: found while fixing the "no data" columns on the team usage page, 2026-08-07.
+
+### 39. ~~A server-recovered session has no project~~ — fixed in v1.26.98
+
+Two things write a `session_logs` row. `ownmind_log_session`, called by the AI, may carry
+`context.project`. When the AI never calls it, `src/routes/memory.js` rebuilds the session
+from the activity log — and no activity event carried a project.
+
+Measured on 2026-08-07, over the previous week: 76 of one heavy user's 95 sessions were
+server-recovered, as were **all** of four other members'. So the column was blank for four
+people entirely, and for four fifths of the fifth.
+
+This was first written up as "no such data to recover", which was wrong and was challenged.
+The value is not unknown: `mcp/index.js` has derived it from `CLAUDE_PROJECT_DIR` (falling
+back to the working directory) since v1.17.37. It simply never travelled with anything except
+the session log the AI writes.
+
+Fixed by sending it rather than trying to recover it. `resolveProjectName()` in
+`shared/helpers.js` is now the single derivation, used by the MCP, both SessionStart hooks and
+the MCP's own emergency session log; every activity event carries `details.project`, and the
+recovery picks the most common one it sees. **Directory name only, never the path** — the name
+is work context, the path says where somebody keeps their files.
+
+Origin: same investigation as 38. Reopened the same day after the "cannot be fixed" claim was
+challenged, which was the right challenge.

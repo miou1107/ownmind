@@ -170,9 +170,9 @@ describe('v1.26.98 — a failure message stays on one line', () => {
       const f = path.join(dir, 'f');
       if (contents !== null) fs.writeFileSync(f, contents);
       return execFileSync('bash', ['-c', [
-        'ROLLBACK_CHARS=200',
-        shellFunction(shellScript, 'one_line_tail'),
-        `one_line_tail ${JSON.stringify(f)}`,
+        'REASON_CHARS=300',
+        shellFunction(shellScript, 'last_log_lines'),
+        `last_log_lines ${JSON.stringify(f)}`,
       ].join('\n')], { encoding: 'utf8' });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -197,12 +197,12 @@ describe('v1.26.98 — a failure message stays on one line', () => {
   });
 
   it('caps a runaway message', () => {
-    assert.ok(oneLineTail(`${'x'.repeat(4000)}\n`).length <= 200);
+    assert.ok(oneLineTail(`${'x'.repeat(4000)}\n`).length <= 300);
   });
 
   it('says so when there is nothing to read, rather than going blank', () => {
-    assert.match(oneLineTail(null), /no detail captured/);
-    assert.match(oneLineTail(''), /no detail captured/);
+    assert.match(oneLineTail(null), /no log file|log empty/);
+    assert.match(oneLineTail(''), /no log file|log empty/);
   });
 
   it('the PowerShell side normalises too, at the same cap', () => {
@@ -212,8 +212,9 @@ describe('v1.26.98 — a failure message stays on one line', () => {
     // ErrorRecord objects render multi-line through Out-String; ToString gives the message.
     assert.match(ps1, /ForEach-Object \{ \$_\.ToString\(\) \}/,
       'Out-String renders an ErrorRecord across several lines');
-    assert.match(ps1, /\$script:ReasonChars = 200\b/);
-    assert.match(sh, /ROLLBACK_CHARS=200\b/);
+    // One cap per side, shared by every reason string — not one per feature.
+    assert.match(ps1, /\$script:ReasonMaxChars = 300\b/);
+    assert.match(sh, /REASON_CHARS=300\b/);
   });
 });
 
@@ -222,7 +223,7 @@ describe('v1.26.98 — the rest of the review', () => {
   const ps1 = fs.readFileSync(ps1Script, 'utf8');
 
   it('git status failure carries git\'s own words, not just an exit code', () => {
-    assert.match(sh, /upgrade_git_status_failed[\s\S]{0,200}one_line_tail/);
+    assert.match(sh, /upgrade_git_status_failed[\s\S]{0,200}last_log_lines/);
     assert.match(ps1, /upgrade_git_status_failed[\s\S]{0,200}\$statusSaid/);
   });
 

@@ -52,7 +52,7 @@ OK()   { echo "OK:$1:$2"; }
 # report_error is already noop-on-missing, so a second call is harmless.
 FAIL() {
   echo "ERROR:$1:$2"
-  report_error "upgrade_failed_terminal_$1" "$2" "${LOG_FILE:-}" 2>/dev/null || true
+  report_error "upgrade_failed_terminal_$1" "$2: $(last_log_lines "${LOG_FILE:-}")" "${LOG_FILE:-}" 2>/dev/null || true
   exit 1
 }
 
@@ -79,6 +79,33 @@ is_file_lock_error() {
   # Remove-Item cannot delete a locked directory is "... because it is in use.", which matched
   # none of the previous patterns. Kept identical to $script:FileLockPattern in the .ps1 (IR-022).
   grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied|it is in use|being used by another' "$log"
+}
+
+# v1.26.98 — what the failing command actually said, folded onto one line for `detail`.
+#
+# Every report_error call below used to pass a hand-written guess: "git pull --ff-only failed
+# (network or non-ff merge)". That sentence is what reaches the server and the admin console,
+# and it is the same sentence whether the remote was unreachable, the branch had diverged, or
+# a file was locked. On 2026-08-07 one machine failed a pull and nobody could say why, because
+# the only record of it was that guess.
+#
+# git's real output is already being appended to the log file, and the log file is already
+# passed as the context argument — but the context arrived empty on that report and this
+# machine has no PowerShell to find out where it is lost. `detail` is a plain string that is
+# known to arrive, so the reason goes there too. Belt and braces, deliberately.
+REASON_CHARS=300
+last_log_lines() {
+  local log="${1:-}"
+  [ -n "$log" ] && [ -f "$log" ] || { printf 'no log file'; return 0; }
+  # Control characters stripped: a newline in this value produces a line that is not valid
+  # JSON, and the whole report is then dropped on arrival.
+  local text
+  text=$(tail -n 5 "$log" 2>/dev/null | tr '\n' '|' | tr -d '\000-\037')
+  [ -n "$text" ] || { printf 'log empty'; return 0; }
+  # `cut` appends a newline of its own; command substitution at the call site would strip it,
+  # but a function that returns one more character than its own cap is a trap for the next
+  # caller that does not use `$(...)`.
+  printf '%s' "$text" | cut -c "1-${REASON_CHARS}" | tr -d '\n'
 }
 
 # --- 0. Pre-check ---
@@ -113,18 +140,6 @@ if [ -f "${REPORT_HELPER_SRC}" ] && cp "${REPORT_HELPER_SRC}" "${LOG_DIR}/report
   export OWNMIND_REPORT_HELPER
 fi
 
-# The failing command's own words, folded onto one line and capped. A newline here reaches
-# stdout inside an `ERROR:<code>:<message>` line, and the caller reading this script parses
-# one line at a time — a multi-line message silently breaks that contract.
-ROLLBACK_CHARS=200
-one_line_tail() {
-  local file="${1:-}"
-  [ -n "$file" ] && [ -f "$file" ] || { printf 'no detail captured'; return 0; }
-  local text
-  text=$(tail -n 3 "$file" 2>/dev/null | tr '\n' '|' | tr -d '\000-\037')
-  [ -n "$text" ] || { printf 'no detail captured'; return 0; }
-  printf '%s' "$text" | cut -c "1-${ROLLBACK_CHARS}" | tr -d '\n'
-}
 
 rollback() {
   STEP "rollback" "Restoring backup ${BACKUP_DIR} -> ${OWNMIND_DIR}"
@@ -148,8 +163,8 @@ rollback() {
     else
       ROLLBACK_KIND="rollback_failed"
     fi
-    echo "ERROR:${ROLLBACK_KIND}:could not restore ${BACKUP_DIR} -> ${OWNMIND_DIR} ($(one_line_tail "${ROLLBACK_LOG}"))"
-    report_error "upgrade_${ROLLBACK_KIND}" "Rollback failed ($(one_line_tail "${ROLLBACK_LOG}")); backup left at ${BACKUP_DIR}" "${ROLLBACK_LOG}"
+    echo "ERROR:${ROLLBACK_KIND}:could not restore ${BACKUP_DIR} -> ${OWNMIND_DIR} ($(last_log_lines "${ROLLBACK_LOG}"))"
+    report_error "upgrade_${ROLLBACK_KIND}" "Rollback failed ($(last_log_lines "${ROLLBACK_LOG}")); backup left at ${BACKUP_DIR}" "${ROLLBACK_LOG}"
   else
     OK "rollback" "Restored previous version"
   fi
@@ -189,29 +204,26 @@ DIRTY=$(git status --porcelain 2>"${STATUS_ERR}")
 STATUS_CODE=$?
 cat "${STATUS_ERR}" >>"${LOG_FILE}" 2>/dev/null || true
 if [ "${STATUS_CODE}" -ne 0 ]; then
-  report_error "upgrade_git_status_failed" "git status --porcelain exited ${STATUS_CODE}: $(one_line_tail "${STATUS_ERR}")" "${STATUS_ERR}"
+  report_error "upgrade_git_status_failed" "git status --porcelain exited ${STATUS_CODE}: $(last_log_lines "${STATUS_ERR}")" "${STATUS_ERR}"
   # No rollback: nothing has been modified yet. The backup copy stays for sweep-old-backups.
   FAIL "git_status" "git status failed (exit ${STATUS_CODE}); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
 fi
 if [ -n "${DIRTY}" ]; then
   STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"
-  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main" "${LOG_FILE}.dirty"
+  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
   if git fetch origin >>"${LOG_FILE}" 2>&1 \
      && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
     OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
   else
-    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed" "${LOG_FILE}"
+    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
     FAIL "git_pull" "Force-align failed (network or permissions); $(rollback_note)"
   fi
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull complete"
 else
-  # Carrying git's own words into the Detail is PR #59's change, which does it for all seven
-  # report_error call sites with a shared cap; leaving a second copy here would collide with
-  # it for no gain. This path keeps only what is unique to it.
-  report_error "upgrade_git_pull_failed" "git pull --ff-only failed" "${LOG_FILE}"
+  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
   rollback
   FAIL "git_pull" "git pull failed; $(rollback_note). Manual check: cd ~/.ownmind && git status"
 fi
@@ -224,11 +236,11 @@ if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
     OK "npm_install" "MCP dependencies updated"
   else
     if is_file_lock_error "${LOG_FILE}"; then
-      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running)" "${LOG_FILE}"
+      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running): $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
       rollback
       FAIL "file_locked" "Files in use by another process (likely Claude Code); $(rollback_note). Close Claude Code completely, then re-run upgrade."
     fi
-    report_error "upgrade_npm_install_failed" "MCP npm install failed" "${LOG_FILE}"
+    report_error "upgrade_npm_install_failed" "MCP npm install failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
     FAIL "npm_install" "MCP npm install failed; $(rollback_note). Check ${LOG_FILE}"
   fi
@@ -277,7 +289,7 @@ else
   if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
   elif [ "${install_status}" -eq 2 ]; then
-    report_error "install_incomplete" "install.sh exited 2 (artifacts missing); not rolled back" "${LOG_FILE}"
+    report_error "install_incomplete" "install.sh exited 2 (artifacts missing); not rolled back: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     STEP "install" "Installation finished but is incomplete — see ${LOG_FILE}. Not rolled back (rollback cannot create the missing parts). Re-run: bash ~/.ownmind/scripts/bootstrap.sh"
   else
     rollback
