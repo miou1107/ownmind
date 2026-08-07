@@ -1,22 +1,15 @@
 # OwnMind 檔案結構
 
-## v1.26.92 修改（改檔案時的鐵律，一條都沒出現過）
+## v1.26.93 修改（換帳號從來沒真的換過）
 
 新增檔：
 ```
-shared/edit-reminder-state.js                   — 一小時節流的狀態讀寫與判斷，依 session 分開
-                                                   存。decide 是純函式、時鐘用參數傳，所以視窗
-                                                   邊界不用等一小時也測得出來。壞檔／缺檔一律
-                                                   當「沒有視窗」，代價是多列一次、不會少列。
-                                                   抓取失敗時存的是五分鐘的短視窗，避免斷線期
-                                                   間每次編輯都白等 3 秒
-hooks/ownmind-edit-reminder.js                  — edit 觸發的完整實作。.js 掛勾 import 它、
-                                                   .sh 掛勾用絕對路徑跑它（跟既有的
-                                                   ownmind-verify-trigger.js 同一個做法），
-                                                   所以視窗邏輯只有一份
-tests/edit-trigger-reminder.test.js             — 兩支掛勾都用真實 Edit/Write payload 實跑；
-                                                   節流那次要證明「沒有發出請求」；安裝器註冊
-                                                   連跑兩次確認不重複也不漏
+tests/installer-key-update.test.js              — 兩支安裝腳本不再用字串 "ownmind" 當跳過
+                                                   條件（含「不帶憑證的那幾個跳過要留著」的
+                                                   反向斷言）；寫入邏輯在暫存 HOME 上真的
+                                                   跑一次，驗金鑰換掉、未受管欄位保住；
+                                                   conflicts 偵測（含環境變數不算衝突、
+                                                   BOM 不再讓檔案消失）
 ```
 
 修改檔：
@@ -41,6 +34,23 @@ openspec/BACKLOG.md                             — 新增 32（觸發詞彙表�
                                                    34（兩支掛勾一個講中文一個講英文）
 ```
 
+## v1.26.92 修改（改檔案時的鐵律，一條都沒出現過）
+
+新增檔：
+```
+shared/edit-reminder-state.js                   — 一小時節流的狀態讀寫與判斷，依 session 分開
+                                                   存。decide 是純函式、時鐘用參數傳，所以視窗
+                                                   邊界不用等一小時也測得出來。壞檔／缺檔一律
+                                                   當「沒有視窗」，代價是多列一次、不會少列。
+                                                   抓取失敗時存的是五分鐘的短視窗，避免斷線期
+                                                   間每次編輯都白等 3 秒
+hooks/ownmind-edit-reminder.js                  — edit 觸發的完整實作。.js 掛勾 import 它、
+                                                   .sh 掛勾用絕對路徑跑它（跟既有的
+                                                   ownmind-verify-trigger.js 同一個做法），
+                                                   所以視窗邏輯只有一份
+tests/edit-trigger-reminder.test.js             — 兩支掛勾都用真實 Edit/Write payload 實跑；
+                                                   節流那次要證明「沒有發出請求」；安裝器註冊
+                                                   連跑兩次確認不重複也不漏
 ## v1.26.91 修改（提醒接通了，規則卻全被過濾掉）
 
 新增檔：
@@ -68,6 +78,16 @@ hooks/ownmind-iron-rule-check.sh                — 同一份表寫在 node -e �
                                                    Git Bash 遞路徑給 node）。比對前轉小寫
 docs/README.zh-TW.md                            — 補上本版版號與條目（原本停在 v1.26.90）
 docs/README.ja.md                               — 同上
+install.sh                                      — Claude Code 與 Cursor 兩個 MCP 區塊拿掉
+                                                   「已設定就跳過」。那兩個區塊裡放的是 API
+                                                   金鑰，跳過等於換帳號無效。改為一律寫入 +
+                                                   合併保留未受管欄位 + 說明是寫入/更換/未變
+install.ps1                                     — 同上（同一個 bug 的 PowerShell 版）。env
+                                                   區塊改成合併，與 install.sh 行為對齊
+scripts/install-helpers/resolve-credentials.cjs — 新增 conflicts（只比對檔案，不含環境變數）
+                                                   ；補上缺漏的 stripBom
+scripts/install-helpers/self-check.cjs          — 新增 credential_agreement 檢查項，兩個設定
+                                                   檔金鑰不一致時 warn 並指名檔案
 ```
 
 ## v1.26.90 修改（鐵律提醒掛勾從來沒觸發過，全平台）

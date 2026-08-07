@@ -1,5 +1,49 @@
 # OwnMind 更新紀錄
 
+## v1.26.93 — 換帳號從來沒真的換過，而且沒有一個地方會說
+
+在 Windows 上做全環境複驗時挖出來的，但兩個都不是 Windows 專屬，Mac 一樣中。
+
+### 一、安裝腳本看到 `"ownmind"` 三個字就整段跳過
+
+```
+install.ps1   if ($content -match '"ownmind"') { "already configured, skipping" }
+install.sh    if grep -q '"ownmind"' "$CLAUDE_SETTINGS"; then echo "already configured, skipping"
+```
+
+判斷的是「這個檔案裡有沒有出現過 ownmind」，但那個區塊裡放的是 **API 金鑰**。所以每一次為了換金鑰而重跑安裝——換帳號、輪替憑證、修正打錯的 key——都什麼事都沒做，然後照樣往下印安裝完成摘要。
+
+該問的是「是不是用**這一把**金鑰設定的」，問成了「有沒有設定過」。
+
+Cursor 的 MCP 區塊同一個寫法、同樣帶金鑰，一起修。再往下那幾個 `already configured, skipping`（Cursor hooks、Windsurf、OpenCode、OpenClaw、Antigravity）寫的是規則文字、不帶憑證，跳過是對的，維持原樣。
+
+改成一律寫入，而且改用合併而非覆蓋，既有 entry 裡安裝腳本不管的欄位會留著。跑完會講清楚是三種的哪一種：新寫入 / 換掉了一把不同的 / 沒有變。
+
+### 二、只寫一個設定檔，讀卻讀三個，而且從不比對
+
+安裝腳本只寫 `~/.claude/settings.json`。全 repo 沒有任何一支會寫 `~/.claude.json`——而 Claude Code 的 MCP 設定放在那裡。
+
+`resolveCredentials` 依序找 `.claude/settings.json` → `.claude/settings.local.json` → `.claude.json`，先找到先贏。所以換帳號之後兩個檔可能各拿著一把不同的金鑰，函式回傳第一把、`background_safe: true`、自我檢查全綠，而從另一個檔啟動的行程正以另一個帳號在跑。**沒有一行程式碼比對過這兩個值。**
+
+現在 `resolveCredentials` 多回一個 `conflicts`，自我檢查多一項 `credential_agreement`，不一致就 warn 並指名是哪個檔。
+
+只比對檔案，不含環境變數：環境變數在搜尋順序的最後，永遠不會贏——有檔案就輪不到它，沒檔案就沒有第二個值可以衝突。把它算進去等於對每個用過 `OWNMIND_API_KEY=...` 一鍵安裝的人都跳警告（那個 shell 會一直帶著舊值到關掉為止）。實測時就是這樣先跳出來的。
+
+warn 不是 fail：解析到的金鑰是能用的，而 v1.26.87 的告警機制會廣播新的 fail。這件事要傳到鍵盤前面那個人，不是去 call admin。
+
+順帶把 `resolve-credentials.cjs` 缺的 stripBom 補上。PS 5.1 舊版 `Set-Content -Encoding UTF8` 寫出來的 BOM 會讓 `JSON.parse` 拋錯、被 catch 吃掉，那個檔就變成「這裡沒有憑證」——正是這支模組存在的目的要消滅的形狀。
+
+### 驗證
+
+Windows 10 + Git Bash + node v25.8.1 + PowerShell 5.1：
+
+- 改後的 PowerShell 區塊逐字搬到 PS 5.1 實跑：舊金鑰換成新的、印出「replaced a different key」、既有的自訂 env 欄位（`KEEP_ME`）和檔案其他部分（`tui`）都留著、寫出來沒有 BOM（前三個位元組 `7B 0D 0A`）、node 讀得動
+- install.sh 的寫入邏輯用同樣方式在暫存 HOME 上實跑，結果相同
+- 兩個檔放不同金鑰 → `conflicts.key: ['.claude.json']`，`credential_agreement` warn
+- 對這台真實設定跑 → `conflicts` 空、pass，健康機器不誤報
+- `conflicts` 只放位置不放值（會跟自我檢查報告一起上傳）
+- 全套測試：本機既有 131 失敗（要資料庫），本分支同樣 131，新增 13 條全過
+
 ## v1.26.92 — 你標最多的那批鐵律，AI 改檔案的時候一條都看不到
 
 掛勾只掛在「執行指令」上。改檔案不是執行指令，所以標了「改檔案時要遵守」的鐵律，從來沒有在 AI 動手改檔案的當下出現過。
@@ -88,7 +132,6 @@ Windows 10 + Git Bash + node v25.8.1，對真實帳號的真實 API：
 ### 順帶修：中文版與日文版 README 停在上一版
 
 規矩是三份 README 一起更新，但沒有任何東西在檢查，所以 v1.26.90 跟 v1.26.91 連續兩版只有英文版被改到，中文版與日文版還在講一個已經不是現況的版本。這次補齊，並加上檢查：三份的版號要跟 `package.json` 一致，標了本版版號的條目三份都要有、或三份都沒有。兩種破法都實際弄壞過一次，確認會紅。
-
 ## v1.26.90 — 動手前的鐵律提醒，其實一次都沒出現過（不只 Windows）
 
 v1.26.88 修好了升級腳本的路徑問題，但同一個錯誤還躺在鐵律提醒掛勾裡，而且位置更前面。
