@@ -34,4 +34,25 @@
       Not 1.26.99: PR #62 already claims that number and bumps package.json to
       it. Two changes sharing a version would make it impossible to tell from
       the version alone which fix a machine has.
-- [ ] 10. Code review, then act on what comes back.
+- [x] 10. Code review, then act on what comes back. Two independent reviews ran.
+      Five findings were reproduced before being acted on:
+
+      | Finding | Reproduced as | Action |
+      | --- | --- | --- |
+      | a newline in a title makes one entry several lines | 60 titles × 2 newlines → 189-line index | title flattened, test added |
+      | the real `--fail` path bypasses the builder | full index → 141 lines after the next failed sync | failure-marker line reserved unconditionally, test added |
+      | truncation splits a surrogate pair | 12 of 24 filename lengths produced a lone surrogate | cut walks code points, test added |
+      | no test pins "by construction" | build-all-then-slice mutation: `## Projects` vanished, 32 of 34 tests green | test that every listed type keeps a heading and entries |
+      | ordering falls back to input order for non-numeric ids | UUID ids: reversed input produced a different file | filename tiebreak, test added |
+
+      Two documented numbers were wrong and are corrected: the "305-character"
+      longest line was `awk length()` counting bytes (196 characters), and the
+      part that had stopped reaching the session was projects specifically, not
+      the back half in general — all 143 iron rules fit inside the 200-line cut.
+
+      Left for a decision rather than changed: whether iron rules should keep
+      roughly half the budget for listings the SessionStart hook already
+      duplicates. See the proposal.
+
+- [x] 11. Ten mutations, all caught. Re-run after every fix.
+- [x] 12. Full suite green after the review round.

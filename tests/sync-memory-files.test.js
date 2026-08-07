@@ -9,6 +9,7 @@ const {
   slugTitle,
   memoryFilename,
   buildMemoryIndex,
+  allocateIndexBudget,
   MEMORY_INDEX_MAX_LINES,
   MEMORY_INDEX_MAX_ENTRY_CHARS,
 } = await import('../hooks/lib/sync-memory-files.js');
@@ -332,6 +333,66 @@ describe('buildMemoryIndex — stays inside the reader’s budget', () => {
     assert.match(line, /…\]\(project_9_zzz\.md\)/, 'truncation must be visible, link must survive');
   });
 
+  it('truncation never cuts a character in half', () => {
+    // `slice` counts UTF-16 code units. A title of astral characters is cut mid-pair
+    // whenever the budget lands on an odd offset, leaving a lone surrogate that renders as
+    // a replacement glyph. Varying the filename by one character walks the budget through
+    // both parities; before the fix, half of these came back broken.
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    const broken = [];
+    for (let pad = 0; pad < 24; pad++) {
+      const md = buildMemoryIndex(
+        [{
+          id: 1, type: 'project', title: '🎯'.repeat(300),
+          updated_at: '2026-08-01T00:00:00Z', filename: `project_1_${'a'.repeat(pad)}.md`,
+        }],
+        '2026-08-08T00:00:00Z', false,
+      );
+      const line = entryLines(md)[0];
+      if (loneSurrogate.test(line)) broken.push(pad);
+      assert.ok(line.length <= MEMORY_INDEX_MAX_ENTRY_CHARS, `pad=${pad} line was ${line.length}`);
+    }
+    assert.deepEqual(broken, [], 'these filename lengths cut an emoji in half');
+  });
+
+  it('a title carrying a newline cannot blow the line count', () => {
+    // The budget counts pushes, not physical lines, so one pushed element holding a newline
+    // becomes several lines in the file. Measured before the fix: 60 titles with two
+    // newlines each produced a 189-line index. yamlQuote() in the same module already
+    // flattens titles; this path did not.
+    const entries = Array.from({ length: 60 }, (_, i) => ({
+      id: i + 1, type: 'project', title: `a\nb\r\nc`,
+      updated_at: new Date(Date.UTC(2026, 0, 1 + i)).toISOString(),
+      filename: `project_${i + 1}_x.md`,
+    }));
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    assert.ok(
+      md.split('\n').length <= MEMORY_INDEX_MAX_LINES,
+      `index was ${md.split('\n').length} lines`,
+    );
+    assert.equal(entryLines(md).length > 0, true, 'entries should still be listed, just flattened');
+  });
+
+  it('every listed type keeps a heading and at least one entry', () => {
+    // Enforces that the cap happens while building rather than by trimming the finished
+    // string. A builder that emits everything and then slices to the budget passes the
+    // length assertions above while dropping the last type completely: measured, that
+    // mutation produced 132 iron rules, zero projects, and no `## Projects` heading at all.
+    const entries = [
+      ...makeMemories('iron_rule', 143),
+      ...makeMemories('project', 130),
+      ...makeMemories('feedback', 40),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    for (const [heading, prefix] of [['## Iron Rules', 'iron_rule_'], ['## Projects', 'project_'], ['## Feedback', 'feedback_']]) {
+      assert.ok(md.includes(heading), `${heading} disappeared entirely`);
+      assert.ok(
+        entryLines(md).some((l) => l.includes(prefix)),
+        `${heading} is present but has no entries under it`,
+      );
+    }
+  });
+
   it('the omission notes are themselves inside the budget', () => {
     const entries = [
       ...makeMemories('iron_rule', 500),
@@ -348,6 +409,61 @@ describe('buildMemoryIndex — stays inside the reader’s budget', () => {
     const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', true);
     assert.match(md, /⚠️ last sync FAILED/);
     assert.ok(md.split('\n').length <= MEMORY_INDEX_MAX_LINES);
+  });
+});
+
+describe('syncMemoryFiles — the budget survives the real failure path', () => {
+  it('a later failed sync does not push a full index over the limit', () => {
+    // applyFailMode() inserts the failure marker into the file already on disk, without
+    // going through the builder. A normal sync that filled its budget exactly went to 141
+    // lines the moment the next sync failed, and the hooks take exactly this path.
+    const memories = Array.from({ length: 400 }, (_, i) => ({
+      id: i + 1, type: i % 2 ? 'project' : 'iron_rule', title: `t${i}`, content: 'c',
+      updated_at: new Date(Date.UTC(2026, 0, 1 + i)).toISOString(), status: 'active',
+    }));
+    syncMemoryFiles({ memoryDir: tmpDir, data: { server_time: '2026-08-08T00:00:00Z', memories } });
+    const afterSync = fs.readFileSync(path.join(tmpDir, 'MEMORY.md'), 'utf8').split('\n').length;
+    assert.ok(afterSync <= MEMORY_INDEX_MAX_LINES, `normal sync produced ${afterSync} lines`);
+
+    syncMemoryFiles({ memoryDir: tmpDir, sync_failed: true });
+    const afterFail = fs.readFileSync(path.join(tmpDir, 'MEMORY.md'), 'utf8');
+    assert.match(afterFail, /⚠️ last sync FAILED/);
+    assert.ok(
+      afterFail.split('\n').length <= MEMORY_INDEX_MAX_LINES,
+      `after the failure marker the file was ${afterFail.split('\n').length} lines`,
+    );
+  });
+});
+
+describe('allocateIndexBudget — directly', () => {
+  const cases = [
+    ['budget 0', { iron_rule: 10, project: 10 }, 0],
+    ['negative budget', { iron_rule: 10, project: 10 }, -50],
+    ['budget below the number of types', { iron_rule: 10, project: 10, feedback: 10 }, 2],
+    ['one type', { project: 999 }, 120],
+    ['counts exactly equal the budget', { iron_rule: 60, project: 60 }, 120],
+    ['a type with nothing in it', { iron_rule: 0, project: 100 }, 120],
+    ['nothing at all', {}, 120],
+    ['counts far beyond the budget', { iron_rule: 1e6, project: 1e6, feedback: 1e6 }, 123],
+    ['one tiny, one enormous', { iron_rule: 1, project: 100000 }, 123],
+  ];
+
+  for (const [name, counts, budget] of cases) {
+    it(`${name}: never overspends, never over-allocates a type`, () => {
+      const alloc = allocateIndexBudget(counts, budget);
+      const sum = Object.values(alloc).reduce((a, b) => a + b, 0);
+      assert.ok(sum <= Math.max(0, budget), `allocated ${sum} of a ${budget} budget`);
+      for (const type of Object.keys(alloc)) {
+        assert.ok(alloc[type] <= (counts[type] || 0), `${type} got more lines than it has entries`);
+        assert.ok(alloc[type] >= 0, `${type} got a negative allocation`);
+      }
+    });
+  }
+
+  it('hands the unused share to the types that want it', () => {
+    const alloc = allocateIndexBudget({ iron_rule: 4, project: 300 }, 120);
+    assert.equal(alloc.iron_rule, 4);
+    assert.equal(alloc.project, 116, 'the 116 lines iron_rule did not need should go to project');
   });
 });
 
@@ -392,6 +508,32 @@ describe('buildMemoryIndex — shows the most recent, in order', () => {
       .map((e) => e.filename);
     const got = listed.map((l) => l.match(/\(([^)]+)\)/)[1]);
     assert.deepEqual(got, newest, 'listed the wrong memories, or listed them out of order');
+  });
+});
+
+describe('buildMemoryIndex — the same data always produces the same file', () => {
+  it('ties are broken deterministically even when ids are not numbers', () => {
+    // Ids are serial integers today, so `Number(b.id) - Number(a.id)` works. It yields NaN
+    // for anything else, and the spec treats NaN as +0, which quietly hands the ordering
+    // back to whatever order the caller passed in — the thing this sort exists to not rely
+    // on. Same timestamps, non-numeric ids, opposite input orders.
+    const entries = ['b3f1', 'a7c2', 'd0e9'].map((id) => ({
+      id, type: 'project', title: `t-${id}`,
+      updated_at: '2026-08-01T00:00:00Z', filename: `project_${id}_x.md`,
+    }));
+    const forward = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const reversed = buildMemoryIndex([...entries].reverse(), '2026-08-08T00:00:00Z', false);
+    assert.equal(forward, reversed, 'input order changed the output');
+  });
+
+  it('numeric ids order newest-id-first within the same timestamp', () => {
+    const entries = [1, 3, 2].map((id) => ({
+      id, type: 'project', title: `t-${id}`,
+      updated_at: '2026-08-01T00:00:00Z', filename: `project_${id}_x.md`,
+    }));
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const order = entryLines(md).map((l) => l.match(/project_(\d+)_/)[1]);
+    assert.deepEqual(order, ['3', '2', '1']);
   });
 });
 

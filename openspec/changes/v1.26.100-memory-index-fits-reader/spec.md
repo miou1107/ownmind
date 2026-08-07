@@ -93,6 +93,36 @@ because a caller that reorders would silently change which memories are visible.
 - **THEN** the failure marker is present, as before
 - **AND** the line budget still holds
 
+### Requirement: truncation produces valid text
+
+#### Scenario: a title made of astral characters
+- **GIVEN** a title of emoji, and filenames whose length walks the budget through both
+  odd and even offsets
+- **WHEN** the entry line is truncated
+- **THEN** no line contains a lone surrogate
+
+`String.prototype.slice` counts UTF-16 code units, so cutting at an odd offset splits a
+surrogate pair and leaves half a character. Measured before the fix: 12 of 24 filename
+lengths produced one. The cut walks whole code points instead.
+
+## The size axis, and why there is no byte cap
+
+The reader's warning cited two numbers, "280 lines and 31.8KB", and only ever stated a
+remediation in lines. Measured against the file it was complaining about:
+
+| | measured |
+| --- | --- |
+| lines | 284 |
+| characters | 32708 (31.9K) |
+| bytes | 52222 (51.0KB) |
+
+The reader's "31.8KB" is its character count, not its byte count. So the axis it measures is
+characters, and `MEMORY_INDEX_MAX_LINES × MEMORY_INDEX_MAX_ENTRY_CHARS` = 28000 characters
+already bounds it below the size that triggered the warning. The worst case this builder can
+actually emit measures 26114 characters (64.7 KB of UTF-8, which is not the axis in
+question). No byte cap is added, because no byte limit has been observed and inventing a
+threshold would be guessing at one.
+
 ## Non-goals
 
 - No overflow index files. Per-memory filenames already carry slugified titles,
