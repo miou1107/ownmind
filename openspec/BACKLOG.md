@@ -55,19 +55,25 @@ path, the most load-bearing code in the product.
 
 Origin: `archive/single-console-consolidation/tasks.md`, Stage 8.
 
-### 4. Nothing tells anyone a collector went quiet
+### 4. A machine that goes *entirely* quiet is still nobody's business
 
-The 系統設定 panel names who is missing, but only to whoever opens the page. Traced on
-production 2026-08-04: one member's scanner stopped uploading on 07-15 and nobody
-noticed for twenty days, because his MCP kept heartbeating daily and the old metric
-counted that as covered. The two heartbeats have different writers, which is the whole
-diagnostic: `mcp/index.js` sends `events: []` with an `os` field for one tool, while
-`hooks/ownmind-usage-scanner.js` sends five tools within the same second and no `os`.
-**One row moving alone means the scheduled scanner is dead while the MCP is fine.** A
-"reporting nothing for N days" broadcast would close the loop; OwnMind memory 740 has the
-full trace and the per-member state.
+What remains after v1.26.99, which closed the half that could be detected: a machine
+whose tool rows disagree with each other is now announced to its owner and to the admin.
 
-Origin: `archive/single-console-consolidation/tasks.md`, Stage 6.
+This half is the one the same release deliberately declined. When **every** row on a
+machine is stale there is nothing in `collector_heartbeat` that distinguishes a dead
+collector from a computer that is switched off, a person on leave, or a laptop that was
+replaced. Measured on 2026-08-07: Joanna's whole machine had been silent 4.2 days and
+Michelle's older Mac 1.2 days, and neither was a fault; Michelle's old Mac will cross any
+threshold eventually and stay across it forever, because nothing in the product says a
+machine was retired.
+
+Closing it needs that missing concept — a way to retire a machine, or a second signal
+(the person is demonstrably working elsewhere) strong enough to tell the two apart. Worth
+doing only if somebody is actually hurt by the gap; the detected half covers the incident
+that opened this item.
+
+Origin: `archive/single-console-consolidation/tasks.md`, Stage 6, narrowed by v1.26.99.
 
 ### 5. The api client has no request timeout
 

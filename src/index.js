@@ -7,6 +7,10 @@ import { startNightlyRecomputeJob } from './jobs/nightly-recompute.js';
 import { startNightlyUpgradeReminderJob } from './jobs/nightly-upgrade-reminder.js';
 import { seedDefaultPasswords } from './jobs/seed-default-passwords.js';
 import { runInstallCheckAlerts } from './jobs/install-check-alerts.js';
+import {
+  runCollectorSilenceAlerts,
+  startCollectorSilenceJob,
+} from './jobs/collector-silence-alerts.js';
 
 const PORT = process.env.PORT || 3000;
 
@@ -34,6 +38,14 @@ async function start() {
     // in again. Idempotent via install_check_alert_state.
     runInstallCheckAlerts().catch((err) =>
       logger.error('install-check startup sweep failed', { error: err.message }));
+    // A collector goes quiet because time passed, not because anything was
+    // uploaded, so this one does need a schedule. The startup sweep is what
+    // makes the machines already silent today surface on the first boot of this
+    // release instead of tomorrow morning. Idempotent via
+    // collector_silence_alert_state.
+    startCollectorSilenceJob();
+    runCollectorSilenceAlerts().catch((err) =>
+      logger.error('collector-silence startup sweep failed', { error: err.message }));
   });
 }
 
