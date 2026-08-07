@@ -1,5 +1,39 @@
 # OwnMind 更新紀錄
 
+## v1.26.90 — 動手前的鐵律提醒，在 Windows 上一次都沒出現過
+
+v1.26.88 修好了升級腳本的路徑問題，但同一個錯誤還躺在鐵律提醒掛勾裡，而且位置更前面。
+
+掛勾要先讀 Claude Code 送來的指令內容，才知道你正要做什麼。它用的是 `readFileSync('/dev/stdin')`。這是 macOS 和 Linux 的寫法，Windows 版 node 沒有這個路徑，會把它當成相對路徑解析成 `C:\dev\stdin`，然後拋出檔案不存在。
+
+拋出的位置在 `try` 之外，所以 `catch` 接不到；外面又包了 `2>/dev/null` 把錯誤丟掉。結果是掛勾拿到空字串、走到下一行的空值檢查就 `exit 0`。**每一次都是。Windows 使用者從來沒有看過任何一次鐵律提醒**，而且畫面上不會有任何異狀，因為它「正常地」結束了。
+
+### 第二個問題：取值路徑本來就錯
+
+就算把讀取修好，下一行 `JSON.parse(d).command` 還是拿不到東西。Claude Code 送的是 `{ tool_name, tool_input: { command } }`，指令包在 `tool_input` 底下，最上層沒有 `command`。
+
+同一個 repo 裡的 `ownmind-tty-echo.cjs` 早就知道這件事，它讀的是最上層的 `tool_response`，還註明「實測會送兩種形狀」並做了相容處理。鐵律掛勾這支沒跟上。
+
+`.js` 版讀 stdin 的方式是對的，但取值路徑一樣錯，所以兩支都改。
+
+### 改法
+
+- 四處 `readFileSync('/dev/stdin')` 全部改成 `readFileSync(0)`。fd 0 是跨平台的寫法，Windows 和 POSIX 都通。
+- 取值改成先看 `tool_input.command`，取不到再退回最上層 `command`。直接手動呼叫掛勾、或舊的呼叫端，都還能用。
+- `.sh` 與 `.js` 兩份一起改。這個 repo 已經被「只修一份、另一份繼續壞」咬過（見 v1.26.87 對 API 外層格式的註解）。
+
+### 驗證
+
+在 Windows 10 + Git Bash + node v25.8.1 實測：
+
+- 修正前：餵真實格式的 payload，`COMMAND=` 空值、`exit 0`
+- 修正後：`COMMAND='git commit -m test'`，判定觸發類型 commit，帶著金鑰查到伺服器，過濾與輸出都正常
+- 兩種 payload 形狀（`tool_input.command` 與最上層 `command`）都取得到
+
+### 沒做
+
+沒有動那些 `2>/dev/null`。這支檔案裡有 13 處，正是它們讓這個 bug 藏了這麼久——但一次拿掉會讓掛勾的錯誤跑進 Claude Code 的輸出，要另外設計要導去哪裡，不適合夾在這次修正裡。建議另開一次處理。
+
 ## v1.26.89 — 你寫的是提醒，系統偷偷把它變成會擋你的規則
 
 存一條鐵律的時候，伺服器會拿它去比對現成的「自動驗證範本」。比中了就把驗證條件寫進那條規則，然後在回傳裡放一個沒人會注意到的欄位。**五個範本全部都是「會擋住操作」的那種。**

@@ -74,8 +74,18 @@ fi
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | node -e "
-  const d = require('fs').readFileSync('/dev/stdin','utf8');
-  try { console.log(JSON.parse(d).command || ''); } catch { console.log(''); }
+  // v1.26.90: read fd 0, not '/dev/stdin'. Windows node resolves that POSIX path to
+  // C:\\dev\\stdin and throws ENOENT before the try block, so COMMAND came back empty
+  // and this hook exited at the '[ -z \$COMMAND ]' guard on every single call — no
+  // iron rule reminder has ever fired on Windows. Same failure class as the install.sh
+  // CLAUDE_SETTINGS path fixed in v1.26.88.
+  const d = require('fs').readFileSync(0,'utf8');
+  try {
+    const p = JSON.parse(d);
+    // Claude Code sends { tool_name, tool_input: { command } }; a bare { command } is
+    // still accepted so direct/manual invocations and older callers keep working.
+    console.log((p.tool_input && p.tool_input.command) || p.command || '');
+  } catch { console.log(''); }
 " 2>/dev/null)
 
 if [ -z "$COMMAND" ]; then exit 0; fi
@@ -120,7 +130,7 @@ if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then exit 0; fi
 RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
   "${API_URL}/api/memory/type/iron_rule" 2>/dev/null | \
   node -e "
-    const d = require('fs').readFileSync('/dev/stdin','utf8');
+    const d = require('fs').readFileSync(0,'utf8');
     const trigger = '$TRIGGER';
     const version = '$VERSION';
     try {
@@ -186,12 +196,12 @@ if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
   VERIFY_RESULT=$(node "$HOME/.ownmind/hooks/ownmind-verify-trigger.js" "$TRIGGER" 2>/dev/null)
   if [ -n "$VERIFY_RESULT" ]; then
     VERIFY_PASS=$(echo "$VERIFY_RESULT" | node -e "
-      const d = require('fs').readFileSync('/dev/stdin','utf8');
+      const d = require('fs').readFileSync(0,'utf8');
       try { console.log(JSON.parse(d).pass ? 'true' : 'false'); } catch { console.log('true'); }
     " 2>/dev/null)
     if [ "$VERIFY_PASS" = "false" ]; then
       BLOCK_CONTEXT=$(echo "$VERIFY_RESULT" | node -e "
-        const d = require('fs').readFileSync('/dev/stdin','utf8');
+        const d = require('fs').readFileSync(0,'utf8');
         const trigger = '$TRIGGER';
         const version = '$VERSION';
         const rules = process.argv[1] || '';
