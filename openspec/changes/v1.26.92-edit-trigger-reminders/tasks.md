@@ -44,5 +44,6 @@
 - [x] CHANGELOG, FILELIST, README ×3 (the v1.26.91 sync test pins all three)
 - [x] `package.json` → 1.26.92
 - [x] `superpowers:verification-before-completion`
-- [ ] `superpowers:requesting-code-review`
-- [ ] Open the PR. **Do not merge, do not tag, do not deploy** — Vin decides all three
+- [x] `superpowers:requesting-code-review` — 8 findings, all Important or below; 1–6 fixed in
+      the follow-up commit, 7–8 recorded as backlog 32/33
+- [x] Open the PR — #54. **Not merged, not tagged, not deployed** — Vin decides all three
