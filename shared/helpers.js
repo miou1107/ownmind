@@ -141,6 +141,48 @@ export function detectCommandTrigger(command) {
 }
 
 /**
+ * Tag values each trigger accepts, beyond the trigger name itself.
+ *
+ * v1.26.91: `detectCommandTrigger` only ever answers commit/deploy/delete, and the hooks
+ * used to match a rule only when one of its tags was literally `trigger:<that word>`.
+ * But nothing tells the user those three words are the whole vocabulary — `ownmind_save`
+ * accepts any tag — so rules get filed under the words people actually think in
+ * (`trigger:回滾`, `trigger:cleanup`, `trigger:部署`) and then never fire. The rule is
+ * stored, the hook runs, the filter drops it, and the exit is silent: nothing anywhere
+ * says why. On a real account with 3 iron rules, all 3 were unreachable.
+ *
+ * This only widens which stored rules a trigger can match. It does NOT widen when the
+ * hooks run — that is still `detectCommandTrigger`, unchanged.
+ *
+ * KEEP IN SYNC with the copy inlined in hooks/ownmind-iron-rule-check.sh. That hook builds
+ * its filter inside `node -e`, and importing this module from there would mean handing node
+ * a path — the exact move that produced two silent Windows failures (install.sh
+ * CLAUDE_SETTINGS in v1.26.88, /dev/stdin in v1.26.90). A duplicated literal cannot ENOENT.
+ */
+export const TRIGGER_TAG_ALIASES = {
+  commit: ['commit', 'git', '提交', 'checkin'],
+  deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
+  delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
+};
+
+/**
+ * Is this rule relevant to the operation about to run?
+ * An untagged rule is relevant to everything — that is the pre-existing contract.
+ * @param {{tags?: string[]}} rule
+ * @param {string} trigger — canonical trigger, or the 'command' fallback
+ * @returns {boolean}
+ */
+export function ruleMatchesTrigger(rule, trigger) {
+  if (!rule || !Array.isArray(rule.tags) || rule.tags.length === 0) return true;
+  const accepted = new Set(
+    (TRIGGER_TAG_ALIASES[trigger] || [trigger]).map(w => `trigger:${w}`)
+  );
+  // v1.19.20: command-based iron rules are relevant to every trigger.
+  accepted.add('trigger:command');
+  return rule.tags.some(t => accepted.has(String(t).toLowerCase()));
+}
+
+/**
  * Detect the trigger type from the free-form context passed to MCP
  * report_compliance.
  * @param {string} context — free-form text
