@@ -222,23 +222,41 @@ trap 'on_install_error "$LINENO"' ERR
 
 
 # --- 決定 MCP command / args ---
+#
+# v1.26.94: the path is handed to Node as an argv element. It used to be interpolated into
+# the source text, and on Windows that silently destroyed it.
+#
+# `cygpath -w` returns backslashes, so after bash finished substituting, Node was compiling:
+#
+#     const p = 'C:\Users\Vin\.ownmind\mcp\start.cmd'.replace(/\\/g, '\\\\');
+#
+# `\U`, `\V`, `\.`, `\m`, `\s` are not escape sequences. JavaScript drops the backslash and
+# keeps the letter, so `p` was already `C:UsersVin.ownmindmcpstart.cmd` before `.replace`
+# ran — and `.replace`, whose whole job was to double the backslashes, had none left to
+# double. Every `bootstrap.sh` upgrade wrote that broken command into settings.json.
+#
+# It stayed invisible because Claude Code launches the MCP server from `~/.claude.json`,
+# which no installer writes (v1.26.91). The broken value sat in the file nothing read.
+#
+# Escaping cannot fix this: the string is destroyed by the JS parser, not by the shell.
+# argv is the only shape that has no quoting layer to get wrong — the same conclusion
+# path-helpers.sh already records ("passing the path as an argv element is the escape-proof
+# shape"). Both branches use it, so there is no per-platform rule to remember.
 if [ "$IS_WINDOWS" = true ]; then
   # Windows: 用 cmd.exe 透過 start.cmd 啟動，避免 Claude Code 找不到 node
   OWNMIND_DIR_WIN=$(cygpath -w "$OWNMIND_DIR" 2>/dev/null || echo "$OWNMIND_DIR")
   START_CMD_WIN="${OWNMIND_DIR_WIN}\\mcp\\start.cmd"
   MCP_ENTRY=$(node -e "
-    const p = '$START_CMD_WIN'.replace(/\\\\/g, '\\\\\\\\');
-    console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', p] }));
-  ")
+    console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', process.argv[1]] }));
+  " "$START_CMD_WIN")
 else
   # Unreachable on Windows (that is the branch above), but routed through to_win_path all
   # the same: it is identity off Windows, and one uniform rule is cheaper to hold than an
   # exception nobody remembers is safe.
   MCP_ENTRY_PATH_WIN="$(to_win_path "$OWNMIND_DIR/mcp/index.js")"
   MCP_ENTRY=$(node -e "
-    const p = '$MCP_ENTRY_PATH_WIN';
-    console.log(JSON.stringify({ command: 'node', args: [p] }));
-  ")
+    console.log(JSON.stringify({ command: 'node', args: [process.argv[1]] }));
+  " "$MCP_ENTRY_PATH_WIN")
 fi
 
 # --- 2. Claude Code MCP 設定 ---
