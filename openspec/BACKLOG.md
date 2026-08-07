@@ -890,3 +890,25 @@ It is not reproducible on demand, so it is recorded rather than chased. If it re
 thing to capture is which tests ran immediately before it in that run.
 
 Origin: noticed while running the suite for v1.26.95.
+
+### 36. The AI and the person hold the same API key, so no server check can separate them
+
+Surfaced by bug report #18. `ownmind_report_bug` asked the AI to wait for the user to type a
+submit phrase and claimed the backend rejected auto-filled submissions. It does not:
+`confirm_string` is a string, and the server sees only that a string with the right value
+arrived.
+
+The reporter proposed a server-issued one-time phrase. That does not close it either — the
+AI is the caller that fetches the phrase, so it can read it and fill it in. Nor does
+"approve it in the admin console": `POST /me/login` returns **the same `api_key`** the AI
+already holds, so every endpoint the person can call, the AI can call too.
+
+v1.26.97 stopped claiming otherwise and recorded `confirmation_declared` instead — a client
+statement, marked as one.
+
+A real gate needs the two to hold different credentials: an MCP key that can write a report
+but not confirm one, and a confirmation credential that only a browser login mints. That is
+a change to the whole permission model rather than to this feature, which is why it was not
+folded in. Until then, no control of this shape can be described as enforced.
+
+Origin: bug report #18 (2026-08-07), and the analysis of #18's proposed fix.

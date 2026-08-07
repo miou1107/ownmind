@@ -20,7 +20,11 @@
  * Design points:
  *   - Auth is unified via the auth middleware (mounted per route).
  *   - Admin permission uses isAtLeast(role, 'admin').
- *   - confirm_string="送出" gated on the server (A2 second line of defense).
+ *   - confirm_string is checked for value, which is NOT the same as verifying that a human
+ *     typed it. The server sees a string equal to the expected phrase and cannot tell who
+ *     produced those characters; the AI holds the same API key as the person, so no
+ *     server-side check can separate them. `confirmation_declared` records what the client
+ *     said about it — a declaration, never a verification. See db/022.
  *   - Three same-fingerprint reports within 1 hour → 429 (UI is the first
  *     line of defense).
  *   - Privacy redaction is fail-closed (crash → 500, no DB write).
@@ -31,6 +35,7 @@ import { Router } from 'express';
 import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import { isAtLeast } from '../middleware/adminAuth.js';
+import { normalizeConfirmationDeclared } from '../utils/confirmation-declared.js';
 import logger from '../utils/logger.js';
 import { isValidFingerprint } from '../../shared/bug-fingerprints.js';
 import { validateContextBlob } from '../../shared/context-blob-schema.js';
@@ -72,15 +77,22 @@ router.post('/', auth, async (req, res) => {
       bug_fingerprint,
       related_lint_event_ids,
       confirm_string,
+      confirmation_declared,
       device_fingerprint,
       client_tool,
     } = req.body || {};
 
-    // 1. Confirm-string gate.
+    // 1. Confirm-string check.
+    //
+    // This checks the value, not its provenance. It stops a call that never went through
+    // the confirmation step at all; it does not — and cannot — stop the AI from typing the
+    // phrase itself. Whatever the client says about that is recorded below as a claim.
     const confirmCheck = validateConfirmString(confirm_string);
     if (!confirmCheck.ok) {
       return res.status(400).json({ error: confirmCheck.error });
     }
+
+    const declared = normalizeConfirmationDeclared(confirmation_declared);
 
     // 2. Required fields.
     if (!title || !description) {
@@ -149,8 +161,9 @@ router.post('/', auth, async (req, res) => {
       `INSERT INTO bug_reports
         (user_id, device_fingerprint, client_tool, title, description,
          severity, component, reproduce_input, context_blob,
-         context_blob_size_bytes, bug_fingerprint, related_lint_event_ids)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         context_blob_size_bytes, bug_fingerprint, related_lint_event_ids,
+         confirmation_declared)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING id, status, created_at`,
       [
         userId,
@@ -165,6 +178,7 @@ router.post('/', auth, async (req, res) => {
         blobCheck.size_bytes || 0,
         bug_fingerprint,
         Array.isArray(related_lint_event_ids) ? related_lint_event_ids : null,
+        declared,
       ]
     );
     const created = insertResult.rows[0];
@@ -394,7 +408,7 @@ router.get('/', auth, async (req, res) => {
 
     const rows = await query(
       `SELECT id, user_id, title, severity, component, status, status_reason,
-              bug_fingerprint, created_at, resolved_at
+              bug_fingerprint, created_at, resolved_at, confirmation_declared
          FROM bug_reports
          ${where}
          ORDER BY created_at DESC
