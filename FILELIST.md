@@ -1,5 +1,33 @@
 # OwnMind 檔案結構
 
+## v1.26.90 修改（鐵律提醒掛勾從來沒觸發過，全平台）
+
+新增檔：
+```
+tests/iron-rule-hook-payload.test.js            — 真的把兩支掛勾跑起來、餵 Claude Code 實際
+                                                   送的 payload，用「有沒有連到規則 API」當
+                                                   訊號（空值檢查在讀金鑰之前）。另含一條
+                                                   全 repo 掃描，禁止任何出貨腳本再用
+                                                   readFileSync('/dev/stdin')——清單用
+                                                   git ls-files 長出來，不手寫
+```
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.sh                — 四處 readFileSync('/dev/stdin') 改成
+                                                   readFileSync(0)。Windows node 會把該 POSIX
+                                                   路徑解析成 C:\dev\stdin 並拋 ENOENT，而拋出
+                                                   點在 try 之外、外層又有 2>/dev/null，所以掛勾
+                                                   每次都拿到空字串直接 exit 0。
+                                                   另：取指令改讀 tool_input.command，
+                                                   保留最上層 command 作為退路
+hooks/ownmind-iron-rule-check.js                — 同樣的取值路徑問題（讀 stdin 本來就對）。
+                                                   兩份一起改，避免重演「只修一份」。
+                                                   取值路徑這一半跟平台無關，macOS 也一樣
+                                                   拿不到，所以不是「Windows 沒提醒」，
+                                                   是所有人都沒看過
+```
+
 ## v1.26.89 修改（鐵律範本不再自動套用）
 
 新增檔：
