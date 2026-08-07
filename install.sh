@@ -558,21 +558,32 @@ for js_file in "${HOOK_JS_FILES[@]}"; do
 done
 
 # 複製 shell wrapper 並設定可執行
-if [ -f "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" ]; then
-  cp "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" "$HOME/.ownmind/git-hooks/pre-commit"
-  chmod +x "$HOME/.ownmind/git-hooks/pre-commit"
-  echo "[ OK ] Installed git pre-commit hook"
-fi
-if [ -f "$OWNMIND_DIR/hooks/ownmind-git-post-commit" ]; then
-  cp "$OWNMIND_DIR/hooks/ownmind-git-post-commit" "$HOME/.ownmind/git-hooks/post-commit"
-  chmod +x "$HOME/.ownmind/git-hooks/post-commit"
-  echo "[ OK ] Installed git post-commit hook"
-fi
-if [ -f "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" ]; then
-  cp "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" "$HOME/.ownmind/git-hooks/commit-msg"
-  chmod +x "$HOME/.ownmind/git-hooks/commit-msg"
-  echo "[ OK ] Installed git commit-msg hook (IR-024)"
-fi
+#
+# v1.26.96: strip CR on the way in, rather than `cp`.
+#
+# `.gitattributes` governs what a *checkout* writes, and a machine that already checked
+# these out with CRLF stays that way forever: git compares normalised content, so a CRLF
+# working file is not a difference against an LF index, `git status` is clean, and neither
+# `pull` nor any later attribute change rewrites it. The copies executed by git are made
+# from those files, so they inherit it.
+#
+# Running the installer is the one moment we can put it right without asking the user to
+# run `git add --renormalize`. A CRLF shebang is tolerated by Git for Windows today and
+# not by every shell, so this costs nothing and removes a latent fault.
+install_git_hook() {
+  local src="$OWNMIND_DIR/hooks/$1" dst="$HOME/.ownmind/git-hooks/$2"
+  [ -f "$src" ] || return 0
+  # '\015' rather than '\r': POSIX tr recognises both, but on an implementation that does
+  # not, '\r' degrades to the literal letter and deletes every r in the hook.
+  # Write-then-move: a plain redirect truncates the live hook first, and git would execute
+  # the half-written file on the next commit if tr died mid-write.
+  tr -d '\015' < "$src" > "$dst.tmp" && mv "$dst.tmp" "$dst"
+  chmod +x "$dst"
+  echo "[ OK ] Installed git $2 hook"
+}
+install_git_hook "ownmind-git-pre-commit"  "pre-commit"
+install_git_hook "ownmind-git-post-commit" "post-commit"
+install_git_hook "ownmind-git-commit-msg"  "commit-msg"
 
 # 設定 global git hooks path（需要 git 可用）
 if command -v git &>/dev/null; then

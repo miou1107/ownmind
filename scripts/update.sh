@@ -186,6 +186,28 @@ if [ -d "$HOME/.claude" ]; then
   echo "[ OK ] Hook scripts synced"
 fi
 
+# --- 2a2. Repair CRLF in the installed git hooks (v1.26.96) ---
+#
+# The git hooks are written by install.sh, not here — but `interactive-upgrade.sh` falls
+# back to this script when it finds no credentials, and those users would otherwise never
+# get the repair. `.gitattributes` governs checkout only: a machine that already holds these
+# files as CRLF is never rewritten by git, because normalised comparison hides it from
+# `status` and `pull` alike.
+#
+# Repair in place rather than reinstall: this script does not own their content.
+GIT_HOOK_DIR="$HOME/.ownmind/git-hooks"
+if [ -d "$GIT_HOOK_DIR" ]; then
+  repaired=0
+  for gh in "$GIT_HOOK_DIR"/pre-commit "$GIT_HOOK_DIR"/post-commit "$GIT_HOOK_DIR"/commit-msg; do
+    [ -f "$gh" ] || continue
+    case "$(tr -cd '\015' < "$gh" | wc -c | tr -d ' ')" in
+      0) ;;
+      *) tr -d '\015' < "$gh" > "$gh.tmp" && mv "$gh.tmp" "$gh" && chmod +x "$gh" && repaired=$((repaired + 1)) ;;
+    esac
+  done
+  [ "$repaired" -gt 0 ] && echo "[ OK ] Repaired CRLF in $repaired git hook(s)"
+fi
+
 # --- 2b. Sync usage scanner (needs shared/ module; kept under $OWNMIND_DIR for execution) ---
 # P6 launchd / systemd invokes $OWNMIND_DIR/hooks/ownmind-usage-scanner.js.
 if [ -f "$OWNMIND_DIR/hooks/ownmind-usage-scanner.js" ]; then
