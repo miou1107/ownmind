@@ -104,6 +104,18 @@ const INDEX_HEADER_LINES = 7;
 const FAIL_MARKER_RESERVED_LINES = 1;
 const PER_SECTION_LINES = 3;
 
+// v1.26.101 — iron rules ask for very little of the budget, because their contents already
+// reach the session by another route. The SessionStart hook injects every rule, with its
+// trigger conditions, directly into the session; an index line for one adds only the link to
+// its local file. A project not listed here is not in the session at all.
+//
+// Sharing purely by entry count therefore spent about half the budget on the duplicate: on
+// the measured install, 63 lines of iron rules against 63 of projects, while 67 projects
+// went unlisted. With this cap the same data lists 106 projects. The number is a judgement,
+// not a measurement: enough that the most recently changed rules are one click away.
+export const IRON_RULE_INDEX_CAP = 20;
+const TYPE_INDEX_CAP = { iron_rule: IRON_RULE_INDEX_CAP };
+
 // Cut to a UTF-16 budget without splitting a character. `slice` counts code units, so a
 // title made of astral characters (emoji, some rarer CJK) gets cut through the middle of a
 // surrogate pair whenever the budget lands on an odd offset, leaving a lone surrogate that
@@ -216,8 +228,15 @@ export function buildMemoryIndex(entries, serverTime, syncFailed) {
   for (const e of entries) (byType[e.type] ||= []).push(e);
 
   const present = SYNCABLE_TYPES.filter((t) => byType[t] && byType[t].length > 0);
+  // The allocator is told how many lines each type will actually accept, not how many
+  // entries it has, so a capped type releases the difference like any other type that wants
+  // less than its share. The omission note is computed from the real total further down, so
+  // a capped type still reports everything it left out.
   const counts = {};
-  for (const t of present) counts[t] = byType[t].length;
+  for (const t of present) {
+    const cap = TYPE_INDEX_CAP[t];
+    counts[t] = cap == null ? byType[t].length : Math.min(byType[t].length, cap);
+  }
 
   const overhead = INDEX_HEADER_LINES + FAIL_MARKER_RESERVED_LINES + present.length * PER_SECTION_LINES;
   const alloc = allocateIndexBudget(counts, MEMORY_INDEX_MAX_LINES - overhead);
