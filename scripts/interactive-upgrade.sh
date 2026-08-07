@@ -52,7 +52,7 @@ OK()   { echo "OK:$1:$2"; }
 # report_error is already noop-on-missing, so a second call is harmless.
 FAIL() {
   echo "ERROR:$1:$2"
-  report_error "upgrade_failed_terminal_$1" "$2" "${LOG_FILE:-}" 2>/dev/null || true
+  report_error "upgrade_failed_terminal_$1" "$2: $(last_log_lines "${LOG_FILE:-}")" "${LOG_FILE:-}" 2>/dev/null || true
   exit 1
 }
 
@@ -76,6 +76,33 @@ is_file_lock_error() {
   local log="$1"
   [ -f "$log" ] || return 1
   grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy' "$log" 2>/dev/null
+}
+
+# v1.26.98 — what the failing command actually said, folded onto one line for `detail`.
+#
+# Every report_error call below used to pass a hand-written guess: "git pull --ff-only failed
+# (network or non-ff merge)". That sentence is what reaches the server and the admin console,
+# and it is the same sentence whether the remote was unreachable, the branch had diverged, or
+# a file was locked. On 2026-08-07 one machine failed a pull and nobody could say why, because
+# the only record of it was that guess.
+#
+# git's real output is already being appended to the log file, and the log file is already
+# passed as the context argument — but the context arrived empty on that report and this
+# machine has no PowerShell to find out where it is lost. `detail` is a plain string that is
+# known to arrive, so the reason goes there too. Belt and braces, deliberately.
+REASON_CHARS=300
+last_log_lines() {
+  local log="${1:-}"
+  [ -n "$log" ] && [ -f "$log" ] || { printf 'no log file'; return 0; }
+  # Control characters stripped: a newline in this value produces a line that is not valid
+  # JSON, and the whole report is then dropped on arrival.
+  local text
+  text=$(tail -n 5 "$log" 2>/dev/null | tr '\n' '|' | tr -d '\000-\037')
+  [ -n "$text" ] || { printf 'log empty'; return 0; }
+  # `cut` appends a newline of its own; command substitution at the call site would strip it,
+  # but a function that returns one more character than its own cap is a trap for the next
+  # caller that does not use `$(...)`.
+  printf '%s' "$text" | cut -c "1-${REASON_CHARS}" | tr -d '\n'
 }
 
 # --- 0. Pre-check ---
@@ -110,19 +137,19 @@ DIRTY=$(git status --porcelain 2>/dev/null)
 if [ -n "${DIRTY}" ]; then
   STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"
-  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main" "${LOG_FILE}.dirty"
+  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
   if git fetch origin >>"${LOG_FILE}" 2>&1 \
      && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
     OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
   else
-    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed" "${LOG_FILE}"
+    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
     FAIL "git_pull" "Force-align failed (network or permissions); backup restored"
   fi
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull complete"
 else
-  report_error "upgrade_git_pull_failed" "git pull --ff-only failed (network or non-ff merge)" "${LOG_FILE}"
+  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
   rollback
   FAIL "git_pull" "git pull failed; backup restored. Manual check: cd ~/.ownmind && git status"
 fi
@@ -135,11 +162,11 @@ if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
     OK "npm_install" "MCP dependencies updated"
   else
     if is_file_lock_error "${LOG_FILE}"; then
-      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running)" "${LOG_FILE}"
+      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running): $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
       rollback
       FAIL "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
     fi
-    report_error "upgrade_npm_install_failed" "MCP npm install failed" "${LOG_FILE}"
+    report_error "upgrade_npm_install_failed" "MCP npm install failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
     FAIL "npm_install" "MCP npm install failed; backup restored. Check ${LOG_FILE}"
   fi
@@ -188,7 +215,7 @@ else
   if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
   elif [ "${install_status}" -eq 2 ]; then
-    report_error "install_incomplete" "install.sh exited 2 (artifacts missing); not rolled back" "${LOG_FILE}"
+    report_error "install_incomplete" "install.sh exited 2 (artifacts missing); not rolled back: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     STEP "install" "Installation finished but is incomplete — see ${LOG_FILE}. Not rolled back (rollback cannot create the missing parts). Re-run: bash ~/.ownmind/scripts/bootstrap.sh"
   else
     rollback
