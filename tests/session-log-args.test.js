@@ -161,12 +161,22 @@ describe('the declared contract matches what the code does', () => {
     // So the description carries the *route* to the phrase, not the phrase. The server's
     // refusal already names it (src/utils/bug-report-helpers.js:22), so one round trip
     // turns into the AI showing the user the exact word.
+    //
+    // v1.26.97: the "MUST NOT auto-fill — the backend rejects it" wording is gone, because
+    // the backend does not (bug #18: two reports were filed exactly that way). Keeping the
+    // phrase out of the description still matters — that was always the part doing the work
+    // — so that assertion stays. What replaced the false claim is an honest one plus a
+    // declaration field, deliberately worded as an obligation rather than as notice that
+    // the check is toothless.
     const mcp = read('mcp/index.js');
     const desc = mcp.slice(mcp.indexOf('confirm_string: {'));
     const line = desc.slice(0, desc.indexOf('},'));
     assert.doesNotMatch(line, /送出/,
       'the phrase must not appear in an AI-facing description — that is what makes auto-filling easy');
-    assert.match(line, /MUST NOT auto-fill/);
+    assert.doesNotMatch(line, /backend rejects|MUST NOT auto-fill/,
+      'the description must not claim a check the server does not perform');
+    assert.match(line, /this one is on you/,
+      'and must still put the obligation on the AI');
     assert.match(line, /server refuses/,
       'the description must tell the AI how to obtain the phrase, or the user is left guessing');
   });
