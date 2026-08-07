@@ -7,11 +7,12 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /**
- * v1.26.96 — a file with a shebang must be checked out with LF endings.
+ * v1.26.96 — line endings are declared once, for everything, with the exceptions listed.
  *
- * `.gitattributes` listed the git hooks one line at a time. `hooks/ownmind-git-commit-msg`
- * was added after that list was written and nobody remembered to extend it, so on a Windows
- * checkout with `core.autocrlf=true` it was the one hook of the three that arrived CRLF:
+ * `.gitattributes` used to be a whitelist, one rule per file or extension.
+ * `hooks/ownmind-git-commit-msg` was added after that list was written and nobody
+ * remembered to extend it, so on a Windows checkout with `core.autocrlf=true` it was the
+ * one hook of the three that arrived CRLF:
  *
  *     i/lf  w/lf    attr/text eol=lf     hooks/ownmind-git-post-commit
  *     i/lf  w/lf    attr/text eol=lf     hooks/ownmind-git-pre-commit
@@ -61,7 +62,49 @@ describe('v1.26.96 — every shebang file is pinned to LF', () => {
     assert.ok(files.length > 20, `only found ${files.length} shebang files — is the scan working?`);
   });
 
-  it('.gitattributes covers all of them', () => {
+  it('the global rule is present, and keeps text=auto', () => {
+    // The whole point of the rewrite: a `*` rule cannot miss a file, so there is nothing to
+    // keep in step. What has to be guarded is somebody narrowing it back to a list, or
+    // dropping `text=auto`.
+    //
+    // `text=auto` is load-bearing. `* eol=lf` on its own sets `text` unconditionally, which
+    // switches off binary sniffing — measured on a file containing 0x0D 0x0A: 13 bytes in,
+    // 11 out. This repository has two binary files today, one of them CHANGELOG.md.
+    const attrs = fs.readFileSync(path.join(repoRoot, '.gitattributes'), 'utf8');
+    assert.match(attrs, /^\*\s+text=auto\s+eol=lf\s*$/m,
+      'the global `* text=auto eol=lf` rule is gone — a per-file list will miss the next file');
+  });
+
+  it('git agrees that every tracked file is covered', () => {
+    // Ask git, not the file: this is what actually decides checkout behaviour.
+    const eol = execFileSync('git', ['ls-files', '--eol'], { cwd: repoRoot, encoding: 'utf8' })
+      .trim().split('\n');
+    const uncovered = eol.filter((line) => {
+      const attr = line.split('\t')[0];
+      return !/eol=(lf|crlf)/.test(attr) && !/-text/.test(attr);
+    });
+    assert.deepEqual(uncovered.map((l) => l.trim().replace(/\s+/g, ' ')), [],
+      'these tracked files have no line-ending rule at all');
+  });
+
+  it('binary content is still detected as binary', () => {
+    // If this goes to zero, `text=auto` was probably dropped: an explicit `text` overrides
+    // detection, and the two files below would start being line-ending converted.
+    const eol = execFileSync('git', ['ls-files', '--eol'], { cwd: repoRoot, encoding: 'utf8' })
+      .trim().split('\n');
+    const binary = eol.filter((l) => /^i\/-text/.test(l.trim())).map((l) => l.split('\t')[1]);
+    assert.ok(binary.includes('CHANGELOG.md'),
+      'CHANGELOG.md carries literal NUL bytes and must stay out of conversion');
+  });
+
+  it('Windows-native formats keep CRLF', () => {
+    const out = execFileSync('git', ['check-attr', 'eol', '--', 'install.ps1', 'mcp/start.cmd'],
+      { cwd: repoRoot, encoding: 'utf8' });
+    assert.equal((out.match(/eol: crlf/g) || []).length, 2,
+      'the exceptions must come after the global rule — last match wins');
+  });
+
+  it('every shebang file resolves to LF', () => {
     const eol = execFileSync('git', ['ls-files', '--eol', '--', ...files], {
       cwd: repoRoot, encoding: 'utf8',
     }).trim().split('\n');

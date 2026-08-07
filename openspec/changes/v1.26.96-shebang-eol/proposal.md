@@ -79,3 +79,45 @@ The repair also reaches one more path than first written. `interactive-upgrade.s
 `install.sh` only when it finds credentials; without them it falls back to
 `scripts/update.sh`, which never touched the git hooks. That path now repairs them in
 place.
+
+
+## Revised after bug #19: a whitelist, narrower or wider, is still a whitelist
+
+The first cut added a glob for the hooks and three extension rules. The reporter's follow-up
+made the point that the *shape* is the defect: 906 tracked files, 28 covered before, 484
+after — and the next file added in a directory nobody thought of is missed again.
+
+`.gitattributes` is now one global rule plus the exceptions:
+
+```
+* text=auto eol=lf
+
+*.ps1 / *.bat / *.cmd / *.vbs   text eol=crlf
+```
+
+Measured in a throwaway clone before adopting it: all 906 files covered, both binary files
+still detected as binary, and `git add --renormalize .` changes nothing but `.gitattributes`
+itself — no content churn at all.
+
+`text=auto` is load-bearing and was verified independently. `* eol=lf` alone sets `text`
+unconditionally, which turns off binary sniffing; the reporter measured 13 bytes in, 11 out
+on a file containing `0x0D 0x0A`. This repository has a live instance: `CHANGELOG.md`
+carries four literal NUL bytes from an old entry about handling NUL bytes, and git classifies
+it as binary today.
+
+The test changed with it. Nothing can be missing from a `*` rule, so the test now guards the
+shape: the global rule exists, `text=auto` is still on it, the exceptions come after it, git
+itself agrees every tracked file is covered, and binary content is still detected.
+
+Two of the reporter's suggestions were not taken:
+
+- **A `scripts/check-eol.sh` for CI.** This repository has no CI — `.github/` holds only
+  CODEOWNERS. The same assertions already run in `npm test`; a second implementation would
+  be two places to drift.
+- **Dropping the test entirely** ("nothing can be missed, so no test is needed"). What the
+  test catches is not a missed file, it is somebody narrowing the rule back to a list or
+  dropping `text=auto` — and the reporter's own proposal contains a script doing exactly
+  that check.
+
+`.editorconfig` was added, as suggested: `.gitattributes` governs git, not what an editor
+writes on save, and the two disagreeing makes files flip back and forth.
