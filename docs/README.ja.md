@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**現在のバージョン：v1.26.89** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
+**現在のバージョン：v1.26.90** · 詳細は [CHANGELOG](../CHANGELOG.md) を参照
 
 # OwnMind — クロスプラットフォーム AI メモリ＆鉄則執行システム
 
@@ -159,6 +159,7 @@ graph LR
 
 ### 鉄則執行エンジン
 
+- **実行前の鉄則リマインダーがようやく発火する** — フックはトップレベルの `.command` を読んでいたが、Claude Code が送るのは `{ tool_name, tool_input: { command } }`。抽出結果は常に空で、フックは空値ガードで正常終了していた — プラットフォームを問わず誰もリマインダーを見ていなかった。Windows ではさらに手前で失敗していた：`readFileSync('/dev/stdin')` は `C:\dev\stdin` に解決され `try` の外で例外を投げ、`2>/dev/null` がそれを捨てていた。両方のフックを fd 0 読み取りと `tool_input.command` 優先に修正し、旧形式は手動実行用に残した `v1.26.90`
 - **一致した検証テンプレートは提案であって適用ではない** — 鉄則の保存時にサーバーが `metadata.verification` を黙って付与していた。セット内の全テンプレートが `block_on_fail: true` を持つため、リマインダーとして書いたルールが作業を止めるルールとして返り、通知はレスポンス内に埋もれた ID ひとつだけだった。長い本文中のキーワード 1 個で一致する: ロールバック時にログを消さないという趣旨のルールが、デプロイのタグと本文中に一度だけ現れる「測試」により「デプロイ前にテストを実行」を付与され、ブロック時の文言は作者が書いていない内容を表示していた。一致判定自体は残し、`template_suggestion`（名称・`applied: false`・作業を止めるか・そのまま伝えられる一文）として返す。誰かが求めるまで何も書き込まない `v1.26.89`
 
 - **共通ジャッジコア** — 純粋関数 `enforceRule(ruleCode, context, options)` が `allow` / `block` / `warn` / `log_only` / `bypass` をティアに基づき返す。**ステータス：**v1.19.7 では `bypass-handler.js` のみを git pre-commit と reply-lint に接続（`OWNMIND_BYPASS` 環境変数が機能する）；`evaluateConditions` ループを `enforceRule` 呼び出しに置き換える完全統合は v1.19.8 に延期 `v1.19.6`

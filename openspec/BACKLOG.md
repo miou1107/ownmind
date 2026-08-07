@@ -756,6 +756,53 @@ applied during that window. Eight were found and cleared by hand on one account 
 
 Origin: 2026-08-06, bug report #16 from `Vin-windows-test`, item 5 of its suggested fixes.
 
+### 30. The hooks discard their own error streams, and that is why v1.26.90 hid for so long
+
+`hooks/ownmind-iron-rule-check.sh` wraps thirteen blocks in `2>/dev/null`. Two separate
+defects lived behind those redirects — a POSIX-only stdin path that threw on Windows, and
+an extraction that read a field the payload never carried — and neither produced a single
+visible symptom on any machine. The hook exited 0 every time.
+
+v1.26.88 established the rule for the installers: an error stream goes to a log, never to
+`/dev/null`. The hooks were not covered, and they are harder: a hook's stderr is consumed
+by Claude Code, so the errors cannot simply be un-suppressed — they need somewhere to go.
+`~/.ownmind/logs/` already exists and the self-check already uploads from there, so the
+destination is probably not the hard part; deciding what is worth logging on a path that
+runs before every single Bash call is.
+
+Related: the same treatment belongs on `ownmind-session-start.sh` and
+`ownmind-worktree-setup.sh`, which carry the same pattern.
+
+Origin: 2026-08-07, deferred out of v1.26.90 by its author as too large to carry along.
+
+### 31. Enforcement is switched off until the rule data is cleaned and users can manage it
+
+v1.26.90 restored the PreToolUse hook, which had never run. Restoring it would also have
+restored the blocking path, which evaluates `metadata.verification` from the local rule
+cache. That cache is a mirror of the server — the MCP layer overwrites it on init and after
+every rule mutation — and the server-side data still carries verification templates that
+the pre-v1.26.89 route attached on its own, every one of them `block_on_fail`.
+
+Measured on one real account: 20 of 27 cached rules carry a blocking mark, and `git push`
+would be stopped by six of them, including rules about credential choice and tag naming,
+under the message "you have not run tests". So v1.26.90 downgraded the blocking path to a
+report. Two things have to land before it goes back:
+
+1. **Clean the stored data.** The five templates produce byte-identical `verification`
+   objects, so a migration can match them exactly. Nothing records whether a given
+   `metadata.verification` was authored by a user or auto-attached — but there is no
+   supported way for a user to apply one either, so an exact template match is strong
+   evidence of auto-attachment. Worth confirming against a couple of real accounts before
+   deleting anything.
+2. **Give users a way to manage them** — backlog 29.
+
+Then re-enable, and re-enable it as one thing: the two hook copies currently disagree about
+scope (the `.sh` evaluates only deploy/delete, the `.js` evaluates commit as well), which
+would make the same account behave differently on macOS and Windows.
+
+Origin: 2026-08-07, during v1.26.90 review; confirmed by an independent adversarial review
+which identified that clearing a local cache is worthless because the server refills it.
+
 ---
 
 ## Smaller cleanups

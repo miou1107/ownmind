@@ -74,8 +74,24 @@ fi
 
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | node -e "
-  const d = require('fs').readFileSync('/dev/stdin','utf8');
-  try { console.log(JSON.parse(d).command || ''); } catch { console.log(''); }
+  // v1.26.90: read fd 0, not '/dev/stdin'. Windows node resolves that POSIX path to
+  // C:\\dev\\stdin and throws ENOENT before the try block, so the extracted command came
+  // back empty and this hook exited at the empty-value guard below. Same failure class as
+  // the install.sh CLAUDE_SETTINGS path fixed in v1.26.88.
+  // NOTE: keep shell variable references out of these comments. The v1.26.88 guard test
+  // scans this block for interpolated paths and cannot tell a comment from live source.
+  const d = require('fs').readFileSync(0,'utf8');
+  try {
+    const p = JSON.parse(d);
+    // Claude Code sends { tool_name, tool_input: { command } }. Reading a top-level
+    // .command yielded undefined on EVERY platform, not just Windows — so even where the
+    // stdin read worked, this hook still exited at the empty-value guard on every call.
+    // A bare { command } is still accepted so manual invocation keeps working.
+    // Non-string values are dropped: a number or object is truthy, would clear the
+    // empty-value guard, and would reach grep as '[object Object]'.
+    const raw = (p.tool_input && p.tool_input.command) || p.command;
+    console.log(typeof raw === 'string' ? raw : '');
+  } catch { console.log(''); }
 " 2>/dev/null)
 
 if [ -z "$COMMAND" ]; then exit 0; fi
@@ -120,7 +136,7 @@ if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then exit 0; fi
 RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
   "${API_URL}/api/memory/type/iron_rule" 2>/dev/null | \
   node -e "
-    const d = require('fs').readFileSync('/dev/stdin','utf8');
+    const d = require('fs').readFileSync(0,'utf8');
     const trigger = '$TRIGGER';
     const version = '$VERSION';
     try {
@@ -163,8 +179,18 @@ if [ -n "$RULES" ]; then
   log_event "iron_rule_trigger" "trigger" "$TRIGGER"
 fi
 
-# For git push: check that git tag matches package.json version
-if echo "$COMMAND" | grep -qiE "git push"; then
+# For git push: check that git tag matches package.json version.
+#
+# v1.26.90: this gate compares OwnMind's OWN version against `git tag -l` run in whatever
+# directory the user happens to be in. It is a maintainer release gate for the OwnMind
+# checkout, and it only ever made sense there. It never ran before this release — the hook
+# exited at the empty-command guard on every call — so pushing in any other repository
+# would now be blocked with an instruction to create OwnMind's version tag in that repo.
+# Scope it to the OwnMind checkout.
+REPO_TOP=$(git rev-parse --show-toplevel 2>/dev/null)
+OWNMIND_TOP=$(cd "$HOME/.ownmind" 2>/dev/null && pwd -P || echo '')
+if [ -n "$REPO_TOP" ]; then REPO_TOP=$(cd "$REPO_TOP" 2>/dev/null && pwd -P || echo "$REPO_TOP"); fi
+if echo "$COMMAND" | grep -qiE "git push" && [ -n "$REPO_TOP" ] && [ "$REPO_TOP" = "$OWNMIND_TOP" ]; then
   PKG_VER=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync(require('os').homedir()+'/.ownmind/package.json','utf8')).version)}catch{console.log('')}" 2>/dev/null)
   if [ -n "$PKG_VER" ]; then
     TAG_EXISTS=$(git tag -l "v${PKG_VER}")
@@ -181,17 +207,36 @@ if echo "$COMMAND" | grep -qiE "git push"; then
   fi
 fi
 
-# For deploy/delete operations: run verification engine
+# For deploy/delete operations: run verification engine.
+#
+# v1.26.90: this reports, it does not block. Reason: the engine evaluates
+# `metadata.verification` from the local rule cache, and that cache is a mirror of the
+# server — the MCP layer overwrites it from the API on init and after every rule mutation.
+# A server bug fixed one release earlier (v1.26.89) had been attaching verification
+# templates to rules on save, from a weak keyword match, with `block_on_fail: true` on
+# every template. v1.26.89 stopped new attachments; it did not clean the ones already
+# stored, and there is no supported way for a user to remove one.
+#
+# Until this release the hook exited at the empty-command guard, so this path had never
+# executed for anybody. Restoring the hook restores the blocking too — enforcing conditions
+# no user authored, naming a rule unrelated to what they were doing. Measured on one real
+# account: 20 of 27 cached rules carry a blocking mark, and `git push` would be stopped by
+# six of them, including rules about credential choice and tag naming.
+#
+# Clearing a local cache does not help: it is refetched from the server. The data has to be
+# cleaned server-side, and users need a way to manage these, before enforcement can be
+# switched on. Both are recorded in the backlog. The failures are still shown, so nothing
+# is hidden — they simply do not abort the command.
 if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
   VERIFY_RESULT=$(node "$HOME/.ownmind/hooks/ownmind-verify-trigger.js" "$TRIGGER" 2>/dev/null)
   if [ -n "$VERIFY_RESULT" ]; then
     VERIFY_PASS=$(echo "$VERIFY_RESULT" | node -e "
-      const d = require('fs').readFileSync('/dev/stdin','utf8');
+      const d = require('fs').readFileSync(0,'utf8');
       try { console.log(JSON.parse(d).pass ? 'true' : 'false'); } catch { console.log('true'); }
     " 2>/dev/null)
     if [ "$VERIFY_PASS" = "false" ]; then
       BLOCK_CONTEXT=$(echo "$VERIFY_RESULT" | node -e "
-        const d = require('fs').readFileSync('/dev/stdin','utf8');
+        const d = require('fs').readFileSync(0,'utf8');
         const trigger = '$TRIGGER';
         const version = '$VERSION';
         const rules = process.argv[1] || '';
@@ -199,25 +244,21 @@ if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
           const r = JSON.parse(d);
           const lines = [];
           if (rules) lines.push(rules);
-          const blockTag = '【OwnMind v' + version + '】鐵律攔截（' + trigger + '）';
+          const warnTag = '【OwnMind v' + version + '】鐵律提醒（' + trigger + '）';
           lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-          lines.push(blockTag);
+          lines.push(warnTag);
           lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-          (r.failures || []).forEach(f => lines.push('  ❌ ' + f));
+          (r.failures || []).forEach(f => lines.push('  ⚠️  ' + f));
           lines.push('');
-          lines.push('回應格式要求：AI 的第一行必須是「' + blockTag + '」，並說明為何被擋下。請先完成上述步驟再執行 ' + trigger + '。');
+          lines.push('回應格式要求：AI 的第一行必須是「' + warnTag + '」，並說明上面這幾點的狀況。這是提醒，不會擋下 ' + trigger + '。');
           const output = {
-            decision: 'block',
-            reason: 'Iron rule verification failed for ' + trigger + ' operation',
             hookSpecificOutput: {
               hookEventName: 'PreToolUse',
               additionalContext: lines.join('\n')
             }
           };
           console.log(JSON.stringify(output));
-        } catch {
-          console.log(JSON.stringify({decision:'block',reason:'Iron rule verification failed'}));
-        }
+        } catch { process.exit(0); }
       " "$RULES" 2>/dev/null)
       echo "$BLOCK_CONTEXT"
       exit 0
@@ -226,8 +267,21 @@ if [ "$TRIGGER" = "deploy" ] || [ "$TRIGGER" = "delete" ]; then
 fi
 
 # Output reminder text (commit: always allow; deploy/delete: verification passed)
+#
+# v1.26.90: wrap it as hookSpecificOutput. A PreToolUse hook that exits 0 has its bare
+# stdout shown only in transcript mode — it never reaches the model. The reminder text
+# itself ends with 「回應格式要求：AI 的第一行必須是…」, an instruction that could not
+# possibly arrive through that channel. The block and version-gate paths in this same file
+# already emit the JSON envelope; only the reminder path did not. This was invisible until
+# now because the hook exited at the empty-command guard on every call.
 if [ -n "$RULES" ]; then
-  echo "$RULES"
+  echo "$RULES" | node -e "
+    const d = require('fs').readFileSync(0,'utf8').replace(/\n+\$/, '');
+    if (!d) process.exit(0);
+    console.log(JSON.stringify({
+      hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: d }
+    }));
+  " 2>/dev/null
 fi
 
 exit 0
