@@ -1,5 +1,27 @@
 # OwnMind 檔案結構
 
+## v1.26.89 修改（鐵律範本不再自動套用）
+
+新增檔：
+```
+tests/no-silent-blocking-templates.test.js      — 用回報案例（記憶 829）的真實內文當測資：
+                                                   證明比對器仍然會命中它（刻意留著，
+                                                   當作「為什麼不能自動套用」的活證據）、
+                                                   五個範本全部都會擋人（所以沒有
+                                                   「只自動套用不擋人的」這條中間路）、
+                                                   存檔路徑不再寫 verification、
+                                                   回傳一定帶 applied:false
+openspec/changes/v1.26.89-no-silent-blocking-templates/  — proposal / spec / tasks
+```
+
+修改檔：
+```
+src/routes/memory.js                            — 比中範本不再寫進 metadata.verification；
+                                                   改回傳 template_suggestion（名稱、
+                                                   applied:false、會不會擋人、一句可直接
+                                                   轉述的話）。matched_template 保留給既有讀者
+```
+
 ## v1.26.88 修改（Windows 升級中途靜默中止）
 
 新增檔：
