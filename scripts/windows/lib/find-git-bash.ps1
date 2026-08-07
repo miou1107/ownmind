@@ -25,6 +25,12 @@
 
 $script:GitBashCacheFile = Join-Path $env:USERPROFILE '.ownmind\.git-bash-path'
 
+# v1.26.99 — every candidate this run rejected, and why. Find-GitBash returning $null used
+# to be indistinguishable from "no bash on this machine", so the caller told the user to go
+# install Git Bash while Git Bash sat in Program Files. Callers render this with
+# Get-GitBashSearchReport so the message describes what actually happened.
+$script:GitBashRejected = @()
+
 function Test-IsGitBash {
   param([Parameter(Mandatory)][string]$BashPath)
 
@@ -35,18 +41,43 @@ function Test-IsGitBash {
 
   try {
     # Git Bash --version 印類似：
-    #   GNU bash, version 5.1.16(1)-release (x86_64-pc-msys)
+    #   2.54 及更早：GNU bash, version 5.2.37(1)-release (x86_64-pc-msys)
+    #   2.55 之後：  GNU bash, version 5.3.15(1)-release (x86_64-pc-cygwin)
     # WSL distro 印類似：
     #   GNU bash, version 5.0.17(1)-release (x86_64-pc-linux-gnu)
     # WSL relay（沒 distro）會 fail，$LASTEXITCODE != 0
     $out = & $BashPath --version 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) { return $false }
-    # msys 是 Git Bash 標誌；linux-gnu 是 WSL distro（也不接受，要的是 Git Bash）
-    if ($out -match 'msys') { return $true }
+    if ($LASTEXITCODE -ne 0) {
+      $script:GitBashRejected += "$BashPath (--version exited $LASTEXITCODE)"
+      return $false
+    }
+    # linux-gnu 先擋掉：那是 WSL distro，不是 Git Bash。
+    if ($out -match 'linux-gnu') {
+      $script:GitBashRejected += "$BashPath (WSL distro, not Git Bash)"
+      return $false
+    }
+    # v1.26.99 — cygwin 加進來。Git for Windows 2.55 把 bash 的 build triplet 從 msys
+    # 換成 cygwin，而這裡只比對 msys，於是每一台更新到 2.55 的機器都會把好好的
+    # Git Bash 判成不合格，Find-GitBash 回 $null。呼叫端的反應是跳過 verify_local /
+    # verify_server 然後繼續，所以整件事唯一的痕跡，是一句叫使用者去 git-scm.com
+    # 裝 Git Bash 的訊息 —— 而 Git Bash 就在 Program Files 裡。
+    # 2026-08-08 於 TANK 更新到 2.55.0.windows.3 之後實測到。
+    if ($out -match 'msys|cygwin') { return $true }
+    $first = @($out -split "`n" | Where-Object { $_.Trim() }) | Select-Object -First 1
+    $script:GitBashRejected += "$BashPath (unrecognized build: $(if ($first) { $first.Trim() } else { 'no --version output' }))"
     return $false
   } catch {
+    $script:GitBashRejected += "$BashPath ($($_.Exception.Message))"
     return $false
   }
+}
+
+# 給呼叫端用的一句話，說明這次搜尋到底發生什麼事。
+function Get-GitBashSearchReport {
+  if (-not $script:GitBashRejected -or @($script:GitBashRejected).Count -eq 0) {
+    return "no bash.exe found under Program Files, LOCALAPPDATA or PATH"
+  }
+  return "found but rejected -> " + (@($script:GitBashRejected) -join "; ")
 }
 
 function Save-GitBashCache {
@@ -63,6 +94,9 @@ function Save-GitBashCache {
 }
 
 function Find-GitBash {
+  # 每次搜尋重新累積，否則同一個 session 呼叫兩次會把上一輪的拒絕理由一起報出來。
+  $script:GitBashRejected = @()
+
   # 1. cache
   if (Test-Path $script:GitBashCacheFile -PathType Leaf) {
     try {
