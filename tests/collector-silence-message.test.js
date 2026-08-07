@@ -23,7 +23,6 @@ function silence(over = {}) {
     user_name: 'Amiee Kuo',
     machine: 'LAPTOP-RGE2HCSQ',
     stale_tools: 'antigravity,cursor,opencode',
-    live_tools: 'claude-code',
     last_beat_at: new Date('2026-07-27T01:18:00Z'),
     stale_days: 11,
     ...over,
@@ -61,6 +60,25 @@ describe('v1.26.99 — the message the person gets', () => {
 
   it('fits the delivery envelope', () => {
     assert.ok(asDelivered(body).length <= DELIVERY_MAX_CHARS);
+  });
+
+  it('a machine name with newlines cannot spend another entry\'s line', () => {
+    // The same untrusted hostname reaches both renderers; only the admin one was
+    // covered, so removing oneLine() here changed nothing any test could see.
+    const { body: two } = renderMemberMessage([
+      silence({ machine: 'evil\nname\nhere' }),
+      silence({ machine: 'BOX-B', stale_days: 3 }),
+    ]);
+    assert.equal(two.split('\n').length, 2);
+    assert.match(two, /BOX-B/);
+  });
+
+  it('puts the longest silence first, so truncation drops the newest problems', () => {
+    const { body: many } = renderMemberMessage([
+      silence({ machine: 'RECENT', stale_days: 8 }),
+      silence({ machine: 'ANCIENT', stale_days: 40 }),
+    ]);
+    assert.ok(many.indexOf('ANCIENT') < many.indexOf('RECENT'));
   });
 });
 

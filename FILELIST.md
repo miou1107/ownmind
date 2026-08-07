@@ -11,21 +11,30 @@ db/023_collector_silence_alert_state.sql        — 哪些機器已經通知過�
 src/lib/broadcast-envelope.js                   — 從 install-check-alert-message.js 抽出來的
                                                    投遞信封（前 5 行、400 字、超出要留下「另有
                                                    N 項」）。第二個呼叫端出現才抽，不是預先抽
-src/lib/collector-silence.js                    — 判斷哪台機器的採集程式死了。純函式、時鐘用
-                                                   參數傳。訊號是「同一台機器內部對不起來」，
-                                                   不是「幾天沒消息」——後者剛好會漏掉真正發生
-                                                   過的那一種
+src/lib/collector-silence.js                    — 判斷哪台機器的採集程式現在是壞的。純函式、
+                                                   時鐘用參數傳。訊號是「同一台機器內部對不
+                                                   起來」，不是「幾天沒消息」，後者剛好會漏掉
+                                                   真正發生過的那一種。刻意不判斷「哪些是新
+                                                   的」——那題由 SQL 回答，因為兩個同時跑的
+                                                   排程只有資料庫能仲裁
 src/lib/collector-silence-message.js            — 兩個對象兩封信：給當事人的有修法、給管理員
                                                    的沒有（他在別人電腦上跑不了）
-src/jobs/collector-silence-alerts.js            — 先 claim 再發送、兩件事包在同一個交易裡；
-                                                   resolve 跟細節更新刻意留在交易外面。每天
-                                                   04:00 台北時間跑一次
+src/jobs/collector-silence-alerts.js            — 先記下、再 claim 並發送（同一個交易）、
+                                                   最後才寫復原。第一次看到不通知，六小時後
+                                                   還在才講；壞滿十四天再講一次。復原寫在最
+                                                   後面，因為它們原本在最前面，一個寫失敗會
+                                                   讓整輪在通知之前就中斷。每天 04:00 台北
+                                                   時間跑一次
 tests/collector-silence.test.js                 — 拿正式機真實快照當測資：一台會響、另外十台
                                                    必須安靜。後者才是值得釘住的那半
 tests/collector-silence-message.test.js         — 兩封信各自的內容、投遞信封、時區、爆量截斷
-tests/collector-silence-job.test.js             — 有狀態的假 DB，連跑兩次驗證第二次不再發；
-                                                   另有一組刻意讀 SQL 文字的測試，並在測試裡
-                                                   寫明「讀不等於跑」以及為什麼假 DB 擔保不了
+tests/collector-silence-job.test.js             — 有狀態的假 DB，時鐘可以往前撥：驗證第一次
+                                                   不發、六小時後才發、同一個人兩台機器修好
+                                                   一台不能把另一台的通知一起收掉。假 DB 的
+                                                   兩個時間常數改成從程式本體讀，不再自己抄
+                                                   一份；常數本身用「要比最慢的排程久」這種
+                                                   性質釘住。另有一組刻意讀 SQL 文字的測試，
+                                                   並寫明「讀不等於跑」
 tests/collector-silence-migration.test.js       — 建表冪等、鍵、外鍵刪除行為、欄位型別要跟
                                                    broadcast_messages.id 對得上、接線
 openspec/changes/v1.26.99-collector-gone-quiet/ — proposal / spec / tasks

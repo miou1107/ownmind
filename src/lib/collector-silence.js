@@ -78,16 +78,28 @@ export function toolsFingerprint(tools) {
 }
 
 /**
+ * Report every machine that is currently broken, and every one that has stopped being.
+ *
+ * Deliberately **not** "which of these are new". That question is answered by the
+ * claim statement in src/jobs/collector-silence-alerts.js, because it is also the
+ * question two concurrent sweeps must not both answer yes to — and the only place
+ * that can settle is the database. Answering it here as well would put the rule in
+ * two places, and the copy in JavaScript would be the one with no locking.
+ *
  * @param {{
  *   rows?: Array<{user_id: number, user_name?: string, machine: string, tool: string,
  *                 last_reported_at: Date|string}>,
  *   knownState?: Array<{user_id: number, machine: string, stale_tools: string,
- *                       announced_at: Date|null, resolved_at: Date|null}>,
+ *                       announced_at: Date|null, resolved_at: Date|null,
+ *                       broadcast_id: number|null}>,
  *   now?: Date,
  *   freshDays?: number,
  *   staleDays?: number,
  * }} input
- * @returns {{newSilences: Array<Object>, resolved: Array<Object>, detailChanges: Array<Object>}}
+ * @returns {{silences: Array<Object>, resolved: Array<Object>, cleared: Array<Object>}}
+ *   `silences` — broken right now, whether or not anybody has been told.
+ *   `resolved` — was announced, is now beating again; carries the broadcast to end.
+ *   `cleared`  — was seen but never announced, and healed before it was confirmed.
  */
 export function evaluateSilence({
   rows = [],
@@ -132,9 +144,9 @@ export function evaluateSilence({
     });
   }
 
-  const newSilences = [];
+  const silences = [];
   const resolved = [];
-  const detailChanges = [];
+  const cleared = [];
 
   for (const [key, machine] of machines) {
     const prev = byKey.get(key);
@@ -145,7 +157,16 @@ export function evaluateSilence({
     // the thresholds would say about it now.
     if (stalest <= freshDays) {
       if (prev && prev.announced_at && !prev.resolved_at) {
-        resolved.push({ user_id: machine.user_id, machine: machine.machine });
+        resolved.push({
+          user_id: machine.user_id,
+          machine: machine.machine,
+          broadcast_id: prev.broadcast_id ?? null,
+        });
+      } else if (prev && !prev.announced_at) {
+        // Seen once, healed before it was ever confirmed. The record has to go, or
+        // its stale `first_seen_at` would let the next break skip the waiting
+        // period this machine was never actually observed through.
+        cleared.push({ user_id: machine.user_id, machine: machine.machine });
       }
       continue;
     }
@@ -164,37 +185,19 @@ export function evaluateSilence({
     // silence longer than the one the date shows.
     const lastBeat = stale.reduce((newest, t) => (t.at > newest.at ? t : newest), stale[0]);
 
-    if (!prev || !prev.announced_at || prev.resolved_at) {
-      newSilences.push({
-        user_id: machine.user_id,
-        user_name: machine.user_name,
-        machine: machine.machine,
-        stale_tools: staleTools,
-        live_tools: toolsFingerprint(
-          machine.tools.filter((t) => t.age <= freshDays).map((t) => t.tool)
-        ),
-        last_beat_at: lastBeat.at,
-        // Rounded at the edge rather than inside the renderer, so every reader of
-        // this finding sees the same number.
-        stale_days: Math.floor(lastBeat.age),
-      });
-      continue;
-    }
-
-    // Already announced and still open. A widening silence (a fourth tool joins
-    // the three already frozen) keeps the record current and stays quiet: the
-    // reader has been told this machine is broken, and it still is.
-    if ((prev.stale_tools || '') !== staleTools) {
-      detailChanges.push({
-        user_id: machine.user_id,
-        machine: machine.machine,
-        stale_tools: staleTools,
-        last_beat_at: lastBeat.at,
-      });
-    }
+    silences.push({
+      user_id: machine.user_id,
+      user_name: machine.user_name,
+      machine: machine.machine,
+      stale_tools: staleTools,
+      last_beat_at: lastBeat.at,
+      // Rounded at the edge rather than inside the renderer, so every reader of
+      // this finding sees the same number.
+      stale_days: Math.floor(lastBeat.age),
+    });
   }
 
-  return { newSilences, resolved, detailChanges };
+  return { silences, resolved, cleared };
 }
 
 export default evaluateSilence;
