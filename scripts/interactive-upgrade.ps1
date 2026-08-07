@@ -28,6 +28,12 @@ $BackupDir = Join-Path $HOME ".ownmind.bak.$Ts"
 $LogDir = Join-Path $HOME ".ownmind-logs"
 try { New-Item -ItemType Directory -Force -Path $LogDir -ErrorAction Stop | Out-Null }
 catch { $LogDir = [System.IO.Path]::GetTempPath() }
+# v1.26.98 — $OwnMindDir\logs is no longer where this script logs, but the upgrade-complete
+# beacon still spools into it, and [System.IO.File]::AppendAllText throws rather than creating
+# a missing parent. Moving $LogDir out took the `New-Item` that used to make it, so the spool
+# would have started failing silently. The .sh side keeps its own `mkdir -p` for the same
+# reason (IR-022).
+try { New-Item -ItemType Directory -Force -Path (Join-Path $OwnMindDir "logs") -ErrorAction Stop | Out-Null } catch { }
 $LogFile = Join-Path $LogDir "upgrade-$Ts.log"
 
 function Step($code, $msg) { Write-Host "INFO:${code}:$msg" }
@@ -74,6 +80,24 @@ function Test-FileLockError {
 }
 
 # Same test against an in-memory string (an exception message), not a file on disk.
+# v1.26.98 — collapse a captured command's output to a single capped line.
+#
+# `git pull 2>&1` does not give strings: PowerShell wraps native stderr in ErrorRecord
+# objects, and `Out-String` renders those across several lines. That text then goes into
+# `Write-Host "ERROR:<code>:<message>"`, and the caller reading this script parses one line
+# at a time — so a multi-line message silently breaks the contract the header documents.
+# ForEach-Object ToString takes the message itself rather than the formatted record.
+$script:ReasonChars = 200
+function ConvertTo-OneLine {
+  param($InputObject)
+  if ($null -eq $InputObject) { return "no detail captured" }
+  $text = (@($InputObject) | ForEach-Object { $_.ToString() }) -join "|"
+  $text = ($text -replace '[\x00-\x1f]', ' ').Trim()
+  if ([string]::IsNullOrWhiteSpace($text)) { return "no detail captured" }
+  if ($text.Length -gt $script:ReasonChars) { $text = $text.Substring(0, $script:ReasonChars) }
+  return $text
+}
+
 function Test-FileLockErrorText {
   param([string]$Text)
   if ([string]::IsNullOrEmpty($Text)) { return $false }
@@ -122,6 +146,17 @@ catch { Fail "backup_failed" "Backup failed: $_" }
 # Rollback now records what actually happened; RollbackNote renders it for the caller.
 $script:RollbackFailed = $false
 
+# v1.26.98 — keep a copy of the error reporter outside $OwnMindDir and point the helper at it.
+# Rollback deletes that directory; if the move then fails, the reporter it would use has just
+# been deleted too, and Report-Error returns having written nothing. See report-error.ps1.
+$reportHelperSrc = Join-Path $OwnMindDir "scripts\install-helpers\report-error.cjs"
+if (Test-Path $reportHelperSrc) {
+  try {
+    Copy-Item -Path $reportHelperSrc -Destination (Join-Path $LogDir "report-error.cjs") -Force -ErrorAction Stop
+    $env:OWNMIND_REPORT_HELPER = Join-Path $LogDir "report-error.cjs"
+  } catch { }
+}
+
 function Rollback {
   Step "rollback" "Restoring backup $BackupDir -> $OwnMindDir"
   $script:RollbackFailed = $false
@@ -131,7 +166,7 @@ function Rollback {
     OK "rollback" "Restored previous version"
   } catch {
     $script:RollbackFailed = $true
-    $detail = "$_"
+    $detail = ConvertTo-OneLine $_
     $kind = if (Test-FileLockErrorText $detail) { "rollback_file_locked" } else { "rollback_failed" }
     Write-Host "ERROR:${kind}:$detail"
     try { Report-Error -Kind "upgrade_$kind" -Detail "Rollback failed: $detail" -ContextFile $LogFile } catch { }
@@ -168,10 +203,14 @@ Push-Location $OwnMindDir
 # stderr is deliberately left alone rather than merged into $dirty: git emits CRLF warnings
 # there, and folding those into the value would make a clean tree look dirty and trigger an
 # unnecessary reset --hard.
-$dirty = git status --porcelain
+$statusErr = "$LogFile.status"
+$dirty = git status --porcelain 2>$statusErr
 $statusCode = $LASTEXITCODE
+if (Test-Path $statusErr) { Get-Content $statusErr -ErrorAction SilentlyContinue | Out-File -Append $LogFile -Encoding utf8 }
 if ($statusCode -ne 0) {
-  Report-Error -Kind "upgrade_git_status_failed" -Detail "git status --porcelain exited $statusCode" -ContextFile $LogFile
+  # Reporting only the exit code repeats the mistake this release is about; keep what git said.
+  $statusSaid = ConvertTo-OneLine (Get-Content $statusErr -ErrorAction SilentlyContinue)
+  Report-Error -Kind "upgrade_git_status_failed" -Detail "git status --porcelain exited ${statusCode}: $statusSaid" -ContextFile $statusErr
   Pop-Location
   # No Rollback: nothing has been modified yet, so restoring would only risk the file-lock
   # failure above for no gain. The backup copy stays put for sweep-old-backups to retire.
@@ -203,11 +242,13 @@ if ($dirty) {
   # failure on TANK produced no upgrade log at all — nothing on this path ever wrote one.
   $pullOut | Out-File -Append $LogFile -Encoding utf8
   if ($pullCode -ne 0) {
-    $gitSaid = ($pullOut | Out-String).Trim()
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $gitSaid" -ContextFile $LogFile
+    # Writing $pullOut to $LogFile above is the part that was missing on Windows, and it stays.
+    # Quoting it into the Detail is PR #59's change, which does it for every call site with a
+    # shared cap; a second copy here would only collide with it.
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "git pull failed ($gitSaid); $(RollbackNote)"
+    Fail "git_pull" "git pull failed; $(RollbackNote)"
   }
   OK "pull" "git pull complete"
 }
