@@ -12,7 +12,7 @@ import http from 'http';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-import { readCredentials, getClientVersion } from '../shared/helpers.js';
+import { readCredentials, getClientVersion, resolveProjectName } from '../shared/helpers.js';
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
@@ -23,6 +23,10 @@ const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const HOME = os.homedir();
 const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
+// v1.26.98 — every event this hook writes carries the project, so a session the server has
+// to rebuild from activity still knows which one it was. The users whose sessions are always
+// rebuilt are precisely the ones the team page showed a blank project for.
+const PROJECT_NAME = resolveProjectName();
 
 function logEvent(event, extra = {}) {
   try {
@@ -36,7 +40,10 @@ function logEvent(event, extra = {}) {
     // runs (session-hook-command.cjs returns it for win32), so leaving it would have given
     // the same event two shapes depending on the user's OS: any later `details->>'status'`
     // query would read blank for every Windows user and say nothing about why.
-    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', details: extra });
+    const details = PROJECT_NAME && extra.project === undefined
+      ? { ...extra, project: PROJECT_NAME }
+      : extra;
+    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', details });
     fs.appendFileSync(path.join(LOG_DIR, `${dateStr}.jsonl`), entry + '\n');
   } catch {}
 }
@@ -77,7 +84,10 @@ function reportEvent(apiUrl, apiKey, event, extra = {}) {
         event,
         tool: 'claude-code',
         source: 'hook',
-        details: extra,   // v1.26.95 — see logEvent above
+        // v1.26.95 — see logEvent above. v1.26.98 — carries the project for the same reason.
+        details: PROJECT_NAME && extra.project === undefined
+          ? { ...extra, project: PROJECT_NAME }
+          : extra,
       }],
     });
     const mod = url.startsWith('https') ? https : http;

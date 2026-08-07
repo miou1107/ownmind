@@ -7,6 +7,17 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 MARKER_FILE="$OWNMIND_DIR/.last-update-check"
 LOCK_FILE="$OWNMIND_DIR/.update-lock"
 LOG_DIR="$OWNMIND_DIR/logs"
+# Same derivation as resolveProjectName() in shared/helpers.js: the working directory's own
+# name, and nothing at the home directory or the filesystem root — a basename there would
+# describe the machine's owner rather than a project. Control characters and quotes are
+# stripped because this value is interpolated into hand-built JSON below.
+OWNMIND_PROJECT_DIR_RESOLVED="${CLAUDE_PROJECT_DIR:-${OWNMIND_PROJECT_DIR:-$PWD}}"
+OWNMIND_PROJECT_NAME=""
+if [ -n "$OWNMIND_PROJECT_DIR_RESOLVED" ] \
+   && [ "$OWNMIND_PROJECT_DIR_RESOLVED" != "/" ] \
+   && [ "$OWNMIND_PROJECT_DIR_RESOLVED" != "$HOME" ]; then
+  OWNMIND_PROJECT_NAME=$(basename "$OWNMIND_PROJECT_DIR_RESOLVED" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+fi
 UPDATE_MSG=""
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
@@ -75,6 +86,13 @@ log_event() {
     details="$details\"$1\":\"$val\""
     shift 2
   done
+  # v1.26.98 — carry the project. A session the server has to rebuild from activity had no
+  # way to know which project it belonged to, so the team page showed a blank for anyone
+  # whose AI never called ownmind_log_session. Directory name only, never the path.
+  if [ -n "${OWNMIND_PROJECT_NAME:-}" ]; then
+    if [ -n "$details" ]; then details="$details,"; fi
+    details="$details\"project\":\"$OWNMIND_PROJECT_NAME\""
+  fi
   local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\",\"details\":{$details}}"
   # Local log
   echo "$entry" >> "$LOG_DIR/$date_str.jsonl"

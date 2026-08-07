@@ -27,6 +27,7 @@ import {
   pushBounded,
   shouldSkipDuplicate,
   resolveClientTool,
+  resolveProjectName,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
@@ -271,15 +272,10 @@ let sessionLogged = false;
 // it to the AI every time). CLAUDE_PROJECT_DIR is the project root passed in by Claude Code
 // when it launches the MCP. If the user isn't in a git repo or is using another tool, fall
 // back to the cwd basename.
-const AUTO_PROJECT = (() => {
-  try {
-    const dir = process.env.CLAUDE_PROJECT_DIR
-      || process.env.OWNMIND_PROJECT_DIR
-      || process.cwd();
-    if (!dir || dir === '/' || dir === os.homedir()) return null;
-    return path.basename(dir);
-  } catch { return null; }
-})();
+// v1.26.98 — this derivation moved to shared/helpers.js so the activity logger can use the
+// same one. Two copies would have been two answers to "which project is this" on the same
+// machine, which is exactly the confusion the team page column was showing.
+const AUTO_PROJECT = resolveProjectName();
 
 // --- v1.17.0 P4: Broadcast fetch + render ---
 // Never block the tool call; failures stay silent; 2s timeout.
