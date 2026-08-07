@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## v1.26.97 修改（那道確認關卡從來沒有在擋）
+
+新增檔：
+```
+db/022_bug_report_confirmation_source.sql       — 新增 confirmation_declared 欄位，附欄位註解
+                                                   說明它是「客戶端宣告」而非「伺服器驗證過」，
+                                                   既有資料回填 unknown
+src/utils/confirmation-declared.js              — 正規化函式，route 與測試共用一份（同
+                                                   activity-insert.js 的做法）
+tests/bug-report-confirmation-declared.test.js  — 沒宣告絕不能變成 user_typed、unknown 不可
+                                                   由客戶端直接宣告、工具說明不得再宣稱伺服器
+                                                   會擋、migration 不得回填成 user_typed
+```
+
+修改檔：
+```
+src/routes/bug-reports.js                       — 寫入與列出這個欄位；檔頭原本寫「confirm_string
+                                                   由伺服器把關」，改成說明它只驗值、驗不了人
+mcp/index.js                                    — 工具說明拿掉「伺服器會擋自動填入」那句假保證，
+                                                   新增必填的 confirmation_declared
+tests/session-log-args.test.js                   — 原本斷言說明裡必須有「不可以自己填」那句
+                                                   假保證，等於在保護它。改成斷言那句不能在、
+                                                   且責任要放在 AI 身上
+openspec/BACKLOG.md                             — 新增 36（AI 與使用者共用同一把金鑰）
+```
+
 ## v1.26.96 修改（手寫的清單不會告訴你它漏了哪一個）
 
 新增檔：

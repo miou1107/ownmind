@@ -690,7 +690,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_report_bug",
-    description: "Report a bug or design issue in OwnMind itself (plain words: the user thinks OwnMind misbehaved and wants to tell the developer).\n\nIMPORTANT: Before calling this tool, the AI MUST first show the field contents to the user for preview, then wait until the user types the exact submit phrase verbatim, then pass those characters as confirm_string. The AI MUST NOT fill confirm_string itself — the backend rejects auto-filled submissions with HTTP 400. Calling this tool without an explicit user submit confirmation violates the design and breaks the feature.",
+    description: "Report a bug or design issue in OwnMind itself (plain words: the user thinks OwnMind misbehaved and wants to tell the developer).\n\nIMPORTANT: Before calling this tool, show the field contents to the user, then wait until they type the submit phrase, and pass exactly what they typed as confirm_string.\n\nThis is a protocol you are asked to follow, NOT something the server enforces. The server checks that confirm_string has the expected value; it cannot tell whether you or the user produced those characters. Report which it was in confirmation_declared: 'user_typed' only when the user actually typed the phrase in response to your preview, 'ai_filled' when you supplied it yourself. Reports are read by a person deciding what to act on, and one that nobody looked at is worth knowing about as such.",
     inputSchema: {
       type: "object",
       properties: {
@@ -718,10 +718,15 @@ const TOOLS = [
         },
         confirm_string: {
           type: "string",
-          description: "Required, and the AI MUST NOT auto-fill or guess it — this is a human-in-the-loop gate. Pass back only what the user typed, verbatim. If you do not know the exact phrase, call this tool with your best attempt: the server refuses with an error that names the required phrase, and you then show the user that phrase and ask them to type it. Do not ask the user to guess.",
+          description: "Pass back what the user typed, verbatim. If you do not know the phrase, call with your best attempt: the server refuses with an error naming the required phrase, and you then show the user that phrase and ask them to type it. Do not ask the user to guess. The server checks this value only; it cannot see who produced it, so this one is on you. Whichever it was, say so in confirmation_declared.",
+        },
+        confirmation_declared: {
+          type: "string",
+          enum: ["user_typed", "ai_filled"],
+          description: "Who produced confirm_string. 'user_typed' only when the user typed the phrase after seeing your preview; 'ai_filled' when you supplied it. Nothing verifies this — it is your statement, recorded as such, and it is what tells the person reading these reports whether anyone else has looked at this one. An absent or unrecognised value is recorded as 'unknown'.",
         },
       },
-      required: ["title", "description", "bug_fingerprint", "confirm_string"],
+      required: ["title", "description", "bug_fingerprint", "confirm_string", "confirmation_declared"],
     },
   },
   {
@@ -1178,8 +1183,12 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_report_bug": {
-      // Two-stage confirmation flow: the AI must not call this before the preview;
-      // the server verifies confirm_string="送出".
+      // Two-stage confirmation flow: show the preview, then pass back what the user typed.
+      //
+      // v1.26.97: the server checks the VALUE of confirm_string, not who produced it, and
+      // it cannot — the AI authenticates with the same API key as the person, so nothing
+      // server-side can separate them. What is recorded instead is the client's own
+      // statement, in confirmation_declared.
       // device_fingerprint is computed locally on demand (a hash of OS-provided machine identifiers).
       let deviceFingerprint = 'unknown';
       let fingerprintSource = 'unavailable';
@@ -1212,6 +1221,7 @@ async function handleTool(name, args) {
           ? args.related_lint_event_ids
           : null,
         confirm_string: args.confirm_string,
+        confirmation_declared: args.confirmation_declared,
         device_fingerprint: deviceFingerprint,
         client_tool: CLIENT_TOOL,
       };
