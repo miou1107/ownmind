@@ -112,9 +112,15 @@ describe('v1.26.98 — every failure path carries it', () => {
   });
 
   it('no Report-Error in the PowerShell script passes a bare guess', () => {
+    // Two normalisers, because there are two kinds of source: `Get-LastLogLines` reads the tail
+    // of a log file, `ConvertTo-OneLine` folds an exception or captured output already in
+    // memory. The requirement is that the Detail carries what actually happened, not that it
+    // calls one particular function — asserting the narrower thing failed the rollback and
+    // git-status reports, which do carry a real reason, by the other route.
     const calls = ps1.match(/Report-Error -Kind "[^"]+" -Detail "[^"]*"/g) || [];
     assert.ok(calls.length >= 5, `only found ${calls.length} Report-Error calls — is the scan working?`);
-    const withoutReason = calls.filter((c) => !c.includes('Get-LastLogLines'));
+    const withoutReason = calls.filter((c) =>
+      !c.includes('Get-LastLogLines') && !/\$\w*[Ss]aid|\$detail/.test(c));
     assert.deepEqual(withoutReason, [], 'these report a guess with no record of what happened');
   });
 

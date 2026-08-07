@@ -20,7 +20,20 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
 $OwnMindDir = Join-Path $HOME ".ownmind"
 $Ts = Get-Date -Format "yyyyMMdd-HHmmss"
 $BackupDir = Join-Path $HOME ".ownmind.bak.$Ts"
-$LogDir = Join-Path $OwnMindDir "logs"
+# v1.26.98 — the log lives OUTSIDE $OwnMindDir, matching interactive-upgrade.sh (bug #15).
+# Rollback is `Remove-Item -Recurse -Force $OwnMindDir` followed by `Move-Item`, so while this
+# file lived under $OwnMindDir\logs\ every failure message that said "see $LogFile" named a
+# file the same function had just deleted. The .sh side moved in v1.26.88; the Windows side
+# was left behind, which is why the Windows half of the team still had no readable log.
+$LogDir = Join-Path $HOME ".ownmind-logs"
+try { New-Item -ItemType Directory -Force -Path $LogDir -ErrorAction Stop | Out-Null }
+catch { $LogDir = [System.IO.Path]::GetTempPath() }
+# v1.26.98 — $OwnMindDir\logs is no longer where this script logs, but the upgrade-complete
+# beacon still spools into it, and [System.IO.File]::AppendAllText throws rather than creating
+# a missing parent. Moving $LogDir out took the `New-Item` that used to make it, so the spool
+# would have started failing silently. The .sh side keeps its own `mkdir -p` for the same
+# reason (IR-022).
+try { New-Item -ItemType Directory -Force -Path (Join-Path $OwnMindDir "logs") -ErrorAction Stop | Out-Null } catch { }
 $LogFile = Join-Path $LogDir "upgrade-$Ts.log"
 
 function Step($code, $msg) { Write-Host "INFO:${code}:$msg" }
@@ -55,6 +68,11 @@ if (Test-Path $reportErrorHelper) {
 # OwnMind MCP node process 持有 ~/.ownmind/mcp/node_modules/*.js handle 時，
 # git pull / npm install 會吃 EBUSY / EACCES。掃 log 找 lock pattern，中了就改錯誤碼為
 # file_locked 並給明確提示。
+# v1.26.98 — 'it is in use' added. PowerShell's own wording when Remove-Item cannot delete a
+# locked directory is "Cannot remove the item at '...' because it is in use.", which matched
+# none of the previous patterns. Measured on TANK, 2026-08-07.
+$script:FileLockPattern = 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied|it is in use|being used by another'
+
 # v1.26.98 — what the failing command actually said, folded onto one line for Detail.
 #
 # Every Report-Error call below passed a hand-written guess ("git pull --ff-only failed
@@ -84,8 +102,31 @@ function Get-LastLogLines {
 function Test-FileLockError {
   param([string]$LogPath)
   if (-not (Test-Path $LogPath)) { return $false }
-  $patterns = 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied'
-  return $null -ne (Select-String -Path $LogPath -Pattern $patterns -CaseSensitive:$false -Quiet)
+  return $null -ne (Select-String -Path $LogPath -Pattern $script:FileLockPattern -CaseSensitive:$false -Quiet)
+}
+
+# Same test against an in-memory string (an exception message), not a file on disk.
+# v1.26.98 — collapse a captured command's output to a single capped line.
+#
+# `git pull 2>&1` does not give strings: PowerShell wraps native stderr in ErrorRecord
+# objects, and `Out-String` renders those across several lines. That text then goes into
+# `Write-Host "ERROR:<code>:<message>"`, and the caller reading this script parses one line
+# at a time — so a multi-line message silently breaks the contract the header documents.
+# ForEach-Object ToString takes the message itself rather than the formatted record.
+function ConvertTo-OneLine {
+  param($InputObject)
+  if ($null -eq $InputObject) { return "no detail captured" }
+  $text = (@($InputObject) | ForEach-Object { $_.ToString() }) -join "|"
+  $text = ($text -replace '[\x00-\x1f]', ' ').Trim()
+  if ([string]::IsNullOrWhiteSpace($text)) { return "no detail captured" }
+  if ($text.Length -gt $script:ReasonMaxChars) { $text = $text.Substring(0, $script:ReasonMaxChars) }
+  return $text
+}
+
+function Test-FileLockErrorText {
+  param([string]$Text)
+  if ([string]::IsNullOrEmpty($Text)) { return $false }
+  return $Text -imatch $script:FileLockPattern
 }
 
 # --- v1.17.66 Self-check 觀測管道保證執行（IR-038） ---
@@ -114,13 +155,56 @@ Step "backup" "Backing up to $BackupDir"
 try { Copy-Item -Recurse -Path $OwnMindDir -Destination $BackupDir; OK "backup" "Backup complete" }
 catch { Fail "backup_failed" "Backup failed: $_" }
 
+# v1.26.98 — Rollback used to swallow its own failure: the catch printed one line and
+# execution continued, with no flag and no report. Every caller then emitted a hard-coded
+# "backup restored", so the user was told the machine had been restored when it had not.
+# Fail() forwards that same string to the server as the Detail of upgrade_failed_terminal_*,
+# which means the diagnostic record admins read was asserting a restore that never happened.
+#
+# On Windows this is the common case, not an exotic one: Remove-Item cannot delete
+# $OwnMindDir while the MCP node process (or Claude Code itself) holds a handle under
+# mcp\node_modules — precisely the condition Test-FileLockError was written for, which had
+# never been wired into this path. Observed on TANK, 2026-08-07:
+#   ERROR:rollback_failed:Cannot remove the item at 'C:\Users\Vin\.ownmind' because it is in use.
+#   ERROR:git_pull:git pull failed; backup restored
+#
+# Rollback now records what actually happened; RollbackNote renders it for the caller.
+$script:RollbackFailed = $false
+
+# v1.26.98 — keep a copy of the error reporter outside $OwnMindDir and point the helper at it.
+# Rollback deletes that directory; if the move then fails, the reporter it would use has just
+# been deleted too, and Report-Error returns having written nothing. See report-error.ps1.
+$reportHelperSrc = Join-Path $OwnMindDir "scripts\install-helpers\report-error.cjs"
+if (Test-Path $reportHelperSrc) {
+  try {
+    Copy-Item -Path $reportHelperSrc -Destination (Join-Path $LogDir "report-error.cjs") -Force -ErrorAction Stop
+    $env:OWNMIND_REPORT_HELPER = Join-Path $LogDir "report-error.cjs"
+  } catch { }
+}
+
 function Rollback {
   Step "rollback" "Restoring backup $BackupDir -> $OwnMindDir"
+  $script:RollbackFailed = $false
   try {
     Remove-Item -Recurse -Force $OwnMindDir -ErrorAction Stop
-    Move-Item -Path $BackupDir -Destination $OwnMindDir
+    Move-Item -Path $BackupDir -Destination $OwnMindDir -ErrorAction Stop
     OK "rollback" "Restored previous version"
-  } catch { Write-Host "ERROR:rollback_failed:$_" }
+  } catch {
+    $script:RollbackFailed = $true
+    $detail = ConvertTo-OneLine $_
+    $kind = if (Test-FileLockErrorText $detail) { "rollback_file_locked" } else { "rollback_failed" }
+    Write-Host "ERROR:${kind}:$detail"
+    try { Report-Error -Kind "upgrade_$kind" -Detail "Rollback failed: $detail" -ContextFile $LogFile } catch { }
+  }
+}
+
+# The tail every rollback caller appends to its failure message, so the message describes the
+# machine's real state instead of the state the rollback was supposed to produce.
+function RollbackNote {
+  if ($script:RollbackFailed) {
+    return "ROLLBACK ALSO FAILED - $OwnMindDir may be half-updated and the backup is still at $BackupDir. Close Claude Code completely, then restore it manually"
+  }
+  return "backup restored"
 }
 
 # --- 2. git pull ---
@@ -131,7 +215,32 @@ function Rollback {
 Step "pull" "Pulling latest OwnMind"
 Push-Location $OwnMindDir
 
-$dirty = git status --porcelain 2>$null
+# v1.26.98 — the `2>$null` here turned a broken git into a silent "clean tree" (IR-002).
+# `git status --porcelain` prints nothing when the tree is clean AND prints nothing when git
+# itself dies, so an empty $dirty was ambiguous — and the ambiguity always resolved the unsafe
+# way, straight into `git pull --ff-only` on a tree whose state was never established.
+# The exit code is the only thing that separates the two cases, so check it.
+# Prompted by a real observation on a Windows 10 box (git 2.54.0.windows.1) where
+# `git status --porcelain` exited -1073741674 (0xC0000096) with no output on stdout or stderr,
+# in a fresh empty repo as well as in ~/.ownmind, while add / diff / log / push all worked.
+# The root cause was not established and is not the point: whatever makes git fail, an empty
+# string must not be read as a verdict about the working tree.
+# stderr is deliberately left alone rather than merged into $dirty: git emits CRLF warnings
+# there, and folding those into the value would make a clean tree look dirty and trigger an
+# unnecessary reset --hard.
+$statusErr = "$LogFile.status"
+$dirty = git status --porcelain 2>$statusErr
+$statusCode = $LASTEXITCODE
+if (Test-Path $statusErr) { Get-Content $statusErr -ErrorAction SilentlyContinue | Out-File -Append $LogFile -Encoding utf8 }
+if ($statusCode -ne 0) {
+  # Reporting only the exit code repeats the mistake this release is about; keep what git said.
+  $statusSaid = ConvertTo-OneLine (Get-Content $statusErr -ErrorAction SilentlyContinue)
+  Report-Error -Kind "upgrade_git_status_failed" -Detail "git status --porcelain exited ${statusCode}: $statusSaid" -ContextFile $statusErr
+  Pop-Location
+  # No Rollback: nothing has been modified yet, so restoring would only risk the file-lock
+  # failure above for no gain. The backup copy stays put for sweep-old-backups to retire.
+  Fail "git_status" "git status failed (exit $statusCode); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
+}
 if ($dirty) {
   Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
@@ -145,16 +254,23 @@ if ($dirty) {
     Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "Force-align failed (network or permissions); backup restored"
+    Fail "git_pull" "Force-align failed (network or permissions); $(RollbackNote)"
   }
   OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
 } else {
   $pullOut = git pull --ff-only 2>&1
-  if ($LASTEXITCODE -ne 0) {
+  # Capture the exit code before anything else runs.
+  $pullCode = $LASTEXITCODE
+  # v1.26.98 — $pullOut used to be captured and then dropped on the floor: it was never written
+  # to $LogFile and never reached the server. That is why the 2026-08-07 19:26 failure produced
+  # no upgrade log at all on Windows — nothing on this path ever wrote one. Writing it here is
+  # what makes the log worth quoting; Get-LastLogLines below is what quotes it.
+  $pullOut | Out-File -Append $LogFile -Encoding utf8
+  if ($pullCode -ne 0) {
     Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "git_pull" "git pull failed; backup restored"
+    Fail "git_pull" "git pull failed; $(RollbackNote)"
   }
   OK "pull" "git pull complete"
 }
@@ -170,12 +286,12 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
       Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running): $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
       Pop-Location
       Rollback
-      Fail "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
+      Fail "file_locked" "Files in use by another process (likely Claude Code); $(RollbackNote). Close Claude Code completely, then re-run upgrade."
     }
     Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
-    Fail "npm_install" "MCP npm install failed; backup restored"
+    Fail "npm_install" "MCP npm install failed; $(RollbackNote)"
   }
   OK "npm_install" "MCP dependencies updated"
   Set-Location $OwnMindDir
@@ -212,7 +328,7 @@ if (-not (Test-Path $installScript)) {
   if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Rollback
-    Fail "install" "install.ps1 failed (see $LogFile); backup restored"
+    Fail "install" "install.ps1 failed (see $LogFile); $(RollbackNote)"
   }
   OK "install" "Setup complete"
 }

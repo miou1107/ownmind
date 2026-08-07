@@ -12,7 +12,13 @@ function Report-Error {
     [string]$Detail = "",
     [string]$ContextFile = ""
   )
-  $helper = Join-Path $HOME ".ownmind\scripts\install-helpers\report-error.cjs"
+  # v1.26.98 — see report-error.sh: Rollback deletes ~/.ownmind before moving the backup
+  # back, so the worst failure is the one where this helper no longer exists. An override
+  # pointing at a copy kept outside that directory keeps the report possible.
+  $helper = $env:OWNMIND_REPORT_HELPER
+  if (-not $helper -or -not (Test-Path $helper)) {
+    $helper = Join-Path $HOME ".ownmind\scripts\install-helpers\report-error.cjs"
+  }
   if (-not (Test-Path $helper)) { return }
   $node = Get-Command node -ErrorAction SilentlyContinue
   if (-not $node) { return }
