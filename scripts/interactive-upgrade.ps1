@@ -363,7 +363,18 @@ if (Test-Path $verifyScript) {
   }
 
   if (-not $bashExe) {
-    Step "verify_local" "Git Bash not found (install from https://git-scm.com/); skipping verify but upgrade continues"
+    # v1.26.99 — say which candidates were examined and why each was turned down. This line
+    # used to read "Git Bash not found (install from https://git-scm.com/)" unconditionally,
+    # which on a machine that has Git Bash is simply false, and it is the only output the
+    # skipped verify produces. Get-GitBashSearchReport comes from the helper, so fall back
+    # to a plain sentence when the helper itself is the thing that is missing.
+    $reason = if (Get-Command Get-GitBashSearchReport -ErrorAction SilentlyContinue) {
+      Get-GitBashSearchReport
+    } else {
+      "find-git-bash.ps1 helper not present at $findGitBashHelper"
+    }
+    Report-Error -Kind "upgrade_git_bash_not_usable" -Detail "verify skipped; $reason" -ContextFile $LogFile
+    Step "verify_local" "No usable Git Bash, skipping verify (upgrade continues) - $reason"
   } else {
     Step "verify_local" "Verifying local components"
     & $bashExe $verifyScript --local 2>&1 | Out-File -Append $LogFile -Encoding utf8
