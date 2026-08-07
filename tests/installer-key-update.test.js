@@ -31,8 +31,24 @@ describe('the installers no longer skip on a present entry', () => {
   const sh = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
   const ps = readFileSync(new URL('../install.ps1', import.meta.url), 'utf8');
 
+  /** The section that writes the Claude Code MCP entry, marker to marker. */
+  function claudeMcpSection(src) {
+    const start = src.indexOf('# --- 2. Claude Code MCP');
+    assert.ok(start > 0, 'install.sh no longer has the Claude Code MCP section marker');
+    const end = src.indexOf('\n# --- ', start + 1);
+    assert.ok(end > start, 'could not find the end of the Claude Code MCP section');
+    return src.slice(start, end);
+  }
+
   it('install.sh does not gate the Claude Code MCP write on the string "ownmind"', () => {
-    assert.doesNotMatch(sh, /Claude Code MCP already configured, skipping/);
+    // Assert on the guard, not on the sentence it used to print. Asserting the old message
+    // is absent passes the moment somebody reintroduces the same skip under a different
+    // wording — verified: putting `grep -q '"ownmind"' ... skipping` back with a shorter
+    // message left the whole file green.
+    assert.doesNotMatch(claudeMcpSection(sh), /grep -q\s+'"ownmind"'/,
+      'the write is gated on the file merely containing "ownmind" again');
+    assert.doesNotMatch(claudeMcpSection(sh), /already configured/,
+      'this section holds the API key — nothing in it may be skipped as already done');
   });
 
   it('install.ps1 does not gate the Claude Code MCP write on the string "ownmind"', () => {
@@ -89,31 +105,26 @@ describe('install.sh really does replace a different key', () => {
     existing.otherTool = { untouched: true };
     writeFileSync(settingsPath, JSON.stringify(existing, null, 2));
 
-    const script = `
-      const fs = require('fs');
-      const entry = { command: 'cmd.exe', args: ['/c', 'start.cmd'] };
-      const p = ${JSON.stringify(settingsPath)};
-      const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (!settings.mcpServers) settings.mcpServers = {};
-      const prev = settings.mcpServers.ownmind || {};
-      const prevEnv = prev.env || {};
-      const nextKey = 'NEW-KEY';
-      settings.mcpServers.ownmind = {
-        ...prev, ...entry,
-        env: { ...prevEnv, OWNMIND_API_URL: 'https://s/ownmind', OWNMIND_API_KEY: nextKey, OWNMIND_TOOL: 'claude-code' }
-      };
-      const _tmp = p + '.tmp';
-      fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
-      fs.renameSync(_tmp, p);
-      if (!prevEnv.OWNMIND_API_KEY) console.log('written');
-      else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('updated');
-      else console.log('unchanged');
-    `;
+    // Extracted from install.sh and executed, not re-typed here. A hand-copied twin only
+    // proves the copy works: install.sh could drift and this would stay green.
+    const sh = readFileSync(new URL('../install.sh', import.meta.url), 'utf8');
+    const start = sh.indexOf('# --- 2. Claude Code MCP');
+    const open = sh.indexOf('node -e "', start);
+    const close = sh.indexOf('\n  "\n', open);
+    assert.ok(start > 0 && open > start && close > open,
+      'could not find the Claude Code MCP write in install.sh');
+    const script = sh
+      .slice(open + 'node -e "'.length, close)
+      .replaceAll('$MCP_ENTRY', JSON.stringify({ command: 'cmd.exe', args: ['/c', 'start.cmd'] }))
+      .replaceAll('$CLAUDE_SETTINGS_WIN', settingsPath)
+      .replaceAll('$API_URL', 'https://s/ownmind')
+      .replaceAll('$API_KEY', 'NEW-KEY')
+      .replaceAll('\\"', '"');
     const said = execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' }).trim();
 
     const after = JSON.parse(readFileSync(settingsPath, 'utf8'));
     assert.equal(after.mcpServers.ownmind.env.OWNMIND_API_KEY, 'NEW-KEY', 'the key changed');
-    assert.equal(said, 'updated', 'and the run said so');
+    assert.match(said, /API key updated \(replaced a different key\)/, 'and the run said so');
     assert.equal(after.mcpServers.ownmind.env.KEEP_ME, 'user-set', 'unmanaged env var survived');
     assert.deepEqual(after.otherTool, { untouched: true }, 'the rest of the file survived');
   });
