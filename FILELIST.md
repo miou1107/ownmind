@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.95 修改（掛勾寫的欄位到伺服器都被丟掉）
+
+新增檔：
+```
+tests/hook-log-event-details.test.js            — 把兩支掛勾的 log_event 從檔案裡抽出來真的
+                                                   執行，用 JSON.parse 讀回來。涵蓋沒有附加
+                                                   欄位（逗號問題）、多組欄位、值裡含引號與
+                                                   反斜線
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — log_event 的附加欄位改放進 details。伺服器
+hooks/ownmind-iron-rule-check.sh                   收事件時只讀 details，平鋪的欄位一律丟掉，
+                                                   所以升級失敗到底卡在哪一步從來沒傳出去過。
+                                                   另外修：鍵沒配到值會讓迴圈永遠卡住；值裡的
+                                                   控制字元會產生非法 JSON
+hooks/ownmind-session-start.js                  — 同一個問題的第三份（Windows 沒 Git Bash 時
+                                                   裝的就是它），logEvent 與 reportEvent 都改
+tests/node-hook-reports-init.test.js            — 原本斷言平鋪的 e.status，等於在保護壞掉的
+                                                   形狀。改成讀 details.status
+```
+
 ## v1.26.94 修改（Windows MCP 路徑每次升級被寫壞）
 
 新增檔：
