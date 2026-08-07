@@ -9,6 +9,8 @@ const {
   slugTitle,
   memoryFilename,
   buildMemoryIndex,
+  MEMORY_INDEX_MAX_LINES,
+  MEMORY_INDEX_MAX_ENTRY_CHARS,
 } = await import('../hooks/lib/sync-memory-files.js');
 
 let tmpDir;
@@ -241,6 +243,187 @@ describe('buildMemoryIndex', () => {
   it('empty entries still emit the minimal structure', () => {
     const md = buildMemoryIndex([], '2026-04-24T10:00:00Z', false);
     assert.match(md, /# Memory Index/);
+  });
+});
+
+// v1.26.100 — the index has to fit the thing that reads it.
+//
+// Measured on Vin's machine 2026-08-08: MEMORY.md was 283 lines (143 iron rules + 130
+// projects) against a reader that stops at 200 and asks for under 140. Everything past the
+// limit had been dropped at load time for some while, with no mark on the file and no
+// warning from either side. The builder had no upper bound at all, so the file grew with the
+// user's memory count until it outgrew the budget.
+//
+// These assert on the built string rather than the file, so a caller cannot satisfy them by
+// trimming afterwards: the ceiling has to hold inside the builder for every input.
+
+function makeMemories(type, count, { titleLength = 40, from = '2026-01-01' } = {}) {
+  const base = Date.parse(`${from}T00:00:00Z`);
+  return Array.from({ length: count }, (_, i) => ({
+    id: i + 1,
+    type,
+    title: `${type} ${i}`.padEnd(titleLength, 'x'),
+    updated_at: new Date(base + i * 86400000).toISOString(),
+    filename: `${type}_${i + 1}_x.md`,
+  }));
+}
+
+function entryLines(md) {
+  return md.split('\n').filter((l) => l.startsWith('- ['));
+}
+
+function omissionLines(md) {
+  return md.split('\n').filter((l) => /more not listed here/.test(l));
+}
+
+describe('buildMemoryIndex — stays inside the reader’s budget', () => {
+  it('the budget is the reader’s number, not one we chose', () => {
+    // Every other test in this block measures the output against these constants, so raising
+    // them would turn the whole block green while the file went back to being unreadable.
+    // These two values come from the reader's own warnings; pin them here.
+    assert.ok(
+      MEMORY_INDEX_MAX_LINES <= 140,
+      'the reader asks for under 140 lines; raising this hides the bug instead of fixing it',
+    );
+    assert.ok(
+      MEMORY_INDEX_MAX_ENTRY_CHARS <= 200,
+      'the reader asks for entry lines under ~200 characters',
+    );
+  });
+
+  it('the measured real-world shape fits', () => {
+    // 143 iron rules + 130 projects is what was actually on disk when this was found.
+    const entries = [
+      ...makeMemories('iron_rule', 143),
+      ...makeMemories('project', 130),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const lines = md.split('\n');
+    assert.ok(
+      lines.length <= MEMORY_INDEX_MAX_LINES,
+      `index was ${lines.length} lines, budget is ${MEMORY_INDEX_MAX_LINES}`,
+    );
+  });
+
+  it('5000 memories with 400-character titles still fit, on both axes', () => {
+    const entries = [
+      ...makeMemories('iron_rule', 1500, { titleLength: 400 }),
+      ...makeMemories('project', 3000, { titleLength: 400 }),
+      ...makeMemories('feedback', 500, { titleLength: 400 }),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const lines = md.split('\n');
+    assert.ok(
+      lines.length <= MEMORY_INDEX_MAX_LINES,
+      `index was ${lines.length} lines, budget is ${MEMORY_INDEX_MAX_LINES}`,
+    );
+    const over = lines.filter((l) => l.length > MEMORY_INDEX_MAX_ENTRY_CHARS);
+    assert.deepEqual(over, [], 'these lines are longer than the reader accepts');
+  });
+
+  it('a truncated title says so, and still links to the right file', () => {
+    const entries = [{
+      id: 9, type: 'project', title: 'z'.repeat(400),
+      updated_at: '2026-08-01T00:00:00Z', filename: 'project_9_zzz.md',
+    }];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const line = entryLines(md)[0];
+    assert.ok(line.length <= MEMORY_INDEX_MAX_ENTRY_CHARS, `line was ${line.length} chars`);
+    assert.match(line, /…\]\(project_9_zzz\.md\)/, 'truncation must be visible, link must survive');
+  });
+
+  it('the omission notes are themselves inside the budget', () => {
+    const entries = [
+      ...makeMemories('iron_rule', 500),
+      ...makeMemories('project', 500),
+      ...makeMemories('feedback', 500),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    assert.equal(omissionLines(md).length, 3, 'each overflowing type states its own omission');
+    assert.ok(md.split('\n').length <= MEMORY_INDEX_MAX_LINES);
+  });
+
+  it('sync_failed adds its marker without pushing the file over', () => {
+    const entries = makeMemories('project', 500);
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', true);
+    assert.match(md, /⚠️ last sync FAILED/);
+    assert.ok(md.split('\n').length <= MEMORY_INDEX_MAX_LINES);
+  });
+});
+
+describe('buildMemoryIndex — says what it left out', () => {
+  it('names the count and where to look', () => {
+    // 300, not the measured 130: with projects as the only type present, 130 entries fit
+    // inside the budget and correctly produce no omission note at all.
+    const total = 300;
+    const entries = makeMemories('project', total);
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const listed = entryLines(md).length;
+    const note = omissionLines(md)[0];
+    assert.ok(note, 'an index that drops entries must say so');
+    assert.match(note, new RegExp(`${total - listed} more not listed here`));
+    assert.match(note, /project_\*\.md/, 'must point at the files that hold the rest');
+    assert.match(note, /ownmind_search/, 'must name the tool that searches them');
+  });
+
+  it('nothing is omitted, nothing is claimed', () => {
+    const entries = [
+      ...makeMemories('iron_rule', 1),
+      ...makeMemories('project', 1),
+      ...makeMemories('feedback', 1),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    assert.deepEqual(omissionLines(md), []);
+    assert.equal(entryLines(md).length, 3);
+  });
+});
+
+describe('buildMemoryIndex — shows the most recent, in order', () => {
+  it('picks the newest regardless of the order it was handed', () => {
+    const ordered = makeMemories('project', 100);
+    // Deterministic shuffle: nothing arrives sorted, and the builder must not assume it does.
+    const shuffled = ordered.map((e, i) => ordered[(i * 37) % ordered.length]);
+    const md = buildMemoryIndex(shuffled, '2026-08-08T00:00:00Z', false);
+    const listed = entryLines(md);
+
+    const newest = [...ordered]
+      .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+      .slice(0, listed.length)
+      .map((e) => e.filename);
+    const got = listed.map((l) => l.match(/\(([^)]+)\)/)[1]);
+    assert.deepEqual(got, newest, 'listed the wrong memories, or listed them out of order');
+  });
+});
+
+describe('buildMemoryIndex — the budget follows need', () => {
+  it('a small type keeps all of its entries and releases the rest', () => {
+    const entries = [
+      ...makeMemories('iron_rule', 4),
+      ...makeMemories('project', 300),
+    ];
+    const md = buildMemoryIndex(entries, '2026-08-08T00:00:00Z', false);
+    const listed = entryLines(md).map((l) => l.match(/\((\w+?)_/)[1]);
+    const ironListed = listed.filter((t) => t === 'iron').length;
+    const projectListed = listed.filter((t) => t === 'project').length;
+
+    assert.equal(ironListed, 4, 'a type that fits must not be trimmed');
+    // Asserting "projects got more than a third" would pass under a plain even split too,
+    // since two types split the budget in half. What actually distinguishes redistribution
+    // is that no budget is left on the table: with entries still queued, the file should
+    // come out at its ceiling. The slack is the omission line reserved for iron_rule, which
+    // fits and therefore never emits one.
+    const used = md.split('\n').length;
+    assert.ok(
+      used >= MEMORY_INDEX_MAX_LINES - 3,
+      `index used only ${used} of ${MEMORY_INDEX_MAX_LINES} lines while ${300 - projectListed} projects were dropped`,
+    );
+    assert.ok(used <= MEMORY_INDEX_MAX_LINES);
+  });
+
+  it('an absent type reserves nothing', () => {
+    const md = buildMemoryIndex(makeMemories('project', 5), '2026-08-08T00:00:00Z', false);
+    assert.doesNotMatch(md, /## Feedback/);
+    assert.doesNotMatch(md, /## Iron Rules/);
   });
 });
 

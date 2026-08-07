@@ -72,6 +72,97 @@ function stringifyMemoryMd(mem) {
   ].join('\n');
 }
 
+// v1.26.100 — the index has to fit the thing that reads it.
+//
+// Both numbers are the reader's own, quoted from the two warnings it produced on a real
+// install on 2026-08-08, where MEMORY.md had grown to 283 lines (143 iron rules + 130
+// projects):
+//
+//   "MEMORY.md is 280 lines and 31.8KB. Only part of it was loaded.
+//    Keep index entries to one line under ~200 chars."
+//   "over its 200-line read limit ... everything past the limit is silently dropped
+//    each time the index is loaded ... Rewrite it to under 140 lines."
+//
+// The builder had no upper bound, so the file grew with the user's memory count until it
+// outgrew the budget, and roughly half of it stopped reaching the session. Nothing marked
+// the file and neither side said anything, so it went on reading as a complete index.
+//
+// Exported so the tests assert against the same constants the builder uses. A second copy
+// of the number in the test would let the two drift apart without failing.
+export const MEMORY_INDEX_MAX_LINES = 140;
+export const MEMORY_INDEX_MAX_ENTRY_CHARS = 200;
+
+// Header block, plus the worst case for every type that is present: heading, omission note,
+// trailing blank. Reserving the omission line even for types that turn out to fit costs at
+// most one line each and keeps the arithmetic a single pass instead of a fixed point.
+const INDEX_HEADER_LINES = 7;
+const PER_SECTION_LINES = 3;
+
+function indexEntryLine(entry) {
+  const date = shortDate(entry.updated_at);
+  const tail = `](${entry.filename})${date ? ` — updated ${date}` : ''}`;
+  // The title is the only part that may be trimmed: a truncated filename would point the
+  // reader at a file that does not exist, which is worse than a shortened title.
+  const room = MEMORY_INDEX_MAX_ENTRY_CHARS - '- ['.length - tail.length;
+  let title = entry.title || '(untitled)';
+  if (title.length > room) title = room > 1 ? `${title.slice(0, room - 1)}…` : '…';
+  return `- [${title}${tail}`;
+}
+
+function omissionLine(type, omitted) {
+  return `- ${omitted} more not listed here (line budget): see the ${type}_*.md files in this directory, or search with the \`ownmind_search\` MCP tool.`;
+}
+
+// Share the entry budget out by need rather than evenly: a type wanting less than its share
+// releases the difference to the ones that want more. Without this, a user with four iron
+// rules and three hundred projects would see a third of the index sitting empty while
+// projects were being dropped.
+export function allocateIndexBudget(counts, budget) {
+  const alloc = {};
+  let pending = Object.keys(counts).filter((t) => counts[t] > 0);
+  for (const t of pending) alloc[t] = 0;
+  let remaining = Math.max(0, budget);
+
+  while (pending.length > 0 && remaining > 0) {
+    const share = Math.floor(remaining / pending.length);
+    if (share < 1) {
+      // Fewer lines left than types still wanting them: hand out one each, in the declared
+      // type order, so the outcome is deterministic rather than dependent on object order.
+      for (const t of pending) {
+        if (remaining === 0) break;
+        alloc[t] += 1;
+        remaining -= 1;
+      }
+      break;
+    }
+    const satisfied = pending.filter((t) => counts[t] <= share);
+    if (satisfied.length === 0) {
+      let extra = remaining - share * pending.length;
+      for (const t of pending) {
+        alloc[t] = share + (extra > 0 ? 1 : 0);
+        if (extra > 0) extra -= 1;
+      }
+      break;
+    }
+    for (const t of satisfied) {
+      alloc[t] = counts[t];
+      remaining -= counts[t];
+    }
+    pending = pending.filter((t) => !satisfied.includes(t));
+  }
+
+  return alloc;
+}
+
+function byNewestFirst(a, b) {
+  const ta = Date.parse(a.updated_at) || 0;
+  const tb = Date.parse(b.updated_at) || 0;
+  if (tb !== ta) return tb - ta;
+  // Stable tiebreak so the same memories produce the same file byte for byte, which keeps
+  // an unchanged sync from looking like a change.
+  return Number(b.id || 0) - Number(a.id || 0);
+}
+
 export function buildMemoryIndex(entries, serverTime, syncFailed) {
   const lines = [];
   lines.push(`${AUTO_MARKER_PREFIX} ${serverTime} -->`);
@@ -88,13 +179,21 @@ export function buildMemoryIndex(entries, serverTime, syncFailed) {
   const byType = {};
   for (const e of entries) (byType[e.type] ||= []).push(e);
 
-  for (const type of SYNCABLE_TYPES) {
-    const items = byType[type];
-    if (!items || items.length === 0) continue;
+  const present = SYNCABLE_TYPES.filter((t) => byType[t] && byType[t].length > 0);
+  const counts = {};
+  for (const t of present) counts[t] = byType[t].length;
+
+  const overhead = INDEX_HEADER_LINES + (syncFailed ? 1 : 0) + present.length * PER_SECTION_LINES;
+  const alloc = allocateIndexBudget(counts, MEMORY_INDEX_MAX_LINES - overhead);
+
+  for (const type of present) {
+    const items = byType[type].slice().sort(byNewestFirst);
+    const shown = items.slice(0, alloc[type] || 0);
     lines.push(`## ${TYPE_LABELS[type]}`);
-    for (const e of items) {
-      const d = shortDate(e.updated_at);
-      lines.push(`- [${e.title || '(untitled)'}](${e.filename})${d ? ` — updated ${d}` : ''}`);
+    for (const e of shown) lines.push(indexEntryLine(e));
+    // An index that quietly stops short reads as a complete index. Say the number.
+    if (shown.length < items.length) {
+      lines.push(omissionLine(type, items.length - shown.length));
     }
     lines.push('');
   }
