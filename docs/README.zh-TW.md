@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.26.90** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.26.91** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -158,6 +158,7 @@ graph LR
 
 ### 鐵律執行引擎
 
+- **鐵律要靠「意思」對上，不是靠三個字一模一樣** — `detectCommandTrigger` 只會回 `commit` / `deploy` / `delete` 三個字，掛勾也只留下標籤剛好是 `trigger:<那個字>` 的規則。可是沒有任何地方講過只有這三個字，`ownmind_save` 又什麼標籤都收，所以規則被存成作者腦中的說法 — `trigger:回滾`、`trigger:cleanup`、`trigger:升級` — 然後在比對這關被丟掉，掛勾靜靜結束，沒有一個地方會說為什麼。實際帳號上出現過三條鐵律、沒有任何一種操作叫得動其中任何一條。現在每個 trigger 各自認得一組同義標籤（`delete` 也吃 刪除／cleanup／清理／rollback／回滾／還原／restore，其餘類推），比對不分大小寫。這只放寬「哪些規則對得上」，沒有動「掛勾什麼時候跑」 — 觸發時機仍然是原本的 `detectCommandTrigger`，所以不會變吵、也不會多擋。像 `trigger:install` 這種不在高風險操作範圍內的標籤還是不會觸發，因為 `npm install` 本來就不是掛勾會跑的操作 `v1.26.91`
 - **動手前的鐵律提醒現在才真的會出現** — 掛勾從最上層的 `.command` 取指令，但 Claude Code 送的是 `{ tool_name, tool_input: { command } }`。取值每次都是空的，掛勾走到空值檢查就「正常」結束，畫面上沒有任何異狀 — 所以不分作業系統，沒人看過這個提醒。Windows 還多錯一步：`readFileSync('/dev/stdin')` 會被解成 `C:\dev\stdin` 並在 `try` 之外拋錯，錯誤又被 `2>/dev/null` 丟掉。兩份掛勾都改成讀 fd 0、優先取 `tool_input.command`，舊格式保留給手動呼叫 `v1.26.90`
 - **比中的驗證範本只是建議，不會自己生效** — 存鐵律時伺服器會拿它比對現成範本，比中就把驗證條件寫進那條規則，而五個範本全部都是會擋住操作的。等於你寫了一條提醒，拿回來的是一條會攔你的規則，而且只用一個藏在回傳裡的欄位交代。條件寬到一個字就中：一條在講「回滾時不要刪掉日誌」的規則，因為貼了部署標籤、內文出現一次「測試」，就被套上「部署前跑測試」，以後擋人時顯示的理由跟作者寫的東西完全對不上。現在比對照跑，但改成 `template_suggestion` 回傳（名稱、`applied: false`、會不會擋人、一句可以直接轉述的話），沒有人開口就不會動到規則 `v1.26.89`
 
