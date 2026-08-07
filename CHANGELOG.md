@@ -1,5 +1,41 @@
 # OwnMind 更新紀錄
 
+## v1.26.96 — 手寫的清單，不會告訴你它漏了哪一個
+
+vin-windows 回報（bug #17）。`.gitattributes` 一行一個檔案，把 git 掛勾釘成 LF：
+
+```
+hooks/ownmind-git-pre-commit      text eol=lf
+hooks/ownmind-git-post-commit     text eol=lf
+```
+
+`hooks/ownmind-git-commit-msg` 是後來才加的，沒有人記得去補那份清單。所以在 Windows 上全新 clone，三支掛勾裡只有它是 CRLF。
+
+往整個程式碼庫掃過去，**有 32 個被追蹤的檔案帶著 shebang 卻沒有 `eol=lf` 規則**，不只回報裡的那一個。
+
+### 目前的影響：零，而這正是重點
+
+回報者實測過：Git for Windows 對 CRLF 的 `#!/bin/sh` 跟 `#!/usr/bin/env bash` 都執行得起來，用 `GIT_TRACE=1` 確認三支掛勾都有被叫起來。
+
+所以這是形狀壞了、不是活的故障。它會在換 shell 提供者的時候變成活的（WSL 的 sh、busybox）—— 那時候 CRLF 的 shebang 會讓系統去找一個名字結尾帶著換行符的直譯器。
+
+### 另一半：已經裝好的機器永遠不會自己修回來
+
+`.gitattributes` 管的是**簽出**時寫什麼。已經是 CRLF 的機器會永遠維持那樣：git 比對時會先正規化，所以 CRLF 的工作檔對 LF 的 index 不算差異，`git status` 是乾淨的，`pull` 跟之後任何屬性變更都不會重寫它。而 git 真正執行的那幾支是從這些檔案複製出來的，所以照樣繼承。
+
+要修回來需要明確跑 `git add --renormalize`，沒有使用者會去跑。跑安裝腳本是唯一能替他們修好的時機。
+
+### 改法
+
+1. `.gitattributes` 改用萬用字元，並涵蓋 `*.js` / `*.cjs` / `*.mjs`（另外 31 個在那裡）
+2. 新測試從 `git ls-files` 長出清單，有 shebang 卻沒被涵蓋就紅 —— 下一個新增的檔案不會再像 commit-msg 那樣溜過去
+3. `install.sh` 複製掛勾到 `~/.ownmind/git-hooks/` 時去掉 CR，所以已經壞掉的機器跑一次安裝就會修好
+
+### 驗證
+
+- 兩種破法各弄壞一次確認會紅：拿掉掛勾的萬用字元、拿掉 `*.js`
+- 安裝腳本的複製實跑：餵 CRLF 進去、出來是 LF、內容其餘不變、可執行位還在、真的跑得起來
+
 ## v1.26.95 — 掛勾寫的每一個欄位，到伺服器都被丟掉了
 
 兩支 shell 掛勾記事件時，會把附加欄位平鋪在最外層：
