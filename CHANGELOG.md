@@ -1,5 +1,47 @@
 # OwnMind 更新紀錄
 
+## v1.26.94 — Windows 的 MCP 路徑，每次升級都被寫壞一次
+
+複驗 v1.26.93 時比對備份發現的。同一個檔案在不同時間點長得不一樣：
+
+```
+2026-08-05（install.ps1 寫的）  args: ["/c","C:\\Users\\Vin\\.ownmind\\mcp\\start.cmd"]
+今天 bootstrap 升級後（install.sh）  args: ["/c","C:UsersVin.ownmindmcpstart.cmd"]
+```
+
+反斜線全部不見了。
+
+### 為什麼
+
+`cygpath -w` 回傳的是反斜線路徑，而 install.sh 把它直接內插進 `node -e` 的原始碼。bash 代換完之後，Node 拿到的是：
+
+```js
+const p = 'C:\Users\Vin\.ownmind\mcp\start.cmd'.replace(/\\/g, '\\\\');
+```
+
+`\U`、`\V`、`\.`、`\m`、`\s` 都不是合法跳脫序列。JavaScript 的處理是把反斜線丟掉、留下字母，所以 `p` 在 `.replace` 執行**之前**就已經是 `C:UsersVin.ownmindmcpstart.cmd` —— 而那個 `.replace` 的唯一工作就是把反斜線加倍，此時一個都不剩。
+
+每一次 `bootstrap.sh` 升級，都會把這個無法執行的指令寫進 `~/.claude/settings.json`。
+
+### 為什麼一直沒人發現
+
+Claude Code 是從 `~/.claude.json` 啟動 MCP 的，而沒有任何安裝腳本會寫那個檔（v1.26.91 才讓這個分裂變得看得見）。壞掉的值就躺在沒人讀的檔案裡，下一次跑 install.ps1 又默默把它修好。
+
+### 改法
+
+改用 argv 傳。這件事不是靠跳脫能解決的——毀掉字串的是 JS 剖析器，不是 shell，所以再怎麼疊反斜線都沒用。argv 是唯一沒有引號層可以搞錯的形狀，而且 `path-helpers.sh` 的註解裡早就寫過這個結論（「passing the path as an argv element is the escape-proof shape」），只是這一處沒照做。
+
+兩個分支都改，不留下「哪個平台要注意」這種要記的例外。非 Windows 那條原本走 `cygpath -m`（正斜線）所以沒事，但一致比較省事。
+
+### 驗證
+
+Windows 10 + Git Bash + node v25.8.1：
+
+- 用改過的 install.sh 對真實環境實跑，寫進 `settings.json` 的是 `["/c","C:\\Users\\Vin\\.ownmind\\mcp\\start.cmd"]`；同一個動作在修之前必壞
+- 自我檢查 13 項全過、0 警告
+- 新測試把 install.sh 裡的 node 區塊**抽出來真的執行**（不是手抄一份），餵真實反斜線路徑驗證原樣往返；另含舊寫法的重現，證明它確實會把路徑毀掉，這個修正不是美化
+- 全套測試：本機既有 131 失敗（要資料庫），本分支同樣 131，新增 4 條全過
+
 ## v1.26.93 — 換帳號從來沒真的換過，而且沒有一個地方會說
 
 在 Windows 上做全環境複驗時挖出來的，但兩個都不是 Windows 專屬，Mac 一樣中。
