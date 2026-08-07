@@ -56,7 +56,12 @@ export function renderMemberMessage(silences = [], {
   maxLines = DELIVERY_MAX_LINES,
 } = {}) {
   const title = '你的用量採集停了';
-  const entries = silences.map((s) => [
+  // Longest silence first, as in the admin message: if the envelope drops
+  // entries, it must drop the newest problems, not the ones that have been
+  // broken for a month. Somebody with more machines than fit is exactly the
+  // person whose oldest one matters most.
+  const ordered = [...silences].sort((a, b) => (b.stale_days ?? 0) - (a.stale_days ?? 0));
+  const entries = ordered.map((s) => [
     oneLine(s.machine),
     `${tools(s.stale_tools)} 從 ${formatDate(s.last_beat_at)} 起沒再回報（${s.stale_days} 天）`,
     '這段期間的用量沒有上傳',

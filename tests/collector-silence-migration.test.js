@@ -29,6 +29,17 @@ describe('023_collector_silence_alert_state migration', () => {
     }
   });
 
+  it('first_seen_at defaults to now, because the claim compares against it', () => {
+    // It is the confirmation window's only input. A column that defaulted to
+    // NULL would make `first_seen_at <= NOW() - INTERVAL` never true, and nothing
+    // would ever be announced — silently, with every test above still green.
+    assert.match(sql, /first_seen_at\s+TIMESTAMPTZ\s+NOT NULL\s+DEFAULT NOW\(\)/);
+  });
+
+  it('announced_at is nullable, because a sighting is recorded before it is announced', () => {
+    assert.doesNotMatch(sql, /announced_at\s+TIMESTAMPTZ\s+NOT NULL/);
+  });
+
   it('lets an admin delete a broadcast without erasing the record of it', () => {
     // ON DELETE CASCADE here would take the whole state row with the broadcast,
     // and the next sweep would announce the same machine again.

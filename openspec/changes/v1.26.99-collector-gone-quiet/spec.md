@@ -7,7 +7,7 @@
 GIVEN a machine with a heartbeat row written in the last 2 days
 AND at least one other row on the same machine not written for 7 days or more
 WHEN the sweep runs
-THEN that machine is a finding, naming the tools that stopped and the ones still beating
+THEN that machine is a finding, naming the tools that stopped
 
 ### S1.2 A machine whose rows all agree is not a finding
 
@@ -72,24 +72,61 @@ THEN their heartbeat rows are excluded by the query that reads them
 
 ## S3. Saying it once
 
-### S3.1 A second sweep is silent
+### S3.1 Nothing is announced the first time a machine is seen broken
 
-GIVEN a machine announced by an earlier sweep and not since resolved
+GIVEN a machine that no earlier sweep recorded
+WHEN the sweep runs
+THEN the silence is recorded and no broadcast is written
+
+Rationale: a computer switched on after a long absence shows one fresh MCP
+heartbeat against several stale scanner rows until the scanner's next run — up to
+two hours on Windows, and longer on battery. Announcing on sight would send an
+un-snoozeable two-day notice about a machine that is fine.
+
+### S3.2 It is announced once the confirmation window has passed
+
+GIVEN a machine recorded by an earlier sweep more than `CONFIRM_HOURS` ago
+AND it is still broken
+WHEN the sweep runs
+THEN it is announced
+
+### S3.3 A second sweep inside the window is silent
+
+GIVEN a machine recorded less than `CONFIRM_HOURS` ago
 WHEN the sweep runs again
 THEN no broadcast is written for it
 
-### S3.2 A widening silence updates the record without re-announcing
+### S3.4 An announced machine is not announced again
+
+GIVEN a machine announced by an earlier sweep and not since resolved
+WHEN the sweep runs again within `REANNOUNCE_DAYS`
+THEN no broadcast is written for it
+
+### S3.5 A machine still broken after `REANNOUNCE_DAYS` is raised again
+
+GIVEN a machine announced more than `REANNOUNCE_DAYS` ago and never resolved
+WHEN the sweep runs
+THEN it is announced again
+
+Rationale: the broadcast expires after 48 hours. Without this a machine nobody
+fixed is never mentioned again, which is the state this feature was built to end.
+
+### S3.6 A widening silence updates the record without re-announcing
 
 GIVEN an announced, open finding
 AND a further tool on the same machine has since gone stale
 WHEN the sweep runs
 THEN `stale_tools` is updated and no broadcast is written
 
-### S3.3 Two overlapping sweeps announce once between them
+### S3.7 Two overlapping sweeps announce once between them
 
-GIVEN two sweeps evaluating the same new finding concurrently
+GIVEN two sweeps evaluating the same finding concurrently
 WHEN both attempt to claim it
 THEN exactly one claim returns a row, and only that sweep announces
+
+Note: this rule lives entirely in the claim statement, not in the evaluator. The
+evaluator reports what is broken now; which of those to announce is settled by
+the database, because that is the only participant that holds a row lock.
 
 ## S4. Recovery
 
@@ -100,11 +137,50 @@ AND every tool row on that machine is now within 2 days
 WHEN the sweep runs
 THEN the row is marked resolved
 
+### S4.1a A sighting that healed before it was announced leaves no record
+
+GIVEN a machine recorded but not yet announced
+AND every tool row on it is now within 2 days
+WHEN the sweep runs
+THEN its row is deleted
+
+Rationale: keeping it would leave a stale `first_seen_at`, and the machine's next
+break would be announced immediately, skipping the window it was never observed
+through.
+
 ### S4.2 Resolving ends the notice the person was sent
 
 GIVEN a finding being resolved that recorded a `broadcast_id`
+AND no other unresolved machine shares that broadcast
 WHEN it is resolved
 THEN that broadcast's `ends_at` is set to now, if it had not already passed
+
+### S4.2a A shared notice survives until every machine it names is repaired
+
+GIVEN one broadcast covering two of a person's machines
+AND only the first has been repaired
+WHEN the sweep runs
+THEN the broadcast stays live, because the second machine's state row is already
+announced and can never be claimed again — ending it would retire that machine's
+only notice
+
+### S4.2b Resolving and ending the notice are one write or neither
+
+GIVEN a finding being resolved
+WHEN the process fails between the two statements
+THEN neither has taken effect
+
+Rationale: resolving first and failing leaves a repaired machine announced for the
+notice's full life, and the state row can never be re-evaluated to correct it.
+
+### S4.2c The admin summary is not ended early
+
+GIVEN an admin summary listing several machines
+WHEN any of them is repaired
+THEN the summary runs its full 48 hours
+
+A deliberate gap: only the member notice's id is stored. The admin's copy names
+several people's machines, so there is no single repair that makes it wrong.
 
 ### S4.3 A machine that breaks again is announced again
 
@@ -134,19 +210,41 @@ GIVEN the startup sweep rejects
 WHEN the server boots
 THEN the failure is logged and the server continues listening
 
+### S5.3 A failed recovery write cannot stop an announcement
+
+GIVEN a sweep with both a machine to announce and a machine to resolve
+WHEN the resolve write throws
+THEN the announcement has already been written and committed
+
+Rationale: these ran first in the first draft, and one failing write aborted the
+sweep before anything was announced — every day, for as long as the bad row
+existed.
+
 ## S6. Delivery
 
 ### S6.1 Every message fits what the reader is actually shown
 
 GIVEN any message this feature writes
 WHEN it passes through the delivery transform (first 5 lines joined, cut at 400 chars)
-THEN nothing that identifies a machine is lost to the cut
+THEN the result is within the envelope, and any entry shortened carries the cut
+marker rather than ending silently
+
+Note: a long enough hostname is still shortened — `collector_heartbeat.machine` is
+`VARCHAR(128)` and five entries share 400 characters. What is guaranteed is the
+field order: the machine name is written first in each entry, so it is the last
+thing to be lost, and a cut is always visible.
 
 ### S6.2 More findings than fit say so
 
 GIVEN more findings than the envelope holds
-WHEN the admin message is rendered
+WHEN either message is rendered
 THEN the last line states how many were omitted and the total, and survives delivery
+
+### S6.2a Both messages list the longest silence first
+
+GIVEN more findings than the envelope holds
+WHEN either message is rendered
+THEN entries dropped by the cut are the newest problems, not the oldest
 
 ### S6.3 Dates are Asia/Taipei
 

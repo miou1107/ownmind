@@ -58,6 +58,20 @@ neutral wording would have served neither.
 two messages answer different questions, and a rule that suppresses one of them is a rule
 that can suppress the wrong one.
 
+**Nothing is announced the first time a machine is seen broken.** A computer
+switched on after a fortnight away has one fresh MCP heartbeat and several stale
+scanner rows until the scanner's next run: half an hour on macOS and systemd,
+**two hours on Windows**, and longer on a laptop that Task Scheduler defers
+because it is on battery. Announcing on sight would send an un-snoozeable two-day
+notice about a machine that is fine — and the startup sweep runs at deploy time,
+which is during the working day. A finding must survive six hours, which costs a
+real one a single night against an incident that ran twenty days.
+
+**A machine still broken a fortnight later is raised again.** The notice expires
+after 48 hours and the state row stays announced, so without this a machine
+nobody fixed is never mentioned again — the exact state this feature exists to
+end.
+
 **Repairing it ends the notice early.** The broadcast is un-snoozeable and runs 48 hours,
 matching install-check alerts. Without storing which broadcast was sent, somebody who fixes
 their machine within the hour keeps being told about it in the first sentence of every
@@ -84,6 +98,41 @@ in `openspec/BACKLOG.md` rather than approximated.
 **A machine where the scanner never ran once.** There is no frozen row to notice. That is
 what the install self-check is for.
 
+## What the review changed
+
+A reviewer walked the spec scenario by scenario against the first implementation
+and found three defects, all of which reproduced:
+
+1. **One broadcast covers both of a person's machines, and repairing the first
+   ended it.** The second machine's state row stays announced, so it can never be
+   claimed again — its only notice disappeared because a different machine was
+   fixed. Michelle and Vin-windows-test both run two machines. Ending a notice now
+   requires that no *other* machine sharing it is still unresolved.
+2. **Resolving and ending the notice were two separate writes, in the order that
+   cannot self-heal.** Resolved-then-crash leaves a repaired machine announced for
+   the notice's full life with no path back, because a resolved row is never
+   re-evaluated. They are one transaction now.
+3. **The detail-update statement had no test and no execution path in one.**
+   Swapping its two parameters would have sent a timestamp into a text column
+   every sweep — and because those writes ran *before* the announcing, the whole
+   sweep would have aborted daily before anybody was told anything. The statement
+   is gone: the sighting upsert refreshes `stale_tools` as a side effect of
+   recording, so there is one statement instead of two and no branch that can go
+   untested. The recovery writes now run after the announcing.
+
+That third one prompted the larger change: **which findings are new is no longer
+decided in JavaScript at all.** `evaluateSilence` reports what is broken now; the
+claim statement decides what to announce. Two overlapping sweeps compute identical
+findings, so the only participant that can settle it is the one holding a row lock.
+
+The reviewer also found that the fake database restated the confirmation window
+and the re-announce interval as its own constants, so setting `CONFIRM_HOURS` to
+zero in the source changed nothing any test could see. The fake imports them now,
+and the values themselves are pinned by the properties they exist to satisfy: the
+window must outlast the slowest scanner schedule (120 minutes, Windows) and stay
+under the gap between sweeps; the re-announce interval must exceed the notice's
+own 48-hour life and fall well short of the twenty-day incident.
+
 ## Verification that is not in the test suite
 
 The tests cover the evaluator, both messages, and the job against a fake database. Two
@@ -94,11 +143,17 @@ that was rolled back, with the table confirmed absent afterwards:
    the unique key, the partial index, and both foreign keys, including `broadcast_id
    INTEGER … ON DELETE SET NULL` against `broadcast_messages.id`, which is `INTEGER` and
    not `BIGINT`.
-2. **The claim statement's conditional upsert behaves as designed.** Run three times:
-   fresh → claimed 1, already announced and open → claimed **0**, after recovery →
-   claimed 1.
+2. **The sighting and claim statements behave as designed.** Run in sequence
+   against the real table: just seen → claimed **0**; after the window → claimed
+   1; same day again → **0**; fifteen days on → 1; once resolved → **0**; and a
+   fresh sighting after resolution cleared `announced_at`, reset `first_seen_at`
+   and reopened the row.
 
-The second matters because the job test's fake implements that rule itself. Deleting the
-`WHERE` clause from the real SQL left every behavioural test green — both ends of that
-interface are ours, so the test proved only that the two fakes agree. The suite now also
-reads the statement, and says plainly in the test that reading is weaker than running.
+The second matters because the job test's fake implements those rules itself.
+Deleting the claim's `WHERE` clause from the real SQL once left every behavioural
+test green — both ends of that interface are ours, so the test proved only that
+the two fakes agree. The suite now also reads the statements, and says plainly in
+the test that reading is weaker than running.
+
+Fourteen mutations were run across the two rounds. All fourteen fail a test; the
+four that initially survived were real gaps and each is covered above.
