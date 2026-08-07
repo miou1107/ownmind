@@ -35,7 +35,7 @@ function OK($code, $msg)   { Write-Host "OK:${code}:$msg" }
 function Fail($code, $msg) {
   try {
     if (Get-Command Report-Error -ErrorAction SilentlyContinue) {
-      Report-Error -Kind "upgrade_failed_terminal_$code" -Detail $msg -ContextFile $LogFile
+      Report-Error -Kind "upgrade_failed_terminal_$code" -Detail "${msg}: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     }
   } catch { }
   throw "ERROR:${code}:$msg"
@@ -55,6 +55,32 @@ if (Test-Path $reportErrorHelper) {
 # OwnMind MCP node process 持有 ~/.ownmind/mcp/node_modules/*.js handle 時，
 # git pull / npm install 會吃 EBUSY / EACCES。掃 log 找 lock pattern，中了就改錯誤碼為
 # file_locked 並給明確提示。
+# v1.26.98 — what the failing command actually said, folded onto one line for Detail.
+#
+# Every Report-Error call below passed a hand-written guess ("git pull --ff-only failed
+# (network or non-ff merge)"), and that guess is the same sentence whether the remote was
+# unreachable, the branch had diverged, or a file was locked. On 2026-08-07 DESKTOP-8DD75VJ
+# failed a pull and nobody could say why, because the guess was the only record of it.
+#
+# The log file is already passed as ContextFile, but that report arrived with an empty
+# context and we have no way to reproduce the Windows path from here. Detail is a plain
+# string that is known to arrive, so the reason goes there too. Mirrors last_log_lines in
+# interactive-upgrade.sh, including the 300-character cap.
+$script:ReasonMaxChars = 300
+function Get-LastLogLines {
+  param([string]$LogPath = "")
+  if (-not $LogPath -or -not (Test-Path $LogPath)) { return "no log file" }
+  try {
+    $lines = Get-Content $LogPath -Tail 5 -ErrorAction Stop
+  } catch { return "log unreadable" }
+  if (-not $lines) { return "log empty" }
+  # Control characters stripped: a newline here produces a line that is not valid JSON and
+  # the whole report is dropped on arrival.
+  $text = ($lines -join "|") -replace '[\x00-\x1f]', ' '
+  if ($text.Length -gt $script:ReasonMaxChars) { $text = $text.Substring(0, $script:ReasonMaxChars) }
+  return $text
+}
+
 function Test-FileLockError {
   param([string]$LogPath)
   if (-not (Test-Path $LogPath)) { return $false }
@@ -110,13 +136,13 @@ if ($dirty) {
   Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
   $dirty | Out-File -FilePath $dirtyLog -Encoding utf8
-  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain non-empty; auto reset --hard to origin/main" -ContextFile $dirtyLog
+  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(Get-LastLogLines $dirtyLog)" -ContextFile $dirtyLog
   git fetch origin 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -eq 0) {
     git reset --hard origin/main 2>&1 | Out-File -Append $LogFile -Encoding utf8
   }
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "fetch + reset --hard origin/main failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "git_pull" "Force-align failed (network or permissions); backup restored"
@@ -125,7 +151,7 @@ if ($dirty) {
 } else {
   $pullOut = git pull --ff-only 2>&1
   if ($LASTEXITCODE -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed (network or non-ff merge)" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "git_pull" "git pull failed; backup restored"
@@ -141,12 +167,12 @@ if (Test-Path (Join-Path $mcpDir "package.json")) {
   npm install --silent 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -ne 0) {
     if (Test-FileLockError $LogFile) {
-      Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running)" -ContextFile $LogFile
+      Report-Error -Kind "upgrade_file_locked" -Detail "npm install hit file lock (likely Claude Code running): $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
       Pop-Location
       Rollback
       Fail "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
     }
-    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed" -ContextFile $LogFile
+    Report-Error -Kind "upgrade_npm_install_failed" -Detail "MCP npm install failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "npm_install" "MCP npm install failed; backup restored"
