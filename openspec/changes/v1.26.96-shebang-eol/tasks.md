@@ -6,5 +6,7 @@
 - [x] Break each guard once — remove the hook glob, remove `*.js`
 - [x] Installer copy verified end to end: CRLF in, LF out, still executable, still runs
 - [x] CHANGELOG, FILELIST, README ×3, `package.json` → 1.26.96
-- [ ] `superpowers:requesting-code-review`
+- [x] `superpowers:requesting-code-review` — 3 findings acted on: the NUL-fixture exemption
+      (it introduced a new instance of the bug being fixed), the `update.sh` fallback path,
+      and a proposal claim the test did not support. Plus four polish items.
 - [ ] Open the PR, and reply on bug #17. **Do not merge, tag or deploy** — Vin decides

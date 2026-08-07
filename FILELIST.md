@@ -17,8 +17,13 @@ tests/shebang-eol.test.js                       — 從 git ls-files 長出「�
                                                    上 *.js / *.cjs / *.mjs（另外 31 個帶
                                                    shebang 的檔案在那裡）
 install.sh                                      — 複製 git 掛勾改用 install_git_hook()，用
-                                                   tr -d 去掉 CR。.gitattributes 只管簽出，
-                                                   已經是 CRLF 的機器 git 永遠不會自己修
+                                                   tr -d 去掉 CR 並寫暫存檔再搬移。
+                                                   .gitattributes 只管簽出，已經是 CRLF 的
+                                                   機器 git 永遠不會自己修
+scripts/update.sh                               — 沒有憑證時 interactive-upgrade 會退回這
+                                                   支，而它從來不碰 git 掛勾。補上就地去 CR
+client/src/pages/System/observed-users.js       — 組合鍵的分隔字元從原始 NUL 改成 \0 跳脫，
+                                                   等價，但讓 git 不再把整個檔案當二進位
 ```
 
 ## v1.26.95 修改（掛勾寫的欄位到伺服器都被丟掉）

@@ -25,6 +25,14 @@ bin/*.sh                          text eol=lf
 *.cjs                             text eol=lf
 *.mjs                             text eol=lf
 
+# An explicit `text` attribute overrides git's binary auto-detection — conversion then
+# happens without guessing the content type. This fixture carries deliberate NUL bytes and
+# exists to pin exact content, so leaving it under the rule above would let git rewrite a
+# CRLF inside it on some future commit: the same silent rewrite this file is here to stop.
+# `-eol` as well as `-text`: setting `eol` on its own enables conversion and effectively
+# sets `text`, so unsetting only `text` would leave the rule above still in force.
+tests/install-check-null-byte-sanitize.test.js  -text -eol
+
 # PowerShell and batch files are Windows-native, keep CRLF
 *.ps1                             text eol=crlf
 *.bat                             text eol=crlf

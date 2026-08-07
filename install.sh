@@ -573,7 +573,11 @@ done
 install_git_hook() {
   local src="$OWNMIND_DIR/hooks/$1" dst="$HOME/.ownmind/git-hooks/$2"
   [ -f "$src" ] || return 0
-  tr -d '\r' < "$src" > "$dst"
+  # '\015' rather than '\r': POSIX tr recognises both, but on an implementation that does
+  # not, '\r' degrades to the literal letter and deletes every r in the hook.
+  # Write-then-move: a plain redirect truncates the live hook first, and git would execute
+  # the half-written file on the next commit if tr died mid-write.
+  tr -d '\015' < "$src" > "$dst.tmp" && mv "$dst.tmp" "$dst"
   chmod +x "$dst"
   echo "[ OK ] Installed git $2 hook"
 }
