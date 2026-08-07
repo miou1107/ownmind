@@ -25,13 +25,28 @@ and the shell SessionStart hook.
 - **WHEN** another process tries to acquire
 - **THEN** it fails, and the existing lock is left untouched
 
-## Requirement: a stale lock is reclaimable, but only by one process at a time
+## Requirement: a stale lock is reclaimable, and reclaiming cannot produce two holders
 
 A lock whose mtime is older than five minutes belongs to a run that died and MAY be
-reclaimed. Deletion MUST be serialised behind its own exclusive file, and whoever wins it
-MUST re-read the lock's age immediately before deleting.
+reclaimed.
 
-Both the five-minute threshold and the serialisation MUST be the same in the shell and Node
+Deleting a path and re-creating it CANNOT be made atomic on a plain filesystem: any process
+that judged a file stale can end up removing a different file that has since taken the path.
+`rename` does not solve it either — it moves the same decision one level down. The
+requirement is therefore not atomicity but that **no two processes ever both believe they
+hold the lock**, achieved in three parts, each of which MUST be present:
+
+1. Deletion MUST be serialised behind its own exclusively-created file.
+2. Whoever wins that MUST re-read the lock's age immediately before deleting.
+3. An acquirer MUST write a value only it could have written, and read it back after
+   creating. If what it reads is not what it wrote, the lock was displaced and it MUST NOT
+   report success.
+
+Clearing a reclaim marker left by a dead reclaimer is itself a delete-and-recreate and MUST
+use the same discipline: move it aside under a name unique to the clearing process, and a
+process that loses that move MUST NOT reclaim on that pass.
+
+The five-minute threshold and all three parts MUST be the same in the shell and Node
 implementations. A shorter threshold on one side would let it steal from a run on the other
 that is still working.
 
@@ -55,9 +70,30 @@ that is still working.
 
 ### Scenario: a reclaim marker left by a dead reclaimer
 
-- **GIVEN** a reclaim marker older than five minutes
-- **THEN** it is removed, and reclaiming can proceed — the re-read above is what makes this
-  safe
+- **GIVEN** a stale lock and a stale reclaim marker, and several processes reaching the
+  acquire together
+- **THEN** at most one of them ends up holding a lock
+
+### Scenario: losing the move-aside
+
+- **GIVEN** a stale reclaim marker, and the move-aside failing because another process got
+  there first
+- **THEN** this process reclaims nothing, deletes nothing, and does not acquire
+
+### Scenario: the acquirer's lock is replaced
+
+- **GIVEN** a process that created the lock, and a different value in the file by the time
+  it reads back
+- **THEN** it reports that it did not acquire
+
+## Requirement: the lock files are not part of the working tree
+
+`.update-lock`, its reclaim marker and any move-aside name MUST be ignored by git.
+
+The user's `~/.ownmind` is a git checkout, and `scripts/interactive-upgrade.sh` reads a
+non-empty `git status --porcelain` — which includes untracked files — as a dirty tree, and
+answers it with `git reset --hard origin/main`. A lock file merely existing during an upgrade
+would trigger that.
 
 ## Requirement: losing the race is not a failure
 

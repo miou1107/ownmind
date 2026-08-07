@@ -3,6 +3,9 @@ node_modules/
 .env.*
 .DS_Store
 .last-update-check
+# Runtime lock files. Untracked files make `git status --porcelain` non-empty, which
+# scripts/interactive-upgrade.sh reads as a dirty tree and answers with `git reset --hard`.
+.update-lock*
 logs/
 
 # v1.20：前端 client 編譯產物與依賴

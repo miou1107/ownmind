@@ -130,6 +130,11 @@ fi
 
 # Age of a file in seconds. Prints nothing and returns non-zero when it is not there.
 # stat -f %m = macOS/BSD, stat -c %Y = GNU.
+#
+# The `|| echo 0` fallback this used to carry is deliberately gone. It made an unreadable
+# mtime mean "infinitely old", so a lock nobody could stat was reclaimed by everybody at
+# once. Failing closed instead means an unreadable lock is never reclaimed; on every
+# platform this script runs on, one of the two `stat` forms works.
 lock_age_seconds() {
   [ -f "$1" ] || return 1
   local mtime
@@ -138,27 +143,41 @@ lock_age_seconds() {
   echo $(( $(date +%s) - mtime ))
 }
 
-# Create a file only if it does not exist. `set -C` (noclobber) makes the redirect
-# O_CREAT|O_EXCL, so exactly one process out of any number can succeed. The subshell keeps
-# noclobber from leaking into the rest of the hook.
+# Create a file only if it does not exist, stamping $2 into it. `set -C` (noclobber) makes
+# the redirect O_CREAT|O_EXCL, so exactly one process out of any number can succeed. The
+# subshell keeps noclobber from leaking into the rest of the hook.
 create_exclusive() {
-  ( set -C; : > "$1" ) 2>/dev/null
+  ( set -C; printf '%s' "${2:-}" > "$1" ) 2>/dev/null
 }
 
 # Take the update lock. Returns non-zero when somebody else holds it.
+#
+# Mirrors shared/update-lock.js; that file explains why reclaiming a stale lock takes three
+# steps rather than one. In short: deleting a path and re-creating it cannot be made atomic,
+# so removal is serialised, the deleter re-reads the age, and the winner then checks that the
+# file at the path is still the one it created.
 #
 # What shipped before was `[ ! -f "$LOCK_FILE" ]` ten lines above a `touch`, which is not a
 # lock twice over: the test and the create are far apart, and `touch` succeeds on a file that
 # already exists. Measured 2026-08-07 — four hooks racing, four winners, every morning.
 acquire_update_lock() {
-  local age rage reclaim="$LOCK_FILE.reclaim"
+  local age rage token reclaim="$LOCK_FILE.reclaim"
 
   age=$(lock_age_seconds "$LOCK_FILE")
   if [ -n "$age" ] && [ "$age" -gt 300 ]; then
     # Stale: the run that took it died. Deletion is serialised behind its own exclusive file,
     # otherwise two processes both delete and both create, and both think they hold it.
     rage=$(lock_age_seconds "$reclaim")
-    if [ -n "$rage" ] && [ "$rage" -gt 300 ]; then rm -f "$reclaim"; fi
+    if [ -n "$rage" ] && [ "$rage" -gt 300 ]; then
+      # Clearing a leaked marker is itself a delete-and-recreate, so it gets the same
+      # treatment: move it aside under a name only this process uses, and whoever loses the
+      # move skips this round rather than racing for it.
+      if mv "$reclaim" "$reclaim.dead.$$" 2>/dev/null; then
+        rm -f "$reclaim.dead.$$"
+      else
+        return 1
+      fi
+    fi
     if create_exclusive "$reclaim"; then
       # Re-read the age now that we are the only reclaimer: an earlier winner may already
       # have put a fresh lock here, and deleting that is exactly the bug being fixed.
@@ -168,7 +187,14 @@ acquire_update_lock() {
     fi
   fi
 
-  create_exclusive "$LOCK_FILE"
+  # A value only this call writes, so the check below compares our lock against whatever is
+  # actually at that path — not the path against itself, which would always agree.
+  token="$$-$(date +%s)-${RANDOM}${RANDOM}"
+  create_exclusive "$LOCK_FILE" "$token" || return 1
+
+  # Did somebody delete the lock we just made and put their own there? Then they hold it,
+  # not us.
+  [ "$(cat "$LOCK_FILE" 2>/dev/null)" = "$token" ]
 }
 
 if [ -d "$OWNMIND_DIR/.git" ]; then
@@ -188,6 +214,11 @@ if [ -d "$OWNMIND_DIR/.git" ]; then
       # put 18 phantom failures on one account across six days and sent us looking for a fault
       # that did not exist. Same event name and reason the MCP uses for this case.
       log_event "update_skipped" "reason" "lock_held"
+    elif acquire_update_lock; then
+      # No lock file, yet the create failed a moment ago: the holder released it in between.
+      # Retrying once tells that apart from a genuine write failure, rather than reporting a
+      # phantom failure — which is the whole point of this release.
+      UPDATE_LOCK_TAKEN=1
     else
       # The create failed and there is no lock file to account for it: a read-only filesystem
       # or a full disk. `set -C` cannot report an errno, so presence of the file is the only
