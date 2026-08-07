@@ -37,6 +37,40 @@ Legend: `[ ]` pending · `[x]` done
       v1.26.88 guard reads as an unconverted interpolated path. `npm test` was red on the
       branch. Reworded, and left a note in the block saying why.
 
+## Phase 3b — What the fix un-hid
+
+The hook had a large tail that had never executed. Restoring it restored all of it at once.
+
+- [x] `git push` was blocked in ANY repository: the version gate compares OwnMind's own
+      version against `git tag -l` in the user's cwd. Reproduced in a blank test repo.
+      Scoped to the OwnMind checkout in both copies.
+- [x] The `.sh` reminder went to bare stdout, which a PreToolUse hook exiting 0 never
+      delivers to the model — while the reminder text itself instructs the AI. Wrapped in
+      `hookSpecificOutput`, like the other output paths in the same file already were.
+- [x] The `.js` copy contacted the API before every Bash call and emitted an empty context
+      blob. Skipped for the non-trigger fallback; silent when there is nothing to say.
+- [x] A non-string `command` cleared the empty-value guard. Type-checked.
+- [x] Enforcement: downgraded from block to report. See below.
+- [x] Every one of the above pinned by a test, each verified by mutation. One of those
+      tests was vacuous on the first attempt — a non-string object stringifies to something
+      no trigger matches, so the assertion held whether or not the type was checked.
+      Rewritten with an array, which does match, and re-mutated.
+
+## Phase 3c — Enforcement stays off
+
+- [x] Measured the real blast radius rather than reasoning about it: on one account, 20 of
+      27 cached rules carry a blocking mark; `git push` would be stopped by 6, `git commit`
+      by 3 on the Windows copy (the `.sh` copy does not evaluate commit at all — an
+      inconsistency worth its own fix).
+- [x] Established that clearing a local cache is worthless: the MCP layer overwrites it from
+      the server on init and after every rule mutation. The contamination is server-side.
+- [x] Independent adversarial review consulted, given the code and the measured data. It
+      reached the same conclusion and named the cache-refill point independently.
+- [x] Blocking downgraded to reporting in both copies; failures still listed. The OwnMind
+      version gate keeps blocking — product logic, not user data, and scoped to that repo.
+- [x] Backlog 31: clean the stored data, give users a way to manage it, reconcile the two
+      copies' scope, then re-enable as one change.
+
 ## Phase 4 — Docs
 
 - [x] `CHANGELOG.md` — corrected the scope claim from Windows-only to all platforms.
