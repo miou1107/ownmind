@@ -1,5 +1,20 @@
 # OwnMind 檔案結構
 
+## v1.26.90 修改（Windows 鐵律提醒掛勾從來沒觸發過）
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.sh                — 四處 readFileSync('/dev/stdin') 改成
+                                                   readFileSync(0)。Windows node 會把該 POSIX
+                                                   路徑解析成 C:\dev\stdin 並拋 ENOENT，而拋出
+                                                   點在 try 之外、外層又有 2>/dev/null，所以掛勾
+                                                   每次都拿到空字串直接 exit 0。
+                                                   另：取指令改讀 tool_input.command，
+                                                   保留最上層 command 作為退路
+hooks/ownmind-iron-rule-check.js                — 同樣的取值路徑問題（讀 stdin 本來就對）。
+                                                   兩份一起改，避免重演「只修一份」
+```
+
 ## v1.26.89 修改（鐵律範本不再自動套用）
 
 新增檔：
