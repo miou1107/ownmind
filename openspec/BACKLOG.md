@@ -831,3 +831,49 @@ No component reads any of them; they are leftovers from the v1.20 prototype.
 widening that change into a locale audit.
 
 Origin: `archive/single-console-consolidation/tasks.md`, Stage 8.
+
+---
+
+### 32. The trigger vocabulary is still a list nobody published
+
+v1.26.91 replaced "the vocabulary is three words nobody published" with "the vocabulary is
+twenty-seven words nobody published", and v1.26.92 added six more for `edit`. The failure
+mode is unchanged: `ownmind_save` accepts any `trigger:` tag, and a tag outside the table
+is dropped at the filter with a silent exit that never says why.
+
+A longer table does not fix this — it only moves the boundary. The cheap real fix is to
+answer at write time: when a rule is saved with a `trigger:` tag no trigger can reach, say
+so in the `ownmind_save` response, along with the tags that would work. That is a server
+change, not a hook change, which is why it was not folded into v1.26.92.
+
+Measured on one account (2026-08-07): 233 distinct `trigger:` tags, of which the most
+common unreachable one is `trigger:edit`… now reachable, followed by `trigger:report` (16
+rules), `trigger:respond` (12) and `trigger:gdocs` (11). Those three describe things the AI
+does that are not tool calls at all, so they need a different mechanism, not a bigger table.
+
+Origin: v1.26.92 code review, and the same reviewer's point in v1.26.91.
+
+### 33. The Windows-without-Git-Bash hook copy was never runnable
+
+`install.ps1` copied `ownmind-iron-rule-check.js` into `~/.claude/hooks` and registered it
+from there. That copy imports `../shared/helpers.js`; `~/.claude/shared/` does not exist and
+no installer creates it, so node exits `ERR_MODULE_NOT_FOUND` before reading the payload.
+On a Windows machine without Git Bash this hook had therefore never run at all — same class
+of silent failure as v1.26.88 and v1.26.90, invisible for the same reason.
+
+v1.26.92 points the registration at the checkout copy (`~/.ownmind/hooks/…`), where the
+imports resolve. **That change was written on a machine with no PowerShell and has not been
+executed.** It needs a real Windows-without-bash run before it can be called fixed. The
+copy step itself is now dead weight and should be removed once that is confirmed.
+
+Origin: v1.26.92 code review.
+
+### 34. The two hook copies speak different languages
+
+`hooks/ownmind-iron-rule-check.sh` writes its reminders in Chinese, the `.js` sibling in
+English. Which one a user gets depends on whether their machine has bash, so the same
+product speaks differently to two people on the same team. `CLAUDE.md` already lists hook
+terminal messages as in scope for 軌道 A i18n; this is one concrete instance, and it will
+keep growing one string at a time until the strings move into the locale files.
+
+Origin: v1.26.92 code review.
