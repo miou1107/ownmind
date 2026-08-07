@@ -112,7 +112,21 @@ COMMAND=$(printf '%s\n' "$PAYLOAD" | tail -n +2)
 if [ -z "$COMMAND" ]; then
   case "$TOOL_NAME" in
     Edit|Write|MultiEdit|NotebookEdit)
-      node "$HOME/.ownmind/hooks/ownmind-edit-reminder.js" 2>/dev/null
+      # The payload goes in on stdin so the reminder can read session_id: the one-hour
+      # window is per session, because the listing exists to put the rules into one AI's
+      # context and a second session that never saw them would only be told the count.
+      #
+      # Failures are recorded rather than dropped. `2>/dev/null` plus `exit 0` is precisely
+      # how v1.26.87, v1.26.88 and v1.26.90 each stayed invisible for weeks.
+      # stderr stays off stdout: whatever lands on stdout is echoed to Claude Code and has
+      # to be the JSON envelope, nothing else. The failure is carried by the exit status.
+      EDIT_OUT=$(printf '%s' "$INPUT" | node "$HOME/.ownmind/hooks/ownmind-edit-reminder.js" 2>/dev/null)
+      EDIT_STATUS=$?
+      if [ "$EDIT_STATUS" -ne 0 ]; then
+        log_event "edit_reminder_failed" "status" "$EDIT_STATUS"
+      elif [ -n "$EDIT_OUT" ]; then
+        echo "$EDIT_OUT"
+      fi
       ;;
   esac
   exit 0

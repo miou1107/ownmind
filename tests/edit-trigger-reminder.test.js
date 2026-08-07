@@ -11,6 +11,7 @@ import {
   decideEditReminder,
   renderEditReminderLine,
   WINDOW_MS,
+  FETCH_BACKOFF_MS,
 } from '../shared/edit-reminder-state.js';
 
 /**
@@ -29,18 +30,24 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
-const editPayload = (toolName = 'Edit') => JSON.stringify({
-  session_id: 'test-session',
+const editPayload = (toolName = 'Edit', sessionId = 'session-A') => JSON.stringify({
+  session_id: sessionId,
   hook_event_name: 'PreToolUse',
   tool_name: toolName,
   tool_input: { file_path: '/tmp/x.js', old_string: 'a', new_string: 'b' },
 });
+
+/** Read one session's entry out of the store. */
+function entryFor(statePath, sessionId) {
+  return JSON.parse(fs.readFileSync(statePath, 'utf8')).sessions[sessionId];
+}
 
 describe('v1.26.92 — the edit trigger, end to end through both hook copies', () => {
   let server;
   let hits;
   let tmpHome;
   let statePath;
+  let baseUrl;
 
   /** Two rules match `edit`, one does not — so a count is a real assertion, not a tautology. */
   const rulesResponse = { data: [
@@ -57,7 +64,7 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
       res.end(JSON.stringify(rulesResponse));
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
 
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-edittrig-'));
     statePath = path.join(tmpHome, 'edit-reminder.json');
@@ -74,6 +81,34 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
     fs.writeFileSync(
       path.join(tmpHome, '.ownmind', 'package.json'),
       JSON.stringify({ version: '99.99.99' })
+    );
+    // A cached rule that WOULD block, with a condition nothing here can satisfy. Without
+    // it the "never blocks" assertion holds no matter which path ran — the verification
+    // engine would find an empty cache and emit nothing either way.
+    fs.mkdirSync(path.join(tmpHome, '.ownmind', 'cache'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpHome, '.ownmind', 'cache', 'iron_rules.json'),
+      JSON.stringify([{
+        code: 'IR-BLOCKER',
+        title: 'a rule that would abort the operation',
+        metadata: {
+          verification: {
+            mode: 'pre_action',
+            trigger: ['edit', 'commit', 'deploy', 'delete'],
+            block_on_fail: true,
+            conditions: {
+              type: 'recent_event_exists',
+              params: { event: 'test-pass', action: 'comply' },
+              message: '還沒跑測試',
+            },
+          },
+        },
+      }])
+    );
+    // The .sh hook shells out to the verification engine by absolute path.
+    fs.symlinkSync(
+      path.join(repoRoot, 'hooks', 'ownmind-verify-trigger.js'),
+      path.join(tmpHome, '.ownmind', 'hooks', 'ownmind-verify-trigger.js')
     );
     // The .sh hook runs the edit reminder by absolute path under HOME, the way it already
     // runs ownmind-verify-trigger.js.
@@ -166,15 +201,15 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
     });
 
     it(`${hook}: once the hour is up, the full listing comes back`, async () => {
-      fs.writeFileSync(statePath, JSON.stringify({
+      fs.writeFileSync(statePath, JSON.stringify({ sessions: { 'session-A': {
         window_start_ms: Date.now() - (WINDOW_MS + 60_000),
         occurrence: 9,
         rule_count: 2,
-      }));
+      } } }));
       const r = await run(hook, editPayload());
       assert.equal(r.reached, true, 'an expired window must list again');
       assert.match(r.context, /IR-001/);
-      assert.equal(JSON.parse(fs.readFileSync(statePath, 'utf8')).occurrence, 1,
+      assert.equal(entryFor(statePath, 'session-A').occurrence, 1,
         'a new window restarts the count');
     });
 
@@ -192,6 +227,65 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
         const parsed = r.stdout.trim() ? JSON.parse(r.stdout.trim()) : {};
         assert.equal('decision' in parsed, false,
           'an edit must never be aborted — the verification engine is not on this path');
+      }
+    });
+
+    it(`${hook}: a second session gets its own listing, not the other one's count`, async () => {
+      // The listing exists to put the rules into one AI's context. A session — or a
+      // subagent — that starts inside another session's window would otherwise be handed
+      // "68 rules, occurrence 2" and never be shown the 68.
+      const a = await run(hook, editPayload('Edit', 'session-A'));
+      assert.match(a.context, /IR-001/);
+
+      const b = await run(hook, editPayload('Edit', 'session-B'));
+      assert.match(b.context, /IR-001/, 'a different session must get the full listing');
+
+      const a2 = await run(hook, editPayload('Edit', 'session-A'));
+      assert.match(a2.context, /本小時第 2 次$/, "session A's own window kept counting");
+      assert.equal(entryFor(statePath, 'session-B').occurrence, 1);
+    });
+
+    it(`${hook}: an unreachable server backs off instead of taxing every edit`, async () => {
+      // Without a back-off, an outage costs every edit a 3s timeout for its whole duration,
+      // and prints nothing to explain it.
+      const dead = { ...process.env, OWNMIND_API_URL: 'http://127.0.0.1:1' };
+      fs.writeFileSync(
+        path.join(tmpHome, '.claude', 'settings.json'),
+        JSON.stringify({ mcpServers: { ownmind: { env: {
+          OWNMIND_API_KEY: 'k', OWNMIND_API_URL: 'http://127.0.0.1:1',
+        } } } })
+      );
+      try {
+        const first = await run(hook, editPayload());
+        assert.equal(first.stdout.trim(), '', 'a failed lookup says nothing');
+        const entry = entryFor(statePath, 'session-A');
+        assert.equal(entry.window_ms, FETCH_BACKOFF_MS, 'a short back-off window is recorded');
+
+        const second = await run(hook, editPayload());
+        assert.equal(second.reached, false, 'the next edit must not retry immediately');
+        assert.equal(second.stdout.trim(), '', 'and must not say "0 條" either');
+      } finally {
+        fs.writeFileSync(
+          path.join(tmpHome, '.claude', 'settings.json'),
+          JSON.stringify({ mcpServers: { ownmind: { env: {
+            OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: baseUrl,
+          } } } })
+        );
+        void dead;
+      }
+    });
+
+    it(`${hook}: an account with no matching rule stays silent, not "0 條"`, async () => {
+      const saved = rulesResponse.data.slice();
+      rulesResponse.data = [{ code: 'IR-003', title: 'deploy only', tags: ['trigger:deploy'] }];
+      try {
+        const first = await run(hook, editPayload());
+        assert.equal(first.stdout.trim(), '', 'nothing matches — say nothing');
+        const second = await run(hook, editPayload());
+        assert.equal(second.stdout.trim(), '',
+          'and do not put a content-free line in front of every edit for the next hour');
+      } finally {
+        rulesResponse.data = saved;
       }
     });
 
@@ -278,7 +372,11 @@ describe('v1.26.92 — trigger derivation', () => {
   });
 
   it('anything else maps to nothing', () => {
-    for (const tool of ['Read', 'Grep', 'Bash', 'Glob', '', null, undefined, 42]) {
+    // The prototype names are the interesting ones: a plain property lookup resolves them
+    // to native functions, which are truthy, so they would clear the caller's "did we get a
+    // trigger" guard and render function source into the reminder.
+    for (const tool of ['Read', 'Grep', 'Bash', 'Glob', '', null, undefined, 42,
+                        'constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
       assert.equal(detectToolTrigger(tool), null, String(tool));
     }
   });
@@ -363,5 +461,40 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
     assert.deepEqual(after.hooks.PreToolUse[0], existing, 'the existing entry is left alone');
 
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('v1.26.92 — an unwritable state directory says so', () => {
+  it('the degradation is announced, not absorbed', async () => {
+    // If state cannot be written, every edit re-lists and pays a network round trip, and
+    // nothing anywhere says why. That is the "unusable, so it gets switched off" outcome
+    // the whole throttle exists to avoid — so it has to be visible.
+    const { editReminder } = await import('../hooks/ownmind-edit-reminder.js');
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ code: 'IR-9', title: 'x', tags: ['trigger:edit'] }] }));
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${server.address().port}`;
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-rostate-'));
+    const statePath = path.join(dir, 'nope', 'edit-reminder.json');
+    fs.mkdirSync(path.join(dir, 'nope'));
+    fs.chmodSync(path.join(dir, 'nope'), 0o500);
+    const saved = process.env.__OWNMIND_EDIT_REMINDER_PATH;
+    process.env.__OWNMIND_EDIT_REMINDER_PATH = statePath;
+    try {
+      const out = await editReminder({
+        version: '1.26.92', apiKey: 'k', apiUrl: url, now: Date.now(), sessionId: 's',
+      });
+      const context = JSON.parse(out).hookSpecificOutput.additionalContext;
+      assert.match(context, /IR-9/, 'the listing still happens');
+      assert.match(context, /無法寫入/, 'and the reason the throttle is not working is stated');
+    } finally {
+      process.env.__OWNMIND_EDIT_REMINDER_PATH = saved;
+      fs.chmodSync(path.join(dir, 'nope'), 0o700);
+      fs.rmSync(dir, { recursive: true, force: true });
+      await new Promise((r) => server.close(r));
+    }
   });
 });

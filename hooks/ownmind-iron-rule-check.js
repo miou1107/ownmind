@@ -54,6 +54,7 @@ async function main() {
 
   let command = '';
   let toolName = '';
+  let sessionId = '';
   try {
     // v1.26.90: Claude Code sends { tool_name, tool_input: { command } } — reading a
     // top-level .command yielded undefined on every platform, so this hook exited at the
@@ -64,6 +65,7 @@ async function main() {
     const raw = (p.tool_input && p.tool_input.command) || p.command;
     command = typeof raw === 'string' ? raw : '';
     toolName = typeof p.tool_name === 'string' ? p.tool_name : '';
+    sessionId = typeof p.session_id === 'string' ? p.session_id : '';
   } catch {}
 
   // v1.26.92: a file-editing tool carries no command, so this used to exit here — which is
@@ -87,7 +89,7 @@ async function main() {
   // below, which is the only code here that can emit `decision: block`. Its conditions are
   // written for commit and deploy; none of them can be satisfied by an edit.
   if (trigger === 'edit') {
-    const out = await editReminder({ version: VERSION, apiKey, apiUrl, now: Date.now() });
+    const out = await editReminder({ version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId });
     if (out) console.log(out);
     process.exit(0);
   }
