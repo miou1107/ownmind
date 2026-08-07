@@ -756,6 +756,25 @@ applied during that window. Eight were found and cleared by hand on one account 
 
 Origin: 2026-08-06, bug report #16 from `Vin-windows-test`, item 5 of its suggested fixes.
 
+### 30. The hooks discard their own error streams, and that is why v1.26.90 hid for so long
+
+`hooks/ownmind-iron-rule-check.sh` wraps thirteen blocks in `2>/dev/null`. Two separate
+defects lived behind those redirects — a POSIX-only stdin path that threw on Windows, and
+an extraction that read a field the payload never carried — and neither produced a single
+visible symptom on any machine. The hook exited 0 every time.
+
+v1.26.88 established the rule for the installers: an error stream goes to a log, never to
+`/dev/null`. The hooks were not covered, and they are harder: a hook's stderr is consumed
+by Claude Code, so the errors cannot simply be un-suppressed — they need somewhere to go.
+`~/.ownmind/logs/` already exists and the self-check already uploads from there, so the
+destination is probably not the hard part; deciding what is worth logging on a path that
+runs before every single Bash call is.
+
+Related: the same treatment belongs on `ownmind-session-start.sh` and
+`ownmind-worktree-setup.sh`, which carry the same pattern.
+
+Origin: 2026-08-07, deferred out of v1.26.90 by its author as too large to carry along.
+
 ---
 
 ## Smaller cleanups
