@@ -245,28 +245,44 @@ fi
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 if [ -f "$CLAUDE_SETTINGS" ]; then
-  if grep -q '"ownmind"' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    echo "[INFO] Claude Code MCP already configured, skipping"
-  else
-    echo "[INFO] Configuring Claude Code MCP"
-    node -e "
-      const fs = require('fs');
-      const entry = $MCP_ENTRY;
-      const settings = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
-      if (!settings.mcpServers) settings.mcpServers = {};
-      settings.mcpServers.ownmind = {
-        ...entry,
-        env: {
-          OWNMIND_API_URL: '$API_URL',
-          OWNMIND_API_KEY: '$API_KEY',
-          OWNMIND_TOOL: 'claude-code'
-        }
-      };
-      const _tmp = '$CLAUDE_SETTINGS_WIN' + '.tmp';
-      fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
-      fs.renameSync(_tmp, '$CLAUDE_SETTINGS_WIN');
-    "
-  fi
+  # v1.26.91: this used to skip the whole block when the file already contained the string
+  # "ownmind", on the assumption that an existing entry needs nothing. But the entry is
+  # where the API key lives, so every re-run that meant to change the key — switching
+  # accounts, rotating a credential, correcting one typed wrong — did nothing at all and
+  # then went on to print an installation summary. The condition asked whether OwnMind was
+  # configured; the question that mattered was whether it was configured with THIS key.
+  #
+  # Now it always writes, and merges rather than replaces so an existing entry keeps any
+  # field this installer does not manage.
+  echo "[INFO] Configuring Claude Code MCP"
+  node -e "
+    const fs = require('fs');
+    const entry = $MCP_ENTRY;
+    const p = '$CLAUDE_SETTINGS_WIN';
+    const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!settings.mcpServers) settings.mcpServers = {};
+    const prev = settings.mcpServers.ownmind || {};
+    const prevEnv = prev.env || {};
+    const nextKey = '$API_KEY';
+    settings.mcpServers.ownmind = {
+      ...prev,
+      ...entry,
+      env: {
+        ...prevEnv,
+        OWNMIND_API_URL: '$API_URL',
+        OWNMIND_API_KEY: nextKey,
+        OWNMIND_TOOL: 'claude-code'
+      }
+    };
+    const _tmp = p + '.tmp';
+    fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
+    fs.renameSync(_tmp, p);
+    // Say which of the two happened. A run that silently changed the account is as
+    // confusing as one that silently did not.
+    if (!prevEnv.OWNMIND_API_KEY) console.log('       API key written');
+    else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('       API key updated (replaced a different key)');
+    else console.log('       API key unchanged');
+  "
 else
   echo "[INFO] Creating Claude Code MCP config"
   mkdir -p "$HOME/.claude"
@@ -668,49 +684,54 @@ fi
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"
   CURSOR_MCP_WIN="$(to_win_path "$CURSOR_MCP")"
-  if [ -f "$CURSOR_MCP" ] && grep -q '"ownmind"' "$CURSOR_MCP" 2>/dev/null; then
-    echo "[INFO] Cursor MCP already configured, skipping"
+  # v1.26.91: the "already configured" skip is gone here for the same reason as the Claude
+  # Code block above — this entry holds the API key, so skipping it meant a key change never
+  # reached Cursor. The other "already configured" skips further down (Cursor hooks,
+  # Windsurf, OpenCode, OpenClaw, Antigravity) append rule text and carry no credential, so
+  # they stay as they are.
+  echo "[INFO] Configuring Cursor MCP"
+  if [ -f "$CURSOR_MCP" ]; then
+    node -e "
+      const fs = require('fs');
+      const entry = $MCP_ENTRY;
+      const p = '$CURSOR_MCP_WIN';
+      const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (!settings.mcpServers) settings.mcpServers = {};
+      const prev = settings.mcpServers.ownmind || {};
+      settings.mcpServers.ownmind = {
+        ...prev,
+        ...entry,
+        env: {
+          ...(prev.env || {}),
+          OWNMIND_API_URL: '$API_URL',
+          OWNMIND_API_KEY: '$API_KEY',
+          OWNMIND_TOOL: 'cursor'
+        }
+      };
+      fs.writeFileSync(p, JSON.stringify(settings, null, 2));
+    "
   else
-    echo "[INFO] Configuring Cursor MCP"
-    if [ -f "$CURSOR_MCP" ]; then
-      node -e "
-        const fs = require('fs');
-        const entry = $MCP_ENTRY;
-        const settings = JSON.parse(fs.readFileSync('$CURSOR_MCP_WIN', 'utf8'));
-        if (!settings.mcpServers) settings.mcpServers = {};
-        settings.mcpServers.ownmind = {
-          ...entry,
-          env: {
-            OWNMIND_API_URL: '$API_URL',
-            OWNMIND_API_KEY: '$API_KEY',
-            OWNMIND_TOOL: 'cursor'
-          }
-        };
-        fs.writeFileSync('$CURSOR_MCP_WIN', JSON.stringify(settings, null, 2));
-      "
-    else
-      mkdir -p "$HOME/.cursor"
-      node -e "
-        const fs = require('fs');
-        const entry = $MCP_ENTRY;
-        const settings = {
-          mcpServers: {
-            ownmind: {
-              ...entry,
-              env: {
-                OWNMIND_API_URL: '$API_URL',
-                OWNMIND_API_KEY: '$API_KEY',
-                OWNMIND_TOOL: 'cursor'
-              }
+    mkdir -p "$HOME/.cursor"
+    node -e "
+      const fs = require('fs');
+      const entry = $MCP_ENTRY;
+      const settings = {
+        mcpServers: {
+          ownmind: {
+            ...entry,
+            env: {
+              OWNMIND_API_URL: '$API_URL',
+              OWNMIND_API_KEY: '$API_KEY',
+              OWNMIND_TOOL: 'cursor'
             }
           }
-        };
-        const _t2 = '$CURSOR_MCP_WIN' + '.tmp';
-        fs.writeFileSync(_t2, JSON.stringify(settings, null, 2));
-        fs.renameSync(_t2, '$CURSOR_MCP_WIN');
-      "
-    fi
-  fi
+        }
+      };
+      const _t2 = '$CURSOR_MCP_WIN' + '.tmp';
+      fs.writeFileSync(_t2, JSON.stringify(settings, null, 2));
+      fs.renameSync(_t2, '$CURSOR_MCP_WIN');
+    "
+fi
 
   # Cursor hooks（beforeShellExecution 作為 session-start workaround）
   CURSOR_HOOKS="$HOME/.cursor/hooks.json"
