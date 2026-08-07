@@ -52,13 +52,30 @@ log_event() {
   mkdir -p "$LOG_DIR"
   local ts=$(date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([0-9][0-9]\)$/:\1/')
   local date_str=$(date +%Y-%m-%d)
-  local extra=""
-  while [ $# -gt 0 ]; do
-    local val=$(echo "$2" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    extra="$extra,\"$1\":\"$val\""
+  # v1.26.95: the extra key/value pairs go inside `details`, not alongside it.
+  #
+  # They used to be written flat — {"ts":…,"event":…,"step":"pull"} — and the upload posts
+  # this same object straight to /api/activity/batch, where the handler reads only
+  # `e.details`. So every field either hook has ever logged was dropped on arrival and
+  # stored as `{}`. Measured 2026-08-07: 18 `update_failed` rows for one user and 9 for
+  # another, all with empty details, so nobody could see which step failed. The local file
+  # had the answer; the server, where anyone would look, did not.
+  # `-gt 1`, not `-gt 0`: `shift 2` with one argument left fails and shifts nothing, so the
+  # loop spins forever and the hook never returns — a stalled session with no output at all.
+  # Reachable only by a caller passing a key with no value, which none do today; dropping a
+  # trailing keyless argument is strictly better than hanging.
+  local details=""
+  while [ $# -gt 1 ]; do
+    # Strip control characters before escaping. A newline or tab in a value produces a line
+    # that is not valid JSON, the whole POST body is rejected, and the event disappears —
+    # exactly the silent loss this release exists to end. No current caller passes free text,
+    # but the obvious next use of this channel is an error message.
+    local val=$(printf '%s' "$2" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+    if [ -n "$details" ]; then details="$details,"; fi
+    details="$details\"$1\":\"$val\""
     shift 2
   done
-  local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}"
+  local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\",\"details\":{$details}}"
   # Local log
   echo "$entry" >> "$LOG_DIR/$date_str.jsonl"
   # Server upload (background, non-blocking)
