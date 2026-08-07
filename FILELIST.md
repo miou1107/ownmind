@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.94 修改（Windows MCP 路徑每次升級被寫壞）
+
+新增檔：
+```
+tests/install-mcp-entry-path.test.js            — 把 install.sh 裡建 MCP_ENTRY 的 node 區塊
+                                                   抽出來真的執行（不是手抄一份，手抄的只能
+                                                   證明抄本會動），餵真實反斜線路徑驗證原樣
+                                                   往返。另含舊寫法的重現，證明它確實把路徑
+                                                   毀成 C:UsersVin.ownmindmcpstart.cmd；以及
+                                                   一條形狀禁令：路徑不得再被引號包進 JS 原始碼
+```
+
+修改檔：
+```
+install.sh                                      — MCP_ENTRY 的路徑改用 process.argv[1] 傳入，
+                                                   不再內插進 node -e 的原始碼。Windows 分支的
+                                                   cygpath -w 是反斜線，內插後 \U \V \. \m \s
+                                                   被 JS 剖析器當非法跳脫吃掉，後面那個要把
+                                                   反斜線加倍的 replace 已無反斜線可加倍。
+                                                   非 Windows 分支原本走 cygpath -m（正斜線）
+                                                   沒事，一併改成同一種寫法
+```
+
 ## v1.26.93 修改（換帳號從來沒真的換過）
 
 新增檔：
