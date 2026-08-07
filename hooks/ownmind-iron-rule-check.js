@@ -32,6 +32,19 @@ function httpGet(url, headers) {
   });
 }
 
+/** True when the current working directory is the OwnMind checkout itself. */
+function inOwnMindCheckout() {
+  try {
+    const top = execSync('git rev-parse --show-toplevel', {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (!top) return false;
+    return fs.realpathSync(top) === fs.realpathSync(path.join(HOME, '.ownmind'));
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   let input = '';
   try {
@@ -42,11 +55,12 @@ async function main() {
   try {
     // v1.26.90: Claude Code sends { tool_name, tool_input: { command } } — reading a
     // top-level .command yielded undefined on every platform, so this hook exited at the
-    // !command guard on every call, macOS included. The Windows-only half of the bug was
-    // the '/dev/stdin' read above; this half was never platform-specific.
+    // !command guard on every call, macOS included. This copy's stdin read was already
+    // correct; the Windows-only '/dev/stdin' half of the bug was in the .sh sibling.
     // A bare { command } is still accepted for direct/manual invocation.
     const p = JSON.parse(input);
-    command = (p.tool_input && p.tool_input.command) || p.command || '';
+    const raw = (p.tool_input && p.tool_input.command) || p.command;
+    command = typeof raw === 'string' ? raw : '';
   } catch {}
 
   if (!command) process.exit(0);
@@ -59,17 +73,24 @@ async function main() {
   const { apiKey, apiUrl } = readCredentials();
   if (!apiKey || !apiUrl) process.exit(0);
 
-  let rules;
-  try {
-    const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
-      'Authorization': `Bearer ${apiKey}`
-    });
-    const parsed = JSON.parse(raw);
-    // v1.19.20: starting in some v1.19.x release the API wraps responses in { data: [...] };
-    // older hooks calling .filter directly would throw. Support both shapes.
-    rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
-  } catch {
-    process.exit(0);
+  // v1.26.90: the fetched rules feed the reminder only, and the reminder block below skips
+  // the 'command' fallback trigger entirely — so for an ordinary Bash command this request
+  // was pure cost. It never showed before because the hook exited above on every call; now
+  // that it runs, it would put a network round trip (3s timeout) in front of every single
+  // Bash tool call. The verification engine reads the local cache, not this response.
+  let rules = [];
+  if (trigger !== 'command') {
+    try {
+      const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
+        'Authorization': `Bearer ${apiKey}`
+      });
+      const parsed = JSON.parse(raw);
+      // v1.19.20: starting in some v1.19.x release the API wraps responses in { data: [...] };
+      // older hooks calling .filter directly would throw. Support both shapes.
+      rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
+    } catch {
+      process.exit(0);
+    }
   }
 
   const relevant = rules.filter(r => {
@@ -86,8 +107,14 @@ async function main() {
 
   const lines = [];
 
-  // For git push: check that git tag matches package.json version
-  if (/git push/i.test(command)) {
+  // For git push: check that git tag matches package.json version.
+  //
+  // v1.26.90: scoped to the OwnMind checkout. This compares OwnMind's own version against
+  // `git tag -l` in the user's current directory — a maintainer release gate that only ever
+  // made sense in this repo. It had never executed (the hook exited at the empty-command
+  // guard on every call), so without this scoping the fix would start blocking `git push`
+  // in every other repository, telling the user to create OwnMind's version tag there.
+  if (/git push/i.test(command) && inOwnMindCheckout()) {
     try {
       const pkgVersion = VERSION !== '?' ? VERSION : null;
       if (pkgVersion) {
@@ -134,7 +161,15 @@ async function main() {
     lines.push(`Response format: the AI's first line must be "${triggerTag}" so the user sees the rule trigger.`);
   }
 
-  // Run verification engine for ALL triggers (commit/deploy/delete)
+  // Run verification engine for ALL triggers (commit/deploy/delete).
+  //
+  // v1.26.90: this reports, it does not block — see the matching note in the .sh sibling.
+  // The conditions come from the local rule cache, which mirrors the server, and the
+  // server-side data still carries verification templates that a pre-v1.26.89 bug attached
+  // on its own (every one of them `block_on_fail`). Nobody has ever seen this path run, so
+  // switching the hook back on would switch on enforcement of conditions no user wrote.
+  // This copy is stricter than the .sh one — it evaluates on `commit` too, not just
+  // deploy/delete — so it would have been the harsher of the two.
   try {
     const verificationPath = path.join(HOME, '.ownmind', 'shared', 'verification.js');
     const { evaluateConditions } = await import(verificationPath);
@@ -171,18 +206,16 @@ async function main() {
       }
 
       if (blockFailures.length > 0) {
-        const blockTag = `[OwnMind v${VERSION}] Iron rule block (${trigger})`;
+        const warnTag = `[OwnMind v${VERSION}] Iron rule reminder (${trigger})`;
         lines.push('');
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        lines.push(blockTag);
+        lines.push(warnTag);
         lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        blockFailures.forEach(f => lines.push(`  ❌ ${f}`));
+        blockFailures.forEach(f => lines.push(`  ⚠️  ${f}`));
         lines.push('');
-        lines.push(`Response format: the AI's first line must be "${blockTag}" and explain why this was blocked. Complete the steps above before executing ${trigger}.`);
+        lines.push(`Response format: the AI's first line must be "${warnTag}" and address the points above. This is a reminder; it does not stop the ${trigger}.`);
 
         console.log(JSON.stringify({
-          decision: 'block',
-          reason: `Iron rule verification failed for ${trigger} operation`,
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
             additionalContext: lines.join('\n')
@@ -199,6 +232,10 @@ async function main() {
   if (trigger === 'commit' && lines.length === 0) {
     lines.push(`[OwnMind v${VERSION}] Iron rule check: commit — ${relevant.length} rules verified ✓`);
   }
+
+  // v1.26.90: nothing to say — stay silent rather than injecting an empty context blob into
+  // every Bash tool call.
+  if (lines.length === 0) return;
 
   console.log(JSON.stringify({
     hookSpecificOutput: {
