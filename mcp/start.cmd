@@ -35,7 +35,13 @@ IF "%NODE_EXE%"=="" (
   echo   - %%ProgramFiles%%\nodejs\node.exe >&2
   echo   - %%LOCALAPPDATA%%\Programs\nodejs\node.exe >&2
   echo Fix: install Node.js v20+ from https://nodejs.org/ then restart Claude Code. >&2
-  echo Error logged to %ERRFILE% (next OwnMind self-check will upload). >&2
+  REM v1.26.100: the parentheses below MUST stay escaped as ^( ^).
+  REM cmd.exe parses this whole IF block in one pass before running any of it, so a bare
+  REM ")" inside it closes the block early — the parser then meets the "." that follows and
+  REM the entire script dies with ". was unexpected at this time." before line 1 executes.
+  REM That is independent of whether node was found, so the launcher failed on every Windows
+  REM machine, and the OwnMind MCP server never started at all. See tests/mcp-start-cmd.test.js.
+  echo Error logged to %ERRFILE% ^(next OwnMind self-check will upload^). >&2
   exit /b 1
 )
 "%NODE_EXE%" "%~dp0index.js"
