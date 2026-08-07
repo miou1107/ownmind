@@ -32,6 +32,12 @@ tests/mcp-auto-update-cross-platform.test.js    — 同上，acquire 搬到共�
 .gitignore                                      — 忽略 .update-lock 系列。未追蹤檔案會讓
                                                    interactive-upgrade.sh 判定工作目錄髒掉、
                                                    直接 git reset --hard
+scripts/interactive-upgrade.sh / .ps1           — 每個錯誤回報都附上失敗指令的日誌尾巴，
+                                                   取代原本寫死的猜測；摺一行、去控制字元、
+                                                   上限 300 字（兩邊同一個上限）
+tests/upgrade-error-reason.test.js              — 呼叫點清單用掃的不用寫的；換行、上限、
+                                                   取尾不取頭、沒日誌時要講清楚
+openspec/BACKLOG.md                             — 新增 37（context 欄位為什麼是空的，未證實）
 package.json / README ×3                        — 版號 1.26.98
 ```
 

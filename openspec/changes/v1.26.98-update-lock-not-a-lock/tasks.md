@@ -36,6 +36,14 @@
       defence in depth hides its own lower layers from concurrency tests.
 - [x] Node-side coverage closed in `tests/node-hook-parity.test.js`: skip on contention,
       lock before announcing, release when there is nothing to run. 4 mutations, all red.
+- [x] Folded in at Vin's request after DESKTOP-8DD75VJ failed a pull with no recorded reason:
+      `interactive-upgrade.sh` / `.ps1` now put the tail of the failing command's log into
+      `detail`. 7 mutations, all red. The derived-call-site scan immediately found a seventh
+      call site the hand edits had missed (`install_incomplete`), and the cap test found an
+      off-by-one from `cut`'s trailing newline.
+- [x] Backlog 37 opened for the empty `context` field. The `$args`-in-an-advanced-function
+      theory is written down **as a guess** — there is no Windows machine here to run it on,
+      so it is not recorded as the cause.
 - [ ] Open the PR. **Do not tag or deploy** — Vin decides, and has said not to rush it.
 
 ## Notes for whoever reviews this

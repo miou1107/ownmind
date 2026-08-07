@@ -133,3 +133,42 @@ released immediately.
 
 - **GIVEN** the Node hook acquired the lock and finds no `update.sh` / `update.ps1`
 - **THEN** it releases the lock rather than holding it for five minutes over a no-op
+
+## Requirement: a reported upgrade failure says what actually failed
+
+Every error report raised by the upgrade scripts MUST carry the tail of the log the failing
+command wrote, in the `detail` field.
+
+`detail` is what reaches the server, the admin console and the health broadcast. A
+hand-written guess there — `"git pull --ff-only failed (network or non-ff merge)"` — reads
+identically whether the remote was unreachable, the branch had diverged, or a file was
+locked, so a failure recorded that way cannot be diagnosed afterwards.
+
+The value MUST be folded onto one line with control characters removed: a newline makes the
+report invalid JSON and it is discarded on arrival. It MUST be capped, and the shell and
+PowerShell implementations MUST use the same cap.
+
+The list of call sites MUST be derived at test time, not written down.
+
+### Scenario: a pull fails because the branch diverged
+
+- **GIVEN** git wrote `fatal: Not possible to fast-forward, aborting.` to the upgrade log
+- **THEN** the reported detail contains that sentence
+
+### Scenario: a log line contains a newline or control character
+
+- **THEN** the reported detail is a single line with no control characters
+
+### Scenario: a runaway log
+
+- **GIVEN** a log line of 5000 characters
+- **THEN** the reported detail is capped, and capped at the same length on both platforms
+
+### Scenario: there is no log to read
+
+- **THEN** the detail says so, rather than going blank — a blank reason is indistinguishable
+  from the state this requirement exists to remove
+
+### Scenario: a new report_error call site is added without the reason
+
+- **THEN** the suite fails, naming it

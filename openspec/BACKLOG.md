@@ -912,3 +912,31 @@ a change to the whole permission model rather than to this feature, which is why
 folded in. Until then, no control of this shape can be described as enforced.
 
 Origin: bug report #18 (2026-08-07), and the analysis of #18's proposed fix.
+
+### 37. The upgrade error report's `context` arrives empty, and we cannot say where it is lost
+
+On 2026-08-07 DESKTOP-8DD75VJ failed a `git pull --ff-only` during an upgrade, restored its
+backup, and self-checked clean seven seconds later. Working out **why** the pull failed was
+impossible: the only record was the hand-written guess in `detail`, `"git pull --ff-only
+failed (network or non-ff merge)"`, and the `context` field — which is supposed to carry the
+tail of the upgrade log — was the empty string.
+
+The path is `interactive-upgrade.ps1` → `Report-Error` (report-error.ps1) →
+`report-error.cjs --context-file=…` → errors spool → `self-check.cjs` → server. Reading it,
+`self-check.cjs:1188` forwards `report.context` faithfully and `report-error.cjs:101` fills
+it from `readContextTail(args.contextFile)`, so the value is either empty at source or the
+argument never arrives. Both are plausible and neither is demonstrated.
+
+There is a candidate: `Report-Error` in `scripts/install-helpers/report-error.ps1` declares
+`[Parameter(Mandatory=$true)]`, which makes it an advanced function, and then assigns to
+`$args` — an automatic variable. **This is a guess. It has not been run.** There is no
+Windows machine on this side to reproduce it on, and a cause that cannot be demonstrated is
+not one to write down as fact.
+
+v1.26.98 did not wait for that answer: it put the real command output into `detail` as well,
+which is a plain string already proven to arrive. So the next failure of this kind will be
+explicable even if `context` is still broken. Closing this item means either reproducing the
+empty context on a Windows machine and fixing it, or establishing that the context field is
+redundant now and removing it.
+
+Origin: DESKTOP-8DD75VJ upgrade failure, 2026-08-07 19:26 (Asia/Taipei).

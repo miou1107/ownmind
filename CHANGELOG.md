@@ -69,6 +69,38 @@ if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then   # 第 132 行
 
 真實掛勾也並行跑過四份：新版是 1 個 `update_check`＋3 個 `update_skipped`，同一組工具跑舊邏輯是 4 個全進。
 
+## v1.26.98（同版）— 升級失敗時，記錄裡只有一句猜測
+
+vin-windows 的 DESKTOP-8DD75VJ 今晚 19:26 升級時 `git pull --ff-only` 失敗、自動還原備份，7 秒後自我檢查 13 項全過。**那台沒事**，但要回答「它為什麼失敗」時發現：查不出來。
+
+伺服器上留下的唯一線索是這句：
+
+> git pull --ff-only failed (network or non-ff merge)
+
+**這是程式自己寫死的猜測。** 不管是連不上遠端、分支分岔、還是檔案被鎖住，送上來的都是這一句。旁邊本來有一個 `context` 欄位要放升級日誌的尾巴，那次是空的。
+
+### 為什麼沒去修 context
+
+追過整條路徑，`self-check.cjs` 有把 `report.context` 原封不動往上送，`report-error.cjs` 也有從檔案讀。所以要嘛來源就是空的、要嘛參數根本沒傳到。兩個都講得通，**兩個都沒被證實**。
+
+有一個候選原因（PowerShell 的 `Report-Error` 宣告成進階函式之後又去指派 `$args` 這個保留變數），**但這台機器沒有 PowerShell 可以跑，證不出來就不寫成結論**。列進 backlog 37。
+
+### 改法：把真正發生的事寫進那個一定會到的欄位
+
+`detail` 是純字串，而且我們確定它會到（那句猜測就是從那裡來的）。所以升級腳本的每一個錯誤回報，現在都會附上失敗指令的日誌尾巴：
+
+```
+git pull --ff-only failed: Updating 1234567..89abcde|fatal: Not possible to fast-forward, aborting.
+```
+
+摺成一行、去掉控制字元（有換行的話整份回報會變成不合法的 JSON、在伺服器端被丟掉），上限 300 字，bash 跟 PowerShell 兩邊同一個上限。
+
+### 測試順手抓到兩件事
+
+呼叫點清單是**掃出來的、不是手寫的**。掃描當場就找到一個手改時漏掉的呼叫點（`install_incomplete`）。上限測試也抓到 `cut` 會多吐一個換行、實際變成 301 字。
+
+7 個突變全紅。
+
 ## v1.26.97 — 那道「請使用者確認」的關卡，從來沒有在擋
 
 vin-windows 回報（bug #18）。`ownmind_report_bug` 的說明白紙黑字寫著：
