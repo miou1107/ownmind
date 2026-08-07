@@ -24,6 +24,14 @@ hooks/ownmind-session-start.js                  — 原本檢查完鎖之後什�
                                                    取得；沒東西可跑時立刻釋放
 mcp/index.js                                    — 改用共用實作，移除自己那份 openSync wx 與
                                                    會誤刪的 stale 清除
+tests/node-hook-parity.test.js                  — Windows 那份掛勾的鎖行為：搶輸要記 skip、
+                                                   不能動別人的鎖、拿到鎖才宣告、沒東西可跑
+                                                   時要把鎖還回去
+tests/p3-update-event-semantics.test.js         — 兩條原本釘在舊寫法上的斷言改釘需求本身
+tests/mcp-auto-update-cross-platform.test.js    — 同上，acquire 搬到共用檔後跟著改
+.gitignore                                      — 忽略 .update-lock 系列。未追蹤檔案會讓
+                                                   interactive-upgrade.sh 判定工作目錄髒掉、
+                                                   直接 git reset --hard
 package.json / README ×3                        — 版號 1.26.98
 ```
 

@@ -17,7 +17,7 @@ import { clearSessionOffState, readSessionOffState } from '../shared/session-off
 import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
-import { acquireUpdateLock, releaseUpdateLock } from '../shared/update-lock.js';
+import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -184,8 +184,18 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
     // delete it if it was stale, and then create nothing at all: every concurrent hook found
     // no lock and ran the update script together. The shared helper is the same one the MCP
     // uses, so the three programs cannot disagree about what holding the lock means.
-    if (!acquireUpdateLock(lock)) {
-      reportEvent(apiUrl, apiKey, 'update_skipped', { reason: 'lock_held' });
+    //
+    // The two failure modes are kept apart, as they are in the MCP and the shell hook:
+    // another process doing the work is a skip; a lock that could not be created at all is a
+    // read-only filesystem or a full disk, and collapsing that into `lock_held` would be the
+    // same class of lie this release exists to remove.
+    const lockResult = tryAcquireUpdateLock(lock);
+    if (!lockResult.acquired) {
+      if (isContention(lockResult.reason)) {
+        reportEvent(apiUrl, apiKey, 'update_skipped', { reason: lockResult.reason });
+      } else {
+        reportEvent(apiUrl, apiKey, 'update_failed', { step: 'lock', error: lockResult.reason });
+      }
       return;
     }
     // The lock is deliberately not released here. The work happens in a detached child that
@@ -200,6 +210,11 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
       // Nothing was started, so nothing is going to release it later — hand it back now
       // rather than blocking the MCP for the next five minutes over a no-op.
       releaseUpdateLock(lock);
+      // Stamp the marker first. A broken install is worth reporting, but the marker is
+      // written only after a successful spawn below, so without this the pair
+      // update_check + update_failed would fire on *every* session rather than once a day —
+      // exactly the repetition that made `update_failed` stop meaning anything.
+      try { fs.writeFileSync(marker, today); } catch { /* best effort */ }
       reportEvent(apiUrl, apiKey, 'update_failed', { step: 'update_script_missing' });
       return;
     }

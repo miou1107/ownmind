@@ -29,8 +29,15 @@ import { fileURLToPath } from 'node:url';
  *
  * The stale-lock takeover had a race of its own in all three: `stat` the age, `rm`, then
  * create. Two processes can both see a stale lock, both remove it, and the second one's
- * `rm` deletes the fresh lock the first one just took. Doing the removal with a rename
- * makes the takeover itself the atomic step — only one process can move a given file away.
+ * `rm` deletes the fresh lock the first one just took.
+ *
+ * There is no atomic fix for that. Deleting a path and re-creating it can always remove a
+ * file that has since taken the path — `rename` does not help, it only moves the same
+ * decision one level down. So the implementation bounds it in three steps, and each step has
+ * its own test below: removal is serialised behind `<lock>.reclaim`; the deleter re-reads
+ * the age immediately before deleting; and the winner reads back a token it wrote, so a
+ * process whose lock was displaced finds out and stands down instead of both believing they
+ * hold it.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -171,6 +178,66 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
     }
   });
 
+  it('a leaked reclaim marker does not let two shell hooks into the critical section', async () => {
+    // Shell mirror of the same scenario on the Node side. Both stale: a reclaimer that died
+    // between creating the marker and removing it.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      for (const f of [lock, lock + '.reclaim']) {
+        fs.writeFileSync(f, '');
+        fs.utimesSync(f, old, old);
+      }
+      const winners = await race(dir, shellRacer(dir,
+        `${acquire()}\nif acquire_update_lock; then echo WIN; fi`));
+      assert.ok(winners <= 1, `${winners} processes hold the same lock`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a process that loses the move-aside does not reclaim', () => {
+    // Pins the losing branch of the leaked-marker cleanup on its own. Racing cannot reach
+    // it: the displacement check further down catches the damage, so the whole layer can be
+    // removed without any concurrency test going red — which is exactly how a defence-in-
+    // depth layer rots away unnoticed. `mv` is shadowed to fail, which is what losing the
+    // move looks like from inside.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      for (const p of [lock, lock + '.reclaim']) {
+        fs.writeFileSync(p, 'held-by-somebody');
+        fs.utimesSync(p, old, old);
+      }
+      const code = spawnSyncStatus(dir,
+        `${acquire()}\nmv() { return 1; }\nacquire_update_lock`);
+      assert.notEqual(code, 0, 'reclaimed anyway after losing the move');
+      assert.equal(fs.readFileSync(lock, 'utf8'), 'held-by-somebody',
+        'deleted the stale lock despite losing the right to');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a displaced shell hook stands down', () => {
+    // Step three in the shell. `create_exclusive` is shadowed so the file ends up holding
+    // somebody else's token — indistinguishable, from inside, from having been deleted and
+    // replaced between the create and the read-back.
+    const dir = tmpdir();
+    try {
+      const code = spawnSyncStatus(dir, [
+        acquire(),
+        'create_exclusive() { ( set -C; printf %s somebody-elses-token > "$1" ) 2>/dev/null; }',
+        'acquire_update_lock',
+      ].join('\n'));
+      assert.notEqual(code, 0, 'kept holding a lock whose contents are somebody else\'s');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('will not delete a stale lock while somebody else is reclaiming it', () => {
     // The shell mirror of the deterministic reclaim test below; see the comment there for
     // why racing alone does not pin this.
@@ -191,7 +258,11 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
     }
   });
 
-  it('leaves no .stale droppings behind', async () => {
+  it('leaves no reclaim marker behind', async () => {
+    // A leaked `.reclaim` blocks every future reclaim for five minutes, so it has to be
+    // cleaned up on every path out. The first version of this test looked for `.stale`
+    // files, which nothing has ever created — it could not fail. `.reclaim` is the name the
+    // code actually uses.
     const dir = tmpdir();
     try {
       const lock = path.join(dir, '.update-lock');
@@ -200,7 +271,9 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
       fs.utimesSync(lock, old, old);
       await race(dir, shellRacer(dir,
         `${acquire()}\nif acquire_update_lock; then echo WIN; fi`));
-      assert.deepEqual(fs.readdirSync(dir).filter((f) => f.includes('.stale')), []);
+      assert.deepEqual(
+        fs.readdirSync(dir).filter((f) => f.includes('.reclaim') || f.includes('.dead')), [],
+        'a leaked reclaim marker stops this machine reclaiming for five minutes');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -270,8 +343,11 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       const winners = await race(dir, (i, go) => spawn(process.execPath, ['-e', `
         const fs = require('fs');
         const go = process.argv[1], lock = process.argv[2];
-        while (!fs.existsSync(go)) { /* spin */ }
+        // Resolve and compile the module BEFORE the start signal. Doing it after meant each
+        // child paid a different module-load cost and they reached the acquire spread out
+        // rather than together — which is why two reclaim mutants survived the first pass.
         import(process.argv[3]).then(({ acquireUpdateLock }) => {
+          while (!fs.existsSync(go)) { /* spin */ }
           if (acquireUpdateLock(lock)) console.log('WIN');
         });
       `, go, path.join(dir, '.update-lock'), shared], { stdio: ['ignore', 'pipe', 'ignore'] }));
@@ -291,8 +367,11 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       const winners = await race(dir, (i, go) => spawn(process.execPath, ['-e', `
         const fs = require('fs');
         const go = process.argv[1], lock = process.argv[2];
-        while (!fs.existsSync(go)) { /* spin */ }
+        // Resolve and compile the module BEFORE the start signal. Doing it after meant each
+        // child paid a different module-load cost and they reached the acquire spread out
+        // rather than together — which is why two reclaim mutants survived the first pass.
         import(process.argv[3]).then(({ acquireUpdateLock }) => {
+          while (!fs.existsSync(go)) { /* spin */ }
           if (acquireUpdateLock(lock)) console.log('WIN');
         });
       `, go, lock, shared], { stdio: ['ignore', 'pipe', 'ignore'] }));
@@ -353,6 +432,101 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       assert.equal(acquireUpdateLock(lock, { now: hourAhead }), false,
         'deleted a lock that was fresh by the time we got to look at it');
       assert.ok(fs.existsSync(lock), 'the fresh lock must survive');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a leaked reclaim marker does not let two processes into the critical section', async () => {
+    /**
+     * The gap all eight mutations missed, because every other reclaim test writes a *fresh*
+     * marker. A `.reclaim` left behind by a killed reclaimer used to be cleared with
+     * `stat` then `unlink` — check-then-act — so two processes could both clear it, the
+     * second deleting the marker the first had just created. Both then sat inside the
+     * section that deletes the real lock, and the winner of that could delete a fresh lock
+     * somebody else legitimately held.
+     *
+     * Clearing is now a move-aside under a per-process name: whoever loses the move skips
+     * the reclaim this round rather than racing for it.
+     */
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      for (const f of [lock, lock + '.reclaim']) {
+        fs.writeFileSync(f, '');
+        fs.utimesSync(f, old, old);   // both stale: a reclaimer died mid-flight
+      }
+      const winners = await race(dir, (i, go) => spawn(process.execPath, ['-e', `
+        const fs = require('fs');
+        const go = process.argv[1], lock = process.argv[2];
+        import(process.argv[3]).then(({ acquireUpdateLock }) => {
+          while (!fs.existsSync(go)) { /* spin */ }
+          if (acquireUpdateLock(lock)) console.log('WIN');
+        });
+      `, go, lock, shared], { stdio: ['ignore', 'pipe', 'ignore'] }));
+      assert.ok(winners <= 1, `${winners} processes hold the same lock`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a process that loses the move-aside does not reclaim', async () => {
+    // JS mirror. `renameSync` is made to throw, which is what losing the move looks like.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      for (const p of [lock, lock + '.reclaim']) {
+        fs.writeFileSync(p, 'held-by-somebody');
+        fs.utimesSync(p, old, old);
+      }
+      const { acquireUpdateLock } = await import(shared);
+      const realRename = fs.renameSync;
+      fs.renameSync = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; };
+      try {
+        assert.equal(acquireUpdateLock(lock), false, 'reclaimed anyway after losing the move');
+        assert.equal(fs.readFileSync(lock, 'utf8'), 'held-by-somebody',
+          'deleted the stale lock despite losing the right to');
+      } finally {
+        fs.renameSync = realRename;
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a displaced lock holder stands down', async () => {
+    /**
+     * Step three, pinned on its own. Whatever the first two steps miss, a process whose
+     * lock was deleted and replaced must not go on believing it holds one — that is the
+     * difference between a bounded race and two concurrent `git pull`s.
+     *
+     * Simulated by replacing the lock's contents the moment it is created: the token read
+     * back is not the token written, which is exactly what displacement looks like.
+     */
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const { acquireUpdateLock } = await import(shared);
+
+      // Sanity: with nothing interfering it acquires. Without this the assertion below
+      // passes just as well on an implementation that never acquires anything.
+      assert.equal(acquireUpdateLock(lock), true, 'baseline acquire failed');
+      fs.rmSync(lock);
+
+      const realWriteSync = fs.writeSync;
+      fs.writeSync = function patched(...args) {
+        const r = realWriteSync.apply(this, args);
+        try { fs.writeFileSync(lock, 'somebody-elses-token'); } catch { /* ignore */ }
+        return r;
+      };
+      try {
+        assert.equal(acquireUpdateLock(lock), false,
+          'kept holding a lock whose contents are somebody else\'s');
+      } finally {
+        fs.writeSync = realWriteSync;
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
