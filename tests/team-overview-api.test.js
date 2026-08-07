@@ -21,6 +21,54 @@ describe('extractRuleCounts', () => {
       { complied: 0, skipped: 0, triggered: 0 }
     );
   });
+
+  /**
+   * v1.26.98 — the shape written when the AI never called ownmind_log_session and the server
+   * rebuilt the session from the activity log. It records the same facts under a different
+   * name, and reading only the first shape reported "no data" for people whose compliance was
+   * sitting in the row: 52 entries for one user, 33 for another, both shown as a dash.
+   */
+  it('counts the server-recovered compliance shape', () => {
+    const d = {
+      _recovery: 'from_activity_logs',
+      compliance: [
+        { rule: 'code-review', action: 'comply' },
+        { rule: 'deploy-check', action: 'comply' },
+        { rule: 'readme-sync', action: 'skip' },
+      ],
+    };
+    assert.deepEqual(extractRuleCounts(d), { complied: 2, skipped: 1, triggered: 3 });
+  });
+
+  it('does not count a session twice when it carries both shapes', () => {
+    const d = {
+      rules_complied: ['IR-003'],
+      rules_skipped: [],
+      compliance: [{ rule: 'x', action: 'comply' }, { rule: 'y', action: 'comply' }],
+    };
+    assert.deepEqual(extractRuleCounts(d), { complied: 1, skipped: 0, triggered: 1 });
+  });
+
+  it('ignores violations rather than folding them into the rate', () => {
+    // `triggered` is defined as complied + skipped, and the page divides complied by it.
+    // Counting violations here would quietly change the meaning of a number that has been
+    // displayed for months. Backlog 38 covers showing them properly.
+    const d = { compliance: [{ rule: 'a', action: 'violate' }, { rule: 'b', action: 'comply' }] };
+    assert.deepEqual(extractRuleCounts(d), { complied: 1, skipped: 0, triggered: 1 });
+  });
+
+  it('survives a malformed compliance array', () => {
+    const d = { compliance: [null, 'nope', {}, { action: 'comply' }] };
+    assert.deepEqual(extractRuleCounts(d), { complied: 1, skipped: 0, triggered: 1 });
+  });
+
+  it('an empty recovered session still reports nothing', () => {
+    // A person who genuinely never triggered a rule must keep showing a dash, not 0%.
+    assert.deepEqual(
+      extractRuleCounts({ _recovery: 'from_activity_logs', compliance: [] }),
+      { complied: 0, skipped: 0, triggered: 0 }
+    );
+  });
 });
 
 describe('aggregateCompliance', () => {

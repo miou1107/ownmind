@@ -940,3 +940,39 @@ empty context on a Windows machine and fixing it, or establishing that the conte
 redundant now and removing it.
 
 Origin: DESKTOP-8DD75VJ upgrade failure, 2026-08-07 19:26 (Asia/Taipei).
+
+### 38. Rule violations are collected but never shown anywhere
+
+`extractRuleCounts` counts `comply` and `skip` and drops `violate`. That is deliberate as of
+v1.26.98: the team page divides complied by triggered, and `triggered` has always meant
+complied + skipped, so folding violations in would silently change a number people have been
+reading for months.
+
+But the violations are real data — `iron_rule_compliance` events with `action: 'violate'`,
+written by the post-commit audit — and nothing displays them. A rate of 98% currently means
+"98% of the rules I noticed, I followed", not "98% of the rules that applied".
+
+Deciding what to show is a product question, not a bug fix: a second column, a separate
+figure, or a redefinition of the existing rate with the label changed to match. It needs
+Vin's call because it changes the meaning of a number already in use.
+
+Origin: found while fixing the "no data" columns on the team usage page, 2026-08-07.
+
+### 39. A server-recovered session has no project, so the "most common project" column stays blank
+
+Two things write a `session_logs` row. `ownmind_log_session`, called by the AI, may carry
+`context.project`. When the AI never calls it, `src/routes/memory.js` rebuilds the session
+from the activity log — and that path records event counts and compliance but no project,
+because `activity_logs` does not carry one.
+
+Measured on 2026-08-07, over the previous week: 76 of Vincent's 95 sessions were
+server-recovered, as were **all** of Michelle's, Phoebe's, 采瑤's and Vin-windows-test's. So
+the column is blank for four people entirely, and for four fifths of the fifth.
+
+v1.26.98 fixed the compliance half of the same problem, because the recovery path was already
+collecting compliance under a different name. The project half has no such data to recover:
+closing this means deciding where a project name could come from server-side — the client's
+cwd on the MCP heartbeat is the obvious candidate, but that is a new field on a new path, and
+it is worth asking first whether a "most common project" column earns it.
+
+Origin: same investigation as 38.

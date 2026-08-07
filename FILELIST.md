@@ -42,7 +42,13 @@ shared/secret-detect.js                         — 長度啟發式改成量「�
                                                    順便補上含斜線金鑰抓不到的漏洞
 tests/secret-detect-word-shape.test.js          — 保證寫成比率（對整個倉庫掃過）不是清單；
                                                    13 種真金鑰逐一驗
-openspec/BACKLOG.md                             — 新增 37（context 欄位為什麼是空的，未證實）
+src/routes/usage/team-overview.js               — 遵守率改成也讀伺服器重建那種寫法
+                                                   （details.compliance）；兩種都有時不重複計
+tests/team-overview-api.test.js                 — 重建寫法、不重複計、violate 不計入、
+                                                   壞資料不炸、真的沒資料仍顯示一槓
+openspec/BACKLOG.md                             — 新增 37（context 欄位為什麼是空的，未證實）、
+                                                   38（違規記錄沒地方顯示）、39（重建的場次
+                                                   沒有專案名稱）
 package.json / README ×3                        — 版號 1.26.98
 ```
 
