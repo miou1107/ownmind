@@ -444,6 +444,29 @@ async function checkGitHooks() {
 }
 
 /**
+ * v1.26.88 — did the install that put this machine here ever finish?
+ *
+ * The artifact list lives in install-artifacts.cjs, shared with install.sh, so that
+ * "complete" means one thing rather than two things that drift apart.
+ */
+async function checkInstallComplete() {
+  let result;
+  try {
+    const { checkInstallArtifacts } = require('./install-artifacts.cjs');
+    result = checkInstallArtifacts({ home: HOME, ownmindDir: OWNMIND_DIR });
+  } catch (err) {
+    return warn('install_complete', `cannot verify: ${err.message}`,
+      'Re-run the installer');
+  }
+  if (result.ok) {
+    return pass('install_complete', `${result.checked}/${result.checked} artifacts present`);
+  }
+  const names = result.missing.map(m => m.describe).join('; ');
+  return fail('install_complete', `${result.missing.length} missing — ${names}`,
+    'Re-run the installer (bash ~/.ownmind/scripts/bootstrap.sh), then fully restart your AI tool');
+}
+
+/**
  * v1.26.81 — did this person's memories and iron rules actually load?
  *
  * The nine checks before this one confirm that things are *installed*. None of them asked
@@ -845,7 +868,8 @@ const QUICK_SKIP = ['usage_roundtrip'];
 async function checkNamesFor({ quick = false } = {}) {
   const all = [
     'mcp_files', 'package_version', 'mcp_node_modules', 'server_health',
-    'api_key_format', 'background_credentials', 'api_credentials', 'git_hooks', 'scheduler',
+    'api_key_format', 'background_credentials', 'api_credentials', 'git_hooks',
+    'install_complete', 'scheduler',
     'memory_load', 'usage_roundtrip',
   ];
   return quick ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
@@ -867,6 +891,10 @@ async function runAllChecks({ quick = false } = {}) {
   checks.push(await safeCheck('background_credentials', () => checkBackgroundCredentials()));
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
+  // v1.26.88: the version number is not evidence that installation completed. A machine
+  // can report the current version because a separate mechanism pulled the working tree
+  // forward, while install.sh aborted before it produced anything. Bug report #15.
+  checks.push(await safeCheck('install_complete', checkInstallComplete));
   checks.push(await safeCheck('scheduler', checkScheduler));
   // v1.26.81 — the one that asks whether the product's central feature works at all.
   checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey })));
