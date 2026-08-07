@@ -88,11 +88,15 @@ describe('node SessionStart hook — a successful load reaches the server', () =
     // Give the fire-and-forget upload a moment; the hook must not block its exit on it,
     // so the process can finish slightly ahead of the request landing.
     const deadline = Date.now() + 3000;
-    while (Date.now() < deadline && !received.batch.some((e) => e.event === 'init' && e.status === 'ok')) {
+    // v1.26.95: read details.status, not a flat e.status. This assertion used to pass
+    // *because* the hook was broken — it spread the fields to the top level, which the real
+    // server discards. Asserting the broken shape would have made the fix look like a
+    // regression.
+    while (Date.now() < deadline && !received.batch.some((e) => e.event === 'init' && e.details?.status === 'ok')) {
       await new Promise((r) => setTimeout(r, 50));
     }
 
-    const init = received.batch.find((e) => e.event === 'init' && e.status === 'ok');
+    const init = received.batch.find((e) => e.event === 'init' && e.details?.status === 'ok');
     assert.ok(init, `no init event reached the server; got: ${JSON.stringify(received.batch.map((e) => e.event))}`);
     assert.equal(init.source, 'hook',
       "the server tells the automatic path from the MCP's by this field; 'mcp' here would defeat the memory_load check");

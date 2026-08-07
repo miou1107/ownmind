@@ -877,3 +877,16 @@ terminal messages as in scope for 軌道 A i18n; this is one concrete instance, 
 keep growing one string at a time until the strings move into the locale files.
 
 Origin: v1.26.92 code review.
+
+### 35. `tests/bare-mount-trailing-slash.test.js` flakes in a full-suite run
+
+Seen once on 2026-08-07: `/me resolves to the console usage page under both bases` returned
+403 where it expects 301. The same file passes in isolation (20/20) and the full suite
+passed on the run before and the run after, on the same commit. 403 is what `adminAuth`
+returns, so the likely cause is state or ordering shared with another test rather than
+anything in the route.
+
+It is not reproducible on demand, so it is recorded rather than chased. If it recurs, the
+thing to capture is which tests ran immediately before it in that run.
+
+Origin: noticed while running the suite for v1.26.95.

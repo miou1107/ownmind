@@ -29,7 +29,13 @@ function logEvent(event, extra = {}) {
     const now = new Date();
     const ts = now.toISOString().replace('Z', '+00:00');
     const dateStr = now.toISOString().slice(0, 10);
-    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', ...extra });
+    // v1.26.95: `details: extra`, not `...extra`. The batch endpoint reads e.details and
+    // nothing else, so spreading the fields flat meant every one of them was discarded on
+    // arrival — the same defect fixed in the two .sh hooks. This copy is the one Windows
+    // runs (session-hook-command.cjs returns it for win32), so leaving it would have given
+    // the same event two shapes depending on the user's OS: any later `details->>'status'`
+    // query would read blank for every Windows user and say nothing about why.
+    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', details: extra });
     fs.appendFileSync(path.join(LOG_DIR, `${dateStr}.jsonl`), entry + '\n');
   } catch {}
 }
@@ -70,7 +76,7 @@ function reportEvent(apiUrl, apiKey, event, extra = {}) {
         event,
         tool: 'claude-code',
         source: 'hook',
-        ...extra,
+        details: extra,   // v1.26.95 — see logEvent above
       }],
     });
     const mod = url.startsWith('https') ? https : http;
