@@ -102,13 +102,15 @@ function Test-RootDepNeeded {
 
 # v1.18.5: conditional-sync-cli.js needs js-yaml, otherwise the module fails to load
 # and the SessionStart hook silently stops updating the big skill.
-# Floor 4.3.0 — CVE-2026-59869, quadratic CPU via YAML merge-key chains.
-if (Test-RootDepNeeded -Package "js-yaml" -MinVersion "4.3.0") {
+# Floor 4.3.1 — CVE-2026-59869 (quadratic CPU via YAML merge-key chains) plus the
+# 4.3.1 backport of the same shape in `!!omap` duplicate-key detection. Keep this in
+# step with package.json and with update.sh; dep-floor-guard turns red otherwise.
+if (Test-RootDepNeeded -Package "js-yaml" -MinVersion "4.3.1") {
   Write-Host "   📦 Installing / updating conditional-sync dependency: js-yaml..."
   Push-Location $OwnMindDir
   try {
     $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
-    & npm install js-yaml@^4.3.0 --no-save --silent --no-audit --no-fund 2>>$errLog
+    & npm install js-yaml@^4.3.1 --no-save --silent --no-audit --no-fund 2>>$errLog
     if ($LASTEXITCODE -eq 0) {
       Write-Host "   [ OK ] js-yaml ready"
     } else {
