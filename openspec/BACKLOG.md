@@ -706,6 +706,103 @@ live, undecided question, not a rejected one.
 Origin: 2026-08-06, Vin's closed-loop requirement, stated while the credential-resolver
 fix was in progress.
 
+### 28. Windows has two installers that do different things, and upgrades only run the broken one
+
+`install.ps1` is a native PowerShell implementation. `install.sh` is the Git Bash one.
+They are not translations of each other: they configure different sets of tools, in a
+different order, with different repair steps.
+
+That divergence stayed invisible while both appeared to work. v1.26.88 made it visible:
+`install.sh` had been aborting halfway through on Windows since some v1.19.x release, and
+`install.ps1` had not. Machine TANK reported a clean 11-passed self-check throughout,
+because it had once been installed by `install.ps1` — the components were there, just
+never updated by any later upgrade. **Upgrades only ever run `install.sh`.**
+
+So on Windows, "installed" and "upgraded" can mean two different sets of components, and
+the self-check cannot tell them apart. The v1.26.88 `install_complete` item narrows this:
+it now catches a machine that never got the parts at all. It does not catch a machine
+holding a stale version of them.
+
+What this would take: pick one implementation as authoritative and make the other call
+it, or extract the per-tool configuration into helpers both drive. The second is closer
+to how `ensure-session-hook.cjs` / `ensure-key-file.cjs` already work — those are the
+only steps the two installers genuinely share today, and they are shared precisely
+because they were extracted.
+
+Do not treat this as cosmetic. Every future Windows fix has to be written twice, and the
+one nobody remembers to write is the one the upgrade path runs.
+
+Origin: 2026-08-06, bug report #15 from `Vin-windows-test`, item 5 of its suggested
+fixes; deliberately left out of v1.26.88's scope so that release stayed a bug fix.
+
+### 29. No supported way to clear a verification block from a rule
+
+v1.26.89 stopped the server attaching `metadata.verification` to iron rules on a template
+match. It did not give anybody a way to remove one that was applied while that was live.
+
+Today the only route is `ownmind_update` overwriting the whole `metadata` object — which
+means the caller has to know the internal shape of `metadata.verification`, and has to
+remember to carry `origin_context` back or lose it. The bug report that prompted v1.26.89
+is right that a normal user cannot do this, and an AI doing it on their behalf is one
+forgotten field away from destroying the rule's provenance.
+
+Candidates: a `clear_verification: true` flag on `ownmind_update`, or a documented
+procedure. The flag is small; the reason it is not in v1.26.89 is that the release was a
+bug fix and this is a new capability.
+
+Related and unmeasured: nobody has audited other accounts for rules carrying a template
+applied during that window. Eight were found and cleared by hand on one account on
+2026-08-06. There is no reason to think that account was special.
+
+Origin: 2026-08-06, bug report #16 from `Vin-windows-test`, item 5 of its suggested fixes.
+
+### 30. The hooks discard their own error streams, and that is why v1.26.90 hid for so long
+
+`hooks/ownmind-iron-rule-check.sh` wraps thirteen blocks in `2>/dev/null`. Two separate
+defects lived behind those redirects — a POSIX-only stdin path that threw on Windows, and
+an extraction that read a field the payload never carried — and neither produced a single
+visible symptom on any machine. The hook exited 0 every time.
+
+v1.26.88 established the rule for the installers: an error stream goes to a log, never to
+`/dev/null`. The hooks were not covered, and they are harder: a hook's stderr is consumed
+by Claude Code, so the errors cannot simply be un-suppressed — they need somewhere to go.
+`~/.ownmind/logs/` already exists and the self-check already uploads from there, so the
+destination is probably not the hard part; deciding what is worth logging on a path that
+runs before every single Bash call is.
+
+Related: the same treatment belongs on `ownmind-session-start.sh` and
+`ownmind-worktree-setup.sh`, which carry the same pattern.
+
+Origin: 2026-08-07, deferred out of v1.26.90 by its author as too large to carry along.
+
+### 31. Enforcement is switched off until the rule data is cleaned and users can manage it
+
+v1.26.90 restored the PreToolUse hook, which had never run. Restoring it would also have
+restored the blocking path, which evaluates `metadata.verification` from the local rule
+cache. That cache is a mirror of the server — the MCP layer overwrites it on init and after
+every rule mutation — and the server-side data still carries verification templates that
+the pre-v1.26.89 route attached on its own, every one of them `block_on_fail`.
+
+Measured on one real account: 20 of 27 cached rules carry a blocking mark, and `git push`
+would be stopped by six of them, including rules about credential choice and tag naming,
+under the message "you have not run tests". So v1.26.90 downgraded the blocking path to a
+report. Two things have to land before it goes back:
+
+1. **Clean the stored data.** The five templates produce byte-identical `verification`
+   objects, so a migration can match them exactly. Nothing records whether a given
+   `metadata.verification` was authored by a user or auto-attached — but there is no
+   supported way for a user to apply one either, so an exact template match is strong
+   evidence of auto-attachment. Worth confirming against a couple of real accounts before
+   deleting anything.
+2. **Give users a way to manage them** — backlog 29.
+
+Then re-enable, and re-enable it as one thing: the two hook copies currently disagree about
+scope (the `.sh` evaluates only deploy/delete, the `.js` evaluates commit as well), which
+would make the same account behave differently on macOS and Windows.
+
+Origin: 2026-08-07, during v1.26.90 review; confirmed by an independent adversarial review
+which identified that clearing a local cache is worthless because the server refills it.
+
 ---
 
 ## Smaller cleanups
@@ -734,3 +831,153 @@ No component reads any of them; they are leftovers from the v1.20 prototype.
 widening that change into a locale audit.
 
 Origin: `archive/single-console-consolidation/tasks.md`, Stage 8.
+
+---
+
+### 32. The trigger vocabulary is still a list nobody published
+
+v1.26.91 replaced "the vocabulary is three words nobody published" with "the vocabulary is
+twenty-seven words nobody published", and v1.26.92 added six more for `edit`. The failure
+mode is unchanged: `ownmind_save` accepts any `trigger:` tag, and a tag outside the table
+is dropped at the filter with a silent exit that never says why.
+
+A longer table does not fix this — it only moves the boundary. The cheap real fix is to
+answer at write time: when a rule is saved with a `trigger:` tag no trigger can reach, say
+so in the `ownmind_save` response, along with the tags that would work. That is a server
+change, not a hook change, which is why it was not folded into v1.26.92.
+
+Measured on one account (2026-08-07): 233 distinct `trigger:` tags, of which the most
+common unreachable one is `trigger:edit`… now reachable, followed by `trigger:report` (16
+rules), `trigger:respond` (12) and `trigger:gdocs` (11). Those three describe things the AI
+does that are not tool calls at all, so they need a different mechanism, not a bigger table.
+
+Origin: v1.26.92 code review, and the same reviewer's point in v1.26.91.
+
+### 33. The Windows-without-Git-Bash hook copy was never runnable
+
+`install.ps1` copied `ownmind-iron-rule-check.js` into `~/.claude/hooks` and registered it
+from there. That copy imports `../shared/helpers.js`; `~/.claude/shared/` does not exist and
+no installer creates it, so node exits `ERR_MODULE_NOT_FOUND` before reading the payload.
+On a Windows machine without Git Bash this hook had therefore never run at all — same class
+of silent failure as v1.26.88 and v1.26.90, invisible for the same reason.
+
+v1.26.92 points the registration at the checkout copy (`~/.ownmind/hooks/…`), where the
+imports resolve. **That change was written on a machine with no PowerShell and has not been
+executed.** It needs a real Windows-without-bash run before it can be called fixed. The
+copy step itself is now dead weight and should be removed once that is confirmed.
+
+Origin: v1.26.92 code review.
+
+### 34. The two hook copies speak different languages
+
+`hooks/ownmind-iron-rule-check.sh` writes its reminders in Chinese, the `.js` sibling in
+English. Which one a user gets depends on whether their machine has bash, so the same
+product speaks differently to two people on the same team. `CLAUDE.md` already lists hook
+terminal messages as in scope for 軌道 A i18n; this is one concrete instance, and it will
+keep growing one string at a time until the strings move into the locale files.
+
+Origin: v1.26.92 code review.
+
+### 35. `tests/bare-mount-trailing-slash.test.js` flakes in a full-suite run
+
+Seen once on 2026-08-07: `/me resolves to the console usage page under both bases` returned
+403 where it expects 301. The same file passes in isolation (20/20) and the full suite
+passed on the run before and the run after, on the same commit. 403 is what `adminAuth`
+returns, so the likely cause is state or ordering shared with another test rather than
+anything in the route.
+
+It is not reproducible on demand, so it is recorded rather than chased. If it recurs, the
+thing to capture is which tests ran immediately before it in that run.
+
+Origin: noticed while running the suite for v1.26.95.
+
+### 36. The AI and the person hold the same API key, so no server check can separate them
+
+Surfaced by bug report #18. `ownmind_report_bug` asked the AI to wait for the user to type a
+submit phrase and claimed the backend rejected auto-filled submissions. It does not:
+`confirm_string` is a string, and the server sees only that a string with the right value
+arrived.
+
+The reporter proposed a server-issued one-time phrase. That does not close it either — the
+AI is the caller that fetches the phrase, so it can read it and fill it in. Nor does
+"approve it in the admin console": `POST /me/login` returns **the same `api_key`** the AI
+already holds, so every endpoint the person can call, the AI can call too.
+
+v1.26.97 stopped claiming otherwise and recorded `confirmation_declared` instead — a client
+statement, marked as one.
+
+A real gate needs the two to hold different credentials: an MCP key that can write a report
+but not confirm one, and a confirmation credential that only a browser login mints. That is
+a change to the whole permission model rather than to this feature, which is why it was not
+folded in. Until then, no control of this shape can be described as enforced.
+
+Origin: bug report #18 (2026-08-07), and the analysis of #18's proposed fix.
+
+### 37. The upgrade error report's `context` arrives empty, and we cannot say where it is lost
+
+On 2026-08-07 DESKTOP-8DD75VJ failed a `git pull --ff-only` during an upgrade, restored its
+backup, and self-checked clean seven seconds later. Working out **why** the pull failed was
+impossible: the only record was the hand-written guess in `detail`, `"git pull --ff-only
+failed (network or non-ff merge)"`, and the `context` field — which is supposed to carry the
+tail of the upgrade log — was the empty string.
+
+The path is `interactive-upgrade.ps1` → `Report-Error` (report-error.ps1) →
+`report-error.cjs --context-file=…` → errors spool → `self-check.cjs` → server. Reading it,
+`self-check.cjs:1188` forwards `report.context` faithfully and `report-error.cjs:101` fills
+it from `readContextTail(args.contextFile)`, so the value is either empty at source or the
+argument never arrives. Both are plausible and neither is demonstrated.
+
+There is a candidate: `Report-Error` in `scripts/install-helpers/report-error.ps1` declares
+`[Parameter(Mandatory=$true)]`, which makes it an advanced function, and then assigns to
+`$args` — an automatic variable. **This is a guess. It has not been run.** There is no
+Windows machine on this side to reproduce it on, and a cause that cannot be demonstrated is
+not one to write down as fact.
+
+v1.26.98 did not wait for that answer: it put the real command output into `detail` as well,
+which is a plain string already proven to arrive. So the next failure of this kind will be
+explicable even if `context` is still broken. Closing this item means either reproducing the
+empty context on a Windows machine and fixing it, or establishing that the context field is
+redundant now and removing it.
+
+Origin: DESKTOP-8DD75VJ upgrade failure, 2026-08-07 19:26 (Asia/Taipei).
+
+### 38. Rule violations are collected but never shown anywhere
+
+`extractRuleCounts` counts `comply` and `skip` and drops `violate`. That is deliberate as of
+v1.26.98: the team page divides complied by triggered, and `triggered` has always meant
+complied + skipped, so folding violations in would silently change a number people have been
+reading for months.
+
+But the violations are real data — `iron_rule_compliance` events with `action: 'violate'`,
+written by the post-commit audit — and nothing displays them. A rate of 98% currently means
+"98% of the rules I noticed, I followed", not "98% of the rules that applied".
+
+Deciding what to show is a product question, not a bug fix: a second column, a separate
+figure, or a redefinition of the existing rate with the label changed to match. It needs
+Vin's call because it changes the meaning of a number already in use.
+
+Origin: found while fixing the "no data" columns on the team usage page, 2026-08-07.
+
+### 39. ~~A server-recovered session has no project~~ — fixed in v1.26.98
+
+Two things write a `session_logs` row. `ownmind_log_session`, called by the AI, may carry
+`context.project`. When the AI never calls it, `src/routes/memory.js` rebuilds the session
+from the activity log — and no activity event carried a project.
+
+Measured on 2026-08-07, over the previous week: 76 of one heavy user's 95 sessions were
+server-recovered, as were **all** of four other members'. So the column was blank for four
+people entirely, and for four fifths of the fifth.
+
+This was first written up as "no such data to recover", which was wrong and was challenged.
+The value is not unknown: `mcp/index.js` has derived it from `CLAUDE_PROJECT_DIR` (falling
+back to the working directory) since v1.17.37. It simply never travelled with anything except
+the session log the AI writes.
+
+Fixed by sending it rather than trying to recover it. `resolveProjectName()` in
+`shared/helpers.js` is now the single derivation, used by the MCP, both SessionStart hooks and
+the MCP's own emergency session log; every activity event carries `details.project`, and the
+recovery picks the most common one it sees. **Directory name only, never the path** — the name
+is work context, the path says where somebody keeps their files.
+
+Origin: same investigation as 38. Reopened the same day after the "cannot be fixed" claim was
+challenged, which was the right challenge.

@@ -226,6 +226,35 @@ function checkBackgroundCredentials(opts = {}) {
   }
 }
 
+/**
+ * Do the places that hold a key agree on which key it is?
+ *
+ * `resolveCredentials` takes the first key it finds and every other check runs on that one,
+ * so a second file holding a different key produced an all-green report while the component
+ * reading that other file acted as a different account. The installer only ever writes
+ * ~/.claude/settings.json; Claude Code keeps its MCP config in ~/.claude.json. Switching
+ * accounts updates one and leaves the other.
+ *
+ * warn, not fail: the resolved key works, and v1.26.87 alerting broadcasts new fails. This
+ * needs to reach the person at the keyboard, not page the admin.
+ */
+function checkCredentialAgreement(resolved) {
+  const NAME = 'credential_agreement';
+  const key = resolved?.conflicts?.key || [];
+  const url = resolved?.conflicts?.url || [];
+  if (key.length === 0 && url.length === 0) {
+    return pass(NAME, 'all config locations agree');
+  }
+  const parts = [];
+  if (key.length) parts.push(`API key differs in ${key.join(', ')}`);
+  if (url.length) parts.push(`API URL differs in ${url.join(', ')}`);
+  return warn(NAME, parts.join('; '),
+    `OwnMind is using the value from ${resolved.source.key || 'an unknown source'}, but the `
+    + 'file(s) named above hold a different one. Whichever component reads those instead — '
+    + 'Claude Code launches the MCP server from ~/.claude.json — will act as the other '
+    + 'account. Make them match, then restart Claude Code');
+}
+
 async function checkApiCredentials(apiUrl, apiKey) {
   if (!apiUrl || !apiKey) {
     return fail('api_credentials', 'apiUrl or apiKey is empty',
@@ -441,6 +470,29 @@ async function checkGitHooks() {
       `chmod +x ${notExec.map(n => path.join(dir, n)).join(' ')}`);
   }
   return pass('git_hooks', `${expected.length} hooks installed`);
+}
+
+/**
+ * v1.26.88 — did the install that put this machine here ever finish?
+ *
+ * The artifact list lives in install-artifacts.cjs, shared with install.sh, so that
+ * "complete" means one thing rather than two things that drift apart.
+ */
+async function checkInstallComplete() {
+  let result;
+  try {
+    const { checkInstallArtifacts } = require('./install-artifacts.cjs');
+    result = checkInstallArtifacts({ home: HOME, ownmindDir: OWNMIND_DIR });
+  } catch (err) {
+    return warn('install_complete', `cannot verify: ${err.message}`,
+      'Re-run the installer');
+  }
+  if (result.ok) {
+    return pass('install_complete', `${result.checked}/${result.checked} artifacts present`);
+  }
+  const names = result.missing.map(m => m.describe).join('; ');
+  return fail('install_complete', `${result.missing.length} missing — ${names}`,
+    'Re-run the installer (bash ~/.ownmind/scripts/bootstrap.sh), then fully restart your AI tool');
 }
 
 /**
@@ -845,7 +897,8 @@ const QUICK_SKIP = ['usage_roundtrip'];
 async function checkNamesFor({ quick = false } = {}) {
   const all = [
     'mcp_files', 'package_version', 'mcp_node_modules', 'server_health',
-    'api_key_format', 'background_credentials', 'api_credentials', 'git_hooks', 'scheduler',
+    'api_key_format', 'credential_agreement', 'background_credentials', 'api_credentials', 'git_hooks',
+    'install_complete', 'scheduler',
     'memory_load', 'usage_roundtrip',
   ];
   return quick ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
@@ -862,11 +915,19 @@ async function runAllChecks({ quick = false } = {}) {
   // issues where settings.json contains the literal "--update". Putting this before
   // api_credentials makes the fail message more specific (format vs. server reject).
   checks.push(await safeCheck('api_key_format', () => checkApiKeyFormat(apiKey)));
+  // v1.26.91: a valid key that some other config file disagrees with. Runs right after the
+  // format check because every check below it is about the resolved key, and this is the
+  // one that says the resolved key may not be the one actually in use.
+  checks.push(await safeCheck('credential_agreement', () => checkCredentialAgreement(resolveCredentials())));
   // v1.26.87: the key can be valid and still invisible to every scheduled run. This one
   // repairs that and says which way it ended up passing.
   checks.push(await safeCheck('background_credentials', () => checkBackgroundCredentials()));
   checks.push(await safeCheck('api_credentials', () => checkApiCredentials(apiUrl, apiKey)));
   checks.push(await safeCheck('git_hooks', checkGitHooks));
+  // v1.26.88: the version number is not evidence that installation completed. A machine
+  // can report the current version because a separate mechanism pulled the working tree
+  // forward, while install.sh aborted before it produced anything. Bug report #15.
+  checks.push(await safeCheck('install_complete', checkInstallComplete));
   checks.push(await safeCheck('scheduler', checkScheduler));
   // v1.26.81 — the one that asks whether the product's central feature works at all.
   checks.push(await safeCheck('memory_load', () => checkMemoryLoad({ apiUrl, apiKey })));
@@ -1229,6 +1290,8 @@ module.exports = {
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
   checkBackgroundCredentials,
+  // v1.26.91 — two config files, two different keys, one all-green report.
+  checkCredentialAgreement,
   // v1.26.72 — the round-trip: scan, then read back from the server.
   checkUsageRoundtrip, redactKey,
   // v1.26.81 — did memories actually load? Verdict from the server, evidence from here.

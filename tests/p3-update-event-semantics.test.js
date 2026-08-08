@@ -155,23 +155,33 @@ test('P3: hook must be able to write update_failed (any step error)', () => {
 // Aligned with the P3 "each step explicitly trapped" principle, lock failure is also a marker.
 // ────────────────────────────────────────────────────────────
 
-test('P3-lock: mcp/index.js LOCK_FILE acquire failure must write update_failed step=lock (v1.17.23 atomic openSync wx)', () => {
+test('P3-lock: mcp/index.js LOCK_FILE acquire failure must write update_failed step=lock', () => {
   // v1.17.19: shell `touch "${LOCK_FILE}" || echo __OM_LOCK_FAIL__`
   // v1.17.22: fs.writeFileSync wrapped in try/catch (but with a TOCTOU race)
   // v1.17.23: fs.openSync(LOCK_FILE, 'wx') atomic create; EEXIST → lock_held; other errors → update_failed step=lock
+  // v1.26.98: the acquire moved into shared/update-lock.js, shared with the Node hook, which
+  //   had no acquire at all. This test asserted the inline call site, so it failed on the
+  //   move — the requirement it protects is the branch below, not where the syscall lives.
+  //   The exclusive-create part is pinned in tests/update-lock-mutual-exclusion.test.js,
+  //   which runs it rather than reading it.
   assert.match(
     mcpSource,
-    /fs\.openSync\(LOCK_FILE,\s*['"]wx['"]\)[\s\S]{0,400}step:\s*['"]lock['"]/,
-    'mcp/index.js must atomically acquire with openSync wx and write update_failed step=lock on non-EEXIST failures'
+    /tryAcquireUpdateLock\(LOCK_FILE\)[\s\S]{0,700}step:\s*['"]lock['"]/,
+    'mcp/index.js must acquire through the shared lock and write update_failed step=lock on non-EEXIST failures'
   );
 });
 
-test('P3-lock: hooks/ownmind-session-start.sh must log update_failed step=lock when touch LOCK_FILE fails', () => {
-  // Pre-fix: `touch "$LOCK_FILE"` without || ...
-  // After: `touch "$LOCK_FILE" || { log_event "update_failed" "step" "lock"; exit 0; }`
+test('P3-lock: hooks/ownmind-session-start.sh must log update_failed step=lock when the lock cannot be created', () => {
+  // v1.17.19: `touch "$LOCK_FILE" || { log_event "update_failed" "step" "lock"; ... }`
+  // v1.26.98: `touch` was never able to fail here — it succeeds on a file that already
+  //   exists — so this branch could not fire for the disk error it was written for, while
+  //   the ten-line gap above it meant every concurrent hook "acquired". The acquire is now
+  //   an exclusive create, and the two failure modes are told apart by whether a lock file
+  //   is there to account for it: present → somebody holds it, which is a skip; absent →
+  //   read-only filesystem or full disk, which is the failure this test exists to keep.
   assert.match(
     hookSource,
-    /touch\s+"\$LOCK_FILE"\s*\|\|\s*\{[^}]*log_event[^}]*update_failed[^}]*lock/,
-    'hook must log update_failed step=lock when touch LOCK_FILE fails; never silently proceed'
+    /elif \[ -f "\$LOCK_FILE" \]; then[\s\S]{0,600}log_event "update_skipped" "reason" "lock_held"[\s\S]{0,600}else[\s\S]{0,600}log_event "update_failed" "step" "lock"/,
+    'hook must separate "somebody else holds it" (skip) from "could not create it" (failure)'
   );
 });

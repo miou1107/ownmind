@@ -27,10 +27,12 @@ import {
   pushBounded,
   shouldSkipDuplicate,
   resolveClientTool,
+  resolveProjectName,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
 import { enrichErrorDetails, errorAliasFields } from './lib/enrich-error.js';
+import { tryAcquireUpdateLock, releaseUpdateLock } from '../shared/update-lock.js';
 import { logMcpCallSafe } from './lib/log-mcp-call.js';
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
@@ -270,15 +272,10 @@ let sessionLogged = false;
 // it to the AI every time). CLAUDE_PROJECT_DIR is the project root passed in by Claude Code
 // when it launches the MCP. If the user isn't in a git repo or is using another tool, fall
 // back to the cwd basename.
-const AUTO_PROJECT = (() => {
-  try {
-    const dir = process.env.CLAUDE_PROJECT_DIR
-      || process.env.OWNMIND_PROJECT_DIR
-      || process.cwd();
-    if (!dir || dir === '/' || dir === os.homedir()) return null;
-    return path.basename(dir);
-  } catch { return null; }
-})();
+// v1.26.98 — this derivation moved to shared/helpers.js so the activity logger can use the
+// same one. Two copies would have been two answers to "which project is this" on the same
+// machine, which is exactly the confusion the team page column was showing.
+const AUTO_PROJECT = resolveProjectName();
 
 // --- v1.17.0 P4: Broadcast fetch + render ---
 // Never block the tool call; failures stay silent; 2s timeout.
@@ -690,7 +687,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_report_bug",
-    description: "Report a bug or design issue in OwnMind itself (plain words: the user thinks OwnMind misbehaved and wants to tell the developer).\n\nIMPORTANT: Before calling this tool, the AI MUST first show the field contents to the user for preview, then wait until the user types the exact submit phrase verbatim, then pass those characters as confirm_string. The AI MUST NOT fill confirm_string itself — the backend rejects auto-filled submissions with HTTP 400. Calling this tool without an explicit user submit confirmation violates the design and breaks the feature.",
+    description: "Report a bug or design issue in OwnMind itself (plain words: the user thinks OwnMind misbehaved and wants to tell the developer).\n\nIMPORTANT: Before calling this tool, show the field contents to the user, then wait until they type the submit phrase, and pass exactly what they typed as confirm_string.\n\nThis is a protocol you are asked to follow, NOT something the server enforces. The server checks that confirm_string has the expected value; it cannot tell whether you or the user produced those characters. Report which it was in confirmation_declared: 'user_typed' only when the user actually typed the phrase in response to your preview, 'ai_filled' when you supplied it yourself. Reports are read by a person deciding what to act on, and one that nobody looked at is worth knowing about as such.",
     inputSchema: {
       type: "object",
       properties: {
@@ -718,10 +715,15 @@ const TOOLS = [
         },
         confirm_string: {
           type: "string",
-          description: "Required, and the AI MUST NOT auto-fill or guess it — this is a human-in-the-loop gate. Pass back only what the user typed, verbatim. If you do not know the exact phrase, call this tool with your best attempt: the server refuses with an error that names the required phrase, and you then show the user that phrase and ask them to type it. Do not ask the user to guess.",
+          description: "Pass back what the user typed, verbatim. If you do not know the phrase, call with your best attempt: the server refuses with an error naming the required phrase, and you then show the user that phrase and ask them to type it. Do not ask the user to guess. The server checks this value only; it cannot see who produced it, so this one is on you. Whichever it was, say so in confirmation_declared.",
+        },
+        confirmation_declared: {
+          type: "string",
+          enum: ["user_typed", "ai_filled"],
+          description: "Who produced confirm_string. 'user_typed' only when the user typed the phrase after seeing your preview; 'ai_filled' when you supplied it. Nothing verifies this — it is your statement, recorded as such, and it is what tells the person reading these reports whether anyone else has looked at this one. An absent or unrecognised value is recorded as 'unknown'.",
         },
       },
-      required: ["title", "description", "bug_fingerprint", "confirm_string"],
+      required: ["title", "description", "bug_fingerprint", "confirm_string", "confirmation_declared"],
     },
   },
   {
@@ -1178,8 +1180,12 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_report_bug": {
-      // Two-stage confirmation flow: the AI must not call this before the preview;
-      // the server verifies confirm_string="送出".
+      // Two-stage confirmation flow: show the preview, then pass back what the user typed.
+      //
+      // v1.26.97: the server checks the VALUE of confirm_string, not who produced it, and
+      // it cannot — the AI authenticates with the same API key as the person, so nothing
+      // server-side can separate them. What is recorded instead is the client's own
+      // statement, in confirmation_declared.
       // device_fingerprint is computed locally on demand (a hash of OS-provided machine identifiers).
       let deviceFingerprint = 'unknown';
       let fingerprintSource = 'unavailable';
@@ -1212,6 +1218,7 @@ async function handleTool(name, args) {
           ? args.related_lint_event_ids
           : null,
         confirm_string: args.confirm_string,
+        confirmation_declared: args.confirmation_declared,
         device_fingerprint: deviceFingerprint,
         client_tool: CLIENT_TOOL,
       };
@@ -1589,14 +1596,6 @@ async function runAutoUpdate() {
     ? fs.readFileSync(MARKER_FILE, 'utf8').trim()
     : '';
 
-  // Stale lock detection
-  if (fs.existsSync(LOCK_FILE)) {
-    try {
-      const lockAge = Date.now() - fs.statSync(LOCK_FILE).mtimeMs;
-      if (lockAge > 5 * 60 * 1000) fs.unlinkSync(LOCK_FILE);
-    } catch {}
-  }
-
   // Skip-reason observability — earlier silent-skip behavior meant Alice/Bob stayed on
   // old versions and nobody noticed.
   if (lastCheck === today) {
@@ -1609,32 +1608,33 @@ async function runAutoUpdate() {
   }
 
   // v1.17.23: atomic lock acquire — the previous existsSync + writeFileSync had a TOCTOU race.
-  // openSync 'wx' = exclusive create; if the file already exists it throws EEXIST
-  // (lets us distinguish lock_held vs disk error).
-  try {
-    const fd = fs.openSync(LOCK_FILE, 'wx');
-    fs.closeSync(fd);
-    _lockHeld = true;
-  } catch (e) {
-    if (e.code === 'EEXIST') {
+  // v1.26.98: moved into shared/update-lock.js, which the Node SessionStart hook now uses too,
+  // and which also closed the race in the stale-lock reclaim that used to sit above this
+  // (stat, unlink, create — two processes could both unlink, the second deleting the fresh
+  // lock the first had just taken). `reason` distinguishes a held lock from a disk error;
+  // they mean different things to whoever reads the log.
+  const acquired = tryAcquireUpdateLock(LOCK_FILE);
+  if (!acquired.acquired) {
+    if (acquired.reason === 'lock_held') {
       logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
     } else {
       // v1.18.8: use errorAliasFields helper (shared with 'error' event); legacy `error` field preserved.
       logEvent('update_failed', {
         source: 'mcp',
         step: 'lock',
-        error: e.code || e.message,
-        ...errorAliasFields(e),
+        error: acquired.reason,
+        ...errorAliasFields(acquired.error),
       });
     }
     return;
   }
+  _lockHeld = true;
 
   logEvent('update_check', { source: 'mcp' });
 
   const cleanup = () => {
     if (!_lockHeld) return;
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    releaseUpdateLock(LOCK_FILE);
     _lockHeld = false;
   };
   const fail = (step, err) => {
@@ -1782,7 +1782,7 @@ runAutoUpdate().catch((e) => {
     });
   } catch {}
   if (_lockHeld) {
-    try { fs.unlinkSync(LOCK_FILE); } catch {}
+    releaseUpdateLock(LOCK_FILE);
     _lockHeld = false;
   }
 });

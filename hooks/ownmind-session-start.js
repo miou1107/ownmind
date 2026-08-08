@@ -12,16 +12,21 @@ import http from 'http';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
-import { readCredentials, getClientVersion } from '../shared/helpers.js';
+import { readCredentials, getClientVersion, resolveProjectName } from '../shared/helpers.js';
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
+import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 const HOME = os.homedir();
 const LOG_DIR = path.join(HOME, '.ownmind', 'logs');
+// v1.26.98 — every event this hook writes carries the project, so a session the server has
+// to rebuild from activity still knows which one it was. The users whose sessions are always
+// rebuilt are precisely the ones the team page showed a blank project for.
+const PROJECT_NAME = resolveProjectName();
 
 function logEvent(event, extra = {}) {
   try {
@@ -29,7 +34,16 @@ function logEvent(event, extra = {}) {
     const now = new Date();
     const ts = now.toISOString().replace('Z', '+00:00');
     const dateStr = now.toISOString().slice(0, 10);
-    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', ...extra });
+    // v1.26.95: `details: extra`, not `...extra`. The batch endpoint reads e.details and
+    // nothing else, so spreading the fields flat meant every one of them was discarded on
+    // arrival — the same defect fixed in the two .sh hooks. This copy is the one Windows
+    // runs (session-hook-command.cjs returns it for win32), so leaving it would have given
+    // the same event two shapes depending on the user's OS: any later `details->>'status'`
+    // query would read blank for every Windows user and say nothing about why.
+    const details = PROJECT_NAME && extra.project === undefined
+      ? { ...extra, project: PROJECT_NAME }
+      : extra;
+    const entry = JSON.stringify({ ts, event, tool: 'claude-code', source: 'hook', details });
     fs.appendFileSync(path.join(LOG_DIR, `${dateStr}.jsonl`), entry + '\n');
   } catch {}
 }
@@ -70,7 +84,10 @@ function reportEvent(apiUrl, apiKey, event, extra = {}) {
         event,
         tool: 'claude-code',
         source: 'hook',
-        ...extra,
+        // v1.26.95 — see logEvent above. v1.26.98 — carries the project for the same reason.
+        details: PROJECT_NAME && extra.project === undefined
+          ? { ...extra, project: PROJECT_NAME }
+          : extra,
       }],
     });
     const mod = url.startsWith('https') ? https : http;
@@ -168,21 +185,49 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
     const lock = path.join(dir, '.update-lock');
     const marker = path.join(dir, '.last-update-check');
 
-    if (fs.existsSync(lock)) {
-      const ageMs = Date.now() - fs.statSync(lock).mtimeMs;
-      if (ageMs < 5 * 60 * 1000) return;
-      try { fs.unlinkSync(lock); } catch {}
-    }
-
     const today = new Date().toISOString().slice(0, 10);
     let last = '';
     try { last = fs.readFileSync(marker, 'utf8').trim(); } catch {}
     if (last === today) return;
 
+    // v1.26.98 — actually take the lock. This used to read the file, return if it was fresh,
+    // delete it if it was stale, and then create nothing at all: every concurrent hook found
+    // no lock and ran the update script together. The shared helper is the same one the MCP
+    // uses, so the three programs cannot disagree about what holding the lock means.
+    //
+    // The two failure modes are kept apart, as they are in the MCP and the shell hook:
+    // another process doing the work is a skip; a lock that could not be created at all is a
+    // read-only filesystem or a full disk, and collapsing that into `lock_held` would be the
+    // same class of lie this release exists to remove.
+    const lockResult = tryAcquireUpdateLock(lock);
+    if (!lockResult.acquired) {
+      if (isContention(lockResult.reason)) {
+        reportEvent(apiUrl, apiKey, 'update_skipped', { reason: lockResult.reason });
+      } else {
+        reportEvent(apiUrl, apiKey, 'update_failed', { step: 'lock', error: lockResult.reason });
+      }
+      return;
+    }
+    // The lock is deliberately not released here. The work happens in a detached child that
+    // outlives this process, so there is nobody left to release it; the five-minute staleness
+    // sweep reclaims it. Holding it that long costs nothing — the daily marker below already
+    // stops a second run today.
+
     reportEvent(apiUrl, apiKey, 'update_check', {});
     const updateScript = path.join(dir, 'scripts',
       process.platform === 'win32' ? 'update.ps1' : 'update.sh');
-    if (!fs.existsSync(updateScript)) return;
+    if (!fs.existsSync(updateScript)) {
+      // Nothing was started, so nothing is going to release it later — hand it back now
+      // rather than blocking the MCP for the next five minutes over a no-op.
+      releaseUpdateLock(lock);
+      // Stamp the marker first. A broken install is worth reporting, but the marker is
+      // written only after a successful spawn below, so without this the pair
+      // update_check + update_failed would fire on *every* session rather than once a day —
+      // exactly the repetition that made `update_failed` stop meaning anything.
+      try { fs.writeFileSync(marker, today); } catch { /* best effort */ }
+      reportEvent(apiUrl, apiKey, 'update_failed', { step: 'update_script_missing' });
+      return;
+    }
 
     // The MCP does the git pull itself; this only re-syncs skills, hooks and the scheduler,
     // which is the part that repairs a machine rather than upgrading it.

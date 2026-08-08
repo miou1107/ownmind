@@ -2,7 +2,7 @@
 # OwnMind 一鍵安裝腳本
 # 用法: curl -sL https://raw.githubusercontent.com/miou1107/ownmind/main/install.sh | bash -s -- YOUR_API_KEY YOUR_API_URL
 
-set -e
+set -eE  # -E so the ERR trap below also fires inside shell functions
 
 API_KEY="${1:-}"
 API_URL="${2:-}"
@@ -181,47 +181,126 @@ if ! npm install -q 2>/dev/null; then
   exit 1
 fi
 
+# --- v1.26.88 Windows path normalization + a place for Node's stderr to go ---
+#
+# Under Git Bash, $HOME is a POSIX path (/c/Users/Vin). Paths passed to node as ARGUMENTS
+# are converted by the MSYS runtime, but paths interpolated into the source text of
+# `node -e` are not: node.exe resolves the leading slash against the drive root and fails
+# with ENOENT. Bug report #15 (2026-08-06) traced a silent, complete abort of this script
+# to exactly that, on the block that writes the PreToolUse hook.
+#
+# path-helpers.sh has existed since v1.26.7 for this reason and was only ever wired into
+# interactive-upgrade.sh. Everything below that embeds a path in Node source must use it.
+if [ -f "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh"
+else
+  to_win_path() { echo "$1"; }
+fi
+
+# Node stderr from the blocks below goes here, never to /dev/null. `set -e` plus a
+# discarded stderr is how a fatal error produced no output at all for four months.
+# This lives outside ~/.ownmind so an upgrade rollback cannot delete it.
+INSTALL_LOG_DIR="$HOME/.ownmind-logs"
+mkdir -p "$INSTALL_LOG_DIR" 2>/dev/null || true
+INSTALL_LOG="$INSTALL_LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
+: > "$INSTALL_LOG" 2>/dev/null || INSTALL_LOG="/dev/stderr"
+
+# Report the step that just failed, then let `set -e` do its job. Without this the user
+# sees a script that simply stops.
+on_install_error() {
+  local line="$1"
+  echo "[FAIL] install.sh aborted at line ${line}"
+  echo "       Details: $INSTALL_LOG"
+  if [ -s "$INSTALL_LOG" ]; then
+    echo "       Last error:"
+    tail -n 5 "$INSTALL_LOG" | sed 's/^/         /'
+  fi
+  report_error "install_aborted" "install.sh aborted at line ${line}" "$INSTALL_LOG" 2>/dev/null || true
+}
+trap 'on_install_error "$LINENO"' ERR
+
+
 # --- 決定 MCP command / args ---
+#
+# v1.26.94: the path is handed to Node as an argv element. It used to be interpolated into
+# the source text, and on Windows that silently destroyed it.
+#
+# `cygpath -w` returns backslashes, so after bash finished substituting, Node was compiling:
+#
+#     const p = 'C:\Users\Vin\.ownmind\mcp\start.cmd'.replace(/\\/g, '\\\\');
+#
+# `\U`, `\V`, `\.`, `\m`, `\s` are not escape sequences. JavaScript drops the backslash and
+# keeps the letter, so `p` was already `C:UsersVin.ownmindmcpstart.cmd` before `.replace`
+# ran — and `.replace`, whose whole job was to double the backslashes, had none left to
+# double. Every `bootstrap.sh` upgrade wrote that broken command into settings.json.
+#
+# It stayed invisible because Claude Code launches the MCP server from `~/.claude.json`,
+# which no installer writes (v1.26.91). The broken value sat in the file nothing read.
+#
+# Escaping cannot fix this: the string is destroyed by the JS parser, not by the shell.
+# argv is the only shape that has no quoting layer to get wrong — the same conclusion
+# path-helpers.sh already records ("passing the path as an argv element is the escape-proof
+# shape"). Both branches use it, so there is no per-platform rule to remember.
 if [ "$IS_WINDOWS" = true ]; then
   # Windows: 用 cmd.exe 透過 start.cmd 啟動，避免 Claude Code 找不到 node
   OWNMIND_DIR_WIN=$(cygpath -w "$OWNMIND_DIR" 2>/dev/null || echo "$OWNMIND_DIR")
   START_CMD_WIN="${OWNMIND_DIR_WIN}\\mcp\\start.cmd"
   MCP_ENTRY=$(node -e "
-    const p = '$START_CMD_WIN'.replace(/\\\\/g, '\\\\\\\\');
-    console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', p] }));
-  ")
+    console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', process.argv[1]] }));
+  " "$START_CMD_WIN")
 else
+  # Unreachable on Windows (that is the branch above), but routed through to_win_path all
+  # the same: it is identity off Windows, and one uniform rule is cheaper to hold than an
+  # exception nobody remembers is safe.
+  MCP_ENTRY_PATH_WIN="$(to_win_path "$OWNMIND_DIR/mcp/index.js")"
   MCP_ENTRY=$(node -e "
-    const p = '$OWNMIND_DIR/mcp/index.js';
-    console.log(JSON.stringify({ command: 'node', args: [p] }));
-  ")
+    console.log(JSON.stringify({ command: 'node', args: [process.argv[1]] }));
+  " "$MCP_ENTRY_PATH_WIN")
 fi
 
 # --- 2. Claude Code MCP 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 if [ -f "$CLAUDE_SETTINGS" ]; then
-  if grep -q '"ownmind"' "$CLAUDE_SETTINGS" 2>/dev/null; then
-    echo "[INFO] Claude Code MCP already configured, skipping"
-  else
-    echo "[INFO] Configuring Claude Code MCP"
-    node -e "
-      const fs = require('fs');
-      const entry = $MCP_ENTRY;
-      const settings = JSON.parse(fs.readFileSync('$CLAUDE_SETTINGS', 'utf8'));
-      if (!settings.mcpServers) settings.mcpServers = {};
-      settings.mcpServers.ownmind = {
-        ...entry,
-        env: {
-          OWNMIND_API_URL: '$API_URL',
-          OWNMIND_API_KEY: '$API_KEY',
-          OWNMIND_TOOL: 'claude-code'
-        }
-      };
-      const _tmp = '$CLAUDE_SETTINGS' + '.tmp';
-      fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
-      fs.renameSync(_tmp, '$CLAUDE_SETTINGS');
-    "
-  fi
+  # v1.26.91: this used to skip the whole block when the file already contained the string
+  # "ownmind", on the assumption that an existing entry needs nothing. But the entry is
+  # where the API key lives, so every re-run that meant to change the key — switching
+  # accounts, rotating a credential, correcting one typed wrong — did nothing at all and
+  # then went on to print an installation summary. The condition asked whether OwnMind was
+  # configured; the question that mattered was whether it was configured with THIS key.
+  #
+  # Now it always writes, and merges rather than replaces so an existing entry keeps any
+  # field this installer does not manage.
+  echo "[INFO] Configuring Claude Code MCP"
+  node -e "
+    const fs = require('fs');
+    const entry = $MCP_ENTRY;
+    const p = '$CLAUDE_SETTINGS_WIN';
+    const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!settings.mcpServers) settings.mcpServers = {};
+    const prev = settings.mcpServers.ownmind || {};
+    const prevEnv = prev.env || {};
+    const nextKey = '$API_KEY';
+    settings.mcpServers.ownmind = {
+      ...prev,
+      ...entry,
+      env: {
+        ...prevEnv,
+        OWNMIND_API_URL: '$API_URL',
+        OWNMIND_API_KEY: nextKey,
+        OWNMIND_TOOL: 'claude-code'
+      }
+    };
+    const _tmp = p + '.tmp';
+    fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
+    fs.renameSync(_tmp, p);
+    // Say which of the two happened. A run that silently changed the account is as
+    // confusing as one that silently did not.
+    if (!prevEnv.OWNMIND_API_KEY) console.log('       API key written');
+    else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('       API key updated (replaced a different key)');
+    else console.log('       API key unchanged');
+  "
 else
   echo "[INFO] Creating Claude Code MCP config"
   mkdir -p "$HOME/.claude"
@@ -240,7 +319,7 @@ else
         }
       }
     };
-    fs.writeFileSync('$CLAUDE_SETTINGS', JSON.stringify(settings, null, 2));
+    fs.writeFileSync('$CLAUDE_SETTINGS_WIN', JSON.stringify(settings, null, 2));
   "
 fi
 
@@ -333,7 +412,7 @@ append_upgrade_rule_if_exists() {
         let c = fs.readFileSync(p, 'utf8');
         c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
         fs.writeFileSync(p, c);
-      " "$target_file" 2>/dev/null || true
+      " "$(to_win_path "$target_file")" 2>>"$INSTALL_LOG" || true
     fi
     {
       echo ""
@@ -375,23 +454,36 @@ node -e "
   const fs = require('fs');
   const nodePath = require('path');
   const os = require('os');
-  const path = '$CLAUDE_SETTINGS';
+  const path = '$CLAUDE_SETTINGS_WIN';
   const s = JSON.parse(fs.readFileSync(path, 'utf8'));
   if (!s.hooks) s.hooks = {};
 
   // SessionStart is handled by ensure-session-hook.cjs (v1.26.86, see that file), which
   // runs as its own step after this block. All four install/update scripts share it.
   // PreToolUse hook — iron rule check
+  //
+  // v1.26.92: two matchers now, and the presence check has to be per-matcher. It used to
+  // ask 'is ownmind-iron-rule-check registered anywhere in PreToolUse', which is true for
+  // every existing install — so a second entry added here would never reach anyone who
+  // already had the first. Upgrades are the whole population.
   if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
-  const preExists = s.hooks.PreToolUse.some(h =>
-    h.hooks?.some(hh => hh.command?.includes('ownmind-iron-rule-check'))
-  );
-  if (!preExists) {
-    s.hooks.PreToolUse.push({
-      matcher: 'Bash',
-      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }]
-    });
-    console.log('   加入 PreToolUse hook（鐵律檢查）');
+  const preToolUseMatchers = [
+    { matcher: 'Bash', label: '鐵律檢查' },
+    // The file-editing tools carry no command, which is why no rule tagged trigger:edit had
+    // ever fired. The hook throttles itself to one full listing per hour.
+    { matcher: 'Edit|Write|MultiEdit|NotebookEdit', label: '改檔案時的鐵律提醒' },
+  ];
+  for (const { matcher, label } of preToolUseMatchers) {
+    const exists = s.hooks.PreToolUse.some(h =>
+      h.matcher === matcher && h.hooks?.some(hh => hh.command?.includes('ownmind-iron-rule-check'))
+    );
+    if (!exists) {
+      s.hooks.PreToolUse.push({
+        matcher,
+        hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }]
+      });
+      console.log('   加入 PreToolUse hook（' + label + '）');
+    }
   }
 
   // WorktreeCreate hook — 自動注入 .mcp.json 到新 worktree
@@ -407,7 +499,7 @@ node -e "
   }
 
   fs.writeFileSync(path, JSON.stringify(s, null, 2));
-" 2>/dev/null
+" 2>>"$INSTALL_LOG"
 
 # --- 4c-2. SessionStart hook (v1.26.86, delegated to the shared implementation) ---
 ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
@@ -466,21 +558,32 @@ for js_file in "${HOOK_JS_FILES[@]}"; do
 done
 
 # 複製 shell wrapper 並設定可執行
-if [ -f "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" ]; then
-  cp "$OWNMIND_DIR/hooks/ownmind-git-pre-commit" "$HOME/.ownmind/git-hooks/pre-commit"
-  chmod +x "$HOME/.ownmind/git-hooks/pre-commit"
-  echo "[ OK ] Installed git pre-commit hook"
-fi
-if [ -f "$OWNMIND_DIR/hooks/ownmind-git-post-commit" ]; then
-  cp "$OWNMIND_DIR/hooks/ownmind-git-post-commit" "$HOME/.ownmind/git-hooks/post-commit"
-  chmod +x "$HOME/.ownmind/git-hooks/post-commit"
-  echo "[ OK ] Installed git post-commit hook"
-fi
-if [ -f "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" ]; then
-  cp "$OWNMIND_DIR/hooks/ownmind-git-commit-msg" "$HOME/.ownmind/git-hooks/commit-msg"
-  chmod +x "$HOME/.ownmind/git-hooks/commit-msg"
-  echo "[ OK ] Installed git commit-msg hook (IR-024)"
-fi
+#
+# v1.26.96: strip CR on the way in, rather than `cp`.
+#
+# `.gitattributes` governs what a *checkout* writes, and a machine that already checked
+# these out with CRLF stays that way forever: git compares normalised content, so a CRLF
+# working file is not a difference against an LF index, `git status` is clean, and neither
+# `pull` nor any later attribute change rewrites it. The copies executed by git are made
+# from those files, so they inherit it.
+#
+# Running the installer is the one moment we can put it right without asking the user to
+# run `git add --renormalize`. A CRLF shebang is tolerated by Git for Windows today and
+# not by every shell, so this costs nothing and removes a latent fault.
+install_git_hook() {
+  local src="$OWNMIND_DIR/hooks/$1" dst="$HOME/.ownmind/git-hooks/$2"
+  [ -f "$src" ] || return 0
+  # '\015' rather than '\r': POSIX tr recognises both, but on an implementation that does
+  # not, '\r' degrades to the literal letter and deletes every r in the hook.
+  # Write-then-move: a plain redirect truncates the live hook first, and git would execute
+  # the half-written file on the next commit if tr died mid-write.
+  tr -d '\015' < "$src" > "$dst.tmp" && mv "$dst.tmp" "$dst"
+  chmod +x "$dst"
+  echo "[ OK ] Installed git $2 hook"
+}
+install_git_hook "ownmind-git-pre-commit"  "pre-commit"
+install_git_hook "ownmind-git-post-commit" "post-commit"
+install_git_hook "ownmind-git-commit-msg"  "commit-msg"
 
 # 設定 global git hooks path（需要 git 可用）
 if command -v git &>/dev/null; then
@@ -609,59 +712,66 @@ fi
 # --- 5. Cursor 設定（如果有 .cursor 目錄）---
 if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
   CURSOR_MCP="$HOME/.cursor/mcp.json"
-  if [ -f "$CURSOR_MCP" ] && grep -q '"ownmind"' "$CURSOR_MCP" 2>/dev/null; then
-    echo "[INFO] Cursor MCP already configured, skipping"
+  CURSOR_MCP_WIN="$(to_win_path "$CURSOR_MCP")"
+  # v1.26.91: the "already configured" skip is gone here for the same reason as the Claude
+  # Code block above — this entry holds the API key, so skipping it meant a key change never
+  # reached Cursor. The other "already configured" skips further down (Cursor hooks,
+  # Windsurf, OpenCode, OpenClaw, Antigravity) append rule text and carry no credential, so
+  # they stay as they are.
+  echo "[INFO] Configuring Cursor MCP"
+  if [ -f "$CURSOR_MCP" ]; then
+    node -e "
+      const fs = require('fs');
+      const entry = $MCP_ENTRY;
+      const p = '$CURSOR_MCP_WIN';
+      const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (!settings.mcpServers) settings.mcpServers = {};
+      const prev = settings.mcpServers.ownmind || {};
+      settings.mcpServers.ownmind = {
+        ...prev,
+        ...entry,
+        env: {
+          ...(prev.env || {}),
+          OWNMIND_API_URL: '$API_URL',
+          OWNMIND_API_KEY: '$API_KEY',
+          OWNMIND_TOOL: 'cursor'
+        }
+      };
+      fs.writeFileSync(p, JSON.stringify(settings, null, 2));
+    "
   else
-    echo "[INFO] Configuring Cursor MCP"
-    if [ -f "$CURSOR_MCP" ]; then
-      node -e "
-        const fs = require('fs');
-        const entry = $MCP_ENTRY;
-        const settings = JSON.parse(fs.readFileSync('$CURSOR_MCP', 'utf8'));
-        if (!settings.mcpServers) settings.mcpServers = {};
-        settings.mcpServers.ownmind = {
-          ...entry,
-          env: {
-            OWNMIND_API_URL: '$API_URL',
-            OWNMIND_API_KEY: '$API_KEY',
-            OWNMIND_TOOL: 'cursor'
-          }
-        };
-        fs.writeFileSync('$CURSOR_MCP', JSON.stringify(settings, null, 2));
-      "
-    else
-      mkdir -p "$HOME/.cursor"
-      node -e "
-        const fs = require('fs');
-        const entry = $MCP_ENTRY;
-        const settings = {
-          mcpServers: {
-            ownmind: {
-              ...entry,
-              env: {
-                OWNMIND_API_URL: '$API_URL',
-                OWNMIND_API_KEY: '$API_KEY',
-                OWNMIND_TOOL: 'cursor'
-              }
+    mkdir -p "$HOME/.cursor"
+    node -e "
+      const fs = require('fs');
+      const entry = $MCP_ENTRY;
+      const settings = {
+        mcpServers: {
+          ownmind: {
+            ...entry,
+            env: {
+              OWNMIND_API_URL: '$API_URL',
+              OWNMIND_API_KEY: '$API_KEY',
+              OWNMIND_TOOL: 'cursor'
             }
           }
-        };
-        const _t2 = '$HOME/.cursor/mcp.json.tmp';
-        fs.writeFileSync(_t2, JSON.stringify(settings, null, 2));
-        fs.renameSync(_t2, '$HOME/.cursor/mcp.json');
-      "
-    fi
-  fi
+        }
+      };
+      const _t2 = '$CURSOR_MCP_WIN' + '.tmp';
+      fs.writeFileSync(_t2, JSON.stringify(settings, null, 2));
+      fs.renameSync(_t2, '$CURSOR_MCP_WIN');
+    "
+fi
 
   # Cursor hooks（beforeShellExecution 作為 session-start workaround）
   CURSOR_HOOKS="$HOME/.cursor/hooks.json"
+  CURSOR_HOOKS_WIN="$(to_win_path "$CURSOR_HOOKS")"
   if [ -f "$CURSOR_HOOKS" ] && grep -q 'ownmind' "$CURSOR_HOOKS" 2>/dev/null; then
     echo "[INFO] Cursor hooks already configured, skipping"
   else
     echo "[INFO] Configuring Cursor hooks"
     node -e "
       const fs = require('fs');
-      const path = '$CURSOR_HOOKS';
+      const path = '$CURSOR_HOOKS_WIN';
       let s = { version: 1, hooks: {} };
       if (fs.existsSync(path)) {
         try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -678,7 +788,7 @@ if [ -d "$HOME/.cursor" ] || command -v cursor &>/dev/null; then
       const _t = path + '.tmp';
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
-    " 2>/dev/null
+    " 2>>"$INSTALL_LOG"
   fi
 fi
 
@@ -686,11 +796,12 @@ fi
 if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
   echo "[INFO] Configuring Gemini CLI"
   GEMINI_SETTINGS="$HOME/.gemini/settings.json"
+  GEMINI_SETTINGS_WIN="$(to_win_path "$GEMINI_SETTINGS")"
   mkdir -p "$HOME/.gemini"
 
   node -e "
     const fs = require('fs');
-    const path = '$GEMINI_SETTINGS';
+    const path = '$GEMINI_SETTINGS_WIN';
     let s = {};
     if (fs.existsSync(path)) {
       try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -711,7 +822,7 @@ if [ -d "$HOME/.gemini" ] || command -v gemini &>/dev/null; then
       console.log('   加入 Gemini CLI SessionStart hook');
     }
     fs.writeFileSync(path, JSON.stringify(s, null, 2));
-  " 2>/dev/null
+  " 2>>"$INSTALL_LOG"
 
   # Gemini GEMINI.md
   GEMINI_MD="$HOME/.gemini/GEMINI.md"
@@ -738,11 +849,12 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
   echo "[INFO] Configuring GitHub Copilot hooks"
   GH_HOOKS_DIR="$HOME/.github/hooks"
   GH_HOOKS_FILE="$GH_HOOKS_DIR/hooks.json"
+  GH_HOOKS_FILE_WIN="$(to_win_path "$GH_HOOKS_FILE")"
   mkdir -p "$GH_HOOKS_DIR"
 
   node -e "
     const fs = require('fs');
-    const path = '$GH_HOOKS_FILE';
+    const path = '$GH_HOOKS_FILE_WIN';
     let s = { version: 1, hooks: {} };
     if (fs.existsSync(path)) {
       try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -757,7 +869,7 @@ if [ -d "$HOME/.github" ] || command -v gh &>/dev/null; then
       console.log('   加入 GitHub Copilot sessionStart hook');
     }
     fs.writeFileSync(path, JSON.stringify(s, null, 2));
-  " 2>/dev/null
+  " 2>>"$INSTALL_LOG"
 fi
 
 # --- 8. Windsurf 設定（如果有 .windsurf 目錄）---
@@ -776,6 +888,7 @@ fi
 
 # --- 9. OpenCode 設定 ---
 OPENCODE_CONFIG="$HOME/.opencode.json"
+OPENCODE_CONFIG_WIN="$(to_win_path "$OPENCODE_CONFIG")"
 if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
   echo "[INFO] Configuring OpenCode"
   if [ -f "$OPENCODE_CONFIG" ] && grep -q 'ownmind' "$OPENCODE_CONFIG" 2>/dev/null; then
@@ -783,7 +896,7 @@ if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
   else
     node -e "
       const fs = require('fs');
-      const path = '$OPENCODE_CONFIG';
+      const path = '$OPENCODE_CONFIG_WIN';
       let s = {};
       if (fs.existsSync(path)) {
         try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -795,13 +908,14 @@ if [ -f "$OPENCODE_CONFIG" ] || command -v opencode &>/dev/null; then
       const _t = path + '.tmp';
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
-    " 2>/dev/null
+    " 2>>"$INSTALL_LOG"
     echo "[ OK ] Added OpenCode instructions"
   fi
 fi
 
 # --- 10. OpenClaw 設定 ---
 OPENCLAW_CONFIG="$HOME/.openclaw.json"
+OPENCLAW_CONFIG_WIN="$(to_win_path "$OPENCLAW_CONFIG")"
 if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
   echo "[INFO] Configuring OpenClaw"
   if [ -f "$OPENCLAW_CONFIG" ] && grep -q 'ownmind' "$OPENCLAW_CONFIG" 2>/dev/null; then
@@ -809,7 +923,7 @@ if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
   else
     node -e "
       const fs = require('fs');
-      const path = '$OPENCLAW_CONFIG';
+      const path = '$OPENCLAW_CONFIG_WIN';
       let s = {};
       if (fs.existsSync(path)) {
         try { s = JSON.parse(fs.readFileSync(path, 'utf8')); } catch {}
@@ -821,7 +935,7 @@ if [ -f "$OPENCLAW_CONFIG" ] || command -v openclaw &>/dev/null; then
       const _t = path + '.tmp';
       fs.writeFileSync(_t, JSON.stringify(s, null, 2));
       fs.renameSync(_t, path);
-    " 2>/dev/null
+    " 2>>"$INSTALL_LOG"
     echo "[ OK ] Added OpenClaw bootstrap"
   fi
 fi
@@ -873,9 +987,45 @@ echo "  [ OK ] Claude Code        SessionStart hook"
 echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
 echo ""
 
+SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+
+# --- v1.26.88: did this run actually finish? ---
+# Everything above can abort halfway and leave a machine that reports the right version
+# and has none of the parts. See install-artifacts.cjs and bug report #15. This runs
+# before the self-check so a truncated install says so in its own words, and the
+# self-check then reports the same condition to the server.
+ARTIFACT_CHECK="$OWNMIND_DIR/scripts/install-helpers/install-artifacts.cjs"
+if [ -f "$ARTIFACT_CHECK" ]; then
+  # --home is passed explicitly. Every path this script writes derives from the shell's
+  # $HOME, but node resolves os.homedir() from USERPROFILE on Windows and from the passwd
+  # entry on POSIX. Under Git Bash those can differ (MSYS2 defaults HOME to /home/<user>),
+  # and a mismatch would report all six artifacts missing on a perfectly healthy install.
+  if artifact_result=$(node "$ARTIFACT_CHECK" --ownmind-dir "$OWNMIND_DIR" --home "$HOME" 2>&1); then
+    echo "[ OK ] $artifact_result"
+  else
+    # EXIT CODE 2, NOT 1 — deliberately.
+    #
+    # interactive-upgrade.sh treats a non-zero install.sh as "the install blew up" and calls
+    # rollback(), which is `rm -rf ~/.ownmind` + `mv backup ~/.ownmind`. That restores the
+    # code and nothing else: ~/.claude/settings.json, the hook scripts, the skill files and
+    # git's core.hooksPath all keep the new values. Rolling back here would leave old code
+    # wired to new configuration — strictly worse than the truncated install we are
+    # reporting, and it cannot create the missing artifacts either way.
+    #
+    # 2 means "it ran, and it is incomplete". The caller reports it and leaves the machine
+    # alone. The self-check below has already told the server, which is how a human hears
+    # about it.
+    echo "[FAIL] Installation did not complete."
+    printf '%s\n' "$artifact_result" | sed 's/^/       /'
+    echo "       Log: $INSTALL_LOG"
+    report_error "install_incomplete" "$artifact_result" "$INSTALL_LOG" 2>/dev/null || true
+    [ -f "$SELF_CHECK_SCRIPT" ] && { node "$SELF_CHECK_SCRIPT" --trigger=post_install || true; }
+    exit 2
+  fi
+fi
+
 # v1.17.63: 跑 self-check 把所有元件的真實狀態抓下來、寫 log + 上傳。
 # 包 || true 保證 self-check 出錯不擋安裝完成的訊息。
-SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
 if [ -f "$SELF_CHECK_SCRIPT" ]; then
   node "$SELF_CHECK_SCRIPT" --trigger=post_install || true
 fi
