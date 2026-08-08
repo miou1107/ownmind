@@ -18,6 +18,8 @@ shared/update-lock.js                           — 更新鎖協定唯一的一�
 tests/update-lock-mutual-exclusion.test.js      — 八個並行只能有一個拿到（shell 與 Node 各跑
                                                    一次）；含陽性對照證明測試抓得到競爭；接手
                                                    排隊與二次確認各有一個決定性測試
+openspec/changes/v1.26.101-index-budget-to-projects/ — proposal / spec / tasks
+openspec/changes/v1.26.100-memory-index-fits-reader/ — proposal / spec / tasks
 openspec/changes/v1.26.98-update-lock-not-a-lock/ — proposal / spec / tasks
 ```
 
@@ -3175,7 +3177,7 @@ OwnMind/
 │   └── lib/                        # v1.17.0 P3 — hook 共用純函式
 │       ├── render-session-context.js   # renderSessionContext(data, broadcasts) → additionalContext 字串
 │       ├── session-start-output.js     # Node CLI wrapper，讓 bash hook 呼叫
-│       ├── sync-memory-files.js        # v1.17.8 — 雲端 → 本地 md 檔 delta sync（stdin JSON / --fail mode）
+│       ├── sync-memory-files.js        # v1.17.8 — 雲端 → 本地 md 檔 delta sync（stdin JSON / --fail mode）；v1.26.100 MEMORY.md 加 140 行預算 + 按需分配 + 溢位說明；v1.26.101 鐵律固定只佔 20 行、其餘給專案
 │       └── flush-compliance-spool.js   # v1.17.97 — SessionStart 補送 reply-lint-pending.jsonl 到 /api/activity/batch（POST 200 後刪檔）
 │
 ├── scripts/                         # 維護工具腳本
@@ -3245,7 +3247,7 @@ OwnMind/
 │   ├── bootstrap-routes.test.js     # Express public routes 整合測試（GET /bootstrap.sh / .ps1 無 auth 正常回應，v1.17.6）
 │   ├── tip-every-call.test.js       # MCP 技巧提示每次都顯示（移除 tipCallCount % 10 gating，v1.17.7）
 │   ├── memory-sync-endpoint.test.js # v1.17.8 — /api/memory/sync 參數解析 + SQL builder（16 tests）
-│   ├── sync-memory-files.test.js    # v1.17.8 — 本地 md 同步 / tombstone / fail mode / backup（22 tests）
+│   ├── sync-memory-files.test.js    # v1.17.8 — 本地 md 同步 / tombstone / fail mode / backup；v1.26.100 索引行數預算 + 溢位說明 + 排序；v1.26.101 鐵律額度上限（52 tests）
 │   ├── ps1-utf8-bom.test.js         # v1.17.9 — 所有 .ps1 必須 UTF-8 BOM（Alice case）
 │   ├── ps1-windows-compat.test.js   # v1.17.9 — .ps1 環境正規化 preamble + install flag 過濾（Bob case）
 │   ├── install-ps1-copy-safety.test.js  # v1.17.10 — install.ps1 Copy-Item self-overwrite guard
