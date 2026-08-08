@@ -86,6 +86,39 @@ export function getClientVersion() {
  * @param {object} [env] — defaults to process.env
  * @returns {string}
  */
+/**
+ * v1.26.98 — the name of the project the caller is working in, or null.
+ *
+ * The team page has a "most common project" column that was blank for most people. The
+ * reason was not that the value is unknown: `mcp/index.js` has computed it since v1.17.37
+ * and puts it on the session log the AI writes. It just never travelled with anything else.
+ *
+ * When the AI does not call `ownmind_log_session` — which, measured on 2026-08-07, is most
+ * sessions, including 76 of one heavy user's 95 — the server rebuilds the session from the
+ * activity log, and no activity event carried a project. So the column was blank for four
+ * people entirely and four fifths of the fifth, and the fix is to send it, not to recover it.
+ *
+ * **Only the last path segment is returned, never the full path.** A directory name is
+ * work context; the path to it says where someone keeps their files, which is not something
+ * this product needs in order to group work by project.
+ *
+ * Returns null at the filesystem root and at the home directory, where the basename would
+ * describe the machine's owner rather than any project.
+ *
+ * @param {object} [env] — defaults to process.env
+ * @returns {string|null}
+ */
+export function resolveProjectName(env = process.env) {
+  try {
+    const dir = env.CLAUDE_PROJECT_DIR || env.OWNMIND_PROJECT_DIR || process.cwd();
+    if (!dir || dir === '/' || dir === os.homedir()) return null;
+    const name = path.basename(dir);
+    return name && name !== '.' && name !== '/' ? name : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveClientTool(env = process.env) {
   return env.OWNMIND_TOOL || env.OWNMIND_CLIENT_TOOL || 'claude-code';
 }
@@ -138,6 +171,84 @@ export function detectCommandTrigger(command) {
   if (/\b(docker\s+compose\s+(up|build|push)|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
   if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(command)) return 'delete';
   return null;
+}
+
+/**
+ * Tool names that change a file on disk, and the trigger each produces.
+ *
+ * v1.26.92: the hook was registered for `Bash` only, so a rule could fire only while a
+ * shell command ran. Editing a file is not a shell command, so no rule tagged
+ * `trigger:edit` had ever fired — on one real account that was 56 rules, the most-used tag
+ * on it, and 63 once the untagged rules that match everything are counted.
+ */
+export const TOOL_TRIGGERS = {
+  Edit: 'edit',
+  Write: 'edit',
+  MultiEdit: 'edit',
+  NotebookEdit: 'edit',
+};
+
+/**
+ * Detect the trigger type from the tool being called, for tools that carry no command.
+ * The command path keeps priority: callers consult `detectCommandTrigger` first, so a
+ * payload with both is resolved by the command exactly as before this change.
+ * @param {string} toolName — PreToolUse `tool_name`
+ * @returns {'edit' | null}
+ */
+export function detectToolTrigger(toolName) {
+  if (typeof toolName !== 'string') return null;
+  // hasOwn, not a plain lookup: 'constructor', 'toString', '__proto__' and friends resolve
+  // up the prototype chain to functions, which are truthy. Those five names would clear the
+  // caller's "did we get a trigger" guard and reach the reminder as a trigger named after
+  // native code.
+  return Object.hasOwn(TOOL_TRIGGERS, toolName) ? TOOL_TRIGGERS[toolName] : null;
+}
+
+/**
+ * Tag values each trigger accepts, beyond the trigger name itself.
+ *
+ * v1.26.91: `detectCommandTrigger` only ever answers commit/deploy/delete, and the hooks
+ * used to match a rule only when one of its tags was literally `trigger:<that word>`.
+ * But nothing tells the user those three words are the whole vocabulary — `ownmind_save`
+ * accepts any tag — so rules get filed under the words people actually think in
+ * (`trigger:回滾`, `trigger:cleanup`, `trigger:部署`) and then never fire. The rule is
+ * stored, the hook runs, the filter drops it, and the exit is silent: nothing anywhere
+ * says why. On a real account with 3 iron rules, all 3 were unreachable.
+ *
+ * This only widens which stored rules a trigger can match. It does NOT widen when the
+ * hooks run — that is still `detectCommandTrigger`, unchanged.
+ *
+ * KEEP IN SYNC with the copy inlined in hooks/ownmind-iron-rule-check.sh. That hook builds
+ * its filter inside `node -e`, and importing this module from there would mean handing node
+ * a path — the exact move that produced two silent Windows failures (install.sh
+ * CLAUDE_SETTINGS in v1.26.88, /dev/stdin in v1.26.90). A duplicated literal cannot ENOENT.
+ */
+export const TRIGGER_TAG_ALIASES = {
+  // v1.26.92: `edit` covers Edit / Write / MultiEdit / NotebookEdit, so a rule tagged
+  // `trigger:write` has to match it. Without this the Write tool would fire the edit
+  // trigger and then drop every rule the author filed under "write" — 23 of them on the
+  // account this was measured against, the second most-used tag there.
+  edit: ['edit', 'write', '編輯', '寫檔', '改檔', 'modify'],
+  commit: ['commit', 'git', '提交', 'checkin'],
+  deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
+  delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
+};
+
+/**
+ * Is this rule relevant to the operation about to run?
+ * An untagged rule is relevant to everything — that is the pre-existing contract.
+ * @param {{tags?: string[]}} rule
+ * @param {string} trigger — canonical trigger, or the 'command' fallback
+ * @returns {boolean}
+ */
+export function ruleMatchesTrigger(rule, trigger) {
+  if (!rule || !Array.isArray(rule.tags) || rule.tags.length === 0) return true;
+  const accepted = new Set(
+    (TRIGGER_TAG_ALIASES[trigger] || [trigger]).map(w => `trigger:${w}`)
+  );
+  // v1.19.20: command-based iron rules are relevant to every trigger.
+  accepted.add('trigger:command');
+  return rule.tags.some(t => accepted.has(String(t).toLowerCase()));
 }
 
 /**

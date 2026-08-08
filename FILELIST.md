@@ -1,5 +1,393 @@
 # OwnMind 檔案結構
 
+## v1.26.98 修改（回滾失敗時不要再回報「backup restored」）
+
+新增檔：
+```
+tests/upgrade-rollback-honesty.test.js          — 收 review 補的五項各有測試：目錄被刪掉仍要
+                                                   回報得出去（含對照組）、還原失敗只看自己的
+                                                   錯誤、訊息摺一行且有上限、Windows 少建的
+                                                   資料夾、git status 要留下原因
+## v1.26.98 修改（那把「一次只准一個人更新」的鎖，其實鎖不住）
+
+新增檔：
+```
+shared/update-lock.js                           — 更新鎖協定唯一的一份實作，MCP 與 Node 掛勾
+                                                   共用。獨佔式建檔取得；接手死掉的鎖要先排隊、
+                                                   拿到後再確認一次年齡才刪
+tests/update-lock-mutual-exclusion.test.js      — 八個並行只能有一個拿到（shell 與 Node 各跑
+                                                   一次）；含陽性對照證明測試抓得到競爭；接手
+                                                   排隊與二次確認各有一個決定性測試
+openspec/changes/v1.26.101-index-budget-to-projects/ — proposal / spec / tasks
+openspec/changes/v1.26.100-memory-index-fits-reader/ — proposal / spec / tasks
+openspec/changes/v1.26.98-update-lock-not-a-lock/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+scripts/interactive-upgrade.sh / .ps1           — 還原失敗時誠實回報；記錄檔移出 ~/.ownmind
+                                                   （Windows 端補上）；git status 失敗就停住
+                                                   不再往下 pull；訊息摺一行、去控制字元、
+                                                   兩邊同一個上限
+scripts/install-helpers/report-error.sh / .ps1  — 可用 OWNMIND_REPORT_HELPER 指向 ~/.ownmind
+                                                   外面的副本，讓「目錄已被刪掉」那種失敗還
+                                                   回報得出去
+hooks/ownmind-session-start.sh                  — 新增 lock_age_seconds / create_exclusive /
+                                                   acquire_update_lock；原本是「檢查檔案不存在」
+                                                   隔十行才 touch，兩個問題都不成鎖。改成先拿鎖
+                                                   才記 update_check；搶輸記 update_skipped
+                                                   （lock_held）而非 update_failed
+hooks/ownmind-session-start.js                  — 原本檢查完鎖之後什麼都沒建立，改用共用實作真的
+                                                   取得；沒東西可跑時立刻釋放
+mcp/index.js                                    — 改用共用實作，移除自己那份 openSync wx 與
+                                                   會誤刪的 stale 清除
+tests/node-hook-parity.test.js                  — Windows 那份掛勾的鎖行為：搶輸要記 skip、
+                                                   不能動別人的鎖、拿到鎖才宣告、沒東西可跑
+                                                   時要把鎖還回去
+tests/p3-update-event-semantics.test.js         — 兩條原本釘在舊寫法上的斷言改釘需求本身
+tests/mcp-auto-update-cross-platform.test.js    — 同上，acquire 搬到共用檔後跟著改
+.gitignore                                      — 忽略 .update-lock 系列。未追蹤檔案會讓
+                                                   interactive-upgrade.sh 判定工作目錄髒掉、
+                                                   直接 git reset --hard
+scripts/interactive-upgrade.sh / .ps1           — 每個錯誤回報都附上失敗指令的日誌尾巴，
+                                                   取代原本寫死的猜測；摺一行、去控制字元、
+                                                   上限 300 字（兩邊同一個上限）
+tests/upgrade-error-reason.test.js              — 呼叫點清單用掃的不用寫的；換行、上限、
+                                                   取尾不取頭、沒日誌時要講清楚
+shared/secret-detect.js                         — 長度啟發式改成量「有沒有單字結構」；刪掉
+                                                   點分隔／斜線分隔兩個例外（量過之後多餘），
+                                                   順便補上含斜線金鑰抓不到的漏洞
+tests/secret-detect-word-shape.test.js          — 保證寫成比率（對整個倉庫掃過）不是清單；
+                                                   13 種真金鑰逐一驗
+shared/helpers.js                               — 新增 resolveProjectName()，專案名稱推導唯一
+                                                   一份（只回資料夾名、不回路徑）
+mcp/ownmind-log.js / mcp/index.js               — 每個活動事件都帶專案；MCP 自己那份推導刪掉
+hooks/ownmind-session-start.sh / .js            — 同上，兩支掛勾送出的事件都帶
+src/routes/memory.js                            — 事後重建工作記錄時挑出現最多次的專案
+tests/activity-carries-project.test.js          — 三個送出端各驗一次；shell 那份手拼 JSON，
+                                                   特別測資料夾名有引號時仍是合法 JSON
+src/routes/usage/team-overview.js               — 遵守率改成也讀伺服器重建那種寫法
+                                                   （details.compliance）；兩種都有時不重複計
+tests/team-overview-api.test.js                 — 重建寫法、不重複計、violate 不計入、
+                                                   壞資料不炸、真的沒資料仍顯示一槓
+openspec/BACKLOG.md                             — 新增 37（context 欄位為什麼是空的，未證實）、
+                                                   38（違規記錄沒地方顯示）、39（重建的場次
+                                                   沒有專案名稱）
+package.json / README ×3                        — 版號 1.26.98
+```
+
+## v1.26.97 修改（那道確認關卡從來沒有在擋）
+
+新增檔：
+```
+db/022_bug_report_confirmation_source.sql       — 新增 confirmation_declared 欄位，附欄位註解
+                                                   說明它是「客戶端宣告」而非「伺服器驗證過」，
+                                                   既有資料回填 unknown
+src/utils/confirmation-declared.js              — 正規化函式，route 與測試共用一份（同
+                                                   activity-insert.js 的做法）
+tests/bug-report-confirmation-declared.test.js  — 沒宣告絕不能變成 user_typed、unknown 不可
+                                                   由客戶端直接宣告、工具說明不得再宣稱伺服器
+                                                   會擋、migration 不得回填成 user_typed
+```
+
+修改檔：
+```
+src/routes/bug-reports.js                       — 寫入與列出這個欄位；檔頭原本寫「confirm_string
+                                                   由伺服器把關」，改成說明它只驗值、驗不了人
+mcp/index.js                                    — 工具說明拿掉「伺服器會擋自動填入」那句假保證，
+                                                   新增必填的 confirmation_declared
+tests/session-log-args.test.js                   — 原本斷言說明裡必須有「不可以自己填」那句
+                                                   假保證，等於在保護它。改成斷言那句不能在、
+                                                   且責任要放在 AI 身上
+openspec/BACKLOG.md                             — 新增 36（AI 與使用者共用同一把金鑰）
+```
+
+## v1.26.96 修改（手寫的清單不會告訴你它漏了哪一個）
+
+新增檔：
+```
+tests/shebang-eol.test.js                       — 從 git ls-files 長出「有 shebang 的檔案」清
+                                                   單，斷言每一個都被 .gitattributes 的
+                                                   eol=lf 涵蓋、且 index 裡不是 CRLF。清單太
+                                                   短就當失敗（避免掃描壞掉時報平安）。另含
+                                                   安裝腳本去 CR 的實跑驗證
+```
+
+修改檔：
+```
+.gitattributes                                  — 從白名單改成黑名單：一行 * text=auto eol=lf
+                                                   加 Windows 原生格式例外。text=auto 不可省，
+                                                   單寫 eol= 會關掉二進位嗅探並改壞檔案
+.editorconfig                                   — 新增。.gitattributes 管 git，管不到編輯器
+                                                   存檔，兩邊要一致
+install.sh                                      — 複製 git 掛勾改用 install_git_hook()，用
+                                                   tr -d 去掉 CR 並寫暫存檔再搬移。
+                                                   .gitattributes 只管簽出，已經是 CRLF 的
+                                                   機器 git 永遠不會自己修
+scripts/update.sh                               — 沒有憑證時 interactive-upgrade 會退回這
+                                                   支，而它從來不碰 git 掛勾。補上就地去 CR
+client/src/pages/System/observed-users.js       — 組合鍵的分隔字元從原始 NUL 改成 \0 跳脫，
+                                                   等價，但讓 git 不再把整個檔案當二進位
+```
+
+## v1.26.95 修改（掛勾寫的欄位到伺服器都被丟掉）
+
+新增檔：
+```
+tests/hook-log-event-details.test.js            — 把兩支掛勾的 log_event 從檔案裡抽出來真的
+                                                   執行，用 JSON.parse 讀回來。涵蓋沒有附加
+                                                   欄位（逗號問題）、多組欄位、值裡含引號與
+                                                   反斜線
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — log_event 的附加欄位改放進 details。伺服器
+hooks/ownmind-iron-rule-check.sh                   收事件時只讀 details，平鋪的欄位一律丟掉，
+                                                   所以升級失敗到底卡在哪一步從來沒傳出去過。
+                                                   另外修：鍵沒配到值會讓迴圈永遠卡住；值裡的
+                                                   控制字元會產生非法 JSON
+hooks/ownmind-session-start.js                  — 同一個問題的第三份（Windows 沒 Git Bash 時
+                                                   裝的就是它），logEvent 與 reportEvent 都改
+tests/node-hook-reports-init.test.js            — 原本斷言平鋪的 e.status，等於在保護壞掉的
+                                                   形狀。改成讀 details.status
+```
+
+## v1.26.94 修改（Windows MCP 路徑每次升級被寫壞）
+
+新增檔：
+```
+tests/install-mcp-entry-path.test.js            — 把 install.sh 裡建 MCP_ENTRY 的 node 區塊
+                                                   抽出來真的執行（不是手抄一份，手抄的只能
+                                                   證明抄本會動），餵真實反斜線路徑驗證原樣
+                                                   往返。另含舊寫法的重現，證明它確實把路徑
+                                                   毀成 C:UsersVin.ownmindmcpstart.cmd；以及
+                                                   一條形狀禁令：路徑不得再被引號包進 JS 原始碼
+```
+
+修改檔：
+```
+install.sh                                      — MCP_ENTRY 的路徑改用 process.argv[1] 傳入，
+                                                   不再內插進 node -e 的原始碼。Windows 分支的
+                                                   cygpath -w 是反斜線，內插後 \U \V \. \m \s
+                                                   被 JS 剖析器當非法跳脫吃掉，後面那個要把
+                                                   反斜線加倍的 replace 已無反斜線可加倍。
+                                                   非 Windows 分支原本走 cygpath -m（正斜線）
+                                                   沒事，一併改成同一種寫法
+```
+
+## v1.26.93 修改（換帳號從來沒真的換過）
+
+新增檔：
+```
+tests/installer-key-update.test.js              — 兩支安裝腳本不再用字串 "ownmind" 當跳過
+                                                   條件（含「不帶憑證的那幾個跳過要留著」的
+                                                   反向斷言）；寫入邏輯在暫存 HOME 上真的
+                                                   跑一次，驗金鑰換掉、未受管欄位保住；
+                                                   conflicts 偵測（含環境變數不算衝突、
+                                                   BOM 不再讓檔案消失）
+```
+
+修改檔：
+```
+shared/helpers.js                               — 新增 TOOL_TRIGGERS / detectToolTrigger；
+                                                   TRIGGER_TAG_ALIASES 加 edit（含 write，
+                                                   否則 Write 工具會觸發 edit 然後把作者標成
+                                                   write 的規則全部丟掉）
+hooks/ownmind-iron-rule-check.js                — 沒有指令時改用 tool_name 判斷觸發；edit 走
+                                                   自己的路徑，不碰驗證引擎
+hooks/ownmind-iron-rule-check.sh                — 同上。payload 現在吐兩個值：第一行 tool_name、
+                                                   第二行起 command（指令可能含換行，工具名不會）
+install.sh / install.ps1                        — PreToolUse 多註冊一個 matcher；判斷改成逐個
+                                                   matcher 檢查（舊的問「這支掛勾裝過沒」，對所有
+                                                   既有安裝都是「裝過」，新位置永遠裝不上去）。
+                                                   install.ps1 另外把註冊指向 checkout 裡的 .js
+                                                   掛勾 —— 複製到 ~/.claude/hooks 的那份根本啟動
+                                                   不了（找不到 ../shared/）。這段沒有實跑過
+.gitignore                                      — 忽略執行期寫進 checkout 的 state/
+openspec/BACKLOG.md                             — 新增 32（觸發詞彙表該在存規則時就告訴作者）、
+                                                   33（Windows 無 bash 那條路要在真機驗）、
+                                                   34（兩支掛勾一個講中文一個講英文）
+```
+
+## v1.26.92 修改（改檔案時的鐵律，一條都沒出現過）
+
+新增檔：
+```
+shared/edit-reminder-state.js                   — 一小時節流的狀態讀寫與判斷，依 session 分開
+                                                   存。decide 是純函式、時鐘用參數傳，所以視窗
+                                                   邊界不用等一小時也測得出來。壞檔／缺檔一律
+                                                   當「沒有視窗」，代價是多列一次、不會少列。
+                                                   抓取失敗時存的是五分鐘的短視窗，避免斷線期
+                                                   間每次編輯都白等 3 秒
+hooks/ownmind-edit-reminder.js                  — edit 觸發的完整實作。.js 掛勾 import 它、
+                                                   .sh 掛勾用絕對路徑跑它（跟既有的
+                                                   ownmind-verify-trigger.js 同一個做法），
+                                                   所以視窗邏輯只有一份
+tests/edit-trigger-reminder.test.js             — 兩支掛勾都用真實 Edit/Write payload 實跑；
+                                                   節流那次要證明「沒有發出請求」；安裝器註冊
+                                                   連跑兩次確認不重複也不漏
+## v1.26.91 修改（提醒接通了，規則卻全被過濾掉）
+
+新增檔：
+```
+tests/iron-rule-trigger-aliases.test.js         — 用實際出事的那組 tag 當樣本：標 回滾/
+                                                   cleanup/升級 的規則現在對得上 delete 與
+                                                   deploy，標 install/config 的仍然對不上
+                                                   （放寬不能變成什麼都提醒）。另含舊過濾邏輯
+                                                   的重現，以及 .sh 內嵌表與 shared/helpers.js
+                                                   匯出值的逐項比對——把 .sh 裡的表抽出來真的
+                                                   執行再比，不是比字串
+tests/readme-version-sync.test.js               — 三份 README（en / zh-TW / ja）的版號要跟
+                                                   package.json 一致，且標了本版版號的條目
+                                                   三份都要有、或三份都沒有。連兩版只更新英文
+                                                   版，沒有任何東西會紅
+```
+
+修改檔：
+```
+shared/helpers.js                               — 新增 TRIGGER_TAG_ALIASES 與
+                                                   ruleMatchesTrigger()。同義字表是唯一真相，
+                                                   .sh 那份是受測管制的複本
+hooks/ownmind-iron-rule-check.js                — 內嵌的 tags.some(...) 換成 ruleMatchesTrigger
+hooks/ownmind-iron-rule-check.sh                — 同一份表寫在 node -e 裡（不 import，避免再從
+                                                   Git Bash 遞路徑給 node）。比對前轉小寫
+docs/README.zh-TW.md                            — 補上本版版號與條目（原本停在 v1.26.90）
+docs/README.ja.md                               — 同上
+install.sh                                      — Claude Code 與 Cursor 兩個 MCP 區塊拿掉
+                                                   「已設定就跳過」。那兩個區塊裡放的是 API
+                                                   金鑰，跳過等於換帳號無效。改為一律寫入 +
+                                                   合併保留未受管欄位 + 說明是寫入/更換/未變
+install.ps1                                     — 同上（同一個 bug 的 PowerShell 版）。env
+                                                   區塊改成合併，與 install.sh 行為對齊
+scripts/install-helpers/resolve-credentials.cjs — 新增 conflicts（只比對檔案，不含環境變數）
+                                                   ；補上缺漏的 stripBom
+scripts/install-helpers/self-check.cjs          — 新增 credential_agreement 檢查項，兩個設定
+                                                   檔金鑰不一致時 warn 並指名檔案
+```
+
+## v1.26.90 修改（鐵律提醒掛勾從來沒觸發過，全平台）
+
+新增檔：
+```
+tests/iron-rule-hook-payload.test.js            — 真的把兩支掛勾跑起來、餵 Claude Code 實際
+                                                   送的 payload，用「有沒有連到規則 API」當
+                                                   訊號（空值檢查在讀金鑰之前）。另含一條
+                                                   全 repo 掃描，禁止任何出貨腳本再用
+                                                   readFileSync('/dev/stdin')——清單用
+                                                   git ls-files 長出來，不手寫
+```
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.sh                — 四處 readFileSync('/dev/stdin') 改成
+                                                   readFileSync(0)。Windows node 會把該 POSIX
+                                                   路徑解析成 C:\dev\stdin 並拋 ENOENT，而拋出
+                                                   點在 try 之外、外層又有 2>/dev/null，所以掛勾
+                                                   每次都拿到空字串直接 exit 0。
+                                                   另：取指令改讀 tool_input.command，
+                                                   保留最上層 command 作為退路
+hooks/ownmind-iron-rule-check.js                — 同樣的取值路徑問題（讀 stdin 本來就對）。
+                                                   兩份一起改，避免重演「只修一份」。
+                                                   取值路徑這一半跟平台無關，macOS 也一樣
+                                                   拿不到，所以不是「Windows 沒提醒」，
+                                                   是所有人都沒看過
+```
+
+## v1.26.89 修改（鐵律範本不再自動套用）
+
+新增檔：
+```
+tests/no-silent-blocking-templates.test.js      — 用回報案例（記憶 829）的真實內文當測資：
+                                                   證明比對器仍然會命中它（刻意留著，
+                                                   當作「為什麼不能自動套用」的活證據）、
+                                                   五個範本全部都會擋人（所以沒有
+                                                   「只自動套用不擋人的」這條中間路）、
+                                                   存檔路徑不再寫 verification、
+                                                   回傳一定帶 applied:false
+openspec/changes/v1.26.89-no-silent-blocking-templates/  — proposal / spec / tasks
+```
+
+修改檔：
+```
+src/routes/memory.js                            — 比中範本不再寫進 metadata.verification；
+                                                   改回傳 template_suggestion（名稱、
+                                                   applied:false、會不會擋人、一句可直接
+                                                   轉述的話）。matched_template 保留給既有讀者
+```
+
+## v1.26.88 修改（Windows 升級中途靜默中止）
+
+新增檔：
+```
+scripts/install-helpers/install-artifacts.cjs   — 「裝完了」的唯一定義。列出安裝該產出的東西
+                                                   （SessionStart 掛勾、鐵律掛勾、hooks/lib、git-hooks、
+                                                   技能檔、MCP 進入點），install.sh 收尾時斷言、
+                                                   self-check.cjs 當成 install_complete 項目報上去。
+                                                   查不到狀態一律算「缺」，不算「大概沒事」。
+                                                   直接執行時是 CLI：完整 exit 0、缺件 exit 1 並列出缺什麼
+tests/install-artifacts.test.js                 — 全在、單缺、多缺、把目錄放成檔案、路徑讀不到（EACCES）；
+                                                   CLI 兩個結束碼；以及「清單只有一份」的來源守衛
+tests/installer-node-paths.test.js              — 從腳本本身長出清單的四道守衛：node -e 裡不得有沒轉過的
+                                                   路徑、_WIN 變數必須由 to_win_path 產生、node 錯誤不得丟給
+                                                   /dev/null、升級日誌不得寫在回滾會刪掉的目錄。
+                                                   解析不出來的 node -e 區塊算失敗，不算跳過
+```
+
+修改檔：
+```
+install.sh                                      — 接上 path-helpers.sh（缺檔時退回恆等函式）；
+                                                   十處寫死在 node 程式碼裡的路徑改走 to_win_path；
+                                                   node 錯誤改寫進 ~/.ownmind-logs/install-<時間>.log；
+                                                   加 ERR trap 印出停在哪一行 + 日誌位置 + 最後幾行錯誤；
+                                                   收尾前跑 install-artifacts 斷言，缺件就 [FAIL] + exit 1
+                                                   （仍會先跑 self-check 把狀態送上伺服器）
+scripts/update.sh                               — 同上接線；五處路徑改走 to_win_path（含四個
+                                                   require('.../load-settings-safe.cjs')）；三處 node
+                                                   錯誤改寫進 update-err.log；日誌目錄提前建立，
+                                                   否則 `2>>` 失敗會讓 beacon 永遠送不出去
+scripts/interactive-upgrade.sh                  — 升級日誌搬到 ~/.ownmind-logs/（回滾動不到的地方）；
+                                                   send_upgrade_complete_beacon 的設定檔路徑改走 to_win_path
+scripts/install-helpers/self-check.cjs          — 新增 install_complete 檢查項（呼叫 install-artifacts.cjs，
+                                                   不自己再列一份清單）；checkNamesFor 同步
+tests/upgrade-complete-beacon.test.js           — 抽出函式測試時一併 source path-helpers.sh，
+                                                   否則測到的是一個實際上不存在的版本
+```
+
+審查後追加的修改：
+```
+hooks/ownmind-iron-rule-check.sh                — 接上 path-helpers.sh；讀金鑰／設定的三處
+                                                   node -e 路徑改走 to_win_path。這一支在
+                                                   Windows 上是實際被註冊的掛勾（install.sh 寫死
+                                                   bash 版、沒有平台分支），所以金鑰一直讀回空字串
+hooks/ownmind-session-start.sh                  — resolve-credentials.cjs、settings.json、
+                                                   self-check.cjs 三個路徑改走 to_win_path
+hooks/ownmind-worktree-setup.sh                 — 同上接線；settings.json、.mcp.json、
+                                                   settings.local.json 三處
+install.ps1                                     — 複製 hooks\lib\*.js（本來只有 update.ps1 有，
+                                                   ps1 裝完沒更新過的機器，bash 掛勾在、
+                                                   它要呼叫的 lib 不在）
+install.sh                                      — set -e 改 set -eE（少了 E，函式裡的失敗不會觸發
+                                                   ERR trap）；產出物檢查改回傳 2 而非 1；
+                                                   傳 --home 給檢查器
+scripts/interactive-upgrade.sh                  — 認得結束碼 2：回報但不回滾（回滾只還原
+                                                   ~/.ownmind，~/.claude 早就改成新的了）；
+                                                   日誌目錄退路改 mktemp -d，不再退回會被刪的目錄；
+                                                   beacon 的 node 錯誤不再丟掉
+scripts/install-helpers/install-artifacts.cjs   — locate 改回傳候選清單（任一存在即可），
+                                                   讓 install.ps1 與 install.sh 兩種實作都算數；
+                                                   hook_lib 加 applies（只有裝了 bash 掛勾才需要）；
+                                                   目錄改檢查裡面的檔案；CLI 收 --home
+scripts/install-helpers/path-helpers.sh         — 補上限制說明：結果是塞進單引號 JS 字串，
+                                                   家目錄含單引號會壞（既有問題，$API_URL 同樣形狀）
+tests/installer-node-paths.test.js              — 掃描範圍改成 git ls-files '*.sh'（手寫清單正是
+                                                   hooks/ 漏掉的原因）；認得 --eval／--print；
+                                                   拿掉「照變數名放行」，改成必須找得到經過
+                                                   to_win_path 的賦值
+```
+
+**未動**：`install.ps1` 與 `install.sh` 在 Windows 上仍是兩條不同的路，升級只走 sh。兩者對齊記進 backlog 第 28 項。
+
 ## v1.26.87 修改（安裝檢測警告機制）
 
 新增檔：
@@ -2789,7 +3177,7 @@ OwnMind/
 │   └── lib/                        # v1.17.0 P3 — hook 共用純函式
 │       ├── render-session-context.js   # renderSessionContext(data, broadcasts) → additionalContext 字串
 │       ├── session-start-output.js     # Node CLI wrapper，讓 bash hook 呼叫
-│       ├── sync-memory-files.js        # v1.17.8 — 雲端 → 本地 md 檔 delta sync（stdin JSON / --fail mode）
+│       ├── sync-memory-files.js        # v1.17.8 — 雲端 → 本地 md 檔 delta sync（stdin JSON / --fail mode）；v1.26.100 MEMORY.md 加 140 行預算 + 按需分配 + 溢位說明；v1.26.101 鐵律固定只佔 20 行、其餘給專案
 │       └── flush-compliance-spool.js   # v1.17.97 — SessionStart 補送 reply-lint-pending.jsonl 到 /api/activity/batch（POST 200 後刪檔）
 │
 ├── scripts/                         # 維護工具腳本
@@ -2859,7 +3247,7 @@ OwnMind/
 │   ├── bootstrap-routes.test.js     # Express public routes 整合測試（GET /bootstrap.sh / .ps1 無 auth 正常回應，v1.17.6）
 │   ├── tip-every-call.test.js       # MCP 技巧提示每次都顯示（移除 tipCallCount % 10 gating，v1.17.7）
 │   ├── memory-sync-endpoint.test.js # v1.17.8 — /api/memory/sync 參數解析 + SQL builder（16 tests）
-│   ├── sync-memory-files.test.js    # v1.17.8 — 本地 md 同步 / tombstone / fail mode / backup（22 tests）
+│   ├── sync-memory-files.test.js    # v1.17.8 — 本地 md 同步 / tombstone / fail mode / backup；v1.26.100 索引行數預算 + 溢位說明 + 排序；v1.26.101 鐵律額度上限（52 tests）
 │   ├── ps1-utf8-bom.test.js         # v1.17.9 — 所有 .ps1 必須 UTF-8 BOM（Alice case）
 │   ├── ps1-windows-compat.test.js   # v1.17.9 — .ps1 環境正規化 preamble + install flag 過濾（Bob case）
 │   ├── install-ps1-copy-safety.test.js  # v1.17.10 — install.ps1 Copy-Item self-overwrite guard

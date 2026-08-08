@@ -7,6 +7,17 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 MARKER_FILE="$OWNMIND_DIR/.last-update-check"
 LOCK_FILE="$OWNMIND_DIR/.update-lock"
 LOG_DIR="$OWNMIND_DIR/logs"
+# Same derivation as resolveProjectName() in shared/helpers.js: the working directory's own
+# name, and nothing at the home directory or the filesystem root — a basename there would
+# describe the machine's owner rather than a project. Control characters and quotes are
+# stripped because this value is interpolated into hand-built JSON below.
+OWNMIND_PROJECT_DIR_RESOLVED="${CLAUDE_PROJECT_DIR:-${OWNMIND_PROJECT_DIR:-$PWD}}"
+OWNMIND_PROJECT_NAME=""
+if [ -n "$OWNMIND_PROJECT_DIR_RESOLVED" ] \
+   && [ "$OWNMIND_PROJECT_DIR_RESOLVED" != "/" ] \
+   && [ "$OWNMIND_PROJECT_DIR_RESOLVED" != "$HOME" ]; then
+  OWNMIND_PROJECT_NAME=$(basename "$OWNMIND_PROJECT_DIR_RESOLVED" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+fi
 UPDATE_MSG=""
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
@@ -19,6 +30,7 @@ else
   to_win_path() { echo "$1"; }
 fi
 OWNMIND_DIR_WIN="$(to_win_path "$OWNMIND_DIR")"
+CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 
 # v1.17.71：補印上次 session 因 tty 不可用沒寫成的 banner（規格 #3 不被 AI 過濾）。
 # SessionStart 的 stderr → user terminal，是 user-visible 通道。
@@ -51,13 +63,37 @@ log_event() {
   mkdir -p "$LOG_DIR"
   local ts=$(date +%Y-%m-%dT%H:%M:%S%z | sed 's/\([0-9][0-9]\)$/:\1/')
   local date_str=$(date +%Y-%m-%d)
-  local extra=""
-  while [ $# -gt 0 ]; do
-    local val=$(echo "$2" | sed 's/\\/\\\\/g; s/"/\\"/g')
-    extra="$extra,\"$1\":\"$val\""
+  # v1.26.95: the extra key/value pairs go inside `details`, not alongside it.
+  #
+  # They used to be written flat — {"ts":…,"event":…,"step":"pull"} — and the upload posts
+  # this same object straight to /api/activity/batch, where the handler reads only
+  # `e.details`. So every field either hook has ever logged was dropped on arrival and
+  # stored as `{}`. Measured 2026-08-07: 18 `update_failed` rows for one user and 9 for
+  # another, all with empty details, so nobody could see which step failed. The local file
+  # had the answer; the server, where anyone would look, did not.
+  # `-gt 1`, not `-gt 0`: `shift 2` with one argument left fails and shifts nothing, so the
+  # loop spins forever and the hook never returns — a stalled session with no output at all.
+  # Reachable only by a caller passing a key with no value, which none do today; dropping a
+  # trailing keyless argument is strictly better than hanging.
+  local details=""
+  while [ $# -gt 1 ]; do
+    # Strip control characters before escaping. A newline or tab in a value produces a line
+    # that is not valid JSON, the whole POST body is rejected, and the event disappears —
+    # exactly the silent loss this release exists to end. No current caller passes free text,
+    # but the obvious next use of this channel is an error message.
+    local val=$(printf '%s' "$2" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g')
+    if [ -n "$details" ]; then details="$details,"; fi
+    details="$details\"$1\":\"$val\""
     shift 2
   done
-  local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\"$extra}"
+  # v1.26.98 — carry the project. A session the server has to rebuild from activity had no
+  # way to know which project it belonged to, so the team page showed a blank for anyone
+  # whose AI never called ownmind_log_session. Directory name only, never the path.
+  if [ -n "${OWNMIND_PROJECT_NAME:-}" ]; then
+    if [ -n "$details" ]; then details="$details,"; fi
+    details="$details\"project\":\"$OWNMIND_PROJECT_NAME\""
+  fi
+  local entry="{\"ts\":\"$ts\",\"event\":\"$event\",\"tool\":\"claude-code\",\"source\":\"hook\",\"details\":{$details}}"
   # Local log
   echo "$entry" >> "$LOG_DIR/$date_str.jsonl"
   # Server upload (background, non-blocking)
@@ -76,10 +112,11 @@ log_event() {
 # on every single session, and memories silently never loaded. Now it asks the shared
 # resolver, so this hook, the Node hook, the scanner and the self-check cannot disagree.
 CREDS_RESOLVER="$OWNMIND_DIR/scripts/install-helpers/resolve-credentials.cjs"
+CREDS_RESOLVER_WIN="$(to_win_path "$CREDS_RESOLVER")"
 if [ -f "$CREDS_RESOLVER" ]; then
   CREDS=$(node -e "
     try {
-      const r = require('$CREDS_RESOLVER').resolveCredentials();
+      const r = require('$CREDS_RESOLVER_WIN').resolveCredentials();
       console.log((r.apiKey || '') + '\n' + (r.apiUrl || ''));
     } catch { console.log('\n'); }
   " 2>/dev/null)
@@ -87,7 +124,7 @@ elif [ -f "$CLAUDE_SETTINGS" ]; then
   # Fallback for the one update that delivers the resolver.
   CREDS=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
       const o = s.mcpServers?.ownmind?.env || {};
       console.log((o.OWNMIND_API_KEY || '') + '\n' + (o.OWNMIND_API_URL || ''));
     } catch { console.log('\n'); }
@@ -103,25 +140,120 @@ if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then
 fi
 
 # --- 自動更新（背景執行，不阻塞 session 啟動）---
-# Stale lock: 超過 5 分鐘自動清除
-# stat -f %m = macOS, stat -c %Y = Linux, echo 0 = fallback（epoch 0 → age 極大 → 必定清除，fail-open）
-if [ -f "$LOCK_FILE" ]; then
-  LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || stat -c %Y "$LOCK_FILE" 2>/dev/null || echo 0) ))
-  [ "$LOCK_AGE" -gt 300 ] && rm -f "$LOCK_FILE"
-fi
+#
+# v1.26.98 — the lock protocol. This mirrors shared/update-lock.js step for step; that file
+# carries the full reasoning, including why a stale lock cannot simply be unlinked. Spawning
+# node to take a lock would cost more than the lock saves, hence the duplication; the two are
+# run against the same scenarios in tests/update-lock-mutual-exclusion.test.js.
 
-if [ -d "$OWNMIND_DIR/.git" ] && [ ! -f "$LOCK_FILE" ]; then
+# Age of a file in seconds. Prints nothing and returns non-zero when it is not there.
+# stat -f %m = macOS/BSD, stat -c %Y = GNU.
+#
+# The `|| echo 0` fallback this used to carry is deliberately gone. It made an unreadable
+# mtime mean "infinitely old", so a lock nobody could stat was reclaimed by everybody at
+# once. Failing closed instead means an unreadable lock is never reclaimed; on every
+# platform this script runs on, one of the two `stat` forms works.
+lock_age_seconds() {
+  [ -f "$1" ] || return 1
+  local mtime
+  mtime=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)
+  [ -n "$mtime" ] || return 1
+  echo $(( $(date +%s) - mtime ))
+}
+
+# Create a file only if it does not exist, stamping $2 into it. `set -C` (noclobber) makes
+# the redirect O_CREAT|O_EXCL, so exactly one process out of any number can succeed. The
+# subshell keeps noclobber from leaking into the rest of the hook.
+create_exclusive() {
+  ( set -C; printf '%s' "${2:-}" > "$1" ) 2>/dev/null
+}
+
+# Take the update lock. Returns non-zero when somebody else holds it.
+#
+# Mirrors shared/update-lock.js; that file explains why reclaiming a stale lock takes three
+# steps rather than one. In short: deleting a path and re-creating it cannot be made atomic,
+# so removal is serialised, the deleter re-reads the age, and the winner then checks that the
+# file at the path is still the one it created.
+#
+# What shipped before was `[ ! -f "$LOCK_FILE" ]` ten lines above a `touch`, which is not a
+# lock twice over: the test and the create are far apart, and `touch` succeeds on a file that
+# already exists. Measured 2026-08-07 — four hooks racing, four winners, every morning.
+acquire_update_lock() {
+  local age rage token reclaim="$LOCK_FILE.reclaim"
+
+  age=$(lock_age_seconds "$LOCK_FILE")
+  if [ -n "$age" ] && [ "$age" -gt 300 ]; then
+    # Stale: the run that took it died. Deletion is serialised behind its own exclusive file,
+    # otherwise two processes both delete and both create, and both think they hold it.
+    rage=$(lock_age_seconds "$reclaim")
+    if [ -n "$rage" ] && [ "$rage" -gt 300 ]; then
+      # Clearing a leaked marker is itself a delete-and-recreate, so it gets the same
+      # treatment: move it aside under a name only this process uses, and whoever loses the
+      # move skips this round rather than racing for it.
+      if mv "$reclaim" "$reclaim.dead.$$" 2>/dev/null; then
+        rm -f "$reclaim.dead.$$"
+      else
+        return 1
+      fi
+    fi
+    if create_exclusive "$reclaim"; then
+      # Re-read the age now that we are the only reclaimer: an earlier winner may already
+      # have put a fresh lock here, and deleting that is exactly the bug being fixed.
+      age=$(lock_age_seconds "$LOCK_FILE")
+      if [ -n "$age" ] && [ "$age" -gt 300 ]; then rm -f "$LOCK_FILE"; fi
+      rm -f "$reclaim"
+    fi
+  fi
+
+  # A value only this call writes, so the check below compares our lock against whatever is
+  # actually at that path — not the path against itself, which would always agree.
+  token="$$-$(date +%s)-${RANDOM}${RANDOM}"
+  create_exclusive "$LOCK_FILE" "$token" || return 1
+
+  # Did somebody delete the lock we just made and put their own there? Then they hold it,
+  # not us.
+  [ "$(cat "$LOCK_FILE" 2>/dev/null)" = "$token" ]
+}
+
+if [ -d "$OWNMIND_DIR/.git" ]; then
   TODAY=$(date +%Y-%m-%d)
   LAST_CHECK=$(cat "$MARKER_FILE" 2>/dev/null || echo "")
 
+  # The marker is checked first because it is the common case and costs only a read. The lock
+  # is taken before anything is logged, so the log shows one check rather than a stampede of
+  # four.
+  UPDATE_LOCK_TAKEN=""
   if [ "$LAST_CHECK" != "$TODAY" ]; then
+    if acquire_update_lock; then
+      UPDATE_LOCK_TAKEN=1
+    elif [ -f "$LOCK_FILE" ]; then
+      # Somebody else — another hook, or the MCP — is already doing it. That is not a failed
+      # upgrade: the work is happening, just not here. Recording it as `update_failed` is what
+      # put 18 phantom failures on one account across six days and sent us looking for a fault
+      # that did not exist. Same event name and reason the MCP uses for this case.
+      log_event "update_skipped" "reason" "lock_held"
+    elif acquire_update_lock; then
+      # No lock file, yet the create failed a moment ago: the holder released it in between.
+      # Retrying once tells that apart from a genuine write failure, rather than reporting a
+      # phantom failure — which is the whole point of this release.
+      UPDATE_LOCK_TAKEN=1
+    else
+      # The create failed and there is no lock file to account for it: a read-only filesystem
+      # or a full disk. `set -C` cannot report an errno, so presence of the file is the only
+      # way to tell the two apart here — the MCP, which can read the errno, makes the same
+      # distinction. This case is a real failure and has to stay visible; keeping it is why
+      # the branch logged anything in the first place.
+      log_event "update_failed" "step" "lock"
+    fi
+  fi
+
+  if [ -n "$UPDATE_LOCK_TAKEN" ]; then
     log_event "update_check"
     # 背景執行更新，不阻塞記憶載入
     # P3 修正（Bob case 2026-04-26）：原本 silent 吞失敗後無條件寫 update_applied，
     # 即使 git pull / npm / update.sh 任一失敗都會誤報「已更新」。對齊 mcp/index.js
     # 的修法：每步顯式檢查；分流寫 update_applied / update_clean / update_failed。
     (
-      touch "$LOCK_FILE" || { log_event "update_failed" "step" "lock"; exit 0; }
       cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; log_event "update_failed" "step" "cd"; exit 0; }
       if ! git fetch -q 2>/dev/null; then
         rm -f "$LOCK_FILE"
@@ -165,9 +297,10 @@ fi
 # 縮短「user 升完 → server 看到」的延遲到「下次開 Claude Code」即可。
 # Fire-and-forget、3 秒 timeout、絕不擋 SessionStart。
 SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+SELF_CHECK_SCRIPT_WIN="$(to_win_path "$SELF_CHECK_SCRIPT")"
 if [ -f "$SELF_CHECK_SCRIPT" ] && [ -n "$API_KEY" ] && [ -n "$API_URL" ]; then
   timeout 3 node -e "
-    const sc = require('$SELF_CHECK_SCRIPT');
+    const sc = require('$SELF_CHECK_SCRIPT_WIN');
     if (sc.retrySpool) {
       sc.retrySpool('$API_URL', '$API_KEY').catch(() => {});
     }

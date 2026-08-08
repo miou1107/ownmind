@@ -118,6 +118,10 @@ describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon behav
       const fakeScript = `
         #!/usr/bin/env bash
         set -u
+        # v1.26.88: the function calls to_win_path, which interactive-upgrade.sh sources at
+        # the top. Source it here too, or this harness tests a version of the function that
+        # cannot exist. (It is identity off Windows, so the payload is unchanged.)
+        . "${path.join(repoRoot, 'scripts/install-helpers/path-helpers.sh')}"
         # Pull the real send_upgrade_complete_beacon function from interactive-upgrade.sh.
         eval "$(sed -n '/^send_upgrade_complete_beacon()/,/^}/p' "${path.join(repoRoot, 'scripts/interactive-upgrade.sh')}")"
         send_upgrade_complete_beacon "1.17.86-test"

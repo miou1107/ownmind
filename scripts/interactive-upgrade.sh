@@ -15,7 +15,19 @@ set -u  # do not set -e; we want to control error paths ourselves
 OWNMIND_DIR="${HOME}/.ownmind"
 TS=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="${HOME}/.ownmind.bak.${TS}"
-LOG_FILE="${OWNMIND_DIR}/logs/upgrade-${TS}.log"
+
+# v1.26.88 — the log lives OUTSIDE ${OWNMIND_DIR}.
+# rollback() is `rm -rf "${OWNMIND_DIR}"` followed by `mv "${BACKUP_DIR}" "${OWNMIND_DIR}"`.
+# While this file lived under ${OWNMIND_DIR}/logs/, every failure message that said
+# "see ~/.ownmind/logs/upgrade-<TS>.log" named a file the same function had just deleted.
+# Measured on TANK, 2026-08-06: 0 bytes, on the one failure anybody wanted to read.
+# Bug report #15.
+LOG_DIR="${HOME}/.ownmind-logs"
+# The fallback must also be outside ${OWNMIND_DIR}. Falling back to ${OWNMIND_DIR}/logs
+# would quietly restore the exact bug this block removes, and the covering test only reads
+# the LOG_FILE= line — it would still pass.
+mkdir -p "${LOG_DIR}" 2>/dev/null || LOG_DIR="$(mktemp -d 2>/dev/null || echo "${TMPDIR:-/tmp}")"
+LOG_FILE="${LOG_DIR}/upgrade-${TS}.log"
 
 # v1.26.7 — normalize paths for Node.exe on Windows + Git Bash.
 # Without this, ${OWNMIND_DIR}=/c/Users/Vin/.ownmind makes require() fail with
@@ -40,7 +52,7 @@ OK()   { echo "OK:$1:$2"; }
 # report_error is already noop-on-missing, so a second call is harmless.
 FAIL() {
   echo "ERROR:$1:$2"
-  report_error "upgrade_failed_terminal_$1" "$2" "${LOG_FILE:-}" 2>/dev/null || true
+  report_error "upgrade_failed_terminal_$1" "$2: $(last_log_lines "${LOG_FILE:-}")" "${LOG_FILE:-}" 2>/dev/null || true
   exit 1
 }
 
@@ -63,7 +75,37 @@ fi
 is_file_lock_error() {
   local log="$1"
   [ -f "$log" ] || return 1
-  grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy' "$log" 2>/dev/null
+  # v1.26.98 — 'it is in use' / 'being used by another' added: PowerShell's own wording when
+  # Remove-Item cannot delete a locked directory is "... because it is in use.", which matched
+  # none of the previous patterns. Kept identical to $script:FileLockPattern in the .ps1 (IR-022).
+  grep -qiE 'EBUSY|EACCES|EPERM|Permission denied|in use by another|another process|file is locked|resource busy|access is denied|it is in use|being used by another' "$log"
+}
+
+# v1.26.98 — what the failing command actually said, folded onto one line for `detail`.
+#
+# Every report_error call below used to pass a hand-written guess: "git pull --ff-only failed
+# (network or non-ff merge)". That sentence is what reaches the server and the admin console,
+# and it is the same sentence whether the remote was unreachable, the branch had diverged, or
+# a file was locked. On 2026-08-07 one machine failed a pull and nobody could say why, because
+# the only record of it was that guess.
+#
+# git's real output is already being appended to the log file, and the log file is already
+# passed as the context argument — but the context arrived empty on that report and this
+# machine has no PowerShell to find out where it is lost. `detail` is a plain string that is
+# known to arrive, so the reason goes there too. Belt and braces, deliberately.
+REASON_CHARS=300
+last_log_lines() {
+  local log="${1:-}"
+  [ -n "$log" ] && [ -f "$log" ] || { printf 'no log file'; return 0; }
+  # Control characters stripped: a newline in this value produces a line that is not valid
+  # JSON, and the whole report is then dropped on arrival.
+  local text
+  text=$(tail -n 5 "$log" 2>/dev/null | tr '\n' '|' | tr -d '\000-\037')
+  [ -n "$text" ] || { printf 'log empty'; return 0; }
+  # `cut` appends a newline of its own; command substitution at the call site would strip it,
+  # but a function that returns one more character than its own cap is a trap for the next
+  # caller that does not use `$(...)`.
+  printf '%s' "$text" | cut -c "1-${REASON_CHARS}" | tr -d '\n'
 }
 
 # --- 0. Pre-check ---
@@ -79,10 +121,64 @@ else
   FAIL "backup_failed" "Backup failed (check disk space)"
 fi
 
+# v1.26.98 — rollback() used to report success by accident: `mv ... && OK` simply printed
+# nothing when the move failed, and `rm -rf` was never checked at all, while every caller
+# went on to emit a hard-coded "backup restored". FAIL forwards that same string to the
+# server as the Detail of upgrade_failed_terminal_*, so a failed rollback produced a
+# diagnostic record asserting a restore that never happened. Kept symmetric with the .ps1
+# side (IR-022), where the Windows file-lock case makes this the common failure, not a rare one.
+ROLLBACK_FAILED=0
+
+# v1.26.98 — keep a copy of the error reporter outside ${OWNMIND_DIR}, and point the helper
+# at it. rollback() deletes that directory; if the subsequent move then fails, the reporter
+# it would use has just been deleted along with everything else, and report_error returns
+# success having written nothing. Verified by running it both ways. ${LOG_DIR} already lives
+# outside ${OWNMIND_DIR} (v1.26.88), so it is the natural place.
+REPORT_HELPER_SRC="${OWNMIND_DIR}/scripts/install-helpers/report-error.cjs"
+if [ -f "${REPORT_HELPER_SRC}" ] && cp "${REPORT_HELPER_SRC}" "${LOG_DIR}/report-error.cjs" 2>/dev/null; then
+  OWNMIND_REPORT_HELPER="${LOG_DIR}/report-error.cjs"
+  export OWNMIND_REPORT_HELPER
+fi
+
+
 rollback() {
   STEP "rollback" "Restoring backup ${BACKUP_DIR} -> ${OWNMIND_DIR}"
-  rm -rf "${OWNMIND_DIR}"
-  mv "${BACKUP_DIR}" "${OWNMIND_DIR}" && OK "rollback" "Restored previous version"
+  ROLLBACK_FAILED=0
+  # v1.26.98 — this attempt's output goes to its own file. Testing the shared ${LOG_FILE}
+  # would read whatever earlier steps left there: an EACCES logged by `npm install` ten
+  # minutes ago makes an unrelated rollback failure report itself as file-locked, and the
+  # user is told to close Claude Code for a disk-space problem. Verified with both controls.
+  # The .ps1 side matches the exception text for the same reason (IR-022).
+  ROLLBACK_LOG="${LOG_FILE}.rollback"
+  : > "${ROLLBACK_LOG}" 2>/dev/null || true
+  if ! rm -rf "${OWNMIND_DIR}" >>"${ROLLBACK_LOG}" 2>&1; then
+    ROLLBACK_FAILED=1
+  elif ! mv "${BACKUP_DIR}" "${OWNMIND_DIR}" >>"${ROLLBACK_LOG}" 2>&1; then
+    ROLLBACK_FAILED=1
+  fi
+  cat "${ROLLBACK_LOG}" >>"${LOG_FILE}" 2>/dev/null || true
+  if [ "${ROLLBACK_FAILED}" -eq 1 ]; then
+    if is_file_lock_error "${ROLLBACK_LOG}"; then
+      ROLLBACK_KIND="rollback_file_locked"
+    else
+      ROLLBACK_KIND="rollback_failed"
+    fi
+    echo "ERROR:${ROLLBACK_KIND}:could not restore ${BACKUP_DIR} -> ${OWNMIND_DIR} ($(last_log_lines "${ROLLBACK_LOG}"))"
+    report_error "upgrade_${ROLLBACK_KIND}" "Rollback failed ($(last_log_lines "${ROLLBACK_LOG}")); backup left at ${BACKUP_DIR}" "${ROLLBACK_LOG}"
+  else
+    OK "rollback" "Restored previous version"
+  fi
+}
+
+# The tail every rollback caller appends to its failure message, so the message describes the
+# machine's real state instead of the state the rollback was supposed to produce.
+rollback_note() {
+  if [ "${ROLLBACK_FAILED}" -eq 1 ]; then
+    printf 'ROLLBACK ALSO FAILED - %s may be half-updated and the backup is still at %s; restore it manually' \
+      "${OWNMIND_DIR}" "${BACKUP_DIR}"
+  else
+    printf 'backup restored'
+  fi
 }
 
 # --- 2. git pull ---
@@ -94,25 +190,42 @@ rollback() {
 STEP "pull" "Pulling latest OwnMind"
 cd "${OWNMIND_DIR}" || FAIL "cd_failed" "Cannot enter ${OWNMIND_DIR}"
 
-DIRTY=$(git status --porcelain 2>/dev/null)
+# v1.26.98 — the `2>/dev/null` here turned a broken git into a silent "clean tree" (IR-002).
+# `git status --porcelain` prints nothing when the tree is clean AND prints nothing when git
+# itself fails, so an empty DIRTY was ambiguous — and the ambiguity always resolved the unsafe
+# way, straight into `git pull --ff-only` on a tree whose state was never established.
+# The exit code is the only thing that separates the two cases, so check it. Kept symmetric
+# with the .ps1 side (IR-022).
+# stderr goes to its own file rather than into DIRTY: git writes CRLF warnings there, and
+# folding those into the value would make a clean tree look dirty and trigger a reset --hard.
+# But it must be kept — reporting only an exit code repeats the mistake this release is about.
+STATUS_ERR="${LOG_FILE}.status"
+DIRTY=$(git status --porcelain 2>"${STATUS_ERR}")
+STATUS_CODE=$?
+cat "${STATUS_ERR}" >>"${LOG_FILE}" 2>/dev/null || true
+if [ "${STATUS_CODE}" -ne 0 ]; then
+  report_error "upgrade_git_status_failed" "git status --porcelain exited ${STATUS_CODE}: $(last_log_lines "${STATUS_ERR}")" "${STATUS_ERR}"
+  # No rollback: nothing has been modified yet. The backup copy stays for sweep-old-backups.
+  FAIL "git_status" "git status failed (exit ${STATUS_CODE}); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
+fi
 if [ -n "${DIRTY}" ]; then
   STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"
-  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main" "${LOG_FILE}.dirty"
+  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
   if git fetch origin >>"${LOG_FILE}" 2>&1 \
      && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
     OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
   else
-    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed" "${LOG_FILE}"
+    report_error "upgrade_git_pull_failed" "fetch + reset --hard origin/main failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
-    FAIL "git_pull" "Force-align failed (network or permissions); backup restored"
+    FAIL "git_pull" "Force-align failed (network or permissions); $(rollback_note)"
   fi
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull complete"
 else
-  report_error "upgrade_git_pull_failed" "git pull --ff-only failed (network or non-ff merge)" "${LOG_FILE}"
+  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
   rollback
-  FAIL "git_pull" "git pull failed; backup restored. Manual check: cd ~/.ownmind && git status"
+  FAIL "git_pull" "git pull failed; $(rollback_note). Manual check: cd ~/.ownmind && git status"
 fi
 
 # --- 3. npm install (MCP deps) ---
@@ -123,13 +236,13 @@ if [ -f "${OWNMIND_DIR}/mcp/package.json" ]; then
     OK "npm_install" "MCP dependencies updated"
   else
     if is_file_lock_error "${LOG_FILE}"; then
-      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running)" "${LOG_FILE}"
+      report_error "upgrade_file_locked" "npm install hit file lock (likely Claude Code running): $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
       rollback
-      FAIL "file_locked" "Files in use by another process (likely Claude Code). Close Claude Code completely, then re-run upgrade."
+      FAIL "file_locked" "Files in use by another process (likely Claude Code); $(rollback_note). Close Claude Code completely, then re-run upgrade."
     fi
-    report_error "upgrade_npm_install_failed" "MCP npm install failed" "${LOG_FILE}"
+    report_error "upgrade_npm_install_failed" "MCP npm install failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
     rollback
-    FAIL "npm_install" "MCP npm install failed; backup restored. Check ${LOG_FILE}"
+    FAIL "npm_install" "MCP npm install failed; $(rollback_note). Check ${LOG_FILE}"
   fi
 fi
 
@@ -161,15 +274,26 @@ if [ -z "${API_KEY}" ] || [ -z "${API_URL}" ]; then
     OK "install" "update.sh complete (scheduler not re-registered; run install.sh manually if needed)"
   else
     rollback
-    FAIL "install" "scripts/update.sh also failed; backup restored"
+    FAIL "install" "scripts/update.sh also failed; $(rollback_note)"
   fi
 else
   cd "${OWNMIND_DIR}"
-  if bash install.sh "${API_KEY}" "${API_URL}" >>"${LOG_FILE}" 2>&1; then
+  # v1.26.88 — exit 2 means "install.sh ran to the end and found itself incomplete".
+  # Do NOT roll back on 2: rollback() only replaces ${OWNMIND_DIR}, while install.sh has
+  # already rewritten ~/.claude/settings.json, the hook scripts, the skill files and
+  # git's core.hooksPath. Restoring the code alone would pair old code with new
+  # configuration, and it cannot produce the missing artifacts anyway. The self-check
+  # inside install.sh has already reported the condition to the server.
+  install_status=0
+  bash install.sh "${API_KEY}" "${API_URL}" >>"${LOG_FILE}" 2>&1 || install_status=$?
+  if [ "${install_status}" -eq 0 ]; then
     OK "install" "Setup complete"
+  elif [ "${install_status}" -eq 2 ]; then
+    report_error "install_incomplete" "install.sh exited 2 (artifacts missing); not rolled back: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+    STEP "install" "Installation finished but is incomplete — see ${LOG_FILE}. Not rolled back (rollback cannot create the missing parts). Re-run: bash ~/.ownmind/scripts/bootstrap.sh"
   else
     rollback
-    FAIL "install" "install.sh failed (see ${LOG_FILE}); backup restored"
+    FAIL "install" "install.sh failed (see ${LOG_FILE}); $(rollback_note)"
   fi
 fi
 
@@ -201,8 +325,11 @@ if [ -x "${OWNMIND_DIR}/scripts/verify-upgrade.sh" ]; then
   if bash "${OWNMIND_DIR}/scripts/verify-upgrade.sh" --local >>"${LOG_FILE}" 2>&1; then
     OK "verify_local" "Local components present"
   else
+    # NOTE: the .ps1 side stopped rolling back here in v1.17.66 ("verify is a post-hoc health
+    # check, it does not gate the upgrade") but this side still does. Left as-is rather than
+    # changed silently — see the PR discussion; only the message is made truthful here.
     rollback
-    FAIL "verify_local" "Local verification failed (missing files). See ${LOG_FILE}"
+    FAIL "verify_local" "Local verification failed (missing files); $(rollback_note). See ${LOG_FILE}"
   fi
 
   STEP "verify_server" "Verifying server connectivity (write/read + iron rule)"
@@ -280,11 +407,14 @@ OK "done" "Upgrade complete -> version ${VERSION}. Backup kept at ${BACKUP_DIR} 
 # fail-fast 5s timeout + spool fallback, sidestepping that race.
 send_upgrade_complete_beacon() {
   local version="$1"
-  local claude_settings="$HOME/.claude/settings.json"
-  [ -f "$claude_settings" ] || return
+  # v1.26.88 — to_win_path, or node.exe never finds it under Git Bash and this beacon
+  # silently returns empty credentials on every Windows machine. Bug report #15.
+  local claude_settings
+  claude_settings="$(to_win_path "$HOME/.claude/settings.json")"
+  [ -f "$HOME/.claude/settings.json" ] || return
   local api_key api_url
-  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>/dev/null)
-  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>/dev/null)
+  api_key=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_KEY } catch { '' }" 2>>"${LOG_FILE:-/dev/null}")
+  api_url=$(node -p "try { require('$claude_settings').mcpServers.ownmind.env.OWNMIND_API_URL } catch { '' }" 2>>"${LOG_FILE:-/dev/null}")
   [ -n "$api_key" ] && [ -n "$api_url" ] || return
   local ts machine platform body
   ts="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
