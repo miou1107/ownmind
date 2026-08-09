@@ -1,5 +1,47 @@
 # OwnMind 更新紀錄
 
+## v1.26.107 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
+
+### 在這之前 `.github/` 底下只有 `CODEOWNERS`
+
+測試只在有人手動跑的機器上跑。開發在 macOS，Windows 專屬的路徑要嘛被 skip、要嘛根本不會執行。**在 Mac 上，一個只會在 Windows 壞的測試不是「失敗的測試」，是「看不見的測試」。** v1.26.104 那批問題全是這樣活下來的。
+
+新增 `.github/workflows/test.yml`：
+
+| | |
+|---|---|
+| 必過 | ubuntu × node 20、ubuntu × node 24、macOS × node 20 |
+| 只顯示不擋 | windows × node 20 |
+| 步驟 | `npm ci` → `node scripts/ensure-console-build.js` → `npm test` |
+
+node 20 是 Dockerfile 的正式環境版本，node 24 是開發機版本。不需要資料庫。這支不碰伺服器、沒有部署權限，換主機不影響它。
+
+Windows 暫時不擋合併：第一次跑有 109 個既有的紅。使用者是從 `main` 自動拉更新的，合併等於當天出貨，那些紅不能拿出貨當人質。
+
+一開始寫成 matrix leg 加 `continue-on-error`，第一次跑就發現不行 —— 那樣的 leg 在 `needs.<job>.result` 裡仍然回報 `failure`，讀那個值的 gate job 分不出「只有 Windows 紅」跟「全部都紅」。拆成獨立 job 讓這件事變成結構上的區別。
+
+### 第一天就抓到的：三個測試看起來是綠的，其實從來沒跑過
+
+**`install-failed-beacon-ps1` —— 從寫下來到現在沒在任何地方通過過。**
+
+它只抽 `function Fail`，但 `Fail` 內插 `$(Get-LastLogLines $LogFile)`，而那支定義在同一個檔案更下面，harness 沒帶進去。PowerShell 在組參數時就丟 CommandNotFoundException，還沒呼叫到 `Report-Error`，然後被 `Fail` 自己的 `catch { }` 吞掉。於是紀錄檔沒被寫出來，失敗長成一個 `os.tmpdir()` 底下的 ENOENT，看不出根因。改成從真實腳本遞迴把相依函式一起抽出來 —— 下一個相依會跟著被抽進來，而不是再把測試變成空殼。
+
+而它一直沒被發現，是因為它只找 `pwsh`：macOS 沒有 PowerShell，Windows 叫的是 `powershell`（5.1，也正是 `install.ps1` 實際呼叫的那個）。兩邊都 skip，**而 skip 跟 pass 在總結裡長得一模一樣。**
+
+原本斷言 `r.status === 1` 也分不出「Fail 丟了例外、catch 收掉」跟「腳本自己垮了」—— 兩種都是 1。改成 catch 裡 `exit 3` 並記下丟出來的訊息。
+
+**`scanner-schedule-repair` 的兩個 plist 案例 —— 只在 macOS 上跑得動。**
+
+它們呼叫 `plutil`，那是 macOS 專屬。其他平台一律 ENOENT，所以在 CI 出現之前，「macOS: ...」實際上等於「哪裡都沒有」。這兩個主張講的是一個產生出來的 XML 檔，在哪個平台都成立，所以直接檢查；`plutil` 存在時仍然照跑當交叉驗證 —— 它是 launchd 自己用的解析器，手寫的檢查沒資格取代它。
+
+反向驗證：把 helper 裡的 XML 跳脫拿掉，新的檢查在 Windows 上就紅了，訊息直接指名「有一個 `&` 沒有開啟任何 entity —— sed 的替換中繼字元活下來了」。那正是這個案例存在的理由，而在這之前它在 Windows 上根本不會執行。
+
+接著在 Windows 上露出第二個問題：預期值用 `path.join` 組，但 plist 裡的路徑是 helper 在 bash 裡寫的。Git Bash 把同一個目錄叫 `/tmp/…`，node 叫 `C:\Users\…\Temp\…`，等於拿同一個目錄的兩種正確寫法互比。改成比對真正要驗的那一段：`{HOME}` 有被代換、目錄名裡的 `&` 有活過 sed。
+
+### 一個測試只要寫成「有某個東西才跑」，在沒有那個東西的機器上就等於不存在
+
+三個都是同一種病，只是換了工具名字：`pwsh`、`plutil`。CI 的價值不只是多一台機器跑測試，是讓「跳過」這件事第一次變得看得見。
+
 ## v1.26.106 — 四個只在 Windows 上壞、而 Mac 測不到的問題
 
 這四個是同一個現象的四種形狀：這個 repo 沒有 CI，測試只在有人手動跑的機器上跑，而 Windows
