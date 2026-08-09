@@ -482,7 +482,7 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
 
   it('moving aside a marker that turned out to be fresh is a stand-down, not a licence', async () => {
     /**
-     * v1.26.110 — the window the racing test above finds only about half the time, pinned.
+     * v1.26.111 — the window the racing test above finds only about half the time, pinned.
      *
      * The move-aside protects whoever loses the rename. It does not establish that the file
      * renamed is the file that was measured: a process that wins the move, clears it, and

@@ -1,6 +1,6 @@
 # OwnMind 更新紀錄
 
-## v1.26.110 — `stat -f` 在 Linux 上不是安靜地失敗，於是更新鎖算不出年紀
+## v1.26.111 — `stat -f` 在 Linux 上不是安靜地失敗，於是更新鎖算不出年紀
 
 CI 開起來的第一天，ubuntu 那一欄的紅就是它。macOS 綠、Linux 紅 —— 這是前幾版那批 Windows 問題的鏡像：**在 Mac 上開發，壞在別的平台。**
 
@@ -40,6 +40,58 @@ the critical section` 在單核容器裡 60 次還是會紅 1～2 次。加上�
 
 
 而那條路上有一個既有的競爭窗口：`a leaked reclaim marker does not let two shell hooks into the critical section` 在 CPU 吃緊時會偶爾紅。單核容器實測 40 次紅 1 次；`main` 40 次 0 次，但 `main` 在 Linux 上根本走不到那條路。macOS 一直都走這條路而且是綠的，所以**這不是新的競爭，是新看得見的競爭**。協定自己的註解就寫著「刪掉再建立沒有原子作法，實作只能把窗口縮小」，所以這次不順手改設計，先記下來。
+
+## v1.26.110 — 四支測試在 Windows 上，連受測程式都沒被啟動過
+
+四支，三種形狀，共通點是：**失敗發生在受測程式跑起來之前**，而斷言事後才報「值不對」。
+
+### 1. `#!` 是核心的功能，Windows 沒有
+
+`git-hook-co-authored-by` 與 `commit-msg-rules` 直接把 shell 腳本當執行檔啟動：
+
+```js
+execFileSync(HOOK, [msgFile], …)   // HOOK = hooks/ownmind-git-commit-msg，開頭是 #!/usr/bin/env bash
+```
+
+macOS 與 Linux 上核心會讀 `#!` 挑直譯器。Windows 沒有這個機制，CreateProcess 收到的是一個文字檔，行程根本沒起來——回傳的 exit code 是 `-1` 或 `null`，而斷言寫的是 `assert.equal(r.status, 1)`，於是報告變成「應該擋下來卻沒擋」。**掛勾看起來壞了，其實它一次都沒被執行。**
+
+改成明講直譯器：`execFileSync('bash', [HOOK, msgFile])`。三個檔案的 shebang 本來就寫 bash，所以在每個平台上都是同一件事。
+
+### 2. `/bin/bash` 不是 Windows 上的檔案
+
+`run-scanner-wrapper` 寫死 `spawn('/bin/bash', …)`。node 在 Windows 上用 Win32 規則解析執行檔，`/bin/bash` 不存在，八個案例全部 `ENOENT`。改成 `bash`，三個平台都找得到。
+
+### 3. 又是 `PATH` 給錯對象
+
+同一支測試把整組受限環境交給 spawn，`PATH: '/usr/bin:/bin'` 也在裡面。那個 PATH 是要逼 wrapper 走 `.node-path`，但 node 讀同一個變數去找 `bash.exe`。受測的環境改由一支 launcher 腳本 `export`，spawn 只拿到 node 啟動 bash 所需的東西。
+
+跟 v1.26.109 的 `path-helpers-bash` 是同一個錯誤的第二次出現——所以這次寫成守衛。
+
+### 4. Windows 路徑塞進生成的 JavaScript
+
+`load-settings-safe` 用 `node -e` 跑一小段程式：
+
+```js
+const { loadOrSkip } = require('${HELPER}');
+const result = loadOrSkip('${filePath.replace(/\\/g, '\\\\')}', …);
+```
+
+`filePath` 有跳脫，`HELPER` 沒有。於是 `C:\Users\…` 裡的 `\U` 被 JavaScript 當成跳脫序列吃掉，`require()` 找不到一個一直都在那裡的檔案。**兩個參數一個有跳脫一個沒有，正是讓沒跳脫的那個看起來沒問題的原因。** 兩個都改用 `JSON.stringify`。
+
+### 結果（本機 Windows）
+
+| 測試檔 | 之前 | 之後 |
+|---|---|---|
+| `run-scanner-wrapper` | 8 紅 | **0** |
+| `git-hook-co-authored-by` | 7 紅 | **0** |
+| `commit-msg-rules` | 7 紅 | **0** |
+| `load-settings-safe` | 6 紅 | **0** |
+
+### 守衛：`tests/bash-c-escaping.test.js` 多一個案例
+
+不准有測試用絕對 POSIX 路徑指定直譯器（`'/bin/bash'`、`'/usr/bin/env'`）。只看 spawn 家族的**第一個參數**——同樣的字串出現在預期值或 stub 的回傳值裡，是關於受測平台的資料，不是這個測試要啟動的行程。反向驗過：把 `/bin/bash` 放回去，守衛指名 `run-scanner-wrapper.test.js:67`。
+
+「直接執行 shell 腳本」那一項**沒有**寫成守衛，因為路徑通常是變數，靜態掃不可靠。與其假裝擋得住，不如記在這裡。
 
 ## v1.26.109 — `bash -c` 在 Windows 上會吃掉反斜線，於是測試跑的根本不是同一份腳本
 

@@ -205,7 +205,7 @@ acquire_update_lock() {
       # treatment: move it aside under a name only this process uses, and whoever loses the
       # move skips this round rather than racing for it.
       if mv "$reclaim" "$reclaim.dead.$$" 2>/dev/null; then
-        # v1.26.110 — what got moved is not necessarily what was measured. Between the read
+        # v1.26.111 — what got moved is not necessarily what was measured. Between the read
         # above and this rename, another process can win the same move, clear it, and create
         # its own fresh marker; the rename then succeeds on that one. Both processes are now
         # inside the reclaim section, and the age re-read below only protects the first one's

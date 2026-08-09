@@ -306,7 +306,7 @@ describe('v1.26.104 — the shell wrapper reaches the rule check', () => {
   function runWrapper(message, env = {}) {
     const msgPath = path.join(tmpRepo, 'MSG');
     fs.writeFileSync(msgPath, message);
-    return spawnSync(wrapper, [msgPath], {
+    return spawnSync('bash', [wrapper, msgPath], {
       cwd: tmpRepo,
       encoding: 'utf8',
       env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome, ...env },
@@ -367,7 +367,7 @@ describe('v1.26.104 — the shell wrapper reaches the rule check', () => {
     try {
       const msgPath = path.join(outside, 'MSG');
       fs.writeFileSync(msgPath, 'feat: clean\n');
-      const r = spawnSync(wrapper, [msgPath], {
+      const r = spawnSync('bash', [wrapper, msgPath], {
         cwd: outside,
         encoding: 'utf8',
         env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
@@ -384,7 +384,7 @@ describe('v1.26.104 — the shell wrapper reaches the rule check', () => {
     writeRulesCache([MUST_MENTION_TICKET_RULE]);
     const msgPath = path.join(tmpRepo, 'my commit message.txt');
     fs.writeFileSync(msgPath, 'feat: no ticket here\n');
-    const r = spawnSync(wrapper, [msgPath], {
+    const r = spawnSync('bash', [wrapper, msgPath], {
       cwd: tmpRepo,
       encoding: 'utf8',
       env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
