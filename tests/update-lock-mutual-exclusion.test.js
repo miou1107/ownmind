@@ -703,7 +703,7 @@ describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on st
   });
 });
 
-describe('v1.26.112 — lock_age_seconds, the cases a stubbed stat cannot reach', () => {
+describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach', () => {
   /**
    * The two tests above stub `stat` on `PATH`, which pins the dialect handling on every
    * platform — the important property, and the reason they exist. Four things stay out of
