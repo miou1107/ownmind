@@ -1,5 +1,54 @@
 # OwnMind 更新紀錄
 
+## v1.26.109 — `bash -c` 在 Windows 上會吃掉反斜線，於是測試跑的根本不是同一份腳本
+
+### 量出來的
+
+拿 `hooks/ownmind-session-start.sh` 裡真實的那一行去測：
+
+```
+bash 應該看到的：
+  sed 's/\\/\\\\/g; s/"/\\"/g'
+
+bash -c <字串>  -> ""      stderr: sed: -e expression #1, char 13: unknown option to `s'
+bash <檔案>     -> "pull"  stderr: 無
+```
+
+node 用 MSVCRT 規則把參數組成命令列，Git Bash 的 `bash.exe` 用 MSYS 規則把命令列拆回來。兩邊對「引號前面的反斜線」的看法不一樣，於是反斜線被吃掉一半。
+
+**傷害是安靜的**：sed 掛掉、值變成空字串，斷言報的是「值不對」而不是「引號壞了」。`hook-log-event-details` 從 v1.26.95 起就宣稱掛勾寫出 `{ step: '' }`——而掛勾在每個平台上寫的都是 `{ step: 'pull' }`。
+
+### 新增 `tests/helpers/bash-script.js`
+
+`execBashScript` / `spawnBashScript` 把腳本寫成檔案再交給 bash。檔案沒有命令列可以被重新解析，所以一個位元組都不會掉。**沒有平台分支**——檔案的形式在哪裡都是對的，而平台分支正是讓這種差異一直看不見的東西。
+
+同一支模組也提供 `toBashPath()`：`C:\Users\…\Temp\x` → `/c/Users/…/Temp/x`。Windows 路徑塞進 bash 的雙引號字串時，反斜線是跳脫字元，`\U` 跟 `\T` 會安靜地變成 `U` 跟 `T`，路徑就不存在了。macOS 與 Linux 的輸入沒有磁碟機代號也沒有反斜線，原樣回傳，所以呼叫端不需要分支。
+
+### 順著修好的三支測試（Windows 上 25 紅 → 0）
+
+| 測試檔 | 之前 | 之後 |
+|---|---|---|
+| `hook-log-event-details` | 13 紅 | **0** |
+| `path-helpers-bash` | 8 紅 | **0** |
+| `activity-carries-project` | 4 紅 | **0** |
+
+修的過程中又露出兩個藏在後面的：
+
+**`path-helpers-bash` 把 `PATH` 放在 spawn 的環境變數裡。** 那個 PATH 是要限制 bash 找不找得到 `cygpath` 的，但 node 也是讀同一個變數去找 `bash.exe`，而一個 POSIX 的 PATH 對 CreateProcess 毫無意義——整個 run 在 helper 被 source 之前就以 `status: null` 死掉。改成在腳本裡 `export PATH`。
+
+**而那個值本身也是錯的。** 案例叫「cygpath 不在 PATH 上」，用的值卻是 `/usr/bin:/bin`——Git Bash 的 cygpath 就住在 `/usr/bin/cygpath.exe`。這個案例在唯一有 cygpath 的平台上宣稱沒有 cygpath，測到的是自己名字的反面。`to_win_path` 只需要 `command -v` 跟 `echo`，兩個都是內建，所以空的 PATH 才是誠實的說法。
+
+**`activity-carries-project` 的 HOME 比對永遠不相等。** 測試把 HOME 用 Windows 路徑傳進去，MSYS 在 bash 裡把它換成 `/c/…`，而腳本裡設的 `CLAUDE_PROJECT_DIR` 還是 `C:\…`。掛勾的 `[ "$dir" != "$HOME" ]` 於是永遠成立，「家目錄不算專案」那條規則測不到。兩邊都走 `toBashPath()`。
+
+### 新增 `tests/bash-c-escaping.test.js`
+
+四個案例，**都不需要 Windows**：
+
+- 掃描 `tests/`，不准有新的檔案把生成的腳本交給 `bash -c`
+- 還沒轉換的 9 個檔案列在 `NOT_YET_CONVERTED`。**這份清單只能變短**——第二個案例會對「已經轉換卻還留在清單上」的項目報錯，所以清單不會比它記錄的債活得久
+- 實測檔案形式真的把腳本原樣送到（只斷言檔案形式：`bash -c` 在 macOS 與 Linux 上是對的，斷言它會壞等於讓這支測試在它針對的平台以外全部變紅，那是同一個錯誤的反方向）
+- `toBashPath()` 的轉換
+
 ## v1.26.108 — Windows 上，commit 前的密鑰掃描一直是關著的
 
 ### 一行程式，十個地方，只在 Windows 上壞

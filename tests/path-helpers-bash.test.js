@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawnBashScript, toBashPath as bp } from './helpers/bash-script.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,18 +23,28 @@ const helperPath = path.join(repoRoot, 'scripts', 'install-helpers', 'path-helpe
  */
 
 function runBash(script, env = {}) {
-  return spawnSync('bash', ['-c', script], {
+  // PATH is set inside the script, not in the spawn env. The cases below restrict PATH to
+  // control what bash can find; node reads the same variable to locate bash.exe, and a
+  // POSIX PATH is meaningless to CreateProcess, so passing it through kills the run with
+  // status null before the helper is sourced. Inside the script it restricts exactly the
+  // lookup the case is about and leaves node's alone.
+  const { PATH, ...restEnv } = env;
+  const prelude = PATH === undefined ? '' : `export PATH=${JSON.stringify(PATH)}\n`;
+  return spawnBashScript(prelude + script, {
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...restEnv },
   });
 }
 
 describe('v1.26.7 — to_win_path: fallback without cygpath', () => {
   it('returns input unchanged when cygpath is not on PATH', () => {
-    // Force an empty PATH (well, just /usr/bin which definitely has no cygpath).
     const r = runBash(
-      `. "${helperPath}" && to_win_path "/c/Users/Vin/.ownmind"`,
-      { PATH: '/usr/bin:/bin' }
+      `. "${bp(helperPath)}" && to_win_path "/c/Users/Vin/.ownmind"`,
+      // Empty, not '/usr/bin:/bin'. Git Bash ships cygpath in /usr/bin, so the old value
+      // asserted 'no cygpath' on the one platform where it is always there, and the case
+      // tested the opposite of its own name. to_win_path needs only command -v and echo,
+      // both builtins, so an empty PATH is the honest way to say the tool is absent.
+      { PATH: '' }
     );
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim(), '/c/Users/Vin/.ownmind');
@@ -42,8 +52,12 @@ describe('v1.26.7 — to_win_path: fallback without cygpath', () => {
 
   it('passes empty string through cleanly', () => {
     const r = runBash(
-      `. "${helperPath}" && to_win_path ""`,
-      { PATH: '/usr/bin:/bin' }
+      `. "${bp(helperPath)}" && to_win_path ""`,
+      // Empty, not '/usr/bin:/bin'. Git Bash ships cygpath in /usr/bin, so the old value
+      // asserted 'no cygpath' on the one platform where it is always there, and the case
+      // tested the opposite of its own name. to_win_path needs only command -v and echo,
+      // both builtins, so an empty PATH is the honest way to say the tool is absent.
+      { PATH: '' }
     );
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim(), '');
@@ -51,8 +65,12 @@ describe('v1.26.7 — to_win_path: fallback without cygpath', () => {
 
   it('passes already-Windows paths through unchanged on Mac/Linux', () => {
     const r = runBash(
-      `. "${helperPath}" && to_win_path "C:/Users/Vin"`,
-      { PATH: '/usr/bin:/bin' }
+      `. "${bp(helperPath)}" && to_win_path "C:/Users/Vin"`,
+      // Empty, not '/usr/bin:/bin'. Git Bash ships cygpath in /usr/bin, so the old value
+      // asserted 'no cygpath' on the one platform where it is always there, and the case
+      // tested the opposite of its own name. to_win_path needs only command -v and echo,
+      // both builtins, so an empty PATH is the honest way to say the tool is absent.
+      { PATH: '' }
     );
     assert.equal(r.status, 0);
     assert.equal(r.stdout.trim(), 'C:/Users/Vin');
@@ -94,8 +112,8 @@ fi
     setup();
     try {
       const r = runBash(
-        `. "${helperPath}" && to_win_path "/c/Users/Vin/.ownmind"`,
-        { PATH: `${tmpBin}:/usr/bin:/bin` }
+        `. "${bp(helperPath)}" && to_win_path "/c/Users/Vin/.ownmind"`,
+        { PATH: `${bp(tmpBin)}:/usr/bin:/bin` }
       );
       assert.equal(r.status, 0, `bash failed: ${r.stderr}`);
       assert.equal(r.stdout.trim(), 'C:/Users/Vin/.ownmind',
@@ -109,8 +127,8 @@ fi
     setup();
     try {
       const r = runBash(
-        `. "${helperPath}" && to_win_path "/d/data"`,
-        { PATH: `${tmpBin}:/usr/bin:/bin` }
+        `. "${bp(helperPath)}" && to_win_path "/d/data"`,
+        { PATH: `${bp(tmpBin)}:/usr/bin:/bin` }
       );
       assert.equal(r.status, 0);
       assert.equal(r.stdout.trim(), 'D:/data');
@@ -123,8 +141,8 @@ fi
     setup();
     try {
       const r = runBash(
-        `. "${helperPath}" && to_win_path "C:/Users/Vin"`,
-        { PATH: `${tmpBin}:/usr/bin:/bin` }
+        `. "${bp(helperPath)}" && to_win_path "C:/Users/Vin"`,
+        { PATH: `${bp(tmpBin)}:/usr/bin:/bin` }
       );
       assert.equal(r.status, 0);
       assert.equal(r.stdout.trim(), 'C:/Users/Vin');
@@ -183,8 +201,8 @@ fi
       // the path has gone through to_win_path() and the helper did NOT damage it.
       const r = runBash(
         `
-          . "${helperPath}"
-          OWNMIND_DIR="${path.join(tmpHome, '.ownmind')}"
+          . "${bp(helperPath)}"
+          OWNMIND_DIR="${bp(path.join(tmpHome, '.ownmind'))}"
           # Mac path is already in a form Node can read; helper must not damage it.
           OWNMIND_DIR_WIN="$(to_win_path "$OWNMIND_DIR")"
           node -p "require('$OWNMIND_DIR_WIN/package.json').version"
