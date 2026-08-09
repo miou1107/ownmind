@@ -48,7 +48,7 @@ const SHAPES = [
   {
     label: 'a test that never settles',
     // What the report has to come back with: the test's own name.
-    identify: () => 'sits there forever',
+    matches: (output) => output.includes('sits there forever'),
     body: [
       "import { it } from 'node:test';",
       "it('sits there forever', async () => { await new Promise(() => {}); });",
@@ -57,9 +57,8 @@ const SHAPES = [
   },
   {
     label: 'a file whose tests pass but which never exits',
-    // Nothing inside the file is stuck, so the file's own path is what has to come back —
-    // the whole path, not the basename every line of its output would carry anyway.
-    identify: (file) => file,
+    // Nothing inside the file is stuck, so the file itself is what has to come back.
+    matches: (output, file) => namesTheFile(output, file),
     body: [
       "import { it } from 'node:test';",
       "import net from 'node:net';",
@@ -165,6 +164,33 @@ async function hangsWithoutTheFlag(shape) {
   }
 }
 
+/**
+ * Canonical form for comparing a path against what the runner printed.
+ *
+ * TAP escapes backslashes, so a Windows path can come back doubled (`D:\\a\\…` for `D:\a\…`),
+ * and drive letters and user directories vary in case. Collapsing runs of backslashes to one
+ * forward slash and lowercasing makes the spellings comparable; on posix it changes nothing
+ * that matters here.
+ */
+function canonPath(s) {
+  return s.replace(/\\+/g, '/').toLowerCase();
+}
+
+/**
+ * Does `output` name `file`?
+ *
+ * Compared on the last two segments — the per-run probe directory and the file — rather than
+ * the whole path. On the Windows runner `os.tmpdir()` answers with a short 8.3 name
+ * (`C:\Users\RUNNER~1\...`, seen in that leg's own error text) while the runner reports the
+ * expanded one, so a whole-path comparison fails on a report that named the file perfectly
+ * well. The probe directory is `mkdtemp`-unique, so this is still an identification and not
+ * "the output mentions a file called probe.test.js".
+ */
+function namesTheFile(output, file) {
+  const tail = canonPath(file).split('/').slice(-2).join('/');
+  return canonPath(output).includes(tail);
+}
+
 /** @returns {{ended: boolean, named: boolean, output: string}} what the deadline did to it. */
 function runUnderTheFlag(shape) {
   const dir = tmpdir();
@@ -185,7 +211,7 @@ function runUnderTheFlag(shape) {
     // Matched on the name and the reason rather than on a TAP line: node 20 prints TAP when
     // stdout is a pipe, node 24 prints the spec reporter, and what matters is that the name
     // reaches whoever is reading the log — not which of the two shapes it arrives in.
-    const named = output.includes(shape.identify(file)) && /timed out after/.test(output);
+    const named = shape.matches(output, file) && /timed out after/.test(output);
     return { ended, named, output };
   } finally {
     removeProbeDir(dir);
@@ -205,6 +231,44 @@ function jobCapMs() {
   assert.ok(caps.length > 0, `${WORKFLOW} declares no timeout-minutes to measure against`);
   return Math.min(...caps);
 }
+
+describe('v1.26.116 — the file the runner named is recognised on Windows too', () => {
+  /**
+   * These run on every platform and are the only part of this file that can be developed
+   * against Windows behaviour from a Mac. The fixtures are the two spellings the Windows leg
+   * actually produced: `os.tmpdir()` answered with the 8.3 short form of the user directory
+   * (`C:\Users\RUNNER~1\…`, quoted verbatim in that leg's own EBUSY message) while TAP prints
+   * paths with doubled backslashes. Against a whole-path, case-sensitive comparison the
+   * report named the file and the check said it had not.
+   */
+  const WIN_FILE = 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\ownmind-hang-atWHQG\\probe.test.js';
+
+  it('a doubled-backslash path in the report still counts as named', () => {
+    const output = "not ok 1 - C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\"
+      + "ownmind-hang-atWHQG\\\\probe.test.js\n  error: 'test timed out after 500ms'";
+    assert.ok(namesTheFile(output, WIN_FILE), 'TAP escaping hid a file the report did name');
+  });
+
+  it('the expanded user directory still counts as named', () => {
+    const output = 'not ok 1 - C:\\Users\\runneradmin\\AppData\\Local\\Temp\\'
+      + 'ownmind-hang-atWHQG\\probe.test.js';
+    assert.ok(namesTheFile(output, WIN_FILE),
+      'the short 8.3 form of the temp directory hid a file the report did name');
+  });
+
+  it('a different run is not counted as named (negative control)', () => {
+    const output = 'not ok 1 - C:\\Users\\runneradmin\\AppData\\Local\\Temp\\'
+      + 'ownmind-hang-SOMEONEELSE\\probe.test.js';
+    assert.ok(!namesTheFile(output, WIN_FILE),
+      'another run\'s probe directory was accepted, so this matches any file of that name');
+  });
+
+  it('a posix path is unaffected', () => {
+    const file = '/tmp/ownmind-hang-abc123/probe.test.js';
+    assert.ok(namesTheFile(`not ok 1 - ${file}`, file));
+    assert.ok(!namesTheFile('not ok 1 - /tmp/ownmind-hang-zzz999/probe.test.js', file));
+  });
+});
 
 describe('v1.26.114 — a hung run names what it is stuck on', () => {
   it('every script that runs the runner carries a deadline', () => {
@@ -248,6 +312,10 @@ describe('v1.26.114 — a hung run names what it is stuck on', () => {
     assert.fail(
       `the deadline ended and named none of the ${tried.length} shape(s) that hang on `
       + `${process.version}:\n`
-      + tried.map((r) => `— ${r.shape.label}: ended=${r.ended} named=${r.named}`).join('\n'));
+      // The output goes in the message: this only ever fails on a platform the author is
+      // not on, and a bare ended/named pair sends the next person back to CI for another
+      // round-trip to find out what the runner actually printed.
+      + tried.map((r) => `— ${r.shape.label}: ended=${r.ended} named=${r.named}\n`
+        + `  output: ${JSON.stringify(r.output.slice(0, 800))}`).join('\n'));
   });
 });
