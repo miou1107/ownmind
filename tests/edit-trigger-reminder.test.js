@@ -407,26 +407,30 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
   const EXPECTED = ['Bash', 'Edit|Write|MultiEdit|NotebookEdit'];
 
   /**
-   * Runs install.sh's real settings-editing block, twice.
+   * Runs the installer's real PreToolUse step, twice.
    *
    * Twice on purpose: the presence check used to ask "is this hook registered anywhere in
    * PreToolUse", which is true on every existing install — so the second matcher would
    * never have reached anyone who already had the first, and every user is an upgrade.
    * A single run cannot tell the two behaviours apart.
+   *
+   * v1.26.103: this used to slice the node -e block out of install.sh and eval it, which
+   * only ever exercised the bash copy — install.ps1 held its own and rotted unwatched. The
+   * step now lives in ensure-pretooluse-hooks.cjs and all four scripts call it, so the test
+   * runs the helper the same way install.sh does. --bash matches install.sh's invocation.
    */
   function runInstallerBlock(settingsPath) {
     const installSh = fs.readFileSync(path.join(repoRoot, 'install.sh'), 'utf8');
-    const start = installSh.indexOf('# --- 4c.');
-    assert.ok(start > 0, 'install.sh no longer has the 4c hook-settings step');
-    const open = installSh.indexOf('node -e "', start);
-    const close = installSh.indexOf('\n" 2>>', open);
-    assert.ok(open > 0 && close > open, 'could not find the node -e block in step 4c');
-
-    const script = installSh
-      .slice(open + 'node -e "'.length, close)
-      .replaceAll('$CLAUDE_SETTINGS_WIN', settingsPath)
-      .replaceAll('\\"', '"');
-    execFileSync(process.execPath, ['-e', script], { stdio: 'ignore' });
+    assert.ok(
+      installSh.includes('ensure-pretooluse-hooks.cjs'),
+      'install.sh no longer delegates PreToolUse registration to the shared helper'
+    );
+    const helper = path.join(repoRoot, 'scripts', 'install-helpers', 'ensure-pretooluse-hooks.cjs');
+    execFileSync(
+      process.execPath,
+      [helper, settingsPath, '--ownmind-dir', path.join(os.homedir(), '.ownmind'), '--bash'],
+      { stdio: 'ignore' }
+    );
   }
 
   it('adds both entries, and adds nothing on a second run', () => {

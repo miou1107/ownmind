@@ -267,11 +267,11 @@ if (Test-Path $ClaudeSettings) {
     // ~/.ownmind/.no-session-hook opt-out). This script used to make that decision inline,
     // one divergent copy per installer, and the daily one always won.
 
-    if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
-    if (!s.hooks.PreToolUse.some(h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-iron-rule-check')))) {
-      s.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }] });
-      changed = true;
-    }
+    // v1.26.103 — PreToolUse is handled by ensure-pretooluse-hooks.cjs in section 3.3b below.
+    // What used to be here was the oldest copy of that logic: one matcher, a presence check
+    // across the whole array, and a bash command written onto Windows machines where
+    // ~/.claude/hooks is not reachable through a WSL relay. Three separate reasons it could
+    // not be right, in a script whose entire audience is upgrades.
 
     if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
     if (!s.hooks.WorktreeCreate.some(h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-worktree-setup')))) {
@@ -294,6 +294,15 @@ if (Test-Path $ClaudeSettings) {
     Report-Error -Kind "update_settings_inject_failed" -Detail "Claude settings hook 注入 node 腳本失敗：$_" -ContextFile $ErrLog
   }
   Remove-Item $tmpScript -ErrorAction SilentlyContinue
+}
+
+# --- 3.3b PreToolUse iron-rule hooks (v1.26.103, delegated to the shared implementation) ---
+# No --bash: Windows always runs the node hook out of the checkout (see install.ps1's v1.26.80
+# note — System32\bash.exe is a WSL launcher, and ~ inside it is not this machine's home).
+$EnsurePreHook = Join-Path $OwnMindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"
+if (Test-Path $EnsurePreHook) {
+  $preHookResult = & node $EnsurePreHook $ClaudeSettings --ownmind-dir $OwnMindDir 2>&1
+  Write-Host "   PreToolUse iron-rule hook: $preHookResult"
 }
 
 # --- 3.4 SessionStart hook (v1.26.86, delegated to the shared implementation) ---
