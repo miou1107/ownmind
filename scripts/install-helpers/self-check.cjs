@@ -58,6 +58,11 @@ const TIMEOUT_MS = 5000;
 // so on macOS the same constant is 250x of headroom. The budget was never sized for the
 // Windows call - it was sized for the Unix one and reused.
 const CIM_TIMEOUT_MS = 30000;
+// v1.26.117 - the MCP preflight starts a real server through cmd.exe on Windows. Measured on
+// TANK: 693ms warm. The budget is deliberately far above that for the same reason
+// CIM_TIMEOUT_MS is: exceeding it means "cannot tell", and a check that reports "cannot tell"
+// too eagerly is noise, while one that reports "broken" too eagerly is a lie.
+const MCP_PREFLIGHT_TIMEOUT_MS = 20000;
 
 // ============================================================
 // Helpers
@@ -168,6 +173,48 @@ async function checkMcpRegistered() {
     );
   }
   return pass('mcp_registered', '~/.claude.json');
+}
+
+/**
+ * Registered is not started: launch the entry Claude Code would launch, and ask it for tools.
+ *
+ * v1.26.117 — `mcp_registered` above reads the file and stops there, which is everything
+ * v1.26.112 needed and nothing the four "registered but does not start" defects would have
+ * shown (see mcp-preflight.cjs for the list). This check spawns the registered command
+ * verbatim, completes the JSON-RPC handshake and counts the `ownmind_*` tools.
+ *
+ * Fail-open by design: a timeout maps to `warn`, never `fail`. A cold or loaded machine can
+ * miss any budget while being healthy, and self-check runs at the end of an install — the
+ * busiest moment there is. v1.26.106 already uploaded one fabricated FAIL from a check that
+ * treated slow as broken; this one says "unknown" instead, and `mcp_registered` keeps the
+ * cheap certainty either way.
+ */
+async function checkMcpLaunches(opts = {}) {
+  // `preflight` is injectable so the mapping below can be asserted for every status without
+  // a real server. The mapping is the whole point of this function — the status it must not
+  // produce is `fail` on an `unknown` — and a rule with no test is a rule with a countdown.
+  let preflight = opts.preflight;
+  if (!preflight) {
+    try {
+      ({ preflightMcp: preflight } = require('./mcp-preflight.cjs'));
+    } catch (e) {
+      // warn, not fail, for the same reason a timeout warns: a diagnostic that cannot run has
+      // said nothing about the machine.
+      return warn('mcp_launches', `mcp-preflight.cjs unavailable (${e.message})`, 'Re-run bootstrap');
+    }
+  }
+  const r = await preflight({
+    home: opts.home || HOME,
+    timeoutMs: opts.timeoutMs || MCP_PREFLIGHT_TIMEOUT_MS,
+  });
+  if (r.status === 'ok') return pass('mcp_launches', r.reason);
+  if (r.status === 'unknown') {
+    return warn('mcp_launches', `unknown: ${r.reason}`,
+      'Not a failure. Re-run when the machine is idle: node ~/.ownmind/scripts/install-helpers/mcp-preflight.cjs');
+  }
+  return fail('mcp_launches', r.reason,
+    'The entry in ~/.claude.json exists but does not produce a working server. Run '
+    + 'node ~/.ownmind/scripts/install-helpers/mcp-preflight.cjs for the full result, then re-run bootstrap.');
 }
 
 async function checkPackageVersion() {
@@ -987,7 +1034,11 @@ const QUICK_SKIP = ['usage_roundtrip'];
 
 async function checkNamesFor({ quick = false } = {}) {
   const all = [
-    'mcp_files', 'package_version', 'mcp_node_modules', 'server_health',
+    // v1.26.117 — `mcp_registered` has run since v1.26.112 and was never declared here, so
+    // the "declared but never run" test could not see it and neither could the quick/full
+    // split. Both MCP checks are named now: this list is the answer to "which checks run",
+    // and a check missing from it is invisible to every assertion made about the set.
+    'mcp_files', 'mcp_registered', 'mcp_launches', 'package_version', 'mcp_node_modules', 'server_health',
     'api_key_format', 'credential_agreement', 'background_credentials', 'api_credentials', 'git_hooks',
     'install_complete', 'scheduler',
     'memory_load', 'usage_roundtrip',
@@ -1000,6 +1051,9 @@ async function runAllChecks({ quick = false } = {}) {
   const checks = [];
   checks.push(await safeCheck('mcp_files', checkMcpFiles));
   checks.push(await safeCheck('mcp_registered', checkMcpRegistered));
+  // v1.26.117 — right after it, because it answers the half the one above cannot: the entry
+  // is there, does it start and does it carry the tools.
+  checks.push(await safeCheck('mcp_launches', checkMcpLaunches));
   checks.push(await safeCheck('package_version', checkPackageVersion));
   checks.push(await safeCheck('mcp_node_modules', checkMcpNodeModules));
   checks.push(await safeCheck('server_health', () => checkServerHealth(apiUrl)));
@@ -1405,6 +1459,8 @@ async function main() {
 // Exported for tests.
 module.exports = {
   checkMcpFiles, checkMcpRegistered, checkPackageVersion, checkMcpNodeModules,
+  // v1.26.117 — registered is not started.
+  checkMcpLaunches, MCP_PREFLIGHT_TIMEOUT_MS,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
   checkBackgroundCredentials,

@@ -351,6 +351,13 @@ function renderBroadcasts(broadcasts) {
 // flight POST also short-circuit, instead of racing multiple POSTs.
 let heartbeatSent = false;
 async function sendMcpHeartbeat() {
+  // v1.26.117 — the self-check's mcp_launches starts this server on purpose, to find out
+  // whether the registered command produces one (scripts/install-helpers/mcp-preflight.cjs).
+  // That start is a diagnostic, not a session: letting it beat would refresh this machine's
+  // heartbeat every self-check run, including the unattended daily one, and the heartbeat is
+  // what collector-silence reads to decide a machine has stopped reporting. A check that
+  // quietly vouches for the thing it is checking is worse than no check.
+  if (process.env.OWNMIND_PREFLIGHT === '1') return;
   if (heartbeatSent) return;
   heartbeatSent = true;
   try {
