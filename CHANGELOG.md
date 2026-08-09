@@ -1,6 +1,6 @@
 # OwnMind 更新紀錄
 
-## v1.26.105 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
+## v1.26.106 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
 
 ### 在這之前 `.github/` 底下只有 `CODEOWNERS`
 
@@ -41,6 +41,55 @@ Windows 暫時不擋合併：第一次跑有 109 個既有的紅。使用者是�
 ### 一個測試只要寫成「有某個東西才跑」，在沒有那個東西的機器上就等於不存在
 
 三個都是同一種病，只是換了工具名字：`pwsh`、`plutil`。CI 的價值不只是多一台機器跑測試，是讓「跳過」這件事第一次變得看得見。
+
+## v1.26.105 — 同一個設定檔裡，一個掛勾在跑，一個死了四個月
+
+### 量到的狀況
+
+2026-08-09，一台升上 v1.26.102 的 Windows，`~/.claude/settings.json` 裡兩筆鐵律掛勾：
+
+```
+matcher                          command                                            實測
+Bash                             node "~/.claude/hooks/ownmind-iron-rule-check.js"  exit 1，ERR_MODULE_NOT_FOUND
+Edit|Write|MultiEdit|NotebookEdit node "~/.ownmind/hooks/ownmind-iron-rule-check.js" exit 0
+```
+
+兩個檔案位元組完全一樣，差別只有位置。放在 `~/.claude/hooks` 的那份會去 import
+`../shared/helpers.js`，而 `~/.claude/shared/` 不存在、也沒有任何安裝腳本會建立它，所以 node
+連 payload 的第一個位元組都沒讀到就結束。使用者每下一個 Bash 指令，鐵律檢查就在看不到的地方
+死一次——掛勾本來就該安靜，所以沒有人會發現。
+
+### 為什麼 v1.26.92 修了卻沒修到
+
+v1.26.92 已經知道這條路徑是壞的，也把新裝的指向 checkout。但它的判斷是「這個 matcher 底下
+有沒有哪一筆 command 提到 `ownmind-iron-rule-check`」——舊的那筆**提到了**。於是壞掉的指令
+自己滿足了自己的修復條件，永遠不會被改。v1.26.92 只修到全新安裝；升級戶才是全部人口，而
+`Edit` 那筆之所以是對的，只因為它是那次新加的。
+
+四份同樣的邏輯散在 install.ps1、install.sh、update.ps1、update.sh 裡，其中只有 bash 那份
+跑得到 CI。爛掉的正好是沒有測試碰得到的那半邊。
+
+### 這版怎麼修
+
+- 抽出 `scripts/install-helpers/ensure-pretooluse-hooks.cjs`，四支安裝／升級腳本共用同一份
+- 指令**不一樣就改寫**，不再把「存在」當成「正確」
+- update.ps1 / update.sh 裡最舊的那份順手一起換掉（只有一個 matcher、全陣列比對，而且會在
+  Windows 上寫入 bash 指令）
+- 安裝自檢改成讀 settings.json 裡**實際註冊的那條指令**，不再問「某處有沒有一份副本」。
+  但光這樣還是抓不到那台機器 —— 兩份副本位元組一樣，註冊的那個檔案**是在的**，缺的是它第一行
+  import 的 `../shared/helpers.js`。所以再加一項檢查：那個 import 解不解得開。**存在不等於跑得起來。**
+- `install.sh` 的 helper 呼叫改成 `if var=$(...); then`。`set -eE` 底下裸的 `VAR=$(...)` 會把
+  helper 的結束碼帶出來、當場中止安裝，底下所有步驟（包含安裝自檢本身）全部不會跑；而且 `2>&1`
+  收進一個失敗路徑不會印的變數，等於連為什麼都看不到。這個檔案開頭就寫過這個組合曾經讓一個致命
+  錯誤四個月沒有任何輸出。兩支更新腳本本來就有包，只有 install.sh 沒有
+- 20 個行為測試，包含上面那台機器的實際狀態當回歸案例
+
+### 順帶：升級不再每次都走強制覆蓋
+
+`.gitignore` 補上六個安裝腳本自己寫進 checkout 的執行時檔案（`.node-path`、`.git-bash-path`、
+`cache/`、`git-hooks/` 等）。這個檔案開頭的註解早就寫過這個坑，但名單停在 `.update-lock*`，
+所以實機每次升級都判定成 dirty tree、每次都 `git reset --hard`。真正的代價不是那次覆蓋，是
+那句警告變成每次都出現的雜訊——使用者真的手改過的東西，會混在同一行訊息裡捲過去。
 
 ## v1.26.104 — 檢查 commit 訊息的那道關卡，讀的是上一次的訊息
 

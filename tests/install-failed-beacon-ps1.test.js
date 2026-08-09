@@ -20,7 +20,7 @@ const repoRoot = path.resolve(__dirname, '..');
  * version — pull it from the real interactive-upgrade.ps1 + dot-source a mock Report-Error
  * stub that records calls.
  *
- * v1.26.105 — this test had not passed anywhere since it was written, and nobody could tell.
+ * v1.26.106 — this test had not passed anywhere since it was written, and nobody could tell.
  * Two reasons, and the second one is why the first went unnoticed for so long:
  *
  *  1. It extracted `function Fail` alone. Fail interpolates `$(Get-LastLogLines $LogFile)`
