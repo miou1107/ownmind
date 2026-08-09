@@ -432,7 +432,7 @@ Write-Host "[ OK ] Installed hook scripts"
 # 現在 Windows 一律走 node：OwnMind 本來就要求 Node 20+，絕對路徑也沒有殼層可以再解讀。
 $HookCmdHelper = Join-Path $OwnmindDir "scripts\install-helpers\session-hook-command.cjs"
 
-# PreToolUse hook — v1.26.103, delegated to ensure-pretooluse-hooks.cjs
+# PreToolUse hook — v1.26.105, delegated to ensure-pretooluse-hooks.cjs
 #
 # Two things moved out of this file. The first is the logic: it lived here in PowerShell and
 # again as a node block inside install.sh, and only the bash copy was reachable from CI — the
@@ -466,7 +466,7 @@ if (Test-Path $PreHookHelper) {
 #
 # Every hook helper from here up edits settings.json on disk, so nothing in this section may
 # hold a parsed snapshot across a helper call and write it back — that write would revert the
-# helper's work. v1.26.103 removed the last such snapshot (the PreToolUse block above), which
+# helper's work. v1.26.105 removed the last such snapshot (the PreToolUse block above), which
 # is why the ordering constraint that used to be spelled out here no longer has a subject.
 $EnsureHook = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-session-hook.cjs'
 if (Test-Path $EnsureHook) {
@@ -535,7 +535,7 @@ $VerificationSrc = Join-Path $OwnmindDir "shared\verification.js"
 Copy-IfDifferent -Src $VerificationSrc -DestDir (Join-Path $HOME ".ownmind\shared\") -Label "verification engine"
 
 # 複製 git hook JS 檔案
-$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
+$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-commit-msg.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
 foreach ($jsFile in $GitHookJsFiles) {
   $src = Join-Path $OwnmindDir "hooks\$jsFile"
   Copy-IfDifferent -Src $src -DestDir (Join-Path $HOME ".ownmind\hooks\") -Label $jsFile
