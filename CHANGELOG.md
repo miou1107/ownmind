@@ -34,6 +34,20 @@ Claude Code 有兩個設定檔，長得很像：
 
 兩個都跟主 bug 是同一句話：正確地寫進了錯的檔案，而檢查沒有問是哪個檔案。
 
+### 修的過程本身又踩了三次同一個坑
+
+實作時想把註冊邏輯用 `node -e` 塞進四支腳本，結果：
+
+1. **PowerShell 5.1 會把傳給原生執行檔的參數裡的雙引號拿掉。** 三行探針實測印出三個 `NaN` —— 因為 `console.log("x=" + argv[1])` 到了 node 手上變成 `console.log(x=+argv[1])`，也就是把 `+undefined` 指派給一個全域變數。沒有任何東西丟例外，區塊只是回報「無法註冊」然後往下走。而 PowerShell 的語法檢查器說這段腳本完美無缺。
+2. **改傳 JSON 也一樣**被拆掉引號。這次是新的 CLI 自己喊出來的：`PROBLEM the MCP entry did not survive the shell`。
+3. **Git Bash 會把看起來像 POSIX 路徑的參數改寫掉。** `cmd.exe` 的 `/c` 旗標正好長那樣，實測到達 node 時變成 `C:/`，會被寫進啟動指令 —— Windows 使用者會拿到一個根本啟動不了的設定。
+
+install.sh 的註解裡早就寫著結論：「argv 是唯一沒有引號層可以搞砸的形狀」。然後這次的 MCP 接線自己又加了一層引號。
+
+所以現在有 `register-mcp-cli.cjs`：磁碟上一個真的檔案、每個值各自一個 argv 元素、任何 shell 都不用嵌 JavaScript，並且對 Git Bash 關掉路徑轉換。
+
+順帶抓到第四個：PowerShell 的 `Set-Content -Encoding utf8` 會寫 BOM，而 `JSON.parse` 碰到 BOM 會丟例外 —— 升級路徑讀 `settings.json` 原本用的是裸的 `JSON.parse`，所以任何被 PowerShell 工具碰過的機器都會靜靜回報 NOENTRY。只在 Windows 上發生。是用 PowerShell 而不是 Node 去寫測試 fixture 才撞出來的。
+
 ### self-check 現在會問這件事
 
 `mcp_files` 確認 server 檔案在、`mcp_node_modules` 確認它跑得起來 —— 一台工具完全不存在的機器，這兩項都是綠的。**決定它會不會被啟動的那個檔案，沒有任何一項在看。**

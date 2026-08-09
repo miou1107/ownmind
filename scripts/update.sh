@@ -276,35 +276,9 @@ mkdir -p "$(dirname "$ERR_LOG")"
 # this neither invents nor moves a key — a machine with no credentials is left alone.
 REGISTER_MCP="$OWNMIND_DIR/scripts/install-helpers/register-mcp.cjs"
 if [ -f "$REGISTER_MCP" ]; then
-  MCP_REG_OUT=$(node -e '
-    const { registerMcp, isRegisteredForClaudeCode } = require(process.argv[1]);
-    const { resolveCredentials } = require(process.argv[2]);
-    const home = process.argv[3];
-    const before = isRegisteredForClaudeCode({ home });
-    if (before.registered) { console.log("ALREADY"); process.exit(0); }
-    // `{ home }`, not the default: resolveCredentials would otherwise read os.homedir()
-    // while registerMcp writes the home we were handed. Reading one machine profile and
-    // writing another is the same two-files-nobody-compares defect this release is about.
-    const creds = resolveCredentials({ home });
-    if (!creds.apiKey || !creds.apiUrl) { console.log("NOCREDS"); process.exit(0); }
-    // Reuse the entry the installer already wrote, so the command line for launching the
-    // server is not re-derived here and cannot drift from install.sh.
-    const fs = require("fs"), path = require("path");
-    let entry = null;
-    try {
-      const s = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
-      const prev = s.mcpServers && s.mcpServers.ownmind;
-      if (prev && prev.command) entry = { command: prev.command, args: prev.args || [] };
-    } catch { /* fall through */ }
-    if (!entry) { console.log("NOENTRY"); process.exit(0); }
-    const r = registerMcp({ entry, apiUrl: creds.apiUrl, apiKey: creds.apiKey, home });
-    for (const p of r.problems) console.log("PROBLEM " + p);
-    console.log(r.verified ? "REGISTERED" : "FAILED");
-  ' "$(to_win_path "$REGISTER_MCP")" \
-    "$(to_win_path "$OWNMIND_DIR/scripts/install-helpers/resolve-credentials.cjs")" \
-    "$(to_win_path "$HOME")" 2>>"$ERR_LOG")
+  MCP_REG_OUT=$(node "$(to_win_path "$OWNMIND_DIR/scripts/install-helpers/register-mcp-cli.cjs")" --upgrade "$(to_win_path "$HOME")" 2>>"$ERR_LOG")
   case "$MCP_REG_OUT" in
-    *REGISTERED*) echo "   MCP 已註冊到 ~/.claude.json（Claude Code 從這裡啟動它，重開 session 後生效）" ;;
+    *VERIFIED*) echo "   MCP 已註冊到 ~/.claude.json（Claude Code 從這裡啟動它，重開 session 後生效）" ;;
     *ALREADY*)    : ;;
     *NOCREDS*|*NOENTRY*) : ;;
     *) echo "   [WARN] MCP 無法註冊到 ~/.claude.json，ownmind_* 工具在 Claude Code 裡不會出現" ;;

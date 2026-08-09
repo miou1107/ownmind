@@ -160,6 +160,37 @@ describe('v1.26.112 — the MCP server is registered where Claude Code launches 
     });
   });
 
+  it('the upgrade path reads a settings.json written by PowerShell (BOM and all)', () => {
+    /**
+     * PowerShell 5.1's `Set-Content -Encoding utf8` writes UTF-8 **with** a byte-order
+     * mark, and `JSON.parse` throws on one. The upgrade path read settings.json with a
+     * bare parse, so on any machine whose settings.json had been touched by a PowerShell
+     * tool it threw, fell into the catch, reported NOENTRY and left the machine
+     * unregistered — silently, and only on Windows.
+     *
+     * Found by writing the test fixture with PowerShell rather than Node, which is the
+     * only reason it surfaced at all.
+     */
+    const { execFileSync } = require_('node:child_process');
+    withHome((home) => {
+      fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+      const settings = JSON.stringify({
+        mcpServers: { ownmind: { ...ENTRY, env: {
+          OWNMIND_API_URL: CREDS.apiUrl, OWNMIND_API_KEY: CREDS.apiKey,
+        } } },
+      }, null, 2);
+      fs.writeFileSync(path.join(home, '.claude', 'settings.json'), `﻿${settings}`, 'utf8');
+
+      const out = execFileSync(process.execPath, [
+        path.join(repoRoot, 'scripts/install-helpers/register-mcp-cli.cjs'), '--upgrade', home,
+      ], { encoding: 'utf8' });
+
+      assert.match(out, /VERIFIED/, `a BOM defeated the upgrade path: ${out.trim()}`);
+      assert.ok(fs.existsSync(path.join(home, '.claude.json')),
+        'reported success but wrote nothing');
+    });
+  });
+
   it('mergeEntry is pure — it does not mutate what it is given', () => {
     const original = { mcpServers: { other: { command: 'x' } } };
     const snapshot = JSON.stringify(original);
@@ -182,8 +213,17 @@ describe('v1.26.112 — the installers actually call it', () => {
   ]) {
     it(`${script} registers through the shared helper`, () => {
       const src = fs.readFileSync(path.join(repoRoot, script), 'utf8');
-      assert.ok(src.includes('register-mcp.cjs'),
-        `${script} does not use register-mcp.cjs, so it cannot be writing ~/.claude.json`);
+      // The CLI, not the library: `node -e` does not survive PowerShell 5.1 and a JSON
+      // argument does not either, so a script that embeds JavaScript is a script that
+      // silently does nothing on Windows. Both were measured on 2026-08-09.
+      assert.ok(src.includes('register-mcp-cli.cjs'),
+        `${script} does not call register-mcp-cli.cjs, so it cannot be writing ~/.claude.json`);
+      // And it must not embed the registration as source. A script that calls registerMcp
+      // inline is one that hands JavaScript to a shell, which is what silently did nothing
+      // on Windows. The CLI path may be assigned to a variable first, so this checks for
+      // the give-away call rather than trying to match one line.
+      assert.ok(!src.includes('registerMcp({'),
+        `${script} still embeds the registration as JavaScript instead of calling the CLI`);
     });
   }
 

@@ -16,7 +16,18 @@ scripts/install-helpers/register-mcp.cjs        — 唯一一份 MCP 註冊實�
                                                    全部的專案歷史），寫完再讀回來驗證，
                                                    家目錄必須是絕對路徑、Windows 上不收
                                                    POSIX 路徑
-tests/mcp-registered-where-claude-reads.test.js — 15 條。含反向對照（只寫 settings.json
+scripts/install-helpers/register-mcp-cli.cjs    — 上面那支的命令列入口，四支腳本都透過它
+                                                   呼叫。存在的理由：`node -e "<script>"`
+                                                   在 PowerShell 5.1 下活不下來 —— 它會把
+                                                   傳給原生執行檔的參數裡的雙引號拿掉，
+                                                   三行探針實測印出三個 NaN，因為
+                                                   console.log("x=" + argv[1]) 變成
+                                                   console.log(x=+argv[1])。改傳 JSON 也
+                                                   一樣被拆掉。所以現在每個值各自一個
+                                                   argv 元素，會跨越 shell 的只剩路徑跟
+                                                   網址裡本來就有的字元。同一家族的 bug：
+                                                   v1.26.94
+tests/mcp-registered-where-claude-reads.test.js — 16 條。含反向對照（只寫 settings.json
                                                    的舊行為必須被判定為未註冊）、不得動到
                                                    os.homedir()、不得弄壞既有的 projects
                                                    歷史、四支腳本都必須真的呼叫 helper、
