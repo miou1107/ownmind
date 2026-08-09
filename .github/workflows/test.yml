@@ -41,6 +41,11 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      # `src/public/dashboard/` is gitignored, so a fresh clone has no console and the
+      # routing tests get a 404 where the SPA shell should be. This is the same step
+      # `npm start` runs as `prestart`, and it uses build:no-translate - the full build
+      # runs an LLM translation pass that needs credentials CI does not have.
+      - run: node scripts/ensure-console-build.js
       # npm test = lint:zh-only + node --test. None of the 257 test files touch a database.
       - run: npm test
 
