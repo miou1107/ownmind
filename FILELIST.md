@@ -72,7 +72,12 @@ scripts/install-helpers/ensure-pretooluse-hooks.cjs — PreToolUse 鐵律掛勾�
                                                    了自己的修復條件，所以 v1.26.92 只修到
                                                    全新安裝，升級戶一個都沒修到。
                                                    --bash / --node 對應兩種呼叫寫法
-tests/ensure-pretooluse-hooks.test.js           — 20 條行為測試，含 2026-08-09 那台機器的
+scripts/update.sh / scripts/update.ps1          — 自我檢查（self-check.cjs）從第 2d 節搬到腳本
+                                                   最後面。原本排在所有修復動作前面，回報的是
+                                                   這支腳本正要修掉的狀態 —— 一台機器發一次
+                                                   警報，等有人看的時候它已經好了。install.sh
+                                                   的安裝自檢本來就在最後一行
+tests/ensure-pretooluse-hooks.test.js           — 22 條行為測試，含 2026-08-09 那台機器的
                                                    實際 settings.json 當回歸案例
 openspec/changes/v1.26.105-one-hook-runs-one-is-dead/ — proposal / spec / tasks
 ```

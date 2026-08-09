@@ -242,20 +242,6 @@ fi
 # synced — and failing the whole run would mislead mcp/index.js into logging update_failed
 # and retrying. A failed repair is not swallowed either: the helper reports it to the
 # server, so it lands on the error-report page instead of a terminal nobody is watching.
-# --- 2d. Have the machine report its own health (v1.26.81) ---
-# The self-check has only ever run during install and manual upgrade. Adam's last full
-# report is dated 2026-05-29; his machine auto-updated daily for two months afterwards and
-# told us nothing, while his scanner sat dead. The report he did send in May already
-# contained the answer to the question that took a week to work out
-# (`bash_resolution.selected === 'WSL_RELAY'`).
-#
-# `--quick` drops the one check that scans every local database. Fire-and-forget, in the
-# background, never blocking the update.
-SELF_CHECK="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
-if [ -f "$SELF_CHECK" ]; then
-  (node "$SELF_CHECK" --trigger=auto_update --quick >/dev/null 2>&1 &) || true
-fi
-
 ENSURE_SCHEDULE="$OWNMIND_DIR/scripts/install-helpers/ensure-scanner-schedule.sh"
 if [ -f "$ENSURE_SCHEDULE" ]; then
   # Captured rather than let through, so the helper's machine-readable line does not land
@@ -435,6 +421,25 @@ if [ -d "$HOME/.cursor" ]; then
       console.log('   ✅ Cursor session-start hook added');
     }
   " 2>>"$ERR_LOG"
+fi
+
+# --- 7. Have the machine report its own health (v1.26.81, moved to the tail in v1.26.105) ---
+# The self-check has only ever run during install and manual upgrade. Adam's last full
+# report is dated 2026-05-29; his machine auto-updated daily for two months afterwards and
+# told us nothing, while his scanner sat dead. The report he did send in May already
+# contained the answer to the question that took a week to work out
+# (`bash_resolution.selected === 'WSL_RELAY'`).
+#
+# It runs LAST, after every repair above. It used to sit in section 2d, ahead of all of
+# them, so it reported the state this script was about to fix: one alert per machine, about
+# a machine that is healthy by the time anybody reads it. install.sh has always run its
+# artifact check at the tail for exactly this reason.
+#
+# `--quick` drops the one check that scans every local database. Fire-and-forget, in the
+# background, never blocking the update.
+SELF_CHECK="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
+if [ -f "$SELF_CHECK" ]; then
+  (node "$SELF_CHECK" --trigger=auto_update --quick >/dev/null 2>&1 &) || true
 fi
 
 # --- Mark that the SessionStart hook is installed (avoids repeated iron-rule-check upgrades) ---
