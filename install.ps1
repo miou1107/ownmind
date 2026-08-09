@@ -617,15 +617,29 @@ if (Test-Path $NoScannerFlag) {
   Write-Host "[INFO] Installing usage scanner"
   # Scanner entry 已隨 repo clone 到 $OwnmindDir\hooks\ownmind-usage-scanner.js
   # 註冊 Task Scheduler（被呼叫腳本內建 node 偵測 + v20+ 驗證 + .node-path 快取）
+  #
+  # v1.26.106 — the registration output used to go through `| Tee-Object -FilePath`. Windows
+  # PowerShell 5.1's Tee-Object has no -Encoding parameter, so it always wrote UTF-16LE;
+  # self-check.cjs read that back as UTF-8 and uploaded NUL bytes to the server. Now the
+  # output is collected, echoed with Write-Host (the half Tee-Object also did), and written
+  # through Write-Utf8NoBom. Full account in scripts/install-helpers/read-text-file.cjs.
+  #
+  # This note lives above the block on purpose: install-ps1-scanner-task-check.test.js reads
+  # a fixed window of characters after the first mention of the script name and requires the
+  # exit-code check inside it, so a long comment between the call and the check reads as a
+  # missing check. Keep prose out of that window.
   $RegisterScript = Join-Path $OwnmindDir 'scripts\windows\register-scanner-task.ps1'
   if (Test-Path $RegisterScript) {
     # v1.17.12 驗 exit code + Get-ScheduledTask（避免 silent fail）。
-    # v1.17.67 IR-038：Tee stdout+stderr 到 log，self-check 會上傳給 admin 看根因。
+    # v1.17.67 IR-038：stdout+stderr 收進 log，self-check 會上傳給 admin 看根因。
     # logs 目錄已在 line 270-280 隨 $GitHookDirs 建好。
     $RegisterLogPath = Join-Path $OwnmindDir ('logs\register-task-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
-    & powershell -ExecutionPolicy Bypass -File $RegisterScript 2>&1 |
-      Tee-Object -FilePath $RegisterLogPath
+    $RegisterOutput = & powershell -ExecutionPolicy Bypass -File $RegisterScript 2>&1
     $regExit = $LASTEXITCODE
+    # Where-Object first: a child that produced nothing pipes a single $null, and Write-Host
+    # would print one blank line where Tee-Object printed nothing at all.
+    $RegisterOutput | Where-Object { $null -ne $_ } | ForEach-Object { Write-Host $_ }
+    Write-Utf8NoBom -Path $RegisterLogPath -Content ($RegisterOutput | Out-String)
     $taskOk = $null -ne (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue)
     if ($regExit -eq 0 -and $taskOk) {
       Write-Host "[ OK ] Task Scheduler registered (runs every 120 min)" -ForegroundColor Green
