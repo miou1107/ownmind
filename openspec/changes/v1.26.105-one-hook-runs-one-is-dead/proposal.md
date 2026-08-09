@@ -30,8 +30,9 @@ The broken command **mentions** `ownmind-iron-rule-check`. It satisfied its own 
 condition, so it was never going to be rewritten. The `Edit` entry is correct only because
 it was newly added that release — new entries are the only ones that reach the write path.
 
-`install.ps1:460` carries the comment "Upgrades are the whole population", and the same loop
-skipped every upgrade.
+`install.ps1` carried the comment "Upgrades are the whole population" directly above that
+loop — the loop that skipped every upgrade. (Line 460 as of b4d8dae; the block is deleted by
+this change.)
 
 ## Why no test caught it
 
@@ -46,9 +47,15 @@ half that rotted is exactly the half no test could touch.
 `~/.claude/hooks`. It does. So the machine reported `install_complete 6/6` while the
 registered command could not start.
 
-The header of that file already states that a version number is not evidence of a completed
-install. This is the same sentence one level in: **the presence of a copy is not evidence
-that the registered one runs.**
+Reading the registered command is necessary but not sufficient, and on this machine it is
+not even the failing half: the two copies are byte-identical, so the registered path **does**
+exist. What was absent is `../shared/helpers.js` relative to it — `~/.claude/shared/`, which
+no installer creates. An ESM import that cannot resolve kills node before the payload runs.
+
+So the check now asserts both: the registered path, and the module that path imports on its
+first line. The header of that file already states that a version number is not evidence of a
+completed install. This is the same sentence two levels in — **a copy is not evidence that
+the registered one runs, and existing is not evidence that it starts.**
 
 ## What this changes
 
@@ -60,8 +67,14 @@ that the registered one runs.**
   compared the whole array, and wrote a bash command on Windows. v1.26.80 fixed that in
   `install.ps1` and left the updaters behind.
 - `install-artifacts.cjs` reads the **registered** command out of `settings.json` and checks
-  that path. The old candidate list remains as the fallback for a machine with nothing
-  registered yet.
+  that path, plus a new `iron_rule_hook_deps` artifact for the module that path imports. The
+  old candidate list remains as the fallback for a machine with nothing registered yet, and
+  the dependency check applies only when a `.js` command is registered — the `.sh` hook
+  imports nothing.
+- `install.sh` no longer invokes the helper as a bare command substitution. Under `set -eE`
+  that carries the helper's exit status and takes the installer down at that line, with the
+  captured stderr never printed — the exact combination the top of that file warns produced
+  no output at all for four months. Both updaters already guarded it; only install.sh did not.
 - BOM tolerance: PowerShell's default `Out-File -Encoding utf8` writes a BOM and `JSON.parse`
   rejects it outright — the repair would have failed on the one platform it exists for.
 

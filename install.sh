@@ -483,10 +483,18 @@ node -e "
 # alone was never enough.
 ENSURE_PRE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-pretooluse-hooks.cjs"
 if [ -f "$ENSURE_PRE_HOOK" ]; then
-  PRE_HOOK_RESULT=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" --bash 2>&1)
-  echo "   PreToolUse iron-rule hook：$PRE_HOOK_RESULT"
+  # `if var=$(...)` and not a bare assignment: under `set -eE` a bare command substitution
+  # carries the helper's exit status and takes the whole installer down at this line —
+  # everything below, including the artifact self-check, never runs. And with 2>&1 captured
+  # into a variable that the failure path would never echo, it goes down without saying why.
+  # See the note at the top of this file: that combination hid a fatal error for four months.
+  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" --bash 2>&1); then
+    echo "[ OK ] PreToolUse iron-rule hook: $pre_hook_result"
+  else
+    echo "[FAIL] PreToolUse iron-rule hook: $pre_hook_result"
+  fi
 else
-  echo "[WARN] ensure-pretooluse-hooks.cjs 不存在（升級殘留？）— 跳過 PreToolUse hook 註冊"
+  echo "[WARN] ensure-pretooluse-hooks.cjs not found (stale upgrade?) — skipped PreToolUse hook registration"
 fi
 
 # --- 4c-2. SessionStart hook (v1.26.86, delegated to the shared implementation) ---

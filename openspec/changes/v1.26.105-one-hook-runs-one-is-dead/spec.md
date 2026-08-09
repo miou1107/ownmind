@@ -98,6 +98,30 @@ evidence that the registered one runs.
 - **WHEN** the artifact check runs
 - **THEN** it falls back to the previous candidate-list behaviour
 
+## Requirement: the registered hook's first import must resolve
+
+When a `.js` command is registered, the check MUST also assert that `../shared/helpers.js`
+resolves relative to it.
+
+Existing is not starting. On the machine measured on 2026-08-09 the registered file **was**
+present — the two copies are byte-identical — and the hook still died on every Bash call,
+because that import resolved into `~/.claude/shared/`, a directory no installer creates. An
+ESM import that cannot resolve kills node before the first byte of the payload runs, so this
+is the difference between registered and running.
+
+### Scenario: the measured machine
+
+- **GIVEN** a registered `.js` command naming a file that exists, whose sibling
+  `../shared/helpers.js` does not
+- **WHEN** the artifact check runs
+- **THEN** `iron_rule_hook` passes and `iron_rule_hook_deps` is reported missing
+
+### Scenario: the bash hook
+
+- **GIVEN** a registered `.sh` command
+- **WHEN** the artifact check runs
+- **THEN** no dependency is demanded — that hook imports nothing
+
 ## Requirement: one implementation, called by all four scripts
 
 `install.sh`, `install.ps1`, `scripts/update.sh` and `scripts/update.ps1` MUST delegate
@@ -111,7 +135,26 @@ rotted is the half no test could touch.
 
 - **GIVEN** each of the four scripts
 - **WHEN** its text is inspected
-- **THEN** it calls the helper and contains no inline registration block
+- **THEN** it calls the helper and contains no inline registration block, matched by that
+  script's own language — PowerShell's copy used `PreToolUse +=` and never `.push(`, so one
+  JS-shaped pattern passes `install.ps1` vacuously, in the one file this change exists
+  because CI cannot reach it
+
+## Requirement: a helper failure is reported, never fatal
+
+A shell script running under `set -e` MUST NOT invoke the helper as a bare command
+substitution.
+
+`VAR=$(cmd)` carries `cmd`'s exit status, so one non-zero exit — an unreadable
+`settings.json`, a locked file on Windows — aborts the whole installer at that line, and
+everything below it, including the artifact self-check, never runs. With `2>&1` captured into
+a variable the failure path never echoes, it aborts silently.
+
+### Scenario: the helper exits non-zero
+
+- **GIVEN** a `settings.json` the helper cannot parse
+- **WHEN** the installer reaches the PreToolUse step
+- **THEN** the failure is printed and the installer continues to its remaining steps
 
 ## Requirement: an upgrade does not judge its own runtime files as user edits
 

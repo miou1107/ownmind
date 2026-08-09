@@ -11,19 +11,24 @@
 - [x] Establish why no test caught it: four copies of the logic, only the bash one reachable
       from CI, and reached by slicing a `node -e` string out of `install.sh` and evaluating it.
 - [x] `scripts/install-helpers/ensure-pretooluse-hooks.cjs` — one implementation; rewrites a
-      command that differs; `--bash` / `--node` for the two invocation styles; BOM tolerated;
+      command that differs; `--bash` selects the bash invocation, node being the default; BOM tolerated;
       malformed JSON reported rather than overwritten; backup before any change.
 - [x] `install.sh`, `install.ps1`, `scripts/update.sh`, `scripts/update.ps1` — all four
       delegate; the older single-matcher block in the two updaters (which wrote a bash command
       on Windows) removed with them.
 - [x] `scripts/install-helpers/install-artifacts.cjs` — `iron_rule_hook` resolves the
       registered command's path; candidate list kept as the fallback when nothing is
-      registered.
+      registered. Plus `iron_rule_hook_deps`, because resolving the path was not enough on the
+      machine this exists for: the registered file **was** present and the hook still could
+      not start, so the module it imports on its first line is now checked too.
+- [x] `install.sh` — the helper call moved from a bare `VAR=$(...)` into `if var=$(...); then`.
+      Under `set -eE` the bare form aborted the installer at that line, with the captured
+      stderr never printed. Both updaters already guarded it.
 - [x] `tests/edit-trigger-reminder.test.js` — stops slicing `install.sh` and calls the helper
       directly, so the assertion covers all four scripts instead of one.
 - [x] `.gitignore` — the six runtime paths, so upgrade stops judging its own files as user
       edits and taking the `git reset --hard` branch on every run.
-- [x] 17 behaviour tests in `tests/ensure-pretooluse-hooks.test.js`, including that machine's
+- [x] 20 behaviour tests in `tests/ensure-pretooluse-hooks.test.js`, including that machine's
       actual `settings.json` as the regression case.
 - [x] Verified on Windows against an unmodified v1.26.102, item by item:
       `edit-trigger-reminder` 22 pass / 14 fail → 24 pass / 12 fail; the ten install/hook
