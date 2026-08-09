@@ -50,6 +50,24 @@
       the first the deadline handles, and a probe that ends resolves immediately instead of
       waiting out the evidence window.
 
+## What Windows found afterwards (v1.26.115)
+
+The guard itself was red on the Windows leg: `EBUSY: resource busy or locked, rmdir`. The
+same class of defect this release exists to make visible, in the code that makes it visible.
+Three independent causes, all fixed:
+
+- [x] The probe's working directory was the temp directory the caller then removed. Windows
+      refuses to remove a directory any process is sitting in. cwd is now the system temp
+      root; the probe file was always passed as an absolute path.
+- [x] `killGroup` fell through to `child.kill()` on Windows — there are no process groups and
+      `process.kill(-pid)` throws there — and that path resolved without waiting for the
+      process to be gone. Every path now waits for the exit event, with a 5s backstop.
+- [x] The removal had no retries. Handles outlive the process briefly on Windows; now 20
+      attempts, 100ms apart.
+- [x] Verified on node 20 and node 24 that by the time the directory is removed the probe has
+      always terminated (`exitCode` set, or `signalCode` SIGKILL) and never still running.
+      Windows itself is confirmed by CI, not locally.
+
 ## Trap found on the way
 
 A nested `node --test` inherits `NODE_TEST_CONTEXT` from the runner that spawned it, prints

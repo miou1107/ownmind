@@ -93,25 +93,50 @@ function writeProbe(dir, body) {
   return file;
 }
 
+/** How long to wait for a killed probe before giving up on seeing it exit. */
+const REAP_TIMEOUT_MS = 5_000;
+
 /**
- * Kill a probe and everything it started, then wait for it to be gone.
+ * Remove a probe directory.
  *
- * Signalling the runner alone is not enough: it executes each file in a grandchild process,
- * and SIGKILL is not forwarded. Measured — killing only the runner left `node probe.test.js`
- * alive, reparented to init, still holding its listening socket. The probes are spawned
- * detached so the whole group can be signalled at once.
+ * Retried, because Windows refuses to remove a directory any process still holds — and a
+ * process the kernel has already reaped can keep its handles for a moment longer. This is
+ * what failed on the Windows leg: `EBUSY: resource busy or locked, rmdir`.
+ */
+function removeProbeDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+}
+
+/**
+ * Kill a probe and everything it started, then wait for it to actually be gone.
+ *
+ * Signalling the runner alone is not enough on posix: it executes each file in a grandchild
+ * process, and SIGKILL is not forwarded. Measured — killing only the runner left
+ * `node probe.test.js` alive, reparented to init, still holding its listening socket. So the
+ * probes are spawned detached and the whole group is signalled.
+ *
+ * Windows has neither process groups nor negative pids: `process.kill(-pid)` throws there,
+ * and the fallback is `child.kill()`, which terminates the tree anyway. Either way this must
+ * not resolve before the process is gone — returning early is what left a live process
+ * holding the directory the caller then tried to delete.
  */
 function killGroup(child) {
   return new Promise((resolve) => {
     if (!child || child.exitCode !== null || child.signalCode !== null) return resolve();
-    child.once('exit', () => resolve());
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    child.once('exit', finish);
+    child.once('error', finish);          // never started: there is nothing to wait for
     try {
       process.kill(-child.pid, 'SIGKILL');
     } catch {
-      // ESRCH: already gone, or never started. Fall back to the child alone.
-      try { child.kill('SIGKILL'); } catch { /* nothing left to signal */ }
-      resolve();
+      // EPERM/EINVAL on Windows, ESRCH when it is already gone. Signal the child itself and
+      // keep waiting for the exit event either way.
+      try { child.kill('SIGKILL'); } catch { finish(); }
     }
+    // A process that refuses to die must not hang the suite; the retrying remove below is
+    // what covers the directory in that case.
+    setTimeout(finish, REAP_TIMEOUT_MS).unref?.();
   });
 }
 
@@ -121,8 +146,10 @@ async function hangsWithoutTheFlag(shape) {
   let child;
   try {
     const file = writeProbe(dir, shape.body);
+    // cwd is deliberately not the probe directory: on Windows a directory cannot be removed
+    // while any process has it as its working directory, and the file is passed absolute.
     child = spawn(process.execPath, ['--test', file],
-      { cwd: dir, stdio: 'ignore', env: envWithoutTestContext(), detached: true });
+      { cwd: os.tmpdir(), stdio: 'ignore', env: envWithoutTestContext(), detached: true });
     let ended = false;
     // Without this listener an EAGAIN/EMFILE under fork pressure raises an unhandled
     // 'error' event, which takes down the whole test process instead of one assertion.
@@ -134,7 +161,7 @@ async function hangsWithoutTheFlag(shape) {
     return !ended;
   } finally {
     await killGroup(child);
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeProbeDir(dir);
   }
 }
 
@@ -146,7 +173,8 @@ function runUnderTheFlag(shape) {
     const r = spawnSync(
       process.execPath,
       [`--test-timeout=${PROBE_TIMEOUT_MS}`, '--test', file],
-      { encoding: 'utf8', timeout: PROBE_BUDGET_MS, cwd: dir, env: envWithoutTestContext() },
+      // cwd: see hangsWithoutTheFlag — never the directory this function then removes.
+      { encoding: 'utf8', timeout: PROBE_BUDGET_MS, cwd: os.tmpdir(), env: envWithoutTestContext() },
     );
     const output = `${r.stdout || ''}${r.stderr || ''}`;
     // `error` covers both ways this ends without the deadline having done anything: the
@@ -160,7 +188,7 @@ function runUnderTheFlag(shape) {
     const named = output.includes(shape.identify(file)) && /timed out after/.test(output);
     return { ended, named, output };
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    removeProbeDir(dir);
   }
 }
 
