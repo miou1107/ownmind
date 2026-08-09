@@ -1,5 +1,66 @@
 # OwnMind 更新紀錄
 
+## v1.26.117 — 自我檢查只確認「有登記」，從來沒確認「叫得起來」
+
+v1.26.112 加的 `mcp_registered` 只做一件事：讀 `~/.claude.json`，看裡面有沒有
+`mcpServers.ownmind`。那擋得住當時那個 bug（整個鍵都不存在），擋不住**登記了、卻起不來**。
+
+而「登記」跟「起得來」中間那段，這個 repo 已經壞過四次，每一次留下的設定檔都是完美的：
+
+- v1.26.94 — `cygpath -w` 的路徑被插進 `node -e` 的原始碼，JS parser 把反斜線吃光
+- v1.26.112 — PowerShell 5.1 會把傳給原生執行檔的參數裡的雙引號拿掉，`node -e` 的腳本
+  變成沒有意義的程式碼，而 PowerShell 自己的語法檢查說它完美無缺
+- v1.26.112 — Git Bash 把 `cmd.exe` 的 `/c` 當 POSIX 路徑改寫成 `C:/`，而那個被改寫過的
+  形態會被寫進啟動指令
+- v1.17.77／79 — `start.cmd` 自己還有一整套「PATH 上找不到 node」的 fallback 階梯，
+  它失敗時留下的是錯誤 spool 裡的一個檔案，不是 `~/.claude.json` 裡一個錯的項目
+
+新增 `scripts/install-helpers/mcp-preflight.cjs`：做 Claude Code 開 session 時做的事 ——
+把那個檔案裡的 `command`／`args`／`env` **原封不動**拿去 spawn，走完 JSON-RPC handshake
+（`initialize` → `notifications/initialized` → `tools/list`），數 `ownmind_*` 工具。
+不是照安裝腳本的意圖重建指令 —— 重建出來的是意圖，而壞掉四次的是磁碟上那一行。
+
+接進 self-check 成為 `mcp_launches`。TANK 實測：熱機 693 毫秒，19/19 個工具。
+
+### 這條刻意 fail-open
+
+它會真的啟動一台 server，成本是幾秒的 node 冷啟動。風險不是慢，是**誤指無辜**：
+機器忙、node 冷啟動，都可能超過任何預算而其實好好的，而 self-check 跑的時機正是
+安裝／升級剛結束、機器最忙的那一刻。**v1.26.106 就出過這個包** —— 排程檢查對一台
+state=Ready 的機器上傳了一個假的 FAIL。
+
+所以逾時一律算「**無法判定**」，永遠不算「壞掉」（對應到 self-check 的 `warn`）。
+這跟 v1.26.113 的 `lock_age_seconds` 剛好相反，差別在於答案是拿來做什麼的：那個是**行為**
+（讀錯就去搶鎖，會弄壞東西，所以必須 fail-closed）；這個是**診斷**，而診斷猜錯是在指控
+一台沒問題的機器。診斷寧可說不知道，行為才該假設最壞。
+
+兩條分開也保住了便宜的那份確定性：`mcp_registered` 仍然是純讀檔、永遠有答案，
+新的那條再怎麼不穩都不會削弱它。
+
+### 診斷用的啟動，不可以被當成一次使用
+
+MCP server 一啟動就會送一次 heartbeat，而 `collector-silence` 正是拿那個 heartbeat 判斷
+「這台機器是不是不再回報了」。這條檢查每天在沒人看著的時候跑一次，如果照原樣啟動，
+等於**天天替一台根本沒人在用的機器背書** —— 一個會偷偷替受檢對象作保的檢查，比沒有還糟。
+
+所以 preflight 會在子行程環境裡設 `OWNMIND_PREFLIGHT=1`（設在 entry 自己的 env 之後，
+免得某個登記把它關掉），`sendMcpHeartbeat()` 看到就直接 return。
+
+順手修一個潛在的不一致：`mcp_registered` 從 v1.26.112 起就在跑，卻從來沒被寫進
+`checkNamesFor`。那份清單是「哪些檢查會跑」的宣告，不在上面的檢查，對所有針對這組檢查
+做的斷言（包括「宣告了卻沒跑」那條測試）都是隱形的。兩條現在都在上面。
+
+驗證：17 條測試，全部不需要 Windows、也不需要裝好的 OwnMind —— 用暫存目錄裡的假 server
+跑完每一種情況（正常／指令不存在／起來就死／起得來但沒有 `ownmind_*` 工具／逾時／
+只回一半就停）。這是刻意的：上面那四個 bug 活得下來，正是因為每個碰得到它們的測試都需要
+一台裝好的 Windows（v1.26.106 的教訓）。含反向對照：拿掉 `notifications/initialized`
+那一行，正常案例立刻紅（`tools/list returned an error: not initialized`）—— 少了它，
+SDK server 會拒答，而這條檢查會把 client 自己的錯誤當成機器的問題。
+另外驗了金鑰不外洩（server 把 `OWNMIND_API_KEY` 印在 stderr 上然後死掉，
+報告裡只會有 `***`，而訊息本身要留著 —— 整段塗黑的理由診斷不了任何事），
+以及逾時之後那個 server 不會留在背景（Windows 上登記的指令是 `cmd.exe /c start.cmd`，
+殺掉 shell 不會殺掉它底下的 node）。
+
 ## v1.26.116 — Windows 上，那個報告明明寫了檔名，檢查卻說它沒寫
 
 v1.26.115 把 Windows 上的 `EBUSY` 修掉了，然後同一條測試在 Windows 上換了一個方式紅：

@@ -1,5 +1,55 @@
 # OwnMind 檔案結構
 
+## v1.26.117 修改（自我檢查只確認「有登記」，從來沒確認「叫得起來」）
+
+新增檔：
+```
+scripts/install-helpers/mcp-preflight.cjs       — 把 ~/.claude.json 裡的 command/args/env
+                                                   原封不動 spawn 起來，走完 JSON-RPC
+                                                   handshake（initialize →
+                                                   notifications/initialized → tools/list）
+                                                   並數 ownmind_* 工具。回傳
+                                                   status: ok / fail / unknown ——
+                                                   逾時是 unknown（fail-open，理由見
+                                                   CHANGELOG）。所有離開這支模組的字串都
+                                                   先過 redactor：env 裡帶 KEY/TOKEN/
+                                                   SECRET/PASSWORD 的值換成 ***、家目錄
+                                                   換成 ~，因為結果會寫進 log 並上傳。
+                                                   Windows 上登記的指令是 cmd.exe /c
+                                                   start.cmd，殺 shell 不會殺底下的 node，
+                                                   所以收尾走 taskkill /T /F。
+                                                   也可以單獨跑：node mcp-preflight.cjs
+                                                   [--home=...] [--timeout=ms]，印 JSON
+tests/mcp-preflight.test.js                     — 17 條，全部不需要 Windows、也不需要裝好的
+                                                   OwnMind：用暫存目錄裡的假 MCP server
+                                                   跑正常／指令不存在／起來就死／起得來但
+                                                   沒有 ownmind_* 工具／逾時／只回一半。
+                                                   含金鑰不外洩（正向＋反向對照）、逾時後
+                                                   server 不會留在背景、以及 self-check
+                                                   的狀態對應（unknown 一定是 warn）
+```
+
+修改檔：
+```
+scripts/install-helpers/self-check.cjs          — 新增 mcp_launches 檢查項，排在
+                                                   mcp_registered 後面（前者讀檔、永遠有
+                                                   答案；後者回答它答不了的那一半）。
+                                                   MCP_PREFLIGHT_TIMEOUT_MS = 20000（TANK
+                                                   實測 693ms，預算刻意寬鬆，理由同
+                                                   CIM_TIMEOUT_MS）。checkMcpLaunches 的
+                                                   preflight 可注入，狀態對應才測得到。
+                                                   另補 checkNamesFor：mcp_registered 從
+                                                   v1.26.112 起就在跑卻從沒被宣告，等於對
+                                                   「宣告了卻沒跑」那條測試是隱形的
+mcp/index.js                                    — sendMcpHeartbeat() 看到
+                                                   OWNMIND_PREFLIGHT=1 就直接 return。
+                                                   mcp_launches 是診斷用的啟動，不是一次
+                                                   使用；照原樣啟動會讓 collector-silence
+                                                   看到的 heartbeat 天天更新，等於替一台
+                                                   沒人在用的機器背書
+package.json                                    — 1.26.116 → 1.26.117
+```
+
 ## v1.26.116 修改（Windows 上，那個報告明明寫了檔名，檢查卻說它沒寫）
 
 修改檔：
