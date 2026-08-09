@@ -182,7 +182,9 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
   # argv is escape-proof: backslashes, spaces and apostrophes all survive it, which the
   # header of path-helpers.sh already recommended and nothing had adopted here.
   #
-  # No `2>/dev/null` (IR-002): if node cannot read that file, the reason belongs on stderr,
+  # No `2>/dev/null` here: a redirect that turns a failure into silence is what hid this
+  # bug, and the project rule against it is the reason it was found. If node cannot read
+  # that file, the reason belongs on stderr,
   # where Claude Code's hook debugging shows it. The empty-value guard below still keeps the
   # hook silent for the ordinary "not configured yet" case.
   API_KEY=$(node -e "

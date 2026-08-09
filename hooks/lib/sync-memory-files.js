@@ -356,7 +356,7 @@ export function projectSlugFromPath(projectPath) {
   // file on Windows** — which is exactly what the v1.26.83 comment in the caller says it
   // exists to prevent ("on Windows was never"), fixed everywhere except in the slug.
   //
-  // `C:\Users\Vin\X` -> `C--Users-Vin-X`, which is also the spelling Claude Code itself uses
+  // `C:\Users\Alex\X` -> `C--Users-Alex-X`, which is the spelling Claude Code itself uses
   // for its project directories, so the files land where the AI already looks. POSIX paths
   // carry no colon, so nothing changes there.
   return String(projectPath).replace(/[\\/:]/g, '-');
