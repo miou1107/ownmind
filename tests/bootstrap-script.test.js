@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
+import { assertExecutable } from './helpers/executable-bit.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -9,8 +10,10 @@ const shPath = join(__dirname, '..', 'scripts', 'bootstrap.sh');
 const ps1Path = join(__dirname, '..', 'scripts', 'bootstrap.ps1');
 
 test('bootstrap.sh exists and is executable', () => {
-  const stat = statSync(shPath);
-  assert.ok(stat.mode & 0o100, 'bootstrap.sh must have user-execute bit (chmod +x)');
+  // v1.26.118 — asked of the git index rather than this filesystem. chmod is a no-op on
+  // NTFS, so the old assertion could not pass on Windows however correct the file was, and
+  // 100755 in the index is the fact that decides it for everybody who clones anyway.
+  assertExecutable(join(__dirname, '..'), 'scripts/bootstrap.sh');
 });
 
 test('bootstrap.sh handles all three install states', () => {

@@ -1,5 +1,33 @@
 # OwnMind 更新紀錄
 
+## v1.26.118 — 「可執行」這個斷言，在 Windows 上不可能成立（#79 的 B 組）
+
+`chmod` 在 NTFS 上是空操作。TANK 實測：一個 `chmod 755` 的檔案讀回來是 `666`。
+所以 `statSync(f).mode & 0o100` 這種斷言，在 Windows 上**不管檔案實際狀態如何都會紅**。
+壞的是尺，不是被量的東西 —— `scripts/bootstrap.sh` 跟 `scripts/run-migrations.sh`
+兩支都好好的。
+
+直接在 Windows 上 skip 掉是最糟的選項：那等於這個平台**完全沒有答案**，
+正是 v1.26.106 那句「在 macOS 上綠燈的測試，對 macOS 的人來說不是通過的測試，
+是看不見的測試」。
+
+改成問 **git index 的 mode**（`git ls-files -s` → `100755`）。這其實本來就是更該問的問題：
+本機那個位元說的是「這一台現在剛好是什麼」，而 index 裡的 `100755` 決定的是
+**每一台 clone 下去的機器會拿到什麼** —— 那才是這條測試在保護的東西。一支被 commit 成
+`100644` 的腳本，對所有 clone 的人都是跑不起來的，作者自己的工作目錄怎麼樣都不重要。
+而且三個平台都讀得到。POSIX 上仍然額外驗本機那個位元，所以一台掉了 +x 的 Unix 機器
+不會因此變安靜。
+
+第三個案例（`shebang-eol.test.js` 的「複製 git hook 時把 CR 去掉」）沒有 index 可以問 ——
+它驗的是暫存目錄裡剛產生的複本。那條在 Windows 上改成斷言它答得出來的那一半：
+`install_git_hook` 有沒有真的去要那個執行位元（`chmod +x`），真正的觀測留在有意義的平台上。
+
+新增 `tests/helpers/executable-bit.js`（單一實作，兩個呼叫端共用）＋ 它自己的反向對照：
+拿一個 commit 成 `100644` 的檔案（README.md）餵進去必須紅，否則「Windows 上會過」跟
+「餵什麼都會過」就分不出來了。
+
+Windows 上實測：這三個檔案 39 條全綠。
+
 ## v1.26.117 — 自我檢查只確認「有登記」，從來沒確認「叫得起來」
 
 v1.26.112 加的 `mcp_registered` 只做一件事：讀 `~/.claude.json`，看裡面有沒有
