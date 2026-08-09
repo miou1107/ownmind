@@ -452,7 +452,7 @@ $HookCmdHelper = Join-Path $OwnmindDir "scripts\install-helpers\session-hook-com
 $PreHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"
 if (Test-Path $PreHookHelper) {
   $preHookResult = & node $PreHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
-  Write-Host "   PreToolUse iron-rule hook：$preHookResult"
+  Write-Host "   PreToolUse iron-rule hook: $preHookResult"
 } else {
   Write-Host "[WARN] ensure-pretooluse-hooks.cjs not found (stale upgrade?) — skipped PreToolUse hook registration" -ForegroundColor Yellow
 }
