@@ -163,7 +163,7 @@ function runHelper({
   return { stdout, code, launchctl: calls('launchctl'), systemctl: calls('systemctl') };
 }
 
-// v1.26.106 — the two plist assertions below used to call `plutil`, which exists only on
+// v1.26.107 — the two plist assertions below used to call `plutil`, which exists only on
 // macOS. Everywhere else they threw ENOENT, and because nothing ran this suite off a Mac
 // until CI existed, "macOS: …" quietly meant "nowhere". The claims themselves are about a
 // generated XML file and hold on any platform, so they are checked here directly, and plutil
