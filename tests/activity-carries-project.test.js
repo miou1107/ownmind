@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execBashScript, toBashPath as bp } from './helpers/bash-script.js';
 import { fileURLToPath } from 'node:url';
 import { resolveProjectName } from '../shared/helpers.js';
 
@@ -73,15 +73,15 @@ describe('v1.26.98 — the shell hook puts it on every event it writes', () => {
       const fnStart = src.indexOf('log_event() {');
       const fn = src.slice(fnStart, src.indexOf('\n}\n', fnStart) + 3);
 
-      execFileSync('bash', ['-c', [
-        `OWNMIND_DIR=${JSON.stringify(path.join(home, '.ownmind'))}`,
+      execBashScript([
+        `OWNMIND_DIR=${JSON.stringify(bp(path.join(home, '.ownmind')))}`,
         `LOG_DIR="$OWNMIND_DIR/logs"`,
         'API_KEY=""; API_URL=""',
-        projectDir === null ? 'unset CLAUDE_PROJECT_DIR' : `CLAUDE_PROJECT_DIR=${JSON.stringify(projectDir)}`,
+        projectDir === null ? 'unset CLAUDE_PROJECT_DIR' : `CLAUDE_PROJECT_DIR=${JSON.stringify(bp(projectDir))}`,
         setup,
         fn,
         'log_event "init" "status" "ok"',
-      ].join('\n')], { env: { ...process.env, HOME: home }, stdio: ['ignore', 'ignore', 'ignore'] });
+      ].join('\n'), { env: { ...process.env, HOME: bp(home) }, stdio: ['ignore', 'ignore', 'ignore'] });
 
       const logDir = path.join(home, '.ownmind', 'logs');
       const file = fs.readdirSync(logDir).find((f) => f.endsWith('.jsonl'));
