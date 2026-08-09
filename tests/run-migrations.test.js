@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, existsSync } from 'node:fs';
+import { assertExecutable } from './helpers/executable-bit.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -48,8 +49,9 @@ test('015 SQL has applied_at column with NOW() default', () => {
 // ============================================================
 
 test('run-migrations.sh exists and is executable', () => {
-  const stat = statSync(shPath);
-  assert.ok(stat.mode & 0o100, 'run-migrations.sh must have user-execute bit (chmod +x)');
+  // v1.26.118 — the index mode, not this filesystem's: chmod is a no-op on NTFS, so the
+  // old assertion was unpassable on Windows regardless of the file's real state.
+  assertExecutable(join(__dirname, '..'), 'scripts/run-migrations.sh');
 });
 
 test('run-migrations.sh uses INFO/OK/ERROR logging convention', () => {

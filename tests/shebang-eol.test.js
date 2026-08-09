@@ -200,7 +200,16 @@ describe('v1.26.96 — the installer repairs a checkout that is already CRLF', (
       const body = fs.readFileSync(out, 'utf8');
       assert.equal(body.includes('\r'), false, 'a CRLF source must land as LF');
       assert.equal(body, '#!/bin/sh\necho hi\n', 'and the content is otherwise unchanged');
-      assert.ok(fs.statSync(out).mode & 0o111, 'still executable');
+      // v1.26.118 — the file is a fresh copy in a temp directory, so there is no index mode
+      // to ask (see tests/helpers/executable-bit.js). On NTFS the bit cannot be observed at
+      // all: chmod is a no-op there, measured as 755 reading back 666. Rather than skip the
+      // platform and leave it unwatched, assert the claim it can still answer — that the
+      // function asks for the bit — and keep the real observation where it is meaningful.
+      if (process.platform === 'win32') {
+        assert.match(fn, /chmod\s+\+x/, 'the copy must ask for the execute bit');
+      } else {
+        assert.ok(fs.statSync(out).mode & 0o111, 'still executable');
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.26.118 修改（「可執行」這個斷言在 Windows 上不可能成立，#79 的 B 組）
+
+新增檔：
+```
+tests/helpers/executable-bit.js                 — assertExecutable(repoRoot, relPath)：
+                                                   問 git index 的 mode（100755），三個平台
+                                                   都讀得到，而且它決定的是每台 clone 的
+                                                   機器會拿到什麼；POSIX 上再額外驗本機
+                                                   那個位元。chmod 在 NTFS 上是空操作
+                                                   （實測 755 讀回來是 666）
+tests/executable-bit-helper.test.js             — 這把新尺自己的正向＋反向對照：拿一個
+                                                   commit 成 100644 的檔案餵進去必須紅，
+                                                   否則「Windows 上會過」跟「餵什麼都會過」
+                                                   分不出來
+```
+
+修改檔：
+```
+tests/bootstrap-script.test.js                  — bootstrap.sh 的可執行斷言改走 index mode
+tests/run-migrations.test.js                    — run-migrations.sh 同上
+tests/shebang-eol.test.js                       — 複製 git hook 那條驗的是暫存目錄裡的新檔，
+                                                   沒有 index 可以問；Windows 上改成斷言
+                                                   install_git_hook 有去要 chmod +x，
+                                                   真正的觀測留在有意義的平台
+package.json                                    — 1.26.117 → 1.26.118
+```
+
 ## v1.26.117 修改（自我檢查只確認「有登記」，從來沒確認「叫得起來」）
 
 新增檔：
