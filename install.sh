@@ -323,6 +323,56 @@ else
   "
 fi
 
+# --- 2a. Register the MCP server where Claude Code launches it (v1.26.112) ---
+#
+# The block above writes `~/.claude/settings.json`, which is where this project's own
+# `resolveCredentials` looks and where the hooks live. Claude Code reads that file for
+# hooks — but it launches MCP servers from `~/.claude.json`, which nothing has ever
+# written. So the `ownmind_*` tools were never registered for anybody installing with this
+# script: not broken, not degraded, absent. Memory still loaded, because the SessionStart
+# hook is configured in settings.json and makes its own HTTP call, and that is exactly why
+# nine releases went by with nobody noticing — the visible half worked.
+#
+# Added alongside rather than replacing: the block above carries the v1.26.91 key-change
+# reporting and field-preserving merge, both of which are pinned by tests, one of which
+# extracts and executes that inline script. Replacing it was the first attempt and broke
+# three of them.
+#
+# No JavaScript is embedded and nothing containing a quote is passed. `node -e` does not
+# survive PowerShell 5.1 (it strips the quotes, so the script arrives as nonsense and runs
+# silently wrong) and neither does a JSON argument — both measured 2026-08-09. A real file
+# plus one argv element per value is the only shape with no quoting layer.
+#
+# MSYS_NO_PATHCONV=1 because Git Bash rewrites anything that looks like a POSIX path before
+# handing it to a native .exe, and `/c` looks exactly like one: measured, the cmd.exe flag
+# arrived as `C:/` and would have been written into the launch command that way, leaving
+# Windows users with an entry that cannot start. Every path here is already Win32.
+#
+# `|| MCP_REG_OUT=""` because this script runs under `set -eE` with an ERR trap that
+# reports a failed install. The CLI exits 0 even when it cannot register, so this step
+# never aborts an otherwise good installation — but a missing node would still exit
+# non-zero, and "MCP not registered" must not be reported as "your install failed".
+REGISTER_MCP_CLI_WIN="$(to_win_path "$OWNMIND_DIR/scripts/install-helpers/register-mcp-cli.cjs")"
+if [ "$IS_WINDOWS" = true ]; then
+  MCP_COMMAND='cmd.exe'
+  MCP_CLI_ARGS=(--arg '/c' --arg "$START_CMD_WIN")
+else
+  MCP_COMMAND='node'
+  MCP_CLI_ARGS=(--arg "$MCP_ENTRY_PATH_WIN")
+fi
+MCP_REG_OUT=$(MSYS_NO_PATHCONV=1 node "$REGISTER_MCP_CLI_WIN" \
+  --command "$MCP_COMMAND" "${MCP_CLI_ARGS[@]}" \
+  --url "$API_URL" --key "$API_KEY" --home "$(to_win_path "$HOME")") || MCP_REG_OUT=""
+printf '%s\n' "$MCP_REG_OUT" | sed -n 's/^PROBLEM /       [WARN] /p'
+# IR-001: an installer saying it configured something is not evidence that it did. This
+# reports what was read back off disk, not what we meant to write.
+if printf '%s\n' "$MCP_REG_OUT" | grep -qx VERIFIED; then
+  echo "       MCP registered in ~/.claude.json (verified by reading it back)"
+else
+  echo "       [WARN] MCP could NOT be registered in ~/.claude.json —"
+  echo "              the ownmind_* tools will not be available in Claude Code."
+fi
+
 # --- 2.0 v1.17.97：算出傳給 hook installer 的 OwnMind 路徑（給 §2.1 + §2.2 共用）---
 # Git Bash on Windows 必須傳 Win32 path（C:\...），否則 Claude Code 在 Windows
 # 原生 command runner 找不到 hook 檔（POSIX path /c/Users/... 不認）。

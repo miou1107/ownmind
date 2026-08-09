@@ -261,6 +261,29 @@ if (Test-Path $EnsureSchedule) {
   }
 }
 
+# --- 3.0b Ensure the MCP server is registered where Claude Code launches it (v1.26.112) ---
+#
+# Has to live in the updater, not only in install.ps1. Nobody re-runs the installer: the
+# auto-update path is git pull -> npm install -> update.ps1, so an install-only fix reaches
+# new users and nobody else. That is the trap v1.26.104 fell into with the git-hook
+# wrappers, and it would be worse here, because the release notes would claim the repair
+# while every installed machine stayed exactly as broken.
+#
+# Every existing machine has mcpServers.ownmind in ~/.claude/settings.json and nothing in
+# ~/.claude.json, which is the file Claude Code actually launches MCP servers from.
+$RegisterMcp = Join-Path $OwnmindDir "scripts/install-helpers/register-mcp-cli.cjs"
+if (Test-Path $RegisterMcp) {
+  # A real file plus argv - see the note in install.ps1: `node -e` does not survive
+  # PowerShell 5.1 argument passing.
+  $RegisterCli = Join-Path $OwnmindDir "scripts/install-helpers/register-mcp-cli.cjs"
+  $regOut = & node $RegisterCli --upgrade $HOME 2>>$ErrLog
+  if ($regOut -contains "REGISTERED") {
+    Write-Host "   MCP 已註冊到 ~/.claude.json（Claude Code 從這裡啟動它，重開 session 後生效）"
+  } elseif ($regOut -contains "FAILED") {
+    Write-Host "   [WARN] MCP 無法註冊到 ~/.claude.json，ownmind_* 工具在 Claude Code 裡不會出現"
+  }
+}
+
 # --- 3. Claude Code settings.json：注入 hooks ---
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
 if (Test-Path $ClaudeSettings) {
