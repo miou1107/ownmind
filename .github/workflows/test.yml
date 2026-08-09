@@ -47,6 +47,11 @@ jobs:
       # runs an LLM translation pass that needs credentials CI does not have.
       - run: node scripts/ensure-console-build.js
       # npm test = lint:zh-only + node --test. None of the 257 test files touch a database.
+      #
+      # The runner carries --test-timeout so that a file which never finishes is named and
+      # fails, instead of consuming the whole timeout-minutes budget in silence. On
+      # 2026-08-09 the macOS leg did exactly that twice: 20 minutes, zero output, and a
+      # conclusion of "cancelled" that reads like somebody pressed a button. See package.json.
       - run: npm test
 
   # Windows runs, reports, and does not block merges - yet.

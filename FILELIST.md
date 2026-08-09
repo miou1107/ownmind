@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.112 修改（測試卡住的時候，它什麼都不說）
+
+新增檔：
+```
+tests/hung-test-is-named.test.js                — 2 條。一條盯著 npm test 有沒有帶時限、
+                                                   值有沒有低到會誤殺（下限 60 秒）；一條是
+                                                   陽性對照：真的做一個會卡住的測試檔丟進去
+                                                   跑，要求時限把它結束掉並且回報名字。
+                                                   對照會先量「這個 node 版本上哪一種形狀
+                                                   真的會卡」，一種都不卡就直接紅，因為那時
+                                                   它什麼都沒量到。反向驗證：同一個檔案不帶
+                                                   時限跑，時間到了必須還活著
+openspec/changes/v1.26.112-a-hung-run-says-nothing/
+                                                — proposal / spec / tasks
+```
+
+修改檔：
+```
+package.json                                    — test 腳本加 --test-timeout=300000；
+                                                   1.26.111 → 1.26.112
+.github/workflows/test.yml                      — 在 npm test 那一步旁邊寫下為什麼要帶時限，
+                                                   免得下一個人把它當雜訊刪掉
+```
+
 ## v1.26.111 修改（stat -f 在 Linux 上不是安靜地失敗）
 
 修改檔：

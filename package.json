@@ -1,13 +1,13 @@
 {
   "name": "ownmind",
-  "version": "1.26.111",
+  "version": "1.26.112",
   "description": "",
   "main": "index.js",
   "scripts": {
     "prestart": "node scripts/ensure-console-build.js",
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "npm run lint:zh-only && node --test",
+    "test": "npm run lint:zh-only && node --test --test-timeout=300000",
     "test:watch": "node --test --watch",
     "lint:zh-only": "node scripts/lint-zh-only.js client/src",
     "build:client": "cd client && npm install && npm run build",
