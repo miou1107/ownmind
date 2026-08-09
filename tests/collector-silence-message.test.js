@@ -5,7 +5,7 @@ import { renderMemberMessage, renderAdminMessage } from '../src/lib/collector-si
 import { DELIVERY_MAX_CHARS, DELIVERY_MAX_LINES } from '../src/lib/broadcast-envelope.js';
 
 /**
- * v1.26.99 — two audiences, two messages.
+ * v1.26.102 — two audiences, two messages.
  *
  * The delivery path shows the first five lines joined by a space, cut at 400
  * characters. Anything past that never reaches the reader, so these assert the
@@ -29,7 +29,7 @@ function silence(over = {}) {
   };
 }
 
-describe('v1.26.99 — the message the person gets', () => {
+describe('v1.26.102 — the message the person gets', () => {
   const { title, body } = renderMemberMessage([silence()]);
 
   it('is addressed to them, about their own machine', () => {
@@ -82,7 +82,7 @@ describe('v1.26.99 — the message the person gets', () => {
   });
 });
 
-describe('v1.26.99 — the message the admin gets', () => {
+describe('v1.26.102 — the message the admin gets', () => {
   const many = [
     silence({ user_id: 2, user_name: 'Amiee Kuo', machine: 'A', stale_days: 11 }),
     silence({ user_id: 3, user_name: 'Adam', machine: 'B', stale_days: 40 }),
@@ -118,7 +118,7 @@ describe('v1.26.99 — the message the admin gets', () => {
   });
 });
 
-describe('v1.26.99 — more machines than fit', () => {
+describe('v1.26.102 — more machines than fit', () => {
   const twelve = Array.from({ length: 12 }, (_, i) => silence({
     user_id: i + 1, user_name: `Person ${i}`, machine: `MACHINE-${i}`, stale_days: 30 - i,
   }));
@@ -140,7 +140,7 @@ describe('v1.26.99 — more machines than fit', () => {
   });
 });
 
-describe('v1.26.99 — dates and rubbish', () => {
+describe('v1.26.102 — dates and rubbish', () => {
   it('renders the date in Asia/Taipei, not UTC', () => {
     // 2026-07-27T16:30Z is already the 28th in Taipei. A date silently one day
     // behind is what makes a reader distrust the rest of the message.

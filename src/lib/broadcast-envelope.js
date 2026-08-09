@@ -1,7 +1,7 @@
 /**
  * broadcast-envelope — fit a list of one-line entries into what delivery actually shows.
  *
- * Extracted from src/lib/install-check-alert-message.js in v1.26.99, when a second
+ * Extracted from src/lib/install-check-alert-message.js in v1.26.102, when a second
  * server-written broadcast needed the same fitting. The alternative was a second
  * implementation of the same rule, and two answers to "what reaches the reader" is
  * exactly the defect this envelope exists to prevent.

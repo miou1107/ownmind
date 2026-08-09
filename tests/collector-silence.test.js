@@ -6,7 +6,7 @@ import {
 } from '../src/lib/collector-silence.js';
 
 /**
- * v1.26.99 — a dead usage collector is detected from disagreement inside one
+ * v1.26.102 — a dead usage collector is detected from disagreement inside one
  * machine, not from absolute silence.
  *
  * The thresholds were chosen against a real snapshot of `collector_heartbeat`
@@ -64,7 +64,7 @@ const PRODUCTION = [
   ...healthy(9, '采瑤', 'LAPTOP-MBGGLV2J', 0.4),
 ];
 
-describe('v1.26.99 — against the production snapshot', () => {
+describe('v1.26.102 — against the production snapshot', () => {
   const { silences } = evaluateSilence({ rows: PRODUCTION, now: NOW });
 
   it('finds the one machine whose scanner is dead', () => {
@@ -93,7 +93,7 @@ describe('v1.26.99 — against the production snapshot', () => {
   });
 });
 
-describe('v1.26.99 — which frozen row the report is taken from', () => {
+describe('v1.26.102 — which frozen row the report is taken from', () => {
   const OWNER = [1, 'Someone', 'box'];
 
   it('takes the date and the day count from the same row: the newest frozen one', () => {
@@ -128,7 +128,7 @@ describe('v1.26.99 — which frozen row the report is taken from', () => {
   });
 });
 
-describe('v1.26.99 — what the thresholds mean', () => {
+describe('v1.26.102 — what the thresholds mean', () => {
   const OWNER = [1, 'Someone', 'box'];
 
   it('a machine entirely dark says nothing, however long it has been', () => {
@@ -175,7 +175,7 @@ describe('v1.26.99 — what the thresholds mean', () => {
   });
 });
 
-describe('v1.26.99 — it reports what is broken, not what is new', () => {
+describe('v1.26.102 — it reports what is broken, not what is new', () => {
   const rows = [
     beat(1, 'Someone', 'box', 'claude-code', 0.1),
     beat(1, 'Someone', 'box', 'cursor', 30),
@@ -209,7 +209,7 @@ describe('v1.26.99 — it reports what is broken, not what is new', () => {
   });
 });
 
-describe('v1.26.99 — recovery', () => {
+describe('v1.26.102 — recovery', () => {
   const repaired = FIVE.map((tool) => beat(1, 'Someone', 'box', tool, 0.1));
 
   it('closes an announced finding once every tool is beating again', () => {
@@ -266,7 +266,7 @@ describe('v1.26.99 — recovery', () => {
   });
 });
 
-describe('v1.26.99 — rubbish input', () => {
+describe('v1.26.102 — rubbish input', () => {
   it('an unreadable timestamp does not vouch for the machine', () => {
     // Treating an unparseable date as age 0 would make it the "something is
     // still alive" evidence, and a broken row would certify a dead machine.

@@ -1,4 +1,4 @@
-# v1.26.99 — Nobody is told when a collector goes quiet
+# v1.26.102 — Nobody is told when a collector goes quiet
 
 `openspec/BACKLOG.md` item 4. It was proposed once before, as an alert, and Vin rejected
 that framing on 2026-08-05: an alarm is not a cure. Two releases went out to cure it

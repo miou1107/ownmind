@@ -205,7 +205,7 @@ function movableClock(start = NOW) {
   return now;
 }
 
-describe('v1.26.99 — nothing is announced on first sighting', () => {
+describe('v1.26.102 — nothing is announced on first sighting', () => {
   it('records the machine and tells nobody', async () => {
     // A computer switched back on after a fortnight away shows one fresh MCP row
     // against several stale scanner ones until the scanner's next run — two hours
@@ -248,7 +248,7 @@ describe('v1.26.99 — nothing is announced on first sighting', () => {
   });
 });
 
-describe('v1.26.99 — the job announces a dead collector', () => {
+describe('v1.26.102 — the job announces a dead collector', () => {
   /** Sweep once to record, advance past the window, sweep again to announce. */
   async function announceOnce(db, clock) {
     await runCollectorSilenceAlerts({ ...db, now: clock });
@@ -314,7 +314,7 @@ describe('v1.26.99 — the job announces a dead collector', () => {
   });
 });
 
-describe('v1.26.99 — running it again', () => {
+describe('v1.26.102 — running it again', () => {
   it('a sweep the next day announces nothing', async () => {
     const clock = movableClock();
     const db = makeDb({ clock });
@@ -345,7 +345,7 @@ describe('v1.26.99 — running it again', () => {
   });
 });
 
-describe('v1.26.99 — recovery', () => {
+describe('v1.26.102 — recovery', () => {
   async function announced(clock, beats = BROKEN) {
     const db = makeDb({ beats, clock });
     await runCollectorSilenceAlerts({ ...db, now: clock });
@@ -444,7 +444,7 @@ describe('v1.26.99 — recovery', () => {
   });
 });
 
-describe('v1.26.99 — the statements the fake cannot vouch for', () => {
+describe('v1.26.102 — the statements the fake cannot vouch for', () => {
   /**
    * The fake interprets the confirmation window, the claim's WHERE and the
    * shared-broadcast guard itself. That makes both ends of those interfaces
@@ -499,7 +499,7 @@ describe('v1.26.99 — the statements the fake cannot vouch for', () => {
   });
 });
 
-describe('v1.26.99 — when a write fails', () => {
+describe('v1.26.102 — when a write fails', () => {
   async function seen(db, clock) {
     await runCollectorSilenceAlerts({ ...db, now: clock });
     clock.advance((CONFIRM_HOURS + 1) * HOUR);
@@ -559,7 +559,7 @@ describe('v1.26.99 — when a write fails', () => {
   });
 });
 
-describe('v1.26.99 — who is left out', () => {
+describe('v1.26.102 — who is left out', () => {
   it('a member exempted from usage tracking is not queried at all', async () => {
     // Their usage is uncounted by agreement, so a dead collector on their
     // machine is not a fault anyone needs telling about. Asserted on the SQL
@@ -572,7 +572,7 @@ describe('v1.26.99 — who is left out', () => {
   });
 });
 
-describe('v1.26.99 — the two timings, pinned to what they are for', () => {
+describe('v1.26.102 — the two timings, pinned to what they are for', () => {
   /**
    * The fake reads these constants rather than restating them, which is right —
    * but it means no behavioural test can tell a sensible value from a nonsense

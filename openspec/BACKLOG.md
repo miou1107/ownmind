@@ -57,7 +57,7 @@ Origin: `archive/single-console-consolidation/tasks.md`, Stage 8.
 
 ### 4. A machine that goes *entirely* quiet is still nobody's business
 
-What remains after v1.26.99, which closed the half that could be detected: a machine
+What remains after v1.26.102, which closed the half that could be detected: a machine
 whose tool rows disagree with each other is now announced to its owner and to the admin.
 
 This half is the one the same release deliberately declined. When **every** row on a
@@ -73,7 +73,7 @@ Closing it needs that missing concept — a way to retire a machine, or a second
 doing only if somebody is actually hurt by the gap; the detected half covers the incident
 that opened this item.
 
-Origin: `archive/single-console-consolidation/tasks.md`, Stage 6, narrowed by v1.26.99.
+Origin: `archive/single-console-consolidation/tasks.md`, Stage 6, narrowed by v1.26.102.
 
 ### 5. The api client has no request timeout
 
