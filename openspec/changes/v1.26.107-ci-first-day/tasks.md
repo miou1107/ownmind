@@ -35,6 +35,18 @@ Opened as v1.26.106, which was taken by the Windows-encoding work while this was
 to 1.26.107 — CHANGELOG heading, `package.json`, README banners, and the in-code version
 annotations. Both CHANGELOG sections are kept in full.
 
+## Measured, and deliberately not fixed here
+
+- [x] The ubuntu × node 24 leg can still fail on `a leaked reclaim marker does not let two
+      shell hooks into the critical section`. Reproduced in a one-CPU container: **1 in 40**
+      runs on this branch, 0 in 40 on `main` — but `main` cannot reach that path on Linux at
+      all, because `lock_age_seconds` returns garbage there, which is the bug this change
+      fixes. `shared/update-lock.js` is byte-identical on both sides and its Node-side twin of
+      the same case did not fail in 40 runs either.
+      So: pre-existing protocol race, newly reachable on Linux. macOS has always taken this
+      path and passes. Not redesigned here — the protocol's own notes say delete-and-recreate
+      cannot be made atomic and the implementation only bounds the window.
+
 ## Not in this change
 
 The Windows leg's 109 pre-existing failures. Clearing them is its own piece of work; until
