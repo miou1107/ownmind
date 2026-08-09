@@ -37,7 +37,13 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+// v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
+// only accidentally one. On Windows it starts with a drive letter, which the ESM loader reads
+// as a URL scheme and rejects: ERR_UNSUPPORTED_ESM_URL_SCHEME. On macOS and Linux the same
+// string begins with `/` and resolves, which is why this only ever failed on Windows — and
+// failed into a catch that exits 0, so the hook went quiet instead of going wrong.
+const importFile = (p) => import(pathToFileURL(p).href);
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
@@ -140,10 +146,10 @@ async function main() {
   let readJsonSafe; let getClientVersion; let parseBypass; let isBypassed; let logBypass;
   let selectBlockFingerprint; let isSessionOff; let evaluateConditions;
   try {
-    const helpers = await import(path.join(HOOK_DIR, '..', 'shared', 'helpers.js'));
-    const bypass = await import(path.join(HOOK_DIR, 'lib', 'bypass-handler.js'));
-    const fingerprint = await import(path.join(HOOK_DIR, 'lib', 'select-block-fingerprint.js'));
-    const sessionOff = await import(path.join(HOOK_DIR, '..', 'shared', 'session-off-state.js'));
+    const helpers = await importFile(path.join(HOOK_DIR, '..', 'shared', 'helpers.js'));
+    const bypass = await importFile(path.join(HOOK_DIR, 'lib', 'bypass-handler.js'));
+    const fingerprint = await importFile(path.join(HOOK_DIR, 'lib', 'select-block-fingerprint.js'));
+    const sessionOff = await importFile(path.join(HOOK_DIR, '..', 'shared', 'session-off-state.js'));
     ({ readJsonSafe, getClientVersion } = helpers);
     ({ parseBypass, isBypassed, logBypass } = bypass);
     ({ selectBlockFingerprint } = fingerprint);
@@ -174,7 +180,7 @@ async function main() {
   if (messageRules.length === 0) process.exit(0);
 
   try {
-    const mod = await import(path.join(HOME, '.ownmind', 'shared', 'verification.js'));
+    const mod = await importFile(path.join(HOME, '.ownmind', 'shared', 'verification.js'));
     evaluateConditions = mod.evaluateConditions;
   } catch {
     console.warn(`[OwnMind v${VERSION}]⚠️ Validator engine unavailable — skipping commit message check`);
