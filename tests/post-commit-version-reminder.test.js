@@ -52,7 +52,13 @@ function runHook(repo, home) {
   const res = spawnSync(process.execPath, [HOOK], {
     cwd: repo,
     encoding: 'utf8',
-    env: { ...process.env, HOME: home },
+    // USERPROFILE as well as HOME: the hook calls os.homedir(), and on Windows that reads
+    // USERPROFILE and ignores HOME entirely. Setting HOME alone left the hook pointed at
+    // the developer's real home, where the fixture rule this test seeds does not exist —
+    // so the hook printed nothing. Three of the five cases here assert that nothing is
+    // printed, and passed for the wrong reason; the one positive case failed and is what
+    // exposed it.
+    env: { ...process.env, HOME: home, USERPROFILE: home },
   });
   assert.equal(res.status, 0, `hook must exit 0, got ${res.status}: ${res.stderr}`);
   return res.stdout + res.stderr;

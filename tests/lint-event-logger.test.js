@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { makeUnwritablePath } from './helpers/unwritable-path.js';
 import {
   writeEvent,
   extractViolatedWords,
@@ -94,14 +95,22 @@ describe('v1.19.11 scenario 11 — rotate mechanism', () => {
 
 describe('v1.19.11 scenario 12 — write failure does not throw', () => {
   it('writing to an unwritable path returns false without throwing', () => {
-    _resetPathForTests('/root/no-permission/x.jsonl');
-    let didThrow = false;
-    let result;
+    // `/root/no-permission/x.jsonl` used to stand in for this. It is not privileged on
+    // Windows — the writer created `C:\root\no-permission` and succeeded. See the note on
+    // makeUnwritablePath.
+    const target = makeUnwritablePath('x.jsonl');
     try {
-      result = writeEvent({ sessionId: 's', event: 'blocked' });
-    } catch { didThrow = true; }
-    assert.equal(didThrow, false, 'must not throw');
-    assert.equal(result, false, 'write failure should return false');
+      _resetPathForTests(target.path);
+      let didThrow = false;
+      let result;
+      try {
+        result = writeEvent({ sessionId: 's', event: 'blocked' });
+      } catch { didThrow = true; }
+      assert.equal(didThrow, false, 'must not throw');
+      assert.equal(result, false, 'write failure should return false');
+    } finally {
+      target.cleanup();
+    }
   });
 
   it('entry is null → returns false, does not throw', () => {
