@@ -140,6 +140,25 @@ describe('stripNul / stripNulEscapes', () => {
     assert.equal(JSON.parse(out).d, 'ab');
   });
 
+  it('leaves the literal six characters alone, and does not break the JSON around them', () => {
+    // A value that CONTAINS backslash-u-0-0-0-0 as text serializes with the backslash
+    // doubled. Stripping on the six-character pattern eats the second backslash and leaves
+    // the first one escaping whatever follows — the document stops parsing, the server
+    // rejects it, the spool retries it. That is the v1.17.83 loop, produced by the function
+    // written to prevent it. The error spool carries text out of arbitrary install logs,
+    // which is where a string like this comes from.
+    const literal = '\\' + 'u0000';
+    const out = stripNulEscapes(JSON.stringify({ note: 'log said: ' + literal + ' was found' }));
+    assert.equal(JSON.parse(out).note, 'log said: ' + literal + ' was found');
+  });
+
+  it('strips a real NUL that follows a literal backslash', () => {
+    // `C:\` then NUL: three backslashes in the serialized form, the last one introducing the
+    // escape. The path separator has to survive and the NUL has to go.
+    const out = stripNulEscapes(JSON.stringify({ d: 'C:\\' + NUL + 'x' }));
+    assert.equal(JSON.parse(out).d, 'C:\\x');
+  });
+
   it('leaves other unicode escapes alone', () => {
     const out = stripNulEscapes(JSON.stringify({ d: 'café ' }));
     assert.equal(JSON.parse(out).d, 'café ');

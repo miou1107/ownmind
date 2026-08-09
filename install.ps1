@@ -636,7 +636,9 @@ if (Test-Path $NoScannerFlag) {
     $RegisterLogPath = Join-Path $OwnmindDir ('logs\register-task-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
     $RegisterOutput = & powershell -ExecutionPolicy Bypass -File $RegisterScript 2>&1
     $regExit = $LASTEXITCODE
-    $RegisterOutput | ForEach-Object { Write-Host $_ }
+    # Where-Object first: a child that produced nothing pipes a single $null, and Write-Host
+    # would print one blank line where Tee-Object printed nothing at all.
+    $RegisterOutput | Where-Object { $null -ne $_ } | ForEach-Object { Write-Host $_ }
     Write-Utf8NoBom -Path $RegisterLogPath -Content ($RegisterOutput | Out-String)
     $taskOk = $null -ne (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue)
     if ($regExit -eq 0 -and $taskOk) {

@@ -88,9 +88,12 @@ function describeSpawnFailure(r) {
   if (r.signal) parts.push(`signal=${r.signal}`);
   const tail = (r.stderr_tail || '').trim();
   if (tail) parts.push(`stderr=${tail}`);
-  // The raw message last: it is the least specific part, and always present.
+  // The raw message last: it is the least specific part, and usually present.
   parts.push(sanitizePath(r.error || '').trim());
-  return parts.filter(Boolean).join(' ');
+  // `usually`: a result carrying none of these fields would otherwise render as an empty
+  // string, which reaches the server as "... failed: " with nothing after the colon — a
+  // report that costs somebody a round trip to discover it says nothing.
+  return parts.filter(Boolean).join(' ') || 'failed with no diagnostic fields';
 }
 
 function readJsonSafe(p) {
@@ -1170,7 +1173,10 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
       continue;
     }
     report._attempts = attempts;
-    remaining.push(JSON.stringify(report));
+    // serializeReport, not JSON.stringify: this writes back to the same spool the uploader
+    // reads, so a direct stringify here is the third caller the comment on serializeReport
+    // warns about — and it is the one that persists a poisoned line rather than sending it.
+    remaining.push(serializeReport(report));
   }
 
   // Append failures back to the main spool (don't overwrite — new entries may have arrived).

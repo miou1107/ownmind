@@ -105,8 +105,23 @@ function stripNul(s) {
  */
 function stripNulEscapes(jsonText) {
   if (typeof jsonText !== 'string') return jsonText;
-  // Case-insensitive, because JSON accepts either case in the four hex digits.
-  return stripNul(jsonText).replace(/\\u0000/gi, '');
+  // Count the backslashes in front, because not every occurrence of that six-character
+  // sequence is an escape. A value that CONTAINS it as literal text serializes with its
+  // backslash doubled, and removing the whole pattern there eats the second backslash and
+  // leaves the first one escaping whatever came next — a document that no longer parses,
+  // which the server rejects and the spool then retries forever. That is the loop this
+  // function exists to prevent.
+  //
+  // An odd run means the last backslash introduces the escape: drop that backslash and the
+  // "u0000" with it. An even run means every backslash is itself escaped and the "u0000" is
+  // plain text, so leave the match alone.
+  //
+  // No `i` flag: JSON.stringify emits the lowercase form, and an uppercase U is not valid
+  // JSON at all, so matching case-insensitively could only ever corrupt something.
+  return stripNul(jsonText).replace(
+    /(\\+)u0000/g,
+    (match, slashes) => (slashes.length % 2 === 1 ? slashes.slice(0, -1) : match)
+  );
 }
 
 module.exports = { decodeTextBuffer, readTextFileSync, stripNul, stripNulEscapes, NUL };

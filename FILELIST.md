@@ -9,13 +9,18 @@ scripts/install-helpers/read-text-file.cjs      — 依 BOM 解碼，不猜。Po
                                                    另含 stripNul / stripNulEscapes ——
                                                    JSON.stringify 會把 NUL 轉成跳脫序列，
                                                    而 Postgres 抱怨的正是那個跳脫序列
-tests/windows-log-encoding.test.js              — 18 條。編碼是位元組的性質，所以 fixture
-                                                   就是位元組 —— 不需要 Windows 也測得到
-tests/windows-test-hygiene.test.js              — 267 條（隨測試檔數量增長）。掃描測試原始碼
+tests/windows-log-encoding.test.js              — 20 條。編碼是位元組的性質，所以 fixture
+                                                   就是位元組 —— 不需要 Windows 也測得到。
+                                                   含審查抓到的那個案例：內容本來就寫著那六個
+                                                   字元時，不可以剪
+tests/windows-test-hygiene.test.js              — 288 條（隨掃描到的檔案數量增長）。掃描原始碼
                                                    本身：沒有裸的 .pathname、每個會執行腳本的
                                                    PowerShell spawn 都帶 -ExecutionPolicy
                                                    Bypass、.cmd stub 有跳脫 cmd.exe 中繼字元、
-                                                   兩支查 Task Scheduler 的函式都用加大後的預算
+                                                   兩支查 Task Scheduler 的函式都用加大後的預算。
+                                                   掃描範圍含 hooks / mcp / scripts / shared /
+                                                   src，不只 tests —— 第一版只掃 tests，而同一
+                                                   個毛病當時正活在出貨的掛勾裡
 openspec/changes/v1.26.106-windows-only-and-mac-cannot-see-it/ — proposal / spec / tasks
 ```
 
@@ -57,6 +62,15 @@ tests/installer-node-paths.test.js              — 同上的 fileURLToPath。�
                                                    改成清空 PATH
 tests/session-log-args.test.js                  — fileURLToPath
 tests/source-files-are-text.test.js             — fileURLToPath
+hooks/ownmind-git-commit-msg.js                 — 改用 fileURLToPath 找自己的目錄。原本是裸的
+                                                   new URL(...).pathname，在 Windows 上會變成
+                                                   C:\C:\...，底下的 import 全部解不開；而這支
+                                                   掛勾設計上任何異常都 exit 0，所以結果不是報錯，
+                                                   是**每一條 commit 訊息規則在 Windows 上靜靜地
+                                                   沒在跑**（審查抓到）
+tests/install-failed-beacon-ps1.test.js         — spawn PowerShell 補上 -ExecutionPolicy
+                                                   Bypass（審查抓到；它用 PWSH 常數，所以躲過了
+                                                   hygiene 測試原本的挑檔條件）
 package.json                                    — 1.26.105 → 1.26.106
 ```
 
