@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-// v1.26.104 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
+// v1.26.106 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
 // '/C:/Users/...'; node then resolves that against the current drive root and looks for
 // 'C:C:Users...'. This file threw MODULE_NOT_FOUND / ENOENT on every Windows run while
 // passing on macOS, where the pathname happens to be a valid path.
@@ -77,7 +77,7 @@ describe('checkInstallArtifacts', () => {
     } finally { h.cleanup(); }
   });
 
-  // v1.26.104 — this used chmod(0o000) on the hooks directory, which is a no-op on Windows:
+  // v1.26.106 — this used chmod(0o000) on the hooks directory, which is a no-op on Windows:
   // NTFS does not honour POSIX mode bits, statSync kept succeeding, and the test failed on
   // the platform it was meant to protect while passing on macOS.
   //

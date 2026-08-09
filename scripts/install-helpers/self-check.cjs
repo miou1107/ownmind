@@ -34,7 +34,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 // v1.17.66 — on Windows, every spawn goes through safeSpawn (forces shell:false + windowsHide:true).
 const { safeSpawn } = require('./safe-spawn.cjs');
-// v1.26.104 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
+// v1.26.106 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
 const { readTextFileSync, stripNulEscapes } = require('./read-text-file.cjs');
 
 const HOME = os.homedir();
@@ -47,7 +47,7 @@ const NO_UPLOAD_FLAG = path.join(OWNMIND_DIR, '.no-self-check-upload');
 const SPOOL_FILENAME = '.upload-spool.jsonl';
 const PLATFORM = process.platform;
 const TIMEOUT_MS = 5000;
-// v1.26.104 - Get-ScheduledTask is a CIM cmdlet: PowerShell has to autoload the
+// v1.26.106 - Get-ScheduledTask is a CIM cmdlet: PowerShell has to autoload the
 // ScheduledTasks module and open a CIM session before it answers. Measured on an idle
 // Windows 10 box: 1.5s, five runs, warm. Against TIMEOUT_MS that is 3x of headroom, and
 // self-check runs at the end of an install or upgrade - the one moment the machine is
@@ -75,7 +75,7 @@ function sanitizePath(s) {
 /**
  * Describe a failed safeSpawn result in a way the reader can act on.
  *
- * v1.26.104 - safeSpawn returns { error, code, killed, signal, stderr_tail } and callers were
+ * v1.26.106 - safeSpawn returns { error, code, killed, signal, stderr_tail } and callers were
  * quoting `error` alone. For a timeout that string is "Command failed: <the command>", which
  * reads as "the command is wrong" and is the one thing it cannot be. Timing out and exiting
  * non-zero call for opposite responses, so the message has to separate them (IR-003).
@@ -711,7 +711,7 @@ async function checkScheduler() {
       ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
       { timeout: CIM_TIMEOUT_MS });
     if (!r.ok) {
-      // v1.26.104 - this reported only r.error, which for a timeout is the literal string
+      // v1.26.106 - this reported only r.error, which for a timeout is the literal string
       // "Command failed: powershell.exe ..." and nothing else: no exit code, no stderr, no
       // hint that a clock ran out. safeSpawn had already captured killed and signal; the
       // caller threw them away and then advised "Requires Windows + PowerShell" to a machine
@@ -806,7 +806,7 @@ async function detectBashResolution() {
 // two battery params, the whole register call threw, and the task never registered. The old
 // detectSchedulerDetail only returned NOT_FOUND — we couldn't see the root cause. Now we
 // also attach "the most recent install run of register-scanner-task.ps1's output".
-// v1.26.104 - logDir is injectable so a test can hand it a real UTF-16LE fixture. Without
+// v1.26.106 - logDir is injectable so a test can hand it a real UTF-16LE fixture. Without
 // it this function is reachable only on Windows, with a real install behind it, which is how
 // it went months emitting NUL bytes unnoticed.
 function readLatestRegisterLog(logDirOverride) {
@@ -824,7 +824,7 @@ function readLatestRegisterLog(logDirOverride) {
     const latest = files[0];
     const fullPath = path.join(logDir, latest.name);
     // Cap at 8KB (logs are normally small; anything larger suggests something is wrong).
-    // v1.26.104 - decode by BOM, not by assumption. install.ps1 wrote this file with
+    // v1.26.106 - decode by BOM, not by assumption. install.ps1 wrote this file with
     // Tee-Object, which on Windows PowerShell 5.1 has no -Encoding parameter and therefore
     // always emits UTF-16LE. Reading it as UTF-8 turned a 298-byte log into mojibake with 148
     // NUL bytes and uploaded that - see read-text-file.cjs. The writer is fixed too, but this
@@ -1064,7 +1064,7 @@ function getSpoolPath(opts = {}) {
 /**
  * The one place a report becomes bytes.
  *
- * v1.26.104 - v1.17.83 taught that a single NUL anywhere in this payload makes Postgres
+ * v1.26.106 - v1.17.83 taught that a single NUL anywhere in this payload makes Postgres
  * reject the whole JSONB document, the INSERT fail, and the spool re-send the identical row
  * until someone notices the run of 500s in the server log. That was fixed by stripping NUL
  * server-side. Stripping it here as well is not redundancy for its own sake: the spool writes
@@ -1381,7 +1381,7 @@ module.exports = {
   // v1.17.66 — environment info collection (IR-038).
   collectEnv, detectShellChain, detectBashResolution,
   detectSchedulerDetail, detectWindowsEncoding,
-  // v1.26.104 - the Windows-only paths a Mac cannot run. Exported so their behavior can be
+  // v1.26.106 - the Windows-only paths a Mac cannot run. Exported so their behavior can be
   // asserted from any platform instead of only being reachable on the one that breaks.
   readLatestRegisterLog, describeSpawnFailure, serializeReport, CIM_TIMEOUT_MS,
 };

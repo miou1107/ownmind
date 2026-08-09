@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
  * release that was named after it.
  */
 function shellScripts() {
-  // v1.26.104 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
+  // v1.26.106 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
   // '/C:/Users/...'; node then resolves that against the current drive root and looks for
   // 'C:C:Users...'. This file threw MODULE_NOT_FOUND / ENOENT on every Windows run while
   // passing on macOS, where the pathname happens to be a valid path.
@@ -190,7 +190,7 @@ describe('the upgrade log survives rollback', () => {
 });
 
 describe('to_win_path is inert when cygpath is absent', () => {
-  // v1.26.104 — the PATH here was `/usr/bin:/bin`, chosen to mean "no cygpath". Under Git
+  // v1.26.106 — the PATH here was `/usr/bin:/bin`, chosen to mean "no cygpath". Under Git
   // Bash cygpath lives in /usr/bin, so on Windows the premise was false: cygpath was found,
   // to_win_path converted, and the test failed while the helper did exactly its job. The
   // name said "off Windows" but nothing made it skip there.

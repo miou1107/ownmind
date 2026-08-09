@@ -3,7 +3,7 @@
 /**
  * Read a text file that some other tool wrote, without assuming it chose UTF-8.
  *
- * Why this exists (v1.26.104):
+ * Why this exists (v1.26.106):
  *
  *   install.ps1 wrote the register-scanner-task log with `Tee-Object -FilePath`. Windows
  *   PowerShell 5.1's Tee-Object has no -Encoding parameter at all, so it always writes

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * v1.26.103 — install-time helper: writes (and repairs) the OwnMind PreToolUse iron-rule hooks
+ * v1.26.105 — install-time helper: writes (and repairs) the OwnMind PreToolUse iron-rule hooks
  * in ~/.claude/settings.json.
  *
  * Why this exists as a helper rather than inline in the installers: the logic lived twice, once

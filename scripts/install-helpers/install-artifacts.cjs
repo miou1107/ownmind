@@ -58,7 +58,7 @@ const claudeHooks = ({ home }) => path.join(home, '.claude', 'hooks');
  * The file the registered PreToolUse command would actually run, or null if no OwnMind entry
  * is registered at all.
  *
- * v1.26.103 — `iron_rule_hook` below asks whether a copy of the hook exists somewhere under
+ * v1.26.105 — `iron_rule_hook` below asks whether a copy of the hook exists somewhere under
  * ~/.claude/hooks. On 2026-08-09 a machine passed that check while the command in
  * settings.json named a copy that could not start: same file, wrong directory, so its
  * `../shared/helpers.js` import resolved to a path no installer creates. The hook died on
@@ -119,7 +119,7 @@ const ARTIFACTS = [
     id: 'iron_rule_hook',
     describe: 'PreToolUse iron-rule hook',
     kind: 'file',
-    // v1.26.103 — when a command is registered, that path is the only one that counts: it is
+    // v1.26.105 — when a command is registered, that path is the only one that counts: it is
     // the file Claude Code will actually run. The list below is the fallback for a machine
     // with nothing registered yet, and used to be the whole check — which is how a machine
     // passed 6/6 while the command named a copy that could not start.

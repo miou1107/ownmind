@@ -14,7 +14,7 @@ const testFiles = readdirSync(testsDir).filter((f) => f.endsWith('.test.js'));
 const read = (f) => readFileSync(join(testsDir, f), 'utf8');
 
 /**
- * v1.26.104 — the suite's own Windows blind spots.
+ * v1.26.106 — the suite's own Windows blind spots.
  *
  * This repository has no CI. Tests run wherever someone runs them, which in practice is one
  * developer's machine, and a test that cannot pass on the other platform is not a failing

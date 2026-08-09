@@ -18,7 +18,7 @@ const { readLatestRegisterLog, serializeReport } = require('../scripts/install-h
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
- * v1.26.104 — a Windows-only defect, asserted from any platform.
+ * v1.26.106 — a Windows-only defect, asserted from any platform.
  *
  * install.ps1 wrote the register-scanner-task log with `Tee-Object -FilePath`. Windows
  * PowerShell 5.1's Tee-Object has no -Encoding parameter at all, so it always writes

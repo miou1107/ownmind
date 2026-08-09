@@ -322,6 +322,138 @@ describe('v1.26.28 pre-commit — separator lines pass, block message shows matc
 });
 
 // ============================================================
+// v1.26.103 — a pure rename carries no new content (bug-report id=10, 2026-08-05)
+//
+// `git mv`-ing a committed file re-scans it from scratch. `git diff --cached
+// --name-status` correctly reports R100 with an identical blob SHA on both sides,
+// but the content scan asks for the diff of ONE path — and a single-path diff has
+// no deleted counterpart to pair with, so rename detection cannot run and every
+// line comes back as an addition.
+//
+// Consequence: any committed file holding key-shaped text (a spec's positive
+// example, a checksum table, a test fixture) becomes permanently un-moveable. The
+// only way out is a bypass, which switches off every other rule at the same time.
+// ============================================================
+
+describe('v1.26.103 pre-commit — a pure rename carries no new content', () => {
+  beforeEach(setupSandbox);
+  afterEach(cleanupSandbox);
+
+  // Split across concat so this repo's own pre-commit scanner does not read the
+  // fixture as a live credential. Same synthetic material the wp-prose specs use.
+  const WP_SHAPED = ['iXEN', 'ops5', 'pJcy', '8PJI', 'lVFM', 'heaH'].join(' ');
+
+  function seedCommit(relPath, content) {
+    stage(relPath, content);
+    runGit(['-c', 'core.hooksPath=/dev/null', 'commit', '-q', '-m', 'seed']);
+  }
+
+  it('git mv of a committed file whose content is key-shaped → exit 0', () => {
+    seedCommit('openspec/changes/wp-prose/spec.md',
+      `positive example that must stay verbatim: ${WP_SHAPED}\n`);
+    runGit(['mv', 'openspec/changes/wp-prose', 'openspec/changes/archive-wp-prose']);
+    const r = runHook();
+    assert.equal(r.status, 0,
+      `a pure rename adds no content and must not be blocked; stderr=${r.stderr}`);
+  });
+
+  // The negative control. Without it the test above is satisfied by simply never
+  // scanning a renamed file, which would open a hole: move a file and smuggle a
+  // key in during the same commit.
+  it('rename that also ADDS a secret line → still exit 1', () => {
+    seedCommit('openspec/changes/wp-prose/spec.md',
+      `positive example that must stay verbatim: ${WP_SHAPED}\n`);
+    runGit(['mv', 'openspec/changes/wp-prose', 'openspec/changes/archive-wp-prose']);
+    const moved = path.join(tmpRepo, 'openspec/changes/archive-wp-prose/spec.md');
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
+    fs.appendFileSync(moved, `const key = "${fakeKey}";\n`);
+    runGit(['add', '-A']);
+    const r = runHook();
+    assert.equal(r.status, 1,
+      `content added during a rename must still be scanned; stderr=${r.stderr}`);
+    assert.match(r.stderr, /openai_api_key/);
+  });
+
+  // Rename detection is a user-configurable git behaviour. If the fix relies on it
+  // being on, it stops working for anyone who has turned it off — silently, in the
+  // blocking direction.
+  it('git mv with diff.renames=false in the repo config → still exit 0', () => {
+    runGit(['config', 'diff.renames', 'false']);
+    seedCommit('openspec/changes/wp-prose/spec.md',
+      `positive example that must stay verbatim: ${WP_SHAPED}\n`);
+    runGit(['mv', 'openspec/changes/wp-prose', 'openspec/changes/archive-wp-prose']);
+    const r = runHook();
+    assert.equal(r.status, 0,
+      `the user's rename-detection setting must not decide this; stderr=${r.stderr}`);
+  });
+
+  // The source path comes from git, and git reads it back as a PATHSPEC — `--` does
+  // not turn that off. A file committed as `:!victim.txt` is both a legal filename and
+  // an exclude pattern, so pairing it with its destination cancels the destination out
+  // of its own diff: git returns nothing and a secret added in the same commit is never
+  // seen. This is the one way the fix could scan LESS than before it.
+  it('rename whose source path is pathspec magic → the added secret is still caught', () => {
+    // Bulk matters: append one line to a one-line file and similarity drops under 50%,
+    // git reports an unrelated delete plus add, no pairing is attempted and the test
+    // passes without ever reaching the code it is meant to pin.
+    seedCommit(':!victim.txt', 'nothing interesting here\n'.repeat(60));
+    runGit(['mv', ':!victim.txt', 'victim.txt']);
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
+    fs.appendFileSync(path.join(tmpRepo, 'victim.txt'), `const key = "${fakeKey}";\n`);
+    runGit(['add', '-A']);
+    const r = runHook();
+    assert.equal(r.status, 1,
+      `a path git hands back must be read literally, not as a pattern; stderr=${r.stderr}`);
+    assert.match(r.stderr, /openai_api_key/);
+  });
+
+  // The same flaw in the harmless direction: an unmatched pathspec pairs nothing, so
+  // the file reverts to being read whole and a plain move is blocked again.
+  it('pure rename whose source path is pathspec magic → exit 0', () => {
+    seedCommit(':colon-start.txt',
+      `positive example that must stay verbatim: ${WP_SHAPED}\n`);
+    runGit(['mv', ':colon-start.txt', 'colon-start.txt']);
+    const r = runHook();
+    assert.equal(r.status, 0,
+      `an unusual filename must not decide whether a move is blocked; stderr=${r.stderr}`);
+  });
+
+  // Every other test here stages exactly one file, so the parser only ever sees a
+  // single record. This one gives it two of different shapes — a rename consumes three
+  // NUL tokens, an add consumes two — and checks the attribution comes out right on
+  // both: the added file's secret is reported, the moved file's untouched content is
+  // not. (It does not pin the explicit non-rename advance itself; dropping that leaves
+  // the loop to resynchronise on the next token that starts with ':'.)
+  it('a rename staged alongside an unrelated add → both are read correctly', () => {
+    seedCommit('openspec/changes/wp-prose/spec.md',
+      `positive example that must stay verbatim: ${WP_SHAPED}\n`);
+    runGit(['mv', 'openspec/changes/wp-prose', 'openspec/changes/archive-wp-prose']);
+    const fakePat = 'ghp_' + 'abcdefghij' + 'klmnopqrst' + 'uvwxyz0123' + '456789AB';
+    stage('src/newly-added.js', `const t = "${fakePat}";\n`);
+    const r = runHook();
+    assert.equal(r.status, 1,
+      `the added file's secret must survive parsing alongside a rename; stderr=${r.stderr}`);
+    assert.match(r.stderr, /github_pat/);
+    assert.doesNotMatch(r.stderr, /wp_application_password/,
+      `the moved file contributed no new content and must not be reported; stderr=${r.stderr}`);
+  });
+
+  // A rename is only exempt because the blob is byte-identical. Content edited in
+  // the same commit changes the SHA, so the exemption must not apply.
+  it('rename plus an edit to an existing line → scanned normally', () => {
+    seedCommit('src/notes.md', 'nothing interesting here\n');
+    runGit(['mv', 'src/notes.md', 'src/moved-notes.md']);
+    const fakePat = 'ghp_' + 'abcdefghij' + 'klmnopqrst' + 'uvwxyz0123' + '456789AB';
+    fs.writeFileSync(path.join(tmpRepo, 'src/moved-notes.md'), `token: ${fakePat}\n`);
+    runGit(['add', '-A']);
+    const r = runHook();
+    assert.equal(r.status, 1,
+      `an edited blob is new content whatever its path; stderr=${r.stderr}`);
+    assert.match(r.stderr, /github_pat/);
+  });
+});
+
+// ============================================================
 // v1.26.33: the content scan must be de-identified — it must fire for the
 // secret-guard rule based on its semantic identity (the commit_no_secrets
 // template's conditions.type), NOT on the personal code IR-002. Otherwise a

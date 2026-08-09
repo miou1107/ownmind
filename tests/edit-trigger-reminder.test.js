@@ -414,7 +414,7 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
    * never have reached anyone who already had the first, and every user is an upgrade.
    * A single run cannot tell the two behaviours apart.
    *
-   * v1.26.103: this used to slice the node -e block out of install.sh and eval it, which
+   * v1.26.105: this used to slice the node -e block out of install.sh and eval it, which
    * only ever exercised the bash copy — install.ps1 held its own and rotted unwatched. The
    * step now lives in ensure-pretooluse-hooks.cjs and all four scripts call it, so the test
    * runs the helper the same way install.sh does. --bash matches install.sh's invocation.
