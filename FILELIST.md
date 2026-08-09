@@ -1,5 +1,66 @@
 # OwnMind 檔案結構
 
+## v1.26.105 修改（同一個設定檔裡，一個掛勾在跑，一個死了四個月）
+
+新增檔：
+```
+scripts/install-helpers/ensure-pretooluse-hooks.cjs — PreToolUse 鐵律掛勾的註冊／修復，
+                                                   四支安裝升級腳本共用同一份。指令
+                                                   **不一樣就改寫**，不再把「這個 matcher
+                                                   底下有提到 ownmind-iron-rule-check」
+                                                   當成「它是對的」—— 壞掉的那筆自己滿足
+                                                   了自己的修復條件，所以 v1.26.92 只修到
+                                                   全新安裝，升級戶一個都沒修到。
+                                                   --bash / --node 對應兩種呼叫寫法
+tests/ensure-pretooluse-hooks.test.js           — 20 條行為測試，含 2026-08-09 那台機器的
+                                                   實際 settings.json 當回歸案例
+openspec/changes/v1.26.105-one-hook-runs-one-is-dead/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+install.sh / install.ps1                        — PreToolUse 那段改成呼叫共用 helper。
+                                                   原本四份同樣的邏輯散在四支腳本裡，
+                                                   只有 bash 那份跑得到 CI，爛掉的正好是
+                                                   沒有測試碰得到的那半邊
+scripts/update.sh / scripts/update.ps1          — 同上。這兩支裡最舊的那份順手一起換掉
+                                                   （只有一個 matcher、全陣列比對，而且會
+                                                   在 Windows 上寫入 bash 指令）
+scripts/install-helpers/install-artifacts.cjs   — iron_rule_hook 改成先讀 settings.json 裡
+                                                   **實際註冊的那條指令**，那個路徑才是
+                                                   Claude Code 真的會跑的檔案。原本只問
+                                                   「~/.claude/hooks 底下有沒有一份副本」，
+                                                   所以那台機器一邊 6/6 全過、一邊每次
+                                                   Bash 都 ERR_MODULE_NOT_FOUND。沒註冊
+                                                   任何東西時才退回舊的候選清單。
+                                                   另新增 iron_rule_hook_deps：光看路徑
+                                                   存不存在還是抓不到那台機器 —— 兩份副本
+                                                   位元組一樣，註冊的那個檔案**是在的**，
+                                                   缺的是它第一行 import 的
+                                                   `../shared/helpers.js`。ESM import 解不開
+                                                   會在 payload 第一個位元組之前就殺掉 node，
+                                                   所以「有這個檔案」跟「它跑得起來」是兩件事。
+                                                   只在註冊的是 .js 時檢查，.sh 不 import 東西
+install.sh                                      — PreToolUse 的 helper 呼叫從 `VAR=$(...)`
+                                                   改成 `if var=$(...); then`。`set -eE` 底下
+                                                   裸的命令替換會把 helper 的結束碼帶出來、
+                                                   直接中止安裝，而且 2>&1 收進變數又沒印出來
+                                                   —— 這個檔案開頭警告過的那個組合。兩支更新
+                                                   腳本本來就有包，只有 install.sh 沒有
+tests/edit-trigger-reminder.test.js             — 不再從 install.sh 切出 node -e 區塊 eval，
+                                                   改成直接跑 helper。切區塊只驗得到 bash
+                                                   那份，install.ps1 自己那份沒人看著爛掉
+.gitignore                                      — 補上六個安裝腳本自己寫進檢出目錄的執行時
+                                                   檔案（.node-path、.git-bash-path、cache/、
+                                                   git-hooks/ 等）。這個檔案開頭的註解早就
+                                                   寫過這個坑，但名單停在 .update-lock*，
+                                                   所以實機每次升級都判定成 dirty tree、
+                                                   每次都 git reset --hard。真正的代價是
+                                                   那句警告變成每次都出現的雜訊 —— 使用者
+                                                   真的手改過的東西會混在同一行裡捲過去
+package.json                                    — 1.26.104 → 1.26.105
+```
+
 ## v1.26.104 修改（檢查 commit 訊息的那道關卡，讀的是上一次的訊息）
 
 新增檔：

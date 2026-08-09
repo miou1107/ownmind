@@ -43,3 +43,17 @@ backups/
 
 # v1.26.92 — per-session edit-reminder throttle state, written into the checkout at runtime
 state/
+
+# v1.26.105 — the rest of what the installers and hooks write into the checkout at runtime.
+# The comment at the top of this file already names the failure: untracked files make
+# `git status --porcelain` non-empty, interactive-upgrade reads that as a dirty tree, and
+# answers with `git reset --hard`. That list stopped at .update-lock*, so on a real machine
+# every upgrade still took the destructive branch — six untracked paths, none of them the
+# user's. The warning it prints is therefore noise on every run, which is the expensive part:
+# an edit the user actually made scrolls past inside the same message.
+.node-path
+.git-bash-path
+.last-mcp-update-check
+.session-hook-installed
+cache/
+git-hooks/
