@@ -20,7 +20,7 @@ function runHook(message) {
   const msgFile = path.join(tmpDir, 'COMMIT_EDITMSG');
   fs.writeFileSync(msgFile, message);
   try {
-    execFileSync(HOOK, [msgFile], {
+    execFileSync('bash', [HOOK, msgFile], {
       stdio: 'pipe',
       env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
     });
