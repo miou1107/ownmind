@@ -547,7 +547,7 @@ if [ -f "$SRC_VERIFY" ] && ! [ "$SRC_VERIFY" -ef "$DST_VERIFY" ]; then
 fi
 
 # 複製 git hook JS 檔案
-HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
+HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
 for js_file in "${HOOK_JS_FILES[@]}"; do
   SRC_JS="$OWNMIND_DIR/hooks/$js_file"
   DST_JS="$HOME/.ownmind/hooks/$js_file"
