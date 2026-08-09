@@ -432,49 +432,30 @@ Write-Host "[ OK ] Installed hook scripts"
 # 現在 Windows 一律走 node：OwnMind 本來就要求 Node 20+，絕對路徑也沒有殼層可以再解讀。
 $HookCmdHelper = Join-Path $OwnmindDir "scripts\install-helpers\session-hook-command.cjs"
 
-$settingsContent = Get-Content $ClaudeSettings -Raw
-$hookSettings = $settingsContent | ConvertFrom-Json
-if (-not $hookSettings.hooks) {
-  $hookSettings | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{})
-}
-
-# PreToolUse hook
-if (-not $hookSettings.hooks.PreToolUse) {
-  $hookSettings.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue @()
-}
-if ($HasBash) {
-  $preCmd = "bash ~/.claude/hooks/ownmind-iron-rule-check.sh"
+# PreToolUse hook — v1.26.105, delegated to ensure-pretooluse-hooks.cjs
+#
+# Two things moved out of this file. The first is the logic: it lived here in PowerShell and
+# again as a node block inside install.sh, and only the bash copy was reachable from CI — the
+# half that rotted was the half no test could run.
+#
+# The second is the repair. Both copies asked whether an entry for the matcher mentioned
+# 'ownmind-iron-rule-check' and stopped there, which a stale entry does, so a stale entry
+# satisfied its own repair and kept its old command forever. Measured on an upgraded Windows
+# machine: the Bash matcher still read `node ~/.claude/hooks/ownmind-iron-rule-check.js` and
+# died with ERR_MODULE_NOT_FOUND on every Bash call, while the Edit matcher — added by
+# v1.26.92, so written fresh — ran fine. Two entries in one settings.json, one working, one
+# dead, and nothing on screen either way. The helper rewrites a command that differs instead
+# of accepting its presence as proof.
+#
+# Windows always takes the node branch (see the v1.26.80 note above), so no --bash here. The
+# helper edits settings.json on disk, which is why nothing below re-writes a stale snapshot.
+$PreHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"
+if (Test-Path $PreHookHelper) {
+  $preHookResult = & node $PreHookHelper $ClaudeSettings --ownmind-dir $OwnmindDir 2>&1
+  Write-Host "   PreToolUse iron-rule hook: $preHookResult"
 } else {
-  # v1.26.92 — run the checkout copy, not the one copied into ~/.claude/hooks.
-  #
-  # That copy cannot start: it imports ../shared/helpers.js, `~/.claude/shared/` does not
-  # exist, and no installer creates it, so node exits with ERR_MODULE_NOT_FOUND before
-  # reading a byte of the payload. On a Windows machine without Git Bash this hook has
-  # therefore never run at all — the same class of silent failure as v1.26.88 and v1.26.90,
-  # and invisible for the same reason: the hook is expected to be quiet.
-  # `~/.ownmind` is the git checkout, so shared/ and hooks/ sit where the imports expect.
-  $preCmd = "node `"$($OwnmindDir -replace '\\','/')/hooks/ownmind-iron-rule-check.js`""
+  Write-Host "[WARN] ensure-pretooluse-hooks.cjs not found (stale upgrade?) — skipped PreToolUse hook registration" -ForegroundColor Yellow
 }
-# v1.26.92 — two matchers, checked one at a time. The old test asked whether any PreToolUse
-# entry mentioned "ownmind", which is true on every existing install, so a second entry
-# added here would never reach anyone who already had the first. Upgrades are the whole
-# population. The editing tools carry no command, which is why no rule tagged trigger:edit
-# had ever fired; the hook throttles itself to one full listing per hour.
-foreach ($matcher in @("Bash", "Edit|Write|MultiEdit|NotebookEdit")) {
-  $exists = $hookSettings.hooks.PreToolUse | Where-Object {
-    $_.matcher -eq $matcher -and ($_.hooks | Where-Object { $_.command -match "ownmind-iron-rule-check" })
-  }
-  if (-not $exists) {
-    $newPreHook = [pscustomobject]@{
-      matcher = $matcher
-      hooks   = @([pscustomobject]@{ type = "command"; command = $preCmd })
-    }
-    $hookSettings.hooks.PreToolUse += $newPreHook
-    Write-Host "[ OK ] Added PreToolUse hook ($matcher)"
-  }
-}
-
-Write-Utf8NoBom -Path $ClaudeSettings -Content ($hookSettings | ConvertTo-Json -Depth 10)
 
 # SessionStart hook — v1.26.86, delegated to ensure-session-hook.cjs (single implementation
 # with behavioral tests). The old PowerShell version filtered entries, ConvertTo-Json'd
@@ -483,8 +464,10 @@ Write-Utf8NoBom -Path $ClaudeSettings -Content ($hookSettings | ConvertTo-Json -
 # its single null matcher afterwards). When the argument did not survive, the result was
 # merely "not true" — no error, so nobody knew.
 #
-# This block must stay AFTER the Write-Utf8NoBom above: the helper edits settings.json on
-# disk, and any later write of the stale $hookSettings snapshot would revert its work.
+# Every hook helper from here up edits settings.json on disk, so nothing in this section may
+# hold a parsed snapshot across a helper call and write it back — that write would revert the
+# helper's work. v1.26.105 removed the last such snapshot (the PreToolUse block above), which
+# is why the ordering constraint that used to be spelled out here no longer has a subject.
 $EnsureHook = Join-Path $OwnmindDir 'scripts\install-helpers\ensure-session-hook.cjs'
 if (Test-Path $EnsureHook) {
   $hookResult = & node $EnsureHook --ownmind-dir $OwnmindDir 2>&1
