@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.join(HERE, '..');
+const WORKFLOW = path.join(REPO, '.github', 'workflows', 'test.yml');
 
 /** The deadline handed to the probes. Short, because the probes exist to hit it. */
 const PROBE_TIMEOUT_MS = 500;
@@ -46,8 +47,8 @@ const PROBE_BUDGET_MS = 5_000;
 const SHAPES = [
   {
     label: 'a test that never settles',
-    // The name below is what the report has to come back with.
-    identifier: 'sits there forever',
+    // What the report has to come back with: the test's own name.
+    identify: () => 'sits there forever',
     body: [
       "import { it } from 'node:test';",
       "it('sits there forever', async () => { await new Promise(() => {}); });",
@@ -56,7 +57,9 @@ const SHAPES = [
   },
   {
     label: 'a file whose tests pass but which never exits',
-    identifier: 'probe.test.js',
+    // Nothing inside the file is stuck, so the file's own path is what has to come back —
+    // the whole path, not the basename every line of its output would carry anyway.
+    identify: (file) => file,
     body: [
       "import { it } from 'node:test';",
       "import net from 'node:net';",
@@ -90,6 +93,28 @@ function writeProbe(dir, body) {
   return file;
 }
 
+/**
+ * Kill a probe and everything it started, then wait for it to be gone.
+ *
+ * Signalling the runner alone is not enough: it executes each file in a grandchild process,
+ * and SIGKILL is not forwarded. Measured — killing only the runner left `node probe.test.js`
+ * alive, reparented to init, still holding its listening socket. The probes are spawned
+ * detached so the whole group can be signalled at once.
+ */
+function killGroup(child) {
+  return new Promise((resolve) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.once('exit', () => resolve());
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      // ESRCH: already gone, or never started. Fall back to the child alone.
+      try { child.kill('SIGKILL'); } catch { /* nothing left to signal */ }
+      resolve();
+    }
+  });
+}
+
 /** @returns {Promise<boolean>} whether the shape is still running well past the deadline. */
 async function hangsWithoutTheFlag(shape) {
   const dir = tmpdir();
@@ -97,13 +122,18 @@ async function hangsWithoutTheFlag(shape) {
   try {
     const file = writeProbe(dir, shape.body);
     child = spawn(process.execPath, ['--test', file],
-      { cwd: dir, stdio: 'ignore', env: envWithoutTestContext() });
-    let exited = false;
-    child.on('exit', () => { exited = true; });
-    await new Promise((r) => setTimeout(r, HANG_EVIDENCE_MS));
-    return !exited;
+      { cwd: dir, stdio: 'ignore', env: envWithoutTestContext(), detached: true });
+    let ended = false;
+    // Without this listener an EAGAIN/EMFILE under fork pressure raises an unhandled
+    // 'error' event, which takes down the whole test process instead of one assertion.
+    child.on('error', () => { ended = true; });
+    const exited = new Promise((r) => child.once('exit', () => { ended = true; r(); }));
+    const waited = new Promise((r) => setTimeout(r, HANG_EVIDENCE_MS));
+    // Resolves as soon as it ends, so a shape that does not hang costs almost nothing.
+    await Promise.race([exited, waited]);
+    return !ended;
   } finally {
-    if (child) child.kill('SIGKILL');
+    await killGroup(child);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -119,53 +149,77 @@ function runUnderTheFlag(shape) {
       { encoding: 'utf8', timeout: PROBE_BUDGET_MS, cwd: dir, env: envWithoutTestContext() },
     );
     const output = `${r.stdout || ''}${r.stderr || ''}`;
-    // `signal` is set when the budget above had to kill it, which is the deadline failing.
-    const ended = !r.signal && r.status !== 0;
+    // `error` covers both ways this ends without the deadline having done anything: the
+    // budget above running out (ETIMEDOUT — and the runner handles SIGTERM, so it exits 1
+    // with no signal, which would otherwise read as a clean failure) and the binary not
+    // being there at all (ENOENT, status null).
+    const ended = !r.signal && !r.error && r.status !== 0;
     // Matched on the name and the reason rather than on a TAP line: node 20 prints TAP when
     // stdout is a pipe, node 24 prints the spec reporter, and what matters is that the name
     // reaches whoever is reading the log — not which of the two shapes it arrives in.
-    const named = output.includes(shape.identifier) && /timed out after/.test(output);
+    const named = output.includes(shape.identify(file)) && /timed out after/.test(output);
     return { ended, named, output };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
+/** Every `npm` script that runs the test runner, so a new one cannot be added without one. */
+function scriptsThatRunTheRunner() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
+  return Object.entries(pkg.scripts).filter(([, cmd]) => /\bnode .*--test\b/.test(cmd));
+}
+
+/** The tightest `timeout-minutes` in the workflow, in ms — the wall a deadline must beat. */
+function jobCapMs() {
+  const caps = [...fs.readFileSync(WORKFLOW, 'utf8').matchAll(/timeout-minutes:\s*(\d+)/g)]
+    .map((m) => Number(m[1]) * 60_000);
+  assert.ok(caps.length > 0, `${WORKFLOW} declares no timeout-minutes to measure against`);
+  return Math.min(...caps);
+}
+
 describe('v1.26.112 — a hung run names what it is stuck on', () => {
-  it('the test script carries a deadline', () => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(REPO, 'package.json'), 'utf8'));
-    const script = pkg.scripts.test;
-    assert.match(script, /--test-timeout=\d+/,
-      `npm test has no deadline, so a stuck file hangs the whole job in silence: ${script}`);
-    const ms = Number(script.match(/--test-timeout=(\d+)/)[1]);
-    // The whole suite runs in well under a minute on every CI platform. A deadline anywhere
-    // near that would turn a slow runner into a red build, which is worse than the hang it
-    // is meant to catch — so it sits far above the suite, not near a single test.
-    assert.ok(ms >= 60_000, `${ms}ms is close enough to a normal run to fire on a slow runner`);
+  it('every script that runs the runner carries a deadline', () => {
+    const scripts = scriptsThatRunTheRunner();
+    assert.ok(scripts.length > 0, 'no npm script runs node --test — did the wording change?');
+    const missing = scripts.filter(([, cmd]) => !/--test-timeout=\d+/.test(cmd));
+    assert.deepEqual(missing.map(([name]) => name), [],
+      'these run the suite with no deadline, so a stuck file hangs the whole job in silence');
+  });
+
+  it('the deadline fires early enough to matter and late enough to be safe', () => {
+    const cap = jobCapMs();
+    for (const [name, cmd] of scriptsThatRunTheRunner()) {
+      const ms = Number(cmd.match(/--test-timeout=(\d+)/)[1]);
+      // Below: the whole suite runs in well under a minute on every CI platform, and a
+      // deadline near that turns a slow runner into a red build — worse than the hang it is
+      // meant to catch.
+      assert.ok(ms >= 60_000, `${name}: ${ms}ms is close enough to a normal run to fire on a slow runner`);
+      // Above: a deadline that cannot fire before the job's own limit gives back exactly the
+      // silence this exists to remove. Half the cap, so there is room to report afterwards.
+      assert.ok(ms <= cap / 2,
+        `${name}: ${ms}ms leaves no room inside the job's ${cap}ms limit — the job would be `
+        + 'killed first, which is the twenty minutes of silence this was added to end');
+    }
   });
 
   it('the deadline ends a hang that would otherwise be unbounded, and says which one', async () => {
-    // Reverse check first: without it, everything below would still pass on a node that
-    // ended these probes for some unrelated reason, and the deadline would be credited with
-    // something it did not do.
-    const hanging = [];
+    // One shape at a time, and each one's reverse check comes first: without it, everything
+    // below would still pass on a node that ended the probe for some unrelated reason, and
+    // the deadline would be credited with something it did not do.
+    let anyHung = false;
+    const tried = [];
     for (const shape of SHAPES) {
-      if (await hangsWithoutTheFlag(shape)) hanging.push(shape);
+      if (!await hangsWithoutTheFlag(shape)) continue;
+      anyHung = true;
+      const result = { shape, ...runUnderTheFlag(shape) };
+      tried.push(result);
+      if (result.ended && result.named) return;   // one demonstrated hang is the requirement
     }
-    assert.ok(hanging.length > 0,
-      `neither shape hangs on ${process.version}, so this check measures nothing`);
-
-    // Stops at the first shape the deadline handles: on node 24 that is the first one, and
-    // running the second costs the whole budget for a result already known to be redundant.
-    const results = [];
-    for (const shape of hanging) {
-      results.push({ shape, ...runUnderTheFlag(shape) });
-      if (results[results.length - 1].ended && results[results.length - 1].named) break;
-    }
-    const bounded = results.filter((r) => r.ended && r.named);
-    assert.ok(bounded.length > 0,
-      `the deadline ended and named none of the ${hanging.length} shape(s) that hang on `
+    assert.ok(anyHung, `neither shape hangs on ${process.version}, so this check measures nothing`);
+    assert.fail(
+      `the deadline ended and named none of the ${tried.length} shape(s) that hang on `
       + `${process.version}:\n`
-      + results.map((r) => `— ${r.shape.label}: ended=${r.ended} named=${r.named}`).join('\n'));
+      + tried.map((r) => `— ${r.shape.label}: ended=${r.ended} named=${r.named}`).join('\n'));
   });
 });

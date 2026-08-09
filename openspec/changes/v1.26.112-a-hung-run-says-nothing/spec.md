@@ -1,15 +1,32 @@
 # v1.26.112 — Spec
 
-## Requirement: the test run carries a deadline
+## Requirement: every script that runs the runner carries a deadline
 
-`npm test` MUST invoke the runner with `--test-timeout`, and the value MUST be at least
-60000ms.
+Every `npm` script that invokes `node --test` MUST pass `--test-timeout`, and the value MUST
+be at least 60000ms and at most half the tightest `timeout-minutes` declared in
+`.github/workflows/test.yml`.
 
 Without one, a test or a file that never finishes is waited on until the CI job's own
-`timeout-minutes` ends it — twenty minutes of no output, reported as `cancelled`. The lower
-bound exists because a deadline near the length of a normal run turns a slow runner into a
-red build, which is a worse failure than the one being caught: the suite takes 30s on ubuntu
-and 47s on macOS.
+`timeout-minutes` ends it — twenty minutes of no output, reported as `cancelled`.
+
+The bounds exist in both directions and neither is decoration:
+
+- **Lower.** A deadline near the length of a normal run turns a slow runner into a red build,
+  which is a worse failure than the one being caught: the suite takes 30s on ubuntu and 47s
+  on macOS.
+- **Upper.** A deadline the job's own limit beats to the punch gives back exactly the silence
+  this exists to remove. It is derived from the workflow rather than written down twice, so
+  raising `--test-timeout` past the job cap fails instead of quietly reinstating the bug.
+
+The set of scripts is read from `package.json` rather than listed, so a new script that runs
+the suite cannot be added without one.
+
+### Scenario: somebody raises the deadline to silence a flake
+
+- **GIVEN** `--test-timeout` set to 30 minutes, against a job capped at 20
+- **WHEN** the guard runs
+- **THEN** it fails, because at that value the job is killed before the deadline can fire and
+  the run is silent again
 
 ### Scenario: a test that never settles
 

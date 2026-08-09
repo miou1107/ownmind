@@ -23,6 +23,33 @@
 - [x] `.github/workflows/test.yml` — record next to the `npm test` step why the runner carries
       a deadline, so the next person to touch it does not remove it as noise.
 
+## From code review
+
+- [x] `ended` treated two non-events as the deadline working: the probe budget running out
+      (`ETIMEDOUT` — and the runner handles SIGTERM, so it exits 1 with no signal, which read
+      as a clean failure) and the binary not being there (`ENOENT`, status null). Both
+      reproduced; now `!r.signal && !r.error && r.status !== 0`. No test distinguishes this on
+      its own — `named` already covers the normal path — so it is a tightening, not a fix with
+      a control behind it.
+- [x] The probes leaked a process per run. `child.kill()` signals the runner, which executes
+      each file in a grandchild that does not receive it; the grandchild was left alive,
+      reparented to init, still holding its socket. Reproduced (one survivor per run). Probes
+      are spawned `detached` and the whole group is signalled, then awaited. Verified: six
+      consecutive runs across both node versions leave zero.
+- [x] The deadline had a lower bound and no upper one, so raising it past the job's own
+      `timeout-minutes` reinstated the exact bug with the guard green. Reproduced at 30
+      minutes against a 20-minute cap. The bound is now read from the workflow instead of
+      written down a second time.
+- [x] `spawn` had no `'error'` listener, so fork pressure (EAGAIN/EMFILE) would take down the
+      whole test process rather than fail one assertion.
+- [x] The second shape identified itself by basename, which any failure of that file prints.
+      It now has to come back with the whole path.
+- [x] `test:watch` ran the suite with no deadline and nothing checked it. The guard now grows
+      over every script that invokes the runner rather than naming one.
+- [x] Halved the file's wall clock (3.6s → 2.2s): shapes are probed one at a time and stop at
+      the first the deadline handles, and a probe that ends resolves immediately instead of
+      waiting out the evidence window.
+
 ## Trap found on the way
 
 A nested `node --test` inherits `NODE_TEST_CONTEXT` from the runner that spawned it, prints

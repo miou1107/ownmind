@@ -4,21 +4,28 @@
 
 新增檔：
 ```
-tests/hung-test-is-named.test.js                — 2 條。一條盯著 npm test 有沒有帶時限、
-                                                   值有沒有低到會誤殺（下限 60 秒）；一條是
-                                                   陽性對照：真的做一個會卡住的測試檔丟進去
-                                                   跑，要求時限把它結束掉並且回報名字。
+tests/hung-test-is-named.test.js                — 3 條。兩條盯著設定：每個會跑 node --test
+                                                   的 npm 腳本都要帶時限（腳本清單是長出來
+                                                   的、不是手寫的），而且值要落在「不會誤殺
+                                                   正常跑的測試」跟「趕得及在 CI job 自己的
+                                                   時限之前開火」之間 —— 上限是從 workflow
+                                                   的 timeout-minutes 讀出來的，不是再抄一份。
+                                                   第三條是陽性對照：真的做一個會卡住的測試檔
+                                                   丟進去跑，要求時限把它結束掉並且回報名字。
                                                    對照會先量「這個 node 版本上哪一種形狀
                                                    真的會卡」，一種都不卡就直接紅，因為那時
                                                    它什麼都沒量到。反向驗證：同一個檔案不帶
-                                                   時限跑，時間到了必須還活著
+                                                   時限跑，時間到了必須還活著。探針用 detached
+                                                   起、整個 process group 一起殺，否則被殺的
+                                                   只有執行器、真正跑檔案的孫程序會活下來
 openspec/changes/v1.26.112-a-hung-run-says-nothing/
                                                 — proposal / spec / tasks
 ```
 
 修改檔：
 ```
-package.json                                    — test 腳本加 --test-timeout=300000；
+package.json                                    — test 跟 test:watch 都加
+                                                   --test-timeout=300000；
                                                    1.26.111 → 1.26.112
 .github/workflows/test.yml                      — 在 npm test 那一步旁邊寫下為什麼要帶時限，
                                                    免得下一個人把它當雜訊刪掉
