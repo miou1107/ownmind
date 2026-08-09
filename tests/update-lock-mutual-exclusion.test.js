@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -697,6 +697,115 @@ describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on st
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       });
       assert.match(out.trim(), /^-?\d+$/, `expected an integer age, got ${JSON.stringify(out)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('v1.26.112 — lock_age_seconds, the cases a stubbed stat cannot reach', () => {
+  /**
+   * The two tests above stub `stat` on `PATH`, which pins the dialect handling on every
+   * platform — the important property, and the reason they exist. Four things stay out of
+   * their reach, and each was a way this defect stayed invisible or could come back:
+   *
+   *   - a stub answers the dialect the test chose, so no test asks *this* machine's real
+   *     `stat` whether the helper works here. That is precisely the question that was
+   *     answered "no" on Linux for nine releases while every suite was green on macOS;
+   *   - the stub tests call `lock_age_seconds` directly, so nothing checks the consequence
+   *     that actually bit: `acquire_update_lock` reading an empty age as "cannot tell" and
+   *     skipping its whole staleness branch. A future change could break the age again
+   *     without any of the callers being exercised;
+   *   - a failure with no explanation reads the same as one with an explanation, unless
+   *     something asserts on stderr;
+   *   - and the routine case — the file simply not being there — must stay silent, or the
+   *     diagnostic that covers the previous point becomes noise on every session.
+   */
+  const AGE = 1200;   // 20 minutes, comfortably past the 300s staleness threshold
+
+  function agedLock(dir) {
+    const f = path.join(dir, '.update-lock');
+    fs.writeFileSync(f, '');
+    const when = new Date(Date.now() - AGE * 1000);
+    fs.utimesSync(f, when, when);
+    return f;
+  }
+
+  function runAge(file, statImpl = '') {
+    return spawnSync('bash', ['-c', [
+      shellFunction(shellHook, 'lock_age_seconds'),
+      statImpl,
+      `lock_age_seconds ${JSON.stringify(file)}`,
+    ].join('\n')], { encoding: 'utf8' });
+  }
+
+  it("answers with this machine's own stat, whichever dialect that is", () => {
+    // No stub: the helper is asked to work *here*. Red on Linux and Git Bash before the
+    // fix, green on macOS throughout — which is the whole shape of the bug, and why a
+    // suite that only ever ran on macOS could not see it. Nothing gates this on which
+    // `stat` is installed; a machine whose dialect the helper mishandles simply cannot
+    // produce an age.
+    const dir = tmpdir();
+    try {
+      const r = runAge(agedLock(dir));
+      assert.equal(r.status, 0, `exited ${r.status}, stderr: ${r.stderr}`);
+      // One line of digits and nothing else — a filesystem report is not an age, and a
+      // looser /\d+/ would match the polluted value that started all this.
+      assert.match(r.stdout, /^\d+\n$/,
+        `expected one line of digits, got ${JSON.stringify(r.stdout)}`);
+      const age = Number(r.stdout.trim());
+      // A window, not an equality: `stat` reports whole seconds, so where the mtime falls
+      // inside its second moves the answer by one either way, and a loaded runner adds a
+      // little. Far too narrow for an epoch or a zero to pass as an age.
+      assert.ok(age >= AGE - 5 && age <= AGE + 30, `${age}s is not ~${AGE}s`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('and a stale lock is actually reclaimed as a result', () => {
+    // The consequence, not the helper: one process, so it pins the staleness branch rather
+    // than the race the eight-way test covers. Before the fix this returned non-zero on
+    // Linux — the age never arrived, so the branch that reclaims was never entered and the
+    // lock below could not be taken.
+    const dir = tmpdir();
+    try {
+      const lock = agedLock(dir);
+      const r = spawnSync('bash', ['-c', [
+        `LOCK_FILE=${JSON.stringify(lock)}`,
+        ['lock_age_seconds', 'create_exclusive', 'acquire_update_lock']
+          .map((n) => shellFunction(shellHook, n)).join('\n'),
+        'acquire_update_lock',
+      ].join('\n')], { encoding: 'utf8' });
+      assert.equal(r.status, 0,
+        `a 20-minute-old lock was not reclaimed (exit ${r.status}): ${r.stderr}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says why on stderr when neither dialect works, instead of failing mutely', () => {
+    const dir = tmpdir();
+    try {
+      const r = runAge(agedLock(dir), 'stat() { echo "stat: unusable" >&2; return 1; }');
+      assert.notEqual(r.status, 0, 'an unreadable mtime must not look like an age');
+      assert.equal(r.stdout, '', 'printed something a caller would treat as an age');
+      assert.match(r.stderr, /cannot read the mtime/, 'gave up leaving nothing to debug');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('but stays quiet about a file that is simply not there', () => {
+    // `acquire_update_lock` asks for the age of `.reclaim` on every session and it is
+    // normally absent. Without this, the diagnostic above turns into startup noise for
+    // every user, every time.
+    const dir = tmpdir();
+    try {
+      const r = runAge(path.join(dir, 'no-such-lock'));
+      assert.notEqual(r.status, 0, 'a missing file has no age');
+      assert.equal(r.stdout, '', 'a missing file must not produce an age');
+      assert.equal(r.stderr, '', 'a missing lock is routine, not something to report');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -170,7 +170,15 @@ lock_age_seconds() {
     ''|*[!0-9]*) mtime=$(stat -f %m "$1" 2>/dev/null) ;;
   esac
   case "$mtime" in
-    ''|*[!0-9]*) return 1 ;;
+    ''|*[!0-9]*)
+      # Each `2>/dev/null` above covers exactly one expected message: the form that is wrong
+      # for this platform objecting to its own flag, on every call of every session. A
+      # machine where *neither* form works is a different thing and must not be silent —
+      # returning non-zero with no explanation is how the defect above stayed invisible for
+      # nine releases. The caller still fails closed; it just says why first.
+      echo "ownmind: cannot read the mtime of $1 — neither 'stat -c %Y' (GNU) nor 'stat -f %m' (BSD) returned an integer; the update lock cannot be aged on this machine" >&2
+      return 1
+      ;;
   esac
   echo $(( $(date +%s) - mtime ))
 }
