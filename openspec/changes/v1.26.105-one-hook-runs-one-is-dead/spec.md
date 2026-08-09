@@ -156,6 +156,23 @@ a variable the failure path never echoes, it aborts silently.
 - **WHEN** the installer reaches the PreToolUse step
 - **THEN** the failure is printed and the installer continues to its remaining steps
 
+## Requirement: health is reported after the repairs, not before
+
+The updaters MUST invoke the self-check after every step that repairs the things it reports
+on.
+
+`install_complete` now includes the registered hook's dependency, so a self-check running
+ahead of the repair uploads a failure the same run then fixes — one alert per affected
+machine, about a state that no longer exists by the time anybody reads it. `install.sh` has
+always run its artifact check at the tail for this reason; the updaters ran theirs in section
+2d, ahead of every repair in section 3.
+
+### Scenario: an upgrade that repairs a stale command
+
+- **GIVEN** a machine whose registered PreToolUse command is the broken one
+- **WHEN** the updater runs
+- **THEN** the command is repaired first, and the health report describes the repaired machine
+
 ## Requirement: an upgrade does not judge its own runtime files as user edits
 
 `.gitignore` MUST cover the files the installers and hooks write into the checkout at
