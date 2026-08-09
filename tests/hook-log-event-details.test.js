@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execBashScript } from './helpers/bash-script.js';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -66,7 +66,7 @@ function callLogEvent(hookRelPath, args) {
       `log_event ${args.map(shArg).join(' ')}`,
     ].join('\n');
     // timeout so the keyless-argument regression fails loudly instead of hanging the run.
-    execFileSync('bash', ['-c', script], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10_000 });
+    execBashScript(script, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10_000 });
 
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
     assert.equal(files.length, 1, 'log_event should append to exactly one file');
@@ -114,7 +114,7 @@ function callLogEventWithUpload(hookRelPath, args) {
       'wait',   // the upload is backgrounded with &
     ].join('\n');
     // timeout so the keyless-argument regression fails loudly instead of hanging the run.
-    execFileSync('bash', ['-c', script], { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10_000 });
+    execBashScript(script, { stdio: ['ignore', 'ignore', 'pipe'], timeout: 10_000 });
 
     const logFile = fs.readdirSync(dir).find((f) => f.endsWith('.jsonl'));
     const local = JSON.parse(fs.readFileSync(path.join(dir, logFile), 'utf8').trim());
