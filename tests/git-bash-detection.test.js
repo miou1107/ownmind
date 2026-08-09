@@ -190,25 +190,37 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
    * Write a stub that prints one `bash --version` line and exits with a chosen code, in
    * whatever form the host can execute: a .cmd on Windows, a shell script elsewhere.
    */
-  function stubBash(dir, name, versionLine, exitCode) {
+  function stubBash(dir, name, lines, exitCode) {
     if (process.platform === 'win32') {
       const file = path.join(dir, `${name}.cmd`);
-      fs.writeFileSync(file, `@echo off\r\necho ${versionLine}\r\nexit /b ${exitCode}\r\n`);
+      const echoes = lines.map((l) => `echo ${l}`).join('\r\n');
+      fs.writeFileSync(file, `@echo off\r\n${echoes}\r\nexit /b ${exitCode}\r\n`);
       return file;
     }
     const file = path.join(dir, name);
-    fs.writeFileSync(file, `#!/bin/sh\necho '${versionLine}'\nexit ${exitCode}\n`, { mode: 0o755 });
+    const echoes = lines.map((l) => `echo '${l}'`).join('\n');
+    fs.writeFileSync(file, `#!/bin/sh\n${echoes}\nexit ${exitCode}\n`, { mode: 0o755 });
     return file;
+  }
+
+  /**
+   * A PowerShell single-quoted literal. Double quotes interpolate `$`, so a checkout or a
+   * temp directory with a `$` in its name would have part of its path silently deleted.
+   */
+  function psLiteral(value) {
+    return `'${String(value).replace(/'/g, "''")}'`;
   }
 
   /** Dot-source the shipped helper and ask it about each stub. Returns one verdict per case. */
   function verdicts(cases) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-gitbash-'));
+    // The `$` is load-bearing: it is what makes a double-quoted PowerShell path lose the rest
+    // of its name, so every case here doubles as the guard on psLiteral.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-gitbash$'));
     try {
-      const paths = cases.map((c) => stubBash(dir, c.name, c.versionLine, c.exitCode));
+      const paths = cases.map((c) => stubBash(dir, c.name, c.lines, c.exitCode));
       const script = [
-        `. ${JSON.stringify(path.join(repoRoot, HELPER))}`,
-        ...paths.map((p) => `if (Test-IsGitBash -BashPath ${JSON.stringify(p)}) { 'true' } else { 'false' }`),
+        `. ${psLiteral(path.join(repoRoot, HELPER))}`,
+        ...paths.map((p) => `if (Test-IsGitBash -BashPath ${psLiteral(p)}) { 'true' } else { 'false' }`),
       ].join('\n');
       const run = spawnSync(powershell, ['-NoProfile', '-Command', script], {
         encoding: 'utf8',
@@ -223,18 +235,41 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
     }
   }
 
+  // `bash --version` is four lines, not one, and the helper matches against the whole of it
+  // via Out-String. Single-line stubs never exercise that, so every case here is the shape a
+  // real bash prints.
+  const COPYRIGHT = [
+    'Copyright (C) 2022 Free Software Foundation, Inc.',
+    'License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>',
+  ];
+
   it('accepts a real Git Bash on both sides of the 2.55 triplet change', () => {
     const cases = [
-      { name: 'git255', versionLine: 'GNU bash, version 5.3.15(1)-release (x86_64-pc-cygwin)', exitCode: 0, want: 'true' },
-      { name: 'git254', versionLine: 'GNU bash, version 5.2.37(1)-release (x86_64-pc-msys)', exitCode: 0, want: 'true' },
-      { name: 'wsl', versionLine: 'GNU bash, version 5.0.17(1)-release (x86_64-pc-linux-gnu)', exitCode: 0, want: 'false' },
-      { name: 'relay', versionLine: 'WSL ERROR: CreateProcessEntryCommon execvpe /bin/bash failed', exitCode: 1, want: 'false' },
-      { name: 'unknown', versionLine: 'something that is not bash', exitCode: 0, want: 'false' },
+      { name: 'git255', lines: ['GNU bash, version 5.3.15(1)-release (x86_64-pc-cygwin)', ...COPYRIGHT], exitCode: 0, want: 'true' },
+      { name: 'git254', lines: ['GNU bash, version 5.2.37(1)-release (x86_64-pc-msys)', ...COPYRIGHT], exitCode: 0, want: 'true' },
+      { name: 'wsl', lines: ['GNU bash, version 5.0.17(1)-release (x86_64-pc-linux-gnu)', ...COPYRIGHT], exitCode: 0, want: 'false' },
+      { name: 'relay', lines: ['WSL ERROR: CreateProcessEntryCommon execvpe /bin/bash failed'], exitCode: 1, want: 'false' },
+      { name: 'unknown', lines: ['something that is not bash'], exitCode: 0, want: 'false' },
     ];
     assert.deepEqual(
       verdicts(cases),
       cases.map((c) => c.want),
       'cygwin (2.55+) and msys (2.54 and earlier) are both Git Bash; a WSL distro, a failing relay and an unrecognised build are not',
     );
+  });
+
+  it('accepts a build whose triplet is unrecognised but whose later lines say cygwin', () => {
+    // Deliberate, and recorded here so it is not "tidied up" later. The match runs against
+    // the whole of `bash --version`, so cygwin anywhere in it is enough. Anchoring it to the
+    // banner line would rule this out — and would be the same move that caused the bug this
+    // file is about, because it assumes the banner's exact wording. The two errors do not
+    // cost the same: a wrong accept means verify-upgrade.sh runs under some other POSIX
+    // shell and, at worst, reports a failure the upgrade already tolerates; a wrong reject
+    // means verification is skipped in silence and the user is told to install software they
+    // already have. Staying loose is the cheaper mistake.
+    const cases = [
+      { name: 'oddball', lines: ['GNU bash, version 5.2.15(1)-release (aarch64-unknown-freebsd)', 'Copyright (C) 2024, ported from cygwin'], exitCode: 0, want: 'true' },
+    ];
+    assert.deepEqual(verdicts(cases), ['true']);
   });
 });
