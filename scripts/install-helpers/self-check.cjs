@@ -136,6 +136,40 @@ async function checkMcpFiles() {
   return pass('mcp_files', sanitizePath(p));
 }
 
+/**
+ * Is the MCP server registered where Claude Code will actually launch it?
+ *
+ * v1.26.112 — the check that had to exist and did not. Every installer wrote
+ * `~/.claude/settings.json`; Claude Code launches MCP servers from `~/.claude.json`, which
+ * nothing wrote. `mcp_files` above confirms the server exists on disk and
+ * `mcp_node_modules` confirms it can start, so a machine where the tools were absent from
+ * every session still passed the whole self-check — the file that decides whether it is
+ * ever launched was not examined by anything.
+ *
+ * IR-001 in one check: the installer reporting success is not evidence, so ask the file
+ * Claude Code reads, on the machine, after the fact.
+ */
+async function checkMcpRegistered() {
+  let state;
+  try {
+    // Required lazily: a half-updated checkout that has this file but not the helper must
+    // report a missing check, not crash the whole self-check run.
+    ({ isRegisteredForClaudeCode: state } = require('./register-mcp.cjs'));
+  } catch (e) {
+    return fail('mcp_registered', `register-mcp.cjs unavailable (${e.message})`, 'Re-run bootstrap');
+  }
+  const r = state();
+  if (!r.registered) {
+    return fail(
+      'mcp_registered',
+      r.reason,
+      'Re-run install, or upgrade — update.sh / update.ps1 now register it. Until then the '
+      + 'ownmind_* tools do not exist in Claude Code, even though memory still loads via the hook.',
+    );
+  }
+  return pass('mcp_registered', '~/.claude.json');
+}
+
 async function checkPackageVersion() {
   const p = path.join(OWNMIND_DIR, 'package.json');
   const pkg = readJsonSafe(p);
@@ -965,6 +999,7 @@ async function runAllChecks({ quick = false } = {}) {
   const { apiKey, apiUrl } = readCredentials();
   const checks = [];
   checks.push(await safeCheck('mcp_files', checkMcpFiles));
+  checks.push(await safeCheck('mcp_registered', checkMcpRegistered));
   checks.push(await safeCheck('package_version', checkPackageVersion));
   checks.push(await safeCheck('mcp_node_modules', checkMcpNodeModules));
   checks.push(await safeCheck('server_health', () => checkServerHealth(apiUrl)));
@@ -1369,7 +1404,7 @@ async function main() {
 
 // Exported for tests.
 module.exports = {
-  checkMcpFiles, checkPackageVersion, checkMcpNodeModules,
+  checkMcpFiles, checkMcpRegistered, checkPackageVersion, checkMcpNodeModules,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
   checkBackgroundCredentials,

@@ -259,6 +259,57 @@ CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 ERR_LOG="$HOME/.ownmind/logs/update-errors.log"
 mkdir -p "$(dirname "$ERR_LOG")"
+
+# --- 3.0b Ensure the MCP server is registered where Claude Code launches it ---
+#
+# v1.26.112 — this has to be in the updater, not only in install.sh.
+#
+# Nobody re-runs the installer. The auto-update path is `git pull` → `npm install` →
+# `update.sh`, so a fix that lives only in install.sh reaches new users and nobody else —
+# the exact trap v1.26.104 fell into with the git-hook wrappers. Every existing machine has
+# `mcpServers.ownmind` in `~/.claude/settings.json` and nothing in `~/.claude.json`, which
+# is the file Claude Code actually launches MCP servers from, so the `ownmind_*` tools do
+# not exist in their sessions. Shipping the install-only fix would have let this release
+# claim the repair while leaving every installed user exactly as broken as before.
+#
+# The credentials come from whatever the machine already has, via the shared resolver, so
+# this neither invents nor moves a key — a machine with no credentials is left alone.
+REGISTER_MCP="$OWNMIND_DIR/scripts/install-helpers/register-mcp.cjs"
+if [ -f "$REGISTER_MCP" ]; then
+  MCP_REG_OUT=$(node -e '
+    const { registerMcp, isRegisteredForClaudeCode } = require(process.argv[1]);
+    const { resolveCredentials } = require(process.argv[2]);
+    const home = process.argv[3];
+    const before = isRegisteredForClaudeCode({ home });
+    if (before.registered) { console.log("ALREADY"); process.exit(0); }
+    // `{ home }`, not the default: resolveCredentials would otherwise read os.homedir()
+    // while registerMcp writes the home we were handed. Reading one machine profile and
+    // writing another is the same two-files-nobody-compares defect this release is about.
+    const creds = resolveCredentials({ home });
+    if (!creds.apiKey || !creds.apiUrl) { console.log("NOCREDS"); process.exit(0); }
+    // Reuse the entry the installer already wrote, so the command line for launching the
+    // server is not re-derived here and cannot drift from install.sh.
+    const fs = require("fs"), path = require("path");
+    let entry = null;
+    try {
+      const s = JSON.parse(fs.readFileSync(path.join(home, ".claude", "settings.json"), "utf8"));
+      const prev = s.mcpServers && s.mcpServers.ownmind;
+      if (prev && prev.command) entry = { command: prev.command, args: prev.args || [] };
+    } catch { /* fall through */ }
+    if (!entry) { console.log("NOENTRY"); process.exit(0); }
+    const r = registerMcp({ entry, apiUrl: creds.apiUrl, apiKey: creds.apiKey, home });
+    for (const p of r.problems) console.log("PROBLEM " + p);
+    console.log(r.verified ? "REGISTERED" : "FAILED");
+  ' "$(to_win_path "$REGISTER_MCP")" \
+    "$(to_win_path "$OWNMIND_DIR/scripts/install-helpers/resolve-credentials.cjs")" \
+    "$(to_win_path "$HOME")" 2>>"$ERR_LOG")
+  case "$MCP_REG_OUT" in
+    *REGISTERED*) echo "   MCP 已註冊到 ~/.claude.json（Claude Code 從這裡啟動它，重開 session 後生效）" ;;
+    *ALREADY*)    : ;;
+    *NOCREDS*|*NOENTRY*) : ;;
+    *) echo "   [WARN] MCP 無法註冊到 ~/.claude.json，ownmind_* 工具在 Claude Code 裡不會出現" ;;
+  esac
+fi
 if [ -f "$CLAUDE_SETTINGS" ]; then
   node -e "
     const fs = require('fs');

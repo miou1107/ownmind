@@ -262,65 +262,48 @@ fi
 # --- 2. Claude Code MCP 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
-if [ -f "$CLAUDE_SETTINGS" ]; then
-  # v1.26.91: this used to skip the whole block when the file already contained the string
-  # "ownmind", on the assumption that an existing entry needs nothing. But the entry is
-  # where the API key lives, so every re-run that meant to change the key — switching
-  # accounts, rotating a credential, correcting one typed wrong — did nothing at all and
-  # then went on to print an installation summary. The condition asked whether OwnMind was
-  # configured; the question that mattered was whether it was configured with THIS key.
-  #
-  # Now it always writes, and merges rather than replaces so an existing entry keeps any
-  # field this installer does not manage.
-  echo "[INFO] Configuring Claude Code MCP"
-  node -e "
-    const fs = require('fs');
-    const entry = $MCP_ENTRY;
-    const p = '$CLAUDE_SETTINGS_WIN';
-    const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
-    if (!settings.mcpServers) settings.mcpServers = {};
-    const prev = settings.mcpServers.ownmind || {};
-    const prevEnv = prev.env || {};
-    const nextKey = '$API_KEY';
-    settings.mcpServers.ownmind = {
-      ...prev,
-      ...entry,
-      env: {
-        ...prevEnv,
-        OWNMIND_API_URL: '$API_URL',
-        OWNMIND_API_KEY: nextKey,
-        OWNMIND_TOOL: 'claude-code'
-      }
-    };
-    const _tmp = p + '.tmp';
-    fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
-    fs.renameSync(_tmp, p);
-    // Say which of the two happened. A run that silently changed the account is as
-    // confusing as one that silently did not.
-    if (!prevEnv.OWNMIND_API_KEY) console.log('       API key written');
-    else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('       API key updated (replaced a different key)');
-    else console.log('       API key unchanged');
-  "
+REGISTER_MCP="$OWNMIND_DIR/scripts/install-helpers/register-mcp.cjs"
+REGISTER_MCP_WIN="$(to_win_path "$REGISTER_MCP")"
+# v1.26.112 — write both files, and the one that matters is `~/.claude.json`.
+#
+# Until now this block wrote `~/.claude/settings.json` and stopped. Claude Code reads that
+# file for hooks, but it launches MCP servers from `~/.claude.json`, which nothing has ever
+# written — so the `ownmind_*` tools were never registered for anybody who installed with
+# this script. Memory still loaded, because the SessionStart hook is configured separately
+# and makes its own HTTP call, and that is why nine releases went by without anyone
+# noticing: the visible half worked.
+#
+# The merge, the atomic write, the read-back and the refusal to clobber an unparseable
+# config all live in the helper, so install.ps1 cannot drift away from this.
+echo "[INFO] Configuring Claude Code MCP"
+# `$HOME` is passed explicitly rather than letting the helper call `os.homedir()`.
+# On Windows, Node resolves the home directory from `USERPROFILE` while this script has
+# been using bash's `$HOME` for every path above it. Those are normally the same, but under
+# Git Bash they need not be — and when they differ, the installer would write its settings
+# to one home and register the MCP server under another, which is the same class of defect
+# as the one this release fixes: two files, two places, nobody comparing them. Measured
+# 2026-08-09 while testing this very block with `HOME` overridden: the helper ignored it
+# and wrote to the real profile.
+MCP_REG_OUT=$(node -e '
+  const { registerMcp } = require(process.argv[1]);
+  const r = registerMcp({
+    entry: JSON.parse(process.argv[2]),
+    apiUrl: process.argv[3],
+    apiKey: process.argv[4],
+    tool: "claude-code",
+    home: process.argv[5],
+  });
+  for (const p of r.problems) console.log("PROBLEM " + p);
+  console.log(r.verified ? "VERIFIED " + r.launchFile : "UNVERIFIED");
+' "$REGISTER_MCP_WIN" "$MCP_ENTRY" "$API_URL" "$API_KEY" "$(to_win_path "$HOME")")
+echo "$MCP_REG_OUT" | sed -n 's/^PROBLEM /       [WARN] /p'
+# IR-001: an installer saying it configured something is not evidence that it did. Report
+# what was read back from disk, not what we intended to write.
+if echo "$MCP_REG_OUT" | grep -q '^VERIFIED '; then
+  echo "       MCP registered in ~/.claude.json (verified by reading it back)"
 else
-  echo "[INFO] Creating Claude Code MCP config"
-  mkdir -p "$HOME/.claude"
-  node -e "
-    const fs = require('fs');
-    const entry = $MCP_ENTRY;
-    const settings = {
-      mcpServers: {
-        ownmind: {
-          ...entry,
-          env: {
-            OWNMIND_API_URL: '$API_URL',
-            OWNMIND_API_KEY: '$API_KEY',
-            OWNMIND_TOOL: 'claude-code'
-          }
-        }
-      }
-    };
-    fs.writeFileSync('$CLAUDE_SETTINGS_WIN', JSON.stringify(settings, null, 2));
-  "
+  echo "       [WARN] MCP could NOT be registered in ~/.claude.json —"
+  echo "              the ownmind_* tools will not be available in Claude Code."
 fi
 
 # --- 2.0 v1.17.97：算出傳給 hook installer 的 OwnMind 路徑（給 §2.1 + §2.2 共用）---
