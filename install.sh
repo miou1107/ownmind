@@ -460,7 +460,7 @@ node -e "
 
   // SessionStart is handled by ensure-session-hook.cjs (v1.26.86, see that file), which
   // runs as its own step after this block. All four install/update scripts share it.
-  // PreToolUse is handled by ensure-pretooluse-hooks.cjs (v1.26.103), same arrangement: it
+  // PreToolUse is handled by ensure-pretooluse-hooks.cjs (v1.26.105), same arrangement: it
   // runs after this block's write, reads settings.json back off disk, and writes its own.
 
   // WorktreeCreate hook — 自動注入 .mcp.json 到新 worktree
@@ -478,7 +478,7 @@ node -e "
   fs.writeFileSync(path, JSON.stringify(s, null, 2));
 " 2>>"$INSTALL_LOG"
 
-# --- 4c-1. PreToolUse iron-rule hooks (v1.26.103, delegated to the shared implementation) ---
+# --- 4c-1. PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 # Also repairs an entry whose command is stale — see the helper's header for why presence
 # alone was never enough.
 ENSURE_PRE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-pretooluse-hooks.cjs"
@@ -535,7 +535,7 @@ if [ -f "$SRC_VERIFY" ] && ! [ "$SRC_VERIFY" -ef "$DST_VERIFY" ]; then
 fi
 
 # 複製 git hook JS 檔案
-HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
+HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
 for js_file in "${HOOK_JS_FILES[@]}"; do
   SRC_JS="$OWNMIND_DIR/hooks/$js_file"
   DST_JS="$HOME/.ownmind/hooks/$js_file"

@@ -36,7 +36,7 @@ function commandFor(settings, matcher) {
   return entry && entry.hooks[0].command;
 }
 
-describe('v1.26.103 — ensure-pretooluse-hooks repairs a stale command, not just a missing one', () => {
+describe('v1.26.105 — ensure-pretooluse-hooks repairs a stale command, not just a missing one', () => {
   beforeEach(setup);
   afterEach(cleanup);
 
@@ -168,7 +168,7 @@ describe('v1.26.103 — ensure-pretooluse-hooks repairs a stale command, not jus
   });
 });
 
-describe('v1.26.103 — install-artifacts checks the registered command, not just a copy on disk', () => {
+describe('v1.26.105 — install-artifacts checks the registered command, not just a copy on disk', () => {
   const artifacts = require('../scripts/install-helpers/install-artifacts.cjs');
 
   let home;
@@ -238,7 +238,7 @@ describe('v1.26.103 — install-artifacts checks the registered command, not jus
   });
 });
 
-describe('v1.26.103 — the installers delegate instead of keeping their own copy', () => {
+describe('v1.26.105 — the installers delegate instead of keeping their own copy', () => {
   const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 
   for (const script of ['install.ps1', 'install.sh', 'scripts/update.ps1', 'scripts/update.sh']) {
