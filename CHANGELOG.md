@@ -74,12 +74,23 @@ Windows 用戶端預設是 Restricted，dot-source `.ps1` 直接被擋（實測�
 新增兩支，兩支都**不需要 Windows**——這是重點，因為這些問題能活這麼久，就是因為每個碰得到它們
 的測試都需要一台裝好的 Windows：
 
-- `tests/windows-log-encoding.test.js`（18 個）：編碼是位元組的性質，所以 fixture 就是位元組。
-  含一個明確記錄「第一版修錯了」的案例：`JSON.stringify` 會把 NUL 轉成跳脫序列，在序列化後找
-  原始 NUL 找不到、卻回報成功，而 Postgres 抱怨的正是那個跳脫序列。
-- `tests/windows-test-hygiene.test.js`（265 個）：掃描測試原始碼本身——沒有裸的
+- `tests/windows-log-encoding.test.js`（20 個）：編碼是位元組的性質，所以 fixture 就是位元組。
+  含兩個明確記錄「修錯了」的案例。第一個：`JSON.stringify` 會把 NUL 轉成跳脫序列，在序列化後找
+  原始 NUL 找不到、卻回報成功，而 Postgres 抱怨的正是那個跳脫序列。第二個是審查抓到的 ——
+  把那六個字元當成純文字剪掉，會剪到**本來就是文字**的那種：內容裡真的寫著那六個字元時，
+  序列化會把反斜線變兩個，剪掉之後剩一個反斜線去跳脫後面的字，整份文件不再是合法 JSON。
+  伺服器拒收、佇列重送 —— 就是那個迴圈本人。現在數前面的反斜線是奇數還是偶數才決定剪不剪。
+- `tests/windows-test-hygiene.test.js`（288 個）：掃描原始碼本身——沒有裸的
   `new URL(...).pathname`、每個會執行腳本的 PowerShell spawn 都帶 Bypass、`.cmd` stub 有跳脫、
   兩支查 Task Scheduler 的函式都用加大後的預算。
+
+  **範圍也是審查抓到的**：第一版只掃 `tests/`，理由是「剛剛找到的那個 bug 在那裡」。而它同時也在
+  出貨的程式碼裡 —— v1.26.104 新增的 commit 訊息掛勾用同一種寫法找自己的目錄，所以在 Windows 上
+  它的 `../shared/helpers.js` 解不開，而那支掛勾設計上任何異常都 exit 0，等於**每一條訊息規則在
+  Windows 上都靜靜地沒在跑**。只往上次出事的地方看的檢查，只會一直找到上次那個 bug。現在
+  `hooks/`、`mcp/`、`scripts/`、`shared/`、`src/` 一起掃。
+  另外挑檔案的條件本身也漏了：原本要求原始碼裡出現小寫加引號的 `powershell`，所以一個用 `pwsh`
+  常數的測試檔從來沒被看過 —— 而那個檔案正在違反它要管的那條規則。
 
 ## v1.26.105 — 同一個設定檔裡，一個掛勾在跑，一個死了四個月
 

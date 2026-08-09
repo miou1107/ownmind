@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -35,12 +35,12 @@ const read = (f) => readFileSync(join(testsDir, f), 'utf8');
  * code.
  */
 
-describe('test files must build paths in a way that works on Windows', () => {
-  // `import.meta.dirname` (Node 20.11+) is the other correct answer, so the pattern is only
-  // a defect when nothing catches it. Matching the guarded form keeps this from firing on
-  // the files that already do the right thing.
-  const BARE_PATHNAME = /(?<!\|\|\s{0,4})new URL\([^)]*import\.meta\.url\)\.pathname(?!\s*\.replace)/;
+// `import.meta.dirname` (Node 20.11+) is the other correct answer, so the pattern is only a
+// defect when nothing catches it. Matching the guarded form keeps this from firing on the
+// files that already do the right thing.
+const BARE_PATHNAME = /(?<!\|\|\s{0,4})new URL\([^)]*import\.meta\.url\)\.pathname(?!\s*\.replace)/;
 
+describe('test files must build paths in a way that works on Windows', () => {
   for (const f of testFiles) {
     it(`${f} does not use a bare new URL(...).pathname`, () => {
       const src = read(f);
@@ -56,8 +56,53 @@ describe('test files must build paths in a way that works on Windows', () => {
   }
 });
 
+describe('shipping code must build paths in a way that works on Windows too', () => {
+  // The first version of this suite scanned `tests/` only, on the reasoning that the defect
+  // it had just found lived there. It lived in shipping code as well: the commit-msg hook
+  // added one release earlier resolved its own directory the same way, so on Windows its
+  // `../shared/helpers.js` import could not resolve — and that hook exits 0 on any failure,
+  // by design, so every commit-message rule was silently unenforced there.
+  //
+  // A guard that only looks where the last bug was found will keep finding the last bug.
+  const SOURCE_DIRS = ['hooks', 'mcp', 'scripts', 'shared', 'src'];
+  const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', 'public', 'cache', '.git']);
+
+  function walk(dir, out = []) {
+    for (const entry of readdirSync(dir)) {
+      if (SKIP_DIRS.has(entry)) continue;
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full, out);
+      else if (/\.(js|cjs|mjs)$/.test(entry)) out.push(full);
+    }
+    return out;
+  }
+
+  it('no shipping file resolves its own directory through a bare .pathname', () => {
+    const offenders = [];
+    for (const dir of SOURCE_DIRS) {
+      let files;
+      try { files = walk(join(repoRoot, dir)); } catch { continue; }
+      for (const full of files) {
+        readFileSync(full, 'utf8').split('\n').forEach((line, i) => {
+          if (BARE_PATHNAME.test(line) && !/import\.meta\.dirname/.test(line)) {
+            offenders.push(`${full.slice(repoRoot.length)}:${i + 1}`);
+          }
+        });
+      }
+    }
+    assert.deepEqual(offenders, [],
+      'on Windows a file: URL pathname is "/C:/Users/..."; use fileURLToPath or '
+      + 'import.meta.dirname. A hook that cannot resolve its own imports exits without '
+      + 'running, and these hooks are built to fail quietly.');
+  });
+});
+
 describe('tests that spawn PowerShell must not be blocked by execution policy', () => {
-  const spawnsPowerShell = testFiles.filter((f) => /spawnSync\(\s*powershell|['"]powershell/.test(read(f)));
+  // Case-insensitive, and `pwsh` as well as `powershell`: the first version required a
+  // quoted lowercase "powershell", so a file spawning a `PWSH` const was never inspected —
+  // and one such file was violating the very rule below. A guard that picks its own subjects
+  // is only as good as the pick.
+  const spawnsPowerShell = testFiles.filter((f) => /pwsh|powershell/i.test(read(f)));
 
   it('at least one file spawns PowerShell, or this whole suite is vacuous', () => {
     assert.ok(spawnsPowerShell.length > 0,
@@ -74,8 +119,11 @@ describe('tests that spawn PowerShell must not be blocked by execution policy', 
       // is a string literal ('exit 0', used to probe whether PowerShell exists at all) is
       // exempt — requiring the flag there would be cargo cult, and the kind of noise that
       // gets a rule switched off. The spawns that matter pass a variable holding a script.
-      const spawns = src.match(/\[\s*'-NoProfile'[^\]]*\]/g) || [];
-      const runsAScript = spawns.filter((s) => !/'-Command'\s*,\s*'[^']*'/.test(s));
+      // Any argument array containing -NoProfile, however it is quoted and whatever comes
+      // first. The original anchored on a single-quoted '-NoProfile' as element one, so an
+      // array starting with '-ExecutionPolicy' — or using double quotes — went unchecked.
+      const spawns = src.match(/\[[^\[\]]*-NoProfile[^\[\]]*\]/g) || [];
+      const runsAScript = spawns.filter((s) => !/-Command['"]\s*,\s*['"][^'"]*['"]/.test(s));
       for (const s of runsAScript) {
         assert.match(s, /-ExecutionPolicy'\s*,\s*'Bypass/,
           `a PowerShell spawn in ${f} omits -ExecutionPolicy Bypass: ${s.slice(0, 90)}`);
@@ -139,8 +187,13 @@ describe('a spawn failure keeps the evidence it was diagnosed from', () => {
     assert.doesNotMatch(out, /timed out/);
   });
 
-  it('does not throw on a malformed result', () => {
+  it('does not throw on a malformed result, and still says something', () => {
+    // `typeof === 'string'` alone is satisfied by '', which reaches the server as
+    // "Get-ScheduledTask failed: " with nothing after the colon — a report that costs
+    // somebody a round trip to find out it says nothing.
     assert.equal(typeof describeSpawnFailure(null), 'string');
+    assert.ok(describeSpawnFailure(null).length > 0);
     assert.equal(typeof describeSpawnFailure({}), 'string');
+    assert.ok(describeSpawnFailure({}).length > 0, 'an empty result must still describe itself');
   });
 });

@@ -39,8 +39,18 @@ nothing and reports success — while the escape sequence is exactly what Postgr
 ### Scenario: upload and spool agree
 
 - **GIVEN** the same report
-- **WHEN** it is written to the spool and when it is uploaded
-- **THEN** both go through the same serialization, so neither can drift from the other
+- **WHEN** it is written to the spool and when it is uploaded, including when a failed entry
+  is written back for a later retry
+- **THEN** all of them go through the same serialization, so none can drift from the others
+
+### Scenario: a value that literally contains the escape text
+
+- **GIVEN** a report field whose text is the six characters of the escape sequence, as
+  written in an install log
+- **WHEN** the report is serialized
+- **THEN** the text survives and the document still parses — stripping it there would eat one
+  of the two backslashes `JSON.stringify` emitted and leave the other escaping the next
+  character, which is the malformed document the server rejects and the spool retries
 
 ## Requirement: a check that timed out is reported as a timeout
 
@@ -72,19 +82,33 @@ which takes about 20ms. The budget is now 30s.
 - **WHEN** self-check runs immediately after an upgrade
 - **THEN** the scheduler check does not report a failure
 
-## Requirement: tests resolve their own directory in a way that works on Windows
+## Requirement: every file resolves its own directory in a way that works on Windows
 
-Test files MUST NOT derive a filesystem path from `new URL(...).pathname` without
-`fileURLToPath`.
+No file — test or shipping — MUST derive a filesystem path from `new URL(...).pathname`
+without `fileURLToPath`.
 
 On Windows that yields `/C:/Users/...`, which node joins onto the current drive root. On
 macOS it happens to be a valid absolute path, so the defect is invisible there.
+
+The guard covers `hooks/`, `mcp/`, `scripts/`, `shared/` and `src/` as well as `tests/`. Its
+first version scanned tests only, on the reasoning that the defect it had just found lived
+there — and it was live in a shipping hook at the same time. A guard that only looks where
+the last bug was found will keep finding the last bug.
 
 ### Scenario: the suite polices itself
 
 - **GIVEN** the test sources
 - **WHEN** they are scanned
 - **THEN** no test file contains a bare `.pathname` used as a path
+
+### Scenario: a hook that fails quietly
+
+- **GIVEN** a hook designed to exit 0 on any error, whose imports are relative to its own
+  directory
+- **WHEN** that directory is resolved by a bare `.pathname` on Windows
+- **THEN** the import cannot resolve, the hook exits without running, and nothing is printed
+  — so the guard must cover shipping code, where a wrong path produces silence rather than
+  a failing test
 
 ## Requirement: a test that spawns PowerShell to run a script passes the policy flag
 
@@ -93,6 +117,14 @@ Any test that dot-sources or executes a `.ps1` MUST spawn PowerShell with
 
 A Windows client that has never set a policy defaults to Restricted, which blocks the
 dot-source outright.
+
+### Scenario: the guard picks the right subjects
+
+- **GIVEN** a test that spawns PowerShell through a variable named for `pwsh`
+- **WHEN** the guard selects files to inspect
+- **THEN** it is inspected — matching is case-insensitive and covers both executable names,
+  because the first version required a quoted lowercase `powershell` and therefore skipped a
+  file that was violating this very requirement
 
 ### Scenario: the detector test actually runs the detector
 
@@ -140,7 +172,7 @@ so scanning them suffices.
 
 ## Known limits
 
-- `windows-test-hygiene.test.js` scans test sources textually. A path built by an
+- `windows-test-hygiene.test.js` scans sources textually. A path built by an
   indirection it cannot see would not be caught, and its case count grows with the number of
   test files rather than being fixed.
 - The BOM rule identifies the encodings PowerShell produces. A file written by something
