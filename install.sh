@@ -249,11 +249,6 @@ if [ "$IS_WINDOWS" = true ]; then
   MCP_ENTRY=$(node -e "
     console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', process.argv[1]] }));
   " "$START_CMD_WIN")
-  # v1.26.112 — the same launch command as a flag list for register-mcp-cli.cjs, kept
-  # beside the JSON rather than parsed back out of it. JSON cannot be handed through a
-  # shell to a native executable intact, which is the whole reason that CLI exists.
-  MCP_COMMAND='cmd.exe'
-  MCP_CLI_ARGS=(--arg '/c' --arg "$START_CMD_WIN")
 else
   # Unreachable on Windows (that is the branch above), but routed through to_win_path all
   # the same: it is identity off Windows, and one uniform rule is cheaper to hold than an
@@ -262,55 +257,115 @@ else
   MCP_ENTRY=$(node -e "
     console.log(JSON.stringify({ command: 'node', args: [process.argv[1]] }));
   " "$MCP_ENTRY_PATH_WIN")
-  MCP_COMMAND='node'
-  MCP_CLI_ARGS=(--arg "$MCP_ENTRY_PATH_WIN")
 fi
 
 # --- 2. Claude Code MCP 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
-REGISTER_MCP_CLI="$OWNMIND_DIR/scripts/install-helpers/register-mcp-cli.cjs"
-REGISTER_MCP_CLI_WIN="$(to_win_path "$REGISTER_MCP_CLI")"
-# v1.26.112 — write both files, and the one that matters is `~/.claude.json`.
+if [ -f "$CLAUDE_SETTINGS" ]; then
+  # v1.26.91: this used to skip the whole block when the file already contained the string
+  # "ownmind", on the assumption that an existing entry needs nothing. But the entry is
+  # where the API key lives, so every re-run that meant to change the key — switching
+  # accounts, rotating a credential, correcting one typed wrong — did nothing at all and
+  # then went on to print an installation summary. The condition asked whether OwnMind was
+  # configured; the question that mattered was whether it was configured with THIS key.
+  #
+  # Now it always writes, and merges rather than replaces so an existing entry keeps any
+  # field this installer does not manage.
+  echo "[INFO] Configuring Claude Code MCP"
+  node -e "
+    const fs = require('fs');
+    const entry = $MCP_ENTRY;
+    const p = '$CLAUDE_SETTINGS_WIN';
+    const settings = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!settings.mcpServers) settings.mcpServers = {};
+    const prev = settings.mcpServers.ownmind || {};
+    const prevEnv = prev.env || {};
+    const nextKey = '$API_KEY';
+    settings.mcpServers.ownmind = {
+      ...prev,
+      ...entry,
+      env: {
+        ...prevEnv,
+        OWNMIND_API_URL: '$API_URL',
+        OWNMIND_API_KEY: nextKey,
+        OWNMIND_TOOL: 'claude-code'
+      }
+    };
+    const _tmp = p + '.tmp';
+    fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
+    fs.renameSync(_tmp, p);
+    // Say which of the two happened. A run that silently changed the account is as
+    // confusing as one that silently did not.
+    if (!prevEnv.OWNMIND_API_KEY) console.log('       API key written');
+    else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('       API key updated (replaced a different key)');
+    else console.log('       API key unchanged');
+  "
+else
+  echo "[INFO] Creating Claude Code MCP config"
+  mkdir -p "$HOME/.claude"
+  node -e "
+    const fs = require('fs');
+    const entry = $MCP_ENTRY;
+    const settings = {
+      mcpServers: {
+        ownmind: {
+          ...entry,
+          env: {
+            OWNMIND_API_URL: '$API_URL',
+            OWNMIND_API_KEY: '$API_KEY',
+            OWNMIND_TOOL: 'claude-code'
+          }
+        }
+      }
+    };
+    fs.writeFileSync('$CLAUDE_SETTINGS_WIN', JSON.stringify(settings, null, 2));
+  "
+fi
+
+# --- 2a. Register the MCP server where Claude Code launches it (v1.26.112) ---
 #
-# Until now this block wrote `~/.claude/settings.json` and stopped. Claude Code reads that
-# file for hooks, but it launches MCP servers from `~/.claude.json`, which nothing has ever
-# written — so the `ownmind_*` tools were never registered for anybody who installed with
-# this script. Memory still loaded, because the SessionStart hook is configured separately
-# and makes its own HTTP call, and that is why nine releases went by without anyone
-# noticing: the visible half worked.
+# The block above writes `~/.claude/settings.json`, which is where this project's own
+# `resolveCredentials` looks and where the hooks live. Claude Code reads that file for
+# hooks — but it launches MCP servers from `~/.claude.json`, which nothing has ever
+# written. So the `ownmind_*` tools were never registered for anybody installing with this
+# script: not broken, not degraded, absent. Memory still loaded, because the SessionStart
+# hook is configured in settings.json and makes its own HTTP call, and that is exactly why
+# nine releases went by with nobody noticing — the visible half worked.
 #
-# The merge, the atomic write, the read-back and the refusal to clobber an unparseable
-# config all live in the helper, so install.ps1 cannot drift away from this.
-echo "[INFO] Configuring Claude Code MCP"
-# `$HOME` is passed explicitly rather than letting the helper call `os.homedir()`.
-# On Windows, Node resolves the home directory from `USERPROFILE` while this script has
-# been using bash's `$HOME` for every path above it. Those are normally the same, but under
-# Git Bash they need not be — and when they differ, the installer would write its settings
-# to one home and register the MCP server under another, which is the same class of defect
-# as the one this release fixes: two files, two places, nobody comparing them. Measured
-# 2026-08-09 while testing this very block with `HOME` overridden: the helper ignored it
-# and wrote to the real profile.
-# No JavaScript is embedded here and nothing containing a quote is passed. `node -e` does
-# not survive PowerShell 5.1 (it strips the quotes, so the script arrives mangled and runs
-# as nonsense), and neither does a JSON argument — both were tried, measured 2026-08-09.
-# A real file plus one argv element per value is the only shape with no quoting layer.
+# Added alongside rather than replacing: the block above carries the v1.26.91 key-change
+# reporting and field-preserving merge, both of which are pinned by tests, one of which
+# extracts and executes that inline script. Replacing it was the first attempt and broke
+# three of them.
+#
+# No JavaScript is embedded and nothing containing a quote is passed. `node -e` does not
+# survive PowerShell 5.1 (it strips the quotes, so the script arrives as nonsense and runs
+# silently wrong) and neither does a JSON argument — both measured 2026-08-09. A real file
+# plus one argv element per value is the only shape with no quoting layer.
 #
 # MSYS_NO_PATHCONV=1 because Git Bash rewrites anything that looks like a POSIX path before
 # handing it to a native .exe, and `/c` looks exactly like one: measured, the cmd.exe flag
 # arrived as `C:/` and would have been written into the launch command that way, leaving
-# Windows users with an entry that cannot start. Every path is already Win32 by this point.
+# Windows users with an entry that cannot start. Every path here is already Win32.
+#
+# `|| MCP_REG_OUT=""` because this script runs under `set -eE` with an ERR trap that
+# reports a failed install. The CLI exits 0 even when it cannot register, so this step
+# never aborts an otherwise good installation — but a missing node would still exit
+# non-zero, and "MCP not registered" must not be reported as "your install failed".
+REGISTER_MCP_CLI_WIN="$(to_win_path "$OWNMIND_DIR/scripts/install-helpers/register-mcp-cli.cjs")"
+if [ "$IS_WINDOWS" = true ]; then
+  MCP_COMMAND='cmd.exe'
+  MCP_CLI_ARGS=(--arg '/c' --arg "$START_CMD_WIN")
+else
+  MCP_COMMAND='node'
+  MCP_CLI_ARGS=(--arg "$MCP_ENTRY_PATH_WIN")
+fi
 MCP_REG_OUT=$(MSYS_NO_PATHCONV=1 node "$REGISTER_MCP_CLI_WIN" \
   --command "$MCP_COMMAND" "${MCP_CLI_ARGS[@]}" \
   --url "$API_URL" --key "$API_KEY" --home "$(to_win_path "$HOME")") || MCP_REG_OUT=""
 printf '%s\n' "$MCP_REG_OUT" | sed -n 's/^PROBLEM /       [WARN] /p'
-# IR-001: an installer saying it configured something is not evidence that it did. Report
-# what was read back from disk, not what we intended to write.
-#
-# `|| MCP_REG_OUT=""` above matters: this script runs under `set -eE` with an ERR trap that
-# reports a failed install. The CLI exits 0 even when it cannot register, so this step can
-# never abort an otherwise good installation — but a missing node would still exit non-zero,
-# and "MCP not registered" must not be reported to the user as "your install failed".
+# IR-001: an installer saying it configured something is not evidence that it did. This
+# reports what was read back off disk, not what we meant to write.
 if printf '%s\n' "$MCP_REG_OUT" | grep -qx VERIFIED; then
   echo "       MCP registered in ~/.claude.json (verified by reading it back)"
 else
