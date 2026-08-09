@@ -38,9 +38,31 @@ Windows 暫時不擋合併：第一次跑有 109 個既有的紅。使用者是�
 
 接著在 Windows 上露出第二個問題：預期值用 `path.join` 組，但 plist 裡的路徑是 helper 在 bash 裡寫的。Git Bash 把同一個目錄叫 `/tmp/…`，node 叫 `C:\Users\…\Temp\…`，等於拿同一個目錄的兩種正確寫法互比。改成比對真正要驗的那一段：`{HOME}` 有被代換、目錄名裡的 `&` 有活過 sed。
 
+### 順帶修掉 CI 第一天在 Linux 上抓到的產品 bug
+
+`hooks/ownmind-session-start.sh` 算檔案年紀的那一行：
+
+```sh
+mtime=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)
+```
+
+`stat -f` 在 macOS／BSD 是「格式字串」，在 GNU／Linux 是 `--file-system`。Linux 上這行會先把
+五行檔案系統資訊吐到 **stdout**，才因為 `%m` 不是合法運算元而回非零、觸發 `||` 接上正確的 epoch。
+`mtime` 於是變成「檔案系統資訊 + 換行 + 正確的時間」，下一行算術直接 `syntax error in expression`。
+
+上一行的註解就寫著兩者不同，而底下的程式碼還是假設第一個會**安靜地**失敗 —— 兩個 `2>/dev/null`
+只吞了 stderr，stdout 照樣汙染了變數。
+
+改成兩種寫法各跑一次、各自檢查結果是不是純數字。用假的 `stat` 放進 PATH 來測，所以在 macOS 上也
+跑得到 —— 重點正是這個：這是一個在 Mac 上開發看不見的缺陷。alpine 容器實跑確認過。
+
+這是 Windows 那批問題的鏡像：在 Mac 上開發，壞在 Linux。
+
 ### 一個測試只要寫成「有某個東西才跑」，在沒有那個東西的機器上就等於不存在
 
 三個都是同一種病，只是換了工具名字：`pwsh`、`plutil`。CI 的價值不只是多一台機器跑測試，是讓「跳過」這件事第一次變得看得見。
+
+而上面那個 `stat` 是同一句話的另一面：**測試從來不曾在會壞的那台機器上跑過。**
 
 ## v1.26.106 — 四個只在 Windows 上壞、而 Mac 測不到的問題
 
