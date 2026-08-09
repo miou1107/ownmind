@@ -149,6 +149,15 @@ fi
 # Age of a file in seconds. Prints nothing and returns non-zero when it is not there.
 # stat -f %m = macOS/BSD, stat -c %Y = GNU.
 #
+# v1.26.107 — the two forms are tried separately and the result is checked for digits,
+# because the losing form is not necessarily quiet. `-f` means "format string" on BSD and
+# `--file-system` on GNU, so on Linux `stat -f %m` prints a five-line filesystem report to
+# **stdout** before exiting non-zero, and a `A || B` chain then appends B's answer
+# underneath it. The variable ends up holding the report, a newline, and the correct epoch,
+# and the arithmetic below dies with "syntax error in expression". The comment above already
+# named the difference; the code assumed one side would fail silently, and `2>/dev/null`
+# only ever covered stderr.
+#
 # The `|| echo 0` fallback this used to carry is deliberately gone. It made an unreadable
 # mtime mean "infinitely old", so a lock nobody could stat was reclaimed by everybody at
 # once. Failing closed instead means an unreadable lock is never reclaimed; on every
@@ -156,8 +165,13 @@ fi
 lock_age_seconds() {
   [ -f "$1" ] || return 1
   local mtime
-  mtime=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)
-  [ -n "$mtime" ] || return 1
+  mtime=$(stat -c %Y "$1" 2>/dev/null)
+  case "$mtime" in
+    ''|*[!0-9]*) mtime=$(stat -f %m "$1" 2>/dev/null) ;;
+  esac
+  case "$mtime" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
   echo $(( $(date +%s) - mtime ))
 }
 

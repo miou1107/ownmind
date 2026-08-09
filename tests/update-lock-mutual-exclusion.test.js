@@ -542,3 +542,89 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
 
   function src() { return fs.readFileSync(shellHook, 'utf8'); }
 });
+
+describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on stdout', () => {
+  /**
+   * `stat -f` means "format string" on BSD and `--file-system` on GNU. The fallback
+   *
+   *     mtime=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)
+   *
+   * assumed the first form fails silently. On Linux it prints a five-line filesystem report
+   * to **stdout** and only then exits non-zero because `%m` is not a valid operand, so `||`
+   * runs the GNU form and appends the real epoch underneath. `mtime` becomes the report plus
+   * a newline plus the right number, and the caller's arithmetic dies with a syntax error.
+   *
+   * The comment one line above named the difference between the two platforms and the code
+   * below it still assumed one of them was quiet. `2>/dev/null` covers stderr only.
+   *
+   * Reproduced in alpine: `stat -f %m` exits 1 after printing `File: ... Inodes: ...`.
+   * Asserted here with a stub on PATH, so it runs on the developer's machine too — the whole
+   * point being that this is a defect a macOS developer cannot otherwise see.
+   */
+  const GNU_STAT_STUB = [
+    '#!/bin/sh',
+    '# Behaves like GNU coreutils stat: -f is --file-system, and -c is the format flag.',
+    'if [ "$1" = "-f" ]; then',
+    '  echo "  File: \\"$3\\""',
+    '  echo "    ID: e263ea3a8075c030 Namelen: 255     Type: UNKNOWN"',
+    '  echo "Blocks: Total: 263940461  Free: 261593355  Available: 248167499"',
+    '  exit 1',
+    'fi',
+    'if [ "$1" = "-c" ]; then echo 1786250210; exit 0; fi',
+    'exit 1',
+  ].join('\n');
+
+  it('returns a number, not a filesystem report with a number stuck to it', () => {
+    const dir = tmpdir();
+    try {
+      const bin = path.join(dir, 'bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(path.join(bin, 'stat'), GNU_STAT_STUB, { mode: 0o755 });
+      const lock = path.join(dir, 'the-lock');
+      fs.writeFileSync(lock, 'token');
+
+      const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
+        + `lock_age_seconds ${JSON.stringify(lock)} && echo "AGE_OK" || echo "AGE_FAIL"`;
+      const out = execFileSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      });
+
+      assert.doesNotMatch(out, /Namelen|Blocks:|File:/,
+        'the filesystem report reached the caller, so the age is not a number');
+      assert.doesNotMatch(out, /syntax error/, 'the arithmetic broke on the polluted value');
+      const [age] = out.trim().split('\n');
+      assert.match(age, /^-?\d+$/, `expected a plain integer age, got ${JSON.stringify(age)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still reports an age on a platform where only the BSD form works', () => {
+    // The mirror case: a stub that answers -f and rejects -c. Fixing Linux must not break
+    // macOS, which is the platform the original code was written on and worked on.
+    const dir = tmpdir();
+    try {
+      const bin = path.join(dir, 'bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(path.join(bin, 'stat'), [
+        '#!/bin/sh',
+        'if [ "$1" = "-f" ]; then echo 1786250210; exit 0; fi',
+        'echo "stat: illegal option -- c" >&2',
+        'exit 1',
+      ].join('\n'), { mode: 0o755 });
+      const lock = path.join(dir, 'the-lock');
+      fs.writeFileSync(lock, 'token');
+
+      const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
+        + `lock_age_seconds ${JSON.stringify(lock)}`;
+      const out = execFileSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      });
+      assert.match(out.trim(), /^-?\d+$/, `expected an integer age, got ${JSON.stringify(out)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

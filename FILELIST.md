@@ -1,5 +1,54 @@
 # OwnMind 檔案結構
 
+## v1.26.107 修改（這個 repo 開始有 CI 了）
+
+新增檔：
+```
+.github/workflows/test.yml                      — push 到 main、任何 PR、手動都會跑。
+                                                   必過：ubuntu × node 20、ubuntu × node 24、
+                                                   macOS × node 20。只顯示不擋：windows ×
+                                                   node 20（獨立 job + continue-on-error，
+                                                   不是 matrix leg —— 那樣的 leg 在
+                                                   needs.<job>.result 仍然回報 failure，
+                                                   gate job 分不出「只有 Windows 紅」跟
+                                                   「全部都紅」）。步驟是 npm ci →
+                                                   ensure-console-build → npm test，
+                                                   不需要資料庫
+openspec/changes/v1.26.107-ci-first-day/        — proposal / spec / tasks
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — lock_age_seconds 不再假設 `stat -f %m`
+                                                   會安靜地失敗。-f 在 BSD 是格式字串、在 GNU
+                                                   是 --file-system，所以 Linux 上它會先把
+                                                   五行檔案系統資訊吐到 stdout 才回非零，
+                                                   `||` 再把正確的時間接在後面 —— 變數變成
+                                                   一團垃圾，下一行算術直接 syntax error。
+                                                   兩種寫法各跑一次、各自檢查是不是純數字
+tests/update-lock-mutual-exclusion.test.js      — 上面那件事的兩條測試。用假的 stat 放進
+                                                   PATH，所以在 macOS 上也跑得到 —— 重點正是
+                                                   這是一個在 Mac 上看不見的缺陷。另一條是
+                                                   鏡像案例：只有 BSD 寫法能用時也要算得出來
+tests/install-failed-beacon-ps1.test.js         — 從真實腳本**遞迴**抽出相依函式，不再只抽
+                                                   function Fail（Fail 內插的
+                                                   Get-LastLogLines 沒被帶進去，PowerShell
+                                                   在組參數時就丟例外、被 Fail 自己的
+                                                   catch {} 吞掉）。找不到 pwsh 時退回
+                                                   PowerShell 5.1 —— 那正是 install.ps1
+                                                   實際呼叫的那一支。斷言改成驗 throw 本身
+                                                   （catch 裡 exit 3），不再用 exit 1，
+                                                   因為「丟了例外被收掉」跟「腳本自己垮了」
+                                                   都是 1
+tests/scanner-schedule-repair.test.js           — 兩個 plist 案例不再只靠 plutil（macOS 專屬，
+                                                   其他平台一律 ENOENT，等於哪裡都沒跑）。
+                                                   直接檢查產生出來的 XML；plutil 在的時候
+                                                   仍然照跑當交叉驗證。預期路徑改成只比對真正
+                                                   要驗的那一段，不再拿 Git Bash 的 /tmp/… 跟
+                                                   node 的 C:\Users\…\Temp\… 互比
+package.json                                    — 1.26.106 → 1.26.107
+```
+
 ## v1.26.106 修改（四個只在 Windows 上壞、而 Mac 測不到的問題）
 
 新增檔：
