@@ -1,5 +1,102 @@
 # OwnMind 更新紀錄
 
+## v1.26.109 — `bash -c` 在 Windows 上會吃掉反斜線，於是測試跑的根本不是同一份腳本
+
+### 量出來的
+
+拿 `hooks/ownmind-session-start.sh` 裡真實的那一行去測：
+
+```
+bash 應該看到的：
+  sed 's/\\/\\\\/g; s/"/\\"/g'
+
+bash -c <字串>  -> ""      stderr: sed: -e expression #1, char 13: unknown option to `s'
+bash <檔案>     -> "pull"  stderr: 無
+```
+
+node 用 MSVCRT 規則把參數組成命令列，Git Bash 的 `bash.exe` 用 MSYS 規則把命令列拆回來。兩邊對「引號前面的反斜線」的看法不一樣，於是反斜線被吃掉一半。
+
+**傷害是安靜的**：sed 掛掉、值變成空字串，斷言報的是「值不對」而不是「引號壞了」。`hook-log-event-details` 從 v1.26.95 起就宣稱掛勾寫出 `{ step: '' }`——而掛勾在每個平台上寫的都是 `{ step: 'pull' }`。
+
+### 新增 `tests/helpers/bash-script.js`
+
+`execBashScript` / `spawnBashScript` 把腳本寫成檔案再交給 bash。檔案沒有命令列可以被重新解析，所以一個位元組都不會掉。**沒有平台分支**——檔案的形式在哪裡都是對的，而平台分支正是讓這種差異一直看不見的東西。
+
+同一支模組也提供 `toBashPath()`：`C:\Users\…\Temp\x` → `/c/Users/…/Temp/x`。Windows 路徑塞進 bash 的雙引號字串時，反斜線是跳脫字元，`\U` 跟 `\T` 會安靜地變成 `U` 跟 `T`，路徑就不存在了。macOS 與 Linux 的輸入沒有磁碟機代號也沒有反斜線，原樣回傳，所以呼叫端不需要分支。
+
+### 順著修好的三支測試（Windows 上 25 紅 → 0）
+
+| 測試檔 | 之前 | 之後 |
+|---|---|---|
+| `hook-log-event-details` | 13 紅 | **0** |
+| `path-helpers-bash` | 8 紅 | **0** |
+| `activity-carries-project` | 4 紅 | **0** |
+
+修的過程中又露出兩個藏在後面的：
+
+**`path-helpers-bash` 把 `PATH` 放在 spawn 的環境變數裡。** 那個 PATH 是要限制 bash 找不找得到 `cygpath` 的，但 node 也是讀同一個變數去找 `bash.exe`，而一個 POSIX 的 PATH 對 CreateProcess 毫無意義——整個 run 在 helper 被 source 之前就以 `status: null` 死掉。改成在腳本裡 `export PATH`。
+
+**而那個值本身也是錯的。** 案例叫「cygpath 不在 PATH 上」，用的值卻是 `/usr/bin:/bin`——Git Bash 的 cygpath 就住在 `/usr/bin/cygpath.exe`。這個案例在唯一有 cygpath 的平台上宣稱沒有 cygpath，測到的是自己名字的反面。`to_win_path` 只需要 `command -v` 跟 `echo`，兩個都是內建，所以空的 PATH 才是誠實的說法。
+
+**`activity-carries-project` 的 HOME 比對永遠不相等。** 測試把 HOME 用 Windows 路徑傳進去，MSYS 在 bash 裡把它換成 `/c/…`，而腳本裡設的 `CLAUDE_PROJECT_DIR` 還是 `C:\…`。掛勾的 `[ "$dir" != "$HOME" ]` 於是永遠成立，「家目錄不算專案」那條規則測不到。兩邊都走 `toBashPath()`。
+
+### 新增 `tests/bash-c-escaping.test.js`
+
+四個案例，**都不需要 Windows**：
+
+- 掃描 `tests/`，不准有新的檔案把生成的腳本交給 `bash -c`
+- 還沒轉換的 9 個檔案列在 `NOT_YET_CONVERTED`。**這份清單只能變短**——第二個案例會對「已經轉換卻還留在清單上」的項目報錯，所以清單不會比它記錄的債活得久
+- 實測檔案形式真的把腳本原樣送到（只斷言檔案形式：`bash -c` 在 macOS 與 Linux 上是對的，斷言它會壞等於讓這支測試在它針對的平台以外全部變紅，那是同一個錯誤的反方向）
+- `toBashPath()` 的轉換
+
+## v1.26.108 — Windows 上，commit 前的密鑰掃描一直是關著的
+
+### 一行程式，十個地方，只在 Windows 上壞
+
+```js
+const verificationPath = path.join(HOME, '.ownmind', 'shared', 'verification.js');
+const mod = await import(verificationPath);
+```
+
+`await import()` 收的是**模組識別碼**，而絕對路徑只是「剛好長得像」。macOS 與 Linux 上它是 `/Users/x/.ownmind/shared/verification.js`，開頭的 `/` 讓它解析得過去。同一個檔案在 Windows 上是 `C:\Users\x\.ownmind\shared\verification.js`，載入器把開頭的 `C:` 讀成**網址的協定名稱**，直接丟 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。
+
+實測（Windows 11 / node 24）：
+
+```
+bare import   -> FAILED: ERR_UNSUPPORTED_ESM_URL_SCHEME
+pathToFileURL -> OK
+```
+
+### 而十個地方全都把它 catch 起來繼續走
+
+| 檔案 | 失敗之後做什麼 |
+|---|---|
+| `ownmind-git-pre-commit.js` | 印一行警告，`exit 0` |
+| `ownmind-git-commit-msg.js` | **什麼都不印**，`exit 0` |
+| `ownmind-git-post-commit.js` | 印一行警告，`exit 0` |
+| `ownmind-iron-rule-check.js` | 靜靜跳過規則評估 |
+| `ownmind-verify-trigger.js` | 回報 `{ pass: true }` |
+| `mcp/index.js` | 回傳 `null`，呼叫端當成「沒有規則」 |
+
+所以 Windows 使用者的 commit 前密鑰掃描、訊息規則、post-commit 檢查、鐵律條件評估，**全部是關的，而且沒有任何一個地方說得夠大聲**。
+
+它能藏這麼久，是因為寫死的 `Co-Authored-By` 比對不走這個引擎——那道關卡照樣會擋，所以掛勾看起來是活的。「還會擋東西」跟「規則引擎在跑」是兩件事。
+
+十個地方都改成 `pathToFileURL(p).href`。全 repo 原本只有 `self-check.cjs` 一支寫對。
+
+### 怎麼發現的
+
+v1.26.107 剛開起來的 Windows CI。`pre-commit-secret` 一口氣 20 個紅，錯誤訊息就是那句 `Validator engine unavailable — skipping pre-commit check`。在那之前這些測試在 macOS 上全綠，在 Windows 上沒有人跑。
+
+第一輪只找到 8 個地方——那是照著手上的清單改。改完再 grep 一次 `await import(`，又跳出兩個：`ownmind-verify-trigger.js` 跟 `mcp/index.js`。清單是記憶，grep 是證據。
+
+### 新增 `tests/esm-import-file-urls.test.js`
+
+兩個案例，**都不需要 Windows**：
+
+- 掃描 `hooks/ shared/ src/ mcp/ scripts/ client/src` 的每一個 `import()` 呼叫，參數不是字串字面值就必須經過 `pathToFileURL`。這個缺陷是「被傳進去的那個字串」的性質，不是「讀它的那台機器」的性質，所以在寫程式的 Mac 上就驗得到。
+- 正面驗證 `pathToFileURL()` 產出的 `file://` 真的匯入得起來——只有規則沒有實證，規則可能對在錯的地方。
+
 ## v1.26.107 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
 
 ### 在這之前 `.github/` 底下只有 `CODEOWNERS`
