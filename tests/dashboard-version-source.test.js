@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import express from 'express';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
+// v1.26.119 — these assertions are written with POSIX literals ('client/src/...'), and
+// path.relative answers with backslashes on Windows. Normalising where a path becomes an
+// assertion keeps the literals readable and the test honest on both platforms.
+import { relPosix } from './helpers/posix-path.js';
 
 import { SERVER_VERSION, readPackageVersion } from '../src/utils/server-version.js';
 import { createVersionRouter } from '../src/routes/version.js';
@@ -112,7 +116,7 @@ describe('SERVER_VERSION has a single definition', () => {
     const offenders = sourceFiles(join(repoRoot, 'src'))
       .filter((f) => f !== join(repoRoot, 'src', 'utils', 'server-version.js'))
       .filter((f) => /(?:const|let|var)\s+SERVER_VERSION\s*=/.test(stripComments(readFileSync(f, 'utf8'))))
-      .map((f) => relative(repoRoot, f));
+      .map((f) => relPosix(repoRoot, f));
 
     assert.deepEqual(
       offenders, [],
@@ -128,7 +132,7 @@ describe('SERVER_VERSION has a single definition', () => {
         if (!/\bSERVER_VERSION\b/.test(src)) return false;
         return !/from\s+'[^']*utils\/server-version\.js'/.test(src);
       })
-      .map((f) => relative(repoRoot, f));
+      .map((f) => relPosix(repoRoot, f));
 
     assert.deepEqual(missing, [], 'these files use SERVER_VERSION without importing the shared module');
   });
@@ -195,7 +199,7 @@ describe('the dashboard holds no version literal', () => {
     for (const file of sourceFiles(join(repoRoot, 'client', 'src'))) {
       const src = stripComments(readFileSync(file, 'utf8'));
       const hit = /version\s*[:=]\s*\{?\s*['"`]v?\d+\.\d+/i.exec(src);
-      if (hit) offenders.push(`${relative(repoRoot, file)}: ${hit[0]}`);
+      if (hit) offenders.push(`${relPosix(repoRoot, file)}: ${hit[0]}`);
     }
     assert.deepEqual(
       offenders, [],
@@ -241,7 +245,7 @@ describe('the version is fetched from a component that renders only after login'
     const callers = sourceFiles(join(repoRoot, 'client', 'src'))
       .filter((f) => f !== join(repoRoot, 'client', 'src', 'hooks', 'useServerVersion.js'))
       .filter((f) => /useServerVersion\s*\(/.test(stripComments(readFileSync(f, 'utf8'))))
-      .map((f) => relative(repoRoot, f));
+      .map((f) => relPosix(repoRoot, f));
 
     assert.deepEqual(callers, ['client/src/components/common/Layout.jsx']);
 

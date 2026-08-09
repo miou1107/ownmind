@@ -37,9 +37,16 @@ export const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024;
  * not be answered, and answering "absent" would hide a genuinely broken machine behind
  * "not installed".
  */
-export async function databaseExists(p) {
+// v1.26.119 — `access` is injectable so the rule below can be asserted without conjuring a
+// real OS error. It could not be: the one shape the tests used, a regular file standing in
+// for a directory, gives ENOTDIR on POSIX and **ENOENT on Windows** (measured on TANK, along
+// with illegal characters, reserved device names and over-long paths — every one of them
+// ENOENT). So on Windows the case read as "absent", the test failed, and the product was
+// right the whole time: the OS itself answers "nothing there". The rule is what matters and
+// the rule is now testable everywhere; the real-OS cases stay where they can be produced.
+export async function databaseExists(p, { access = fs.access } = {}) {
   try {
-    await fs.access(p);
+    await access(p);
     return true;
   } catch (err) {
     return err?.code !== 'ENOENT';

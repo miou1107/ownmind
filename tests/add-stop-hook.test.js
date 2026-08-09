@@ -95,11 +95,20 @@ describe('v1.17.96 — add-stop-hook idempotent merge', () => {
   });
 
   it('hook command uses an absolute path (avoid broken PATH resolution)', () => {
-    const r = helper.addHook(settingsPath, '/abs/path/.ownmind');
+    // v1.26.119 — see the sibling in add-post-tool-use-hook.test.js: a POSIX literal cannot
+    // match on Windows, where path.join answers with backslashes, so the assertion failed on
+    // the separator rather than on the property it names.
+    const ownmindDir = path.resolve(
+      process.platform === 'win32' ? 'C:\\abs\\path\\.ownmind' : '/abs/path/.ownmind');
+    const r = helper.addHook(settingsPath, ownmindDir);
     assert.equal(r.status, 'created');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const cmd = s.hooks.Stop[0].hooks[0].command;
-    assert.match(cmd, /\/abs\/path\/\.ownmind\/hooks\/ownmind-reply-lint\.js/);
+    assert.ok(cmd.includes(path.join(ownmindDir, 'hooks', 'ownmind-reply-lint.js')),
+      `expected the absolute hook path in the command, got: ${cmd}`);
+    const quoted = cmd.match(/"([^"]+)"/);
+    assert.ok(quoted && path.isAbsolute(quoted[1]),
+      `the hook path must be absolute, got: ${cmd}`);
     assert.ok(cmd.startsWith('node '), 'command should start with node');
   });
 

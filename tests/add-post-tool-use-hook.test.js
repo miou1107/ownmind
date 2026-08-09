@@ -93,11 +93,22 @@ describe('v1.17.71 — add-post-tool-use-hook idempotent merge', () => {
   });
 
   it('hook command uses absolute path (avoids broken PATH resolution)', () => {
-    const r = helper.addHook(settingsPath, '/abs/path/.ownmind');
+    // v1.26.119 — the fake home is spelled for the platform under test, and the expectation
+    // is built the same way the helper builds it. The old literal `/abs/path/...` could not
+    // match on Windows, where path.join answers with backslashes, while the property being
+    // asserted — an absolute path rather than a bare filename — was satisfied all along.
+    const ownmindDir = path.resolve(
+      process.platform === 'win32' ? 'C:\\abs\\path\\.ownmind' : '/abs/path/.ownmind');
+    const r = helper.addHook(settingsPath, ownmindDir);
     assert.equal(r.status, 'created');
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     const cmd = s.hooks.PostToolUse[0].hooks[0].command;
-    assert.match(cmd, /\/abs\/path\/\.ownmind\/hooks\/ownmind-tty-echo\.cjs/);
+    assert.ok(cmd.includes(path.join(ownmindDir, 'hooks', 'ownmind-tty-echo.cjs')),
+      `expected the absolute hook path in the command, got: ${cmd}`);
+    // The claim in the title, asserted directly rather than implied by the literal.
+    const quoted = cmd.match(/"([^"]+)"/);
+    assert.ok(quoted && path.isAbsolute(quoted[1]),
+      `the hook path must be absolute, got: ${cmd}`);
     assert.ok(cmd.startsWith('node '), 'command 應以 node 開頭');
   });
 

@@ -23,6 +23,8 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { toPosix } from './helpers/posix-path.js';
+
 import { redirectBareMountPath } from '../src/middleware/bare-mount-redirect.js';
 import { installLegacyAdminMount } from '../src/middleware/legacy-admin-mount.js';
 import { isLegacyConsoleRetired } from '../shared/legacy-console-manifest.js';
@@ -388,7 +390,9 @@ describe('v1.26.57 — no regression in the paths v1.26.48 made relative', () =>
     for (const file of walkJs(join(repoRoot, 'src'))) {
       const src = readFileSync(file, 'utf8');
       const n = (src.match(/express\.static\(/g) || []).length;
-      if (n > 0) found.push(`${file.slice(repoRoot.length + 1)} x${n}`);
+      // v1.26.119 — toPosix, or this reads `src\app.js x1` on Windows and fails on the
+      // separator while having found exactly the right file.
+      if (n > 0) found.push(`${toPosix(file.slice(repoRoot.length + 1))} x${n}`);
     }
     assert.deepEqual(
       found.sort(),
