@@ -12,6 +12,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildSessionLogBody } from '../mcp/lib/session-log-body.js';
 import { bucketLabel, UNREPORTED } from '../src/utils/session-buckets.js';
 import { findMissingArgs } from '../mcp/lib/required-args.js';
@@ -119,7 +120,11 @@ describe('bucketLabel — an absent tool or model is named, not coerced', () => 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('the declared contract matches what the code does', () => {
-  const repoRoot = new URL('..', import.meta.url).pathname;
+  // v1.26.106 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
+  // '/C:/Users/...'; node then resolves that against the current drive root and looks for
+  // 'C:C:Users...'. This file threw MODULE_NOT_FOUND / ENOENT on every Windows run while
+  // passing on macOS, where the pathname happens to be a valid path.
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
   const read = (p) => readFileSync(join(repoRoot, p), 'utf8');
 
   it('ownmind_log_session declares only summary as required', () => {

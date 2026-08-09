@@ -37,10 +37,15 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
-const HOOK_DIR = path.dirname(new URL(import.meta.url).pathname);
+// fileURLToPath, not `.pathname`: on Windows the latter is "/C:/Users/...", which node
+// resolves against the current drive root. Every import below is relative to this, and this
+// hook is built to exit 0 on any failure — so getting it wrong does not produce an error,
+// it produces a commit-message check that silently never runs.
+const HOOK_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Does this rule judge the commit message?

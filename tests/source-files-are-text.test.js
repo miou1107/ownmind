@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Control bytes that make grep treat a source file as binary and skip it
 // silently. Tab (09), LF (0a), CR (0d) are legitimate; the rest are not.
@@ -42,7 +43,7 @@ const SCANNED = ['../src', '../scripts/install-helpers', '../hooks'];
 describe('source files stay searchable', () => {
   for (const rel of SCANNED) {
     it(`no file under ${rel.replace('../', '')}/ contains a control byte`, () => {
-      const root = new URL(rel, import.meta.url).pathname;
+      const root = fileURLToPath(new URL(rel, import.meta.url));
       const offenders = jsFilesUnder(root)
         .filter((file) => FORBIDDEN.test(readFileSync(file, 'utf8')));
       assert.deepEqual(offenders, [], `control bytes make grep skip these files: ${offenders.join(', ')}`);
@@ -53,7 +54,7 @@ describe('source files stay searchable', () => {
 describe('source files survive an editor that normalises invisible characters', () => {
   for (const rel of SCANNED) {
     it(`no file under ${rel.replace('../', '')}/ carries a literal invisible character`, () => {
-      const root = new URL(rel, import.meta.url).pathname;
+      const root = fileURLToPath(new URL(rel, import.meta.url));
       const offenders = jsFilesUnder(root)
         .filter((file) => INVISIBLE.test(readFileSync(file, 'utf8')));
       assert.deepEqual(

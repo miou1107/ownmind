@@ -34,6 +34,8 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 // v1.17.66 — on Windows, every spawn goes through safeSpawn (forces shell:false + windowsHide:true).
 const { safeSpawn } = require('./safe-spawn.cjs');
+// v1.26.106 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
+const { readTextFileSync, stripNulEscapes } = require('./read-text-file.cjs');
 
 const HOME = os.homedir();
 const OWNMIND_DIR = path.join(HOME, '.ownmind');
@@ -45,6 +47,17 @@ const NO_UPLOAD_FLAG = path.join(OWNMIND_DIR, '.no-self-check-upload');
 const SPOOL_FILENAME = '.upload-spool.jsonl';
 const PLATFORM = process.platform;
 const TIMEOUT_MS = 5000;
+// v1.26.106 - Get-ScheduledTask is a CIM cmdlet: PowerShell has to autoload the
+// ScheduledTasks module and open a CIM session before it answers. Measured on an idle
+// Windows 10 box: 1.5s, five runs, warm. Against TIMEOUT_MS that is 3x of headroom, and
+// self-check runs at the end of an install or upgrade - the one moment the machine is
+// busiest. On 2026-08-09 a post-upgrade run duly reported `fail: Get-ScheduledTask failed`
+// on a machine whose task was Ready with LastTaskResult 0x0, and uploaded it.
+//
+// The comparison that makes the old number indefensible: launchctl list answers in ~20ms,
+// so on macOS the same constant is 250x of headroom. The budget was never sized for the
+// Windows call - it was sized for the Unix one and reused.
+const CIM_TIMEOUT_MS = 30000;
 
 // ============================================================
 // Helpers
@@ -57,6 +70,30 @@ function fail(name, detail, fix) { return { name, status: 'fail', detail, fix };
 function sanitizePath(s) {
   if (typeof s !== 'string') return String(s ?? '');
   return s.split(HOME).join('~');
+}
+
+/**
+ * Describe a failed safeSpawn result in a way the reader can act on.
+ *
+ * v1.26.106 - safeSpawn returns { error, code, killed, signal, stderr_tail } and callers were
+ * quoting `error` alone. For a timeout that string is "Command failed: <the command>", which
+ * reads as "the command is wrong" and is the one thing it cannot be. Timing out and exiting
+ * non-zero call for opposite responses, so the message has to separate them (IR-003).
+ */
+function describeSpawnFailure(r) {
+  if (!r) return 'unknown failure';
+  const parts = [];
+  if (r.killed) parts.push('timed out');
+  if (r.code !== undefined && r.code !== null) parts.push(`code=${r.code}`);
+  if (r.signal) parts.push(`signal=${r.signal}`);
+  const tail = (r.stderr_tail || '').trim();
+  if (tail) parts.push(`stderr=${tail}`);
+  // The raw message last: it is the least specific part, and usually present.
+  parts.push(sanitizePath(r.error || '').trim());
+  // `usually`: a result carrying none of these fields would otherwise render as an empty
+  // string, which reaches the server as "... failed: " with nothing after the colon — a
+  // report that costs somebody a round trip to discover it says nothing.
+  return parts.filter(Boolean).join(' ') || 'failed with no diagnostic fields';
 }
 
 function readJsonSafe(p) {
@@ -675,10 +712,17 @@ async function checkScheduler() {
     // Alice's and Bob's machines). Now we go through safeSpawn — no shell, with windowsHide.
     const r = await safeSpawn('powershell.exe',
       ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
-      { timeout: TIMEOUT_MS });
+      { timeout: CIM_TIMEOUT_MS });
     if (!r.ok) {
-      return fail('scheduler', `Get-ScheduledTask failed: ${r.error}`,
-        'Requires Windows + PowerShell');
+      // v1.26.106 - this reported only r.error, which for a timeout is the literal string
+      // "Command failed: powershell.exe ..." and nothing else: no exit code, no stderr, no
+      // hint that a clock ran out. safeSpawn had already captured killed and signal; the
+      // caller threw them away and then advised "Requires Windows + PowerShell" to a machine
+      // that plainly has both.
+      return fail('scheduler', `Get-ScheduledTask failed: ${describeSpawnFailure(r)}`,
+        r.killed
+          ? `Query exceeded ${CIM_TIMEOUT_MS}ms. The task may still be healthy - check with: Get-ScheduledTask -TaskName 'OwnMind Usage Scanner'`
+          : 'Requires Windows + PowerShell');
     }
     const state = r.stdout.trim();
     if (state === 'Ready' || state === 'Running') {
@@ -765,9 +809,12 @@ async function detectBashResolution() {
 // two battery params, the whole register call threw, and the task never registered. The old
 // detectSchedulerDetail only returned NOT_FOUND — we couldn't see the root cause. Now we
 // also attach "the most recent install run of register-scanner-task.ps1's output".
-function readLatestRegisterLog() {
+// v1.26.106 - logDir is injectable so a test can hand it a real UTF-16LE fixture. Without
+// it this function is reachable only on Windows, with a real install behind it, which is how
+// it went months emitting NUL bytes unnoticed.
+function readLatestRegisterLog(logDirOverride) {
   try {
-    const logDir = path.join(HOME, '.ownmind', 'logs');
+    const logDir = logDirOverride || path.join(HOME, '.ownmind', 'logs');
     if (!fs.existsSync(logDir)) return null;
     const files = fs.readdirSync(logDir)
       .filter((f) => /^register-task-.+\.log$/.test(f))
@@ -780,7 +827,12 @@ function readLatestRegisterLog() {
     const latest = files[0];
     const fullPath = path.join(logDir, latest.name);
     // Cap at 8KB (logs are normally small; anything larger suggests something is wrong).
-    const buf = fs.readFileSync(fullPath, { encoding: 'utf8' });
+    // v1.26.106 - decode by BOM, not by assumption. install.ps1 wrote this file with
+    // Tee-Object, which on Windows PowerShell 5.1 has no -Encoding parameter and therefore
+    // always emits UTF-16LE. Reading it as UTF-8 turned a 298-byte log into mojibake with 148
+    // NUL bytes and uploaded that - see read-text-file.cjs. The writer is fixed too, but this
+    // is the half that helps a machine that already has such a file on disk.
+    const buf = readTextFileSync(fullPath);
     const tail = buf.length > 8192 ? '...(truncated)...\n' + buf.slice(-8192) : buf;
     // Run sanitizePath: PowerShell error messages often include absolute paths
     // (C:\Users\<realname>\...) — the local username is PII; replace it with ~ before
@@ -804,7 +856,12 @@ async function detectSchedulerDetail() {
     "[pscustomobject]@{ State=[string]$t.State; LastRunTime=[string]$i.LastRunTime; " +
     "LastTaskResult=$i.LastTaskResult; NextRunTime=[string]$i.NextRunTime } | " +
     "ConvertTo-Json -Compress";
-  const r = await safeSpawn('powershell.exe', ['-NoProfile', '-Command', cmd]);
+  // Two CIM cmdlets, so at least as slow as checkScheduler's one - and it was running on
+  // safeSpawn's 5s default. Losing this to a timeout costs the detail (last run, exit code,
+  // next run) that a scheduler failure is diagnosed from. Get-ScheduledTask is named in the
+  // command above.
+  const r = await safeSpawn('powershell.exe', ['-NoProfile', '-Command', cmd],
+    { timeout: CIM_TIMEOUT_MS });
   const registerLog = readLatestRegisterLog();
   if (!r.ok) return registerLog ? { register_log: registerLog } : null;
   const out = r.stdout.trim();
@@ -1007,11 +1064,34 @@ function getSpoolPath(opts = {}) {
   return path.join(opts.spoolDir || LOG_DIR, SPOOL_FILENAME);
 }
 
+/**
+ * The one place a report becomes bytes.
+ *
+ * v1.26.106 - v1.17.83 taught that a single NUL anywhere in this payload makes Postgres
+ * reject the whole JSONB document, the INSERT fail, and the spool re-send the identical row
+ * until someone notices the run of 500s in the server log. That was fixed by stripping NUL
+ * server-side. Stripping it here as well is not redundancy for its own sake: the spool writes
+ * the same bytes to disk and replays them later, so a poisoned report that reaches the spool
+ * outlives the process that made it and keeps being retried.
+ *
+ * stripNulEscapes, not stripNul: JSON.stringify has already turned any NUL into its escape
+ * form by this point, so searching the serialized text for a NUL character finds nothing and
+ * reports success on a payload that is still poisoned. The escape is also what Postgres
+ * objects to - "unsupported Unicode escape sequence" is the error v1.17.83 was diagnosed
+ * from. This was wrong in the first draft of the fix and a test caught it.
+ *
+ * Both callers go through this. Adding a third that calls JSON.stringify directly puts the
+ * loop back.
+ */
+function serializeReport(report) {
+  return stripNulEscapes(JSON.stringify(report));
+}
+
 function appendSpool(report, opts = {}) {
   try {
     const dir = opts.spoolDir || LOG_DIR;
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(getSpoolPath(opts), JSON.stringify(report) + '\n');
+    fs.appendFileSync(getSpoolPath(opts), serializeReport(report) + '\n');
     return true;
   } catch {
     return false;
@@ -1028,7 +1108,7 @@ async function postReport(report, apiUrl, apiKey) {
         // v1.17.64: aligned with the auth middleware (src/middleware/auth.js) — always Bearer.
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify(report),
+      body: serializeReport(report),
     },
     TIMEOUT_MS,
   );
@@ -1093,7 +1173,10 @@ async function retrySpool(apiUrl, apiKey, opts = {}) {
       continue;
     }
     report._attempts = attempts;
-    remaining.push(JSON.stringify(report));
+    // serializeReport, not JSON.stringify: this writes back to the same spool the uploader
+    // reads, so a direct stringify here is the third caller the comment on serializeReport
+    // warns about — and it is the one that persists a poisoned line rather than sending it.
+    remaining.push(serializeReport(report));
   }
 
   // Append failures back to the main spool (don't overwrite — new entries may have arrived).
@@ -1304,6 +1387,9 @@ module.exports = {
   // v1.17.66 — environment info collection (IR-038).
   collectEnv, detectShellChain, detectBashResolution,
   detectSchedulerDetail, detectWindowsEncoding,
+  // v1.26.106 - the Windows-only paths a Mac cannot run. Exported so their behavior can be
+  // asserted from any platform instead of only being reachable on the one that breaks.
+  readLatestRegisterLog, describeSpawnFailure, serializeReport, CIM_TIMEOUT_MS,
 };
 
 if (require.main === module) {

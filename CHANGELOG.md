@@ -1,6 +1,6 @@
 # OwnMind 更新紀錄
 
-## v1.26.106 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
+## v1.26.107 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
 
 ### 在這之前 `.github/` 底下只有 `CODEOWNERS`
 
@@ -42,6 +42,98 @@ Windows 暫時不擋合併：第一次跑有 109 個既有的紅。使用者是�
 
 三個都是同一種病，只是換了工具名字：`pwsh`、`plutil`。CI 的價值不只是多一台機器跑測試，是讓「跳過」這件事第一次變得看得見。
 
+## v1.26.106 — 四個只在 Windows 上壞、而 Mac 測不到的問題
+
+這四個是同一個現象的四種形狀：這個 repo 沒有 CI，測試只在有人手動跑的機器上跑，而 Windows
+專屬的路徑在 Mac 上要嘛被 skip、要嘛根本不會執行。一個在 Mac 上綠燈的測試，對 Mac 上的開發者
+來說不是失敗的測試，是看不見的測試。
+
+### 1. 上傳給 server 的診斷 log 是亂碼，還帶 148 個 NUL byte
+
+`install.ps1` 用 `Tee-Object -FilePath` 寫 scanner task 的註冊 log。Windows PowerShell 5.1 的
+`Tee-Object` **根本沒有 `-Encoding` 參數**（PS 6 才加），所以它一定寫 UTF-16LE。
+`self-check.cjs` 用 `{ encoding: 'utf8' }` 讀回來再上傳——298 bytes 的 log 到 server 變成夾著
+148 個 NUL byte 的亂碼。實機上每一個 `register-task-*.log` 都是 UTF-16LE，最早一個是
+2026-05-09。
+
+這正是 v1.17.83 那次事故的原料：Postgres JSONB 只要看到一個 NUL 就拒收整份文件，INSERT 整筆
+失敗，client 的 retry spool 又把同一筆無限重送，server log 出現一連串 500。當時的修法是在
+server 端 INSERT 前 strip 掉。這版補上另外一半：不要再產生。
+
+諷刺的是 `self-check.cjs` 自己就在回報
+`default_outfile_encoding: 'Unicode (UTF-16 LE BOM)'`——就在它正在弄壞的那個欄位旁邊。知道一件
+事跟拿它做判斷是兩回事。
+
+- 新增 `scripts/install-helpers/read-text-file.cjs`：依 BOM 解碼，不猜
+- `install.ps1` 改用 `Write-Utf8NoBom`；`Tee-Object` 原本兼有的螢幕輸出用 `Write-Host` 補回
+- 上傳與 spool 收斂到單一 `serializeReport()`，濾掉 NUL
+
+### 2. scheduler 檢查 5 秒 timeout，會上傳假的 FAIL
+
+`Get-ScheduledTask` 是 CIM cmdlet，PowerShell 得先自動載入 ScheduledTasks 模組、開 CIM session
+才會回話。閒置的 Windows 10 上實測 1.5 秒（跑五次），而 timeout 是 5 秒——三倍餘裕，偏偏
+self-check 跑的時機正是安裝／升級剛結束、機器最忙的那一刻。2026-08-09 一次升級後的 self-check
+就對一台 State=Ready、LastTaskResult=0x0 的機器回報 `fail`，而且送上去了。
+
+對照之下 `launchctl list` 大約 20 毫秒，同一個常數在 macOS 上是 250 倍餘裕。這個預算從來不是
+為 Windows 這支呼叫定的，是 Unix 那支的數字被沿用。
+
+第二層問題：`safeSpawn` 有回傳 `killed` 跟 `signal`，呼叫端只取了 `error` 就丟掉。所以上傳的
+錯誤訊息是「Command failed: powershell.exe ...」，看不出是 timeout，附的修復提示還寫著
+「Requires Windows + PowerShell」——對一台明顯兩者都有的機器（IR-003）。
+
+### 3. 四個測試檔在 Windows 上根本沒在測
+
+`new URL(...).pathname` 在 Windows 產出 `/C:/Users/...`，node 再把它接到當前磁碟根目錄變成
+`C:\C:\Users\...`。`install-artifacts.test.js` 在第一個斷言之前就 MODULE_NOT_FOUND 死掉，另外
+三個丟 ENOENT。在 macOS 上這個 pathname 剛好是合法路徑，所以全部綠燈。
+
+改用 `fileURLToPath()`。壞掉的正好包含 install-artifacts 的 CLI 測試——就是 `install.sh` 收尾
+在呼叫的那支。
+
+### 4. Git Bash 偵測器唯一會真的執行的測試，在任何平台上都不可能通過
+
+`git-bash-detection.test.js` spawn PowerShell 時沒帶 `-ExecutionPolicy Bypass`。沒設定過原則的
+Windows 用戶端預設是 Restricted，dot-source `.ps1` 直接被擋（實測：`Get-ExecutionPolicy -List`
+每個 scope 都是 Undefined）。macOS 因為沒有 PowerShell 而整個 describe 被 skip。所以這個唯一會
+真的跑起偵測器的測試，一邊被跳過、一邊失敗。出貨的呼叫端全都有帶這個旗標，只有測試漏了。
+
+修好之後才看得到第二個問題：那個 `.cmd` stub 沒有跳脫 cmd.exe 的中繼字元，而真實的
+`bash --version` 第三行結尾是 `<http://gnu.org/licenses/gpl.html>`——cmd 把 `<` 讀成輸入重導向。
+兩個 Git Bash 案例都帶著那一行，所以兩個都被判否，測試因此指控偵測器壞掉，而偵測器是好的。
+跟 v1.26.100 那個 `start.cmd` 未跳脫 `)` 是同一種形狀。
+
+### 順帶修掉的兩個「只在 Windows 上失敗」的測試
+
+- `install-artifacts.test.js` 用 `chmod(0o000)` 製造「stat 不到的路徑」，在 NTFS 上是 no-op。
+  改成把目錄換成檔案，讓 stat 因為 ENOTDIR 而失敗——這是每個平台都同意的理由，順便不再需要
+  root 的特例分支。
+- `installer-node-paths.test.js` 用 `PATH=/usr/bin:/bin` 表示「沒有 cygpath」，但 Git Bash 的
+  cygpath 就住在 `/usr/bin`。前提在 Windows 上是假的，helper 正確轉換卻被判失敗。改成清空 PATH。
+
+### 測試
+
+新增兩支，兩支都**不需要 Windows**——這是重點，因為這些問題能活這麼久，就是因為每個碰得到它們
+的測試都需要一台裝好的 Windows：
+
+- `tests/windows-log-encoding.test.js`（20 個）：編碼是位元組的性質，所以 fixture 就是位元組。
+  含兩個明確記錄「修錯了」的案例。第一個：`JSON.stringify` 會把 NUL 轉成跳脫序列，在序列化後找
+  原始 NUL 找不到、卻回報成功，而 Postgres 抱怨的正是那個跳脫序列。第二個是審查抓到的 ——
+  把那六個字元當成純文字剪掉，會剪到**本來就是文字**的那種：內容裡真的寫著那六個字元時，
+  序列化會把反斜線變兩個，剪掉之後剩一個反斜線去跳脫後面的字，整份文件不再是合法 JSON。
+  伺服器拒收、佇列重送 —— 就是那個迴圈本人。現在數前面的反斜線是奇數還是偶數才決定剪不剪。
+- `tests/windows-test-hygiene.test.js`（288 個）：掃描原始碼本身——沒有裸的
+  `new URL(...).pathname`、每個會執行腳本的 PowerShell spawn 都帶 Bypass、`.cmd` stub 有跳脫、
+  兩支查 Task Scheduler 的函式都用加大後的預算。
+
+  **範圍也是審查抓到的**：第一版只掃 `tests/`，理由是「剛剛找到的那個 bug 在那裡」。而它同時也在
+  出貨的程式碼裡 —— v1.26.104 新增的 commit 訊息掛勾用同一種寫法找自己的目錄，所以在 Windows 上
+  它的 `../shared/helpers.js` 解不開，而那支掛勾設計上任何異常都 exit 0，等於**每一條訊息規則在
+  Windows 上都靜靜地沒在跑**。只往上次出事的地方看的檢查，只會一直找到上次那個 bug。現在
+  `hooks/`、`mcp/`、`scripts/`、`shared/`、`src/` 一起掃。
+  另外挑檔案的條件本身也漏了：原本要求原始碼裡出現小寫加引號的 `powershell`，所以一個用 `pwsh`
+  常數的測試檔從來沒被看過 —— 而那個檔案正在違反它要管的那條規則。
+
 ## v1.26.105 — 同一個設定檔裡，一個掛勾在跑，一個死了四個月
 
 ### 量到的狀況
@@ -82,7 +174,11 @@ v1.26.92 已經知道這條路徑是壞的，也把新裝的指向 checkout。�
   helper 的結束碼帶出來、當場中止安裝，底下所有步驟（包含安裝自檢本身）全部不會跑；而且 `2>&1`
   收進一個失敗路徑不會印的變數，等於連為什麼都看不到。這個檔案開頭就寫過這個組合曾經讓一個致命
   錯誤四個月沒有任何輸出。兩支更新腳本本來就有包，只有 install.sh 沒有
-- 20 個行為測試，包含上面那台機器的實際狀態當回歸案例
+- 兩支更新腳本的自我檢查搬到最後面。它原本在第 2d 節、排在所有修復動作**前面**，所以回報的是這支
+  腳本正要修掉的那個狀態 —— 一台機器發一次警報，而等有人去看的時候它已經是好的。加了上面那項
+  依賴檢查之後這件事會變明顯：壞掉的那批機器會先被回報一次、再被同一次更新修好。install.sh 的
+  安裝自檢本來就放在最後一行，就是這個理由
+- 22 個行為測試，包含上面那台機器的實際狀態當回歸案例
 
 ### 順帶：升級不再每次都走強制覆蓋
 
