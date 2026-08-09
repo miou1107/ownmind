@@ -43,13 +43,24 @@ function makeHome({ omit = [], satisfyWith = {} } = {}) {
   return { home, ownmindDir, ctx, cleanup: () => rmSync(home, { recursive: true, force: true }) };
 }
 
+/**
+ * How many artifacts this home is expected to have checked.
+ *
+ * Not `ARTIFACTS.length`: several artifacts carry an `applies` predicate, so the number
+ * checked is a property of the machine, not of the list. Comparing against the raw length
+ * makes the count assertion fail the moment a conditional artifact is added, which says
+ * nothing about whether anything was silently skipped.
+ */
+const applicableCount = (ctx) =>
+  ARTIFACTS.filter((a) => (typeof a.applies === 'function' ? a.applies(ctx) : true)).length;
+
 describe('checkInstallArtifacts', () => {
   it('passes when every artifact is present', () => {
     const h = makeHome();
     try {
       const r = checkInstallArtifacts({ home: h.home, ownmindDir: h.ownmindDir });
       assert.equal(r.ok, true, JSON.stringify(r.missing));
-      assert.equal(r.checked, ARTIFACTS.length);
+      assert.equal(r.checked, applicableCount(h.ctx));
     } finally { h.cleanup(); }
   });
 
@@ -128,7 +139,12 @@ describe('the two Windows installers produce different files, and both must pass
     try {
       const r = checkInstallArtifacts({ home: h.home, ownmindDir: h.ownmindDir });
       assert.equal(r.ok, true, JSON.stringify(r.missing));
-      assert.equal(r.checked, ARTIFACTS.length - 1, 'hook_lib should have been skipped');
+      assert.equal(r.checked, applicableCount(h.ctx), 'hook_lib should have been skipped');
+      assert.ok(
+        !ARTIFACTS.filter((x) => (typeof x.applies === 'function' ? x.applies(h.ctx) : true))
+          .some((x) => x.id === 'hook_lib'),
+        'hook_lib is the one that must not apply here'
+      );
     } finally { h.cleanup(); }
   });
 

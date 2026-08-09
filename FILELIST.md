@@ -60,7 +60,7 @@ tests/source-files-are-text.test.js             — fileURLToPath
 package.json                                    — 1.26.105 → 1.26.106
 ```
 
-## v1.26.105 修改（同一個設定檔裡，一個掛勾在跑，一個死了半年）
+## v1.26.105 修改（同一個設定檔裡，一個掛勾在跑，一個死了四個月）
 
 新增檔：
 ```
@@ -72,7 +72,7 @@ scripts/install-helpers/ensure-pretooluse-hooks.cjs — PreToolUse 鐵律掛勾�
                                                    了自己的修復條件，所以 v1.26.92 只修到
                                                    全新安裝，升級戶一個都沒修到。
                                                    --bash / --node 對應兩種呼叫寫法
-tests/ensure-pretooluse-hooks.test.js           — 17 條行為測試，含 2026-08-09 那台機器的
+tests/ensure-pretooluse-hooks.test.js           — 20 條行為測試，含 2026-08-09 那台機器的
                                                    實際 settings.json 當回歸案例
 openspec/changes/v1.26.105-one-hook-runs-one-is-dead/ — proposal / spec / tasks
 ```
@@ -92,7 +92,21 @@ scripts/install-helpers/install-artifacts.cjs   — iron_rule_hook 改成先讀 
                                                    「~/.claude/hooks 底下有沒有一份副本」，
                                                    所以那台機器一邊 6/6 全過、一邊每次
                                                    Bash 都 ERR_MODULE_NOT_FOUND。沒註冊
-                                                   任何東西時才退回舊的候選清單
+                                                   任何東西時才退回舊的候選清單。
+                                                   另新增 iron_rule_hook_deps：光看路徑
+                                                   存不存在還是抓不到那台機器 —— 兩份副本
+                                                   位元組一樣，註冊的那個檔案**是在的**，
+                                                   缺的是它第一行 import 的
+                                                   `../shared/helpers.js`。ESM import 解不開
+                                                   會在 payload 第一個位元組之前就殺掉 node，
+                                                   所以「有這個檔案」跟「它跑得起來」是兩件事。
+                                                   只在註冊的是 .js 時檢查，.sh 不 import 東西
+install.sh                                      — PreToolUse 的 helper 呼叫從 `VAR=$(...)`
+                                                   改成 `if var=$(...); then`。`set -eE` 底下
+                                                   裸的命令替換會把 helper 的結束碼帶出來、
+                                                   直接中止安裝，而且 2>&1 收進變數又沒印出來
+                                                   —— 這個檔案開頭警告過的那個組合。兩支更新
+                                                   腳本本來就有包，只有 install.sh 沒有
 tests/edit-trigger-reminder.test.js             — 不再從 install.sh 切出 node -e 區塊 eval，
                                                    改成直接跑 helper。切區塊只驗得到 bash
                                                    那份，install.ps1 自己那份沒人看著爛掉
