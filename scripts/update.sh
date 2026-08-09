@@ -109,12 +109,14 @@ needs_root_dep() {
 # v1.18.5: conditional-sync-cli.js needs js-yaml. Without it the module fails to load
 # with ERR_MODULE_NOT_FOUND, the SessionStart hook silently fails, and the big skill
 # (~/.claude/skills/ownmind-iron-rules/) stops updating.
-# Floor 4.3.0 — CVE-2026-59869, quadratic CPU via YAML merge-key chains. Reachable
+# Floor 4.3.1 — CVE-2026-59869 (quadratic CPU via YAML merge-key chains) plus the
+# 4.3.1 backport of the same shape in `!!omap` duplicate-key detection. Reachable
 # because iron-rule frontmatter is parsed on this machine and shared team standards
-# come from other accounts.
-if needs_root_dep js-yaml 4.3.0; then
+# come from other accounts. Keep this in step with package.json: dep-floor-guard
+# turns red when this floor drops below the one package.json declares.
+if needs_root_dep js-yaml 4.3.1; then
   echo "   📦 Installing / updating conditional-sync dependency: js-yaml..."
-  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.3.0 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.3.1 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
     && echo "   ✅ js-yaml ready" \
     || echo "   ⚠️ js-yaml install failed (see ~/.ownmind/logs/update-err.log); big skill sync will fall back to skip — other features unaffected"
 fi
