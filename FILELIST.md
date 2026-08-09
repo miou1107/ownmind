@@ -1,5 +1,79 @@
 # OwnMind 檔案結構
 
+## v1.26.106 修改（四個只在 Windows 上壞、而 Mac 測不到的問題）
+
+新增檔：
+```
+scripts/install-helpers/read-text-file.cjs      — 依 BOM 解碼，不猜。PowerShell 的每一種
+                                                   寫法都會留 BOM，所以 BOM 是可靠的依據。
+                                                   另含 stripNul / stripNulEscapes ——
+                                                   JSON.stringify 會把 NUL 轉成跳脫序列，
+                                                   而 Postgres 抱怨的正是那個跳脫序列
+tests/windows-log-encoding.test.js              — 20 條。編碼是位元組的性質，所以 fixture
+                                                   就是位元組 —— 不需要 Windows 也測得到。
+                                                   含審查抓到的那個案例：內容本來就寫著那六個
+                                                   字元時，不可以剪
+tests/windows-test-hygiene.test.js              — 288 條（隨掃描到的檔案數量增長）。掃描原始碼
+                                                   本身：沒有裸的 .pathname、每個會執行腳本的
+                                                   PowerShell spawn 都帶 -ExecutionPolicy
+                                                   Bypass、.cmd stub 有跳脫 cmd.exe 中繼字元、
+                                                   兩支查 Task Scheduler 的函式都用加大後的預算。
+                                                   掃描範圍含 hooks / mcp / scripts / shared /
+                                                   src，不只 tests —— 第一版只掃 tests，而同一
+                                                   個毛病當時正活在出貨的掛勾裡
+openspec/changes/v1.26.106-windows-only-and-mac-cannot-see-it/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+install.ps1                                     — 註冊排程的輸出不再走 `| Tee-Object
+                                                   -FilePath`。Windows PowerShell 5.1 的
+                                                   Tee-Object 沒有 -Encoding 參數（PS 6 才
+                                                   加），所以它一定寫 UTF-16LE —— 那台機器上
+                                                   每一個 register-task-*.log 都是 fffe 開頭，
+                                                   最早一個是 2026-05-09。改用 Write-Utf8NoBom，
+                                                   螢幕輸出用 Write-Host 補回，$LASTEXITCODE
+                                                   在下一行就讀
+scripts/install-helpers/self-check.cjs          — 讀 log 改走 readTextFileSync（依 BOM 解碼）；
+                                                   CIM_TIMEOUT_MS 5000 → 30000（Get-ScheduledTask
+                                                   是 CIM cmdlet，閒置 Windows 10 實測約 1.5 秒，
+                                                   而 self-check 跑的時機正是安裝升級剛結束、
+                                                   機器最忙的那一刻）；新增 describeSpawnFailure
+                                                   保留 killed／signal 證據，不再把 timeout 回報成
+                                                   「Requires Windows + PowerShell」；上傳與 spool
+                                                   收斂到單一 serializeReport
+tests/git-bash-detection.test.js                — PowerShell spawn 補上 -ExecutionPolicy Bypass
+                                                   （出貨的呼叫端全都有帶，只有測試漏了；沒設定過
+                                                   原則的 Windows 用戶端預設 Restricted，
+                                                   dot-source .ps1 直接被擋）。.cmd stub 補上
+                                                   cmd.exe 中繼字元跳脫 —— 真實 bash --version
+                                                   第三行結尾是 <http://gnu.org/licenses/gpl.html>，
+                                                   cmd 把 < 讀成輸入重導向
+tests/install-artifacts.test.js                 — new URL().pathname → fileURLToPath。Windows 上
+                                                   前者產出 /C:/Users/...，node 再接到當前磁碟根
+                                                   目錄變成 C:\C:\...，整個 process 在第一個斷言
+                                                   之前就死掉。另外「stat 不到的路徑」不再用
+                                                   chmod(0o000)（NTFS 上是 no-op），改成把目錄換成
+                                                   檔案讓 stat 因 ENOTDIR 失敗 —— 每個平台都同意
+                                                   的理由，順便不再需要 root 的特例分支
+tests/installer-node-paths.test.js              — 同上的 fileURLToPath。另外「沒有 cygpath」不再
+                                                   用 PATH=/usr/bin:/bin 表示 —— Git Bash 的
+                                                   cygpath 就住在 /usr/bin，前提在 Windows 上是假的。
+                                                   改成清空 PATH
+tests/session-log-args.test.js                  — fileURLToPath
+tests/source-files-are-text.test.js             — fileURLToPath
+hooks/ownmind-git-commit-msg.js                 — 改用 fileURLToPath 找自己的目錄。原本是裸的
+                                                   new URL(...).pathname，在 Windows 上會變成
+                                                   C:\C:\...，底下的 import 全部解不開；而這支
+                                                   掛勾設計上任何異常都 exit 0，所以結果不是報錯，
+                                                   是**每一條 commit 訊息規則在 Windows 上靜靜地
+                                                   沒在跑**（審查抓到）
+tests/install-failed-beacon-ps1.test.js         — spawn PowerShell 補上 -ExecutionPolicy
+                                                   Bypass（審查抓到；它用 PWSH 常數，所以躲過了
+                                                   hygiene 測試原本的挑檔條件）
+package.json                                    — 1.26.105 → 1.26.106
+```
+
 ## v1.26.105 修改（同一個設定檔裡，一個掛勾在跑，一個死了四個月）
 
 新增檔：
@@ -12,7 +86,12 @@ scripts/install-helpers/ensure-pretooluse-hooks.cjs — PreToolUse 鐵律掛勾�
                                                    了自己的修復條件，所以 v1.26.92 只修到
                                                    全新安裝，升級戶一個都沒修到。
                                                    --bash / --node 對應兩種呼叫寫法
-tests/ensure-pretooluse-hooks.test.js           — 20 條行為測試，含 2026-08-09 那台機器的
+scripts/update.sh / scripts/update.ps1          — 自我檢查（self-check.cjs）從第 2d 節搬到腳本
+                                                   最後面。原本排在所有修復動作前面，回報的是
+                                                   這支腳本正要修掉的狀態 —— 一台機器發一次
+                                                   警報，等有人看的時候它已經好了。install.sh
+                                                   的安裝自檢本來就在最後一行
+tests/ensure-pretooluse-hooks.test.js           — 22 條行為測試，含 2026-08-09 那台機器的
                                                    實際 settings.json 當回歸案例
 openspec/changes/v1.26.105-one-hook-runs-one-is-dead/ — proposal / spec / tasks
 ```

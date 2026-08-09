@@ -20,7 +20,7 @@ const repoRoot = path.resolve(__dirname, '..');
  * version — pull it from the real interactive-upgrade.ps1 + dot-source a mock Report-Error
  * stub that records calls.
  *
- * v1.26.106 — this test had not passed anywhere since it was written, and nobody could tell.
+ * v1.26.107 — this test had not passed anywhere since it was written, and nobody could tell.
  * Two reasons, and the second one is why the first went unnoticed for so long:
  *
  *  1. It extracted `function Fail` alone. Fail interpolates `$(Get-LastLogLines $LogFile)`
@@ -145,6 +145,8 @@ describe('v1.17.85 — interactive-upgrade.ps1 Fail observation (runs wherever a
     const scriptPath = path.join(tmpDir, 'test.ps1');
     fs.writeFileSync(scriptPath, fakeScript);
 
+    // -ExecutionPolicy Bypass: a Windows client that never set a policy is Restricted, and
+    // this runs a generated .ps1 from disk. Every shipped caller passes it.
     const r = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
       encoding: 'utf8',
     });
