@@ -392,7 +392,18 @@ describe('v1.26.103 pre-commit — a pure rename carries no new content', () => 
   // an exclude pattern, so pairing it with its destination cancels the destination out
   // of its own diff: git returns nothing and a secret added in the same commit is never
   // seen. This is the one way the fix could scan LESS than before it.
-  it('rename whose source path is pathspec magic → the added secret is still caught', () => {
+  // A colon is not a legal character in an NTFS filename — Windows reads it as the
+  // alternate-data-stream separator — so `:!victim.txt` cannot be created there at all and
+  // the two tests below report ENOENT rather than anything about the scanner. Stated as a
+  // skip with its reason instead of a platform branch that silently drops them, and paired
+  // with the `[ab].txt` cases further down, which cover the same defect class using a name
+  // Windows does accept. Without those, skipping here would leave Windows with no coverage
+  // of pathspec magic at all while still reporting a green run.
+  const colonSkip = process.platform === 'win32'
+    ? 'a colon cannot appear in an NTFS filename; the [ab].txt cases cover this on Windows'
+    : false;
+
+  it('rename whose source path is pathspec magic → the added secret is still caught', { skip: colonSkip }, () => {
     // Bulk matters: append one line to a one-line file and similarity drops under 50%,
     // git reports an unrelated delete plus add, no pairing is attempted and the test
     // passes without ever reaching the code it is meant to pin.
@@ -409,10 +420,39 @@ describe('v1.26.103 pre-commit — a pure rename carries no new content', () => 
 
   // The same flaw in the harmless direction: an unmatched pathspec pairs nothing, so
   // the file reverts to being read whole and a plain move is blocked again.
-  it('pure rename whose source path is pathspec magic → exit 0', () => {
+  it('pure rename whose source path is pathspec magic → exit 0', { skip: colonSkip }, () => {
     seedCommit(':colon-start.txt',
       `positive example that must stay verbatim: ${WP_SHAPED}\n`);
     runGit(['mv', ':colon-start.txt', 'colon-start.txt']);
+    const r = runHook();
+    assert.equal(r.status, 0,
+      `an unusual filename must not decide whether a move is blocked; stderr=${r.stderr}`);
+  });
+
+  // The same class with a name every platform accepts. `[ab]` is a character class to git's
+  // pathspec globbing, so the literal filename does not match itself — verified directly:
+  //
+  //     git diff --cached --name-only HEAD -- '[ab].txt'   ->   "" (its own file, unmatched)
+  //
+  // Brackets are legal on NTFS, so unlike the colon cases these run on Windows, where the
+  // rename-pairing code has otherwise never been exercised with a magic path.
+  const GLOB_NAME = '[ab].txt';
+
+  it('rename whose source path is glob magic → the added secret is still caught', () => {
+    seedCommit(GLOB_NAME, 'nothing interesting here\n'.repeat(60));
+    runGit(['mv', GLOB_NAME, 'globbed.txt']);
+    const fakeKey = 'sk-' + 'proj-' + 'abc123XYZdef456ghi789jkl';
+    fs.appendFileSync(path.join(tmpRepo, 'globbed.txt'), `const key = "${fakeKey}";\n`);
+    runGit(['add', '-A']);
+    const r = runHook();
+    assert.equal(r.status, 1,
+      `a path git hands back must be read literally, not as a pattern; stderr=${r.stderr}`);
+    assert.match(r.stderr, /openai_api_key/);
+  });
+
+  it('pure rename whose source path is glob magic → exit 0', () => {
+    seedCommit(GLOB_NAME, `positive example that must stay verbatim: ${WP_SHAPED}\n`);
+    runGit(['mv', GLOB_NAME, 'globbed.txt']);
     const r = runHook();
     assert.equal(r.status, 0,
       `an unusual filename must not decide whether a move is blocked; stderr=${r.stderr}`);

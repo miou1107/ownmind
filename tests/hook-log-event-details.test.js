@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execBashScript } from './helpers/bash-script.js';
+import { execBashScript, toBashPath, bashPathList } from './helpers/bash-script.js';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -59,7 +59,7 @@ function callLogEvent(hookRelPath, args) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-logev-'));
   try {
     const script = [
-      `LOG_DIR=${JSON.stringify(dir)}`,
+      `LOG_DIR=${JSON.stringify(toBashPath(dir))}`,
       'API_KEY=""',        // keep the upload branch from firing during a test
       'API_URL=""',
       fn,
@@ -97,7 +97,7 @@ function callLogEventWithUpload(hookRelPath, args) {
     fs.writeFileSync(path.join(bin, 'curl'), [
       '#!/bin/bash',
       'while [ $# -gt 0 ]; do',
-      `  if [ "$1" = "-d" ]; then printf '%s' "$2" > ${JSON.stringify(capture)}; fi`,
+      `  if [ "$1" = "-d" ]; then printf '%s' "$2" > ${JSON.stringify(toBashPath(capture))}; fi`,
       '  shift',
       'done',
       'exit 0',
@@ -105,8 +105,11 @@ function callLogEventWithUpload(hookRelPath, args) {
     fs.chmodSync(path.join(bin, 'curl'), 0o755);
 
     const script = [
-      `export PATH=${JSON.stringify(bin)}:$PATH`,
-      `LOG_DIR=${JSON.stringify(dir)}`,
+      // bashPathList, not the raw path: a Windows path carries the very character PATH uses
+      // as its separator, and the drive-relative fragment it leaves behind resolves against
+      // whatever drive the process is on. See the note on bashPathList.
+      `export PATH=${JSON.stringify(bashPathList(bin))}:$PATH`,
+      `LOG_DIR=${JSON.stringify(toBashPath(dir))}`,
       'API_KEY="k"',
       'API_URL="http://127.0.0.1:1"',
       fn,

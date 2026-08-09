@@ -68,6 +68,57 @@ tests/node-hook-parity.test.js                  — 清理改成重試＋失敗�
 package.json                                    — 1.26.119 → 1.26.120
 ```
 
+## v1.26.123 修改（Windows 剩下的 9 條紅燈：測試自己站錯磁碟機）
+
+新增檔：
+```
+tests/helpers/unwritable-path.js                 — makeUnwritablePath()：拿一個「檔案擋在
+                                                   資料夾該在的位置」當不可寫路徑。三個平台
+                                                   都失敗（ENOTDIR，Windows 也認），而且東西
+                                                   建在 temp 底下。原本用的 /root/no-permission
+                                                   在 Windows 上是普通目錄，直接建起來寫成功
+tests/bash-path-list.test.js                     — bashPathList／toWinPath 的正向＋反向對照，
+                                                   外加一條真的到「另一顆磁碟機」上跑的：
+                                                   轉換過的找得到、原始寫法找不到。只有一顆
+                                                   硬碟的機器會明講自己跳過，不假裝有覆蓋
+tests/lint-zh-only-crlf.test.js                  — 註解裡的黑名單字在 LF／CRLF 都要被忽略，
+                                                   反向對照：不在註解裡的同一個字兩種換行
+                                                   都必須照樣抓到（否則「修好」可能只是
+                                                   把 lint 關掉）
+```
+
+修改檔：
+```
+scripts/lint-zh-only.js                          — split(/\r?\n/)，不是 split('\n')。CRLF
+                                                   checkout 下每行尾巴留著 \r，而 \r 對 JS
+                                                   regex 是行結束字元，`.` 不跨過去，所以
+                                                   /\/\/.*$/ 一個都比不到、註解剝除整個沒作用。
+                                                   npm test 第一步就是這支 lint，於是 Windows
+                                                   上整套測試停在這裡。和 v1.26.122 在
+                                                   migration-017 修的是同一個 \r
+tests/helpers/bash-script.js                     — 新增 bashPathList()（PATH 用冒號分隔，而
+                                                   Windows 路徑裡就有一個；切出來的後半段是
+                                                   相對於磁碟機根目錄的路徑）與 toWinPath()
+                                                   （to_win_path 的 JS 對應，由 bash-path-list
+                                                   跑真的 shell 函式比對，防止兩邊漂移）
+tests/hook-log-event-details.test.js             — 假 curl 的 bin 走 bashPathList，LOG_DIR 與
+tests/run-scanner-wrapper.test.js                  capture 走 toBashPath；wrapper 那兩行漏掉的
+                                                   PATH 補上（同檔其他地方早就轉了）
+tests/installer-key-update.test.js               — $CLAUDE_SETTINGS_WIN 換成 toWinPath 的結果，
+                                                   也就是 install.sh 真正填進去的形狀
+tests/lint-event-logger.test.js                  — 改用 makeUnwritablePath；session-counter
+tests/session-counter.test.js                      兩條原本只斷言「不可以 throw」，寫成功也算過，
+tests/session-counter-block.test.js                現在額外斷言那個檔案真的沒被寫出來
+tests/post-commit-version-reminder.test.js       — 子行程同時設 HOME 與 USERPROFILE。hook 走
+                                                   os.homedir()，Windows 讀的是 USERPROFILE
+tests/pre-commit-secret.test.js                  — 冒號檔名那兩條在 Windows 明講理由 skip
+                                                   （NTFS 非法字元，建不出來），補上 [ab].txt
+                                                   兩條：[ab] 對 git pathspec 是字元集合、
+                                                   字面檔名配不到自己，而中括號 NTFS 收
+README.md / docs/README.zh-TW.md                 — 版本標記 1.26.122 → 1.26.123
+docs/README.ja.md / package.json
+```
+
 ## v1.26.119 修改（記憶檔在 Windows 上從來沒寫成功過，#79 的 C 組）
 
 新增檔：

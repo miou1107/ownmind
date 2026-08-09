@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { makeUnwritablePath } from './helpers/unwritable-path.js';
 
 import {
   readCounter,
@@ -112,11 +113,20 @@ describe('v1.19.3 basic flow', () => {
 
 describe('v1.19.3 defensive — write failure must not throw', () => {
   it('writing to an unwritable path: incrementCounter swallows the error and returns 1 or 0, never throws', () => {
-    _resetCounterPathForTests('/root/no-permission/x.json'); // not writable by a normal user
-    // Must not throw.
-    let didThrow = false;
-    try { incrementCounter('session-z'); }
-    catch { didThrow = true; }
-    assert.equal(didThrow, false, 'incrementCounter must not throw on write failure');
+    // Was `/root/no-permission/x.json` — unwritable to a normal user on Linux and macOS,
+    // and an ordinary creatable directory on Windows. See the note on makeUnwritablePath.
+    const target = makeUnwritablePath();
+    try {
+      _resetCounterPathForTests(target.path);
+      // Must not throw.
+      let didThrow = false;
+      try { incrementCounter('session-z'); }
+      catch { didThrow = true; }
+      assert.equal(didThrow, false, 'incrementCounter must not throw on write failure');
+      assert.equal(fs.existsSync(target.path), false,
+        'the write must actually have failed — otherwise this proves nothing');
+    } finally {
+      target.cleanup();
+    }
   });
 });

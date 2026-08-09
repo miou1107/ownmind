@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { makeUnwritablePath } from './helpers/unwritable-path.js';
 
 import {
   readCounter,
@@ -152,9 +153,19 @@ describe('v1.19.7 — resetBlockCount', () => {
 
 describe('v1.19.7 — defensive: write failure must not throw', () => {
   it('writing to an unwritable path: incrementBlockCount must not throw', () => {
-    _resetCounterPathForTests('/root/cannot-write/x.json');
-    let didThrow = false;
-    try { incrementBlockCount('s1'); } catch { didThrow = true; }
-    assert.equal(didThrow, false);
+    // Was `/root/cannot-write/x.json`, which Windows happily created and wrote — so this
+    // assertion was satisfied by the success path and never entered the failure path it
+    // is named after. See the note on makeUnwritablePath.
+    const target = makeUnwritablePath();
+    try {
+      _resetCounterPathForTests(target.path);
+      let didThrow = false;
+      try { incrementBlockCount('s1'); } catch { didThrow = true; }
+      assert.equal(didThrow, false);
+      assert.equal(fs.existsSync(target.path), false,
+        'the write must actually have failed — otherwise this proves nothing');
+    } finally {
+      target.cleanup();
+    }
   });
 });

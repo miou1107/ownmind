@@ -57,7 +57,15 @@ function walk(dir) {
 
 function lintFile(filePath) {
   const content = readFileSync(filePath, 'utf8');
-  const lines = content.split('\n');
+  // v1.26.123 — split on \r?\n, not \n. A CRLF checkout leaves a carriage return at the end
+  // of every line, and `\r` is a line terminator to a JS regex: `.` will not cross it, so
+  // `/\/\/.*$/` finds no match and the comment stripping below silently strips nothing.
+  // Every comment in the tree is then linted as if it were UI text. Locally that failed
+  // `npm test` at the lint step, before a single test ran, on a file nobody had touched —
+  // while CI stayed green because the Linux and macOS checkouts use LF.
+  // Same shape as the strip in tests/migration-017-bug-reports-id-serial.test.js: a strip
+  // that quietly strips nothing reads exactly like one that had nothing to strip.
+  const lines = content.split(/\r?\n/);
 
   // Strip comments (simplified — no nested handling) + strip whole t(...) call expressions.
   // Naive paren match: from `t(` to the first `)`; covers most cases.

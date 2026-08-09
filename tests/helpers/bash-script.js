@@ -42,6 +42,48 @@ export function toBashPath(p) {
     .replace(/\\/g, '/');
 }
 
+/**
+ * The shape `to_win_path` (scripts/install-helpers/path-helpers.sh) hands back, for tests
+ * that stand in for a shell variable holding its output.
+ *
+ * v1.26.123 — `installer-key-update` substituted a native `path.join` result for
+ * `$CLAUDE_SETTINGS_WIN` and ran the resulting JavaScript. install.sh fills that variable
+ * from `cygpath -m`, which returns `C:/Users/…` — forward slashes, no escape to get wrong.
+ * The test supplied `C:\Users\…` instead, and since the value is interpolated into a
+ * single-quoted JS literal, `\U` and `\A` and `\T` were dropped by the parser before the
+ * program ran. The failure was real but the installer was not: the test had handed it a
+ * path install.sh cannot produce.
+ *
+ * Kept honest by tests/bash-path-list.test.js, which runs the real shell function and
+ * requires the two to agree.
+ */
+export function toWinPath(p) {
+  return String(p).replace(/\\/g, '/');
+}
+
+/**
+ * Build a `PATH`-style list out of host paths.
+ *
+ * v1.26.123 — the entries of `PATH` are separated by a colon, and a Windows path contains
+ * one. `C:\Users\…\bin` prepended raw does not become one broken entry, it becomes two:
+ * `C`, and `\Users\…\bin`. That second fragment is a *drive-relative* path — it resolves
+ * against whichever drive the process happens to be on. Measured with the stub `curl` that
+ * `hook-log-event-details` puts on PATH, temp dir on `C:`:
+ *
+ *     cwd on C:  ->  type -a curl  ->  \Users\…\bin/curl   (the stub — found by accident)
+ *     cwd on S:  ->  type -a curl  ->  /mingw64/bin/curl   (the real curl — stub invisible)
+ *
+ * So the test passed on a developer machine, where the checkout and the temp directory sit
+ * on the same drive, and failed on the CI Windows runner, which checks out onto `D:` while
+ * `TEMP` stays on `C:`. Nothing about the assertion was wrong; the stub simply never ran.
+ *
+ * Going through `toBashPath` first turns each entry into `/c/Users/…/bin`, which holds no
+ * colon and no drive-relative fragment, so the list means the same thing on every drive.
+ */
+export function bashPathList(...entries) {
+  return entries.flat().map(toBashPath).join(':');
+}
+
 /** Write `script` into its own temp directory. The caller owns `cleanup`. */
 export function makeBashScript(script, prefix = 'ownmind-bash-') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

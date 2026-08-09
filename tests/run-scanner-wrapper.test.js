@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
-import { makeBashScript, toBashPath } from './helpers/bash-script.js';
+import { makeBashScript, toBashPath, bashPathList } from './helpers/bash-script.js';
 
 /**
  * End-to-end test for scripts/install-helpers/run-scanner.sh.
@@ -136,7 +136,11 @@ describe('run-scanner.sh wrapper', () => {
     await fs.mkdir(pathDir, { recursive: true });
     await writeStubNode(pathDir, { version: 'v20.11.0' });
     // do not create .node-path; rely on PATH to provide it
-    const r = await runWrapper(home, { PATH: `${pathDir}:/usr/bin:/bin` });
+    // bashPathList: a raw Windows path prepended here is split at its drive colon and the
+    // remainder is resolved against the current drive, so the stub was invisible whenever
+    // the checkout and the temp directory were on different drives — which is exactly the
+    // CI Windows runner (`D:` checkout, `C:` temp) and not a developer box.
+    const r = await runWrapper(home, { PATH: `${bashPathList(pathDir)}:/usr/bin:/bin` });
     assert.equal(r.code, 0);
     const outLog = await fs.readFile(path.join(home, '.ownmind/logs/scanner.log'), 'utf8');
     assert.match(outLog, /version=v20\.11\.0/);
@@ -151,7 +155,7 @@ describe('run-scanner.sh wrapper', () => {
     await fs.mkdir(path.dirname(hbBin), { recursive: true });
     await writeStubNode(path.dirname(hbBin), { version: 'v20.0.0' });
     // put my-opt into PATH
-    const r = await runWrapper(home, { PATH: `${path.dirname(hbBin)}:/usr/bin:/bin` });
+    const r = await runWrapper(home, { PATH: `${bashPathList(path.dirname(hbBin))}:/usr/bin:/bin` });
     assert.equal(r.code, 0);
   });
 

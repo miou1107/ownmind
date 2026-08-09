@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { toWinPath } from './helpers/bash-script.js';
 
 const require = createRequire(import.meta.url);
 const { resolveCredentials } = require('../scripts/install-helpers/resolve-credentials.cjs');
@@ -116,7 +117,11 @@ describe('install.sh really does replace a different key', () => {
     const script = sh
       .slice(open + 'node -e "'.length, close)
       .replaceAll('$MCP_ENTRY', JSON.stringify({ command: 'cmd.exe', args: ['/c', 'start.cmd'] }))
-      .replaceAll('$CLAUDE_SETTINGS_WIN', settingsPath)
+      // toWinPath, because that is what install.sh puts in the variable: the block reads
+      // `$(to_win_path "$CLAUDE_SETTINGS")`, i.e. `cygpath -m` output, which uses forward
+      // slashes. Substituting a native backslash path here fed the extracted source a
+      // string the JS parser eats — a failure about the test's own input, not the code.
+      .replaceAll('$CLAUDE_SETTINGS_WIN', toWinPath(settingsPath))
       .replaceAll('$API_URL', 'https://s/ownmind')
       .replaceAll('$API_KEY', 'NEW-KEY')
       .replaceAll('\\"', '"');

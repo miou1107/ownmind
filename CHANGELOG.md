@@ -1,5 +1,66 @@
 # OwnMind 更新紀錄
 
+## v1.26.123 — Windows 上剩下的 9 條紅燈：測試自己站錯磁碟機
+
+CI 的 Windows runner 把程式碼 checkout 在 `D:`，但 `TEMP` 還在 `C:`。開發機兩邊都在 `C:`。
+剩下的 9 條紅燈裡有 4 條，就是這個差別造成的 —— 而且**不是產品壞了，是測試餵了產品一個不可能的輸入**。
+
+### 一、PATH 裡放 Windows 路徑，等於放了兩個項目
+
+`PATH` 用冒號分隔，而 `C:\Users\…\bin` 裡面就有一個冒號。bash 讀到的不是一個壞掉的項目，是兩個：
+`C`，和 `\Users\…\bin`。後面那個是**相對於磁碟機根目錄**的路徑 —— 它指向「目前這台行程所在磁碟機」
+上的 `\Users\…\bin`。
+
+實測（temp 在 `C:`，PATH 裡放的是測試自己造的假 `curl`）：
+
+```
+cwd 在 C:  ->  type -a curl  ->  \Users\…\bin/curl   （抓到假的 —— 純屬巧合）
+cwd 在 S:  ->  type -a curl  ->  /mingw64/bin/curl   （抓到真的，假的完全看不見）
+```
+
+所以 `hook-log-event-details` 那句 `the upload branch never ran` **從頭到尾都是對的**：
+假 `curl` 根本沒被執行過。錯的是它拿到的 PATH。`run-scanner-wrapper` 的兩條是同一件事
+——那個檔案其他地方早就用了 `toBashPath`，只有這兩行漏掉。
+
+新增 `bashPathList()`，由它負責這個 join，並附一條**在異磁碟機上真的跑**的測試：轉換過的找得到，
+原始寫法找不到（反向對照）。同一台機器上，只有一顆硬碟時它會明講自己跳過，不會假裝有覆蓋到。
+
+### 二、其餘各自不同的原因
+
+| 檔案 | 原因 |
+|---|---|
+| `installer-key-update` | 測試把 `$CLAUDE_SETTINGS_WIN` 換成反斜線路徑。install.sh 填進去的是 `cygpath -m` 的輸出（正斜線）。反斜線被 JS parser 當跳脫字元吃掉 —— **install.sh 本身沒問題**，是測試給了它一個它產不出來的值 |
+| `lint-event-logger`／`session-counter`×2 | 用 `/root/no-permission/` 當「不可寫路徑」。Windows 上那不是特權目錄，直接建起來寫成功。三條裡有兩條只斷言「不可以 throw」，於是**寫成功也算過** —— 錯誤路徑一次都沒進去，還在真的硬碟上留下 `C:\root` |
+| `post-commit-version-reminder` | 只設了 `HOME`。hook 走 `os.homedir()`，Windows 讀的是 `USERPROFILE`，所以 hook 一直指著開發者的真 home。同檔 5 條裡有 3 條斷言「不該有輸出」，全部**因為錯的理由而通過** |
+| `pre-commit-secret`×2 | 檔名 `:!victim.txt` 的冒號在 NTFS 是非法字元（那是 ADS 分隔符），那個檔在 Windows 上**建不出來** |
+
+冒號那兩條改成明講理由的 skip，並補上 `[ab].txt` —— `[ab]` 對 git pathspec 是字元集合，
+字面檔名配不到自己（實測 `git diff --cached -- '[ab].txt'` 回傳空），而中括號 NTFS 收。
+所以同一類缺陷在 Windows 上仍然有人守，不是靜靜地少測一塊。
+
+### 三、順手撈到的：`npm test` 在 CRLF checkout 上跑不起來
+
+`scripts/lint-zh-only.js` 用 `split('\n')` 切行，CRLF checkout 下每行尾巴留著 `\r`。
+`\r` 對 JS regex 是行結束字元，`.` 不會跨過去，所以 `/\/\/.*$/` **一個都比不到**，
+註解剝除整個沒作用 —— 全樹的註解都被當成 UI 文字來檢查。
+
+`npm test` 第一步就是這支 lint，於是 Windows 上（`core.autocrlf=true`）整套測試停在 lint，
+指著一個沒人動過的檔案。Linux／macOS checkout 是 LF，CI 永遠看不到。
+
+**這和 v1.26.122 在 migration-017 測試裡修的是同一個 `\r`。** 修在那裡，沒有帶過來這裡。
+
+### 驗證方式
+
+把整包 checkout 複製到 `S:`（temp 仍在 `C:`），複製出 runner 的磁碟機切分，然後兩邊都跑：
+
+```
+修之前： 9 fail   ← 和 CI 上的數字一樣
+修之後： 0 fail
+```
+
+本機整套：4036 tests / 4020 pass / **0 cancelled**。剩下 2 條在 `bare-mount-trailing-slash`，
+在未改動的 HEAD 上一樣紅（本機沒有 build client），不在 CI 的名單裡。
+
 ## v1.26.122 — 讓整套測試在 Windows 上跑不完的那個檔案
 
 `tests/update-lock-mutual-exclusion.test.js` 在 Windows 上不是慢，是**跑不完**：三條測試各自吃滿
