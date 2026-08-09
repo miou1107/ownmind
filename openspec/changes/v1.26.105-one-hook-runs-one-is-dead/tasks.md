@@ -28,7 +28,11 @@
       directly, so the assertion covers all four scripts instead of one.
 - [x] `.gitignore` — the six runtime paths, so upgrade stops judging its own files as user
       edits and taking the `git reset --hard` branch on every run.
-- [x] 20 behaviour tests in `tests/ensure-pretooluse-hooks.test.js`, including that machine's
+- [x] `scripts/update.sh` and `scripts/update.ps1` — the self-check moved from section 2d to
+      the tail. Adding the dependency check made the pre-existing ordering visible: the health
+      report was taken before the repairs, so every affected machine would have uploaded one
+      failure about a state the same run then fixed.
+- [x] 22 behaviour tests in `tests/ensure-pretooluse-hooks.test.js`, including that machine's
       actual `settings.json` as the regression case.
 - [x] Verified on Windows against an unmodified v1.26.102, item by item:
       `edit-trigger-reminder` 22 pass / 14 fail → 24 pass / 12 fail; the ten install/hook
