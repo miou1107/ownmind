@@ -221,6 +221,49 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
     }
   });
 
+  it('moving aside a marker that turned out to be fresh is a stand-down, not a licence', () => {
+    // The window CI kept finding, pinned deterministically because racing for it only lands
+    // about half the time.
+    //
+    // Two hooks both measure the leaked marker as stale. One wins the move-aside, clears it,
+    // and creates its OWN fresh marker — it is now the reclaimer. The other's `mv` then runs
+    // and succeeds, because there is a file at that path again. It is not the file it
+    // measured. Both are now inside the reclaim section, and the age re-read that is supposed
+    // to protect the winner's new lock only helps if it happens after that lock exists.
+    //
+    // `lock_age_seconds` is shadowed to answer "stale" for the marker exactly once, which is
+    // what the loser saw, while the marker on disk is fresh — what it will actually move.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'held-by-somebody');
+      fs.utimesSync(lock, old, old);
+      fs.writeFileSync(lock + '.reclaim', '');   // fresh: somebody is reclaiming right now
+
+      const code = spawnSyncStatus(dir, [
+        acquire(),
+        // Answer stale for the first `.reclaim` question only; everything else answers truly.
+        'real_lock_age_seconds() { [ -f "$1" ] || return 1; local m; m=$(stat -c %Y "$1" 2>/dev/null);',
+        '  case "$m" in ""|*[!0-9]*) m=$(stat -f %m "$1" 2>/dev/null) ;; esac;',
+        '  case "$m" in ""|*[!0-9]*) return 1 ;; esac; echo $(( $(date +%s) - m )); }',
+        'FAKED=""',
+        'lock_age_seconds() {',
+        '  case "$1" in *.reclaim) if [ -z "$FAKED" ]; then FAKED=1; echo 1200; return 0; fi ;; esac',
+        '  real_lock_age_seconds "$1"',
+        '}',
+        'acquire_update_lock',
+      ].join('\n'));
+
+      assert.notEqual(code, 0,
+        'moved aside a fresh marker and carried on — that is two hooks in the critical section');
+      assert.equal(fs.readFileSync(lock, 'utf8'), 'held-by-somebody',
+        'deleted a lock while another reclaimer was live');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('a displaced shell hook stands down', () => {
     // Step three in the shell. `create_exclusive` is shadowed so the file ends up holding
     // somebody else's token — indistinguishable, from inside, from having been deleted and
@@ -432,6 +475,37 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       assert.equal(acquireUpdateLock(lock, { now: hourAhead }), false,
         'deleted a lock that was fresh by the time we got to look at it');
       assert.ok(fs.existsSync(lock), 'the fresh lock must survive');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('moving aside a marker that turned out to be fresh is a stand-down, not a licence', async () => {
+    /**
+     * v1.26.110 — the window the racing test above finds only about half the time, pinned.
+     *
+     * The move-aside protects whoever loses the rename. It does not establish that the file
+     * renamed is the file that was measured: a process that wins the move, clears it, and
+     * creates its own fresh marker puts a file back at that path, and a second process's
+     * rename then succeeds on that one. Both are inside the reclaim section, and the age
+     * re-read below only protects the first one's new lock once that lock exists.
+     *
+     * Driven off the file, like the test above: the clock reports "long ago" while a
+     * `.reclaim` is present — which is what the loser measured — and the real time once the
+     * marker has been parked, which is what it actually took.
+     */
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      fs.writeFileSync(lock, '');                 // fresh: the lock a live reclaimer just took
+      fs.writeFileSync(lock + '.reclaim', '');    // fresh: that reclaimer is still working
+      const staleWhileMarked = () =>
+        (fs.existsSync(lock + '.reclaim') ? Date.now() + 3600_000 : Date.now());
+
+      const { acquireUpdateLock } = await import(shared);
+      assert.equal(acquireUpdateLock(lock, { now: staleWhileMarked }), false,
+        'took a marker that was fresh and carried on into the critical section');
+      assert.ok(fs.existsSync(lock), 'deleted a lock while another reclaimer was live');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

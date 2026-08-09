@@ -193,7 +193,7 @@ create_exclusive() {
 # lock twice over: the test and the create are far apart, and `touch` succeeds on a file that
 # already exists. Measured 2026-08-07 — four hooks racing, four winners, every morning.
 acquire_update_lock() {
-  local age rage token reclaim="$LOCK_FILE.reclaim"
+  local age rage dage token reclaim="$LOCK_FILE.reclaim"
 
   age=$(lock_age_seconds "$LOCK_FILE")
   if [ -n "$age" ] && [ "$age" -gt 300 ]; then
@@ -205,7 +205,15 @@ acquire_update_lock() {
       # treatment: move it aside under a name only this process uses, and whoever loses the
       # move skips this round rather than racing for it.
       if mv "$reclaim" "$reclaim.dead.$$" 2>/dev/null; then
+        # v1.26.110 — what got moved is not necessarily what was measured. Between the read
+        # above and this rename, another process can win the same move, clear it, and create
+        # its own fresh marker; the rename then succeeds on that one. Both processes are now
+        # inside the reclaim section, and the age re-read below only protects the first one's
+        # new lock if it happens after that lock exists. So check what was actually taken:
+        # a fresh marker means somebody is reclaiming right now, and this call stands down.
+        dage=$(lock_age_seconds "$reclaim.dead.$$")
         rm -f "$reclaim.dead.$$"
+        if [ -z "$dage" ] || [ "$dage" -le 300 ]; then return 1; fi
       else
         return 1
       fi

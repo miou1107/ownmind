@@ -104,6 +104,22 @@ it. `2>/dev/null` covers stderr only.
 - **WHEN** the file's age is computed
 - **THEN** the result is an integer
 
+## Requirement: clearing a leaked reclaim marker verifies what it took
+
+After winning the move-aside of a `.reclaim` marker, a process MUST confirm the file it moved
+was the stale one it measured, and stand down otherwise.
+
+Winning the rename does not establish that. Another process can win the same move, clear it,
+and create its own fresh marker in between, and the rename then succeeds on that one — so two
+processes end up inside the reclaim section, where the age re-read only protects the first
+one's new lock once that lock exists.
+
+### Scenario: the marker turned out to be somebody's live one
+
+- **GIVEN** a `.reclaim` marker measured as stale but fresh by the time it is renamed
+- **WHEN** the mover inspects what it took
+- **THEN** it stands down without deleting the lock
+
 ## Known limits
 
 - GitHub's Windows runner ships Git Bash and a looser execution policy than an ordinary
@@ -112,11 +128,16 @@ it. `2>/dev/null` covers stderr only.
 - Fixing `lock_age_seconds` makes the stale-lock reclaim path reachable on Linux for the
   first time, and it brings a pre-existing race with it. `a leaked reclaim marker does not let
   two shell hooks into the critical section` fails intermittently under CPU pressure —
-  measured 1 in 40 runs in a one-CPU container, and once on ubuntu × node 24 in CI. The
-  protocol's own documentation states there is no atomic fix for delete-and-recreate and that
-  the implementation only bounds the window; the readback that catches a displaced holder is a
-  point-in-time check, so a process still inside the reclaim section can remove a lock another
-  process has already validated. macOS has always taken this path and passes, so the race is
-  not new — only newly visible. Left as its own piece of work rather than redesigned here.
+  measured 1 in 40 runs in a one-CPU container, and on both ubuntu legs in CI. macOS has
+  always taken this path and passes, so the race is not new — only newly visible.
+
+  One window of it is closed by the requirement above, mutation-verified on both
+  implementations. The rest is not: the shell case still fails 1-2 times in 60 on a one-CPU
+  container. Traced, and it is a different window — four processes become reclaimer in turn,
+  each of them legitimately, because the first removes the marker as soon as it is done and
+  the next sees "no marker, lock still stale" and takes over by the rules. Closing that means
+  changing the protocol, and `shared/update-lock.js` already states that delete-and-recreate
+  cannot be made atomic and that the implementation only bounds the window. Measured and
+  written down rather than redesigned as a side effect of a `stat` fix.
 - The Windows leg does not gate. Until its 109 pre-existing failures are cleared, a Windows
   regression can merge.

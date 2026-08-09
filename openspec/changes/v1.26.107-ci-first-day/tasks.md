@@ -44,8 +44,17 @@ annotations. Both CHANGELOG sections are kept in full.
       fixes. `shared/update-lock.js` is byte-identical on both sides and its Node-side twin of
       the same case did not fail in 40 runs either.
       So: pre-existing protocol race, newly reachable on Linux. macOS has always taken this
-      path and passes. Not redesigned here — the protocol's own notes say delete-and-recreate
-      cannot be made atomic and the implementation only bounds the window.
+      path and passes.
+- [x] Closed one window of it in both implementations: after winning the move-aside of a
+      `.reclaim` marker, check that what was moved is the stale marker that was measured, and
+      stand down otherwise. Deterministic test on each side, both red before the change; both
+      mutations red.
+- [x] Measured what remains: 1-2 failures in 60 runs on a one-CPU container, shell side only.
+      Traced with per-step timestamps — four processes become reclaimer in turn, each of them
+      legitimately, because the first removes the marker as soon as it is done and the next
+      sees "no marker, lock still stale". That is the protocol's shape, not the window above,
+      and `shared/update-lock.js` already states delete-and-recreate cannot be made atomic.
+      Not redesigned as a side effect of a `stat` fix.
 
 ## Not in this change
 

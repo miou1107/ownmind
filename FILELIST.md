@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.26.110 修改（stat -f 在 Linux 上不是安靜地失敗）
+
+修改檔：
+```
+shared/update-lock.js                           — 清掉遺留的 reclaim 標記時，移開之後回頭確認
+                                                   移走的真的是過期的那一份。贏得 rename 不等於
+                                                   移走的是剛才量到的那一份 —— 中間可能有人放了
+                                                   一份新鮮的回去，於是兩個 process 同時進臨界區
+hooks/ownmind-session-start.sh                  — 上面那件事的 shell 版（兩邊必須一致）。另外
+                                                   lock_age_seconds 不再假設 `stat -f %m`
+                                                   會安靜地失敗。-f 在 BSD 是格式字串、在 GNU
+                                                   是 --file-system，所以 Linux 上它會先把
+                                                   五行檔案系統資訊吐到 stdout 才回非零，
+                                                   `||` 再把正確的時間接在後面 —— 變數變成
+                                                   一團垃圾，下一行算術直接 syntax error。
+                                                   兩種寫法各跑一次、各自檢查是不是純數字
+tests/update-lock-mutual-exclusion.test.js      — 上面那件事的兩條測試。用假的 stat 放進
+                                                   PATH，所以在 macOS 上也跑得到 —— 重點正是
+                                                   這是一個在 Mac 上看不見的缺陷。另一條是
+                                                   鏡像案例：只有 BSD 寫法能用時也要算得出來
+openspec/changes/v1.26.107-ci-first-day/        — 這一版跟 v1.26.107 的發版文件寫在同一個
+                                                   change 目錄（那一版合併時缺文件，一起補）
+package.json                                    — 1.26.109 → 1.26.110
+```
+
 ## v1.26.107 修改（這個 repo 開始有 CI 了）
 
 新增檔：
@@ -19,17 +44,6 @@ openspec/changes/v1.26.107-ci-first-day/        — proposal / spec / tasks
 
 修改檔：
 ```
-hooks/ownmind-session-start.sh                  — lock_age_seconds 不再假設 `stat -f %m`
-                                                   會安靜地失敗。-f 在 BSD 是格式字串、在 GNU
-                                                   是 --file-system，所以 Linux 上它會先把
-                                                   五行檔案系統資訊吐到 stdout 才回非零，
-                                                   `||` 再把正確的時間接在後面 —— 變數變成
-                                                   一團垃圾，下一行算術直接 syntax error。
-                                                   兩種寫法各跑一次、各自檢查是不是純數字
-tests/update-lock-mutual-exclusion.test.js      — 上面那件事的兩條測試。用假的 stat 放進
-                                                   PATH，所以在 macOS 上也跑得到 —— 重點正是
-                                                   這是一個在 Mac 上看不見的缺陷。另一條是
-                                                   鏡像案例：只有 BSD 寫法能用時也要算得出來
 tests/install-failed-beacon-ps1.test.js         — 從真實腳本**遞迴**抽出相依函式，不再只抽
                                                    function Fail（Fail 內插的
                                                    Get-LastLogLines 沒被帶進去，PowerShell
@@ -46,7 +60,7 @@ tests/scanner-schedule-repair.test.js           — 兩個 plist 案例不再只
                                                    仍然照跑當交叉驗證。預期路徑改成只比對真正
                                                    要驗的那一段，不再拿 Git Bash 的 /tmp/… 跟
                                                    node 的 C:\Users\…\Temp\… 互比
-package.json                                    — 1.26.106 → 1.26.107
+（版號在這一版沒有動：v1.26.107 已經出去了，這裡補的是當時缺的發版文件）
 ```
 
 ## v1.26.106 修改（四個只在 Windows 上壞、而 Mac 測不到的問題）
