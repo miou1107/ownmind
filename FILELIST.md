@@ -1,5 +1,65 @@
 # OwnMind 檔案結構
 
+## v1.26.106 修改（四個只在 Windows 上壞、而 Mac 測不到的問題）
+
+新增檔：
+```
+scripts/install-helpers/read-text-file.cjs      — 依 BOM 解碼，不猜。PowerShell 的每一種
+                                                   寫法都會留 BOM，所以 BOM 是可靠的依據。
+                                                   另含 stripNul / stripNulEscapes ——
+                                                   JSON.stringify 會把 NUL 轉成跳脫序列，
+                                                   而 Postgres 抱怨的正是那個跳脫序列
+tests/windows-log-encoding.test.js              — 18 條。編碼是位元組的性質，所以 fixture
+                                                   就是位元組 —— 不需要 Windows 也測得到
+tests/windows-test-hygiene.test.js              — 267 條（隨測試檔數量增長）。掃描測試原始碼
+                                                   本身：沒有裸的 .pathname、每個會執行腳本的
+                                                   PowerShell spawn 都帶 -ExecutionPolicy
+                                                   Bypass、.cmd stub 有跳脫 cmd.exe 中繼字元、
+                                                   兩支查 Task Scheduler 的函式都用加大後的預算
+openspec/changes/v1.26.106-windows-only-and-mac-cannot-see-it/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+install.ps1                                     — 註冊排程的輸出不再走 `| Tee-Object
+                                                   -FilePath`。Windows PowerShell 5.1 的
+                                                   Tee-Object 沒有 -Encoding 參數（PS 6 才
+                                                   加），所以它一定寫 UTF-16LE —— 那台機器上
+                                                   每一個 register-task-*.log 都是 fffe 開頭，
+                                                   最早一個是 2026-05-09。改用 Write-Utf8NoBom，
+                                                   螢幕輸出用 Write-Host 補回，$LASTEXITCODE
+                                                   在下一行就讀
+scripts/install-helpers/self-check.cjs          — 讀 log 改走 readTextFileSync（依 BOM 解碼）；
+                                                   CIM_TIMEOUT_MS 5000 → 30000（Get-ScheduledTask
+                                                   是 CIM cmdlet，閒置 Windows 10 實測約 1.5 秒，
+                                                   而 self-check 跑的時機正是安裝升級剛結束、
+                                                   機器最忙的那一刻）；新增 describeSpawnFailure
+                                                   保留 killed／signal 證據，不再把 timeout 回報成
+                                                   「Requires Windows + PowerShell」；上傳與 spool
+                                                   收斂到單一 serializeReport
+tests/git-bash-detection.test.js                — PowerShell spawn 補上 -ExecutionPolicy Bypass
+                                                   （出貨的呼叫端全都有帶，只有測試漏了；沒設定過
+                                                   原則的 Windows 用戶端預設 Restricted，
+                                                   dot-source .ps1 直接被擋）。.cmd stub 補上
+                                                   cmd.exe 中繼字元跳脫 —— 真實 bash --version
+                                                   第三行結尾是 <http://gnu.org/licenses/gpl.html>，
+                                                   cmd 把 < 讀成輸入重導向
+tests/install-artifacts.test.js                 — new URL().pathname → fileURLToPath。Windows 上
+                                                   前者產出 /C:/Users/...，node 再接到當前磁碟根
+                                                   目錄變成 C:\C:\...，整個 process 在第一個斷言
+                                                   之前就死掉。另外「stat 不到的路徑」不再用
+                                                   chmod(0o000)（NTFS 上是 no-op），改成把目錄換成
+                                                   檔案讓 stat 因 ENOTDIR 失敗 —— 每個平台都同意
+                                                   的理由，順便不再需要 root 的特例分支
+tests/installer-node-paths.test.js              — 同上的 fileURLToPath。另外「沒有 cygpath」不再
+                                                   用 PATH=/usr/bin:/bin 表示 —— Git Bash 的
+                                                   cygpath 就住在 /usr/bin，前提在 Windows 上是假的。
+                                                   改成清空 PATH
+tests/session-log-args.test.js                  — fileURLToPath
+tests/source-files-are-text.test.js             — fileURLToPath
+package.json                                    — 1.26.105 → 1.26.106
+```
+
 ## v1.26.105 修改（同一個設定檔裡，一個掛勾在跑，一個死了半年）
 
 新增檔：
