@@ -1,5 +1,21 @@
 # OwnMind 檔案結構
 
+## v1.26.121 修改（自己弄壞的兩條 ＋ 一條擋不住 Windows 的守門測試）
+
+修改檔：
+```
+README.md / docs/README.zh-TW.md / docs/README.ja.md
+                                                — 開頭的「目前版本」補到 v1.26.121
+                                                   （117–120 連續四版漏改）
+hooks/lib/sync-memory-files.js                  — 註解裡的真實家目錄路徑改成 placeholder
+hooks/ownmind-iron-rule-check.sh                — 註解引用的個人鐵律編號改成描述規則本身
+tests/no-personal-rule-codes.test.js            — 白名單比對前先正規化分隔符。原本寫
+                                                   src/routes/me.js，而 path.relative 在
+                                                   Windows 上回 srcoutesme.js，那個唯一
+                                                   有正當理由的例外從來沒被比對到
+package.json                                    — 1.26.120 → 1.26.121
+```
+
 ## v1.26.120 修改（半安裝的機器上鐵律檢查整個沒在跑，#79 的 A 組）
 
 修改檔：

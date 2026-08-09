@@ -55,7 +55,13 @@ function walk(dir, acc) {
 }
 
 function isAllowed(relFile, line) {
-  return ALLOWLIST.some((a) => relFile === a.file && line.includes(a.substr));
+  // v1.26.121 — compare in one spelling. `path.relative` answers `src\routes\me.js` on
+  // Windows and the allowlist is written `src/routes/me.js`, so the entry never matched
+  // there: the one documented, justified exception was reported as a violation on that
+  // platform and the whole guard was red for a reason that had nothing to do with the code
+  // it guards. Same class as the separator fixes in v1.26.119.
+  const norm = (p) => p.split(path.sep).join('/');
+  return ALLOWLIST.some((a) => norm(relFile) === a.file && line.includes(a.substr));
 }
 
 describe('v1.26.34 — no personal iron-rule codes in product code', () => {
