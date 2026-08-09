@@ -11,7 +11,7 @@ projectSlugFromPath = (p) => String(p).replace(/[\\/]/g, '-')   // 只換斜線
 ```
 
 Windows 的專案路徑開頭是 `C:\`，而**冒號在 Windows 的資料夾名稱裡是非法的** ——
-NTFS 把它讀成 alternate data stream 的分隔符。所以 `mkdir` 丟 EINVAL、寫入被吞掉，
+NTFS 把它讀成 alternate data stream 的分隔符。所以 `mkdir` 失敗（TANK 實測是 ENOENT —— Windows 又一次把另一種形狀併進同一個 errno）、寫入被吞掉，
 SessionStart hook **在 Windows 上從來沒寫成功過任何一個記憶檔**。
 
 諷刺的地方：呼叫端 v1.26.83 的註解就寫著「把記憶寫進這個專案的資料夾，跟 shell hook 一樣 ——

@@ -16,7 +16,7 @@ tests/helpers/posix-path.js                     — toPosix / relPosix：在「�
 hooks/lib/sync-memory-files.js                  — projectSlugFromPath 也要換掉冒號。
                                                    Windows 專案路徑開頭是 C:\，而冒號在
                                                    資料夾名稱裡非法（NTFS 讀成 ADS 分隔符），
-                                                   所以 mkdir 丟 EINVAL、SessionStart hook
+                                                   所以 mkdir 失敗（實測 ENOENT）、SessionStart hook
                                                    在 Windows 上從來沒寫成功過任何記憶檔。
                                                    C:\Users\Vin\X → C--Users-Vin-X，正是
                                                    Claude Code 自己的專案資料夾拼法
