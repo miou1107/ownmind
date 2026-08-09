@@ -1,6 +1,6 @@
 # OwnMind 更新紀錄
 
-## v1.26.112 — 測試卡住的時候，它什麼都不說
+## v1.26.114 — 測試卡住的時候，它什麼都不說
 
 CI 開起來的第二天，main 上的 macOS 那一欄跑到第 20 秒吐完最後一行，然後二十分鐘不再出聲，
 直到 `timeout-minutes` 把它砍掉。GitHub 把這種結果記成 `cancelled`，看起來像有人按了取消。
@@ -40,6 +40,89 @@ CI 開起來的第二天，main 上的 macOS 那一欄跑到第 20 秒吐完最�
 | 測試都過了但檔案不退出 | 時限攔得住，會報名字 | 攔不住 |
 
 node 24 上「洩漏 handle」那格還是無解。寫出來，不假裝有守到。
+
+## v1.26.113 — 那個假的 stat 測不到四件事，而失敗還是沒有聲音
+
+v1.26.111 用放進 PATH 的假 `stat` 驅動兩條測試，把方言處理釘在每個平台上 —— 這是最重要的性質，也是那兩條存在的理由。但有四件事在它們的射程外，而每一件都是這個缺陷當初能藏住、或未來能復發的路徑。
+
+### 假的 stat 只會回答測試指定的方言
+
+所以沒有任何一條測試去問「這台機器**真正的** `stat`，這個 helper 在這裡能不能用」。而那正是在 Linux 上被回答「不能」、卻連續九個版本在 macOS 上全綠的那個問題。現在有一條不帶任何 stub、直接問這台機器。
+
+### 那兩條直接呼叫 `lock_age_seconds`，所以沒驗到真正咬人的後果
+
+`acquire_update_lock` 把空的 age 讀成「看不出多舊」，整段 staleness 分支跳過 —— 那才是使用者實際遇到的事。以後改壞 age 而沒有任何呼叫端被跑到，測試一樣會全綠。現在有一條走完整條路：20 分鐘前的 lock 必須真的被接管。
+
+### 沒有解釋的失敗，跟有解釋的失敗長得一模一樣
+
+兩種寫法都答不出來時，`lock_age_seconds` 原本只是回非零。這個缺陷能活九個版本，靠的正是「失敗沒有聲音」—— 兩個 `2>/dev/null` 蓋掉抱怨，函式再默默回非零，沒有任何一層講過話。
+
+現在會往 stderr 說清楚是哪個檔案、兩種寫法都試過了。呼叫端行為完全不變、一樣 fail-closed，只是先說為什麼。方言處理的邏輯一個字都沒動。
+
+### 而檔案不存在是常態，那條路徑必須安靜
+
+`acquire_update_lock` 每次 session 都會問 `.reclaim` 的年紀，而那個檔案通常不存在。少了這條測試，上面那句診斷會變成每個使用者每次啟動都看到的噪音。
+
+### 反向驗證
+
+把 `lock_age_seconds` 換回 v1.26.111 之前的版本，四條裡三條紅（真 stat、stale 接管、stderr 診斷）。「檔案不存在要安靜」那條維持綠 —— 它防的是矯枉過正，本來就該兩邊都綠。
+## v1.26.112 — MCP server 從來沒被註冊在 Claude Code 會讀的那個檔案
+
+### 記憶會載入，但 AI 不能主動存取記憶
+
+Claude Code 有兩個設定檔，長得很像：
+
+| 檔案 | Claude Code 從這裡讀什麼 |
+|---|---|
+| `~/.claude.json` | **MCP server** |
+| `~/.claude/settings.json` | hooks、權限 |
+
+安裝腳本從頭到尾只寫後者。所以 `ownmind_*` 工具**在任何人的 session 裡都不存在** —— 不是壞掉、不是降級，是根本沒被註冊。
+
+而它藏得住，是因為**看得見的那一半是好的**：SessionStart hook 設定在 `settings.json`（Claude Code 確實從那裡讀 hooks），它自己打 API 把記憶注入 context。使用者看到「記憶載入了」，於是沒有人去問另一半在哪。
+
+2026-08-09 在一台機器上量到：`settings.json` 裡有完整正確的 `mcpServers.ownmind`，`~/.claude.json` 連 `mcpServers` 這個鍵都沒有，session 裡沒有任何 `ownmind_*` 工具。手動跑 `node ~/.ownmind/mcp/index.js`，`initialize` 回得好好的 —— server 一直是好的，只有「寫在哪」是錯的。
+
+這件事倉庫其實早就知道一半。`resolve-credentials.cjs` 兩個檔案都找，v1.26.93／94 的紀錄也順口寫過 `~/.claude.json` 是「沒有任何安裝腳本會寫的那個檔案」。沒有人把那句話的結論講完：**沒人寫，就等於沒註冊。**
+
+### 升級腳本也要改，不然只有新使用者受惠
+
+沒有人會重跑安裝腳本。自動更新走的是 `git pull` → `npm install` → `update.sh`，從頭到尾不碰安裝腳本 —— 這正是 v1.26.104 在 git hook wrapper 上踩過的坑。
+
+只修安裝腳本的話，這一版會宣稱修好了，而每一台既有機器原封不動地壞著，還以為自己好了。所以 `update.sh` 跟 `update.ps1` 都加了同一節：`.claude.json` 沒有就補註冊，沿用機器上既有的金鑰跟啟動指令，找不到憑證就安靜跳過。
+
+### 「寫了、也讀得回來」不等於「寫對地方」
+
+實作過程中同一種病又犯了兩次，兩次都被同一個問題抓到 —— **驗證從來沒問「在哪個檔案」**：
+
+1. `registerMcp` 一開始預設用 `os.homedir()`。Windows 上那是 `USERPROFILE`，而 `install.sh` 其他路徑全用 bash 的 `$HOME`。測試時把 `HOME` 指到暫存目錄，helper 照樣寫進真正的家目錄，然後回報 verified —— 它確實寫了、也確實讀回來了，只是在沒人看的地方。現在家目錄必須由呼叫端明確傳入，非絕對路徑、或 Windows 上拿到 POSIX 路徑，直接拋錯不寫。
+2. `update.sh` 裡的 `resolveCredentials()` 沒帶 `home`，會讀 A 家目錄的憑證、寫進 B 家目錄。
+
+兩個都跟主 bug 是同一句話：正確地寫進了錯的檔案，而檢查沒有問是哪個檔案。
+
+### 修的過程本身又踩了三次同一個坑
+
+實作時想把註冊邏輯用 `node -e` 塞進四支腳本，結果：
+
+1. **PowerShell 5.1 會把傳給原生執行檔的參數裡的雙引號拿掉。** 三行探針實測印出三個 `NaN` —— 因為 `console.log("x=" + argv[1])` 到了 node 手上變成 `console.log(x=+argv[1])`，也就是把 `+undefined` 指派給一個全域變數。沒有任何東西丟例外，區塊只是回報「無法註冊」然後往下走。而 PowerShell 的語法檢查器說這段腳本完美無缺。
+2. **改傳 JSON 也一樣**被拆掉引號。這次是新的 CLI 自己喊出來的：`PROBLEM the MCP entry did not survive the shell`。
+3. **Git Bash 會把看起來像 POSIX 路徑的參數改寫掉。** `cmd.exe` 的 `/c` 旗標正好長那樣，實測到達 node 時變成 `C:/`，會被寫進啟動指令 —— Windows 使用者會拿到一個根本啟動不了的設定。
+
+install.sh 的註解裡早就寫著結論：「argv 是唯一沒有引號層可以搞砸的形狀」。然後這次的 MCP 接線自己又加了一層引號。
+
+所以現在有 `register-mcp-cli.cjs`：磁碟上一個真的檔案、每個值各自一個 argv 元素、任何 shell 都不用嵌 JavaScript，並且對 Git Bash 關掉路徑轉換。
+
+順帶抓到第四個：PowerShell 的 `Set-Content -Encoding utf8` 會寫 BOM，而 `JSON.parse` 碰到 BOM 會丟例外 —— 升級路徑讀 `settings.json` 原本用的是裸的 `JSON.parse`，所以任何被 PowerShell 工具碰過的機器都會靜靜回報 NOENTRY。只在 Windows 上發生。是用 PowerShell 而不是 Node 去寫測試 fixture 才撞出來的。
+
+### self-check 現在會問這件事
+
+`mcp_files` 確認 server 檔案在、`mcp_node_modules` 確認它跑得起來 —— 一台工具完全不存在的機器，這兩項都是綠的。**決定它會不會被啟動的那個檔案，沒有任何一項在看。**
+
+新增 `mcp_registered`：直接讀 `~/.claude.json`，沒有就明講「`ownmind_*` 工具在 Claude Code 裡不會出現」。這就是 IR-001 —— 安裝腳本說成功不算數，要自己開設定檔確認。
+
+### 文件也教錯了
+
+`docs/setup-claude-code.md` 一直叫使用者把設定加到 `~/.claude/settings.json`，也就是那個對 MCP 沒有作用的檔案。已改，並且把兩個檔案的差別列成表。
 
 ## v1.26.111 — `stat -f` 在 Linux 上不是安靜地失敗，於是更新鎖算不出年紀
 

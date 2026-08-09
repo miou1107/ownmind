@@ -7,7 +7,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /**
- * v1.26.112 — a test run that hangs must say which test it is stuck in.
+ * v1.26.114 — a test run that hangs must say which test it is stuck in.
  *
  * On 2026-08-09, the first day this repo had CI, the macOS leg stopped producing output
  * partway through the suite and stayed that way until `timeout-minutes` killed it: twenty
@@ -178,7 +178,7 @@ function jobCapMs() {
   return Math.min(...caps);
 }
 
-describe('v1.26.112 — a hung run names what it is stuck on', () => {
+describe('v1.26.114 — a hung run names what it is stuck on', () => {
   it('every script that runs the runner carries a deadline', () => {
     const scripts = scriptsThatRunTheRunner();
     assert.ok(scripts.length > 0, 'no npm script runs node --test — did the wording change?');
