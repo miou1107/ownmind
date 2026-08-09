@@ -130,7 +130,7 @@ function reclaimIfStale(lockFile, staleMs, now) {
     } catch {
       return;   // somebody else is clearing it — do not race them for it
     }
-    // v1.26.110 — winning the rename does not establish that what moved is what was
+    // v1.26.111 — winning the rename does not establish that what moved is what was
     // measured. A process that wins the same move, clears it, and creates its own fresh
     // marker puts a file back at that path, and this rename then succeeds on that one.
     // Both would be inside the section below, where the age re-read only protects the first

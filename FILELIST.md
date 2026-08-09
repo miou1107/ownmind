@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.110 修改（stat -f 在 Linux 上不是安靜地失敗）
+## v1.26.111 修改（stat -f 在 Linux 上不是安靜地失敗）
 
 修改檔：
 ```
@@ -22,7 +22,7 @@ tests/update-lock-mutual-exclusion.test.js      — 上面那件事的兩條測�
                                                    鏡像案例：只有 BSD 寫法能用時也要算得出來
 openspec/changes/v1.26.107-ci-first-day/        — 這一版跟 v1.26.107 的發版文件寫在同一個
                                                    change 目錄（那一版合併時缺文件，一起補）
-package.json                                    — 1.26.109 → 1.26.110
+package.json                                    — 1.26.110 → 1.26.111
 ```
 
 ## v1.26.107 修改（這個 repo 開始有 CI 了）

@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import { spawn } from 'child_process';
+import { makeBashScript, toBashPath } from './helpers/bash-script.js';
 
 /**
  * End-to-end test for scripts/install-helpers/run-scanner.sh.
@@ -43,24 +44,39 @@ exit ${exitCode}
 }
 
 function runWrapper(home, env = {}) {
+  // The wrapper's environment is exported by a launcher script rather than passed to spawn.
+  // PATH is the reason: the cases restrict it to force the wrapper through .node-path, but
+  // node reads the same variable to locate bash.exe and '/usr/bin:/bin' is not a path any
+  // Windows process can be started from — every case died with `spawn bash ENOENT` before
+  // the wrapper was reached. Exporting inside the launcher restricts exactly the lookups the
+  // cases are about and leaves node's own alone.
+  const wrapperEnv = {
+    HOME: toBashPath(home),
+    PATH: '/usr/bin:/bin',  // minimal PATH, forcing use of .node-path or PATH
+    OWNMIND_DIR: toBashPath(path.join(home, '.ownmind')),
+    OWNMIND_MIN_NODE_MAJOR: '20',
+    OWNMIND_SKIP_SYSTEM_CANDIDATES: '1',  // disable real paths like /opt/homebrew during tests
+    ...env
+  };
+  const launcher = makeBashScript([
+    ...Object.entries(wrapperEnv).map(([k, v]) => `export ${k}=${JSON.stringify(String(v))}`),
+    `exec bash ${JSON.stringify(toBashPath(WRAPPER))}`,
+  ].join('\n'));
+
   return new Promise((resolve, reject) => {
-    const child = spawn('/bin/bash', [WRAPPER], {
-      env: {
-        HOME: home,
-        PATH: '/usr/bin:/bin',  // minimal PATH, forcing use of .node-path or PATH
-        OWNMIND_DIR: path.join(home, '.ownmind'),
-        OWNMIND_MIN_NODE_MAJOR: '20',
-        OWNMIND_SKIP_SYSTEM_CANDIDATES: '1',  // disable real paths like /opt/homebrew during tests
-        ...env
-      },
+    const child = spawn('bash', [launcher.file], {
+      // Only what node needs to start bash. The wrapper sees wrapperEnv and nothing else,
+      // because the launcher's exports overwrite anything inherited.
+      env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot },
       stdio: ['ignore', 'pipe', 'pipe']
     });
     const out = [];
     const err = [];
     child.stdout.on('data', (d) => out.push(d));
     child.stderr.on('data', (d) => err.push(d));
-    child.on('error', reject);
+    child.on('error', (e) => { launcher.cleanup(); reject(e); });
     child.on('close', (code) => {
+      launcher.cleanup();
       resolve({
         code,
         stdout: Buffer.concat(out).toString('utf8'),
