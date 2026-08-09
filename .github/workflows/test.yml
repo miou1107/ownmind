@@ -73,4 +73,5 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - run: node scripts/ensure-console-build.js
       - run: npm test
