@@ -149,6 +149,15 @@ fi
 # Age of a file in seconds. Prints nothing and returns non-zero when it is not there.
 # stat -f %m = macOS/BSD, stat -c %Y = GNU.
 #
+# v1.26.107 — the two forms are tried separately and the result is checked for digits,
+# because the losing form is not necessarily quiet. `-f` means "format string" on BSD and
+# `--file-system` on GNU, so on Linux `stat -f %m` prints a five-line filesystem report to
+# **stdout** before exiting non-zero, and a `A || B` chain then appends B's answer
+# underneath it. The variable ends up holding the report, a newline, and the correct epoch,
+# and the arithmetic below dies with "syntax error in expression". The comment above already
+# named the difference; the code assumed one side would fail silently, and `2>/dev/null`
+# only ever covered stderr.
+#
 # The `|| echo 0` fallback this used to carry is deliberately gone. It made an unreadable
 # mtime mean "infinitely old", so a lock nobody could stat was reclaimed by everybody at
 # once. Failing closed instead means an unreadable lock is never reclaimed; on every
@@ -156,8 +165,13 @@ fi
 lock_age_seconds() {
   [ -f "$1" ] || return 1
   local mtime
-  mtime=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)
-  [ -n "$mtime" ] || return 1
+  mtime=$(stat -c %Y "$1" 2>/dev/null)
+  case "$mtime" in
+    ''|*[!0-9]*) mtime=$(stat -f %m "$1" 2>/dev/null) ;;
+  esac
+  case "$mtime" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
   echo $(( $(date +%s) - mtime ))
 }
 
@@ -179,7 +193,7 @@ create_exclusive() {
 # lock twice over: the test and the create are far apart, and `touch` succeeds on a file that
 # already exists. Measured 2026-08-07 — four hooks racing, four winners, every morning.
 acquire_update_lock() {
-  local age rage token reclaim="$LOCK_FILE.reclaim"
+  local age rage dage token reclaim="$LOCK_FILE.reclaim"
 
   age=$(lock_age_seconds "$LOCK_FILE")
   if [ -n "$age" ] && [ "$age" -gt 300 ]; then
@@ -191,7 +205,15 @@ acquire_update_lock() {
       # treatment: move it aside under a name only this process uses, and whoever loses the
       # move skips this round rather than racing for it.
       if mv "$reclaim" "$reclaim.dead.$$" 2>/dev/null; then
+        # v1.26.111 — what got moved is not necessarily what was measured. Between the read
+        # above and this rename, another process can win the same move, clear it, and create
+        # its own fresh marker; the rename then succeeds on that one. Both processes are now
+        # inside the reclaim section, and the age re-read below only protects the first one's
+        # new lock if it happens after that lock exists. So check what was actually taken:
+        # a fresh marker means somebody is reclaiming right now, and this call stands down.
+        dage=$(lock_age_seconds "$reclaim.dead.$$")
         rm -f "$reclaim.dead.$$"
+        if [ -z "$dage" ] || [ "$dage" -le 300 ]; then return 1; fi
       else
         return 1
       fi

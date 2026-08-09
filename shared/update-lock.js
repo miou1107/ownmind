@@ -127,10 +127,18 @@ function reclaimIfStale(lockFile, staleMs, now) {
     const parked = `${reclaim}.dead.${process.pid}`;
     try {
       fs.renameSync(reclaim, parked);
-      fs.unlinkSync(parked);
     } catch {
       return;   // somebody else is clearing it — do not race them for it
     }
+    // v1.26.111 — winning the rename does not establish that what moved is what was
+    // measured. A process that wins the same move, clears it, and creates its own fresh
+    // marker puts a file back at that path, and this rename then succeeds on that one.
+    // Both would be inside the section below, where the age re-read only protects the first
+    // one's new lock once that lock exists. So check what was actually taken: a fresh marker
+    // means somebody is reclaiming right now, and this call stands down.
+    const parkedAge = ageMs(parked, now());
+    try { fs.unlinkSync(parked); } catch { /* best effort */ }
+    if (!(parkedAge > staleMs)) return;
   }
 
   if (!createExclusive(reclaim).ok) return;          // another process is already reclaiming

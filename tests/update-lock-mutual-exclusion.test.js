@@ -221,6 +221,49 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
     }
   });
 
+  it('moving aside a marker that turned out to be fresh is a stand-down, not a licence', () => {
+    // The window CI kept finding, pinned deterministically because racing for it only lands
+    // about half the time.
+    //
+    // Two hooks both measure the leaked marker as stale. One wins the move-aside, clears it,
+    // and creates its OWN fresh marker — it is now the reclaimer. The other's `mv` then runs
+    // and succeeds, because there is a file at that path again. It is not the file it
+    // measured. Both are now inside the reclaim section, and the age re-read that is supposed
+    // to protect the winner's new lock only helps if it happens after that lock exists.
+    //
+    // `lock_age_seconds` is shadowed to answer "stale" for the marker exactly once, which is
+    // what the loser saw, while the marker on disk is fresh — what it will actually move.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'held-by-somebody');
+      fs.utimesSync(lock, old, old);
+      fs.writeFileSync(lock + '.reclaim', '');   // fresh: somebody is reclaiming right now
+
+      const code = spawnSyncStatus(dir, [
+        acquire(),
+        // Answer stale for the first `.reclaim` question only; everything else answers truly.
+        'real_lock_age_seconds() { [ -f "$1" ] || return 1; local m; m=$(stat -c %Y "$1" 2>/dev/null);',
+        '  case "$m" in ""|*[!0-9]*) m=$(stat -f %m "$1" 2>/dev/null) ;; esac;',
+        '  case "$m" in ""|*[!0-9]*) return 1 ;; esac; echo $(( $(date +%s) - m )); }',
+        'FAKED=""',
+        'lock_age_seconds() {',
+        '  case "$1" in *.reclaim) if [ -z "$FAKED" ]; then FAKED=1; echo 1200; return 0; fi ;; esac',
+        '  real_lock_age_seconds "$1"',
+        '}',
+        'acquire_update_lock',
+      ].join('\n'));
+
+      assert.notEqual(code, 0,
+        'moved aside a fresh marker and carried on — that is two hooks in the critical section');
+      assert.equal(fs.readFileSync(lock, 'utf8'), 'held-by-somebody',
+        'deleted a lock while another reclaimer was live');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('a displaced shell hook stands down', () => {
     // Step three in the shell. `create_exclusive` is shadowed so the file ends up holding
     // somebody else's token — indistinguishable, from inside, from having been deleted and
@@ -437,6 +480,37 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
     }
   });
 
+  it('moving aside a marker that turned out to be fresh is a stand-down, not a licence', async () => {
+    /**
+     * v1.26.111 — the window the racing test above finds only about half the time, pinned.
+     *
+     * The move-aside protects whoever loses the rename. It does not establish that the file
+     * renamed is the file that was measured: a process that wins the move, clears it, and
+     * creates its own fresh marker puts a file back at that path, and a second process's
+     * rename then succeeds on that one. Both are inside the reclaim section, and the age
+     * re-read below only protects the first one's new lock once that lock exists.
+     *
+     * Driven off the file, like the test above: the clock reports "long ago" while a
+     * `.reclaim` is present — which is what the loser measured — and the real time once the
+     * marker has been parked, which is what it actually took.
+     */
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      fs.writeFileSync(lock, '');                 // fresh: the lock a live reclaimer just took
+      fs.writeFileSync(lock + '.reclaim', '');    // fresh: that reclaimer is still working
+      const staleWhileMarked = () =>
+        (fs.existsSync(lock + '.reclaim') ? Date.now() + 3600_000 : Date.now());
+
+      const { acquireUpdateLock } = await import(shared);
+      assert.equal(acquireUpdateLock(lock, { now: staleWhileMarked }), false,
+        'took a marker that was fresh and carried on into the critical section');
+      assert.ok(fs.existsSync(lock), 'deleted a lock while another reclaimer was live');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('a leaked reclaim marker does not let two processes into the critical section', async () => {
     /**
      * The gap all eight mutations missed, because every other reclaim test writes a *fresh*
@@ -541,4 +615,90 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
   });
 
   function src() { return fs.readFileSync(shellHook, 'utf8'); }
+});
+
+describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on stdout', () => {
+  /**
+   * `stat -f` means "format string" on BSD and `--file-system` on GNU. The fallback
+   *
+   *     mtime=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null)
+   *
+   * assumed the first form fails silently. On Linux it prints a five-line filesystem report
+   * to **stdout** and only then exits non-zero because `%m` is not a valid operand, so `||`
+   * runs the GNU form and appends the real epoch underneath. `mtime` becomes the report plus
+   * a newline plus the right number, and the caller's arithmetic dies with a syntax error.
+   *
+   * The comment one line above named the difference between the two platforms and the code
+   * below it still assumed one of them was quiet. `2>/dev/null` covers stderr only.
+   *
+   * Reproduced in alpine: `stat -f %m` exits 1 after printing `File: ... Inodes: ...`.
+   * Asserted here with a stub on PATH, so it runs on the developer's machine too — the whole
+   * point being that this is a defect a macOS developer cannot otherwise see.
+   */
+  const GNU_STAT_STUB = [
+    '#!/bin/sh',
+    '# Behaves like GNU coreutils stat: -f is --file-system, and -c is the format flag.',
+    'if [ "$1" = "-f" ]; then',
+    '  echo "  File: \\"$3\\""',
+    '  echo "    ID: e263ea3a8075c030 Namelen: 255     Type: UNKNOWN"',
+    '  echo "Blocks: Total: 263940461  Free: 261593355  Available: 248167499"',
+    '  exit 1',
+    'fi',
+    'if [ "$1" = "-c" ]; then echo 1786250210; exit 0; fi',
+    'exit 1',
+  ].join('\n');
+
+  it('returns a number, not a filesystem report with a number stuck to it', () => {
+    const dir = tmpdir();
+    try {
+      const bin = path.join(dir, 'bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(path.join(bin, 'stat'), GNU_STAT_STUB, { mode: 0o755 });
+      const lock = path.join(dir, 'the-lock');
+      fs.writeFileSync(lock, 'token');
+
+      const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
+        + `lock_age_seconds ${JSON.stringify(lock)} && echo "AGE_OK" || echo "AGE_FAIL"`;
+      const out = execFileSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      });
+
+      assert.doesNotMatch(out, /Namelen|Blocks:|File:/,
+        'the filesystem report reached the caller, so the age is not a number');
+      assert.doesNotMatch(out, /syntax error/, 'the arithmetic broke on the polluted value');
+      const [age] = out.trim().split('\n');
+      assert.match(age, /^-?\d+$/, `expected a plain integer age, got ${JSON.stringify(age)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still reports an age on a platform where only the BSD form works', () => {
+    // The mirror case: a stub that answers -f and rejects -c. Fixing Linux must not break
+    // macOS, which is the platform the original code was written on and worked on.
+    const dir = tmpdir();
+    try {
+      const bin = path.join(dir, 'bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(path.join(bin, 'stat'), [
+        '#!/bin/sh',
+        'if [ "$1" = "-f" ]; then echo 1786250210; exit 0; fi',
+        'echo "stat: illegal option -- c" >&2',
+        'exit 1',
+      ].join('\n'), { mode: 0o755 });
+      const lock = path.join(dir, 'the-lock');
+      fs.writeFileSync(lock, 'token');
+
+      const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
+        + `lock_age_seconds ${JSON.stringify(lock)}`;
+      const out = execFileSync('bash', ['-c', script], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      });
+      assert.match(out.trim(), /^-?\d+$/, `expected an integer age, got ${JSON.stringify(out)}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
