@@ -1,5 +1,39 @@
 # OwnMind 檔案結構
 
+## v1.26.119 修改（記憶檔在 Windows 上從來沒寫成功過，#79 的 C 組）
+
+新增檔：
+```
+tests/helpers/posix-path.js                     — toPosix / relPosix：在「路徑變成斷言」
+                                                   的那個點正規化成正斜線。走訪檔案的測試
+                                                   在 Windows 上會拿到 src\app.js，跟
+                                                   'src/app.js' 這種字面值比對就紅了 ——
+                                                   找對了檔案、比錯了分隔符
+```
+
+修改檔：
+```
+hooks/lib/sync-memory-files.js                  — projectSlugFromPath 也要換掉冒號。
+                                                   Windows 專案路徑開頭是 C:\，而冒號在
+                                                   資料夾名稱裡非法（NTFS 讀成 ADS 分隔符），
+                                                   所以 mkdir 丟 EINVAL、SessionStart hook
+                                                   在 Windows 上從來沒寫成功過任何記憶檔。
+                                                   C:\Users\Vin\X → C--Users-Vin-X，正是
+                                                   Claude Code 自己的專案資料夾拼法
+shared/scanners/sqlite-cli.js                   — databaseExists 收可注入的 access，讓
+                                                   「只有 ENOENT 算不存在」這條規則不必靠
+                                                   變出真的 OS 錯誤就測得到（Windows 把
+                                                   ENOTDIR 那個形狀也回成 ENOENT）
+tests/scanner-vscode-multipath.test.js          — 新增直接測那條規則的案例；真實 OS 的
+                                                   ENOTDIR 案例留在 POSIX，Windows 改成
+                                                   斷言「這裡真的是 ENOENT」，哪天變了會紅
+tests/bare-mount-trailing-slash.test.js         — 走訪結果過 toPosix
+tests/dashboard-version-source.test.js          — relative → relPosix（四處）
+tests/add-post-tool-use-hook.test.js            — 假家目錄依平台造，期待值用同樣的
+tests/add-stop-hook.test.js                       path.join 造，並直接斷言 path.isAbsolute
+package.json                                    — 1.26.118 → 1.26.119
+```
+
 ## v1.26.118 修改（「可執行」這個斷言在 Windows 上不可能成立，#79 的 B 組）
 
 新增檔：

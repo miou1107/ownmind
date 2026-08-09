@@ -210,11 +210,39 @@ describe('"not installed" must mean absent, never "I could not tell"', () => {
     assert.equal(await defaultExists(nodePath.join(TMP, 'never-existed.vscdb')), false);
   });
 
-  it('a path that cannot exist is not reported as absent', async () => {
-    // A regular file where a directory belongs gives ENOTDIR on every platform,
-    // including Windows. It is also the shape of a wrongly resolved home directory,
-    // which is one of the things v1.26.65 was about, so it must be loud rather than
-    // silently treated as a clean machine.
+  it('the rule itself: only ENOENT means absent', async () => {
+    // v1.26.119 — the rule, asserted directly instead of through whichever errno the host
+    // platform happens to raise. Everything below this line used to depend on producing a
+    // real OS error, which is why the suite could not be made to hold on Windows.
+    const raise = (code) => () => Promise.reject(Object.assign(new Error(code), { code }));
+    assert.equal(await defaultExists('/any', { access: raise('ENOENT') }), false);
+    for (const code of ['EACCES', 'ENOTDIR', 'EIO', 'EPERM', undefined]) {
+      assert.equal(await defaultExists('/any', { access: raise(code) }), true,
+        `${code} means the question could not be answered, not "not installed"`);
+    }
+  });
+
+  it('a path that cannot exist is not reported as absent', async (t) => {
+    // The same rule against a real OS error. A regular file where a directory belongs is
+    // also the shape of a wrongly resolved home directory, which is one of the things
+    // v1.26.65 was about, so it must be loud rather than silently treated as a clean machine.
+    //
+    // v1.26.119 — this comment used to claim ENOTDIR "on every platform, including Windows".
+    // Measured on TANK: Windows answers ENOENT for this path, and for illegal characters,
+    // reserved device names and over-long paths as well. There the OS itself says "nothing
+    // there", so "absent" is its own answer and the product is behaving correctly — the
+    // claim in the comment was the thing that was wrong. The rule is covered on every
+    // platform by the case above; this one keeps the real-OS evidence where it exists.
+    if (process.platform === 'win32') {
+      const probe = nodePath.join(TMP, 'a-file-win');
+      await fsp.mkdir(TMP, { recursive: true });
+      await fsp.writeFile(probe, 'x');
+      let code = null;
+      try { await fsp.access(nodePath.join(probe, 'state.vscdb')); } catch (e) { code = e.code; }
+      assert.equal(code, 'ENOENT',
+        'if Windows ever starts reporting ENOTDIR here, delete this branch and run the real case');
+      return t.skip('Windows collapses this into ENOENT; see the rule test above');
+    }
     await fsp.mkdir(TMP, { recursive: true });
     const notADir = nodePath.join(TMP, 'a-file');
     await fsp.writeFile(notADir, 'x');

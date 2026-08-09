@@ -1,5 +1,54 @@
 # OwnMind 更新紀錄
 
+## v1.26.119 — 追 Windows 紅燈追出一個真的產品 bug：記憶檔在 Windows 上一次都沒寫成功過
+
+原本是在收 #79 的 C 組（「路徑與斷言」那批，本來以為全是尺的問題）。其中一條
+`node-hook-parity.test.js` 的「writes memory files into the project directory」
+在 Windows 上紅，追下去發現**壞的不是尺**：
+
+```js
+projectSlugFromPath = (p) => String(p).replace(/[\\/]/g, '-')   // 只換斜線
+```
+
+Windows 的專案路徑開頭是 `C:\`，而**冒號在 Windows 的資料夾名稱裡是非法的** ——
+NTFS 把它讀成 alternate data stream 的分隔符。所以 `mkdir` 丟 EINVAL、寫入被吞掉，
+SessionStart hook **在 Windows 上從來沒寫成功過任何一個記憶檔**。
+
+諷刺的地方：呼叫端 v1.26.83 的註解就寫著「把記憶寫進這個專案的資料夾，跟 shell hook 一樣 ——
+少了它，AI 讀到的是上次寫下的快照，而那在 Windows 上從來沒發生過」。那一版把每個地方都修好了，
+就是漏了 slug 這一行。
+
+改成 `replace(/[\\/:]/g, '-')`：`C:\Users\Vin\X` → `C--Users-Vin-X`，
+這也正是 Claude Code 自己在用的專案資料夾拼法，所以檔案會落在 AI 本來就會去看的地方。
+POSIX 路徑沒有冒號，那邊行為不變。原本紅的那條測試現在綠。
+
+### 其餘的確實是尺壞了
+
+- **分隔符**：好幾條測試走訪 `src/`／`client/src/`，用 `path.relative` 轉成相對路徑之後，
+  跟 `'src/app.js'` 這種字面值比對。Windows 上 `path.relative` 回的是 `src\app.js`，
+  於是**找對了檔案、卻比錯了分隔符**。新增 `tests/helpers/posix-path.js`，在「路徑變成斷言」
+  的那個點正規化，字面值維持好讀。（`bare-mount-trailing-slash`、`dashboard-version-source`）
+- **假家目錄**：兩條 hook 測試傳 `/abs/path/.ownmind` 進去，然後期待輸出裡有
+  `/abs/path/.ownmind/hooks/...`。helper 用 `path.join`，Windows 上出來是反斜線 ——
+  斷言的性質（絕對路徑，不是裸檔名）其實一直成立。改成依平台造絕對路徑、用同樣的
+  `path.join` 造期待值，並且**直接斷言 `path.isAbsolute`**，比原本的字面值更強。
+- **ENOTDIR 這件事，註解寫錯了**：`scanner-vscode-multipath` 那條的註解說
+  「拿普通檔案當資料夾，每個平台都會給 ENOTDIR，包括 Windows」。TANK 實測：Windows 給的是
+  **ENOENT** —— 非法字元、保留裝置名、超長路徑也全部是 ENOENT。也就是說在 Windows 上
+  「不存在」是作業系統自己的答案，產品的行為是對的，錯的是那句註解。
+  `databaseExists` 現在收一個可注入的 `access`，讓「只有 ENOENT 算不存在」這條規則
+  **在每個平台上都測得到**，不必去變出一個真的 OS 錯誤；真實 OS 的案例留在做得出來的平台。
+
+### 還沒收的
+
+- `node-hook-parity` 的「takes the lock before announcing the check」仍紅（Windows 上跑
+  update 腳本那條路徑），跟 #79 的 A 組同一族。
+- A 組（12 條 `.sh` 掛勾）**要先有一個決定才能動**：Windows 上那份 `.sh` 副本是「備援、
+  壞了要修」還是「根本不會被叫到、測試該跳過」？兩個答案的處理方式完全相反。
+- `bare-mount-trailing-slash` 有兩條在本機紅（`/dashboard/` 回 404），那是因為本機沒有
+  console build（`src/public/dashboard` 是 gitignore 的產物）。CI 兩邊都有跑
+  `ensure-console-build.js`，所以那不在 #79 的清單裡，也不是 Windows 的問題。
+
 ## v1.26.118 — 「可執行」這個斷言，在 Windows 上不可能成立（#79 的 B 組）
 
 `chmod` 在 NTFS 上是空操作。TANK 實測：一個 `chmod 755` 的檔案讀回來是 `666`。

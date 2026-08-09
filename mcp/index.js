@@ -350,14 +350,20 @@ function renderBroadcasts(broadcasts) {
 // The flag is set BEFORE the await so parallel/rapid calls during the in-
 // flight POST also short-circuit, instead of racing multiple POSTs.
 let heartbeatSent = false;
+//
+// v1.26.117 — OWNMIND_PREFLIGHT is the self-check starting this server on purpose, to find
+// out whether the registered command produces one (scripts/install-helpers/mcp-preflight.cjs).
+// That start is a diagnostic, not a session: letting it beat would refresh this machine's
+// heartbeat on every self-check run, including the unattended daily one, and the heartbeat is
+// what collector-silence reads to decide a machine has stopped reporting. A check that
+// quietly vouches for the thing it is checking is worse than no check.
+//
+// The guard sits above the `heartbeatSent` one and both stay at the top of the body: the
+// v1.17.x rule is that the flag is set synchronously before the await, and a comment long
+// enough to push that out of sight is a comment in the wrong place (tests/heartbeat-once-
+// per-process.test.js reads the first 400 characters of this function and says so).
 async function sendMcpHeartbeat() {
-  // v1.26.117 — the self-check's mcp_launches starts this server on purpose, to find out
-  // whether the registered command produces one (scripts/install-helpers/mcp-preflight.cjs).
-  // That start is a diagnostic, not a session: letting it beat would refresh this machine's
-  // heartbeat every self-check run, including the unattended daily one, and the heartbeat is
-  // what collector-silence reads to decide a machine has stopped reporting. A check that
-  // quietly vouches for the thing it is checking is worse than no check.
-  if (process.env.OWNMIND_PREFLIGHT === '1') return;
+  if (process.env.OWNMIND_PREFLIGHT === '1') return; // diagnostic start — see above
   if (heartbeatSent) return;
   heartbeatSent = true;
   try {

@@ -347,7 +347,17 @@ export function syncMemoryFiles({ memoryDir, data, sync_failed = false } = {}) {
 }
 
 export function projectSlugFromPath(projectPath) {
-  return String(projectPath).replace(/[\\/]/g, '-');
+  // v1.26.119 — the colon has to go too, and this is a product bug rather than a test one.
+  // On Windows a project path starts `C:\`, and a colon cannot appear in a directory name
+  // there at all — NTFS reads it as the alternate-data-stream separator. So mkdir threw
+  // EINVAL, the write was swallowed, and the SessionStart hook **never wrote a single memory
+  // file on Windows** — which is exactly what the v1.26.83 comment in the caller says it
+  // exists to prevent ("on Windows was never"), fixed everywhere except in the slug.
+  //
+  // `C:\Users\Vin\X` -> `C--Users-Vin-X`, which is also the spelling Claude Code itself uses
+  // for its project directories, so the files land where the AI already looks. POSIX paths
+  // carry no colon, so nothing changes there.
+  return String(projectPath).replace(/[\\/:]/g, '-');
 }
 
 export function resolveMemoryDir({ claudeProjectDir, home }) {
