@@ -1,0 +1,77 @@
+name: test
+
+# Why this exists: before it, `.github/` held only CODEOWNERS - the repo had no CI at all.
+# Tests ran only on whichever machine someone happened to run them on, and the Windows-only
+# paths were either skipped on macOS or never reached. On a Mac, a test that fails on Windows
+# is not a failing test, it is an invisible one. Every one of the four v1.26.104 bugs survived
+# that way; the UTF-16 log bug shipped from 2026-05-09 until it was dug out by hand.
+#
+# This workflow touches nothing outside the runner: no server, no deploy credentials, no
+# knowledge of where the server is. Changing hosting providers does not affect it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# This repo ships several versions a day. Without this, pushes queue behind each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The platforms that get a veto. node 20 is what the Dockerfile runs in production;
+  # node 24 is what the dev machine runs, and it catches "only breaks on newer node".
+  test:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false # one platform going red must not cancel the others - per-platform results are the point
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: '20' }
+          - { os: ubuntu-latest, node: '24' }
+          - { os: macos-latest, node: '20' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      # `src/public/dashboard/` is gitignored, so a fresh clone has no console and the
+      # routing tests get a 404 where the SPA shell should be. This is the same step
+      # `npm start` runs as `prestart`, and it uses build:no-translate - the full build
+      # runs an LLM translation pass that needs credentials CI does not have.
+      - run: node scripts/ensure-console-build.js
+      # npm test = lint:zh-only + node --test. None of the 257 test files touch a database.
+      - run: npm test
+
+  # Windows runs, reports, and does not block merges - yet.
+  #
+  # First run on this workflow: ubuntu 6 failures, macOS 3, Windows 111. Users pull from
+  # origin/main automatically, so merging is same-day shipping; a hundred pre-existing
+  # failures cannot be allowed to hold that hostage while they get worked through.
+  #
+  # This is a separate job rather than a matrix leg with `continue-on-error` because a
+  # continue-on-error leg still reports `failure` through `needs.<job>.result`, so a gate
+  # job reading that value cannot tell "Windows failed" from "everything failed". Splitting
+  # the jobs makes the distinction structural: `test` is the required check, this one never
+  # fails the run. When Windows is clean, delete the continue-on-error line and fold this
+  # back into the matrix above.
+  test-windows:
+    name: windows-latest / node 20 (not blocking yet)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/ensure-console-build.js
+      - run: npm test

@@ -38,7 +38,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -163,6 +163,70 @@ function runHelper({
   return { stdout, code, launchctl: calls('launchctl'), systemctl: calls('systemctl') };
 }
 
+// v1.26.107 — the two plist assertions below used to call `plutil`, which exists only on
+// macOS. Everywhere else they threw ENOENT, and because nothing ran this suite off a Mac
+// until CI existed, "macOS: …" quietly meant "nowhere". The claims themselves are about a
+// generated XML file and hold on any platform, so they are checked here directly, and plutil
+// is still consulted when it is present — it is the parser launchd itself uses, and no
+// hand-written check earns the right to replace it.
+const HAS_PLUTIL = (() => {
+  const r = spawnSync('plutil', ['-help'], { encoding: 'utf8' });
+  return !r.error;
+})();
+
+const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+function decodeXmlText(s) {
+  return s.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (whole, body) => {
+    if (body[0] === '#') {
+      const code = body[1] === 'x' ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      return String.fromCodePoint(code);
+    }
+    return Object.prototype.hasOwnProperty.call(XML_ENTITIES, body) ? XML_ENTITIES[body] : whole;
+  });
+}
+
+/**
+ * Well-formedness, limited to the two ways this generator can produce a broken file.
+ *
+ * A bare `&` is the important one: the plist is built by substituting HOME into a template
+ * with sed, and `&` is sed's "the whole match" metacharacter. Unescaped, it corrupts the
+ * output; in XML it also starts an entity that never terminates, which is precisely why
+ * launchd refuses the file. Tag balance is the other: a truncated write leaves a file that
+ * still looks plausible in a substring search.
+ */
+function assertWellFormedPlist(xml, context) {
+  const bareAmp = xml.match(/&(?!(?:#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);)/);
+  assert.equal(
+    bareAmp,
+    null,
+    `${context}: an & that starts no entity — sed's replacement metacharacter survived`,
+  );
+
+  const stack = [];
+  const body = xml.replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<![^>]*>/g, '');
+  for (const [, closing, name, selfClosing] of body.matchAll(/<(\/)?([A-Za-z][\w:.-]*)[^>]*?(\/)?>/g)) {
+    if (selfClosing) continue;
+    if (closing) {
+      assert.equal(stack.pop(), name, `${context}: </${name}> does not close the open element`);
+    } else {
+      stack.push(name);
+    }
+  }
+  assert.deepEqual(stack, [], `${context}: unclosed elements`);
+}
+
+/** The decoded <string> values of the <array> that follows <key>name</key>. */
+function plistStringArray(xml, name) {
+  const key = xml.indexOf(`<key>${name}</key>`);
+  assert.notEqual(key, -1, `plist has no <key>${name}</key>`);
+  const open = xml.indexOf('<array>', key);
+  const close = xml.indexOf('</array>', open);
+  assert.ok(open !== -1 && close !== -1, `<key>${name}</key> is not followed by an <array>`);
+  return [...xml.slice(open, close).matchAll(/<string>([\s\S]*?)<\/string>/g)]
+    .map((m) => decodeXmlText(m[1]));
+}
+
 describe('ensure-scanner-schedule.sh — repairs a dead schedule, leaves a live one alone', () => {
   before(() => { sandbox = makeSandbox(); });
   after(() => { if (sandbox) fs.rmSync(sandbox.root, { recursive: true, force: true }); });
@@ -188,28 +252,49 @@ describe('ensure-scanner-schedule.sh — repairs a dead schedule, leaves a live 
     // first assertion fires.
     assert.doesNotMatch(body, /\{HOME\}/, '{HOME} placeholder was left unsubstituted');
 
-    // Read the path back the way launchd will, through the XML parser. A raw substring
-    // search would be wrong in both directions: it fails on a correctly encoded `&amp;`,
-    // and it would pass on a file that happens to contain the right characters in the
-    // wrong element.
-    const parsed = JSON.parse(
-      execFileSync('plutil', ['-convert', 'json', '-o', '-', plist], { encoding: 'utf8' }),
-    );
-    assert.deepEqual(
-      parsed.ProgramArguments,
-      ['/bin/bash', path.join(sandbox.home, '.ownmind/bin/run-scanner.sh')],
-      'the scheduled command does not point at this HOME',
-    );
+    // Read the path back the way launchd will, decoding entities. A raw substring search
+    // would be wrong in both directions: it fails on a correctly encoded `&amp;`, and it
+    // would pass on a file that happens to contain the right characters in the wrong element.
+    // The helper writes this path from inside bash, so its spelling is bash's view of the
+    // filesystem. Under Git Bash on Windows the same directory is /tmp/… where node calls it
+    // C:\Users\…\Temp\…, and asserting on path.join's answer compares two correct spellings
+    // of one directory and calls the difference a defect. What the case is actually about is
+    // that {HOME} was substituted and that the `&` in the directory name survived sed, so it
+    // is checked against the part of the path that carries both.
+    const homeTail = sandbox.home.split(/[\\/]/).slice(-2).join('/');
+    const assertArgs = (args, source) => {
+      assert.deepEqual(args.slice(0, 1), ['/bin/bash'], `${source}: not run through bash`);
+      assert.equal(args.length, 2, `${source}: expected exactly one script argument`);
+      assert.ok(
+        args[1].endsWith(`${homeTail}/.ownmind/bin/run-scanner.sh`),
+        `${source}: the scheduled command does not point at this HOME — got ${args[1]}`,
+      );
+    };
+
+    assertArgs(plistStringArray(body, 'ProgramArguments'), 'plist');
+
+    if (HAS_PLUTIL) {
+      const parsed = JSON.parse(
+        execFileSync('plutil', ['-convert', 'json', '-o', '-', plist], { encoding: 'utf8' }),
+      );
+      assertArgs(parsed.ProgramArguments, 'plutil');
+    }
   });
 
   it('macOS: the plist it writes is a file launchd can actually parse', () => {
     // "no {HOME} left" and "well-formed" are different claims, and a corrupt plist is
-    // worse than no plist: it survives on disk and every later load fails. plutil is the
-    // parser launchd itself uses.
+    // worse than no plist: it survives on disk and every later load fails.
     runHelper({ osType: 'darwin', loaded: false });
     const plist = path.join(sandbox.home, 'Library/LaunchAgents', `${LABEL}.plist`);
-    const out = execFileSync('plutil', ['-lint', plist], { encoding: 'utf8' });
-    assert.match(out, /OK/, `plutil rejected the generated plist: ${out}`);
+    assertWellFormedPlist(fs.readFileSync(plist, 'utf8'), 'generated plist');
+
+    // plutil is the parser launchd itself uses, so where it exists its verdict is the one
+    // that counts. Where it does not, the check above still runs rather than the case
+    // disappearing — a skipped assertion and a passing one look identical in a summary.
+    if (HAS_PLUTIL) {
+      const out = execFileSync('plutil', ['-lint', plist], { encoding: 'utf8' });
+      assert.match(out, /OK/, `plutil rejected the generated plist: ${out}`);
+    }
   });
 
   it('macOS: does nothing when the agent is already loaded', () => {
