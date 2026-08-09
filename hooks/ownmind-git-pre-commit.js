@@ -21,10 +21,16 @@ import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
 import { isSecretGuardRule } from './lib/secret-guard-rule.js';
 import { parseIronRulesResponse, shouldOverwriteCache } from './lib/iron-rule-sync.js';
 import { isOff as isSessionOff } from '../shared/session-off-state.js';
+// One definition of "this rule judges the message", shared with the hook that enforces
+// them. Two copies of that predicate is the pair that drifts.
+import { isMessageRule } from './ownmind-git-commit-msg.js';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
-const COMMIT_MSG_FILE = path.join(process.cwd(), '.git', 'COMMIT_EDITMSG');
+// v1.26.104: there is deliberately no COMMIT_EDITMSG here. Git writes that file AFTER
+// pre-commit runs, so reading it yields the previous commit's message, not this one's.
+// Commit-message rules moved to hooks/ownmind-git-commit-msg.js, which git hands the
+// real message path.
 const VERSION = getClientVersion();
 
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -80,10 +86,24 @@ function getStagedFiles() {
  *
  * Any failure returns empty (fail-open, never block the commit).
  */
-function getStagedAddedLines(file) {
+function getStagedAddedLines(file, srcPath = null) {
   let diff;
   try {
-    diff = execFileSync('git', ['diff', '--cached', '-U0', '--', file], {
+    // v1.26.103: for a rename, ask for BOTH paths. Scoped to the destination alone,
+    // git has no deleted counterpart to pair the addition with, so rename detection
+    // cannot run and it renders the file as brand new — every pre-existing line comes
+    // back as an addition. Move a file and edit one line of it, and the scan reads the
+    // other 400 untouched lines as newly written. -M forces the pairing even where
+    // diff.renames is turned off in the user's config. Bug-report id=10.
+    //
+    // --literal-pathspecs, and it is load-bearing: these are paths from git, but git
+    // reads them back as PATHSPECS, and `--` does not turn that off. A file committed
+    // as `:!victim.txt` is a valid filename and also an exclude pattern — renaming it
+    // cancels the destination out of its own diff, which returns empty, and a secret
+    // added in that same commit sails through. Measured, not theorised: the hook
+    // exited 0 on a freshly added `sk-proj-…` line.
+    const paths = srcPath && srcPath !== file ? [srcPath, file] : [file];
+    diff = execFileSync('git', ['--literal-pathspecs', 'diff', '--cached', '-U0', '-M', '--', ...paths], {
       encoding: 'utf8',
       maxBuffer: 5 * 1024 * 1024, // 5 MB — large enough for a typical patch
     });
@@ -98,6 +118,60 @@ function getStagedAddedLines(file) {
     added.push(line.slice(1));
   }
   return added;
+}
+
+/**
+ * v1.26.103: where each staged path came from, when it was renamed.
+ *
+ * The content scan asks git for the diff of ONE path. A single-path diff has no
+ * deleted counterpart to pair the addition with, so rename detection cannot run and
+ * git renders a moved file as brand new — every pre-existing line comes back as an
+ * addition. `git mv` a committed file holding key-shaped text (a spec's positive
+ * example, a checksum table, a test fixture) and the commit is blocked over content
+ * that has been in the repository for versions; the only way past is a bypass, which
+ * switches off every other rule at the same time. Bug-report id=10.
+ *
+ * Handing the scan the source path too is what lets git pair them again.
+ *
+ * On any failure this returns an empty map, so every staged file is scanned as a
+ * whole — the fail-safe direction for a security check.
+ *
+ * @returns {Map<string, string>} destination path → source path, renames only
+ */
+function getRenameSources() {
+  const renames = new Map();
+  try {
+    // -M explicitly: with diff.renames=false in the user's config, git reports a move
+    // as an unrelated delete plus add, the source path is lost, and the scan falls
+    // straight back into the bug. The user's rename-detection preference must not
+    // decide whether their commit is blocked.
+    //
+    // No --literal-pathspecs here, unlike the scan below: this call passes no pathspec at
+    // all, so the flag would be a no-op carrying a comment that implies otherwise.
+    const raw = execFileSync('git', ['diff', '--cached', '--raw', '-M', '-z'], {
+      encoding: 'utf8',
+      maxBuffer: 5 * 1024 * 1024,
+    });
+    if (!raw) return renames;
+    const tokens = raw.split('\0');
+    for (let i = 0; i < tokens.length; i++) {
+      const meta = tokens[i];
+      if (!meta || meta[0] !== ':') continue;
+      // :<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<old>\0<new>  for R and C
+      // :<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>        for everything else
+      const status = meta.slice(1).split(' ')[4];
+      if (!status) continue;
+      const isPair = status[0] === 'R' || status[0] === 'C';
+      if (!isPair) { i += 1; continue; }
+      const srcPath = tokens[i + 1];
+      const destPath = tokens[i + 2];
+      i += 2;
+      if (srcPath && destPath) renames.set(destPath, srcPath);
+    }
+  } catch {
+    return new Map();
+  }
+  return renames;
 }
 
 /**
@@ -134,8 +208,11 @@ function maskSecretFragment(text) {
  */
 function checkStagedDiffForSecrets(stagedFiles) {
   const hits = [];
+  // v1.26.103: a moved file needs both of its paths, or git reads it as brand new.
+  // See getRenameSources.
+  const renameSources = getRenameSources();
   for (const file of stagedFiles) {
-    const lines = getStagedAddedLines(file);
+    const lines = getStagedAddedLines(file, renameSources.get(file));
     for (const line of lines) {
       const r = detectSecretLike(line, { skip_keyword: true });
       if (r.detected) {
@@ -157,14 +234,6 @@ function checkStagedDiffForSecrets(stagedFiles) {
     }
   }
   return hits;
-}
-
-function getCommitMessage() {
-  try {
-    return fs.readFileSync(COMMIT_MSG_FILE, 'utf8').trim();
-  } catch {
-    return process.env.GIT_COMMIT_MSG || '';
-  }
 }
 
 function httpGet(url, headers) {
@@ -285,10 +354,17 @@ async function main() {
     // If fetch failed, continue with old cache
   }
 
-  // 3. Filter rules with commit trigger
+  // 3. Filter rules with commit trigger.
+  //
+  // v1.26.104: message rules are excluded rather than merely left unevaluated. The
+  // condition handlers return true when no message is present, so leaving them in would
+  // have them counted in "all N rules passed ✓" — an assurance about a check that never
+  // ran. They are enforced in hooks/ownmind-git-commit-msg.js, which git hands the real
+  // message.
   const commitRules = rules.filter(r => {
     const triggers = r.metadata?.verification?.trigger;
-    return Array.isArray(triggers) && triggers.includes('commit');
+    if (!Array.isArray(triggers) || !triggers.includes('commit')) return false;
+    return !isMessageRule(r);
   });
 
   if (commitRules.length === 0) {
@@ -301,13 +377,14 @@ async function main() {
     process.exit(0);
   }
 
-  const commitMessage = getCommitMessage();
   const changedSourceFiles = getChangedSourceFiles(stagedFiles);
   const complianceEvents = readComplianceEvents();
 
+  // No commitMessage: this hook runs before git writes the message anywhere it could be
+  // read from. Omitting the key is the point — a wrong value here is worse than none,
+  // because the condition handlers cannot tell "absent" from "genuinely empty".
   const context = {
     stagedFiles,
-    commitMessage,
     changedSourceFiles,
     complianceEvents,
   };

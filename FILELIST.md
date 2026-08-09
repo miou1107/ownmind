@@ -1,5 +1,153 @@
 # OwnMind 檔案結構
 
+## v1.26.105 修改（同一個設定檔裡，一個掛勾在跑，一個死了半年）
+
+新增檔：
+```
+scripts/install-helpers/ensure-pretooluse-hooks.cjs — PreToolUse 鐵律掛勾的註冊／修復，
+                                                   四支安裝升級腳本共用同一份。指令
+                                                   **不一樣就改寫**，不再把「這個 matcher
+                                                   底下有提到 ownmind-iron-rule-check」
+                                                   當成「它是對的」—— 壞掉的那筆自己滿足
+                                                   了自己的修復條件，所以 v1.26.92 只修到
+                                                   全新安裝，升級戶一個都沒修到。
+                                                   --bash / --node 對應兩種呼叫寫法
+tests/ensure-pretooluse-hooks.test.js           — 17 條行為測試，含 2026-08-09 那台機器的
+                                                   實際 settings.json 當回歸案例
+openspec/changes/v1.26.105-one-hook-runs-one-is-dead/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+install.sh / install.ps1                        — PreToolUse 那段改成呼叫共用 helper。
+                                                   原本四份同樣的邏輯散在四支腳本裡，
+                                                   只有 bash 那份跑得到 CI，爛掉的正好是
+                                                   沒有測試碰得到的那半邊
+scripts/update.sh / scripts/update.ps1          — 同上。這兩支裡最舊的那份順手一起換掉
+                                                   （只有一個 matcher、全陣列比對，而且會
+                                                   在 Windows 上寫入 bash 指令）
+scripts/install-helpers/install-artifacts.cjs   — iron_rule_hook 改成先讀 settings.json 裡
+                                                   **實際註冊的那條指令**，那個路徑才是
+                                                   Claude Code 真的會跑的檔案。原本只問
+                                                   「~/.claude/hooks 底下有沒有一份副本」，
+                                                   所以那台機器一邊 6/6 全過、一邊每次
+                                                   Bash 都 ERR_MODULE_NOT_FOUND。沒註冊
+                                                   任何東西時才退回舊的候選清單
+tests/edit-trigger-reminder.test.js             — 不再從 install.sh 切出 node -e 區塊 eval，
+                                                   改成直接跑 helper。切區塊只驗得到 bash
+                                                   那份，install.ps1 自己那份沒人看著爛掉
+.gitignore                                      — 補上六個安裝腳本自己寫進檢出目錄的執行時
+                                                   檔案（.node-path、.git-bash-path、cache/、
+                                                   git-hooks/ 等）。這個檔案開頭的註解早就
+                                                   寫過這個坑，但名單停在 .update-lock*，
+                                                   所以實機每次升級都判定成 dirty tree、
+                                                   每次都 git reset --hard。真正的代價是
+                                                   那句警告變成每次都出現的雜訊 —— 使用者
+                                                   真的手改過的東西會混在同一行裡捲過去
+package.json                                    — 1.26.104 → 1.26.105
+```
+
+## v1.26.104 修改（檢查 commit 訊息的那道關卡，讀的是上一次的訊息）
+
+新增檔：
+```
+hooks/ownmind-git-commit-msg.js                 — 用 git 傳進來的訊息路徑（$1）評估
+                                                   commit_message* 類型的鐵律。挑規則看
+                                                   條件類型、不看規則編號，因為每個人的
+                                                   編號都不一樣。只讀快取不打 API：
+                                                   pre-commit 幾秒前才在同一次 commit 裡
+                                                   更新過。過濾掉 # 開頭的 git 註解行。
+                                                   任何異常一律放行
+tests/commit-msg-rules.test.js                  — 20 條。pre-commit 不再被舊訊息影響、
+                                                   commit-msg 對真訊息判斷、
+                                                   commit_message_contains 也要生效、
+                                                   bypass、空快取放行、沒帶參數放行、
+                                                   shell wrapper 真的有叫到 node、
+                                                   沒安裝腳本時要放行、以及走真 git commit
+                                                   的端到端：第一次擋、改好第二次要過
+openspec/changes/v1.26.104-message-rules-judge-the-real-message/ — proposal / spec
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js                 — 拿掉 COMMIT_MSG_FILE 跟
+                                                   getCommitMessage()。git 要到 pre-commit
+                                                   跑完才寫 .git/COMMIT_EDITMSG，讀它拿到的
+                                                   是上一次的訊息。訊息規則從 commitRules
+                                                   整個濾掉，不是留著讓它通過 —— 條件判斷
+                                                   沒訊息時回傳通過，留著會被算進「N 條全部
+                                                   通過 ✓」。context 也不再放 commitMessage
+                                                   這個鍵
+hooks/ownmind-git-commit-msg                    — 寫死的 Co-Authored-By 比對保留（整行錨定
+                                                   ＋不分大小寫，抓得到 git 自己的寫法
+                                                   `Co-authored-by:`，而規則引擎是區分大小
+                                                   寫的子字串比對、抓不到），後面再叫
+                                                   ownmind-git-commit-msg.js 跑使用者自己的
+                                                   規則。腳本不存在就跳過、不當成失敗，
+                                                   半套安裝不該讓人不能 commit。補上
+                                                   chain 既有掛勾的邏輯
+install.sh / install.ps1                        — 兩邊的 git hook JS 清單都加
+                                                   ownmind-git-commit-msg.js
+scripts/update.sh / scripts/update.ps1          — 已安裝的三支 git hook wrapper 改成每次
+                                                   更新都從檢出目錄重新複製，不再只修
+                                                   CRLF。~/.ownmind 就是檢出目錄，pull 一
+                                                   落地 hooks/ 立刻換新，但 git-hooks/ 是
+                                                   安裝腳本複製的副本，而自動更新路徑不會
+                                                   跑安裝腳本 —— 這一版剛好把工作從
+                                                   pre-commit 搬到 commit-msg，不修的話
+                                                   使用者會拿到新的那一半、舊的那一半留著
+                                                   ，訊息規則整組靜靜失效。沒安裝過的不會
+                                                   幫他裝。update.ps1 之前完全沒碰這個目錄
+tests/updater-refreshes-git-hooks.test.js       — wrapper 清單從 install.sh 長出來（手寫
+                                                   清單正是一開始漂掉的原因），驗證兩支更新
+                                                   腳本都會刷新每一支、而且都不會無中生有
+package.json                                    — 1.26.103 → 1.26.104
+```
+
+## v1.26.103 修改（搬檔案不算寫檔案）
+
+新增檔：
+```
+openspec/changes/v1.26.103-rename-is-not-new-content/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js                 — 新增 getRenameSources()：讀一次
+                                                   `git diff --cached --raw -M -z`，把每個
+                                                   目的地路徑對回它的來源路徑。
+                                                   getStagedAddedLines() 多收 srcPath，改名的
+                                                   檔案兩個路徑一起傳給 git——只給目的地那一個
+                                                   時，git 沒有對得上的刪除side，配對不起來，
+                                                   整份檔案都會被當成新加的。兩個 git 呼叫都
+                                                   明寫 -M，不然使用者把 diff.renames 關掉就
+                                                   整個退回原本的 bug。
+                                                   掃描那一支加 --literal-pathspecs：git 給
+                                                   回來的路徑，git 自己會當成 pathspec 讀，
+                                                   `--` 擋不住。檔名叫 `:!victim.txt` 同時
+                                                   是「排除」樣式，改名時會把目的地從自己的
+                                                   差異裡排掉，同一次 commit 新加的密鑰完全
+                                                   沒被掃到（實測掃描器回報通過）。raw 那一支
+                                                   不加，因為它根本沒傳 pathspec，加了是沒有
+                                                   作用的旗標配一段會誤導人的註解。
+                                                   刻意沒加 blob SHA 豁免：配對修好之後沒有
+                                                   任何測試分得出它在不在，而在會擋人的檢查裡
+                                                   加一個沒測到的跳過分支，是多一個洞不是多
+                                                   一層保險
+tests/pre-commit-secret.test.js                 — +7 條（bug #10）：純搬移不擋、搬移同時新增
+                                                   密鑰要擋、搬移同時改寫內容要擋、
+                                                   diff.renames=false 也不擋、來源路徑是
+                                                   pathspec 樣式時新增的密鑰仍要擋、同樣檔名
+                                                   純搬移不擋、改名跟不相干的新增檔同時進
+                                                   staging 時歸屬要正確。
+                                                   第二三條是反面對照，少了它們「永遠不掃改名
+                                                   檔」也會全綠。
+                                                   pathspec 那條的種子檔刻意放 60 行：只放一行
+                                                   的話相似度掉到 50% 以下，git 根本不報改名，
+                                                   測試會在碰到要驗的程式之前就通過
+package.json                                    — 1.26.102 → 1.26.103
+```
+
 ## v1.26.102 修改（採集程式停掉，現在會有人被通知）
 
 新增檔：

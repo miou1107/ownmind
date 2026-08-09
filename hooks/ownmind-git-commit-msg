@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
-# OwnMind commit-trailer guard: reject commits adding Co-Authored-By trailer.
+# OwnMind commit-msg hook.
+#
+# Two checks, deliberately not merged into one:
+#
+#   1. The trailer guard below. Anchored to the start of a line and case-insensitive,
+#      so it catches `Co-authored-by:` — which is git's own spelling, and not what a
+#      substring rule written as "Co-Authored-By" would match.
+#   2. The user's own commit-message iron rules, evaluated by hooks/ownmind-git-commit-msg.js.
+#
+# v1.26.104 added the second. Message rules used to be evaluated in pre-commit, which
+# reads `.git/COMMIT_EDITMSG` — a file git does not write until AFTER pre-commit has run,
+# so it was judging the previous commit's message. This hook is handed the real message
+# as $1.
+#
 # Bypass (not recommended): git commit --no-verify
 set -e
 
@@ -13,6 +26,36 @@ if grep -qiE '^[[:space:]]*Co-Authored-By:' "$MSG_FILE"; then
   echo "   你的鐵律：git commit 不加 Co-Authored-By。" >&2
   echo "   如需強制覆蓋（不建議），用 git commit --no-verify。" >&2
   exit 1
+fi
+
+# Rule evaluation is skipped when the script is absent rather than treated as a failure:
+# a missing or half-installed client must not become the reason somebody cannot commit.
+HOOK_JS="$HOME/.ownmind/hooks/ownmind-git-commit-msg.js"
+if [ -f "$HOOK_JS" ]; then
+  set +e
+  node "$HOOK_JS" "$MSG_FILE"
+  RESULT=$?
+  set -e
+  if [ "$RESULT" -ne 0 ]; then
+    exit 1
+  fi
+fi
+
+# Chain existing hooks (once core.hooksPath is set git ignores .git/hooks/, so chain
+# manually — same arrangement as the pre-commit wrapper).
+#
+# `|| true` is load-bearing under `set -e`: an assignment from a command substitution
+# carries the command's exit status, so without it a `git rev-parse` that fails — no repo,
+# or git not on the hook's PATH — kills this script at 128 with nothing printed, and git
+# reports only that the hook refused the commit.
+GIT_DIR_PATH="$(git rev-parse --git-dir 2>/dev/null || true)"
+if [ -n "$GIT_DIR_PATH" ] && [ -x "$GIT_DIR_PATH/hooks/commit-msg" ]; then
+  "$GIT_DIR_PATH/hooks/commit-msg" "$MSG_FILE"
+  exit $?
+fi
+if [ -x .git/hooks/commit-msg.local ]; then
+  .git/hooks/commit-msg.local "$MSG_FILE"
+  exit $?
 fi
 
 exit 0

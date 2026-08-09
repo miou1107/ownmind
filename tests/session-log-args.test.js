@@ -120,7 +120,7 @@ describe('bucketLabel — an absent tool or model is named, not coerced', () => 
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('the declared contract matches what the code does', () => {
-  // v1.26.104 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
+  // v1.26.106 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
   // '/C:/Users/...'; node then resolves that against the current drive root and looks for
   // 'C:C:Users...'. This file threw MODULE_NOT_FOUND / ENOENT on every Windows run while
   // passing on macOS, where the pathname happens to be a valid path.

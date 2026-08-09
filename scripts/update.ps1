@@ -210,6 +210,35 @@ if (Test-Path $ClaudeDir) {
   Write-Host "[ OK ] Hook scripts synced"
 }
 
+# --- 2a2. Reinstall the git hook wrappers (v1.26.104) ---
+#
+# Same defect as the *.js sync above, one directory over, and this script never touched
+# these at all. The auto-update path is `git pull` → `npm install` → this script, never
+# install.ps1. `~/.ownmind` IS the checkout, so a pull replaces the hook logic under
+# `hooks/` immediately, while `git-hooks/` keeps whatever install.ps1 copied on the day it
+# last ran. When a release moves work from one wrapper to another, the user ends up with
+# the new half and not the old one, and nothing reports it.
+$GitHookDir = Join-Path $HOME ".ownmind\git-hooks"
+if (Test-Path $GitHookDir) {
+  $refreshed = 0
+  foreach ($ghName in @("pre-commit", "post-commit", "commit-msg")) {
+    $ghDest = Join-Path $GitHookDir $ghName
+    $ghSrc = Join-Path $OwnMindDir "hooks\ownmind-git-$ghName"
+    # Only refresh a hook that is already installed — creating one here would switch on
+    # OwnMind's git hooks for somebody who never asked install.ps1 for them.
+    if (-not (Test-Path $ghDest)) { continue }
+    if (-not (Test-Path $ghSrc)) { continue }
+    # LF, always: these run under sh.exe, and CRLF makes the shebang line unusable.
+    $srcText = [System.IO.File]::ReadAllText($ghSrc).Replace("`r`n", "`n")
+    $destText = [System.IO.File]::ReadAllText($ghDest)
+    if ($srcText -ne $destText) {
+      [System.IO.File]::WriteAllText($ghDest, $srcText)
+      $refreshed++
+    }
+  }
+  if ($refreshed -gt 0) { Write-Host "[ OK ] Refreshed $refreshed git hook wrapper(s)" }
+}
+
 # --- 2b. usage scanner ---
 $ScannerJs = Join-Path $OwnMindDir "hooks\ownmind-usage-scanner.js"
 if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }
@@ -267,7 +296,7 @@ if (Test-Path $ClaudeSettings) {
     // ~/.ownmind/.no-session-hook opt-out). This script used to make that decision inline,
     // one divergent copy per installer, and the daily one always won.
 
-    // v1.26.103 — PreToolUse is handled by ensure-pretooluse-hooks.cjs in section 3.3b below.
+    // v1.26.105 — PreToolUse is handled by ensure-pretooluse-hooks.cjs in section 3.3b below.
     // What used to be here was the oldest copy of that logic: one matcher, a presence check
     // across the whole array, and a bash command written onto Windows machines where
     // ~/.claude/hooks is not reachable through a WSL relay. Three separate reasons it could
@@ -296,7 +325,7 @@ if (Test-Path $ClaudeSettings) {
   Remove-Item $tmpScript -ErrorAction SilentlyContinue
 }
 
-# --- 3.3b PreToolUse iron-rule hooks (v1.26.103, delegated to the shared implementation) ---
+# --- 3.3b PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 # No --bash: Windows always runs the node hook out of the checkout (see install.ps1's v1.26.80
 # note — System32\bash.exe is a WSL launcher, and ~ inside it is not this machine's home).
 $EnsurePreHook = Join-Path $OwnMindDir "scripts\install-helpers\ensure-pretooluse-hooks.cjs"

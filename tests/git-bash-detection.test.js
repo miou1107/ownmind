@@ -193,7 +193,7 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
   function stubBash(dir, name, lines, exitCode) {
     if (process.platform === 'win32') {
       const file = path.join(dir, `${name}.cmd`);
-      // v1.26.104 — `echo` arguments must be escaped for cmd.exe. The real `bash --version`
+      // v1.26.106 — `echo` arguments must be escaped for cmd.exe. The real `bash --version`
       // third line ends `<http://gnu.org/licenses/gpl.html>`, and cmd reads that `<` as input
       // redirection: it tries to open a file named `http://...`, writes "The syntax of the
       // command is incorrect" to stderr, and PowerShell surfaces that as a NativeCommandError.
@@ -233,7 +233,7 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
         `. ${psLiteral(path.join(repoRoot, HELPER))}`,
         ...paths.map((p) => `if (Test-IsGitBash -BashPath ${psLiteral(p)}) { 'true' } else { 'false' }`),
       ].join('\n');
-      // v1.26.104 — -ExecutionPolicy Bypass is required, not tidiness. A Windows client whose
+      // v1.26.106 — -ExecutionPolicy Bypass is required, not tidiness. A Windows client whose
       // policy has never been set is Restricted, so dot-sourcing find-git-bash.ps1 fails with
       // UnauthorizedAccess and this suite fails on a healthy machine. Measured on Windows 10
       // with every Get-ExecutionPolicy scope Undefined. macOS skips the whole describe for
