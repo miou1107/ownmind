@@ -10,6 +10,7 @@ import {
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { pathToFileURL } from 'url';
 import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
@@ -34,6 +35,13 @@ import { captureClientOriginContext, injectOriginSection, validateOriginContext 
 import { enrichErrorDetails, errorAliasFields } from './lib/enrich-error.js';
 import { tryAcquireUpdateLock, releaseUpdateLock } from '../shared/update-lock.js';
 import { logMcpCallSafe } from './lib/log-mcp-call.js';
+// v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
+// only accidentally one. On Windows it starts with a drive letter, which the ESM loader reads
+// as a URL scheme and rejects: ERR_UNSUPPORTED_ESM_URL_SCHEME. On macOS and Linux the same
+// string begins with `/` and resolves, which is why this only ever failed on Windows — and
+// failed into a catch that hid it.
+const importFile = (p) => import(pathToFileURL(p).href);
+
 
 // --- Verifiable rules cache (in-memory, loaded at init) ---
 let cachedVerifiableRules = [];
@@ -55,7 +63,7 @@ let evaluateConditions = null;
 async function getEvaluateConditions() {
   if (evaluateConditions) return evaluateConditions;
   try {
-    const mod = await import(path.join(os.homedir(), '.ownmind/shared/verification.js'));
+    const mod = await importFile(path.join(os.homedir(), '.ownmind/shared/verification.js'));
     evaluateConditions = mod.evaluateConditions;
     return evaluateConditions;
   } catch {

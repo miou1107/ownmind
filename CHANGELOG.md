@@ -1,5 +1,53 @@
 # OwnMind 更新紀錄
 
+## v1.26.108 — Windows 上，commit 前的密鑰掃描一直是關著的
+
+### 一行程式，十個地方，只在 Windows 上壞
+
+```js
+const verificationPath = path.join(HOME, '.ownmind', 'shared', 'verification.js');
+const mod = await import(verificationPath);
+```
+
+`await import()` 收的是**模組識別碼**，而絕對路徑只是「剛好長得像」。macOS 與 Linux 上它是 `/Users/x/.ownmind/shared/verification.js`，開頭的 `/` 讓它解析得過去。同一個檔案在 Windows 上是 `C:\Users\x\.ownmind\shared\verification.js`，載入器把開頭的 `C:` 讀成**網址的協定名稱**，直接丟 `ERR_UNSUPPORTED_ESM_URL_SCHEME`。
+
+實測（Windows 11 / node 24）：
+
+```
+bare import   -> FAILED: ERR_UNSUPPORTED_ESM_URL_SCHEME
+pathToFileURL -> OK
+```
+
+### 而十個地方全都把它 catch 起來繼續走
+
+| 檔案 | 失敗之後做什麼 |
+|---|---|
+| `ownmind-git-pre-commit.js` | 印一行警告，`exit 0` |
+| `ownmind-git-commit-msg.js` | **什麼都不印**，`exit 0` |
+| `ownmind-git-post-commit.js` | 印一行警告，`exit 0` |
+| `ownmind-iron-rule-check.js` | 靜靜跳過規則評估 |
+| `ownmind-verify-trigger.js` | 回報 `{ pass: true }` |
+| `mcp/index.js` | 回傳 `null`，呼叫端當成「沒有規則」 |
+
+所以 Windows 使用者的 commit 前密鑰掃描、訊息規則、post-commit 檢查、鐵律條件評估，**全部是關的，而且沒有任何一個地方說得夠大聲**。
+
+它能藏這麼久，是因為寫死的 `Co-Authored-By` 比對不走這個引擎——那道關卡照樣會擋，所以掛勾看起來是活的。「還會擋東西」跟「規則引擎在跑」是兩件事。
+
+十個地方都改成 `pathToFileURL(p).href`。全 repo 原本只有 `self-check.cjs` 一支寫對。
+
+### 怎麼發現的
+
+v1.26.107 剛開起來的 Windows CI。`pre-commit-secret` 一口氣 20 個紅，錯誤訊息就是那句 `Validator engine unavailable — skipping pre-commit check`。在那之前這些測試在 macOS 上全綠，在 Windows 上沒有人跑。
+
+第一輪只找到 8 個地方——那是照著手上的清單改。改完再 grep 一次 `await import(`，又跳出兩個：`ownmind-verify-trigger.js` 跟 `mcp/index.js`。清單是記憶，grep 是證據。
+
+### 新增 `tests/esm-import-file-urls.test.js`
+
+兩個案例，**都不需要 Windows**：
+
+- 掃描 `hooks/ shared/ src/ mcp/ scripts/ client/src` 的每一個 `import()` 呼叫，參數不是字串字面值就必須經過 `pathToFileURL`。這個缺陷是「被傳進去的那個字串」的性質，不是「讀它的那台機器」的性質，所以在寫程式的 Mac 上就驗得到。
+- 正面驗證 `pathToFileURL()` 產出的 `file://` 真的匯入得起來——只有規則沒有實證，規則可能對在錯的地方。
+
 ## v1.26.107 — 這個 repo 開始有 CI 了，而它第一天就找出三個從來沒跑過的測試
 
 ### 在這之前 `.github/` 底下只有 `CODEOWNERS`
