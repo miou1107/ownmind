@@ -368,13 +368,19 @@ if (Test-Path $verifyScript) {
     # which on a machine that has Git Bash is simply false, and it is the only output the
     # skipped verify produces. Get-GitBashSearchReport comes from the helper, so fall back
     # to a plain sentence when the helper itself is the thing that is missing.
-    $reason = if (Get-Command Get-GitBashSearchReport -ErrorAction SilentlyContinue) {
+    #
+    # Folded through ConvertTo-OneLine like every other reported reason. The text is
+    # assembled from exception messages and `bash --version` output, one per rejected
+    # candidate: a newline in it makes the report invalid JSON and the whole thing is
+    # dropped on arrival, and an unbounded length is the other way to lose it.
+    $searchReport = if (Get-Command Get-GitBashSearchReport -ErrorAction SilentlyContinue) {
       Get-GitBashSearchReport
     } else {
       "find-git-bash.ps1 helper not present at $findGitBashHelper"
     }
-    Report-Error -Kind "upgrade_git_bash_not_usable" -Detail "verify skipped; $reason" -ContextFile $LogFile
-    Step "verify_local" "No usable Git Bash, skipping verify (upgrade continues) - $reason"
+    $searchSaid = ConvertTo-OneLine $searchReport
+    Report-Error -Kind "upgrade_git_bash_not_usable" -Detail "verify skipped; $searchSaid" -ContextFile $LogFile
+    Step "verify_local" "No usable Git Bash, skipping verify (upgrade continues) - $searchSaid"
   } else {
     Step "verify_local" "Verifying local components"
     & $bashExe $verifyScript --local 2>&1 | Out-File -Append $LogFile -Encoding utf8
