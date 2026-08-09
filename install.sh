@@ -249,6 +249,11 @@ if [ "$IS_WINDOWS" = true ]; then
   MCP_ENTRY=$(node -e "
     console.log(JSON.stringify({ command: 'cmd.exe', args: ['/c', process.argv[1]] }));
   " "$START_CMD_WIN")
+  # v1.26.112 — the same launch command as a flag list for register-mcp-cli.cjs, kept
+  # beside the JSON rather than parsed back out of it. JSON cannot be handed through a
+  # shell to a native executable intact, which is the whole reason that CLI exists.
+  MCP_COMMAND='cmd.exe'
+  MCP_CLI_ARGS=(--arg '/c' --arg "$START_CMD_WIN")
 else
   # Unreachable on Windows (that is the branch above), but routed through to_win_path all
   # the same: it is identity off Windows, and one uniform rule is cheaper to hold than an
@@ -257,13 +262,15 @@ else
   MCP_ENTRY=$(node -e "
     console.log(JSON.stringify({ command: 'node', args: [process.argv[1]] }));
   " "$MCP_ENTRY_PATH_WIN")
+  MCP_COMMAND='node'
+  MCP_CLI_ARGS=(--arg "$MCP_ENTRY_PATH_WIN")
 fi
 
 # --- 2. Claude Code MCP 設定 ---
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
-REGISTER_MCP="$OWNMIND_DIR/scripts/install-helpers/register-mcp.cjs"
-REGISTER_MCP_WIN="$(to_win_path "$REGISTER_MCP")"
+REGISTER_MCP_CLI="$OWNMIND_DIR/scripts/install-helpers/register-mcp-cli.cjs"
+REGISTER_MCP_CLI_WIN="$(to_win_path "$REGISTER_MCP_CLI")"
 # v1.26.112 — write both files, and the one that matters is `~/.claude.json`.
 #
 # Until now this block wrote `~/.claude/settings.json` and stopped. Claude Code reads that
@@ -284,22 +291,27 @@ echo "[INFO] Configuring Claude Code MCP"
 # as the one this release fixes: two files, two places, nobody comparing them. Measured
 # 2026-08-09 while testing this very block with `HOME` overridden: the helper ignored it
 # and wrote to the real profile.
-MCP_REG_OUT=$(node -e '
-  const { registerMcp } = require(process.argv[1]);
-  const r = registerMcp({
-    entry: JSON.parse(process.argv[2]),
-    apiUrl: process.argv[3],
-    apiKey: process.argv[4],
-    tool: "claude-code",
-    home: process.argv[5],
-  });
-  for (const p of r.problems) console.log("PROBLEM " + p);
-  console.log(r.verified ? "VERIFIED " + r.launchFile : "UNVERIFIED");
-' "$REGISTER_MCP_WIN" "$MCP_ENTRY" "$API_URL" "$API_KEY" "$(to_win_path "$HOME")")
-echo "$MCP_REG_OUT" | sed -n 's/^PROBLEM /       [WARN] /p'
+# No JavaScript is embedded here and nothing containing a quote is passed. `node -e` does
+# not survive PowerShell 5.1 (it strips the quotes, so the script arrives mangled and runs
+# as nonsense), and neither does a JSON argument — both were tried, measured 2026-08-09.
+# A real file plus one argv element per value is the only shape with no quoting layer.
+#
+# MSYS_NO_PATHCONV=1 because Git Bash rewrites anything that looks like a POSIX path before
+# handing it to a native .exe, and `/c` looks exactly like one: measured, the cmd.exe flag
+# arrived as `C:/` and would have been written into the launch command that way, leaving
+# Windows users with an entry that cannot start. Every path is already Win32 by this point.
+MCP_REG_OUT=$(MSYS_NO_PATHCONV=1 node "$REGISTER_MCP_CLI_WIN" \
+  --command "$MCP_COMMAND" "${MCP_CLI_ARGS[@]}" \
+  --url "$API_URL" --key "$API_KEY" --home "$(to_win_path "$HOME")") || MCP_REG_OUT=""
+printf '%s\n' "$MCP_REG_OUT" | sed -n 's/^PROBLEM /       [WARN] /p'
 # IR-001: an installer saying it configured something is not evidence that it did. Report
 # what was read back from disk, not what we intended to write.
-if echo "$MCP_REG_OUT" | grep -q '^VERIFIED '; then
+#
+# `|| MCP_REG_OUT=""` above matters: this script runs under `set -eE` with an ERR trap that
+# reports a failed install. The CLI exits 0 even when it cannot register, so this step can
+# never abort an otherwise good installation — but a missing node would still exit non-zero,
+# and "MCP not registered" must not be reported to the user as "your install failed".
+if printf '%s\n' "$MCP_REG_OUT" | grep -qx VERIFIED; then
   echo "       MCP registered in ~/.claude.json (verified by reading it back)"
 else
   echo "       [WARN] MCP could NOT be registered in ~/.claude.json —"

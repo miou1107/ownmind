@@ -327,24 +327,22 @@ $McpConfig = @{
 # Delegated to the same Node helper install.sh uses, so the two installers cannot drift.
 # The merge, atomic write, read-back and home-directory validation all live there.
 Write-Host "[INFO] Configuring Claude Code MCP"
-$RegisterMcp = Join-Path $OwnmindDir "scripts\install-helpers\register-mcp.cjs"
+$RegisterMcp = Join-Path $OwnmindDir "scripts/install-helpers/register-mcp-cli.cjs"
 if (-not (Test-Path $RegisterMcp)) {
   Write-Host "       [WARN] register-mcp.cjs missing - MCP was not registered"
 } else {
-  $McpEntryJson = ($McpConfig | ConvertTo-Json -Depth 10 -Compress)
-  $regScript = @'
-const { registerMcp } = require(process.argv[1]);
-const r = registerMcp({
-  entry: JSON.parse(process.argv[2]),
-  apiUrl: process.argv[3],
-  apiKey: process.argv[4],
-  tool: "claude-code",
-  home: process.argv[5],
-});
-for (const p of r.problems) console.log("PROBLEM " + p);
-console.log(r.verified ? "VERIFIED" : "UNVERIFIED");
-'@
-  $regOut = & node -e $regScript $RegisterMcp $McpEntryJson $ApiUrl $ApiKey $HOME 2>&1
+  # No embedded JavaScript. PowerShell 5.1 strips the double quotes when handing an
+  # argument to a native executable, so a script passed via `node -e` arrives mangled -
+  # measured 2026-08-09, a three-line probe printed NaN three times because
+  # console.log("x=" + argv[1]) became console.log(x=+argv[1]). Same family as v1.26.94.
+  # A real file plus argv has no quoting layer to get wrong.
+  # Every value its own argument. Nothing containing a quote is handed to a native
+  # executable: PowerShell 5.1 strips those, which is how the first two attempts failed.
+  $RegisterCli = Join-Path $OwnmindDir "scripts/install-helpers/register-mcp-cli.cjs"
+  $cliArgs = @($RegisterCli, "--command", $McpConfig.command)
+  foreach ($a in $McpConfig.args) { $cliArgs += @("--arg", $a) }
+  $cliArgs += @("--url", $ApiUrl, "--key", $ApiKey, "--home", $HOME)
+  $regOut = & node $cliArgs 2>&1
   foreach ($line in $regOut) {
     if ("$line" -like "PROBLEM *") { Write-Host ("       [WARN] " + ("$line" -replace '^PROBLEM ', '')) }
   }
