@@ -21,9 +21,13 @@ function withTmp(fn) {
 // Inline node script that exercises the helper. Prints stdout JSON if loaded,
 // otherwise the helper itself prints a stderr warning and process.exit(0).
 function runHelper(filePath, fallback = '{}') {
+  // Both paths go through JSON.stringify, not just one. HELPER was interpolated raw, so on
+  // Windows its backslashes were read as JavaScript escapes — `C:\Users\…` reached require()
+  // as `C:Users…` and it could not find a file that had been there all along. filePath was
+  // already escaped by hand; the asymmetry is what let the other one look fine.
   const code = `
-    const { loadOrSkip } = require('${HELPER}');
-    const result = loadOrSkip('${filePath.replace(/\\/g, '\\\\')}', ${fallback});
+    const { loadOrSkip } = require(${JSON.stringify(HELPER)});
+    const result = loadOrSkip(${JSON.stringify(filePath)}, ${fallback});
     process.stdout.write(JSON.stringify(result));
   `;
   return spawnSync('node', ['-e', code], { encoding: 'utf8' });
@@ -70,13 +74,15 @@ describe('loadOrSkip — settings.json safe loader', () => {
       const original = 'corrupted but has user data: { "secret": "value"';
       fs.writeFileSync(p, original);
       // Run a "naive" update flow: load → would write back if we got past load
+      // Same reason as runHelper above: a raw Windows path inside a JS string loses its
+      // backslashes to escape processing.
       const code = `
         const fs = require('fs');
-        const { loadOrSkip } = require('${HELPER}');
-        const s = loadOrSkip('${p}', {});
+        const { loadOrSkip } = require(${JSON.stringify(HELPER)});
+        const s = loadOrSkip(${JSON.stringify(p)}, {});
         // If loadOrSkip didn't exit, this code runs and would clobber the file
         s.injected = true;
-        fs.writeFileSync('${p}', JSON.stringify(s));
+        fs.writeFileSync(${JSON.stringify(p)}, JSON.stringify(s));
       `;
       const r = spawnSync('node', ['-e', code], { encoding: 'utf8' });
       assert.equal(r.status, 0);

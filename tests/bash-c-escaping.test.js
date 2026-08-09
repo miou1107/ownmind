@@ -94,6 +94,34 @@ describe('v1.26.109 — bash -c loses backslashes on Windows', () => {
     }
   });
 
+  it('no test names an interpreter by absolute POSIX path', () => {
+    // v1.26.110 — `spawn('/bin/bash', …)` is resolved by node through Win32 rules, where
+    // /bin/bash is not a file, so every case in run-scanner-wrapper died with ENOENT before
+    // the script under test ran. `bash` is found from PATH on all three platforms.
+    //
+    // Executing a shell script directly is the same mistake with the interpreter left
+    // implicit: `#!` is a kernel feature and Windows has none, so CreateProcess is handed a
+    // text file. That one cannot be checked from the source alone — the path is usually a
+    // variable — so it is written down here rather than pretended to be guarded.
+    const offenders = [];
+    for (const f of fs.readdirSync(testsDir).filter((n) => n.endsWith('.test.js'))) {
+      const src = fs.readFileSync(path.join(testsDir, f), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (/^\s*(\/\/|\*)/.test(line)) return;
+        // Only the first argument of a spawn, which is the one node has to resolve. The same
+        // string as an expected value or a stub's return is data about the platform under
+        // test, not a process this suite is trying to start.
+        if (/(?:spawnSync|spawn|execFileSync|execFile)\(\s*['"]\/(?:usr\/)?bin\/(?:bash|sh|env)['"]/.test(line)) {
+          offenders.push(`${f}:${i + 1}  ${line.trim()}`);
+        }
+      });
+    }
+    assert.deepEqual(
+      offenders, [],
+      `name the interpreter without a path — 'bash', not '/bin/bash':\n  ${offenders.join('\n  ')}`,
+    );
+  });
+
   it('toBashPath leaves a POSIX path alone and converts a Windows one', () => {
     assert.equal(toBashPath('/tmp/x/y'), '/tmp/x/y');
     assert.equal(toBashPath('C:\\Users\\Vin\\Temp'), '/c/Users/Vin/Temp');
