@@ -109,5 +109,14 @@ it. `2>/dev/null` covers stderr only.
 - GitHub's Windows runner ships Git Bash and a looser execution policy than an ordinary
   client, so "the user's own security settings block the script" is not observable here. That
   still depends on the self-check reports.
+- Fixing `lock_age_seconds` makes the stale-lock reclaim path reachable on Linux for the
+  first time, and it brings a pre-existing race with it. `a leaked reclaim marker does not let
+  two shell hooks into the critical section` fails intermittently under CPU pressure —
+  measured 1 in 40 runs in a one-CPU container, and once on ubuntu × node 24 in CI. The
+  protocol's own documentation states there is no atomic fix for delete-and-recreate and that
+  the implementation only bounds the window; the readback that catches a displaced holder is a
+  point-in-time check, so a process still inside the reclaim section can remove a lock another
+  process has already validated. macOS has always taken this path and passes, so the race is
+  not new — only newly visible. Left as its own piece of work rather than redesigned here.
 - The Windows leg does not gate. Until its 109 pre-existing failures are cleared, a Windows
   regression can merge.
