@@ -1,5 +1,36 @@
 # OwnMind 檔案結構
 
+## v1.26.114 修改（測試卡住的時候，它什麼都不說）
+
+新增檔：
+```
+tests/hung-test-is-named.test.js                — 3 條。兩條盯著設定：每個會跑 node --test
+                                                   的 npm 腳本都要帶時限（腳本清單是長出來
+                                                   的、不是手寫的），而且值要落在「不會誤殺
+                                                   正常跑的測試」跟「趕得及在 CI job 自己的
+                                                   時限之前開火」之間 —— 上限是從 workflow
+                                                   的 timeout-minutes 讀出來的，不是再抄一份。
+                                                   第三條是陽性對照：真的做一個會卡住的測試檔
+                                                   丟進去跑，要求時限把它結束掉並且回報名字。
+                                                   對照會先量「這個 node 版本上哪一種形狀
+                                                   真的會卡」，一種都不卡就直接紅，因為那時
+                                                   它什麼都沒量到。反向驗證：同一個檔案不帶
+                                                   時限跑，時間到了必須還活著。探針用 detached
+                                                   起、整個 process group 一起殺，否則被殺的
+                                                   只有執行器、真正跑檔案的孫程序會活下來
+openspec/changes/v1.26.114-a-hung-run-says-nothing/
+                                                — proposal / spec / tasks
+```
+
+修改檔：
+```
+package.json                                    — test 跟 test:watch 都加
+                                                   --test-timeout=300000；
+                                                   1.26.113 → 1.26.114
+.github/workflows/test.yml                      — 在 npm test 那一步旁邊寫下為什麼要帶時限，
+                                                   免得下一個人把它當雜訊刪掉
+```
+
 ## v1.26.113 修改（那個假的 stat 測不到四件事，而失敗還是沒有聲音）
 
 修改檔：
@@ -23,6 +54,8 @@ tests/update-lock-mutual-exclusion.test.js      — 補 4 條 v1.26.111 那兩�
                                                    都不存在的 .reclaim 噴
 package.json                                    — 1.26.112 → 1.26.113（排在 #77 之後，
                                                    兩個 PR 原本都編 v1.26.112、撞號）
+```
+
 ## v1.26.112 修改（MCP server 從來沒被註冊在 Claude Code 會讀的那個檔案）
 
 新增檔：
@@ -63,7 +96,7 @@ tests/mcp-registered-where-claude-reads.test.js — 16 條。含反向對照（�
 ```
 install.sh / install.ps1                        — Claude Code MCP 區塊改成呼叫共用 helper，
                                                    並且回報「讀回來確認過」而不是回報
-                                                   「我寫了」（IR-001）
+                                                   「我寫了」
 scripts/update.sh / scripts/update.ps1          — 新增 3.0b 節。沒有人會重跑安裝腳本，
                                                    自動更新走 git pull → npm install →
                                                    update.*，只修安裝腳本等於只有新使用者
