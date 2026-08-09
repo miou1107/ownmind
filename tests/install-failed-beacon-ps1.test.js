@@ -69,7 +69,9 @@ describe('v1.17.85 — interactive-upgrade.ps1 Fail observation (runs when pwsh 
     const scriptPath = path.join(tmpDir, 'test.ps1');
     fs.writeFileSync(scriptPath, fakeScript);
 
-    const r = spawnSync(PWSH, ['-NoProfile', '-File', scriptPath], { encoding: 'utf8' });
+    // -ExecutionPolicy Bypass: a Windows client that never set a policy is Restricted, and
+    // this runs a generated .ps1 from disk. Every shipped caller passes it.
+    const r = spawnSync(PWSH, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], { encoding: 'utf8' });
     assert.equal(r.status, 1, 'Fail throw → catch exit 1');
 
     const record = fs.readFileSync(recordFile, 'utf8');
