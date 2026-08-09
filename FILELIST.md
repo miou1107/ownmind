@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.112 修改（那個假的 stat 測不到四件事，而失敗還是沒有聲音）
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — lock_age_seconds 兩種寫法都答不出來時，
+                                                   改成往 stderr 講清楚是哪個檔案、兩種
+                                                   寫法都試過了，再 return 非零。原本只是
+                                                   默默回非零 —— 而「失敗沒有聲音」正是
+                                                   這個缺陷能活九個版本的原因。呼叫端行為
+                                                   不變、一樣 fail-closed。方言處理的邏輯
+                                                   一個字都沒動
+tests/update-lock-mutual-exclusion.test.js      — 補 4 條 v1.26.111 那兩條射程外的案例：
+                                                   ①不帶 stub、直接問這台機器真正的 stat
+                                                   （那正是 Linux 上答「不能」而 macOS 上
+                                                   全綠的那題）；②走完整條路，20 分鐘前的
+                                                   lock 必須真的被 acquire_update_lock
+                                                   接管，而不只是 lock_age_seconds 回對；
+                                                   ③兩種寫法都壞時 stderr 要講原因；
+                                                   ④檔案不存在時兩個 stream 都要安靜，
+                                                   否則 ③ 的診斷會對著幾乎每次 session
+                                                   都不存在的 .reclaim 噴
+package.json                                    — 1.26.111 → 1.26.112
+```
+
 ## v1.26.111 修改（stat -f 在 Linux 上不是安靜地失敗）
 
 修改檔：
