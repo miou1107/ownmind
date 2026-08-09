@@ -481,10 +481,15 @@ describe('v1.26.92 — an unwritable state directory says so', () => {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     const url = `http://127.0.0.1:${server.address().port}`;
 
+    // v1.26.120 — the unwritable directory used to be made with `chmod 0o500`, which is a
+    // no-op on NTFS (measured in v1.26.118: a file set to 755 reads back as 666). So on
+    // Windows the write succeeded, no degradation happened, and the test failed for the one
+    // reason it was not testing. A regular file standing where the directory belongs cannot
+    // be written through on any platform — ENOTDIR on POSIX, ENOENT on Windows, both of
+    // them "this cannot be written", which is the whole question here.
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-rostate-'));
+    fs.writeFileSync(path.join(dir, 'nope'), 'not a directory');
     const statePath = path.join(dir, 'nope', 'edit-reminder.json');
-    fs.mkdirSync(path.join(dir, 'nope'));
-    fs.chmodSync(path.join(dir, 'nope'), 0o500);
     const saved = process.env.__OWNMIND_EDIT_REMINDER_PATH;
     process.env.__OWNMIND_EDIT_REMINDER_PATH = statePath;
     try {
