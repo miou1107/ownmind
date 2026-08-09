@@ -208,11 +208,38 @@ describe('v1.26.105 — install-artifacts checks the registered command, not jus
     assert.ok(missingIds().includes('iron_rule_hook'), 'the registered path is the one that has to exist');
   });
 
+  it('the measured machine: the registered file is there, and still cannot start', () => {
+    // 2026-08-09, exactly. The two copies are byte-identical, so "does the registered file
+    // exist" answers yes — and the hook still died on every Bash call, because the copy under
+    // ~/.claude/hooks resolves `../shared/helpers.js` to ~/.claude/shared/, a directory no
+    // installer creates. Existing is not starting.
+    makeHome(null);
+    const registered = path.join(home, '.claude', 'hooks', 'ownmind-iron-rule-check.js');
+    fs.writeFileSync(
+      path.join(home, '.claude', 'settings.json'),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { matcher: 'Bash', hooks: [{ type: 'command', command: `node "${registered.replace(/\\/g, '/')}"` }] },
+          ],
+        },
+      })
+    );
+    const ids = missingIds();
+    assert.ok(!ids.includes('iron_rule_hook'), 'the file itself is present — that was never the question');
+    assert.ok(
+      ids.includes('iron_rule_hook_deps'),
+      'the import the registered hook makes on its first line has to resolve, or it never runs'
+    );
+  });
+
   it('a command naming the file that is actually there passes', () => {
     makeHome(null);
     const target = path.join(ownmindDir, 'hooks', 'ownmind-iron-rule-check.js');
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, '// real');
+    fs.mkdirSync(path.join(ownmindDir, 'shared'), { recursive: true });
+    fs.writeFileSync(path.join(ownmindDir, 'shared', 'helpers.js'), '// real');
     fs.writeFileSync(
       path.join(home, '.claude', 'settings.json'),
       JSON.stringify({
@@ -241,7 +268,18 @@ describe('v1.26.105 — install-artifacts checks the registered command, not jus
 describe('v1.26.105 — the installers delegate instead of keeping their own copy', () => {
   const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 
-  for (const script of ['install.ps1', 'install.sh', 'scripts/update.ps1', 'scripts/update.sh']) {
+  // One pattern per language. `PreToolUse.push(` is what the node blocks inside the shell
+  // scripts used; PowerShell's inline copy never contained it, it used `PreToolUse +=`. A
+  // single JS-shaped pattern therefore passed install.ps1 unchanged — vacuously, in the one
+  // file this change exists because CI cannot reach.
+  const INLINE_PATTERNS = {
+    'install.ps1': /PreToolUse\s*\+=/,
+    'install.sh': /PreToolUse\.push\(/,
+    'scripts/update.ps1': /PreToolUse\s*\+=/,
+    'scripts/update.sh': /PreToolUse\.push\(/,
+  };
+
+  for (const script of Object.keys(INLINE_PATTERNS)) {
     it(`${script} calls ensure-pretooluse-hooks.cjs and holds no inline copy`, () => {
       const content = fs.readFileSync(path.join(repoRoot, script), 'utf8');
       assert.ok(
@@ -250,8 +288,36 @@ describe('v1.26.105 — the installers delegate instead of keeping their own cop
       );
       // The inline copies were the bug: four of them, only one reachable from CI.
       assert.ok(
-        !/PreToolUse\.push\(/.test(content),
-        `${script} still pushes a PreToolUse entry inline — that copy will drift again`
+        !INLINE_PATTERNS[script].test(content),
+        `${script} still registers a PreToolUse entry inline — that copy will drift again`
+      );
+    });
+  }
+
+  // The shell scripts run under `set -e`. A bare `VAR=$(cmd)` carries cmd's exit status, so
+  // one non-zero exit from the helper — an unreadable settings.json, a locked file on
+  // Windows — takes the whole installer down at that line, and with `2>&1` captured into a
+  // variable that is never echoed on the failure path, it takes it down silently. install.sh
+  // already carries that lesson in a comment: "`set -e` plus a discarded stderr is how a
+  // fatal error produced no output at all for four months."
+  for (const script of ['install.sh', 'scripts/update.sh']) {
+    it(`${script} does not let a helper failure abort the run under set -e`, () => {
+      const content = fs.readFileSync(path.join(repoRoot, script), 'utf8');
+      // The invocation names the helper through a variable, so find that variable first
+      // rather than grepping for the filename and matching nothing.
+      const holder = content.match(
+        /^\s*([A-Za-z_][A-Za-z0-9_]*)="[^"]*ensure-pretooluse-hooks\.cjs"/m
+      );
+      assert.ok(holder, `${script} no longer assigns the helper path to a variable`);
+      const bare = content
+        .split('\n')
+        .filter((line) => line.includes(`$${holder[1]}`))
+        .filter((line) => /^\s*[A-Za-z_][A-Za-z0-9_]*=\$\(/.test(line));
+      assert.deepEqual(
+        bare,
+        [],
+        `${script} invokes the helper as a bare command substitution; wrap it in ` +
+          `\`if var=$(...); then\` so a non-zero exit is reported rather than fatal`
       );
     });
   }

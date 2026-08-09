@@ -133,6 +133,32 @@ const ARTIFACTS = [
     },
   },
   {
+    id: 'iron_rule_hook_deps',
+    describe: 'the module the registered PreToolUse hook imports on its first line',
+    kind: 'file',
+    // v1.26.105 — existing is not starting. On the machine measured on 2026-08-09 the
+    // registered file was present: the two copies were byte-identical, so asking "is the
+    // registered path there" answered yes while the hook died on every Bash call. What was
+    // absent was `../shared/helpers.js` relative to it — ~/.claude/shared/, a directory no
+    // installer creates. An ESM import that cannot resolve kills node before the first byte
+    // of the payload runs, so this is the difference between registered and running.
+    //
+    // Only for the .js hook, and only when a command is registered: the .sh hook imports
+    // nothing, and with nothing registered there is no path to judge (see iron_rule_hook's
+    // fallback).
+    applies: (ctx) => {
+      const registered = registeredIronRuleTarget(ctx);
+      return Boolean(registered) && registered.endsWith('.js');
+    },
+    // Never throws when nothing is registered: `locate` is called ahead of `applies` by
+    // anything that enumerates the artifacts, so it has to return a path either way.
+    locate: (ctx) => {
+      const registered = registeredIronRuleTarget(ctx);
+      const base = registered ? path.dirname(registered) : claudeHooks(ctx);
+      return [path.join(base, '..', 'shared', 'helpers.js')];
+    },
+  },
+  {
     id: 'hook_lib',
     describe: 'hooks/lib next to the bash SessionStart hook (it cannot render without it)',
     kind: 'file',
