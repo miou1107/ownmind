@@ -31,9 +31,10 @@
       name appeared in a source comment, which `no-hardcoded-names-in-output`
       forbids in product code. Reworded.
 - [x] 9. CHANGELOG, FILELIST, README + zh-TW + ja, version bump to 1.26.100.
-      Not 1.26.99: PR #62 already claims that number and bumps package.json to
-      it. Two changes sharing a version would make it impossible to tell from
-      the version alone which fix a machine has.
+      Not 1.26.99: PR #62 claimed that number at the time and bumped
+      package.json to it. Two changes sharing a version would make it impossible
+      to tell from the version alone which fix a machine has. (#62 merged after
+      this one and was renumbered to 1.26.102 on its way in.)
 - [x] 10. Code review, then act on what comes back. Two independent reviews ran.
       Five findings were reproduced before being acted on:
 

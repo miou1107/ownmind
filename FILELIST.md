@@ -1,5 +1,56 @@
 # OwnMind 檔案結構
 
+## v1.26.102 修改（採集程式停掉，現在會有人被通知）
+
+新增檔：
+```
+db/023_collector_silence_alert_state.sql        — 哪些機器已經通知過。鍵是 (user_id, machine)
+                                                   不是 tool：一個排程死掉會同時凍住四個工具，
+                                                   照 tool 記會把一台壞機器通知四次。broadcast_id
+                                                   是為了修好之後把通知提早關掉
+src/lib/broadcast-envelope.js                   — 從 install-check-alert-message.js 抽出來的
+                                                   投遞信封（前 5 行、400 字、超出要留下「另有
+                                                   N 項」）。第二個呼叫端出現才抽，不是預先抽
+src/lib/collector-silence.js                    — 判斷哪台機器的採集程式現在是壞的。純函式、
+                                                   時鐘用參數傳。訊號是「同一台機器內部對不
+                                                   起來」，不是「幾天沒消息」，後者剛好會漏掉
+                                                   真正發生過的那一種。刻意不判斷「哪些是新
+                                                   的」——那題由 SQL 回答，因為兩個同時跑的
+                                                   排程只有資料庫能仲裁
+src/lib/collector-silence-message.js            — 兩個對象兩封信：給當事人的有修法、給管理員
+                                                   的沒有（他在別人電腦上跑不了）
+src/jobs/collector-silence-alerts.js            — 先記下、再 claim 並發送（同一個交易）、
+                                                   最後才寫復原。第一次看到不通知，六小時後
+                                                   還在才講；壞滿十四天再講一次。復原寫在最
+                                                   後面，因為它們原本在最前面，一個寫失敗會
+                                                   讓整輪在通知之前就中斷。每天 04:00 台北
+                                                   時間跑一次
+tests/collector-silence.test.js                 — 拿正式機真實快照當測資：一台會響、另外十台
+                                                   必須安靜。後者才是值得釘住的那半
+tests/collector-silence-message.test.js         — 兩封信各自的內容、投遞信封、時區、爆量截斷
+tests/collector-silence-job.test.js             — 有狀態的假 DB，時鐘可以往前撥：驗證第一次
+                                                   不發、六小時後才發、同一個人兩台機器修好
+                                                   一台不能把另一台的通知一起收掉。假 DB 的
+                                                   兩個時間常數改成從程式本體讀，不再自己抄
+                                                   一份；常數本身用「要比最慢的排程久」這種
+                                                   性質釘住。另有一組刻意讀 SQL 文字的測試，
+                                                   並寫明「讀不等於跑」
+tests/collector-silence-migration.test.js       — 建表冪等、鍵、外鍵刪除行為、欄位型別要跟
+                                                   broadcast_messages.id 對得上、接線
+openspec/changes/v1.26.102-collector-gone-quiet/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+src/lib/install-check-alert-message.js          — 投遞信封那段搬到 broadcast-envelope.js，
+                                                   對外的名字全部保留，既有 21 個測試不動照過
+src/index.js                                    — 開機掃一次 + 註冊每日排程。這個條件是「時間
+                                                   過了」才成立、不是「有東西上傳」才成立，所以
+                                                   跟安裝檢測那支不同，它真的需要時鐘
+openspec/BACKLOG.md                             — 第 4 項結案；刻意不做的那半（整台安靜的機器）
+                                                   帶著量到的數字留下來
+```
+
 ## v1.26.98 修改（回滾失敗時不要再回報「backup restored」）
 
 新增檔：
