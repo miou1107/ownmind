@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,8 +24,14 @@ const repoRoot = path.resolve(__dirname, '..');
  * carries on, so the only trace was one line telling the user to install Git Bash
  * from git-scm.com — while Git Bash was installed. Measured on TANK, 2026-08-08.
  *
- * These are text assertions on the shipped .ps1, matching how the rest of the
- * PowerShell surface is covered in this repo (the test host is not Windows).
+ * Two layers, because neither one is enough on its own. The text assertions run
+ * everywhere and are what a macOS or Linux checkout gets; they are pinned to the
+ * whole branch, value included, since `-match 'msys|cygwin'` followed by
+ * `return $false` satisfies a pattern-only assertion while reinstating the exact
+ * bug. The behavioural block below dot-sources the shipped helper and runs
+ * Test-IsGitBash against stub executables that print each triplet, which is the
+ * only layer that can tell recognising a build from accepting it. It needs a
+ * PowerShell on the host, so it skips where there is none.
  */
 
 const HELPER = 'scripts/windows/lib/find-git-bash.ps1';
@@ -32,6 +40,15 @@ const UPGRADE = 'scripts/interactive-upgrade.ps1';
 function read(rel) {
   return fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 }
+
+/** pwsh 7 anywhere, Windows PowerShell 5.1 as the fallback the upgrade script itself runs under. */
+const powershell = ['pwsh', 'powershell'].find((exe) => {
+  try {
+    return spawnSync(exe, ['-NoProfile', '-Command', 'exit 0']).status === 0;
+  } catch {
+    return false;
+  }
+});
 
 describe('find-git-bash.ps1 — build triplet matching', () => {
   it('accepts cygwin as well as msys', () => {
@@ -49,6 +66,17 @@ describe('find-git-bash.ps1 — build triplet matching', () => {
       content,
       /if\s*\(\$out\s+-match\s+'msys'\)/,
       'matching msys alone is the 2.55 regression; it must not come back',
+    );
+  });
+
+  it('the branch that recognises a Git Bash build is the branch that accepts it', () => {
+    // Pinned to the value, not just the pattern. `-match 'msys|cygwin'` with a `return $false`
+    // body reads as fixed and behaves exactly like the bug, and every pattern-only assertion
+    // in this file stays green through it.
+    assert.match(
+      read(HELPER),
+      /if\s*\(\$out\s+-match\s+'msys\|cygwin'\)\s*\{\s*return\s+\$true\s*\}/,
+      'recognising the build must return $true',
     );
   });
 
@@ -134,6 +162,79 @@ describe('interactive-upgrade.ps1 — honest message when Git Bash is unusable',
       content,
       /helper not present at/,
       'Get-GitBashSearchReport does not exist if the helper failed to load',
+    );
+  });
+
+  it('folds the reason to one line before reporting it', () => {
+    // The reason is assembled from `bash --version` output and exception messages, one entry
+    // per rejected candidate. A newline in it makes the report invalid JSON and the server
+    // drops the whole thing, which is the silent loss v1.26.98 was about. Read the variables
+    // out of the Detail rather than naming them, so a rename cannot walk away from the check.
+    const content = read(UPGRADE);
+    const call = /Report-Error -Kind "upgrade_git_bash_not_usable" -Detail "([^"]*)"/.exec(content);
+    assert.ok(call, 'the skipped verify must still be reported');
+    const interpolated = call[1].match(/\$\w+/g) || [];
+    assert.ok(interpolated.length, 'the Detail must carry the reason, not a fixed sentence');
+    for (const name of interpolated) {
+      assert.match(
+        content,
+        new RegExp(`\\${name}\\s*=\\s*ConvertTo-OneLine\\b`),
+        `${name} reaches the report unfolded; one newline in it loses the entire report`,
+      );
+    }
+  });
+});
+
+describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'no PowerShell on this host' }, () => {
+  /**
+   * Write a stub that prints one `bash --version` line and exits with a chosen code, in
+   * whatever form the host can execute: a .cmd on Windows, a shell script elsewhere.
+   */
+  function stubBash(dir, name, versionLine, exitCode) {
+    if (process.platform === 'win32') {
+      const file = path.join(dir, `${name}.cmd`);
+      fs.writeFileSync(file, `@echo off\r\necho ${versionLine}\r\nexit /b ${exitCode}\r\n`);
+      return file;
+    }
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, `#!/bin/sh\necho '${versionLine}'\nexit ${exitCode}\n`, { mode: 0o755 });
+    return file;
+  }
+
+  /** Dot-source the shipped helper and ask it about each stub. Returns one verdict per case. */
+  function verdicts(cases) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-gitbash-'));
+    try {
+      const paths = cases.map((c) => stubBash(dir, c.name, c.versionLine, c.exitCode));
+      const script = [
+        `. ${JSON.stringify(path.join(repoRoot, HELPER))}`,
+        ...paths.map((p) => `if (Test-IsGitBash -BashPath ${JSON.stringify(p)}) { 'true' } else { 'false' }`),
+      ].join('\n');
+      const run = spawnSync(powershell, ['-NoProfile', '-Command', script], {
+        encoding: 'utf8',
+        // The helper builds its cache path from USERPROFILE at load. Point it at the temp
+        // directory so a test run can never touch the real ~/.ownmind/.git-bash-path.
+        env: { ...process.env, USERPROFILE: dir },
+      });
+      assert.equal(run.status, 0, `PowerShell exited ${run.status}: ${run.stderr}`);
+      return run.stdout.trim().split(/\r?\n/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('accepts a real Git Bash on both sides of the 2.55 triplet change', () => {
+    const cases = [
+      { name: 'git255', versionLine: 'GNU bash, version 5.3.15(1)-release (x86_64-pc-cygwin)', exitCode: 0, want: 'true' },
+      { name: 'git254', versionLine: 'GNU bash, version 5.2.37(1)-release (x86_64-pc-msys)', exitCode: 0, want: 'true' },
+      { name: 'wsl', versionLine: 'GNU bash, version 5.0.17(1)-release (x86_64-pc-linux-gnu)', exitCode: 0, want: 'false' },
+      { name: 'relay', versionLine: 'WSL ERROR: CreateProcessEntryCommon execvpe /bin/bash failed', exitCode: 1, want: 'false' },
+      { name: 'unknown', versionLine: 'something that is not bash', exitCode: 0, want: 'false' },
+    ];
+    assert.deepEqual(
+      verdicts(cases),
+      cases.map((c) => c.want),
+      'cygwin (2.55+) and msys (2.54 and earlier) are both Git Bash; a WSL distro, a failing relay and an unrecognised build are not',
     );
   });
 });
