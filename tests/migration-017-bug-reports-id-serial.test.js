@@ -81,8 +81,13 @@ test('all five tables use SERIAL (not BIGSERIAL) for id', () => {
 
 test('real declarations contain no BIGSERIAL (only allowed inside comments for context)', () => {
   // Strip line comments (-- ...) and block comments; only inspect actual SQL.
+  // v1.26.122 — `\r` first. On a CRLF checkout every line ends with a carriage return, and
+  // `\r` is a line terminator to a JS regex: `.` will not cross it, so `--.*$` matches
+  // nothing and the strip silently does nothing at all. The test then reads its own
+  // explanatory comments as SQL and reports a migration that is perfectly correct as broken.
+  // A strip that quietly strips nothing is the same failure mode as a redirect to /dev/null.
   const sqlNoComments = sql
-    .split('\n')
+    .split(/\r?\n/)
     .map((line) => line.replace(/--.*$/, '')) // strip inline comments
     .join('\n');
   assert.doesNotMatch(

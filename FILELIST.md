@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.122 修改（讓整套測試在 Windows 上跑不完的那個檔案）
+
+修改檔：
+```
+tests/update-lock-mutual-exclusion.test.js      — import() 全部改用 pathToFileURL(...).href
+                                                   （8 處：3 處子行程、5 處行程內）。絕對路徑
+                                                   在 Windows 上開頭是磁碟機代號，ESM loader
+                                                   讀成 URL scheme 而拒絕 —— 跟 v1.26.108 在
+                                                   mcp/index.js 修過的同一個錯。
+                                                   contender 的 stderr 從 ignore 改成 pipe
+                                                   並且真的去讀（只 pipe 不讀，管線塞滿之後
+                                                   子行程會卡在寫入不結束，等於把診斷變成它
+                                                   要解釋的那個當機）。race() 在沒人獲勝時
+                                                   先印出第一個 contender 的 stderr
+tests/migration-017-bug-reports-id-serial.test.js
+                                                — 去註解前先切掉 \r。CRLF 檢出時每行結尾都是
+                                                   \r，而 \r 對 JS 正規表達式是行結束字元，
+                                                   `.` 不會跨過去 —— `--.*$` 因此一個字都沒剪，
+                                                   測試把自己的說明註解當成 SQL 讀
+README.md / docs/README.zh-TW.md / docs/README.ja.md
+                                                — 目前版本 v1.26.122
+package.json                                    — 1.26.121 → 1.26.122
+```
+
 ## v1.26.121 修改（自己弄壞的兩條 ＋ 一條擋不住 Windows 的守門測試）
 
 修改檔：
