@@ -1,5 +1,62 @@
 # OwnMind 檔案結構
 
+## v1.26.104 修改（檢查 commit 訊息的那道關卡，讀的是上一次的訊息）
+
+新增檔：
+```
+hooks/ownmind-git-commit-msg.js                 — 用 git 傳進來的訊息路徑（$1）評估
+                                                   commit_message* 類型的鐵律。挑規則看
+                                                   條件類型、不看規則編號，因為每個人的
+                                                   編號都不一樣。只讀快取不打 API：
+                                                   pre-commit 幾秒前才在同一次 commit 裡
+                                                   更新過。過濾掉 # 開頭的 git 註解行。
+                                                   任何異常一律放行
+tests/commit-msg-rules.test.js                  — 20 條。pre-commit 不再被舊訊息影響、
+                                                   commit-msg 對真訊息判斷、
+                                                   commit_message_contains 也要生效、
+                                                   bypass、空快取放行、沒帶參數放行、
+                                                   shell wrapper 真的有叫到 node、
+                                                   沒安裝腳本時要放行、以及走真 git commit
+                                                   的端到端：第一次擋、改好第二次要過
+openspec/changes/v1.26.104-message-rules-judge-the-real-message/ — proposal / spec
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js                 — 拿掉 COMMIT_MSG_FILE 跟
+                                                   getCommitMessage()。git 要到 pre-commit
+                                                   跑完才寫 .git/COMMIT_EDITMSG，讀它拿到的
+                                                   是上一次的訊息。訊息規則從 commitRules
+                                                   整個濾掉，不是留著讓它通過 —— 條件判斷
+                                                   沒訊息時回傳通過，留著會被算進「N 條全部
+                                                   通過 ✓」。context 也不再放 commitMessage
+                                                   這個鍵
+hooks/ownmind-git-commit-msg                    — 寫死的 Co-Authored-By 比對保留（整行錨定
+                                                   ＋不分大小寫，抓得到 git 自己的寫法
+                                                   `Co-authored-by:`，而規則引擎是區分大小
+                                                   寫的子字串比對、抓不到），後面再叫
+                                                   ownmind-git-commit-msg.js 跑使用者自己的
+                                                   規則。腳本不存在就跳過、不當成失敗，
+                                                   半套安裝不該讓人不能 commit。補上
+                                                   chain 既有掛勾的邏輯
+install.sh / install.ps1                        — 兩邊的 git hook JS 清單都加
+                                                   ownmind-git-commit-msg.js
+scripts/update.sh / scripts/update.ps1          — 已安裝的三支 git hook wrapper 改成每次
+                                                   更新都從檢出目錄重新複製，不再只修
+                                                   CRLF。~/.ownmind 就是檢出目錄，pull 一
+                                                   落地 hooks/ 立刻換新，但 git-hooks/ 是
+                                                   安裝腳本複製的副本，而自動更新路徑不會
+                                                   跑安裝腳本 —— 這一版剛好把工作從
+                                                   pre-commit 搬到 commit-msg，不修的話
+                                                   使用者會拿到新的那一半、舊的那一半留著
+                                                   ，訊息規則整組靜靜失效。沒安裝過的不會
+                                                   幫他裝。update.ps1 之前完全沒碰這個目錄
+tests/updater-refreshes-git-hooks.test.js       — wrapper 清單從 install.sh 長出來（手寫
+                                                   清單正是一開始漂掉的原因），驗證兩支更新
+                                                   腳本都會刷新每一支、而且都不會無中生有
+package.json                                    — 1.26.103 → 1.26.104
+```
+
 ## v1.26.103 修改（搬檔案不算寫檔案）
 
 新增檔：

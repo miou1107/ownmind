@@ -188,20 +188,37 @@ if [ -d "$HOME/.claude" ]; then
   echo "[ OK ] Hook scripts synced"
 fi
 
-# --- 2a2. Repair CRLF in the installed git hooks (v1.26.96) ---
+# --- 2a2. Reinstall the git hook wrappers (v1.26.104), stripping CR (v1.26.96) ---
 #
-# The git hooks are written by install.sh, not here — but `interactive-upgrade.sh` falls
-# back to this script when it finds no credentials, and those users would otherwise never
-# get the repair. `.gitattributes` governs checkout only: a machine that already holds these
-# files as CRLF is never rewritten by git, because normalised comparison hides it from
-# `status` and `pull` alike.
+# This used to repair CRLF only, on the reasoning that "install.sh owns their content".
+# That reasoning cost v1.26.104 its enforcement: the auto-update path is `git pull` →
+# `npm install` → this script, and it never runs install.sh. `~/.ownmind` IS the checkout,
+# so the pull instantly replaces the hook logic under `hooks/`, while `git-hooks/` still
+# holds the copies made whenever install.sh last ran — which can be many versions ago.
 #
-# Repair in place rather than reinstall: this script does not own their content.
+# When a release moves work from one wrapper to another, that split leaves the user with
+# the new half and not the old one, and nothing says so. Copying from the checkout on every
+# update is what keeps the two halves the same age.
+#
+# CR is stripped in the same pass: `.gitattributes` governs checkout only, so a machine that
+# already holds these files as CRLF is never rewritten by git — normalised comparison hides
+# it from `status` and `pull` alike.
 GIT_HOOK_DIR="$HOME/.ownmind/git-hooks"
 if [ -d "$GIT_HOOK_DIR" ]; then
   repaired=0
-  for gh in "$GIT_HOOK_DIR"/pre-commit "$GIT_HOOK_DIR"/post-commit "$GIT_HOOK_DIR"/commit-msg; do
+  for gh_name in pre-commit post-commit commit-msg; do
+    gh="$GIT_HOOK_DIR/$gh_name"
+    gh_src="$OWNMIND_DIR/hooks/ownmind-git-$gh_name"
+    # Only ever refresh a hook that is already installed: creating one here would enable
+    # OwnMind's git hooks on a machine whose owner never asked install.sh for them.
     [ -f "$gh" ] || continue
+    if [ -f "$gh_src" ]; then
+      if ! tr -d '\015' < "$gh_src" | cmp -s - "$gh"; then
+        tr -d '\015' < "$gh_src" > "$gh.tmp" && mv "$gh.tmp" "$gh" && chmod +x "$gh" \
+          && repaired=$((repaired + 1))
+        continue
+      fi
+    fi
     case "$(tr -cd '\015' < "$gh" | wc -c | tr -d ' ')" in
       0) ;;
       *) tr -d '\015' < "$gh" > "$gh.tmp" && mv "$gh.tmp" "$gh" && chmod +x "$gh" && repaired=$((repaired + 1)) ;;
