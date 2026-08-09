@@ -210,6 +210,35 @@ if (Test-Path $ClaudeDir) {
   Write-Host "[ OK ] Hook scripts synced"
 }
 
+# --- 2a2. Reinstall the git hook wrappers (v1.26.104) ---
+#
+# Same defect as the *.js sync above, one directory over, and this script never touched
+# these at all. The auto-update path is `git pull` → `npm install` → this script, never
+# install.ps1. `~/.ownmind` IS the checkout, so a pull replaces the hook logic under
+# `hooks/` immediately, while `git-hooks/` keeps whatever install.ps1 copied on the day it
+# last ran. When a release moves work from one wrapper to another, the user ends up with
+# the new half and not the old one, and nothing reports it.
+$GitHookDir = Join-Path $HOME ".ownmind\git-hooks"
+if (Test-Path $GitHookDir) {
+  $refreshed = 0
+  foreach ($ghName in @("pre-commit", "post-commit", "commit-msg")) {
+    $ghDest = Join-Path $GitHookDir $ghName
+    $ghSrc = Join-Path $OwnMindDir "hooks\ownmind-git-$ghName"
+    # Only refresh a hook that is already installed — creating one here would switch on
+    # OwnMind's git hooks for somebody who never asked install.ps1 for them.
+    if (-not (Test-Path $ghDest)) { continue }
+    if (-not (Test-Path $ghSrc)) { continue }
+    # LF, always: these run under sh.exe, and CRLF makes the shebang line unusable.
+    $srcText = [System.IO.File]::ReadAllText($ghSrc).Replace("`r`n", "`n")
+    $destText = [System.IO.File]::ReadAllText($ghDest)
+    if ($srcText -ne $destText) {
+      [System.IO.File]::WriteAllText($ghDest, $srcText)
+      $refreshed++
+    }
+  }
+  if ($refreshed -gt 0) { Write-Host "[ OK ] Refreshed $refreshed git hook wrapper(s)" }
+}
+
 # --- 2b. usage scanner ---
 $ScannerJs = Join-Path $OwnMindDir "hooks\ownmind-usage-scanner.js"
 if (Test-Path $ScannerJs) { Write-Host "[ OK ] Usage scanner ready" }

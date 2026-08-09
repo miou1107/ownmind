@@ -21,10 +21,16 @@ import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
 import { isSecretGuardRule } from './lib/secret-guard-rule.js';
 import { parseIronRulesResponse, shouldOverwriteCache } from './lib/iron-rule-sync.js';
 import { isOff as isSessionOff } from '../shared/session-off-state.js';
+// One definition of "this rule judges the message", shared with the hook that enforces
+// them. Two copies of that predicate is the pair that drifts.
+import { isMessageRule } from './ownmind-git-commit-msg.js';
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
-const COMMIT_MSG_FILE = path.join(process.cwd(), '.git', 'COMMIT_EDITMSG');
+// v1.26.104: there is deliberately no COMMIT_EDITMSG here. Git writes that file AFTER
+// pre-commit runs, so reading it yields the previous commit's message, not this one's.
+// Commit-message rules moved to hooks/ownmind-git-commit-msg.js, which git hands the
+// real message path.
 const VERSION = getClientVersion();
 
 const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -230,14 +236,6 @@ function checkStagedDiffForSecrets(stagedFiles) {
   return hits;
 }
 
-function getCommitMessage() {
-  try {
-    return fs.readFileSync(COMMIT_MSG_FILE, 'utf8').trim();
-  } catch {
-    return process.env.GIT_COMMIT_MSG || '';
-  }
-}
-
 function httpGet(url, headers) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
@@ -356,10 +354,17 @@ async function main() {
     // If fetch failed, continue with old cache
   }
 
-  // 3. Filter rules with commit trigger
+  // 3. Filter rules with commit trigger.
+  //
+  // v1.26.104: message rules are excluded rather than merely left unevaluated. The
+  // condition handlers return true when no message is present, so leaving them in would
+  // have them counted in "all N rules passed ✓" — an assurance about a check that never
+  // ran. They are enforced in hooks/ownmind-git-commit-msg.js, which git hands the real
+  // message.
   const commitRules = rules.filter(r => {
     const triggers = r.metadata?.verification?.trigger;
-    return Array.isArray(triggers) && triggers.includes('commit');
+    if (!Array.isArray(triggers) || !triggers.includes('commit')) return false;
+    return !isMessageRule(r);
   });
 
   if (commitRules.length === 0) {
@@ -372,13 +377,14 @@ async function main() {
     process.exit(0);
   }
 
-  const commitMessage = getCommitMessage();
   const changedSourceFiles = getChangedSourceFiles(stagedFiles);
   const complianceEvents = readComplianceEvents();
 
+  // No commitMessage: this hook runs before git writes the message anywhere it could be
+  // read from. Omitting the key is the point — a wrong value here is worse than none,
+  // because the condition handlers cannot tell "absent" from "genuinely empty".
   const context = {
     stagedFiles,
-    commitMessage,
     changedSourceFiles,
     complianceEvents,
   };

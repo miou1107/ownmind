@@ -552,7 +552,7 @@ $VerificationSrc = Join-Path $OwnmindDir "shared\verification.js"
 Copy-IfDifferent -Src $VerificationSrc -DestDir (Join-Path $HOME ".ownmind\shared\") -Label "verification engine"
 
 # 複製 git hook JS 檔案
-$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
+$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-commit-msg.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
 foreach ($jsFile in $GitHookJsFiles) {
   $src = Join-Path $OwnmindDir "hooks\$jsFile"
   Copy-IfDifferent -Src $src -DestDir (Join-Path $HOME ".ownmind\hooks\") -Label $jsFile
