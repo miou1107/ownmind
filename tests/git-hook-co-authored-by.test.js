@@ -9,17 +9,27 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOOK = path.join(__dirname, '..', 'hooks', 'ownmind-git-commit-msg');
 
+// v1.26.104: $HOME points at an empty sandbox, not the developer's real home. The wrapper
+// now runs the user's own cached rules, so with a real $HOME these cases would start
+// depending on whatever that person happens to have written down — a
+// `commit_message_contains` rule of their own would turn "accepts plain commit message"
+// red for reasons unrelated to this code. What is under test here is the trailer guard.
 function runHook(message) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'om-hook-test-'));
+  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'om-hook-home-'));
   const msgFile = path.join(tmpDir, 'COMMIT_EDITMSG');
   fs.writeFileSync(msgFile, message);
   try {
-    execFileSync(HOOK, [msgFile], { stdio: 'pipe' });
+    execFileSync(HOOK, [msgFile], {
+      stdio: 'pipe',
+      env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
+    });
     return { code: 0, stderr: '' };
   } catch (e) {
     return { code: e.status ?? -1, stderr: e.stderr?.toString() ?? '' };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    fs.rmSync(tmpHome, { recursive: true, force: true });
   }
 }
 
