@@ -1,5 +1,48 @@
 # OwnMind 更新紀錄
 
+## v1.26.122 — 讓整套測試在 Windows 上跑不完的那個檔案
+
+`tests/update-lock-mutual-exclusion.test.js` 在 Windows 上不是慢，是**跑不完**：三條測試各自吃滿
+timeout，然後整個 run 停在那裡不動。本機因此無法跑完整套；CI 上這個家族是 6 紅 ＋ 15 條被連坐取消，
+佔掉 Windows 剩餘紅燈的三分之二。
+
+原因一行就講得完：
+
+```js
+import(process.argv[3])        // 一個絕對路徑，開頭是 C:
+```
+
+`import()` 收的是 module specifier，而**絕對路徑只是碰巧長得像**。Windows 上它開頭是磁碟機代號，
+ESM loader 把它讀成 URL scheme 然後拒絕（`ERR_UNSUPPORTED_ESM_URL_SCHEME`）。八個 contender
+全部死在載入模組那一步，一個都沒走到搶鎖。
+
+**這是 v1.26.108 在 `mcp/index.js` 修過的同一個錯，連錯誤訊息都一字不差 —— 修在那裡，沒有帶過來這裡。**
+
+而它之所以表現成「卡住」而不是「報錯」，是因為 contender 是這樣起的：
+
+```js
+stdio: ['ignore', 'pipe', 'ignore']   // ← stderr 丟掉
+```
+
+八個子行程全都在對著沒有人聽的那個串流喊 `ERR_UNSUPPORTED_ESM_URL_SCHEME`，而測試唯一看得到的
+是「0 個贏家」。**這是這次最貴的一課：把 stderr 倒掉，會讓一個錯誤看起來像一次當機。**
+
+三處都改：
+
+- 子行程與行程內的 `import()` 全部改用 `pathToFileURL(...).href`（共 8 處）。
+- contender 的 stderr 改成 `pipe`，**而且真的去讀它** —— 只 pipe 不讀，管線塞滿之後子行程會卡在
+  寫入而永遠不結束，那會把一個診斷變成它要解釋的那個當機。
+- 沒有人獲勝時，`race()` 先把第一個 contender 的 stderr 印出來，再讓斷言去猜。「沒人搶到鎖」
+  跟「harness 自己壞了」從外面看一模一樣。
+
+Windows 實測：這個檔案 31 條全綠（原本 3 條卡死 ＋ 5 條紅），而且**整套測試第一次能在這台機器上跑完**：
+4018 條、3998 綠、8 紅、**0 條被連坐取消**。
+
+順手補一條同樣「安靜地什麼都沒做」的：`migration-017` 那條在去註解之前沒有先切掉 `\r`。
+CRLF 檢出時每一行結尾都是 `\r`，而 `\r` 對 JS 正規表達式是**行結束字元** —— `.` 不會跨過去，
+所以 `--.*$` 一個字都沒剪，測試就把自己的說明註解當成 SQL 讀，然後指控一個完全正確的 migration。
+（CI 上不會發生，`.gitattributes` 有 `eol=lf`；但工作目錄是 CRLF 的人會中。）
+
 ## v1.26.121 — 我自己弄壞的兩條，加上一條擋不住 Windows 的守門測試
 
 跑完整套回歸（扣掉那個會卡死的檔案）之後對照 v1.26.116，把紅燈一條一條歸屬：

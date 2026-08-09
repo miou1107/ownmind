@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
  * v1.26.98 — `.update-lock` did not lock.
@@ -77,11 +77,33 @@ async function race(dir, makeChild) {
     c.stdout.on('data', (d) => { buf += d; });
     return () => buf;
   });
+  // v1.26.122 — the children's stderr used to be `ignore`, and that is the whole reason
+  // this file read as a hang rather than as an error for as long as it did: on Windows
+  // every Node contender died at `import()` before reaching the acquire, said so on a
+  // stream nobody was listening to, and the assertion could only report "0 winners".
+  //
+  // It must be *read*, not merely piped: an unread pipe fills, and a child blocked writing
+  // to it never exits — which would turn a diagnostic into the very hang it explains.
+  const errs = children.map((c) => {
+    let buf = '';
+    c.stderr.on('data', (d) => { buf += d; });
+    return () => buf;
+  });
   // Give every child time to reach its spin loop before releasing them.
   await new Promise((r) => setTimeout(r, 300));
   fs.writeFileSync(go, '1');
   await Promise.all(children.map((c) => new Promise((r) => c.on('close', r))));
-  return outs.filter((read) => read().includes('WIN')).length;
+  const winners = outs.filter((read) => read().includes('WIN')).length;
+  if (winners === 0) {
+    // Nobody won. That is either the finding or a broken harness, and those look identical
+    // from the outside — so print what the contenders actually said before the assertion
+    // gets a chance to guess.
+    const said = errs.map((read) => read().trim()).filter(Boolean);
+    if (said.length) {
+      process.stderr.write(`[race] no contender won; first child's stderr:\n${said[0].split('\n').slice(0, 6).join('\n')}\n`);
+    }
+  }
+  return winners;
 }
 
 function shellRacer(dir, snippet) {
@@ -89,7 +111,7 @@ function shellRacer(dir, snippet) {
     `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
     `while [ ! -f ${JSON.stringify(go)} ]; do :; done`,
     snippet,
-  ].join('\n')], { stdio: ['ignore', 'pipe', 'ignore'] });
+  ].join('\n')], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
 describe('v1.26.98 — the harness can see a race at all (positive control)', () => {
@@ -359,6 +381,11 @@ describe('v1.26.98 — losing the race is a skip, not a failure', () => {
 
 describe('v1.26.98 — the Node side uses one shared implementation', () => {
   const shared = path.join(repoRoot, 'shared', 'update-lock.js');
+  // v1.26.122 — `import()` takes a module specifier, and an absolute filesystem path is only
+  // accidentally one: on Windows it starts with a drive letter, which the ESM loader reads as a
+  // URL scheme and rejects (ERR_UNSUPPORTED_ESM_URL_SCHEME). The same mistake, in the same
+  // words, as v1.26.108 in mcp/index.js — fixed there, never carried across to here.
+  const sharedUrl = pathToFileURL(shared).href;
 
   it('exists, so the MCP and the Node hook cannot drift apart', () => {
     assert.ok(fs.existsSync(shared), 'shared/update-lock.js is missing');
@@ -389,11 +416,11 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
         // Resolve and compile the module BEFORE the start signal. Doing it after meant each
         // child paid a different module-load cost and they reached the acquire spread out
         // rather than together — which is why two reclaim mutants survived the first pass.
-        import(process.argv[3]).then(({ acquireUpdateLock }) => {
+        import(require("url").pathToFileURL(process.argv[3]).href).then(({ acquireUpdateLock }) => {
           while (!fs.existsSync(go)) { /* spin */ }
           if (acquireUpdateLock(lock)) console.log('WIN');
         });
-      `, go, path.join(dir, '.update-lock'), shared], { stdio: ['ignore', 'pipe', 'ignore'] }));
+      `, go, path.join(dir, '.update-lock'), shared], { stdio: ['ignore', 'pipe', 'pipe'] }));
       assert.equal(winners, 1, `${winners} processes hold the same lock`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -413,11 +440,11 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
         // Resolve and compile the module BEFORE the start signal. Doing it after meant each
         // child paid a different module-load cost and they reached the acquire spread out
         // rather than together — which is why two reclaim mutants survived the first pass.
-        import(process.argv[3]).then(({ acquireUpdateLock }) => {
+        import(require("url").pathToFileURL(process.argv[3]).href).then(({ acquireUpdateLock }) => {
           while (!fs.existsSync(go)) { /* spin */ }
           if (acquireUpdateLock(lock)) console.log('WIN');
         });
-      `, go, lock, shared], { stdio: ['ignore', 'pipe', 'ignore'] }));
+      `, go, lock, shared], { stdio: ['ignore', 'pipe', 'pipe'] }));
       assert.equal(winners, 1, `stale takeover admitted ${winners}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -443,7 +470,7 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       fs.utimesSync(lock, old, old);
       fs.writeFileSync(lock + '.reclaim', '');   // another process is mid-reclaim, right now
 
-      const { acquireUpdateLock } = await import(shared);
+      const { acquireUpdateLock } = await import(sharedUrl);
       assert.equal(acquireUpdateLock(lock), false,
         'took the lock out from under the process that is reclaiming it');
       assert.ok(fs.existsSync(lock),
@@ -471,7 +498,7 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       fs.writeFileSync(lock, '');   // fresh: this stands for the lock the winner just took
       const hourAhead = () => (fs.existsSync(lock + '.reclaim') ? Date.now() : Date.now() + 3600_000);
 
-      const { acquireUpdateLock } = await import(shared);
+      const { acquireUpdateLock } = await import(sharedUrl);
       assert.equal(acquireUpdateLock(lock, { now: hourAhead }), false,
         'deleted a lock that was fresh by the time we got to look at it');
       assert.ok(fs.existsSync(lock), 'the fresh lock must survive');
@@ -502,7 +529,7 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       const staleWhileMarked = () =>
         (fs.existsSync(lock + '.reclaim') ? Date.now() + 3600_000 : Date.now());
 
-      const { acquireUpdateLock } = await import(shared);
+      const { acquireUpdateLock } = await import(sharedUrl);
       assert.equal(acquireUpdateLock(lock, { now: staleWhileMarked }), false,
         'took a marker that was fresh and carried on into the critical section');
       assert.ok(fs.existsSync(lock), 'deleted a lock while another reclaimer was live');
@@ -534,11 +561,11 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
       const winners = await race(dir, (i, go) => spawn(process.execPath, ['-e', `
         const fs = require('fs');
         const go = process.argv[1], lock = process.argv[2];
-        import(process.argv[3]).then(({ acquireUpdateLock }) => {
+        import(require("url").pathToFileURL(process.argv[3]).href).then(({ acquireUpdateLock }) => {
           while (!fs.existsSync(go)) { /* spin */ }
           if (acquireUpdateLock(lock)) console.log('WIN');
         });
-      `, go, lock, shared], { stdio: ['ignore', 'pipe', 'ignore'] }));
+      `, go, lock, shared], { stdio: ['ignore', 'pipe', 'pipe'] }));
       assert.ok(winners <= 1, `${winners} processes hold the same lock`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -555,7 +582,7 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
         fs.writeFileSync(p, 'held-by-somebody');
         fs.utimesSync(p, old, old);
       }
-      const { acquireUpdateLock } = await import(shared);
+      const { acquireUpdateLock } = await import(sharedUrl);
       const realRename = fs.renameSync;
       fs.renameSync = () => { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; };
       try {
@@ -582,7 +609,7 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
     const dir = tmpdir();
     try {
       const lock = path.join(dir, '.update-lock');
-      const { acquireUpdateLock } = await import(shared);
+      const { acquireUpdateLock } = await import(sharedUrl);
 
       // Sanity: with nothing interfering it acquires. Without this the assertion below
       // passes just as well on an implementation that never acquires anything.
