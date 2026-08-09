@@ -1,5 +1,49 @@
 # OwnMind 檔案結構
 
+## v1.26.103 修改（搬檔案不算寫檔案）
+
+新增檔：
+```
+openspec/changes/v1.26.103-rename-is-not-new-content/ — proposal / spec / tasks
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js                 — 新增 getRenameSources()：讀一次
+                                                   `git diff --cached --raw -M -z`，把每個
+                                                   目的地路徑對回它的來源路徑。
+                                                   getStagedAddedLines() 多收 srcPath，改名的
+                                                   檔案兩個路徑一起傳給 git——只給目的地那一個
+                                                   時，git 沒有對得上的刪除side，配對不起來，
+                                                   整份檔案都會被當成新加的。兩個 git 呼叫都
+                                                   明寫 -M，不然使用者把 diff.renames 關掉就
+                                                   整個退回原本的 bug。
+                                                   掃描那一支加 --literal-pathspecs：git 給
+                                                   回來的路徑，git 自己會當成 pathspec 讀，
+                                                   `--` 擋不住。檔名叫 `:!victim.txt` 同時
+                                                   是「排除」樣式，改名時會把目的地從自己的
+                                                   差異裡排掉，同一次 commit 新加的密鑰完全
+                                                   沒被掃到（實測掃描器回報通過）。raw 那一支
+                                                   不加，因為它根本沒傳 pathspec，加了是沒有
+                                                   作用的旗標配一段會誤導人的註解。
+                                                   刻意沒加 blob SHA 豁免：配對修好之後沒有
+                                                   任何測試分得出它在不在，而在會擋人的檢查裡
+                                                   加一個沒測到的跳過分支，是多一個洞不是多
+                                                   一層保險
+tests/pre-commit-secret.test.js                 — +7 條（bug #10）：純搬移不擋、搬移同時新增
+                                                   密鑰要擋、搬移同時改寫內容要擋、
+                                                   diff.renames=false 也不擋、來源路徑是
+                                                   pathspec 樣式時新增的密鑰仍要擋、同樣檔名
+                                                   純搬移不擋、改名跟不相干的新增檔同時進
+                                                   staging 時歸屬要正確。
+                                                   第二三條是反面對照，少了它們「永遠不掃改名
+                                                   檔」也會全綠。
+                                                   pathspec 那條的種子檔刻意放 60 行：只放一行
+                                                   的話相似度掉到 50% 以下，git 根本不報改名，
+                                                   測試會在碰到要驗的程式之前就通過
+package.json                                    — 1.26.102 → 1.26.103
+```
+
 ## v1.26.102 修改（採集程式停掉，現在會有人被通知）
 
 新增檔：
