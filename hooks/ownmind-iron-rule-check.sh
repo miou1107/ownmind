@@ -66,13 +66,13 @@ if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
   # 檢查 settings.json 是否已有 SessionStart hook
   HAS_SESSION_HOOK=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
       const has = (s.hooks?.SessionStart || []).some(h =>
         h.hooks?.some(hh => (hh.command || '').includes('ownmind'))
       );
       console.log(has ? 'yes' : 'no');
     } catch { console.log('no'); }
-  " 2>/dev/null)
+  " "$CLAUDE_SETTINGS_WIN")
 
   if [ "$HAS_SESSION_HOOK" = "no" ]; then
     # 自動升級：pull + update
@@ -169,18 +169,34 @@ API_URL=""
 API_KEY=""
 
 if [ -f "$CLAUDE_SETTINGS" ]; then
+  # v1.26.120 — the path goes in as argv, never interpolated into the source.
+  #
+  # It used to be spliced into a single-quoted JS string. That is safe only while
+  # `to_win_path` returns `cygpath -m` output (forward slashes) — and it silently is not
+  # whenever `path-helpers.sh` is missing, because the fallback is a no-op that hands back
+  # whatever $HOME held. On Windows that is a backslash path, so `C:Users...` reached the
+  # JS parser as escape sequences, the read threw, the catch printed an empty key, and this
+  # hook exited 0 without a word. A half-installed machine therefore had no iron-rule check
+  # at all and no way to find out. Same class as v1.26.94 and v1.26.112.
+  #
+  # argv is escape-proof: backslashes, spaces and apostrophes all survive it, which the
+  # header of path-helpers.sh already recommended and nothing had adopted here.
+  #
+  # No `2>/dev/null` (IR-002): if node cannot read that file, the reason belongs on stderr,
+  # where Claude Code's hook debugging shows it. The empty-value guard below still keeps the
+  # hook silent for the ordinary "not configured yet" case.
   API_KEY=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
       console.log(s.mcpServers?.ownmind?.env?.OWNMIND_API_KEY || '');
-    } catch { console.log(''); }
-  " 2>/dev/null)
+    } catch (e) { console.error('[ownmind] cannot read credentials: ' + e.message); console.log(''); }
+  " "$CLAUDE_SETTINGS_WIN")
   API_URL=$(node -e "
     try {
-      const s = JSON.parse(require('fs').readFileSync('$CLAUDE_SETTINGS_WIN', 'utf8'));
+      const s = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
       console.log(s.mcpServers?.ownmind?.env?.OWNMIND_API_URL || '');
     } catch { console.log(''); }
-  " 2>/dev/null)
+  " "$CLAUDE_SETTINGS_WIN")
 fi
 
 if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then exit 0; fi

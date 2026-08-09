@@ -168,6 +168,33 @@ describe('node SessionStart hook — the update lock', () => {
   after(() => server?.close());
 
   /** A HOME that looks like an install: a git checkout, and optionally an update script. */
+  /**
+   * v1.26.120 — Windows will not delete a directory anything still has open, and this hook
+   * starts an update script on purpose, so the child can outlive the hook by a moment. The
+   * old cleanup was a bare rmSync in a finally: it threw EPERM on the temp directory and
+   * failed the test **after its assertions had already passed** — the reported failure was
+   * "takes the lock before announcing the check", which had nothing to do with it.
+   *
+   * Retry, then give up loudly rather than throwing: the subject here is what the hook did,
+   * not whether the OS had released a handle yet, and the directory is under tmpdir.
+   */
+  async function cleanup(home) {
+    for (let i = 0; i < 20; i++) {
+      try {
+        fs.rmSync(home, { recursive: true, force: true });
+        return;
+      } catch (e) {
+        if (i === 19) {
+          // Not swallowed (IR-003): a leak that is never mentioned is a leak nobody fixes.
+          process.stderr.write(`[node-hook-parity] could not remove ${home}: ${e.code}
+`);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  }
+
   function makeHome({ withUpdateScript }) {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lock-hook-'));
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
@@ -223,7 +250,7 @@ describe('node SessionStart hook — the update lock', () => {
       assert.ok(!names.includes('update_check'), 'announced a check while standing down');
       assert.ok(!names.includes('update_failed'), 'a held lock is not a failed upgrade');
     } finally {
-      fs.rmSync(home, { recursive: true, force: true });
+      await cleanup(home);
     }
   });
 
@@ -236,7 +263,7 @@ describe('node SessionStart hook — the update lock', () => {
       assert.equal(fs.readFileSync(lock, 'utf8'), 'another-process',
         'released a lock it never held');
     } finally {
-      fs.rmSync(home, { recursive: true, force: true });
+      await cleanup(home);
     }
   });
 
@@ -248,7 +275,7 @@ describe('node SessionStart hook — the update lock', () => {
       assert.ok(names.includes('update_check'), `no check ran: ${names.join(', ')}`);
       assert.equal(names.filter((n) => n === 'update_check').length, 1);
     } finally {
-      fs.rmSync(home, { recursive: true, force: true });
+      await cleanup(home);
     }
   });
 
@@ -266,7 +293,7 @@ describe('node SessionStart hook — the update lock', () => {
       assert.ok(fs.existsSync(path.join(home, '.ownmind', '.last-update-check')),
         'without the marker this fires on every session start');
     } finally {
-      fs.rmSync(home, { recursive: true, force: true });
+      await cleanup(home);
     }
   });
 });

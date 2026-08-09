@@ -136,6 +136,21 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
   });
 
   /**
+   * The failure message these assertions used to carry was a guess — "the command was not
+   * extracted" — and a guess is what a reader then spends an afternoon disproving. Attach
+   * what the hook actually did instead: an early exit from a guard higher up prints its own
+   * envelope on stdout, and a crash prints on stderr.
+   */
+  function why(r, guess) {
+    return [
+      guess,
+      `exit=${r.status}`,
+      r.stdout ? `stdout=${r.stdout.slice(0, 500)}` : 'stdout=(empty)',
+      r.stderr ? `stderr=${r.stderr.slice(0, 500)}` : 'stderr=(empty)',
+    ].join('\n  ');
+  }
+
+  /**
    * Run a hook with the given stdin and report whether it reached the rules endpoint.
    * Async on purpose: spawnSync would block this process's event loop, so the local
    * server could not answer and every hook would look like it never called out.
@@ -154,12 +169,17 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
         }
       );
       let stdout = '';
+      let stderr = '';
       child.stdout.on('data', (c) => { stdout += c; });
-      child.stderr.resume();
+      // v1.26.120 — kept, not resumed into the void (IR-003). These assertions fail on a
+      // platform the author is not on, and `reached: false` on its own says nothing about
+      // why the hook stopped: a payload it could not parse, a guard higher up that exited
+      // first, and a crash all look identical. Every one of those writes a different stderr.
+      child.stderr.on('data', (c) => { stderr += c; });
       child.on('error', reject);
       child.on('close', (status) => {
         const reached = hits.slice(before).some((u) => u.includes('/api/memory/type/iron_rule'));
-        resolve({ status, stdout, reached });
+        resolve({ status, stdout, stderr, reached });
       });
       child.stdin.end(payload);
     });
@@ -169,12 +189,12 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
     it(`${hook}: the real Claude Code payload reaches the rules endpoint`, async () => {
       const r = await run(hook, REAL_PAYLOAD);
       assert.equal(r.reached, true,
-        'tool_input.command was not extracted — the hook exited at the empty-command guard');
+        why(r, 'tool_input.command was not extracted — the hook exited at the empty-command guard'));
     });
 
     it(`${hook}: a bare { command } payload still works`, async () => {
       const r = await run(hook, BARE_PAYLOAD);
-      assert.equal(r.reached, true, 'manual invocation with a bare payload must keep working');
+      assert.equal(r.reached, true, why(r, 'manual invocation with a bare payload must keep working'));
     });
 
     it(`${hook}: a payload with no command stays silent and exits 0`, async () => {

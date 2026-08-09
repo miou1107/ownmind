@@ -1,5 +1,33 @@
 # OwnMind 檔案結構
 
+## v1.26.120 修改（半安裝的機器上鐵律檢查整個沒在跑，#79 的 A 組）
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.sh                — settings.json 的路徑改用 argv 傳給
+                                                   node（process.argv[1]），不再插進
+                                                   node -e 的原始碼。path-helpers.sh
+                                                   不在時 fallback 原封不動回傳，Windows
+                                                   上就是反斜線路徑 → JS parser 當成跳脫
+                                                   序列 → 讀檔失敗 → 空金鑰 → 靜靜 exit 0。
+                                                   同時拿掉憑證讀取的兩個 2>/dev/null
+                                                   （IR-002），讀不到的理由要進 stderr
+tests/iron-rule-hook-payload.test.js            — 不再 child.stderr.resume() 把 stderr
+                                                   倒掉（IR-003）；失敗訊息附 exit code、
+                                                   stdout、stderr。原本的訊息是猜的，
+                                                   而且猜錯了
+tests/edit-trigger-reminder.test.js             — 「狀態目錄不可寫」改成拿普通檔案擋在
+                                                   資料夾的位置（POSIX ENOTDIR／Windows
+                                                   ENOENT），chmod 0o500 在 NTFS 上是
+                                                   空操作，製造不出不可寫的目錄
+tests/node-hook-parity.test.js                  — 清理改成重試＋失敗時在 stderr 說一聲。
+                                                   掛勾會啟動更新腳本，子行程可能比它多活
+                                                   一下，Windows 不准刪還開著的資料夾，
+                                                   於是斷言全過之後才因 EPERM 失敗，還掛
+                                                   在一個無關的測試名字上
+package.json                                    — 1.26.119 → 1.26.120
+```
+
 ## v1.26.119 修改（記憶檔在 Windows 上從來沒寫成功過，#79 的 C 組）
 
 新增檔：
