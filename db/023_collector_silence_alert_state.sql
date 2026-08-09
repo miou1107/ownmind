@@ -1,5 +1,5 @@
 -- db/023_collector_silence_alert_state.sql
--- v1.26.99: which machines have already been told their collector went quiet.
+-- v1.26.102: which machines have already been told their collector went quiet.
 --
 -- A silence is identified by (user_id, machine) — not by tool. One dead schedule
 -- freezes every tool the scanner writes at once, so keying on the tool would

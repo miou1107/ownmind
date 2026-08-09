@@ -1,4 +1,4 @@
-# v1.26.99 — spec
+# v1.26.102 — spec
 
 ## S1. Detection
 

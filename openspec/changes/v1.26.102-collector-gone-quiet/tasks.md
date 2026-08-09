@@ -1,4 +1,4 @@
-# v1.26.99 — tasks
+# v1.26.102 — tasks
 
 - [x] **Measure before choosing thresholds.** Dump every `collector_heartbeat` row on
       production with ages, plus last usage event and last init per person. Result: one
