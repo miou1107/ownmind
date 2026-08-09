@@ -294,6 +294,28 @@ describe('v1.26.105 — the installers delegate instead of keeping their own cop
     });
   }
 
+  // The self-check reports install_complete, which now includes the registered hook's
+  // dependency. Run before the repair, it reports a machine as broken and the same script
+  // then fixes it — one alert per affected machine, about a state that no longer exists by
+  // the time anybody reads it. install.sh has always run its artifact check at the tail for
+  // this reason; the updaters ran theirs in section 2d, ahead of every repair in section 3.
+  for (const [script, selfCheck, repair] of [
+    ['scripts/update.sh', 'self-check.cjs', 'ensure-pretooluse-hooks.cjs'],
+    ['scripts/update.ps1', 'self-check.cjs', 'ensure-pretooluse-hooks.cjs'],
+  ]) {
+    it(`${script} reports health after its repairs, not before`, () => {
+      const content = fs.readFileSync(path.join(repoRoot, script), 'utf8');
+      const invoked = content.lastIndexOf(selfCheck);
+      const repaired = content.lastIndexOf(repair);
+      assert.ok(invoked > 0 && repaired > 0, `${script} must contain both steps`);
+      assert.ok(
+        invoked > repaired,
+        `${script} runs the self-check before the PreToolUse repair, so it uploads a failure ` +
+          `the same run is about to fix`
+      );
+    });
+  }
+
   // The shell scripts run under `set -e`. A bare `VAR=$(cmd)` carries cmd's exit status, so
   // one non-zero exit from the helper — an unreadable settings.json, a locked file on
   // Windows — takes the whole installer down at that line, and with `2>&1` captured into a
