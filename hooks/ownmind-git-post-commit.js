@@ -10,8 +10,15 @@
 import path from 'path';
 import { execSync, execFileSync } from 'child_process';
 import os from 'os';
+import { pathToFileURL } from 'url';
 import { readJsonSafe, getChangedSourceFiles, getClientVersion } from '../shared/helpers.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
+// v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
+// only accidentally one. On Windows it starts with a drive letter, which the ESM loader reads
+// as a URL scheme and rejects: ERR_UNSUPPORTED_ESM_URL_SCHEME. On macOS and Linux the same
+// string begins with `/` and resolves, which is why this only ever failed on Windows — and
+// failed into a catch that exits 0, so the hook went quiet instead of going wrong.
+const importFile = (p) => import(pathToFileURL(p).href);
 
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
@@ -71,7 +78,7 @@ async function main() {
   let evaluateConditions;
   try {
     const verificationPath = path.join(HOME, '.ownmind', 'shared', 'verification.js');
-    const mod = await import(verificationPath);
+    const mod = await importFile(verificationPath);
     evaluateConditions = mod.evaluateConditions;
   } catch {
     console.warn(`[OwnMind v${VERSION}]⚠️ Validator engine unavailable — skipping post-commit check`);
