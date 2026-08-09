@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.112 修改（測試卡住的時候，它什麼都不說）
+## v1.26.114 修改（測試卡住的時候，它什麼都不說）
 
 新增檔：
 ```
@@ -18,7 +18,7 @@ tests/hung-test-is-named.test.js                — 3 條。兩條盯著設定�
                                                    時限跑，時間到了必須還活著。探針用 detached
                                                    起、整個 process group 一起殺，否則被殺的
                                                    只有執行器、真正跑檔案的孫程序會活下來
-openspec/changes/v1.26.112-a-hung-run-says-nothing/
+openspec/changes/v1.26.114-a-hung-run-says-nothing/
                                                 — proposal / spec / tasks
 ```
 
@@ -26,9 +26,92 @@ openspec/changes/v1.26.112-a-hung-run-says-nothing/
 ```
 package.json                                    — test 跟 test:watch 都加
                                                    --test-timeout=300000；
-                                                   1.26.111 → 1.26.112
+                                                   1.26.113 → 1.26.114
 .github/workflows/test.yml                      — 在 npm test 那一步旁邊寫下為什麼要帶時限，
                                                    免得下一個人把它當雜訊刪掉
+```
+
+## v1.26.113 修改（那個假的 stat 測不到四件事，而失敗還是沒有聲音）
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                  — lock_age_seconds 兩種寫法都答不出來時，
+                                                   改成往 stderr 講清楚是哪個檔案、兩種
+                                                   寫法都試過了，再 return 非零。原本只是
+                                                   默默回非零 —— 而「失敗沒有聲音」正是
+                                                   這個缺陷能活九個版本的原因。呼叫端行為
+                                                   不變、一樣 fail-closed。方言處理的邏輯
+                                                   一個字都沒動
+tests/update-lock-mutual-exclusion.test.js      — 補 4 條 v1.26.111 那兩條射程外的案例：
+                                                   ①不帶 stub、直接問這台機器真正的 stat
+                                                   （那正是 Linux 上答「不能」而 macOS 上
+                                                   全綠的那題）；②走完整條路，20 分鐘前的
+                                                   lock 必須真的被 acquire_update_lock
+                                                   接管，而不只是 lock_age_seconds 回對；
+                                                   ③兩種寫法都壞時 stderr 要講原因；
+                                                   ④檔案不存在時兩個 stream 都要安靜，
+                                                   否則 ③ 的診斷會對著幾乎每次 session
+                                                   都不存在的 .reclaim 噴
+package.json                                    — 1.26.112 → 1.26.113（排在 #77 之後，
+                                                   兩個 PR 原本都編 v1.26.112、撞號）
+```
+
+## v1.26.112 修改（MCP server 從來沒被註冊在 Claude Code 會讀的那個檔案）
+
+新增檔：
+```
+scripts/install-helpers/register-mcp.cjs        — 唯一一份 MCP 註冊實作，四支腳本共用
+                                                   （install.sh / install.ps1 /
+                                                   update.sh / update.ps1），避免再各寫
+                                                   一份然後漂掉。同時寫 ~/.claude.json
+                                                   （Claude Code 真正啟動 MCP 的地方）
+                                                   跟 ~/.claude/settings.json（本專案
+                                                   resolveCredentials 先看的地方）。
+                                                   原子寫入、合併而非覆蓋、讀不懂的設定
+                                                   檔直接拋錯不動它（那個檔案裝著使用者
+                                                   全部的專案歷史），寫完再讀回來驗證，
+                                                   家目錄必須是絕對路徑、Windows 上不收
+                                                   POSIX 路徑
+scripts/install-helpers/register-mcp-cli.cjs    — 上面那支的命令列入口，四支腳本都透過它
+                                                   呼叫。存在的理由：`node -e "<script>"`
+                                                   在 PowerShell 5.1 下活不下來 —— 它會把
+                                                   傳給原生執行檔的參數裡的雙引號拿掉，
+                                                   三行探針實測印出三個 NaN，因為
+                                                   console.log("x=" + argv[1]) 變成
+                                                   console.log(x=+argv[1])。改傳 JSON 也
+                                                   一樣被拆掉。所以現在每個值各自一個
+                                                   argv 元素，會跨越 shell 的只剩路徑跟
+                                                   網址裡本來就有的字元。同一家族的 bug：
+                                                   v1.26.94
+tests/mcp-registered-where-claude-reads.test.js — 16 條。含反向對照（只寫 settings.json
+                                                   的舊行為必須被判定為未註冊）、不得動到
+                                                   os.homedir()、不得弄壞既有的 projects
+                                                   歷史、四支腳本都必須真的呼叫 helper、
+                                                   兩支升級腳本必須傳 home 給
+                                                   resolveCredentials、self-check 必須
+                                                   有在跑這項檢查
+```
+
+修改檔：
+```
+install.sh / install.ps1                        — Claude Code MCP 區塊改成呼叫共用 helper，
+                                                   並且回報「讀回來確認過」而不是回報
+                                                   「我寫了」
+scripts/update.sh / scripts/update.ps1          — 新增 3.0b 節。沒有人會重跑安裝腳本，
+                                                   自動更新走 git pull → npm install →
+                                                   update.*，只修安裝腳本等於只有新使用者
+                                                   受惠、既有機器原封不動壞著（v1.26.104
+                                                   在 git hook wrapper 上踩過同一個坑）。
+                                                   沿用機器上既有的啟動指令與金鑰，沒憑證
+                                                   就安靜跳過，寫不進去就明講工具不會出現
+scripts/install-helpers/self-check.cjs          — 新增 mcp_registered。mcp_files 確認檔案
+                                                   在、mcp_node_modules 確認跑得起來，
+                                                   而決定它會不會被啟動的那個檔案，原本
+                                                   沒有任何一項在看
+docs/setup-claude-code.md                       — 原本教使用者寫 ~/.claude/settings.json，
+                                                   那個檔案對 MCP 沒有作用。改成
+                                                   ~/.claude.json，並列表說明兩者差別
+package.json                                    — 1.26.111 → 1.26.112
 ```
 
 ## v1.26.111 修改（stat -f 在 Linux 上不是安靜地失敗）

@@ -353,6 +353,37 @@ if (Test-Path $ClaudeSettings) {
   Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
 }
 
+# --- 2a. Register the MCP server where Claude Code launches it (v1.26.112) ---
+#
+# Everything above writes ~/.claude/settings.json. Claude Code reads that file for hooks,
+# but it launches MCP servers from ~/.claude.json, which nothing has ever written - so the
+# ownmind_* tools were never registered for anybody. Added alongside rather than replacing,
+# because the block above carries the v1.26.91 key-change reporting and field-preserving
+# merge, both pinned by tests.
+#
+# Every value is its own argument. Nothing containing a quote is handed to a native
+# executable: PowerShell 5.1 strips those, so `node -e` and a JSON argument both arrive
+# mangled - measured 2026-08-09, a probe printed NaN three times.
+$RegisterCli = Join-Path $OwnmindDir "scripts/install-helpers/register-mcp-cli.cjs"
+if (-not (Test-Path $RegisterCli)) {
+  Write-Host "       [WARN] register-mcp-cli.cjs missing - MCP was not registered"
+} else {
+  $cliArgs = @($RegisterCli, "--command", $McpConfig.command)
+  foreach ($a in $McpConfig.args) { $cliArgs += @("--arg", $a) }
+  $cliArgs += @("--url", $ApiUrl, "--key", $ApiKey, "--home", $HOME)
+  $regOut = & node $cliArgs 2>&1
+  foreach ($line in $regOut) {
+    if ("$line" -like "PROBLEM *") { Write-Host ("       [WARN] " + ("$line" -replace '^PROBLEM ', '')) }
+  }
+  # IR-001: an installer reporting success is not evidence that it configured anything.
+  if ($regOut -contains "VERIFIED") {
+    Write-Host "       MCP registered in ~/.claude.json (verified by reading it back)"
+  } else {
+    Write-Host "       [WARN] MCP could NOT be registered in ~/.claude.json -"
+    Write-Host "              the ownmind_* tools will not be available in Claude Code."
+  }
+}
+
 # --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
 # 用同一支跨平台 Node helper（idempotent + backup + atomic）。
 $AddHookHelper = Join-Path $OwnmindDir "scripts\install-helpers\add-post-tool-use-hook.cjs"

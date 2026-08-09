@@ -1,4 +1,4 @@
-# v1.26.112 — Tasks
+# v1.26.114 — Tasks
 
 - [x] Establish where the hung macOS run stopped. `node --test` reports files in dispatch
       order (262 file transitions in the ubuntu log, 2 of them out of order, both explained by
