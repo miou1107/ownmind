@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Bug report #15 (2026-08-06, machine TANK): `bash ~/.ownmind/scripts/bootstrap.sh` aborted
@@ -26,7 +27,11 @@ import { execFileSync } from 'node:child_process';
  * release that was named after it.
  */
 function shellScripts() {
-  const root = new URL('..', import.meta.url).pathname;
+  // v1.26.104 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
+  // '/C:/Users/...'; node then resolves that against the current drive root and looks for
+  // 'C:C:Users...'. This file threw MODULE_NOT_FOUND / ENOENT on every Windows run while
+  // passing on macOS, where the pathname happens to be a valid path.
+  const root = fileURLToPath(new URL('..', import.meta.url));
   const out = execFileSync('git', ['ls-files', '*.sh'], { cwd: root, encoding: 'utf8' })
     .split('\n')
     .filter(Boolean)
@@ -184,11 +189,18 @@ describe('the upgrade log survives rollback', () => {
   });
 });
 
-describe('to_win_path is inert off Windows', () => {
+describe('to_win_path is inert when cygpath is absent', () => {
+  // v1.26.104 — the PATH here was `/usr/bin:/bin`, chosen to mean "no cygpath". Under Git
+  // Bash cygpath lives in /usr/bin, so on Windows the premise was false: cygpath was found,
+  // to_win_path converted, and the test failed while the helper did exactly its job. The
+  // name said "off Windows" but nothing made it skip there.
+  //
+  // An empty PATH makes the premise true on every platform. `command -v` is a shell builtin
+  // and keeps working, which is all to_win_path needs to reach its else branch.
   it('returns its input unchanged when cygpath is absent', () => {
     const out = execFileSync('bash', ['-c',
-      'PATH=/usr/bin:/bin; . scripts/install-helpers/path-helpers.sh; to_win_path "/c/Users/Vin/.claude/settings.json"',
-    ], { encoding: 'utf8', cwd: new URL('..', import.meta.url).pathname });
+      'PATH=; . scripts/install-helpers/path-helpers.sh; to_win_path "/c/Users/Vin/.claude/settings.json"',
+    ], { encoding: 'utf8', cwd: fileURLToPath(new URL('..', import.meta.url)) });
     assert.equal(out.trim(), '/c/Users/Vin/.claude/settings.json');
   });
 });

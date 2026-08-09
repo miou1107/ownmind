@@ -623,9 +623,25 @@ if (Test-Path $NoScannerFlag) {
     # v1.17.67 IR-038：Tee stdout+stderr 到 log，self-check 會上傳給 admin 看根因。
     # logs 目錄已在 line 270-280 隨 $GitHookDirs 建好。
     $RegisterLogPath = Join-Path $OwnmindDir ('logs\register-task-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
-    & powershell -ExecutionPolicy Bypass -File $RegisterScript 2>&1 |
-      Tee-Object -FilePath $RegisterLogPath
+    # v1.26.104 — this was `... 2>&1 | Tee-Object -FilePath $RegisterLogPath`.
+    #
+    # Windows PowerShell 5.1's Tee-Object has no -Encoding parameter at all (PS 6 added it),
+    # so it always writes UTF-16LE. self-check.cjs read the file back as UTF-8 and uploaded
+    # the result: a 298-byte log arrived at the server as mojibake carrying 148 NUL bytes —
+    # the exact input behind the v1.17.83 JSONB 500 storm, where Postgres rejected the whole
+    # document and the client's spool re-sent it forever. Every register-task-*.log on the
+    # machine this was found on is UTF-16LE, the oldest from 2026-05-09.
+    #
+    # Collect first, then write through Write-Utf8NoBom. Tee-Object also echoed to the
+    # console, so Write-Host restores that half deliberately rather than dropping it.
+    #
+    # $LASTEXITCODE is read on the very next line: Write-Host does not disturb it, but
+    # anything inserted between the call and the read would, and that exit code is what
+    # decides whether this reports success.
+    $RegisterOutput = & powershell -ExecutionPolicy Bypass -File $RegisterScript 2>&1
     $regExit = $LASTEXITCODE
+    $RegisterOutput | ForEach-Object { Write-Host $_ }
+    Write-Utf8NoBom -Path $RegisterLogPath -Content ($RegisterOutput | Out-String)
     $taskOk = $null -ne (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue)
     if ($regExit -eq 0 -and $taskOk) {
       Write-Host "[ OK ] Task Scheduler registered (runs every 120 min)" -ForegroundColor Green

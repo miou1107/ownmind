@@ -193,7 +193,18 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
   function stubBash(dir, name, lines, exitCode) {
     if (process.platform === 'win32') {
       const file = path.join(dir, `${name}.cmd`);
-      const echoes = lines.map((l) => `echo ${l}`).join('\r\n');
+      // v1.26.104 — `echo` arguments must be escaped for cmd.exe. The real `bash --version`
+      // third line ends `<http://gnu.org/licenses/gpl.html>`, and cmd reads that `<` as input
+      // redirection: it tries to open a file named `http://...`, writes "The syntax of the
+      // command is incorrect" to stderr, and PowerShell surfaces that as a NativeCommandError.
+      // Both Git Bash cases carry that line, so both were rejected and this suite reported the
+      // detector broken on every Windows machine while the detector was fine — confirmed by
+      // running Test-IsGitBash against a hand-written stub.
+      //
+      // Same shape as the v1.26.100 start.cmd bug: an unescaped cmd metacharacter inside a
+      // block. `^` must be escaped first, or it would double-escape the ones added after it.
+      const cmdEscape = (s) => s.replace(/\^/g, '^^').replace(/([&<>|()])/g, '^$1');
+      const echoes = lines.map((l) => `echo ${cmdEscape(l)}`).join('\r\n');
       fs.writeFileSync(file, `@echo off\r\n${echoes}\r\nexit /b ${exitCode}\r\n`);
       return file;
     }
@@ -222,7 +233,14 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
         `. ${psLiteral(path.join(repoRoot, HELPER))}`,
         ...paths.map((p) => `if (Test-IsGitBash -BashPath ${psLiteral(p)}) { 'true' } else { 'false' }`),
       ].join('\n');
-      const run = spawnSync(powershell, ['-NoProfile', '-Command', script], {
+      // v1.26.104 — -ExecutionPolicy Bypass is required, not tidiness. A Windows client whose
+      // policy has never been set is Restricted, so dot-sourcing find-git-bash.ps1 fails with
+      // UnauthorizedAccess and this suite fails on a healthy machine. Measured on Windows 10
+      // with every Get-ExecutionPolicy scope Undefined. macOS skips the whole describe for
+      // lack of PowerShell, so the only test that ever *runs* the Git Bash detector could not
+      // pass anywhere: skipped on one platform, failing on the other. Every shipped caller
+      // (install.ps1, mcp/index.js, ownmind-session-start.js) already passes this flag.
+      const run = spawnSync(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
         encoding: 'utf8',
         // The helper builds its cache path from USERPROFILE at load. Point it at the temp
         // directory so a test run can never touch the real ~/.ownmind/.git-bash-path.

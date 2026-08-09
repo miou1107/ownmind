@@ -1,13 +1,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const HELPER = new URL('../scripts/install-helpers/install-artifacts.cjs', import.meta.url).pathname;
+// v1.26.104 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
+// '/C:/Users/...'; node then resolves that against the current drive root and looks for
+// 'C:C:Users...'. This file threw MODULE_NOT_FOUND / ENOENT on every Windows run while
+// passing on macOS, where the pathname happens to be a valid path.
+const HELPER = fileURLToPath(new URL('../scripts/install-helpers/install-artifacts.cjs', import.meta.url));
 const { ARTIFACTS, checkInstallArtifacts } = require('../scripts/install-helpers/install-artifacts.cjs');
 
 /**
@@ -72,17 +77,25 @@ describe('checkInstallArtifacts', () => {
     } finally { h.cleanup(); }
   });
 
-  it('fails closed when a path cannot be stat-ed', function (t) {
-    if (process.getuid && process.getuid() === 0) return t.skip('root ignores mode bits');
+  // v1.26.104 — this used chmod(0o000) on the hooks directory, which is a no-op on Windows:
+  // NTFS does not honour POSIX mode bits, statSync kept succeeding, and the test failed on
+  // the platform it was meant to protect while passing on macOS.
+  //
+  // Replacing the directory with a file makes the stat fail for a reason every platform
+  // agrees on — ENOTDIR when resolving a child of a non-directory — so the assertion is now
+  // about the code under test rather than about the host's permission model. It also removes
+  // the root special-case: root ignores mode bits, but not this.
+  it('fails closed when a path cannot be stat-ed', () => {
     const h = makeHome();
     const hooks = join(h.home, '.claude', 'hooks');
     try {
-      chmodSync(hooks, 0o000);
+      rmSync(hooks, { recursive: true, force: true });
+      writeFileSync(hooks, 'not a directory');
       const r = checkInstallArtifacts({ home: h.home, ownmindDir: h.ownmindDir });
-      chmodSync(hooks, 0o755);
       assert.equal(r.ok, false, 'an unreadable path counts as missing, never as present');
+      assert.ok(r.missing.some((m) => m.id === 'iron_rule_hook'),
+        'the artifact whose path became unreadable must be the one reported missing');
     } finally {
-      try { chmodSync(hooks, 0o755); } catch { /* already restored */ }
       h.cleanup();
     }
   });
