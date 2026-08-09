@@ -460,31 +460,8 @@ node -e "
 
   // SessionStart is handled by ensure-session-hook.cjs (v1.26.86, see that file), which
   // runs as its own step after this block. All four install/update scripts share it.
-  // PreToolUse hook — iron rule check
-  //
-  // v1.26.92: two matchers now, and the presence check has to be per-matcher. It used to
-  // ask 'is ownmind-iron-rule-check registered anywhere in PreToolUse', which is true for
-  // every existing install — so a second entry added here would never reach anyone who
-  // already had the first. Upgrades are the whole population.
-  if (!s.hooks.PreToolUse) s.hooks.PreToolUse = [];
-  const preToolUseMatchers = [
-    { matcher: 'Bash', label: '鐵律檢查' },
-    // The file-editing tools carry no command, which is why no rule tagged trigger:edit had
-    // ever fired. The hook throttles itself to one full listing per hour.
-    { matcher: 'Edit|Write|MultiEdit|NotebookEdit', label: '改檔案時的鐵律提醒' },
-  ];
-  for (const { matcher, label } of preToolUseMatchers) {
-    const exists = s.hooks.PreToolUse.some(h =>
-      h.matcher === matcher && h.hooks?.some(hh => hh.command?.includes('ownmind-iron-rule-check'))
-    );
-    if (!exists) {
-      s.hooks.PreToolUse.push({
-        matcher,
-        hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }]
-      });
-      console.log('   加入 PreToolUse hook（' + label + '）');
-    }
-  }
+  // PreToolUse is handled by ensure-pretooluse-hooks.cjs (v1.26.105), same arrangement: it
+  // runs after this block's write, reads settings.json back off disk, and writes its own.
 
   // WorktreeCreate hook — 自動注入 .mcp.json 到新 worktree
   if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
@@ -500,6 +477,25 @@ node -e "
 
   fs.writeFileSync(path, JSON.stringify(s, null, 2));
 " 2>>"$INSTALL_LOG"
+
+# --- 4c-1. PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
+# Also repairs an entry whose command is stale — see the helper's header for why presence
+# alone was never enough.
+ENSURE_PRE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-pretooluse-hooks.cjs"
+if [ -f "$ENSURE_PRE_HOOK" ]; then
+  # `if var=$(...)` and not a bare assignment: under `set -eE` a bare command substitution
+  # carries the helper's exit status and takes the whole installer down at this line —
+  # everything below, including the artifact self-check, never runs. And with 2>&1 captured
+  # into a variable that the failure path would never echo, it goes down without saying why.
+  # See the note at the top of this file: that combination hid a fatal error for four months.
+  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" --bash 2>&1); then
+    echo "[ OK ] PreToolUse iron-rule hook: $pre_hook_result"
+  else
+    echo "[FAIL] PreToolUse iron-rule hook: $pre_hook_result"
+  fi
+else
+  echo "[WARN] ensure-pretooluse-hooks.cjs not found (stale upgrade?) — skipped PreToolUse hook registration"
+fi
 
 # --- 4c-2. SessionStart hook (v1.26.86, delegated to the shared implementation) ---
 ENSURE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-session-hook.cjs"
