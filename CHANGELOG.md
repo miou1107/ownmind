@@ -1,5 +1,49 @@
 # OwnMind 更新紀錄
 
+## v1.26.112 — MCP server 從來沒被註冊在 Claude Code 會讀的那個檔案
+
+### 記憶會載入，但 AI 不能主動存取記憶
+
+Claude Code 有兩個設定檔，長得很像：
+
+| 檔案 | Claude Code 從這裡讀什麼 |
+|---|---|
+| `~/.claude.json` | **MCP server** |
+| `~/.claude/settings.json` | hooks、權限 |
+
+安裝腳本從頭到尾只寫後者。所以 `ownmind_*` 工具**在任何人的 session 裡都不存在** —— 不是壞掉、不是降級，是根本沒被註冊。
+
+而它藏得住，是因為**看得見的那一半是好的**：SessionStart hook 設定在 `settings.json`（Claude Code 確實從那裡讀 hooks），它自己打 API 把記憶注入 context。使用者看到「記憶載入了」，於是沒有人去問另一半在哪。
+
+2026-08-09 在一台機器上量到：`settings.json` 裡有完整正確的 `mcpServers.ownmind`，`~/.claude.json` 連 `mcpServers` 這個鍵都沒有，session 裡沒有任何 `ownmind_*` 工具。手動跑 `node ~/.ownmind/mcp/index.js`，`initialize` 回得好好的 —— server 一直是好的，只有「寫在哪」是錯的。
+
+這件事倉庫其實早就知道一半。`resolve-credentials.cjs` 兩個檔案都找，v1.26.93／94 的紀錄也順口寫過 `~/.claude.json` 是「沒有任何安裝腳本會寫的那個檔案」。沒有人把那句話的結論講完：**沒人寫，就等於沒註冊。**
+
+### 升級腳本也要改，不然只有新使用者受惠
+
+沒有人會重跑安裝腳本。自動更新走的是 `git pull` → `npm install` → `update.sh`，從頭到尾不碰安裝腳本 —— 這正是 v1.26.104 在 git hook wrapper 上踩過的坑。
+
+只修安裝腳本的話，這一版會宣稱修好了，而每一台既有機器原封不動地壞著，還以為自己好了。所以 `update.sh` 跟 `update.ps1` 都加了同一節：`.claude.json` 沒有就補註冊，沿用機器上既有的金鑰跟啟動指令，找不到憑證就安靜跳過。
+
+### 「寫了、也讀得回來」不等於「寫對地方」
+
+實作過程中同一種病又犯了兩次，兩次都被同一個問題抓到 —— **驗證從來沒問「在哪個檔案」**：
+
+1. `registerMcp` 一開始預設用 `os.homedir()`。Windows 上那是 `USERPROFILE`，而 `install.sh` 其他路徑全用 bash 的 `$HOME`。測試時把 `HOME` 指到暫存目錄，helper 照樣寫進真正的家目錄，然後回報 verified —— 它確實寫了、也確實讀回來了，只是在沒人看的地方。現在家目錄必須由呼叫端明確傳入，非絕對路徑、或 Windows 上拿到 POSIX 路徑，直接拋錯不寫。
+2. `update.sh` 裡的 `resolveCredentials()` 沒帶 `home`，會讀 A 家目錄的憑證、寫進 B 家目錄。
+
+兩個都跟主 bug 是同一句話：正確地寫進了錯的檔案，而檢查沒有問是哪個檔案。
+
+### self-check 現在會問這件事
+
+`mcp_files` 確認 server 檔案在、`mcp_node_modules` 確認它跑得起來 —— 一台工具完全不存在的機器，這兩項都是綠的。**決定它會不會被啟動的那個檔案，沒有任何一項在看。**
+
+新增 `mcp_registered`：直接讀 `~/.claude.json`，沒有就明講「`ownmind_*` 工具在 Claude Code 裡不會出現」。這就是 IR-001 —— 安裝腳本說成功不算數，要自己開設定檔確認。
+
+### 文件也教錯了
+
+`docs/setup-claude-code.md` 一直叫使用者把設定加到 `~/.claude/settings.json`，也就是那個對 MCP 沒有作用的檔案。已改，並且把兩個檔案的差別列成表。
+
 ## v1.26.111 — `stat -f` 在 Linux 上不是安靜地失敗，於是更新鎖算不出年紀
 
 CI 開起來的第一天，ubuntu 那一欄的紅就是它。macOS 綠、Linux 紅 —— 這是前幾版那批 Windows 問題的鏡像：**在 Mac 上開發，壞在別的平台。**

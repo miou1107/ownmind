@@ -316,41 +316,46 @@ $McpConfig = @{
 }
 
 # --- 2. Claude Code MCP 設定 ---
-if (Test-Path $ClaudeSettings) {
-  # v1.26.91: this used to skip the whole block when the file already contained the string
-  # "ownmind". But the entry is where the API key lives, so every re-run that meant to change
-  # the key — switching accounts, rotating a credential, correcting one typed wrong — did
-  # nothing at all and then printed an installation summary. The condition asked whether
-  # OwnMind was configured; the question that mattered was whether it was configured with
-  # THIS key. install.sh carried the identical bug; both are fixed together.
-  Write-Host "[INFO] Configuring Claude Code MCP"
-  $content = Get-Content $ClaudeSettings -Raw
-  $settings = $content | ConvertFrom-Json
-  if (-not $settings.mcpServers) {
-    $settings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
-  }
-  $prevKey = $null
-  # Merge, do not replace: an existing entry keeps any env var this installer does not
-  # manage. install.sh spreads `prev`/`prevEnv` for the same reason — the two must agree.
-  $mergedConfig = @{}
-  foreach ($k in $McpConfig.Keys) { $mergedConfig[$k] = $McpConfig[$k] }
-  $mergedEnv = @{}
-  if ($settings.mcpServers.ownmind -and $settings.mcpServers.ownmind.env) {
-    $prevKey = $settings.mcpServers.ownmind.env.OWNMIND_API_KEY
-    foreach ($p in $settings.mcpServers.ownmind.env.PSObject.Properties) { $mergedEnv[$p.Name] = $p.Value }
-  }
-  foreach ($k in $McpConfig.env.Keys) { $mergedEnv[$k] = $McpConfig.env[$k] }
-  $mergedConfig['env'] = $mergedEnv
-  $settings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$mergedConfig) -Force
-  Write-Utf8NoBom -Path $ClaudeSettings -Content ($settings | ConvertTo-Json -Depth 10)
-  # Say which of the two happened. A run that silently changed the account is as confusing
-  # as one that silently did not.
-  if (-not $prevKey) { Write-Host "       API key written" }
-  elseif ($prevKey -ne $ApiKey) { Write-Host "       API key updated (replaced a different key)" }
-  else { Write-Host "       API key unchanged" }
+# v1.26.112 — write both files, and the one that matters is ~/.claude.json.
+#
+# This block used to write ~/.claude/settings.json and stop. Claude Code reads that file
+# for hooks, but it launches MCP servers from ~/.claude.json, which nothing has ever
+# written — so the ownmind_* tools were never registered for anybody. Memory still loaded,
+# because the SessionStart hook is configured separately and makes its own HTTP call, and
+# that is why nine releases went by with nobody noticing: the visible half worked.
+#
+# Delegated to the same Node helper install.sh uses, so the two installers cannot drift.
+# The merge, atomic write, read-back and home-directory validation all live there.
+Write-Host "[INFO] Configuring Claude Code MCP"
+$RegisterMcp = Join-Path $OwnmindDir "scripts\install-helpers\register-mcp.cjs"
+if (-not (Test-Path $RegisterMcp)) {
+  Write-Host "       [WARN] register-mcp.cjs missing - MCP was not registered"
 } else {
-  Write-Host "[INFO] Creating Claude Code MCP config"
-  Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
+  $McpEntryJson = ($McpConfig | ConvertTo-Json -Depth 10 -Compress)
+  $regScript = @'
+const { registerMcp } = require(process.argv[1]);
+const r = registerMcp({
+  entry: JSON.parse(process.argv[2]),
+  apiUrl: process.argv[3],
+  apiKey: process.argv[4],
+  tool: "claude-code",
+  home: process.argv[5],
+});
+for (const p of r.problems) console.log("PROBLEM " + p);
+console.log(r.verified ? "VERIFIED" : "UNVERIFIED");
+'@
+  $regOut = & node -e $regScript $RegisterMcp $McpEntryJson $ApiUrl $ApiKey $HOME 2>&1
+  foreach ($line in $regOut) {
+    if ("$line" -like "PROBLEM *") { Write-Host ("       [WARN] " + ("$line" -replace '^PROBLEM ', '')) }
+  }
+  # IR-001: an installer reporting success is not evidence that it configured anything.
+  # This reports what was read back off disk, not what we meant to write.
+  if ($regOut -contains "VERIFIED") {
+    Write-Host "       MCP registered in ~/.claude.json (verified by reading it back)"
+  } else {
+    Write-Host "       [WARN] MCP could NOT be registered in ~/.claude.json -"
+    Write-Host "              the ownmind_* tools will not be available in Claude Code."
+  }
 }
 
 # --- 2.1 v1.17.71 OwnMind 在場感：加 PostToolUse hook 把 banner 印到 user terminal ---
