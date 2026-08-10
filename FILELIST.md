@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.130 修改（看得到、修不到：修復端問的問題比檢測端弱）
+
+新檔：
+```
+scripts/install-helpers/schedule-health.ps1      — 新增、Windows 排程健康判斷的唯一一份規則
+                                                    （Test-ScheduleHealthy /
+                                                    Test-TaskBelongsToInstall）。純字串邏輯、
+                                                    不碰 Task Scheduler，所以測試在 macOS /
+                                                    Linux 也執行得到
+tests/scanner-schedule-ownership.test.js         — 17 tests：同一張案例表跑 JS 與 PowerShell
+                                                    兩份實作（含 Adam 那台的真實 actions 字串）、
+                                                    停用/讀不到狀態仍算壞掉、修復前的閘門與
+                                                    修復後的驗證都要問歸屬
+```
+
+修改檔：
+```
+scripts/install-helpers/ensure-scanner-schedule.ps1 — 健康閘門從「有工作而且沒被停用」改成
+                                                    Test-ScheduleHealthy；重新註冊完也確認
+                                                    工作真的指回這個安裝目錄
+FILELIST.md / CHANGELOG.md / package.json        — 版號與紀錄
+```
+
 ## v1.26.129 修改（副本執行少了 shared/ ＋ 自動更新不再靜悄悄）
 
 新檔：
@@ -1620,7 +1643,13 @@ scripts/install-helpers/session-hook-command.cjs    — v1.26.86 未加引號、
                                               指令不覆蓋
 scripts/install-helpers/ensure-scanner-schedule.ps1 — v1.26.79 同上的 Windows 版。被停用的工作也算
                                               壞掉（查得到、永遠不會跑）。註冊邏輯只有一份，
-                                              轉呼叫 register-scanner-task.ps1，這裡不複製
+                                              轉呼叫 register-scanner-task.ps1，這裡不複製。
+                                              v1.26.130 健康判斷改呼叫 schedule-health.ps1
+scripts/install-helpers/schedule-health.ps1 — v1.26.130 Test-ScheduleHealthy /
+                                              Test-TaskBelongsToInstall。修復端問的問題要跟
+                                              自我檢測端一樣：工作屬於別的安裝目錄也算壞掉。
+                                              純字串邏輯、不碰 Task Scheduler，所以不在
+                                              Windows 也執行得到
 tests/scanner-task-durability.test.js       — v1.26.65
 tests/scanner-blind-scan.test.js            — v1.26.65
 tests/scanner-vscode-multipath.test.js      — v1.26.66
