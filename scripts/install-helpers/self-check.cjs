@@ -809,7 +809,13 @@ async function checkScheduler() {
     // stays a split on the first newline.
     const r = await safeSpawn('powershell.exe',
       ['-NoProfile', '-Command',
-        "$t = Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue; "
+        // v1.26.130 - -TaskPath '\' pins the query to the root folder, where
+        // register-scanner-task.ps1 creates it. Without it a same-named task in some other
+        // folder joins the result, $t becomes an array, and the two lines this parses as
+        // "state" and "actions" stop describing one task. ensure-scanner-schedule.ps1 has
+        // always pinned it; a check and a repair asking different questions is the defect
+        // this release exists to close, so they ask the same one here too.
+        "$t = Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -TaskPath '\\' -ErrorAction SilentlyContinue; "
         + "if ($t) { $t.State; (($t.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ') -replace '\\r?\\n', ' ' }"],
       { timeout: CIM_TIMEOUT_MS });
     if (!r.ok) {
