@@ -1,5 +1,130 @@
 # OwnMind 更新紀錄
 
+## v1.26.133 — 三個只在 Windows 出現、而且都不會自己報錯的缺陷
+
+2026-08-10 在 TANK（Windows 10 專業版、Claude Code 桌面版、client 1.26.132）把整套功能
+逐項跑過一遍：19 個 MCP 工具、5 個 Claude Code 掛勾、3 個 git 掛勾、排程掃描器、
+9 支 PowerShell 腳本、離線備援。找到三個缺陷，共通形狀是**失敗發生在沒有人看的通道**。
+
+### 缺陷一：開場載入把待顯示訊息印給了沒有人看的地方，然後把檔案清掉
+
+`hooks/ownmind-session-start.js` 的 `drainSpools()` 做三件事，順序是致命的：
+
+1. 印出標題「📥 OwnMind messages queued from your last session:」
+2. `runLibScript('flush-pending-banners.js', { stdinFile: bannerFile })`
+3. `fs.writeFileSync(bannerFile, '')`
+
+`runLibScript` 是 `stdio: ['pipe', 'ignore', 'ignore']` 的**卸離**子行程，而
+`flush-pending-banners.js` 是把每一則訊息寫到**自己的 stderr**。stderr 被 ignore，
+訊息進了一根被丟掉的管子；第 3 行照樣把檔案清成 0 bytes。
+
+實測：塞一筆 77 bytes 的訊息進 `logs/banner-pending.jsonl`，執行掛勾 ——
+畫面只有標題、底下空的，檔案變 0 bytes。**訊息永久消失。**
+
+這不是邊緣情況。會寫進這個佇列的兩支程式（tty-echo 的 PostToolUse 掛勾、
+reply-lint 的 Stop 掛勾）都是**先試著寫終端機裝置、開不起來才退到這個檔案**，
+而 Claude Code 桌面版底下 `\\.\CONOUT$` 就是開不起來。所以在那個環境裡，
+佇列不是備援、是唯一通道：一場 25 分鐘的 session 累積了 19 筆，
+包含一則 reply-lint 的語言警告，然後在下次開場時全部被銷毀。
+
+也就是說：**Windows 桌面版底下，OwnMind 對使用者的即時提示一則都看不到。**
+
+改法是不再委派給看不到輸出的子行程 —— 解析規則搬到
+`hooks/lib/pending-banners.js`，開場掛勾自己印。清空改成「印出去了才清」，而且**寫回去的是
+沒印出來的那些**：解析不出來的行原封不動留在檔案裡，不會跟已顯示的訊息一起被清掉
+（一則寫到一半的紀錄是這個檔案最常見的壞法，也是唯一能看出是誰把它寫壞的線索）。
+而**非空但完全解析不出東西**的佇列改成搬到 `.unreadable` 而不是刪掉 ——
+清理永遠排在證據保全之後。標題也只在真的有東西時才印，順手解掉「孤零零一行標題」那個症狀。
+
+`runLibScript` 的 `stdinFile` 參數直接移除，不是修好：一個三條輸出全部 ignore 的
+執行器，不該提供一個把資料餵給「會產生輸出的程式」的入口。
+
+### 缺陷二：開場載入會把鐵律快取清空，害回覆語言檢查整場空轉
+
+`mcp/index.js` 的 init 打的是 `/api/memory/init?compact=true`。精簡回應**刻意**
+不帶 `iron_rules` 陣列 —— 它帶的是 `iron_rules_digest`。但兩處快取寫入都當它是完整回應：
+
+```js
+filterCacheableRules(data.iron_rules || [])   // → [] → 寫進 cache/iron_rules.json
+iron_rule: data.iron_rules || []              // → [] → 寫進 cache/memories.json
+```
+
+實測（同一台機器，四條鐵律的帳號）：快取在 20:25 有 IR-004 —— 全帳號唯一帶
+`lint_validator` 的那條 —— 2983 bytes；呼叫一次 `ownmind_init`，20:30 變成 2 bytes。
+reply-lint 的 Stop 掛勾從那個檔案解出要跑哪些檢查，於是整場 session 解出 0 個，
+一則中英夾雜 67.3% 的回覆一聲不響地過關。
+
+這正是 `shared/cacheable-rules.js` 當初寫來擋的那個「設定了等於沒設定」，
+只是這次發生在上面一層。它看起來像偶發，是因為 pre-commit 掛勾發現快取空的時候會重建 ——
+換句話說，**那條語言鐵律只在你當天有 commit 之後才生效**。
+
+同一個運算式也把 `team_standard`、`coding_standard`、`project`、`env`、`portfolio`
+在離線快取裡一起清光，所以那台機器的離線 init 只回得出一個 profile 跟兩條原則。
+
+改法在 `shared/init-cache.js`，整件事就是一個區分：**「沒有回答」不等於「答案是空的」**。
+
+- `pickRulesForCache` — 回應有帶就用；沒帶就去問 `/api/memory/type/iron_rule`；
+  兩邊都問不到就回 `null`，呼叫端**不准寫**。真的是空陣列則照寫，因為
+  「這個帳號沒有可快取的規則」跟「查不到」必須分得開。
+- `mergeOfflineCacheData` — 回應有回答的型別用回應的，沒回答的型別保留舊快取。
+
+- `previousDataForAccount` — **合併會問一個「覆蓋」從來不用問的問題：磁碟上那份是誰的？**
+  在這個修法之前，精簡 init 會把大部分集合清空，所以換金鑰到另一個帳號時，
+  舊帳號的資料是「因為這個缺陷」而被順手清掉的。改成保留之後，如果不管帳號，
+  就會變成一個帳號的團隊標準與專案在另一把金鑰底下讀得到 —— 那正是 v1.26.82
+  在開場快取上抓到的問題，這次會從「修別的東西」這條路繞回來。
+  規則沿用 v1.26.82：用 `accountFingerprint`（伺服器網址 + 金鑰的雜湊，
+  所以檔案標得出帳號、但不會變成另一個可以讀到金鑰的地方）比對，而且**刻意嚴格**——
+  完全沒有帳號標記的快取算成「別人的」，不算成「我們的」。每台機器下一次 init 就會補上標記，
+  代價是一個 session 的舊行為，換到的是「來源查不出來的檔案永遠不會被信任」。
+
+已知且刻意保留：精簡回應的 `principles` 只有 id/title/code，仍然會覆蓋掉完整的舊資料。
+那是既有行為、是另一個（比較小的）問題；用「看起來像被截斷」去猜是猜測，
+猜錯會無聲地把過期內容釘住。
+
+### 缺陷三：自我檢查在每一台排程正常的 Windows 機器上誤報失敗
+
+`safe-spawn.cjs` 會把它回傳的 stdout 裡的家目錄換成 `~`
+（`s.split(os.homedir()).join('~')`）。那是為了讓上傳的自我檢查報告不帶使用者的
+個人資料夾路徑 —— 對一份**報告**來說是對的。`checkScheduler` 拿同一個字串去做**比對**：
+
+```js
+const actions = lines.slice(1).join(' ');          // wscript.exe "~\.ownmind\..."
+if (!taskBelongsToInstall(actions, OWNMIND_DIR))   // C:\Users\Vin\.ownmind
+```
+
+`~\.ownmind\...` 永遠不可能包含 `C:\Users\Vin\.ownmind`，所以**只要安裝目錄在家目錄底下
+（預設全都是），這項檢查一定紅字**。實測那台機器的排程是 Ready、
+LastTaskResult 0x0、下次執行時間正常、參數指的就是自己的檔案，報告卻寫
+`Task Scheduler entry points at another installation`，還附上「請重新註冊」——
+重新註冊修不了任何東西，因為沒有東西壞掉，而新註冊的排程隔天照樣過不了同一個比對。
+
+PowerShell 那半邊的規則（`schedule-health.ps1`）是直接從 `Get-ScheduledTask` 讀，
+從來沒看過 `~`，所以「檢查」跟「修復」又一次各說各話 —— 跟 v1.26.130 關掉的是同一種分裂，
+這次是從消毒函式那邊繞進來的。
+
+改法：`scheduler-task-owner.cjs` 加一個 `expandHomeMarker(text, home)`，把 `~`
+（只認緊接路徑分隔符的那種）還原成家目錄，`self-check.cjs` 在問所有權之前先還原。
+刻意**不**併進 `taskBelongsToInstall`：所有權規則有兩份實作、彼此對賭，
+而只有 JS 這邊會經過消毒函式；還原是呼叫端的問題，就放在呼叫端指名去拿的函式裡。
+
+### 沒有壞的部分（一併記錄，避免下次重測）
+
+- 鐵律攔截在 install / delete / 改檔案三種情境都正確跳出，`git commit` 沒跳是因為
+  這個帳號的四條鐵律都沒有 commit 觸發標籤
+- 19 個 MCP 工具逐一實測通過（`upload_standard` 只做到預覽，沒有 commit 到團隊標準）
+- 三個 git 掛勾：假金鑰擋下、AI 署名擋下、乾淨提交通過
+- 排程掃描器實際上傳 473 筆用量資料
+- 9 支 PowerShell 腳本語法全過，離線備援正確標記 `_offline`
+- 記憶檔同步到本機（含中文檔名）正常
+
+### 新增測試
+
+`tests/pending-banners.test.js`（12）、`tests/init-cache.test.js`（17）、
+`tests/scheduler-actions-home-marker.test.js`（9）。三份都帶 mutation control：
+分別證明修改前的寫法真的會丟掉訊息、真的會清空快取、真的會把健康的排程判成別人的 ——
+沒有這一層，這三個修法都是無法否證的。
+
 ## v1.26.132 — 為了安裝而寫的那兩條鐵律，正好在安裝的時候不會出現
 
 ### 量到的事實

@@ -21,6 +21,9 @@ import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.j
 import { buildApiErrorMessage } from './lib/api-error-message.js';
 import { localDateOnly } from '../shared/local-date.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
+// v1.26.133 — a compact init response is not evidence that a collection is empty.
+import { pickRulesForCache, mergeOfflineCacheData, previousDataForAccount } from '../shared/init-cache.js';
+import { accountFingerprint } from '../shared/scanners/base.js';
 // v1.26.127: the tip list lives in shared/tips.js so this and INSTRUCTIONS_SOP cannot drift.
 import { getRandomTip } from '../shared/tips.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
@@ -797,30 +800,55 @@ async function handleTool(name, args) {
       // E4: Sync verifiable rules to local cache
       // v1.26.124: "verifiable" is now "anything a cache consumer needs" — the reply-lint
       // hook's rules live here too. See shared/cacheable-rules.js.
-      try {
-        const verifiableRules = filterCacheableRules(data.iron_rules || []);
-        cachedVerifiableRules = verifiableRules;
-        const cachePath = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
-        const cacheDir = path.dirname(cachePath);
-        if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-        fs.writeFileSync(cachePath, JSON.stringify(verifiableRules, null, 2));
-      } catch { /* silent fail */ }
+      //
+      // v1.26.133: this request asks for `compact=true`, and a compact response carries
+      // `iron_rules_digest` rather than `iron_rules`. So `data.iron_rules || []` filtered an
+      // empty array on every single init and wrote `[]` over the cache. Measured on Windows
+      // 2026-08-10: the account's only rule carrying a lint_validator was in the cache at
+      // 20:25 and gone at 20:30 after one init — leaving the reply-lint Stop hook with zero
+      // validators for the rest of the session. See shared/init-cache.js.
+      //
+      // When the response cannot answer, ask the endpoint that can; when that fails too,
+      // leave the cache as it is. `absent` is not `empty`.
+      let ironRules = Array.isArray(data.iron_rules) ? data.iron_rules : null;
+      if (!ironRules) {
+        try {
+          const fetched = await callApi('GET', '/api/memory/type/iron_rule');
+          ironRules = pickRulesForCache(null, Array.isArray(fetched) ? fetched : fetched?.data);
+        } catch { /* offline or 5xx: both caches keep what they already hold */ }
+      }
 
-      // Write full memory cache for offline fallback
+      if (ironRules) {
+        try {
+          const verifiableRules = filterCacheableRules(ironRules);
+          cachedVerifiableRules = verifiableRules;
+          const cachePath = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
+          const cacheDir = path.dirname(cachePath);
+          if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+          fs.writeFileSync(cachePath, JSON.stringify(verifiableRules, null, 2));
+        } catch { /* silent fail */ }
+      }
+
+      // Write full memory cache for offline fallback.
+      // v1.26.133: merged rather than replaced, for the same reason — a compact response
+      // carries no team standards, coding standards, projects, envs or portfolios, and
+      // storing `|| []` for each erased them from the offline cache on every session start.
+      // The offline probe on 2026-08-10 came back with no iron rules and no team standards
+      // for precisely that.
+      //
+      // The `account` stamp is what makes merging safe. Replacing needed no such question;
+      // keeping what is already on disk does, because a key pointing at another account must
+      // not inherit this one's collections. Same rule as the SessionStart cache (v1.26.82):
+      // an unattributed cache counts as somebody else's.
       try {
+        const fingerprint = accountFingerprint({ apiUrl: API_URL, apiKey: API_KEY });
         writeMemoryCache({
           saved_at: new Date().toISOString(),
           sync_token: data.sync_token || null,
-          data: {
-            profile: data.profile ? [data.profile] : [],
-            principle: data.principles || [],
-            iron_rule: data.iron_rules || [],
-            coding_standard: data.coding_standards || [],
-            team_standard: data.team_standards || [],
-            project: data.projects || [],
-            env: data.envs || [],
-            portfolio: data.portfolios || [],
-          }
+          account: fingerprint,
+          data: mergeOfflineCacheData(
+            previousDataForAccount(readMemoryCache(), fingerprint), data, ironRules,
+          ),
         });
       } catch { /* silent fail */ }
 

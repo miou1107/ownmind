@@ -1,5 +1,77 @@
 # OwnMind 檔案結構
 
+## v1.26.133 修改（三個只在 Windows 出現、都不會自己報錯的缺陷）
+
+新檔：
+```
+hooks/lib/pending-banners.js                    — 待顯示訊息佇列的解析規則，一個地方。
+                                                   parsePendingBanners（壞掉的行不能拖累讀得懂
+                                                   的行；解析成功但沒帶 block 的紀錄也算讀不出
+                                                   來，否則整份都是這種的佇列會長得跟空佇列
+                                                   一樣，然後被刪掉）、renderPendingBanners
+                                                   （沒東西就回空字串——那既是「不要印孤零零
+                                                   的標題」，也是呼叫端「不要清檔」的訊號）
+shared/init-cache.js                            — 精簡 init 回應可以拿來寫什麼、不能拿來寫
+                                                   什麼。pickRulesForCache（回應有帶就用、
+                                                   沒帶就用另外抓的、兩邊都沒有就回 null，
+                                                   呼叫端不准寫；真的空陣列照寫，因為「這個
+                                                   帳號沒有可快取的規則」跟「查不到」必須
+                                                   分得開）、mergeOfflineCacheData（回應沒
+                                                   回答的型別保留舊快取）、
+                                                   previousDataForAccount（合併才需要問的
+                                                   問題：磁碟上那份是誰的。沿用 v1.26.82
+                                                   的帳號指紋，沒有標記就當成別人的）、
+                                                   OFFLINE_CACHE_FIELDS（型別對應欄位，
+                                                   新增型別不會在其中一邊無聲消失）
+tests/pending-banners.test.js                   — 12 tests：解析與算繪的行為，加上兩個端到端
+                                                   ——真的把掛勾跑起來，斷言那一則訊息確實
+                                                   出現在 stderr 且佇列被清空；以及完全讀不出
+                                                   東西的佇列要被搬到 .unreadable 而不是刪掉。
+                                                   另有原始碼層的守門：不准再把佇列餵給
+                                                   看不到輸出的子行程，清空必須排在寫出之後
+tests/init-cache.test.js                        — 17 tests：含 mutation control（證明修改前的
+                                                   `data.iron_rules || []` 真的會把快取清空）、
+                                                   每個快取型別都要被覆蓋到、以及一個端到端：
+                                                   真的啟動一個 MCP 行程去打一台只回精簡回應的
+                                                   假伺服器，斷言快取裡的規則還在
+tests/scheduler-actions-home-marker.test.js     — 9 tests：expandHomeMarker 的行為、mutation
+                                                   control（不還原的話健康的排程就是會被判成
+                                                   別人的）、反向控制（還原之後別人的排程仍然
+                                                   不是我們的），並直接對 safeSpawn 斷言它真的
+                                                   會把家目錄換成 ~——那是這整份測試的前提
+```
+
+改檔：
+```
+hooks/ownmind-session-start.js                  — drainSpools 的橫幅那段改成呼叫新的
+                                                   flushPendingBannerFile：當場自己印，
+                                                   印出去了才清檔，讀不出東西的佇列搬到
+                                                   .unreadable。runLibScript 的 stdinFile
+                                                   參數直接移除——一個三條輸出全部 ignore
+                                                   的執行器，不該提供把資料餵給「會產生
+                                                   輸出的程式」的入口
+hooks/lib/flush-pending-banners.js              — 改成共用 pending-banners.js 的解析規則。
+                                                   這支 CLI 留給 shell 掛勾（它自己沒辦法
+                                                   解析 jsonl）；Node 掛勾不再經過它
+mcp/index.js                                    — init 的兩處快取寫入。鐵律快取改成先看回應
+                                                   有沒有帶陣列，沒帶就去問
+                                                   /api/memory/type/iron_rule，兩邊都失敗就
+                                                   不動快取。離線快取改成 mergeOfflineCacheData
+                                                   （合併而不是覆蓋），精簡回應沒帶的型別
+                                                   保留舊值，並寫入 account 指紋、只在指紋
+                                                   相符時才沿用舊資料
+scripts/install-helpers/scheduler-task-owner.cjs — 新增 expandHomeMarker(text, home)：把
+                                                   safeSpawn 代換掉的 ~ 還原成家目錄，只認
+                                                   緊接路徑分隔符的那種。刻意不併進
+                                                   taskBelongsToInstall——所有權規則有兩份
+                                                   實作彼此對賭，而只有 JS 這邊會經過消毒
+                                                   函式，還原是呼叫端的問題
+scripts/install-helpers/self-check.cjs          — checkScheduler 在問所有權之前先還原家目錄，
+                                                   用的是跟 OWNMIND_DIR 同一個 HOME
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.133 與三語同步
+```
+
 ## v1.26.132 修改（為了安裝而寫的鐵律，在安裝時不會出現）
 
 新檔：
