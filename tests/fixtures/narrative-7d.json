@@ -1,0 +1,1145 @@
+{
+ "ranking": [
+  {
+   "id": 1,
+   "name": "member-1",
+   "role": "super_admin",
+   "sessions": "1334",
+   "events": "2649",
+   "last_activity": "2026-08-10T15:44:43.000Z",
+   "measured": true
+  },
+  {
+   "id": 8,
+   "name": "member-8",
+   "role": "user",
+   "sessions": "147",
+   "events": "435",
+   "last_activity": "2026-08-10T14:39:35.980Z",
+   "measured": true
+  },
+  {
+   "id": 4,
+   "name": "member-4",
+   "role": "super_admin",
+   "sessions": "138",
+   "events": "420",
+   "last_activity": "2026-08-10T12:06:05.925Z",
+   "measured": true
+  },
+  {
+   "id": 12,
+   "name": "member-12",
+   "role": "user",
+   "sessions": "174",
+   "events": "351",
+   "last_activity": "2026-08-10T11:02:56.000Z",
+   "measured": true
+  },
+  {
+   "id": 6,
+   "name": "member-6",
+   "role": "user",
+   "sessions": "56",
+   "events": "237",
+   "last_activity": "2026-08-10T10:08:22.000Z",
+   "measured": true
+  },
+  {
+   "id": 3,
+   "name": "member-3",
+   "role": "user",
+   "sessions": "30",
+   "events": "163",
+   "last_activity": "2026-08-10T09:50:42.000Z",
+   "measured": true
+  },
+  {
+   "id": 11,
+   "name": "member-11",
+   "role": "user",
+   "sessions": "54",
+   "events": "59",
+   "last_activity": "2026-08-10T15:44:13.626Z",
+   "measured": true
+  },
+  {
+   "id": 10,
+   "name": "member-10",
+   "role": "user",
+   "sessions": "0",
+   "events": "0",
+   "last_activity": null,
+   "measured": true
+  },
+  {
+   "id": 9,
+   "name": "member-9",
+   "role": "user",
+   "sessions": "0",
+   "events": "0",
+   "last_activity": null,
+   "measured": true
+  }
+ ],
+ "versions": [
+  {
+   "user_id": 1,
+   "tool": "antigravity",
+   "version": "1.26.135",
+   "last_reported_at": "2026-08-10T15:20:51.560Z",
+   "machine": "machine-1"
+  },
+  {
+   "user_id": 1,
+   "tool": "claude-code",
+   "version": "1.26.135",
+   "last_reported_at": "2026-08-10T15:20:50.135Z",
+   "machine": "machine-1"
+  },
+  {
+   "user_id": 1,
+   "tool": "codex",
+   "version": "1.26.135",
+   "last_reported_at": "2026-08-10T15:20:50.667Z",
+   "machine": "machine-1"
+  },
+  {
+   "user_id": 1,
+   "tool": "cursor",
+   "version": "1.26.135",
+   "last_reported_at": "2026-08-10T15:20:51.218Z",
+   "machine": "machine-1"
+  },
+  {
+   "user_id": 1,
+   "tool": "opencode",
+   "version": "1.26.135",
+   "last_reported_at": "2026-08-10T15:20:50.982Z",
+   "machine": "machine-1"
+  },
+  {
+   "user_id": 3,
+   "tool": "antigravity",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T08:41:36.391Z",
+   "machine": "machine-3"
+  },
+  {
+   "user_id": 3,
+   "tool": "claude-code",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T08:41:34.051Z",
+   "machine": "machine-3"
+  },
+  {
+   "user_id": 3,
+   "tool": "codex",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T08:41:34.645Z",
+   "machine": "machine-3"
+  },
+  {
+   "user_id": 3,
+   "tool": "cursor",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T08:41:35.778Z",
+   "machine": "machine-3"
+  },
+  {
+   "user_id": 3,
+   "tool": "opencode",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T08:41:35.641Z",
+   "machine": "machine-3"
+  },
+  {
+   "user_id": 4,
+   "tool": "antigravity",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T09:15:57.955Z",
+   "machine": "machine-4"
+  },
+  {
+   "user_id": 4,
+   "tool": "claude-code",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T12:06:06.829Z",
+   "machine": "machine-4"
+  },
+  {
+   "user_id": 4,
+   "tool": "codex",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T09:15:57.277Z",
+   "machine": "machine-4"
+  },
+  {
+   "user_id": 4,
+   "tool": "cursor",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T09:15:57.685Z",
+   "machine": "machine-4"
+  },
+  {
+   "user_id": 4,
+   "tool": "opencode",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T09:15:57.586Z",
+   "machine": "machine-4"
+  },
+  {
+   "user_id": 6,
+   "tool": "antigravity",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T10:01:39.539Z",
+   "machine": "machine-6"
+  },
+  {
+   "user_id": 6,
+   "tool": "claude-code",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T10:01:38.808Z",
+   "machine": "machine-6"
+  },
+  {
+   "user_id": 6,
+   "tool": "codex",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T10:01:38.973Z",
+   "machine": "machine-6"
+  },
+  {
+   "user_id": 6,
+   "tool": "cursor",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T10:01:39.258Z",
+   "machine": "machine-6"
+  },
+  {
+   "user_id": 6,
+   "tool": "opencode",
+   "version": "1.26.125",
+   "last_reported_at": "2026-08-10T10:01:39.137Z",
+   "machine": "machine-6"
+  },
+  {
+   "user_id": 8,
+   "tool": "antigravity",
+   "version": "1.26.134",
+   "last_reported_at": "2026-08-10T14:38:16.374Z",
+   "machine": "machine-8"
+  },
+  {
+   "user_id": 8,
+   "tool": "claude-code",
+   "version": "1.26.134",
+   "last_reported_at": "2026-08-10T14:39:44.905Z",
+   "machine": "machine-8"
+  },
+  {
+   "user_id": 8,
+   "tool": "codex",
+   "version": "1.26.134",
+   "last_reported_at": "2026-08-10T14:38:15.903Z",
+   "machine": "machine-8"
+  },
+  {
+   "user_id": 8,
+   "tool": "cursor",
+   "version": "1.26.134",
+   "last_reported_at": "2026-08-10T14:38:16.181Z",
+   "machine": "machine-8"
+  },
+  {
+   "user_id": 8,
+   "tool": "opencode",
+   "version": "1.26.134",
+   "last_reported_at": "2026-08-10T14:38:16.046Z",
+   "machine": "machine-8"
+  },
+  {
+   "user_id": 9,
+   "tool": "antigravity",
+   "version": "1.26.26",
+   "last_reported_at": "2026-07-27T09:18:32.355Z",
+   "machine": "machine-9"
+  },
+  {
+   "user_id": 9,
+   "tool": "claude-code",
+   "version": "1.26.57",
+   "last_reported_at": "2026-08-10T08:24:40.549Z",
+   "machine": "machine-9"
+  },
+  {
+   "user_id": 9,
+   "tool": "cursor",
+   "version": "1.26.26",
+   "last_reported_at": "2026-07-27T09:18:31.775Z",
+   "machine": "machine-9"
+  },
+  {
+   "user_id": 9,
+   "tool": "opencode",
+   "version": "1.26.26",
+   "last_reported_at": "2026-07-27T09:18:31.594Z",
+   "machine": "machine-9"
+  },
+  {
+   "user_id": 10,
+   "tool": "antigravity",
+   "version": "1.26.27",
+   "last_reported_at": "2026-08-10T09:43:12.865Z",
+   "machine": "machine-10"
+  },
+  {
+   "user_id": 10,
+   "tool": "claude-code",
+   "version": "1.26.27",
+   "last_reported_at": "2026-08-10T09:43:12.005Z",
+   "machine": "machine-10"
+  },
+  {
+   "user_id": 10,
+   "tool": "codex",
+   "version": "1.26.27",
+   "last_reported_at": "2026-08-10T09:43:12.140Z",
+   "machine": "machine-10"
+  },
+  {
+   "user_id": 10,
+   "tool": "cursor",
+   "version": "1.26.27",
+   "last_reported_at": "2026-08-10T09:43:12.689Z",
+   "machine": "machine-10"
+  },
+  {
+   "user_id": 10,
+   "tool": "opencode",
+   "version": "1.26.27",
+   "last_reported_at": "2026-08-10T09:43:12.581Z",
+   "machine": "machine-10"
+  },
+  {
+   "user_id": 11,
+   "tool": "antigravity",
+   "version": "1.26.84",
+   "last_reported_at": "2026-08-10T10:43:04.101Z",
+   "machine": "machine-11"
+  },
+  {
+   "user_id": 11,
+   "tool": "claude-code",
+   "version": "1.26.84",
+   "last_reported_at": "2026-08-10T10:43:03.206Z",
+   "machine": "machine-11"
+  },
+  {
+   "user_id": 11,
+   "tool": "codex",
+   "version": "1.26.84",
+   "last_reported_at": "2026-08-10T10:43:03.324Z",
+   "machine": "machine-11"
+  },
+  {
+   "user_id": 11,
+   "tool": "cursor",
+   "version": "1.26.84",
+   "last_reported_at": "2026-08-10T10:43:03.901Z",
+   "machine": "machine-11"
+  },
+  {
+   "user_id": 11,
+   "tool": "opencode",
+   "version": "1.26.84",
+   "last_reported_at": "2026-08-10T10:43:03.776Z",
+   "machine": "machine-11"
+  },
+  {
+   "user_id": 12,
+   "tool": "antigravity",
+   "version": "1.26.128",
+   "last_reported_at": "2026-08-10T10:37:24.662Z",
+   "machine": "machine-12"
+  },
+  {
+   "user_id": 12,
+   "tool": "claude-code",
+   "version": "1.26.128",
+   "last_reported_at": "2026-08-10T11:02:56.360Z",
+   "machine": "machine-12"
+  },
+  {
+   "user_id": 12,
+   "tool": "codex",
+   "version": "1.26.128",
+   "last_reported_at": "2026-08-10T10:37:24.335Z",
+   "machine": "machine-12"
+  },
+  {
+   "user_id": 12,
+   "tool": "cursor",
+   "version": "1.26.128",
+   "last_reported_at": "2026-08-10T10:37:24.577Z",
+   "machine": "machine-12"
+  },
+  {
+   "user_id": 12,
+   "tool": "opencode",
+   "version": "1.26.128",
+   "last_reported_at": "2026-08-10T10:37:24.476Z",
+   "machine": "machine-12"
+  }
+ ],
+ "daily": [
+  {
+   "d": "08-03",
+   "c": "2"
+  },
+  {
+   "d": "08-04",
+   "c": "749"
+  },
+  {
+   "d": "08-05",
+   "c": "951"
+  },
+  {
+   "d": "08-06",
+   "c": "665"
+  },
+  {
+   "d": "08-07",
+   "c": "725"
+  },
+  {
+   "d": "08-08",
+   "c": "196"
+  },
+  {
+   "d": "08-09",
+   "c": "284"
+  },
+  {
+   "d": "08-10",
+   "c": "742"
+  }
+ ],
+ "hourly": [
+  {
+   "hour": 0,
+   "c": "58"
+  },
+  {
+   "hour": 1,
+   "c": "71"
+  },
+  {
+   "hour": 2,
+   "c": "57"
+  },
+  {
+   "hour": 3,
+   "c": "49"
+  },
+  {
+   "hour": 4,
+   "c": "1"
+  },
+  {
+   "hour": 5,
+   "c": "5"
+  },
+  {
+   "hour": 6,
+   "c": "71"
+  },
+  {
+   "hour": 7,
+   "c": "93"
+  },
+  {
+   "hour": 8,
+   "c": "186"
+  },
+  {
+   "hour": 9,
+   "c": "470"
+  },
+  {
+   "hour": 10,
+   "c": "306"
+  },
+  {
+   "hour": 11,
+   "c": "350"
+  },
+  {
+   "hour": 12,
+   "c": "247"
+  },
+  {
+   "hour": 13,
+   "c": "362"
+  },
+  {
+   "hour": 14,
+   "c": "202"
+  },
+  {
+   "hour": 15,
+   "c": "219"
+  },
+  {
+   "hour": 16,
+   "c": "245"
+  },
+  {
+   "hour": 17,
+   "c": "235"
+  },
+  {
+   "hour": 18,
+   "c": "210"
+  },
+  {
+   "hour": 19,
+   "c": "161"
+  },
+  {
+   "hour": 20,
+   "c": "110"
+  },
+  {
+   "hour": 21,
+   "c": "168"
+  },
+  {
+   "hour": 22,
+   "c": "184"
+  },
+  {
+   "hour": 23,
+   "c": "254"
+  }
+ ],
+ "weekday": [
+  {
+   "dow": 0,
+   "c": "284"
+  },
+  {
+   "dow": 1,
+   "c": "744"
+  },
+  {
+   "dow": 2,
+   "c": "749"
+  },
+  {
+   "dow": 3,
+   "c": "951"
+  },
+  {
+   "dow": 4,
+   "c": "665"
+  },
+  {
+   "dow": 5,
+   "c": "725"
+  },
+  {
+   "dow": 6,
+   "c": "196"
+  }
+ ],
+ "event_types": [
+  {
+   "event": "init",
+   "c": "1933"
+  },
+  {
+   "event": "mcp_call",
+   "c": "585"
+  },
+  {
+   "event": "update_skipped",
+   "c": "539"
+  },
+  {
+   "event": "iron_rule_trigger",
+   "c": "486"
+  },
+  {
+   "event": "iron_rule_compliance",
+   "c": "285"
+  },
+  {
+   "event": "update_check",
+   "c": "90"
+  },
+  {
+   "event": "memory_save",
+   "c": "75"
+  },
+  {
+   "event": "memory_update",
+   "c": "65"
+  },
+  {
+   "event": "memory_search",
+   "c": "62"
+  },
+  {
+   "event": "error",
+   "c": "38"
+  },
+  {
+   "event": "update_applied",
+   "c": "35"
+  },
+  {
+   "event": "memory_get",
+   "c": "28"
+  },
+  {
+   "event": "session_log",
+   "c": "28"
+  },
+  {
+   "event": "update_failed",
+   "c": "17"
+  },
+  {
+   "event": "update_clean",
+   "c": "16"
+  },
+  {
+   "event": "secret_set",
+   "c": "10"
+  },
+  {
+   "event": "handoff_create",
+   "c": "6"
+  },
+  {
+   "event": "handoff_accept",
+   "c": "3"
+  },
+  {
+   "event": "memory_disable",
+   "c": "3"
+  },
+  {
+   "event": "session_off",
+   "c": "2"
+  },
+  {
+   "event": "secret_delete",
+   "c": "2"
+  },
+  {
+   "event": "session_log_emergency",
+   "c": "2"
+  },
+  {
+   "event": "session_on",
+   "c": "2"
+  },
+  {
+   "event": "init_fail",
+   "c": "1"
+  },
+  {
+   "event": "memory_sync_fail",
+   "c": "1"
+  }
+ ],
+ "compliance": [
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-106",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxx",
+   "comply": "0",
+   "skip": "0",
+   "violate": "1",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": null,
+   "title": "規則標題（測試替身）",
+   "comply": "26",
+   "skip": "4",
+   "violate": "1",
+   "observed": "0"
+  },
+  {
+   "user_id": 8,
+   "user_name": "member-8",
+   "rule_code": "IR-004",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxx",
+   "comply": "1",
+   "skip": "0",
+   "violate": "1",
+   "observed": "0"
+  },
+  {
+   "user_id": 3,
+   "user_name": "member-3",
+   "rule_code": "IR-002",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "4",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 3,
+   "user_name": "member-3",
+   "rule_code": "IR-003",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "5",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 4,
+   "user_name": "member-4",
+   "rule_code": "IR-024",
+   "title": "規則標題（測試替身）",
+   "comply": "16",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 4,
+   "user_name": "member-4",
+   "rule_code": "IR-025",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxx",
+   "comply": "23",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 4,
+   "user_name": "member-4",
+   "rule_code": null,
+   "title": "規則標題（測試替身）",
+   "comply": "1",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": "IR-001",
+   "title": "規則標題（測試替身）xxxxxxxxxxx",
+   "comply": "2",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": "IR-002",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "11",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": "IR-003",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "2",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": "IR-006",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxx",
+   "comply": "11",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": "IR-007",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "1",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": "IR-008",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "4",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 6,
+   "user_name": "member-6",
+   "rule_code": null,
+   "title": "規則標題（測試替身）",
+   "comply": "28",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "",
+   "title": "規則標題（測試替身）",
+   "comply": "0",
+   "skip": "0",
+   "violate": "0",
+   "observed": "89"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-047",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxx",
+   "comply": "3",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-058",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "2",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-065",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxx",
+   "comply": "1",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-087",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "1",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-125",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "4",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 1,
+   "user_name": "member-1",
+   "rule_code": "IR-596",
+   "title": "規則標題（測試替身）",
+   "comply": "2",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 8,
+   "user_name": "member-8",
+   "rule_code": "",
+   "title": "規則標題（測試替身）",
+   "comply": "0",
+   "skip": "0",
+   "violate": "0",
+   "observed": "12"
+  },
+  {
+   "user_id": 8,
+   "user_name": "member-8",
+   "rule_code": "IR-001",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "8",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 8,
+   "user_name": "member-8",
+   "rule_code": "IR-002",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "8",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  },
+  {
+   "user_id": 8,
+   "user_name": "member-8",
+   "rule_code": "IR-003",
+   "title": "規則標題（測試替身）xxxxxxxxxxxxxxxxxxxxxxxx",
+   "comply": "13",
+   "skip": "0",
+   "violate": "0",
+   "observed": "0"
+  }
+ ],
+ "update_health": [
+  {
+   "event": "update_skipped",
+   "c": "539"
+  },
+  {
+   "event": "update_check",
+   "c": "90"
+  }
+ ],
+ "project_ranking": [
+  {
+   "project_key": "ownmind",
+   "project": "OwnMind",
+   "user_id": 8,
+   "name": "member-8",
+   "sessions": 12,
+   "turns": 130,
+   "tokens": "1383872710"
+  },
+  {
+   "project_key": "taipeifunpass-ph",
+   "project": "taipeifunpass-ph",
+   "user_id": 1,
+   "name": "member-1",
+   "sessions": 3,
+   "turns": 112,
+   "tokens": "3464679062"
+  },
+  {
+   "project_key": "ownmind",
+   "project": "OwnMind",
+   "user_id": 1,
+   "name": "member-1",
+   "sessions": 9,
+   "turns": 80,
+   "tokens": "2474770759"
+  },
+  {
+   "project_key": "multi-claude-switcher",
+   "project": "multi-claude-switcher",
+   "user_id": 1,
+   "name": "member-1",
+   "sessions": 3,
+   "turns": 62,
+   "tokens": "1917947338"
+  },
+  {
+   "project_key": "daas",
+   "project": "daas",
+   "user_id": 4,
+   "name": "member-4",
+   "sessions": 7,
+   "turns": 41,
+   "tokens": "2851606524"
+  },
+  {
+   "project_key": "multi-claude-switcher",
+   "project": "multi-claude-switcher",
+   "user_id": 3,
+   "name": "member-3",
+   "sessions": 1,
+   "turns": 30,
+   "tokens": "1758836273"
+  },
+  {
+   "project_key": "idaytour",
+   "project": "idaytour",
+   "user_id": 1,
+   "name": "member-1",
+   "sessions": 11,
+   "turns": 25,
+   "tokens": "773365862"
+  },
+  {
+   "project_key": "ownmind",
+   "project": "ownmind",
+   "user_id": 3,
+   "name": "member-3",
+   "sessions": 4,
+   "turns": 10,
+   "tokens": "586278758"
+  },
+  {
+   "project_key": "daas-orchestrator",
+   "project": "daas-orchestrator",
+   "user_id": 4,
+   "name": "member-4",
+   "sessions": 2,
+   "turns": 1,
+   "tokens": "69551379"
+  },
+  {
+   "project_key": "ai_seo",
+   "project": "ai_seo",
+   "user_id": 3,
+   "name": "member-3",
+   "sessions": 1,
+   "turns": 0,
+   "tokens": "0"
+  },
+  {
+   "project_key": "小白工程師",
+   "project": "小白工程師",
+   "user_id": 12,
+   "name": "member-12",
+   "sessions": 9,
+   "turns": 0,
+   "tokens": "0"
+  },
+  {
+   "project_key": "system32",
+   "project": "System32",
+   "user_id": 4,
+   "name": "member-4",
+   "sessions": 1,
+   "turns": 0,
+   "tokens": "0"
+  },
+  {
+   "project_key": "fontrip-agentic-process-automation",
+   "project": "fontrip-agentic-process-automation",
+   "user_id": 6,
+   "name": "member-6",
+   "sessions": 5,
+   "turns": 0,
+   "tokens": "0"
+  }
+ ],
+ "project_friction_raw": [
+  {
+   "project_key": "taipeifunpass-ph",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "daas-orchestrator",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "multi-claude-switcher",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "idaytour (day-tour-demo)",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "idaytour",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "multi-claude-switcher",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "multi-claude-switcher",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "taipeifunpass-ph",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "multi-claude-switcher",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "taipeifunpass-ph",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "idaytour",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ai_seo",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "daas",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+   "project_key": "ownmind",
+   "friction": "踩坑內容（測試替身，長度與真實資料相同）xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+ ],
+ "project_compliance": []
+}

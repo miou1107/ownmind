@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { buildMessages, callLLMSwitch, computeDataHash } from '../lib/llm-narrative.js';
+import { buildMessages, callLLMSwitch, computeDataHash, requestBytes } from '../lib/llm-narrative.js';
+import { condenseSections } from '../lib/narrative-condense.js';
 import { createNarrativeCache } from '../lib/narrative-cache.js';
 
 export function createNarrativeRouter({
@@ -42,15 +43,33 @@ export function createNarrativeRouter({
       const range = String(req.query.range || '14d');
       const sections = await collectSections({ query, range });
       const redacted = redactPIIDeep(sections);
-      const hash = computeDataHash(redacted);
+      // The upstream refuses a body over 40 KiB. Measured 2026-08-10: 7 days is 32,372
+      // bytes and goes through, 14 days is 47,893 and 30 days is 52,842, and both came
+      // back to the user as 502 on every call. Shrink until it fits, measuring the body
+      // that will actually be posted. A payload already inside the budget passes through
+      // untouched, so the 7-day report is unchanged.
+      const { sections: forModel, notes: condensedNotes, fits } =
+        condenseSections(redacted, { measure: requestBytes });
+      if (!fits) {
+        // Posting it anyway is still the best move — the ceiling was measured, not
+        // published, so it may go through. But the last time this failed it took replaying
+        // the request by hand from the server to find out why, because the only trace was a
+        // generic 502. Say the number here so the next one is one log line.
+        console.warn('[me-narrative] payload still %d bytes after condensing (range=%s)',
+          requestBytes(forModel), range);
+      }
+      const hash = computeDataHash(forModel);
       const cacheKey = `${range}:${hash}`;
       const hit = insightsCache.get(cacheKey);
       if (hit) return res.json({ cached: true, ...hit });
 
-      const messages = buildMessages(redacted);
+      const messages = buildMessages(forModel);
       const result = await callLLM({ apiKey, messages });
-      insightsCache.set(cacheKey, result);
-      res.json({ cached: false, ...result });
+      // The page shows this so the reader knows which parts were summarised before the
+      // model saw them, rather than reading a condensed report as a complete one.
+      const payload = condensedNotes.length ? { ...result, condensed: condensedNotes } : result;
+      insightsCache.set(cacheKey, payload);
+      res.json({ cached: false, ...payload });
     } catch (err) {
       console.error('[me-narrative] insights failed:', err);
       res.status(502).json({ error: 'Insights temporarily unavailable; please try again later' });
