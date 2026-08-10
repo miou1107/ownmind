@@ -76,6 +76,75 @@ describe('the installers no longer skip on a present entry', () => {
     }
   });
 
+  /**
+   * v1.26.134 — the third defect in the same story.
+   *
+   * Both installers reported on `prevKey` vs `nextKey`: what the run intended, never what
+   * landed. Thirty lines below, the same key going into ~/.claude.json is confirmed by
+   * reading the file back and says so in the message. Two halves of one credential write,
+   * two standards of evidence — and the unverified half is ~/.claude/settings.json, the file
+   * every hook reads its key from and one of the two locations an account switch must change.
+   *
+   * The silent-corruption path that makes it more than a technicality is PowerShell's
+   * ConvertTo-Json: exceeding -Depth is a warning, not an error. Measured on 5.1 with
+   * $ErrorActionPreference = 'Stop', `-Depth 3` on a four-level object wrote
+   * {"a":{"b":{"c":{"d":"System.Collections.Hashtable"}}}} — a corrupt settings file, and the
+   * installer would still have printed "API key updated".
+   */
+  it('both installers read the settings file back before reporting', () => {
+    assert.match(ps, /\$landed = \(Get-Content \$ClaudeSettings -Raw \| ConvertFrom-Json\)/,
+      'install.ps1 reports on its own intent again, without reading the file back');
+    assert.match(sh, /landed = JSON\.parse\(fs\.readFileSync\(p, 'utf8'\)\)/,
+      'install.sh reports on its own intent again, without reading the file back');
+  });
+
+  it('and both say so when the key is not there afterwards', () => {
+    // A write that did not land must not be reported as one that did. Neither may be silent
+    // about it either: this is the condition the whole rule exists for.
+    assert.match(ps, /the API key is NOT in \$ClaudeSettings after writing it/,
+      'install.ps1 has no message for a key that did not land');
+    assert.match(sh, /the API key is NOT in/,
+      'install.sh has no message for a key that did not land');
+  });
+
+  it('install.ps1 serialises at a depth PowerShell cannot silently truncate', () => {
+    // -Depth 10 against a file that is already five levels deep before the user adds a hook.
+    // 100 is the maximum the cmdlet accepts, and exceeding it is the only case that warns.
+    assert.doesNotMatch(ps, /ConvertTo-Json -Depth 10\)/,
+      'a settings write is back on -Depth 10, which truncates deep structures into a string');
+    assert.ok((ps.match(/ConvertTo-Json -Depth 100\)/g) || []).length >= 4,
+      'not every settings/MCP write was raised off the truncating depth');
+  });
+
+  it('the completion banner comes after the checks, in both installers', () => {
+    // install.sh could print "OwnMind installation complete" and then, further down,
+    // "[FAIL] Installation did not complete." — one run contradicting itself, claim first.
+    //
+    // Comments are stripped first: both files now explain this reorder in prose that quotes
+    // the banner text, and an indexOf against the raw source finds the explanation.
+    const shCode = sh.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    const psCode = ps.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+
+    const shBanner = shCode.indexOf('OwnMind installation complete');
+    const shCheck = shCode.indexOf('$SELF_CHECK_SCRIPT" --trigger=post_install');
+    assert.ok(shCheck > 0 && shBanner > shCheck,
+      'install.sh declares success before the self-check has run');
+
+    const psBanner = psCode.indexOf('OwnMind installation complete');
+    const psCheck = psCode.indexOf('$SelfCheckScript --trigger=post_install');
+    assert.ok(psCheck > 0 && psBanner > psCheck,
+      'install.ps1 declares success before the self-check has run');
+  });
+
+  it('install.ps1 says something when the self-check itself cannot run', () => {
+    // `try { … } catch { }` around it meant a self-check that threw produced no output at all,
+    // and the run still read as complete.
+    const psCheckIdx = ps.indexOf('$SelfCheckScript --trigger=post_install');
+    const after = ps.slice(psCheckIdx, psCheckIdx + 400);
+    assert.match(after, /self-check could not run/,
+      'a self-check that throws is swallowed again');
+  });
+
   it('the merge preserves fields the installer does not manage', () => {
     assert.match(sh, /\.\.\.prev,/, 'install.sh spreads the previous entry');
     assert.match(sh, /\.\.\.\(prev\.env \|\| \{\}\)/, 'install.sh spreads the previous env');
@@ -129,7 +198,11 @@ describe('install.sh really does replace a different key', () => {
 
     const after = JSON.parse(readFileSync(settingsPath, 'utf8'));
     assert.equal(after.mcpServers.ownmind.env.OWNMIND_API_KEY, 'NEW-KEY', 'the key changed');
-    assert.match(said, /API key updated \(replaced a different key\)/, 'and the run said so');
+    // v1.26.134: the "verified" wording is only reachable through the branch that re-read the
+    // file and compared, so asserting it here proves the read-back actually ran rather than
+    // just being present in the source.
+    assert.match(said, /API key updated \(replaced a different key\), verified by reading it back/,
+      'the run reported the swap without confirming it against the file');
     assert.equal(after.mcpServers.ownmind.env.KEEP_ME, 'user-set', 'unmanaged env var survived');
     assert.deepEqual(after.otherTool, { untouched: true }, 'the rest of the file survived');
   });
