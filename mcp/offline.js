@@ -5,7 +5,32 @@ import os from 'node:os';
 import { tokenize, itemMatchesTokens } from '../shared/memory-search-tokens.js';
 import { shapeSearchResults } from '../shared/memory-search-result.js';
 
-const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/memories.json');
+/**
+ * v1.26.138 — the MCP's offline cache has its own file.
+ *
+ * It used to be `cache/memories.json`, which is also where the SessionStart hook's
+ * conditional sync keeps its cache (hooks/lib/conditional-sync.js). Two writers, one path,
+ * and two incompatible shapes:
+ *
+ *   hook: { sync_token, saved_at, account, data: <the init response, verbatim> }
+ *   MCP:  { sync_token, saved_at, account, data: { profile: [...], iron_rule: [...], … } }
+ *
+ * The hook's step 2 returns `cache.data` as the init payload whenever the cached sync_token
+ * matches the server's. So after any MCP init, the hook handed a type-keyed object to
+ * renderSessionContext, which reads `.profile` / `.iron_rules_digest` — and rendered a
+ * session banner with no version, no rules and no profile, while logging `init: ok`.
+ *
+ * What kept this from firing before v1.26.133 was an accident: the MCP wrote no `account`
+ * field, so readCache refused the file under the v1.26.82 rule that an unattributed cache
+ * belongs to somebody else, and the hook fell through to a full download. Stamping the MCP's
+ * cache — correct on its own terms — removed that accidental protection and turned a latent
+ * collision into a broken memory load, measured on Windows 2026-08-10 immediately after
+ * updating to 1.26.137.
+ *
+ * Two owners with different schemas need two files. Splitting them also means neither has to
+ * know the other exists, which is why this is a path change rather than a shared schema.
+ */
+const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/mcp-memories.json');
 const DEFAULT_QUEUE_PATH = path.join(os.homedir(), '.ownmind/queue.jsonl');
 
 export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = DEFAULT_QUEUE_PATH) {
