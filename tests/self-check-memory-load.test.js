@@ -29,6 +29,7 @@ import express from 'express';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createSelfCheckRouter } from '../src/routes/usage/self-check.js';
+import { startServer } from './helpers/app-server.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(import.meta.url);
@@ -56,14 +57,22 @@ function serverWith(rows) {
   return { app, seen };
 }
 
+/**
+ * v1.26.139 — the address is read after 'listening', not on the line after listen().
+ *
+ * `app.listen(0)` binds asynchronously, so `server.address()` on the next line can be null.
+ * That is invisible until the machine is busy: in a parallel full-suite run the port reached
+ * the URL as `undefined` and the failure read `[TypeError: fetch failed] { cause: Error: bad
+ * port }` against whichever test the scheduler happened to hit. Each app here is built per
+ * test, so this stays one server per call — only the waiting and the check are new.
+ */
 async function get(app) {
-  const server = app.listen(0);
+  const server = await startServer(app);
   try {
-    const { port } = server.address();
-    const res = await fetch(`http://127.0.0.1:${port}/api/usage/self-check`);
+    const res = await fetch(`${server.url}/api/usage/self-check`);
     return { status: res.status, body: await res.json() };
   } finally {
-    server.close();
+    await server.close();
   }
 }
 

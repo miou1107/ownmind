@@ -6,6 +6,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { startServer } from './helpers/app-server.js';
 
 const { createSelfCheckRouter } = await import('../src/routes/usage/self-check.js');
 
@@ -26,14 +27,22 @@ function app({ rows = [], counts = [], userId = 7, onQuery = null } = {}) {
   return { a, seen };
 }
 
+/**
+ * v1.26.139 — the address is read after 'listening', not on the line after listen().
+ *
+ * `a.listen(0)` binds asynchronously, so `server.address()` on the next line can be null. In a
+ * parallel full-suite run that put `undefined` into the URL and the failure read
+ * `[TypeError: fetch failed] { cause: Error: bad port }`, landing on whichever test the
+ * scheduler reached first. Each app is built per test here, so this remains one server per
+ * call; only the waiting and the check are new.
+ */
 async function get(a) {
-  const server = a.listen(0);
+  const server = await startServer(a);
   try {
-    const { port } = server.address();
-    const res = await fetch(`http://127.0.0.1:${port}/api/usage/self-check`);
+    const res = await fetch(`${server.url}/api/usage/self-check`);
     return { status: res.status, body: await res.json() };
   } finally {
-    server.close();
+    await server.close();
   }
 }
 
@@ -83,15 +92,15 @@ describe('GET /api/usage/self-check', () => {
 
   it('takes no user parameter at all', async () => {
     const { a } = app({ userId: 7 });
-    const server = a.listen(0);
+    // Not the shared get(), because this one needs a query string on the URL.
+    const server = await startServer(a);
     try {
-      const { port } = server.address();
-      const res = await fetch(`http://127.0.0.1:${port}/api/usage/self-check?user_id=9`);
+      const res = await fetch(`${server.url}/api/usage/self-check?user_id=9`);
       const body = await res.json();
       assert.equal(res.status, 200);
       assert.equal(body.user_id, 7, 'a query string must not be able to choose the user');
     } finally {
-      server.close();
+      await server.close();
     }
   });
 
@@ -100,13 +109,13 @@ describe('GET /api/usage/self-check', () => {
     // one member's machine names and counts to the next one. helmet sets no
     // Cache-Control of its own; this was checked rather than assumed.
     const { a } = app();
-    const server = a.listen(0);
+    // Not the shared get(), because this one reads a response header rather than the body.
+    const server = await startServer(a);
     try {
-      const { port } = server.address();
-      const res = await fetch(`http://127.0.0.1:${port}/api/usage/self-check`);
+      const res = await fetch(`${server.url}/api/usage/self-check`);
       assert.match(res.headers.get('cache-control') ?? '', /no-store/);
     } finally {
-      server.close();
+      await server.close();
     }
   });
 

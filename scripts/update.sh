@@ -175,15 +175,35 @@ fi
 if [ -d "$HOME/.claude" ]; then
   HOOK_DIR="$HOME/.claude/hooks"
   mkdir -p "$HOOK_DIR/lib"
-  for hook_file in "$OWNMIND_DIR/hooks/"*.sh; do
+  # v1.26.139: `.js` as well as `.sh`.
+  #
+  # Only the shell hooks were copied, so `$HOOK_DIR` kept whatever `.js` files an earlier
+  # install had left there — frozen at that version. Measured on Windows 2026-08-10: after
+  # updating to 1.26.137, `~/.claude/hooks/ownmind-session-start.js` was still the 1.26.132
+  # copy, three versions and two bug fixes behind, while the sync printed "Hook scripts
+  # synced".
+  #
+  # Nothing on a current install runs those copies — install.ps1 wires the Node hooks by their
+  # `~/.ownmind/hooks/` path and install.sh wires the shell ones — so this is a stale file
+  # rather than a live fault. They are refreshed rather than deleted precisely because that
+  # cannot be said of every machine: an install old enough to have pointed a hook at
+  # `~/.claude/hooks/*.js` would lose it, silently, on its next update. Copying costs a few
+  # files; deleting risks breaking a machine nobody is looking at.
+  for hook_file in "$OWNMIND_DIR/hooks/"*.sh "$OWNMIND_DIR/hooks/"*.js "$OWNMIND_DIR/hooks/"*.cjs; do
     if [ -f "$hook_file" ]; then
       cp "$hook_file" "$HOOK_DIR/"
       chmod +x "$HOOK_DIR/$(basename "$hook_file")"
     fi
   done
   # v1.17.0 P3: the SessionStart hook needs the render module under lib/.
+  #
+  # v1.26.139: the failure is reported rather than silenced. `2>/dev/null || true` here meant a
+  # lib/ that could not be copied — a permissions problem, a full disk — left the hooks running
+  # against whatever modules were already on disk, with the line above still printing "synced".
   if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
-    cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
+    if ! cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/"; then
+      echo "[WARN] hooks/lib modules could not be synced — the hooks may run against older copies"
+    fi
   fi
   echo "[ OK ] Hook scripts synced"
 fi

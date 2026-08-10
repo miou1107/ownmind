@@ -12,41 +12,40 @@
 // Driven rather than asserted against the source. A regex over app.js would pass on a
 // limiter mounted after the router, or on one built with `max: Infinity`.
 
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { startServer } from './helpers/app-server.js';
 
-let app;
+let server;
 
 before(async () => {
   // Small enough to exhaust in three requests. Read at import time, so it must be set
   // before src/app.js is loaded.
   process.env.AUTH_RATE_LIMIT_MAX = '2';
   process.env.ENCRYPTION_KEY ||= 'test-encryption-key-at-least-32-chars-long';
-  ({ default: app } = await import('../src/app.js'));
+  const { default: app } = await import('../src/app.js');
+  // v1.26.139 — one server for the file, not one per request. This test used to open and
+  // close a server for every attempt; under a parallel full-suite run `srv.address()` came
+  // back unusable and the port went into the URL as `undefined`, so the failure read
+  // `[TypeError: fetch failed] { cause: Error: bad port }` and looked like a rate-limit bug.
+  // Sharing the server changes nothing that is asserted here: the limiter lives on the app,
+  // keyed by IP, and was already shared across those per-request servers.
+  server = await startServer(app);
 });
+
+after(async () => { await server?.close(); });
 
 /** POST a login attempt and return the status. The DB is unreachable here, which is fine:
  *  the limiter runs before the handler, so a throttled request never reaches it. */
 async function attemptFull(path) {
-  return new Promise((resolve, reject) => {
-    const srv = app.listen(0, async () => {
-      try {
-        const { port } = srv.address();
-        const r = await fetch(`http://127.0.0.1:${port}${path}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' }),
-        });
-        let body = {};
-        try { body = await r.json(); } catch { /* not json */ }
-        resolve({ status: r.status, body });
-      } catch (err) {
-        reject(err);
-      } finally {
-        srv.close();
-      }
-    });
+  const r = await fetch(`${server.url}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'nobody@example.com', password: 'wrong' }),
   });
+  let body = {};
+  try { body = await r.json(); } catch { /* not json */ }
+  return { status: r.status, body };
 }
 
 describe('v1.26.60 — POST /api/me/login is rate limited', () => {

@@ -9,9 +9,10 @@
  *
  * See openspec/changes/archive/v1.26.48-flip-root-retire-me/spec.md.
  */
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { startServer } from './helpers/app-server.js';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -24,39 +25,31 @@ process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
 
 const repoRoot = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
-let app;
+let server;
 before(async () => {
-  ({ default: app } = await import('../src/app.js'));
+  const { default: app } = await import('../src/app.js');
+  server = await startServer(app);
 });
+
+after(async () => { await server?.close(); });
 
 /**
  * Send a single request through the app and return the response envelope.
  *
  * Manually managed listener because supertest is not a dependency here and the
  * existing tests use the same shape (tests/spa-deep-link-base.test.js).
+ *
+ * v1.26.139 — one server for the file, not one per request. Every request used to open and
+ * close its own listener, and under a parallel full-suite run `srv.address()` came back
+ * unusable often enough that the port reached the URL as `undefined`:
+ * `[TypeError: fetch failed] { cause: Error: bad port }`. Nothing here depends on a fresh
+ * listener — these are redirect assertions against a stateless app — so the churn was cost
+ * with no benefit. Confirmed separately: a serial full-suite run has no such failures.
  */
 async function fetchOnce(urlPath, { method = 'GET' } = {}) {
-  return await new Promise((resolve, reject) => {
-    const srv = app.listen(0, async () => {
-      try {
-        const port = srv.address().port;
-        const r = await fetch(`http://127.0.0.1:${port}${urlPath}`, {
-          method,
-          redirect: 'manual',
-        });
-        const body = await r.text().catch(() => '');
-        srv.close();
-        resolve({
-          status: r.status,
-          location: r.headers.get('location'),
-          body,
-        });
-      } catch (err) {
-        srv.close();
-        reject(err);
-      }
-    });
-  });
+  const r = await fetch(`${server.url}${urlPath}`, { method, redirect: 'manual' });
+  const body = await r.text().catch(() => '');
+  return { status: r.status, location: r.headers.get('location'), body };
 }
 
 /**
