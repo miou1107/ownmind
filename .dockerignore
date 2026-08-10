@@ -12,6 +12,10 @@ openspec
 tests
 docs
 *.md
+# v1.26.126：例外。src/utils/changelog.js 在啟動時讀這一份，供 GET /api/changelog 用。
+# 少了這行 re-include，Dockerfile 的 COPY CHANGELOG.md 會直接讓 build 失敗
+#（failed to compute cache key: "/CHANGELOG.md": not found）——不是「頁尾空的」而已。
+!CHANGELOG.md
 .env
 .env.*
 .DS_Store

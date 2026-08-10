@@ -40,7 +40,6 @@
   "kpi.sessions_unit": "sessions",
   "kpi.token_traffic": "Token Traffic Analysis",
   "footer.changelog": "Changelog",
-  "footer.copyright": "OwnMind Open Source Project",
   "changelog.title": "Changelog",
   "changelog.empty": "No changelog entries yet",
   "error.not_found": "Page not found",

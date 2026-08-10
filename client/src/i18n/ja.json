@@ -40,7 +40,6 @@
   "kpi.sessions_unit": "セッション",
   "kpi.token_traffic": "トークン流量分析",
   "footer.changelog": "変更履歴",
-  "footer.copyright": "OwnMind オープンソースプロジェクト",
   "changelog.title": "変更履歴",
   "changelog.empty": "変更履歴はまだありません",
   "error.not_found": "ページが見つかりません",

@@ -57,6 +57,58 @@ describe('Dockerfile carries what the start path executes', () => {
     }
   });
 
+  it('nothing the Dockerfile copies is excluded from the build context', () => {
+    // v1.26.126. A COPY line is only half the requirement: `.dockerignore` decides what
+    // reaches the daemon at all, and the two are edited in different files by different
+    // reflexes. `COPY CHANGELOG.md` was added for GET /api/changelog while `*.md` sat in
+    // `.dockerignore`, and the result is not a missing file at runtime — the build fails
+    // outright with `failed to compute cache key: "/CHANGELOG.md": not found`.
+    //
+    // The IR-268 rule is "add the COPY". This is the other half of it, and it generalises:
+    // any future runtime path added under an excluded pattern fails here rather than in a
+    // deploy. `--from=` copies are exempt — they read from a previous stage, which
+    // `.dockerignore` does not filter.
+    const rules = readFileSync(join(repoRoot, '.dockerignore'), 'utf8')
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => (l.startsWith('!')
+        ? { negate: true, pattern: l.slice(1) }
+        : { negate: false, pattern: l }));
+
+    /**
+     * Docker matches per path element; a bare directory name also covers everything
+     * under it. `**` and `*` are translated in one pass — doing it as two needs a
+     * placeholder to stop the second replacement eating the first's output, and the
+     * placeholder that fits is a NUL, which shebang-eol.test.js forbids in tracked JS.
+     */
+    const matches = (pattern, path) => {
+      const body = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*|\*/g, (m) => (m === '**' ? '.*' : '[^/]*'));
+      return new RegExp(`^${body}(?:/.*)?$`).test(path);
+    };
+
+    // Last matching rule wins, which is what lets `!CHANGELOG.md` re-include one file.
+    const excludedBy = (path) => rules.reduce(
+      (hit, rule) => (matches(rule.pattern, path) ? (rule.negate ? null : rule.pattern) : hit),
+      null,
+    );
+
+    const contextCopies = [...dockerfile.matchAll(/^COPY\s+(?!--from=)(\S+)/gm)]
+      .map((m) => m[1].replace(/\/$/, ''));
+    assert.ok(contextCopies.length > 0, 'no context COPY found — did the COPY syntax change?');
+
+    for (const src of contextCopies) {
+      const rule = excludedBy(src);
+      assert.equal(
+        rule, null,
+        `Dockerfile copies ${src}, but .dockerignore excludes it via "${rule}" — `
+        + `the build fails on that COPY. Add "!${src}" to .dockerignore.`,
+      );
+    }
+  });
+
   it('the console build is what gets served, and it comes from the builder stage', () => {
     assert.match(
       dockerfile,

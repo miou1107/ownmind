@@ -1,5 +1,59 @@
 # OwnMind 檔案結構
 
+## v1.26.126 修改（頁尾更新紀錄接上 CHANGELOG.md）
+
+新檔：
+```
+src/utils/changelog.js                           — 新增、把 CHANGELOG.md 解析成 entries。
+                                                    三種標題寫法都認（破折號 / ASCII 連字號 /
+                                                    日期在前），只認第一種會讓 284 筆沒有標題。
+                                                    摘要取第一段散文，跳過圍籬區塊、遇 ### 停。
+                                                    圍籬區塊裡的 ## 不算標題（整份檔案有六個引用式標題，
+                                                    含本版自己的範例區塊）。
+                                                    loadChangelogEntries 讀不到檔案回 []、不丟例外
+src/routes/changelog.js                          — 新增、GET /api/changelog 回 { entries }，
+                                                    factory 形式掛在 auth 後面（比照 createVersionRouter）。
+                                                    模組載入時解析一次：CHANGELOG.md 不會在同一個 process 內變
+client/src/hooks/useChangelog.js                 — 新增、走 apiGet('/api/changelog')，初值 []、
+                                                    失敗維持 []（等同原本的空狀態）。模組層級快取、只快取成功值。
+                                                    **只能從 Layout 呼叫**，理由同 useServerVersion
+tests/changelog-feed.test.js                     — 27 tests：三種標題寫法、圍籬區塊裡的標題不算、
+                                                    無版號的標題要跳過、（同版）標記要拿掉、
+                                                    摘要跳過程式碼區塊／小標／表格／清單、
+                                                    inline markdown 清乾淨、
+                                                    真實 CHANGELOG.md 的第一筆等於 package.json 版號、
+                                                    第二筆是前一版（引用式標題的回歸守門）、
+                                                    每一筆都有標題、版號不唯一（所以 React key 是複合的）、
+                                                    路由回傳與 auth 卡控、Dockerfile 有 COPY CHANGELOG.md（IR-034）
+```
+
+修改檔：
+```
+.dockerignore                                    — 加 !CHANGELOG.md。清單裡有 *.md，
+                                                    少了這行 re-include 不是「檔案沒進映像」，
+                                                    是 build 直接失敗（failed to compute cache key）
+Dockerfile                                       — 加 COPY CHANGELOG.md。src/ 跟 db/ 是逐個 COPY 的，
+                                                    放在它們之外的檔案不會進映像，而解析失敗會安靜退成 []
+tests/dockerfile-runtime-files.test.js           — 新增一條通用守門：每一行從 build context 來的 COPY，
+                                                    來源都不能被 .dockerignore 排除（--from= 的不算）。
+                                                    原本「Dockerfile 裡有那行 COPY」的斷言在 build
+                                                    壞掉的狀態下照樣是綠的
+tests/dashboard-version-source.test.js           — 新增 6 條：Layout 有呼叫 useChangelog、
+                                                    App 不再宣告 changelog、hook 只有一個呼叫者、
+                                                    hook 走 apiGet 且失敗不進快取、
+                                                    Footer 與三個語系都不再有 footer.copyright
+src/app.js                                       — 掛上 /api/changelog
+client/src/App.jsx                               — 拿掉 layoutProps = { changelog: [] }，
+                                                    <Layout {...layoutProps}> 改回 <Layout>
+client/src/components/common/Layout.jsx          — 自己呼叫 useChangelog()，不再從 App 收 prop
+client/src/components/common/Footer.jsx          — 版號顯示補 v 前綴（跟頁尾左側同一個寫法）、
+                                                    date 空字串就不畫那個 <span>、
+                                                    React key 改成「版號 + 位置」（版號不唯一，
+                                                    v1.26.98 底下有六筆）、
+                                                    拿掉右下角 footer.copyright（Vin 要求）
+client/src/i18n/{zh,en,ja}.json                  — 三個語系一起刪 footer.copyright，不留孤兒鍵
+```
+
 ## v1.26.125 修改（擋對了但名字寫錯）
 
 新檔：

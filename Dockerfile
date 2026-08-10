@@ -33,6 +33,10 @@ COPY scripts/ensure-console-build.js ./scripts/ensure-console-build.js
 # / opencode.js / vscode-telemetry.js / cursor.js / antigravity.js；id-helper 是
 # server 端必須，其餘為 client scanner 共用同一份檔案的部署便利考量
 COPY shared/ ./shared/
+# v1.26.126: src/utils/changelog.js reads this at boot to serve GET /api/changelog.
+# Without it the parse falls back to [] and the footer's changelog modal is empty
+# in production while working on every developer machine.
+COPY CHANGELOG.md ./CHANGELOG.md
 
 # v1.20：藍綠並存策略 — 新版 client build 產物放 dashboard/
 # v1.26.60：整併結束，映像裡只剩一個後台。/me 跟 /admin 兩個舊介面的靜態檔都搬到 repo
