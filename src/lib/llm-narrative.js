@@ -56,6 +56,28 @@ export function buildMessages(narrativeData) {
   ];
 }
 
+/**
+ * The exact bytes sent upstream.
+ *
+ * Exported so the size check and the request itself cannot drift apart: the upstream
+ * refuses on the body it receives, so a check measuring anything else is measuring a
+ * number nobody enforces. `callLLMSwitch` posts this and nothing else.
+ */
+export function buildRequestBody(messages) {
+  return JSON.stringify({
+    model: 'auto',
+    response_format: { type: 'json_object' },
+    temperature: 0.3,
+    max_tokens: 2000,
+    messages,
+  });
+}
+
+/** Size in bytes of the request these sections would produce. */
+export function requestBytes(narrativeData) {
+  return Buffer.byteLength(buildRequestBody(buildMessages(narrativeData)), 'utf8');
+}
+
 export function parseLLMJson(raw) {
   let cleaned = String(raw).trim();
   const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
@@ -90,13 +112,7 @@ export async function callLLMSwitch({ apiKey, messages, fetchImpl = fetch, timeo
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: 'auto',
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-        max_tokens: 2000,
-        messages,
-      }),
+      body: buildRequestBody(messages),
       signal: controller.signal,
     });
     if (!res.ok) {

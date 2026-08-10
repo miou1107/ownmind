@@ -154,3 +154,80 @@ describe('GET /api/me/narrative/insights', () => {
     assert.match(received, /\[email\]/);
   });
 });
+
+// v1.26.137 — the condensing has to be wired into the route, not merely available.
+//
+// The previous round's lesson: a unit test of the pure helper stays green while the thing
+// that was broken comes back. So these drive the real router and assert on what actually
+// reached the model. Delete the `condenseSections` call in the route and they go red.
+describe('GET /api/me/narrative/insights — oversized payloads', () => {
+  /** A query stub whose friction rows are large enough to blow the 40 KiB ceiling. */
+  function bigQuery() {
+    const long = '這是一段逐字記下來的踩坑描述，會很長很長。'.repeat(60);
+    return async (sql) => {
+      // Only the friction query returns the long rows. An earlier version of this stub
+      // matched the project-ranking query too and stuffed it with the same text, which is
+      // not a shape production produces — but it did surface that the targeted steps alone
+      // leave an unanticipated section unhandled, which is why the last-resort trim exists.
+      if (/friction/i.test(sql)) {
+        return { rows: Array.from({ length: 60 }, (_, i) => ({ project_key: `p${i % 6}`, friction: long })) };
+      }
+      if (/collector_heartbeat/i.test(sql)) {
+        return {
+          rows: Array.from({ length: 44 }, (_, i) => ({
+            user_id: (i % 9) + 1,
+            tool: ['claude-code', 'codex', 'cursor', 'antigravity', 'opencode'][i % 5],
+            version: i % 7 === 0 ? '1.26.27' : '1.26.135',
+            last_reported_at: '2026-08-10T00:00:00.000Z',
+            machine: `machine-${(i % 9) + 1}`,
+          })),
+        };
+      }
+      return { rows: [] };
+    };
+  }
+
+  function appWithCapture({ query }) {
+    const seen = {};
+    const router = createNarrativeRouter({
+      query,
+      auth: fakeAuth,
+      env: { LLM_SWITCH_API_KEY: 'test-key' },
+      llmCall: async ({ messages }) => {
+        seen.messages = messages;
+        seen.bytes = Buffer.byteLength(JSON.stringify({
+          model: 'auto', response_format: { type: 'json_object' },
+          temperature: 0.3, max_tokens: 2000, messages,
+        }), 'utf8');
+        return { summary_one_line: 'ok', insights_for_admin: [], next_actions: [] };
+      },
+    });
+    const app = express();
+    app.use(express.json());
+    app.use('/api/me/narrative', router);
+    return { app, seen };
+  }
+
+  it('what reaches the model is under the size the upstream refuses', async () => {
+    const { app, seen } = appWithCapture({ query: bigQuery() });
+    const res = await get(app, '/api/me/narrative/insights?range=30d');
+    assert.equal(res.status, 200);
+    // 39,600 bytes was measured going through and 41,025 measured refused.
+    assert.ok(seen.bytes < 39_600, `sent ${seen.bytes} bytes, which the upstream refuses`);
+  });
+
+  it('the reply says which parts were summarised', async () => {
+    const { app } = appWithCapture({ query: bigQuery() });
+    const res = await get(app, '/api/me/narrative/insights?range=30d');
+    assert.ok(Array.isArray(res.body.condensed) && res.body.condensed.length > 0,
+      'a condensed report presented as a complete one is the failure mode worth avoiding');
+  });
+
+  it('a payload that already fits is sent whole, with nothing added to the reply', async () => {
+    const { app, seen } = appWithCapture({ query: fakeQuery() });
+    const res = await get(app, '/api/me/narrative/insights?range=7d');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.condensed, undefined, 'the range that always worked must be untouched');
+    assert.ok(!JSON.stringify(seen.messages).includes('_condensed'));
+  });
+});
