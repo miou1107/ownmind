@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { readCredentials, getClientVersion, resolveProjectName } from '../shared/helpers.js';
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
+import { queueUpdateBanner } from '../shared/update-banner.js';
 import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
@@ -216,6 +217,9 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
         reportEvent(apiUrl, apiKey, 'update_skipped', { reason: lockResult.reason });
       } else {
         reportEvent(apiUrl, apiKey, 'update_failed', { step: 'lock', error: lockResult.reason });
+        // v1.26.129: the user hears about a failure wherever it happens. This hook is the
+        // updater on Windows, so reporting only in the bash sibling would leave Windows silent.
+        queueUpdateBanner({ outcome: 'failed', step: 'lock' });
       }
       return;
     }
@@ -237,6 +241,7 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
       // exactly the repetition that made `update_failed` stop meaning anything.
       try { fs.writeFileSync(marker, today); } catch { /* best effort */ }
       reportEvent(apiUrl, apiKey, 'update_failed', { step: 'update_script_missing' });
+      queueUpdateBanner({ outcome: 'failed', step: 'update_script_missing' });
       return;
     }
 

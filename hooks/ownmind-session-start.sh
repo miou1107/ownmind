@@ -39,10 +39,26 @@ CLAUDE_SETTINGS_WIN="$(to_win_path "$CLAUDE_SETTINGS")"
 # 50+ banner 積壓時 per-line spawn 會卡住數秒。
 PENDING_BANNER_FILE="$LOG_DIR/banner-pending.jsonl"
 SCRIPT_DIR_FOR_FLUSH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# v1.26.129 — run the lib modules out of the checkout, not out of the copy beside this file.
+#
+# update.sh copies hooks/lib/*.js into ~/.claude/hooks/lib/ and has never copied shared/. So
+# any module that imports ../../shared/ resolves to ~/.claude/shared/, which does not exist,
+# and dies at load with ERR_MODULE_NOT_FOUND. That is not hypothetical: conditional-sync.js
+# imports shared/scanners/base.js, and running the installed copy fails outright — every call
+# site here redirects stderr to /dev/null, so it degraded into "no init data" without a word.
+# The comment on update.sh's usage-scanner block already says this out loud: anything needing
+# shared/ is "kept under $OWNMIND_DIR for execution". This makes the session hook agree.
+#
+# The checkout has shared/ as a sibling of hooks/, so imports resolve there. Falling back to
+# the local copy keeps a machine with no checkout working exactly as it does today.
+LIB_DIR="$OWNMIND_DIR/hooks/lib"
+# shared/ is the whole reason for the preference, so it is what gets checked.
+{ [ -d "$LIB_DIR" ] && [ -d "$OWNMIND_DIR/shared" ]; } || LIB_DIR="$SCRIPT_DIR_FOR_FLUSH/lib"
 if [ -s "$PENDING_BANNER_FILE" ]; then
   echo "" >&2
   echo "📥 OwnMind 上次 session 累積的訊息（tty 寫不到、補印）：" >&2
-  node "$SCRIPT_DIR_FOR_FLUSH/lib/flush-pending-banners.js" < "$PENDING_BANNER_FILE" 2>&1 1>/dev/null
+  node "$LIB_DIR/flush-pending-banners.js" < "$PENDING_BANNER_FILE" 2>&1 1>/dev/null
   # 註：concurrency — 兩個 session 同時跑時，append 是 atomic（O_APPEND），但
   # 介於 read 跟下面 truncate 之間進來的 banner 會被丟掉。v1.17.71 接受這個
   # microsecond race；之後若有人發現掉訊息再考慮 lockfile。
@@ -54,7 +70,7 @@ fi
 # 嚴禁外漏 stderr/stdout（user-visible 通道）— helper 內部已做防護、這邊也丟到 /dev/null 雙保險。
 COMPLIANCE_SPOOL_FILE="$LOG_DIR/reply-lint-pending.jsonl"
 if [ -s "$COMPLIANCE_SPOOL_FILE" ]; then
-  node "$SCRIPT_DIR_FOR_FLUSH/lib/flush-compliance-spool.js" >/dev/null 2>&1 || true
+  node "$LIB_DIR/flush-compliance-spool.js" >/dev/null 2>&1 || true
 fi
 
 # --- Log function (local + server) ---
@@ -245,6 +261,12 @@ acquire_update_lock() {
   [ "$(cat "$LOCK_FILE" 2>/dev/null)" = "$token" ]
 }
 
+# v1.26.129: queue what the background update did, so the next session can tell the user.
+# The message text lives in shared/update-banner.js — written once, not once per language.
+queue_update_banner() {
+  node "$LIB_DIR/queue-update-banner.js" "$1" "$2" >/dev/null 2>&1 || true
+}
+
 if [ -d "$OWNMIND_DIR/.git" ]; then
   TODAY=$(date +%Y-%m-%d)
   LAST_CHECK=$(cat "$MARKER_FILE" 2>/dev/null || echo "")
@@ -274,6 +296,7 @@ if [ -d "$OWNMIND_DIR/.git" ]; then
       # distinction. This case is a real failure and has to stay visible; keeping it is why
       # the branch logged anything in the first place.
       log_event "update_failed" "step" "lock"
+      queue_update_banner failed lock
     fi
   fi
 
@@ -284,10 +307,11 @@ if [ -d "$OWNMIND_DIR/.git" ]; then
     # 即使 git pull / npm / update.sh 任一失敗都會誤報「已更新」。對齊 mcp/index.js
     # 的修法：每步顯式檢查；分流寫 update_applied / update_clean / update_failed。
     (
-      cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; log_event "update_failed" "step" "cd"; exit 0; }
+      cd "$OWNMIND_DIR" || { rm -f "$LOCK_FILE"; log_event "update_failed" "step" "cd"; queue_update_banner failed cd; exit 0; }
       if ! git fetch -q 2>/dev/null; then
         rm -f "$LOCK_FILE"
         log_event "update_failed" "step" "fetch"
+        queue_update_banner failed fetch
         exit 0
       fi
       UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null)
@@ -296,19 +320,26 @@ if [ -d "$OWNMIND_DIR/.git" ]; then
         if ! { git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null; }; then
           rm -f "$LOCK_FILE"
           log_event "update_failed" "step" "pull"
+          queue_update_banner failed pull
           exit 0
         fi
         if ! ( cd "$OWNMIND_DIR/mcp" && npm install -q 2>/dev/null ); then
           rm -f "$LOCK_FILE"
           log_event "update_failed" "step" "npm"
+          queue_update_banner failed npm
           exit 0
         fi
         if ! bash "$OWNMIND_DIR/scripts/update.sh" >/dev/null 2>&1; then
           rm -f "$LOCK_FILE"
           log_event "update_failed" "step" "update_sh"
+          queue_update_banner failed update_sh
           exit 0
         fi
         log_event "update_applied"
+        # No version argument: the shim reads package.json off disk itself. That read has to
+        # happen after the pull — a value captured any earlier names the version the user was
+        # leaving, not the one they just got.
+        queue_update_banner applied
       else
         log_event "update_clean"
       fi
@@ -345,8 +376,7 @@ fi
 #   4. 相同 → 跳過 init download、用 cache (~95% sessions 走這條)
 #   5. 不同 → 全量 init + 寫新 cache + 重寫 ~/.claude/skills/ownmind-iron-rules/
 # helper 內建 fallback：fetch 失敗 → 用 cache、cache 也沒 → 印空 string
-SCRIPT_DIR_FOR_INIT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INIT_DATA=$(timeout 10 node "$SCRIPT_DIR_FOR_INIT/lib/conditional-sync-cli.js" \
+INIT_DATA=$(timeout 10 node "$LIB_DIR/conditional-sync-cli.js" \
   "$API_URL" "$API_KEY" 2>/dev/null)
 
 if [ -z "$INIT_DATA" ]; then
@@ -384,8 +414,7 @@ fi
 
 # --- 解析記憶 + 廣播 + 輸出 JSON ---
 # render 邏輯拆到 hooks/lib/render-session-context.js（可被 unit test）
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-node "$SCRIPT_DIR/lib/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA" 2>/dev/null
+node "$LIB_DIR/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA" 2>/dev/null
 
 # --- v1.17.8: delta sync 本地記憶 md 檔（A+C 方案，不阻塞，fail-silent）---
 # 把雲端 iron_rule/project/feedback 同步到 $CLAUDE_PROJECT_DIR 的 auto-memory dir，
@@ -395,9 +424,9 @@ if [ -n "$CLAUDE_PROJECT_DIR" ]; then
     -H "Authorization: Bearer $API_KEY" \
     "${API_URL}/api/memory/sync?types=iron_rule,project,feedback" 2>/dev/null)
   if [ -n "$SYNC_DATA" ]; then
-    echo "$SYNC_DATA" | node "$SCRIPT_DIR/lib/sync-memory-files.js" 2>/dev/null
+    echo "$SYNC_DATA" | node "$LIB_DIR/sync-memory-files.js" 2>/dev/null
   else
-    node "$SCRIPT_DIR/lib/sync-memory-files.js" --fail 2>/dev/null
+    node "$LIB_DIR/sync-memory-files.js" --fail 2>/dev/null
     log_event "memory_sync_fail"
   fi
 fi
