@@ -3,8 +3,18 @@ import { query } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { requireFields } from '../utils/require-fields.js';
+import { parseRowId } from '../utils/row-id.js';
 
 const router = Router();
+
+// Same guard as the memory router. No literal path is shadowed by `:id` here, so no real
+// endpoint was answering 500 — but `PUT /api/handoff/abc/accept` still went to an INT
+// column and came back as 500 "Failed to accept handoff", which says the server broke when
+// what happened is that the caller sent something that is not an id.
+router.param('id', (req, res, next, raw) => {
+  if (!parseRowId(raw).ok) return res.status(404).json({ error: 'Handoff not found' });
+  next();
+});
 router.use(auth);
 
 /**

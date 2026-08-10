@@ -23,6 +23,7 @@ import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
+import { parseRowId } from '../utils/row-id.js';
 import { tokenize, buildSearchWhere } from '../utils/memory-search-query.js';
 import {
   withReportSuggestion,
@@ -72,6 +73,19 @@ async function checkSyncToken(userId, syncToken) {
 }
 
 const router = Router();
+
+// Every `:id` route is guarded here rather than at each handler. `/:id` is registered
+// after the literal paths, so anything that matched none of them — `/api/memory/stats`,
+// a typo, a client still calling a renamed route — arrives as an id. Passing it through
+// produced `invalid input syntax for type integer` and a 500 "Query failed", which reads
+// as "the server broke" when what happened is that the path does not exist. Measured on
+// production 2026-08-10: `/api/memory/stats` and `/api/memory/recent` 500'd on every call.
+//
+// One gate instead of six also means a `:id` route added later cannot forget it.
+router.param('id', (req, res, next, raw) => {
+  if (!parseRowId(raw).ok) return res.status(404).json({ error: 'Memory not found' });
+  next();
+});
 
 // v1.26.64 — the columns GET /search reads. Named rather than `*`, matching the
 // allow-list in shared/memory-search-result.js: `*` was dragging `previous_content` (a
@@ -1634,6 +1648,13 @@ router.put('/:id/revert', async (req, res) => {
 
     if (!history_id) {
       return res.status(400).json({ error: 'history_id is required' });
+    }
+    // Same defect as the path parameter, one layer in: this goes to an INT column, so
+    // `{"history_id":"abc"}` came back as 500 "Failed to restore memory" — a client's bad
+    // value reported as the server breaking. A well-formed id for a version that is not
+    // there already answers 404, so an unusable one answers the same.
+    if (!parseRowId(history_id).ok) {
+      return res.status(404).json({ error: 'History version not found' });
     }
 
     // Confirm the memory belongs to the user, then fetch the historical version.
