@@ -342,15 +342,41 @@ if (Test-Path $ClaudeSettings) {
   foreach ($k in $McpConfig.env.Keys) { $mergedEnv[$k] = $McpConfig.env[$k] }
   $mergedConfig['env'] = $mergedEnv
   $settings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$mergedConfig) -Force
-  Write-Utf8NoBom -Path $ClaudeSettings -Content ($settings | ConvertTo-Json -Depth 10)
+  # v1.26.134: -Depth 100, not 10. Exceeding the depth is not an error in PowerShell — the
+  # branch below the limit is written out as the literal string "System.Collections.Hashtable"
+  # and the file is quietly corrupt. Measured on 5.1: `-Depth 3` on a four-level object
+  # produced {"a":{"b":{"c":{"d":"System.Collections.Hashtable"}}}} with $ErrorActionPreference
+  # = 'Stop' in force. This file is nested five levels before any user adds a hook, and 100 is
+  # the maximum the cmdlet accepts.
+  Write-Utf8NoBom -Path $ClaudeSettings -Content ($settings | ConvertTo-Json -Depth 100)
+  # v1.26.134 — read it back, and let the file decide what gets printed.
+  #
+  # This said "API key updated" on the strength of $prevKey vs $ApiKey: what the run intended,
+  # never what landed. Thirty lines below, the same key going into ~/.claude.json is confirmed
+  # by reading it back and says so. Two halves of one credential write, two standards of
+  # evidence — and the unverified half is the file the SessionStart, iron-rule and reply-lint
+  # hooks read their key from, i.e. one of the two locations an account switch has to change.
+  #
+  # IR-001 is precisely this: an installer's success message is not evidence. The rule exists
+  # because this script once skipped the write entirely and printed a summary anyway.
+  $landed = $null
+  try {
+    $landed = (Get-Content $ClaudeSettings -Raw | ConvertFrom-Json).mcpServers.ownmind.env.OWNMIND_API_KEY
+  } catch { $landed = $null }
+  if ($landed -ne $ApiKey) {
+    # Not silenced and not a crash: the install can continue, but nobody may be told the key
+    # changed when it did not. A truncated write lands here too.
+    Write-Host "       [WARN] the API key is NOT in $ClaudeSettings after writing it" -ForegroundColor Yellow
+    Write-Host "              the hooks will keep using the previous account - open the file and check it" -ForegroundColor Yellow
+  }
   # Say which of the two happened. A run that silently changed the account is as confusing
   # as one that silently did not.
-  if (-not $prevKey) { Write-Host "       API key written" }
-  elseif ($prevKey -ne $ApiKey) { Write-Host "       API key updated (replaced a different key)" }
-  else { Write-Host "       API key unchanged" }
+  elseif (-not $prevKey) { Write-Host "       API key written, verified by reading it back" }
+  elseif ($prevKey -ne $ApiKey) { Write-Host "       API key updated (replaced a different key), verified by reading it back" }
+  else { Write-Host "       API key unchanged, verified by reading it back" }
 } else {
   Write-Host "[INFO] Creating Claude Code MCP config"
-  Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
+  Write-Utf8NoBom -Path $ClaudeSettings -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 100)
 }
 
 # --- 2a. Register the MCP server where Claude Code launches it (v1.26.112) ---
@@ -631,11 +657,11 @@ if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue
         $cursorSettings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
       }
       $cursorSettings.mcpServers | Add-Member -NotePropertyName ownmind -NotePropertyValue ([pscustomobject]$McpConfig) -Force
-      Write-Utf8NoBom -Path $CursorMcp -Content ($cursorSettings | ConvertTo-Json -Depth 10)
+      Write-Utf8NoBom -Path $CursorMcp -Content ($cursorSettings | ConvertTo-Json -Depth 100)
     }
   } else {
     Write-Host "[INFO] Configuring Cursor MCP"
-    Write-Utf8NoBom -Path $CursorMcp -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 10)
+    Write-Utf8NoBom -Path $CursorMcp -Content (@{ mcpServers = @{ ownmind = $McpConfig } } | ConvertTo-Json -Depth 100)
   }
 }
 
@@ -686,8 +712,30 @@ if (Test-Path $NoScannerFlag) {
   }
 }
 
+# v1.17.63: self-check 把所有元件真實狀態抓下來、寫 log + 上傳
+# 包 try/catch：若 user 的 $ErrorActionPreference=Stop，沒包會中斷後面的安裝完成訊息
+#
+# v1.26.134 — this runs BEFORE the completion banner now, and its failure is reported.
+#
+# The banner used to print first, so "OwnMind installation complete" appeared above whatever
+# the checks then found, and a `[FAIL]` line arrived underneath a sentence that had already
+# declared success. The empty catch made the other half of it: if self-check itself threw,
+# nothing was said at all and the run still read as complete. IR-001 is about exactly this
+# ordering — the installer's claim is not evidence, so the evidence goes first.
+$SelfCheckScript = Join-Path $OwnmindDir 'scripts\install-helpers\self-check.cjs'
+if (Test-Path $SelfCheckScript) {
+  try { & node $SelfCheckScript --trigger=post_install }
+  catch {
+    Write-Host "[WARN] self-check could not run: $_" -ForegroundColor Yellow
+    Write-Host "       nothing below has been verified; check the components yourself" -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "[WARN] self-check.cjs not found (stale upgrade?) - nothing below has been verified" -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "OwnMind installation complete" -ForegroundColor Green
+Write-Host "   (see the self-check above for what was actually verified)"
 Write-Host ""
 Write-Host "   MCP Server: $OwnmindDir\mcp\index.js"
 Write-Host "   API URL:    $ApiUrl"
@@ -698,13 +746,5 @@ if (-not $HasBash) {
 }
 Write-Host "   Git Hooks:  pre-commit + post-commit（Iron Rule Verification）"
 Write-Host ""
-
-# v1.17.63: self-check 把所有元件真實狀態抓下來、寫 log + 上傳
-# 包 try/catch：若 user 的 $ErrorActionPreference=Stop，沒包會中斷後面的安裝完成訊息
-$SelfCheckScript = Join-Path $OwnmindDir 'scripts\install-helpers\self-check.cjs'
-if (Test-Path $SelfCheckScript) {
-  try { & node $SelfCheckScript --trigger=post_install } catch { }
-}
-
 Write-Host "Open a new Claude Code session - OwnMind will auto-load your memory."
 Write-Host ""

@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## v1.26.134 修改（安裝腳本印「已更新」的依據是意圖，不是檔案）
+
+改檔：
+```
+install.ps1                                     — 金鑰寫進 settings.json 之後讀回來、解析、
+                                                   比對，對不上就明說「金鑰不在檔案裡」；對得上
+                                                   才印原本三句並補「verified by reading it
+                                                   back」。四個寫入點的 ConvertTo-Json 從
+                                                   -Depth 10 改 100（超過深度只警告不報錯，
+                                                   會把分支寫成 System.Collections.Hashtable
+                                                   這個字串）。完成橫幅移到自我檢查之後，
+                                                   包自我檢查的空 catch 補上訊息
+install.sh                                      — 同上的讀回來確認（node -e 區塊內），對不上
+                                                   印 PROBLEM。完成橫幅整塊移到產出檢查與
+                                                   自我檢查之後——原本會在「complete」底下印出
+                                                   「[FAIL] Installation did not complete.」
+tests/installer-key-update.test.js              — 13 → 18 tests：兩支都要讀回來確認、都要有
+                                                   金鑰沒落地的訊息、深度不准退回 10、橫幅必須
+                                                   排在檢查之後、自我檢查爆掉要說話。既有的
+                                                   「真的執行 install.sh 抽出區塊」測試改成
+                                                   斷言 verified by reading it back，那句話
+                                                   只有走完比對分支才印得出來
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.134 與三語同步
+```
+
 ## v1.26.133 修改（三個只在 Windows 出現、都不會自己報錯的缺陷）
 
 新檔：

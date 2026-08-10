@@ -295,11 +295,27 @@ if [ -f "$CLAUDE_SETTINGS" ]; then
     const _tmp = p + '.tmp';
     fs.writeFileSync(_tmp, JSON.stringify(settings, null, 2));
     fs.renameSync(_tmp, p);
+    // v1.26.134 — read it back, and let the file decide what gets printed.
+    //
+    // These three lines used to report on prevEnv vs nextKey: what the run intended, never
+    // what landed. The same key going into ~/.claude.json is confirmed by reading it back and
+    // says so, and this half — the file every hook reads its key from — was not. IR-001 is
+    // exactly that: an installer's success message is not evidence.
+    let landed = null;
+    try {
+      landed = JSON.parse(fs.readFileSync(p, 'utf8')).mcpServers.ownmind.env.OWNMIND_API_KEY;
+    } catch (e) { landed = null; }
+    if (landed !== nextKey) {
+      // Reported, not silenced: the install can carry on, but nobody may be told the account
+      // changed when it did not. A parse failure lands here too, which is the point.
+      console.log('       PROBLEM the API key is NOT in ' + p + ' after writing it -');
+      console.log('               the hooks will keep using the previous account; open the file and check it');
+    }
     // Say which of the two happened. A run that silently changed the account is as
     // confusing as one that silently did not.
-    if (!prevEnv.OWNMIND_API_KEY) console.log('       API key written');
-    else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('       API key updated (replaced a different key)');
-    else console.log('       API key unchanged');
+    else if (!prevEnv.OWNMIND_API_KEY) console.log('       API key written, verified by reading it back');
+    else if (prevEnv.OWNMIND_API_KEY !== nextKey) console.log('       API key updated (replaced a different key), verified by reading it back');
+    else console.log('       API key unchanged, verified by reading it back');
   "
 else
   echo "[INFO] Creating Claude Code MCP config"
@@ -1064,28 +1080,6 @@ ANTIGRAVITY_EOF
   fi
 fi
 
-echo ""
-echo "─────────────────────────────────────────────"
-echo "OwnMind installation complete"
-echo "─────────────────────────────────────────────"
-echo "  MCP Server: $OWNMIND_DIR/mcp/index.js"
-echo "  API URL:    $API_URL"
-echo "  API Key:    ${API_KEY:0:4}****${API_KEY: -4}"
-if [ "$IS_WINDOWS" = true ]; then
-echo "  Windows:    MCP launched via cmd.exe + start.cmd"
-fi
-echo ""
-echo "Auto-load configured for detected platforms:"
-echo "  [ OK ] Claude Code        SessionStart hook"
-{ command -v gemini &>/dev/null || [ -d "$HOME/.gemini" ]; } && echo "  [ OK ] Gemini CLI         SessionStart hook"
-{ command -v cursor &>/dev/null || [ -d "$HOME/.cursor" ]; } && echo "  [ OK ] Cursor             session-start hook"
-{ command -v gh &>/dev/null || [ -d "$HOME/.github" ]; } && echo "  [ OK ] GitHub Copilot     sessionStart hook"
-{ [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; } && echo "  [ OK ] Windsurf           rules file"
-{ [ -f "$HOME/.opencode.json" ] || command -v opencode &>/dev/null; } && echo "  [ OK ] OpenCode           instructions file"
-{ [ -f "$HOME/.openclaw.json" ] || command -v openclaw &>/dev/null; } && echo "  [ OK ] OpenClaw           bootstrap file"
-{ [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "  [ OK ] Antigravity        rules file"
-echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
-echo ""
 
 SELF_CHECK_SCRIPT="$OWNMIND_DIR/scripts/install-helpers/self-check.cjs"
 
@@ -1130,5 +1124,33 @@ if [ -f "$SELF_CHECK_SCRIPT" ]; then
   node "$SELF_CHECK_SCRIPT" --trigger=post_install || true
 fi
 
+# v1.26.134 — the completion banner moved BELOW the checks.
+#
+# It used to print here, before the artifact check and the self-check, so a run could say
+# "OwnMind installation complete" and then print "[FAIL] Installation did not complete."
+# underneath it — one run contradicting itself, with the claim arriving first. The claim is
+# not the evidence; it goes after it. install.ps1 was reordered the same way.
+echo ""
+echo "─────────────────────────────────────────────"
+echo "OwnMind installation complete"
+echo "─────────────────────────────────────────────"
+echo "  MCP Server: $OWNMIND_DIR/mcp/index.js"
+echo "  API URL:    $API_URL"
+echo "  API Key:    ${API_KEY:0:4}****${API_KEY: -4}"
+if [ "$IS_WINDOWS" = true ]; then
+echo "  Windows:    MCP launched via cmd.exe + start.cmd"
+fi
+echo ""
+echo "Auto-load configured for detected platforms:"
+echo "  [ OK ] Claude Code        SessionStart hook"
+{ command -v gemini &>/dev/null || [ -d "$HOME/.gemini" ]; } && echo "  [ OK ] Gemini CLI         SessionStart hook"
+{ command -v cursor &>/dev/null || [ -d "$HOME/.cursor" ]; } && echo "  [ OK ] Cursor             session-start hook"
+{ command -v gh &>/dev/null || [ -d "$HOME/.github" ]; } && echo "  [ OK ] GitHub Copilot     sessionStart hook"
+{ [ -d "$HOME/.windsurf" ] || [ -d "$HOME/.codeium" ]; } && echo "  [ OK ] Windsurf           rules file"
+{ [ -f "$HOME/.opencode.json" ] || command -v opencode &>/dev/null; } && echo "  [ OK ] OpenCode           instructions file"
+{ [ -f "$HOME/.openclaw.json" ] || command -v openclaw &>/dev/null; } && echo "  [ OK ] OpenClaw           bootstrap file"
+{ [ -d "$HOME/.antigravity" ] || command -v antigravity &>/dev/null; } && echo "  [ OK ] Antigravity        rules file"
+echo "  [ OK ] Git hooks          pre-commit + post-commit (Iron Rule Verification)"
+echo ""
 echo "Open a new AI session — OwnMind will auto-load your memory."
 echo ""
