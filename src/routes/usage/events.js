@@ -138,17 +138,28 @@ export function createEventsRouter(deps = {}) {
 
       // ── 2. Model allowlist (batch query; skipped when no events) ─
       const modelKeys = [...new Set(
-        processed.map((p) => `${p.event.tool}::${p.event.model ?? ''}`)
-          .filter((k) => !k.endsWith('::'))
+        processed.filter((p) => p.event.model)
+          .map((p) => `${p.event.tool}::${p.event.model}`)
       )];
       const knownModels = await lookupKnownModels({ query }, modelKeys);
-      const unknownMessageIds = new Set();
-      for (const p of processed) {
-        if (!p.event.model) continue;
-        if (!knownModels.has(`${p.event.tool}::${p.event.model}`)) {
-          unknownMessageIds.add(effectiveMessageId(p));
-        }
-      }
+      // v1.26.135: one audit row per model, ever — not one per message. The
+      // allowlist is `model_pricing`, which stopped being maintained when
+      // v1.26.60 dropped cost, so every message from every current model was
+      // landing an `unknown_model` row: 253,409 of them, and nothing else in
+      // the table. A signal that fires on every message is not a signal.
+      // Model strings are deliberately not normalised. `claude-opus-5` and
+      // `Claude-Opus-5` are two keys here and two keys in the db/024 index, so
+      // the two stay consistent — and a model arriving under a spelling nobody
+      // has seen before genuinely is news worth one row.
+      const unknownKeys = modelKeys.filter((k) => !knownModels.has(k));
+      const alreadyReported = await lookupReportedUnknownModels({ query }, unknownKeys);
+      // Model keys this batch may still report. A key is claimed (deleted from
+      // this set) at INSERT time, not here: a batch whose first message for a
+      // model turns out to be a replay would otherwise consume that model's one
+      // chance to be reported and write nothing, leaving a genuinely new model
+      // permanently unrecorded. Replays are normal traffic — a failed upload
+      // rewinds to the last acknowledged offset and resends.
+      const unreportedModels = new Set(unknownKeys.filter((k) => !alreadyReported.has(k)));
 
       // ── 3. D7 token_regression (batch-query per-(tool, session_id) max) ──
       const sessionKeys = [...new Set(
@@ -207,7 +218,10 @@ export function createEventsRouter(deps = {}) {
         }
 
         if (insertRes.inserted) {
-          if (unknownMessageIds.has(messageId)) {
+          // Claim the model here, where the row is known to have landed.
+          // `delete` returns true only for the first winner, so the audit is
+          // written once per model per batch and the DB index catches the rest.
+          if (e.model && unreportedModels.delete(`${e.tool}::${e.model}`)) {
             await writeAudit({ query }, userId, e.tool, 'unknown_model', {
               model: e.model, message_id: messageId, session_id: e.session_id
             });
@@ -327,10 +341,20 @@ async function isExempt({ query }, userId) {
   return res.rows[0] || null;
 }
 
+// Keys are `tool::value`. Split on the FIRST separator only: `tool` never
+// contains `::`, but the values do not have that guarantee — `model` is free
+// text and `session_id` comes from the client. A plain split('::') would hand
+// the query a truncated value, which silently answers "no match" and, for the
+// unknown-model path, means every batch re-attempts a write forever.
+function splitKey(k) {
+  const i = k.indexOf('::');
+  return [k.slice(0, i), k.slice(i + 2)];
+}
+
 async function lookupKnownModels({ query }, keys) {
   const known = new Set();
   if (keys.length === 0) return known;
-  const pairs = keys.map((k) => k.split('::'));
+  const pairs = keys.map(splitKey);
   const tools = pairs.map((p) => p[0]);
   const models = pairs.map((p) => p[1]);
   const res = await query(
@@ -342,10 +366,30 @@ async function lookupKnownModels({ query }, keys) {
   return known;
 }
 
+// Which of these `tool::model` keys already have an `unknown_model` audit row.
+// Those are models somebody has already been told about; re-reporting them on
+// every subsequent message is what buried the table.
+async function lookupReportedUnknownModels({ query }, keys) {
+  const reported = new Set();
+  if (keys.length === 0) return reported;
+  const pairs = keys.map(splitKey);
+  const tools = pairs.map((p) => p[0]);
+  const models = pairs.map((p) => p[1]);
+  const res = await query(
+    `SELECT DISTINCT tool, details->>'model' AS model
+       FROM usage_audit_log
+      WHERE event_type = 'unknown_model'
+        AND (tool, details->>'model') IN (SELECT * FROM UNNEST($1::text[], $2::text[]))`,
+    [tools, models]
+  );
+  for (const r of res.rows) reported.add(`${r.tool}::${r.model}`);
+  return reported;
+}
+
 async function loadSessionMaxCumulative({ query }, userId, sessionKeys) {
   const map = new Map();
   if (sessionKeys.length === 0) return map;
-  const pairs = sessionKeys.map((k) => k.split('::'));
+  const pairs = sessionKeys.map(splitKey);
   const tools = pairs.map((p) => p[0]);
   const sessions = pairs.map((p) => p[1]);
   const res = await query(
@@ -515,8 +559,20 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
 async function writeAudit({ query }, userId, tool, eventType, details) {
   try {
     await query(
+      // Backstops the db/024 partial unique index. Two uploads carrying the
+      // same new model can both pass the lookup above before either has
+      // inserted; without this the loser raises and the caller logs a write
+      // failure for a row it never needed.
+      //
+      // The arbiter is named on purpose. A bare ON CONFLICT DO NOTHING would
+      // swallow every unique violation on this table — including a primary-key
+      // clash from a sequence left behind a restored dump — and a
+      // token_regression row would vanish with no error and no log line.
+      // Naming it still inserts rows that fall outside the index predicate.
       `INSERT INTO usage_audit_log (user_id, tool, event_type, details)
-       VALUES ($1, $2, $3, $4::jsonb)`,
+       VALUES ($1, $2, $3, $4::jsonb)
+       ON CONFLICT (tool, (details->>'model')) WHERE event_type = 'unknown_model'
+       DO NOTHING`,
       [userId, tool, eventType, JSON.stringify(details)]
     );
   } catch (err) {
