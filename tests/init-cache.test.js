@@ -31,6 +31,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 import {
   pickRulesForCache,
@@ -247,9 +248,26 @@ describe('the init handler does not write a cache it cannot fill', () => {
  * The unit tests above pin the rule; this pins that the rule is the one the running program
  * uses. Both are needed — the defect was not in a rule, it was in a call site that never
  * consulted one.
+ *
+ * Skipped where the MCP cannot start at all. `mcp/` has its own dependency on the MCP SDK and
+ * its own node_modules, and CI runs `npm ci` at the repo root only — so on a runner the server
+ * exits with ERR_MODULE_NOT_FOUND before reading a byte of the init response, and this test
+ * would report a 20-second timeout for a reason that has nothing to do with caching. It runs
+ * on any real installation, which is where the defect was measured; everywhere else the rule
+ * is still covered by the unit tests and the call-site guards above.
  */
+const MCP_RUNNABLE = (() => {
+  try {
+    createRequire(path.join(repoRoot, 'mcp', 'index.js'))
+      .resolve('@modelcontextprotocol/sdk/server/index.js');
+    return false;
+  } catch {
+    return 'mcp/node_modules is absent (root-only `npm ci`), so the MCP cannot start here';
+  }
+})();
+
 describe('end to end: one init against a compact server must not empty the cache', () => {
-  it('leaves IR-004 in cache/iron_rules.json', async () => {
+  it('leaves the cached rule in cache/iron_rules.json', { skip: MCP_RUNNABLE }, async () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-init-'));
     const cachePath = path.join(home, '.ownmind', 'cache', 'iron_rules.json');
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
