@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.26.128 修改（團隊規範送到了 hook 面前、然後被丟掉）
+
+修改檔：
+```
+hooks/lib/render-session-context.js              — 算繪 team_standards_digest。init 一直都有回它，
+                                                    而且放在 !compact 外面（＝專門為 hook 這條路送的），
+                                                    但這支從來沒讀。結果團隊規範只到得了會呼叫
+                                                    ownmind_init 的工具，到不了走 SessionStart hook 的
+                                                    ——Claude Code 整個在後者。排在鐵律後面（衝突時
+                                                    鐵律優先，用順序講），並附 standard_detail 的讀法
+                                                    （摘要只有標題，看得到名字讀不到內容還是遵守不了）
+tests/session-start-render.test.js               — 新增 4 條：摘要有算繪、有指出怎麼讀全文、
+                                                    沒有團隊規範時整段不出現、順序排在鐵律之後
+shared/tips.js                                   — 兩句技巧文案依 Vin 決定回到原本寫法
+                                                    （回報 bug 直接送管理者、團隊規範自動遵守）。
+                                                    後者現在是送得到的，靠的跟鐵律同一個東西
+```
+
 ## v1.26.127 修改（技巧清單合一，每條綁一個真的存在的東西）
 
 新檔：

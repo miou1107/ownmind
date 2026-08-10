@@ -158,3 +158,48 @@ describe('renderSessionContext — v1.19 tier distribution summary', () => {
     assert.ok(!out.includes('0 total'), 'total 0 should not display the count');
   });
 });
+
+describe('renderSessionContext — team standards', () => {
+  // v1.26.128. `/api/memory/init` returns team_standards_digest outside its `!compact`
+  // guard — deliberately sent on this path, since every live caller here asks for compact.
+  // This renderer never read it, so a team's rules reached anyone whose tool calls
+  // ownmind_init and nobody whose tool loads memory through the SessionStart hook. Claude
+  // Code is entirely in the second group.
+  //
+  // Same shape as the missing tip: the server sent it, the renderer dropped it, and the
+  // only visible symptom was an AI that did not follow rules it was never given.
+  it('renders the digest the init response carries', () => {
+    const out = renderSessionContext({
+      server_version: '1.26.128',
+      team_standards_digest: '[團隊] 前端命名規範\n[團隊] API 錯誤碼',
+    }, []);
+    assert.match(out, /## Team standards/);
+    assert.match(out, /前端命名規範/);
+    assert.match(out, /API 錯誤碼/);
+  });
+
+  it('points at how to read one in full', () => {
+    // The digest is titles only. Without this the AI sees a rule's name and no way to obey it.
+    const out = renderSessionContext({
+      server_version: '1.26.128',
+      team_standards_digest: '[團隊] 前端命名規範',
+    }, []);
+    assert.match(out, /standard_detail/);
+  });
+
+  it('omits the section entirely when the user has no team standards', () => {
+    const out = renderSessionContext({ server_version: '1.26.128' }, []);
+    assert.doesNotMatch(out, /Team standards/);
+  });
+
+  it('puts team standards after the iron rules, not above them', () => {
+    // Iron rules outrank team standards when the two conflict; order says so without a
+    // sentence about it.
+    const out = renderSessionContext({
+      server_version: '1.26.128',
+      iron_rules_digest: 'IR-001: 範例',
+      team_standards_digest: '[團隊] 前端命名規範',
+    }, []);
+    assert.ok(out.indexOf('Iron rules') < out.indexOf('Team standards'));
+  });
+});
