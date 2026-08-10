@@ -1,10 +1,32 @@
 import { appendFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { resolveClientTool, resolveProjectName } from '../shared/helpers.js';
 // Node 18+ has global fetch — node-fetch is not required (dependency removed in v1.17.99).
 
-const LOGS_DIR = join(process.env.HOME || '', '.ownmind', 'logs');
+/**
+ * v1.26.131 — where this process writes its own activity log.
+ *
+ * This used to be `join(process.env.HOME || '', '.ownmind', 'logs')`. **HOME is not set on
+ * Windows**, so the empty-string fallback made the path relative, and the log landed in
+ * whatever directory the host happened to launch the MCP in — or, where that is not
+ * writable, nowhere at all, taking the server upload with it (see logEvent).
+ *
+ * The same line, in the same package, has already cost this project once. The comment above
+ * the auto-update block in index.js records v1.17.22: "root cause of Alice (Windows) / Bob
+ * being stuck on old versions: process.env.HOME is undefined on Windows". index.js was moved
+ * to os.homedir(). Its logger, one import away, was left behind — so the machines that could
+ * not update also could not report that they had not updated.
+ *
+ * Resolved on each call rather than once at import, so a test can exercise the Windows case
+ * without a child process. os.homedir() already reads USERPROFILE on Windows; the explicit
+ * env reads ahead of it match the shape used by every other file in the repo that needs this.
+ */
+export function resolveLogsDir() {
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
+  return join(home, '.ownmind', 'logs');
+}
 // v1.18.4: fallback is 'claude-code' rather than 'unknown', so activity_logs does not
 // fill with 'unknown' and break per-tool grouping.
 //
@@ -20,12 +42,18 @@ const PROJECT_NAME = resolveProjectName();
 const API_URL = (process.env.OWNMIND_API_URL || '').replace(/\/$/, '');
 const API_KEY = process.env.OWNMIND_API_KEY || '';
 
-// Ensure logs directory exists (once per process)
-let dirReady = false;
+// Ensure the logs directory exists. Memoised on the resolved path rather than on a boolean:
+// the path is computed per call now, and a latched flag would skip the mkdir for a directory
+// it had never actually created. The reachable version of that is not a changing HOME but a
+// deleted directory - a reinstall or a cleanup mid-session, after which a boolean latch means
+// the local log is dead for the rest of the process, silently and with no self-healing.
+let readyDir = null;
 function ensureDir() {
-  if (dirReady) return;
-  if (!existsSync(LOGS_DIR)) mkdirSync(LOGS_DIR, { recursive: true });
-  dirReady = true;
+  const dir = resolveLogsDir();
+  if (readyDir === dir) return dir;
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  readyDir = dir;
+  return dir;
 }
 
 // Buffer for batch upload (flush every 10 events or 30 seconds)
@@ -70,9 +98,23 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 }
 
 // Important event types: flush immediately, do not wait for the buffer to fill.
+// v1.26.131 — the update outcomes joined this set.
+//
+// They are the events a machine that cannot update most needs to send, and they happen at
+// most once a day, so batching buys nothing. What it can cost is the event: all four are
+// emitted in the first seconds of process life, squarely inside the window before the
+// thirty-second timer fires, and a host that terminates its MCP child rather than signalling
+// it never runs the beforeExit / SIGTERM flush either.
+//
+// (The timer does fire in a process that stays alive - that was checked, not assumed. This
+// is about the process that does not.)
 const IMMEDIATE_FLUSH_EVENTS = new Set([
   'iron_rule_compliance',
   'session_log',
+  'update_applied',
+  'update_failed',
+  'update_skipped',
+  'update_clean',
 ]);
 
 // v1.20.1: extracted to keep the test and logEvent from disagreeing on what "today" means.
@@ -95,7 +137,6 @@ import { localDateOnly } from '../shared/local-date.js';
  */
 export function logEvent(event, details = {}) {
   try {
-    ensureDir();
     const now = new Date();
     const tzOffset = -now.getTimezoneOffset();
     const sign = tzOffset >= 0 ? '+' : '-';
@@ -107,8 +148,6 @@ export function logEvent(event, details = {}) {
       String(now.getMinutes()).padStart(2, '0') + ':' +
       String(now.getSeconds()).padStart(2, '0') +
       sign + hh + ':' + mm;
-
-    const filePath = join(LOGS_DIR, `${dateStr}.jsonl`);
 
     const tool = details.tool || TOOL_NAME;
     const source = details.source || 'mcp';
@@ -124,16 +163,30 @@ export function logEvent(event, details = {}) {
     // and the buffer push share the same entry object, so the id is consistent.
     const entry = { ts, event, tool, source, client_event_id: randomUUID(), details: rest };
 
-    // Write local
-    appendFileSync(filePath, JSON.stringify(entry) + '\n');
+    // Serialised here, before anything is buffered, so an entry that cannot be stringified
+    // fails alone. Left to flushToServer, the throw would land after buffer.splice had
+    // already emptied the buffer, taking up to nine unrelated events with it.
+    const line = JSON.stringify(entry) + '\n';
 
-    // Buffer for server upload
+    // v1.26.131 — buffer first, write second.
+    //
+    // These used to be the other way round inside one try/catch, and the first statement in
+    // that try was ensureDir(). So an unwritable logs directory did not degrade an event to
+    // "sent but not stored locally" — it deleted the event outright, before it was ever
+    // buffered, and the catch said nothing. One filesystem problem cost both copies, and the
+    // server copy is the only one anybody can look at on a machine they do not have.
     buffer.push(entry);
     if (buffer.length >= 10 || IMMEDIATE_FLUSH_EVENTS.has(event)) {
       flushToServer();
     } else {
       scheduleFlush();
     }
+
+    // Local copy, in its own try, and ensureDir() called only from inside it: that call is
+    // where the original failure happened, and nothing about it may reach the upload above.
+    try {
+      appendFileSync(join(ensureDir(), `${dateStr}.jsonl`), line);
+    } catch { /* the event is already on its way to the server */ }
   } catch {
     // Silent fail — never disrupt main flow
   }
