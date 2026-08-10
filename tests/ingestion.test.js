@@ -121,12 +121,39 @@ function makeFakeQuery(state = { events: [], audits: [] }) {
         count: params[3], wall_seconds: params[4] });
       return { rowCount: 1, rows: [] };
     }
-    // INSERT audit
+    // Already-reported unknown models (one audit row per model, ever)
+    if (/FROM usage_audit_log/.test(sql) && /SELECT DISTINCT/.test(sql)) {
+      const tools = params[0]; const models = params[1];
+      const rows = [];
+      for (let i = 0; i < tools.length; i += 1) {
+        const hit = state.audits.some((a) =>
+          a.event_type === 'unknown_model' &&
+          a.tool === tools[i] && a.details?.model === models[i]);
+        if (hit) rows.push({ tool: tools[i], model: models[i] });
+      }
+      return { rows };
+    }
+    // INSERT audit. Mirrors the db/024 partial unique index so a batch that
+    // slips past the application-level de-dup still cannot double-write.
+    //
+    // `auditAttempts` counts what the router TRIED to write, before the index
+    // silently drops anything. Assertions on `audits` alone cannot tell the
+    // application-level de-dup from the index doing all the work; assertions on
+    // `auditAttempts` can, and that is the only thing that will go red if the
+    // application-level de-dup is deleted.
     if (/INSERT INTO usage_audit_log/.test(sql)) {
-      state.audits.push({
+      const row = {
         user_id: params[0], tool: params[1],
         event_type: params[2], details: JSON.parse(params[3])
-      });
+      };
+      state.auditAttempts = (state.auditAttempts ?? 0) + 1;
+      if (row.event_type === 'unknown_model' && /ON CONFLICT/.test(sql)) {
+        const clash = state.audits.some((a) =>
+          a.event_type === 'unknown_model' &&
+          a.tool === row.tool && a.details?.model === row.details?.model);
+        if (clash) return { rowCount: 0, rows: [] };
+      }
+      state.audits.push(row);
       return { rowCount: 1, rows: [] };
     }
     throw new Error('unexpected SQL: ' + sql);
@@ -215,6 +242,172 @@ describe('POST /api/usage/events', () => {
     assert.equal(state.audits.length, 1);
     assert.equal(state.audits[0].event_type, 'unknown_model');
     assert.equal(state.audits[0].details.model, 'fake-model');
+  });
+
+  it('records unknown_model once per model, not once per message', async () => {
+    const state = { events: [], audits: [], knownModels: new Set() };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const mk = (id) => ({
+      tool: 'claude-code', session_id: 's1', message_id: id,
+      model: 'claude-opus-5', ts: '2026-04-21T09:00:00Z',
+      input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+    });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [mk('m1'), mk('m2'), mk('m3')] }
+    });
+    assert.equal(res.body.accepted, 3, 'every event is still ingested');
+    assert.equal(state.audits.length, 1, 'one audit row for the model, not three');
+    assert.equal(state.audits[0].details.model, 'claude-opus-5');
+    assert.equal(state.auditAttempts, 1,
+      'the router must not even attempt the other two — the index is a backstop, not the rule');
+  });
+
+  it('a replayed first message must not consume the model\'s one chance to be reported', async () => {
+    // The batch's first event for this model is already in token_events (an
+    // upload that failed after the server stored it and was resent). It will
+    // come back as duplicated. The second, genuinely new event is what must
+    // carry the audit — otherwise a brand-new model is never recorded at all.
+    const state = {
+      events: [{
+        user_id: 1, tool: 'claude-code', session_id: 's1', message_id: 'replayed',
+        model: 'brand-new-model', ts: new Date('2026-04-21T09:00:00Z'),
+        cumulative_total_tokens: 1,
+        input_tokens: 0, output_tokens: 0,
+        cache_creation_tokens: 0, cache_read_tokens: 0, reasoning_tokens: 0
+      }],
+      audits: [], knownModels: new Set()
+    };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const mk = (id) => ({
+      tool: 'claude-code', session_id: 's1', message_id: id, model: 'brand-new-model',
+      ts: '2026-04-21T09:00:00Z',
+      input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+    });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [mk('replayed'), mk('fresh')] }
+    });
+    assert.equal(res.body.duplicated, 1);
+    assert.equal(res.body.accepted, 1);
+    assert.equal(state.audits.length, 1, 'the new model is still reported');
+    assert.equal(state.audits[0].details.message_id, 'fresh');
+  });
+
+  it('a batch whose events are all replays reports nothing — and claims nothing', async () => {
+    const state = {
+      events: [{
+        user_id: 1, tool: 'claude-code', session_id: 's1', message_id: 'old',
+        model: 'brand-new-model', ts: new Date('2026-04-21T09:00:00Z'),
+        cumulative_total_tokens: 1,
+        input_tokens: 0, output_tokens: 0,
+        cache_creation_tokens: 0, cache_read_tokens: 0, reasoning_tokens: 0
+      }],
+      audits: [], knownModels: new Set()
+    };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [{
+        tool: 'claude-code', session_id: 's1', message_id: 'old',
+        model: 'brand-new-model', ts: '2026-04-21T09:00:00Z',
+        input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+      }] }
+    });
+    assert.equal(res.body.duplicated, 1);
+    assert.equal(state.audits.length, 0, 'nothing landed, so nothing is reported');
+  });
+
+  it('drops the write when the model was reported between the lookup and the insert', async () => {
+    // Scenario 4 of the spec: two uploads carrying the same never-seen model
+    // both read "not reported yet". The lookup here answers with stale data,
+    // so the router genuinely attempts the insert and the index must eat it.
+    const state = { events: [], audits: [], knownModels: new Set(), staleLookup: true };
+    const fake = makeFakeQuery(state);
+    const app = buildApp({
+      queryFn: async (sql, params) => {
+        if (state.staleLookup && /FROM usage_audit_log/.test(sql) && /SELECT DISTINCT/.test(sql)) {
+          return { rows: [] };            // the other upload has not inserted yet
+        }
+        return fake(sql, params);
+      },
+      user: { id: 1 }
+    });
+    // The other upload wins the race in between.
+    state.audits.push({ user_id: 2, tool: 'claude-code', event_type: 'unknown_model',
+      details: { model: 'claude-opus-5' } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [{
+        tool: 'claude-code', session_id: 's1', message_id: 'loser',
+        model: 'claude-opus-5', ts: '2026-04-21T09:00:00Z',
+        input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+      }] }
+    });
+    assert.equal(res.body.accepted, 1, 'the usage event itself is unaffected');
+    assert.equal(state.auditAttempts, 1, 'the router did try to write');
+    assert.equal(state.audits.length, 1, 'but only one row exists for the model');
+  });
+
+  it('does not record unknown_model again for a model already reported', async () => {
+    const state = {
+      events: [], knownModels: new Set(),
+      audits: [{ user_id: 1, tool: 'claude-code', event_type: 'unknown_model',
+        details: { model: 'claude-opus-5' } }]
+    };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [{
+        tool: 'claude-code', session_id: 's9', message_id: 'later',
+        model: 'claude-opus-5', ts: '2026-04-21T09:00:00Z',
+        input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+      }] }
+    });
+    assert.equal(res.body.accepted, 1);
+    assert.equal(state.audits.length, 1, 'no second row for a model seen before');
+  });
+
+  it('keeps token_regression per-message — the unknown_model rule must not spread', async () => {
+    const state = {
+      events: [{
+        user_id: 1, tool: 'claude-code', session_id: 's1', message_id: 'prev',
+        model: 'opus', ts: new Date('2026-04-21T09:00:00Z'),
+        cumulative_total_tokens: 1000,
+        input_tokens: 0, output_tokens: 0,
+        cache_creation_tokens: 0, cache_read_tokens: 0, reasoning_tokens: 0
+      }],
+      audits: [], knownModels: new Set(['claude-code::opus'])
+    };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const mk = (id) => ({
+      tool: 'claude-code', session_id: 's1', message_id: id, model: 'opus',
+      ts: '2026-04-21T10:00:00Z',
+      input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 10
+    });
+    await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [mk('r1'), mk('r2')] }
+    });
+    const regressions = state.audits.filter((a) => a.event_type === 'token_regression');
+    assert.equal(regressions.length, 2, 'both regressing messages are still recorded');
+  });
+
+  it('still reports each distinct unknown model in a mixed batch', async () => {
+    const state = { events: [], audits: [], knownModels: new Set(['claude-code::known-one']) };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const mk = (id, model) => ({
+      tool: 'claude-code', session_id: 's1', message_id: id, model,
+      ts: '2026-04-21T09:00:00Z',
+      input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+    });
+    await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [mk('a', 'claude-opus-5'), mk('b', 'known-one'),
+        mk('c', 'claude-sonnet-5'), mk('d', 'claude-opus-5')] }
+    });
+    const models = state.audits.map((a) => a.details.model).sort();
+    assert.deepEqual(models, ['claude-opus-5', 'claude-sonnet-5']);
   });
 
   it('writes token_regression audit when new cumulative < previous max', async () => {
