@@ -43,21 +43,22 @@ const { taskBelongsToInstall } = require('../scripts/install-helpers/scheduler-t
 const HEALTH_PS1 = 'scripts/install-helpers/schedule-health.ps1';
 const HELPER_PS1 = 'scripts/install-helpers/ensure-scanner-schedule.ps1';
 
-/** pwsh 7 anywhere; Windows PowerShell 5.1 is what production actually runs, so prefer it there. */
-const POWERSHELL = (() => {
-  const candidates = process.platform === 'win32' ? ['pwsh', 'powershell'] : ['pwsh'];
-  for (const exe of candidates) {
-    const r = spawnSync(exe, ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.Major'], {
-      encoding: 'utf8',
-    });
-    if (r.status === 0) return exe;
-  }
-  return null;
-})();
+/**
+ * Every PowerShell on this machine, not the first one found.
+ *
+ * `scripts/update.ps1` runs this helper as `& powershell` — Windows PowerShell 5.1, still the
+ * Windows 10 default. A first-match probe picks pwsh 7 on the Windows runner and 5.1, the
+ * version production actually executes, is never exercised at all. Both are checked wherever
+ * both exist; on Linux and macOS runners that is pwsh alone.
+ */
+const SHELLS = ['pwsh', 'powershell'].filter((exe) => {
+  const r = spawnSync(exe, ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' });
+  return r.status === 0;
+});
 
-const noPowerShell = POWERSHELL
+const noPowerShell = SHELLS.length > 0
   ? false
-  : 'no PowerShell on this machine; CI runners have pwsh and run these for real';
+  : 'no PowerShell on this machine; the CI runners have it and run these for real';
 
 /**
  * Run one call against the helper and return the boolean it produced.
@@ -72,29 +73,38 @@ const noPowerShell = POWERSHELL
  * paths full of backslashes and quotes, and interpolating them into a -Command string is
  * how a test ends up asserting against its own escaping instead of the function.
  */
-function evalPs(expression, env) {
+function evalPs(exe, expression, env) {
   const script = `${read(HEALTH_PS1)}\n${expression}`;
   // -ExecutionPolicy Bypass because a Windows client that never configured a policy is
   // Restricted; tests/windows-test-hygiene.test.js pins this on every spawn that runs a
   // script rather than a literal.
-  const r = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+  const r = spawnSync(exe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
     encoding: 'utf8',
     env: { ...process.env, ...env },
   });
-  assert.equal(r.status, 0, `PowerShell exited ${r.status}: ${r.stderr}`);
+  assert.equal(r.status, 0, `${exe} exited ${r.status}: ${r.stderr}`);
   const out = r.stdout.trim();
-  assert.match(out, /^(True|False)$/, `expected a boolean, got: ${JSON.stringify(out)}`);
+  assert.match(out, /^(True|False)$/, `${exe} returned no boolean: ${JSON.stringify(out)}`);
   return out === 'True';
 }
 
-const belongs = (actions, dir) => evalPs(
+/** Assert the same expectation against every PowerShell present, naming the one that broke. */
+function eachShell(expression, env, expected, message) {
+  for (const exe of SHELLS) {
+    assert.equal(evalPs(exe, expression, env), expected, `${message} (under ${exe})`);
+  }
+}
+
+const belongs = (actions, dir, expected, message) => eachShell(
   'Test-TaskBelongsToInstall -Actions $env:PS_ACTIONS -OwnMindDir $env:PS_DIR',
   { PS_ACTIONS: actions, PS_DIR: dir },
+  expected, message,
 );
 
-const healthy = (state, actions, dir) => evalPs(
+const healthy = (state, actions, dir, expected, message) => eachShell(
   'Test-ScheduleHealthy -State $env:PS_STATE -Actions $env:PS_ACTIONS -OwnMindDir $env:PS_DIR',
   { PS_STATE: state, PS_ACTIONS: actions, PS_DIR: dir },
+  expected, message,
 );
 
 // The action string Windows reports for a real registration, taken from the one measured in
@@ -125,13 +135,22 @@ describe('the PowerShell repair asks the same ownership question the check asks'
       `${HEALTH_PS1} is missing; the ownership rule has no home on the Windows side`);
   });
 
+  it('CI really has a PowerShell to run these against', { skip: process.env.CI ? false : 'local' }, () => {
+    // Everything below skips itself when no shell is found. That is right on a dev machine
+    // and wrong on CI: the runners are the only place these ever execute, and a probe that
+    // silently stopped matching would turn the whole file into a source-text check without
+    // anything going red.
+    assert.ok(SHELLS.length > 0,
+      'no PowerShell found on a CI runner — the probe is stale and these tests are now vacuous');
+  });
+
   for (const c of OWNERSHIP_CASES) {
     it(`${c.name} — PowerShell agrees with the JS rule`, { skip: noPowerShell }, () => {
       // Both sides asserted against the same expectation rather than against each other:
       // two implementations that agree on the wrong answer would still pass a pure
       // parity check (IR-128).
       assert.equal(taskBelongsToInstall(c.actions, c.dir), c.expect, 'the JS rule disagrees');
-      assert.equal(belongs(c.actions, c.dir), c.expect, 'the PowerShell rule disagrees');
+      belongs(c.actions, c.dir, c.expect, 'the PowerShell rule disagrees');
     });
   }
 });
@@ -140,23 +159,23 @@ describe('what the repair treats as a healthy schedule', () => {
   it("Adam's task is not healthy — this is the whole defect", { skip: noPowerShell }, () => {
     // Enabled, present, State=Ready. The old gate returned "already_registered" here and
     // walked away, every day, on a machine the self-check was calling broken.
-    assert.equal(healthy('Ready', OURS, ADAM_DIR), false);
+    healthy('Ready', OURS, ADAM_DIR, false, 'a task owned by another install was called healthy');
   });
 
   it('a task that belongs here and is enabled is left alone', { skip: noPowerShell }, () => {
-    assert.equal(healthy('Ready', OURS, String.raw`C:\Users\Vin\.ownmind`), true);
-    assert.equal(healthy('Running', OURS, String.raw`C:\Users\Vin\.ownmind`), true);
+    healthy('Ready', OURS, String.raw`C:\Users\Vin\.ownmind`, true, 'Ready must be left alone');
+    healthy('Running', OURS, String.raw`C:\Users\Vin\.ownmind`, true, 'Running must be left alone');
   });
 
   it('a disabled task is still broken, ownership notwithstanding', { skip: noPowerShell }, () => {
     // v1.26.79's rule, kept: a task that never fires is the same outcome as no task.
-    assert.equal(healthy('Disabled', OURS, String.raw`C:\Users\Vin\.ownmind`), false);
+    healthy('Disabled', OURS, String.raw`C:\Users\Vin\.ownmind`, false, 'a disabled task is not a schedule');
   });
 
   it('an unreadable state is not evidence of health', { skip: noPowerShell }, () => {
     // self-check.cjs treats a missing state as "not found" rather than as OK; the repair
     // must not be more generous than the check, or the two disagree again.
-    assert.equal(healthy('', OURS, String.raw`C:\Users\Vin\.ownmind`), false);
+    healthy('', OURS, String.raw`C:\Users\Vin\.ownmind`, false, 'an unreadable state must not pass');
   });
 });
 
