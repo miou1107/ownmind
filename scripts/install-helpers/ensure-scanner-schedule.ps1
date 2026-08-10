@@ -31,12 +31,33 @@ if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
   Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
 }
 
-$OwnMindDir = if ($env:OWNMIND_DIR) { $env:OWNMIND_DIR } else { Join-Path $env:USERPROFILE '.ownmind' }
+# v1.26.130 - two variables, because they answer two different questions.
+#
+# $ScriptDir is where this script's siblings are: $PSScriptRoot, not a path rebuilt from the
+# environment. v1.26.129 was a release about a script executed from a copy whose siblings had
+# not come with it; rebuilding the path is how that happens.
+#
+# $InstallDir is the answer to "which installation does the scheduled task have to drive",
+# and it must be computed the same way in all three places that ask:
+#   - scripts/windows/register-scanner-task.ps1, which writes the path into the task
+#   - scripts/install-helpers/self-check.cjs, which reports a mismatch
+#   - here, which repairs one
+#
+# All three use the Windows profile. This script used to honour $env:OWNMIND_DIR and the
+# other two never have, which under a custom install path produced a repair that could not
+# converge: the gate would reject the task, re-registration would write the profile path back
+# again, the post-repair check would reject it a second time, and the machine would send a
+# failed-repair report every single day. The override cannot be the shared value anyway - it
+# is an install-time variable and is simply absent from the environment when the daily update
+# runs. A custom install path therefore remains unsupported by the scheduler, exactly as it
+# already was, rather than newly generating a daily error nobody can act on.
+$ScriptDir = $PSScriptRoot
+$InstallDir = Join-Path $env:USERPROFILE '.ownmind'
 $TaskName = 'OwnMind Usage Scanner'
 
 # Best-effort reporting, same pattern update.ps1 uses. A missing helper must never stop
 # the repair itself.
-$reportErrorHelper = Join-Path $OwnMindDir 'scripts\install-helpers\report-error.ps1'
+$reportErrorHelper = Join-Path $ScriptDir 'report-error.ps1'
 if (Test-Path $reportErrorHelper) {
   . $reportErrorHelper
 } else {
@@ -54,22 +75,11 @@ function Fail-Schedule {
 # can be executed by a test off Windows, and so it stays the twin of the JS rule the
 # self-check reports with. Missing is a hard failure rather than a fall back to the old
 # presence-only gate: silently answering the weaker question is the defect being fixed.
-$healthHelper = Join-Path $OwnMindDir 'scripts\install-helpers\schedule-health.ps1'
+$healthHelper = Join-Path $ScriptDir 'schedule-health.ps1'
 if (-not (Test-Path $healthHelper)) {
   Fail-Schedule "schedule-health.ps1 missing at $healthHelper"
 }
 . $healthHelper
-
-<#
-.SYNOPSIS
-  The task's actions on one line, or '' when there is no task or nothing readable.
-#>
-function Get-TaskActionText {
-  param($Task)
-  if (-not $Task) { return '' }
-  $joined = ($Task.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' '
-  return ($joined -replace '\r?\n', ' ')
-}
 
 # Three ways a registered task is not a working schedule, all of them measured on real
 # machines, all of them decided by Test-ScheduleHealthy: disabled (v1.26.79), owned by
@@ -87,12 +97,12 @@ function Get-TaskActionText {
 $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
 if ($task -and (Test-ScheduleHealthy -State $task.State `
                                      -Actions (Get-TaskActionText $task) `
-                                     -OwnMindDir $OwnMindDir)) {
+                                     -OwnMindDir $InstallDir)) {
   Write-Host "OK:schedule:already_registered"
   exit 0
 }
 
-$registerScript = Join-Path $OwnMindDir 'scripts\windows\register-scanner-task.ps1'
+$registerScript = Join-Path $ScriptDir '..\windows\register-scanner-task.ps1'
 if (-not (Test-Path $registerScript)) {
   Fail-Schedule "register-scanner-task.ps1 missing at $registerScript"
 }
@@ -117,8 +127,20 @@ if ($task.State -eq 'Disabled') {
 # asserted anyway for the same reason the presence check above exists: this repo has shipped
 # a release where registration reported success and the machine had nothing (v1.17.66), and
 # "repaired" written onto a machine that is still broken is worse than an honest failure.
-if (-not (Test-TaskBelongsToInstall -Actions (Get-TaskActionText $task) -OwnMindDir $OwnMindDir)) {
-  Fail-Schedule "task '$TaskName' still points at another installation after re-registering (register exit $registerExit)"
+#
+# One real way to get here: the task was created by a different Windows account, whose DACL
+# grants us read but not write. -Force then throws under that script's 'Stop' preference and
+# the foreign task survives.
+#
+# The message carries what the task actually points at, and where we expected it to point.
+# This defect lived from v1.26.79 to v1.26.130 because the only report anyone saw never said
+# that; repeating the omission in the new failure path would buy nothing.
+$afterActions = Get-TaskActionText $task
+if (-not (Test-TaskBelongsToInstall -Actions $afterActions -OwnMindDir $InstallDir)) {
+  Fail-Schedule ("task '$TaskName' still points elsewhere after re-registering (register exit " `
+    + "$registerExit); expected $InstallDir, task runs: $afterActions. If it was created by " `
+    + "another Windows account, delete it in Task Scheduler as an administrator and let the " `
+    + "next update re-create it")
 }
 
 Write-Host "OK:schedule:repaired"

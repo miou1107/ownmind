@@ -40,6 +40,50 @@ broken, exactly as `self-check.cjs` reports it.
 - **THEN** ownership is treated as unknown and the task is not re-registered on that basis —
   a permissions quirk must not trigger a repair
 
+## Requirement: one definition of "this installation"
+
+The repair, the registration and the self-check MUST resolve the installation directory the
+same way, so that a repair always converges.
+
+### Scenario: the repair resolves it differently from the registration
+
+- **GIVEN** the repair compares against a path the registration never writes
+- **WHEN** a task is re-registered
+- **THEN** the post-repair check rejects it again, and every subsequent auto-update repeats
+  the whole cycle and reports a failure — so the suite fails on the divergence instead
+
+### Scenario: an install-path override is set
+
+- **GIVEN** `$env:OWNMIND_DIR` pointed somewhere other than the Windows profile
+- **WHEN** the daily update runs
+- **THEN** the repair ignores it, because that variable is set at install time and is not in
+  the environment the update runs in; a value only one of the three sides can see cannot be
+  the value they agree on
+
+## Requirement: the evidence the gate decides on is itself testable
+
+### Scenario: the action reader is emptied
+
+- **GIVEN** `Get-TaskActionText` is changed to return `''`
+- **WHEN** the suite runs on a machine with PowerShell
+- **THEN** it fails — otherwise every ownership check falls to "cannot tell", the gate
+  silently returns to its pre-v1.26.130 behaviour, and nothing goes red
+
+### Scenario: a task carries more than one action
+
+- **GIVEN** a task with two actions
+- **WHEN** its action text is read
+- **THEN** both appear, because the one naming the installation may not be the first
+
+## Requirement: a failed repair says what it saw
+
+### Scenario: the task still points elsewhere after re-registering
+
+- **GIVEN** re-registration did not replace the foreign task
+- **WHEN** the failure is reported
+- **THEN** it names the directory expected and the command the task actually runs — the
+  omission of exactly this is why the defect survived from v1.26.79
+
 ## Requirement: the ownership rule has one home per language
 
 The rule MUST NOT be restated inline in `ensure-scanner-schedule.ps1`.

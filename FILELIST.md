@@ -6,20 +6,31 @@
 ```
 scripts/install-helpers/schedule-health.ps1      — 新增、Windows 排程健康判斷的唯一一份規則
                                                     （Test-ScheduleHealthy /
-                                                    Test-TaskBelongsToInstall）。純字串邏輯、
-                                                    不碰 Task Scheduler，所以測試在 macOS /
-                                                    Linux 也執行得到
-tests/scanner-schedule-ownership.test.js         — 17 tests：同一張案例表跑 JS 與 PowerShell
+                                                    Test-TaskBelongsToInstall /
+                                                    Get-TaskActionText）。純字串邏輯、不碰
+                                                    Task Scheduler，所以測試在 macOS / Linux
+                                                    也執行得到。讀 actions 的那支也放這裡：
+                                                    它一旦回空字串，全部歸屬判斷都會退回
+                                                    「無法判斷」，閘門就變回修之前那樣而測試
+                                                    全綠
+tests/scanner-schedule-ownership.test.js         — 26 tests：同一張案例表跑 JS 與 PowerShell
                                                     兩份實作（含 Adam 那台的真實 actions 字串）、
-                                                    停用/讀不到狀態仍算壞掉、修復前的閘門與
-                                                    修復後的驗證都要問歸屬
+                                                    停用/讀不到狀態仍算壞掉、多個 action 不能
+                                                    只讀第一個、修復前的閘門與修復後的驗證都要
+                                                    問歸屬且要真的中斷、三邊算出同一個安裝目錄
 ```
 
 修改檔：
 ```
 scripts/install-helpers/ensure-scanner-schedule.ps1 — 健康閘門從「有工作而且沒被停用」改成
                                                     Test-ScheduleHealthy；重新註冊完也確認
-                                                    工作真的指回這個安裝目錄
+                                                    工作真的指回這個安裝目錄，失敗時把它實際
+                                                    指到哪裡寫進訊息。安裝目錄改成跟註冊端、
+                                                    自我檢測端算同一個值（拿掉 OWNMIND_DIR
+                                                    覆寫，否則修復永遠不會收斂）；旁邊的檔案
+                                                    改用 $PSScriptRoot 找
+scripts/install-helpers/self-check.cjs           — 查排程補上 -TaskPath '\'，跟修復端問同一
+                                                    個問題
 FILELIST.md / CHANGELOG.md / package.json        — 版號與紀錄
 ```
 
