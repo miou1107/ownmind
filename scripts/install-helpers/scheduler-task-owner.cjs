@@ -44,4 +44,46 @@ function taskBelongsToInstall(actions, ownmindDir) {
   return normalize(actions).includes(normalize(ownmindDir));
 }
 
-module.exports = { taskBelongsToInstall };
+/**
+ * v1.26.133 — put the home directory back into text that safe-spawn.cjs redacted.
+ *
+ * safeSpawn replaces every occurrence of `os.homedir()` with `~` in the stdout it returns.
+ * That exists so an uploaded self-check report does not carry the user's profile path, and it
+ * is right for a report. It is wrong for a comparison, and the scheduler check was doing both
+ * with the same string: it asked PowerShell for the task's actions through safeSpawn and
+ * handed the result to `taskBelongsToInstall` alongside an unredacted `OWNMIND_DIR`.
+ *
+ * So the check compared
+ *
+ *     wscript.exe "~\.ownmind\scripts\windows\run-hidden.vbs" ...
+ *
+ * against `C:\Users\Vin\.ownmind` and concluded the task belonged to somebody else. Measured
+ * on Windows 2026-08-10 on a machine whose task was Ready, LastTaskResult 0x0, and pointing at
+ * exactly the right files: `[FAIL] scheduler  Task Scheduler entry points at another
+ * installation`. The advice attached to it — re-register the task — fixes nothing, because
+ * nothing is broken, and the re-registered task fails the same comparison the next day.
+ *
+ * Every install whose directory sits under the user's home is affected, which is all of them
+ * by default. The PowerShell half of this rule (schedule-health.ps1) reads the actions
+ * straight from Get-ScheduledTask and never saw a `~`, so the repair and the check disagreed
+ * again — the same class of split v1.26.130 closed.
+ *
+ * Kept separate from taskBelongsToInstall rather than folded into it: the ownership rule has
+ * two implementations that are asserted against each other, and only the JS caller goes
+ * through a redacting helper. Un-redacting is the caller's problem, so it lives in a function
+ * the caller reaches for by name.
+ *
+ * @param {string} text  output that may have been home-redacted
+ * @param {string} home  the home directory `~` stands for, normally os.homedir()
+ * @returns {string} text with a leading `~` path segment expanded back to home
+ */
+function expandHomeMarker(text, home) {
+  if (typeof text !== 'string' || text === '') return text;
+  if (typeof home !== 'string' || home.trim() === '') return text;
+  if (!text.includes('~')) return text;
+  // Only `~` immediately followed by a separator: that is the shape safeSpawn produces when it
+  // substitutes a directory path. A bare `~` elsewhere in a command line is left alone.
+  return text.replace(/~(?=[\\/])/g, () => home);
+}
+
+module.exports = { taskBelongsToInstall, expandHomeMarker };

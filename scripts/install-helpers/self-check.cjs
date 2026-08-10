@@ -36,7 +36,7 @@ const execFileAsync = promisify(execFile);
 const { safeSpawn } = require('./safe-spawn.cjs');
 // v1.26.106 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
 const { readTextFileSync, stripNulEscapes } = require('./read-text-file.cjs');
-const { taskBelongsToInstall } = require('./scheduler-task-owner.cjs');
+const { taskBelongsToInstall, expandHomeMarker } = require('./scheduler-task-owner.cjs');
 
 const HOME = os.homedir();
 const OWNMIND_DIR = path.join(HOME, '.ownmind');
@@ -831,7 +831,12 @@ async function checkScheduler() {
     }
     const lines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     const state = lines[0] || '';
-    const actions = lines.slice(1).join(' ');
+    // v1.26.133: safeSpawn hands back stdout with the home directory replaced by `~`, so the
+    // action text arrives as `wscript.exe "~\.ownmind\..."` and could never contain the
+    // absolute OWNMIND_DIR the ownership rule compares it against. Every install under the
+    // user's home therefore failed this check while being perfectly healthy — measured
+    // 2026-08-10 on a task that was Ready with LastTaskResult 0x0. See scheduler-task-owner.cjs.
+    const actions = expandHomeMarker(lines.slice(1).join(' '), HOME);
     if (!state) {
       return fail('scheduler', 'Task Scheduler entry not found for "OwnMind Usage Scanner"',
         'Run: powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
