@@ -8,6 +8,8 @@ import { isAtLeast } from '../middleware/adminAuth.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../../shared/lint-event-types.js';
 import { shapeSearchResults, SEARCH_ROW_LIMIT } from '../../shared/memory-search-result.js';
 import { compressOldSessions } from './session.js';
+// v1.26.127: rendered, not duplicated — the MCP responses and this manual are one list.
+import { renderTipPool } from '../../shared/tips.js';
 import { computePeriodRange, groupFrictions } from '../utils/report.js';
 import { computeEnforcementAlerts } from '../utils/enforcement.js';
 import { lintIronRule } from '../utils/iron-rule-quality.js';
@@ -100,35 +102,8 @@ The version is taken from the MCP tool response prefix (auto-attached). For AI-i
 **Tip:** Each MCP tool response auto-attaches a random one-line tip in this format:
 \`[OwnMind vX.X.X] Tip: [randomly chosen]\`
 
-Tip pool (pick a random one each time, avoid consecutive repeats):
-- Say "remember this" and I will write the experience into memory, persisted across platforms
-- Say "add an iron rule" and I will record the full context so the same mistake won't happen again
-- Say "hand off to Codex" and I will package up the work in progress for another tool to take over
-- Say "what memories do I have" and I will list all your preferences, iron rules, and project context
-- Say "organize memory" and I will review this conversation and find experiences worth saving
-- Ask "what did you learn" or "any new knowledge today" to have the AI review and record learnings
-- Whether you use Claude, Cursor, or Codex, OwnMind gives all your AIs the same shared memory
-- Iron rules are never deleted — only disabled with a recorded reason, for later review
-- Every iron rule records the incident behind it, so you (and the AI) know why the rule exists
-- Ask "what did I work on recently" and I will recap from your session logs
-- OwnMind proactively suggests organizing memory after 2 hours of work or 50% context usage
-- During a handoff, both sides see the summary so nothing is lost in transition
-- You can export memory to markdown anytime — the data is always yours
-- Say "don't follow this one" and I will ask why, then disable (not delete) and keep an audit trail
-- Search memory with multi-keyword queries — matches against title, content, tags, and code
-- OwnMind automatically records the machine, tool, and AI model you use, for traceability
-- Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI
-- Ask "what's left on the ring project" and I will answer from project memories
-- Iron rules are numbered so you can reference them directly by their code
-- Every handoff records the source tool and model so you can trace which AI made each decision
-- Ask "how did this iron rule originate" and I will show you the full incident background
-- OwnMind supports secret management — your API keys and passwords are stored securely
-- Say "update ring's progress" and I will refresh the project status and todos
-- Even on online AIs (claude.ai, ChatGPT) you can export and load your memories
-- Memory is short-term and long-term: session logs auto-compress; iron rules and decisions are kept forever
-- Ask "which iron rules are disabled" to review past decision changes
-- OwnMind keeps evolving — the AI will proactively suggest workflow and rule improvements
-- Say "this project is done" and I will archive it to the portfolio with tech choices and lessons
+The pool that tip is drawn from — reproduce the one you were given, do not pick again:
+${renderTipPool()}
 
 ## Upgrade Handling (Highest Priority)
 
@@ -267,7 +242,7 @@ Each ownmind_init also checks whether ~/.ownmind/ is at the latest version:
 
 [OwnMind vX.X.X] Version update: a new version was detected and applied automatically
    - Added proactive iron rule protection
-   - Tip pool expanded to 28 entries
+   - Faster memory search
    - Fixed handoff summary format
   (Summarize from git log commit messages in user-friendly language — do not list commit hashes)
 

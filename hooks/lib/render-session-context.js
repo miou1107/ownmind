@@ -8,12 +8,16 @@
  * Extracted for unit testing (tests/session-start-render.test.js).
  */
 
+import { getRandomTip } from '../../shared/tips.js';
+
 /**
  * @param {Object} data  memory init response (server_version, profile, iron_rules_digest, principles, active_handoff)
  * @param {Array}  broadcasts  fetched from /api/broadcast/active
+ * @param {Object} [deps]  injection point for tests
+ * @param {Function} [deps.tip]  supplies the tip line
  * @returns {string}  additionalContext
  */
-export function renderSessionContext(data, broadcasts) {
+export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = {}) {
   const lines = [];
 
   // v1.17.0 P3: broadcasts go first so the AI relays them first; cap at 3 to avoid context bloat.
@@ -86,6 +90,20 @@ export function renderSessionContext(data, broadcasts) {
   }
 
   lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
+
+  // v1.26.127: this is where the invented tips came from. The config templates tell the AI to
+  // print a tip right after the startup memory load — and until now nothing on this path
+  // supplied one. A tip rides on MCP *tool responses*; loading memory through the SessionStart
+  // hook is not a tool call, so the instruction landed with no tip available and the model
+  // filled the gap, sometimes with advice that had nothing to do with OwnMind.
+  //
+  // An instruction to relay something is only safe where the something exists.
+  lines.push('');
+  // Not "verbatim": the tips are written in English and the AI answers in the user's language,
+  // so a literal instruction it has to break teaches it that these instructions are negotiable
+  // — on the one guard the whole change leans on. The templates use the same framing.
+  lines.push('Tip (relay this one — translate it if you are speaking another language, '
+    + 'but do not compose your own): ' + tip());
 
   return lines.join('\n');
 }
