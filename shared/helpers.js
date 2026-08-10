@@ -161,7 +161,7 @@ export function readCredentials(settingsPath) {
 /**
  * Detect the trigger type from a PreToolUse hook command.
  * @param {string} command — bash command
- * @returns {'commit' | 'deploy' | 'delete' | null}
+ * @returns {'commit' | 'deploy' | 'delete' | 'install' | null}
  */
 export function detectCommandTrigger(command) {
   if (!command) return null;
@@ -170,6 +170,25 @@ export function detectCommandTrigger(command) {
   if (/\bgit\s+push\b/i.test(command)) return 'deploy';
   if (/\b(docker\s+compose\s+(up|build|push)|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
   if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(command)) return 'delete';
+  // v1.26.132 — last, so no command that already had a trigger changes classification.
+  //
+  // Install and credential work had no trigger at all, which meant the two rules written
+  // for it were unreachable: one says "the install script reporting success does not
+  // count, go and read the config file", the other says a silenced failure in a setup
+  // script is a defect. Both were tagged `trigger:install` by their author and nothing
+  // ever asked for that tag.
+  //
+  // Matched narrowly on purpose. `npm install` and `pip install` are excluded: a reminder
+  // in front of every dependency install is one the user learns to scroll past, and
+  // neither rule is about fetching packages. A bare `token` is excluded too — it matches
+  // ordinary prose like "token count" — where API_KEY and credential do not.
+  if (/(^|[\s/\\])[\w.~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)\b/i.test(command)) return 'install';
+  // Not `\bAPI[_-]?KEY\b`: an underscore is a word character, so `\b` does not exist between
+  // the `D` and the `A` of OWNMIND_API_KEY — the prefixed form every real env var uses, and
+  // the one this rule is about, was the one shape that regex could not see. Guard on a
+  // non-letter instead, which still refuses `therapy_keys` and friends.
+  if (/(^|[^A-Za-z])API[_-]?KEYS?\b/i.test(command)) return 'install';
+  if (/\bcredentials?\b/i.test(command)) return 'install';
   return null;
 }
 
@@ -232,6 +251,13 @@ export const TRIGGER_TAG_ALIASES = {
   commit: ['commit', 'git', '提交', 'checkin'],
   deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
   delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
+  // v1.26.132: the vocabulary an author actually reaches for when filing a rule about
+  // installing or rotating a key. `setup`, `config` and `api_key` are here because that is
+  // how the rules on the account this was measured against were already tagged — the tags
+  // were never wrong, no trigger asked for them. Deliberately narrower than the others:
+  // `script` and `debug` are not accepted, or every rule about shell scripting would list
+  // itself in front of an unrelated key rotation.
+  install: ['install', 'setup', 'config', '安裝', '設定', 'api_key', 'credential_rotation', '換金鑰', '切換帳號'],
 };
 
 /**
@@ -255,13 +281,20 @@ export function ruleMatchesTrigger(rule, trigger) {
  * Detect the trigger type from the free-form context passed to MCP
  * report_compliance.
  * @param {string} context — free-form text
- * @returns {'commit' | 'deploy' | 'delete' | null}
+ * @returns {'commit' | 'deploy' | 'delete' | 'install' | null}
  */
 export function detectTriggerFromContext(context) {
   if (!context) return null;
   if (/\bcommit\b/i.test(context)) return 'commit';
   if (/\bdeploy\b|部署/i.test(context)) return 'deploy';
   if (/\bdelete\b|刪除/i.test(context)) return 'delete';
+  // v1.26.132 — the same gap as the command gate, one door further in. This is the entry
+  // MCP report_compliance uses, so leaving `install` out here would recreate the exact
+  // mismatch this release exists to close: a vocabulary the rules use and no caller asks
+  // for. Nothing is enforced by adding it — it selects rules carrying an explicit
+  // `verification.trigger` of `install`, of which there are none today.
+  if (/\binstall\b|安裝|換金鑰|切換帳號/i.test(context)) return 'install';
+  if (/(^|[^A-Za-z])API[_-]?KEYS?\b/i.test(context)) return 'install';
   return null;
 }
 

@@ -159,6 +159,16 @@ elif echo "$COMMAND" | grep -qiE "(rm -rf|rmdir|del |drop table|DELETE FROM)"; t
   TRIGGER="delete"
 elif echo "$COMMAND" | grep -qiE "(docker.*deploy|docker.*up|kubectl apply|npm run deploy)"; then
   TRIGGER="deploy"
+# v1.26.132 — install and credential work had no trigger, so the two rules written for it
+# could not fire during it. KEEP IN SYNC with detectCommandTrigger in shared/helpers.js.
+# `npm install` / `pip install` stay out: this matches a script filename or a key name, and
+# neither of those appears in a dependency install.
+elif echo "$COMMAND" | grep -qiE "(^|[[:space:]/\\])[[:alnum:]._~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)([[:space:]]|$)"; then
+  TRIGGER="install"
+# Not `\bAPI_KEY\b`: an underscore is a word character, so there is no boundary before the
+# `A` in OWNMIND_API_KEY — the prefixed form every real env var uses.
+elif echo "$COMMAND" | grep -qiE "(^|[^A-Za-z])API[_-]?KEYS?\b|\bcredentials?\b"; then
+  TRIGGER="install"
 fi
 
 if [ -z "$TRIGGER" ]; then exit 0; fi
@@ -204,9 +214,31 @@ fi
 if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then exit 0; fi
 
 # 從 OwnMind 取得相關鐵律
-RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
-  "${API_URL}/api/memory/type/iron_rule" 2>/dev/null | \
-  node -e "
+#
+# v1.26.132 — this fetch used to be `curl -sf --max-time 3 ... 2>/dev/null`, three silencers
+# on one line. `-f` returns an empty body on any 4xx/5xx, and an empty RULES is the same
+# code path as "no rule matched" — so a dead server, a revoked key and a genuinely quiet
+# operation were indistinguishable. A safety mechanism that can switch itself off without a
+# word is worse than one that is missing, because a missing one is visible.
+#
+# The body goes to a file and the status code to a variable, so a failure can be told apart
+# from an empty result and recorded. The record goes to the activity log, not to stdout:
+# stdout is handed to Claude Code and has to stay a valid envelope.
+#
+# 3s → 5s: the timeout is a ceiling on how long a reminder may delay a command, but at 3
+# seconds an ordinary slow connection dropped the rules by the same silent road.
+RULES_BODY=$(mktemp)
+RULES_HTTP=$(curl -s --max-time 5 -o "$RULES_BODY" -w '%{http_code}' \
+  -H "Authorization: Bearer $API_KEY" "${API_URL}/api/memory/type/iron_rule")
+RULES_CURL_EXIT=$?
+if [ "$RULES_CURL_EXIT" -ne 0 ]; then
+  # Network-level failure: no HTTP status exists. curl's own exit code says which kind
+  # (6 = DNS, 7 = refused, 28 = timeout), which is the part worth keeping.
+  log_event "iron_rule_fetch_failed" "reason" "curl_exit_${RULES_CURL_EXIT}" "trigger" "$TRIGGER"
+elif [ "$RULES_HTTP" != "200" ]; then
+  log_event "iron_rule_fetch_failed" "reason" "http_${RULES_HTTP}" "trigger" "$TRIGGER"
+fi
+RULES=$(node -e "
     const d = require('fs').readFileSync(0,'utf8');
     const trigger = '$TRIGGER';
     const version = '$VERSION';
@@ -225,7 +257,8 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
         edit: ['edit', 'write', '編輯', '寫檔', '改檔', 'modify'],
         commit: ['commit', 'git', '提交', 'checkin'],
         deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
-        delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore']
+        delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
+        install: ['install', 'setup', 'config', '安裝', '設定', 'api_key', 'credential_rotation', '換金鑰', '切換帳號']
       };
       const accepted = new Set((ALIASES[trigger] || [trigger]).map(w => 'trigger:' + w));
       accepted.add('trigger:command');
@@ -247,7 +280,10 @@ RULES=$(curl -sf --max-time 3 -H "Authorization: Bearer $API_KEY" \
         console.log('回應格式要求：AI 的第一行必須是「' + tag + '」，讓使用者看到鐵律觸發。');
       }
     } catch { process.exit(0); }
-  " 2>/dev/null)
+  " < "$RULES_BODY")
+# stderr is deliberately not redirected: if node cannot parse what the server sent, the
+# reason belongs where Claude Code's hook debugging shows it. Only stdout is read back.
+rm -f "$RULES_BODY"
 
 # commit trigger 且無相關 rules：靜默退出
 # deploy/delete：即使無 rules 也要跑 verification engine（下方）
