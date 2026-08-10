@@ -23,9 +23,16 @@ limit, and SHALL be measured using the same function that builds the posted body
 
 ### Scenario: friction is shortened, never dropped
 
-- **WHEN** the friction section is condensed
+- **WHEN** truncating the friction notes is enough to fit
 - **THEN** every entry is still present
 - **AND** every project that had friction still has friction
+
+### Scenario: truncation alone is not enough
+
+- **WHEN** the payload is still over budget after every friction note is at its shortest
+- **THEN** entries may be dropped by the last-resort trim
+- **AND** the notes say how many were left out
+- **AND** no note claims that nothing was dropped
 
 ### Scenario: the compliance rows that matter survive
 
@@ -51,3 +58,31 @@ limit, and SHALL be measured using the same function that builds the posted body
 
 - **WHEN** the payload already fitted
 - **THEN** the response carries no such list
+
+## ADDED Requirement: the model SHALL be told when it is reading a summary
+
+The system prompt SHALL instruct the model that `_condensed` marks summarised sections, that
+it must state the scope of what it saw when writing about them, and that it must not infer
+totals or proportions for those sections.
+
+### Scenario: the compliance section holds only violations
+
+- **GIVEN** the compliance rows without a violation or skip were dropped
+- **WHEN** the model writes the explanation for that section
+- **THEN** it states that only rows with a violation or skip are shown
+- **AND** it does not describe the team's overall compliance as poor
+
+## ADDED Requirement: an unreadable version SHALL NOT replace a readable one
+
+`scanner_version` is nullable and reaches this code as `null` or `"unknown"`.
+
+### Scenario: one tool on a machine has never reported its version
+
+- **GIVEN** a machine reporting 1.26.135 for one tool and null for another
+- **WHEN** the version list is collapsed
+- **THEN** the row for that machine reads 1.26.135
+
+### Scenario: a machine has no readable version at all
+
+- **WHEN** the version list is collapsed
+- **THEN** the machine is still listed, with the unreadable value

@@ -16,11 +16,25 @@ tests/narrative-condense.test.js                 — 13 條測試。重點不是
                                                     不會愈削愈薄
 ```
 
+```
+tests/fixtures/narrative-7d.json                 — 一份真實 7 天報表的形狀（自由文字換成等長替身、
+                                                    名字換掉）。用來釘住「一直正常的那個區間不會被
+                                                    精簡」；只比對常數的話，資料多長一欄就會失守
+```
+
 修改檔：
 ```
-src/routes/me-narrative.js                       — 送出前先過精簡；回覆帶上「哪幾區被摘要了」
+src/routes/me-narrative.js                       — 送出前先過精簡；回覆帶上「哪幾區被摘要了」；
+                                                    壓不下去時記下還剩幾位元組（上次查這個問題是把
+                                                    請求搬到伺服器手動重放才看到原因）
 src/lib/llm-narrative.js                         — 把組請求的那段抽成 buildRequestBody()，量大小跟
-                                                    真正送出去的用同一支程式產生，否則量了等於沒量
+                                                    真正送出去的用同一支程式產生，否則量了等於沒量。
+                                                    指示新增第 10 條：看到摘要標記就要先講清楚自己
+                                                    看到的是哪一部分，禁止推斷整體比例
+client/src/pages/Portal/NarrativePage.jsx        — 把「哪些被摘要了」顯示在報告最上面。不顯示的話，
+                                                    讀者會看到 AI 說明跟旁邊的完整統計表對不起來，
+                                                    而不知道為什麼
+client/src/i18n/{zh,en,ja}.json                  — 對應的三語文案
 tests/me-narrative.test.js                       — 3 條路由層測試：真正送到模型的大小在上限之下、
                                                     回覆有說哪些被摘要、本來就放得下的區間完全不動
 ```

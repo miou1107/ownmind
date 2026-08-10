@@ -221,6 +221,7 @@
   "narrative.subtitle": "チーム全体の利用状況の統計と、AI が生成した平易な説明",
   "narrative.summary_label": "ひとことでの結論",
   "narrative.summary_empty": "結論はまだありません",
+  "narrative.condensed_label": "以下の AI による説明は要約から書かれています",
   "narrative.insights_loading": "AI の説明を生成中…",
   "narrative.insights_no_llm": "管理者が AI サービスを設定していないため、平易な説明はありません。下の統計はそのまま使えます。",
   "narrative.insights_failed": "AI の説明を今は生成できません。下の統計はそのまま使えます。",

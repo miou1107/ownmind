@@ -221,6 +221,7 @@
   "narrative.subtitle": "全團隊的使用狀況統計、加上 AI 產生的白話說明",
   "narrative.summary_label": "一句話結論",
   "narrative.summary_empty": "目前沒有結論",
+  "narrative.condensed_label": "下面的 AI 說明只讀了部分資料",
   "narrative.insights_loading": "AI 說明產生中…",
   "narrative.insights_no_llm": "管理者還沒設定 AI 服務、所以沒有白話說明。下面的統計數字照常。",
   "narrative.insights_failed": "AI 說明暫時產生不出來。下面的統計數字照常。",

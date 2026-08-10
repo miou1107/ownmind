@@ -199,6 +199,18 @@ export default function NarrativePage() {
             </p>
           </Card>
 
+          {/* AI 那段如果是讀摘要寫出來的，這裡先講。
+              下面的統計表格是完整資料，AI 的說明不是 — 兩邊會對不起來，不講的話讀者只會覺得
+              AI 寫錯了。長區間會走到這條：整段期間的紀錄超過模型單次能收的量。 */}
+          {insights?.condensed?.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 leading-relaxed">
+              <p className="font-bold">{t('narrative.condensed_label')}</p>
+              <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                {insights.condensed.map((x, i) => <li key={i}>{x}</li>)}
+              </ul>
+            </div>
+          )}
+
           {/* 從來沒回報過的成員先講清楚，免得下面的排名被當成完整名單。
               他們在表格裡有出現、只是被標起來，所以文案不能寫「不含他們」 */}
           {unmeasured.length > 0 && (

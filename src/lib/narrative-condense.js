@@ -7,38 +7,70 @@
  * refuses the same. The ceiling is 40 KiB.
  *
  * The three ranges the page offers measured 32,372 / 47,893 / 52,842 bytes, so the report
- * worked for 7 days and answered 502 for 14 and 30 — on every call, not intermittently.
+ * worked for 7 days and answered 502 for 14 and 30, on every call.
  *
- * What this does NOT do is cut the payload down to a fixed size and hope. It shrinks in
- * ordered steps, measuring after each one and stopping the moment it fits, because the
- * cheapest step that works is the one that loses the least. A 7-day report is inside the
- * budget and comes back untouched.
+ * This does not cut the payload to a fixed size and hope. It shrinks in ordered steps,
+ * measuring after each one and stopping the moment it fits, because the cheapest step that
+ * works is the one that loses the least. A 7-day report is inside the budget and comes back
+ * untouched.
  *
  * The order is by information density, not by size:
- *   1. Long friction notes are truncated. They are prose, and the first sentences carry
- *      the point; the tail is usually the same incident restated.
- *   2. Compliance rows with nothing to report are dropped, with a count left behind. A
- *      rule everybody followed is the least interesting row in the file.
- *   3. The version list is collapsed to one row per machine, keeping the OLDEST version
- *      seen on it. That section is read to find who is behind; keeping the newest would
- *      hide precisely that.
+ *   1. Long friction notes are truncated. They are prose, and the first sentences carry the
+ *      point; the tail is usually the same incident restated.
+ *   2. Compliance rows with nothing to report are dropped, with a count left behind. A rule
+ *      nobody broke is the least interesting row in the file.
+ *   3. The version list is collapsed to one row per machine, keeping the OLDEST version seen
+ *      on it. That section is read to find who is behind; keeping the newest would hide
+ *      precisely that.
+ *   4. Last resort: trim whatever the largest list currently is. This covers a section
+ *      nobody anticipated growing — without it such a section sails past every targeted
+ *      step, comes back over budget, and is posted anyway, which is the 502 this removes.
  *
- * Whatever it did is written into `_condensed` so the model is reading a summary knowingly
- * rather than a full record it will then describe as complete.
+ * Two things are structural rather than remembered:
+ *
+ * - **The notes are derived from the before/after state, never accumulated.** An earlier
+ *   version pushed a note per step, and a note from step 1 ("no entry was deleted") could
+ *   still be sitting there after step 4 had deleted entries. Describing the final state
+ *   makes that contradiction unrepresentable.
+ * - **The size that is checked includes the notes.** They travel with the payload, so a
+ *   measurement taken before they are attached is a measurement of something nobody posts.
  */
 
 /**
  * Measured: 39,600 bytes goes through, 41,025 comes back 413. The ceiling is 40 KiB.
  *
- * 38,000 leaves roughly 3 KB of margin, which is the room the system prompt has to grow
- * without this silently starting to cut data. It is deliberately NOT tighter: the 7-day
- * report measures 32,372 bytes, and a budget under that would condense the one range that
- * has always worked — buying nothing and quietly making today's report coarser.
+ * The margin is the gap to that ceiling — `requestBytes` already counts the system prompt,
+ * so prompt growth is measured rather than absorbed by this number. What the margin buys is
+ * room for the ceiling to be slightly lower than the bisection resolved it to.
+ *
+ * Deliberately NOT tighter: the 7-day report measures 32,372 bytes, and a budget under that
+ * would condense the one range that has always worked, buying nothing and making today's
+ * report coarser.
  */
 export const REQUEST_BUDGET_BYTES = 38_000;
 
 /** Progressively harder caps on a single friction note, in characters. */
 const FRICTION_CAPS = [600, 400, 250, 150, 80];
+
+/**
+ * Lists whose order is time, oldest first. Trimming these from the front would drop the
+ * most recent days, which is the end a reader cares about.
+ */
+const TIME_ORDERED = new Set(['daily', 'hourly', 'weekday']);
+
+/** Section names as they read to someone who does not work on this code. */
+const SECTION_NAMES = {
+  project_friction_raw: '逐筆踩坑紀錄',
+  compliance: '規則遵守紀錄',
+  versions: '版本清單',
+  project_ranking: '專案排名',
+  ranking: '成員排名',
+  daily: '每日活動',
+  hourly: '時段分布',
+  weekday: '星期分布',
+  event_types: '事件類型',
+};
+const nameOf = (k) => SECTION_NAMES[k] ?? k;
 
 const sizeOf = (v) => Buffer.byteLength(JSON.stringify(v), 'utf8');
 
@@ -58,79 +90,90 @@ export function condenseSections(sections, opts = {}) {
   if (!sections || typeof sections !== 'object') return { sections, notes: [], fits: true };
   if (measure(sections) <= budgetBytes) return { sections, notes: [], fits: true };
 
-  // Deep-copied once: the caller's object is also what the cache key was computed from.
+  const original = sections;
+  // Deep-copied once: the caller's object is also what the response is shaped from.
   let work = structuredClone(sections);
-  const notes = [];
+
+  /** The object that would actually be posted, notes included. */
+  const withNotes = (w) => ({ ...w, _condensed: describe(original, w) });
+  const fitsNow = (w) => measure(withNotes(w)) <= budgetBytes;
 
   for (const cap of FRICTION_CAPS) {
     const trimmed = truncateFriction(work.project_friction_raw, cap);
     if (trimmed.changed) {
       work = { ...work, project_friction_raw: trimmed.rows };
-      setNote(notes, 'friction', `逐筆摩擦紀錄每則截到 ${cap} 字以內（共 ${trimmed.rows.length} 則，未刪除任何一則）`);
-      if (measure(work) <= budgetBytes) return finish(work, notes, true);
+      if (fitsNow(work)) return done(original, work, true);
     }
 
-    // Only reached once the friction notes are as short as this cap allows.
+    // Run once, after the gentlest friction cap: these two are lossier per byte saved.
     if (cap === FRICTION_CAPS[0]) {
-      const c = dropCleanCompliance(work.compliance);
+      const c = dropQuietCompliance(work.compliance);
       if (c.dropped > 0) {
         work = { ...work, compliance: c.rows };
-        notes.push(`compliance 只保留有違反或跳過的 ${c.rows.length} 條，另外 ${c.dropped} 條全部遵從的沒有列出`);
-        if (measure(work) <= budgetBytes) return finish(work, notes, true);
+        if (fitsNow(work)) return done(original, work, true);
       }
       const v = collapseVersions(work.versions);
       if (v.dropped > 0) {
         work = { ...work, versions: v.rows };
-        notes.push(`版本清單每台機器收成一列（原 ${v.rows.length + v.dropped} 列），版本取該台最舊的那個`);
-        if (measure(work) <= budgetBytes) return finish(work, notes, true);
+        if (fitsNow(work)) return done(original, work, true);
       }
     }
   }
 
-  // Last resort. The three steps above are aimed at the sections that were actually large
-  // on production, and they are enough for today's data by a wide margin. But every list
-  // here grows with the team, and a section nobody anticipated getting big would otherwise
-  // sail past all of them, come back over budget, and be sent anyway — which is the 502
-  // this exists to stop. So: trim whatever the largest list currently is, one bite at a
-  // time, and say how many rows were left out. Predictable degradation beats an error.
-  work = trimLargestLists(work, budgetBytes, measure, notes);
-
-  return finish(work, notes, measure(work) <= budgetBytes);
+  work = trimLargestLists(work, budgetBytes, (w) => measure(withNotes(w)));
+  return done(original, work, fitsNow(work));
 }
 
-function trimLargestLists(work, budgetBytes, measure, notes) {
-  const dropped = new Map();
-  // Bounded so a payload that cannot shrink (a single enormous row) ends the loop rather
-  // than spinning: each pass removes at least one row from the biggest list, or stops.
-  for (let pass = 0; pass < 500 && measure(work) > budgetBytes; pass += 1) {
-    let biggest = null;
-    let biggestSize = 0;
-    for (const [k, v] of Object.entries(work)) {
-      if (!Array.isArray(v) || v.length <= 1) continue;
-      const size = sizeOf(v);
-      if (size > biggestSize) { biggest = k; biggestSize = size; }
-    }
-    if (!biggest) break;
-    const keep = Math.max(1, Math.floor(work[biggest].length * 0.8));
-    dropped.set(biggest, (dropped.get(biggest) ?? 0) + (work[biggest].length - keep));
-    work = { ...work, [biggest]: work[biggest].slice(0, keep) };
-  }
-  for (const [k, n] of dropped) {
-    notes.push(`${k} 太大，只保留前 ${work[k].length} 列，另外 ${n} 列沒有列出`);
-  }
-  return work;
-}
-
-function finish(work, notes, fits) {
-  if (!fits) notes.push('已用盡所有精簡手段，內容仍然偏大');
+function done(original, work, fits) {
+  const notes = describe(original, work, fits);
   return { sections: { ...work, _condensed: notes }, notes, fits };
 }
 
-/** Replace a note in `notes` that starts with the same tag, so a harder cap supersedes. */
-function setNote(notes, tag, text) {
-  const at = notes.findIndex((n) => n.startsWith('逐筆摩擦紀錄'));
-  if (at >= 0) notes[at] = text;
-  else notes.push(text);
+/**
+ * State the difference between what was collected and what is being sent.
+ *
+ * Derived, not accumulated: every sentence here is read off the final payload, so it cannot
+ * describe a step that a later step undid.
+ */
+function describe(original, work, fits = true) {
+  const notes = [];
+
+  const of = original.project_friction_raw;
+  const wf = work.project_friction_raw;
+  if (Array.isArray(of) && Array.isArray(wf)) {
+    const shortened = wf.filter((r, i) => (r?.friction?.length ?? 0) < (of[i]?.friction?.length ?? 0)).length;
+    const missing = of.length - wf.length;
+    if (missing > 0) {
+      notes.push(`${nameOf('project_friction_raw')}只列出 ${wf.length} 則，另外 ${missing} 則沒有列出`
+        + (shortened > 0 ? '，列出的內容也有截短' : ''));
+    } else if (shortened > 0) {
+      const cap = Math.max(...wf.map((r) => r?.friction?.length ?? 0));
+      notes.push(`${nameOf('project_friction_raw')}共 ${of.length} 則全部保留，較長的截到約 ${cap} 字`);
+    }
+  }
+
+  const oc = original.compliance;
+  const wc = work.compliance;
+  if (Array.isArray(oc) && Array.isArray(wc) && wc.length < oc.length) {
+    notes.push(`${nameOf('compliance')}只列出有違反或跳過的 ${wc.length} 條，另外 ${oc.length - wc.length} 條沒有列出`);
+  }
+
+  const ov = original.versions;
+  const wv = work.versions;
+  if (Array.isArray(ov) && Array.isArray(wv) && wv.length < ov.length) {
+    notes.push(`${nameOf('versions')}每台機器收成一列（原 ${ov.length} 列），版本取該台最舊的那個，看不出是哪個工具落後`);
+  }
+
+  for (const [k, v] of Object.entries(work)) {
+    if (k === 'project_friction_raw' || k === 'compliance' || k === 'versions') continue;
+    const o = original[k];
+    if (Array.isArray(o) && Array.isArray(v) && v.length < o.length) {
+      notes.push(`${nameOf(k)}只列出 ${v.length} 列，另外 ${o.length - v.length} 列沒有列出`);
+    }
+  }
+
+  if (!fits) notes.push('已用盡所有精簡手段，內容仍然偏大');
+  return notes;
 }
 
 function truncateFriction(rows, cap) {
@@ -145,7 +188,14 @@ function truncateFriction(rows, cap) {
   return { rows: out, changed };
 }
 
-function dropCleanCompliance(rows) {
+/**
+ * Drop the compliance rows with nothing to report.
+ *
+ * "Nothing to report" is no violation and no skip. It is not the same as "fully compliant":
+ * a row can be observed-only, with every counter at zero. The note says "no violation or
+ * skip" rather than "fully compliant" for that reason.
+ */
+function dropQuietCompliance(rows) {
   if (!Array.isArray(rows)) return { rows, dropped: 0 };
   const keep = rows.filter((c) => Number(c?.violate ?? 0) > 0 || Number(c?.skip ?? 0) > 0);
   return { rows: keep, dropped: rows.length - keep.length };
@@ -157,7 +207,7 @@ function collapseVersions(rows) {
   for (const r of rows) {
     const key = `${r?.user_id}::${r?.machine}`;
     const prev = byMachine.get(key);
-    if (!prev || isOlder(r?.version, prev.version)) {
+    if (!prev || prefer(r?.version, prev.version)) {
       byMachine.set(key, {
         user_id: r?.user_id,
         machine: r?.machine,
@@ -170,14 +220,58 @@ function collapseVersions(rows) {
   return { rows: out, dropped: rows.length - out.length };
 }
 
-/** Compare dotted versions numerically; anything unparseable sorts as older. */
+/**
+ * Should `candidate` replace `current` as the machine's reported version?
+ *
+ * Oldest wins, because the section is read to find who is behind. But an unreadable value
+ * never wins over a readable one: `scanner_version` is nullable and does turn up as null or
+ * "unknown" in production, and sorting those as oldest would replace a real "1.26.27" with
+ * a blank — erasing exactly the answer the section exists to give.
+ */
+function prefer(candidate, current) {
+  const cOk = parsable(candidate);
+  const curOk = parsable(current);
+  if (cOk !== curOk) return cOk;
+  if (!cOk) return false;
+  return isOlder(candidate, current);
+}
+
+function parsable(v) {
+  return /^\d+(\.\d+)*$/.test(String(v ?? '').trim());
+}
+
+/** Compare dotted versions numerically. Both sides are known parsable. */
 function isOlder(a, b) {
-  const parts = (v) => String(v ?? '').split('.').map((n) => Number.parseInt(n, 10));
+  const parts = (v) => String(v).trim().split('.').map((n) => Number.parseInt(n, 10));
   const x = parts(a); const y = parts(b);
   for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
-    const xi = Number.isFinite(x[i]) ? x[i] : -1;
-    const yi = Number.isFinite(y[i]) ? y[i] : -1;
+    const xi = Number.isFinite(x[i]) ? x[i] : 0;
+    const yi = Number.isFinite(y[i]) ? y[i] : 0;
     if (xi !== yi) return xi < yi;
   }
   return false;
+}
+
+function trimLargestLists(work, budgetBytes, measure) {
+  // Bounded so a payload that cannot shrink (one enormous row) ends the loop rather than
+  // spinning: each pass removes at least one row from the biggest list, or stops.
+  for (let pass = 0; pass < 500 && measure(work) > budgetBytes; pass += 1) {
+    let biggest = null;
+    let biggestSize = 0;
+    for (const [k, v] of Object.entries(work)) {
+      if (!Array.isArray(v) || v.length <= 1) continue;
+      const size = sizeOf(v);
+      if (size > biggestSize) { biggest = k; biggestSize = size; }
+    }
+    if (!biggest) break;
+    const keep = Math.max(1, Math.floor(work[biggest].length * 0.8));
+    // Time-ordered lists run oldest first, so keep the end.
+    work = {
+      ...work,
+      [biggest]: TIME_ORDERED.has(biggest)
+        ? work[biggest].slice(-keep)
+        : work[biggest].slice(0, keep),
+    };
+  }
+  return work;
 }
