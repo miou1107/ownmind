@@ -32,6 +32,9 @@
 
 const fs = require('fs');
 const path = require('path');
+// v1.26.131 - os.homedir() as the last resort: HOME is unset on Windows, and the two
+// expressions this replaced produced a relative path and a TypeError respectively.
+const os = require('os');
 
 // The command carries no marker field, so identity is the substring — same convention as
 // add-post-tool-use-hook.cjs, and the reason a stale command is recognisable at all.
@@ -161,7 +164,7 @@ if (require.main === module) {
     process.exit(1);
   }
   const settingsPath = args[0];
-  let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || '', '.ownmind');
+  let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || os.homedir(), '.ownmind');
   const idx = args.indexOf('--ownmind-dir');
   if (idx >= 0 && args[idx + 1]) ownmindDir = args[idx + 1];
   const useBash = args.includes('--bash');

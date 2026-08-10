@@ -1,5 +1,37 @@
 # OwnMind 檔案結構
 
+## v1.26.131 修改（更新不了的機器，也說不出自己更新不了）
+
+新檔：
+```
+tests/mcp-log-event-windows-home.test.js         — 11 tests：沒有 HOME 時路徑仍是絕對路徑
+                                                    （Windows 的情況）、USERPROFILE 優先於
+                                                    空字串、原始碼不准再出現 `HOME || ''`、
+                                                    四種更新結果都要立刻送，以及兩條真的跑起來
+                                                    的實測：資料夾不能寫的時候事件仍然要送到
+                                                    伺服器（純比字串的版本擋不住這個 bug，
+                                                    因為原本出錯的是建資料夾、不是寫檔），
+                                                    還有一筆序列化不了的事件不准把排隊中的
+                                                    其他事件一起帶走
+```
+
+修改檔：
+```
+mcp/ownmind-log.js                               — 路徑改用 HOME || USERPROFILE ||
+                                                    os.homedir()（Windows 沒有 HOME、`|| ''`
+                                                    會讓它變成相對路徑）；改成先排隊上傳、
+                                                    再寫本機檔，寫檔有自己的 try，而建資料夾
+                                                    只在那個 try 裡面呼叫（原本它是整段的第一
+                                                    行，出錯會連上傳一起跳過、而且安靜）；
+                                                    序列化提前做，壞掉的一筆不會拖垮整批；
+                                                    建資料夾的記憶改成記路徑而不是記布林；
+                                                    update_applied / failed / skipped / clean
+                                                    改成立刻送出，不進緩衝區
+scripts/install-helpers/ensure-pretooluse-hooks.cjs — 同一個寫法的另外三處一起改掉。目前
+scripts/install-helpers/add-post-tool-use-hook.cjs    呼叫端都有帶參數、碰不到，但這一版的
+scripts/install-helpers/add-stop-hook.cjs             前提就是這個寫法會一再出現
+```
+
 ## v1.26.130 修改（看得到、修不到：修復端問的問題比檢測端弱）
 
 新檔：

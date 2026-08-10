@@ -26,6 +26,9 @@
 
 const fs = require('fs');
 const path = require('path');
+// v1.26.131 - os.homedir() as the last resort: HOME is unset on Windows, and the two
+// expressions this replaced produced a relative path and a TypeError respectively.
+const os = require('os');
 
 // Identify whether the hook already exists by looking for 'ownmind-reply-lint' in the command string.
 const HOOK_IDENTIFIER_SUBSTR = 'ownmind-reply-lint';
@@ -120,7 +123,7 @@ if (require.main === module) {
     process.exit(1);
   }
   const settingsPath = args[0];
-  let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE, '.ownmind');
+  let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || os.homedir(), '.ownmind');
   const idx = args.indexOf('--ownmind-dir');
   if (idx >= 0 && args[idx + 1]) ownmindDir = args[idx + 1];
 
