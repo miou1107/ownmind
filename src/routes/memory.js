@@ -23,7 +23,7 @@ import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
-import { parseMemoryId } from '../utils/memory-id.js';
+import { parseRowId } from '../utils/row-id.js';
 import { tokenize, buildSearchWhere } from '../utils/memory-search-query.js';
 import {
   withReportSuggestion,
@@ -83,9 +83,7 @@ const router = Router();
 //
 // One gate instead of six also means a `:id` route added later cannot forget it.
 router.param('id', (req, res, next, raw) => {
-  const parsed = parseMemoryId(raw);
-  if (!parsed.ok) return res.status(404).json({ error: 'Memory not found' });
-  req.memoryId = parsed.id;
+  if (!parseRowId(raw).ok) return res.status(404).json({ error: 'Memory not found' });
   next();
 });
 
@@ -1650,6 +1648,13 @@ router.put('/:id/revert', async (req, res) => {
 
     if (!history_id) {
       return res.status(400).json({ error: 'history_id is required' });
+    }
+    // Same defect as the path parameter, one layer in: this goes to an INT column, so
+    // `{"history_id":"abc"}` came back as 500 "Failed to restore memory" — a client's bad
+    // value reported as the server breaking. A well-formed id for a version that is not
+    // there already answers 404, so an unusable one answers the same.
+    if (!parseRowId(history_id).ok) {
+      return res.status(404).json({ error: 'History version not found' });
     }
 
     // Confirm the memory belongs to the user, then fetch the historical version.

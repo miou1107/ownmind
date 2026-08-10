@@ -19,7 +19,7 @@
  */
 const PG_INT_MAX = 2147483647;
 
-export function parseMemoryId(raw) {
+export function parseRowId(raw) {
   if (typeof raw !== 'string' && typeof raw !== 'number') return { ok: false };
   const s = String(raw);
   if (!/^\d+$/.test(s)) return { ok: false };
