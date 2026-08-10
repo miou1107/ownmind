@@ -1,5 +1,39 @@
 # OwnMind 檔案結構
 
+## v1.26.138 修改（開場的記憶載入變成空的，而且回報 ok）
+
+新檔：
+```
+tests/cache-file-ownership.test.js              — 8 tests：兩個寫入者不准共用快取路徑
+                                                   （含反向控制：兩邊一起搬到新的共用路徑
+                                                   不算通過）、holdsInitPayload 要認出單數
+                                                   型別鍵、複數形的 init 回應仍要被接受
+                                                   （否則每次開場都重新下載）、以及最關鍵
+                                                   的一項：帳號標記正確、sync_token 新鮮、
+                                                   時間沒過期，只有形狀不對的快取必須被
+                                                   當成不存在
+```
+
+改檔：
+```
+mcp/offline.js                                  — 離線快取改用自己的檔案
+                                                   cache/mcp-memories.json。原本跟開場程式
+                                                   的 conditional-sync 共用 memories.json，
+                                                   兩者結構不同：開場程式存 init 回應原形、
+                                                   記憶服務存按型別分類。開場程式只要看到
+                                                   sync_token 對得上就直接把 cache.data
+                                                   當成 init 內容，於是渲染出空橫幅
+hooks/lib/conditional-sync.js                   — readCache 新增 holdsInitPayload 守門：
+                                                   拿到不是 init 形狀的內容就當成不存在。
+                                                   這一層不依賴上面那層，已經被寫壞的機器
+                                                   下一次開場會自己痊癒，不用手動刪檔。
+                                                   判別用否定式（單數型別鍵），因為肯定式
+                                                   得指名一個每個帳號都保證有的欄位，而
+                                                   空帳號幾乎沒有這種欄位
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.138 與三語同步
+```
+
 ## v1.26.137 修改（那頁只有 7 天看得到分析）
 
 新檔：

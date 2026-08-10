@@ -58,10 +58,45 @@ export function readCache(cachePath = DEFAULT_CACHE_PATH, fsModule = fs, account
     if (account) {
       if (cache?.account !== accountFingerprint(account)) return null;
     }
+    if (!holdsInitPayload(cache)) return null;
     return cache;
   } catch {
     return null;
   }
+}
+
+/**
+ * v1.26.138 — is this file's `data` an init payload, or somebody else's cache?
+ *
+ * `cache/memories.json` was shared with the MCP's offline cache, which stores the same
+ * memories under a different schema: one array per type, keyed `iron_rule`, `coding_standard`,
+ * `team_standard`. An init response uses the plural forms and puts `profile` in a single
+ * object, so the singular keys are a reliable signature of the other writer.
+ *
+ * Measured on Windows 2026-08-10: after an MCP init, step 2 of runConditionalSync saw a
+ * matching sync_token, returned the type-keyed object as the init payload, and
+ * renderSessionContext produced a banner with no version, no iron rules and no profile —
+ * while the hook logged `init: ok`. Nothing failed; the memory load just silently contained
+ * nothing.
+ *
+ * The MCP writes its own file as of this version, so the two no longer collide. This check is
+ * the part that does not depend on that: a cache whose shape this renderer cannot read is
+ * refused, the hook downloads a fresh one, and the machine heals itself on the next session
+ * rather than needing the wrong file deleted by hand.
+ *
+ * Deliberately a negative test. A positive one would have to name a field every account is
+ * guaranteed to have, and an account with no rules and no profile has almost none.
+ *
+ * @param {object|null} cache
+ * @returns {boolean} false when the payload belongs to a different consumer
+ */
+export function holdsInitPayload(cache) {
+  const data = cache?.data;
+  if (!data || typeof data !== 'object') return false;
+  for (const typeKeyed of ['iron_rule', 'coding_standard', 'team_standard', 'standard_detail']) {
+    if (Array.isArray(data[typeKeyed])) return false;
+  }
+  return true;
 }
 
 /**

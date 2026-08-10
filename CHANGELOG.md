@@ -1,5 +1,74 @@
 # OwnMind 更新紀錄
 
+## v1.26.138 — 開場的記憶載入變成空的，而且回報 ok
+
+2026-08-10 更新到 1.26.137 之後，開場橫幅長這樣：
+
+```
+[OwnMind v?] Memory loaded: your personal memories are now active
+## Profile
+- :
+```
+
+版本問號、鐵律 0 條、profile 空白。而事件紀錄寫的是 `init: ok`，stderr 一個字都沒有，
+離開碼 0。**沒有任何東西失敗，只是載入的內容什麼都沒有。**
+
+### 根因：兩個程式共用一個檔案，形狀卻不同
+
+`~/.ownmind/cache/memories.json` 有兩個寫入者：
+
+```
+hooks/lib/conditional-sync.js  { sync_token, saved_at, account, data: <init 回應原形> }
+mcp/offline.js                 { sync_token, saved_at, account, data: { profile:[…],
+                                                                        iron_rule:[…], … } }
+```
+
+`runConditionalSync` 的第二步是：**只要快取的 sync_token 跟伺服器一致，就直接把
+`cache.data` 當成 init 內容回傳**。於是記憶服務跑過 init 之後，開場程式拿到的是
+「按型別分類」的物件，而 `renderSessionContext` 讀的是 `.profile` 與
+`.iron_rules_digest` —— 對不上，就渲染出一個什麼都沒有的橫幅。
+
+### 為什麼是現在才炸
+
+**在 v1.26.133 之前，是一個意外在保護它。** 記憶服務寫這個檔案時不帶 `account` 欄位，
+而 `readCache` 依 v1.26.82 的規則「沒有標記就當成別人的」會拒絕它，開場程式於是
+默默改抓完整資料、畫面正常。
+
+v1.26.133 給記憶服務的快取補上帳號標記——**那件事本身是對的**，它擋的是換金鑰之後
+沿用別人資料——但它同時拆掉了這道意外的保護，把一個潛伏的形狀衝突變成了壞掉的記憶載入。
+
+### 兩個修法，缺一個都留有回頭路
+
+1. **記憶服務改用自己的檔案** `cache/mcp-memories.json`。兩個擁有者、兩種結構，
+   就該是兩個檔案；分開之後彼此也不需要知道對方存在。
+2. **`readCache` 會拒絕不是 init 形狀的內容**（`holdsInitPayload`）。這一層不依賴第一層：
+   已經被寫壞的機器會在下一次開場自己痊癒，不需要有人手動去刪那個檔案。
+
+判別方式刻意用「否定式」——看有沒有單數的型別鍵（`iron_rule`、`coding_standard`、
+`team_standard`、`standard_detail`），因為 init 回應用的是複數。肯定式判別必須指名
+一個「每個帳號都保證有」的欄位，而一個沒有鐵律也沒有 profile 的帳號幾乎沒有這種欄位。
+
+### 實測落地
+
+修法前後同一支開場程式：
+
+| | 修法前 | 修法後 |
+|---|---|---|
+| 版本標記 | `[OwnMind v?]` | `[OwnMind v1.26.137]` |
+| 鐵律 | 0 條 | 4 條 |
+| profile | 空白 | 有內容 |
+| 團隊標準 | 0 行 | 38 行 |
+
+並且確認：新版記憶服務跑過 init 之後**完全沒有動到**開場程式的快取檔，
+它自己那份 `mcp-memories.json` 是按型別分類、帶帳號標記、4 條鐵律。
+
+### 新增測試
+
+`tests/cache-file-ownership.test.js`（8 項）：兩個寫入者不准共用路徑（含反向控制，
+避免兩邊一起搬到新的共用路徑就通過）、`holdsInitPayload` 要認出型別鍵、複數形的 init
+回應仍要被接受（否則每次開場都重新下載）、以及最關鍵的一項——帳號標記正確、
+sync_token 新鮮、時間也沒過期，只有形狀不對的快取，必須被當成不存在。
+
 ## v1.26.137 — 那頁只有 7 天看得到分析，14 天跟 30 天是一塊錯誤訊息
 
 ### 量到的事實

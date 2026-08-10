@@ -15,6 +15,19 @@ import {
 
 /**
  * v1.18.0 — conditional-sync tests (spec.md §4.2 + §4.5)
+ *
+ * v1.26.138 — the payload fixtures below say `iron_rules`, plural, and have to stay plural.
+ *
+ * They used to say `iron_rule`, chosen as an arbitrary placeholder. That singular key is the
+ * schema of a *different* cache: the MCP's offline store keeps one array per memory type,
+ * while this file caches the init response, where collections are plural and `profile` is a
+ * single object. Both wrote `cache/memories.json` until v1.26.138, and readCache now refuses a
+ * payload carrying the singular keys precisely so the other writer's file can never be served
+ * here as an init payload again — which is what produced a session banner with no version, no
+ * iron rules and no profile.
+ *
+ * So a fixture using the singular form is not merely unrealistic: it is the shape this module
+ * is now required to reject, and reverting it would make these tests assert the bug.
  */
 
 let tmpHome;
@@ -123,7 +136,7 @@ describe('v1.18.0 — fetchSyncTokenLight', () => {
 
 describe('v1.18.0 — fetchInitFull', () => {
   it('success → returns full init payload', async () => {
-    const payload = { sync_token: 'X', data: { iron_rule: [{ id: 1 }] } };
+    const payload = { sync_token: 'X', data: { iron_rules: [{ id: 1 }] } };
     const fakeFetch = makeFetch([['/api/memory/init', () => okJson(payload)]]);
     const r = await fetchInitFull('http://api', 'K', fakeFetch);
     assert.deepEqual(r, payload);
@@ -221,13 +234,13 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
     const ago25h = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
     fs.writeFileSync(cachePath, JSON.stringify({
-      sync_token: 'X', saved_at: ago25h, data: { iron_rule: [] }
+      sync_token: 'X', saved_at: ago25h, data: { iron_rules: [] }
     }));
     let syncTokenCalled = false;
     let initCalled = false;
     const fakeFetch = makeFetch([
       ['sync-token', () => { syncTokenCalled = true; return okJson({ sync_token: 'X' }); }],
-      ['init', () => { initCalled = true; return okJson({ sync_token: 'X', data: { iron_rule: [] } }); }],
+      ['init', () => { initCalled = true; return okJson({ sync_token: 'X', data: { iron_rules: [] } }); }],
     ]);
     const r = await runConditionalSync({
       apiUrl: 'http://api', apiKey: 'K',
@@ -239,22 +252,22 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
   });
 
   it('sync-token endpoint fails → fallback to init', async () => {
-    writeCache({ sync_token: 'X', data: { iron_rule: [{ id: 1 }] } }, cachePath);
+    writeCache({ sync_token: 'X', data: { iron_rules: [{ id: 1 }] } }, cachePath);
     const fakeFetch = makeFetch([
       ['sync-token', () => failJson(500)],
-      ['init', () => okJson({ sync_token: 'NEW', data: { iron_rule: [{ id: 2 }] } })],
+      ['init', () => okJson({ sync_token: 'NEW', data: { iron_rules: [{ id: 2 }] } })],
     ]);
     const r = await runConditionalSync({
       apiUrl: 'http://api', apiKey: 'K',
       cachePath, fetchFn: fakeFetch,
     });
     assert.equal(r.source, 'init_refreshed');
-    assert.deepEqual(r.data, { iron_rule: [{ id: 2 }] });
+    assert.deepEqual(r.data, { iron_rules: [{ id: 2 }] });
   });
 
   it('init endpoint also fails + cache present → fallback to cache', async () => {
     // v1.26.82: stamped with the calling account — an unattributed cache is refused by design.
-    writeCache({ sync_token: 'X', data: { iron_rule: [{ id: 1 }] } }, cachePath, undefined, { apiUrl: 'http://api', apiKey: 'K' });
+    writeCache({ sync_token: 'X', data: { iron_rules: [{ id: 1 }] } }, cachePath, undefined, { apiUrl: 'http://api', apiKey: 'K' });
     const fakeFetch = makeFetch([
       ['sync-token', () => failJson(500)],
       ['init', () => failJson(500)],
@@ -265,7 +278,7 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
     });
     assert.equal(r.source, 'cache_fallback');
     assert.equal(r.refreshed, false);
-    assert.deepEqual(r.data, { iron_rule: [{ id: 1 }] });
+    assert.deepEqual(r.data, { iron_rules: [{ id: 1 }] });
   });
 
   it('init fails + no cache → source=error', async () => {
@@ -282,7 +295,7 @@ describe('v1.18.0 — runConditionalSync end-to-end', () => {
   });
 
   it('no apiUrl/apiKey → fallback immediately', async () => {
-    writeCache({ sync_token: 'X', data: { iron_rule: [] } }, cachePath);
+    writeCache({ sync_token: 'X', data: { iron_rules: [] } }, cachePath);
     const r = await runConditionalSync({
       apiUrl: '', apiKey: '',
       cachePath,
