@@ -42,13 +42,17 @@ const PROJECT_NAME = resolveProjectName();
 const API_URL = (process.env.OWNMIND_API_URL || '').replace(/\/$/, '');
 const API_KEY = process.env.OWNMIND_API_KEY || '';
 
-// Ensure logs directory exists (once per process)
-let dirReady = false;
+// Ensure the logs directory exists. Memoised on the resolved path rather than on a boolean:
+// the path is computed per call now, and a latched flag would skip the mkdir for a directory
+// it had never actually created. The reachable version of that is not a changing HOME but a
+// deleted directory - a reinstall or a cleanup mid-session, after which a boolean latch means
+// the local log is dead for the rest of the process, silently and with no self-healing.
+let readyDir = null;
 function ensureDir() {
   const dir = resolveLogsDir();
-  if (dirReady) return dir;
+  if (readyDir === dir) return dir;
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  dirReady = true;
+  readyDir = dir;
   return dir;
 }
 
@@ -97,11 +101,13 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
 // v1.26.131 — the update outcomes joined this set.
 //
 // They are the events a machine that cannot update most needs to send, and they happen at
-// most once a day, so batching buys nothing. What batching costs is everything: the buffer
-// waits for ten events or a thirty-second timer, and a host that terminates its MCP child
-// rather than signalling it never runs the beforeExit / SIGTERM flush. Two users sat on
-// stale versions unnoticed - one for eight weeks - sending a daily heartbeat and not one
-// word about why their updates were not landing.
+// most once a day, so batching buys nothing. What it can cost is the event: all four are
+// emitted in the first seconds of process life, squarely inside the window before the
+// thirty-second timer fires, and a host that terminates its MCP child rather than signalling
+// it never runs the beforeExit / SIGTERM flush either.
+//
+// (The timer does fire in a process that stays alive - that was checked, not assumed. This
+// is about the process that does not.)
 const IMMEDIATE_FLUSH_EVENTS = new Set([
   'iron_rule_compliance',
   'session_log',
@@ -157,13 +163,18 @@ export function logEvent(event, details = {}) {
     // and the buffer push share the same entry object, so the id is consistent.
     const entry = { ts, event, tool, source, client_event_id: randomUUID(), details: rest };
 
+    // Serialised here, before anything is buffered, so an entry that cannot be stringified
+    // fails alone. Left to flushToServer, the throw would land after buffer.splice had
+    // already emptied the buffer, taking up to nine unrelated events with it.
+    const line = JSON.stringify(entry) + '\n';
+
     // v1.26.131 — buffer first, write second.
     //
-    // These used to be the other way round inside this one try/catch, so an unwritable logs
-    // directory did not degrade an event to "sent but not stored locally". It deleted the
-    // event outright: appendFileSync threw, the push below it never ran, and the catch said
-    // nothing. One filesystem problem cost both copies, and the server-side one is the copy
-    // anybody can actually look at.
+    // These used to be the other way round inside one try/catch, and the first statement in
+    // that try was ensureDir(). So an unwritable logs directory did not degrade an event to
+    // "sent but not stored locally" — it deleted the event outright, before it was ever
+    // buffered, and the catch said nothing. One filesystem problem cost both copies, and the
+    // server copy is the only one anybody can look at on a machine they do not have.
     buffer.push(entry);
     if (buffer.length >= 10 || IMMEDIATE_FLUSH_EVENTS.has(event)) {
       flushToServer();
@@ -171,10 +182,10 @@ export function logEvent(event, details = {}) {
       scheduleFlush();
     }
 
-    // Local copy, in its own try: it is the more detailed record, and it is also the one
-    // that can fail on a machine we cannot inspect. Losing it must not cost the upload.
+    // Local copy, in its own try, and ensureDir() called only from inside it: that call is
+    // where the original failure happened, and nothing about it may reach the upload above.
     try {
-      appendFileSync(join(ensureDir(), `${dateStr}.jsonl`), JSON.stringify(entry) + '\n');
+      appendFileSync(join(ensureDir(), `${dateStr}.jsonl`), line);
     } catch { /* the event is already on its way to the server */ }
   } catch {
     // Silent fail — never disrupt main flow
