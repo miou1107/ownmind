@@ -311,10 +311,35 @@ const SECRET_REGEXES = [
     name: 'aws_access_key',
     pattern: /AKIA[A-Z0-9]{16}(?![A-Z0-9])/,
   },
+  // v1.26.125 — Anthropic keys are `sk-ant-…`, and this rule exists so they stop being
+  // reported as OpenAI's.
+  //
+  // Both vendors use an `sk-` prefix, and a single rule named `openai_api_key` owned the
+  // whole family. Blocking was always correct; the *diagnosis* was not. Measured during the
+  // v1.26.124 release, when the new baseline scan blocked that release's own commit:
+  //
+  //     leak.txt: value 符合 openai_api_key 格式 (detected_by=regex:openai_api_key)
+  //               matched="sk-ant-a…AAAA"
+  //
+  // The masked fragment says `sk-ant-` while the rule name says OpenAI, so a user who has
+  // never held an OpenAI key is sent to look for one. Same class as v1.26.28, which added
+  // `matched_text` because a hidden match got bug id=6 misdiagnosed: the block is only half
+  // the job, and a wrong name costs the other half.
+  //
+  // Listed before the OpenAI rule because the loop above returns on first match, and the
+  // OpenAI pattern additionally refuses `ant-` so the two do not depend on this order.
+  // Either alone would work; the pair means neither a reorder nor an edit to one pattern
+  // can quietly hand Anthropic keys back to the wrong vendor.
+  {
+    name: 'anthropic_api_key',
+    pattern: /sk-ant-[A-Za-z0-9_-]{20,}/,
+  },
   // OpenAI API key: sk- prefix + 20+ chars (alnum / hyphen / underscore).
+  // The `(?!ant-)` excludes Anthropic's prefix only — four literal characters including the
+  // hyphen — so `sk-antelope…` is still read as OpenAI, as it should be.
   {
     name: 'openai_api_key',
-    pattern: /sk-[A-Za-z0-9_-]{20,}/,
+    pattern: /sk-(?!ant-)[A-Za-z0-9_-]{20,}/,
   },
   // v1.19.10: OwnMind pre-defined key prefixes.
   // Tied to the 2026-05-22 incident where 'vin-ownmind-admin-2026' and

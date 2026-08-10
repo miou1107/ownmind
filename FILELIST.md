@@ -1,5 +1,42 @@
 # OwnMind 檔案結構
 
+## v1.26.125 修改（擋對了但名字寫錯）
+
+新檔：
+```
+tests/secret-vendor-attribution.test.js         — 8 條。回報的廠商必須等於實際命中的前綴。
+                                                   含 mutation control（證明修復前的
+                                                   sk- 樣式真的會吃掉 Anthropic 金鑰）、
+                                                   兩條反向控制（sk-proj- 與經典 sk- 仍報
+                                                   OpenAI）、以及 sk-antelope… 仍是 OpenAI
+                                                   的邊界案例。素材一律執行時組合，不寫成
+                                                   單一字串 —— 否則此檔會被它所測試的掃描器
+                                                   擋住，上一版已經發生過
+```
+
+修改檔：
+```
+shared/secret-detect.js                         — 新增 anthropic_api_key 規則
+                                                   /sk-ant-[A-Za-z0-9_-]{20,}/，排在
+                                                   openai_api_key 之前（迴圈第一個命中即回傳）；
+                                                   openai_api_key 改為 /sk-(?!ant-)…/，獨立
+                                                   拒絕 Anthropic 前綴。兩道防護並存，讓重排
+                                                   順序或單改一條都不足以恢復誤標
+```
+
+文件：
+```
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.26.124 → 1.26.125
+CHANGELOG.md / FILELIST.md                                          — 本版紀錄
+```
+
+未改動（先查證過）：
+```
+tests/pre-commit-secret.test.js                 — 5 處 regex:openai_api_key 斷言，素材皆為
+                                                   sk-proj-…（確實是 OpenAI），不受影響
+tests/secret-detect-unit.test.js                — 1 處同上
+```
+
 ## v1.26.124 修改（四道防線裡有兩道從來沒擋過任何東西）
 
 新檔：
