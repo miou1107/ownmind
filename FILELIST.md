@@ -1,5 +1,26 @@
 # OwnMind 檔案結構
 
+## v1.26.131 修改（更新不了的機器，也說不出自己更新不了）
+
+新檔：
+```
+tests/mcp-log-event-windows-home.test.js         — 9 tests：沒有 HOME 時路徑仍是絕對路徑
+                                                    （Windows 的情況）、USERPROFILE 優先於
+                                                    空字串、原始碼不准再出現 `HOME || ''`、
+                                                    排隊必須早於寫檔、四種更新結果都要立刻送
+```
+
+修改檔：
+```
+mcp/ownmind-log.js                               — 路徑改用 HOME || USERPROFILE ||
+                                                    os.homedir()（Windows 沒有 HOME、`|| ''`
+                                                    會讓它變成相對路徑）；改成先排隊上傳、
+                                                    再寫本機檔，寫檔有自己的 try（原本寫檔
+                                                    失敗會連上傳一起跳過、而且安靜）；
+                                                    update_applied / failed / skipped / clean
+                                                    改成立刻送出，不進緩衝區
+```
+
 ## v1.26.130 修改（看得到、修不到：修復端問的問題比檢測端弱）
 
 新檔：
