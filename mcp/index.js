@@ -19,6 +19,8 @@ import { appendCompliance, readComplianceEvents } from '../shared/compliance.js'
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
+import { localDateOnly } from '../shared/local-date.js';
+import { filterCacheableRules } from '../shared/cacheable-rules.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
@@ -80,7 +82,10 @@ async function refreshIronRulesCache() {
     const rules = await callApi('GET', `/api/memory/type/iron_rule${tokenParam}`);
     if (rules.new_token) currentSyncToken = rules.new_token;
     const allRules = Array.isArray(rules) ? rules : (rules.data || []);
-    const verifiable = allRules.filter(r => r.metadata?.verification);
+    // v1.26.124: also keep rules carrying lint_validator — see shared/cacheable-rules.js.
+    // The reply-lint hook reads this same file, and dropping its rules here made enabling a
+    // reply check a no-op that reported nothing.
+    const verifiable = filterCacheableRules(allRules);
     cachedVerifiableRules = verifiable;
     const cacheDir = path.dirname(CACHE_PATH);
     if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
@@ -825,8 +830,10 @@ async function handleTool(name, args) {
       data._client_version = CLIENT_VERSION;
       // Enforcement Alerts are already embedded in iron_rules_digest by the server — no need to re-format on the client.
       // E4: Sync verifiable rules to local cache
+      // v1.26.124: "verifiable" is now "anything a cache consumer needs" — the reply-lint
+      // hook's rules live here too. See shared/cacheable-rules.js.
       try {
-        const verifiableRules = (data.iron_rules || []).filter(r => r.metadata?.verification);
+        const verifiableRules = filterCacheableRules(data.iron_rules || []);
         cachedVerifiableRules = verifiableRules;
         const cachePath = path.join(os.homedir(), '.ownmind/cache/iron_rules.json');
         const cacheDir = path.dirname(cachePath);
@@ -1612,7 +1619,13 @@ const execFile = promisify(_execFile);
 let _lockHeld = false;
 
 async function runAutoUpdate() {
-  const today = new Date().toISOString().slice(0, 10);
+  // v1.26.124: local, not UTC — the one place in the MCP that had not adopted the timezone
+  // rule its own logEvent established in v1.20.1. The shell hook computes this marker with
+  // `date +%Y-%m-%d` and the Node hook now uses the same helper, so all three finally agree
+  // on which day it is. While they did not, the eight hours a UTC+8 machine runs ahead of
+  // UTC were a window in which each program read the other's marker as a different day,
+  // reran the update, and rewrote the marker so the next session disagreed the other way.
+  const today = localDateOnly();
   const lastCheck = fs.existsSync(MARKER_FILE)
     ? fs.readFileSync(MARKER_FILE, 'utf8').trim()
     : '';

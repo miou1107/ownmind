@@ -749,6 +749,60 @@ else
         echo "[WARN] systemctl not found; configure cron or scheduler manually"
       fi
       ;;
+    msys*|cygwin*|win32*)
+      # v1.26.124 — Windows had no branch here at all, so it fell into `*)` below and got
+      # one warning line. `$OSTYPE` is `msys` under Git for Windows, measured on the machine
+      # this was found on. The consequence was a machine with the scanner files in place,
+      # nothing scheduled to run them, and no usage data ever reaching the server.
+      #
+      # It is reachable by anyone: scripts/bootstrap.sh has no Windows branch either and
+      # always runs `bash install.sh`, and bootstrap is what "install OwnMind" and "repair
+      # OwnMind" both go through.
+      #
+      # The comment three branches up already described this exact death — "one WARN line
+      # and nobody ever finds out; that is how Adam's scanner died" — while Windows was
+      # falling into it. Registration is the same PowerShell script install.ps1 calls, so
+      # both entry points now converge on one implementation.
+      REGISTER_SCRIPT="$OWNMIND_DIR/scripts/windows/register-scanner-task.ps1"
+      if [ ! -f "$REGISTER_SCRIPT" ]; then
+        echo "[WARN] register-scanner-task.ps1 not found; usage collection will not run"
+        report_error "scanner_schedule_install_failed" "register-scanner-task.ps1 missing at $REGISTER_SCRIPT" || true
+      elif ! command -v powershell.exe >/dev/null; then
+        echo "[WARN] powershell.exe not found; usage collection will not run"
+        echo "       Manual retry: powershell -ExecutionPolicy Bypass -File $(to_win_path "$REGISTER_SCRIPT")"
+        report_error "scanner_schedule_install_failed" "powershell.exe not on PATH under $OSTYPE" || true
+      else
+        # -ExecutionPolicy Bypass because a client that has never set a policy defaults to
+        # Restricted and cannot run a .ps1 at all — the same flag every shipping caller
+        # passes, and whose absence made one test unpassable on any platform (v1.26.106).
+        #
+        # Nothing in this branch discards stderr — it all goes to the log, because silencing
+        # the failure is what this whole branch exists to stop doing. `|| true` guards the
+        # `set -eE` above, so a registration failure is reported rather than aborting the
+        # install with everything below it — including the self-check — never running.
+        REGISTER_LOG="$OWNMIND_DIR/logs/register-task-$(date +%Y%m%d-%H%M%S).log"
+        mkdir -p "$OWNMIND_DIR/logs"
+        REG_EXIT=0
+        powershell.exe -ExecutionPolicy Bypass -File "$(to_win_path "$REGISTER_SCRIPT")" \
+          > "$REGISTER_LOG" 2>&1 || REG_EXIT=$?
+        # Ask Windows whether the task exists rather than trusting the exit code — v1.17.12
+        # added that check on the PowerShell side for the same reason, and the darwin and
+        # linux branches above both learned it too.
+        TASK_PRESENT=""
+        TASK_PRESENT="$(powershell.exe -NoProfile -Command \
+          "if (Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue) { 'yes' }" \
+          2>>"$REGISTER_LOG" | tr -d '\r\n ')" || true
+        if [ "$REG_EXIT" = "0" ] && [ "$TASK_PRESENT" = "yes" ]; then
+          echo "[ OK ] Task Scheduler registered (runs every 120 min)"
+        else
+          echo "[WARN] Task Scheduler registration failed (exit=$REG_EXIT, task_exists=${TASK_PRESENT:-no});"
+          echo "       usage collection will not run. Error log: $REGISTER_LOG"
+          echo "       Manual retry: powershell -ExecutionPolicy Bypass -File $(to_win_path "$REGISTER_SCRIPT")"
+          report_error "scanner_schedule_install_failed" \
+            "register-scanner-task.ps1 exit=$REG_EXIT task_exists=${TASK_PRESENT:-no}" || true
+        fi
+      fi
+      ;;
     *)
       echo "[WARN] Unknown OS ($OSTYPE); scanner files installed but auto-schedule not registered"
       ;;

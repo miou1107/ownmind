@@ -17,6 +17,7 @@ import { pathToFileURL } from 'url';
 import { readJsonSafe, getChangedSourceFiles, getClientVersion, readCredentials } from '../shared/helpers.js';
 import { readComplianceEvents } from '../shared/compliance.js';
 import { detectSecretLike } from '../shared/secret-detect.js';
+import { filterCacheableRules } from '../shared/cacheable-rules.js';
 import { parseBypass, isBypassed, logBypass } from './lib/bypass-handler.js';
 import { selectBlockFingerprint } from './lib/select-block-fingerprint.js';
 import { isSecretGuardRule } from './lib/secret-guard-rule.js';
@@ -271,7 +272,10 @@ async function fetchAndCacheRules() {
     // The endpoint answers with a { data: [...] } envelope. Reading it as a bare
     // array yielded zero rules on every sync, which then overwrote the cache and
     // let the next commit through unchecked and unannounced.
-    const verifiable = parseIronRulesResponse(raw).filter(r => r.metadata?.verification);
+    // v1.26.124: same predicate the MCP uses. This hook overwrites the cache whenever it
+    // finds it empty, so a narrower filter here would delete the reply-lint hook's rules
+    // every time somebody committed — the two writers have to agree on what the file holds.
+    const verifiable = filterCacheableRules(parseIronRulesResponse(raw));
 
     // Never replace a cache with nothing: an empty result almost always means the
     // sync went wrong, and a stale cache still enforces something while an empty
@@ -312,6 +316,35 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0) {
   return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
 }
 
+/**
+ * v1.26.124: the baseline secret block, used on every path that leaves main() without a
+ * secret-guard rule having reported the same hits.
+ *
+ * Deliberately exits rather than returning a verdict: every caller is a point where the
+ * hook used to exit 0 unconditionally, and the whole defect was that those exits were
+ * silent. Keeping the decision here means a future early return cannot accidentally
+ * reintroduce one.
+ *
+ * @param {Array<{file, rule, reason, matched_text}>} secretHits
+ * @returns {never}
+ */
+function exitOnBaselineSecrets(secretHits) {
+  if (secretHits.length === 0) process.exit(0);
+
+  const failures = ['BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）'];
+  for (const hit of secretHits) {
+    const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
+    failures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
+  }
+  console.error(formatBlockMessage(failures, [{
+    ruleCode: 'BASELINE',
+    ruleTitle: '提交內容含疑似金鑰／憑證',
+    secretHit: true,
+    isSecretRule: true,
+  }]));
+  process.exit(1);
+}
+
 // ============================================================
 // Main
 // ============================================================
@@ -326,6 +359,39 @@ async function main() {
       return;
     }
   } catch { /* state file read failure — fail-open and run normally */ }
+
+  // 0. Baseline secret scan — v1.26.124.
+  //
+  // This used to sit inside the rule loop, gated on the user owning a secret-guard rule.
+  // Every exit above that loop therefore skipped it, and two of them are reached whenever
+  // the user has no machine-verifiable rule: "cache empty and the fetch returned nothing"
+  // and "no rule carries the commit trigger". On this account all three iron rules are
+  // reminder-only, so both fired — and a commit staging a well-formed AWS key plus an
+  // Anthropic key went in with no output at all. Verified on a scratch repository: the
+  // wrapper ran, this hook ran, and it exited 0 before reaching the scan.
+  //
+  // A leaked credential is not a preference. It does not become acceptable because the
+  // user never wrote a rule about it, so the scan no longer asks whether they did. The
+  // rule-driven path below is unchanged: when a secret-guard rule exists it still reports
+  // the hits, with its own wording and its own block_on_fail decision, and the baseline
+  // stands down so the same finding is not printed twice.
+  const stagedFiles = getStagedFiles();
+  if (stagedFiles.length === 0) {
+    // Nothing staged is genuinely nothing to check — an empty or --amend-only commit.
+    process.exit(0);
+  }
+  // The bypass set is read here rather than beside the rule loop, because the baseline now
+  // runs before that loop and has to honour the same escape hatch. `OWNMIND_BYPASS=all` is
+  // a deliberate, audited override; making the baseline the one thing it cannot turn off
+  // would leave a user with no way past a false positive except --no-verify, which turns
+  // off every check at once and writes no audit row. `BASELINE` bypasses just this scan.
+  const bypassSet = parseBypass(process.env);
+  const baselineBypassed = isBypassed('BASELINE', bypassSet);
+  if (baselineBypassed) {
+    try { logBypass({ ruleCode: 'BASELINE', ruleTitle: '提交內容含疑似金鑰／憑證', source: 'pre_commit' }); }
+    catch { /* the audit row is best-effort; it must not block the commit */ }
+  }
+  const secretHits = baselineBypassed ? [] : checkStagedDiffForSecrets(stagedFiles);
 
   // 1. Load iron rules from local cache (with staleness check)
   let rules = readJsonSafe(CACHE_FILE);
@@ -348,8 +414,10 @@ async function main() {
     // Cache empty — try to fetch from API
     const fetched = await fetchAndCacheRules();
     if (!fetched || fetched.length === 0) {
-      // Truly no rules available — pass
-      process.exit(0);
+      // v1.26.124: no verifiable rule is not the same as nothing to check. This exit is
+      // reached by every account whose iron rules are reminder-only, which is the default
+      // state — so it was the most-travelled of the silent paths.
+      exitOnBaselineSecrets(secretHits);
     }
     rules = fetched;
   } else if (cacheStale) {
@@ -375,15 +443,12 @@ async function main() {
   });
 
   if (commitRules.length === 0) {
-    process.exit(0);
+    // v1.26.124: rules exist but none of them runs at commit time. Same reasoning as above.
+    exitOnBaselineSecrets(secretHits);
   }
 
-  // 4. Collect git context
-  const stagedFiles = getStagedFiles();
-  if (stagedFiles.length === 0) {
-    process.exit(0);
-  }
-
+  // 4. Collect git context. stagedFiles was gathered in step 0, because the baseline scan
+  // needs it before any of the rule-driven exits above.
   const changedSourceFiles = getChangedSourceFiles(stagedFiles);
   const complianceEvents = readComplianceEvents();
 
@@ -410,10 +475,16 @@ async function main() {
 
   // 6. Evaluate each rule
   // v1.19.7: integrate the OWNMIND_BYPASS env var + secret-guard content double check.
-  const bypassSet = parseBypass(process.env);
+  // v1.26.124: bypassSet is now parsed in step 0, because the baseline scan runs before
+  // this loop and honours the same override.
   const blockFailures = [];
   const blockReasons = [];  // v1.26.8: parallel to blockFailures, used for fingerprint dispatch
   let checkedCount = 0;
+  // v1.26.124: set when a secret-guard rule takes ownership of the step-0 hits, so the
+  // baseline stands down and the same leak is not reported twice. It also means a rule that
+  // is skipped for any reason — wrong trigger, missing conditions — leaves the baseline in
+  // charge rather than silently taking the check with it.
+  let secretGuardReported = false;
 
   for (const rule of commitRules) {
     const verification = rule.metadata?.verification;
@@ -442,7 +513,10 @@ async function main() {
     let secretHit = false;
     const secretGuard = isSecretGuardRule(verification);
     if (secretGuard) {
-      const secretHits = checkStagedDiffForSecrets(stagedFiles);
+      // v1.26.124: reuse the step-0 scan rather than running it again. Re-scanning meant
+      // `git diff` ran once per secret-guard rule, and — worse for correctness — the
+      // baseline and the rule could disagree if the index moved between them.
+      secretGuardReported = true;
       for (const hit of secretHits) {
         const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
         failures.push(`${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
@@ -458,6 +532,23 @@ async function main() {
       }
       blockReasons.push({ ruleCode, ruleTitle, secretHit, isSecretRule: secretGuard });
     }
+  }
+
+  // v1.26.124: the loop ran, but nothing in it claimed the step-0 hits — the user has
+  // commit-time rules and none of them is a secret guard. Without this the leak would ride
+  // out on the pass path below, which is the same silence in a different place.
+  if (secretHits.length > 0 && !secretGuardReported) {
+    blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）');
+    for (const hit of secretHits) {
+      const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
+      blockFailures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
+    }
+    blockReasons.push({
+      ruleCode: 'BASELINE',
+      ruleTitle: '提交內容含疑似金鑰／憑證',
+      secretHit: true,
+      isSecretRule: true,
+    });
   }
 
   // 7. Output results

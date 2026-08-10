@@ -1,5 +1,137 @@
 # OwnMind 更新紀錄
 
+## v1.26.124 — 四道防線裡有兩道從來沒擋過任何東西
+
+在 Windows 實機逐項驗證安裝、設定、資料回傳、鐵律觸發、版本更新，不看測試碼、直接跑。
+挖到的東西比預期嚴重：**產品宣稱的四道防線，有兩道是空轉的**，而且兩道都是同一個原因。
+
+### 一、git commit 的金鑰外洩防護，一次都沒生效過
+
+重現（修復前，真機、拋棄式 repo、使用者的真實鐵律）：
+
+```
+$ printf 'AWS_SECRET_ACCESS_KEY = "wJalrXUtnFEMI/..."\napi_key = "sk-ant-api03-..."\n' > leak.txt
+$ git add leak.txt && git commit -m "test: add config"
+[master (root-commit) 68ea04b] test: add config
+```
+
+**進版了。沒有任何輸出，exit 0。**
+
+不是設定壞掉：我在 repo 裡放了一個串接用的探針掛勾，它印出來了，證明 wrapper 有跑、`ownmind-git-pre-commit.js` 也有跑。
+問題是掃描寫在「逐條鐵律」的迴圈裡、還鎖在 `isSecretGuardRule` 後面，而迴圈上方有兩個 `process.exit(0)`：
+「快取空且抓不到規則」和「沒有任何一條鐵律帶 commit 觸發」。這個帳號的三條鐵律全是純提醒（沒有 `metadata.verification`），
+所以兩個出口**都**會踩到 —— 而那正是新帳號的預設狀態。README 寫的「git commit 硬擋」，對沒有手寫過驗證條件的人來說一直是空的。
+
+**修法**：金鑰掃描移到所有鐵律出口之前，不再過問使用者有沒有寫規則。外洩的憑證不是偏好問題，不會因為使用者沒設定就變得可以接受。
+規則驅動那條路不變 —— 有 secret-guard 鐵律時仍由它報告、用它自己的措辭跟 `block_on_fail`，baseline 退場，同一筆外洩不會印兩次。
+`OWNMIND_BYPASS=all`（或 `BASELINE`）仍然放行並寫稽核列：唯一過不了的檢查會逼使用者改用 `--no-verify`，那會一次關掉全部、而且不留紀錄。
+
+### 二、回覆語言檢查，設了也不會生效
+
+同一個病灶的另一半。`~/.ownmind/cache/iron_rules.json` 當初是為 commit 驗證引擎建的，只收 `metadata.verification`。
+v1.21.0 讓 Stop 掛勾也讀同一個檔、找 `metadata.lint_validator`，**但沒有人把過濾條件放寬**。
+於是一條只帶驗證器、不帶 verification 的鐵律，會被伺服器發下來、然後在寫進磁碟的路上被丟掉。
+
+實測：這個帳號的快取是 2 bytes（`[]`），Stop 掛勾解析出 0 個驗證器，對一句引擎判定 79.3% 中英混雜的回覆回報「沒有問題」，
+exit 0、一個字都沒寫 —— 跟一句乾淨的回覆長得完全一樣。
+
+**修法**：新增 `shared/cacheable-rules.js`，快取收「任一消費者需要的規則」。
+兩個寫入者（MCP 初始化、pre-commit 發現快取空時）共用同一個判斷 —— 之前它們不一致，誰後寫誰決定對方看得到什麼。
+
+**沒有改全域預設**：語言偏好因人而異，v1.26.13 已經刻意確立「沒設定就不檢查」，理由是有使用者從沒要求過卻一直被檢查。
+本版只讓「設定得起來」這件事成立。金鑰掃描則相反 —— 那不是偏好。
+
+### 三、兩個掛勾對「今天」的定義不一樣
+
+實測，2026-08-10 07:38 本地時間（UTC+8），三個值同時成立：
+
+```
+shell 掛勾   date +%Y-%m-%d              2026-08-10
+MCP         localDateOnly()             2026-08-10
+Node 掛勾   toISOString().slice(0,10)   2026-08-09   <- 只有它不一樣
+```
+
+`.last-update-check` 當時是 `2026-08-09`。Node 掛勾（Claude Code 掛的）讀成「今天查過了」而跳過；
+shell 掛勾（Gemini CLI 掛的）讀成「還沒查」，跑完整套更新，然後寫回 `2026-08-10` —— 下一次換 Node 掛勾覺得沒跑過。
+**兩個掛勾在這台機器上都註冊著**，所以本地午夜到早上八點這 8 小時，它們每一輪都互相推翻。
+兩個行程同時決定要更新，正是更新鎖存在要擋的那件事。
+
+同一個 8 小時裡，掛勾寫的事件進昨天的 `YYYY-MM-DD.jsonl`、MCP 寫的進今天的，「今天的日誌」只有一半。
+
+專案規則比這個缺陷還老 —— `mcp/ownmind-log.js`，v1.20.1：「OwnMind 以使用者本地時區定義今天」。
+MCP 遵守了，兩個 shell 掛勾遵守了，只有 Node 掛勾沒有。
+
+**它為什麼活這麼久**：本地時間等於 UTC 的地方，兩個表達式回傳同一個字串。CI 跟伺服器都在 UTC，
+**結構上不可能重現**。唯一會發生的地方是開發者自己的機器。
+
+**修法**：定義搬到 `shared/local-date.js`，四個檔案共用。時間戳也一起改成帶本地時區位移，
+這樣一行的日期跟裝它的檔名不會再指向不同天。
+
+### 四、用 install.sh 裝的 Windows，沒有用量收集
+
+`$OSTYPE` 在 Git for Windows 下是 `msys`。install.sh 的排程 `case` 只有 `darwin*` 跟 `linux*`，
+Windows 落進 `*)`，印一行警告就過去。腳本裡註冊 Windows 排程的指令：**0 個**。
+
+而 `scripts/bootstrap.sh` 也沒有 Windows 分支，一律 `bash install.sh` —— 而「裝 OwnMind」「修 OwnMind」都走 bootstrap。
+
+三個分支之上的註解早就寫過這種死法：「只印一行 WARN 到安裝畫面上，之後永遠不會有人發現。Adam 的掃描器就是這樣死了」——
+而 Windows 一直在往那裡掉。
+
+**修法**：補上 `msys*|cygwin*|win32*)` 分支，呼叫 install.ps1 用的同一支 `register-scanner-task.ps1`，
+帶 `-ExecutionPolicy Bypass`（沒設過原則的用戶端預設 Restricted，根本跑不了 .ps1），
+註冊完再問一次 Windows 排程器確認任務真的在，不只信 exit code。
+全程不丟棄 stderr（IR-002）—— 這個分支存在的原因就是失敗被縮成一行沒人看的警告。
+
+### 五、自我檢查用別人的排程幫你背書
+
+同一次沙盒安裝抓到的。把 install.sh 裝進一個拋棄式 HOME，它一個排程都沒建，報告卻是：
+
+```
+[ OK ]  scheduler            Task Scheduler state=Ready
+```
+
+因為 `Get-ScheduledTask -TaskName 'OwnMind Usage Scanner'` 是整台機器共用的，
+它找到的是**真正那份安裝**的任務：`wscript.exe "C:\Users\Vin\.ownmind\scripts\windows\run-hidden.vbs" ...`
+
+意思是：只要這台機器曾經裝過一次 OwnMind，之後不管裝得多壞，這條檢查都會永遠通過 ——
+而它的職責正是察覺用量收集死掉。
+
+**修法**：連任務的 actions 一起讀，比對是否指向這次安裝的目錄。
+判斷抽成 `scripts/install-helpers/scheduler-task-owner.cjs`，純函式、無相依，這樣不在 Windows 也測得到。
+讀不到 actions 視為「無法判斷」而非「錯」—— 權限問題不該把健康的機器判成硬失敗，
+那正是 v1.26.106 從這個檔案移除過的假警報。
+
+### 驗證
+
+- 本機 `npm test`：4084 → 見下方數字
+- 金鑰外洩：修復前進版的那個 commit，修復後被擋下；乾淨的 commit、空的 staging、名字嚇人但內容是散文的檔案都不受影響
+- 語言檢查：中英混雜 79.3% 會提醒、純中文安靜，兩個方向都用真實鐵律 IR-004 端對端跑過
+- 時區：`2026-08-10.jsonl` 在修好當下立刻出現，時間戳是 `+08:00`
+- 資料回傳：伺服器讀回 24 小時 2826 筆事件、scanner 版本 1.26.123，回報正常
+
+### 這一版的第一次提交，被它自己加的檢查擋下來了
+
+```
+[OwnMind v1.26.124]Pre-commit check: commit blocked
+  ❌ BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）
+  ❌     → tests/pre-commit-secret-baseline.test.js: value 符合 openai_api_key 格式
+```
+
+新測試把假金鑰寫成單一字串常數當素材，於是這個檔案自己變成不可提交。
+守門的東西擋下寫它的人，是它有效的最強證明 —— 而正確的解法不是繞過，
+是把前綴拆開、執行時才組起來（`tests/pre-commit-secret.test.js` 一直都這樣處理）。
+組出來的字串在執行時照樣被偵測到，8 條測試全數維持通過。
+那幾行上面留了註解，寫明「不要把它整理回單一字串」。
+
+### 順手修掉的兩處測試漂移
+
+- `tests/reply-lint-hook-v197.test.js` 用 UTC 算日誌檔名，正是本版修掉的表達式 —— 改成 import 共用的 `localDateOnly`，測試不會再跟掛勾各算各的
+- 兩支新測試原本用 `bash -c`，被 `tests/bash-c-escaping.test.js` 擋下（v1.26.109 的守門測試正確發揮作用），改用 `spawnBashScript` 以檔案交付
+
+### 已知、沒修
+
+- 被擋下的 Anthropic 金鑰會被報成 `openai_api_key`：`sk-ant-` 是 Anthropic 的前綴。擋是對的，但診斷指錯方向，另案處理
+
 ## v1.26.123 — Windows 上剩下的 9 條紅燈：測試自己站錯磁碟機
 
 CI 的 Windows runner 把程式碼 checkout 在 `D:`，但 `TEMP` 還在 `C:`。開發機兩邊都在 `C:`。

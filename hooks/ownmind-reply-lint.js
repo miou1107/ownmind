@@ -65,6 +65,11 @@ import https from 'node:https';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 
+// v1.26.124: assigned from shared/local-date.js inside main()'s guarded dynamic import.
+// Module-level so spoolEvents can reach it; spoolEvents only ever runs after that import
+// has succeeded, because main() exits on failure before any event is spooled.
+let localDateOnly = null;
+
 const FORCE_FALLBACK = process.env.OWNMIND_TTY_FORCE_FALLBACK === '1';
 const TTY_OVERRIDE = process.env.OWNMIND_TTY_OVERRIDE || '';
 const NO_NETWORK = process.env.OWNMIND_REPLY_LINT_NO_NETWORK === '1';
@@ -124,6 +129,12 @@ async function main() {
   // v1.21.0: validator registry (rule-driven lint).
   let findValidator, extractEnabledValidators;
   try {
+    // v1.26.124: loaded here rather than as a static import at the top of the file, because
+    // spec #3 above allows only Node built-ins to be imported statically — a shared/* module
+    // missing on a half-installed machine would otherwise kill this hook before its own
+    // error handlers are installed. Assigned to the module-level binding so spoolEvents,
+    // which is not in this scope, stops needing its own copy of "what day is it".
+    ({ localDateOnly } = await import('../shared/local-date.js'));
     ({ lintReply } = await import('../shared/language-lint.js'));
     ({ findValidator, extractEnabledValidators } = await import('../shared/validators/index.js'));
     ({ readCredentials, getClientVersion } = await import('../shared/helpers.js'));
@@ -774,7 +785,10 @@ function spoolEvents(events) {
   try {
     const logsDir = path.join(HOME, '.ownmind', 'logs');
     fs.mkdirSync(logsDir, { recursive: true });
-    const dateStr = new Date().toISOString().slice(0, 10);
+    // v1.26.124: local, not UTC. The MCP names this file by the local date; this hook
+    // named it by the UTC one, so on a UTC+8 machine every event spooled between local
+    // midnight and 08:00 went into yesterday's file while the MCP wrote today's.
+    const dateStr = localDateOnly(new Date());
     const filePath = path.join(logsDir, `${dateStr}.jsonl`);
     const lines = events.map(e => JSON.stringify(e)).join('\n') + '\n';
     fs.appendFileSync(filePath, lines);
