@@ -1,5 +1,49 @@
 # OwnMind 檔案結構
 
+## v1.26.132 修改（為了安裝而寫的鐵律，在安裝時不會出現）
+
+新檔：
+```
+tests/iron-rule-install-trigger.test.js         — 17 tests：install/setup/bootstrap/update
+                                                   四種腳本檔名與 API_KEY／credential 都要
+                                                   歸成 install 類、npm install 與 pip
+                                                   install 一定不能中（每次裝套件都跳的提醒
+                                                   等於沒有提醒）、既有 commit/deploy/delete
+                                                   分類不受影響，以及把 .sh 掛勾真的跑起來：
+                                                   `bash install.sh --api-key` 要連到規則
+                                                   API、要點名 IR-001 與 IR-002、且不能把
+                                                   一條 trigger:delete 的規則拖進來
+tests/iron-rule-fetch-failure-logged.test.js    — 4 tests：規則端點回 500／401 都要在活動
+                                                   紀錄留下 iron_rule_fetch_failed 並寫明
+                                                   原因與觸發類別；成功查詢不准留失敗紀錄
+                                                   （「沒有規則符合」不是失敗）；失敗永遠
+                                                   不准出現在 stdout，也不准擋下指令
+```
+
+改檔：
+```
+shared/helpers.js                               — detectCommandTrigger 新增 install 判定，
+                                                   放在所有既有判定之後，既有分類不變。
+                                                   金鑰樣式改守「前面不是英文字母」而不是
+                                                   \b：底線是單字字元，\bAPI_KEY\b 抓不到
+                                                   OWNMIND_API_KEY —— 唯一抓不到的形狀剛好
+                                                   是唯一會出現的形狀。
+                                                   TRIGGER_TAG_ALIASES 加 install（收
+                                                   install/setup/config/安裝/設定/api_key/
+                                                   credential_rotation/換金鑰/切換帳號），
+                                                   刻意不收 script 與 debug。
+                                                   detectTriggerFromContext（MCP
+                                                   report_compliance 的入口）同樣補上
+                                                   install，否則就是在另一個入口重建
+                                                   這一版要關掉的落差
+hooks/ownmind-iron-rule-check.sh                — TRIGGER 偵測與內嵌 ALIASES 同步上面兩處
+                                                   （KEEP IN SYNC 註解已標）。取鐵律的
+                                                   curl -sf ... 2>/dev/null 三重消音拆掉：
+                                                   body 進暫存檔、狀態碼進變數，失敗走
+                                                   log_event 而不是 stdout；node 的 stderr
+                                                   不再倒掉（IR-002）；逾時 3 秒 → 5 秒
+```
+
 ## v1.26.131 修改（更新不了的機器，也說不出自己更新不了）
 
 新檔：
