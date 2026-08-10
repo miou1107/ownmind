@@ -82,7 +82,7 @@ function Get-TaskActionText {
 #
 # -TaskPath '\' pins the query to the root folder, which is where register-scanner-task.ps1
 # creates it (Register-ScheduledTask with no -TaskPath). Without it, a same-named task in
-# some other folder joins the result and $task becomes an array — its .State would then be
+# some other folder joins the result and $task becomes an array - its .State would then be
 # an array too, and the health question stops having a single answer.
 $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
 if ($task -and (Test-ScheduleHealthy -State $task.State `
