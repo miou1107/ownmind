@@ -2,21 +2,22 @@
 
 ## What was measured
 
-Production, 2026-08-10. Nine users:
+Production, 2026-08-10, queried directly against `activity_logs` — no join, no report:
 
-| | client version | activity events, 20 days |
+| | client version | activity events, all time |
 |---|---|---|
-| seven users | 1.26.125 – 1.26.128 | 41 – 5531 |
+| seven users | 1.26.125 – 1.26.128 | 16,733 rows, of which 8,087 `update_skipped` |
 | Amiee | 1.26.57, frozen since 08-04 | **0** |
 | Joanna | 1.26.27, frozen since 06-18 | **0** |
 
-Both stale machines send an MCP heartbeat every single day, so their MCP process starts. They
-are also the only two team members who do not use Claude Code — one uses Codex, one uses
-Antigravity.
+Zero is not "zero in the last twenty days". Neither user has ever produced a single row, from
+any source. Both machines send an authenticated MCP heartbeat every day, so the API URL and
+key on those machines are present and valid, and the MCP process does start. They are also
+the only two team members who do not use Claude Code — one uses Codex, one uses Antigravity.
 
-Zero events is not "few events". It means every `update_skipped`, `update_failed` and
-`update_applied` this repo has emitted on those machines since v1.17.22 went nowhere. The two
-users who most needed diagnosing were the two who could not be diagnosed.
+The same module uploads fine for the other seven, including the very events at issue. That
+rules out a server-side rejection, absent or stale credentials, and a bad query. The two users
+who most needed diagnosing were the two who could not be diagnosed.
 
 ## Why the heartbeat survives and nothing else does
 
@@ -81,6 +82,31 @@ having and one was not:
 - It named `~/.gemini/config/hooks.json` and `.agents/hooks.json` as Antigravity hook
   configuration. **Neither exists on this machine**, and `~/.antigravity/` contains no hooks
   file. Not acted on.
+
+## What is not proven, and the one question that would settle it
+
+That `ensureDir()` actually threw on those two machines is **inferred, not measured**. It
+rests on the MCP's working directory being unwritable there, and it is entirely possible that
+Codex and Antigravity launch it in the user's workspace — in which case the events were
+written to a stray `.ownmind/logs` in a project folder, `buffer.push` ran, the timer fired,
+and the zero has a different cause.
+
+The competing explanation is change (3)'s: the process is terminated inside the thirty-second
+buffer window. Note that these are mutually exclusive, and the proposal must not claim both:
+the unref'd timer does fire in a process that stays alive, verified by running it. So either
+the process is long-lived, in which case buffering cannot explain the zero and the filesystem
+chain is the survivor, or it is short-lived, in which case buffering explains it and the
+filesystem chain is unproven.
+
+All three changes are correct under either, which is why this ships without settling it. What
+settles it is one question to one user: **do any `.ownmind\logs\*.jsonl` files exist outside
+`%USERPROFILE%` on their machine?** Present → the directory was writable, and change (3) is
+the real fix. Absent, with `%USERPROFILE%\.ownmind\logs` also empty for those dates → the
+filesystem chain is confirmed.
+
+Independently of all of that, change (1) is justified on its own: a relative `.ownmind/logs`
+in a *writable* working directory is not benign either. It litters users' project folders with
+a log directory they never asked for and may commit.
 
 ## What this does not do
 

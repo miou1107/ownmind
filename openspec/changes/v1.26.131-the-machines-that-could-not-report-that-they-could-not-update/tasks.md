@@ -17,7 +17,25 @@
       and its account of MCP termination on Windows were kept; its named hook config files
       (`~/.gemini/config/hooks.json`, `.agents/hooks.json`) do not exist on this machine and
       were not acted on
-- [ ] Code review
+- [x] Code review — one Critical and three others fixed:
+      - **the test did not defend the fix.** The original throw came from `ensureDir()`, the
+        *first* statement in the try, not from `appendFileSync` — so "buffer.push appears
+        before appendFileSync" was satisfied by the broken code too. Replaced with a probe
+        that runs a child against a throwaway HTTP server with an unwritable HOME; the
+        reviewer's mutation (hoist `ensureDir()` back into the try) now goes red
+      - the causal claim outran the evidence. Re-measured: **zero rows ever, from any
+        source**, against 16,733 for the other seven — which kills the server-side and
+        credential explanations outright. But which of the two mechanisms fired on those
+        machines is still unproven, and the CHANGELOG and proposal now say so, with the one
+        question that would settle it
+      - `dirReady` latched a boolean while the path was resolved per call, so a deleted logs
+        directory killed local logging for the life of the process. Memoises the path now
+      - reordering created a poison-pill path: an unserialisable entry would throw inside
+        `flushToServer` after `splice`, destroying up to nine queued events. Serialised
+        before buffering, with its own test and mutation check
+      - swept the three remaining bare `process.env.HOME` sites (unreachable today — every
+        caller passes `--ownmind-dir` — but this release's premise is that the expression
+        recurs)
 - [ ] Ship — Vin's call
 - [ ] Separate decision, still open: Codex and Antigravity have only the MCP-startup updater,
       where Claude Code, Gemini CLI and Cursor have two. Worth deciding **after** the next
