@@ -1,5 +1,77 @@
 # OwnMind 更新紀錄
 
+## v1.26.125 — 擋對了，但名字寫錯，於是使用者被派去找一把他從來沒有過的金鑰
+
+Anthropic 跟 OpenAI 的 API 金鑰都是 `sk-` 開頭。`shared/secret-detect.js` 裡有一條叫
+`openai_api_key` 的正規表示式，吃下了整個 `sk-` 家族。
+
+實地觀測到的時機很難更諷刺 —— 就在提交 v1.26.124 的當下，那一版新加的預設金鑰掃描擋下了那一版自己：
+
+```
+leak.txt: value 符合 openai_api_key 格式 (detected_by=regex:openai_api_key) matched="sk-ant-a…AAAA"
+```
+
+同一句話裡，遮罩後的片段寫著 `sk-ant-`，而規則名字寫著 OpenAI。
+
+**擋是對的，這部分從來沒有錯。** 錯的是診斷：一個從來沒有 OpenAI 金鑰的人，被明確地告知去找一把 OpenAI 金鑰。
+
+這跟 v1.26.28 修的是同一種失敗。當時是因為一個看不見的比對讓 bug id=6 被誤判，才補上 `matched_text`。
+擋下 commit 只是一半的工作；使用者真正拿去行動的是那個名字，而錯的名字把另外一半丟掉。
+
+### 修法
+
+新增 `anthropic_api_key` 規則，`/sk-ant-[A-Za-z0-9_-]{20,}/`，**排在 OpenAI 那條前面** ——
+比對迴圈找到第一個就回傳。同時 OpenAI 那條改成 `/sk-(?!ant-)[A-Za-z0-9_-]{20,}/`，**獨立地**拒絕 Anthropic 前綴。
+
+兩道其中任一單獨都夠用。兩道一起放，是為了讓「有人重排順序」跟「有人改了其中一條」都不足以
+靜靜地把 Anthropic 金鑰交還給錯的廠商。
+
+排除的是 `ant-` 這**四個字元**、不是 `ant` 這三個字母。所以 `sk-antelope…` 仍然被判成 OpenAI，
+這是對的。寫成 `(?!ant)` 會往**沒有人會發現的方向**誤判 —— 一個沒有 Anthropic 金鑰的人，
+不會發現自己找不到它。
+
+### 沒有動到任何人腳下的地
+
+改之前先查了所有既有的 `regex:openai_api_key` 斷言：`tests/pre-commit-secret.test.js` 五處、
+`tests/secret-detect-unit.test.js` 一處，用的全都是 `sk-proj-` 開頭的素材 ——
+那確實是 OpenAI 的形狀。所以這次拆分不需要改動任何既有斷言，也不需要為了相容而保留錯的名字。
+
+（這一段本來把那個素材完整抄了一遍，於是**這份 CHANGELOG 自己被掃描擋下來**：
+
+```
+CHANGELOG.md: value 符合 openai_api_key 格式 matched="sk-proj-…9jkl"
+```
+
+掃描器分不出「文件裡的範例」跟「真的金鑰」，而它不該分 —— 一把貼進說明文件的真金鑰，
+外洩程度跟貼進程式碼一模一樣。寫成截斷形式即可，說明的價值一點都沒少。
+連續兩版被自己的防護擋住、兩次都是文件與測試素材而非真的憑證，這件事本身就是它有在工作的紀錄。）
+
+`detected_by` 仍然以 `regex:` 開頭，呼叫端就是靠這個前綴決定要不要遮罩（v1.26.28）——
+一個丟掉這個前綴的新規則名，會把完整金鑰印進終端機跟日誌檔。有測試盯著這件事。
+
+### 新增測試（`tests/secret-vendor-attribution.test.js`，8 條）
+
+- Anthropic 金鑰被歸給 Anthropic
+- Anthropic 金鑰的 `rule` 跟 `reason` **都不准出現 OpenAI 字樣**（分開寫成否定斷言，因為
+  這是使用者真正讀到並據以行動的那句話）
+- 反向控制兩條：`sk-proj-` 與經典 `sk-` + base62 仍然報成 OpenAI ——
+  否則「直接刪掉 OpenAI 規則」也能讓上面全部通過
+- `sk-antelope…` 仍是 OpenAI：釘住排除的是四個字元不是三個字母
+- mutation control：證明修復前的 `sk-[A-Za-z0-9_-]{20,}` **真的**會吃掉 Anthropic 金鑰 ——
+  否則上面全部都是演戲
+- 遮罩前綴仍在、`reason` 與 `rule` 指向同一個廠商
+- 讀真實模組確認兩條規則都註冊了、且 Anthropic 排在前面
+
+測試素材一律在執行時組起來、絕不寫成單一字串常數，旁邊留了註解寫明不要整理回去。
+理由是實證的：寫死的金鑰會讓測試檔自己被它所測試的掃描器擋住 ——
+上一版 `tests/pre-commit-secret-baseline.test.js` 就是這樣。
+
+### 驗證
+
+- `npm test`：4094 條、4078 過、2 條既有失敗（需前端建置產物，本版未動 `src/` 與 `client/`）
+- 四種形狀實測歸屬正確：Anthropic → anthropic、`sk-proj-` → openai、經典 `sk-` → openai、`sk-antelope` → openai
+- 既有的 121 條金鑰偵測相關測試全數維持通過，無一需要修改
+
 ## v1.26.124 — 四道防線裡有兩道從來沒擋過任何東西
 
 在 Windows 實機逐項驗證安裝、設定、資料回傳、鐵律觸發、版本更新，不看測試碼、直接跑。
