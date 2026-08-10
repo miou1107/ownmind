@@ -23,7 +23,7 @@ ownmind_init 回傳的每一條 iron_rule **必須在整個 session 中嚴格遵
 ## 顯示規則（強制）
 
 - 每次存取記憶 →【OwnMind vX.X.X】{類型}：{內容} 版本標記
-- 每次觸發附上 →【OwnMind vX.X.X】技巧提示：隨機一條
+- 每次觸發附上 →【OwnMind vX.X.X】技巧提示：沿用 OwnMind 給的那句 Tip（工具回應與 session 啟動內容都會帶一句），不可自行編造；沒給就不要顯示這一行
 
 ## 鐵律主動防護（強制）
 

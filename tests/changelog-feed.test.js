@@ -159,8 +159,30 @@ describe('the real CHANGELOG.md', () => {
     assert.deepEqual(untitled, []);
   });
 
-  it('follows the newest release with the one before it, not with something it quoted', () => {
-    assert.equal(entries[1].version, '1.26.125');
+  it('runs newest to oldest, so nothing it quoted has been spliced into the history', () => {
+    // The regression this guards: a `## v1.15.4 …` heading quoted inside a fenced block was
+    // parsed as a release and landed second, ahead of the real history.
+    //
+    // v1.26.127: this used to pin the literal '1.26.125' as the second entry, which made it
+    // fail on the release after the one that wrote it — red every version, and silent about
+    // the bug it exists for. A quoted heading is out of place wherever it lands, so assert
+    // the property instead: versions never climb as the list descends. Equal is allowed —
+    // v1.26.98 legitimately ships six entries in a row.
+    const rank = (v) => v.split('.').map(Number);
+    const climbs = (a, b) => {
+      const [x, y] = [rank(a), rank(b)];
+      for (let i = 0; i < 3; i += 1) if (x[i] !== y[i]) return x[i] < y[i];
+      return false;
+    };
+    const breaks = entries
+      .slice(1)
+      .map((e, i) => (climbs(entries[i].version, e.version) ? `${entries[i].version} → ${e.version}` : null))
+      .filter(Boolean);
+    assert.deepEqual(
+      breaks, [],
+      'a version climbs partway down the list — a heading quoted inside a fenced block has '
+      + 'been parsed as a release',
+    );
   });
 
   it('repeats a version more than once, so a version is not a unique key', () => {

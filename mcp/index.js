@@ -21,6 +21,8 @@ import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.j
 import { buildApiErrorMessage } from './lib/api-error-message.js';
 import { localDateOnly } from '../shared/local-date.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
+// v1.26.127: the tip list lives in shared/tips.js so this and INSTRUCTIONS_SOP cannot drift.
+import { getRandomTip } from '../shared/tips.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
@@ -230,45 +232,6 @@ function resolveType(name, args) {
   if (typeof entry === 'string') return entry;
   // entry is object (ownmind_get)
   return entry[args?.type] || 'Memory loaded';
-}
-
-// --- Tips ---
-const TIPS = [
-  'Say "remember this" and I will write the experience into memory, persisted across platforms',
-  'Say "add an iron rule" and I will record the full context so the same mistake won\'t happen again',
-  'Say "hand off to Codex" and I will package up the work in progress for another tool to take over',
-  'Say "what memories do I have" and I will list all your preferences, iron rules, and project context',
-  'Say "organize memory" and I will review this conversation and find experiences worth saving',
-  'Ask "what did you learn" or "any new knowledge today" to have the AI review and record learnings',
-  'Whether you use Claude, Cursor, or Codex, OwnMind gives all your AIs the same shared memory',
-  'Iron rules are never deleted — only disabled with a recorded reason, for later review',
-  'Every iron rule records the incident behind it, so you (and the AI) know why the rule exists',
-  'Ask "what did I work on recently" and I will recap from your session logs',
-  'OwnMind proactively suggests organizing memory after 2 hours of work or 50% context usage',
-  'During a handoff, both sides see the summary so nothing is lost in transition',
-  'You can export memory to markdown anytime — the data is always yours',
-  'Say "don\'t follow this one" and I will ask why, then disable (not delete) and keep an audit trail',
-  'Search memory with multi-keyword queries — matches against title, content, tags, and code',
-  'OwnMind automatically records the machine, tool, and AI model you use, for traceability',
-  'Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI',
-  'Ask "what\'s left on the ring project" and I will answer from project memories',
-  'Iron rules are numbered so you can reference them directly by their code',
-  'Every handoff records the source tool and model so you can trace which AI made each decision',
-  'Ask "how did this iron rule originate" and I will show you the full incident background',
-  'OwnMind supports secret management — your API keys and passwords are stored securely',
-  'Say "update ring\'s progress" and I will refresh the project status and todos',
-  'Even on online AIs (claude.ai, ChatGPT) you can export and load your memories',
-  'Memory is short-term and long-term: session logs auto-compress; iron rules and decisions are kept forever',
-  'Ask "which iron rules are disabled" to review past decision changes',
-  'OwnMind keeps evolving — the AI will proactively suggest workflow and rule improvements',
-  'Say "this project is done" and I will archive it to the portfolio with tech choices and lessons',
-];
-let lastTipIndex = -1;
-function getRandomTip() {
-  let idx;
-  do { idx = Math.floor(Math.random() * TIPS.length); } while (idx === lastTipIndex && TIPS.length > 1);
-  lastTipIndex = idx;
-  return TIPS[idx];
 }
 
 // --- Session tracking (for emergency shutdown log) ---

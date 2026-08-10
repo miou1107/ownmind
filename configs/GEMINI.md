@@ -27,7 +27,7 @@ ownmind_init 回傳的每一條 iron_rule **必須在整個 session 中嚴格遵
 - 寫入記憶 →【OwnMind vX.X.X】記憶寫入：已儲存 [類型]：[標題]
 - 交接建立 →【OwnMind vX.X.X】建立交接：交接已建立
 - 交接接手 →【OwnMind vX.X.X】接受交接：交接接手
-- 每次觸發後附上 →【OwnMind vX.X.X】技巧提示：[隨機一條]
+- 每次觸發後附上 →【OwnMind vX.X.X】技巧提示：沿用 OwnMind 給的那句 Tip（工具回應與 session 啟動內容都會帶一句），不可自行編造；沒給就不要顯示這一行
 
 ## 鐵律主動防護（強制）
 

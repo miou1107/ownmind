@@ -1,5 +1,49 @@
 # OwnMind 檔案結構
 
+## v1.26.127 修改（技巧清單合一，每條綁一個真的存在的東西）
+
+新檔：
+```
+shared/tips.js                                   — 新增、技巧的唯一來源，25 條（原本 28）。
+                                                    每條是 { text, anchor }，
+                                                    anchor 是 mcp/index.js 真的有註冊的工具名，
+                                                    或 file:<路徑>（單一工具涵蓋不到的能力）。
+                                                    另外提供 getRandomTip（不連續重複）與
+                                                    renderTipPool（給操作手冊內插）
+tests/tips-list.test.js                          — 24 tests：每條錨點都解得出來、沒有重複技巧、
+                                                    getRandomTip 只回清單裡的字且不連續重複、
+                                                    mcp/index.js 不准再有自己的 TIPS、
+                                                    操作手冊必須內插而不是重寫、
+                                                    任何技巧原文出現在 shared/tips.js 以外就紅、
+                                                    五份範本「每一行」都要說沿用 Tip 且不可自行編造
+```
+
+修改檔：
+```
+hooks/lib/render-session-context.js              — SessionStart 內容補一句 Tip。技巧本來只掛在
+                                                    MCP 工具回應上，但用 hook 載入記憶不是一次
+                                                    工具呼叫 —— 範本要 AI 在啟動後印一句技巧，
+                                                    那條路上從來沒人給它一句，模型就自己補。
+                                                    這是「技巧跟 OwnMind 無關」的真正來源
+mcp/index.js                                     — 刪掉自己的 TIPS（28 條）跟 getRandomTip，
+                                                    改 import ../shared/tips.js
+src/routes/memory.js                             — INSTRUCTIONS_SOP 的 tip pool 改成
+                                                    ${renderTipPool()}，不再把 28 條重寫一遍。
+                                                    原本兩份一字不差、沒有任何程式在比對
+configs/AGENTS.md                                — 兩處技巧位置改成「沿用工具回應裡已附的那句 Tip、
+                                                    不可自行編造」
+configs/GEMINI.md                                — 同上（一處）
+configs/global_rules.md                          — 同上。註：Windsurf 是安裝時 cp 一份過去、
+                                                    已存在就跳過，舊安裝不會跟著更新
+configs/copilot-instructions.md                  — 同上
+configs/antigravity.md                           — 同上
+tests/changelog-feed.test.js                     — 原本釘死「第二筆是 1.26.125」，下一版就會紅、
+                                                    而且紅的理由跟它要防的 bug 無關。改成整份清單
+                                                    的版號不准往上爬（允許相等 — v1.26.98 有六筆）
+```
+
+（`configs/CLAUDE.md` 沒有技巧提示指令，這版也沒有加 — Claude Code 一直都不自己加技巧。）
+
 ## v1.26.126 修改（頁尾更新紀錄接上 CHANGELOG.md）
 
 新檔：
