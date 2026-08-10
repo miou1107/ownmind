@@ -22,7 +22,6 @@ export default function Footer({ version, changelog = [] }) {
           <Sparkles size={12} />
           {t('footer.changelog')}
         </button>
-        <span>{t('footer.copyright')}</span>
       </footer>
 
       <Modal
@@ -38,16 +37,27 @@ export default function Footer({ version, changelog = [] }) {
           </p>
         ) : (
           <div className="relative pl-6 border-l-2 border-slate-100 space-y-6">
-            {changelog.map((entry) => (
-              <div key={entry.version} className="relative">
+            {/* Keyed by position as well as version: CHANGELOG.md ships several
+                entries under one version (v1.26.98 has six), so the version alone
+                is not unique and React would drop the duplicates. */}
+            {changelog.map((entry, i) => (
+              <div key={`${entry.version}-${i}`} className="relative">
                 <div className="absolute -left-[31px] top-1 w-4 h-4 bg-sage-500 rounded-full border-4 border-white shadow-sm" />
                 <div className="flex items-baseline gap-2 mb-1">
                   <span className="text-sm font-bold text-slate-900">
-                    {entry.version}
+                    {/* The API answers with a bare "1.26.125"; the footer beside
+                        it says "v1.26.125", and the two must read as the same
+                        thing for the reader to find where they are in the list. */}
+                    v{entry.version}
                   </span>
-                  <span className="text-[10px] font-mono text-slate-400">
-                    {entry.date}
-                  </span>
+                  {/* Only the earliest releases carry a date in CHANGELOG.md.
+                      An empty <span> would leave a gap the reader reads as a
+                      missing value rather than a value that was never recorded. */}
+                  {entry.date && (
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {entry.date}
+                    </span>
+                  )}
                 </div>
                 {entry.title && (
                   <p className="text-xs font-semibold text-slate-700 mb-1">

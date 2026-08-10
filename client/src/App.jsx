@@ -92,9 +92,10 @@ export default function App() {
   // super_admin、姓名寫死 'User'、登出只 console.log、onOpenProfile 沒有實作。
   // 寫死的角色會讓每一個登入者都看到「管理」跟「超級管理」區塊。
   //
-  // changelog 刻意留空：Footer 三語系都有 changelog.empty 空狀態，真正的更新
-  // 紀錄來源是獨立的一件事。
-  const layoutProps = { changelog: [] };
+  // v1.26.126: the changelog left with them. It used to be passed from here as a
+  // literal `[]`, with a comment saying the real source was "a separate thing" --
+  // so the footer's changelog button opened an empty modal for six months. It is
+  // now GET /api/changelog, read by Layout like the version.
 
   // 一般頁面兩層守門員：
   //   RequireAuth — 沒登入直接導 /login
@@ -103,7 +104,7 @@ export default function App() {
   const renderPage = (page) => (
     <RequireAuth>
       <RequireFreshPassword>
-        <Layout {...layoutProps}>{page}</Layout>
+        <Layout>{page}</Layout>
       </RequireFreshPassword>
     </RequireAuth>
   );
@@ -115,7 +116,7 @@ export default function App() {
     <RequireAuth>
       <RequireFreshPassword>
         <RequireRole min={minRole}>
-          <Layout {...layoutProps}>{page}</Layout>
+          <Layout>{page}</Layout>
         </RequireRole>
       </RequireFreshPassword>
     </RequireAuth>

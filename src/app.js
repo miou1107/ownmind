@@ -151,6 +151,7 @@ import setupRoutes from './routes/setup.js';
 import adminPasswordResetRoutes from './routes/admin-password-reset.js';
 import bugReportsRoutes from './routes/bug-reports.js';
 import { createVersionRouter } from './routes/version.js';
+import { createChangelogRouter } from './routes/changelog.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
 
@@ -180,6 +181,7 @@ app.use('/api/me', meRoutes);
 app.use('/api/bug-reports', bugReportsRoutes);
 app.use('/api/debug', createDebugRouter({ query, auth }));
 app.use('/api/version', createVersionRouter({ auth }));
+app.use('/api/changelog', createChangelogRouter({ auth }));
 
 // v1.26.48: root points at the console. Relative Location so the same emitted
 // value serves both a plain `/` deployment and the /ownmind reverse-proxy setup.

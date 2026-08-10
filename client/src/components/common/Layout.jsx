@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import { useT } from '../../i18n/LocaleContext';
 import useServerVersion from '../../hooks/useServerVersion';
+import useChangelog from '../../hooks/useChangelog';
 import { useSession } from '../../session/SessionContext';
 import { navLabelKey } from './nav-sections';
 import Sidebar from './Sidebar';
@@ -19,10 +20,15 @@ import Footer from './Footer';
 // Layout 只在登入後才渲染，所以請求一定帶著 key；App 在登入前就掛好而且不會
 // unmount，在那裡發請求會 401 一次然後永遠不重試。
 // locale 由 LocaleProvider 提供、同樣不需 props。
-export default function Layout({ children, changelog }) {
+//
+// v1.26.126: the changelog joins them, for the same reason. It arrived as a prop
+// from App, where it was the literal `[]` -- so the footer's changelog button
+// opened an empty modal from v1.20.0 until now.
+export default function Layout({ children }) {
   const t = useT();
   const { pathname } = useLocation();
   const version = useServerVersion();
+  const changelog = useChangelog();
   const { role, name, error, ready, logout } = useSession();
   const titleKey = navLabelKey(pathname);
   const pageTitle = titleKey ? t(titleKey) : t('header.title');

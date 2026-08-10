@@ -316,3 +316,72 @@ describe('Footer copes with what it is now given', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// v1.26.126 — the changelog now has a source, and it is fetched the same way
+// ---------------------------------------------------------------------------
+
+describe('the changelog is read from the server, not declared by the client', () => {
+  // The empty state above was the whole reason this went unnoticed for six months:
+  // "目前尚無版本紀錄" is indistinguishable from a product with no releases. The
+  // guards below are structural for the same reason the version ones are — this
+  // repo has no React render harness — and they pin the two halves that can each
+  // silently reintroduce an empty modal: Layout must ask, and App must not answer.
+  const layoutPath = join(repoRoot, 'client', 'src', 'components', 'common', 'Layout.jsx');
+  const appPath = join(repoRoot, 'client', 'src', 'App.jsx');
+  const hookPath = join(repoRoot, 'client', 'src', 'hooks', 'useChangelog.js');
+
+  it('Layout calls the hook', () => {
+    const src = stripComments(readFileSync(layoutPath, 'utf8'));
+    assert.match(src, /useChangelog\(\)/, 'Layout must fetch the changelog itself');
+  });
+
+  it('App neither calls the hook nor hands a changelog down', () => {
+    // The defect verbatim: `const layoutProps = { changelog: [] }`. Any literal
+    // array passed as a changelog puts the modal back into its empty state while
+    // every test stays green.
+    const src = stripComments(readFileSync(appPath, 'utf8'));
+    assert.doesNotMatch(src, /useChangelog/,
+      'App mounts before login; fetching there 401s once and never retries');
+    assert.doesNotMatch(src, /changelog\s*[:=]\s*\[/,
+      'App must not declare the changelog — that is the defect v1.26.126 fixed');
+  });
+
+  it('Layout is the only caller, and Layout sits beneath RequireAuth', () => {
+    const callers = sourceFiles(join(repoRoot, 'client', 'src'))
+      .filter((f) => f !== hookPath)
+      .filter((f) => /useChangelog\s*\(/.test(stripComments(readFileSync(f, 'utf8'))))
+      .map((f) => relPosix(repoRoot, f));
+
+    assert.deepEqual(callers, ['client/src/components/common/Layout.jsx']);
+    // The RequireAuth nesting itself is asserted by the version suite above, and
+    // both hooks ride on the same <Layout> placements.
+  });
+
+  it('the hook goes through the api client and keeps no failure', () => {
+    const src = stripComments(readFileSync(hookPath, 'utf8'));
+    assert.match(src, /apiGet\(\s*'\/api\/changelog'\s*\)/);
+    assert.doesNotMatch(src, /\bfetch\(/, 'must not bypass the api client');
+    // Line-scoped rather than the version suite's `\(!ok[^)]*\)`: this guard also
+    // rejects a malformed body, so its condition contains a `)` of its own.
+    assert.match(src, /^\s*if\s*\(!ok.*\breturn\b/m,
+      'a failed response must leave the cache untouched');
+  });
+});
+
+describe('the footer carries no copyright line', () => {
+  it('Footer renders no copyright string', () => {
+    const src = readFileSync(join(repoRoot, 'client', 'src', 'components', 'common', 'Footer.jsx'), 'utf8');
+    assert.doesNotMatch(src, /footer\.copyright/);
+  });
+
+  it('no locale keeps the key, so none is left orphaned', () => {
+    for (const locale of ['zh', 'en', 'ja']) {
+      const dict = JSON.parse(
+        readFileSync(join(repoRoot, 'client', 'src', 'i18n', `${locale}.json`), 'utf8'),
+      );
+      assert.equal(dict['footer.copyright'], undefined,
+        `${locale}.json still defines footer.copyright, which nothing renders`);
+    }
+  });
+});
