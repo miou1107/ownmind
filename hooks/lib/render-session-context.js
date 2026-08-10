@@ -77,6 +77,19 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
     lines.push('');
   }
 
+  // v1.26.128: the init response has carried team_standards_digest since team standards shipped —
+  // outside the `!compact` guard, i.e. deliberately sent on this exact path — and this
+  // renderer never read it. So a team's rules were loaded for anyone whose tool calls
+  // ownmind_init and silently skipped for everyone whose tool loads memory through the
+  // SessionStart hook, which is every Claude Code user. Same shape as the missing tip in
+  // v1.26.127: the server sent it, the renderer dropped it, and nothing said so.
+  if (d.team_standards_digest) {
+    lines.push('## Team standards (follow these like your own rules)');
+    lines.push(d.team_standards_digest);
+    lines.push('For the full text of one: ownmind_get("standard_detail").');
+    lines.push('');
+  }
+
   if (Array.isArray(d.principles) && d.principles.length > 0) {
     lines.push('## Working principles');
     for (const p of d.principles) lines.push('- ' + (p.title || ''));

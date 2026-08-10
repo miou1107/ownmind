@@ -68,13 +68,11 @@ export const TIPS = [
   { text: 'Say "update this project\'s progress" and I will refresh its status and todos', anchor: 'ownmind_update' },
   { text: 'Memory is short-term and long-term: session logs auto-compress; iron rules and decisions are kept forever', anchor: 'file:src/routes/session.js' },
   { text: 'Say "this project is finished" and I will archive the whole context and what you took away from it', anchor: 'ownmind_save' },
-  // Not "straight to": the show-then-confirm step is a protocol the server cannot enforce, and
-  // this sentence is read by the same model being asked to honour it.
-  { text: 'Say "report an OwnMind bug" and I will write it up, show it to you, and send it to the administrators once you confirm', anchor: 'ownmind_report_bug' },
-  // "loads them", not "so nobody breaks them": only iron rules reach the hooks. The standards
-  // digest is returned on init and nothing enforces it, so promising enforcement is the kind
-  // of sentence that makes a team lead stop checking.
-  { text: 'OwnMind has team standards: upload your team\'s rules once and every member\'s AI loads them at the start of a session', anchor: 'ownmind_upload_standard' },
+  { text: 'Say "report an OwnMind bug" to send the problem straight to the administrators', anchor: 'ownmind_report_bug' },
+  // v1.26.128: this claim is now delivered rather than asserted — render-session-context.js
+  // renders team_standards_digest, which it had been dropping. What still backs it is the AI
+  // following loaded rules, the same footing iron rules stand on; no hook blocks a violation.
+  { text: 'OwnMind has team standards: every member\'s AI follows the same rules automatically, so nobody breaks them by accident', anchor: 'ownmind_upload_standard' },
 ];
 
 /**
