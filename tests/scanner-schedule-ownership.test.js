@@ -36,7 +36,16 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
-const codeOnly = (src) => src.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+/**
+ * Source with comments removed — block comments too, not only `#` lines.
+ *
+ * The slices below are cut with indexOf('register-scanner-task.ps1'). A `<# … #>` help block
+ * that happened to name that script before the gate would silently move the boundary and
+ * leave the gate assertion looking at nothing.
+ */
+const codeOnly = (src) => src
+  .replace(/<#[\s\S]*?#>/g, '')
+  .split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
 
 const { taskBelongsToInstall } = require('../scripts/install-helpers/scheduler-task-owner.cjs');
 
@@ -106,6 +115,33 @@ const healthy = (state, actions, dir, expected, message) => eachShell(
   { PS_STATE: state, PS_ACTIONS: actions, PS_DIR: dir },
   expected, message,
 );
+
+/**
+ * Run Get-TaskActionText over a fake task and return the string, under every shell present.
+ *
+ * `$taskExpr` is PowerShell that evaluates to a task-shaped object — the real thing comes
+ * from Get-ScheduledTask, which does not exist off Windows, so the shape is reproduced with
+ * pscustomobject. That is a stand-in for the OS, not for our own code: the function under
+ * test is the shipped one (IR-128).
+ */
+function actionTextOf(taskExpr) {
+  const results = SHELLS.map((exe) => {
+    const script = `${read(HEALTH_PS1)}\n$t = ${taskExpr}\n'[' + (Get-TaskActionText $t) + ']'`;
+    const r = spawnSync(exe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+      encoding: 'utf8',
+    });
+    assert.equal(r.status, 0, `${exe} exited ${r.status}: ${r.stderr}`);
+    const m = r.stdout.trim().match(/^\[([\s\S]*)\]$/);
+    assert.ok(m, `${exe} returned no bracketed value: ${JSON.stringify(r.stdout)}`);
+    return m[1];
+  });
+  // Brackets, so a trailing space is visible in the diff rather than trimmed away by the
+  // assertion — the null-Actions case turns on exactly that space.
+  for (const v of results) assert.equal(v, results[0], 'the shells disagree on the action text');
+  return results[0];
+}
+
+const action = (exe, args) => `[pscustomobject]@{ Execute = ${exe}; Arguments = ${args} }`;
 
 // The action string Windows reports for a real registration, taken from the one measured in
 // v1.26.124. `ADAMS` is the same task seen from the installation that does not own it —
@@ -179,6 +215,49 @@ describe('what the repair treats as a healthy schedule', () => {
   });
 });
 
+describe('reading the actions off a task', () => {
+  // The gate's whole evidence comes through this function. A version returning '' would put
+  // every ownership check on the "cannot tell" branch, collapsing the gate to the
+  // pre-v1.26.130 behaviour with every source-text assertion in this file still green.
+
+  it('flattens executable and arguments', { skip: noPowerShell }, () => {
+    const t = `[pscustomobject]@{ Actions = @(${action("'wscript.exe'", String.raw`'"C:\x\run-hidden.vbs"'`)}) }`;
+    assert.equal(actionTextOf(t), 'wscript.exe "C:\\x\\run-hidden.vbs"');
+  });
+
+  it('keeps every action, not just the first', { skip: noPowerShell }, () => {
+    // A task can carry several; dropping the later ones would hide the one naming the install.
+    const t = `[pscustomobject]@{ Actions = @(${action("'a.exe'", "'1'")}, ${action("'b.exe'", "'2'")}) }`;
+    assert.equal(actionTextOf(t), 'a.exe 1 b.exe 2');
+  });
+
+  it('survives an action with no arguments', { skip: noPowerShell }, () => {
+    const t = `[pscustomobject]@{ Actions = @(${action("'a.exe'", '$null')}) }`;
+    assert.equal(actionTextOf(t), 'a.exe ');
+  });
+
+  it('yields blank-ish text when the actions cannot be read', { skip: noPowerShell }, () => {
+    // Get-ScheduledTask can return a task whose actions this user may not read. What matters
+    // is that the result is whitespace, because that is what Test-TaskBelongsToInstall treats
+    // as "cannot tell" — the branch that must never trigger a re-registration.
+    for (const t of ['[pscustomobject]@{ Actions = $null }', '[pscustomobject]@{ Actions = @() }']) {
+      const text = actionTextOf(t);
+      assert.equal(text.trim(), '', `expected whitespace, got ${JSON.stringify(text)}`);
+      belongs(text, String.raw`C:\Users\Adam\.ownmind`, true,
+        'unreadable actions must not convict a task');
+    }
+  });
+
+  it('returns empty for no task at all', { skip: noPowerShell }, () => {
+    assert.equal(actionTextOf('$null'), '');
+  });
+
+  it('flattens newlines, because the self-check parses this as one line', { skip: noPowerShell }, () => {
+    const t = `[pscustomobject]@{ Actions = @(${action("'a.exe'", '"x`r`ny"')}) }`;
+    assert.equal(actionTextOf(t), 'a.exe x y');
+  });
+});
+
 describe('ensure-scanner-schedule.ps1 uses the rule', () => {
   it('the gate consults ownership, not just presence and state', () => {
     const src = codeOnly(read(HELPER_PS1));
@@ -194,14 +273,45 @@ describe('ensure-scanner-schedule.ps1 uses the rule', () => {
       'the ownership rule must have one home on the Windows side');
   });
 
-  it('the verification after repairing checks ownership too', () => {
+  it('the verification after repairing checks ownership, and fails on it', () => {
     // Re-registering is what fixes this, and register-scanner-task.ps1 replaces the task
     // with -Force. If it somehow did not, saying "repaired" would be the v1.17.66 defect
     // again: reporting success onto a machine that still has nothing working.
+    //
+    // Fail-Schedule is asserted as well as the call, because asserting only the call leaves
+    // two live mutations: dropping the `-not`, and swapping Fail-Schedule for a Write-Host.
     const src = codeOnly(read(HELPER_PS1));
     const after = src.slice(src.lastIndexOf('register-scanner-task.ps1'));
-    assert.match(after, /Test-TaskBelongsToInstall|Test-ScheduleHealthy/,
+    assert.match(after, /if \(-not \(Test-TaskBelongsToInstall/,
       'nothing confirms the re-registered task belongs to this installation');
+    const check = after.slice(after.indexOf('if (-not (Test-TaskBelongsToInstall'));
+    assert.match(check.slice(0, check.indexOf('\n}')), /Fail-Schedule/,
+      'the ownership check after repairing does not fail the run, so "repaired" is still printed');
+  });
+
+  it('the failure says what the task points at', () => {
+    // The reason this defect survived from v1.26.79 is that the report never carried the
+    // path. A failure message that omits it again teaches nobody anything.
+    const src = codeOnly(read(HELPER_PS1));
+    const after = src.slice(src.lastIndexOf('register-scanner-task.ps1'));
+    assert.match(after, /\$afterActions/,
+      'the mismatch is reported without the action text that would identify the other install');
+  });
+
+  it('asks about the same installation the registration writes', () => {
+    // register-scanner-task.ps1 hardcodes the Windows profile, and self-check.cjs compares
+    // against os.homedir(). A repair resolving it any other way cannot converge: it would
+    // reject the task, re-register the profile path, reject it again, and report a failure
+    // every day forever. All three have to compute one value.
+    const src = codeOnly(read(HELPER_PS1));
+    assert.match(src, /\$InstallDir = Join-Path \$env:USERPROFILE '\.ownmind'/,
+      'the repair resolves the install directory differently from the script that registers the task');
+    assert.doesNotMatch(src, /OWNMIND_DIR/,
+      'an install-path override is absent from the environment when the daily update runs, '
+      + 'so it cannot be the value the three sides agree on');
+    const register = codeOnly(read('scripts/windows/register-scanner-task.ps1'));
+    assert.match(register, /Join-Path \$env:USERPROFILE '\.ownmind'/,
+      'the registration side moved; the repair now compares against something else');
   });
 
   it('reverse control: the gate slice really is the part before the repair', () => {

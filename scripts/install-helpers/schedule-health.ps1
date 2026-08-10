@@ -39,6 +39,32 @@ function Get-ComparablePath {
 
 <#
 .SYNOPSIS
+  A task's actions flattened to one line, or '' when there is no task and nothing to read.
+.DESCRIPTION
+  This lives here rather than beside its caller because it is the only part of the new
+  evidence-gathering, and a version of it that returns '' unconditionally would put every
+  ownership check back on the "cannot tell" branch - collapsing the gate to exactly the
+  pre-v1.26.130 behaviour with the whole suite still green. It has to be executable by a test.
+
+  Two behaviours worth stating rather than leaving to be rediscovered:
+    - $null | ForEach-Object runs the block once with $_ = $null, so a task whose Actions
+      cannot be read yields " " rather than "". Whitespace is what Test-TaskBelongsToInstall
+      already treats as "cannot tell", so the outcome is right - but by way of a PowerShell
+      quirk, not by an obvious property of the code.
+    - Newlines are flattened because self-check.cjs parses its own copy of this output as a
+      single line, and the two are meant to be reading the same thing.
+.PARAMETER Task
+  A scheduled task object, or $null.
+#>
+function Get-TaskActionText {
+  param($Task)
+  if (-not $Task) { return '' }
+  $joined = ($Task.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' '
+  return ($joined -replace '\r?\n', ' ')
+}
+
+<#
+.SYNOPSIS
   Does the task's action list drive this installation?
 .DESCRIPTION
   Mirrors taskBelongsToInstall() in scheduler-task-owner.cjs, including its refusal to
