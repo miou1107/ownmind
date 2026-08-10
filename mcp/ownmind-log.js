@@ -80,11 +80,13 @@ const IMMEDIATE_FLUSH_EVENTS = new Set([
 // getFullYear/Month/Date. Around midnight, the 8-hour UTC-vs-Taipei gap caused the test to
 // look at the wrong file and flake. Per timezone discipline, OwnMind defines "today"
 // in the user's local timezone.
-export function localDateOnly(date) {
-  return date.getFullYear() + '-' +
-    String(date.getMonth() + 1).padStart(2, '0') + '-' +
-    String(date.getDate()).padStart(2, '0');
-}
+//
+// v1.26.124: the definition moved to shared/local-date.js, because keeping it here made it
+// reachable only from the MCP — and the Node hooks, which write into the same log directory
+// and read the same update marker, had each grown their own UTC copy. Re-exported so the
+// existing importers (and tests) keep working.
+export { localDateOnly } from '../shared/local-date.js';
+import { localDateOnly } from '../shared/local-date.js';
 
 /**
  * Write a structured log event to ~/.ownmind/logs/YYYY-MM-DD.jsonl

@@ -10,6 +10,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { localDateOnly } from '../shared/local-date.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -149,7 +150,12 @@ describe('v1.19.7 scenario 16 — after 3 consecutive blocks, the 4th downgrades
     runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
 
     // Read the archive and grab the last event.
-    const archive = path.join(tmpHome, '.ownmind', 'logs', `${new Date().toISOString().slice(0, 10)}.jsonl`);
+    // v1.26.124: localDateOnly, not toISOString().slice(0, 10). The hook names this file by
+    // the local date now, so a UTC name here looks for a file that does not exist for the
+    // eight hours a UTC+8 machine runs ahead — which is exactly the flake v1.20.1 recorded
+    // when the MCP and its test disagreed the same way. Importing the helper rather than
+    // restating it means the test cannot drift from the hook again.
+    const archive = path.join(tmpHome, '.ownmind', 'logs', `${localDateOnly(new Date())}.jsonl`);
     assert.ok(fs.existsSync(archive), 'archive should exist');
     const lines = fs.readFileSync(archive, 'utf8').trim().split('\n').filter(Boolean);
     const lastEvent = JSON.parse(lines[lines.length - 1]);

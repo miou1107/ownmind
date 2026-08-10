@@ -18,6 +18,7 @@ import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
 import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
+import { localDateOnly, localIsoTimestamp } from '../shared/local-date.js';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,8 +33,12 @@ function logEvent(event, extra = {}) {
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
     const now = new Date();
-    const ts = now.toISOString().replace('Z', '+00:00');
-    const dateStr = now.toISOString().slice(0, 10);
+    // v1.26.124: local, not UTC. The MCP writes into this same directory using the local
+    // date, so a UTC filename here put the two halves of one day's events in two files for
+    // the eight hours a UTC+8 machine is a day ahead. The timestamp moves with it, so a
+    // line's own date and the name of the file holding it cannot disagree.
+    const ts = localIsoTimestamp(now);
+    const dateStr = localDateOnly(now);
     // v1.26.95: `details: extra`, not `...extra`. The batch endpoint reads e.details and
     // nothing else, so spreading the fields flat meant every one of them was discarded on
     // arrival — the same defect fixed in the two .sh hooks. This copy is the one Windows
@@ -185,7 +190,13 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
     const lock = path.join(dir, '.update-lock');
     const marker = path.join(dir, '.last-update-check');
 
-    const today = new Date().toISOString().slice(0, 10);
+    // v1.26.124: local, not UTC — and the reason this one matters more than the log
+    // filename. The shell sibling has always computed this marker with `date +%Y-%m-%d`,
+    // and the MCP now agrees. While this line read UTC, the two hooks disagreed about
+    // whether today's update had run for the whole 00:00–08:00 window on a UTC+8 machine:
+    // each saw the other's marker as belonging to a different day, redid the update, and
+    // rewrote the marker so the next session disagreed the other way.
+    const today = localDateOnly();
     let last = '';
     try { last = fs.readFileSync(marker, 'utf8').trim(); } catch {}
     if (last === today) return;

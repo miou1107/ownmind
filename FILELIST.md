@@ -1,5 +1,69 @@
 # OwnMind 檔案結構
 
+## v1.26.124 修改（四道防線裡有兩道從來沒擋過任何東西）
+
+新檔：
+```
+shared/local-date.js                            — localDateOnly / localIsoTimestamp。「今天」的
+                                                   單一定義，四個檔案共用。標頭記錄了實測到的
+                                                   三方不一致：shell 掛勾 08-10、MCP 08-10、
+                                                   Node 掛勾 08-09，同一時刻
+shared/cacheable-rules.js                       — isCacheableRule / filterCacheableRules。
+                                                   規則快取收「任一消費者需要的」：帶
+                                                   verification（commit 引擎）或帶
+                                                   lint_validator（Stop 掛勾）。兩個寫入者共用，
+                                                   否則誰後寫誰決定對方看得到什麼
+scripts/install-helpers/scheduler-task-owner.cjs — taskBelongsToInstall()。排程任務是不是這次
+                                                   安裝建的。純函式、零相依，所以不在 Windows
+                                                   也測得到；讀不到 actions 視為「無法判斷」
+
+tests/local-date-agreement.test.js              — 12 條。本地日期規則、shell 與 JS 一致性、
+                                                   東經時區的反向控制、四個共用日誌目錄的程式
+                                                   不得再用 UTC 算日期的守門測試
+tests/pre-commit-secret-baseline.test.js        — 8 條。用修復前真實重現的那段外洩內容，逐一
+                                                   涵蓋三個曾經靜默放行的出口；三條反向控制
+                                                   （乾淨程式碼、空 staging、名字嚇人但內容是
+                                                   散文）確保修法不會退化成「什麼都擋」
+tests/cacheable-rules.test.js                   — 12 條。含 mutation control：證明舊的
+                                                   verification-only 過濾真的會讓驗證器消失
+tests/windows-scanner-schedule.test.js          — 11 條。install.sh 的 Windows 分支 + 排程歸屬
+                                                   判斷。兩者都寫成任何平台都能跑
+```
+
+修改檔：
+```
+hooks/ownmind-git-pre-commit.js                 — 金鑰掃描移到所有鐵律出口之前（step 0）；
+                                                   secretGuardReported 讓有 secret-guard 鐵律
+                                                   時 baseline 退場、不重複報告；迴圈後補上
+                                                   backstop；bypassSet 上移，OWNMIND_BYPASS=all
+                                                   與 BASELINE 仍放行並寫稽核列；快取寫入改用
+                                                   filterCacheableRules
+hooks/ownmind-session-start.js                  — 日誌檔名、時間戳、.last-update-check 全部改用
+                                                   本地日期
+hooks/ownmind-reply-lint.js                     — spoolEvents 的檔名改用本地日期；localDateOnly
+                                                   走 main() 內受保護的動態 import（規格只允許
+                                                   Node 內建做靜態 import）
+mcp/index.js                                    — runAutoUpdate 的「今天」改用本地日期；兩處
+                                                   快取寫入改用 filterCacheableRules
+mcp/ownmind-log.js                              — localDateOnly 改為從 shared/ 再匯出，既有
+                                                   匯入者不受影響
+install.sh                                      — 排程 case 補 msys*|cygwin*|win32*) 分支：呼叫
+                                                   register-scanner-task.ps1、帶
+                                                   -ExecutionPolicy Bypass、註冊後回頭確認任務
+                                                   存在、全程不丟棄 stderr（IR-002）
+scripts/install-helpers/self-check.cjs          — 排程檢查一併讀 actions，經
+                                                   taskBelongsToInstall 確認屬於這次安裝
+
+tests/reply-lint-hook-v197.test.js              — 日誌檔名改用共用的 localDateOnly（原本用 UTC，
+                                                   正是本版修掉的表達式）
+```
+
+文件：
+```
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md — 1.26.123 → 1.26.124
+CHANGELOG.md / FILELIST.md                                          — 本版紀錄
+```
+
 ## v1.26.122 修改（讓整套測試在 Windows 上跑不完的那個檔案）
 
 修改檔：

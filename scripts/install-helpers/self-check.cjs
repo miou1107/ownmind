@@ -36,6 +36,7 @@ const execFileAsync = promisify(execFile);
 const { safeSpawn } = require('./safe-spawn.cjs');
 // v1.26.106 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
 const { readTextFileSync, stripNulEscapes } = require('./read-text-file.cjs');
+const { taskBelongsToInstall } = require('./scheduler-task-owner.cjs');
 
 const HOME = os.homedir();
 const OWNMIND_DIR = path.join(HOME, '.ownmind');
@@ -791,8 +792,25 @@ async function checkScheduler() {
     // v1.17.66: passing a shell flag used to wrap the command in cmd.exe, which would eat
     // the `|` and produce a false "Select-Object is not recognized" failure (hit on both
     // Alice's and Bob's machines). Now we go through safeSpawn — no shell, with windowsHide.
+    // v1.26.124: ask for the task's actions as well as its state.
+    //
+    // A task named 'OwnMind Usage Scanner' is machine-global, so this check answered
+    // "does this machine have one" when the question is "did this install produce one".
+    // Caught by installing into a throwaway HOME on a machine that already had OwnMind:
+    // the sandbox registered nothing at all — install.sh had no Windows branch — and the
+    // report still read `[ OK ] scheduler  Task Scheduler state=Ready`, because it had
+    // found the task belonging to the real installation in C:\Users\Vin\.ownmind.
+    //
+    // The practical effect is worse than one wrong line: every machine that ever had
+    // OwnMind would pass this check forever, however broken the current install is, and
+    // this is the check that exists to notice usage collection dying.
+    //
+    // State first, then the arguments of every action on one line, so the parse below
+    // stays a split on the first newline.
     const r = await safeSpawn('powershell.exe',
-      ['-NoProfile', '-Command', "Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State"],
+      ['-NoProfile', '-Command',
+        "$t = Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -ErrorAction SilentlyContinue; "
+        + "if ($t) { $t.State; (($t.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ') -replace '\\r?\\n', ' ' }"],
       { timeout: CIM_TIMEOUT_MS });
     if (!r.ok) {
       // v1.26.106 - this reported only r.error, which for a timeout is the literal string
@@ -805,13 +823,24 @@ async function checkScheduler() {
           ? `Query exceeded ${CIM_TIMEOUT_MS}ms. The task may still be healthy - check with: Get-ScheduledTask -TaskName 'OwnMind Usage Scanner'`
           : 'Requires Windows + PowerShell');
     }
-    const state = r.stdout.trim();
-    if (state === 'Ready' || state === 'Running') {
-      return pass('scheduler', `Task Scheduler state=${state}`);
-    }
+    const lines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const state = lines[0] || '';
+    const actions = lines.slice(1).join(' ');
     if (!state) {
       return fail('scheduler', 'Task Scheduler entry not found for "OwnMind Usage Scanner"',
         'Run: powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
+    }
+    // v1.26.124: the task exists — but is it ours? See scheduler-task-owner.cjs for the
+    // measured false pass this closes, and for why an unreadable action list is treated as
+    // "cannot tell" rather than "wrong".
+    if (!taskBelongsToInstall(actions, OWNMIND_DIR)) {
+      return fail('scheduler',
+        `Task Scheduler entry points at another installation, not ${OWNMIND_DIR}`,
+        'A task from an older or different OwnMind directory is registered. Re-run: '
+        + 'powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
+    }
+    if (state === 'Ready' || state === 'Running') {
+      return pass('scheduler', `Task Scheduler state=${state}`);
     }
     return warn('scheduler', `Task Scheduler state=${state}`,
       'Check Task Scheduler UI or re-run register-scanner-task.ps1');
