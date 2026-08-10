@@ -27,6 +27,12 @@ exist, which is a 404. The difference is not cosmetic: 500s are what an operator
 decide whether something is broken, and these were produced by nothing worse than a typo or
 a client still calling a route that has been renamed.
 
+**Nothing shipped was calling these paths.** `memory/stats` and `memory/recent` appear
+nowhere in `mcp/`, `client/src`, `hooks/`, `shared/` or `scripts/`; they were reached by the
+sweep tool itself. So no feature was down. What was real is the shape: any typo, any client
+left on a renamed route, and any future literal path shadowed by `/:id` produces a 500 that
+says the server broke.
+
 Five more routes take the same parameter and had the same behaviour: `PUT /:id`,
 `PUT /:id/disable`, `PUT /:id/enable`, `PUT /:id/revert`, `GET /:id/history`.
 
@@ -43,7 +49,26 @@ Five more routes take the same parameter and had the same behaviour: `PUT /:id`,
 Deliberately stricter than `parseInt`: `parseInt('12abc')` is `12`, so a fat-fingered path
 would quietly return row 12 — a real row, belonging to someone, with no error anywhere.
 
+## Why 404 rather than 400
+
+400 has a case: `/api/memory/12abc` is a malformed request, and answering 404 tells a buggy
+client "that row is not there", which sends them looking in the database instead of at their
+string interpolation.
+
+404 wins anyway. The `:id` segment is *path*, not a field — `/api/memory/stats` is a path
+that genuinely does not exist, and the router cannot tell "you meant an id and fumbled it"
+apart from "you meant a route that was never there". Answering 400 to `/api/memory/stats`
+would be the more confusing of the two lies. The route already collapses "no such row" and
+"not your row" into one 404, so collapsing "not an id" into it matches what it already
+discloses.
+
 ## What this does not change
 
-Other routers were checked in the same sweep and do not have this shape. Nothing else in
-the memory router changes; every existing behaviour for well-formed ids is untouched.
+No other router has a literal path shadowed by `/:id`, so nowhere else was a real endpoint
+answering 500. The underlying shape did exist one route over in `handoff.js` and inside
+`/:id/revert`, and both are fixed here. Every existing behaviour for well-formed ids is
+untouched.
+
+The routers that parse ids with `parseInt` (`admin.js`, `broadcast.js`, `bug-reports.js`)
+are a milder version of the same question — `parseInt('abc')` is `NaN`, which Postgres also
+rejects, but they would read row 12 for `12abc`. Left as follow-up, deliberately.
