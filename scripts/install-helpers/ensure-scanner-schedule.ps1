@@ -50,10 +50,30 @@ function Fail-Schedule {
   exit 1
 }
 
-# A disabled task is not a healthy task. Get-ScheduledTask returns one happily, and for
-# the user the outcome is identical to having no task: it never fires, no data arrives.
-# Checking presence alone would call Adam's machine healthy in one of the two ways it can
-# be broken.
+# v1.26.130 - the rule for "is this schedule healthy" lives in one dot-sourceable file so it
+# can be executed by a test off Windows, and so it stays the twin of the JS rule the
+# self-check reports with. Missing is a hard failure rather than a fall back to the old
+# presence-only gate: silently answering the weaker question is the defect being fixed.
+$healthHelper = Join-Path $OwnMindDir 'scripts\install-helpers\schedule-health.ps1'
+if (-not (Test-Path $healthHelper)) {
+  Fail-Schedule "schedule-health.ps1 missing at $healthHelper"
+}
+. $healthHelper
+
+<#
+.SYNOPSIS
+  The task's actions on one line, or '' when there is no task or nothing readable.
+#>
+function Get-TaskActionText {
+  param($Task)
+  if (-not $Task) { return '' }
+  $joined = ($Task.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' '
+  return ($joined -replace '\r?\n', ' ')
+}
+
+# Three ways a registered task is not a working schedule, all of them measured on real
+# machines, all of them decided by Test-ScheduleHealthy: disabled (v1.26.79), owned by
+# another installation (v1.26.130, Adam and Eric), and a state we could not read.
 #
 # -ErrorAction SilentlyContinue so an absent task is $null rather than a throw. Both reads
 # below are written out rather than wrapped in a helper: the thing worth being able to see
@@ -62,11 +82,12 @@ function Fail-Schedule {
 #
 # -TaskPath '\' pins the query to the root folder, which is where register-scanner-task.ps1
 # creates it (Register-ScheduledTask with no -TaskPath). Without it, a same-named task in
-# some other folder joins the result, $task becomes an array, and `$task.State -ne
-# 'Disabled'` stops being a boolean: PowerShell filters the array instead, and a non-empty
-# array is truthy. A stranger's task would then vouch for ours being healthy.
+# some other folder joins the result and $task becomes an array — its .State would then be
+# an array too, and the health question stops having a single answer.
 $task = Get-ScheduledTask -TaskName $TaskName -TaskPath '\' -ErrorAction SilentlyContinue
-if ($task -and $task.State -ne 'Disabled') {
+if ($task -and (Test-ScheduleHealthy -State $task.State `
+                                     -Actions (Get-TaskActionText $task) `
+                                     -OwnMindDir $OwnMindDir)) {
   Write-Host "OK:schedule:already_registered"
   exit 0
 }
@@ -91,6 +112,13 @@ if (-not $task) {
 }
 if ($task.State -eq 'Disabled') {
   Fail-Schedule "task '$TaskName' exists but is disabled after re-registering"
+}
+# register-scanner-task.ps1 replaces the task with -Force, so this should always hold. It is
+# asserted anyway for the same reason the presence check above exists: this repo has shipped
+# a release where registration reported success and the machine had nothing (v1.17.66), and
+# "repaired" written onto a machine that is still broken is worse than an honest failure.
+if (-not (Test-TaskBelongsToInstall -Actions (Get-TaskActionText $task) -OwnMindDir $OwnMindDir)) {
+  Fail-Schedule "task '$TaskName' still points at another installation after re-registering (register exit $registerExit)"
 }
 
 Write-Host "OK:schedule:repaired"
