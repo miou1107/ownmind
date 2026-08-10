@@ -138,8 +138,8 @@ export function createEventsRouter(deps = {}) {
 
       // ── 2. Model allowlist (batch query; skipped when no events) ─
       const modelKeys = [...new Set(
-        processed.map((p) => `${p.event.tool}::${p.event.model ?? ''}`)
-          .filter((k) => !k.endsWith('::'))
+        processed.filter((p) => p.event.model)
+          .map((p) => `${p.event.tool}::${p.event.model}`)
       )];
       const knownModels = await lookupKnownModels({ query }, modelKeys);
       // v1.26.135: one audit row per model, ever — not one per message. The
@@ -147,6 +147,10 @@ export function createEventsRouter(deps = {}) {
       // v1.26.60 dropped cost, so every message from every current model was
       // landing an `unknown_model` row: 253,409 of them, and nothing else in
       // the table. A signal that fires on every message is not a signal.
+      // Model strings are deliberately not normalised. `claude-opus-5` and
+      // `Claude-Opus-5` are two keys here and two keys in the db/024 index, so
+      // the two stay consistent — and a model arriving under a spelling nobody
+      // has seen before genuinely is news worth one row.
       const unknownKeys = modelKeys.filter((k) => !knownModels.has(k));
       const alreadyReported = await lookupReportedUnknownModels({ query }, unknownKeys);
       // Model keys this batch may still report. A key is claimed (deleted from
@@ -337,10 +341,20 @@ async function isExempt({ query }, userId) {
   return res.rows[0] || null;
 }
 
+// Keys are `tool::value`. Split on the FIRST separator only: `tool` never
+// contains `::`, but the values do not have that guarantee — `model` is free
+// text and `session_id` comes from the client. A plain split('::') would hand
+// the query a truncated value, which silently answers "no match" and, for the
+// unknown-model path, means every batch re-attempts a write forever.
+function splitKey(k) {
+  const i = k.indexOf('::');
+  return [k.slice(0, i), k.slice(i + 2)];
+}
+
 async function lookupKnownModels({ query }, keys) {
   const known = new Set();
   if (keys.length === 0) return known;
-  const pairs = keys.map((k) => k.split('::'));
+  const pairs = keys.map(splitKey);
   const tools = pairs.map((p) => p[0]);
   const models = pairs.map((p) => p[1]);
   const res = await query(
@@ -358,7 +372,7 @@ async function lookupKnownModels({ query }, keys) {
 async function lookupReportedUnknownModels({ query }, keys) {
   const reported = new Set();
   if (keys.length === 0) return reported;
-  const pairs = keys.map((k) => k.split('::'));
+  const pairs = keys.map(splitKey);
   const tools = pairs.map((p) => p[0]);
   const models = pairs.map((p) => p[1]);
   const res = await query(
@@ -375,7 +389,7 @@ async function lookupReportedUnknownModels({ query }, keys) {
 async function loadSessionMaxCumulative({ query }, userId, sessionKeys) {
   const map = new Map();
   if (sessionKeys.length === 0) return map;
-  const pairs = sessionKeys.map((k) => k.split('::'));
+  const pairs = sessionKeys.map(splitKey);
   const tools = pairs.map((p) => p[0]);
   const sessions = pairs.map((p) => p[1]);
   const res = await query(

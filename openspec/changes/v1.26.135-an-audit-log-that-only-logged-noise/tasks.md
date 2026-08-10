@@ -64,9 +64,62 @@ Three findings, all real, all fixed:
       rows untouched, named arbiter drops the duplicate `unknown_model` and still inserts
       other types. Rollback verified — production still 0 rows, no index
 
-## 7. Ship
+## 7. Second review round
+
+An independent pass, told not to trust §5. Two Important, four Minor, no Critical.
+
+- [x] **Important — the mechanism this change is named after had no test.** Neutering
+      `lookupReportedUnknownModels()` to always return empty, and separately dropping the
+      `alreadyReported` filter, both left the suite 33/33 green. The cross-batch case asserted
+      only `state.audits.length === 1`, which the fake index produces on its own. §5 fixed the
+      in-batch half of exactly this defect and left the cross-batch half. Added the
+      `auditAttempts === 0` assertion; both mutants now go red.
+- [x] **Important — the duplicate-collapsing DELETE was quadratic.** `DELETE ... USING ...
+      WHERE a.id > b.id` materialises every duplicate *pair*, and this table's shape is the
+      worst case: 253,409 rows over six keys. Measured on a Postgres 16 seeded to that exact
+      shape — planner estimate 95,539,188 join rows, still running when cancelled at 3m59s.
+      There is no `statement_timeout` on the pool and the migration runner blocks `listen()`,
+      so it would not abort, it would hold the server down. §6 validated this with two rows,
+      which is why the cost never showed. Rewritten as `id NOT IN (SELECT min(id) ... GROUP
+      BY)`: **527 ms**, same survivors.
+- [x] **Minor — a model name containing `::` was truncated by the key split.** Keys are
+      `tool::model` strings and `split('::')` took the wrong half, so the lookup asked about a
+      model nobody had written and always answered "not reported" — one INSERT attempt per
+      batch forever, absorbed by the index, visible nowhere. `splitKey()` splits on the first
+      separator only; applied to the session lookup too, which had the same latent bug.
+- [x] **Minor — rollback direction documented.** See the deploy note below.
+- [x] **Minor — cross-user and case-sensitivity semantics written into the spec.** Both were
+      correct but undocumented, and the admin audit page's `user_id` filter makes the first
+      one easy to misread.
+- [x] **Minor — doc drift.** FILELIST said 4 new tests, CHANGELOG said three review findings.
+
+## 8. Re-verify after the second round
+
+- [x] Mutant C — `lookupReportedUnknownModels` returns empty → `does not record unknown_model
+      again for a model already reported` goes red
+- [x] Mutant D — ignore the lookup result (`new Set(unknownKeys)`) → same test goes red
+- [x] Mutant E — `splitKey` back to `k.split('::')` → the embedded-`::` test goes red
+- [x] Restored from backup each time; 34/34 green
+- [x] `db/024` verbatim against Postgres 16 seeded to production's shape (253,409 rows over
+      six keys, plus `token_regression`, `fingerprint_mismatch`, a NULL-`tool` duplicate pair
+      and a pair with no `model` key): DELETE 253,403 in 527 ms, survivors are exactly the
+      lowest id per key, every other event type untouched, and the NULL-`tool` and no-`model`
+      duplicates left alone — a unique index treats those NULLs as distinct, so collapsing
+      them would have deleted rows the index permits. Index then built on top. Second run
+      `DELETE 0`, third run on an empty table `DELETE 0` — idempotent both ways.
+- [x] Named arbiter re-checked against the real index: same model under a different `tool`
+      inserts, `token_regression` for the same model inserts twice, the duplicate
+      `unknown_model` from a different user is dropped
+- [x] Test container removed
+
+## 9. Ship
 
 - [x] Full test suite
 - [x] CHANGELOG + FILELIST + version bump
 - [ ] Deploy — needs Vin. `db/024` must run before the new image serves traffic; the index
-      build is on an empty table, so it is instant
+      build is on an empty table, so it is instant.
+      **Rolling back is not free.** If the image goes back to v1.26.131 or earlier while the
+      index stays, the old `writeAudit` has no `ON CONFLICT` and every `unknown_model` write
+      past the first raises a unique violation, logged as `usage_audit_log write failed` —
+      about 6,700 error lines a day. No data is lost. Drop
+      `uq_usage_audit_unknown_model` as part of any rollback.

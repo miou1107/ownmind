@@ -86,3 +86,37 @@ be written once per affected message. The uniqueness constraint introduced for
 - **GIVEN** a session whose cumulative token count regresses twice
 - **WHEN** both events are ingested
 - **THEN** two `token_regression` rows exist
+
+## ADDED Requirement: the report is per (tool, model), not per user
+
+An `unknown_model` row SHALL be scoped by `(tool, model)` only. Neither the lookup nor the
+index is scoped by `user_id`, so the first user to send a never-seen model claims the single
+row on everyone's behalf; the `user_id` column records who happened to be first, not who has
+used the model.
+
+This is deliberate — the row answers "has anyone been told about this model yet", and one row
+per user would restore a large fraction of the volume this change exists to remove. It is
+stated here because the admin audit page supports filtering by `user_id`
+(`src/routes/usage/admin-audit.js`), and an unqualified reading of that filter would suggest
+a user never touched a model when in fact somebody else simply reported it first.
+
+### Scenario: a second user sends a model already reported by the first
+
+- **GIVEN** user A has already caused an `unknown_model` row for `(claude-code, some-model)`
+- **WHEN** user B ingests events carrying that same model
+- **THEN** no second `unknown_model` row is written
+- **AND** filtering the audit page by user B shows no `unknown_model` row for that model
+
+## ADDED Requirement: model strings are compared verbatim
+
+Model strings SHALL NOT be case-folded, trimmed or otherwise normalised before being used as
+part of the uniqueness key. `claude-opus-5`, `Claude-Opus-5` and `claude-opus-5 ` are three
+distinct keys, in the application set and in the index alike.
+
+A model arriving under a spelling that has not been seen before is itself worth one row, and
+keeping the application and the index on identical rules is what stops the two disagreeing.
+
+### Scenario: same model, different casing
+
+- **WHEN** events carrying `claude-opus-5` and `Claude-Opus-5` are ingested
+- **THEN** one `unknown_model` row exists for each

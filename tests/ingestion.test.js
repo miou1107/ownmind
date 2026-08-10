@@ -366,6 +366,39 @@ describe('POST /api/usage/events', () => {
     });
     assert.equal(res.body.accepted, 1);
     assert.equal(state.audits.length, 1, 'no second row for a model seen before');
+    // Row count alone cannot see this: the fake index would collapse the write
+    // anyway. What has to hold is that the router asked the table first and did
+    // not even attempt it — that is the whole of "ever", and it is the only
+    // assertion that goes red if lookupReportedUnknownModels stops working.
+    assert.equal(state.auditAttempts ?? 0, 0,
+      'the router must not attempt a write for a model reported in an earlier batch');
+  });
+
+  it('a model name containing the key separator is still matched, not truncated', async () => {
+    // `model` is free-text VARCHAR(128). The batch's lookup keys are
+    // `tool::model` strings, so a model carrying its own `::` splits into the
+    // wrong value — the lookup then asks about a model nobody ever wrote and
+    // always answers "not reported", so every batch re-attempts the write for
+    // the rest of time. The index would absorb it, which is exactly why nothing
+    // would ever surface it.
+    const state = {
+      events: [], knownModels: new Set(),
+      audits: [{ user_id: 1, tool: 'claude-code', event_type: 'unknown_model',
+        details: { model: 'vendor::weird::model' } }]
+    };
+    const app = buildApp({ queryFn: makeFakeQuery(state), user: { id: 1 } });
+    const res = await request(app, {
+      method: 'POST', path: '/api/usage/events',
+      body: { events: [{
+        tool: 'claude-code', session_id: 's1', message_id: 'm1',
+        model: 'vendor::weird::model', ts: '2026-04-21T09:00:00Z',
+        input_tokens: 0, output_tokens: 0, cumulative_total_tokens: 1
+      }] }
+    });
+    assert.equal(res.body.accepted, 1);
+    assert.equal(state.auditAttempts ?? 0, 0,
+      'the router recognised the model as already reported despite the embedded ::');
+    assert.equal(state.audits.length, 1);
   });
 
   it('keeps token_regression per-message — the unknown_model rule must not spread', async () => {
