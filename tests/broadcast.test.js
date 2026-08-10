@@ -722,6 +722,8 @@ describe('ensureUpgradeReminder', () => {
     const query = async (sql, params) => {
       calls.push({ sql, params });
       if (/role = 'super_admin'/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
+      // v1.26.129: the job now retires the auto reminders it supersedes before inserting.
+      if (/UPDATE broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
       if (/SELECT id FROM broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
       if (/INSERT INTO broadcast_messages/.test(sql)) return { rowCount: 1, rows: [{ id: 88 }] };
       return { rows: [] };
@@ -735,6 +737,8 @@ describe('ensureUpgradeReminder', () => {
   it('skips insert when already exists (idempotent)', async () => {
     const query = async (sql) => {
       if (/role = 'super_admin'/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
+      // v1.26.129: the job now retires the auto reminders it supersedes before inserting.
+      if (/UPDATE broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
       if (/SELECT id FROM broadcast_messages/.test(sql)) return { rowCount: 1, rows: [{ id: 99 }] };
       throw new Error('should not reach INSERT');
     };
@@ -751,6 +755,8 @@ describe('ensureUpgradeReminder', () => {
     const query = async (sql, params) => {
       calls.push({ sql, params });
       if (/role = 'super_admin'/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
+      // v1.26.129: the job now retires the auto reminders it supersedes before inserting.
+      if (/UPDATE broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
       // SELECT only matches active, returns empty here
       if (/SELECT id FROM broadcast_messages/.test(sql)) {
         assert.match(sql, /ends_at IS NULL OR ends_at > NOW/);
@@ -768,6 +774,8 @@ describe('ensureUpgradeReminder', () => {
     // Fix M1: match on err.code instead of the err.message string
     const query = async (sql) => {
       if (/role = 'super_admin'/.test(sql)) return { rowCount: 1, rows: [{ id: 1 }] };
+      // v1.26.129: the job now retires the auto reminders it supersedes before inserting.
+      if (/UPDATE broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
       if (/SELECT id FROM broadcast_messages/.test(sql)) return { rowCount: 0, rows: [] };
       if (/INSERT INTO broadcast_messages/.test(sql)) {
         const err = new Error('duplicate key value violates unique constraint');

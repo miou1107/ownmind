@@ -26,6 +26,7 @@ import { getRandomTip } from '../shared/tips.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
+import { queueUpdateBanner } from '../shared/update-banner.js';
 import {
   detectTriggerFromContext,
   sanitizeErrorMessage,
@@ -33,6 +34,7 @@ import {
   shouldSkipDuplicate,
   resolveClientTool,
   resolveProjectName,
+  getClientVersion,
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
@@ -1641,6 +1643,9 @@ async function runAutoUpdate() {
       step,
       error: err?.code || err?.message || String(err).slice(0, 120),
     });
+    // v1.26.129: whichever of the MCP and the bash hook takes the lock first does that day's
+    // update, so reporting the outcome in only one of them makes the message a coin flip.
+    queueUpdateBanner({ outcome: 'failed', step });
   };
 
   try {
@@ -1726,6 +1731,9 @@ async function runAutoUpdate() {
     cleanup();
     try { fs.writeFileSync(MARKER_FILE, today); } catch {}
     logEvent('update_applied', { source: 'mcp' });
+    // Read the version now, not earlier: the pull just changed it, and CLIENT_VERSION is the
+    // value this process cached at module load — i.e. the version the user was leaving.
+    queueUpdateBanner({ outcome: 'applied', version: getClientVersion() });
 
     // v1.17.62: after a successful upgrade, re-send one heartbeat that reads the **new**
     // package.json from disk, so the server sees the new version without waiting for the user

@@ -1,5 +1,56 @@
 # OwnMind 檔案結構
 
+## v1.26.129 修改（副本執行少了 shared/ ＋ 自動更新不再靜悄悄）
+
+新檔：
+```
+shared/update-banner.js                          — 新增、背景更新結果的訊息文案 + 排進
+                                                    banner-pending.jsonl（下次開對話印出來）。
+                                                    成功講版號、失敗講白話步驟並問要不要回報、
+                                                    沒有新版就什麼都不寫（沉默要繼續代表沒事）
+hooks/lib/queue-update-banner.js                 — 新增、給 shell updater 用的 CLI 殼。
+                                                    applied 不帶版號時自己讀 package.json
+                                                    （讀取必須發生在 pull 之後）
+tests/update-banner.test.js                      — 12 tests：成功/失敗文案、未知步驟不吞掉、
+                                                    無新版不寫、版號讀不到就不寫（「已更新到 ? 版」
+                                                    比沉默還糟）、多行訊息不能拆成兩行 JSON、
+                                                    append 不覆蓋、目錄不存在會自己建、寫不進去回 false
+tests/hook-lib-resolution.test.js                — 5 tests：LIB_DIR 優先指工作目錄、沒有任何呼叫點
+                                                    還用 $SCRIPT_DIR/lib、被呼叫的模組都存在，
+                                                    以及照真實環境重建的反向測試（複製到沒有
+                                                    shared/ 的資料夾會 ERR_MODULE_NOT_FOUND）
+tests/upgrade-reminder-threshold.test.js         — 7 tests：落後一版/幾版不吵、落後夠多才提醒、
+                                                    邊界釘死、新 minor 的早期 patch 只提醒舊 minor、
+                                                    文案講的是「更新壞了」不是「有新版」。
+                                                    比對用的是 broadcast-filter 真的在用的
+                                                    isHigher，不是自己重寫一份
+tests/session-context-field-coverage.test.js     — 5 tests：init 回的每個欄位都必須被算繪、
+                                                    列為「不該進 session 開場」並寫理由，
+                                                    或列進已知缺口（目前 5 個，只能減不能增）。
+                                                    新增欄位而沒人處理就會紅
+```
+
+修改檔：
+```
+hooks/ownmind-session-start.sh                   — 7 個 lib 呼叫點全部改走 LIB_DIR
+                                                    （優先 $OWNMIND_DIR/hooks/lib，因為 shared/
+                                                    在它旁邊）。這修掉 v1.26.127 會讓記憶完全
+                                                    載不進來的問題，也修掉 conditional-sync
+                                                    一直載入失敗、退化成「API 慢」的老問題。
+                                                    另外每個更新結果分支都排一則 banner
+src/jobs/nightly-upgrade-reminder.js             — 門檻從「不是最新版就提醒」改成落後
+                                                    LAG_PATCHES(10) 版以上；標題改成
+                                                    「自動更新好像沒在運作」；文案附回報出路。
+                                                    每次執行先把自己取代掉的舊自動廣播收掉
+                                                    （它們從來沒寫 ends_at、後台又不准撤銷
+                                                    is_auto，只改門檻等於沒改）
+mcp/index.js                                     — 更新成功/失敗都排一則 banner。MCP 跟 bash
+                                                    hook 搶同一把鎖、誰先搶到誰做，只接一支
+                                                    等於擲骰子
+hooks/ownmind-session-start.js                   — 同上（這支是 Windows 上真正在做更新的那支）
+tests/broadcast.test.js                          — 既有的 4 個 stub 補上新的 UPDATE 分支
+```
+
 ## v1.26.128 修改（團隊規範送到了 hook 面前、然後被丟掉）
 
 修改檔：
