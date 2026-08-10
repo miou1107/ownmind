@@ -48,8 +48,16 @@ export function createNarrativeRouter({
       // back to the user as 502 on every call. Shrink until it fits, measuring the body
       // that will actually be posted. A payload already inside the budget passes through
       // untouched, so the 7-day report is unchanged.
-      const { sections: forModel, notes: condensedNotes } =
+      const { sections: forModel, notes: condensedNotes, fits } =
         condenseSections(redacted, { measure: requestBytes });
+      if (!fits) {
+        // Posting it anyway is still the best move — the ceiling was measured, not
+        // published, so it may go through. But the last time this failed it took replaying
+        // the request by hand from the server to find out why, because the only trace was a
+        // generic 502. Say the number here so the next one is one log line.
+        console.warn('[me-narrative] payload still %d bytes after condensing (range=%s)',
+          requestBytes(forModel), range);
+      }
       const hash = computeDataHash(forModel);
       const cacheKey = `${range}:${hash}`;
       const hit = insightsCache.get(cacheKey);

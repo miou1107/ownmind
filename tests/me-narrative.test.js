@@ -228,6 +228,10 @@ describe('GET /api/me/narrative/insights — oversized payloads', () => {
     const res = await get(app, '/api/me/narrative/insights?range=7d');
     assert.equal(res.status, 200);
     assert.equal(res.body.condensed, undefined, 'the range that always worked must be untouched');
-    assert.ok(!JSON.stringify(seen.messages).includes('_condensed'));
+    // The system prompt legitimately mentions `_condensed` (it tells the model what to do
+    // when it is present), so check the data message rather than the whole conversation.
+    const userMessage = seen.messages.find((m) => m.role === 'user');
+    assert.ok(!userMessage.content.includes('_condensed'),
+      'the data sent for a fitting range must carry no condensing marker');
   });
 });
