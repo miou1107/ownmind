@@ -23,6 +23,7 @@ import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
+import { parseMemoryId } from '../utils/memory-id.js';
 import { tokenize, buildSearchWhere } from '../utils/memory-search-query.js';
 import {
   withReportSuggestion,
@@ -72,6 +73,21 @@ async function checkSyncToken(userId, syncToken) {
 }
 
 const router = Router();
+
+// Every `:id` route is guarded here rather than at each handler. `/:id` is registered
+// after the literal paths, so anything that matched none of them — `/api/memory/stats`,
+// a typo, a client still calling a renamed route — arrives as an id. Passing it through
+// produced `invalid input syntax for type integer` and a 500 "Query failed", which reads
+// as "the server broke" when what happened is that the path does not exist. Measured on
+// production 2026-08-10: `/api/memory/stats` and `/api/memory/recent` 500'd on every call.
+//
+// One gate instead of six also means a `:id` route added later cannot forget it.
+router.param('id', (req, res, next, raw) => {
+  const parsed = parseMemoryId(raw);
+  if (!parsed.ok) return res.status(404).json({ error: 'Memory not found' });
+  req.memoryId = parsed.id;
+  next();
+});
 
 // v1.26.64 — the columns GET /search reads. Named rather than `*`, matching the
 // allow-list in shared/memory-search-result.js: `*` was dragging `previous_content` (a
