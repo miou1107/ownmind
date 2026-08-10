@@ -1,5 +1,43 @@
 # OwnMind 檔案結構
 
+## v1.26.139 修改（每次跑測試都有紅字，每次紅的都不是同一個）
+
+新檔：
+```
+tests/helpers/app-server.js                     — startServer(app)：等 'listening' 才讀位址、
+                                                   檢查位址可用（不可用就報實際看到什麼，
+                                                   不拿 undefined 去組網址）、接 listen 的
+                                                   'error' 事件（原本沒接會變成毫無資訊的
+                                                   「測試超時」）、close() 先
+                                                   closeAllConnections 再關（否則 fetch 留下
+                                                   的長連線會讓回呼不觸發）
+tests/test-server-helper.test.js                — 9 tests：網址一定帶真實埠號、位址不可用要
+                                                   報錯而不是回一個壞網址（含 port 0）、
+                                                   listen 出錯要浮上來而不是掛到超時、
+                                                   close 會 resolve；並釘住那四支實際紅過的
+                                                   測試不准回頭自己開 listen(0)
+```
+
+改檔：
+```
+tests/login-rate-limit.test.js                  — 改成整支共用一台伺服器。原本每個請求開關
+                                                   一台，並行跑全套時 address() 回不出可用
+                                                   位址，埠號以 undefined 進網址，失敗訊息是
+                                                   bad port，看起來像頻率限制壞了
+tests/stage-1b-flip-root-retire-me.test.js      — 同上，改成整支共用一台
+tests/selfcheck-endpoint.test.js                — 每個測試各自建 app，所以維持一個請求一台，
+                                                   但改走 startServer（原本在 listen(0) 的
+                                                   下一行就同步讀 address()）
+tests/self-check-memory-load.test.js            — 同上
+scripts/update.sh                               — 掛勾同步從只複製 *.sh 擴大到 *.js 與 *.cjs
+                                                   （~/.claude/hooks 底下的 .js 副本原本會
+                                                   停在舊版；選擇同步而不是刪除，因為夠舊的
+                                                   安裝可能真的指向那裡）。lib/ 複製的
+                                                   2>/dev/null || true 改成失敗就明說
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.139 與三語同步
+```
+
 ## v1.26.138 修改（開場的記憶載入變成空的，而且回報 ok）
 
 新檔：
