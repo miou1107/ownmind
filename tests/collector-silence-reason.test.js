@@ -61,10 +61,13 @@ async function emptyDir() {
 }
 
 describe('the reason vocabulary is closed', () => {
-  it('is exactly the six codes the spec names', () => {
+  it('is exactly the nine codes the spec names', () => {
+    // v1.26.142 added the three that describe a failure of the collector rather than an
+    // absence of data. The first six are produced by an adapter that returned; these are
+    // produced when the adapter threw, hung, or was never run.
     assert.deepEqual([...REASONS].sort(), [
-      'account_changed', 'no_install', 'no_new_activity',
-      'ok', 'sqlite_missing', 'unreadable'
+      'account_changed', 'adapter_error', 'adapter_timeout', 'no_install',
+      'no_new_activity', 'ok', 'skipped_by_config', 'sqlite_missing', 'unreadable'
     ]);
   });
 

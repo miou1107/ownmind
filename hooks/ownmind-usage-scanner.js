@@ -12,17 +12,24 @@
 import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
+import { execFile as _execFile } from 'child_process';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
+import { runAutoUpdate } from '../shared/auto-update.js';
+import { queueUpdateBanner } from '../shared/update-banner.js';
 import { readCredentials, getClientVersion } from '../shared/helpers.js';
 import {
-  runScan, readOffsets, writeOffsetsAtomic,
+  runScan, readOffsets, writeOffsetsAtomic, reportCollectorState,
   accountFingerprint, cursorForAccount, DEFAULT_CACHE_PATH
 } from '../shared/scanners/base.js';
+import { ADAPTER_ERROR, ADAPTER_TIMEOUT, SKIPPED_BY_CONFIG } from '../shared/scanners/reasons.js';
 import { createClaudeCodeAdapter } from '../shared/scanners/claude-code.js';
 import { createCodexAdapter } from '../shared/scanners/codex.js';
 import { createOpenCodeAdapter } from '../shared/scanners/opencode.js';
 import { createCursorAdapter } from '../shared/scanners/cursor.js';
 import { createAntigravityAdapter } from '../shared/scanners/antigravity.js';
+
+const execFileAsync = promisify(_execFile);
 
 const HOME = os.homedir();
 const LOG_PATH = path.join(HOME, '.ownmind', 'logs', 'scanner.log');
@@ -34,6 +41,118 @@ async function log(line) {
 }
 
 const STALE_LOCK_MS = 6 * 60 * 60 * 1000;  // 6 hours
+
+/**
+ * v1.26.142 — how long one adapter may take before the run stops waiting for it.
+ *
+ * A throw is caught, logged and reported. A scan that never finishes is not: the loop
+ * stays on that tool, the adapters after it never run, and the whole run dies whenever
+ * the scheduler gives up. The visible result is one account whose first tool checks in
+ * every two hours while the four behind it are frozen on a date months old — which is
+ * what the records of one member look like.
+ *
+ * Ten minutes. The measured worst case is a few seconds for a long history, so this is a
+ * ceiling for a machine far outside anything seen, not a target. The scheduler's own
+ * interval is two hours, so no run can overlap the next.
+ */
+const ADAPTER_DEADLINE_MS = 10 * 60 * 1000;
+
+/**
+ * v1.26.142 — the daily upgrade, run from the scheduler.
+ *
+ * Shares `.update-lock` and `.last-mcp-update-check` with the MCP, so on a machine that
+ * also runs an AI tool the two cannot both pull, and whichever gets there first settles
+ * the day for both. The marker's name is left as it is: renaming it would make every
+ * installed machine believe today's check had not happened and run one extra upgrade, for
+ * nothing but a tidier filename.
+ *
+ * Every failure is swallowed. The scanner's job is usage collection; an upgrade that
+ * cannot run must not cost the account its data.
+ */
+async function maybeUpgrade({ apiUrl, apiKey }) {
+  try {
+    const dir = path.join(HOME, '.ownmind');
+    const result = await runAutoUpdate({
+      ownmindDir: dir,
+      markerFile: path.join(dir, '.last-mcp-update-check'),
+      lockFile: path.join(dir, '.update-lock'),
+      source: 'scanner',
+      execFile: execFileAsync,
+      logEvent: (event, details) => {
+        void log(`[scanner] ${event} ${JSON.stringify(details)}`);
+        void postActivityEvent({ apiUrl, apiKey, event, details });
+      },
+      queueBanner: (b) => { try { queueUpdateBanner(b); } catch { /* best effort */ } }
+      // No post-upgrade heartbeat here, unlike the MCP. That one exists because an MCP
+      // process lives for a whole conversation and would report the version it started
+      // with for hours. This process exits in seconds and the next run, two hours later,
+      // reads the new version off disk — the server corrects itself without another code
+      // path to keep right.
+    });
+    if (result?.outcome && result.outcome !== 'skipped') {
+      await log(`[scanner] upgrade ${result.outcome}`
+        + `${result.step ? ` step=${result.step}` : ''}`
+        + `${result.version ? ` version=${result.version}` : ''}`);
+    }
+  } catch (err) {
+    await log(`[scanner] upgrade check failed: ${err?.message || err}`);
+  }
+}
+
+/**
+ * Fire-and-forget activity event, so an upgrade run by the scheduler is as visible on the
+ * server as one run by the MCP. Failures are silent by design: this is a report about a
+ * report.
+ */
+async function postActivityEvent({ apiUrl, apiKey, event, details }) {
+  if (!apiUrl || !apiKey) return;
+  try {
+    await fetch(`${String(apiUrl).replace(/\/+$/, '')}/api/activity/batch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        events: [{
+          ts: new Date().toISOString(),
+          event,
+          tool: 'scanner',
+          source: 'scanner',
+          details: details || {}
+        }]
+      }),
+      signal: AbortSignal.timeout(10_000)
+    });
+  } catch { /* best effort */ }
+}
+
+/**
+ * Reject if `work` has not settled within the deadline.
+ *
+ * The underlying work is not cancellable — nothing here can reach inside a wedged file
+ * read — so this abandons the wait rather than the operation. That is the whole point:
+ * the remaining adapters get to run, and the tool that hung gets to say so. The process
+ * exits when its event loop drains, as before.
+ *
+ * @param {string} tool
+ * @param {Promise<any>} work
+ * @param {number} [deadlineMs]
+ */
+function withAdapterDeadline(tool, work, deadlineMs = ADAPTER_DEADLINE_MS) {
+  let timer;
+  const deadline = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(
+        `${tool} did not finish within ${Math.round(deadlineMs / 1000)}s`);
+      // A flag, not a message match: the reason code is chosen from this, and matching on
+      // wording would silently pick the wrong code the day somebody rewrites the sentence.
+      err.__adapterTimeout = true;
+      reject(err);
+    }, deadlineMs);
+    // Node keeps the process alive for a pending timer. Without this an otherwise finished
+    // run would sit here for the rest of the deadline before exiting.
+    timer.unref?.();
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Self-locking: prevents the scheduled scanner from colliding with a manual run.
@@ -161,6 +280,18 @@ async function main() {
       .filter((spec) => !skip.has(spec.tool))
       .map((spec) => spec.factory({ scannerVersion, machine }));
 
+    // v1.26.142 — a tool named in OWNMIND_SKIP_TOOLS leaves the adapter list above and,
+    // until now, left the account's records entirely: no row, no date, nothing to
+    // distinguish it from a tool the member has never installed. The variable is meant for
+    // backfills and debugging, which makes it exactly the kind of thing that gets set on a
+    // machine once and stays set.
+    for (const spec of adapterSpecs.filter((s) => skip.has(s.tool))) {
+      await reportCollectorState(
+        { apiUrl, apiKey, logger: { warn: (m) => { void log(m); } } },
+        { tool: spec.tool, reason: SKIPPED_BY_CONFIG, scannerVersion, machine }
+      );
+    }
+
     // v1.26.72 — collected and returned, so the self-check can compare "what this
     // machine just did" against "what the server says it now holds". Until now this loop
     // wrote its findings only to a log file on the machine with the problem.
@@ -168,7 +299,8 @@ async function main() {
 
     for (const adapter of adapters) {
       try {
-        const result = await runScan({ adapter, apiUrl, apiKey, accountChanged });
+        const result = await withAdapterDeadline(
+          adapter.tool, runScan({ adapter, apiUrl, apiKey, accountChanged }));
         scanned.push({
           tool: adapter.tool,
           sent: result.sent ?? 0,
@@ -204,12 +336,36 @@ async function main() {
         // A thrown adapter sent nothing and cannot say why, which is not the same as
         // "nothing to send". Recorded so the self-check reports it rather than skipping
         // the tool entirely.
+        const reason = err?.__adapterTimeout ? ADAPTER_TIMEOUT : ADAPTER_ERROR;
         scanned.push({
           tool: adapter.tool, sent: 0, accepted: 0, sessions: 0,
-          reason: null, error: err.message
+          reason, error: err.message
         });
+        // v1.26.142 — and reported off the machine. Until now the line above was the
+        // whole of it: correct, complete, and in a file on the one computer nobody is
+        // looking at. `runScan` sends a heartbeat on every outcome it reaches, so the
+        // only way for a tool to have no row at all is to end up here — which is exactly
+        // how a member who works in Codex all day came to have no `codex` row for six
+        // weeks, indistinguishable from never having installed it.
+        await reportCollectorState(
+          { apiUrl, apiKey, logger: { warn: (m) => { void log(m); } } },
+          { tool: adapter.tool, reason, scannerVersion, machine, error: err.message }
+        );
       }
     }
+
+    // v1.26.142 — and then, once a day, the upgrade.
+    //
+    // Deliberately after the scan: an upgrade rewrites the files this process is running
+    // from, and a run that finishes on the code it started with is one less thing to
+    // reason about. The next run, two hours later, is the new version.
+    //
+    // This is here because it is the only thing on these machines that runs on its own.
+    // The full upgrade used to happen only when an AI tool opened an MCP session, so a
+    // member whose editor OwnMind does not register with kept a scanner checking in daily
+    // for eight weeks on the version she installed in June. Nothing was broken; there was
+    // nobody to ask her machine to update.
+    await maybeUpgrade({ apiUrl, apiKey });
 
     // No credentials in here. The caller that needs them reads them itself; a secret
     // that travels in a return value ends up in somebody's log eventually.
@@ -219,7 +375,7 @@ async function main() {
   }
 }
 
-export { main, acquireLock, releaseLock };
+export { main, acquireLock, releaseLock, withAdapterDeadline, ADAPTER_DEADLINE_MS };
 
 // Only run main when invoked directly; importing this module does not trigger it (test-friendly).
 // fileURLToPath handles Windows backslash and URL-encoding differences — a plain `import.meta.url`

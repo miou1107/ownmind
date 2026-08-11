@@ -165,6 +165,83 @@ export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = P
 }
 
 /**
+ * v1.26.142 — a thrown message is written by somebody else and goes to a server.
+ *
+ * The messages this carries are Node's, and Node's file errors quote the path in full:
+ * `ENOENT: no such file or directory, open '/Users/alice/Projects/acme-merger/...'`. The
+ * collector's business is when a tool was used, never what it was used on, and a folder
+ * name can be the most sensitive thing on the machine. The home directory is replaced with
+ * `~`, which keeps every part of the path that helps diagnose and drops the two that
+ * identify — the account name and anything above it.
+ *
+ * The match stops at a path boundary. `/home/vin` is a prefix of `/home/vincent`, and a
+ * plain substring replace would turn a colleague's path into `~cent/...` — which is not a
+ * leak, but is a diagnostic message that reads as corrupted, and the person reading it has
+ * no way to tell which it is.
+ *
+ * Both slash directions are tried: the path inside a Node error and the one in USERPROFILE
+ * do not always agree about separators, and matching only one of them leaks the other.
+ *
+ * @param {string} text
+ * @param {string} homeDir
+ * @returns {string}
+ */
+export function redactHome(text, homeDir = os.homedir()) {
+  let out = String(text ?? '');
+  const candidates = [homeDir, homeDir?.replace(/\\/g, '/'), homeDir?.replace(/\//g, '\\')]
+    .filter((h) => typeof h === 'string' && h.length > 1);
+  for (const home of new Set(candidates)) {
+    const escaped = home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`${escaped}(?=[/\\\\]|$|['"\\s])`, 'g'), '~');
+  }
+  return out;
+}
+
+/**
+ * v1.26.142 — the check-in for a tool that never got as far as a scan.
+ *
+ * `runScan` sends a heartbeat on every outcome it knows about, including all the empty
+ * ones. The outcomes it does not know about are the ones where the adapter itself failed:
+ * a throw, a hang, or a tool dropped by `OWNMIND_SKIP_TOOLS` before the loop. Those used
+ * to produce a line in a local log file and no row anywhere, which reads from the server
+ * as a tool the member has never installed.
+ *
+ * Errors are swallowed on purpose. This runs inside the scanner's own failure handler; a
+ * diagnostic that can end the run is worse than the defect it reports.
+ *
+ * @param {object} deps
+ * @param {string} deps.apiUrl
+ * @param {string} deps.apiKey
+ * @param {Function} [deps.fetchFn]
+ * @param {object} [deps.logger]
+ * @param {object} beat
+ * @param {string} beat.tool
+ * @param {string} beat.reason      - one of the collector-failure codes in reasons.js
+ * @param {string} [beat.scannerVersion]
+ * @param {string} [beat.machine]
+ * @param {string} [beat.error]     - the thrown message; the server truncates it
+ * @returns {Promise<boolean>} whether the report reached the server
+ */
+export async function reportCollectorState(
+  { apiUrl, apiKey, fetchFn = fetch, logger = null, homeDir = os.homedir() },
+  { tool, reason, scannerVersion, machine, error }
+) {
+  if (!apiUrl || !apiKey || !tool || !reason) return false;
+  const heartbeat = { tool, reason, scanner_version: scannerVersion, machine };
+  // Sent only when there is one. An `error: undefined` survives JSON.stringify as an
+  // absent key, but an empty string does not, and the server would store the absence of
+  // a message as a message.
+  if (error) heartbeat.error = redactHome(String(error), homeDir);
+  try {
+    await postBatch({ apiUrl, apiKey, fetchFn }, { events: [], heartbeat });
+    return true;
+  } catch (err) {
+    logger?.warn?.(`[scanner] could not report ${tool} ${reason}: ${err?.message || err}`);
+    return false;
+  }
+}
+
+/**
  * Full scan → post → commit-offset pipeline for a single adapter.
  *
  * @param {object} deps

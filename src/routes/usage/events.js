@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query as defaultQuery } from '../../utils/db.js';
 import defaultAuth from '../../middleware/auth.js';
 import logger from '../../utils/logger.js';
-import { isReason } from '../../../shared/scanners/reasons.js';
+import { isReason, isCollectorFailure } from '../../../shared/scanners/reasons.js';
 import {
   recomputeDaily as defaultRecompute,
   deriveTouchedCombos
@@ -551,10 +551,37 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
        reason,
        reasonProvided]
     );
+    // v1.26.142 — the message that says *what* broke.
+    //
+    // `reason` is a closed set in a sized column and has to stay that way, so the thrown
+    // text cannot live there. It goes to the audit table instead, where it is queryable
+    // and bounded, and only for the two codes that mean the collector itself failed. Any
+    // heartbeat being allowed to write free text here would turn this table back into the
+    // log file the whole change exists to replace.
+    //
+    // Written after the upsert and in its own try: an audit row that fails must not cost
+    // the account its heartbeat, which is the more important of the two records.
+    if (isCollectorFailure(reason) && typeof heartbeat.error === 'string' && heartbeat.error) {
+      await writeAudit({ query }, userId, heartbeat.tool, 'collector_error', {
+        reason,
+        machine,
+        scanner_version: heartbeat.scanner_version ?? null,
+        message: heartbeat.error.slice(0, COLLECTOR_ERROR_MAX_CHARS)
+      });
+    }
   } catch (err) {
     logger.error('heartbeat update failed', { error: err.message });
   }
 }
+
+/**
+ * v1.26.142 — how much of a thrown message survives into the audit row.
+ *
+ * Long enough for a stack-free error plus the path it names; short enough that a machine
+ * failing every two hours cannot fill the table. Anything longer belongs in the local log,
+ * which still holds the untruncated line.
+ */
+const COLLECTOR_ERROR_MAX_CHARS = 1000;
 
 async function writeAudit({ query }, userId, tool, eventType, details) {
   try {

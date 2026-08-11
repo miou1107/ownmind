@@ -27,6 +27,14 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const mcpSource = readFileSync(join(__dirname, '..', 'mcp', 'index.js'), 'utf8');
+/**
+ * v1.26.142 — the upgrade moved to shared/auto-update.js so the scheduled scanner could
+ * run it too, which is what reaches machines whose editor does not speak MCP to OwnMind.
+ * The event split these tests exist to protect moved with it, so the assertions follow the
+ * code rather than the filename. The events themselves are now asserted by running the
+ * upgrade with an injected process runner, in tests/auto-update-shared.test.js.
+ */
+const updateSource = readFileSync(join(__dirname, '..', 'shared', 'auto-update.js'), 'utf8');
 const hookSource = readFileSync(join(__dirname, '..', 'hooks', 'ownmind-session-start.sh'), 'utf8');
 const dashboardHtml = readFileSync(join(__dirname, '..', 'legacy', 'admin-v1.26', 'index.html'), 'utf8');
 
@@ -34,7 +42,7 @@ test('P3: mcp/index.js no longer hardcodes update_ok (must split into update_app
   // Before: ` logEvent('update_ok', { source: 'mcp' });` appeared in the callback else branch.
   // After: the string should be gone entirely.
   assert.equal(
-    mcpSource.includes("logEvent('update_ok'"),
+    updateSource.includes("logEvent('update_ok'"),
     false,
     'update_ok must be retired in favor of update_applied (new commit pulled) and update_clean (no new version)'
   );
@@ -42,7 +50,7 @@ test('P3: mcp/index.js no longer hardcodes update_ok (must split into update_app
 
 test('P3: mcp/index.js must write update_applied for the "new commit pulled" case', () => {
   assert.match(
-    mcpSource,
+    updateSource,
     /logEvent\(['"]update_applied['"]/,
     'mcp/index.js must include logEvent("update_applied", ...) corresponding to the dashboard "updated" label'
   );
@@ -50,7 +58,7 @@ test('P3: mcp/index.js must write update_applied for the "new commit pulled" cas
 
 test('P3: mcp/index.js must write update_clean for the "no new version" case', () => {
   assert.match(
-    mcpSource,
+    updateSource,
     /logEvent\(['"]update_clean['"]/,
     'mcp/index.js must include logEvent("update_clean", ...) corresponding to the dashboard "no new version" label'
   );
@@ -62,12 +70,12 @@ test('P3: mcp/index.js must branch update_applied / update_clean explicitly (no 
   //   - new commit pulled + all steps succeeded → update_applied
   //   - no new commits (git log HEAD..origin/main empty) → update_clean
   assert.match(
-    mcpSource,
+    updateSource,
     /logEvent\(['"]update_applied['"]/,
     'mcp/index.js must write update_applied after pulling a new commit and all steps succeeding'
   );
   assert.match(
-    mcpSource,
+    updateSource,
     /logEvent\(['"]update_clean['"]/,
     'mcp/index.js must write update_clean when no new version is available; never silently complete'
   );
@@ -78,14 +86,14 @@ test('P3: mcp/index.js must explicitly write update_failed when any key step fai
   // Any step failure (fetch / log / pull / npm / update_sh) flows through fail() helper,
   // which writes update_failed with the step name.
   assert.match(
-    mcpSource,
+    updateSource,
     /logEvent\(['"]update_failed['"][^)]*step/,
     'update_failed event must carry a step field to identify which stage failed'
   );
   // Must cover every key step.
   for (const step of ['fetch', 'pull', 'npm', 'update_sh']) {
     assert.ok(
-      mcpSource.includes(`'${step}'`) || mcpSource.includes(`"${step}"`),
+      updateSource.includes(`'${step}'`) || updateSource.includes(`"${step}"`),
       `step="${step}" must appear in the update_failed path`
     );
   }
@@ -165,9 +173,9 @@ test('P3-lock: mcp/index.js LOCK_FILE acquire failure must write update_failed s
   //   The exclusive-create part is pinned in tests/update-lock-mutual-exclusion.test.js,
   //   which runs it rather than reading it.
   assert.match(
-    mcpSource,
-    /tryAcquireUpdateLock\(LOCK_FILE\)[\s\S]{0,700}step:\s*['"]lock['"]/,
-    'mcp/index.js must acquire through the shared lock and write update_failed step=lock on non-EEXIST failures'
+    updateSource,
+    /tryAcquireUpdateLock\(lockFile\)[\s\S]{0,700}step:\s*['"]lock['"]/,
+    'the upgrade must acquire through the shared lock and write update_failed step=lock on non-EEXIST failures'
   );
 });
 
