@@ -81,7 +81,12 @@ const HEARTBEAT_SQL = `
          COALESCE(u.name, u.email) AS user_name,
          h.machine,
          h.tool,
-         h.last_reported_at
+         h.last_reported_at,
+         -- v1.26.142. Without this column every row looks equally healthy, and a collector
+         -- that now reports its own failure every two hours would read as the freshest
+         -- thing on the machine. The detector needs to know the difference between a row
+         -- that means "I worked" and one that means "I broke".
+         h.reason
   FROM collector_heartbeat h
   JOIN users u ON u.id = h.user_id
   WHERE NOT EXISTS (

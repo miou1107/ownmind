@@ -31,6 +31,19 @@ import { createAntigravityAdapter } from '../shared/scanners/antigravity.js';
 
 const execFileAsync = promisify(_execFile);
 
+/**
+ * v1.26.142 — a logger whose own failure cannot end the run.
+ *
+ * `log()` awaits `fs.mkdir` and `fs.appendFile`. On a read-only home or a full disk those
+ * reject, and a rejection with no handler attached terminates the process on Node 15 and
+ * later. Every other call to `log()` in this file is awaited inside a `try`; these two are
+ * inside a synchronous callback that cannot await, so the handler is attached here instead.
+ *
+ * A collector that dies because it could not write a line about a collector that died is
+ * the same failure this release is about, one level up.
+ */
+const quietLogger = { warn: (m) => { log(m).catch(() => {}); } };
+
 const HOME = os.homedir();
 const LOG_PATH = path.join(HOME, '.ownmind', 'logs', 'scanner.log');
 const LOCK_PATH = path.join(HOME, '.ownmind', 'cache', 'scanner.lock');
@@ -69,8 +82,12 @@ const ADAPTER_DEADLINE_MS = 10 * 60 * 1000;
  * Every failure is swallowed. The scanner's job is usage collection; an upgrade that
  * cannot run must not cost the account its data.
  */
-async function maybeUpgrade({ apiUrl, apiKey }) {
+async function maybeUpgrade() {
+  const inFlight = [];
   try {
+    // Read here rather than taken from main(): this runs outside it now, and a credential
+    // that travels through a return value ends up in somebody's log eventually.
+    const { apiKey, apiUrl } = readCredentials();
     const dir = path.join(HOME, '.ownmind');
     const result = await runAutoUpdate({
       ownmindDir: dir,
@@ -79,8 +96,14 @@ async function maybeUpgrade({ apiUrl, apiKey }) {
       source: 'scanner',
       execFile: execFileAsync,
       logEvent: (event, details) => {
-        void log(`[scanner] ${event} ${JSON.stringify(details)}`);
-        void postActivityEvent({ apiUrl, apiKey, event, details });
+        // Collected rather than fired and forgotten. The direct-run handler exits the
+        // process as soon as main() resolves — it has to, or a wedged adapter's handle
+        // would keep it alive forever — and an exit cuts every request still in flight.
+        // These are the events that say whether the upgrade happened, on the machines
+        // where nobody would otherwise know, so losing them to the exit would remove the
+        // observability this change exists to add.
+        inFlight.push(log(`[scanner] ${event} ${JSON.stringify(details)}`).catch(() => {}));
+        inFlight.push(postActivityEvent({ apiUrl, apiKey, event, details }));
       },
       queueBanner: (b) => { try { queueUpdateBanner(b); } catch { /* best effort */ } }
       // No post-upgrade heartbeat here, unlike the MCP. That one exists because an MCP
@@ -96,6 +119,11 @@ async function maybeUpgrade({ apiUrl, apiKey }) {
     }
   } catch (err) {
     await log(`[scanner] upgrade check failed: ${err?.message || err}`);
+  } finally {
+    // postActivityEvent swallows its own errors and log() is wrapped above, so this
+    // settles rather than throws. In the finally so an upgrade that failed still gets its
+    // failure reported before the process goes.
+    await Promise.allSettled(inFlight);
   }
 }
 
@@ -287,7 +315,7 @@ async function main() {
     // machine once and stays set.
     for (const spec of adapterSpecs.filter((s) => skip.has(s.tool))) {
       await reportCollectorState(
-        { apiUrl, apiKey, logger: { warn: (m) => { void log(m); } } },
+        { apiUrl, apiKey, logger: quietLogger },
         { tool: spec.tool, reason: SKIPPED_BY_CONFIG, scannerVersion, machine }
       );
     }
@@ -348,25 +376,17 @@ async function main() {
         // how a member who works in Codex all day came to have no `codex` row for six
         // weeks, indistinguishable from never having installed it.
         await reportCollectorState(
-          { apiUrl, apiKey, logger: { warn: (m) => { void log(m); } } },
+          { apiUrl, apiKey, logger: quietLogger },
           { tool: adapter.tool, reason, scannerVersion, machine, error: err.message }
         );
       }
     }
 
-    // v1.26.142 — and then, once a day, the upgrade.
+    // The upgrade is deliberately NOT here. See the direct-run block at the end of the
+    // file: `main` is also imported and called as "run one scan" by the self-check, and an
+    // upgrade inside it would run under that check's 60-second budget, from inside the very
+    // script an upgrade launches.
     //
-    // Deliberately after the scan: an upgrade rewrites the files this process is running
-    // from, and a run that finishes on the code it started with is one less thing to
-    // reason about. The next run, two hours later, is the new version.
-    //
-    // This is here because it is the only thing on these machines that runs on its own.
-    // The full upgrade used to happen only when an AI tool opened an MCP session, so a
-    // member whose editor OwnMind does not register with kept a scanner checking in daily
-    // for eight weeks on the version she installed in June. Nothing was broken; there was
-    // nobody to ask her machine to update.
-    await maybeUpgrade({ apiUrl, apiKey });
-
     // No credentials in here. The caller that needs them reads them itself; a secret
     // that travels in a return value ends up in somebody's log eventually.
     return { machine, scannerVersion, scanned };
@@ -385,7 +405,24 @@ const isDirectRun = process.argv[1] && (() => {
   catch { return false; }
 })();
 if (isDirectRun) {
+  // v1.26.142 — the upgrade belongs to *this* entry point and to nothing else.
+  //
+  // `main` is exported, and the self-check imports it as `scan` to mean "run one scan and
+  // tell me what you found". Putting the upgrade inside main() therefore put a `git pull`
+  // and an `npm install` inside a check that runs under a 60-second budget — and the
+  // self-check is itself spawned from `update.sh`, which an upgrade is what launches. On
+  // a machine eight weeks behind, i.e. exactly the machines this is for, npm alone
+  // outlasts that budget: the check would time out having proven nothing, stamp its weekly
+  // marker anyway, and `process.exit(0)` out of the self-check while still holding the
+  // update lock — which five minutes later another process reclaims as stale and starts a
+  // second pull into the same directory, on top of the first one's orphaned children.
+  //
+  // Only a run started by the scheduler upgrades. Everything else just scans.
   main()
+    .then(async (result) => {
+      await maybeUpgrade();
+      return result;
+    })
     // v1.26.142 — exit rather than waiting for the event loop to drain.
     //
     // The per-adapter deadline stops the run waiting on a wedged scan, and the wedged scan

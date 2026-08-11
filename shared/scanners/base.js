@@ -188,8 +188,18 @@ export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = P
  */
 export function redactHome(text, homeDir = os.homedir()) {
   let out = String(text ?? '');
-  const candidates = [homeDir, homeDir?.replace(/\\/g, '/'), homeDir?.replace(/\//g, '\\')]
-    .filter((h) => typeof h === 'string' && h.length > 1);
+  const candidates = [
+    homeDir,
+    homeDir?.replace(/\\/g, '/'),
+    homeDir?.replace(/\//g, '\\'),
+    // v1.26.142 — the encoded form. Claude Code names each project directory after its
+    // path with the separators turned into dashes:
+    //   ~/.claude/projects/-Users-alice-SourceCode-acme-merger/
+    // Redacting only the prefix leaves that intact, so the account name and the project
+    // name both survive inside a path that has already been "redacted" — the two things
+    // this function exists to remove, in the one place they are hardest to notice.
+    homeDir?.replace(/[/\\]/g, '-')
+  ].filter((h) => typeof h === 'string' && h.length > 1);
   for (const home of new Set(candidates)) {
     const escaped = home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Case-insensitive. Windows paths are, and the case that reaches a Node error message
@@ -197,7 +207,15 @@ export function redactHome(text, homeDir = os.homedir()) {
     // case-sensitive match would send the account name through unredacted on the one
     // platform where it is most likely to differ. On a case-sensitive filesystem the cost
     // is redacting a path that differs from home only in case, which is a path nobody has.
-    out = out.replace(new RegExp(`${escaped}(?=[/\\\\]|$|['"\\s])`, 'gi'), '~');
+    // The lookahead is what keeps `/home/vin` from eating the start of `/home/vincent`.
+    // It has to admit every character a path can legitimately end against in prose: the
+    // separators, end of string, quotes and whitespace, and the punctuation an error
+    // message puts straight after a path — `"/Users/alice: permission denied"` and
+    // `"...alice, and more"` both went through unredacted while `:` and `,` were missing.
+    // `-` is in there for the encoded form above, where the next character is another
+    // dash. It costs an over-redaction on a sibling directory named `<home>-something`,
+    // which is a path nobody has and would be harmless if they did.
+    out = out.replace(new RegExp(`${escaped}(?=[/\\\\]|$|['"\\s:,;)\\]}-])`, 'gi'), '~');
   }
   return out;
 }
@@ -289,9 +307,12 @@ export async function runScan(deps) {
       if (sessions.length > 0) payload.sessions = sessions;
       await postBatch({ apiUrl, apiKey, fetchFn }, payload);
     }
-    // Still need to atomic-write offsets (Tier 2 session_date may advance).
+    // Still need to atomic-write offsets (Tier 2 session_date may advance). Re-read for
+    // the same reason as the write below: a late adapter must not erase what the ones
+    // after it committed while it was still running.
     if (Object.keys(offsetPatch).length > 0) {
-      const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
+      const newState = mergeState(
+        await readOffsets(cachePath), adapter.tool, offsetPatch, cumulativePatch);
       await writeOffsetsAtomic(cachePath, newState);
     }
     return {
@@ -318,7 +339,18 @@ export async function runScan(deps) {
   }
 
   // All batches succeeded → merge and atomic write.
-  const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
+  //
+  // v1.26.142 — merged onto a fresh read, not onto the snapshot taken at the top.
+  //
+  // The scanner's loop stopped being strictly sequential when the per-adapter deadline
+  // arrived: an adapter that is slow rather than wedged can finish after the run has
+  // moved on, and it would then write a whole file built from a snapshot older than the
+  // offsets the adapters behind it had already committed. Their progress would be erased,
+  // those tools would replay from an old position next run, and `session_cumulative`
+  // would go backwards. Re-reading here makes the write merge instead of clobber; the
+  // temp-file rename that follows was already atomic.
+  const newState = mergeState(
+    await readOffsets(cachePath), adapter.tool, offsetPatch, cumulativePatch);
   await writeOffsetsAtomic(cachePath, newState);
 
   return {

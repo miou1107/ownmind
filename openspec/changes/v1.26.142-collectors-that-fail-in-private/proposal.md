@@ -120,6 +120,47 @@ another program could read a stale marker and repeat the whole upgrade; and `red
 matches case-insensitively, because a Windows path in a Node error and the one in
 `USERPROFILE` do not always agree about case.
 
+## What the second review round changed
+
+Two of these would have made the release a net loss.
+
+1. **`main()` is not only the scheduler's entry point.** The self-check imports it as `scan`
+   to mean "run one scan and tell me what you found", and runs it under a 60-second budget.
+   Putting the upgrade inside `main()` therefore put `git pull` and `npm install` inside
+   that check — and the self-check is itself spawned from `update.sh`, which is what an
+   upgrade launches. On a machine eight weeks behind, the exact population this is for, npm
+   alone outlasts the budget: the check times out having proven nothing, stamps its weekly
+   marker anyway, and `process.exit(0)`s out of the self-check while still holding the
+   update lock, which five minutes later another process reclaims as stale and starts a
+   second pull into the same directory. Only a run started by the scheduler upgrades now;
+   everything else just scans.
+2. **The new heartbeats would have switched off the alert that finds this.**
+   `evaluateSilence` detects a dead collector by disagreement inside one machine: some tools
+   fresh, others frozen. That worked *because* a broken adapter stopped writing rows. As of
+   this release it writes one every two hours saying it failed — so without a change there,
+   every broken collector looks permanently fresh, and the machine that prompted all of
+   this would show five current rows and raise nothing. A failure heartbeat now counts as an
+   absence: it never makes a machine look alive, and it lands among the stale whatever its
+   age. `skipped_by_config` deliberately does not, because alerting on somebody's own
+   setting every two hours is how an alert gets muted.
+
+Also fixed: a slow-but-not-wedged adapter finishing after its deadline could overwrite the
+offsets the adapters behind it had committed, so the offsets write now merges onto a fresh
+read rather than a stale snapshot; `releaseUpdateLock` honours the token it is given, so a
+holder that overran can no longer delete its reclaimer's lock; the lock's stale threshold
+went from 5 minutes to 10, because the upgrade's own worst case is 280 seconds of
+legitimate work and twenty seconds of headroom is not headroom (the shell hook's copy moved
+with it, and the test that says the two agree now reads both numbers instead of restating
+them); the weekly marker is stamped only when the round-trip reached an answer, not when it
+timed out or found another scan already running; `redactHome` reaches the encoded project
+directory (`-Users-alice-SourceCode-…`) and stops at the punctuation an error message puts
+after a path; and the two fire-and-forget `log()` calls got handlers, since a rejection with
+none ends the process on Node 15 and later.
+
+Two test weaknesses the review named and both are closed: the npm.cmd assertion could be
+satisfied by a comment (it now strips comments first), and no test covered a `update_sh`
+failure or checked that a successful upgrade stamps the day.
+
 ### Known limitation, not fixed
 
 On Windows, `execFile` with `shell: true` and a timeout kills the shell and not the `npm`

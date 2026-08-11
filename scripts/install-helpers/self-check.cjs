@@ -1188,9 +1188,20 @@ async function runAllChecks({ quick = false } = {}) {
   // stamped after the check rather than before: a run that crashes partway leaves the
   // check due, which is the safe direction for a diagnostic.
   if (!quick || roundtripDue()) {
-    checks.push(await safeCheck('usage_roundtrip',
-      () => checkUsageRoundtrip({ apiUrl, apiKey, notify: !quick })));
-    stampRoundtrip();
+    const result = await safeCheck('usage_roundtrip',
+      () => checkUsageRoundtrip({ apiUrl, apiKey, notify: !quick }));
+    checks.push(result);
+    // v1.26.142 — stamped only when the check reached an answer.
+    //
+    // `checkUsageRoundtrip` returns `warn` for every way it can fail to find out: no
+    // credentials, the collector would not load, the scan timed out, another scan is
+    // already running, the server could not be asked. Stamping on those burns the weekly
+    // slot for seven days having proven nothing — and the "another scan is already
+    // running" case is not hypothetical, because this self-check is spawned from inside
+    // the update script the scanner itself runs.
+    //
+    // A pass or a fail both mean the question was answered. Only those close the week.
+    if (result?.status === 'pass' || result?.status === 'fail') stampRoundtrip();
   }
   return { checks, apiKey, apiUrl };
 }

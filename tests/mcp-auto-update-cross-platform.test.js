@@ -107,8 +107,14 @@ test('the upgrade: on Windows, use npm.cmd (so execFile can find it)', () => {
   // and checks both halves: npm.cmd, and the shell:true that CVE-2024-27980's patch made
   // necessary. What is left here is the one fact a source read can still add — that the
   // Windows name is chosen from the platform and not hardcoded either way.
+  // Comments stripped first. The shared module explains the Windows branch in prose, so a
+  // match against the raw file could be satisfied by the explanation of the rule instead of
+  // the rule — which is how this assertion would survive its own subject being deleted.
+  const code = updateSource
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n').map((l) => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
   assert.match(
-    updateSource,
+    code,
     /['"]win32['"][\s\S]{0,400}npm\.cmd|npm\.cmd[\s\S]{0,400}['"]win32['"]/,
     'must detect Windows and use npm.cmd; otherwise npm install ENOENTs on Windows'
   );

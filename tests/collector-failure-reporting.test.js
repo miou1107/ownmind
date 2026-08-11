@@ -23,6 +23,9 @@ const { buildSelfCheckReport } = await import('../shared/scanners/selfcheck.js')
 const { withAdapterDeadline, ADAPTER_DEADLINE_MS } =
   await import('../hooks/ownmind-usage-scanner.js');
 const { createEventsRouter } = await import('../src/routes/usage/events.js');
+const { evaluateSilence } = await import('../src/lib/collector-silence.js');
+const { renderMemberMessage, renderAdminMessage } =
+  await import('../src/lib/collector-silence-message.js');
 
 describe('the three collector-failure codes', () => {
   it('are recognised at the server boundary', () => {
@@ -150,6 +153,24 @@ describe('redactHome', () => {
     assert.equal(redactHome("open 'c:\\users\\Amy\\.codex\\x'", 'C:\\Users\\Amy'),
       "open '~\\.codex\\x'");
     assert.equal(redactHome('/Users/Alice/p', '/users/alice'), '~/p');
+  });
+
+  it('reaches the encoded project directory, not just the path prefix', () => {
+    // Claude Code names each project directory after its path with the separators turned
+    // into dashes. Redacting only the prefix left the account name sitting inside a path
+    // that had already been "redacted" — the hardest place in the message to notice it.
+    const out = redactHome(
+      "ENOENT: open '/Users/alice/.claude/projects/-Users-alice-SourceCode-acme/x.jsonl'",
+      '/Users/alice');
+    assert.equal(out.includes('alice'), false, `account name survived: ${out}`);
+    assert.match(out, /~\/\.claude\/projects\//, 'the diagnostic value is gone too');
+  });
+
+  it('stops at the punctuation an error message puts after a path', () => {
+    assert.equal(redactHome('/Users/alice: permission denied', '/Users/alice'),
+      '~: permission denied');
+    assert.equal(redactHome('/Users/alice, and more', '/Users/alice'), '~, and more');
+    assert.equal(redactHome('(/Users/alice)', '/Users/alice'), '(~)');
   });
 
   it('does not leave a fragment behind when one home is a prefix of another', () => {
@@ -389,5 +410,188 @@ describe('what the server does with a failure heartbeat', () => {
     assert.ok(beat);
     assert.equal(beat.params.includes('banana'), false);
     assert.equal(audit, undefined);
+  });
+});
+
+describe('the scanner does not exit out from under its own reports (source reads)', () => {
+  // These two read the file rather than run it, and that is a real weakness worth naming:
+  // driving it for real would need credentials, a fake server and five live adapters. What
+  // they pin is narrow but exact — that the collect-then-await pair is present and that the
+  // explicit exit is there — and both would fail the day somebody restores the simpler
+  // fire-and-forget version. The behaviour they stand in for is described here so the next
+  // person can decide whether it has become worth the harness.
+  // The direct-run handler calls process.exit(0) as soon as main() resolves. It has to: a
+  // wedged adapter's handle would otherwise keep the process alive forever, and the
+  // scheduler would stack another one next to it every two hours.
+  //
+  // An exit cuts every request still in flight. The upgrade's own events — did it happen,
+  // did it fail, at which step — are exactly the ones that matter on the machines nobody
+  // is watching, so firing them and forgetting them would remove the observability this
+  // change exists to add.
+
+  it('waits for the upgrade reports it started before returning', async () => {
+    const source = await import('node:fs')
+      .then((m) => m.readFileSync('hooks/ownmind-usage-scanner.js', 'utf8'));
+    const fn = source.slice(source.indexOf('async function maybeUpgrade'));
+    const body = fn.slice(0, fn.indexOf('\n}\n'));
+    assert.match(body, /inFlight\.push\(\s*postActivityEvent/,
+      'the activity events are fired and forgotten, so the exit will cut them');
+    assert.match(body, /await Promise\.allSettled\(inFlight\)/,
+      'nothing waits for them');
+    assert.match(body, /finally\s*\{[\s\S]*allSettled/,
+      'an upgrade that failed must still get its failure reported before the process goes');
+  });
+
+  it('exits explicitly on success rather than waiting for the event loop', async () => {
+    const source = await import('node:fs')
+      .then((m) => m.readFileSync('hooks/ownmind-usage-scanner.js', 'utf8'));
+    assert.match(source, /\.then\(\(\) => \{ process\.exit\(0\); \}\)/,
+      'a hung adapter leaves a live handle; without this the process never ends');
+  });
+});
+
+describe('a failure heartbeat must not switch off the alert that finds it', () => {
+  // The sharpest finding of the review round, and the one that would have made this whole
+  // release a net loss.
+  //
+  // `evaluateSilence` detects a dead collector by disagreement inside one machine: some
+  // tools fresh, others frozen. That worked precisely because a broken adapter stopped
+  // writing rows. Since this release it writes one every two hours saying it failed — so
+  // without this, every broken collector looks permanently fresh, and the machine that
+  // prompted the change (one tool current, four frozen in July) would show five current
+  // rows and raise nothing at all.
+
+  const NOW = new Date('2026-08-11T09:00:00Z');
+  const ago = (days) => new Date(NOW.getTime() - days * 86_400_000);
+  const row = (tool, days, reason) => ({
+    user_id: 1, user_name: 'Amiee', machine: 'LAPTOP-1',
+    tool, last_reported_at: ago(days), reason
+  });
+
+  it('flags a tool that has been reporting adapter_error every two hours', () => {
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 0, ADAPTER_ERROR)],
+      now: NOW
+    });
+    assert.equal(silences.length, 1, 'a collector failing every run raised nothing');
+    assert.equal(silences[0].stale_tools, 'codex');
+    assert.deepEqual(silences[0].failing_tools, ['codex']);
+  });
+
+  it('flags a hung one the same way', () => {
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 0, ADAPTER_TIMEOUT)],
+      now: NOW
+    });
+    assert.equal(silences.length, 1);
+  });
+
+  it('says nothing about a tool the user deliberately skipped', () => {
+    // Alerting every two hours on somebody's own setting is how an alert gets muted.
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 0, SKIPPED_BY_CONFIG)],
+      now: NOW
+    });
+    assert.deepEqual(silences, []);
+  });
+
+  it('still says nothing when every tool is healthy', () => {
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 0, 'no_new_activity')],
+      now: NOW
+    });
+    assert.deepEqual(silences, []);
+  });
+
+  it('does not treat a failing tool as evidence the machine is alive', () => {
+    // Only the healthy rows may vouch for a machine. Otherwise one adapter crashing on
+    // schedule would keep a machine that stopped weeks ago looking current.
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 30, 'ok'), row('codex', 0, ADAPTER_ERROR)],
+      now: NOW
+    });
+    assert.deepEqual(silences, [], 'a dark machine is a switched-off computer, not a fault');
+  });
+
+  it('still reports an ordinary long silence', () => {
+    // The behaviour that already existed must survive the change.
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 30, null)],
+      now: NOW
+    });
+    assert.equal(silences.length, 1);
+    assert.equal(silences[0].stale_days, 30);
+    assert.deepEqual(silences[0].failing_tools, []);
+  });
+
+  it('tells the reader it is failing, not that it has been quiet for no days', () => {
+    // "has not reported since today (0 days)" reads as a bug in the alert, and a reader
+    // who spots one stops believing the rest of it.
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 0, ADAPTER_ERROR)],
+      now: NOW
+    });
+    const member = renderMemberMessage(silences);
+    const admin = renderAdminMessage(silences);
+    for (const [who, msg] of [['member', member], ['admin', admin]]) {
+      assert.match(msg.body, /每次執行都失敗/, `${who} message does not say it is failing`);
+      assert.doesNotMatch(msg.body, /0 天/, `${who} message claims a zero-day silence`);
+    }
+  });
+
+  it('keeps the day-count wording for a genuine silence', () => {
+    const { silences } = evaluateSilence({
+      rows: [row('claude-code', 0, 'ok'), row('codex', 30, null)],
+      now: NOW
+    });
+    assert.match(renderAdminMessage(silences).body, /已 30 天/);
+    assert.doesNotMatch(renderAdminMessage(silences).body, /每次執行都失敗/);
+  });
+});
+
+describe('the job asks the database for the column the detector needs', () => {
+  // Both ends of this interface are easy to fake, and faking both is how a change like
+  // this passes every test while doing nothing. `evaluateSilence` is tested above with
+  // hand-built rows carrying `reason`; if the job's SELECT stops asking for that column,
+  // every real row arrives with `reason: undefined`, `isCollectorFailure` answers false
+  // for all of them, and the alert quietly goes back to being switched off — with the
+  // suite still green.
+  //
+  // So this one runs the job with an injected query and checks what it actually asked for.
+
+  it('selects reason, and its rows reach the detector', async () => {
+    const { runCollectorSilenceAlerts } = await import('../src/jobs/collector-silence-alerts.js');
+    const asked = [];
+    const now = new Date('2026-08-11T09:00:00Z');
+    const beat = (tool, reason) => ({
+      user_id: 1, user_name: 'Amiee', machine: 'LAPTOP-1', tool,
+      last_reported_at: now, reason
+    });
+    const query = async (sql) => {
+      asked.push(sql);
+      if (/FROM collector_heartbeat/.test(sql)) {
+        return { rows: [beat('claude-code', 'ok'), beat('codex', ADAPTER_ERROR)] };
+      }
+      return { rows: [] };
+    };
+    const sightings = [];
+    await runCollectorSilenceAlerts({
+      query: async (sql, params) => {
+        if (/INSERT INTO collector_silence_alert_state/.test(sql)) sightings.push(params);
+        return query(sql, params);
+      },
+      withTransaction: async (fn) => fn({ query: async () => ({ rows: [] }) }),
+      now: () => now
+    });
+
+    const heartbeatSql = asked.find((s) => /FROM collector_heartbeat/.test(s));
+    assert.ok(heartbeatSql, 'the job never read the heartbeats');
+    assert.match(heartbeatSql, /\bh\.reason\b/,
+      'the query does not ask for reason, so every row reaches the detector as undefined '
+      + 'and a failing collector is indistinguishable from a healthy one');
+
+    assert.equal(sightings.length, 1,
+      'the failing collector was not recorded as a silence end to end');
+    assert.equal(sightings[0][2], 'codex');
   });
 });

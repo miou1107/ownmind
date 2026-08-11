@@ -48,7 +48,19 @@
 import fs from 'fs';
 
 /** A lock untouched for this long is assumed to belong to a run that died. */
-export const STALE_MS = 5 * 60 * 1000;
+// v1.26.142 — raised from 5 minutes.
+//
+// The upgrade's own worst case is 280 seconds of legitimate work (30s fetch + 10s log +
+// 30s + 30s for both pull attempts + 120s npm + 60s sync), which left twenty seconds of
+// headroom before a healthy holder was declared dead — and on Windows, `execFile`'s
+// timeout settles only when the child's stdio closes, so a grandchild npm can hold on well
+// past its own kill. A reclaim in that window is not a recovery; it is a second upgrade
+// starting on top of a running one.
+//
+// Ten minutes clears the worst case by a factor of two. The cost is that a genuinely dead
+// holder blocks for ten minutes instead of five, which delays one upgrade by one scanner
+// interval at most.
+export const STALE_MS = 10 * 60 * 1000;
 
 /** Suffix of the short-lived file that serialises stale-lock reclamation. */
 const RECLAIM_SUFFIX = '.reclaim';
@@ -202,7 +214,26 @@ export function acquireUpdateLock(lockFile, opts = {}) {
 /**
  * Release a lock this process holds. Never call it without having acquired — an unconditional
  * release in an error path is how a process ends up deleting somebody else's lock.
+ *
+ * v1.26.142 — pass the token `tryAcquireUpdateLock` returned, and the release becomes safe
+ * even when that warning is ignored.
+ *
+ * The warning alone stopped being enough once the scheduled scanner joined the MCP and the
+ * two hooks as a contender: four programs, one of them running every two hours on every
+ * machine, and a hold that can legitimately last minutes. If a holder overruns the stale
+ * threshold, the next contender reclaims the lock and starts work; when the first one then
+ * finishes and releases, an unconditional unlink deletes the *reclaimer's* lock, a third
+ * process acquires, and two upgrades run into the same directory at once — which is the
+ * one outcome this lock exists to prevent.
+ *
+ * With a token, a release that is no longer ours is a no-op. Callers that pass nothing keep
+ * the old unconditional behaviour, so nothing that has not been read and considered changes.
+ *
+ * @param {string} lockFile
+ * @param {string} [token] the value returned by tryAcquireUpdateLock
+ * @returns {boolean} whether this call removed the lock
  */
-export function releaseUpdateLock(lockFile) {
-  try { fs.unlinkSync(lockFile); } catch { /* already gone */ }
+export function releaseUpdateLock(lockFile, token) {
+  if (token && !stillOurs(lockFile, token)) return false;
+  try { fs.unlinkSync(lockFile); return true; } catch { return false; }
 }

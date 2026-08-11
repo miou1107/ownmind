@@ -216,15 +216,28 @@ create_exclusive() {
 # What shipped before was `[ ! -f "$LOCK_FILE" ]` ten lines above a `touch`, which is not a
 # lock twice over: the test and the create are far apart, and `touch` succeeds on a file that
 # already exists. Measured 2026-08-07 — four hooks racing, four winners, every morning.
+# v1.26.142 — 600, not 300. Kept identical to STALE_MS in shared/update-lock.js: two
+# implementations of one protocol that disagree about when a lock is dead is a protocol
+# where each one reclaims the other's live lock. The upgrade's own worst case is 280
+# seconds of legitimate work, which left twenty seconds of headroom, and the scheduled
+# scanner became a fourth contender running every two hours on every machine.
+LOCK_STALE_SECONDS=600
+
 acquire_update_lock() {
+  # Defaulted in place as well as set at file scope, so the function stays correct when it
+  # is lifted out on its own — which the concurrency tests do, and which is the only way to
+  # run eight of these against one lock. Without the default the comparisons below get an
+  # empty string and bash answers "integer expression expected" for every contender, so
+  # nobody acquires and nobody reclaims.
+  local stale="${LOCK_STALE_SECONDS:-600}"
   local age rage dage token reclaim="$LOCK_FILE.reclaim"
 
   age=$(lock_age_seconds "$LOCK_FILE")
-  if [ -n "$age" ] && [ "$age" -gt 300 ]; then
+  if [ -n "$age" ] && [ "$age" -gt "$stale" ]; then
     # Stale: the run that took it died. Deletion is serialised behind its own exclusive file,
     # otherwise two processes both delete and both create, and both think they hold it.
     rage=$(lock_age_seconds "$reclaim")
-    if [ -n "$rage" ] && [ "$rage" -gt 300 ]; then
+    if [ -n "$rage" ] && [ "$rage" -gt "$stale" ]; then
       # Clearing a leaked marker is itself a delete-and-recreate, so it gets the same
       # treatment: move it aside under a name only this process uses, and whoever loses the
       # move skips this round rather than racing for it.
@@ -237,7 +250,7 @@ acquire_update_lock() {
         # a fresh marker means somebody is reclaiming right now, and this call stands down.
         dage=$(lock_age_seconds "$reclaim.dead.$$")
         rm -f "$reclaim.dead.$$"
-        if [ -z "$dage" ] || [ "$dage" -le 300 ]; then return 1; fi
+        if [ -z "$dage" ] || [ "$dage" -le "$stale" ]; then return 1; fi
       else
         return 1
       fi
@@ -246,7 +259,7 @@ acquire_update_lock() {
       # Re-read the age now that we are the only reclaimer: an earlier winner may already
       # have put a fresh lock here, and deleting that is exactly the bug being fixed.
       age=$(lock_age_seconds "$LOCK_FILE")
-      if [ -n "$age" ] && [ "$age" -gt 300 ]; then rm -f "$LOCK_FILE"; fi
+      if [ -n "$age" ] && [ "$age" -gt "$stale" ]; then rm -f "$LOCK_FILE"; fi
       rm -f "$reclaim"
     fi
   fi
