@@ -71,8 +71,15 @@ function acquireBundle() {
   };
   pull('acquire_update_lock');
   // Definition order, so a function is defined before anything that calls it.
-  return defined.filter((n) => needed.includes(n))
+  const bundle = defined.filter((n) => needed.includes(n))
     .map((n) => shellFunction(shellHook, n)).join('\n');
+  // A bundle that does not parse makes every contender die before touching the lock, and
+  // the race harness reports that as "nobody acquired" — a green-looking measurement of
+  // nothing, which is the failure this whole file exists to avoid. Ask bash directly.
+  const check = spawnSync('bash', ['-n', '-c', bundle], { encoding: 'utf8' });
+  assert.equal(check.status, 0,
+    `the lifted shell bundle does not parse, so no contender would reach the lock:\n${check.stderr}`);
+  return bundle;
 }
 
 
@@ -85,16 +92,24 @@ function tmpdir() {
  * rather than a copy of it. Same technique as tests/shebang-eol.test.js.
  */
 function shellFunction(file, name) {
-  const src = fs.readFileSync(file, 'utf8');
+  // CRLF is normalised away first. Every boundary below is expressed in terms of `\n`, and
+  // on a Windows checkout the same file arrives with `\r\n` — which silently changes which
+  // byte offsets match and produced a bundle eleven lines short, failing as
+  // `syntax error: unexpected end of file` rather than as anything nameable.
+  const src = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   // Anchored at a line start: `indexOf('update_lock() {')` also matches inside
   // `acquire_update_lock() {`, and would slice out a syntactically broken fragment of the
   // wrong function. No name collides today, which is the only reason it has not happened.
-  const marker = new RegExp(`^${name}\\(\\) \\{`, 'm');
+  const marker = new RegExp(`^${name}\\(\\) \\{$`, 'm');
   const start = src.search(marker);
-  assert.ok(start > 0, `${path.basename(file)} does not define ${name}()`);
-  const end = src.indexOf('\n}\n', start);
-  assert.ok(end > start, `${name}() has no closing brace at column 0`);
-  return src.slice(start, end + 3);
+  assert.ok(start >= 0, `${path.basename(file)} does not define ${name}()`);
+  // The closing brace is the first line that is exactly `}` — anchored, so a `}` that ends
+  // a brace group or a here-doc line inside the body cannot end the extraction early.
+  const close = /^\}$/m;
+  const rest = src.slice(start);
+  const at = rest.search(close);
+  assert.ok(at > 0, `${name}() has no closing brace at column 0`);
+  return rest.slice(0, at + 2);
 }
 
 /**
