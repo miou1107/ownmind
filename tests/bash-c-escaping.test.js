@@ -28,6 +28,15 @@ const testsDir = path.join(repoRoot, 'tests');
  *
  * Both cases here run anywhere. The mangling is a property of how the string crosses the
  * process boundary, and the rule about which form to use can be read off the source.
+ *
+ * v1.26.145 — a second failure mode for the same rule, and a louder one. Windows cuts a
+ * command line at roughly 8 KB. `update-lock-mutual-exclusion.test.js` lifts shell functions
+ * out of the session hook and hands them to bash; adding comments to those functions took
+ * the assembled script from under the ceiling to over it — 8,594 bytes sent, 8,262 delivered
+ * — and `acquire_update_lock` arrived cut in half. Every contender died at `unexpected end
+ * of file` before touching the lock, and a concurrency test reads that as "nobody acquired".
+ * A passing-looking test that had stopped measuring anything, on the one platform nobody
+ * develops on. A file has no ceiling; an argument does, and it does not say when it is hit.
  */
 
 // Files still on `bash -c`, each of them red on Windows today. This list may shrink and must
@@ -40,7 +49,6 @@ const NOT_YET_CONVERTED = new Set([
   'installer-node-paths.test.js',
   'shebang-eol.test.js',
   'sweep-old-backups.test.js',
-  'update-lock-mutual-exclusion.test.js',
   'upgrade-complete-beacon.test.js',
   'upgrade-error-reason.test.js',
   'upgrade-rollback-honesty.test.js',

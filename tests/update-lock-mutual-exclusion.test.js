@@ -192,31 +192,20 @@ function shellRacer(dir, snippet) {
 }
 
 describe('v1.26.145 — the harness has no silent size ceiling', () => {
-  it('never hands a script to bash as a command-line argument', () => {
-    // Windows cuts a command line at roughly 8 KB. The lifted bundle crossed it when this
-    // release added comments to the functions — 8,594 bytes sent, 8,262 delivered — and
-    // `acquire_update_lock` arrived cut in half. Every contender died at `unexpected end of
-    // file`, and the race harness reported that as "nobody acquired": a test that had
-    // stopped measuring anything, on the platform nobody develops on.
-    //
-    // The rule that prevents a repeat is structural, not a size check: scripts built from
-    // the hook go through a file. This asserts nobody quietly goes back to `-c`.
-    const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
-    const offenders = src.split('\n')
-      .map((line, i) => ({ line: line.trim(), n: i + 1 }))
-      .filter(({ line }) => /\bbash', \['-c'/.test(line) || /\bbash', \['-n', '-c'/.test(line));
-    assert.deepEqual(offenders, [],
-      'these pass a script as an argument, which Windows truncates without saying so — '
-      + 'use scriptFile(dir, body) and run `bash <file>`');
-  });
+  // The rule that scripts go through a file, rather than through `bash -c`, is enforced
+  // repo-wide in tests/bash-c-escaping.test.js — one rule, one place. What that check cannot
+  // say is why this particular file crossed the line, so the number lives here.
 
-  it('the assembled bundle is bigger than the ceiling it used to be under', () => {
-    // If the bundle ever shrinks back under 8 KB this stops being load-bearing, and the
-    // assertion above would be guarding nothing anybody could notice breaking.
+  it('the assembled bundle is bigger than the command-line ceiling it used to fit under', () => {
+    // 8,594 bytes sent, 8,262 delivered on Windows: `acquire_update_lock` arrived cut in
+    // half and every contender died before touching the lock, which a race harness reports
+    // as "nobody acquired". If the bundle ever shrinks back under the ceiling, the repo-wide
+    // rule stops being load-bearing *for this file* and somebody should say so rather than
+    // leave a constraint whose reason has quietly expired.
     const bytes = Buffer.byteLength(acquireBundle());
     assert.ok(bytes > 4096,
-      `the bundle is ${bytes} bytes; if it is now small, say so here rather than leaving `
-      + 'a rule whose reason has quietly expired');
+      `the bundle is ${bytes} bytes — small enough that the truncation this file was fixed `
+      + 'for could no longer happen. Say so here instead of leaving the note unexplained.');
   });
 });
 
