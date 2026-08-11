@@ -239,9 +239,18 @@ describe('sync-rules-block — the file belongs to the user', () => {
     assert.match(fs.readFileSync(realFile, 'utf8'), /keep me/);
   });
 
-  it('keeps the permissions the user set on the file', () => {
+  /**
+   * Skipped where the setup cannot be made true. Windows has no POSIX mode bits, so `chmod`
+   * does not produce 600 there and the assertion would be reporting on a premise that never
+   * held — Windows CI is what caught it.
+   */
+  it('keeps the permissions the user set on the file', (t) => {
     const { target, snippet } = fixture('# My rules\n');
     fs.chmodSync(target, 0o600);
+    if ((fs.statSync(target).mode & 0o777) !== 0o600) {
+      t.skip('this platform does not carry POSIX mode bits, so there is nothing to preserve');
+      return;
+    }
     run(['--target', target, '--marker', 'ownmind-rules', '--snippet', snippet]);
     assert.equal(fs.statSync(target).mode & 0o777, 0o600, 'an upgrade must not widen access');
   });
