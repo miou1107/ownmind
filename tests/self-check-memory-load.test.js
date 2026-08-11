@@ -258,14 +258,33 @@ describe('the auto-update path runs the self-check too', () => {
     }
   });
 
-  it('quick mode drops the one that runs a full scan', async () => {
-    // usage_roundtrip scans every local database. Acceptable once during an upgrade the
-    // user is watching; not acceptable every day in the background.
-    const names = await selfCheck.checkNamesFor({ quick: true });
-    assert.ok(!names.includes('usage_roundtrip'));
-    const full = await selfCheck.checkNamesFor({ quick: false });
-    assert.ok(full.includes('usage_roundtrip'), 'the full run must still do it');
-  });
+  it('quick mode drops the one that runs a full scan, until it is a week overdue',
+    async () => {
+      // usage_roundtrip scans every local database. Acceptable once during an upgrade the
+      // user is watching; not acceptable every day in the background.
+      //
+      // v1.26.142 — this used to assert it never ran on a quick pass, and it was that
+      // assertion, held for weeks, that hid the real cost: the quick pass is the
+      // auto-update path, so for anyone who does not re-run the installer by hand it is
+      // the only pass, and "not daily" meant "not ever". The daily cost still must not
+      // come back; the check must still happen sometimes. Both are asserted now.
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-quickset-'));
+      try {
+        const marker = path.join(dir, '.last-usage-roundtrip');
+        fs.writeFileSync(marker, new Date().toISOString().slice(0, 10));
+        const recent = await selfCheck.checkNamesFor({ quick: true, markerPath: marker });
+        assert.ok(!recent.includes('usage_roundtrip'), 'not on a quick pass run today');
+
+        fs.writeFileSync(marker, '2020-01-01');
+        const overdue = await selfCheck.checkNamesFor({ quick: true, markerPath: marker });
+        assert.ok(overdue.includes('usage_roundtrip'), 'but not never, either');
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+
+      const full = await selfCheck.checkNamesFor({ quick: false });
+      assert.ok(full.includes('usage_roundtrip'), 'the full run must still do it');
+    });
 
   // Two assertions rather than one pattern: the path goes through a variable in both
   // scripts, so "the filename and the trigger appear on the same line" is not true of

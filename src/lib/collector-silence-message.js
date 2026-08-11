@@ -45,6 +45,25 @@ function tools(fingerprint) {
 }
 
 /**
+ * v1.26.142 — a collector that reports its own failure has not been quiet.
+ *
+ * Two different faults reach this renderer now. One stopped writing rows weeks ago; the
+ * other writes one every two hours saying it crashed. Both mean no usage is arriving, and
+ * both belong in the same alert — but telling somebody their collector "has not reported
+ * since today (0 days)" reads as a bug in the alert, and the reader stops believing the
+ * rest of it.
+ *
+ * @param {Object} s a silence finding
+ * @returns {boolean} whether every tool in it is failing rather than silent
+ */
+function allFailing(s) {
+  const failing = Array.isArray(s.failing_tools) ? s.failing_tools : [];
+  if (failing.length === 0) return false;
+  const named = String(s.stale_tools || '').split(',').filter(Boolean);
+  return named.length > 0 && named.every((t) => failing.includes(t));
+}
+
+/**
  * What the person whose machine it is gets told.
  *
  * @param {Array<Object>} silences findings for this one user
@@ -63,7 +82,9 @@ export function renderMemberMessage(silences = [], {
   const ordered = [...silences].sort((a, b) => (b.stale_days ?? 0) - (a.stale_days ?? 0));
   const entries = ordered.map((s) => [
     oneLine(s.machine),
-    `${tools(s.stale_tools)} 從 ${formatDate(s.last_beat_at)} 起沒再回報（${s.stale_days} 天）`,
+    allFailing(s)
+      ? `${tools(s.stale_tools)} 每次執行都失敗`
+      : `${tools(s.stale_tools)} 從 ${formatDate(s.last_beat_at)} 起沒再回報（${s.stale_days} 天）`,
     '這段期間的用量沒有上傳',
     FIX,
   ].join(FIELD_SEPARATOR));
@@ -92,7 +113,9 @@ export function renderAdminMessage(silences = [], {
   const ordered = [...silences].sort((a, b) => (b.stale_days ?? 0) - (a.stale_days ?? 0));
   const entries = ordered.map((s) => [
     `${oneLine(s.user_name) || `user ${s.user_id}`}（${oneLine(s.machine)}）`,
-    `${tools(s.stale_tools)} 停在 ${formatDate(s.last_beat_at)}，已 ${s.stale_days} 天`,
+    allFailing(s)
+      ? `${tools(s.stale_tools)} 每次執行都失敗（最近一次 ${formatDate(s.last_beat_at)}）`
+      : `${tools(s.stale_tools)} 停在 ${formatDate(s.last_beat_at)}，已 ${s.stale_days} 天`,
     // The reason the dashboard still looks fine, which is the part that makes
     // this worth a broadcast rather than a column somebody might notice.
     '但機器還在回報，所以看起來像沒工作',

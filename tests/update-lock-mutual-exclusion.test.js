@@ -391,14 +391,20 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
     assert.ok(fs.existsSync(shared), 'shared/update-lock.js is missing');
   });
 
-  for (const [label, file] of [
-    ['the MCP', path.join(repoRoot, 'mcp', 'index.js')],
-    ['the Node session-start hook', path.join(repoRoot, 'hooks', 'ownmind-session-start.js')],
+  // v1.26.142 — the MCP left this list. It no longer takes the lock at all: the whole
+  // upgrade moved to shared/auto-update.js so the scheduled scanner could run it too, and
+  // that module takes the lock on behalf of every caller. The property this test protects
+  // is unchanged — nobody reimplements the acquire — so the module that now does it takes
+  // the MCP's place here rather than the assertion being dropped.
+  for (const [label, file, importPath] of [
+    ['the shared auto-update', path.join(repoRoot, 'shared', 'auto-update.js'), './update-lock.js'],
+    ['the Node session-start hook', path.join(repoRoot, 'hooks', 'ownmind-session-start.js'),
+      '../shared/update-lock.js'],
   ]) {
     it(`${label} imports it rather than rolling its own`, () => {
       // includes(), not assert.match(): a failing match prints the entire file.
       const src = fs.readFileSync(file, 'utf8');
-      assert.ok(src.includes("from '../shared/update-lock.js'"),
+      assert.ok(src.includes(`from '${importPath}'`),
         `${label} does not import the shared lock`);
       assert.ok(/\b(try)?[aA]cquireUpdateLock\(/.test(src),
         `${label} imports the shared lock but never calls it`);
@@ -406,6 +412,20 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
         `${label} still has its own copy of the acquire`);
     });
   }
+
+  it('the MCP delegates its upgrade instead of locking on its own', () => {
+    // Two programs each releasing "their" lock is how one releases the other's. The MCP
+    // used to hold it across the upgrade and release it from an outer catch; both are
+    // gone, and this asserts they stay gone rather than trusting the diff that removed
+    // them.
+    const src = fs.readFileSync(path.join(repoRoot, 'mcp', 'index.js'), 'utf8');
+    assert.ok(src.includes("from '../shared/auto-update.js'"),
+      'the MCP must run the shared upgrade, not a second copy of it');
+    assert.ok(!/\b(try)?[aA]cquireUpdateLock\(/.test(src),
+      'the MCP must not acquire the update lock itself');
+    assert.ok(!/releaseUpdateLock\(/.test(src),
+      'nor release a lock it does not hold');
+  });
 
   it('exactly one of eight concurrent processes acquires it', async () => {
     const dir = tmpdir();
@@ -636,9 +656,27 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
   it('the shell and Node implementations agree on the staleness threshold', () => {
     // They guard the same file. If one calls a lock stale at 5 minutes and the other at 15,
     // the shorter one steals from a run that is still working.
+    //
+    // v1.26.142 — the number is read from each side rather than written here twice. This
+    // used to assert "5 minutes" and "300" as two literals, so raising the threshold meant
+    // editing three places, and editing two of them would have left the two guards of one
+    // file disagreeing while a test named "they agree" passed.
     const js = fs.readFileSync(shared, 'utf8');
-    assert.match(js, /5\s*\*\s*60\s*\*\s*1000/, 'the Node threshold is not 5 minutes');
-    assert.match(src(), /-gt 300\b/, 'the shell threshold is not 300 seconds');
+    const jsMs = js.match(/export const STALE_MS = (\d+) \* 60 \* 1000;/);
+    assert.ok(jsMs, 'STALE_MS is not in the form this test can read');
+    const shMatch = src().match(/^LOCK_STALE_SECONDS=(\d+)$/m);
+    assert.ok(shMatch, 'the shell hook has no LOCK_STALE_SECONDS');
+    assert.equal(Number(shMatch[1]), Number(jsMs[1]) * 60,
+      `shell says ${shMatch[1]}s, Node says ${jsMs[1]} minutes`);
+
+    // And no literal survives next to the variable: one line left as `-gt 300` is a lock
+    // that is stale on one code path and live on another, in the same file.
+    assert.doesNotMatch(src(), /-gt 300\b/, 'a hardcoded 300 is still in the shell hook');
+
+    // The threshold has to exceed the longest legitimate hold, or a healthy holder gets
+    // declared dead mid-upgrade and a second one starts on top of it. The upgrade's own
+    // worst case is 280 seconds of timeouts.
+    assert.ok(Number(jsMs[1]) * 60 > 280, 'the threshold is inside the upgrade worst case');
   });
 
   function src() { return fs.readFileSync(shellHook, 'utf8'); }
@@ -748,7 +786,7 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
    *   - and the routine case — the file simply not being there — must stay silent, or the
    *     diagnostic that covers the previous point becomes noise on every session.
    */
-  const AGE = 1200;   // 20 minutes, comfortably past the 300s staleness threshold
+  const AGE = 2400;   // 40 minutes, comfortably past the 600s staleness threshold
 
   function agedLock(dir) {
     const f = path.join(dir, '.update-lock');
