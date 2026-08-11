@@ -1,7 +1,7 @@
 # Tasks
 
 - [x] 1. Reproduce deterministically enough to study: 16 contenders, seeded leaked marker,
-      12 CPU-saturating background processes → 10 double acquisitions in 240 rounds
+      12 CPU-saturating background processes → 56 double acquisitions in 500 rounds
 - [x] 2. Trace the interleaving with append-only markers (a `date` subshell per trace point
       serialises the race and hides it) → three processes inside the section at once
 - [x] 3. `hooks/ownmind-session-start.sh` — token on the marker; verify before deleting the

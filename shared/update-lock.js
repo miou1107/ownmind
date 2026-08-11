@@ -19,7 +19,7 @@
  * `open(…, 'wx')` — O_CREAT|O_EXCL. One winner out of any number, no window. That part is
  * easy and is where the whole problem would end if locks never had to expire.
  *
- * ## Reclaiming a dead run's lock, and why it takes three steps
+ * ## Reclaiming a dead run's lock, and why it takes four steps
  *
  * A run that is killed leaves the file behind and would block updates forever, so a lock
  * older than STALE_MS is reclaimable. **Deleting a path and re-creating it cannot be made
@@ -47,11 +47,28 @@
  * *detected* by whoever was displaced, at both levels.
  *
  * v1.26.145 added step 2, after CI caught the shell twin admitting two processes and the
- * scenario was reproduced under load: sixteen contenders against a leaked marker gave 10
- * double acquisitions in 240 rounds — three processes inside the section at once, not the
- * "few microseconds" this comment used to claim. With step 2 the same 240 rounds produced
- * none. What is left is rounds in which nobody reclaims (3 in 400), which costs one skipped
- * update and is the safe direction.
+ * scenario was reproduced under load: sixteen contenders against a leaked marker gave 56
+ * double acquisitions in 500 rounds — three processes inside the section at once, not the
+ * "few microseconds" this comment used to claim. With step 2 the same 500 rounds produced
+ * none, and the ordinary case (a stale lock, no leaked marker) produced exactly one winner
+ * in each of 300. What is also left is rounds in which nobody reclaims (3 in 400), which
+ * costs one skipped update and is the safe direction.
+ *
+ * ## What is still not closed, stated plainly
+ *
+ * None of this makes the reclaim atomic, and nothing available here can. Between the moment
+ * a process establishes that it still owns the marker and the moment it unlinks the lock,
+ * there is an interval the scheduler can preempt. Another process can destroy that marker,
+ * a third can reclaim and take the lock, and the first can then wake and delete the lock it
+ * now has no right to. The ownership checks are placed as the last thing before each
+ * deletion to make that interval as short as the language allows; they do not remove it.
+ *
+ * The residual is bounded by the same thing it always was: whoever is displaced finds out,
+ * because the file at the path no longer reads back as theirs. What it costs when it does
+ * happen is two upgrades in one directory — which is why this is worth measuring again
+ * rather than reasoning about. The numbers above are from
+ * `16 contenders + 12 CPU-saturating processes`; a machine with fewer cores will differ.
+ * Do not replace them with an argument.
  */
 
 import fs from 'fs';
@@ -106,15 +123,42 @@ function createExclusive(file, token = '') {
   } catch (e) {
     return { ok: false, code: e.code || 'EUNKNOWN', error: e };
   }
+  // v1.26.145 — a token that could not be written is now fatal to the creation, and the file
+  // is removed again.
+  //
+  // It used to be swallowed: "an unwritable token only costs us the verification below". That
+  // was true while the marker had no token. It is not true now. An unwritten token makes
+  // `stillOurs` false everywhere, so the creator deletes nothing — *including its own
+  // marker*, which it then leaves behind for the leaked-marker path to clear ten minutes
+  // later. Reproduced by making writeSync throw ENOSPC: `.update-lock` and
+  // `.update-lock.reclaim` both left on disk, stale lock not reclaimed.
+  //
+  // Failing here instead turns a disk-full into one skipped update with a reason attached,
+  // which is what every other failure in this file already does.
+  let wrote = true;
+  let writeErr = null;
   try {
     if (token) fs.writeSync(fd, token);
-  } catch { /* an unwritable token only costs us the verification below */ }
+  } catch (e) { wrote = false; writeErr = e; }
   try { fs.closeSync(fd); } catch { /* nothing useful to do */ }
+  if (!wrote) {
+    try { fs.unlinkSync(file); } catch { /* best effort — it is ours, we just made it */ }
+    return { ok: false, code: writeErr?.code || 'EWRITE', error: writeErr };
+  }
   return { ok: true };
 }
 
 /** @returns {boolean} whether the file at `file` is still the one that wrote `token`. */
 function stillOurs(file, token) {
+  // An empty token matches an empty file, and an empty file is what either of these looks
+  // like between being created and being written. That turns the check inside out: it would
+  // report "still ours" for a file somebody else is in the middle of creating, and licence
+  // deleting it. No caller can produce an empty token, which is exactly why nobody would
+  // notice if one ever could. Unreachable from the exported functions as they stand —
+  // `mintToken` always yields a pid and a timestamp, and `releaseUpdateLock` short-circuits
+  // on a falsy token before it gets here — so it is a guard, not a fix, and no test can
+  // drive it without widening the module's surface to reach a private function.
+  if (!token) return false;
   try {
     return fs.readFileSync(file, 'utf8') === token;
   } catch {
@@ -169,13 +213,13 @@ function reclaimIfStale(lockFile, staleMs, now) {
   // guarding it. Standing down (v1.26.111) keeps *this* process out; it does nothing about
   // the next one, which finds the path free and walks in. Measured on the shell twin on
   // 2026-08-11 with sixteen contenders under load: three processes inside at once, two of
-  // them acquiring — 10 double acquisitions in 240 rounds.
+  // them acquiring — 56 double acquisitions in 500 rounds.
   //
   // Restoring the marker was tried and measured worse than the bug (45 in 120): a restore is
   // a second window in which the mutex is absent, and `rename` clobbers whatever took the
   // path meanwhile. What works is checking from the other end. An occupant that has lost its
   // marker is not an occupant, and must not delete anything on the strength of an age it
-  // read while it still was one. With that check the same 240 rounds produced no double
+  // read while it still was one. With that check the same 500 rounds produced no double
   // acquisition at all.
   const rtoken = mintToken();
   if (!createExclusive(reclaim, rtoken).ok) return;   // another process is already reclaiming
