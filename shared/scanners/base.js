@@ -165,6 +165,106 @@ export async function postBatch({ apiUrl, apiKey, fetchFn = fetch, timeoutMs = P
 }
 
 /**
+ * v1.26.142 — a thrown message is written by somebody else and goes to a server.
+ *
+ * The messages this carries are Node's, and Node's file errors quote the path in full:
+ * `ENOENT: no such file or directory, open '/Users/alice/Projects/acme-merger/...'`. The
+ * collector's business is when a tool was used, never what it was used on, and a folder
+ * name can be the most sensitive thing on the machine. The home directory is replaced with
+ * `~`, which keeps every part of the path that helps diagnose and drops the two that
+ * identify — the account name and anything above it.
+ *
+ * The match stops at a path boundary. `/home/vin` is a prefix of `/home/vincent`, and a
+ * plain substring replace would turn a colleague's path into `~cent/...` — which is not a
+ * leak, but is a diagnostic message that reads as corrupted, and the person reading it has
+ * no way to tell which it is.
+ *
+ * Both slash directions are tried: the path inside a Node error and the one in USERPROFILE
+ * do not always agree about separators, and matching only one of them leaks the other.
+ *
+ * @param {string} text
+ * @param {string} homeDir
+ * @returns {string}
+ */
+export function redactHome(text, homeDir = os.homedir()) {
+  let out = String(text ?? '');
+  const candidates = [
+    homeDir,
+    homeDir?.replace(/\\/g, '/'),
+    homeDir?.replace(/\//g, '\\'),
+    // v1.26.142 — the encoded form. Claude Code names each project directory after its
+    // path with the separators turned into dashes:
+    //   ~/.claude/projects/-Users-alice-SourceCode-acme-merger/
+    // Redacting only the prefix leaves that intact, so the account name and the project
+    // name both survive inside a path that has already been "redacted" — the two things
+    // this function exists to remove, in the one place they are hardest to notice.
+    homeDir?.replace(/[/\\]/g, '-')
+  ].filter((h) => typeof h === 'string' && h.length > 1);
+  for (const home of new Set(candidates)) {
+    const escaped = home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Case-insensitive. Windows paths are, and the case that reaches a Node error message
+    // is not always the case in USERPROFILE — a drive letter alone can differ — so a
+    // case-sensitive match would send the account name through unredacted on the one
+    // platform where it is most likely to differ. On a case-sensitive filesystem the cost
+    // is redacting a path that differs from home only in case, which is a path nobody has.
+    // The lookahead is what keeps `/home/vin` from eating the start of `/home/vincent`.
+    // It has to admit every character a path can legitimately end against in prose: the
+    // separators, end of string, quotes and whitespace, and the punctuation an error
+    // message puts straight after a path — `"/Users/alice: permission denied"` and
+    // `"...alice, and more"` both went through unredacted while `:` and `,` were missing.
+    // `-` is in there for the encoded form above, where the next character is another
+    // dash. It costs an over-redaction on a sibling directory named `<home>-something`,
+    // which is a path nobody has and would be harmless if they did.
+    out = out.replace(new RegExp(`${escaped}(?=[/\\\\]|$|['"\\s:,;)\\]}-])`, 'gi'), '~');
+  }
+  return out;
+}
+
+/**
+ * v1.26.142 — the check-in for a tool that never got as far as a scan.
+ *
+ * `runScan` sends a heartbeat on every outcome it knows about, including all the empty
+ * ones. The outcomes it does not know about are the ones where the adapter itself failed:
+ * a throw, a hang, or a tool dropped by `OWNMIND_SKIP_TOOLS` before the loop. Those used
+ * to produce a line in a local log file and no row anywhere, which reads from the server
+ * as a tool the member has never installed.
+ *
+ * Errors are swallowed on purpose. This runs inside the scanner's own failure handler; a
+ * diagnostic that can end the run is worse than the defect it reports.
+ *
+ * @param {object} deps
+ * @param {string} deps.apiUrl
+ * @param {string} deps.apiKey
+ * @param {Function} [deps.fetchFn]
+ * @param {object} [deps.logger]
+ * @param {object} beat
+ * @param {string} beat.tool
+ * @param {string} beat.reason      - one of the collector-failure codes in reasons.js
+ * @param {string} [beat.scannerVersion]
+ * @param {string} [beat.machine]
+ * @param {string} [beat.error]     - the thrown message; the server truncates it
+ * @returns {Promise<boolean>} whether the report reached the server
+ */
+export async function reportCollectorState(
+  { apiUrl, apiKey, fetchFn = fetch, logger = null, homeDir = os.homedir() },
+  { tool, reason, scannerVersion, machine, error }
+) {
+  if (!apiUrl || !apiKey || !tool || !reason) return false;
+  const heartbeat = { tool, reason, scanner_version: scannerVersion, machine };
+  // Sent only when there is one. An `error: undefined` survives JSON.stringify as an
+  // absent key, but an empty string does not, and the server would store the absence of
+  // a message as a message.
+  if (error) heartbeat.error = redactHome(String(error), homeDir);
+  try {
+    await postBatch({ apiUrl, apiKey, fetchFn }, { events: [], heartbeat });
+    return true;
+  } catch (err) {
+    logger?.warn?.(`[scanner] could not report ${tool} ${reason}: ${err?.message || err}`);
+    return false;
+  }
+}
+
+/**
  * Full scan → post → commit-offset pipeline for a single adapter.
  *
  * @param {object} deps
@@ -207,9 +307,12 @@ export async function runScan(deps) {
       if (sessions.length > 0) payload.sessions = sessions;
       await postBatch({ apiUrl, apiKey, fetchFn }, payload);
     }
-    // Still need to atomic-write offsets (Tier 2 session_date may advance).
+    // Still need to atomic-write offsets (Tier 2 session_date may advance). Re-read for
+    // the same reason as the write below: a late adapter must not erase what the ones
+    // after it committed while it was still running.
     if (Object.keys(offsetPatch).length > 0) {
-      const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
+      const newState = mergeState(
+        await readOffsets(cachePath), adapter.tool, offsetPatch, cumulativePatch);
       await writeOffsetsAtomic(cachePath, newState);
     }
     return {
@@ -236,7 +339,18 @@ export async function runScan(deps) {
   }
 
   // All batches succeeded → merge and atomic write.
-  const newState = mergeState(state, adapter.tool, offsetPatch, cumulativePatch);
+  //
+  // v1.26.142 — merged onto a fresh read, not onto the snapshot taken at the top.
+  //
+  // The scanner's loop stopped being strictly sequential when the per-adapter deadline
+  // arrived: an adapter that is slow rather than wedged can finish after the run has
+  // moved on, and it would then write a whole file built from a snapshot older than the
+  // offsets the adapters behind it had already committed. Their progress would be erased,
+  // those tools would replay from an old position next run, and `session_cumulative`
+  // would go backwards. Re-reading here makes the write merge instead of clobber; the
+  // temp-file rename that follows was already atomic.
+  const newState = mergeState(
+    await readOffsets(cachePath), adapter.tool, offsetPatch, cumulativePatch);
   await writeOffsetsAtomic(cachePath, newState);
 
   return {

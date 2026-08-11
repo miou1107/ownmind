@@ -1517,6 +1517,44 @@ tests/upgrade-rollback-honesty.test.js          — 收 review 補的五項各�
                                                    回報得出去（含對照組）、還原失敗只看自己的
                                                    錯誤、訊息摺一行且有上限、Windows 少建的
                                                    資料夾、git status 要留下原因
+## v1.26.142 修改（壞在沒人看得到的地方）
+
+新增檔：
+```
+shared/auto-update.js                           — 完整升級流程唯一的一份實作（fetch → 比對 →
+                                                   pull → npm → 同步腳本）。從 mcp/index.js 搬
+                                                   出來，讓每兩小時跑一次的排程也能執行，
+                                                   不再只有開 AI 工具才會升級。行程執行器、
+                                                   時鐘、記錄器、橫幅佇列全部注入
+tests/auto-update-shared.test.js                — 用注入的行程執行器實跑：跳過的三種情況、
+                                                   沒有新版、完整升級順序、--autostash 退路、
+                                                   Windows 用 npm.cmd + shell、每個步驟失敗
+                                                   都要回報 step 並放掉鎖、失敗不蓋當日戳記
+tests/collector-failure-reporting.test.js       — 掛掉／卡住／被跳過三種都要回報；訊息只進
+                                                   稽核表且截到 1000 字；自我檢查不可以把
+                                                   自己送出的失敗通知讀成成功
+tests/selfcheck-roundtrip-weekly.test.js        — 每週一次的閘門；讀不到／日期壞掉／時鐘倒退
+                                                   一律當成該跑
+openspec/changes/v1.26.142-collectors-that-fail-in-private/ — proposal / spec / tasks
+```
+
+改動檔：
+```
+shared/scanners/reasons.js                      — 新增 adapter_error / adapter_timeout /
+                                                   skipped_by_config，以及 isCollectorFailure
+shared/scanners/base.js                         — 新增 reportCollectorState：沒走到掃描的工具
+                                                   也要留下一筆紀錄
+shared/scanners/selfcheck.js                    — 兩個新的失敗碼列入 LOCAL_BLOCKERS，否則自己
+                                                   送出的失敗通知會被讀成「有新紀錄＝正常」
+hooks/ownmind-usage-scanner.js                  — 每個工具加十分鐘上限（卡住不再拖垮後面的）；
+                                                   掛掉／被跳過都回報；掃描完跑一次升級檢查
+mcp/index.js                                    — 升級改為呼叫 shared/auto-update.js；不再自己
+                                                   拿鎖、放鎖
+src/routes/usage/events.js                      — 失敗心跳寫一筆 collector_error 稽核紀錄，
+                                                   訊息截到 1000 字；其他原因一律不寫
+scripts/install-helpers/self-check.cjs          — usage_roundtrip 在每日路徑上改為每七天跑一次
+```
+
 ## v1.26.98 修改（那把「一次只准一個人更新」的鎖，其實鎖不住）
 
 新增檔：

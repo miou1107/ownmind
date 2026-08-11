@@ -31,9 +31,54 @@ export const UNREADABLE = 'unreadable';
 /** The cursor belonged to a different account and was reset this run. */
 export const ACCOUNT_CHANGED = 'account_changed';
 
+/**
+ * v1.26.142 — the three ways a tool used to vanish from the server entirely.
+ *
+ * Every reason above is produced by an adapter that got far enough to return. The scanner
+ * has three outcomes that never reach one, and all three used to end with a line in
+ * `~/.ownmind/logs/scanner.log` on the machine with the problem and nothing anywhere else:
+ *
+ *   - the adapter threw
+ *   - the adapter never returned, and the run was abandoned waiting for it
+ *   - `OWNMIND_SKIP_TOOLS` dropped it before the loop
+ *
+ * From the server all three look identical to a member who has never installed that tool,
+ * and that is the reading one of them got for six weeks: a member whose whole day is spent
+ * in Codex, whose account has never once held a `codex` heartbeat row.
+ *
+ * A collector that cannot say anything useful still has to say *why* — the principle the
+ * codes above already follow. These extend it to the runs where the adapter is the thing
+ * that failed.
+ */
+/** The adapter threw. `heartbeat.error` carries the message. */
+export const ADAPTER_ERROR = 'adapter_error';
+/** The adapter did not return within the per-tool deadline. */
+export const ADAPTER_TIMEOUT = 'adapter_timeout';
+/** OWNMIND_SKIP_TOOLS named this tool, so it was never scanned. */
+export const SKIPPED_BY_CONFIG = 'skipped_by_config';
+
 export const REASONS = new Set([
-  OK, NO_NEW_ACTIVITY, NO_INSTALL, SQLITE_MISSING, UNREADABLE, ACCOUNT_CHANGED
+  OK, NO_NEW_ACTIVITY, NO_INSTALL, SQLITE_MISSING, UNREADABLE, ACCOUNT_CHANGED,
+  ADAPTER_ERROR, ADAPTER_TIMEOUT, SKIPPED_BY_CONFIG
 ]);
+
+/**
+ * Reasons that mean the collector itself failed, as opposed to having nothing to report.
+ *
+ * The server writes an audit row for these and only these. Letting any heartbeat carry
+ * free text into the audit table would turn it back into the log file this replaces.
+ */
+export const COLLECTOR_FAILURES = new Set([ADAPTER_ERROR, ADAPTER_TIMEOUT]);
+
+/**
+ * Whether a reason means the collector broke rather than having nothing to send.
+ *
+ * @param {unknown} v
+ * @returns {boolean}
+ */
+export function isCollectorFailure(v) {
+  return typeof v === 'string' && COLLECTOR_FAILURES.has(v);
+}
 
 /**
  * Whether a value is one of the codes. Used at the server boundary, where anything a
