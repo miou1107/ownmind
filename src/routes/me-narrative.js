@@ -43,18 +43,18 @@ export function createNarrativeRouter({
       const range = String(req.query.range || '14d');
       const sections = await collectSections({ query, range });
       const redacted = redactPIIDeep(sections);
-      // The upstream refuses a body over 40 KiB. Measured 2026-08-10: 7 days is 32,372
-      // bytes and goes through, 14 days is 47,893 and 30 days is 52,842, and both came
-      // back to the user as 502 on every call. Shrink until it fits, measuring the body
-      // that will actually be posted. A payload already inside the budget passes through
-      // untouched, so the 7-day report is unchanged.
+      // The gateway refuses on capacity rather than on size (v1.26.140 corrects the 40 KiB
+      // ceiling this comment used to claim), and a bigger body is refused more often: at 14
+      // and 30 days this arrives around 48,000 and 53,000 bytes, and both were turned away
+      // during a window in which the 31,929-byte 7-day body went through. Shrink toward the
+      // budget, measuring the body that will actually be posted. A payload already inside it
+      // passes through untouched, so the 7-day report is unchanged.
       const { sections: forModel, notes: condensedNotes, fits } =
         condenseSections(redacted, { measure: requestBytes });
       if (!fits) {
-        // Posting it anyway is still the best move — the ceiling was measured, not
-        // published, so it may go through. But the last time this failed it took replaying
-        // the request by hand from the server to find out why, because the only trace was a
-        // generic 502. Say the number here so the next one is one log line.
+        // Posting it anyway is still the best move — nothing here is a hard limit. But say
+        // the number, because the first time this failed it took replaying the request by
+        // hand from the server to find out why; the only trace was a generic 502.
         console.warn('[me-narrative] payload still %d bytes after condensing (range=%s)',
           requestBytes(forModel), range);
       }

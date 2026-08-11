@@ -146,29 +146,50 @@ fi
 # --- 1b. Sync upgrade rules to other AI tools (skip ones that aren't installed) ---
 UPGRADE_SNIPPET="$OWNMIND_DIR/skills/ownmind-upgrade-agents-snippet.md"
 if [ -f "$UPGRADE_SNIPPET" ]; then
+  RULE_WRITTEN=0
+  RULE_FAILED=""
+  # Returns 0 written, 1 not installed, 2 failed. The strip used to end in `|| true`, so a
+  # node that could not run left the previous block in place and the append below added a
+  # second one — while the summary said synced either way. This is the same defect
+  # v1.26.140 fixed in update.ps1; it is stated rather than assumed here too.
   append_rule() {
     local target_file="$1"
-    if [ -d "$(dirname "$target_file")" ]; then
-      mkdir -p "$(dirname "$target_file")"
-      if [ -f "$target_file" ]; then
-        node -e "
-          const fs = require('fs');
-          const p = process.argv[1];
-          let c = fs.readFileSync(p, 'utf8');
-          c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
-          fs.writeFileSync(p, c);
-        " "$(to_win_path "$target_file")" 2>>"${HOME}/.ownmind/logs/update-err.log" || true
-      fi
-      { echo ''; echo '<!-- ownmind-upgrade-rule -->'; cat "$UPGRADE_SNIPPET"; echo '<!-- /ownmind-upgrade-rule -->'; } >> "$target_file"
+    [ -d "$(dirname "$target_file")" ] || return 1
+    if [ -f "$target_file" ]; then
+      node -e "
+        const fs = require('fs');
+        const p = process.argv[1];
+        let c = fs.readFileSync(p, 'utf8');
+        c = c.replace(/<!--\\s*ownmind-upgrade-rule\\s*-->[\\s\\S]*?<!--\\s*\\/ownmind-upgrade-rule\\s*-->\\n?/g, '');
+        fs.writeFileSync(p, c);
+      " "$(to_win_path "$target_file")" 2>>"${HOME}/.ownmind/logs/update-err.log" || return 2
     fi
+    # `cat` is checked on its own. A group's status is its LAST command's, so a snippet that
+    # exists but cannot be read would write an empty rule block between the markers and
+    # return 0 — counted as written. `[ -f ]` above tests existence, not readability.
+    local snippet_body
+    snippet_body="$(cat "$UPGRADE_SNIPPET")" || return 2
+    { echo ''; echo '<!-- ownmind-upgrade-rule -->'; printf '%s\n' "$snippet_body"; echo '<!-- /ownmind-upgrade-rule -->'; } >> "$target_file" || return 2
   }
-  append_rule "$HOME/.codex/AGENTS.md"
-  append_rule "$HOME/.cursor/rules/ownmind.md"
-  append_rule "$HOME/.antigravity/rules/ownmind.md"
-  append_rule "$HOME/.opencode/AGENTS.md"
-  append_rule "$HOME/.windsurf/rules/ownmind.md"
-  append_rule "$HOME/.gemini/GEMINI.md"
-  echo "[ OK ] Upgrade rules synced to detected AI tools"
+  for rule_target in \
+    "$HOME/.codex/AGENTS.md" \
+    "$HOME/.cursor/rules/ownmind.md" \
+    "$HOME/.antigravity/rules/ownmind.md" \
+    "$HOME/.opencode/AGENTS.md" \
+    "$HOME/.windsurf/rules/ownmind.md" \
+    "$HOME/.gemini/GEMINI.md"; do
+    append_rule "$rule_target"
+    case $? in
+      0) RULE_WRITTEN=$((RULE_WRITTEN + 1)) ;;
+      2) RULE_FAILED="$RULE_FAILED $rule_target" ;;
+    esac
+  done
+  if [ -n "$RULE_FAILED" ]; then
+    echo "[WARN] Upgrade rules synced to $RULE_WRITTEN AI tool(s); failed:$RULE_FAILED"
+    echo "       see ${HOME}/.ownmind/logs/update-err.log"
+  else
+    echo "[ OK ] Upgrade rules synced to $RULE_WRITTEN detected AI tool(s)"
+  fi
 fi
 
 # --- 2. Sync hook scripts + hooks/lib modules ---

@@ -1,13 +1,26 @@
 /**
- * Shrink the narrative payload until the upstream will accept it.
+ * Shrink the narrative payload so the upstream is more likely to accept it.
  *
- * Measured on production 2026-08-10 against the LLM switch, one request every 20 seconds
- * so rate limiting could not be mistaken for a size limit: a body of 39,600 bytes goes
- * through, 41,025 comes back 413 Payload Too Large, and every provider behind the switch
- * refuses the same. The ceiling is 40 KiB.
+ * **Corrected 2026-08-11.** This file used to state that the gateway has a hard 40 KiB
+ * ceiling, measured by bisection on 2026-08-10. That reading was wrong, and the way it was
+ * wrong is worth keeping: the probe bodies were built by repeating one short phrase, which
+ * costs far fewer tokens per byte than a real report, so the boundary that bisection found
+ * was not a boundary in bytes at all.
  *
- * The three ranges the page offers measured 32,372 / 47,893 / 52,842 bytes, so the report
- * worked for 7 days and answered 502 for 14 and 30, on every call.
+ * What was measured the next day, against the same gateway:
+ *
+ *   - a 40,214-byte probe body went through
+ *   - the route's real 35,301-byte 14-day body was refused four times in one ten-minute
+ *     window, then accepted on three sequential and three concurrent replays afterwards
+ *   - the endpoint itself then answered 200 five times in a row
+ *
+ * So the gateway refuses on capacity at that moment, not on size, and a larger payload is
+ * simply likelier to exceed whatever budget is left. The 7-day report (31,929 bytes) kept
+ * working throughout for that reason and no other.
+ *
+ * Condensing therefore buys better odds, not a guarantee. The guarantee, as far as there is
+ * one, is the retry in `callLLMSwitch` — a gateway that is busy now is usually not busy
+ * three seconds later.
  *
  * This does not cut the payload to a fixed size and hope. It shrinks in ordered steps,
  * measuring after each one and stopping the moment it fits, because the cheapest step that
@@ -37,15 +50,16 @@
  */
 
 /**
- * Measured: 39,600 bytes goes through, 41,025 comes back 413. The ceiling is 40 KiB.
+ * Not a ceiling — there is no fixed one (see the correction above). This is the size past
+ * which a payload is worth shrinking, and it is a trade rather than a limit: a smaller body
+ * is refused less often, and a body that has been cut says less.
  *
- * The margin is the gap to that ceiling — `requestBytes` already counts the system prompt,
- * so prompt growth is measured rather than absorbed by this number. What the margin buys is
- * room for the ceiling to be slightly lower than the bisection resolved it to.
+ * Deliberately NOT tighter: the 7-day report measures 31,929 bytes and has never been
+ * refused, so a budget under that would condense the one range that works, making today's
+ * report coarser in exchange for nothing.
  *
- * Deliberately NOT tighter: the 7-day report measures 32,372 bytes, and a budget under that
- * would condense the one range that has always worked, buying nothing and making today's
- * report coarser.
+ * Deliberately NOT looser: 14 and 30 days arrive at roughly 48,000 and 53,000 bytes, and
+ * both were refused during a busy window while the 7-day body went through.
  */
 export const REQUEST_BUDGET_BYTES = 38_000;
 
