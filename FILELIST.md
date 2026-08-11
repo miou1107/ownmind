@@ -1560,7 +1560,11 @@ hooks/ownmind-usage-scanner.js                  — 檔案權限記成 100755（
 scripts/interactive-upgrade.sh                  — 判斷「被改過」改用 --untracked-files=no；
                                                    未追蹤檔另外寫進紀錄，但不再觸發覆蓋
 scripts/interactive-upgrade.ps1                 — 同上（IR-022 兩端一起改）
-.gitignore                                      — 加 bin/ reports/ standards/
+hooks/ownmind-session-start.sh                  — 拉新版前的 git stash 改成 pull --autostash。
+                                                   原本 stash 完整段沒有任何地方 pop 回來，
+                                                   一台機器上量到 30 筆沒放回去的暫存
+.gitignore                                      — 加 bin/ reports/（standards/ 不加，
+                                                   那是使用者自己的目錄）
 ```
 
 ## v1.26.142 修改（壞在沒人看得到的地方）
