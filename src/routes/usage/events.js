@@ -510,7 +510,7 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     // previous one. Anything old enough not to report a hostname is old enough that the
     // answer genuinely is unknown.
     const machine = normaliseMachine(heartbeat.machine);
-    await query(
+    const beat = await query(
       `INSERT INTO collector_heartbeat
          (user_id, tool, last_reported_at, scanner_version, machine, os, status, reason)
        -- Every parameter here is cast. This is INSERT ... SELECT, not INSERT ... VALUES,
@@ -561,7 +561,17 @@ async function writeHeartbeatIfPresent({ query }, userId, heartbeat) {
     //
     // Written after the upsert and in its own try: an audit row that fails must not cost
     // the account its heartbeat, which is the more important of the two records.
-    if (isCollectorFailure(reason) && typeof heartbeat.error === 'string' && heartbeat.error) {
+    //
+    // Gated on the UPSERT having actually written. The statement above is rate-limited by
+    // its own WHERE clause, and an audit write that ignored that would be a way around the
+    // rate limit rather than a record of it: a machine stuck in a failure loop, or a client
+    // sending faster than it should, could put a row in here as often as it liked. Because
+    // the UPSERT also writes whenever the reason *changes*, the first report of a failure
+    // always lands — it is the repetitions inside the window that are dropped, which is
+    // exactly what the window is for.
+    const wrote = (beat?.rowCount ?? 0) > 0;
+    if (wrote && isCollectorFailure(reason)
+        && typeof heartbeat.error === 'string' && heartbeat.error) {
       await writeAudit({ query }, userId, heartbeat.tool, 'collector_error', {
         reason,
         machine,

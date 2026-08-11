@@ -87,6 +87,47 @@ tool and no model involved. It is the obvious place for this and was not being u
    implementation, two callers. A machine now upgrades on its own schedule regardless of
    which AI tool it hosts, or whether it hosts one at all.
 
+## What the review round changed
+
+Three real defects, all in the part that now runs unattended on other people's machines.
+
+1. **An upgrade that failed after the pull reported itself healthy the next day.** `git pull`
+   moves HEAD; `npm install` and the sync script can still fail. The next run then found no
+   pending commits, called itself clean, stamped the day and never retried — leaving the
+   machine on new code with old dependencies until somebody happened to push another commit.
+   A machine reporting a healthy upgrade every day while quietly broken is the exact failure
+   this release exists to remove, so it must not be introduced by it. The post-pull steps now
+   have their own marker: written before they start, removed when they finish, and its
+   presence means redo them regardless of what git says.
+2. **A rebase stopped by a conflict wedged the machine for good.** `--rebase --autostash`
+   waits for a human. There is no human. Every later pull then failed with "you are in the
+   middle of a rebase" — the `--ff-only` fallback included — with the user's own changes held
+   in the autostash. Now aborted before the pull and again if the pull leaves one behind;
+   aborting is also what restores the autostash.
+3. **The audit row was a way around the heartbeat's rate limit.** The UPSERT is throttled by
+   its own `WHERE`; the new audit write ignored the result, so a machine stuck in a failure
+   loop could write as often as it liked. Gated on the UPSERT having written. Because that
+   statement also fires whenever the reason *changes*, the first report of a failure still
+   always lands.
+
+Two further findings were refuted by measurement rather than argument: a `Promise.race`
+loser that rejects later is consumed by race's own subscription and does not become an
+unhandled rejection; and the SessionStart hook cannot starve the scanner of the lock,
+because its own daily marker stops it taking that lock more than once a day.
+
+Two smaller fixes: the day is stamped before the lock is released, closing the gap in which
+another program could read a stale marker and repeat the whole upgrade; and `redactHome`
+matches case-insensitively, because a Windows path in a Node error and the one in
+`USERPROFILE` do not always agree about case.
+
+### Known limitation, not fixed
+
+On Windows, `execFile` with `shell: true` and a timeout kills the shell and not the `npm`
+process under it, so a timed-out `npm install` can go on writing to `node_modules` after the
+lock has been handed back. Node has no portable process-group kill, and every workaround
+costs more than the failure: the window is 120 seconds, on a two-hour schedule, for a
+dependency install of a handful of packages. Recorded rather than papered over.
+
 ## The one thing this cannot do for itself
 
 The member on the June version cannot receive this change, because the mechanism that

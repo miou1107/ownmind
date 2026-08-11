@@ -192,7 +192,12 @@ export function redactHome(text, homeDir = os.homedir()) {
     .filter((h) => typeof h === 'string' && h.length > 1);
   for (const home of new Set(candidates)) {
     const escaped = home.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replace(new RegExp(`${escaped}(?=[/\\\\]|$|['"\\s])`, 'g'), '~');
+    // Case-insensitive. Windows paths are, and the case that reaches a Node error message
+    // is not always the case in USERPROFILE — a drive letter alone can differ — so a
+    // case-sensitive match would send the account name through unredacted on the one
+    // platform where it is most likely to differ. On a case-sensitive filesystem the cost
+    // is redacting a path that differs from home only in case, which is a path nobody has.
+    out = out.replace(new RegExp(`${escaped}(?=[/\\\\]|$|['"\\s])`, 'gi'), '~');
   }
   return out;
 }
