@@ -656,9 +656,27 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
   it('the shell and Node implementations agree on the staleness threshold', () => {
     // They guard the same file. If one calls a lock stale at 5 minutes and the other at 15,
     // the shorter one steals from a run that is still working.
+    //
+    // v1.26.142 — the number is read from each side rather than written here twice. This
+    // used to assert "5 minutes" and "300" as two literals, so raising the threshold meant
+    // editing three places, and editing two of them would have left the two guards of one
+    // file disagreeing while a test named "they agree" passed.
     const js = fs.readFileSync(shared, 'utf8');
-    assert.match(js, /5\s*\*\s*60\s*\*\s*1000/, 'the Node threshold is not 5 minutes');
-    assert.match(src(), /-gt 300\b/, 'the shell threshold is not 300 seconds');
+    const jsMs = js.match(/export const STALE_MS = (\d+) \* 60 \* 1000;/);
+    assert.ok(jsMs, 'STALE_MS is not in the form this test can read');
+    const shMatch = src().match(/^LOCK_STALE_SECONDS=(\d+)$/m);
+    assert.ok(shMatch, 'the shell hook has no LOCK_STALE_SECONDS');
+    assert.equal(Number(shMatch[1]), Number(jsMs[1]) * 60,
+      `shell says ${shMatch[1]}s, Node says ${jsMs[1]} minutes`);
+
+    // And no literal survives next to the variable: one line left as `-gt 300` is a lock
+    // that is stale on one code path and live on another, in the same file.
+    assert.doesNotMatch(src(), /-gt 300\b/, 'a hardcoded 300 is still in the shell hook');
+
+    // The threshold has to exceed the longest legitimate hold, or a healthy holder gets
+    // declared dead mid-upgrade and a second one starts on top of it. The upgrade's own
+    // worst case is 280 seconds of timeouts.
+    assert.ok(Number(jsMs[1]) * 60 > 280, 'the threshold is inside the upgrade worst case');
   });
 
   function src() { return fs.readFileSync(shellHook, 'utf8'); }
@@ -768,7 +786,7 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
    *   - and the routine case — the file simply not being there — must stay silent, or the
    *     diagnostic that covers the previous point becomes noise on every session.
    */
-  const AGE = 1200;   // 20 minutes, comfortably past the 300s staleness threshold
+  const AGE = 2400;   // 40 minutes, comfortably past the 600s staleness threshold
 
   function agedLock(dir) {
     const f = path.join(dir, '.update-lock');

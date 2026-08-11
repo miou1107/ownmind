@@ -151,6 +151,10 @@ describe('when there are new commits', () => {
       `bash ${path.join(dir, 'scripts', 'update.sh')}`
     ]);
     assert.ok(h.banners.some((b) => b.outcome === 'applied' && b.version === '1.26.142'));
+    // The assertion a misplaced markToday() would trip. Only the CLEAN path asserted this
+    // before, so moving the stamp on the applied path was invisible to the suite.
+    assert.equal(fs.readFileSync(path.join(dir, '.last-mcp-update-check'), 'utf8'),
+      '2026-08-11', 'a successful upgrade must close the day');
   });
 
   it('falls back to --ff-only when --autostash is refused', async () => {
@@ -204,6 +208,20 @@ describe('when a step fails', () => {
       assert.ok(h.banners.some((b) => b.outcome === 'failed' && b.step === step));
     });
   }
+
+  it('reports step=update_sh when the sync script fails', async () => {
+    // The one step that had no case. It is also the step most likely to fail on the
+    // machines this release is for: a sync script pulled from two months of commits,
+    // running against an installation laid down by a much older installer.
+    const { execFile } = fakeExec({ pending: 'abc1234 x', failOn: 'bash' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.outcome, FAILED);
+    assert.equal(out.step, 'update_sh');
+    assert.equal(fs.existsSync(path.join(dir, '.update-lock')), false);
+    assert.equal(fs.existsSync(path.join(dir, '.last-mcp-update-check')), false,
+      'a failed sync must not close the day');
+  });
 
   it('leaves the day unstamped, so the next run tries again', async () => {
     // Stamping a failure would cost the machine a whole day for a transient network

@@ -36,6 +36,8 @@
  * is invisible here too; that is what the install self-check is for.
  */
 
+import { isCollectorFailure } from '../../shared/scanners/reasons.js';
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
@@ -138,6 +140,23 @@ export function evaluateSilence({
     machines.get(key).tools.push({
       tool: String(row.tool ?? ''),
       age,
+      // v1.26.142 — a collector that reports its own failure is not a working one.
+      //
+      // This detector reads disagreement inside one machine: some tools fresh, others
+      // frozen. That worked because a broken adapter stopped writing rows at all. Since
+      // v1.26.142 it writes one every two hours saying it failed — which is the whole
+      // point of that change, and which would otherwise make every broken collector look
+      // permanently fresh and switch this alert off for exactly the fault it was built to
+      // catch. The very machine that prompted the change would show five current rows and
+      // raise nothing.
+      //
+      // So a failure heartbeat counts as an absence here: it never contributes to the
+      // machine looking alive, and it lands among the stale whatever its age.
+      //
+      // `skipped_by_config` is deliberately not in this set. That tool did not fail; it
+      // was told not to run, and alerting on somebody's own setting every two hours is
+      // how an alert becomes something people turn off.
+      failing: isCollectorFailure(row.reason),
       at: row.last_reported_at instanceof Date
         ? row.last_reported_at
         : new Date(row.last_reported_at),
@@ -150,8 +169,16 @@ export function evaluateSilence({
 
   for (const [key, machine] of machines) {
     const prev = byKey.get(key);
-    const freshest = Math.min(...machine.tools.map((t) => t.age));
-    const stalest = Math.max(...machine.tools.map((t) => t.age));
+    const healthy = machine.tools.filter((t) => !t.failing);
+    // Infinity when every tool is failing, which is neither fresh nor recovered: the
+    // recovery branch below will not fire and `alive` will be false, so a machine whose
+    // whole collector is broken says nothing here. That is the existing rule for a machine
+    // nothing has been heard from, and it holds for the same reason — a completely dark
+    // machine is a switched-off computer far more often than it is a fault.
+    const freshest = healthy.length ? Math.min(...healthy.map((t) => t.age)) : Infinity;
+    const stalest = healthy.length
+      ? Math.max(...machine.tools.map((t) => (t.failing ? Infinity : t.age)))
+      : Infinity;
 
     // Recovery first: every tool beating again closes an open finding, whatever
     // the thresholds would say about it now.
@@ -172,7 +199,7 @@ export function evaluateSilence({
     }
 
     const alive = freshest <= freshDays;
-    const stale = machine.tools.filter((t) => t.age >= staleDays);
+    const stale = machine.tools.filter((t) => t.failing || t.age >= staleDays);
     // Nothing alive, or nothing stopped: not the shape this detects. Say nothing
     // rather than guess — including about a machine that is entirely dark, which
     // is a switched-off computer far more often than it is a fault.
@@ -184,6 +211,10 @@ export function evaluateSilence({
     // pairing the newest timestamp with the oldest row's age would report a
     // silence longer than the one the date shows.
     const lastBeat = stale.reduce((newest, t) => (t.at > newest.at ? t : newest), stale[0]);
+    // Named separately so the message can say "failing" rather than "silent for N days":
+    // a tool reporting adapter_error every two hours has been silent for no days at all,
+    // and telling somebody it has been quiet since today would read as a bug in the alert.
+    const failingTools = stale.filter((t) => t.failing).map((t) => t.tool);
 
     silences.push({
       user_id: machine.user_id,
@@ -194,6 +225,7 @@ export function evaluateSilence({
       // Rounded at the edge rather than inside the renderer, so every reader of
       // this finding sees the same number.
       stale_days: Math.floor(lastBeat.age),
+      failing_tools: failingTools,
     });
   }
 
