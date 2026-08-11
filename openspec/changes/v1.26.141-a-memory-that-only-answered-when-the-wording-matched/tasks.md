@@ -70,9 +70,41 @@
 - [x] 14 behavioural tests, including run-twice-is-a-no-op and non-ASCII round-trip
 - [x] PowerShell layer exercised in a container: success and failure paths, under StrictMode
 - [x] Caught `$args` (a PowerShell automatic variable) in my own new code while testing it
-- [x] Remove the earlier Chinese rules from `configs/*.md` — superseded, and a copy per
-      template is a copy that drifts
+- [x] Remove the earlier Chinese rules from `configs/*.md` — superseded by the single
+      source, and a copy per template is a copy that drifts
 - [x] Align the wording across all three surfaces so they read as one rule
+
+## 8. Final review round
+
+Two Critical findings, both content-loss paths in code this change added, both silent
+(exit 0, output `written:`):
+
+- [x] **An orphaned opening marker swallowed everything after it.** The strip was a regex
+      spanning from an opener to the next closer; a CLAUDE.md merged through a dotfiles repo
+      can carry one marker without its partner, and run 2 then deleted the user's own rules
+      in between. Reproduced before fixing. Replaced with a line-by-line strip that only
+      removes a region it is genuinely paired with; a dangling marker costs one line, ours,
+      and is reported as `repaired:`.
+- [x] **`rename()` onto a symlinked target destroyed the link** and widened permissions from
+      600 to 644. Now resolves the link and writes to the real file, and restores the mode
+      the user had set.
+- [x] Both mutation-checked: restoring the spanning regex kills 2, removing the symlink
+      resolve kills 1, dropping the chmod kills 1
+- [x] Migration now ends the legacy block at any heading level — `## ` after it used to make
+      the whole thing look hand-edited, so a large share of machines would have kept the
+      stale block and been told about it on every upgrade forever
+- [x] The block carries the two instructions the migration would otherwise have deleted with
+      nothing replacing them: the `[OwnMind vX.X.X]` display tag and the `ownmind_init`
+      fallback
+- [x] `Get-Command node` guard before `& node` in update.ps1 — reading `$LASTEXITCODE` with
+      no native command run is an error under `Set-StrictMode -Version Latest`, which this
+      same file already guards elsewhere
+- [x] Both PowerShell scripts parse-checked in a container
+
+Two review claims did not survive checking, recorded because both were specific and wrong:
+the seven `configs/*.md` templates do **not** still carry the superseded rules (the add and
+the removal both happened inside this branch, netting to no change), and the Antigravity
+rules path agrees between install and update — both use `~/.antigravity/rules/ownmind.md`.
 
 ## Left open
 

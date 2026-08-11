@@ -217,7 +217,12 @@ if ((Test-Path $UpgradeSnippet) -and (Test-Path $AppendRuleHelper)) {
 # shell 那份不會 —— 三個作業系統都要一樣的東西，就該只有一份實作。
 $RulesBlock = Join-Path $OwnMindDir "configs\ownmind-rules-block.md"
 $RulesSync = Join-Path $OwnMindDir "scripts\install-helpers\sync-rules-block.cjs"
-if ((Test-Path $RulesBlock) -and (Test-Path $RulesSync)) {
+# The node guard this file's own comment at Test-RootDepNeeded explains: `& node` with node
+# absent throws CommandNotFoundException, and reading $LASTEXITCODE when no native command
+# has run is an error under Set-StrictMode -Version Latest.
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Write-Host "[WARN] node not found; OwnMind rules block not written"
+} elseif ((Test-Path $RulesBlock) -and (Test-Path $RulesSync)) {
   $blockWritten = 0
   $blockFailed = @()
   $blockLegacy = $null
