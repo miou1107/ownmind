@@ -180,11 +180,18 @@ describe('renderSessionContext — team standards', () => {
 
   it('points at how to read one in full', () => {
     // The digest is titles only. Without this the AI sees a rule's name and no way to obey it.
+    //
+    // v1.26.141: this used to assert `standard_detail`, which was the instruction the renderer
+    // gave and which returns `{"data": []}` for a standard whose text is held on its own
+    // record — the case for every standard written recently. The test pinned the defect: it
+    // checked that *an* instruction was present, never that following it arrives anywhere.
+    // It now names the route that works. See tests/session-context-lookup-instructions.test.js.
     const out = renderSessionContext({
-      server_version: '1.26.128',
+      server_version: '1.26.141',
       team_standards_digest: '[團隊] 前端命名規範',
     }, []);
-    assert.match(out, /standard_detail/);
+    assert.match(out, /ownmind_search/);
+    assert.doesNotMatch(out, /ownmind_get\(["']standard_detail["']\)/);
   });
 
   it('omits the section entirely when the user has no team standards', () => {
