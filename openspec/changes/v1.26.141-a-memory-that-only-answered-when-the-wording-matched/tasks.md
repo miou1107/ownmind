@@ -59,7 +59,27 @@
 - [x] Version numbers out of AI-facing headings
 - [x] "No payload grows" corrected — it grows by 621 bytes on a minimal fixture
 
+## 7. Delivery into the user's own files
+
+- [x] Find that `install.sh` / `install.ps1` skip CLAUDE.md forever once "OwnMind" appears,
+      and that neither update script touches it — every machine frozen on its install date
+- [x] `configs/ownmind-rules-block.md` as the single source
+- [x] `scripts/install-helpers/sync-rules-block.cjs` — one implementation for all platforms
+- [x] Wire all four scripts: install.sh, install.ps1, update.sh, update.ps1
+- [x] Migrate the old unmarked block, exact line match only; leave hand-edited ones and say so
+- [x] 14 behavioural tests, including run-twice-is-a-no-op and non-ASCII round-trip
+- [x] PowerShell layer exercised in a container: success and failure paths, under StrictMode
+- [x] Caught `$args` (a PowerShell automatic variable) in my own new code while testing it
+- [x] Remove the earlier Chinese rules from `configs/*.md` — superseded, and a copy per
+      template is a copy that drifts
+- [x] Align the wording across all three surfaces so they read as one rule
+
 ## Left open
 
+- [ ] Windows PowerShell 5.1 is not covered by any test here: the container is pwsh 7, and
+      Windows CI runs pwsh 7 with continue-on-error. The empty-file bug v1.26.140 fixed
+      happened only on 5.1.
+- [ ] `install.sh` still freezes `GEMINI.md` the same way. Upgrades fix it; fresh installs
+      write a stale template first.
 - [ ] Project memory titles are still not in the session context. Adding them costs ~5.8 KB
       per session against an 18 KB context. Vin's call, not a correctness question.

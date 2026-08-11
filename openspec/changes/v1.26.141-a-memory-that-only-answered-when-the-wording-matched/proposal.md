@@ -76,9 +76,10 @@ Three lines, in both of the places the guidance is delivered.
 
 1. **The standards list says how to actually read one**: `ownmind_search("<its title>")`,
    then `ownmind_get({ id })` on the row it returns.
-2. **An unrecognised internal term is a reason to search** — a tool, a site, a process, an
-   abbreviation, a name — before answering or starting work. Scoped to terms it does not
-   recognise on purpose: "search every message" is noise, and noise is what gets ignored.
+2. **Something that points at them rather than at the world is a reason to search** — a
+   name, tool, site, server or decision you cannot resolve from the repo in front of you.
+   Keyed on the referent, not the vocabulary, and deliberately not on "before every action":
+   see section 4. "Search every message" is noise, and noise is what gets ignored.
 3. **"I have no information about that" requires having looked.** Never say it about
    something of the user's — a server, a project, a credential, a decision — without an
    `ownmind_search` in that session first. It is a claim about their memory, not about the
@@ -107,7 +108,7 @@ What actually survives, and what the rules now use:
 |---|---|---|
 | `hooks/lib/render-session-context.js` | Claude Code | once, at session start |
 | `mcp/index.js` tool descriptions | every tool | every turn |
-| `configs/*.md` (7 templates) | every install | every turn |
+| `configs/ownmind-rules-block.md`, written into the user's own files | every install | every turn |
 
 The `ownmind_search` description now says *when to call it*, not only what it returns, and
 `ownmind_get` no longer points at `standard_detail` — a tool description is in front of the
@@ -143,6 +144,68 @@ All three resolve, including the wording the release is named after. Recorded be
 reasoning was careful and specific and still wrong, and because it would have sent this
 change chasing a prefix that is not a problem.
 
+## 4. Where the rules actually live, after a second round with Vin
+
+The three sentences were only ever half the answer. Vin asked the question that finds the
+other half: *should the installer be writing this into CLAUDE.md?*
+
+It should, and it was not — and the reason is the same shape as everything else in this
+release. `install.sh` and `install.ps1` wrote a five-line block with a heredoc and then
+skipped the file forever after, on the strength of the word "OwnMind" appearing anywhere in
+it. Neither `update.sh` nor `update.ps1` touched the file at all. **Every machine's copy
+froze on its install date.** Measured 2026-08-11: one machine was still carrying a four-line
+version that had been superseded three times.
+
+So a rule written today reached nobody through that path, no matter how well worded.
+
+### What changed
+
+`configs/ownmind-rules-block.md` is now the single source, injected as a marked block into
+the user's own instruction files — CLAUDE.md and the six other tools' — by one Node helper
+that all four scripts call. The block is rewritten on every upgrade; nothing outside the
+markers is touched.
+
+The marker-block job had already been written twice, once in shell and once in PowerShell,
+and v1.26.140 found the two had drifted until one threw on an empty file and the other did
+not. It is one implementation now, in the runtime all three platforms already depend on.
+
+### The block itself, after review
+
+A reviewer took the first draft apart, and four of its objections were right:
+
+- **"Before you act" is self-defeating.** A coding agent edits a file nearly every turn, so
+  the rule fires every turn, returns nothing useful, and teaches the model that this whole
+  block is ignorable. Neither reported failure needed it. Replaced with a trigger on the
+  *referent*: does this point at them, or at the world? 「公司 pages」 is every-word-familiar
+  and entirely unresolvable from the repo, which is exactly the case a vocabulary-based
+  trigger misses.
+- **"Correct the memory" was not executable.** `ownmind_update` needs a numeric id; the
+  assistant has a title. The instruction now names the whole sequence — search, read in full,
+  then update — which is the same gap this release exists to close, reintroduced one layer
+  over.
+- **Updating from a search result overwrites the rest of the memory.** Search returns 400
+  characters. Now stated: read it in full first.
+- **Nothing stopped one person's assistant rewriting a company standard.** Correction is
+  scoped to their own `project` and `env` memories; for a `team_standard` or an `iron_rule`
+  — the user's own words from a real incident — it reports and lets them decide.
+
+Two sections were cut on the same review: precedence between rule types (inert, and
+contradicted by enforcement that happens lower down) and three of the four lines on secrets
+(the API already rejects them with HTTP 400, and both write tools say so).
+
+### Migration, for machines that already have the old block
+
+The old block has no markers, so an upgrade cannot recognise it and would leave a stale copy
+above the new one. The helper matches it line by line against every wording this project has
+shipped:
+
+- every line is one of ours → replaced
+- anything else → **left alone**, and the updater prints a line telling the user there is an
+  old section they may want to delete
+
+That file is where people keep their own rules. Eating a hand-written line to save a
+duplicated heading is not a trade worth making (IR-112).
+
 ## What this does not change
 
 No new lists are added and nothing is fetched that was not fetched before. The context itself
@@ -150,6 +213,15 @@ does grow — measured on a minimal fixture, 448 → 1,069 bytes — because thr
 three sentences. An earlier draft of these notes said "no payload grows", which was wrong.
 
 ## What this does not fix
+
+`install.sh` still has the same freeze-forever check for `GEMINI.md` — a different template,
+not converted here. Gemini users do get the new rules: the upgrade path writes the block into
+`GEMINI.md` like every other tool's file.
+
+The `ownmind-upgrade-rule` block still has its own shell and PowerShell implementations
+rather than using the shared helper. It works and is tested; converting it is a separate
+change.
+
 
 **Project memories are still not listed anywhere in the session context.** This change makes
 the assistant go and look for one instead of asserting it does not exist, which is the

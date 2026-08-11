@@ -92,13 +92,14 @@ describe('the session context tells the AI when to look something up at all', ()
    * The lists are titles. A colleague saying 「公司 pages」 is describing something that is in
    * memory under a different wording, and until this line existed nothing connected the two.
    */
-  it('instructs a search when an unfamiliar internal term comes up', () => {
+  it('instructs a search when the request points at the user rather than the world', () => {
     const out = withStandards();
     assert.match(
       out,
-      /ownmind_search[\s\S]{0,200}(term|name|word)/i,
-      'there must be a standing instruction to search on an unrecognised internal term'
+      /points at them rather than at the world/i,
+      'the trigger is the referent, not the vocabulary: every word of 「公司 pages」 is familiar'
     );
+    assert.match(out, /ownmind_search/);
   });
 
   it('says the lists are titles only, so absence from them proves nothing', () => {
@@ -202,8 +203,10 @@ describe('the guidance reaches surfaces that survive compact=true', () => {
 
   it('ownmind_search says when to call it, not only what it returns', () => {
     const desc = mcp.slice(mcp.indexOf('name: "ownmind_search"'), mcp.indexOf('name: "ownmind_save"'));
-    assert.match(desc, /do not recognise/i, 'an unrecognised internal term is a reason to search');
+    assert.match(desc, /points at the user rather than at the world/i, 'the read trigger');
+    assert.match(desc, /before you ask the user/i);
     assert.match(desc, /never tell the user you have no information/i);
+    assert.match(desc, /before ownmind_update/i, 'reading in full before updating belongs here too');
   });
 
   it('ownmind_get no longer sends the AI to standard_detail for a listed standard', () => {
@@ -220,15 +223,54 @@ describe('the guidance reaches surfaces that survive compact=true', () => {
     assert.match(block, /ownmind_search/);
   });
 
-  /** Every install writes one of these, and the AI re-reads it every turn. */
-  for (const f of ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md', 'antigravity.md',
-    'copilot-instructions.md', 'global_rules.md', 'openclaw-bootstrap.md']) {
-    it(`configs/${f} carries the three rules`, () => {
-      const t = readFileSync(join(repoRoot, 'configs', f), 'utf8');
-      assert.match(t, /ownmind_search\("</, `${f}: no search-on-unfamiliar-term rule`);
-      assert.match(t, /standard_detail/, `${f}: nothing steers it off the empty lookup`);
+  /**
+   * The rules themselves live in one file and are injected into the user's own instruction
+   * files as a marked block. They are deliberately NOT duplicated into `configs/*.md`: those
+   * are templates, and a copy in each of them is a copy that drifts.
+   */
+  it('the block source carries all three rules', () => {
+    const block = readFileSync(join(repoRoot, 'configs/ownmind-rules-block.md'), 'utf8');
+    assert.match(block, /points at them, not at the world/i, 'the read trigger');
+    assert.match(block, /Before you ask the user/i);
+    assert.match(block, /Before you say "I don't know"/i);
+    assert.match(block, /ownmind_save/, 'the write rule');
+    assert.match(block, /ownmind_update/, 'the correct rule');
+    assert.match(block, /ownmind_disable/, 'a memory whose premise is gone is disabled, not rewritten');
+    assert.match(block, /in full/i, 'read it in full before updating — search returns a 400-char preview');
+  });
+
+  it('the block does not authorise editing shared or personal-authored memories', () => {
+    const block = readFileSync(join(repoRoot, 'configs/ownmind-rules-block.md'), 'utf8');
+    assert.match(block, /team_standard/);
+    assert.match(block, /iron_rule/);
+    assert.match(block, /let them decide|tell the user/i);
+  });
+
+  /** Fresh install and upgrade, on both platforms — four scripts, one implementation. */
+  for (const f of ['install.sh', 'install.ps1', 'scripts/update.sh', 'scripts/update.ps1']) {
+    it(`${f} syncs the block through the shared helper`, () => {
+      const t = readFileSync(join(repoRoot, f), 'utf8');
+      assert.match(t, /sync-rules-block\.cjs/, `${f}: does not call the helper`);
+      assert.match(t, /ownmind-rules-block\.md/, `${f}: does not name the block source`);
     });
   }
+
+  /**
+   * The check that froze every machine's copy on its install date. `install.sh` still has one
+   * of these for `GEMINI.md` — a different template, not converted here — so this is scoped to
+   * CLAUDE.md rather than to the phrase. Gemini users still get the rules: the upgrade path
+   * writes the block into `GEMINI.md` like every other tool's file.
+   */
+  it('install no longer skips CLAUDE.md just because the word OwnMind appears in it', () => {
+    for (const f of ['install.sh', 'install.ps1']) {
+      const t = readFileSync(join(repoRoot, f), 'utf8');
+      assert.doesNotMatch(
+        t,
+        /CLAUDE\.md already references OwnMind, skipping/,
+        `${f}: that check froze every machine's copy on its install date`
+      );
+    }
+  });
 });
 
 /**

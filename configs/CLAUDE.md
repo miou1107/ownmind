@@ -7,9 +7,6 @@ OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind
 - 衝突時以 OwnMind 為準
 - 存取記憶時顯示【OwnMind vX.X.X】{類型}：{內容} 格式標記
 - 對話超過 20 輪或即將執行不可逆操作時，呼叫 ownmind_get('iron_rule') re-check
-- 碰到不認得的公司用語（工具、網站、流程、縮寫、名字），回答或動手**之前**先 `ownmind_search("<那個詞>")`
-- **不准**對使用者自己的東西（伺服器、專案、憑證、決策）說「我沒有這個資料」，除非這個 session 內真的搜尋過 —— 那是一句關於他的記憶的斷言
-- 只看到團隊規範標題時，用 `ownmind_search("<標題>")` 找到那一列再 `ownmind_get` 讀全文；不要用 `ownmind_get('standard_detail')`，內文存在自己紀錄上的規範用它會拿到空的
 - 觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」
 - 對話結束前必須呼叫 ownmind_log_session 記錄工作摘要（不需使用者同意）
 
