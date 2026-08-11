@@ -164,28 +164,50 @@ if (Test-Path $ClaudeDir) {
 
 # --- 1b. 同步升級規則到其他 AI 工具 ---
 $UpgradeSnippet = Join-Path $OwnMindDir "skills\ownmind-upgrade-agents-snippet.md"
-if (Test-Path $UpgradeSnippet) {
-  $snippet = Get-Content -Raw -Path $UpgradeSnippet
-  function AppendRule {
-    param([string]$TargetFile)
-    $dir = Split-Path -Parent $TargetFile
-    if (-not (Test-Path $dir)) { return }
-    $marker = '<!-- ownmind-upgrade-rule -->'
-    $endMarker = '<!-- /ownmind-upgrade-rule -->'
-    $existing = if (Test-Path $TargetFile) {
-      [regex]::Replace((Get-Content -Raw -Path $TargetFile),
-        '<!--\s*ownmind-upgrade-rule\s*-->[\s\S]*?<!--\s*/ownmind-upgrade-rule\s*-->\r?\n?', '')
-    } else { '' }
-    $block = "`r`n$marker`r`n$($script:snippet)`r`n$endMarker`r`n"
-    Set-Content -Path $TargetFile -Value ($existing.TrimEnd() + $block) -Encoding UTF8 -NoNewline
+$AppendRuleHelper = Join-Path $OwnMindDir "scripts\windows\lib\append-upgrade-rule.ps1"
+if ((Test-Path $UpgradeSnippet) -and -not (Test-Path $AppendRuleHelper)) {
+  # Ships in the same commit as this file, so its absence means an incomplete checkout —
+  # worth a line, because the alternative is skipping the whole step in silence.
+  Write-Host "[WARN] Upgrade rules skipped: helper missing at $AppendRuleHelper"
+}
+if ((Test-Path $UpgradeSnippet) -and (Test-Path $AppendRuleHelper)) {
+  . $AppendRuleHelper
+  # ReadAllText, not Get-Content -Raw: the snippet is UTF-8 with Chinese in it and carries no
+  # BOM, and Windows PowerShell 5.1 reads a BOM-less file in the system ANSI code page. Every
+  # Traditional Chinese Windows machine has been writing a mangled copy of this rule into
+  # every AI tool it found.
+  $rawSnippet = [System.IO.File]::ReadAllText($UpgradeSnippet)
+  if ($null -eq $rawSnippet) { $rawSnippet = '' }
+
+  $targets = @(
+    (Join-Path $HOME ".codex\AGENTS.md"),
+    (Join-Path $HOME ".cursor\rules\ownmind.md"),
+    (Join-Path $HOME ".antigravity\rules\ownmind.md"),
+    (Join-Path $HOME ".opencode\AGENTS.md"),
+    (Join-Path $HOME ".windsurf\rules\ownmind.md"),
+    (Join-Path $HOME ".gemini\GEMINI.md")
+  )
+
+  # Counted rather than assumed. The previous version printed a fixed "[ OK ]" line whatever
+  # happened, so a tool that threw on the way past looked exactly like one that synced.
+  $written = 0
+  $failed = @()
+  foreach ($target in $targets) {
+    try {
+      if ((Add-OwnMindUpgradeRule -TargetFile $target -Snippet $rawSnippet) -eq 'written') {
+        $written += 1
+      }
+    } catch {
+      $failed += "$target ($($_.Exception.Message))"
+    }
   }
-  AppendRule (Join-Path $HOME ".codex\AGENTS.md")
-  AppendRule (Join-Path $HOME ".cursor\rules\ownmind.md")
-  AppendRule (Join-Path $HOME ".antigravity\rules\ownmind.md")
-  AppendRule (Join-Path $HOME ".opencode\AGENTS.md")
-  AppendRule (Join-Path $HOME ".windsurf\rules\ownmind.md")
-  AppendRule (Join-Path $HOME ".gemini\GEMINI.md")
-  Write-Host "[ OK ] Upgrade rules synced to detected AI tools"
+
+  if ($failed.Count -gt 0) {
+    Write-Host "[WARN] Upgrade rules synced to $written AI tool(s); $($failed.Count) failed:"
+    foreach ($f in $failed) { Write-Host "       - $f" }
+  } else {
+    Write-Host "[ OK ] Upgrade rules synced to $written detected AI tool(s)"
+  }
 }
 
 # --- 2. hook scripts + lib（Git Bash 才能跑 .sh）---
