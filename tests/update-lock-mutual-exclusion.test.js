@@ -45,6 +45,70 @@ const repoRoot = path.resolve(__dirname, '..');
 const shellHook = path.join(repoRoot, 'hooks', 'ownmind-session-start.sh');
 const CONTENDERS = 8;
 
+/**
+ * Every function `acquire_update_lock` needs, lifted out of the shipping hook.
+ *
+ * v1.26.145 — this was a hand-written list of three names in two places. Adding a helper to
+ * the protocol made every lifted contender die on `command not found`, which reads as "the
+ * lock admitted nobody" — a green-looking harness measuring nothing. The list is now taken
+ * from the function bodies: whatever `acquire_update_lock` calls, and whatever those call,
+ * comes along.
+ */
+function acquireBundle() {
+  const src = fs.readFileSync(shellHook, 'utf8');
+  const defined = [...src.matchAll(/^([a-z_][a-z0-9_]*)\(\) \{/gm)].map((m) => m[1]);
+  const needed = [];
+  const pull = (name) => {
+    if (needed.includes(name)) return;
+    needed.push(name);
+    const body = shellFunction(shellHook, name);
+    for (const other of defined) {
+      // `[^\w-]` on both sides rather than requiring whitespace after: `some_fn;`,
+      // `$(some_fn)` and `some_fn)` are all calls, and missing one produces the exact
+      // `command not found` this discovery exists to prevent.
+      if (other !== name && new RegExp(`(^|[^\\w-])${other}($|[^\\w-])`, 'm').test(body)) pull(other);
+    }
+  };
+  pull('acquire_update_lock');
+  // Definition order, so a function is defined before anything that calls it.
+  const bundle = defined.filter((n) => needed.includes(n))
+    .map((n) => shellFunction(shellHook, n)).join('\n');
+  // A bundle that does not parse makes every contender die before touching the lock, and
+  // the race harness reports that as "nobody acquired" — a green-looking measurement of
+  // nothing, which is the failure this whole file exists to avoid. Ask bash directly.
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-parse-'));
+  let check;
+  try {
+    check = spawnSync('bash', ['-n', scriptFile(scratch, bundle)], { encoding: 'utf8' });
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
+  assert.equal(check.status, 0,
+    `the lifted shell bundle does not parse, so no contender would reach the lock:\n${check.stderr}`);
+  return bundle;
+}
+
+
+/**
+ * Write a script to a file and return its path, so it can be run as `bash <file>` rather
+ * than `bash -c <the whole thing>`.
+ *
+ * v1.26.145 — Windows truncates a command line at roughly 8 KB. The lifted bundle crossed
+ * that when this release added comments to the functions: measured at 8,594 bytes, of which
+ * Windows delivered 8,262, cutting `acquire_update_lock` in half. Bash then reported
+ * `unexpected end of file`, every contender died before touching the lock, and the race
+ * harness read that as "nobody acquired" — a test that had quietly stopped measuring
+ * anything, on the one platform nobody develops on.
+ *
+ * A file has no such ceiling and removes the argument-mangling MSYS does to anything that
+ * looks like a path.
+ */
+function scriptFile(dir, body) {
+  const p = path.join(dir, `script-${scriptFile.n = (scriptFile.n || 0) + 1}.sh`);
+  fs.writeFileSync(p, `${body}\n`);
+  return p;
+}
+
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lock-'));
 }
@@ -54,12 +118,24 @@ function tmpdir() {
  * rather than a copy of it. Same technique as tests/shebang-eol.test.js.
  */
 function shellFunction(file, name) {
-  const src = fs.readFileSync(file, 'utf8');
-  const start = src.indexOf(`${name}() {`);
-  assert.ok(start > 0, `${path.basename(file)} does not define ${name}()`);
-  const end = src.indexOf('\n}\n', start);
-  assert.ok(end > start, `${name}() has no closing brace at column 0`);
-  return src.slice(start, end + 3);
+  // CRLF is normalised away first. Every boundary below is expressed in terms of `\n`, and
+  // on a Windows checkout the same file arrives with `\r\n` — which silently changes which
+  // byte offsets match and produced a bundle eleven lines short, failing as
+  // `syntax error: unexpected end of file` rather than as anything nameable.
+  const src = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  // Anchored at a line start: `indexOf('update_lock() {')` also matches inside
+  // `acquire_update_lock() {`, and would slice out a syntactically broken fragment of the
+  // wrong function. No name collides today, which is the only reason it has not happened.
+  const marker = new RegExp(`^${name}\\(\\) \\{$`, 'm');
+  const start = src.search(marker);
+  assert.ok(start >= 0, `${path.basename(file)} does not define ${name}()`);
+  // The closing brace is the first line that is exactly `}` — anchored, so a `}` that ends
+  // a brace group or a here-doc line inside the body cannot end the extraction early.
+  const close = /^\}$/m;
+  const rest = src.slice(start);
+  const at = rest.search(close);
+  assert.ok(at > 0, `${name}() has no closing brace at column 0`);
+  return rest.slice(0, at + 2);
 }
 
 /**
@@ -107,12 +183,31 @@ async function race(dir, makeChild) {
 }
 
 function shellRacer(dir, snippet) {
-  return (i, go) => spawn('bash', ['-c', [
+  const file = scriptFile(dir, [
     `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
-    `while [ ! -f ${JSON.stringify(go)} ]; do :; done`,
+    `while [ ! -f ${JSON.stringify(path.join(dir, 'go'))} ]; do :; done`,
     snippet,
-  ].join('\n')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  ].join('\n'));
+  return () => spawn('bash', [file], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
+
+describe('v1.26.145 — the harness has no silent size ceiling', () => {
+  // The rule that scripts go through a file, rather than through `bash -c`, is enforced
+  // repo-wide in tests/bash-c-escaping.test.js — one rule, one place. What that check cannot
+  // say is why this particular file crossed the line, so the number lives here.
+
+  it('the assembled bundle is bigger than the command-line ceiling it used to fit under', () => {
+    // 8,594 bytes sent, 8,262 delivered on Windows: `acquire_update_lock` arrived cut in
+    // half and every contender died before touching the lock, which a race harness reports
+    // as "nobody acquired". If the bundle ever shrinks back under the ceiling, the repo-wide
+    // rule stops being load-bearing *for this file* and somebody should say so rather than
+    // leave a constraint whose reason has quietly expired.
+    const bytes = Buffer.byteLength(acquireBundle());
+    assert.ok(bytes > 4096,
+      `the bundle is ${bytes} bytes — small enough that the truncation this file was fixed `
+      + 'for could no longer happen. Say so here instead of leaving the note unexplained.');
+  });
+});
 
 describe('v1.26.98 — the harness can see a race at all (positive control)', () => {
   /**
@@ -156,8 +251,7 @@ describe('v1.26.98 — the harness can see a race at all (positive control)', ()
 describe('v1.26.98 — the shell hook takes a real lock', () => {
   // The whole protocol, taken from the file that ships. `acquire_update_lock` calls the
   // other two, so extracting it alone would run against `command not found`.
-  const acquire = () => ['lock_age_seconds', 'create_exclusive', 'acquire_update_lock']
-    .map((n) => shellFunction(shellHook, n)).join('\n');
+  const acquire = acquireBundle;
 
   it('exactly one of eight concurrent hooks acquires it', async () => {
     const dir = tmpdir();
@@ -346,11 +440,13 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
 });
 
 function spawnSyncStatus(dir, snippet) {
-  const r = execFileSync('bash', ['-c', [
+  // Via a file: `snippet` is usually the whole lifted bundle, which is over Windows'
+  // ~8 KB command-line ceiling (see scriptFile).
+  const r = execFileSync('bash', [scriptFile(dir, [
     `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
     snippet,
     'echo $?',
-  ].join('\n')], { encoding: 'utf8' });
+  ].join('\n'))], { encoding: 'utf8' });
   return Number(r.trim().split('\n').pop());
 }
 
@@ -724,7 +820,7 @@ describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on st
 
       const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
         + `lock_age_seconds ${JSON.stringify(lock)} && echo "AGE_OK" || echo "AGE_FAIL"`;
-      const out = execFileSync('bash', ['-c', script], {
+      const out = execFileSync('bash', [scriptFile(dir, script)], {
         encoding: 'utf8',
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       });
@@ -757,7 +853,7 @@ describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on st
 
       const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
         + `lock_age_seconds ${JSON.stringify(lock)}`;
-      const out = execFileSync('bash', ['-c', script], {
+      const out = execFileSync('bash', [scriptFile(dir, script)], {
         encoding: 'utf8',
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       });
@@ -797,11 +893,11 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
   }
 
   function runAge(file, statImpl = '') {
-    return spawnSync('bash', ['-c', [
+    return spawnSync('bash', [scriptFile(path.dirname(file), [
       shellFunction(shellHook, 'lock_age_seconds'),
       statImpl,
       `lock_age_seconds ${JSON.stringify(file)}`,
-    ].join('\n')], { encoding: 'utf8' });
+    ].join('\n'))], { encoding: 'utf8' });
   }
 
   it("answers with this machine's own stat, whichever dialect that is", () => {
@@ -836,12 +932,11 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
     const dir = tmpdir();
     try {
       const lock = agedLock(dir);
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         `LOCK_FILE=${JSON.stringify(lock)}`,
-        ['lock_age_seconds', 'create_exclusive', 'acquire_update_lock']
-          .map((n) => shellFunction(shellHook, n)).join('\n'),
+        acquireBundle(),
         'acquire_update_lock',
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       assert.equal(r.status, 0,
         `a 20-minute-old lock was not reclaimed (exit ${r.status}): ${r.stderr}`);
     } finally {
@@ -871,6 +966,445 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
       assert.notEqual(r.status, 0, 'a missing file has no age');
       assert.equal(r.stdout, '', 'a missing file must not produce an age');
       assert.equal(r.stderr, '', 'a missing lock is routine, not something to report');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('v1.26.145 — an occupant that has lost its marker is not an occupant', () => {
+  /**
+   * CI caught the leaked-marker race admitting two processes (ubuntu / node 20, run
+   * 31491011959). Reproduced on 2026-08-11 with sixteen contenders under load: 10 double
+   * acquisitions in 240 rounds, and a trace showing why —
+   *
+   *   17460 ENTER reclaim section
+   *   17530 moved a fresh marker -> stand down    <- deleted 17460's LIVE marker
+   *   17516 ENTER reclaim section                 <- nothing left to stop it
+   *   17460 RM   17516 RM   17572 created/verify
+   *   17460 created/verify                        <- two winners
+   *
+   * Clearing a *leaked* marker is a delete-and-recreate like everything else here, so it can
+   * land on a marker that is alive. The marker is the section's mutex, so its owner is then
+   * inside an unguarded section and the next arrival joins it. Both then delete a lock on the
+   * strength of an age read taken before somebody else's fresh lock existed.
+   *
+   * These drive that window directly rather than waiting for the scheduler to produce it: the
+   * occupant is held inside the section with an injected `sleep`, and the marker is removed
+   * from outside — which is exactly what the cleanup above does. The `sleep` sets the timing
+   * and changes no logic; everything else is the shipping function.
+   */
+
+  const heldInsideSection = () => {
+    const bundle = acquireBundle();
+    // The pause goes *after* the age re-read and before anything is deleted. That is the
+    // window: the occupant has decided the lock is stale, and everything it does from here
+    // rests on still being the only reclaimer. Pausing before the read instead would just
+    // have it re-read a fresh age and decline for the wrong reason — which is how the first
+    // draft of this test passed against the unfixed code.
+    const read = 'age=$(lock_age_seconds "$LOCK_FILE")';
+    const occurrences = bundle.split(read).length - 1;
+    assert.equal(occurrences, 2,
+      `expected exactly two age reads, found ${occurrences}. A third would leave this pause `
+      + 'somewhere other than the window, and the test would go on passing while measuring '
+      + 'nothing.');
+    const inside = bundle.lastIndexOf(read);
+    const cut = inside + read.length;
+    return bundle.slice(0, cut)
+      + '\n      touch "$READY"\n      while [ ! -f "$RESUME" ]; do :; done'
+      + bundle.slice(cut);
+  };
+
+  /** Run the occupant, pausing it inside the section until `resume` appears. */
+  const startOccupant = (dir) => {
+    const ready = path.join(dir, 'ready');
+    const resume = path.join(dir, 'resume');
+    const file = scriptFile(dir, [
+      `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
+      `READY=${JSON.stringify(ready)}`,
+      `RESUME=${JSON.stringify(resume)}`,
+      heldInsideSection(),
+      'if acquire_update_lock; then echo WIN; fi',
+    ].join('\n'));
+    const child = spawn('bash', [file], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d; });
+    return { child, ready, resume, out: () => out, err: () => err };
+  };
+
+  const waitFor = async (file) => {
+    for (let i = 0; i < 400; i++) {
+      if (fs.existsSync(file)) return true;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    return false;
+  };
+
+  it('does not delete a lock somebody else took while its marker was gone', async () => {
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const o = startOccupant(dir);
+      assert.ok(await waitFor(o.ready),
+        `the occupant never reached the reclaim section: ${o.err()}`);
+
+      // What the leaked-marker cleanup does to a marker it mistakes for a dead one.
+      fs.rmSync(`${lock}.reclaim`, { force: true });
+      // A newcomer walks into the unguarded section and takes the lock.
+      fs.rmSync(lock, { force: true });
+      fs.writeFileSync(lock, 'newcomer-token');
+
+      fs.writeFileSync(o.resume, '1');
+      await new Promise((r) => o.child.on('close', r));
+
+      assert.equal(fs.readFileSync(lock, 'utf8'), 'newcomer-token',
+        "the occupant deleted the newcomer's fresh lock — it stopped being the only "
+        + 'reclaimer the moment its marker was taken away');
+      assert.ok(!o.out().includes('WIN'),
+        'the occupant also acquired, which is the double acquisition itself');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not delete a marker that is no longer its own', async () => {
+    // The other half. An occupant that blindly removes `.reclaim` on its way out deletes the
+    // marker of whoever is inside now, which is how the mutex evaporates in the first place.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const reclaim = `${lock}.reclaim`;
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const o = startOccupant(dir);
+      assert.ok(await waitFor(o.ready), `the occupant never got inside: ${o.err()}`);
+
+      // Somebody else is the occupant now.
+      fs.rmSync(reclaim, { force: true });
+      fs.writeFileSync(reclaim, 'somebody-elses-token');
+
+      fs.writeFileSync(o.resume, '1');
+      await new Promise((r) => o.child.on('close', r));
+
+      assert.equal(fs.readFileSync(reclaim, 'utf8'), 'somebody-elses-token',
+        "the occupant removed another process's marker on its way out, leaving that "
+        + 'process inside an unguarded section');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still reclaims normally when its marker is left alone', async () => {
+    // The control. Both assertions above are satisfied by a function that never reclaims
+    // anything at all, and that would be a worse bug than the one being fixed.
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const o = startOccupant(dir);
+      assert.ok(await waitFor(o.ready), `the occupant never got inside: ${o.err()}`);
+      fs.writeFileSync(o.resume, '1');
+      await new Promise((r) => o.child.on('close', r));
+
+      assert.ok(o.out().includes('WIN'),
+        `an undisturbed reclaim must still take the lock: ${o.err()}`);
+      assert.notEqual(fs.readFileSync(lock, 'utf8'), 'dead-run',
+        'the dead run\'s lock is still there — nothing was reclaimed');
+      assert.ok(!fs.existsSync(`${lock}.reclaim`), 'the marker was left behind');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('v1.26.145 — the Node twin holds the same guard', () => {
+  /**
+   * IR-022: the shell hook and this file are two implementations of one protocol, and a
+   * guard present in only one of them is a protocol where the two disagree about who holds
+   * the lock. The shell side was reproduced under load; this side is driven through the
+   * `now` seam it already exposes for tests, which is enough to open the same window without
+   * any concurrency at all.
+   */
+
+  const load = () => import(pathToFileURL(path.join(repoRoot, 'shared', 'update-lock.js')).href);
+
+  /**
+   * A clock that sabotages the reclaim at its most dangerous moment: after the reclaimer has
+   * measured the lock as stale and before it deletes it. That is exactly what a cleanup
+   * mistaking a live marker for a leaked one does, followed by the newcomer it lets in.
+   */
+  const clockThatStealsTheMarker = (lock, onSteal) => {
+    const reclaim = `${lock}.reclaim`;
+    let stolen = false;
+    return () => {
+      if (!stolen && fs.existsSync(reclaim)) {
+        stolen = true;
+        fs.rmSync(reclaim, { force: true });   // the cleanup deletes a live marker
+        onSteal();                             // and a newcomer walks in
+      }
+      return Date.now();
+    };
+  };
+
+  it('does not delete a lock taken while its marker was gone', async () => {
+    const { tryAcquireUpdateLock } = await load();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const now = clockThatStealsTheMarker(lock, () => {
+        fs.rmSync(lock, { force: true });
+        fs.writeFileSync(lock, 'newcomer-token');
+        // Aged deliberately. In the shell twin the reclaimer is holding an age it read
+        // before the newcomer's lock existed; here the read and the check sit in one
+        // expression, and the `now` seam fires before the read. Giving the newcomer's lock
+        // an old mtime reproduces the same state — a reclaimer about to delete a lock it
+        // believes is stale — which is the condition the marker check exists to override.
+        fs.utimesSync(lock, old, old);
+      });
+      const got = tryAcquireUpdateLock(lock, { now });
+
+      assert.equal(fs.readFileSync(lock, 'utf8'), 'newcomer-token',
+        "the reclaimer deleted the newcomer's fresh lock using an age it read while it was "
+        + 'still the only reclaimer');
+      assert.equal(got.acquired, false,
+        'and it also acquired, which is the double acquisition itself');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not delete a marker that is no longer its own', async () => {
+    const { tryAcquireUpdateLock } = await load();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const reclaim = `${lock}.reclaim`;
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const now = clockThatStealsTheMarker(lock, () => {
+        fs.writeFileSync(reclaim, 'somebody-elses-token');   // a new occupant is inside
+      });
+      tryAcquireUpdateLock(lock, { now });
+
+      assert.equal(fs.readFileSync(reclaim, 'utf8'), 'somebody-elses-token',
+        "the reclaimer removed another process's marker on its way out, leaving that "
+        + 'process inside an unguarded section');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('still reclaims a dead run\'s lock when nothing interferes', async () => {
+    // The control: both assertions above are satisfied by never reclaiming anything.
+    const { tryAcquireUpdateLock } = await load();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const got = tryAcquireUpdateLock(lock);
+      assert.equal(got.acquired, true, `a 20-minute-old lock was not reclaimed: ${got.reason}`);
+      assert.notEqual(fs.readFileSync(lock, 'utf8'), 'dead-run');
+      assert.ok(!fs.existsSync(`${lock}.reclaim`), 'the marker was left behind');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+const load145 = () =>
+  import(pathToFileURL(path.join(repoRoot, 'shared', 'update-lock.js')).href);
+
+describe('v1.26.145 — an empty token never reads as ownership', () => {
+  // Both ownership checks compare file contents against a token, and both files look empty
+  // between being created and being written (create is O_EXCL; the write is a second step).
+  // So an empty token matches a file somebody else is halfway through creating, and the
+  // check that exists to prevent deleting other people's locks starts permitting it. No
+  // caller can produce an empty token today — which is why nobody would notice if one could.
+
+  it('the shell check refuses an empty token', () => {
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      fs.writeFileSync(f, '');
+      const r = spawnSync('bash', [scriptFile(dir, [
+        shellFunction(shellHook, 'marker_is_ours'),
+        `if marker_is_ours ${JSON.stringify(f)} ""; then echo OURS; else echo NOT; fi`,
+      ].join('\n'))], { encoding: 'utf8' });
+      assert.equal(r.stdout.trim(), 'NOT',
+        'an empty token matched an empty file, which is what a marker looks like mid-creation');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says nothing on stderr when the marker is already gone', () => {
+    // The redirections in `read -r cur < "$1" 2>/dev/null` apply left to right, so a missing
+    // file fails to open before stderr has been pointed anywhere and bash prints to the
+    // user's terminal. This function is called precisely when the file may have just been
+    // deleted, so that is the race path, not an edge case.
+    const dir = tmpdir();
+    try {
+      const r = spawnSync('bash', [scriptFile(dir, [
+        shellFunction(shellHook, 'marker_is_ours'),
+        `marker_is_ours ${JSON.stringify(path.join(dir, 'gone'))} "tok" || true`,
+      ].join('\n'))], { encoding: 'utf8' });
+      assert.equal(r.stderr.trim(), '',
+        `a missing marker printed to stderr, which is the user's terminal: ${r.stderr}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the shell check still accepts the real thing', () => {
+    // Control: a check that always says NOT would satisfy the assertion above and disable
+    // the whole guard. create_exclusive writes with `printf '%s'`, so there is no trailing
+    // newline for `read` to rely on.
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      const r = spawnSync('bash', [scriptFile(dir, [
+        shellFunction(shellHook, 'create_exclusive'),
+        shellFunction(shellHook, 'marker_is_ours'),
+        `create_exclusive ${JSON.stringify(f)} "1234-tok"`,
+        `if marker_is_ours ${JSON.stringify(f)} "1234-tok"; then echo OURS; else echo NOT; fi`,
+      ].join('\n'))], { encoding: 'utf8' });
+      assert.equal(r.stdout.trim(), 'OURS',
+        `a token written by create_exclusive did not read back: ${r.stderr}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('releasing with no token at all keeps its unconditional meaning', async () => {
+    // The empty-token guard must not silently turn the documented legacy call into a no-op:
+    // callers that pass nothing still expect the lock removed.
+    const { releaseUpdateLock } = await load145();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      fs.writeFileSync(lock, 'somebody');
+      assert.equal(releaseUpdateLock(lock), true);
+      assert.ok(!fs.existsSync(lock), 'a tokenless release must still remove the lock');
+
+      fs.writeFileSync(lock, 'somebody');
+      assert.equal(releaseUpdateLock(lock, 'not-the-holder'), false);
+      assert.ok(fs.existsSync(lock), 'a release with the wrong token must not remove it');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('v1.26.145 — a token that cannot be written takes its file with it', () => {
+  /**
+   * Giving the marker a token created a leak that did not exist before it. `create` and
+   * `write` are two steps: the file exists as soon as the exclusive create succeeds, and if
+   * the write then fails the file is left empty. Every ownership check reads an empty file
+   * as somebody else's — including the check run by the process that just made it — so that
+   * process deletes nothing, its own marker included, and the marker sits there until the
+   * leaked-marker path clears it ten minutes later.
+   *
+   * Before the token existed this was harmless: the `finally` removed the marker whatever
+   * happened. It is the new ownership check that turns a full disk into a stalled update.
+   */
+
+  it('shell: a write that fails leaves nothing behind', () => {
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      // The create has to succeed and the write has to fail — the shape a full disk gives.
+      // `ulimit -f 0` does not produce it (bash raises SIGXFSZ and kills the shell before
+      // the function returns), and there is no portable device that refuses writes: Linux
+      // has /dev/full, macOS does not.
+      //
+      // So the *write* is stubbed and the function under test is the real one, lifted from
+      // the hook: a shell function named `printf` shadows the builtin, and the redirect
+      // still creates the file exactly as it would in the failing case. What is being
+      // asserted is create_exclusive's own handling of a failed write, which is the code
+      // this release changed.
+      const r = spawnSync('bash', [scriptFile(dir, [
+        shellFunction(shellHook, 'create_exclusive'),
+        'printf() { return 1; }',
+        `if create_exclusive ${JSON.stringify(f)} "tok"; then echo CREATED; else echo FAILED; fi`,
+        `[ -e ${JSON.stringify(f)} ] && echo LEFT || echo CLEAN`,
+      ].join('\n'))], { encoding: 'utf8' });
+      assert.match(r.stdout, /FAILED/, 'an unwritable token must not report success');
+      assert.match(r.stdout, /CLEAN/,
+        'the empty file was left behind: every ownership check reads it as somebody '
+        + "else's, so nobody removes it until it ages out");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shell: an ordinary create still succeeds and holds the token', () => {
+    // Control. A create_exclusive that always failed would satisfy the assertion above.
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      const r = spawnSync('bash', [scriptFile(dir, [
+        shellFunction(shellHook, 'create_exclusive'),
+        shellFunction(shellHook, 'marker_is_ours'),
+        `create_exclusive ${JSON.stringify(f)} "tok" && echo CREATED`,
+        `marker_is_ours ${JSON.stringify(f)} "tok" && echo OURS`,
+        `create_exclusive ${JSON.stringify(f)} "other" || echo SECOND_REFUSED`,
+        `marker_is_ours ${JSON.stringify(f)} "tok" && echo STILL_OURS`,
+      ].join('\n'))], { encoding: 'utf8' });
+      for (const want of ['CREATED', 'OURS', 'SECOND_REFUSED', 'STILL_OURS']) {
+        assert.match(r.stdout, new RegExp(want),
+          `expected ${want}: ${r.stdout} ${r.stderr}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('node: a write that fails leaves no lock and no marker', async () => {
+    const { tryAcquireUpdateLock } = await load145();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const realWrite = fs.writeSync;
+      fs.writeSync = () => { const e = new Error('no space left on device'); e.code = 'ENOSPC'; throw e; };
+      let got;
+      try {
+        got = tryAcquireUpdateLock(lock);
+      } finally {
+        fs.writeSync = realWrite;
+      }
+
+      assert.equal(got.acquired, false, 'a lock whose token could not be written is not held');
+      // `lock_held` and not `ENOSPC`: the marker could not be written either, so the reclaim
+      // never ran and the dead run's lock is still sitting at the path. That is the correct
+      // answer — the caller is genuinely blocked by a lock — and it is why this test asserts
+      // on what is left on disk rather than on the reason string.
+      assert.ok(!fs.existsSync(`${lock}.reclaim`),
+        'the marker was left behind, and no ownership check will ever claim it: the process '
+        + 'that made it reads its own empty file as somebody else\'s');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
