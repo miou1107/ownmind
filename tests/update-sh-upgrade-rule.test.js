@@ -114,17 +114,35 @@ describe('update.sh — the upgrade-rule sync reports what happened', () => {
     assert.doesNotMatch(out, /\[ OK \]/);
   });
 
-  it('a snippet that cannot be read is a failure, not an empty rule block', () => {
+  /**
+   * Skipped where the setup cannot be made true rather than asserted anyway. `chmod 000` has
+   * no effect on Windows, and root reads through it on POSIX — in both cases the file stays
+   * readable, and a test whose premise did not hold would be reporting on nothing. Windows CI
+   * is what caught this: the test failed there because the file was never unreadable.
+   */
+  it('a snippet that cannot be read is a failure, not an empty rule block', (t) => {
     const { home, out } = runBlock({ tools: [['.codex/AGENTS.md', null]] });
-    // Written once, then made unreadable and run again.
-    assert.match(out, /\[ OK \]/);
-    fs.chmodSync(path.join(home, '.ownmind/skills/ownmind-upgrade-agents-snippet.md'), 0o000);
-    const second = execFileSync('bash', [path.join(home, 'block.sh')], {
-      encoding: 'utf8', env: { ...process.env, HOME: home },
-    });
-    fs.chmodSync(path.join(home, '.ownmind/skills/ownmind-upgrade-agents-snippet.md'), 0o644);
-    assert.match(second, /\[WARN\]/);
-    assert.doesNotMatch(second, /\[ OK \]/);
+    assert.match(out, /\[ OK \]/, 'the control: readable snippet, reported as written');
+
+    const snippet = path.join(home, '.ownmind/skills/ownmind-upgrade-agents-snippet.md');
+    fs.chmodSync(snippet, 0o000);
+    try {
+      fs.readFileSync(snippet);
+      t.skip('this platform/user reads through chmod 000, so the snippet is not unreadable');
+      return;
+    } catch {
+      // Unreadable for real — the premise holds.
+    }
+
+    try {
+      const second = execFileSync('bash', [path.join(home, 'block.sh')], {
+        encoding: 'utf8', env: { ...process.env, HOME: home },
+      });
+      assert.match(second, /\[WARN\]/);
+      assert.doesNotMatch(second, /\[ OK \]/);
+    } finally {
+      fs.chmodSync(snippet, 0o644);
+    }
   });
 
   it('a failure in one tool does not stop the others', () => {
