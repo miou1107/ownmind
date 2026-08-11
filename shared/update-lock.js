@@ -32,17 +32,26 @@
  *
  * 1. **Only one process deletes at a time.** Removal is serialised behind `<lock>.reclaim`,
  *    taken with the same exclusive create.
- * 2. **The deleter re-reads the age immediately before deleting.** A lock created while it
+ * 2. **The marker's holder proves the marker is still its own before deleting anything.**
+ *    Clearing a *leaked* marker is itself a delete-and-recreate, so a marker that is alive
+ *    can be deleted by a process that mistook it for a dead one. That does not merely
+ *    inconvenience its owner: the marker is the mutex, so its owner is now inside an
+ *    unguarded section, and the next arrival walks in beside it.
+ * 3. **The deleter re-reads the age immediately before deleting.** A lock created while it
  *    waited its turn is no longer stale, so it is left alone.
- * 3. **The winner verifies it still holds what it made.** If another process deleted our
+ * 4. **The winner verifies it still holds what it made.** If another process deleted our
  *    fresh lock and put its own there, the file at the path is no longer the one we created,
  *    and we stand down rather than both believing we hold it.
  *
- * Step 3 is what makes the residual safe rather than merely unlikely: displacement is
- * *detected* by whoever was displaced. What is left is a process displaced in the few
- * microseconds after its own check, which needs a `.reclaim` leaked by a `SIGKILL` inside a
- * three-syscall window plus two hooks arriving together. Not zero. Bounded, and stated,
- * which the previous version of this comment was not.
+ * Steps 2 and 4 are what make the residual safe rather than merely unlikely: displacement is
+ * *detected* by whoever was displaced, at both levels.
+ *
+ * v1.26.145 added step 2, after CI caught the shell twin admitting two processes and the
+ * scenario was reproduced under load: sixteen contenders against a leaked marker gave 10
+ * double acquisitions in 240 rounds — three processes inside the section at once, not the
+ * "few microseconds" this comment used to claim. With step 2 the same 240 rounds produced
+ * none. What is left is rounds in which nobody reclaims (3 in 400), which costs one skipped
+ * update and is the safe direction.
  */
 
 import fs from 'fs';
@@ -153,17 +162,40 @@ function reclaimIfStale(lockFile, staleMs, now) {
     if (!(parkedAge > staleMs)) return;
   }
 
-  if (!createExclusive(reclaim).ok) return;          // another process is already reclaiming
+  // v1.26.145 — the marker carries a token, for the same reason the lock does.
+  //
+  // The block above deletes the marker it moved aside, and that marker is sometimes a live
+  // one: a process is inside the section right now and this call has just removed the mutex
+  // guarding it. Standing down (v1.26.111) keeps *this* process out; it does nothing about
+  // the next one, which finds the path free and walks in. Measured on the shell twin on
+  // 2026-08-11 with sixteen contenders under load: three processes inside at once, two of
+  // them acquiring — 10 double acquisitions in 240 rounds.
+  //
+  // Restoring the marker was tried and measured worse than the bug (45 in 120): a restore is
+  // a second window in which the mutex is absent, and `rename` clobbers whatever took the
+  // path meanwhile. What works is checking from the other end. An occupant that has lost its
+  // marker is not an occupant, and must not delete anything on the strength of an age it
+  // read while it still was one. With that check the same 240 rounds produced no double
+  // acquisition at all.
+  const rtoken = mintToken();
+  if (!createExclusive(reclaim, rtoken).ok) return;   // another process is already reclaiming
 
   try {
     // Re-read the age now that we are the only reclaimer. If the winner of an earlier
     // reclaim has already put a fresh lock here, this is no longer stale and must not be
     // touched — deleting it is what would let two processes update at once.
-    if (ageMs(lockFile, now()) > staleMs) {
+    //
+    // `stillOurs` last, immediately before the unlink: the age read is the slow part, and
+    // the marker can be taken away while it happens.
+    if (ageMs(lockFile, now()) > staleMs && stillOurs(reclaim, rtoken)) {
       try { fs.unlinkSync(lockFile); } catch { /* already gone */ }
     }
   } finally {
-    try { fs.unlinkSync(reclaim); } catch { /* best effort */ }
+    // Only ever remove a marker that is still ours. Removing somebody else's is how the
+    // mutex came to evaporate in the first place.
+    if (stillOurs(reclaim, rtoken)) {
+      try { fs.unlinkSync(reclaim); } catch { /* best effort */ }
+    }
   }
 }
 

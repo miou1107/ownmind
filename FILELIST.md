@@ -1540,6 +1540,31 @@ tests/upgrade-rollback-honesty.test.js          — 收 review 補的五項各�
                                                    回報得出去（含對照組）、還原失敗只看自己的
                                                    錯誤、訊息摺一行且有上限、Windows 少建的
                                                    資料夾、git status 要留下原因
+## v1.26.145 修改（守門的那個東西，被門外的人刪掉了）
+
+新增檔：
+```
+openspec/changes/v1.26.145-the-reclaim-mutex-deletes-itself/ — proposal / spec / tasks
+```
+
+改動檔：
+```
+hooks/ownmind-session-start.sh                  — 收回過期鎖的那道門閂改成帶主人名字
+                                                   （marker_is_ours）：刪舊鎖前確認一次、
+                                                   離開刪門閂前再確認一次。原本「清掉沒人要
+                                                   的門閂」會刪到還活著的那一個，門閂就是門，
+                                                   於是一間給一個人的房間裡站了三個人
+shared/update-lock.js                           — 同一套協定的 Node 版，同樣改（IR-022）；
+                                                   檔頭三步驟改成四步驟
+tests/update-lock-mutual-exclusion.test.js      — 兩邊各三條回歸測試：門閂被拿走的人不准刪
+                                                   別人的鎖、離開時不准刪別人的門閂、以及
+                                                   「什麼都不收回」也會紅的反面對照。用插入
+                                                   暫停打開時間窗，不靠運氣。搬函式的清單
+                                                   改成從程式碼長出來（加一個小函式就讓所有
+                                                   競爭者死在 command not found，看起來像
+                                                   「沒有人拿到鎖」）
+```
+
 ## v1.26.144 修改（升級程式把自己寫出來的東西當成「你改的」）
 
 新增檔：
