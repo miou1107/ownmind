@@ -63,7 +63,10 @@ function acquireBundle() {
     needed.push(name);
     const body = shellFunction(shellHook, name);
     for (const other of defined) {
-      if (other !== name && new RegExp(`(^|[^\\w-])${other}(\\s|$)`, 'm').test(body)) pull(other);
+      // `[^\w-]` on both sides rather than requiring whitespace after: `some_fn;`,
+      // `$(some_fn)` and `some_fn)` are all calls, and missing one produces the exact
+      // `command not found` this discovery exists to prevent.
+      if (other !== name && new RegExp(`(^|[^\\w-])${other}($|[^\\w-])`, 'm').test(body)) pull(other);
     }
   };
   pull('acquire_update_lock');
@@ -83,7 +86,11 @@ function tmpdir() {
  */
 function shellFunction(file, name) {
   const src = fs.readFileSync(file, 'utf8');
-  const start = src.indexOf(`${name}() {`);
+  // Anchored at a line start: `indexOf('update_lock() {')` also matches inside
+  // `acquire_update_lock() {`, and would slice out a syntactically broken fragment of the
+  // wrong function. No name collides today, which is the only reason it has not happened.
+  const marker = new RegExp(`^${name}\\(\\) \\{`, 'm');
+  const start = src.search(marker);
   assert.ok(start > 0, `${path.basename(file)} does not define ${name}()`);
   const end = src.indexOf('\n}\n', start);
   assert.ok(end > start, `${name}() has no closing brace at column 0`);
@@ -934,9 +941,12 @@ describe('v1.26.145 — an occupant that has lost its marker is not an occupant'
     // have it re-read a fresh age and decline for the wrong reason — which is how the first
     // draft of this test passed against the unfixed code.
     const read = 'age=$(lock_age_seconds "$LOCK_FILE")';
+    const occurrences = bundle.split(read).length - 1;
+    assert.equal(occurrences, 2,
+      `expected exactly two age reads, found ${occurrences}. A third would leave this pause `
+      + 'somewhere other than the window, and the test would go on passing while measuring '
+      + 'nothing.');
     const inside = bundle.lastIndexOf(read);
-    assert.ok(inside > bundle.indexOf(read),
-      'expected two age reads; the reclaim section is not shaped as this test assumes');
     const cut = inside + read.length;
     return bundle.slice(0, cut)
       + '\n      touch "$READY"\n      while [ ! -f "$RESUME" ]; do :; done'
@@ -1152,6 +1162,186 @@ describe('v1.26.145 — the Node twin holds the same guard', () => {
       assert.equal(got.acquired, true, `a 20-minute-old lock was not reclaimed: ${got.reason}`);
       assert.notEqual(fs.readFileSync(lock, 'utf8'), 'dead-run');
       assert.ok(!fs.existsSync(`${lock}.reclaim`), 'the marker was left behind');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+const load145 = () =>
+  import(pathToFileURL(path.join(repoRoot, 'shared', 'update-lock.js')).href);
+
+describe('v1.26.145 — an empty token never reads as ownership', () => {
+  // Both ownership checks compare file contents against a token, and both files look empty
+  // between being created and being written (create is O_EXCL; the write is a second step).
+  // So an empty token matches a file somebody else is halfway through creating, and the
+  // check that exists to prevent deleting other people's locks starts permitting it. No
+  // caller can produce an empty token today — which is why nobody would notice if one could.
+
+  it('the shell check refuses an empty token', () => {
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      fs.writeFileSync(f, '');
+      const r = spawnSync('bash', ['-c', [
+        shellFunction(shellHook, 'marker_is_ours'),
+        `if marker_is_ours ${JSON.stringify(f)} ""; then echo OURS; else echo NOT; fi`,
+      ].join('\n')], { encoding: 'utf8' });
+      assert.equal(r.stdout.trim(), 'NOT',
+        'an empty token matched an empty file, which is what a marker looks like mid-creation');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says nothing on stderr when the marker is already gone', () => {
+    // The redirections in `read -r cur < "$1" 2>/dev/null` apply left to right, so a missing
+    // file fails to open before stderr has been pointed anywhere and bash prints to the
+    // user's terminal. This function is called precisely when the file may have just been
+    // deleted, so that is the race path, not an edge case.
+    const dir = tmpdir();
+    try {
+      const r = spawnSync('bash', ['-c', [
+        shellFunction(shellHook, 'marker_is_ours'),
+        `marker_is_ours ${JSON.stringify(path.join(dir, 'gone'))} "tok" || true`,
+      ].join('\n')], { encoding: 'utf8' });
+      assert.equal(r.stderr.trim(), '',
+        `a missing marker printed to stderr, which is the user's terminal: ${r.stderr}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the shell check still accepts the real thing', () => {
+    // Control: a check that always says NOT would satisfy the assertion above and disable
+    // the whole guard. create_exclusive writes with `printf '%s'`, so there is no trailing
+    // newline for `read` to rely on.
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      const r = spawnSync('bash', ['-c', [
+        shellFunction(shellHook, 'create_exclusive'),
+        shellFunction(shellHook, 'marker_is_ours'),
+        `create_exclusive ${JSON.stringify(f)} "1234-tok"`,
+        `if marker_is_ours ${JSON.stringify(f)} "1234-tok"; then echo OURS; else echo NOT; fi`,
+      ].join('\n')], { encoding: 'utf8' });
+      assert.equal(r.stdout.trim(), 'OURS',
+        `a token written by create_exclusive did not read back: ${r.stderr}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('releasing with no token at all keeps its unconditional meaning', async () => {
+    // The empty-token guard must not silently turn the documented legacy call into a no-op:
+    // callers that pass nothing still expect the lock removed.
+    const { releaseUpdateLock } = await load145();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      fs.writeFileSync(lock, 'somebody');
+      assert.equal(releaseUpdateLock(lock), true);
+      assert.ok(!fs.existsSync(lock), 'a tokenless release must still remove the lock');
+
+      fs.writeFileSync(lock, 'somebody');
+      assert.equal(releaseUpdateLock(lock, 'not-the-holder'), false);
+      assert.ok(fs.existsSync(lock), 'a release with the wrong token must not remove it');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('v1.26.145 — a token that cannot be written takes its file with it', () => {
+  /**
+   * Giving the marker a token created a leak that did not exist before it. `create` and
+   * `write` are two steps: the file exists as soon as the exclusive create succeeds, and if
+   * the write then fails the file is left empty. Every ownership check reads an empty file
+   * as somebody else's — including the check run by the process that just made it — so that
+   * process deletes nothing, its own marker included, and the marker sits there until the
+   * leaked-marker path clears it ten minutes later.
+   *
+   * Before the token existed this was harmless: the `finally` removed the marker whatever
+   * happened. It is the new ownership check that turns a full disk into a stalled update.
+   */
+
+  it('shell: a write that fails leaves nothing behind', () => {
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      // The create has to succeed and the write has to fail — the shape a full disk gives.
+      // `ulimit -f 0` does not produce it (bash raises SIGXFSZ and kills the shell before
+      // the function returns), and there is no portable device that refuses writes: Linux
+      // has /dev/full, macOS does not.
+      //
+      // So the *write* is stubbed and the function under test is the real one, lifted from
+      // the hook: a shell function named `printf` shadows the builtin, and the redirect
+      // still creates the file exactly as it would in the failing case. What is being
+      // asserted is create_exclusive's own handling of a failed write, which is the code
+      // this release changed.
+      const r = spawnSync('bash', ['-c', [
+        shellFunction(shellHook, 'create_exclusive'),
+        'printf() { return 1; }',
+        `if create_exclusive ${JSON.stringify(f)} "tok"; then echo CREATED; else echo FAILED; fi`,
+        `[ -e ${JSON.stringify(f)} ] && echo LEFT || echo CLEAN`,
+      ].join('\n')], { encoding: 'utf8' });
+      assert.match(r.stdout, /FAILED/, 'an unwritable token must not report success');
+      assert.match(r.stdout, /CLEAN/,
+        'the empty file was left behind: every ownership check reads it as somebody '
+        + "else's, so nobody removes it until it ages out");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('shell: an ordinary create still succeeds and holds the token', () => {
+    // Control. A create_exclusive that always failed would satisfy the assertion above.
+    const dir = tmpdir();
+    try {
+      const f = path.join(dir, 'marker');
+      const r = spawnSync('bash', ['-c', [
+        shellFunction(shellHook, 'create_exclusive'),
+        shellFunction(shellHook, 'marker_is_ours'),
+        `create_exclusive ${JSON.stringify(f)} "tok" && echo CREATED`,
+        `marker_is_ours ${JSON.stringify(f)} "tok" && echo OURS`,
+        `create_exclusive ${JSON.stringify(f)} "other" || echo SECOND_REFUSED`,
+        `marker_is_ours ${JSON.stringify(f)} "tok" && echo STILL_OURS`,
+      ].join('\n')], { encoding: 'utf8' });
+      for (const want of ['CREATED', 'OURS', 'SECOND_REFUSED', 'STILL_OURS']) {
+        assert.match(r.stdout, new RegExp(want),
+          `expected ${want}: ${r.stdout} ${r.stderr}`);
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('node: a write that fails leaves no lock and no marker', async () => {
+    const { tryAcquireUpdateLock } = await load145();
+    const dir = tmpdir();
+    try {
+      const lock = path.join(dir, '.update-lock');
+      const old = new Date(Date.now() - 20 * 60 * 1000);
+      fs.writeFileSync(lock, 'dead-run');
+      fs.utimesSync(lock, old, old);
+
+      const realWrite = fs.writeSync;
+      fs.writeSync = () => { const e = new Error('no space left on device'); e.code = 'ENOSPC'; throw e; };
+      let got;
+      try {
+        got = tryAcquireUpdateLock(lock);
+      } finally {
+        fs.writeSync = realWrite;
+      }
+
+      assert.equal(got.acquired, false, 'a lock whose token could not be written is not held');
+      // `lock_held` and not `ENOSPC`: the marker could not be written either, so the reclaim
+      // never ran and the dead run's lock is still sitting at the path. That is the correct
+      // answer — the caller is genuinely blocked by a lock — and it is why this test asserts
+      // on what is left on disk rather than on the reason string.
+      assert.ok(!fs.existsSync(`${lock}.reclaim`),
+        'the marker was left behind, and no ownership check will ever claim it: the process '
+        + 'that made it reads its own empty file as somebody else\'s');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

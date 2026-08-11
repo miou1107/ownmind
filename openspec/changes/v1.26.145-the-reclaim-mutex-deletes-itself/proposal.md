@@ -13,7 +13,7 @@ PR #87 — a change that does not touch any of this code). A re-run of the same 
 so it is load-dependent.
 
 Reproduced on 2026-08-11: sixteen contenders against a leaked marker, under twelve
-CPU-saturating background processes. **10 double acquisitions in 240 rounds.** With tracing:
+CPU-saturating background processes. **56 double acquisitions in 500 rounds.** With tracing:
 
 ```
 17460 ENTER reclaim section
@@ -31,7 +31,7 @@ and the next arrival joins it. Each occupant then deletes the lock on the streng
 it read before somebody else's fresh lock existed.
 
 The shared comment in `shared/update-lock.js` described the residual as "a process displaced
-in the few microseconds after its own check". Measured, it is 4% of rounds under load, and
+in the few microseconds after its own check". Measured, it is 11% of rounds under load, and
 the cause is not microseconds — it is three processes in a section built for one.
 
 ## What changes
@@ -58,9 +58,22 @@ Both implementations change together (IR-022): `acquire_update_lock` in
 
 Both are recorded in the code, because the shape of each is the obvious next idea.
 
+## What this does not do
+
+It does not make the reclaim atomic, and nothing available here can. Between the moment a
+process establishes that it still owns the marker and the moment it unlinks the lock there
+is an interval the scheduler can preempt; another process can destroy that marker, a third
+can take the lock, and the first can wake and delete a lock it no longer has any right to.
+Both ownership checks are placed as the last thing before their deletion so that interval is
+as short as the language allows. That is a narrowing, not a closure.
+
+Saying so is the point. The comment being replaced described its own residual as "a few
+microseconds after its own check", and that sentence is why nobody re-measured for four
+releases while the real figure was 11% of rounds under load.
+
 ## Impact
 
-- No double acquisition in 500 rounds of the scenario that produced 10 in 240 before.
+- No double acquisition in 500 rounds of the scenario that produced 56 in 500 before.
 - What is left is rounds where nobody reclaims (3 in 400). That costs one skipped update,
   which the next session or the two-hourly scanner picks up. It is the safe direction.
 - The ordinary case — a stale lock, no leaked marker — still yields exactly one winner in

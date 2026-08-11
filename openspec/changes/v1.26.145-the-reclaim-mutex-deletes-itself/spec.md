@@ -34,7 +34,8 @@ and its holder SHALL verify that identity immediately before any deletion.
 
 - **GIVEN** both the lock and the marker have been left behind by dead runs
 - **WHEN** sixteen processes contend under CPU saturation
-- **THEN** at most one acquires, in every round
+- **THEN** no round admits two, across 500 measured rounds — a narrowing of the window,
+  not a guarantee that none exists (see the proposal)
 - **AND** rounds in which none acquires are permitted: the lock stays stale and the next
   session or scheduled scan reclaims it
 
