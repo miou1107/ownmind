@@ -66,7 +66,11 @@ function findLegacyBlock(lines) {
   const start = lines.findIndex((l) => l.trim() === LEGACY_HEADING);
   if (start === -1) return null;
   let end = start + 1;
-  while (end < lines.length && !/^#\s/.test(lines[end])) end += 1;
+  // Any heading level, not just `# `. Appending a section to the bottom of CLAUDE.md is the
+  // normal way people edit it, and a `## ` heading after the old block used to make the
+  // whole thing look hand-edited — so the migration skipped it and the note printed on every
+  // upgrade, forever, on a large share of machines.
+  while (end < lines.length && !/^#{1,6}\s/.test(lines[end])) end += 1;
   const body = lines.slice(start, end);
   // Trailing blank lines belong to the separation between sections, not to the block.
   while (body.length > 0 && body[body.length - 1].trim() === '') body.pop();
@@ -74,9 +78,54 @@ function findLegacyBlock(lines) {
   return { start, end, ours };
 }
 
-function blockRegex(marker) {
-  const m = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`\\n*<!--\\s*${m}\\s*-->[\\s\\S]*?<!--\\s*/${m}\\s*-->\\n?`, 'g');
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Remove our own block, line by line rather than with a regex spanning the file.
+ *
+ * A regex spanning from the opening marker to the closing one deletes whatever sits between
+ * them — which is correct only while the markers are a matched pair. They are not always:
+ * a CLAUDE.md synced between two machines through a dotfiles repo can come out of a merge
+ * with one marker and no partner. Measured on the first version of this file: an orphaned
+ * opener plus a real block two paragraphs later, and the second run silently ate the user's
+ * own rules in between — exit 0, output `written:`.
+ *
+ * So a marker only ever removes a region it is genuinely paired with. A dangling marker
+ * costs one line, which is ours, and the caller is told.
+ *
+ * @returns {{ text: string, orphan: boolean }}
+ */
+function stripBlocks(text, marker) {
+  const open = new RegExp(`^\\s*<!--\\s*${esc(marker)}\\s*-->\\s*$`);
+  const close = new RegExp(`^\\s*<!--\\s*/${esc(marker)}\\s*-->\\s*$`);
+  const lines = text.split('\n');
+  const out = [];
+  let orphan = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    if (open.test(lines[i])) {
+      // Scan for this opener's partner. Another opener first means this one never had one.
+      let j = i + 1;
+      while (j < lines.length && !close.test(lines[j]) && !open.test(lines[j])) j += 1;
+      if (j < lines.length && close.test(lines[j])) {
+        i = j + 1;          // a matched pair: drop it and everything it wraps
+        continue;
+      }
+      orphan = true;
+      i += 1;               // dangling opener: drop this line only, keep what follows
+      continue;
+    }
+    if (close.test(lines[i])) {
+      orphan = true;
+      i += 1;               // dangling closer: also ours, also one line
+      continue;
+    }
+    out.push(lines[i]);
+    i += 1;
+  }
+
+  return { text: out.join('\n'), orphan };
 }
 
 function main() {
@@ -92,6 +141,19 @@ function main() {
     return;
   }
 
+  // Follow a symlink to the file it points at, and write THERE.
+  //
+  // Keeping config files in one directory and symlinking them into place is how people move
+  // a setup between machines. rename() onto the link replaces the link with a regular file:
+  // the real copy is orphaned, stops receiving anything, and nothing says so. Measured on the
+  // first version of this file.
+  let realTarget = target;
+  try {
+    if (fs.lstatSync(target).isSymbolicLink()) realTarget = fs.realpathSync(target);
+  } catch {
+    // Not there yet — realTarget stays as given, and the write creates it.
+  }
+
   let body;
   try {
     body = fs.readFileSync(snippet, 'utf8').replace(/\s+$/, '');
@@ -103,9 +165,9 @@ function main() {
   // readFileSync gives '' for an empty file, which is what every caller means. The
   // PowerShell equivalent gave $null and threw on it — v1.26.140.
   let existing = '';
-  if (fs.existsSync(target)) {
+  if (fs.existsSync(realTarget)) {
     try {
-      existing = fs.readFileSync(target, 'utf8');
+      existing = fs.readFileSync(realTarget, 'utf8');
     } catch (err) {
       process.stderr.write(`error:${target}:cannot read: ${err.message}\n`);
       process.exit(1);
@@ -124,27 +186,34 @@ function main() {
     }
   }
 
-  existing = existing.replace(blockRegex(marker), '\n');
+  const stripped = stripBlocks(existing, marker);
   const block = `\n<!-- ${marker} -->\n${body}\n<!-- /${marker} -->\n`;
-  const next = `${existing.replace(/\s+$/, '')}\n${block}`;
+  const next = `${stripped.text.replace(/\s+$/, '')}\n${block}`;
 
   // Write through a sibling temp file and rename: this file holds the user's own rules, and
-  // an interrupted write that truncates it is not recoverable from anything we hold.
-  const tmp = `${target}.ownmind.tmp`;
+  // an interrupted write that truncates it is not recoverable from anything we hold. The temp
+  // sits next to the REAL target so the rename stays within one filesystem.
+  const tmp = path.join(path.dirname(realTarget), `.${path.basename(realTarget)}.ownmind.tmp`);
   try {
+    // A fresh file inherits the process umask; an existing one keeps whatever the user set.
+    // Without this, a CLAUDE.md they had chmod'ed to 600 comes back 644 after an upgrade.
+    let mode;
+    try { mode = fs.statSync(realTarget).mode & 0o777; } catch { /* new file */ }
     fs.writeFileSync(tmp, next, 'utf8');
-    fs.renameSync(tmp, target);
+    if (mode !== undefined) fs.chmodSync(tmp, mode);
+    fs.renameSync(tmp, realTarget);
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch { /* nothing to clean up */ }
     process.stderr.write(`error:${target}:cannot write: ${err.message}\n`);
     process.exit(1);
   }
 
-  process.stdout.write(`${legacyKept ? 'legacy-kept' : 'written'}:${target}\n`);
+  const status = legacyKept ? 'legacy-kept' : (stripped.orphan ? 'repaired' : 'written');
+  process.stdout.write(`${status}:${target}\n`);
 }
 
 // Guarded: the test suite requires this file to exercise findLegacyBlock directly, and an
 // unguarded main() would run — with no arguments — on import.
 if (require.main === module) main();
 
-module.exports = { findLegacyBlock, blockRegex, LEGACY_LINES, LEGACY_HEADING };
+module.exports = { findLegacyBlock, stripBlocks, LEGACY_LINES, LEGACY_HEADING };

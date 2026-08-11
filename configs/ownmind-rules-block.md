@@ -45,6 +45,8 @@ user what contradicts it and let them decide.
 
 ### Housekeeping
 
-Credentials go through `ownmind_set_secret` / `ownmind_get_secret`; a server memory
-records where it is, not how to log in. Call `ownmind_log_session` before the
-conversation ends — no need to ask.
+Credentials go through `ownmind_set_secret` / `ownmind_get_secret`; a server memory records
+where it is, not how to log in. Call `ownmind_log_session` before the conversation ends — no
+need to ask. Show the `[OwnMind vX.X.X]` tag when you surface a memory, so the user can tell
+what came from their memory and what came from you. If no OwnMind context appeared at the
+start of this session, call `ownmind_init` yourself.
