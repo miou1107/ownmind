@@ -225,13 +225,15 @@ describe('withAdapterDeadline', () => {
       assert.ok(ADAPTER_DEADLINE_MS >= 60_000, 'too tight for a machine with long history');
       assert.ok(ADAPTER_DEADLINE_MS < 2 * 60 * 60 * 1000, 'runs must not be able to overlap');
 
-      // And it is genuinely the default: a promise that never settles is still pending
-      // well after a short deadline would have rejected it.
-      let settled = false;
-      const pending = withAdapterDeadline('codex', new Promise(() => {}));
-      pending.catch(() => { settled = true; });
-      await new Promise((r) => setTimeout(r, 60));
-      assert.equal(settled, false, 'the default must not be a few milliseconds');
+      // And it is genuinely the default: work that takes 40ms comes back as a result, not
+      // as a timeout.
+      //
+      // The work has to settle. An earlier version raced a promise that never did, which
+      // left the real ten-minute timer running with nothing to clear it — the run then hung
+      // for ten minutes rather than failing, which is a worse outcome than the bug.
+      const slow = new Promise((r) => setTimeout(() => r('done'), 40));
+      assert.equal(await withAdapterDeadline('codex', slow), 'done',
+        'the default deadline fired on work that took 40ms');
     });
 
   it('rejects with a flagged error when the work never settles', async () => {

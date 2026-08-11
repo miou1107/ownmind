@@ -161,6 +161,26 @@ Two test weaknesses the review named and both are closed: the npm.cmd assertion 
 satisfied by a comment (it now strips comments first), and no test covered a `update_sh`
 failure or checked that a successful upgrade stamps the day.
 
+## What CI caught that neither review did
+
+The deadline timer was `unref`'d, so that a finished run would not sit waiting out the
+remaining minutes. `clearTimeout` in the `finally` already did that, and an unref'd timer
+cannot hold the event loop open — so an adapter wedged on an awaited promise rather than on
+a live handle holds nothing either, the loop drains, and the process leaves *before* the
+deadline fires. The hung tool reports nothing, which is the exact silence the deadline was
+written to break.
+
+Node 24's test runner keeps its own handle alive and hid it. Node 20 said so out loud:
+"Promise resolution is still pending but the event loop has already resolved". The local
+suite was green and wrong, on every run, across three review rounds.
+
+One test had to change with it: it raced a promise that never settled against the real
+ten-minute default, which without the unref left a live timer nothing would clear — the run
+hung for ten minutes instead of failing. It now races work that finishes in 40ms, which is
+the same claim without the leak.
+
+Both suites are now run on Node 20 as well as 24 before this is called done.
+
 ### Known limitation, not fixed
 
 On Windows, `execFile` with `shell: true` and a timeout kills the shell and not the `npm`

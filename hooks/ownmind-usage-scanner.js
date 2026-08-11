@@ -175,9 +175,18 @@ function withAdapterDeadline(tool, work, deadlineMs = ADAPTER_DEADLINE_MS) {
       err.__adapterTimeout = true;
       reject(err);
     }, deadlineMs);
-    // Node keeps the process alive for a pending timer. Without this an otherwise finished
-    // run would sit here for the rest of the deadline before exiting.
-    timer.unref?.();
+    // No unref here, and the reason is the whole point of the deadline.
+    //
+    // It was unref'd so a finished run would not sit waiting out the remaining minutes —
+    // but `clearTimeout` in the `finally` below already does that, and an unref'd timer
+    // cannot hold the event loop open. An adapter wedged on an awaited promise rather than
+    // on a live handle holds nothing either, so the loop would drain and the process would
+    // leave *before* the deadline ever fired: the tool that hung would report nothing,
+    // which is the exact silence this was written to break.
+    //
+    // Node 20's test runner says so out loud — "Promise resolution is still pending but
+    // the event loop has already resolved" — while Node 24 keeps the runner's own handle
+    // alive and hides it. Locally green, and wrong.
   });
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
