@@ -1,5 +1,75 @@
 # OwnMind 檔案結構
 
+## v1.26.140 修改（兩個都印了 OK 的失敗）
+
+新檔：
+```
+scripts/windows/lib/append-upgrade-rule.ps1     — Add-OwnMindUpgradeRule：把升級規則寫進別的
+                                                   AI 工具的指示檔。從 update.ps1 抽出來才測得到。
+                                                   讀到 null（空檔案）一律當空字串——原本直接餵給
+                                                   [regex]::Replace() 會炸，而且賦值沒完成，
+                                                   下一行再對 null 呼叫 .TrimEnd()。
+                                                   回 written / skipped，其餘一律丟例外讓呼叫端
+                                                   自己交代。用 WriteAllText 寫（Set-Content
+                                                   -Encoding UTF8 在 PS 5.1 會加 BOM，這些檔案
+                                                   是別家工具在讀）
+tests/append-upgrade-rule.test.js               — 7 條真的跑 PowerShell 的行為測試（空檔案、
+                                                   檔案不存在、使用者自己的內容、連跑兩次、
+                                                   中文原樣往返、工具沒安裝、沒有 BOM）
+                                                   ＋ 靜態測試釘住兩個寫法不准搬回來。
+                                                   跑的時候會照 update.ps1 一樣先開 StrictMode。
+                                                   沒有 pwsh 的機器會標示原因跳過，不會假裝跑過
+tests/update-sh-upgrade-rule.test.js            — 9 條。把 update.sh 的 1b 區塊從真正的腳本
+                                                   抽出來跑（抄一份會走鐘），用假的 HOME 跟
+                                                   一個必定失敗的 node 測「清除步驟跑不起來」。
+                                                   做過 mutation：把 || true 加回去、把結尾換回
+                                                   寫死字串、把失敗算成成功，三個突變都被抓到
+```
+
+修改檔：
+```
+scripts/update.ps1                              — 改用抽出來的輔助函式；六個目標逐一計數，
+                                                   失敗的會被指名，結尾印實際數量而不是寫死的
+                                                   「[ OK ] synced」——就是那行固定字串讓這個錯誤
+                                                   看起來像成功。輔助檔不在（不完整的 checkout）
+                                                   會出一行警告，而不是整段安靜跳過
+scripts/update.sh                               — 同一件事的 mac / Linux / Git Bash 版：結尾印
+                                                   實際數量、清除步驟不再掛 `|| true`（掛著的話
+                                                   node 跑不起來會變成「舊區塊留著 + 又加一個新的」
+                                                   而畫面照樣說成功）
+scripts/windows/lib/append-upgrade-rule.ps1     — 讀檔改用 [System.IO.File]::ReadAllText。
+                                                   Get-Content -Raw 在 PowerShell 5.1 讀沒有 BOM
+                                                   的檔案會用系統編碼（繁中 Windows 是 cp950），
+                                                   而這支程式寫的就是沒有 BOM 的 UTF-8——
+                                                   下一次更新會把使用者自己的中文當 Big5 解、
+                                                   弄壞再寫回去
+src/lib/llm-narrative.js                        — callLLMSwitch 會重試：408 / 429 / 5xx 跟連線
+                                                   直接失敗重兩次、間隔三秒、總共 60 秒為限，
+                                                   而且每次嘗試的逾時被這個期限夾住（否則三次
+                                                   卡死要等九十秒）；4xx 一次就回報。錯誤訊息帶
+                                                   實際用掉幾次嘗試。上游回應留 2,000 字而不是
+                                                   200 字——查上一次那個 502 得從伺服器手動重放
+                                                   請求，因為紀錄剛好斷在第二、三個供應商失敗
+                                                   的原因那裡
+src/lib/narrative-condense.js                   — 更正 v1.26.137 寫下的「閘道有 40 KiB 硬上限」。
+                                                   那次的探測內容是同一句短句重複貼的，每位元組
+                                                   耗的 token 遠少於真實報告，所以二分法找到的
+                                                   邊界不是位元組的邊界。實測：40,214 位元組過得去，
+                                                   而 35,301 位元組被擋，同一份二十分鐘後六次全過。
+                                                   精簡買的是機率不是保證，註解照實改
+src/routes/me-narrative.js                      — 同上，註解改成量到的事實
+tests/llm-narrative.test.js                     — 17 條重試測試。做過 mutation：拿掉 429、
+                                                   預設不重試、上游訊息砍回 200 字、拿掉嘗試次數、
+                                                   什麼狀態都重試，五個突變全部被抓到。
+                                                   逾時那條改成用真的會理會 signal 的 fetch——
+                                                   原本自己造一個 AbortError，而真正的
+                                                   DOMException 的 message 是唯讀的，
+                                                   那條測試綠著放過了一個會毀掉錯誤訊息的
+                                                   TypeError
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.140 與三語同步
+```
+
 ## v1.26.139 修改（每次跑測試都有紅字，每次紅的都不是同一個）
 
 新檔：
