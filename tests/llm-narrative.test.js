@@ -131,8 +131,359 @@ describe('callLLMSwitch', () => {
       text: async () => 'service unavailable',
     });
     await assert.rejects(
-      () => callLLMSwitch({ apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: 'https://example.com/llm-switch/v1' }),
+      () => callLLMSwitch({ apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: 'https://example.com/llm-switch/v1', retries: 0 }),
       /503/
+    );
+  });
+});
+
+/**
+ * v1.26.140 — the 14-day and 30-day 整體分析 reports failed whenever the shared gateway was
+ * busy, and the page showed an error rather than a report.
+ *
+ * Measured on production 2026-08-11. The same 35,301-byte body that the route builds for the
+ * 14-day range came back 502 from the route four times running at 01:03–01:12 UTC, then
+ * succeeded on every one of three sequential and three concurrent replays twenty minutes
+ * later, and the endpoint itself then answered 200 five times in a row. A 40,214-byte probe
+ * body went through during the same window in which 35,301 was refused, so size is not what
+ * decides it — the gateway's capacity at that moment is.
+ *
+ * The 7-day range kept working throughout because it is smaller (31,929 bytes) and slips
+ * under whatever budget was left. That is why this looked like a size limit in v1.26.137.
+ *
+ * A failure that resolves itself in seconds should cost the reader a slower report, not a
+ * missing one.
+ */
+describe('callLLMSwitch — retrying a gateway that is momentarily out of capacity', () => {
+  const base = 'https://example.com/llm-switch/v1';
+  const ok = {
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: '{"summary_one_line":"hi"}' } }] }),
+  };
+
+  it('a 502 that succeeds on the next attempt returns the report', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      if (calls === 1) return { ok: false, status: 502, text: async () => 'All 3 provider attempts failed' };
+      return ok;
+    };
+    const out = await callLLMSwitch({
+      apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retryDelayMs: 0,
+    });
+    assert.equal(out.summary_one_line, 'hi');
+    assert.equal(calls, 2);
+  });
+
+  it('a network error that clears on the next attempt returns the report', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('fetch failed');
+      return ok;
+    };
+    const out = await callLLMSwitch({
+      apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retryDelayMs: 0,
+    });
+    assert.equal(out.summary_one_line, 'hi');
+    assert.equal(calls, 2);
+  });
+
+  it('gives up after the configured number of retries', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      return { ok: false, status: 502, text: async () => 'still busy' };
+    };
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries: 2, retryDelayMs: 0,
+      }),
+      /502/
+    );
+    assert.equal(calls, 3, 'the first attempt plus two retries');
+  });
+
+  /**
+   * A rejection the gateway will repeat is not worth waiting for three times. 400 and 401
+   * mean the request or the key is wrong, and no amount of retrying changes either.
+   */
+  it('does not retry a request the gateway will refuse again', async () => {
+    for (const status of [400, 401, 403, 404]) {
+      let calls = 0;
+      const fakeFetch = async () => {
+        calls += 1;
+        return { ok: false, status, text: async () => 'nope' };
+      };
+      await assert.rejects(
+        () => callLLMSwitch({
+          apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries: 2, retryDelayMs: 0,
+        }),
+        new RegExp(String(status))
+      );
+      assert.equal(calls, 1, `${status} should be attempted once`);
+    }
+  });
+
+  it('retries 429, which is the gateway saying "not right now"', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      if (calls === 1) return { ok: false, status: 429, text: async () => 'rate limited' };
+      return ok;
+    };
+    const out = await callLLMSwitch({
+      apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retryDelayMs: 0,
+    });
+    assert.equal(out.summary_one_line, 'hi');
+    assert.equal(calls, 2);
+  });
+
+  /**
+   * Diagnosing the 502 above needed the request replayed by hand from the server, because
+   * the log had been cut off mid-sentence at 200 characters — right where the reason for the
+   * second and third provider failing would have been.
+   */
+  it('keeps enough of the upstream reply to say why every provider failed', async () => {
+    const upstream = 'All 3 provider attempts failed: '
+      + 'groq/llama-3.3-70b-versatile: 413 Payload Too Large; '.padEnd(400, '.')
+      + 'mistral/mistral-small-latest: 429 capacity exceeded, retry after 60s; '
+      + 'openai/gpt-4o-mini: 500 upstream unavailable';
+    const fakeFetch = async () => ({ ok: false, status: 502, text: async () => upstream });
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries: 0, retryDelayMs: 0,
+      }),
+      (err) => {
+        assert.match(err.message, /mistral-small-latest: 429/);
+        assert.match(err.message, /gpt-4o-mini: 500/);
+        return true;
+      }
+    );
+  });
+
+  /**
+   * A real abort, not a hand-built one.
+   *
+   * The first version of this test threw `Object.assign(new Error(), {name: 'AbortError'})`,
+   * and passed against code that could not survive a genuine timeout: an aborted fetch
+   * rejects with a DOMException whose `message` is a getter-only accessor, so the line that
+   * appended the attempt count threw `TypeError: Cannot set property message` and destroyed
+   * the error it was annotating. Both ends of the interface were fabricated, so the fakes
+   * only agreed with each other.
+   */
+  it('a genuine timeout surfaces as a readable error, not as a TypeError', async () => {
+    // Honours the signal and does nothing else — this is what a stalled gateway looks like.
+    const stallingFetch = (url, opts) => new Promise((_, reject) => {
+      opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+    });
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: stallingFetch, apiBase: base,
+        timeoutMs: 20, retries: 1, retryDelayMs: 0,
+      }),
+      (err) => {
+        assert.notEqual(err.constructor.name, 'TypeError', err.message);
+        assert.match(err.message, /timed out/);
+        assert.match(err.message, /after 2 attempts/);
+        return true;
+      }
+    );
+  });
+
+  /**
+   * Somebody is watching a page while this runs. Three attempts that each time out at 30
+   * seconds would hold them there for a minute and a half; retrying is for a gateway that
+   * refuses in three seconds, not for one that has stopped answering.
+   */
+  it('stops retrying once the overall deadline has passed, even with attempts left', async () => {
+    let calls = 0;
+    let clock = 0;
+    const stallingFetch = (url, opts) => new Promise((_, reject) => {
+      calls += 1;
+      clock += 40_000;   // each attempt stalls until its own timeout
+      opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+    });
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: stallingFetch, apiBase: base,
+        timeoutMs: 20, retries: 2, retryDelayMs: 0, overallTimeoutMs: 60_000, now: () => clock,
+      }),
+      /after 2 attempts/
+    );
+    assert.equal(calls, 2, 'two stalled attempts reach the 60s deadline; the third is not started');
+  });
+
+  /**
+   * The classifier used to be a substring match on the error message, and the message
+   * carries the model's own output. A report whose text happened to mention a network error
+   * was retried three times and then reported as a transport failure.
+   */
+  /**
+   * A gateway under load answers 200 and then stalls streaming the body. That is the same
+   * out-of-capacity condition as a 502 and has to stay retryable.
+   *
+   * Before this was covered, `res.json()` sat outside the try that classifies failures, so
+   * the abort escaped as a raw DOMException with `transient` still false: no retry, and a
+   * log line reading `DOMException [AbortError]: This operation was aborted` — no attempt
+   * count, no URL, nothing about a timeout. The failure C1 was fixed to remove, arriving
+   * through a different door.
+   */
+  it('a body that stalls after the headers arrive is retried', async () => {
+    let calls = 0;
+    const fakeFetch = async (url, opts) => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: true,
+          json: () => new Promise((_, reject) => {
+            opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+          }),
+        };
+      }
+      return ok;
+    };
+    const out = await callLLMSwitch({
+      apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base,
+      timeoutMs: 20, retries: 1, retryDelayMs: 0,
+    });
+    assert.equal(out.summary_one_line, 'hi');
+    assert.equal(calls, 2);
+  });
+
+  it('a body that never finishes is reported readably rather than as a DOMException', async () => {
+    const stallingBody = async (url, opts) => ({
+      ok: true,
+      json: () => new Promise((_, reject) => {
+        opts.signal.addEventListener('abort', () => reject(opts.signal.reason));
+      }),
+    });
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: stallingBody, apiBase: base,
+        timeoutMs: 20, retries: 1, retryDelayMs: 0,
+      }),
+      (err) => {
+        assert.notEqual(err.constructor.name, 'DOMException', err.message);
+        assert.match(err.message, /body timed out/);
+        assert.match(err.message, /after 2 attempts/);
+        return true;
+      }
+    );
+  });
+
+  it('does not retry a 200 whose content is not the JSON that was asked for', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'the gateway had a network error and a socket timeout' } }] }),
+      };
+    };
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries: 2, retryDelayMs: 0,
+      }),
+      /parse failed/
+    );
+    assert.equal(calls, 1, 'the gateway answered; asking again produces the same answer');
+  });
+
+  it('does not retry a programming error in the response handling', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      return { ok: true };   // no json()
+    };
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries: 2, retryDelayMs: 0,
+      }),
+      /res\.json is not a function/
+    );
+    assert.equal(calls, 1);
+  });
+
+  it('a connection that never opens is retried', async () => {
+    let calls = 0;
+    const fakeFetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError('fetch failed');
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: '{"summary_one_line":"hi"}' } }] }),
+      };
+    };
+    const out = await callLLMSwitch({
+      apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retryDelayMs: 0,
+    });
+    assert.equal(out.summary_one_line, 'hi');
+    assert.equal(calls, 2);
+  });
+
+  it('a nonsense retry count still makes one attempt rather than dereferencing nothing', async () => {
+    for (const retries of [-1, NaN, undefined]) {
+      const fakeFetch = async () => ({ ok: false, status: 502, text: async () => 'busy' });
+      await assert.rejects(
+        () => callLLMSwitch({
+          apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries, retryDelayMs: 0,
+        }),
+        (err) => {
+          assert.match(err.message, /502/);
+          assert.doesNotMatch(err.message, /after 0 attempts/);
+          return true;
+        },
+        `retries: ${retries}`
+      );
+    }
+  });
+
+  /** A base URL that cannot be parsed answers the same way every time. */
+  it('does not retry an unusable apiBase', async () => {
+    let calls = 0;
+    const fakeFetch = async () => { calls += 1; return ok; };
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: 'not-a-url', retries: 2, retryDelayMs: 0,
+      }),
+      /Invalid URL|Failed to parse/
+    );
+    assert.equal(calls, 0, 'a request was never worth sending');
+  });
+
+  /**
+   * The clock has to move when the fake sleeps, or the test is asking the code to respect a
+   * deadline against a clock that never advances — which it would always pass.
+   */
+  it('does not sleep past the overall deadline between attempts', async () => {
+    let clock = 0;
+    let elapsedInFetch = 0;
+    const fakeFetch = async () => {
+      clock += 900;              // each refusal takes 900ms
+      elapsedInFetch += 900;
+      return { ok: false, status: 502, text: async () => 'busy' };
+    };
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base,
+        retries: 2, retryDelayMs: 3_000, overallTimeoutMs: 1_000,
+        now: () => clock,
+        sleep: async (ms) => { clock += ms; },
+      }),
+      /502/
+    );
+    assert.ok(clock <= 1_000, `the call ran to ${clock}ms against a 1000ms deadline`);
+    assert.equal(elapsedInFetch, 900, 'one attempt; the deadline stopped the second');
+  });
+
+  it('says how many attempts were made, so a slow report is not mistaken for a slow gateway', async () => {
+    const fakeFetch = async () => ({ ok: false, status: 502, text: async () => 'busy' });
+    await assert.rejects(
+      () => callLLMSwitch({
+        apiKey: 'sk-x', messages: [], fetchImpl: fakeFetch, apiBase: base, retries: 2, retryDelayMs: 0,
+      }),
+      /3 attempts/
     );
   });
 });

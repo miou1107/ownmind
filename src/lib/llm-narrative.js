@@ -108,29 +108,138 @@ function stableStringify(obj) {
   return '{' + keys.map(k => JSON.stringify(k) + ':' + stableStringify(obj[k])).join(',') + '}';
 }
 
-export async function callLLMSwitch({ apiKey, messages, fetchImpl = fetch, timeoutMs = 30_000, apiBase = process.env.OWNMIND_LLM_API_BASE }) {
+/**
+ * Statuses worth trying again.
+ *
+ * The gateway wraps every provider failure as 502, and 502 is exactly the case this exists
+ * for: measured on production 2026-08-11, the same request body was refused four times in
+ * one ten-minute window and then accepted on every one of six replays afterwards. 408, 429
+ * and the other 5xx are the same kind of answer — "not right now" rather than "not ever".
+ *
+ * Everything else is the gateway saying the request or the key is wrong, and repeating it
+ * only makes the reader wait longer for the same refusal.
+ */
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+/** How much of the upstream reply to keep. Enough to name every provider that refused. */
+const UPSTREAM_EXCERPT_CHARS = 2000;
+
+export async function callLLMSwitch({
+  apiKey,
+  messages,
+  fetchImpl = fetch,
+  timeoutMs = 30_000,
+  apiBase = process.env.OWNMIND_LLM_API_BASE,
+  retries = 2,
+  retryDelayMs = 3_000,
+  // Somebody is watching a page while this runs. Three attempts that each time out at 30s
+  // would keep them there for a minute and a half, so retrying stops at this mark whether or
+  // not the attempts are used up. Refusals come back in about three seconds, which is the
+  // case retrying is for; a stall is not.
+  overallTimeoutMs = 60_000,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now = () => Date.now(),
+}) {
   if (!apiKey) throw new Error('LLM_SWITCH_API_KEY not set');
   if (!apiBase) throw new Error('OWNMIND_LLM_API_BASE not set (the OpenAI-compatible LLM endpoint base URL)');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetchImpl(`${apiBase.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: buildRequestBody(messages),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const txt = typeof res.text === 'function' ? await res.text().catch(() => '') : '';
-      throw new Error(`LLM upstream ${res.status}: ${String(txt).slice(0, 200)}`);
+
+  // Number.isFinite, not Math.max alone: `retries: NaN` makes `Math.max(1, NaN)` NaN, the
+  // loop never runs, and the throw at the end dereferences an error nobody assigned.
+  const attempts = Number.isFinite(retries) ? Math.max(1, Math.trunc(retries) + 1) : 1;
+  const startedAt = now();
+  // Built once, before any attempt. A base URL that cannot be parsed is a configuration
+  // error, and retrying it three times only spends the reader's patience on a fixed answer.
+  const url = new URL('chat/completions', `${apiBase.replace(/\/+$/, '')}/`).toString();
+  let lastError;
+  let used = 0;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    // Checked before starting rather than only after failing. Sleeping between attempts can
+    // carry the clock past the deadline, and starting an attempt with a millisecond of
+    // budget left burns a slot and replaces a useful error with a timeout.
+    const remaining = overallTimeoutMs - (now() - startedAt);
+    if (attempt > 1 && remaining <= 0) break;
+    used = attempt;
+
+    const controller = new AbortController();
+    // Clamped to what is left of the overall budget, so the deadline is a real bound rather
+    // than a suggestion: without this a second attempt started just under the mark can run a
+    // full timeout past it.
+    const attemptTimeout = Math.max(1, Math.min(timeoutMs, remaining));
+    const timer = setTimeout(() => controller.abort(), attemptTimeout);
+    let transient = false;
+    try {
+      let res;
+      try {
+        res = await fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: buildRequestBody(messages),
+          signal: controller.signal,
+        });
+      } catch (err) {
+        // Nothing came back at all: the connection failed, or this attempt's clock ran out.
+        // Both are the same kind of "not right now" as a 502.
+        //
+        // Deliberately a fresh Error rather than the one thrown. An aborted fetch rejects
+        // with a DOMException whose `message` is a getter — assigning to it in a module
+        // (strict mode) throws a TypeError, which is what would reach the log instead of the
+        // reason. A hand-built `new Error()` with `name = 'AbortError'` does not behave that
+        // way, so a test that fakes one proves nothing about this path.
+        transient = true;
+        throw new Error(
+          controller.signal.aborted
+            ? `LLM request timed out after ${attemptTimeout}ms`
+            : `LLM transport failure: ${err?.message || err}`,
+          { cause: err }
+        );
+      }
+
+      if (!res.ok) {
+        const txt = typeof res.text === 'function' ? await res.text().catch(() => '') : '';
+        transient = RETRYABLE_STATUS.has(res.status);
+        throw new Error(`LLM upstream ${res.status}: ${String(txt).slice(0, UPSTREAM_EXCERPT_CHARS)}`);
+      }
+
+      // The headers arrived, but the body still has to. A gateway under load answers 200 and
+      // then stalls streaming the JSON — the same out-of-capacity condition the rest of this
+      // is about — and that abort has to stay retryable. What is NOT retryable is the answer
+      // itself being wrong: a body that arrives and does not parse arrives the same way next
+      // time, so `parseLLMJson` sits outside this and is surfaced immediately.
+      let json;
+      try {
+        json = await res.json();
+      } catch (err) {
+        if (!controller.signal.aborted) throw err;
+        transient = true;
+        throw new Error(
+          `LLM response body timed out after ${attemptTimeout}ms`,
+          { cause: err }
+        );
+      }
+      const content = json?.choices?.[0]?.message?.content || '';
+      return parseLLMJson(content);
+    } catch (err) {
+      if (!transient) throw err;
+      lastError = err;
+      if (attempt === attempts) break;
+      // Clamped to the deadline as well. Sleeping the full delay past the mark is how a
+      // "60-second deadline" quietly becomes 63 seconds.
+      await sleep(Math.max(0, Math.min(retryDelayMs, overallTimeoutMs - (now() - startedAt))));
+    } finally {
+      clearTimeout(timer);
     }
-    const json = await res.json();
-    const content = json?.choices?.[0]?.message?.content || '';
-    return parseLLMJson(content);
-  } finally {
-    clearTimeout(timer);
   }
+
+  // The attempt count belongs in the message: without it a report that took forty seconds
+  // and one that took thirteen read identically in the log. It reports attempts actually
+  // started, which is not always `attempts` — the deadline can end it early.
+  //
+  // A new Error rather than editing the one caught: every error that reaches here is one of
+  // ours, but building a fresh one keeps that from being a thing this line has to be right
+  // about.
+  throw new Error(`${lastError.message} (after ${used} attempts)`, { cause: lastError });
 }
