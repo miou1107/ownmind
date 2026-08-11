@@ -242,7 +242,7 @@ if [ -n "${DIRTY}" ]; then
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull complete"
 else
-  # v1.26.143 — this branch used to be unreachable on macOS and Linux, because the tree was
+  # v1.26.144 — this branch used to be unreachable on macOS and Linux, because the tree was
   # always read as dirty and the reset above ran instead. Now it is the live path, so its
   # one realistic failure has to be legible: an untracked file whose name a new release has
   # started tracking makes `--ff-only` refuse ("would be overwritten by merge"). The reset
