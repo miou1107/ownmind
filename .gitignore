@@ -54,6 +54,9 @@ state/
 .node-path
 .git-bash-path
 .last-mcp-update-check
+# v1.26.143: written by self-check.cjs's usage_roundtrip step. The other markers beside it
+# were already ignored; this one was missed, so every self-check left the checkout dirty.
+.last-usage-roundtrip
 .session-hook-installed
 cache/
 git-hooks/
