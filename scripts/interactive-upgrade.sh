@@ -199,14 +199,30 @@ cd "${OWNMIND_DIR}" || FAIL "cd_failed" "Cannot enter ${OWNMIND_DIR}"
 # stderr goes to its own file rather than into DIRTY: git writes CRLF warnings there, and
 # folding those into the value would make a clean tree look dirty and trigger a reset --hard.
 # But it must be kept — reporting only an exit code repeats the mistake this release is about.
+#
+# v1.26.144 — `--untracked-files=no`. The branch below answers a dirty tree with
+# `git reset --hard`, and reset acts on tracked files only: an untracked path is still
+# there when it finishes, so it chooses the destructive branch again on the next upgrade,
+# and the one after that. On a machine measured on 2026-08-11 the untracked entries were
+# `bin/` and `reports/` — both written into the checkout by OwnMind itself. They are still
+# logged just below, because they are worth seeing; they no longer overwrite anything.
 STATUS_ERR="${LOG_FILE}.status"
-DIRTY=$(git status --porcelain 2>"${STATUS_ERR}")
+DIRTY=$(git status --porcelain --untracked-files=no 2>"${STATUS_ERR}")
 STATUS_CODE=$?
 cat "${STATUS_ERR}" >>"${LOG_FILE}" 2>/dev/null || true
 if [ "${STATUS_CODE}" -ne 0 ]; then
   report_error "upgrade_git_status_failed" "git status --porcelain exited ${STATUS_CODE}: $(last_log_lines "${STATUS_ERR}")" "${STATUS_ERR}"
   # No rollback: nothing has been modified yet. The backup copy stays for sweep-old-backups.
   FAIL "git_status" "git status failed (exit ${STATUS_CODE}); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
+fi
+# Recorded, not acted on. Whoever reads an upgrade log still gets to see what else is in
+# the directory; the decision above is not theirs to make.
+UNTRACKED=$(git status --porcelain --untracked-files=normal 2>/dev/null | grep '^??' || true)
+if [ -n "${UNTRACKED}" ]; then
+  {
+    echo "[info] untracked paths present (not touched by this upgrade):"
+    echo "${UNTRACKED}"
+  } >>"${LOG_FILE}" 2>/dev/null || true
 fi
 if [ -n "${DIRTY}" ]; then
   STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"

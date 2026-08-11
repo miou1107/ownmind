@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.143 修改（v1.26.139 修錯了：不是競態，是 fetch 拒絕某些埠號）
+## v1.26.144 修改（v1.26.139 修錯了：不是競態，是 fetch 拒絕某些埠號）
 
 改檔：
 ```
@@ -1540,6 +1540,29 @@ tests/upgrade-rollback-honesty.test.js          — 收 review 補的五項各�
                                                    回報得出去（含對照組）、還原失敗只看自己的
                                                    錯誤、訊息摺一行且有上限、Windows 少建的
                                                    資料夾、git status 要留下原因
+## v1.26.144 修改（升級程式把自己寫出來的東西當成「你改的」）
+
+新增檔：
+```
+tests/upgrade-dirty-tree-is-the-users.test.js    — chmod +x 的清單從兩支安裝腳本讀出來，逐一
+                                                   檢查 repo 裡記錄成 100755；把腳本裡那行
+                                                   git status 抽出來，在真的 git repo 上跑
+                                                   三種狀態（只有未追蹤檔／改過追蹤檔／改過
+                                                   權限），確認只有後兩種算「被改過」
+openspec/changes/v1.26.144-upgrader-calls-its-own-output-your-changes/ — proposal / spec / tasks
+```
+
+改動檔：
+```
+hooks/ownmind-usage-scanner.js                  — 檔案權限記成 100755（內容沒動）。安裝腳本
+                                                   跟同步腳本都會 chmod +x 它，記成 644 等於
+                                                   每台機器裝完就永遠是「被改過」的狀態
+scripts/interactive-upgrade.sh                  — 判斷「被改過」改用 --untracked-files=no；
+                                                   未追蹤檔另外寫進紀錄，但不再觸發覆蓋
+scripts/interactive-upgrade.ps1                 — 同上（IR-022 兩端一起改）
+.gitignore                                      — 加 bin/ reports/ standards/
+```
+
 ## v1.26.142 修改（壞在沒人看得到的地方）
 
 新增檔：
