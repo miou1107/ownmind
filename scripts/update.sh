@@ -220,7 +220,10 @@ if [ -f "$RULES_BLOCK" ] && [ -f "$RULES_SYNC" ]; then
       --snippet "$(to_win_path "$RULES_BLOCK")" \
       $legacy_flag 2>>"${HOME}/.ownmind/logs/update-err.log")" || return 2
     case "$result" in
-      written:*) return 0 ;;
+      # `repaired:` is a successful write that also had to remove a broken marker the file
+      # had picked up. It was falling through to the catch-all and being reported as a
+      # failure — a working upgrade printing a warning teaches people to ignore warnings.
+      written:*|repaired:*) return 0 ;;
       legacy-kept:*) return 3 ;;
       skipped:*) return 1 ;;
       *) return 2 ;;

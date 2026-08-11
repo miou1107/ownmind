@@ -95,20 +95,53 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  *
  * @returns {{ text: string, orphan: boolean }}
  */
+const FENCE = /^\s*(```+|~~~+)/;
+
+/**
+ * Which lines are inside a fenced code block, and therefore prose about markers rather than
+ * markers.
+ *
+ * Reproduced before this existed: a CLAUDE.md whose owner had documented what OwnMind puts
+ * in their file — the markers shown inside a ```markdown fence — came back with the fence
+ * emptied and the explanation gone. Anyone who pastes the block into their own notes to
+ * remember what it is loses those notes on the next upgrade, silently.
+ */
+function fencedLines(lines) {
+  const inFence = new Array(lines.length).fill(false);
+  let open = null;
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(FENCE);
+    if (open === null) {
+      if (m) { open = m[1]; inFence[i] = true; }
+    } else {
+      inFence[i] = true;
+      // CommonMark: a fence closes on the same character, at least as long as the opener.
+      // Comparing only the character closes a ```` fence on the first ``` inside it, and
+      // everything after that looks like ordinary text again — including marker examples,
+      // which then get deleted.
+      if (m && m[1][0] === open[0] && m[1].length >= open.length) open = null;
+    }
+  }
+  return inFence;
+}
+
 function stripBlocks(text, marker) {
   const open = new RegExp(`^\\s*<!--\\s*${esc(marker)}\\s*-->\\s*$`);
   const close = new RegExp(`^\\s*<!--\\s*/${esc(marker)}\\s*-->\\s*$`);
   const lines = text.split('\n');
+  const fenced = fencedLines(lines);
+  const isOpen = (i) => !fenced[i] && open.test(lines[i]);
+  const isClose = (i) => !fenced[i] && close.test(lines[i]);
   const out = [];
   let orphan = false;
   let i = 0;
 
   while (i < lines.length) {
-    if (open.test(lines[i])) {
+    if (isOpen(i)) {
       // Scan for this opener's partner. Another opener first means this one never had one.
       let j = i + 1;
-      while (j < lines.length && !close.test(lines[j]) && !open.test(lines[j])) j += 1;
-      if (j < lines.length && close.test(lines[j])) {
+      while (j < lines.length && !isClose(j) && !isOpen(j)) j += 1;
+      if (j < lines.length && isClose(j)) {
         i = j + 1;          // a matched pair: drop it and everything it wraps
         continue;
       }
@@ -116,7 +149,7 @@ function stripBlocks(text, marker) {
       i += 1;               // dangling opener: drop this line only, keep what follows
       continue;
     }
-    if (close.test(lines[i])) {
+    if (isClose(i)) {
       orphan = true;
       i += 1;               // dangling closer: also ours, also one line
       continue;
@@ -187,21 +220,54 @@ function main() {
   }
 
   const stripped = stripBlocks(existing, marker);
-  const block = `\n<!-- ${marker} -->\n${body}\n<!-- /${marker} -->\n`;
-  const next = `${stripped.text.replace(/\s+$/, '')}\n${block}`;
+  // Match the file's own line ending. A CRLF file on Windows would otherwise come back with
+  // our block in LF and everything else in CRLF.
+  const eol = /\r\n/.test(existing) && !/(^|[^\r])\n/.test(existing) ? '\r\n' : '\n';
+  const nl = (s) => s.replace(/\r?\n/g, eol);
+  const block = nl(`\n<!-- ${marker} -->\n${body}\n<!-- /${marker} -->\n`);
+  const next = `${stripped.text.replace(/\s+$/, '')}${eol}${block}`;
 
-  // Write through a sibling temp file and rename: this file holds the user's own rules, and
-  // an interrupted write that truncates it is not recoverable from anything we hold. The temp
+  // Write through a temp file and rename: this file holds the user's own rules, and an
+  // interrupted write that truncates it is not recoverable from anything we hold. The temp
   // sits next to the REAL target so the rename stays within one filesystem.
-  const tmp = path.join(path.dirname(realTarget), `.${path.basename(realTarget)}.ownmind.tmp`);
+  //
+  // The name carries the pid: two upgrades running at once (a scheduled one and one the user
+  // started) otherwise write the same temp path, interleave, and rename the result over the
+  // file. Same-name temp files are how an atomic write stops being atomic.
+  const tmp = path.join(
+    path.dirname(realTarget),
+    `.${path.basename(realTarget)}.ownmind.${process.pid}.tmp`
+  );
   try {
     // A fresh file inherits the process umask; an existing one keeps whatever the user set.
     // Without this, a CLAUDE.md they had chmod'ed to 600 comes back 644 after an upgrade.
-    let mode;
-    try { mode = fs.statSync(realTarget).mode & 0o777; } catch { /* new file */ }
-    fs.writeFileSync(tmp, next, 'utf8');
-    if (mode !== undefined) fs.chmodSync(tmp, mode);
-    fs.renameSync(tmp, realTarget);
+    let stat;
+    try { stat = fs.statSync(realTarget); } catch { /* new file */ }
+
+    // More than one name points at this inode: renaming over it would break the other names
+    // off onto the old content, and they would never receive an update again. Writing in
+    // place keeps every link pointing at the same, updated file. It gives up atomicity, so
+    // it is used only where rename would do visible damage.
+    if (stat && stat.nlink > 1) {
+      // Writing in place truncates first, so a crash or a full disk here leaves the user's
+      // file short. rename() is not available: it would break the other names off onto the
+      // old content. A copy alongside bounds the damage to "restore this file" instead of
+      // "the rules you wrote are gone".
+      const bak = `${tmp}.bak`;
+      fs.copyFileSync(realTarget, bak);
+      try {
+        fs.writeFileSync(realTarget, next, 'utf8');
+      } catch (err) {
+        fs.copyFileSync(bak, realTarget);
+        throw err;
+      } finally {
+        try { fs.unlinkSync(bak); } catch { /* already gone */ }
+      }
+    } else {
+      fs.writeFileSync(tmp, next, 'utf8');
+      if (stat) fs.chmodSync(tmp, stat.mode & 0o777);
+      fs.renameSync(tmp, realTarget);
+    }
   } catch (err) {
     try { fs.unlinkSync(tmp); } catch { /* nothing to clean up */ }
     process.stderr.write(`error:${target}:cannot write: ${err.message}\n`);
