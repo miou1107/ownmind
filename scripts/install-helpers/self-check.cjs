@@ -1072,7 +1072,58 @@ async function collectEnv() {
  */
 const QUICK_SKIP = ['usage_roundtrip'];
 
-async function checkNamesFor({ quick = false } = {}) {
+/**
+ * v1.26.142 — when the round-trip last ran, so `--quick` can run it occasionally instead
+ * of never.
+ *
+ * v1.26.81 took `usage_roundtrip` out of the quick set because scanning every local
+ * database once a day in the background is too much for a check the scanner's own
+ * schedule already covers. That reasoning holds. What was not measured is that `--quick`
+ * is the auto-update path, and for anyone who never re-runs the installer by hand it is
+ * the *only* path — so "not every day" became "not ever". One member's machine has
+ * uploaded fourteen checks a day for weeks, every one of them about whether things are
+ * installed, and never once the only check that asks whether the data is arriving.
+ *
+ * Weekly turns never into within-seven-days, at one extra scan a week, with no user
+ * action of any kind. That last part is the requirement: the machines this is for belong
+ * to people who are busy, and any fix that needs them to type something does not happen.
+ */
+const ROUNDTRIP_MARKER = path.join(OWNMIND_DIR, '.last-usage-roundtrip');
+const ROUNDTRIP_INTERVAL_DAYS = 7;
+
+/**
+ * Whether the weekly round-trip is due.
+ *
+ * Every failure to read answers "yes". The machines that cannot be reasoned about from
+ * the server are the entire point of the check, and a throttle that fails closed would
+ * silence exactly the population it exists to serve. A missing marker, an unreadable one,
+ * a date that will not parse, and a clock that has moved backwards all mean run it.
+ *
+ * @param {string} [markerPath]
+ * @param {Date} [now]
+ * @returns {boolean}
+ */
+function roundtripDue(markerPath = ROUNDTRIP_MARKER, now = new Date()) {
+  let stamp;
+  try { stamp = fs.readFileSync(markerPath, 'utf8').trim(); }
+  catch { return true; }
+  const last = Date.parse(stamp);
+  if (!Number.isFinite(last)) return true;
+  const elapsedDays = (now.getTime() - last) / 86_400_000;
+  if (!(elapsedDays >= 0)) return true;
+  return elapsedDays >= ROUNDTRIP_INTERVAL_DAYS;
+}
+
+/**
+ * Stamp the marker. Best effort on purpose: a read-only ~/.ownmind must not fail the check
+ * that has already run, and the only cost of not recording it is running again next time.
+ */
+function stampRoundtrip(markerPath = ROUNDTRIP_MARKER, now = new Date()) {
+  try { fs.writeFileSync(markerPath, now.toISOString().slice(0, 10)); }
+  catch { /* best effort */ }
+}
+
+async function checkNamesFor({ quick = false, markerPath = ROUNDTRIP_MARKER } = {}) {
   const all = [
     // v1.26.117 — `mcp_registered` has run since v1.26.112 and was never declared here, so
     // the "declared but never run" test could not see it and neither could the quick/full
@@ -1083,7 +1134,15 @@ async function checkNamesFor({ quick = false } = {}) {
     'install_complete', 'scheduler',
     'memory_load', 'usage_roundtrip',
   ];
-  return quick ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
+  // v1.26.142 — the quick set now depends on the marker as well as the flag, and this
+  // function is the declared answer to "which checks run". Taking the same decision the
+  // runner takes keeps the two from drifting; a hardcoded list here would go on claiming
+  // the round-trip never runs on a quick pass the moment it starts running weekly.
+  //
+  // `markerPath` is a parameter because the decision genuinely depends on a file. A test
+  // that cannot name that file can only assert the answer equals itself, and the real
+  // marker lives in the caller's own ~/.ownmind, which no test may write to.
+  return quick && !roundtripDue(markerPath) ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
 }
 
 async function runAllChecks({ quick = false } = {}) {
@@ -1123,9 +1182,15 @@ async function runAllChecks({ quick = false } = {}) {
   // v1.26.81 — skipped on the daily auto-update run. Scanning every local database once
   // during an upgrade the user is watching is fine; doing it every day in the background
   // is not, and the scanner has its own schedule for that anyway.
-  if (!quick) {
+  //
+  // v1.26.142 — and on the quick path once a week, because "not daily" had become
+  // "not ever" for everyone who does not re-run the installer by hand. The marker is
+  // stamped after the check rather than before: a run that crashes partway leaves the
+  // check due, which is the safe direction for a diagnostic.
+  if (!quick || roundtripDue()) {
     checks.push(await safeCheck('usage_roundtrip',
-      () => checkUsageRoundtrip({ apiUrl, apiKey, notify: true })));
+      () => checkUsageRoundtrip({ apiUrl, apiKey, notify: !quick })));
+    stampRoundtrip();
   }
   return { checks, apiKey, apiUrl };
 }
@@ -1511,6 +1576,9 @@ module.exports = {
   // v1.26.81 — did memories actually load? Verdict from the server, evidence from here.
   checkMemoryLoad, collectMemoryLoadEvidence,
   buildReport, summarize, sanitizePath, parseArgs, checkNamesFor,
+  // v1.26.142 — the weekly gate that turns "skipped on the daily path" back into
+  // "runs sometimes", for the machines whose only path is the daily one.
+  roundtripDue, stampRoundtrip, ROUNDTRIP_MARKER, ROUNDTRIP_INTERVAL_DAYS,
   // v1.17.66 — spool mechanism (IR-038 observability pipeline).
   uploadReport, appendSpool, retrySpool,
   // v1.17.79 — error spool drain (broad client-side failure pipeline).

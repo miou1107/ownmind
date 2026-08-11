@@ -14,7 +14,9 @@
  * the interesting half is testable without a server.
  */
 
-import { NO_INSTALL, SQLITE_MISSING, UNREADABLE } from './reasons.js';
+import {
+  NO_INSTALL, SQLITE_MISSING, UNREADABLE, ADAPTER_ERROR, ADAPTER_TIMEOUT
+} from './reasons.js';
 
 /**
  * How recent a heartbeat has to be to count as "this run landed".
@@ -97,8 +99,17 @@ export const BLOCKED = 'blocked';
 const FAILING = new Set([NOT_RECORDED, BLOCKED]);
 const WARNING = new Set([OTHER_MACHINE, UNATTRIBUTED]);
 
-/** Reasons that mean the machine could not read the tool, so nothing was ever sent. */
-const LOCAL_BLOCKERS = new Set([UNREADABLE, SQLITE_MISSING]);
+/**
+ * Reasons that mean the machine could not read the tool, so nothing was ever sent.
+ *
+ * v1.26.142 — the two collector-failure codes belong here, and the reason is subtle enough
+ * to be worth stating. `verdictFor` consults the server only after this set, and since
+ * v1.26.142 a crashed adapter *does* leave a fresh heartbeat behind. Without these two
+ * entries a tool that failed on every run would satisfy "the server has a recent row from
+ * this machine" and report `confirmed` — the check would read its own failure notice as
+ * proof of success.
+ */
+const LOCAL_BLOCKERS = new Set([UNREADABLE, SQLITE_MISSING, ADAPTER_ERROR, ADAPTER_TIMEOUT]);
 
 /**
  * Two hostnames for the same computer. Windows reports it upper-cased on some paths, and

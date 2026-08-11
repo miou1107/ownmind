@@ -41,8 +41,11 @@ import {
 } from '../shared/helpers.js';
 import { parseStandardMarkdown } from '../src/utils/md-parser.js';
 import { captureClientOriginContext, injectOriginSection, validateOriginContext } from '../src/utils/iron-rule-origin-context.js';
-import { enrichErrorDetails, errorAliasFields } from './lib/enrich-error.js';
-import { tryAcquireUpdateLock, releaseUpdateLock } from '../shared/update-lock.js';
+import { enrichErrorDetails } from './lib/enrich-error.js';
+// v1.26.142 — the update lock is taken and released inside shared/auto-update.js now, and
+// errorAliasFields went with the lock-failure event that used it. Both imports are dropped
+// rather than left: this file does not type-check, so an unused import is indistinguishable
+// from one that is quietly wrong.
 import { logMcpCallSafe } from './lib/log-mcp-call.js';
 // v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
 // only accidentally one. On Windows it starts with a drive letter, which the ESM loader reads
@@ -1608,214 +1611,60 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 const OWNMIND_DIR = path.join(os.homedir(), '.ownmind');
 const MARKER_FILE = path.join(OWNMIND_DIR, '.last-mcp-update-check');
 const LOCK_FILE = path.join(OWNMIND_DIR, '.update-lock');
-const IS_WINDOWS = process.platform === 'win32';
-const NPM_CMD = IS_WINDOWS ? 'npm.cmd' : 'npm';
 
 import { execFile as _execFile } from 'child_process';
 import { promisify } from 'util';
+import { runAutoUpdate as sharedAutoUpdate } from '../shared/auto-update.js';
 const execFile = promisify(_execFile);
 
-// v1.17.60: use a module-scope flag so "inside runAutoUpdate" and "the outer catch" share state.
-// Previously the outer catch unconditionally called unlinkSync(LOCK_FILE). If a future path
-// introduces a "throw before acquiring the lock" case, this would delete another process's
-// lock. Now we only cleanup if we actually hold the lock ourselves.
-let _lockHeld = false;
-
 async function runAutoUpdate() {
-  // v1.26.124: local, not UTC — the one place in the MCP that had not adopted the timezone
-  // rule its own logEvent established in v1.20.1. The shell hook computes this marker with
-  // `date +%Y-%m-%d` and the Node hook now uses the same helper, so all three finally agree
-  // on which day it is. While they did not, the eight hours a UTC+8 machine runs ahead of
-  // UTC were a window in which each program read the other's marker as a different day,
-  // reran the update, and rewrote the marker so the next session disagreed the other way.
-  const today = localDateOnly();
-  const lastCheck = fs.existsSync(MARKER_FILE)
-    ? fs.readFileSync(MARKER_FILE, 'utf8').trim()
-    : '';
-
-  // Skip-reason observability — earlier silent-skip behavior meant Alice/Bob stayed on
-  // old versions and nobody noticed.
-  if (lastCheck === today) {
-    logEvent('update_skipped', { source: 'mcp', reason: 'marker_today' });
-    return;
-  }
-  if (!fs.existsSync(path.join(OWNMIND_DIR, '.git'))) {
-    logEvent('update_skipped', { source: 'mcp', reason: 'no_git_dir', dir: OWNMIND_DIR });
-    return;
-  }
-
-  // v1.17.23: atomic lock acquire — the previous existsSync + writeFileSync had a TOCTOU race.
-  // v1.26.98: moved into shared/update-lock.js, which the Node SessionStart hook now uses too,
-  // and which also closed the race in the stale-lock reclaim that used to sit above this
-  // (stat, unlink, create — two processes could both unlink, the second deleting the fresh
-  // lock the first had just taken). `reason` distinguishes a held lock from a disk error;
-  // they mean different things to whoever reads the log.
-  const acquired = tryAcquireUpdateLock(LOCK_FILE);
-  if (!acquired.acquired) {
-    if (acquired.reason === 'lock_held') {
-      logEvent('update_skipped', { source: 'mcp', reason: 'lock_held' });
-    } else {
-      // v1.18.8: use errorAliasFields helper (shared with 'error' event); legacy `error` field preserved.
-      logEvent('update_failed', {
-        source: 'mcp',
-        step: 'lock',
-        error: acquired.reason,
-        ...errorAliasFields(acquired.error),
-      });
-    }
-    return;
-  }
-  _lockHeld = true;
-
-  logEvent('update_check', { source: 'mcp' });
-
-  const cleanup = () => {
-    if (!_lockHeld) return;
-    releaseUpdateLock(LOCK_FILE);
-    _lockHeld = false;
-  };
-  const fail = (step, err) => {
-    cleanup();
-    logEvent('update_failed', {
-      source: 'mcp',
-      step,
-      error: err?.code || err?.message || String(err).slice(0, 120),
-    });
-    // v1.26.129: whichever of the MCP and the bash hook takes the lock first does that day's
-    // update, so reporting the outcome in only one of them makes the message a coin flip.
-    queueUpdateBanner({ outcome: 'failed', step });
-  };
-
-  try {
-    // git fetch
-    try {
-      await execFile('git', ['fetch', '-q'], { cwd: OWNMIND_DIR, timeout: 30000 });
-    } catch (e) {
-      return fail('fetch', e);
-    }
-
-    // Check whether there are new commits.
-    let updates = '';
-    try {
-      const { stdout } = await execFile(
-        'git', ['log', 'HEAD..origin/main', '--oneline'],
-        { cwd: OWNMIND_DIR, timeout: 10000 }
-      );
-      updates = String(stdout || '').trim();
-    } catch (e) {
-      return fail('log', e);
-    }
-
-    if (!updates) {
-      cleanup();
-      try { fs.writeFileSync(MARKER_FILE, today); } catch {}
-      logEvent('update_clean', { source: 'mcp' });
-      return;
-    }
-
-    // New version detected, continue.
-    // v1.17.23: use --autostash (git 2.6+) instead of the manual-stash / no-pop flow.
-    // The old manual stash never popped, so uncommitted user changes got stuck in the stash forever.
-    // v1.17.65: the fallback no longer passes --autostash. Previously both the main path and
-    // the fallback used --autostash, so on git < 2.6 both failed — there was effectively no
-    // fallback. Switched to --ff-only: a dirty tree is rejected and we logEvent it so the user
-    // can fix it themselves. We must NEVER do a manual stash (v1.17.22 proved it eats changes
-    // when not popped).
-    try {
-      await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
-        { cwd: OWNMIND_DIR, timeout: 30000 });
-    } catch {
-      try {
-        await execFile('git', ['pull', '-q', '--ff-only'],
-          { cwd: OWNMIND_DIR, timeout: 30000 });
-      } catch (e) {
-        return fail('pull', e);
-      }
-    }
-
-    // npm install — on Windows we must use npm.cmd and go through the shell.
-    // v1.17.62: as of Node v18.20.2 / v20.12.2 / v21.7.3 (CVE-2024-27980 patch), execFile
-    // can no longer run .cmd / .bat files directly — shell:true is required. Bob's
-    // update_failed step=npm error=EINVAL was exactly this. Mac / Linux are unaffected,
-    // so we only enable the shell on Windows.
-    try {
-      await execFile(NPM_CMD, ['install', '-q'], {
-        cwd: path.join(OWNMIND_DIR, 'mcp'),
-        timeout: 120000,
-        windowsHide: true,
-        shell: IS_WINDOWS,
-      });
-    } catch (e) {
-      return fail('npm', e);
-    }
-
-    // Sync skill / hook: run update.sh on Unix, update.ps1 on Windows.
-    try {
-      if (IS_WINDOWS) {
-        await execFile(
-          'powershell.exe',
-          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-            path.join(OWNMIND_DIR, 'scripts', 'update.ps1')],
-          { cwd: OWNMIND_DIR, timeout: 60000, windowsHide: true }
-        );
-      } else {
-        await execFile('bash', [path.join(OWNMIND_DIR, 'scripts', 'update.sh')],
-          { cwd: OWNMIND_DIR, timeout: 60000 });
-      }
-    } catch (e) {
-      return fail('update_sh', e);
-    }
-
-    cleanup();
-    try { fs.writeFileSync(MARKER_FILE, today); } catch {}
-    logEvent('update_applied', { source: 'mcp' });
-    // Read the version now, not earlier: the pull just changed it, and CLIENT_VERSION is the
-    // value this process cached at module load — i.e. the version the user was leaving.
-    queueUpdateBanner({ outcome: 'applied', version: getClientVersion() });
-
-    // v1.17.62: after a successful upgrade, re-send one heartbeat that reads the **new**
-    // package.json from disk, so the server sees the new version without waiting for the user
-    // to restart their AI tool.
-    // Why: CLIENT_VERSION is a constant cached at module-load time; after auto-update the disk
-    // is fresh but this process's in-memory value is still old. The previous sendMcpHeartbeat
-    // used the cached value, and the heartbeatSent flag only fires once per process — so a
-    // long-running MCP process would forever report the old version (the root cause of
-    // Dana / Alice being stuck).
-    // 5-second timeout (callApi itself has no timeout); on failure, log an observation event.
-    try {
-      const rootPkg = new URL('../package.json', import.meta.url);
-      const freshVersion = JSON.parse(fs.readFileSync(rootPkg, 'utf8')).version;
-      if (freshVersion && freshVersion !== CLIENT_VERSION) {
-        await Promise.race([
-          callApi('POST', '/api/usage/events', {
-            events: [],
-            heartbeat: {
-              tool: CLIENT_TOOL,
-              scanner_version: freshVersion,
-              machine: os.hostname(),
-              os: os.platform(),
-            },
-          }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('heartbeat_timeout_5s')), 5000)),
-        ]);
-      }
-    } catch (e) {
-      // Log on failure so the dashboard can monitor how reliable the post-upgrade heartbeat is.
-      try {
-        logEvent('update_heartbeat_failed', {
-          source: 'mcp',
-          error: e?.code || e?.message || String(e).slice(0, 120),
-        });
-      } catch {}
-    }
-  } catch (e) {
-    fail('unknown', e);
-  }
+  // v1.26.142 — the body of this function moved to shared/auto-update.js so that something
+  // other than an AI tool could run it. The scheduled usage scanner now calls the same
+  // implementation, which is what finally reaches the machines whose editor does not speak
+  // MCP to OwnMind: before this, those upgraded only when somebody happened to open a tool
+  // that did, and one of them sat eight weeks on the version it was installed with.
+  //
+  // Everything specific to this process stays here: its logger, its banner queue, its
+  // marker file, and the post-upgrade heartbeat below, which exists because an MCP process
+  // outlives the upgrade and would otherwise report the version it started with for the
+  // rest of the conversation.
+  const result = await sharedAutoUpdate({
+    ownmindDir: OWNMIND_DIR,
+    markerFile: MARKER_FILE,
+    lockFile: LOCK_FILE,
+    source: 'mcp',
+    execFile,
+    logEvent: (event, details) => logEvent(event, details),
+    queueBanner: (banner) => queueUpdateBanner(banner),
+    onApplied: async (freshVersion) => {
+      // CLIENT_VERSION is a constant cached at module load, and heartbeatSent fires once
+      // per process, so a long-running MCP would otherwise report the old version forever
+      // — the root cause of two members appearing stuck on old releases.
+      if (!freshVersion || freshVersion === CLIENT_VERSION) return;
+      await Promise.race([
+        callApi('POST', '/api/usage/events', {
+          events: [],
+          heartbeat: {
+            tool: CLIENT_TOOL,
+            scanner_version: freshVersion,
+            machine: os.hostname(),
+            os: os.platform(),
+          },
+        }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('heartbeat_timeout_5s')), 5000)),
+      ]);
+    },
+  });
+  return result;
 }
 
 // Fire-and-forget — must not block MCP startup.
 // v1.17.23: the catch is no longer silent — any unexpected error writes update_failed step=outer.
-// v1.17.60: only cleanup when we actually hold the lock, to avoid deleting another process's lock.
+// v1.26.142: the lock cleanup that used to live here is gone. It guarded against this
+// function throwing while holding the lock, and the shared implementation now releases it
+// in a `finally` on every path — including the one where it never acquired it. Keeping a
+// second releaser here would mean two programs could each believe they were tidying up
+// after themselves while one of them released the other's lock.
 runAutoUpdate().catch((e) => {
   try {
     logEvent('update_failed', {
@@ -1824,10 +1673,6 @@ runAutoUpdate().catch((e) => {
       error: e?.code || e?.message || String(e).slice(0, 120),
     });
   } catch {}
-  if (_lockHeld) {
-    releaseUpdateLock(LOCK_FILE);
-    _lockHeld = false;
-  }
 });
 
 // --- Emergency shutdown: persist the session log ---

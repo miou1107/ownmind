@@ -382,16 +382,34 @@ describe('the auto-update path actually calls the repair', () => {
       'update.ps1 never checks whether the scanner scheduled task is alive');
   });
 
-  it('mcp/index.js still invokes update.sh / update.ps1 after pulling', () => {
+  it('the upgrade still invokes update.sh / update.ps1 after pulling', () => {
     // The repair only reaches a user if the freshly pulled script is the one that runs.
     // git pull must come first; if that order ever flips, every fix in these scripts is
     // one release late and this test is the only thing that would say so.
-    const src = read('mcp/index.js');
+    //
+    // v1.26.142 — the upgrade moved from mcp/index.js to shared/auto-update.js, so the
+    // scheduled scanner could run it on machines that never open an MCP session. The
+    // ordering requirement is unchanged and follows the code. The order is also asserted
+    // by running it, in tests/auto-update-shared.test.js, which checks the full command
+    // sequence rather than the position of two strings in a file.
+    const src = read('shared/auto-update.js');
     const pull = src.indexOf("'pull'");
     const sync = src.indexOf("'update.ps1'");
     assert.ok(pull > 0 && sync > 0, 'could not find the pull / sync calls');
     assert.ok(pull < sync, 'update scripts run before git pull, so fixes land one release late');
   });
+
+  it('the scheduled scanner runs the upgrade, so a machine with no MCP session still gets it',
+    () => {
+      // The reason any of this moved. One member's scanner checked in every day for eight
+      // weeks on the version she installed in June: the upgrade only ever fired from an
+      // MCP session, and the editor she works in does not open one.
+      const src = read('hooks/ownmind-usage-scanner.js');
+      assert.match(src, /from '\.\.\/shared\/auto-update\.js'/,
+        'the scanner does not run the upgrade, so tool-less machines never advance');
+      assert.match(src, /runAutoUpdate\(/,
+        'the scanner imports the upgrade but never calls it');
+    });
 });
 
 describe('ensure-scanner-schedule.ps1 — same contract on Windows', () => {

@@ -25,6 +25,22 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const mcpSource = readFileSync(join(__dirname, '..', 'mcp', 'index.js'), 'utf8');
 const repoRoot = join(__dirname, '..');
 
+/**
+ * v1.26.142 — where the upgrade itself now lives.
+ *
+ * The whole chain moved out of mcp/index.js into shared/auto-update.js so that something
+ * other than an AI tool could run it: the scheduled scanner calls the same implementation,
+ * which is what finally reaches machines whose editor does not speak MCP to OwnMind.
+ *
+ * Every assertion below that is about *the upgrade* follows it. The ones that are about
+ * *this process* — where OWNMIND_DIR comes from, what the outer catch logs — stay on
+ * mcpSource, because those are still mcp/index.js's own business.
+ *
+ * These remain source reads rather than behaviour. The behaviour they approximate is
+ * exercised for real, with an injected process runner, in tests/auto-update-shared.test.js.
+ */
+const updateSource = readFileSync(join(__dirname, '..', 'shared', 'auto-update.js'), 'utf8');
+
 test('mcp/index.js: OWNMIND_DIR must use os.homedir(), not process.env.HOME', () => {
   // Before: path.join(process.env.HOME || '', '.ownmind')
   // After:  path.join(os.homedir(), '.ownmind')
@@ -48,45 +64,52 @@ test('mcp/index.js: import os module', () => {
   );
 });
 
-test('mcp/index.js: when conditions fail, must logEvent(update_skipped); never silent-skip', () => {
+test('the upgrade: when conditions fail, must logEvent(update_skipped); never silent-skip', () => {
   // Before: condition not met → fall through out of the try block; no logs.
   // After: every skip path writes logEvent('update_skipped', { reason: '...' }).
   assert.match(
-    mcpSource,
+    updateSource,
     /logEvent\(['"]update_skipped['"]/,
     'must add update_skipped event; otherwise users stuck on old versions are invisible to us'
   );
 });
 
-test('mcp/index.js: skip reasons must cover three scenarios', () => {
+test('the upgrade: skip reasons must cover three scenarios', () => {
   // Three skip scenarios:
   //   - marker_today: already checked today
   //   - no_git_dir: ~/.ownmind/.git is missing (tarball install or Windows path error)
   //   - lock_held: another process is updating
   for (const reason of ['marker_today', 'no_git_dir', 'lock_held']) {
     assert.ok(
-      mcpSource.includes(`'${reason}'`) || mcpSource.includes(`"${reason}"`),
+      updateSource.includes(`'${reason}'`) || updateSource.includes(`"${reason}"`),
       `update_skipped reason must include '${reason}'`
     );
   }
 });
 
-test('mcp/index.js: no more exec(bashScript) — switch to cross-platform execFile', () => {
+test('the upgrade: no more exec(bashScript) — switch to cross-platform execFile', () => {
   // Before: exec(`touch ... cd ... bash ...`) (bash syntax fails wholesale on Windows cmd).
   // After: execFile('git', [...], { cwd: OWNMIND_DIR }) and similar.
   // At minimum, the bash-heredoc-style inline shell script inside exec must be gone.
   assert.doesNotMatch(
-    mcpSource,
+    updateSource,
     /exec\(`[\s\S]*?touch[\s\S]*?cd ~\/\.ownmind/,
     'exec(`touch ... cd ~/.ownmind ...`) pattern must be removed (Windows cmd does not understand it)'
   );
 });
 
-test('mcp/index.js: on Windows, use npm.cmd (so execFile can find it)', () => {
+test('the upgrade: on Windows, use npm.cmd (so execFile can find it)', () => {
   // Node's execFile on Windows cannot find 'npm' directly (it is npm.cmd).
+  //
+  // v1.26.142 — the platform is a parameter of the shared module rather than a read of
+  // process.platform, which is exactly why it can now be asserted by running it instead
+  // of by reading it. tests/auto-update-shared.test.js drives the Windows branch on a Mac
+  // and checks both halves: npm.cmd, and the shell:true that CVE-2024-27980's patch made
+  // necessary. What is left here is the one fact a source read can still add — that the
+  // Windows name is chosen from the platform and not hardcoded either way.
   assert.match(
-    mcpSource,
-    /process\.platform\s*===?\s*['"]win32['"][\s\S]{0,200}npm\.cmd|npm\.cmd[\s\S]{0,200}process\.platform/,
+    updateSource,
+    /['"]win32['"][\s\S]{0,400}npm\.cmd|npm\.cmd[\s\S]{0,400}['"]win32['"]/,
     'must detect Windows and use npm.cmd; otherwise npm install ENOENTs on Windows'
   );
 });
@@ -134,7 +157,7 @@ test('v1.17.23 update.ps1: Node script uses argv[2]/argv[3], not argv[1]/argv[2]
   );
 });
 
-test('v1.17.23 mcp/index.js: lock acquire must be atomic', () => {
+test('v1.17.23 the upgrade: lock acquire must be atomic', () => {
   // v1.17.22 used existsSync + writeFileSync — TOCTOU race; two MCPs could both pass existsSync.
   // Fix: fs.openSync(LOCK_FILE, 'wx') — exclusive create; existing file yields EEXIST.
   // v1.26.98: moved into shared/update-lock.js, because the two SessionStart hooks were
@@ -144,8 +167,8 @@ test('v1.17.23 mcp/index.js: lock acquire must be atomic', () => {
   //   assertion now follows the import. The behaviour itself is exercised, rather than read,
   //   in tests/update-lock-mutual-exclusion.test.js: eight concurrent processes, one winner.
   assert.match(
-    mcpSource,
-    /import \{[^}]*tryAcquireUpdateLock[^}]*\} from '\.\.\/shared\/update-lock\.js'/,
+    updateSource,
+    /import \{[^}]*tryAcquireUpdateLock[^}]*\} from '\.\/update-lock\.js'/,
     'lock acquire must go through the shared exclusive-create helper (prevent concurrent races)'
   );
   assert.match(
@@ -168,17 +191,17 @@ test('v1.17.23 update.ps1: must inject Gemini / Copilot / Cursor hooks', () => {
   }
 });
 
-test('v1.17.23 mcp/index.js: use git pull --autostash (avoid stash-without-pop swallowing user changes)', () => {
+test('v1.17.23 the upgrade: use git pull --autostash (avoid stash-without-pop swallowing user changes)', () => {
   // v1.17.22 ran git stash -q then pull but never stash pop → uncommitted user changes vanished.
   // Fix: git pull --rebase --autostash handles both in one shot (git 2.6+).
   assert.match(
-    mcpSource,
+    updateSource,
     /['"]--autostash['"]/,
     'git pull must include --autostash; otherwise stash without pop swallows user changes'
   );
 });
 
-test('v1.17.65 mcp/index.js: autostash fallback must not include --autostash (otherwise both paths fail the same way)', () => {
+test('v1.17.65 the upgrade: autostash fallback must not include --autostash (otherwise both paths fail the same way)', () => {
   // v1.17.23 wrote a fallback for git < 2.6 that lacks --autostash, but the fallback
   // also passed --autostash → whatever caused the main path to fail, the fallback
   // would re-fail for the same reason.
@@ -186,10 +209,10 @@ test('v1.17.65 mcp/index.js: autostash fallback must not include --autostash (ot
   // When the user has uncommitted changes, ff-only pull explicitly refuses and logEvents
   // step=pull, so the user handles it themselves; we no longer perform a manual stash
   // (v1.17.22 already proved manual stash without pop swallows user changes).
-  const idx = mcpSource.indexOf("'pull', '-q', '--rebase', '--autostash'");
+  const idx = updateSource.indexOf("'pull', '-q', '--rebase', '--autostash'");
   assert.ok(idx >= 0, 'main path must still be git pull -q --rebase --autostash');
   // Within 1500 chars after the main-path catch block, find the fallback execFile.
-  const slice = mcpSource.slice(idx, idx + 1500);
+  const slice = updateSource.slice(idx, idx + 1500);
   const fallbackMatch = slice.match(/} catch[\s\S]+?execFile\([^)]*'git'[^)]*\[([^\]]+)\]/);
   assert.ok(fallbackMatch, 'fallback execFile git block must follow the main path');
   assert.ok(

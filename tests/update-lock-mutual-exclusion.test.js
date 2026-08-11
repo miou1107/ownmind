@@ -391,14 +391,20 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
     assert.ok(fs.existsSync(shared), 'shared/update-lock.js is missing');
   });
 
-  for (const [label, file] of [
-    ['the MCP', path.join(repoRoot, 'mcp', 'index.js')],
-    ['the Node session-start hook', path.join(repoRoot, 'hooks', 'ownmind-session-start.js')],
+  // v1.26.142 — the MCP left this list. It no longer takes the lock at all: the whole
+  // upgrade moved to shared/auto-update.js so the scheduled scanner could run it too, and
+  // that module takes the lock on behalf of every caller. The property this test protects
+  // is unchanged — nobody reimplements the acquire — so the module that now does it takes
+  // the MCP's place here rather than the assertion being dropped.
+  for (const [label, file, importPath] of [
+    ['the shared auto-update', path.join(repoRoot, 'shared', 'auto-update.js'), './update-lock.js'],
+    ['the Node session-start hook', path.join(repoRoot, 'hooks', 'ownmind-session-start.js'),
+      '../shared/update-lock.js'],
   ]) {
     it(`${label} imports it rather than rolling its own`, () => {
       // includes(), not assert.match(): a failing match prints the entire file.
       const src = fs.readFileSync(file, 'utf8');
-      assert.ok(src.includes("from '../shared/update-lock.js'"),
+      assert.ok(src.includes(`from '${importPath}'`),
         `${label} does not import the shared lock`);
       assert.ok(/\b(try)?[aA]cquireUpdateLock\(/.test(src),
         `${label} imports the shared lock but never calls it`);
@@ -406,6 +412,20 @@ describe('v1.26.98 — the Node side uses one shared implementation', () => {
         `${label} still has its own copy of the acquire`);
     });
   }
+
+  it('the MCP delegates its upgrade instead of locking on its own', () => {
+    // Two programs each releasing "their" lock is how one releases the other's. The MCP
+    // used to hold it across the upgrade and release it from an outer catch; both are
+    // gone, and this asserts they stay gone rather than trusting the diff that removed
+    // them.
+    const src = fs.readFileSync(path.join(repoRoot, 'mcp', 'index.js'), 'utf8');
+    assert.ok(src.includes("from '../shared/auto-update.js'"),
+      'the MCP must run the shared upgrade, not a second copy of it');
+    assert.ok(!/\b(try)?[aA]cquireUpdateLock\(/.test(src),
+      'the MCP must not acquire the update lock itself');
+    assert.ok(!/releaseUpdateLock\(/.test(src),
+      'nor release a lock it does not hold');
+  });
 
   it('exactly one of eight concurrent processes acquires it', async () => {
     const dir = tmpdir();
