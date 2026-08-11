@@ -1,5 +1,61 @@
 # OwnMind 檔案結構
 
+## v1.26.141 修改（只有在你剛好講對詞的時候才答得出來的記憶）
+
+新檔：
+```
+configs/ownmind-rules-block.md                  — 規則本文的唯一來源。會被注入使用者自己的
+                                                   CLAUDE.md／AGENTS.md／GEMINI.md 等，
+                                                   夾在 <!-- ownmind-rules --> 標記中間
+scripts/install-helpers/sync-rules-block.cjs    — 標記區塊的唯一實作，四支安裝／升級腳本共用。
+                                                   本來 shell 一份、PowerShell 一份，
+                                                   v1.26.140 抓到兩份行為已經不一樣。
+                                                   含舊區塊遷移：逐行比對是不是我們出貨過的內容，
+                                                   有人手改過就留著並回報（IR-112）。
+                                                   寫檔走 temp + rename，中斷不會截斷使用者的檔案
+tests/sync-rules-block.test.js                  — 14 條。空檔案、檔案不存在、使用者自己的內容、
+                                                   連跑兩次不變、兩個標記區塊並存、不累積空行、
+                                                   中文原樣往返、沒有 BOM、不留暫存檔，
+                                                   以及遷移的三種情況
+tests/session-context-lookup-instructions.test.js
+                                                — 27 條。開場內容必須告訴 AI「什麼時候該去查」，
+                                                   不能只列已知的。含兩端覆蓋（掛勾版 + 給其他
+                                                   AI 工具的操作手冊）。做過 mutation：把舊那句
+                                                   撈全文的改回去死 3 條、拿掉「不認得就查」死 1 條、
+                                                   拿掉「不准說沒有」死 2 條、拿掉伺服器那段死 3 條
+```
+
+修改檔：
+```
+hooks/lib/render-session-context.js             — 三句話。(1) 規範清單結尾那句從
+                                                   ownmind_get("standard_detail") 改成先搜尋標題
+                                                   再用 id 讀 —— 前者對「內文存在自己紀錄上」的
+                                                   規範回傳空陣列，而那正是最近寫的那幾條。
+                                                   (2) 碰到不認得的公司用語，回答或動手之前先搜尋。
+                                                   (3) 對使用者自己的東西不准說「我沒有資料」，
+                                                   除非這個 session 內真的查過 —— 那是一句關於
+                                                   他的記憶的斷言
+mcp/index.js                                    — 這一版真正送得到其他工具的地方。
+                                                   ownmind_search 的說明改成寫「什麼時候該叫它」：
+                                                   碰到不認得的公司用語先查、不准沒查過就說
+                                                   「我沒有這個資料」。ownmind_get 的說明拿掉
+                                                   「用 standard_detail 撈全文」——那句對內文存在
+                                                   自己紀錄上的規範回傳空的，而工具說明每一輪都在
+                                                   模型面前，本來就壓過開場那份
+install.sh / install.ps1                        — CLAUDE.md 那段從「看到 OwnMind 就跳過」
+                                                   （於是永遠不更新）改成呼叫共用腳本寫標記區塊
+scripts/update.sh / scripts/update.ps1          — 新增 1c 段：每次升級把規則區塊寫進
+                                                   CLAUDE.md 與另外六個工具的指示檔，
+                                                   逐一計數、失敗點名
+src/routes/memory.js                            — INSTRUCTIONS_SOP 新增「When to Read Memory」，
+                                                   並修掉 Team Standard RAG 那段跟新規則打架的句子。
+                                                   **注意：instructions 只有 compact=false 才送，
+                                                   而每個呼叫端都帶 compact**——初稿只改這裡，
+                                                   等於放在整包資料裡唯一沒人收得到的地方（review 抓到）
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.141 與三語同步
+```
+
 ## v1.26.140 修改（兩個都印了 OK 的失敗）
 
 新檔：

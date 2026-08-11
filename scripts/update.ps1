@@ -210,6 +210,76 @@ if ((Test-Path $UpgradeSnippet) -and (Test-Path $AppendRuleHelper)) {
   }
 }
 
+# --- 1c. 同步 OwnMind 規則區塊到每個 AI 工具的指示檔 ---
+#
+# v1.26.141. 用的是 update.sh 同一支 node 腳本，不是另寫一份 PowerShell 版：
+# 標記區塊這件事本來就寫過兩份，而 v1.26.140 抓到 PowerShell 那份對空檔案會炸、
+# shell 那份不會 —— 三個作業系統都要一樣的東西，就該只有一份實作。
+$RulesBlock = Join-Path $OwnMindDir "configs\ownmind-rules-block.md"
+$RulesSync = Join-Path $OwnMindDir "scripts\install-helpers\sync-rules-block.cjs"
+# The node guard this file's own comment at Test-RootDepNeeded explains: `& node` with node
+# absent throws CommandNotFoundException, and reading $LASTEXITCODE when no native command
+# has run is an error under Set-StrictMode -Version Latest.
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Write-Host "[WARN] node not found; OwnMind rules block not written"
+} elseif ((Test-Path $RulesBlock) -and (Test-Path $RulesSync)) {
+  $blockWritten = 0
+  $blockFailed = @()
+  $blockLegacy = $null
+
+  function Sync-OwnMindRulesBlock {
+    param([string]$TargetFile, [switch]$LegacyClaude)
+    # NOT $args: that is an automatic variable in PowerShell, and assigning to it inside a
+    # function is the kind of thing that works until it doesn't.
+    $nodeArgs = @($RulesSync, '--target', $TargetFile, '--marker', 'ownmind-rules',
+      '--snippet', $RulesBlock)
+    if ($LegacyClaude) { $nodeArgs += '--legacy-claude' }
+    $errLog = Join-Path $HOME ".ownmind\logs\update-err.log"
+    $out = & node @nodeArgs 2>> $errLog
+    if ($LASTEXITCODE -ne 0) { return 'failed' }
+    # `repaired:` is a successful write that also removed a broken marker; without this it
+    # fell through to 'failed' and a working upgrade printed a warning.
+    if ($out -match '^written:' -or $out -match '^repaired:') { return 'written' }
+    if ($out -match '^legacy-kept:') { return 'legacy-kept' }
+    if ($out -match '^skipped:') { return 'skipped' }
+    return 'failed'
+  }
+
+  $claudeMd = Join-Path $HOME ".claude\CLAUDE.md"
+  switch (Sync-OwnMindRulesBlock -TargetFile $claudeMd -LegacyClaude) {
+    'written'     { $blockWritten += 1 }
+    'legacy-kept' { $blockWritten += 1; $blockLegacy = $claudeMd }
+    'failed'      { $blockFailed += $claudeMd }
+  }
+
+  foreach ($blockTarget in @(
+    (Join-Path $HOME ".codex\AGENTS.md"),
+    (Join-Path $HOME ".cursor\rules\ownmind.md"),
+    (Join-Path $HOME ".antigravity\rules\ownmind.md"),
+    (Join-Path $HOME ".opencode\AGENTS.md"),
+    (Join-Path $HOME ".windsurf\rules\ownmind.md"),
+    (Join-Path $HOME ".gemini\GEMINI.md")
+  )) {
+    switch (Sync-OwnMindRulesBlock -TargetFile $blockTarget) {
+      'written'     { $blockWritten += 1 }
+      'legacy-kept' { $blockWritten += 1 }
+      'failed'      { $blockFailed += $blockTarget }
+    }
+  }
+
+  if ($blockFailed.Count -gt 0) {
+    Write-Host "[WARN] OwnMind rules written to $blockWritten file(s); $($blockFailed.Count) failed:"
+    foreach ($f in $blockFailed) { Write-Host "       - $f" }
+    Write-Host "       see $HOME\.ownmind\logs\update-err.log"
+  } else {
+    Write-Host "[ OK ] OwnMind rules written to $blockWritten AI instruction file(s)"
+  }
+  if ($blockLegacy) {
+    Write-Host "[NOTE] $blockLegacy still has an older OwnMind section that you edited by hand."
+    Write-Host "       It was left alone. Delete the '# OwnMind 個人記憶系統' section when convenient."
+  }
+}
+
 # --- 2. hook scripts + lib（Git Bash 才能跑 .sh）---
 if (Test-Path $ClaudeDir) {
   $HookDir = Join-Path $ClaudeDir "hooks"

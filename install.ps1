@@ -426,29 +426,31 @@ if (Test-Path $AddStopHookHelper) {
   Write-Host "   Stop reply-lint hook：$stopHookResult"
 }
 
-# --- 3. CLAUDE.md 加入 OwnMind 引用 ---
-$OwnmindBlock = @(
-  "",
-  "# OwnMind 個人記憶系統",
-  "",
-  "OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。",
-  "如果 context 中沒有看到【OwnMind vX.X.X】標記，手動呼叫 ownmind_init MCP tool。",
-  "鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind vX.X.X】{類型}：{內容} 格式標記。",
-  "觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。"
-) -join "`n"
-
-if (Test-Path $ClaudeMd) {
-  $existing = Get-Content $ClaudeMd -Raw
-  if ($existing -match "OwnMind") {
-    Write-Host "[INFO] CLAUDE.md already references OwnMind, skipping"
+# --- 3. CLAUDE.md：寫入 OwnMind 規則區塊 ---
+#
+# v1.26.141. 本來是「檔案裡出現過 OwnMind 這個字就跳過」，於是每台機器的內容都凍結在
+# 安裝當天。改成標記區塊，並且跟 update.ps1、update.sh、install.sh 共用同一支 node
+# 腳本 —— 這件事寫過兩份，而 v1.26.140 抓到兩份的行為已經不一樣了。
+$RulesBlock = Join-Path $OwnmindDir "configs\ownmind-rules-block.md"
+$RulesSync = Join-Path $OwnmindDir "scripts\install-helpers\sync-rules-block.cjs"
+if ((Test-Path $RulesBlock) -and (Test-Path $RulesSync)) {
+  $rulesOut = & node $RulesSync --target $ClaudeMd --marker ownmind-rules --snippet $RulesBlock --legacy-claude 2>&1
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "[ OK ] CLAUDE.md carries the OwnMind rules block"
+    if ("$rulesOut" -match '^repaired:') {
+      Write-Host "[NOTE] CLAUDE.md had a broken OwnMind marker; it was repaired."
+    }
+    if ("$rulesOut" -match '^legacy-kept:') {
+      Write-Host "[NOTE] An older OwnMind section in CLAUDE.md looks hand-edited, so it was left alone."
+      Write-Host "       Delete the '# OwnMind 個人記憶系統' section when convenient."
+    }
   } else {
-    Write-Host "[INFO] Updating CLAUDE.md"
-    Write-Utf8NoBom -Path $ClaudeMd -Content ($existing + $OwnmindBlock)
+    Write-Host "[WARN] Could not write the OwnMind rules block into CLAUDE.md: $rulesOut"
   }
 } else {
-  Write-Host "[INFO] Creating CLAUDE.md"
-  Write-Utf8NoBom -Path $ClaudeMd -Content $OwnmindBlock
+  Write-Host "[WARN] OwnMind rules block not found in this checkout; CLAUDE.md left unchanged"
 }
+
 
 # --- 4. 安裝 Skill ---
 Copy-Item (Join-Path $OwnmindDir "skills\ownmind-memory.md") (Join-Path $SkillDir "SKILL.md") -Force

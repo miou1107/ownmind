@@ -420,35 +420,42 @@ else
   echo "[WARN] add-stop-hook.cjs 不存在（升級殘留？）— 跳過 Stop hook 註冊"
 fi
 
-# --- 3. CLAUDE.md 加入 OwnMind 引用 ---
-CLAUDE_MD="$HOME/.claude/CLAUDE.md"
-if [ -f "$CLAUDE_MD" ]; then
-  if grep -q "OwnMind" "$CLAUDE_MD" 2>/dev/null; then
-    echo "[INFO] CLAUDE.md already references OwnMind, skipping"
+# --- 3. CLAUDE.md：寫入 OwnMind 規則區塊 ---
+#
+# v1.26.141. 這一段本來是「檔案裡出現過 OwnMind 這個字就整段跳過」，於是每台機器的內容
+# 都凍結在安裝當天 —— 2026-08-11 實測，有一台還帶著已經被取代三次的四行版本，而且
+# update.sh / update.ps1 從頭到尾沒碰過這個檔案。改成標記區塊，升級時重寫標記中間，
+# 使用者自己寫的行完全不動。
+#
+# 舊的無標記區塊：逐行比對，全部都是本專案出貨過的內容才移除；有人手改過就留著、
+# 印一行請他自己刪。這個檔案是使用者放個人鐵律的地方（IR-112）。
+RULES_BLOCK="$OWNMIND_DIR/configs/ownmind-rules-block.md"
+RULES_SYNC="$OWNMIND_DIR/scripts/install-helpers/sync-rules-block.cjs"
+mkdir -p "$HOME/.claude"
+if [ -f "$RULES_BLOCK" ] && [ -f "$RULES_SYNC" ]; then
+  RULES_RESULT="$(node "$RULES_SYNC" \
+    --target "$HOME/.claude/CLAUDE.md" \
+    --marker ownmind-rules \
+    --snippet "$RULES_BLOCK" \
+    --legacy-claude 2>&1)" && RULES_OK=1 || RULES_OK=0
+  if [ "$RULES_OK" = "1" ]; then
+    echo "[ OK ] CLAUDE.md carries the OwnMind rules block"
+    case "$RULES_RESULT" in
+      repaired:*)
+        echo "[NOTE] CLAUDE.md had a broken OwnMind marker; it was repaired."
+        ;;
+      legacy-kept:*)
+        echo "[NOTE] An older OwnMind section in CLAUDE.md looks hand-edited, so it was left alone."
+        echo "       Delete the '# OwnMind 個人記憶系統' section when convenient."
+        ;;
+    esac
   else
-    echo "[INFO] Updating CLAUDE.md"
-    cat >> "$CLAUDE_MD" << 'CLAUDE_EOF'
-
-# OwnMind 個人記憶系統
-
-OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。
-如果 context 中沒有看到【OwnMind vX.X.X】標記，手動呼叫 ownmind_init MCP tool。
-鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind vX.X.X】{類型}：{內容} 格式標記。
-觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。
-CLAUDE_EOF
+    echo "[WARN] Could not write the OwnMind rules block into CLAUDE.md: $RULES_RESULT"
   fi
 else
-  echo "[INFO] Creating CLAUDE.md"
-  mkdir -p "$HOME/.claude"
-  cat > "$CLAUDE_MD" << 'CLAUDE_EOF'
-# OwnMind 個人記憶系統
-
-OwnMind 記憶透過 SessionStart hook 自動載入（不需手動呼叫 ownmind_init）。
-如果 context 中沒有看到【OwnMind vX.X.X】標記，手動呼叫 ownmind_init MCP tool。
-鐵律必須嚴格遵守。衝突時以 OwnMind 為準。存取記憶時顯示【OwnMind vX.X.X】{類型}：{內容} 格式標記。
-觸發詞：「記起來」「學起來」「新增鐵律」「交接」「整理記憶」。
-CLAUDE_EOF
+  echo "[WARN] OwnMind rules block not found in this checkout; CLAUDE.md left unchanged"
 fi
+
 
 # --- 4. 安裝 Skills ---
 SKILL_DIR="$HOME/.claude/skills/ownmind-memory"
