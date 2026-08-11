@@ -199,8 +199,18 @@ cd "${OWNMIND_DIR}" || FAIL "cd_failed" "Cannot enter ${OWNMIND_DIR}"
 # stderr goes to its own file rather than into DIRTY: git writes CRLF warnings there, and
 # folding those into the value would make a clean tree look dirty and trigger a reset --hard.
 # But it must be kept — reporting only an exit code repeats the mistake this release is about.
+#
+# v1.26.144 — `--untracked-files=no`. The branch below answers a dirty tree with
+# `git reset --hard`, and reset acts on tracked files only: an untracked path is still
+# there when it finishes, so it chooses the destructive branch again on the next upgrade,
+# and the one after that. On a machine measured on 2026-08-11 the untracked entries were
+# `bin/` and `reports/` — both written into the checkout by OwnMind itself, and both now
+# ignored, so they no longer appear in status at all. What the listing below is for is the
+# untracked paths that are *not* ours and *not* ignored: another machine carries a
+# `standards/` nothing in this repository creates. Those stay visible in the log, because
+# they are worth seeing; they no longer overwrite anything.
 STATUS_ERR="${LOG_FILE}.status"
-DIRTY=$(git status --porcelain 2>"${STATUS_ERR}")
+DIRTY=$(git status --porcelain --untracked-files=no 2>"${STATUS_ERR}")
 STATUS_CODE=$?
 cat "${STATUS_ERR}" >>"${LOG_FILE}" 2>/dev/null || true
 if [ "${STATUS_CODE}" -ne 0 ]; then
@@ -208,10 +218,19 @@ if [ "${STATUS_CODE}" -ne 0 ]; then
   # No rollback: nothing has been modified yet. The backup copy stays for sweep-old-backups.
   FAIL "git_status" "git status failed (exit ${STATUS_CODE}); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
 fi
+# Recorded, not acted on. Whoever reads an upgrade log still gets to see what else is in
+# the directory; the decision above is not theirs to make.
+UNTRACKED=$(git status --porcelain --untracked-files=normal 2>/dev/null | grep '^??' || true)
+if [ -n "${UNTRACKED}" ]; then
+  {
+    echo "[info] untracked paths present (not touched by this upgrade):"
+    echo "${UNTRACKED}"
+  } >>"${LOG_FILE}" 2>/dev/null || true
+fi
 if [ -n "${DIRTY}" ]; then
   STEP "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   echo "${DIRTY}" > "${LOG_FILE}.dirty"
-  report_error "upgrade_dirty_tree" "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
+  report_error "upgrade_dirty_tree" "tracked files modified (git status --porcelain --untracked-files=no non-empty); auto reset --hard to origin/main; tree: $(last_log_lines "${LOG_FILE}.dirty")" "${LOG_FILE}.dirty"
   if git fetch origin >>"${LOG_FILE}" 2>&1 \
      && git reset --hard origin/main >>"${LOG_FILE}" 2>&1; then
     OK "pull" "Force-aligned (dirty changes overwritten; previous state in backup)"
@@ -223,7 +242,14 @@ if [ -n "${DIRTY}" ]; then
 elif git pull --ff-only >>"${LOG_FILE}" 2>&1; then
   OK "pull" "git pull complete"
 else
-  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: $(last_log_lines "${LOG_FILE}")" "${LOG_FILE}"
+  # v1.26.144 — this branch used to be unreachable on macOS and Linux, because the tree was
+  # always read as dirty and the reset above ran instead. Now it is the live path, so its
+  # one realistic failure has to be legible: an untracked file whose name a new release has
+  # started tracking makes `--ff-only` refuse ("would be overwritten by merge"). The reset
+  # it replaced did not refuse — it overwrote the file and reported success — so refusing is
+  # the safe direction, and naming the untracked paths is what turns a stalled upgrade into
+  # one somebody can finish by hand.
+  report_error "upgrade_git_pull_failed" "git pull --ff-only failed: $(last_log_lines "${LOG_FILE}")${UNTRACKED:+; untracked: $(echo "${UNTRACKED}" | tr '\n' ' ')}" "${LOG_FILE}"
   rollback
   FAIL "git_pull" "git pull failed; $(rollback_note). Manual check: cd ~/.ownmind && git status"
 fi

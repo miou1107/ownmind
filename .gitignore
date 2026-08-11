@@ -60,3 +60,16 @@ state/
 .session-hook-installed
 cache/
 git-hooks/
+
+# v1.26.143 — two more, found on a real installation two releases later. This list is
+# written by hand, which is why it keeps being short by however many paths have been added
+# since somebody last looked; that is now caught from the other side, by making untracked
+# files stop deciding whether the tree is dirty at all. `git reset --hard` cannot remove an
+# untracked file, so a branch chosen because of one can only run again next time.
+#
+# Only paths OwnMind itself is known to write are listed. A member's machine also reports
+# `?? standards/`, and nothing in this repository creates it — so it is the user's, and
+# hiding someone's own directory from their own `git status` is not this file's business.
+# The change above is what stops it triggering a reset.
+bin/
+reports/

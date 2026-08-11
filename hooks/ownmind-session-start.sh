@@ -329,8 +329,22 @@ if [ -d "$OWNMIND_DIR/.git" ]; then
       fi
       UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null)
       if [ -n "$UPDATES" ]; then
-        git stash -q 2>/dev/null
-        if ! { git pull -q --rebase 2>/dev/null || git pull -q 2>/dev/null; }; then
+        # v1.26.144 — this was `git stash -q` followed by a pull, with no `stash pop` on any
+        # path out of this block, including the successful one. Whatever the user had
+        # uncommitted went into the stash and stayed there. v1.17.22 shipped exactly this
+        # bug in the MCP and it is what made uncommitted work disappear; the fix landed
+        # there and never reached here.
+        #
+        # Measured on one machine on 2026-08-11: 30 stash entries, one per upgrade back to
+        # v1.17.x. They were mode changes rather than anybody's work, because the installer
+        # chmods a file committed 644 — but the mechanism does not know the difference, and
+        # the day it holds a real edit it keeps it.
+        #
+        # `--autostash` is the operation that stashes *and* puts it back, and it is what
+        # shared/auto-update.js already uses. The fallback deliberately omits it: on git
+        # older than 2.6 the flag is unknown, and `--ff-only` refuses a dirty tree rather
+        # than touching it, which is the safe way to decline.
+        if ! { git pull -q --rebase --autostash 2>/dev/null || git pull -q --ff-only 2>/dev/null; }; then
           rm -f "$LOCK_FILE"
           log_event "update_failed" "step" "pull"
           queue_update_banner failed pull
