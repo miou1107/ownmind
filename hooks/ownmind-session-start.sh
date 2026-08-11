@@ -206,12 +206,22 @@ create_exclusive() {
   ( set -C; printf '%s' "${2:-}" > "$1" ) 2>/dev/null
 }
 
+# Is the file at $1 still the one that wrote $2? `read` rather than $(cat …): every caller
+# uses this immediately before deleting something, and a fork is exactly the gap that makes
+# the deletion land on a file that arrived in the meantime.
+marker_is_ours() {
+  local cur=''
+  read -r cur < "$1" 2>/dev/null
+  [ "$cur" = "$2" ]
+}
+
 # Take the update lock. Returns non-zero when somebody else holds it.
 #
-# Mirrors shared/update-lock.js; that file explains why reclaiming a stale lock takes three
+# Mirrors shared/update-lock.js; that file explains why reclaiming a stale lock takes four
 # steps rather than one. In short: deleting a path and re-creating it cannot be made atomic,
-# so removal is serialised, the deleter re-reads the age, and the winner then checks that the
-# file at the path is still the one it created.
+# so removal is serialised behind a marker, the marker's holder proves the marker is still
+# its own before deleting anything, the deleter re-reads the age, and the winner then checks
+# that the file at the path is still the one it created.
 #
 # What shipped before was `[ ! -f "$LOCK_FILE" ]` ten lines above a `touch`, which is not a
 # lock twice over: the test and the create are far apart, and `touch` succeeds on a file that
@@ -230,7 +240,7 @@ acquire_update_lock() {
   # empty string and bash answers "integer expression expected" for every contender, so
   # nobody acquires and nobody reclaims.
   local stale="${LOCK_STALE_SECONDS:-600}"
-  local age rage dage token reclaim="$LOCK_FILE.reclaim"
+  local age rage dage token rtoken reclaim="$LOCK_FILE.reclaim"
 
   age=$(lock_age_seconds "$LOCK_FILE")
   if [ -n "$age" ] && [ "$age" -gt "$stale" ]; then
@@ -248,6 +258,23 @@ acquire_update_lock() {
         # inside the reclaim section, and the age re-read below only protects the first one's
         # new lock if it happens after that lock exists. So check what was actually taken:
         # a fresh marker means somebody is reclaiming right now, and this call stands down.
+        #
+        # v1.26.145 — standing down is not enough, because the marker this call just deleted
+        # may have been a live one. The marker IS the mutex, so deleting somebody's live one
+        # leaves them inside the section with nothing guarding the door. Measured 2026-08-11,
+        # sixteen contenders under load: three processes inside at once, two reaching `WIN`.
+        #
+        #   17460 ENTER reclaim section
+        #   17530 moved a fresh marker -> stand down    <- deleted 17460's live marker
+        #   17516 ENTER reclaim section                 <- nothing left to stop it
+        #   17460 RM   17516 RM   17572 created/verify  <- 17572 holds the lock
+        #   17460 created/verify                        <- and so does 17460
+        #
+        # Putting the marker back was tried and measured worse than the bug (45 double
+        # acquires in 120 rounds against 5): a restore is a second window in which the mutex
+        # is absent. What works is the other end — the occupant checks that the marker is
+        # still its own immediately before it deletes anything (see below). This deletion
+        # therefore stays, and is now detected rather than prevented.
         dage=$(lock_age_seconds "$reclaim.dead.$$")
         rm -f "$reclaim.dead.$$"
         if [ -z "$dage" ] || [ "$dage" -le "$stale" ]; then return 1; fi
@@ -255,12 +282,21 @@ acquire_update_lock() {
         return 1
       fi
     fi
-    if create_exclusive "$reclaim"; then
+    rtoken="$$-$(date +%s)-${RANDOM}${RANDOM}"
+    if create_exclusive "$reclaim" "$rtoken"; then
       # Re-read the age now that we are the only reclaimer: an earlier winner may already
       # have put a fresh lock here, and deleting that is exactly the bug being fixed.
       age=$(lock_age_seconds "$LOCK_FILE")
-      if [ -n "$age" ] && [ "$age" -gt "$stale" ]; then rm -f "$LOCK_FILE"; fi
-      rm -f "$reclaim"
+      # ...and re-check that we still ARE the only reclaimer. The marker is this section's
+      # mutex, and it can be taken away: a cleanup that mistook it for a leaked one deletes
+      # it, and another occupant's exit deletes it. Either way the door is open behind us and
+      # the age above was read in a section we no longer hold.
+      # `read`, not `$(cat ...)`: a fork here is the gap this check exists to close.
+      marker_is_ours "$reclaim" "$rtoken" \
+        && [ -n "$age" ] && [ "$age" -gt "$stale" ] && rm -f "$LOCK_FILE"
+      # Only ever remove a marker that is still ours — removing somebody else's is how the
+      # mutex evaporated in the first place.
+      marker_is_ours "$reclaim" "$rtoken" && rm -f "$reclaim"
     fi
   fi
 
