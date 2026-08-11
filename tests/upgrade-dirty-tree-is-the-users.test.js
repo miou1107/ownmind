@@ -23,8 +23,9 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { assertExecutable } from './helpers/executable-bit.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -38,45 +39,74 @@ describe('files the installers make executable are committed executable', () => 
   // been added since somebody last looked. This one cannot go stale: the next
   // `chmod +x` someone adds is in it the moment they add it.
 
-  /** Every checkout-relative path either installer chmods +x. */
+  const INSTALLERS = ['install.sh', 'scripts/update.sh'];
+
+  /**
+   * Every checkout-relative path either installer chmods +x.
+   *
+   * Anything the extractor cannot resolve is returned as an `unparsed` entry rather than
+   * dropped. A silently skipped target is the failure this whole test exists to prevent:
+   * it would report a clean sweep over a list it had quietly shortened.
+   */
   const chmodTargets = () => {
     const targets = new Set();
-    for (const source of [read('install.sh'), read('scripts/update.sh')]) {
-      for (const m of source.matchAll(/chmod \+x "([^"]+)"/g)) {
-        const raw = m[1];
-        // Only paths inside the checkout can have a committed mode. The copies under
-        // ~/.claude/hooks and ~/.ownmind/git-hooks are not tracked anywhere.
-        const rel = raw
+    const unparsed = [];
+    for (const file of INSTALLERS) {
+      const source = read(file);
+      for (const line of source.split('\n')) {
+        if (!/(^|\s)chmod\s/.test(line) || line.trimStart().startsWith('#')) continue;
+        const quoted = line.match(/chmod \+x "([^"]+)"/);
+        if (!quoted) {
+          // Unquoted, numeric (chmod 755), or multi-target forms. None is used today; if
+          // one appears, say so rather than passing over it.
+          unparsed.push(`${file}: ${line.trim()}`);
+          continue;
+        }
+        const rel = quoted[1]
           .replace(/^\$\{?OWNMIND_DIR\}?\//, '')
-          .replace(/^"?\$\{?HOME\}?\/\.ownmind\//, '');
-        if (rel === raw) continue;
+          .replace(/^\$\{?HOME\}?\/\.ownmind\//, '');
+        // Still starts with a variable: it points outside the checkout (~/.claude/hooks,
+        // ~/.ownmind/git-hooks, the bin dir), so it has no committed mode to check. This
+        // comes before the substitution check below, because those copies are allowed to be
+        // built with $(basename ...) — they are not in the repository either way.
+        if (rel.startsWith('$')) continue;
+        if (rel.includes('$(') || rel.includes('$')) {
+          // Inside the checkout but built at runtime: the path cannot be resolved here, so
+          // it cannot be checked, so it is reported rather than dropped.
+          unparsed.push(`${file}: ${line.trim()}`);
+          continue;
+        }
         targets.add(rel);
       }
     }
-    return [...targets];
+    return { targets: [...targets], unparsed };
   };
 
-  const committedMode = (rel) => {
-    const out = execFileSync('git', ['ls-files', '-s', '--', rel], { cwd: ROOT, encoding: 'utf8' });
-    return out.trim() ? out.trim().split(/\s+/)[0] : null;
-  };
+  const isTracked = (rel) =>
+    execFileSync('git', ['ls-files', '--', rel], { cwd: ROOT, encoding: 'utf8' }).trim() !== '';
 
   it('finds the paths by reading the installers', () => {
-    const targets = chmodTargets();
+    const { targets } = chmodTargets();
     assert.ok(targets.length > 0, 'the extractor found no chmod +x targets at all');
     assert.ok(targets.includes('hooks/ownmind-usage-scanner.js'),
       `expected the scanner hook among ${JSON.stringify(targets)}`);
   });
 
-  it('every one of them is recorded 100755', () => {
-    const wrong = chmodTargets()
-      .map((rel) => ({ rel, mode: committedMode(rel) }))
-      .filter(({ mode }) => mode !== null && mode !== '100755');
-    assert.deepEqual(wrong, [],
-      'these are chmod +x by an installer but committed non-executable, so every '
-      + 'installation is mode-dirty from the moment it is installed');
+  it('refuses to pass over a chmod it cannot read', () => {
+    const { unparsed } = chmodTargets();
+    assert.deepEqual(unparsed, [],
+      'these chmod lines are in a form the extractor does not resolve, so they would be '
+      + 'checked by nobody. Either quote a literal path, or teach the extractor.');
   });
 
+  it('every one of them is committed executable', () => {
+    // assertExecutable is the repository's existing ruler for this (v1.26.118): it reads
+    // the index mode, which is the only one a Windows leg can measure and the only one that
+    // describes what everybody else gets on checkout.
+    const tracked = chmodTargets().targets.filter(isTracked);
+    assert.ok(tracked.length > 0, 'no chmod +x target is tracked — the extractor is wrong');
+    for (const rel of tracked) assertExecutable(ROOT, rel);
+  });
 });
 
 describe('the dirty decision, run as the script runs it', () => {
@@ -93,7 +123,12 @@ describe('the dirty decision, run as the script runs it', () => {
 
   const seedRepo = async () => {
     const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-dirty-'));
-    const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+    // -c core.hooksPath=: install.sh sets a *global* core.hooksPath, so a plain commit in a
+    // throwaway repo runs OwnMind's own pre-commit and commit-msg hooks — which shell out to
+    // node and can reject it. The rest of the suite guards the same way
+    // (tests/pre-commit-secret.test.js).
+    const git = (...args) => execFileSync('git', ['-c', 'core.hooksPath=', ...args],
+      { cwd: dir, encoding: 'utf8' });
     git('init', '-q', '-b', 'main');
     git('config', 'user.email', 't@example.com');
     git('config', 'user.name', 'test');
@@ -137,15 +172,19 @@ describe('the dirty decision, run as the script runs it', () => {
   });
 
   it('still reads a mode change as dirty', async () => {
-    // Not hypothetical: this is the entry that was on the real machine. Committing the
-    // exec bit is what removes it — the check must keep being able to see one.
+    // Not hypothetical: this is the entry that was on the real machine. Committing the exec
+    // bit is what removes it — the check must keep being able to see one.
+    //
+    // The mode is moved in the index rather than with fs.chmodSync, because chmod is a
+    // no-op on NTFS and git writes core.filemode=false there: measuring the working-copy
+    // bit is a ruler that cannot read on Windows (v1.26.118). `update-index --chmod` moves
+    // the recorded mode on every platform, which is the half that reaches other machines.
     const { dir, git } = await seedRepo();
     try {
-      fs.chmodSync(path.join(dir, 'tracked.txt'), 0o755);
+      git('update-index', '--chmod=+x', 'tracked.txt');
       const out = execFileSync('git', ['status', ...statusArgsFromShell()],
         { cwd: dir, encoding: 'utf8' });
       assert.match(out, /tracked\.txt/, 'a mode change is a tracked change');
-      void git;
     } finally {
       await fsp.rm(dir, { recursive: true, force: true });
     }
@@ -168,6 +207,22 @@ describe('both upgraders decide the same way', () => {
     assert.match(m[1], /--untracked-files=no/);
   });
 
+  it('the powershell filter matches untracked lines and not every line', () => {
+    // `-like '??*'` reads as "two of any character, then anything", because `?` is a
+    // single-character wildcard in -like. That would list the whole status output under a
+    // heading that says untracked. -match takes a regex, where `\?\?` is two question
+    // marks, and `^` keeps it to the status code column.
+    const m = UPGRADE_PS1.match(/\$untracked = git status [^\n]*\n?[^\n]*Where-Object \{ ([^}]*) \}/);
+    assert.ok(m, 'no untracked filter found in interactive-upgrade.ps1');
+    assert.match(m[1], /-match/, 'the filter must use -match, not -like');
+    assert.match(m[1], /\^\\\?\\\?/, 'the pattern must be anchored to the two-column status code');
+    assert.doesNotMatch(m[1], /-like/);
+  });
+
+  it('the shell filter is anchored the same way', () => {
+    assert.match(UPGRADE_SH, /grep '\^\?\?'/);
+  });
+
   it('both still log what is untracked rather than hiding it', () => {
     assert.match(UPGRADE_SH, /untracked paths present/);
     assert.match(UPGRADE_PS1, /untracked paths present/);
@@ -188,16 +243,76 @@ describe('both upgraders decide the same way', () => {
 });
 
 describe('the checkout ignores what OwnMind writes into it', () => {
-  const IGNORE = read('.gitignore');
+  // Asked of git rather than of the file's text. A later `!bin/` further down would leave a
+  // string match green while git went on reporting the directory, which is the same class
+  // of mistake as reading `git status` and calling the answer "the user's changes".
+
+  const isIgnored = (rel) => {
+    const r = spawnSync('git', ['check-ignore', '-q', '--', rel], { cwd: ROOT });
+    return r.status === 0;
+  };
 
   // Only what OwnMind writes. A member's machine also carries an untracked `standards/`,
   // and nothing in this repository creates it — so it is theirs, and hiding someone's own
-  // directory from their own `git status` is not this file's business. The change above is
-  // what stops it triggering a reset.
-  for (const dir of ['bin/', 'reports/']) {
-    it(`ignores ${dir}`, () => {
-      assert.ok(IGNORE.split('\n').some((line) => line.trim() === dir),
+  // directory from their own `git status` is not this file's business. The change to the
+  // dirty decision is what stops it triggering a reset.
+  for (const dir of ['bin/run-scanner.sh', 'reports/health-2026-08-11.md']) {
+    it(`git ignores ${dir}`, () => {
+      assert.ok(isIgnored(dir),
         `${dir} is written into the checkout by OwnMind and must not appear in git status`);
     });
   }
+
+  it('does not ignore a path that is not ours', () => {
+    // The control. Without it, a `*` rule would pass both cases above and prove nothing.
+    assert.equal(isIgnored('standards/rules.md'), false,
+      'standards/ is the user\'s, and must stay visible in their own git status');
+  });
+});
+
+describe('nothing stashes the user\'s work without putting it back', () => {
+  // v1.26.143. `hooks/ownmind-session-start.sh` ran `git stash -q` before its pull and had
+  // no `stash pop` on any path out of the block, including the successful one. v1.17.22
+  // shipped the same bug in the MCP, where it made uncommitted work disappear; the fix
+  // landed there and never reached here. Measured on one machine on 2026-08-11: 30 stash
+  // entries, one per upgrade going back to v1.17.x.
+  //
+  // The list of scripts is grown by walking the repository, so a script added later is
+  // covered the day it appears rather than the day somebody remembers this test.
+
+  const scripts = () =>
+    execFileSync('git', ['ls-files', '--', '*.sh', '*.ps1'], { cwd: ROOT, encoding: 'utf8' })
+      .split('\n').filter(Boolean);
+
+  it('finds scripts to check', () => {
+    const found = scripts();
+    assert.ok(found.length > 5, `only found ${found.length} scripts — the listing is broken`);
+    assert.ok(found.includes('hooks/ownmind-session-start.sh'));
+  });
+
+  it('no script stashes without restoring in the same file', () => {
+    const offenders = [];
+    for (const rel of scripts()) {
+      const body = read(rel);
+      // `--autostash` is the flag that stashes and puts it back by itself; a bare
+      // `git stash` needs a matching pop or apply somewhere in the same script.
+      const bare = body.split('\n').filter((line) =>
+        /git stash\b/.test(line) && !/--autostash/.test(line)
+        && !line.trimStart().startsWith('#'));
+      if (bare.length === 0) continue;
+      if (/git stash (pop|apply)/.test(body)) continue;
+      offenders.push(`${rel}: ${bare[0].trim()}`);
+    }
+    assert.deepEqual(offenders, [],
+      'these stash the working tree and never restore it, so whatever the user had '
+      + 'uncommitted stays in the stash list');
+  });
+
+  it('the session-start hook pulls with --autostash', () => {
+    const body = read('hooks/ownmind-session-start.sh');
+    assert.match(body, /git pull -q --rebase --autostash/);
+    // The fallback must not carry --autostash: on git older than 2.6 the flag is unknown,
+    // and the point of a fallback is to work where the primary path did not.
+    assert.match(body, /git pull -q --ff-only/);
+  });
 });

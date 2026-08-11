@@ -61,3 +61,24 @@ the checkout.
 - **GIVEN** `install.sh` creates `bin/` and the daily health job writes `reports/`
 - **WHEN** `git status --porcelain` runs in the checkout
 - **THEN** neither path appears
+
+### Requirement: nothing stashes the working tree without restoring it
+
+No script in the repository SHALL run `git stash` without restoring the stashed state.
+
+#### Scenario: the session-start hook pulls a new version
+
+- **GIVEN** the user has uncommitted changes in the checkout
+- **WHEN** `hooks/ownmind-session-start.sh` finds new commits upstream and pulls
+- **THEN** it pulls with `--autostash`, which restores the changes when the pull finishes
+- **AND** the fallback pull omits `--autostash` and declines a dirty tree with `--ff-only`
+  rather than touching it
+
+#### Scenario: a script added later
+
+- **GIVEN** a shell or PowerShell script that runs `git stash` with no matching
+  `stash pop` or `stash apply` in the same file, and without `--autostash`
+- **WHEN** the test suite runs
+- **THEN** it fails naming that script
+- **AND** the list of scripts checked comes from walking the repository, not from a list
+  written by hand
