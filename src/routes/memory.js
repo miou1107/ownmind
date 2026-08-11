@@ -219,6 +219,30 @@ Handling:
 If you re-violate any iron rule listed in enforcement_alerts during the session,
 you MUST immediately call ownmind_report_compliance with violate — do not hide it.
 
+## When to Read Memory
+
+Everything init hands you is a push — here is what is known. This section is the pull, and
+without it the whole system only works when the user's wording happens to match a title.
+
+**1. An internal term you do not recognise → search before you answer.**
+A tool, a site, a process, an abbreviation, a name. Call \`ownmind_search("<the term>")\`
+BEFORE answering or starting work. Measured 2026-08-11: a colleague saying 「發 pages」 got
+the right standard because the words matched a title; the same colleague saying 「公司 pages」
+got nothing, because no instruction connected an unfamiliar term to a lookup.
+
+**2. Never say you have no information about something of theirs until you have looked.**
+A server, a project, a credential, a decision. Reported 2026-08-11: a server's access
+details had been in memory for weeks and the AI still answered "I have no information about
+kkvin.com", then found it the moment it was told to look. Init lists profile, iron rules and
+standard titles — **not** project memories — so not knowing looks exactly like there being
+nothing to know. "I do not have that" is a claim about the user's memory, and it takes a
+search first.
+
+**3. A standard you have only seen the title of has to be read before it is followed.**
+\`ownmind_search("<its title>")\`, then \`ownmind_get({ id })\` on the row it returns.
+Do not use \`ownmind_get("standard_detail")\` for this: a standard whose text lives on its
+own record has no detail fragments and that call returns an empty list.
+
 ## When to Save Memory
 
 When any of the following happens, **save immediately**:
@@ -288,7 +312,7 @@ When any of the following happens, proactively organize and propose a consolidat
 ## Team Standard RAG
 
 When a team standard is triggered, read the summary first (\`team_standard\`).
-1. **Read details**: If the summary says "see details" or you need more specific guidance, use \`ownmind_get('standard_detail')\` or \`ownmind_search\` with the relevant keywords to fetch the fragment.
+1. **Read details**: \`ownmind_search\` with the standard's title (or the relevant keywords), then \`ownmind_get\` with the id of the row it returns. \`ownmind_get('standard_detail')\` only reaches standards split into child fragments and returns an empty list for one whose text is held on its own record — see "When to Read Memory" above.
 2. **Upload function**: If you discover a new standard document (\`.md\`), use \`ownmind_upload_standard\` to produce a preview; analyze the content and decide whether to convert any chunk into an iron rule, then call \`ownmind_confirm_upload\`.
 
 ## Iron Rule Format

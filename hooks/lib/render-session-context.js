@@ -86,7 +86,13 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
   if (d.team_standards_digest) {
     lines.push('## Team standards (follow these like your own rules)');
     lines.push(d.team_standards_digest);
-    lines.push('For the full text of one: ownmind_get("standard_detail").');
+    // v1.26.141: this line used to read `ownmind_get("standard_detail")`, which returns []
+    // for a standard whose text lives on its own record rather than in child fragments —
+    // i.e. for the ones written most recently. Two assistants given only this context both
+    // found the right standard by its title, both followed this instruction, and both would
+    // have got nothing back. Search is what actually resolves a title to a row.
+    lines.push('These are titles. Read one in full before you follow it: '
+      + 'ownmind_search("<its title>"), then ownmind_get({ id }) on the row it returns.');
     lines.push('');
   }
 
@@ -103,6 +109,42 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
   }
 
   lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
+
+  // v1.26.141: everything above is a push — here is what is known. Nothing was a pull, and
+  // the difference is what users experience as "the AI forgot OwnMind exists".
+  //
+  // Measured: a colleague saying 「發 pages」 gets looked up, because the wording happens to
+  // match a title in the list above. The same colleague saying 「公司 pages」 does not, because
+  // no line anywhere told the AI that an unrecognised term is a reason to go and look. The
+  // lists are titles; matching one is luck, and luck was the whole mechanism.
+  //
+  // Scoped to terms it does not recognise on purpose. "Search every message" is noise, and
+  // noise is what gets ignored.
+  // Worded to match configs/ownmind-rules-block.md and the ownmind_search tool description.
+  // The same rule now reaches the model from three directions, and three wordings of one rule
+  // read as three rules — the vaguest of which wins.
+  //
+  // "Points at them, not at the world" rather than "a term you do not recognise": the reported
+  // miss was 「公司 pages」, where every word is one the model knows and only the referent is
+  // unfamiliar. A trigger keyed on unfamiliar *vocabulary* does not fire on it.
+  lines.push('When something in the request points at them rather than at the world — a name, '
+    + 'tool, site, process, server or decision you cannot resolve from the repo in front of '
+    + 'you, or a phrase you would have to guess at ("the company X", "our Y", "the usual Z") — '
+    + 'call ownmind_search("<it>") BEFORE you answer or start work. The lists above are titles '
+    + 'only; not seeing something there does not mean it is not in memory.');
+  // The sharper half of the same rule, because it names the exact sentence that goes wrong.
+  //
+  // Reported 2026-08-11: a server's access details had been in memory for weeks, and the AI
+  // still answered "I do not have information about kkvin.com" — then found it immediately
+  // when told to look. Nothing above lists project memories at all (profile, iron rules,
+  // standard titles, principle titles — no projects), so from where it sat, not knowing was
+  // indistinguishable from there being nothing to know.
+  //
+  // Saying "I do not have that" is a claim about memory. It requires having looked.
+  lines.push('Never tell the user you have no information about something of theirs — a '
+    + 'server, a project, a credential, a decision — until you have run ownmind_search on it '
+    + 'in this session. "I do not have that" is a claim about their memory, and you have not '
+    + 'read it yet.');
 
   // v1.26.127: this is where the invented tips came from. The config templates tell the AI to
   // print a tip right after the startup memory load — and until now nothing on this path

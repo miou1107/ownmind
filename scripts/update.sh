@@ -192,6 +192,74 @@ if [ -f "$UPGRADE_SNIPPET" ]; then
   fi
 fi
 
+# --- 1c. Sync the OwnMind rules block into every AI tool's instruction file ---
+#
+# v1.26.141. Before this, CLAUDE.md got these rules once, from a heredoc in install.sh, and
+# then never again: the installer skipped the file if the word "OwnMind" appeared anywhere in
+# it. Every machine's copy froze on its install date. Measured 2026-08-11 — one machine was
+# still carrying a four-line block superseded three times, and no update script touched the
+# file at all.
+#
+# One node helper for all three platforms. The marker-block job was written twice before,
+# once here and once in PowerShell, and the two drifted until v1.26.140 found the PowerShell
+# copy throwing on an empty file while this one handled it.
+RULES_BLOCK="$OWNMIND_DIR/configs/ownmind-rules-block.md"
+RULES_SYNC="$OWNMIND_DIR/scripts/install-helpers/sync-rules-block.cjs"
+if [ -f "$RULES_BLOCK" ] && [ -f "$RULES_SYNC" ]; then
+  BLOCK_WRITTEN=0
+  BLOCK_FAILED=""
+  BLOCK_LEGACY=""
+  sync_rules_block() {
+    local target_file="$1"
+    local legacy_flag="$2"
+    local result
+    # shellcheck disable=SC2086
+    result="$(node "$(to_win_path "$RULES_SYNC")" \
+      --target "$(to_win_path "$target_file")" \
+      --marker ownmind-rules \
+      --snippet "$(to_win_path "$RULES_BLOCK")" \
+      $legacy_flag 2>>"${HOME}/.ownmind/logs/update-err.log")" || return 2
+    case "$result" in
+      # `repaired:` is a successful write that also had to remove a broken marker the file
+      # had picked up. It was falling through to the catch-all and being reported as a
+      # failure — a working upgrade printing a warning teaches people to ignore warnings.
+      written:*|repaired:*) return 0 ;;
+      legacy-kept:*) return 3 ;;
+      skipped:*) return 1 ;;
+      *) return 2 ;;
+    esac
+  }
+  sync_rules_block "$HOME/.claude/CLAUDE.md" --legacy-claude
+  case $? in
+    0) BLOCK_WRITTEN=$((BLOCK_WRITTEN + 1)) ;;
+    3) BLOCK_WRITTEN=$((BLOCK_WRITTEN + 1)); BLOCK_LEGACY="$HOME/.claude/CLAUDE.md" ;;
+    2) BLOCK_FAILED="$BLOCK_FAILED $HOME/.claude/CLAUDE.md" ;;
+  esac
+  for block_target in \
+    "$HOME/.codex/AGENTS.md" \
+    "$HOME/.cursor/rules/ownmind.md" \
+    "$HOME/.antigravity/rules/ownmind.md" \
+    "$HOME/.opencode/AGENTS.md" \
+    "$HOME/.windsurf/rules/ownmind.md" \
+    "$HOME/.gemini/GEMINI.md"; do
+    sync_rules_block "$block_target" ""
+    case $? in
+      0|3) BLOCK_WRITTEN=$((BLOCK_WRITTEN + 1)) ;;
+      2) BLOCK_FAILED="$BLOCK_FAILED $block_target" ;;
+    esac
+  done
+  if [ -n "$BLOCK_FAILED" ]; then
+    echo "[WARN] OwnMind rules written to $BLOCK_WRITTEN file(s); failed:$BLOCK_FAILED"
+    echo "       see ${HOME}/.ownmind/logs/update-err.log"
+  else
+    echo "[ OK ] OwnMind rules written to $BLOCK_WRITTEN AI instruction file(s)"
+  fi
+  if [ -n "$BLOCK_LEGACY" ]; then
+    echo "[NOTE] $BLOCK_LEGACY still has an older OwnMind section that you edited by hand."
+    echo "       It was left alone. Delete the '# OwnMind 個人記憶系統' section when convenient."
+  fi
+fi
+
 # --- 2. Sync hook scripts + hooks/lib modules ---
 if [ -d "$HOME/.claude" ]; then
   HOOK_DIR="$HOME/.claude/hooks"
