@@ -437,6 +437,9 @@ if ((Test-Path $RulesBlock) -and (Test-Path $RulesSync)) {
   $rulesOut = & node $RulesSync --target $ClaudeMd --marker ownmind-rules --snippet $RulesBlock --legacy-claude 2>&1
   if ($LASTEXITCODE -eq 0) {
     Write-Host "[ OK ] CLAUDE.md carries the OwnMind rules block"
+    if ("$rulesOut" -match '^repaired:') {
+      Write-Host "[NOTE] CLAUDE.md had a broken OwnMind marker; it was repaired."
+    }
     if ("$rulesOut" -match '^legacy-kept:') {
       Write-Host "[NOTE] An older OwnMind section in CLAUDE.md looks hand-edited, so it was left alone."
       Write-Host "       Delete the '# OwnMind 個人記憶系統' section when convenient."

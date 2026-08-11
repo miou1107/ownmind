@@ -237,7 +237,9 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     $errLog = Join-Path $HOME ".ownmind\logs\update-err.log"
     $out = & node @nodeArgs 2>> $errLog
     if ($LASTEXITCODE -ne 0) { return 'failed' }
-    if ($out -match '^written:') { return 'written' }
+    # `repaired:` is a successful write that also removed a broken marker; without this it
+    # fell through to 'failed' and a working upgrade printed a warning.
+    if ($out -match '^written:' -or $out -match '^repaired:') { return 'written' }
     if ($out -match '^legacy-kept:') { return 'legacy-kept' }
     if ($out -match '^skipped:') { return 'skipped' }
     return 'failed'

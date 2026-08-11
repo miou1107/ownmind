@@ -441,6 +441,9 @@ if [ -f "$RULES_BLOCK" ] && [ -f "$RULES_SYNC" ]; then
   if [ "$RULES_OK" = "1" ]; then
     echo "[ OK ] CLAUDE.md carries the OwnMind rules block"
     case "$RULES_RESULT" in
+      repaired:*)
+        echo "[NOTE] CLAUDE.md had a broken OwnMind marker; it was repaired."
+        ;;
       legacy-kept:*)
         echo "[NOTE] An older OwnMind section in CLAUDE.md looks hand-edited, so it was left alone."
         echo "       Delete the '# OwnMind 個人記憶系統' section when convenient."

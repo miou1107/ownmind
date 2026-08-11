@@ -246,3 +246,79 @@ describe('sync-rules-block — the file belongs to the user', () => {
     assert.equal(fs.statSync(target).mode & 0o777, 0o600, 'an upgrade must not widen access');
   });
 });
+
+/**
+ * agy review round. Three more ways the file could be damaged, all reproduced first.
+ */
+describe('sync-rules-block — adversarial inputs', () => {
+  /**
+   * Reproduced: a CLAUDE.md whose owner had written down what OwnMind puts in their file,
+   * showing the markers inside a ```markdown fence, came back with the fence emptied and
+   * the explanation gone. Anyone who pastes the block into their own notes to remember what
+   * it is loses those notes on the next upgrade, silently.
+   */
+  it('markers inside a fenced code block are prose, not markers', () => {
+    const { target, snippet } = fixture([
+      '# My rules',
+      '',
+      'OwnMind puts a block like this in here:',
+      '',
+      '```markdown',
+      '<!-- ownmind-rules -->',
+      '(its rules go here)',
+      '<!-- /ownmind-rules -->',
+      '```',
+      '',
+      'Do not delete the explanation above.',
+      '',
+    ].join('\n'));
+    run(['--target', target, '--marker', 'ownmind-rules', '--snippet', snippet]);
+    const body = read(target);
+    assert.match(body, /\(its rules go here\)/, 'the example inside the fence must survive');
+    assert.match(body, /Do not delete the explanation above/);
+    assert.match(body, /rule one/, 'and the real block still goes in');
+  });
+
+  it('survives a tilde fence too', () => {
+    const { target, snippet } = fixture(
+      '# Mine\n\n~~~\n<!-- ownmind-rules -->\nsample\n<!-- /ownmind-rules -->\n~~~\n\nkeep me\n'
+    );
+    run(['--target', target, '--marker', 'ownmind-rules', '--snippet', snippet]);
+    assert.match(read(target), /sample/);
+    assert.match(read(target), /keep me/);
+  });
+
+  /**
+   * Two upgrades at once — a scheduled one and one the user started — used to write the same
+   * temp path, interleave, and rename the result over the file. A same-named temp file is
+   * how an atomic write stops being atomic.
+   */
+  it('the temp file name is not shared between concurrent runs', () => {
+    const src = fs.readFileSync(script, 'utf8');
+    assert.match(src, /process\.pid/, 'the temp name must be unique per process');
+  });
+
+  /**
+   * Hardlinks: rename() breaks the other names off onto the old content, and they never
+   * receive an update again.
+   */
+  it('writes in place when another name points at the same file', () => {
+    const { dir, target, snippet } = fixture('# My rules\n\nkeep me\n');
+    const other = path.join(dir, 'linked-CLAUDE.md');
+    fs.linkSync(target, other);
+
+    run(['--target', target, '--marker', 'ownmind-rules', '--snippet', snippet]);
+
+    assert.equal(fs.statSync(target).ino, fs.statSync(other).ino, 'the link must survive');
+    assert.match(fs.readFileSync(other, 'utf8'), /rule one/, 'both names see the update');
+    assert.match(fs.readFileSync(other, 'utf8'), /keep me/);
+  });
+
+  it('a CRLF file keeps CRLF', () => {
+    const { target, snippet } = fixture('# Mine\r\n\r\nkeep me\r\n');
+    run(['--target', target, '--marker', 'ownmind-rules', '--snippet', snippet]);
+    const raw = fs.readFileSync(target, 'utf8');
+    assert.match(raw, /<!-- ownmind-rules -->\r\n/, 'our block should match the file');
+    assert.doesNotMatch(raw, /[^\r]\n/, 'no lone LF should be introduced');
+  });
+});

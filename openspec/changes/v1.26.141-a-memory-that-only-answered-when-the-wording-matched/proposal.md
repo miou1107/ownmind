@@ -162,8 +162,8 @@ So a rule written today reached nobody through that path, no matter how well wor
 
 `configs/ownmind-rules-block.md` is now the single source, injected as a marked block into
 the user's own instruction files — CLAUDE.md and the six other tools' — by one Node helper
-that all four scripts call. The block is rewritten on every upgrade; nothing outside the
-markers is touched.
+that all four scripts call. The block is rewritten on every upgrade. The only thing outside the markers that changes is
+the run of blank lines at the end of the file, which is normalised to one.
 
 The marker-block job had already been written twice, once in shell and once in PowerShell,
 and v1.26.140 found the two had drifted until one threw on an empty file and the other did

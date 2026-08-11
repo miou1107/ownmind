@@ -47,6 +47,7 @@ user what contradicts it and let them decide.
 
 Credentials go through `ownmind_set_secret` / `ownmind_get_secret`; a server memory records
 where it is, not how to log in. Call `ownmind_log_session` before the conversation ends — no
-need to ask. Show the `[OwnMind vX.X.X]` tag when you surface a memory, so the user can tell
-what came from their memory and what came from you. If no OwnMind context appeared at the
-start of this session, call `ownmind_init` yourself.
+need to ask. If no OwnMind context appeared at the start of this session, call `ownmind_init`
+yourself. When you surface a memory, prefix it with the version tag the OwnMind tools put at
+the front of their own responses, so the user can tell what came from their memory and what
+came from you.

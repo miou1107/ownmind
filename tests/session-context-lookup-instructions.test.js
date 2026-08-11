@@ -303,3 +303,21 @@ describe('every ownmind_* tool named in the guidance actually exists', () => {
     });
   }
 });
+
+/**
+ * The helper gained a third success status, `repaired:`, when it has to remove a broken
+ * marker the file had picked up. Every call site classified it as a failure, so a working
+ * upgrade would have printed a warning — and a warning on a successful run is how people
+ * learn to ignore warnings.
+ */
+describe('every call site treats a repaired write as success', () => {
+  for (const f of ['install.sh', 'install.ps1', 'scripts/update.sh', 'scripts/update.ps1']) {
+    it(`${f} handles repaired:`, () => {
+      assert.match(
+        readFileSync(join(repoRoot, f), 'utf8'),
+        /repaired:/,
+        `${f}: an unhandled status falls through to the failure branch`
+      );
+    });
+  }
+});
