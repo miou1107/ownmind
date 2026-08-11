@@ -228,8 +228,16 @@ Push-Location $OwnMindDir
 # stderr is deliberately left alone rather than merged into $dirty: git emits CRLF warnings
 # there, and folding those into the value would make a clean tree look dirty and trigger an
 # unnecessary reset --hard.
+#
+# v1.26.144 — `--untracked-files=no`. The branch below answers a dirty tree with
+# `git reset --hard`, and reset acts on tracked files only: an untracked path is still
+# there when it finishes, so it chooses the destructive branch again on the next upgrade,
+# and the one after that. One member's machine has reported `tree: ?? standards/` on every
+# upgrade for exactly this reason. `bin/` and `reports/` are ours and are now ignored, so
+# they leave status entirely; a path like `standards/` is neither, and the listing below
+# keeps it visible in the log. Neither overwrites anything any more.
 $statusErr = "$LogFile.status"
-$dirty = git status --porcelain 2>$statusErr
+$dirty = git status --porcelain --untracked-files=no 2>$statusErr
 $statusCode = $LASTEXITCODE
 if (Test-Path $statusErr) { Get-Content $statusErr -ErrorAction SilentlyContinue | Out-File -Append $LogFile -Encoding utf8 }
 if ($statusCode -ne 0) {
@@ -241,11 +249,20 @@ if ($statusCode -ne 0) {
   # failure above for no gain. The backup copy stays put for sweep-old-backups to retire.
   Fail "git_status" "git status failed (exit $statusCode); the working tree state could not be established, so the upgrade stopped before changing anything. Check the local git installation, then re-run."
 }
+# Recorded, not acted on. Whoever reads an upgrade log still gets to see what else is in
+# the directory; the decision above is not theirs to make.
+# -match, not -like: in -like a `?` is a single-character wildcard, so '??*' would match
+# every status line rather than the untracked ones.
+$untracked = git status --porcelain --untracked-files=normal 2>$null | Where-Object { $_ -match '^\?\?' }
+if ($untracked) {
+  "[info] untracked paths present (not touched by this upgrade):" | Out-File -Append $LogFile -Encoding utf8
+  $untracked | Out-File -Append $LogFile -Encoding utf8
+}
 if ($dirty) {
   Step "pull_dirty" "Working tree has uncommitted changes; auto-aligning to origin/main (backup already saved)"
   $dirtyLog = "$LogFile.dirty"
   $dirty | Out-File -FilePath $dirtyLog -Encoding utf8
-  Report-Error -Kind "upgrade_dirty_tree" -Detail "git status --porcelain non-empty; auto reset --hard to origin/main; tree: $(Get-LastLogLines $dirtyLog)" -ContextFile $dirtyLog
+  Report-Error -Kind "upgrade_dirty_tree" -Detail "tracked files modified (git status --porcelain --untracked-files=no non-empty); auto reset --hard to origin/main; tree: $(Get-LastLogLines $dirtyLog)" -ContextFile $dirtyLog
   git fetch origin 2>&1 | Out-File -Append $LogFile -Encoding utf8
   if ($LASTEXITCODE -eq 0) {
     git reset --hard origin/main 2>&1 | Out-File -Append $LogFile -Encoding utf8
@@ -267,7 +284,11 @@ if ($dirty) {
   # what makes the log worth quoting; Get-LastLogLines below is what quotes it.
   $pullOut | Out-File -Append $LogFile -Encoding utf8
   if ($pullCode -ne 0) {
-    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $(Get-LastLogLines $LogFile)" -ContextFile $LogFile
+    # v1.26.144 — the one realistic failure here is an untracked file whose name a new
+    # release has started tracking: --ff-only refuses rather than overwriting it. Naming the
+    # untracked paths is what turns a stalled upgrade into one somebody can finish by hand.
+    $untrackedNote = if ($untracked) { "; untracked: $($untracked -join ' ')" } else { "" }
+    Report-Error -Kind "upgrade_git_pull_failed" -Detail "git pull --ff-only failed: $(Get-LastLogLines $LogFile)$untrackedNote" -ContextFile $LogFile
     Pop-Location
     Rollback
     Fail "git_pull" "git pull failed; $(RollbackNote)"
