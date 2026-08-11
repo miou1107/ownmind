@@ -284,7 +284,7 @@ if ($dirty) {
   # what makes the log worth quoting; Get-LastLogLines below is what quotes it.
   $pullOut | Out-File -Append $LogFile -Encoding utf8
   if ($pullCode -ne 0) {
-    # v1.26.143 — the one realistic failure here is an untracked file whose name a new
+    # v1.26.144 — the one realistic failure here is an untracked file whose name a new
     # release has started tracking: --ff-only refuses rather than overwriting it. Naming the
     # untracked paths is what turns a stalled upgrade into one somebody can finish by hand.
     $untrackedNote = if ($untracked) { "; untracked: $($untracked -join ' ')" } else { "" }

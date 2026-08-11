@@ -271,7 +271,7 @@ describe('the checkout ignores what OwnMind writes into it', () => {
 });
 
 describe('nothing stashes the user\'s work without putting it back', () => {
-  // v1.26.143. `hooks/ownmind-session-start.sh` ran `git stash -q` before its pull and had
+  // v1.26.144. `hooks/ownmind-session-start.sh` ran `git stash -q` before its pull and had
   // no `stash pop` on any path out of the block, including the successful one. v1.17.22
   // shipped the same bug in the MCP, where it made uncommitted work disappear; the fix
   // landed there and never reached here. Measured on one machine on 2026-08-11: 30 stash

@@ -329,7 +329,7 @@ if [ -d "$OWNMIND_DIR/.git" ]; then
       fi
       UPDATES=$(git log HEAD..origin/main --oneline 2>/dev/null)
       if [ -n "$UPDATES" ]; then
-        # v1.26.143 — this was `git stash -q` followed by a pull, with no `stash pop` on any
+        # v1.26.144 — this was `git stash -q` followed by a pull, with no `stash pop` on any
         # path out of this block, including the successful one. Whatever the user had
         # uncommitted went into the stash and stayed there. v1.17.22 shipped exactly this
         # bug in the MCP and it is what made uncommitted work disappear; the fix landed
