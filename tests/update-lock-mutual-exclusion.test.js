@@ -76,12 +76,38 @@ function acquireBundle() {
   // A bundle that does not parse makes every contender die before touching the lock, and
   // the race harness reports that as "nobody acquired" — a green-looking measurement of
   // nothing, which is the failure this whole file exists to avoid. Ask bash directly.
-  const check = spawnSync('bash', ['-n', '-c', bundle], { encoding: 'utf8' });
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-parse-'));
+  let check;
+  try {
+    check = spawnSync('bash', ['-n', scriptFile(scratch, bundle)], { encoding: 'utf8' });
+  } finally {
+    fs.rmSync(scratch, { recursive: true, force: true });
+  }
   assert.equal(check.status, 0,
     `the lifted shell bundle does not parse, so no contender would reach the lock:\n${check.stderr}`);
   return bundle;
 }
 
+
+/**
+ * Write a script to a file and return its path, so it can be run as `bash <file>` rather
+ * than `bash -c <the whole thing>`.
+ *
+ * v1.26.145 — Windows truncates a command line at roughly 8 KB. The lifted bundle crossed
+ * that when this release added comments to the functions: measured at 8,594 bytes, of which
+ * Windows delivered 8,262, cutting `acquire_update_lock` in half. Bash then reported
+ * `unexpected end of file`, every contender died before touching the lock, and the race
+ * harness read that as "nobody acquired" — a test that had quietly stopped measuring
+ * anything, on the one platform nobody develops on.
+ *
+ * A file has no such ceiling and removes the argument-mangling MSYS does to anything that
+ * looks like a path.
+ */
+function scriptFile(dir, body) {
+  const p = path.join(dir, `script-${scriptFile.n = (scriptFile.n || 0) + 1}.sh`);
+  fs.writeFileSync(p, `${body}\n`);
+  return p;
+}
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lock-'));
@@ -157,12 +183,42 @@ async function race(dir, makeChild) {
 }
 
 function shellRacer(dir, snippet) {
-  return (i, go) => spawn('bash', ['-c', [
+  const file = scriptFile(dir, [
     `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
-    `while [ ! -f ${JSON.stringify(go)} ]; do :; done`,
+    `while [ ! -f ${JSON.stringify(path.join(dir, 'go'))} ]; do :; done`,
     snippet,
-  ].join('\n')], { stdio: ['ignore', 'pipe', 'pipe'] });
+  ].join('\n'));
+  return () => spawn('bash', [file], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
+
+describe('v1.26.145 — the harness has no silent size ceiling', () => {
+  it('never hands a script to bash as a command-line argument', () => {
+    // Windows cuts a command line at roughly 8 KB. The lifted bundle crossed it when this
+    // release added comments to the functions — 8,594 bytes sent, 8,262 delivered — and
+    // `acquire_update_lock` arrived cut in half. Every contender died at `unexpected end of
+    // file`, and the race harness reported that as "nobody acquired": a test that had
+    // stopped measuring anything, on the platform nobody develops on.
+    //
+    // The rule that prevents a repeat is structural, not a size check: scripts built from
+    // the hook go through a file. This asserts nobody quietly goes back to `-c`.
+    const src = fs.readFileSync(new URL(import.meta.url), 'utf8');
+    const offenders = src.split('\n')
+      .map((line, i) => ({ line: line.trim(), n: i + 1 }))
+      .filter(({ line }) => /\bbash', \['-c'/.test(line) || /\bbash', \['-n', '-c'/.test(line));
+    assert.deepEqual(offenders, [],
+      'these pass a script as an argument, which Windows truncates without saying so — '
+      + 'use scriptFile(dir, body) and run `bash <file>`');
+  });
+
+  it('the assembled bundle is bigger than the ceiling it used to be under', () => {
+    // If the bundle ever shrinks back under 8 KB this stops being load-bearing, and the
+    // assertion above would be guarding nothing anybody could notice breaking.
+    const bytes = Buffer.byteLength(acquireBundle());
+    assert.ok(bytes > 4096,
+      `the bundle is ${bytes} bytes; if it is now small, say so here rather than leaving `
+      + 'a rule whose reason has quietly expired');
+  });
+});
 
 describe('v1.26.98 — the harness can see a race at all (positive control)', () => {
   /**
@@ -395,11 +451,13 @@ describe('v1.26.98 — the shell hook takes a real lock', () => {
 });
 
 function spawnSyncStatus(dir, snippet) {
-  const r = execFileSync('bash', ['-c', [
+  // Via a file: `snippet` is usually the whole lifted bundle, which is over Windows'
+  // ~8 KB command-line ceiling (see scriptFile).
+  const r = execFileSync('bash', [scriptFile(dir, [
     `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
     snippet,
     'echo $?',
-  ].join('\n')], { encoding: 'utf8' });
+  ].join('\n'))], { encoding: 'utf8' });
   return Number(r.trim().split('\n').pop());
 }
 
@@ -773,7 +831,7 @@ describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on st
 
       const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
         + `lock_age_seconds ${JSON.stringify(lock)} && echo "AGE_OK" || echo "AGE_FAIL"`;
-      const out = execFileSync('bash', ['-c', script], {
+      const out = execFileSync('bash', [scriptFile(dir, script)], {
         encoding: 'utf8',
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       });
@@ -806,7 +864,7 @@ describe('v1.26.107 — lock_age_seconds survives a stat that fails loudly on st
 
       const script = `${shellFunction(shellHook, 'lock_age_seconds')}\n`
         + `lock_age_seconds ${JSON.stringify(lock)}`;
-      const out = execFileSync('bash', ['-c', script], {
+      const out = execFileSync('bash', [scriptFile(dir, script)], {
         encoding: 'utf8',
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
       });
@@ -846,11 +904,11 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
   }
 
   function runAge(file, statImpl = '') {
-    return spawnSync('bash', ['-c', [
+    return spawnSync('bash', [scriptFile(path.dirname(file), [
       shellFunction(shellHook, 'lock_age_seconds'),
       statImpl,
       `lock_age_seconds ${JSON.stringify(file)}`,
-    ].join('\n')], { encoding: 'utf8' });
+    ].join('\n'))], { encoding: 'utf8' });
   }
 
   it("answers with this machine's own stat, whichever dialect that is", () => {
@@ -885,11 +943,11 @@ describe('v1.26.113 — lock_age_seconds, the cases a stubbed stat cannot reach'
     const dir = tmpdir();
     try {
       const lock = agedLock(dir);
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         `LOCK_FILE=${JSON.stringify(lock)}`,
         acquireBundle(),
         'acquire_update_lock',
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       assert.equal(r.status, 0,
         `a 20-minute-old lock was not reclaimed (exit ${r.status}): ${r.stderr}`);
     } finally {
@@ -972,13 +1030,14 @@ describe('v1.26.145 — an occupant that has lost its marker is not an occupant'
   const startOccupant = (dir) => {
     const ready = path.join(dir, 'ready');
     const resume = path.join(dir, 'resume');
-    const child = spawn('bash', ['-c', [
+    const file = scriptFile(dir, [
       `LOCK_FILE=${JSON.stringify(path.join(dir, '.update-lock'))}`,
       `READY=${JSON.stringify(ready)}`,
       `RESUME=${JSON.stringify(resume)}`,
       heldInsideSection(),
       'if acquire_update_lock; then echo WIN; fi',
-    ].join('\n')], { stdio: ['ignore', 'pipe', 'pipe'] });
+    ].join('\n'));
+    const child = spawn('bash', [file], { stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });
     let err = '';
@@ -1198,10 +1257,10 @@ describe('v1.26.145 — an empty token never reads as ownership', () => {
     try {
       const f = path.join(dir, 'marker');
       fs.writeFileSync(f, '');
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         shellFunction(shellHook, 'marker_is_ours'),
         `if marker_is_ours ${JSON.stringify(f)} ""; then echo OURS; else echo NOT; fi`,
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       assert.equal(r.stdout.trim(), 'NOT',
         'an empty token matched an empty file, which is what a marker looks like mid-creation');
     } finally {
@@ -1216,10 +1275,10 @@ describe('v1.26.145 — an empty token never reads as ownership', () => {
     // deleted, so that is the race path, not an edge case.
     const dir = tmpdir();
     try {
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         shellFunction(shellHook, 'marker_is_ours'),
         `marker_is_ours ${JSON.stringify(path.join(dir, 'gone'))} "tok" || true`,
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       assert.equal(r.stderr.trim(), '',
         `a missing marker printed to stderr, which is the user's terminal: ${r.stderr}`);
     } finally {
@@ -1234,12 +1293,12 @@ describe('v1.26.145 — an empty token never reads as ownership', () => {
     const dir = tmpdir();
     try {
       const f = path.join(dir, 'marker');
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         shellFunction(shellHook, 'create_exclusive'),
         shellFunction(shellHook, 'marker_is_ours'),
         `create_exclusive ${JSON.stringify(f)} "1234-tok"`,
         `if marker_is_ours ${JSON.stringify(f)} "1234-tok"; then echo OURS; else echo NOT; fi`,
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       assert.equal(r.stdout.trim(), 'OURS',
         `a token written by create_exclusive did not read back: ${r.stderr}`);
     } finally {
@@ -1294,12 +1353,12 @@ describe('v1.26.145 — a token that cannot be written takes its file with it', 
       // still creates the file exactly as it would in the failing case. What is being
       // asserted is create_exclusive's own handling of a failed write, which is the code
       // this release changed.
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         shellFunction(shellHook, 'create_exclusive'),
         'printf() { return 1; }',
         `if create_exclusive ${JSON.stringify(f)} "tok"; then echo CREATED; else echo FAILED; fi`,
         `[ -e ${JSON.stringify(f)} ] && echo LEFT || echo CLEAN`,
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       assert.match(r.stdout, /FAILED/, 'an unwritable token must not report success');
       assert.match(r.stdout, /CLEAN/,
         'the empty file was left behind: every ownership check reads it as somebody '
@@ -1314,14 +1373,14 @@ describe('v1.26.145 — a token that cannot be written takes its file with it', 
     const dir = tmpdir();
     try {
       const f = path.join(dir, 'marker');
-      const r = spawnSync('bash', ['-c', [
+      const r = spawnSync('bash', [scriptFile(dir, [
         shellFunction(shellHook, 'create_exclusive'),
         shellFunction(shellHook, 'marker_is_ours'),
         `create_exclusive ${JSON.stringify(f)} "tok" && echo CREATED`,
         `marker_is_ours ${JSON.stringify(f)} "tok" && echo OURS`,
         `create_exclusive ${JSON.stringify(f)} "other" || echo SECOND_REFUSED`,
         `marker_is_ours ${JSON.stringify(f)} "tok" && echo STILL_OURS`,
-      ].join('\n')], { encoding: 'utf8' });
+      ].join('\n'))], { encoding: 'utf8' });
       for (const want of ['CREATED', 'OURS', 'SECOND_REFUSED', 'STILL_OURS']) {
         assert.match(r.stdout, new RegExp(want),
           `expected ${want}: ${r.stdout} ${r.stderr}`);
