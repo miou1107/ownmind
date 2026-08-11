@@ -48,6 +48,21 @@ const handlerBody = (src, marker) => {
   return rest.slice(0, end === -1 ? rest.length : end);
 };
 
+/**
+ * The `ownmind_get` tool definition, sliced to the next tool rather than to a byte count.
+ *
+ * v1.26.141: these assertions used fixed windows (idx + 900, idx + 1400). Adding six lines
+ * of comment above the description pushed `parent_id` out of the 900-byte one and three
+ * tests went red — none of them about anything that had changed. A window measured in bytes
+ * fails for the wrong reason, which is the kind of red that teaches people to re-run.
+ */
+function ownmindGetBlock(src) {
+  const idx = src.indexOf('name: "ownmind_get"');
+  if (idx < 0) throw new Error('ownmind_get is no longer declared in mcp/index.js');
+  const next = src.indexOf('name: "ownmind_', idx + 20);
+  return src.slice(idx, next < 0 ? undefined : next);
+}
+
 describe('SHARED_MEMORY_TYPES', () => {
   it('shares exactly the two team-standard layers', () => {
     assert.deepEqual([...SHARED_MEMORY_TYPES].sort(), ['standard_detail', 'team_standard']);
@@ -211,15 +226,11 @@ describe('GET /type/standard_detail can be narrowed to one parent', () => {
   });
 
   it('the MCP tool can pass the filter through', () => {
-    const idx = mcpSrc.indexOf('name: "ownmind_get"');
-    const block = mcpSrc.slice(idx, idx + 900);
-    assert.match(block, /parent_id/);
+    assert.match(ownmindGetBlock(mcpSrc), /parent_id/);
   });
 
   it('parent_id is optional — it must not join the required list', () => {
-    const idx = mcpSrc.indexOf('name: "ownmind_get"');
-    const block = mcpSrc.slice(idx, idx + 1400);
-    const required = block.match(/required: \[([^\]]*)\]/);
+    const required = ownmindGetBlock(mcpSrc).match(/required: \[([^\]]*)\]/);
     assert.ok(required, 'ownmind_get has no required list at all');
     assert.doesNotMatch(required[1], /parent_id/);
   });
@@ -228,8 +239,7 @@ describe('GET /type/standard_detail can be narrowed to one parent', () => {
     // v1.26.64 made `type` optional, because a call carrying `id` does not need one.
     // The schema no longer refuses a call with neither, so the handler must. Without
     // this the tool would silently fetch something arbitrary.
-    const idx = mcpSrc.indexOf('name: "ownmind_get"');
-    const required = mcpSrc.slice(idx, idx + 1400).match(/required: \[([^\]]*)\]/);
+    const required = ownmindGetBlock(mcpSrc).match(/required: \[([^\]]*)\]/);
     assert.doesNotMatch(required[1], /type/);
 
     // Window sized to reach past the id branch and its offline fallback. A tighter one
@@ -300,11 +310,10 @@ describe('MCP client exposes the type (server and client must move together)', (
   const mcpSrc = read('mcp/index.js');
 
   it('ownmind_get accepts standard_detail', () => {
-    const idx = mcpSrc.indexOf('name: "ownmind_get"');
-    // 1400, not 600: v1.26.64 lengthened the description to explain the id argument, and
-    // a window that tight fails on prose rather than on behaviour.
-    const block = mcpSrc.slice(idx, idx + 1400);
-    assert.match(block, /"standard_detail"/);
+    // Sliced to the next tool, not to a byte count: v1.26.64 lengthened the description
+    // once and v1.26.141 lengthened it again, and each time a fixed window failed on prose
+    // rather than on behaviour.
+    assert.match(ownmindGetBlock(mcpSrc), /"standard_detail"/);
   });
 
   it('ownmind_save still refuses standard_detail', () => {

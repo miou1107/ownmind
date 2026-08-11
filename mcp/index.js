@@ -431,7 +431,12 @@ const TOOLS = [
   },
   {
     name: "ownmind_get",
-    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. Use standard_detail to pull the full text behind a team_standard summary.",
+    // v1.26.141: this used to end "Use standard_detail to pull the full text behind a
+    // team_standard summary." Measured against production, that returns { data: [] } for a
+    // standard whose text lives on its own record — the case for every standard written
+    // recently. A tool description is read on every turn, so it outranked the session context
+    // that was telling the AI the same wrong thing.
+    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. To read a team standard you have only seen the title of, call ownmind_search with that title and then ownmind_get with the id of the row it returns; standard_detail holds child fragments and is empty for a standard whose text is on its own record.",
     inputSchema: {
       type: "object",
       properties: {
@@ -444,7 +449,12 @@ const TOOLS = [
   },
   {
     name: "ownmind_search",
-    description: "Search memories and session logs by keyword. Results are previews: content is cut to 400 characters, with content_length and content_truncated on each row. Call ownmind_get with that row's id to read one in full. The response carries memory_total and memory_returned; when they differ the list was capped and a narrower query will reach the rest.",
+    // v1.26.141: the two "call this when" sentences. Everything else OwnMind delivers states
+    // what is known; nothing said when to go and look, so a term that happened to match a
+    // title in the startup list got looked up and the same thing said differently did not.
+    // This description is in front of the model on every turn, which the startup context is
+    // not — and it reaches every tool, including the ones that never see that context.
+    description: "Search memories and session logs by keyword. CALL THIS when a company-specific term you do not recognise comes up (a tool, a site, a process, an abbreviation, a name) BEFORE you answer or start work. NEVER tell the user you have no information about something of theirs — a server, a project, a credential, a decision — until you have searched for it in this session; that is a claim about their memory, not about the world. Results are previews: content is cut to 400 characters, with content_length and content_truncated on each row. Call ownmind_get with that row's id to read one in full. The response carries memory_total and memory_returned; when they differ the list was capped and a narrower query will reach the rest.",
     inputSchema: {
       type: "object",
       properties: {
