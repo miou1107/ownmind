@@ -385,9 +385,22 @@ const isDirectRun = process.argv[1] && (() => {
   catch { return false; }
 })();
 if (isDirectRun) {
-  main().catch(async (err) => {
-    await log(`[scanner] fatal: ${err.message}`);
-    try { await releaseLock(); } catch { /* ignore */ }
-    process.exit(1);
-  });
+  main()
+    // v1.26.142 — exit rather than waiting for the event loop to drain.
+    //
+    // The per-adapter deadline stops the run waiting on a wedged scan, and the wedged scan
+    // does not stop: nothing here can reach inside a stalled file read. Its handle keeps
+    // the event loop alive, so a process that has finished its work, released its lock and
+    // has nothing left to do would sit there indefinitely — and the scheduler would start
+    // another one every two hours next to it.
+    //
+    // Everything this process owes anybody has been awaited by the time main() resolves:
+    // the events are posted, the cursor file is written, the lock is handed back. Leaving
+    // is the correct end of the run, not an abandonment of it.
+    .then(() => { process.exit(0); })
+    .catch(async (err) => {
+      await log(`[scanner] fatal: ${err.message}`);
+      try { await releaseLock(); } catch { /* ignore */ }
+      process.exit(1);
+    });
 }

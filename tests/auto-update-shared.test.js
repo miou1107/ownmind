@@ -222,6 +222,173 @@ describe('when a step fails', () => {
   });
 });
 
+describe('a failure after the pull is remembered', () => {
+  // Review finding, and the sharpest one. `git pull` moves HEAD; the steps after it can
+  // still fail. The next run then finds no pending commits, calls itself clean, stamps the
+  // day and never retries — leaving the machine on new code with old dependencies, or with
+  // hooks that were never re-synced, until somebody happens to push another commit.
+  //
+  // A machine reporting a healthy upgrade every day while quietly broken is the exact
+  // failure this whole release exists to remove, so it must not be introduced by it.
+
+  const stepsMarker = () => path.join(dir, '.last-mcp-update-check.steps-pending');
+
+  it('leaves a marker when npm fails after the tree has moved', async () => {
+    const { execFile } = fakeExec({ pending: 'abc1234 x', failOn: 'npm install' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.step, 'npm');
+    assert.equal(fs.existsSync(stepsMarker()), true, 'nothing records that the tree moved');
+  });
+
+  it('redoes the post-pull steps next run, even with nothing new upstream', async () => {
+    fs.writeFileSync(stepsMarker(), '2026-08-10');
+    const { execFile, calls } = fakeExec({ pending: '' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.outcome, APPLIED, 'an unfinished upgrade must not report as clean');
+    assert.ok(calls.some((c) => c.cmd === 'npm'), 'npm install was never retried');
+    assert.ok(calls.some((c) => c.cmd === 'bash'), 'the sync script was never retried');
+    assert.equal(calls.some((c) => c.args[0] === 'pull'), false,
+      'there is nothing to pull; only the unfinished half should repeat');
+  });
+
+  it('clears the marker once the steps finish', async () => {
+    const { execFile } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+    await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(fs.existsSync(stepsMarker()), false, 'the retry would repeat forever');
+  });
+
+  it('still reports clean when nothing is pending and nothing is unfinished', async () => {
+    const { execFile, calls } = fakeExec({ pending: '' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile });
+    assert.equal(out.outcome, CLEAN);
+    assert.equal(calls.some((c) => c.cmd === 'npm'), false,
+      'the ordinary quiet run must stay free');
+  });
+});
+
+describe('a repository left mid-rebase', () => {
+  // `git pull --rebase --autostash` stops and waits on a conflict. On an unattended machine
+  // that is a trap: every later pull fails with "you are in the middle of a rebase", the
+  // --ff-only fallback included, and the user's own changes stay parked in the autostash.
+  // The machine then reports a failed update every two hours, for good.
+
+  it('is aborted before pulling, so the next attempt starts from a clean tree', async () => {
+    fs.mkdirSync(path.join(dir, '.git', 'rebase-merge'), { recursive: true });
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    const abort = calls.findIndex((c) => c.cmd === 'git' && c.args[0] === 'rebase');
+    const pull = calls.findIndex((c) => c.cmd === 'git' && c.args[0] === 'pull');
+    assert.ok(abort >= 0, 'a wedged rebase is never cleared, so this machine never updates again');
+    assert.ok(abort < pull, 'the abort has to come before the pull to be any use');
+    assert.equal(out.outcome, APPLIED);
+    assert.ok(h.events.some((e) => e.event === 'update_rebase_aborted'));
+  });
+
+  it('is aborted again when the rebase pull itself leaves one behind', async () => {
+    // The common case: no rebase on entry, the pull starts one, it conflicts and stops.
+    // Without a second abort the --ff-only fallback fails for a reason that has nothing to
+    // do with fast-forwarding.
+    let pulls = 0;
+    const calls = [];
+    const execFile = async (cmd, args = []) => {
+      calls.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
+      if (cmd === 'git' && args[0] === 'pull' && args.includes('--rebase')) {
+        pulls += 1;
+        fs.mkdirSync(path.join(dir, '.git', 'rebase-apply'), { recursive: true });
+        throw new Error('CONFLICT');
+      }
+      if (cmd === 'git' && args[0] === 'rebase') {
+        fs.rmSync(path.join(dir, '.git', 'rebase-apply'), { recursive: true, force: true });
+        return { stdout: '', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    };
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(pulls, 1);
+    assert.ok(calls.includes('git rebase --abort'), 'the conflicted rebase is left in place');
+    assert.ok(calls.indexOf('git rebase --abort') < calls.indexOf('git pull -q --ff-only'));
+    assert.equal(out.outcome, APPLIED);
+  });
+
+  it('costs nothing when there is no rebase in progress', async () => {
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+    await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(calls.some((c) => c.args[0] === 'rebase'), false);
+    assert.equal(h.events.some((e) => e.event === 'update_rebase_aborted'), false);
+  });
+
+  it('carries on when the abort itself fails, rather than hiding the real error', async () => {
+    fs.mkdirSync(path.join(dir, '.git', 'rebase-merge'), { recursive: true });
+    const execFile = async (cmd, args = []) => {
+      if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
+      if (cmd === 'git' && args[0] === 'rebase') throw new Error('cannot abort');
+      if (cmd === 'git' && args[0] === 'pull') throw new Error('in the middle of a rebase');
+      return { stdout: '', stderr: '' };
+    };
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.step, 'pull', 'the failure reported must be the one that matters');
+    assert.ok(h.events.some((e) => e.event === 'update_rebase_abort_failed'));
+  });
+});
+
+describe('the day is stamped before the lock is handed back', () => {
+  it('so nobody can take the lock and read a marker that still says yesterday', async () => {
+    // Release-then-stamp leaves a gap in which another program acquires the lock, sees an
+    // out-of-date marker, and runs the whole upgrade again.
+    // Observed on the real filesystem rather than through the injected one: the lock is
+    // released by shared/update-lock.js, which holds its own `fs`, so a spy on the
+    // injected object would never see it and the test would pass on a stub.
+    const marker = path.join(dir, '.last-mcp-update-check');
+    const lock = path.join(dir, '.update-lock');
+    let lockHeldWhenStamped = null;
+    const watchedFs = {
+      ...fs,
+      writeFileSync: (p, d) => {
+        if (p === marker) lockHeldWhenStamped = fs.existsSync(lock);
+        return fs.writeFileSync(p, d);
+      }
+    };
+    const h = harness();
+    const { execFile } = fakeExec({ pending: 'abc1234 x' });
+    const out = await runAutoUpdate({
+      ...h.opts, execFile, platform: 'darwin', fileSystem: watchedFs });
+    assert.equal(out.outcome, APPLIED);
+    assert.equal(lockHeldWhenStamped, true,
+      'the lock was already gone when the day was stamped, so another program could run '
+      + 'the whole upgrade again in the gap');
+    assert.equal(fs.existsSync(lock), false, 'and it must still end up released');
+  });
+
+  it('does the same on the nothing-to-do path', async () => {
+    const marker = path.join(dir, '.last-mcp-update-check');
+    const lock = path.join(dir, '.update-lock');
+    let lockHeldWhenStamped = null;
+    const watchedFs = {
+      ...fs,
+      writeFileSync: (p, d) => {
+        if (p === marker) lockHeldWhenStamped = fs.existsSync(lock);
+        return fs.writeFileSync(p, d);
+      }
+    };
+    const h = harness();
+    const { execFile } = fakeExec({ pending: '' });
+    const out = await runAutoUpdate({
+      ...h.opts, execFile, platform: 'darwin', fileSystem: watchedFs });
+    assert.equal(out.outcome, CLEAN);
+    assert.equal(lockHeldWhenStamped, true);
+    assert.equal(fs.existsSync(lock), false);
+  });
+});
+
 describe('the caller hook that runs after a successful upgrade', () => {
   it('is handed the version now on disk', async () => {
     const seen = [];

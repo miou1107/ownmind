@@ -41,6 +41,43 @@ const LOG_TIMEOUT_MS = 10_000;
 const PULL_TIMEOUT_MS = 30_000;
 const NPM_TIMEOUT_MS = 120_000;
 const SYNC_TIMEOUT_MS = 60_000;
+const REBASE_ABORT_TIMEOUT_MS = 15_000;
+
+/**
+ * v1.26.142 — put a repository that stopped mid-rebase back the way it was.
+ *
+ * `git pull --rebase --autostash` stops and waits when it hits a conflict. On a machine
+ * somebody is sitting at, that is the right behaviour. On one where this runs from a
+ * timer it is a trap: the repository stays mid-rebase, every later pull fails with "you
+ * are in the middle of a rebase" — the `--ff-only` fallback included — and the user's own
+ * uncommitted changes stay parked in the autostash. The machine then reports a failed
+ * update every two hours, forever, and the state that causes it is invisible from here.
+ *
+ * `git rebase --abort` returns the tree to its pre-pull state and restores the autostash,
+ * so the next attempt starts from where the previous one began rather than from halfway
+ * through it. Nothing is discarded: an abort is the operation that puts things back.
+ *
+ * Checked by directory rather than by running the abort blind, so the ordinary case costs
+ * nothing and the log line means something when it appears.
+ */
+async function abortAnyRebase({ execFile, ownmindDir, fileSystem, logEvent, source }) {
+  const mid = ['rebase-merge', 'rebase-apply']
+    .some((d) => fileSystem.existsSync(path.join(ownmindDir, '.git', d)));
+  if (!mid) return false;
+  try {
+    await execFile('git', ['rebase', '--abort'],
+      { cwd: ownmindDir, timeout: REBASE_ABORT_TIMEOUT_MS });
+    logEvent('update_rebase_aborted', { source });
+    return true;
+  } catch (e) {
+    // Reported and not fatal. The pull below will fail on its own and say so with a step
+    // name; swallowing the abort here would only replace one error with a less specific one.
+    logEvent('update_rebase_abort_failed', {
+      source, error: e?.code || e?.message || String(e).slice(0, 120)
+    });
+    return false;
+  }
+}
 
 /**
  * Run the daily upgrade if it is due.
@@ -76,6 +113,9 @@ export async function runAutoUpdate({
   const isWindows = platform === 'win32';
   const npmCmd = isWindows ? 'npm.cmd' : 'npm';
   const stamp = today();
+  // Lives next to the daily marker. Present means "the tree moved and the rest of the
+  // installation has not caught up", which no amount of reading git can tell you.
+  const stepsMarker = `${markerFile}.steps-pending`;
 
   let lastCheck = '';
   try { lastCheck = fileSystem.readFileSync(markerFile, 'utf8').trim(); } catch { /* first run */ }
@@ -134,26 +174,52 @@ export async function runAutoUpdate({
       pending = String(stdout || '').trim();
     } catch (e) { return fail('log', e); }
 
-    if (!pending) {
-      release();
+    // v1.26.142 — `pending` being empty is not the same as "there is nothing to do".
+    //
+    // The steps after the pull can fail on their own, and when they do, HEAD has already
+    // advanced. The next run then finds no pending commits, calls itself clean, stamps the
+    // day and never retries — leaving the machine on new code with old dependencies, or
+    // with skills and hooks that were never re-synced, until somebody happens to push
+    // another commit. That is a machine that reports a healthy upgrade every day and is
+    // quietly broken, which is the failure mode this whole release is about.
+    //
+    // So the post-pull steps have their own marker. It is written before they start and
+    // removed when they finish, and its presence means "redo them regardless of git".
+    const unfinished = fileSystem.existsSync(stepsMarker);
+    if (!pending && !unfinished) {
       markToday();
+      release();
       logEvent('update_clean', { source });
       return { outcome: CLEAN };
     }
 
-    // --autostash on the primary path (git 2.6+). The fallback deliberately does not pass
-    // it: before v1.26.65 both paths did, so on older git both failed and there was no
-    // fallback at all. --ff-only refuses a dirty tree rather than touching it — a manual
-    // stash without a pop is how uncommitted work disappeared in v1.17.22.
-    try {
-      await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
-        { cwd: ownmindDir, timeout: PULL_TIMEOUT_MS });
-    } catch {
+    if (pending) {
+      // A rebase that stopped on a conflict leaves the repository mid-rebase, and every
+      // later attempt fails with "you are in the middle of a rebase" — for good, on an
+      // unattended machine, with the user's own changes held in the autostash. Nobody is
+      // sitting there to resolve it, so the only useful thing to do is put the tree back
+      // the way it was and let --ff-only decide. Aborting restores the autostash too.
+      await abortAnyRebase({ execFile, ownmindDir, fileSystem, logEvent, source });
+
+      // --autostash on the primary path (git 2.6+). The fallback deliberately does not
+      // pass it: before v1.26.65 both paths did, so on older git both failed and there was
+      // no fallback at all. --ff-only refuses a dirty tree rather than touching it — a
+      // manual stash without a pop is how uncommitted work disappeared in v1.17.22.
       try {
-        await execFile('git', ['pull', '-q', '--ff-only'],
+        await execFile('git', ['pull', '-q', '--rebase', '--autostash'],
           { cwd: ownmindDir, timeout: PULL_TIMEOUT_MS });
-      } catch (e) { return fail('pull', e); }
+      } catch {
+        await abortAnyRebase({ execFile, ownmindDir, fileSystem, logEvent, source });
+        try {
+          await execFile('git', ['pull', '-q', '--ff-only'],
+            { cwd: ownmindDir, timeout: PULL_TIMEOUT_MS });
+        } catch (e) { return fail('pull', e); }
+      }
     }
+
+    // From here on, a failure has to be remembered: the working tree has moved and the
+    // rest of the installation has not caught up with it yet.
+    try { fileSystem.writeFileSync(stepsMarker, stamp); } catch { /* best effort */ }
 
     // Windows needs the shell for npm.cmd: since the CVE-2024-27980 patch, execFile
     // refuses .cmd/.bat directly, which surfaced as `update_failed step=npm error=EINVAL`.
@@ -177,8 +243,12 @@ export async function runAutoUpdate({
       }
     } catch (e) { return fail('update_sh', e); }
 
-    release();
+    try { fileSystem.unlinkSync(stepsMarker); } catch { /* already gone */ }
+    // Stamped before the lock is handed back. Releasing first leaves a gap in which
+    // another program takes the lock, reads a marker that still says yesterday, and runs
+    // the whole thing again.
     markToday();
+    release();
     logEvent('update_applied', { source });
 
     // Read the version from disk now. Anything cached at module load is the version being

@@ -143,6 +143,15 @@ describe('redactHome', () => {
     assert.equal(redactHome('C:/Users/Amy/.codex/x', 'C:\\Users\\Amy'), '~/.codex/x');
   });
 
+  it('matches regardless of case, because Windows paths do', () => {
+    // Review finding. USERPROFILE and the path quoted in a Node error do not always agree
+    // about case — a drive letter alone can differ — and a case-sensitive match would send
+    // the account name through unredacted on the platform where it is most likely to differ.
+    assert.equal(redactHome("open 'c:\\users\\Amy\\.codex\\x'", 'C:\\Users\\Amy'),
+      "open '~\\.codex\\x'");
+    assert.equal(redactHome('/Users/Alice/p', '/users/alice'), '~/p');
+  });
+
   it('does not leave a fragment behind when one home is a prefix of another', () => {
     // /home/vin and /home/vincent coexist. Replacing the shorter first leaves "~cent".
     assert.equal(redactHome('/home/vincent/x', '/home/vincent'), '~/x');
@@ -268,11 +277,17 @@ describe('what the server does with a failure heartbeat', () => {
   // Driving the real route with an injected query. A regex over the source passes whether
   // or not the statement does what it says.
 
-  async function post(heartbeat) {
+  // `heartbeatRowCount` is what the UPSERT reports having written. 1 is the ordinary case;
+  // 0 is the statement's own rate limit suppressing a repeat, which the audit row has to
+  // respect or it becomes a way around it.
+  async function post(heartbeat, { heartbeatRowCount = 1 } = {}) {
     const captured = [];
     const query = async (sql, params) => {
       captured.push({ sql, params });
       if (/FROM usage_tracking_exemption/.test(sql)) return { rows: [] };
+      if (/INSERT INTO collector_heartbeat/.test(sql)) {
+        return { rows: [], rowCount: heartbeatRowCount };
+      }
       return { rows: [], rowCount: 0 };
     };
     const router = createEventsRouter({
@@ -348,6 +363,20 @@ describe('what the server does with a failure heartbeat', () => {
     });
     assert.ok(beat, 'the heartbeat itself is unaffected');
     assert.equal(audit, undefined);
+  });
+
+  it('writes no audit row when the heartbeat itself was rate-limited away', async () => {
+    // Review finding. The UPSERT is rate-limited by its own WHERE clause; an audit write
+    // that ignored that would be a route around the limit rather than a record of it, and
+    // a machine stuck in a failure loop would fill the table. The UPSERT still writes
+    // whenever the reason *changes*, so the first report of a failure always lands — it is
+    // the repetitions inside the window that are dropped, which is what the window is for.
+    const { beat, audit } = await post(
+      { tool: 'codex', reason: ADAPTER_ERROR, machine: 'M', error: 'boom' },
+      { heartbeatRowCount: 0 }
+    );
+    assert.ok(beat, 'the statement is still issued');
+    assert.equal(audit, undefined, 'but nothing may be recorded for a suppressed beat');
   });
 
   it('writes no audit row when the failure arrives without a message', async () => {
