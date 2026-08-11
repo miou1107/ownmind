@@ -4,6 +4,19 @@
 
 新檔：
 ```
+configs/ownmind-rules-block.md                  — 規則本文的唯一來源。會被注入使用者自己的
+                                                   CLAUDE.md／AGENTS.md／GEMINI.md 等，
+                                                   夾在 <!-- ownmind-rules --> 標記中間
+scripts/install-helpers/sync-rules-block.cjs    — 標記區塊的唯一實作，四支安裝／升級腳本共用。
+                                                   本來 shell 一份、PowerShell 一份，
+                                                   v1.26.140 抓到兩份行為已經不一樣。
+                                                   含舊區塊遷移：逐行比對是不是我們出貨過的內容，
+                                                   有人手改過就留著並回報（IR-112）。
+                                                   寫檔走 temp + rename，中斷不會截斷使用者的檔案
+tests/sync-rules-block.test.js                  — 14 條。空檔案、檔案不存在、使用者自己的內容、
+                                                   連跑兩次不變、兩個標記區塊並存、不累積空行、
+                                                   中文原樣往返、沒有 BOM、不留暫存檔，
+                                                   以及遷移的三種情況
 tests/session-context-lookup-instructions.test.js
                                                 — 27 條。開場內容必須告訴 AI「什麼時候該去查」，
                                                    不能只列已知的。含兩端覆蓋（掛勾版 + 給其他
@@ -29,8 +42,11 @@ mcp/index.js                                    — 這一版真正送得到其�
                                                    「用 standard_detail 撈全文」——那句對內文存在
                                                    自己紀錄上的規範回傳空的，而工具說明每一輪都在
                                                    模型面前，本來就壓過開場那份
-configs/*.md（7 份範本）                          — 同樣三條。每台安裝都有一份在磁碟上、每一輪都讀，
-                                                   而且不會被 compact 拿掉
+install.sh / install.ps1                        — CLAUDE.md 那段從「看到 OwnMind 就跳過」
+                                                   （於是永遠不更新）改成呼叫共用腳本寫標記區塊
+scripts/update.sh / scripts/update.ps1          — 新增 1c 段：每次升級把規則區塊寫進
+                                                   CLAUDE.md 與另外六個工具的指示檔，
+                                                   逐一計數、失敗點名
 src/routes/memory.js                            — INSTRUCTIONS_SOP 新增「When to Read Memory」，
                                                    並修掉 Team Standard RAG 那段跟新規則打架的句子。
                                                    **注意：instructions 只有 compact=false 才送，

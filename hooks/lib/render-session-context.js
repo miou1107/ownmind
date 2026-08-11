@@ -120,10 +120,18 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
   //
   // Scoped to terms it does not recognise on purpose. "Search every message" is noise, and
   // noise is what gets ignored.
-  lines.push('When a company-specific term you do not recognise comes up — a tool, a site, a '
-    + 'process, an abbreviation, a name — call ownmind_search("<the term>") BEFORE you answer '
-    + 'or start work. The lists above are titles only; not seeing something there does not '
-    + 'mean it is not in memory.');
+  // Worded to match configs/ownmind-rules-block.md and the ownmind_search tool description.
+  // The same rule now reaches the model from three directions, and three wordings of one rule
+  // read as three rules — the vaguest of which wins.
+  //
+  // "Points at them, not at the world" rather than "a term you do not recognise": the reported
+  // miss was 「公司 pages」, where every word is one the model knows and only the referent is
+  // unfamiliar. A trigger keyed on unfamiliar *vocabulary* does not fire on it.
+  lines.push('When something in the request points at them rather than at the world — a name, '
+    + 'tool, site, process, server or decision you cannot resolve from the repo in front of '
+    + 'you, or a phrase you would have to guess at ("the company X", "our Y", "the usual Z") — '
+    + 'call ownmind_search("<it>") BEFORE you answer or start work. The lists above are titles '
+    + 'only; not seeing something there does not mean it is not in memory.');
   // The sharper half of the same rule, because it names the exact sentence that goes wrong.
   //
   // Reported 2026-08-11: a server's access details had been in memory for weeks, and the AI
