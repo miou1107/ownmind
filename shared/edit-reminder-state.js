@@ -112,9 +112,9 @@ export function writeEditReminderState(sessionId, entry) {
  * Pure: takes the clock as an argument so the window boundary is testable without waiting
  * an hour or stubbing Date.
  *
- * @param {{window_start_ms: number, occurrence: number, rule_count: number, window_ms?: number} | null} state
+ * @param {{window_start_ms: number, occurrence: number, rule_count: number, counts?: object, window_ms?: number} | null} state
  * @param {number} nowMs
- * @returns {{mode: 'full' | 'line', occurrence: number, window_start_ms: number, rule_count: number}}
+ * @returns {{mode: 'full' | 'line', occurrence: number, window_start_ms: number, rule_count: number, counts?: object}}
  */
 export function decideEditReminder(state, nowMs) {
   // A failed lookup stores a short window instead of the usual hour, so the back-off is
@@ -135,6 +135,11 @@ export function decideEditReminder(state, nowMs) {
     occurrence: state.occurrence + 1,
     window_start_ms: state.window_start_ms,
     rule_count: state.rule_count,
+    // issue #94 — the per-category counts ride along for the same reason rule_count does:
+    // the throttled path must not make a request. `isEntry` does not require this field, so
+    // a state file written before v1.26.151 still reads, and the caller falls back to the
+    // single-count line when it is absent.
+    counts: state.counts,
   };
 }
 

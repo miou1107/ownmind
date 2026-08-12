@@ -236,10 +236,33 @@ if [ -z "$API_KEY" ] || [ -z "$API_URL" ]; then exit 0; fi
 #
 # 3s → 5s: the timeout is a ceiling on how long a reminder may delay a command, but at 3
 # seconds an ordinary slow connection dropped the rules by the same silent road.
+#
+# issue #94 — one request, not five. This used to fetch `/type/iron_rule`, so the reminder
+# could only ever speak about iron rules and the user could not tell "no team standard applies
+# here" from "team standards were never looked at". `/hook-context` returns all five
+# categories already filtered for this trigger. Doing it as five client-side requests was the
+# obvious alternative and is not viable here: this curl is synchronous with a 5s ceiling and
+# sits in front of every risky command, so five in sequence is a 25-second worst case ahead of
+# a `git commit`. That delay is how the whole mechanism gets switched off.
+#
+# `/hook-context` is new in v1.26.151 and this hook is updated independently of the server, so
+# anything other than a 200 falls back to the endpoint every server since v1.19 answers. A
+# hook that only knew the new URL would go quiet against a server not yet deployed, and quiet
+# is indistinguishable from "no rules apply" — the failure this file keeps being rewritten to
+# avoid. The renderer reads which shape arrived from the body itself, so the shell does not
+# have to tell it which of the two curls won.
 RULES_BODY=$(mktemp)
 RULES_HTTP=$(curl -s --max-time 5 -o "$RULES_BODY" -w '%{http_code}' \
-  -H "Authorization: Bearer $API_KEY" "${API_URL}/api/memory/type/iron_rule")
+  -H "Authorization: Bearer $API_KEY" "${API_URL}/api/memory/hook-context?trigger=${TRIGGER}")
 RULES_CURL_EXIT=$?
+if [ "$RULES_CURL_EXIT" -eq 0 ] && [ "$RULES_HTTP" != "200" ]; then
+  # Reached the server, which does not have this endpoint. Recorded rather than dropped: a
+  # fallback that never says it happened is how a permanently degraded reminder looks normal.
+  log_event "hook_context_fallback" "reason" "http_${RULES_HTTP}" "trigger" "$TRIGGER"
+  RULES_HTTP=$(curl -s --max-time 5 -o "$RULES_BODY" -w '%{http_code}' \
+    -H "Authorization: Bearer $API_KEY" "${API_URL}/api/memory/type/iron_rule")
+  RULES_CURL_EXIT=$?
+fi
 if [ "$RULES_CURL_EXIT" -ne 0 ]; then
   # Network-level failure: no HTTP status exists. curl's own exit code says which kind
   # (6 = DNS, 7 = refused, 28 = timeout), which is the part worth keeping.
@@ -247,51 +270,20 @@ if [ "$RULES_CURL_EXIT" -ne 0 ]; then
 elif [ "$RULES_HTTP" != "200" ]; then
   log_event "iron_rule_fetch_failed" "reason" "http_${RULES_HTTP}" "trigger" "$TRIGGER"
 fi
-RULES=$(node -e "
-    const d = require('fs').readFileSync(0,'utf8');
-    const trigger = '$TRIGGER';
-    const version = '$VERSION';
-    try {
-      // v1.26.87: the API wraps responses as { data: [...] }. Calling .filter on
-      // the envelope throws, the whole snippet dies, and the surrounding \$( )
-      // swallows it — so this hook has been silently producing no reminders.
-      // The .js sibling was fixed for this in v1.19.20; this copy was missed.
-      const parsed = JSON.parse(d);
-      const rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
-      // v1.26.91: this used to match only 'trigger:' + trigger (plus commit/git), so a rule
-      // tagged in any other vocabulary was dropped here and the hook exited without a word.
-      // KEEP IN SYNC with TRIGGER_TAG_ALIASES in shared/helpers.js — duplicated on purpose,
-      // see the comment there. Widens which rules match; does not widen when this hook runs.
-      const ALIASES = {
-        edit: ['edit', 'write', '編輯', '寫檔', '改檔', 'modify'],
-        commit: ['commit', 'git', '提交', 'checkin'],
-        deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
-        delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
-        install: ['install', 'setup', 'config', '安裝', '設定', 'api_key', 'credential_rotation', '換金鑰', '切換帳號']
-      };
-      const accepted = new Set((ALIASES[trigger] || [trigger]).map(w => 'trigger:' + w));
-      accepted.add('trigger:command');
-      const relevant = rules.filter(r => {
-        if (!r.tags || r.tags.length === 0) return true;
-        return r.tags.some(t => accepted.has(String(t).toLowerCase()));
-      });
-      if (relevant.length === 0) process.exit(0);
-      // commit trigger（頻率高）：精簡模式；deploy/delete（頻率低風險高）：完整模式
-      if (trigger === 'commit') {
-        console.log('【OwnMind v' + version + '】鐵律檢查：commit 操作，' + relevant.length + ' 條規則已確認 ✓');
-      } else {
-        const tag = '【OwnMind v' + version + '】鐵律觸發（' + trigger + '）';
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log(tag);
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        relevant.forEach(r => console.log('  ⚠️  ' + (r.code || 'IR-?') + ': ' + r.title));
-        console.log('');
-        console.log('回應格式要求：AI 的第一行必須是「' + tag + '」，讓使用者看到鐵律觸發。');
-      }
-    } catch { process.exit(0); }
-  " < "$RULES_BODY")
-# stderr is deliberately not redirected: if node cannot parse what the server sent, the
-# reason belongs where Claude Code's hook debugging shows it. Only stdout is read back.
+# issue #94 — rendering moved out of inline `node -e` and into a file. That block had to
+# carry its own copy of the trigger alias table (the `KEEP IN SYNC` note on
+# TRIGGER_TAG_ALIASES names this hook), because importing a module from `node -e` means
+# handing node a path — the move behind two silent Windows failures. Running a script BY path
+# as argv is a different thing and is what this hook already does for its other helpers, so
+# the copy is gone and both hooks now print the same line rather than two translations of it.
+#
+# stderr is deliberately not redirected: if node cannot parse what the server sent, the reason
+# belongs where Claude Code's hook debugging shows it. Only stdout is read back.
+RULES=$(node "$HOME/.ownmind/hooks/ownmind-render-context.js" "$VERSION" "$TRIGGER" < "$RULES_BODY")
+RENDER_STATUS=$?
+if [ "$RENDER_STATUS" -ne 0 ]; then
+  log_event "render_context_failed" "status" "$RENDER_STATUS" "trigger" "$TRIGGER"
+fi
 rm -f "$RULES_BODY"
 
 # commit trigger 且無相關 rules：靜默退出

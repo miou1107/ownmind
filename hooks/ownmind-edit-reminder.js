@@ -13,10 +13,10 @@
  */
 
 import fs from 'fs';
-import https from 'https';
-import http from 'http';
 import { fileURLToPath } from 'url';
-import { getClientVersion, readCredentials, ruleMatchesTrigger } from '../shared/helpers.js';
+import { getClientVersion, readCredentials } from '../shared/helpers.js';
+import { renderHookContextLine } from '../shared/hook-context.js';
+import { fetchHookContext } from './lib/hook-context-fetch.js';
 import {
   readEditReminderState,
   writeEditReminderState,
@@ -24,19 +24,6 @@ import {
   renderEditReminderLine,
   FETCH_BACKOFF_MS,
 } from '../shared/edit-reminder-state.js';
-
-function httpGet(url, headers) {
-  return new Promise((resolve, reject) => {
-    const mod = url.startsWith('https') ? https : http;
-    const req = mod.get(url, { headers, timeout: 3000 }, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-  });
-}
 
 function envelope(text) {
   return JSON.stringify({
@@ -74,20 +61,25 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
     // before every file write is noise with no content, and a brand new account — the
     // population least willing to put up with it — is exactly where it would happen.
     if (decision.rule_count <= 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
-    const line = renderEditReminderLine(version, decision.rule_count, decision.occurrence);
+    // issue #94 — the throttled line names every category too, from the counts stored in the
+    // window. A state file written by an older client has none, so the pre-v1.26.151 line is
+    // still what comes out until the next full listing refreshes the window.
+    const contextLine = decision.counts
+      ? renderHookContextLine({ version, trigger: 'edit', counts: decision.counts })
+      : '';
+    const line = contextLine
+      ? `${contextLine} · 本小時第 ${decision.occurrence} 次`
+      : renderEditReminderLine(version, decision.rule_count, decision.occurrence);
     return envelope(wrote ? line : `${line}\n${STATE_WRITE_FAILED}`);
   }
 
   if (!apiKey || !apiUrl) return null;
 
-  let rules = null;
+  let ctx = null;
   try {
-    const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
-      'Authorization': `Bearer ${apiKey}`,
-    });
-    const parsed = JSON.parse(raw);
-    // The API wraps responses as { data: [...] }; older shapes were a bare array.
-    rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
+    // issue #94 — all five categories in one request. See fetchHookContext for the fallback
+    // to `/type/iron_rule` when the server predates that endpoint.
+    ctx = await fetchHookContext({ apiUrl, apiKey, trigger: 'edit' });
   } catch {
     // Back off rather than retry on the next keystroke. An unreachable server would
     // otherwise cost every edit a 3s timeout for the length of the outage, silently. A
@@ -101,18 +93,27 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
     return null;
   }
 
-  const relevant = rules.filter(r => ruleMatchesTrigger(r, 'edit'));
+  const relevant = ctx.rules;
+  // A legacy response knows the iron-rule count and nothing else. Storing zeroes for the other
+  // four would have the throttled line claim they were consulted and empty, when they were
+  // never asked — so nothing is stored and the old line is what gets printed.
+  const counts = ctx.legacy ? undefined : ctx.counts;
 
   const wrote = writeEditReminderState(sessionId, {
     window_start_ms: decision.window_start_ms,
     occurrence: decision.occurrence,
     rule_count: relevant.length,
+    counts,
   });
 
   if (relevant.length === 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
 
   const tag = `【OwnMind v${version}】AI 改檔案要遵守的鐵律 ${relevant.length} 條`;
+  const contextLine = counts
+    ? renderHookContextLine({ version, trigger: 'edit', counts, withHowTo: true })
+    : '';
   const lines = [
+    ...(contextLine ? [contextLine, ''] : []),
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     tag,
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',

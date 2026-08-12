@@ -624,7 +624,7 @@ fi
 # git checkout. The list still matters for a clone anywhere else, and a name missing from it
 # fails quietly rather than loudly: the hook keeps running and classifies every command as
 # no-trigger, which looks exactly like a quiet day.
-HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js" "ownmind-detect-trigger.js")
+HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js" "ownmind-detect-trigger.js" "ownmind-render-context.js")
 for js_file in "${HOOK_JS_FILES[@]}"; do
   SRC_JS="$OWNMIND_DIR/hooks/$js_file"
   DST_JS="$HOME/.ownmind/hooks/$js_file"

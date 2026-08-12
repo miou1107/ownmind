@@ -286,13 +286,29 @@ export const TRIGGER_TAG_ALIASES = {
 
 /**
  * Is this rule relevant to the operation about to run?
- * An untagged rule is relevant to everything — that is the pre-existing contract.
+ *
+ * An untagged rule is relevant to everything. That is the pre-existing contract and it stays
+ * the default, because it is what the iron-rule path has always done and the accounts it was
+ * measured on have no untagged iron rules for it to affect.
+ *
+ * It does not survive contact with the other memory types. issue #94 widens the hook from one
+ * category to five, and project notes and environment records carry no trigger tags at all —
+ * under the default they would all match every operation. Measured on one account
+ * (150 iron rules / 32 team standards / 33 coding standards / 92 principles / 14 profile
+ * entries): commit went 38 → 63, install 13 → 38, edit 87 → 112, and every one of the extras
+ * was a note with nothing to say about the command about to run.
+ *
+ * So the five-category path passes `untaggedMatchesAll: false`, and the iron-rule path does
+ * not. Under the strict setting no iron rule is lost on that account — commit 33/33,
+ * install 12/12, edit 71/71 — which is what makes it safe to apply to all five.
+ *
  * @param {{tags?: string[]}} rule
  * @param {string} trigger — canonical trigger, or the 'command' fallback
+ * @param {{untaggedMatchesAll?: boolean}} [opts]
  * @returns {boolean}
  */
-export function ruleMatchesTrigger(rule, trigger) {
-  if (!rule || !Array.isArray(rule.tags) || rule.tags.length === 0) return true;
+export function ruleMatchesTrigger(rule, trigger, { untaggedMatchesAll = true } = {}) {
+  if (!rule || !Array.isArray(rule.tags) || rule.tags.length === 0) return untaggedMatchesAll;
   const accepted = new Set(
     (TRIGGER_TAG_ALIASES[trigger] || [trigger]).map(w => `trigger:${w}`)
   );
