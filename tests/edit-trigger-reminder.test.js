@@ -17,6 +17,7 @@ import {
   WINDOW_MS,
   FETCH_BACKOFF_MS,
 } from '../shared/edit-reminder-state.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.92 — the rules people tag most were the ones that never fired.
@@ -340,7 +341,7 @@ describe('v1.26.154 — each kind of operation gets its own hour', () => {
   let tmpDir;
 
   before(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-window-key-'));
+    tmpDir = tempDir('ownmind-window-key-');
     statePath = path.join(tmpDir, 'state.json');
     process.env.__OWNMIND_EDIT_REMINDER_PATH = statePath;
   });
@@ -478,7 +479,7 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
   }
 
   it('adds both entries, and adds nothing on a second run', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-installer-'));
+    const dir = tempDir('ownmind-installer-');
     const settingsPath = path.join(dir, 'settings.json');
     fs.writeFileSync(settingsPath, JSON.stringify({}));
 
@@ -495,7 +496,7 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
   });
 
   it('an install that already has only the Bash entry gets the edit one added', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-installer-'));
+    const dir = tempDir('ownmind-installer-');
     const settingsPath = path.join(dir, 'settings.json');
     const existing = {
       matcher: 'Bash',
@@ -531,7 +532,7 @@ describe('v1.26.92 — an unwritable state directory says so', () => {
     // reason it was not testing. A regular file standing where the directory belongs cannot
     // be written through on any platform — ENOTDIR on POSIX, ENOENT on Windows, both of
     // them "this cannot be written", which is the whole question here.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-rostate-'));
+    const dir = tempDir('ownmind-rostate-');
     fs.writeFileSync(path.join(dir, 'nope'), 'not a directory');
     const statePath = path.join(dir, 'nope', 'edit-reminder.json');
     const saved = process.env.__OWNMIND_EDIT_REMINDER_PATH;

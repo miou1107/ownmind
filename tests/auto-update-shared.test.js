@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const { runAutoUpdate, SKIPPED, CLEAN, APPLIED, FAILED } =
   await import('../shared/auto-update.js');
@@ -26,7 +27,7 @@ let ROOT;
 let dir;
 
 beforeEach(async () => {
-  ROOT = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-autoupdate-'));
+  ROOT = await tempDir('ownmind-autoupdate-');
   dir = path.join(ROOT, '.ownmind');
   await fsp.mkdir(path.join(dir, '.git'), { recursive: true });
   await fsp.writeFile(path.join(dir, 'package.json'), JSON.stringify({ version: '1.26.142' }));

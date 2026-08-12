@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.17.99 — mcp/ownmind-log.js logEvent must generate a client_event_id per event.
@@ -48,7 +49,7 @@ async function startFakeServer() {
 }
 
 function setup() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-log-uuid-test-'));
+  tmpHome = tempDir('ownmind-log-uuid-test-');
   logsDir = path.join(tmpHome, '.ownmind', 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
   captured = [];

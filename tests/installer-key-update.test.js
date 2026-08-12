@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { toWinPath } from './helpers/bash-script.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const { resolveCredentials } = require('../scripts/install-helpers/resolve-credentials.cjs');
@@ -157,7 +158,7 @@ describe('install.sh really does replace a different key', () => {
   let home;
 
   before(() => {
-    home = mkdtempSync(path.join(tmpdir(), 'ownmind-inst-'));
+    home = tempDir('ownmind-inst-');
     mkdirSync(path.join(home, '.claude'));
   });
   after(() => rmSync(home, { recursive: true, force: true }));
@@ -212,7 +213,7 @@ describe('resolveCredentials reports disagreement instead of silently picking on
   let home;
 
   before(() => {
-    home = mkdtempSync(path.join(tmpdir(), 'ownmind-creds-'));
+    home = tempDir('ownmind-creds-');
     mkdirSync(path.join(home, '.claude'));
   });
   after(() => rmSync(home, { recursive: true, force: true }));

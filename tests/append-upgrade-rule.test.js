@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -40,7 +41,7 @@ const hasPwsh = pwshAvailable();
 
 describe('Add-OwnMindUpgradeRule (PowerShell)', { skip: hasPwsh ? false : 'pwsh not on PATH' }, () => {
   const run = (script) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-rule-'));
+    const dir = tempDir('ownmind-rule-');
     const file = path.join(dir, 'runner.ps1');
     // Same modes update.ps1 sets before it dot-sources the helper. Without StrictMode the
     // helper would be exercised in a laxer mode than the one it actually runs in.

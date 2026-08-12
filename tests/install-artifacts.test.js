@@ -6,6 +6,7 @@ import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 // v1.26.106 — fileURLToPath, not .pathname. On Windows a file: URL pathname is
@@ -28,7 +29,7 @@ const touch = (p) => { mkdirSync(dirname(p), { recursive: true }); writeFileSync
  * path unless told otherwise.
  */
 function makeHome({ omit = [], satisfyWith = {} } = {}) {
-  const home = mkdtempSync(join(tmpdir(), 'ownmind-artifacts-'));
+  const home = tempDir('ownmind-artifacts-');
   const ownmindDir = join(home, '.ownmind');
   const ctx = { home, ownmindDir };
   // The bash SessionStart hook must exist before `hook_lib`'s `applies` is consulted, so

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.98 — an upgrade failure has to say what actually went wrong.
@@ -44,7 +45,7 @@ function shellFunction(file, name) {
 
 /** Run `last_log_lines` against a log file whose contents we control. */
 function lastLogLines(contents) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-reason-'));
+  const dir = tempDir('ownmind-reason-');
   try {
     const log = path.join(dir, 'upgrade.log');
     if (contents !== null) fs.writeFileSync(log, contents);

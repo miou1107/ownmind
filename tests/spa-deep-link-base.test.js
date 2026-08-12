@@ -9,6 +9,7 @@ import {
   existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.44 — a hard load of a dashboard deep link must not render a blank page.
@@ -79,7 +80,7 @@ function extractAssetRefs(html) {
  * be skipped: it owns the "assets are actually reachable" proof.
  */
 async function withFixtureApp(fn) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'ownmind-spa-'));
+  const dir = tempDir('ownmind-spa-');
   try {
     mkdirSync(path.join(dir, 'assets'), { recursive: true });
     writeFileSync(path.join(dir, 'assets', 'index-fixture.js'), '// asset\n');
@@ -156,7 +157,7 @@ describe('v1.26.44 — base href resolution, against a fixture shell (no build n
     // was served before, and confirm the asset 404s. Builds its own fixture rather
     // than using withFixtureApp, because it needs the *old* handler wired up.
     {
-      const dir = mkdtempSync(path.join(tmpdir(), 'ownmind-spa-old-'));
+      const dir = tempDir('ownmind-spa-old-');
       try {
         mkdirSync(path.join(dir, 'assets'), { recursive: true });
         writeFileSync(path.join(dir, 'assets', 'index-fixture.js'), '// asset\n');

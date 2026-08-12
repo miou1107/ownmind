@@ -56,7 +56,7 @@ function runHook(input, env = {}) {
 }
 
 function setupTmpHome() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-reply-lint-test-'));
+  tmpHome = tempDir('ownmind-reply-lint-test-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
@@ -438,4 +438,5 @@ describe('v1.17.96 — POST /api/activity/batch schema aligns with server expect
 // Required: require for the fake server above (mixed use inside an ESM module)
 import { createRequire } from 'node:module';
 import http from 'node:http';
+import { tempDir } from './helpers/temp-dir.js';
 const require = createRequire(import.meta.url);

@@ -28,6 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(
   import.meta.dirname || path.dirname(new URL(import.meta.url).pathname),
@@ -79,8 +80,8 @@ const MUST_MENTION_TICKET_RULE = {
 };
 
 function setupSandbox() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cm-home-'));
-  tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cm-repo-'));
+  tmpHome = tempDir('ownmind-cm-home-');
+  tmpRepo = tempDir('ownmind-cm-repo-');
 
   const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
   fs.mkdirSync(cacheDir, { recursive: true });
@@ -363,7 +364,7 @@ describe('v1.26.104 — the shell wrapper reaches the rule check', () => {
     // refused the commit.
     installClientInto(tmpHome);
     writeRulesCache([]);
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cm-nogit-'));
+    const outside = tempDir('ownmind-cm-nogit-');
     try {
       const msgPath = path.join(outside, 'MSG');
       fs.writeFileSync(msgPath, 'feat: clean\n');

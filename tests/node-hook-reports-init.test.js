@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(repoRoot, 'hooks', 'ownmind-session-start.js');
@@ -67,7 +68,7 @@ describe('node SessionStart hook — a successful load reaches the server', () =
     // A scratch HOME so the run cannot touch this machine's real logs or read its real
     // credentials. The key and url are supplied the way Adam's machine supplies them:
     // through the environment, which the hook reads via the shared resolver.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-hook-'));
+    const home = tempDir('ownmind-hook-');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
 
     await new Promise((resolve, reject) => {

@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), '..');
 const hookPath = path.join(repoRoot, 'hooks', 'ownmind-reply-lint.js');
@@ -36,7 +37,7 @@ function runHook(input, env = {}) {
 }
 
 function setupTmpHome() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-reply-lint-v1193-'));
+  tmpHome = tempDir('ownmind-reply-lint-v1193-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   counterPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-session-counter.json');

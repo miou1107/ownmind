@@ -30,6 +30,7 @@ import { redirectBareMountPath } from '../src/middleware/bare-mount-redirect.js'
 import { installLegacyAdminMount } from '../src/middleware/legacy-admin-mount.js';
 import { isLegacyConsoleRetired } from '../shared/legacy-console-manifest.js';
 import { connect } from 'node:net';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -331,7 +332,7 @@ describe('v1.26.57 — redirectBareMountPath in isolation', () => {
 
 describe('v1.26.57 — the retired /admin branch is unaffected', () => {
   it('still redirects to the console, inside the prefix', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'legacy-'));
+    const dir = tempDir('legacy-');
     writeFileSync(join(dir, 'index.html'), '<h1>legacy</h1>');
     const a = express();
     installLegacyAdminMount(a, { retired: true, publicDir: dir });

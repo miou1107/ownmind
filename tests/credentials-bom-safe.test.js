@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { tempDir } from './helpers/temp-dir.js';
 
 const { readCredentials, readJsonSafe } = await import('../shared/helpers.js');
 
@@ -21,7 +22,7 @@ const { readCredentials, readJsonSafe } = await import('../shared/helpers.js');
 
 let tmpDir;
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-creds-bom-'));
+  tmpDir = tempDir('ownmind-creds-bom-');
 });
 afterEach(() => {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.114 — a test run that hangs must say which test it is stuck in.
@@ -69,7 +70,7 @@ const SHAPES = [
 ];
 
 function tmpdir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-hang-'));
+  return tempDir('ownmind-hang-');
 }
 
 /**

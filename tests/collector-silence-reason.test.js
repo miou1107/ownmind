@@ -20,6 +20,7 @@ import fsp from 'fs/promises';
 import nodePath from 'path';
 import nodeOs from 'os';
 import express from 'express';
+import { tempDir } from './helpers/temp-dir.js';
 
 const { createEventsRouter } = await import('../src/routes/usage/events.js');
 
@@ -47,7 +48,7 @@ const sqliteCliMissing = async () => {
 
 let ROOT;
 before(async () => {
-  ROOT = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'ownmind-reason-'));
+  ROOT = await tempDir('ownmind-reason-');
 });
 after(async () => {
   await fsp.rm(ROOT, { recursive: true, force: true });

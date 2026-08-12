@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require_ = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -98,7 +99,7 @@ let tmp;
 let serverPath;
 
 before(() => {
-  tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-preflight-'));
+  tmp = tempDir('ownmind-preflight-');
   serverPath = path.join(tmp, 'fake-server.js');
   fs.writeFileSync(serverPath, FAKE_SERVER);
 });

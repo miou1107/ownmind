@@ -80,6 +80,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -89,7 +90,7 @@ describe('v1.17.86 — interactive-upgrade.sh send_upgrade_complete_beacon behav
   let tmpHome;
 
   function setup() {
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-uc-beacon-'));
+    tmpHome = tempDir('ownmind-uc-beacon-');
     const claudeDir = path.join(tmpHome, '.claude');
     fs.mkdirSync(claudeDir, { recursive: true });
     fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });

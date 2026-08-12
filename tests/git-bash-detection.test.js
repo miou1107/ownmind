@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -226,7 +227,7 @@ describe('find-git-bash.ps1 — run as shipped', { skip: powershell ? false : 'n
   function verdicts(cases) {
     // The `$` is load-bearing: it is what makes a double-quoted PowerShell path lose the rest
     // of its name, so every case here doubles as the guard on psLiteral.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-gitbash$'));
+    const dir = tempDir('ownmind-gitbash$');
     try {
       const paths = cases.map((c) => stubBash(dir, c.name, c.lines, c.exitCode));
       const script = [

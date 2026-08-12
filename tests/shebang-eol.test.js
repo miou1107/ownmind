@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.96 — line endings are declared once, for everything, with the exceptions listed.
@@ -182,7 +183,7 @@ describe('v1.26.96 — the installer repairs a checkout that is already CRLF', (
     assert.match(fn, /tr -d/, 'the copy must strip CR, not plain cp');
     assert.match(fn, /\.tmp.*&&.*mv/s, 'write-then-move, so a dead tr cannot leave a half-written hook');
 
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-crlf-'));
+    const dir = tempDir('ownmind-crlf-');
     try {
       fs.mkdirSync(path.join(dir, 'hooks'), { recursive: true });
       fs.mkdirSync(path.join(dir, '.ownmind', 'git-hooks'), { recursive: true });

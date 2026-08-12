@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.17.97 — hooks/lib/flush-compliance-spool.js
@@ -25,7 +26,7 @@ let tmpHome;
 let pendingSpoolPath;
 
 function setupTmpHome() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-flush-spool-test-'));
+  tmpHome = tempDir('ownmind-flush-spool-test-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   pendingSpoolPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-pending.jsonl');
 }

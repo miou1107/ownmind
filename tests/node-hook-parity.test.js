@@ -21,6 +21,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(repoRoot, 'hooks', 'ownmind-session-start.js');
@@ -72,9 +73,9 @@ describe('node SessionStart hook — parity with the shell hook', () => {
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-parity-'));
+    home = tempDir('ownmind-parity-');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
-    projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-proj-'));
+    projectDir = tempDir('ownmind-proj-');
 
     stdout = await new Promise((resolve, reject) => {
       execFile('node', [HOOK], {
@@ -196,7 +197,7 @@ describe('node SessionStart hook — the update lock', () => {
   }
 
   function makeHome({ withUpdateScript }) {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lock-hook-'));
+    const home = tempDir('ownmind-lock-hook-');
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     fs.mkdirSync(path.join(home, '.ownmind', '.git'), { recursive: true });
     if (withUpdateScript) {

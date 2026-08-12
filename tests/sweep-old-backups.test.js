@@ -4,6 +4,7 @@ import { spawnSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.17.70 — sweep-old-backups (IR-027 program-logic gate)
@@ -48,7 +49,7 @@ function runSweep(retentionDays) {
 
 describe('v1.17.70 — sweep old backups (find -mtime +N)', () => {
   before(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-sweep-test-'));
+    tmpDir = tempDir('ownmind-sweep-test-');
   });
 
   after(() => {

@@ -18,6 +18,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,7 +33,7 @@ const URL = 'https://ownmind.example.com';
  * written verbatim so the malformed fixtures stay malformed.
  */
 function sandbox(settings) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-keyfile-'));
+  const home = tempDir('ownmind-keyfile-');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   const settingsPath = path.join(home, '.claude', 'settings.json');
   if (typeof settings === 'string') fs.writeFileSync(settingsPath, settings);

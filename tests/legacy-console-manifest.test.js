@@ -30,6 +30,7 @@ import {
 import { installLegacyAdminMount } from '../src/middleware/legacy-admin-mount.js';
 import { relativeRedirectTarget } from '../src/utils/relative-redirect.js';
 import { navMinRole } from '../client/src/components/common/nav-sections.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -49,7 +50,7 @@ async function fetchOnce(app, urlPath) {
 }
 
 function makeLegacyDir() {
-  const dir = mkdtempSync(join(tmpdir(), 'legacy-console-'));
+  const dir = tempDir('legacy-console-');
   writeFileSync(join(dir, 'index.html'), '<h1>legacy console</h1>');
   return dir;
 }

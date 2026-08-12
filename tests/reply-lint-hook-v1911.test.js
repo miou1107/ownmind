@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(
   import.meta.dirname || path.dirname(new URL(import.meta.url).pathname),
@@ -21,7 +22,7 @@ let transcriptPath;
 let eventLogPath;
 
 function setup() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-v1911-'));
+  tmpHome = tempDir('ownmind-v1911-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
   eventLogPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-events.jsonl');

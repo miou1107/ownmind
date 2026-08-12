@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.98 — `.update-lock` did not lock.
@@ -76,7 +77,7 @@ function acquireBundle() {
   // A bundle that does not parse makes every contender die before touching the lock, and
   // the race harness reports that as "nobody acquired" — a green-looking measurement of
   // nothing, which is the failure this whole file exists to avoid. Ask bash directly.
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-parse-'));
+  const scratch = tempDir('ownmind-parse-');
   let check;
   try {
     check = spawnSync('bash', ['-n', scriptFile(scratch, bundle)], { encoding: 'utf8' });
@@ -110,7 +111,7 @@ function scriptFile(dir, body) {
 }
 
 function tmpdir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lock-'));
+  return tempDir('ownmind-lock-');
 }
 
 /**

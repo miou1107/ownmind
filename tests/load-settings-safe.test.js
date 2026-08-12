@@ -5,12 +5,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HELPER = path.join(__dirname, '..', 'scripts', 'install-helpers', 'load-settings-safe.cjs');
 
 function withTmp(fn) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'om-load-test-'));
+  const dir = tempDir('om-load-test-');
   try {
     return fn(dir);
   } finally {

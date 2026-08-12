@@ -10,13 +10,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { buildUpdateBanner, queueUpdateBanner } from '../shared/update-banner.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 let home;
 const pendingFile = () => path.join(home, '.ownmind', 'logs', 'banner-pending.jsonl');
 const records = () => fs.readFileSync(pendingFile(), 'utf8')
   .split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
-beforeEach(() => { home = fs.mkdtempSync(path.join(os.tmpdir(), 'om-banner-')); });
+beforeEach(() => { home = tempDir('om-banner-'); });
 afterEach(() => { fs.rmSync(home, { recursive: true, force: true }); });
 
 describe('buildUpdateBanner', () => {

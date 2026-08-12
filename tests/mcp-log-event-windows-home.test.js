@@ -40,6 +40,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOGGER = 'mcp/ownmind-log.js';
@@ -128,7 +129,7 @@ describe('a failed local write does not also cost the upload', () => {
     //
     // HOME points at a regular file, so mkdirSync fails with ENOTDIR. That is this defect's
     // shape on a machine where the resolved directory cannot be created.
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-log-'));
+    const tmp = tempDir('ownmind-log-');
     const notADir = path.join(tmp, 'home-is-a-file');
     fs.writeFileSync(notADir, 'not a directory');
 

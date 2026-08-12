@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.123 — the mixed-language linter read a CRLF checkout as if none of it were
@@ -36,7 +37,7 @@ const BLACKLISTED = (() => {
 
 /** Run the linter over a one-file directory written with the given line ending. */
 function lint(fileBody, eol) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-lintzh-'));
+  const dir = tempDir('ownmind-lintzh-');
   try {
     fs.writeFileSync(path.join(dir, 'Sample.jsx'), fileBody.split('\n').join(eol));
     const r = spawnSync(process.execPath, [LINTER, dir], { encoding: 'utf8' });

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require_ = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -31,7 +32,7 @@ const {
  */
 
 function fakeHome() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-mcpreg-'));
+  return tempDir('ownmind-mcpreg-');
 }
 
 const ENTRY = { command: 'cmd.exe', args: ['/c', 'C:\\Users\\x\\.ownmind\\mcp\\start.cmd'] };

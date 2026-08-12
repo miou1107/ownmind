@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const { decodeTextBuffer, stripNul, stripNulEscapes } = require('../scripts/install-helpers/read-text-file.cjs');
@@ -84,7 +85,7 @@ describe('decodeTextBuffer — decode by BOM, not by assumption', () => {
 
 describe('readLatestRegisterLog — the caller that was uploading the mojibake', () => {
   it('reads a UTF-16LE register log as text, with no NUL left to upload', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ownmind-reglog-'));
+    const dir = tempDir('ownmind-reglog-');
     try {
       writeFileSync(join(dir, 'register-task-20260809-102105.log'), utf16leWithBom(REAL_LOG));
       const got = readLatestRegisterLog(dir);
@@ -97,7 +98,7 @@ describe('readLatestRegisterLog — the caller that was uploading the mojibake',
   });
 
   it('picks the newest log when several exist', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ownmind-reglog-'));
+    const dir = tempDir('ownmind-reglog-');
     try {
       writeFileSync(join(dir, 'register-task-20260101-000000.log'), utf16leWithBom('older\r\n'));
       // mtime resolution is coarse enough that two writes in the same millisecond tie; set

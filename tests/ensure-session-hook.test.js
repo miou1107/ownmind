@@ -18,12 +18,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = path.join(repoRoot, 'scripts/install-helpers/ensure-session-hook.cjs');
 
 function sandbox(settings) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-hookfix-'));
+  const home = tempDir('ownmind-hookfix-');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   const p = path.join(home, '.claude', 'settings.json');
   if (settings !== undefined) fs.writeFileSync(p, JSON.stringify(settings, null, 2));

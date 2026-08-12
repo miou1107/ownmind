@@ -22,6 +22,7 @@ import assert from 'node:assert/strict';
 import fsp from 'fs/promises';
 import nodePath from 'path';
 import nodeOs from 'os';
+import { tempDir } from './helpers/temp-dir.js';
 
 const { createVscodeAdapter, toTaipeiYmd } =
   await import('../shared/scanners/vscode-telemetry.js');
@@ -57,7 +58,7 @@ function collectingLogger() {
 let ROOT;
 
 before(async () => {
-  ROOT = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'ownmind-ag-conv-'));
+  ROOT = await tempDir('ownmind-ag-conv-');
 });
 
 after(async () => {
@@ -402,7 +403,7 @@ describe('nothing else changes', () => {
     // Nothing passes conversationDirs in production: hooks/ownmind-usage-scanner.js
     // constructs the adapter as factory({ scannerVersion, machine }). A fix that only
     // worked when a test supplied the paths would be inert where it matters.
-    const home = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'ownmind-ag-home-'));
+    const home = await tempDir('ownmind-ag-home-');
     const conv = nodePath.join(home, '.gemini', 'antigravity', 'conversations');
     await fsp.mkdir(conv, { recursive: true });
     const f = nodePath.join(conv, 'c.db');

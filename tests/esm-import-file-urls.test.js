@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -93,7 +94,7 @@ describe('v1.26.108 — dynamic import takes URLs, not Windows paths', () => {
   it('pathToFileURL is what makes an absolute path importable', async () => {
     // The positive half. Without it the case above is only a spelling rule, and a spelling
     // rule nobody has watched work is a rule that can be right about the wrong thing.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-esm-'));
+    const dir = tempDir('ownmind-esm-');
     const file = path.join(dir, 'verification.js');
     try {
       fs.writeFileSync(file, 'export const evaluateConditions = () => "loaded";\n');

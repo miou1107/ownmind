@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -237,7 +238,7 @@ describe('v1.17.66 — Bug #4 self-check uploadReport spool mechanism', () => {
       assert.fail('uploadReport / appendSpool not yet exported; cannot verify spool behavior');
     }
     // Use an isolated tmp dir to simulate ~/.ownmind/logs, avoiding pollution of the real host.
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-spool-'));
+    const tmp = tempDir('ownmind-spool-');
     const origFetch = globalThis.fetch;
     globalThis.fetch = async () => ({ ok: false, status: 401 });
     try {
@@ -262,7 +263,7 @@ describe('v1.17.66 — Bug #4 self-check uploadReport spool mechanism', () => {
         typeof selfCheck.appendSpool !== 'function') {
       assert.fail('retrySpool / appendSpool not yet exported; cannot verify replay behavior');
     }
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-spool-'));
+    const tmp = tempDir('ownmind-spool-');
     const origFetch = globalThis.fetch;
     globalThis.fetch = async () => ({ ok: true, status: 200 });
     try {
