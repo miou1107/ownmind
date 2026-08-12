@@ -1,5 +1,52 @@
 # OwnMind 檔案結構
 
+## v1.26.154 修改（那個數字沒有讓任何人去讀它）
+
+修改：
+```
+shared/hook-context.js                          — tallyHookContext 多回傳 totals（在過濾之前
+                                                   數，所以是「總共幾條」不是「幾條通過」）
+                                                   與 names（每一類中的記憶標題）。
+                                                   renderHookContextLine 改成句子形式、
+                                                   分子/分母、以及可省略的名單段落。
+                                                   伺服器沒送 totals 時退回單純數字，
+                                                   不自己編一個分母出來。
+
+shared/edit-reminder-state.js                   — 新增 windowKey(sessionId, trigger)，
+                                                   讀寫都吃 trigger，所以 commit、部署、
+                                                   改檔案各自算一小時。舊的狀態檔以純對話
+                                                   編號為鍵，讀不到就是多列一次，安全方向。
+                                                   decideEditReminder 一併帶 totals，
+                                                   但刻意不帶 names——名單正是時間窗要擋的。
+                                                   （檔名現在比它的職責窄，這版不改名：
+                                                   四個呼叫端加兩支掛勾同時動風險太高。）
+
+src/routes/memory.js                            — /hook-context 一併回傳 totals 與 names，
+                                                   用的是同一批查回來的列，沒有第二次查詢。
+
+hooks/ownmind-render-context.js                 — 多吃一個 sessionId 參數（stdin 已經被
+                                                   回應內容佔住），套用時間窗；印橫幅的
+                                                   觸發種類會把鐵律從名單裡拿掉，避免同一份
+                                                   清單在兩個地方各印一次。
+
+hooks/ownmind-iron-rule-check.js                — JS 那一份掛勾套用同一個時間窗、同樣的鍵值。
+                                                   一個只存在於兩份實作其中一份的防護，
+                                                   等於行為取決於平台裝到哪一份。
+
+hooks/ownmind-edit-reminder.js                  — 改用 (sessionId, 'edit') 的鍵值；
+                                                   帶上 totals；名單排除鐵律（下面的橫幅
+                                                   已經在列了）。
+
+hooks/lib/hook-context-fetch.js                 — 把 totals / names 原樣帶過去。兩者可以是
+                                                   undefined：v1.26.151~153 的伺服器會回新的
+                                                   形狀但沒有這兩個欄位，補零會變成宣稱查過。
+
+hooks/ownmind-iron-rule-check.sh                — payload 現在吐三行：session_id、tool_name、
+                                                   指令（指令可能含換行，所以它擁有結尾）。
+                                                   session_id 本來被丟掉，指令那條路因此沒有
+                                                   東西可以當時間窗的鍵。
+```
+
 ## v1.26.153 修改（一支測試每跑一次留 23 個垃圾目錄）
 
 新增：

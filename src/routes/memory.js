@@ -872,8 +872,13 @@ router.get('/hook-context', async (req, res) => {
       [types, req.user.id]
     );
 
-    const { counts, rules } = tallyHookContext(result.rows, trigger, ruleMatchesTrigger);
-    res.json({ data: { trigger, counts, rules } });
+    // v1.26.154 — `totals` and `names` ride along on the same rows. The query already returns
+    // every row of the five types, so neither costs a second trip; the denominator is a count
+    // of what came back and the names are titles that were already selected.
+    const { counts, totals, names, rules } = tallyHookContext(
+      result.rows, trigger, ruleMatchesTrigger
+    );
+    res.json({ data: { trigger, counts, totals, names, rules } });
   } catch (error) {
     logger.error('hook-context failed', { error: error.message });
     res.status(500).json({ error: 'Failed to build hook context' });

@@ -18,6 +18,11 @@ import { renderHookContextLine } from '../shared/hook-context.js';
 import { fetchHookContext } from './lib/hook-context-fetch.js';
 import { readComplianceEvents } from '../shared/compliance.js';
 import { editReminder } from './ownmind-edit-reminder.js';
+import {
+  readEditReminderState,
+  writeEditReminderState,
+  decideEditReminder,
+} from '../shared/edit-reminder-state.js';
 // v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
 // only accidentally one. On Windows it starts with a drive letter, which the ESM loader reads
 // as a URL scheme and rejects: ERR_UNSUPPORTED_ESM_URL_SCHEME. On macOS and Linux the same
@@ -114,6 +119,8 @@ async function main() {
   // why the fallback to `/type/iron_rule` exists and what `legacy` means.
   let relevant = [];
   let counts = null;
+  let totals;
+  let allNames;
   if (trigger !== 'command') {
     try {
       const ctx = await fetchHookContext({ apiUrl, apiKey, trigger });
@@ -122,6 +129,8 @@ async function main() {
       // as zeroes would claim they were consulted and found nothing, when they were not asked
       // — the precise confusion this issue is about. So the old line is printed instead.
       counts = ctx.legacy ? null : ctx.counts;
+      totals = ctx.legacy ? undefined : ctx.totals;
+      allNames = ctx.legacy ? undefined : ctx.names;
     } catch {
       process.exit(0);
     }
@@ -179,10 +188,40 @@ async function main() {
   // issue #94 — the counts line goes first, above whatever else this hook has to say. It is
   // the part that answers "did OwnMind actually look", and it is the same string the .sh
   // sibling prints, so the two copies no longer differ in what the user is told.
+  // v1.26.154 — the same window as the .sh twin, keyed the same way. A guard present in only
+  // one of two implementations of one protocol is a protocol whose behaviour depends on which
+  // copy a platform happens to install.
+  let names;
+  let decision = null;
+  if (counts) {
+    decision = decideEditReminder(readEditReminderState(sessionId, trigger), Date.now());
+    if (decision.mode === 'full') {
+      // Iron rules are excluded wherever the banner below prints them, which is every trigger
+      // but commit — the same rule the .sh twin applies, for the same reason.
+      names = allNames && (trigger === 'commit'
+        ? allNames
+        : Object.fromEntries(Object.entries(allNames).filter(([t]) => t !== 'iron_rule')));
+    }
+  }
+
   const contextLine = counts
-    ? renderHookContextLine({ version: VERSION, trigger, counts, withHowTo: trigger !== 'commit' })
+    ? renderHookContextLine({
+      version: VERSION, trigger, counts, totals, names, withHowTo: trigger !== 'commit',
+    })
     : '';
   if (contextLine) lines.push(contextLine);
+
+  // Opened only when something was shown, for the reason spelled out in the .sh twin: a window
+  // spent on a listing nobody saw would throttle the next operation against nothing.
+  if (decision && decision.mode === 'full' && contextLine) {
+    writeEditReminderState(sessionId, trigger, {
+      window_start_ms: decision.window_start_ms,
+      occurrence: decision.occurrence,
+      rule_count: relevant.length,
+      counts,
+      totals,
+    });
+  }
 
   if (trigger !== 'commit' && trigger !== 'command' && relevant.length > 0) {
     const triggerTag = `[OwnMind v${VERSION}] Iron rule triggered (${trigger})`;

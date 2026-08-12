@@ -90,7 +90,18 @@ export async function fetchHookContext({ apiUrl, apiKey, trigger, timeout = 3000
     const parsed = JSON.parse(res.body);
     const data = parsed?.data || parsed;
     if (data && data.counts) {
-      return { counts: { ...emptyCounts(), ...data.counts }, rules: data.rules || [], legacy: false };
+      // v1.26.154 — `totals` and `names` are optional on the way in, because a server between
+      // v1.26.151 and this release answers the new shape without them. Passing undefined
+      // through rather than substituting zeroes keeps the caller able to tell "the server did
+      // not send denominators" from "the denominators are zero", and it prints the older,
+      // bare form in that case instead of claiming a total it was never told.
+      return {
+        counts: { ...emptyCounts(), ...data.counts },
+        totals: data.totals,
+        names: data.names,
+        rules: data.rules || [],
+        legacy: false,
+      };
     }
     // A 200 whose body is not the shape this endpoint documents. Treat it as a server that
     // does not have it rather than trusting a half-understood payload.

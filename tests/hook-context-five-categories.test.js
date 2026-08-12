@@ -34,12 +34,105 @@ describe('issue #94 — the reminder lists every memory category', () => {
   describe('renderHookContextLine', () => {
     it('names all five categories, hardest-to-waive first', () => {
       const line = renderHookContextLine({ version: '9.9.9', trigger: 'edit', counts: FULL_COUNTS });
-      assert.match(line, /\[OwnMind v9\.9\.9\] File edit · /);
+      // v1.26.154 — the separator became a sentence. The version tag and the trigger label
+      // still open the line, which is the part this test is about.
+      assert.match(line, /\[OwnMind v9\.9\.9\] This operation is a "File edit" procedure\./);
       const order = HOOK_CONTEXT_TYPES.map(c => c.label);
       const positions = order.map(label => line.indexOf(label));
       assert.ok(positions.every(p => p >= 0), `every category must appear: ${line}`);
       assert.deepEqual([...positions].sort((a, b) => a - b), positions,
         'a team standard cannot be waived by one person and must not be the row that scrolls off');
+    });
+
+    /**
+     * v1.26.154 — the denominator and the names.
+     *
+     * `Team standards 4` did not make anyone read them. Measured on the release before this
+     * one: the line said `Team standards 4` in front of a commit and the AI opened none of the
+     * four, one of which required requesting a code review. Two things came out of that — say
+     * how many exist, and say which ones matched.
+     */
+    describe('v1.26.154 — denominators and names', () => {
+      const FULL_TOTALS = {
+        team_standard: 32, iron_rule: 118, coding_standard: 5, principle: 3, profile: 4,
+      };
+
+      it('prints matched over total when the totals are known', () => {
+        const line = renderHookContextLine({
+          version: '9.9.9', trigger: 'edit', counts: FULL_COUNTS, totals: FULL_TOTALS,
+        });
+        assert.match(line, /Team standards 7\/32/);
+        assert.match(line, /Preferences 0\/4/,
+          'a category that matched nothing still says how many exist');
+      });
+
+      it('falls back to the bare count when the server sent no totals', () => {
+        // A server between v1.26.151 and this release answers the new shape without `totals`.
+        // Inventing a denominator there would claim a number nobody was told.
+        const line = renderHookContextLine({
+          version: '9.9.9', trigger: 'edit', counts: FULL_COUNTS,
+        });
+        assert.match(line, /Team standards 7(?!\/)/);
+        assert.doesNotMatch(line, /\d+\/\d+/, 'no denominator may be invented');
+      });
+
+      it('lists the names of the categories that matched', () => {
+        const line = renderHookContextLine({
+          version: '9.9.9',
+          trigger: 'commit',
+          counts: { ...FULL_COUNTS, team_standard: 2 },
+          totals: FULL_TOTALS,
+          names: { team_standard: ['Commit 前品管三步驟', 'git-push'] },
+        });
+        assert.match(line, /Team standards: Commit 前品管三步驟, git-push/);
+      });
+
+      it('gives a category that matched nothing no name row at all', () => {
+        // A heading with nothing under it is the shape people learn to skip, and the count
+        // above has already reported that the category was looked at.
+        const line = renderHookContextLine({
+          version: '9.9.9',
+          trigger: 'commit',
+          counts: FULL_COUNTS,
+          totals: FULL_TOTALS,
+          names: { team_standard: ['only me'], profile: [] },
+        });
+        assert.match(line, /Team standards: only me/);
+        assert.doesNotMatch(line, /Preferences:/);
+      });
+
+      it('prints no names at all when the caller withholds them', () => {
+        // What the throttled path does: the counts still go out, the list does not.
+        const line = renderHookContextLine({
+          version: '9.9.9', trigger: 'commit', counts: FULL_COUNTS, totals: FULL_TOTALS,
+        });
+        assert.doesNotMatch(line, /Team standards:/);
+      });
+
+      it('tells the model to relay the names as well', () => {
+        // Without this the names are read as context and summarised away, and the whole point
+        // of naming them is that the user sees which ones applied.
+        const line = renderHookContextLine({
+          version: '9.9.9',
+          trigger: 'commit',
+          counts: FULL_COUNTS,
+          totals: FULL_TOTALS,
+          names: { team_standard: ['a'] },
+        });
+        assert.match(line, /relay them too/i);
+      });
+
+      it('tallyHookContext counts the total before it applies the filter', () => {
+        const rows = [
+          { type: 'team_standard', title: 'matches', tags: ['trigger:commit'] },
+          { type: 'team_standard', title: 'does not', tags: ['trigger:deploy'] },
+          { type: 'team_standard', title: 'untagged', tags: [] },
+        ];
+        const { counts, totals, names } = tallyHookContext(rows, 'commit', ruleMatchesTrigger);
+        assert.equal(counts.team_standard, 1, 'only the commit-tagged one applies');
+        assert.equal(totals.team_standard, 3, 'but all three exist and the line must say so');
+        assert.deepEqual(names.team_standard, ['matches']);
+      });
     });
 
     it('prints a category at 0 rather than dropping it', () => {

@@ -90,12 +90,17 @@ if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
 fi
 
 INPUT=$(cat)
-# v1.26.92: two values now come out of the payload, so they are emitted as
-#   line 1  → tool_name
-#   line 2+ → command
-# in that order on purpose. A tool name is a bare identifier and can never contain a
-# newline; a command can (git commit -m with a multi-line message), so it has to be the one
-# that owns the tail.
+# v1.26.154: three values now come out of the payload, emitted as
+#   line 1  → session_id
+#   line 2  → tool_name
+#   line 3+ → command
+# in that order on purpose. A session id and a tool name are both bare identifiers and can
+# never contain a newline; a command can (git commit -m with a multi-line message), so it has
+# to be the one that owns the tail.
+#
+# The session id is here so the renderer can show the matched memory names once an hour per
+# session rather than in front of every command. The edit path has read it off the payload
+# since v1.26.92; the command path threw it away.
 PAYLOAD=$(echo "$INPUT" | node -e "
   // v1.26.90: read fd 0, not '/dev/stdin'. Windows node resolves that POSIX path to
   // C:\\dev\\stdin and throws ENOENT before the try block, so the extracted command came
@@ -113,13 +118,15 @@ PAYLOAD=$(echo "$INPUT" | node -e "
     // Non-string values are dropped: a number or object is truthy, would clear the
     // empty-value guard, and would reach grep as '[object Object]'.
     const raw = (p.tool_input && p.tool_input.command) || p.command;
+    console.log(typeof p.session_id === 'string' ? p.session_id : '');
     console.log(typeof p.tool_name === 'string' ? p.tool_name : '');
     console.log(typeof raw === 'string' ? raw : '');
-  } catch { console.log(''); console.log(''); }
+  } catch { console.log(''); console.log(''); console.log(''); }
 " 2>/dev/null)
 
-TOOL_NAME=$(printf '%s\n' "$PAYLOAD" | head -1)
-COMMAND=$(printf '%s\n' "$PAYLOAD" | tail -n +2)
+SESSION_ID=$(printf '%s\n' "$PAYLOAD" | head -1)
+TOOL_NAME=$(printf '%s\n' "$PAYLOAD" | sed -n '2p')
+COMMAND=$(printf '%s\n' "$PAYLOAD" | tail -n +3)
 
 # v1.26.92: a file-editing tool carries no command, so this used to exit here — which is why
 # no rule tagged trigger:edit had ever fired. The edit path is delegated whole to
@@ -279,7 +286,7 @@ fi
 #
 # stderr is deliberately not redirected: if node cannot parse what the server sent, the reason
 # belongs where Claude Code's hook debugging shows it. Only stdout is read back.
-RULES=$(node "$HOME/.ownmind/hooks/ownmind-render-context.js" "$VERSION" "$TRIGGER" < "$RULES_BODY")
+RULES=$(node "$HOME/.ownmind/hooks/ownmind-render-context.js" "$VERSION" "$TRIGGER" "$SESSION_ID" < "$RULES_BODY")
 RENDER_STATUS=$?
 if [ "$RENDER_STATUS" -ne 0 ]; then
   log_event "render_context_failed" "status" "$RENDER_STATUS" "trigger" "$TRIGGER"

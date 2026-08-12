@@ -60,23 +60,42 @@ export const HOOK_CONTEXT_TYPES = [
  */
 export function tallyHookContext(rows, trigger, matches) {
   const counts = {};
-  for (const { type } of HOOK_CONTEXT_TYPES) counts[type] = 0;
+  const totals = {};
+  const names = {};
+  for (const { type } of HOOK_CONTEXT_TYPES) {
+    counts[type] = 0;
+    totals[type] = 0;
+    names[type] = [];
+  }
   const rules = [];
 
   for (const row of rows || []) {
     if (!Object.hasOwn(counts, row.type)) continue;
+    // v1.26.154 — the denominator. Counted before the match, so it says how many of this kind
+    // the account holds, not how many survived the filter. A bare `4` could not tell "four
+    // apply" from "four exist"; `4/32` answers both, and it was the first question the display
+    // provoked from the person it was built for.
+    totals[row.type] += 1;
     // Only iron rules keep "untagged means relevant to everything". The other four are not
     // tagged for triggers, because until now nothing ever asked them to be — under the old
     // contract every one of them would match every operation. See ruleMatchesTrigger.
     if (!matches(row, trigger, { untaggedMatchesAll: row.type === 'iron_rule' })) continue;
     counts[row.type] += 1;
-    // Titles for iron rules, counts for the rest. Sending every matching row of all five
-    // would be a few hundred titles in front of a command, and a reminder that long is one
-    // people learn to scroll past — which costs more than the four counts are worth.
+    // v1.26.154 — titles for every matching row, not just iron rules.
+    //
+    // The count alone did not make anyone read them. Measured on the release before this one:
+    // the line said `Team standards 4` in front of a commit, and the AI that read it opened
+    // none of the four. One of them was "Commit 前品管三步驟", whose second step is to request
+    // a code review — skipped. A name is harder to walk past than a number.
+    //
+    // What keeps this from becoming the wall of text the counts replaced is the window in
+    // shared/edit-reminder-state.js: the names go out once an hour per session per trigger,
+    // and every operation in between gets the counts alone.
+    names[row.type].push(row.title);
     if (row.type === 'iron_rule') rules.push({ code: row.code, title: row.title });
   }
 
-  return { counts, rules };
+  return { counts, totals, names, rules };
 }
 
 /**
@@ -111,7 +130,9 @@ export function triggerLabel(trigger) {
  * @param {boolean} [opts.withHowTo] — append the "how do I read these" line
  * @returns {string} one or two lines, or '' when there is nothing to say
  */
-export function renderHookContextLine({ version, trigger, counts, withHowTo = false }) {
+export function renderHookContextLine({
+  version, trigger, counts, totals, names, withHowTo = false,
+}) {
   const total = HOOK_CONTEXT_TYPES.reduce((n, { type }) => n + (counts?.[type] || 0), 0);
   // Nothing matched in any category: stay quiet. A line saying five zeroes is noise in front
   // of an operation OwnMind has nothing to say about, and this is the existing behaviour of
@@ -126,8 +147,17 @@ export function renderHookContextLine({ version, trigger, counts, withHowTo = fa
   // is precisely what the old line could not distinguish from "never fetched". On an account
   // where only 2 of 14 profile entries carry a trigger tag, that row reads 0 and is telling
   // the truth about the tagging, not hiding a fetch that did not happen.
-  const parts = HOOK_CONTEXT_TYPES.map(({ type, label }) => `${label} ${counts?.[type] || 0}`);
-  const line = `[OwnMind v${version}] ${triggerLabel(trigger)} · ${parts.join(', ')}`;
+  // v1.26.154 — `1/32`, not `1`. `totals` is absent on the legacy path, where the fallback
+  // endpoint knows the iron-rule count and nothing else; a denominator invented there would
+  // claim the other four were counted when they were never fetched, which is the exact
+  // confusion this display exists to end. So the bare form stays as the honest degradation.
+  const parts = HOOK_CONTEXT_TYPES.map(({ type, label }) => (
+    totals
+      ? `${label} ${counts?.[type] || 0}/${totals[type] || 0}`
+      : `${label} ${counts?.[type] || 0}`
+  ));
+  const line = `[OwnMind v${version}] This operation is a "${triggerLabel(trigger)}" `
+    + `procedure. Memories found: ${parts.join(', ')}`;
 
   // The instruction that makes the English above reach the user in their own language. Same
   // shape as the startup tip's: say what to relay, and name what must survive the translation.
@@ -138,5 +168,28 @@ export function renderHookContextLine({ version, trigger, counts, withHowTo = fa
     + 'speaking with them. Keep the counts and the version tag exactly as written.';
   const howTo = ' To show the contents of a category, read it with ownmind_get — e.g. '
     + 'ownmind_get("team_standard") — and tell them they can simply ask for it by name.';
-  return `${line}\n${relay}${withHowTo ? howTo : ''}`;
+
+  // v1.26.154 — the names, when the caller has decided this is the once-an-hour listing.
+  //
+  // Only categories with something in them get a row: a heading followed by nothing is the
+  // shape people learn to skip past, and the count above has already said the category was
+  // looked at. Callers that print their own iron-rule banner leave `iron_rule` out of `names`
+  // rather than have it appear twice — the decision is theirs because only they know whether
+  // that banner is about to be printed.
+  //
+  // No cap on the list. Deliberate, and decided with the numbers on the table: a real account
+  // matches around 38 iron rules on a commit. Truncating to the first N would hide the rest
+  // behind a "…and 28 more" that nobody can act on, and the window already keeps this to once
+  // an hour per trigger, which is what the length is being traded against.
+  const listed = names
+    ? HOOK_CONTEXT_TYPES
+      .filter(({ type }) => (names[type] || []).length > 0)
+      .map(({ type, label }) => `  ${label}: ${names[type].join(', ')}`)
+    : [];
+  const listing = listed.length
+    ? `\n${listed.join('\n')}\nThese names are part of the line above — relay them too, `
+      + 'translated, and keep each name recognisable.'
+    : '';
+
+  return `${line}\n${relay}${withHowTo ? howTo : ''}${listing}`;
 }
