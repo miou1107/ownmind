@@ -75,8 +75,9 @@
 ## 6. Quality gates
 
 - [x] `superpowers:verification-before-completion`
-- [ ] `superpowers:requesting-code-review`
-- [ ] `superpowers:receiving-code-review`
+- [x] `superpowers:requesting-code-review` — two reviewers on different models, both given the
+      commit and told to attack the authorization model
+- [x] `superpowers:receiving-code-review` — see §9
 
 ## 7. Release paperwork
 
@@ -96,3 +97,67 @@
 - [x] Ownership is not transferable — an orphaned standard is now maintainable by an admin,
       but it still belongs to the account that made it. Moving ownership is a bigger question
       than this issue needs answering
+
+## 9. Code review, and what it changed
+
+Two reviewers on different models, both given the commit and asked to break the authorization
+model rather than to bless it. **Neither found a path to a row a caller should not reach**;
+one traced `POST /`, `batch-sync-standard`, `/sync`, `/init` and the `type`-immutability of the
+UPDATE to establish that a member cannot mint a shared-type row for an admin to be tricked
+into writing, and confirmed the 404 is uniform across missing / forbidden / malformed ids.
+
+Acted on:
+
+- [x] **The new audit record was forgeable by the party it audits.** `memories.metadata` is
+      written straight from the request body, and the history entry spread `oldMemory.metadata`
+      wholesale — so an owner could `PUT` an `admin_write` of their choosing onto their own row
+      and it would ride into the next history entry. Verified by running the spread. The
+      inherited key is now dropped before the server's own is added, and a test pins it.
+- [x] **The audit tests could not fail.** They matched `/admin_write/` in the handler body, so
+      mutating the guard to a constant — always stamping it, or never — left the literal in
+      place and stayed green. Now the assertion is on `access.viaAdmin && { admin_write`, on
+      each verb naming its own action, and on the two ids binding to different sources.
+      Mutation-checked: guard forced off → red; ids swapped → red.
+- [x] **Disable's gate was the one verb no test scoped.** `tests/memory-visibility.test.js`
+      matched `isSharedMemoryType(access.memory.type)` against the whole file, and this change
+      gave enable and revert the same expression — so deleting disable's gate passed on a
+      copy. Inverting it to `&& isAtLeast` (members through, admins refused) passed the entire
+      suite. The assertion is now handler-scoped and includes the negation; disable joined the
+      gate loop in the new file. Mutation-checked: inverted → 2 red.
+- [x] **Nothing pinned that the gate runs before the write** — the exact defect this change
+      exists to fix, one handler further along. Each write verb now asserts the gate's index
+      is below the UPDATE's. Mutation-checked: enable's gate moved under its UPDATE → red.
+- [x] **`SELECT *` in the helper**, against the convention `src/routes/memory.js:92` records
+      (`*` drags `previous_content` and the embedding). Four of the five routes previously
+      selected one column or none. Now a named list, exported and pinned by a test that also
+      forbids `*`, `previous_content` and `embedding`.
+- [x] **Two brittle assertions** rewritten: the UPDATE slice was coupled to four-space
+      indentation (a `try` wrapper would fail it on layout), and `WHERE id = $5 AND user_id =
+      $6` was coupled to parameter numbering, which renumbers when any column is added.
+
+Not acted on, with reasoning:
+
+- [x] **"The 404-after-UPDATE branches are dead."** They are not: the row is resolved in one
+      statement and written in another, so a concurrent disable or a `test-cleanup` delete
+      between them leaves zero rows, and returning 404 there is the correct answer. Kept.
+- [x] **"No handler-level behavioural tests."** Both reviewers are right that every route-level
+      assertion is a regex over source, and that is a real limit — recorded here rather than
+      papered over. It is also the whole repo's convention for this file, because `query` is
+      imported directly rather than injected; making the five handlers testable end-to-end
+      means threading a query dependency through `src/routes/memory.js`, which is a change of
+      its own and would land unreviewed inside a permission fix. The properties they named as
+      most likely to regress are now pinned by assertions with mutations watched to fail, and
+      the SQL is checked against the live database in §4.
+
+## 10. Known limitation, measured rather than assumed
+
+- [x] **Retiring a shared row does not always reach members promptly.**
+      `generateSyncToken` (`src/utils/syncToken.js:18-24`) hashes `MAX(updated_at)` over
+      `team_standard` rows with `status = 'active'`. Disabling a standard removes it from that
+      set, so unless it held the maximum, no member's token moves and their local copy stays
+      until the 24-hour staleness net in `hooks/lib/conditional-sync.js` fires. `standard_detail`
+      is not in the token at all, so an admin edit to a fragment moves nothing for anyone but
+      its owner. Both predate this change — a `standard_detail` owner could already trigger it —
+      but admin retirement is now an advertised workflow, so the lag belongs on the record.
+      Fixing it means changing what the token hashes, which affects every client's freshness
+      check and deserves its own change. v1.26.146 §9 records the same gap from the other side.
