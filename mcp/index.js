@@ -26,6 +26,7 @@ import { pickRulesForCache, mergeOfflineCacheData, previousDataForAccount } from
 import { accountFingerprint } from '../shared/scanners/base.js';
 // v1.26.127: the tip list lives in shared/tips.js so this and INSTRUCTIONS_SOP cannot drift.
 import { getRandomTip } from '../shared/tips.js';
+import { hintsFromStandards } from '../shared/invocable-standards.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
@@ -207,6 +208,10 @@ const CLIENT_TOOL = resolveClientTool();
 
 let serverVersion = null;
 let currentSyncToken = null;
+// v1.26.148 (issue #85): the company's askable standards, learned at init and reused on every
+// later response's tip. Held in memory rather than re-fetched: a tip is not worth a round
+// trip, and an empty list simply leaves the static pool as it was.
+let currentInvocableHints = [];
 
 // --- Unified version banner labels ---
 const TYPE_MAP = {
@@ -803,6 +808,9 @@ async function handleTool(name, args) {
       }
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
+      }
+      if (Array.isArray(data.invocable_standards)) {
+        currentInvocableHints = hintsFromStandards(data.invocable_standards);
       }
       if (data.server_version) serverVersion = data.server_version;
       if (data.upgrade_action?.required) {
@@ -1589,7 +1597,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       broadcastText,
       tag,
       body,
-      tip: getRandomTip(),
+      tip: getRandomTip({ invocableHints: currentInvocableHints }),
       tipTag: formatTag('Tip'),
     });
   } catch (error) {
