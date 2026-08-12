@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { stageHookHome } from './helpers/hook-home.js';
 
-import { renderHookContextLine, HOOK_CONTEXT_TYPES, tallyHookContext } from '../shared/hook-context.js';
+import { renderHookContextLine, HOOK_CONTEXT_TYPES, TRIGGER_LABELS, tallyHookContext } from '../shared/hook-context.js';
 import { ruleMatchesTrigger } from '../shared/helpers.js';
 
 /**
@@ -34,7 +34,7 @@ describe('issue #94 — the reminder lists every memory category', () => {
   describe('renderHookContextLine', () => {
     it('names all five categories, hardest-to-waive first', () => {
       const line = renderHookContextLine({ version: '9.9.9', trigger: 'edit', counts: FULL_COUNTS });
-      assert.match(line, /【OwnMind v9\.9\.9】檔案編輯 · /);
+      assert.match(line, /\[OwnMind v9\.9\.9\] File edit · /);
       const order = HOOK_CONTEXT_TYPES.map(c => c.label);
       const positions = order.map(label => line.indexOf(label));
       assert.ok(positions.every(p => p >= 0), `every category must appear: ${line}`);
@@ -44,7 +44,7 @@ describe('issue #94 — the reminder lists every memory category', () => {
 
     it('prints a category at 0 rather than dropping it', () => {
       const line = renderHookContextLine({ version: '9.9.9', trigger: 'edit', counts: FULL_COUNTS });
-      assert.match(line, /個人偏好 0/,
+      assert.match(line, /Preferences 0/,
         'the zero is the informative part — it separates "looked, found none" from "never asked"');
     });
 
@@ -57,9 +57,9 @@ describe('issue #94 — the reminder lists every memory category', () => {
     it('says what the user is doing, not what the trigger is called', () => {
       const line = renderHookContextLine({ version: '9.9.9', trigger: 'install', counts: FULL_COUNTS });
       // A user debugging an auth header saw `鐵律觸發（install）` under every curl and asked
-      // what was being installed. Nothing was.
-      assert.doesNotMatch(line, /install/);
-      assert.match(line, /安裝／金鑰/);
+      // what was being installed. Nothing was. The label is a phrase, not the internal name.
+      assert.match(line, /Install \/ credentials/);
+      assert.doesNotMatch(line.split('\n')[0], /\(install\)/);
     });
 
     it('offers a way to read the contents when asked to', () => {
@@ -68,6 +68,29 @@ describe('issue #94 — the reminder lists every memory category', () => {
       });
       assert.match(withHowTo, /ownmind_get/, 'a count with no way to expand it is a dead end');
       assert.equal(withHowTo.split('\n').length, 2);
+    });
+  });
+
+  describe('the line is written once, in English, and translated on delivery', () => {
+    // issue #94 asked for "英文原稿 + AI 轉述" — the route already used for the startup tip in
+    // hooks/lib/render-session-context.js. v1.26.151 hard-coded Chinese instead, which ships
+    // one language and calls it done; v1.26.152 is the correction.
+    it('carries no hard-coded Chinese in the labels', () => {
+      const han = /[一-鿿]/;
+      for (const { type, label } of HOOK_CONTEXT_TYPES) {
+        assert.doesNotMatch(label, han, `${type} must not pin one language into the source`);
+      }
+      for (const [trigger, label] of Object.entries(TRIGGER_LABELS)) {
+        assert.doesNotMatch(label, han, `${trigger} must not pin one language into the source`);
+      }
+    });
+
+    it('tells the model to translate it, and what must survive that', () => {
+      const line = renderHookContextLine({ version: '9.9.9', trigger: 'edit', counts: FULL_COUNTS });
+      assert.match(line, /translated into the language you are speaking/);
+      // Without naming them, the numbers get paraphrased away — and the numbers are the whole
+      // point, since they are what separates "looked, found none" from "never asked".
+      assert.match(line, /Keep the counts and the version tag exactly as written/);
     });
   });
 
@@ -159,7 +182,7 @@ describe('issue #94 — the reminder lists every memory category', () => {
         trigger: 'deploy', counts: FULL_COUNTS, rules: [{ code: 'IR-001', title: 'a deploy rule' }],
       } }));
       assert.equal(r.status, 0);
-      assert.match(r.stdout, /團隊規範 7、鐵律 71/);
+      assert.match(r.stdout, /Team standards 7, Iron rules 71/);
       assert.match(r.stdout, /IR-001: a deploy rule/);
     });
 
@@ -174,7 +197,7 @@ describe('issue #94 — the reminder lists every memory category', () => {
       assert.match(r.stdout, /鐵律觸發（deploy）/);
       assert.match(r.stdout, /IR-001/);
       assert.doesNotMatch(r.stdout, /IR-002/, 'an edit rule has nothing to say about a deploy');
-      assert.doesNotMatch(r.stdout, /團隊規範/,
+      assert.doesNotMatch(r.stdout, /Team standards/,
         'four zeroes would claim those categories were consulted, and they were not');
     });
 
@@ -267,7 +290,7 @@ describe('issue #94 — the reminder lists every memory category', () => {
       assert.equal(r.urls.length, 1,
         `one round trip, not five: this sits in front of every risky command. urls=${r.urls}`);
       assert.match(r.urls[0], /\/api\/memory\/hook-context\?trigger=deploy/);
-      assert.match(r.stdout, /團隊規範 7、鐵律 71、程式規範 3、工作原則 2、個人偏好 0/);
+      assert.match(r.stdout, /Team standards 7, Iron rules 71, Coding standards 3, Working principles 2, Preferences 0/);
     });
 
     it('falls back to the old endpoint against a server that lacks the new one', async () => {
@@ -278,7 +301,7 @@ describe('issue #94 — the reminder lists every memory category', () => {
       assert.match(r.urls[1], /\/api\/memory\/type\/iron_rule/);
       assert.match(r.stdout, /IR-OLD/,
         'a hook that only knew the new URL would go silent, and silence reads as "no rules"');
-      assert.doesNotMatch(r.stdout, /團隊規範/);
+      assert.doesNotMatch(r.stdout, /Team standards/);
     });
 
     it('records the fallback rather than degrading quietly forever', async () => {

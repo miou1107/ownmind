@@ -80,19 +80,30 @@ if (!legacy) {
 }
 
 if (rules.length > 0) {
-  if (trigger === 'commit') {
-    // commit is frequent, so it stays compact: the result, not the listing.
-    if (legacy) out.push(`【OwnMind v${version}】鐵律檢查：commit 操作，${rules.length} 條規則已確認 ✓`);
-  } else {
-    const tag = legacy
-      ? `【OwnMind v${version}】鐵律觸發（${trigger}）`
-      : `【OwnMind v${version}】鐵律 ${rules.length} 條`;
-    out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    out.push(tag);
+  if (legacy) {
+    // The pre-v1.26.151 output, unchanged. It is what a user on an un-upgraded server sees,
+    // and its Chinese is the Chinese they have been seeing all along — translating it here
+    // would change the fallback into a third thing nobody asked for. The English-source route
+    // applies to the new line, which is the one being introduced.
+    if (trigger === 'commit') {
+      out.push(`【OwnMind v${version}】鐵律檢查：commit 操作，${rules.length} 條規則已確認 ✓`);
+    } else {
+      const tag = `【OwnMind v${version}】鐵律觸發（${trigger}）`;
+      out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      out.push(tag);
+      out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      rules.forEach((r) => out.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
+      out.push('');
+      out.push(`回應格式要求：AI 的第一行必須是「${tag}」，讓使用者看到鐵律觸發。`);
+    }
+  } else if (trigger !== 'commit') {
+    // On the new path the counts line above already names the trigger and the iron-rule
+    // count, and carries the instruction to relay it. A second banner repeating both would
+    // be the same sentence twice, so this is the listing only. commit stays compact: the
+    // count in the line above is the whole message there.
     out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     rules.forEach((r) => out.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
-    out.push('');
-    out.push(`回應格式要求：AI 的第一行必須是「${tag}」，讓使用者看到鐵律觸發。`);
+    out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
 }
 
