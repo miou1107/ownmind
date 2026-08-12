@@ -22,6 +22,7 @@ import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-v
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
+import { resolveWritableMemory } from '../utils/memory-write-access.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
 import { parseRowId } from '../utils/row-id.js';
@@ -1316,17 +1317,15 @@ router.put('/:id', async (req, res) => {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // Confirm the memory exists and belongs to the user, and grab the old content.
-    const existing = await query(
-      'SELECT * FROM memories WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    );
-
-    if (existing.rows.length === 0) {
-      return res.status(404).json({ error: 'Memory not found' });
+    // Resolve who may write to this row, and grab the old content.
+    // v1.26.147 (issue #85): this used to match on the caller's own user_id, so a team
+    // standard someone else uploaded answered 404 before the admin check below could run.
+    const access = await resolveWritableMemory({ id: req.params.id, user: req.user, queryFn: query });
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
-    const oldMemory = existing.rows[0];
+    const oldMemory = access.memory;
 
     // v1.26.29: a present-but-empty title would lint an empty title and log a
     // history change while COALESCE('' -> null) silently keeps the old title —
@@ -1464,7 +1463,9 @@ router.put('/:id', async (req, res) => {
            updated_at = NOW()
        WHERE id = $5 AND user_id = $6
        RETURNING *`,
-      [title || null, content || null, tags || null, metadataForUpdate, req.params.id, req.user.id, shouldBackup, tierForUpdate]
+      // The owner's id, not the caller's: an admin editing a team standard is authorized
+      // above, and re-matching on req.user.id here would write nothing and return no row.
+      [title || null, content || null, tags || null, metadataForUpdate, req.params.id, oldMemory.user_id, shouldBackup, tierForUpdate]
     );
 
     const memory = result.rows[0];
@@ -1484,6 +1485,11 @@ router.put('/:id', async (req, res) => {
       // would be unrecoverable.
       ...(titleChanged && {
         title_change: { from: oldMemory.title, to: title },
+      }),
+      // v1.26.147: an admin editing someone else's team standard is the one write where the
+      // row's owner is not who changed it. History is the only place that can say so.
+      ...(access.viaAdmin && {
+        admin_write: { action: 'update', by_user_id: req.user.id, owner_user_id: oldMemory.user_id },
       }),
     };
     await query(
@@ -1568,9 +1574,16 @@ router.put('/:id/disable', async (req, res) => {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
-    // Shared-type disables are admin-only (v1.26.38: covers standard_detail too).
-    const check = await query('SELECT type FROM memories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
-    if (check.rows.length > 0 && isSharedMemoryType(check.rows[0].type) && !isAtLeast(req.user.role, 'admin')) {
+    // v1.26.147 (issue #85): an admin may retire a team standard whoever uploaded it —
+    // otherwise a standard whose creator has left the company can never be taken down.
+    const access = await resolveWritableMemory({ id: req.params.id, user: req.user, queryFn: query });
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    // Shared-type disables are admin-only (v1.26.38: covers standard_detail too). Still
+    // needed for the owner's own standard: resolveWritableMemory lets an owner through.
+    if (isSharedMemoryType(access.memory.type) && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: 'Team standards and their details may only be disabled by admins' });
     }
 
@@ -1582,7 +1595,7 @@ router.put('/:id/disable', async (req, res) => {
            updated_at = NOW()
        WHERE id = $2 AND user_id = $3
        RETURNING *`,
-      [reason, req.params.id, req.user.id]
+      [reason, req.params.id, access.memory.user_id]
     );
 
     if (result.rows.length === 0) {
@@ -1592,7 +1605,12 @@ router.put('/:id/disable', async (req, res) => {
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'disable', $3, $4)`,
-      [req.params.id, 'api', result.rows[0].content, JSON.stringify({ reason })]
+      [req.params.id, 'api', result.rows[0].content, JSON.stringify({
+        reason,
+        ...(access.viaAdmin && {
+          admin_write: { action: 'disable', by_user_id: req.user.id, owner_user_id: access.memory.user_id },
+        }),
+      })]
     );
 
     // v1.17.87: disabling an iron_rule is a high-risk sensitive event;
@@ -1649,6 +1667,17 @@ router.put('/:id/enable', async (req, res) => {
       return res.status(409).json(tokenResult.errorResponse);
     }
 
+    const access = await resolveWritableMemory({ id: req.params.id, user: req.user, queryFn: query });
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    // v1.26.147: disabling a shared type was admin-only while putting one back was not, so
+    // a member could restore a standard an admin had retired. Same gate on both directions.
+    if (isSharedMemoryType(access.memory.type) && !isAtLeast(req.user.role, 'admin')) {
+      return res.status(403).json({ error: 'Team standards and their details may only be re-enabled by admins' });
+    }
+
     const result = await query(
       `UPDATE memories
        SET status = 'active',
@@ -1657,7 +1686,7 @@ router.put('/:id/enable', async (req, res) => {
            updated_at = NOW()
        WHERE id = $1 AND user_id = $2
        RETURNING *`,
-      [req.params.id, req.user.id]
+      [req.params.id, access.memory.user_id]
     );
 
     if (result.rows.length === 0) {
@@ -1666,8 +1695,12 @@ router.put('/:id/enable', async (req, res) => {
 
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
-       VALUES ($1, $2, 'enable', $3, NULL)`,
-      [req.params.id, 'api', result.rows[0].content]
+       VALUES ($1, $2, 'enable', $3, $4)`,
+      [req.params.id, 'api', result.rows[0].content, access.viaAdmin
+        ? JSON.stringify({
+          admin_write: { action: 'enable', by_user_id: req.user.id, owner_user_id: access.memory.user_id },
+        })
+        : null]
     );
 
     const newToken = await generateSyncToken(req.user.id);
@@ -1698,13 +1731,16 @@ router.put('/:id/revert', async (req, res) => {
       return res.status(404).json({ error: 'History version not found' });
     }
 
-    // Confirm the memory belongs to the user, then fetch the historical version.
-    const memCheck = await query(
-      'SELECT id FROM memories WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    );
-    if (memCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Memory not found' });
+    // Confirm the caller may write to this memory, then fetch the historical version.
+    const access = await resolveWritableMemory({ id: req.params.id, user: req.user, queryFn: query });
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    // v1.26.147: a revert rewrites content, so it is an edit under another name and carries
+    // the same admin-only gate as one.
+    if (isSharedMemoryType(access.memory.type) && !isAtLeast(req.user.role, 'admin')) {
+      return res.status(403).json({ error: 'Team standards and their details may only be edited by admins' });
     }
 
     const historyResult = await query(
@@ -1724,14 +1760,19 @@ router.put('/:id/revert', async (req, res) => {
        SET content = $1, updated_at = NOW()
        WHERE id = $2 AND user_id = $3
        RETURNING *`,
-      [historyContent, req.params.id, req.user.id]
+      [historyContent, req.params.id, access.memory.user_id]
     );
 
     // Record the revert.
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'revert', $3, $4)`,
-      [req.params.id, 'api', historyContent, JSON.stringify({ reverted_from: history_id })]
+      [req.params.id, 'api', historyContent, JSON.stringify({
+        reverted_from: history_id,
+        ...(access.viaAdmin && {
+          admin_write: { action: 'revert', by_user_id: req.user.id, owner_user_id: access.memory.user_id },
+        }),
+      })]
     );
 
     res.json(result.rows[0]);
@@ -1746,13 +1787,12 @@ router.put('/:id/revert', async (req, res) => {
  */
 router.get('/:id/history', async (req, res) => {
   try {
-    // Confirm the memory belongs to the user.
-    const memCheck = await query(
-      'SELECT id FROM memories WHERE id = $1 AND user_id = $2',
-      [req.params.id, req.user.id]
-    );
-    if (memCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Memory not found' });
+    // History is the undo surface for the write routes, so it opens to whoever may write:
+    // the owner, and an admin on a team standard. An admin who can revert someone else's
+    // standard but cannot see the versions to revert to has half a capability.
+    const access = await resolveWritableMemory({ id: req.params.id, user: req.user, queryFn: query });
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
     }
 
     const result = await query(

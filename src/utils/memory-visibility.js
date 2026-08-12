@@ -11,9 +11,10 @@
  * This module owns the single predicate that decides "may this caller read this
  * row", so the type, search, and by-id routes cannot drift apart again.
  *
- * Read access only. Update and disable stay matched on the caller's own
- * user_id — being able to read a shared fragment must never imply being able
- * to change it.
+ * Read access only — being able to read a shared fragment must never imply being
+ * able to change it. Who may change one is decided in `memory-write-access.js`:
+ * its owner, or an admin (v1.26.147, issue #85; before that, only its owner,
+ * which left standards spread across accounts with no one able to edit them all).
  */
 
 /** Memory types that are readable across accounts. */
