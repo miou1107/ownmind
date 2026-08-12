@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.26.153 修改（一支測試每跑一次留 23 個垃圾目錄）
+
+新增：
+```
+tests/sync-rules-block-no-temp-leak.test.js     — 守門測試。把 sync-rules-block.test.js 當
+                                                   子行程跑，並用 TMPDIR/TEMP/TMP 把它的暫存
+                                                   位置導到一個空目錄，跑完剩下什麼就是它漏的。
+                                                   受測檔案不需要為了被量測而改任何一行。
+                                                   自帶反向檢查：先確認子行程真的跑了整個檔案
+                                                   （至少 20 條過），才相信目錄講的話 —— 沒跑
+                                                   起來留下的也是空目錄，兩者從外面看一模一樣。
+                                                   會把 NODE_TEST_CONTEXT 與
+                                                   NODE_TEST_WORKER_ID 從子行程環境拿掉，否則
+                                                   子行程會切成序列化格式、輸出裡沒有 pass N。
+```
+
+修改：
+```
+tests/sync-rules-block.test.js                  — fixture() 建的暫存目錄記進 fixtureDirs，
+                                                   檔案層級的 after 掛勾統一刪。用 after 而不是
+                                                   每條測試各自 t.after()：拿 t 就得幫 23 條
+                                                   it() 都加參數。after 不管過不過都會跑，而
+                                                   斷言失敗那次才是漏最兇的。清理失敗寫 stderr
+                                                   但不讓整套變紅 —— 安靜吞掉等於把缺陷原樣裝
+                                                   回去。所有測試主體與斷言一字未動。
+```
+
 ## v1.26.152 修改（那行字被寫死成中文 — issue #94 更正）
 
 修改：
