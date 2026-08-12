@@ -1,10 +1,12 @@
 import auth from './auth.js';
 
-const ROLE_RANK = { user: 0, admin: 1, super_admin: 2 };
+// The ranking moved to utils/roles.js so authorization decisions can import it without
+// pulling in this middleware and, through auth.js, the database pool. Imported rather than
+// re-exported straight through, because the guards below call it by name; re-exported
+// because every existing caller imports it from this module.
+import { isAtLeast } from '../utils/roles.js';
 
-export function isAtLeast(userRole, required) {
-  return (ROLE_RANK[userRole] ?? -1) >= (ROLE_RANK[required] ?? 99);
-}
+export { isAtLeast };
 
 /**
  * adminAuth — allows admin + super_admin

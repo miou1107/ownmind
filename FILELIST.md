@@ -1,5 +1,52 @@
 # OwnMind 檔案結構
 
+## v1.26.147 修改（一條團隊規範，只有當初建立它的人改得動 — issue #85）
+
+新檔：
+```
+src/utils/roles.js                              — ROLE_RANK / isAtLeast。從 middleware/adminAuth.js
+                                                   搬出來，讓「誰能做什麼」的判斷可以比較角色位階、
+                                                   而不用連帶 import auth middleware 跟資料庫連線池。
+                                                   adminAuth.js 改成 import 進來再 re-export（不能直接
+                                                   `export ... from`，它自己的守衛要用到這個名字）
+src/utils/memory-write-access.js                — resolveWritableMemory：寫入權限的單一判定。
+                                                   只用 id 撈那一列，再判斷「擁有者」或「共用型別 +
+                                                   管理員」。查不到跟不能動回傳同一個 404，不能拿來
+                                                   掃別人有哪些記憶。query 用注入的，本身不碰 db
+tests/team-standard-admin-write.test.js         — 37 tests：擁有者（含 id 字串/數字對不上的情況）/
+                                                   管理員對共用型別 / 管理員對私有型別要 404 且與
+                                                   不存在無法區分 / super_admin 位階 / 一般成員讀得到
+                                                   但寫不了 / 撈的時候不能帶 user_id / 五支 handler 都
+                                                   改走 helper / UPDATE 要綁擁有者不是呼叫者（斷言前
+                                                   先把註解拿掉，不然讀到的是解釋不是程式）/ 原本
+                                                   跑不到的 admin 檢查還在、且新增到 enable 與 revert /
+                                                   四種寫入都要留 admin_write
+```
+
+改檔：
+```
+src/routes/memory.js                            — PUT /:id、/:id/disable、/:id/enable、/:id/revert、
+                                                   GET /:id/history 五支改走 resolveWritableMemory；
+                                                   授權後的 UPDATE 綁那一列擁有者的 user_id；enable
+                                                   與 revert 補上共用型別的 admin 檢查（本來沒有，
+                                                   停用要管理員、啟用不用）；管理員代寫時把
+                                                   admin_write { action, by_user_id, owner_user_id }
+                                                   寫進 memory_history.metadata
+src/middleware/adminAuth.js                     — ROLE_RANK / isAtLeast 移到 utils/roles.js，改成
+                                                   import 後 re-export，既有呼叫端不用改
+src/utils/memory-visibility.js                  — 檔頭更正：原本寫「更新與停用一律綁呼叫者自己的
+                                                   user_id」，這一版之後不成立；改成指向
+                                                   memory-write-access.js
+tests/memory-visibility.test.js                 — 兩處對應更新：disable 的型別檢查來源改成
+                                                   access.memory.type；「寫入未放寬」那一組改成斷言
+                                                   「寫入仍然只打一位擁有者的那一列」（$5/$6），
+                                                   並註明放寬的那半由 team-standard-admin-write 顧
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.147 與三語同步
+openspec/changes/v1.26.147-only-its-author-could-change-a-team-standard/
+                                                — proposal / spec / tasks
+```
+
 ## v1.26.144 修改（v1.26.139 修錯了：不是競態，是 fetch 拒絕某些埠號）
 
 改檔：

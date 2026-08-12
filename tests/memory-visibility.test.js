@@ -270,7 +270,12 @@ describe('creating or editing a shared type stays admin-only', () => {
   });
 
   it('disable gates every shared type', () => {
-    assert.match(routeSrc, /isSharedMemoryType\(check\.rows\[0\]\.type\)/);
+    // Scoped to the handler: v1.26.147 gave enable and revert the same expression, so a
+    // whole-file match would now pass on a copy in another handler with disable's gate gone.
+    assert.match(
+      handlerBody(routeSrc, "router.put('/:id/disable'"),
+      /isSharedMemoryType\(access\.memory\.type\)/,
+    );
   });
 
   it('no write handler still tests type equality against team_standard alone', () => {
@@ -282,12 +287,19 @@ describe('creating or editing a shared type stays admin-only', () => {
 describe('write routes stay owner-scoped', () => {
   const routeSrc = read('src/routes/memory.js');
 
-  it('update still matches on the caller user_id', () => {
+  // v1.26.147 (issue #85) moved the owner check out of the opening SELECT and into
+  // resolveWritableMemory, which lets an admin through on the two shared types and nothing
+  // else. What these two tests protect is the half that did not change: the write itself
+  // still names one owner's row. Reading is still never a licence to write — that is
+  // resolveWritableMemory's own suite, tests/team-standard-admin-write.test.js.
+  it('update writes to one owner’s row', () => {
+    // Matched on the shape rather than on $5/$6: parameter numbers renumber whenever a
+    // column is added to the statement, and a red test about renumbering teaches nothing.
     const body = handlerBody(routeSrc, "router.put('/:id'");
-    assert.match(body, /WHERE id = \$1 AND user_id = \$2/);
+    assert.match(body, /UPDATE memories[\s\S]*?WHERE id = \$\d+ AND user_id = \$\d+/);
   });
 
-  it('disable still matches on the caller user_id', () => {
+  it('disable writes to one owner’s row', () => {
     assert.match(routeSrc, /SET status = 'disabled',[\s\S]{0,400}?WHERE id = \$2 AND user_id = \$3/);
   });
 
