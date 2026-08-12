@@ -65,6 +65,9 @@ export function stageHookHome({ apiUrl, apiKey = 'test-key', version = '99.99.99
 export const HOOK_HELPERS = [
   // Classifies the command. Absent, every command comes back with no trigger at all.
   'ownmind-detect-trigger.js',
+  // Turns the hook-context response into the printed reminder. Absent, the hook fetches
+  // correctly and then prints nothing, which reads as "no rules applied".
+  'ownmind-render-context.js',
   // Runs the pre-action conditions on deploy/delete.
   'ownmind-verify-trigger.js',
   // Owns the whole Edit/Write path, which carries no command to classify.

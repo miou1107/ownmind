@@ -126,7 +126,10 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
       child.stderr.resume();
       child.on('error', reject);
       child.on('close', (status) => {
-        const reached = hits.slice(before).some((u) => u.includes('/api/memory/type/iron_rule'));
+        // v1.26.151: either endpoint counts as "the hook looked the rules up". `/hook-context` is
+        // what it asks for now; `/type/iron_rule` is the fallback for a server without it, and
+        // these assertions are about whether a lookup happened at all, not about which URL.
+        const reached = hits.slice(before).some((u) => (u.includes('/api/memory/hook-context') || u.includes('/api/memory/type/iron_rule')));
         resolve({ status, stdout, reached, context: contextOf(stdout) });
       });
       child.stdin.end(payload);

@@ -1,5 +1,69 @@
 # OwnMind 檔案結構
 
+## v1.26.151 修改（提醒只講鐵律，五類記憶只撈了一類 — issue #94）
+
+新檔：
+```
+shared/hook-context.js                          — 五個類別、順序、trigger 顯示名稱、
+                                                   那行字的算繪，以及 tallyHookContext。
+                                                   順序照「破例的權力」排：團隊規範一個人
+                                                   破不了例，排第一；鐵律是自己訂的可以當場
+                                                   決定，排第二。也順便讓個位數的類別
+                                                   不被 70+ 條的鐵律擠掉。
+                                                   tally 是純函式、跟路由分開，
+                                                   所以「哪些列算數」可以不接資料庫測。
+hooks/ownmind-render-context.js                 — shell 掛勾的算繪，從內嵌 node -e 搬出來。
+                                                   從 body 自己認出是新舊哪種回應，
+                                                   不靠 shell 告訴它 —— shell 以為抓到什麼
+                                                   和實際抓到什麼不一致時，不會印出錯的行。
+                                                   兩種都不是就 exit 1（見下方 IR-002）。
+hooks/lib/hook-context-fetch.js                 — 帶退路的抓取，.js 掛勾與編輯提醒共用。
+tests/hook-context-five-categories.test.js      — 算繪、tally、兩種回應形狀，
+                                                   外加跑真的 .sh 掛勾（含退路與它的記錄）
+openspec/changes/v1.26.151-five-categories-not-one/
+  proposal.md / spec.md / tasks.md               — 為什麼是一支端點而不是五支 curl（25 秒）、
+                                                   為什麼四類只給條數、0 為什麼要印、
+                                                   退路為什麼不印那四個 0、
+                                                   以及 i18n 為什麼沒做
+```
+
+修改：
+```
+src/routes/memory.js                            — 新增 GET /hook-context?trigger=X。
+                                                   一句 SQL 撈五類，team_standard 走
+                                                   buildReadableWhere（跨帳號共用），
+                                                   其餘四類留在 user_id 分支。
+                                                   註冊在 /:id 之前，不會被吃掉。
+shared/helpers.js                               — ruleMatchesTrigger 多一個
+                                                   untaggedMatchesAll 選項。預設 true
+                                                   （既有契約、鐵律照舊），
+                                                   五類路徑傳 false。
+shared/edit-reminder-state.js                   — 每小時視窗多帶 counts，
+                                                   節流路徑才能照樣不打網路。
+                                                   isEntry 不要求這個欄位，
+                                                   舊的狀態檔還讀得起來。
+hooks/ownmind-iron-rule-check.sh                — 改打 /hook-context，非 200 退回舊端點
+                                                   並記 hook_context_fallback；
+                                                   內嵌的 20 行渲染（含自己抄的 ALIASES）
+                                                   換成呼叫 ownmind-render-context.js。
+hooks/ownmind-iron-rule-check.js                — 改用 fetchHookContext，五類那行排在最前面。
+hooks/ownmind-edit-reminder.js                  — 同上；自己那份 httpGet 移除。
+install.sh / install.ps1                        — 掛勾檔清單補 ownmind-render-context.js
+tests/iron-rule-check-response-shape.test.js    — 本來在 grep shell 檔裡的 parse 字串，
+                                                   而那段搬家了。改成跑真的模組 ——
+                                                   grep 得到卻永遠不執行的 parse，
+                                                   測試照樣會綠。
+tests/iron-rule-trigger-aliases.test.js         — 從「比對兩份 ALIASES 是否一致」
+                                                   改成「斷言沒有第二份」。更強的保證。
+tests/helpers/hook-home.js                      — HOOK_HELPERS 補 ownmind-render-context.js
+tests/iron-rule-fetch-failure-logged.test.js    — stub 兩支端點都要失敗，否則新端點
+                                                   回 200、測試綠著卻什麼都沒量
+tests/iron-rule-hook-payload.test.js            — 「有沒有去查」改成兩支端點都算
+tests/iron-rule-install-trigger.test.js
+tests/edit-trigger-reminder.test.js
+package.json                                    — 1.26.150 → 1.26.151
+```
+
 ## v1.26.150 修改（兩份判斷變成一份 — issue #92 收尾）
 
 新檔：

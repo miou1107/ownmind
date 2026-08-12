@@ -154,7 +154,10 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
       child.stderr.on('data', (c) => { stderr += c; });
       child.on('error', reject);
       child.on('close', (status) => {
-        const reached = hits.slice(before).some((u) => u.includes('/api/memory/type/iron_rule'));
+        // v1.26.151: either endpoint counts as "the hook looked the rules up". `/hook-context` is
+        // what it asks for now; `/type/iron_rule` is the fallback for a server without it, and
+        // these assertions are about whether a lookup happened at all, not about which URL.
+        const reached = hits.slice(before).some((u) => (u.includes('/api/memory/hook-context') || u.includes('/api/memory/type/iron_rule')));
         resolve({ status, stdout, stderr, reached });
       });
       child.stdin.end(payload);

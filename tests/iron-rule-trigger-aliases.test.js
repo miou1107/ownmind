@@ -68,26 +68,39 @@ describe('trigger tag aliases', () => {
   });
 });
 
-describe('the .sh copy of the table does not drift', () => {
+describe('the .sh hook has no copy of the table to drift', () => {
   const sh = readFileSync(new URL('../hooks/ownmind-iron-rule-check.sh', import.meta.url), 'utf8');
 
   /**
-   * The .sh hook builds its filter inside `node -e`, so it carries its own copy of the
-   * table rather than importing this module — handing node a path from Git Bash is what
-   * produced two silent Windows failures (v1.26.88, v1.26.90). Duplication is the safer
-   * trade, but only while something checks the two copies still agree.
+   * It used to have one. The filter was built inside `node -e`, and a module cannot be
+   * imported from there without handing node a path — the move behind two silent Windows
+   * failures (v1.26.88, v1.26.90) — so the table was duplicated and this file checked the two
+   * copies still agreed.
+   *
+   * v1.26.151 moved the rendering into hooks/ownmind-render-context.js, which the hook runs
+   * BY path as argv. That is a different thing from interpolating a path into source, and it
+   * is what the hook already did for its other helpers. The file imports `ruleMatchesTrigger`,
+   * so there is no second table left — which is a stronger guarantee than a test comparing
+   * two of them, and the reason this describe asserts absence rather than agreement.
    */
-  it('carries the same aliases as shared/helpers.js', () => {
-    const match = sh.match(/const ALIASES = (\{[\s\S]*?\});/);
-    assert.ok(match, 'the .sh hook no longer carries an ALIASES table');
-    const shAliases = JSON.parse(
-      execFileSync(process.execPath, ['-e', `console.log(JSON.stringify(${match[1]}))`], { encoding: 'utf8' })
-    );
-    assert.deepEqual(shAliases, TRIGGER_TAG_ALIASES);
+  it('no longer carries an inline ALIASES table', () => {
+    assert.doesNotMatch(sh, /const ALIASES = \{/,
+      'a reinstated copy is the drift this change removed — put new aliases in TRIGGER_TAG_ALIASES');
   });
 
-  it('still adds trigger:command and lowercases the tag before comparing', () => {
-    assert.match(sh, /accepted\.add\('trigger:command'\)/);
-    assert.match(sh, /String\(t\)\.toLowerCase\(\)/);
+  it('does not filter rules itself at all', () => {
+    assert.doesNotMatch(sh, /accepted\.add\('trigger:command'\)/);
+    assert.doesNotMatch(sh, /r\.tags/,
+      'tag matching belongs to ruleMatchesTrigger, reached through ownmind-render-context.js');
+  });
+
+  it('the renderer it delegates to imports the shared table', () => {
+    const renderer = readFileSync(
+      new URL('../hooks/ownmind-render-context.js', import.meta.url), 'utf8');
+    assert.match(renderer, /import \{ ruleMatchesTrigger \} from '\.\.\/shared\/helpers\.js'/);
+    // And the table it reaches is this module's, not a re-declaration next to the import.
+    assert.doesNotMatch(renderer, /const ALIASES = \{/);
+    assert.ok(TRIGGER_TAG_ALIASES.deploy.includes('部署'),
+      'sanity: the shared table is the one carrying the vocabulary');
   });
 });

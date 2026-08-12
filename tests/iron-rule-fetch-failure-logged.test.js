@@ -72,6 +72,18 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
       .map((line) => JSON.parse(line));
   }
 
+  /**
+   * Both endpoints the hook may use to look rules up.
+   *
+   * v1.26.151 added `/hook-context` and made `/type/iron_rule` the fallback for a server that
+   * does not have it. A stub that failed only the old URL would let the new one answer 200
+   * and the hook would sail past the failure this file exists to prove is recorded — the test
+   * would go green by measuring nothing, which is the same shape as the defect.
+   */
+  function isRuleLookup(url) {
+    return url.includes('/api/memory/hook-context') || url.includes('/api/memory/type/iron_rule');
+  }
+
   function run(command) {
     return new Promise((resolve, reject) => {
       const child = spawn('bash', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh')], {
@@ -95,7 +107,7 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
 
   it('a 500 from the rules endpoint is written to the activity log', async () => {
     respond = (req, res) => {
-      if (req.url.includes('/api/memory/type/iron_rule')) {
+      if (isRuleLookup(req.url)) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'boom' }));
         return;
@@ -115,7 +127,7 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
 
   it('a revoked key (401) is recorded too', async () => {
     respond = (req, res) => {
-      if (req.url.includes('/api/memory/type/iron_rule')) {
+      if (isRuleLookup(req.url)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'unauthorized' }));
         return;
@@ -143,7 +155,7 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
 
   it('the failure never reaches stdout and never blocks the command', async () => {
     respond = (req, res) => {
-      if (req.url.includes('/api/memory/type/iron_rule')) {
+      if (isRuleLookup(req.url)) {
         res.writeHead(500);
         res.end('{}');
         return;

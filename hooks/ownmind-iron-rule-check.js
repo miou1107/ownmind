@@ -13,7 +13,9 @@ import http from 'http';
 import os from 'os';
 import { pathToFileURL } from 'url';
 import { execSync } from 'child_process';
-import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger, detectToolTrigger, ruleMatchesTrigger } from '../shared/helpers.js';
+import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger, detectToolTrigger } from '../shared/helpers.js';
+import { renderHookContextLine } from '../shared/hook-context.js';
+import { fetchHookContext } from './lib/hook-context-fetch.js';
 import { readComplianceEvents } from '../shared/compliance.js';
 import { editReminder } from './ownmind-edit-reminder.js';
 // v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
@@ -106,25 +108,24 @@ async function main() {
   // was pure cost. It never showed before because the hook exited above on every call; now
   // that it runs, it would put a network round trip (3s timeout) in front of every single
   // Bash tool call. The verification engine reads the local cache, not this response.
-  let rules = [];
+  //
+  // issue #94 — one request for all five memory categories, already filtered for this
+  // trigger. Matching used to happen here, over iron rules only; see fetchHookContext for
+  // why the fallback to `/type/iron_rule` exists and what `legacy` means.
+  let relevant = [];
+  let counts = null;
   if (trigger !== 'command') {
     try {
-      const raw = await httpGet(`${apiUrl}/api/memory/type/iron_rule`, {
-        'Authorization': `Bearer ${apiKey}`
-      });
-      const parsed = JSON.parse(raw);
-      // v1.19.20: starting in some v1.19.x release the API wraps responses in { data: [...] };
-      // older hooks calling .filter directly would throw. Support both shapes.
-      rules = Array.isArray(parsed) ? parsed : (parsed.data || []);
+      const ctx = await fetchHookContext({ apiUrl, apiKey, trigger });
+      relevant = ctx.rules;
+      // A legacy response knows the iron-rule count and nothing else. Printing the other four
+      // as zeroes would claim they were consulted and found nothing, when they were not asked
+      // — the precise confusion this issue is about. So the old line is printed instead.
+      counts = ctx.legacy ? null : ctx.counts;
     } catch {
       process.exit(0);
     }
   }
-
-  // v1.26.91: was an inline match on 'trigger:<trigger>' plus a commit/git special case,
-  // which meant a rule tagged in any other vocabulary could never match. See
-  // TRIGGER_TAG_ALIASES for why that silently stranded whole rule sets.
-  const relevant = rules.filter(r => ruleMatchesTrigger(r, trigger));
 
   // v1.19.20: even without any reminder-relevant rule, the verification engine block may still
   // fire — do not early-return here.
@@ -175,6 +176,14 @@ async function main() {
   // deploy/delete trigger: full mode (infrequent + high risk — list all rules with eye-catching markers).
   // v1.19.20: the 'command' fallback trigger does NOT show a reminder (it fires on command shape,
   // not operation type).
+  // issue #94 — the counts line goes first, above whatever else this hook has to say. It is
+  // the part that answers "did OwnMind actually look", and it is the same string the .sh
+  // sibling prints, so the two copies no longer differ in what the user is told.
+  const contextLine = counts
+    ? renderHookContextLine({ version: VERSION, trigger, counts, withHowTo: trigger !== 'commit' })
+    : '';
+  if (contextLine) lines.push(contextLine);
+
   if (trigger !== 'commit' && trigger !== 'command' && relevant.length > 0) {
     const triggerTag = `[OwnMind v${VERSION}] Iron rule triggered (${trigger})`;
     lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

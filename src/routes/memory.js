@@ -22,6 +22,8 @@ import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-v
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
+import { ruleMatchesTrigger } from '../../shared/helpers.js';
+import { HOOK_CONTEXT_TYPES, tallyHookContext } from '../../shared/hook-context.js';
 import { resolveWritableMemory } from '../utils/memory-write-access.js';
 import { buildInvocableStandards, validateInvocableMetadata } from '../../shared/invocable-standards.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
@@ -831,6 +833,50 @@ router.get('/sync', async (req, res) => {
   } catch (err) {
     logger.error('memory sync failed', { error: err.message });
     res.status(500).json({ error: 'Sync failed' });
+  }
+});
+
+/**
+ * Everything a PreToolUse hook needs to render its reminder, in one request.
+ *
+ * issue #94 — the hooks fetched `/type/iron_rule` and nothing else, so the reminder could
+ * only ever speak about iron rules. A user could not tell "no team standard applies here"
+ * from "team standards were never consulted", and only one of those is acceptable.
+ *
+ * This is one endpoint rather than five client-side requests because the hook sits in front
+ * of every risky command the user runs. The shell hook's curl is synchronous with a
+ * `--max-time 5` ceiling; five of them in sequence would put a 25-second worst case ahead of
+ * a `git commit`. A delay that long gets the whole mechanism switched off, and a switched-off
+ * safety mechanism enforces nothing.
+ *
+ * Filtering happens here, not in the hooks. The shell hook builds its filter inside inline
+ * `node -e` source and has historically had to keep its own copy of the alias table; sending
+ * it counts it can print, rather than rows it must classify, retires that copy for this path.
+ */
+router.get('/hook-context', async (req, res) => {
+  try {
+    const trigger = typeof req.query.trigger === 'string' ? req.query.trigger.trim() : '';
+    if (!trigger) return res.status(400).json({ error: 'trigger is required' });
+
+    const types = HOOK_CONTEXT_TYPES.map(c => c.type);
+    // One query for all five. `buildReadableWhere` is what makes team_standard — shared
+    // across accounts — come back for a caller who does not own it, exactly as /type/:type
+    // resolves it; the other four fall through its `user_id` branch and stay owner-scoped.
+    const result = await query(
+      `SELECT m.type, m.code, m.title, m.tags
+         FROM memories m
+        WHERE m.status = 'active'
+          AND m.type = ANY($1)
+          AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}
+        ORDER BY m.type, m.updated_at DESC`,
+      [types, req.user.id]
+    );
+
+    const { counts, rules } = tallyHookContext(result.rows, trigger, ruleMatchesTrigger);
+    res.json({ data: { trigger, counts, rules } });
+  } catch (error) {
+    logger.error('hook-context failed', { error: error.message });
+    res.status(500).json({ error: 'Failed to build hook context' });
   }
 });
 
