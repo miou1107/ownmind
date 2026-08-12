@@ -70,8 +70,11 @@ function ordinalOf(row) {
 export function buildStandardFragments(rows, { budget = FRAGMENT_CHAR_BUDGET } = {}) {
   const all = Array.isArray(rows) ? rows.slice() : [];
 
-  // Rows the sync has numbered come first, in document order; the rest follow by id. A single
-  // standard is all one or all the other, because a sync numbers every chunk it sends.
+  // Rows the sync has numbered come first, in document order; the rest follow by id. A sync
+  // numbers every chunk it sends, so a standard is normally all one or all the other — but the
+  // sync loop is not one transaction, so a crash partway through leaves a mixed set until the
+  // next successful sync. Interleaved is wrong then; it is also self-healing, and no ordering
+  // rule can recover a document the writer never finished describing.
   all.sort((a, b) => {
     const ordA = ordinalOf(a);
     const ordB = ordinalOf(b);
@@ -105,6 +108,54 @@ export function buildStandardFragments(rows, { budget = FRAGMENT_CHAR_BUDGET } =
     fragments_truncated: truncated,
     ...(truncated && { fragments_truncated_notice: TRUNCATION_NOTICE }),
   };
+}
+
+/**
+ * Decide what a batch sync does to each fragment of one standard.
+ *
+ * Pulled out of the route so the branches are reachable by a test. They were not, and the
+ * three that matter all survive a mutation otherwise: dropping the reorder branch (legacy
+ * standards then never gain ordinals and stay in id order forever, which is the defect the
+ * ordinals exist to fix), dropping `ord` from an insert, and replacing the reorder's metadata
+ * merge with a full write that loses the content hash.
+ *
+ * Existing rows are keyed by title, which is what makes a heading rename a disable plus an
+ * insert rather than an update. That is the write path's own behaviour, not a choice made
+ * here; recording the position is how the read survives it.
+ *
+ * @param {Array<{title: string, content: string, hash: string, level: number}>} chunks
+ *        in document order — the position in this array is the ordinal
+ * @param {Array<{id: number, title: string, hash: string, ord: number|null}>} existingRows
+ * @returns {Array<object>} one entry per chunk, then one per row the sync no longer sends
+ */
+export function planChunkSync(chunks, existingRows) {
+  const incoming = Array.isArray(chunks) ? chunks : [];
+  const existingList = Array.isArray(existingRows) ? existingRows : [];
+  const byTitle = new Map(existingList.map(row => [row.title, row]));
+  const seen = new Set();
+  const plan = [];
+
+  incoming.forEach((chunk, ord) => {
+    seen.add(chunk.title);
+    const previous = byTitle.get(chunk.title);
+    if (!previous) {
+      plan.push({ action: 'insert', chunk, ord });
+    } else if (previous.hash !== chunk.hash) {
+      plan.push({ action: 'update', chunk, ord, id: previous.id });
+    } else if (previous.ord !== ord) {
+      // Same text, different place — a section moved, or this standard predates ordinals and
+      // is being backfilled. Either way only `ord` is written, so the hash survives.
+      plan.push({ action: 'reorder', chunk, ord, id: previous.id });
+    } else {
+      plan.push({ action: 'unchanged', chunk, ord, id: previous.id });
+    }
+  });
+
+  for (const row of existingList) {
+    if (!seen.has(row.title)) plan.push({ action: 'disable', id: row.id, title: row.title });
+  }
+
+  return plan;
 }
 
 /**

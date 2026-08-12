@@ -1560,8 +1560,13 @@ src/routes/memory.js                            — GET /:id 接上 attachStanda
                                                    寫進 metadata.ord（新增、更新、只有位置變
                                                    都會寫），stats 多一個 reordered
 mcp/index.js                                    — ownmind_get 的說明不再要讀的人分辨兩種存法，
-                                                   改成「用 id 讀就會拿到全文，含 fragments」
-package.json / README.md / CHANGELOG.md         — 版號與紀錄
+                                                   改成「用 id 讀就會拿到全文，含 fragments」。
+                                                   另外離線從本機快取讀到團隊規範時，明講
+                                                   它的段落不在快取裡、不要當成完整的
+tests/memory-visibility.test.js                 — 那個找防呆的斷言原本切固定位元組數，上面
+                                                   多八行就把防呆擠出視窗。改成切到下一個
+                                                   case（跟同檔 ownmindGetBlock 一樣的修法）
+package.json / README ×3 / CHANGELOG.md         — 版號與紀錄
 ```
 
 ## v1.26.145 修改（守門的那個東西，被門外的人刪掉了）

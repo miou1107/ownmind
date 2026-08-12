@@ -17,7 +17,7 @@ import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 import { buildOnboarding } from '../utils/onboarding.js';
 import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.js';
-import { attachStandardFragments } from '../utils/standard-fragments.js';
+import { attachStandardFragments, planChunkSync } from '../utils/standard-fragments.js';
 import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
@@ -845,7 +845,14 @@ router.get('/type/:type', async (req, res) => {
             AND m.status = 'active'
             AND ${buildReadableWhere({ alias: 'm', userParam: '$2' })}
             ${narrowToParent ? `AND m.metadata->>'parent_id' = $3` : ''}
-          ORDER BY m.updated_at DESC`
+          ORDER BY ${narrowToParent
+              // v1.26.146: this is the call a truncated read is told to make, so it has to
+              // hand back the document rather than a pile of sections. `updated_at DESC` was
+              // worse than arbitrary here: the sync stamps NOW() row by row, so the first
+              // re-sync of a standard leaves this branch returning it exactly backwards.
+              ? `CASE WHEN jsonb_typeof(m.metadata->'ord') = 'number'
+                      THEN (m.metadata->>'ord')::int ELSE NULL END NULLS LAST, m.id`
+              : `m.updated_at DESC`}`
       : `SELECT * FROM memories WHERE type = $1 AND user_id = $2 AND status = 'active' ORDER BY updated_at DESC`;
     const params = narrowToParent
       ? [req.params.type, req.user.id, parentId]
@@ -970,6 +977,10 @@ router.get('/:id', async (req, res) => {
     // rest existed. Reading one is what a caller asked for, so reading one is where the
     // fragments are attached — the type listing deliberately stays as it was, because
     // answering an index with every standard's full text is a cost nobody asked for.
+    //
+    // A failure of the fragment lookup fails the whole read, where the row alone used to
+    // succeed. That is the intended trade: falling back to the row would hand the caller the
+    // boilerplate line with no indication anything was missing, which is the defect.
     res.json(await attachStandardFragments(result.rows[0], { query, userId: req.user.id }));
   } catch (err) {
     logger.error('memory query failed', { error: err.message });
@@ -1939,69 +1950,54 @@ router.post('/batch-sync-standard', async (req, res) => {
          AND status = 'active'`,
       [parentId.toString()]
     );
-    const existingMap = new Map(existingResult.rows.map(r => [r.title, r]));
-
     const stats = { added: 0, updated: 0, deleted: 0, unchanged: 0, reordered: 0 };
-    const processedTitles = new Set();
 
-    // 3. Process the incoming chunks.
+    // 3. Work out what happens to each fragment, then do it.
     //
-    // v1.26.146: `ord` is the chunk's position in this array, and this is the only place that
-    // knows it. Chunks arrive in document order and the diff below keys on title, so a renamed
-    // heading is a disable plus an insert — its row id becomes the rename date rather than its
-    // place in the document, and renaming a top-level heading does that to every section under
-    // it. Row id was the read path's ordering key until it was traced; recording the position
-    // the sync already has costs one field and needs no backfill, because a standard gains its
-    // ordinals the next time anything syncs it.
-    for (const [ord, chunk] of chunks.entries()) {
-      const { title, content, hash, level } = chunk;
-      processedTitles.add(title);
-
-      const existing = existingMap.get(title);
-      if (!existing) {
-        // Add.
+    // v1.26.146: `ord` is the chunk's position in the incoming array, and this request is the
+    // only place that knows it. The diff keys on title, so a renamed heading is a disable plus
+    // an insert — its row id becomes the rename date rather than its place in the document,
+    // and renaming a top-level heading does that to every section beneath it. Row id was the
+    // read path's ordering key until that was traced. Recording the position costs one field
+    // and needs no backfill: a standard gains its ordinals the next time anything syncs it.
+    //
+    // The branching lives in planChunkSync so it can be tested. Inline, none of it was
+    // reachable: dropping the reorder branch, or `ord` from the insert, left the whole suite
+    // green while legacy standards silently never gained an ordinal.
+    for (const step of planChunkSync(chunks, existingResult.rows)) {
+      if (step.action === 'insert') {
+        const { title, content, hash, level } = step.chunk;
         await query(
           `INSERT INTO memories (user_id, type, title, content, tags, metadata)
            VALUES ($1, 'standard_detail', $2, $3, $4, $5)`,
-          [
-            req.user.id,
-            title,
-            content,
-            ['rule_detail'],
-            { parent_id: parentId, hash, level, ord }
-          ]
+          [req.user.id, title, content, ['rule_detail'],
+           { parent_id: parentId, hash, level, ord: step.ord }]
         );
         stats.added++;
-      } else if (existing.hash !== hash) {
-        // Update.
+      } else if (step.action === 'update') {
+        const { content, hash, level } = step.chunk;
         await query(
           `UPDATE memories
            SET content = $1, metadata = $2, updated_at = NOW()
            WHERE id = $3`,
-          [content, { parent_id: parentId, hash, level, ord }, existing.id]
+          [content, { parent_id: parentId, hash, level, ord: step.ord }, step.id]
         );
         stats.updated++;
-      } else if (existing.ord !== ord) {
-        // Same text, different place in the document — a section moved, or this standard
-        // predates ordinals. Writing only `ord` leaves the hash and level as they were.
+      } else if (step.action === 'reorder') {
+        // Merge rather than replace: the text did not change, so the hash must survive.
         await query(
           `UPDATE memories SET metadata = metadata || $1::jsonb, updated_at = NOW() WHERE id = $2`,
-          [JSON.stringify({ ord }), existing.id]
+          [JSON.stringify({ ord: step.ord }), step.id]
         );
         stats.reordered++;
-      } else {
-        stats.unchanged++;
-      }
-    }
-
-    // 4. Delete vanished details (mark as disabled).
-    for (const [title, existing] of existingMap) {
-      if (!processedTitles.has(title)) {
+      } else if (step.action === 'disable') {
         await query(
           `UPDATE memories SET status = 'disabled', disabled_reason = 'sync_removal', updated_at = NOW() WHERE id = $1`,
-          [existing.id]
+          [step.id]
         );
         stats.deleted++;
+      } else {
+        stats.unchanged++;
       }
     }
 

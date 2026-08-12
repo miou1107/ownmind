@@ -22,6 +22,7 @@ import {
   FRAGMENT_CHAR_BUDGET,
   buildStandardFragments,
   attachStandardFragments,
+  planChunkSync,
 } from '../src/utils/standard-fragments.js';
 
 /** A fragment row as Postgres hands it back. */
@@ -189,5 +190,74 @@ describe('attachStandardFragments — a fragment read on its own', () => {
       { id: 341, type: 'standard_detail', metadata: {} }, { query, userId: 7 });
     assert.equal('parent_id' in out, false);
     assert.equal(calls.length, 0);
+  });
+
+  it('counts the siblings with the caller and the parent bound the right way round', async () => {
+    // The fragment query has this assertion and the count query did not, so swapping the two
+    // parameters here — the same mutation, one function down — used to survive.
+    const { query, calls } = fakeQuery([[{ n: 17 }]]);
+    await attachStandardFragments(
+      { id: 341, type: 'standard_detail', metadata: { parent_id: 345 } }, { query, userId: 7 });
+    assert.deepEqual(calls[0].params, [7, '345']);
+    assert.match(calls[0].text, /metadata->>'parent_id'\s*=\s*\$2/);
+    assert.match(calls[0].text, /m\.status\s*=\s*'active'/);
+  });
+});
+
+describe('planChunkSync — what a sync does to each fragment', () => {
+  const chunk = (title, hash = `h-${title}`) => ({ title, content: `c-${title}`, hash, level: 1 });
+  const existing = (id, title, hash = `h-${title}`, ord = null) => ({ id, title, hash, ord });
+
+  it('inserts a chunk nobody has seen, carrying its position', () => {
+    const plan = planChunkSync([chunk('a'), chunk('b')], []);
+    assert.deepEqual(plan.map(s => [s.action, s.ord]), [['insert', 0], ['insert', 1]]);
+  });
+
+  it('updates a chunk whose text changed, and moves its position with it', () => {
+    const plan = planChunkSync([chunk('a', 'new')], [existing(1, 'a', 'old', 0)]);
+    assert.deepEqual(plan, [{ action: 'update', chunk: chunk('a', 'new'), ord: 0, id: 1 }]);
+  });
+
+  it('backfills a standard that predates ordinals instead of leaving it on id order', () => {
+    // Every row unchanged, every row without an ord. Dropping this branch is invisible to a
+    // content-only test and leaves legacy standards permanently in id order — the defect the
+    // ordinals exist to fix.
+    const plan = planChunkSync([chunk('a'), chunk('b')], [existing(2, 'b'), existing(1, 'a')]);
+    assert.deepEqual(plan.map(s => s.action), ['reorder', 'reorder']);
+    assert.deepEqual(plan.map(s => [s.id, s.ord]), [[1, 0], [2, 1]]);
+  });
+
+  it('leaves a row alone when its text and its position both match', () => {
+    const plan = planChunkSync([chunk('a')], [existing(1, 'a', 'h-a', 0)]);
+    assert.deepEqual(plan.map(s => s.action), ['unchanged']);
+  });
+
+  it('treats position 0 as a position, so the first section is not reordered forever', () => {
+    const plan = planChunkSync([chunk('a')], [existing(1, 'a', 'h-a', 0)]);
+    assert.equal(plan[0].action, 'unchanged', 'ord 0 must not read as "no ord"');
+  });
+
+  it('records a move as a reorder, not as an edit', () => {
+    const plan = planChunkSync(
+      [chunk('b'), chunk('a')],
+      [existing(1, 'a', 'h-a', 0), existing(2, 'b', 'h-b', 1)]);
+    assert.deepEqual(plan.map(s => [s.action, s.id, s.ord]), [['reorder', 2, 0], ['reorder', 1, 1]]);
+  });
+
+  it('disables a section the sync no longer sends, and only that one', () => {
+    const plan = planChunkSync([chunk('a')], [existing(1, 'a', 'h-a', 0), existing(9, 'gone')]);
+    assert.deepEqual(plan.map(s => s.action), ['unchanged', 'disable']);
+    assert.equal(plan[1].id, 9);
+  });
+
+  it('turns a renamed heading into a disable plus an insert, which is why position is recorded', () => {
+    const plan = planChunkSync([chunk('a2')], [existing(1, 'a1', 'h-a1', 0)]);
+    assert.deepEqual(plan.map(s => s.action), ['insert', 'disable']);
+    assert.equal(plan[0].ord, 0, 'the replacement takes the position, not a new row id');
+  });
+
+  it('survives an empty sync and an empty history', () => {
+    assert.deepEqual(planChunkSync([], []), []);
+    assert.deepEqual(planChunkSync([], [existing(1, 'a')]).map(s => s.action), ['disable']);
   });
 });
