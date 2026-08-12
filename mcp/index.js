@@ -439,7 +439,7 @@ const TOOLS = [
     // standard whose text lives on its own record — the case for every standard written
     // recently. A tool description is read on every turn, so it outranked the session context
     // that was telling the AI the same wrong thing.
-    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. To read a team standard you have only seen the title of, call ownmind_search with that title and then ownmind_get with the id of the row it returns; standard_detail holds child fragments and is empty for a standard whose text is on its own record.",
+    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. To read a team standard you have only seen the title of, call ownmind_search with that title and then ownmind_get with the id of the row it returns: that gives you the whole standard, including any text held in child fragments, which arrive in document order in a `fragments` array. You do not need to know how a standard was stored.",
     inputSchema: {
       type: "object",
       properties: {
@@ -904,12 +904,24 @@ async function handleTool(name, args) {
           if (isNetworkError(err)) {
             const cached = findCachedMemory(readMemoryCache(), args.id);
             logEvent('memory_get', { by_id: true, offline: true });
+            // v1.26.146: online, a team standard whose text lives in child fragments comes
+            // back whole. The local cache holds seven memory types and standard_detail is not
+            // one of them (shared/init-cache.js), so on this path the same read is the one
+            // line of upload boilerplate that issue #89 is about — and the tool description
+            // has just promised the caller a whole standard. Say which one this is, because
+            // "short standard" and "standard read short" are indistinguishable otherwise.
+            const partialStandard = cached && cached.type === 'team_standard';
             return {
               data: cached ? [cached] : [],
               _offline: true,
-              _offline_notice: cached
-                ? '[OwnMind offline mode] Served from the local cache; it may be behind the server'
-                : `[OwnMind offline mode] Memory ${args.id} is not in the local cache`,
+              _offline_notice: !cached
+                ? `[OwnMind offline mode] Memory ${args.id} is not in the local cache`
+                : partialStandard
+                  ? '[OwnMind offline mode] Served from the local cache; it may be behind the server. '
+                    + 'This is a team standard, and if its text was uploaded as sections they are not '
+                    + 'in the local cache — what you are reading may be a summary line rather than the '
+                    + 'whole standard. Do not act on it as if it were complete.'
+                  : '[OwnMind offline mode] Served from the local cache; it may be behind the server',
             };
           }
           throw err;
