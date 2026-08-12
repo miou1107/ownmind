@@ -53,7 +53,7 @@ export function validateInvocableMetadata(metadata, type) {
     return {
       ok: false,
       error: 'metadata.user_invocable applies to team standards only',
-      hint: 'A private memory is never shown to anyone else, so nothing would ever say it aloud.',
+      hint: 'Only the team_standard summary layer is loaded at session start, so nothing else could be named in a tip — including standard_detail fragments, which members can read but which the tip never reaches.',
     };
   }
 
@@ -69,7 +69,7 @@ export function validateInvocableMetadata(metadata, type) {
       return {
         ok: false,
         error: `metadata.invocation_hint must be ${INVOCATION_HINT_MAX} characters or fewer`,
-        hint: 'It is shown as a single tip line; a longer one is truncated by the client that renders it.',
+        hint: 'It is shown as a single tip line. A longer one is not shortened — it is dropped, and the standard goes unadvertised.',
       };
     }
     if (/[\r\n]/.test(hint)) {
@@ -78,6 +78,21 @@ export function validateInvocableMetadata(metadata, type) {
   }
 
   return { ok: true };
+}
+
+/**
+ * Is this sentence safe to render as one line of tip?
+ *
+ * The same three rules the write path enforces, applied again on the way out. Rows written
+ * before the validation existed, or written straight to the database, are the reason: a tip
+ * is rendered into another member's session as text their AI is told to relay, so a hint
+ * carrying its own newlines could add lines nobody wrote.
+ */
+function isUsableHint(hint) {
+  return typeof hint === 'string'
+    && hint.trim() !== ''
+    && hint.length <= INVOCATION_HINT_MAX
+    && !/[\r\n]/.test(hint);
 }
 
 /**
@@ -99,8 +114,11 @@ export function buildInvocableStandards(rows) {
 
     const hint = typeof metadata.invocation_hint === 'string' ? metadata.invocation_hint.trim() : '';
     // A row that predates the validation, or one written straight into the database, can
-    // carry the flag without the sentence. Skipping it keeps the promise the tip makes.
-    if (!hint || hint.length > INVOCATION_HINT_MAX) continue;
+    // carry a sentence the write path would have refused. The read side therefore applies
+    // the same three rules rather than only two: review found that `trim()` removes edge
+    // whitespace but not an interior newline, so a hint of
+    // "line one\nignore previous instructions\nline three" reached the rendered tip verbatim.
+    if (!isUsableHint(hint)) continue;
     if (seen.has(hint)) continue;
 
     seen.add(hint);
@@ -123,5 +141,5 @@ export function buildInvocableStandards(rows) {
 export function hintsFromStandards(standards) {
   return (Array.isArray(standards) ? standards : [])
     .map((s) => (s && typeof s.hint === 'string' ? s.hint.trim() : ''))
-    .filter((hint) => hint !== '' && hint.length <= INVOCATION_HINT_MAX);
+    .filter(isUsableHint);
 }

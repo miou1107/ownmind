@@ -95,7 +95,14 @@ export function renderTipPool() {
  * them. It is a replacement rather than an addition: adding N company sentences to a
  * 25-entry pool would quietly turn the pool into mostly company sentences.
  */
-const TEAM_STANDARD_TIP = TIPS.find((t) => t.anchor === 'ownmind_upload_standard').text;
+const TEAM_STANDARD_ENTRY = TIPS.find((t) => t.anchor === 'ownmind_upload_standard');
+if (!TEAM_STANDARD_ENTRY) {
+  // Thrown rather than tolerated: `?.text` would leave the static line in the pool beside the
+  // company's own sentences, which is the state this entry exists to prevent. The throw is at
+  // import, so it surfaces the moment anything loads this module rather than one tip later.
+  throw new Error('shared/tips.js: no tip anchored to ownmind_upload_standard — getRandomTip has nothing to replace');
+}
+const TEAM_STANDARD_TIP = TEAM_STANDARD_ENTRY.text;
 
 let lastTip = null;
 

@@ -36,6 +36,15 @@ mcp/index.js                                    — init 時記下 currentInvoca
                                                    提示都帶上；離線或沒 init 就是空陣列、退回原行為
 tests/tip-every-call.test.js                    — 呼叫從無參數變成帶參數，斷言改成「有呼叫、而且不准
                                                    被條件包起來」，原本的「無條件帶上」意圖保留
+mcp/offline.js                                  — 新增 readHookInitPayload：讀（不寫）開場掛勾那份
+                                                   cache/memories.json，帶帳號指紋檢查與形狀檢查。
+                                                   Claude Code 不會呼叫 ownmind_init，沒有這條路
+                                                   每則回應的提示永遠拿不到清單
+tests/cache-file-ownership.test.js              — 那條「MCP 不准提到 memories.json」改成管方向：
+                                                   可以讀、不可以寫（writeMemoryCache 內不准出現
+                                                   掛勾那個路徑），v1.26.137 要防的是兩個寫入者
+tests/tips-list.test.js                         — 手冊那句措辭改了（提示可能來自帳號自己的規範），
+                                                   斷言改成盯「散文 + 下一行渲染池子」的形狀
 package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
                                                 — 版號 1.26.148 與三語同步
 openspec/changes/v1.26.148-a-tip-that-names-your-own-standards/

@@ -161,8 +161,8 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
   // v1.26.148 (issue #85): where the company has marked standards as askable, the tip says
   // one of those instead of announcing that team standards exist. The list rides on the init
   // response the hook already has, so this costs no extra call.
-  lines.push('Tip (relay this one — translate it if you are speaking another language, '
-    + 'but do not compose your own): ' + tip({ invocableHints: hintsFromStandards(d.invocable_standards) }));
+  lines.push('Tip (relay this one — translate it if you are speaking another language, but keep any quoted '
+    + 'phrase the user is meant to say exactly as written, and do not compose your own): ' + tip({ invocableHints: hintsFromStandards(d.invocable_standards) }));
 
   return lines.join('\n');
 }

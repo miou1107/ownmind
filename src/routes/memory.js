@@ -119,7 +119,7 @@ The version is taken from the MCP tool response prefix (auto-attached). For AI-i
 **Tip:** Each MCP tool response auto-attaches a random one-line tip in this format:
 \`[OwnMind vX.X.X] Tip: [randomly chosen]\`
 
-The pool that tip is drawn from — reproduce the one you were given, do not pick again:
+The tip you were given is the one to reproduce — do not pick again. It comes either from the pool below, or, on an account whose team standards are marked askable, from one of those standards' own sentences (which are per-account and therefore not printed here):
 ${renderTipPool()}
 
 ## Upgrade Handling (Highest Priority)

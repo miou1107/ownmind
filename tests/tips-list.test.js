@@ -116,7 +116,10 @@ describe('one list, two consumers', () => {
   it('the operations manual renders the pool instead of restating it', () => {
     const src = read('src/routes/memory.js');
     assert.match(src, /import \{[^}]*renderTipPool[^}]*\} from '\.\.\/\.\.\/shared\/tips\.js'/);
-    assert.match(src, /The pool that tip is drawn from[^\n]*\n\$\{renderTipPool\(\)\}/);
+    // v1.26.148 reworded the framing (a tip may now come from the account's own team
+    // standards, which are per-account and not printable here). What is pinned is the
+    // shape that matters: prose, then the rendered pool on the next line.
+    assert.match(src, /do not pick again[^\n]*\n\$\{renderTipPool\(\)\}/);
   });
 
   it('no tip text is hardcoded anywhere outside the shared module', () => {
