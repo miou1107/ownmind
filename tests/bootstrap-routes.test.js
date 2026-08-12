@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { startServer } from './helpers/app-server.js';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 
@@ -9,14 +10,11 @@ process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
   || 'test-only-encryption-key-32-chars-x';
 const { default: app } = await import('../src/app.js');
 
-function listenApp() {
-  return new Promise((resolve) => {
-    const server = createServer(app);
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      resolve({ server, base: `http://127.0.0.1:${port}` });
-    });
-  });
+// v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses to
+// dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+async function listenApp() {
+  const started = await startServer(createServer(app));
+  return { server: { close: started.close }, base: started.url };
 }
 
 async function get(base, path) {

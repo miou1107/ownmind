@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { startServer } from './helpers/app-server.js';
 import { createDebugRouter } from '../src/routes/debug.js';
 
 /**
@@ -44,19 +45,19 @@ function setupTestApp() {
 }
 
 async function post(app, payload) {
-  const port = await new Promise((resolve) => {
-    const srv = app.listen(0, () => resolve(srv.address().port));
-    app._server = srv;
-  });
+  // v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses
+  // to dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+  const server = await startServer(app);
+  app._server = server;
   try {
-    const r = await fetch(`http://127.0.0.1:${port}/api/debug/install-check`, {
+    const r = await fetch(`${server.url}/api/debug/install-check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     return { status: r.status, body: await r.json() };
   } finally {
-    app._server.close();
+    await app._server.close();
   }
 }
 

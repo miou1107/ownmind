@@ -1,4 +1,5 @@
 // v1.26.46 — the legacy-console manifest and the /admin either/or.
+import { startServer } from './helpers/app-server.js';
 //
 // Requirement 5 of the single-console consolidation: retirement is a consequence of
 // finishing the work, not a task to remember. The manifest is the guard, so these tests
@@ -35,20 +36,16 @@ const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const ROLE_RANK = { user: 1, admin: 2, super_admin: 3 };
 
 async function fetchOnce(app, urlPath) {
-  return new Promise((resolve, reject) => {
-    const srv = app.listen(0, async () => {
-      try {
-        const { port } = srv.address();
-        const r = await fetch(`http://127.0.0.1:${port}${urlPath}`, { redirect: 'manual' });
-        const body = r.status === 200 ? await r.text() : '';
-        resolve({ status: r.status, location: r.headers.get('location'), body });
-      } catch (err) {
-        reject(err);
-      } finally {
-        srv.close();
-      }
-    });
-  });
+  // v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses
+  // to dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+  const srv = await startServer(app);
+  try {
+    const r = await fetch(`${srv.url}${urlPath}`, { redirect: 'manual' });
+    const body = r.status === 200 ? await r.text() : '';
+    return { status: r.status, location: r.headers.get('location'), body };
+  } finally {
+    await srv.close();
+  }
 }
 
 function makeLegacyDir() {

@@ -1,4 +1,5 @@
 // v1.26.73 — one heartbeat row per machine, not per person.
+import { startServer } from './helpers/app-server.js';
 //
 // `collector_heartbeat` was UNIQUE (user_id, tool), so somebody with two computers had
 // them overwriting each other all day. Watched happen on production 2026-08-05: at 11:50
@@ -73,16 +74,17 @@ async function post(router, body) {
   const a = express();
   a.use(express.json());
   a.use('/api/usage/events', router);
-  const server = a.listen(0);
+  // v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses
+  // to dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+  const server = await startServer(a);
   try {
-    const { port } = server.address();
-    await fetch(`http://127.0.0.1:${port}/api/usage/events`, {
+    await fetch(`${server.url}/api/usage/events`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
   } finally {
-    server.close();
+    await server.close();
   }
 }
 

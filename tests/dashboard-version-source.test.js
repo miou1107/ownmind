@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { startServer } from './helpers/app-server.js';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -147,15 +148,15 @@ async function getVersion({ auth } = {}) {
   const fakeAuth = auth || ((req, res, next) => { req.user = { id: 1 }; next(); });
   app.use('/api/version', createVersionRouter({ auth: fakeAuth }));
 
-  const server = await new Promise((resolve) => {
-    const s = app.listen(0, () => resolve(s));
-  });
+  // v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses
+  // to dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+  const server = await startServer(app);
   try {
-    const r = await fetch(`http://127.0.0.1:${server.address().port}/api/version`);
+    const r = await fetch(`${server.url}/api/version`);
     const ct = r.headers.get('content-type') || '';
     return { status: r.status, body: ct.includes('json') ? await r.json() : null };
   } finally {
-    server.close();
+    await server.close();
   }
 }
 

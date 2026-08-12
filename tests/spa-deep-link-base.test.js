@@ -1,4 +1,5 @@
 import { describe, it } from 'node:test';
+import { startServer } from './helpers/app-server.js';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
@@ -54,13 +55,11 @@ const needsBuild = hasBuiltShell
   ? false
   : 'requires the client build (src/public/dashboard/); run npm run build:client';
 
-function listenApp(target = app) {
-  return new Promise((resolve) => {
-    const server = createServer(target);
-    server.listen(0, '127.0.0.1', () => {
-      resolve({ server, base: `http://127.0.0.1:${server.address().port}` });
-    });
-  });
+// v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses to
+// dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+async function listenApp(target = app) {
+  const started = await startServer(createServer(target));
+  return { server: { close: started.close }, base: started.url };
 }
 
 function extractBaseHref(html) {
