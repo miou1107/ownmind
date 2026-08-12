@@ -1474,8 +1474,16 @@ router.put('/:id', async (req, res) => {
     // v1.19: tier change recorded in metadata.tier_change for audit
     // (spec scenario 2 / scenario 8).
     const tierChanged = tier !== undefined && tier !== null && tier !== oldMemory.tier;
+    // v1.26.147 review: `memories.metadata` is written straight from the request body, so a
+    // caller can put an `admin_write` of their own choosing on their row and it would ride
+    // this spread into the history entry. The one record of "someone other than the owner
+    // changed this" cannot be writable by the party it audits, so the inherited key is
+    // dropped and only the server's own is added below.
+    const { admin_write: _forgeableAdminWrite, ...inheritedMetadata } = oldMemory.metadata && typeof oldMemory.metadata === 'object'
+      ? oldMemory.metadata
+      : {};
     const historyMetadata = {
-      ...oldMemory.metadata,
+      ...inheritedMetadata,
       update_reason: update_reason || null,
       ...(tierChanged && {
         tier_change: { from: oldMemory.tier || 'default', to: tier },
@@ -1693,14 +1701,16 @@ router.put('/:id/enable', async (req, res) => {
       return res.status(404).json({ error: 'Memory not found' });
     }
 
+    const enableAudit = access.viaAdmin
+      ? { admin_write: { action: 'enable', by_user_id: req.user.id, owner_user_id: access.memory.user_id } }
+      : null;
+
     await query(
       `INSERT INTO memory_history (memory_id, changed_by, change_type, content, metadata)
        VALUES ($1, $2, 'enable', $3, $4)`,
-      [req.params.id, 'api', result.rows[0].content, access.viaAdmin
-        ? JSON.stringify({
-          admin_write: { action: 'enable', by_user_id: req.user.id, owner_user_id: access.memory.user_id },
-        })
-        : null]
+      // Owner enables keep passing SQL NULL, exactly as this insert always has; only an
+      // admin putting back someone else's standard writes anything here.
+      [req.params.id, 'api', result.rows[0].content, enableAudit && JSON.stringify(enableAudit)]
     );
 
     const newToken = await generateSyncToken(req.user.id);

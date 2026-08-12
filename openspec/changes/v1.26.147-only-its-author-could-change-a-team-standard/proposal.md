@@ -121,5 +121,11 @@ no `admin` accounts, so today this widens what those two accounts can do. The ga
 against `admin` because that is what every other shared-type check in this file uses, and
 `super_admin` outranks it.
 
+**Retiring a standard can take up to a day to reach members' machines.** `generateSyncToken`
+hashes `MAX(updated_at)` over *active* `team_standard` rows, so disabling one usually removes
+it from that set without moving anyone's token, and members keep their local copy until the
+24-hour staleness net fires. Edits propagate immediately; retirements may not. Pre-existing
+and unchanged here, recorded because admin retirement is now something this change advertises.
+
 **This reaches nobody until the server is deployed.** Server-side change; kkvin.com needs a
 rebuild. Deployment is Vin's call (IR-136).

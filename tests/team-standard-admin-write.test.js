@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resolveWritableMemory } from '../src/utils/memory-write-access.js';
+import { resolveWritableMemory, WRITE_ACCESS_COLUMNS } from '../src/utils/memory-write-access.js';
 import { isAtLeast } from '../src/utils/roles.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -156,8 +156,18 @@ describe('resolveWritableMemory — the lookup', () => {
     await resolveWritableMemory({ id: 869, user: ADMIN, queryFn });
     assert.equal(calls.length, 1);
     assert.match(flat(calls[0].sql), /WHERE id = \$1$/);
-    assert.doesNotMatch(flat(calls[0].sql), /user_id/);
+    assert.doesNotMatch(flat(calls[0].sql).replace(/^SELECT.*?FROM/, 'SELECT FROM'), /user_id/);
     assert.deepEqual(calls[0].params, [869]);
+  });
+
+  it('selects every column the handlers read, and not the two that cost', () => {
+    // Named columns rather than `*`, for the reason src/routes/memory.js:92 records: `*`
+    // drags previous_content and the embedding into a lookup four routes did not use to run.
+    // Dropping one of these from the list is a silent undefined at runtime, not an error.
+    for (const column of ['id', 'user_id', 'type', 'title', 'content', 'tags', 'metadata', 'tier', 'status']) {
+      assert.match(WRITE_ACCESS_COLUMNS, new RegExp(`\\b${column}\\b`), `${column} is read by a handler`);
+    }
+    assert.doesNotMatch(WRITE_ACCESS_COLUMNS, /previous_content|embedding|\*/);
   });
 
   it('reports a missing row as 404 without inspecting anything', async () => {
@@ -197,7 +207,9 @@ describe('the write handlers ask the helper instead of matching on user_id', () 
     // The UPDATE must not re-apply `user_id = req.user.id`: that is the same 404 one
     // statement later, except silent — it writes nothing and returns no row.
     for (const [marker, name] of handlers.slice(0, 4)) {
-      const found = handlerBody(marker).match(/await query\(\s*`UPDATE memories[\s\S]*?^ {4}\);/m);
+      // Sliced to the end of the call, not to a fixed indentation: wrapping a handler in a
+      // transaction would re-indent it and fail this on layout rather than on behaviour.
+      const found = handlerBody(marker).match(/await query\(\s*`UPDATE memories[\s\S]*?RETURNING \*`,[\s\S]*?\n\s*\);/);
       assert.ok(found, `${name} has no UPDATE to check`);
       // Comments are stripped: one of them explains why req.user.id is not bound here, and
       // an assertion that reads prose cannot tell an explanation from the code it describes.
@@ -217,36 +229,75 @@ describe('the write handlers ask the helper instead of matching on user_id', () 
 });
 
 describe('the admin-only gate that was unreachable', () => {
-  it('still refuses a non-admin editing a team standard they own', () => {
-    assert.match(
-      handlerBody("router.put('/:id', async"),
-      /isSharedMemoryType\([\s\S]*?\) && !isAtLeast\(req\.user\.role, 'admin'\)/,
-    );
-  });
+  // Disable was admin-only while enable was not: a member could put back a standard an
+  // admin had retired. Revert rewrites content, so it is an edit under another name.
+  const gated = [
+    ["router.put('/:id', async", 'edit'],
+    ["router.put('/:id/disable', async", 'disable'],
+    ["router.put('/:id/enable', async", 'enable'],
+    ["router.put('/:id/revert', async", 'revert'],
+  ];
 
-  it('now covers enable and revert, which never had it', () => {
-    // Disable was admin-only while enable was not: a member could put back a standard an
-    // admin had retired. Revert rewrites content, so it is an edit under another name.
-    for (const marker of ["router.put('/:id/enable', async", "router.put('/:id/revert', async"]) {
+  for (const [marker, name] of gated) {
+    it(`${name} refuses a non-admin on a shared type`, () => {
+      // The negation is part of the assertion: dropping the `!` inverts the gate — members
+      // through, admins refused — and a pattern that only looked for isAtLeast would pass.
       assert.match(
         handlerBody(marker),
-        /isSharedMemoryType\([\s\S]*?\) && !isAtLeast\(req\.user\.role, 'admin'\)/,
-        `${marker} must gate shared types on admin`,
+        /isSharedMemoryType\([\s\S]{0,40}?\) && !isAtLeast\(req\.user\.role, 'admin'\)/,
+        `${name} must gate shared types on admin`,
       );
-    }
-  });
+    });
+
+    it(`${name} runs that gate before it writes`, () => {
+      // This whole change exists because a check sat below the thing that made it
+      // unreachable. A gate that runs after the UPDATE returns 403 on a write that landed.
+      const body = handlerBody(marker);
+      const gate = body.indexOf('!isAtLeast');
+      const write = body.indexOf('UPDATE memories');
+      assert.ok(gate !== -1 && write !== -1, `${name} is missing the gate or the write`);
+      assert.ok(gate < write, `${name} gates the write after making it`);
+    });
+  }
 });
 
 describe('an admin write is recorded as one', () => {
-  it('edit and revert name the acting admin in history metadata', () => {
-    for (const marker of ["router.put('/:id', async", "router.put('/:id/revert', async"]) {
-      assert.match(handlerBody(marker), /admin_write/, `${marker} must audit the admin write`);
-    }
-  });
+  const verbs = [
+    ["router.put('/:id', async", 'update'],
+    ["router.put('/:id/disable', async", 'disable'],
+    ["router.put('/:id/enable', async", 'enable'],
+    ["router.put('/:id/revert', async", 'revert'],
+  ];
 
-  it('disable and enable do too — retiring someone else’s standard is the loudest case', () => {
-    for (const marker of ["router.put('/:id/disable', async", "router.put('/:id/enable', async"]) {
-      assert.match(handlerBody(marker), /admin_write/, `${marker} must audit the admin write`);
-    }
+  for (const [marker, action] of verbs) {
+    it(`${action} records the admin write, and only when it is one`, () => {
+      // `access.viaAdmin &&` is the assertion, not `admin_write` on its own: mutating the
+      // guard to a constant — always stamping it, or never — leaves the literal in place.
+      const body = handlerBody(marker);
+      assert.match(
+        body,
+        /access\.viaAdmin[\s\S]{0,20}?\{[\s\S]{0,120}?admin_write:/,
+        `${action} must condition the audit on the write being an admin's`,
+      );
+      assert.match(body, new RegExp(`admin_write: \\{ action: '${action}'`), `${action} must name its own action`);
+      assert.match(
+        body,
+        /by_user_id: req\.user\.id, owner_user_id: (access\.memory|oldMemory)\.user_id/,
+        `${action} must record who acted and whose row it was, not the same id twice`,
+      );
+    });
+  }
+
+  it('an inherited admin_write cannot ride into history', () => {
+    // memories.metadata is written from the request body, so an owner can put an admin_write
+    // of their choosing on their own row. An audit record the audited party can write is not
+    // one. The update handler is the only path that spreads the row's metadata into history.
+    const body = handlerBody("router.put('/:id', async");
+    assert.match(body, /admin_write: _forgeableAdminWrite, \.\.\.inheritedMetadata/);
+    assert.doesNotMatch(
+      body,
+      /const historyMetadata = \{\s*\.\.\.oldMemory\.metadata/,
+      'history must not inherit the caller-written metadata wholesale',
+    );
   });
 });

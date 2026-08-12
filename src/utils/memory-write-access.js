@@ -26,6 +26,18 @@ import { isAtLeast } from './roles.js';
 const REFUSED = Object.freeze({ ok: false, status: 404, error: 'Memory not found' });
 
 /**
+ * The columns the write handlers read off the resolved row, named rather than `*` for the
+ * reason recorded at src/routes/memory.js:92 — `*` drags `previous_content` (a second full
+ * copy of the text) and the embedding vector into a lookup that now runs on four routes that
+ * used to select one column or none at all.
+ *
+ * Each column is here because a handler reads it: `user_id` and `type` decide access and bind
+ * the write; `title`, `content`, `tags`, `metadata` and `tier` feed the update's merge, lint,
+ * secret guard and history entry; `status` and `id` are read by callers of the result.
+ */
+export const WRITE_ACCESS_COLUMNS = 'id, user_id, type, title, content, tags, metadata, tier, status';
+
+/**
  * Resolve the row a write route is about to act on, and say on what authority.
  *
  * @param {object} options
@@ -36,7 +48,7 @@ const REFUSED = Object.freeze({ ok: false, status: 404, error: 'Memory not found
  *                  | { ok: false, status: number, error: string }>}
  */
 export async function resolveWritableMemory({ id, user, queryFn }) {
-  const found = await queryFn('SELECT * FROM memories WHERE id = $1', [id]);
+  const found = await queryFn(`SELECT ${WRITE_ACCESS_COLUMNS} FROM memories WHERE id = $1`, [id]);
   if (found.rows.length === 0) return REFUSED;
 
   const memory = found.rows[0];
