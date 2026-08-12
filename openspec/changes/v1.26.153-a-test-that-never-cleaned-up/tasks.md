@@ -38,10 +38,12 @@
 
 - [x] Record counts and dates first, then delete the 391 accumulated directories (IR-003)
 - [x] Remove the control worktree
-- [ ] CHANGELOG.md / FILELIST.md / README.md / docs/README.zh-TW.md / docs/README.ja.md
+- [x] CHANGELOG.md / FILELIST.md / README.md / docs/README.zh-TW.md / docs/README.ja.md
       (IR-008)
-- [ ] Bump `package.json` to 1.26.153
-- [ ] Commit, push, tag `v1.26.153`
+- [x] Bump `package.json` to 1.26.153
+- [x] Commit, push, tag `v1.26.153` — the tag is not decoration: the server deploys by
+      `git checkout vX.Y.Z`, and v1.26.149 through .151 have none, which is why deploying
+      v1.26.152 needed a tag created after the fact
 
 ## Not doing
 
