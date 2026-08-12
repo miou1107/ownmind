@@ -317,6 +317,62 @@ export const TRIGGER_TAG_ALIASES = {
 };
 
 /**
+ * Every word a `trigger:` tag can carry and still be asked for by something.
+ *
+ * v1.26.157 — the table above had exactly one reader: `ruleMatchesTrigger`, at the moment a
+ * hook decides what to show. Nothing consulted it when a memory was *written*, so a tag naming
+ * a word no trigger uses was stored, reported as saved, and then never asked for again.
+ *
+ * Measured 2026-08-12 on the live account: nine memories carried tags matching no operation at
+ * all. One of them — a standard requiring an independent review before anything leaves — had
+ * never fired in the two weeks it had existed, and an issue was filed that afternoon without
+ * it appearing. The author saw a tag they had written; the reader saw a category count that
+ * was simply lower than it should have been. Neither end could see the fault.
+ */
+export const KNOWN_TRIGGER_WORDS = new Set([
+  // Accepted for every trigger — see ruleMatchesTrigger.
+  'command',
+  ...Object.keys(TRIGGER_TAG_ALIASES),
+  ...Object.values(TRIGGER_TAG_ALIASES).flat(),
+].map((w) => w.toLowerCase()));
+
+/**
+ * Which of these tags name a trigger word nothing will ever ask for?
+ *
+ * Only `trigger:`-prefixed tags are judged. Every other tag is a free-text label used for
+ * search and grouping; it has no vocabulary to be wrong about, and rejecting one would break
+ * the way tags have always been used.
+ *
+ * @param {unknown} tags
+ * @returns {string[]} the offending tags, verbatim and in the order given
+ */
+export function unknownTriggerTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  return tags.filter((tag) => {
+    if (typeof tag !== 'string') return false;
+    const lower = tag.toLowerCase();
+    if (!lower.startsWith('trigger:')) return false;
+    return !KNOWN_TRIGGER_WORDS.has(lower.slice('trigger:'.length));
+  });
+}
+
+/**
+ * The sentence shown when a tag names a word nothing asks for.
+ *
+ * It says what will happen rather than that something is wrong, because usually nothing is:
+ * a memory found by name — "I'm wrapping up" — needs no trigger tag at all, and seven of the
+ * nine found on 2026-08-12 were deliberately left that way. What the author cannot otherwise
+ * discover is that the tag they wrote buys them nothing.
+ */
+export function unknownTriggerTagWarning(offending) {
+  const words = Object.keys(TRIGGER_TAG_ALIASES).join(' / ');
+  return `這些標籤系統不認得：${offending.join('、')}。`
+    + `貼了也不會讓這條記憶在做事的時候自動跳出來。`
+    + `認得的時機是：${words}（或 command＝每次都跳）。`
+    + `如果本來就打算靠名字被找到，可以不加時機標籤。`;
+}
+
+/**
  * Is this rule relevant to the operation about to run?
  *
  * An untagged rule is relevant to everything. That is the pre-existing contract and it stays

@@ -1,5 +1,37 @@
 # OwnMind 檔案結構
 
+## v1.26.157 修改（那張認得哪些字的表，從來沒人在寫入時查過）
+
+新增：
+```
+tests/unknown-trigger-tags.test.js              — 帳號上實際找到的 11 個死標籤全部要被抓到；
+                                                   表裡每一個字都要被接受，而且
+                                                   ruleMatchesTrigger 仍要認它——兩者必須
+                                                   同構，否則會對「其實會動的標籤」發警告，
+                                                   那會教作者忽略下一次；一般標籤不受影響；
+                                                   undefined / null / 裸字串 / 混雜陣列不炸；
+                                                   兩條寫入路徑都要掛上，而且都不准變成 4xx。
+```
+
+修改：
+```
+shared/helpers.js                               — 新增 KNOWN_TRIGGER_WORDS（從
+                                                   TRIGGER_TAG_ALIASES 推導，不另寫一份，
+                                                   手寫第二份就是同一個缺陷升一層）、
+                                                   unknownTriggerTags（只判 trigger: 開頭、
+                                                   大小寫不敏感、原字回傳）、
+                                                   unknownTriggerTagWarning（講會發生什麼、
+                                                   列出真的存在的時機、並說明「不加標籤」
+                                                   本來就是合理答案）。
+
+src/routes/memory.js                            — 新增與更新兩條路徑的回應都多帶一個
+                                                   warning 欄位。更新那條特別重要：
+                                                   tags 是整組取代不是合併，所以那裡正是
+                                                   「會動的標籤被弄掉」或「死標籤被帶進來」
+                                                   的時刻。純新增欄位，狀態碼與既有欄位
+                                                   一律不動。
+```
+
 ## v1.26.156 修改（搜尋用空白切字，而中文沒有空白）
 
 新增：

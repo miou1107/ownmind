@@ -22,7 +22,11 @@ import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-v
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
-import { ruleMatchesTrigger } from '../../shared/helpers.js';
+import {
+  ruleMatchesTrigger,
+  unknownTriggerTags,
+  unknownTriggerTagWarning,
+} from '../../shared/helpers.js';
 import { HOOK_CONTEXT_TYPES, tallyHookContext } from '../../shared/hook-context.js';
 import { resolveWritableMemory } from '../utils/memory-write-access.js';
 import { buildInvocableStandards, validateInvocableMetadata } from '../../shared/invocable-standards.js';
@@ -1360,6 +1364,16 @@ router.post('/', async (req, res) => {
     const pendingCount = parseInt(prCount.rows[0].cnt, 10);
     if (pendingCount > 0) response.pending_review_count = pendingCount;
 
+    // v1.26.157 — a tag naming a word no trigger asks for is stored happily and then never
+    // asked for. Said here, at the only moment the author is still looking, rather than left
+    // to be discovered weeks later by someone wondering why a rule never fired.
+    //
+    // A warning, not a refusal: seven of the nine such memories found on 2026-08-12 were
+    // deliberately kept that way, and rejecting the tag would make those rows uneditable for
+    // any unrelated reason.
+    const badTags = unknownTriggerTags(tags);
+    if (badTags.length > 0) response.warning = unknownTriggerTagWarning(badTags);
+
     res.status(201).json(response);
   } catch (err) {
     // v1.19.1: split the catch-all 500 into 400/409/503/500.
@@ -1636,6 +1650,12 @@ router.put('/:id', async (req, res) => {
     );
     const pendingCount = parseInt(prCount.rows[0].cnt, 10);
     if (pendingCount > 0) response.pending_review_count = pendingCount;
+
+    // v1.26.157 — same check as the create path. It has to be on both: `tags` REPLACES rather
+    // than merges here, so an update is exactly where a working tag gets dropped or a dead one
+    // gets introduced, and it is the path the tagging work of 2026-08-12 went through.
+    const badTagsPut = unknownTriggerTags(tags);
+    if (badTagsPut.length > 0) response.warning = unknownTriggerTagWarning(badTagsPut);
 
     res.json(response);
   } catch (err) {
