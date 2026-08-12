@@ -9,6 +9,7 @@
  */
 
 import { getRandomTip } from '../../shared/tips.js';
+import { hintsFromStandards } from '../../shared/invocable-standards.js';
 
 /**
  * @param {Object} data  memory init response (server_version, profile, iron_rules_digest, principles, active_handoff)
@@ -157,8 +158,11 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
   // Not "verbatim": the tips are written in English and the AI answers in the user's language,
   // so a literal instruction it has to break teaches it that these instructions are negotiable
   // — on the one guard the whole change leans on. The templates use the same framing.
+  // v1.26.148 (issue #85): where the company has marked standards as askable, the tip says
+  // one of those instead of announcing that team standards exist. The list rides on the init
+  // response the hook already has, so this costs no extra call.
   lines.push('Tip (relay this one — translate it if you are speaking another language, '
-    + 'but do not compose your own): ' + tip());
+    + 'but do not compose your own): ' + tip({ invocableHints: hintsFromStandards(d.invocable_standards) }));
 
   return lines.join('\n');
 }
