@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,8 +34,40 @@ function run(args, { expectFail = false } = {}) {
   }
 }
 
+/**
+ * Every directory `fixture()` has handed out, so the hook below can remove them.
+ *
+ * This file used to create one per test and remove none. Measured 2026-08-12: one run leaves
+ * 23 behind, and this machine had accumulated 368 in about a day of test runs. Nothing broke
+ * — which is the point. A leak that costs a few empty directories never fails anything, so it
+ * survives however long nobody happens to look in the temp folder.
+ *
+ * Cleanup is a file-level `after` rather than per-test `t.after`, because reaching `t` would
+ * mean giving all 23 `it()` callbacks a parameter they otherwise have no use for, and a
+ * mechanical edit across every test in a file is its own way to introduce a mistake. `after`
+ * runs whether the tests passed or failed, which is the property that actually matters here:
+ * a failing assertion is exactly when the old code leaked, because it left by the fast path.
+ */
+const fixtureDirs = [];
+
+after(() => {
+  for (const dir of fixtureDirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      // Reported, not swallowed. A cleanup that fails quietly puts the leak back exactly as
+      // it was, and the next person to look would find the same 368 directories with a test
+      // named "leaves nothing behind" passing above them. Not thrown, because one locked file
+      // on Windows should not turn a green suite red.
+      process.stderr.write(`could not remove fixture dir ${dir}: ${err.message}\n`);
+    }
+  }
+  fixtureDirs.length = 0;
+});
+
 function fixture(contents) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-block-'));
+  fixtureDirs.push(dir);
   const target = path.join(dir, 'CLAUDE.md');
   const snippet = path.join(dir, 'block.md');
   fs.writeFileSync(snippet, '## OwnMind rules\n\nrule one\n');
