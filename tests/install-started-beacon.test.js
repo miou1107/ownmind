@@ -1,4 +1,5 @@
 import { describe, it, beforeEach } from 'node:test';
+import { startServer } from './helpers/app-server.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -52,12 +53,10 @@ describe('debug route — install-check accepts a minimal beacon (v1.17.78)', ()
     // onReportStored: skip the real install-check-alerts evaluator — these tests
     // exercise the beacon endpoint with a fake `query` it isn't built for.
     app.use('/api/debug', createDebugRouter({ query: makeQuery(), auth: makeAuth(8), onReportStored: async () => {} }));
-    await new Promise((resolve) => {
-      server = app.listen(0, () => {
-        baseUrl = `http://127.0.0.1:${server.address().port}/api/debug/install-check`;
-        resolve();
-      });
-    });
+    // v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses
+    // to dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+    server = await startServer(app);
+    baseUrl = `${server.url}/api/debug/install-check`;
   });
 
   // Close the server after each it, otherwise node --test never exits
@@ -70,7 +69,7 @@ describe('debug route — install-check accepts a minimal beacon (v1.17.78)', ()
       });
       return { status: res.status, body: await res.json().catch(() => ({})) };
     } finally {
-      await new Promise((resolve) => server.close(resolve));
+      await server.close();
     }
   }
 

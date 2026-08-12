@@ -1,4 +1,5 @@
 // v1.26.57 — the bare mount path must redirect *inside* the reverse-proxy prefix.
+import { startServer } from './helpers/app-server.js';
 //
 // Found on production 2026-08-04: `https://kkvin.com/ownmind/dashboard` (no trailing
 // slash) answered `301 Location: /dashboard/`, an absolute path that drops the
@@ -43,20 +44,16 @@ before(async () => {
 });
 
 async function fetchOnce(target, urlPath, { method = 'GET' } = {}) {
-  return await new Promise((resolve, reject) => {
-    const srv = target.listen(0, async () => {
-      try {
-        const { port } = srv.address();
-        const r = await fetch(`http://127.0.0.1:${port}${urlPath}`, { method, redirect: 'manual' });
-        const body = await r.text().catch(() => '');
-        srv.close();
-        resolve({ status: r.status, location: r.headers.get('location'), body });
-      } catch (err) {
-        srv.close();
-        reject(err);
-      }
-    });
-  });
+  // v1.26.158 — through the shared helper: `listen(0)` can hand back a port `fetch` refuses
+  // to dial, which is the v1.26.143 finding. See tests/helpers/app-server.js.
+  const srv = await startServer(target);
+  try {
+    const r = await fetch(`${srv.url}${urlPath}`, { method, redirect: 'manual' });
+    const body = await r.text().catch(() => '');
+    return { status: r.status, location: r.headers.get('location'), body };
+  } finally {
+    await srv.close();
+  }
 }
 
 /**

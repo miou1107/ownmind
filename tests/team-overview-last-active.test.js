@@ -15,6 +15,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { startServer } from './helpers/app-server.js';
 
 const { createTeamOverviewRouter } = await import('../src/routes/usage/team-overview.js');
 
@@ -36,13 +37,15 @@ function run({ rows = [], onQuery = null } = {}) {
 }
 
 async function get(app, qs = `?from=${encodeURIComponent(FROM)}&to=${encodeURIComponent(TO)}`) {
-  const server = app.listen(0);
+  // v1.26.158 — through the shared helper, which draws again when the OS hands back a port
+  // `fetch` refuses to dial. This file failed on 2026-08-12 as `bad port`, which is the
+  // v1.26.143 finding arriving in a file that had never been migrated.
+  const server = await startServer(app);
   try {
-    const { port } = server.address();
-    const res = await fetch(`http://127.0.0.1:${port}/api/usage/admin/team-overview${qs}`);
+    const res = await fetch(`${server.url}/api/usage/admin/team-overview${qs}`);
     return { status: res.status, body: await res.json() };
   } finally {
-    server.close();
+    await server.close();
   }
 }
 

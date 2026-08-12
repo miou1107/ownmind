@@ -1,5 +1,38 @@
 # OwnMind 檔案結構
 
+## v1.26.158 修改（藥早就配好了，只發給一半的人）
+
+新增：
+```
+tests/no-raw-listen-with-fetch.test.js          — 守門測試。任何測試檔同時用了 .listen(0)
+                                                   跟 fetch( 卻沒引用 helpers/app-server.js
+                                                   就紅。並且點名這次搬的 12 支，
+                                                   拿掉 import 會以檔名報錯，而不是變成一個
+                                                   每次跑都飄到不同檔案的紅字。
+                                                   還會斷言自己的前提：fetch 真的會拒絕
+                                                   6000 埠——哪天不拒絕了，這條會紅並說明，
+                                                   helper 跟守門就都可以刪。
+```
+
+改用共用 helper（12 支，每支寫法都不同，一支一支改）：
+```
+tests/team-overview-last-active.test.js         — 實際紅掉的那一支
+tests/changelog-feed.test.js                    — Promise 包住的 listen
+tests/dashboard-version-source.test.js          — 同上
+tests/debug-route-beacon-version.test.js        — 埠號寄放在 app._server
+tests/upgrade-complete-beacon.test.js           — 同上
+tests/bootstrap-routes.test.js                  — createServer + listenApp
+tests/spa-deep-link-base.test.js                — 同上
+tests/heartbeat-per-machine.test.js             — 每次請求開一台
+tests/install-started-beacon.test.js            — 在 before 開
+tests/install-check-null-byte-sanitize.test.js  — 在 beforeEach 開
+tests/bare-mount-trailing-slash.test.js         — 整個請求寫在 listen 回呼裡。
+                                                   rawRequestLocation 的原始 listen(0) 保留：
+                                                   那是直接往 socket 寫手工請求，
+                                                   封鎖清單是 fetch 才有的規則。
+tests/legacy-console-manifest.test.js           — 同上（回呼裡發請求）
+```
+
 ## v1.26.157 修改（那張認得哪些字的表，從來沒人在寫入時查過）
 
 新增：
