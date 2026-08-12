@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execBashScript, toBashPath as bp } from './helpers/bash-script.js';
 import { fileURLToPath } from 'node:url';
 import { resolveProjectName } from '../shared/helpers.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.98 — the "most common project" column was blank because nothing sent a project.
@@ -60,7 +61,7 @@ describe('v1.26.98 — resolveProjectName', () => {
 describe('v1.26.98 — the shell hook puts it on every event it writes', () => {
   /** Run the hook's log_event against a controlled HOME and read what it wrote. */
   function loggedDetails({ projectDir, useHomeAsProjectDir = false }) {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-proj-'));
+    const home = tempDir('ownmind-proj-');
     // The child runs with HOME pointing at this temp directory, so "the home directory" has
     // to mean that one — comparing against the real one would test nothing the code sees.
     if (useHomeAsProjectDir) projectDir = home;

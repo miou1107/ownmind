@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOOK = path.join(__dirname, '..', 'hooks', 'ownmind-git-commit-msg');
@@ -15,8 +16,8 @@ const HOOK = path.join(__dirname, '..', 'hooks', 'ownmind-git-commit-msg');
 // `commit_message_contains` rule of their own would turn "accepts plain commit message"
 // red for reasons unrelated to this code. What is under test here is the trailer guard.
 function runHook(message) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'om-hook-test-'));
-  const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'om-hook-home-'));
+  const tmpDir = tempDir('om-hook-test-');
+  const tmpHome = tempDir('om-hook-home-');
   const msgFile = path.join(tmpDir, 'COMMIT_EDITMSG');
   fs.writeFileSync(msgFile, message);
   try {

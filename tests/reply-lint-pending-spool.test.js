@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.17.97 — hook-side conditional spool: only write reply-lint-pending.jsonl
@@ -31,7 +32,7 @@ let archiveDir;
 let transcriptPath;
 
 function setupTmpHome() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-pending-spool-test-'));
+  tmpHome = tempDir('ownmind-pending-spool-test-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   archiveDir = path.join(tmpHome, '.ownmind', 'logs');
   pendingSpoolPath = path.join(archiveDir, 'reply-lint-pending.jsonl');

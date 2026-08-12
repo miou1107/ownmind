@@ -19,6 +19,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const selfCheck = require('../scripts/install-helpers/self-check.cjs');
@@ -30,7 +31,7 @@ const NOW = new Date('2026-08-11T09:00:00Z');
 const daysAgo = (n) => new Date(NOW.getTime() - n * 86_400_000).toISOString().slice(0, 10);
 
 beforeEach(async () => {
-  ROOT = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-roundtrip-'));
+  ROOT = await tempDir('ownmind-roundtrip-');
   marker = path.join(ROOT, '.last-usage-roundtrip');
 });
 afterEach(async () => {

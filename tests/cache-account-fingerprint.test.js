@@ -28,11 +28,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { accountFingerprint } from '../shared/scanners/base.js';
 import { readCache, writeCache, shouldRefreshCache } from '../hooks/lib/conditional-sync.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const ACC_A = { apiUrl: 'https://kkvin.com/ownmind', apiKey: 'a'.repeat(36) };
 const ACC_B = { apiUrl: 'https://kkvin.com/ownmind', apiKey: 'b'.repeat(36) };
 
-const tmpCache = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cache-')), 'memories.json');
+const tmpCache = () => path.join(tempDir('ownmind-cache-'), 'memories.json');
 
 describe('the memory cache records which account it belongs to', () => {
   it('writes the fingerprint alongside the payload', () => {

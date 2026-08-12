@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(repoRoot, 'hooks/ownmind-git-post-commit.js');
@@ -20,7 +21,7 @@ const HOOK = path.join(repoRoot, 'hooks/ownmind-git-post-commit.js');
 // The hook only reaches the version check after the iron-rule pass, which needs a
 // cached commit-triggered rule and the validator engine under $HOME/.ownmind.
 function makeHome() {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-postcommit-home-'));
+  const home = tempDir('ownmind-postcommit-home-');
   const own = path.join(home, '.ownmind');
   fs.mkdirSync(path.join(own, 'cache'), { recursive: true });
   fs.mkdirSync(path.join(own, 'shared'), { recursive: true });
@@ -33,7 +34,7 @@ function makeHome() {
 }
 
 function makeRepo({ packageJson } = {}) {
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-postcommit-repo-'));
+  const repo = tempDir('ownmind-postcommit-repo-');
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
   git('init', '-q');
   git('config', 'user.email', 'test@example.com');

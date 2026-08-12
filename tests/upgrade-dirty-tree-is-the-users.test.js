@@ -26,6 +26,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { assertExecutable } from './helpers/executable-bit.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -122,7 +123,7 @@ describe('the dirty decision, run as the script runs it', () => {
   };
 
   const seedRepo = async () => {
-    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-dirty-'));
+    const dir = await tempDir('ownmind-dirty-');
     // -c core.hooksPath=: install.sh sets a *global* core.hooksPath, so a plain commit in a
     // throwaway repo runs OwnMind's own pre-commit and commit-msg hooks — which shell out to
     // node and can reject it. The rest of the suite guards the same way

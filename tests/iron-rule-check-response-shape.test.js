@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { fetchHookContext } from '../hooks/lib/hook-context-fetch.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * The API wraps its responses as { data: [...] }. Three hooks read that endpoint:
@@ -115,7 +116,7 @@ describe('the JS hook path keeps its v1.19.20 fix', () => {
   it('records the fallback, as the shell copy does', async () => {
     // Without this the record depended on which hook copy a platform installs, so "no
     // fallback events" would mean "the server is fine" on Linux and nothing on Windows.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-fallback-log-'));
+    const home = tempDir('ownmind-fallback-log-');
     const realHome = process.env.HOME;
     const realProfile = process.env.USERPROFILE;
     process.env.HOME = home;

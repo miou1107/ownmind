@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
@@ -30,7 +31,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
  * @returns {string} the staged home; pass it as HOME **and** USERPROFILE, and rm it after
  */
 export function stageHookHome({ apiUrl, apiKey = 'test-key', version = '99.99.99' }) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-hook-home-'));
+  const home = tempDir('ownmind-hook-home-');
 
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(

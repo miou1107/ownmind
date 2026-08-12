@@ -26,6 +26,7 @@ import {
   hintsFromStandards,
 } from '../shared/invocable-standards.js';
 import { TIPS, getRandomTip } from '../shared/tips.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
@@ -322,7 +323,7 @@ describe('wiring — the three places the list has to travel through', () => {
     const { makeOfflineHelpers } = await import('../mcp/offline.js');
     const { accountFingerprint } = await import('../shared/scanners/base.js');
 
-    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ownmind-hookcache-'));
+    const dir = await tempDir('ownmind-hookcache-');
     const hookCache = path.join(dir, 'memories.json');
     const account = { apiUrl: 'https://example.test', apiKey: 'k-1' };
     const helpers = makeOfflineHelpers(path.join(dir, 'mcp.json'), path.join(dir, 'q.jsonl'), hookCache);

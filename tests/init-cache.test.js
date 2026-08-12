@@ -40,6 +40,7 @@ import {
   OFFLINE_CACHE_FIELDS,
 } from '../shared/init-cache.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -268,7 +269,7 @@ const MCP_RUNNABLE = (() => {
 
 describe('end to end: one init against a compact server must not empty the cache', () => {
   it('leaves the cached rule in cache/iron_rules.json', { skip: MCP_RUNNABLE }, async () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-init-'));
+    const home = tempDir('ownmind-init-');
     const cachePath = path.join(home, '.ownmind', 'cache', 'iron_rules.json');
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });
     // The state the measured machine was in: a correct cache, written by the pre-commit hook.

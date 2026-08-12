@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 
 import { readCache, holdsInitPayload } from '../hooks/lib/conditional-sync.js';
 import { accountFingerprint } from '../shared/scanners/base.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const code = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8')
@@ -137,7 +138,7 @@ describe('readCache refuses a foreign payload even when everything else matches'
   };
 
   it('the type-keyed cache is treated as absent', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cachefile-'));
+    const dir = tempDir('ownmind-cachefile-');
     try {
       // Account stamp correct, token present, saved_at fresh — the only thing wrong is the
       // shape, which is exactly the state the measured machine was in.

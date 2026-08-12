@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,7 +97,7 @@ describe('v1.17.85 — interactive-upgrade.ps1 Fail observation (runs wherever a
   let thrownFile;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-ps1-fail-'));
+    tmpDir = tempDir('ownmind-ps1-fail-');
     recordFile = path.join(tmpDir, 'report-error-calls.txt');
     thrownFile = path.join(tmpDir, 'thrown.txt');
   });

@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.17.71 — hooks/ownmind-tty-echo.cjs (OwnMind presence indicator / IR-027 program-logic gate)
@@ -40,7 +41,7 @@ function runHook(input, env = {}) {
 }
 
 function setupTmpHome() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-tty-test-'));
+  tmpHome = tempDir('ownmind-tty-test-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
 }

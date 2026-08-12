@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { toBashPath } from './helpers/bash-script.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const testsDir = path.join(repoRoot, 'tests');
@@ -90,7 +91,7 @@ describe('v1.26.109 — bash -c loses backslashes on Windows', () => {
     const sed = "sed 's/\\\\/\\\\\\\\/g; s/\"/\\\\\"/g'";
     const script = `printf '%s' 'pull' | ${sed}\n`;
 
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-bashc-'));
+    const dir = tempDir('ownmind-bashc-');
     try {
       const file = path.join(dir, 's.sh');
       fs.writeFileSync(file, script);

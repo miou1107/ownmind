@@ -27,6 +27,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(
   import.meta.dirname || path.dirname(new URL(import.meta.url).pathname),
@@ -124,8 +125,8 @@ function runHook(env = {}) {
 }
 
 beforeEach(() => {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-baseline-home-'));
-  tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-baseline-repo-'));
+  tmpHome = tempDir('ownmind-baseline-home-');
+  tmpRepo = tempDir('ownmind-baseline-repo-');
 
   // The rule-driven path dynamic-imports these out of ~/.ownmind/shared. Copying them keeps
   // the secret-guard case below on the real code path rather than a degraded one.

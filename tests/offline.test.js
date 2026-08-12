@@ -11,6 +11,7 @@ const QUEUE_PATH = path.join(TEST_DIR, 'queue.jsonl');
 
 // Let offline.js accept custom paths
 import { makeOfflineHelpers } from '../mcp/offline.js';
+import { tempDir } from './helpers/temp-dir.js';
 const { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, clearQueue } = makeOfflineHelpers(CACHE_PATH, QUEUE_PATH);
 
 before(() => fs.mkdirSync(path.join(TEST_DIR, 'cache'), { recursive: true }));
@@ -163,7 +164,7 @@ describe('replayQueue', () => {
   let tmpDir;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-replay-'));
+    tmpDir = tempDir('ownmind-replay-');
     helpers = makeOfflineHelpers(
       path.join(tmpDir, 'memories.json'),
       path.join(tmpDir, 'queue.jsonl')

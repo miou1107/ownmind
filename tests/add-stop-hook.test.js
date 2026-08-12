@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const helper = require('../scripts/install-helpers/add-stop-hook.cjs');
@@ -13,7 +14,7 @@ let settingsPath;
 const OWNMIND_DIR = '/Users/test/.ownmind';
 
 function setup() {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-stop-hook-install-'));
+  tmpDir = tempDir('ownmind-stop-hook-install-');
   settingsPath = path.join(tmpDir, 'settings.json');
 }
 function cleanup() {

@@ -12,6 +12,7 @@ import {
   writeCache,
   runConditionalSync,
 } from '../hooks/lib/conditional-sync.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.18.0 — conditional-sync tests (spec.md §4.2 + §4.5)
@@ -34,7 +35,7 @@ let tmpHome;
 let cachePath;
 
 function setup() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cond-sync-test-'));
+  tmpHome = tempDir('ownmind-cond-sync-test-');
   cachePath = path.join(tmpHome, 'cache', 'memories.json');
 }
 function cleanup() {

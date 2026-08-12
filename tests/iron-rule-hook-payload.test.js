@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { stageHookHome } from './helpers/hook-home.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.90 — the PreToolUse iron-rule hook never saw the command.
@@ -96,7 +97,7 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
         },
       }], null, 2)
     );
-    otherRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-otherrepo-'));
+    otherRepo = tempDir('ownmind-otherrepo-');
     for (const args of [
       ['init', '-q'],
       ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'],

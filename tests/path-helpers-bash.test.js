@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -82,7 +83,7 @@ describe('v1.26.7 — to_win_path: with simulated cygpath (Git Bash on Windows)'
   let fakeCygpath;
 
   function setup() {
-    tmpBin = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cygpath-stub-'));
+    tmpBin = tempDir('ownmind-cygpath-stub-');
     fakeCygpath = path.join(tmpBin, 'cygpath');
     // Stub cygpath: implements the -m (mixed) conversion just enough to fake Git Bash.
     fs.writeFileSync(fakeCygpath, `#!/usr/bin/env bash
@@ -162,7 +163,7 @@ describe('v1.26.7 — verify-upgrade.sh:49 regression (the actual bug)', () => {
 
   function setup() {
     // Stub cygpath again (same as above).
-    tmpBin = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cygpath-stub-'));
+    tmpBin = tempDir('ownmind-cygpath-stub-');
     fakeCygpath = path.join(tmpBin, 'cygpath');
     fs.writeFileSync(fakeCygpath, `#!/usr/bin/env bash
 mode="$1"; input="$2"
@@ -177,7 +178,7 @@ fi
     fs.chmodSync(fakeCygpath, 0o755);
 
     // Build a fake ~/.ownmind with a package.json that node can read directly.
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-home-'));
+    tmpHome = tempDir('ownmind-home-');
     fs.mkdirSync(path.join(tmpHome, '.ownmind'), { recursive: true });
     fs.writeFileSync(
       path.join(tmpHome, '.ownmind', 'package.json'),

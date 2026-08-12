@@ -40,6 +40,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
@@ -59,7 +60,7 @@ const LABEL = 'com.ownmind.usage-scanner';
 let sandbox;
 
 function makeSandbox() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-sched-'));
+  const root = tempDir('ownmind-sched-');
   // A deliberately hostile home directory. `&` is the one that matters: in sed's
   // replacement text it means "everything that matched", so an unescaped substitution
   // writes the literal `{HOME}` back into the plist and produces a file launchd cannot

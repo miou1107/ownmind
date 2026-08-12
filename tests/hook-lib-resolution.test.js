@@ -23,6 +23,7 @@ import { readFileSync, readdirSync, mkdtempSync, mkdirSync, copyFileSync, rmSync
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const hookPath = join(repoRoot, 'hooks', 'ownmind-session-start.sh');
@@ -63,7 +64,7 @@ describe('the failure mode this guards is real', () => {
     // Reproduces `~/.claude/hooks/lib` exactly: the modules, none of their siblings. If this
     // ever stops failing, the fallback branch of LIB_DIR became safe and this whole file can
     // be reconsidered — but until then, the fallback is a degraded mode, not an equal one.
-    const sandbox = mkdtempSync(join(tmpdir(), 'om-libres-'));
+    const sandbox = tempDir('om-libres-');
     try {
       const libDir = join(sandbox, 'hooks', 'lib');
       mkdirSync(libDir, { recursive: true });

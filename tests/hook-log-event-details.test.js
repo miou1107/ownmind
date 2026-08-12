@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execBashScript, toBashPath, bashPathList } from './helpers/bash-script.js';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.95 — every field the shell hooks logged was thrown away on arrival.
@@ -56,7 +57,7 @@ function callLogEvent(hookRelPath, args) {
   // `for … done` or heredoc truncates into a clear message rather than a bash syntax error.
   assert.match(fn, /local entry=/, `${hookRelPath}: log_event extraction was truncated`);
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-logev-'));
+  const dir = tempDir('ownmind-logev-');
   try {
     const script = [
       `LOG_DIR=${JSON.stringify(toBashPath(dir))}`,
@@ -88,7 +89,7 @@ function callLogEventWithUpload(hookRelPath, args) {
   const end = src.indexOf('\n}\n', start);
   const fn = src.slice(start, end + 3);
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-logup-'));
+  const dir = tempDir('ownmind-logup-');
   try {
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin);

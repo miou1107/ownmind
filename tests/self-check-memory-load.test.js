@@ -30,6 +30,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { createSelfCheckRouter } from '../src/routes/usage/self-check.js';
 import { startServer } from './helpers/app-server.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(import.meta.url);
@@ -125,7 +126,7 @@ describe('checkMemoryLoad — verdict from the server, evidence from the machine
 
   const serverSays = (memory_load) => async () => ({ memory_load });
   const settings = (command) => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-sc-'));
+    const dir = tempDir('ownmind-sc-');
     const p = path.join(dir, 'settings.json');
     fs.writeFileSync(p, JSON.stringify({
       hooks: { SessionStart: [{ matcher: 'startup', hooks: [{ type: 'command', command }] }] },
@@ -179,7 +180,7 @@ describe('checkMemoryLoad — verdict from the server, evidence from the machine
   });
 
   it('records a missing SessionStart entry as its own finding', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-sc-'));
+    const dir = tempDir('ownmind-sc-');
     const p = path.join(dir, 'settings.json');
     fs.writeFileSync(p, JSON.stringify({ hooks: {} }));
     const r = await checkMemoryLoad({
@@ -268,7 +269,7 @@ describe('the auto-update path runs the self-check too', () => {
       // auto-update path, so for anyone who does not re-run the installer by hand it is
       // the only pass, and "not daily" meant "not ever". The daily cost still must not
       // come back; the check must still happen sometimes. Both are asserted now.
-      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-quickset-'));
+      const dir = tempDir('ownmind-quickset-');
       try {
         const marker = path.join(dir, '.last-usage-roundtrip');
         fs.writeFileSync(marker, new Date().toISOString().slice(0, 10));

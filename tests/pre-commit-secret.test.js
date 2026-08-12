@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(
   import.meta.dirname || path.dirname(new URL(import.meta.url).pathname),
@@ -42,8 +43,8 @@ const IR_002_RULE = {
 };
 
 function setupSandbox() {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-pc-home-'));
-  tmpRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-pc-repo-'));
+  tmpHome = tempDir('ownmind-pc-home-');
+  tmpRepo = tempDir('ownmind-pc-repo-');
 
   // 1. Fake cache.
   const cacheDir = path.join(tmpHome, '.ownmind', 'cache');

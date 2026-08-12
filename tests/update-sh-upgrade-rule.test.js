@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -39,7 +40,7 @@ function extractBlock() {
 }
 
 function runBlock({ tools = [], snippet = 'RULE BODY', breakNode = false } = {}) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-sh-'));
+  const home = tempDir('ownmind-sh-');
   const ownmind = path.join(home, '.ownmind');
   fs.mkdirSync(path.join(ownmind, 'skills'), { recursive: true });
   fs.mkdirSync(path.join(ownmind, 'logs'), { recursive: true });

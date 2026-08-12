@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,7 +31,7 @@ describe('v1.17.85 — interactive-upgrade.sh writes errors/ observability when 
   let errorsDir;
 
   beforeEach(() => {
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-fail-beacon-'));
+    tmpHome = tempDir('ownmind-fail-beacon-');
     // Mirror report-error helper + report-error.sh into tmpHome to simulate the user's .ownmind.
     const ownmindDir = path.join(tmpHome, '.ownmind');
     fs.mkdirSync(path.join(ownmindDir, 'scripts', 'install-helpers'), { recursive: true });

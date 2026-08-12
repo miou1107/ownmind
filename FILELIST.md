@@ -1,5 +1,38 @@
 # OwnMind 檔案結構
 
+## v1.26.159 修改（5264 個沒人負責的資料夾）
+
+新增：
+```
+tests/helpers/temp-dir.js                       — 借出暫存目錄的唯一窗口。tempDir(前綴)
+                                                   借出，並在借它的那支檔案跑完時收回去。
+                                                   收不掉（Windows 上被子行程鎖住）會寫到
+                                                   stderr 但不會讓整套變紅——安靜失敗等於
+                                                   把問題原封不動放回去。
+                                                   刻意支援 await：原本的呼叫端有同步也有
+                                                   非同步，await 一個字串就是那個字串，
+                                                   所以非同步那些不用改寫成別的形狀。
+
+tests/no-unregistered-temp-dir.test.js          — 守門測試。tests/ 底下任何檔案自己去要
+                                                   暫存目錄就紅，並指名是哪一支。
+                                                   另外驗自己兩件事：比對規則還認得出它
+                                                   禁止的寫法（不然哪天改壞了會因為什麼都
+                                                   沒比到而變綠）；以及那條唯一許可的路
+                                                   真的會收乾淨——另開行程、把暫存位置指到
+                                                   空資料夾，先確認那個行程真的有跑，
+                                                   再看資料夾裡還剩什麼。
+```
+
+改用共用工具（80 支檔案、106 個地方，機械式替換）：
+```
+fs.mkdtempSync(path.join(os.tmpdir(), 'x-'))  →  tempDir('x-')
+```
+本來就有自己收尾的檔案保留原本的收尾（同一個目錄刪兩次不算錯）。
+漏最兇的十支：ensure-key-file、ensure-session-hook、resolve-credentials、
+installer-key-update、self-check-memory-load、cache-account-fingerprint、
+post-commit-version-reminder、update-sh-upgrade-rule、node-hook-reports-init、
+mcp-start-cmd。
+
 ## v1.26.158 修改（藥早就配好了，只發給一半的人）
 
 新增：

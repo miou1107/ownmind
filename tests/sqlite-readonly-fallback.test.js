@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 import fsp from 'fs/promises';
 import nodePath from 'path';
 import nodeOs from 'os';
+import { tempDir } from './helpers/temp-dir.js';
 const { defaultRunSqlite } = await import('../shared/scanners/vscode-telemetry.js');
 
 /** The copy is passed as a plain path, so this is identity; kept for readability. */
@@ -43,7 +44,7 @@ function cliMissing() {
 
 let ROOT;
 before(async () => {
-  ROOT = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'ownmind-sqlite-fb-'));
+  ROOT = await tempDir('ownmind-sqlite-fb-');
 });
 after(async () => {
   await fsp.rm(ROOT, { recursive: true, force: true });
@@ -322,7 +323,7 @@ describe('the real sqlite3 CLI, on this machine', () => {
       t.skip('no Cursor database on this machine');
       return;
     }
-    const isolated = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'ownmind-real-'));
+    const isolated = await tempDir('ownmind-real-');
     const copy = nodePath.join(isolated, 'state.vscdb');
     // Deliberately without sidecars: this is the state the scheduled scan finds when
     // the editor is closed, and the exact case that used to come back empty.

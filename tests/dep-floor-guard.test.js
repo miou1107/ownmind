@@ -13,6 +13,7 @@ import {
   satisfiesFloor,
   readInstalledVersion,
 } from '../scripts/install-helpers/dep-floor.mjs';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(__dirname, '..');
@@ -97,7 +98,7 @@ test('satisfiesFloor fails safe on unreadable input', () => {
 // ---------------------------------------------------------------------------
 
 function withFakeInstall(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'ownmind-dep-floor-'));
+  const dir = tempDir('ownmind-dep-floor-');
   try {
     return fn(dir);
   } finally {

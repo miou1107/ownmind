@@ -26,6 +26,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(import.meta.url);
@@ -36,7 +37,7 @@ const URL_ = 'https://kkvin.com/ownmind';
 
 /** A throwaway HOME with only the files a case needs. */
 function homeWith(files) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-creds-'));
+  const home = tempDir('ownmind-creds-');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   for (const [rel, body] of Object.entries(files)) {
     fs.writeFileSync(path.join(home, rel), JSON.stringify(body, null, 2));

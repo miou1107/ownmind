@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,7 +102,7 @@ describe('mcp/start.cmd — real cmd.exe parse', { skip: os.platform() !== 'win3
     assert.ok(launchIdx >= 0, 'launch line not found');
     lines[launchIdx] = 'echo __PARSE_OK__';
 
-    const probe = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-cmd-')), 'probe.cmd');
+    const probe = path.join(tempDir('ownmind-cmd-'), 'probe.cmd');
     fs.writeFileSync(probe, lines.join('\r\n'), 'ascii');
 
     let out = '';

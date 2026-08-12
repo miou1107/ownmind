@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 
 const require = createRequire(import.meta.url);
 const helper = require('../scripts/install-helpers/ensure-pretooluse-hooks.cjs');
@@ -19,7 +20,7 @@ let tmpDir;
 let settingsPath;
 
 function setup() {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-pretooluse-'));
+  tmpDir = tempDir('ownmind-pretooluse-');
   settingsPath = path.join(tmpDir, 'settings.json');
 }
 function cleanup() {
@@ -175,7 +176,7 @@ describe('v1.26.105 — install-artifacts checks the registered command, not jus
   let ownmindDir;
 
   function makeHome(command) {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-artifacts-'));
+    home = tempDir('ownmind-artifacts-');
     ownmindDir = path.join(home, '.ownmind');
     // A copy under ~/.claude/hooks — this is what the old check looked at, and it was there
     // the whole time the hook was dead.

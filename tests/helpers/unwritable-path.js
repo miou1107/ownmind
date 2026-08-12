@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { tempDir } from './temp-dir.js';
 
 /**
  * A path that cannot be written on any platform.
@@ -21,7 +22,7 @@ import path from 'node:path';
  * real disk.
  */
 export function makeUnwritablePath(leaf = 'x.json') {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-unwritable-'));
+  const dir = tempDir('ownmind-unwritable-');
   const blocker = path.join(dir, 'blocker');
   fs.writeFileSync(blocker, 'a file, standing where a directory would have to be\n');
   return {

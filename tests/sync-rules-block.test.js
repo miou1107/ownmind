@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const script = path.join(repoRoot, 'scripts/install-helpers/sync-rules-block.cjs');
@@ -66,7 +67,7 @@ after(() => {
 });
 
 function fixture(contents) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-block-'));
+  const dir = tempDir('ownmind-block-');
   fixtureDirs.push(dir);
   const target = path.join(dir, 'CLAUDE.md');
   const snippet = path.join(dir, 'block.md');

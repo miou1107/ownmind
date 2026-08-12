@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
@@ -113,7 +114,7 @@ describe('the scanner must not exit 0 when it did nothing', () => {
   it('exits non-zero when it cannot find credentials', async () => {
     const { spawnSync } = await import('node:child_process');
     const os = await import('node:os');
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-scanner-'));
+    const home = tempDir('ownmind-scanner-');
 
     try {
       const run = spawnSync(process.execPath, ['hooks/ownmind-usage-scanner.js'], {

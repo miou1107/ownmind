@@ -23,6 +23,7 @@ import nodePath from 'path';
 import nodeOs from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { tempDir } from './helpers/temp-dir.js';
 
 const execFileP = promisify(execFile);
 
@@ -45,7 +46,7 @@ function cantOpen() {
 
 let ROOT;
 before(async () => {
-  ROOT = await fsp.mkdtemp(nodePath.join(nodeOs.tmpdir(), 'ownmind-oc-closed-'));
+  ROOT = await tempDir('ownmind-oc-closed-');
 });
 after(async () => {
   await fsp.rm(ROOT, { recursive: true, force: true });

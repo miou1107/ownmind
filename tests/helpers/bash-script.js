@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { tempDir } from './temp-dir.js';
 
 /**
  * Run a generated shell script through a file rather than `bash -c <string>`.
@@ -86,7 +87,7 @@ export function bashPathList(...entries) {
 
 /** Write `script` into its own temp directory. The caller owns `cleanup`. */
 export function makeBashScript(script, prefix = 'ownmind-bash-') {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const dir = tempDir(prefix);
   const file = path.join(dir, 'script.sh');
   // LF regardless of host: bash rejects a `\r` at the end of a line, and on Windows a
   // JS template literal that a linter has touched can carry CRLF.

@@ -34,6 +34,7 @@ import {
   renderPendingBanners,
   PENDING_BANNER_HEADER,
 } from '../hooks/lib/pending-banners.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
@@ -145,7 +146,7 @@ describe('the SessionStart hook shows the spool before clearing it', () => {
   it('end to end: the queued block reaches stderr and the spool is emptied', () => {
     // The regression test proper. A throwaway HOME with one queued banner and no reachable
     // server: drainSpools runs before the network call, so the hook flushes and then exits.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-banner-'));
+    const home = tempDir('ownmind-banner-');
     try {
       const logs = path.join(home, '.ownmind', 'logs');
       fs.mkdirSync(logs, { recursive: true });
@@ -180,7 +181,7 @@ describe('the SessionStart hook shows the spool before clearing it', () => {
   it('end to end: a shown block is cleared while the broken line beside it survives', () => {
     // The mixed case. Emptying the file would show the readable record and destroy the
     // malformed one in the same stroke, which is the behaviour this release is about.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-banner-mixed-'));
+    const home = tempDir('ownmind-banner-mixed-');
     try {
       const logs = path.join(home, '.ownmind', 'logs');
       fs.mkdirSync(logs, { recursive: true });
@@ -211,7 +212,7 @@ describe('the SessionStart hook shows the spool before clearing it', () => {
 
   it('end to end: a spool nothing can be read from is parked, not deleted', () => {
     // IR-003. Whatever is malformed in there is the only evidence of how it got that way.
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-banner-bad-'));
+    const home = tempDir('ownmind-banner-bad-');
     try {
       const logs = path.join(home, '.ownmind', 'logs');
       fs.mkdirSync(logs, { recursive: true });

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { tempDir } from './helpers/temp-dir.js';
 
 /**
  * v1.26.98 — review findings on the rollback-honesty change.
@@ -23,7 +24,7 @@ const reportPs1 = path.join(repoRoot, 'scripts', 'install-helpers', 'report-erro
 const reportCjs = path.join(repoRoot, 'scripts', 'install-helpers', 'report-error.cjs');
 
 function tmpdir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-rollback-'));
+  return tempDir('ownmind-rollback-');
 }
 
 function shellFunction(file, name) {
