@@ -29,13 +29,22 @@
  * It also keeps the small numbers visible. Iron rules run to 70+ on a real account and team
  * standards to single digits, so ordering by count — or by anything correlated with it —
  * hides exactly the row the user is least free to ignore.
+ *
+ * Labels are English on purpose, and the rendered line carries an instruction to translate
+ * them. That is the route already used for the startup tip (hooks/lib/render-session-context.js
+ * — "translate it if you are speaking another language"): the source text is written once, in
+ * English, and the model renders it in whatever language it is speaking to this user. Hard-coding
+ * Chinese here would have shipped one language and called it done.
+ *
+ * v1.26.151 did hard-code Chinese, on a misreading of the issue that asked for this. v1.26.152
+ * is the correction.
  */
 export const HOOK_CONTEXT_TYPES = [
-  { type: 'team_standard', label: '團隊規範' },
-  { type: 'iron_rule', label: '鐵律' },
-  { type: 'coding_standard', label: '程式規範' },
-  { type: 'principle', label: '工作原則' },
-  { type: 'profile', label: '個人偏好' },
+  { type: 'team_standard', label: 'Team standards' },
+  { type: 'iron_rule', label: 'Iron rules' },
+  { type: 'coding_standard', label: 'Coding standards' },
+  { type: 'principle', label: 'Working principles' },
+  { type: 'profile', label: 'Preferences' },
 ];
 
 /**
@@ -79,12 +88,12 @@ export function tallyHookContext(rows, trigger, matches) {
  * being the thing shown.
  */
 export const TRIGGER_LABELS = {
-  edit: '檔案編輯',
-  commit: '提交',
-  deploy: '部署',
-  delete: '刪除',
-  install: '安裝／金鑰',
-  command: '執行指令',
+  edit: 'File edit',
+  commit: 'Commit',
+  deploy: 'Deploy',
+  delete: 'Delete',
+  install: 'Install / credentials',
+  command: 'Command',
 };
 
 /** The label to show for a trigger, falling back to the raw name for one we do not know. */
@@ -118,7 +127,16 @@ export function renderHookContextLine({ version, trigger, counts, withHowTo = fa
   // where only 2 of 14 profile entries carry a trigger tag, that row reads 0 and is telling
   // the truth about the tagging, not hiding a fetch that did not happen.
   const parts = HOOK_CONTEXT_TYPES.map(({ type, label }) => `${label} ${counts?.[type] || 0}`);
-  const line = `【OwnMind v${version}】${triggerLabel(trigger)} · ${parts.join('、')}`;
-  if (!withHowTo) return line;
-  return `${line}\n想看內容 → 跟我說「列出這次的團隊規範」，或用 ownmind_get("team_standard")`;
+  const line = `[OwnMind v${version}] ${triggerLabel(trigger)} · ${parts.join(', ')}`;
+
+  // The instruction that makes the English above reach the user in their own language. Same
+  // shape as the startup tip's: say what to relay, and name what must survive the translation.
+  // Without it the model either drops the line or paraphrases the numbers away, and the
+  // numbers are the entire point — they are what separates "looked, found none" from
+  // "never asked".
+  const relay = 'Relay the line above to the user, translated into the language you are '
+    + 'speaking with them. Keep the counts and the version tag exactly as written.';
+  const howTo = ' To show the contents of a category, read it with ownmind_get — e.g. '
+    + 'ownmind_get("team_standard") — and tell them they can simply ask for it by name.';
+  return `${line}\n${relay}${withHowTo ? howTo : ''}`;
 }

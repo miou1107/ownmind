@@ -1,5 +1,24 @@
 # OwnMind 檔案結構
 
+## v1.26.152 修改（那行字被寫死成中文 — issue #94 更正）
+
+修改：
+```
+shared/hook-context.js                          — HOOK_CONTEXT_TYPES 與 TRIGGER_LABELS
+                                                   改回英文原稿；renderHookContextLine
+                                                   多帶一句轉述指示（要翻譯、但條數與版本號
+                                                   照抄）。檔頭記下這條路線的出處：
+                                                   render-session-context.js:164 的啟動提示
+                                                   早就這樣做了。
+hooks/ownmind-render-context.js                 — 新路徑不再多印一次「鐵律 N 條」標題
+                                                   （上面那行已經有 Iron rules N）。
+                                                   退回舊端點時印的中文原封不動 ——
+                                                   那是使用者一直看到的東西。
+tests/hook-context-five-categories.test.js      — 斷言改英文；新增「標籤裡不准有中日韓字」
+                                                   與「必須叫模型翻譯、且指名數字要照抄」
+package.json                                    — 1.26.151 → 1.26.152
+```
+
 ## v1.26.151 修改（提醒只講鐵律，五類記憶只撈了一類 — issue #94）
 
 新檔：

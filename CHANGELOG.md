@@ -1,5 +1,40 @@
 # OwnMind 更新紀錄
 
+## v1.26.152 — 那行字被我寫死成中文了（issue #94 的更正）
+
+v1.26.151 把五個類別的顯示名稱直接寫成中文字串。issue #94 明確要求的不是這樣：
+
+> 類別的顯示名稱要走 #91 講的 i18n 路線（**英文原稿 + AI 轉述**），不要硬寫中文。
+
+我當時只看到「走 #91 講的路線」，去翻 #91 發現它已關閉、內容是別的事，就判定「沒有路線可循」
+而擱置。**路線就寫在同一句話的括號裡**，是我讀漏了。
+
+而且這條路線在這個專案裡早就有現成的：`hooks/lib/render-session-context.js:164`，
+啟動提示就是這樣做的 —— 原稿用英文寫一次，附一句「你在講別的語言的話請翻譯」。
+
+### 改了什麼
+
+類別與操作名稱改回英文原稿：
+
+```
+[OwnMind v1.26.152] Deploy · Team standards 7, Iron rules 71, Coding standards 3, Working principles 2, Preferences 0
+Relay the line above to the user, translated into the language you are speaking with them.
+Keep the counts and the version tag exactly as written.
+```
+
+第二行就是那句轉述指示。**「條數和版本號要照抄」必須明講** —— 不講的話模型會把數字順手改寫掉，
+而數字是這整件事的重點：它就是用來分辨「查了沒中」和「根本沒問」的。
+
+`tests/hook-context-five-categories.test.js` 新增一條測試，掃過所有標籤、看到中日韓字就紅。
+
+### 沒改的
+
+**退回舊伺服器時印的那段中文原封不動。** 那是使用者一直看到的東西，把它也翻掉等於在
+降級路徑上多生出第三種樣子。英文原稿這條路線是給新的那行字用的。
+
+順帶簡化：新路徑的鐵律清單上面不再多印一次「鐵律 N 條」的標題 ——
+上面那行已經寫了 `Iron rules 71`，同一句話講兩次。
+
 ## v1.26.151 — 提醒那行字只講鐵律，五類記憶只撈了一類（issue #94）
 
 執行危險操作前那行提醒，本來要同時回答三件事：
