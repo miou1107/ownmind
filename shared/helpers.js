@@ -187,7 +187,29 @@ export function detectCommandTrigger(command) {
   // not. Squaring the two could have gone either way; it went this way because a Swarm deploy
   // is a deploy, and the alternative was to stop recognising it on the platforms that did.
   if (/\b(docker\s+compose\s+(up|build|push)|docker\s+stack\s+deploy|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
+  // v1.26.155 — a release publishes a build, so it belongs with the deploys rather than with
+  // the outward sends below, where the rest of the `gh` verbs go.
+  if (/\bgh\s+release\s+(create|edit|upload)\b/i.test(command)) return 'deploy';
   if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(command)) return 'delete';
+  // v1.26.155 — publishing something where other people will read it.
+  //
+  // The team standard for this ("run an independent review before anything goes out") was
+  // tagged `trigger:send` by its author and nothing has ever asked for that tag, so it has
+  // never fired. Measured 2026-08-12: `gh issue create`, `gh issue comment` and `gh pr create`
+  // all classified as nothing at all, and an issue was filed that afternoon without the
+  // standard appearing.
+  //
+  // Not folded into `deploy`, though that was the cheaper option. The label is shown to the
+  // user, and "This operation is a Deploy procedure" in front of a comment on an issue is the
+  // same defect as the `install` label that once appeared over a plain curl and had someone
+  // asking what was being installed. Different operation, different name.
+  //
+  // Narrow on purpose: creating or replying, not reading. `gh issue list` and `gh pr view`
+  // send nothing. `gh release create` is deliberately with the deploys above instead — it
+  // publishes a build, and calling that "outward send" would be the same mislabelling in the
+  // other direction.
+  if (/\bgh\s+(issue|pr)\s+(create|comment|edit|review|close|reopen)\b/i.test(command)
+    || /\bgit\s+send-email\b/i.test(command)) return 'send';
   // v1.26.132 — last, so no command that already had a trigger changes classification.
   //
   // Install and credential work had no trigger at all, which meant the two rules written
@@ -273,7 +295,17 @@ export const TRIGGER_TAG_ALIASES = {
   // account this was measured against, the second most-used tag there.
   edit: ['edit', 'write', '編輯', '寫檔', '改檔', 'modify'],
   commit: ['commit', 'git', '提交', 'checkin'],
-  deploy: ['deploy', '部署', 'release', '發布', '上線', 'publish', 'upgrade', '升級'],
+  deploy: ['deploy', '部署', 'release', '發布', '發佈', '上線', 'publish', 'upgrade', '升級'],
+  // v1.26.155 — anything that goes where other people will read it: a report to a client, a
+  // reply on an issue, a public post.
+  //
+  // `publish` / `發布` / `發佈` are in this list AND in `deploy`, on purpose. The word does not
+  // decide which one is meant — 發布新版本 is a deploy and 發布一篇文章 is an outward send —
+  // and the author of a memory cannot know which bucket their tag will land in. Matching both
+  // costs one extra line on the operation it does not apply to; matching one costs a rule that
+  // stays silent on the operation it was written for. The standard this exists for gives the
+  // tiebreaker itself: what goes out cannot be taken back.
+  send: ['send', '送出', '對外', '外部', 'publish', '發布', '發佈'],
   delete: ['delete', '刪除', 'cleanup', '清理', 'rollback', '回滾', '還原', 'restore'],
   // v1.26.132: the vocabulary an author actually reaches for when filing a rule about
   // installing or rotating a key. `setup`, `config` and `api_key` are here because that is

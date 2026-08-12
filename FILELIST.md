@@ -1,5 +1,39 @@
 # OwnMind 檔案結構
 
+## v1.26.155 修改（有一條團隊規範從來沒有響過）
+
+修改：
+```
+shared/helpers.js                               — detectCommandTrigger 新增「對外送出」分支：
+                                                   gh issue|pr create|comment|edit|review|
+                                                   close|reopen 與 git send-email。
+                                                   gh release create|edit|upload 放在部署那組
+                                                   （它發布的是建置產物）。抓得窄：
+                                                   gh issue list / gh pr view 不中。
+                                                   TRIGGER_TAG_ALIASES 新增 send，
+                                                   publish / 發布 / 發佈 同時屬於 send 與
+                                                   deploy——「發布新版本」是部署、
+                                                   「發布一篇文章」是對外送出，字面分不出來，
+                                                   而寫記憶的人不會知道自己的標籤落在哪一邊。
+                                                   deploy 也補上缺的 發佈（正體字形）。
+
+shared/hook-context.js                          — TRIGGER_LABELS.send = 'Outward send'。
+                                                   不叫 Deploy 也不叫 Publish：那兩個都讀起來
+                                                   像在出軟體，而這個動作在你回一則 issue 留言
+                                                   時也會跳。
+
+tests/iron-rule-trigger-parity.test.js          — 兩份分類器共用的對照表新增四條會中的、
+                                                   兩條不該中的（gh issue list、gh pr view）、
+                                                   gh release create 歸部署、以及
+                                                   「gh pr create && git push」仍然是部署，
+                                                   確認既有分類沒有被新分支搶走。
+
+tests/iron-rule-trigger-aliases.test.js         — 新增「對外送出」一節：
+                                                   publish/發布/發佈 兩邊都中、
+                                                   部署專用字彙不會跟著過去、
+                                                   send 標籤不會在 commit 或改檔案時中。
+```
+
 ## v1.26.154 修改（那個數字沒有讓任何人去讀它）
 
 修改：
