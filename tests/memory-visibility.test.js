@@ -270,7 +270,7 @@ describe('creating or editing a shared type stays admin-only', () => {
   });
 
   it('disable gates every shared type', () => {
-    assert.match(routeSrc, /isSharedMemoryType\(check\.rows\[0\]\.type\)/);
+    assert.match(routeSrc, /isSharedMemoryType\(access\.memory\.type\)/);
   });
 
   it('no write handler still tests type equality against team_standard alone', () => {
@@ -282,12 +282,17 @@ describe('creating or editing a shared type stays admin-only', () => {
 describe('write routes stay owner-scoped', () => {
   const routeSrc = read('src/routes/memory.js');
 
-  it('update still matches on the caller user_id', () => {
+  // v1.26.147 (issue #85) moved the owner check out of the opening SELECT and into
+  // resolveWritableMemory, which lets an admin through on the two shared types and nothing
+  // else. What these two tests protect is the half that did not change: the write itself
+  // still names one owner's row. Reading is still never a licence to write — that is
+  // resolveWritableMemory's own suite, tests/team-standard-admin-write.test.js.
+  it('update writes to one owner’s row', () => {
     const body = handlerBody(routeSrc, "router.put('/:id'");
-    assert.match(body, /WHERE id = \$1 AND user_id = \$2/);
+    assert.match(body, /WHERE id = \$5 AND user_id = \$6/);
   });
 
-  it('disable still matches on the caller user_id', () => {
+  it('disable writes to one owner’s row', () => {
     assert.match(routeSrc, /SET status = 'disabled',[\s\S]{0,400}?WHERE id = \$2 AND user_id = \$3/);
   });
 
