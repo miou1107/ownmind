@@ -70,11 +70,29 @@ function readStore() {
 }
 
 /**
+ * The key one window is stored under.
+ *
+ * v1.26.154 — the trigger joins the session in the key, so commit, deploy, delete, install and
+ * edit each get their own hour. They have to: the listing names the memories that matched
+ * *this* operation, and the four that match a commit are not the four that match a deploy.
+ * Sharing one window meant seeing the commit list at 10:00 and being told, silently, that the
+ * deploy list at 10:20 had already been shown. It had not.
+ *
+ * Entries written before this release are keyed by the bare session id, so they no longer
+ * match and the first operation of each kind prints one extra listing. That is the safe
+ * direction, and `PRUNE_MS` clears them within a day.
+ */
+export function windowKey(sessionId, trigger) {
+  return `${sessionId || 'default'}::${trigger || 'edit'}`;
+}
+
+/**
  * @param {string} sessionId
+ * @param {string} [trigger]
  * @returns {{window_start_ms: number, occurrence: number, rule_count: number, window_ms?: number} | null}
  */
-export function readEditReminderState(sessionId) {
-  const entry = readStore()[sessionId || 'default'];
+export function readEditReminderState(sessionId, trigger) {
+  const entry = readStore()[windowKey(sessionId, trigger)];
   return isEntry(entry) ? entry : null;
 }
 
@@ -83,13 +101,13 @@ export function readEditReminderState(sessionId) {
  * @param {{window_start_ms: number, occurrence: number, rule_count: number, window_ms?: number}} entry
  * @returns {boolean} write success — callers must surface a failure rather than degrade quietly
  */
-export function writeEditReminderState(sessionId, entry) {
+export function writeEditReminderState(sessionId, trigger, entry) {
   try {
     const p = getStatePath();
     fs.mkdirSync(path.dirname(p), { recursive: true });
 
     const sessions = readStore();
-    sessions[sessionId || 'default'] = entry;
+    sessions[windowKey(sessionId, trigger)] = entry;
     for (const [id, e] of Object.entries(sessions)) {
       if (!isEntry(e) || (entry.window_start_ms - e.window_start_ms) > PRUNE_MS) delete sessions[id];
     }
@@ -140,6 +158,10 @@ export function decideEditReminder(state, nowMs) {
     // a state file written before v1.26.151 still reads, and the caller falls back to the
     // single-count line when it is absent.
     counts: state.counts,
+    // v1.26.154 — the denominators, carried for the same reason and on the same terms. The
+    // names deliberately do not ride along: they are what the window exists to withhold, and
+    // storing them would put the wall of text one bug away from coming back.
+    totals: state.totals,
   };
 }
 

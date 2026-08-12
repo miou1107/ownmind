@@ -11,6 +11,9 @@ import { TOOL_TRIGGERS, detectToolTrigger, ruleMatchesTrigger } from '../shared/
 import {
   decideEditReminder,
   renderEditReminderLine,
+  readEditReminderState,
+  writeEditReminderState,
+  windowKey,
   WINDOW_MS,
   FETCH_BACKOFF_MS,
 } from '../shared/edit-reminder-state.js';
@@ -38,9 +41,15 @@ const editPayload = (toolName = 'Edit', sessionId = 'session-A') => JSON.stringi
   tool_input: { file_path: '/tmp/x.js', old_string: 'a', new_string: 'b' },
 });
 
-/** Read one session's entry out of the store. */
-function entryFor(statePath, sessionId) {
-  return JSON.parse(fs.readFileSync(statePath, 'utf8')).sessions[sessionId];
+/**
+ * Read one window's entry out of the store.
+ *
+ * v1.26.154 — the key gained the trigger, so commit, deploy and edit each get their own hour.
+ * These tests are all on the edit path; `windowKey` is imported rather than spelled out here
+ * so a future change to the key shape breaks in one place instead of drifting.
+ */
+function entryFor(statePath, sessionId, trigger = 'edit') {
+  return JSON.parse(fs.readFileSync(statePath, 'utf8')).sessions[windowKey(sessionId, trigger)];
 }
 
 describe('v1.26.92 — the edit trigger, end to end through both hook copies', () => {
@@ -179,7 +188,7 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
     });
 
     it(`${hook}: once the hour is up, the full listing comes back`, async () => {
-      fs.writeFileSync(statePath, JSON.stringify({ sessions: { 'session-A': {
+      fs.writeFileSync(statePath, JSON.stringify({ sessions: { [windowKey('session-A', 'edit')]: {
         window_start_ms: Date.now() - (WINDOW_MS + 60_000),
         occurrence: 9,
         rule_count: 2,
@@ -316,6 +325,63 @@ describe('v1.26.92 — the throttle decision, without waiting an hour', () => {
   it('a clock that jumped backwards starts a new window rather than counting forever', () => {
     const state = { window_start_ms: 10_000, occurrence: 3, rule_count: 68 };
     assert.equal(decideEditReminder(state, 5_000).mode, 'full');
+  });
+});
+
+/**
+ * v1.26.154 — one window per trigger, not one per session.
+ *
+ * The listing names the memories that matched *this* operation, and the four that match a
+ * commit are not the four that match a deploy. Sharing one window meant seeing the commit list
+ * at 10:00 and being told, silently, that the deploy list at 10:20 had already been shown.
+ */
+describe('v1.26.154 — each kind of operation gets its own hour', () => {
+  let statePath;
+  let tmpDir;
+
+  before(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-window-key-'));
+    statePath = path.join(tmpDir, 'state.json');
+    process.env.__OWNMIND_EDIT_REMINDER_PATH = statePath;
+  });
+
+  after(() => {
+    delete process.env.__OWNMIND_EDIT_REMINDER_PATH;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('a commit listing does not silence the deploy listing', () => {
+    const now = Date.now();
+    writeEditReminderState('s1', 'commit', {
+      window_start_ms: now, occurrence: 1, rule_count: 4,
+    });
+
+    assert.equal(decideEditReminder(readEditReminderState('s1', 'commit'), now + 1000).mode,
+      'line', 'a second commit inside the hour is throttled, as before');
+    assert.equal(decideEditReminder(readEditReminderState('s1', 'deploy'), now + 1000).mode,
+      'full', 'but a deploy has never shown its list and must');
+  });
+
+  it('and a second session still gets its own', () => {
+    // The v1.26.92 property, still holding with the trigger in the key: the listing exists to
+    // put the names into one AI's context, and an AI that never saw them is not "up to date".
+    const now = Date.now();
+    writeEditReminderState('s-a', 'commit', {
+      window_start_ms: now, occurrence: 1, rule_count: 4,
+    });
+    assert.equal(decideEditReminder(readEditReminderState('s-b', 'commit'), now + 1000).mode,
+      'full');
+  });
+
+  it('an entry written before this release simply expires instead of misreading', () => {
+    // Pre-v1.26.154 files are keyed by the bare session id. Reading one as though it were a
+    // window would be worse than ignoring it: the safe direction is one extra listing.
+    fs.writeFileSync(statePath, JSON.stringify({ sessions: { 'old-session': {
+      window_start_ms: Date.now(), occurrence: 5, rule_count: 9,
+    } } }));
+    assert.equal(readEditReminderState('old-session', 'commit'), null);
+    assert.equal(decideEditReminder(readEditReminderState('old-session', 'commit'), Date.now()).mode,
+      'full');
   });
 });
 

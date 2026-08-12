@@ -46,15 +46,19 @@ const STATE_WRITE_FAILED =
  * @returns {Promise<string|null>} the JSON envelope to print, or null to stay silent
  */
 export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) {
-  const decision = decideEditReminder(readEditReminderState(sessionId), now);
+  // v1.26.154 — the window is keyed by trigger as well now. This path is always `edit`; the
+  // command path passes its own, so a commit listing no longer silences a deploy listing.
+  const decision = decideEditReminder(readEditReminderState(sessionId, 'edit'), now);
 
   if (decision.mode === 'line') {
     // No request on this path. The count is carried in the state file precisely so the
     // throttled case — the common one — puts no network round trip in front of an edit.
-    const wrote = writeEditReminderState(sessionId, {
+    const wrote = writeEditReminderState(sessionId, 'edit', {
       window_start_ms: decision.window_start_ms,
       occurrence: decision.occurrence,
       rule_count: decision.rule_count,
+      counts: decision.counts,
+      totals: decision.totals,
     });
     // rule_count 0 means there is nothing to say: either this account has no rule matching
     // an edit, or the last lookup failed and this is the back-off window. Saying "0 條"
@@ -84,7 +88,7 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
     // Back off rather than retry on the next keystroke. An unreachable server would
     // otherwise cost every edit a 3s timeout for the length of the outage, silently. A
     // short window still leaves the hourly listing intact once the server is back.
-    writeEditReminderState(sessionId, {
+    writeEditReminderState(sessionId, 'edit', {
       window_start_ms: now,
       occurrence: 1,
       rule_count: 0,
@@ -98,19 +102,28 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
   // four would have the throttled line claim they were consulted and empty, when they were
   // never asked — so nothing is stored and the old line is what gets printed.
   const counts = ctx.legacy ? undefined : ctx.counts;
+  const totals = ctx.legacy ? undefined : ctx.totals;
 
-  const wrote = writeEditReminderState(sessionId, {
+  const wrote = writeEditReminderState(sessionId, 'edit', {
     window_start_ms: decision.window_start_ms,
     occurrence: decision.occurrence,
     rule_count: relevant.length,
     counts,
+    totals,
   });
 
   if (relevant.length === 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
 
   const tag = `【OwnMind v${version}】AI 改檔案要遵守的鐵律 ${relevant.length} 條`;
+  // v1.26.154 — the names of everything that matched, except the iron rules: those get the
+  // banner below, and printing them in both places is the same sentence twice. Which of the
+  // two prints them is the caller's business, which is why `names` is passed in rather than
+  // decided inside the renderer.
+  const names = ctx.legacy || !ctx.names
+    ? undefined
+    : Object.fromEntries(Object.entries(ctx.names).filter(([type]) => type !== 'iron_rule'));
   const contextLine = counts
-    ? renderHookContextLine({ version, trigger: 'edit', counts, withHowTo: true })
+    ? renderHookContextLine({ version, trigger: 'edit', counts, totals, names, withHowTo: true })
     : '';
   const lines = [
     ...(contextLine ? [contextLine, ''] : []),

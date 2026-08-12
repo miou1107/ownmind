@@ -20,9 +20,20 @@
 import { readFileSync } from 'fs';
 import { renderHookContextLine } from '../shared/hook-context.js';
 import { ruleMatchesTrigger } from '../shared/helpers.js';
+import {
+  readEditReminderState,
+  writeEditReminderState,
+  decideEditReminder,
+} from '../shared/edit-reminder-state.js';
 
 const version = process.argv[2] || '?';
 const trigger = process.argv[3] || 'command';
+// v1.26.154 — the session id, so the names below can be shown once an hour instead of in
+// front of every command. It arrives as argv rather than on stdin because stdin is already
+// carrying the response body. An empty one still works: `windowKey` falls back to 'default',
+// which means one shared window per machine — worse than per-session, and still far better
+// than repeating the full list on every operation.
+const sessionId = process.argv[4] || '';
 
 let body = '';
 try {
@@ -66,17 +77,53 @@ const rules = legacy
 const out = [];
 
 if (!legacy) {
+  // v1.26.154 — the command path has a window now, keyed by session and trigger. The counts
+  // line still goes out on every operation, deliberately: it is one line, and repeating it was
+  // decided to cost nothing worth saving. What the window governs is the names, which are the
+  // part that gets long.
+  const decision = decideEditReminder(readEditReminderState(sessionId, trigger), Date.now());
+  const listing = decision.mode === 'full';
+
+  // Iron rules are left out of the names whenever the banner below is going to print them,
+  // which is every trigger except commit. Two copies of the same list, thirty lines apart,
+  // reads as two different findings.
+  const names = listing && data.names
+    ? (trigger === 'commit'
+      ? data.names
+      : Object.fromEntries(Object.entries(data.names).filter(([t]) => t !== 'iron_rule')))
+    : undefined;
+
   // The counts line answers "what does OwnMind think is happening" and "did it actually look".
   // The how-to line rides along only on the full listing: deploy and delete are the infrequent
-  // triggers, and the command path has no session state to throttle a repeat with — putting it
-  // on `commit` would print it in front of every commit, which is how a hint becomes wallpaper.
+  // triggers, and putting it on `commit` would print it in front of every commit, which is how
+  // a hint becomes wallpaper.
   const line = renderHookContextLine({
     version,
     trigger,
     counts: data.counts,
+    totals: data.totals,
+    names,
     withHowTo: trigger !== 'commit',
   });
   if (line) out.push(line);
+
+  // The window opens only when something was actually shown. Opening it on an operation that
+  // printed nothing — every category at zero, so `renderHookContextLine` returns '' — would
+  // spend the hour on a listing nobody saw, and the next operation of that kind would be
+  // throttled against it.
+  //
+  // A failed write costs one extra listing later and nothing else, so unlike the edit path it
+  // gets no message of its own: that path repeats on every keystroke, this one on every
+  // command.
+  if (listing && line) {
+    writeEditReminderState(sessionId, trigger, {
+      window_start_ms: decision.window_start_ms,
+      occurrence: decision.occurrence,
+      rule_count: rules.length,
+      counts: data.counts,
+      totals: data.totals,
+    });
+  }
 }
 
 if (rules.length > 0) {
