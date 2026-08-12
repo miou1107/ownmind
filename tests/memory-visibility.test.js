@@ -242,10 +242,13 @@ describe('GET /type/standard_detail can be narrowed to one parent', () => {
     const required = ownmindGetBlock(mcpSrc).match(/required: \[([^\]]*)\]/);
     assert.doesNotMatch(required[1], /type/);
 
-    // Window sized to reach past the id branch and its offline fallback. A tighter one
-    // fails on the length of the code above the guard rather than on the guard.
+    // v1.26.146: this was a 2,600-byte window, and adding eight lines to the offline branch
+    // above the guard pushed the guard out of it — a red test about nothing that had changed,
+    // which is the failure `ownmindGetBlock` was rewritten to avoid two releases ago. Slice to
+    // the next case instead, so the assertion is about the handler and not about its length.
     const handlerIdx = mcpSrc.indexOf('case "ownmind_get"');
-    const handler = mcpSrc.slice(handlerIdx, handlerIdx + 2600);
+    const nextCase = mcpSrc.indexOf('\n    case "', handlerIdx + 20);
+    const handler = mcpSrc.slice(handlerIdx, nextCase < 0 ? undefined : nextCase);
     assert.match(handler, /if \(!args\.type\)/, 'nothing refuses a call with neither id nor type');
   });
 });
