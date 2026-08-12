@@ -1,5 +1,57 @@
 # OwnMind 檔案結構
 
+## v1.26.148 修改（提示句唸出你們公司自己「可以開口叫」的規範 — issue #85）
+
+新檔：
+```
+shared/invocable-standards.js                   — 哪些團隊規範是「使用者可以開口叫」的。
+                                                   INVOCATION_HINT_MAX（120 字，提示只有一行）、
+                                                   validateInvocableMetadata（寫入時驗那一組欄位）、
+                                                   buildInvocableStandards（從資料庫列建）、
+                                                   hintsFromStandards（從 init 回應取句子）。
+                                                   後兩支刻意分開：形狀不同而且搞錯是安靜的 ——
+                                                   把回應清單餵給前者會回空陣列、提示默默退回靜態句
+tests/invocable-standard-tips.test.js           — 30 tests：旗標沒台詞要擋 / 空白台詞 / 非布林旗標 /
+                                                   超長與剛好等於上限 / 換行 / 非團隊規範不准標 /
+                                                   沒提到這件事的記憶完全不受影響 / 從資料庫列建
+                                                   （沒台詞的丟掉不退回唸標題、truthy 不等於 true、
+                                                   重複句子去掉）/ 兩支函式不可互換（明確測）/
+                                                   getRandomTip（沒標記時完全不變、400 抽內看得到公司
+                                                   句子、靜態那句要退場、其餘池子還在、不連續重複）/
+                                                   三處接線
+```
+
+改檔：
+```
+shared/tips.js                                  — getRandomTip 改收 { invocableHints }：有的話取代
+                                                   靜態那句團隊規範提示（TEAM_STANDARD_TIP 由 anchor
+                                                   找出來），沒有的話行為完全不變。不重複的記錄從
+                                                   index 改成記文字，因為池子每次呼叫可能不同
+src/routes/memory.js                            — init 回應新增 invocable_standards（compact 也送 ——
+                                                   每個呼叫端都要 compact，只在非 compact 帶的欄位
+                                                   等於沒人收得到）；POST / 與 PUT /:id 加上那一組
+                                                   欄位的驗證，錯誤裡附上該怎麼寫
+hooks/lib/render-session-context.js             — 開場那句提示改吃 init 回應裡的清單，不另外打 API
+mcp/index.js                                    — init 時記下 currentInvocableHints，之後每一則回應的
+                                                   提示都帶上；離線或沒 init 就是空陣列、退回原行為
+tests/tip-every-call.test.js                    — 呼叫從無參數變成帶參數，斷言改成「有呼叫、而且不准
+                                                   被條件包起來」，原本的「無條件帶上」意圖保留
+mcp/offline.js                                  — 新增 readHookInitPayload：讀（不寫）開場掛勾那份
+                                                   cache/memories.json，帶帳號指紋檢查與形狀檢查。
+                                                   Claude Code 不會呼叫 ownmind_init，沒有這條路
+                                                   每則回應的提示永遠拿不到清單
+tests/cache-file-ownership.test.js              — 那條「MCP 不准提到 memories.json」改成管方向：
+                                                   可以讀、不可以寫（writeMemoryCache 內不准出現
+                                                   掛勾那個路徑），v1.26.137 要防的是兩個寫入者
+tests/tips-list.test.js                         — 手冊那句措辭改了（提示可能來自帳號自己的規範），
+                                                   斷言改成盯「散文 + 下一行渲染池子」的形狀
+package.json / README.md / docs/README.zh-TW.md / docs/README.ja.md / CHANGELOG.md
+                                                — 版號 1.26.148 與三語同步
+openspec/changes/v1.26.148-a-tip-that-names-your-own-standards/
+                                                — proposal / spec / tasks
+```
+
+
 ## v1.26.147 修改（一條團隊規範，只有當初建立它的人改得動 — issue #85）
 
 新檔：

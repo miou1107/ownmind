@@ -34,10 +34,18 @@ test('random tip is included in every tool response (unconditional)', () => {
   assert.ok(composeCallMatch, '預期 success path return composeToolResponse({...})');
 
   const composeCall = composeCallMatch[0];
+  // v1.26.148 takes an argument (the account's own invocable standards), so the call is no
+  // longer argument-free. What must not change is that it is called unconditionally — no
+  // ternary, no `&&`, no counter — so the pattern pins the call and forbids a guard.
   assert.match(
     composeCall,
-    /tip:\s*getRandomTip\(\)/,
-    '預期 composeToolResponse 帶 tip: getRandomTip()，未來再有人改路徑要保持 tip 無條件帶上'
+    /tip:\s*getRandomTip\((\{[^}]*\})?\)\s*,/,
+    '預期 composeToolResponse 帶 tip: getRandomTip(...)，未來再有人改路徑要保持 tip 無條件帶上'
+  );
+  assert.doesNotMatch(
+    composeCall,
+    /tip:\s*[^,]*[?&|]{1,2}\s*getRandomTip/,
+    'tip 不可以被條件包起來——它必須每一次呼叫都帶上'
   );
   assert.match(
     composeCall,

@@ -67,11 +67,20 @@ const INIT_SHAPE = {
 };
 
 describe('the two caches do not share a file', () => {
-  it('the MCP no longer points at memories.json', () => {
+  it('the MCP writes only its own file', () => {
     const src = code('mcp/offline.js');
-    assert.doesNotMatch(src, /cache\/memories\.json/,
-      'the MCP is back on the hook\'s cache file, which the hook then reads as an init payload');
     assert.match(src, /cache\/mcp-memories\.json/, 'the MCP has no cache path of its own');
+
+    // v1.26.148 the MCP reads the hook's file — Claude Code never calls ownmind_init, so the
+    // askable-standards list only reaches the per-response tip from there. Reading is safe;
+    // what caused v1.26.137's silent empty banner was two writers on one file. So the
+    // constraint is now on the direction, not on the mention: the hook path may appear, and
+    // it may not be what writeMemoryCache writes.
+    assert.match(src, /const DEFAULT_HOOK_CACHE_PATH[^\n]*cache\/memories\.json/,
+      'the hook path must be named once, as its own constant');
+    const writer = src.slice(src.indexOf('function writeMemoryCache'), src.indexOf('function localSearch'));
+    assert.doesNotMatch(writer, /hookCachePath/, 'the MCP must never write the hook\'s cache');
+    assert.match(src, /function readHookInitPayload/);
   });
 
   it('the hook still owns memories.json', () => {

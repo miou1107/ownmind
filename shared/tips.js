@@ -83,12 +83,51 @@ export function renderTipPool() {
   return TIPS.map((t) => `- ${t.text}`).join('\n');
 }
 
-let lastTipIndex = -1;
+/**
+ * The static tip about team standards, and the reason it is singled out.
+ *
+ * v1.26.148 (issue #85): it announces that the mechanism exists — "OwnMind has team
+ * standards" — which tells a member nothing about what their own company has made askable.
+ * A colleague could not know 「幫我發 pages」 works unless somebody told them out loud, and
+ * this line is the only place the product speaks to them every day.
+ *
+ * So when the caller knows the user's own invocable standards, this entry steps aside for
+ * them. It is a replacement rather than an addition: adding N company sentences to a
+ * 25-entry pool would quietly turn the pool into mostly company sentences.
+ */
+const TEAM_STANDARD_ENTRY = TIPS.find((t) => t.anchor === 'ownmind_upload_standard');
+if (!TEAM_STANDARD_ENTRY) {
+  // Thrown rather than tolerated: `?.text` would leave the static line in the pool beside the
+  // company's own sentences, which is the state this entry exists to prevent. The throw is at
+  // import, so it surfaces the moment anything loads this module rather than one tip later.
+  throw new Error('shared/tips.js: no tip anchored to ownmind_upload_standard — getRandomTip has nothing to replace');
+}
+const TEAM_STANDARD_TIP = TEAM_STANDARD_ENTRY.text;
 
-/** One tip at random, never the same one twice in a row. */
-export function getRandomTip() {
-  let idx;
-  do { idx = Math.floor(Math.random() * TIPS.length); } while (idx === lastTipIndex && TIPS.length > 1);
-  lastTipIndex = idx;
-  return TIPS[idx].text;
+let lastTip = null;
+
+/**
+ * One tip at random, never the same one twice in a row.
+ *
+ * @param {object} [options]
+ * @param {string[]} [options.invocableHints] sentences from the user's own team standards,
+ *   as built by shared/invocable-standards.js. When present they take the place of the
+ *   static team-standard tip; when absent nothing changes for anyone.
+ * @returns {string}
+ */
+export function getRandomTip({ invocableHints = [] } = {}) {
+  const hints = (Array.isArray(invocableHints) ? invocableHints : [])
+    .filter((h) => typeof h === 'string' && h.trim() !== '')
+    .map((h) => h.trim());
+
+  const pool = hints.length > 0
+    ? [...TIPS.map((t) => t.text).filter((text) => text !== TEAM_STANDARD_TIP), ...hints]
+    : TIPS.map((t) => t.text);
+
+  let choice;
+  do {
+    choice = pool[Math.floor(Math.random() * pool.length)];
+  } while (choice === lastTip && pool.length > 1);
+  lastTip = choice;
+  return choice;
 }
