@@ -234,9 +234,13 @@ search preview show. Under this change that line is no longer the whole answer t
 it costs nothing to leave; rewriting it would be a one-off write across production rows to
 fix something the read path already handles (IR-146).
 
-**`POST /batch-sync-standard` is unchanged.** New uploads keep producing the same parent row.
-They are readable by construction once the read path merges, so the acceptance criterion is
-met without touching the write path.
+**`POST /batch-sync-standard` keeps producing the same parent row.** New uploads still create
+the boilerplate parent, and they are readable by construction once the read path merges, so the
+acceptance criterion is met without changing what the write path creates. It does gain one
+thing — the ordinal in decision 3 — and its response gains `stats.reordered`, which the only
+consumer passes through untouched (`mcp/index.js:1380`). On the first sync after this ships,
+a legacy standard reports every one of its rows as reordered: that is the backfill happening,
+not an anomaly.
 
 **Nothing changes for a self-contained standard.** It has no fragments, the lookup finds none,
 and the response is byte-identical to today's. That is the second acceptance criterion, and it

@@ -18,7 +18,7 @@ keyed to it, return those fragments in the response alongside the row.
 - **GIVEN** memory 869 is a `team_standard` with no rows keyed to it
 - **WHEN** a caller reads memory 869 by id
 - **THEN** the response is what it was before this change
-- **AND** no empty `details` array is added to it
+- **AND** no empty `fragments` array is added to it
 
 ### Scenario: reading a memory that is not a team standard
 
@@ -61,22 +61,22 @@ keyed to it, return those fragments in the response alongside the row.
 - **GIVEN** a standard's fragments total fewer characters than the budget
 - **WHEN** it is read
 - **THEN** every fragment is returned
-- **AND** `details_returned` equals `details_total`
-- **AND** `details_truncated` is false
+- **AND** `fragments_returned` equals `fragments_total`
+- **AND** `fragments_truncated` is false
 
 ### Scenario: a standard past the character budget
 
 - **GIVEN** a standard's fragments exceed the budget
 - **WHEN** it is read
 - **THEN** fragments are returned up to the budget
-- **AND** `details_total` reports how many exist
-- **AND** `details_truncated` is true, so the caller can tell the answer is partial
+- **AND** `fragments_total` reports how many exist
+- **AND** `fragments_truncated` is true, so the caller can tell the answer is partial
 
 ### Scenario: a single fragment larger than the whole budget
 
 - **WHEN** the first fragment alone exceeds the budget
 - **THEN** that fragment is still returned rather than an empty list
-- **AND** `details_truncated` is true
+- **AND** `fragments_truncated` is true
 
 ## ADDED Requirement: the merge SHALL respect the sharing rules that already govern fragments
 
@@ -105,11 +105,48 @@ consequence for a reader, and stating it invites the reader to act on it.
 - **THEN** it is told that reading a standard by id returns its full text
 - **AND** it is not asked to work out which of two shapes it is holding
 
+## ADDED Requirement: a truncated read SHALL name a follow-up that returns the document
+
+### Scenario: reaching the rest of a truncated standard
+
+- **GIVEN** a read was truncated at the budget
+- **WHEN** the caller makes the follow-up call the response named
+- **THEN** it receives the standard's fragments in document order
+- **AND** not in the order they were last written, which after a re-sync is the reverse
+
 ## ADDED Requirement: editing a standard SHALL NOT be able to swallow its fragments
 
-### Scenario: saving a fragment-shaped standard from the admin console
+The consumer here is `ownmind_update`, not a console: `client/src` has no memory editor and
+never issues `PUT /api/memory/:id`. It is the sharper case, because `ownmind_get` already
+instructs an assistant to read a memory in full before updating it so as not to overwrite the
+rest — an instruction that, against a merged `content`, would mean "write every fragment back
+into the parent".
 
-- **GIVEN** the console loaded the standard's own `content` into its editor
-- **WHEN** the user saves without changing anything
+### Scenario: an assistant reads a fragment-shaped standard and saves it unchanged
+
+- **GIVEN** the read returned the standard with its fragments
+- **WHEN** the assistant calls `ownmind_update` on that memory without changing anything
 - **THEN** the parent row's `content` is unchanged
 - **AND** every fragment still exists and is still keyed to that parent
+- **AND** the `fragments` field is not written back into any column
+
+## ADDED Requirement: a sync SHALL record where each section sits in the document
+
+### Scenario: a standard uploaded before ordinals existed
+
+- **GIVEN** every fragment of a standard is unchanged and none carries a position
+- **WHEN** the standard is synced
+- **THEN** each fragment gains its position
+- **AND** its content hash is not rewritten
+
+### Scenario: a section moves
+
+- **WHEN** two sections swap places with no text change
+- **THEN** both positions are rewritten
+- **AND** neither is treated as an edit
+
+### Scenario: a heading is renamed
+
+- **WHEN** a chunk arrives under a title no existing fragment has
+- **THEN** the old fragment is disabled and a new one is inserted
+- **AND** the new one takes the position the document gives it, not the order it was created

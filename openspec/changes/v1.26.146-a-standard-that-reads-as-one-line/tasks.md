@@ -60,7 +60,7 @@
       standard falls back to id · self-contained standard yields nothing · owner still reaches
       a retired standard's fragments · non-owner does not · malformed `parent_id` matches
       nothing instead of aborting · non-numeric `ord` does not abort the ordering
-- [x] Full suite: 4,605 pass, 0 fail
+- [x] Full suite: 4,615 pass, 0 fail (13 live-database checks after review, not 11)
 
 ## 6. Both ends (IR-022)
 
@@ -75,9 +75,9 @@
 
 ## 7. Review
 
-- [ ] `superpowers:requesting-code-review`
-- [ ] `superpowers:receiving-code-review` on what comes back
-- [ ] `superpowers:verification-before-completion`
+- [x] `superpowers:requesting-code-review` — see §10
+- [x] `superpowers:receiving-code-review` — see §10
+- [x] `superpowers:verification-before-completion`
 
 ## 8. Release paperwork
 
@@ -99,3 +99,44 @@
 - [x] The duplicate-breadcrumb twin (two chunks sharing a title both insert on first sync;
       later syncs dedupe by title so one is never updated and never disabled) is pre-existing
       and out of scope. Noted because `fragments` would surface such a row.
+
+## 10. Code review, and what it changed
+
+- [x] `superpowers:requesting-code-review` — a reviewer on a second model, given the commit
+- [x] `superpowers:receiving-code-review` — every finding checked against the source first
+
+Acted on:
+
+- [x] **The truncation notice pointed at a call that returns the document backwards.**
+      `GET /type/standard_detail?parent_id=` ordered by `updated_at DESC`, and the reorder
+      branch stamps `NOW()` row by row, so the first re-sync of a standard leaves that call
+      returning it in reverse. The escape hatch would have committed the defect the ordinals
+      exist to prevent. That branch now orders by `ord`; the unnarrowed listing keeps
+      newest-first. Both verified against the real database.
+- [x] **The proposal described an offline line the code did not contain**, while the new tool
+      description promised the whole standard unconditionally. Implemented: a cached
+      `team_standard` now says its sections are not in the local cache and must not be treated
+      as complete.
+- [x] **The sync branches had no tests at all.** Extracted to `planChunkSync` and covered by
+      nine cases; five mutations watched to fail, including deleting the reorder branch
+      (legacy standards then never gain ordinals) and guarding it on truthiness (position 0
+      never backfills).
+- [x] **`spec.md` named `details_*` fields** the code does not have, and specified a console
+      flow that does not exist. Rewritten against `fragments_*` and `ownmind_update`, with
+      scenarios added for the escape hatch and the three sync branches.
+- [x] `SIBLING_COUNT_SQL` had no parameter-order assertion where its sibling did; added, and
+      the swap mutation now fails.
+- [x] Softened the "all one or all the other" claim: the sync loop is not a transaction.
+- [x] Recorded that `stats.reordered` counts the whole standard on the first post-deploy sync,
+      and that a fragment-lookup failure now fails the read rather than degrading to the row.
+
+Found by the review and fixed rather than worked around:
+
+- [x] `tests/memory-visibility.test.js` asserted inside a 2,600-byte window, and eight new
+      lines above the guard pushed it out — a red test about nothing that had changed, the
+      same failure the file's own `ownmindGetBlock` was rewritten to avoid. Now slices to the
+      next `case`. Re-checked by removing the guard: still red.
+
+Not acted on: the duplicate-breadcrumb twin (pre-existing, §9) and the uncapped escape hatch
+for a standard large enough to exceed the budget — capping it would leave no recovery path at
+all, and nothing on the account is within 5,000 characters of the budget.
