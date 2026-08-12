@@ -160,6 +160,17 @@ export function readCredentials(settingsPath) {
 
 /**
  * Detect the trigger type from a PreToolUse hook command.
+ *
+ * KEEP IN SYNC with the grep chain in hooks/ownmind-iron-rule-check.sh — patterns AND the
+ * order they are tested in, since the first match wins and a command can belong to two
+ * families (`docker compose up -d && rm -rf ./old` is a deploy here and has to be one there).
+ *
+ * This function is the reference; the shell chain is transcribed from it. issue #92: for a
+ * long time nothing said so and nothing checked, and 7 of 17 sample commands had drifted
+ * apart — including `git tag`, which reached no trigger at all on the platforms where the
+ * shell copy is the one installed. tests/iron-rule-trigger-parity.test.js runs both for real
+ * and fails if any answer differs.
+ *
  * @param {string} command — bash command
  * @returns {'commit' | 'deploy' | 'delete' | 'install' | null}
  */
@@ -168,7 +179,10 @@ export function detectCommandTrigger(command) {
   if (/\bgit\s+(commit|reset|rebase|merge)\b/i.test(command)) return 'commit';
   if (/\bgit\s+tag\b/i.test(command)) return 'commit';
   if (/\bgit\s+push\b/i.test(command)) return 'deploy';
-  if (/\b(docker\s+compose\s+(up|build|push)|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
+  // issue #92 — `docker stack deploy` is here because the shell copy had it and this one did
+  // not. Squaring the two could have gone either way; it went this way because a Swarm deploy
+  // is a deploy, and the alternative was to stop recognising it on the platforms that did.
+  if (/\b(docker\s+compose\s+(up|build|push)|docker\s+stack\s+deploy|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
   if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(command)) return 'delete';
   // v1.26.132 — last, so no command that already had a trigger changes classification.
   //
@@ -241,6 +255,12 @@ export function detectToolTrigger(toolName) {
  * its filter inside `node -e`, and importing this module from there would mean handing node
  * a path — the exact move that produced two silent Windows failures (install.sh
  * CLAUDE_SETTINGS in v1.26.88, /dev/stdin in v1.26.90). A duplicated literal cannot ENOENT.
+ *
+ * This table is guarded by tests/iron-rule-trigger-aliases.test.js. The other thing that hook
+ * duplicates — which command produces which trigger — is `detectCommandTrigger` below, and
+ * for a long time nothing guarded that at all; see issue #92 and
+ * tests/iron-rule-trigger-parity.test.js. The banner strings the two copies print are still
+ * unsynchronised (one English, one Chinese) and are tracked separately in issue #91.
  */
 export const TRIGGER_TAG_ALIASES = {
   // v1.26.92: `edit` covers Edit / Write / MultiEdit / NotebookEdit, so a rule tagged

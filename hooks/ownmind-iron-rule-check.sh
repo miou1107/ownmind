@@ -150,15 +150,44 @@ if [ -z "$COMMAND" ]; then
 fi
 
 # 偵測觸發關鍵字
+#
+# issue #92 — a line-by-line transcription of detectCommandTrigger in shared/helpers.js,
+# in its order. It used to be an independent chain, and by the time anyone compared them 7
+# of 17 sample commands were classified differently. install.sh registers this copy on mac
+# and Linux, so the drifting half was the half most users were running:
+#
+#   git tag                 reached no trigger here, so a release tag — the moment the
+#                           version-sync rules are written for — was silent
+#   docker compose build    likewise, and `push` too: the old deploy pattern was
+#   docker compose push     `docker.*up`, which neither contains
+#   docker logs backup      matched `docker.*up`, because `backup` contains "up". Reading a
+#   docker ps | grep uptime log printed a full deployment rule listing. Same for `uptime`.
+#   Remove-Item             absent here, present in the reference
+#   deploy && delete        the delete branch was tested first, so a command that deploys
+#                           and then tidies up classified as a delete
+#
+# tests/iron-rule-trigger-parity.test.js runs this file for real and requires every answer
+# to match the reference. Editing either side alone now fails there.
+#
+# Where the two disagreed about something only this copy recognised, the reference is the
+# side that moved: `docker.*deploy` became `docker stack deploy` in shared/helpers.js, so a
+# Swarm deploy is now a deploy on every platform rather than on half of them.
+#
+# One pattern is simply gone: `del `, the cmd.exe delete. It cannot appear on the platforms
+# this copy runs on, and PowerShell's own name for it — Remove-Item — is matched above.
+# Anything else wanted here belongs in shared/helpers.js first; adding it back only here
+# rebuilds the drift this change removed.
 TRIGGER=""
-if echo "$COMMAND" | grep -qiE "git (commit|reset|rebase|merge)"; then
+if echo "$COMMAND" | grep -qiE "\bgit[[:space:]]+(commit|reset|rebase|merge)\b"; then
   TRIGGER="commit"
-elif echo "$COMMAND" | grep -qiE "git push"; then
+elif echo "$COMMAND" | grep -qiE "\bgit[[:space:]]+tag\b"; then
+  TRIGGER="commit"
+elif echo "$COMMAND" | grep -qiE "\bgit[[:space:]]+push\b"; then
   TRIGGER="deploy"
-elif echo "$COMMAND" | grep -qiE "(rm -rf|rmdir|del |drop table|DELETE FROM)"; then
+elif echo "$COMMAND" | grep -qiE "\b(docker[[:space:]]+compose[[:space:]]+(up|build|push)|docker[[:space:]]+stack[[:space:]]+deploy|kubectl[[:space:]]+apply|npm[[:space:]]+run[[:space:]]+deploy)\b"; then
+  TRIGGER="deploy"
+elif echo "$COMMAND" | grep -qiE "\b(rm[[:space:]]+-rf|rmdir|Remove-Item|drop[[:space:]]+table|DELETE[[:space:]]+FROM)\b"; then
   TRIGGER="delete"
-elif echo "$COMMAND" | grep -qiE "(docker.*deploy|docker.*up|kubectl apply|npm run deploy)"; then
-  TRIGGER="deploy"
 # v1.26.132 — install and credential work had no trigger, so the two rules written for it
 # could not fire during it. KEEP IN SYNC with detectCommandTrigger in shared/helpers.js.
 # `npm install` / `pip install` stay out: this matches a script filename or a key name, and

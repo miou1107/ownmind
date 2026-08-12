@@ -1,5 +1,39 @@
 # OwnMind 檔案結構
 
+## v1.26.149 修改（同一個判斷寫了兩份，而它們講的不一樣 — issue #92）
+
+新檔：
+```
+tests/iron-rule-trigger-parity.test.js          — 18 條指令的對照表，同時餵給
+                                                   detectCommandTrigger() 與真的那支 .sh 掛勾，
+                                                   答案不同就紅。shell 那半是 spawn 真的掛勾、
+                                                   再從它自己印的橫幅把 trigger 讀回來，
+                                                   測試裡不重抄 grep 規則（重抄＝第三份副本）。
+                                                   橫幅認不得就 throw，不回 null ——
+                                                   回 null 會把每條指令都變成「沒判到」、
+                                                   整個檔案照樣綠。也刻意不做「bash 找不到就跳過」
+openspec/changes/v1.26.149-two-copies-that-answered-differently/
+  proposal.md / spec.md / tasks.md               — 為什麼參考實作是 shared/helpers.js、
+                                                   docker stack deploy 為什麼往上搬而不是刪掉、
+                                                   del 為什麼不搬、以及 deploy/delete 順序
+                                                   這一列為什麼是判斷而不是缺陷
+```
+
+修改：
+```
+hooks/ownmind-iron-rule-check.sh                — 觸發判斷鏈改成 detectCommandTrigger 的
+                                                   逐條轉寫（連順序）。補 git tag、
+                                                   docker compose build|push、Remove-Item；
+                                                   docker.*up 換成明確樣式（本來會誤中
+                                                   docker logs backup 的 backup）；
+                                                   delete 分支移到 deploy 之後
+shared/helpers.js                               — deploy 家族補 docker stack deploy（本來只有
+                                                   .sh 認得）；detectCommandTrigger 補上
+                                                   KEEP IN SYNC 註記並指名守門測試；
+                                                   TRIGGER_TAG_ALIASES 的註記改成分清楚
+                                                   「這張表有測試守」與「判斷邏輯本來沒有」
+```
+
 ## v1.26.148 修改（提示句唸出你們公司自己「可以開口叫」的規範 — issue #85）
 
 新檔：
