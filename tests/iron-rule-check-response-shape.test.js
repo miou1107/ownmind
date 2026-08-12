@@ -1,6 +1,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -108,5 +110,32 @@ describe('the JS hook path keeps its v1.19.20 fix', () => {
     body = BARE;
     const ctx = await fetchHookContext({ apiUrl: baseUrl, apiKey: 'k', trigger: 'commit' });
     assert.equal(ctx.rules.length, 1);
+  });
+
+  it('records the fallback, as the shell copy does', async () => {
+    // Without this the record depended on which hook copy a platform installs, so "no
+    // fallback events" would mean "the server is fine" on Linux and nothing on Windows.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-fallback-log-'));
+    const realHome = process.env.HOME;
+    const realProfile = process.env.USERPROFILE;
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    try {
+      body = WRAPPED;
+      await fetchHookContext({ apiUrl: baseUrl, apiKey: 'k', trigger: 'commit' });
+      const dir = path.join(home, '.ownmind', 'logs');
+      const events = fs.readdirSync(dir)
+        .flatMap((f) => fs.readFileSync(path.join(dir, f), 'utf8').trim().split('\n'))
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
+      const fallback = events.find((e) => e.event === 'hook_context_fallback');
+      assert.ok(fallback, `expected a fallback record. got ${JSON.stringify(events)}`);
+      assert.equal(fallback.details.trigger, 'commit');
+      assert.match(fallback.details.reason, /404/, 'the record has to say what happened');
+    } finally {
+      process.env.HOME = realHome;
+      process.env.USERPROFILE = realProfile;
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });

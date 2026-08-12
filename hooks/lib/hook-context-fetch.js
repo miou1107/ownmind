@@ -1,3 +1,6 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import https from 'https';
 import http from 'http';
 import { ruleMatchesTrigger } from '../../shared/helpers.js';
@@ -29,6 +32,37 @@ function httpGetWithStatus(url, headers, timeout) {
     req.on('error', reject);
     req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
   });
+}
+
+/**
+ * Record the fallback the way the shell hook's `log_event` does, into the same file.
+ *
+ * The shell records it and this path did not, which made the record depend on which hook copy
+ * a platform happens to install — so "no fallback events" would have meant "the server is
+ * fine" on Linux and nothing at all on Windows. A permanently degraded reminder that never
+ * says so looks exactly like a working one, and that has to hold on both copies.
+ *
+ * Fail-open and silent on error: a logging failure must never cost the user their command.
+ */
+function logFallback(reason, trigger) {
+  try {
+    const dir = path.join(os.homedir(), '.ownmind', 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    const now = new Date();
+    const entry = {
+      ts: now.toISOString(),
+      event: 'hook_context_fallback',
+      tool: 'claude-code',
+      source: 'hook',
+      details: { reason, trigger },
+    };
+    fs.appendFileSync(
+      path.join(dir, `${now.toISOString().slice(0, 10)}.jsonl`),
+      `${JSON.stringify(entry)}\n`
+    );
+  } catch {
+    // Deliberate. See above.
+  }
 }
 
 /** An all-zero count map, so callers never have to guard on a missing category. */
@@ -64,6 +98,7 @@ export async function fetchHookContext({ apiUrl, apiKey, trigger, timeout = 3000
 
   // Anything else — 404 from an older server, a proxy's 502, a body we cannot read — is
   // answered by the endpoint that has existed all along.
+  logFallback(`http_${res.status}`, trigger);
   const legacyRes = await httpGetWithStatus(`${apiUrl}/api/memory/type/iron_rule`, headers, timeout);
   if (legacyRes.status !== 200) throw new Error(`iron_rule lookup returned ${legacyRes.status}`);
   const parsed = JSON.parse(legacyRes.body);
