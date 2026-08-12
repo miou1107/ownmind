@@ -4,6 +4,7 @@ import os from 'node:os';
 
 import { tokenize, itemMatchesTokens } from '../shared/memory-search-tokens.js';
 import { shapeSearchResults } from '../shared/memory-search-result.js';
+import { accountFingerprint } from '../shared/scanners/base.js';
 
 /**
  * v1.26.138 — the MCP's offline cache has its own file.
@@ -32,8 +33,14 @@ import { shapeSearchResults } from '../shared/memory-search-result.js';
  */
 const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/mcp-memories.json');
 const DEFAULT_QUEUE_PATH = path.join(os.homedir(), '.ownmind/queue.jsonl');
+/**
+ * The SessionStart hook's cache, written by hooks/lib/conditional-sync.js and holding the
+ * whole init payload under `data`. Read here, never written: v1.26.137 split the two files
+ * precisely because two writers with two schemas corrupted each other's reads.
+ */
+const DEFAULT_HOOK_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/memories.json');
 
-export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = DEFAULT_QUEUE_PATH) {
+export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = DEFAULT_QUEUE_PATH, hookCachePath = DEFAULT_HOOK_CACHE_PATH) {
 
   function isNetworkError(err) {
     if (!err) return false;
@@ -49,6 +56,35 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
       msg.toLowerCase().includes('fetch failed') ||
       msg.toLowerCase().includes('network error')
     );
+  }
+
+  /**
+   * The init payload the SessionStart hook last received, or null.
+   *
+   * v1.26.148: Claude Code loads memory through that hook and never calls `ownmind_init`
+   * (configs/CLAUDE.md says so in as many words), so an MCP process there can run its whole
+   * life without seeing an init response — and anything learned at init, such as which team
+   * standards a person can ask for, would never reach the tip on the surface users actually
+   * see. The hook wrote that payload to disk; this reads it.
+   *
+   * @param {{ apiUrl?: string, apiKey?: string }} [account] refuse a cache belonging to
+   *   another account, the same check hooks/lib/conditional-sync.js makes (v1.26.82: a
+   *   colleague once installed somebody else's key and read their memories).
+   */
+  function readHookInitPayload(account) {
+    try {
+      if (!fs.existsSync(hookCachePath)) return null;
+      const cache = JSON.parse(fs.readFileSync(hookCachePath, 'utf8'));
+      if (!cache || typeof cache !== 'object') return null;
+      if (account && cache.account !== accountFingerprint(account)) return null;
+      const data = cache.data;
+      // The MCP's own cache keys memories by singular type name; an init payload does not.
+      // Reading the wrong shape is how v1.26.138's silent empty banner happened.
+      if (!data || typeof data !== 'object' || Array.isArray(data.team_standard)) return null;
+      return data;
+    } catch {
+      return null;
+    }
   }
 
   function readMemoryCache() {
@@ -165,13 +201,14 @@ export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = D
     };
   }
 
-  return { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, clearQueue, replayQueue };
+  return { isNetworkError, readMemoryCache, readHookInitPayload, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, clearQueue, replayQueue };
 }
 
 // Default export: pre-built instance with production paths
 export const {
   isNetworkError,
   readMemoryCache,
+  readHookInitPayload,
   writeMemoryCache,
   localSearch,
   findCachedMemory,

@@ -14,7 +14,7 @@ import { pathToFileURL } from 'url';
 import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
-import { isNetworkError, readMemoryCache, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, replayQueue } from './offline.js';
+import { isNetworkError, readMemoryCache, readHookInitPayload, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, replayQueue } from './offline.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
@@ -26,6 +26,7 @@ import { pickRulesForCache, mergeOfflineCacheData, previousDataForAccount } from
 import { accountFingerprint } from '../shared/scanners/base.js';
 // v1.26.127: the tip list lives in shared/tips.js so this and INSTRUCTIONS_SOP cannot drift.
 import { getRandomTip } from '../shared/tips.js';
+import { hintsFromStandards } from '../shared/invocable-standards.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
@@ -207,6 +208,32 @@ const CLIENT_TOOL = resolveClientTool();
 
 let serverVersion = null;
 let currentSyncToken = null;
+// v1.26.148 (issue #85): the company's askable standards, reused on every response's tip.
+// Held in memory rather than re-fetched: a tip is not worth a round trip, and an empty list
+// simply leaves the static pool as it was.
+let currentInvocableHints = [];
+let hookHintsRead = false;
+
+/**
+ * The hints to draw a tip from, learned at init or, failing that, from the SessionStart
+ * hook's cache.
+ *
+ * The fallback is not an edge case, it is the main client: Claude Code loads memory through
+ * the hook and never calls `ownmind_init` (configs/CLAUDE.md states this), so on the surface
+ * users see most — the tip on every tool response — an init-only list would stay empty for
+ * the life of the process and the static line this change replaces would keep showing.
+ *
+ * The disk is read at most once per process, and only while the list is still empty.
+ */
+function tipInvocableHints() {
+  if (currentInvocableHints.length > 0 || hookHintsRead) return currentInvocableHints;
+  hookHintsRead = true;
+  const payload = readHookInitPayload({ apiUrl: API_URL, apiKey: API_KEY });
+  if (payload && Array.isArray(payload.invocable_standards)) {
+    currentInvocableHints = hintsFromStandards(payload.invocable_standards);
+  }
+  return currentInvocableHints;
+}
 
 // --- Unified version banner labels ---
 const TYPE_MAP = {
@@ -468,7 +495,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_save",
-    description: "⚠️ For sensitive data (passwords, tokens, API keys, credentials) use ownmind_set_secret instead — do not write secrets into memories (the memory API detects and rejects them with HTTP 400). Save a new memory: specify type, title, content, plus optional code, tags, metadata. When writing an iron_rule, the AI should also pass origin_event / user_quote describing \"why this rule was created at the time\" — if unknown, write \"user issued the rule directly\".",
+    description: "⚠️ For sensitive data (passwords, tokens, API keys, credentials) use ownmind_set_secret instead — do not write secrets into memories (the memory API detects and rejects them with HTTP 400). Save a new memory: specify type, title, content, plus optional code, tags, metadata. When writing an iron_rule, the AI should also pass origin_event / user_quote describing \"why this rule was created at the time\" — if unknown, write \"user issued the rule directly\". When writing a team_standard that a person can ask for by name, set metadata.user_invocable: true together with metadata.invocation_hint — the sentence they are shown in the daily tip, in their own words. The flag without the sentence is rejected.",
     inputSchema: {
       type: "object",
       properties: {
@@ -531,7 +558,7 @@ const TOOLS = [
         },
         metadata: {
           type: "object",
-          description: "Updated metadata (optional)",
+          description: "Updated metadata (optional). REPLACES the stored metadata rather than merging into it, so read the memory first and send back the keys you want to keep. On a team_standard, two keys control the daily tip: `user_invocable: true` marks a standard a person can ask for by name, and `invocation_hint` is the one-line sentence they are shown, written in their words (e.g. 想把東西變成網址傳給人看？直接說「幫我發 pages」). Both are required together — the flag without the sentence is rejected. A standard with neither is never named in a tip.",
         },
         // v1.19: iron rule tier
         tier: {
@@ -788,6 +815,12 @@ async function handleTool(name, args) {
             return {
               _offline: true,
               _offline_notice: `[OwnMind offline mode] Cannot reach the server — data is served from local cache (${cache.saved_at}) and may be stale`,
+              // No invocable hints on this path, deliberately: the offline cache keys memories by
+              // type and its `team_standard` bucket is filled from the init response's
+              // `team_standards` field, which only a non-compact response carries — and every
+              // caller asks for compact. Measured on this machine 2026-08-12: the cache file has
+              // no `team_standard` key at all. So there is nothing here to derive hints from, and
+              // an offline session falls back to the static pool.
               iron_rules: cache.data.iron_rule || [],
               principles: cache.data.principle || [],
               profile: (cache.data.profile || [])[0] || null,
@@ -803,6 +836,9 @@ async function handleTool(name, args) {
       }
       if (data.sync_token) {
         currentSyncToken = data.sync_token;
+      }
+      if (Array.isArray(data.invocable_standards)) {
+        currentInvocableHints = hintsFromStandards(data.invocable_standards);
       }
       if (data.server_version) serverVersion = data.server_version;
       if (data.upgrade_action?.required) {
@@ -1589,7 +1625,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       broadcastText,
       tag,
       body,
-      tip: getRandomTip(),
+      tip: getRandomTip({ invocableHints: tipInvocableHints() }),
       tipTag: formatTag('Tip'),
     });
   } catch (error) {

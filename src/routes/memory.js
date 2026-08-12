@@ -23,6 +23,7 @@ import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js'
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
 import { resolveWritableMemory } from '../utils/memory-write-access.js';
+import { buildInvocableStandards, validateInvocableMetadata } from '../../shared/invocable-standards.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
 import { parseRowId } from '../utils/row-id.js';
@@ -118,7 +119,7 @@ The version is taken from the MCP tool response prefix (auto-attached). For AI-i
 **Tip:** Each MCP tool response auto-attaches a random one-line tip in this format:
 \`[OwnMind vX.X.X] Tip: [randomly chosen]\`
 
-The pool that tip is drawn from — reproduce the one you were given, do not pick again:
+The tip you were given is the one to reproduce — do not pick again. It comes either from the pool below, or, on an account whose team standards are marked askable, from one of those standards' own sentences (which are per-account and therefore not printed here):
 ${renderTipPool()}
 
 ## Upgrade Handling (Highest Priority)
@@ -478,6 +479,7 @@ router.get('/init', async (req, res) => {
 
     // Team standards summary.
     const teamStandardsDigest = teamStandards.map(r => `[團隊] ${r.title}`).join('\n');
+    const invocableStandards = buildInvocableStandards(teamStandards);
 
     // Sync token
     const syncToken = await generateSyncToken(req.user.id);
@@ -744,6 +746,11 @@ router.get('/init', async (req, res) => {
       iron_rules_digest: ironRulesDigestFinal,
       ...(!compact && { team_standards: teamStandards }),
       team_standards_digest: teamStandardsDigest,
+      // v1.26.148 (issue #85): the standards this user can ask for by name, so the tip line
+      // can say 「直接說『幫我發 pages』」 instead of announcing that team standards exist.
+      // Sent in compact mode too — every caller asks for compact, and a field only the
+      // non-compact response carries is a field nobody receives (v1.26.141).
+      invocable_standards: invocableStandards,
       active_handoff: activeHandoff,
       weekly_summary: weeklySummary,
       memory_health: memoryHealth,
@@ -1104,6 +1111,18 @@ router.post('/', async (req, res) => {
       return res.status(403).json({ error: 'Team standards and their details may only be created by admins' });
     }
 
+    // v1.26.148 (issue #85): a standard marked askable must carry the sentence to show.
+    // Checked on the way in, because the flag without the sentence degrades to reading the
+    // title aloud — 「pages 發布工具 pages.py 全文」 — which is the failure this pair exists
+    // to prevent, and it would only be noticed by whoever saw the tip.
+    const invocableCheck = validateInvocableMetadata(metadata, type);
+    if (!invocableCheck.ok) {
+      return res.status(400).json({
+        error: invocableCheck.error,
+        ...(invocableCheck.hint && { hint: invocableCheck.hint }),
+      });
+    }
+
     // iron_rule auto-numbering.
     let finalCode = code || null;
     if (type === 'iron_rule' && !finalCode) {
@@ -1351,6 +1370,19 @@ router.put('/:id', async (req, res) => {
     // Shared-type edits are admin-only (v1.26.38: covers standard_detail too).
     if (isSharedMemoryType(oldMemory.type) && !isAtLeast(req.user.role, 'admin')) {
       return res.status(403).json({ error: 'Team standards and their details may only be edited by admins' });
+    }
+
+    // v1.26.148: the same check on update — a standard acquires the flag this way far more
+    // often than at creation. `metadata` replaces the stored object wholesale (COALESCE on
+    // the column), so validating what the caller sent validates what will be stored.
+    if (metadata !== undefined) {
+      const invocableCheckPut = validateInvocableMetadata(metadata, oldMemory.type);
+      if (!invocableCheckPut.ok) {
+        return res.status(400).json({
+          error: invocableCheckPut.error,
+          ...(invocableCheckPut.hint && { hint: invocableCheckPut.hint }),
+        });
+      }
     }
 
     // v1.19: tier validation — use the existing memory's type to avoid the
