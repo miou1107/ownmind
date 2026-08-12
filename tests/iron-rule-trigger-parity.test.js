@@ -81,6 +81,23 @@ const COMMANDS = [
   // one the user learns to scroll past.
   { command: 'npm install', expected: null },
   { command: 'echo hello', expected: null },
+  // v1.26.155 — outward sends. The standard for this ("run an independent review before
+  // anything goes out") was tagged `trigger:send` by its author and nothing ever asked for
+  // that tag, so it had never fired. Measured 2026-08-12: an issue was filed that afternoon
+  // and the standard did not appear, because none of these classified as anything at all.
+  { command: 'gh issue create --title x --body-file b.md', expected: 'send' },
+  { command: 'gh issue comment 97 -F reply.md', expected: 'send' },
+  { command: 'gh pr create --fill', expected: 'send' },
+  { command: 'gh pr review 12 --approve', expected: 'send' },
+  // Reading is not sending. A reminder about reviewing outward content in front of every
+  // `gh issue list` is one that gets scrolled past, and then it is gone for the real case too.
+  { command: 'gh issue list', expected: null },
+  { command: 'gh pr view 3', expected: null },
+  // A release publishes a build, so it goes with the deploys rather than the sends — the same
+  // reasoning that keeps `install` off a plain curl: the label is shown to the user.
+  { command: 'gh release create v1.2.3', expected: 'deploy' },
+  // The two that must not have been stolen by the new branch, since both are matched earlier.
+  { command: 'gh pr create && git push', expected: 'deploy' },
 ];
 
 /**

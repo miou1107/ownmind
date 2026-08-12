@@ -112,6 +112,10 @@ export const TRIGGER_LABELS = {
   deploy: 'Deploy',
   delete: 'Delete',
   install: 'Install / credentials',
+  // v1.26.155 — not "Publish" and not "Deploy": both read as shipping software, and this fires
+  // on a reply to an issue as much as on a public post. What it has to convey is that the
+  // thing is about to leave, because that is the property the standard behind it turns on.
+  send: 'Outward send',
   command: 'Command',
 };
 

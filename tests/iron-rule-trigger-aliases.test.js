@@ -66,6 +66,46 @@ describe('trigger tag aliases', () => {
     assert.equal(ruleMatchesTrigger({ tags: ['trigger:review'] }, 'review'), true);
     assert.equal(ruleMatchesTrigger({ tags: ['trigger:回滾'] }, 'review'), false);
   });
+
+  /**
+   * v1.26.155 — the outward send.
+   *
+   * A team standard requiring an independent review before anything leaves was tagged
+   * `trigger:send` by its author, and nothing had ever asked for that tag. Measured
+   * 2026-08-12: it had never fired, including on the issue filed that same afternoon.
+   */
+  describe('outward send', () => {
+    it('reaches the standard that was written for it', () => {
+      assert.equal(ruleMatchesTrigger({ tags: ['trigger:send'] }, 'send'), true);
+      assert.equal(ruleMatchesTrigger({ tags: ['trigger:送出'] }, 'send'), true);
+      assert.equal(ruleMatchesTrigger({ tags: ['trigger:對外'] }, 'send'), true);
+    });
+
+    it('publish and 發布 match a send AND a deploy, because the word decides nothing', () => {
+      // 發布新版本 is a deploy; 發布一篇文章 is an outward send. Whoever writes the memory
+      // cannot know which bucket their tag lands in, so it lands in both. The cost of the
+      // extra match is one line on an operation it does not apply to; the cost of picking
+      // one is a rule that stays silent on the operation it was written for — and the
+      // standard behind this gives the tiebreaker: what goes out cannot be taken back.
+      for (const tag of ['trigger:publish', 'trigger:發布', 'trigger:發佈']) {
+        assert.equal(ruleMatchesTrigger({ tags: [tag] }, 'send'), true, `${tag} vs send`);
+        assert.equal(ruleMatchesTrigger({ tags: [tag] }, 'deploy'), true, `${tag} vs deploy`);
+      }
+    });
+
+    it('does not drag the deploy-only vocabulary along with it', () => {
+      // Otherwise every deployment standard turns up on a reply to an issue, which is the
+      // noise this whole filter exists to remove.
+      for (const tag of ['trigger:部署', 'trigger:kubectl', 'trigger:上線', 'trigger:升級']) {
+        assert.equal(ruleMatchesTrigger({ tags: [tag] }, 'send'), false, `${tag} vs send`);
+      }
+    });
+
+    it('and a send tag does not make something fire on a commit', () => {
+      assert.equal(ruleMatchesTrigger({ tags: ['trigger:send'] }, 'commit'), false);
+      assert.equal(ruleMatchesTrigger({ tags: ['trigger:對外'] }, 'edit'), false);
+    });
+  });
 });
 
 describe('the .sh hook has no copy of the table to drift', () => {
