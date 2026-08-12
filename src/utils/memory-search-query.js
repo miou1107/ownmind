@@ -13,6 +13,7 @@
  */
 
 export { tokenize } from '../../shared/memory-search-tokens.js';
+import { bigrams, bigramThreshold } from '../../shared/memory-search-tokens.js';
 
 /**
  * Escape LIKE metacharacters so a user token containing '%' or '_' matches
@@ -38,18 +39,38 @@ export function buildSearchWhere(tokens, startingParamIndex = 2) {
   if (!Array.isArray(tokens) || tokens.length === 0) return null;
 
   const params = [];
-  const groups = tokens.map((token, i) => {
-    const paramIdx = startingParamIndex + i;
+  let nextParam = startingParamIndex;
+  const firstTokenParam = `$${nextParam}`;
+
+  const groups = tokens.map((token) => {
+    const paramIdx = nextParam;
+    nextParam += 1;
     params.push(`%${escapeLikePattern(token)}%`);
-    return (
-      `(title ILIKE $${paramIdx} OR content ILIKE $${paramIdx} ` +
+
+    const whole =
+      `title ILIKE $${paramIdx} OR content ILIKE $${paramIdx} ` +
       `OR code ILIKE $${paramIdx} ` +
-      `OR EXISTS (SELECT 1 FROM unnest(COALESCE(tags, ARRAY[]::text[])) t WHERE t ILIKE $${paramIdx}))`
-    );
+      `OR EXISTS (SELECT 1 FROM unnest(COALESCE(tags, ARRAY[]::text[])) t WHERE t ILIKE $${paramIdx})`;
+
+    // v1.26.156 — the same window rule `itemMatchesTokens` applies offline. Without it the
+    // two paths answer differently for the language most of these memories are written in,
+    // which is the drift shared/memory-search-tokens.js exists to prevent.
+    const windows = bigrams(token);
+    if (windows.length === 0) return `(${whole})`;
+
+    const gramIdx = nextParam;
+    nextParam += 1;
+    params.push(windows.map((g) => `%${escapeLikePattern(g)}%`));
+    const need = bigramThreshold(windows.length);
+    // Counted per column rather than pooled, and only over the prose columns. `code` and
+    // `tags` hold identifiers; a partial match on `IR-XXX` or `trigger:commit` is noise.
+    const counted = (col) =>
+      `(SELECT count(*) FROM unnest($${gramIdx}::text[]) g WHERE ${col} ILIKE g) >= ${need}`;
+
+    return `(${whole} OR ${counted('title')} OR ${counted('content')})`;
   });
 
   const whereClause = groups.join(' AND ');
-  const firstTokenParam = `$${startingParamIndex}`;
   const orderClause = `(title ILIKE ${firstTokenParam}) DESC, updated_at DESC`;
 
   return { whereClause, orderClause, params };
