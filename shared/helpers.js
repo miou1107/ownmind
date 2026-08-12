@@ -161,15 +161,19 @@ export function readCredentials(settingsPath) {
 /**
  * Detect the trigger type from a PreToolUse hook command.
  *
- * KEEP IN SYNC with the grep chain in hooks/ownmind-iron-rule-check.sh — patterns AND the
- * order they are tested in, since the first match wins and a command can belong to two
- * families (`docker compose up -d && rm -rf ./old` is a deploy here and has to be one there).
+ * This is the only copy. Both hooks reach it: ownmind-iron-rule-check.js imports it, and
+ * ownmind-iron-rule-check.sh shells out to hooks/ownmind-detect-trigger.js, which is a
+ * four-line wrapper around this function. Adding a pattern here changes every platform at
+ * once, and there is no second list to forget.
  *
- * This function is the reference; the shell chain is transcribed from it. issue #92: for a
- * long time nothing said so and nothing checked, and 7 of 17 sample commands had drifted
- * apart — including `git tag`, which reached no trigger at all on the platforms where the
- * shell copy is the one installed. tests/iron-rule-trigger-parity.test.js runs both for real
- * and fails if any answer differs.
+ * Order matters and is load-bearing: the first match wins, and a command can belong to two
+ * families — `docker compose up -d && rm -rf ./old` is a deploy, not a delete.
+ *
+ * issue #92: the shell hook used to carry its own hand-transcribed grep chain. Nothing said
+ * the two had to agree and nothing checked, and 7 of 17 sample commands had drifted apart —
+ * including `git tag`, which reached no trigger at all on the platforms where the shell copy
+ * is the one installed. tests/iron-rule-trigger-parity.test.js still runs both paths for
+ * real, so the wrapper and the import are held to the same answers.
  *
  * @param {string} command — bash command
  * @returns {'commit' | 'deploy' | 'delete' | 'install' | null}

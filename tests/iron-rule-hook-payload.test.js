@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { stageHookHome } from './helpers/hook-home.js';
 
 /**
  * v1.26.90 — the PreToolUse iron-rule hook never saw the command.
@@ -68,26 +69,9 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-irhook-'));
-    fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpHome, '.claude', 'settings.json'),
-      JSON.stringify({
-        mcpServers: {
-          ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: baseUrl } },
-        },
-      })
-    );
-    // Deliberately no ~/.ownmind/.git — that keeps the .sh one-time upgrade block, which
-    // would run `git pull`, from firing inside a test.
-
-    // ~/.ownmind/package.json makes the version gate reachable; the gate must still decline
-    // to fire because the cwd below is a different repository.
-    fs.mkdirSync(path.join(tmpHome, '.ownmind'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpHome, '.ownmind', 'package.json'),
-      JSON.stringify({ version: '99.99.99' })
-    );
+    // The version this stages into ~/.ownmind/package.json makes the version gate reachable;
+    // the gate must still decline to fire, because the cwd below is a different repository.
+    tmpHome = stageHookHome({ apiUrl: baseUrl });
 
     // A cached rule marked "block if this fails", with a condition that cannot pass (no
     // compliance events exist under this HOME). This is the shape a pre-v1.26.89 server
@@ -112,14 +96,6 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
         },
       }], null, 2)
     );
-    // The .sh hook shells out to these two by absolute path under HOME.
-    fs.mkdirSync(path.join(tmpHome, '.ownmind', 'hooks'), { recursive: true });
-    fs.symlinkSync(path.join(repoRoot, 'shared'), path.join(tmpHome, '.ownmind', 'shared'));
-    fs.symlinkSync(
-      path.join(repoRoot, 'hooks', 'ownmind-verify-trigger.js'),
-      path.join(tmpHome, '.ownmind', 'hooks', 'ownmind-verify-trigger.js')
-    );
-
     otherRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-otherrepo-'));
     for (const args of [
       ['init', '-q'],

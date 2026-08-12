@@ -2,41 +2,42 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { detectCommandTrigger } from '../shared/helpers.js';
+import { stageHookHome } from './helpers/hook-home.js';
 
 /**
- * issue #92 — the two command classifiers must answer the same thing.
+ * issue #92 — both routes into the classifier must answer the same thing.
  *
- * `ownmind-iron-rule-check` ships twice: the `.js` hook classifies through
- * `detectCommandTrigger()` in shared/helpers.js, and the `.sh` hook rebuilds the same
- * decision as a hand-written `grep -qiE` chain. Both exist for good reasons — the shell copy
- * needs no node on PATH and avoids handing node a path, the move behind two silent Windows
- * failures (v1.26.88, v1.26.90).
+ * `ownmind-iron-rule-check` ships twice. The `.js` hook imports `detectCommandTrigger()`
+ * from shared/helpers.js; the `.sh` hook pipes the command into
+ * hooks/ownmind-detect-trigger.js, which wraps the same function. One implementation, two
+ * ways in — so what this file now guards is the plumbing, not a second rule list.
  *
- * What did not exist was anything holding them to the same answers. The KEEP IN SYNC note in
- * shared/helpers.js covers `TRIGGER_TAG_ALIASES` only, and the drift test beside it compares
- * that one table. The classification itself was unguarded, and `install.sh` registers the
- * `.sh` copy on mac and Linux — so the unguarded implementation is the one actually running
- * for most users.
+ * It did not start there. The `.sh` hook used to rebuild the decision as a hand-written
+ * `grep -qiE` chain, and nothing held the two to the same answers: the KEEP IN SYNC note in
+ * shared/helpers.js covers `TRIGGER_TAG_ALIASES` only. The classification itself was
+ * unguarded, and `install.sh` registers the `.sh` copy on mac and Linux — so the unguarded
+ * implementation was the one actually running for most users.
  *
- * Measured before this test existed: 7 of the 17 commands below were classified differently.
+ * Measured before this test existed: 7 of the 18 commands below were classified differently.
  * `git tag` reached no trigger at all on mac/Linux, so a release tag — the moment a commit
  * rule most wants to speak — was silent. `docker compose build` and `docker compose push`
  * likewise. In the other direction `docker.*up` matched `docker logs backup` and
  * `docker ps | grep uptime`, because `backup` and `uptime` both contain "up": reading a log
- * produced a full deployment rule listing.
+ * produced a full deployment rule listing. v1.26.149 squared the answers; v1.26.150 deleted
+ * the chain.
  *
- * `shared/helpers.js` is the reference. It is the copy the KEEP IN SYNC note names, the copy
- * carrying the per-pattern rationale, and the copy already under test.
+ * Keep this table even though the second list is gone. It is what would catch the wrapper
+ * being dropped, the pipe losing a multi-line command, or someone reintroducing a shortcut
+ * ahead of the node call — all of which look exactly like the original defect from outside.
  *
- * The shell side is observed by running the real hook, never by restating its grep chain
- * here. A third copy of the logic would be the defect this file exists to catch, written into
- * the thing catching it.
+ * The shell side is observed by running the real hook, never by restating what it does here.
+ * A third copy of the logic would be the defect this file exists to catch, written into the
+ * thing catching it.
  */
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -133,28 +134,7 @@ describe('issue #92 — the .js and .sh command classifiers agree', () => {
       await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
       baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-      tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-trigger-parity-'));
-      fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpHome, '.claude', 'settings.json'),
-        JSON.stringify({
-          mcpServers: {
-            ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: baseUrl } },
-          },
-        })
-      );
-      // No ~/.ownmind/.git: that keeps the one-time upgrade block, which runs `git pull`,
-      // from firing inside a test run.
-      fs.mkdirSync(path.join(tmpHome, '.ownmind', 'hooks'), { recursive: true });
-      fs.writeFileSync(
-        path.join(tmpHome, '.ownmind', 'package.json'),
-        JSON.stringify({ version: '99.99.99' })
-      );
-      fs.symlinkSync(path.join(repoRoot, 'shared'), path.join(tmpHome, '.ownmind', 'shared'));
-      fs.symlinkSync(
-        path.join(repoRoot, 'hooks', 'ownmind-verify-trigger.js'),
-        path.join(tmpHome, '.ownmind', 'hooks', 'ownmind-verify-trigger.js')
-      );
+      tmpHome = stageHookHome({ apiUrl: baseUrl });
     });
 
     after(async () => {
@@ -193,7 +173,9 @@ describe('issue #92 — the .js and .sh command classifiers agree', () => {
         assert.equal(r.status, 0,
           `a hook must never fail the tool call it inspects. stderr=${r.stderr.slice(0, 300)}`);
         assert.equal(triggerFromHookOutput(r.stdout), expected,
-          'the shell copy disagrees with shared/helpers.js — see the KEEP IN SYNC note there');
+          'the shell hook disagrees with shared/helpers.js. Both should reach the same function '
+          + 'via hooks/ownmind-detect-trigger.js, so suspect the plumbing first: the pipe into it, '
+          + 'its exit status, or something classifying ahead of the node call');
       });
     }
   });

@@ -2,10 +2,10 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { stageHookHome } from './helpers/hook-home.js';
 
 /**
  * v1.26.132 — when the rule lookup failed, the hook said nothing and behaved exactly as if
@@ -49,28 +49,7 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-fetchfail-'));
-    fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpHome, '.claude', 'settings.json'),
-      JSON.stringify({
-        mcpServers: {
-          ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: baseUrl } },
-        },
-      })
-    );
-    // No ~/.ownmind/.git — keeps the one-time upgrade block (which runs `git pull`) out.
-    fs.mkdirSync(path.join(tmpHome, '.ownmind'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpHome, '.ownmind', 'package.json'),
-      JSON.stringify({ version: '99.99.99' })
-    );
-    fs.mkdirSync(path.join(tmpHome, '.ownmind', 'hooks'), { recursive: true });
-    fs.symlinkSync(path.join(repoRoot, 'shared'), path.join(tmpHome, '.ownmind', 'shared'));
-    fs.symlinkSync(
-      path.join(repoRoot, 'hooks', 'ownmind-verify-trigger.js'),
-      path.join(tmpHome, '.ownmind', 'hooks', 'ownmind-verify-trigger.js')
-    );
+    tmpHome = stageHookHome({ apiUrl: baseUrl });
   });
 
   after(async () => {

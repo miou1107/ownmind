@@ -616,7 +616,15 @@ if [ -f "$SRC_VERIFY" ] && ! [ "$SRC_VERIFY" -ef "$DST_VERIFY" ]; then
 fi
 
 # 複製 git hook JS 檔案
-HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js")
+# v1.26.150 — ownmind-detect-trigger.js added: ownmind-iron-rule-check.sh runs it by absolute
+# path to classify a command, so it belongs with the other helpers reached that way.
+#
+# The copy below is a no-op today. OWNMIND_DIR is $HOME/.ownmind, so SRC_JS and DST_JS are
+# the same file and `-ef` skips every one of them — what actually puts these on disk is the
+# git checkout. The list still matters for a clone anywhere else, and a name missing from it
+# fails quietly rather than loudly: the hook keeps running and classifies every command as
+# no-trigger, which looks exactly like a quiet day.
+HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js" "ownmind-detect-trigger.js")
 for js_file in "${HOOK_JS_FILES[@]}"; do
   SRC_JS="$OWNMIND_DIR/hooks/$js_file"
   DST_JS="$HOME/.ownmind/hooks/$js_file"
