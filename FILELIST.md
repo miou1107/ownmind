@@ -1,5 +1,60 @@
 # OwnMind 檔案結構
 
+## v1.26.150 修改（兩份判斷變成一份 — issue #92 收尾）
+
+新檔：
+```
+hooks/ownmind-detect-trigger.js                 — 從 stdin 讀指令、印出 trigger 名稱的包裝。
+                                                   四行本體，判斷全在 detectCommandTrigger()。
+                                                   走 stdin 不走 argv：commit 訊息常是多行，
+                                                   stdin 沒有長度上限也沒有引號規則。
+                                                   給了 argv 就用 argv，方便手動測，
+                                                   也避免在沒接管線的終端機上卡住。
+tests/helpers/hook-home.js                      — 幫 shell 掛勾搭拋棄式 $HOME 的唯一一處。
+                                                   原本這段在五個測試檔各手抄一遍，
+                                                   而掛勾一多一支 helper，四個檔八個測試同時紅、
+                                                   全部同一個漏掉的連結。HOOK_HELPERS 那張表
+                                                   就是為此存在：加 helper 只改這裡。
+                                                   用 symlink 不用複製，改掛勾不必重搭；
+                                                   node 從真實路徑解析模組，所以 hooks/package.json
+                                                   的 "type": "module" 在 repo 裡就找得到，
+                                                   假 $HOME 不需要複製一份。
+openspec/changes/v1.26.150-one-classifier-not-two/
+  proposal.md / spec.md / tasks.md               — 為什麼「shell 那份要能不靠 node」這個前提
+                                                   其實早就不成立（第 23 行就在呼叫 node）、
+                                                   為什麼因此選 B 案而不是 A 案、
+                                                   為什麼不把判斷塞進現成那個 node 區塊、
+                                                   以及安裝腳本那兩張清單為什麼是空轉的
+```
+
+修改：
+```
+hooks/ownmind-iron-rule-check.sh                — 20 行 grep 鏈刪掉，改成一行管線餵進
+                                                   ownmind-detect-trigger.js。有檢查離開狀態、
+                                                   非零寫 detect_trigger_failed 進活動記錄；
+                                                   stderr 刻意不導掉（IR-002）——
+                                                   安靜壞掉的判斷器回空答案，
+                                                   跟「這條指令不觸發任何東西」長得一樣。
+shared/helpers.js                               — detectCommandTrigger 的 KEEP IN SYNC 註記
+                                                   改寫：已經沒有第二份要同步了。
+                                                   樣式一條沒動，18 條指令答案全同 v1.26.149。
+install.sh / install.ps1                        — 掛勾檔清單補 ownmind-detect-trigger.js。
+                                                   註記標明這兩張清單在標準安裝下是空轉的
+                                                   （OWNMIND_DIR 就是 $HOME/.ownmind，
+                                                   來源與目的同一個檔，-ef 直接跳過），
+                                                   真正把檔案放上去的是 git checkout。
+tests/iron-rule-trigger-parity.test.js          — 標頭與失敗訊息改寫：現在守的是管線，
+                                                   不是第二份規則表。表格保留 ——
+                                                   包裝被拿掉、管線吃掉多行指令、
+                                                   有人在 node 呼叫前面插捷徑，
+                                                   從外面看都跟原本那個缺陷一模一樣。
+tests/edit-trigger-reminder.test.js             — 改用 stageHookHome()
+tests/iron-rule-fetch-failure-logged.test.js
+tests/iron-rule-hook-payload.test.js
+tests/iron-rule-install-trigger.test.js
+package.json                                    — 1.26.149 → 1.26.150
+```
+
 ## v1.26.149 修改（同一個判斷寫了兩份，而它們講的不一樣 — issue #92）
 
 新檔：

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { stageHookHome } from './helpers/hook-home.js';
 import { TOOL_TRIGGERS, detectToolTrigger, ruleMatchesTrigger } from '../shared/helpers.js';
 import {
   decideEditReminder,
@@ -66,22 +67,8 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-edittrig-'));
+    tmpHome = stageHookHome({ apiUrl: baseUrl });
     statePath = path.join(tmpHome, 'edit-reminder.json');
-    fs.mkdirSync(path.join(tmpHome, '.claude'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpHome, '.claude', 'settings.json'),
-      JSON.stringify({
-        mcpServers: { ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: baseUrl } } },
-      })
-    );
-    // No ~/.ownmind/.git — that keeps the .sh one-time upgrade block, which runs git pull,
-    // from firing inside a test.
-    fs.mkdirSync(path.join(tmpHome, '.ownmind', 'hooks'), { recursive: true });
-    fs.writeFileSync(
-      path.join(tmpHome, '.ownmind', 'package.json'),
-      JSON.stringify({ version: '99.99.99' })
-    );
     // A cached rule that WOULD block, with a condition nothing here can satisfy. Without
     // it the "never blocks" assertion holds no matter which path ran — the verification
     // engine would find an empty cache and emit nothing either way.
@@ -104,18 +91,6 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
           },
         },
       }])
-    );
-    // The .sh hook shells out to the verification engine by absolute path.
-    fs.symlinkSync(
-      path.join(repoRoot, 'hooks', 'ownmind-verify-trigger.js'),
-      path.join(tmpHome, '.ownmind', 'hooks', 'ownmind-verify-trigger.js')
-    );
-    // The .sh hook runs the edit reminder by absolute path under HOME, the way it already
-    // runs ownmind-verify-trigger.js.
-    fs.symlinkSync(path.join(repoRoot, 'shared'), path.join(tmpHome, '.ownmind', 'shared'));
-    fs.symlinkSync(
-      path.join(repoRoot, 'hooks', 'ownmind-edit-reminder.js'),
-      path.join(tmpHome, '.ownmind', 'hooks', 'ownmind-edit-reminder.js')
     );
   });
 

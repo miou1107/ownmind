@@ -594,7 +594,9 @@ $VerificationSrc = Join-Path $OwnmindDir "shared\verification.js"
 Copy-IfDifferent -Src $VerificationSrc -DestDir (Join-Path $HOME ".ownmind\shared\") -Label "verification engine"
 
 # 複製 git hook JS 檔案
-$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-commit-msg.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js")
+# v1.26.150 — keep in step with HOOK_JS_FILES in install.sh; see the note there for why the
+# copy is a no-op on a standard install and why a missing name fails quietly.
+$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-commit-msg.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js", "ownmind-detect-trigger.js")
 foreach ($jsFile in $GitHookJsFiles) {
   $src = Join-Path $OwnmindDir "hooks\$jsFile"
   Copy-IfDifferent -Src $src -DestDir (Join-Path $HOME ".ownmind\hooks\") -Label $jsFile

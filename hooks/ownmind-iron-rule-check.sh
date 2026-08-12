@@ -151,53 +151,33 @@ fi
 
 # 偵測觸發關鍵字
 #
-# issue #92 — a line-by-line transcription of detectCommandTrigger in shared/helpers.js,
-# in its order. It used to be an independent chain, and by the time anyone compared them 7
-# of 17 sample commands were classified differently. install.sh registers this copy on mac
-# and Linux, so the drifting half was the half most users were running:
+# issue #92 — one call into the classifier, not a second copy of it.
 #
-#   git tag                 reached no trigger here, so a release tag — the moment the
-#                           version-sync rules are written for — was silent
-#   docker compose build    likewise, and `push` too: the old deploy pattern was
-#   docker compose push     `docker.*up`, which neither contains
-#   docker logs backup      matched `docker.*up`, because `backup` contains "up". Reading a
-#   docker ps | grep uptime log printed a full deployment rule listing. Same for `uptime`.
-#   Remove-Item             absent here, present in the reference
-#   deploy && delete        the delete branch was tested first, so a command that deploys
-#                           and then tidies up classified as a delete
+# This was a 20-line grep chain transcribed by hand from detectCommandTrigger in
+# shared/helpers.js. Transcription was the whole defect: by the time anyone compared the
+# two, 7 of 17 sample commands were classified differently, and install.sh registers this
+# copy on macOS and Linux, so the drifting half was the half most users were running.
+# `git tag` reached no trigger here at all — a release tag, the one moment the version-sync
+# rules are written for, was silent. `docker logs backup` matched the old `docker.*up`
+# pattern, because "backup" contains "up", so reading a log printed a deployment listing.
 #
-# tests/iron-rule-trigger-parity.test.js runs this file for real and requires every answer
-# to match the reference. Editing either side alone now fails there.
+# v1.26.149 made both sides answer alike and added tests/iron-rule-trigger-parity.test.js to
+# hold them there. This removes the second side, so there is nothing left to drift. New
+# patterns go in shared/helpers.js and arrive here for free; adding one only here is no
+# longer possible, which is the point.
 #
-# Where the two disagreed about something only this copy recognised, the reference is the
-# side that moved: `docker.*deploy` became `docker stack deploy` in shared/helpers.js, so a
-# Swarm deploy is now a deploy on every platform rather than on half of them.
+# Calling node costs nothing that was not already spent — this script cannot run without it
+# anyway, and reaches for it near the top of the file just to read the version string.
 #
-# One pattern is simply gone: `del `, the cmd.exe delete. It cannot appear on the platforms
-# this copy runs on, and PowerShell's own name for it — Remove-Item — is matched above.
-# Anything else wanted here belongs in shared/helpers.js first; adding it back only here
-# rebuilds the drift this change removed.
-TRIGGER=""
-if echo "$COMMAND" | grep -qiE "\bgit[[:space:]]+(commit|reset|rebase|merge)\b"; then
-  TRIGGER="commit"
-elif echo "$COMMAND" | grep -qiE "\bgit[[:space:]]+tag\b"; then
-  TRIGGER="commit"
-elif echo "$COMMAND" | grep -qiE "\bgit[[:space:]]+push\b"; then
-  TRIGGER="deploy"
-elif echo "$COMMAND" | grep -qiE "\b(docker[[:space:]]+compose[[:space:]]+(up|build|push)|docker[[:space:]]+stack[[:space:]]+deploy|kubectl[[:space:]]+apply|npm[[:space:]]+run[[:space:]]+deploy)\b"; then
-  TRIGGER="deploy"
-elif echo "$COMMAND" | grep -qiE "\b(rm[[:space:]]+-rf|rmdir|Remove-Item|drop[[:space:]]+table|DELETE[[:space:]]+FROM)\b"; then
-  TRIGGER="delete"
-# v1.26.132 — install and credential work had no trigger, so the two rules written for it
-# could not fire during it. KEEP IN SYNC with detectCommandTrigger in shared/helpers.js.
-# `npm install` / `pip install` stay out: this matches a script filename or a key name, and
-# neither of those appears in a dependency install.
-elif echo "$COMMAND" | grep -qiE "(^|[[:space:]/\\])[[:alnum:]._~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)([[:space:]]|$)"; then
-  TRIGGER="install"
-# Not `\bAPI_KEY\b`: an underscore is a word character, so there is no boundary before the
-# `A` in OWNMIND_API_KEY — the prefixed form every real env var uses.
-elif echo "$COMMAND" | grep -qiE "(^|[^A-Za-z])API[_-]?KEYS?\b|\bcredentials?\b"; then
-  TRIGGER="install"
+# stderr is deliberately not redirected. If node cannot load the classifier that has to be
+# visible: a silently empty answer is indistinguishable from "this command triggers
+# nothing", which is the most common true answer and so the best hiding place a defect
+# could ask for. The exit status is checked as well, so a failure is recorded, not dropped.
+TRIGGER=$(printf '%s' "$COMMAND" | node "$HOME/.ownmind/hooks/ownmind-detect-trigger.js")
+DETECT_STATUS=$?
+if [ "$DETECT_STATUS" -ne 0 ]; then
+  log_event "detect_trigger_failed" "status" "$DETECT_STATUS"
+  exit 0
 fi
 
 if [ -z "$TRIGGER" ]; then exit 0; fi
