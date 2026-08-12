@@ -439,7 +439,7 @@ const TOOLS = [
     // standard whose text lives on its own record — the case for every standard written
     // recently. A tool description is read on every turn, so it outranked the session context
     // that was telling the AI the same wrong thing.
-    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. To read a team standard you have only seen the title of, call ownmind_search with that title and then ownmind_get with the id of the row it returns; standard_detail holds child fragments and is empty for a standard whose text is on its own record.",
+    description: "Retrieve memories. Pass id to read one memory in full — that is how you follow up a search result whose content was truncated. Pass type to list every memory of that type. To read a team standard you have only seen the title of, call ownmind_search with that title and then ownmind_get with the id of the row it returns: that gives you the whole standard, including any text held in child fragments, which arrive in document order in a `fragments` array. You do not need to know how a standard was stored.",
     inputSchema: {
       type: "object",
       properties: {

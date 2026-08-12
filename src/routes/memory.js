@@ -17,6 +17,7 @@ import { matchTemplate, RULE_TEMPLATES } from '../utils/templates.js';
 import { generateNextIronRuleCode } from '../utils/auto-numbering.js';
 import { buildOnboarding } from '../utils/onboarding.js';
 import { parseSyncTypes, parseSince, buildSyncQuery } from '../lib/memory-sync.js';
+import { attachStandardFragments } from '../utils/standard-fragments.js';
 import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-validator.js';
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
@@ -964,7 +965,12 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Memory not found' });
     }
 
-    res.json(result.rows[0]);
+    // v1.26.146 (issue #89): a team standard whose text was uploaded as child fragments used
+    // to answer this read with one line of boilerplate, and nothing in the answer said the
+    // rest existed. Reading one is what a caller asked for, so reading one is where the
+    // fragments are attached — the type listing deliberately stays as it was, because
+    // answering an index with every standard's full text is a cost nobody asked for.
+    res.json(await attachStandardFragments(result.rows[0], { query, userId: req.user.id }));
   } catch (err) {
     logger.error('memory query failed', { error: err.message });
     res.status(500).json({ error: 'Query failed' });
@@ -1924,7 +1930,10 @@ router.post('/batch-sync-standard', async (req, res) => {
 
     // 2. Fetch the existing detail rows.
     const existingResult = await query(
-      `SELECT id, title, metadata->>'hash' as hash FROM memories
+      `SELECT id, title, metadata->>'hash' as hash,
+              CASE WHEN jsonb_typeof(metadata->'ord') = 'number'
+                   THEN (metadata->>'ord')::int END AS ord
+         FROM memories
        WHERE type = 'standard_detail'
          AND metadata->>'parent_id' = $1
          AND status = 'active'`,
@@ -1932,11 +1941,19 @@ router.post('/batch-sync-standard', async (req, res) => {
     );
     const existingMap = new Map(existingResult.rows.map(r => [r.title, r]));
 
-    const stats = { added: 0, updated: 0, deleted: 0, unchanged: 0 };
+    const stats = { added: 0, updated: 0, deleted: 0, unchanged: 0, reordered: 0 };
     const processedTitles = new Set();
 
     // 3. Process the incoming chunks.
-    for (const chunk of chunks) {
+    //
+    // v1.26.146: `ord` is the chunk's position in this array, and this is the only place that
+    // knows it. Chunks arrive in document order and the diff below keys on title, so a renamed
+    // heading is a disable plus an insert — its row id becomes the rename date rather than its
+    // place in the document, and renaming a top-level heading does that to every section under
+    // it. Row id was the read path's ordering key until it was traced; recording the position
+    // the sync already has costs one field and needs no backfill, because a standard gains its
+    // ordinals the next time anything syncs it.
+    for (const [ord, chunk] of chunks.entries()) {
       const { title, content, hash, level } = chunk;
       processedTitles.add(title);
 
@@ -1951,7 +1968,7 @@ router.post('/batch-sync-standard', async (req, res) => {
             title,
             content,
             ['rule_detail'],
-            { parent_id: parentId, hash, level }
+            { parent_id: parentId, hash, level, ord }
           ]
         );
         stats.added++;
@@ -1961,9 +1978,17 @@ router.post('/batch-sync-standard', async (req, res) => {
           `UPDATE memories
            SET content = $1, metadata = $2, updated_at = NOW()
            WHERE id = $3`,
-          [content, { parent_id: parentId, hash, level }, existing.id]
+          [content, { parent_id: parentId, hash, level, ord }, existing.id]
         );
         stats.updated++;
+      } else if (existing.ord !== ord) {
+        // Same text, different place in the document — a section moved, or this standard
+        // predates ordinals. Writing only `ord` leaves the hash and level as they were.
+        await query(
+          `UPDATE memories SET metadata = metadata || $1::jsonb, updated_at = NOW() WHERE id = $2`,
+          [JSON.stringify({ ord }), existing.id]
+        );
+        stats.reordered++;
       } else {
         stats.unchanged++;
       }

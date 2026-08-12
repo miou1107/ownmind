@@ -1540,6 +1540,30 @@ tests/upgrade-rollback-honesty.test.js          — 收 review 補的五項各�
                                                    回報得出去（含對照組）、還原失敗只看自己的
                                                    錯誤、訊息摺一行且有上限、Windows 少建的
                                                    資料夾、git status 要留下原因
+## v1.26.146 修改（一條讀起來只有一行的規範，issue #89）
+
+新增檔：
+```
+src/utils/standard-fragments.js                 — 讀一條團隊規範時，把掛在底下的段落一起帶回來。
+                                                   排序、字數上限、超過上限時講出下一步；以及
+                                                   單獨讀到一個段落時附上它屬於哪一條
+tests/standard-fragments.test.js                — 17 個測試。排序的樣本都刻意打亂過（照預期
+                                                   順序排好的樣本，拿掉排序照樣綠），上限測試
+                                                   會驗正式的那個數字而不只是注入的
+openspec/changes/v1.26.146-a-standard-that-reads-as-one-line/ — proposal / spec / tasks
+```
+
+改動檔：
+```
+src/routes/memory.js                            — GET /:id 接上 attachStandardFragments；
+                                                   batch-sync-standard 把段落在文件裡的位置
+                                                   寫進 metadata.ord（新增、更新、只有位置變
+                                                   都會寫），stats 多一個 reordered
+mcp/index.js                                    — ownmind_get 的說明不再要讀的人分辨兩種存法，
+                                                   改成「用 id 讀就會拿到全文，含 fragments」
+package.json / README.md / CHANGELOG.md         — 版號與紀錄
+```
+
 ## v1.26.145 修改（守門的那個東西，被門外的人刪掉了）
 
 新增檔：
