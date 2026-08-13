@@ -1,5 +1,212 @@
 # OwnMind 檔案結構
 
+## v1.26.169 修改（第三道關卡接上了）
+
+新增：
+```
+hooks/lib/compliance-step.js                    — 這一輪要做什麼的決策函式。本機先篩、失敗必留痕、
+                                                   退回次數自己算（不共用 lint 的門檻）。團隊規範
+                                                   的回饋會多一句「使用者說了不算」。
+hooks/lib/compliance-client.js                  — 送查核請求。Bearer 認證、5 秒逾時、失敗後退避、
+                                                   送出前先遮蔽密碼權杖形狀的字串。
+tests/enforcement-compliance-step.test.js       — 決策的各種分支。
+tests/enforcement-compliance-client.test.js     — 認證標頭、退避、遮蔽。
+tests/enforcement-reply-lint-wiring.test.js     — 把 hook 當程式跑，驗它真的走到檢查、而且在
+                                                   「重寫」那條早退之前。抓到 readCredentials
+                                                   不在作用域的就是這個檔。
+```
+
+修改：
+```
+hooks/ownmind-reply-lint.js                     — 合規檢查插在 stop_hook_active 早退之前；逐字稿
+                                                   只讀一次，後面重用。依賴全部動態載入且各自 catch，
+                                                   壞一支不能拖垮既有三個檢查。
+hooks/lib/compliance-step.js
+src/lib/enforcement/select-rules.js             — trigger 改成可接多個標籤：一則回覆同時是「回話」
+                                                   也是「回報」。
+```
+
+## v1.26.168 修改（判斷者：伺服器端）
+
+新增：
+```
+db/025_enforcement.sql                          — users.enforcement_mode（預設 off）＋
+                                                   compliance_checks。outcome 刻意把
+                                                   skipped/failed 跟 clean 分開，否則「沒跑」
+                                                   會長得跟「跑了沒事」一樣。
+src/lib/enforcement/select-rules.js             — 挑這一輪要判的規範。寧可多挑，只用預算擋；
+                                                   超大的規範會被跳過而不是讓後面全部消失，
+                                                   被跳過的會回報給呼叫端記錄。
+src/lib/enforcement/judge-prompt.js             — 給判官的提示與回覆驗證。吃已解析的物件，
+                                                   因為 callLLMSwitch 回的就是物件。
+src/routes/compliance.js                        — POST /check 與 /feedback。帳號開關第一關；
+                                                   撈規範用 buildReadableWhere ＋ 併片段。
+tests/enforcement-judge.test.js                 — 挑選與提示，含「回傳形狀不能漂移」。
+tests/enforcement-compliance-route.test.js      — 端點行為，其中一條走真的 callLLMSwitch
+                                                   打樁伺服器，釘住那個曾經害整套失效的接縫。
+```
+
+修改：
+```
+src/app.js                                      — 掛 /api/compliance。
+tests/helpers/real-db.js                        — 容器埠改成依行程編號，避免偶發互撞。
+```
+
+## v1.26.167 修改（四種規範，四句不同的話）
+
+修改：
+```
+hooks/ownmind-prompt-inject.js                  — PRECEDENCE_SENTENCE 改成 PRECEDENCE_BY_TYPE，
+                                                   四種各一句；未知型別有 fallback（沒有句子
+                                                   就等於回到事故當時的狀態）。標頭也改成講
+                                                   實際型別，不再一律叫 standard。
+src/routes/enforcement-bundle.js                — selectors/guards/injectables 都帶上 type。
+hooks/lib/path-guard.js                         — 擋下來的訊息依 type 分兩種，跟注入時一致。
+tests/enforcement-prompt-inject.test.js         — 四種各一條，另加「每個型別都要有句子」。
+tests/enforcement-path-guard.test.js            — 團隊規範要求「確認」、個人規範不要求。
+tests/enforcement-bundle.test.js                — type 必須被送出去。
+```
+
+## v1.26.166 修改（開工之前，規範先擺到眼前）
+
+新增：
+```
+hooks/ownmind-prompt-inject.js                  — UserPromptSubmit hook。比對純本機（訊息
+                                                   不出機器、不加來回）。注入第一句固定是
+                                                   優先權宣告，再來禁區路徑與負責人，最後
+                                                   才是本文。去重狀態落在檔案，因為每則訊息
+                                                   都是新行程。沒同步過的機器會明講。
+tests/enforcement-prompt-inject.test.js         — 含優先權那句必須在本文之前、以及把 hook
+                                                   當程式跑兩次驗去重真的跨行程。
+tests/enforcement-inject-registration.test.js   — 讀寫完之後的 settings.json 來斷言，不是
+                                                   grep 原始碼（註解掉的註冊也會通過 grep）。
+```
+
+修改：
+```
+scripts/install-helpers/ensure-pretooluse-hooks.cjs — 抽出 ensureEntry()，讓 UserPromptSubmit
+                                                   跟既有工具攔截共用同一套加/修/不動邏輯。
+                                                   升級路徑也會拿到。
+tests/ensure-pretooluse-hooks.test.js           — 「已經正確」的 fixture 補上新 hook；少了它
+                                                   等於斷言「缺一個 hook 不算要修」。
+```
+
+## v1.26.165 修改（第一道真的擋得住的關卡）
+
+新增：
+```
+hooks/lib/path-guard.js                         — 禁區判斷。repo 由被編輯檔案的目錄解析，
+                                                   不是工作目錄。比對前兩邊都先過 realpath
+                                                   （mac 的 /var 與 /private/var 是同一處，
+                                                   直接比字串會讓檔案看起來在 repo 外面）。
+                                                   findContentMention 另外接住「文件內文在
+                                                   提議改禁區」這種路徑擋不到的情況。
+tests/enforcement-path-guard.test.js            — 含跨 repo 那一條：session 在 A、改 B 的
+                                                   禁區檔，必須擋。
+tests/enforcement-edit-guard.test.js            — 最後一條把 payload 灌進真的 .sh，驗 block
+                                                   有走到輸出。這是唯一能發現「擋寫在錯的
+                                                   檔案裡」的測試。
+```
+
+修改：
+```
+hooks/ownmind-edit-reminder.js                  — 擋的出口在節流之前，且與 verification
+                                                   engine 無關。stdin 改成只讀一次（session id
+                                                   與檔案路徑同一份 payload），且只在真的有
+                                                   管線輸入時讀。
+hooks/ownmind-iron-rule-check.js                — edit 分支把 file_path 與內文傳下去（Windows
+                                                   走的是這條，不傳等於那個平台沒有擋）。
+```
+
+## v1.26.164 修改（規範終於會走到你的電腦上）
+
+新增：
+```
+hooks/lib/enforcement-cache.js                  — 規範 bundle 的讀寫。readEnforcementBundle
+                                                   回 present 旗標，分得出「沒有規範」跟
+                                                   「從來沒同步過」。mayReplaceBundle 擋掉
+                                                   空回應覆蓋既有快取。自己一個檔案，因為
+                                                   memories.json 的形狀由 compact init 決定，
+                                                   而且 holdsInitPayload 會拒收型別鍵。
+tests/enforcement-cache.test.js                 — 讀寫、present 旗標、空回應保護。
+tests/enforcement-sync-cli.test.js              — 行程內對真伺服器驗行為，另用真的把 CLI
+                                                   當程式跑一次，驗 main() 真的走到同步。
+```
+
+修改：
+```
+hooks/lib/conditional-sync-cli.js               — 加 syncEnforcementBundle()，排在 init 同步
+                                                   之前且不依賴它。改成只有被當程式執行時才
+                                                   跑 main()（用 realpath 比對，不比字串），
+                                                   這樣測試才能在行程內驅動它。
+```
+
+## v1.26.163 修改（那條規範不是你上傳的，所以你看不見它）
+
+新增：
+```
+src/routes/enforcement-bundle.js                — 規範配送端點。buildBundle() 把資料庫的
+                                                   巢狀 metadata 攤平成三份清單：selectors
+                                                   （每條規範、不含內文）、guards（禁區路徑）、
+                                                   injectables（帶內文、只含被標註的）。查詢
+                                                   用 buildReadableWhere，否則看不到別人上傳
+                                                   的團隊規範。
+tests/helpers/stub-llm.js                       — 冒充 callLLMSwitch 要打的那個模型端點。
+                                                   一個接縫只准有一端是假的，假的是上游模型，
+                                                   受測的助手函式保持真的。
+tests/helpers/real-db.js                        — 起一個真的 Postgres 並套上本 repo 全部的
+                                                   migration。跨帳號可見性與片段組裝只寫在
+                                                   SQL 裡，注入假資料列證明不了它們。docker
+                                                   不在時回 null，呼叫端要大聲 skip。
+tests/enforcement-seams.test.js                 — 釘住 callLLMSwitch 的回傳型別與請求內容。
+                                                   把它改成回原始字串，兩條當場轉紅。
+tests/enforcement-bundle.test.js                — buildBundle 的形狀，以及註冊順序（/:id 會
+                                                   把 enforcement-bundle 當 id 吃掉）。
+tests/enforcement-bundle-mounted.test.js        — 真資料庫 + 真路由 + 真認證。事故當時的資料
+                                                   形狀：規範屬於同事、禁止清單在子片段。把
+                                                   查詢換回 user_id = $1 就轉紅。
+```
+
+修改：
+```
+src/routes/memory.js                            — 在 router.get('/:id') 之上掛
+                                                   /enforcement-bundle。掛在下面的話 Express
+                                                   會把它當成一個 id，整數轉型失敗回 500。
+```
+
+
+## v1.26.162 修改（兩 GB 的那個檔案）
+
+修改：
+```
+shared/scanners/claude-code.js                  — defaultReadIncremental 改分段讀（單次
+                                                   fs 讀取上限 8 MiB），並限制一次掃描
+                                                   最多取 64 MiB；超過就停在行尾、下次
+                                                   續讀。切點改用 buf.lastIndexOf(0x0a)
+                                                   在位元組上找，不再從解碼後的字串回推
+                                                   長度（多位元組字元被切開會讓位置偏掉）。
+                                                   壞掉的位置記錄回到 0 而不是餵 NaN 給
+                                                   Buffer.alloc；單行超過上限丟
+                                                   OWNMIND_LINE_TOO_LONG（接得住的錯誤，
+                                                   會被上層跳過並記進紀錄）。codex adapter
+                                                   共用這個函式，一起修好
+scripts/install-helpers/self-check.cjs          — 查排程多要一行 OWNMIND_LASTRESULT，
+                                                   state=Ready 但上次結果非 0 就判 fail；
+                                                   新增並匯出 taskRunFailed（0x000413xx
+                                                   是排程系統自己的狀態碼，不是失敗）
+tests/scanner-claude-code.test.js               — 四案：分段讀不會把超過上限的長度交給
+                                                   fs、停在上限後續掃會排空且每次都前進、
+                                                   單行過長丟得出接得住的錯、壞掉的位置
+                                                   記錄從 0 重讀；另一案驗切點落在多位元組
+                                                   字元中間時位置仍然精準（把切點改回從
+                                                   字串回推就會紅）
+tests/self-check.test.js                        — taskRunFailed 四案：成功與排程狀態碼
+                                                   不算失敗、行程退出碼算失敗（含 0x86）、
+                                                   吃得下 '0x86' 字串、讀不到就不判
+package.json / README.md / docs/README.ja.md
+docs/README.zh-TW.md / CHANGELOG.md             — 版號與更新紀錄
+```
+
 ## v1.26.161 修改（窗戶只關了一半）
 
 新增：

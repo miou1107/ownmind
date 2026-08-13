@@ -152,6 +152,7 @@ import adminPasswordResetRoutes from './routes/admin-password-reset.js';
 import bugReportsRoutes from './routes/bug-reports.js';
 import { createVersionRouter } from './routes/version.js';
 import { createChangelogRouter } from './routes/changelog.js';
+import complianceRoutes from './routes/compliance.js';
 import { query } from './utils/db.js';
 import auth from './middleware/auth.js';
 
@@ -164,6 +165,7 @@ app.use('/api/setup', setupRoutes);
 app.use('/api/admin/users', adminPasswordResetRoutes);
 
 app.use('/api/memory', memoryRoutes);
+app.use('/api/compliance', complianceRoutes);
 app.use('/api/session', sessionRoutes);
 app.use('/api/handoff', handoffRoutes);
 // sub-paths must be mounted before /api/admin, otherwise adminRoutes swallows them

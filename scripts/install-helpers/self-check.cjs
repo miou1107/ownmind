@@ -761,6 +761,29 @@ async function defaultFetchSelfCheck(apiUrl, apiKey) {
   return res.json();
 }
 
+/**
+ * Did the last scheduled run fail?
+ *
+ * Windows stores one number for two different things. The 0x000413xx band is Task
+ * Scheduler talking about itself — not yet run, currently running, no future runs,
+ * stopped by the user — and none of those say our process failed. 0 is success.
+ * Everything else is the exit code of what we launched: 1, 0x86 (SIGABRT, which is
+ * what a node abort leaves behind), a Windows error code.
+ *
+ * An unreadable value is not evidence of failure; a check that fires on "cannot tell"
+ * trains people to ignore it.
+ *
+ * @param {number|string|null} code  raw number, or the '0x86' form the report stores
+ * @returns {boolean}
+ */
+function taskRunFailed(code) {
+  if (code === null || code === undefined || code === '') return false;
+  const n = typeof code === 'number' ? code : Number(String(code).trim());
+  if (!Number.isFinite(n)) return false;
+  if (n === 0) return false;
+  return !(n >= 0x41300 && n <= 0x413ff);
+}
+
 async function checkScheduler() {
   if (PLATFORM === 'darwin') {
     try {
@@ -815,8 +838,14 @@ async function checkScheduler() {
         // "state" and "actions" stop describing one task. ensure-scanner-schedule.ps1 has
         // always pinned it; a check and a repair asking different questions is the defect
         // this release exists to close, so they ask the same one here too.
+        // v1.26.162 - and the result of its last run, on a labelled line. Labelled rather
+        // than positional because the actions line can come back empty, and a bare third
+        // line would then be read as the actions. The task object is piped into
+        // Get-ScheduledTaskInfo, the same way detectSchedulerDetail has been doing it.
         "$t = Get-ScheduledTask -TaskName 'OwnMind Usage Scanner' -TaskPath '\\' -ErrorAction SilentlyContinue; "
-        + "if ($t) { $t.State; (($t.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ') -replace '\\r?\\n', ' ' }"],
+        + "if ($t) { $t.State; (($t.Actions | ForEach-Object { $_.Execute + ' ' + $_.Arguments }) -join ' ') -replace '\\r?\\n', ' '; "
+        + "$i = $t | Get-ScheduledTaskInfo; "
+        + "if ($i) { 'OWNMIND_LASTRESULT=' + $i.LastTaskResult } }"],
       { timeout: CIM_TIMEOUT_MS });
     if (!r.ok) {
       // v1.26.106 - this reported only r.error, which for a timeout is the literal string
@@ -829,7 +858,10 @@ async function checkScheduler() {
           ? `Query exceeded ${CIM_TIMEOUT_MS}ms. The task may still be healthy - check with: Get-ScheduledTask -TaskName 'OwnMind Usage Scanner'`
           : 'Requires Windows + PowerShell');
     }
-    const lines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const allLines = r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const resultLine = allLines.find((l) => l.startsWith('OWNMIND_LASTRESULT='));
+    const lastResult = resultLine ? resultLine.split('=')[1] : null;
+    const lines = allLines.filter((l) => l !== resultLine);
     const state = lines[0] || '';
     // v1.26.133: safeSpawn hands back stdout with the home directory replaced by `~`, so the
     // action text arrives as `wscript.exe "~\.ownmind\..."` and could never contain the
@@ -851,6 +883,19 @@ async function checkScheduler() {
         + 'powershell -ExecutionPolicy Bypass -File "$HOME\\.ownmind\\scripts\\windows\\register-scanner-task.ps1"');
     }
     if (state === 'Ready' || state === 'Running') {
+      // The state answers "is the task registered and enabled", which is not the same
+      // question as "did the last run of it work". Measured 2026-08-13: a machine whose
+      // scanner aborted on every trigger (0x86 = SIGABRT, from a >2 GiB session file)
+      // reported `[ OK ] scheduler  Task Scheduler state=Ready` for months, while the
+      // number that said otherwise was already being collected into the same report.
+      if (taskRunFailed(lastResult)) {
+        // Hex, because that is how Task Scheduler's UI and every search result spell it.
+        const asHex = `0x${(Number(lastResult) >>> 0).toString(16)}`;
+        return fail('scheduler',
+          `Task Scheduler state=${state}, but the last run ended with ${asHex}`,
+          'The schedule is fine; the run is not. See what it printed: '
+          + 'Get-Content "$env:USERPROFILE\\.ownmind\\logs\\scanner.log" -Tail 30');
+      }
       return pass('scheduler', `Task Scheduler state=${state}`);
     }
     return warn('scheduler', `Task Scheduler state=${state}`,
@@ -1578,6 +1623,8 @@ module.exports = {
   // v1.26.117 — registered is not started.
   checkMcpLaunches, MCP_PREFLIGHT_TIMEOUT_MS,
   checkServerHealth, checkApiKeyFormat, checkApiCredentials, checkGitHooks, checkScheduler,
+  // v1.26.162 — state=Ready said the task exists; nothing read what its last run returned.
+  taskRunFailed,
   // v1.26.87 — repairs an environment-only key into a file, then reports which way it went.
   checkBackgroundCredentials,
   // v1.26.91 — two config files, two different keys, one all-green report.

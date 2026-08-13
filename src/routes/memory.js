@@ -22,6 +22,7 @@ import { validateTierRequest, applyTierDefault } from '../utils/iron-rule-tier-v
 import { buildIronRulesDigest, countByTier } from '../utils/iron-rule-digest.js';
 import { validateMemoryContent } from '../utils/memory-secret-guard.js';
 import { isSharedMemoryType, buildReadableWhere } from '../utils/memory-visibility.js';
+import { createEnforcementBundleRouter } from './enforcement-bundle.js';
 import {
   ruleMatchesTrigger,
   unknownTriggerTags,
@@ -1013,6 +1014,17 @@ router.get('/search', async (req, res) => {
     res.status(500).json({ error: 'Search failed' });
   }
 });
+
+/**
+ * GET /enforcement-bundle - selection keys and guard rules for the client.
+ *
+ * Registered here, above `/:id`, and that position is the whole point. Express matches in
+ * order: mounted after `/:id`, this path arrives as an id, `WHERE m.id = $1` fails its
+ * integer cast, and the handler below answers 500. The client can only read that as "the
+ * server is broken", so its cache never fills and nothing anywhere says why - a silent
+ * failure in the mechanism whose job is to make failures loud.
+ */
+router.use('/enforcement-bundle', createEnforcementBundleRouter());
 
 /**
  * GET /:id - fetch a single memory.
