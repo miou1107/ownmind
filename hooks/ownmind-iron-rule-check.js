@@ -196,11 +196,12 @@ async function main() {
   if (counts) {
     decision = decideEditReminder(readEditReminderState(sessionId, trigger), Date.now());
     if (decision.mode === 'full') {
-      // Iron rules are excluded wherever the banner below prints them, which is every trigger
-      // but commit — the same rule the .sh twin applies, for the same reason.
-      names = allNames && (trigger === 'commit'
-        ? allNames
-        : Object.fromEntries(Object.entries(allNames).filter(([t]) => t !== 'iron_rule')));
+      // Everything that matched gets named, iron rules included, on every trigger — the same
+      // rule the .sh twin applies, for the same reason. v1.26.154 excluded them wherever the
+      // banner was going to print them; v1.26.160 reverses that on the owner's instruction,
+      // because a category showing a bare count next to categories showing names reads as a
+      // category that found nothing.
+      names = allNames;
     }
   }
 

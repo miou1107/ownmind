@@ -115,13 +115,14 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
   if (relevant.length === 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
 
   const tag = `【OwnMind v${version}】AI 改檔案要遵守的鐵律 ${relevant.length} 條`;
-  // v1.26.154 — the names of everything that matched, except the iron rules: those get the
-  // banner below, and printing them in both places is the same sentence twice. Which of the
-  // two prints them is the caller's business, which is why `names` is passed in rather than
-  // decided inside the renderer.
-  const names = ctx.legacy || !ctx.names
-    ? undefined
-    : Object.fromEntries(Object.entries(ctx.names).filter(([type]) => type !== 'iron_rule'));
+  // The names of everything that matched, iron rules included.
+  //
+  // v1.26.154 held them back here on the grounds that the banner below already prints them and
+  // twice is once too many. v1.26.160 reverses that on the owner's instruction: the listing is
+  // meant to be the answer to "what did OwnMind find", and a category that shows a count with
+  // no names beside every other category that has them reads as though nothing was found. The
+  // banner is a different job — it is what stops you — so the two overlapping is the point.
+  const names = ctx.legacy || !ctx.names ? undefined : ctx.names;
   const contextLine = counts
     ? renderHookContextLine({ version, trigger: 'edit', counts, totals, names, withHowTo: true })
     : '';

@@ -177,9 +177,10 @@ export function renderHookContextLine({
   //
   // Only categories with something in them get a row: a heading followed by nothing is the
   // shape people learn to skip past, and the count above has already said the category was
-  // looked at. Callers that print their own iron-rule banner leave `iron_rule` out of `names`
-  // rather than have it appear twice — the decision is theirs because only they know whether
-  // that banner is about to be printed.
+  // looked at. Which categories reach `names` is the caller's decision — as of v1.26.160 every
+  // caller passes all of them, iron rules included, even when it is about to print its own
+  // iron-rule banner. The listing answers "what did OwnMind find"; a category showing a bare
+  // count next to categories showing names reads as a category that found nothing.
   //
   // No cap on the list. Deliberate, and decided with the numbers on the table: a real account
   // matches around 38 iron rules on a commit. Truncating to the first N would hide the rest
