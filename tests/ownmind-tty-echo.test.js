@@ -324,25 +324,78 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner extraction', () => {
   });
 });
 
-describe('v1.17.71 — ownmind-tty-echo.cjs primary tty write path (when tty is available)', () => {
+describe('v1.26.171 — the tty channel is gone for good', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('does not trigger fallback when tty is writable (no pending file)', () => {
-    // This test only works in an environment with a writable /dev/tty; spawnSync has no controlling
-    // tty by default and would fall back. So this test forces the main path via an env var pointing
-    // at a fake tty simulator (a pipe file).
+  it('the old tty override is ignored and the audit spool is always written', () => {
+    // The primary path this block used to test opened /dev/tty — which a hook subprocess
+    // can never do, so "primary" was a path that had never once run. The override env that
+    // made it testable must now do nothing, and every emitted block lands in the spool.
     const fakeTty = path.join(tmpHome, 'fake-tty');
-    fs.writeFileSync(fakeTty, '');  // empty file acting as a fake tty
+    fs.writeFileSync(fakeTty, '');
     const input = {
       tool_response: mcpToolResponse([{ type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：A' }]),
     };
     const r = runHook(input, { OWNMIND_TTY_OVERRIDE: fakeTty });
     assert.equal(r.status, 0);
-    assert.equal(fs.existsSync(pendingFile), false,
-      'primary path must not write the pending file when it succeeds');
-    // The fake tty should receive the banner.
-    const ttyContent = fs.readFileSync(fakeTty, 'utf8');
-    assert.match(ttyContent, /記憶搜尋/, 'primary path should write to tty');
+    assert.equal(fs.readFileSync(fakeTty, 'utf8'), '', 'nothing may write to a tty path anymore');
+    assert.match(fs.readFileSync(pendingFile, 'utf8'), /記憶搜尋/, 'the audit spool records the block');
+    assert.match(JSON.parse(r.stdout).systemMessage, /記憶搜尋/);
+  });
+});
+
+// ============================================================
+// v1.26.171 — the systemMessage contract (same port as ownmind-reply-lint.js)
+//
+// /dev/tty can never be opened from a hook subprocess (no controlling terminal, any
+// platform), so the old primary path failed on every call it ever made, and the fallback
+// spool stopped being read when the session-start flush was removed (it fed the spool into
+// the model's context, not the user's eyes). The channel that renders for PostToolUse is
+// the same one Stop uses: a single {"systemMessage": ...} JSON object on stdout at exit 0.
+// The spool write stays, as the audit record.
+// ============================================================
+
+describe('v1.26.171 — banners ride systemMessage on stdout', () => {
+  beforeEach(() => setupTmpHome());
+  afterEach(() => cleanupTmpHome());
+
+  it('a banner reaches stdout as exactly one systemMessage JSON object', () => {
+    const input = {
+      tool_name: 'mcp__ownmind__ownmind_search',
+      tool_response: mcpToolResponse([
+        { type: 'text', text: '[OwnMind v1.26.171] Memory search:\n{"data":[]}\n\n[OwnMind v1.26.171] Tip: search works' },
+      ]),
+    };
+    const r = runHook(input);
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '', 'stderr stays empty - it is not a user channel');
+    const parsed = JSON.parse(r.stdout);
+    assert.deepEqual(Object.keys(parsed), ['systemMessage'],
+      'stdout must be exactly one systemMessage object - Claude Code parses it whole');
+    assert.match(parsed.systemMessage, /Memory search/);
+    assert.match(parsed.systemMessage, /Tip: search works/);
+  });
+
+  it('the spool records the same block as an audit trail', () => {
+    const input = {
+      tool_name: 'mcp__ownmind__ownmind_save',
+      tool_response: mcpToolResponse([
+        { type: 'text', text: '[OwnMind v1.26.171] Memory write: saved' },
+      ]),
+    };
+    runHook(input);
+    const content = fs.readFileSync(pendingFile, 'utf8');
+    assert.match(content, /Memory write: saved/);
+  });
+
+  it('no banner means byte-for-byte silent stdout', () => {
+    const input = {
+      tool_name: 'Read',
+      tool_response: mcpToolResponse([{ type: 'text', text: 'plain output, no banner' }]),
+    };
+    const r = runHook(input);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '', 'a bannerless call must not render even an empty line');
   });
 });

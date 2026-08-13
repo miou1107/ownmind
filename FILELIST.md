@@ -13,6 +13,9 @@ hooks/ownmind-reply-lint.js                     — 通知通道重建：/dev/tt
                                                    systemMessage JSON；降級警告 exit 1→0。
 hooks/ownmind-session-start.sh / .js            — 不再於開場把通知備援檔灌進模型後清空；
                                                    備援檔改為純稽核紀錄（寫入端 1MB 輪替）。
+hooks/ownmind-tty-echo.cjs                      — 同病同修：/dev/tty 廢除，改 stdout
+                                                   systemMessage JSON；稽核檔照寫。
+tests/ownmind-tty-echo.test.js                  — 改測新通道契約。
 hooks/lib/notice-throttle.js                    — 新增：狀態類提醒節流（變化講、恢復講、
                                                    持續中每 10 輪提醒）。
 tests/enforcement-notice-throttle.test.js       — 節流規則的單元測試。
