@@ -1,5 +1,16 @@
 # OwnMind 檔案結構
 
+## v1.26.170 修改（標籤清單在最後一哩被丟掉）
+
+修改：
+```
+src/routes/compliance.js                        — trigger 收到陣列不再被coerce 成空字串。
+                                                   線上實測抓到：309 條規範送達，符合標籤的
+                                                   一條都沒進判斷，而回應是「skipped」。
+tests/enforcement-compliance-route.test.js      — 補重現測試：帶標籤的規範必須真的送到判官
+                                                   面前，不能只是沒有報錯。
+```
+
 ## v1.26.169 修改（第三道關卡接上了）
 
 新增：
