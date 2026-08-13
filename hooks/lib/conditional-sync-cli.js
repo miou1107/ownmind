@@ -28,6 +28,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { runConditionalSync } from './conditional-sync.js';
 // v1.18.5: syncToAllTools switched to dynamic import (line 116 below).
 // Reason: iron-rule-sync.js → iron-rule-frontmatter.js → js-yaml.
@@ -88,6 +89,37 @@ function writeStdoutAsync(data) {
   });
 }
 
+/**
+ * Fetch the enforcement bundle and cache it.
+ *
+ * Never throws and never blocks the rest of the sync: a machine that cannot reach the server
+ * still has to start its session. What it must not do is stay quiet about which of the three
+ * outcomes happened - a failed fetch and an account with no annotated rules produce the same
+ * empty cache, and only one of them means this machine has stopped being protected.
+ */
+export async function syncEnforcementBundle(apiUrl, apiKey, { cachePath, log = logSyncResult } = {}) {
+  try {
+    const { fetchEnforcementBundle, writeEnforcementBundle } = await import('./enforcement-cache.js');
+    const bundle = await fetchEnforcementBundle(apiUrl, apiKey);
+    if (!bundle) {
+      log('enforcement bundle: fetch failed, keeping the cached copy');
+      return 'fetch_failed';
+    }
+    if (writeEnforcementBundle(bundle, cachePath)) {
+      log(
+        `enforcement bundle: ${bundle.selectors?.length ?? 0} selectors, `
+        + `${bundle.guards?.length ?? 0} guards, ${bundle.injectables?.length ?? 0} injectables`,
+      );
+      return 'written';
+    }
+    log('enforcement bundle: empty response refused, cached copy kept');
+    return 'refused';
+  } catch (err) {
+    log(`enforcement bundle error: ${err.message}`);
+    return 'error';
+  }
+}
+
 async function main() {
   const apiUrl = process.argv[2];
   const apiKey = process.argv[3];
@@ -96,6 +128,20 @@ async function main() {
     await writeStdoutAsync('');
     process.exit(0);
   }
+
+  // Enforcement bundle — the selection keys, guard rules and injectable text the hooks read
+  // locally.
+  //
+  // Here, and not in ownmind-session-start.js, because this file is what both platforms
+  // actually run: session-hook-command.cjs registers the .sh on macOS and Linux, the .sh
+  // calls this CLI, and the .js hook is Windows-only. A sync written into the .js would
+  // never execute on the machine it was written for.
+  //
+  // Ahead of the init sync, and not gated on it. The init cache has its own freshness
+  // window and its own failure modes; letting either one decide whether rules reach this
+  // machine would mean an unrelated outage quietly switches enforcement off. They are
+  // independent, so they fail independently.
+  await syncEnforcementBundle(apiUrl, apiKey);
 
   let result;
   try {
@@ -147,8 +193,30 @@ async function main() {
   process.exit(0);
 }
 
-main().catch(async (err) => {
-  logSyncResult(`uncaught: ${err.message}`);
-  try { await writeStdoutAsync(''); } catch { /* ignore */ }
-  process.exit(0);
-});
+/**
+ * Only run as a program when run as a program.
+ *
+ * `syncEnforcementBundle` is exported so a test can drive it in-process against a real HTTP
+ * server; without this guard, importing it would also start a sync and exit the test runner.
+ *
+ * Real paths, not the strings: `import.meta.url` is symlink-resolved while `argv[1]` is
+ * whatever path the caller typed, and the installed hooks directory is assembled with
+ * symlinks — comparing the raw strings makes this file silently do nothing when run as a
+ * CLI, which is the failure this whole feature exists to stop.
+ */
+function invokedDirectly() {
+  try {
+    return Boolean(process.argv[1])
+      && fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
+  main().catch(async (err) => {
+    logSyncResult(`uncaught: ${err.message}`);
+    try { await writeStdoutAsync(''); } catch { /* ignore */ }
+    process.exit(0);
+  });
+}
