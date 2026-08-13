@@ -392,3 +392,34 @@ describe('v1.17.68 — checkApiKeyFormat (client-side format validation; does no
     assert.equal(r.status, 'pass');
   });
 });
+
+// Amiee's machine, 2026-08-13. Her scheduled scanner had been exiting 0x86 (a node
+// abort) since at least 08-11, and the report she uploaded carried that number in
+// scheduler_detail while the scheduler check read "state=Ready" and passed. The state
+// says the task is registered and enabled; only the result code says whether the last
+// run of it worked.
+describe('taskRunFailed — a scheduled run that ended badly must not read as healthy', () => {
+  it('success and Task Scheduler status codes are not failures', () => {
+    for (const code of [0, 0x41300, 0x41301, 0x41303, 0x41304, 0x41306, 0x41325]) {
+      assert.equal(selfCheck.taskRunFailed(code), false, `0x${code.toString(16)}`);
+    }
+  });
+
+  it('a process exit code is a failure — 0x86 is the node abort we shipped', () => {
+    assert.equal(selfCheck.taskRunFailed(0x86), true);
+    assert.equal(selfCheck.taskRunFailed(1), true);
+    assert.equal(selfCheck.taskRunFailed(0x80070002), true);
+  });
+
+  it('accepts the hex string form the report stores', () => {
+    assert.equal(selfCheck.taskRunFailed('0x86'), true);
+    assert.equal(selfCheck.taskRunFailed('0x0'), false);
+    assert.equal(selfCheck.taskRunFailed('0x41303'), false);
+  });
+
+  it('an unreadable result is not evidence of failure', () => {
+    for (const v of [null, undefined, '', 'unknown', NaN]) {
+      assert.equal(selfCheck.taskRunFailed(v), false, String(v));
+    }
+  });
+});

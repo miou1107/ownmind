@@ -110,6 +110,70 @@ describe('defaultReadIncremental', () => {
     const { nextOffset } = await defaultReadIncremental(file, 0);
     assert.equal(nextOffset, Buffer.byteLength(line + '\n', 'utf8'));
   });
+
+  // v1.26.162 — Amiee's machine, 2026-08-13. One read of `stat.size - start` bytes
+  // reached node's fs binding, which CHECKs that the length is an int32; a session
+  // file past 2 GiB aborted the whole process with "Assertion failed:
+  // args[3]->IsInt32()". A native abort is not catchable, so the per-file try/catch
+  // above it never ran and the scan died before sending anything — silently, every
+  // run, for as long as that file is on disk.
+  it('reads in bounded chunks, never handing fs a length above the chunk size', async () => {
+    const file = path.join(TMP_DIR, 'chunked.jsonl');
+    const lines = Array.from({ length: 40 }, (_, i) => `line-${i}`);
+    await fs.writeFile(file, `${lines.join('\n')}\n`, 'utf8');
+
+    const seen = [];
+    const r = await defaultReadIncremental(file, 0, { chunkBytes: 8, spy: (n) => seen.push(n) });
+
+    assert.deepEqual(r.lines, lines, 'every line still arrives despite the small chunk');
+    assert.equal(r.nextOffset, Buffer.byteLength(`${lines.join('\n')}\n`, 'utf8'));
+    assert.ok(seen.length > 1, 'the read was actually split');
+    assert.ok(seen.every((n) => n <= 8), `every read length within the cap, got ${seen}`);
+  });
+
+  it('stops at the per-scan cap on a complete line and resumes there next scan', async () => {
+    const file = path.join(TMP_DIR, 'capped.jsonl');
+    const lines = Array.from({ length: 20 }, (_, i) => `line-${i}`);
+    const body = `${lines.join('\n')}\n`;
+    await fs.writeFile(file, body, 'utf8');
+
+    // A cap that lands mid-file: the run must return whole lines only, and the
+    // offset must advance so the rest is not lost.
+    const first = await defaultReadIncremental(file, 0, { maxBytes: 30 });
+    assert.ok(first.lines.length > 0, 'made progress');
+    assert.ok(first.lines.length < lines.length, 'stopped short of the whole file');
+    assert.ok(first.nextOffset > 0 && first.nextOffset < body.length);
+
+    const rest = [];
+    let offset = first.nextOffset;
+    rest.push(...first.lines);
+    for (let i = 0; i < 20 && offset < body.length; i++) {
+      const next = await defaultReadIncremental(file, offset, { maxBytes: 30 });
+      assert.ok(next.nextOffset > offset, 'each scan advances, never stalls');
+      offset = next.nextOffset;
+      rest.push(...next.lines);
+    }
+    assert.deepEqual(rest, lines, 'successive scans drain the backlog exactly once');
+  });
+
+  it('a single line longer than the cap raises a catchable error, not an abort', async () => {
+    const file = path.join(TMP_DIR, 'longline.jsonl');
+    await fs.writeFile(file, `${'x'.repeat(200)}\n`, 'utf8');
+    await assert.rejects(
+      () => defaultReadIncremental(file, 0, { maxBytes: 32 }),
+      (err) => err.code === 'OWNMIND_LINE_TOO_LONG',
+    );
+  });
+
+  it('a corrupt stored offset restarts from 0 instead of reading NaN bytes', async () => {
+    const file = path.join(TMP_DIR, 'badoffset.jsonl');
+    await fs.writeFile(file, 'only-line\n', 'utf8');
+    for (const bad of [NaN, -1, 1.5, undefined, null]) {
+      const r = await defaultReadIncremental(file, bad);
+      assert.deepEqual(r.lines, ['only-line'], `offset ${String(bad)} restarts cleanly`);
+      assert.equal(r.nextOffset, 'only-line\n'.length);
+    }
+  });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -263,5 +327,26 @@ describe('createClaudeCodeAdapter.readSince', () => {
     const r = await adapter.readSince({});
     assert.deepEqual(r.events, []);
     assert.deepEqual(r.offsetPatch, {});
+  });
+});
+
+describe('defaultReadIncremental — cutting on a byte, not on a character', () => {
+  it('a cap landing inside a multi-byte character still leaves the offset exact', async () => {
+    const file = path.join(TMP_DIR, 'boundary.jsonl');
+    // Each line is 3 ASCII + one 3-byte character + newline = 7 bytes.
+    const line = `ab:${'繁'}`;
+    const body = `${line}\n${line}\n${line}\n`;
+    await fs.writeFile(file, body, 'utf8');
+    const lineBytes = Buffer.byteLength(`${line}\n`, 'utf8');
+
+    // Cut two bytes into the second line's multi-byte character.
+    const cap = lineBytes + 5;
+    const first = await defaultReadIncremental(file, 0, { maxBytes: cap });
+    assert.deepEqual(first.lines, [line]);
+    assert.equal(first.nextOffset, lineBytes, 'offset lands on the line boundary, not inside a character');
+
+    const second = await defaultReadIncremental(file, first.nextOffset, { maxBytes: cap });
+    assert.deepEqual(second.lines, [line], 'the character survived the cut intact');
+    assert.equal(second.nextOffset, lineBytes * 2);
   });
 });

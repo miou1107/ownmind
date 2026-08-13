@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## v1.26.168 修改（第三道關卡接上了）
+## v1.26.169 修改（第三道關卡接上了）
 
 新增：
 ```
@@ -26,7 +26,7 @@ src/lib/enforcement/select-rules.js             — trigger 改成可接多個�
                                                    也是「回報」。
 ```
 
-## v1.26.167 修改（判斷者：伺服器端）
+## v1.26.168 修改（判斷者：伺服器端）
 
 新增：
 ```
@@ -52,7 +52,7 @@ src/app.js                                      — 掛 /api/compliance。
 tests/helpers/real-db.js                        — 容器埠改成依行程編號，避免偶發互撞。
 ```
 
-## v1.26.166 修改（四種規範，四句不同的話）
+## v1.26.167 修改（四種規範，四句不同的話）
 
 修改：
 ```
@@ -67,7 +67,7 @@ tests/enforcement-path-guard.test.js            — 團隊規範要求「確認�
 tests/enforcement-bundle.test.js                — type 必須被送出去。
 ```
 
-## v1.26.165 修改（開工之前，規範先擺到眼前）
+## v1.26.166 修改（開工之前，規範先擺到眼前）
 
 新增：
 ```
@@ -91,7 +91,7 @@ tests/ensure-pretooluse-hooks.test.js           — 「已經正確」的 fixtur
                                                    等於斷言「缺一個 hook 不算要修」。
 ```
 
-## v1.26.164 修改（第一道真的擋得住的關卡）
+## v1.26.165 修改（第一道真的擋得住的關卡）
 
 新增：
 ```
@@ -118,7 +118,7 @@ hooks/ownmind-iron-rule-check.js                — edit 分支把 file_path 與
                                                    走的是這條，不傳等於那個平台沒有擋）。
 ```
 
-## v1.26.163 修改（規範終於會走到你的電腦上）
+## v1.26.164 修改（規範終於會走到你的電腦上）
 
 新增：
 ```
@@ -141,7 +141,7 @@ hooks/lib/conditional-sync-cli.js               — 加 syncEnforcementBundle()�
                                                    這樣測試才能在行程內驅動它。
 ```
 
-## v1.26.162 修改（那條規範不是你上傳的，所以你看不見它）
+## v1.26.163 修改（那條規範不是你上傳的，所以你看不見它）
 
 新增：
 ```
@@ -174,6 +174,38 @@ src/routes/memory.js                            — 在 router.get('/:id') 之�
                                                    會把它當成一個 id，整數轉型失敗回 500。
 ```
 
+
+## v1.26.162 修改（兩 GB 的那個檔案）
+
+修改：
+```
+shared/scanners/claude-code.js                  — defaultReadIncremental 改分段讀（單次
+                                                   fs 讀取上限 8 MiB），並限制一次掃描
+                                                   最多取 64 MiB；超過就停在行尾、下次
+                                                   續讀。切點改用 buf.lastIndexOf(0x0a)
+                                                   在位元組上找，不再從解碼後的字串回推
+                                                   長度（多位元組字元被切開會讓位置偏掉）。
+                                                   壞掉的位置記錄回到 0 而不是餵 NaN 給
+                                                   Buffer.alloc；單行超過上限丟
+                                                   OWNMIND_LINE_TOO_LONG（接得住的錯誤，
+                                                   會被上層跳過並記進紀錄）。codex adapter
+                                                   共用這個函式，一起修好
+scripts/install-helpers/self-check.cjs          — 查排程多要一行 OWNMIND_LASTRESULT，
+                                                   state=Ready 但上次結果非 0 就判 fail；
+                                                   新增並匯出 taskRunFailed（0x000413xx
+                                                   是排程系統自己的狀態碼，不是失敗）
+tests/scanner-claude-code.test.js               — 四案：分段讀不會把超過上限的長度交給
+                                                   fs、停在上限後續掃會排空且每次都前進、
+                                                   單行過長丟得出接得住的錯、壞掉的位置
+                                                   記錄從 0 重讀；另一案驗切點落在多位元組
+                                                   字元中間時位置仍然精準（把切點改回從
+                                                   字串回推就會紅）
+tests/self-check.test.js                        — taskRunFailed 四案：成功與排程狀態碼
+                                                   不算失敗、行程退出碼算失敗（含 0x86）、
+                                                   吃得下 '0x86' 字串、讀不到就不判
+package.json / README.md / docs/README.ja.md
+docs/README.zh-TW.md / CHANGELOG.md             — 版號與更新紀錄
+```
 
 ## v1.26.161 修改（窗戶只關了一半）
 
