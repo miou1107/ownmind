@@ -92,19 +92,23 @@ export function buildBundle(rows) {
       });
     }
 
-    // Action-gate rules ride the same list with kind: 'action'. A gate with no triggers can
-    // never fire, so shipping it would claim a protection that does not exist - same reason
-    // an empty path list is not a guard. Malformed checks entries are dropped one by one
-    // rather than failing the row: the gate still fires on its triggers, and read_required
-    // still forces the rule text in front of the AI.
+    // Action-gate rules ride the same list with kind: 'action'. Filtered BEFORE the
+    // emission decision: a triggers list whose entries are all non-strings would pass a
+    // raw length check and ship as triggers: [] - a guard that can never fire, claiming a
+    // protection that does not exist. Same reason an empty path list is not a guard.
+    // Malformed checks entries are dropped one by one rather than failing the row: the
+    // gate still fires on its triggers, and read_required still forces the rule text in
+    // front of the AI.
     const gate = enforcement.gate;
-    if (gate && Array.isArray(gate.triggers) && gate.triggers.length) {
+    const gateTriggers = (gate && Array.isArray(gate.triggers) ? gate.triggers : [])
+      .filter((t) => typeof t === 'string' && t);
+    if (gateTriggers.length) {
       const ruleText = buildGateRuleText(row);
       guards.push({
         id: row.id,
         title: row.title || '',
         kind: 'action',
-        triggers: gate.triggers.filter((t) => typeof t === 'string' && t),
+        triggers: gateTriggers,
         checks: (Array.isArray(gate.checks) ? gate.checks : [])
           .filter((c) => c && (c.type === 'must_match' || c.type === 'must_not_match')
             && typeof c.pattern === 'string' && c.pattern)
