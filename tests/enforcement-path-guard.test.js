@@ -23,6 +23,7 @@ import {
 
 const GUARD = {
   id: 412,
+  type: 'team_standard',
   title: 'ci ownership belongs to the colleague',
   repo_match: 'guarded-monorepo',
   paths: ['ci/**', '.gitlab-ci.yml'],
@@ -152,4 +153,23 @@ test('the block message names the standard, the owner and what to do instead', (
   assert.match(message, /ci\/projects\.yml/);
   // The claim that made the incident: a permissions list inside the repo outranking the rule.
   assert.match(message, /admin/i);
+});
+
+test('a team standard block says the user\'s say-so does not waive it', () => {
+  // Must match what the injection told the assistant up front. Two different stories about
+  // who can waive a rule is worse than one strict story.
+  const repo = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  const violation = findGuardViolation(touch(repo, 'ci/projects.yml'), [GUARD]);
+  const message = formatGuardBlock(violation);
+  assert.match(message, /team standard/);
+  assert.match(message, /確認/);
+});
+
+test('a personal rule block does not demand a confirmation', () => {
+  const personal = { ...GUARD, type: 'iron_rule', id: 900 };
+  const repo = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  const violation = findGuardViolation(touch(repo, 'ci/projects.yml'), [personal]);
+  const message = formatGuardBlock(violation);
+  assert.ok(!message.includes('確認'), 'the user does not confirm to waive their own rule');
+  assert.match(message, /open an issue/);
 });

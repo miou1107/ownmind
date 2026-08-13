@@ -100,6 +100,15 @@ test('a guard block with an empty path list is not a guard', () => {
   assert.deepEqual(guards, [], 'a guard that can never match should not claim it guards');
 });
 
+test('injectables carry their type, because it decides the precedence sentence', () => {
+  // A team standard belongs to the company and the user cannot waive it; their own iron rule
+  // they can. Without the type the client cannot tell those apart, and the difference is the
+  // whole reason the sentence exists.
+  const { injectables } = buildBundle(ROWS);
+  assert.equal(injectables.find((i) => i.id === 412).type, 'team_standard');
+  assert.equal(injectables.find((i) => i.id === 125).type, 'iron_rule');
+});
+
 test('injectables carry text, and only for annotated rules', () => {
   // Injection puts the rule in front of the AI before it starts. A title with an empty body
   // would tell it to obey something it cannot read, so text has to reach the client for
