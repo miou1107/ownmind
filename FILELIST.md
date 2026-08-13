@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.26.164 修改（第一道真的擋得住的關卡）
+
+新增：
+```
+hooks/lib/path-guard.js                         — 禁區判斷。repo 由被編輯檔案的目錄解析，
+                                                   不是工作目錄。比對前兩邊都先過 realpath
+                                                   （mac 的 /var 與 /private/var 是同一處，
+                                                   直接比字串會讓檔案看起來在 repo 外面）。
+                                                   findContentMention 另外接住「文件內文在
+                                                   提議改禁區」這種路徑擋不到的情況。
+tests/enforcement-path-guard.test.js            — 含跨 repo 那一條：session 在 A、改 B 的
+                                                   禁區檔，必須擋。
+tests/enforcement-edit-guard.test.js            — 最後一條把 payload 灌進真的 .sh，驗 block
+                                                   有走到輸出。這是唯一能發現「擋寫在錯的
+                                                   檔案裡」的測試。
+```
+
+修改：
+```
+hooks/ownmind-edit-reminder.js                  — 擋的出口在節流之前，且與 verification
+                                                   engine 無關。stdin 改成只讀一次（session id
+                                                   與檔案路徑同一份 payload），且只在真的有
+                                                   管線輸入時讀。
+hooks/ownmind-iron-rule-check.js                — edit 分支把 file_path 與內文傳下去（Windows
+                                                   走的是這條，不傳等於那個平台沒有擋）。
+```
+
 ## v1.26.163 修改（規範終於會走到你的電腦上）
 
 新增：
