@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## v1.26.167 修改（判斷者：伺服器端）
+
+新增：
+```
+db/025_enforcement.sql                          — users.enforcement_mode（預設 off）＋
+                                                   compliance_checks。outcome 刻意把
+                                                   skipped/failed 跟 clean 分開，否則「沒跑」
+                                                   會長得跟「跑了沒事」一樣。
+src/lib/enforcement/select-rules.js             — 挑這一輪要判的規範。寧可多挑，只用預算擋；
+                                                   超大的規範會被跳過而不是讓後面全部消失，
+                                                   被跳過的會回報給呼叫端記錄。
+src/lib/enforcement/judge-prompt.js             — 給判官的提示與回覆驗證。吃已解析的物件，
+                                                   因為 callLLMSwitch 回的就是物件。
+src/routes/compliance.js                        — POST /check 與 /feedback。帳號開關第一關；
+                                                   撈規範用 buildReadableWhere ＋ 併片段。
+tests/enforcement-judge.test.js                 — 挑選與提示，含「回傳形狀不能漂移」。
+tests/enforcement-compliance-route.test.js      — 端點行為，其中一條走真的 callLLMSwitch
+                                                   打樁伺服器，釘住那個曾經害整套失效的接縫。
+```
+
+修改：
+```
+src/app.js                                      — 掛 /api/compliance。
+tests/helpers/real-db.js                        — 容器埠改成依行程編號，避免偶發互撞。
+```
+
 ## v1.26.166 修改（四種規範，四句不同的話）
 
 修改：
