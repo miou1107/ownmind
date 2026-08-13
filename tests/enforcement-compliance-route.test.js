@@ -191,6 +191,37 @@ test('a verdict for a rule that was not selected is ignored', async () => {
   assert.deepEqual(json.violations, []);
 });
 
+test('a trigger list survives the route and selects tag-matched rules', async () => {
+  // Production found this: selectRules accepts a list, the route coerced it to '' , and every
+  // rule selected by its tags was dropped without a trace. The check answered 'skipped', which
+  // is indistinguishable from a quiet, correct turn.
+  const tagged = {
+    id: 125, type: 'iron_rule', code: 'IR-125', title: 'conclusion first',
+    content: 'Lead with the conclusion.', tags: ['trigger:回話', 'trigger:always'], metadata: {},
+  };
+  let sawRule = false;
+  const llmFn = async (messages) => {
+    sawRule = messages.map((m) => m.content).join('\n').includes('Lead with the conclusion');
+    return { verdicts: [] };
+  };
+  const app = appWith({ memories: [tagged], llmFn });
+  const { json } = await post(app, '/api/compliance/check', {
+    ...PAYLOAD, trigger: ['respond', 'report'],
+  });
+  assert.notEqual(json.outcome, 'skipped', 'the tagged rule was not selected');
+  assert.equal(sawRule, true, 'the rule text never reached the judge');
+});
+
+test('a bare string trigger still works', async () => {
+  const tagged = {
+    id: 3, type: 'iron_rule', title: 'reproduction test first',
+    content: 'Write the failing test first.', tags: ['trigger:edit'], metadata: {},
+  };
+  const app = appWith({ memories: [tagged], llmFn: async () => ({ verdicts: [] }) });
+  const { json } = await post(app, '/api/compliance/check', { ...PAYLOAD, trigger: 'edit' });
+  assert.equal(json.outcome, 'clean');
+});
+
 test('a request with no assistant text is rejected rather than judged', async () => {
   const app = appWith({ memories: [RULE_412], llmFn: async () => ({ verdicts: [] }) });
   const { status } = await post(app, '/api/compliance/check', { ...PAYLOAD, assistant_text: '   ' });

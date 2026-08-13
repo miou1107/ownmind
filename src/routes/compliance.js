@@ -120,7 +120,11 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
       assistantText,
       userPrompts: Array.isArray(userPrompts) ? userPrompts : [],
       repoRemote: repoRemote || null,
-      trigger: typeof trigger === 'string' ? trigger : '',
+      // A string or a list, both kept. A reply is the assistant talking and usually
+      // reporting as well, so the client sends both labels - and coercing a list to '' here
+      // dropped every tag-selected rule on the floor. Verified against production: the check
+      // came back 'skipped' on a reply that plainly broke a rule tagged trigger:always.
+      trigger: Array.isArray(trigger) ? trigger : (typeof trigger === 'string' ? trigger : ''),
     });
     // What was looked at is recorded even on a clean verdict: "the rule was never selected"
     // and "the rule was selected and misjudged" need different fixes, and afterwards they are
