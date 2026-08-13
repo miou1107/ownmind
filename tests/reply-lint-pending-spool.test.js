@@ -76,7 +76,6 @@ function runHook(env = {}) {
       ...process.env,
       HOME: tmpHome,
       USERPROFILE: tmpHome,
-      OWNMIND_TTY_FORCE_FALLBACK: '1',
       ...env,
     },
   });
@@ -94,7 +93,6 @@ function runHookAsync(env = {}) {
         ...process.env,
         HOME: tmpHome,
         USERPROFILE: tmpHome,
-        OWNMIND_TTY_FORCE_FALLBACK: '1',
         ...env,
       },
     });

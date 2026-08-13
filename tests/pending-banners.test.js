@@ -115,109 +115,32 @@ describe('renderPendingBanners', () => {
   });
 });
 
-describe('the SessionStart hook shows the spool before clearing it', () => {
+describe('the SessionStart hook leaves the banner spool alone (v1.26.171)', () => {
   const HOOK = 'hooks/ownmind-session-start.js';
 
-  it('does not pipe the spool into a detached child', () => {
-    // runLibScript ignores all three streams. Handing it a file whose contents are meant to
-    // be *displayed* is the defect; the option that made it possible is gone with it.
+  // The flush this block used to test is gone on purpose. Notices are delivered at the turn
+  // they happen, as systemMessage on the Stop hook's stdout; the spool is a durable audit
+  // record, rotated by its writer. The old flush wrote the blocks to this hook's stderr -
+  // which at exit 0 goes to the debug log, not the user - and then erased the file: an
+  // invisible re-announcement that destroyed the only record. What is asserted now is that
+  // no code path here reads, pipes, or truncates the spool.
+
+  it('no code path flushes or truncates the spool', () => {
     const src = codeOnly(read(HOOK));
+    assert.doesNotMatch(src, /flushPendingBannerFile\s*\(/,
+      'the session-start flush is back - notices already reached the user at their own turn');
     assert.doesNotMatch(src, /runLibScript\(\s*'flush-pending-banners\.js'/,
       'the banner flush is back in a child process whose stderr is discarded');
-    assert.doesNotMatch(src, /stdinFile/,
-      'runLibScript can still be fed a spool, which is how the blocks were discarded');
   });
 
-  it('the spool is only rewritten after the blocks have been written', () => {
-    // The ordering is the whole fix: a rewrite that runs whatever happened above it is the
-    // line that destroyed the messages.
-    const src = codeOnly(read(HOOK));
-    const flush = src.slice(src.indexOf('function flushPendingBannerFile'));
-    const body = flush.slice(0, flush.indexOf('\n}\n'));
-    assert.match(body, /renderPendingBanners/, 'the blocks must be written from here');
-    assert.ok(
-      body.indexOf('renderPendingBanners') < body.indexOf('writeFileSync(bannerFile'),
-      'the spool is cleared before the blocks are written — that is the original defect',
-    );
-    assert.doesNotMatch(body, /writeFileSync\(bannerFile, ''\)/,
-      'writing an empty string back takes the unreadable lines with it');
-  });
-
-  it('end to end: the queued block reaches stderr and the spool is emptied', () => {
-    // The regression test proper. A throwaway HOME with one queued banner and no reachable
-    // server: drainSpools runs before the network call, so the hook flushes and then exits.
+  it('end to end: a queued banner survives a session start untouched', () => {
     const home = tempDir('ownmind-banner-');
     try {
       const logs = path.join(home, '.ownmind', 'logs');
       fs.mkdirSync(logs, { recursive: true });
       const spool = path.join(logs, 'banner-pending.jsonl');
-      const block = '[OwnMind test] this exact text must reach the terminal';
-      fs.writeFileSync(spool, line(block) + '\n');
-
-      const r = spawnSync(process.execPath, [path.join(repoRoot, HOOK)], {
-        encoding: 'utf8',
-        input: JSON.stringify({ session_id: 't', hook_event_name: 'SessionStart', source: 'startup' }),
-        env: {
-          ...process.env,
-          HOME: home,
-          USERPROFILE: home,
-          // Unroutable on purpose: this test is about the spool, not about the load. The
-          // credentials still have to be present, or the hook exits before drainSpools.
-          OWNMIND_API_URL: 'http://127.0.0.1:1',
-          OWNMIND_API_KEY: '00000000-0000-4000-8000-000000000000',
-        },
-        timeout: 30000,
-      });
-
-      assert.match(r.stderr || '', new RegExp(block.replace(/[[\]]/g, '\\$&')),
-        'the queued block never reached stderr — this is the v1.26.133 defect');
-      assert.equal(fs.readFileSync(spool, 'utf8'), '',
-        'the spool must be cleared once its contents have been shown');
-    } finally {
-      fs.rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it('end to end: a shown block is cleared while the broken line beside it survives', () => {
-    // The mixed case. Emptying the file would show the readable record and destroy the
-    // malformed one in the same stroke, which is the behaviour this release is about.
-    const home = tempDir('ownmind-banner-mixed-');
-    try {
-      const logs = path.join(home, '.ownmind', 'logs');
-      fs.mkdirSync(logs, { recursive: true });
-      const spool = path.join(logs, 'banner-pending.jsonl');
-      const broken = '{"block": "half written';
-      fs.writeFileSync(spool, `${line('shown to the user')}\n${broken}\n`);
-
-      const r = spawnSync(process.execPath, [path.join(repoRoot, HOOK)], {
-        encoding: 'utf8',
-        input: JSON.stringify({ session_id: 't', hook_event_name: 'SessionStart', source: 'startup' }),
-        env: {
-          ...process.env,
-          HOME: home,
-          USERPROFILE: home,
-          OWNMIND_API_URL: 'http://127.0.0.1:1',
-          OWNMIND_API_KEY: '00000000-0000-4000-8000-000000000000',
-        },
-        timeout: 30000,
-      });
-
-      assert.match(r.stderr || '', /shown to the user/, 'the readable block was not shown');
-      assert.equal(fs.readFileSync(spool, 'utf8'), `${broken}\n`,
-        'the spool must come back holding exactly what could not be shown');
-    } finally {
-      fs.rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  it('end to end: a spool nothing can be read from is parked, not deleted', () => {
-    // IR-003. Whatever is malformed in there is the only evidence of how it got that way.
-    const home = tempDir('ownmind-banner-bad-');
-    try {
-      const logs = path.join(home, '.ownmind', 'logs');
-      fs.mkdirSync(logs, { recursive: true });
-      const spool = path.join(logs, 'banner-pending.jsonl');
-      fs.writeFileSync(spool, '{"block": "never closed\n');
+      const content = line('[OwnMind test] audit record, not a message queue') + '\n';
+      fs.writeFileSync(spool, content);
 
       spawnSync(process.execPath, [path.join(repoRoot, HOOK)], {
         encoding: 'utf8',
@@ -232,9 +155,8 @@ describe('the SessionStart hook shows the spool before clearing it', () => {
         timeout: 30000,
       });
 
-      assert.equal(fs.existsSync(spool), false, 'the unreadable spool should have been moved aside');
-      assert.equal(fs.readFileSync(`${spool}.unreadable`, 'utf8'), '{"block": "never closed\n',
-        'the malformed content must survive the move');
+      assert.equal(fs.readFileSync(spool, 'utf8'), content,
+        'the audit spool must come through a session start byte-for-byte intact');
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }

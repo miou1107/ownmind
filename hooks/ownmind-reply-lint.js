@@ -11,14 +11,17 @@
  *   v1.17.96 plugs into the Claude Code Stop hook (fires at the end of every AI turn),
  *   reads the transcript, extracts the last assistant text, runs lintReply, and on
  *   violations:
- *     1. Writes a banner to the user terminal (reuses writeToTty from ownmind-tty-echo.cjs)
+ *     1. Queues a user-facing notice, emitted as `{"systemMessage": ...}` JSON on stdout
  *     2. Writes a compliance event to ~/.ownmind/logs/YYYY-MM-DD.jsonl (picked up by MCP buffer)
  *        + best-effort POST /api/activity/batch (spool is the fallback, POST is the fast path)
  *
- * 3 specs (inherited from v1.17.71 ownmind-tty-echo.cjs):
- *   1. MUST NOT be filtered or swallowed by the AI — never write stderr / stdout / additionalContext
- *   2. Primary path writes to /dev/tty (mac/linux) or \\.\CONOUT$ (Windows), bypassing the Claude Code hook output channel
- *   3. Fallback writes to ~/.ownmind/logs/banner-pending.jsonl; next SessionStart flushes it
+ * Output-channel specs (v1.26.171, replacing the /dev/tty design):
+ *   1. User-facing text travels ONLY via systemMessage JSON on stdout at exit 0 — the one
+ *      channel Claude Code documents as rendering to the human. /dev/tty is never opened:
+ *      a hook subprocess has no controlling terminal on any platform, so that write failed
+ *      on every turn it was ever attempted.
+ *   2. stdout carries either that single JSON object or nothing at all.
+ *   3. ~/.ownmind/logs/banner-pending.jsonl is the audit record of everything queued.
  *
  * Stop hook stdin schema (Claude Code official):
  *   {
@@ -40,8 +43,6 @@
  * Always exit 0 (never block the AI flow).
  *
  * Environment variables (test / opt-out):
- *   OWNMIND_TTY_FORCE_FALLBACK=1     Force the fallback file path (test)
- *   OWNMIND_TTY_OVERRIDE=<path>      Use this path as the tty target (test)
  *   OWNMIND_REPLY_LINT_NO_NETWORK=1  Disable POST /api/activity/batch (test)
  *   OWNMIND_REPLY_LINT_DISABLE=1     Skip lint entirely (user opt-out)
  *   OWNMIND_REPLY_LINT_API_URL       Override API URL (test with a fake server)
@@ -71,8 +72,6 @@ import { execSync } from 'node:child_process';
 // has succeeded, because main() exits on failure before any event is spooled.
 let localDateOnly = null;
 
-const FORCE_FALLBACK = process.env.OWNMIND_TTY_FORCE_FALLBACK === '1';
-const TTY_OVERRIDE = process.env.OWNMIND_TTY_OVERRIDE || '';
 const NO_NETWORK = process.env.OWNMIND_REPLY_LINT_NO_NETWORK === '1';
 const DISABLED = process.env.OWNMIND_REPLY_LINT_DISABLE === '1';
 const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
@@ -147,11 +146,13 @@ async function runComplianceOnce(payload, transcript) {
     { requestCheck },
     { readEnforcementBundle },
     { readCredentials },
+    { decideNotice },
   ] = await Promise.all([
     import('./lib/compliance-step.js'),
     import('./lib/compliance-client.js'),
     import('./lib/enforcement-cache.js'),
     import('../shared/helpers.js'),
+    import('./lib/notice-throttle.js'),
   ]);
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
@@ -172,6 +173,19 @@ async function runComplianceOnce(payload, transcript) {
   });
 
   if (step.action === 'exit2') incrementComplianceBlockCount(sessionId);
+
+  // v1.26.171 throttle (the user's call): state-shaped notices — the recurring "this turn
+  // was NOT checked" family, identified by noticeKey — speak on every state change and
+  // every 10th turn while the state persists; recovery is announced once. Event-shaped
+  // notices (a pushback, the cap reached) have no key and always speak. Suppressed turns
+  // still reach the audit spool via the caller.
+  const speak = decideNotice(sessionId, step.noticeKey ?? null);
+  if (step.noticeKey && !speak) {
+    return { ...step, banner: undefined, suppressedBanner: step.banner };
+  }
+  if (!step.noticeKey && speak && step.action !== 'exit2' && !step.banner) {
+    return { ...step, banner: '[OwnMind] compliance checks are running again - this turn was checked' };
+  }
   return step;
 }
 
@@ -244,11 +258,13 @@ async function main() {
       complianceTranscript = readTranscriptTail(transcriptForCompliance);
       if (complianceTranscript.lastAssistantText) {
         const step = await runComplianceOnce(payload, complianceTranscript);
-        if (step.banner) {
-          const wroteBanner = !FORCE_FALLBACK && writeToTty(step.banner);
-          if (!wroteBanner) writeFallback(step.banner);
-        }
+        if (step.banner) queueUserNotice(step.banner);
+        // A throttled state-notice still belongs in the audit spool - suppression is about
+        // the screen, never about the record.
+        else if (step.suppressedBanner) writeFallback(step.suppressedBanner);
         if (step.action === 'exit2') {
+          // stderr is the model's rewrite instruction, and it also renders to the user as
+          // the block reason — the queued banner stays in the spool for the audit trail.
           try { process.stderr.write(step.stderr + '\n'); } catch { /* ignore */ }
           process.exit(2);
           return;
@@ -260,7 +276,7 @@ async function main() {
   // stop_hook_active=true means this Stop was triggered by a previous hook block →
   // exit immediately to avoid an infinite loop (Claude Code Stop hook spec).
   // v1.19.3: also guarantees the Stop during Claude rewrite isn't counted again.
-  if (payload.stop_hook_active === true) { process.exit(0); return; }
+  if (payload.stop_hook_active === true) { exitWith(0); return; }
 
   // v1.20.3: user invoked /ownmind-off → skip lint, remind in the terminal every 10 turns.
   // When a new session starts, the SessionStart hook clears the state file automatically.
@@ -269,20 +285,17 @@ async function main() {
       const tick = incrementTickCount();
       if (tick > 0 && tick % 10 === 0) {
         const reminder = [
-          '',
           `[OwnMind v${getClientVersion()}] ⚠️ OwnMind is currently disabled (${tick} AI responses skipped lint)`,
           '  → Re-enable with /ownmind-on, or open a new conversation to restore',
-          '',
         ].join('\n');
-        const wrote = !FORCE_FALLBACK && writeToTty(reminder);
-        if (!wrote) writeFallback(reminder);
+        queueUserNotice(reminder);
       }
     } catch { /* reminder failure must not block the main flow */ }
-    process.exit(0); return;
+    exitWith(0); return;
   }
 
   const transcriptPath = sanitizeTranscriptPath(payload.transcript_path);
-  if (!transcriptPath) { process.exit(0); return; }
+  if (!transcriptPath) { exitWith(0); return; }
 
   // v1.19.12: single transcript read pulls both the last assistant text and recent user prompts
   // (replaces v1.19.7's two statSync + readFileSync calls, halving I/O).
@@ -298,7 +311,7 @@ async function main() {
   // cheap but pointless, and two reads of a file being appended to can disagree.
   const { lastAssistantText, recentUserPrompts: userPrompts, historicalAssistantCorpus } =
     complianceTranscript || readTranscriptTail(transcriptPath);
-  if (!lastAssistantText) { process.exit(0); return; }
+  if (!lastAssistantText) { exitWith(0); return; }
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
 
@@ -330,7 +343,7 @@ async function main() {
       historicalCorpus: historicalAssistantCorpus || '',
       userPrompts,
     });
-  } catch { process.exit(0); return; }
+  } catch { exitWith(0); return; }
 
   const violations = Array.isArray(lintResult.violations) ? [...lintResult.violations] : [];
 
@@ -338,7 +351,7 @@ async function main() {
   if (combinedOk) {
     // v1.19.7: when lint passes, reset block_count so the next turn starts fresh.
     try { resetBlockCount(sessionId); } catch { /* swallow */ }
-    process.exit(0); return;
+    exitWith(0); return;
   }
 
   // === v1.19.3: accumulate violation count and decide whether to block ===
@@ -377,10 +390,7 @@ async function main() {
     downgraded: downgradeToWarning,
     blockCount: priorBlockCount,
   });
-  if (banner) {
-    const wrote = !FORCE_FALLBACK && writeToTty(banner);
-    if (!wrote) writeFallback(banner);
-  }
+  if (banner) queueUserNotice(banner);
 
   // === v1.19.7: write block reason to stderr (replacing the old stdout JSON) ===
   let exitCode = 0;
@@ -415,19 +425,11 @@ async function main() {
       });
     } catch { /* swallow, must not block the main flow */ }
   } else if (downgradeToWarning) {
-    const note = formatDowngradeNotice(priorBlockCount, violations);
-    try { process.stderr.write(note + '\n'); } catch { /* ignore */ }
-    // v1.20.2 follow-up #3: the downgrade path also includes the bug-report path.
-    // v1.26.1: clarify fingerprint scope (see block path above).
-    try {
-      process.stderr.write(
-        '[OwnMind bug report] Think this lint decision is wrong? Call ownmind_report_bug to file a report. ' +
-        'bug_fingerprint: lint_context_memory_missing, suggest_report: true ' +
-        '(Use this fingerprint ONLY when reporting THIS lint decision as a misfire. ' +
-        'For unrelated issues, use bug_fingerprint=clt_user_reported_other instead.)\n'
-      );
-    } catch { /* ignore */ }
-    exitCode = 1;
+    // v1.26.171: this path used to write formatDowngradeNotice + a bug-report pointer to
+    // stderr and exit 1 — a combination that renders nowhere (exit-1 stderr goes to the
+    // debug log). The user-facing downgrade text is in the banner riding systemMessage;
+    // the stderr writes were dead output and are gone with the exit-1 code.
+    exitCode = 0;
 
     // v1.19.11: the downgrade path also writes one record.
     try {
@@ -465,7 +467,7 @@ async function main() {
     spoolPendingForRetry(events);
   }
 
-  process.exit(exitCode);
+  exitWith(exitCode);
 }
 
 function readStdin() {
@@ -691,21 +693,6 @@ function formatPrivacySummary(matches) {
     .join(', ');
 }
 
-/**
- * v1.19.7: message written to stderr (for the user) when downgrading to warning after consecutive blocks.
- * (Uses exit 1 rather than exit 2 — Claude Code treats this as a non-blocking warning shown to the user,
- *  and it is NOT fed back to Claude as the next prompt.)
- */
-function formatDowngradeNotice(priorBlockCount, violations) {
-  const ruleList = Array.isArray(violations)
-    ? violations.map((v) => v.rule).join(', ')
-    : '';
-  return [
-    `[OwnMind] reply-lint has blocked ${priorBlockCount} times in a row — downgrading to warning to break the loop.`,
-    `Still detected: ${ruleList}`,
-    'Manually review the AI response, or set OWNMIND_REPLY_LINT_MODE=warn to temporarily disable hard block.',
-  ].join('\n');
-}
 
 /**
  * v1.19.3: package violations into a directive-style reason fed to Claude as the next prompt after a block.
@@ -806,21 +793,37 @@ function formatBlockReason(violations, opts = {}) {
 }
 
 /**
- * Write to the user terminal device. Returns true on success, false on failure.
- * MUST NOT write to stderr / stdout (those get captured by the Claude Code hook channel → the AI sees them).
+ * v1.26.171 — the user-facing channel, rebuilt on what actually renders.
+ *
+ * The old path opened /dev/tty. A hook subprocess has no controlling terminal on any
+ * platform, so that open failed every time, the fallback spooled to a file, and the next
+ * SessionStart flushed the spool into a stream nobody reads. Three "showing you instead of
+ * asking again" notices sat unseen in this user's spool while they were told nothing.
+ *
+ * The documented channel that reaches the human is JSON on stdout with a `systemMessage`
+ * field, exit 0. So notices queue here, and the exit path emits them as one JSON object.
+ * The spool stays as an audit record, written unconditionally.
  */
-function writeToTty(block) {
-  const ttyPath = TTY_OVERRIDE || (process.platform === 'win32' ? '\\\\.\\CONOUT$' : '/dev/tty');
-  let fd = null;
-  try {
-    fd = fs.openSync(ttyPath, 'a');
-    fs.writeSync(fd, '\n' + block + '\n');
-    fs.closeSync(fd);
-    return true;
-  } catch {
-    if (fd !== null) { try { fs.closeSync(fd); } catch { /* ignore */ } }
-    return false;
+const pendingUserNotices = [];
+
+function queueUserNotice(block) {
+  if (typeof block !== 'string' || !block.trim()) return;
+  pendingUserNotices.push(block.trim());
+  writeFallback(block);
+}
+
+/**
+ * The one place stdout is written. Claude Code parses it with a real JSON parser; anything
+ * else on stdout would corrupt the object, which is why spec #3 (never write stdout) still
+ * holds everywhere else in this file.
+ */
+function exitWith(code) {
+  if (code === 0 && pendingUserNotices.length) {
+    try {
+      process.stdout.write(JSON.stringify({ systemMessage: pendingUserNotices.join('\n') }));
+    } catch { /* a notice that cannot be emitted is already in the spool */ }
   }
+  process.exit(code);
 }
 
 function writeFallback(block) {

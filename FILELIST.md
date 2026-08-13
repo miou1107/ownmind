@@ -1,5 +1,33 @@
 # OwnMind 檔案結構
 
+## v1.26.171 修改（規範真的被挑到，系統講的話真的被看到）
+
+修改：
+```
+src/lib/enforcement/select-rules.js             — matchesTag 接受標籤清單（任一對上即可）；
+                                                   trigger:always 升到 rank 0，預算擠不掉。
+hooks/lib/compliance-step.js                    — skipped+enabled:false 與缺憑證都改成明講
+                                                   「這一輪沒檢查」；擋下訊息帶查核編號。
+hooks/lib/compliance-client.js                  — 把伺服器的 enabled 欄位傳回決策層。
+hooks/ownmind-reply-lint.js                     — 通知通道重建：/dev/tty 廢除，改 stdout
+                                                   systemMessage JSON；降級警告 exit 1→0。
+hooks/ownmind-session-start.sh / .js            — 不再於開場把通知備援檔灌進模型後清空；
+                                                   備援檔改為純稽核紀錄（寫入端 1MB 輪替）。
+hooks/ownmind-tty-echo.cjs                      — 同病同修：/dev/tty 廢除，改 stdout
+                                                   systemMessage JSON；稽核檔照寫。
+tests/ownmind-tty-echo.test.js                  — 改測新通道契約。
+hooks/lib/notice-throttle.js                    — 新增：狀態類提醒節流（變化講、恢復講、
+                                                   持續中每 10 輪提醒）。
+tests/enforcement-notice-throttle.test.js       — 節流規則的單元測試。
+tests/enforcement-judge.test.js                 — 陣列 trigger 與 always 排序的重現測試。
+tests/enforcement-compliance-step.test.js       — skipped／缺憑證要出聲、編號進 stderr。
+tests/enforcement-reply-lint-wiring.test.js     — systemMessage 真的上 stdout、安靜輪全空白。
+tests/reply-lint-hook.test.js                   — stdout 契約改為「空白或單一 JSON 物件」。
+tests/reply-lint-hook-v197.test.js              — 降級改 exit 0 + systemMessage。
+tests/reply-lint-hook-v1911.test.js             — 同上。
+openspec/changes/v1.26.171-rules-actually-selected-and-heard/ — proposal / spec / tasks。
+```
+
 ## v1.26.170 修改（標籤清單在最後一哩被丟掉）
 
 修改：
