@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.160 修改（有找到的，就要念出名字）
+
+新增：
+```
+tests/names-include-iron-rules.test.js          — 驗每小時那份名單會把鐵律也念出來。
+                                                   三個呼叫端各測一次（不是只測共用排版
+                                                   那支——排版那支本來就沒意見，
+                                                   排除鐵律的邏輯在呼叫端）。
+                                                   另有一案驗框框照樣會印，
+                                                   免得日後有人「整理」時把框框刪掉
+                                                   還一路綠燈。
+                                                   已拿改動前的程式驗過：四案紅三案。
+```
+
+修改：
+```
+hooks/ownmind-edit-reminder.js                  — 名單整份傳過去，不再濾掉鐵律
+hooks/ownmind-iron-rule-check.js                — 同上，且所有觸發情境一致
+hooks/ownmind-render-context.js                 — 同上，並拿掉只為了做這個排除而存在的
+                                                   commit／非 commit 分岔
+shared/hook-context.js                          — 只有註解：原本描述的規則已不成立
+```
+
 ## v1.26.159 修改（5264 個沒人負責的資料夾）
 
 新增：

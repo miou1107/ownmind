@@ -84,14 +84,11 @@ if (!legacy) {
   const decision = decideEditReminder(readEditReminderState(sessionId, trigger), Date.now());
   const listing = decision.mode === 'full';
 
-  // Iron rules are left out of the names whenever the banner below is going to print them,
-  // which is every trigger except commit. Two copies of the same list, thirty lines apart,
-  // reads as two different findings.
-  const names = listing && data.names
-    ? (trigger === 'commit'
-      ? data.names
-      : Object.fromEntries(Object.entries(data.names).filter(([t]) => t !== 'iron_rule')))
-    : undefined;
+  // Everything that matched is named, iron rules included, on every trigger. v1.26.154 left
+  // them out wherever the banner was going to print them; v1.26.160 puts them back on the
+  // owner's instruction. The listing answers "what did OwnMind find", and a category showing
+  // a bare count next to categories showing names reads as a category that found nothing.
+  const names = listing && data.names ? data.names : undefined;
 
   // The counts line answers "what does OwnMind think is happening" and "did it actually look".
   // The how-to line rides along only on the full listing: deploy and delete are the infrequent
