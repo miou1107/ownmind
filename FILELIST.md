@@ -1,5 +1,39 @@
 # OwnMind 檔案結構
 
+## v1.26.162 修改（那條規範不是你上傳的，所以你看不見它）
+
+新增：
+```
+src/routes/enforcement-bundle.js                — 規範配送端點。buildBundle() 把資料庫的
+                                                   巢狀 metadata 攤平成三份清單：selectors
+                                                   （每條規範、不含內文）、guards（禁區路徑）、
+                                                   injectables（帶內文、只含被標註的）。查詢
+                                                   用 buildReadableWhere，否則看不到別人上傳
+                                                   的團隊規範。
+tests/helpers/stub-llm.js                       — 冒充 callLLMSwitch 要打的那個模型端點。
+                                                   一個接縫只准有一端是假的，假的是上游模型，
+                                                   受測的助手函式保持真的。
+tests/helpers/real-db.js                        — 起一個真的 Postgres 並套上本 repo 全部的
+                                                   migration。跨帳號可見性與片段組裝只寫在
+                                                   SQL 裡，注入假資料列證明不了它們。docker
+                                                   不在時回 null，呼叫端要大聲 skip。
+tests/enforcement-seams.test.js                 — 釘住 callLLMSwitch 的回傳型別與請求內容。
+                                                   把它改成回原始字串，兩條當場轉紅。
+tests/enforcement-bundle.test.js                — buildBundle 的形狀，以及註冊順序（/:id 會
+                                                   把 enforcement-bundle 當 id 吃掉）。
+tests/enforcement-bundle-mounted.test.js        — 真資料庫 + 真路由 + 真認證。事故當時的資料
+                                                   形狀：規範屬於同事、禁止清單在子片段。把
+                                                   查詢換回 user_id = $1 就轉紅。
+```
+
+修改：
+```
+src/routes/memory.js                            — 在 router.get('/:id') 之上掛
+                                                   /enforcement-bundle。掛在下面的話 Express
+                                                   會把它當成一個 id，整數轉型失敗回 500。
+```
+
+
 ## v1.26.161 修改（窗戶只關了一半）
 
 新增：
