@@ -109,6 +109,15 @@ export function buildBundle(rows) {
         title: row.title || '',
         kind: 'action',
         triggers: gateTriggers,
+        // Optional narrowing pattern (Amendment 1): the shared trigger classifier
+        // over-triggers by design (every `git push` classifies as deploy), so a guard may
+        // scope itself to commands matching this regex. Shipped verbatim when it is a
+        // non-empty string, omitted otherwise - never null or ''. Not validated here: the
+        // client treats an invalid regex as "guard fires", so the failure mode is a stop,
+        // not a silent pass.
+        ...(typeof gate.applies_pattern === 'string' && gate.applies_pattern
+          ? { applies_pattern: gate.applies_pattern }
+          : {}),
         checks: (Array.isArray(gate.checks) ? gate.checks : [])
           .filter((c) => c && (c.type === 'must_match' || c.type === 'must_not_match')
             && typeof c.pattern === 'string' && c.pattern)
