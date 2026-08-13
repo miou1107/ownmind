@@ -59,7 +59,7 @@ SELECT setval(pg_get_serial_sequence('memories','id'), 1000);
 `;
 
 test('the mounted endpoint returns a colleague-owned standard from a real database', async (t) => {
-  const db = await startRealDb({ port: 55434, name: 'ownmind-test-bundle-db' });
+  const db = await startRealDb();
   if (!db) {
     // Loud, not silent. A database test that quietly did not run is the same shape of lie
     // this feature exists to remove.

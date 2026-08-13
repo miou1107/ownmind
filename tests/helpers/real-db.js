@@ -29,7 +29,11 @@ const READY_ATTEMPTS = 40;
  */
 export async function startRealDb({
   image = 'pgvector/pgvector:pg16',
-  port = 55433,
+  // Derived from the process id rather than fixed. Two suites running at once - or one run
+  // starting while the previous container is still going away - would otherwise collide on
+  // the port, and the failure surfaces as an unrelated test failing once in a while, which
+  // is the hardest kind to track down.
+  port = 55000 + (process.pid % 2000),
   name = `ownmind-test-db-${port}`,
 } = {}) {
   try {
