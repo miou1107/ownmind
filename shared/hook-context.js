@@ -125,6 +125,28 @@ export function triggerLabel(trigger) {
 }
 
 /**
+ * The instruction that gets an English hook line to the user in their own language.
+ *
+ * Exported since v1.26.161. The contract has always been "English at the source **plus** a relay
+ * instruction", and until now the only place that owned the second half was this file — so
+ * v1.26.161's first pass translated four strings on the edit path into English and shipped them
+ * with nothing to translate them, which is worse than the Chinese they replaced: a Chinese
+ * reader had been reading those fine. Any caller that emits an English string on its own is
+ * responsible for carrying this with it.
+ *
+ * The presentation clause is measured, not assumed. In the Claude Code renderer `<sub>` and
+ * `<small>` do nothing at all (a terminal has no font sizes), inline code picks up a theme
+ * accent colour and comes out LOUDER than body text, and blockquote + italic is the one
+ * combination that recedes. The literal `> *…*` is spelled out because naming the two features
+ * separately invites a model to apply one of them.
+ */
+export const RELAY_INSTRUCTION =
+  'Relay the line above to the user, translated into the language you are speaking with them. '
+  + 'Keep the counts, the occurrence and the version tag exactly as written. '
+  + 'Render it as an italic blockquote — `> *…*` — so it sits behind your answer instead of '
+  + 'competing with it.';
+
+/**
  * Render the reminder line.
  *
  * @param {object}  opts
@@ -132,10 +154,11 @@ export function triggerLabel(trigger) {
  * @param {string}  opts.trigger — canonical trigger name
  * @param {Record<string, number>} opts.counts — matched rules per memory type
  * @param {boolean} [opts.withHowTo] — append the "how do I read these" line
+ * @param {string}  [opts.suffix] — appended to the line ITSELF, before the relay instruction
  * @returns {string} one or two lines, or '' when there is nothing to say
  */
 export function renderHookContextLine({
-  version, trigger, counts, totals, names, withHowTo = false,
+  version, trigger, counts, totals, names, withHowTo = false, suffix = '',
 }) {
   const total = HOOK_CONTEXT_TYPES.reduce((n, { type }) => n + (counts?.[type] || 0), 0);
   // Nothing matched in any category: stay quiet. A line saying five zeroes is noise in front
@@ -160,16 +183,21 @@ export function renderHookContextLine({
       ? `${label} ${counts?.[type] || 0}/${totals[type] || 0}`
       : `${label} ${counts?.[type] || 0}`
   ));
+  // v1.26.161 — `suffix` lands here, inside the line, not after the paragraph below it. The
+  // throttled edit path used to build `${contextLine} · occurrence 2 this hour`, which put the
+  // occurrence AFTER the relay instruction — so the sentence naming what must survive the
+  // translation did not name it, and a model following that instruction faithfully drops it.
+  // The occurrence is what stops a one-line reminder, where a list stood a minute ago, from
+  // reading as something broken.
   const line = `[OwnMind v${version}] This operation is a "${triggerLabel(trigger)}" `
-    + `procedure. Memories found: ${parts.join(', ')}`;
+    + `procedure. Memories found: ${parts.join(', ')}${suffix}`;
 
   // The instruction that makes the English above reach the user in their own language. Same
   // shape as the startup tip's: say what to relay, and name what must survive the translation.
   // Without it the model either drops the line or paraphrases the numbers away, and the
   // numbers are the entire point — they are what separates "looked, found none" from
   // "never asked".
-  const relay = 'Relay the line above to the user, translated into the language you are '
-    + 'speaking with them. Keep the counts and the version tag exactly as written.';
+  const relay = RELAY_INSTRUCTION;
   const howTo = ' To show the contents of a category, read it with ownmind_get — e.g. '
     + 'ownmind_get("team_standard") — and tell them they can simply ask for it by name.';
 

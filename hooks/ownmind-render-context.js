@@ -30,9 +30,15 @@ const version = process.argv[2] || '?';
 const trigger = process.argv[3] || 'command';
 // v1.26.154 — the session id, so the names below can be shown once an hour instead of in
 // front of every command. It arrives as argv rather than on stdin because stdin is already
-// carrying the response body. An empty one still works: `windowKey` falls back to 'default',
-// which means one shared window per machine — worse than per-session, and still far better
-// than repeating the full list on every operation.
+// carrying the response body.
+//
+// An empty one still works, but v1.26.161 raised what it costs and the old note here
+// understated it. `windowKey` falls back to 'default', so the window is shared by every session
+// on the machine — and since v1.26.161 that window governs the ⚠️ listing too, not just the
+// names. A brand-new session starting inside another session's hour therefore sees
+// `Iron rules 9/150` and none of the nine, where before it at least got the list. The counts
+// line still goes out every time, so nothing disappears silently; what is lost is the rule text
+// in that session's context.
 const sessionId = process.argv[4] || '';
 
 let body = '';
@@ -76,13 +82,20 @@ const rules = legacy
 
 const out = [];
 
+// v1.26.161 — hoisted out of the block below, because the ⚠️ listing further down needs it too.
+// It did not before: `listing` governed the names inside the counts line and nothing else, so
+// the block of rules printed in front of every command that matched anything. Two commands a
+// minute apart each printed the same nine rules, the second one having just correctly withheld
+// those same nine names from the line above them.
+let listing = false;
+
 if (!legacy) {
   // v1.26.154 — the command path has a window now, keyed by session and trigger. The counts
   // line still goes out on every operation, deliberately: it is one line, and repeating it was
   // decided to cost nothing worth saving. What the window governs is the names, which are the
   // part that gets long.
   const decision = decideEditReminder(readEditReminderState(sessionId, trigger), Date.now());
-  const listing = decision.mode === 'full';
+  listing = decision.mode === 'full';
 
   // Everything that matched is named, iron rules included, on every trigger. v1.26.154 left
   // them out wherever the banner was going to print them; v1.26.160 puts them back on the
@@ -140,11 +153,15 @@ if (rules.length > 0) {
       out.push('');
       out.push(`回應格式要求：AI 的第一行必須是「${tag}」，讓使用者看到鐵律觸發。`);
     }
-  } else if (trigger !== 'commit') {
+  } else if (trigger !== 'commit' && listing) {
     // On the new path the counts line above already names the trigger and the iron-rule
     // count, and carries the instruction to relay it. A second banner repeating both would
     // be the same sentence twice, so this is the listing only. commit stays compact: the
     // count in the line above is the whole message there.
+    //
+    // v1.26.161 — and only on the operation the window is open for. `listing` is the same value
+    // that decides whether the names go into the line above; the two are one decision, and
+    // splitting them is what let the long half through while the short half was throttled.
     out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     rules.forEach((r) => out.push(`  ⚠️  ${r.code || 'IR-?'}: ${r.title}`));
     out.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

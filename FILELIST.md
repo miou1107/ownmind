@@ -1,5 +1,47 @@
 # OwnMind 檔案結構
 
+## v1.26.161 修改（窗戶只關了一半）
+
+新增：
+```
+tests/command-listing-obeys-window.test.js      — 驗 ⚠️ 清單跟名字受同一個窗戶管。
+                                                   八個案例：第一次印、第二次不印、
+                                                   換 trigger 照印、換 session 照印、
+                                                   commit 一律不印、什麼都沒比對到就
+                                                   不開窗、窗過期又印回來。
+                                                   改動前跑過：只有「第二次不印」是紅的，
+                                                   其餘七個綠——所以它證明的是這一個defect，
+                                                   不是順手把別的行為一起改掉了
+tests/relay-asks-for-a-quiet-line.test.js       — 驗轉述指示有講排版（引用區塊＋斜體），
+                                                   而且沒有把「要翻譯」「數字照抄」擠掉
+tests/edit-reminder-english-source.test.js      — 驗編輯路徑那兩個檔整份沒有中日韓字
+                                                   （含假名、諺文、全形標點，不是只有漢字）。
+                                                   掃整個檔案而不是挑幾個字串比對：
+                                                   挑著比對的清單，漏掉的那條不會報錯。
+                                                   另有一案驗「翻成英文的字串一定帶著
+                                                   轉述指示」——只翻不帶指示，對原本讀
+                                                   得懂中文的人是退步
+```
+
+修改：
+```
+hooks/ownmind-render-context.js                 — `listing` 提到外層，⚠️ 清單也受它管；
+                                                   空 session id 那段註解改寫（它現在少給的
+                                                   東西比 v1.26.154 寫那段時多）
+shared/hook-context.js                          — 轉述指示加上排版要求；抽成 RELAY_INSTRUCTION
+                                                   匯出，讓單獨送英文字串的呼叫端帶得走；
+                                                   新增 suffix 參數，次數改放進句子裡面
+hooks/ownmind-edit-reminder.js                  — 四個中文字串改英文原稿，各自配轉述指示；
+                                                   框框的指示明講「鐵律標題不准翻」
+shared/edit-reminder-state.js                   — 節流那行改英文原稿
+tests/edit-trigger-reminder.test.js             — 斷言跟著改英文；「不准宣稱已遵守」
+                                                   那條的關鍵字也改英文（原本的中文
+                                                   關鍵字對英文的行會無條件通過）
+tests/hook-context-five-categories.test.js      — 渲染器測試改用隔離的狀態檔與 session id。
+                                                   原本讀寫開發者自己的
+                                                   ~/.ownmind/state/edit-reminder.json
+```
+
 ## v1.26.160 修改（有找到的，就要念出名字）
 
 新增：

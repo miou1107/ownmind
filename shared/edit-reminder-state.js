@@ -181,5 +181,11 @@ export function decideEditReminder(state, nowMs) {
  * @param {number} occurrence
  */
 export function renderEditReminderLine(version, ruleCount, occurrence) {
-  return `【OwnMind v${version}】AI 改檔案要遵守的鐵律 ${ruleCount} 條 · 本小時第 ${occurrence} 次`;
+  // v1.26.161 — English at the source, like every other string a hook emits. This one is glued
+  // onto a line the model is explicitly told to translate, so half of it arriving pre-translated
+  // into one particular language was the line contradicting its own instruction.
+  // "the AI must follow" is load-bearing and predates the translation: without it the line reads
+  // as an instruction to whoever is watching the screen, and they are not the party bound.
+  return `[OwnMind v${version}] This operation is a "File edit" procedure. `
+    + `Iron rules the AI must follow: ${ruleCount} · occurrence ${occurrence} this hour`;
 }
