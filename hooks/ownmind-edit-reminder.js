@@ -15,7 +15,7 @@
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { getClientVersion, readCredentials } from '../shared/helpers.js';
-import { renderHookContextLine } from '../shared/hook-context.js';
+import { renderHookContextLine, RELAY_INSTRUCTION } from '../shared/hook-context.js';
 import { fetchHookContext } from './lib/hook-context-fetch.js';
 import {
   readEditReminderState,
@@ -39,7 +39,18 @@ function envelope(text) {
  * whole point of this release line is that a broken guard must not look like a working one.
  */
 const STATE_WRITE_FAILED =
-  '（OwnMind 無法寫入 ~/.ownmind/state/，所以每次編輯都會重列一次。請檢查該目錄權限。）';
+  '(OwnMind cannot write to ~/.ownmind/state/, so the full listing will repeat on every edit. '
+  + 'Check the permissions on that directory.)';
+
+/**
+ * The same notice when it is the only thing being said.
+ *
+ * v1.26.161 — it goes out alone on the two paths where there is no rule to report, and English
+ * with nothing to translate it is a regression for the reader it was Chinese for. Everywhere
+ * else it is appended to a line that already carries the instruction.
+ */
+const STATE_WRITE_FAILED_ALONE = `${STATE_WRITE_FAILED}\nTell the user this, in the language you `
+  + 'are speaking with them.';
 
 /**
  * @param {{version: string, apiKey: string, apiUrl: string, now: number, sessionId?: string}} opts
@@ -61,19 +72,29 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
       totals: decision.totals,
     });
     // rule_count 0 means there is nothing to say: either this account has no rule matching
-    // an edit, or the last lookup failed and this is the back-off window. Saying "0 條"
+    // an edit, or the last lookup failed and this is the back-off window. Saying "0 rules"
     // before every file write is noise with no content, and a brand new account — the
     // population least willing to put up with it — is exactly where it would happen.
-    if (decision.rule_count <= 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
+    if (decision.rule_count <= 0) return wrote ? null : envelope(STATE_WRITE_FAILED_ALONE);
     // issue #94 — the throttled line names every category too, from the counts stored in the
     // window. A state file written by an older client has none, so the pre-v1.26.151 line is
     // still what comes out until the next full listing refreshes the window.
+    // v1.26.161 — the occurrence goes in as `suffix`, so it lands inside the line rather than
+    // after the instruction that says which parts must survive translation.
     const contextLine = decision.counts
-      ? renderHookContextLine({ version, trigger: 'edit', counts: decision.counts })
+      ? renderHookContextLine({
+        version,
+        trigger: 'edit',
+        counts: decision.counts,
+        suffix: ` · occurrence ${decision.occurrence} this hour`,
+      })
       : '';
+    // The legacy line has no relay instruction of its own — it predates the English-source
+    // route and was Chinese until v1.26.161. Translating it without carrying the instruction
+    // would leave a Chinese reader worse off than before, so the instruction comes with it.
     const line = contextLine
-      ? `${contextLine} · 本小時第 ${decision.occurrence} 次`
-      : renderEditReminderLine(version, decision.rule_count, decision.occurrence);
+      || `${renderEditReminderLine(version, decision.rule_count, decision.occurrence)}\n`
+        + RELAY_INSTRUCTION;
     return envelope(wrote ? line : `${line}\n${STATE_WRITE_FAILED}`);
   }
 
@@ -112,9 +133,10 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
     totals,
   });
 
-  if (relevant.length === 0) return wrote ? null : envelope(STATE_WRITE_FAILED);
+  if (relevant.length === 0) return wrote ? null : envelope(STATE_WRITE_FAILED_ALONE);
 
-  const tag = `【OwnMind v${version}】AI 改檔案要遵守的鐵律 ${relevant.length} 條`;
+  const tag = `[OwnMind v${version}] Iron rules the AI must follow when editing files: `
+    + `${relevant.length}`;
   // The names of everything that matched, iron rules included.
   //
   // v1.26.154 held them back here on the grounds that the banner below already prints them and
@@ -133,7 +155,16 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
     '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
     ...relevant.map(r => `  ⚠️  ${r.code || 'IR-?'}: ${r.title}`),
     '',
-    '完整清單每小時列一次，同一小時內之後的編輯只會顯示一行。這是提醒，不會擋下編輯。',
+    'The full list is shown once an hour; later edits in the same hour get a single line. '
+    + 'This is a reminder — it does not block the edit.',
+    // v1.26.161 — the banner needs its own instruction. The counts line above carries one, and
+    // it says "the line above", which is everything this block is not. On a legacy server there
+    // is no counts line at all and this block is the entire output. Rule titles are excluded by
+    // name: they are user data, in whatever language their author wrote them, and a model told
+    // to translate the surrounding text will otherwise take them with it.
+    'If you surface any of this to the user, put OwnMind\'s own wording above into the language '
+    + 'you are speaking with them. Leave each rule title exactly as written — the user wrote '
+    + 'those.',
   ];
   if (!wrote) lines.push(STATE_WRITE_FAILED);
   return envelope(lines.join('\n'));

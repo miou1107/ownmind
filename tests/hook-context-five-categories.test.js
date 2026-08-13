@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { stageHookHome } from './helpers/hook-home.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 import { renderHookContextLine, HOOK_CONTEXT_TYPES, TRIGGER_LABELS, tallyHookContext } from '../shared/hook-context.js';
 import { ruleMatchesTrigger } from '../shared/helpers.js';
@@ -183,7 +184,9 @@ describe('issue #94 — the reminder lists every memory category', () => {
       assert.match(line, /translated into the language you are speaking/);
       // Without naming them, the numbers get paraphrased away — and the numbers are the whole
       // point, since they are what separates "looked, found none" from "never asked".
-      assert.match(line, /Keep the counts and the version tag exactly as written/);
+      // v1.26.161 — the occurrence joined the must-survive list. It used to be appended after
+      // this sentence, so the sentence did not cover the one part most likely to be dropped.
+      assert.match(line, /Keep the counts, the occurrence and the version tag exactly as written/);
     });
   });
 
@@ -252,13 +255,37 @@ describe('issue #94 — the reminder lists every memory category', () => {
   });
 
   describe('ownmind-render-context.js — which shape arrived', () => {
-    /** Run the renderer over one response body, the way the shell hook does. */
-    function render(body, trigger = 'deploy') {
+    let rendererStateDir;
+    let rendererStatePath;
+
+    before(() => {
+      rendererStateDir = tempDir('ownmind-renderer-state-');
+      rendererStatePath = path.join(rendererStateDir, 'edit-reminder.json');
+    });
+
+    after(() => {
+      if (rendererStateDir) fs.rmSync(rendererStateDir, { recursive: true, force: true });
+    });
+
+    /**
+     * Run the renderer over one response body, the way the shell hook does.
+     *
+     * v1.26.161 — with its own state file and its own session id. Without them this suite read
+     * and wrote the real `~/.ownmind/state/edit-reminder.json` under the key `default:deploy`,
+     * so it left a window open on the machine that ran it. That was invisible while the window
+     * governed only the names; now that it governs the listing too, whether these assertions
+     * pass depends on what the developer's own hooks did in the previous hour.
+     *
+     * Each call gets a fresh session id, so a test that wants a second render inside one window
+     * has to say so by passing the same one.
+     */
+    let renderCall = 0;
+    function render(body, trigger = 'deploy', sessionId = `render-${++renderCall}`) {
       return new Promise((resolve, reject) => {
         const child = spawn(
           process.execPath,
-          [path.join(repoRoot, 'hooks', 'ownmind-render-context.js'), '9.9.9', trigger],
-          { stdio: 'pipe' }
+          [path.join(repoRoot, 'hooks', 'ownmind-render-context.js'), '9.9.9', trigger, sessionId],
+          { stdio: 'pipe', env: { ...process.env, __OWNMIND_EDIT_REMINDER_PATH: rendererStatePath } }
         );
         let stdout = '';
         let stderr = '';

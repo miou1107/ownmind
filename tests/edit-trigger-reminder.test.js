@@ -179,13 +179,23 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
       const second = await run(hook, editPayload());
       assert.equal(second.reached, false,
         'the throttled path must make no request — the count is carried in the state file');
+      // v1.26.161 — English at the source, and the relay instruction that makes English reach a
+      // reader who does not read it. The line itself is asserted whole; the instruction below it
+      // is asserted separately because translating the string without shipping the instruction
+      // is the regression this pair exists to catch.
+      const [firstLine, ...rest] = second.context.split('\n');
       assert.equal(
-        second.context,
-        '【OwnMind v99.99.99】AI 改檔案要遵守的鐵律 2 條 · 本小時第 2 次'
+        firstLine,
+        '[OwnMind v99.99.99] This operation is a "File edit" procedure. '
+        + 'Iron rules the AI must follow: 2 · occurrence 2 this hour'
       );
+      assert.match(rest.join('\n'), /translated into the language you are speaking with them/);
 
       const third = await run(hook, editPayload('MultiEdit'));
-      assert.match(third.context, /本小時第 3 次$/, 'the occurrence must keep counting');
+      assert.match(
+        third.context.split('\n')[0], /occurrence 3 this hour$/,
+        'the occurrence must keep counting, and must stay on the line rather than after it',
+      );
     });
 
     it(`${hook}: once the hour is up, the full listing comes back`, async () => {
@@ -229,7 +239,10 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
       assert.match(b.context, /IR-001/, 'a different session must get the full listing');
 
       const a2 = await run(hook, editPayload('Edit', 'session-A'));
-      assert.match(a2.context, /本小時第 2 次$/, "session A's own window kept counting");
+      assert.match(
+        a2.context.split('\n')[0], /occurrence 2 this hour$/,
+        "session A's own window kept counting",
+      );
       assert.equal(entryFor(statePath, 'session-B').occurrence, 1);
     });
 
@@ -396,15 +409,19 @@ describe('v1.26.92 — what the one-line reminder says', () => {
   });
 
   it('carries the count and the occurrence', () => {
-    assert.match(line, /68 條/);
-    assert.match(line, /第 4 次/);
+    // `/68/` alone would also match a version string that happened to contain it.
+    assert.match(line, /follow: 68/);
+    assert.match(line, /occurrence 4/);
   });
 
   it('does not claim the rules were followed', () => {
     // The hook can see that the rules were put in front of the AI. It cannot see whether
     // they were obeyed, and a line that claims so is false exactly when it matters.
-    for (const claim of ['正在遵守', '已遵守', '遵守中']) {
-      assert.doesNotMatch(line, new RegExp(claim));
+    //
+    // v1.26.161 — the claims are English now because the line is. Same assertion, and the
+    // Chinese ones would have gone green on an English line without checking anything.
+    for (const claim of ['is following', 'has followed', 'complied', 'applied', 'enforced']) {
+      assert.doesNotMatch(line, new RegExp(claim, 'i'));
     }
   });
 });
@@ -543,7 +560,7 @@ describe('v1.26.92 — an unwritable state directory says so', () => {
       });
       const context = JSON.parse(out).hookSpecificOutput.additionalContext;
       assert.match(context, /IR-9/, 'the listing still happens');
-      assert.match(context, /無法寫入/, 'and the reason the throttle is not working is stated');
+      assert.match(context, /cannot write to/, 'and the reason the throttle is not working is stated');
     } finally {
       process.env.__OWNMIND_EDIT_REMINDER_PATH = saved;
       fs.chmodSync(path.join(dir, 'nope'), 0o700);
