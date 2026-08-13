@@ -82,8 +82,13 @@ export function anySelectorMatches(selectors, { assistantText, userPrompts, repo
   });
 }
 
-/** What the assistant reads on stderr: the rule, its own words, and what to do instead. */
-export function formatViolationFeedback(violations) {
+/**
+ * What the assistant reads on stderr: the rule, its own words, and what to do instead.
+ *
+ * v1.26.171: also the check id. The stderr renders to the user as the block reason — the one
+ * channel proven to reach a human — so the 誤判 handle has to ride here, not in a banner.
+ */
+export function formatViolationFeedback(violations, { checkId } = {}) {
   const lines = ['[OwnMind] This reply breaks rules you are required to follow:'];
   for (const v of violations) {
     const kind = v.ruleType === 'team_standard' ? 'Team standard' : 'Rule';
@@ -96,6 +101,9 @@ export function formatViolationFeedback(violations) {
     }
   }
   lines.push('Rewrite the reply so it complies. Do not argue with the rule.');
+  if (checkId) {
+    lines.push(`If the user says this was a false alarm, tell them to reply "誤判 ${checkId}".`);
+  }
   return lines.join('\n');
 }
 
@@ -117,16 +125,26 @@ export async function runComplianceStep(ctx) {
   if (disabled || mode === 'warn') {
     return {
       action: 'notice',
+      noticeKey: 'off:warn-mode',
       banner: '[OwnMind] compliance check is off for this session (lint disabled or warn mode)',
     };
   }
-  if (!apiKey || !apiUrl) return { action: 'none' };
+  // v1.26.171: an unconfigured machine used to return silent `none`, which reads exactly
+  // like "checked and passed" — the impersonation this product forbids.
+  if (!apiKey || !apiUrl) {
+    return {
+      action: 'notice',
+      noticeKey: 'not-checked:no-credentials',
+      banner: '[OwnMind] this machine has no credentials, so this turn was NOT checked',
+    };
+  }
 
   // A machine that never synced cannot check anything, and saying nothing there reads exactly
   // like "no rule applies to this turn".
   if (!bundle || bundle.present !== true) {
     return {
       action: 'notice',
+      noticeKey: 'not-checked:never-synced',
       banner: '[OwnMind] this machine has never synced its rules, so this turn was NOT checked',
     };
   }
@@ -150,7 +168,20 @@ export async function runComplianceStep(ctx) {
   if (check.outcome === 'failed') {
     return {
       action: 'notice',
+      // One key for every failure reason: timeout and the backoff it triggers are the same
+      // outage, and a key that flaps between them would re-announce on every flap.
+      noticeKey: 'not-checked:check-failed',
       banner: `[OwnMind] compliance check did not run (${check.reason || 'unknown'}) - this turn was NOT checked`,
+    };
+  }
+  // v1.26.171: 'skipped' means the SERVER declined to check (enforcement mode off for the
+  // account, or it selected nothing). The off state was arriving with `enabled:false`,
+  // being discarded, and reading like a clean verdict.
+  if (check.outcome === 'skipped' && check.enabled === false) {
+    return {
+      action: 'notice',
+      noticeKey: 'off:server',
+      banner: '[OwnMind] enforcement is switched off for this account, so this turn was NOT checked',
     };
   }
   if (check.outcome !== 'violation' || !check.violations?.length) {
@@ -169,7 +200,7 @@ export async function runComplianceStep(ctx) {
 
   return {
     action: 'exit2',
-    stderr: formatViolationFeedback(check.violations),
+    stderr: formatViolationFeedback(check.violations, { checkId: check.check_id }),
     banner: `[OwnMind] compliance: ${check.violations.length} rule violation(s) sent back to the AI${idNote}`,
   };
 }

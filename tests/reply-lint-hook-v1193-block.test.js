@@ -29,7 +29,6 @@ function runHook(input, env = {}) {
       ...process.env,
       HOME: tmpHome,
       USERPROFILE: tmpHome,
-      OWNMIND_TTY_FORCE_FALLBACK: '1',
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       ...env,
     },

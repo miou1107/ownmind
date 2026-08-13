@@ -102,6 +102,9 @@ export async function requestCheck({
       outcome: body.outcome || 'failed',
       violations: Array.isArray(body.violations) ? body.violations : [],
       check_id: body.check_id ?? null,
+      // v1.26.171: the server sends enabled:false when enforcement is off for the account.
+      // Discarding it made "switched off" indistinguishable from "checked and clean".
+      enabled: body.enabled !== false,
     };
   } catch (err) {
     writeBackoffUntil(stateDir, now() + BACKOFF_MS);

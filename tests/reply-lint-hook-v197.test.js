@@ -3,7 +3,7 @@
  *
  * Tracks openspec/changes/v1.20-iron-rule-enforcement/spec.md:
  *   - scenarios 13~15: reply-lint block switches to exit 2 + stderr
- *   - scenario 16: after consecutive blocks hit BLOCK_DOWNGRADE_LIMIT, downgrade to a warning exit 1
+ *   - scenario 16: after consecutive blocks hit BLOCK_DOWNGRADE_LIMIT, downgrade to a visible warning
  *   - scenario 17: privacy detects national ID / email; user prompt is an exception
  *     (event name privacy_check; v1.19.10 neutralization)
  */
@@ -35,7 +35,6 @@ function runHook(input, env = {}) {
       ...process.env,
       HOME: tmpHome,
       USERPROFILE: tmpHome,
-      OWNMIND_TTY_FORCE_FALLBACK: '1',
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       ...env,
     },
@@ -48,6 +47,19 @@ function setupTmpHome() {
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   counterPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-session-counter.json');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
+
+  // v1.26.171: stage a configured, quiet machine (credentials + a bundle whose selector
+  // matches nothing), so the loud not-checked notices do not join these lint-path tests.
+  fs.writeFileSync(path.join(tmpHome, '.claude.json'), JSON.stringify({
+    mcpServers: {
+      ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: 'http://127.0.0.1:1/unreachable' } },
+    },
+  }));
+  fs.mkdirSync(path.join(tmpHome, '.ownmind', 'cache'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpHome, '.ownmind', 'cache', 'enforcement.json'),
+    JSON.stringify({ selectors: [{ id: 1, keywords: ['zzz-matches-nothing'], tags: [] }], guards: [], injectables: [] }),
+  );
 
   // v1.21.0: the rule-driven architecture needs a user iron-rule cache to enable validators.
   // Tests always write a fake cache enabling all 3 validators.
@@ -98,11 +110,11 @@ const CLEAN_TEXT = '好、我來把那段改成白話中文、不夾英文。';
 // Scenario 16: consecutive blocks downgrade to a warning
 // ============================================================
 
-describe('v1.19.7 scenario 16 — after 3 consecutive blocks, the 4th downgrades to exit 1', () => {
+describe('v1.19.7 scenario 16 — after 3 consecutive blocks, the 4th downgrades to a visible warning', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('after 4+3 violations, the 7th downgrades to exit 1 (first 3 accumulate; 4th–6th block; 7th downgrades)', () => {
+  it('after 4+3 violations, the 7th downgrades (first 3 accumulate; 4th-6th block; 7th downgrades)', () => {
     writeTranscript([{ role: 'assistant', text: VIOLATING_TEXT }]);
     const sessionId = 'sess-downgrade';
     const payload = stopPayload({ session_id: sessionId });
@@ -130,11 +142,13 @@ describe('v1.19.7 scenario 16 — after 3 consecutive blocks, the 4th downgrades
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 3);
 
-    // Attempt 7: block_count is already 3; downgrade to exit 1; do not increment block_count.
+    // Attempt 7: block_count is already 3; downgrade — v1.26.171 delivers the downgrade
+    // notice via systemMessage, which only exit 0 renders, so exit 1 became exit 0.
     r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r.status, 1, `attempt 7 should downgrade to exit 1; stderr=${r.stderr}`);
-    assert.match(r.stderr, /blocked .* times in a row/, 'stderr should include the downgrade message');
-    assert.match(r.stderr, /break the loop/);
+    assert.equal(r.status, 0, `attempt 7 should downgrade to a non-blocking exit; stderr=${r.stderr}`);
+    const parsed = JSON.parse(r.stdout);
+    assert.match(parsed.systemMessage, /consecutive blocks/,
+      'the downgrade notice must ride systemMessage so the user actually sees it');
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 3, 'downgrade must not increment block_count');
   });
