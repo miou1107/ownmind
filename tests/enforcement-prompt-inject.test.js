@@ -5,7 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
-import { buildInjection, PRECEDENCE_SENTENCE } from '../hooks/ownmind-prompt-inject.js';
+import { buildInjection, precedenceFor, PRECEDENCE_BY_TYPE } from '../hooks/ownmind-prompt-inject.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(repoRoot, 'hooks', 'ownmind-prompt-inject.js');
@@ -26,6 +26,7 @@ const HOOK = path.join(repoRoot, 'hooks', 'ownmind-prompt-inject.js');
 
 const CI_STANDARD = {
   id: 412,
+  type: 'team_standard',
   title: 'ci ownership belongs to the colleague',
   content: 'The /ci directory is maintained by the colleague. No other engineer may modify it.',
   keywords: ['FAPA', 'onboarding'],
@@ -37,6 +38,7 @@ const CI_STANDARD = {
 
 const ALWAYS_RULE = {
   id: 125,
+  type: 'iron_rule',
   title: 'conclusion first',
   content: 'Lead with the conclusion.',
   keywords: [],
@@ -57,7 +59,7 @@ test('the precedence sentence comes before the body, not after it', () => {
   // missing is the sentence saying the standard outranks the repository, so that sentence
   // cannot be buried underneath 3500 characters of standard.
   const { text } = buildInjection([CI_STANDARD], 'FAPA', null, []);
-  const precedenceAt = text.indexOf(PRECEDENCE_SENTENCE);
+  const precedenceAt = text.indexOf(precedenceFor('team_standard'));
   const bodyAt = text.indexOf('The /ci directory is maintained');
   assert.ok(precedenceAt >= 0, 'the precedence sentence is missing entirely');
   assert.ok(precedenceAt < bodyAt, 'the precedence sentence must precede the body');
@@ -169,4 +171,44 @@ test('a machine that never synced says so instead of staying silent', () => {
     timeout: 30_000,
   });
   assert.match(out, /never synced|has not synced/i);
+});
+
+test('a team standard says it belongs to the team and cannot simply be waived', () => {
+  // The decision behind this wording: most of what a team standard protects is somebody
+  // else's, so "Vin said it was fine" is not enough on its own.
+  const { text } = buildInjection([CI_STANDARD], 'FAPA', null, []);
+  assert.match(text, /TEAM standard/);
+  assert.match(text, /outranks their personal iron rules/);
+  assert.match(text, /確認/, 'a team standard override needs an explicit confirmation');
+});
+
+test('an iron rule says the user may set it aside, because it is theirs', () => {
+  const { text } = buildInjection([ALWAYS_RULE], 'anything', null, []);
+  assert.match(text, /own iron rule/);
+  assert.match(text, /the team standard governs/);
+  assert.match(text, /may set this aside/);
+  assert.doesNotMatch(text, /確認/, 'the user does not have to confirm to waive their own rule');
+});
+
+test('a principle and a preference say plainly that they yield', () => {
+  const principle = { ...ALWAYS_RULE, id: 900, type: 'principle', content: 'p' };
+  const preference = { ...ALWAYS_RULE, id: 901, type: 'profile', content: 'q' };
+  assert.match(buildInjection([principle], 'x', null, []).text, /unless an iron rule or a team/);
+  const prefText = buildInjection([preference], 'x', null, []).text;
+  assert.match(prefText, /not a rule/);
+  assert.match(prefText, /when nothing above it decides/);
+});
+
+test('every shipped type has its own sentence, and an unknown type still gets one', () => {
+  // A type with no sentence must not fall through to silence: an injected rule with no
+  // precedence line is the exact state the 2026-08-13 incident happened in.
+  for (const type of ['team_standard', 'iron_rule', 'coding_standard', 'principle', 'profile']) {
+    assert.ok(PRECEDENCE_BY_TYPE[type], `no precedence sentence for ${type}`);
+  }
+  assert.ok(precedenceFor('something_new_next_year').length > 0);
+});
+
+test('the header names the kind of rule, not always "standard"', () => {
+  assert.match(buildInjection([CI_STANDARD], 'FAPA', null, []).text, /\[OwnMind team_standard 412\]/);
+  assert.match(buildInjection([ALWAYS_RULE], 'x', null, []).text, /\[OwnMind iron_rule 125\]/);
 });

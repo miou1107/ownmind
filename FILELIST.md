@@ -1,5 +1,20 @@
 # OwnMind 檔案結構
 
+## v1.26.166 修改（四種規範，四句不同的話）
+
+修改：
+```
+hooks/ownmind-prompt-inject.js                  — PRECEDENCE_SENTENCE 改成 PRECEDENCE_BY_TYPE，
+                                                   四種各一句；未知型別有 fallback（沒有句子
+                                                   就等於回到事故當時的狀態）。標頭也改成講
+                                                   實際型別，不再一律叫 standard。
+src/routes/enforcement-bundle.js                — selectors/guards/injectables 都帶上 type。
+hooks/lib/path-guard.js                         — 擋下來的訊息依 type 分兩種，跟注入時一致。
+tests/enforcement-prompt-inject.test.js         — 四種各一條，另加「每個型別都要有句子」。
+tests/enforcement-path-guard.test.js            — 團隊規範要求「確認」、個人規範不要求。
+tests/enforcement-bundle.test.js                — type 必須被送出去。
+```
+
 ## v1.26.165 修改（開工之前，規範先擺到眼前）
 
 新增：

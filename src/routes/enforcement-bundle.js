@@ -60,6 +60,10 @@ export function buildBundle(rows) {
     if (hasGuard) {
       guards.push({
         id: row.id,
+        // Same reason the injectables carry it: what the assistant is told when it is blocked
+        // has to match what it was told when the rule was injected. A team standard the user
+        // cannot waive and a personal rule they can must not produce the same message.
+        type: row.type,
         title: row.title || '',
         repo_match: repoMatch,
         paths: guard.paths,
@@ -72,6 +76,12 @@ export function buildBundle(rows) {
     if (keywords.length > 0 || alwaysCheck || hasGuard) {
       injectables.push({
         id: row.id,
+        // The type decides which precedence sentence goes in front of this rule, and that
+        // sentence is the whole point of injecting it - a team standard belongs to the
+        // company and the user cannot wave it through, their own iron rule they can. Ship
+        // the type or the client has to guess, and guessing here means telling someone their
+        // colleague's rule is theirs to waive.
+        type: row.type,
         title: row.title || '',
         content: row.judge_text || row.content || '',
         keywords,
