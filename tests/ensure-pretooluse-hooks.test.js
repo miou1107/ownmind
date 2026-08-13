@@ -78,11 +78,17 @@ describe('v1.26.105 — ensure-pretooluse-hooks repairs a stale command, not jus
   });
 
   it('an already-correct settings.json is left byte-identical', () => {
+    // v1.26.165 — the prompt hook joins the fixture. "Already correct" means every hook this
+    // helper installs is present and current; leaving the new one out would make the test
+    // assert that a settings file missing a hook is nothing to fix.
     write({
       hooks: {
         PreToolUse: [
           { matcher: 'Bash', hooks: [{ type: 'command', command: NODE_CMD }] },
           { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [{ type: 'command', command: NODE_CMD }] },
+        ],
+        UserPromptSubmit: [
+          { hooks: [{ type: 'command', command: helper.buildInjectCmd(OWNMIND_DIR) }] },
         ],
       },
     });

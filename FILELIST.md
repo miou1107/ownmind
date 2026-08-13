@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.26.165 修改（開工之前，規範先擺到眼前）
+
+新增：
+```
+hooks/ownmind-prompt-inject.js                  — UserPromptSubmit hook。比對純本機（訊息
+                                                   不出機器、不加來回）。注入第一句固定是
+                                                   優先權宣告，再來禁區路徑與負責人，最後
+                                                   才是本文。去重狀態落在檔案，因為每則訊息
+                                                   都是新行程。沒同步過的機器會明講。
+tests/enforcement-prompt-inject.test.js         — 含優先權那句必須在本文之前、以及把 hook
+                                                   當程式跑兩次驗去重真的跨行程。
+tests/enforcement-inject-registration.test.js   — 讀寫完之後的 settings.json 來斷言，不是
+                                                   grep 原始碼（註解掉的註冊也會通過 grep）。
+```
+
+修改：
+```
+scripts/install-helpers/ensure-pretooluse-hooks.cjs — 抽出 ensureEntry()，讓 UserPromptSubmit
+                                                   跟既有工具攔截共用同一套加/修/不動邏輯。
+                                                   升級路徑也會拿到。
+tests/ensure-pretooluse-hooks.test.js           — 「已經正確」的 fixture 補上新 hook；少了它
+                                                   等於斷言「缺一個 hook 不算要修」。
+```
+
 ## v1.26.164 修改（第一道真的擋得住的關卡）
 
 新增：

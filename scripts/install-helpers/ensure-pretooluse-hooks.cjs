@@ -62,6 +62,60 @@ function buildPreCmd(ownmindDir, useBash) {
   return `node "${hookPath}"`;
 }
 
+// v1.26.165 — the prompt hook has no .sh twin. It is pure node on every platform, so unlike
+// the tool hook there is no bash/node fork here; the same command is written everywhere.
+const INJECT_IDENTIFIER_SUBSTR = 'ownmind-prompt-inject';
+
+/**
+ * The UserPromptSubmit command.
+ *
+ * Points into ~/.ownmind rather than ~/.claude/hooks for the reason buildPreCmd gives: the
+ * hook imports ./lib/enforcement-cache.js, and only the .ownmind tree has the siblings those
+ * imports expect.
+ */
+function buildInjectCmd(ownmindDir) {
+  const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-prompt-inject.js').replace(/\\/g, '/');
+  return `node "${hookPath}"`;
+}
+
+/**
+ * Add or repair one hook entry in one event's list.
+ *
+ * Extracted so UserPromptSubmit gets the same add/repair/leave-alone behaviour the tool hooks
+ * already had, rather than a second implementation of it that drifts. `matcher` is null for
+ * events that do not take one.
+ *
+ * @returns {{action: 'added'|'repaired'|'unchanged', from?: string}}
+ */
+function ensureEntry(list, matcher, identifier, command) {
+  const belongsToUs = (group) => {
+    if (!group || !Array.isArray(group.hooks)) return false;
+    if (matcher !== null && group.matcher !== matcher) return false;
+    return group.hooks.some(
+      (h) => h && typeof h.command === 'string' && h.command.includes(identifier),
+    );
+  };
+
+  const entry = list.find(belongsToUs);
+  if (!entry) {
+    const group = { hooks: [{ type: 'command', command }] };
+    if (matcher !== null) group.matcher = matcher;
+    list.push(group);
+    return { action: 'added' };
+  }
+
+  const stale = entry.hooks.filter(
+    (h) => h && typeof h.command === 'string'
+      && h.command.includes(identifier)
+      && h.command !== command,
+  );
+  if (stale.length === 0) return { action: 'unchanged' };
+
+  const from = stale[0].command;
+  for (const h of stale) h.command = command;
+  return { action: 'repaired', from };
+}
+
 /**
  * @returns {{ status: 'ok' | 'error', message?: string, results?: Array<{matcher: string, action: 'added'|'repaired'|'unchanged', from?: string}> }}
  */
@@ -95,40 +149,26 @@ function ensureHooks(settingsPath, ownmindDir, useBash) {
 
   if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {};
   if (!Array.isArray(settings.hooks.PreToolUse)) settings.hooks.PreToolUse = [];
+  if (!Array.isArray(settings.hooks.UserPromptSubmit)) settings.hooks.UserPromptSubmit = [];
 
   const results = [];
   let changed = false;
 
   for (const matcher of MATCHERS) {
-    const entry = settings.hooks.PreToolUse.find((group) => {
-      if (!group || group.matcher !== matcher || !Array.isArray(group.hooks)) return false;
-      return group.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(HOOK_IDENTIFIER_SUBSTR));
-    });
-
-    if (!entry) {
-      settings.hooks.PreToolUse.push({
-        matcher,
-        hooks: [{ type: 'command', command: preCmd }],
-      });
-      results.push({ matcher, action: 'added' });
-      changed = true;
-      continue;
-    }
-
-    const stale = entry.hooks.filter((h) =>
-      h && typeof h.command === 'string' &&
-      h.command.includes(HOOK_IDENTIFIER_SUBSTR) &&
-      h.command !== preCmd
-    );
-    if (stale.length === 0) {
-      results.push({ matcher, action: 'unchanged' });
-      continue;
-    }
-    const from = stale[0].command;
-    for (const h of stale) h.command = preCmd;
-    results.push({ matcher, action: 'repaired', from });
-    changed = true;
+    const r = ensureEntry(settings.hooks.PreToolUse, matcher, HOOK_IDENTIFIER_SUBSTR, preCmd);
+    results.push({ matcher, ...r });
+    if (r.action !== 'unchanged') changed = true;
   }
+
+  // UserPromptSubmit takes no matcher: it fires on every prompt, and the hook itself decides
+  // whether it has anything to say. Registered here rather than only in install.sh so that
+  // the upgrade path picks it up too — a hook file that ships without a settings entry is a
+  // hook that never runs, and every test of its logic keeps passing.
+  const injected = ensureEntry(
+    settings.hooks.UserPromptSubmit, null, INJECT_IDENTIFIER_SUBSTR, buildInjectCmd(ownmindDir),
+  );
+  results.push({ matcher: 'UserPromptSubmit', ...injected });
+  if (injected.action !== 'unchanged') changed = true;
 
   if (!changed) return { status: 'ok', results };
 
@@ -185,4 +225,7 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { ensureHooks, buildPreCmd, MATCHERS, HOOK_IDENTIFIER_SUBSTR };
+module.exports = {
+  ensureHooks, buildPreCmd, buildInjectCmd, ensureEntry,
+  MATCHERS, HOOK_IDENTIFIER_SUBSTR, INJECT_IDENTIFIER_SUBSTR,
+};
