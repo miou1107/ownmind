@@ -64,6 +64,7 @@ import os from 'node:os';
 import https from 'node:https';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { execSync } from 'node:child_process';
 
 // v1.26.124: assigned from shared/local-date.js inside main()'s guarded dynamic import.
 // Module-level so spoolEvents can reach it; spoolEvents only ever runs after that import
@@ -112,6 +113,67 @@ const MAX_TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const POST_TIMEOUT_MS = 1500;
 
 main().catch(() => { try { process.exit(0); } catch { /* ignore */ } });
+
+/** The origin of the repo this session is in. Absent outside a repo, which is normal. */
+function readRepoRemote() {
+  try {
+    return execSync('git remote get-url origin', {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+    }).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Run the compliance step once for this turn.
+ *
+ * Kept out of main() so the decision it carries out lives in a module with its own tests. The
+ * first draft of this step was pasted inline and referenced a constant this file does not
+ * have; the ReferenceError went into a bare catch, and the whole check would have been dead
+ * on arrival with the suite green.
+ */
+async function runComplianceOnce(payload, transcript) {
+  // Every dependency resolved here, including readCredentials.
+  //
+  // The hook loads its shared helpers into function-scoped `let`s inside main() (line 176),
+  // so nothing from '../shared/helpers.js' is in scope out here. The first version of this
+  // helper called `readCredentials()` on the assumption that it was, and the ReferenceError
+  // went into the caller's catch: the check ran on no turn at all, silently, exactly the
+  // failure this whole feature exists to remove. The behavioural test caught it; no unit test
+  // could have.
+  const [
+    { runComplianceStep, readComplianceBlockCount, incrementComplianceBlockCount },
+    { requestCheck },
+    { readEnforcementBundle },
+    { readCredentials },
+  ] = await Promise.all([
+    import('./lib/compliance-step.js'),
+    import('./lib/compliance-client.js'),
+    import('./lib/enforcement-cache.js'),
+    import('../shared/helpers.js'),
+  ]);
+
+  const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
+  const step = await runComplianceStep({
+    disabled: DISABLED,
+    mode: MODE,
+    ...readCredentials(),
+    sessionId,
+    assistantText: transcript.lastAssistantText,
+    userPrompts: transcript.recentUserPrompts,
+    repoRemote: readRepoRemote(),
+    // A reply is the assistant talking, and usually reporting on work as well. Both labels
+    // go in so a rule tagged either way is in scope for this turn.
+    trigger: ['respond', 'report'],
+    bundle: readEnforcementBundle(),
+    blockCount: readComplianceBlockCount(sessionId),
+    requestCheckImpl: requestCheck,
+  });
+
+  if (step.action === 'exit2') incrementComplianceBlockCount(sessionId);
+  return step;
+}
 
 async function main() {
   // v1.19.3: MODE=disable is equivalent to the legacy DISABLED env.
@@ -164,6 +226,37 @@ async function main() {
   } catch { process.exit(0); return; }
   if (!payload) { process.exit(0); return; }
 
+  // === Standard enforcement ===
+  //
+  // Ahead of the stop_hook_active early return, deliberately. That return exists so the
+  // string validators below cannot loop, but it also means a reply produced *because* the
+  // assistant was pushed back is never examined - so one rejection would buy a permanently
+  // unchecked turn. The loop is bounded here instead, by a counter of this path's own that
+  // shares nothing with BLOCK_THRESHOLD or incrementCounter: a rule violation has to reach
+  // the assistant on the first offence, not the fourth.
+  //
+  // Everything it needs is imported dynamically and every failure is caught: a broken or
+  // half-upgraded lib file must not take the three existing validators down with it.
+  let complianceTranscript = null;
+  try {
+    const transcriptForCompliance = sanitizeTranscriptPath(payload.transcript_path);
+    if (transcriptForCompliance) {
+      complianceTranscript = readTranscriptTail(transcriptForCompliance);
+      if (complianceTranscript.lastAssistantText) {
+        const step = await runComplianceOnce(payload, complianceTranscript);
+        if (step.banner) {
+          const wroteBanner = !FORCE_FALLBACK && writeToTty(step.banner);
+          if (!wroteBanner) writeFallback(step.banner);
+        }
+        if (step.action === 'exit2') {
+          try { process.stderr.write(step.stderr + '\n'); } catch { /* ignore */ }
+          process.exit(2);
+          return;
+        }
+      }
+    }
+  } catch { /* fail open: the compliance check must never block the user's work */ }
+
   // stop_hook_active=true means this Stop was triggered by a previous hook block →
   // exit immediately to avoid an infinite loop (Claude Code Stop hook spec).
   // v1.19.3: also guarantees the Stop during Claude rewrite isn't counted again.
@@ -201,7 +294,10 @@ async function main() {
   // v1.20.2 follow-up #3: in addition to lastAssistantText / userPrompts, also extract historical
   // assistant corpus for jargon-explanation cross-reply vocabulary memory (the rule's text says "if already
   // explained in context, may be kept" — now actually implemented).
-  const { lastAssistantText, recentUserPrompts: userPrompts, historicalAssistantCorpus } = readTranscriptTail(transcriptPath);
+  // Reuses the read the compliance step already did. Reading the tail twice per turn is
+  // cheap but pointless, and two reads of a file being appended to can disagree.
+  const { lastAssistantText, recentUserPrompts: userPrompts, historicalAssistantCorpus } =
+    complianceTranscript || readTranscriptTail(transcriptPath);
   if (!lastAssistantText) { process.exit(0); return; }
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
