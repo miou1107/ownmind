@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import express from 'express';
 import { buildBundle, createEnforcementBundleRouter } from '../src/routes/enforcement-bundle.js';
 import { startServer } from './helpers/app-server.js';
@@ -98,6 +99,43 @@ test('a guard block with an empty path list is not a guard', () => {
     metadata: { enforcement: { guard: { repo_match: 'r', paths: [], owner: 'e' } } },
   }]);
   assert.deepEqual(guards, [], 'a guard that can never match should not claim it guards');
+});
+
+test('a rule carrying gate metadata ships as an action guard', async () => {
+  const rule = {
+    id: 918, type: 'iron_rule', title: 'compose only, no cache',
+    content: 'Deploys must use docker compose build --no-cache.',
+    metadata: { enforcement: { gate: {
+      triggers: ['deploy'],
+      checks: [
+        { type: 'must_not_match', pattern: '(^|\\s)docker\\s+build(\\s|$)', reason: 'use docker compose build, never bare docker build (IR-023)' },
+        { type: 'must_match', pattern: '--no-cache', reason: 'docker builds must carry --no-cache (IR-018)' },
+      ],
+      read_required: true, ask_first: false,
+    } } },
+  };
+  const { guards } = buildBundle([rule]);
+  assert.equal(guards.length, 1);
+  const g = guards[0];
+  assert.equal(g.kind, 'action');
+  assert.deepEqual(g.triggers, ['deploy']);
+  assert.equal(g.checks.length, 2);
+  assert.equal(g.read_required, true);
+  assert.match(g.rule_text, /docker compose build/);
+  assert.equal(g.rules_hash, createHash('sha256').update(g.rule_text).digest('hex'));
+});
+
+test('malformed gate metadata is skipped without crashing the bundle', () => {
+  // A gate with no triggers can never fire; a checks field that is not an array must not
+  // throw halfway through the route. Both degrade to "no action guard", not to a 500.
+  const { guards } = buildBundle([
+    { id: 20, type: 'iron_rule', title: 'no triggers', content: 'x', tags: [],
+      metadata: { enforcement: { gate: { checks: [{ type: 'must_match', pattern: 'y', reason: 'z' }] } } } },
+    { id: 21, type: 'iron_rule', title: 'bad checks', content: 'x', tags: [],
+      metadata: { enforcement: { gate: { triggers: ['deploy'], checks: 'not-an-array' } } } },
+  ]);
+  assert.deepEqual(guards.map((g) => g.id), [21], 'a gate without triggers can never fire');
+  assert.deepEqual(guards[0].checks, [], 'a non-array checks field degrades to no checks');
 });
 
 test('injectables carry their type, because it decides the precedence sentence', () => {
