@@ -113,6 +113,7 @@ test('a rule carrying gate metadata ships as an action guard', async () => {
         { type: 'must_match', pattern: '--no-cache', reason: 'docker builds must carry --no-cache (IR-018)' },
       ],
       read_required: true, ask_first: false,
+      applies_pattern: 'docker\\s+compose|git\\s+push\\b.*\\s(refs/tags/)?v\\d',
     } } },
   };
   const { guards } = buildBundle([rule]);
@@ -124,6 +125,9 @@ test('a rule carrying gate metadata ships as an action guard', async () => {
     title: 'compose only, no cache',
     kind: 'action',
     triggers: ['deploy'],
+    // Verbatim - the server does not validate the regex. The client treats an invalid
+    // pattern as "guard fires" (Amendment 1), so mangling it here could only widen firing.
+    applies_pattern: 'docker\\s+compose|git\\s+push\\b.*\\s(refs/tags/)?v\\d',
     checks: [
       { type: 'must_not_match', pattern: '(^|\\s)docker\\s+build(\\s|$)', reason: 'use docker compose build, never bare docker build (IR-023)' },
       { type: 'must_match', pattern: '--no-cache', reason: 'docker builds must carry --no-cache (IR-018)' },
@@ -135,6 +139,27 @@ test('a rule carrying gate metadata ships as an action guard', async () => {
     // the guard shipped would pass even if the wrong string were shipped and hashed.
     rules_hash: createHash('sha256').update(ruleText).digest('hex'),
   });
+});
+
+test('a gate without applies_pattern ships a guard without the key', () => {
+  // Omitted means omitted - not null, not ''. The client distinguishes "no scoping
+  // pattern, fire on every trigger match" by the key's absence, and a shipped empty
+  // string would read as a pattern that matches everything anyway but through the
+  // invalid-regex fallback, which logs as a data problem.
+  const gates = [
+    {}, // no applies_pattern at all
+    { applies_pattern: '' }, // empty string is not a pattern
+    { applies_pattern: 42 }, // non-string is not a pattern
+  ];
+  for (const extra of gates) {
+    const { guards } = buildBundle([{
+      id: 30, type: 'iron_rule', title: 't', content: 'x', tags: [],
+      metadata: { enforcement: { gate: { triggers: ['deploy'], checks: [], ...extra } } },
+    }]);
+    assert.equal(guards.length, 1);
+    assert.ok(!('applies_pattern' in guards[0]),
+      `applies_pattern ${JSON.stringify(extra)} must not ship as a key`);
+  }
 });
 
 test('malformed gate metadata is skipped without crashing the bundle', () => {
