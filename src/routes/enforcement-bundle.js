@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { query as defaultQuery } from '../utils/db.js';
 import logger from '../utils/logger.js';
@@ -11,6 +12,8 @@ import { buildReadableWhere } from '../utils/memory-visibility.js';
  *
  *   selectors    every rule, no text        the "is anything relevant" pre-filter
  *   guards       path rules, no text        the hard block on an edit
+ *                + action-gate rules,       the client-side gate on a command; these DO
+ *                  WITH text                carry text, because the receipt binds to it
  *   injectables  annotated rules, WITH text what is put in front of the AI at prompt time
  *
  * Rule text stays on the server for `selectors`, where the judge already is. That keeps the
@@ -27,6 +30,24 @@ import { buildReadableWhere } from '../utils/memory-visibility.js';
  */
 
 const BUNDLE_TYPES = ['iron_rule', 'team_standard', 'principle', 'coding_standard'];
+
+/**
+ * Summary layer plus every fragment - the same concatenation the selectors' judge text uses
+ * (`buildJudgeText` in src/lib/enforcement/select-rules.js, which is private to that module).
+ * The gate's receipt binds to a hash of this string, so it has to be the rule as the judge
+ * would read it, not just the summary row.
+ */
+function buildGateRuleText(row) {
+  const parts = [row.content || ''];
+  if (Array.isArray(row.fragments)) {
+    for (const fragment of row.fragments) {
+      if (!fragment) continue;
+      const heading = fragment.title ? `\n\n## ${fragment.title}\n` : '\n\n';
+      parts.push(heading + (fragment.content || ''));
+    }
+  }
+  return parts.join('').trim();
+}
 
 /**
  * @param {Array<object>} rows memory rows straight from the database
@@ -68,6 +89,32 @@ export function buildBundle(rows) {
         repo_match: repoMatch,
         paths: guard.paths,
         owner: guard.owner || '',
+      });
+    }
+
+    // Action-gate rules ride the same list with kind: 'action'. A gate with no triggers can
+    // never fire, so shipping it would claim a protection that does not exist - same reason
+    // an empty path list is not a guard. Malformed checks entries are dropped one by one
+    // rather than failing the row: the gate still fires on its triggers, and read_required
+    // still forces the rule text in front of the AI.
+    const gate = enforcement.gate;
+    if (gate && Array.isArray(gate.triggers) && gate.triggers.length) {
+      const ruleText = buildGateRuleText(row);
+      guards.push({
+        id: row.id,
+        title: row.title || '',
+        kind: 'action',
+        triggers: gate.triggers.filter((t) => typeof t === 'string' && t),
+        checks: (Array.isArray(gate.checks) ? gate.checks : [])
+          .filter((c) => c && (c.type === 'must_match' || c.type === 'must_not_match')
+            && typeof c.pattern === 'string' && c.pattern)
+          .map((c) => ({ type: c.type, pattern: c.pattern, reason: String(c.reason || row.title || '') })),
+        read_required: gate.read_required !== false,
+        ask_first: gate.ask_first === true,
+        rule_text: ruleText,
+        // Hashed over exactly the string shipped above - the receipt binds to it, so editing
+        // the rule invalidates old receipts.
+        rules_hash: createHash('sha256').update(ruleText).digest('hex'),
       });
     }
 
