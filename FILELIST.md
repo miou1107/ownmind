@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## v1.26.168 修改（第三道關卡接上了）
+
+新增：
+```
+hooks/lib/compliance-step.js                    — 這一輪要做什麼的決策函式。本機先篩、失敗必留痕、
+                                                   退回次數自己算（不共用 lint 的門檻）。團隊規範
+                                                   的回饋會多一句「使用者說了不算」。
+hooks/lib/compliance-client.js                  — 送查核請求。Bearer 認證、5 秒逾時、失敗後退避、
+                                                   送出前先遮蔽密碼權杖形狀的字串。
+tests/enforcement-compliance-step.test.js       — 決策的各種分支。
+tests/enforcement-compliance-client.test.js     — 認證標頭、退避、遮蔽。
+tests/enforcement-reply-lint-wiring.test.js     — 把 hook 當程式跑，驗它真的走到檢查、而且在
+                                                   「重寫」那條早退之前。抓到 readCredentials
+                                                   不在作用域的就是這個檔。
+```
+
+修改：
+```
+hooks/ownmind-reply-lint.js                     — 合規檢查插在 stop_hook_active 早退之前；逐字稿
+                                                   只讀一次，後面重用。依賴全部動態載入且各自 catch，
+                                                   壞一支不能拖垮既有三個檢查。
+hooks/lib/compliance-step.js
+src/lib/enforcement/select-rules.js             — trigger 改成可接多個標籤：一則回覆同時是「回話」
+                                                   也是「回報」。
+```
+
 ## v1.26.167 修改（判斷者：伺服器端）
 
 新增：
