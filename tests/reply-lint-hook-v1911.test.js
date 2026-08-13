@@ -25,6 +25,19 @@ function setup() {
   tmpHome = tempDir('ownmind-v1911-');
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
+
+  // v1.26.171: stage a configured, quiet machine (credentials + a bundle whose selector
+  // matches nothing), so the loud not-checked notices do not join these lint-path tests.
+  fs.writeFileSync(path.join(tmpHome, '.claude.json'), JSON.stringify({
+    mcpServers: {
+      ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: 'http://127.0.0.1:1/unreachable' } },
+    },
+  }));
+  fs.mkdirSync(path.join(tmpHome, '.ownmind', 'cache'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpHome, '.ownmind', 'cache', 'enforcement.json'),
+    JSON.stringify({ selectors: [{ id: 1, keywords: ['zzz-matches-nothing'], tags: [] }], guards: [], injectables: [] }),
+  );
   eventLogPath = path.join(tmpHome, '.ownmind', 'logs', 'reply-lint-events.jsonl');
   // v1.26.13: seed validator cache (rule-driven; empty cache = no lint).
   const cacheDir = path.join(tmpHome, '.ownmind', 'cache');
@@ -47,7 +60,6 @@ function runHook(input, env = {}) {
       ...process.env,
       HOME: tmpHome,
       USERPROFILE: tmpHome,
-      OWNMIND_TTY_FORCE_FALLBACK: '1',
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       ...env,
     },
@@ -161,7 +173,7 @@ describe('v1.19.11 scenario 9 — 4th block hits downgrade limit; switch to warn
   beforeEach(setup);
   afterEach(teardown);
 
-  it('after 3 consecutive blocks, the 4th downgrades to exit 1 warning', () => {
+  it('after 3 consecutive blocks, the 4th downgrades to a visible warning', () => {
     writeTranscript(VIOLATING_TEXT);
     const sid = 'sess-downgrade';
     const payload = stopPayload({ session_id: sid });
@@ -171,10 +183,11 @@ describe('v1.19.11 scenario 9 — 4th block hits downgrade limit; switch to warn
       runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     }
 
-    // 7th (block_count=3, should downgrade to warning).
+    // 7th (block_count=3, should downgrade). v1.26.171: the downgrade notice rides
+    // systemMessage, which only exit 0 renders — exit 1 put it where nobody looked.
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
-    assert.equal(r.status, 1, 'should downgrade to warning exit 1');
-    assert.match(r.stderr, /blocked .* times in a row|downgrading to warning/);
+    assert.equal(r.status, 0, 'the downgrade must not block, and must exit 0 so its notice renders');
+    assert.match(JSON.parse(r.stdout).systemMessage, /consecutive blocks/);
   });
 });
 

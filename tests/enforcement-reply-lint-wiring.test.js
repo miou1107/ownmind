@@ -34,9 +34,8 @@ function stageHome({ assistantText, selectors, present = true }) {
     );
   }
 
-  // Credentials, or the step returns before it reaches the bundle: a machine with OwnMind
-  // not configured at all is not something to be noisy about, so that exit is silent and
-  // this test would be asserting on a path it never took.
+  // Credentials, or the step stops at its own loud "no credentials" notice (v1.26.171)
+  // before it ever reaches the bundle - and these tests are about the paths past that.
   fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
     mcpServers: {
       ownmind: {
@@ -75,7 +74,6 @@ function runHook({ home, transcript, stopHookActive = false, env = {} }) {
         ...process.env,
         HOME: home,
         USERPROFILE: home,
-        OWNMIND_TTY_FORCE_FALLBACK: '1',
         ...env,
       },
       timeout: 30_000,
@@ -123,6 +121,36 @@ test('a machine with no enforcement cache says the turn was not checked', () => 
   assert.match(bannerText(home), /never synced/);
 });
 
+// v1.26.171 — the audit found every notice went to /dev/tty, which a hook can never open
+// (no controlling terminal, any platform), and the fallback spool is read by nobody. The
+// documented channel that renders on the user's screen is JSON stdout with `systemMessage`.
+test('a not-checked notice reaches the user as systemMessage JSON on stdout', () => {
+  const { home, transcript } = stageHome({
+    assistantText: 'anything at all', selectors: [], present: false,
+  });
+  const result = runHook({ home, transcript });
+  assert.equal(result.status, 0);
+  // Parsed with the real parser, not matched with a regex: Claude Code will do the same,
+  // and stdout that is almost-JSON renders nothing at all.
+  const parsed = JSON.parse(result.stdout);
+  assert.match(parsed.systemMessage, /never synced/);
+  assert.match(parsed.systemMessage, /NOT checked/);
+  // The spool remains as the audit record.
+  assert.match(bannerText(home), /never synced/);
+});
+
+test('a quiet turn emits no stdout at all', () => {
+  // An empty systemMessage would still render a blank line under every reply. Silence on a
+  // clean turn has to stay byte-for-byte silent.
+  const { home, transcript } = stageHome({
+    assistantText: 'the tests are green',
+    selectors: [{ id: 1, keywords: ['nothing-like-this'], tags: [] }],
+  });
+  const result = runHook({ home, transcript });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.trim(), '');
+});
+
 test('the check runs even when this Stop came from a previous block', () => {
   // stop_hook_active is true on the rewrite. If the compliance step sat behind that early
   // return, the corrected reply would never be examined and one rejection would buy a
@@ -150,4 +178,24 @@ test('an explicitly disabled hook does nothing at all, including this check', ()
   const result = runHook({ home, transcript, env: { OWNMIND_REPLY_LINT_DISABLE: '1' } });
   assert.equal(result.status, 0);
   assert.equal(bannerText(home), '', 'a disabled hook must be silent, not merely quieter');
+});
+
+// v1.26.171 throttle (the user's call, 2026-08-14): state-shaped "NOT checked" notices
+// announce on state change and every 10th turn, not under every reply. The alternative was
+// outage-length spam, and the rational user response to that is switching the product off.
+test('the same not-checked state speaks once, then goes quiet, but keeps its audit trail', () => {
+  const { home, transcript } = stageHome({
+    assistantText: 'anything at all', selectors: [], present: false,
+  });
+  const first = runHook({ home, transcript });
+  assert.equal(first.status, 0);
+  assert.match(JSON.parse(first.stdout).systemMessage, /never synced/);
+
+  const second = runHook({ home, transcript });
+  assert.equal(second.status, 0);
+  assert.equal(second.stdout.trim(), '', 'the unchanged state must not repeat on the very next turn');
+
+  const spool = bannerText(home);
+  const mentions = spool.split('never synced').length - 1;
+  assert.equal(mentions, 2, 'both turns must reach the audit spool, spoken or not');
 });

@@ -1,24 +1,30 @@
 #!/usr/bin/env node
 /**
- * OwnMind TTY Echo Hook (v1.17.71)
+ * OwnMind Banner Echo Hook (v1.17.71, channel rebuilt v1.26.171)
  *
  * Purpose (3 specs):
  *   1. Every OwnMind action (memory read/write, iron rule trigger, compliance report, broadcast)
  *      must be visible to the user.
  *   2. Multiple banners triggered in the same call are merged into one brand block (no prefix repetition).
- *   3. MUST NOT be filtered or swallowed by the AI — never write stderr / stdout / additionalContext.
+ *   3. The AI must not be able to filter or swallow them.
  *
  * Why this hook exists:
  *   Claude Code folds MCP tool results into a card the user doesn't see; the AI often swallows
  *   them without quoting. We intercept tool results from the PostToolUse hook, pick lines that
- *   start with "[OwnMind vX.Y.Z] XXX: YYY", and write them directly to the user terminal device,
- *   bypassing the Claude Code hook output system.
+ *   start with "[OwnMind vX.Y.Z] XXX: YYY", and put them in front of the human.
  *
- * Primary path (Mac/Linux): open /dev/tty for writing.
- * Primary path (Windows):   open \\.\CONOUT$ for writing.
- * Fallback: write to ~/.ownmind/logs/banner-pending.jsonl; next SessionStart hook flushes it.
+ * Channel (v1.26.171): a single `{"systemMessage": ...}` JSON object on stdout, exit 0 — the
+ * one channel Claude Code documents as rendering to the human for every hook event, and one
+ * the model never sees, which is what spec #3 always wanted. The original design opened
+ * /dev/tty (or \\.\CONOUT$), but a hook subprocess has no controlling terminal on any
+ * platform, so that write failed on every call this hook ever made; everything landed in the
+ * fallback spool, which nothing read once the session-start flush was removed (it fed the
+ * spool into the model's context, not the user's eyes).
  *
- * Always exit 0, never block the tool flow. Never writes stdout / stderr (those get captured by the AI channel).
+ * ~/.ownmind/logs/banner-pending.jsonl remains as the audit record of every block emitted.
+ *
+ * Always exit 0, never block the tool flow. stdout carries either the one JSON object or
+ * nothing at all; stderr is never written.
  */
 
 'use strict';
@@ -26,12 +32,6 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-
-// Test switches:
-// OWNMIND_TTY_FORCE_FALLBACK=1 → skip the tty primary path, force the fallback.
-// OWNMIND_TTY_OVERRIDE=<path>  → use this path as the tty target (e.g. point to a fake tty in tests).
-const FORCE_FALLBACK = process.env.OWNMIND_TTY_FORCE_FALLBACK === '1';
-const TTY_OVERRIDE = process.env.OWNMIND_TTY_OVERRIDE || '';
 
 const HOME = process.env.HOME || process.env.USERPROFILE || os.homedir();
 const PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'banner-pending.jsonl');
@@ -52,10 +52,10 @@ async function main() {
       process.exit(0);
       return;
     }
-    const wrote = !FORCE_FALLBACK && writeToTty(block);
-    if (!wrote) {
-      writeFallback(block);
-    }
+    writeFallback(block);
+    try {
+      process.stdout.write(JSON.stringify({ systemMessage: block }));
+    } catch { /* the block is already in the audit spool */ }
   } catch {
     // Always exit 0, never crash.
   }
@@ -185,30 +185,8 @@ function formatBlock(banners) {
 }
 
 /**
- * Attempt to write to the user terminal device. Returns true on success, false on failure.
- * MUST NOT write to stderr / stdout (Claude Code treats those as the hook channel → AI sees them).
- */
-function writeToTty(block) {
-  const ttyPath = TTY_OVERRIDE || (process.platform === 'win32' ? '\\\\.\\CONOUT$' : '/dev/tty');
-  let fd = null;
-  try {
-    fd = fs.openSync(ttyPath, 'a');
-    fs.writeSync(fd, '\n' + block + '\n');
-    fs.closeSync(fd);
-    return true;
-  } catch {
-    if (fd !== null) {
-      try { fs.closeSync(fd); } catch { /* ignore */ }
-    }
-    return false;
-  }
-}
-
-/**
- * Fallback: write to ~/.ownmind/logs/banner-pending.jsonl; next SessionStart flushes it.
- * One JSON record per line (JSON Lines format).
- *
- * MUST NOT write to stderr / stdout (spec #3: must not be filtered by the AI).
+ * Audit record: append to ~/.ownmind/logs/banner-pending.jsonl (JSON Lines).
+ * Nothing flushes this file anymore; it exists so what was shown can be checked later.
  */
 // Prevent unbounded growth: when banner-pending.jsonl exceeds 1 MB, rotate to .old (overwriting previous .old).
 // 1 MB ≈ 10k records — far above any reasonable backlog.

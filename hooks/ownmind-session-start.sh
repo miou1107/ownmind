@@ -55,15 +55,11 @@ SCRIPT_DIR_FOR_FLUSH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="$OWNMIND_DIR/hooks/lib"
 # shared/ is the whole reason for the preference, so it is what gets checked.
 { [ -d "$LIB_DIR" ] && [ -d "$OWNMIND_DIR/shared" ]; } || LIB_DIR="$SCRIPT_DIR_FOR_FLUSH/lib"
-if [ -s "$PENDING_BANNER_FILE" ]; then
-  echo "" >&2
-  echo "📥 OwnMind 上次 session 累積的訊息（tty 寫不到、補印）：" >&2
-  node "$LIB_DIR/flush-pending-banners.js" < "$PENDING_BANNER_FILE" 2>&1 1>/dev/null
-  # 註：concurrency — 兩個 session 同時跑時，append 是 atomic（O_APPEND），但
-  # 介於 read 跟下面 truncate 之間進來的 banner 會被丟掉。v1.17.71 接受這個
-  # microsecond race；之後若有人發現掉訊息再考慮 lockfile。
-  : > "$PENDING_BANNER_FILE"  # 清空
-fi
+# v1.26.171: the banner spool is no longer flushed here. Notices are delivered at the turn
+# they happen, via systemMessage on the Stop hook's stdout; the spool is an audit record and
+# stays on disk (the writer rotates it at 1MB). The old flush piped every stale banner into
+# this hook's stdout — which SessionStart feeds to the MODEL, not the user — and then erased
+# the file, destroying the audit trail it was supposed to be.
 
 # v1.17.97：補送 reply-lint Stop hook 上次 POST 失敗 / 離線時 spool 的合規事件。
 # helper 自己處理：沒檔/沒 credentials/POST 失敗 → 留檔等下次；POST 200 → 刪檔。

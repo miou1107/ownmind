@@ -51,15 +51,24 @@ function matchesRepo(rule, repoRemote) {
  * them. Without it the judge would cover only the handful with an enforcement block, and the
  * instruction was every rule.
  */
+// v1.26.171: the hook sends trigger as an array (a reply is both a respond and a report).
+// The old template string turned that array into "trigger:respond,report", which matches no
+// tag — measured on the live bundle, 6 of 310 rules were ever judged. Any element may match.
 function matchesTag(rule, trigger) {
   if (!trigger || !Array.isArray(rule?.tags)) return false;
-  return rule.tags.includes(`trigger:${trigger}`) || rule.tags.includes('trigger:always');
+  const triggers = Array.isArray(trigger) ? trigger : [trigger];
+  return triggers.some((t) => t && rule.tags.includes(`trigger:${t}`));
+}
+
+/** trigger:always is a standing instruction, not a contextual match — ranked with always_check. */
+function isAlwaysTagged(rule) {
+  return Array.isArray(rule?.tags) && rule.tags.includes('trigger:always');
 }
 
 /**
  * @param {Array<object>} memories
  * @param {{assistantText?: string, userPrompts?: string[], repoRemote?: string|null,
- *          toolsUsed?: string[], trigger?: string}} context
+ *          toolsUsed?: string[], trigger?: string|string[]}} context
  * @param {{maxRules?: number, maxChars?: number}} [opts]
  * @returns {{selected: Array<object>, budgetExceeded: boolean}}
  */
@@ -83,7 +92,7 @@ export function selectRules(memories, context = {}, opts = {}) {
   for (const rule of memories) {
     if (!rule) continue;
     let rank = null;
-    if (rule?.metadata?.enforcement?.always_check === true) rank = 0;
+    if (rule?.metadata?.enforcement?.always_check === true || isAlwaysTagged(rule)) rank = 0;
     else if (matchesRepo(rule, repoRemote)) rank = 1;
     else if (matchesKeyword(rule, hay)) rank = 2;
     else if (matchesTag(rule, trigger)) rank = 3;
@@ -96,9 +105,14 @@ export function selectRules(memories, context = {}, opts = {}) {
   const selected = [];
   const dropped = [];
   let chars = 0;
-  for (const { rule } of candidates) {
-    // The count budget is a hard stop: past it, nothing more is going to fit either.
-    if (selected.length >= maxRules) {
+  for (const { rank, rule } of candidates) {
+    // The count budget is a hard stop for contextual matches. Rank-0 rules (always_check /
+    // trigger:always) are exempt from it: a standing instruction the user marked "every
+    // turn" being silently evicted by the count of its siblings is exactly the
+    // rule-delivered-but-not-enforced failure this module exists to prevent. The char
+    // budget below still applies to them — an oversized rule set has to lose something,
+    // and that loss is at least recorded.
+    if (rank !== 0 && selected.length >= maxRules) {
       dropped.push(rule.id);
       continue;
     }

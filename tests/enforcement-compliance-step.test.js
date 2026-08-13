@@ -118,6 +118,36 @@ test('a clean verdict is silent', async () => {
   assert.equal(result.action, 'none');
 });
 
+// v1.26.171 — every way of being OFF must be loud. The audit found two silent ones: the
+// server saying "enforcement is switched off for this account" was treated exactly like a
+// clean verdict, and a machine with no credentials returned nothing at all. Both read as
+// "checked and passed", which is the one impersonation the product forbids.
+test('a server-side skip says enforcement is off, never silence', async () => {
+  const result = await runComplianceStep({
+    ...BASE,
+    requestCheckImpl: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
+  });
+  assert.equal(result.action, 'notice');
+  assert.match(result.banner, /NOT checked/);
+  assert.match(result.banner, /switched off/);
+});
+
+test('a machine with no credentials says so, never silence', async () => {
+  const result = await runComplianceStep({ ...BASE, apiKey: '', apiUrl: '' });
+  assert.equal(result.action, 'notice');
+  assert.match(result.banner, /NOT checked/);
+  assert.match(result.banner, /credential/i);
+});
+
+test('the blocking stderr carries the check id for 誤判 reporting', async () => {
+  // Until now the id lived only in banners, and banners never rendered — so the
+  // false-positive feedback loop had no possible client. The stderr path is the one the
+  // user provably sees (it renders as the block reason).
+  const text = formatViolationFeedback([OWN_RULE_VIOLATION], { checkId: 4242 });
+  assert.match(text, /4242/);
+  assert.match(text, /誤判/);
+});
+
 test('the pushback stops after the cap, rather than trading turns for ever', async () => {
   const result = await runComplianceStep({
     ...BASE,
