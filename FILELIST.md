@@ -1,5 +1,28 @@
 # OwnMind 檔案結構
 
+## v1.26.163 修改（規範終於會走到你的電腦上）
+
+新增：
+```
+hooks/lib/enforcement-cache.js                  — 規範 bundle 的讀寫。readEnforcementBundle
+                                                   回 present 旗標，分得出「沒有規範」跟
+                                                   「從來沒同步過」。mayReplaceBundle 擋掉
+                                                   空回應覆蓋既有快取。自己一個檔案，因為
+                                                   memories.json 的形狀由 compact init 決定，
+                                                   而且 holdsInitPayload 會拒收型別鍵。
+tests/enforcement-cache.test.js                 — 讀寫、present 旗標、空回應保護。
+tests/enforcement-sync-cli.test.js              — 行程內對真伺服器驗行為，另用真的把 CLI
+                                                   當程式跑一次，驗 main() 真的走到同步。
+```
+
+修改：
+```
+hooks/lib/conditional-sync-cli.js               — 加 syncEnforcementBundle()，排在 init 同步
+                                                   之前且不依賴它。改成只有被當程式執行時才
+                                                   跑 main()（用 realpath 比對，不比字串），
+                                                   這樣測試才能在行程內驅動它。
+```
+
 ## v1.26.162 修改（那條規範不是你上傳的，所以你看不見它）
 
 新增：
