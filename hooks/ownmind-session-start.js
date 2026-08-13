@@ -17,7 +17,6 @@ import { clearSessionOffState, readSessionOffState } from '../shared/session-off
 import { queueUpdateBanner } from '../shared/update-banner.js';
 import { runConditionalSync } from './lib/conditional-sync.js';
 import { renderSessionContext } from './lib/render-session-context.js';
-import { parsePendingBanners, renderPendingBanners } from './lib/pending-banners.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
 import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
 import { localDateOnly, localIsoTimestamp } from '../shared/local-date.js';
@@ -140,69 +139,6 @@ function runLibScript(script, { env } = {}) {
 }
 
 /**
- * v1.26.133 — show the queued banners, then clear the spool. In that order.
- *
- * This used to print a header, spawn `flush-pending-banners.js` through runLibScript, and
- * truncate the file on the next line. runLibScript spawns detached with stdio ignored, and
- * the blocks are written to the child's stderr — so they went to a discarded pipe while the
- * spool was emptied regardless. Measured on Windows 2026-08-10: a 77-byte spool produced a
- * header with nothing under it and a 0-byte file. Every message in it was gone for good.
- *
- * The device those banners could not be written to in the first place (`\\.\CONOUT$` under
- * Claude Code's desktop app) is why the spool is the normal path there rather than a rare
- * one, so this was not a corner case: it was every OwnMind notification on the platform.
- *
- * Printing in-process removes the plumbing that was got wrong. The truncation is now
- * conditional on having written something, and a non-empty spool that yields nothing
- * printable is parked rather than deleted: the cleanup goes after the evidence.
- *
- * @param {string} bannerFile path to logs/banner-pending.jsonl
- * @returns {number} how many blocks were written
- */
-function flushPendingBannerFile(bannerFile) {
-  let raw;
-  try {
-    raw = fs.readFileSync(bannerFile, 'utf8');
-  } catch {
-    return 0;
-  }
-
-  const { blocks, unreadable } = parsePendingBanners(raw);
-
-  if (blocks.length === 0) {
-    // Nothing to show, but the file is not empty — otherwise the caller would not have got
-    // here. Deleting it would discard whatever is malformed in it without anybody seeing it;
-    // leaving it would retry the same unparseable content on every session forever.
-    if (unreadable.length > 0) {
-      try {
-        fs.renameSync(bannerFile, `${bannerFile}.unreadable`);
-        logEvent('banner_spool_unreadable', { lines: unreadable.length });
-      } catch { /* best effort: the spool stays and is retried next session */ }
-    }
-    return 0;
-  }
-
-  try {
-    process.stderr.write(renderPendingBanners(blocks));
-  } catch {
-    // stderr is closed or full: keep the spool so the next session can try again.
-    return 0;
-  }
-
-  // What is written back is what was *not* shown. Emptying the file would take the malformed
-  // lines with it — a partially written record at the tail is the normal way this file breaks,
-  // and it is the only trace of whatever wrote it that way.
-  const remainder = unreadable.length > 0 ? `${unreadable.join('\n')}\n` : '';
-  try {
-    fs.writeFileSync(bannerFile, remainder);
-  } catch {
-    // Shown but not cleared: the user sees these twice, which is the harmless direction.
-    logEvent('banner_spool_clear_failed', { shown: blocks.length });
-  }
-  return blocks.length;
-}
-
-/**
  * v1.26.83 — the flushes and drains the shell hook has always done and this one never did.
  *
  * Each is a spool of things that failed to reach the server earlier. On Windows nothing has
@@ -210,10 +146,11 @@ function flushPendingBannerFile(bannerFile) {
  */
 function drainSpools(apiUrl, apiKey) {
   const logDir = path.join(HOME, '.ownmind', 'logs');
-  const bannerFile = path.join(logDir, 'banner-pending.jsonl');
-  if (fs.existsSync(bannerFile) && fs.statSync(bannerFile).size > 0) {
-    flushPendingBannerFile(bannerFile);
-  }
+  // v1.26.171: the banner spool is no longer flushed or cleared at session start. Notices
+  // are delivered at the turn they happen via systemMessage on the Stop hook's stdout, and
+  // every queued notice is written to the spool as a durable audit record (rotated at 1MB
+  // by its writer). Flushing here re-announced already-delivered notices into a channel the
+  // user never saw, then destroyed the record.
 
   const complianceSpool = path.join(logDir, 'reply-lint-pending.jsonl');
   if (fs.existsSync(complianceSpool) && fs.statSync(complianceSpool).size > 0) {

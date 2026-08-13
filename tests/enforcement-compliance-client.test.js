@@ -124,3 +124,29 @@ test('the endpoint asked for is the compliance check', async () => {
   await requestCheck({ apiUrl: 'http://x/', apiKey: 'k', payload: PAYLOAD, fetchImpl, stateDir });
   assert.equal(url, 'http://x/api/compliance/check', 'a trailing slash must not double up');
 });
+
+// v1.26.171 — the one changed line in this module. The step tests inject their own
+// requestCheckImpl, so without this seam test both ends of the `enabled` contract would be
+// fakes agreeing with each other.
+test('a server body carrying enabled:false survives into the result', async () => {
+  const stateDir = tempDir('om-compliance-');
+  const fetchImpl = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
+  });
+  const result = await requestCheck({ apiUrl: 'http://x', apiKey: 'k', payload: PAYLOAD, fetchImpl, stateDir });
+  assert.equal(result.outcome, 'skipped');
+  assert.equal(result.enabled, false);
+});
+
+test('a server that never sends enabled reads as enabled', async () => {
+  // Older servers predate the field. Mapping absence to false would make every legacy
+  // skipped response loudly claim enforcement is switched off.
+  const stateDir = tempDir('om-compliance-');
+  const fetchImpl = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ outcome: 'skipped', violations: [] }),
+  });
+  const result = await requestCheck({ apiUrl: 'http://x', apiKey: 'k', payload: PAYLOAD, fetchImpl, stateDir });
+  assert.equal(result.enabled, true);
+});

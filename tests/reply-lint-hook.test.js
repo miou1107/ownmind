@@ -46,8 +46,7 @@ function runHook(input, env = {}) {
       ...process.env,
       HOME: tmpHome,
       USERPROFILE: tmpHome,
-      // Force the fallback path (test environment has no controlling tty).
-      OWNMIND_TTY_FORCE_FALLBACK: '1',
+
       // Block real API calls (tests must not hit the network).
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       ...env,
@@ -60,6 +59,21 @@ function setupTmpHome() {
   fs.mkdirSync(path.join(tmpHome, '.ownmind', 'logs'), { recursive: true });
   pendingFile = path.join(tmpHome, '.ownmind', 'logs', 'banner-pending.jsonl');
   transcriptPath = path.join(tmpHome, 'transcript.jsonl');
+
+  // v1.26.171: a machine with no credentials or no enforcement bundle now SAYS SO on every
+  // turn — that loudness is the feature, but it is not what this file tests. Stage a
+  // configured, quiet machine (credentials + a bundle whose one selector matches nothing)
+  // so these tests exercise the lint validators alone.
+  fs.writeFileSync(path.join(tmpHome, '.claude.json'), JSON.stringify({
+    mcpServers: {
+      ownmind: { env: { OWNMIND_API_KEY: 'test-key', OWNMIND_API_URL: 'http://127.0.0.1:1/unreachable' } },
+    },
+  }));
+  fs.mkdirSync(path.join(tmpHome, '.ownmind', 'cache'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpHome, '.ownmind', 'cache', 'enforcement.json'),
+    JSON.stringify({ selectors: [{ id: 1, keywords: ['zzz-matches-nothing'], tags: [] }], guards: [], injectables: [] }),
+  );
 
   // v1.21.0: rule-driven architecture requires user-iron-rule cache to declare which
   // validators to enable. Tests always write a fake cache enabling all 3 validators
@@ -138,13 +152,18 @@ describe('v1.17.96 — ownmind-reply-lint.js: basic contract', () => {
     assert.equal(r.status, 0, 'even on violation, exit 0; warn-only, never block');
   });
 
-  it('stderr / stdout always blank (must not be visible to the AI)', () => {
+  it('stderr blank; stdout carries only the systemMessage JSON (never model-visible text)', () => {
+    // v1.26.171: the banner rides `{"systemMessage": …}` on stdout — the channel Claude Code
+    // renders to the HUMAN and never feeds to the model. Raw banner text outside that JSON
+    // would be the old bug back.
     writeTranscript([
       { role: 'assistant', text: 'I think we should refactor using a different approach completely.' },
     ]);
     const r = runHook(stopPayload());
-    assert.equal(r.stderr, '', 'stderr must stay blank (IR-027 spec #3)');
-    assert.ok(!r.stdout.includes('【OwnMind'), 'stdout must not contain banner (AI channel swallows it)');
+    assert.equal(r.stderr, '', 'stderr must stay blank on the warn path');
+    const parsed = JSON.parse(r.stdout);
+    assert.deepEqual(Object.keys(parsed), ['systemMessage'], 'stdout is exactly one systemMessage object');
+    assert.match(parsed.systemMessage, /Reply quality lint/);
   });
 
   it('malformed stdin JSON does not crash', () => {
@@ -254,35 +273,41 @@ describe('v1.17.96 — fallback banner does not pollute stdout/stderr', () => {
   beforeEach(() => setupTmpHome());
   afterEach(() => cleanupTmpHome());
 
-  it('on violation — stdout/stderr stay blank; all messages go only to the fallback file', () => {
+  it('on violation — stderr blank; the banner travels inside systemMessage, and also to the fallback file', () => {
     writeTranscript([
       { role: 'assistant', text: 'I really should refactor this whole thing completely from scratch immediately.' },
     ]);
     const r = runHook(stopPayload());
     assert.equal(r.stderr, '');
-    assert.ok(!r.stdout.includes('lint_language_mixed_ratio'), 'lint event text must not leak to stdout');
-    assert.ok(!r.stdout.includes('IR-037'), 'IR-037 string must never appear in stdout (neutralization)');
-    assert.ok(!r.stdout.includes('【OwnMind'), 'OwnMind banner must not leak to stdout');
+    const parsed = JSON.parse(r.stdout);
+    assert.deepEqual(Object.keys(parsed), ['systemMessage'],
+      'nothing may share stdout with the systemMessage object - Claude Code parses it whole');
+    assert.ok(fs.existsSync(pendingFile), 'the audit spool still records what was said');
   });
 
-  // review-B3: strictly verify stdout / stderr are completely blank (not just "no banner")
-  it('strict contract: violation + clean / empty input / malformed input — stdout and stderr must be completely blank', () => {
+  // review-B3, revised for v1.26.171: every path that says nothing must say NOTHING (an empty
+  // systemMessage would render a blank line under every reply), and the one path that speaks
+  // must speak only valid JSON.
+  it('strict contract: quiet paths are byte-for-byte silent; the violation path is exactly one JSON object', () => {
     writeTranscript([
       { role: 'assistant', text: 'I really should refactor everything completely from scratch immediately because of bugs.' },
     ]);
-    const cases = [
-      { name: 'violation', input: stopPayload() },
+    const quietCases = [
       { name: 'empty input', input: '{}' },
       { name: 'malformed JSON', input: 'this is not json' },
       { name: 'transcript missing', input: stopPayload({ transcript_path: path.join(tmpHome, 'no-such-file.jsonl') }) },
       { name: 'stop_hook_active=true', input: stopPayload({ stop_hook_active: true }) },
     ];
-    for (const c of cases) {
+    for (const c of quietCases) {
       const r = runHook(c.input);
       assert.equal(r.stdout, '', `[${c.name}] stdout must be completely blank, actual: ${JSON.stringify(r.stdout)}`);
       assert.equal(r.stderr, '', `[${c.name}] stderr must be completely blank, actual: ${JSON.stringify(r.stderr)}`);
       assert.equal(r.status, 0, `[${c.name}] must exit 0`);
     }
+    const r = runHook(stopPayload());
+    assert.equal(r.status, 0);
+    assert.equal(r.stderr, '');
+    assert.deepEqual(Object.keys(JSON.parse(r.stdout)), ['systemMessage']);
   });
 });
 
@@ -388,7 +413,6 @@ describe('v1.17.96 — POST /api/activity/batch schema aligns with server expect
             ...process.env,
             HOME: tmpHome,
             USERPROFILE: tmpHome,
-            OWNMIND_TTY_FORCE_FALLBACK: '1',
             OWNMIND_REPLY_LINT_API_URL: apiUrl,
           },
         });

@@ -77,6 +77,60 @@ test('a rule whose tag does not match this turn is left out', () => {
   assert.deepEqual(selected, []);
 });
 
+// v1.26.171 — the reply-lint hook sends trigger as an ARRAY (a reply is both a respond and a
+// report). Interpolating that array into `trigger:${trigger}` produced "trigger:respond,report",
+// which matches no tag: measured on the live bundle, 6 of 310 rules were ever judged.
+test('an array trigger selects a rule tagged with any of its elements', () => {
+  const respondRule = { ...TAGGED, id: 21, tags: ['trigger:respond'] };
+  const { selected } = selectRules([respondRule, UNRELATED], {
+    ...CTX, trigger: ['respond', 'report'],
+  });
+  assert.deepEqual(selected.map((r) => r.id), [21]);
+});
+
+test('an array trigger with no matching element selects nothing but always-rules', () => {
+  const respondRule = { ...TAGGED, id: 21, tags: ['trigger:respond'] };
+  const { selected } = selectRules([respondRule, ALWAYS], {
+    ...CTX, trigger: ['deploy', 'git'],
+  });
+  assert.deepEqual(selected.map((r) => r.id), [125]);
+});
+
+test('always-tagged rules survive the budget ahead of tag matches', () => {
+  // The trap found in review: fixing the array match alone floods the candidate list, the
+  // sort is rank-then-id, and the always-rules — the only ones enforced for months — would
+  // be the ones evicted. They must rank with always_check, not with ordinary tag matches.
+  const alwaysRules = Array.from({ length: 3 }, (_, i) => ({
+    ...TAGGED, id: 900 + i, tags: ['trigger:always'], metadata: {},
+  }));
+  const tagRules = Array.from({ length: 6 }, (_, i) => ({
+    ...TAGGED, id: 10 + i, tags: ['trigger:respond'],
+  }));
+  const { selected, dropped } = selectRules([...tagRules, ...alwaysRules], {
+    ...CTX, trigger: ['respond'],
+  }, { maxRules: 4 });
+  const ids = selected.map((r) => r.id);
+  assert.ok([900, 901, 902].every((id) => ids.includes(id)),
+    `every always-rule must be selected, got ${ids}`);
+  assert.equal(selected.length, 4);
+  assert.equal(dropped.length, 5, 'the evicted tag matches are recorded, not lost');
+});
+
+test('the count budget never evicts a rank-0 rule, even when they alone exceed it', () => {
+  // The live bundle has 7 trigger:always rules and the default count budget is 6. Without
+  // this exemption the highest-id always-rule is evicted every single turn, forever — a
+  // standing instruction delivered and never enforced, which is the incident this whole
+  // change exists to close. Only the char budget may drop a rank-0 rule, and that drop is
+  // recorded.
+  const seven = Array.from({ length: 7 }, (_, i) => ({
+    ...TAGGED, id: 800 + i, tags: ['trigger:always'], metadata: {},
+  }));
+  const { selected, dropped, budgetExceeded } = selectRules(seven, CTX, { maxRules: 6 });
+  assert.equal(selected.length, 7, 'all seven always-rules must be judged');
+  assert.deepEqual(dropped, []);
+  assert.equal(budgetExceeded, false);
+});
+
 test('fragments are merged into the text the judge will read', () => {
   // A prohibition list often lives in a fragment. Sending the summary alone hands the judge a
   // standard with its prohibitions removed, which is the exact shape of the incident.
@@ -90,8 +144,10 @@ test('fragments are merged into the text the judge will read', () => {
 });
 
 test('the budget caps the count and says it was exceeded', () => {
-  const many = Array.from({ length: 20 }, (_, i) => ({ ...ALWAYS, id: 100 + i }));
-  const { selected, budgetExceeded } = selectRules(many, CTX, { maxRules: 6 });
+  // Tag matches, not always-rules: rank-0 is exempt from the count budget (v1.26.171), so
+  // the cap this asserts only exists for contextual matches.
+  const many = Array.from({ length: 20 }, (_, i) => ({ ...TAGGED, id: 100 + i }));
+  const { selected, budgetExceeded } = selectRules(many, { ...CTX, trigger: 'edit' }, { maxRules: 6 });
   assert.equal(selected.length, 6);
   assert.equal(budgetExceeded, true);
 });
