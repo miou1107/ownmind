@@ -102,9 +102,10 @@ test('a guard block with an empty path list is not a guard', () => {
 });
 
 test('a rule carrying gate metadata ships as an action guard', async () => {
+  const ruleText = 'Deploys must use docker compose build --no-cache.';
   const rule = {
     id: 918, type: 'iron_rule', title: 'compose only, no cache',
-    content: 'Deploys must use docker compose build --no-cache.',
+    content: ruleText,
     metadata: { enforcement: { gate: {
       triggers: ['deploy'],
       checks: [
@@ -116,13 +117,24 @@ test('a rule carrying gate metadata ships as an action guard', async () => {
   };
   const { guards } = buildBundle([rule]);
   assert.equal(guards.length, 1);
-  const g = guards[0];
-  assert.equal(g.kind, 'action');
-  assert.deepEqual(g.triggers, ['deploy']);
-  assert.equal(g.checks.length, 2);
-  assert.equal(g.read_required, true);
-  assert.match(g.rule_text, /docker compose build/);
-  assert.equal(g.rules_hash, createHash('sha256').update(g.rule_text).digest('hex'));
+  // The whole object, not a subset. This shape is the cross-task contract the client gate
+  // keys on; a field that silently disappears or changes type must fail this suite.
+  assert.deepEqual(guards[0], {
+    id: 918,
+    title: 'compose only, no cache',
+    kind: 'action',
+    triggers: ['deploy'],
+    checks: [
+      { type: 'must_not_match', pattern: '(^|\\s)docker\\s+build(\\s|$)', reason: 'use docker compose build, never bare docker build (IR-023)' },
+      { type: 'must_match', pattern: '--no-cache', reason: 'docker builds must carry --no-cache (IR-018)' },
+    ],
+    read_required: true,
+    ask_first: false,
+    rule_text: ruleText,
+    // Computed from the expected text, not from the guard's own rule_text - hashing what
+    // the guard shipped would pass even if the wrong string were shipped and hashed.
+    rules_hash: createHash('sha256').update(ruleText).digest('hex'),
+  });
 });
 
 test('malformed gate metadata is skipped without crashing the bundle', () => {
@@ -133,8 +145,12 @@ test('malformed gate metadata is skipped without crashing the bundle', () => {
       metadata: { enforcement: { gate: { checks: [{ type: 'must_match', pattern: 'y', reason: 'z' }] } } } },
     { id: 21, type: 'iron_rule', title: 'bad checks', content: 'x', tags: [],
       metadata: { enforcement: { gate: { triggers: ['deploy'], checks: 'not-an-array' } } } },
+    // Non-string trigger entries filter out; a list that filters to nothing is no gate at
+    // all. Emitting it would ship a guard with triggers: [] - one that can never fire.
+    { id: 22, type: 'iron_rule', title: 'non-string triggers', content: 'x', tags: [],
+      metadata: { enforcement: { gate: { triggers: [42], checks: [] } } } },
   ]);
-  assert.deepEqual(guards.map((g) => g.id), [21], 'a gate without triggers can never fire');
+  assert.deepEqual(guards.map((g) => g.id), [21], 'a gate whose triggers filter to nothing can never fire');
   assert.deepEqual(guards[0].checks, [], 'a non-array checks field degrades to no checks');
 });
 
