@@ -103,7 +103,23 @@ async function main() {
   // below, which is the only code here that can emit `decision: block`. Its conditions are
   // written for commit and deploy; none of them can be satisfied by an edit.
   if (trigger === 'edit') {
-    const out = await editReminder({ version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId });
+    // The path and the incoming text come out of the payload this function already read.
+    // stdin is spent by now, so they are parsed from `input` rather than read again — and
+    // without them the guard inside editReminder has nothing to judge, which on Windows
+    // (the only platform that reaches this branch) would mean no guard at all.
+    let filePath = '';
+    let content = '';
+    try {
+      const toolInput = JSON.parse(input)?.tool_input || {};
+      filePath = typeof toolInput.file_path === 'string' ? toolInput.file_path : '';
+      content = [toolInput.content, toolInput.new_string]
+        .filter((s) => typeof s === 'string')
+        .join('\n');
+    } catch { /* a payload without tool_input simply has nothing to guard */ }
+
+    const out = await editReminder({
+      version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId, filePath, content,
+    });
     if (out) console.log(out);
     process.exit(0);
   }

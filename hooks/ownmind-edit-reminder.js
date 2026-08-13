@@ -7,13 +7,21 @@
  * `ownmind-verify-trigger.js`. The alias table in v1.26.91 had to be duplicated because it
  * lives inside a `node -e` string; this does not, so it is not.
  *
- * The edit trigger never blocks. It returns a `hookSpecificOutput` envelope or nothing, and
- * deliberately does not touch the verification engine — that engine is the only path that
- * can emit `decision: block`, and its conditions are written for commit and deploy.
+ * v1.26.164 — the edit trigger blocks in exactly one case: a file whose path a standard in
+ * the enforcement bundle marks as somebody else's. Everything else on this path is still a
+ * reminder, and the verification engine is still untouched — its conditions are written for
+ * commit and deploy, so the block below is its own exit and shares nothing with it.
+ *
+ * The guard lives here rather than in `ownmind-iron-rule-check.js` because of what is
+ * registered. `install.sh` passes `--bash`, `ensure-pretooluse-hooks.cjs` turns that into
+ * `ownmind-iron-rule-check.sh`, and that script hands every edit tool to this file and exits.
+ * A guard written into the `.js` hook would pass its tests and never run on macOS or Linux.
  */
 
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { findGuardViolation, findContentMention, formatGuardBlock } from './lib/path-guard.js';
+import { readEnforcementBundle } from './lib/enforcement-cache.js';
 import { getClientVersion, readCredentials } from '../shared/helpers.js';
 import { renderHookContextLine, RELAY_INSTRUCTION } from '../shared/hook-context.js';
 import { fetchHookContext } from './lib/hook-context-fetch.js';
@@ -56,7 +64,50 @@ const STATE_WRITE_FAILED_ALONE = `${STATE_WRITE_FAILED}\nTell the user this, in 
  * @param {{version: string, apiKey: string, apiUrl: string, now: number, sessionId?: string}} opts
  * @returns {Promise<string|null>} the JSON envelope to print, or null to stay silent
  */
-export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) {
+export async function editReminder({
+  version, apiKey, apiUrl, now, sessionId,
+  filePath = '',
+  content = '',
+  guards = null,
+}) {
+  // The guard runs before the throttle, and before anything that can decide to stay quiet.
+  // The listing below is shown once an hour by design; a block that inherited that throttle
+  // would let the second attempt within the hour through, which is a delay, not a guarantee.
+  if (filePath || content) {
+    try {
+      const rules = guards || readEnforcementBundle().guards;
+      if (rules.length > 0) {
+        // The path first: an actual write to a file somebody else owns.
+        const violation = filePath ? findGuardViolation(filePath, rules) : null;
+        if (violation) {
+          const reason = formatGuardBlock(violation);
+          return JSON.stringify({
+            decision: 'block',
+            reason,
+            hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: reason },
+          });
+        }
+        // Then the text. A document at an ordinary path can propose the forbidden change,
+        // which is what the incident behind this feature actually produced - and by the time
+        // anyone notices, a person has read a plan built on a rule already broken. This is a
+        // warning rather than a block: the document is not the edit, and blocking every file
+        // that mentions a guarded path would stop the assistant explaining why it will not
+        // touch it.
+        const mention = findContentMention(content, rules);
+        if (mention) {
+          return envelope(
+            `[OwnMind] Standard ${mention.standard.id} covers ${mention.matchedPath} in this `
+            + `repository, and this text proposes changes there. Those paths belong to `
+            + `${mention.standard.owner || 'someone else'} — whatever a permissions list inside `
+            + 'the repository says. Re-read the standard before going further, and say plainly '
+            + 'that the change has to go through its owner.\n'
+            + 'Tell the user this, in the language you are speaking with them.',
+          );
+        }
+      }
+    } catch { /* fail open: a broken guard must not stop the user editing files */ }
+  }
+
   // v1.26.154 — the window is keyed by trigger as well now. This path is always `edit`; the
   // command path passes its own, so a commit listing no longer silences a deploy listing.
   const decision = decideEditReminder(readEditReminderState(sessionId, 'edit'), now);
@@ -171,26 +222,42 @@ export async function editReminder({ version, apiKey, apiUrl, now, sessionId }) 
 }
 
 /** Read the session id off the payload, when a caller pipes one in. */
-function readSessionId() {
+function readPayload() {
+  // Only when something is actually piping. `readFileSync(0)` on an interactive terminal
+  // waits for input that will never come, which turns "run this file to see what it does"
+  // into a hung shell. The .sh always pipes, so the guard costs nothing where it matters.
+  if (process.stdin.isTTY) return {};
   try {
     const raw = fs.readFileSync(0, 'utf8');
-    if (!raw) return '';
-    const p = JSON.parse(raw);
-    return typeof p.session_id === 'string' ? p.session_id : '';
+    if (!raw) return {};
+    return JSON.parse(raw) || {};
   } catch {
-    return '';
+    return {};
   }
+}
+
+/** Write and Edit name the incoming text differently; both are the text about to land. */
+function readContent(toolInput) {
+  return [toolInput?.content, toolInput?.new_string]
+    .filter((s) => typeof s === 'string')
+    .join('\n');
 }
 
 /** CLI entry — how the .sh hook calls this. */
 async function main() {
   const { apiKey, apiUrl } = readCredentials();
+  // One read of stdin, because there is only one. The session id and the file being written
+  // arrive in the same payload, and a second `readFileSync(0)` would find it spent.
+  const payload = readPayload();
+  const toolInput = payload.tool_input || {};
   const out = await editReminder({
     version: getClientVersion(),
     apiKey,
     apiUrl,
     now: Date.now(),
-    sessionId: readSessionId(),
+    sessionId: typeof payload.session_id === 'string' ? payload.session_id : '',
+    filePath: typeof toolInput.file_path === 'string' ? toolInput.file_path : '',
+    content: readContent(toolInput),
   });
   if (out) console.log(out);
 }
