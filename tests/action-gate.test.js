@@ -1,0 +1,118 @@
+/**
+ * Tests for action gate guard matching.
+ */
+
+import { strict as assert } from 'assert';
+import { test } from 'node:test';
+import { matchGuards } from '../hooks/lib/action-gate.js';
+
+const DEPLOY_GUARD = {
+  id: 918,
+  kind: 'action',
+  triggers: ['deploy'],
+  checks: [],
+  read_required: true,
+  ask_first: false,
+  rule_text: 'x',
+  rules_hash: 'h',
+};
+
+test('a compose build command matches a deploy guard', () => {
+  assert.equal(
+    matchGuards('docker compose build --no-cache api', [DEPLOY_GUARD]).length,
+    1
+  );
+});
+
+test('a version-tag push is a deploy even though the classifier calls it git', () => {
+  assert.equal(matchGuards('git push origin ima-v1.2.9', [DEPLOY_GUARD]).length, 1);
+  assert.equal(matchGuards('git push origin v0.35.13', [DEPLOY_GUARD]).length, 1);
+});
+
+test('everyday commands match nothing', () => {
+  for (const cmd of [
+    'ls -la',
+    'git status',
+    'git grep "docker build"',
+    'npm test',
+  ]) {
+    assert.equal(
+      matchGuards(cmd, [DEPLOY_GUARD]).length,
+      0,
+      `should not match: ${cmd}`
+    );
+  }
+});
+
+test('null or undefined or empty command returns empty array', () => {
+  assert.deepEqual(matchGuards(null, [DEPLOY_GUARD]), []);
+  assert.deepEqual(matchGuards(undefined, [DEPLOY_GUARD]), []);
+  assert.deepEqual(matchGuards('', [DEPLOY_GUARD]), []);
+  assert.deepEqual(matchGuards('   ', [DEPLOY_GUARD]), []);
+});
+
+test('guards array null or undefined is handled safely', () => {
+  assert.deepEqual(matchGuards('docker compose up', null), []);
+  assert.deepEqual(matchGuards('docker compose up', undefined), []);
+});
+
+test('guards lacking triggers are filtered out', () => {
+  const guardNoTriggers = {
+    id: 999,
+    kind: 'action',
+    triggers: [],
+    checks: [],
+    read_required: false,
+    ask_first: false,
+    rule_text: 'x',
+    rules_hash: 'h',
+  };
+  assert.equal(matchGuards('docker compose build', [guardNoTriggers]).length, 0);
+});
+
+test('guards with non-action kind are filtered out', () => {
+  const notActionGuard = {
+    id: 999,
+    kind: 'notification',
+    triggers: ['deploy'],
+    checks: [],
+    read_required: false,
+    ask_first: false,
+    rule_text: 'x',
+    rules_hash: 'h',
+  };
+  assert.equal(
+    matchGuards('docker compose build', [notActionGuard]).length,
+    0
+  );
+});
+
+test('multiple guards are matched correctly', () => {
+  const commitGuard = {
+    id: 100,
+    kind: 'action',
+    triggers: ['commit'],
+    checks: [],
+    read_required: false,
+    ask_first: false,
+    rule_text: 'x',
+    rules_hash: 'h',
+  };
+  const deployGuard = DEPLOY_GUARD;
+
+  // git commit should match only commitGuard
+  const commitMatches = matchGuards('git commit -m "test"', [
+    commitGuard,
+    deployGuard,
+  ]);
+  assert.equal(commitMatches.length, 1);
+  assert.equal(commitMatches[0].id, 100);
+
+  // docker compose up should match only deployGuard
+  const deployMatches = matchGuards('docker compose up', [
+    commitGuard,
+    deployGuard,
+  ]);
+  assert.equal(deployMatches.length, 1);
+  assert.equal(deployMatches[0].id, 918);
+});
