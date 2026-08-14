@@ -1,6 +1,8 @@
 /**
- * Tests for the hook message i18n helper: t() dictionary lookup + the getLocale() stub it
- * consumes.
+ * Tests for the hook message i18n helper: t() dictionary lookup + the OWNMIND_LOCALE_FORCE
+ * seam of the getLocale() it consumes. getLocale()'s full resolution chain (account
+ * preference, OS-detected locale, normalization) is covered in tests/hook-locale.test.js;
+ * this file only needs the seam every t() test pins its locale through.
  *
  * Locale is pinned per test via OWNMIND_LOCALE_FORCE, the documented test-only env seam that
  * getLocale() checks first (see hooks/lib/locale.js). Two tests need a dictionary file that is
@@ -16,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { t, resetI18nCacheForTests } from '../hooks/lib/i18n.js';
 import { getLocale } from '../hooks/lib/locale.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -127,8 +130,14 @@ test('getLocale honors OWNMIND_LOCALE_FORCE for valid locale codes', () => {
 });
 
 test('getLocale falls back to en when OWNMIND_LOCALE_FORCE is unset or invalid', () => {
+  // Task 2 replaced the stub with real resolution, which reads
+  // <homeDir>/.ownmind/{cache/memories.json,state/locale.json}. Point it at an empty temp
+  // dir so this stays a pure OWNMIND_LOCALE_FORCE test rather than depending on whatever
+  // account preference or OS-detected locale happens to be on the machine running the suite
+  // (see tests/hook-locale.test.js for the real-resolution cases this task added).
+  const home = tempDir('hook-i18n-locale-');
   delete process.env.OWNMIND_LOCALE_FORCE;
-  assert.equal(getLocale(), 'en');
+  assert.equal(getLocale({ homeDir: home }), 'en');
   process.env.OWNMIND_LOCALE_FORCE = 'fr';
-  assert.equal(getLocale(), 'en');
+  assert.equal(getLocale({ homeDir: home }), 'en');
 });

@@ -23,13 +23,23 @@ tests/gate-provisioning.test.js                 — 佈建端對端測試（spaw
                                                    hook 對 staged HOME，5 項）。
 hooks/lib/i18n.js                               — total-function message lookup for hook user
                                                    notices; t(key, params?), resetI18nCacheForTests().
-hooks/lib/locale.js                             — stub locale resolver; getLocale({homeDir}) honors
-                                                   OWNMIND_LOCALE_FORCE first, else 'en'. Real resolution
-                                                   lands in a later task; signature stays.
+hooks/lib/locale.js                             — real locale resolver; getLocale({homeDir}):
+                                                   OWNMIND_LOCALE_FORCE → account preference
+                                                   (memories cache data.locale) → normalized
+                                                   OS-detected state/locale.json → 'en'. Sync,
+                                                   total, subprocess-free.
+hooks/lib/locale-provision.js                   — SessionStart-only OS-locale detector (darwin
+                                                   `defaults`, win32 PowerShell, else $LANG/$LC_ALL);
+                                                   provisionLocale({homeDir}) writes
+                                                   state/locale.json, never throws.
 hooks/locales/en.json, hooks/locales/zh.json    — the 8 core
                                                    action-gate / reply-lint user-facing strings, keyed by
                                                    the string-inventory audience=user set.
-tests/hook-i18n.test.js                         — t() + getLocale() unit tests (10 cases).
+tests/hook-i18n.test.js                         — t() + getLocale() OWNMIND_LOCALE_FORCE seam
+                                                   unit tests (10 cases).
+tests/hook-locale.test.js                       — getLocale() full resolution chain,
+                                                   provisionLocale() null-on-failure behavior,
+                                                   and SessionStart wiring end-to-end (16 cases).
 ```
 
 修改：
@@ -39,9 +49,11 @@ hooks/ownmind-iron-rule-check.sh                — 觸發詞偵測前先過做�
 hooks/ownmind-iron-rule-check.js                — 同上（Windows twin）；直接 import 閘門
                                                    模組，同一套 fail-open-loud 包法。
 hooks/ownmind-session-start.sh                  — 開場即佈建閘門狀態（憑證檢查之前）；
-                                                   stdin payload 原樣交給 gate-provision.js。
+                                                   stdin payload 原樣交給 gate-provision.js；
+                                                   同位置加呼叫 locale-provision.js（不需 stdin）。
 hooks/ownmind-session-start.js                  — 同上（Windows twin）；讀 stdin 取
-                                                   session_id、動態 import 佈建函式。
+                                                   session_id、動態 import 佈建函式；新增
+                                                   provisionOsLocale()，緊接 provisionGate() 之後。
 tests/helpers/hook-home.js                      — staged home 加掛 hooks/lib 目錄。
 ```
 

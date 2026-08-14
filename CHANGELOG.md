@@ -179,6 +179,45 @@ missing-key-everywhere fallback, placeholder substitution, and the missing/corru
 dictionary cases (using the not-yet-shipped `ja` locale as disposable scratch space, so
 no real dictionary is ever touched).
 
+**Gate message i18n, task 2 of 7 — locale resolution chain + SessionStart OS-locale
+provisioning**: Task 1's `hooks/lib/locale.js` stub is replaced with the real resolver.
+`getLocale({homeDir?})` now resolves, in order: `OWNMIND_LOCALE_FORCE` (the test seam, still
+checked first) → the account's stored preference (`data.locale` in
+`<homeDir>/.ownmind/cache/memories.json`, honored only when it is exactly `zh`, `en` or
+`ja` — that field does not exist until a later task starts sending it, so its absence
+resolves the same as "no preference") → the OS-detected locale, normalized from
+`<homeDir>/.ownmind/state/locale.json`'s `detected` field (`/^zh/i` → `zh`, `/^ja/i` →
+`ja`, else `en`) → `'en'`. Normalization only ever applies to the detected value; an
+invalid stored preference is ignored outright rather than coerced. `getLocale()` stays
+sync, total and subprocess-free.
+
+New `hooks/lib/locale-provision.js` is the SessionStart-only counterpart that does the one
+thing `getLocale()` is not allowed to: shell out to the OS. Detector per platform — darwin:
+`defaults read -g AppleLocale`; win32: `powershell.exe (Get-Culture).Name`; else: `$LANG` or
+`$LC_ALL`. `provisionLocale({homeDir?})` never throws: detection and the write are wrapped
+independently, so a missing binary, a timeout, or an unwritable state dir all still leave
+(or safely skip) a well-formed `{"detected":null,"detected_at":"<ISO>"}` write rather than
+breaking SessionStart. Normalization deliberately does not happen here — only in
+`locale.js` — so a malformed raw OS value can never poison the always-on read path.
+
+Wired into both SessionStart hook twins, in the same pre-credential, fire-and-forget
+position as the P1 gate's own provisioning: `hooks/ownmind-session-start.js` gains
+`provisionOsLocale()`, called right after `provisionGate()`; `hooks/ownmind-session-start.sh`
+invokes `node "$LIB_DIR/locale-provision.js" </dev/null` right beside its existing
+`gate-provision.js` call. Neither needs the stdin payload or an API key — OS detection
+depends on neither — and a locale-provisioning failure can never delay or break session
+start.
+
+`tests/hook-locale.test.js` (16 cases) covers the full resolution chain, `provisionLocale`'s
+null-on-failure behavior (forcing the OS detector to fail for real by flipping
+`process.platform` to a value with no matching binary on the test machine, not via a mocked
+seam), and end-to-end wiring — spawning both hook twins against a staged HOME and asserting
+`state/locale.json` lands, plus a case proving a broken state dir still exits 0.
+`tests/hook-i18n.test.js`'s one test that called the old stubbed `getLocale()` with no
+`homeDir` is updated to pass an isolated temp dir — with the stub gone, that call now reads
+the real machine's `~/.ownmind`, and would otherwise silently depend on whatever account
+preference or OS locale happens to be on whoever's machine runs the suite.
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓
