@@ -119,6 +119,18 @@ describe('cache-freshness token — wire value is stable across refactors', () =
     assert.equal(token, '8ac6381b9d96');
   });
 
+  it('all four inputs distinct and non-empty still hash to the same 12 hex chars', async () => {
+    // The case above leaves team_max and locale empty, so a refactor that mangled only one of
+    // them — trimmed it, lowercased it, reordered it against the others — would slip past.
+    const token = await generateSyncToken(
+      7, fakeQueryWithRows([{
+        user_max: '2026-05-13T00:00:00Z', team_max: '2026-05-12T00:00:00Z', locale: 'ja',
+      }]),
+    );
+    // sha256('7:2026-05-13T00:00:00Z:2026-05-12T00:00:00Z:ja').slice(0, 12)
+    assert.equal(token, '10849375c58e');
+  });
+
   it('an absent locale column hashes identically to an empty one (no re-init for old rows)', async () => {
     const withoutColumn = await generateSyncToken(
       1, fakeQueryWithRows([{ user_max: '2026-05-13T00:00:00Z', team_max: '' }]),

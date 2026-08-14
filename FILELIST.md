@@ -99,12 +99,15 @@ tests/sync-token-endpoint.test.js               — 3 new cases: locale changes 
                                                    value pinned to literal bytes (every
                                                    installed machine holds one on disk and
                                                    re-inits when it moves, so a formatting
-                                                   change must be deliberate); lock token
-                                                   ignores locale, moves on an iron-rule
-                                                   write, moves on a rule leaving the active
-                                                   set when MAX alone would not; the two
-                                                   families hash differently from identical
-                                                   inputs and cross-family tokens are rejected.
+                                                   change must be deliberate, so two input
+                                                   shapes are pinned); the lock token ignores
+                                                   locale and reacts to each of its own
+                                                   inputs; the two families hash differently
+                                                   from identical inputs and a cross-family
+                                                   token is rejected. These inject a fake
+                                                   query, so they pin the hashing and say
+                                                   nothing about which rows the SQL reads —
+                                                   that is the real-database file's job.
 tests/local-locale-refresh.test.js              — Round 2: adds the cache_fresh case, pinning
                                                    the success contract the doc comment now
                                                    states (a matching token means the cache
@@ -182,8 +185,16 @@ tests/iron-rule-upgrade-lock-scope.test.js      — Round 2, real-database (star
                                                    409 without the split. The lock still
                                                    locks: a background write to the rule under
                                                    the editor 409s, and the token that 409
-                                                   hands back works first try. An unrelated
-                                                   memory write does not evict the editor.
+                                                   hands back works first try; disabling a
+                                                   NON-max rule by raw SQL (MAX asserted
+                                                   unmoved either side) also 409s, which is
+                                                   what makes COUNT(*) load-bearing rather
+                                                   than decorative. An unrelated memory write
+                                                   does not evict the editor. The 409 body is
+                                                   asserted against shouldRetryForSyncToken()
+                                                   so this lock's conflict can never be
+                                                   mistaken for a stale cache token by the
+                                                   MCP client's generic write retry.
                                                    Only a real database can settle this — the
                                                    claim is about which rows each query reads,
                                                    which fixtures cannot show.

@@ -141,6 +141,15 @@ hash produced, where saving any unrelated memory in another tab evicted an open 
 scope name is folded into the lock's hash, so a token from one family handed to the other can
 only fail the check, never pass it by coincidence.
 
+One more thing the split forced into the open: the 409 this lock raises used to contain the
+words "sync_token mismatch", and the MCP client's generic write retry
+(`mcp/lib/sync-token-retry.js`) treats any 409 matching `/sync_token/i` as a stale *cache*
+token — recovering by fetching one from `GET /api/memory/sync-token`. Nothing routes admin
+calls through that wrapper today, so it never fired; but that recovery used to work by
+coincidence and after the split could never work at all. The message no longer says
+`sync_token`, and the test asserts the real 409 body against `shouldRetryForSyncToken()`
+rather than against the wording, so it cannot drift back.
+
 Also clarified, from the same review: `refreshLocalCacheForLocale` accepts both
 `init_refreshed` and `cache_fresh` as success, but its doc comment reasoned only about the
 first. The contract it actually enforces — and now states — is "the local cache reflects the

@@ -198,7 +198,14 @@ router.put('/:id/upgrade', async (req, res) => {
     const tokenCheck = await validateIronRuleLockToken(req.user.id, sync_token);
     if (!tokenCheck.valid) {
       return res.status(409).json({
-        error: 'Iron-rule state has changed (sync_token mismatch); please reload and retry',
+        // The phrase `sync_token` is deliberately absent from this message. The MCP client's
+        // generic write-retry (mcp/lib/sync-token-retry.js) treats any 409 whose text matches
+        // /sync_token/i as "stale cache token", and recovers by fetching a fresh one from
+        // GET /api/memory/sync-token — a cache-freshness value, which since the scope split
+        // can never satisfy this lock. That retry would then fail every time, having looked
+        // like it worked before the split purely by coincidence. Nothing routes admin calls
+        // through that wrapper today; this keeps it that way if something ever does.
+        error: 'Iron-rule state has changed since this list was loaded; please reload and retry',
         new_token: tokenCheck.new_token,
       });
     }

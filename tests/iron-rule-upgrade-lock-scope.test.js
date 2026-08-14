@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from './helpers/app-server.js';
 import { startRealDb } from './helpers/real-db.js';
+import { shouldRetryForSyncToken } from '../mcp/lib/sync-token-retry.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -172,6 +173,19 @@ test('sync_token scopes: a locale write moves the cache token and leaves the iro
     assert.match(raced.json.new_token, /^[0-9a-f]{12}$/, '409 must hand back a usable fresh token');
     assert.notEqual(raced.json.new_token, staleEditorToken);
 
+    // This 409 must not look like a stale *cache* token to the MCP client's generic write
+    // retry, which recovers by fetching GET /api/memory/sync-token — a value that since the
+    // split can never satisfy this lock, so the retry would fail every time. Nothing routes
+    // admin calls through that wrapper today; asserted against the real response body so the
+    // wording cannot drift back into the trap.
+    assert.equal(
+      shouldRetryForSyncToken({
+        method: 'PUT', status: raced.status, errorMessage: raced.json.error, body: raced.json,
+      }),
+      false,
+      'the iron-rule lock 409 must not be mistaken for a cache-token 409',
+    );
+
     // Recovering with the token the 409 handed back must work first try.
     const retried = await putUpgrade(ruleId, UPGRADED_RULE_CONTENT, raced.json.new_token);
     assert.equal(retried.status, 200,
@@ -188,7 +202,33 @@ test('sync_token scopes: a locale write moves the cache token and leaves the iro
     assert.equal(unrelated.status, 200,
       `an unrelated memory write must not evict the iron-rule editor; got ${unrelated.status}: ${JSON.stringify(unrelated.json)}`);
 
-    // --- 5. And the write really happened — the 200s above are not a lock that stopped
+    // --- 5. COUNT(*) earns its place. Disabling a rule that is NOT the most recently touched
+    //     one, by raw SQL that deliberately leaves updated_at alone, changes the list the
+    //     editor is holding while MAX(updated_at) stays exactly where it was. Asserted here
+    //     rather than assumed: the MAX either side of the disable is compared, so this case
+    //     can only pass because of the count. Drop COUNT(*) from the lock query and this is
+    //     the assertion that goes red. ---
+    const activeMax = () => db.psql(
+      `SELECT COALESCE(MAX(updated_at)::text, '') FROM memories
+       WHERE user_id = 1 AND type = 'iron_rule' AND status = 'active';`,
+    ).trim();
+
+    const tokenBeforeDisable = unrelated.json.sync_token;
+    const maxBeforeDisable = activeMax();
+    db.psql(`UPDATE memories SET status = 'disabled'
+             WHERE user_id = 1 AND type = 'iron_rule' AND title LIKE '部署%';`);
+    assert.equal(activeMax(), maxBeforeDisable,
+      'fixture precondition: the disabled rule must not be the MAX, or this proves nothing about COUNT');
+
+    const afterDisable = await putUpgrade(ruleId, VALID_RULE_CONTENT, tokenBeforeDisable);
+    assert.equal(afterDisable.status, 409,
+      `a rule leaving the active set must invalidate the snapshot even with MAX unmoved; got ${afterDisable.status}`);
+
+    // Put it back so the closing assertions run against the list the earlier steps built.
+    db.psql(`UPDATE memories SET status = 'active'
+             WHERE user_id = 1 AND type = 'iron_rule' AND title LIKE '部署%';`);
+
+    // --- 6. And the write really happened — the 200s above are not a lock that stopped
     //     checking anything. ---
     const stored = db.psql(`SELECT content FROM memories WHERE id = ${ruleId};`);
     assert.ok(stored.includes('什麼時候適用'),
