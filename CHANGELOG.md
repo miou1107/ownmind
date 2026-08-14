@@ -2,6 +2,41 @@
 
 ## v1.26.173 — 一次觸發只佔一行，不要再被主程式蓋三次章
 
+### 鐵律升級助手會把整包 metadata 蓋掉，順手清空規範的執行次數
+
+後台的鐵律升級 API（`PUT /api/admin/iron-rules/:id/upgrade`）在填「起源」欄位時，會把整個
+`metadata` 欄位覆蓋成只剩 `origin_context` 一個鍵。被清掉的是 `metadata.stats` —— 每條規範
+被執行過幾次、漏掉幾次、觸發幾次的計數。那組數字只累加、不重算，所以覆蓋掉就永遠回不來，
+而且畫面上不會有任何跡象。
+
+根因是這支 handler 讀了自己的 SQL 沒撈的欄位：`SELECT id, type, title, content, tags` 撈完
+之後，程式讀 `oldRule.metadata` 跟 `oldRule.code`，兩個永遠是 undefined，JavaScript 不會報錯。
+所以除了上面那筆資料損失，另外兩件事也一路壞著沒人發現：稽核紀錄裡每一筆升級都記成「沒有規範
+編號」；而 v1.18.3 特地把 metadata 餵給 lint、好讓已經寫過起源的規範不要再被叫去補，也因為
+拿到 undefined 而完全沒生效，每條規範每次升級都被念一次。
+
+修法是把 `code, metadata` 補進 SELECT，並把寫入改成在資料庫端只改 `origin_context` 這一個鍵
+（`jsonb_set`），不是讀出來、改完、整包寫回去。後者就算欄位撈對了還是有競爭窗口：累加執行次數
+的那段（`src/routes/memory.js`）刻意不動 `updated_at`，所以樂觀鎖看不到它、不會擋，中間插進來
+的計數一樣會被蓋掉。改在資料庫端動一個鍵是把那個窗口關掉，不是縮小。
+
+同一支路由的另一個端點（`POST /:id/suggest-skill-md`）也犯一樣的毛病、也一起補：它產生建議之後
+會拿自己的產出再跑一次 lint，同樣沒撈 metadata。不補的話，改完會變成同一支路由的兩個端點對同一條
+規範講不同的話——升級那邊不念了，建議那邊還在念。
+
+補充兩件配套：
+- 起源欄位如果原本就存壞了（少 `captured_at` 或 `confidence`），現在會被 lint 擋下來回 400，
+  以前不會。這是 v1.18.2 本來就設計成錯誤等級的判定，只是一直沒生效。庫裡每一支寫入都產生合格
+  格式，而且同一條規範改內容時 `PUT /api/memory/:id` 早就會擋，所以實際影響接近零；要修的話從
+  只改 metadata 的那條路徑進去，不會被 lint 擋。
+- `metadata` 欄位如果不是物件（SQL NULL 或 jsonb 純量），寫入照樣成立，不會變成 500。
+
+新增 `tests/iron-rule-upgrade-metadata-preserved.test.js`：真資料庫、真路由、真 adminAuth，
+種一條帶著計數的鐵律，送一次帶 `origin_event` 的升級，斷言計數與其他鍵都還在、稽核列有真的規範
+編號、已經寫過起源的規範不再被念（升級端點與建議端點都驗），以及 metadata 不是物件時照樣寫得進去。
+用假資料餵 handler 的測試證不了這個 bug —— 整個缺陷就是「SQL 撈的欄位」跟「JavaScript 讀的屬性」
+對不起來，餵假資料等於直接把那個落差定義掉。
+
 ### Wrap-up after the final whole-branch review
 
 - `hooks/lib/conditional-sync.js` now exports `DEFAULT_CACHE_PATH`, and
