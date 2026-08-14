@@ -407,3 +407,47 @@ test('I4: approveAction validates sessionId and guardId', () => {
   const code5 = ask5.userLine.match(/(\d{6})/)[1];
   assert.equal(approveAction(dir, 's1', 0, code5), false, 'zero guardId should not approve');
 });
+
+// --- Re-review breakages from Amendment 2 wave ---
+
+test('NEW-1: ask_first approval must NOT bypass regex checks (security)', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ id: 888, ask_first: true, checks: [{ type: 'must_not_match', pattern: '\\-\\-force', reason: 'no force push' }], read_required: false });
+
+  // First: ask_first blocks, get approval code
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  const code = ask.userLine.match(/(\d{6})/)[1];
+
+  // Approve it
+  approveAction(dir, 's1', g.id, code);
+
+  // Now try with check violation (--force push) → must still block on check
+  const blocked = evaluateGate({ command: 'git push --force origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(blocked.kind, 'check', 'ask approval must NOT bypass checks - --force should block');
+  assert.match(blocked.reason, /no force push/);
+});
+
+test('NEW-2: read-block and check-block decisions must carry userLine', () => {
+  const dir = prepStateDir();
+  const g = mkGuard();
+
+  // Read block should have userLine
+  const readBlock = evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(readBlock.kind, 'read');
+  assert.ok(readBlock.userLine, 'read-block must have userLine');
+  assert.match(readBlock.userLine, /blocked until the rule/);
+
+  // Check block should have userLine
+  evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' }); // consume read
+  const checkBlock = evaluateGate({ command: 'docker compose build api', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(checkBlock.kind, 'check');
+  assert.ok(checkBlock.userLine, 'check-block must have userLine');
+  assert.match(checkBlock.userLine, /blocked/);
+
+  // Verify gate-log.jsonl still doesn't contain userLine text
+  const logFile = path.join(dir, 'gate-log.jsonl');
+  const logContent = fs.readFileSync(logFile, 'utf8');
+  assert.ok(!logContent.includes('blocked until the rule'), 'gate-log must not contain userLine text');
+  assert.ok(!logContent.includes('Approval code:'), 'gate-log must not contain userLine from ask');
+});
