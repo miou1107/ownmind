@@ -64,7 +64,28 @@ REJECTED，不拋例外。
 - (b) allow 日誌記錄消耗的 guardId 清單。
 - (c) degradedRead 改為按閘門重設，不黏著。
 
-這一版只把資料送到位。真正在動作前擋下指令的用戶端閘門，在後續版本接上。
+**閘門接上執行線**：已註冊的 PreToolUse hook 現在真的會在動作前擋指令。
+
+新增 `hooks/lib/action-gate-cli.js`：stdin 收 hook payload、stdout 回決策的獨立程式。
+bash 版 hook（macOS / Linux 註冊的那份）照既有跑 node 助手的方式呼叫它、有輸出就原樣
+轉發並就地結束（擋下取代提醒流程——被擋的指令不需要提醒）；Windows 跑的 `.js` 版直接
+import 同一套模組，兩份 hook 對同一條指令永遠給同一個答案。輸出契約：擋下時印
+`{"decision":"block","reason":<給模型的理由>,"systemMessage":<給使用者的一行>,…}`；
+放行時一個字都不印（日常指令零干擾）；回執子系統壞掉時放行但明講「could not run in
+full - receipts unavailable, checks still enforced」；閘門本身跑不起來時放行但明講
+「this command was NOT gated」——閘門絕不無聲失效（fail-open-loud）。
+
+接線位置在觸發詞偵測與憑證檢查**之前**，是故意的：閘門讀的是本機執行包快取、不是
+API，沒設金鑰的機器一樣被管；裸 `docker build` 這種共用分類器故意不認的指令，也不會
+被空觸發詞的提早退出漏掉（e2e 測試鎖住這個順序）。首次接觸順手把狀態目錄的簽章密鑰與
+session nonce 建好（冪等、失敗可存活——降級為無狀態檢查並明講）。enforcement.json
+毀損或不存在一律視為「沒有東西要管」：安靜放行、不炸 hook。
+
+`tests/action-gate-e2e.test.js`：10 項端對端測試，全部 spawn 真程式、只讀 stdout ——
+首次部署擋下（決策 JSON 完整）、重試放行、裸 docker build 檢查式擋下、30 條日常指令
+零輸出（applies_pattern 讓 `git push origin main` / `feature-x` 通過）、版本標籤 push
+被 IR-136 型樣式閘門擋、毀損／缺席快取安靜、狀態目錄壞掉降級但檢查式照擋、
+.sh 與 .js 兩份 hook 原樣轉發決策。
 
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
