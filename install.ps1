@@ -481,11 +481,15 @@ if (Test-Path $HookLibSrc) {
 }
 # gate-message-i18n task 7 — same reasoning as hooks\lib above: hooks\locales holds the
 # gate/lint/compliance message dictionaries hooks\lib\i18n.js reads at runtime.
+# -Exclude ".*" keeps this twin of install.sh's `cp hooks/locales/*.json` honest: a POSIX
+# shell glob never matches a leading dot, but PowerShell's does, so a bare "*.json" here also
+# picks up hooks\locales\.translate-cache.json — a gitignored build artifact of the translate
+# pipeline, not a dictionary — and deploys it to ~\.claude\hooks\locales on Windows only.
 $HookLocalesDir = Join-Path $HookDir "locales"
 $HookLocalesSrc = Join-Path $OwnmindDir "hooks\locales"
 if (Test-Path $HookLocalesSrc) {
   New-Item -ItemType Directory -Force -Path $HookLocalesDir | Out-Null
-  Copy-Item (Join-Path $HookLocalesSrc "*.json") $HookLocalesDir -Force
+  Copy-Item (Join-Path $HookLocalesSrc "*.json") $HookLocalesDir -Force -Exclude ".*"
 }
 Write-Host "[ OK ] Installed hook scripts"
 

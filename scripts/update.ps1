@@ -302,11 +302,16 @@ if (Test-Path $ClaudeDir) {
   # gate-message-i18n task 7 — same reasoning as hooks\lib above: hooks\locales holds the
   # gate/lint/compliance message dictionaries hooks\lib\i18n.js reads at runtime, and this
   # is the only path a Windows machine's fallback copy ever gets refreshed through.
+  # The dot-name filter keeps this twin of install.sh's `cp hooks/locales/*.json` honest: a
+  # POSIX shell glob never matches a leading dot, but PowerShell's "*.json" does, so without
+  # it hooks\locales\.translate-cache.json — a gitignored build artifact of the translate
+  # pipeline, not a dictionary — lands in ~\.claude\hooks\locales on Windows only.
   $HookLocalesDir = Join-Path $HookDir "locales"
   $LocalesSrc = Join-Path $OwnMindDir "hooks\locales"
   if (Test-Path $LocalesSrc) {
     New-Item -ItemType Directory -Force -Path $HookLocalesDir | Out-Null
     Get-ChildItem -Path $LocalesSrc -Filter "*.json" -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -notlike ".*" } |
       ForEach-Object { Copy-Item -Force -Path $_.FullName -Destination $HookLocalesDir }
   }
   Write-Host "[ OK ] Hook scripts synced"
