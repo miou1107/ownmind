@@ -18,7 +18,8 @@
 新增 `hooks/lib/action-gate.js`：guard matching 模組，判斷實際執行的指令有哪些
 閘門該被觸發。支援 `applies_pattern` 欄位，用正規表達式進一步限制特定閘門何時
 被觸發（無效正規表達式視為都通過，fail-toward-enforcement）；特殊處理版本標籤 push
-（ima-v、v+ 開頭）視為部署。
+（ima-v、v+ 開頭、包括 refs/tags/ 格式）視為部署。修正：guards 不是陣列時安全
+降級而非拋錯（JSON 快取毀壞時的防禦）。
 
 這一版只把資料送到位。真正在動作前擋下指令的用戶端閘門，在後續版本接上。
 

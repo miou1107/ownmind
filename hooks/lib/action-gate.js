@@ -69,7 +69,8 @@ export function matchGuards(command, guards) {
   if (!triggers.size) return [];
 
   // Filter guards: only action guards with matching triggers and patterns
-  return (guards || []).filter(
+  // Use Array.isArray to safely handle non-array values (e.g., corrupted cache data)
+  return (Array.isArray(guards) ? guards : []).filter(
     (g) =>
       g &&
       g.kind === 'action' &&

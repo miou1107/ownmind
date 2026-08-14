@@ -202,3 +202,19 @@ test('guard without applies_pattern field works as before', () => {
     1
   );
 });
+
+test('non-array guards are handled safely without throwing', () => {
+  // Truthy non-array values should not throw, but return []
+  assert.deepEqual(matchGuards('docker compose up', 'oops'), []);
+  assert.deepEqual(matchGuards('docker compose up', {}), []);
+  assert.deepEqual(matchGuards('docker compose up', 42), []);
+  assert.deepEqual(matchGuards('docker compose up', true), []);
+});
+
+test('refs/tags/ push format is recognized as a version-tag deployment', () => {
+  assert.equal(
+    matchGuards('git push origin refs/tags/v1.2.9', [DEPLOY_GUARD]).length,
+    1,
+    'refs/tags/ format should match deploy guard'
+  );
+});
