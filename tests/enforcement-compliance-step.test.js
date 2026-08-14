@@ -1,21 +1,41 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { tempDir } from './helpers/temp-dir.js';
 import {
   runComplianceStep,
   anySelectorMatches,
   formatViolationFeedback,
   MAX_COMPLIANCE_BLOCKS,
 } from '../hooks/lib/compliance-step.js';
+import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 
 // Task 4 (hook message i18n) wired runComplianceStep()'s banners through t(), which resolves
 // locale from this real process's env/home unless pinned. This suite's banner assertions
 // (e.g. /only warns/, /has not downloaded your rules yet/) are literal-English regexes, so the locale is
 // pinned to 'en' for the whole file — same pattern as tests/action-gate.test.js (Task 3).
 const ORIGINAL_FORCE = process.env.OWNMIND_LOCALE_FORCE;
-beforeEach(() => { process.env.OWNMIND_LOCALE_FORCE = 'en'; });
+
+// v1.30.2: a failed check now writes a diagnosis line, so the whole file is pointed at a
+// throwaway path — otherwise running the suite appends to the developer's own machine log.
+const LOG_FILE = path.join(tempDir('om-step-failures-'), 'check-failures.jsonl');
+const readLoggedFailures = () => {
+  try {
+    return fs.readFileSync(LOG_FILE, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  } catch {
+    return [];
+  }
+};
+
+beforeEach(() => {
+  process.env.OWNMIND_LOCALE_FORCE = 'en';
+  _logPathForTests(LOG_FILE);
+});
 afterEach(() => {
   if (ORIGINAL_FORCE === undefined) delete process.env.OWNMIND_LOCALE_FORCE;
   else process.env.OWNMIND_LOCALE_FORCE = ORIGINAL_FORCE;
+  _logPathForTests(null);
 });
 
 /**
@@ -117,11 +137,101 @@ test('a machine that never synced says the turn was not checked', async () => {
 test('a failed check produces a visible notice, never silence', async () => {
   const result = await runComplianceStep({
     ...BASE,
-    requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'timeout', reason: 'timeout',
+    }),
   });
   assert.equal(result.action, 'notice');
   assert.match(result.banner, /could not reach its server/);
   assert.match(result.banner, /did not check the AI's reply/);
+});
+
+/**
+ * v1.30.2 — a key the server no longer accepts is not an outage.
+ *
+ * It never heals, so the outage sentence is both wrong and unactionable: it invites the user
+ * to wait for something that will still be broken next week. The two states also have to be
+ * distinct notice keys, or the throttle treats the transition as "same state, stay quiet".
+ */
+test('a rejected key tells the user to sign in again, not that the server is down', async () => {
+  const result = await runComplianceStep({
+    ...BASE,
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'unauthorized', reason: 'http 401',
+    }),
+  });
+  assert.equal(result.action, 'notice');
+  assert.equal(result.noticeKey, 'not-checked:signed-out');
+  assert.match(result.banner, /does not recognise this computer/);
+  assert.match(result.banner, /sign in again/);
+  assert.ok(!/could not reach its server/.test(result.banner), result.banner);
+});
+
+test('an outage keeps its own notice key, so the change between the two is announced', async () => {
+  const result = await runComplianceStep({
+    ...BASE,
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'network', reason: 'ECONNREFUSED',
+    }),
+  });
+  assert.equal(result.noticeKey, 'not-checked:check-failed');
+});
+
+test('a server that answered but could not finish is not called unreachable', async () => {
+  // This is the likeliest failure in production — the rule fetch or the judge failing behind an
+  // HTTP 200 — and "could not reach its server" is simply false about it, on top of pointing
+  // the reader at their own network. It asks nothing of them: there is nothing here to fix.
+  const result = await runComplianceStep({
+    ...BASE,
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'server-declined', reason: 'server answered failed',
+    }),
+  });
+  assert.equal(result.noticeKey, 'not-checked:server-declined');
+  assert.ok(!/could not reach/.test(result.banner), result.banner);
+  assert.match(result.banner, /nothing for you to do/i);
+});
+
+test('why the check did not run is written down, since the notice cannot say it', async () => {
+  // The notice carries no error text on purpose — "http 401" is the internal vocabulary the
+  // message rules ban. That left the reason with no sink at all: this is the sink.
+  const before = readLoggedFailures().length;
+  await runComplianceStep({
+    ...BASE,
+    sessionId: 'sess-42',
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'unauthorized', reason: 'http 401',
+    }),
+  });
+  const written = readLoggedFailures().slice(before);
+  assert.equal(written.length, 1);
+  assert.equal(written[0].session_id, 'sess-42');
+  assert.equal(written[0].failure, 'unauthorized');
+  assert.equal(written[0].reason, 'http 401');
+});
+
+test('when the server recorded the failure itself, the local line can be joined to its row', async () => {
+  // The server answers 200 with outcome:'failed' for its own four failures, three of which
+  // carry a check_id. Dropping it leaves a local line that says a check did not run and no way
+  // to reach the row that says why.
+  const before = readLoggedFailures().length;
+  await runComplianceStep({
+    ...BASE,
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'server-declined',
+      reason: 'server answered failed', check_id: 77,
+    }),
+  });
+  const written = readLoggedFailures().slice(before);
+  assert.equal(written.length, 1);
+  assert.equal(written[0].check_id, 77);
+  assert.equal(written[0].failure, 'server-declined');
+});
+
+test('a check that ran writes nothing to the failure log', async () => {
+  const before = readLoggedFailures().length;
+  await runComplianceStep(BASE);
+  assert.equal(readLoggedFailures().length, before);
 });
 
 test('a clean verdict is silent', async () => {

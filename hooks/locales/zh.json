@@ -17,6 +17,8 @@
   "compliance.off.warnMode": "[OwnMind] 🟡 這個對話裡 OwnMind 只會提醒，不會要 AI 重寫。",
   "compliance.notChecked.noCredentials": "[OwnMind] 🔴 這台電腦還沒登入 OwnMind，所以 OwnMind 沒有檢查 AI 這段回話。",
   "compliance.notChecked.neverSynced": "[OwnMind] 🔴 這台電腦還沒把你的規矩抓下來，所以 OwnMind 沒有檢查 AI 這段回話。你開個新對話它就會抓。",
+  "compliance.notChecked.signedOut": "[OwnMind] 🔴 OwnMind 認不得這台電腦了，所以 OwnMind 沒有檢查 AI 這段回話。你要重新登入：拿新的登入資料重跑一次安裝指令。",
+  "compliance.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind 這次沒把檢查做完，所以 OwnMind 沒有檢查 AI 這段回話。這是 OwnMind 那邊的問題，通常會自己好，你不用做什麼。",
   "compliance.notChecked.checkFailed": "[OwnMind] 🔴 OwnMind 這次連不上伺服器，沒有檢查 AI 這段回話。",
   "compliance.off.server": "[OwnMind] 🔴 你的帳號把規矩檢查關掉了，所以 OwnMind 沒有檢查 AI 這段回話。",
   "compliance.idNote": " （OwnMind 判錯了就回一句「誤判 {checkId}」）",
