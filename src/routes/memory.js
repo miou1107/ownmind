@@ -1431,6 +1431,9 @@ router.post('/', async (req, res) => {
  *   'auto'              — deletes the settings key outright, so GET /init stops echoing a
  *     value and the client falls back to OS-detected language.
  *   anything else       — 400, and the row is left untouched.
+ *
+ * Both success branches return `sync_token`: the account's locale is a hash input to the
+ * cache-freshness token, so either branch moves it and the caller must be handed the new one.
  */
 router.put('/locale', async (req, res) => {
   try {
@@ -1441,7 +1444,9 @@ router.put('/locale', async (req, res) => {
         `UPDATE users SET settings = COALESCE(settings, '{}'::jsonb) - 'locale' WHERE id = $1`,
         [req.user.id]
       );
-      return res.json({ locale: null });
+      // The cache-freshness token folds the account's locale in, so clearing it moves the
+      // token — see the sibling write below for why that has to be handed back.
+      return res.json({ locale: null, sync_token: await generateSyncToken(req.user.id) });
     }
 
     if (!ACCOUNT_LOCALES.includes(locale)) {
@@ -1457,7 +1462,13 @@ router.put('/locale', async (req, res) => {
        WHERE id = $1`,
       [req.user.id, locale]
     );
-    res.json({ locale });
+    // Return a fresh sync token (state changed after the write) — the same contract every
+    // other write in this router honours. The account's locale is a hash input to the
+    // cache-freshness token, so this write moves it; a caller holding a long-lived session
+    // token (the MCP's `currentSyncToken`) would otherwise present the pre-write value on its
+    // very next memory write and eat a 409 plus an auto-retry round trip, for a change it
+    // made itself.
+    res.json({ locale, sync_token: await generateSyncToken(req.user.id) });
   } catch (err) {
     logger.error('set locale failed', { error: err.message });
     res.status(500).json({ error: 'Failed to set locale' });

@@ -4,6 +4,166 @@
 
 修改：
 ```
+mcp/lib/local-locale-refresh.js                 — Whole-branch review scope B
+                                                   (Important): refreshLocalCacheForLocale
+                                                   could destroy ANOTHER account's hook
+                                                   cache and report success. The MCP
+                                                   resolves credentials from process.env
+                                                   only; the hooks resolve theirs
+                                                   files-first, env-last
+                                                   (scripts/install-helpers/resolve-credentials.cjs),
+                                                   so on a multi-account machine they
+                                                   differ. readCache's v1.26.82 account
+                                                   check is read-side only, so
+                                                   runConditionalSync refused to read the
+                                                   foreign cache and then wrote this
+                                                   account's init over it — measured: the
+                                                   other account's profile/iron
+                                                   rules/digests gone, ok:true reported,
+                                                   getLocale (no fingerprint check of its
+                                                   own) serving the wrong language, and
+                                                   that account's next SessionStart left
+                                                   with no memories at all when offline.
+                                                   Now compares
+                                                   accountFingerprint({apiUrl, apiKey})
+                                                   against the on-disk stamp and, when
+                                                   they differ, syncs nothing and returns
+                                                   {ok:false, source:'account_mismatch'}.
+                                                   An unstamped (pre-v1.26.82) cache is
+                                                   NOT foreign — readCache refuses those
+                                                   for everyone, so nothing readable is
+                                                   lost, and treating them as foreign
+                                                   would strand every upgrading machine.
+mcp/index.js                                    — Whole-branch review scope B:
+                                                   ownmind_set_locale gained a dedicated
+                                                   message for the new account_mismatch
+                                                   outcome — the generic degraded text
+                                                   promises "it will apply here at the
+                                                   next session start too", which after a
+                                                   mismatch can never come true (the hooks
+                                                   on that machine are a different
+                                                   account). Also adopts the sync_token
+                                                   PUT /locale now returns
+                                                   (currentSyncToken = data.sync_token),
+                                                   the same contract every sibling write
+                                                   here honours; without it the session's
+                                                   next memory write ate a 409 plus an
+                                                   auto-retry round trip.
+hooks/lib/locale-provision.js                   — Whole-branch review scope B
+                                                   (Important): both execFileSync detector
+                                                   calls omitted stdio, and Node's default
+                                                   pipes the child's stderr to the
+                                                   parent's. The .sh SessionStart twin
+                                                   redirects it on macOS/Linux, but a
+                                                   Windows install runs the .js twin where
+                                                   provisionLocale() executes IN-PROCESS —
+                                                   so PowerShell's Constrained Language
+                                                   Mode / AppLocker / WDAC /
+                                                   execution-policy errors landed on the
+                                                   hook's own stderr, a user-visible
+                                                   channel. Both calls now pass stdio:
+                                                   ['ignore','pipe','ignore'] (the form
+                                                   path-guard.js,
+                                                   ownmind-git-commit-msg.js and
+                                                   ownmind-reply-lint.js already use),
+                                                   hoisted to a documented DETECTOR_STDIO
+                                                   constant. Detection behaviour
+                                                   unchanged: a failure still degrades to
+                                                   detected: null.
+hooks/lib/locale.js                             — Whole-branch review scope B (Minor):
+                                                   getLocale(null) still threw. The
+                                                   previous round closed {homeDir: null}
+                                                   but left the parameter as ({homeDir =
+                                                   os.homedir()} = {}), whose = {} default
+                                                   also fires only for undefined — so an
+                                                   explicit null destructured and threw
+                                                   before any inner guard ran, breaking
+                                                   the documented totality contract one
+                                                   level up from where it was fixed. Now
+                                                   const { homeDir } = opts || {} (|| not
+                                                   ??, so false/0/'' are covered too); the
+                                                   inner non-string/empty homeDir fallback
+                                                   is unchanged.
+src/routes/memory.js                            — Whole-branch review scope B (Minor):
+                                                   PUT /locale moved the account's
+                                                   cache-freshness token (locale is one of
+                                                   its hash inputs) but returned nothing,
+                                                   so a caller holding a long-lived
+                                                   session token presented the pre-write
+                                                   value on its very next memory write and
+                                                   paid a 409 plus an auto-retry round
+                                                   trip, for a change it made itself. Both
+                                                   success branches — the pin and the
+                                                   auto-clear early return — now return
+                                                   sync_token from generateSyncToken(),
+                                                   matching every other write in this
+                                                   router.
+legacy/admin-v1.26/index.html                   — Whole-branch review scope B (Minor,
+                                                   comment only, no behaviour change):
+                                                   recorded the cross-family token hazard
+                                                   at iruUpdateTier(). It takes an
+                                                   iron-rule-LOCK token from GET
+                                                   /admin/iron-rules/upgrade-status and
+                                                   sends it as sync_token to PUT
+                                                   /api/memory/:id, which validates
+                                                   against the cache-freshness family;
+                                                   before the token split those were one
+                                                   function, and the two spaces are now
+                                                   provably disjoint, so this would 409 on
+                                                   first click and its own 409 handler
+                                                   cannot recover it. Not live (/admin
+                                                   301-redirects via
+                                                   src/middleware/legacy-admin-mount.js;
+                                                   the current console has no sync_token
+                                                   path), so the comment names the correct
+                                                   fix and notes that iruConfirmUpgrade()
+                                                   is unaffected — it sends the same
+                                                   variable to the lock token's own
+                                                   endpoint.
+tests/local-locale-refresh.test.js              — Whole-branch review scope B, 4 new
+                                                   cases (TDD, red first against a staged
+                                                   temp HOME): a cache stamped with
+                                                   another account is left byte-for-byte
+                                                   identical and the result is not ok
+                                                   (red: the file was rewritten and
+                                                   ok:true returned); a cache stamped with
+                                                   the same account still refreshes; no
+                                                   cache file at all still refreshes; and
+                                                   an unstamped legacy cache still
+                                                   refreshes, pinning that only a
+                                                   DIFFERING stamp blocks the sync.
+tests/hook-locale.test.js                       — Whole-branch review scope B, 2 new
+                                                   cases (TDD, both red first): a
+                                                   PATH-shimmed detector that writes to
+                                                   stderr and exits non-zero must leave
+                                                   the parent process's stderr empty while
+                                                   state/locale.json is still written as
+                                                   {"detected":null,…} (red:
+                                                   PowerShell-shaped error text appeared
+                                                   verbatim on the parent's stderr); and
+                                                   getLocale(null) — plus false/0/'' —
+                                                   must return a valid locale instead of
+                                                   throwing.
+tests/memory-locale-route.test.js               — Whole-branch review scope B: the
+                                                   real-DB sync-token scenario now also
+                                                   asserts PUT /locale returns a
+                                                   sync_token, that it differs from the
+                                                   token the caller held before the write,
+                                                   and that it equals what GET /sync-token
+                                                   serves afterwards — asserted separately
+                                                   for the pin and the auto-clear branch,
+                                                   since returning it from only one of the
+                                                   two early-return paths is the likely
+                                                   shape of a miss.
+tests/mcp-set-locale-tool.test.js               — Whole-branch review scope B, 2 new
+                                                   source-level cases: the case handler
+                                                   must assign the returned sync_token to
+                                                   currentSyncToken, and must branch on
+                                                   the account_mismatch source with a
+                                                   message that says the local hooks
+                                                   belong to a different account rather
+                                                   than repeating the generic "applies
+                                                   here next session" promise.
 hooks/ownmind-tty-echo.cjs                      — formatBlock 改單行輸出：事件用 ┃ 串接
                                                    （分隔符抽成 EVENT_SEPARATOR 常數）。
                                                    extractBanners 比對前先把 \r／U+2028／

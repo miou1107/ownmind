@@ -130,6 +130,135 @@ describe('refreshLocalCacheForLocale', () => {
     assert.equal(getLocale({ homeDir: tmpHome }), 'ja');
   });
 
+  /**
+   * Fix round 2 — the cache on disk may not belong to the account this MCP is configured
+   * with, and rewriting it destroys the other account's whole init payload.
+   *
+   * The MCP resolves its credentials from `process.env` only (mcp/index.js). The hooks
+   * resolve theirs files-first, env-last (scripts/install-helpers/resolve-credentials.cjs:
+   * ~/.claude/settings.json -> settings.local.json -> .claude.json -> env). On a machine
+   * running more than one OwnMind account those two can differ, and `cache/memories.json`
+   * has exactly one owner: the hooks.
+   *
+   * Without a guard, `runConditionalSync` under account A finds a cache stamped B, refuses
+   * to *read* it (v1.26.82) — and then downloads A's init and writes it over the top, which
+   * is the destructive half that check never covered. B's profile, iron rules and digests
+   * are gone; `getLocale` has no fingerprint check at all, so it then serves A's language on
+   * a machine whose hooks are B; and at B's next SessionStart `readCache` correctly refuses
+   * the A-stamped file, so an offline session loads no memories at all — strictly worse than
+   * the `cache_fallback` it would have had.
+   */
+  it('a cache stamped with another account is left byte-for-byte alone (no sync, not ok)', async () => {
+    const tmpHome = tempDir('ownmind-local-locale-refresh-other-account-');
+    const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');
+    const hooksAccount = { apiUrl: 'http://api', apiKey: 'HOOKS-KEY-B' };
+    const mcpAccount = { apiUrl: 'http://api', apiKey: 'MCP-KEY-A' };
+
+    // What the hooks left behind: account B's whole init payload.
+    writeCache(
+      {
+        sync_token: 'B-TOKEN',
+        data: { sync_token: 'B-TOKEN', iron_rules_digest: 'B-DIGEST', locale: 'zh', profile: { name: 'B' } },
+      },
+      cachePath,
+      undefined,
+      hooksAccount,
+    );
+    const before = fs.readFileSync(cachePath, 'utf8');
+
+    // A fetch that would happily succeed — so nothing but the guard can prevent the write.
+    const fetchFn = makeFetch([
+      ['sync-token', () => okJson({ sync_token: 'A-TOKEN' })],
+      ['init', () => okJson({
+        sync_token: 'A-TOKEN', server_version: '9.9.9', iron_rules_digest: 'A-DIGEST', locale: 'ja',
+      })],
+    ]);
+
+    const result = await refreshLocalCacheForLocale({ ...mcpAccount, cachePath, fetchFn });
+
+    assert.equal(result.ok, false, 'refreshing another account\'s cache must never be reported as success');
+    assert.equal(result.source, 'account_mismatch');
+    assert.equal(fs.readFileSync(cachePath, 'utf8'), before,
+      "the other account's cache must be byte-for-byte untouched");
+  });
+
+  it('a cache stamped with this same account still refreshes as before', async () => {
+    const tmpHome = tempDir('ownmind-local-locale-refresh-same-account-');
+    const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');
+    const account = { apiUrl: 'http://api', apiKey: 'SAME-KEY' };
+
+    writeCache(
+      { sync_token: 'OLD', data: { sync_token: 'OLD', iron_rules_digest: '', locale: 'zh' } },
+      cachePath,
+      undefined,
+      account,
+    );
+
+    const fetchFn = makeFetch([
+      ['sync-token', () => okJson({ sync_token: 'NEW' })],
+      ['init', () => okJson({
+        sync_token: 'NEW', server_version: '9.9.9', iron_rules_digest: '', locale: 'ja',
+      })],
+    ]);
+
+    const result = await refreshLocalCacheForLocale({ ...account, cachePath, fetchFn });
+
+    assert.equal(result.ok, true, 'the guard must only fire for a *different* account');
+    assert.equal(result.source, 'init_refreshed');
+    assert.equal(getLocale({ homeDir: tmpHome }), 'ja');
+  });
+
+  it('no cache file at all refreshes normally — there is nothing to clobber', async () => {
+    const tmpHome = tempDir('ownmind-local-locale-refresh-no-cache-');
+    const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');
+    assert.equal(fs.existsSync(cachePath), false, 'precondition: a staged home with no cache yet');
+
+    const fetchFn = makeFetch([
+      ['sync-token', () => okJson({ sync_token: 'NEW' })],
+      ['init', () => okJson({
+        sync_token: 'NEW', server_version: '9.9.9', iron_rules_digest: '', locale: 'ja',
+      })],
+    ]);
+
+    const result = await refreshLocalCacheForLocale({
+      apiUrl: 'http://api', apiKey: 'K', cachePath, fetchFn,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.source, 'init_refreshed');
+    assert.equal(getLocale({ homeDir: tmpHome }), 'ja');
+  });
+
+  it('a cache with no account stamp at all is still refreshed (it is unreadable to everyone)', async () => {
+    // Pre-v1.26.82 caches carry no `account` field. `readCache` already refuses those for
+    // *every* account, so the file is dead weight to whoever holds it — overwriting it
+    // destroys nothing anyone could have read, and is exactly what a normal SessionStart
+    // does. Only a *differing* stamp means a live cache belonging to somebody else.
+    const tmpHome = tempDir('ownmind-local-locale-refresh-unstamped-');
+    const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');
+
+    writeCache(
+      { sync_token: 'OLD', data: { sync_token: 'OLD', iron_rules_digest: '', locale: 'zh' } },
+      cachePath,
+    );
+    assert.equal(JSON.parse(fs.readFileSync(cachePath, 'utf8')).account, undefined,
+      'precondition: an unstamped, legacy-shaped cache');
+
+    const fetchFn = makeFetch([
+      ['sync-token', () => okJson({ sync_token: 'NEW' })],
+      ['init', () => okJson({
+        sync_token: 'NEW', server_version: '9.9.9', iron_rules_digest: '', locale: 'ja',
+      })],
+    ]);
+
+    const result = await refreshLocalCacheForLocale({
+      apiUrl: 'http://api', apiKey: 'K', cachePath, fetchFn,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.source, 'init_refreshed');
+  });
+
   it('a fetch failure degrades gracefully: ok:false, no throw, existing cache left untouched', async () => {
     const tmpHome = tempDir('ownmind-local-locale-refresh-fail-');
     const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');

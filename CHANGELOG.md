@@ -2,6 +2,64 @@
 
 ## v1.26.173 — 一次觸發只佔一行，不要再被主程式蓋三次章
 
+**Locale chain (whole-branch review, scope B) — four defects closed, one dead hazard recorded
+(TDD, each proved red before green)**:
+
+`ownmind_set_locale` could overwrite a *different* OwnMind account's hook cache and report
+success. The MCP resolves its credentials from `process.env` alone, while the hooks resolve
+theirs files-first, env-last (`scripts/install-helpers/resolve-credentials.cjs`:
+`~/.claude/settings.json` → `settings.local.json` → `.claude.json` → env); on a machine running
+more than one account those two differ, and this product's own author is such a user.
+`readCache`'s v1.26.82 account check is read-side only — `runConditionalSync` refused to *read*
+the other account's cache and then wrote this account's init straight over the top. Reproduced
+end to end before the fix: the other account's profile, iron rules and digests were destroyed,
+`refreshLocalCacheForLocale` returned `{ok: true, source: 'init_refreshed'}`, `getLocale` (which
+has no fingerprint check of its own) then served the wrong account's language on that machine,
+and at the rightful account's next SessionStart `readCache` correctly refused the now-foreign
+file — so an offline session there would have loaded no memories at all, strictly worse than the
+`cache_fallback` it would otherwise have had. `refreshLocalCacheForLocale` now compares
+`accountFingerprint({apiUrl, apiKey})` against the stamp on disk and, when they differ, syncs
+nothing and returns `{ok: false, source: 'account_mismatch'}`. An *unstamped* cache
+(pre-v1.26.82) is deliberately not treated as foreign: `readCache` already refuses those for
+every account alike, so overwriting one destroys nothing anyone could have read, while calling
+them foreign would leave every upgrading machine permanently unable to refresh here.
+`ownmind_set_locale`'s degraded message gained its own branch for this outcome — the generic one
+promises "it will apply here at the next session start too", which after a mismatch can never
+come true, because the hooks on that machine are a different account.
+
+`hooks/lib/locale-provision.js` leaked the OS detector's stderr into the SessionStart hook's own
+stderr. Both `execFileSync` calls omitted `stdio`, and Node's default pipes the child's stderr
+straight to the parent's. On macOS/Linux the `.sh` twin redirects the step, so it stays hidden;
+but a Windows install runs the `.js` twin, where `provisionLocale()` executes in-process — so
+anything `powershell.exe` writes to stderr (Constrained Language Mode, AppLocker/WDAC, execution
+policy) surfaced on a channel the user reads. Both calls now pass
+`stdio: ['ignore', 'pipe', 'ignore']`, the form `path-guard.js`, `ownmind-git-commit-msg.js` and
+`ownmind-reply-lint.js` already use. Proved with a PATH-shimmed detector that writes to stderr
+and exits non-zero: the parent's stderr is now empty and `state/locale.json` is still written as
+`{"detected":null,…}`.
+
+`hooks/lib/locale.js`'s `getLocale` still threw on an explicit `getLocale(null)`. The previous
+round closed `{homeDir: null}` but left the parameter itself as `({homeDir = …} = {})`, whose
+`= {}` default likewise fires only for `undefined` — the same hole, one level up, in a function
+documented as total. Now `const { homeDir } = opts || {}`, covering `false`/`0`/`''` too.
+
+`PUT /api/memory/locale` moved the account's cache-freshness token (locale is one of its hash
+inputs) without returning the new one, and the MCP did not adopt it — so the next memory write in
+that session presented the pre-write token and paid a 409 plus an auto-retry round trip, for a
+change it had made itself. Both success branches (pin and `auto`-clear) now return `sync_token`,
+matching every other write in that router, and the MCP assigns it the way its sibling writes do.
+
+`legacy/admin-v1.26/index.html`'s `iruUpdateTier` takes an iron-rule-LOCK token from
+`GET /admin/iron-rules/upgrade-status` and sends it as `sync_token` to `PUT /api/memory/:id`,
+which validates against the cache-freshness family. Before the token split those were the same
+function; the two spaces are now provably disjoint, so this would 409 on its first click and its
+own 409 handler cannot recover it (the `new_token` it retries with is from the wrong family
+again). It is not live — `/admin` 301-redirects (`src/middleware/legacy-admin-mount.js`) and the
+current console has no `sync_token` path at all — so the hazard is recorded as a comment at the
+call site instead, naming the fix, so nobody resurrects or copies the pattern. No behaviour
+change. `iruConfirmUpgrade()` is explicitly noted as unaffected: it sends the same variable to
+the lock token's own endpoint.
+
 **A broken message layer can no longer switch the action gate off (whole-branch review
 findings; TDD, each proved red before green)**:
 

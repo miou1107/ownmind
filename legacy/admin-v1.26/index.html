@@ -1972,6 +1972,27 @@ $env:OWNMIND_API_KEY='${key}'; $env:OWNMIND_API_URL='${apiUrl}'; irm https://raw
 
   // v1.19: 把鐵律 tier 改成 newTier、PUT /memory/:id（後端 validator 會擋非 iron_rule）
   //   update_reason 帶 prevTier → newTier 給 audit 追溯（spec 場景 8）
+  //
+  // BROKEN, AND DEAD — do not resurrect or copy this call without fixing it first.
+  //
+  // `iruSyncToken` is an iron-rule-LOCK token, issued by GET /admin/iron-rules/upgrade-status.
+  // This function sends it as `sync_token` to PUT /api/memory/:id, which validates against the
+  // CACHE-FRESHNESS family instead. Before the token split those were the same function, so
+  // this worked by coincidence; the two token spaces are now provably disjoint, so this
+  // request would 409 on its very first click and the 409 handler below cannot recover it —
+  // `data.new_token` on that response is another cache-freshness token, which this endpoint
+  // will reject just the same on the retry.
+  //
+  // It is not live: /admin 301-redirects to the current console (src/middleware/legacy-admin-mount.js)
+  // and the current console has no sync_token code path at all, so nothing reaches this. Left
+  // recorded rather than deleted because the whole legacy console is kept as a reference, and
+  // a future reader copying this pattern into live code is the actual hazard.
+  //
+  // The correct fix, whenever this is revived: take the tier write's token from the same
+  // cache-freshness source every other /api/memory write uses, or move the tier write behind
+  // an /admin/iron-rules endpoint that validates the lock token this variable actually holds.
+  // Note that iruConfirmUpgrade() below is NOT affected — it sends the same variable to
+  // PUT /admin/iron-rules/:id/upgrade, which is the lock token's own endpoint.
   async function iruUpdateTier(ruleId, newTier) {
     if (!iruSyncToken) throw new Error('sync_token 缺、請重新載入列表');
     const cached = iruRulesCache.find(r => r.id === ruleId);

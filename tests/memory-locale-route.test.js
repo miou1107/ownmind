@@ -190,7 +190,7 @@ test('account locale preference: set, echoed via init, auto clears, invalid inpu
       const initBefore = await initTokenFor('key-locale-a');
       assert.equal(initBefore, tokenBefore, 'GET /init and GET /sync-token must serve the same token');
 
-      await put('key-locale-a', { locale: 'zh' });
+      const putZh = await put('key-locale-a', { locale: 'zh' });
       const tokenAfterZh = await syncTokenFor('key-locale-a');
       assert.notEqual(tokenAfterZh, tokenBefore,
         "PUT locale must change this account's sync_token, or the client cache never re-inits");
@@ -199,10 +199,30 @@ test('account locale preference: set, echoed via init, auto clears, invalid inpu
         'the token embedded in GET /init must move too, or the cache it writes is born stale');
       assert.equal(initAfterZh, tokenAfterZh, 'the two endpoints must still agree after the write');
 
-      await put('key-locale-a', { locale: 'auto' });
+      // Fix round 2 — the write moves the token, so it must hand the new one back, the way
+      // every other write in this router does. A caller holding a long-lived session token
+      // (the MCP's `currentSyncToken`) otherwise keeps presenting the pre-write value on its
+      // very next memory write and eats a 409 plus an auto-retry round trip, for a write it
+      // performed itself and could have been told about.
+      assert.equal(typeof putZh.json.sync_token, 'string',
+        'PUT /locale must return a sync_token');
+      assert.notEqual(putZh.json.sync_token, tokenBefore,
+        'the returned token must be the post-write one, not the value the caller already held');
+      assert.equal(putZh.json.sync_token, tokenAfterZh,
+        'the returned token must be exactly what GET /sync-token now serves');
+
+      const putAuto = await put('key-locale-a', { locale: 'auto' });
       const tokenAfterAuto = await syncTokenFor('key-locale-a');
       assert.notEqual(tokenAfterAuto, tokenAfterZh,
         'clearing the preference (auto) must also change the sync_token');
+      // The `auto` branch returns early on its own path, so it needs its own assertion —
+      // returning the token from only one of the two branches is the likely shape of a miss.
+      assert.equal(typeof putAuto.json.sync_token, 'string',
+        'the auto (clear) branch must return a sync_token too');
+      assert.notEqual(putAuto.json.sync_token, putZh.json.sync_token,
+        'the auto branch must return the post-clear token, not the previous write\'s');
+      assert.equal(putAuto.json.sync_token, tokenAfterAuto,
+        'the auto branch\'s token must be exactly what GET /sync-token now serves');
 
       const unrelatedAfter = await syncTokenFor('key-locale-b');
       assert.equal(unrelatedAfter, unrelatedBefore,
