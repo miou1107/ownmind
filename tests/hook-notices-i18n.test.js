@@ -546,17 +546,27 @@ function stageBrokenI18nReplyLint() {
   const tempRoot = tempDir('reply-lint-broken-i18n-');
   fs.mkdirSync(path.join(tempRoot, 'hooks', 'lib'), { recursive: true });
   fs.symlinkSync(path.join(repoRoot, 'shared'), path.join(tempRoot, 'shared'));
-  // None of hooks/lib/* (other than i18n.js itself) import i18n.js relatively, so every file
-  // except it is safe to symlink whole — auto-enumerated so a future addition to hooks/lib is
-  // covered automatically rather than needing this list hand-maintained.
-  for (const entry of fs.readdirSync(path.join(repoRoot, 'hooks', 'lib'))) {
+  // Any hooks/lib/* file whose own source references `./i18n.js` (a relative import of it)
+  // must be a real copy here, not a symlink: Node's ESM loader resolves a symlinked module's
+  // import.meta.url to its REAL path by default, so its own `./i18n.js` import would resolve
+  // against the real repo tree and silently load the working i18n.js instead of the staged
+  // broken one (verified empirically in Task 3, then re-verified here — code review caught
+  // hooks/lib/compliance-step.js falling into exactly this trap once it gained its own
+  // complianceNotice() helper, since this loop used to symlink it unconditionally). Detected
+  // by a content scan, not a hand-maintained file list, so the next hooks/lib file that starts
+  // importing i18n.js is covered automatically instead of silently regressing this proof.
+  const libDir = path.join(repoRoot, 'hooks', 'lib');
+  for (const entry of fs.readdirSync(libDir)) {
     if (entry === 'i18n.js') continue;
-    fs.symlinkSync(path.join(repoRoot, 'hooks', 'lib', entry), path.join(tempRoot, 'hooks', 'lib', entry));
+    const src = path.join(libDir, entry);
+    const dest = path.join(tempRoot, 'hooks', 'lib', entry);
+    const importsI18n = fs.statSync(src).isFile()
+      && /['"]\.\/i18n\.js['"]/.test(fs.readFileSync(src, 'utf8'));
+    if (importsI18n) fs.copyFileSync(src, dest);
+    else fs.symlinkSync(src, dest);
   }
-  // The entry file must be a real copy: its own `import('./lib/i18n.js')` must resolve
-  // against this staged tree, not follow a symlink's realpath back to the real repo file
-  // (verified empirically in Task 3 — Node's ESM loader resolves a symlinked module's
-  // import.meta.url to its REAL path by default).
+  // The entry file must be a real copy too, for the same reason: its own
+  // `import('./lib/i18n.js')` must resolve against this staged tree.
   fs.copyFileSync(REPLY_LINT_HOOK, path.join(tempRoot, 'hooks', 'ownmind-reply-lint.js'));
   fs.writeFileSync(path.join(tempRoot, 'hooks', 'lib', 'i18n.js'), 'export function t( { this is not valid js');
   return path.join(tempRoot, 'hooks', 'ownmind-reply-lint.js');
@@ -581,6 +591,19 @@ test('reply-lint hook: an unloadable i18n.js falls back to English and never cra
     assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); }, `stdout must be valid JSON, got:\n${r.stdout}`);
     assert.match(parsed.systemMessage, /Reply quality lint/, 'falls back to the English banner header');
     assert.doesNotMatch(parsed.systemMessage, /回話品質/, 'the zh translation must not appear — i18n itself is broken');
+    // MODE='warn' also drives compliance-step.js's own off:warn-mode banner through this same
+    // staged-broken-i18n run — hooks/lib/compliance-step.js is a hooks/lib/* file that itself
+    // imports './i18n.js' relatively (via its complianceNotice() helper), so this is the case
+    // code review found the staging helper's symlink-everything-in-hooks/lib loop was missing:
+    // a symlinked compliance-step.js would resolve its own import against the REAL repo
+    // i18n.js (Node resolves a symlink's import.meta.url to its real path), silently loading
+    // the real dictionary instead of the staged broken one and defeating this exact assertion.
+    assert.match(
+      parsed.systemMessage,
+      /compliance check is off for this session \(lint disabled or warn mode\)/,
+      'compliance-step.js (also on the hooks/lib i18n.js import graph) must fall back to English too',
+    );
+    assert.doesNotMatch(parsed.systemMessage, /合規檢查目前關閉中/, 'the zh translation must not appear for compliance-step either');
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
