@@ -35,6 +35,12 @@ JSON 檔，內含規範 ID、規範雜湊與 HMAC 簽章（簽過 `sessionId:rul
 只在徹底通過時呼叫。sessionId 驗證以防路徑遍歷。approveAction 檢核同意碼雜湊後
 刪檔，一次性消耗。
 
+新增 `hooks/lib/approve-action.js`：一次性批准 CLI。讀取 `~/.ownmind/state/gate-current-session`
+（或 `OWNMIND_GATE_STATE_DIR` 環境變數）存放的 session ID，檢核同意碼並呼叫 approveAction；
+印出 `APPROVED` 退出碼 0 或 `REJECTED` 退出碼 1。guardId 轉換成整數 Number() 後驗證；
+任何無效輸入（state 目錄遺失、session 檔遺失、guardId 非正整數、code 不符）都靜默回傳
+REJECTED，不拋例外。
+
 **Amendment 2 修正**（adversarial review 發現的設計漏洞）：
 
 - C1：決策日誌永不記錄同意碼或 userLine（機器看不到的 systemMessage 內容）；改記

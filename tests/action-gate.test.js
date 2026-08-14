@@ -5,6 +5,7 @@
 import { strict as assert } from 'assert';
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { matchGuards, evaluateGate, approveAction } from '../hooks/lib/action-gate.js';
@@ -450,4 +451,18 @@ test('NEW-2: read-block and check-block decisions must carry userLine', () => {
   const logContent = fs.readFileSync(logFile, 'utf8');
   assert.ok(!logContent.includes('blocked until the rule'), 'gate-log must not contain userLine text');
   assert.ok(!logContent.includes('Approval code:'), 'gate-log must not contain userLine from ask');
+});
+
+// --- CLI: approve-action ---
+
+test('the approval CLI approves a valid code once', () => {
+  const dir = prepStateDir();
+  fs.writeFileSync(path.join(dir, 'gate-current-session'), 's1');
+  fs.writeFileSync(path.join(dir, 'gate-ask-s1-918.json'),
+    JSON.stringify({ codeHash: createHash('sha256').update('123456').digest('hex'), approved: false }));
+  const env = { ...process.env, OWNMIND_GATE_STATE_DIR: dir };
+  const ok = spawnSync('node', ['hooks/lib/approve-action.js', '918', '123456'], { encoding: 'utf8', env });
+  assert.equal(ok.status, 0); assert.match(ok.stdout, /APPROVED/);
+  const again = spawnSync('node', ['hooks/lib/approve-action.js', '918', '123456'], { encoding: 'utf8', env });
+  assert.equal(again.status, 1);
 });
