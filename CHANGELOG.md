@@ -141,6 +141,24 @@ go。這個較弱的保證是刻意換取較低的摩擦；IR-136 的「先停�
 性質（一次性、只在整條指令通過時消耗、非 limit 批准仍跑檢查、limit 停止並請人批准的
 路徑不變）與 code 模式完全相同。
 
+**Final-review fix — the gate owns stdout, the upgrade hitchhiker no longer shares it**:
+`hooks/ownmind-iron-rule-check.sh` carries a one-time "SessionStart hook missing →
+auto-install" block that echoes a `hookSpecificOutput` advisory on the first tool call. It
+used to run before the payload was read, so on a turn where the action gate then BLOCKED,
+stdout carried two newline-separated JSON objects (advisory + block). Two objects violate
+the single-object hook contract — a harness parser can drop the gate block and let a risky
+command run ungated. Fix: the advisory block now runs *after* the gate's evaluate-and-exit
+short-circuit, so a blocked command has already emitted its lone JSON object and exited
+before the advisory can speak. The advisory therefore only ever echoes on a turn the gate
+did NOT block, and it now fires on the first non-empty command rather than the first tool
+call of any kind — a negligible delay for a one-time, opportunistic self-heal. The `.js`
+twin (`hooks/ownmind-iron-rule-check.js`) needed no change: it has no upgrade block and its
+gate decision is the first thing it ever writes to stdout. `tests/action-gate-e2e.test.js`
+gains two end-to-end cases that stage a HOME with the upgrade armed (`~/.ownmind/.git`
+present, install marker absent): a gate-blockable command must yield exactly one JSON
+object — the block — and a non-blocked command must still let the single upgrade advisory
+through.
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓

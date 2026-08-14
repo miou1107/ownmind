@@ -226,6 +226,79 @@ test('the .sh hook forwards a gate block and stops there', () => {
     'the gate must run before the empty-trigger exit can skip it');
 });
 
+// --- The gate owns stdout for the turn, even when the one-time upgrade is armed ---
+//
+// The .sh carries a hitchhiker: a one-time "SessionStart hook missing → auto-install"
+// block that echoes a {"hookSpecificOutput":…} advisory on the first tool call. It fires
+// at most once per machine, guarded by a marker touch, and only when ~/.ownmind/.git is
+// present and settings.json has no SessionStart hook. If it echoes and then execution
+// falls through to a gate BLOCK, stdout carries TWO newline-separated JSON objects, which
+// violates the single-object hook contract — a harness parser can drop the gate block and
+// let a risky command run ungated. The gate must win the stdout race: it emits and exits
+// before the advisory ever runs.
+
+/** Stage a HOME whose upgrade hitchhiker is armed AND whose enforcement cache has guards. */
+function stageArmedUpgradeHome() {
+  const home = stageHookHome({ apiUrl: 'http://127.0.0.1:9' });
+  fs.mkdirSync(path.join(home, '.ownmind', 'cache'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.ownmind', 'cache', 'enforcement.json'),
+    JSON.stringify({ selectors: [], guards: DEFAULT_GUARDS, injectables: [] })
+  );
+  // Arm the one-time upgrade: the three conditions sh:65 keys on are
+  //   (a) install marker absent — stageHookHome never creates it,
+  //   (b) ~/.ownmind/.git present — created here (an empty dir; the block's `git pull`
+  //       fails fast into 2>/dev/null and the advisory still echoes),
+  //   (c) settings.json carries no SessionStart hook — stageHookHome writes only mcpServers.
+  fs.mkdirSync(path.join(home, '.ownmind', '.git'), { recursive: true });
+  return home;
+}
+
+function runShIn(home, command) {
+  return spawnSync('bash', [SH_HOOK], {
+    input: JSON.stringify({
+      session_id: 'e2e-session',
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command },
+    }),
+    encoding: 'utf8',
+    cwd: home,
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+}
+
+test('a gate block with the upgrade armed emits exactly ONE JSON object — the block', () => {
+  const home = stageArmedUpgradeHome();
+  const r = runShIn(home, 'docker compose build --no-cache api');
+
+  assert.equal(r.status, 0, `hook must exit 0; stderr=${r.stderr.slice(0, 300)}`);
+  // The contract: stdout is exactly one JSON object. Two objects (upgrade advisory + gate
+  // block) make JSON.parse of the whole stream throw — that is the pre-fix red state.
+  let parsed;
+  assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); },
+    `stdout must be exactly one JSON object, got:\n${r.stdout}`);
+  assert.equal(parsed.decision, 'block',
+    'the single object must be the gate block, not the upgrade advisory');
+  assert.match(parsed.systemMessage, /blocked until the rule/, 'the user sees why');
+});
+
+test('a non-blocked command with the upgrade armed still lets the advisory through (one object)', () => {
+  const home = stageArmedUpgradeHome();
+  // `ls -la` is neither gate-blockable nor a trigger, so the only thing with anything to
+  // say this turn is the upgrade advisory. It must arrive as one clean JSON object.
+  const r = runShIn(home, 'ls -la');
+
+  assert.equal(r.status, 0, `hook must exit 0; stderr=${r.stderr.slice(0, 300)}`);
+  let parsed;
+  assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); },
+    `stdout must be exactly one JSON object, got:\n${r.stdout}`);
+  assert.ok(!parsed.decision, 'a non-blocked command is not a gate block');
+  assert.ok(parsed.hookSpecificOutput, 'the upgrade advisory rides a hookSpecificOutput envelope');
+  assert.match(parsed.hookSpecificOutput.additionalContext, /自動升級|SessionStart/,
+    'the one object is the upgrade advisory');
+});
+
 test('the .js twin blocks and allows the same way', () => {
   const { home } = stageGateHome();
   const payload = JSON.stringify({

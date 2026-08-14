@@ -60,35 +60,6 @@ log_event() {
   fi
 }
 
-# --- 一次性升級：偵測到缺少 SessionStart hook → 自動安裝 ---
-UPGRADE_MARKER="$HOME/.ownmind/.session-hook-installed"
-if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
-  # 檢查 settings.json 是否已有 SessionStart hook
-  HAS_SESSION_HOOK=$(node -e "
-    try {
-      const s = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
-      const has = (s.hooks?.SessionStart || []).some(h =>
-        h.hooks?.some(hh => (hh.command || '').includes('ownmind'))
-      );
-      console.log(has ? 'yes' : 'no');
-    } catch { console.log('no'); }
-  " "$CLAUDE_SETTINGS_WIN")
-
-  if [ "$HAS_SESSION_HOOK" = "no" ]; then
-    # 自動升級：pull + update
-    (
-      cd "$HOME/.ownmind" && \
-      git pull -q --rebase 2>/dev/null && \
-      cd mcp && npm install -q 2>/dev/null && \
-      bash "$HOME/.ownmind/scripts/update.sh" >/dev/null 2>&1
-    )
-    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"【OwnMind v${VERSION}】自動升級：已安裝 SessionStart hook，下次開新 session 記憶會自動載入，不用再手動說「載入 OwnMind」。\"}}"
-  fi
-
-  # 標記已檢查，不再重複
-  touch "$UPGRADE_MARKER"
-fi
-
 INPUT=$(cat)
 # v1.26.154: three values now come out of the payload, emitted as
 #   line 1  → session_id
@@ -182,6 +153,44 @@ fi
 if [ -n "$GATE_OUT" ]; then
   echo "$GATE_OUT"
   exit 0
+fi
+
+# --- 一次性升級：偵測到缺少 SessionStart hook → 自動安裝 ---
+#
+# Deliberately BELOW the action gate, not above it. This block echoes a hookSpecificOutput
+# advisory of its own, and stdout is handed to Claude Code as a single JSON object. Placed
+# before the gate, its echo plus a gate BLOCK put two newline-separated objects on stdout —
+# a harness parser can then drop the block and let a risky command run ungated. Keeping it
+# here means the gate owns stdout for the turn: a blocked command has already emitted and
+# exited above, so the advisory can only ever echo on a turn the gate did NOT block. It
+# fires at most once per machine (guarded by the marker touch) and only on a non-empty
+# command, which is a negligible delay for a one-time, opportunistic self-heal.
+UPGRADE_MARKER="$HOME/.ownmind/.session-hook-installed"
+if [ ! -f "$UPGRADE_MARKER" ] && [ -d "$HOME/.ownmind/.git" ]; then
+  # 檢查 settings.json 是否已有 SessionStart hook
+  HAS_SESSION_HOOK=$(node -e "
+    try {
+      const s = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+      const has = (s.hooks?.SessionStart || []).some(h =>
+        h.hooks?.some(hh => (hh.command || '').includes('ownmind'))
+      );
+      console.log(has ? 'yes' : 'no');
+    } catch { console.log('no'); }
+  " "$CLAUDE_SETTINGS_WIN")
+
+  if [ "$HAS_SESSION_HOOK" = "no" ]; then
+    # 自動升級：pull + update
+    (
+      cd "$HOME/.ownmind" && \
+      git pull -q --rebase 2>/dev/null && \
+      cd mcp && npm install -q 2>/dev/null && \
+      bash "$HOME/.ownmind/scripts/update.sh" >/dev/null 2>&1
+    )
+    echo "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"【OwnMind v${VERSION}】自動升級：已安裝 SessionStart hook，下次開新 session 記憶會自動載入，不用再手動說「載入 OwnMind」。\"}}"
+  fi
+
+  # 標記已檢查，不再重複
+  touch "$UPGRADE_MARKER"
 fi
 
 # 偵測觸發關鍵字
