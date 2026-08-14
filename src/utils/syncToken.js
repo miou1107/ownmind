@@ -111,7 +111,12 @@ export async function validateSyncToken(userId, clientToken, queryFn = defaultQu
  * Inputs are exactly the row set `GET /upgrade-status` returns — the user's active iron
  * rules — and nothing else:
  *
- *   MAX(updated_at)  any edit to any of those rules, including one arriving from ownmind_save
+ *   MAX(updated_at)  any edit that bumps a rule's updated_at, including one arriving from
+ *                    ownmind_save. Nothing in this schema bumps it automatically — there is
+ *                    no trigger, every UPDATE sets it by hand — so a write that deliberately
+ *                    leaves the timestamp alone stays invisible here. The one that does that
+ *                    today is the rule_stats merge in src/routes/memory.js, which the upgrade
+ *                    PUT does not write, so it cannot clobber what the lock cannot see.
  *   COUNT(*)         a rule added or disabled; on its own MAX can miss a rule leaving the
  *                    active set when it was not the most recently touched one
  *
