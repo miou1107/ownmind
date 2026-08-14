@@ -242,6 +242,79 @@ tests/hook-locale.test.js                       — Cleanup batch: new case asse
                                                    homeDir: null }) returns a valid locale instead of
                                                    throwing (TDD red before the locale.js fix, green
                                                    after).
+hooks/lib/action-gate.js                        — Whole-branch review (Important): the static
+                                                   `import { t } from './i18n.js'` is gone. A static
+                                                   ESM import failure is unrecoverable at module
+                                                   scope, so a missing/unparseable/throwing i18n.js
+                                                   stopped action-gate.js itself from loading, the
+                                                   callers' outer catch fired, and the command RAN
+                                                   UNGATED — a message-formatting module could switch
+                                                   enforcement off. Replaced with a guarded
+                                                   module-level lazy binding (top-level await
+                                                   import() inside try) plus a local total safeT()
+                                                   helper, used at all five userLine sites (verbal
+                                                   ask, code ask, limit ask, read-block, check-block),
+                                                   each carrying the exact pre-i18n English literal as
+                                                   its fallback. safeT() also falls back when t()
+                                                   throws at call time and when t() echoes the key
+                                                   back (hooks/locales/ absent) — a raw key is not a
+                                                   message. No decision logic, reason string, receipt,
+                                                   code issuance or ask-mode behaviour changed.
+hooks/lib/i18n.js                               — Whole-branch review, 2 fixes: (1) placeholder
+                                                   substitution used `name in params`, which walks the
+                                                   prototype chain, so a value containing
+                                                   {constructor}/{toString} rendered a function body
+                                                   into a user notice — now Object.hasOwn; (2)
+                                                   getLocale() ran on every t() call, re-reading and
+                                                   JSON-parsing ~/.ownmind/cache/memories.json each
+                                                   time (0.296 ms against a real 57 KB cache, several
+                                                   calls per gate run, on a ~1.5 ms PreToolUse
+                                                   budget) — the resolved locale is now memoized per
+                                                   process, which also stops a concurrent locale
+                                                   rewrite from rendering one hook run in two
+                                                   languages. OWNMIND_LOCALE_FORCE is exempt from the
+                                                   memo (it is the test seam suites flip between calls
+                                                   in one process) and resetI18nCacheForTests() clears
+                                                   the memo alongside the dictionary cache.
+tests/action-gate-i18n.test.js                  — Whole-branch review, re-baselined + extended. The
+                                                   CLI and .js-hook end-to-end cases previously PINNED
+                                                   the fail-open behaviour for a broken i18n.js ("no
+                                                   decision, loud not-gated notice"); they now assert
+                                                   a normal BLOCK carrying the English notice. The
+                                                   separate fail-open for action-gate.js itself
+                                                   failing to load or throwing stays pinned unchanged
+                                                   (the malformed-guard-bundle cases). stageGateTree()
+                                                   generalizes the old stageBrokenI18nTree() over four
+                                                   I18N_VARIANTS — unparseable, absent, throwing, and
+                                                   the real module staged without hooks/locales/ — and
+                                                   a new parametrized case runs each variant through
+                                                   read-block, check-block, verbal ask and code ask,
+                                                   asserting the English userLine byte-for-byte and
+                                                   that no bare key or empty string reaches the user.
+                                                   One more case pins action/kind/reason/guardId
+                                                   identical to the intact module.
+tests/hook-i18n.test.js                         — Whole-branch review, 4 new cases (TDD): two proving
+                                                   only own properties are substituted (a
+                                                   {constructor}/{toString}/{hasOwnProperty} template,
+                                                   and a params object with a custom prototype); one
+                                                   proving the locale is resolved once per process —
+                                                   resolve against a staged HOME, delete it, assert
+                                                   the answer is unchanged, then assert
+                                                   resetI18nCacheForTests() clears the memo; and one
+                                                   regression-guarding the OWNMIND_LOCALE_FORCE seam
+                                                   against the memo by flipping it en→zh→en inside a
+                                                   single process.
+tests/hook-locales-parity.test.js               — Whole-branch review (Minor): new case asserting
+                                                   hooks/locales/en.override.json and en.json carry
+                                                   identical key sets and identical values. The
+                                                   override is what keeps the route-C translate
+                                                   pipeline from regenerating the hand-authored
+                                                   English through the LLM, and its own _comment
+                                                   claimed lockstep, but nothing enforced it — editing
+                                                   en.json alone would silently un-pin a string.
+                                                   Currently 24/24, zero drift; proved to have teeth
+                                                   by staging both a value drift and a missing
+                                                   override key.
 ```
 
 新增：

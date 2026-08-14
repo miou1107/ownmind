@@ -2,6 +2,55 @@
 
 ## v1.26.173 — 一次觸發只佔一行，不要再被主程式蓋三次章
 
+**A broken message layer can no longer switch the action gate off (whole-branch review
+findings; TDD, each proved red before green)**:
+
+`hooks/lib/action-gate.js` held a STATIC `import { t } from './i18n.js'`. In ESM a static
+import failure is unrecoverable at module scope, so a missing, unparseable, or
+throwing-on-load `i18n.js` meant `action-gate.js` itself failed to load — at which point the
+callers' outer catch emitted the loud fail-open notice and **the command ran ungated**.
+Reproduced against a staged home for all three cases: a guard that should have blocked
+allowed instead. That handed a message-formatting module the power to disable enforcement,
+which an interrupted `update.sh`, a failed copy, or a Windows AV quarantine is enough to
+trigger. The import is now a guarded module-level lazy binding (top-level `await import()`
+inside a `try`), and all five `userLine` sites (verbal ask, code ask, limit ask, read-block,
+check-block) go through a local total `safeT()` helper that falls back to the exact pre-i18n
+English literal. Three separate failures collapse to that same fallback: the module never
+loaded, `t()` throws at call time, and `t()` echoes the key back because `hooks/locales/` is
+missing — a raw dictionary key is not a message, so it counts as a failure too. Nothing about
+the decision changed: no logic, no model-facing `reason`, no receipts, no code issuance, no
+verbal/code mode, and the 3-block limit still stays code-mode.
+
+**Re-baselined contract**: `tests/action-gate-i18n.test.js` previously PINNED the fail-open
+behaviour for a broken `i18n.js` ("no decision emitted, loud not-gated notice") in its CLI and
+.js-hook end-to-end cases. Those two expectations now assert the opposite and safer contract —
+a normal BLOCK decision carrying the English notice. The separate fail-open for the case where
+`action-gate.js` ITSELF cannot load, or throws, is correct and stays pinned exactly as it was.
+Four new `evaluateGate` cases cover each way the message layer can break (deleted, unparseable,
+`t()` throws, `hooks/locales/` absent) across read-block, check-block, verbal ask and code ask,
+plus a case proving `action`/`kind`/`reason`/`guardId` stay identical to the intact module.
+
+`hooks/lib/i18n.js` substituted placeholders with `name in params`, which walks the prototype
+chain — a template containing `{constructor}` or `{toString}` rendered a function body into a
+user notice (verified: `a function Object() { [native code] } b …`). Now `Object.hasOwn`.
+
+`hooks/lib/i18n.js` also called `getLocale()` on every single `t()` call, and `getLocale()`
+reads and JSON-parses `~/.ownmind/cache/memories.json` each time — 0.296 ms against a real
+57 KB cache, several times per gate run, on the PreToolUse path whose whole budget is ~1.5 ms.
+The resolved locale is now memoized per process, which also closes the window where a
+concurrent `ownmind_set_locale` could render two lines of one hook run in two different
+languages. `OWNMIND_LOCALE_FORCE` is deliberately exempt from the memo — it is the test seam
+several suites flip between calls inside a single process — and `resetI18nCacheForTests()`
+clears the memo alongside the dictionary cache. No existing suite needed changing.
+
+`tests/hook-locales-parity.test.js` now asserts `hooks/locales/en.override.json` and
+`en.json` carry identical key sets and identical values. The override is what stops the
+route-C translate pipeline from re-writing the hand-authored English through the LLM, and its
+own `_comment` claimed lockstep, but nothing enforced it — so editing `en.json` alone would
+silently un-pin a string and let the next `npm run translate:hooks` regenerate the gate's own
+block notices. Currently 24/24 with zero drift; proved to have teeth by staging both a value
+drift and a missing override key.
+
 **Gate message i18n cleanup batch — three review-flagged defects closed (TDD, each proved
 red before green)**:
 

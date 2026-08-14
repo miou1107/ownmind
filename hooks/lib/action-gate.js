@@ -11,12 +11,38 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { detectCommandTrigger } from '../../shared/helpers.js';
 import { writeReceipt, verifyReceipt } from './gate-receipt.js';
-// Static on purpose: both callers (action-gate-cli.js, ownmind-iron-rule-check.js) already
-// dynamically import THIS module inside a try/catch that fail-opens on anything it throws —
-// a failure to load i18n.js is just one more member of that already-handled exception class,
-// not a new failure mode. reason strings below stay raw English template literals; only
-// userLine (user-facing) routes through t().
-import { t } from './i18n.js';
+// Guarded, NOT static. A static `import { t } from './i18n.js'` is unrecoverable at module
+// scope: if i18n.js is missing, unparseable, or throws while loading, action-gate.js itself
+// fails to load, the callers' outer catch fires, and the command runs UNGATED. That hands a
+// message-formatting module the power to switch enforcement off — a half-written file from an
+// interrupted update.sh, a failed copy, or a Windows AV quarantine would be enough. The gate
+// must still decide with no message layer at all, so the binding is lazy and every use goes
+// through safeT() below. reason strings stay raw English template literals; only userLine
+// (user-facing) routes through translations.
+let translate = null;
+try { ({ t: translate } = await import('./i18n.js')); } catch { /* gate must decide even with no message layer */ }
+
+/**
+ * Total message lookup: returns the localized string when the message layer works, and the
+ * exact pre-i18n English literal otherwise. Never throws, never returns a bare dictionary key.
+ *
+ * Three separate failures collapse to the same fallback: the module never loaded (translate
+ * stays null), t() throws at call time, and t() echoes the key back because no dictionary was
+ * found beside it (hooks/locales/ missing). A raw key is not a message, so the last one counts
+ * as a failure too even though nothing threw.
+ *
+ * @param {string} key dictionary key
+ * @param {string} fallback the English literal this site emitted before i18n existed
+ * @param {Record<string, unknown>} [params] placeholder values, same set as the fallback uses
+ * @returns {string}
+ */
+const safeT = (key, fallback, params) => {
+  try {
+    if (!translate) return fallback;
+    const rendered = translate(key, params);
+    return typeof rendered === 'string' && rendered !== key ? rendered : fallback;
+  } catch { return fallback; }
+};
 
 /**
  * Regex for version-tag pushes.
@@ -172,7 +198,11 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
         + 'affirmative (go / ok / 好 / yes) run: '
         + `node ~/.ownmind/hooks/lib/approve-action.js --verbal ${guard.id} — then retry the command. `
         + 'Do NOT run that command otherwise, and do not state or imply the user approved unless they actually did.',
-      userLine: t('gate.ask.verbal', { title: guard.title }),
+      userLine: safeT(
+        'gate.ask.verbal',
+        `[OwnMind] ⛔ "${guard.title}" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.`,
+        { title: guard.title }
+      ),
       approval_mode: 'verbal',
     };
   }
@@ -190,7 +220,17 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
     reason: `[OwnMind gate] "${guard.title}" needs the user's explicit go for this action. `
       + 'Ask the user for the 6-digit approval code shown on their screen, then run: '
       + `node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> — and retry the command.`,
-    userLine: t(kindLabel === 'limit' ? 'gate.ask.code.limit' : 'gate.ask.code.action', { title: guard.title, code }),
+    userLine: kindLabel === 'limit'
+      ? safeT(
+        'gate.ask.code.limit',
+        `[OwnMind] ⛔ "${guard.title}" wants your approval for: a command blocked 3 times in a row. Approval code: ${code} (paste it to the AI to allow it once)`,
+        { title: guard.title, code }
+      )
+      : safeT(
+        'gate.ask.code.action',
+        `[OwnMind] ⛔ "${guard.title}" wants your approval for: this action. Approval code: ${code} (paste it to the AI to allow it once)`,
+        { title: guard.title, code }
+      ),
     code_issued: true,
   };
 }
@@ -332,7 +372,11 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
           return {
             action: 'block', kind: 'read', guardId: guard.id,
             reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
-            userLine: t('gate.read.blocked', { title: guard.title }),
+            userLine: safeT(
+              'gate.read.blocked',
+              `[OwnMind] ⛔ blocked until the rule "${guard.title}" is read (auto-unblocks on retry)`,
+              { title: guard.title }
+            ),
             ...(globalDegraded && { degraded: 'no-receipts' }),
           };
         }
@@ -377,7 +421,7 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
         return {
           action: 'block', kind: 'check', guardId: guard.id,
           reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
-          userLine: t('gate.check.blocked', { reason: c.reason }),
+          userLine: safeT('gate.check.blocked', `[OwnMind] ⛔ blocked: ${c.reason}`, { reason: c.reason }),
           ...(globalDegraded && { degraded: 'no-receipts' }),
         };
       }

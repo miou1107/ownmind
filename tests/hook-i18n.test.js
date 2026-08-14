@@ -117,6 +117,82 @@ test('t() leaves unknown/unsupplied placeholders as-is', () => {
   assert.equal(out, '[OwnMind] ⛔ blocked: {reason}');
 });
 
+test('t() substitutes only own properties — inherited names are left as literal placeholders', async () => {
+  // `name in params` walks the prototype chain, so every string ever passed through t() could
+  // render an inherited property into a user notice: `{constructor}` becomes a function body,
+  // `{toString}` likewise. Own-property lookup is the only correct test.
+  const mod = await import(stageI18nForJaFixture(JSON.stringify({
+    'gate.failopen': 'a {constructor} b {toString} c {hasOwnProperty} d {reason}',
+  })));
+  process.env.OWNMIND_LOCALE_FORCE = 'ja';
+  assert.equal(
+    mod.t('gate.failopen', { reason: 'supplied' }),
+    'a {constructor} b {toString} c {hasOwnProperty} d supplied'
+  );
+});
+
+test('t() substitutes only own properties — a custom prototype does not leak into the notice', async () => {
+  const mod = await import(stageI18nForJaFixture(JSON.stringify({ 'gate.failopen': '{own}/{inherited}' })));
+  process.env.OWNMIND_LOCALE_FORCE = 'ja';
+  const params = Object.create({ inherited: 'leaked' });
+  params.own = 'kept';
+  assert.equal(mod.t('gate.failopen', params), 'kept/{inherited}');
+});
+
+test('t() resolves the locale once per process instead of re-reading the account cache on every call', () => {
+  // getLocale() reads and JSON.parses <home>/.ownmind/cache/memories.json on every call —
+  // measured at 0.296 ms against a real 57 KB cache, on the PreToolUse path whose whole budget
+  // is ~1.5 ms and where one gate run emits several notices. Resolving once also removes the
+  // window where a concurrent locale rewrite renders one hook run in two languages.
+  const home = tempDir('hook-i18n-memo-');
+  fs.mkdirSync(path.join(home, '.ownmind', 'cache'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.ownmind', 'cache', 'memories.json'),
+    JSON.stringify({ data: { locale: 'zh' } })
+  );
+  const savedHome = process.env.HOME;
+  const savedProfile = process.env.USERPROFILE;
+  delete process.env.OWNMIND_LOCALE_FORCE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    resetI18nCacheForTests();
+    assert.equal(t('gate.failopen'), '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關');
+
+    // The only thing that could have produced that answer is now gone. A resolved-once locale
+    // keeps answering zh; a per-call re-read falls back to en.
+    fs.rmSync(path.join(home, '.ownmind'), { recursive: true, force: true });
+    assert.equal(
+      t('gate.failopen'),
+      '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關',
+      'the locale must be resolved once per process, not re-read on every t() call'
+    );
+
+    // ...and the memo is resettable, so it can never leak from one test into the next.
+    resetI18nCacheForTests();
+    assert.equal(
+      t('gate.failopen'),
+      '[OwnMind] the action gate could not run - this command was NOT gated',
+      'resetI18nCacheForTests() must clear the memoized locale alongside the dictionary cache'
+    );
+  } finally {
+    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
+    if (savedProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = savedProfile;
+  }
+});
+
+test('OWNMIND_LOCALE_FORCE still takes effect when flipped between t() calls in one process', () => {
+  // The test seam is what every other suite in this repo pins its locale with, several of them
+  // flipping it in beforeEach inside a single process. Memoizing the resolved locale must never
+  // reach it: the forced value is read fresh on every call.
+  process.env.OWNMIND_LOCALE_FORCE = 'en';
+  assert.equal(t('gate.failopen'), '[OwnMind] the action gate could not run - this command was NOT gated');
+  process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  assert.equal(t('gate.failopen'), '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關');
+  process.env.OWNMIND_LOCALE_FORCE = 'en';
+  assert.equal(t('gate.failopen'), '[OwnMind] the action gate could not run - this command was NOT gated');
+});
+
 test('t() does not throw when the resolved dictionary file is corrupted', async () => {
   const mod = await import(stageI18nForJaFixture('{ this is not valid json'));
   process.env.OWNMIND_LOCALE_FORCE = 'ja';

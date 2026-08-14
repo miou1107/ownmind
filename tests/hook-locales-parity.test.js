@@ -41,6 +41,7 @@ function loadLocale(name) {
 const zh = loadLocale('zh');
 const en = loadLocale('en');
 const ja = loadLocale('ja');
+const enOverride = loadLocale('en.override');
 
 function dictKeys(dict) {
   return Object.keys(dict).filter((k) => !k.startsWith('_'));
@@ -185,6 +186,33 @@ describe('hooks/locales dictionary parity (zh / en / ja)', () => {
         `OTHER_PROTOCOL_LITERALS lists "${literal}" but no zh.json value contains it, so the `
           + 'parity assertion for it never runs against anything — remove it from the list or '
           + 'add the missing source string'
+      );
+    }
+  });
+
+  // hooks/locales/en.override.json is what stops the route-C translate pipeline from sending
+  // the hand-authored English through the LLM: the pipeline consults the override before it
+  // translates, so a key present there is pinned and a key missing from it is not. Its own
+  // _comment claims every key stays in lockstep with en.json, but nothing enforced that claim —
+  // so editing en.json alone (adding a key, or rewording an existing one) would silently
+  // un-pin that string and let the next `npm run translate:hooks` regenerate the gate's own
+  // English block notices through a model. These are the exact literals other suites pin
+  // byte-for-byte; drift here is how they would start moving.
+  it('en.override.json pins every en.json key, with identical values (no drift)', () => {
+    assert.ok(enOverride, 'hooks/locales/en.override.json must exist');
+    const enKeys = dictKeys(en);
+    const overrideKeys = dictKeys(enOverride);
+    assert.deepEqual(
+      [...overrideKeys].sort(), [...enKeys].sort(),
+      'en.override.json and en.json must carry the same key set — a key in en.json but not in '
+        + 'the override is unpinned and will be re-translated by the LLM; a key only in the '
+        + 'override pins a string that no longer exists'
+    );
+    for (const key of enKeys) {
+      assert.equal(
+        enOverride[key], en[key],
+        `en.override.json "${key}" has drifted from en.json — the override is what the translate `
+          + 'pipeline actually emits, so the two must be byte-identical'
       );
     }
   });
