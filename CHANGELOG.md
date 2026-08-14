@@ -35,6 +35,19 @@ JSON 檔，內含規範 ID、規範雜湊與 HMAC 簽章（簽過 `sessionId:rul
 只在徹底通過時呼叫。sessionId 驗證以防路徑遍歷。approveAction 檢核同意碼雜湊後
 刪檔，一次性消耗。
 
+**Amendment 2 修正**（adversarial review 發現的設計漏洞）：
+
+- C1：決策日誌永不記錄同意碼或 userLine（機器看不到的 systemMessage 內容）；改記
+  `code_issued: true` 旗標。
+- C2：回執子系統故障時（遺失密鑰、nonce 或狀態目錄不可寫）不拋例外、不靜默失敗放開；
+  跳過讀取閘門但設 `degraded: 'no-receipts'` 旗標、檢查式仍然執行（無狀態）、ask_first
+  仍然擋（fail closed）。
+- I1：limit 核發的同意碼在消耗時也要清除違規計數器，讓下次重試重新運行檢查。
+- I2：approve 只在整個指令徹底通過時消耗；任何其他閘門擋下就不消耗批准標記，下一次重試
+  時批准仍然有效。
+- I3：DOCKER_BUILD 模式已採納（共用分類器遺漏裸 `docker build`，它也是部署）。
+- I4：approveAction 與 evaluateGate 一致應用 sessionId 清理、guardId 須為正整數。
+
 這一版只把資料送到位。真正在動作前擋下指令的用戶端閘門，在後續版本接上。
 
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
