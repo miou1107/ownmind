@@ -159,6 +159,26 @@ present, install marker absent): a gate-blockable command must yield exactly one
 object — the block — and a non-blocked command must still let the single upgrade advisory
 through.
 
+**Gate message i18n, task 1 of 7 — dictionaries + total-function `t()` helper**: the
+action-gate and reply-lint user notices are currently English-only regardless of who is
+reading them. This lays the foundation, without wiring it up yet. New `hooks/lib/i18n.js`
+exports `t(key, params?)` and `resetI18nCacheForTests()`; `t()` is a total function — a
+missing key, a missing dictionary file, or a corrupted dictionary file never throws, it
+falls back per-key: resolved locale → `en` → the key string itself. Placeholders use
+`{name}` syntax; a placeholder the caller didn't supply is left untouched in the output.
+New `hooks/lib/locale.js` is a stub for now: `getLocale({homeDir?}) → 'zh'|'en'|'ja'`
+only honors the `OWNMIND_LOCALE_FORCE` test seam and otherwise always returns `'en'`; a
+later task replaces the body with real resolution but keeps this exact signature, with
+the env-var check staying first. New `hooks/locales/en.json` and `hooks/locales/zh.json`
+hold the eight `audience: "user"` action-gate and reply-lint strings from the inventory
+at `docs/superpowers/specs/2026-08-14-gate-i18n/string-inventory.json` — the English
+values are the current literals verbatim, the Chinese values are hand-authored. No
+call site uses `t()` yet; `action-gate.js` and friends still emit the English literals
+directly. `tests/hook-i18n.test.js` covers per-locale lookup, per-key fallback, the
+missing-key-everywhere fallback, placeholder substitution, and the missing/corrupted
+dictionary cases (using the not-yet-shipped `ja` locale as disposable scratch space, so
+no real dictionary is ever touched).
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓
