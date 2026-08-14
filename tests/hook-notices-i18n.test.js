@@ -633,7 +633,13 @@ test('zh: tty-echo merged-banner header renders through t() (identical to en —
     const r = runTtyEchoHook(ttyPayload('Memory search: found 3'), { OWNMIND_LOCALE_FORCE: 'zh' });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /^\[OwnMind v1\.2\.3\]\n {2}Memory search: found 3$/);
+    // Baseline re-pinned when origin/main (v1.26.173) merged in: formatBlock now emits ONE
+    // line per trigger, so the non-i18n output this case measures against is the single-line
+    // shape rather than "header + indented item". The assertion is unchanged in kind — an
+    // exact match on the whole rendered systemMessage — so it still proves both that zh
+    // renders byte-identically to en (the header carries no linguistic content) and that
+    // {version} was interpolated.
+    assert.match(parsed.systemMessage, /^\[OwnMind v1\.2\.3\] Memory search: found 3$/);
   } finally { fs.rmSync(ttyHome, { recursive: true, force: true }); }
 });
 
@@ -643,7 +649,10 @@ test('en: tty-echo merged-banner header is byte-identical to the pre-change lite
     const r = runTtyEchoHook(ttyPayload('Memory search: found 3'), { OWNMIND_LOCALE_FORCE: 'en' });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.equal(parsed.systemMessage, '[OwnMind v1.2.3]\n  Memory search: found 3');
+    // "pre-change" means before the i18n change, not before v1.26.173: the literal this pins
+    // is whatever formatBlock would emit with no t() in the path, and v1.26.173 moved that to
+    // one line. Re-pinned to the post-v1.26.173 literal for exactly that reason.
+    assert.equal(parsed.systemMessage, '[OwnMind v1.2.3] Memory search: found 3');
   } finally { fs.rmSync(ttyHome, { recursive: true, force: true }); }
 });
 
@@ -667,6 +676,10 @@ test('tty-echo hook: an unloadable i18n.js falls back to the literal header and 
     assert.equal(r.status, 0, `must exit 0 even with a broken i18n module; stderr=${r.stderr.slice(0, 500)}`);
     let parsed;
     assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); }, `stdout must be valid JSON, got:\n${r.stdout}`);
-    assert.equal(parsed.systemMessage, '[OwnMind v1.2.3]\n  Memory search: found 3');
+    // Re-pinned to v1.26.173's single-line shape. What this case is actually about is
+    // unchanged: with hooks/lib/i18n.js unloadable and the locale forced to zh, the hook must
+    // still exit 0, still emit valid JSON, and still render the English literal header rather
+    // than a key, a crash, or an empty line.
+    assert.equal(parsed.systemMessage, '[OwnMind v1.2.3] Memory search: found 3');
   } finally { fs.rmSync(ttyHome, { recursive: true, force: true }); }
 });

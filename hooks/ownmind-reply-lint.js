@@ -72,6 +72,12 @@ import { execSync } from 'node:child_process';
 // has succeeded, because main() exits on failure before any event is spooled.
 let localDateOnly = null;
 
+// v1.26.173: assigned from shared/update-banner.js in that same import. Module-level because
+// exitWith is where the drain has to happen — the queue may only be cleared once the notice
+// has actually gone out on stdout.
+let clearDeliveredUpdateNotices = null;
+let deliveredUpdateNoticeCount = 0;
+
 const NO_NETWORK = process.env.OWNMIND_REPLY_LINT_NO_NETWORK === '1';
 const DISABLED = process.env.OWNMIND_REPLY_LINT_DISABLE === '1';
 const API_URL_OVERRIDE = process.env.OWNMIND_REPLY_LINT_API_URL || '';
@@ -225,6 +231,7 @@ async function main() {
   let detectPrivacyLeak;
   let writeLintEvent, extractViolatedWords;
   let isOff, incrementTickCount;
+  let readUpdateNotices;
   // v1.21.0: validator registry (rule-driven lint).
   let findValidator, extractEnabledValidators;
   try {
@@ -252,6 +259,7 @@ async function main() {
       extractViolatedWords,
     } = await import('./lib/lint-event-logger.js'));
     ({ isOff, incrementTickCount } = await import('../shared/session-off-state.js'));
+    ({ readUpdateNotices, clearDeliveredUpdateNotices } = await import('../shared/update-banner.js'));
   } catch {
     process.exit(0); return;
   }
@@ -262,6 +270,23 @@ async function main() {
     payload = safeParse(input);
   } catch { process.exit(0); return; }
   if (!payload) { process.exit(0); return; }
+
+  // v1.26.173 — the background updater's outcome, which has no turn of its own.
+  //
+  // The update runs in a detached child that outlives the session that started it, so there
+  // is no reply left to attach the result to. It waits in logs/update-pending.jsonl and is
+  // delivered here, on the first turn that reaches exitWith(0). Queued before anything below
+  // can exit early, so a failed update is not held hostage by whatever the lint decides about
+  // this particular reply; the queue is only drained once the bytes are actually on stdout.
+  try {
+    const { blocks, lineCount } = readUpdateNotices();
+    if (blocks.length) {
+      for (const block of blocks) queueUserNotice(block);
+      // Every line read is consumed, including ones that parsed to nothing — leaving an
+      // unshowable line behind would re-read it on every turn for the life of the machine.
+      deliveredUpdateNoticeCount = lineCount;
+    }
+  } catch { /* a queue that cannot be read must not cost the reply its lint */ }
 
   // === Standard enforcement ===
   //
@@ -873,6 +898,15 @@ function exitWith(code) {
   if (code === 0 && pendingUserNotices.length) {
     try {
       process.stdout.write(JSON.stringify({ systemMessage: pendingUserNotices.join('\n') }));
+      // v1.26.173 — the update queue is drained here and nowhere else, because here is the
+      // only point at which the notice has demonstrably left the process. An exit down any
+      // other path leaves the record in place and the next turn shows it instead: an update
+      // outcome shown twice is a wart, an update failure shown never is the bug this fixes.
+      if (deliveredUpdateNoticeCount > 0 && clearDeliveredUpdateNotices) {
+        try {
+          clearDeliveredUpdateNotices({ deliveredCount: deliveredUpdateNoticeCount });
+        } catch { /* it stays queued and goes out next turn */ }
+      }
     } catch { /* a notice that cannot be emitted is already in the spool */ }
   }
   process.exit(code);

@@ -17,6 +17,13 @@
  * SessionStart hook. That hook used to spawn this file detached with stderr ignored, which
  * discarded every block it wrote while the spool was truncated anyway; it now prints the
  * blocks in-process. This CLI stays for the shell hook, which cannot parse jsonl itself.
+ *
+ * v1.26.171 removed both SessionStart flushes, so NO HOOK RUNS THIS ANY MORE. Notices are
+ * delivered on the turn they happen via systemMessage, and banner-pending.jsonl became an
+ * append-only audit record. This file is now a hand tool: run it against the spool when you
+ * want to read what was shown. It is not a delivery path, and nothing should make it one
+ * again — a notice that needs delivering needs a queue of its own, the way the background
+ * update's outcome got logs/update-pending.jsonl in v1.26.173.
  */
 
 'use strict';
