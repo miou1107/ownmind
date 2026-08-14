@@ -151,7 +151,7 @@ describe('v1.19.7 scenario 16 — after 3 consecutive blocks, the 4th downgrades
     r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0, `attempt 7 should downgrade to a non-blocking exit; stderr=${r.stderr}`);
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /consecutive blocks/,
+    assert.match(parsed.systemMessage, /went back for a rewrite 3 times and still is not right/,
       'the downgrade notice must ride systemMessage so the user actually sees it');
     counter = JSON.parse(fs.readFileSync(counterPath, 'utf8'));
     assert.equal(counter[sessionId].block_count, 3, 'downgrade must not increment block_count');

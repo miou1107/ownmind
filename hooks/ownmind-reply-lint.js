@@ -211,7 +211,7 @@ async function runComplianceOnce(payload, transcript) {
       ...step,
       banner: await lintNotice(
         'lint.recovered',
-        '[OwnMind] compliance checks are running again - this turn was checked',
+        "[OwnMind] 🟢 OwnMind checked the AI's reply against your rules (checking had been down, it is back).",
       ),
     };
   }
@@ -336,8 +336,8 @@ async function main() {
         const reminder = await lintNotice(
           'lint.offReminder',
           [
-            `[OwnMind v${version}] ⚠️ OwnMind is currently disabled (${tick} AI responses skipped lint)`,
-            '  → Re-enable with /ownmind-on, or open a new conversation to restore',
+            `[OwnMind v${version}] 🔴 OwnMind is off, and ${tick} of the AI's replies have gone unchecked.`,
+            '  → To turn it back on: type /ownmind-on, or just start a new conversation.',
           ].join('\n'),
           { version, tick },
         );
@@ -701,26 +701,26 @@ async function formatBanner(violations, getClientVersion, opts = {}) {
   if (downgraded) {
     header = await lintNotice(
       'lint.banner.header.downgraded',
-      `[OwnMind v${version}] Reply quality lint ⚠️ ${blockCount} consecutive blocks reached — downgrading to warning (please review manually to avoid a loop)`,
+      `[OwnMind v${version}] 🟡 The AI's reply went back for a rewrite ${blockCount} times and still is not right, so OwnMind has stopped sending it back and is showing it to you. Your call whether to accept it.`,
       { version, blockCount },
     );
   } else if (blocked) {
     header = await lintNotice(
       'lint.banner.header.blocked',
-      `[OwnMind v${version}] Reply quality lint ⚠️ Block triggered — Claude will receive a rewrite directive (session count ${count})`,
+      `[OwnMind v${version}] 🟢 The AI's reply breaks your rules, so OwnMind has told the AI to rewrite it (${count} so far in this conversation).`,
       { version, count },
     );
   } else if (mode === 'block') {
     const remaining = Math.max(0, threshold - count);
     header = await lintNotice(
       'lint.banner.header.blockMode',
-      `[OwnMind v${version}] Reply quality lint (block mode, session count ${count}, ${remaining} more before block)`,
+      `[OwnMind v${version}] 🟢 OwnMind found something in the AI's reply that breaks your rules (${count} so far in this conversation). ${remaining} more and OwnMind will tell the AI to rewrite it.`,
       { version, count, remaining },
     );
   } else {
     header = await lintNotice(
       'lint.banner.header.otherMode',
-      `[OwnMind v${version}] Reply quality lint (${mode} mode, session count ${count})`,
+      `[OwnMind v${version}] 🟢 OwnMind found something in the AI's reply that breaks your rules (${count} so far in this conversation). For now OwnMind only warns; it does not ask for a rewrite.`,
       { version, mode, count },
     );
   }
@@ -729,7 +729,7 @@ async function formatBanner(violations, getClientVersion, opts = {}) {
   if (modeInvalid) {
     out.push(await lintNotice(
       'lint.banner.modeInvalid',
-      `  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' is unrecognized — falling back to warn`,
+      `  🔴 OwnMind does not recognise the reply-check setting '${rawMode}', so this run only warns and asks for no rewrite.`,
       { rawMode },
     ));
   }
@@ -737,7 +737,7 @@ async function formatBanner(violations, getClientVersion, opts = {}) {
   for (const v of violations) {
     out.push(await lintNotice(
       'lint.banner.violationLine',
-      `  ⚠️  ${v.rule}: ${v.message}`,
+      `  ・${v.rule}: ${v.message}`,
       { rule: v.rule, message: v.message },
     ));
   }

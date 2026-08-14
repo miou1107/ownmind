@@ -9,7 +9,7 @@ import {
 
 // Task 4 (hook message i18n) wired runComplianceStep()'s banners through t(), which resolves
 // locale from this real process's env/home unless pinned. This suite's banner assertions
-// (e.g. /off for this session/, /never synced/) are literal-English regexes, so the locale is
+// (e.g. /only warns/, /has not downloaded your rules yet/) are literal-English regexes, so the locale is
 // pinned to 'en' for the whole file — same pattern as tests/action-gate.test.js (Task 3).
 const ORIGINAL_FORCE = process.env.OWNMIND_LOCALE_FORCE;
 beforeEach(() => { process.env.OWNMIND_LOCALE_FORCE = 'en'; });
@@ -97,7 +97,7 @@ test('nothing in the cached rules bears on this turn, so no request is made', as
 test('a disabled session says so rather than passing quietly', async () => {
   const result = await runComplianceStep({ ...BASE, disabled: true });
   assert.equal(result.action, 'notice');
-  assert.match(result.banner, /off for this session/);
+  assert.match(result.banner, /only warns/);
 });
 
 test('warn mode also says so', async () => {
@@ -110,8 +110,8 @@ test('a machine that never synced says the turn was not checked', async () => {
   // applies", and the difference is whether this machine enforces anything at all.
   const result = await runComplianceStep({ ...BASE, bundle: { present: false, selectors: [] } });
   assert.equal(result.action, 'notice');
-  assert.match(result.banner, /never synced/);
-  assert.match(result.banner, /NOT checked/);
+  assert.match(result.banner, /has not downloaded your rules yet/);
+  assert.match(result.banner, /did not check the AI's reply/);
 });
 
 test('a failed check produces a visible notice, never silence', async () => {
@@ -120,8 +120,8 @@ test('a failed check produces a visible notice, never silence', async () => {
     requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
   });
   assert.equal(result.action, 'notice');
-  assert.match(result.banner, /timeout/);
-  assert.match(result.banner, /NOT checked/);
+  assert.match(result.banner, /could not reach its server/);
+  assert.match(result.banner, /did not check the AI's reply/);
 });
 
 test('a clean verdict is silent', async () => {
@@ -139,15 +139,15 @@ test('a server-side skip says enforcement is off, never silence', async () => {
     requestCheckImpl: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
   });
   assert.equal(result.action, 'notice');
-  assert.match(result.banner, /NOT checked/);
+  assert.match(result.banner, /did not check the AI's reply/);
   assert.match(result.banner, /switched off/);
 });
 
 test('a machine with no credentials says so, never silence', async () => {
   const result = await runComplianceStep({ ...BASE, apiKey: '', apiUrl: '' });
   assert.equal(result.action, 'notice');
-  assert.match(result.banner, /NOT checked/);
-  assert.match(result.banner, /credential/i);
+  assert.match(result.banner, /did not check the AI's reply/);
+  assert.match(result.banner, /not signed in to OwnMind/);
 });
 
 test('the blocking stderr carries the check id for 誤判 reporting', async () => {

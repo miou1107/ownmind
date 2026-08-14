@@ -26,7 +26,7 @@ const SH_HOOK = path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh');
 const JS_HOOK = path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.js');
 
 const DEGRADED_LINE =
-  '[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced';
+  '[OwnMind] 🟡 OwnMind could not confirm whether the AI had read your rules this time, but it is still blocking the AI\'s commands against them.';
 
 /**
  * The Task 1 guard shape, pattern-scoped (plan Amendment 1). The shared classifier calls
@@ -106,7 +106,7 @@ test('the first deploy attempt is read-blocked with the full decision envelope',
   const out = JSON.parse(r.stdout);
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /docker compose build --no-cache/, 'the rule text rides the model-facing reason');
-  assert.match(out.systemMessage, /blocked until the rule/, 'the user sees why');
+  assert.match(out.systemMessage, /tried to act without reading this rule first/, 'the user sees why');
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreToolUse');
   assert.equal(out.hookSpecificOutput.additionalContext, '');
 });
@@ -126,7 +126,7 @@ test('a plain docker build is check-blocked once the rule is read', () => {
   const out = JSON.parse(second.stdout);
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /use docker compose build/, 'the violated check names the fix');
-  assert.match(out.systemMessage, /blocked/);
+  assert.match(out.systemMessage, /does not meet your rules/);
 });
 
 test('the everyday pack crosses the gate untouched', () => {
@@ -211,7 +211,7 @@ test('the .sh hook forwards a gate block and stops there', () => {
   assert.equal(first.status, 0);
   const out = JSON.parse(first.stdout);
   assert.equal(out.decision, 'block', 'the .sh echoes the CLI decision verbatim');
-  assert.match(out.systemMessage, /blocked until the rule/);
+  assert.match(out.systemMessage, /tried to act without reading this rule first/);
 
   // The retry is allowed by the gate; whatever the reminder flow says next, it must not block.
   const retry = runSh('docker compose build --no-cache api');
@@ -280,7 +280,7 @@ test('a gate block with the upgrade armed emits exactly ONE JSON object — the 
     `stdout must be exactly one JSON object, got:\n${r.stdout}`);
   assert.equal(parsed.decision, 'block',
     'the single object must be the gate block, not the upgrade advisory');
-  assert.match(parsed.systemMessage, /blocked until the rule/, 'the user sees why');
+  assert.match(parsed.systemMessage, /tried to act without reading this rule first/, 'the user sees why');
 });
 
 test('a non-blocked command with the upgrade armed still lets the advisory through (one object)', () => {
@@ -318,7 +318,7 @@ test('the .js twin blocks and allows the same way', () => {
   const out = JSON.parse(first.stdout);
   assert.equal(out.decision, 'block');
   assert.match(out.reason, /docker compose build --no-cache/);
-  assert.match(out.systemMessage, /blocked until the rule/);
+  assert.match(out.systemMessage, /tried to act without reading this rule first/);
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreToolUse');
 
   const retry = run();

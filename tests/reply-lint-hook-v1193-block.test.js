@@ -31,7 +31,7 @@ function runHook(input, env = {}) {
       USERPROFILE: tmpHome,
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       // Task 4 (hook message i18n) wired the mode-invalid line through t(); this suite
-      // asserts /fallback|falling back/ (literal English), so the locale is pinned defensively.
+      // asserts /does not recognise the reply-check setting/ (literal English), so the locale is pinned defensively.
       OWNMIND_LOCALE_FORCE: 'en',
       ...env,
     },
@@ -226,7 +226,7 @@ describe('v1.19.3 scenario 6 — unknown MODE value fails open to warn', () => {
     assert.ok(fs.existsSync(pendingFile), 'violation should write a banner');
     const banner = fs.readFileSync(pendingFile, 'utf8');
     assert.match(banner, /foo/, 'banner should contain the unknown MODE value');
-    assert.match(banner, /fallback|falling back/, 'banner should mention the fallback');
+    assert.match(banner, /does not recognise the reply-check setting/, 'banner should mention the fallback');
   });
 });
 

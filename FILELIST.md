@@ -1,5 +1,68 @@
 # OwnMind 檔案結構
 
+## v1.30.1 修改（「回覆誤判 770」真的會記下來 ＋ 24 句使用者訊息全面重寫 ＋ 被拒絕時要說原因）
+
+新增（誤判回報接上線）：
+```
+tests/mcp-check-feedback-tool.test.js           — 工具註冊與處理邏輯的來源層斷言，加上真資料庫
+                                                   驗證：回報真的寫進 user_feedback、無效判定
+                                                   被擋、別人回報不會蓋掉你的紀錄。
+```
+
+修改（誤判回報接上線）：
+```
+mcp/index.js                                    — 新增 ownmind_report_check_feedback：把使用者
+                                                   回的「誤判 770」送到 POST /api/compliance/
+                                                   feedback。那個端點在此之前只有測試在呼叫。
+                                                   失敗不排隊重送，直接說沒進去。
+hooks/lib/compliance-step.js                    — 被擋時 AI 讀到的指示改成寫明「不呼叫那個工具，
+                                                   使用者講的話就不會被記下來」。
+```
+
+## v1.30.1 修改（24 句使用者訊息全面重寫 ＋ 被拒絕的時候至少要說是為什麼）
+
+修改（使用者訊息全面重寫）：
+```
+hooks/locales/zh.json / en.json / ja.json       — 24 句全部重寫：主詞改成「你」或「AI」、動作
+                                                   指名是誰做的、講清楚要不要做什麼、拿掉行話
+                                                   跟內部代號；⛔ 換成 🟢🟡🔴 狀態燈。
+hooks/locales/en.override.json                  — 24 把全部釘住，翻譯流程不准改寫英文。
+hooks/locales/ja.override.json                  — 同上（日文是手寫的，這台沒有翻譯金鑰；
+                                                   意思有測試釘住，通順度還沒母語者看過）。
+hooks/locales/glossary.json                     — 協定字面值換成三顆燈；保留否定句釘選。
+hooks/lib/action-gate.js                        — 五處寫死的英文備援跟著改 —— 字典載不進來時
+                                                   出的就是它，對不上時平常完全看不出來。
+hooks/lib/compliance-step.js                    — 同上；checkFailed 不再把伺服器的原始原因
+                                                   （含 unknown）印給使用者看。
+hooks/ownmind-reply-lint.js                     — 六處 banner 備援跟著改。
+CLAUDE.md                                       — 新增「使用者看得到的每一句話怎麼寫」：四道
+                                                   機械檢查、三顆燈的判準、改一句要連動的四個
+                                                   地方。
+tests/（11 個檔）                                 — 約 40 處釘住舊字串的斷言與比對式改基準。
+```
+
+新增：
+```
+tests/real-db-lock.test.js                      — 資料庫互斥鎖的四項測試（活著的持有者不准被
+                                                   搶、死掉的要被接手、拿到鎖後失敗要放掉、
+                                                   被搶走的人不准刪掉別人的鎖）。上一版這個
+                                                   鎖完全沒有測試。
+```
+
+修改：
+```
+hooks/lib/approve-action.js                     — 拒絕時把理由印到錯誤輸出（stdout 仍只印
+                                                   REJECTED）；不合法的 --session 值直接擋，
+                                                   不再往下被改成 unknown；--session 沒接值
+                                                   不再悄悄退回指標檔。
+tests/helpers/real-db.js                        — 鎖：先判生死再判年齡、釋放前確認鎖還是自己
+                                                   的、拿到鎖之後失敗一律放掉。
+tests/action-gate.test.js                       — 換掉一項宣稱在驗「不合法代號被拒絕」但其實
+                                                   永遠是綠的斷言；補malformed --session 案例。
+package.json / README* / docs/README*           — 1.26.174 → 1.26.175
+CHANGELOG.md / FILELIST.md                      — v1.30.1 條目
+```
+
 ## v1.26.174 修改（開兩個視窗，閘門就永遠點不了頭）
 
 修改：

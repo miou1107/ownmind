@@ -59,7 +59,7 @@ describe('parsePendingBanners', () => {
   it('keeps a multi-line block intact', () => {
     // A real banner is several lines: version header, the violation, the tip. Splitting one
     // into pieces would be as unreadable as losing it.
-    const block = '[OwnMind v1.26.132] Reply quality lint\n  ⚠️  lint_language_mixed_ratio: 67.3%';
+    const block = "[OwnMind v1.26.132] 🟢 OwnMind found something in the AI's reply that breaks your rules\n  ・lint_language_mixed_ratio: 67.3%";
     assert.deepEqual(parsePendingBanners(line(block) + '\n').blocks, [block]);
   });
 

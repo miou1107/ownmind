@@ -45,20 +45,33 @@ function dictKeys(dict) {
   return Object.keys(dict).filter((k) => !k.startsWith('_'));
 }
 
-// en.json is hand-authored and spells its safety negations with an uppercase, standalone NOT
-// ("this turn was NOT checked", "this command was NOT gated") — the shouting is the point, and
-// it doubles as a machine-readable marker for "this value's whole job is to deny that a check
-// happened". `never` catches the one negation phrased without it (neverSynced's English says
-// both, but a future sibling might say only one).
-const EN_DENIES_CHECK = /\bNOT\b|\bnever\b/;
-// en.json values that assert the check DID happen. Kept separate because an affirmative notice
-// must not drift negative either — lint.recovered's whole purpose is to tell the user the gap
-// is over.
-const EN_AFFIRMS_CHECK = /\bwas checked\b/;
+// v1.30.1: the deny/affirm sets come from the KEYS, not from English prose.
+//
+// They used to be derived by scanning en.json for a standalone "NOT"/"never". That broke the
+// first time the English was reworded — which happened wholesale in v1.30.1 — in both
+// directions at once: it stopped recognising the notices it exists to protect (their new
+// English says "did not check" rather than "was NOT checked"), and it started claiming
+// `compliance.off.warnMode` was one, because that string legitimately says OwnMind "never asks
+// the AI to rewrite" — a denial about a different thing entirely. A test whose subject list is
+// assembled from adjectives in the sentence it is checking will always be one rewording away
+// from covering nothing.
+//
+// A key name is what actually carries the intent, and it survives copy edits.
+const DENY_KEY = /^compliance\.notChecked\.|^compliance\.off\.server$|^gate\.failopen$/;
+const AFFIRM_KEY = /^lint\.recovered$/;
 
-// Japanese negative predicate suffix. Covers されていません / されませんでした / ありません —
-// every polite negative form the dictionary's register would use.
-const JA_NEGATIVE_PREDICATE = /ません$/;
+// The English still has to *be* a denial. Without this the key list could quietly point at a
+// string somebody reworded into an all-clear, and every Japanese assertion below would go on
+// passing against the wrong English.
+const EN_DENIES_CHECK = /\bnot\b|\bnever\b|\bcould not\b/i;
+
+// The assertion in Japanese is carried by the predicate attached to the check itself, and it
+// need not be sentence-final: "OwnMind はこの指示をチェックできず、AI はそのまま実行しました"
+// denies the check in a mid-sentence continuative and then ends on an unrelated verb. What
+// must never appear in one of these is the completed affirmative — that is the shape the
+// v1.26.174 pipeline produced, and it says the opposite of what the notice is for.
+const JA_CHECK_DENIED = /(?:チェック|確認)(?:されていません|していません|できず|できません|できませんでした|されませんでした)/;
+const JA_CHECK_AFFIRMED = /(?:チェック|確認)(?:されました|しました)/;
 // The artifact of the incident: the bracketed negation translated as a noun value. Banned
 // outright rather than only on today's five keys — the pipeline that produced it once will
 // produce it again on the next string built the same way. Narrowing this ban should be a
@@ -66,31 +79,55 @@ const JA_NEGATIVE_PREDICATE = /ません$/;
 // effect of a regenerated dictionary.
 const QUOTED_NOUN_ARTIFACT = '「なし」';
 
-const denyKeys = dictKeys(en).filter((k) => EN_DENIES_CHECK.test(en[k]));
-const affirmKeys = dictKeys(en).filter((k) => EN_AFFIRMS_CHECK.test(en[k]) && !EN_DENIES_CHECK.test(en[k]));
+const denyKeys = dictKeys(en).filter((k) => DENY_KEY.test(k));
+const affirmKeys = dictKeys(en).filter((k) => AFFIRM_KEY.test(k));
 
 describe('hooks/locales/ja.json — the Japanese must assert what the English asserts', () => {
   // An empty derived list would make every assertion below vacuous — the same "dead assertion"
   // trap tests/hook-locales-parity.test.js guards its literal list against.
-  it('en.json still marks its safety negations with NOT/never (otherwise the checks below run against nothing)', () => {
+  it('the key lists still resolve, and the English behind them still denies a check', () => {
     assert.ok(
       denyKeys.length > 0,
-      'no en.json value contains a standalone NOT/never — either the notices were reworded '
-        + '(update EN_DENIES_CHECK to match the new marker) or the safety strings are gone'
+      'no key matched DENY_KEY — the safety notices were renamed or removed, and every '
+        + 'assertion below is now vacuous'
     );
     assert.ok(
       affirmKeys.length > 0,
-      'no en.json value contains "was checked" — the affirmative-notice assertion below is dead'
+      'no key matched AFFIRM_KEY — the affirmative-notice assertion below is dead'
     );
-  });
-
-  it('every notice whose English denies a check ends on a Japanese negative predicate', () => {
+    // The guard the prose-derived version used to provide for free: a key list is only the
+    // right subject if the English under it is still a denial.
     for (const key of denyKeys) {
       assert.match(
-        ja[key].trim(),
-        JA_NEGATIVE_PREDICATE,
-        `ja.json "${key}" must end on a negative predicate (…ません) because en.json says `
+        en[key],
+        EN_DENIES_CHECK,
+        `en.json "${key}" is on the deny list but no longer denies anything — either it was `
+          + 'reworded into an all-clear (a bug in its own right) or DENY_KEY is pointing at '
+          + `the wrong string (got: ${JSON.stringify(en[key])})`
+      );
+    }
+    for (const key of affirmKeys) {
+      assert.doesNotMatch(
+        en[key],
+        EN_DENIES_CHECK,
+        `en.json "${key}" is on the affirm list but reads as a denial (got: ${JSON.stringify(en[key])})`
+      );
+    }
+  });
+
+  it('every notice whose English denies a check denies it in Japanese too', () => {
+    for (const key of denyKeys) {
+      assert.match(
+        ja[key],
+        JA_CHECK_DENIED,
+        `ja.json "${key}" must say the check did NOT happen, because en.json says `
           + `${JSON.stringify(en[key])} — got ${JSON.stringify(ja[key])}`
+      );
+      assert.doesNotMatch(
+        ja[key],
+        JA_CHECK_AFFIRMED,
+        `ja.json "${key}" states the check completed — that is the exact v1.26.174 defect, a `
+          + `notice about an unprotected turn reading as an all-clear (got: ${JSON.stringify(ja[key])})`
       );
     }
   });
@@ -108,15 +145,17 @@ describe('hooks/locales/ja.json — the Japanese must assert what the English as
 
   it('a notice whose English says the check DID happen stays affirmative in ja', () => {
     for (const key of affirmKeys) {
-      assert.ok(
-        ja[key].includes('チェックされました'),
-        `ja.json "${key}" must state affirmatively that the turn was checked, because en.json `
+      assert.match(
+        ja[key],
+        JA_CHECK_AFFIRMED,
+        `ja.json "${key}" must state affirmatively that the reply was checked, because en.json `
           + `says ${JSON.stringify(en[key])} — got ${JSON.stringify(ja[key])}`
       );
-      assert.ok(
-        !JA_NEGATIVE_PREDICATE.test(ja[key].trim()),
-        `ja.json "${key}" ends on a negative predicate but en.json affirms the check ran `
-          + `(got: ${JSON.stringify(ja[key])})`
+      assert.doesNotMatch(
+        ja[key],
+        JA_CHECK_DENIED,
+        `ja.json "${key}" denies the check but en.json affirms it ran — this notice's whole `
+          + `purpose is to tell the user the gap is over (got: ${JSON.stringify(ja[key])})`
       );
     }
   });
@@ -142,12 +181,18 @@ describe('hooks/locales/ja.json — the Japanese must assert what the English as
   // each must actually say so rather than merely avoid the banned artifact. Deriving the
   // expectation from en.json again (not from a copy of the Japanese) keeps this from
   // degenerating into a restatement of the string it is checking.
-  it('every notice whose English denies a check names the check in ja rather than only negating something else', () => {
+  // v1.30.1: this used to require the literal チェックされていません, which is one of several
+  // correct ways to say it and forbade the rest — gate.failopen legitimately reads
+  // "…チェックできず、AI はそのまま実行しました". The property is that the negation attaches to the
+  // check, and that is now asserted by JA_CHECK_DENIED in the test above, so this one keeps
+  // only the part that assertion does not cover: the notice must name what was not done, not
+  // merely contain a negative somewhere.
+  it('a deny notice names the check itself, not just some other clause', () => {
     for (const key of denyKeys) {
       assert.ok(
-        ja[key].includes('チェックされていません'),
-        `ja.json "${key}" never says the check did not happen — a negative predicate about `
-          + `some other clause is not the same assertion as en.json's ${JSON.stringify(en[key])} `
+        /チェック|確認/.test(ja[key]),
+        `ja.json "${key}" never mentions the check at all — a negation about some other clause `
+          + `is not the same assertion as en.json's ${JSON.stringify(en[key])} `
           + `(got: ${JSON.stringify(ja[key])})`
       );
     }

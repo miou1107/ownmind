@@ -72,7 +72,8 @@ test('zh: verbal-mode ask userLine', () => {
   assert.equal(ask.kind, 'ask');
   assert.equal(
     ask.userLine,
-    '[OwnMind] ⛔ 「compose no-cache」這個動作要你點頭才放行。回「go」放行一次、回「no」取消。'
+    '[OwnMind] 🟢 AI 想做一件你規定要先問過的事，OwnMind 先擋住了：compose no-cache\n'
+    + '  你回「go」，OwnMind 就放行這一次；回「no」就不准。'
   );
 });
 
@@ -82,11 +83,12 @@ test('zh: code-mode ask userLine (action variant)', () => {
   const g = mkGuard({ id: 701, ask_first: true, checks: [], read_required: false });
   const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(ask.kind, 'ask');
-  const code = ask.userLine.match(/同意碼：(\d{6})/)?.[1];
+  const code = ask.userLine.match(/放行這一次：(\d{6})/)?.[1];
   assert.ok(code, 'a 6-digit code must be present');
   assert.equal(
     ask.userLine,
-    `[OwnMind] ⛔ 「compose no-cache」要你同意這個動作。同意碼：${code}（把它貼給 AI 就放行一次）`
+    '[OwnMind] 🟢 AI 想做一件你規定要先問過的事，OwnMind 先擋住了：compose no-cache\n'
+    + `  你把這組數字貼給 AI，OwnMind 就放行這一次：${code}`
   );
 });
 
@@ -99,11 +101,12 @@ test('zh: limit userLine (code-mode, 3-strikes variant)', () => {
   }
   const limit = evaluateGate({ command: 'docker build .', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(limit.kind, 'limit');
-  const code = limit.userLine.match(/同意碼：(\d{6})/)?.[1];
+  const code = limit.userLine.match(/放行這一次：(\d{6})/)?.[1];
   assert.ok(code, 'a 6-digit code must be present');
   assert.equal(
     limit.userLine,
-    `[OwnMind] ⛔ 「compose no-cache」連續擋了同一個指令 3 次，要你決定放不放行。同意碼：${code}（把它貼給 AI 就放行一次）`
+    '[OwnMind] 🟡 AI 同一個指令被 OwnMind 擋了 3 次還在試，卡在這條規矩上：compose no-cache\n'
+    + `  你把這組數字貼給 AI，OwnMind 就放行這一次：${code}；不想放行就不用理它。`
   );
 });
 
@@ -113,7 +116,8 @@ test('zh: read-block userLine', () => {
   const g = mkGuard({ id: 703 });
   const r = evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(r.kind, 'read');
-  assert.equal(r.userLine, '[OwnMind] ⛔ 先讀過規矩「compose no-cache」才放行（AI 讀完重試就自動解鎖）');
+  assert.equal(r.userLine, '[OwnMind] 🟢 AI 還沒讀過這條規矩就想動手，OwnMind 擋下來了：compose no-cache\n'
+    + '  AI 讀完再試一次，OwnMind 就會自動放行，你不用做什麼。');
 });
 
 test('zh: check-block userLine', () => {
@@ -123,7 +127,8 @@ test('zh: check-block userLine', () => {
   evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' }); // consume read
   const r = evaluateGate({ command: 'docker compose build api', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(r.kind, 'check');
-  assert.equal(r.userLine, '[OwnMind] ⛔ 已擋下：add --no-cache (IR-018)');
+  assert.equal(r.userLine, '[OwnMind] 🟢 AI 的指令不符合你的規矩，OwnMind 擋下來了：add --no-cache (IR-018)\n'
+    + '  AI 改對再試一次就會過，你不用做什麼。');
 });
 
 // --- en regression pin: byte-identical to the pre-change literals (string-inventory.json) ---
@@ -135,7 +140,8 @@ test('en: verbal-mode ask userLine is byte-identical to the pre-change literal',
   const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(
     ask.userLine,
-    '[OwnMind] ⛔ "compose no-cache" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.'
+    '[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: compose no-cache\n'
+    + '  Reply "go" and OwnMind allows it this once; reply "no" and it does not.'
   );
 });
 
@@ -144,11 +150,12 @@ test('en: code-mode ask userLine is byte-identical to the pre-change literal', (
   const dir = prepStateDir();
   const g = mkGuard({ id: 711, ask_first: true, checks: [], read_required: false });
   const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
-  const code = ask.userLine.match(/Approval code: (\d{6})/)?.[1];
+  const code = ask.userLine.match(/allows it this once: (\d{6})/)?.[1];
   assert.ok(code, 'a 6-digit code must be present');
   assert.equal(
     ask.userLine,
-    `[OwnMind] ⛔ "compose no-cache" wants your approval for: this action. Approval code: ${code} (paste it to the AI to allow it once)`
+    '[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: compose no-cache\n'
+    + `  Paste this number to the AI and OwnMind allows it this once: ${code}`
   );
 });
 
@@ -160,11 +167,12 @@ test('en: limit userLine is byte-identical to the pre-change literal', () => {
     evaluateGate({ command: 'docker build .', guards: [g], stateDir: dir, sessionId: 's1' });
   }
   const limit = evaluateGate({ command: 'docker build .', guards: [g], stateDir: dir, sessionId: 's1' });
-  const code = limit.userLine.match(/Approval code: (\d{6})/)?.[1];
+  const code = limit.userLine.match(/allows it this once: (\d{6})/)?.[1];
   assert.ok(code, 'a 6-digit code must be present');
   assert.equal(
     limit.userLine,
-    `[OwnMind] ⛔ "compose no-cache" wants your approval for: a command blocked 3 times in a row. Approval code: ${code} (paste it to the AI to allow it once)`
+    '[OwnMind] 🟡 OwnMind has blocked the same command from the AI 3 times and it is still trying. It is stuck on this rule: compose no-cache\n'
+    + `  Paste this number to the AI and OwnMind allows it this once: ${code}. If you would rather it stopped, just ignore this.`
   );
 });
 
@@ -173,7 +181,11 @@ test('en: read-block userLine is byte-identical to the pre-change literal', () =
   const dir = prepStateDir();
   const g = mkGuard({ id: 713 });
   const r = evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
-  assert.equal(r.userLine, '[OwnMind] ⛔ blocked until the rule "compose no-cache" is read (auto-unblocks on retry)');
+  assert.equal(
+    r.userLine,
+    '[OwnMind] 🟢 The AI tried to act without reading this rule first, so OwnMind stopped it: compose no-cache\n'
+    + '  Once the AI has read the rule and retried, OwnMind lets it through automatically. Nothing for you to do.'
+  );
 });
 
 test('en: check-block userLine is byte-identical to the pre-change literal', () => {
@@ -182,7 +194,11 @@ test('en: check-block userLine is byte-identical to the pre-change literal', () 
   const g = mkGuard({ id: 714 });
   evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
   const r = evaluateGate({ command: 'docker compose build api', guards: [g], stateDir: dir, sessionId: 's1' });
-  assert.equal(r.userLine, '[OwnMind] ⛔ blocked: add --no-cache (IR-018)');
+  assert.equal(
+    r.userLine,
+    "[OwnMind] 🟢 The AI's command does not meet your rules, so OwnMind stopped it: add --no-cache (IR-018)\n"
+    + '  Once the AI fixes the command and retries it will go through. Nothing for you to do.'
+  );
 });
 
 // --- reason (model-facing) never localizes, and gate decisions never depend on locale ---
@@ -260,7 +276,7 @@ test('CLI: the degraded notice is rendered in zh when OWNMIND_LOCALE_FORCE=zh', 
   const r = runGateCli({ home, command: 'docker compose build --no-cache api', env: { OWNMIND_LOCALE_FORCE: 'zh' } });
   assert.equal(r.status, 0);
   assert.deepEqual(JSON.parse(r.stdout), {
-    systemMessage: '[OwnMind] 閘門部分失效：讀取回執暫時無法使用，指令檢查仍照常把關',
+    systemMessage: '[OwnMind] 🟡 OwnMind 這次無法確認 AI 有沒有讀過規矩，但還是照你的規矩在擋 AI 的指令。',
   });
 });
 
@@ -279,7 +295,7 @@ test('CLI: the failopen notice is rendered in zh when OWNMIND_LOCALE_FORCE=zh, a
   const r = runGateCli({ home, command: 'docker compose build api', env: { OWNMIND_LOCALE_FORCE: 'zh' } });
   assert.equal(r.status, 0, 'the gate always exits 0, even when it fails open');
   assert.deepEqual(JSON.parse(r.stdout), {
-    systemMessage: '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關',
+    systemMessage: '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。',
   });
 });
 
@@ -304,7 +320,7 @@ test('JS hook: the failopen notice is rendered in zh when OWNMIND_LOCALE_FORCE=z
   });
   assert.equal(r.status, 0, `hook must exit 0; stderr=${r.stderr.slice(0, 300)}`);
   assert.deepEqual(JSON.parse(r.stdout), {
-    systemMessage: '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關',
+    systemMessage: '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。',
   });
 });
 
@@ -381,9 +397,12 @@ function stageGateTree({ entryRelPath, copyRelPaths = [], symlinkRelPaths = [], 
 
 // The exact English literals the gate emitted before any of this branch existed (byte-identical
 // to hooks/locales/en.json, which tests above pin against the pre-change template literals).
-const EN_READ_BLOCK = '[OwnMind] ⛔ blocked until the rule "compose no-cache" is read (auto-unblocks on retry)';
-const EN_CHECK_BLOCK = '[OwnMind] ⛔ blocked: add --no-cache (IR-018)';
-const EN_VERBAL_ASK = '[OwnMind] ⛔ "compose no-cache" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.';
+const EN_READ_BLOCK = '[OwnMind] 🟢 The AI tried to act without reading this rule first, so OwnMind stopped it: compose no-cache\n'
+  + '  Once the AI has read the rule and retried, OwnMind lets it through automatically. Nothing for you to do.';
+const EN_CHECK_BLOCK = "[OwnMind] 🟢 The AI's command does not meet your rules, so OwnMind stopped it: add --no-cache (IR-018)\n"
+  + '  Once the AI fixes the command and retries it will go through. Nothing for you to do.';
+const EN_VERBAL_ASK = '[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: compose no-cache\n'
+    + '  Reply "go" and OwnMind allows it this once; reply "no" and it does not.';
 
 /** Loads an isolated copy of action-gate.js whose `./i18n.js` is the given broken variant. */
 async function loadGateWith(variant) {
@@ -426,11 +445,12 @@ for (const [name, variant] of Object.entries(I18N_VARIANTS)) {
     const codeGuard = mkGuard({ id: 762, ask_first: true, checks: [], read_required: false });
     const codeAsk = broken.evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [codeGuard], stateDir: codeDir, sessionId: 's1' });
     assert.equal(codeAsk.action, 'block', 'the code ask must still block');
-    const code = codeAsk.userLine.match(/Approval code: (\d{6})/)?.[1];
+    const code = codeAsk.userLine.match(/allows it this once: (\d{6})/)?.[1];
     assert.ok(code, `a 6-digit code must still reach the user, got: ${JSON.stringify(codeAsk.userLine)}`);
     assert.equal(
       codeAsk.userLine,
-      `[OwnMind] ⛔ "compose no-cache" wants your approval for: this action. Approval code: ${code} (paste it to the AI to allow it once)`
+      '[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: compose no-cache\n'
+    + `  Paste this number to the AI and OwnMind allows it this once: ${code}`
     );
 
     // Belt and braces on the two failure shapes a naive fallback would produce anyway.

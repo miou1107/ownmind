@@ -75,7 +75,7 @@ function runHook({ home, transcript, stopHookActive = false, env = {} }) {
         HOME: home,
         USERPROFILE: home,
         // Task 4 (hook message i18n) wired the compliance-step "not-checked" banners through
-        // t(); this suite asserts /never synced/, /NOT checked/ (literal English), so the
+        // t(); this suite asserts /has not downloaded your rules yet/, /did not check the AI's reply/ (literal English), so the
         // locale is pinned defensively.
         OWNMIND_LOCALE_FORCE: 'en',
         ...env,
@@ -122,7 +122,7 @@ test('a machine with no enforcement cache says the turn was not checked', () => 
   });
   const result = runHook({ home, transcript });
   assert.equal(result.status, 0);
-  assert.match(bannerText(home), /never synced/);
+  assert.match(bannerText(home), /has not downloaded your rules yet/);
 });
 
 // v1.26.171 — the audit found every notice went to /dev/tty, which a hook can never open
@@ -137,10 +137,10 @@ test('a not-checked notice reaches the user as systemMessage JSON on stdout', ()
   // Parsed with the real parser, not matched with a regex: Claude Code will do the same,
   // and stdout that is almost-JSON renders nothing at all.
   const parsed = JSON.parse(result.stdout);
-  assert.match(parsed.systemMessage, /never synced/);
-  assert.match(parsed.systemMessage, /NOT checked/);
+  assert.match(parsed.systemMessage, /has not downloaded your rules yet/);
+  assert.match(parsed.systemMessage, /did not check the AI's reply/);
   // The spool remains as the audit record.
-  assert.match(bannerText(home), /never synced/);
+  assert.match(bannerText(home), /has not downloaded your rules yet/);
 });
 
 test('a quiet turn emits no stdout at all', () => {
@@ -166,7 +166,7 @@ test('the check runs even when this Stop came from a previous block', () => {
   const result = runHook({ home, transcript, stopHookActive: true });
   assert.equal(result.status, 0);
   assert.match(
-    bannerText(home), /never synced/,
+    bannerText(home), /has not downloaded your rules yet/,
     'the compliance step did not run on a rewrite - it is behind the early return',
   );
 });
@@ -193,13 +193,13 @@ test('the same not-checked state speaks once, then goes quiet, but keeps its aud
   });
   const first = runHook({ home, transcript });
   assert.equal(first.status, 0);
-  assert.match(JSON.parse(first.stdout).systemMessage, /never synced/);
+  assert.match(JSON.parse(first.stdout).systemMessage, /has not downloaded your rules yet/);
 
   const second = runHook({ home, transcript });
   assert.equal(second.status, 0);
   assert.equal(second.stdout.trim(), '', 'the unchanged state must not repeat on the very next turn');
 
   const spool = bannerText(home);
-  const mentions = spool.split('never synced').length - 1;
+  const mentions = spool.split('has not downloaded your rules yet').length - 1;
   assert.equal(mentions, 2, 'both turns must reach the audit spool, spoken or not');
 });

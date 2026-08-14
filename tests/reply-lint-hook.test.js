@@ -168,7 +168,7 @@ describe('v1.17.96 — ownmind-reply-lint.js: basic contract', () => {
     assert.equal(r.stderr, '', 'stderr must stay blank on the warn path');
     const parsed = JSON.parse(r.stdout);
     assert.deepEqual(Object.keys(parsed), ['systemMessage'], 'stdout is exactly one systemMessage object');
-    assert.match(parsed.systemMessage, /Reply quality lint/);
+    assert.match(parsed.systemMessage, /OwnMind found something in the AI's reply/);
   });
 
   it('malformed stdin JSON does not crash', () => {
@@ -255,7 +255,7 @@ describe('v1.17.96 — IR-037 / IR-036 violation detection (extracts the last as
     const record = JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop());
     const block = record.block;
     assert.match(block, /^\[OwnMind\s+v[\d.?]+\]/, 'banner must begin with the signature');
-    assert.match(block, /Reply quality lint/, 'banner must mark this as the reply-quality check');
+    assert.match(block, /OwnMind found something in the AI's reply/, 'banner must mark this as the reply-quality check');
   });
 });
 

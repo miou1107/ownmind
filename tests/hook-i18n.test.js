@@ -51,7 +51,7 @@ test('t() returns the en string for a known key when locale is en', () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
   assert.equal(
     t('gate.failopen'),
-    '[OwnMind] the action gate could not run - this command was NOT gated'
+    '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.'
   );
 });
 
@@ -59,7 +59,7 @@ test('t() returns the zh string when locale resolves to zh', () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
   assert.equal(
     t('gate.failopen'),
-    '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關'
+    '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。'
   );
 });
 
@@ -93,7 +93,7 @@ test('t() falls back per-key to en when the resolved dictionary is missing that 
   // Key absent from the staged ja.json falls back to the en string.
   assert.equal(
     mod.t('lint.recovered'),
-    '[OwnMind] compliance checks are running again - this turn was checked'
+    '[OwnMind] 🟢 OwnMind checked the AI\'s reply against your rules (checking had been down, it is back).'
   );
 });
 
@@ -107,14 +107,15 @@ test('t() substitutes {title} and {code} placeholders', () => {
   const out = t('gate.ask.code.action', { title: 'Deploy prod', code: '123456' });
   assert.equal(
     out,
-    '[OwnMind] ⛔ "Deploy prod" wants your approval for: this action. Approval code: 123456 (paste it to the AI to allow it once)'
+    '[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: Deploy prod\n'
+    + '  Paste this number to the AI and OwnMind allows it this once: 123456'
   );
 });
 
 test('t() leaves unknown/unsupplied placeholders as-is', () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
   const out = t('gate.check.blocked', {});
-  assert.equal(out, '[OwnMind] ⛔ blocked: {reason}');
+  assert.equal(out, '[OwnMind] 🟢 The AI\'s command does not meet your rules, so OwnMind stopped it: {reason}\n  Once the AI fixes the command and retries it will go through. Nothing for you to do.');
 });
 
 test('t() tolerates a null params argument — the total-function contract covers it', () => {
@@ -122,8 +123,8 @@ test('t() tolerates a null params argument — the total-function contract cover
   // check and throw. Callers rely on t() never throwing; the gate's safeT() would swallow it,
   // but a throw here still costs the caller its message for no reason.
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  assert.equal(t('gate.failopen', null), '[OwnMind] the action gate could not run - this command was NOT gated');
-  assert.equal(t('gate.check.blocked', null), '[OwnMind] ⛔ blocked: {reason}');
+  assert.equal(t('gate.failopen', null), '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.');
+  assert.equal(t('gate.check.blocked', null), '[OwnMind] 🟢 The AI\'s command does not meet your rules, so OwnMind stopped it: {reason}\n  Once the AI fixes the command and retries it will go through. Nothing for you to do.');
 });
 
 test('t() substitutes only own properties — inherited names are left as literal placeholders', async () => {
@@ -166,14 +167,14 @@ test('t() resolves the locale once per process instead of re-reading the account
   process.env.USERPROFILE = home;
   try {
     resetI18nCacheForTests();
-    assert.equal(t('gate.failopen'), '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關');
+    assert.equal(t('gate.failopen'), '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。');
 
     // The only thing that could have produced that answer is now gone. A resolved-once locale
     // keeps answering zh; a per-call re-read falls back to en.
     fs.rmSync(path.join(home, '.ownmind'), { recursive: true, force: true });
     assert.equal(
       t('gate.failopen'),
-      '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關',
+      '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。',
       'the locale must be resolved once per process, not re-read on every t() call'
     );
 
@@ -181,7 +182,7 @@ test('t() resolves the locale once per process instead of re-reading the account
     resetI18nCacheForTests();
     assert.equal(
       t('gate.failopen'),
-      '[OwnMind] the action gate could not run - this command was NOT gated',
+      '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.',
       'resetI18nCacheForTests() must clear the memoized locale alongside the dictionary cache'
     );
   } finally {
@@ -195,11 +196,11 @@ test('OWNMIND_LOCALE_FORCE still takes effect when flipped between t() calls in 
   // flipping it in beforeEach inside a single process. Memoizing the resolved locale must never
   // reach it: the forced value is read fresh on every call.
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  assert.equal(t('gate.failopen'), '[OwnMind] the action gate could not run - this command was NOT gated');
+  assert.equal(t('gate.failopen'), '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.');
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  assert.equal(t('gate.failopen'), '[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關');
+  assert.equal(t('gate.failopen'), '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。');
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  assert.equal(t('gate.failopen'), '[OwnMind] the action gate could not run - this command was NOT gated');
+  assert.equal(t('gate.failopen'), '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.');
 });
 
 test('t() does not throw when the resolved dictionary file is corrupted', async () => {
@@ -208,7 +209,7 @@ test('t() does not throw when the resolved dictionary file is corrupted', async 
   assert.doesNotThrow(() => mod.t('gate.failopen'));
   assert.equal(
     mod.t('gate.failopen'),
-    '[OwnMind] the action gate could not run - this command was NOT gated'
+    '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.'
   );
 });
 
@@ -218,7 +219,7 @@ test('t() does not throw when the resolved dictionary file is missing entirely',
   assert.doesNotThrow(() => mod.t('gate.failopen'));
   assert.equal(
     mod.t('gate.failopen'),
-    '[OwnMind] the action gate could not run - this command was NOT gated'
+    '[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.'
   );
 });
 

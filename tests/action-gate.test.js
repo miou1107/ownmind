@@ -13,7 +13,7 @@ import { ensureKey, ensureNonce } from '../hooks/lib/gate-receipt.js';
 import { tempDir } from './helpers/temp-dir.js';
 
 // Task 3 (gate-message-i18n) wired userLine through t(), which several assertions below pin
-// as literal English text (e.g. the exact VERBAL go-ahead line, /blocked until the rule/).
+// as literal English text (e.g. the exact VERBAL go-ahead line, /tried to act without reading this rule first/).
 // This suite predates locale support and is meant to pin BEHAVIOR, not translated copy, so it
 // forces the locale rather than weakening those assertions — see tests/action-gate-i18n.test.js
 // for the suite that actually exercises zh output and the en regression pin.
@@ -449,14 +449,14 @@ test('NEW-2: read-block and check-block decisions must carry userLine', () => {
   const readBlock = evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(readBlock.kind, 'read');
   assert.ok(readBlock.userLine, 'read-block must have userLine');
-  assert.match(readBlock.userLine, /blocked until the rule/);
+  assert.match(readBlock.userLine, /tried to act without reading this rule first/);
 
   // Check block should have userLine
   evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' }); // consume read
   const checkBlock = evaluateGate({ command: 'docker compose build api', guards: [g], stateDir: dir, sessionId: 's1' });
   assert.equal(checkBlock.kind, 'check');
   assert.ok(checkBlock.userLine, 'check-block must have userLine');
-  assert.match(checkBlock.userLine, /blocked/);
+  assert.match(checkBlock.userLine, /does not meet your rules/);
 
   // Verify gate-log.jsonl still doesn't contain userLine text
   const logFile = path.join(dir, 'gate-log.jsonl');
@@ -568,7 +568,8 @@ test('VERBAL: a verbal ask blocks with a go-ahead line, carries no code, and nev
   // The exact go-ahead line Amendment 3 specifies.
   assert.equal(
     ask.userLine,
-    '[OwnMind] ⛔ "compose no-cache" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.',
+    '[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: compose no-cache\n'
+    + '  Reply "go" and OwnMind allows it this once; reply "no" and it does not.',
   );
   // No secret code anywhere: verbal mode issues none.
   assert.ok(!/\d{6}/.test(ask.userLine), 'a verbal ask must carry no 6-digit code in the user line');
@@ -722,12 +723,40 @@ test('the approval CLI approves the session it is given, not whichever started l
     ['hooks/lib/approve-action.js', '--verbal', '822', '--session', 'blocked-session'], { encoding: 'utf8', env });
   assert.equal(downgrade.status, 1, '--session must not become a way around code mode');
 
-  // A traversal attempt in the id collapses to 'unknown' before it reaches a path, so it
-  // cannot reach the real ask above and cannot write outside the state dir.
-  const traversal = spawnSync('node',
-    ['hooks/lib/approve-action.js', '--verbal', '820', '--session', '../../blocked-session'],
-    { encoding: 'utf8', env });
-  assert.equal(traversal.status, 1, 'an unsafe session id must be refused, not path-joined');
+  // v1.30.1: an unsafe id is refused at the CLI, not passed down to be coerced.
+  //
+  // The first version of this assertion used '../../blocked-session' and called itself a
+  // traversal test. It was neither: path.join normalises that to <dir>/blocked-session-820.json,
+  // which does not exist, so it was green with or without any validation. Worse, the property
+  // it claimed — "an unsafe id is refused" — was false: action-gate.js *collapses* an unsafe id
+  // to the literal 'unknown', a bucket every session with no usable id shares, so a malformed
+  // --session did not fail, it landed on somebody else's record. Proven here by seeding that
+  // bucket and showing the malformed forms cannot reach it.
+  fs.writeFileSync(path.join(dir, 'gate-ask-unknown-830.json'),
+    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  for (const bad of ['../../blocked-session', 'has space', 'a/b', '', 'x\ny']) {
+    const res = spawnSync('node',
+      ['hooks/lib/approve-action.js', '--verbal', '830', '--session', bad], { encoding: 'utf8', env });
+    assert.equal(res.status, 1, `an unsafe session id must be refused: ${JSON.stringify(bad)}`);
+    assert.match(res.stdout, /REJECTED/);
+  }
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'gate-ask-unknown-830.json'), 'utf8')).approved,
+    false, "no malformed id may reach the shared 'unknown' bucket");
+
+  // A flag that was passed must be honoured or refused, never silently ignored: falling back
+  // to the pointer here would reinstate the bug --session exists to fix.
+  fs.writeFileSync(path.join(dir, 'gate-current-session'), 'blocked-session');
+  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-831.json'),
+    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  const noValue = spawnSync('node',
+    ['hooks/lib/approve-action.js', '--verbal', '831', '--session'], { encoding: 'utf8', env });
+  assert.equal(noValue.status, 1, '--session with no value must refuse, not fall back to the pointer');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'gate-ask-blocked-session-831.json'), 'utf8')).approved,
+    false, 'and it must not have approved through the pointer either');
+
+  // Every refusal now says why on stderr. stdout keeps its one-word contract.
+  assert.match(noValue.stderr, /--session was given with no value/);
+  assert.equal(noValue.stdout.trim(), 'REJECTED', 'stdout stays parseable');
 });
 
 test('the gate names the blocked session in the approval command it hands the AI', () => {
