@@ -100,6 +100,36 @@ describe('refreshLocalCacheForLocale', () => {
     assert.equal(resolved, 'en', 'no OS-detected state file in this staged home, so the final fallback applies');
   });
 
+  it('cache_fresh counts as success: the cache already carries the new locale, nothing to fetch', async () => {
+    // The success condition accepts `cache_fresh` as well as `init_refreshed`, and this pins
+    // why. `ok` claims "the local cache reflects the server's current state"; a matching
+    // sync_token says exactly that. It happens when another process synced in the window
+    // after the PUT, or when the PUT re-selected the locale the account already had. Reporting
+    // failure here would tell the user the change had not taken effect on a machine where it
+    // demonstrably had.
+    const tmpHome = tempDir('ownmind-local-locale-refresh-fresh-');
+    const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');
+    const account = { apiUrl: 'http://api', apiKey: 'K' };
+
+    writeCache(
+      { sync_token: 'CURRENT', data: { sync_token: 'CURRENT', iron_rules_digest: '', locale: 'ja' } },
+      cachePath,
+      undefined,
+      account,
+    );
+
+    const fetchFn = makeFetch([
+      ['sync-token', () => okJson({ sync_token: 'CURRENT' })],
+      ['init', () => { throw new Error('init must not be called when the token already matches'); }],
+    ]);
+
+    const result = await refreshLocalCacheForLocale({ ...account, cachePath, fetchFn });
+
+    assert.equal(result.source, 'cache_fresh');
+    assert.equal(result.ok, true, 'a cache that already matches the server is a success, not a failure');
+    assert.equal(getLocale({ homeDir: tmpHome }), 'ja');
+  });
+
   it('a fetch failure degrades gracefully: ok:false, no throw, existing cache left untouched', async () => {
     const tmpHome = tempDir('ownmind-local-locale-refresh-fail-');
     const cachePath = path.join(tmpHome, '.ownmind', 'cache', 'memories.json');

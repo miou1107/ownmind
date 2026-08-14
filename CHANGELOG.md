@@ -120,6 +120,35 @@ machine, next session start on the user's other machines — the "set once, all 
 follow, eventually" promise was accurate but the machine that just set it deserves better
 than "eventually" too.
 
+**Task 5 fix round 2 — one hash was answering two different questions**: round 1 was right
+about the cache, and it caught a second caller in the blast radius. `sync_token` was being
+used for two unrelated jobs. `GET /sync-token` and `GET /init` use it to ask "has anything
+this client caches changed?" — a question whose inputs must be *wide*, which is why locale
+belongs in it. `src/routes/admin-iron-rule-upgrade.js` was using the identical hash as an
+optimistic lock, asking "did iron-rule state move under this editor?" — a question whose
+inputs must be *narrow*, because every input beyond the editor's own snapshot is a conflict
+raised over something that cannot possibly affect it. Widening the shared hash therefore
+fixed one caller and broke the other: a user who changed their own language while an
+iron-rule upgrade was open got `409 Iron-rule state has changed`, with no iron rule changed.
+
+The two are now separate functions in `src/utils/syncToken.js` —
+`generateSyncToken`/`validateSyncToken` for cache freshness, unchanged in inputs and in wire
+value, and `generateIronRuleLockToken`/`validateIronRuleLockToken` for the lock — over one
+hash implementation and one comparison, so they cannot drift apart. The lock's inputs are now
+exactly the rows `GET /upgrade-status` returns: `MAX(updated_at)` and `COUNT(*)` over the
+user's active iron rules. That also retires a second class of false conflict the old shared
+hash produced, where saving any unrelated memory in another tab evicted an open edit. The
+scope name is folded into the lock's hash, so a token from one family handed to the other can
+only fail the check, never pass it by coincidence.
+
+Also clarified, from the same review: `refreshLocalCacheForLocale` accepts both
+`init_refreshed` and `cache_fresh` as success, but its doc comment reasoned only about the
+first. The contract it actually enforces — and now states — is "the local cache reflects the
+server's current state"; a matching token says precisely that, and it happens legitimately
+when another process synced in the window after the write, or when the write re-selected the
+locale the account already had. Narrowing success to `init_refreshed` would report failure
+for a cache that is demonstrably correct.
+
 ## v1.26.172 — 做事閘門第一步：閘門規範隨執行包下發
 
 規則庫裡帶有做事閘門標註（`enforcement.gate`）的規範，現在會以資料的形式隨執行包的
