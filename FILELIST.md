@@ -43,10 +43,12 @@ tests/hook-locale.test.js                       — getLocale() full resolution 
 tests/action-gate-i18n.test.js                  — the gate family through t(): zh userLine for
                                                    all 5 block variants, en byte-identical
                                                    regression pin, reason/decision fields locale-
-                                                   independent, CLI degraded/failopen notices
-                                                   localized, and a broken-i18n.js e2e case
-                                                   proving fail-open never invents a block (17
-                                                   cases).
+                                                   independent, CLI/degraded/failopen notices
+                                                   localized, and a broken-i18n.js e2e case for
+                                                   all three entry points (action-gate-cli.js,
+                                                   ownmind-iron-rule-check.js, approve-action.js)
+                                                   proving fail-open never invents a block and
+                                                   never crashes (19 cases).
 ```
 
 修改：
@@ -69,6 +71,9 @@ hooks/lib/action-gate.js                        — 4 個 userLine 站點（verb
                                                    t()；model-facing reason 不動。
 hooks/lib/action-gate-cli.js                    — failopen／degraded 通知改走 gateNotice()
                                                    動態 import t()、失敗時退回英文字面值。
+hooks/lib/approve-action.js                     — review 補：action-gate.js 改成動態 import、
+                                                   包在 try/catch，i18n.js 壞掉時仍印
+                                                   REJECTED（原本會整支炸掉、stdout 空白）。
 tests/action-gate.test.js                       — pin OWNMIND_LOCALE_FORCE=en for the whole
                                                    suite (predates locale support; several
                                                    assertions pin literal English userLine text).
