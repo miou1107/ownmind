@@ -278,3 +278,23 @@ describe('refreshLocalCacheForLocale', () => {
     assert.equal(after, before, 'a failed refresh must not corrupt or partially overwrite the existing cache');
   });
 });
+
+describe('cache path ownership', () => {
+  it('imports the cache path instead of restating it', async () => {
+    // The guard reads the cache before handing it over, so it must look at the file
+    // conditional-sync.js actually writes. A private second literal here would let the guard
+    // drift off the real cache in silence if the path ever moved, disarming the cross-account
+    // protection while every test stayed green.
+    const sync = await import('../hooks/lib/conditional-sync.js');
+    assert.equal(typeof sync.DEFAULT_CACHE_PATH, 'string');
+    const src = fs.readFileSync(new URL('../mcp/lib/local-locale-refresh.js', import.meta.url), 'utf8');
+    assert.ok(
+      /import\s*\{[^}]*DEFAULT_CACHE_PATH[^}]*\}\s*from\s*'\.\.\/\.\.\/hooks\/lib\/conditional-sync\.js'/.test(src),
+      'local-locale-refresh.js must import DEFAULT_CACHE_PATH from conditional-sync.js',
+    );
+    assert.ok(
+      !/['"]memories\.json['"]/.test(src.replace(/^\s*\*.*$/gm, '')),
+      'local-locale-refresh.js must not restate the cache filename outside comments',
+    );
+  });
+});

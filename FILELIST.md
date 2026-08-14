@@ -2,6 +2,17 @@
 
 ## v1.26.173 修改（一次觸發只佔一行，不要再被主程式蓋三次章）
 
+修改（final-review wrap-up）：
+```
+hooks/lib/conditional-sync.js                   — DEFAULT_CACHE_PATH is now exported: one owner
+                                                   for the cache path the account guard inspects.
+mcp/lib/local-locale-refresh.js                 — imports that constant instead of restating it.
+hooks/lib/i18n.js                               — t(key, null) tolerated (the `= {}` default only
+                                                   covered undefined).
+tests/local-locale-refresh.test.js              — pins the single-owner cache path.
+tests/hook-i18n.test.js                         — pins t(key, null).
+```
+
 修改：
 ```
 mcp/lib/local-locale-refresh.js                 — Whole-branch review scope B

@@ -40,7 +40,10 @@ function loadDict(locale) {
   return dictCache.get(locale);
 }
 
-export function t(key, params = {}) {
+export function t(key, params) {
+  // `= {}` would only cover undefined; an explicit null reaches Object.hasOwn below and throws,
+  // which contradicts the total-function contract this module's callers rely on.
+  const values = params || {};
   let template;
   for (const locale of [resolveLocale(), 'en']) {
     const dict = loadDict(locale);
@@ -49,7 +52,7 @@ export function t(key, params = {}) {
   if (template === undefined) template = key;
   // Object.hasOwn, not `name in params`: `in` walks the prototype chain, so a template
   // containing {constructor} or {toString} would render a function body into a user notice.
-  return template.replace(/\{(\w+)\}/g, (m, name) => (Object.hasOwn(params, name) ? String(params[name]) : m));
+  return template.replace(/\{(\w+)\}/g, (m, name) => (Object.hasOwn(values, name) ? String(values[name]) : m));
 }
 
 export function resetI18nCacheForTests() { dictCache.clear(); localeMemo = null; }

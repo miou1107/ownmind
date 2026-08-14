@@ -2,6 +2,17 @@
 
 ## v1.26.173 — 一次觸發只佔一行，不要再被主程式蓋三次章
 
+### Wrap-up after the final whole-branch review
+
+- `hooks/lib/conditional-sync.js` now exports `DEFAULT_CACHE_PATH`, and
+  `mcp/lib/local-locale-refresh.js` imports it instead of restating the literal. The
+  cross-account guard inspects the cache before handing it to `runConditionalSync`, so a second
+  copy of the path would have disarmed the guard in silence if the path ever moved. Pinned by a
+  test that fails if the literal reappears.
+- `t(key, null)` no longer throws. The `= {}` default only covered `undefined`, so an explicit
+  null reached the own-property check — a contradiction of the total-function contract the gate's
+  fallback helper and every notice site rely on.
+
 **The Japanese fail-open notice said the opposite of the English (whole-branch review,
 Important, safety)**:
 
