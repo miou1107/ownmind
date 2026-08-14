@@ -162,6 +162,43 @@ test('a gate without applies_pattern ships a guard without the key', () => {
   }
 });
 
+test('a gate marked ask_mode verbal ships ask_mode on the action guard', () => {
+  // Amendment 3: Vin chose a spoken "go" over pasting a 6-digit code for ask_first guards.
+  // The choice is carried as data (ask_mode: 'verbal'); the client gate reads it to decide
+  // whether the block asks for a code or a go-ahead. Only the explicit 'verbal' value ships.
+  const { guards } = buildBundle([{
+    id: 819, type: 'iron_rule', title: 'deploys ask first', content: 'Ask before deploying.',
+    tags: [],
+    metadata: { enforcement: { gate: {
+      triggers: ['deploy'], checks: [], read_required: true, ask_first: true, ask_mode: 'verbal',
+    } } },
+  }]);
+  assert.equal(guards.length, 1);
+  assert.equal(guards[0].ask_first, true);
+  assert.equal(guards[0].ask_mode, 'verbal', 'a verbal gate must ship ask_mode: verbal');
+});
+
+test('a gate with no verbal ask_mode ships no ask_mode key (default code)', () => {
+  // Omitted, 'code', and any non-'verbal' value all mean the same thing on the wire: no key,
+  // the client defaults to code mode. Shipping ask_mode: 'code' would be redundant noise and
+  // a second value the client would have to special-case.
+  const variants = [
+    {}, // absent
+    { ask_mode: 'code' }, // explicit default
+    { ask_mode: 'spoken' }, // unknown value is not 'verbal'
+    { ask_mode: 42 }, // non-string
+  ];
+  for (const extra of variants) {
+    const { guards } = buildBundle([{
+      id: 40, type: 'iron_rule', title: 't', content: 'x', tags: [],
+      metadata: { enforcement: { gate: { triggers: ['deploy'], checks: [], ask_first: true, ...extra } } },
+    }]);
+    assert.equal(guards.length, 1);
+    assert.ok(!('ask_mode' in guards[0]),
+      `ask_mode ${JSON.stringify(extra)} must not ship as a key`);
+  }
+});
+
 test('malformed gate metadata is skipped without crashing the bundle', () => {
   // A gate with no triggers can never fire; a checks field that is not an array must not
   // throw halfway through the route. Both degrade to "no action guard", not to a 500.

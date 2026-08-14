@@ -124,6 +124,12 @@ export function buildBundle(rows) {
           .map((c) => ({ type: c.type, pattern: c.pattern, reason: String(c.reason || row.title || '') })),
         read_required: gate.read_required !== false,
         ask_first: gate.ask_first === true,
+        // Approval mode (Amendment 3): the owner may choose a spoken "go" over pasting a 6-digit
+        // code for ask_first guards, an accepted honesty downgrade (stop-and-confirm, not unforgeable
+        // consent). Only the explicit 'verbal' value ships; anything else — absent, 'code', an
+        // unknown string — omits the key and the client defaults to code mode. One value on the
+        // wire, one thing for the client to special-case.
+        ...(gate.ask_mode === 'verbal' ? { ask_mode: 'verbal' } : {}),
         rule_text: ruleText,
         // Hashed over exactly the string shipped above - the receipt binds to it, so editing
         // the rule invalidates old receipts.
