@@ -203,7 +203,8 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
         + 'Do NOT run that command otherwise, and do not state or imply the user approved unless they actually did.',
       userLine: safeT(
         'gate.ask.verbal',
-        `[OwnMind] ⛔ "${guard.title}" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.`,
+        `[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: ${guard.title}\n`
+        + '  Reply "go" and OwnMind allows it this once; reply "no" and it does not.',
         { title: guard.title }
       ),
       approval_mode: 'verbal',
@@ -228,12 +229,14 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
     userLine: kindLabel === 'limit'
       ? safeT(
         'gate.ask.code.limit',
-        `[OwnMind] ⛔ "${guard.title}" wants your approval for: a command blocked 3 times in a row. Approval code: ${code} (paste it to the AI to allow it once)`,
+        `[OwnMind] 🟡 OwnMind has blocked the same command from the AI 3 times and it is still trying. It is stuck on this rule: ${guard.title}\n`
+        + `  Paste this number to the AI and OwnMind allows it this once: ${code}. If you would rather it stopped, just ignore this.`,
         { title: guard.title, code }
       )
       : safeT(
         'gate.ask.code.action',
-        `[OwnMind] ⛔ "${guard.title}" wants your approval for: this action. Approval code: ${code} (paste it to the AI to allow it once)`,
+        `[OwnMind] 🟢 The AI wants to do something your rules say to ask about first, so OwnMind stopped it: ${guard.title}\n`
+        + `  Paste this number to the AI and OwnMind allows it this once: ${code}`,
         { title: guard.title, code }
       ),
     code_issued: true,
@@ -379,7 +382,8 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
             reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
             userLine: safeT(
               'gate.read.blocked',
-              `[OwnMind] ⛔ blocked until the rule "${guard.title}" is read (auto-unblocks on retry)`,
+              `[OwnMind] 🟢 The AI tried to act without reading this rule first, so OwnMind stopped it: ${guard.title}\n`
+              + '  Once the AI has read the rule and retried, OwnMind lets it through automatically. Nothing for you to do.',
               { title: guard.title }
             ),
             ...(globalDegraded && { degraded: 'no-receipts' }),
@@ -426,7 +430,10 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
         return {
           action: 'block', kind: 'check', guardId: guard.id,
           reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
-          userLine: safeT('gate.check.blocked', `[OwnMind] ⛔ blocked: ${c.reason}`, { reason: c.reason }),
+          userLine: safeT('gate.check.blocked',
+            `[OwnMind] 🟢 The AI's command does not meet your rules, so OwnMind stopped it: ${c.reason}\n`
+            + '  Once the AI fixes the command and retries it will go through. Nothing for you to do.',
+            { reason: c.reason }),
           ...(globalDegraded && { degraded: 'no-receipts' }),
         };
       }

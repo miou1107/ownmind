@@ -121,7 +121,17 @@ export function formatViolationFeedback(violations, { checkId } = {}) {
   }
   lines.push('Rewrite the reply so it complies. Do not argue with the rule.');
   if (checkId) {
-    lines.push(`If the user says this was a false alarm, tell them to reply "誤判 ${checkId}".`);
+    // v1.30.1: this used to stop at "tell them to reply 誤判 N", and nothing downstream did
+    // anything with that reply — the endpoint that records it (POST /api/compliance/feedback)
+    // had no caller outside its own test. So the notice asked the user for something that went
+    // nowhere, and the false-positive rate, which is the stated threshold for turning
+    // enforcement on for anyone else, could never be computed. The instruction now names the
+    // tool that records it.
+    lines.push(
+      `If the user says this was a false alarm, tell them to reply "誤判 ${checkId}". `
+      + `When they do, call ownmind_report_check_feedback with check_id ${checkId} and `
+      + 'verdict "false_positive" — their reply is only recorded if you make that call.',
+    );
   }
   return lines.join('\n');
 }
@@ -147,7 +157,7 @@ export async function runComplianceStep(ctx) {
       noticeKey: 'off:warn-mode',
       banner: await complianceNotice(
         'compliance.off.warnMode',
-        '[OwnMind] compliance check is off for this session (lint disabled or warn mode)',
+        '[OwnMind] 🟡 In this conversation OwnMind only warns; it never asks the AI to rewrite.',
       ),
     };
   }
@@ -159,7 +169,7 @@ export async function runComplianceStep(ctx) {
       noticeKey: 'not-checked:no-credentials',
       banner: await complianceNotice(
         'compliance.notChecked.noCredentials',
-        '[OwnMind] this machine has no credentials, so this turn was NOT checked',
+        "[OwnMind] 🔴 This computer is not signed in to OwnMind, so OwnMind did not check the AI's reply.",
       ),
     };
   }
@@ -172,7 +182,7 @@ export async function runComplianceStep(ctx) {
       noticeKey: 'not-checked:never-synced',
       banner: await complianceNotice(
         'compliance.notChecked.neverSynced',
-        '[OwnMind] this machine has never synced its rules, so this turn was NOT checked',
+        "[OwnMind] 🔴 This computer has not downloaded your rules yet, so OwnMind did not check the AI's reply. Start a new conversation and it will fetch them.",
       ),
     };
   }
@@ -201,7 +211,7 @@ export async function runComplianceStep(ctx) {
       noticeKey: 'not-checked:check-failed',
       banner: await complianceNotice(
         'compliance.notChecked.checkFailed',
-        `[OwnMind] compliance check did not run (${check.reason || 'unknown'}) - this turn was NOT checked`,
+        "[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI's reply.",
         { reason: check.reason || 'unknown' },
       ),
     };
@@ -215,7 +225,7 @@ export async function runComplianceStep(ctx) {
       noticeKey: 'off:server',
       banner: await complianceNotice(
         'compliance.off.server',
-        '[OwnMind] enforcement is switched off for this account, so this turn was NOT checked',
+        "[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI's reply.",
       ),
     };
   }
@@ -226,7 +236,7 @@ export async function runComplianceStep(ctx) {
   const idNote = check.check_id
     ? await complianceNotice(
       'compliance.idNote',
-      ` [check ${check.check_id}: say "誤判 ${check.check_id}" if this is wrong]`,
+      ` (if OwnMind got it wrong, reply 誤判 ${check.check_id})`,
       { checkId: check.check_id },
     )
     : '';
@@ -236,8 +246,8 @@ export async function runComplianceStep(ctx) {
       action: 'notice',
       banner: await complianceNotice(
         'compliance.blockCapReached',
-        `[OwnMind] the reply still breaks ${check.violations.length} rule(s) after `
-          + `${blockCount} rewrites - showing you instead of asking again${idNote}`,
+        `[OwnMind] 🟡 The AI's reply still breaks ${check.violations.length} of your rules after `
+          + `${blockCount} rewrites, so OwnMind has stopped sending it back and is showing it to you.${idNote}`,
         { count: check.violations.length, blockCount, idNote },
       ),
     };
@@ -248,7 +258,7 @@ export async function runComplianceStep(ctx) {
     stderr: formatViolationFeedback(check.violations, { checkId: check.check_id }),
     banner: await complianceNotice(
       'compliance.pushedBack',
-      `[OwnMind] compliance: ${check.violations.length} rule violation(s) sent back to the AI${idNote}`,
+      `[OwnMind] 🟢 The AI's reply breaks ${check.violations.length} of your rules, so OwnMind has told the AI to rewrite it.${idNote}`,
       { count: check.violations.length, idNote },
     ),
   };

@@ -71,7 +71,11 @@ function edgeWhitespace(str) {
 // place) was listed here too, but no dictionary value has ever told the user to type it — only
 // `/ownmind-on` (how to turn it back on) appears — so it never matched anything and the
 // coverage test below would fail loudly if it, or any future addition, went the same way.
-const OTHER_PROTOCOL_LITERALS = ['⛔', '誤判', '/ownmind-on'];
+// v1.30.1: ⛔ was replaced by 🟢/🟡/🔴 status lights. Every notice used to open with the same
+// mark whether OwnMind had successfully blocked something or had failed to run at all, so the
+// two read identically. Green now means OwnMind did its job — a block is a green light — yellow
+// means reduced protection or worth a look, red means it did not run or did not check.
+const OTHER_PROTOCOL_LITERALS = ['🟢', '🟡', '🔴', '誤判', '/ownmind-on'];
 const OWNMIND_HEADER = /^\[OwnMind[^\]]*\]/;
 
 // hooks/locales/zh.json quotes the "go"/"no" reply keywords with 「」 (its own convention);
@@ -162,7 +166,7 @@ describe('hooks/locales dictionary parity (zh / en / ja)', () => {
     assert.ok(pattern.test('「go」'), 'CJK 「go」 must still match');
   });
 
-  it('other protocol literals (⛔, 誤判, /ownmind-on) survive untranslated in ja', () => {
+  it('other protocol literals (🟢🟡🔴, 誤判, /ownmind-on) survive untranslated in ja', () => {
     for (const key of dictKeys(en)) {
       for (const literal of OTHER_PROTOCOL_LITERALS) {
         if (en[key].includes(literal)) {

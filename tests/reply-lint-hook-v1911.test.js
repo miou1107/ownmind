@@ -62,7 +62,7 @@ function runHook(input, env = {}) {
       USERPROFILE: tmpHome,
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
       // Task 4 (hook message i18n) wired the downgraded-banner header through t(); this suite
-      // asserts /consecutive blocks/ (literal English), so the locale is pinned defensively.
+      // asserts /went back for a rewrite 3 times and still is not right/ (literal English), so the locale is pinned defensively.
       OWNMIND_LOCALE_FORCE: 'en',
       ...env,
     },
@@ -190,7 +190,7 @@ describe('v1.19.11 scenario 9 — 4th block hits downgrade limit; switch to warn
     // systemMessage, which only exit 0 renders — exit 1 put it where nobody looked.
     const r = runHook(payload, { OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0, 'the downgrade must not block, and must exit 0 so its notice renders');
-    assert.match(JSON.parse(r.stdout).systemMessage, /consecutive blocks/);
+    assert.match(JSON.parse(r.stdout).systemMessage, /went back for a rewrite 3 times and still is not right/);
   });
 });
 

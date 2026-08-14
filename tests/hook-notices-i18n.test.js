@@ -80,35 +80,40 @@ test('zh: off (disabled/warn-mode) banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
   const r = await runComplianceStep(complianceBase({ disabled: true }));
   assert.equal(r.action, 'notice');
-  assert.equal(r.banner, '[OwnMind] 這個對話的合規檢查目前關閉中（lint 已停用或為 warn 模式）');
+  assert.equal(r.banner, '[OwnMind] 🟡 這個對話裡 OwnMind 只會提醒，不會要 AI 重寫。');
 });
 
 test('zh: no-credentials banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
   const r = await runComplianceStep(complianceBase({ apiKey: '', apiUrl: '' }));
-  assert.equal(r.banner, '[OwnMind] 這台機器沒有憑證，這一輪「沒有」被檢查');
+  assert.equal(r.banner, '[OwnMind] 🔴 這台電腦還沒登入 OwnMind，所以 OwnMind 沒有檢查 AI 這段回話。');
 });
 
 test('zh: never-synced banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
   const r = await runComplianceStep(complianceBase({ bundle: { present: false, selectors: [] } }));
-  assert.equal(r.banner, '[OwnMind] 這台機器從未同步過規則，這一輪「沒有」被檢查');
+  assert.equal(r.banner, '[OwnMind] 🔴 這台電腦還沒把你的規矩抓下來，所以 OwnMind 沒有檢查 AI 這段回話。你開個新對話它就會抓。');
 });
 
-test('zh: check-failed banner carries the raw reason token untranslated', async () => {
+test('zh: check-failed banner never shows the internal reason token', async () => {
+  // v1.30.1. This used to print the server's reason verbatim — "（timeout）", and "（unknown）"
+  // when there was no reason at all. Vin hit the unknown variant on 2026-08-15 and asked what
+  // the sentence was trying to say: it named a code that means nothing to a reader, twice
+  // stated the same fact, and never said what to do. The reason stays in the log; the notice
+  // says what happened to the reader instead.
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
+  const withReason = await runComplianceStep(complianceBase({
     requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
   }));
-  assert.equal(r.banner, '[OwnMind] 合規檢查沒有執行（timeout）— 這一輪「沒有」被檢查');
-});
+  assert.equal(withReason.banner, '[OwnMind] 🔴 OwnMind 這次連不上伺服器，沒有檢查 AI 這段回話。');
+  assert.doesNotMatch(withReason.banner, /could not reach its server/, 'the raw reason token must not reach the user');
 
-test('zh: check-failed banner falls back to "unknown" when the server gives no reason', async () => {
-  process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
+  // Same notice whether the server gave a reason or not: the reader's situation is identical.
+  const noReason = await runComplianceStep(complianceBase({
     requestCheckImpl: async () => ({ outcome: 'failed', violations: [] }),
   }));
-  assert.equal(r.banner, '[OwnMind] 合規檢查沒有執行（unknown）— 這一輪「沒有」被檢查');
+  assert.equal(noReason.banner, withReason.banner);
+  assert.doesNotMatch(noReason.banner, /unknown/, '"unknown" is an internal placeholder, not a message');
 });
 
 test('zh: server-side off banner', async () => {
@@ -116,7 +121,7 @@ test('zh: server-side off banner', async () => {
   const r = await runComplianceStep(complianceBase({
     requestCheckImpl: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
   }));
-  assert.equal(r.banner, '[OwnMind] 這個帳號的強制執行已關閉，這一輪「沒有」被檢查');
+  assert.equal(r.banner, '[OwnMind] 🔴 你的帳號把規矩檢查關掉了，所以 OwnMind 沒有檢查 AI 這段回話。');
 });
 
 test('zh: block-cap-reached banner, with the 誤判 check-id note appended', async () => {
@@ -129,8 +134,8 @@ test('zh: block-cap-reached banner, with the 誤判 check-id note appended', asy
   }));
   assert.equal(
     r.banner,
-    '[OwnMind] 這則回覆重寫 2 次後仍違反 1 條規則 — 直接顯示給你看，不再要求 AI 重寫'
-      + ' （檢查編號 4242：如果判斷有誤，請回覆「誤判 4242」）',
+    '[OwnMind] 🟡 AI 這段回話重寫 2 次還是違反你 1 條規矩，OwnMind 不再退了，直接顯示給你看。'
+      + ' （OwnMind 判錯了就回一句「誤判 4242」）',
   );
 });
 
@@ -144,7 +149,7 @@ test('zh: pushed-back banner, with the 誤判 check-id note appended', async () 
   assert.equal(r.action, 'exit2');
   assert.equal(
     r.banner,
-    '[OwnMind] 合規檢查：1 條規則違規已送回給 AI （檢查編號 4242：如果判斷有誤，請回覆「誤判 4242」）',
+    '[OwnMind] 🟢 AI 這段回話違反你 1 條規矩，OwnMind 已經要 AI 重寫。 （OwnMind 判錯了就回一句「誤判 4242」）',
   );
 });
 
@@ -155,7 +160,7 @@ test('zh: pushed-back banner with no check_id has no trailing note', async () =>
       outcome: 'violation', check_id: undefined, violations: [TEAM_STANDARD_VIOLATION],
     }),
   }));
-  assert.equal(r.banner, '[OwnMind] 合規檢查：1 條規則違規已送回給 AI');
+  assert.equal(r.banner, '[OwnMind] 🟢 AI 這段回話違反你 1 條規矩，OwnMind 已經要 AI 重寫。');
 });
 
 // --- en regression pin: byte-identical to the pre-change literals ---
@@ -163,19 +168,19 @@ test('zh: pushed-back banner with no check_id has no trailing note', async () =>
 test('en: off (disabled/warn-mode) banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
   const r = await runComplianceStep(complianceBase({ disabled: true }));
-  assert.equal(r.banner, '[OwnMind] compliance check is off for this session (lint disabled or warn mode)');
+  assert.equal(r.banner, '[OwnMind] 🟡 In this conversation OwnMind only warns; it never asks the AI to rewrite.');
 });
 
 test('en: no-credentials banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
   const r = await runComplianceStep(complianceBase({ apiKey: '', apiUrl: '' }));
-  assert.equal(r.banner, '[OwnMind] this machine has no credentials, so this turn was NOT checked');
+  assert.equal(r.banner, '[OwnMind] 🔴 This computer is not signed in to OwnMind, so OwnMind did not check the AI\'s reply.');
 });
 
 test('en: never-synced banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
   const r = await runComplianceStep(complianceBase({ bundle: { present: false, selectors: [] } }));
-  assert.equal(r.banner, '[OwnMind] this machine has never synced its rules, so this turn was NOT checked');
+  assert.equal(r.banner, '[OwnMind] 🔴 This computer has not downloaded your rules yet, so OwnMind did not check the AI\'s reply. Start a new conversation and it will fetch them.');
 });
 
 test('en: check-failed banner is byte-identical to the pre-change literal', async () => {
@@ -183,7 +188,7 @@ test('en: check-failed banner is byte-identical to the pre-change literal', asyn
   const r = await runComplianceStep(complianceBase({
     requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
   }));
-  assert.equal(r.banner, '[OwnMind] compliance check did not run (timeout) - this turn was NOT checked');
+  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI\'s reply.');
 });
 
 test('en: server-side off banner is byte-identical to the pre-change literal', async () => {
@@ -191,7 +196,7 @@ test('en: server-side off banner is byte-identical to the pre-change literal', a
   const r = await runComplianceStep(complianceBase({
     requestCheckImpl: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
   }));
-  assert.equal(r.banner, '[OwnMind] enforcement is switched off for this account, so this turn was NOT checked');
+  assert.equal(r.banner, '[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI\'s reply.');
 });
 
 test('en: block-cap-reached banner is byte-identical to the pre-change literal', async () => {
@@ -204,8 +209,8 @@ test('en: block-cap-reached banner is byte-identical to the pre-change literal',
   }));
   assert.equal(
     r.banner,
-    '[OwnMind] the reply still breaks 1 rule(s) after 2 rewrites - showing you instead of asking again'
-      + ' [check 4242: say "誤判 4242" if this is wrong]',
+    '[OwnMind] 🟡 The AI\'s reply still breaks 1 of your rules after 2 rewrites, so OwnMind has stopped sending it back and is showing it to you.'
+      + ' (if OwnMind got it wrong, reply 誤判 4242)',
   );
 });
 
@@ -218,7 +223,7 @@ test('en: pushed-back banner is byte-identical to the pre-change literal', async
   }));
   assert.equal(
     r.banner,
-    '[OwnMind] compliance: 1 rule violation(s) sent back to the AI [check 4242: say "誤判 4242" if this is wrong]',
+    '[OwnMind] 🟢 The AI\'s reply breaks 1 of your rules, so OwnMind has told the AI to rewrite it. (if OwnMind got it wrong, reply 誤判 4242)',
   );
 });
 
@@ -260,7 +265,7 @@ test('compliance-step: an unloadable i18n.js falls back to the English literal a
   assert.equal(r.action, 'notice', 'a broken i18n module must not change the decision');
   assert.equal(
     r.banner,
-    '[OwnMind] compliance check is off for this session (lint disabled or warn mode)',
+    '[OwnMind] 🟡 In this conversation OwnMind only warns; it never asks the AI to rewrite.',
     'the fallback is the plain English literal even though OWNMIND_LOCALE_FORCE=zh was set',
   );
 });
@@ -345,7 +350,7 @@ test('zh: quality-lint banner header, warn-mode variant', () => {
     // Note: MODE='warn' also makes the compliance-step treat itself as off, so its own
     // (still-English, unrelated to this assertion) notice rides the same systemMessage ahead
     // of the lint banner — hence no leading-anchor match here.
-    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 回話品質檢查（warn 模式，本次對話第 1 次）/);
+    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 🟢 OwnMind 在 AI 這段回話裡挑到違反你規矩的地方（這個對話第 1 次）。目前 OwnMind 只提醒/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -356,7 +361,7 @@ test('zh: quality-lint banner header, block-mode-not-yet-triggered variant', () 
     const r = runReplyLintHook(stopPayload(), { OWNMIND_LOCALE_FORCE: 'zh', OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /^\[OwnMind v\?\] 回話品質檢查（擋下模式，本次對話第 1 次，再 3 次就會擋下）/);
+    assert.match(parsed.systemMessage, /^\[OwnMind v\?\] 🟢 OwnMind 在 AI 這段回話裡挑到違反你規矩的地方（這個對話第 1 次）。再 3 次，OwnMind 就會直接要 AI 重寫。/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -367,7 +372,7 @@ test('zh: mode-invalid line', () => {
     const r = runReplyLintHook(stopPayload(), { OWNMIND_LOCALE_FORCE: 'zh', OWNMIND_REPLY_LINT_MODE: 'foo' });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /OWNMIND_REPLY_LINT_MODE='foo' 是未知值 — 已改用 warn 模式/);
+    assert.match(parsed.systemMessage, /回話檢查的設定值 'foo' OwnMind 看不懂，這次只提醒，不會要 AI 重寫。/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -383,7 +388,7 @@ test('zh: downgraded-to-warning banner header (rides stdout, exit 0)', () => {
     const r = runReplyLintHook(payload, { OWNMIND_LOCALE_FORCE: 'zh', OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0, 'the downgrade must not block, and must exit 0 so its notice renders');
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /已連續擋下 3 次，降級為提醒（請自行檢查，避免卡在迴圈）/);
+    assert.match(parsed.systemMessage, /被退回重寫 3 次還是沒改對，OwnMind 不再退了，直接顯示給你看/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -398,7 +403,7 @@ test('zh: hard-block banner header (never reaches stdout, but is in the audit sp
     }
     const r = runReplyLintHook(payload, { OWNMIND_LOCALE_FORCE: 'zh', OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2, 'the 4th violation must hard-block');
-    assert.match(bannerSpool(), /已擋下，AI 將收到重寫指示（本次對話第 4 次）/);
+    assert.match(bannerSpool(), /違反你的規矩，OwnMind 已經要 AI 重寫（這個對話第 4 次）/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -417,7 +422,7 @@ test('zh: /ownmind-off reminder (fires on the 10th tick)', () => {
     const parsed = JSON.parse(r.stdout);
     assert.match(
       parsed.systemMessage,
-      /\[OwnMind v\?\] ⚠️ OwnMind 目前已停用（已跳過 10 次回話檢查）\n {2}→ 用 \/ownmind-on 重新開啟，或開新對話即可恢復/,
+      /\[OwnMind v\?\] 🔴 OwnMind 現在是關的，AI 已經有 10 段回話沒被檢查過。\n {2}→ 你要開回來：輸入 \/ownmind-on，或直接開一個新對話。/,
     );
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
@@ -444,7 +449,7 @@ test('zh: compliance recovery notice (state changes from not-checked to clean)',
     const second = runReplyLintHook(stopPayload({ session_id: sessionId }), { OWNMIND_LOCALE_FORCE: 'zh' });
     assert.equal(second.status, 0);
     const parsed = JSON.parse(second.stdout);
-    assert.match(parsed.systemMessage, /回話檢查已恢復運作，這一輪有檢查到/);
+    assert.match(parsed.systemMessage, /已經照你的規矩檢查過 AI 這段回話/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -459,7 +464,7 @@ test('en: quality-lint banner header, warn-mode variant, is byte-identical to th
     const parsed = JSON.parse(r.stdout);
     // MODE='warn' also makes the compliance-step treat itself as off, so its own English
     // notice rides the same systemMessage ahead of the lint banner — no leading anchor here.
-    assert.match(parsed.systemMessage, /\[OwnMind v\?\] Reply quality lint \(warn mode, session count 1\)/);
+    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 🟢 OwnMind found something in the AI's reply that breaks your rules \(1 so far in this conversation\)\. For now OwnMind only warns/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -470,7 +475,7 @@ test('en: quality-lint banner header, block-mode-not-yet-triggered variant, byte
     const r = runReplyLintHook(stopPayload(), { OWNMIND_LOCALE_FORCE: 'en', OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /^\[OwnMind v\?\] Reply quality lint \(block mode, session count 1, 3 more before block\)/);
+    assert.match(parsed.systemMessage, /^\[OwnMind v\?\] 🟢 OwnMind found something in the AI's reply that breaks your rules \(1 so far in this conversation\)\. 3 more and OwnMind will tell the AI to rewrite it\./);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -481,7 +486,7 @@ test('en: mode-invalid line is byte-identical to the pre-change literal', () => 
     const r = runReplyLintHook(stopPayload(), { OWNMIND_LOCALE_FORCE: 'en', OWNMIND_REPLY_LINT_MODE: 'foo' });
     assert.equal(r.status, 0);
     const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.systemMessage, /OWNMIND_REPLY_LINT_MODE='foo' is unrecognized — falling back to warn/);
+    assert.match(parsed.systemMessage, /does not recognise the reply-check setting 'foo'/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -499,7 +504,7 @@ test('en: downgraded-to-warning banner header is byte-identical to the pre-chang
     const parsed = JSON.parse(r.stdout);
     assert.match(
       parsed.systemMessage,
-      /⚠️ 3 consecutive blocks reached — downgrading to warning \(please review manually to avoid a loop\)/,
+      /went back for a rewrite 3 times and still is not right/,
     );
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
@@ -515,7 +520,7 @@ test('en: hard-block banner header is byte-identical to the pre-change literal (
     }
     const r = runReplyLintHook(payload, { OWNMIND_LOCALE_FORCE: 'en', OWNMIND_REPLY_LINT_MODE: 'block' });
     assert.equal(r.status, 2);
-    assert.match(bannerSpool(), /⚠️ Block triggered — Claude will receive a rewrite directive \(session count 4\)/);
+    assert.match(bannerSpool(), /so OwnMind has told the AI to rewrite it \(4 so far in this conversation\)/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -534,8 +539,8 @@ test('en: /ownmind-off reminder is byte-identical to the pre-change literal', ()
     const parsed = JSON.parse(r.stdout);
     assert.equal(
       parsed.systemMessage,
-      '[OwnMind v?] ⚠️ OwnMind is currently disabled (10 AI responses skipped lint)\n'
-        + '  → Re-enable with /ownmind-on, or open a new conversation to restore',
+      '[OwnMind v?] 🔴 OwnMind is off, and 10 of the AI\'s replies have gone unchecked.\n'
+        + '  → To turn it back on: type /ownmind-on, or just start a new conversation.',
     );
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
@@ -589,7 +594,7 @@ test('reply-lint hook: an unloadable i18n.js falls back to English and never cra
     assert.equal(r.status, 0, `must exit 0 even with a broken i18n module; stderr=${r.stderr.slice(0, 500)}`);
     let parsed;
     assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); }, `stdout must be valid JSON, got:\n${r.stdout}`);
-    assert.match(parsed.systemMessage, /Reply quality lint/, 'falls back to the English banner header');
+    assert.match(parsed.systemMessage, /OwnMind found something in the AI's reply/, 'falls back to the English banner header');
     assert.doesNotMatch(parsed.systemMessage, /回話品質/, 'the zh translation must not appear — i18n itself is broken');
     // MODE='warn' also drives compliance-step.js's own off:warn-mode banner through this same
     // staged-broken-i18n run — hooks/lib/compliance-step.js is a hooks/lib/* file that itself
@@ -600,7 +605,7 @@ test('reply-lint hook: an unloadable i18n.js falls back to English and never cra
     // the real dictionary instead of the staged broken one and defeating this exact assertion.
     assert.match(
       parsed.systemMessage,
-      /compliance check is off for this session \(lint disabled or warn mode\)/,
+      /In this conversation OwnMind only warns/,
       'compliance-step.js (also on the hooks/lib i18n.js import graph) must fall back to English too',
     );
     assert.doesNotMatch(parsed.systemMessage, /合規檢查目前關閉中/, 'the zh translation must not appear for compliance-step either');

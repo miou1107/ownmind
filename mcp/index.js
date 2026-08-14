@@ -763,6 +763,25 @@ const TOOLS = [
     },
   },
   {
+    name: "ownmind_report_check_feedback",
+    description: "Record whether an OwnMind compliance check got it right. Call this when the user replies \"誤判 <id>\" (or otherwise says a block was wrong) with verdict 'false_positive', and when they confirm a block was a good catch with verdict 'correct'. The check id is the number shown to them in the block notice.\n\nThis is the ONLY way a verdict is recorded. The user typing \"誤判 770\" does nothing on its own — nothing reads their message but you. Until this call is made the check stays unrated, and the false-positive rate, which is the threshold for switching enforcement on for anyone else, is computed from nothing.\n\nDo not call it on your own judgement of a block. It records what the user said, and a rate the AI filled in for itself measures the AI.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        check_id: {
+          type: "number",
+          description: "The check id shown in the block notice (the number in \"誤判 770\")",
+        },
+        verdict: {
+          type: "string",
+          enum: ["false_positive", "correct"],
+          description: "'false_positive' = the user says the block was wrong; 'correct' = they confirmed it was right",
+        },
+      },
+      required: ["check_id", "verdict"],
+    },
+  },
+  {
     name: "ownmind_session_off",
     description: "Temporarily disable OwnMind hooks for this session (response-quality lint + pre-commit check). AI responses will not be intercepted or rewritten; git commits will not be blocked by iron rules. Automatically restored when a new session starts, or call ownmind_session_on to re-enable immediately. While disabled, every 10 AI responses the user sees a terminal reminder \"OwnMind is currently disabled\".",
     inputSchema: {
@@ -1449,6 +1468,41 @@ async function handleTool(name, args) {
       logEvent('memory_sync_standard', { title: pending.parent_title, stats: data.stats });
 
       return data;
+    }
+
+    case "ownmind_report_check_feedback": {
+      // v1.30.1. POST /api/compliance/feedback has existed since the enforcement work landed
+      // and had no caller but its own test: the block notice told the user to reply "誤判 770",
+      // and their reply reached nobody. This is the missing half.
+      const checkId = Number(args.check_id);
+      const verdict = args.verdict;
+      if (!Number.isInteger(checkId) || checkId <= 0) {
+        return { status: 'error', message: 'check_id must be the positive integer shown in the block notice' };
+      }
+      if (verdict !== 'false_positive' && verdict !== 'correct') {
+        return { status: 'error', message: "verdict must be 'false_positive' or 'correct'" };
+      }
+      try {
+        await callApi('POST', '/api/compliance/feedback', { check_id: checkId, verdict });
+        logEvent('compliance_check_feedback', { check_id: checkId, verdict });
+        return {
+          status: 'ok',
+          check_id: checkId,
+          verdict,
+          message: verdict === 'false_positive'
+            ? `Recorded: check ${checkId} was a false alarm. It now counts against the false-positive rate.`
+            : `Recorded: check ${checkId} was a good catch.`,
+        };
+      } catch (err) {
+        // Never queued for later: the endpoint updates one row by id, and a verdict that
+        // arrives silently minutes later is indistinguishable from one that was never sent.
+        // Say it did not land, so the user can say it again.
+        logEvent('compliance_check_feedback_failed', { check_id: checkId, verdict, error: err.message });
+        return {
+          status: 'error',
+          message: `Could not record the verdict for check ${checkId} (${err.message}). Nothing was saved — tell the user it did not go through.`,
+        };
+      }
     }
 
     case "ownmind_session_off": {

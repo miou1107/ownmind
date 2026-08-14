@@ -49,50 +49,86 @@ const LOCK_STALE_MS = 10 * 60 * 1000;
 const LOCK_POLL_MS = 250;
 const LOCK_TIMEOUT_MS = 10 * 60 * 1000;
 
+const OWNER_FILE = () => path.join(LOCK_DIR, 'owner.json');
+
+function readOwner() {
+  try { return JSON.parse(fs.readFileSync(OWNER_FILE(), 'utf8')); } catch { return null; }
+}
+
+/**
+ * Liveness first, age only as the fallback.
+ *
+ * The first cut asked "is it older than the stale window?" before "is the holder alive?", and
+ * `at` is stamped once at acquire with no heartbeat. A live holder that simply took longer than
+ * the window was therefore declared gone and its lock stolen out from under it — two containers
+ * at once, which is the state this lock exists to prevent. A pid that answers is alive, however
+ * long it has been working; the age check is only for the case where the pid tells us nothing.
+ */
 function lockHolderIsGone() {
-  let owner;
-  try {
-    owner = JSON.parse(fs.readFileSync(path.join(LOCK_DIR, 'owner.json'), 'utf8'));
-  } catch {
-    // No owner file at all: either a half-created lock or one from a version that did not
-    // write it. Age it out through the stale window rather than breaking it immediately.
+  const owner = readOwner();
+  // No owner record at all: a half-created lock, or one from a version that did not write it.
+  // Nothing to ask about liveness, so age it out rather than breaking it immediately.
+  if (!owner || !Number.isInteger(owner.pid)) {
     try { return Date.now() - fs.statSync(LOCK_DIR).mtimeMs > LOCK_STALE_MS; } catch { return true; }
   }
-  if (Date.now() - (owner.at || 0) > LOCK_STALE_MS) return true;
   try {
     // Signal 0 checks for existence without delivering anything. ESRCH means the holder died
     // without releasing; EPERM means it exists and belongs to someone else, so it is alive.
     process.kill(owner.pid, 0);
     return false;
   } catch (err) {
-    return err.code === 'ESRCH';
+    if (err.code === 'ESRCH') return true;
+    // Any other error (EPERM, or a pid this platform will not answer for) leaves liveness
+    // unknown; fall back to age so an unanswerable pid cannot block forever.
+    return Date.now() - (owner.at || 0) > LOCK_STALE_MS;
   }
 }
+
+/** The token this process wrote, so a release can prove the lock is still its own. */
+let heldToken = null;
 
 async function acquireDbLock() {
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   for (;;) {
     try {
       fs.mkdirSync(LOCK_DIR);
-      fs.writeFileSync(path.join(LOCK_DIR, 'owner.json'),
-        JSON.stringify({ pid: process.pid, at: Date.now() }));
+      // The token, not just the pid: pids are reused, and after a steal the previous holder
+      // must not be able to delete the new holder's lock on its way out.
+      heldToken = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      fs.writeFileSync(OWNER_FILE(), JSON.stringify({ pid: process.pid, at: Date.now(), token: heldToken }));
       return;
     } catch (err) {
       if (err.code !== 'EEXIST') throw err;
       if (lockHolderIsGone()) {
-        try { fs.rmSync(LOCK_DIR, { recursive: true, force: true }); } catch { /* raced */ }
-        continue;
+        // Delete the record we judged, not whatever is there now: between the judgement and
+        // this line another waiter may already have broken and retaken the lock, and removing
+        // a live holder's directory is the same two-containers bug by a different route.
+        const stale = readOwner();
+        try {
+          if (!stale || readOwner()?.token === stale?.token) {
+            fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+          }
+        } catch { /* raced with another breaker; fall through and retry */ }
       }
       if (Date.now() > deadline) {
         throw new Error(`timed out waiting for the test database lock at ${LOCK_DIR}`);
       }
+      // Always sleep, including after a break attempt: a break that keeps failing (a foreign
+      // holder's directory on a shared tmp) would otherwise spin without ever reaching the
+      // deadline check above.
       await new Promise((resolve) => { setTimeout(resolve, LOCK_POLL_MS); });
     }
   }
 }
 
 function releaseDbLock() {
-  try { fs.rmSync(LOCK_DIR, { recursive: true, force: true }); } catch { /* already gone */ }
+  if (!heldToken) return;
+  // Only if it is still ours. If we were judged stale and someone else took over, deleting the
+  // directory here would free a lock that another process is actively holding.
+  try {
+    if (readOwner()?.token === heldToken) fs.rmSync(LOCK_DIR, { recursive: true, force: true });
+  } catch { /* already gone */ }
+  heldToken = null;
 }
 
 /**
@@ -121,7 +157,23 @@ export async function startRealDb({
   // Taken after the docker check so a machine without docker still returns null instantly
   // rather than queueing behind a lock it will never need.
   await acquireDbLock();
+  // Everything from here to the successful return runs guarded: `docker run` can throw (image
+  // pull failure, a port already bound) and an unguarded throw would exit startRealDb with the
+  // lock still held and the container still up. The lock recovers on its own once the process
+  // dies — the next waiter's `process.kill` gets ESRCH — but until then the other DB files
+  // block, and the orphaned container is never reclaimed, because the next process derives a
+  // different name from its own pid.
+  try {
+    return await startContainer({ image, port, name });
+  } catch (err) {
+    try { execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' }); } catch { /* none */ }
+    releaseDbLock();
+    throw err;
+  }
+}
 
+/** The body of startRealDb, once the lock is held. Never call this without it. */
+async function startContainer({ image, port, name }) {
   try { execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' }); } catch { /* none */ }
   execFileSync('docker', ['run', '-d', '--name', name,
     '-e', 'POSTGRES_PASSWORD=test',
