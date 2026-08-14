@@ -1,5 +1,164 @@
 # OwnMind 更新紀錄
 
+## v1.26.172 — 做事閘門第一步：閘門規範隨執行包下發
+
+規則庫裡帶有做事閘門標註（`enforcement.gate`）的規範，現在會以資料的形式隨執行包的
+`guards` 清單下發（`kind: 'action'`）：觸發詞、檢查式（must_match / must_not_match）、
+要不要先讀規範全文、要不要先問過使用者，連同規範全文與它的 SHA-256 雜湊一起送到用戶端。
+雜湊蓋在下發的那份全文上 —— 之後的讀取回執會綁定它，規範一改、舊回執立刻失效。
+
+標註不完整的不會弄壞整包：沒有觸發詞、或觸發詞全都不是文字（過濾完剩空清單）的閘門，
+永遠不可能觸發，所以不下發；格式不對的檢查式逐條剔除，閘門本身照常下發。
+
+閘門標註可以帶一個選填的適用範圍樣式（`applies_pattern`，正規表達式）：帶了就只在指令
+對上樣式時觸發，沒帶就照觸發詞觸發。共用的觸發詞分類器寬鬆是刻意的（每個 `git push` 都
+算 deploy），這個樣式讓個別規範自己收窄範圍、不用再養第二個分類器。樣式原樣下發、伺服器
+不驗證 —— 用戶端把壞掉的樣式當成「照樣觸發」，壞資料的下場是多擋一次，不是漏擋。
+
+新增 `hooks/lib/action-gate.js`：guard matching 模組，判斷實際執行的指令有哪些
+閘門該被觸發。支援 `applies_pattern` 欄位，用正規表達式進一步限制特定閘門何時
+被觸發（無效正規表達式視為都通過，fail-toward-enforcement）；特殊處理版本標籤 push
+（ima-v、v+ 開頭、包括 refs/tags/ 格式）視為部署。修正：guards 不是陣列時安全
+降級而非拋錯（JSON 快取毀壞時的防禦）。
+
+新增 `hooks/lib/gate-receipt.js`：讀取回執基礎元件。每個狀態目錄帶一把 SHA-256 簽章用的
+密鑰（`gate.key`，32 位元隨機值，存取保護），每個 session 帶一個隨機 nonce。回執是
+JSON 檔，內含規範 ID、規範雜湊與 HMAC 簽章（簽過 `sessionId:ruleId:rulesHash:nonce`）；
+驗證時偵測到遺失檔、損壞內容、符號連結、或規範雜湊不符時返回 false（不拋例外）。
+確保密鑰與 nonce 的呼叫是冪等的。
+
+新增 `evaluateGate()` 與 `approveAction()`：決策核心邏輯。evaluateGate 按先後順序
+檢查匹配的閘門：(1) 規範未讀就擋下、全文放進 reason（傳遞即代表讀取、重試即通過）；
+(2) 逐條執行 checks、首次違規擋下並標註違規理由；(3) ask_first 無批准標記就擋下
+並核發同意碼（用 CSPRNG randomInt 產、不用 Math.random）；(4) 同個閘門 + 同類型
+連續被擋 3 次改為「停止並請人批准」（limit），之後永不允許（避免卡在迴圈）。clearLimit
+只在徹底通過時呼叫。sessionId 驗證以防路徑遍歷。approveAction 檢核同意碼雜湊後
+刪檔，一次性消耗。
+
+新增 `hooks/lib/approve-action.js`：一次性批准 CLI。讀取 `~/.ownmind/state/gate-current-session`
+（或 `OWNMIND_GATE_STATE_DIR` 環境變數）存放的 session ID，檢核同意碼並呼叫 approveAction；
+印出 `APPROVED` 退出碼 0 或 `REJECTED` 退出碼 1。guardId 轉換成整數 Number() 後驗證；
+任何無效輸入（state 目錄遺失、session 檔遺失、guardId 非正整數、code 不符）都靜默回傳
+REJECTED，不拋例外。
+
+**Amendment 2 修正**（adversarial review 發現的設計漏洞）：
+
+- C1：決策日誌永不記錄同意碼或 userLine（機器看不到的 systemMessage 內容）；改記
+  `code_issued: true` 旗標。
+- C2：回執子系統故障時（遺失密鑰、nonce 或狀態目錄不可寫）不拋例外、不靜默失敗放開；
+  跳過讀取閘門但設 `degraded: 'no-receipts'` 旗標、檢查式仍然執行（無狀態）、ask_first
+  仍然擋（fail closed）。
+- I1：limit 核發的同意碼在消耗時也要清除違規計數器，讓下次重試重新運行檢查。
+- I2：approve 只在整個指令徹底通過時消耗；任何其他閘門擋下就不消耗批准標記，下一次重試
+  時批准仍然有效。
+- I3：DOCKER_BUILD 模式已採納（共用分類器遺漏裸 `docker build`，它也是部署）。
+- I4：approveAction 與 evaluateGate 一致應用 sessionId 清理、guardId 須為正整數。
+
+**Re-review 波修正**（amendment 實裝後的安全與功能漏洞）：
+
+- NEW-1（安全）：ask_first 批准原本會跳過檢查式（不該有的捷徑），現在只有 'limit' 批准
+  能跳檢查；'ask' 批准必須通過檢查。approveAction 發出的同意檔現在記錄 kind，供判別。
+- NEW-2：read-block 與 check-block 決策原本遺漏 userLine；已還原人面向文字（機器日誌
+  仍然乾淨）。
+- (a) ask/limit 塊在降級模式下也帶 degraded 旗標。
+- (b) allow 日誌記錄消耗的 guardId 清單。
+- (c) degradedRead 改為按閘門重設，不黏著。
+
+**閘門接上執行線**：已註冊的 PreToolUse hook 現在真的會在動作前擋指令。
+
+新增 `hooks/lib/action-gate-cli.js`：stdin 收 hook payload、stdout 回決策的獨立程式。
+bash 版 hook（macOS / Linux 註冊的那份）照既有跑 node 助手的方式呼叫它、有輸出就原樣
+轉發並就地結束（擋下取代提醒流程——被擋的指令不需要提醒）；Windows 跑的 `.js` 版直接
+import 同一套模組，兩份 hook 對同一條指令永遠給同一個答案。輸出契約：擋下時印
+`{"decision":"block","reason":<給模型的理由>,"systemMessage":<給使用者的一行>,…}`；
+放行時一個字都不印（日常指令零干擾）；回執子系統壞掉時放行但明講「could not run in
+full - receipts unavailable, checks still enforced」；閘門本身跑不起來時放行但明講
+「this command was NOT gated」——閘門絕不無聲失效（fail-open-loud）。
+
+接線位置在觸發詞偵測與憑證檢查**之前**，是故意的：閘門讀的是本機執行包快取、不是
+API，沒設金鑰的機器一樣被管；裸 `docker build` 這種共用分類器故意不認的指令，也不會
+被空觸發詞的提早退出漏掉（e2e 測試鎖住這個順序）。首次接觸順手把狀態目錄的簽章密鑰與
+session nonce 建好（冪等、失敗可存活——降級為無狀態檢查並明講）。enforcement.json
+毀損或不存在一律視為「沒有東西要管」：安靜放行、不炸 hook。
+
+`tests/action-gate-e2e.test.js`：10 項端對端測試，全部 spawn 真程式、只讀 stdout ——
+首次部署擋下（決策 JSON 完整）、重試放行、裸 docker build 檢查式擋下、30 條日常指令
+零輸出（applies_pattern 讓 `git push origin main` / `feature-x` 通過）、版本標籤 push
+被 IR-136 型樣式閘門擋、毀損／缺席快取安靜、狀態目錄壞掉降級但檢查式照擋、
+.sh 與 .js 兩份 hook 原樣轉發決策。
+
+**Session 佈建**：兩份 SessionStart hook（`.sh` 與 `.js`）現在每次開新對話就把閘門狀態
+準備好（新增 `hooks/lib/gate-provision.js`，兩份 hook 共用同一個函式）：確保簽章密鑰
+存在（mode 0400）、確保本 session 的 nonce 存在 —— nonce 內容不是 32 位十六進位就砍掉
+重生（防被植入的假 nonce 拿去簽回執）；把 session ID 寫進 `gate-current-session`（批准
+CLI 靠這個檔知道「現在是哪個 session」，所以就算密鑰跟 nonce 都已存在也每次重寫）；
+並清掃超過 30 天的 per-session 狀態檔（回執、詢問、上限、nonce —— `gate.key`、
+`gate-current-session` 與稽核日誌 `gate-log.jsonl` 永不清）。佈建跑在憑證檢查之前：
+閘門讀的是本機快取，沒設 API 金鑰的機器一樣要佈建。全程包在防護裡，任何失敗都靜默跳過、
+絕不拖慢或弄壞 session 啟動 —— 漏佈建的機器由閘門 CLI 在首次使用時大聲補上。閘門 CLI
+裡既有的 ensureKey / ensureNonce 後備保留（冪等）。`tests/gate-provisioning.test.js`
+5 項端對端測試 spawn 真 hook 對 staged HOME 驗證以上全部。
+
+**紅隊測試**：原型的五種偽造攻擊全部落成 `tests/gate-receipt.test.js` 的明確測試 ——
+手寫假 hmac、跨 session 重放（同機、換 nonce）、規範竄改後重新 pin（換 rules_hash）、
+符號連結回執、拿猜的密鑰算 hmac —— 每一種都必須驗證失敗（`false`）；任一種若成功
+即為重大破口，不是靠放寬斷言矇混過關的測試。同意面兩種攻擊落成 `tests/action-gate.test.js`：
+給模型看的 `reason` 永不帶 6 位同意碼（ask 與 limit 都驗）、稽核日誌裡也搜不到碼；
+以及「亂猜同意碼會燒掉這次 ask」—— 不能無限重試到猜中。
+
+**延後的加固修正**（早期審查標記、集中在本任務處理）：
+
+- 回執寫入端符號連結防禦：`writeReceipt` 先 lstat，遇到預先植入的符號連結先 unlink
+  再寫，避免寫入被重導向到攻擊者選定的檔案（unlink 只砍連結、不動目標）。
+- `verifyReceipt` 改為全函式（total）：畸形的 guard（缺 id 或 rules_hash）回傳 false、
+  絕不拋例外（拋例外會被呼叫端當成回執子系統故障、誤判為降級）；hmac 比對改用
+  `crypto.timingSafeEqual` 加長度守衛（常數時間比對，長度不符的截斷／亂碼 hmac 先擋掉）。
+- 佈建清掃：超齡的「目錄符號連結」以 lstat→unlink 移除（先前 `rmSync` 對目錄連結拋
+  EISDIR 被吞掉、垃圾永遠清不掉）。
+- 稽核日誌輪替：`gate-log.jsonl` 超過 5 MB 就輪到 `gate-log.jsonl.old`（覆蓋前一份
+  .old）再續寫，與 `hooks/ownmind-reply-lint.js` 橫幅備援檔的 `PENDING_FILE_MAX_BYTES`
+  同一套做法，稽核記錄不會無限膨脹。
+- `applies_pattern` 大小寫：比對改為不分大小寫（`/i`）。共用觸發詞分類器本來就是 `/i`，
+  裸觸發詞的閘門早就攔得到 `Git push`（大寫 G）；用 `applies_pattern` 自我收窄的閘門
+  不該反而更弱，讓大寫指令繞過。
+- 同意碼防猜：`approveAction` 記 `misses`，比對失敗就加一，累積 5 次後這次 ask 燒掉 ——
+  之後連正確碼也不放行，必須核發新的 ask（新碼、計數歸零）才能繼續。猜錯只會浪費它
+  正在猜的那一組碼，不會把使用者鎖在外面。
+
+**Amendment 3：口頭批准模式（`ask_mode: 'verbal'`）**：ask_first 閘門現在可以選「口頭 go」
+而不是貼 6 位數同意碼。閘門帶 `ask_mode: 'verbal'` 時（隨執行包下發、資料驅動），擋下的
+訊息改成「回覆 go 批准一次，回覆 no 取消」，不核發任何同意碼。approve-action.js 新增
+`--verbal <guardId>` 路徑，呼叫新的 `approveActionVerbal()`，把該 ask 標記為批准、記
+`approval_mode: 'verbal'`，全程沒有碼。
+
+這是誠實的降級、不是假裝的無法偽造：口頭模式是「停下來確認」閘門，不是「無法偽造同意」
+閘門 —— AI 轉述擋下訊息、使用者說 go、AI 記錄後放行，所以 AI 原則上可以自己宣稱得到了
+go。這個較弱的保證是刻意換取較低的摩擦；IR-136 的「先停下來」照舊強制，只有「同意的證明」
+被降級，而且降級這件事明寫在稽核日誌裡（`approval_mode: 'verbal'`）。
+
+兩條安全邊界有測試守住：口頭批准不能滿足 code 模式的 ask（不能用口頭 CLI 把 code 閘門
+降級成免碼），code 批准也不能滿足 verbal 模式的 ask（verbal 的 ask 根本沒有碼）。其餘
+性質（一次性、只在整條指令通過時消耗、非 limit 批准仍跑檢查、limit 停止並請人批准的
+路徑不變）與 code 模式完全相同。
+
+**Final-review fix — the gate owns stdout, the upgrade hitchhiker no longer shares it**:
+`hooks/ownmind-iron-rule-check.sh` carries a one-time "SessionStart hook missing →
+auto-install" block that echoes a `hookSpecificOutput` advisory on the first tool call. It
+used to run before the payload was read, so on a turn where the action gate then BLOCKED,
+stdout carried two newline-separated JSON objects (advisory + block). Two objects violate
+the single-object hook contract — a harness parser can drop the gate block and let a risky
+command run ungated. Fix: the advisory block now runs *after* the gate's evaluate-and-exit
+short-circuit, so a blocked command has already emitted its lone JSON object and exited
+before the advisory can speak. The advisory therefore only ever echoes on a turn the gate
+did NOT block, and it now fires on the first non-empty command rather than the first tool
+call of any kind — a negligible delay for a one-time, opportunistic self-heal. The `.js`
+twin (`hooks/ownmind-iron-rule-check.js`) needed no change: it has no upgrade block and its
+gate decision is the first thing it ever writes to stdout. `tests/action-gate-e2e.test.js`
+gains two end-to-end cases that stage a HOME with the upgrade armed (`~/.ownmind/.git`
+present, install marker absent): a gate-blockable command must yield exactly one JSON
+object — the block — and a non-blocked command must still let the single upgrade advisory
+through.
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓

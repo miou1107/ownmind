@@ -1,5 +1,41 @@
 # OwnMind 檔案結構
 
+## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）
+
+新增：
+```
+hooks/lib/action-gate.js                        — guard matching 與決策核心；evaluateGate、
+                                                   approveAction、matchGuards 匯出。
+hooks/lib/gate-receipt.js                       — 讀取回執子系統；writeReceipt、verifyReceipt、
+                                                   ensureKey、ensureNonce。
+hooks/lib/approve-action.js                     — 一次性批准 CLI；讀 session ID、驗碼、
+                                                   終端列印 APPROVED／REJECTED。
+hooks/lib/action-gate-cli.js                    — 閘門 CLI；stdin 收 hook payload、stdout 回
+                                                   決策 JSON，放行時靜默、失效時明講。
+tests/action-gate.test.js                       — guard matching、evaluateGate、approveAction
+                                                   的 26 項單元測試（含邊界與安全檢查）。
+tests/action-gate-e2e.test.js                   — 閘門接線端對端測試（CLI、.sh、.js 三面，
+                                                   含 30 條日常指令零干擾包）。
+tests/helpers/temp-dir.js                       — 測試用暫時目錄助手。
+hooks/lib/gate-provision.js                     — session 佈建；密鑰＋nonce（被植入就重生）＋
+                                                   gate-current-session＋30 天狀態清掃。
+tests/gate-provisioning.test.js                 — 佈建端對端測試（spawn 兩份 SessionStart
+                                                   hook 對 staged HOME，5 項）。
+```
+
+修改：
+```
+hooks/ownmind-iron-rule-check.sh                — 觸發詞偵測前先過做事閘門；閘門有輸出就
+                                                   原樣轉發並就地結束。
+hooks/ownmind-iron-rule-check.js                — 同上（Windows twin）；直接 import 閘門
+                                                   模組，同一套 fail-open-loud 包法。
+hooks/ownmind-session-start.sh                  — 開場即佈建閘門狀態（憑證檢查之前）；
+                                                   stdin payload 原樣交給 gate-provision.js。
+hooks/ownmind-session-start.js                  — 同上（Windows twin）；讀 stdin 取
+                                                   session_id、動態 import 佈建函式。
+tests/helpers/hook-home.js                      — staged home 加掛 hooks/lib 目錄。
+```
+
 ## v1.26.171 修改（規範真的被挑到，系統講的話真的被看到）
 
 修改：

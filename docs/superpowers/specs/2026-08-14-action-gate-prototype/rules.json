@@ -1,0 +1,61 @@
+[
+  {
+    "id": "deploy-docker-build",
+    "title": "Deploy builds: docker compose build --no-cache, never bare docker build (IR-023 + IR-018)",
+    "trigger": {
+      "command_patterns": [
+        "^(sudo )?docker build\\b",
+        "^(sudo )?docker compose\\b.*\\bbuild\\b",
+        "^(sudo )?docker-compose\\b.*\\bbuild\\b"
+      ]
+    },
+    "checks": [
+      {
+        "type": "must_not_match",
+        "pattern": "^(sudo )?docker build\\b",
+        "reason": "Bare `docker build` is forbidden for deploys — use `docker compose build` (IR-023, learned from a real production incident)."
+      },
+      {
+        "type": "must_match",
+        "pattern": "(^|\\s)--no-cache(\\s|$)",
+        "reason": "Deploy builds must include --no-cache (IR-018) — cached layers have shipped stale code before."
+      }
+    ],
+    "read_required": true
+  },
+  {
+    "id": "deploy-tag-push",
+    "title": "Tag pushes (v*, ima-v*, ima-rc*) ARE deploys and need per-instance human approval first (IR-136)",
+    "trigger": {
+      "command_patterns": [
+        "^git push\\b.*\\s(v[0-9]\\S*|ima-v\\S*|ima-rc\\S*)(\\s|$)"
+      ]
+    },
+    "checks": [
+      {
+        "type": "marker_exists",
+        "marker": "deploy-approved",
+        "reason": "Pushing this tag triggers a production deploy. No deploy-approved marker in this session — ask Vin first; a previous release is NOT standing authorization (IR-136)."
+      }
+    ],
+    "read_required": true
+  },
+  {
+    "id": "db-drop-backup",
+    "title": "psql / DROP TABLE requires a completed backup first (generalization test rule)",
+    "trigger": {
+      "command_patterns": [
+        "^psql\\b",
+        "\\bDROP\\s+TABLE\\b"
+      ]
+    },
+    "checks": [
+      {
+        "type": "marker_exists",
+        "marker": "backup-done",
+        "reason": "Destructive DB command with no backup-done marker in this session — take and verify a backup first."
+      }
+    ],
+    "read_required": true
+  }
+]

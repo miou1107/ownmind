@@ -95,6 +95,60 @@ async function main() {
     if (!trigger) process.exit(0);
   }
 
+  // --- P1 action gate (v1.26.172) ---
+  //
+  // Before the credential guard on purpose: the gate reads the local enforcement cache,
+  // not the API, so a machine that has never stored a key is still enforced. A block
+  // replaces the reminder flow entirely — a blocked command needs no reminder — and the
+  // degraded/fail-open notices take the same early exit, matching the .sh twin, which
+  // echoes whatever the gate CLI prints and stops. Two wirings of one protocol must not
+  // differ in what a platform is told.
+  //
+  // Fail-open-LOUD: anything thrown in here lets the command run but says so. The imports
+  // are dynamic and inside the try so a broken gate module degrades to that message
+  // instead of taking the whole hook down silently via main().catch.
+  if (command) {
+    try {
+      const { evaluateGate } = await import('./lib/action-gate.js');
+      const { readEnforcementBundle } = await import('./lib/enforcement-cache.js');
+      const { ensureKey, ensureNonce } = await import('./lib/gate-receipt.js');
+
+      const bundle = readEnforcementBundle();
+      const stateDir = path.join(HOME, '.ownmind', 'state');
+      const sid = /^[A-Za-z0-9._-]+$/.test(sessionId) ? sessionId : 'unknown';
+
+      // Idempotent provisioning; a failure is survivable — evaluateGate degrades to
+      // stateless checks and reports it through the degraded flag below.
+      try {
+        ensureKey(stateDir);
+        ensureNonce(stateDir, sid);
+      } catch { /* evaluateGate reports the degradation itself */ }
+
+      const gate = evaluateGate({ command, guards: bundle.guards, stateDir, sessionId: sid });
+      if (gate.action === 'block') {
+        console.log(JSON.stringify({
+          decision: 'block',
+          reason: gate.reason,
+          systemMessage: gate.userLine,
+          hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '' },
+        }));
+        process.exit(0);
+      }
+      if (gate.degraded) {
+        console.log(JSON.stringify({
+          systemMessage: '[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced',
+        }));
+        process.exit(0);
+      }
+      // plain allow: fall through to the reminder flow in silence
+    } catch {
+      console.log(JSON.stringify({
+        systemMessage: '[OwnMind] the action gate could not run - this command was NOT gated',
+      }));
+      process.exit(0);
+    }
+  }
+
   const { apiKey, apiUrl } = readCredentials();
   if (!apiKey || !apiUrl) process.exit(0);
 
