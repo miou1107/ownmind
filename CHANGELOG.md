@@ -99,6 +99,32 @@ CLI 靠這個檔知道「現在是哪個 session」，所以就算密鑰跟 nonc
 裡既有的 ensureKey / ensureNonce 後備保留（冪等）。`tests/gate-provisioning.test.js`
 5 項端對端測試 spawn 真 hook 對 staged HOME 驗證以上全部。
 
+**紅隊測試**：原型的五種偽造攻擊全部落成 `tests/gate-receipt.test.js` 的明確測試 ——
+手寫假 hmac、跨 session 重放（同機、換 nonce）、規範竄改後重新 pin（換 rules_hash）、
+符號連結回執、拿猜的密鑰算 hmac —— 每一種都必須驗證失敗（`false`）；任一種若成功
+即為重大破口，不是靠放寬斷言矇混過關的測試。同意面兩種攻擊落成 `tests/action-gate.test.js`：
+給模型看的 `reason` 永不帶 6 位同意碼（ask 與 limit 都驗）、稽核日誌裡也搜不到碼；
+以及「亂猜同意碼會燒掉這次 ask」—— 不能無限重試到猜中。
+
+**延後的加固修正**（早期審查標記、集中在本任務處理）：
+
+- 回執寫入端符號連結防禦：`writeReceipt` 先 lstat，遇到預先植入的符號連結先 unlink
+  再寫，避免寫入被重導向到攻擊者選定的檔案（unlink 只砍連結、不動目標）。
+- `verifyReceipt` 改為全函式（total）：畸形的 guard（缺 id 或 rules_hash）回傳 false、
+  絕不拋例外（拋例外會被呼叫端當成回執子系統故障、誤判為降級）；hmac 比對改用
+  `crypto.timingSafeEqual` 加長度守衛（常數時間比對，長度不符的截斷／亂碼 hmac 先擋掉）。
+- 佈建清掃：超齡的「目錄符號連結」以 lstat→unlink 移除（先前 `rmSync` 對目錄連結拋
+  EISDIR 被吞掉、垃圾永遠清不掉）。
+- 稽核日誌輪替：`gate-log.jsonl` 超過 5 MB 就輪到 `gate-log.jsonl.old`（覆蓋前一份
+  .old）再續寫，與 `hooks/ownmind-reply-lint.js` 橫幅備援檔的 `PENDING_FILE_MAX_BYTES`
+  同一套做法，稽核記錄不會無限膨脹。
+- `applies_pattern` 大小寫：比對改為不分大小寫（`/i`）。共用觸發詞分類器本來就是 `/i`，
+  裸觸發詞的閘門早就攔得到 `Git push`（大寫 G）；用 `applies_pattern` 自我收窄的閘門
+  不該反而更弱，讓大寫指令繞過。
+- 同意碼防猜：`approveAction` 記 `misses`，比對失敗就加一，累積 5 次後這次 ask 燒掉 ——
+  之後連正確碼也不放行，必須核發新的 ask（新碼、計數歸零）才能繼續。猜錯只會浪費它
+  正在猜的那一組碼，不會把使用者鎖在外面。
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓

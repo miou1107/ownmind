@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { tempDir } from './helpers/temp-dir.js';
+import { provisionGateSession } from '../hooks/lib/gate-provision.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -177,6 +178,31 @@ test('the sweep never takes the current session\'s own nonce, however old', () =
 
   assert.equal(fs.readFileSync(noncePath, 'utf8'), oldNonce,
     'the current session keeps the nonce it was ensured, even an aged one');
+});
+
+test('an aged directory-symlink in the state dir is swept, not left as clutter', () => {
+  // A dir-symlink named like sweepable state: rmSync without recursive throws EISDIR on it,
+  // the sweep swallows the throw, and the clutter stays forever. The sweep must lstat and
+  // unlink the link (never following it into its target directory).
+  const home = tempDir('gate-prov-dirlink-');
+  const stateDir = stateDirOf(home);
+  fs.mkdirSync(stateDir, { recursive: true });
+
+  const realDir = path.join(home, 'somewhere');
+  fs.mkdirSync(realDir, { recursive: true });
+  fs.writeFileSync(path.join(realDir, 'keep.txt'), 'keep');
+  const linkPath = path.join(stateDir, 'gate-receipt-deadlink-1.json');
+  fs.symlinkSync(realDir, linkPath);
+  // Age the symlink itself; lutimes acts on the link, not on the directory it points at.
+  const then = new Date(Date.now() - 31 * DAY_MS);
+  fs.lutimesSync(linkPath, then, then);
+
+  provisionGateSession(stateDir, 'prov-1');
+
+  assert.equal(fs.existsSync(linkPath), false, 'an aged dir-symlink must be swept');
+  assert.ok(fs.existsSync(realDir), 'sweeping the link must never touch its target directory');
+  assert.equal(fs.readFileSync(path.join(realDir, 'keep.txt'), 'utf8'), 'keep',
+    'the target directory contents are untouched');
 });
 
 test('the .sh twin provisions identically', { skip: process.platform === 'win32' }, () => {

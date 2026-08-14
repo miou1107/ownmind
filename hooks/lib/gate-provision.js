@@ -64,7 +64,14 @@ export function provisionGateSession(stateDir, sessionId) {
     if (name === `gate-nonce-${sessionId}`) continue;
     const p = path.join(stateDir, name);
     try {
-      if (fs.lstatSync(p).mtimeMs < cutoff) fs.rmSync(p, { force: true });
+      const st = fs.lstatSync(p);
+      if (st.mtimeMs < cutoff) {
+        // A directory-symlink named like state would make rmSync (no recursive) throw EISDIR,
+        // which the catch below swallows — leaving the clutter forever. unlink removes the link
+        // itself, never its target; rmSync handles ordinary aged files.
+        if (st.isSymbolicLink()) fs.unlinkSync(p);
+        else fs.rmSync(p, { force: true });
+      }
     } catch { /* a racing sweep already took it */ }
   }
 }

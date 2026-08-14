@@ -79,3 +79,46 @@ test('verifyReceipt returns false when receipt path is a symlink (never throws)'
   // verifyReceipt should return false for a symlink
   assert.equal(verifyReceipt(dir, 's1', guard), false);
 });
+
+// --- Deferred hardening (Task 9 § C) ---
+
+test('HARDENING: writeReceipt refuses to write through a pre-planted symlink', () => {
+  // An attacker pre-plants a symlink at the receipt path pointing at a file they want the
+  // gate to overwrite. writeReceipt must lstat and unlink the link, then write a real file.
+  const dir = tempDir('gate-wsym-');
+  ensureKey(dir);
+  ensureNonce(dir, 's1');
+  const guard = { id: 918, rule_text: 'text', rules_hash: 'aaa' };
+
+  const victim = path.join(dir, 'victim.txt');
+  fs.writeFileSync(victim, 'precious');
+  const receiptPath = path.join(dir, 'gate-receipt-s1-918.json');
+  fs.symlinkSync(victim, receiptPath);
+
+  writeReceipt(dir, 's1', guard);
+
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'precious', 'the symlink target must be untouched');
+  assert.equal(fs.lstatSync(receiptPath).isSymbolicLink(), false, 'the planted link is replaced by a real file');
+  assert.equal(verifyReceipt(dir, 's1', guard), true, 'the real receipt written in its place verifies');
+});
+
+test('HARDENING: verifyReceipt is total — a malformed guard returns false, never throws', () => {
+  const dir = tempDir('gate-total-');
+  ensureKey(dir);
+  ensureNonce(dir, 's1');
+  assert.equal(verifyReceipt(dir, 's1', undefined), false);
+  assert.equal(verifyReceipt(dir, 's1', null), false);
+  assert.equal(verifyReceipt(dir, 's1', {}), false, 'missing id and rules_hash');
+  assert.equal(verifyReceipt(dir, 's1', { id: 918 }), false, 'missing rules_hash');
+});
+
+test('HARDENING: verifyReceipt rejects a wrong-length hmac without throwing', () => {
+  // timingSafeEqual throws on unequal-length buffers; the length guard must catch it first.
+  const dir = tempDir('gate-len-');
+  ensureKey(dir);
+  ensureNonce(dir, 's1');
+  const guard = { id: 918, rule_text: 'text', rules_hash: 'aaa' };
+  fs.writeFileSync(path.join(dir, 'gate-receipt-s1-918.json'),
+    JSON.stringify({ ruleId: 918, rulesHash: 'aaa', hmac: 'ab' }));
+  assert.equal(verifyReceipt(dir, 's1', guard), false);
+});
