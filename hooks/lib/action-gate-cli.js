@@ -27,6 +27,22 @@ const DEGRADED_LINE =
 /** sessionId lands in state file names; anything unsafe collapses to 'unknown'. */
 const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
 
+/**
+ * Looks up a gate notice through t(), but the two lines above are what tell the user the
+ * gate itself just broke — that lookup must never depend on the same i18n module it would be
+ * reporting as broken. A dynamic import here (not a static one at module scope) means a
+ * broken hooks/lib/i18n.js only ever degrades this ONE notice's text to the plain English
+ * literal; it cannot take down this whole CLI before main() even runs.
+ */
+async function gateNotice(key, fallback) {
+  try {
+    const { t } = await import('./i18n.js');
+    return t(key);
+  } catch {
+    return fallback;
+  }
+}
+
 async function main() {
   let payload = {};
   try {
@@ -67,11 +83,11 @@ async function main() {
         hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '' },
       }));
     } else if (d.degraded) {
-      process.stdout.write(JSON.stringify({ systemMessage: DEGRADED_LINE }));
+      process.stdout.write(JSON.stringify({ systemMessage: await gateNotice('gate.degraded', DEGRADED_LINE) }));
     }
     // plain allow: print nothing — the everyday path costs one process and zero words
   } catch {
-    process.stdout.write(JSON.stringify({ systemMessage: NOT_GATED_LINE }));
+    process.stdout.write(JSON.stringify({ systemMessage: await gateNotice('gate.failopen', NOT_GATED_LINE) }));
   }
   process.exit(0);
 }

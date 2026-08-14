@@ -11,6 +11,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { detectCommandTrigger } from '../../shared/helpers.js';
 import { writeReceipt, verifyReceipt } from './gate-receipt.js';
+// Static on purpose: both callers (action-gate-cli.js, ownmind-iron-rule-check.js) already
+// dynamically import THIS module inside a try/catch that fail-opens on anything it throws —
+// a failure to load i18n.js is just one more member of that already-handled exception class,
+// not a new failure mode. reason strings below stay raw English template literals; only
+// userLine (user-facing) routes through t().
+import { t } from './i18n.js';
 
 /**
  * Regex for version-tag pushes.
@@ -166,7 +172,7 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
         + 'affirmative (go / ok / 好 / yes) run: '
         + `node ~/.ownmind/hooks/lib/approve-action.js --verbal ${guard.id} — then retry the command. `
         + 'Do NOT run that command otherwise, and do not state or imply the user approved unless they actually did.',
-      userLine: `[OwnMind] ⛔ "${guard.title}" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.`,
+      userLine: t('gate.ask.verbal', { title: guard.title }),
       approval_mode: 'verbal',
     };
   }
@@ -184,7 +190,7 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
     reason: `[OwnMind gate] "${guard.title}" needs the user's explicit go for this action. `
       + 'Ask the user for the 6-digit approval code shown on their screen, then run: '
       + `node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> — and retry the command.`,
-    userLine: `[OwnMind] ⛔ "${guard.title}" wants your approval for: ${kindLabel === 'limit' ? 'a command blocked 3 times in a row' : 'this action'}. Approval code: ${code} (paste it to the AI to allow it once)`,
+    userLine: t(kindLabel === 'limit' ? 'gate.ask.code.limit' : 'gate.ask.code.action', { title: guard.title, code }),
     code_issued: true,
   };
 }
@@ -326,7 +332,7 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
           return {
             action: 'block', kind: 'read', guardId: guard.id,
             reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
-            userLine: `[OwnMind] ⛔ blocked until the rule "${guard.title}" is read (auto-unblocks on retry)`,
+            userLine: t('gate.read.blocked', { title: guard.title }),
             ...(globalDegraded && { degraded: 'no-receipts' }),
           };
         }
@@ -371,7 +377,7 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
         return {
           action: 'block', kind: 'check', guardId: guard.id,
           reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
-          userLine: `[OwnMind] ⛔ blocked: ${c.reason}`,
+          userLine: t('gate.check.blocked', { reason: c.reason }),
           ...(globalDegraded && { degraded: 'no-receipts' }),
         };
       }

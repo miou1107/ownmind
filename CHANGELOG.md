@@ -218,6 +218,50 @@ seam), and end-to-end wiring — spawning both hook twins against a staged HOME 
 the real machine's `~/.ownmind`, and would otherwise silently depend on whatever account
 preference or OS locale happens to be on whoever's machine runs the suite.
 
+**Gate message i18n, task 3 of 7 — the gate family wired through `t()`**: the four
+`userLine` (user-facing, `systemMessage`) sites in `hooks/lib/action-gate.js` now call
+`t()` — verbal ask (`gate.ask.verbal`), code-mode ask (`gate.ask.code.action`), the
+3-strikes limit escalation (`gate.ask.code.limit`, the same code-mode template with a
+different key instead of the old `kindLabel === 'limit'` ternary), read-block
+(`gate.read.blocked`), and check-block (`gate.check.blocked`). The model-facing `reason`
+on every one of those branches is untouched — still a raw English template literal — and a
+new test asserts `reason`/`action`/`kind` stay byte-identical across every locale, so a
+gate DECISION can never depend on which language its notice happens to render in. The
+three literal duplicates of the failopen/degraded notices (`action-gate-cli.js` ×2,
+`ownmind-iron-rule-check.js` ×2) now resolve through `t('gate.failopen')` /
+`t('gate.degraded')` too.
+
+Both of those two call sites sit in the gate's own fail-open catch blocks — the code that
+tells the user the gate just broke — so they cannot depend on a static top-level import of
+`i18n.js` the way `action-gate.js` itself safely can (that one is always loaded through a
+dynamic `import()` its two callers already wrap in try/catch, so a broken `i18n.js` just
+joins the existing "anything thrown in the gate path fails open" class). Both files instead
+gained a small `gateNotice(key, fallback)` helper: a *dynamic* `import('./i18n.js')` wrapped
+in its own try/catch, falling back to the plain English literal on any failure. Verified
+empirically (not assumed) that Node's ESM loader resolves a symlinked module's
+`import.meta.url` to its real path by default — so a naive "symlink everything except one
+broken file" test harness would have silently loaded the real, working `i18n.js` instead of
+the staged broken one; the new e2e test stages real file copies for exactly the files whose
+own relative imports need to be redirected.
+
+`hooks/ownmind-iron-rule-check.sh`'s hardcoded fail-open JSON (fired only when node itself
+cannot run at all, so there is no node process left to call `t()` through) gains a one-line
+comment explaining why it deliberately stays a literal, kept in sync with `gate.failopen`
+by hand.
+
+New `tests/action-gate-i18n.test.js` (17 cases): all five zh `userLine` variants with
+placeholders filled; an en regression pin byte-identical to the pre-change literals (copied
+from `docs/superpowers/specs/2026-08-14-gate-i18n/string-inventory.json`, not retyped);
+`reason` staying English and gate-decision fields staying identical across locales; the
+CLI's degraded and failopen notices rendering in zh under `OWNMIND_LOCALE_FORCE`; and the
+broken-`i18n.js` case proving the gate still exits 0, still fails the command open exactly
+like any other internal exception, and falls back to the English literal even when a locale
+was explicitly forced. `tests/action-gate.test.js` pins `OWNMIND_LOCALE_FORCE=en` for the
+whole suite (several assertions there pin literal English `userLine` text, e.g. the exact
+verbal go-ahead line and `/blocked until the rule/` — that suite predates locale support
+and is meant to pin behavior, not translated copy, so the fix is to force the locale rather
+than weaken those assertions).
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓

@@ -40,20 +40,38 @@ tests/hook-i18n.test.js                         — t() + getLocale() OWNMIND_LO
 tests/hook-locale.test.js                       — getLocale() full resolution chain,
                                                    provisionLocale() null-on-failure behavior,
                                                    and SessionStart wiring end-to-end (16 cases).
+tests/action-gate-i18n.test.js                  — the gate family through t(): zh userLine for
+                                                   all 5 block variants, en byte-identical
+                                                   regression pin, reason/decision fields locale-
+                                                   independent, CLI degraded/failopen notices
+                                                   localized, and a broken-i18n.js e2e case
+                                                   proving fail-open never invents a block (17
+                                                   cases).
 ```
 
 修改：
 ```
 hooks/ownmind-iron-rule-check.sh                — 觸發詞偵測前先過做事閘門；閘門有輸出就
-                                                   原樣轉發並就地結束。
+                                                   原樣轉發並就地結束；fail-open 字面值加註解
+                                                   說明為何不走 t()。
 hooks/ownmind-iron-rule-check.js                — 同上（Windows twin）；直接 import 閘門
-                                                   模組，同一套 fail-open-loud 包法。
+                                                   模組，同一套 fail-open-loud 包法；failopen／
+                                                   degraded 通知改走 gateNotice() 動態 import
+                                                   t()、失敗時退回英文字面值。
 hooks/ownmind-session-start.sh                  — 開場即佈建閘門狀態（憑證檢查之前）；
                                                    stdin payload 原樣交給 gate-provision.js；
                                                    同位置加呼叫 locale-provision.js（不需 stdin）。
 hooks/ownmind-session-start.js                  — 同上（Windows twin）；讀 stdin 取
                                                    session_id、動態 import 佈建函式；新增
                                                    provisionOsLocale()，緊接 provisionGate() 之後。
+hooks/lib/action-gate.js                        — 4 個 userLine 站點（verbal ask、code-mode
+                                                   ask/limit、read-block、check-block）改走
+                                                   t()；model-facing reason 不動。
+hooks/lib/action-gate-cli.js                    — failopen／degraded 通知改走 gateNotice()
+                                                   動態 import t()、失敗時退回英文字面值。
+tests/action-gate.test.js                       — pin OWNMIND_LOCALE_FORCE=en for the whole
+                                                   suite (predates locale support; several
+                                                   assertions pin literal English userLine text).
 tests/helpers/hook-home.js                      — staged home 加掛 hooks/lib 目錄。
 ```
 

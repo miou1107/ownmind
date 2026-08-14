@@ -30,6 +30,29 @@ import {
 // failed into a catch that exits 0, so the hook went quiet instead of going wrong.
 const importFile = (p) => import(pathToFileURL(p).href);
 
+const NOT_GATED_LINE =
+  '[OwnMind] the action gate could not run - this command was NOT gated';
+const DEGRADED_LINE =
+  '[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced';
+
+/**
+ * Looks up a gate notice through t(), but the two lines above are what tell the user the
+ * gate itself just broke — that lookup must never depend on the same i18n module it would be
+ * reporting as broken. A dynamic import here (not a static one at module scope) means a
+ * broken hooks/lib/i18n.js only ever degrades this ONE notice's text to the plain English
+ * literal; it cannot take down this whole hook before main() even runs. LITERAL DUPLICATE of
+ * the same helper in hooks/lib/action-gate-cli.js — these are independent client wirings of
+ * one protocol, not a shared module, same as the notice strings themselves.
+ */
+async function gateNotice(key, fallback) {
+  try {
+    const { t } = await import('./lib/i18n.js');
+    return t(key);
+  } catch {
+    return fallback;
+  }
+}
+
 const HOME = os.homedir();
 const CACHE_FILE = path.join(HOME, '.ownmind', 'cache', 'iron_rules.json');
 const VERSION = getClientVersion();
@@ -136,14 +159,14 @@ async function main() {
       }
       if (gate.degraded) {
         console.log(JSON.stringify({
-          systemMessage: '[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced',
+          systemMessage: await gateNotice('gate.degraded', DEGRADED_LINE),
         }));
         process.exit(0);
       }
       // plain allow: fall through to the reminder flow in silence
     } catch {
       console.log(JSON.stringify({
-        systemMessage: '[OwnMind] the action gate could not run - this command was NOT gated',
+        systemMessage: await gateNotice('gate.failopen', NOT_GATED_LINE),
       }));
       process.exit(0);
     }

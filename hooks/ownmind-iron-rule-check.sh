@@ -147,6 +147,10 @@ GATE_OUT=$(printf '%s' "$INPUT" | node "$HOME/.ownmind/hooks/lib/action-gate-cli
 GATE_STATUS=$?
 if [ "$GATE_STATUS" -ne 0 ]; then
   log_event "action_gate_failed" "status" "$GATE_STATUS"
+  # Hardcoded English on purpose: this branch means node itself could not run the gate CLI, so
+  # there is no node process left here to call t() through — bash cannot route this through the
+  # i18n dictionary the way the .js side does. Keep it in sync with gate.failopen in
+  # hooks/locales/en.json (Task 3, 2026-08-14 gate-message-i18n).
   echo '{"systemMessage":"[OwnMind] the action gate could not run - this command was NOT gated"}'
   exit 0
 fi
