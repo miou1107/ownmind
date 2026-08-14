@@ -116,3 +116,89 @@ test('multiple guards are matched correctly', () => {
   assert.equal(deployMatches.length, 1);
   assert.equal(deployMatches[0].id, 918);
 });
+
+test('applies_pattern restricts guard matching', () => {
+  const deployGuardWithPattern = {
+    id: 950,
+    kind: 'action',
+    triggers: ['deploy'],
+    checks: [],
+    read_required: true,
+    ask_first: false,
+    rule_text: 'x',
+    rules_hash: 'h',
+    applies_pattern: 'git\\s+push\\b.*\\s(refs\\/tags\\/)?(v\\d|ima-v|ima-rc)|docker\\s+compose',
+  };
+
+  // Should NOT match plain git push
+  assert.equal(
+    matchGuards('git push origin main', [deployGuardWithPattern]).length,
+    0,
+    'plain git push should not match pattern'
+  );
+  assert.equal(
+    matchGuards('git push origin feature-x', [deployGuardWithPattern]).length,
+    0,
+    'feature branch push should not match pattern'
+  );
+
+  // Should match version-tag push
+  assert.equal(
+    matchGuards('git push origin ima-v1.2.9', [deployGuardWithPattern]).length,
+    1,
+    'version-tag push should match pattern'
+  );
+
+  // Should match docker compose
+  assert.equal(
+    matchGuards('docker compose build --no-cache api', [
+      deployGuardWithPattern,
+    ]).length,
+    1,
+    'docker compose should match pattern'
+  );
+});
+
+test('invalid applies_pattern regex still fires guard', () => {
+  const deployGuardWithInvalidPattern = {
+    id: 951,
+    kind: 'action',
+    triggers: ['deploy'],
+    checks: [],
+    read_required: true,
+    ask_first: false,
+    rule_text: 'x',
+    rules_hash: 'h',
+    applies_pattern: '(',
+  };
+
+  // Even though pattern is invalid, guard should still match (fail toward enforcement)
+  assert.equal(
+    matchGuards('docker compose build', [deployGuardWithInvalidPattern]).length,
+    1,
+    'invalid regex should still allow guard to fire'
+  );
+});
+
+test('guard without applies_pattern field works as before', () => {
+  const deployGuardNoPattern = {
+    id: 952,
+    kind: 'action',
+    triggers: ['deploy'],
+    checks: [],
+    read_required: true,
+    ask_first: false,
+    rule_text: 'x',
+    rules_hash: 'h',
+  };
+
+  // Should match any deploy command
+  assert.equal(
+    matchGuards('git push origin main', [deployGuardNoPattern]).length,
+    1
+  );
+  assert.equal(
+    matchGuards('docker compose build', [deployGuardNoPattern]).length,
+    1
+  );
+});
