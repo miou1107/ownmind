@@ -146,12 +146,38 @@ function bumpLimit(stateDir, sid, gid, kind) {
 function clearLimit(stateDir, sid, gid) { try { fs.unlinkSync(limitPath(stateDir, sid, gid)); } catch { /* absent is fine */ } }
 
 function issueAsk(stateDir, sid, guard, kindLabel) {
+  // Amendment 3 (verbal mode): an ask_first guard the owner marked ask_mode:'verbal' still BLOCKS
+  // and surfaces the rule, but requires no secret code — a spoken "go" approves it. This is a
+  // stop-and-confirm gate, not an unforgeable-consent gate; the honesty downgrade is recorded
+  // as approval_mode:'verbal'. The limit backstop is NEVER verbal ("limit path unchanged"), so
+  // verbal only applies to the ask_first path (kindLabel === 'ask').
+  const verbal = kindLabel === 'ask' && guard.ask_mode === 'verbal';
+  if (verbal) {
+    try {
+      // No codeHash: a verbal ask has no code to satisfy. mode:'verbal' is the on-disk marker
+      // that only approveActionVerbal — never the code CLI — may approve this record.
+      fs.writeFileSync(askPath(stateDir, sid, guard.id),
+        JSON.stringify({ approved: false, kind: kindLabel, mode: 'verbal' }));
+    } catch { /* without the file the approve step fails closed */ }
+    return {
+      action: 'block', kind: kindLabel, guardId: guard.id,
+      reason: `[OwnMind gate] "${guard.title}" needs the user's explicit go-ahead before this action runs. `
+        + 'Relay this block to the user in your own words. ONLY if the user then replies with an '
+        + 'affirmative (go / ok / 好 / yes) run: '
+        + `node ~/.ownmind/hooks/lib/approve-action.js --verbal ${guard.id} — then retry the command. `
+        + 'Do NOT run that command otherwise, and do not state or imply the user approved unless they actually did.',
+      userLine: `[OwnMind] ⛔ "${guard.title}" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.`,
+      approval_mode: 'verbal',
+    };
+  }
+
   // The code is a consent secret, not a label: use a CSPRNG, not Math.random.
   const code = String(randomInt(100000, 1000000));
   try {
-    // NEW-1: Store kindLabel so we can distinguish ask vs limit approvals
+    // NEW-1: Store kindLabel so we can distinguish ask vs limit approvals.
+    // mode:'code' is the explicit sentinel so approveActionVerbal can refuse to downgrade it.
     fs.writeFileSync(askPath(stateDir, sid, guard.id),
-      JSON.stringify({ codeHash: createHash('sha256').update(code).digest('hex'), approved: false, kind: kindLabel }));
+      JSON.stringify({ codeHash: createHash('sha256').update(code).digest('hex'), approved: false, kind: kindLabel, mode: 'code' }));
   } catch { /* without the file the approve step fails closed */ }
   return {
     action: 'block', kind: kindLabel, guardId: guard.id,
@@ -181,6 +207,10 @@ export function approveAction(stateDir, sessionId, guardId, code) {
   const rec = readJson(p);
   if (!rec || rec.approved) return false;
 
+  // A code approve may satisfy ONLY a code-mode ask. A verbal-mode ask carries no code, so the
+  // code CLI must not be able to approve it — the two consent paths stay separate on purpose.
+  if (rec.mode === 'verbal') return false;
+
   // A burned ask never yields, even to the correct code. issueAsk overwrites the file with a
   // fresh record (no misses), so a new ask resets the counter — a wrong-guess run cannot lock
   // the user out, it only wastes the one code it was guessing against.
@@ -193,6 +223,40 @@ export function approveAction(stateDir, sessionId, guardId, code) {
     return false;
   }
   try { fs.writeFileSync(p, JSON.stringify({ ...rec, approved: true })); } catch { return false; }
+  return true;
+}
+
+/**
+ * Verbal approval (Amendment 3): mark a verbal-mode ask approved with NO code. The user said
+ * "go" out loud; the AI records that and proceeds. This is the accepted honesty downgrade — a
+ * stop-and-confirm, not unforgeable consent — so the record carries approval_mode:'verbal'.
+ *
+ * It REFUSES a code-mode ask: a verbal "go" cannot downgrade a guard the owner left in code mode.
+ * It applies the same sessionId/guardId sanitization as approveAction, so a path-traversal
+ * sessionId or a non-positive guardId can never approve anything.
+ *
+ * @param {string} stateDir
+ * @param {string} sessionId
+ * @param {number} guardId
+ * @returns {boolean}
+ */
+export function approveActionVerbal(stateDir, sessionId, guardId) {
+  const sid = typeof sessionId === 'string' && SAFE_SESSION_ID.test(sessionId)
+    ? sessionId
+    : 'unknown';
+  if (!Number.isInteger(guardId) || guardId <= 0) return false;
+
+  const p = askPath(stateDir, sid, guardId);
+  const rec = readJson(p);
+  if (!rec || rec.approved) return false;
+
+  // A verbal approve may satisfy ONLY a verbal-mode ask. A code-mode ask (or any ask without
+  // the verbal marker) cannot be waved through by the verbal CLI — that would defeat the code
+  // guard entirely.
+  if (rec.mode !== 'verbal') return false;
+
+  try { fs.writeFileSync(p, JSON.stringify({ ...rec, approved: true, approval_mode: 'verbal' })); }
+  catch { return false; }
   return true;
 }
 
@@ -213,6 +277,9 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
   const matched = matchGuards(command, guards);
   let globalDegraded = false;
   const consumedGuards = [];
+  // Amendment 3: record when an allow is being granted on the strength of a verbal go-ahead,
+  // so the audit log shows the honesty boundary rather than hiding it.
+  let verbalApprovalConsumed = false;
 
   // I2: Evaluate all guards first, collect verdicts, defer approval consumption
   const approvalsToConsume = [];
@@ -318,10 +385,14 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
         const ask = issueAsk(stateDir, sid, guard, 'ask');
         const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'ask', action: 'block' };
         if (ask.code_issued) logEntry.code_issued = true;
+        // A verbal ask logs approval_mode:'verbal' instead of code_issued — never a code.
+        if (ask.approval_mode) logEntry.approval_mode = ask.approval_mode;
         log(stateDir, logEntry);
         // (a) Carry degraded flag in blocks
         return { ...ask, ...(globalDegraded && { degraded: 'no-receipts' }) };
       }
+      // The go-ahead was verbal: mark it so the eventual allow log records the honesty boundary.
+      if (rec.approval_mode === 'verbal') verbalApprovalConsumed = true;
       // Defer consumption until all guards pass (ask approvals also deferred)
       approvalsToConsume.push(guard.id);
       consumedGuards.push(guard.id);
@@ -340,6 +411,7 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
   const logEntry = { sessionId: sid, command, action: 'allow' };
   if (consumedGuards.length > 0) logEntry.guardIds = consumedGuards;
   if (globalDegraded) logEntry.degraded = 'no-receipts';
+  if (verbalApprovalConsumed) logEntry.approval_mode = 'verbal';
   log(stateDir, logEntry);
 
   return { action: 'allow', ...(globalDegraded && { degraded: 'no-receipts' }) };

@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { matchGuards, evaluateGate, approveAction } from '../hooks/lib/action-gate.js';
+import { matchGuards, evaluateGate, approveAction, approveActionVerbal } from '../hooks/lib/action-gate.js';
 import { ensureKey, ensureNonce } from '../hooks/lib/gate-receipt.js';
 import { tempDir } from './helpers/temp-dir.js';
 
@@ -545,7 +545,119 @@ test('a capital-G "Git push" version-tag deploy is still gated', () => {
   );
 });
 
+// --- Amendment 3: verbal approval mode ---
+
+test('VERBAL: a verbal ask blocks with a go-ahead line, carries no code, and never claims approval', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ ask_first: true, ask_mode: 'verbal', checks: [], read_required: false });
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  assert.equal(ask.action, 'block', 'a verbal ask still blocks');
+  // The exact go-ahead line Amendment 3 specifies.
+  assert.equal(
+    ask.userLine,
+    '[OwnMind] ⛔ "compose no-cache" needs your go-ahead for this action. Reply "go" to approve it once, or "no" to cancel.',
+  );
+  // No secret code anywhere: verbal mode issues none.
+  assert.ok(!/\d{6}/.test(ask.userLine), 'a verbal ask must carry no 6-digit code in the user line');
+  assert.ok(!/\d{6}/.test(ask.reason), 'a verbal ask must carry no 6-digit code in the reason');
+  // The reason must instruct the --verbal CLI and must NOT claim the user already approved.
+  assert.match(ask.reason, /approve-action\.js --verbal 918/, 'the reason must point at the --verbal CLI');
+  assert.ok(!/already approved|has approved|user approved this/i.test(ask.reason),
+    'the reason must not claim the user already approved');
+});
+
+test('VERBAL: approveActionVerbal approves a verbal ask once, then it is one-shot', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ id: 819, ask_first: true, ask_mode: 'verbal', checks: [], read_required: false });
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  assert.equal(approveActionVerbal(dir, 's1', g.id), true, 'a verbal approve marks the ask approved');
+  const allowed = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(allowed.action, 'allow', 'the retry after a verbal go is allowed once');
+  const again = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(again.kind, 'ask', 'the verbal approval is one-shot');
+});
+
+test('VERBAL SECURITY: a verbal approve cannot satisfy a code-mode ask', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ id: 820, ask_first: true, checks: [], read_required: false }); // default ask_mode: code
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  assert.ok(/\d{6}/.test(ask.userLine), 'a code-mode ask still issues a 6-digit code');
+  // The verbal CLI must NOT be able to downgrade a code guard to a codeless go-ahead.
+  assert.equal(approveActionVerbal(dir, 's1', g.id), false, 'a verbal approve must refuse a code-mode ask');
+  // The guard is still blocked (no approval was recorded).
+  const still = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(still.kind, 'ask', 'the code-mode ask is still pending after a rejected verbal approve');
+});
+
+test('VERBAL SECURITY: a code approve cannot satisfy a verbal ask', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ id: 821, ask_first: true, ask_mode: 'verbal', checks: [], read_required: false });
+  evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  // A verbal ask carries no code; the code CLI must not approve it with any guess.
+  assert.equal(approveAction(dir, 's1', g.id, '000000'), false, 'a code approve must refuse a verbal ask');
+  assert.equal(approveAction(dir, 's1', g.id, '123456'), false, 'still refused for any code');
+  // A legitimate verbal approve still works after the code attempts.
+  assert.equal(approveActionVerbal(dir, 's1', g.id), true, 'the verbal approve still works');
+});
+
+test('VERBAL: approveActionVerbal refuses a bad sessionId and a non-positive guardId', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ id: 822, ask_first: true, ask_mode: 'verbal', checks: [], read_required: false });
+  evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(approveActionVerbal(dir, '../etc/passwd', g.id), false, 'path-traversal sessionId is refused');
+  assert.equal(approveActionVerbal(dir, 's1', -1), false, 'negative guardId is refused');
+  assert.equal(approveActionVerbal(dir, 's1', 0), false, 'zero guardId is refused');
+  assert.equal(approveActionVerbal(dir, 's1', 'not-a-number'), false, 'non-integer guardId is refused');
+});
+
+test('VERBAL: gate-log records approval_mode verbal on issue and on the approved allow, never a code', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ id: 823, ask_first: true, ask_mode: 'verbal', checks: [], read_required: false });
+
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  approveActionVerbal(dir, 's1', g.id);
+  const allowed = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(allowed.action, 'allow');
+
+  const entries = fs.readFileSync(path.join(dir, 'gate-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const askEntry = entries.find((e) => e.kind === 'ask');
+  assert.equal(askEntry.approval_mode, 'verbal', 'the verbal ask block logs approval_mode: verbal');
+  assert.ok(!('code_issued' in askEntry), 'a verbal ask logs no code_issued flag');
+  const allowEntry = entries.find((e) => e.action === 'allow');
+  assert.equal(allowEntry.approval_mode, 'verbal', 'the allow that consumes a verbal go logs approval_mode: verbal');
+  // No 6-digit code is ever written for a verbal flow.
+  assert.ok(!/\d{6}/.test(fs.readFileSync(path.join(dir, 'gate-log.jsonl'), 'utf8')),
+    'the gate-log carries no code for a verbal flow');
+});
+
 // --- CLI: approve-action ---
+
+test('the approval CLI approves a verbal ask via --verbal, and refuses a code-mode ask', () => {
+  const dir = prepStateDir();
+  fs.writeFileSync(path.join(dir, 'gate-current-session'), 's1');
+  // A verbal ask carries no codeHash, only mode: 'verbal'.
+  fs.writeFileSync(path.join(dir, 'gate-ask-s1-830.json'),
+    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  const env = { ...process.env, OWNMIND_GATE_STATE_DIR: dir };
+  const ok = spawnSync('node', ['hooks/lib/approve-action.js', '--verbal', '830'], { encoding: 'utf8', env });
+  assert.equal(ok.status, 0);
+  assert.match(ok.stdout, /APPROVED/);
+  // One-shot: the second --verbal is rejected (already approved).
+  const again = spawnSync('node', ['hooks/lib/approve-action.js', '--verbal', '830'], { encoding: 'utf8', env });
+  assert.equal(again.status, 1);
+  assert.match(again.stdout, /REJECTED/);
+
+  // A code-mode ask must not be approvable via --verbal.
+  fs.writeFileSync(path.join(dir, 'gate-ask-s1-831.json'),
+    JSON.stringify({ codeHash: createHash('sha256').update('123456').digest('hex'), approved: false, kind: 'ask', mode: 'code' }));
+  const rejected = spawnSync('node', ['hooks/lib/approve-action.js', '--verbal', '831'], { encoding: 'utf8', env });
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stdout, /REJECTED/);
+});
 
 test('the approval CLI approves a valid code once', () => {
   const dir = prepStateDir();
