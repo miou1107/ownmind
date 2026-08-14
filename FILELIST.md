@@ -2,6 +2,29 @@
 
 ## v1.26.173 修改（一次觸發只佔一行，不要再被主程式蓋三次章）
 
+新增（鐵律升級助手蓋掉整包 metadata）：
+```
+tests/iron-rule-upgrade-metadata-preserved.test.js — 真資料庫 + 真路由 + 真 adminAuth：升級
+                                                   帶 origin_event 時 metadata.stats 與其他鍵
+                                                   必須留下、稽核列要有真的規範編號、已寫過
+                                                   起源的規範不再被念補起源。
+```
+
+修改（鐵律升級助手蓋掉整包 metadata）：
+```
+src/routes/admin-iron-rule-upgrade.js           — PUT /:id/upgrade 的 SELECT 補回程式其實有讀
+                                                   的 code / metadata 兩欄；寫入改成
+                                                   jsonb_set 只動 origin_context 一個鍵，
+                                                   不再整包覆蓋（會清掉 metadata.stats）；
+                                                   metadata 不是物件時也不會 500。
+                                                   POST /:id/suggest-skill-md 的 SELECT 同樣
+                                                   補上 metadata，兩個端點對同一條規範才會
+                                                   講一樣的話。
+src/utils/iron-rule-suggest.js                  — 自我 lint 時把 metadata 一起帶進去；lint 沒過
+                                                   的提示改口，講清楚 origin_context 的錯是在
+                                                   規範存的資料裡、不是在旁邊那格提案文字裡。
+```
+
 修改（final-review wrap-up）：
 ```
 hooks/lib/conditional-sync.js                   — DEFAULT_CACHE_PATH is now exported: one owner

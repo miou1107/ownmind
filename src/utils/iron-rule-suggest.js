@@ -87,14 +87,22 @@ export function suggestSkillMdFormat(rule) {
   // v1.18.1 A: round-trip lint self-check — the helper validates its own output against lint
   // Previously (rc3) it did not; the upgrade assistant only got rejected by the server on click, a fixture/prod mismatch
   // Now the helper runs lint itself and, if it fails, adds a warning to notes for the admin
+  // v1.26.173: metadata is forwarded so checkOriginContext sees an origin_context the rule
+  // already records. Callers that pass no metadata are unchanged — undefined is what this
+  // lint saw before, and it reads it as "absent" either way.
   const lintCheck = lintIronRule({
     title: rule.title,
     content: proposed,
     tags: rule.tags,
+    metadata: rule.metadata,
   });
   if (!lintCheck.ok) {
-    notes.push(`⚠️ Template proposal did not pass lint (will be rejected by the server): ${lintCheck.errors.join(' / ')}`);
-    notes.push('Admin must fix it manually before saving; do not just click confirm');
+    // "This proposal" rather than "the template proposal": since v1.26.173 the lint also sees
+    // the rule's stored metadata, so an `origin_context:` error here is about the row, not
+    // about the text in the editor beside it — and no amount of editing that text clears it.
+    // Repair the metadata through a metadata-only PUT /api/memory/:id instead.
+    notes.push(`⚠️ This proposal did not pass lint (the server will reject it): ${lintCheck.errors.join(' / ')}`);
+    notes.push('Fix it before saving; do not just click confirm. An error prefixed `origin_context:` is in the rule\'s stored metadata, not in the proposal — editing the text below will not clear it.');
   }
   if (lintCheck.warnings && lintCheck.warnings.length > 0) {
     for (const w of lintCheck.warnings) notes.push(`Hint: ${w}`);
