@@ -7,7 +7,7 @@
  * device cannot be opened — Claude Code's desktop app on Windows, measured 2026-08-10 — the
  * fallback is not an edge case, it is the only path: 19 banners piled up in 25 minutes.
  *
- * Two programs drain it, and until now they did it in two different ways:
+ * Two programs used to drain it, and they did it in two different ways:
  *
  *   - the shell SessionStart hook, via the `flush-pending-banners.js` CLI
  *   - the Node SessionStart hook, which spawned that same CLI *detached with stdio ignored*
@@ -17,10 +17,17 @@
  * spawn discarded stderr, so the blocks went nowhere while the file was emptied anyway.
  * What the user saw was the header line and nothing under it — every queued message lost.
  *
- * So the parsing rule lives here, both callers share it, and the Node hook prints the blocks
- * itself rather than delegating to a child whose output it cannot see. Clearing the spool is
- * the caller's job, and only after the blocks are out: the cleanup goes after the evidence,
- * never before it.
+ * v1.26.171 stopped both drains: every notice is now delivered on the turn it happens, as
+ * systemMessage JSON, and re-announcing an already-delivered notice into a stream the user
+ * never reads was worth less than the audit record the flush destroyed. So banner-pending
+ * .jsonl is append-only now, and NOTHING IN THE PRODUCT READS IT — these functions are kept
+ * for reading the spool by hand while debugging (`node hooks/lib/flush-pending-banners.js <
+ * banner-pending.jsonl`) and for the tests that pin the parsing rule.
+ *
+ * v1.26.173: the one notice that genuinely could not be delivered in-turn — the outcome of a
+ * background update, produced by a child that outlives its session — has its own queue at
+ * logs/update-pending.jsonl and its own drain in the Stop hook. Queue and audit record are
+ * separate files because they are separate jobs; conflating them is what lost the notice.
  */
 
 /**
