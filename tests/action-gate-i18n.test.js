@@ -308,43 +308,55 @@ test('JS hook: the failopen notice is rendered in zh when OWNMIND_LOCALE_FORCE=z
   });
 });
 
-// --- CLI: a totally broken i18n module must never crash the gate or change its decision —
-// it must fall back to the plain English literal, exactly as if i18n.js did not exist ---
+// --- A totally broken i18n module must never crash any of the three gate entry points, nor
+// change what any of them decide — it must fall back to the plain English literal, exactly
+// as if i18n.js did not exist. Covers all three: the CLI, the .js hook twin, and the
+// approve-action CLI (review found the third one crashing with empty stdout — see below). ---
 
 /**
- * Stages an isolated copy of the CLI's own import chain (action-gate.js, gate-receipt.js,
- * enforcement-cache.js, locale.js — everything action-gate-cli.js's dynamic imports touch)
- * with real file CONTENT copied in, EXCEPT hooks/lib/i18n.js, which is replaced with a file
- * that fails to parse. This simulates "the i18n module cannot load" without ever touching the
- * real hooks/lib/i18n.js — every other test file in this suite (after Task 3) transitively
- * imports that file through the gate, so corrupting the real one, even briefly, would be a
- * shared-file race against every other test file node's parallel test runner may run
- * concurrently.
+ * Stages an isolated directory whose hooks/lib/i18n.js fails to parse, with everything else
+ * needed to load `entryRelPath` present too. `copyRelPaths` are real file-CONTENT copies (for
+ * files whose OWN `./i18n.js`-relative resolution must land on the staged broken one —
+ * i.e. hooks/lib/action-gate.js and the entry file itself); `symlinkRelPaths` are symlinks to
+ * the real files (for everything else on the static import graph that just needs to load,
+ * where redirecting its own further imports does not matter).
  *
- * These must be real copies, not symlinks: Node's ESM loader resolves a symlinked module's
- * `import.meta.url` to its REAL path by default (verified empirically — see task report), so
- * a symlinked action-gate.js would resolve its own `./i18n.js` against the real repo path and
- * silently load the real, working i18n.js instead of this staged broken one. Only `shared/`
- * is safe to symlink whole, because shared/helpers.js has no relative imports of its own to
- * mis-resolve.
+ * These must be real copies, not symlinks, for the two files named above: Node's ESM loader
+ * resolves a symlinked module's `import.meta.url` to its REAL path by default (verified
+ * empirically — see task report), so a symlinked action-gate.js would resolve its own
+ * `./i18n.js` against the real repo path and silently load the real, working i18n.js instead
+ * of this staged broken one. `shared/` is always safe to symlink whole, because none of the
+ * files under it have relative imports of their own that need mis-resolving.
+ *
+ * Never touches the real hooks/lib/i18n.js — every other test file in this suite (after Task
+ * 3) transitively imports it through the gate, so corrupting the real one, even briefly,
+ * would be a shared-file race against every other test file node's parallel test runner may
+ * run concurrently.
  */
-function stageBrokenI18nCli() {
+function stageBrokenI18nTree({ entryRelPath, copyRelPaths, symlinkRelPaths = [] }) {
   const tempRoot = tempDir('gate-broken-i18n-');
   fs.mkdirSync(path.join(tempRoot, 'hooks', 'lib'), { recursive: true });
   fs.symlinkSync(path.join(repoRoot, 'shared'), path.join(tempRoot, 'shared'));
-  const KEEP = ['action-gate-cli.js', 'action-gate.js', 'gate-receipt.js', 'enforcement-cache.js', 'locale.js'];
-  for (const name of KEEP) {
-    fs.copyFileSync(path.join(repoRoot, 'hooks', 'lib', name), path.join(tempRoot, 'hooks', 'lib', name));
+  for (const rel of symlinkRelPaths) {
+    fs.symlinkSync(path.join(repoRoot, rel), path.join(tempRoot, rel));
+  }
+  for (const rel of [...copyRelPaths, entryRelPath]) {
+    fs.mkdirSync(path.dirname(path.join(tempRoot, rel)), { recursive: true });
+    fs.copyFileSync(path.join(repoRoot, rel), path.join(tempRoot, rel));
   }
   // A syntax error: the dynamic `import('./i18n.js')` this simulates must REJECT, not just
   // return something t()-shaped, to prove the guard around the import itself (not just around
   // a well-formed-but-empty module).
   fs.writeFileSync(path.join(tempRoot, 'hooks', 'lib', 'i18n.js'), 'export function t( { this is not valid js');
-  return path.join(tempRoot, 'hooks', 'lib', 'action-gate-cli.js');
+  return path.join(tempRoot, entryRelPath);
 }
 
 test('CLI: an unloadable i18n.js falls back to the English literal, exits 0, and fails the command open', () => {
-  const cliPath = stageBrokenI18nCli();
+  const cliPath = stageBrokenI18nTree({
+    entryRelPath: 'hooks/lib/action-gate-cli.js',
+    copyRelPaths: ['hooks/lib/action-gate.js'],
+    symlinkRelPaths: ['hooks/lib/gate-receipt.js', 'hooks/lib/enforcement-cache.js', 'hooks/lib/locale.js'],
+  });
   const home = tempDir('gate-broken-i18n-home-');
   stageEnforcement(home, [mkGuard({ id: 750 })]);
 
@@ -367,4 +379,65 @@ test('CLI: an unloadable i18n.js falls back to the English literal, exits 0, and
     '[OwnMind] the action gate could not run - this command was NOT gated',
     'the fallback is the plain English literal even though OWNMIND_LOCALE_FORCE=zh was set — i18n itself is broken'
   );
+});
+
+test('JS hook: an unloadable i18n.js falls back to the English literal, exits 0, and fails the command open', () => {
+  // The .js hook's static import list is longer than the CLI's, but only action-gate.js and
+  // the entry file itself sit on the path to i18n.js — everything else here just needs to
+  // load, so it is symlinked to the real (unbroken) file rather than copied.
+  const hookPath = stageBrokenI18nTree({
+    entryRelPath: 'hooks/ownmind-iron-rule-check.js',
+    copyRelPaths: ['hooks/lib/action-gate.js'],
+    symlinkRelPaths: [
+      'hooks/ownmind-edit-reminder.js',
+      'hooks/lib/gate-receipt.js',
+      'hooks/lib/enforcement-cache.js',
+      'hooks/lib/locale.js',
+      'hooks/lib/hook-context-fetch.js',
+    ],
+  });
+  const home = tempDir('gate-broken-i18n-jshook-home-');
+  stageEnforcement(home, [mkGuard({ id: 751 })]);
+
+  const payload = JSON.stringify({
+    session_id: 'broken-i18n', hook_event_name: 'PreToolUse', tool_name: 'Bash',
+    tool_input: { command: 'docker compose build --no-cache api' },
+  });
+  const r = spawnSync(process.execPath, [hookPath], {
+    input: payload,
+    encoding: 'utf8',
+    cwd: home,
+    env: { ...process.env, HOME: home, USERPROFILE: home, OWNMIND_LOCALE_FORCE: 'zh' },
+  });
+  assert.equal(r.status, 0, `must exit 0 even with a broken i18n module; stderr=${r.stderr.slice(0, 500)}`);
+  let parsed;
+  assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); }, `stdout must be valid JSON, got:\n${r.stdout}`);
+  assert.ok(!parsed.decision, 'a broken i18n module must fail the gate OPEN, never invent a block');
+  assert.equal(
+    parsed.systemMessage,
+    '[OwnMind] the action gate could not run - this command was NOT gated',
+    'the fallback is the plain English literal even though OWNMIND_LOCALE_FORCE=zh was set — i18n itself is broken'
+  );
+});
+
+test('approve-action CLI: an unloadable i18n.js still prints REJECTED (not a crash with empty stdout)', () => {
+  // Regression case: action-gate.js's new static `import { t } from './i18n.js'` (this task)
+  // is also reachable through approve-action.js, which statically imports action-gate.js at
+  // its own top level — a location that cannot be wrapped in try/catch. Left as a static
+  // import there too, a broken i18n.js would crash approve-action.js with a raw stack trace
+  // and NO "REJECTED" on stdout, which is a real regression for whatever parses that output.
+  // approve-action.js now imports action-gate.js dynamically, inside its own try/catch, so
+  // this must still print REJECTED and exit 1 like any other bad input.
+  const approvePath = stageBrokenI18nTree({
+    entryRelPath: 'hooks/lib/approve-action.js',
+    copyRelPaths: ['hooks/lib/action-gate.js'],
+    symlinkRelPaths: ['hooks/lib/gate-receipt.js', 'hooks/lib/locale.js'],
+  });
+  const stateDir = tempDir('gate-broken-i18n-approve-state-');
+  const r = spawnSync(process.execPath, [approvePath, '918', '123456'], {
+    encoding: 'utf8',
+    env: { ...process.env, OWNMIND_GATE_STATE_DIR: stateDir },
+  });
+  assert.equal(r.status, 1, 'a broken i18n module fails closed, same exit code as any other rejected approval');
+  assert.equal(r.stdout, 'REJECTED\n', 'must still print REJECTED on stdout, not crash with an empty stdout + stack trace');
 });

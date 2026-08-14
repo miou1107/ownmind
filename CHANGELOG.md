@@ -262,6 +262,21 @@ verbal go-ahead line and `/blocked until the rule/` — that suite predates loca
 and is meant to pin behavior, not translated copy, so the fix is to force the locale rather
 than weaken those assertions).
 
+Review found a third static importer of `action-gate.js` the fail-open analysis above had
+missed: `hooks/lib/approve-action.js`, whose top-level `import { approveAction,
+approveActionVerbal } from './action-gate.js'` cannot be wrapped in try/catch (ESM static
+imports are hoisted). With a broken `i18n.js`, that crashed the approval CLI with a raw
+stack trace and empty stdout instead of printing `REJECTED` — the exit code happened to
+still be 1, but the documented `stdout` contract (`APPROVED`/`REJECTED`, always) broke.
+`approve-action.js` now imports `action-gate.js` dynamically inside its own try/catch,
+falling closed to `REJECTED` on any import failure, same as every other bad-input path in
+that file. Review also found the broken-`i18n.js` e2e proof only covered
+`action-gate-cli.js`, not its literal-duplicate twin `ownmind-iron-rule-check.js` — two new
+cases in `tests/action-gate-i18n.test.js` (19 total) close both gaps: the same
+broken-module scenario staged against the `.js` hook, and against `approve-action.js`
+itself. The staging helper was generalized (`stageBrokenI18nTree`) so all three entry
+points share one implementation instead of three near-duplicates.
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓
