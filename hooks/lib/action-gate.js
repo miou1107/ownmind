@@ -196,7 +196,10 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
       reason: `[OwnMind gate] "${guard.title}" needs the user's explicit go-ahead before this action runs. `
         + 'Relay this block to the user in your own words. ONLY if the user then replies with an '
         + 'affirmative (go / ok / 好 / yes) run: '
-        + `node ~/.ownmind/hooks/lib/approve-action.js --verbal ${guard.id} — then retry the command. `
+        // `--session ${sid}` is not optional decoration: without it the CLI falls back to a
+        // single global pointer that the most recent SessionStart owns, so with two Claude
+        // sessions open the approval lands on the wrong one and a genuine "go" is refused.
+        + `node ~/.ownmind/hooks/lib/approve-action.js --verbal ${guard.id} --session ${sid} — then retry the command. `
         + 'Do NOT run that command otherwise, and do not state or imply the user approved unless they actually did.',
       userLine: safeT(
         'gate.ask.verbal',
@@ -219,7 +222,9 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
     action: 'block', kind: kindLabel, guardId: guard.id,
     reason: `[OwnMind gate] "${guard.title}" needs the user's explicit go for this action. `
       + 'Ask the user for the 6-digit approval code shown on their screen, then run: '
-      + `node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> — and retry the command.`,
+      // Same reason as the verbal branch above: the session has to be named, or a second
+      // open session silently owns the pointer this CLI would otherwise resolve through.
+      + `node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> --session ${sid} — and retry the command.`,
     userLine: kindLabel === 'limit'
       ? safeT(
         'gate.ask.code.limit',

@@ -671,6 +671,82 @@ test('the approval CLI approves a verbal ask via --verbal, and refuses a code-mo
   assert.match(rejected.stdout, /REJECTED/);
 });
 
+test('the approval CLI approves the session it is given, not whichever started last', () => {
+  // v1.26.174. The gate writes its ask under the session it blocked; this CLI used to look
+  // the session up in `gate-current-session`, a single pointer every SessionStart overwrites.
+  // Measured on the first real release this gate stopped: the ask belonged to the blocked
+  // session, the pointer belonged to a second Claude session started minutes later, and a
+  // genuine user "go" printed REJECTED. Two sessions open — the normal state on this
+  // author's machine — meant the gate could not be approved at all.
+  const dir = prepStateDir();
+  // The pointer names the OTHER session, exactly as a later SessionStart would leave it.
+  fs.writeFileSync(path.join(dir, 'gate-current-session'), 'other-session');
+  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-820.json'),
+    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  const env = { ...process.env, OWNMIND_GATE_STATE_DIR: dir };
+
+  // Without the flag the CLI resolves the pointer, finds no ask there, and refuses. That is
+  // the defect, pinned: it is what the old code did on every invocation.
+  const blind = spawnSync('node', ['hooks/lib/approve-action.js', '--verbal', '820'], { encoding: 'utf8', env });
+  assert.equal(blind.status, 1, 'the pointer names a session with no such ask, so this must refuse');
+
+  const named = spawnSync('node',
+    ['hooks/lib/approve-action.js', '--verbal', '820', '--session', 'blocked-session'],
+    { encoding: 'utf8', env });
+  assert.equal(named.status, 0, `naming the blocked session must approve it; got ${named.stdout}${named.stderr}`);
+  assert.match(named.stdout, /APPROVED/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'gate-ask-blocked-session-820.json'), 'utf8')).approved, true);
+
+  // The pointer's own session is untouched — this names a session, it does not claim one.
+  assert.equal(fs.readFileSync(path.join(dir, 'gate-current-session'), 'utf8'), 'other-session');
+
+  // Still one-shot, and the flag order does not matter for the code form either.
+  const twice = spawnSync('node',
+    ['hooks/lib/approve-action.js', '--verbal', '820', '--session', 'blocked-session'],
+    { encoding: 'utf8', env });
+  assert.equal(twice.status, 1, 'an already-approved ask must still refuse a second time');
+
+  // A code-mode ask in a named session takes the code path and nothing else.
+  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-821.json'),
+    JSON.stringify({ codeHash: createHash('sha256').update('654321').digest('hex'), approved: false, kind: 'ask', mode: 'code' }));
+  const wrongCode = spawnSync('node',
+    ['hooks/lib/approve-action.js', '821', '000000', '--session', 'blocked-session'], { encoding: 'utf8', env });
+  assert.equal(wrongCode.status, 1, 'naming a session must not let a wrong code through');
+  const rightCode = spawnSync('node',
+    ['hooks/lib/approve-action.js', '821', '654321', '--session', 'blocked-session'], { encoding: 'utf8', env });
+  assert.equal(rightCode.status, 0, `the real code in a named session must approve; got ${rightCode.stdout}`);
+  // And --verbal still cannot downgrade a code-mode ask, named session or not.
+  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-822.json'),
+    JSON.stringify({ codeHash: createHash('sha256').update('111111').digest('hex'), approved: false, kind: 'ask', mode: 'code' }));
+  const downgrade = spawnSync('node',
+    ['hooks/lib/approve-action.js', '--verbal', '822', '--session', 'blocked-session'], { encoding: 'utf8', env });
+  assert.equal(downgrade.status, 1, '--session must not become a way around code mode');
+
+  // A traversal attempt in the id collapses to 'unknown' before it reaches a path, so it
+  // cannot reach the real ask above and cannot write outside the state dir.
+  const traversal = spawnSync('node',
+    ['hooks/lib/approve-action.js', '--verbal', '820', '--session', '../../blocked-session'],
+    { encoding: 'utf8', env });
+  assert.equal(traversal.status, 1, 'an unsafe session id must be refused, not path-joined');
+});
+
+test('the gate names the blocked session in the approval command it hands the AI', () => {
+  // The CLI's --session flag is only reachable if the instruction carries the value, and the
+  // AI has no other way to learn its own session id — it is in no environment variable.
+  const dir = prepStateDir();
+  const verbalGuard = mkGuard({ id: 820, ask_first: true, ask_mode: 'verbal', checks: [], read_required: false });
+  const verbal = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [verbalGuard], stateDir: dir, sessionId: 'sess-abc' });
+  assert.equal(verbal.kind, 'ask');
+  assert.match(verbal.reason, /--verbal 820 --session sess-abc/,
+    'the verbal instruction must name the blocked session');
+
+  const codeGuard = mkGuard({ id: 821, ask_first: true, checks: [], read_required: false });
+  const coded = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [codeGuard], stateDir: dir, sessionId: 'sess-abc' });
+  assert.equal(coded.kind, 'ask');
+  assert.match(coded.reason, /approve-action\.js 821 <code> --session sess-abc/,
+    'the code instruction must name it too');
+});
+
 test('the approval CLI approves a valid code once', () => {
   const dir = prepStateDir();
   fs.writeFileSync(path.join(dir, 'gate-current-session'), 's1');

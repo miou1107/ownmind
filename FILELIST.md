@@ -1,5 +1,27 @@
 # OwnMind 檔案結構
 
+## v1.26.174 修改（開兩個視窗，閘門就永遠點不了頭）
+
+修改：
+```
+hooks/lib/approve-action.js                     — 收 `--session <id>`：登記「使用者點頭了」
+                                                   要對到被擋的那個對話，不是最後開的那個。
+                                                   沒帶參數就退回原本的指標檔（單視窗不變）。
+hooks/lib/action-gate.js                        — 擋下來時給 AI 的那行指令帶上 --session，
+                                                   代碼模式與口頭模式都帶。
+tests/action-gate.test.js                       — 兩項新測試：指標指向別的對話時，帶對話代號
+                                                   才登記得成；以及閘門真的把對話代號寫進那行
+                                                   指令裡。含穿越路徑、代碼模式不被降級、
+                                                   一次性等反例。
+tests/helpers/real-db.js                        — 等資料庫起來改成真的下一句查詢，不再只信
+                                                   pg_isready（initdb 的臨時伺服器會讓它提早
+                                                   說 yes）；再加跨行程互斥鎖，整套測試同時
+                                                   只會有一個資料庫容器（持有者掛掉會被接手，
+                                                   不會卡死）。
+package.json / README* / docs/README*           — 1.26.173 → 1.26.174
+CHANGELOG.md / FILELIST.md                      — v1.26.174 條目
+```
+
 ## v1.26.173 修改（一次觸發只佔一行，不要再被主程式蓋三次章）
 
 新增（鐵律升級助手蓋掉整包 metadata）：
