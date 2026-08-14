@@ -5,6 +5,30 @@ import { getLocale } from './locale.js';
 
 const dictCache = new Map();
 
+/**
+ * The locale resolved for this process, or null before the first resolution.
+ *
+ * getLocale() reads and JSON.parses <home>/.ownmind/cache/memories.json on every call —
+ * measured at 0.296 ms against a real 57 KB cache. One gate run emits several notices, on the
+ * PreToolUse path whose whole budget is ~1.5 ms, so a per-call read is most of the budget spent
+ * re-deriving an answer that cannot change usefully mid-run. Resolving once also closes the
+ * window where a concurrent locale rewrite renders two lines of the same run in two languages.
+ */
+let localeMemo = null;
+
+/**
+ * OWNMIND_LOCALE_FORCE is deliberately exempt from the memo: it is the documented test seam,
+ * and several suites flip it between calls inside a single process. An env lookup is free, so
+ * only the file-reading resolution below it is worth caching.
+ */
+const FORCED_LOCALES = new Set(['zh', 'en', 'ja']);
+
+function resolveLocale() {
+  if (FORCED_LOCALES.has(process.env.OWNMIND_LOCALE_FORCE)) return getLocale();
+  if (localeMemo === null) localeMemo = getLocale();
+  return localeMemo;
+}
+
 function loadDict(locale) {
   if (!dictCache.has(locale)) {
     let dict = null;
@@ -18,12 +42,14 @@ function loadDict(locale) {
 
 export function t(key, params = {}) {
   let template;
-  for (const locale of [getLocale(), 'en']) {
+  for (const locale of [resolveLocale(), 'en']) {
     const dict = loadDict(locale);
     if (dict && typeof dict[key] === 'string') { template = dict[key]; break; }
   }
   if (template === undefined) template = key;
-  return template.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));
+  // Object.hasOwn, not `name in params`: `in` walks the prototype chain, so a template
+  // containing {constructor} or {toString} would render a function body into a user notice.
+  return template.replace(/\{(\w+)\}/g, (m, name) => (Object.hasOwn(params, name) ? String(params[name]) : m));
 }
 
-export function resetI18nCacheForTests() { dictCache.clear(); }
+export function resetI18nCacheForTests() { dictCache.clear(); localeMemo = null; }
