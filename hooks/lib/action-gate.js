@@ -6,7 +6,11 @@
  * classifier detects them as plain git pushes.
  */
 
+import { createHash, randomInt } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { detectCommandTrigger } from '../../shared/helpers.js';
+import { writeReceipt, verifyReceipt } from './gate-receipt.js';
 
 /**
  * Regex for version-tag pushes.
@@ -14,6 +18,16 @@ import { detectCommandTrigger } from '../../shared/helpers.js';
  * Examples: v0.35.13, ima-v1.2.9, ima-rc123
  */
 const TAG_PUSH = /git\s+push\b.*\s(?:refs\/tags\/)?(?:v\d|ima-v|ima-rc)/;
+
+/**
+ * Regex for plain `docker build` invocations.
+ * The shared classifier only recognises `docker compose` verbs as deploys, so the
+ * non-compliant sibling — `docker build` where a guard demands `docker compose build`
+ * — would never reach the gate, making its must_not_match check dead code. Anchored
+ * to a command position (start of string, or after ;, &, |, or sudo) so quoted
+ * mentions like `git grep "docker build"` stay unmatched.
+ */
+const DOCKER_BUILD = /(^|[;&|]\s*|\bsudo\s+)docker\s+build(\s|$)/;
 
 /**
  * Check if a command matches a guard's applies_pattern.
@@ -65,6 +79,11 @@ export function matchGuards(command, guards) {
   // Special case: version-tag pushes are deployments
   if (TAG_PUSH.test(command)) triggers.add('deploy');
 
+  // Special case: a plain `docker build` is a deploy attempt — it is the very
+  // command the compose guards exist to intercept, and the shared classifier
+  // does not see it.
+  if (DOCKER_BUILD.test(command)) triggers.add('deploy');
+
   // No triggers matched, return empty array
   if (!triggers.size) return [];
 
@@ -78,4 +97,111 @@ export function matchGuards(command, guards) {
       g.triggers.some((t) => triggers.has(t)) &&
       patternMatches(command, g.applies_pattern)
   );
+}
+
+// --- Decision core: read gate, compliance gate, ask-first, stop-and-ask limit ---
+
+const askPath = (d, sid, gid) => path.join(d, `gate-ask-${sid}-${gid}.json`);
+const limitPath = (d, sid, gid) => path.join(d, `gate-limit-${sid}-${gid}.json`);
+const logPath = (d) => path.join(d, 'gate-log.jsonl');
+
+/**
+ * sessionId is trusted from the harness only. It is embedded in state file
+ * names, so anything outside this set (e.g. a "/" from "../") could steer
+ * state paths outside the state directory.
+ */
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
+
+function log(stateDir, entry) {
+  try { fs.appendFileSync(logPath(stateDir), JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n'); }
+  catch { /* the log must never take the gate down */ }
+}
+
+function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
+
+function bumpLimit(stateDir, sid, gid, kind) {
+  const p = limitPath(stateDir, sid, gid);
+  const prev = readJson(p) || { kind: null, count: 0 };
+  const count = prev.kind === kind ? prev.count + 1 : 1;
+  try { fs.writeFileSync(p, JSON.stringify({ kind, count })); } catch { /* over-asks, never under */ }
+  return count;
+}
+function clearLimit(stateDir, sid, gid) { try { fs.unlinkSync(limitPath(stateDir, sid, gid)); } catch { /* absent is fine */ } }
+
+function issueAsk(stateDir, sid, guard, kindLabel) {
+  // The code is a consent secret, not a label: use a CSPRNG, not Math.random.
+  const code = String(randomInt(100000, 1000000));
+  try {
+    fs.writeFileSync(askPath(stateDir, sid, guard.id),
+      JSON.stringify({ codeHash: createHash('sha256').update(code).digest('hex'), approved: false }));
+  } catch { /* without the file the approve step fails closed */ }
+  return {
+    action: 'block', kind: kindLabel, guardId: guard.id,
+    reason: `[OwnMind gate] "${guard.title}" needs the user's explicit go for this action. `
+      + 'Ask the user for the 6-digit approval code shown on their screen, then run: '
+      + `node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> — and retry the command.`,
+    userLine: `[OwnMind] ⛔ "${guard.title}" wants your approval for: ${kindLabel === 'limit' ? 'a command blocked 3 times in a row' : 'this action'}. Approval code: ${code} (paste it to the AI to allow it once)`,
+  };
+}
+
+export function approveAction(stateDir, sessionId, guardId, code) {
+  const p = askPath(stateDir, sessionId, guardId);
+  const rec = readJson(p);
+  if (!rec || rec.approved) return false;
+  if (createHash('sha256').update(String(code)).digest('hex') !== rec.codeHash) return false;
+  try { fs.writeFileSync(p, JSON.stringify({ ...rec, approved: true })); } catch { return false; }
+  return true;
+}
+
+function consumeApproval(stateDir, sessionId, guardId) {
+  const p = askPath(stateDir, sessionId, guardId);
+  const rec = readJson(p);
+  if (!rec || rec.approved !== true) return false;
+  try { fs.unlinkSync(p); } catch { /* worst case: one extra allowed retry this session */ }
+  return true;
+}
+
+export function evaluateGate({ command, guards, stateDir, sessionId }) {
+  // Path-traversal hardening: never let an untrusted sessionId steer state paths.
+  const sid = typeof sessionId === 'string' && SAFE_SESSION_ID.test(sessionId)
+    ? sessionId
+    : 'unknown';
+
+  const matched = matchGuards(command, guards);
+  for (const guard of matched) {
+    const decide = (d) => { log(stateDir, { sessionId: sid, guardId: guard.id, command, ...d }); return d; };
+
+    if (guard.read_required && !verifyReceipt(stateDir, sid, guard)) {
+      writeReceipt(stateDir, sid, guard); // delivering the text below IS the read
+      const count = bumpLimit(stateDir, sid, guard.id, 'read');
+      if (count >= 3) return decide(issueAsk(stateDir, sid, guard, 'limit'));
+      return decide({
+        action: 'block', kind: 'read', guardId: guard.id,
+        reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
+        userLine: `[OwnMind] ⛔ blocked until the rule "${guard.title}" is read (auto-unblocks on retry)`,
+      });
+    }
+
+    for (const c of guard.checks || []) {
+      let re; try { re = new RegExp(c.pattern); } catch { continue; } // a broken pattern must not brick the shell
+      const hit = re.test(command);
+      if ((c.type === 'must_match' && !hit) || (c.type === 'must_not_match' && hit)) {
+        const count = bumpLimit(stateDir, sid, guard.id, 'check');
+        if (count >= 3) return decide(issueAsk(stateDir, sid, guard, 'limit'));
+        return decide({
+          action: 'block', kind: 'check', guardId: guard.id,
+          reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
+          userLine: `[OwnMind] ⛔ blocked: ${c.reason}`,
+        });
+      }
+    }
+
+    if (guard.ask_first && !consumeApproval(stateDir, sid, guard.id)) {
+      return decide(issueAsk(stateDir, sid, guard, 'ask'));
+    }
+
+    clearLimit(stateDir, sid, guard.id);
+    log(stateDir, { sessionId: sid, guardId: guard.id, command, action: 'allow' });
+  }
+  return { action: 'allow' };
 }
