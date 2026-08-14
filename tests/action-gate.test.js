@@ -4,7 +4,10 @@
 
 import { strict as assert } from 'assert';
 import { test } from 'node:test';
-import { matchGuards } from '../hooks/lib/action-gate.js';
+import { createHash } from 'node:crypto';
+import { matchGuards, evaluateGate, approveAction } from '../hooks/lib/action-gate.js';
+import { ensureKey, ensureNonce } from '../hooks/lib/gate-receipt.js';
+import { tempDir } from './helpers/temp-dir.js';
 
 const DEPLOY_GUARD = {
   id: 918,
@@ -217,4 +220,65 @@ test('refs/tags/ push format is recognized as a version-tag deployment', () => {
     1,
     'refs/tags/ format should match deploy guard'
   );
+});
+
+// --- evaluateGate / approveAction (the decision core) ---
+
+function prepStateDir() {
+  const dir = tempDir('gate-eval-');
+  ensureKey(dir);
+  ensureNonce(dir, 's1');
+  return dir;
+}
+
+function mkGuard(over = {}) {
+  return { id: 918, kind: 'action', title: 'compose no-cache', triggers: ['deploy'],
+    checks: [
+      { type: 'must_not_match', pattern: '(^|\\s)docker\\s+build(\\s|$)', reason: 'use docker compose build (IR-023)' },
+      { type: 'must_match', pattern: '--no-cache', reason: 'add --no-cache (IR-018)' },
+    ],
+    read_required: true, ask_first: false,
+    rule_text: 'Deploys use docker compose build --no-cache.',
+    rules_hash: createHash('sha256').update('Deploys use docker compose build --no-cache.').digest('hex'),
+    ...over };
+}
+
+test('unread rule blocks with the rule text, and the retry passes gate 1', () => {
+  const dir = prepStateDir(); const g = mkGuard();
+  const first = evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(first.action, 'block'); assert.equal(first.kind, 'read');
+  assert.match(first.reason, /docker compose build --no-cache/);
+  const second = evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(second.action, 'allow');
+});
+
+test('a read but non-compliant command blocks with the specific reason', () => {
+  const dir = prepStateDir(); const g = mkGuard();
+  evaluateGate({ command: 'docker compose build --no-cache api', guards: [g], stateDir: dir, sessionId: 's1' });
+  const r = evaluateGate({ command: 'docker compose build api', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(r.action, 'block'); assert.equal(r.kind, 'check');
+  assert.match(r.reason, /--no-cache/);
+});
+
+test('the third consecutive block becomes stop-and-ask, never an allow', () => {
+  const dir = prepStateDir(); const g = mkGuard();
+  evaluateGate({ command: 'docker compose build --no-cache x', guards: [g], stateDir: dir, sessionId: 's1' }); // read
+  for (let i = 0; i < 2; i += 1) {
+    assert.equal(evaluateGate({ command: 'docker build .', guards: [g], stateDir: dir, sessionId: 's1' }).kind, 'check');
+  }
+  const third = evaluateGate({ command: 'docker build .', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(third.kind, 'limit');
+  assert.match(third.userLine, /\d{6}/, 'the user line carries the approval code');
+  assert.ok(!third.reason.match(/\d{6}/), 'the model-facing reason must NOT contain the code');
+});
+
+test('ask_first blocks until the code is approved, then allows exactly once', () => {
+  const dir = prepStateDir(); const g = mkGuard({ ask_first: true, checks: [], read_required: false });
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  const code = ask.userLine.match(/(\d{6})/)[1];
+  assert.equal(approveAction(dir, 's1', g.id, code), true);
+  assert.equal(evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' }).action, 'allow');
+  const again = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(again.kind, 'ask', 'approval is one-shot');
 });

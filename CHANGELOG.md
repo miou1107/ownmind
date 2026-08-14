@@ -27,6 +27,14 @@ JSON 檔，內含規範 ID、規範雜湊與 HMAC 簽章（簽過 `sessionId:rul
 驗證時偵測到遺失檔、損壞內容、符號連結、或規範雜湊不符時返回 false（不拋例外）。
 確保密鑰與 nonce 的呼叫是冪等的。
 
+新增 `evaluateGate()` 與 `approveAction()`：決策核心邏輯。evaluateGate 按先後順序
+檢查匹配的閘門：(1) 規範未讀就擋下、全文放進 reason（傳遞即代表讀取、重試即通過）；
+(2) 逐條執行 checks、首次違規擋下並標註違規理由；(3) ask_first 無批准標記就擋下
+並核發同意碼（用 CSPRNG randomInt 產、不用 Math.random）；(4) 同個閘門 + 同類型
+連續被擋 3 次改為「停止並請人批准」（limit），之後永不允許（避免卡在迴圈）。clearLimit
+只在徹底通過時呼叫。sessionId 驗證以防路徑遍歷。approveAction 檢核同意碼雜湊後
+刪檔，一次性消耗。
+
 這一版只把資料送到位。真正在動作前擋下指令的用戶端閘門，在後續版本接上。
 
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
