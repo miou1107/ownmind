@@ -453,6 +453,58 @@ test('NEW-2: read-block and check-block decisions must carry userLine', () => {
   assert.ok(!logContent.includes('Approval code:'), 'gate-log must not contain userLine from ask');
 });
 
+// --- CONSENT red-team (Task 9 § B) ---
+
+test('CONSENT: the model-facing reason never carries the approval code (ask and limit)', () => {
+  const dir = prepStateDir();
+
+  // An ask_first guard issues an ask on first contact.
+  const gAsk = mkGuard({ id: 700, ask_first: true, checks: [], read_required: false });
+  const ask = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [gAsk], stateDir: dir, sessionId: 's1' });
+  assert.equal(ask.kind, 'ask');
+  const askCode = ask.userLine.match(/(\d{6})/)[1];
+  assert.ok(!/\d{6}/.test(ask.reason), 'the ask reason must carry no 6-digit code');
+
+  // A separate guard drops into stop-and-ask (limit) after three consecutive check blocks.
+  const gLimit = mkGuard({ id: 701, read_required: false });
+  for (let i = 0; i < 3; i += 1) {
+    evaluateGate({ command: 'docker build .', guards: [gLimit], stateDir: dir, sessionId: 's1' });
+  }
+  const limit = evaluateGate({ command: 'docker build .', guards: [gLimit], stateDir: dir, sessionId: 's1' });
+  assert.equal(limit.kind, 'limit');
+  const limitCode = limit.userLine.match(/(\d{6})/)[1];
+  assert.ok(!/\d{6}/.test(limit.reason), 'the limit reason must carry no 6-digit code');
+
+  // Neither code is ever written to the audit log.
+  const logContent = fs.readFileSync(path.join(dir, 'gate-log.jsonl'), 'utf8');
+  assert.ok(!logContent.includes(askCode), 'the ask code must not appear in gate-log.jsonl');
+  assert.ok(!logContent.includes(limitCode), 'the limit code must not appear in gate-log.jsonl');
+});
+
+test('code guessing burns the ask instead of yielding', () => {
+  const dir = prepStateDir();
+  fs.writeFileSync(path.join(dir, 'gate-ask-s1-918.json'),
+    JSON.stringify({ codeHash: createHash('sha256').update('123456').digest('hex'), approved: false, misses: 0 }));
+  for (let i = 0; i < 5; i += 1) assert.equal(approveAction(dir, 's1', 918, '000000'), false);
+  assert.equal(approveAction(dir, 's1', 918, '123456'), false, 'a burned ask never approves');
+});
+
+test('a fresh ask resets the burn counter so a legitimate code still approves', () => {
+  const dir = prepStateDir();
+  const g = mkGuard({ ask_first: true, checks: [], read_required: false });
+
+  // Burn the first ask with five wrong guesses.
+  const first = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(first.kind, 'ask');
+  for (let i = 0; i < 5; i += 1) assert.equal(approveAction(dir, 's1', g.id, '000000'), false);
+
+  // The next real gate evaluation issues a fresh ask (new code, counter reset).
+  const second = evaluateGate({ command: 'git push origin ima-v9.9.9', guards: [g], stateDir: dir, sessionId: 's1' });
+  assert.equal(second.kind, 'ask');
+  const code = second.userLine.match(/(\d{6})/)[1];
+  assert.equal(approveAction(dir, 's1', g.id, code), true, 'a fresh ask accepts the correct code again');
+});
+
 // --- Deferred hardening: gate-log rotation (Task 9 § C4, Task 6 review "Important") ---
 
 test('gate-log rotates to .old past 5MB and the current log continues', () => {

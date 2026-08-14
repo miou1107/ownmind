@@ -1,6 +1,7 @@
 import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHmac } from 'node:crypto';
 import { test } from 'node:test';
 import { tempDir } from './helpers/temp-dir.js';
 import {
@@ -77,6 +78,67 @@ test('verifyReceipt returns false when receipt path is a symlink (never throws)'
   fs.symlinkSync('/etc/passwd', receiptPath);
 
   // verifyReceipt should return false for a symlink
+  assert.equal(verifyReceipt(dir, 's1', guard), false);
+});
+
+// --- FORGERY red-team (Task 9): the five prototype attacks, ported as tests ---
+// Ported from docs/superpowers/specs/2026-08-14-action-gate-prototype/evidence.md § D.
+// Every one must verify false. A `true` here is a Critical break, not a test to relax.
+
+// FORGERY 1 — hand-written receipt with a fabricated hmac. Already covered above by
+// 'a hand-written receipt is rejected'; the symlink case (FORGERY 4) is covered by
+// 'verifyReceipt returns false when receipt path is a symlink'. The three below are new.
+
+test('FORGERY 2: a valid receipt replayed from another session is rejected', () => {
+  // Same machine (shared gate.key), two sessions with different nonces. The attacker copies
+  // the victim session's genuinely valid receipt bytes into their own session's receipt path.
+  const dir = tempDir('gate-replay-');
+  ensureKey(dir);
+  ensureNonce(dir, 's-victim');
+  ensureNonce(dir, 's-attacker');
+  const guard = { id: 918, rule_text: 'text', rules_hash: 'aaa' };
+
+  writeReceipt(dir, 's-victim', guard);
+  assert.equal(verifyReceipt(dir, 's-victim', guard), true, 'the victim receipt is valid in its own session');
+
+  const victimBytes = fs.readFileSync(path.join(dir, 'gate-receipt-s-victim-918.json'));
+  fs.writeFileSync(path.join(dir, 'gate-receipt-s-attacker-918.json'), victimBytes);
+  assert.equal(
+    verifyReceipt(dir, 's-attacker', guard), false,
+    'a receipt bound to another session nonce must not replay'
+  );
+});
+
+test('FORGERY 3: a receipt for tampered-then-repinned rule content is rejected', () => {
+  // The old receipt binds the rule CONTENT hash; even a trusted re-pin of weakened content
+  // (nonce unchanged) leaves the old receipt covering content that no longer exists.
+  const dir = tempDir('gate-tamper-');
+  ensureKey(dir);
+  ensureNonce(dir, 's1');
+  const original = { id: 918, rule_text: 'orig', rules_hash: 'hash-original' };
+  writeReceipt(dir, 's1', original);
+  assert.equal(verifyReceipt(dir, 's1', original), true);
+
+  const tampered = { id: 918, rule_text: 'weakened', rules_hash: 'hash-tampered' };
+  assert.equal(
+    verifyReceipt(dir, 's1', tampered), false,
+    'a receipt does not cover rule content changed after it was pinned'
+  );
+});
+
+test('FORGERY 5: an hmac computed with a guessed key is rejected', () => {
+  // The attacker knows the exact signed material (sessionId:id:rules_hash:nonce) but not the
+  // key, and signs it with a guessed key. Only the real gate.key can produce a valid hmac.
+  const dir = tempDir('gate-guesskey-');
+  ensureKey(dir);
+  ensureNonce(dir, 's1');
+  const guard = { id: 918, rule_text: 'text', rules_hash: 'aaa' };
+  const nonce = fs.readFileSync(path.join(dir, 'gate-nonce-s1'), 'utf8');
+
+  const forged = createHmac('sha256', 'not-the-real-key')
+    .update(`s1:918:aaa:${nonce}`).digest('hex');
+  fs.writeFileSync(path.join(dir, 'gate-receipt-s1-918.json'),
+    JSON.stringify({ ruleId: 918, rulesHash: 'aaa', hmac: forged }));
   assert.equal(verifyReceipt(dir, 's1', guard), false);
 });
 
