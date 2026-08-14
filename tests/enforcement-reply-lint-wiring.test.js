@@ -74,6 +74,10 @@ function runHook({ home, transcript, stopHookActive = false, env = {} }) {
         ...process.env,
         HOME: home,
         USERPROFILE: home,
+        // Task 4 (hook message i18n) wired the compliance-step "not-checked" banners through
+        // t(); this suite asserts /never synced/, /NOT checked/ (literal English), so the
+        // locale is pinned defensively.
+        OWNMIND_LOCALE_FORCE: 'en',
         ...env,
       },
       timeout: 30_000,

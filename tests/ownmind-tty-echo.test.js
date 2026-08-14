@@ -36,7 +36,9 @@ function runHook(input, env = {}) {
   return spawnSync('node', [hookPath], {
     input: typeof input === 'string' ? input : JSON.stringify(input),
     encoding: 'utf8',
-    env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome, ...env },
+    // Task 4 (hook message i18n) wired the merged-banner header through t(); pinned
+    // defensively even though the header carries no linguistic content (identical en/zh).
+    env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome, OWNMIND_LOCALE_FORCE: 'en', ...env },
   });
 }
 

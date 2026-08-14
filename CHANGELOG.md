@@ -277,6 +277,52 @@ broken-module scenario staged against the `.js` hook, and against `approve-actio
 itself. The staging helper was generalized (`stageBrokenI18nTree`) so all three entry
 points share one implementation instead of three near-duplicates.
 
+**Gate message i18n, task 4 of 7 — the remaining user notices wired through `t()`**: every
+`audience: "user"` string in `hooks/ownmind-reply-lint.js`, `hooks/lib/compliance-step.js`
+and `hooks/ownmind-tty-echo.cjs` now renders through `t()`. `hooks/ownmind-session-start.js`
+needed no change — every string it emits is `hookSpecificOutput.additionalContext`
+(model-facing), which this task's own scope explicitly excludes.
+
+`hooks/lib/compliance-step.js` gained the same `complianceNotice(key, fallback, params)`
+dynamic-import-with-fallback shape as the gate's `gateNotice()` (Task 3): the off/warn-mode,
+no-credentials, never-synced, check-failed, server-side-off, block-cap-reached, and
+pushed-back-to-the-AI banners all resolve through it, including the `誤判 {checkId}`
+false-alarm handle — appended as its own resolved-and-interpolated `{idNote}` param rather
+than string-spliced, so the wrapping sentence around that protocol word still translates.
+`hooks/ownmind-reply-lint.js` gained the equivalent `lintNotice()` helper and wired the
+`lint.recovered` key Task 1 had already reserved but never called, the `/ownmind-off`
+reminder, and `formatBanner()`'s four mutually-exclusive header variants (each now its own
+full-sentence key — `lint.banner.header.{downgraded,blocked,blockMode,otherMode}` — rather
+than a base string with a spliced-on suffix, so the translated sentence holds together per
+locale), the mode-invalid line, and the per-violation line (`{rule}`/`{message}` are raw,
+untranslated params — `{message}` originates in `shared/language-lint.js`, outside this
+task's reading list, and stays English in every locale). `formatBanner()` is now async;
+its one call site awaits it. `hooks/ownmind-tty-echo.cjs` — CommonJS inside an otherwise-ESM
+package — proved empirically that a dynamic `import()` of a sibling ESM module works from a
+`.cjs` file even though a static `import` and a `require()` of the same module do not, and
+used that to wire its merged-banner header (`tty.header`) the same way; the header itself
+carries no linguistic content (`[OwnMind {version}]`, brand name plus version number), so
+its zh and en dictionary values are identical on purpose — confirmed load-bearing rather
+than vacuous by a manual mutation test (temporarily corrupted the zh value, watched the
+corresponding test go red, reverted).
+
+New `tests/hook-notices-i18n.test.js` (35 cases): every zh notice with placeholders filled;
+an en regression pin byte-identical to the pre-change literals for each; a hard-block
+variant that only ever reaches the audit spool (`banner-pending.jsonl`), never `stdout`,
+because `exitWith()` only emits queued notices on exit code 0; a two-call scenario that
+actually drives `notice-throttle.js`'s state machine from a "never synced" key back to
+`null` to exercise the real `lint.recovered` recovery path end-to-end; and one broken-`i18n.js`
+proof per file (`compliance-step.js` via a direct staged-module import, `ownmind-reply-lint.js`
+and `ownmind-tty-echo.cjs` via a spawned staged copy) showing the decision/exit-code
+contract survives untouched while the notice text degrades to the English fallback.
+Seven existing suites (`tests/enforcement-compliance-step.test.js`,
+`tests/reply-lint-hook.test.js`, `tests/reply-lint-hook-v1193-block.test.js`,
+`tests/reply-lint-hook-v1911.test.js`, `tests/reply-lint-hook-v197.test.js`,
+`tests/enforcement-reply-lint-wiring.test.js`, `tests/ownmind-tty-echo.test.js`) pin
+`OWNMIND_LOCALE_FORCE=en` — some load-bearingly (verified the same way Task 3 verified
+`tests/action-gate.test.js`'s pin: ran the suite with `OWNMIND_LOCALE_FORCE=zh` leaking in
+from the outer shell, confirmed it broke without the pin, confirmed it holds with it).
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓

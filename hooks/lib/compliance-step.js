@@ -3,6 +3,25 @@ import os from 'node:os';
 import path from 'node:path';
 
 /**
+ * Looks up a compliance notice through t(), but this module's own notices are what tell the
+ * user whether a turn was actually checked — that lookup must never depend on the same i18n
+ * module it would be reporting on. A dynamic import here (not a static one at module scope)
+ * means a broken hooks/lib/i18n.js only ever degrades one notice's text to its English
+ * fallback; it cannot take the whole compliance step down, which would silently skip
+ * checking the turn — the exact impersonation this step exists to prevent. Duplicated (not
+ * shared) in hooks/lib/action-gate-cli.js, hooks/ownmind-iron-rule-check.js and
+ * hooks/ownmind-reply-lint.js, same as the notice strings themselves.
+ */
+async function complianceNotice(key, fallback, params = {}) {
+  try {
+    const { t } = await import('./i18n.js');
+    return t(key, params);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * The per-turn compliance check, as a decision function.
  *
  * It lives here rather than inline in the stop hook because pasted-in code cannot be unit
@@ -126,7 +145,10 @@ export async function runComplianceStep(ctx) {
     return {
       action: 'notice',
       noticeKey: 'off:warn-mode',
-      banner: '[OwnMind] compliance check is off for this session (lint disabled or warn mode)',
+      banner: await complianceNotice(
+        'compliance.off.warnMode',
+        '[OwnMind] compliance check is off for this session (lint disabled or warn mode)',
+      ),
     };
   }
   // v1.26.171: an unconfigured machine used to return silent `none`, which reads exactly
@@ -135,7 +157,10 @@ export async function runComplianceStep(ctx) {
     return {
       action: 'notice',
       noticeKey: 'not-checked:no-credentials',
-      banner: '[OwnMind] this machine has no credentials, so this turn was NOT checked',
+      banner: await complianceNotice(
+        'compliance.notChecked.noCredentials',
+        '[OwnMind] this machine has no credentials, so this turn was NOT checked',
+      ),
     };
   }
 
@@ -145,7 +170,10 @@ export async function runComplianceStep(ctx) {
     return {
       action: 'notice',
       noticeKey: 'not-checked:never-synced',
-      banner: '[OwnMind] this machine has never synced its rules, so this turn was NOT checked',
+      banner: await complianceNotice(
+        'compliance.notChecked.neverSynced',
+        '[OwnMind] this machine has never synced its rules, so this turn was NOT checked',
+      ),
     };
   }
 
@@ -171,7 +199,11 @@ export async function runComplianceStep(ctx) {
       // One key for every failure reason: timeout and the backoff it triggers are the same
       // outage, and a key that flaps between them would re-announce on every flap.
       noticeKey: 'not-checked:check-failed',
-      banner: `[OwnMind] compliance check did not run (${check.reason || 'unknown'}) - this turn was NOT checked`,
+      banner: await complianceNotice(
+        'compliance.notChecked.checkFailed',
+        `[OwnMind] compliance check did not run (${check.reason || 'unknown'}) - this turn was NOT checked`,
+        { reason: check.reason || 'unknown' },
+      ),
     };
   }
   // v1.26.171: 'skipped' means the SERVER declined to check (enforcement mode off for the
@@ -181,26 +213,43 @@ export async function runComplianceStep(ctx) {
     return {
       action: 'notice',
       noticeKey: 'off:server',
-      banner: '[OwnMind] enforcement is switched off for this account, so this turn was NOT checked',
+      banner: await complianceNotice(
+        'compliance.off.server',
+        '[OwnMind] enforcement is switched off for this account, so this turn was NOT checked',
+      ),
     };
   }
   if (check.outcome !== 'violation' || !check.violations?.length) {
     return { action: 'none' };
   }
 
-  const idNote = check.check_id ? ` [check ${check.check_id}: say "誤判 ${check.check_id}" if this is wrong]` : '';
+  const idNote = check.check_id
+    ? await complianceNotice(
+      'compliance.idNote',
+      ` [check ${check.check_id}: say "誤判 ${check.check_id}" if this is wrong]`,
+      { checkId: check.check_id },
+    )
+    : '';
 
   if (blockCount >= MAX_COMPLIANCE_BLOCKS) {
     return {
       action: 'notice',
-      banner: `[OwnMind] the reply still breaks ${check.violations.length} rule(s) after `
-        + `${blockCount} rewrites - showing you instead of asking again${idNote}`,
+      banner: await complianceNotice(
+        'compliance.blockCapReached',
+        `[OwnMind] the reply still breaks ${check.violations.length} rule(s) after `
+          + `${blockCount} rewrites - showing you instead of asking again${idNote}`,
+        { count: check.violations.length, blockCount, idNote },
+      ),
     };
   }
 
   return {
     action: 'exit2',
     stderr: formatViolationFeedback(check.violations, { checkId: check.check_id }),
-    banner: `[OwnMind] compliance: ${check.violations.length} rule violation(s) sent back to the AI${idNote}`,
+    banner: await complianceNotice(
+      'compliance.pushedBack',
+      `[OwnMind] compliance: ${check.violations.length} rule violation(s) sent back to the AI${idNote}`,
+      { count: check.violations.length, idNote },
+    ),
   };
 }
