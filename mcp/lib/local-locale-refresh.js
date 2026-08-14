@@ -2,16 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { runConditionalSync } from '../../hooks/lib/conditional-sync.js';
+import { runConditionalSync, DEFAULT_CACHE_PATH } from '../../hooks/lib/conditional-sync.js';
 import { accountFingerprint } from '../../shared/scanners/base.js';
-
-/**
- * The same file `runConditionalSync` defaults to, restated because conditional-sync.js keeps
- * its own constant module-private. It has to be resolved here rather than left to the callee:
- * the account check below has to look at the file *before* handing it over, and `cachePath`
- * is undefined on the production path.
- */
-const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind', 'cache', 'memories.json');
 
 /**
  * Fix round 2 — is the cache on disk somebody else's?

@@ -117,6 +117,15 @@ test('t() leaves unknown/unsupplied placeholders as-is', () => {
   assert.equal(out, '[OwnMind] ⛔ blocked: {reason}');
 });
 
+test('t() tolerates a null params argument — the total-function contract covers it', () => {
+  // A `= {}` default only fires on undefined, so an explicit null used to reach the own-property
+  // check and throw. Callers rely on t() never throwing; the gate's safeT() would swallow it,
+  // but a throw here still costs the caller its message for no reason.
+  process.env.OWNMIND_LOCALE_FORCE = 'en';
+  assert.equal(t('gate.failopen', null), '[OwnMind] the action gate could not run - this command was NOT gated');
+  assert.equal(t('gate.check.blocked', null), '[OwnMind] ⛔ blocked: {reason}');
+});
+
 test('t() substitutes only own properties — inherited names are left as literal placeholders', async () => {
   // `name in params` walks the prototype chain, so every string ever passed through t() could
   // render an inherited property into a user notice: `{constructor}` becomes a function body,
