@@ -2,8 +2,179 @@
 
 ## v1.26.173 修改（一次觸發只佔一行，不要再被主程式蓋三次章）
 
+修改（final-review wrap-up）：
+```
+hooks/lib/conditional-sync.js                   — DEFAULT_CACHE_PATH is now exported: one owner
+                                                   for the cache path the account guard inspects.
+mcp/lib/local-locale-refresh.js                 — imports that constant instead of restating it.
+hooks/lib/i18n.js                               — t(key, null) tolerated (the `= {}` default only
+                                                   covered undefined).
+tests/local-locale-refresh.test.js              — pins the single-owner cache path.
+tests/hook-i18n.test.js                         — pins t(key, null).
+```
+
 修改：
 ```
+mcp/lib/local-locale-refresh.js                 — Whole-branch review scope B
+                                                   (Important): refreshLocalCacheForLocale
+                                                   could destroy ANOTHER account's hook
+                                                   cache and report success. The MCP
+                                                   resolves credentials from process.env
+                                                   only; the hooks resolve theirs
+                                                   files-first, env-last
+                                                   (scripts/install-helpers/resolve-credentials.cjs),
+                                                   so on a multi-account machine they
+                                                   differ. readCache's v1.26.82 account
+                                                   check is read-side only, so
+                                                   runConditionalSync refused to read the
+                                                   foreign cache and then wrote this
+                                                   account's init over it — measured: the
+                                                   other account's profile/iron
+                                                   rules/digests gone, ok:true reported,
+                                                   getLocale (no fingerprint check of its
+                                                   own) serving the wrong language, and
+                                                   that account's next SessionStart left
+                                                   with no memories at all when offline.
+                                                   Now compares
+                                                   accountFingerprint({apiUrl, apiKey})
+                                                   against the on-disk stamp and, when
+                                                   they differ, syncs nothing and returns
+                                                   {ok:false, source:'account_mismatch'}.
+                                                   An unstamped (pre-v1.26.82) cache is
+                                                   NOT foreign — readCache refuses those
+                                                   for everyone, so nothing readable is
+                                                   lost, and treating them as foreign
+                                                   would strand every upgrading machine.
+mcp/index.js                                    — Whole-branch review scope B:
+                                                   ownmind_set_locale gained a dedicated
+                                                   message for the new account_mismatch
+                                                   outcome — the generic degraded text
+                                                   promises "it will apply here at the
+                                                   next session start too", which after a
+                                                   mismatch can never come true (the hooks
+                                                   on that machine are a different
+                                                   account). Also adopts the sync_token
+                                                   PUT /locale now returns
+                                                   (currentSyncToken = data.sync_token),
+                                                   the same contract every sibling write
+                                                   here honours; without it the session's
+                                                   next memory write ate a 409 plus an
+                                                   auto-retry round trip.
+hooks/lib/locale-provision.js                   — Whole-branch review scope B
+                                                   (Important): both execFileSync detector
+                                                   calls omitted stdio, and Node's default
+                                                   pipes the child's stderr to the
+                                                   parent's. The .sh SessionStart twin
+                                                   redirects it on macOS/Linux, but a
+                                                   Windows install runs the .js twin where
+                                                   provisionLocale() executes IN-PROCESS —
+                                                   so PowerShell's Constrained Language
+                                                   Mode / AppLocker / WDAC /
+                                                   execution-policy errors landed on the
+                                                   hook's own stderr, a user-visible
+                                                   channel. Both calls now pass stdio:
+                                                   ['ignore','pipe','ignore'] (the form
+                                                   path-guard.js,
+                                                   ownmind-git-commit-msg.js and
+                                                   ownmind-reply-lint.js already use),
+                                                   hoisted to a documented DETECTOR_STDIO
+                                                   constant. Detection behaviour
+                                                   unchanged: a failure still degrades to
+                                                   detected: null.
+hooks/lib/locale.js                             — Whole-branch review scope B (Minor):
+                                                   getLocale(null) still threw. The
+                                                   previous round closed {homeDir: null}
+                                                   but left the parameter as ({homeDir =
+                                                   os.homedir()} = {}), whose = {} default
+                                                   also fires only for undefined — so an
+                                                   explicit null destructured and threw
+                                                   before any inner guard ran, breaking
+                                                   the documented totality contract one
+                                                   level up from where it was fixed. Now
+                                                   const { homeDir } = opts || {} (|| not
+                                                   ??, so false/0/'' are covered too); the
+                                                   inner non-string/empty homeDir fallback
+                                                   is unchanged.
+src/routes/memory.js                            — Whole-branch review scope B (Minor):
+                                                   PUT /locale moved the account's
+                                                   cache-freshness token (locale is one of
+                                                   its hash inputs) but returned nothing,
+                                                   so a caller holding a long-lived
+                                                   session token presented the pre-write
+                                                   value on its very next memory write and
+                                                   paid a 409 plus an auto-retry round
+                                                   trip, for a change it made itself. Both
+                                                   success branches — the pin and the
+                                                   auto-clear early return — now return
+                                                   sync_token from generateSyncToken(),
+                                                   matching every other write in this
+                                                   router.
+legacy/admin-v1.26/index.html                   — Whole-branch review scope B (Minor,
+                                                   comment only, no behaviour change):
+                                                   recorded the cross-family token hazard
+                                                   at iruUpdateTier(). It takes an
+                                                   iron-rule-LOCK token from GET
+                                                   /admin/iron-rules/upgrade-status and
+                                                   sends it as sync_token to PUT
+                                                   /api/memory/:id, which validates
+                                                   against the cache-freshness family;
+                                                   before the token split those were one
+                                                   function, and the two spaces are now
+                                                   provably disjoint, so this would 409 on
+                                                   first click and its own 409 handler
+                                                   cannot recover it. Not live (/admin
+                                                   301-redirects via
+                                                   src/middleware/legacy-admin-mount.js;
+                                                   the current console has no sync_token
+                                                   path), so the comment names the correct
+                                                   fix and notes that iruConfirmUpgrade()
+                                                   is unaffected — it sends the same
+                                                   variable to the lock token's own
+                                                   endpoint.
+tests/local-locale-refresh.test.js              — Whole-branch review scope B, 4 new
+                                                   cases (TDD, red first against a staged
+                                                   temp HOME): a cache stamped with
+                                                   another account is left byte-for-byte
+                                                   identical and the result is not ok
+                                                   (red: the file was rewritten and
+                                                   ok:true returned); a cache stamped with
+                                                   the same account still refreshes; no
+                                                   cache file at all still refreshes; and
+                                                   an unstamped legacy cache still
+                                                   refreshes, pinning that only a
+                                                   DIFFERING stamp blocks the sync.
+tests/hook-locale.test.js                       — Whole-branch review scope B, 2 new
+                                                   cases (TDD, both red first): a
+                                                   PATH-shimmed detector that writes to
+                                                   stderr and exits non-zero must leave
+                                                   the parent process's stderr empty while
+                                                   state/locale.json is still written as
+                                                   {"detected":null,…} (red:
+                                                   PowerShell-shaped error text appeared
+                                                   verbatim on the parent's stderr); and
+                                                   getLocale(null) — plus false/0/'' —
+                                                   must return a valid locale instead of
+                                                   throwing.
+tests/memory-locale-route.test.js               — Whole-branch review scope B: the
+                                                   real-DB sync-token scenario now also
+                                                   asserts PUT /locale returns a
+                                                   sync_token, that it differs from the
+                                                   token the caller held before the write,
+                                                   and that it equals what GET /sync-token
+                                                   serves afterwards — asserted separately
+                                                   for the pin and the auto-clear branch,
+                                                   since returning it from only one of the
+                                                   two early-return paths is the likely
+                                                   shape of a miss.
+tests/mcp-set-locale-tool.test.js               — Whole-branch review scope B, 2 new
+                                                   source-level cases: the case handler
+                                                   must assign the returned sync_token to
+                                                   currentSyncToken, and must branch on
+                                                   the account_mismatch source with a
+                                                   message that says the local hooks
+                                                   belong to a different account rather
+                                                   than repeating the generic "applies
+                                                   here next session" promise.
 hooks/ownmind-tty-echo.cjs                      — formatBlock 改單行輸出：事件用 ┃ 串接
                                                    （分隔符抽成 EVENT_SEPARATOR 常數）。
                                                    extractBanners 比對前先把 \r／U+2028／
@@ -28,14 +199,523 @@ hooks/lib/pending-banners.js                    — 說明更正：v1.26.171 之
 hooks/lib/flush-pending-banners.js                 執行它，程式保留當手動查稽核紀錄的工具。
 tests/update-banner.test.js                     — 改測新佇列檔；新增讀取／按行清除的測試
                                                    （含「讀完之後才寫進來的那筆不能被刪」）。
+install.sh                                       — Section 4b's copy-to-~/.claude/hooks
+                                                   fallback gains hooks/locales/*.json
+                                                   alongside the existing hooks/lib/*.js
+                                                   glob (gate-message-i18n task 7): same
+                                                   mkdir -p + guarded cp shape, same
+                                                   2>/dev/null || true silencing a fresh
+                                                   checkout's still-missing directory.
+scripts/update.sh                                — Same extension to section 2's copy;
+                                                   unlike install.sh this one is not
+                                                   silenced on failure — a failed cp
+                                                   prints [WARN], matching the existing
+                                                   hooks/lib failure path (v1.26.139).
+install.ps1                                      — Symmetric extension found while
+                                                   checking: the Windows installer's own
+                                                   hooks\lib copy section gained the
+                                                   identical hooks\locales\*.json copy.
+scripts/update.ps1                               — Same extension to the Windows
+                                                   updater's own hooks\lib copy section
+                                                   (also found while checking, not named
+                                                   in the task brief).
+scripts/check-sync.sh                            — L3 deploy-drift check's dynamic
+                                                   hooks/lib/*.js comparison-pair block
+                                                   gained the same one-line extension
+                                                   for hooks/locales/*.json, so a
+                                                   fallback-location machine shows up as
+                                                   drifted rather than silently stale.
+scripts/check-sync.ps1                           — Same one-line extension, PowerShell
+                                                   side.
+README.md                                        — New Infrastructure bullet + FAQ entry
+                                                   (gate-message-i18n task 7) documenting
+                                                   hook message localization: what it
+                                                   does, the resolution order in plain
+                                                   terms, the three supported languages,
+                                                   how to change it (ownmind_set_locale,
+                                                   asked for via the AI; 'auto' reverts
+                                                   to the OS language), when it takes
+                                                   effect (immediate here, next session
+                                                   start elsewhere), and that ja is
+                                                   machine-generated pending a
+                                                   native-speaker review — closing the
+                                                   note Task 6 left open.
+docs/README.zh-TW.md                             — Same entry, hand-written in
+                                                   Traditional Chinese.
+docs/README.ja.md                                — Same entry, hand-written in Japanese.
+client/src/scripts/translate.mjs                 — Generalized with --dir <path> (Task 6,
+                                                   gate-message-i18n): every file the
+                                                   pipeline touches (zh/en/ja dictionaries,
+                                                   .translate-cache.json, glossary.json,
+                                                   en.override.json, ja.override.json) now
+                                                   resolves relative to --dir instead of a
+                                                   hardcoded client/src/i18n. Omitting --dir
+                                                   stays byte-identical to the prior
+                                                   behavior. en.json, ja.json, glossary.json
+                                                   and both override files default to {} when
+                                                   absent under --dir, so a brand-new
+                                                   dictionary directory bootstraps on its
+                                                   first run; only zh.json is required.
+                                                   Exports parseDirArg, resolveI18nDir,
+                                                   applyOverride and DEFAULT_I18N_DIR for
+                                                   tests. Comments and console output
+                                                   translated to English while the file was
+                                                   touched (project i18n policy).
+package.json                                     — New script translate:hooks runs
+                                                   translate.mjs --dir hooks/locales.
+.gitignore                                       — Added hooks/locales/.translate-cache.json,
+                                                   mirroring the existing
+                                                   client/src/i18n/.translate-cache.json
+                                                   entry.
+tests/hook-i18n.test.js                          — The three tests that used the (previously
+                                                   unshipped) ja locale slot as scratch space
+                                                   for a missing, corrupt or partial
+                                                   dictionary file now stage a private copy
+                                                   of i18n.js + locale.js under a throwaway
+                                                   directory instead, since
+                                                   hooks/locales/ja.json is real as of this
+                                                   task and writing to or deleting it would
+                                                   race tests/hook-locales-parity.test.js
+                                                   under Node's parallel test-file execution.
+                                                   Header comment updated to say why.
+src/routes/memory.js                            — GET /init gains a `locale` field (Task 5,
+                                                   gate-message-i18n): read from
+                                                   users.settings.locale via the same
+                                                   jsonb_set pattern onboarding_completed_at
+                                                   already uses. New PUT /locale route,
+                                                   registered ahead of PUT /:id (same ordering
+                                                   fix as /enforcement-bundle): sets zh/en/ja
+                                                   verbatim, or deletes the settings key
+                                                   outright on 'auto'; any other value
+                                                   rejected 400 before touching the row.
+mcp/index.js                                    — New tool ownmind_set_locale ({ locale:
+                                                   'zh'|'en'|'ja'|'auto' }); forwards to PUT
+                                                   /api/memory/locale, same one-round-trip
+                                                   shape as ownmind_delete_secret (the
+                                                   smallest existing authenticated write tool
+                                                   — ownmind_session_off/_on turned out to
+                                                   make no server call at all). TYPE_MAP
+                                                   banner label added. Fix round 1: after the
+                                                   write succeeds, calls
+                                                   refreshLocalCacheForLocale() so this
+                                                   machine's own cache updates immediately;
+                                                   response message states the true timing
+                                                   (immediate here, next session start on
+                                                   other machines).
+tests/session-context-field-coverage.test.js    — NOT_FOR_THE_SESSION_CONTEXT gains `locale`:
+                                                   not model-facing, only hooks/lib/locale.js
+                                                   reads it, so the new init field needed
+                                                   classifying rather than silently failing
+                                                   this guard.
+src/utils/syncToken.js                          — generateSyncToken now hashes
+                                                   users.settings->>'locale' alongside
+                                                   user_max/team_max (Task 5 fix round 1): a
+                                                   locale write only touches users.settings,
+                                                   never memories.updated_at, so without this
+                                                   the token could never change on a locale-
+                                                   only write and the conditional-sync client
+                                                   would never notice. GET /sync-token and GET
+                                                   /init both already call this one function,
+                                                   so both stay in sync by construction.
+                                                   Round 2 splits the two purposes the one
+                                                   hash was serving: cache freshness keeps
+                                                   generateSyncToken/validateSyncToken (wide
+                                                   inputs, locale included, wire value
+                                                   unchanged), and the iron-rule optimistic
+                                                   lock gets generateIronRuleLockToken/
+                                                   validateIronRuleLockToken (narrow inputs:
+                                                   MAX(updated_at) + COUNT(*) over the user's
+                                                   active iron rules — exactly the rows GET
+                                                   /upgrade-status returns). One hash
+                                                   (hashScopedState) and one comparison
+                                                   (compareToken) still serve both, so they
+                                                   cannot drift; the scope name is folded into
+                                                   the lock's hash so a token from one family
+                                                   can never satisfy the other by accident.
+src/routes/admin-iron-rule-upgrade.js           — Round 2: all three call sites moved to the
+                                                   iron-rule lock pair. Sharing the broad
+                                                   token meant a user changing their own
+                                                   language mid-edit got 409 "Iron-rule state
+                                                   has changed" with no iron rule changed; the
+                                                   same shared hash also fired on any
+                                                   unrelated memory save. Wire field keeps its
+                                                   sync_token name.
+tests/sync-token-endpoint.test.js               — 3 new cases: locale changes -> token
+                                                   changes (same user_max/team_max); clearing
+                                                   the preference (auto, i.e. empty string)
+                                                   also changes it; same locale + same
+                                                   user_max/team_max stays idempotent.
+                                                   Round 2: the cache-freshness token's wire
+                                                   value pinned to literal bytes (every
+                                                   installed machine holds one on disk and
+                                                   re-inits when it moves, so a formatting
+                                                   change must be deliberate, so two input
+                                                   shapes are pinned); the lock token ignores
+                                                   locale and reacts to each of its own
+                                                   inputs; the two families hash differently
+                                                   from identical inputs and a cross-family
+                                                   token is rejected. These inject a fake
+                                                   query, so they pin the hashing and say
+                                                   nothing about which rows the SQL reads —
+                                                   that is the real-database file's job.
+tests/local-locale-refresh.test.js              — Round 2: adds the cache_fresh case, pinning
+                                                   the success contract the doc comment now
+                                                   states (a matching token means the cache
+                                                   already reflects the server, so init is
+                                                   never called and ok stays true).
+mcp/lib/local-locale-refresh.js                 — Round 2 (doc only): the JSDoc now states
+                                                   what ok claims — "the local cache reflects
+                                                   the server's current state" — and why both
+                                                   init_refreshed and cache_fresh satisfy it,
+                                                   while cache_fallback and error do not.
+tests/memory-locale-route.test.js               — Round 2: the sync-token scenario now pins
+                                                   GET /init's embedded token too, and that
+                                                   the two endpoints agree before and after
+                                                   the write.
+hooks/locales/ja.json                           — Cleanup batch (post-Task-7 review): restored the
+                                                   leading space compliance.idNote lost — zh.json and
+                                                   en.json both have it, and
+                                                   hooks/lib/compliance-step.js concatenates this value
+                                                   onto compliance.blockCapReached /
+                                                   compliance.pushedBack with no separator, so the
+                                                   Japanese output ran the two sentences together with
+                                                   no gap.
+hooks/locales/ja.override.json                  — Cleanup batch: pinned the corrected
+                                                   compliance.idNote value (leading space included) so
+                                                   a future translate:hooks re-run — which regenerates
+                                                   this key whenever the .translate-cache.json entry
+                                                   for it is invalidated — cannot silently drop the
+                                                   space again; overrides apply last and always win.
+tests/hook-locales-parity.test.js               — Cleanup batch, 3 fixes (TDD, each proved red first):
+                                                   (1) new leading/trailing-whitespace-presence check
+                                                   across zh/en/ja for every key — red against the
+                                                   ja.json bug above, green after the fix; (2)
+                                                   OTHER_PROTOCOL_LITERALS' dead /ownmind-off entry (no
+                                                   dictionary value ever contained it) replaced with a
+                                                   coverage assertion that fails loudly if any listed
+                                                   literal is absent from zh.json, then the dead entry
+                                                   itself removed; (3) quotedForm()'s regex used
+                                                   independent open/close character classes
+                                                   (["「]word["」]), which accepted a mismatched
+                                                   ASCII-open/CJK-close pair — tightened to an explicit
+                                                   alternation requiring a matching pair, with a new
+                                                   test proving both the rejection and that both real
+                                                   quoting styles still match.
+hooks/lib/locale.js                             — Cleanup batch: closed a totality hole in getLocale()
+                                                   — the {homeDir = os.homedir()} default parameter
+                                                   only fires for undefined, so an explicit {homeDir:
+                                                   null} skipped it and reached path.join(null, ...),
+                                                   throwing and breaking the function's documented
+                                                   "never throws" contract. No current call site passes
+                                                   null; closed anyway as a latent hole. Falls back to
+                                                   os.homedir() for any non-string or empty homeDir.
+tests/hook-locale.test.js                       — Cleanup batch: new case asserting getLocale({
+                                                   homeDir: null }) returns a valid locale instead of
+                                                   throwing (TDD red before the locale.js fix, green
+                                                   after).
+hooks/lib/action-gate.js                        — Whole-branch review (Important): the static
+                                                   `import { t } from './i18n.js'` is gone. A static
+                                                   ESM import failure is unrecoverable at module
+                                                   scope, so a missing/unparseable/throwing i18n.js
+                                                   stopped action-gate.js itself from loading, the
+                                                   callers' outer catch fired, and the command RAN
+                                                   UNGATED — a message-formatting module could switch
+                                                   enforcement off. Replaced with a guarded
+                                                   module-level lazy binding (top-level await
+                                                   import() inside try) plus a local total safeT()
+                                                   helper, used at all five userLine sites (verbal
+                                                   ask, code ask, limit ask, read-block, check-block),
+                                                   each carrying the exact pre-i18n English literal as
+                                                   its fallback. safeT() also falls back when t()
+                                                   throws at call time and when t() echoes the key
+                                                   back (hooks/locales/ absent) — a raw key is not a
+                                                   message. No decision logic, reason string, receipt,
+                                                   code issuance or ask-mode behaviour changed.
+hooks/lib/i18n.js                               — Whole-branch review, 2 fixes: (1) placeholder
+                                                   substitution used `name in params`, which walks the
+                                                   prototype chain, so a value containing
+                                                   {constructor}/{toString} rendered a function body
+                                                   into a user notice — now Object.hasOwn; (2)
+                                                   getLocale() ran on every t() call, re-reading and
+                                                   JSON-parsing ~/.ownmind/cache/memories.json each
+                                                   time (0.296 ms against a real 57 KB cache, several
+                                                   calls per gate run, on a ~1.5 ms PreToolUse
+                                                   budget) — the resolved locale is now memoized per
+                                                   process, which also stops a concurrent locale
+                                                   rewrite from rendering one hook run in two
+                                                   languages. OWNMIND_LOCALE_FORCE is exempt from the
+                                                   memo (it is the test seam suites flip between calls
+                                                   in one process) and resetI18nCacheForTests() clears
+                                                   the memo alongside the dictionary cache.
+tests/action-gate-i18n.test.js                  — Whole-branch review, re-baselined + extended. The
+                                                   CLI and .js-hook end-to-end cases previously PINNED
+                                                   the fail-open behaviour for a broken i18n.js ("no
+                                                   decision, loud not-gated notice"); they now assert
+                                                   a normal BLOCK carrying the English notice. The
+                                                   separate fail-open for action-gate.js itself
+                                                   failing to load or throwing stays pinned unchanged
+                                                   (the malformed-guard-bundle cases). stageGateTree()
+                                                   generalizes the old stageBrokenI18nTree() over four
+                                                   I18N_VARIANTS — unparseable, absent, throwing, and
+                                                   the real module staged without hooks/locales/ — and
+                                                   a new parametrized case runs each variant through
+                                                   read-block, check-block, verbal ask and code ask,
+                                                   asserting the English userLine byte-for-byte and
+                                                   that no bare key or empty string reaches the user.
+                                                   One more case pins action/kind/reason/guardId
+                                                   identical to the intact module.
+tests/hook-i18n.test.js                         — Whole-branch review, 4 new cases (TDD): two proving
+                                                   only own properties are substituted (a
+                                                   {constructor}/{toString}/{hasOwnProperty} template,
+                                                   and a params object with a custom prototype); one
+                                                   proving the locale is resolved once per process —
+                                                   resolve against a staged HOME, delete it, assert
+                                                   the answer is unchanged, then assert
+                                                   resetI18nCacheForTests() clears the memo; and one
+                                                   regression-guarding the OWNMIND_LOCALE_FORCE seam
+                                                   against the memo by flipping it en→zh→en inside a
+                                                   single process.
+tests/hook-locales-parity.test.js               — Whole-branch review (Minor): new case asserting
+                                                   hooks/locales/en.override.json and en.json carry
+                                                   identical key sets and identical values. The
+                                                   override is what keeps the route-C translate
+                                                   pipeline from regenerating the hand-authored
+                                                   English through the LLM, and its own _comment
+                                                   claimed lockstep, but nothing enforced it — editing
+                                                   en.json alone would silently un-pin a string.
+                                                   Currently 24/24, zero drift; proved to have teeth
+                                                   by staging both a value drift and a missing
+                                                   override key.
+hooks/locales/ja.json                           — Whole-branch review (Important, safety): 6 of the
+                                                   24 keys asserted something other than what
+                                                   en.json asserts, and were corrected.
+                                                   gate.failopen said the command WAS checked ("with
+                                                   none") where English says it was NOT gated — the
+                                                   fail-open notice read as an all-clear on any
+                                                   machine whose OS locale is ja. The same shape hit
+                                                   compliance.notChecked.noCredentials /
+                                                   .neverSynced / .checkFailed and
+                                                   compliance.off.server: zh.json emphasises its
+                                                   negations by bracketing them (「沒有」被檢查) and
+                                                   the pipeline rendered the bracket contents as the
+                                                   noun 「なし」, detaching the negation from the
+                                                   predicate. lint.recovered was the mirror case —
+                                                   English says the turn WAS checked, Japanese said
+                                                   something 検出されました ("was detected"). All six
+                                                   now end on an explicit …チェックされていません or
+                                                   …チェックされました; noCredentials also swaps
+                                                   証明書 ("certificate") for 認証情報, the
+                                                   credentials term the rest of the product uses.
+                                                   The other 18 keys were audited (back-translated
+                                                   before reading en.json) and left as they are —
+                                                   style and register still await native review.
+hooks/locales/ja.override.json                  — Whole-branch review: pins all six corrected values,
+                                                   joining compliance.idNote. ja.json is what ships,
+                                                   this file is what survives the next
+                                                   translate:hooks (applyOverride runs last), so a
+                                                   semantic correction written to only one of the two
+                                                   is a fix with a fuse on it. Its _comment now
+                                                   records why these six exist, so a future reader
+                                                   does not mistake them for phrasing preferences and
+                                                   drop them.
+hooks/locales/glossary.json                     — Whole-branch review: added the two
+                                                   negation-carrying clauses (「沒有」被把關,
+                                                   「沒有」被檢查) as pinned phrase mappings for both
+                                                   zh-to-en and zh-to-ja, so the pipeline stops
+                                                   detaching the negation from the predicate at the
+                                                   source rather than only being corrected after the
+                                                   fact. _comment rewritten: the file now carries two
+                                                   classes of entry, not just protocol
+                                                   self-mappings.
+tests/hook-locales-ja-meaning.test.js           — NEW. Whole-branch review: meaning-level guard the
+                                                   structural parity test cannot provide — a value
+                                                   can have the right keys, placeholders and literals
+                                                   and still assert the opposite. Derives the
+                                                   affected keys from en.json's own uppercase
+                                                   NOT/never marker (so a future safety notice is
+                                                   covered the day it lands), then requires each such
+                                                   Japanese value to end on a negative predicate
+                                                   (…ません) and to actually name the check it
+                                                   denies; bans the 「なし」 artifact across every
+                                                   key; requires the one affirmative notice
+                                                   (lint.recovered) to stay affirmative; and requires
+                                                   every ja.override.json pin to equal the shipped
+                                                   ja.json value. Guards its own derived lists
+                                                   against being empty, the same dead-assertion
+                                                   discipline hook-locales-parity.test.js uses.
+                                                   Proved red against the pre-fix dictionary — 4 of
+                                                   its 6 cases failed — green after.
+install.ps1                                     — Whole-branch review (Minor): the hooks\locales
+                                                   Copy-Item takes -Exclude ".*". PowerShell
+                                                   wildcards match a leading dot where a POSIX glob
+                                                   does not, so "*.json" also picked up
+                                                   .translate-cache.json — a gitignored translate
+                                                   -pipeline artifact — and deployed it to
+                                                   ~\.claude\hooks\locales on Windows only, breaking
+                                                   parity with install.sh.
+scripts/update.ps1                              — Whole-branch review: same fix on the update path,
+                                                   as Where-Object { $_.Name -notlike ".*" } in the
+                                                   existing Get-ChildItem pipeline (no assumption
+                                                   needed about -Exclude against a bare container
+                                                   path).
+scripts/check-sync.ps1                          — Whole-branch review: same dot-name filter on the
+                                                   drift check. Required, not cosmetic: once the two
+                                                   scripts above stop copying .translate-cache.json,
+                                                   an unfiltered check here would demand it be
+                                                   present in ~/.claude/hooks/locales and report
+                                                   permanent drift on every Windows machine.
+tests/ps1-locale-copy-dotfile-parity.test.js    — NEW. Whole-branch review: pins the three exclusions
+                                                   statically and ties them to install.sh's glob and
+                                                   to the .gitignore entry that justifies them. A
+                                                   source check, not an execution — neither pwsh nor
+                                                   powershell exists on the dev or CI hosts, so it
+                                                   proves the exclusion is still written down, not
+                                                   that PowerShell honours it. Each assertion was
+                                                   confirmed to discriminate by running its regexes
+                                                   against the pre-fix files at HEAD.
 ```
 
 新增：
 ```
+tests/hook-locales-fallback-sync.test.js         — Task 7: lifts the real install.sh
+                                                   section-4b and update.sh section-2
+                                                   blocks by their section markers (same
+                                                   "extract, don't restate" approach
+                                                   tests/update-sh-upgrade-rule.test.js
+                                                   uses for a different section). 5
+                                                   cases against a staged
+                                                   $OWNMIND_DIR/hooks tree: each script's
+                                                   block lands all three locale files in
+                                                   ~/.claude/hooks/locales; a stale
+                                                   fallback dictionary is overwritten
+                                                   rather than left behind on re-sync;
+                                                   each block tolerates a checkout with
+                                                   no hooks/locales directory at all.
+                                                   Proved red against the pre-Task-7
+                                                   originals first (ENOENT on
+                                                   .../hooks/locales), then green again
+                                                   against the patched scripts.
+hooks/locales/glossary.json                      — Task 6: self-mapping term glossary for the
+                                                   pipeline's --dir run against hooks/locales
+                                                   — go, no, 誤判 and ⛔ each map to themselves
+                                                   so the LLM copies these protocol literals
+                                                   through instead of translating them, the
+                                                   same mechanism
+                                                   client/src/i18n/glossary.json uses for
+                                                   brand terms.
+hooks/locales/en.override.json                   — Task 6: pins all 24 hand-authored English
+                                                   strings from Tasks 1-5 verbatim, so the
+                                                   pipeline's English pass can never rewrite
+                                                   the wordings regression-pinned in
+                                                   tests/hook-i18n.test.js and
+                                                   tests/hook-notices-i18n.test.js. Verified
+                                                   byte-for-byte identical to
+                                                   hooks/locales/en.json before committing.
+hooks/locales/ja.override.json                   — Task 6: empty scaffold with only a
+                                                   _comment key, mirroring
+                                                   client/src/i18n/ja.override.json's shape.
+                                                   Nothing needed a manual override once the
+                                                   glossary self-mappings were in place.
+hooks/locales/ja.json                            — Task 6: generated by `npm run
+                                                   translate:hooks`
+                                                   (client/src/scripts/translate.mjs --dir
+                                                   hooks/locales, model gpt-oss-120b via the
+                                                   shared kkvin.com/llm-switch proxy —
+                                                   gpt-4o-mini and gpt-4o both hit the
+                                                   proxy's broken mistral-ocr-* fallback
+                                                   chain for this specific batch, reproduced
+                                                   with curl outside the script). All 24 keys
+                                                   present, no missing-translation warnings.
+                                                   Wording has not had a
+                                                   native-Japanese-speaker review pass yet
+                                                   (Task 7 tracks that).
+tests/translate-hooks-dir.test.js                — Task 6, TDD: unit tests for
+                                                   parseDirArg/resolveI18nDir/applyOverride,
+                                                   plus one full-script integration run in
+                                                   manual mode (TRANSLATE_API_KEY unset, no
+                                                   live LLM call) proving the pipeline reads
+                                                   and writes only under --dir and never
+                                                   touches client/src/i18n.
+tests/hook-locales-parity.test.js                — Task 6, TDD (red before ja.json existed):
+                                                   mechanical parity check across
+                                                   hooks/locales/{zh,en,ja}.json — every key
+                                                   exists in all three, every {placeholder}
+                                                   set matches per key, the [OwnMind ...]
+                                                   header and other protocol literals (⛔, 誤判,
+                                                   /ownmind-on, /ownmind-off) survive
+                                                   verbatim in ja.
 tests/update-notice-delivery.test.js            — 把 Stop 掛勾當程式跑：待送的更新結果要
                                                    真的出現在 stdout 的 systemMessage、
                                                    送完要清佇列、沒東西時不能亂講話。
                                                    拿掉送出或拿掉清除都會紅。
+tests/memory-locale-route.test.js               — Real-database route test (Task 5): PUT
+                                                   /locale writes users.settings.locale via
+                                                   jsonb_set, even from a row whose settings
+                                                   column is SQL NULL; GET /init echoes the
+                                                   value back; 'auto' deletes the key without
+                                                   touching sibling keys; invalid values
+                                                   rejected 400, never reaching the database;
+                                                   no-auth request rejected 401. Same
+                                                   startRealDb()/startServer() harness as
+                                                   enforcement-bundle-mounted.test.js. Fix
+                                                   round 1: a PUT /locale write changes this
+                                                   account's sync_token (zh, then auto, each
+                                                   differ from the last) while an unrelated
+                                                   account's token stays put.
+tests/mcp-set-locale-tool.test.js               — Source-level test for ownmind_set_locale
+                                                   (mcp/index.js cannot be imported — it
+                                                   connects a live stdio server on load, same
+                                                   constraint memory-title-update.test.js
+                                                   documents): schema shape, enum values,
+                                                   English description, and that the case
+                                                   handler forwards args.locale to PUT
+                                                   /api/memory/locale. Fix round 1:
+                                                   description and response wording state the
+                                                   true propagation timing (immediate on this
+                                                   machine, next session start on others);
+                                                   case handler calls
+                                                   refreshLocalCacheForLocale().
+mcp/lib/local-locale-refresh.js                 — Task 5 fix round 1:
+                                                   refreshLocalCacheForLocale({apiUrl, apiKey,
+                                                   cachePath, fetchFn}) — thin wrapper around
+                                                   hooks/lib/conditional-sync.js's own
+                                                   runConditionalSync(), reused verbatim
+                                                   rather than a second cache writer (that
+                                                   file has one owner). Never throws; returns
+                                                   {ok, source} so a failed refresh degrades
+                                                   the tool's response text instead of failing
+                                                   the call.
+tests/local-locale-refresh.test.js              — 3 cases against a staged HOME: a pinned
+                                                   locale change reaches cache.data.locale and
+                                                   getLocale() returns it immediately; 'auto'
+                                                   removes the value and getLocale() stops
+                                                   returning the stale one; a fetch failure
+                                                   degrades gracefully (ok:false, no throw,
+                                                   existing cache left byte-for-byte
+                                                   untouched).
+tests/iron-rule-upgrade-lock-scope.test.js      — Round 2, real-database (startRealDb() +
+                                                   startServer(), both routers behind their
+                                                   real auth): with an iron-rule upgrade edit
+                                                   open, a locale write moves the cache token
+                                                   on both GET /sync-token and GET /init while
+                                                   the open edit still commits 200 — the
+                                                   regression this round fixes, and it fails
+                                                   409 without the split. The lock still
+                                                   locks: a background write to the rule under
+                                                   the editor 409s, and the token that 409
+                                                   hands back works first try; disabling a
+                                                   NON-max rule by raw SQL (MAX asserted
+                                                   unmoved either side) also 409s, which is
+                                                   what makes COUNT(*) load-bearing rather
+                                                   than decorative. An unrelated memory write
+                                                   does not evict the editor. The 409 body is
+                                                   asserted against shouldRetryForSyncToken()
+                                                   so this lock's conflict can never be
+                                                   mistaken for a stale cache token by the
+                                                   MCP client's generic write retry.
+                                                   Only a real database can settle this — the
+                                                   claim is about which rows each query reads,
+                                                   which fixtures cannot show.
 ```
 
 ## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）
@@ -59,19 +739,107 @@ hooks/lib/gate-provision.js                     — session 佈建；密鑰＋no
                                                    gate-current-session＋30 天狀態清掃。
 tests/gate-provisioning.test.js                 — 佈建端對端測試（spawn 兩份 SessionStart
                                                    hook 對 staged HOME，5 項）。
+hooks/lib/i18n.js                               — total-function message lookup for hook user
+                                                   notices; t(key, params?), resetI18nCacheForTests().
+hooks/lib/locale.js                             — real locale resolver; getLocale({homeDir}):
+                                                   OWNMIND_LOCALE_FORCE → account preference
+                                                   (memories cache data.locale) → normalized
+                                                   OS-detected state/locale.json → 'en'. Sync,
+                                                   total, subprocess-free.
+hooks/lib/locale-provision.js                   — SessionStart-only OS-locale detector (darwin
+                                                   `defaults`, win32 PowerShell, else $LANG/$LC_ALL);
+                                                   provisionLocale({homeDir}) writes
+                                                   state/locale.json, never throws.
+hooks/locales/en.json, hooks/locales/zh.json    — 24 keys (was 8): the gate.* / lint.* family
+                                                   plus (task 4) the compliance.* and tty.*
+                                                   families, keyed by the string-inventory
+                                                   audience=user set.
+tests/hook-i18n.test.js                         — t() + getLocale() OWNMIND_LOCALE_FORCE seam
+                                                   unit tests (10 cases).
+tests/hook-locale.test.js                       — getLocale() full resolution chain,
+                                                   provisionLocale() null-on-failure behavior,
+                                                   and SessionStart wiring end-to-end (16 cases).
+tests/action-gate-i18n.test.js                  — the gate family through t(): zh userLine for
+                                                   all 5 block variants, en byte-identical
+                                                   regression pin, reason/decision fields locale-
+                                                   independent, CLI/degraded/failopen notices
+                                                   localized, and a broken-i18n.js e2e case for
+                                                   all three entry points (action-gate-cli.js,
+                                                   ownmind-iron-rule-check.js, approve-action.js)
+                                                   proving fail-open never invents a block and
+                                                   never crashes (19 cases).
+tests/hook-notices-i18n.test.js                 — the remaining user notices through t():
+                                                   reply-lint banner header (4 variants) +
+                                                   mode-invalid + per-violation line +
+                                                   /ownmind-off reminder + recovery, compliance-
+                                                   step's 7 state/event banners, tty-echo's
+                                                   merged-banner header; zh + en-byte-identical
+                                                   pairs, decision-field locale-independence,
+                                                   one broken-i18n.js proof per file (35 cases).
 ```
 
 修改：
 ```
 hooks/ownmind-iron-rule-check.sh                — 觸發詞偵測前先過做事閘門；閘門有輸出就
-                                                   原樣轉發並就地結束。
+                                                   原樣轉發並就地結束；fail-open literals now
+                                                   carry a comment on why they bypass t().
 hooks/ownmind-iron-rule-check.js                — 同上（Windows twin）；直接 import 閘門
-                                                   模組，同一套 fail-open-loud 包法。
+                                                   模組，同一套 fail-open-loud 包法; failopen/
+                                                   degraded notices route through gateNotice()
+                                                   (dynamic import of t(), English literal
+                                                   fallback on failure).
 hooks/ownmind-session-start.sh                  — 開場即佈建閘門狀態（憑證檢查之前）；
-                                                   stdin payload 原樣交給 gate-provision.js。
+                                                   stdin payload 原樣交給 gate-provision.js;
+                                                   locale-provision.js is now invoked at the same
+                                                   pre-credential position (no stdin required).
 hooks/ownmind-session-start.js                  — 同上（Windows twin）；讀 stdin 取
-                                                   session_id、動態 import 佈建函式。
+                                                   session_id、動態 import 佈建函式; adds
+                                                   provisionOsLocale() right after provisionGate().
+hooks/lib/action-gate.js                        — the 4 userLine sites (verbal ask, code-mode
+                                                   ask/limit, read-block, check-block) now go
+                                                   through t(); model-facing reason untouched.
+hooks/lib/action-gate-cli.js                    — failopen/degraded notices route through
+                                                   gateNotice() (dynamic import of t(), English
+                                                   literal fallback on failure).
+hooks/lib/approve-action.js                     — review fix: action-gate.js loaded via dynamic
+                                                   import inside try/catch, so a broken i18n.js
+                                                   still prints REJECTED (previously the whole
+                                                   CLI crashed with empty stdout).
+tests/action-gate.test.js                       — pin OWNMIND_LOCALE_FORCE=en for the whole
+                                                   suite (predates locale support; several
+                                                   assertions pin literal English userLine text).
 tests/helpers/hook-home.js                      — staged home 加掛 hooks/lib 目錄。
+hooks/lib/compliance-step.js                    — the 7 state/event banners (off/warn-mode,
+                                                   no-credentials, never-synced, check-failed,
+                                                   server-off, block-cap-reached, pushed-back)
+                                                   now go through t() via a complianceNotice()
+                                                   dynamic-import-with-fallback helper; the
+                                                   誤判 check-id note is its own resolved
+                                                   {idNote} param, not string-spliced.
+hooks/ownmind-reply-lint.js                     — lint.recovered wired at its emit site; new
+                                                   lintNotice() helper; the /ownmind-off
+                                                   reminder and formatBanner()'s 4 header
+                                                   variants + mode-invalid line + per-violation
+                                                   line now go through t(); formatBanner() is
+                                                   now async, its one call site awaits it.
+hooks/ownmind-tty-echo.cjs                      — merged-banner header (tty.header) now goes
+                                                   through t() via ttyNotice(); dynamic
+                                                   import() works from this CommonJS file even
+                                                   though static import and require() of an ESM
+                                                   sibling do not (verified empirically).
+tests/enforcement-compliance-step.test.js       — pin OWNMIND_LOCALE_FORCE=en (calls
+                                                   runComplianceStep() directly, in-process,
+                                                   against the real machine's env/home).
+tests/reply-lint-hook.test.js                   — pin OWNMIND_LOCALE_FORCE=en (asserts /Reply
+                                                   quality lint/).
+tests/reply-lint-hook-v1193-block.test.js       — pin OWNMIND_LOCALE_FORCE=en (asserts
+                                                   /fallback|falling back/).
+tests/reply-lint-hook-v1911.test.js             — pin OWNMIND_LOCALE_FORCE=en (asserts
+                                                   /consecutive blocks/).
+tests/reply-lint-hook-v197.test.js              — pin OWNMIND_LOCALE_FORCE=en (defensive).
+tests/enforcement-reply-lint-wiring.test.js     — pin OWNMIND_LOCALE_FORCE=en (asserts
+                                                   /never synced/, /NOT checked/).
+tests/ownmind-tty-echo.test.js                  — pin OWNMIND_LOCALE_FORCE=en (defensive).
 ```
 
 ## v1.26.171 修改（規範真的被挑到，系統講的話真的被看到）

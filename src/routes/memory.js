@@ -48,6 +48,14 @@ function parseSemver(v) {
 
 const UPDATE_PROMPT = 'Your OwnMind MCP client is outdated — please update. In the terminal run: cd ~/.ownmind && git pull && cd mcp && npm install. Or paste this prompt to the AI: "Update OwnMind for me: cd ~/.ownmind && git pull && cd mcp && npm install"';
 
+// Task 5 (gate-message-i18n): the account's language preference for OwnMind's own
+// tool/gate messages, stored at users.settings.locale (same jsonb column and pattern as
+// onboarding_completed_at below) and echoed by GET /init so hooks/lib/locale.js (Task 2)
+// picks it up with zero client changes via the local memories.json cache.
+// Only these three are storable; 'auto' is accepted by the write route but means "delete
+// the key", not "store the string 'auto'" — see PUT /locale below.
+const ACCOUNT_LOCALES = ['zh', 'en', 'ja'];
+
 /**
  * Sync token check.
  * - token present and valid → pass
@@ -730,10 +738,15 @@ router.get('/init', async (req, res) => {
     const userStateResult = await query(
       `SELECT
         EXISTS (SELECT 1 FROM memories WHERE user_id = $1 AND status = 'active') AS has_any_memory,
-        (SELECT settings->>'onboarding_completed_at' FROM users WHERE id = $1) AS onboarding_completed_at`,
+        (SELECT settings->>'onboarding_completed_at' FROM users WHERE id = $1) AS onboarding_completed_at,
+        (SELECT settings->>'locale' FROM users WHERE id = $1) AS locale`,
       [req.user.id]
     );
-    const { has_any_memory: hasAnyMemory, onboarding_completed_at: onboardingCompletedAt } = userStateResult.rows[0] || {};
+    const {
+      has_any_memory: hasAnyMemory,
+      onboarding_completed_at: onboardingCompletedAt,
+      locale: accountLocale,
+    } = userStateResult.rows[0] || {};
     const onboarding = buildOnboarding({ hasAnyMemory, onboardingCompletedAt, tool: detectedTool });
 
     res.json({
@@ -758,6 +771,11 @@ router.get('/init', async (req, res) => {
       // Sent in compact mode too — every caller asks for compact, and a field only the
       // non-compact response carries is a field nobody receives (v1.26.141).
       invocable_standards: invocableStandards,
+      // Task 5 (gate-message-i18n): the account's locale preference, or null when never set
+      // / cleared back to 'auto'. hooks/lib/locale.js reads this at cache.data.locale and
+      // ignores anything that is not exactly zh|en|ja — null included — falling through to
+      // OS-detected language, so sending null here (rather than omitting the key) is safe.
+      locale: accountLocale || null,
       active_handoff: activeHandoff,
       weekly_summary: weeklySummary,
       memory_health: memoryHealth,
@@ -1397,6 +1415,63 @@ router.post('/', async (req, res) => {
     if (classified.logStack) logPayload.stack = err?.stack;
     logger[classified.logLevel]('memory create failed', logPayload);
     res.status(classified.status).json(classified.body);
+  }
+});
+
+/**
+ * PUT /locale - set or clear the account's language preference for OwnMind's own
+ * tool/gate messages (Task 5, gate-message-i18n). Registered ahead of PUT /:id so a
+ * request here is never swallowed as an id lookup (same ordering reason as
+ * /enforcement-bundle above).
+ *
+ * body.locale:
+ *   'zh' | 'en' | 'ja' — pins the preference; stored verbatim, no normalization here
+ *     (normalization is a client-side concern applied only to OS-detected values, never
+ *     to a deliberate account choice — see hooks/lib/locale.js).
+ *   'auto'              — deletes the settings key outright, so GET /init stops echoing a
+ *     value and the client falls back to OS-detected language.
+ *   anything else       — 400, and the row is left untouched.
+ *
+ * Both success branches return `sync_token`: the account's locale is a hash input to the
+ * cache-freshness token, so either branch moves it and the caller must be handed the new one.
+ */
+router.put('/locale', async (req, res) => {
+  try {
+    const { locale } = req.body || {};
+
+    if (locale === 'auto') {
+      await query(
+        `UPDATE users SET settings = COALESCE(settings, '{}'::jsonb) - 'locale' WHERE id = $1`,
+        [req.user.id]
+      );
+      // The cache-freshness token folds the account's locale in, so clearing it moves the
+      // token — see the sibling write below for why that has to be handed back.
+      return res.json({ locale: null, sync_token: await generateSyncToken(req.user.id) });
+    }
+
+    if (!ACCOUNT_LOCALES.includes(locale)) {
+      return res.status(400).json({
+        error: `locale must be one of: ${ACCOUNT_LOCALES.join(', ')}, auto`,
+        received: locale,
+      });
+    }
+
+    await query(
+      `UPDATE users
+       SET settings = jsonb_set(COALESCE(settings, '{}'::jsonb), '{locale}', to_jsonb($2::text))
+       WHERE id = $1`,
+      [req.user.id, locale]
+    );
+    // Return a fresh sync token (state changed after the write) — the same contract every
+    // other write in this router honours. The account's locale is a hash input to the
+    // cache-freshness token, so this write moves it; a caller holding a long-lived session
+    // token (the MCP's `currentSyncToken`) would otherwise present the pre-write value on its
+    // very next memory write and eat a 409 plus an auto-retry round trip, for a change it
+    // made itself.
+    res.json({ locale, sync_token: await generateSyncToken(req.user.id) });
+  } catch (err) {
+    logger.error('set locale failed', { error: err.message });
+    res.status(500).json({ error: 'Failed to set locale' });
   }
 });
 

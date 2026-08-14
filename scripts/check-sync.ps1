@@ -166,6 +166,21 @@ if (Test-Path $libDir) {
     }
 }
 
+# Dynamically add hooks/locales/*.json (gate-message-i18n task 7 — same pattern as
+# hooks/lib above: install.ps1/update.ps1 ship these to the ~/.claude/hooks fallback too).
+# The dot-name filter mirrors what those two now copy: PowerShell's '*.json' matches a
+# leading dot where a POSIX glob does not, so without it this drift check would demand
+# .translate-cache.json (a gitignored translate-pipeline artifact, never shipped) be present
+# in ~/.claude/hooks/locales and report permanent drift on every Windows machine.
+$localesDir = Join-Path $OwnmindDir 'hooks/locales'
+if (Test-Path $localesDir) {
+    Get-ChildItem -Path $localesDir -Filter '*.json' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notlike '.*' } |
+        ForEach-Object {
+            $pairs += @{ src = $_.FullName; dst = (Join-Path $ClaudeDir "hooks/locales/$($_.Name)") }
+        }
+}
+
 $driftCount = 0
 $driftFiles = @()
 foreach ($p in $pairs) {

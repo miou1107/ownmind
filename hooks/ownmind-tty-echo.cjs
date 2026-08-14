@@ -41,6 +41,24 @@ const PENDING_FILE = path.join(HOME, '.ownmind', 'logs', 'banner-pending.jsonl')
 
 main();
 
+/**
+ * Looks up the merged-banner header through t(), same fail-open contract as every other
+ * gate/lint notice helper in this codebase (see hooks/lib/action-gate-cli.js's gateNotice).
+ * This file is CommonJS inside an otherwise-ESM package, so it cannot use a static `import`
+ * and `require()` on an ESM module throws ERR_REQUIRE_ESM — but the dynamic `import()`
+ * expression works from CommonJS too (verified empirically for this task), and wrapping it in
+ * try/catch keeps a broken hooks/lib/i18n.js from touching this hook's own "always exit 0,
+ * never crash" contract.
+ */
+async function ttyNotice(key, fallback, params) {
+  try {
+    const { t } = await import('./lib/i18n.js');
+    return t(key, params);
+  } catch {
+    return fallback;
+  }
+}
+
 async function main() {
   try {
     const input = await readStdin();
@@ -50,7 +68,7 @@ async function main() {
       process.exit(0);
       return;
     }
-    const block = formatBlock(banners);
+    const block = await formatBlock(banners);
     if (!block) {
       process.exit(0);
       return;
@@ -184,7 +202,7 @@ function stripLabelColon(eventLine) {
  *
  *   [OwnMind v1.17.71] Memory search ┃ Tip: you can search memory
  */
-function formatBlock(banners) {
+async function formatBlock(banners) {
   if (!Array.isArray(banners) || banners.length === 0) return null;
 
   const out = [];
@@ -210,8 +228,16 @@ function formatBlock(banners) {
   const eventBanners = banners.filter((b) => b.kind === 'banner');
   if (eventBanners.length > 0) {
     const version = eventBanners[0].version || '';
+    // The signature is looked up through t() (hook message i18n); the events are appended to
+    // that same line, so the one-line/one-stamp floor above is unaffected — the keyed value
+    // supplies the prefix only, never the layout. Break characters are flattened here for the
+    // same reason extractBanners flattens them in banner bodies: the dictionary is a second
+    // text source feeding this line, and a break in it would buy an extra host stamp. A no-op
+    // for every value shipped today (en and zh are both "[OwnMind {version}]").
+    const signature = (await ttyNotice('tty.header', `[OwnMind ${version}]`, { version }))
+      .replace(/[\r\n\u2028\u2029\u000B\u0085]/g, ' ');
     const parts = eventBanners.map((b) => stripLabelColon(b.eventLine));
-    out.push(`[OwnMind ${version}] ${parts.join(EVENT_SEPARATOR)}`);
+    out.push(`${signature} ${parts.join(EVENT_SEPARATOR)}`);
   }
   if (out.length === 0) return null;
   return out.join('\n');

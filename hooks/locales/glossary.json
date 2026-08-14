@@ -1,0 +1,19 @@
+{
+  "_comment": "Term glossary for hooks/locales, used by client/src/scripts/translate.mjs's --dir pipeline (Task 6 of gate-message-i18n). It carries two kinds of entry. (1) Self-mappings: protocol literals that hooks/locales/zh.json embeds as fixed tokens the AI or the user must reply/see verbatim — the LLM must copy them through unchanged rather than translate them. See hooks/locales/en.json, where the same literals already survive untranslated in the hand-authored English (e.g. compliance.idNote keeps the Chinese word 誤判 even in English, because it is the fixed phrase the user is told to reply with regardless of locale). (2) Negation-carrying clauses: zh.json emphasises the safety negations in its fail-open / not-checked notices by bracketing them (「沒有」被把關, 「沒有」被檢查), and the pipeline translated the bracket contents as a standalone noun value, dropping the negation's grammatical role — the Japanese came back saying the command WAS checked 'with none'. These clauses are pinned whole so the negation cannot be detached from the predicate again. Both classes are belt-and-braces with hooks/locales/ja.override.json (which forces the final value regardless of what the LLM returns) and tests/hook-locales-ja-meaning.test.js (which fails if a value stops denying what the English denies).",
+  "zh-to-en": {
+    "go": "go",
+    "no": "no",
+    "誤判": "誤判",
+    "⛔": "⛔",
+    "「沒有」被把關": "was NOT gated",
+    "「沒有」被檢查": "was NOT checked"
+  },
+  "zh-to-ja": {
+    "go": "go",
+    "no": "no",
+    "誤判": "誤判",
+    "⛔": "⛔",
+    "「沒有」被把關": "チェックされていません",
+    "「沒有」被檢查": "チェックされていません"
+  }
+}

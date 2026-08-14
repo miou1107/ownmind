@@ -61,6 +61,9 @@ function runHook(input, env = {}) {
       HOME: tmpHome,
       USERPROFILE: tmpHome,
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
+      // Task 4 (hook message i18n) wired the downgraded-banner header through t(); this suite
+      // asserts /consecutive blocks/ (literal English), so the locale is pinned defensively.
+      OWNMIND_LOCALE_FORCE: 'en',
       ...env,
     },
   });

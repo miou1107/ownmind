@@ -76,6 +76,14 @@ if [ ! -t 0 ]; then
 fi
 printf '%s' "$GATE_STDIN_PAYLOAD" | node "$LIB_DIR/gate-provision.js" >/dev/null 2>&1 || true
 
+# --- Gate message i18n, task 2 of 7: SessionStart OS-locale detection ---
+# getLocale() (hooks/lib/locale.js) must stay sync and subprocess-free so it can run on every
+# hook message, so this is the one place allowed to shell out for the machine's OS locale,
+# once per session. Same pre-credential position and failure shape as gate-provision.js just
+# above: local-only, no session id or stdin payload needed, no API key required, and
+# `</dev/null` keeps a manual terminal run from inheriting a TTY it never reads from.
+node "$LIB_DIR/locale-provision.js" </dev/null >/dev/null 2>&1 || true
+
 # v1.17.97：補送 reply-lint Stop hook 上次 POST 失敗 / 離線時 spool 的合規事件。
 # helper 自己處理：沒檔/沒 credentials/POST 失敗 → 留檔等下次；POST 200 → 刪檔。
 # 嚴禁外漏 stderr/stdout（user-visible 通道）— helper 內部已做防護、這邊也丟到 /dev/null 雙保險。

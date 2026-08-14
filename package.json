@@ -13,6 +13,7 @@
     "build:client": "cd client && npm install && npm run build",
     "dev:client": "cd client && npm run dev",
     "translate:client": "cd client && npm run translate",
+    "translate:hooks": "node client/src/scripts/translate.mjs --dir hooks/locales",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.mjs"
   },
   "repository": {

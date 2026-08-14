@@ -282,10 +282,31 @@ async function provisionGate() {
   } catch { /* never delay or break session start; the gate CLI reprovisions loudly */ }
 }
 
+/**
+ * Gate message i18n, task 2 of 7 — detect this machine's OS locale for getLocale() to read
+ * back later.
+ *
+ * getLocale() (hooks/lib/locale.js) must stay sync and subprocess-free so it can run on
+ * every hook message, so this is the one place allowed to shell out for it, once per
+ * session. Same fire-and-forget shape as provisionGate() right above: the import is dynamic
+ * and the whole call is wrapped, so a broken or slow detector can never delay or break
+ * session start — getLocale() falls back to 'en' regardless of whether this ever ran.
+ */
+async function provisionOsLocale() {
+  try {
+    const { provisionLocale } = await import('./lib/locale-provision.js');
+    provisionLocale({ homeDir: HOME });
+  } catch { /* never delay or break session start; getLocale() falls back to 'en' */ }
+}
+
 async function main() {
   // v1.26.172 — gate provisioning first: it is local-only and must happen even on the
   // paths below that exit before the memory load (missing credentials, unreachable API).
   await provisionGate();
+
+  // Gate message i18n, task 2 — same local-only reasoning as gate provisioning above; a
+  // machine with no API key still gets its OS locale detected for hook message rendering.
+  await provisionOsLocale();
 
   // v1.20.3: when a new session starts, clear the legacy "session temporarily disabled" state file.
   // Implements the spec's "new session auto-resumes" — opening a new conversation re-enables the OwnMind hooks.
