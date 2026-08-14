@@ -1,0 +1,83 @@
+#!/usr/bin/env node
+/**
+ * Action-gate CLI — the PreToolUse gate as a standalone stdin→stdout program.
+ *
+ * The registered hook on macOS/Linux is a bash script; it cannot import evaluateGate, so
+ * it pipes its stdin payload here the same way it already runs its other node helpers by
+ * path. The .js twin imports the same modules directly — both wirings answer alike.
+ *
+ * The whole contract is on stdout:
+ *   - block   → one JSON decision envelope ({decision:'block', ...}), exit 0
+ *   - allow   → nothing at all (silence is the common case and must stay free)
+ *   - degraded allow → a systemMessage saying receipts were unavailable
+ *   - anything thrown in the gate path → fail-open-LOUD: the command runs, but the user
+ *     is told it was NOT gated. A gate that switches itself off silently is the exact
+ *     failure this product exists to prevent.
+ */
+
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+const NOT_GATED_LINE =
+  '[OwnMind] the action gate could not run - this command was NOT gated';
+const DEGRADED_LINE =
+  '[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced';
+
+/** sessionId lands in state file names; anything unsafe collapses to 'unknown'. */
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
+
+async function main() {
+  let payload = {};
+  try {
+    payload = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+  } catch { /* no payload, no gate */ }
+
+  // The harness sends { tool_input: { command } }; a bare { command } keeps manual
+  // invocation working, the same affordance both hook twins already grant.
+  const rawCommand = payload?.tool_input?.command ?? payload?.command;
+  const sessionId = typeof payload?.session_id === 'string' && SAFE_SESSION_ID.test(payload.session_id)
+    ? payload.session_id
+    : 'unknown';
+  if (typeof rawCommand !== 'string' || !rawCommand.trim()) process.exit(0);
+
+  try {
+    const { evaluateGate } = await import('./action-gate.js');
+    const { readEnforcementBundle } = await import('./enforcement-cache.js');
+    const { ensureKey, ensureNonce } = await import('./gate-receipt.js');
+
+    const bundle = readEnforcementBundle();
+    const stateDir = path.join(os.homedir(), '.ownmind', 'state');
+
+    // First contact with the state dir provisions it. Idempotent, and a failure here is
+    // survivable on purpose: evaluateGate degrades to stateless checks and says so, which
+    // is a better answer than turning the whole gate off over an unwritable directory.
+    try {
+      ensureKey(stateDir);
+      ensureNonce(stateDir, sessionId);
+    } catch { /* evaluateGate reports the degradation itself */ }
+
+    const d = evaluateGate({ command: rawCommand, guards: bundle.guards, stateDir, sessionId });
+
+    if (d.action === 'block') {
+      process.stdout.write(JSON.stringify({
+        decision: 'block',
+        reason: d.reason,
+        systemMessage: d.userLine,
+        hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '' },
+      }));
+    } else if (d.degraded) {
+      process.stdout.write(JSON.stringify({ systemMessage: DEGRADED_LINE }));
+    }
+    // plain allow: print nothing — the everyday path costs one process and zero words
+  } catch {
+    process.stdout.write(JSON.stringify({ systemMessage: NOT_GATED_LINE }));
+  }
+  process.exit(0);
+}
+
+main().catch(() => {
+  // main() already catches the gate path; this guards the guard.
+  try { process.stdout.write(JSON.stringify({ systemMessage: NOT_GATED_LINE })); } catch { /* stdout gone */ }
+  process.exit(0);
+});
