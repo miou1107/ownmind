@@ -126,8 +126,13 @@ router.post('/:id/suggest-skill-md', async (req, res) => {
       return res.status(400).json({ error: 'invalid rule id' });
     }
 
+    // v1.26.173: `metadata` joins the column list for the same reason PUT /:id/upgrade got
+    // it — suggestSkillMdFormat round-trips its own proposal through lintIronRule, and
+    // without metadata that lint reports "consider adding metadata.origin_context" for
+    // rules that already record one. Left alone, the two endpoints of this router would
+    // now disagree about the same rule: PUT stops nagging, suggest keeps nagging.
     const result = await query(
-      `SELECT id, code, title, content, tags
+      `SELECT id, code, title, content, tags, metadata
        FROM memories
        WHERE id = $1 AND user_id = $2 AND type = 'iron_rule' AND status = 'active'`,
       [ruleId, req.user.id]
@@ -211,8 +216,30 @@ router.put('/:id/upgrade', async (req, res) => {
     }
 
     // 1. Fetch the existing row and confirm ownership.
+    //
+    // `code` and `metadata` are in the column list because the code below reads them. Until
+    // v1.26.173 they were not, and both reads quietly evaluated to undefined: the audit row
+    // recorded every upgrade as having no rule code, and the lint call below never saw the
+    // stored metadata at all. See step 3 for the third consequence, which was the expensive
+    // one.
+    //
+    // Restoring metadata to the lint's view cuts both ways, and the second way is a 400.
+    // checkOriginContext treats an absent origin_context as a warning but a present-but-
+    // malformed one as an error, so a rule whose stored origin_context is missing
+    // `captured_at` or `confidence` now fails lint where it used to pass — and the lint runs
+    // before the origin_event block below, so supplying a fresh valid origin does not clear
+    // it. Accepted rather than special-cased: every writer in this repo emits a valid shape
+    // (scripts/backfill-iron-rule-origin-context.js, captureClientOriginContext), and the
+    // same rule already 400s on PUT /api/memory/:id for any content change, so this endpoint
+    // is only catching up to one that has behaved this way since v1.18.3.
+    //
+    // Not that the malformed state is unreachable — the metadata-only PUT on that route
+    // skips lint entirely, and `ownmind_update` tells its caller to read the memory and send
+    // back the keys worth keeping, which is exactly how a required key goes missing. That
+    // same path is the repair, so the state is recoverable; suppressing the error here would
+    // instead re-introduce the blindness this line exists to remove.
     const existing = await query(
-      `SELECT id, type, title, content, tags
+      `SELECT id, type, code, title, content, tags, metadata
        FROM memories
        WHERE id = $1 AND user_id = $2 AND type = 'iron_rule' AND status = 'active'`,
       [ruleId, req.user.id]
@@ -245,7 +272,7 @@ router.put('/:id/upgrade', async (req, res) => {
     // metadata.origin_context, and auto-inject the "## 起源" section into
     // the body (rendered from metadata).
     let finalContent = content;
-    let updatedMetadata = oldRule.metadata || null;
+    let originContext = null;
     if (origin_event || user_quote) {
       const oc = {
         captured_at: new Date().toISOString(),
@@ -254,18 +281,42 @@ router.put('/:id/upgrade', async (req, res) => {
       };
       if (user_quote) oc.user_quote = user_quote;
       finalContent = injectOriginSection(content, oc);
-      updatedMetadata = { ...(updatedMetadata || {}), origin_context: oc };
+      originContext = oc;
     }
 
     // 3. UPDATE — back up the previous content into previous_content.
+    //
+    // v1.26.173: metadata is patched at one key in SQL rather than serialised back from the
+    // row read at step 1. The old form built `{ origin_context }` from `oldRule.metadata`,
+    // which the SELECT above never fetched, and `metadata = COALESCE($5, metadata)` then
+    // wrote that one-key object over the whole jsonb column. The casualty is
+    // `metadata.stats` — the enforced/missed/triggered counters that PUT /api/memory/:id
+    // accumulates per rule, and which nothing recomputes.
+    //
+    // `jsonb_typeof(metadata) = 'object'` rather than COALESCE alone: COALESCE catches a SQL
+    // NULL column but not a jsonb scalar, and jsonb_set on one raises `cannot set path in
+    // scalar` — a 500 where the old code silently replaced the value. Nothing in this repo
+    // writes a scalar there, but the read side is not the place to find out.
+    //
+    // jsonb_set rather than a corrected read-modify-write, because the read at step 1 and
+    // this write are not one transaction and those counters are exactly what lands in
+    // between: the stats merge in src/routes/memory.js deliberately leaves `updated_at`
+    // alone so it does not bump the sync token, so the optimistic lock above cannot see one
+    // and would not 409. Patching the single key in the database closes that window instead
+    // of narrowing it.
     await query(
       `UPDATE memories
        SET content = $1,
            previous_content = $2,
-           metadata = COALESCE($5, metadata),
+           metadata = CASE
+             WHEN $5::jsonb IS NULL THEN metadata
+             ELSE jsonb_set(
+               CASE WHEN jsonb_typeof(metadata) = 'object' THEN metadata ELSE '{}'::jsonb END,
+               '{origin_context}', $5::jsonb)
+           END,
            updated_at = NOW()
        WHERE id = $3 AND user_id = $4`,
-      [finalContent, oldRule.content, ruleId, req.user.id, updatedMetadata ? JSON.stringify(updatedMetadata) : null]
+      [finalContent, oldRule.content, ruleId, req.user.id, originContext ? JSON.stringify(originContext) : null]
     );
 
     // 4. memory_history audit.
