@@ -91,6 +91,17 @@ test('getLocale returns en when both files are missing', () => {
   assert.equal(getLocale({ homeDir: home }), 'en');
 });
 
+test('getLocale({ homeDir: null }) degrades to the real home dir instead of throwing', () => {
+  // getLocale()'s default parameter (`homeDir = os.homedir()`) only fires when the caller
+  // passes `undefined` (or omits the key entirely) — an *explicit* `{ homeDir: null }` skips
+  // the default and reaches `path.join(null, ...)`, which throws a TypeError. No current call
+  // site passes null, but the function is documented as "sync, total (never throws)", so this
+  // closes the hole rather than relying on every future caller to happen to avoid it.
+  assert.doesNotThrow(() => getLocale({ homeDir: null }));
+  const result = getLocale({ homeDir: null });
+  assert.ok(['zh', 'en', 'ja'].includes(result), `expected a valid locale, got ${JSON.stringify(result)}`);
+});
+
 test('getLocale returns en when both files are garbage/corrupted', () => {
   const home = tempDir('locale-');
   const cacheDir = path.join(home, '.ownmind', 'cache');

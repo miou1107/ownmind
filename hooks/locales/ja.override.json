@@ -1,3 +1,4 @@
 {
-  "_comment": "Japanese overrides — human-forced translations for terms the LLM gets wrong, applied last so they always win over the pipeline's output. Empty scaffold: hooks/locales/ja.json is pipeline-generated (Task 6 of gate-message-i18n) rather than hand-translated, so this starts empty and only gains entries if a real Japanese speaker (or a mechanical check like tests/hook-locales-parity.test.js) finds a specific key the LLM mistranslated. Key -> hooks/locales/zh.json key, mirroring client/src/i18n/ja.override.json's shape."
+  "_comment": "Japanese overrides — human-forced translations for terms the LLM gets wrong, applied last so they always win over the pipeline's output. Empty scaffold: hooks/locales/ja.json is pipeline-generated (Task 6 of gate-message-i18n) rather than hand-translated, so this starts empty and only gains entries if a real Japanese speaker (or a mechanical check like tests/hook-locales-parity.test.js) finds a specific key the LLM mistranslated. Key -> hooks/locales/zh.json key, mirroring client/src/i18n/ja.override.json's shape.",
+  "compliance.idNote": " （チェック番号 {checkId}：判断が誤っている場合は「誤判 {checkId}」と返信してください）"
 }

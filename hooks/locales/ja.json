@@ -19,7 +19,7 @@
   "compliance.notChecked.neverSynced": "[OwnMind] このデバイスは規則を同期したことがなく、今回のラウンドは「なし」でした",
   "compliance.notChecked.checkFailed": "[OwnMind] コンプライアンスチェックが実行されませんでした（{reason}）— 今回のラウンドは「なし」でした",
   "compliance.off.server": "[OwnMind] このアカウントの強制実行は無効で、今回のラウンドは「なし」でした",
-  "compliance.idNote": "（チェック番号 {checkId}：判断が誤っている場合は「誤判 {checkId}」と返信してください）",
+  "compliance.idNote": " （チェック番号 {checkId}：判断が誤っている場合は「誤判 {checkId}」と返信してください）",
   "compliance.blockCapReached": "[OwnMind] この返信は {blockCount} 回書き換えられましたが、まだ {count} 件の規則に違反しています — 直接表示し、AI に再書き換えを要求しません{idNote}",
   "compliance.pushedBack": "[OwnMind] コンプライアンスチェック：{count} 件の違反が AI に送信されました{idNote}",
   "tty.header": "[OwnMind {version}]"

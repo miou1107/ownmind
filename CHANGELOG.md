@@ -2,6 +2,47 @@
 
 ## v1.26.173 — 一次觸發只佔一行，不要再被主程式蓋三次章
 
+**Gate message i18n cleanup batch — three review-flagged defects closed (TDD, each proved
+red before green)**:
+
+`hooks/locales/ja.json`'s `compliance.idNote` had lost its leading space — both `zh.json`
+and `en.json` keep one, but the pipeline-generated `ja.json` did not. That value is
+concatenated directly onto `compliance.blockCapReached` / `compliance.pushedBack` in
+`hooks/lib/compliance-step.js` (a template literal with no separator of its own), so the
+Japanese notice ran the two sentences together with no gap between them. Fixed, and pinned
+in `hooks/locales/ja.override.json` (previously an empty scaffold) so a future
+`translate:hooks` run — which only regenerates a key once its `.translate-cache.json` entry
+is invalidated, so today's run is a no-op either way — cannot drop the space again;
+verified by staging a simulated re-run with the space already lost and confirming the
+override forces it back. `tests/hook-locales-parity.test.js` gained a new check requiring
+leading/trailing whitespace presence to match across `zh`/`en`/`ja` for every key, proved
+red against the pre-fix `ja.json` first.
+
+`tests/hook-locales-parity.test.js`'s `OTHER_PROTOCOL_LITERALS` list also carried
+`/ownmind-off`, which no dictionary value has ever contained — only `/ownmind-on` (the
+command that re-enables OwnMind) appears in any notice, never the command that disables it —
+so that list entry never exercised the assertion it looked like it was providing. Rather
+than just delete it, the test now asserts every listed literal actually appears in `zh.json`
+somewhere, so a future dead entry fails loudly instead of sitting there as silent false
+confidence; that new check is what caught `/ownmind-off` in the first place (proved red
+before removing the literal, green after).
+
+The same file's `quotedForm()` helper built its regex from independent open/close character
+classes (`["「]word["」]`), which accepted a mismatched pair — an ASCII open quote paired
+with a CJK close bracket, or vice versa — neither of which is a real quoting convention
+either locale uses. Tightened to an explicit alternation (`"word"` or `「word」`) requiring a
+matching pair, with a new test proving both the rejection and that both legitimate quoting
+styles still match (no existing assertion weakened; the real dictionary content only ever
+used matched pairs already).
+
+`hooks/lib/locale.js`'s `getLocale({ homeDir = os.homedir() } = {})` only applies its
+default for an `undefined` `homeDir` — an explicit `{ homeDir: null }` skips it and reaches
+`path.join(null, ...)`, throwing and breaking the function's documented "sync, total, never
+throws" contract. No current call site passes `null`, so this was a latent hole, not a live
+bug; closed by falling back to `os.homedir()` for any non-string or empty `homeDir`, with a
+new test asserting `getLocale({ homeDir: null })` returns a valid locale rather than
+throwing.
+
 `ownmind-tty-echo.cjs` 的規格第 2 條寫的是「同一次觸發的訊息合併成一塊、不重複前綴」，
 但實際上做不到：Claude Code 會在 systemMessage 的**每一行**前面蓋上
 `PostToolUse:<工具名> says:`。原本「品牌標頭一行 + 事件縮排列點」的排版有三行，

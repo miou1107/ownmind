@@ -50,11 +50,27 @@ function placeholders(str) {
   return [...str.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 }
 
-// Fixed tokens that must survive translation unchanged in every locale: the verbal-approval
-// reply keywords, the block glyph, and the false-positive report phrase the AI is told to
-// listen for (hooks/lib/compliance-step.js:124 embeds this same Chinese phrase even in the
-// English string — it is the fixed handshake phrase, not untranslated leftover Chinese).
-const OTHER_PROTOCOL_LITERALS = ['⛔', '誤判', '/ownmind-on', '/ownmind-off'];
+// Whether a value opens/closes on whitespace is part of its contract, not incidental
+// formatting: compliance.idNote's leading space is the separator between it and whatever
+// compliance.blockCapReached / compliance.pushedBack concatenates it onto in
+// hooks/lib/compliance-step.js (a template literal, no separator of its own) — drop the
+// space and the two sentences run together with no gap. Presence, not the exact character, is
+// what is compared: zh/ja lead with an ideographic space in places, en with an ASCII one, and
+// that difference is legitimate; a key having a leading/trailing space in one locale but not
+// another is not.
+function edgeWhitespace(str) {
+  return { leading: /^\s/.test(str), trailing: /\s$/.test(str) };
+}
+
+// Fixed tokens that must survive translation unchanged in every locale: the block glyph, the
+// false-positive report phrase the AI is told to listen for (hooks/lib/compliance-step.js:124
+// embeds this same Chinese phrase even in the English string — it is the fixed handshake
+// phrase, not untranslated leftover Chinese), and the re-enable slash command the offReminder
+// notice points users at. `/ownmind-off` (the command that got OwnMind disabled in the first
+// place) was listed here too, but no dictionary value has ever told the user to type it — only
+// `/ownmind-on` (how to turn it back on) appears — so it never matched anything and the
+// coverage test below would fail loudly if it, or any future addition, went the same way.
+const OTHER_PROTOCOL_LITERALS = ['⛔', '誤判', '/ownmind-on'];
 const OWNMIND_HEADER = /^\[OwnMind[^\]]*\]/;
 
 // hooks/locales/zh.json quotes the "go"/"no" reply keywords with 「」 (its own convention);
@@ -66,7 +82,12 @@ const OWNMIND_HEADER = /^\[OwnMind[^\]]*\]/;
 // would wrongly flag that key, so the check requires the quote delimiters).
 const REPLY_KEYWORDS = ['go', 'no'];
 function quotedForm(word) {
-  return new RegExp(`["「]${word}["」]`); // ASCII "word" or Japanese-bracket 「word」
+  // Require a *matching* delimiter pair: ASCII "word" or the CJK bracket 「word」, never a mix
+  // of the two. An independent open-class/close-class regex (`["「]word["」]`) would also
+  // accept "word」 or 「word" — an opening delimiter from one style paired with a closing
+  // delimiter from the other — which is not a real quoting convention either locale uses and
+  // must not count as "quoted".
+  return new RegExp(`(?:"${word}"|「${word}」)`);
 }
 
 describe('hooks/locales dictionary parity (zh / en / ja)', () => {
@@ -127,13 +148,60 @@ describe('hooks/locales dictionary parity (zh / en / ja)', () => {
     }
   });
 
-  it('other protocol literals (⛔, 誤判, /ownmind-on, /ownmind-off) survive untranslated in ja', () => {
+  // quotedForm() builds its regex from two independent character classes for the open and
+  // close delimiter (`["「]` ... `["」]`), which accepts any combination of the two, not just
+  // the two real quoting conventions. A string quoted with an ASCII open and a CJK close (or
+  // vice versa) is not actually quoted in either style, so it must not match.
+  it('quotedForm() requires a matching delimiter pair, not an ASCII/CJK mix', () => {
+    const pattern = quotedForm('go');
+    assert.ok(!pattern.test('"go」'), 'ASCII open quote + CJK close bracket must not match');
+    assert.ok(!pattern.test('「go"'), 'CJK open bracket + ASCII close quote must not match');
+    // The two real quoting styles must still match (no assertion weakened by the tightening).
+    assert.ok(pattern.test('"go"'), 'ASCII "go" must still match');
+    assert.ok(pattern.test('「go」'), 'CJK 「go」 must still match');
+  });
+
+  it('other protocol literals (⛔, 誤判, /ownmind-on) survive untranslated in ja', () => {
     for (const key of dictKeys(en)) {
       for (const literal of OTHER_PROTOCOL_LITERALS) {
         if (en[key].includes(literal)) {
           assert.ok(ja[key].includes(literal), `ja.json "${key}" lost the protocol literal "${literal}"`);
         }
       }
+    }
+  });
+
+  // A literal listed in OTHER_PROTOCOL_LITERALS but present in no dictionary is false
+  // confidence: the test above only fires its assertion when `en[key].includes(literal)` is
+  // true for some key, so an absent literal silently never exercises anything and the list
+  // entry sits there looking like coverage without providing any. Requiring the literal to
+  // appear in at least one zh.json value (the hand-written source of truth) turns a silently
+  // dead entry into a loud failure instead of relying on someone noticing it by eye.
+  it('every literal in OTHER_PROTOCOL_LITERALS actually appears in zh.json somewhere (a listed-but-absent literal is a dead assertion)', () => {
+    for (const literal of OTHER_PROTOCOL_LITERALS) {
+      const appearsInSource = dictKeys(zh).some((key) => zh[key].includes(literal));
+      assert.ok(
+        appearsInSource,
+        `OTHER_PROTOCOL_LITERALS lists "${literal}" but no zh.json value contains it, so the `
+          + 'parity assertion for it never runs against anything — remove it from the list or '
+          + 'add the missing source string'
+      );
+    }
+  });
+
+  it('leading/trailing whitespace presence matches across zh, en, and ja for every key', () => {
+    for (const key of dictKeys(zh)) {
+      const zhEdge = edgeWhitespace(zh[key]);
+      const enEdge = edgeWhitespace(en[key]);
+      const jaEdge = edgeWhitespace(ja[key]);
+      assert.deepEqual(
+        enEdge, zhEdge,
+        `en.json "${key}" leading/trailing whitespace ${JSON.stringify(enEdge)} != zh.json's ${JSON.stringify(zhEdge)} (en: ${JSON.stringify(en[key])}, zh: ${JSON.stringify(zh[key])})`
+      );
+      assert.deepEqual(
+        jaEdge, zhEdge,
+        `ja.json "${key}" leading/trailing whitespace ${JSON.stringify(jaEdge)} != zh.json's ${JSON.stringify(zhEdge)} (ja: ${JSON.stringify(ja[key])}, zh: ${JSON.stringify(zh[key])})`
+      );
     }
   });
 });

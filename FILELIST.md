@@ -201,6 +201,47 @@ tests/memory-locale-route.test.js               — Round 2: the sync-token scen
                                                    GET /init's embedded token too, and that
                                                    the two endpoints agree before and after
                                                    the write.
+hooks/locales/ja.json                           — Cleanup batch (post-Task-7 review): restored the
+                                                   leading space compliance.idNote lost — zh.json and
+                                                   en.json both have it, and
+                                                   hooks/lib/compliance-step.js concatenates this value
+                                                   onto compliance.blockCapReached /
+                                                   compliance.pushedBack with no separator, so the
+                                                   Japanese output ran the two sentences together with
+                                                   no gap.
+hooks/locales/ja.override.json                  — Cleanup batch: pinned the corrected
+                                                   compliance.idNote value (leading space included) so
+                                                   a future translate:hooks re-run — which regenerates
+                                                   this key whenever the .translate-cache.json entry
+                                                   for it is invalidated — cannot silently drop the
+                                                   space again; overrides apply last and always win.
+tests/hook-locales-parity.test.js               — Cleanup batch, 3 fixes (TDD, each proved red first):
+                                                   (1) new leading/trailing-whitespace-presence check
+                                                   across zh/en/ja for every key — red against the
+                                                   ja.json bug above, green after the fix; (2)
+                                                   OTHER_PROTOCOL_LITERALS' dead /ownmind-off entry (no
+                                                   dictionary value ever contained it) replaced with a
+                                                   coverage assertion that fails loudly if any listed
+                                                   literal is absent from zh.json, then the dead entry
+                                                   itself removed; (3) quotedForm()'s regex used
+                                                   independent open/close character classes
+                                                   (["「]word["」]), which accepted a mismatched
+                                                   ASCII-open/CJK-close pair — tightened to an explicit
+                                                   alternation requiring a matching pair, with a new
+                                                   test proving both the rejection and that both real
+                                                   quoting styles still match.
+hooks/lib/locale.js                             — Cleanup batch: closed a totality hole in getLocale()
+                                                   — the {homeDir = os.homedir()} default parameter
+                                                   only fires for undefined, so an explicit {homeDir:
+                                                   null} skipped it and reached path.join(null, ...),
+                                                   throwing and breaking the function's documented
+                                                   "never throws" contract. No current call site passes
+                                                   null; closed anyway as a latent hole. Falls back to
+                                                   os.homedir() for any non-string or empty homeDir.
+tests/hook-locale.test.js                       — Cleanup batch: new case asserting getLocale({
+                                                   homeDir: null }) returns a valid locale instead of
+                                                   throwing (TDD red before the locale.js fix, green
+                                                   after).
 ```
 
 新增：
