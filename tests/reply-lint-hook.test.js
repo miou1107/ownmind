@@ -49,6 +49,11 @@ function runHook(input, env = {}) {
 
       // Block real API calls (tests must not hit the network).
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
+      // Task 4 (hook message i18n) wired the quality-lint banner through t(); this suite
+      // asserts /Reply quality lint/ (literal English), so the locale is pinned defensively —
+      // HOME is already redirected to a fresh tmpHome with no locale files, but this also
+      // guards against OWNMIND_LOCALE_FORCE leaking in from whatever shell runs the suite.
+      OWNMIND_LOCALE_FORCE: 'en',
       ...env,
     },
   });

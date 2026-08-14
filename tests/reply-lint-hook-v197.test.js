@@ -36,6 +36,10 @@ function runHook(input, env = {}) {
       HOME: tmpHome,
       USERPROFILE: tmpHome,
       OWNMIND_REPLY_LINT_NO_NETWORK: '1',
+      // Task 4 (hook message i18n) wired the per-violation banner line through t(); pinned
+      // defensively even though {rule} is an untranslated raw param (privacy_check stays
+      // literal in every locale) — consistent with the other reply-lint suites.
+      OWNMIND_LOCALE_FORCE: 'en',
       ...env,
     },
   });

@@ -32,9 +32,10 @@ hooks/lib/locale-provision.js                   — SessionStart-only OS-locale 
                                                    `defaults`, win32 PowerShell, else $LANG/$LC_ALL);
                                                    provisionLocale({homeDir}) writes
                                                    state/locale.json, never throws.
-hooks/locales/en.json, hooks/locales/zh.json    — the 8 core
-                                                   action-gate / reply-lint user-facing strings, keyed by
-                                                   the string-inventory audience=user set.
+hooks/locales/en.json, hooks/locales/zh.json    — 24 keys (was 8): the gate.* / lint.* family
+                                                   plus (task 4) the compliance.* and tty.*
+                                                   families, keyed by the string-inventory
+                                                   audience=user set.
 tests/hook-i18n.test.js                         — t() + getLocale() OWNMIND_LOCALE_FORCE seam
                                                    unit tests (10 cases).
 tests/hook-locale.test.js                       — getLocale() full resolution chain,
@@ -49,6 +50,14 @@ tests/action-gate-i18n.test.js                  — the gate family through t():
                                                    ownmind-iron-rule-check.js, approve-action.js)
                                                    proving fail-open never invents a block and
                                                    never crashes (19 cases).
+tests/hook-notices-i18n.test.js                 — the remaining user notices through t():
+                                                   reply-lint banner header (4 variants) +
+                                                   mode-invalid + per-violation line +
+                                                   /ownmind-off reminder + recovery, compliance-
+                                                   step's 7 state/event banners, tty-echo's
+                                                   merged-banner header; zh + en-byte-identical
+                                                   pairs, decision-field locale-independence,
+                                                   one broken-i18n.js proof per file (35 cases).
 ```
 
 修改：
@@ -82,6 +91,37 @@ tests/action-gate.test.js                       — pin OWNMIND_LOCALE_FORCE=en 
                                                    suite (predates locale support; several
                                                    assertions pin literal English userLine text).
 tests/helpers/hook-home.js                      — staged home 加掛 hooks/lib 目錄。
+hooks/lib/compliance-step.js                    — the 7 state/event banners (off/warn-mode,
+                                                   no-credentials, never-synced, check-failed,
+                                                   server-off, block-cap-reached, pushed-back)
+                                                   now go through t() via a complianceNotice()
+                                                   dynamic-import-with-fallback helper; the
+                                                   誤判 check-id note is its own resolved
+                                                   {idNote} param, not string-spliced.
+hooks/ownmind-reply-lint.js                     — lint.recovered wired at its emit site; new
+                                                   lintNotice() helper; the /ownmind-off
+                                                   reminder and formatBanner()'s 4 header
+                                                   variants + mode-invalid line + per-violation
+                                                   line now go through t(); formatBanner() is
+                                                   now async, its one call site awaits it.
+hooks/ownmind-tty-echo.cjs                      — merged-banner header (tty.header) now goes
+                                                   through t() via ttyNotice(); dynamic
+                                                   import() works from this CommonJS file even
+                                                   though static import and require() of an ESM
+                                                   sibling do not (verified empirically).
+tests/enforcement-compliance-step.test.js       — pin OWNMIND_LOCALE_FORCE=en (calls
+                                                   runComplianceStep() directly, in-process,
+                                                   against the real machine's env/home).
+tests/reply-lint-hook.test.js                   — pin OWNMIND_LOCALE_FORCE=en (asserts /Reply
+                                                   quality lint/).
+tests/reply-lint-hook-v1193-block.test.js       — pin OWNMIND_LOCALE_FORCE=en (asserts
+                                                   /fallback|falling back/).
+tests/reply-lint-hook-v1911.test.js             — pin OWNMIND_LOCALE_FORCE=en (asserts
+                                                   /consecutive blocks/).
+tests/reply-lint-hook-v197.test.js              — pin OWNMIND_LOCALE_FORCE=en (defensive).
+tests/enforcement-reply-lint-wiring.test.js     — pin OWNMIND_LOCALE_FORCE=en (asserts
+                                                   /never synced/, /NOT checked/).
+tests/ownmind-tty-echo.test.js                  — pin OWNMIND_LOCALE_FORCE=en (defensive).
 ```
 
 ## v1.26.171 修改（規範真的被挑到，系統講的話真的被看到）

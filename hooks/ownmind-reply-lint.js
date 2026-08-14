@@ -113,6 +113,23 @@ const POST_TIMEOUT_MS = 1500;
 
 main().catch(() => { try { process.exit(0); } catch { /* ignore */ } });
 
+/**
+ * Looks up a lint/compliance notice through t(), same fail-open contract as the gate's
+ * gateNotice() helper (hooks/lib/action-gate-cli.js). A dynamic import here — not a static one
+ * at module scope — means a broken hooks/lib/i18n.js only ever degrades one notice's text to
+ * its English fallback. Spec #3 above forbids anything besides Node built-ins as a static
+ * import for exactly this reason: a broken shared/lib module must not crash this file before
+ * its own process-wide error handlers (installed at the very top) are what catch it.
+ */
+async function lintNotice(key, fallback, params = {}) {
+  try {
+    const { t } = await import('./lib/i18n.js');
+    return t(key, params);
+  } catch {
+    return fallback;
+  }
+}
+
 /** The origin of the repo this session is in. Absent outside a repo, which is normal. */
 function readRepoRemote() {
   try {
@@ -184,7 +201,13 @@ async function runComplianceOnce(payload, transcript) {
     return { ...step, banner: undefined, suppressedBanner: step.banner };
   }
   if (!step.noticeKey && speak && step.action !== 'exit2' && !step.banner) {
-    return { ...step, banner: '[OwnMind] compliance checks are running again - this turn was checked' };
+    return {
+      ...step,
+      banner: await lintNotice(
+        'lint.recovered',
+        '[OwnMind] compliance checks are running again - this turn was checked',
+      ),
+    };
   }
   return step;
 }
@@ -284,10 +307,15 @@ async function main() {
     try {
       const tick = incrementTickCount();
       if (tick > 0 && tick % 10 === 0) {
-        const reminder = [
-          `[OwnMind v${getClientVersion()}] ⚠️ OwnMind is currently disabled (${tick} AI responses skipped lint)`,
-          '  → Re-enable with /ownmind-on, or open a new conversation to restore',
-        ].join('\n');
+        const version = getClientVersion();
+        const reminder = await lintNotice(
+          'lint.offReminder',
+          [
+            `[OwnMind v${version}] ⚠️ OwnMind is currently disabled (${tick} AI responses skipped lint)`,
+            '  → Re-enable with /ownmind-on, or open a new conversation to restore',
+          ].join('\n'),
+          { version, tick },
+        );
         queueUserNotice(reminder);
       }
     } catch { /* reminder failure must not block the main flow */ }
@@ -380,7 +408,7 @@ async function main() {
   const shouldHardBlock = reachedBlockThreshold && !downgradeToWarning;
 
   // === Banner path (shown to the user) ===
-  const banner = formatBanner(violations, getClientVersion, {
+  const banner = await formatBanner(violations, getClientVersion, {
     mode: MODE,
     modeInvalid: MODE_INVALID,
     rawMode: RAW_MODE,
@@ -627,7 +655,7 @@ function readTranscriptTail(transcriptPath, opts = {}) {
  * Example (downgraded after 3 consecutive blocks):
  *   [OwnMind v1.19.7] Reply quality lint ⚠️ 3 consecutive blocks — downgrading to warning (please review manually)
  */
-function formatBanner(violations, getClientVersion, opts = {}) {
+async function formatBanner(violations, getClientVersion, opts = {}) {
   if (!Array.isArray(violations) || violations.length === 0) return null;
   let version;
   try { version = getClientVersion(); } catch { version = '?'; }
@@ -644,25 +672,49 @@ function formatBanner(violations, getClientVersion, opts = {}) {
   } = opts;
 
   const out = [];
-  let header = `[OwnMind v${version}] Reply quality lint`;
+  let header;
   if (downgraded) {
-    header += ` ⚠️ ${blockCount} consecutive blocks reached — downgrading to warning (please review manually to avoid a loop)`;
+    header = await lintNotice(
+      'lint.banner.header.downgraded',
+      `[OwnMind v${version}] Reply quality lint ⚠️ ${blockCount} consecutive blocks reached — downgrading to warning (please review manually to avoid a loop)`,
+      { version, blockCount },
+    );
   } else if (blocked) {
-    header += ` ⚠️ Block triggered — Claude will receive a rewrite directive (session count ${count})`;
+    header = await lintNotice(
+      'lint.banner.header.blocked',
+      `[OwnMind v${version}] Reply quality lint ⚠️ Block triggered — Claude will receive a rewrite directive (session count ${count})`,
+      { version, count },
+    );
   } else if (mode === 'block') {
     const remaining = Math.max(0, threshold - count);
-    header += ` (block mode, session count ${count}, ${remaining} more before block)`;
+    header = await lintNotice(
+      'lint.banner.header.blockMode',
+      `[OwnMind v${version}] Reply quality lint (block mode, session count ${count}, ${remaining} more before block)`,
+      { version, count, remaining },
+    );
   } else {
-    header += ` (${mode} mode, session count ${count})`;
+    header = await lintNotice(
+      'lint.banner.header.otherMode',
+      `[OwnMind v${version}] Reply quality lint (${mode} mode, session count ${count})`,
+      { version, mode, count },
+    );
   }
   out.push(header);
 
   if (modeInvalid) {
-    out.push(`  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' is unrecognized — falling back to warn`);
+    out.push(await lintNotice(
+      'lint.banner.modeInvalid',
+      `  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' is unrecognized — falling back to warn`,
+      { rawMode },
+    ));
   }
 
   for (const v of violations) {
-    out.push(`  ⚠️  ${v.rule}: ${v.message}`);
+    out.push(await lintNotice(
+      'lint.banner.violationLine',
+      `  ⚠️  ${v.rule}: ${v.message}`,
+      { rule: v.rule, message: v.message },
+    ));
   }
   return out.join('\n');
 }
