@@ -5,7 +5,10 @@
  * Purpose (3 specs):
  *   1. Every OwnMind action (memory read/write, iron rule trigger, compliance report, broadcast)
  *      must be visible to the user.
- *   2. Multiple banners triggered in the same call are merged into one brand block (no prefix repetition).
+ *   2. Multiple banners triggered in the same call are merged so the brand prefix is not
+ *      repeated. The unit that counts is the LINE, not the block: the host stamps every line
+ *      it renders, so a header line plus indented items repeats the prefix even though it
+ *      looks like one block. One trigger, one line.
  *   3. The AI must not be able to filter or swallow them.
  *
  * Why this hook exists:
@@ -110,7 +113,17 @@ function extractBanners(rawJson) {
     .join('\n');
   if (!fullText) return [];
 
-  const lines = fullText.split('\n');
+  // "\n" is the only separator this parser recognises; every other break character is
+  // flattened to a space first. Measured 2026-08-14 against Claude Code, leaving them in
+  // fails two ways at once:
+  //   U+2028 U+2029 \r  are line terminators to a JS regex, so the "." in the banner pattern
+  //                     below refuses to match them and the whole banner is dropped in
+  //                     silence. An event the user was supposed to see disappears (spec #1).
+  //   U+000B U+0085     are not, so they ride through into the emitted line, where the host
+  //                     breaks on them and stamps the new line. That is the repetition this
+  //                     hook collapses to one line to avoid (spec #2).
+  // Only a banner body can carry one, and no banner body needs one.
+  const lines = fullText.replace(/[\r\u2028\u2029\u000B\u0085]/g, ' ').split('\n');
   const banners = [];
 
   // Broadcast block: 📢 OwnMind system notice ... until ---
@@ -144,6 +157,23 @@ function extractBanners(rawJson) {
   return banners;
 }
 
+const EVENT_SEPARATOR = ' ┃ ';
+
+/**
+ * Drop the trailing colon only when it is the line's ONLY colon — i.e. the line is a bare
+ * label ("Memory search:" / "記憶搜尋：") left over from a layout where the body followed on
+ * the next line. A body that legitimately ends in a colon ("Tip: try this:") keeps it,
+ * because there the colon is content.
+ *
+ * @param {string} eventLine
+ * @returns {string}
+ */
+function stripLabelColon(eventLine) {
+  const trimmed = eventLine.replace(/\s+$/, '');
+  const colonCount = (trimmed.match(/[：:]/g) || []).length;
+  return colonCount === 1 ? trimmed.replace(/[：:]$/, '') : trimmed;
+}
+
 /**
  * Merge banner array into a single brand block.
  *
@@ -152,9 +182,7 @@ function extractBanners(rawJson) {
  *   ...
  *   ---
  *
- *   [OwnMind v1.17.71]
- *     Memory search
- *     Tip: you can search memory
+ *   [OwnMind v1.17.71] Memory search ┃ Tip: you can search memory
  */
 function formatBlock(banners) {
   if (!Array.isArray(banners) || banners.length === 0) return null;
@@ -169,16 +197,21 @@ function formatBlock(banners) {
     }
   }
 
-  // Merge OwnMind banners into "brand header + indented list".
+  // Merge OwnMind banners onto ONE line. Claude Code stamps "PostToolUse:<tool> says:" on
+  // every rendered line of a systemMessage, so the old "brand header + indented list" shape
+  // cost three stamps per tool call. Measured 2026-08-14: U+2028, U+2029, U+000B and U+0085
+  // break the line too and each break gets its own stamp, so there is no way to wrap without
+  // paying for it. One line, one stamp is therefore the floor. extractBanners flattens those
+  // characters on the way in, which is what keeps that true for arbitrary banner bodies.
+  //
+  // EVENT_SEPARATOR is structure, not content: a banner body must never contain it, or the
+  // reader sees one event where there were none. Nothing emits it today (checked against
+  // shared/tips.js), and this is the note that says keep it that way.
   const eventBanners = banners.filter((b) => b.kind === 'banner');
   if (eventBanners.length > 0) {
     const version = eventBanners[0].version || '';
-    out.push(`[OwnMind ${version}]`);
-    for (const b of eventBanners) {
-      // Strip a trailing standalone "：" (multi-line events like "Memory search:" end with colon + newline).
-      const cleaned = b.eventLine.replace(/：\s*$/, '');
-      out.push(`  ${cleaned}`);
-    }
+    const parts = eventBanners.map((b) => stripLabelColon(b.eventLine));
+    out.push(`[OwnMind ${version}] ${parts.join(EVENT_SEPARATOR)}`);
   }
   if (out.length === 0) return null;
   return out.join('\n');

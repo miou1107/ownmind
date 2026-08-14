@@ -9,11 +9,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildUpdateBanner, queueUpdateBanner } from '../shared/update-banner.js';
+import {
+  buildUpdateBanner,
+  queueUpdateBanner,
+  readUpdateNotices,
+  clearDeliveredUpdateNotices,
+} from '../shared/update-banner.js';
 import { tempDir } from './helpers/temp-dir.js';
 
 let home;
-const pendingFile = () => path.join(home, '.ownmind', 'logs', 'banner-pending.jsonl');
+const pendingFile = () => path.join(home, '.ownmind', 'logs', 'update-pending.jsonl');
 const records = () => fs.readFileSync(pendingFile(), 'utf8')
   .split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
@@ -63,7 +68,7 @@ describe('buildUpdateBanner', () => {
 });
 
 describe('queueUpdateBanner', () => {
-  it('writes one JSON Lines record the flusher can read', () => {
+  it('writes one JSON Lines record the Stop hook can read', () => {
     assert.equal(queueUpdateBanner({ outcome: 'applied', version: '1.26.129', homeDir: home }), true);
     const rows = records();
     assert.equal(rows.length, 1);
@@ -72,9 +77,9 @@ describe('queueUpdateBanner', () => {
   });
 
   it('keeps a multi-line failure message on one line of the file', () => {
-    // flush-pending-banners.js parses per line. A raw newline would split one message into
-    // two lines, the second of which is not JSON, and the flusher skips broken lines — so
-    // the user would silently get half a message.
+    // The reader parses per line. A raw newline would split one message into two lines, the
+    // second of which is not JSON, and broken lines are skipped — so the user would
+    // silently get half a message.
     queueUpdateBanner({ outcome: 'failed', step: 'pull', homeDir: home });
     const raw = fs.readFileSync(pendingFile(), 'utf8').trimEnd();
     assert.equal(raw.split('\n').length, 1);
@@ -107,5 +112,59 @@ describe('queueUpdateBanner', () => {
       queueUpdateBanner({ outcome: 'applied', version: '1.26.129', homeDir: blocked }),
       false,
     );
+  });
+});
+
+describe('readUpdateNotices / clearDeliveredUpdateNotices', () => {
+  it('reads back what was queued, oldest first', () => {
+    queueUpdateBanner({ outcome: 'failed', step: 'pull', homeDir: home });
+    queueUpdateBanner({ outcome: 'applied', version: '1.26.129', homeDir: home });
+    const { blocks, lineCount } = readUpdateNotices({ homeDir: home });
+    assert.equal(lineCount, 2);
+    assert.match(blocks[0], /\u66f4\u65b0\u5931\u6557/);
+    assert.match(blocks[1], /1\.26\.129/);
+  });
+
+  it('reports nothing on a machine that has never queued anything', () => {
+    const { blocks, lineCount } = readUpdateNotices({ homeDir: home });
+    assert.deepEqual(blocks, []);
+    assert.equal(lineCount, 0);
+  });
+
+  it('counts an unreadable line even though it cannot show it', () => {
+    // Drain is by position. A skipped line that did not occupy one would shift the slice and
+    // delete the next record — an outcome nobody ever saw.
+    fs.mkdirSync(path.dirname(pendingFile()), { recursive: true });
+    fs.writeFileSync(pendingFile(), '{ this is half a record\n');
+    queueUpdateBanner({ outcome: 'applied', version: '1.26.129', homeDir: home });
+    const { blocks, lineCount } = readUpdateNotices({ homeDir: home });
+    assert.equal(blocks.length, 1);
+    assert.equal(lineCount, 2);
+  });
+
+  it('removes the file once everything queued has been delivered', () => {
+    queueUpdateBanner({ outcome: 'applied', version: '1.26.129', homeDir: home });
+    const { lineCount } = readUpdateNotices({ homeDir: home });
+    assert.equal(clearDeliveredUpdateNotices({ deliveredCount: lineCount, homeDir: home }), true);
+    assert.ok(!fs.existsSync(pendingFile()));
+  });
+
+  it('keeps an outcome that arrived after the read — draining must not truncate', () => {
+    // The updater runs detached and can append at any moment, including between the Stop
+    // hook reading the queue and clearing it. Truncating here would delete an outcome that
+    // was never shown to anybody, which is the exact failure this queue exists to end.
+    queueUpdateBanner({ outcome: 'failed', step: 'fetch', homeDir: home });
+    const { lineCount } = readUpdateNotices({ homeDir: home });
+    queueUpdateBanner({ outcome: 'applied', version: '1.26.173', homeDir: home });
+    clearDeliveredUpdateNotices({ deliveredCount: lineCount, homeDir: home });
+    const after = readUpdateNotices({ homeDir: home });
+    assert.equal(after.blocks.length, 1);
+    assert.match(after.blocks[0], /1\.26\.173/);
+  });
+
+  it('does nothing when asked to drain zero', () => {
+    queueUpdateBanner({ outcome: 'applied', version: '1.26.129', homeDir: home });
+    assert.equal(clearDeliveredUpdateNotices({ deliveredCount: 0, homeDir: home }), false);
+    assert.equal(readUpdateNotices({ homeDir: home }).blocks.length, 1);
   });
 });
