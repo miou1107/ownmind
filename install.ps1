@@ -479,6 +479,14 @@ if (Test-Path $HookLibSrc) {
   New-Item -ItemType Directory -Force -Path $HookLibDir | Out-Null
   Copy-Item (Join-Path $HookLibSrc "*.js") $HookLibDir -Force
 }
+# gate-message-i18n task 7 — same reasoning as hooks\lib above: hooks\locales holds the
+# gate/lint/compliance message dictionaries hooks\lib\i18n.js reads at runtime.
+$HookLocalesDir = Join-Path $HookDir "locales"
+$HookLocalesSrc = Join-Path $OwnmindDir "hooks\locales"
+if (Test-Path $HookLocalesSrc) {
+  New-Item -ItemType Directory -Force -Path $HookLocalesDir | Out-Null
+  Copy-Item (Join-Path $HookLocalesSrc "*.json") $HookLocalesDir -Force
+}
 Write-Host "[ OK ] Installed hook scripts"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---

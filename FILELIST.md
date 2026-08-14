@@ -28,6 +28,50 @@ hooks/lib/pending-banners.js                    — 說明更正：v1.26.171 之
 hooks/lib/flush-pending-banners.js                 執行它，程式保留當手動查稽核紀錄的工具。
 tests/update-banner.test.js                     — 改測新佇列檔；新增讀取／按行清除的測試
                                                    （含「讀完之後才寫進來的那筆不能被刪」）。
+install.sh                                       — Section 4b's copy-to-~/.claude/hooks
+                                                   fallback gains hooks/locales/*.json
+                                                   alongside the existing hooks/lib/*.js
+                                                   glob (gate-message-i18n task 7): same
+                                                   mkdir -p + guarded cp shape, same
+                                                   2>/dev/null || true silencing a fresh
+                                                   checkout's still-missing directory.
+scripts/update.sh                                — Same extension to section 2's copy;
+                                                   unlike install.sh this one is not
+                                                   silenced on failure — a failed cp
+                                                   prints [WARN], matching the existing
+                                                   hooks/lib failure path (v1.26.139).
+install.ps1                                      — Symmetric extension found while
+                                                   checking: the Windows installer's own
+                                                   hooks\lib copy section gained the
+                                                   identical hooks\locales\*.json copy.
+scripts/update.ps1                               — Same extension to the Windows
+                                                   updater's own hooks\lib copy section
+                                                   (also found while checking, not named
+                                                   in the task brief).
+scripts/check-sync.sh                            — L3 deploy-drift check's dynamic
+                                                   hooks/lib/*.js comparison-pair block
+                                                   gained the same one-line extension
+                                                   for hooks/locales/*.json, so a
+                                                   fallback-location machine shows up as
+                                                   drifted rather than silently stale.
+scripts/check-sync.ps1                           — Same one-line extension, PowerShell
+                                                   side.
+README.md                                        — New Infrastructure bullet + FAQ entry
+                                                   (gate-message-i18n task 7) documenting
+                                                   hook message localization: what it
+                                                   does, the resolution order in plain
+                                                   terms, the three supported languages,
+                                                   how to change it (ownmind_set_locale,
+                                                   asked for via the AI; 'auto' reverts
+                                                   to the OS language), when it takes
+                                                   effect (immediate here, next session
+                                                   start elsewhere), and that ja is
+                                                   machine-generated pending a
+                                                   native-speaker review — closing the
+                                                   note Task 6 left open.
+docs/README.zh-TW.md                             — Same entry, hand-written in
+                                                   Traditional Chinese.
+docs/README.ja.md                                — Same entry, hand-written in Japanese.
 client/src/scripts/translate.mjs                 — Generalized with --dir <path> (Task 6,
                                                    gate-message-i18n): every file the
                                                    pipeline touches (zh/en/ja dictionaries,
@@ -161,6 +205,24 @@ tests/memory-locale-route.test.js               — Round 2: the sync-token scen
 
 新增：
 ```
+tests/hook-locales-fallback-sync.test.js         — Task 7: lifts the real install.sh
+                                                   section-4b and update.sh section-2
+                                                   blocks by their section markers (same
+                                                   "extract, don't restate" approach
+                                                   tests/update-sh-upgrade-rule.test.js
+                                                   uses for a different section). 5
+                                                   cases against a staged
+                                                   $OWNMIND_DIR/hooks tree: each script's
+                                                   block lands all three locale files in
+                                                   ~/.claude/hooks/locales; a stale
+                                                   fallback dictionary is overwritten
+                                                   rather than left behind on re-sync;
+                                                   each block tolerates a checkout with
+                                                   no hooks/locales directory at all.
+                                                   Proved red against the pre-Task-7
+                                                   originals first (ENOENT on
+                                                   .../hooks/locales), then green again
+                                                   against the patched scripts.
 hooks/locales/glossary.json                      — Task 6: self-mapping term glossary for the
                                                    pipeline's --dir run against hooks/locales
                                                    — go, no, 誤判 and ⛔ each map to themselves

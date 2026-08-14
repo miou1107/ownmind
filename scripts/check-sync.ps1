@@ -166,6 +166,15 @@ if (Test-Path $libDir) {
     }
 }
 
+# Dynamically add hooks/locales/*.json (gate-message-i18n task 7 — same pattern as
+# hooks/lib above: install.ps1/update.ps1 ship these to the ~/.claude/hooks fallback too).
+$localesDir = Join-Path $OwnmindDir 'hooks/locales'
+if (Test-Path $localesDir) {
+    Get-ChildItem -Path $localesDir -Filter '*.json' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $pairs += @{ src = $_.FullName; dst = (Join-Path $ClaudeDir "hooks/locales/$($_.Name)") }
+    }
+}
+
 $driftCount = 0
 $driftFiles = @()
 foreach ($p in $pairs) {

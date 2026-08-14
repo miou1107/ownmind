@@ -160,6 +160,16 @@ if [ -d "${OWNMIND_DIR}/hooks/lib" ]; then
   done
 fi
 
+# hooks/locales/*.json added dynamically (gate-message-i18n task 7 — same pattern as
+# hooks/lib above: install.sh/update.sh ship these to the ~/.claude/hooks fallback too).
+if [ -d "${OWNMIND_DIR}/hooks/locales" ]; then
+  for f in "${OWNMIND_DIR}/hooks/locales/"*.json; do
+    [ -f "${f}" ] || continue
+    base=$(basename "${f}")
+    SRC_TO_DST+=("${f}|${CLAUDE_DIR}/hooks/locales/${base}")
+  done
+fi
+
 DRIFT_COUNT=0
 DRIFT_FILES=()
 for pair in "${SRC_TO_DST[@]}"; do

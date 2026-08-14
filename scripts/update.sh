@@ -264,6 +264,7 @@ fi
 if [ -d "$HOME/.claude" ]; then
   HOOK_DIR="$HOME/.claude/hooks"
   mkdir -p "$HOOK_DIR/lib"
+  mkdir -p "$HOOK_DIR/locales"
   # v1.26.139: `.js` as well as `.sh`.
   #
   # Only the shell hooks were copied, so `$HOOK_DIR` kept whatever `.js` files an earlier
@@ -292,6 +293,14 @@ if [ -d "$HOME/.claude" ]; then
   if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
     if ! cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/"; then
       echo "[WARN] hooks/lib modules could not be synced — the hooks may run against older copies"
+    fi
+  fi
+  # gate-message-i18n task 7: hooks/locales holds the gate/lint/compliance message
+  # dictionaries (hooks/lib/i18n.js reads them at runtime). Same silent-failure risk as
+  # hooks/lib above, so it gets the same loud warning rather than a swallowed error.
+  if [ -d "$OWNMIND_DIR/hooks/locales" ]; then
+    if ! cp "$OWNMIND_DIR/hooks/locales/"*.json "$HOOK_DIR/locales/"; then
+      echo "[WARN] hooks/locales dictionaries could not be synced — hook messages may render in a stale language or fall back to English"
     fi
   fi
   echo "[ OK ] Hook scripts synced"

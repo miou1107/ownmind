@@ -510,6 +510,7 @@ echo "[INFO] Upgrade rules synced: ${INSTALLED_TOOLS} installed, ${SKIPPED_TOOLS
 # --- 4b. 安裝 Hook Scripts + hooks/lib 模組（v1.17.0 P3）---
 HOOK_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOK_DIR/lib"
+mkdir -p "$HOOK_DIR/locales"
 cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-worktree-setup.sh" "$HOOK_DIR/"
@@ -520,7 +521,11 @@ chmod +x "$HOOK_DIR/ownmind-worktree-setup.sh"
 if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
   cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
 fi
-echo "[INFO] Installed hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib"
+# 同步 hooks/locales（gate/lint/compliance 訊息的 i18n 字典，gate-message-i18n task 7）
+if [ -d "$OWNMIND_DIR/hooks/locales" ]; then
+  cp "$OWNMIND_DIR/hooks/locales/"*.json "$HOOK_DIR/locales/" 2>/dev/null || true
+fi
+echo "[INFO] Installed hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib + hooks/locales"
 
 # --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
 node -e "
