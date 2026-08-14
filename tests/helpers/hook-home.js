@@ -64,6 +64,12 @@ export function stageHookHome({ apiUrl, apiKey = 'test-key', version = '99.99.99
  * going, which is why the omission survived a full suite run before anyone noticed.
  */
 export const HOOK_HELPERS = [
+  // The lib directory, whole. v1.26.172 put the action gate at hooks/lib/action-gate-cli.js
+  // and the hook runs it by path before anything else; absent, the node call fails and the
+  // hook answers with the loud "NOT gated" notice instead of the flow under test. The
+  // directory rather than the one file, because the CLI imports its siblings from the same
+  // real path and the next lib helper should not need another entry here.
+  'lib',
   // Classifies the command. Absent, every command comes back with no trigger at all.
   'ownmind-detect-trigger.js',
   // Turns the hook-context response into the printed reminder. Absent, the hook fetches

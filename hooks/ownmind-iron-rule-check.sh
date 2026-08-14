@@ -156,6 +156,34 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
+# --- P1 action gate (v1.26.172) ---
+#
+# Placed here, before trigger detection and before the credential guard, on purpose. The
+# gate reads the local enforcement cache, not the API, so a machine with no key configured
+# is still enforced; and the gate's own matcher recognises commands the shared classifier
+# deliberately does not (a plain `docker build` is the very command the compose guards
+# exist to intercept), so the empty-trigger exit below must never get the chance to skip it.
+#
+# The CLI's stdout is the whole answer. A block replaces the reminder flow — a blocked
+# command needs no reminder — and the degraded/fail-open notices ride the same channel.
+# Silence means allow, and silence is the everyday case.
+#
+# Same pattern as the ownmind-detect-trigger.js call below: run by path, stderr left
+# visible for hook debugging, exit status checked rather than swallowed. If node cannot run
+# the CLI at all, the command still goes through, but the user is told it was NOT gated —
+# a gate that switches itself off without a word is the failure this product exists to end.
+GATE_OUT=$(printf '%s' "$INPUT" | node "$HOME/.ownmind/hooks/lib/action-gate-cli.js")
+GATE_STATUS=$?
+if [ "$GATE_STATUS" -ne 0 ]; then
+  log_event "action_gate_failed" "status" "$GATE_STATUS"
+  echo '{"systemMessage":"[OwnMind] the action gate could not run - this command was NOT gated"}'
+  exit 0
+fi
+if [ -n "$GATE_OUT" ]; then
+  echo "$GATE_OUT"
+  exit 0
+fi
+
 # 偵測觸發關鍵字
 #
 # issue #92 — one call into the classifier, not a second copy of it.
