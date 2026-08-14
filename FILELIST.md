@@ -1,5 +1,20 @@
 # OwnMind 檔案結構
 
+## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI）
+
+新增：
+```
+hooks/lib/action-gate.js                        — guard matching 與決策核心；evaluateGate、
+                                                   approveAction、matchGuards 匯出。
+hooks/lib/gate-receipt.js                       — 讀取回執子系統；writeReceipt、verifyReceipt、
+                                                   ensureKey、ensureNonce。
+hooks/lib/approve-action.js                     — 一次性批准 CLI；讀 session ID、驗碼、
+                                                   終端列印 APPROVED／REJECTED。
+tests/action-gate.test.js                       — guard matching、evaluateGate、approveAction
+                                                   的 26 項單元測試（含邊界與安全檢查）。
+tests/helpers/temp-dir.js                       — 測試用暫時目錄助手。
+```
+
 ## v1.26.171 修改（規範真的被挑到，系統講的話真的被看到）
 
 修改：
