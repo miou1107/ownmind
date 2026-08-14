@@ -22,6 +22,20 @@ async function complianceNotice(key, fallback, params = {}) {
 }
 
 /**
+ * Record why a check did not run, on the same fail-open terms as the notice lookup above.
+ *
+ * Dynamically imported for the same reason: this step is what tells the user whether their
+ * turn was checked, and a broken diagnosis module must never be able to take it down — that
+ * would trade a missing log line for a silently unchecked turn.
+ */
+async function recordCheckFailure(entry) {
+  try {
+    const { logCheckFailure } = await import('./check-failure-log.js');
+    logCheckFailure(entry);
+  } catch { /* the check itself still ran and still reports; only the diagnosis is lost */ }
+}
+
+/**
  * The per-turn compliance check, as a decision function.
  *
  * It lives here rather than inline in the stop hook because pasted-in code cannot be unit
@@ -204,15 +218,56 @@ export async function runComplianceStep(ctx) {
   });
 
   if (check.outcome === 'failed') {
+    // v1.30.2: the reason is written down here and nowhere else. The notice cannot carry it —
+    // 'http 401', 'timeout' and 'unknown' are the internal vocabulary the message rules ban,
+    // and the version that spliced it into the sentence is what those rules were written
+    // against. Taking it out left it with no sink at all, which made a revoked key and a
+    // two-second blip the same event as far as anyone diagnosing the machine could tell.
+    await recordCheckFailure({
+      sessionId,
+      failure: check.failure || 'unknown',
+      reason: check.reason || 'unknown',
+      checkId: check.check_id ?? null,
+    });
+
+    // A key the server will not accept is the one failure that never heals: waiting does
+    // nothing, and only the user can fix it. It gets its own notice key as well as its own
+    // sentence, or the throttle reads the move between the two states as "no change, stay
+    // quiet" and the user keeps being told to wait for an outage that is not one.
+    if (check.failure === 'unauthorized') {
+      return {
+        action: 'notice',
+        noticeKey: 'not-checked:signed-out',
+        banner: await complianceNotice(
+          'compliance.notChecked.signedOut',
+          "[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI's reply. You need to sign in again: run the install command again with new sign-in details.",
+        ),
+      };
+    }
+
+    // The server answered and could not finish — its rule fetch failed, or the judge did.
+    // "Could not reach its server" is simply false there, and it is the likeliest failure in
+    // production, so it would have been the wrong sentence on the most common cause. It asks
+    // nothing of the user, unlike the rejected key: there is nothing on this machine to fix.
+    if (check.failure === 'server-declined') {
+      return {
+        action: 'notice',
+        noticeKey: 'not-checked:server-declined',
+        banner: await complianceNotice(
+          'compliance.notChecked.serverDeclined',
+          "[OwnMind] 🔴 OwnMind did not finish checking the AI's reply this time, so it did not check it. The problem is at OwnMind's end and usually clears on its own; nothing for you to do.",
+        ),
+      };
+    }
+
     return {
       action: 'notice',
-      // One key for every failure reason: timeout and the backoff it triggers are the same
-      // outage, and a key that flaps between them would re-announce on every flap.
+      // One key for every remaining failure reason: a timeout and the backoff it triggers are
+      // the same outage, and a key that flaps between them would re-announce on every flap.
       noticeKey: 'not-checked:check-failed',
       banner: await complianceNotice(
         'compliance.notChecked.checkFailed',
         "[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI's reply.",
-        { reason: check.reason || 'unknown' },
       ),
     };
   }

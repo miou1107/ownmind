@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runComplianceStep, MAX_COMPLIANCE_BLOCKS } from '../hooks/lib/compliance-step.js';
+import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,6 +30,13 @@ const REPLY_LINT_HOOK = path.join(repoRoot, 'hooks', 'ownmind-reply-lint.js');
 const TTY_ECHO_HOOK = path.join(repoRoot, 'hooks', 'ownmind-tty-echo.cjs');
 
 const ORIGINAL_FORCE = process.env.OWNMIND_LOCALE_FORCE;
+
+// v1.30.2: the cases below drive runComplianceStep to a failed check in-process, and a failed
+// check now appends a diagnosis line. Without this every suite run injects fabricated
+// failures, carrying real timestamps, into the developer's own ~/.ownmind/logs/
+// check-failures.jsonl — the file whose whole job is answering "when did this start".
+_logPathForTests(path.join(tempDir('om-notices-failures-'), 'check-failures.jsonl'));
+
 afterEach(() => {
   if (ORIGINAL_FORCE === undefined) delete process.env.OWNMIND_LOCALE_FORCE;
   else process.env.OWNMIND_LOCALE_FORCE = ORIGINAL_FORCE;
@@ -116,6 +124,33 @@ test('zh: check-failed banner never shows the internal reason token', async () =
   assert.doesNotMatch(noReason.banner, /unknown/, '"unknown" is an internal placeholder, not a message');
 });
 
+test('zh: a rejected key gets its own banner, not the outage one', async () => {
+  // v1.30.2. Every failure used to produce the outage sentence. This one never heals and is
+  // the only notice in the family that asks the user to go and do something, so it has to be
+  // a different sentence — and a different notice key, or the throttle reads the move between
+  // the two states as "unchanged, stay quiet".
+  process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  const r = await runComplianceStep(complianceBase({
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'unauthorized', reason: 'http 401',
+    }),
+  }));
+  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind 認不得這台電腦了，所以 OwnMind 沒有檢查 AI 這段回話。你要重新登入：拿新的登入資料重跑一次安裝指令。');
+  assert.equal(r.noticeKey, 'not-checked:signed-out');
+  assert.doesNotMatch(r.banner, /401|unauthorized/, 'the raw reason token must not reach the user');
+});
+
+test('zh: a server that answered but could not finish gets its own banner', async () => {
+  process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  const r = await runComplianceStep(complianceBase({
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'server-declined', reason: 'server answered failed',
+    }),
+  }));
+  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind 這次沒把檢查做完，所以 OwnMind 沒有檢查 AI 這段回話。這是 OwnMind 那邊的問題，通常會自己好，你不用做什麼。');
+  assert.equal(r.noticeKey, 'not-checked:server-declined');
+});
+
 test('zh: server-side off banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
   const r = await runComplianceStep(complianceBase({
@@ -191,6 +226,16 @@ test('en: check-failed banner is byte-identical to the pre-change literal', asyn
   assert.equal(r.banner, '[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI\'s reply.');
 });
 
+test('en: the rejected-key banner is byte-identical to the dictionary', async () => {
+  process.env.OWNMIND_LOCALE_FORCE = 'en';
+  const r = await runComplianceStep(complianceBase({
+    requestCheckImpl: async () => ({
+      outcome: 'failed', violations: [], failure: 'unauthorized', reason: 'http 401',
+    }),
+  }));
+  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI\'s reply. You need to sign in again: run the install command again with new sign-in details.');
+});
+
 test('en: server-side off banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
   const r = await runComplianceStep(complianceBase({
@@ -247,14 +292,27 @@ test('compliance-step decision fields (action/noticeKey) are identical across ev
 
 function stageBrokenI18nComplianceStep() {
   const tempRoot = tempDir('compliance-step-broken-i18n-');
-  fs.mkdirSync(path.join(tempRoot, 'hooks', 'lib'), { recursive: true });
-  fs.copyFileSync(
-    path.join(repoRoot, 'hooks', 'lib', 'compliance-step.js'),
-    path.join(tempRoot, 'hooks', 'lib', 'compliance-step.js'),
-  );
+  const libDir = path.join(tempRoot, 'hooks', 'lib');
+  fs.mkdirSync(libDir, { recursive: true });
+  // The whole directory, not a named copy of compliance-step.js. v1.30.2 gave it a second
+  // dynamic dependency (check-failure-log.js) and a hand-written file list would have staged a
+  // tree where that import rejects — silently, since the caller swallows it, leaving a proof
+  // that quietly stops exercising the path it names. Same approach as its reply-lint sibling.
+  for (const name of fs.readdirSync(path.join(repoRoot, 'hooks', 'lib'))) {
+    if (name.endsWith('.js')) {
+      fs.copyFileSync(path.join(repoRoot, 'hooks', 'lib', name), path.join(libDir, name));
+    }
+  }
   // A syntax error, so the dynamic `import('./i18n.js')` this simulates must REJECT.
-  fs.writeFileSync(path.join(tempRoot, 'hooks', 'lib', 'i18n.js'), 'export function t( { this is not valid js');
-  return path.join(tempRoot, 'hooks', 'lib', 'compliance-step.js');
+  fs.writeFileSync(path.join(libDir, 'i18n.js'), 'export function t( { this is not valid js');
+  // The staged tree is a separate module instance, so the `_logPathForTests` staged at the top
+  // of this file does not reach it and the real one would write to the real home. Stubbed
+  // rather than redirected: this proof is about a broken dictionary, not about the log.
+  fs.writeFileSync(
+    path.join(libDir, 'check-failure-log.js'),
+    'export function logCheckFailure() { return true; }\nexport function _logPathForTests() {}\n',
+  );
+  return path.join(libDir, 'compliance-step.js');
 }
 
 test('compliance-step: an unloadable i18n.js falls back to the English literal and never changes the decision', async () => {

@@ -17,6 +17,8 @@
   "compliance.off.warnMode": "[OwnMind] 🟡 In this conversation OwnMind only warns; it never asks the AI to rewrite.",
   "compliance.notChecked.noCredentials": "[OwnMind] 🔴 This computer is not signed in to OwnMind, so OwnMind did not check the AI's reply.",
   "compliance.notChecked.neverSynced": "[OwnMind] 🔴 This computer has not downloaded your rules yet, so OwnMind did not check the AI's reply. Start a new conversation and it will fetch them.",
+  "compliance.notChecked.signedOut": "[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI's reply. You need to sign in again: run the install command again with new sign-in details.",
+  "compliance.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind did not finish checking the AI's reply this time, so it did not check it. The problem is at OwnMind's end and usually clears on its own; nothing for you to do.",
   "compliance.notChecked.checkFailed": "[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI's reply.",
   "compliance.off.server": "[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI's reply.",
   "compliance.idNote": " (if OwnMind got it wrong, reply 誤判 {checkId})",

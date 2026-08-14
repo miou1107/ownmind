@@ -17,6 +17,8 @@
   "compliance.off.warnMode": "[OwnMind] 🟡 この会話では OwnMind は警告のみで、AI に書き直しを指示しません。",
   "compliance.notChecked.noCredentials": "[OwnMind] 🔴 このパソコンは OwnMind にログインしていないため、OwnMind は AI の返答をチェックしていません。",
   "compliance.notChecked.neverSynced": "[OwnMind] 🔴 このパソコンはあなたの規則をまだ取得していないため、OwnMind は AI の返答をチェックしていません。新しい会話を始めれば取得します。",
+  "compliance.notChecked.signedOut": "[OwnMind] 🔴 OwnMind はこのパソコンを認識できなくなったため、OwnMind は AI の返答をチェックしていません。もう一度ログインしてください：新しいログイン情報でインストールコマンドを実行し直してください。",
+  "compliance.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind は今回チェックを最後まで実行できず、AI の返答をチェックしていません。OwnMind 側の問題で、通常は自然に復旧します。あなたがすることはありません。",
   "compliance.notChecked.checkFailed": "[OwnMind] 🔴 OwnMind は今回サーバーに接続できず、AI の返答をチェックしていません。",
   "compliance.off.server": "[OwnMind] 🔴 このアカウントでは規則チェックがオフのため、OwnMind は AI の返答をチェックしていません。",
   "compliance.idNote": " （OwnMind の判断が誤っている場合は「誤判 {checkId}」と返信してください）",
