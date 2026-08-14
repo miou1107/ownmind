@@ -67,11 +67,58 @@ src/utils/syncToken.js                          — generateSyncToken now hashes
                                                    would never notice. GET /sync-token and GET
                                                    /init both already call this one function,
                                                    so both stay in sync by construction.
+                                                   Round 2 splits the two purposes the one
+                                                   hash was serving: cache freshness keeps
+                                                   generateSyncToken/validateSyncToken (wide
+                                                   inputs, locale included, wire value
+                                                   unchanged), and the iron-rule optimistic
+                                                   lock gets generateIronRuleLockToken/
+                                                   validateIronRuleLockToken (narrow inputs:
+                                                   MAX(updated_at) + COUNT(*) over the user's
+                                                   active iron rules — exactly the rows GET
+                                                   /upgrade-status returns). One hash
+                                                   (hashScopedState) and one comparison
+                                                   (compareToken) still serve both, so they
+                                                   cannot drift; the scope name is folded into
+                                                   the lock's hash so a token from one family
+                                                   can never satisfy the other by accident.
+src/routes/admin-iron-rule-upgrade.js           — Round 2: all three call sites moved to the
+                                                   iron-rule lock pair. Sharing the broad
+                                                   token meant a user changing their own
+                                                   language mid-edit got 409 "Iron-rule state
+                                                   has changed" with no iron rule changed; the
+                                                   same shared hash also fired on any
+                                                   unrelated memory save. Wire field keeps its
+                                                   sync_token name.
 tests/sync-token-endpoint.test.js               — 3 new cases: locale changes -> token
                                                    changes (same user_max/team_max); clearing
                                                    the preference (auto, i.e. empty string)
                                                    also changes it; same locale + same
                                                    user_max/team_max stays idempotent.
+                                                   Round 2: the cache-freshness token's wire
+                                                   value pinned to literal bytes (every
+                                                   installed machine holds one on disk and
+                                                   re-inits when it moves, so a formatting
+                                                   change must be deliberate); lock token
+                                                   ignores locale, moves on an iron-rule
+                                                   write, moves on a rule leaving the active
+                                                   set when MAX alone would not; the two
+                                                   families hash differently from identical
+                                                   inputs and cross-family tokens are rejected.
+tests/local-locale-refresh.test.js              — Round 2: adds the cache_fresh case, pinning
+                                                   the success contract the doc comment now
+                                                   states (a matching token means the cache
+                                                   already reflects the server, so init is
+                                                   never called and ok stays true).
+mcp/lib/local-locale-refresh.js                 — Round 2 (doc only): the JSDoc now states
+                                                   what ok claims — "the local cache reflects
+                                                   the server's current state" — and why both
+                                                   init_refreshed and cache_fresh satisfy it,
+                                                   while cache_fallback and error do not.
+tests/memory-locale-route.test.js               — Round 2: the sync-token scenario now pins
+                                                   GET /init's embedded token too, and that
+                                                   the two endpoints agree before and after
+                                                   the write.
 ```
 
 新增：
@@ -125,6 +172,21 @@ tests/local-locale-refresh.test.js              — 3 cases against a staged HOM
                                                    degrades gracefully (ok:false, no throw,
                                                    existing cache left byte-for-byte
                                                    untouched).
+tests/iron-rule-upgrade-lock-scope.test.js      — Round 2, real-database (startRealDb() +
+                                                   startServer(), both routers behind their
+                                                   real auth): with an iron-rule upgrade edit
+                                                   open, a locale write moves the cache token
+                                                   on both GET /sync-token and GET /init while
+                                                   the open edit still commits 200 — the
+                                                   regression this round fixes, and it fails
+                                                   409 without the split. The lock still
+                                                   locks: a background write to the rule under
+                                                   the editor 409s, and the token that 409
+                                                   hands back works first try. An unrelated
+                                                   memory write does not evict the editor.
+                                                   Only a real database can settle this — the
+                                                   claim is about which rows each query reads,
+                                                   which fixtures cannot show.
 ```
 
 ## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）

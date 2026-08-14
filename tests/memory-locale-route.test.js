@@ -178,14 +178,26 @@ test('account locale preference: set, echoed via init, auto clears, invalid inpu
       const syncTokenFor = (apiKey) => fetch(`${server.url}/api/memory/sync-token`, {
         headers: { Authorization: `Bearer ${apiKey}` },
       }).then((res) => res.json()).then((j) => j.sync_token);
+      // The client polls GET /sync-token but caches the token GET /init embedded. Both are
+      // pinned because a change that moved only one of them would leave every session either
+      // re-initing forever or never noticing anything — and round 2 split this hash in two,
+      // which is exactly the kind of edit that could take one endpoint and not the other.
+      const initTokenFor = async (apiKey) => (await initFor(apiKey)).json.sync_token;
 
       const unrelatedBefore = await syncTokenFor('key-locale-b');
 
       const tokenBefore = await syncTokenFor('key-locale-a');
+      const initBefore = await initTokenFor('key-locale-a');
+      assert.equal(initBefore, tokenBefore, 'GET /init and GET /sync-token must serve the same token');
+
       await put('key-locale-a', { locale: 'zh' });
       const tokenAfterZh = await syncTokenFor('key-locale-a');
       assert.notEqual(tokenAfterZh, tokenBefore,
         "PUT locale must change this account's sync_token, or the client cache never re-inits");
+      const initAfterZh = await initTokenFor('key-locale-a');
+      assert.notEqual(initAfterZh, initBefore,
+        'the token embedded in GET /init must move too, or the cache it writes is born stale');
+      assert.equal(initAfterZh, tokenAfterZh, 'the two endpoints must still agree after the write');
 
       await put('key-locale-a', { locale: 'auto' });
       const tokenAfterAuto = await syncTokenFor('key-locale-a');

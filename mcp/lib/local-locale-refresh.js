@@ -23,6 +23,26 @@ import { runConditionalSync } from '../../hooks/lib/conditional-sync.js';
  * the same as any other write would. Nothing here is locale-specific except *when* it is
  * called.
  *
+ * What `ok` claims: **the local cache now reflects the server's current state**, so the next
+ * hook invocation on this machine resolves the new language. Two of `runConditionalSync`'s
+ * four outcomes satisfy that, and the success condition accepts both:
+ *
+ *   `init_refreshed`  the expected path — the token moved, a fresh payload was downloaded
+ *   `cache_fresh`     the token already matched, so the cache on disk is current and there
+ *                     was nothing to fetch. Reachable two ways: another process (a session
+ *                     start, a concurrent tool call) synced in the window between the PUT and
+ *                     this call, or the PUT re-selected the locale the account already had, a
+ *                     no-op write that moves no token. In both the postcondition holds.
+ *
+ *   `cache_fallback`  init failed, whatever is on disk was served — it may predate the write
+ *   `error`           nothing usable at all
+ *
+ * Those last two are the ones that mean "this machine may still answer in the old language",
+ * and only those report `ok: false`. Narrowing success to `init_refreshed` alone would have
+ * reported failure for a cache that is demonstrably correct, which is a worse lie than the
+ * one it would prevent: the caller uses this to decide whether to tell the user the change
+ * has taken effect here, and under `cache_fresh` it has.
+ *
  * @param {object} opts
  * @param {string} opts.apiUrl
  * @param {string} opts.apiKey
