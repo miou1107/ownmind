@@ -27,7 +27,13 @@ import logger from '../utils/logger.js';
 import { detectFrontmatter } from '../utils/iron-rule-frontmatter.js';
 import { lintIronRule } from '../utils/iron-rule-quality.js';
 import { suggestSkillMdFormat } from '../utils/iron-rule-suggest.js';
-import { generateSyncToken, validateSyncToken } from '../utils/syncToken.js';
+// The iron-rule-scoped pair, not the broad cache-freshness one. These three endpoints form a
+// closed loop — `/upgrade-status` issues the token, `PUT /:id/upgrade` requires it back — and
+// the question they ask is "did iron-rule state move under this editor", not "is the client's
+// cache current". Sharing the broad token meant an unrelated write (the account's own language
+// preference, once locale joined that hash) evicted an open edit with a 409 claiming iron-rule
+// state had changed. See src/utils/syncToken.js for the split.
+import { generateIronRuleLockToken, validateIronRuleLockToken } from '../utils/syncToken.js';
 import { injectOriginSection } from '../utils/iron-rule-origin-context.js';
 import { writeAuditLog } from '../utils/audit-log.js';
 
@@ -89,8 +95,9 @@ router.get('/upgrade-status', async (req, res) => {
     const legacy = total - skillMd;
 
     // v1.18.0-rc3 review B2 fix: return sync_token to the client so PUT
-    // upgrade must echo it back for stale checks.
-    const sync_token = await generateSyncToken(req.user.id);
+    // upgrade must echo it back for stale checks. The wire field keeps its name; what it
+    // fingerprints is the iron-rule list this response just returned.
+    const sync_token = await generateIronRuleLockToken(req.user.id);
 
     res.json({
       total,
@@ -188,10 +195,17 @@ router.put('/:id/upgrade', async (req, res) => {
         hint: 'Take sync_token from GET /upgrade-status and include it in PUT for the stale check',
       });
     }
-    const tokenCheck = await validateSyncToken(req.user.id, sync_token);
+    const tokenCheck = await validateIronRuleLockToken(req.user.id, sync_token);
     if (!tokenCheck.valid) {
       return res.status(409).json({
-        error: 'Iron-rule state has changed (sync_token mismatch); please reload and retry',
+        // The phrase `sync_token` is deliberately absent from this message. The MCP client's
+        // generic write-retry (mcp/lib/sync-token-retry.js) treats any 409 whose text matches
+        // /sync_token/i as "stale cache token", and recovers by fetching a fresh one from
+        // GET /api/memory/sync-token — a cache-freshness value, which since the scope split
+        // can never satisfy this lock. That retry would then fail every time, having looked
+        // like it worked before the split purely by coincidence. Nothing routes admin calls
+        // through that wrapper today; this keeps it that way if something ever does.
+        error: 'Iron-rule state has changed since this list was loaded; please reload and retry',
         new_token: tokenCheck.new_token,
       });
     }
@@ -279,8 +293,8 @@ router.put('/:id/upgrade', async (req, res) => {
       new_format: lintResult.format,
     });
 
-    // 5. Return a fresh sync_token so the client knows state changed.
-    const newSyncToken = await generateSyncToken(req.user.id);
+    // 5. Return a fresh lock token so the editor can keep working without reloading the list.
+    const newSyncToken = await generateIronRuleLockToken(req.user.id);
 
     res.json({
       ok: true,

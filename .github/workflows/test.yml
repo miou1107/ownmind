@@ -46,7 +46,11 @@ jobs:
       # `npm start` runs as `prestart`, and it uses build:no-translate - the full build
       # runs an LLM translation pass that needs credentials CI does not have.
       - run: node scripts/ensure-console-build.js
-      # npm test = lint:zh-only + node --test. None of the 257 test files touch a database.
+      # npm test = lint:zh-only + node --test. A handful of test files DO stand up a real
+      # Postgres, via tests/helpers/real-db.js (docker run pgvector). They skip by name when
+      # docker is unavailable rather than passing quietly, so the ubuntu legs — which have
+      # docker — are where those assertions actually run; the macOS and Windows legs report
+      # them as skips.
       #
       # The runner carries --test-timeout so that a file which never finishes is named and
       # fails, instead of consuming the whole timeout-minutes budget in silence. On

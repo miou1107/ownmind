@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   runComplianceStep,
@@ -6,6 +6,17 @@ import {
   formatViolationFeedback,
   MAX_COMPLIANCE_BLOCKS,
 } from '../hooks/lib/compliance-step.js';
+
+// Task 4 (hook message i18n) wired runComplianceStep()'s banners through t(), which resolves
+// locale from this real process's env/home unless pinned. This suite's banner assertions
+// (e.g. /off for this session/, /never synced/) are literal-English regexes, so the locale is
+// pinned to 'en' for the whole file — same pattern as tests/action-gate.test.js (Task 3).
+const ORIGINAL_FORCE = process.env.OWNMIND_LOCALE_FORCE;
+beforeEach(() => { process.env.OWNMIND_LOCALE_FORCE = 'en'; });
+afterEach(() => {
+  if (ORIGINAL_FORCE === undefined) delete process.env.OWNMIND_LOCALE_FORCE;
+  else process.env.OWNMIND_LOCALE_FORCE = ORIGINAL_FORCE;
+});
 
 /**
  * The decision the stop hook carries out.

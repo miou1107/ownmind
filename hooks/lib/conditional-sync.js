@@ -28,7 +28,13 @@ import path from 'node:path';
 import os from 'node:os';
 import { accountFingerprint } from '../../shared/scanners/base.js';
 
-const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind', 'cache', 'memories.json');
+/**
+ * The one owner of this path. Exported because callers that inspect the file before handing it
+ * to runConditionalSync (mcp/lib/local-locale-refresh.js's account guard) must look at exactly
+ * the file this module would write; a second literal here and there would let the guard drift
+ * off the real cache silently if the path ever moves.
+ */
+export const DEFAULT_CACHE_PATH = path.join(os.homedir(), '.ownmind', 'cache', 'memories.json');
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;  // 24 hours
 const SYNC_TOKEN_TIMEOUT_MS = 3000;
 const INIT_TIMEOUT_MS = 8000;

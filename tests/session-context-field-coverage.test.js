@@ -37,6 +37,9 @@ const NOT_FOR_THE_SESSION_CONTEXT = {
   team_standards: 'non-compact only; the hook renders team_standards_digest instead',
   upgrade_action: 'the hook runs its own daily updater (ownmind-session-start.js); it does '
     + 'not need the server to tell the AI to upgrade',
+  locale: 'not model-facing — hooks/lib/locale.js (Task 2, gate-message-i18n) reads this '
+    + 'straight out of the local cache.data.locale the sync path writes, to pick the '
+    + "language of the hook's own terminal notices; the AI never needs it in context",
 };
 
 /**

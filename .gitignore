@@ -13,6 +13,8 @@ client/node_modules/
 client/dist/
 client/.vite/
 client/src/i18n/.translate-cache.json
+# Task 6 (gate-message-i18n): same translate.mjs pipeline, driven at hooks/locales via --dir.
+hooks/locales/.translate-cache.json
 # v1.20：build 產出後的 dashboard 靜態頁（並存於舊 src/public/index.html）
 # 藍綠策略：新版進 dashboard/、舊 admin/ 跟 me/ 不動、退役才轉址
 src/public/dashboard/
