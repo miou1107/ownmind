@@ -141,11 +141,18 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
       + 'Ask the user for the 6-digit approval code shown on their screen, then run: '
       + `node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> — and retry the command.`,
     userLine: `[OwnMind] ⛔ "${guard.title}" wants your approval for: ${kindLabel === 'limit' ? 'a command blocked 3 times in a row' : 'this action'}. Approval code: ${code} (paste it to the AI to allow it once)`,
+    code_issued: true,
   };
 }
 
 export function approveAction(stateDir, sessionId, guardId, code) {
-  const p = askPath(stateDir, sessionId, guardId);
+  // I4: Apply same sessionId sanitization and validate guardId
+  const sid = typeof sessionId === 'string' && SAFE_SESSION_ID.test(sessionId)
+    ? sessionId
+    : 'unknown';
+  if (!Number.isInteger(guardId) || guardId <= 0) return false;
+
+  const p = askPath(stateDir, sid, guardId);
   const rec = readJson(p);
   if (!rec || rec.approved) return false;
   if (createHash('sha256').update(String(code)).digest('hex') !== rec.codeHash) return false;
@@ -168,40 +175,117 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
     : 'unknown';
 
   const matched = matchGuards(command, guards);
+  let degradedRead = false;
+
+  // I2: Evaluate all guards first, collect verdicts, defer approval consumption
+  const approvalsToConsume = [];
+
   for (const guard of matched) {
-    const decide = (d) => { log(stateDir, { sessionId: sid, guardId: guard.id, command, ...d }); return d; };
+    // C2: Wrap receipt operations; skip read gate on failure but set degraded flag
+    if (guard.read_required) {
+      let receiptValid = false;
+      try {
+        receiptValid = verifyReceipt(stateDir, sid, guard);
+      } catch {
+        degradedRead = true;
+      }
 
-    if (guard.read_required && !verifyReceipt(stateDir, sid, guard)) {
-      writeReceipt(stateDir, sid, guard); // delivering the text below IS the read
-      const count = bumpLimit(stateDir, sid, guard.id, 'read');
-      if (count >= 3) return decide(issueAsk(stateDir, sid, guard, 'limit'));
-      return decide({
-        action: 'block', kind: 'read', guardId: guard.id,
-        reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
-        userLine: `[OwnMind] ⛔ blocked until the rule "${guard.title}" is read (auto-unblocks on retry)`,
-      });
-    }
+      if (!receiptValid) {
+        try {
+          writeReceipt(stateDir, sid, guard);
+        } catch {
+          degradedRead = true;
+        }
 
-    for (const c of guard.checks || []) {
-      let re; try { re = new RegExp(c.pattern); } catch { continue; } // a broken pattern must not brick the shell
-      const hit = re.test(command);
-      if ((c.type === 'must_match' && !hit) || (c.type === 'must_not_match' && hit)) {
-        const count = bumpLimit(stateDir, sid, guard.id, 'check');
-        if (count >= 3) return decide(issueAsk(stateDir, sid, guard, 'limit'));
-        return decide({
-          action: 'block', kind: 'check', guardId: guard.id,
-          reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
-          userLine: `[OwnMind] ⛔ blocked: ${c.reason}`,
-        });
+        // If receipt subsystem failed (not just missing receipt), skip read gate
+        // but don't block - let checks run (stateless)
+        if (degradedRead) {
+          // Skip to checks, don't block on read gate
+          // Continue to check phase below
+        } else {
+          // Normal case: receipt missing or invalid, bump counter and block
+          const count = bumpLimit(stateDir, sid, guard.id, 'read');
+          if (count >= 3) {
+            const ask = issueAsk(stateDir, sid, guard, 'limit');
+            const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'limit', action: 'block' };
+            if (ask.code_issued) logEntry.code_issued = true;
+            log(stateDir, logEntry);
+            return ask;
+          }
+          const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'read', action: 'block' };
+          log(stateDir, logEntry);
+          return {
+            action: 'block', kind: 'read', guardId: guard.id,
+            reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
+          };
+        }
       }
     }
 
-    if (guard.ask_first && !consumeApproval(stateDir, sid, guard.id)) {
-      return decide(issueAsk(stateDir, sid, guard, 'ask'));
+    // Checks still run (stateless) even with receipt degradation
+    // I1: Check if there's a redeemable limit approval first
+    const hasLimitApproval = (() => {
+      const p = askPath(stateDir, sid, guard.id);
+      const rec = readJson(p);
+      return rec && rec.approved === true;
+    })();
+
+    if (hasLimitApproval) {
+      // Defer consumption until all guards pass
+      approvalsToConsume.push(guard.id);
+      // Clear counter for this guard
+      clearLimit(stateDir, sid, guard.id);
+      // Continue to next guard
+      continue;
     }
 
+    for (const c of guard.checks || []) {
+      let re; try { re = new RegExp(c.pattern); } catch { continue; }
+      const hit = re.test(command);
+      if ((c.type === 'must_match' && !hit) || (c.type === 'must_not_match' && hit)) {
+        const count = bumpLimit(stateDir, sid, guard.id, 'check');
+        if (count >= 3) {
+          const ask = issueAsk(stateDir, sid, guard, 'limit');
+          const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'limit', action: 'block' };
+          if (ask.code_issued) logEntry.code_issued = true;
+          log(stateDir, logEntry);
+          return ask;
+        }
+        const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'check', action: 'block' };
+        log(stateDir, logEntry);
+        return {
+          action: 'block', kind: 'check', guardId: guard.id,
+          reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
+          ...(degradedRead && { degraded: 'no-receipts' }),
+        };
+      }
+    }
+
+    // ask_first: fails closed even with degradation - check without consuming
+    if (guard.ask_first) {
+      const p = askPath(stateDir, sid, guard.id);
+      const rec = readJson(p);
+      if (!rec || rec.approved !== true) {
+        const ask = issueAsk(stateDir, sid, guard, 'ask');
+        const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'ask', action: 'block' };
+        if (ask.code_issued) logEntry.code_issued = true;
+        log(stateDir, logEntry);
+        return ask;
+      }
+      // Defer consumption until all guards pass
+      approvalsToConsume.push(guard.id);
+    }
+
+    // Guard passed all gates
     clearLimit(stateDir, sid, guard.id);
-    log(stateDir, { sessionId: sid, guardId: guard.id, command, action: 'allow' });
   }
-  return { action: 'allow' };
+
+  // All guards passed: now consume deferred approvals
+  for (const guardId of approvalsToConsume) {
+    consumeApproval(stateDir, sid, guardId);
+  }
+
+  // Log and return allow
+  log(stateDir, { sessionId: sid, command, action: 'allow', ...(degradedRead && { degraded: 'no-receipts' }) });
+  return { action: 'allow', ...(degradedRead && { degraded: 'no-receipts' }) };
 }
