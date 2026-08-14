@@ -132,8 +132,9 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
   // The code is a consent secret, not a label: use a CSPRNG, not Math.random.
   const code = String(randomInt(100000, 1000000));
   try {
+    // NEW-1: Store kindLabel so we can distinguish ask vs limit approvals
     fs.writeFileSync(askPath(stateDir, sid, guard.id),
-      JSON.stringify({ codeHash: createHash('sha256').update(code).digest('hex'), approved: false }));
+      JSON.stringify({ codeHash: createHash('sha256').update(code).digest('hex'), approved: false, kind: kindLabel }));
   } catch { /* without the file the approve step fails closed */ }
   return {
     action: 'block', kind: kindLabel, guardId: guard.id,
@@ -175,12 +176,15 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
     : 'unknown';
 
   const matched = matchGuards(command, guards);
-  let degradedRead = false;
+  let globalDegraded = false;
+  const consumedGuards = [];
 
   // I2: Evaluate all guards first, collect verdicts, defer approval consumption
   const approvalsToConsume = [];
 
   for (const guard of matched) {
+    let degradedRead = false; // (c) Reset degradedRead per guard
+
     // C2: Wrap receipt operations; skip read gate on failure but set degraded flag
     if (guard.read_required) {
       let receiptValid = false;
@@ -200,6 +204,7 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
         // If receipt subsystem failed (not just missing receipt), skip read gate
         // but don't block - let checks run (stateless)
         if (degradedRead) {
+          globalDegraded = true;
           // Skip to checks, don't block on read gate
           // Continue to check phase below
         } else {
@@ -210,31 +215,37 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
             const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'limit', action: 'block' };
             if (ask.code_issued) logEntry.code_issued = true;
             log(stateDir, logEntry);
-            return ask;
+            // (a) Carry degraded flag in blocks
+            return { ...ask, ...(globalDegraded && { degraded: 'no-receipts' }) };
           }
           const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'read', action: 'block' };
           log(stateDir, logEntry);
+          // NEW-2: Restore userLine for read-block
           return {
             action: 'block', kind: 'read', guardId: guard.id,
             reason: `[OwnMind gate] Read this rule before acting, then retry the command:\n--- RULE ${guard.id}: ${guard.title} ---\n${guard.rule_text}`,
+            userLine: `[OwnMind] ⛔ blocked until the rule "${guard.title}" is read (auto-unblocks on retry)`,
+            ...(globalDegraded && { degraded: 'no-receipts' }),
           };
         }
       }
     }
 
     // Checks still run (stateless) even with receipt degradation
-    // I1: Check if there's a redeemable limit approval first
+    // I1 & NEW-1: Check if there's a redeemable approval first
+    // NEW-1: Only bypass checks for 'limit' kind, not 'ask' kind
     const hasLimitApproval = (() => {
       const p = askPath(stateDir, sid, guard.id);
       const rec = readJson(p);
-      return rec && rec.approved === true;
+      return rec && rec.approved === true && rec.kind === 'limit';
     })();
 
     if (hasLimitApproval) {
-      // Defer consumption until all guards pass
+      // Defer consumption until all guards pass (only for limit, not ask)
       approvalsToConsume.push(guard.id);
       // Clear counter for this guard
       clearLimit(stateDir, sid, guard.id);
+      consumedGuards.push(guard.id);
       // Continue to next guard
       continue;
     }
@@ -249,14 +260,17 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
           const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'limit', action: 'block' };
           if (ask.code_issued) logEntry.code_issued = true;
           log(stateDir, logEntry);
-          return ask;
+          // (a) Carry degraded flag in blocks
+          return { ...ask, ...(globalDegraded && { degraded: 'no-receipts' }) };
         }
         const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'check', action: 'block' };
         log(stateDir, logEntry);
+        // NEW-2: Restore userLine for check-block
         return {
           action: 'block', kind: 'check', guardId: guard.id,
           reason: `[OwnMind gate] The command violates "${guard.title}": ${c.reason}. Fix the command and retry.`,
-          ...(degradedRead && { degraded: 'no-receipts' }),
+          userLine: `[OwnMind] ⛔ blocked: ${c.reason}`,
+          ...(globalDegraded && { degraded: 'no-receipts' }),
         };
       }
     }
@@ -270,10 +284,12 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
         const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'ask', action: 'block' };
         if (ask.code_issued) logEntry.code_issued = true;
         log(stateDir, logEntry);
-        return ask;
+        // (a) Carry degraded flag in blocks
+        return { ...ask, ...(globalDegraded && { degraded: 'no-receipts' }) };
       }
-      // Defer consumption until all guards pass
+      // Defer consumption until all guards pass (ask approvals also deferred)
       approvalsToConsume.push(guard.id);
+      consumedGuards.push(guard.id);
     }
 
     // Guard passed all gates
@@ -285,7 +301,11 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
     consumeApproval(stateDir, sid, guardId);
   }
 
-  // Log and return allow
-  log(stateDir, { sessionId: sid, command, action: 'allow', ...(degradedRead && { degraded: 'no-receipts' }) });
-  return { action: 'allow', ...(degradedRead && { degraded: 'no-receipts' }) };
+  // (b) Allow log entries record per-guard guardId list
+  const logEntry = { sessionId: sid, command, action: 'allow' };
+  if (consumedGuards.length > 0) logEntry.guardIds = consumedGuards;
+  if (globalDegraded) logEntry.degraded = 'no-receipts';
+  log(stateDir, logEntry);
+
+  return { action: 'allow', ...(globalDegraded && { degraded: 'no-receipts' }) };
 }

@@ -48,6 +48,16 @@ JSON 檔，內含規範 ID、規範雜湊與 HMAC 簽章（簽過 `sessionId:rul
 - I3：DOCKER_BUILD 模式已採納（共用分類器遺漏裸 `docker build`，它也是部署）。
 - I4：approveAction 與 evaluateGate 一致應用 sessionId 清理、guardId 須為正整數。
 
+**Re-review 波修正**（amendment 實裝後的安全與功能漏洞）：
+
+- NEW-1（安全）：ask_first 批准原本會跳過檢查式（不該有的捷徑），現在只有 'limit' 批准
+  能跳檢查；'ask' 批准必須通過檢查。approveAction 發出的同意檔現在記錄 kind，供判別。
+- NEW-2：read-block 與 check-block 決策原本遺漏 userLine；已還原人面向文字（機器日誌
+  仍然乾淨）。
+- (a) ask/limit 塊在降級模式下也帶 degraded 旗標。
+- (b) allow 日誌記錄消耗的 guardId 清單。
+- (c) degradedRead 改為按閘門重設，不黏著。
+
 這一版只把資料送到位。真正在動作前擋下指令的用戶端閘門，在後續版本接上。
 
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
