@@ -41,7 +41,10 @@ function patternMatches(command, pattern) {
   if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return true;
 
   try {
-    const regex = new RegExp(pattern);
+    // Case-insensitive: the shared trigger classifier is /i, so a bare-trigger guard already
+    // catches `Git push` (capital G). A guard that scopes itself with applies_pattern must not
+    // be weaker — a capitalized command must not walk past a rule that narrowed itself.
+    const regex = new RegExp(pattern, 'i');
     return regex.test(command);
   } catch {
     // Invalid regex: fail toward enforcement (return true)
@@ -106,6 +109,13 @@ const limitPath = (d, sid, gid) => path.join(d, `gate-limit-${sid}-${gid}.json`)
 const logPath = (d) => path.join(d, 'gate-log.jsonl');
 
 /**
+ * Audit-log size cap. Past this, the current log is rotated to gate-log.jsonl.old (overwriting
+ * any prior .old) before the next line is appended, so the audit record cannot grow unbounded.
+ * Same pattern and intent as the banner spool's PENDING_FILE_MAX_BYTES in ownmind-reply-lint.js.
+ */
+const LOG_MAX_BYTES = 5 * 1024 * 1024;
+
+/**
  * sessionId is trusted from the harness only. It is embedded in state file
  * names, so anything outside this set (e.g. a "/" from "../") could steer
  * state paths outside the state directory.
@@ -113,8 +123,15 @@ const logPath = (d) => path.join(d, 'gate-log.jsonl');
 const SAFE_SESSION_ID = /^[A-Za-z0-9._-]+$/;
 
 function log(stateDir, entry) {
-  try { fs.appendFileSync(logPath(stateDir), JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n'); }
-  catch { /* the log must never take the gate down */ }
+  try {
+    const p = logPath(stateDir);
+    try {
+      if (fs.statSync(p).size > LOG_MAX_BYTES) {
+        try { fs.renameSync(p, p + '.old'); } catch { /* ignore — worst case the log keeps growing */ }
+      }
+    } catch { /* file does not exist yet → nothing to rotate */ }
+    fs.appendFileSync(p, JSON.stringify({ ts: new Date().toISOString(), ...entry }) + '\n');
+  } catch { /* the log must never take the gate down */ }
 }
 
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
@@ -146,6 +163,13 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
   };
 }
 
+/**
+ * How many wrong codes an ask tolerates before it is burned. A 6-digit code is a small space;
+ * without a cap, an attacker could enumerate it against a single ask file. After this many
+ * misses the ask never approves again — the AI must trigger a fresh ask (new code) to proceed.
+ */
+const MAX_ASK_MISSES = 5;
+
 export function approveAction(stateDir, sessionId, guardId, code) {
   // I4: Apply same sessionId sanitization and validate guardId
   const sid = typeof sessionId === 'string' && SAFE_SESSION_ID.test(sessionId)
@@ -156,7 +180,18 @@ export function approveAction(stateDir, sessionId, guardId, code) {
   const p = askPath(stateDir, sid, guardId);
   const rec = readJson(p);
   if (!rec || rec.approved) return false;
-  if (createHash('sha256').update(String(code)).digest('hex') !== rec.codeHash) return false;
+
+  // A burned ask never yields, even to the correct code. issueAsk overwrites the file with a
+  // fresh record (no misses), so a new ask resets the counter — a wrong-guess run cannot lock
+  // the user out, it only wastes the one code it was guessing against.
+  const misses = Number.isInteger(rec.misses) ? rec.misses : 0;
+  if (misses >= MAX_ASK_MISSES) return false;
+
+  if (createHash('sha256').update(String(code)).digest('hex') !== rec.codeHash) {
+    // Wrong code: burn one attempt so guessing the 6-digit space is not free.
+    try { fs.writeFileSync(p, JSON.stringify({ ...rec, misses: misses + 1 })); } catch { /* fail closed: no approval */ }
+    return false;
+  }
   try { fs.writeFileSync(p, JSON.stringify({ ...rec, approved: true })); } catch { return false; }
   return true;
 }

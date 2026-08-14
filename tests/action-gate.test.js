@@ -453,6 +453,46 @@ test('NEW-2: read-block and check-block decisions must carry userLine', () => {
   assert.ok(!logContent.includes('Approval code:'), 'gate-log must not contain userLine from ask');
 });
 
+// --- Deferred hardening: gate-log rotation (Task 9 § C4, Task 6 review "Important") ---
+
+test('gate-log rotates to .old past 5MB and the current log continues', () => {
+  const dir = prepStateDir();
+  const logFile = path.join(dir, 'gate-log.jsonl');
+  // Pre-seed the log above the 5MB cap; the next write must rotate before appending.
+  fs.writeFileSync(logFile, 'x'.repeat(5 * 1024 * 1024 + 16));
+
+  // An allow logs exactly one line.
+  const r = evaluateGate({ command: 'ls -la', guards: [], stateDir: dir, sessionId: 's1' });
+  assert.equal(r.action, 'allow');
+
+  assert.ok(fs.existsSync(logFile + '.old'), 'the oversized log rotates to gate-log.jsonl.old');
+  const cur = fs.readFileSync(logFile, 'utf8');
+  assert.ok(cur.length < 5 * 1024 * 1024, 'the current log restarts small after rotation');
+  assert.match(cur, /"action":"allow"/, 'the new entry lands in the fresh current log');
+});
+
+// --- Deferred hardening: applies_pattern case-insensitivity (Task 9 § C5) ---
+
+test('a capital-G "Git push" version-tag deploy is still gated', () => {
+  // The shared trigger classifier is /i, so a bare-trigger guard already catches capital G.
+  assert.equal(
+    matchGuards('Git push origin v1.2.9', [DEPLOY_GUARD]).length, 1,
+    'the /i classifier catches capital-G git push for a bare-trigger guard'
+  );
+
+  // A guard that scopes itself with applies_pattern uses its own regex; it must match
+  // case-insensitively too, or a capitalized command walks past a rule that scoped itself.
+  const scoped = {
+    id: 137, kind: 'action', title: 'tag push (scoped)', triggers: ['deploy'],
+    applies_pattern: 'git\\s+push\\b.*\\s(refs\\/tags\\/)?(v\\d|ima-v|ima-rc)',
+    checks: [], read_required: true, ask_first: false, rule_text: 'x', rules_hash: 'h',
+  };
+  assert.equal(
+    matchGuards('Git push origin v1.2.9', [scoped]).length, 1,
+    'a pattern-scoped guard must match case-insensitively too'
+  );
+});
+
 // --- CLI: approve-action ---
 
 test('the approval CLI approves a valid code once', () => {
