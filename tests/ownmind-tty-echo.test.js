@@ -129,28 +129,39 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner extraction', () => {
     // items therefore bought three stamps — the exact repetition the spec forbids. One line.
     assert.ok(!block.includes('\n'), 'merged banners must occupy exactly one line');
     assert.match(block, /^\[OwnMind v[\d.]+\] /, 'the line opens with the signature');
-    assert.equal(block.split('[OwnMind v').length - 1, 1, 'the signature appears exactly once');
+    assert.equal(block.split('\n').filter((l) => /^\[OwnMind v[\d.]+\] /.test(l)).length, 1,
+      'exactly one line opens with the signature');
     // Every event survives the merge.
     assert.match(block, /鐵律提醒/);
     assert.match(block, /技巧提示/);
   });
 
-  it('no break character smuggles in a second line (U+2028/2029/000B/0085 all get stamped too)', () => {
-    // Measured 2026-08-14 against Claude Code: each of these renders as a line break AND the
-    // new line gets its own "PostToolUse:… says:" stamp, so none of them is a free wrap.
-    // The banner text must therefore never carry one.
+  it('break characters in a banner body are flattened, not dropped and not passed through', () => {
+    // Measured 2026-08-14 against Claude Code. Remove the flattening in extractBanners and
+    // this fixture fails two different ways at once: \r, U+2028 and U+2029 are line
+    // terminators to a JS regex, so the banner never matches and the whole event disappears
+    // from the user's view (spec #1); U+000B and U+0085 are not, so they ride through into
+    // the emitted line, where the host breaks on them and stamps the new line (spec #2).
+    const BREAKS = ['\r', '\u2028', '\u2029', '\u000B', '\u0085'];
+    const body = `\u524d${BREAKS.join('\u4e2d')}\u5c3e`;
     const input = {
       tool_name: 'mcp__ownmind__ownmind_search',
       tool_response: mcpToolResponse([
-        { type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：找到 3 筆\n\n【OwnMind v1.17.71】技巧提示：可以說「搜尋記憶」' },
+        { type: 'text', text: `\u3010OwnMind v1.17.71\u3011\u8a18\u61b6\u641c\u5c0b\uff1a\u627e\u5230 3 \u7b46\n\n\u3010OwnMind v1.17.71\u3011\u6280\u5de7\u63d0\u793a\uff1a${body}` },
       ]),
     };
     runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
-    const content = fs.readFileSync(pendingFile, 'utf8');
-    const block = JSON.parse(content.trim().split('\n').pop()).block;
-    for (const ch of ['\u2028', '\u2029', '\u000B', '\u0085']) {
-      assert.ok(!block.includes(ch),
-        `block must not contain U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+    const block = JSON.parse(fs.readFileSync(pendingFile, 'utf8').trim().split('\n').pop()).block;
+    // Nothing was dropped: both events, and the text on both sides of every break, survive.
+    assert.match(block, /\u8a18\u61b6\u641c\u5c0b/, 'the first event must survive');
+    assert.match(block, /\u6280\u5de7\u63d0\u793a/, 'the second event must survive');
+    assert.match(block, /\u524d/, 'text before the breaks must survive');
+    assert.match(block, /\u5c3e/, 'text after the breaks must survive');
+    // Nothing rode through: the block is still exactly one line.
+    assert.ok(!block.includes('\n'), 'the block must still be a single line');
+    for (const ch of BREAKS) {
+      const name = `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+      assert.ok(!block.includes(ch), `${name} must not survive into the emitted block`);
     }
   });
 
