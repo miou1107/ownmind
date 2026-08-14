@@ -15,6 +15,27 @@ tests/ownmind-tty-echo.test.js                  — 合併測試改測單行契�
                                                    一行開頭符合）；新增換行字元測試，樣本
                                                    內文真的帶那些字元，斷言訊息沒少、字元
                                                    沒溜出去（拿掉修正會紅）。
+shared/update-banner.js                         — 待送佇列改用 logs/update-pending.jsonl
+                                                   （原本混在稽核檔裡）；新增
+                                                   updateQueuePath()、readUpdateNotices()、
+                                                   clearDeliveredUpdateNotices()（按行數
+                                                   刪，不整檔清）；開頭說明改寫，不再宣稱
+                                                   開場會補送。
+hooks/ownmind-reply-lint.js                     — 送達點：解析 payload 後立刻把待送的更新
+                                                   結果排進使用者訊息；stdout 真的寫出去
+                                                   之後才清佇列。
+hooks/lib/pending-banners.js                    — 說明更正：v1.26.171 之後沒有任何掛勾會
+hooks/lib/flush-pending-banners.js                 執行它，程式保留當手動查稽核紀錄的工具。
+tests/update-banner.test.js                     — 改測新佇列檔；新增讀取／按行清除的測試
+                                                   （含「讀完之後才寫進來的那筆不能被刪」）。
+```
+
+新增：
+```
+tests/update-notice-delivery.test.js            — 把 Stop 掛勾當程式跑：待送的更新結果要
+                                                   真的出現在 stdout 的 systemMessage、
+                                                   送完要清佇列、沒東西時不能亂講話。
+                                                   拿掉送出或拿掉清除都會紅。
 ```
 
 ## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）
