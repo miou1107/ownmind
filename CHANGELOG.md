@@ -60,6 +60,56 @@
 「開場會把它印出來」，實際上 v1.26.171 之後**沒有任何掛勾會執行它**。程式留著當手動查稽核
 紀錄的工具，但文件不再宣稱它是送達路徑。
 
+**Gate message i18n, task 6 of 7 — Japanese hook dictionary via the route-C translate
+pipeline**: `hooks/locales/ja.json` now ships, generated rather than hand-translated, by
+reusing `client/src/scripts/translate.mjs` — the same LLM+glossary+override pipeline that
+already produces the client dashboard's `en.json`/`ja.json` — instead of a second,
+independent translation path for hook strings.
+
+`translate.mjs` gained `--dir <path>`: every file the pipeline touches (the three
+dictionaries, `.translate-cache.json`, `glossary.json`, both override files) now resolves
+relative to that directory instead of a hardcoded `client/src/i18n`, and only `zh.json` (the
+hand-written source of truth) is required to exist under it — `en.json`, `ja.json`,
+`glossary.json` and both override files default to `{}` when absent, so a brand-new
+dictionary directory bootstraps on its first run rather than needing every scaffold file
+created by hand first. Omitting `--dir` is byte-identical to the pre-Task-6 script. New root
+script `translate:hooks` runs it against `hooks/locales`.
+
+`hooks/locales/en.override.json` pins all 24 hand-authored English strings from Tasks 1-5 —
+regression-pinned byte-for-byte in `tests/hook-i18n.test.js` and
+`tests/hook-notices-i18n.test.js` — so the pipeline's English pass (which it still runs,
+translating `zh.json` afresh, since that is simply how the shared script works) can never
+overwrite them; verified by diffing `en.json` before and after the real run. New
+`hooks/locales/glossary.json` maps the protocol literals `zh.json` embeds as fixed
+tokens (`go`, `no`, `誤判`, `⛔`) to themselves, the same self-mapping trick as an ordinary
+glossary term, so the LLM copies them through instead of translating them — `誤判 {checkId}`
+is the false-positive report phrase `hooks/lib/compliance-step.js:124` tells the user to
+reply with, already kept untranslated in the hand-authored `en.json` for the same reason.
+`hooks/locales/ja.override.json` ships as the empty scaffold Task 6 calls for; nothing needed
+a manual override once the glossary self-mappings were in place.
+
+New `tests/translate-hooks-dir.test.js` (TDD RED before the `--dir` support existed): pure
+unit tests for `parseDirArg`/`resolveI18nDir`/`applyOverride`, plus one full-script
+integration run in manual mode (`TRANSLATE_API_KEY` unset, so no live LLM call) proving the
+whole pipeline reads and writes only under the given `--dir` and never touches
+`client/src/i18n`. New `tests/hook-locales-parity.test.js` (TDD RED before `ja.json`
+existed — the file simply did not exist yet, so `all three locale files exist and parse as
+JSON` failed first): a mechanical dictionary-parity check across `zh`/`en`/`ja` — every key
+in one exists in all three, every `{placeholder}` set matches per key, the `[OwnMind ...]`
+header and the other protocol literals survive verbatim in `ja`. `tests/hook-i18n.test.js`'s
+three tests that used to borrow the (previously unshipped) `ja` locale slot as scratch space
+for a missing/corrupt/partial dictionary file now stage a private copy of `i18n.js` +
+`locale.js` under a throwaway directory instead — writing to or deleting the real, now-real
+`hooks/locales/ja.json` would race `tests/hook-locales-parity.test.js` (and any other suite)
+reading it under Node's parallel test-file execution.
+
+The real translate run needed three attempts before it produced output: the first two
+(`gpt-4o-mini`, then `gpt-4o`) hit the shared `kkvin.com/llm-switch` proxy's broken
+`mistral-ocr-*` fallback chain for the Japanese batch specifically (a proxy-side routing
+defect, reproduced directly with `curl`, unrelated to this pipeline) — `gpt-oss-120b`
+routed cleanly and produced all 24 keys with no missing-translation warnings. `ja.json`'s
+wording has not had a native-Japanese-speaker review pass yet; Task 7 tracks that.
+
 **Gate message i18n, task 5 of 7 — account locale preference via `ownmind_set_locale`**:
 `users.settings.locale` (same `jsonb_set` pattern `onboarding_completed_at` already used)
 now stores each account's preferred language for OwnMind's own tool/gate messages.

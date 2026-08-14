@@ -28,6 +28,41 @@ hooks/lib/pending-banners.js                    — 說明更正：v1.26.171 之
 hooks/lib/flush-pending-banners.js                 執行它，程式保留當手動查稽核紀錄的工具。
 tests/update-banner.test.js                     — 改測新佇列檔；新增讀取／按行清除的測試
                                                    （含「讀完之後才寫進來的那筆不能被刪」）。
+client/src/scripts/translate.mjs                 — Generalized with --dir <path> (Task 6,
+                                                   gate-message-i18n): every file the
+                                                   pipeline touches (zh/en/ja dictionaries,
+                                                   .translate-cache.json, glossary.json,
+                                                   en.override.json, ja.override.json) now
+                                                   resolves relative to --dir instead of a
+                                                   hardcoded client/src/i18n. Omitting --dir
+                                                   stays byte-identical to the prior
+                                                   behavior. en.json, ja.json, glossary.json
+                                                   and both override files default to {} when
+                                                   absent under --dir, so a brand-new
+                                                   dictionary directory bootstraps on its
+                                                   first run; only zh.json is required.
+                                                   Exports parseDirArg, resolveI18nDir,
+                                                   applyOverride and DEFAULT_I18N_DIR for
+                                                   tests. Comments and console output
+                                                   translated to English while the file was
+                                                   touched (project i18n policy).
+package.json                                     — New script translate:hooks runs
+                                                   translate.mjs --dir hooks/locales.
+.gitignore                                       — Added hooks/locales/.translate-cache.json,
+                                                   mirroring the existing
+                                                   client/src/i18n/.translate-cache.json
+                                                   entry.
+tests/hook-i18n.test.js                          — The three tests that used the (previously
+                                                   unshipped) ja locale slot as scratch space
+                                                   for a missing, corrupt or partial
+                                                   dictionary file now stage a private copy
+                                                   of i18n.js + locale.js under a throwaway
+                                                   directory instead, since
+                                                   hooks/locales/ja.json is real as of this
+                                                   task and writing to or deleting it would
+                                                   race tests/hook-locales-parity.test.js
+                                                   under Node's parallel test-file execution.
+                                                   Header comment updated to say why.
 src/routes/memory.js                            — GET /init gains a `locale` field (Task 5,
                                                    gate-message-i18n): read from
                                                    users.settings.locale via the same
@@ -126,6 +161,55 @@ tests/memory-locale-route.test.js               — Round 2: the sync-token scen
 
 新增：
 ```
+hooks/locales/glossary.json                      — Task 6: self-mapping term glossary for the
+                                                   pipeline's --dir run against hooks/locales
+                                                   — go, no, 誤判 and ⛔ each map to themselves
+                                                   so the LLM copies these protocol literals
+                                                   through instead of translating them, the
+                                                   same mechanism
+                                                   client/src/i18n/glossary.json uses for
+                                                   brand terms.
+hooks/locales/en.override.json                   — Task 6: pins all 24 hand-authored English
+                                                   strings from Tasks 1-5 verbatim, so the
+                                                   pipeline's English pass can never rewrite
+                                                   the wordings regression-pinned in
+                                                   tests/hook-i18n.test.js and
+                                                   tests/hook-notices-i18n.test.js. Verified
+                                                   byte-for-byte identical to
+                                                   hooks/locales/en.json before committing.
+hooks/locales/ja.override.json                   — Task 6: empty scaffold with only a
+                                                   _comment key, mirroring
+                                                   client/src/i18n/ja.override.json's shape.
+                                                   Nothing needed a manual override once the
+                                                   glossary self-mappings were in place.
+hooks/locales/ja.json                            — Task 6: generated by `npm run
+                                                   translate:hooks`
+                                                   (client/src/scripts/translate.mjs --dir
+                                                   hooks/locales, model gpt-oss-120b via the
+                                                   shared kkvin.com/llm-switch proxy —
+                                                   gpt-4o-mini and gpt-4o both hit the
+                                                   proxy's broken mistral-ocr-* fallback
+                                                   chain for this specific batch, reproduced
+                                                   with curl outside the script). All 24 keys
+                                                   present, no missing-translation warnings.
+                                                   Wording has not had a
+                                                   native-Japanese-speaker review pass yet
+                                                   (Task 7 tracks that).
+tests/translate-hooks-dir.test.js                — Task 6, TDD: unit tests for
+                                                   parseDirArg/resolveI18nDir/applyOverride,
+                                                   plus one full-script integration run in
+                                                   manual mode (TRANSLATE_API_KEY unset, no
+                                                   live LLM call) proving the pipeline reads
+                                                   and writes only under --dir and never
+                                                   touches client/src/i18n.
+tests/hook-locales-parity.test.js                — Task 6, TDD (red before ja.json existed):
+                                                   mechanical parity check across
+                                                   hooks/locales/{zh,en,ja}.json — every key
+                                                   exists in all three, every {placeholder}
+                                                   set matches per key, the [OwnMind ...]
+                                                   header and other protocol literals (⛔, 誤判,
+                                                   /ownmind-on, /ownmind-off) survive
+                                                   verbatim in ja.
 tests/update-notice-delivery.test.js            — 把 Stop 掛勾當程式跑：待送的更新結果要
                                                    真的出現在 stdout 的 systemMessage、
                                                    送完要清佇列、沒東西時不能亂講話。

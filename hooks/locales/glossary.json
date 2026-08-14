@@ -1,0 +1,15 @@
+{
+  "_comment": "Term glossary for hooks/locales, used by client/src/scripts/translate.mjs's --dir pipeline (Task 6 of gate-message-i18n). Unlike client/src/i18n/glossary.json (brand/feature-name term mappings), these are self-mappings: protocol literals that hooks/locales/zh.json embeds as fixed tokens the AI or the user must reply/see verbatim — the LLM must copy them through unchanged rather than translate them. See hooks/locales/en.json, where the same literals already survive untranslated in the hand-authored English (e.g. compliance.idNote keeps the Chinese word 誤判 even in English, because it is the fixed phrase the user is told to reply with regardless of locale).",
+  "zh-to-en": {
+    "go": "go",
+    "no": "no",
+    "誤判": "誤判",
+    "⛔": "⛔"
+  },
+  "zh-to-ja": {
+    "go": "go",
+    "no": "no",
+    "誤判": "誤判",
+    "⛔": "⛔"
+  }
+}

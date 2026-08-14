@@ -5,26 +5,35 @@
  * this file only needs the seam every t() test pins its locale through.
  *
  * Locale is pinned per test via OWNMIND_LOCALE_FORCE, the documented test-only env seam that
- * getLocale() checks first (see hooks/lib/locale.js). Two tests need a dictionary file that is
- * either missing or corrupted; both use the 'ja' locale as scratch space, since no ja.json
- * ships in this task (only zh.json and en.json do) — so there is nothing to lose by writing a
- * throwaway file there and removing it in a finally block.
+ * getLocale() checks first (see hooks/lib/locale.js).
+ *
+ * hooks/locales/ja.json shipped for real as of Task 6 (gate-message-i18n) — before that, this
+ * file used the 'ja' locale as scratch space for a missing/corrupt/partial dictionary, since
+ * nothing shipped there yet. Now that the real file exists and every other suite (notably
+ * tests/hook-locales-parity.test.js) reads it, writing to or deleting the real
+ * hooks/locales/ja.json here would race whichever other test file node's parallel test runner
+ * happens to schedule alongside this one. The three tests below instead stage a private copy
+ * of i18n.js + locale.js under a throwaway hooks/lib/, next to a throwaway hooks/locales/
+ * carrying only the fixture files each test needs — never touching the real committed tree.
+ * i18n.js resolves its dictionary path relative to its own file
+ * (`new URL('../locales/...', import.meta.url)`), so a *copy* is required, not a symlink:
+ * Node's ESM loader resolves a symlinked module back to the real file's path by default, which
+ * would defeat the isolation. Real en.json and zh.json are copied in too, since t()'s fallback
+ * chain always tries `en` after the forced locale, and the fallback assertions below pin real
+ * production English strings.
  */
 
 import { strict as assert } from 'assert';
 import { test, beforeEach, afterEach } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { t, resetI18nCacheForTests } from '../hooks/lib/i18n.js';
 import { getLocale } from '../hooks/lib/locale.js';
 import { tempDir } from './helpers/temp-dir.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function localeFilePath(locale) {
-  return path.join(__dirname, '..', 'hooks', 'locales', `${locale}.json`);
-}
+const repoRoot = path.join(__dirname, '..');
 
 const ORIGINAL_FORCE = process.env.OWNMIND_LOCALE_FORCE;
 
@@ -54,23 +63,38 @@ test('t() returns the zh string when locale resolves to zh', () => {
   );
 });
 
-test('t() falls back per-key to en when the resolved dictionary is missing that key', () => {
-  const jaPath = localeFilePath('ja');
-  assert.equal(fs.existsSync(jaPath), false, 'precondition: ja.json must not already exist');
-  fs.writeFileSync(jaPath, JSON.stringify({ 'gate.failopen': 'テスト用の文字列' }));
-  try {
-    process.env.OWNMIND_LOCALE_FORCE = 'ja';
-    resetI18nCacheForTests();
-    // Key present in ja.json comes from ja.
-    assert.equal(t('gate.failopen'), 'テスト用の文字列');
-    // Key absent from ja.json falls back to the en string.
-    assert.equal(
-      t('lint.recovered'),
-      '[OwnMind] compliance checks are running again - this turn was checked'
-    );
-  } finally {
-    fs.rmSync(jaPath, { force: true });
+/**
+ * Stages a private copy of hooks/lib/i18n.js + locale.js under a scratch directory, with a
+ * scratch hooks/locales/ carrying real en.json/zh.json plus whatever `ja.json` content the
+ * caller supplies (a string to write it verbatim, or omitted entirely to leave `ja.json`
+ * absent from the scratch tree). Returns the staged i18n.js's file:// URL, ready to `import()`.
+ */
+function stageI18nForJaFixture(jaJsonContent) {
+  const tempRoot = tempDir('hook-i18n-scratch-');
+  const libDir = path.join(tempRoot, 'hooks', 'lib');
+  const localesDir = path.join(tempRoot, 'hooks', 'locales');
+  fs.mkdirSync(libDir, { recursive: true });
+  fs.mkdirSync(localesDir, { recursive: true });
+  fs.copyFileSync(path.join(repoRoot, 'hooks', 'lib', 'i18n.js'), path.join(libDir, 'i18n.js'));
+  fs.copyFileSync(path.join(repoRoot, 'hooks', 'lib', 'locale.js'), path.join(libDir, 'locale.js'));
+  fs.copyFileSync(path.join(repoRoot, 'hooks', 'locales', 'en.json'), path.join(localesDir, 'en.json'));
+  fs.copyFileSync(path.join(repoRoot, 'hooks', 'locales', 'zh.json'), path.join(localesDir, 'zh.json'));
+  if (jaJsonContent !== undefined) {
+    fs.writeFileSync(path.join(localesDir, 'ja.json'), jaJsonContent);
   }
+  return pathToFileURL(path.join(libDir, 'i18n.js')).href;
+}
+
+test('t() falls back per-key to en when the resolved dictionary is missing that key', async () => {
+  const mod = await import(stageI18nForJaFixture(JSON.stringify({ 'gate.failopen': 'テスト用の文字列' })));
+  process.env.OWNMIND_LOCALE_FORCE = 'ja';
+  // Key present in the staged ja.json comes from ja.
+  assert.equal(mod.t('gate.failopen'), 'テスト用の文字列');
+  // Key absent from the staged ja.json falls back to the en string.
+  assert.equal(
+    mod.t('lint.recovered'),
+    '[OwnMind] compliance checks are running again - this turn was checked'
+  );
 });
 
 test('t() returns the key itself when missing from every dictionary', () => {
@@ -93,31 +117,22 @@ test('t() leaves unknown/unsupplied placeholders as-is', () => {
   assert.equal(out, '[OwnMind] ⛔ blocked: {reason}');
 });
 
-test('t() does not throw when the resolved dictionary file is corrupted', () => {
-  const jaPath = localeFilePath('ja');
-  assert.equal(fs.existsSync(jaPath), false, 'precondition: ja.json must not already exist');
-  fs.writeFileSync(jaPath, '{ this is not valid json');
-  try {
-    process.env.OWNMIND_LOCALE_FORCE = 'ja';
-    resetI18nCacheForTests();
-    assert.doesNotThrow(() => t('gate.failopen'));
-    assert.equal(
-      t('gate.failopen'),
-      '[OwnMind] the action gate could not run - this command was NOT gated'
-    );
-  } finally {
-    fs.rmSync(jaPath, { force: true });
-  }
+test('t() does not throw when the resolved dictionary file is corrupted', async () => {
+  const mod = await import(stageI18nForJaFixture('{ this is not valid json'));
+  process.env.OWNMIND_LOCALE_FORCE = 'ja';
+  assert.doesNotThrow(() => mod.t('gate.failopen'));
+  assert.equal(
+    mod.t('gate.failopen'),
+    '[OwnMind] the action gate could not run - this command was NOT gated'
+  );
 });
 
-test('t() does not throw when the resolved dictionary file is missing entirely', () => {
-  const jaPath = localeFilePath('ja');
-  assert.equal(fs.existsSync(jaPath), false, 'precondition: ja.json must not exist for this test');
+test('t() does not throw when the resolved dictionary file is missing entirely', async () => {
+  const mod = await import(stageI18nForJaFixture());
   process.env.OWNMIND_LOCALE_FORCE = 'ja';
-  resetI18nCacheForTests();
-  assert.doesNotThrow(() => t('gate.failopen'));
+  assert.doesNotThrow(() => mod.t('gate.failopen'));
   assert.equal(
-    t('gate.failopen'),
+    mod.t('gate.failopen'),
     '[OwnMind] the action gate could not run - this command was NOT gated'
   );
 });
