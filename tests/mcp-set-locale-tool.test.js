@@ -105,6 +105,30 @@ describe('ownmind_set_locale — case handler', () => {
     assert.match(block, /immediat/i);
     assert.match(block, /next session/i);
   });
+
+  // Fix round 2: a locale write moves the account's cache-freshness token (locale is a hash
+  // input), so this session's `currentSyncToken` is stale the moment the PUT returns. Every
+  // sibling write in this file assigns the token the server hands back; this one did not, so
+  // the next memory write in the same MCP session paid a 409 plus an auto-retry round trip.
+  it('adopts the fresh sync_token the locale write returns, like every sibling write', () => {
+    assert.match(block, /currentSyncToken\s*=\s*data\.sync_token/,
+      'the case handler must assign the returned sync_token to currentSyncToken');
+  });
+
+  // Fix round 2: `account_mismatch` is a distinct degraded outcome and the generic degraded
+  // message is wrong for it. That message promises "it will apply here at the next session
+  // start too" — but this machine's hooks are configured with a *different* account, so the
+  // language written here never applies to them, at the next session start or ever. It needs
+  // its own sentence, or the tool reports a reassurance that cannot come true.
+  it('handles the account_mismatch outcome with its own message, not the generic degraded one', () => {
+    assert.match(block, /account_mismatch/,
+      'the case handler must branch on the account_mismatch source');
+    const mismatchBranch = block.slice(block.indexOf('account_mismatch'));
+    assert.match(mismatchBranch, /different account/i,
+      'the mismatch message must say the local hooks belong to a different account');
+    assert.ok(!/it will apply here at the next session start/i.test(mismatchBranch.split('\n').slice(0, 6).join('\n')),
+      'the mismatch branch must not repeat the generic "applies here next session" promise');
+  });
 });
 
 describe('ownmind_set_locale — imports', () => {

@@ -1496,10 +1496,15 @@ async function handleTool(name, args) {
 
     case "ownmind_set_locale": {
       // Task 5 (gate-message-i18n): a small authenticated write, same shape as
-      // ownmind_delete_secret — one server round trip, no sync_token involved (this is an
-      // account setting, not a memory row). 'auto' is forwarded as-is; the server is what
-      // decides it means "delete the key" (src/routes/memory.js PUT /locale).
+      // ownmind_delete_secret — one server round trip. 'auto' is forwarded as-is; the server
+      // is what decides it means "delete the key" (src/routes/memory.js PUT /locale).
       const data = await callApi("PUT", "/api/memory/locale", { locale: args.locale });
+      // Fix round 2: this write DOES move the cache-freshness token — the account's locale is
+      // one of its hash inputs (src/utils/syncToken.js) — so adopt the fresh one the route
+      // returns, exactly like every sibling write here. Without it the next memory write in
+      // this session presents the pre-write token and pays a 409 plus an auto-retry round
+      // trip, for a change this session made itself.
+      if (data.sync_token) currentSyncToken = data.sync_token;
       logEvent('set_locale', { locale: args.locale });
 
       // Fix round 1: the server write already changed this account's sync_token (locale is
@@ -1509,9 +1514,22 @@ async function handleTool(name, args) {
       // the exact function hooks/lib/conditional-sync.js already owns, so the very next hook
       // invocation here already resolves the new language.
       const refresh = await refreshLocalCacheForLocale({ apiUrl: API_URL, apiKey: API_KEY });
-      const message = refresh.ok
-        ? "Applied immediately on this machine. On the user's other machines it applies at each one's next session start."
-        : "Saved on the server, but this machine's local cache could not be refreshed immediately — it will apply here at the next session start too, same as the user's other machines.";
+
+      // Fix round 2: `account_mismatch` needs its own sentence. This MCP resolves its
+      // credentials from process.env alone, while the hooks resolve theirs files-first
+      // (scripts/install-helpers/resolve-credentials.cjs), so on a multi-account machine the
+      // hook cache can belong to somebody else — in which case it is deliberately left
+      // untouched. The generic degraded message would promise "it will apply here at the next
+      // session start too", which for this outcome can never come true: the hooks on this
+      // machine are a different account and will keep resolving that account's language.
+      let message;
+      if (refresh.ok) {
+        message = "Applied immediately on this machine. On the user's other machines it applies at each one's next session start.";
+      } else if (refresh.source === 'account_mismatch') {
+        message = "Saved on the server for this account. This machine's OwnMind hooks are configured with a different account, so their local cache was left untouched — hook messages here keep following that other account's language. This account's own machines pick the change up at each one's next session start.";
+      } else {
+        message = "Saved on the server, but this machine's local cache could not be refreshed immediately — it will apply here at the next session start too, same as the user's other machines.";
+      }
 
       return { ...data, message };
     }

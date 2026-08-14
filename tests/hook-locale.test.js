@@ -102,6 +102,22 @@ test('getLocale({ homeDir: null }) degrades to the real home dir instead of thro
   assert.ok(['zh', 'en', 'ja'].includes(result), `expected a valid locale, got ${JSON.stringify(result)}`);
 });
 
+test('getLocale(null) degrades instead of throwing (the same hole, one level up)', () => {
+  // Fix round 2. The previous round closed `{ homeDir: null }` but left the parameter itself
+  // as `({ homeDir = os.homedir() } = {})`, whose `= {}` default also only fires for
+  // `undefined` — so an explicit `getLocale(null)` destructures null and throws before any of
+  // the inner guarding runs. Same reasoning, one level up, and the function is documented as
+  // total, so it has to hold for every argument rather than for the shapes we happened to
+  // think of.
+  assert.doesNotThrow(() => getLocale(null));
+  assert.ok(['zh', 'en', 'ja'].includes(getLocale(null)));
+  // `false` / `0` / `''` reach the same path; pinned so a future `opts ?? {}` (which would
+  // let `false` through to the destructuring) cannot silently reopen it.
+  for (const falsy of [undefined, null, false, 0, '']) {
+    assert.doesNotThrow(() => getLocale(falsy), `getLocale(${JSON.stringify(falsy)}) must not throw`);
+  }
+});
+
 test('getLocale returns en when both files are garbage/corrupted', () => {
   const home = tempDir('locale-');
   const cacheDir = path.join(home, '.ownmind', 'cache');
@@ -169,6 +185,63 @@ test('provisionLocale writes detected: null and does not throw when the OS detec
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   }
   const p = path.join(home, '.ownmind', 'state', 'locale.json');
+  const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+  assert.equal(parsed.detected, null);
+  assert.match(parsed.detected_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+});
+
+/**
+ * Fix round 2 — the OS detector must not leak the child's stderr into the parent's.
+ *
+ * `execFileSync` without an explicit `stdio` pipes the child's stderr straight to the parent
+ * process's stderr (Node documents exactly this default). On macOS/Linux the `.sh` SessionStart
+ * twin redirects the whole provisioning step, so nothing shows; but a Windows install runs the
+ * `.js` twin, where `provisionLocale()` executes IN-PROCESS
+ * (hooks/ownmind-session-start.js) — so whatever `powershell.exe` writes to stderr
+ * (Constrained Language Mode, AppLocker/WDAC, execution-policy errors) lands on the hook's own
+ * stderr, which in this product is a channel the user reads.
+ *
+ * The assertion is platform-independent even though the incident is Windows-only: it forces
+ * the darwin branch (the one whose detector is a plain executable that can be shimmed on PATH)
+ * and proves the parent's stderr stays clean while the state file is still written. Skipped on
+ * win32, where a PATH shim cannot stand in for `powershell.exe` without a shell.
+ */
+test('the OS detector never writes to the parent process stderr', { skip: process.platform === 'win32' }, () => {
+  const home = tempDir('locale-prov-stderr-');
+  const binDir = path.join(home, 'shim-bin');
+  fs.mkdirSync(binDir, { recursive: true });
+
+  // Stands in for a locked-down `powershell.exe`: noisy on stderr, non-zero exit.
+  const shim = path.join(binDir, 'defaults');
+  fs.writeFileSync(shim,
+    '#!/bin/sh\n'
+    + 'echo "PSSecurityException: cannot be loaded because running scripts is disabled" >&2\n'
+    + 'echo "At line:1 char:1" >&2\n'
+    + 'exit 1\n');
+  fs.chmodSync(shim, 0o755);
+
+  const runner = path.join(home, 'run-provision.mjs');
+  fs.writeFileSync(runner,
+    `import { provisionLocale } from ${JSON.stringify(path.join(repoRoot, 'hooks', 'lib', 'locale-provision.js'))};\n`
+    // The darwin branch is the one with a shimmable executable detector; forcing it keeps
+    // this test meaningful on Linux CI too (where the real branch reads $LANG and spawns
+    // nothing at all).
+    + "Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });\n"
+    + `provisionLocale({ homeDir: ${JSON.stringify(home)} });\n`);
+
+  const r = spawnSync(process.execPath, [runner], {
+    encoding: 'utf8',
+    timeout: 30000,
+    env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+  });
+
+  assert.equal(r.status, 0, `the runner must exit 0 (stderr: ${r.stderr})`);
+  assert.equal(r.stderr, '',
+    `the detector's stderr must never reach the parent process — got: ${JSON.stringify(r.stderr)}`);
+
+  // ...and the failure still degrades to a well-formed state file, exactly as before.
+  const p = path.join(home, '.ownmind', 'state', 'locale.json');
+  assert.ok(fs.existsSync(p), 'locale.json must still be written when the detector fails');
   const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
   assert.equal(parsed.detected, null);
   assert.match(parsed.detected_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);

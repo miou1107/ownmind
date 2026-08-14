@@ -48,18 +48,23 @@ function normalizeDetected(raw) {
 }
 
 /**
- * @param {{homeDir?: string}} [opts]
+ * @param {{homeDir?: string}} [opts] — any falsy value is accepted and read as "no options".
  * @returns {'zh'|'en'|'ja'}
  */
-export function getLocale({ homeDir = os.homedir() } = {}) {
+export function getLocale(opts) {
+  // `opts || {}` rather than a `= {}` parameter default: that default fires only for
+  // `undefined`, so an explicit `getLocale(null)` destructures null and throws before any of
+  // the guarding below can run — the same hole the `homeDir` line closes, one level up.
+  // Deliberately `||` and not `??`, so `false`/`0`/`''` are covered too.
+  const { homeDir } = opts || {};
+
   const forced = process.env.OWNMIND_LOCALE_FORCE;
   if (VALID_LOCALES.has(forced)) return forced;
 
-  // The destructuring default above only fires for `undefined` — an explicit
-  // `{ homeDir: null }` (or any other falsy, non-string value) skips it and would otherwise
-  // reach path.join() below and throw, breaking this function's "never throws" contract.
-  // Falling back here, rather than trusting every future call site to never pass one, is what
-  // actually keeps that contract true.
+  // Likewise for the value: an explicit `{ homeDir: null }` (or any other falsy, non-string
+  // value) would otherwise reach path.join() below and throw, breaking this function's "never
+  // throws" contract. Falling back here, rather than trusting every future call site to never
+  // pass one, is what actually keeps that contract true.
   const resolvedHomeDir = typeof homeDir === 'string' && homeDir ? homeDir : os.homedir();
 
   const cache = readJsonSafe(path.join(resolvedHomeDir, '.ownmind', 'cache', 'memories.json'));

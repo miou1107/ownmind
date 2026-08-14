@@ -25,15 +25,32 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+/**
+ * `stdio: ['ignore', 'pipe', 'ignore']` — the same form path-guard.js, ownmind-git-commit-msg.js
+ * and ownmind-reply-lint.js already use, and it is load-bearing here rather than tidiness.
+ *
+ * `execFileSync` with no `stdio` pipes the child's stderr straight through to the parent's
+ * (Node's documented default). On macOS/Linux the `.sh` SessionStart twin redirects this whole
+ * step, so nothing is visible; but a Windows install runs the `.js` twin, where
+ * `provisionLocale()` executes in-process inside `hooks/ownmind-session-start.js` — so anything
+ * `powershell.exe` writes to stderr (Constrained Language Mode, AppLocker/WDAC, execution
+ * policy) would surface on the hook's own stderr, a channel the user reads. Only stdout is
+ * wanted; the failure itself is already reported by the thrown non-zero exit, which the caller
+ * turns into `detected: null`.
+ */
+const DETECTOR_STDIO = ['ignore', 'pipe', 'ignore'];
+
 function detectRawLocale() {
   if (process.platform === 'darwin') {
-    return execFileSync('defaults', ['read', '-g', 'AppleLocale'], { timeout: 2000, encoding: 'utf8' }).trim();
+    return execFileSync('defaults', ['read', '-g', 'AppleLocale'], {
+      timeout: 2000, encoding: 'utf8', stdio: DETECTOR_STDIO,
+    }).trim();
   }
   if (process.platform === 'win32') {
     return execFileSync(
       'powershell.exe',
       ['-NoProfile', '-Command', '(Get-Culture).Name'],
-      { timeout: 5000, encoding: 'utf8' }
+      { timeout: 5000, encoding: 'utf8', stdio: DETECTOR_STDIO }
     ).trim();
   }
   return (process.env.LANG || process.env.LC_ALL || '').trim();
