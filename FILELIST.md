@@ -54,26 +54,30 @@ tests/action-gate-i18n.test.js                  — the gate family through t():
 修改：
 ```
 hooks/ownmind-iron-rule-check.sh                — 觸發詞偵測前先過做事閘門；閘門有輸出就
-                                                   原樣轉發並就地結束；fail-open 字面值加註解
-                                                   說明為何不走 t()。
+                                                   原樣轉發並就地結束；fail-open literals now
+                                                   carry a comment on why they bypass t().
 hooks/ownmind-iron-rule-check.js                — 同上（Windows twin）；直接 import 閘門
-                                                   模組，同一套 fail-open-loud 包法；failopen／
-                                                   degraded 通知改走 gateNotice() 動態 import
-                                                   t()、失敗時退回英文字面值。
+                                                   模組，同一套 fail-open-loud 包法; failopen/
+                                                   degraded notices route through gateNotice()
+                                                   (dynamic import of t(), English literal
+                                                   fallback on failure).
 hooks/ownmind-session-start.sh                  — 開場即佈建閘門狀態（憑證檢查之前）；
-                                                   stdin payload 原樣交給 gate-provision.js；
-                                                   同位置加呼叫 locale-provision.js（不需 stdin）。
+                                                   stdin payload 原樣交給 gate-provision.js;
+                                                   locale-provision.js is now invoked at the same
+                                                   pre-credential position (no stdin required).
 hooks/ownmind-session-start.js                  — 同上（Windows twin）；讀 stdin 取
-                                                   session_id、動態 import 佈建函式；新增
-                                                   provisionOsLocale()，緊接 provisionGate() 之後。
-hooks/lib/action-gate.js                        — 4 個 userLine 站點（verbal ask、code-mode
-                                                   ask/limit、read-block、check-block）改走
-                                                   t()；model-facing reason 不動。
-hooks/lib/action-gate-cli.js                    — failopen／degraded 通知改走 gateNotice()
-                                                   動態 import t()、失敗時退回英文字面值。
-hooks/lib/approve-action.js                     — review 補：action-gate.js 改成動態 import、
-                                                   包在 try/catch，i18n.js 壞掉時仍印
-                                                   REJECTED（原本會整支炸掉、stdout 空白）。
+                                                   session_id、動態 import 佈建函式; adds
+                                                   provisionOsLocale() right after provisionGate().
+hooks/lib/action-gate.js                        — the 4 userLine sites (verbal ask, code-mode
+                                                   ask/limit, read-block, check-block) now go
+                                                   through t(); model-facing reason untouched.
+hooks/lib/action-gate-cli.js                    — failopen/degraded notices route through
+                                                   gateNotice() (dynamic import of t(), English
+                                                   literal fallback on failure).
+hooks/lib/approve-action.js                     — review fix: action-gate.js loaded via dynamic
+                                                   import inside try/catch, so a broken i18n.js
+                                                   still prints REJECTED (previously the whole
+                                                   CLI crashed with empty stdout).
 tests/action-gate.test.js                       — pin OWNMIND_LOCALE_FORCE=en for the whole
                                                    suite (predates locale support; several
                                                    assertions pin literal English userLine text).
