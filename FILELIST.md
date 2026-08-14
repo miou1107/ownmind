@@ -1,5 +1,75 @@
 # OwnMind 檔案結構
 
+## v1.30.2 修改（檢查沒跑成的時候講真正的原因 ＋ 失敗原因終於有地方存）
+
+新增：
+```
+tests/check-failure-log-not-polluted-by-tests.test.js — 任何在行程內叫 runComplianceStep 的
+                                                   測試都必須先把紀錄檔導開，否則跑一次
+                                                   測試就往開發者自己那份 check-failures
+                                                   .jsonl 塞假事件。這正是「註解不是檢查」
+                                                   ：導開這件事本來只寫在其中一支測試的
+                                                   註解裡，另一支就漏了。第一版只看名字有
+                                                   沒有出現，import 那行就能滿足它 ——
+                                                   改成必須看到帶參數的呼叫（已用 mutation
+                                                   驗過）。
+hooks/lib/check-failure-log.js                  — 檢查失敗的原因寫進 ~/.ownmind/logs/
+                                                   check-failures.jsonl。訊息裡不能寫原因
+                                                   （內部代號不是講給使用者聽的字），拿掉
+                                                   之後就沒有任何地方存了 —— 這裡是那個
+                                                   地方。只留在本機，因為它要記的正好是
+                                                   「送不出去」。1 MB 輪替（連 .old 上限
+                                                   2 MB），寫不進去回 false，永不 throw。
+tests/check-failure-log.test.js                 — 紀錄內容、伺服器那筆的編號、每一次都留
+                                                   （要答的是「什麼時候開始壞的」）、輪替、
+                                                   寫不進去不會炸掉正在跑的檢查。
+```
+
+修改：
+```
+hooks/lib/compliance-client.js                  — 失敗分成 unauthorized / server-declined /
+                                                   server / timeout / network /
+                                                   no-credentials。只有 401 算「不認這台
+                                                   電腦」：這台伺服器的 403 只出現在後台
+                                                   路由，出現在這裡代表前面有代理擋著，而
+                                                   這是唯一一句會叫使用者去動手的訊息。
+                                                   401 的退避縮成一分鐘（其他維持五分鐘）
+                                                   —— 五分鐘會讓使用者剛登入好還被繼續叫
+                                                   去登入；完全不退避則是每一輪都把整段
+                                                   回話重送給伺服器丟掉、還多寫一行認證
+                                                   失敗紀錄，沒有上限。
+                                                   伺服器回 200 但自己那邊沒做完（產線最
+                                                   可能的失敗）原本連分類都沒有，現在是
+                                                   server-declined 並帶回它自己那筆紀錄的
+                                                   編號；那條路的四種情況只有一種沒有編號
+                                                   （連帳號要不要檢查都讀不到），用
+                                                   enabled=false 這個線上唯一的區別寫進
+                                                   原因字串。退避狀態一起記住原因，否則只
+                                                   有真的去連的那一輪知道為什麼。錯誤訊息
+                                                   過既有的 redact() 並截斷再落地。
+hooks/lib/compliance-step.js                    — 失敗一律寫紀錄（含伺服器那筆的編號）；
+                                                   unauthorized 與 server-declined 各走
+                                                   自己的訊息與自己的 notice key（共用一個
+                                                   key 會被節流當成「狀態沒變、繼續安靜」，
+                                                   而且「連不上伺服器」對後者是假話）。
+hooks/locales/zh.json / en.json / ja.json       — 新增 compliance.notChecked.signedOut 與
+                                                   compliance.notChecked.serverDeclined。
+hooks/locales/en.override.json / ja.override.json — 同步釘住。
+tests/hook-english-fallbacks-match-dictionary.test.js — 新句子納入寫死英文的比對（已用
+                                                   mutation 驗過會紅）。
+tests/enforcement-compliance-client.test.js     — 分類、403 不算不認得、伺服器 200 但沒做完、
+                                                   401 每輪都重試（登入好下一輪就恢復）、
+                                                   退避記憶、舊版狀態檔、憑證不外洩、原因截斷。
+tests/enforcement-compliance-step.test.js       — 兩種失敗兩種說法、原因有落地、帶得回伺服器
+                                                   那筆的編號、成功不寫紀錄。
+tests/hook-notices-i18n.test.js                 — 新句子的中英文逐字釘住；並把這支測試的
+                                                   紀錄檔導到暫存目錄 —— 它會在行程內觸發
+                                                   失敗，原本每跑一次就往開發者自己那份
+                                                   check-failures.jsonl 塞假事件。
+package.json / README* / docs/README*           — 1.30.1 → 1.30.2
+CHANGELOG.md / FILELIST.md                      — v1.30.2 條目
+```
+
 ## v1.30.1 修改（「回覆誤判 770」真的會記下來 ＋ 24 句使用者訊息全面重寫 ＋ 被拒絕時要說原因）
 
 新增（誤判回報接上線）：

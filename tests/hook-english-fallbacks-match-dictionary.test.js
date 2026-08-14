@@ -43,6 +43,8 @@ const HARD_CODED = {
     'compliance.off.warnMode',
     'compliance.notChecked.noCredentials',
     'compliance.notChecked.neverSynced',
+    'compliance.notChecked.signedOut',
+    'compliance.notChecked.serverDeclined',
     'compliance.notChecked.checkFailed',
     'compliance.off.server',
   ],
