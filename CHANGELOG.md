@@ -60,6 +60,32 @@
 「開場會把它印出來」，實際上 v1.26.171 之後**沒有任何掛勾會執行它**。程式留著當手動查稽核
 紀錄的工具，但文件不再宣稱它是送達路徑。
 
+**Gate message i18n, task 5 of 7 — account locale preference via `ownmind_set_locale`**:
+`users.settings.locale` (same `jsonb_set` pattern `onboarding_completed_at` already used)
+now stores each account's preferred language for OwnMind's own tool/gate messages.
+`GET /api/memory/init` echoes it as a new `locale` field (`null` when unset), which
+`hooks/lib/locale.js` (Task 2) already reads from the local `cache.data.locale` mirror
+`runConditionalSync` writes verbatim — so the client needed zero changes to pick this up.
+
+A new `PUT /api/memory/locale` route, registered ahead of `PUT /:id` so a request here is
+never swallowed as an id lookup (the same ordering issue `/enforcement-bundle` already
+solved), accepts `{ locale: 'zh' | 'en' | 'ja' | 'auto' }`: `zh`/`en`/`ja` are stored
+verbatim via `jsonb_set` (no server-side normalization — a stored preference is a
+deliberate choice, unlike the OS-detected value `locale.js` normalizes on the client);
+`auto` deletes the `locale` key outright via `settings - 'locale'`, scoped to that key
+alone so a sibling key like `onboarding_completed_at` survives untouched; anything else is
+rejected with 400 before touching the database.
+
+The new MCP tool `ownmind_set_locale` (`{ locale }`) forwards straight to that route —
+same one-round-trip shape as `ownmind_delete_secret`, the smallest existing authenticated
+write tool, rather than `ownmind_session_off`/`_on`, which turned out to be purely local
+(no server call at all, so its "auth pattern" is not actually one).
+
+Also updates `tests/session-context-field-coverage.test.js`'s `NOT_FOR_THE_SESSION_CONTEXT`
+list: `locale` is not model-facing (only `hooks/lib/locale.js` reads it, to pick the
+language of the hook's own terminal notices), so the coverage guard that test exists to
+enforce needed the new field classified rather than silently unaccounted for.
+
 ## v1.26.172 — 做事閘門第一步：閘門規範隨執行包下發
 
 規則庫裡帶有做事閘門標註（`enforcement.gate`）的規範，現在會以資料的形式隨執行包的

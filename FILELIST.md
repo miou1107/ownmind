@@ -28,6 +28,29 @@ hooks/lib/pending-banners.js                    — 說明更正：v1.26.171 之
 hooks/lib/flush-pending-banners.js                 執行它，程式保留當手動查稽核紀錄的工具。
 tests/update-banner.test.js                     — 改測新佇列檔；新增讀取／按行清除的測試
                                                    （含「讀完之後才寫進來的那筆不能被刪」）。
+src/routes/memory.js                            — GET /init gains a `locale` field (Task 5,
+                                                   gate-message-i18n): read from
+                                                   users.settings.locale via the same
+                                                   jsonb_set pattern onboarding_completed_at
+                                                   already uses. New PUT /locale route,
+                                                   registered ahead of PUT /:id (same ordering
+                                                   fix as /enforcement-bundle): sets zh/en/ja
+                                                   verbatim, or deletes the settings key
+                                                   outright on 'auto'; any other value
+                                                   rejected 400 before touching the row.
+mcp/index.js                                    — New tool ownmind_set_locale ({ locale:
+                                                   'zh'|'en'|'ja'|'auto' }); forwards to PUT
+                                                   /api/memory/locale, same one-round-trip
+                                                   shape as ownmind_delete_secret (the
+                                                   smallest existing authenticated write tool
+                                                   — ownmind_session_off/_on turned out to
+                                                   make no server call at all). TYPE_MAP
+                                                   banner label added.
+tests/session-context-field-coverage.test.js    — NOT_FOR_THE_SESSION_CONTEXT gains `locale`:
+                                                   not model-facing, only hooks/lib/locale.js
+                                                   reads it, so the new init field needed
+                                                   classifying rather than silently failing
+                                                   this guard.
 ```
 
 新增：
@@ -36,6 +59,24 @@ tests/update-notice-delivery.test.js            — 把 Stop 掛勾當程式跑�
                                                    真的出現在 stdout 的 systemMessage、
                                                    送完要清佇列、沒東西時不能亂講話。
                                                    拿掉送出或拿掉清除都會紅。
+tests/memory-locale-route.test.js               — Real-database route test (Task 5): PUT
+                                                   /locale writes users.settings.locale via
+                                                   jsonb_set, even from a row whose settings
+                                                   column is SQL NULL; GET /init echoes the
+                                                   value back; 'auto' deletes the key without
+                                                   touching sibling keys; invalid values
+                                                   rejected 400, never reaching the database;
+                                                   no-auth request rejected 401. Same
+                                                   startRealDb()/startServer() harness as
+                                                   enforcement-bundle-mounted.test.js.
+tests/mcp-set-locale-tool.test.js               — Source-level test for ownmind_set_locale
+                                                   (mcp/index.js cannot be imported — it
+                                                   connects a live stdio server on load, same
+                                                   constraint memory-title-update.test.js
+                                                   documents): schema shape, enum values,
+                                                   English description, and that the case
+                                                   handler forwards args.locale to PUT
+                                                   /api/memory/locale.
 ```
 
 ## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）

@@ -256,6 +256,7 @@ const TYPE_MAP = {
   ownmind_set_secret: 'Secret management',
   ownmind_delete_secret: 'Secret management',
   ownmind_report_compliance: 'Compliance report',
+  ownmind_set_locale: 'Locale preference',
 };
 
 function getVersion() { return serverVersion || CLIENT_VERSION; }
@@ -778,6 +779,21 @@ const TOOLS = [
       type: "object",
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: "ownmind_set_locale",
+    description: "Sets the language OwnMind's own tool and gate messages display in, across all of this user's machines (this does not translate the user's other content, only OwnMind's own output). Pass 'zh', 'en' or 'ja' to pin that language; pass 'auto' to clear the preference so it reverts to each machine's OS-detected language.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        locale: {
+          type: "string",
+          enum: ["zh", "en", "ja", "auto"],
+          description: "Language code to pin ('zh' | 'en' | 'ja'), or 'auto' to clear the stored preference and follow the OS language instead.",
+        },
+      },
+      required: ["locale"],
     },
   },
 ];
@@ -1475,6 +1491,16 @@ async function handleTool(name, args) {
           ? 'OwnMind is re-enabled. The next AI response / git commit will run the hooks normally.'
           : 'OwnMind was already enabled; no action taken.',
       };
+    }
+
+    case "ownmind_set_locale": {
+      // Task 5 (gate-message-i18n): a small authenticated write, same shape as
+      // ownmind_delete_secret — one server round trip, no sync_token involved (this is an
+      // account setting, not a memory row). 'auto' is forwarded as-is; the server is what
+      // decides it means "delete the key" (src/routes/memory.js PUT /locale).
+      const data = await callApi("PUT", "/api/memory/locale", { locale: args.locale });
+      logEvent('set_locale', { locale: args.locale });
+      return data;
     }
 
     default:
