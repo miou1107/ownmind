@@ -55,11 +55,18 @@ export function getLocale({ homeDir = os.homedir() } = {}) {
   const forced = process.env.OWNMIND_LOCALE_FORCE;
   if (VALID_LOCALES.has(forced)) return forced;
 
-  const cache = readJsonSafe(path.join(homeDir, '.ownmind', 'cache', 'memories.json'));
+  // The destructuring default above only fires for `undefined` — an explicit
+  // `{ homeDir: null }` (or any other falsy, non-string value) skips it and would otherwise
+  // reach path.join() below and throw, breaking this function's "never throws" contract.
+  // Falling back here, rather than trusting every future call site to never pass one, is what
+  // actually keeps that contract true.
+  const resolvedHomeDir = typeof homeDir === 'string' && homeDir ? homeDir : os.homedir();
+
+  const cache = readJsonSafe(path.join(resolvedHomeDir, '.ownmind', 'cache', 'memories.json'));
   const preference = cache?.data?.locale;
   if (VALID_LOCALES.has(preference)) return preference;
 
-  const state = readJsonSafe(path.join(homeDir, '.ownmind', 'state', 'locale.json'));
+  const state = readJsonSafe(path.join(resolvedHomeDir, '.ownmind', 'state', 'locale.json'));
   const normalized = normalizeDetected(state?.detected);
   if (normalized) return normalized;
 
