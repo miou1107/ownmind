@@ -16,15 +16,40 @@ import { detectCommandTrigger } from '../../shared/helpers.js';
 const TAG_PUSH = /git\s+push\b.*\s(?:refs\/tags\/)?(?:v\d|ima-v|ima-rc)/;
 
 /**
+ * Check if a command matches a guard's applies_pattern.
+ * If the pattern is invalid, returns true (fail toward enforcement).
+ * @param {string} command
+ * @param {string} pattern
+ * @returns {boolean}
+ */
+function patternMatches(command, pattern) {
+  // No pattern or empty pattern: always matches
+  if (!pattern || typeof pattern !== 'string' || !pattern.trim()) return true;
+
+  try {
+    const regex = new RegExp(pattern);
+    return regex.test(command);
+  } catch {
+    // Invalid regex: fail toward enforcement (return true)
+    return true;
+  }
+}
+
+/**
  * Match action guards whose triggers include the detected command trigger.
  *
  * Detects the trigger from the command using detectCommandTrigger. Also
  * applies special logic for version-tag pushes, which count as deployments
  * even if the general classifier identifies them as plain git pushes.
  *
+ * Guards may carry an applies_pattern field (regex string) to further
+ * restrict matching. If present, the guard only matches if the pattern
+ * matches the command. Invalid patterns are treated as always matching
+ * (fail toward enforcement).
+ *
  * @param {string} command — bash command
  * @param {Array} guards — array of guard objects
- * @returns {Array} guards whose triggers match the detected trigger
+ * @returns {Array} guards whose triggers match the detected trigger and patterns match
  */
 export function matchGuards(command, guards) {
   // Reject null/undefined/empty commands
@@ -43,12 +68,13 @@ export function matchGuards(command, guards) {
   // No triggers matched, return empty array
   if (!triggers.size) return [];
 
-  // Filter guards: only action guards with matching triggers
+  // Filter guards: only action guards with matching triggers and patterns
   return (guards || []).filter(
     (g) =>
       g &&
       g.kind === 'action' &&
       Array.isArray(g.triggers) &&
-      g.triggers.some((t) => triggers.has(t))
+      g.triggers.some((t) => triggers.has(t)) &&
+      patternMatches(command, g.applies_pattern)
   );
 }
