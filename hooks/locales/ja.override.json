@@ -1,4 +1,11 @@
 {
-  "_comment": "Japanese overrides — human-forced translations for terms the LLM gets wrong, applied last so they always win over the pipeline's output. Empty scaffold: hooks/locales/ja.json is pipeline-generated (Task 6 of gate-message-i18n) rather than hand-translated, so this starts empty and only gains entries if a real Japanese speaker (or a mechanical check like tests/hook-locales-parity.test.js) finds a specific key the LLM mistranslated. Key -> hooks/locales/zh.json key, mirroring client/src/i18n/ja.override.json's shape.",
-  "compliance.idNote": " （チェック番号 {checkId}：判断が誤っている場合は「誤判 {checkId}」と返信してください）"
+  "_comment": "Japanese overrides — human-forced translations for terms and sentences the LLM gets wrong, applied last so they always win over the pipeline's output. hooks/locales/ja.json is pipeline-generated (Task 6 of gate-message-i18n) rather than hand-translated, so this file only gains entries where a specific value was found to be wrong; ja.json ships, this file is what makes the correction survive the next `npm run translate:hooks`. Both must be edited together — tests/hook-locales-ja-meaning.test.js fails if they drift apart. Key -> hooks/locales/zh.json key, mirroring client/src/i18n/ja.override.json's shape.",
+  "_comment_meaning": "The six entries below are semantic corrections, not phrasing preferences. zh.json writes its safety negations inside emphasis brackets (這個指令「沒有」被把關 / 這一輪「沒有」被檢查) and the pipeline rendered the bracketed 「沒有」 as a noun value — 「なし」でチェックされました — whose final predicate is affirmative completed passive, i.e. it told a Japanese reader the check HAPPENED while en.json says it did NOT. A machine whose OS locale is ja gets Japanese with no opt-in, so these read as an all-clear during a fail-open. Corrected to end on a negative predicate (…チェックされていません); lint.recovered is the mirror case, an affirmative notice the pipeline turned into 検出されました (\"something was detected\"), which is a different claim from \"this turn was checked\".",
+  "compliance.idNote": " （チェック番号 {checkId}：判断が誤っている場合は「誤判 {checkId}」と返信してください）",
+  "gate.failopen": "[OwnMind] ゲートが起動できませんでした — この指示はチェックされていません",
+  "lint.recovered": "[OwnMind] 会話チェックが復帰しました — 今回のラウンドはチェックされました",
+  "compliance.notChecked.noCredentials": "[OwnMind] このデバイスには認証情報がないため、今回のラウンドはチェックされていません",
+  "compliance.notChecked.neverSynced": "[OwnMind] このデバイスは規則を一度も同期していないため、今回のラウンドはチェックされていません",
+  "compliance.notChecked.checkFailed": "[OwnMind] コンプライアンスチェックが実行されませんでした（{reason}）— 今回のラウンドはチェックされていません",
+  "compliance.off.server": "[OwnMind] このアカウントの強制実行は無効なため、今回のラウンドはチェックされていません"
 }

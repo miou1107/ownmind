@@ -2,6 +2,68 @@
 
 ## v1.26.173 — 一次觸發只佔一行，不要再被主程式蓋三次章
 
+**The Japanese fail-open notice said the opposite of the English (whole-branch review,
+Important, safety)**:
+
+`hooks/locales/ja.json`'s `gate.failopen` read
+`ゲートが起動せず、この指示は「なし」でチェックされました` — whose final predicate, `されました`,
+is affirmative completed passive. To a Japanese reader it says the command *was* checked
+("with none"), while `en.json` says `the action gate could not run - this command was NOT
+gated`. A machine whose OS locale is `ja` gets Japanese automatically with no opt-in, so the
+one notice whose entire job is to warn that nothing protected this command was reading as an
+all-clear. The root cause is upstream of Japanese: `zh.json` puts its safety negations inside
+emphasis brackets (`這個指令「沒有」被把關`, `這一輪「沒有」被檢查`) and the route-C pipeline
+translated the bracketed `「沒有」` as a noun value — `「なし」` — detaching the negation from the
+predicate that was supposed to carry it.
+
+All 24 keys were audited for meaning (each `ja` value back-translated to English before
+reading `en.json`, then compared): **6 carried a meaning defect, 18 were faithful**. The same
+`「なし」でした` shape had hit `compliance.notChecked.noCredentials`,
+`compliance.notChecked.neverSynced`, `compliance.notChecked.checkFailed` and
+`compliance.off.server` — all four told the user "this round was 'none'" instead of "this turn
+was NOT checked". The sixth is the mirror image: `lint.recovered`, whose English says `this
+turn was checked`, had become `このラウンドで検出されました` ("something *was detected* this
+round") — a different claim from "the check ran", and an alarming one. All six now end on an
+explicit negative or affirmative predicate (`…チェックされていません` / `…チェックされました`),
+and `compliance.notChecked.noCredentials` also drops `証明書` ("certificate") for `認証情報`,
+the term the rest of the product already uses for credentials — a user told a certificate is
+missing looks for the wrong thing. Style, register and naturalness were deliberately left
+alone; those still await the native-speaker pass.
+
+Each correction is written to both `hooks/locales/ja.json` (what ships) and
+`hooks/locales/ja.override.json` (what survives the next `npm run translate:hooks`, since
+overrides apply last), the same two-file discipline the earlier `compliance.idNote` fix used.
+`hooks/locales/glossary.json` gains the two negation-carrying clauses as pinned phrases so the
+pipeline stops detaching them at the source, and now documents that it carries two classes of
+entry rather than only protocol self-mappings. `zh.json` and `en.json` are untouched.
+
+New `tests/hook-locales-ja-meaning.test.js` guards the property that was violated rather than
+the strings that were written: it derives the affected keys from `en.json`'s own uppercase
+`NOT`/`never` marker, requires each such Japanese value to end on a negative predicate and to
+name the check it is denying, bans the `「なし」` artifact across every key, requires the one
+affirmative notice to stay affirmative, and requires every `ja.override.json` pin to match the
+shipped `ja.json` value so a correction written to only one of the two fails loudly. Proved
+red against the pre-fix dictionary (4 of its 6 cases failed), green after.
+
+**PowerShell shipped a gitignored build artifact its bash twin never did (whole-branch review,
+Minor)**:
+
+`install.ps1`, `scripts/update.ps1` and `scripts/check-sync.ps1` selected the hook
+dictionaries with `*.json`. A POSIX glob never matches a leading dot, so `install.sh` silently
+skips `hooks/locales/.translate-cache.json` (the translate pipeline's per-key hash cache,
+gitignored, regenerated locally); PowerShell's wildcard has no such rule and `*` eats the dot,
+so Windows machines had a build artifact deployed into `~\.claude\hooks\locales` that no bash
+machine has ever had. Harmless at runtime — `hooks/lib/i18n.js` loads dictionaries by name,
+never by scanning the directory — but it breaks the sh/ps1 parity this repo enforces, and
+`check-sync.ps1` would have reported permanent drift the moment the other two stopped copying
+it, so all three had to move together. `install.ps1`'s `Copy-Item` takes `-Exclude ".*"` (its
+path is already a wildcard, the shape where `-Exclude` is documented to apply); the two
+`Get-ChildItem` pipelines filter on `$_.Name -notlike '.*'`, which needs no assumption about
+how `-Exclude` behaves against a bare container path. No PowerShell interpreter exists on the
+dev or CI hosts, so this was verified by reading against the surrounding lines, not executed;
+`tests/ps1-locale-copy-dotfile-parity.test.js` pins the exclusions statically and ties them to
+the `.gitignore` entry that justifies them.
+
 **Locale chain (whole-branch review, scope B) — four defects closed, one dead hazard recorded
 (TDD, each proved red before green)**:
 

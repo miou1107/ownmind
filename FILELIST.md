@@ -475,6 +475,93 @@ tests/hook-locales-parity.test.js               — Whole-branch review (Minor):
                                                    Currently 24/24, zero drift; proved to have teeth
                                                    by staging both a value drift and a missing
                                                    override key.
+hooks/locales/ja.json                           — Whole-branch review (Important, safety): 6 of the
+                                                   24 keys asserted something other than what
+                                                   en.json asserts, and were corrected.
+                                                   gate.failopen said the command WAS checked ("with
+                                                   none") where English says it was NOT gated — the
+                                                   fail-open notice read as an all-clear on any
+                                                   machine whose OS locale is ja. The same shape hit
+                                                   compliance.notChecked.noCredentials /
+                                                   .neverSynced / .checkFailed and
+                                                   compliance.off.server: zh.json emphasises its
+                                                   negations by bracketing them (「沒有」被檢查) and
+                                                   the pipeline rendered the bracket contents as the
+                                                   noun 「なし」, detaching the negation from the
+                                                   predicate. lint.recovered was the mirror case —
+                                                   English says the turn WAS checked, Japanese said
+                                                   something 検出されました ("was detected"). All six
+                                                   now end on an explicit …チェックされていません or
+                                                   …チェックされました; noCredentials also swaps
+                                                   証明書 ("certificate") for 認証情報, the
+                                                   credentials term the rest of the product uses.
+                                                   The other 18 keys were audited (back-translated
+                                                   before reading en.json) and left as they are —
+                                                   style and register still await native review.
+hooks/locales/ja.override.json                  — Whole-branch review: pins all six corrected values,
+                                                   joining compliance.idNote. ja.json is what ships,
+                                                   this file is what survives the next
+                                                   translate:hooks (applyOverride runs last), so a
+                                                   semantic correction written to only one of the two
+                                                   is a fix with a fuse on it. Its _comment now
+                                                   records why these six exist, so a future reader
+                                                   does not mistake them for phrasing preferences and
+                                                   drop them.
+hooks/locales/glossary.json                     — Whole-branch review: added the two
+                                                   negation-carrying clauses (「沒有」被把關,
+                                                   「沒有」被檢查) as pinned phrase mappings for both
+                                                   zh-to-en and zh-to-ja, so the pipeline stops
+                                                   detaching the negation from the predicate at the
+                                                   source rather than only being corrected after the
+                                                   fact. _comment rewritten: the file now carries two
+                                                   classes of entry, not just protocol
+                                                   self-mappings.
+tests/hook-locales-ja-meaning.test.js           — NEW. Whole-branch review: meaning-level guard the
+                                                   structural parity test cannot provide — a value
+                                                   can have the right keys, placeholders and literals
+                                                   and still assert the opposite. Derives the
+                                                   affected keys from en.json's own uppercase
+                                                   NOT/never marker (so a future safety notice is
+                                                   covered the day it lands), then requires each such
+                                                   Japanese value to end on a negative predicate
+                                                   (…ません) and to actually name the check it
+                                                   denies; bans the 「なし」 artifact across every
+                                                   key; requires the one affirmative notice
+                                                   (lint.recovered) to stay affirmative; and requires
+                                                   every ja.override.json pin to equal the shipped
+                                                   ja.json value. Guards its own derived lists
+                                                   against being empty, the same dead-assertion
+                                                   discipline hook-locales-parity.test.js uses.
+                                                   Proved red against the pre-fix dictionary — 4 of
+                                                   its 6 cases failed — green after.
+install.ps1                                     — Whole-branch review (Minor): the hooks\locales
+                                                   Copy-Item takes -Exclude ".*". PowerShell
+                                                   wildcards match a leading dot where a POSIX glob
+                                                   does not, so "*.json" also picked up
+                                                   .translate-cache.json — a gitignored translate
+                                                   -pipeline artifact — and deployed it to
+                                                   ~\.claude\hooks\locales on Windows only, breaking
+                                                   parity with install.sh.
+scripts/update.ps1                              — Whole-branch review: same fix on the update path,
+                                                   as Where-Object { $_.Name -notlike ".*" } in the
+                                                   existing Get-ChildItem pipeline (no assumption
+                                                   needed about -Exclude against a bare container
+                                                   path).
+scripts/check-sync.ps1                          — Whole-branch review: same dot-name filter on the
+                                                   drift check. Required, not cosmetic: once the two
+                                                   scripts above stop copying .translate-cache.json,
+                                                   an unfiltered check here would demand it be
+                                                   present in ~/.claude/hooks/locales and report
+                                                   permanent drift on every Windows machine.
+tests/ps1-locale-copy-dotfile-parity.test.js    — NEW. Whole-branch review: pins the three exclusions
+                                                   statically and ties them to install.sh's glob and
+                                                   to the .gitignore entry that justifies them. A
+                                                   source check, not an execution — neither pwsh nor
+                                                   powershell exists on the dev or CI hosts, so it
+                                                   proves the exclusion is still written down, not
+                                                   that PowerShell honours it. Each assertion was
+                                                   confirmed to discriminate by running its regexes
+                                                   against the pre-fix files at HEAD.
 ```
 
 新增：
