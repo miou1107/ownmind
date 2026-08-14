@@ -152,9 +152,7 @@ function extractBanners(rawJson) {
  *   ...
  *   ---
  *
- *   [OwnMind v1.17.71]
- *     Memory search
- *     Tip: you can search memory
+ *   [OwnMind v1.17.71] Memory search ┃ Tip: you can search memory
  */
 function formatBlock(banners) {
   if (!Array.isArray(banners) || banners.length === 0) return null;
@@ -169,16 +167,19 @@ function formatBlock(banners) {
     }
   }
 
-  // Merge OwnMind banners into "brand header + indented list".
+  // Merge OwnMind banners onto ONE line. Claude Code stamps "PostToolUse:<tool> says:" on
+  // every rendered line of a systemMessage, so the old "brand header + indented list" shape
+  // cost three stamps per tool call. Measured 2026-08-14: U+2028, U+2029, U+000B and U+0085
+  // all break the line too, and each break gets its own stamp — there is no way to wrap
+  // without paying for it. One line, one stamp is therefore the floor.
+  //
+  // The trailing colon is stripped (both widths): "Memory search:" reads as a dangling label
+  // once the body it introduced is no longer on the next line.
   const eventBanners = banners.filter((b) => b.kind === 'banner');
   if (eventBanners.length > 0) {
     const version = eventBanners[0].version || '';
-    out.push(`[OwnMind ${version}]`);
-    for (const b of eventBanners) {
-      // Strip a trailing standalone "：" (multi-line events like "Memory search:" end with colon + newline).
-      const cleaned = b.eventLine.replace(/：\s*$/, '');
-      out.push(`  ${cleaned}`);
-    }
+    const parts = eventBanners.map((b) => b.eventLine.replace(/[：:]\s*$/, ''));
+    out.push(`[OwnMind ${version}] ${parts.join(' ┃ ')}`);
   }
   if (out.length === 0) return null;
   return out.join('\n');

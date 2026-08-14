@@ -113,7 +113,7 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner extraction', () => {
       'should not touch pending file when there is no banner');
   });
 
-  it('multiple banners in one trigger merge into a single "signature header + indented list" block', () => {
+  it('multiple banners in one trigger merge onto a single line (one host stamp)', () => {
     const input = {
       tool_name: 'mcp__ownmind__ownmind_get',
       tool_response: mcpToolResponse([
@@ -124,16 +124,34 @@ describe('v1.17.71 — ownmind-tty-echo.cjs banner extraction', () => {
     const content = fs.readFileSync(pendingFile, 'utf8');
     const record = JSON.parse(content.trim().split('\n').pop());
     const block = record.block;
-    // Header: [OwnMind v1.22.0+] sits alone on the first line (v1.22.0 switched to ASCII brackets).
-    assert.match(block, /^\[OwnMind v[\d.]+\]\n/, 'signature header must be on its own first line');
-    // Subsequent lines must not repeat the prefix.
-    const lines = block.trim().split('\n');
-    const tail = lines.slice(1).join('\n');
-    assert.ok(!tail.includes('[OwnMind v') && !tail.includes('【OwnMind v'),
-      'signature prefix must not repeat on subsequent lines (merged into one block)');
-    // Body is listed indented.
+    // Spec #2 is "no prefix repetition", and the host decides what a line costs: Claude Code
+    // stamps "PostToolUse:<tool> says:" on every line it renders. A header line plus indented
+    // items therefore bought three stamps — the exact repetition the spec forbids. One line.
+    assert.ok(!block.includes('\n'), 'merged banners must occupy exactly one line');
+    assert.match(block, /^\[OwnMind v[\d.]+\] /, 'the line opens with the signature');
+    assert.equal(block.split('[OwnMind v').length - 1, 1, 'the signature appears exactly once');
+    // Every event survives the merge.
     assert.match(block, /鐵律提醒/);
     assert.match(block, /技巧提示/);
+  });
+
+  it('no break character smuggles in a second line (U+2028/2029/000B/0085 all get stamped too)', () => {
+    // Measured 2026-08-14 against Claude Code: each of these renders as a line break AND the
+    // new line gets its own "PostToolUse:… says:" stamp, so none of them is a free wrap.
+    // The banner text must therefore never carry one.
+    const input = {
+      tool_name: 'mcp__ownmind__ownmind_search',
+      tool_response: mcpToolResponse([
+        { type: 'text', text: '【OwnMind v1.17.71】記憶搜尋：找到 3 筆\n\n【OwnMind v1.17.71】技巧提示：可以說「搜尋記憶」' },
+      ]),
+    };
+    runHook(input, { OWNMIND_TTY_FORCE_FALLBACK: '1' });
+    const content = fs.readFileSync(pendingFile, 'utf8');
+    const block = JSON.parse(content.trim().split('\n').pop()).block;
+    for (const ch of ['\u2028', '\u2029', '\u000B', '\u0085']) {
+      assert.ok(!block.includes(ch),
+        `block must not contain U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+    }
   });
 
   it('supports multiple content parts (legacy shape — occasionally still arrives as multi-part)', () => {
