@@ -61,6 +61,21 @@ LIB_DIR="$OWNMIND_DIR/hooks/lib"
 # this hook's stdout — which SessionStart feeds to the MODEL, not the user — and then erased
 # the file, destroying the audit trail it was supposed to be.
 
+# --- v1.26.172: P1 action gate — session provisioning ---
+# The SessionStart payload arrives on stdin (the same contract iron-rule-check.sh reads);
+# the lib script parses session_id out of it itself, so the payload is piped through whole.
+# This runs before the credential guard on purpose: the gate works off the local
+# enforcement cache, so a machine with no API key still gets its signing key, this
+# session's nonce, and the gate-current-session pointer the approval CLI reads — plus the
+# 30-day sweep of dead per-session state. Failure is a silent skip (the gate CLI
+# provisions loudly at first use), and the `-t 0` guard keeps a manual terminal run from
+# hanging on a stdin that never closes.
+GATE_STDIN_PAYLOAD=""
+if [ ! -t 0 ]; then
+  GATE_STDIN_PAYLOAD=$(cat 2>/dev/null || true)
+fi
+printf '%s' "$GATE_STDIN_PAYLOAD" | node "$LIB_DIR/gate-provision.js" >/dev/null 2>&1 || true
+
 # v1.17.97：補送 reply-lint Stop hook 上次 POST 失敗 / 離線時 spool 的合規事件。
 # helper 自己處理：沒檔/沒 credentials/POST 失敗 → 留檔等下次；POST 200 → 刪檔。
 # 嚴禁外漏 stderr/stdout（user-visible 通道）— helper 內部已做防護、這邊也丟到 /dev/null 雙保險。

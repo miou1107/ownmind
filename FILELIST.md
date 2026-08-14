@@ -17,6 +17,10 @@ tests/action-gate.test.js                       — guard matching、evaluateGat
 tests/action-gate-e2e.test.js                   — 閘門接線端對端測試（CLI、.sh、.js 三面，
                                                    含 30 條日常指令零干擾包）。
 tests/helpers/temp-dir.js                       — 測試用暫時目錄助手。
+hooks/lib/gate-provision.js                     — session 佈建；密鑰＋nonce（被植入就重生）＋
+                                                   gate-current-session＋30 天狀態清掃。
+tests/gate-provisioning.test.js                 — 佈建端對端測試（spawn 兩份 SessionStart
+                                                   hook 對 staged HOME，5 項）。
 ```
 
 修改：
@@ -25,6 +29,10 @@ hooks/ownmind-iron-rule-check.sh                — 觸發詞偵測前先過做�
                                                    原樣轉發並就地結束。
 hooks/ownmind-iron-rule-check.js                — 同上（Windows twin）；直接 import 閘門
                                                    模組，同一套 fail-open-loud 包法。
+hooks/ownmind-session-start.sh                  — 開場即佈建閘門狀態（憑證檢查之前）；
+                                                   stdin payload 原樣交給 gate-provision.js。
+hooks/ownmind-session-start.js                  — 同上（Windows twin）；讀 stdin 取
+                                                   session_id、動態 import 佈建函式。
 tests/helpers/hook-home.js                      — staged home 加掛 hooks/lib 目錄。
 ```
 

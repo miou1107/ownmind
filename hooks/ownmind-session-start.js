@@ -252,7 +252,41 @@ function maybeCheckForUpdates(apiUrl, apiKey) {
   } catch { /* never block session start */ }
 }
 
+/**
+ * v1.26.172 (P1 action gate, Task 7) — provision the gate state for this session.
+ *
+ * Key, this session's nonce (regenerated if planted), the gate-current-session pointer the
+ * approval CLI reads, and the 30-day sweep of dead per-session state. It runs before the
+ * credential guard on purpose: the gate works off the local enforcement cache, so a
+ * machine with no API key still gets provisioned. The import is dynamic and the whole call
+ * is wrapped — provisioning must never delay or break session start; a machine this
+ * skipped on is covered loudly by the gate CLI at first use.
+ */
+async function provisionGate() {
+  try {
+    let payload = {};
+    // Only read stdin when something is piping into it; on a terminal this would wait for
+    // input that never comes (same guard as ownmind-prompt-inject.js).
+    if (!process.stdin.isTTY) {
+      try { payload = JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch { payload = {}; }
+    }
+    let sessionId = payload?.session_id;
+    if (typeof sessionId !== 'string' || !sessionId) return; // nothing to provision for
+    // Unsafe ids collapse to 'unknown', matching action-gate-cli.js, so the nonce written
+    // here is the nonce the gate will look for.
+    if (!/^[A-Za-z0-9._-]+$/.test(sessionId)) sessionId = 'unknown';
+    const { provisionGateSession } = await import('./lib/gate-provision.js');
+    const stateDir = process.env.OWNMIND_GATE_STATE_DIR
+      || path.join(HOME, '.ownmind', 'state');
+    provisionGateSession(stateDir, sessionId);
+  } catch { /* never delay or break session start; the gate CLI reprovisions loudly */ }
+}
+
 async function main() {
+  // v1.26.172 — gate provisioning first: it is local-only and must happen even on the
+  // paths below that exit before the memory load (missing credentials, unreachable API).
+  await provisionGate();
+
   // v1.20.3: when a new session starts, clear the legacy "session temporarily disabled" state file.
   // Implements the spec's "new session auto-resumes" — opening a new conversation re-enables the OwnMind hooks.
   try {
