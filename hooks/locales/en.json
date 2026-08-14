@@ -1,0 +1,10 @@
+{
+  "gate.ask.verbal": "[OwnMind] ⛔ \"{title}\" needs your go-ahead for this action. Reply \"go\" to approve it once, or \"no\" to cancel.",
+  "gate.ask.code.action": "[OwnMind] ⛔ \"{title}\" wants your approval for: this action. Approval code: {code} (paste it to the AI to allow it once)",
+  "gate.ask.code.limit": "[OwnMind] ⛔ \"{title}\" wants your approval for: a command blocked 3 times in a row. Approval code: {code} (paste it to the AI to allow it once)",
+  "gate.read.blocked": "[OwnMind] ⛔ blocked until the rule \"{title}\" is read (auto-unblocks on retry)",
+  "gate.check.blocked": "[OwnMind] ⛔ blocked: {reason}",
+  "gate.failopen": "[OwnMind] the action gate could not run - this command was NOT gated",
+  "gate.degraded": "[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced",
+  "lint.recovered": "[OwnMind] compliance checks are running again - this turn was checked"
+}

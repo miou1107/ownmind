@@ -1,0 +1,10 @@
+{
+  "gate.ask.verbal": "[OwnMind] ⛔ 「{title}」這個動作要你點頭才放行。回「go」放行一次、回「no」取消。",
+  "gate.ask.code.action": "[OwnMind] ⛔ 「{title}」要你同意這個動作。同意碼：{code}（把它貼給 AI 就放行一次）",
+  "gate.ask.code.limit": "[OwnMind] ⛔ 「{title}」連續擋了同一個指令 3 次，要你決定放不放行。同意碼：{code}（把它貼給 AI 就放行一次）",
+  "gate.read.blocked": "[OwnMind] ⛔ 先讀過規矩「{title}」才放行（AI 讀完重試就自動解鎖）",
+  "gate.check.blocked": "[OwnMind] ⛔ 已擋下：{reason}",
+  "gate.failopen": "[OwnMind] 閘門這次沒跑起來，這個指令「沒有」被把關",
+  "gate.degraded": "[OwnMind] 閘門部分失效：讀取回執暫時無法使用，指令檢查仍照常把關",
+  "lint.recovered": "[OwnMind] 回話檢查已恢復運作，這一輪有檢查到"
+}

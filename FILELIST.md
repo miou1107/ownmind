@@ -21,6 +21,15 @@ hooks/lib/gate-provision.js                     — session 佈建；密鑰＋no
                                                    gate-current-session＋30 天狀態清掃。
 tests/gate-provisioning.test.js                 — 佈建端對端測試（spawn 兩份 SessionStart
                                                    hook 對 staged HOME，5 項）。
+hooks/lib/i18n.js                               — total-function message lookup for hook user
+                                                   notices; t(key, params?), resetI18nCacheForTests().
+hooks/lib/locale.js                             — stub locale resolver; getLocale({homeDir}) honors
+                                                   OWNMIND_LOCALE_FORCE first, else 'en'. Real resolution
+                                                   lands in a later task; signature stays.
+hooks/locales/en.json, hooks/locales/zh.json    — the 8 core
+                                                   action-gate / reply-lint user-facing strings, keyed by
+                                                   the string-inventory audience=user set.
+tests/hook-i18n.test.js                         — t() + getLocale() unit tests (10 cases).
 ```
 
 修改：
