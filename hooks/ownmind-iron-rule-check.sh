@@ -151,7 +151,7 @@ if [ "$GATE_STATUS" -ne 0 ]; then
   # there is no node process left here to call t() through — bash cannot route this through the
   # i18n dictionary the way the .js side does. Keep it in sync with gate.failopen in
   # hooks/locales/en.json (Task 3, 2026-08-14 gate-message-i18n).
-  echo '{"systemMessage":"[OwnMind] the action gate could not run - this command was NOT gated"}'
+  echo '{"systemMessage":"[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did."}'
   exit 0
 fi
 if [ -n "$GATE_OUT" ]; then

@@ -106,7 +106,7 @@ test('zh: check-failed banner never shows the internal reason token', async () =
     requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
   }));
   assert.equal(withReason.banner, '[OwnMind] 🔴 OwnMind 這次連不上伺服器，沒有檢查 AI 這段回話。');
-  assert.doesNotMatch(withReason.banner, /could not reach its server/, 'the raw reason token must not reach the user');
+  assert.doesNotMatch(withReason.banner, /timeout/, 'the raw reason token must not reach the user');
 
   // Same notice whether the server gave a reason or not: the reader's situation is identical.
   const noReason = await runComplianceStep(complianceBase({
@@ -350,7 +350,7 @@ test('zh: quality-lint banner header, warn-mode variant', () => {
     // Note: MODE='warn' also makes the compliance-step treat itself as off, so its own
     // (still-English, unrelated to this assertion) notice rides the same systemMessage ahead
     // of the lint banner — hence no leading-anchor match here.
-    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 🟢 OwnMind 在 AI 這段回話裡挑到違反你規矩的地方（這個對話第 1 次）。目前 OwnMind 只提醒/);
+    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 🟡 OwnMind 在 AI 這段回話裡挑到違反你規矩的地方（這個對話第 1 次）。目前 OwnMind 只提醒/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -422,7 +422,7 @@ test('zh: /ownmind-off reminder (fires on the 10th tick)', () => {
     const parsed = JSON.parse(r.stdout);
     assert.match(
       parsed.systemMessage,
-      /\[OwnMind v\?\] 🔴 OwnMind 現在是關的，AI 已經有 10 段回話沒被檢查過。\n {2}→ 你要開回來：輸入 \/ownmind-on，或直接開一個新對話。/,
+      /\[OwnMind v\?\] 🔴 OwnMind 現在是關的，AI 已經有 10 段回話沒過回話品質檢查。\n {2}→ 你要開回來：輸入 \/ownmind-on，或直接開一個新對話。/,
     );
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
@@ -464,7 +464,7 @@ test('en: quality-lint banner header, warn-mode variant, is byte-identical to th
     const parsed = JSON.parse(r.stdout);
     // MODE='warn' also makes the compliance-step treat itself as off, so its own English
     // notice rides the same systemMessage ahead of the lint banner — no leading anchor here.
-    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 🟢 OwnMind found something in the AI's reply that breaks your rules \(1 so far in this conversation\)\. For now OwnMind only warns/);
+    assert.match(parsed.systemMessage, /\[OwnMind v\?\] 🟡 OwnMind found something in the AI's reply that breaks your rules \(1 so far in this conversation\)\. For now OwnMind only warns/);
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
@@ -539,7 +539,7 @@ test('en: /ownmind-off reminder is byte-identical to the pre-change literal', ()
     const parsed = JSON.parse(r.stdout);
     assert.equal(
       parsed.systemMessage,
-      '[OwnMind v?] 🔴 OwnMind is off, and 10 of the AI\'s replies have gone unchecked.\n'
+      '[OwnMind v?] 🔴 OwnMind is off, and 10 of the AI\'s replies have skipped the reply-quality check.\n'
         + '  → To turn it back on: type /ownmind-on, or just start a new conversation.',
     );
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
@@ -595,7 +595,7 @@ test('reply-lint hook: an unloadable i18n.js falls back to English and never cra
     let parsed;
     assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); }, `stdout must be valid JSON, got:\n${r.stdout}`);
     assert.match(parsed.systemMessage, /OwnMind found something in the AI's reply/, 'falls back to the English banner header');
-    assert.doesNotMatch(parsed.systemMessage, /回話品質/, 'the zh translation must not appear — i18n itself is broken');
+    assert.doesNotMatch(parsed.systemMessage, /挑到違反你規矩的地方/, 'the zh translation must not appear — i18n itself is broken');
     // MODE='warn' also drives compliance-step.js's own off:warn-mode banner through this same
     // staged-broken-i18n run — hooks/lib/compliance-step.js is a hooks/lib/* file that itself
     // imports './i18n.js' relatively (via its complianceNotice() helper), so this is the case
@@ -608,7 +608,7 @@ test('reply-lint hook: an unloadable i18n.js falls back to English and never cra
       /In this conversation OwnMind only warns/,
       'compliance-step.js (also on the hooks/lib i18n.js import graph) must fall back to English too',
     );
-    assert.doesNotMatch(parsed.systemMessage, /合規檢查目前關閉中/, 'the zh translation must not appear for compliance-step either');
+    assert.doesNotMatch(parsed.systemMessage, /只會提醒/, 'the zh translation must not appear for compliance-step either');
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 

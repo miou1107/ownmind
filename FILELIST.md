@@ -23,6 +23,15 @@ hooks/lib/compliance-step.js                    — 被擋時 AI 讀到的指示
 
 修改（使用者訊息全面重寫）：
 ```
+hooks/lib/action-gate-cli.js                    — gate.failopen / gate.degraded 的第二份
+                                                   複本跟著改（最外層那份不經過翻譯層，
+                                                   node 跑不起來時直接印它）。
+hooks/ownmind-iron-rule-check.js                — 第三份複本跟著改。
+hooks/ownmind-iron-rule-check.sh                — 第四份（bash 沒有 node 可以呼叫 t()）。
+tests/hook-english-fallbacks-match-dictionary.test.js — 新增：六個檔案裡寫死的英文必須跟
+                                                   en.json 一字不差，並禁止任何退役句子留在
+                                                   程式碼裡。這批就是漏了三個檔案，而 .sh 裡
+                                                   本來就有「記得同步」的註解 —— 註解不是檢查。
 hooks/locales/zh.json / en.json / ja.json       — 24 句全部重寫：主詞改成「你」或「AI」、動作
                                                    指名是誰做的、講清楚要不要做什麼、拿掉行話
                                                    跟內部代號；⛔ 換成 🟢🟡🔴 狀態燈。
@@ -58,8 +67,8 @@ hooks/lib/approve-action.js                     — 拒絕時把理由印到錯�
 tests/helpers/real-db.js                        — 鎖：先判生死再判年齡、釋放前確認鎖還是自己
                                                    的、拿到鎖之後失敗一律放掉。
 tests/action-gate.test.js                       — 換掉一項宣稱在驗「不合法代號被拒絕」但其實
-                                                   永遠是綠的斷言；補malformed --session 案例。
-package.json / README* / docs/README*           — 1.26.174 → 1.26.175
+                                                   永遠是綠的斷言；補 malformed --session 案例。
+package.json / README* / docs/README*           — 1.26.174 → 1.30.1
 CHANGELOG.md / FILELIST.md                      — v1.30.1 條目
 ```
 

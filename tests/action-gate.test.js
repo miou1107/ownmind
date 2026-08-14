@@ -310,7 +310,7 @@ test('C1: gate-log never contains approval code or userLine', () => {
   const logFile = path.join(dir, 'gate-log.jsonl');
   const logContent = fs.readFileSync(logFile, 'utf8');
   assert.ok(!logContent.includes(code), 'approval code must not appear in log');
-  assert.ok(!logContent.includes('Approval code:'), 'userLine text must not appear in log');
+  assert.ok(!logContent.includes('OwnMind allows it this once'), 'userLine text must not appear in log');
 
   // Verify log has code_issued flag
   const entries = logContent.trim().split('\n').map(l => JSON.parse(l));
@@ -461,8 +461,8 @@ test('NEW-2: read-block and check-block decisions must carry userLine', () => {
   // Verify gate-log.jsonl still doesn't contain userLine text
   const logFile = path.join(dir, 'gate-log.jsonl');
   const logContent = fs.readFileSync(logFile, 'utf8');
-  assert.ok(!logContent.includes('blocked until the rule'), 'gate-log must not contain userLine text');
-  assert.ok(!logContent.includes('Approval code:'), 'gate-log must not contain userLine from ask');
+  assert.ok(!logContent.includes('tried to act without reading this rule first'), 'gate-log must not contain userLine text');
+  assert.ok(!logContent.includes('OwnMind allows it this once'), 'gate-log must not contain userLine from ask');
 });
 
 // --- CONSENT red-team (Task 9 § B) ---

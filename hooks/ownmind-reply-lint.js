@@ -336,7 +336,7 @@ async function main() {
         const reminder = await lintNotice(
           'lint.offReminder',
           [
-            `[OwnMind v${version}] 🔴 OwnMind is off, and ${tick} of the AI's replies have gone unchecked.`,
+            `[OwnMind v${version}] 🔴 OwnMind is off, and ${tick} of the AI's replies have skipped the reply-quality check.`,
             '  → To turn it back on: type /ownmind-on, or just start a new conversation.',
           ].join('\n'),
           { version, tick },
@@ -720,7 +720,7 @@ async function formatBanner(violations, getClientVersion, opts = {}) {
   } else {
     header = await lintNotice(
       'lint.banner.header.otherMode',
-      `[OwnMind v${version}] 🟢 OwnMind found something in the AI's reply that breaks your rules (${count} so far in this conversation). For now OwnMind only warns; it does not ask for a rewrite.`,
+      `[OwnMind v${version}] 🟡 OwnMind found something in the AI's reply that breaks your rules (${count} so far in this conversation). For now OwnMind only warns; it does not ask for a rewrite.`,
       { version, mode, count },
     );
   }
