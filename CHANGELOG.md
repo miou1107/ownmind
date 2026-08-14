@@ -87,6 +87,18 @@ session nonce 建好（冪等、失敗可存活——降級為無狀態檢查並
 被 IR-136 型樣式閘門擋、毀損／缺席快取安靜、狀態目錄壞掉降級但檢查式照擋、
 .sh 與 .js 兩份 hook 原樣轉發決策。
 
+**Session 佈建**：兩份 SessionStart hook（`.sh` 與 `.js`）現在每次開新對話就把閘門狀態
+準備好（新增 `hooks/lib/gate-provision.js`，兩份 hook 共用同一個函式）：確保簽章密鑰
+存在（mode 0400）、確保本 session 的 nonce 存在 —— nonce 內容不是 32 位十六進位就砍掉
+重生（防被植入的假 nonce 拿去簽回執）；把 session ID 寫進 `gate-current-session`（批准
+CLI 靠這個檔知道「現在是哪個 session」，所以就算密鑰跟 nonce 都已存在也每次重寫）；
+並清掃超過 30 天的 per-session 狀態檔（回執、詢問、上限、nonce —— `gate.key`、
+`gate-current-session` 與稽核日誌 `gate-log.jsonl` 永不清）。佈建跑在憑證檢查之前：
+閘門讀的是本機快取，沒設 API 金鑰的機器一樣要佈建。全程包在防護裡，任何失敗都靜默跳過、
+絕不拖慢或弄壞 session 啟動 —— 漏佈建的機器由閘門 CLI 在首次使用時大聲補上。閘門 CLI
+裡既有的 ensureKey / ensureNonce 後備保留（冪等）。`tests/gate-provisioning.test.js`
+5 項端對端測試 spawn 真 hook 對 staged HOME 驗證以上全部。
+
 ## v1.26.171 — 規範真的被挑到，系統講的話真的被看到
 
 整晚的量測稽核（80 則真實回覆的基準語料、兩輪對抗審查）找到三個互相獨立的洞，每一個都足以讓
