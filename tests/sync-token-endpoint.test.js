@@ -45,6 +45,31 @@ describe('v1.18.0 — generateSyncToken (core logic behind the sync-token endpoi
     assert.notEqual(t1, t2, 'team_standard change counts too');
   });
 
+  // Task 5 fix round 1 (gate-message-i18n): a locale write touches users.settings, never
+  // memories.updated_at, so a hash built only from MAX(updated_at) can never change when the
+  // account's language preference changes — the propagation review that caught this. locale
+  // must be a first-class hash input, same tier as user_max/team_max.
+  it('locale changes → token changes (same user_max/team_max)', async () => {
+    const base = { user_max: '2026-05-13T00:00:00Z', team_max: '' };
+    const t1 = await generateSyncToken(1, fakeQueryWithRows([{ ...base, locale: 'zh' }]));
+    const t2 = await generateSyncToken(1, fakeQueryWithRows([{ ...base, locale: 'ja' }]));
+    assert.notEqual(t1, t2, 'a locale-only change must still bump the token');
+  });
+
+  it('locale unset (auto) differs from any pinned locale, same user_max/team_max', async () => {
+    const base = { user_max: '2026-05-13T00:00:00Z', team_max: '' };
+    const withZh = await generateSyncToken(1, fakeQueryWithRows([{ ...base, locale: 'zh' }]));
+    const cleared = await generateSyncToken(1, fakeQueryWithRows([{ ...base, locale: '' }]));
+    assert.notEqual(withZh, cleared, 'clearing the preference (auto) must also bump the token');
+  });
+
+  it('same locale + same user_max/team_max → idempotent (same token)', async () => {
+    const row = { user_max: '2026-05-13T00:00:00Z', team_max: '', locale: 'en' };
+    const t1 = await generateSyncToken(1, fakeQueryWithRows([row]));
+    const t2 = await generateSyncToken(1, fakeQueryWithRows([row]));
+    assert.equal(t1, t2, 'same input including locale → same token');
+  });
+
   it('different userId → different token (same max)', async () => {
     const fakeQuery = fakeQueryWithRows([{ user_max: '2026-05-13T00:00:00Z', team_max: '' }]);
     const t1 = await generateSyncToken(1, fakeQuery);

@@ -86,6 +86,40 @@ list: `locale` is not model-facing (only `hooks/lib/locale.js` reads it, to pick
 language of the hook's own terminal notices), so the coverage guard that test exists to
 enforce needed the new field classified rather than silently unaccounted for.
 
+**Gate message i18n, task 5 fix round 1 — locale actually propagates, not just once a day**:
+review found that `PUT /api/memory/locale` only ever wrote `users.settings`, and
+`generateSyncToken` (`src/utils/syncToken.js`) hashed nothing but `MAX(updated_at)` from
+`memories` — so a locale-only write could never change `sync_token`, and the existing
+conditional-sync client (which decides whether to re-init purely by comparing that token
+against its 24h-fresh local cache) would never notice. The new preference sat on the
+server, invisible on every machine, until an unrelated memory write happened to bump the
+token or the daily staleness fallback fired.
+
+`generateSyncToken` now folds `users.settings->>'locale'` into the same hash as a third
+input alongside `user_max`/`team_max`. Both `GET /sync-token` and `GET /init` already
+called this one function with the same arguments, so there was no second call site to
+find or fix — the existing conditional-sync machinery on every other machine now
+re-inits and picks up the change on its own, at that machine's next session start.
+
+A separate user decision: the machine that actually calls `ownmind_set_locale` should not
+have to wait even that long. New `mcp/lib/local-locale-refresh.js` exports
+`refreshLocalCacheForLocale()`, a thin wrapper that calls `runConditionalSync()` —
+reusing `hooks/lib/conditional-sync.js`'s own function verbatim, rather than hand-rolling
+a second cache writer or patching `cache/memories.json` in place (that file has exactly
+one owner; see the schema-collision history `mcp/offline.js` already documents for why
+the MCP's own offline cache lives at a different path). Because the server write already
+moved the account's `sync_token`, `runConditionalSync`'s own comparison finds a mismatch
+and downloads a fresh `GET /init`, the same as any other write would — nothing about this
+call is locale-specific except when it happens. The `ownmind_set_locale` case handler now
+calls it right after the server write succeeds; a refresh failure degrades gracefully
+(the server write already succeeded, and every machine — this one included, as a
+fallback — still gets the change through the normal sync-token path) and is reflected in
+the tool's response text rather than failing the call. The tool description and response
+message were both reworded to state the true effect timing plainly: immediate on this
+machine, next session start on the user's other machines — the "set once, all machines
+follow, eventually" promise was accurate but the machine that just set it deserves better
+than "eventually" too.
+
 ## v1.26.172 — 做事閘門第一步：閘門規範隨執行包下發
 
 規則庫裡帶有做事閘門標註（`enforcement.gate`）的規範，現在會以資料的形式隨執行包的

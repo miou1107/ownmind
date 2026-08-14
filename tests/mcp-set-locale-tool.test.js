@@ -70,6 +70,15 @@ describe('ownmind_set_locale — tool registration', () => {
     assert.ok(!/[぀-ヿ㐀-鿿]/.test(descMatch[1]),
       'tool description must be English (no CJK)');
   });
+
+  // Fix round 1 honesty requirement: the description must not overstate the effect as
+  // uniformly instant — a machine other than the caller's own only re-inits at its next
+  // SessionStart (the sync-token change makes that happen on its own, but not mid-session).
+  it('description says the effect is immediate on this machine, next-session on others', () => {
+    assert.match(block, /immediat/i);
+    assert.match(block, /next session/i);
+    assert.match(block, /this machine/i);
+  });
 });
 
 describe('ownmind_set_locale — case handler', () => {
@@ -82,5 +91,25 @@ describe('ownmind_set_locale — case handler', () => {
 
   it('logs the call locally via logEvent', () => {
     assert.match(block, /logEvent\(/);
+  });
+
+  // Fix round 1: after the server write succeeds, this machine's own cache must be
+  // refreshed immediately (not left to wait for the next SessionStart like every other
+  // machine) — reusing the conditional-sync machinery via mcp/lib/local-locale-refresh.js,
+  // never a hand-rolled second cache writer.
+  it('refreshes this machine\'s local cache immediately via refreshLocalCacheForLocale', () => {
+    assert.match(block, /refreshLocalCacheForLocale\(/);
+  });
+
+  it('the response message reflects both outcomes: refreshed now, or degraded to next-session', () => {
+    assert.match(block, /immediat/i);
+    assert.match(block, /next session/i);
+  });
+});
+
+describe('ownmind_set_locale — imports', () => {
+  it('imports refreshLocalCacheForLocale from mcp/lib/local-locale-refresh.js', () => {
+    assert.match(MCP_SOURCE,
+      /import\s*\{\s*refreshLocalCacheForLocale\s*\}\s*from\s*['"]\.\/lib\/local-locale-refresh\.js['"]/);
   });
 });

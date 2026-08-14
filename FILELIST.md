@@ -45,12 +45,33 @@ mcp/index.js                                    — New tool ownmind_set_locale 
                                                    smallest existing authenticated write tool
                                                    — ownmind_session_off/_on turned out to
                                                    make no server call at all). TYPE_MAP
-                                                   banner label added.
+                                                   banner label added. Fix round 1: after the
+                                                   write succeeds, calls
+                                                   refreshLocalCacheForLocale() so this
+                                                   machine's own cache updates immediately;
+                                                   response message states the true timing
+                                                   (immediate here, next session start on
+                                                   other machines).
 tests/session-context-field-coverage.test.js    — NOT_FOR_THE_SESSION_CONTEXT gains `locale`:
                                                    not model-facing, only hooks/lib/locale.js
                                                    reads it, so the new init field needed
                                                    classifying rather than silently failing
                                                    this guard.
+src/utils/syncToken.js                          — generateSyncToken now hashes
+                                                   users.settings->>'locale' alongside
+                                                   user_max/team_max (Task 5 fix round 1): a
+                                                   locale write only touches users.settings,
+                                                   never memories.updated_at, so without this
+                                                   the token could never change on a locale-
+                                                   only write and the conditional-sync client
+                                                   would never notice. GET /sync-token and GET
+                                                   /init both already call this one function,
+                                                   so both stay in sync by construction.
+tests/sync-token-endpoint.test.js               — 3 new cases: locale changes -> token
+                                                   changes (same user_max/team_max); clearing
+                                                   the preference (auto, i.e. empty string)
+                                                   also changes it; same locale + same
+                                                   user_max/team_max stays idempotent.
 ```
 
 新增：
@@ -68,7 +89,11 @@ tests/memory-locale-route.test.js               — Real-database route test (Ta
                                                    rejected 400, never reaching the database;
                                                    no-auth request rejected 401. Same
                                                    startRealDb()/startServer() harness as
-                                                   enforcement-bundle-mounted.test.js.
+                                                   enforcement-bundle-mounted.test.js. Fix
+                                                   round 1: a PUT /locale write changes this
+                                                   account's sync_token (zh, then auto, each
+                                                   differ from the last) while an unrelated
+                                                   account's token stays put.
 tests/mcp-set-locale-tool.test.js               — Source-level test for ownmind_set_locale
                                                    (mcp/index.js cannot be imported — it
                                                    connects a live stdio server on load, same
@@ -76,7 +101,30 @@ tests/mcp-set-locale-tool.test.js               — Source-level test for ownmin
                                                    documents): schema shape, enum values,
                                                    English description, and that the case
                                                    handler forwards args.locale to PUT
-                                                   /api/memory/locale.
+                                                   /api/memory/locale. Fix round 1:
+                                                   description and response wording state the
+                                                   true propagation timing (immediate on this
+                                                   machine, next session start on others);
+                                                   case handler calls
+                                                   refreshLocalCacheForLocale().
+mcp/lib/local-locale-refresh.js                 — Task 5 fix round 1:
+                                                   refreshLocalCacheForLocale({apiUrl, apiKey,
+                                                   cachePath, fetchFn}) — thin wrapper around
+                                                   hooks/lib/conditional-sync.js's own
+                                                   runConditionalSync(), reused verbatim
+                                                   rather than a second cache writer (that
+                                                   file has one owner). Never throws; returns
+                                                   {ok, source} so a failed refresh degrades
+                                                   the tool's response text instead of failing
+                                                   the call.
+tests/local-locale-refresh.test.js              — 3 cases against a staged HOME: a pinned
+                                                   locale change reaches cache.data.locale and
+                                                   getLocale() returns it immediately; 'auto'
+                                                   removes the value and getLocale() stops
+                                                   returning the stale one; a fetch failure
+                                                   degrades gracefully (ok:false, no throw,
+                                                   existing cache left byte-for-byte
+                                                   untouched).
 ```
 
 ## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）
