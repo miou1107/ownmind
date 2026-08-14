@@ -52,9 +52,17 @@
 1. `hooks/locales/zh.json`（**中文是原稿**，英日文由它產生）
 2. `hooks/locales/en.json` + `en.override.json`（override 釘住英文，翻譯流程不准改寫）
 3. `hooks/locales/ja.json` + `ja.override.json`
-4. **程式碼裡那句寫死的英文備援**（`action-gate.js` / `compliance-step.js` /
-   `ownmind-reply-lint.js` 的 `safeT` / `complianceNotice` / `lintNotice` 第二個參數）——
-   字典載不進來時出的就是它，跟 `en.json` 對不上時，平常完全看不出來
+4. **程式碼裡那些寫死的英文備援 —— 有六個檔案，不是三個**：
+   - `hooks/lib/action-gate.js`、`hooks/lib/compliance-step.js`、`hooks/ownmind-reply-lint.js`
+     （`safeT` / `complianceNotice` / `lintNotice` 的第二個參數）
+   - `hooks/lib/action-gate-cli.js`、`hooks/ownmind-iron-rule-check.js`、
+     `hooks/ownmind-iron-rule-check.sh` —— **這三個最容易漏**。它們存的是
+     `gate.failopen` / `gate.degraded`，而 `.sh` 那份跟 CLI 最外層那份根本不經過翻譯層
+     （那條路是「node 整個跑不起來」，沒有 node 可以呼叫 `t()`）
+
+   2026-08-15 這批 24 句就是漏了後面三個 —— 而且 `.sh` 裡本來就寫著「記得跟 en.json 同步」
+   的註解、規格檔也記著「有三份複本」。**兩個都不是檢查，兩個都被讀過去了。**
+   現在有 `tests/hook-english-fallbacks-match-dictionary.test.js` 在盯，漏掉會紅。
 
 ## 國際化專案規則（最高優先級）
 

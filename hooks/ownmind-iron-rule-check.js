@@ -31,9 +31,9 @@ import {
 const importFile = (p) => import(pathToFileURL(p).href);
 
 const NOT_GATED_LINE =
-  '[OwnMind] the action gate could not run - this command was NOT gated';
+  "[OwnMind] 🔴 OwnMind could not check this command, and the AI ran it anyway. If it matters, look at what it did.";
 const DEGRADED_LINE =
-  '[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced';
+  "[OwnMind] 🟡 OwnMind could not confirm whether the AI had read your rules this time, but it is still blocking the AI's commands against them.";
 
 /**
  * Looks up a gate notice through t(), but the two lines above are what tell the user the
