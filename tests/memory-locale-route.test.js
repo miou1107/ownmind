@@ -167,6 +167,35 @@ test('account locale preference: set, echoed via init, auto clears, invalid inpu
       });
       assert.equal(res.status, 401);
     }
+
+    // --- 9. Sync-token propagation (fix round 1): a locale write only touches
+    //     users.settings, never the memories table, so the token has to fold locale in as
+    //     its own hash input or the existing conditional-sync client machinery (which
+    //     compares GET /sync-token against the local cache) never notices the change —
+    //     the preference would then sit invisible on every other machine until an
+    //     unrelated write happens to bump the token, or the 24h staleness fallback fires. ---
+    {
+      const syncTokenFor = (apiKey) => fetch(`${server.url}/api/memory/sync-token`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      }).then((res) => res.json()).then((j) => j.sync_token);
+
+      const unrelatedBefore = await syncTokenFor('key-locale-b');
+
+      const tokenBefore = await syncTokenFor('key-locale-a');
+      await put('key-locale-a', { locale: 'zh' });
+      const tokenAfterZh = await syncTokenFor('key-locale-a');
+      assert.notEqual(tokenAfterZh, tokenBefore,
+        "PUT locale must change this account's sync_token, or the client cache never re-inits");
+
+      await put('key-locale-a', { locale: 'auto' });
+      const tokenAfterAuto = await syncTokenFor('key-locale-a');
+      assert.notEqual(tokenAfterAuto, tokenAfterZh,
+        'clearing the preference (auto) must also change the sync_token');
+
+      const unrelatedAfter = await syncTokenFor('key-locale-b');
+      assert.equal(unrelatedAfter, unrelatedBefore,
+        "another account's sync_token must not move because of this account's locale write");
+    }
   } finally {
     if (server) await server.close();
     if (pool?.end) await pool.end().catch(() => {});

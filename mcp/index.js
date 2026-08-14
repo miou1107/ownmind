@@ -48,6 +48,7 @@ import { enrichErrorDetails } from './lib/enrich-error.js';
 // rather than left: this file does not type-check, so an unused import is indistinguishable
 // from one that is quietly wrong.
 import { logMcpCallSafe } from './lib/log-mcp-call.js';
+import { refreshLocalCacheForLocale } from './lib/local-locale-refresh.js';
 // v1.26.108 — `await import()` takes a module specifier, and an absolute filesystem path is
 // only accidentally one. On Windows it starts with a drive letter, which the ESM loader reads
 // as a URL scheme and rejects: ERR_UNSUPPORTED_ESM_URL_SCHEME. On macOS and Linux the same
@@ -783,7 +784,7 @@ const TOOLS = [
   },
   {
     name: "ownmind_set_locale",
-    description: "Sets the language OwnMind's own tool and gate messages display in, across all of this user's machines (this does not translate the user's other content, only OwnMind's own output). Pass 'zh', 'en' or 'ja' to pin that language; pass 'auto' to clear the preference so it reverts to each machine's OS-detected language.",
+    description: "Sets the language OwnMind's own tool and gate messages display in, across all of this user's machines (this does not translate the user's other content, only OwnMind's own output). Takes effect immediately on this machine; on the user's other machines it takes effect at each one's next session start. Pass 'zh', 'en' or 'ja' to pin that language; pass 'auto' to clear the preference so it reverts to each machine's OS-detected language.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1500,7 +1501,19 @@ async function handleTool(name, args) {
       // decides it means "delete the key" (src/routes/memory.js PUT /locale).
       const data = await callApi("PUT", "/api/memory/locale", { locale: args.locale });
       logEvent('set_locale', { locale: args.locale });
-      return data;
+
+      // Fix round 1: the server write already changed this account's sync_token (locale is
+      // now a hash input — src/utils/syncToken.js), so every machine's normal
+      // conditional-sync re-inits on its own at its *next* session start. This machine does
+      // not have to wait for that: refresh its own cache/memories.json right now, reusing
+      // the exact function hooks/lib/conditional-sync.js already owns, so the very next hook
+      // invocation here already resolves the new language.
+      const refresh = await refreshLocalCacheForLocale({ apiUrl: API_URL, apiKey: API_KEY });
+      const message = refresh.ok
+        ? "Applied immediately on this machine. On the user's other machines it applies at each one's next session start."
+        : "Saved on the server, but this machine's local cache could not be refreshed immediately — it will apply here at the next session start too, same as the user's other machines.";
+
+      return { ...data, message };
     }
 
     default:
