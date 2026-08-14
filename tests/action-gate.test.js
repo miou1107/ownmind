@@ -3,7 +3,7 @@
  */
 
 import { strict as assert } from 'assert';
-import { test } from 'node:test';
+import { test, beforeEach, afterEach } from 'node:test';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -11,6 +11,18 @@ import path from 'node:path';
 import { matchGuards, evaluateGate, approveAction, approveActionVerbal } from '../hooks/lib/action-gate.js';
 import { ensureKey, ensureNonce } from '../hooks/lib/gate-receipt.js';
 import { tempDir } from './helpers/temp-dir.js';
+
+// Task 3 (gate-message-i18n) wired userLine through t(), which several assertions below pin
+// as literal English text (e.g. the exact VERBAL go-ahead line, /blocked until the rule/).
+// This suite predates locale support and is meant to pin BEHAVIOR, not translated copy, so it
+// forces the locale rather than weakening those assertions — see tests/action-gate-i18n.test.js
+// for the suite that actually exercises zh output and the en regression pin.
+const ORIGINAL_LOCALE_FORCE = process.env.OWNMIND_LOCALE_FORCE;
+beforeEach(() => { process.env.OWNMIND_LOCALE_FORCE = 'en'; });
+afterEach(() => {
+  if (ORIGINAL_LOCALE_FORCE === undefined) delete process.env.OWNMIND_LOCALE_FORCE;
+  else process.env.OWNMIND_LOCALE_FORCE = ORIGINAL_LOCALE_FORCE;
+});
 
 const DEPLOY_GUARD = {
   id: 918,
