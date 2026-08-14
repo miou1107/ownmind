@@ -4,10 +4,17 @@
 
 修改：
 ```
-hooks/ownmind-tty-echo.cjs                      — formatBlock 改單行輸出：事件用 ┃ 串接、
-                                                   尾端冒號（全形半形皆收）去除。
-tests/ownmind-tty-echo.test.js                  — 合併測試改測單行契約（無換行、簽章只出現
-                                                   一次）；新增四種換行字元不得混入的測試。
+hooks/ownmind-tty-echo.cjs                      — formatBlock 改單行輸出：事件用 ┃ 串接
+                                                   （分隔符抽成 EVENT_SEPARATOR 常數）。
+                                                   extractBanners 比對前先把 \r／U+2028／
+                                                   U+2029／U+000B／U+0085 換成空白，修掉
+                                                   「訊息整則消失」與「字元溜進輸出」。
+                                                   新增 stripLabelColon()：只有整行僅一個
+                                                   冒號時才拿掉尾端冒號。
+tests/ownmind-tty-echo.test.js                  — 合併測試改測單行契約（無換行、簽章只有
+                                                   一行開頭符合）；新增換行字元測試，樣本
+                                                   內文真的帶那些字元，斷言訊息沒少、字元
+                                                   沒溜出去（拿掉修正會紅）。
 ```
 
 ## v1.26.172 修改（做事閘門第一步：閘門規範隨執行包下發 + 批准 CLI + PreToolUse 接線）
