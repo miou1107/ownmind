@@ -1,5 +1,50 @@
 # OwnMind 檔案結構
 
+## v1.30.3 修改（判回話的模型從隨機抽改成指定，並核對真的是那顆）
+
+新增：
+```
+src/lib/enforcement/judge-llm.js                — 指定判斷模型（gpt-oss-120b，只有一顆）、
+                                                   temperature 0、比對「要的跟實際回答的是
+                                                   不是同一顆」（switch 會加 openai/ 前綴，
+                                                   直接字串比會每次都誤報）。**沒有備援模型**
+                                                   ：唯一會被 switch 認的第二顆是
+                                                   mistral-small-latest，而它把 8 段合規回話
+                                                   全判違規；讓它接手等於在多數情況下給出
+                                                   有信心的錯答案，而且沒有任何紀錄分得出來。
+                                                   查不成就查不成，這件事是看得見、有紀錄、
+                                                   而且不會混進誤判率的。附 2026-08-15 對正式
+                                                   switch 的實測：71 個模型的池子含 OCR／
+                                                   語音／向量；正式機紀錄抓到 mistral-ocr
+                                                   在判規矩；auto 之下 16 次有 13 次是
+                                                   mistral-small-latest。
+tests/judge-llm.test.js                         — 指定、temperature、前綴比對、不換第二顆、
+                                                   預算不重複發放、剩餘時間不夠就不硬起一次
+                                                   （否則 5 毫秒的逾時會蓋掉真正的失敗原因）、
+                                                   程式自己寫錯不准當成「模型不回應」。
+tests/judge-default-adapter.test.js             — 從「判斷要哪顆」到「實際送出去的位元組」
+                                                   這一段：每支路由測試都注入自己的 llmFn，
+                                                   所以這段接縫原本一行測試都沒有。改成工廠
+                                                   函式讓它可測，只假造 fetch。
+```
+
+修改：
+```
+src/lib/llm-narrative.js                        — buildRequestBody 與 callLLMSwitch 收
+                                                   model / temperature；新增 onServed 讓
+                                                   呼叫端知道實際回答的是哪顆。預設值原封
+                                                   不動，寫敘述文那條路不受影響。
+src/routes/compliance.js                        — 判斷改走 judge-llm；switch 換掉指定模型
+                                                   時寫一行警告（不擋，但不能沒聲音）。指定
+                                                   的那顆被拒時在同一份時間預算內重送一次
+                                                   （這台 gateway 的 502 重送就會過），而不是
+                                                   換一顆判得比較差的來頂。
+tests/llm-narrative.test.js                     — 新參數有送出、沒給參數時維持原本行為、
+                                                   實際回答的模型拿得到。
+package.json / package-lock.json / README* / docs/README* — 1.30.2 → 1.30.3
+CHANGELOG.md / FILELIST.md                      — v1.30.3 條目
+```
+
 ## v1.30.2 修改（檢查沒跑成的時候講真正的原因 ＋ 失敗原因終於有地方存）
 
 新增：
