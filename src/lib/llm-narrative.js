@@ -71,11 +71,14 @@ export function buildMessages(narrativeData) {
  * refuses on the body it receives, so a check measuring anything else is measuring a
  * number nobody enforces. `callLLMSwitch` posts this and nothing else.
  */
-export function buildRequestBody(messages) {
+export function buildRequestBody(messages, { model = 'auto', temperature = 0.3 } = {}) {
   return JSON.stringify({
-    model: 'auto',
+    // Defaults are what the narrative writer has always sent, so it is untouched. The judge
+    // names its own model and pins temperature to 0 — see src/lib/enforcement/judge-llm.js for
+    // why 'auto' is the wrong answer for an audit.
+    model,
     response_format: { type: 'json_object' },
-    temperature: 0.3,
+    temperature,
     max_tokens: 2000,
     messages,
   });
@@ -139,6 +142,13 @@ export async function callLLMSwitch({
   overallTimeoutMs = 60_000,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = () => Date.now(),
+  // v1.30.3. Both default to what the narrative writer has always sent.
+  model,
+  temperature,
+  // The switch answers 200 while serving a different model than the one asked for — measured
+  // for gemini-2.0-flash, llama-3.3-70b and gpt-4o, all of which came back as
+  // mistral-small-latest. A caller that pins a model has to be able to find that out.
+  onServed,
 }) {
   if (!apiKey) throw new Error('LLM_SWITCH_API_KEY not set');
   if (!apiBase) throw new Error('OWNMIND_LLM_API_BASE not set (the OpenAI-compatible LLM endpoint base URL)');
@@ -177,7 +187,7 @@ export async function callLLMSwitch({
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           },
-          body: buildRequestBody(messages),
+          body: buildRequestBody(messages, { model, temperature }),
           signal: controller.signal,
         });
       } catch (err) {
@@ -220,6 +230,7 @@ export async function callLLMSwitch({
           { cause: err }
         );
       }
+      if (typeof onServed === 'function' && json?.model) onServed(json.model);
       const content = json?.choices?.[0]?.message?.content || '';
       return parseLLMJson(content);
     } catch (err) {

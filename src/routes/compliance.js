@@ -3,6 +3,7 @@ import { query as defaultQuery } from '../utils/db.js';
 import auth from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { callLLMSwitch } from '../lib/llm-narrative.js';
+import { createJudgeCaller } from '../lib/enforcement/judge-llm.js';
 import { buildReadableWhere } from '../utils/memory-visibility.js';
 import { attachStandardFragments } from '../utils/standard-fragments.js';
 import { selectRules } from '../lib/enforcement/select-rules.js';
@@ -34,15 +35,47 @@ const JUDGED_TYPES = ['iron_rule', 'team_standard', 'principle', 'coding_standar
  * undefined on every call, and would have recorded every check as failed while its tests -
  * which injected a string-returning stub - stayed green.
  */
-async function defaultLlm(messages) {
-  return callLLMSwitch({
-    apiKey: process.env.LLM_SWITCH_API_KEY,
-    messages,
+/**
+ * A factory rather than a constant so this seam can be exercised.
+ *
+ * Every route test injects its own `llmFn`, which means the adapter below — the `{parsed,
+ * served}` shape, the `onServed` closure, the warning wiring — had no test at all. That is the
+ * same shape as the defect the comment above describes: a seam nobody ran, with a green suite.
+ */
+export function createDefaultJudge({ fetchImpl, apiKey = () => process.env.LLM_SWITCH_API_KEY, warn } = {}) {
+  return createJudgeCaller({
     timeoutMs: JUDGE_TIMEOUT_MS,
-    retries: 0,
-    overallTimeoutMs: JUDGE_TIMEOUT_MS,
+    callLLM: async ({ model, temperature, timeoutMs, messages }) => {
+      let served;
+      const parsed = await callLLMSwitch({
+        apiKey: apiKey(),
+        messages,
+        ...(fetchImpl ? { fetchImpl } : {}),
+      model,
+      temperature,
+      timeoutMs,
+      // One replay, inside the same budget. There is no second-choice judge any more, so this
+      // is what a refusal gets — and it is the case retrying is actually for: measured on this
+      // gateway, the same body was refused four times in one window and then accepted on all
+      // six replays. The delay is short because the whole budget is four seconds; the default
+      // three-second pause would spend it on waiting.
+      retries: 1,
+      retryDelayMs: 250,
+      overallTimeoutMs: timeoutMs,
+        onServed: (m) => { served = m; },
+      });
+      return { parsed, served };
+    },
+    // Not fatal, and not silent either: the pin is the only thing keeping an OCR model out of
+    // this seat, and a pin the switch ignores has to be visible to whoever reads the logs
+    // rather than discovered again in six weeks.
+    onSubstitution: (asked, served) => {
+      (warn || logger.warn?.bind(logger))?.('compliance: judge model substituted by the switch', { asked, served });
+    },
   });
 }
+
+const defaultLlm = createDefaultJudge();
 
 export function createComplianceRouter({ queryFn = defaultQuery, llmFn = defaultLlm } = {}) {
   const router = Router();
