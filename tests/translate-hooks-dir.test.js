@@ -51,10 +51,12 @@ describe('resolveI18nDir', () => {
   });
 
   it('leaves an absolute --dir untouched regardless of cwd', () => {
-    assert.equal(
-      resolveI18nDir(['--dir', '/abs/path'], { cwd: '/repo' }),
-      '/abs/path'
-    );
+    // Absolute means absolute on the machine running this. `/abs/path` is absolute on POSIX
+    // and, on Windows, a rooted path with no drive — `path.resolve` supplies the current one
+    // and returns `C:\abs\path`, which is correct behaviour and made this the only assertion
+    // in the file that failed there.
+    const absolute = process.platform === 'win32' ? 'C:\\abs\\path' : '/abs/path';
+    assert.equal(resolveI18nDir(['--dir', absolute], { cwd: '/repo' }), absolute);
   });
 
   it('ignores an unrelated cwd override when --dir is absent (default never depends on cwd)', () => {

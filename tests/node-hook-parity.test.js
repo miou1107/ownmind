@@ -78,7 +78,7 @@ describe('node SessionStart hook — parity with the shell hook', () => {
     projectDir = tempDir('ownmind-proj-');
 
     stdout = await new Promise((resolve, reject) => {
-      execFile('node', [HOOK], {
+      const child = execFile('node', [HOOK], {
         env: {
           ...process.env,
           HOME: home,
@@ -89,6 +89,12 @@ describe('node SessionStart hook — parity with the shell hook', () => {
         },
         timeout: 25000,
       }, (err, out, stderr) => (err ? reject(new Error(`${err.message}\n${stderr}`)) : resolve(out)));
+      // The hook reads stdin to EOF whenever stdin is not a terminal, which is what Claude
+      // Code hands it. `execFile` opens a pipe and never closes it, so without this line the
+      // hook waits for a payload that will never arrive and every test below fails at the
+      // 25s timeout with no output and no error — measured on Windows 2026-08-15, ten tests
+      // across this file and node-hook-reports-init.
+      child.stdin.end(JSON.stringify({ session_id: 'parity', hook_event_name: 'SessionStart' }));
     });
   });
 
@@ -211,7 +217,7 @@ describe('node SessionStart hook — the update lock', () => {
 
   function runHook(home) {
     return new Promise((resolve) => {
-      execFile('node', [HOOK], {
+      const child = execFile('node', [HOOK], {
         env: {
           ...process.env,
           HOME: home,
@@ -221,6 +227,11 @@ describe('node SessionStart hook — the update lock', () => {
         },
         timeout: 25000,
       }, () => resolve());   // the hook must never fail the session; its exit code is not the subject
+      // Closed for the reason spelled out in the `before` hook above: an open stdin pipe is
+      // an indefinite wait, and the timeout that ends it looks exactly like a lock that was
+      // never released — which is what these tests are about, so the wrong diagnosis was one
+      // the failure actively invited.
+      child.stdin.end(JSON.stringify({ session_id: 'lock', hook_event_name: 'SessionStart' }));
     });
   }
 

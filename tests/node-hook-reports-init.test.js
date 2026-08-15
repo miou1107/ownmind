@@ -72,7 +72,7 @@ describe('node SessionStart hook — a successful load reaches the server', () =
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
 
     await new Promise((resolve, reject) => {
-      execFile('node', [HOOK], {
+      const child = execFile('node', [HOOK], {
         env: {
           ...process.env,
           HOME: home,
@@ -82,6 +82,11 @@ describe('node SessionStart hook — a successful load reaches the server', () =
         },
         timeout: 20000,
       }, (err, stdout, stderr) => (err ? reject(new Error(`${err.message}\n${stderr}`)) : resolve(stdout)));
+      // The hook reads stdin to EOF whenever stdin is not a terminal. `execFile` opens the
+      // pipe and never closes it, so without this the hook waits forever and the test fails
+      // at its timeout claiming the init endpoint was never called — which was true, and for
+      // a reason nothing in the failure pointed at.
+      child.stdin.end(JSON.stringify({ session_id: 'init-report', hook_event_name: 'SessionStart' }));
     });
 
     assert.ok(received.init >= 1, 'the hook never even called the init endpoint');

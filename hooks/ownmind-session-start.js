@@ -16,6 +16,11 @@ import { readCredentials, getClientVersion, resolveProjectName } from '../shared
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { queueUpdateBanner } from '../shared/update-banner.js';
 import { runConditionalSync } from './lib/conditional-sync.js';
+// From the CLI module, which is where this function already lives. Importing it is safe: that
+// file runs main() only when it is process.argv[1]. Importing rather than restating it is the
+// point — a second copy of the fetch-and-cache rule is how the two platforms drifted apart in
+// the first place.
+import { syncEnforcementBundle } from './lib/conditional-sync-cli.js';
 import { renderSessionContext } from './lib/render-session-context.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
 import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
@@ -326,6 +331,27 @@ async function main() {
   // v1.26.83 — everything the shell hook does around the load, and this one did not.
   drainSpools(apiUrl, apiKey);
   maybeCheckForUpdates(apiUrl, apiKey);
+
+  // The enforcement bundle — the selection keys, guard rules and injectable text every later
+  // hook reads locally to check a turn against the standards.
+  //
+  // This call lives in conditional-sync-cli.js as well, whose own comment reasons that the
+  // .sh hook is what "both platforms actually run" and that a sync written into the .js
+  // "would never execute on the machine it was written for". Both halves of that are true of
+  // macOS and Linux and neither is true here: Windows registers this file, and this file
+  // imports runConditionalSync directly rather than going through that CLI. So on Windows the
+  // bundle was never fetched, ~/.ownmind/cache/enforcement.json never existed, and every
+  // standards check reported "this machine has never synced" — correctly, and forever.
+  //
+  // Measured 2026-08-15 on Windows: the server returns a populated bundle to a direct request
+  // and the file was still absent after a clean session start into a fresh home.
+  //
+  // Ahead of the init sync and not gated on it, matching the CLI: the two have separate
+  // freshness windows and separate failure modes, and letting either decide the other would
+  // mean an unrelated outage quietly switching enforcement off.
+  try {
+    await syncEnforcementBundle(apiUrl, apiKey);
+  } catch { /* never block the load; syncEnforcementBundle already logs its own outcome */ }
 
   // v1.26.83 — conditional sync rather than an unconditional full download. Skips the
   // payload when the server's sync_token matches the cache (~95% of sessions), and stamps
