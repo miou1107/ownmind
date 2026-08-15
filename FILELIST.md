@@ -1,5 +1,38 @@
 # OwnMind 檔案結構
 
+## v1.30.4 修改（交接工具照自己的說明書呼叫會 400）
+
+新增：
+```
+mcp/lib/handoff-body.js                         — 決定一份交接紀錄可以缺什麼：from_tool 用
+                                                   CLIENT_TOOL 自己填、from_model 不編、
+                                                   project / content 不給預設。刻意照抄
+                                                   session-log-body.js 的判準而不是自己重想
+                                                   一套 —— 同一個決定在兩張表上必須一致。
+                                                   空白判定分兩種：被預設的欄位連空白字元
+                                                   都算「沒填」，被守門檢查的欄位只有空字串
+                                                   算，否則 content: "   " 會過了客戶端檢查
+                                                   卻在這裡被砍掉，換回一個伺服器的通用 400。
+tests/handoff-args.test.js                      — 12 條：預設、不覆蓋呼叫端給的值、不編造
+                                                   model、不砍守門放行的空白值，加上三條
+                                                   「宣告的合約要跟伺服器一致」——工具的
+                                                   required 清單、伺服器的 requireFields、
+                                                   以及 handler 必須走這個模組而不是就地組
+                                                   body（就地組正是這次漂掉的原因）。
+                                                   五種改壞方式逐一驗過會變紅。
+```
+
+修改：
+```
+src/routes/handoff.js                           — requireFields 從四欄改成 project / content
+                                                   兩欄，跟工具宣告的 required 與資料庫的
+                                                   可空欄位對齊（db/001_init.sql:76-87）。
+mcp/index.js                                    — handoff_create 改走 buildHandoffBody；
+                                                   原本就地組 body，只送呼叫端給的欄位。
+package.json / package-lock.json / README* / docs/README* — 1.30.3 → 1.30.4
+CHANGELOG.md / FILELIST.md                      — v1.30.4 條目
+```
+
 ## v1.30.3 修改（判回話的模型從隨機抽改成指定，並核對真的是那顆）
 
 新增：

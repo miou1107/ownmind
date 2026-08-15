@@ -29,6 +29,7 @@ import { getRandomTip } from '../shared/tips.js';
 import { hintsFromStandards } from '../shared/invocable-standards.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
+import { buildHandoffBody } from './lib/handoff-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { queueUpdateBanner } from '../shared/update-banner.js';
 import {
@@ -1214,10 +1215,14 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_handoff_create": {
-      const body = { project: args.project, content: args.content, sync_token: currentSyncToken };
-      if (args.from_tool !== undefined) body.from_tool = args.from_tool;
-      if (args.from_model !== undefined) body.from_model = args.from_model;
-      if (args.from_machine !== undefined) body.from_machine = args.from_machine;
+      // v1.30.4: the body is built by mcp/lib/handoff-body.js, which fills from_tool from
+      // CLIENT_TOOL and never invents from_model. Assembled inline, this sent exactly the
+      // fields the caller passed — so a call made the way the schema describes it arrived
+      // without two fields the endpoint then demanded. Same shape as bug #9, one table over.
+      const body = {
+        ...buildHandoffBody(args, { clientTool: CLIENT_TOOL }),
+        sync_token: currentSyncToken,
+      };
       const data = await callApi("POST", "/api/handoff", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
       logEvent('handoff_create', { project: args.project });
