@@ -7,8 +7,9 @@
  * What was wrong: the tool declared `project` and `content` required and the three `from_*`
  * fields optional, while POST /api/handoff required `project, from_tool, from_model, content`.
  * A caller that read the schema and sent the two required fields got a 400 and lost the
- * handoff, every time. The columns have been nullable since db/001_init.sql:76-87, so the
- * endpoint disagreed with its own storage as well as with its only client.
+ * handoff, every time. Every column on that table except `content` has been nullable since
+ * db/001_init.sql:76-87, so the endpoint disagreed with its own storage as well as with its
+ * only client.
  *
  * The rule:
  *

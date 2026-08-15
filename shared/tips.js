@@ -58,7 +58,12 @@ export const TIPS = [
   { text: 'Say "search my memory for X" and I will look through titles, content, tags and code', anchor: 'ownmind_search' },
   { text: 'Switching computers? Install OwnMind and all your memories sync — no need to re-teach the AI', anchor: 'ownmind_init' },
   { text: 'Ask "what is left on this project" and I will answer from that project\'s memory', anchor: 'ownmind_get' },
-  { text: 'Every handoff records the source tool and model so you can trace which AI made each decision', anchor: 'ownmind_handoff_create' },
+  // v1.30.4: this said the model was always recorded. It was true only because the endpoint
+  // refused any handoff without one — which is the bug that release fixed. Nothing in the MCP
+  // process knows the model, so it is now recorded when the AI names it and left unreported
+  // otherwise. A tip is a claim about the product in the product's own voice; this one has to
+  // match what the column will actually contain.
+  { text: 'Every handoff records which tool it came from — and the model too, when the AI names it', anchor: 'ownmind_handoff_create' },
   { text: 'Ask "how did this iron rule originate" and I will show you the full incident background', anchor: 'ownmind_get' },
   // Phrased around what the user does, not around what the detector catches. The write-time
   // secret scan is conservative by design (shared/secret-detect.js prefers a miss to a wrong

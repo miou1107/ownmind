@@ -19,16 +19,32 @@ tests/handoff-args.test.js                      — 12 條：預設、不覆蓋�
                                                    required 清單、伺服器的 requireFields、
                                                    以及 handler 必須走這個模組而不是就地組
                                                    body（就地組正是這次漂掉的原因）。
-                                                   五種改壞方式逐一驗過會變紅。
+                                                   另外兩條來自 code review：客戶端守門檢查
+                                                   與這個模組的空白判定必須逐值一致（照抄
+                                                   session-log 那份，只寫一個手寫例子擋不住
+                                                   守門那邊被改嚴）、以及「沒有任何一句話跟
+                                                   使用者說模型一定有記到」。八種改壞方式
+                                                   逐一驗過會變紅。
 ```
 
 修改：
 ```
 src/routes/handoff.js                           — requireFields 從四欄改成 project / content
                                                    兩欄，跟工具宣告的 required 與資料庫的
-                                                   可空欄位對齊（db/001_init.sql:76-87）。
+                                                   可空欄位對齊（db/001_init.sql:76-87，
+                                                   content 以外都可空）。
 mcp/index.js                                    — handoff_create 改走 buildHandoffBody；
                                                    原本就地組 body，只送呼叫端給的欄位。
+                                                   from_tool / from_model 的說明文字改成跟
+                                                   log_session 同一套講法：能講出模型名稱就
+                                                   填，填不出來記成「未回報」而不是猜一個
+                                                   —— 只寫「選填」那一欄會永遠是空的。
+shared/tips.js                                  — 那句「每次交接都會記下來源工具與模型」
+                                                   本來只因為伺服器硬性要求才成立，而那正是
+                                                   這次修掉的東西。改成講實際會發生的事。
+client/src/pages/Portal/HandoffsPage.jsx        — 三個來源欄位都空的時候不要留一個「來源：」
+                                                   在那邊懸空（伺服器不再強制 from_tool 之後
+                                                   這種資料才變得可能出現）。
 package.json / package-lock.json / README* / docs/README* — 1.30.3 → 1.30.4
 CHANGELOG.md / FILELIST.md                      — v1.30.4 條目
 ```

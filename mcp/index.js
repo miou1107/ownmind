@@ -594,8 +594,12 @@ const TOOLS = [
       properties: {
         project: { type: "string", description: "Project name" },
         content: { type: "string", description: "Handoff content" },
-        from_tool: { type: "string", description: "Source tool name (optional)" },
-        from_model: { type: "string", description: "Source model name (optional)" },
+        // v1.30.4: worded like ownmind_log_session's, which is the same decision on the same
+        // two fields. Left as a bare "(optional)", `from_model` would go permanently empty —
+        // an AI that can name its own model has no reason to volunteer it, and the console
+        // groups handoffs by that column.
+        from_tool: { type: "string", description: "(optional) Source tool name (e.g., claude-code, cursor, codex). Defaults to the tool hosting this MCP." },
+        from_model: { type: "string", description: "(optional) Source model name (e.g., claude-opus-5, gpt-5). Supply it when you know it; it is recorded as unreported rather than guessed." },
         from_machine: { type: "string", description: "Source machine name (optional)" },
       },
       required: ["project", "content"],

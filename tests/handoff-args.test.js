@@ -22,6 +22,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHandoffBody } from '../mcp/lib/handoff-body.js';
+import { findMissingArgs } from '../mcp/lib/required-args.js';
+import { TIPS } from '../shared/tips.js';
 
 describe('buildHandoffBody — what actually goes to the server', () => {
   const clientTool = 'cursor';
@@ -133,9 +135,74 @@ describe('the declared contract matches what the server enforces', () => {
     const mcp = read('mcp/index.js');
     const from = mcp.indexOf('case "ownmind_handoff_create"');
     assert.ok(from > 0);
-    const block = mcp.slice(from, mcp.indexOf('case "ownmind_handoff_accept"'));
+    // Bounded the same way as the block above: an unguarded indexOf returns -1 if the accept
+    // case is ever renamed, and slice(from, -1) then runs these assertions over most of the
+    // file instead of over this handler.
+    const next = mcp.indexOf('case "ownmind_handoff_accept"', from + 10);
+    const block = mcp.slice(from, next > from ? next : undefined);
     assert.match(block, /buildHandoffBody\(/, 'the handler must build its body through the shared module');
-    assert.doesNotMatch(block, /args\.from_model/,
+    // Both access forms: `args.from_model` and `args["from_model"]` are the same inline
+    // assembly, and pinning only the dot form leaves the other one a silent way back in.
+    assert.doesNotMatch(block, /args\s*(\.\s*from_model|\[\s*["']from_model["']\s*\])/,
       'reading from_model straight off args is the inline assembly this replaced');
+  });
+});
+
+describe('the builder never strips what the guard let through', () => {
+  // Copied from tests/session-log-args.test.js, and the reason it is copied rather than
+  // summarised: the invariant is a relationship between two modules, so only a test that
+  // imports both can hold it. Pinned by one hand-written example instead, a later tightening
+  // of isMissingValue would turn the session-log test red and leave this one green — and
+  // `content: "   "` would silently regain the pass-the-guard-then-generic-400 loop that
+  // handoff-body.js exists to prevent.
+  const clientTool = 'claude-code';
+
+  it('the two rules agree on every value the guard is asked about', () => {
+    for (const v of ['', '   ', 'x', null, undefined]) {
+      for (const field of ['project', 'content']) {
+        const args = { project: 'p', content: 'c', [field]: v };
+        const guardSaysMissing = findMissingArgs('ownmind_handoff_create', args, ['project', 'content']).length > 0;
+        const builderDropsIt = !(field in buildHandoffBody(args, { clientTool }));
+        assert.equal(
+          builderDropsIt, guardSaysMissing,
+          `${field}=${JSON.stringify(v)}: guard and builder must agree, or the call fails at the server`,
+        );
+      }
+    }
+  });
+
+  it('but a blank from_tool still falls back — the guard does not enforce that one', () => {
+    assert.equal(buildHandoffBody({ project: 'p', content: 'c', from_tool: '   ' }, { clientTool }).from_tool, clientTool);
+  });
+});
+
+describe('nothing tells the user the model is always recorded', () => {
+  // A tip is a claim about the product, in the product's own voice (shared/tips.js header).
+  // Before this change the endpoint refused any handoff without a model, so "every handoff
+  // records the source tool and model" was true of every row that existed. It is not true of
+  // rows created from now on, and tests/tips-list.test.js only checks that a tip's anchor
+  // names a registered tool — so the false claim shipped green.
+  //
+  // Pinned as a relationship rather than as wording: whenever buildHandoffBody can return a
+  // body with no from_model, no handoff tip may mention the model without a condition.
+
+  it('the builder is still able to produce a handoff with no model', () => {
+    // The premise the assertion below depends on. If this ever stops being true, that test
+    // is guarding nothing and should be revisited rather than left passing.
+    assert.ok(!('from_model' in buildHandoffBody({ project: 'p', content: 'c' }, { clientTool: 'claude-code' })));
+  });
+
+  it('so no handoff tip states it unconditionally', () => {
+    const claimsModel = /\bmodels?\b/i;
+    const conditional = /\bwhen\b|\bif\b|\bunless\b/i;
+    const handoffTips = TIPS.filter((tip) => String(tip.anchor).includes('handoff'));
+    assert.ok(handoffTips.length > 0, 'no handoff tips found — the filter has stopped matching');
+    for (const tip of handoffTips) {
+      if (!claimsModel.test(tip.text)) continue;
+      assert.match(
+        tip.text, conditional,
+        `"${tip.text}" promises the model is recorded; the code records it only when the AI names it`,
+      );
+    }
   });
 });
