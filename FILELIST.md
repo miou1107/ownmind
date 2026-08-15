@@ -1,5 +1,47 @@
 # OwnMind 檔案結構
 
+## v1.30.5 修改（沒人跑的那一半）
+
+新增：
+```
+tests/windows-session-start-syncs-enforcement.test.js
+                                                — 驗 Windows 註冊的那支開場程式會下載並寫出
+                                                   規範檢查包。三案：有去要、有寫到後續掛鉤
+                                                   會讀的位置、以及伺服器連不上時開場仍然成功。
+                                                   已拿改動前的程式驗過：三案紅兩案。
+
+tests/no-file-url-concatenation.test.js         — 禁止用字串拼 file:// 網址，違反就指名檔案
+                                                   跟行號。並且分平台各驗一次自己的前提：
+                                                   Windows 上兩種寫法真的不同、Mac 上真的相同
+                                                   （後者才是這條規則會被當成多此一舉的原因）。
+                                                   註解裡示範錯誤寫法不算違規——否則每個修好的
+                                                   地方就沒辦法解釋自己。
+```
+
+修改（產品）：
+```
+hooks/ownmind-session-start.js                  — 補上規範檢查包的同步。引用既有函式而不是
+                                                   自己再寫一份——再寫一份正是兩個平台走散的原因
+client/src/scripts/translate.mjs                — 判斷「是否被直接執行」改用 pathToFileURL。
+                                                   原本的字串拼法在 Windows 上永遠不成立，
+                                                   整支腳本變成回報成功的空轉
+hooks/lib/sync-memory-files.js                  — 同一行的第二份。沒出事只因為 Windows 上
+                                                   沒人用命令列叫它，一併改掉
+```
+
+修改（測試，全部是 Windows 上不可能過的寫法）：
+```
+tests/node-hook-parity.test.js                  — 三處啟動掛鉤時關閉輸入（原本 10 條各卡 25 秒）
+tests/node-hook-reports-init.test.js            — 同上
+tests/real-db-lock.test.js                      — 路徑改用檔案網址、PATH 用正確分隔符號、
+                                                   Windows 上改寫批次檔假 docker；最後仍在
+                                                   Windows 標示跳過並寫明理由（Node 叫不動 .cmd，
+                                                   而且該輔助程式還用了 ls 與 cat）
+tests/gate-provisioning.test.js                 — 權限改驗 Windows 能保證的「不可寫」，
+                                                   並在同處寫明它保證不了的事
+tests/translate-hooks-dir.test.js               — 「絕對路徑」以執行當下的平台為準
+```
+
 ## v1.30.4 修改（交接工具照自己的說明書呼叫會 400）
 
 新增：

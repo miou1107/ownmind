@@ -83,7 +83,21 @@ test('a session start provisions key, nonce and current-session', () => {
   const stateDir = stateDirOf(home);
   const keyPath = path.join(stateDir, 'gate.key');
   assert.ok(fs.existsSync(keyPath), 'gate.key must exist after session start');
-  assert.equal(fs.statSync(keyPath).mode & 0o777, 0o400, 'gate.key must be mode 0400');
+  // Windows has no POSIX mode bits. Node maps the single read-only attribute it does have to
+  // 0o444, so `chmod(0o400)` there produces 444 and this asserted a number the platform cannot
+  // produce — the one failure in this file on Windows, and it read as a missing chmod rather
+  // than as an absent feature.
+  //
+  // What is asserted instead is what Windows can actually guarantee: the file is not writable.
+  // What it cannot guarantee is the other half of 0400 — on Windows the key stays readable by
+  // other accounts on the machine, and protecting it there needs an ACL, not a mode. That is a
+  // real gap and it is stated here rather than hidden behind a relaxed number.
+  const mode = fs.statSync(keyPath).mode & 0o777;
+  if (process.platform === 'win32') {
+    assert.equal(mode & 0o222, 0, `gate.key must not be writable (mode ${mode.toString(8)})`);
+  } else {
+    assert.equal(mode, 0o400, 'gate.key must be mode 0400');
+  }
 
   const nonce = fs.readFileSync(path.join(stateDir, 'gate-nonce-prov-1'), 'utf8');
   assert.match(nonce, HEX_NONCE, 'the session nonce is 16 random bytes as lowercase hex');

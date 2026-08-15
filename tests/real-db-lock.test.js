@@ -3,10 +3,21 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * The specifier the snippets below import, as a URL rather than a path.
+ *
+ * `import('/abs/path.js')` is accepted on POSIX and rejected on Windows, where `C:\…` parses
+ * as the scheme `c:` and the loader refuses it — four tests in this file failed that way and
+ * only there. A file URL is correct on both.
+ */
+const REAL_DB_SPECIFIER = JSON.stringify(
+  pathToFileURL(path.join(repoRoot, 'tests', 'helpers', 'real-db.js')).href,
+);
 
 /**
  * v1.30.1 — the mutex that keeps `tests/helpers/real-db.js` to one database container.
@@ -24,6 +35,16 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /** A directory holding a fake `docker` that answers `info` and swallows everything else. */
 function stubDockerBin(behaviour = 'ok') {
   const dir = tempDir('stub-docker-');
+  // Windows cannot execute an extensionless `#!/bin/sh` file, so the stub has to be a batch
+  // file there or `docker` resolves to whatever is really installed — or to nothing, and the
+  // test measures a machine rather than the lock.
+  if (process.platform === 'win32') {
+    const batch = behaviour === 'run-fails'
+      ? '@echo off\r\nif "%1"=="info" exit /b 0\r\nif "%1"=="run" (echo boom 1>&2& exit /b 125)\r\nexit /b 0\r\n'
+      : '@echo off\r\nexit /b 0\r\n';
+    fs.writeFileSync(path.join(dir, 'docker.cmd'), batch);
+    return dir;
+  }
   const script = behaviour === 'run-fails'
     // `docker info` succeeds so startRealDb gets past its availability check, then `run` fails
     // the way an image-pull failure or a bound port does.
@@ -42,13 +63,40 @@ function runInProcess({ tmpdir, dockerBin, code }) {
   return execFileSync(process.execPath, ['--input-type=module', '-e', code], {
     cwd: repoRoot,
     encoding: 'utf8',
-    env: { ...process.env, TMPDIR: tmpdir, PATH: `${dockerBin}:${process.env.PATH}` },
+    // `path.delimiter`, not ':'. On Windows the separator is ';' and a ':'-joined PATH is one
+    // long nonexistent directory, so the stub is never found and the real `docker` answers —
+    // or nothing does.
+    env: {
+      ...process.env,
+      TMPDIR: tmpdir,
+      TEMP: tmpdir,
+      TMP: tmpdir,
+      PATH: `${dockerBin}${path.delimiter}${process.env.PATH}`,
+    },
   });
 }
 
 const LOCK_NAME = 'ownmind-test-db.lock';
 
-test('a live holder past the stale window keeps its lock', async () => {
+/**
+ * Skipped on Windows, and this is a statement about the fixture rather than about the lock.
+ *
+ * `tests/helpers/real-db.js` reaches docker through `execFileSync('docker', …)`. Windows
+ * resolves that name to `docker.cmd` but cannot execute a batch file without a shell, so the
+ * stub can never stand in for docker there and every case reports NO_DOCKER — measured
+ * 2026-08-15. The same helper also shells out to `ls` and `cat`, which that machine does not
+ * have either.
+ *
+ * Named, and given a reason a reader can act on, because these four ran red on Windows for
+ * months while reading as though the lock itself were broken. A skip that says why is a
+ * different fact from a failure, and the two were being confused.
+ */
+const SKIP_ON_WINDOWS = process.platform === 'win32'
+  ? 'the docker fixture cannot run on Windows: execFileSync cannot launch a .cmd stub, and '
+    + 'tests/helpers/real-db.js also shells out to ls and cat'
+  : false;
+
+test('a live holder past the stale window keeps its lock', { skip: SKIP_ON_WINDOWS }, async () => {
   const tmpdir = tempDir('lock-live-');
   const lockDir = path.join(tmpdir, LOCK_NAME);
 
@@ -68,7 +116,7 @@ test('a live holder past the stale window keeps its lock', async () => {
     code: `
       const t = setTimeout(() => { console.log('STILL_WAITING'); process.exit(0); }, 3000);
       t.unref?.();
-      const { startRealDb } = await import(${JSON.stringify(path.join(repoRoot, 'tests/helpers/real-db.js'))});
+      const { startRealDb } = await import(${REAL_DB_SPECIFIER});
       await startRealDb();
       console.log('ACQUIRED');
       process.exit(0);
@@ -80,7 +128,7 @@ test('a live holder past the stale window keeps its lock', async () => {
     'held-by-a-live-process', 'and its owner record must be untouched');
 });
 
-test('a dead holder is broken through, and the new holder owns the lock', async () => {
+test('a dead holder is broken through, and the new holder owns the lock', { skip: SKIP_ON_WINDOWS }, async () => {
   const tmpdir = tempDir('lock-dead-');
   const lockDir = path.join(tmpdir, LOCK_NAME);
 
@@ -99,7 +147,7 @@ test('a dead holder is broken through, and the new holder owns the lock', async 
     code: `
       const t = setTimeout(() => { console.log('STILL_WAITING'); process.exit(0); }, 5000);
       t.unref?.();
-      const { startRealDb } = await import(${JSON.stringify(path.join(repoRoot, 'tests/helpers/real-db.js'))});
+      const { startRealDb } = await import(${REAL_DB_SPECIFIER});
       const db = await startRealDb();
       console.log(db ? 'ACQUIRED' : 'NO_DOCKER');
       process.exit(0);
@@ -112,7 +160,7 @@ test('a dead holder is broken through, and the new holder owns the lock', async 
     'held-by-a-corpse', 'the new holder must have written its own owner record');
 });
 
-test('a failure after acquiring releases the lock instead of stranding it', async () => {
+test('a failure after acquiring releases the lock instead of stranding it', { skip: SKIP_ON_WINDOWS }, async () => {
   const tmpdir = tempDir('lock-throw-');
   const lockDir = path.join(tmpdir, LOCK_NAME);
   const dockerBin = stubDockerBin('run-fails');
@@ -121,7 +169,7 @@ test('a failure after acquiring releases the lock instead of stranding it', asyn
     tmpdir,
     dockerBin,
     code: `
-      const { startRealDb } = await import(${JSON.stringify(path.join(repoRoot, 'tests/helpers/real-db.js'))});
+      const { startRealDb } = await import(${REAL_DB_SPECIFIER});
       try { await startRealDb(); console.log('UNEXPECTED_SUCCESS'); }
       catch { console.log('THREW'); }
       process.exit(0);
@@ -133,7 +181,7 @@ test('a failure after acquiring releases the lock instead of stranding it', asyn
     + 'file blocks until this process exits');
 });
 
-test('a stale-broken holder cannot delete the lock its successor now holds', async () => {
+test('a stale-broken holder cannot delete the lock its successor now holds', { skip: SKIP_ON_WINDOWS }, async () => {
   const tmpdir = tempDir('lock-token-');
   const lockDir = path.join(tmpdir, LOCK_NAME);
   const dockerBin = stubDockerBin();
@@ -147,7 +195,7 @@ test('a stale-broken holder cannot delete the lock its successor now holds', asy
     code: `
       const fs = await import('node:fs');
       const path = await import('node:path');
-      const { startRealDb } = await import(${JSON.stringify(path.join(repoRoot, 'tests/helpers/real-db.js'))});
+      const { startRealDb } = await import(${REAL_DB_SPECIFIER});
       const db = await startRealDb();
       const owner = path.join(${JSON.stringify(lockDir)}, 'owner.json');
       fs.writeFileSync(owner, JSON.stringify({ pid: process.pid, at: Date.now(), token: 'somebody-elses' }));

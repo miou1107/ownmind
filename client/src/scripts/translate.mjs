@@ -31,7 +31,7 @@
 //   the very first run rather than needing every scaffold file created by hand first.
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join, resolve } from 'path';
 import { createHash } from 'crypto';
 
@@ -236,7 +236,14 @@ async function main() {
 
 // Only run the CLI when this file is the process entry point, not when it is imported (e.g.
 // from tests, to reuse parseDirArg / resolveI18nDir / applyOverride as pure functions).
-const isMainModule = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+//
+// `pathToFileURL`, not string concatenation. `file://` + an argv path is correct on POSIX by
+// accident — the leading slash of `/repo/…` supplies the third slash — and wrong on Windows,
+// where argv[1] is `C:\…` and the comparison can never be true. The consequence there was not
+// an error: the script ran, matched nothing, printed nothing and exited 0, so every caller was
+// told it had succeeded. Measured on Windows 2026-08-15.
+const isMainModule = process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMainModule) {
   main().catch((err) => {
     console.error('Translation script error:', err.message);

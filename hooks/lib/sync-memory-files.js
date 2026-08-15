@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 const SYNCABLE_TYPES = ['iron_rule', 'project', 'feedback'];
 const TYPE_LABELS = {
@@ -412,6 +413,12 @@ async function main() {
   syncMemoryFiles({ memoryDir, data });
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// `pathToFileURL`, not `file://` + argv. The concatenation is right on POSIX only because the
+// leading slash of `/repo/…` happens to supply the URL's third slash; on Windows argv[1] is
+// `C:\…` and the comparison is never true, so the CLI silently does nothing and exits 0. Only
+// ownmind-session-start.sh runs this file that way today, and that hook is macOS and Linux —
+// so this one was correct by luck rather than by rule. The same line in
+// client/src/scripts/translate.mjs was not, and made that script a no-op on Windows.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(() => process.exit(0));
 }
