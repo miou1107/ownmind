@@ -113,9 +113,16 @@ export default function HandoffsPage() {
                   <h2 className="font-medium text-slate-900 break-all">
                     {h.project || `#${h.id}`}
                   </h2>
+                  {/* v1.30.4: the label is dropped rather than left dangling. from_tool stopped
+                      being server-required, so a row with all three source fields empty is now
+                      reachable and rendered as "來源：· 2026/08/15" — a label with nothing after
+                      it. Omitting the whole prefix reads correctly in all three languages and
+                      needs no new string. */}
                   <p className="mt-1 text-xs text-slate-500">
-                    {t('handoffs.from_label')}：
-                    {[h.from_tool, h.from_model, h.from_machine].filter(Boolean).join(' / ')} ·{' '}
+                    {(() => {
+                      const from = [h.from_tool, h.from_model, h.from_machine].filter(Boolean).join(' / ');
+                      return from ? `${t('handoffs.from_label')}：${from} · ` : '';
+                    })()}
                     {fmtDate(h.created_at, locale)}
                   </p>
                 </div>

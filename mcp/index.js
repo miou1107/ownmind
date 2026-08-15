@@ -29,6 +29,7 @@ import { getRandomTip } from '../shared/tips.js';
 import { hintsFromStandards } from '../shared/invocable-standards.js';
 import { findMissingArgs, buildMissingArgsError } from './lib/required-args.js';
 import { buildSessionLogBody } from './lib/session-log-body.js';
+import { buildHandoffBody } from './lib/handoff-body.js';
 import { writeSessionOffState, clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { queueUpdateBanner } from '../shared/update-banner.js';
 import {
@@ -593,8 +594,12 @@ const TOOLS = [
       properties: {
         project: { type: "string", description: "Project name" },
         content: { type: "string", description: "Handoff content" },
-        from_tool: { type: "string", description: "Source tool name (optional)" },
-        from_model: { type: "string", description: "Source model name (optional)" },
+        // v1.30.4: worded like ownmind_log_session's, which is the same decision on the same
+        // two fields. Left as a bare "(optional)", `from_model` would go permanently empty —
+        // an AI that can name its own model has no reason to volunteer it, and the console
+        // groups handoffs by that column.
+        from_tool: { type: "string", description: "(optional) Source tool name (e.g., claude-code, cursor, codex). Defaults to the tool hosting this MCP." },
+        from_model: { type: "string", description: "(optional) Source model name (e.g., claude-opus-5, gpt-5). Supply it when you know it; it is recorded as unreported rather than guessed." },
         from_machine: { type: "string", description: "Source machine name (optional)" },
       },
       required: ["project", "content"],
@@ -1214,10 +1219,14 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_handoff_create": {
-      const body = { project: args.project, content: args.content, sync_token: currentSyncToken };
-      if (args.from_tool !== undefined) body.from_tool = args.from_tool;
-      if (args.from_model !== undefined) body.from_model = args.from_model;
-      if (args.from_machine !== undefined) body.from_machine = args.from_machine;
+      // v1.30.4: the body is built by mcp/lib/handoff-body.js, which fills from_tool from
+      // CLIENT_TOOL and never invents from_model. Assembled inline, this sent exactly the
+      // fields the caller passed — so a call made the way the schema describes it arrived
+      // without two fields the endpoint then demanded. Same shape as bug #9, one table over.
+      const body = {
+        ...buildHandoffBody(args, { clientTool: CLIENT_TOOL }),
+        sync_token: currentSyncToken,
+      };
       const data = await callApi("POST", "/api/handoff", body);
       if (data.sync_token) currentSyncToken = data.sync_token;
       logEvent('handoff_create', { project: args.project });
