@@ -124,6 +124,59 @@ describe('callLLMSwitch', () => {
     assert.equal(out.summary_one_line, 'hi');
   });
 
+  // v1.30.3 — the judge has to be able to name its model and pin its temperature, and to find
+  // out which model actually answered. The switch substitutes silently: asking it for
+  // gemini-2.0-flash, llama-3.3-70b or gpt-4o all came back served by mistral-small-latest,
+  // HTTP 200, no hint. Everything below defaults to what the narrative writer already sent, so
+  // that caller is unchanged.
+  it('sends the model and temperature it is given', async () => {
+    let sent = null;
+    await callLLMSwitch({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'x' }],
+      model: 'gpt-oss-120b',
+      temperature: 0,
+      fetchImpl: async (_u, opts) => {
+        sent = JSON.parse(opts.body);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: '{}' } }] }) };
+      },
+      apiBase: 'https://example.com/llm-switch/v1',
+    });
+    assert.equal(sent.model, 'gpt-oss-120b');
+    assert.equal(sent.temperature, 0);
+  });
+
+  it('still sends what it always sent when nothing is given', async () => {
+    let sent = null;
+    await callLLMSwitch({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'x' }],
+      fetchImpl: async (_u, opts) => {
+        sent = JSON.parse(opts.body);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: '{}' } }] }) };
+      },
+      apiBase: 'https://example.com/llm-switch/v1',
+    });
+    assert.equal(sent.model, 'auto');
+    assert.equal(sent.temperature, 0.3);
+  });
+
+  it('reports which model actually answered, which is not always the one asked for', async () => {
+    const served = [];
+    await callLLMSwitch({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'x' }],
+      model: 'gpt-4o',
+      onServed: (m) => served.push(m),
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ model: 'mistral-small-latest', choices: [{ message: { content: '{}' } }] }),
+      }),
+      apiBase: 'https://example.com/llm-switch/v1',
+    });
+    assert.deepEqual(served, ['mistral-small-latest']);
+  });
+
   it('non-2xx upstream throws Error including the status', async () => {
     const fakeFetch = async () => ({
       ok: false,
