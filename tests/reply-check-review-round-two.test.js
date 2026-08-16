@@ -410,3 +410,40 @@ test('the two hooks still run, end to end, after all of the above', () => {
   assert.ok(Date.now() - started < 10_000, 'the Stop hook waited on the judge');
   assert.equal(listVerdicts('round-two', path.join(home, '.ownmind', 'state')).length, 1);
 });
+
+// ------------------------------ installed but unstartable is its own repair
+
+test('a CLI that is there but cannot be started is not told to update OwnMind', async () => {
+  // The Windows fix taught the judge to tell "installed in a shape I cannot launch" apart
+  // from "not installed" — and then had nowhere to say it, so it fell through to the generic
+  // line: re-run the OwnMind update script. That script installs OwnMind. It cannot touch
+  // Claude Code's own install, which is the thing that is wrong.
+  const out = await collectVerdict(one({
+    outcome: 'failed', failure: 'bad-cli-shape',
+    reason: 'claude is installed but cannot be started from here: ...claude.cmd is a shim this cannot unwrap',
+  }));
+  assert.match(out.banner, /Claude Code/);
+  assert.doesNotMatch(out.banner, /update script/,
+    'the repair named must be one that can work');
+  assert.doesNotMatch(out.banner, /cmd|shim|unwrap/,
+    'the shape of the install is not a sentence for a person');
+});
+
+test('every failure the judge can produce has a sentence of its own', async () => {
+  // Grown, not listed. `bad-cli-shape` reached the user as the generic "re-run the update
+  // script" because a new failure kind was added in one file and the family that speaks to
+  // the user lives in another — and nothing connected them. A hand-written list here would
+  // have been extended by the same person who forgot the first time.
+  const source = fs.readFileSync(path.join(repoRoot, 'hooks', 'lib', 'local-judge.js'), 'utf8');
+  const kinds = [...source.matchAll(/failure: '([a-z-]+)'|failure: \w+ \? '([a-z-]+)' : '([a-z-]+)'/g)]
+    .flatMap((m) => [m[1], m[2], m[3]])
+    .filter(Boolean);
+  assert.ok(kinds.length >= 4, `found only ${kinds.length} failure kinds; the scan has stopped working`);
+
+  const generic = await collectVerdict(one({ outcome: 'failed', failure: 'a-kind-nobody-named' }));
+  for (const kind of new Set(kinds)) {
+    const out = await collectVerdict(one({ outcome: 'failed', failure: kind, reason: 'x' }));
+    assert.notEqual(out.banner, generic.banner,
+      `"${kind}" falls through to the generic notice — it needs a sentence in verdict-collect.js`);
+  }
+});
