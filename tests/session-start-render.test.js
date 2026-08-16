@@ -1,7 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const { renderSessionContext } = await import('../hooks/lib/render-session-context.js');
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 describe('renderSessionContext — broadcasts', () => {
   it('no broadcasts → output omits the notification section', () => {
@@ -32,6 +37,53 @@ describe('renderSessionContext — broadcasts', () => {
     assert.match(out, /defer for 24 hours/);
   });
 
+  it('a long broadcast keeps its lines, and says so when it does cut', () => {
+    // Bug #26. The body went through `.split('\n').slice(0, 5).join(' ').slice(0, 400)` —
+    // three lossy operations in one line, none of them announced. A team standard posted as a
+    // ten-line notice arrived as one run-on sentence stopping mid-word, and neither the person
+    // who wrote it nor the person reading it could tell anything was missing. The cap itself is
+    // fine; a cap that lies about being a cap is not.
+    const body = Array.from({ length: 12 }, (_, i) => `第 ${i + 1} 行：這一行要看得到`).join('\n');
+    const out = renderSessionContext({}, [{ title: 't', body, severity: 'info' }], { tip: () => '' });
+
+    assert.match(out, /第 6 行/, 'the sixth line was dropped and nobody was told');
+    assert.match(out, /第 12 行/, 'the last line was dropped and nobody was told');
+    assert.doesNotMatch(out, /第 1 行：這一行要看得到 第 2 行/,
+      'the lines were joined into one run-on sentence');
+  });
+
+  it('a body past the cap is cut, and the cut is stated', () => {
+    // The cap stays — an admin pasting a whole document must not flood every session start.
+    // What changes is that being cut is visible, the way "N more broadcast(s) not shown"
+    // already is for the broadcast list right below it.
+    const body = 'x'.repeat(5000);
+    const out = renderSessionContext({}, [{ title: 't', body, severity: 'info' }], { tip: () => '' });
+    assert.match(out, /沒顯示|not shown/, 'it was cut and said nothing about it');
+  });
+
+  it('nothing the server would accept gets cut here', () => {
+    // The server refuses a body over 2000 characters. If this side cut earlier than that, an
+    // admin could write a broadcast the server accepted and every member would silently
+    // receive less of it — which is bug #26 exactly, just with different numbers. Read from
+    // the server's own validator so the two cannot drift apart.
+    const validator = fs.readFileSync(path.join(repoRoot, 'src', 'routes', 'broadcast.js'), 'utf8');
+    const m = validator.match(/body\.body\.length > (\d+)/);
+    assert.ok(m, "the server's body limit could not be found — this check has stopped working");
+    const serverMax = Number(m[1]);
+
+    const body = 'a'.repeat(serverMax);
+    const out = renderSessionContext({}, [{ title: 't', body, severity: 'info' }], { tip: () => '' });
+    assert.doesNotMatch(out, /沒顯示/,
+      `the server accepts ${serverMax} characters and this cut a body that size`);
+  });
+
+  it('a short broadcast is not marked as cut', () => {
+    // The control: a truthful "nothing was cut" has to be distinguishable from the notice.
+    const out = renderSessionContext({}, [{ title: 't', body: '兩行\n就這樣', severity: 'info' }], { tip: () => '' });
+    assert.match(out, /就這樣/);
+    assert.doesNotMatch(out, /沒顯示/, 'nothing was cut, so nothing may claim it was');
+  });
+
   it('renders at most 3 broadcasts; the rest are summarized', () => {
     const many = Array.from({ length: 5 }, (_, i) => ({
       title: `廣播 ${i}`, body: 'x'.repeat(50), severity: 'info'
@@ -43,23 +95,27 @@ describe('renderSessionContext — broadcasts', () => {
     assert.match(out, /2 more broadcast\(s\) not shown/);
   });
 
-  it('body longer than 400 chars is truncated to keep context from exploding', () => {
-    const longBody = 'x'.repeat(1000);
+  it('a body is still capped, so one broadcast cannot flood every session', () => {
+    // The cap survives the bug-#26 fix: a broadcast is pasted into every member's session
+    // start, so an admin pasting a document must not cost everybody their context. What the
+    // fix changed is that being cut is now stated, not that cutting stopped.
+    const longBody = 'x'.repeat(20000);
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '長廣播', body: longBody, severity: 'info'
     }]);
-    // After 400-char truncation, the full 1000 chars must not be present.
-    assert.ok(out.length < 2000, 'total output should not exceed 2000 chars');
+    assert.ok(out.length < 6000, `one broadcast produced ${out.length} characters of context`);
   });
 
-  it('multi-line body folds into 5 lines or fewer', () => {
+  it('a multi-line body stays multi-line, and every line is quoted', () => {
+    // It used to be `.slice(0, 5).join(' ')`: five lines, run together into one. A numbered
+    // list arrived as a sentence, and lines 6 onward simply were not there.
     const multiline = Array.from({ length: 10 }, (_, i) => `Line ${i}`).join('\n');
     const out = renderSessionContext({ server_version: '1.17.0' }, [{
       title: '多行', body: multiline, severity: 'info'
     }]);
-    // Only the first 5 lines are kept.
-    assert.ok(out.includes('Line 4'));
-    assert.ok(!out.includes('Line 5'));
+    for (let i = 0; i < 10; i += 1) {
+      assert.ok(out.includes(`> Line ${i}`), `Line ${i} is missing, or lost its quote marker`);
+    }
   });
 
   it('error-severity broadcasts append a SYSTEM action-required block', () => {
