@@ -173,7 +173,11 @@ const ARTIFACTS = [
     id: 'git_hooks',
     describe: 'git hooks (iron-rule verification at commit time)',
     kind: 'file',
-    locate: ({ ownmindDir }) => [path.join(ownmindDir, 'git-hooks', 'pre-commit')],
+    locate: ({ ownmindDir }) => [
+      path.join(ownmindDir, 'git-hooks', 'pre-commit'),
+      // Bug report #24 — a merge runs this one and never pre-commit.
+      path.join(ownmindDir, 'git-hooks', 'pre-merge-commit'),
+    ],
   },
   {
     id: 'memory_skill',
