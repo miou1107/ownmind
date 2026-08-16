@@ -20,7 +20,8 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { runComplianceStep, MAX_COMPLIANCE_BLOCKS } from '../hooks/lib/compliance-step.js';
+import { startComplianceCheck } from '../hooks/lib/compliance-step.js';
+import { collectVerdict } from '../hooks/lib/verdict-collect.js';
 import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 import { tempDir } from './helpers/temp-dir.js';
 
@@ -31,10 +32,10 @@ const TTY_ECHO_HOOK = path.join(repoRoot, 'hooks', 'ownmind-tty-echo.cjs');
 
 const ORIGINAL_FORCE = process.env.OWNMIND_LOCALE_FORCE;
 
-// v1.30.2: the cases below drive runComplianceStep to a failed check in-process, and a failed
-// check now appends a diagnosis line. Without this every suite run injects fabricated
-// failures, carrying real timestamps, into the developer's own ~/.ownmind/logs/
-// check-failures.jsonl — the file whose whole job is answering "when did this start".
+// v1.30.2: the cases below drive a failed check in-process, and a failed check appends a
+// diagnosis line. Without this every suite run injects fabricated failures, carrying real
+// timestamps, into the developer's own ~/.ownmind/logs/check-failures.jsonl — the file whose
+// whole job is answering "when did this start".
 _logPathForTests(path.join(tempDir('om-notices-failures-'), 'check-failures.jsonl'));
 
 afterEach(() => {
@@ -43,12 +44,13 @@ afterEach(() => {
 });
 
 // ============================================================================
-// A. hooks/lib/compliance-step.js — runComplianceStep() called directly
+// A. the reply check's own notices, called directly
+//
+// Two halves, because the check is two halves. hooks/lib/compliance-step.js decides whether
+// to start a judge and says why when it will not; hooks/lib/verdict-collect.js says what the
+// judge found, a turn later. Both are user-facing and both are pinned per locale here.
 // ============================================================================
 
-// always_check:true so the default fixture reaches requestCheckImpl regardless of
-// assistantText — the tests that exercise the "nothing to check" path override `bundle`
-// explicitly (see the never-synced case below).
 const BUNDLE_MATCHING = {
   present: true,
   selectors: [{ id: 1, always_check: true, tags: [] }],
@@ -68,8 +70,7 @@ function complianceBase(over = {}) {
     repoRemote: null,
     trigger: '',
     bundle: BUNDLE_MATCHING,
-    blockCount: 0,
-    requestCheckImpl: async () => ({ outcome: 'clean', violations: [], check_id: 1 }),
+    startJudgeImpl: () => ({ started: true }),
     ...over,
   };
 }
@@ -82,252 +83,230 @@ const TEAM_STANDARD_VIOLATION = {
   fix: 'open an issue for the colleague',
 };
 
-// --- zh: every state/event banner carries the zh string with placeholders filled ---
+/** One verdict waiting, with the throttle and the log stubbed out of the way. */
+function verdictBase(record) {
+  return {
+    sessionId: 's1',
+    list: () => [{ turnId: 't1', record }],
+    remove: () => {},
+    sweep: () => {},
+    logFailure: () => {},
+    speak: (key) => key !== null,
+  };
+}
+
+// --- zh: the reasons a judge was not started ---
 
 test('zh: off (disabled/warn-mode) banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({ disabled: true }));
+  const r = await startComplianceCheck(complianceBase({ disabled: true }));
   assert.equal(r.action, 'notice');
   assert.equal(r.banner, '[OwnMind] 🟡 這個對話裡 OwnMind 只會提醒，不會要 AI 重寫。');
 });
 
 test('zh: no-credentials banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({ apiKey: '', apiUrl: '' }));
+  const r = await startComplianceCheck(complianceBase({ apiKey: '', apiUrl: '' }));
   assert.equal(r.banner, '[OwnMind] 🔴 這台電腦還沒登入 OwnMind，所以 OwnMind 沒有檢查 AI 這段回話。');
 });
 
 test('zh: never-synced banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({ bundle: { present: false, selectors: [] } }));
+  const r = await startComplianceCheck(complianceBase({ bundle: { present: false, selectors: [] } }));
   assert.equal(r.banner, '[OwnMind] 🔴 這台電腦還沒把你的規矩抓下來，所以 OwnMind 沒有檢查 AI 這段回話。你開個新對話它就會抓。');
 });
 
-test('zh: check-failed banner never shows the internal reason token', async () => {
-  // v1.30.1. This used to print the server's reason verbatim — "（timeout）", and "（unknown）"
-  // when there was no reason at all. Vin hit the unknown variant on 2026-08-15 and asked what
-  // the sentence was trying to say: it named a code that means nothing to a reader, twice
-  // stated the same fact, and never said what to do. The reason stays in the log; the notice
-  // says what happened to the reader instead.
+test('zh: judge-not-started banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const withReason = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
+  const r = await startComplianceCheck(complianceBase({
+    startJudgeImpl: () => ({ started: false, reason: 'the job could not be written' }),
   }));
-  assert.equal(withReason.banner, '[OwnMind] 🔴 OwnMind 這次連不上伺服器，沒有檢查 AI 這段回話。');
-  assert.doesNotMatch(withReason.banner, /timeout/, 'the raw reason token must not reach the user');
+  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind 沒能開始檢查 AI 這段回話，所以這段沒有對過你的規矩。重跑一次 OwnMind 的更新指令通常就會好。');
+});
 
-  // Same notice whether the server gave a reason or not: the reader's situation is identical.
-  const noReason = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({ outcome: 'failed', violations: [] }),
+// --- zh: what the judge came back with, a turn later ---
+
+test('zh: check-failed banner never shows the internal reason token', async () => {
+  // v1.30.1. This used to print the reason verbatim — "（timeout）", and "（unknown）" when
+  // there was no reason at all. Vin hit the unknown variant on 2026-08-15 and asked what the
+  // sentence was trying to say: it named a code that means nothing to a reader, twice stated
+  // the same fact, and never said what to do. The reason stays in the log; the notice says
+  // what happened to the reader instead.
+  process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  const r = await collectVerdict(verdictBase({
+    outcome: 'failed', failure: 'timeout', reason: 'the judge did not answer within 90000ms',
   }));
-  assert.equal(noReason.banner, withReason.banner);
-  assert.doesNotMatch(noReason.banner, /unknown/, '"unknown" is an internal placeholder, not a message');
+  assert.equal(
+    r.banner,
+    '[OwnMind] 🔴 OwnMind 沒能檢查 AI 前面某一段回話，那一段沒有對過你的規矩。\n'
+    + '  重跑一次 OwnMind 的更新指令通常就會好；在那之前 AI 的回話沒有人在對規矩。',
+  );
+  assert.doesNotMatch(r.banner, /timeout|90000/, 'the raw reason token must not reach the user');
 });
 
 test('zh: a rejected key gets its own banner, not the outage one', async () => {
   // v1.30.2. Every failure used to produce the outage sentence. This one never heals and is
   // the only notice in the family that asks the user to go and do something, so it has to be
-  // a different sentence — and a different notice key, or the throttle reads the move between
-  // the two states as "unchanged, stay quiet".
+  // a different sentence — and a different throttle key, or the move between the two states
+  // reads as "unchanged, stay quiet".
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({
-      outcome: 'failed', violations: [], failure: 'unauthorized', reason: 'http 401',
-    }),
+  const r = await collectVerdict(verdictBase({
+    outcome: 'failed', failure: 'unauthorized', reason: 'http 401',
   }));
   assert.equal(r.banner, '[OwnMind] 🔴 OwnMind 認不得這台電腦了，所以 OwnMind 沒有檢查 AI 這段回話。你要重新登入：拿新的登入資料重跑一次安裝指令。');
-  assert.equal(r.noticeKey, 'not-checked:signed-out');
   assert.doesNotMatch(r.banner, /401|unauthorized/, 'the raw reason token must not reach the user');
 });
 
-test('zh: a server that answered but could not finish gets its own banner', async () => {
+test('zh: a missing Claude Code gets the repair that works', async () => {
+  // v1.30.11. The generic line says to re-run the update script, which installs OwnMind and
+  // cannot install the CLI the judge runs on — a repair that could never repair this.
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({
-      outcome: 'failed', violations: [], failure: 'server-declined', reason: 'server answered failed',
-    }),
+  const r = await collectVerdict(verdictBase({
+    outcome: 'failed', failure: 'no-cli', reason: 'claude is not on this machine',
   }));
-  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind 這次沒把檢查做完，所以 OwnMind 沒有檢查 AI 這段回話。這是 OwnMind 那邊的問題，通常會自己好，你不用做什麼。');
-  assert.equal(r.noticeKey, 'not-checked:server-declined');
+  assert.equal(
+    r.banner,
+    '[OwnMind] 🔴 OwnMind 是叫這台電腦上的 Claude Code 來檢查 AI 的回話的，但找不到它，那一段就沒有檢查。\n'
+    + '  你要在這台電腦裝好 Claude Code，而且在終端機打 claude 叫得動它，檢查才會回來。',
+  );
+});
+
+test('zh: a judge that was started and never came back', async () => {
+  process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  const r = await collectVerdict({
+    ...verdictBase({ outcome: 'pending', started_at: 0 }),
+    now: () => 10_000_000,
+  });
+  assert.equal(
+    r.banner,
+    '[OwnMind] 🔴 OwnMind 開始檢查 AI 前面某一段回話，之後就沒有下文了，那一段沒有對過你的規矩。\n'
+    + '  下一段回話會重新檢查。一直這樣的話，重跑一次 OwnMind 的更新指令。',
+  );
 });
 
 test('zh: server-side off banner', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
-  }));
+  const r = await collectVerdict(verdictBase({ outcome: 'disabled' }));
   assert.equal(r.banner, '[OwnMind] 🔴 你的帳號把規矩檢查關掉了，所以 OwnMind 沒有檢查 AI 這段回話。');
 });
 
-test('zh: block-cap-reached banner, with the 誤判 check-id note appended', async () => {
+test('zh: violation banner, with the 誤判 check-id note appended', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
-    blockCount: MAX_COMPLIANCE_BLOCKS,
-    requestCheckImpl: async () => ({
-      outcome: 'violation', check_id: 4242, violations: [TEAM_STANDARD_VIOLATION],
-    }),
+  const r = await collectVerdict(verdictBase({
+    outcome: 'violation', check_id: 4242, violations: [TEAM_STANDARD_VIOLATION],
   }));
   assert.equal(
     r.banner,
-    '[OwnMind] 🟡 AI 這段回話重寫 2 次還是違反你 1 條規矩，OwnMind 不再退了，直接顯示給你看。'
-      + ' （OwnMind 判錯了就回一句「誤判 4242」）',
+    '[OwnMind] 🟡 OwnMind 檢查了 AI 前面某一段回話，它違反你 1 條規矩，第一條是：ci ownership\n'
+    + '  OwnMind 已經把這幾條交給 AI，AI 接下來應該會自己改。這只是提醒、擋不住它，所以你自己再看一眼。'
+    + ' （OwnMind 判錯了就回一句「誤判 4242」）',
   );
 });
 
-test('zh: pushed-back banner, with the 誤判 check-id note appended', async () => {
+test('zh: violation banner with no check_id has no trailing note', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({
-      outcome: 'violation', check_id: 4242, violations: [TEAM_STANDARD_VIOLATION],
-    }),
+  const r = await collectVerdict(verdictBase({
+    outcome: 'violation', check_id: undefined, violations: [TEAM_STANDARD_VIOLATION],
   }));
-  assert.equal(r.action, 'exit2');
-  assert.equal(
-    r.banner,
-    '[OwnMind] 🟢 AI 這段回話違反你 1 條規矩，OwnMind 已經要 AI 重寫。 （OwnMind 判錯了就回一句「誤判 4242」）',
-  );
+  assert.doesNotMatch(r.banner, /誤判/);
 });
 
-test('zh: pushed-back banner with no check_id has no trailing note', async () => {
+test('zh: checking coming back is announced', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({
-      outcome: 'violation', check_id: undefined, violations: [TEAM_STANDARD_VIOLATION],
-    }),
-  }));
-  assert.equal(r.banner, '[OwnMind] 🟢 AI 這段回話違反你 1 條規矩，OwnMind 已經要 AI 重寫。');
+  const r = await collectVerdict({
+    ...verdictBase({ outcome: 'clean', violations: [] }),
+    speak: (key) => key === null,
+  });
+  assert.equal(r.banner, '[OwnMind] 🟢 OwnMind 又在拿你的規矩檢查 AI 的回話了。');
 });
 
-// --- en regression pin: byte-identical to the pre-change literals ---
+// --- en regression pin: byte-identical to the dictionary ---
 
 test('en: off (disabled/warn-mode) banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({ disabled: true }));
+  const r = await startComplianceCheck(complianceBase({ disabled: true }));
   assert.equal(r.banner, '[OwnMind] 🟡 In this conversation OwnMind only warns; it never asks the AI to rewrite.');
 });
 
 test('en: no-credentials banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({ apiKey: '', apiUrl: '' }));
+  const r = await startComplianceCheck(complianceBase({ apiKey: '', apiUrl: '' }));
   assert.equal(r.banner, '[OwnMind] 🔴 This computer is not signed in to OwnMind, so OwnMind did not check the AI\'s reply.');
 });
 
 test('en: never-synced banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({ bundle: { present: false, selectors: [] } }));
+  const r = await startComplianceCheck(complianceBase({ bundle: { present: false, selectors: [] } }));
   assert.equal(r.banner, '[OwnMind] 🔴 This computer has not downloaded your rules yet, so OwnMind did not check the AI\'s reply. Start a new conversation and it will fetch them.');
-});
-
-test('en: check-failed banner is byte-identical to the pre-change literal', async () => {
-  process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({ outcome: 'failed', violations: [], reason: 'timeout' }),
-  }));
-  assert.equal(r.banner, '[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI\'s reply.');
 });
 
 test('en: the rejected-key banner is byte-identical to the dictionary', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({
-      outcome: 'failed', violations: [], failure: 'unauthorized', reason: 'http 401',
-    }),
+  const r = await collectVerdict(verdictBase({
+    outcome: 'failed', failure: 'unauthorized', reason: 'http 401',
   }));
   assert.equal(r.banner, '[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI\'s reply. You need to sign in again: run the install command again with new sign-in details.');
 });
 
 test('en: server-side off banner is byte-identical to the pre-change literal', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({ outcome: 'skipped', enabled: false, violations: [] }),
-  }));
+  const r = await collectVerdict(verdictBase({ outcome: 'disabled' }));
   assert.equal(r.banner, '[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI\'s reply.');
 });
 
-test('en: block-cap-reached banner is byte-identical to the pre-change literal', async () => {
+test('en: violation banner is byte-identical to the dictionary', async () => {
   process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({
-    blockCount: MAX_COMPLIANCE_BLOCKS,
-    requestCheckImpl: async () => ({
-      outcome: 'violation', check_id: 4242, violations: [TEAM_STANDARD_VIOLATION],
-    }),
+  const r = await collectVerdict(verdictBase({
+    outcome: 'violation', check_id: 4242, violations: [TEAM_STANDARD_VIOLATION],
   }));
   assert.equal(
     r.banner,
-    '[OwnMind] 🟡 The AI\'s reply still breaks 1 of your rules after 2 rewrites, so OwnMind has stopped sending it back and is showing it to you.'
-      + ' (if OwnMind got it wrong, reply 誤判 4242)',
+    '[OwnMind] 🟡 OwnMind checked one of the AI\'s earlier replies and it breaks 1 of your rules, starting with ci ownership\n'
+    + '  OwnMind has passed this to the AI, which should correct itself from here. This is a reminder, not a block: OwnMind cannot make it comply, so check that it did.'
+    + ' (if OwnMind got it wrong, reply 誤判 4242)',
   );
 });
 
-test('en: pushed-back banner is byte-identical to the pre-change literal', async () => {
-  process.env.OWNMIND_LOCALE_FORCE = 'en';
-  const r = await runComplianceStep(complianceBase({
-    requestCheckImpl: async () => ({
-      outcome: 'violation', check_id: 4242, violations: [TEAM_STANDARD_VIOLATION],
-    }),
-  }));
-  assert.equal(
-    r.banner,
-    '[OwnMind] 🟢 The AI\'s reply breaks 1 of your rules, so OwnMind has told the AI to rewrite it. (if OwnMind got it wrong, reply 誤判 4242)',
-  );
-});
-
-// --- decision fields never depend on locale; only banner text does ---
+// --- the decision must not depend on the language, or on the dictionary loading at all ---
 
 test('compliance-step decision fields (action/noticeKey) are identical across every locale', async () => {
-  const results = {};
-  for (const locale of ['en', 'zh', undefined]) {
-    if (locale === undefined) delete process.env.OWNMIND_LOCALE_FORCE;
-    else process.env.OWNMIND_LOCALE_FORCE = locale;
-    results[String(locale)] = await runComplianceStep(complianceBase({ disabled: true }));
-  }
-  const [first, ...rest] = Object.values(results);
-  for (const r of rest) {
-    assert.equal(r.action, first.action);
-    assert.equal(r.noticeKey, first.noticeKey);
+  const cases = [
+    ['disabled', complianceBase({ disabled: true })],
+    ['no-credentials', complianceBase({ apiKey: '', apiUrl: '' })],
+    ['never-synced', complianceBase({ bundle: { present: false, selectors: [] } })],
+    ['judge-not-started', complianceBase({ startJudgeImpl: () => ({ started: false, reason: 'x' }) })],
+    ['started', complianceBase()],
+  ];
+  for (const [name, ctx] of cases) {
+    const seen = [];
+    for (const locale of ['en', 'zh', 'ja']) {
+      process.env.OWNMIND_LOCALE_FORCE = locale;
+      const r = await startComplianceCheck(ctx);
+      seen.push(`${r.action}|${r.noticeKey ?? ''}`);
+    }
+    assert.equal(new Set(seen).size, 1,
+      `${name}: what the hook DOES changed with the language: ${seen.join(' / ')}`);
   }
 });
-
-// --- a broken i18n.js must never change what runComplianceStep decides ---
-
-function stageBrokenI18nComplianceStep() {
-  const tempRoot = tempDir('compliance-step-broken-i18n-');
-  const libDir = path.join(tempRoot, 'hooks', 'lib');
-  fs.mkdirSync(libDir, { recursive: true });
-  // The whole directory, not a named copy of compliance-step.js. v1.30.2 gave it a second
-  // dynamic dependency (check-failure-log.js) and a hand-written file list would have staged a
-  // tree where that import rejects — silently, since the caller swallows it, leaving a proof
-  // that quietly stops exercising the path it names. Same approach as its reply-lint sibling.
-  for (const name of fs.readdirSync(path.join(repoRoot, 'hooks', 'lib'))) {
-    if (name.endsWith('.js')) {
-      fs.copyFileSync(path.join(repoRoot, 'hooks', 'lib', name), path.join(libDir, name));
-    }
-  }
-  // A syntax error, so the dynamic `import('./i18n.js')` this simulates must REJECT.
-  fs.writeFileSync(path.join(libDir, 'i18n.js'), 'export function t( { this is not valid js');
-  // The staged tree is a separate module instance, so the `_logPathForTests` staged at the top
-  // of this file does not reach it and the real one would write to the real home. Stubbed
-  // rather than redirected: this proof is about a broken dictionary, not about the log.
-  fs.writeFileSync(
-    path.join(libDir, 'check-failure-log.js'),
-    'export function logCheckFailure() { return true; }\nexport function _logPathForTests() {}\n',
-  );
-  return path.join(libDir, 'compliance-step.js');
-}
 
 test('compliance-step: an unloadable i18n.js falls back to the English literal and never changes the decision', async () => {
-  process.env.OWNMIND_LOCALE_FORCE = 'zh';
-  const stagedPath = stageBrokenI18nComplianceStep();
-  const { runComplianceStep: stagedRun } = await import(pathToFileURL(stagedPath).href);
-  const r = await stagedRun(complianceBase({ disabled: true }));
-  assert.equal(r.action, 'notice', 'a broken i18n module must not change the decision');
-  assert.equal(
-    r.banner,
-    '[OwnMind] 🟡 In this conversation OwnMind only warns; it never asks the AI to rewrite.',
-    'the fallback is the plain English literal even though OWNMIND_LOCALE_FORCE=zh was set',
-  );
-});
+  // The notice text may degrade when the message layer is broken. What the hook decides may
+  // not: a machine with a damaged dictionary must still know it did not check the turn.
+  const staged = tempDir('om-i18n-broken-');
+  for (const dir of ['hooks/lib', 'shared']) fs.mkdirSync(path.join(staged, dir), { recursive: true });
+  for (const name of fs.readdirSync(path.join(repoRoot, 'hooks', 'lib'))) {
+    const src = path.join(repoRoot, 'hooks', 'lib', name);
+    if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(staged, 'hooks/lib', name));
+  }
+  fs.writeFileSync(path.join(staged, 'hooks/lib/i18n.js'), 'this is not valid javascript {{{');
 
+  const mod = await import(pathToFileURL(path.join(staged, 'hooks/lib/compliance-step.js')).href);
+  process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  const r = await mod.startComplianceCheck(complianceBase({ apiKey: '', apiUrl: '' }));
+  assert.equal(r.action, 'notice');
+  assert.equal(r.noticeKey, 'not-checked:no-credentials');
+  assert.match(r.banner, /not signed in to OwnMind/, 'it fell back to something other than English');
+});
 // ============================================================================
 // B. hooks/ownmind-reply-lint.js — spawned as a subprocess (Stop hook contract)
 // ============================================================================

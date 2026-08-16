@@ -1,9 +1,19 @@
 /**
- * Picking up a verdict that arrived after the turn it belongs to.
+ * Picking up verdicts that arrived after the turns they belong to.
  *
  * The judge runs detached and takes 29–54 seconds, which is usually less than the time a
  * person spends reading a reply and typing the next thing. So by the next turn the answer is
  * normally waiting, and this is where it is collected.
+ *
+ * VERDICTS, PLURAL. A judge slower than the user leaves two waiting, and the first version
+ * could only carry one — the older one was overwritten before anybody read it. Everything
+ * that has landed is delivered, and each one says which reply it is about, because "your last
+ * reply" stops being true the moment a verdict is a turn late.
+ *
+ * WHAT IS NOT SAID MATTERS AS MUCH. A judge still within its time is silence, because most
+ * turns are that. A judge past its time is a notice, because a check that was started and
+ * never came back is a turn nobody checked — and the failure this whole feature exists to
+ * remove is that being indistinguishable from a reply with nothing wrong.
  *
  * A decision function, not a hook: the caller owns stdout and the process. The first draft of
  * the compliance step was pasted inline into a hook, referenced a constant that did not
@@ -11,7 +21,9 @@
  * once run.
  */
 
-import { takeVerdict } from './verdict-store.js';
+import {
+  listVerdicts, removeVerdict, sweepStaleSessions, JUDGE_DEADLINE_MS,
+} from './verdict-store.js';
 
 /**
  * Looks a notice up through t(), and falls back to the exact English literal.
@@ -31,80 +43,267 @@ async function notice(key, fallback, params = {}) {
 }
 
 /**
+ * Record why a check did not run, where somebody diagnosing the machine can read it.
+ *
+ * The user's line deliberately carries no error vocabulary — `no-cli`, `timeout` and the rest
+ * are exactly what the message rules ban — so without this the detail has no sink at all, and
+ * a revoked key and a two-second blip look the same to whoever is asked to explain it.
+ */
+async function defaultLogFailure(entry) {
+  try {
+    const { logCheckFailure } = await import('./check-failure-log.js');
+    logCheckFailure(entry);
+  } catch { /* the verdict still reaches the user; only the diagnosis is lost */ }
+}
+
+/**
+ * Throttling, in its own namespace.
+ *
+ * The Stop hook runs `decideNotice` for this same session on every turn with the state IT
+ * knows about — whether a judge was started. This is a different state machine on a different
+ * hook, and sharing one slot would make each read the other's key as a state change: the user
+ * would be told checking had recovered, then failed, on alternate turns, forever.
+ */
+async function defaultSpeak(sessionId, noticeKey) {
+  try {
+    const { decideNotice } = await import('./notice-throttle.js');
+    return decideNotice(`${sessionId}#verdict`, noticeKey);
+  } catch {
+    // A throttle that cannot be consulted over-speaks. That is the safe direction for a
+    // channel whose failure mode was silence.
+    return true;
+  }
+}
+
+/**
  * @param {object} opts
  * @param {string} opts.sessionId
- * @param {Function} [opts.take] injectable for tests
- * @returns {Promise<{action: 'none'}|{action: 'notice', banner: string, forAssistant?: string}>}
+ * @param {Function} [opts.list]        injectable for tests
+ * @param {Function} [opts.remove]
+ * @param {Function} [opts.speak]       (noticeKey) => boolean, for state-shaped notices
+ * @param {Function} [opts.logFailure]
+ * @param {Function} [opts.now]
+ * @param {number}   [opts.deadlineMs]
+ * @returns {Promise<{action: 'none'}|{action: 'notice', banner: string, forAssistant: string}>}
  */
-export async function collectVerdict({ sessionId, take = takeVerdict } = {}) {
-  const verdict = take(sessionId);
+export async function collectVerdict({
+  sessionId,
+  list = listVerdicts,
+  remove = removeVerdict,
+  speak = null,
+  logFailure = defaultLogFailure,
+  sweep = sweepStaleSessions,
+  now = Date.now,
+  deadlineMs = JUDGE_DEADLINE_MS,
+} = {}) {
+  const decide = speak || ((key) => defaultSpeak(sessionId, key));
 
+  const waiting = list(sessionId);
   // Nothing waiting. The judge is still running, or this turn was never judged. Either way
   // there is nothing to say — and this is the common case, so it must cost nothing.
-  if (!verdict) return { action: 'none' };
+  if (!waiting.length) return { action: 'none' };
 
-  if (verdict.outcome === 'failed') {
-    // A key the server will not accept is the one failure waiting never fixes, and only the
-    // user can. It kept its own sentence when the judge moved off the server; collapsing it
-    // into "could not check" would tell someone to sit tight through an outage that is not one.
-    const banner = verdict.failure === 'unauthorized'
-      ? await notice(
+  const banners = [];
+  const contexts = [];
+  // A turn that produced a real verdict is a turn the check ran on. Recorded so the throttle
+  // can return to a healthy state; without it the state stays stuck on the last failure key,
+  // and a genuinely NEW failure of the same kind reads as "no change" and is suppressed.
+  let checkRan = false;
+
+  for (const { turnId, record } of waiting) {
+    const outcome = record?.outcome;
+
+    if (outcome === 'pending') {
+      const age = now() - (Number.isFinite(record.started_at) ? record.started_at : 0);
+      // Still within its time. Leave the marker exactly where it is — taking it would throw
+      // away the verdict that is about to land in it.
+      if (age < deadlineMs) continue;
+
+      remove(sessionId, turnId);
+      await logFailure({ sessionId, failure: 'judge-vanished', reason: `no verdict within ${deadlineMs}ms`, checkId: null });
+      if (await decide('not-checked:judge-vanished')) {
+        banners.push(await notice(
+          'verdict.didNotFinish',
+          "[OwnMind] 🔴 OwnMind started checking one of the AI's replies and never heard back, so that reply was not checked against your rules.\n"
+          + '  The next reply is checked from scratch. If this keeps happening, run the OwnMind update script.',
+        ));
+        contexts.push(assistantLine(
+          'A reply check was started and never finished, so one of your earlier replies was not checked '
+          + 'against the user\'s rules.', record,
+        ));
+      }
+      continue;
+    }
+
+    remove(sessionId, turnId);
+
+    if (outcome === 'disabled') {
+      // The loudest state the product has, and the first version made it the quietest: the
+      // judge returned without writing anything at all.
+      if (await decide('off:server')) {
+        banners.push(await notice(
+          'compliance.off.server',
+          "[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI's reply.",
+        ));
+      }
+      continue;
+    }
+
+    if (outcome === 'failed') {
+      await logFailure({
+        sessionId,
+        failure: record.failure || 'unknown',
+        reason: record.reason || 'unknown',
+        checkId: record.check_id ?? null,
+      });
+      const { key, banner } = await failureNotice(record);
+      if (await decide(key)) {
+        banners.push(banner);
+        contexts.push(assistantLine(
+          `The reply check did not run (${record.failure || 'unknown'}${record.reason ? `: ${record.reason}` : ''}).`,
+          record,
+        ));
+      }
+      continue;
+    }
+
+    // Everything below here is a check that ran.
+    checkRan = true;
+
+    // 'skipped' is a turn no rule applied to, which is most turns. Silent, but its marker has
+    // to be cleared — done above — or the deadline turns every ordinary turn into a failure.
+    if (outcome !== 'violation' || !record.violations?.length) continue;
+
+    banners.push(await violationBanner(record));
+    contexts.push(violationContext(record));
+  }
+
+  // Recovery, announced once. `decide` is what decides that, and it is only meaningful to
+  // ask when this turn actually knows the check is healthy.
+  if (checkRan && !banners.length && await decide(null)) {
+    banners.push(await notice(
+      'verdict.recovered',
+      "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again.",
+    ));
+  }
+
+  try { sweep(); } catch { /* housekeeping never costs a verdict */ }
+
+  if (!banners.length && !contexts.length) return { action: 'none' };
+  return {
+    action: 'notice',
+    banner: banners.join('\n'),
+    forAssistant: contexts.join('\n\n'),
+  };
+}
+
+/**
+ * Which sentence a failure gets, and which throttle key it counts against.
+ *
+ * Each of these asks something different of the user — sign in again, install Claude Code,
+ * sit tight — so they cannot share a sentence, and they cannot share a key either: a key that
+ * flapped between two states would read every move as "no change, stay quiet".
+ */
+async function failureNotice(record) {
+  if (record.failure === 'unauthorized') {
+    return {
+      key: 'not-checked:signed-out',
+      banner: await notice(
         'compliance.notChecked.signedOut',
         "[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI's reply. You need to sign in again: run the install command again with new sign-in details.",
-      )
-      : await notice(
-        'verdict.notChecked',
-        "[OwnMind] 🔴 OwnMind could not check the AI's last reply.\n"
-        + '  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.',
-      );
-    return {
-      action: 'notice',
-      banner,
-      // The assistant gets the detail the user's line deliberately does not carry: `no-cli`,
-      // `timeout` and the rest are the internal vocabulary the message rules ban.
-      forAssistant: `[OwnMind] The reply check did not run for your previous reply `
-        + `(${verdict.failure || 'unknown'}${verdict.reason ? `: ${verdict.reason}` : ''}). `
-        + 'Tell the user this, in the language you are speaking with them.',
+      ),
     };
   }
-
-  if (verdict.outcome !== 'violation' || !verdict.violations?.length) {
-    // Checked, nothing wrong. Silence is the everyday path and stays free.
-    return { action: 'none' };
+  if (record.failure === 'no-cli') {
+    // The generic line tells the user to re-run the update script. That installs OwnMind; it
+    // cannot install the CLI the judge runs on, so it was a repair that could never repair
+    // this — printed every tenth turn, indefinitely.
+    return {
+      key: 'not-checked:no-cli',
+      banner: await notice(
+        'verdict.notChecked.noCli',
+        "[OwnMind] 🔴 OwnMind checks the AI's replies by asking Claude Code on this computer, and it could not find it, so that reply was not checked.\n"
+        + '  Install Claude Code on this computer and make sure typing claude in a terminal starts it.',
+      ),
+    };
   }
+  return {
+    key: 'not-checked:check-failed',
+    banner: await notice(
+      'verdict.notChecked',
+      "[OwnMind] 🔴 OwnMind could not check one of the AI's earlier replies, so that reply was not checked against your rules.\n"
+      + '  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.',
+    ),
+  };
+}
 
-  const lines = verdict.violations.map((v) => {
-    const name = [v.ruleCode, v.ruleTitle].filter(Boolean).join(': ');
-    return `  - ${name}\n    evidence: ${v.evidence}\n    fix: ${v.fix}`;
-  });
-
+/**
+ * What the user is told about a reply that broke rules.
+ *
+ * 🟡, not 🟢, and it says why. This path runs after the user has already read the reply — it
+ * cannot stop anything, it can only tell the AI. The product's own rule is that a mechanism
+ * which only reminds has to say it only reminds; the first version said "it will correct
+ * itself this turn. Nothing for you to do", which is a promise nothing here can keep.
+ */
+async function violationBanner(record) {
+  const count = record.violations.length;
+  const first = record.violations[0].ruleTitle;
+  const checkId = record.check_id;
   // The handle for saying it got this wrong. Without it the false-positive rate — the stated
   // threshold for turning enforcement on for anybody besides its author — cannot be counted,
   // because nothing else in the product records a disagreement.
-  const checkId = verdict.check_id;
   const idNote = checkId
     ? await notice('compliance.idNote', ` (if OwnMind got it wrong, reply 誤判 ${checkId})`, { checkId })
     : '';
+  return await notice(
+    'verdict.violation',
+    `[OwnMind] 🟡 OwnMind checked one of the AI's earlier replies and it breaks ${count} of your rules, starting with ${first}\n`
+    + '  OwnMind has passed this to the AI, which should correct itself from here. This is a reminder, not a block: OwnMind cannot make it comply, so check that it did.',
+    { count, title: first },
+  ) + idNote;
+}
 
-  return {
-    action: 'notice',
-    banner: await notice(
-      'verdict.violation',
-      `[OwnMind] 🟢 OwnMind checked the AI's last reply and one of your rules was not met: ${verdict.violations[0].ruleTitle}\n`
-      + '  OwnMind has handed this to the AI and it will correct itself this turn. Nothing for you to do.',
-      { title: verdict.violations[0].ruleTitle },
-    ) + idNote,
-    // Written as an instruction rather than a report: the turn this belongs to is over, so
-    // the only thing that can act on it is the reply about to be written.
-    forAssistant: `[OwnMind] Your previous reply broke ${verdict.violations.length === 1 ? 'a rule' : 'rules'} `
-      + 'the user wrote. This is not a request to apologise or to explain yourself — it is the '
-      + 'correction to apply from here on:\n'
-      + `${lines.join('\n')}\n`
-      + 'Follow it in this reply. Do not restate the finding back to the user; they have already been shown it.'
-      + (checkId
-        ? `\nIf the user says this was a false alarm, call ownmind_report_check_feedback with `
-          + `check_id ${checkId} and verdict "false_positive" — their reply is only recorded if `
-          + 'you make that call.'
-        : ''),
-  };
+/**
+ * The instruction the assistant reads.
+ *
+ * Written as an instruction rather than a report: the turn this belongs to is over, so the
+ * only thing that can act on it is the reply about to be written. It names the reply, because
+ * a verdict that arrives two turns late used to say "your previous reply" — which is a
+ * different reply, and the correction went to the wrong one and stayed offset from then on.
+ */
+function violationContext(record) {
+  const lines = record.violations.map((v) => {
+    const name = [v.ruleCode, v.ruleTitle].filter(Boolean).join(': ');
+    return `  - ${name}\n    evidence: ${v.evidence}\n    fix: ${v.fix}`
+      // A team standard belongs to the company, not to the person in this conversation, so
+      // "the user said it was fine" is not a waiver. The synchronous path said this and the
+      // async one did not; without it the AI learns it can be talked out of somebody else's
+      // rule by the one person who cannot lift it.
+      + (v.ruleType === 'team_standard'
+        ? '\n    This is a team standard, not one of the user\'s own rules: their say-so does not'
+          + '\n    waive it. Ask them to reply with 「確認」 if they want it overridden.'
+        : '');
+  });
+  const checkId = record.check_id;
+  return `${assistantLine(
+    `An earlier reply of yours broke ${record.violations.length === 1 ? 'a rule' : 'rules'} the user wrote.`,
+    record,
+  )}\n`
+    + 'This is not a request to apologise or to explain yourself — it is the correction to apply '
+    + 'from here on:\n'
+    + `${lines.join('\n')}\n`
+    + 'Follow it in this reply. Do not restate the finding back to the user; they have already been shown it.'
+    + (checkId
+      ? `\nIf the user says this was a false alarm, call ownmind_report_check_feedback with `
+        + `check_id ${checkId} and verdict "false_positive" — their reply is only recorded if `
+        + 'you make that call.'
+      : '');
+}
+
+/** Every line to the assistant names which reply it is about, or it is about the wrong one. */
+function assistantLine(sentence, record) {
+  const excerpt = record?.reply_excerpt;
+  return `[OwnMind] ${sentence}`
+    + (excerpt ? `\nThe reply in question began: "${excerpt}"` : '')
+    + (excerpt ? '' : '\nOwnMind could not record which reply; treat it as one of your recent ones.');
 }

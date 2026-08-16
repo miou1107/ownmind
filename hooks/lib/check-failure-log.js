@@ -42,7 +42,7 @@ export function _logPathForTests(p) {
  *
  * @param {object} entry
  * @param {string} [entry.sessionId]
- * @param {string} [entry.failure] one of the classifications from compliance-client.js
+ * @param {string} [entry.failure] one of the classifications from verdict-collect.js
  * @param {string} [entry.reason] the detail behind it, already redacted by the client
  * @param {number|null} [entry.checkId] present when the server got far enough to record a row
  *   of its own — that row holds the real cause, and this is the only thing that can join a

@@ -13,6 +13,9 @@ import { runJudgeJob } from '../hooks/lib/run-local-judge.js';
 
 const JOB = {
   sessionId: 's1',
+  // One file per judged turn, not per session: turn N+1's verdict used to land on turn N's,
+  // so a violation found on the earlier reply was deleted by the later reply being clean.
+  turnId: 'turn-1',
   apiUrl: 'https://example.invalid',
   apiKey: 'k',
   assistantText: '我先看了 A 檔案，又看了 B 檔案。',
@@ -29,7 +32,7 @@ function harness({ selection, verdict, selectThrows, resolveThrows }) {
     written,
     posted,
     deps: {
-      write: (sid, rec) => { written.push({ sid, ...rec }); return true; },
+      write: (sid, turnId, rec) => { written.push({ sid, turnId, ...rec }); return true; },
       judge: async (args) => { posted.push({ judged: args.rules.map((r) => r.id) }); return verdict; },
       postImpl: async (url, _key, body) => {
         posted.push({ url, body });
@@ -133,19 +136,25 @@ test('a resolve that does not go through does not cost the user their verdict', 
   assert.equal(h.written[0].outcome, 'violation', 'written before the post, and it stays');
 });
 
-test('an account with the check switched off is not judged at all', async () => {
-  // No quota spent, and nothing written — there is no verdict to deliver about a check the
-  // account does not want.
+test('an account with the check switched off is said so, not passed over', async () => {
+  // No quota spent — but the marker the parent left has to be resolved, and the state has to
+  // reach the user. This test used to assert nothing was written, which pinned the hole: the
+  // product calls the off state its loudest and the first version made it its quietest.
   const h = harness({ selection: { enabled: false, outcome: 'skipped' } });
   await runJudgeJob(JOB, h.deps);
-  assert.equal(h.written.length, 0);
-  assert.equal(h.posted.filter((p) => p.judged).length, 0);
+  assert.equal(h.posted.filter((p) => p.judged).length, 0, 'a disabled account must not be billed');
+  assert.equal(h.written.length, 1);
+  assert.equal(h.written[0].outcome, 'disabled');
 });
 
-test('a turn no rule applies to spends nothing', async () => {
+test('a turn no rule applies to spends nothing, and still clears its marker', async () => {
   const h = harness({ selection: { enabled: true, outcome: 'skipped', check_id: 3, rules: [] } });
   await runJudgeJob(JOB, h.deps);
   assert.equal(h.posted.filter((p) => p.judged).length, 0,
     'launching the CLI to be told nothing applied costs ~30s of the user\'s own quota');
-  assert.equal(h.written.length, 0);
+  // Silent to the user, but recorded: a marker nobody resolves expires three minutes later as
+  // "the judge never came back", which is a true sentence about a dead judge and a false one
+  // about a turn no rule applied to.
+  assert.equal(h.written.length, 1);
+  assert.equal(h.written[0].outcome, 'skipped');
 });

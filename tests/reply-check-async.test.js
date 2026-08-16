@@ -24,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { tempDir } from './helpers/temp-dir.js';
-import { verdictPath, jobPath } from '../hooks/lib/verdict-store.js';
+import { listVerdicts, writeVerdict } from '../hooks/lib/verdict-store.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STOP_HOOK = path.join(repoRoot, 'hooks', 'ownmind-reply-lint.js');
@@ -127,22 +127,26 @@ function runPromptHook({ home, prompt = 'next question', env = {} }) {
   }
 }
 
-/** Wait for the detached judge to land its answer, or give up and say so. */
+const stateOf = (home) => path.join(home, '.ownmind', 'state');
+
+/**
+ * Wait for the detached judge to land its answer, or give up and say so.
+ *
+ * `pending` does not count: that is the marker the Stop hook writes before spawning, so
+ * accepting it would let a judge that never ran pass as a judge that answered.
+ */
 async function waitForVerdict(home, ms = 20_000) {
-  const file = verdictPath(SESSION, path.join(home, '.ownmind', 'state'));
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const done = listVerdicts(SESSION, stateOf(home)).find((v) => v.record.outcome !== 'pending');
+    if (done) return done.record;
     await sleep(100);
   }
   return null;
 }
 
 function writeVerdictFile(home, record) {
-  fs.writeFileSync(
-    verdictPath(SESSION, path.join(home, '.ownmind', 'state')),
-    JSON.stringify(record),
-  );
+  writeVerdict(SESSION, 'staged-turn', record, stateOf(home));
 }
 
 test('the Stop hook starts the judge and does not wait for it', async () => {
@@ -161,14 +165,24 @@ test('the Stop hook starts the judge and does not wait for it', async () => {
   server.close();
   assert.equal(result.status, 0);
   assert.ok(elapsed < 10_000, `the hook waited ${elapsed}ms on a judge it must not wait for`);
-  // The job file is written by the hook and consumed by the child, so either state proves the
-  // handover happened; what must not be true is that no job was ever created.
-  const job = jobPath(SESSION, path.join(home, '.ownmind', 'state'));
-  const verdict = verdictPath(SESSION, path.join(home, '.ownmind', 'state'));
-  assert.ok(
-    fs.existsSync(job) || fs.existsSync(verdict),
-    'no job reached the judge — the Stop hook never started one',
-  );
+  // The marker is written by the hook itself, before the spawn — so it is there whether the
+  // child got as far as answering or died on the way up. That is the whole point of it.
+  assert.equal(listVerdicts(SESSION, stateOf(home)).length, 1,
+    'the Stop hook started no judge, and left nothing saying it had not');
+});
+
+test('a conversation the user switched OwnMind off in starts no judge', () => {
+  // The judge runs on the user's own Claude Code subscription. Starting one after they typed
+  // /ownmind-off spends their quota on a check they have just said they do not want.
+  const { home, transcript } = stageHome();
+  fs.writeFileSync(path.join(home, '.ownmind', 'state', 'session-off.json'), JSON.stringify({
+    session_id: SESSION, off_at: new Date().toISOString(), tick_count: 0,
+  }));
+
+  const result = runStopHook({ home, transcript });
+  assert.equal(result.status, 0);
+  assert.deepEqual(listVerdicts(SESSION, stateOf(home)), [],
+    'a judge was started for a conversation with OwnMind switched off');
 });
 
 test('a judge that could not reach the server tells the user so on the next turn', async () => {
@@ -192,10 +206,24 @@ test('a judge that could not reach the server tells the user so on the next turn
 
   // Delivered once. Left in place it would re-announce on every turn for the rest of the
   // session, which teaches the reader to skip it.
-  assert.equal(
-    fs.existsSync(verdictPath(SESSION, path.join(home, '.ownmind', 'state'))), false,
-    'the verdict was read but not taken',
-  );
+  assert.deepEqual(listVerdicts(SESSION, stateOf(home)), [], 'the verdict was read but not taken');
+});
+
+test('the same outage does not put a red line under every single turn', () => {
+  // The notice used to pass through the throttle in the Stop hook. It moved to the prompt
+  // hook and left the throttle behind — and a line under every reply for the length of an
+  // outage is worse than the outage, because the rational response is switching this off.
+  const { home } = stageHome();
+  const failure = { outcome: 'failed', failure: 'timeout', reason: 'no answer', violations: [] };
+
+  writeVerdict(SESSION, 'turn-1', failure, stateOf(home));
+  const first = runPromptHook({ home });
+  assert.match(JSON.parse(first.stdout).systemMessage, /could not check/);
+
+  writeVerdict(SESSION, 'turn-2', failure, stateOf(home));
+  const second = runPromptHook({ home });
+  assert.equal(second.stdout.trim(), '',
+    'the second turn of the same outage announced it again');
 });
 
 test('a violation reaches the user and the assistant in one emission', () => {
@@ -213,7 +241,8 @@ test('a violation reaches the user and the assistant in one emission', () => {
   assert.equal(result.status, 0);
   const parsed = JSON.parse(result.stdout);
   assert.match(parsed.systemMessage, /Lead with the conclusion/);
-  assert.match(parsed.systemMessage, /Nothing for you to do/);
+  assert.match(parsed.systemMessage, /reminder, not a block/,
+    'this path arrives after the user has read the reply; it cannot claim to have handled it');
   assert.match(parsed.systemMessage, /4321/, 'without the id the user cannot report a false alarm');
   assert.match(parsed.hookSpecificOutput.additionalContext, /Lead with the conclusion/);
   assert.match(parsed.hookSpecificOutput.additionalContext, /I read file A first/);
@@ -267,7 +296,8 @@ test('a machine that never synced still delivers a waiting verdict', () => {
   assert.equal(result.status, 0);
   const parsed = JSON.parse(result.stdout);
   assert.match(parsed.hookSpecificOutput.additionalContext, /never synced/i);
-  assert.match(parsed.systemMessage, /could not check/);
+  assert.match(parsed.systemMessage, /Claude Code/,
+    'a missing CLI gets the repair that works, not the one that cannot');
 });
 
 test('a rejected key says sign in again, not "try later"', () => {

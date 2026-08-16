@@ -28,7 +28,7 @@
 
 import process from 'node:process';
 import { judgeLocally } from './local-judge.js';
-import { takeJob, writeVerdict } from './verdict-store.js';
+import { replyExcerpt, takeJob, writeVerdict } from './verdict-store.js';
 
 /** Long enough for a slow gateway, short enough not to sit forever on a dead network. */
 const HTTP_TIMEOUT_MS = 15_000;
@@ -52,7 +52,16 @@ async function post(url, apiKey, body) {
 
 export async function runJudgeJob(job, deps = {}) {
   const { judge = judgeLocally, postImpl = post, write = writeVerdict } = deps;
-  const { sessionId, apiUrl, apiKey } = job;
+  const { sessionId, turnId, apiUrl, apiKey } = job;
+  // Carried into every record. A verdict that lands two turns late has to say which reply it
+  // is about, or the correction is applied to a reply that was never judged.
+  const excerpt = replyExcerpt(job.assistantText);
+
+  // EVERY PATH OUT OF HERE WRITES. The parent left a `pending` marker before spawning this
+  // process, and a marker nobody resolves becomes "the judge never came back" three minutes
+  // later — which is a true sentence about a dead judge and a false one about a check that
+  // was simply not wanted.
+  const settle = (record) => write(sessionId, turnId, { violations: [], reply_excerpt: excerpt, ...record });
 
   // 1. Which rules apply, and what do they say.
   let selection;
@@ -68,19 +77,28 @@ export async function runJudgeJob(job, deps = {}) {
     });
   } catch (err) {
     const rejected = err?.status === 401 || err?.status === 403;
-    write(sessionId, {
+    settle({
       outcome: 'failed',
       failure: rejected ? 'unauthorized' : 'server-unreachable',
       reason: `could not ask which rules apply: ${err?.message || err}`,
-      violations: [],
     });
     return;
   }
 
-  // The account is off, or nothing applied to this turn. Either way there is nothing to
-  // judge and nothing to say — but the row, if one was opened, is already settled by the
-  // server, so there is nothing to resolve either.
-  if (selection?.enabled === false || selection?.outcome === 'skipped') return;
+  // The account has rule checking switched off. The product calls this its loudest state and
+  // the first version made it its quietest: this returned without writing, so the user was
+  // told nothing at all and the marker expired as a failure that had not happened.
+  if (selection?.enabled === false) {
+    settle({ outcome: 'disabled', check_id: selection.check_id ?? null });
+    return;
+  }
+
+  // Nothing applied to this turn, which is most turns. Silent to the user, but the marker
+  // still has to be resolved — and the row, if one was opened, the server already settled.
+  if (selection?.outcome === 'skipped') {
+    settle({ outcome: 'skipped', check_id: selection.check_id ?? null });
+    return;
+  }
 
   // 2. Judge it, here, on this user's own subscription.
   const verdict = await judge({
@@ -90,7 +108,7 @@ export async function runJudgeJob(job, deps = {}) {
   });
 
   // 3. The user's answer first — the network is the thing most likely to be gone by now.
-  write(sessionId, {
+  settle({
     outcome: verdict.outcome,
     violations: verdict.violations,
     failure: verdict.failure || null,
@@ -124,10 +142,11 @@ async function main() {
     // The last resort. Something here threw where nothing was supposed to, and the turn it
     // belongs to ended long ago — so the only way to say so is the verdict file itself.
     try {
-      writeVerdict(job.sessionId, {
+      writeVerdict(job.sessionId, job.turnId, {
         outcome: 'failed',
         failure: 'judge-crashed',
         reason: String(err?.message || err).slice(0, 200),
+        reply_excerpt: replyExcerpt(job.assistantText),
         violations: [],
       });
     } catch { /* nothing left to try */ }
