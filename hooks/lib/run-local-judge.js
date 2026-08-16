@@ -29,6 +29,7 @@
 import process from 'node:process';
 import { judgeLocally } from './local-judge.js';
 import { replyExcerpt, takeJob, writeVerdict } from './verdict-store.js';
+import { redact, toReason } from './redact.js';
 
 /** Long enough for a slow gateway, short enough not to sit forever on a dead network. */
 const HTTP_TIMEOUT_MS = 15_000;
@@ -69,9 +70,11 @@ export async function runJudgeJob(job, deps = {}) {
     selection = await postImpl(`${apiUrl}/api/compliance/check`, apiKey, {
       mode: 'select',
       session_id: sessionId,
-      turn_index: job.turnIndex ?? null,
-      assistant_text: job.assistantText,
-      user_prompts: job.userPrompts || [],
+      // The reply and the prompts leave the machine here. Redacted on the way out, the same
+      // way the client this replaced did it: an AI reply quoting a config file or a curl
+      // command carries whatever the user was working on.
+      assistant_text: redact(job.assistantText),
+      user_prompts: (job.userPrompts || []).map(redact),
       repo_remote: job.repoRemote || null,
       trigger: job.trigger || '',
     });
@@ -80,7 +83,23 @@ export async function runJudgeJob(job, deps = {}) {
     settle({
       outcome: 'failed',
       failure: rejected ? 'unauthorized' : 'server-unreachable',
-      reason: `could not ask which rules apply: ${err?.message || err}`,
+      reason: toReason(`could not ask which rules apply: ${err?.message || err}`),
+    });
+    return;
+  }
+
+  // THE SERVER ANSWERED AND COULD NOT FINISH. Checked before `enabled`, and deliberately:
+  // its rule fetch failing answers `{enabled: true, outcome: 'failed'}` with NO rules, and
+  // its account lookup failing answers `{enabled: false, outcome: 'failed'}`. Reading
+  // `enabled` first made the first case fall through to a judge with an empty rule list —
+  // which returns 'skipped', which is silence — and the second case say "you switched rule
+  // checking off", which is a false statement about the user's own settings.
+  if (selection?.outcome === 'failed') {
+    settle({
+      outcome: 'failed',
+      failure: 'server-declined',
+      reason: 'the server could not finish working out which rules apply',
+      check_id: selection.check_id ?? null,
     });
     return;
   }
@@ -100,6 +119,19 @@ export async function runJudgeJob(job, deps = {}) {
     return;
   }
 
+  // A 200 that carries neither rules nor a recognised outcome. Judging an empty rule list
+  // returns 'skipped', and 'skipped' is silence — so an answer this code does not understand
+  // must not be allowed to become "checked, nothing wrong".
+  if (!Array.isArray(selection?.rules)) {
+    settle({
+      outcome: 'failed',
+      failure: 'server-declined',
+      reason: toReason(`the server answered without a rule list: ${JSON.stringify(selection)}`),
+      check_id: selection?.check_id ?? null,
+    });
+    return;
+  }
+
   // 2. Judge it, here, on this user's own subscription.
   const verdict = await judge({
     rules: selection.rules || [],
@@ -112,7 +144,7 @@ export async function runJudgeJob(job, deps = {}) {
     outcome: verdict.outcome,
     violations: verdict.violations,
     failure: verdict.failure || null,
-    reason: verdict.reason || null,
+    reason: verdict.reason ? toReason(verdict.reason) : null,
     check_id: selection.check_id ?? null,
     latency_ms: verdict.latencyMs,
   });
@@ -145,7 +177,7 @@ async function main() {
       writeVerdict(job.sessionId, job.turnId, {
         outcome: 'failed',
         failure: 'judge-crashed',
-        reason: String(err?.message || err).slice(0, 200),
+        reason: toReason(err?.message || err),
         reply_excerpt: replyExcerpt(job.assistantText),
         violations: [],
       });

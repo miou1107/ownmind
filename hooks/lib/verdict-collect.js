@@ -22,7 +22,7 @@
  */
 
 import {
-  listVerdicts, removeVerdict, sweepStaleSessions, JUDGE_DEADLINE_MS,
+  listVerdicts, readVerdict, removeVerdict, sweepStaleSessions, JUDGE_DEADLINE_MS,
 } from './verdict-store.js';
 
 /**
@@ -92,6 +92,7 @@ export async function collectVerdict({
   remove = removeVerdict,
   speak = null,
   logFailure = defaultLogFailure,
+  reread = readVerdict,
   sweep = sweepStaleSessions,
   now = Date.now,
   deadlineMs = JUDGE_DEADLINE_MS,
@@ -110,30 +111,43 @@ export async function collectVerdict({
   // and a genuinely NEW failure of the same kind reads as "no change" and is suppressed.
   let checkRan = false;
 
-  for (const { turnId, record } of waiting) {
-    const outcome = record?.outcome;
+  for (const entry of waiting) {
+    const { turnId } = entry;
+    let record = entry.record;
 
-    if (outcome === 'pending') {
+    if (record?.outcome === 'pending') {
       const age = now() - (Number.isFinite(record.started_at) ? record.started_at : 0);
       // Still within its time. Leave the marker exactly where it is — taking it would throw
       // away the verdict that is about to land in it.
       if (age < deadlineMs) continue;
 
-      remove(sessionId, turnId);
-      await logFailure({ sessionId, failure: 'judge-vanished', reason: `no verdict within ${deadlineMs}ms`, checkId: null });
-      if (await decide('not-checked:judge-vanished')) {
-        banners.push(await notice(
-          'verdict.didNotFinish',
-          "[OwnMind] 🔴 OwnMind started checking one of the AI's replies and never heard back, so that reply was not checked against your rules.\n"
-          + '  The next reply is checked from scratch. If this keeps happening, run the OwnMind update script.',
-        ));
-        contexts.push(assistantLine(
-          'A reply check was started and never finished, so one of your earlier replies was not checked '
-          + 'against the user\'s rules.', record,
-        ));
+      // Read once more before writing it off. The listing and this line are not one
+      // operation, and the judge writes by renaming onto exactly this path — so a judge that
+      // finished in between would have its finding deleted here and announced as a judge that
+      // never came back. Measured budget is 115s against a 180s deadline; that gap is not
+      // wide enough to leave the race open.
+      const fresh = reread(sessionId, turnId);
+      if (fresh && fresh.outcome !== 'pending') {
+        record = fresh;                       // it landed after all — fall through and deliver
+      } else {
+        remove(sessionId, turnId);
+        await logFailure({ sessionId, failure: 'judge-vanished', reason: `no verdict within ${deadlineMs}ms`, checkId: null });
+        if (await decide('not-checked:judge-vanished')) {
+          banners.push(await notice(
+            'verdict.didNotFinish',
+            "[OwnMind] 🔴 OwnMind started checking one of the AI's replies and never heard back, so that reply was not checked against your rules.\n"
+            + '  The next reply is checked from scratch. If this keeps happening, run the OwnMind update script.',
+          ));
+          contexts.push(assistantLine(
+            'A reply check was started and never finished, so one of your earlier replies was not checked '
+            + 'against the user\'s rules.', record,
+          ));
+        }
+        continue;
       }
-      continue;
     }
+
+    const outcome = record?.outcome;
 
     remove(sessionId, turnId);
 
@@ -178,13 +192,20 @@ export async function collectVerdict({
     contexts.push(violationContext(record));
   }
 
-  // Recovery, announced once. `decide` is what decides that, and it is only meaningful to
-  // ask when this turn actually knows the check is healthy.
-  if (checkRan && !banners.length && await decide(null)) {
-    banners.push(await notice(
-      'verdict.recovered',
-      "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again.",
-    ));
+  // Recovery, announced once. `decide(null)` is what decides that, and it has a side effect:
+  // it moves the throttle back to the healthy state. So it is called on EVERY turn that knows
+  // the check is healthy, including turns that also carried a finding — guarding it behind
+  // "no other banners" left the throttle parked on the last failure key, and the next failure
+  // of that same kind then read as "no change, stay quiet" and went unannounced. That is a
+  // turn that was not checked and nobody told, which is the failure this file exists for.
+  if (checkRan) {
+    const announce = await decide(null);
+    if (announce && !banners.length) {
+      banners.push(await notice(
+        'verdict.recovered',
+        "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again. Nothing for you to do.",
+      ));
+    }
   }
 
   try { sweep(); } catch { /* housekeeping never costs a verdict */ }
@@ -234,6 +255,19 @@ async function failureNotice(record) {
         'verdict.notChecked.notLoggedIn',
         "[OwnMind] 🔴 Claude Code on this computer is not signed in, so OwnMind could not have it check the AI's reply.\n"
         + '  Sign in to Claude Code again and checking comes back on its own.',
+      ),
+    };
+  }
+  if (record.failure === 'server-declined') {
+    // The server answered and could not finish — its rule fetch failed, or its account
+    // lookup did. "Could not reach its server" is simply false about it, and it points the
+    // reader at their own network. It asks nothing of them: there is nothing here to fix.
+    return {
+      key: 'not-checked:server-declined',
+      banner: await notice(
+        'verdict.notChecked.serverDeclined',
+        "[OwnMind] 🔴 OwnMind could not work out which of your rules applied to the AI's reply, so that reply was not checked.\n"
+        + "  The problem is at OwnMind's end and usually clears on its own; nothing for you to do.",
       ),
     };
   }

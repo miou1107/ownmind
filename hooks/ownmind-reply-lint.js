@@ -208,19 +208,18 @@ async function runComplianceOnce(payload, transcript) {
   // every 10th turn while the state persists; recovery is announced once. Event-shaped
   // notices have no key and always speak. Suppressed turns still reach the audit spool via
   // the caller.
+  // Called for its side effect as much as its answer: a healthy turn has to move the throttle
+  // back, or the next failure of the same kind reads as "no change, stay quiet".
   const speak = decideNotice(sessionId, step.noticeKey ?? null);
   if (step.noticeKey && !speak) {
     return { ...step, banner: undefined, suppressedBanner: step.banner };
   }
-  if (!step.noticeKey && speak && !step.banner) {
-    return {
-      ...step,
-      banner: await lintNotice(
-        'lint.recovered',
-        "[OwnMind] 🟢 OwnMind checked the AI's reply against your rules (checking had been down, it is back).",
-      ),
-    };
-  }
+  // This used to announce "OwnMind checked the AI's reply against your rules" when the state
+  // went healthy. Both paths that reach it now make that false: `{action:'none'}` with no key
+  // means either no rule bore on this turn, or a judge was STARTED — and a started judge is
+  // thirty to fifty seconds from having checked anything. Recovery is announced by
+  // verdict-collect.js instead, on the turn a real verdict lands, because that is the only
+  // place that knows one did.
   return step;
 }
 

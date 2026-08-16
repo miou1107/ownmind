@@ -54,6 +54,10 @@ export function startLocalJudge({
   trigger = '',
   stateDirImpl = null,
   spawnImpl = spawn,
+  // Injectable so its failure branch — and the rollback of the marker written just above it —
+  // can be reached. The test that was meant to cover it pointed the whole state directory at
+  // an unwritable path, so the marker write failed first and this branch never ran.
+  writeJobImpl = writeJob,
   runnerPath = path.join(here, 'run-local-judge.js'),
 } = {}) {
   if (!sessionId || !assistantText || !apiUrl || !apiKey) {
@@ -66,12 +70,12 @@ export function startLocalJudge({
   // `stop_hook_active` return by design, so a turn another validator pushed back arrives here
   // again with the same text. A second judge for it spends the user's own subscription twice
   // and produces a second verdict saying what the first one already said.
-  const hash = textHash(assistantText);
+  const hash = textHash(assistantText, userPrompts);
   const alreadyRunning = listVerdicts(sessionId, dir)
     .some((v) => v.record?.outcome === 'pending' && v.record?.text_hash === hash);
   if (alreadyRunning) return { started: true, alreadyRunning: true };
 
-  const turnId = makeTurnId(assistantText);
+  const turnId = makeTurnId(assistantText, userPrompts);
 
   // Before the job, before the spawn. Ordering is the point: everything after this can fail
   // in a way that leaves no evidence, and this is the evidence.
@@ -84,7 +88,7 @@ export function startLocalJudge({
   }, dir);
   if (!marked) return { started: false, reason: 'the state directory could not be written' };
 
-  const jobFile = writeJob(sessionId, turnId, {
+  const jobFile = writeJobImpl(sessionId, turnId, {
     sessionId, turnId, assistantText, userPrompts, apiUrl, apiKey, repoRemote, trigger,
   }, dir);
   if (!jobFile) {
