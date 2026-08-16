@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.30.8 修改（「別人的檔案你不能改」，有兩扇門是開著的）
+
+修改：
+```
+hooks/lib/path-guard.js                         — 檔案在不在專案裡，改成直接問 git（--show-prefix），
+                                                   不再拿兩串路徑相減。相減會被兩件事騙過去：
+                                                   Windows 同一個資料夾有長短兩個名字、
+                                                   Mac 大小寫兩種寫法，對不起來就當成「不在這個
+                                                   專案」放行。另外資料夾還不存在時會往上找到
+                                                   第一個存在的資料夾再問，缺的段落補回去 ——
+                                                   在別人管的路徑下開新檔案原本完全擋不到
+hooks/ownmind-edit-reminder.js                  — 這個檢查自己壞掉時改成講出來。原本是空的 catch，
+                                                   保護關掉跟保護跑過長得一模一樣
+tests/helpers/real-db.js                        — 有 docker 不等於跑得動這個映像。Windows 跑的是
+                                                   Windows 容器模式，`docker info` 會過、
+                                                   `docker run` Linux 映像才炸，於是六條資料庫
+                                                   測試在 Windows 上一直被算成失敗而不是略過
+tests/enforcement-path-guard.test.js            — 補四條：資料夾還不存在、缺好幾層、
+                                                   換個大小寫寫法、以及不能因此開始亂擋。
+                                                   資料夾比對改看檔案系統給的編號，不比字串
+tests/enforcement-edit-guard.test.js            — 補一條：檢查壞掉時要出聲
+.github/workflows/test.yml                      — Windows 那關改成「沒過就不准合併」
+tests/install-clean-machine.test.js             — 新增，見下
+```
+
 ## v1.30.7 修改（一個只代表「機器很忙」的紅字）
 
 修改：
