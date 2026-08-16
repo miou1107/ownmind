@@ -59,20 +59,40 @@ for (const r of rows) {
 }
 
 console.log('\n\n=== 爭點 2：同意碼 ===\n');
+// This used to grep action-gate.js for the sha256 line. A grep answers a question about the
+// source, not about the product: reword the line and the script says "fixed". So it now
+// issues a real ask and reads what actually landed on disk.
+const { evaluateGate, approveAction } = await import(path.join(REPO, 'hooks/lib/action-gate.js'));
+const { ensureKey, ensureNonce } = await import(path.join(REPO, 'hooks/lib/gate-receipt.js'));
+
 const gate = fs.readFileSync(path.join(REPO, 'hooks/lib/action-gate.js'), 'utf8');
 const miss = gate.match(/MAX_ASK_MISSES\s*=\s*(\d+)/);
 console.log(`  猜錯上限：${miss ? miss[1] : '(找不到)'} 次`);
-const writesHash = /codeHash:\s*createHash\('sha256'\)\.update\(code\)/.test(gate);
-console.log(`  同意碼的指紋有沒有寫進硬碟上的檔案：${writesHash ? '有' : '沒有'}`);
-if (writesHash) {
-  const code = String(Math.floor(Math.random() * 900000) + 100000);
-  const h = createHash('sha256').update(code).digest('hex');
-  const t = Date.now();
-  let got = null;
-  for (let i = 100000; i <= 999999; i += 1) if (createHash('sha256').update(String(i)).digest('hex') === h) { got = String(i); break; }
-  console.log(`  從指紋反推回數字：${got === code ? '成功' : '失敗'}，${Date.now() - t} 毫秒`);
-  console.log('  → 反推出來之後只送一次，而且是對的。「猜錯 5 次燒掉」擋不到這條路。');
-}
+
+const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'om-tiebreak-'));
+ensureKey(stateDir);
+ensureNonce(stateDir, 'tiebreak');
+const codeGuard = {
+  id: 899, kind: 'action', title: '同意碼測試', triggers: ['deploy'],
+  checks: [], read_required: false, ask_first: true,
+  rule_text: 'x', rules_hash: createHash('sha256').update('x').digest('hex'),
+};
+const asked = evaluateGate({
+  command: 'git push origin v9.9.9', guards: [codeGuard], stateDir, sessionId: 'tiebreak',
+});
+const issued = (asked.userLine || '').match(/(\d{6})/)?.[1];
+const rec = JSON.parse(fs.readFileSync(path.join(stateDir, 'gate-ask-tiebreak-899.json'), 'utf8'));
+
+const plainSha = createHash('sha256').update(String(issued)).digest('hex');
+console.log(`  硬碟上存的就是 sha256(同意碼) 嗎：${plainSha === rec.codeHash ? '是 ← 一秒就反推得出來' : '不是'}`);
+
+// Time one attempt and scale, rather than actually sweeping 900,000 of them.
+const t = process.hrtime.bigint();
+approveAction(stateDir, 'tiebreak', 899, '000000');
+const per = Number(process.hrtime.bigint() - t) / 1e6;
+console.log(`  試一個數字要 ${per.toFixed(1)} 毫秒 → 掃完 900,000 個要 ${(900000 * per / 3.6e6).toFixed(1)} 小時`);
+console.log(`  真的同意碼還能不能用：${approveAction(stateDir, 'tiebreak', 899, issued) ? '能' : '不能'}`);
+fs.rmSync(stateDir, { recursive: true, force: true });
 
 console.log('\n\n=== 爭點 3：印章跟同意書是不是放在同一個抽屜 ===\n');
 const keyPath = path.join(os.homedir(), '.ownmind/state/gate.key');

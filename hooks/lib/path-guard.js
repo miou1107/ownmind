@@ -218,5 +218,11 @@ export function formatGuardBlock(violation) {
     );
   }
   lines.push(`  What to do instead: open an issue for ${owner} describing the change you need.`);
+  // The person at the keyboard sees nothing when a tool call is denied — the harness prints
+  // one generic line and keeps the rest. So the only way this reaches them is if the
+  // assistant says it, which means the message has to ask. Its sibling in
+  // ownmind-edit-reminder.js (the content-mention warning) has always asked; this one, the
+  // harder block of the two, did not.
+  lines.push('  Tell the user this, in the language you are speaking with them.');
   return lines.join('\n');
 }

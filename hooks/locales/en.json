@@ -24,5 +24,7 @@
   "compliance.idNote": " (if OwnMind got it wrong, reply 誤判 {checkId})",
   "compliance.blockCapReached": "[OwnMind] 🟡 The AI's reply still breaks {count} of your rules after {blockCount} rewrites, so OwnMind has stopped sending it back and is showing it to you.{idNote}",
   "compliance.pushedBack": "[OwnMind] 🟢 The AI's reply breaks {count} of your rules, so OwnMind has told the AI to rewrite it.{idNote}",
-  "tty.header": "[OwnMind {version}]"
+  "tty.header": "[OwnMind {version}]",
+  "gate.allow.verbal": "[OwnMind] 🟡 The AI said you agreed to 「{title}」, so OwnMind allowed it this once.\n  If you did say so, ignore this; if you did not, stop it now.",
+  "gate.ask.forged": "[OwnMind] 🟡 There was already an approval on file for this, and OwnMind did not issue it.\n  OwnMind ignored it and is asking you instead."
 }

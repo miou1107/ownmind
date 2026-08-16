@@ -365,7 +365,11 @@ if echo "$COMMAND" | grep -qiE "git push" && [ -n "$REPO_TOP" ] && [ "$REPO_TOP"
         const tag = '【OwnMind v' + v + '】版號卡控';
         const sep = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
         const msg = sep + '\n' + tag + '\n' + sep + '\n  package.json 版號為 ' + pv + '，但沒有對應的 git tag v' + pv + '\n  ❌ 請先執行：git tag v' + pv + '\n  然後再 git push --tags\n\n回應格式要求：AI 的第一行必須是「' + tag + '」。';
-        console.log(JSON.stringify({decision:'block',reason:'Missing git tag for version ' + pv,hookSpecificOutput:{hookEventName:'PreToolUse',additionalContext:msg}}));
+        // DENY ENVELOPE — see tests/hook-deny-envelope.test.js, which reads this file and
+        // holds the .js twin to the same shape. Both field pairs, and the whole message in
+        // the reason: on a deny, additionalContext is not a channel the model reads, so this
+        // block used to arrive with no version number in it at all.
+        console.log(JSON.stringify({decision:'block',reason:msg,hookSpecificOutput:{hookEventName:'PreToolUse',permissionDecision:'deny',permissionDecisionReason:msg}}));
       "
       exit 0
     fi

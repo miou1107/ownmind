@@ -18,18 +18,23 @@ node docs/findings/repros/<name>.mjs
 bash docs/findings/repros/real-hook-repro.sh
 ```
 
-| Script | Answers | Finding |
-|---|---|---|
-| `my-repro.mjs` | Can the assistant approve its own gate? | O1 |
-| `real-hook-repro.sh` | Same question, driven through the hook Claude Code actually runs | O1 |
-| `tiebreak.mjs` | Is the consent code recoverable, is the signing key readable, and which key shapes does the scanner catch? | O1, O3 |
-| `verify-bug20.mjs` | Does a secret rule set to "do not block" print a green tick over a leaked key? | O2 |
-| `symlink-escape.mjs` | Does a symlink out of the repo escape the path guard? | O5 |
-| `repro-guard-failopen.mjs` | The five ways the path guard used to allow a guarded edit | F1, F2 (fixed) |
-| `edge-cases.mjs` | Does the fixed guard answer correctly for worktrees, submodules, nested repos, missing folders? | F1, F2 (fixed) |
+| Script | Answers | Finding | Should now print |
+|---|---|---|---|
+| `my-repro.mjs` | Can the assistant approve its own gate? | O1 (fixed) | blocked, at every step |
+| `real-hook-repro.sh` | Same question, driven through the hook Claude Code actually runs | O1 (fixed) | blocked — **reads the installed `~/.ownmind`, so it keeps showing the hole until that copy is upgraded** |
+| `tiebreak.mjs` | Is the consent code recoverable, is the signing key readable, and which key shapes does the scanner catch? | O1 (fixed), O3 (open) | ~17 hours to sweep the code space; the key still readable; 8 of 25 key shapes caught |
+| `verify-bug20.mjs` | Does a secret rule set to "do not block" print a green tick over a leaked key? | O2 (fixed) | blocked in all three cases |
+| `symlink-escape.mjs` | Does a symlink out of the repo escape the path guard? | O5 (open) | allowed — the escape is still there |
+| `repro-guard-failopen.mjs` | The five ways the path guard used to allow a guarded edit | F1, F2 (fixed) | blocked, all five |
+| `edge-cases.mjs` | Does the fixed guard answer correctly for worktrees, submodules, nested repos, missing folders? | F1, F2 (fixed) | blocked, every case |
 
-The last two should now print "blocked" for every case. If either starts printing "allowed"
-again, F1 or F2 has come back.
+A script that starts printing "allowed" where the table says blocked means its finding has
+come back. `symlink-escape.mjs` is the one that is *supposed* to print allowed today.
+
+Two of these read the real gate rather than grepping the source for a line that used to be
+there — `my-repro.mjs` and `tiebreak.mjs` both used to assume the consent code was stored as
+a plain sha256 and would have reported "fixed" the moment that line was reworded. They now
+issue a real ask and read what landed on disk.
 
 **Nothing here is a live credential.** The key-shaped strings are AWS's own published
 documentation examples or obviously fake, and several are assembled at runtime so that the

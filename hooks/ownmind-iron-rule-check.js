@@ -149,12 +149,26 @@ async function main() {
 
       const gate = evaluateGate({ command, guards: bundle.guards, stateDir, sessionId: sid });
       if (gate.action === 'block') {
+        // DENY ENVELOPE — both field pairs, or the block loses its words. Inlined rather
+        // than imported for the same reason gateNotice() is: a block must not be reachable
+        // only through a file that could be missing. tests/hook-deny-envelope.test.js holds
+        // the rationale and keeps all four emitters agreeing.
         console.log(JSON.stringify({
           decision: 'block',
           reason: gate.reason,
           systemMessage: gate.userLine,
-          hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '' },
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: gate.reason,
+          },
         }));
+        process.exit(0);
+      }
+      if (gate.userLine) {
+        // An allow that still has something to say: the gate let this through on the strength
+        // of a spoken go-ahead, and the person said to have spoken it should hear about it.
+        console.log(JSON.stringify({ systemMessage: gate.userLine }));
         process.exit(0);
       }
       if (gate.degraded) {
@@ -260,12 +274,18 @@ async function main() {
             '',
             `Response format: the AI's first line must be "${versionTag}".`,
           ];
+          // DENY ENVELOPE — see tests/hook-deny-envelope.test.js. The whole message goes in
+          // the reason: on a deny, additionalContext is not a channel the model reads, which
+          // is how this block used to arrive as a bare "denied this tool" with no version in
+          // it at all.
+          const blockReason = blockLines.join('\n');
           console.log(JSON.stringify({
             decision: 'block',
-            reason: `Missing git tag for version ${pkgVersion}`,
+            reason: blockReason,
             hookSpecificOutput: {
               hookEventName: 'PreToolUse',
-              additionalContext: blockLines.join('\n')
+              permissionDecision: 'deny',
+              permissionDecisionReason: blockReason,
             }
           }));
           process.exit(0);

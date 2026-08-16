@@ -38,7 +38,10 @@ const HARD_CODED = {
   'hooks/lib/action-gate-cli.js': ['gate.failopen', 'gate.degraded'],
   'hooks/ownmind-iron-rule-check.js': ['gate.failopen', 'gate.degraded'],
   'hooks/ownmind-iron-rule-check.sh': ['gate.failopen'],
-  'hooks/lib/action-gate.js': ['gate.ask.verbal', 'gate.read.blocked', 'gate.check.blocked'],
+  'hooks/lib/action-gate.js': [
+    'gate.ask.verbal', 'gate.read.blocked', 'gate.check.blocked',
+    'gate.allow.verbal', 'gate.ask.forged',
+  ],
   'hooks/lib/compliance-step.js': [
     'compliance.off.warnMode',
     'compliance.notChecked.noCredentials',

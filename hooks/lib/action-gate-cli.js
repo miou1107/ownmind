@@ -7,7 +7,7 @@
  * path. The .js twin imports the same modules directly — both wirings answer alike.
  *
  * The whole contract is on stdout:
- *   - block   → one JSON decision envelope ({decision:'block', ...}), exit 0
+ *   - block   → one JSON deny envelope, exit 0
  *   - allow   → nothing at all (silence is the common case and must stay free)
  *   - degraded allow → a systemMessage saying receipts were unavailable
  *   - anything thrown in the gate path → fail-open-LOUD: the command runs, but the user
@@ -76,12 +76,24 @@ async function main() {
     const d = evaluateGate({ command: rawCommand, guards: bundle.guards, stateDir, sessionId });
 
     if (d.action === 'block') {
+      // DENY ENVELOPE — both field pairs, or the block loses its words. Inlined rather
+      // than imported for the same reason gateNotice() is: a block must not be reachable
+      // only through a file that could be missing. tests/hook-deny-envelope.test.js holds
+      // the rationale and keeps all four emitters agreeing.
       process.stdout.write(JSON.stringify({
         decision: 'block',
         reason: d.reason,
         systemMessage: d.userLine,
-        hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '' },
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'deny',
+          permissionDecisionReason: d.reason,
+        },
       }));
+    } else if (d.userLine) {
+      // An allow that still has something to say: the gate let this through on the strength
+      // of a spoken go-ahead, and the person said to have spoken it should hear about it.
+      process.stdout.write(JSON.stringify({ systemMessage: d.userLine }));
     } else if (d.degraded) {
       process.stdout.write(JSON.stringify({ systemMessage: await gateNotice('gate.degraded', DEGRADED_LINE) }));
     }
