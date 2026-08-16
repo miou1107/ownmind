@@ -303,4 +303,18 @@ describe('a rule that was broken is never counted as one that passed', () => {
     assert.equal(r.status, 0);
     assert.match(`${r.stdout}${r.stderr}`, /all 1 rules passed ✓/);
   });
+
+  // Bug report #21, and the owner's answer (2026-08-16): leave the coverage alone, stop
+  // implying it is complete. Measured there — of 31 common credential shapes, 14 commit
+  // cleanly, including a database connection string and `password = "..."` in a config file.
+  // The green tick is the sentence that has to carry that, because it is the one under every
+  // commit somebody makes.
+  it('the green tick says what the scan covers, not that everything was covered', () => {
+    setCache([structuredClone(SECRET_GUARD_RULE)]);
+    stage('ok.js', CLEAN);
+    const r = runHook();
+    const said = `${r.stdout}${r.stderr}`;
+    assert.match(said, /通過不等於沒外洩/,
+      `a clean commit still reads as a complete scan. It said:\n${said}`);
+  });
 });
