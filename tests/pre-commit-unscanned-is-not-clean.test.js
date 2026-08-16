@@ -87,7 +87,7 @@ test('a clean repository still commits', () => {
   assert.equal(r.status, 0, `a clean commit was blocked:\n${r.stdout}${r.stderr}`);
 });
 
-test('a binary file is reported as not scanned rather than counted as clean', () => {
+test('a binary file is named, and does not stop the commit', () => {
   const repo = newRepo();
   const home = tempDir('om-unscanned-home4-');
   // NUL bytes make git call it binary, which means its diff carries no added lines — so the
@@ -102,8 +102,56 @@ test('a binary file is reported as not scanned rather than counted as clean', ()
 
   const r = runHook(repo, home);
   const said = `${r.stdout}${r.stderr}`;
-  assert.equal(r.status, 1, `a binary file with a key in it committed cleanly:\n${said}`);
-  assert.match(said, /二進位檔/);
+  // Review caught the first version blocking here. Nothing can read inside a binary file, so
+  // stopping the commit protects nothing — and measured, it stopped every commit touching a
+  // PNG, every `git mv` of one, and this repository's own binary test fixture. A merge was
+  // worse: it blocked halfway and left the repository mid-merge.
+  assert.equal(r.status, 0, `a binary file stopped an ordinary commit:\n${said}`);
+  assert.match(said, /掃不進去/, 'passing in silence is the impersonation this release is about');
+  assert.match(said, /blob\.bin/);
+});
+
+test('an unreadable file never hides a key found in the same commit', () => {
+  // The one that must not ship. The first version returned inside the unscanned branch and
+  // dropped every credential it had already found: measured, an image plus a .env carrying
+  // an AWS key showed the image and hid the key — and the remedy that message printed then
+  // committed the key with no output at all.
+  const repo = newRepo();
+  const home = tempDir('om-both-home-');
+  fs.writeFileSync(path.join(repo, 'logo.bin'), Buffer.from([0, 1, 2, 0, 255, 0]));
+  fs.writeFileSync(path.join(repo, 'creds.env'), `AWS_ACCESS_KEY_ID=${EXAMPLE_KEY}\n`);
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+
+  const r = runHook(repo, home);
+  const said = `${r.stdout}${r.stderr}`;
+  assert.equal(r.status, 1);
+  assert.match(said, /creds\.env/, 'the credential was not reported at all');
+  assert.match(said, /aws_access_key|金鑰|憑證/, 'the block named a file but not what was found in it');
+});
+
+test('excusing an unreadable file does not switch off the scan of the readable ones', () => {
+  // The second half of the same defect: one bypass code covered both complaints, so the
+  // advice printed alongside "this file could not be scanned" also disabled the scan of the
+  // .env beside it. Measured: exit 0, no output, key committed.
+  const repo = newRepo();
+  const home = tempDir('om-bypass-home-');
+  const filler = 'x'.repeat(6 * 1024 * 1024);
+  fs.writeFileSync(path.join(repo, 'big.txt'), `${filler}\n`);
+  fs.writeFileSync(path.join(repo, 'creds.env'), `AWS_ACCESS_KEY_ID=${EXAMPLE_KEY}\n`);
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+
+  const r = spawnSync('node', [HOOK], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: {
+      ...process.env, HOME: home, USERPROFILE: home,
+      OWNMIND_BYPASS: 'BASELINE_UNSCANNED',
+    },
+  });
+  const said = `${r.stdout}${r.stderr}`;
+  assert.equal(r.status, 1, `the bypass for one complaint let a key through:\n${said}`);
+  assert.match(said, /creds\.env/);
+  assert.doesNotMatch(said, /big\.txt/, 'the excused file is still being complained about');
 });
 
 test('a merge commit is checked, which is what pre-merge-commit exists for', () => {

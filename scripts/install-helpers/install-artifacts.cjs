@@ -173,11 +173,16 @@ const ARTIFACTS = [
     id: 'git_hooks',
     describe: 'git hooks (iron-rule verification at commit time)',
     kind: 'file',
-    locate: ({ ownmindDir }) => [
-      path.join(ownmindDir, 'git-hooks', 'pre-commit'),
-      // Bug report #24 — a merge runs this one and never pre-commit.
-      path.join(ownmindDir, 'git-hooks', 'pre-merge-commit'),
-    ],
+    locate: ({ ownmindDir }) => [path.join(ownmindDir, 'git-hooks', 'pre-commit')],
+  },
+  {
+    // Its own entry, not a second candidate on the one above: candidates are satisfied by
+    // ANY one being present, and pre-commit always is — so listing this beside it could
+    // never have noticed the merge hook missing, which is the whole reason it was added.
+    id: 'git_merge_hook',
+    describe: 'git pre-merge-commit hook (a merge runs this one, never pre-commit)',
+    kind: 'file',
+    locate: ({ ownmindDir }) => [path.join(ownmindDir, 'git-hooks', 'pre-merge-commit')],
   },
   {
     id: 'memory_skill',

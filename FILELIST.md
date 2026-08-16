@@ -10,7 +10,7 @@ scripts/install-helpers/win-system-binary.cjs
                                        問不到 bash —— 四個都在 System32，那台機器四個都有。
                                        改成直接去 Windows 保證的位置拿。找不到就退回原本的名字，
                                        免得「為了可靠」反而把別人的機器弄壞
-tests/win-system-binary.test.js      — 十九條，全部用注入的環境跑，因為改這支的機器是 Mac、
+tests/win-system-binary.test.js      — 十五條，全部用注入的環境跑，因為改這支的機器是 Mac、
                                        壞掉的機器是 Windows。兩個接線點各弄壞一次確認會紅
 ```
 
@@ -69,7 +69,8 @@ scripts/update.sh / update.ps1       — 四個地方都要裝新的那支掛勾
                                        裝過的」，那樣的話已經在用的機器永遠拿不到這支 ——
                                        所以只有這一支例外，而且只在已經裝過的機器上補
 scripts/install-helpers/install-artifacts.cjs
-                                     — 自我檢查會發現這支掛勾不見了
+                                     — 自我檢查會發現這支掛勾不見了（自己一條，不是掛在舊那條
+                                       後面 —— 掛在後面的話永遠不會發現，因為舊那支一定在）
 ```
 
 **已收回：** 原本改了兩個地方讓 Windows 不靠 PATH 找自己的程式。那是為了 TANK 那兩個紅字做的，

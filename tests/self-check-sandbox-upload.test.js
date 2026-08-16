@@ -127,3 +127,43 @@ test('a sandbox nested inside the real home still counts as a sandbox', () => {
   });
   assert.equal(nested.real, false);
 });
+
+// ============================================================================
+// Review, before this shipped: an inequality between the two homes is not proof of a
+// sandbox. Two real machines would have been judged one and gone silent — and silence is
+// the failure this guard exists to prevent, so getting this wrong costs more than the bug.
+// ============================================================================
+
+test('a home that is merely spelled differently is not a sandbox', () => {
+  // Git Bash hands node `/c/Users/Vin`, which path.resolve turns into `C:\\c\\Users\\Vin`.
+  // Every MSYS machine would fail an equality test — and MSYS is the platform the original
+  // bug came from. What separates it from a sandbox is that OwnMind is installed in it.
+  const r = checkHomeIsAccountHome({
+    runningHome: '/c/Users/Vin',
+    accountHome: 'C:\\Users\\Vin',
+    exists: (p) => String(p).includes('.ownmind'),
+  });
+  assert.equal(r.real, true, 'a real machine was judged a sandbox and will stop reporting health');
+});
+
+test('a container whose HOME the image set is not a sandbox either', () => {
+  // HOME=/github/home against a passwd entry of /root: a GitHub Actions container job, and
+  // any image with ENV HOME=/app running as root.
+  const r = checkHomeIsAccountHome({
+    runningHome: '/github/home',
+    accountHome: '/root',
+    exists: (p) => String(p).startsWith('/github/home/.ownmind'),
+  });
+  assert.equal(r.real, true);
+});
+
+test('a throwaway home with no OwnMind in it is still a sandbox', () => {
+  // The control. Without it the narrowing above would let the original bug straight back in:
+  // the test install built its HOME from nothing, so ~/.ownmind was not there yet.
+  const r = checkHomeIsAccountHome({
+    runningHome: '/tmp/throwaway-home',
+    accountHome: '/Users/someone',
+    exists: () => false,
+  });
+  assert.equal(r.real, false);
+});

@@ -347,7 +347,10 @@ if (Test-Path $GitHookDir) {
     if (-not (Test-Path $ghSrc)) { continue }
     # LF, always: these run under sh.exe, and CRLF makes the shebang line unusable.
     $srcText = [System.IO.File]::ReadAllText($ghSrc).Replace("`r`n", "`n")
-    $destText = [System.IO.File]::ReadAllText($ghDest)
+    # Absent on the pre-merge-commit create path above, and ReadAllText on a missing file
+    # throws — which under this script's ErrorActionPreference would print a red error on
+    # every Windows update, or worse, stop the rest of the file from running.
+    $destText = if (Test-Path $ghDest) { [System.IO.File]::ReadAllText($ghDest) } else { $null }
     if ($srcText -ne $destText) {
       [System.IO.File]::WriteAllText($ghDest, $srcText)
       $refreshed++
