@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## 進行中（尚未發版）：TANK 這台 Windows 的兩個紅字
+## 進行中（尚未發版）：測試安裝不准冒充真機、以及那兩個紅字的真相
 
 新增：
 ```
@@ -14,18 +14,24 @@ tests/win-system-binary.test.js      — 十九條，全部用注入的環境跑
                                        壞掉的機器是 Windows。兩個接線點各弄壞一次確認會紅
 ```
 
+tests/self-check-sandbox-upload.test.js
+                                     — 七條。其中一條是在驗這個測試檔自己：它寫暫存檔的那個
+                                       設定名稱一度打錯，結果反而把五份假報告排進了本機的
+                                       上傳佇列 —— 跟它要防的是同一個毛病
+```
+
 修改：
 ```
-scripts/install-helpers/safe-spawn.cjs
-                                     — 所有 powershell.exe / chcp.com / where.exe 都改走上面那支
-scripts/install-helpers/mcp-preflight.cjs
-                                     — cmd.exe 也是。這支本來是拿「自己這個環境的 PATH 壞了」
-                                       去指控使用者的設定檔有問題
 scripts/install-helpers/self-check.cjs
-                                     — 檢測報告多記一行：這台找不找得到 Windows 自己的程式、
-                                       是靠 PATH 還是靠絕對位置。少了這行，這次是連進正式機
-                                       撈資料庫才問出答案的
+                                     — 這次真正的修法：用別人的家目錄跑的自我檢查，成績不上傳，
+                                       也不排進佇列，而且畫面上明講「這不是這台機器的健康狀態」。
+                                       判準是作業系統回報的帳號家目錄，跟這次跑的家目錄不一樣就是。
+                                       另外報告多記一行：這台找不找得到 Windows 自己的程式
 ```
+
+**已收回：** 原本改了兩個地方讓 Windows 不靠 PATH 找自己的程式。那是為了 TANK 那兩個紅字做的，
+而那兩個紅字是沙箱測試造成的假象 —— 沙箱是「故意」把 PowerShell 拿掉的。為一個不存在的問題
+動 Windows 的啟動路徑，沒有正當理由。留下的只有那支報告用的小工具跟它的測試。
 
 
 ## v1.30.9 修改（擋住了但你看不到；還有一把 AI 自己配得出來的鑰匙）
