@@ -1,5 +1,29 @@
 # OwnMind 檔案結構
 
+## v1.30.6 修改（修復要放在故障會經過的那條路上）
+
+新增：
+```
+tests/scanner-schedule-windows-delegation.test.js
+                                                — 驗 Windows 上排程修復會轉呼叫 PowerShell 版，
+                                                   而不是回報「這個系統不支援」。六案：
+                                                   不再出現那句話、結果原樣傳出、失敗要當失敗、
+                                                   讀不懂的回覆算失敗並保留原話、程式不見要報錯、
+                                                   其他平台維持原樣。
+                                                   用假的直譯器驅動——把開發者真正的排程刪掉
+                                                   看它會不會長回來，那不叫測試。
+                                                   已拿改動前的程式驗過：六案紅五案。
+```
+
+修改：
+```
+scripts/install-helpers/ensure-scanner-schedule.sh
+                                                — 新增 Windows 分支，轉呼叫同目錄的 .ps1，
+                                                   沿用同一套輸出格式與結束碼；
+                                                   PowerShell 的錯誤訊息完整保留（IR-003）；
+                                                   新增 OWNMIND_PWSH 供測試替換直譯器
+```
+
 ## v1.30.5 修改（沒人跑的那一半）
 
 新增：
