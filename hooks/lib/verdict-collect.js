@@ -278,6 +278,48 @@ async function failureNotice(record) {
       ),
     };
   }
+  if (record.failure === 'timeout') {
+    // The judge ran and did not finish in time. Nothing about OwnMind's own install is wrong,
+    // so the generic "re-run the update script" was both useless and misleading — and it was
+    // the line the owner's own machine saw on every turn while its ceiling was set too low.
+    // The sentence asks the user to say so, because a timeout on every turn is a number this
+    // product got wrong, not something they can repair.
+    return {
+      key: 'not-checked:too-slow',
+      banner: await notice(
+        'verdict.notChecked.tooSlow',
+        '[OwnMind] 🔴 Checking that reply took longer than OwnMind allows, so it was not checked against your rules.\n'
+        + '  The next reply is checked from scratch. If this happens every turn, say so: the limit is set too low.',
+      ),
+    };
+  }
+  if (record.failure === 'unparseable') {
+    // The judge answered in a shape this could not read. Nothing on the user's side causes it
+    // and nothing on their side fixes it; the next turn simply asks again.
+    return {
+      key: 'not-checked:bad-answer',
+      banner: await notice(
+        'verdict.notChecked.badAnswer',
+        "[OwnMind] 🔴 OwnMind could not make sense of what came back from the check, so that reply was not checked against your rules.\n"
+        + '  The next reply is checked from scratch. Nothing for you to do.',
+      ),
+    };
+  }
+  if (record.failure === 'bad-cli-shape') {
+    // Installed, and unstartable. A distinct repair from every other line in this family:
+    // installing it again is what "not found" asks for and would not help here, and re-running
+    // the OwnMind updater — where this used to land — cannot touch Claude Code's own install
+    // at all. The judge learned to tell this state apart on Windows and then had nowhere to
+    // say it, which is the same defect one layer further out.
+    return {
+      key: 'not-checked:bad-cli-shape',
+      banner: await notice(
+        'verdict.notChecked.badCliShape',
+        '[OwnMind] 🔴 Claude Code is on this computer but OwnMind cannot start it, so that reply was not checked.\n'
+        + '  Try typing claude yourself in a terminal: if it starts, say so; if it does not, install Claude Code again.',
+      ),
+    };
+  }
   if (record.failure === 'server-declined') {
     // The server answered and could not finish — its rule fetch failed, or its account
     // lookup did. "Could not reach its server" is simply false about it, and it points the

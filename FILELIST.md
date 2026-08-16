@@ -1,5 +1,20 @@
 # OwnMind 檔案結構
 
+
+新增（判官分得出三種失敗之後，要有三句話講得出來）：
+```
+hooks/lib/verdict-collect.js（再改）  — 三句新的：①有 Claude Code 但叫不動 ②檢查超過時間上限
+                                       ③看不懂檢查回來的答案。前面兩種本來都會掉進同一句
+                                       「重跑一次 OwnMind 的更新指令」—— 而那支指令裝的是
+                                       OwnMind，碰不到 Claude Code，也不會讓判斷變快
+tests/reply-check-review-round-two.test.js（再改）
+                                     — 兩條。其中一條是「長出來的」：它去 local-judge.js 掃出
+                                       所有失敗種類，逐一確認每種都有自己的句子。
+                                       寫完當場就抓到第二個漏的（超過時間上限那種）——
+                                       手寫清單不會，因為漏的人跟補清單的是同一個
+hooks/locales/*（再改）              — 三句 × 三語系 ＋ 兩份 override
+```
+
 ## v1.30.12 修改（Windows 上啟動不了判官，而且回報的理由是錯的）
 
 新增：
