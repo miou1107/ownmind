@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import yaml from 'js-yaml';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -29,11 +30,27 @@ test('the clean-install test exists where CI expects it', () => {
   );
 });
 
+/**
+ * The `install` job, parsed rather than grepped.
+ *
+ * A substring search over the whole file passes on a commented-out step, on `if: false`, and
+ * on the filename appearing in a comment - all of which mean nothing runs it, which is the
+ * one thing this file exists to notice.
+ */
+function installJob() {
+  const workflow = yaml.load(fs.readFileSync(path.join(repoRoot, WORKFLOW), 'utf8'));
+  return workflow.jobs?.install;
+}
+
 test('a CI job runs the clean-install test by name', () => {
-  const workflow = fs.readFileSync(path.join(repoRoot, WORKFLOW), 'utf8');
+  const job = installJob();
+  assert.ok(job, `${WORKFLOW} has no \`install\` job, so nothing runs the clean-install test`);
+  const steps = (job.steps || []).filter((s) => typeof s.run === 'string');
+  const runner = steps.find((s) => s.run.includes(E2E_FILE));
+  assert.ok(runner, `no step in the install job runs ${E2E_FILE}`);
   assert.ok(
-    workflow.includes(E2E_FILE),
-    `${WORKFLOW} no longer names ${E2E_FILE}, so nothing runs it`,
+    runner.if === undefined,
+    `the step running ${E2E_FILE} is conditional (\`if: ${runner.if}\`), so it can skip silently`,
   );
 });
 
@@ -41,11 +58,11 @@ test('the clean-install test runs on all three platforms', () => {
   // Windows is the reason this file exists: the install failures reported from real machines
   // were Windows failures, and a clean-install job that only ran on Linux would have been
   // green through every one of them.
-  const workflow = fs.readFileSync(path.join(repoRoot, WORKFLOW), 'utf8');
-  const job = workflow.slice(workflow.indexOf('\n  install:'));
-  assert.ok(job, 'no `install:` job in the workflow');
+  const job = installJob();
+  assert.ok(job, `${WORKFLOW} has no \`install\` job`);
+  const platforms = JSON.stringify(job.strategy?.matrix?.os || []);
   for (const os_ of ['ubuntu-latest', 'macos-latest', 'windows-latest']) {
-    assert.ok(job.includes(os_), `the install job does not run on ${os_}`);
+    assert.ok(platforms.includes(os_), `the install job does not run on ${os_} (matrix: ${platforms})`);
   }
 });
 

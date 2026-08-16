@@ -32,9 +32,10 @@ on:
 # week. `drill` makes the failure branch runnable on demand: run this workflow with it on, and
 # an issue should appear. Close the issue afterwards; nothing else needs undoing.
 
+# Read-only by default; the one job that needs to write says so itself, so the three real
+# installs run with a token that cannot open anything.
 permissions:
   contents: read
-  issues: write
 
 jobs:
   install:
@@ -69,6 +70,9 @@ jobs:
     # `failure()` alone would also skip this when the matrix was cancelled.
     if: always() && needs.install.result != 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
@@ -77,7 +81,11 @@ jobs:
           RESULT: ${{ needs.install.result }}
         shell: bash
         run: |
-          set -euo pipefail
+          # Deliberately not `set -e`. This step exists so a failure reaches a person, and a
+          # rate-limited `gh issue list` under `set -e` would end the step right there - no
+          # issue, no comment, and a silent morning that looks exactly like a healthy one.
+          # Every command below decides for itself what to do when it fails.
+          set -uo pipefail
           TITLE="Installing OwnMind is broken"
           BODY=$(cat <<EOF
           The daily check installed OwnMind onto a machine with nothing on it, then asked each
@@ -94,16 +102,25 @@ jobs:
           EOF
           )
 
+          # An empty answer here has two meanings - no open issue, or the lookup failed - and
+          # they call for the same response: say something. A duplicate issue is noise; a
+          # silent failure is the thing this workflow was built to stop.
           EXISTING=$(gh issue list --repo "$REPO" --state open --label install-broken \
-            --json number --jq '.[0].number // empty')
+            --json number --jq '.[0].number // empty' 2>/dev/null || true)
 
-          if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing ($RESULT): $RUN_URL"
+          if [ -n "$EXISTING" ] && gh issue comment "$EXISTING" --repo "$REPO" \
+               --body "Still failing ($RESULT): $RUN_URL"; then
             echo "commented on #$EXISTING"
-          else
-            # --label creates it if the repo does not have it yet only when it exists; create
-            # it first so a missing label cannot be what stops the alert reaching anybody.
-            gh label create install-broken --repo "$REPO" \
-              --description "The daily clean-install check is failing" --color B60205 2>/dev/null || true
-            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" --label install-broken
+            exit 0
+          fi
+
+          # The label has to exist before it can be applied, and a missing label must not be
+          # what stops the alert.
+          gh label create install-broken --repo "$REPO" \
+            --description "The daily clean-install check is failing" --color B60205 2>/dev/null || true
+          if ! gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" --label install-broken; then
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" || {
+              echo "::error::the clean install failed and this step could not open an issue about it"
+              exit 1
+            }
           fi

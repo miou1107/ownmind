@@ -29,9 +29,17 @@ import { fileURLToPath } from 'node:url';
  *
  * ## Two things this deliberately does not exercise
  *
- * **The clone.** `install.sh` clones from GitHub; this seeds ~/.ownmind from the checkout
- * under test instead. Otherwise the run would install origin/main and tell you nothing about
- * the branch, and a red result would mean "GitHub was slow" as often as anything else.
+ * **The GitHub clone.** `install.sh` clones from github.com; this seeds ~/.ownmind from the
+ * commit under test instead, by way of a bare repo that stands in as the remote. Otherwise
+ * the run would install origin/main and tell you nothing about the branch, and a red result
+ * would mean "GitHub was slow" as often as anything else. The installer's *other* branch -
+ * `git pull` into an existing ~/.ownmind - is exercised, and the bare repo is what makes that
+ * possible: `actions/checkout@v4` leaves a `pull_request` build on a detached HEAD with no
+ * local branch, a clone of that is detached too, and `git pull` there exits 1 with "you are
+ * not currently on a branch". Cloning the checkout directly would therefore have been green
+ * on every push and red on every pull request.
+ *
+ * Note that this installs *committed* state. Uncommitted work in the tree is not covered.
  *
  * **The scheduler.** `$HOME/.ownmind/.no-usage-scanner` is set on purpose. Without it the
  * installer calls `launchctl load -w` / `systemctl --user enable --now`, which register with
@@ -48,7 +56,6 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require_ = createRequire(import.meta.url);
 
-const IS_WINDOWS = process.platform === 'win32';
 const API_KEY = 'clean-machine-test-key-0123456789';
 
 /** Everything `before` produces, so each test reads state rather than rebuilding it. */
@@ -81,6 +88,32 @@ async function startStub() {
   return server;
 }
 
+/**
+ * The environment that keeps every child inside the throwaway home.
+ *
+ * `HOME` and `USERPROFILE` alone are not a seal. `install.sh` runs `git config --global`,
+ * and when `XDG_CONFIG_HOME` is set and the throwaway `$HOME/.gitconfig` does not exist yet,
+ * git writes to `$XDG_CONFIG_HOME/git/config` - the developer's real one. This file then
+ * deletes the directory that config points at, leaving `core.hooksPath` aimed at nothing and
+ * git hooks silently off in every repository on that machine. `GIT_CONFIG_GLOBAL` names the
+ * file outright, which no lookup order can reroute; `XDG_CONFIG_HOME` covers everything else
+ * that follows the same convention.
+ *
+ * Every spawn in this file uses this - including the MCP preflight, whose child would
+ * otherwise inherit the real `HOME` from `process.env` and run its auto-update against the
+ * developer's own ~/.ownmind.
+ */
+function sandboxEnv(extra = {}) {
+  return {
+    ...process.env,
+    HOME: world.home,
+    USERPROFILE: world.home,
+    XDG_CONFIG_HOME: path.join(world.home, '.config'),
+    GIT_CONFIG_GLOBAL: path.join(world.home, '.gitconfig'),
+    ...extra,
+  };
+}
+
 before(async () => {
   world.stub = await startStub();
   world.apiUrl = `http://127.0.0.1:${world.stub.address().port}`;
@@ -90,14 +123,20 @@ before(async () => {
   // in the file. It is removed by this file's own `after` below.
   world.home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-clean-install-'));
 
-  execFileSync('git', ['clone', '-q', '--no-hardlinks', repoRoot, path.join(world.home, '.ownmind')]);
+  // A bare repo standing in for github.com, carrying the commit under test on a real branch.
+  // Pushing writes only to the bare repo, so the checkout being tested is never touched -
+  // and the clone below lands on a branch with an upstream, which is what lets the
+  // installer's `git pull` succeed from a detached-HEAD build. See the note in the docblock.
+  const origin = path.join(world.home, 'origin.git');
+  execFileSync('git', ['init', '-q', '--bare', origin]);
+  execFileSync('git', ['-C', repoRoot, 'push', '-q', origin, 'HEAD:refs/heads/main']);
+  execFileSync('git', [
+    'clone', '-q', '--no-hardlinks', '--branch', 'main', origin, path.join(world.home, '.ownmind'),
+  ]);
   fs.writeFileSync(path.join(world.home, '.ownmind', '.no-usage-scanner'), '');
 
   const r = spawnSync('bash', [path.join(repoRoot, 'install.sh'), API_KEY, world.apiUrl], {
-    // HOME is what install.sh reads; USERPROFILE is what the Windows branches read. Both, or
-    // the run installs into the developer's real home, which is the one outcome that must be
-    // impossible.
-    env: { ...process.env, HOME: world.home, USERPROFILE: world.home },
+    env: sandboxEnv(),
     encoding: 'utf8',
     timeout: 10 * 60 * 1000,
   });
@@ -116,6 +155,19 @@ const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 /** Every hook command registered under `event`, whatever its matcher. */
 function hookCommands(settings, event) {
   return (settings.hooks?.[event] || []).flatMap((entry) => (entry.hooks || []).map((h) => h.command));
+}
+
+/**
+ * The script out of a registered hook command, whichever form the installer wrote.
+ *
+ * Two shapes reach this: `bash ~/.claude/hooks/x.sh` and `node "/abs/path/x.js"`. Stripping
+ * a leading and trailing quote independently would leave the opening quote on the second
+ * form and produce an unopenable path, so the argument is unquoted as a whole.
+ */
+function hookScriptPath(command) {
+  const arg = command.slice(command.indexOf(' ') + 1).trim();
+  const unquoted = arg.startsWith('"') && arg.endsWith('"') ? arg.slice(1, -1) : arg;
+  return unquoted.startsWith('~') ? path.join(world.home, unquoted.slice(1)) : unquoted;
 }
 
 test('the installer finishes, and says so', () => {
@@ -143,8 +195,19 @@ test('the registered tool actually starts and answers', async () => {
   // Registered and starts are separated by a lot of machinery, and this repository has shipped
   // four separate registrations that read perfectly and did not launch. Reading the entry
   // proves the first; only spawning it proves the second.
-  const { preflightMcp } = require_(path.join(repoRoot, 'scripts/install-helpers/mcp-preflight.cjs'));
-  const result = await preflightMcp({ home: world.home, timeoutMs: 60_000 });
+  const { preflightMcp, readRegistration } = require_(
+    path.join(repoRoot, 'scripts/install-helpers/mcp-preflight.cjs'),
+  );
+
+  // The entry is passed in with a sandboxed env rather than left to `preflightMcp` to read.
+  // Its `home` option governs which file the entry is read from and nothing else: the child
+  // is spawned with `{...process.env, ...entry.env}`, so HOME would arrive from the developer's
+  // own shell and the server would resolve - and auto-update - the real ~/.ownmind.
+  const registration = readRegistration({ home: world.home });
+  assert.ok(!registration.error, `could not read the registration: ${registration.error}`);
+  const entry = { ...registration.entry, env: { ...(registration.entry.env || {}), ...sandboxEnv() } };
+
+  const result = await preflightMcp({ home: world.home, entry, timeoutMs: 60_000 });
   assert.equal(
     result.status, 'ok',
     `the MCP server did not answer: ${result.reason} (phase: ${result.phase})`,
@@ -214,34 +277,46 @@ test('the registered edit hook really blocks an edit to somebody else\'s path', 
     }),
   );
 
+  const fire = (filePath) => {
+    const payload = JSON.stringify({
+      tool_name: 'Edit',
+      session_id: 'clean-install-e2e',
+      tool_input: { file_path: filePath },
+    });
+    const r = spawnSync('bash', [hookScriptPath(command)], {
+      input: payload, env: sandboxEnv(), encoding: 'utf8', timeout: 60_000,
+    });
+    return { out: `${r.stdout || ''}`, err: `${r.stderr || ''}` };
+  };
+
   // Deliberately a file in a folder that does not exist yet: adding the first file under a
   // guarded path is the ordinary shape of this, and it was the shape that walked through.
-  const payload = JSON.stringify({
-    tool_name: 'Edit',
-    session_id: 'clean-install-e2e',
-    tool_input: { file_path: path.join(repo, 'ci', 'templates', 'projects.yml') },
-  });
-
-  const scriptPath = command.replace(/^bash\s+/, '').replace(/^~/, world.home).replace(/^"|"$/g, '');
-  const r = spawnSync('bash', [scriptPath], {
-    input: payload,
-    env: { ...process.env, HOME: world.home, USERPROFILE: world.home },
-    encoding: 'utf8',
-    timeout: 60_000,
-  });
-  const out = `${r.stdout || ''}`;
+  const blocked = fire(path.join(repo, 'ci', 'templates', 'projects.yml'));
   assert.match(
-    out, /"decision"\s*:\s*"block"/,
-    `the installed hook did not block. stdout: ${out}\nstderr: ${r.stderr}`,
+    blocked.out, /"decision"\s*:\s*"block"/,
+    `the installed hook did not block. stdout: ${blocked.out}\nstderr: ${blocked.err}`,
   );
-  assert.match(out, /412/, 'the block does not name the standard that caused it');
+  // The reason line itself, not just the number appearing somewhere in the payload.
+  const reason = JSON.parse(blocked.out).reason;
+  assert.match(reason, /Blocked by team standard 412/);
+  assert.match(reason, /ci\/templates\/projects\.yml/);
+
+  // The negative, without which a hook that blocked everything would pass the assertion above.
+  const allowed = fire(path.join(repo, 'src', 'mine', 'index.js'));
+  assert.doesNotMatch(
+    allowed.out, /"decision"\s*:\s*"block"/,
+    `the installed hook blocked a path nobody claimed: ${allowed.out}`,
+  );
 });
 
 test('the installed git hook really stops a commit carrying a key', () => {
   const hooksPath = execFileSync('git', ['config', '--global', 'core.hooksPath'], {
-    env: { ...process.env, HOME: world.home, USERPROFILE: world.home },
-    encoding: 'utf8',
+    env: sandboxEnv(), encoding: 'utf8',
   }).trim();
+  assert.ok(
+    hooksPath.startsWith(world.home),
+    `core.hooksPath points outside the throwaway home: ${hooksPath}`,
+  );
   assert.ok(hooksPath, 'no global core.hooksPath was set, so the git hooks run for nobody');
   const preCommit = path.join(hooksPath, 'pre-commit');
   assert.ok(fs.existsSync(preCommit), `no pre-commit hook at ${preCommit}`);
@@ -258,15 +333,18 @@ test('the installed git hook really stops a commit carrying a key', () => {
   execFileSync('git', ['-C', repo, 'add', 'conf.env']);
 
   const r = spawnSync('bash', [preCommit], {
-    cwd: repo,
-    env: { ...process.env, HOME: world.home, USERPROFILE: world.home },
-    encoding: 'utf8',
-    timeout: 60_000,
+    cwd: repo, env: sandboxEnv(), encoding: 'utf8', timeout: 60_000,
   });
+  const out = `${r.stdout || ''}${r.stderr || ''}`;
   assert.equal(
     r.status, 1,
-    `the pre-commit hook let a key through (exit ${r.status}).\n${r.stdout}\n${r.stderr}`,
+    `the pre-commit hook let a key through (exit ${r.status}).\n${out}`,
   );
+  // Why it stopped, not only that it stopped. A rule set to "do not block" prints
+  // `all N rules passed ✓` over a leaked key - a green tick and a zero exit are both
+  // survivable on their own, and the pair of them is what makes that defect invisible.
+  assert.match(out, /blocked|敏感|secret|key/i, `the hook exited 1 without saying why:\n${out}`);
+  assert.doesNotMatch(out, /rules passed/, 'the hook reported a pass while stopping the commit');
 });
 
 test('the rules block lands in the CLAUDE.md the assistant reads', () => {
