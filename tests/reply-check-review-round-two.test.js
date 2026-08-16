@@ -167,6 +167,36 @@ test('the redactor leaves ordinary prose alone', async () => {
   assert.equal(redact(prose), prose);
 });
 
+test('the quote the judge takes from the reply is redacted too', async () => {
+  // The reply is redacted on the way to the server, but the judge reads the RAW reply on this
+  // machine and quotes it back as evidence — and that quote is posted to the server when the
+  // audit row is closed. Same text, second road, so it needs the same treatment: a reply with
+  // `api_key=…` on the line a rule was broken on would otherwise send that line verbatim.
+  const { judgeLocally } = await import('../hooks/lib/local-judge.js');
+  const dir = tempDir('om-round-two-judge-');
+  const bin = path.join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
+  const answer = JSON.stringify({
+    verdicts: [{
+      ruleId: 795, violated: true,
+      evidence: 'run it with api_key=sk-live-abc123',
+      fix: 'do not paste api_key=sk-live-abc123 into the reply',
+    }],
+  });
+  fs.writeFileSync(bin, `#!/usr/bin/env node\nprocess.stdin.resume();\nprocess.stdin.on('end', () => { process.stdout.write(${JSON.stringify(answer)}); });\n`);
+  fs.chmodSync(bin, 0o755);
+
+  const out = await judgeLocally({
+    rules: [{ id: 795, title: 'no keys in replies', judgeText: 'x' }],
+    assistantText: 'run it with api_key=sk-live-abc123',
+    claudeBin: bin,
+  });
+  assert.equal(out.outcome, 'violation');
+  assert.doesNotMatch(out.violations[0].evidence, /sk-live-abc123/, 'the quote carries the key');
+  assert.doesNotMatch(out.violations[0].fix, /sk-live-abc123/);
+  assert.doesNotMatch(JSON.stringify(out.verdicts), /sk-live-abc123/,
+    'and the verdicts array is what gets posted back to the server');
+});
+
 test('a failure reason cannot write an unbounded surprise to disk', async () => {
   // These are kept for weeks in the local diagnosis log. A proxy answering HTML to a request
   // expecting JSON puts the first of that HTML into the parser's error message.
