@@ -61,13 +61,13 @@ against.
 The existing behaviour stays reachable and unchanged until Task 3 switches the client over —
 this is the release that must not break the check for anyone mid-upgrade.
 
-- [ ] **Step 1:** write the failing test — a request in select-only mode returns the selected
+- [x] **Step 1:** write the failing test — a request in select-only mode returns the selected
       rules with `judgeText`, records a row with outcome `pending`, and makes **no** LLM call
       (inject an `llmFn` that throws if called)
-- [ ] **Step 2:** run it, watch it fail
-- [ ] **Step 3:** implement
-- [ ] **Step 4:** run it, watch it pass; run the existing compliance route tests unchanged
-- [ ] **Step 5:** commit
+- [x] **Step 2:** run it, watch it fail
+- [x] **Step 3:** implement
+- [x] **Step 4:** run it, watch it pass; run the existing compliance route tests unchanged
+- [x] **Step 5:** commit
 
 ### Task 2: a judge that runs on this machine
 
@@ -86,11 +86,11 @@ What the tests must pin, because each of these is a way to fail quietly:
   empty verdict list that reads as "clean"
 - `claude` not on PATH is its own case with its own message
 
-- [ ] **Step 1:** write the failing tests against a fake `claude` on PATH
-- [ ] **Step 2:** run them, watch them fail
-- [ ] **Step 3:** implement
-- [ ] **Step 4:** run them; then run the real CLI once by hand and record the latency
-- [ ] **Step 5:** commit
+- [x] **Step 1:** write the failing tests against a fake `claude` on PATH
+- [x] **Step 2:** run them, watch them fail
+- [x] **Step 3:** implement
+- [x] **Step 4:** run them; then run the real CLI once by hand and record the latency
+- [x] **Step 5:** commit
 
 ### Task 3: fire at Stop, collect at the next turn
 
@@ -118,11 +118,11 @@ The states a user can be in, each with its own line:
 | Verdict not ready yet | nothing — it lands next turn |
 | Judge could not run | that the reply was not checked, and what repairs it |
 
-- [ ] **Step 1:** verify a real Stop hook can leave the judge running
-- [ ] **Step 2:** write the failing tests for the four states
-- [ ] **Step 3:** implement
-- [ ] **Step 4:** run the suite; break each new check once to confirm it goes red (IR-134)
-- [ ] **Step 5:** commit
+- [x] **Step 1:** verify a real Stop hook can leave the judge running
+- [x] **Step 2:** write the failing tests for the four states
+- [x] **Step 3:** implement
+- [x] **Step 4:** run the suite; break each new check once to confirm it goes red (IR-134)
+- [x] **Step 5:** commit
 
 ---
 

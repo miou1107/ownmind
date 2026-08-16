@@ -151,18 +151,15 @@ export function formatViolationFeedback(violations, { checkId } = {}) {
 }
 
 /**
- * @param {object} ctx
- * @returns {Promise<{action: 'exit2'|'notice'|'none', stderr?: string, banner?: string}>}
+ * Everything that can be decided on this machine, before anything is asked of anyone.
+ *
+ * Shared by both callers: the turn either cannot be checked (each reason with its own
+ * sentence and its own throttle key) or nothing in the cached rule set bears on it. Only past
+ * this point does a check cost a network call, a subscription, or a second of anyone's time.
+ *
+ * @returns {Promise<object|null>} a result the caller should return as-is, or null to proceed.
  */
-export async function runComplianceStep(ctx) {
-  const {
-    disabled, mode, apiKey, apiUrl, sessionId,
-    assistantText, userPrompts, repoRemote, trigger,
-    bundle,
-    blockCount = 0,
-    requestCheckImpl,
-  } = ctx;
-
+async function preflight({ disabled, mode, apiKey, apiUrl, bundle, assistantText, userPrompts, repoRemote, trigger }) {
   // Degraded is acceptable. Silent is not: a check that is switched off must never be
   // indistinguishable from a check that passed.
   if (disabled || mode === 'warn') {
@@ -205,9 +202,68 @@ export async function runComplianceStep(ctx) {
     return { action: 'none' };
   }
 
-  const check = await requestCheckImpl({
+  return null;
+}
+
+/**
+ * Hand this turn to a judge running on the user's own subscription, and return.
+ *
+ * The judging itself takes 29–54 seconds — measured, real CLI, real payload — so nothing here
+ * waits for it. What comes back is only whether a judge was started; the verdict reaches the
+ * user through `verdict-collect.js` on the following turn.
+ *
+ * The trade is written down in the plan and repeated here because it is a real loss: the check
+ * can no longer stop a reply before the user reads it. It buys a check that actually runs.
+ *
+ * @param {object} ctx
+ * @returns {Promise<{action: 'notice'|'none', noticeKey?: string, banner?: string}>}
+ */
+export async function startComplianceCheck(ctx) {
+  const stop = await preflight(ctx);
+  if (stop) return stop;
+
+  const { sessionId, assistantText, userPrompts, repoRemote, trigger, apiUrl, apiKey } = ctx;
+  const started = ctx.startJudgeImpl({
+    sessionId,
+    assistantText,
+    userPrompts: userPrompts || [],
     apiUrl,
     apiKey,
+    repoRemote: repoRemote || null,
+    trigger: trigger || '',
+  });
+
+  if (started?.started === true) return { action: 'none' };
+
+  // Nothing will write a verdict file, so nothing downstream will ever notice this turn went
+  // unchecked. This is the only place it can be said.
+  return {
+    action: 'notice',
+    noticeKey: 'not-checked:judge-not-started',
+    banner: await complianceNotice(
+      'compliance.notChecked.judgeNotStarted',
+      "[OwnMind] 🔴 OwnMind could not start checking the AI's reply, so this reply was not checked against your rules. Re-running the OwnMind update script usually repairs it.",
+    ),
+  };
+}
+
+/**
+ * @param {object} ctx
+ * @returns {Promise<{action: 'exit2'|'notice'|'none', stderr?: string, banner?: string}>}
+ */
+export async function runComplianceStep(ctx) {
+  const {
+    sessionId, assistantText, userPrompts, repoRemote, trigger,
+    blockCount = 0,
+    requestCheckImpl,
+  } = ctx;
+
+  const stop = await preflight(ctx);
+  if (stop) return stop;
+
+  const check = await requestCheckImpl({
+    apiUrl: ctx.apiUrl,
+    apiKey: ctx.apiKey,
     payload: {
       session_id: sessionId,
       assistant_text: assistantText,
