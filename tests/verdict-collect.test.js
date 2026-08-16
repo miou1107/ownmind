@@ -85,8 +85,11 @@ test('a judge that did not run is loud, and the user line carries no jargon', as
   }));
 
   assert.equal(out.action, 'notice');
-  assert.match(out.banner, /could not check/);
-  assert.match(out.banner, /update script/, 'and what repairs it');
+  assert.match(out.banner, /not checked against your rules/);
+  // A timeout has its own sentence now, and its repair is not "run the update script" — the
+  // updater installs OwnMind and cannot make a judge answer faster. What the line must still
+  // do is name something the reader can act on.
+  assert.match(out.banner, /the limit is set too low/, 'a failure with no repair is just bad news');
   for (const jargon of ['no-cli', 'timeout', 'unparseable', 'exit']) {
     assert.doesNotMatch(out.banner, new RegExp(jargon),
       `"${jargon}" is internal vocabulary and must not reach the user`);

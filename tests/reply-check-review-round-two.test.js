@@ -25,6 +25,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
+import { fakeClaude } from './helpers/fake-claude.js';
 import { runJudgeJob } from '../hooks/lib/run-local-judge.js';
 import { collectVerdict } from '../hooks/lib/verdict-collect.js';
 import { startLocalJudge } from '../hooks/lib/start-local-judge.js';
@@ -174,8 +175,6 @@ test('the quote the judge takes from the reply is redacted too', async () => {
   // audit row is closed. Same text, second road, so it needs the same treatment: a reply with
   // `api_key=…` on the line a rule was broken on would otherwise send that line verbatim.
   const { judgeLocally } = await import('../hooks/lib/local-judge.js');
-  const dir = tempDir('om-round-two-judge-');
-  const bin = path.join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
   const answer = JSON.stringify({
     verdicts: [{
       ruleId: 795, violated: true,
@@ -183,13 +182,15 @@ test('the quote the judge takes from the reply is redacted too', async () => {
       fix: 'do not paste api_key=sk-live-abc123 into the reply',
     }],
   });
-  fs.writeFileSync(bin, `#!/usr/bin/env node\nprocess.stdin.resume();\nprocess.stdin.on('end', () => { process.stdout.write(${JSON.stringify(answer)}); });\n`);
-  fs.chmodSync(bin, 0o755);
+  // Through the shared helper, because this file used to build its own and named it
+  // `claude.cmd` on Windows while filling it with a node script. cmd.exe cannot run that, so
+  // the judge never started and this test failed over a defect in its own fixture.
+  const fake = fakeClaude({ stdout: answer, prefix: 'om-round-two-judge-' });
 
   const out = await judgeLocally({
     rules: [{ id: 795, title: 'no keys in replies', judgeText: 'x' }],
     assistantText: 'run it with api_key=sk-live-abc123',
-    claudeBin: bin,
+    claudeBin: fake.bin,
   });
   assert.equal(out.outcome, 'violation');
   assert.doesNotMatch(out.violations[0].evidence, /sk-live-abc123/, 'the quote carries the key');
@@ -440,4 +441,41 @@ test('the judge ceiling clears the slowest real payload measured', () => {
   const MEASURED_WORST_MS = 150_243;
   assert.ok(DEFAULT_TIMEOUT_MS > MEASURED_WORST_MS,
     `the judge is given ${DEFAULT_TIMEOUT_MS}ms and a real turn took ${MEASURED_WORST_MS}ms`);
+});
+
+// ------------------------------ installed but unstartable is its own repair
+
+test('a CLI that is there but cannot be started is not told to update OwnMind', async () => {
+  // The Windows fix taught the judge to tell "installed in a shape I cannot launch" apart
+  // from "not installed" — and then had nowhere to say it, so it fell through to the generic
+  // line: re-run the OwnMind update script. That script installs OwnMind. It cannot touch
+  // Claude Code's own install, which is the thing that is wrong.
+  const out = await collectVerdict(one({
+    outcome: 'failed', failure: 'bad-cli-shape',
+    reason: 'claude is installed but cannot be started from here: ...claude.cmd is a shim this cannot unwrap',
+  }));
+  assert.match(out.banner, /Claude Code/);
+  assert.doesNotMatch(out.banner, /update script/,
+    'the repair named must be one that can work');
+  assert.doesNotMatch(out.banner, /cmd|shim|unwrap/,
+    'the shape of the install is not a sentence for a person');
+});
+
+test('every failure the judge can produce has a sentence of its own', async () => {
+  // Grown, not listed. `bad-cli-shape` reached the user as the generic "re-run the update
+  // script" because a new failure kind was added in one file and the family that speaks to
+  // the user lives in another — and nothing connected them. A hand-written list here would
+  // have been extended by the same person who forgot the first time.
+  const source = fs.readFileSync(path.join(repoRoot, 'hooks', 'lib', 'local-judge.js'), 'utf8');
+  const kinds = [...source.matchAll(/failure: '([a-z-]+)'|failure: \w+ \? '([a-z-]+)' : '([a-z-]+)'/g)]
+    .flatMap((m) => [m[1], m[2], m[3]])
+    .filter(Boolean);
+  assert.ok(kinds.length >= 4, `found only ${kinds.length} failure kinds; the scan has stopped working`);
+
+  const generic = await collectVerdict(one({ outcome: 'failed', failure: 'a-kind-nobody-named' }));
+  for (const kind of new Set(kinds)) {
+    const out = await collectVerdict(one({ outcome: 'failed', failure: kind, reason: 'x' }));
+    assert.notEqual(out.banner, generic.banner,
+      `"${kind}" falls through to the generic notice — it needs a sentence in verdict-collect.js`);
+  }
 });

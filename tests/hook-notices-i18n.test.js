@@ -137,15 +137,28 @@ test('zh: check-failed banner never shows the internal reason token', async () =
   // the same fact, and never said what to do. The reason stays in the log; the notice says
   // what happened to the reader instead.
   process.env.OWNMIND_LOCALE_FORCE = 'zh';
+  // A timeout has had its own sentence since v1.30.12; this case keeps the generic one, which
+  // is where a failure nobody has named yet still lands.
   const r = await collectVerdict(verdictBase({
-    outcome: 'failed', failure: 'timeout', reason: 'the judge did not answer within 90000ms',
+    outcome: 'failed', failure: 'some-kind-nobody-named-yet', reason: 'http 500 <html>...',
   }));
   assert.equal(
     r.banner,
     '[OwnMind] 🔴 OwnMind 沒能檢查 AI 前面某一段回話，那一段沒有對過你的規矩。\n'
     + '  重跑一次 OwnMind 的更新指令通常就會好；在那之前 AI 的回話沒有人在對規矩。',
   );
-  assert.doesNotMatch(r.banner, /timeout|90000/, 'the raw reason token must not reach the user');
+  assert.doesNotMatch(r.banner, /500|html/, 'the raw reason token must not reach the user');
+
+  // And the timeout's own line carries no error vocabulary either.
+  const slow = await collectVerdict(verdictBase({
+    outcome: 'failed', failure: 'timeout', reason: 'the judge did not answer within 300000ms',
+  }));
+  assert.equal(
+    slow.banner,
+    '[OwnMind] 🔴 檢查 AI 那段回話花的時間超過上限，所以那一段沒有對過你的規矩。\n'
+    + '  下一段回話會重新檢查。每一輪都這樣的話跟我說一聲，那是上限訂得不夠。',
+  );
+  assert.doesNotMatch(slow.banner, /timeout|300000/, 'the raw reason token must not reach the user');
 });
 
 test('zh: a rejected key gets its own banner, not the outage one', async () => {

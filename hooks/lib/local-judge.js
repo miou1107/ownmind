@@ -29,6 +29,7 @@
 
 import { spawn } from 'node:child_process';
 import { redact } from './redact.js';
+import { resolveClaudeBin } from './resolve-claude-bin.js';
 import {
   JUDGE_SYSTEM,
   buildJudgeUserPrompt,
@@ -124,15 +125,26 @@ export async function judgeLocally({
 
   let result;
   try {
-    result = await run(spawnImpl, claudeBin, argv, prompt, timeoutMs);
+    // Windows keeps the CLI in a shape node cannot spawn directly — see resolve-claude-bin.js.
+    // Off Windows this hands the name straight back, so there is one code path everywhere.
+    const { command, prefixArgs } = resolveClaudeBin(claudeBin);
+    result = await run(spawnImpl, command, [...prefixArgs, ...argv], prompt, timeoutMs);
   } catch (err) {
-    // ENOENT here is the CLI not being on this machine, which is a different problem from the
-    // CLI refusing — different cause, different repair, so a different answer.
-    const noCli = err?.code === 'ENOENT';
+    // Three different states, three different sentences. ENOENT and `not-found` are the CLI
+    // genuinely not being here. `shim-*` is the opposite — it IS here, in a form this cannot
+    // launch — and calling that "not installed" is the wrong repair, which is precisely the
+    // defect this branch was rewritten for: on Windows every judge run reported a missing
+    // install on machines that had one.
+    const shimFailure = err?.code === 'shim-unknown' || err?.code === 'shim-unreadable';
+    const noCli = !shimFailure && (err?.code === 'ENOENT' || err?.code === 'not-found');
     return done({
       outcome: 'failed',
-      failure: noCli ? 'no-cli' : 'spawn',
-      reason: noCli ? `${claudeBin} is not on this machine` : `could not start ${claudeBin}: ${err?.message || err}`,
+      failure: shimFailure ? 'bad-cli-shape' : noCli ? 'no-cli' : 'spawn',
+      reason: noCli
+        ? `${claudeBin} is not on this machine`
+        : shimFailure
+          ? `${claudeBin} is installed but cannot be started from here: ${err.message}`
+          : `could not start ${claudeBin}: ${err?.message || err}`,
     });
   }
 

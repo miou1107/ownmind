@@ -16,6 +16,50 @@ tests/reply-check-review-round-two.test.js（再改）
                                        這兩個數字住在不同檔案，本來沒有東西把它們綁在一起
 ```
 
+
+新增（判官分得出三種失敗之後，要有三句話講得出來）：
+```
+hooks/lib/verdict-collect.js（再改）  — 三句新的：①有 Claude Code 但叫不動 ②檢查超過時間上限
+                                       ③看不懂檢查回來的答案。前面兩種本來都會掉進同一句
+                                       「重跑一次 OwnMind 的更新指令」—— 而那支指令裝的是
+                                       OwnMind，碰不到 Claude Code，也不會讓判斷變快
+tests/reply-check-review-round-two.test.js（再改）
+                                     — 兩條。其中一條是「長出來的」：它去 local-judge.js 掃出
+                                       所有失敗種類，逐一確認每種都有自己的句子。
+                                       寫完當場就抓到第二個漏的（超過時間上限那種）——
+                                       手寫清單不會，因為漏的人跟補清單的是同一個
+hooks/locales/*（再改）              — 三句 × 三語系 ＋ 兩份 override
+```
+
+## v1.30.12 修改（Windows 上啟動不了判官，而且回報的理由是錯的）
+
+新增：
+```
+hooks/lib/resolve-claude-bin.js      — 把 `claude` 這個名字變成 node 真的能啟動的東西。
+                                       Windows 上 node 不會套用 PATHEXT，也拒絕直接跑 .cmd，
+                                       所以要自己在 PATH 上找、找到轉接檔就讀出它背後的目標。
+                                       Windows 以外原樣放行，不做任何解析
+tests/resolve-claude-bin.test.js     — 15 條。平台、環境變數、檔案系統全部是參數，
+                                       所以在 Linux 跟 macOS 上也跑得到 ——
+                                       這個 bug 活這麼久就是因為只有 Windows 看得見它。
+                                       另有兩條只在 Windows 跑：一條證明舊寫法真的會 EINVAL
+                                       （沒有這條，就沒有證據說這個修正是必要的），
+                                       一條證明新寫法啟動得起來、而且參數不會變形
+```
+
+修改：
+```
+hooks/lib/local-judge.js             — 啟動前先過解析器。失敗理由拆成三種：
+                                       沒裝（no-cli）、裝了但這裡啟動不了（bad-cli-shape）、
+                                       其他啟動失敗（spawn）。原本只有前後兩種，
+                                       而 Windows 全部落在「沒裝」——那句話是錯的
+```
+
+**踩過的兩個坑（第一版改完 13 個測試全綠，對真機一跑就爆）：**
+1. 第一版只認 `.js` 目標。Claude Code 現在的轉接檔指向 `.exe`。
+2. npm 轉接檔裡有 `IF EXIST "%dp0%\node.exe"` 這一行，整份檔案掃的話會把
+   沒被選到的分支裡的直譯器當成目標。現在只讀帶 `%*` 的那一行。
+
 ## v1.30.11 修改（回話檢查改用使用者自己的訂閱額度）
 
 **兩個已知限制（不是壞掉，是設計上就這樣，先寫下來免得以後被當成 bug 回報）：**

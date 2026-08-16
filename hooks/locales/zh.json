@@ -33,5 +33,8 @@
   "verdict.recovered": "[OwnMind] 🟢 OwnMind 又在拿你的規矩檢查 AI 的回話了。你不用做什麼。",
   "verdict.notChecked.notLoggedIn": "[OwnMind] 🔴 這台電腦上的 Claude Code 沒有登入，所以 OwnMind 沒辦法叫它檢查 AI 的回話。\n  你重新登入 Claude Code，檢查就會自己回來。",
   "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind 叫這台電腦上的 Claude Code 檢查 AI 的回話，它不肯，所以那一段沒有檢查。\n  你自己在終端機打一次 claude 看看：它跟你講什麼，就是 OwnMind 遇到的事。",
-  "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind 算不出你哪幾條規矩該用在 AI 這段回話上，所以那一段沒有檢查。\n  這是 OwnMind 那邊的問題，通常會自己好，你不用做什麼。"
+  "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind 算不出你哪幾條規矩該用在 AI 這段回話上，所以那一段沒有檢查。\n  這是 OwnMind 那邊的問題，通常會自己好，你不用做什麼。",
+  "verdict.notChecked.badCliShape": "[OwnMind] 🔴 這台電腦上有 Claude Code，但 OwnMind 叫不動它，所以那一段回話沒有檢查。\n  你在終端機自己打一次 claude 看看：叫得動就跟我說，叫不動就把 Claude Code 重裝一次。",
+  "verdict.notChecked.tooSlow": "[OwnMind] 🔴 檢查 AI 那段回話花的時間超過上限，所以那一段沒有對過你的規矩。\n  下一段回話會重新檢查。每一輪都這樣的話跟我說一聲，那是上限訂得不夠。",
+  "verdict.notChecked.badAnswer": "[OwnMind] 🔴 OwnMind 看不懂檢查回來的答案，所以那一段回話沒有對過你的規矩。\n  下一段回話會重新檢查，你不用做什麼。"
 }
