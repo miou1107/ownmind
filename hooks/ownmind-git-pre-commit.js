@@ -628,6 +628,16 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(`[OwnMind v${VERSION}]Error report: pre-commit unexpected error — skipping check: ${err.message}`);
+  // Bug report #22: this used to be one line reading "unexpected error — skipping check",
+  // printed above a successful commit. A half-finished install, an interrupted pull, or any
+  // one damaged file on the import chain is enough to reach it, and the terminal then looks
+  // almost exactly like a commit that passed. It stays exit 0 — a broken hook must not stop
+  // somebody working — but it no longer whispers.
+  console.error(
+    `[OwnMind v${VERSION}] 🔴 OwnMind 沒有檢查這次 commit —— 它自己壞掉了，不是檢查過沒問題。\n`
+    + '  這次的內容沒有掃過密碼，也沒有比對任何規矩。\n'
+    + '  重跑一次 OwnMind 的更新指令通常就會好。\n'
+    + `  （壞在哪：${err.message}）`,
+  );
   process.exit(0);
 });
