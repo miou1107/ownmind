@@ -7,6 +7,18 @@ Each entry says what breaks for a user, how it was proved, and where it stands.
 running something. `reported` means an agent or a bug report claimed it and nobody has
 re-run it yet — those are listed separately at the bottom and must not be quoted as facts.
 
+**Two words this document uses precisely, because adversarial review found it using them
+loosely:**
+
+- **`measured`** means a number came back from running something. A number worked out from a
+  measurement is **`extrapolated`**, and is labelled as such. The 16.8-hour sweep below was
+  the first casualty of not doing this: it is arithmetic on a 67 ms sample, it is
+  single-threaded, and the parallel number is four times smaller.
+- **`Fixed in vX`** means the change is committed and tagged. It does **not** mean the reader
+  has it. Client hooks arrive on the next new session after an upgrade; anything under `src/`
+  needs the production machine rebuilt. At the time of writing, the author's own machine was
+  still reporting `v1.30.7` while three entries below were marked fixed in v1.30.9.
+
 ---
 
 ## Fixed in v1.30.8
@@ -224,10 +236,15 @@ the way around is `gate-ask-<session>-<guard>.json`, which is O1. The silent blo
 makes the self-unlock tempting rather than merely possible. Fixing the message is therefore
 part of fixing O1, not separate from it.
 
-Not investigated yet: whether the envelope is dropped by this harness, by the `.sh`, or by
-the CLI. That is the first question.
+**Symptom fixed; root cause never answered.** The question this entry opened with — whether
+the envelope was dropped by the harness, the `.sh` or the CLI — was overtaken by finding a
+shape that works, and then this entry was headed "Fixed" anyway. Adversarial review caught
+that. What is known: the legacy `{decision:'block'}` envelope is honoured as a verdict and its
+words are discarded, and adding the modern pair delivers them. What is not known: which layer
+does the discarding, and therefore whether anything else it carries is being dropped too.
+That question is still open and is listed at the end of this document.
 
-**Fixed.** Every PreToolUse block now sends `hookSpecificOutput.permissionDecision: 'deny'`
+**Symptom fixed.** Every PreToolUse block now sends `hookSpecificOutput.permissionDecision: 'deny'`
 with `permissionDecisionReason` alongside the legacy `decision`/`reason` pair. Measured in
 the live harness both ways: with the old envelope the same block arrived as
 `Hook PreToolUse:Bash denied this tool`; with the new one the whole reason came through,
@@ -248,7 +265,9 @@ Driven through the registered hook, not the module: blocked, blocked, the assist
 nothing about having been unlocked. The audit row records `approval_mode: verbal`.
 
 In code mode the six-digit consent code is recoverable from the stored fingerprint by trying
-all 900,000 values: measured 318ms and 32ms on two runs. `MAX_ASK_MISSES = 5` does not apply,
+all 900,000 values: 318ms and 32ms on two runs — those two are recovery runs that stopped as
+soon as they found the code, not full sweeps; the full sweep was separately measured at 0.7 s.
+`MAX_ASK_MISSES = 5` does not apply,
 because recovering the code costs no wrong guesses. The signing key at
 `~/.ownmind/state/gate.key` is mode 400 and owned by the same uid the assistant runs as, so
 signing the file is available too.
@@ -258,10 +277,19 @@ one account that has any. Everyone else has zero. This is a hole in a small surf
 
 **Fixed, with one part honestly left open.**
 
-- The code is no longer recoverable. `scrypt` with a per-record salt replaces the bare
-  sha256: measured 0.7 s for the full 900,000-value sweep before, 16.8 hours after, at 67 ms
-  per verification. Memory-hard at 32 MB per attempt, so parallel hardware does not collapse
-  it. A code-mode ask also expires after an hour, which keeps the window far inside that.
+- The code is no longer recoverable in the hour it is worth anything. `scrypt` with a
+  per-record salt replaces the bare sha256. **Measured:** 0.7 s for the full 900,000-value
+  sweep before; 67 ms per verification after. **Extrapolated from that:** 16.8 hours for the
+  sweep. The sweep itself was never run.
+
+  The first version of this entry added "memory-hard at 32 MB per attempt, so parallel
+  hardware does not collapse it". That was asserted, adversarial review called it, and
+  measuring it says otherwise: on an 8-core laptop, 8 threads bring the sweep to **3.8 hours**
+  — a factor of 4.4, with 0.3 GB in flight. Hardness bought a constant, not immunity.
+
+  So what protects the code is the one-hour expiry, not the KDF: an hour against 3.8 hours is
+  a margin of about four on ordinary hardware, and four times the cores would close it. Worth
+  stating plainly because the fix reads as stronger than it is if the KDF gets the credit.
 - The record is sealed with `gate.key`, and the seal covers the approval state, the session
   and the guard — so a hand-written `{"approved":true}`, a flipped flag on a genuine record,
   and a seal lifted from another guard all fail. A record in the previous format is refused
@@ -323,6 +351,17 @@ pre-change hook, two are controls.
 ---
 
 ## Open — verified, not fixed
+
+### O7 — Which layer discards a blocked hook's words is still unknown · from O6
+
+O6 shipped a shape that works without ever answering why the old one did not. The legacy
+`{decision:'block', reason}` envelope is honoured as a verdict and stripped of its text
+somewhere between the hook's stdout and the assistant; nobody has established whether that is
+the harness, the registered `.sh`, or the gate CLI. Until it is, there is no way to say
+whether anything else those envelopes carry is being dropped the same way.
+
+Settling it costs one experiment: emit each envelope shape from a trivial hook and read what
+arrives, one layer at a time.
 
 
 ### O3 — The secret scanner misses most real key shapes · verified, needs a decision
