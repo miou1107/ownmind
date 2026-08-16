@@ -1578,6 +1578,7 @@ async function drainErrorSpool(apiUrl, apiKey, opts = {}) {
  */
 function checkHomeIsAccountHome(opts = {}) {
   const running = opts.runningHome || HOME;
+  const exists = opts.exists || fs.existsSync;
   let account;
   try {
     account = opts.accountHome !== undefined ? opts.accountHome : os.userInfo().homedir;
@@ -1591,7 +1592,23 @@ function checkHomeIsAccountHome(opts = {}) {
     const resolved = path.resolve(String(p));
     return PLATFORM === 'win32' ? resolved.toLowerCase() : resolved;
   };
-  return { real: norm(running) === norm(account), running, account };
+  if (norm(running) === norm(account)) return { real: true, running, account };
+
+  // Different is not the same as a sandbox, and review found two real machines where it is
+  // not: a container job with HOME=/github/home against a passwd entry of /root, and a
+  // Windows Git Bash home that arrives as `/c/Users/Vin` — `path.resolve` turns that into
+  // `C:\c\Users\Vin`, so every MSYS machine would be judged a sandbox forever. That is the
+  // same platform the bug came from, and the punishment is silence: it stops reporting
+  // health and nobody is told.
+  //
+  // So an inequality is not proof on its own. A sandbox is a home somebody built for a test
+  // run: OwnMind is not installed in it. A real machine whose HOME is merely spelled
+  // differently has ~/.ownmind exactly where the run is looking.
+  const installedHere = exists(path.join(String(running), '.ownmind'));
+  if (installedHere) {
+    return { real: true, running, account, undecided: 'home differs but OwnMind is installed in it' };
+  }
+  return { real: false, running, account };
 }
 
 async function uploadReport(report, apiUrl, apiKey, opts = {}) {

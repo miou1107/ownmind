@@ -222,7 +222,7 @@ function preflightMcp(options = {}) {
     const stderrTail = () => redact(stderrBuf).trim().slice(-STDERR_TAIL_BYTES);
 
     try {
-child = spawnFn(entry.command, entry.args || [], {
+      child = spawnFn(entry.command, entry.args || [], {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
