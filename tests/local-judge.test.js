@@ -205,3 +205,18 @@ test('nothing to judge is not a judgement', async () => {
   assert.equal(out.outcome, 'skipped');
   assert.throws(() => fake.invocation(), 'the CLI must not have been launched at all');
 });
+
+test('a CLI that is not signed in is a different failure from a CLI that refused', async () => {
+  // Measured 2026-08-16 by running the whole pipeline against the real CLI on a machine whose
+  // Claude Code had no session: exit 1, "Not logged in · Please run /login". Left in the
+  // general bucket, the user is told to re-run the OwnMind update script — which installs
+  // OwnMind and cannot log anybody in, so they would be handed a repair that cannot work.
+  const loggedOut = fakeClaude({ stdout: 'Not logged in \u00b7 Please run /login', exitCode: 1 });
+  const out = await judgeLocally({ rules: RULES, assistantText: REPLY, claudeBin: loggedOut.bin });
+  assert.equal(out.outcome, 'failed');
+  assert.equal(out.failure, 'not-logged-in');
+
+  const refused = fakeClaude({ stdout: 'usage limit reached', exitCode: 1 });
+  const other = await judgeLocally({ rules: RULES, assistantText: REPLY, claudeBin: refused.bin });
+  assert.equal(other.failure, 'exit', 'everything else it refuses for stays one bucket');
+});

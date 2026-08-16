@@ -268,6 +268,43 @@ test('a missing Claude Code is not told to run the update script', async () => {
     'the repair named must be one that works');
 });
 
+test('a Claude Code that is not signed in is told to sign in, not to update OwnMind', async () => {
+  // Measured 2026-08-16 by running the whole pipeline against a real CLI: a machine whose
+  // Claude Code is not signed in exits 1 with "Not logged in · Please run /login". That landed
+  // in the general bucket, whose sentence tells the user to re-run the OwnMind update script —
+  // which installs OwnMind and cannot log anybody in.
+  const out = await collectVerdict({
+    sessionId: 's1',
+    list: () => stagedVerdict({
+      outcome: 'failed', failure: 'not-logged-in',
+      reason: 'the judge exited 1: Not logged in · Please run /login',
+    }),
+    remove: () => {},
+    logFailure: () => {},
+    speak: always,
+  });
+  assert.match(out.banner, /sign(ed)? in/i);
+  assert.doesNotMatch(out.banner, /update script/);
+  assert.doesNotMatch(out.banner, /\/login|exited 1/,
+    'the raw output of another program is not a sentence for a person');
+});
+
+test('any other refusal from Claude Code points at Claude Code, not at OwnMind', async () => {
+  // A usage limit reached, a model not available, a configuration it will not accept. All at
+  // Claude Code's end, and OwnMind's updater is the wrong machine to send anybody to.
+  const out = await collectVerdict({
+    sessionId: 's1',
+    list: () => stagedVerdict({
+      outcome: 'failed', failure: 'exit', reason: 'the judge exited 1: usage limit reached',
+    }),
+    remove: () => {},
+    logFailure: () => {},
+    speak: always,
+  });
+  assert.match(out.banner, /Claude Code/);
+  assert.doesNotMatch(out.banner, /update script/);
+});
+
 test('a failure the user is not shown is still written down where it can be diagnosed', async () => {
   // I4. The local failure log exists precisely because the user's line carries no error
   // vocabulary; after the judge moved off the server nothing wrote to it any more.

@@ -60,6 +60,8 @@ const HARD_CODED = {
   'hooks/lib/verdict-collect.js': [
     'verdict.notChecked',
     'verdict.notChecked.noCli',
+    'verdict.notChecked.notLoggedIn',
+    'verdict.notChecked.cliRefused',
     'verdict.didNotFinish',
     'verdict.recovered',
     'verdict.violation',

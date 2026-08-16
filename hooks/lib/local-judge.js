@@ -133,9 +133,16 @@ export async function judgeLocally({
     });
   }
   if (result.code !== 0) {
+    // A CLI that refuses is not a CLI that is missing, and one particular refusal is worth
+    // separating: measured 2026-08-16, a machine whose Claude Code is not signed in exits 1
+    // with "Not logged in · Please run /login". Left in the general bucket the user is told to
+    // re-run the OwnMind update script — which installs OwnMind and cannot log anybody in, so
+    // they would be given a repair that cannot work, every tenth turn, indefinitely.
+    const said = `${result.stderr || ''}\n${result.stdout || ''}`;
+    const loggedOut = /not logged in|please run \/login/i.test(said);
     return done({
       outcome: 'failed',
-      failure: 'exit',
+      failure: loggedOut ? 'not-logged-in' : 'exit',
       reason: `the judge exited ${result.code}: ${excerpt(result.stderr || result.stdout)}`,
     });
   }
