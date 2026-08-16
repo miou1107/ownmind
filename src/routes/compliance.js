@@ -90,7 +90,22 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
       user_prompts: userPrompts,
       repo_remote: repoRemote,
       trigger,
+      mode: requestedMode,
     } = req.body || {};
+
+    // v1.30.11. `mode: 'select'` answers the first half of this route's job — which rules
+    // apply to this turn, and what they say — and stops there.
+    //
+    // The judge is moving onto the user's own Claude Code subscription — the owner's standing
+    // instruction — which means it has to run on their machine, because that is where the
+    // quota is, and it must not reach the llm switch at all. The rules are not
+    // there: measured 2026-08-16, the client's cache holds 318 selectors and zero rule text.
+    // Shipping the corpus to every machine is a far bigger change than moving the judging, so
+    // the work splits where the cost does — matching stays here, judging goes there.
+    //
+    // Anything that is not exactly 'select' takes the old path unchanged. A release that
+    // moves the judge must not change what a client that has not upgraded yet receives.
+    const selectOnly = requestedMode === 'select';
 
     if (!sessionId || typeof assistantText !== 'string' || assistantText.trim() === '') {
       return res.status(400).json({ error: 'session_id and assistant_text are required' });
@@ -170,7 +185,31 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
 
     if (selected.length === 0) {
       const id = await record('skipped', considered, []);
-      return res.json({ enabled: true, outcome: 'skipped', violations: [], check_id: id });
+      // `rules: []` on the select path, and absent on the judging path. The client is about to
+      // decide whether to spend the user's quota; "nothing applied" and "something went wrong"
+      // must not arrive looking the same, and an absent field reads as neither.
+      return res.json({
+        enabled: true, outcome: 'skipped', violations: [], check_id: id,
+        ...(selectOnly && { rules: [] }),
+      });
+    }
+
+    if (selectOnly) {
+      // Opened, not closed: the row exists so the verdict has something to be recorded
+      // against when it arrives from the client, minutes or a turn later. `pending` is a
+      // state the schema did not have, and it needs one — a row with no outcome would be
+      // counted as a check that ran and found nothing.
+      const id = await record('pending', considered, []);
+      return res.json({
+        enabled: true,
+        outcome: 'pending',
+        violations: [],
+        check_id: id,
+        // judgeText is what the client cannot reconstruct: it holds selectors, not bodies.
+        rules: selected.map((r) => ({
+          id: r.id, type: r.type, code: r.code || null, title: r.title, judgeText: r.judgeText,
+        })),
+      });
     }
 
     let judged;
