@@ -53,7 +53,15 @@ const HARD_CODED = {
     'compliance.notChecked.signedOut',
     'compliance.notChecked.serverDeclined',
     'compliance.notChecked.checkFailed',
+    'compliance.notChecked.judgeNotStarted',
     'compliance.off.server',
+  ],
+  // The turn-late half of the reply check. Its notices carry the same weight as the gate's:
+  // `verdict.notChecked` is the line that says nothing looked at the AI's last reply.
+  'hooks/lib/verdict-collect.js': [
+    'verdict.notChecked',
+    'verdict.violation',
+    'compliance.notChecked.signedOut',
   ],
 };
 

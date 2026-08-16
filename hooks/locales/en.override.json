@@ -21,6 +21,7 @@
   "compliance.notChecked.signedOut": "[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI's reply. You need to sign in again: run the install command again with new sign-in details.",
   "compliance.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind did not finish checking the AI's reply this time, so it did not check it. The problem is at OwnMind's end and usually clears on its own; nothing for you to do.",
   "compliance.notChecked.checkFailed": "[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI's reply.",
+  "compliance.notChecked.judgeNotStarted": "[OwnMind] 🔴 OwnMind could not start checking the AI's reply, so this reply was not checked against your rules. Re-running the OwnMind update script usually repairs it.",
   "compliance.off.server": "[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI's reply.",
   "compliance.idNote": " (if OwnMind got it wrong, reply 誤判 {checkId})",
   "compliance.blockCapReached": "[OwnMind] 🟡 The AI's reply still breaks {count} of your rules after {blockCount} rewrites, so OwnMind has stopped sending it back and is showing it to you.{idNote}",

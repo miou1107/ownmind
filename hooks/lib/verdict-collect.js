@@ -44,13 +44,22 @@ export async function collectVerdict({ sessionId, take = takeVerdict } = {}) {
   if (!verdict) return { action: 'none' };
 
   if (verdict.outcome === 'failed') {
+    // A key the server will not accept is the one failure waiting never fixes, and only the
+    // user can. It kept its own sentence when the judge moved off the server; collapsing it
+    // into "could not check" would tell someone to sit tight through an outage that is not one.
+    const banner = verdict.failure === 'unauthorized'
+      ? await notice(
+        'compliance.notChecked.signedOut',
+        "[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI's reply. You need to sign in again: run the install command again with new sign-in details.",
+      )
+      : await notice(
+        'verdict.notChecked',
+        "[OwnMind] 🔴 OwnMind could not check the AI's last reply.\n"
+        + '  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.',
+      );
     return {
       action: 'notice',
-      banner: await notice(
-        'verdict.notChecked',
-        '[OwnMind] 🔴 OwnMind could not check the AI\'s last reply.\n'
-        + '  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.',
-      ),
+      banner,
       // The assistant gets the detail the user's line deliberately does not carry: `no-cli`,
       // `timeout` and the rest are the internal vocabulary the message rules ban.
       forAssistant: `[OwnMind] The reply check did not run for your previous reply `
@@ -69,6 +78,14 @@ export async function collectVerdict({ sessionId, take = takeVerdict } = {}) {
     return `  - ${name}\n    evidence: ${v.evidence}\n    fix: ${v.fix}`;
   });
 
+  // The handle for saying it got this wrong. Without it the false-positive rate — the stated
+  // threshold for turning enforcement on for anybody besides its author — cannot be counted,
+  // because nothing else in the product records a disagreement.
+  const checkId = verdict.check_id;
+  const idNote = checkId
+    ? await notice('compliance.idNote', ` (if OwnMind got it wrong, reply 誤判 ${checkId})`, { checkId })
+    : '';
+
   return {
     action: 'notice',
     banner: await notice(
@@ -76,13 +93,18 @@ export async function collectVerdict({ sessionId, take = takeVerdict } = {}) {
       `[OwnMind] 🟢 OwnMind checked the AI's last reply and one of your rules was not met: ${verdict.violations[0].ruleTitle}\n`
       + '  OwnMind has handed this to the AI and it will correct itself this turn. Nothing for you to do.',
       { title: verdict.violations[0].ruleTitle },
-    ),
+    ) + idNote,
     // Written as an instruction rather than a report: the turn this belongs to is over, so
     // the only thing that can act on it is the reply about to be written.
     forAssistant: `[OwnMind] Your previous reply broke ${verdict.violations.length === 1 ? 'a rule' : 'rules'} `
       + 'the user wrote. This is not a request to apologise or to explain yourself — it is the '
       + 'correction to apply from here on:\n'
       + `${lines.join('\n')}\n`
-      + 'Follow it in this reply. Do not restate the finding back to the user; they have already been shown it.',
+      + 'Follow it in this reply. Do not restate the finding back to the user; they have already been shown it.'
+      + (checkId
+        ? `\nIf the user says this was a false alarm, call ownmind_report_check_feedback with `
+          + `check_id ${checkId} and verdict "false_positive" — their reply is only recorded if `
+          + 'you make that call.'
+        : ''),
   };
 }

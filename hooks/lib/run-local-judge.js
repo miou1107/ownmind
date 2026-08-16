@@ -40,7 +40,13 @@ async function post(url, apiKey, body) {
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`http ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`http ${res.status}`);
+    // Carried so the caller can tell a rejected key from an outage. They ask different things
+    // of the user — sign in again, versus do nothing — and only one of them heals on its own.
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -61,9 +67,10 @@ export async function runJudgeJob(job, deps = {}) {
       trigger: job.trigger || '',
     });
   } catch (err) {
+    const rejected = err?.status === 401 || err?.status === 403;
     write(sessionId, {
       outcome: 'failed',
-      failure: 'server-unreachable',
+      failure: rejected ? 'unauthorized' : 'server-unreachable',
       reason: `could not ask which rules apply: ${err?.message || err}`,
       violations: [],
     });
