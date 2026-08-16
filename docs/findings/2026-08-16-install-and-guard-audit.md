@@ -170,6 +170,13 @@ Two ways a test run could have reached the developer's real machine:
 rather than left to inherit. A new assertion fails if `core.hooksPath` ends up outside the
 throwaway home.
 
+**Postscript, because it is the same lesson twice in one afternoon.** That new assertion was
+written as `hooksPath.startsWith(world.home)` and promptly failed on Windows against
+`C:/Users/RUNNER~1/…/.ownmind/git-hooks` — a path plainly inside the home. git answers with
+forward slashes; `world.home` carries backslashes. One directory, two spellings, compared as
+strings, wrong answer: F2 exactly, written an hour after fixing F2. The comparison normalises
+separators now and is case-insensitive where the filesystem is.
+
 **Proved to go red, not just to go green.** A check only ever seen passing is a check nobody
 has evidence about. Two defects were committed on purpose — the guard returning `null`
 always, and the MCP registration silently doing nothing, which is the failure a real Windows
