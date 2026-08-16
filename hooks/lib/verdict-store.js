@@ -35,15 +35,18 @@ const SAFE_ID = /^[A-Za-z0-9._-]+$/;
 /**
  * How long a judge may take before a marker with no verdict means it is never coming.
  *
- * The judge's own ceiling is 90s, plus two 15s HTTP calls and the CLI's ~10s start. Three
- * minutes leaves room for a loaded machine without leaving a dead judge unreported for long.
+ * The judge's own ceiling is 300s, plus two 15s HTTP calls and the CLI's ~10s start: 340s
+ * before a judge that is merely slow would be called dead. 420s is that with room to spare.
  *
- * 180s against a measured 115s worst case. The collector reads the file once more before
- * writing a marker off, so overshooting no longer loses a verdict — but if real latency
- * drifts up, the first symptom will be "never heard back" notices about judges that were
- * merely slow, and this is the number to raise.
+ * This is the number the previous comment said to raise, and the reason it gave is the reason
+ * it was raised: real latency was measured at 150s against a bench that had suggested 18s, so
+ * the 180s that looked generous was in fact one slow turn away from calling live judges dead.
+ *
+ * The cost of erring long is that a judge which really did die goes unreported for seven
+ * minutes. That is nearly free here, because nothing is collected until the next time the user
+ * types — the report was never going to be prompt, only correct.
  */
-export const JUDGE_DEADLINE_MS = 180_000;
+export const JUDGE_DEADLINE_MS = 420_000;
 
 /** Enough of the reply to recognise which one a late verdict is about. */
 const EXCERPT_CHARS = 160;
