@@ -10,8 +10,12 @@
  * WHAT WAS MEASURED before this was written:
  *
  *   - `claude -p` answers headlessly and spends the subscription
- *   - a real payload (8 rules, a long reply) takes ~18s on haiku and ~43s on sonnet; a bare
- *     "reply OK" takes 10.5s, so roughly ten of those seconds are startup
+ *   - a bare "reply OK" takes 10.5s, so roughly ten seconds of any run is startup
+ *   - a REAL turn, measured against production on 2026-08-16: 9 rules, a 12,349-character
+ *     prompt, 150 seconds on haiku. An earlier bench said 18s for "8 rules and a long reply",
+ *     and that number was wrong by an order of magnitude — its rule bodies were a fifteenth
+ *     the size of the ones this account actually has. It set a 90s ceiling, and the first
+ *     live turn after release timed out on it.
  *   - a prompt beginning `---` is parsed as a FLAG. That is not a style preference — it is
  *     how the first probe of this died, with `error: unknown option '--- RULE 795: …'`
  *
@@ -35,18 +39,24 @@ import {
 /**
  * Long enough for the slowest measured run, and no longer.
  *
- * haiku answered a production-sized payload in 18s and, once, 57s. Nobody waits on this —
- * the caller starts it and returns — so the budget exists to stop a wedged process living
- * forever, not to keep a user's attention.
+ * 90s at first, from a bench that judged ONE rule. The first turn after the release timed out
+ * on it. Measured against production on 2026-08-16, on a real turn of a real account: the
+ * server selected 9 rules, the prompt came to 12,349 characters, and haiku took 150 seconds.
+ * The earlier 18s and 57s figures were a payload a fifteenth of that size.
+ *
+ * 300s is that measurement with room for a turn that matches more rules than nine. Nobody
+ * waits on this — the caller starts it and returns — so the budget exists to stop a wedged
+ * process living forever, not to keep a user's attention, and erring long costs nothing while
+ * erring short costs the check itself.
  */
-const DEFAULT_TIMEOUT_MS = 90_000;
+export const DEFAULT_TIMEOUT_MS = 300_000;
 
 /**
  * The smallest model that can do this job, because it runs on every checked turn.
  *
- * Measured on a production-sized payload: haiku 18s, sonnet 43s. Judging a reply against
- * written rules is a reading task, not a reasoning one, and the user pays for the difference
- * out of their own quota.
+ * Judging a reply against written rules is a reading task, not a reasoning one, and the user
+ * pays for the difference out of their own quota. haiku takes 150s on a real turn (9 rules,
+ * 12,349 characters); a larger model on the same payload would be minutes, on every reply.
  */
 const DEFAULT_MODEL = 'haiku';
 

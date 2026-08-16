@@ -28,7 +28,8 @@ import { tempDir } from './helpers/temp-dir.js';
 import { runJudgeJob } from '../hooks/lib/run-local-judge.js';
 import { collectVerdict } from '../hooks/lib/verdict-collect.js';
 import { startLocalJudge } from '../hooks/lib/start-local-judge.js';
-import { listVerdicts, writeVerdict, jobPath, sweepStaleSessions } from '../hooks/lib/verdict-store.js';
+import { listVerdicts, writeVerdict, jobPath, sweepStaleSessions, JUDGE_DEADLINE_MS } from '../hooks/lib/verdict-store.js';
+import { DEFAULT_TIMEOUT_MS } from '../hooks/lib/local-judge.js';
 import { redact, toReason } from '../hooks/lib/redact.js';
 import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 
@@ -408,4 +409,35 @@ test('the two hooks still run, end to end, after all of the above', () => {
   });
   assert.ok(Date.now() - started < 10_000, 'the Stop hook waited on the judge');
   assert.equal(listVerdicts('round-two', path.join(home, '.ownmind', 'state')).length, 1);
+});
+
+// ------------------------------------------------- the two budgets have to agree
+
+test('a judge that runs to its own ceiling is not called dead', () => {
+  // The two numbers live in different files and nothing held them together, so they drifted
+  // apart in the one direction that matters. Measured against production 2026-08-16: 9 rules,
+  // a 12,349-character prompt, 150 seconds — against a 90s judge ceiling and a 180s deadline
+  // set from a bench that judged ONE rule. The very first live turn after release timed out.
+  //
+  // The invariant is not "these numbers are big enough" — nobody can check that from here.
+  // It is that the deadline leaves room for a judge that used every second it was given, plus
+  // the two HTTP calls and the CLI's start. Otherwise a merely slow judge is announced as one
+  // that never came back, and its verdict is thrown away.
+  const HTTP_BUDGET_MS = 2 * 15_000;      // the select call and the resolve call
+  const CLI_START_MS = 15_000;            // ~10s measured, rounded up
+
+  assert.ok(
+    JUDGE_DEADLINE_MS > DEFAULT_TIMEOUT_MS + HTTP_BUDGET_MS + CLI_START_MS,
+    `the deadline (${JUDGE_DEADLINE_MS}ms) does not clear the judge's own ceiling `
+    + `(${DEFAULT_TIMEOUT_MS}ms) plus the network and the CLI start — a judge that runs to `
+    + 'its limit would be reported to the user as a judge that never came back',
+  );
+});
+
+test('the judge ceiling clears the slowest real payload measured', () => {
+  // 150,243ms, production account, 9 rules, 2026-08-16. A ceiling under that is a check that
+  // fails on ordinary turns, which is what shipped and what this replaces.
+  const MEASURED_WORST_MS = 150_243;
+  assert.ok(DEFAULT_TIMEOUT_MS > MEASURED_WORST_MS,
+    `the judge is given ${DEFAULT_TIMEOUT_MS}ms and a real turn took ${MEASURED_WORST_MS}ms`);
 });
