@@ -346,15 +346,19 @@ test('an ask the gate could not save says so, instead of handing out a dead code
   // redeem, because the record behind it was never written.
   const dir = stateDir();
   const g = guard();
-  fs.chmodSync(dir, 0o500);           // readable, not writable
-  try {
-    const blocked = run(dir, g);
-    assert.equal(blocked.action, 'block', 'still refuses, which was never in doubt');
-    assert.match(blocked.userLine, /could not save this approval/,
-      'and now says that answering will not help');
-  } finally {
-    fs.chmodSync(dir, 0o700);
-  }
+  // A directory where the record has to go, so the write fails and nothing else does.
+  //
+  // The first version chmodded the state directory to 0o500. That is a no-op on Windows —
+  // node's chmod only toggles the read-only attribute, and it does not stop a file being
+  // created inside — so the ask was written, no notice appeared, and CI went red on the
+  // Windows leg alone. This way fails identically everywhere, and it fails at exactly the
+  // step under test rather than taking the key and the nonce down with it.
+  fs.mkdirSync(askFile(dir, 's1', 820));
+
+  const blocked = run(dir, g);
+  assert.equal(blocked.action, 'block', 'still refuses, which was never in doubt');
+  assert.match(blocked.userLine, /could not save this approval/,
+    'and now says that answering will not help');
 });
 
 test('a verbal record cannot satisfy a guard its owner moved to code mode', () => {
