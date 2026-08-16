@@ -24,6 +24,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { redact } from './redact.js';
 import {
   JUDGE_SYSTEM,
   buildJudgeUserPrompt,
@@ -157,6 +158,12 @@ export async function judgeLocally({
     });
   }
 
+  // The judge quotes the reply back as evidence, and that quote goes to the server when the
+  // audit row is closed. The reply itself is redacted on the way out — this is the same text
+  // arriving by a second road, so it gets the same treatment. Without it, a reply containing
+  // `api_key=…` on the line a rule was broken on would send that line verbatim.
+  const safe = (v) => ({ ...v, evidence: redact(v.evidence), fix: redact(v.fix) });
+
   const byId = new Map(rules.map((r) => [r.id, r]));
   const violations = verdicts
     .filter((v) => v.violated && byId.has(v.ruleId))
@@ -169,12 +176,16 @@ export async function judgeLocally({
         // user never wrote into a message telling them their rule was broken.
         ruleTitle: rule.title || '',
         ruleCode: rule.code || null,
-        evidence: v.evidence,
-        fix: v.fix,
+        evidence: redact(v.evidence),
+        fix: redact(v.fix),
       };
     });
 
-  return done({ outcome: violations.length > 0 ? 'violation' : 'clean', violations, verdicts });
+  return done({
+    outcome: violations.length > 0 ? 'violation' : 'clean',
+    violations,
+    verdicts: verdicts.map(safe),
+  });
 }
 
 function excerpt(text) {
