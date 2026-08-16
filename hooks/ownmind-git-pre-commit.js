@@ -113,10 +113,20 @@ function getStagedAddedLines(file, srcPath = null) {
     const paths = srcPath && srcPath !== file ? [srcPath, file] : [file];
     diff = execFileSync('git', ['--literal-pathspecs', 'diff', '--cached', '-U0', '-M', '--', ...paths], {
       encoding: 'utf8',
-      maxBuffer: 5 * 1024 * 1024, // 5 MB — large enough for a typical patch
+      maxBuffer: DIFF_MAX_BYTES,
     });
-  } catch {
-    return [];
+  } catch (err) {
+    // Bug report #24: this used to `return []`, and an empty result is the same value a
+    // genuinely clean file produces. Measured there — a 6 MB staged file carrying an AWS
+    // key committed with exit 0 and no output, while 2 MB and 4 MB blocked. A scanner has
+    // no business having a size above which it stops looking and says nothing.
+    //
+    // Thrown rather than returned, so a caller cannot forget to look: the only two callers
+    // are the baseline scan and the rule-driven scan, and both must treat "not scanned" as
+    // a reason to stop, never as a pass.
+    const e = new Error(`could not read the staged diff for ${file}: ${err?.message || err}`);
+    e.ownmindUnscanned = { file, oversize: /maxBuffer|ENOBUFS/i.test(String(err?.message || '')) };
+    throw e;
   }
   const lines = diff.split('\n');
   const added = [];
@@ -146,6 +156,14 @@ function getStagedAddedLines(file, srcPath = null) {
  *
  * @returns {Map<string, string>} destination path → source path, renames only
  */
+/**
+ * The ceiling on one file's staged diff.
+ *
+ * Not a threshold above which scanning is skipped — exceeding it is a blocked commit with a
+ * sentence saying why. See the throw in getStagedAddedLines.
+ */
+const DIFF_MAX_BYTES = 5 * 1024 * 1024;
+
 function getRenameSources() {
   const renames = new Map();
   try {
@@ -214,13 +232,36 @@ function maskSecretFragment(text) {
  *
  * @returns {Array<{file, rule, reason, matched_text}>} list of hits
  */
+/**
+ * @returns {{hits: Array, unscanned: Array<{file: string, why: string}>}}
+ *   `unscanned` is the half bug report #24 was about: files the scanner did not read at all.
+ *   It is returned rather than logged, because the caller has to be unable to ignore it.
+ */
 function checkStagedDiffForSecrets(stagedFiles) {
   const hits = [];
+  const unscanned = [];
   // v1.26.103: a moved file needs both of its paths, or git reads it as brand new.
   // See getRenameSources.
   const renameSources = getRenameSources();
   for (const file of stagedFiles) {
-    const lines = getStagedAddedLines(file, renameSources.get(file));
+    let lines;
+    try {
+      lines = getStagedAddedLines(file, renameSources.get(file));
+    } catch (err) {
+      unscanned.push({
+        file,
+        why: err?.ownmindUnscanned?.oversize
+          ? `這個檔案的改動超過 ${Math.round(DIFF_MAX_BYTES / (1024 * 1024))} MB，掃不完`
+          : '讀不到這個檔案的改動',
+      });
+      continue;
+    }
+    // A binary file's diff carries no added lines at all, so "nothing found" here means
+    // "nothing was looked at". Said out loud rather than counted as clean.
+    if (lines.length === 0 && isProbablyBinary(file)) {
+      unscanned.push({ file, why: '二進位檔，掃不進去' });
+      continue;
+    }
     for (const line of lines) {
       const r = detectSecretLike(line, { skip_keyword: true });
       if (r.detected) {
@@ -241,7 +282,26 @@ function checkStagedDiffForSecrets(stagedFiles) {
       }
     }
   }
-  return hits;
+  return { hits, unscanned };
+}
+
+/**
+ * Does git consider this staged file binary?
+ *
+ * Asked of git rather than guessed from the extension: git's own answer is the one that
+ * decides whether the diff has any `+` lines for the scanner to read.
+ */
+function isProbablyBinary(file) {
+  try {
+    const stat = execFileSync('git', ['--literal-pathspecs', 'diff', '--cached', '--numstat', '--', file], {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    // git prints `-\t-\t<path>` for a binary file, and counts for a text one.
+    return /^-\s+-\s/.test(stat.trim());
+  } catch {
+    return false;
+  }
 }
 
 function httpGet(url, headers) {
@@ -385,7 +445,22 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
  * @param {Array<{file, rule, reason, matched_text}>} secretHits
  * @returns {never}
  */
-function exitOnBaselineSecrets(secretHits) {
+function exitOnBaselineSecrets(secretHits, unscanned = []) {
+  // Bug report #24: a file the scanner could not read is not a file it found nothing in.
+  // Blocked, not warned — everything else on this path exits 0, so a warning here would be
+  // one line above a successful commit, which is the shape the whole report is about.
+  if (unscanned.length > 0) {
+    const failures = ['BASELINE: 有檔案沒有被掃過，所以這次 commit 不知道裡面有沒有密碼'];
+    for (const u of unscanned) failures.push(`    → ${u.file}: ${u.why}`);
+    failures.push('    要繼續的話，把這些檔案拆小或分開 commit；真的要放行請用 OWNMIND_BYPASS=BASELINE');
+    console.error(formatBlockMessage(failures, [{
+      ruleCode: 'BASELINE',
+      ruleTitle: '有檔案沒有被掃過',
+      secretHit: true,
+      isSecretRule: true,
+    }]));
+    process.exit(1);
+  }
   if (secretHits.length === 0) process.exit(0);
 
   const failures = ['BASELINE: 提交內容含疑似金鑰／憑證（OwnMind 的預設掃描抓到的，不用你設定任何規矩）'];
@@ -448,7 +523,9 @@ async function main() {
     try { logBypass({ ruleCode: 'BASELINE', ruleTitle: '提交內容含疑似金鑰／憑證', source: 'pre_commit' }); }
     catch { /* the audit row is best-effort; it must not block the commit */ }
   }
-  const secretHits = baselineBypassed ? [] : checkStagedDiffForSecrets(stagedFiles);
+  const scan = baselineBypassed ? { hits: [], unscanned: [] } : checkStagedDiffForSecrets(stagedFiles);
+  const secretHits = scan.hits;
+  const unscanned = scan.unscanned;
 
   // 1. Load iron rules from local cache (with staleness check)
   let rules = readJsonSafe(CACHE_FILE);
@@ -474,7 +551,7 @@ async function main() {
       // v1.26.124: no verifiable rule is not the same as nothing to check. This exit is
       // reached by every account whose iron rules are reminder-only, which is the default
       // state — so it was the most-travelled of the silent paths.
-      exitOnBaselineSecrets(secretHits);
+      exitOnBaselineSecrets(secretHits, unscanned);
     }
     rules = fetched;
   } else if (cacheStale) {
@@ -501,7 +578,7 @@ async function main() {
 
   if (commitRules.length === 0) {
     // v1.26.124: rules exist but none of them runs at commit time. Same reasoning as above.
-    exitOnBaselineSecrets(secretHits);
+    exitOnBaselineSecrets(secretHits, unscanned);
   }
 
   // 4. Collect git context. stagedFiles was gathered in step 0, because the baseline scan
@@ -608,6 +685,19 @@ async function main() {
   // either no rule is a secret guard, or one is and is not set to block. Without this the
   // leak would ride out on the pass path below, which is the same silence in a different
   // place.
+  // The same on the rule-driven path: a file nobody read cannot be reported as clean by the
+  // pass message below. Bug report #24.
+  if (unscanned.length > 0) {
+    blockFailures.push('BASELINE: 有檔案沒有被掃過，所以這次 commit 不知道裡面有沒有密碼');
+    for (const u of unscanned) blockFailures.push(`    → ${u.file}: ${u.why}`);
+    blockFailures.push('    要繼續的話，把這些檔案拆小或分開 commit；真的要放行請用 OWNMIND_BYPASS=BASELINE');
+    blockReasons.push({
+      ruleCode: 'BASELINE',
+      ruleTitle: '有檔案沒有被掃過',
+      secretHit: true,
+      isSecretRule: true,
+    });
+  }
   if (secretHits.length > 0 && !secretHitsBlocked) {
     blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（OwnMind 的預設掃描抓到的，不用你設定任何規矩）');
     for (const hit of secretHits) {

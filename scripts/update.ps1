@@ -328,12 +328,22 @@ if (Test-Path $ClaudeDir) {
 $GitHookDir = Join-Path $HOME ".ownmind\git-hooks"
 if (Test-Path $GitHookDir) {
   $refreshed = 0
-  foreach ($ghName in @("pre-commit", "post-commit", "commit-msg")) {
+  foreach ($ghName in @("pre-commit", "post-commit", "commit-msg", "pre-merge-commit")) {
     $ghDest = Join-Path $GitHookDir $ghName
     $ghSrc = Join-Path $OwnMindDir "hooks\ownmind-git-$ghName"
     # Only refresh a hook that is already installed — creating one here would switch on
     # OwnMind's git hooks for somebody who never asked install.ps1 for them.
-    if (-not (Test-Path $ghDest)) { continue }
+    #
+    # pre-merge-commit is the one exception, and it does not weaken that: it shipped after
+    # these wrappers did, so every existing install has pre-commit and none has this one.
+    # "Refresh only" would leave every machine already using OwnMind's git hooks with its
+    # merges unchecked forever (bug report #24, and the v1.26.104 trap). It is created only
+    # where pre-commit is already present, so the consent question is unchanged — this
+    # machine's owner did ask for OwnMind's git hooks.
+    if (-not (Test-Path $ghDest)) {
+      if ($ghName -ne "pre-merge-commit") { continue }
+      if (-not (Test-Path (Join-Path $GitHookDir "pre-commit"))) { continue }
+    }
     if (-not (Test-Path $ghSrc)) { continue }
     # LF, always: these run under sh.exe, and CRLF makes the shebang line unusable.
     $srcText = [System.IO.File]::ReadAllText($ghSrc).Replace("`r`n", "`n")

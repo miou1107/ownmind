@@ -1,0 +1,27 @@
+#!/bin/sh
+# OwnMind Git Pre-Merge-Commit Hook — Shell Wrapper
+# Git runs pre-commit for an ordinary commit and pre-merge-commit for a merge — never both.
+# Without this file, merging a branch that leaks a credential is checked by nothing at all,
+# and the person merging is not the person who wrote the leak. Bug report #24.
+#
+# Same Node entry point: what it examines is the staged tree, and a merge has one.
+
+node "$HOME/.ownmind/hooks/ownmind-git-pre-commit.js"
+RESULT=$?
+if [ $RESULT -ne 0 ]; then
+  exit 1
+fi
+
+# Chain existing hooks (core.hooksPath 設定後 git 忽略 .git/hooks/，需要手動 chain)
+# 1. 先檢查 repo 自己的 .git/hooks/pre-commit（被 core.hooksPath 覆蓋的原有 hook）
+if [ -x "$(git rev-parse --git-dir 2>/dev/null)/hooks/pre-merge-commit" ]; then
+  "$(git rev-parse --git-dir)/hooks/pre-merge-commit"
+  exit $?
+fi
+# 2. 再檢查 .local 慣例（husky 等工具遷移後的 hook）
+if [ -x .git/hooks/pre-merge-commit.local ]; then
+  .git/hooks/pre-merge-commit.local
+  exit $?
+fi
+
+exit 0

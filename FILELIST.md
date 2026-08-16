@@ -46,6 +46,32 @@ hooks/ownmind-edit-reminder.js       — 讀憑證讀失敗的時候，整個擋
                                        門照跑
 ```
 
+tests/pre-commit-unscanned-is-not-clean.test.js
+                                     — 五條，全部用真的 git repo 跑，因為這三種都是 git 自己
+                                       決定要餵什麼給掃描器。含真的開分支、真的 merge。
+                                       三個修法各弄壞一次確認會紅
+
+新增（合併分支也要掃）：
+```
+hooks/ownmind-git-pre-merge-commit   — git 做一般 commit 走一支掛勾、做 merge 走另一支，
+                                       不會兩支都跑。以前只裝了前者，所以合併一個帶著金鑰的
+                                       分支完全沒人檢查 —— 而按下合併的人不是寫出那個金鑰的人
+```
+
+修改（沒掃到的檔案不准算乾淨）：
+```
+hooks/ownmind-git-pre-commit.js      — 三件事：改動超過 5MB 的檔案本來讀不完就當作沒事，
+                                       實測 6MB 帶著金鑰直接過、4MB 會擋 —— 現在讀不完就擋；
+                                       二進位檔掃不進去，現在明講掃不進去而不是算乾淨；
+                                       這兩種在畫面上都會指名是哪個檔案
+install.sh / install.ps1 /
+scripts/update.sh / update.ps1       — 四個地方都要裝新的那支掛勾。更新腳本本來只會「刷新已經
+                                       裝過的」，那樣的話已經在用的機器永遠拿不到這支 ——
+                                       所以只有這一支例外，而且只在已經裝過的機器上補
+scripts/install-helpers/install-artifacts.cjs
+                                     — 自我檢查會發現這支掛勾不見了
+```
+
 **已收回：** 原本改了兩個地方讓 Windows 不靠 PATH 找自己的程式。那是為了 TANK 那兩個紅字做的，
 而那兩個紅字是沙箱測試造成的假象 —— 沙箱是「故意」把 PowerShell 拿掉的。為一個不存在的問題
 動 Windows 的啟動路徑，沒有正當理由。留下的只有那支報告用的小工具跟它的測試。

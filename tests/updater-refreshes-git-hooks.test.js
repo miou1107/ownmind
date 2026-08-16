@@ -49,7 +49,10 @@ describe('v1.26.104 — updaters refresh every installed git hook wrapper', () =
     const names = installedHookNames();
     assert.ok(names.length >= 3,
       `expected to derive the wrapper list from install.sh, got ${JSON.stringify(names)}`);
-    assert.deepEqual([...names].sort(), ['commit-msg', 'post-commit', 'pre-commit']);
+    assert.deepEqual([...names].sort(),
+      // pre-merge-commit joined in v1.30.10: git runs pre-commit for an ordinary commit and
+      // this one for a merge, never both, so a merge used to be checked by nothing.
+      ['commit-msg', 'post-commit', 'pre-commit', 'pre-merge-commit']);
   });
 
   it('update.sh refreshes each one from the checkout, not merely repairs line endings', () => {
@@ -74,9 +77,15 @@ describe('v1.26.104 — updaters refresh every installed git hook wrapper', () =
   it('neither updater creates a wrapper that was never installed', () => {
     // Refreshing is not the same as enabling. A machine whose owner never asked for
     // OwnMind's git hooks must not acquire them from an update.
-    assert.match(updateSh, /\[ -f "\$gh" \] \|\| continue/,
-      'update.sh must skip wrappers that are not already present');
-    assert.match(updatePs1, /if \(-not \(Test-Path \$ghDest\)\) \{ continue \}/,
+    // The invariant is "never switch OwnMind's git hooks ON for somebody who did not ask",
+    // not "never write a file". v1.30.10 added pre-merge-commit, which no existing install
+    // has and every one of them needs, so both updaters create that one — and only that one,
+    // and only where pre-commit is already present, which is the consent this protects.
+    assert.match(updateSh, /pre-merge-commit\) \[ -f "\$GIT_HOOK_DIR\/pre-commit" \] \|\| continue/,
+      'update.sh must create pre-merge-commit only where pre-commit already exists');
+    assert.match(updateSh, /\*\) continue ;;/,
+      'update.sh must still skip every other wrapper that is not already present');
+    assert.match(updatePs1, /if \(\$ghName -ne "pre-merge-commit"\) \{ continue \}/,
       'update.ps1 must skip wrappers that are not already present');
   });
 });
