@@ -666,6 +666,10 @@ install_git_hook() {
 install_git_hook "ownmind-git-pre-commit"  "pre-commit"
 install_git_hook "ownmind-git-post-commit" "post-commit"
 install_git_hook "ownmind-git-commit-msg"  "commit-msg"
+# Bug report #24: git runs pre-commit for an ordinary commit and pre-merge-commit for a
+# merge, never both. Without this one, merging a branch that leaks a credential is checked
+# by nothing — and the person merging is not the person who wrote the leak.
+install_git_hook "ownmind-git-pre-merge-commit" "pre-merge-commit"
 
 # 設定 global git hooks path（需要 git 可用）
 if command -v git &>/dev/null; then

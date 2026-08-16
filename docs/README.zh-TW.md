@@ -2,7 +2,7 @@ Personalized persistent memory for AI
 
 [English](../README.md) | [繁體中文](README.zh-TW.md) | [日本語](README.ja.md)
 
-**目前版本：v1.30.9** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
+**目前版本：v1.30.10** · 詳見 [更新紀錄 CHANGELOG](../CHANGELOG.md)
 
 # OwnMind — 最佳 Harness Engine AI 管控系統
 
@@ -26,7 +26,7 @@ Personalized persistent memory for AI
 
 ### 🛡️ 安全意識者 — 敏感資料絕對不會被 AI 不小心外洩
 
-- 密碼／API 金鑰（呼叫線上服務的通行碼）想 commit 進 git → pre-commit hook 用樣式比對直接擋下（v1.19.7 新功能）
+- 密碼／API 金鑰（呼叫線上服務的通行碼）想 commit 進 git → pre-commit hook 擋得下它認得的格式：AWS 金鑰、GitHub token、JWT、Anthropic 與 OpenAI 金鑰，以及頂格寫的長字串金鑰。**它是一張網，不是一道牆** —— 實測 31 種常見格式，14 種會通過，其中包括資料庫連線字串跟設定檔裡的 `password = "..."`。通過只代表它認得的東西沒出現，不代表沒有外洩（v1.19.7 新功能，v1.30.10 把範圍講清楚）
 - AI 想把密碼寫進記憶 → 記憶接口用狀態碼 400 拒絕、引導去加密金鑰庫
 - AI 回應夾了使用者身分證／信箱／手機 → reply-lint（回應品質檢查工具：自動掃 AI 回應有沒有違反規則）發出 privacy_check 事件、由使用者自設的鐵律決定要不要擋下（v1.19.7 新增、v1.19.10 中性化）
 
