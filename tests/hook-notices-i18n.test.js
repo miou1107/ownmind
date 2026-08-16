@@ -83,11 +83,15 @@ const TEAM_STANDARD_VIOLATION = {
   fix: 'open an issue for the colleague',
 };
 
-/** One verdict waiting, with the throttle and the log stubbed out of the way. */
+/** One verdict waiting, with the throttle, the log and the disk stubbed out of the way. */
 function verdictBase(record) {
   return {
     sessionId: 's1',
     list: () => [{ turnId: 't1', record }],
+    // Stubbed too. The collector reads the file once more before writing a marker off as
+    // expired, and an unstubbed read goes to the developer's own ~/.ownmind/state — so the
+    // answer would depend on whose machine the suite is running on.
+    reread: () => record,
     remove: () => {},
     sweep: () => {},
     logFailure: () => {},

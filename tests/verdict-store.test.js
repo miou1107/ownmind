@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tempDir } from './helpers/temp-dir.js';
 import {
-  verdictPath, jobPath, writeVerdict, listVerdicts, removeVerdict, writeJob, takeJob,
+  verdictPath, jobPath, writeVerdict, listVerdicts, readVerdict, removeVerdict, writeJob, takeJob,
   sweepStaleSessions,
 } from '../hooks/lib/verdict-store.js';
 
@@ -64,6 +64,33 @@ test('a temporary file mid-rename is not mistaken for a verdict', () => {
   writeVerdict('s1', 't1', { outcome: 'clean' }, d);
   fs.writeFileSync(`${verdictPath('s1', 't2', d)}.999.tmp`, '{"outcome":"clean"}');
   assert.equal(listVerdicts('s1', d).length, 1);
+});
+
+test('reading one turn tells gone apart from unreadable', () => {
+  // The collector acts on the difference. Gone means somebody else took it — another window
+  // on this session, or the housekeeping — and there is nothing to say. Unreadable means a
+  // turn whose verdict cannot be recovered, which is a turn that went unchecked. Collapsing
+  // them makes one of the two a lie whichever way it goes.
+  const d = dir();
+  assert.equal(readVerdict('s1', 'never-existed', d), undefined, 'gone must be distinguishable');
+
+  const target = verdictPath('s1', 't1', d);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, '{"outcome":"viol');
+  assert.equal(readVerdict('s1', 't1', d), null, 'unreadable is not gone');
+
+  writeVerdict('s1', 't2', { outcome: 'clean' }, d);
+  assert.equal(readVerdict('s1', 't2', d).outcome, 'clean');
+});
+
+test('a verdict is no more readable than the job beside it', () => {
+  // It holds 160 characters of what the AI said, plus the judge's quotes from it. On a shared
+  // machine the default 0644 hands the user's own work to everybody with an account.
+  const d = dir();
+  writeVerdict('s1', 't1', { outcome: 'clean', reply_excerpt: 'what the AI said' }, d);
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(verdictPath('s1', 't1', d)).mode & 0o777, 0o600);
+  }
 });
 
 test('a job carries credentials, so it does not outlive its use', () => {

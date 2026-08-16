@@ -127,6 +127,11 @@ export async function collectVerdict({
       // never came back. Measured budget is 115s against a 180s deadline; that gap is not
       // wide enough to leave the race open.
       const fresh = reread(sessionId, turnId);
+      // Gone entirely: another window on this session took it, or the sweep did. Announcing
+      // "the judge never came back" there is a false alarm about a verdict that was, in all
+      // likelihood, delivered by whoever took it — the same distinction listVerdicts makes
+      // twenty lines away, which this had been missing.
+      if (fresh === undefined) continue;
       if (fresh && fresh.outcome !== 'pending') {
         record = fresh;                       // it landed after all — fall through and deliver
       } else {
@@ -181,11 +186,19 @@ export async function collectVerdict({
       continue;
     }
 
-    // Everything below here is a check that ran.
-    checkRan = true;
-
     // 'skipped' is a turn no rule applied to, which is most turns. Silent, but its marker has
     // to be cleared — done above — or the deadline turns every ordinary turn into a failure.
+    //
+    // And it is NOT evidence that checking works. The server decided nothing applied, so the
+    // judge was never launched; counting it as healthy announced 🟢 "OwnMind is checking your
+    // replies again" on a machine with no Claude Code on it, and alternated with the 🔴 on
+    // every turn a rule DID apply — which defeats the throttle as well as being untrue.
+    if (outcome === 'skipped') continue;
+
+    // A verdict the judge actually produced. This is the only thing that proves the check
+    // works end to end on this machine.
+    checkRan = true;
+
     if (outcome !== 'violation' || !record.violations?.length) continue;
 
     banners.push(await violationBanner(record));
@@ -271,7 +284,10 @@ async function failureNotice(record) {
       ),
     };
   }
-  if (record.failure === 'exit') {
+  // 'spawn' is every non-ENOENT failure to start it: no permission on the binary, a broken
+  // shim. Claude Code's end, like the refusals below, so it takes the same sentence rather
+  // than the generic one that sends the reader to OwnMind's updater.
+  if (record.failure === 'exit' || record.failure === 'spawn') {
     // Everything else Claude Code refuses for: a usage limit reached, a model not available,
     // a configuration it will not accept. All of them are at Claude Code's end, and pointing
     // the user at OwnMind's updater sends them to the wrong machine entirely.

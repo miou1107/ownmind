@@ -202,7 +202,12 @@ test('a judge that was never started is reported once its time is up', async () 
       started_at: now - JUDGE_DEADLINE_MS - 1,
       reply_excerpt: 'something the AI said',
     }),
+    // Stubbed, or the second look reads the developer's own state directory and the answer
+    // depends on whose machine the suite is running on.
+    reread: () => null,
     remove: (_s, t) => removed.push(t),
+    logFailure: () => {},
+    sweep: () => {},
     speak: always,
   });
   assert.equal(out.action, 'notice');
@@ -219,7 +224,9 @@ test('a judge still within its time is left alone and said nothing about', async
     sessionId: 's1',
     now: () => now,
     list: () => stagedVerdict({ outcome: 'pending', started_at: now - 1_000 }),
+    reread: () => null,
     remove: (_s, t) => removed.push(t),
+    sweep: () => {},
     speak: always,
   });
   assert.equal(out.action, 'none');
@@ -381,6 +388,27 @@ test('the marker is on disk before the child is spawned', async () => {
   assert.equal(all[0].record.outcome, 'pending');
   assert.ok(all[0].record.started_at, 'without a start time there is no deadline to miss');
   assert.match(all[0].record.reply_excerpt, /a reply/);
+});
+
+test('a job that cannot be written spawns nothing and leaves no marker', async () => {
+  // The marker is written before the job, so this branch has to roll it back. The test that
+  // was meant to cover it pointed the whole state directory at an unwritable path, which made
+  // the MARKER write fail first — so this branch and its rollback never ran once.
+  const d = dir();
+  let spawned = false;
+  const started = startLocalJudge({
+    sessionId: 's1',
+    assistantText: 'a reply',
+    apiUrl: 'http://x',
+    apiKey: 'k',
+    stateDirImpl: d,
+    writeJobImpl: () => null,
+    spawnImpl: () => { spawned = true; return { unref() {} }; },
+  });
+  assert.equal(started.started, false);
+  assert.equal(spawned, false, 'a judge with no job would sit there and do nothing');
+  assert.deepEqual(listVerdicts('s1', d), [],
+    'the marker was left to expire as "the judge never came back", three minutes later');
 });
 
 test('a spawn that fails leaves no marker to expire', async () => {

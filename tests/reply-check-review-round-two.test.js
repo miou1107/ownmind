@@ -235,6 +235,39 @@ test('a turn that carried a violation still puts the throttle back to healthy', 
     'the throttle was never told this turn was healthy, so it is still on the last failure');
 });
 
+test('a turn no rule applied to is not evidence that checking works', async () => {
+  // `skipped` means the SERVER said nothing applied, so the judge was never launched. Counting
+  // it as a healthy check announced 🟢 "OwnMind is checking your replies again" on a machine
+  // with no Claude Code on it — and alternated with the 🔴 on every turn a rule DID apply,
+  // which defeats the throttle as well as being untrue.
+  const out = await collectVerdict({
+    ...one({ outcome: 'skipped' }),
+    speak: (key) => key === null,     // the throttle says a recovery is due
+  });
+  assert.equal(out.action, 'none',
+    'OwnMind claimed to be checking replies on a turn where nothing was checked');
+});
+
+test('a verdict the judge really produced is evidence that checking works', async () => {
+  // The control. Without it a fix that never announced recovery would pass the test above.
+  const out = await collectVerdict({
+    ...one({ outcome: 'clean', violations: [] }),
+    speak: (key) => key === null,
+  });
+  assert.match(out.banner, /checking the AI's replies against your rules again/);
+});
+
+test('a failure to start Claude Code points at Claude Code', async () => {
+  // Every non-ENOENT start failure — no permission on the binary, a broken shim — is at
+  // Claude Code's end, like the refusals. The generic sentence sends the reader to OwnMind's
+  // updater, which is the wrong machine.
+  const out = await collectVerdict(one({
+    outcome: 'failed', failure: 'spawn', reason: 'could not start claude: EACCES',
+  }));
+  assert.match(out.banner, /Claude Code/);
+  assert.doesNotMatch(out.banner, /update script/);
+});
+
 // -------------------------------------------------------------- the deadline race
 
 test('a verdict that landed just past the deadline is delivered, not deleted', async () => {
@@ -258,6 +291,25 @@ test('a verdict that landed just past the deadline is delivered, not deleted', a
   });
   assert.match(out.banner, /Lead with the conclusion/, 'the finding was thrown away');
   assert.doesNotMatch(out.banner, /never heard back/);
+});
+
+test('a marker somebody else already took is not announced as a vanished judge', async () => {
+  // Two windows on one session: A delivers and removes a marker past its deadline between B's
+  // listing and B's second look. Gone is not unreadable — the same distinction the listing
+  // makes twenty lines away, which this path had been missing.
+  const removed = [];
+  const out = await collectVerdict({
+    sessionId: 's1',
+    now: () => 10_000_000,
+    list: () => [{ turnId: 't1', record: { outcome: 'pending', started_at: 0 } }],
+    remove: (_s, t) => removed.push(t),
+    reread: () => undefined,          // what readVerdict returns when the file is gone
+    sweep: () => {},
+    logFailure: () => {},
+    speak: (key) => key !== null,
+  });
+  assert.equal(out.action, 'none');
+  assert.deepEqual(removed, [], 'it was not ours to remove');
 });
 
 // ------------------------------------------------------ two replies that look alike
