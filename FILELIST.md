@@ -120,8 +120,13 @@ hooks/lib/verdict-collect.js（再改）  — 一次撿所有等著的判決，�
                                        ④同一個問題連續發生會被節流，不會每一輪都在畫面上出現
 hooks/ownmind-reply-lint.js（再改）   — 你打了 /ownmind-off 之後不會再起判官。
                                        判官花的是你自己的訂閱額度
-hooks/locales/*（再改）              — 三句新的（找不到 Claude Code、判官沒回來、檢查恢復了），
-                                       一句改寫（違規那句）
+hooks/lib/local-judge.js（再改）      — 分得出「Claude Code 沒登入」跟「它不肯做」。
+                                       實測整條路跑一次的時候撞到的：沒登入的機器會回
+                                       「Not logged in」，而那本來會被歸到同一堆裡，
+                                       畫面上叫你重跑 OwnMind 的更新指令 ——
+                                       更新指令不會幫你登入 Claude Code
+hooks/locales/*（再改）              — 五句新的（找不到 Claude Code、沒登入、它不肯做、
+                                       判官沒回來、檢查恢復了），一句改寫（違規那句）
 tests/reply-check-turn-identity.test.js
                                      — 二十四條，五個嚴重問題各自的重現。全部用真的檔案跑，
                                        因為那些檔案就是「判的那支」跟「講的那支」之間的

@@ -227,6 +227,29 @@ async function failureNotice(record) {
       ),
     };
   }
+  if (record.failure === 'not-logged-in') {
+    return {
+      key: 'not-checked:not-logged-in',
+      banner: await notice(
+        'verdict.notChecked.notLoggedIn',
+        "[OwnMind] 🔴 Claude Code on this computer is not signed in, so OwnMind could not have it check the AI's reply.\n"
+        + '  Sign in to Claude Code again and checking comes back on its own.',
+      ),
+    };
+  }
+  if (record.failure === 'exit') {
+    // Everything else Claude Code refuses for: a usage limit reached, a model not available,
+    // a configuration it will not accept. All of them are at Claude Code's end, and pointing
+    // the user at OwnMind's updater sends them to the wrong machine entirely.
+    return {
+      key: 'not-checked:cli-refused',
+      banner: await notice(
+        'verdict.notChecked.cliRefused',
+        "[OwnMind] 🔴 OwnMind asked Claude Code on this computer to check the AI's reply and it would not, so that reply was not checked.\n"
+        + '  Try running claude yourself in a terminal: whatever it says there is what OwnMind ran into.',
+      ),
+    };
+  }
   return {
     key: 'not-checked:check-failed',
     banner: await notice(

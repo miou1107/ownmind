@@ -30,5 +30,7 @@
   "verdict.violation": "[OwnMind] 🟡 OwnMind 檢查了 AI 前面某一段回話，它違反你 {count} 條規矩，第一條是：{title}\n  OwnMind 已經把這幾條交給 AI，AI 接下來應該會自己改。這只是提醒、擋不住它，所以你自己再看一眼。",
   "verdict.notChecked.noCli": "[OwnMind] 🔴 OwnMind 是叫這台電腦上的 Claude Code 來檢查 AI 的回話的，但找不到它，那一段就沒有檢查。\n  你要在這台電腦裝好 Claude Code，而且在終端機打 claude 叫得動它，檢查才會回來。",
   "verdict.didNotFinish": "[OwnMind] 🔴 OwnMind 開始檢查 AI 前面某一段回話，之後就沒有下文了，那一段沒有對過你的規矩。\n  下一段回話會重新檢查。一直這樣的話，重跑一次 OwnMind 的更新指令。",
-  "verdict.recovered": "[OwnMind] 🟢 OwnMind 又在拿你的規矩檢查 AI 的回話了。"
+  "verdict.recovered": "[OwnMind] 🟢 OwnMind 又在拿你的規矩檢查 AI 的回話了。",
+  "verdict.notChecked.notLoggedIn": "[OwnMind] 🔴 這台電腦上的 Claude Code 沒有登入，所以 OwnMind 沒辦法叫它檢查 AI 的回話。\n  你重新登入 Claude Code，檢查就會自己回來。",
+  "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind 叫這台電腦上的 Claude Code 檢查 AI 的回話，它不肯，所以那一段沒有檢查。\n  你自己在終端機打一次 claude 看看：它跟你講什麼，就是 OwnMind 遇到的事。"
 }
