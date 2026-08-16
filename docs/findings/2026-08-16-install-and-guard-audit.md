@@ -200,38 +200,7 @@ unproven — which is the same standard everything else in this document was hel
 
 ---
 
-## Open — verified, not fixed
-
-### O1 — The assistant can approve its own gate · verified 2026-08-15
-
-Driven through the registered hook, not the module: blocked, blocked, the assistant writes
-`gate-ask-<session>-<guard>.json` containing `{"approved":true}`, allowed — and the hook says
-nothing about having been unlocked. The audit row records `approval_mode: verbal`.
-
-In code mode the six-digit consent code is recoverable from the stored fingerprint by trying
-all 900,000 values: measured 318ms and 32ms on two runs. `MAX_ASK_MISSES = 5` does not apply,
-because recovering the code costs no wrong guesses. The signing key at
-`~/.ownmind/state/gate.key` is mode 400 and owned by the same uid the assistant runs as, so
-signing the file is available too.
-
-**Scope, measured:** 3 blocking guards against 313 rules the reply check can reach, on the
-one account that has any. Everyone else has zero. This is a hole in a small surface.
-
-### O2 — A secret rule set to "do not block" prints a green tick over a leaked key · verified
-
-Control: the rule set to block → the commit is stopped. Problem case: the same rule with
-`block_on_fail: false`, or with the field absent → the commit proceeds and the terminal says
-`Pre-commit check: all 1 rules passed ✓` while `AWS_ACCESS_KEY_ID=…` is in the staged diff.
-The green tick is the defect; failing open may be arguable, claiming a pass is not.
-
-### O3 — The secret scanner misses most real key shapes · verified, needs a decision
-
-25 combinations of five key shapes against five ways of writing them: 8 blocked, 17 missed.
-Indentation and quotes defeat it; an AWS secret-key shape is missed in all five forms.
-
-**Not fixed on purpose.** `detectSecretLike` is shared with the memory-write API, whose
-design prefers false negatives — widening it changes behaviour for a caller that wants the
-current behaviour. This is a design change, so it is Vin's call, not a repair.
+## Fixed in v1.30.9
 
 ### O6 — The gate blocks without its message reaching the user · verified 2026-08-16
 
@@ -257,6 +226,114 @@ part of fixing O1, not separate from it.
 
 Not investigated yet: whether the envelope is dropped by this harness, by the `.sh`, or by
 the CLI. That is the first question.
+
+**Fixed.** Every PreToolUse block now sends `hookSpecificOutput.permissionDecision: 'deny'`
+with `permissionDecisionReason` alongside the legacy `decision`/`reason` pair. Measured in
+the live harness both ways: with the old envelope the same block arrived as
+`Hook PreToolUse:Bash denied this tool`; with the new one the whole reason came through,
+including the sentence telling the assistant to relay it.
+
+It was not only the gate. Three other emitters had the same shape, and two of them put their
+entire message in `additionalContext`, which is not read on a deny — so the version-tag block
+arrived with no version number in it, and a blocked edit could not name the standard it hit.
+`formatGuardBlock` also gained the "tell the user this" line its sibling warning always had.
+
+`tests/hook-deny-envelope.test.js` runs all four emitters and holds them to one shape; each
+one was broken in turn to confirm it goes red alone.
+
+### O1 — The assistant can approve its own gate · verified 2026-08-15
+
+Driven through the registered hook, not the module: blocked, blocked, the assistant writes
+`gate-ask-<session>-<guard>.json` containing `{"approved":true}`, allowed — and the hook says
+nothing about having been unlocked. The audit row records `approval_mode: verbal`.
+
+In code mode the six-digit consent code is recoverable from the stored fingerprint by trying
+all 900,000 values: measured 318ms and 32ms on two runs. `MAX_ASK_MISSES = 5` does not apply,
+because recovering the code costs no wrong guesses. The signing key at
+`~/.ownmind/state/gate.key` is mode 400 and owned by the same uid the assistant runs as, so
+signing the file is available too.
+
+**Scope, measured:** 3 blocking guards against 313 rules the reply check can reach, on the
+one account that has any. Everyone else has zero. This is a hole in a small surface.
+
+**Fixed, with one part honestly left open.**
+
+- The code is no longer recoverable. `scrypt` with a per-record salt replaces the bare
+  sha256: measured 0.7 s for the full 900,000-value sweep before, 16.8 hours after, at 67 ms
+  per verification. Memory-hard at 32 MB per attempt, so parallel hardware does not collapse
+  it. A code-mode ask also expires after an hour, which keeps the window far inside that.
+- The record is sealed with `gate.key`, and the seal covers the approval state, the session
+  and the guard — so a hand-written `{"approved":true}`, a flipped flag on a genuine record,
+  and a seal lifted from another guard all fail. A record in the previous format is refused
+  rather than upgraded.
+- **Not closed:** `gate.key` is readable by the same uid, so an assistant determined to forge
+  one can still read it and compute the hmac. This turns a one-line file write into
+  deliberate key theft; it is a speed bump, not a wall, and is documented as such in the code.
+- A verbal ask has no secret at all, by design, so nothing can verify it. The allow it grants
+  now says so — "the AI said you agreed to X" — which is the only check that a claim of
+  consent can ever have. A record with a bad seal is ignored, logged as `forged_approval`,
+  and reported to the user rather than passed over in silence.
+
+**The first version of that seal did not hold, and review found it.** Recorded here in full,
+because the paragraph above is what the release notes said while all four of these worked:
+
+| Attack | Why it worked |
+|---|---|
+| Plant a `mode:'verbal'` record on a code-mode guard, then run the documented `--verbal` approve command | `approveActionVerbal` read `mode` off the attacker's own record |
+| Plant a record with your own `codeSalt`/`codeHash`, then approve with your own code | `approveAction` never checked the seal, then wrote the record back **through** the sealing helper — a signing oracle |
+| Keep the genuine record and its genuine seal, swap only `codeSalt`/`codeHash` | those two fields were outside the sealed set |
+| Reset `misses` on a burned ask | so was `misses`, so `MAX_ASK_MISSES` was a suggestion |
+
+None of them reads `gate.key`; three are silent. Fixed by verifying the seal before any other
+field is read, extending the sealed set to `v, mode, kind, approved, approval_mode, issuedAt,
+codeSalt, codeHash, misses`, signing a canonical JSON array rather than a `:`-joined string,
+and requiring the record's mode to match the guard's configured mode at consume time.
+
+Two more from the same review, both about what the user is told rather than what is allowed:
+a forgery detected on any guard that was not the one blocking was thrown away (single slot,
+read only inside the ask branch), and "the key or nonce is unreadable" was reported with the
+same sentence as "somebody forged this" — an accusation, over a genuine approval, because a
+file was missing.
+
+`tests/gate-self-approval.test.js`: 18 tests. 8 fail against the pre-review gate; the TTL test
+was separately mutation-checked, because it had been passing on a stale seal rather than on
+the clock.
+
+### O2 — A secret rule set to "do not block" prints a green tick over a leaked key · verified
+
+Control: the rule set to block → the commit is stopped. Problem case: the same rule with
+`block_on_fail: false`, or with the field absent → the commit proceeds and the terminal says
+`Pre-commit check: all 1 rules passed ✓` while `AWS_ACCESS_KEY_ID=…` is in the staged diff.
+The green tick is the defect; failing open may be arguable, claiming a pass is not.
+
+**Fixed, and it was two faults, not one.** The green tick was the visible one: a rule that
+failed but is not set to block left no trace anywhere and was counted among the rules
+reported as passed. It now names the rule, says OwnMind let the commit through on purpose,
+and says which setting to change.
+
+The one underneath was worse. A secret-guard rule stood the baseline scan down as soon as it
+*looked* at the hits, whether or not it did anything about them — so a rule set to
+`block_on_fail: false` removed the floor and then declined to block itself. The baseline
+exists so that no rule setting can leave a leak unguarded; only a rule that actually stops
+the commit stands it down now.
+
+`tests/pre-commit-secret-baseline.test.js` gained five tests; three fail against the
+pre-change hook, two are controls.
+
+---
+
+## Open — verified, not fixed
+
+
+### O3 — The secret scanner misses most real key shapes · verified, needs a decision
+
+25 combinations of five key shapes against five ways of writing them: 8 blocked, 17 missed.
+Indentation and quotes defeat it; an AWS secret-key shape is missed in all five forms.
+
+**Not fixed on purpose.** `detectSecretLike` is shared with the memory-write API, whose
+design prefers false negatives — widening it changes behaviour for a caller that wants the
+current behaviour. This is a design change, so it is Vin's call, not a repair.
+
 
 ### O5 — A symlink inside a repo pointing outside it escapes the path guard · verified
 

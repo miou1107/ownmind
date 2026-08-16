@@ -106,10 +106,20 @@ function runGuard({ filePath, content, guards }) {
       if (violation) {
         const reason = formatGuardBlock(violation);
         return {
+          // DENY ENVELOPE — both field pairs, or the block loses its words. Inlined rather
+          // than imported so a missing file can never be what turns a block off.
+          // tests/hook-deny-envelope.test.js holds the rationale and keeps all four
+          // emitters agreeing. additionalContext is gone from here on purpose: on a deny it
+          // is not a channel the model reads, so this block used to arrive as a bare
+          // "denied this tool" — the assistant could not name the standard it had just hit.
           block: JSON.stringify({
             decision: 'block',
             reason,
-            hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: reason },
+            hookSpecificOutput: {
+              hookEventName: 'PreToolUse',
+              permissionDecision: 'deny',
+              permissionDecisionReason: reason,
+            },
           }),
           notice: '',
         };

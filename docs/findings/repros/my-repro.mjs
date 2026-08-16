@@ -19,7 +19,7 @@ const real = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.ownmind/cache/
 const guard = real.guards.find((g) => String(g.id) === '820');
 if (!guard) throw new Error('guard 820 not found');
 
-const { evaluateGate } = await import(path.join(REPO, 'hooks/lib/action-gate.js'));
+const { evaluateGate, approveAction } = await import(path.join(REPO, 'hooks/lib/action-gate.js'));
 const { ensureKey, ensureNonce } = await import(path.join(REPO, 'hooks/lib/gate-receipt.js'));
 
 const sessionId = 'repro-session-1';
@@ -67,16 +67,29 @@ if (fs.existsSync(log)) {
   }));
 }
 
-// And the 6-digit code, if the guard had used code mode.
+// And the 6-digit code. This used to assume the stored form and sweep it; it now reads what
+// the gate really wrote, so the script cannot go on describing a format the product left.
 console.log('\n--- 另一條：那組六位數同意碼 ---');
-const code = String(Math.floor(Math.random() * 900000) + 100000);
-const hash = createHash('sha256').update(code).digest('hex');
-console.log(`假設閘門產生的同意碼是 ${code}，硬碟上只存它的指紋（不存數字本身）`);
-const t0 = Date.now();
-let found = null;
-for (let i = 100000; i <= 999999; i += 1) {
-  if (createHash('sha256').update(String(i)).digest('hex') === hash) { found = String(i); break; }
-}
-console.log(`AI 從指紋反推回數字：${found}，花了 ${Date.now() - t0} 毫秒`);
+// Same rule, in code mode rather than verbal, and without the read gate in front of it —
+// this section is about the code, not about the number of blocks it takes to reach one.
+const codeGuard = { ...guard, id: 821, ask_mode: undefined, read_required: false };
+const askedForCode = evaluateGate({
+  command: 'git push origin v9.9.9', guards: [codeGuard], stateDir, sessionId,
+});
+const realCode = (askedForCode.userLine || '').match(/(\d{6})/)?.[1];
+const stored = JSON.parse(fs.readFileSync(path.join(stateDir, `gate-ask-${sessionId}-821.json`), 'utf8'));
+console.log(`閘門這次發的同意碼是 ${realCode}，硬碟上存的是：`);
+console.log(`  ${JSON.stringify({ codeSalt: stored.codeSalt, codeHash: stored.codeHash })}`);
+
+const plain = createHash('sha256').update(String(realCode)).digest('hex');
+console.log(`\n舊做法（直接存 sha256）還在不在：${plain === stored.codeHash ? '在 ← 沒修好' : '不在'}`);
+
+// Time one derivation the way the gate does it, and scale it to the whole 900,000-value space
+// rather than actually sweeping it.
+const t0 = process.hrtime.bigint();
+approveAction(stateDir, sessionId, 821, '000000');
+const perTry = Number(process.hrtime.bigint() - t0) / 1e6;
+console.log(`試一個數字要 ${perTry.toFixed(1)} 毫秒 → 掃完 900,000 個要 ${(900000 * perTry / 3.6e6).toFixed(1)} 小時`);
+console.log(`而且同意碼過 1 小時就作廢，掃不完。`);
 
 fs.rmSync(SCRATCH, { recursive: true, force: true });
