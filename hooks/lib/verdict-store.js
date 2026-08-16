@@ -37,6 +37,11 @@ const SAFE_ID = /^[A-Za-z0-9._-]+$/;
  *
  * The judge's own ceiling is 90s, plus two 15s HTTP calls and the CLI's ~10s start. Three
  * minutes leaves room for a loaded machine without leaving a dead judge unreported for long.
+ *
+ * 180s against a measured 115s worst case. The collector reads the file once more before
+ * writing a marker off, so overshooting no longer loses a verdict — but if real latency
+ * drifts up, the first symptom will be "never heard back" notices about judges that were
+ * merely slow, and this is the number to raise.
  */
 export const JUDGE_DEADLINE_MS = 180_000;
 

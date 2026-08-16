@@ -19,6 +19,13 @@
  * the compliance step was pasted inline into a hook, referenced a constant that did not
  * exist, and the ReferenceError was swallowed by a catch — it would have shipped and never
  * once run.
+ *
+ * KNOWN LIMITATION, written down so it is not rediscovered as a bug. Collection only happens
+ * on the next `UserPromptSubmit`, so the LAST reply of a conversation is never collected: a
+ * rule broken there is judged, recorded, and never shown to anybody. Delivering it would mean
+ * opening the next conversation with a note about the previous one, which is a product
+ * decision rather than a fix, so it is not made here. The verdict is not lost — it sits in
+ * the state directory until the seven-day sweep.
  */
 
 import {
