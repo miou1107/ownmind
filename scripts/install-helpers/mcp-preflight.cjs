@@ -48,6 +48,7 @@
 const { spawn } = require('child_process');
 const os = require('os');
 const { readJson, CLAUDE_JSON } = require('./register-mcp.cjs');
+const { resolveSystemBinary } = require('./win-system-binary.cjs');
 
 // Cold node on Windows, spawned through cmd.exe, measured at 2-6s. 20s is deliberate slack:
 // the cost of being generous is a slow check, the cost of being tight is the fabricated
@@ -133,7 +134,7 @@ function killTree(child) {
   try { child.kill(); } catch { /* already gone */ }
   if (process.platform === 'win32' && child.pid) {
     try {
-      spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
+      spawn(resolveSystemBinary('taskkill'), ['/pid', String(child.pid), '/T', '/F'], {
         windowsHide: true,
         stdio: 'ignore',
       }).on('error', () => { /* taskkill absent or pid already reaped */ });
@@ -158,6 +159,10 @@ function preflightMcp(options = {}) {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     entry: givenEntry = null,
     spawnFn = spawn,
+    // Injected only by tests. The fix below is Windows-only and this file is edited on a
+    // Mac, so without a way to state the platform the assertion that proves it passes
+    // vacuously everywhere it is actually run.
+    resolveDeps = {},
   } = options;
 
   let entry = givenEntry;
@@ -222,7 +227,13 @@ function preflightMcp(options = {}) {
     const stderrTail = () => redact(stderrBuf).trim().slice(-STDERR_TAIL_BYTES);
 
     try {
-      child = spawnFn(entry.command, entry.args || [], {
+      // v1.30.10 — `cmd.exe` is what the Windows installer registers, and one machine could
+      // not spawn it: `could not spawn: spawn cmd.exe ENOENT`, from a self-check whose PATH
+      // had lost System32 (see win-system-binary.cjs). Claude Code launches this same entry
+      // from the desktop session, where PATH is usually intact — so the check was reporting
+      // its own environment as the machine's. Resolving to the address Windows guarantees
+      // asks the question the check is actually for: does this entry produce a server.
+      child = spawnFn(resolveSystemBinary(entry.command, resolveDeps), entry.args || [], {
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,

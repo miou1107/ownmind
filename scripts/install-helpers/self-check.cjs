@@ -34,6 +34,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 // v1.17.66 — on Windows, every spawn goes through safeSpawn (forces shell:false + windowsHide:true).
 const { safeSpawn } = require('./safe-spawn.cjs');
+const { describeSystemBinaries } = require('./win-system-binary.cjs');
 // v1.26.106 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
 const { readTextFileSync, stripNulEscapes } = require('./read-text-file.cjs');
 const { taskBelongsToInstall, expandHomeMarker } = require('./scheduler-task-owner.cjs');
@@ -1103,6 +1104,13 @@ async function collectEnv() {
   };
   // Two extra blocks only present on Windows (the launchd / systemd equivalents on other
   // platforms are already captured by checkScheduler).
+  // v1.30.10 — can this machine find Windows' own binaries, and how?
+  //
+  // Added because a machine reported `spawn cmd.exe ENOENT`, `spawn powershell.exe ENOENT`,
+  // a null code page and an empty `where bash` in one run, and nothing in the fifteen check
+  // results or the environment summary said whether System32 was on PATH. Answering that took
+  // a query against the production database. It is one line of the report now.
+  env.system_binaries = describeSystemBinaries();
   env.bash_resolution = await detectBashResolution();
   env.scheduler_detail = await detectSchedulerDetail();
   return env;
