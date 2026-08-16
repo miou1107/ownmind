@@ -625,6 +625,10 @@ $CommitMsgBat = Join-Path $HOME ".ownmind\git-hooks\commit-msg"
 $PreCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-pre-commit"
 $PostCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-post-commit"
 $CommitMsgSrc = Join-Path $OwnmindDir "hooks\ownmind-git-commit-msg"
+# Bug report #24: git runs pre-commit for an ordinary commit and pre-merge-commit for a
+# merge, never both. Without this one a merge is checked by nothing.
+$PreMergeCommitBat = Join-Path $HOME ".ownmind\git-hooks\pre-merge-commit"
+$PreMergeCommitSrc = Join-Path $OwnmindDir "hooks\ownmind-git-pre-merge-commit"
 
 # 偵測 sh.exe（Git for Windows 自帶）
 $shPath = Test-ShAvailable
@@ -639,6 +643,11 @@ if (-not $shPath) {
     Write-Host "[ OK ] Installed git pre-commit hook (LF)"
   } else {
     Write-Host "[WARN] source not found: $PreCommitSrc, skipping pre-commit hook" -ForegroundColor Yellow
+  }
+  if (Copy-AsLf -Src $PreMergeCommitSrc -Dest $PreMergeCommitBat) {
+    Write-Host "[ OK ] Installed git pre-merge-commit hook (LF)"
+  } else {
+    Write-Host "[WARN] source not found: $PreMergeCommitSrc, skipping pre-merge-commit hook" -ForegroundColor Yellow
   }
   if (Copy-AsLf -Src $PostCommitSrc -Dest $PostCommitBat) {
     Write-Host "[ OK ] Installed git post-commit hook (LF)"
