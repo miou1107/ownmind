@@ -1,5 +1,33 @@
 # OwnMind 檔案結構
 
+## 進行中（尚未發版）：TANK 這台 Windows 的兩個紅字
+
+新增：
+```
+scripts/install-helpers/win-system-binary.cjs
+                                     — 不要問 PATH「Windows 自己的程式在哪」。實測那台機器同一次
+                                       檢測裡：叫不動 cmd.exe、叫不動 powershell.exe、問不到編碼、
+                                       問不到 bash —— 四個都在 System32，那台機器四個都有。
+                                       改成直接去 Windows 保證的位置拿。找不到就退回原本的名字，
+                                       免得「為了可靠」反而把別人的機器弄壞
+tests/win-system-binary.test.js      — 十九條，全部用注入的環境跑，因為改這支的機器是 Mac、
+                                       壞掉的機器是 Windows。兩個接線點各弄壞一次確認會紅
+```
+
+修改：
+```
+scripts/install-helpers/safe-spawn.cjs
+                                     — 所有 powershell.exe / chcp.com / where.exe 都改走上面那支
+scripts/install-helpers/mcp-preflight.cjs
+                                     — cmd.exe 也是。這支本來是拿「自己這個環境的 PATH 壞了」
+                                       去指控使用者的設定檔有問題
+scripts/install-helpers/self-check.cjs
+                                     — 檢測報告多記一行：這台找不找得到 Windows 自己的程式、
+                                       是靠 PATH 還是靠絕對位置。少了這行，這次是連進正式機
+                                       撈資料庫才問出答案的
+```
+
+
 ## v1.30.9 修改（擋住了但你看不到；還有一把 AI 自己配得出來的鑰匙）
 
 修改：

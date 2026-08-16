@@ -25,6 +25,7 @@
 
 const { execFile } = require('child_process');
 const os = require('os');
+const { resolveSystemBinary } = require('./win-system-binary.cjs');
 
 const HOME = os.homedir();
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -35,7 +36,13 @@ function sanitize(s) {
   return s.split(HOME).join('~');
 }
 
-function safeSpawn(file, args = [], options = {}) {
+/**
+ * @param {string} file
+ * @param {string[]} args
+ * @param {object} options passed through to execFile
+ * @param {object} [deps] injected for tests only — never by callers
+ */
+function safeSpawn(file, args = [], options = {}, deps = {}) {
   // v1.17.66 review fix — must not just log a warning (Task Scheduler stderr has no audience,
   // so a Bug #2-class hidden regression could slip past review again).
   // If a caller really needs a shell, use child_process.execFile directly — this helper's
@@ -54,8 +61,16 @@ function safeSpawn(file, args = [], options = {}) {
     ...options,
   };
 
+  // v1.30.10 — never ask PATH where Windows keeps its own binaries. One machine reported
+  // `spawn powershell.exe ENOENT` and a null code page and an empty `where bash` in the same
+  // self-check, on a Windows 10 install that has all three: something between Git Bash,
+  // PowerShell and node handed this process a PATH with no System32 in it. See
+  // win-system-binary.cjs. Off Windows and for names it does not know, this is the identity.
+  const execFileImpl = deps.execFileImpl || execFile;
+  const target = resolveSystemBinary(file, deps.resolve || {});
+
   return new Promise((resolve) => {
-    execFile(file, args, opts, (error, stdout, stderr) => {
+    execFileImpl(target, args, opts, (error, stdout, stderr) => {
       const stdoutStr = String(stdout || '');
       const stderrStr = String(stderr || '');
       if (error) {
