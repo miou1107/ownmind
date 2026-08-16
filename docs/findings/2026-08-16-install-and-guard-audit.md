@@ -116,6 +116,14 @@ The same argument applies to the daily check's alert, so
 purpose. Running it with `drill` on should produce a GitHub issue; that is how the alerting
 path gets exercised without waiting for a real outage.
 
+**The drill has not been run yet, and neither has the daily check.** GitHub resolves both
+`schedule` and `workflow_dispatch` against the *default branch* only: until this lands on
+`main`, `gh workflow run daily-install-check.yml` answers `HTTP 404: workflow ... not found
+on the default branch`, and no schedule fires. So the alert path is written and syntax-checked
+and nothing more. **First thing to do after merging: run it once with `drill` on, confirm an
+issue appears, and close that issue.** Until that has happened, treat the daily check as
+unproven — which is the same standard everything else in this document was held to.
+
 ---
 
 ## Open — verified, not fixed
