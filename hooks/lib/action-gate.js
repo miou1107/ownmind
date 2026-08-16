@@ -154,9 +154,19 @@ const ASK_FORMAT = 2;
  * no wrong guesses — the attacker submits once, and is right.
  *
  * scrypt with a per-record salt is what changes that. Measured on the author's machine at
- * these parameters: 67 ms for one verification, so 16.8 hours for the sweep that used to take
- * 0.7 seconds. Memory-hard (32 MB per attempt at N=32768, r=8), so the usual answer of
- * throwing parallel hardware at it does not collapse the number either.
+ * these parameters: 67 ms for one verification, which SCALES to 16.8 hours for the sweep that
+ * really took 0.7 seconds. The sweep itself was never run — that number is arithmetic, and it
+ * is single-threaded arithmetic.
+ *
+ * The parallel figure is the one that matters, and it was measured after the first version of
+ * this comment claimed without checking that memory-hardness stopped it. On this 8-core
+ * laptop, 32 MB per attempt: 8 threads bring the sweep to **3.8 hours**, a factor of 4.4 —
+ * 0.3 GB in flight, which is nothing. Hardness bought a constant, not immunity.
+ *
+ * So the security here is ASK_TTL_MS, not the KDF. An hour against 3.8 hours is a margin of
+ * about four on ordinary hardware, and a machine with four times the cores would close it.
+ * If that margin ever needs to be real rather than adequate, raise N — do not re-tell the
+ * memory-hardness story.
  *
  * 67 ms is paid twice per approval — once issuing, once checking — by a human who is being
  * asked a question. It is not detectable at that scale.
@@ -174,8 +184,12 @@ const CODE_KDF = {
 };
 
 /**
- * How long a code-mode ask can still be approved. The point is to keep the window shorter
- * than the sweep above by a wide margin: an hour against 16.8 hours.
+ * How long a code-mode ask can still be approved.
+ *
+ * This is the actual defence, not the KDF — see the parallel measurement above. An hour
+ * against a 3.8-hour parallel sweep on an ordinary laptop is a margin of about four, and it
+ * is the reason a recovered code is worth nothing: it arrives after the ask it belongs to has
+ * expired. Shortening this buys more than raising N does.
  *
  * Verbal asks are exempt and carry no expiry. They hold no secret to recover — that is the
  * accepted honesty downgrade the mode is named for — so expiring them would buy nothing and
