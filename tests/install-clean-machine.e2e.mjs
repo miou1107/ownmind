@@ -30,16 +30,10 @@ import { fileURLToPath } from 'node:url';
  * ## Two things this deliberately does not exercise
  *
  * **The GitHub clone.** `install.sh` clones from github.com; this seeds ~/.ownmind from the
- * commit under test instead, by way of a bare repo that stands in as the remote. Otherwise
- * the run would install origin/main and tell you nothing about the branch, and a red result
- * would mean "GitHub was slow" as often as anything else. The installer's *other* branch -
- * `git pull` into an existing ~/.ownmind - is exercised, and the bare repo is what makes that
- * possible: `actions/checkout@v4` leaves a `pull_request` build on a detached HEAD with no
- * local branch, a clone of that is detached too, and `git pull` there exits 1 with "you are
- * not currently on a branch". Cloning the checkout directly would therefore have been green
- * on every push and red on every pull request.
- *
- * Note that this installs *committed* state. Uncommitted work in the tree is not covered.
+ * tree under test instead — see `seedOwnmind` for how, and for the two CI-only failures that
+ * shaped it. Otherwise the run would install origin/main and tell you nothing about the
+ * branch, and a red result would mean "GitHub was slow" as often as anything else. The
+ * installer's *other* branch — `git pull` into an existing ~/.ownmind — is exercised.
  *
  * **The scheduler.** `$HOME/.ownmind/.no-usage-scanner` is set on purpose. Without it the
  * installer calls `launchctl load -w` / `systemctl --user enable --now`, which register with
@@ -114,6 +108,56 @@ function sandboxEnv(extra = {}) {
   };
 }
 
+/**
+ * Build `~/.ownmind` the way a real install has it: a git checkout with a branch and a remote.
+ *
+ * Not a clone of the checkout under test, and not a push from it. Both were tried and both
+ * break on how CI fetches:
+ *
+ *   - `actions/checkout@v4` leaves a `pull_request` build on a detached HEAD with **no local
+ *     branch**. A clone of that is detached too, and `install.sh`'s existing-directory branch
+ *     runs `git pull`, which exits 1 with "you are not currently on a branch".
+ *   - It also fetches depth 1. Pushing that HEAD into a fresh repository is refused outright:
+ *     `! [remote rejected] HEAD -> main (shallow update not allowed)`.
+ *
+ * Both were green on `push` and `workflow_dispatch` and red only on `pull_request`, which is
+ * the worst shape available: main stays green while every PR fails.
+ *
+ * So the seed carries no history from the checkout at all. The tracked files are copied out
+ * of the **working tree** into a fresh repository with one commit, and `~/.ownmind` is cloned
+ * from that. `git pull` then runs for real and finds nothing, so the installer's update path
+ * stays exercised - and because it is the working tree rather than `HEAD`, a developer
+ * running this file locally tests the edit they just made rather than their last commit.
+ */
+function seedOwnmind() {
+  const upstream = path.join(world.home, 'upstream');
+  const files = execFileSync('git', ['-C', repoRoot, 'ls-files', '-z'], {
+    encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+  }).split('\0').filter(Boolean);
+  assert.ok(files.length > 100, `only ${files.length} tracked files found; the seed would be empty`);
+
+  for (const rel of files) {
+    const src = path.join(repoRoot, rel);
+    // `ls-files` lists the index, which can name a file deleted in the working tree. Skipping
+    // is right: that is what the tree under test actually looks like.
+    if (!fs.existsSync(src)) continue;
+    const dst = path.join(upstream, rel);
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(src, dst);
+  }
+
+  const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'ignore' });
+  execFileSync('git', ['init', '-q', '-b', 'main', upstream]);
+  git(upstream, '-c', 'core.hooksPath=', 'add', '-A');
+  git(
+    upstream, '-c', 'user.email=install-e2e@example.com', '-c', 'user.name=install e2e',
+    '-c', 'core.hooksPath=', 'commit', '-qm', 'the tree under test',
+  );
+  execFileSync('git', [
+    'clone', '-q', '--no-hardlinks', upstream, path.join(world.home, '.ownmind'),
+  ], { stdio: 'ignore' });
+}
+
 before(async () => {
   world.stub = await startStub();
   world.apiUrl = `http://127.0.0.1:${world.stub.address().port}`;
@@ -123,16 +167,7 @@ before(async () => {
   // in the file. It is removed by this file's own `after` below.
   world.home = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-clean-install-'));
 
-  // A bare repo standing in for github.com, carrying the commit under test on a real branch.
-  // Pushing writes only to the bare repo, so the checkout being tested is never touched -
-  // and the clone below lands on a branch with an upstream, which is what lets the
-  // installer's `git pull` succeed from a detached-HEAD build. See the note in the docblock.
-  const origin = path.join(world.home, 'origin.git');
-  execFileSync('git', ['init', '-q', '--bare', origin]);
-  execFileSync('git', ['-C', repoRoot, 'push', '-q', origin, 'HEAD:refs/heads/main']);
-  execFileSync('git', [
-    'clone', '-q', '--no-hardlinks', '--branch', 'main', origin, path.join(world.home, '.ownmind'),
-  ]);
+  seedOwnmind();
   fs.writeFileSync(path.join(world.home, '.ownmind', '.no-usage-scanner'), '');
 
   const r = spawnSync('bash', [path.join(repoRoot, 'install.sh'), API_KEY, world.apiUrl], {

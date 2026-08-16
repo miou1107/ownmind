@@ -124,20 +124,33 @@ Found by review before it shipped, and worth recording because the shape is nast
 fails — including the PR adding the job, where the tempting fix is to mark it non-blocking.
 That is precisely the pattern F4 exists to end.
 
-**Cause:** `actions/checkout@v4` leaves a `pull_request` build on a detached HEAD with **no
-local branch**. The test seeded `~/.ownmind` by cloning that checkout; a clone of a
-branchless detached repo is itself detached, and `install.sh`'s existing-directory branch
-runs `git pull`, which exits 1 with "you are not currently on a branch".
+**Two causes, and the second was only found by the PR itself.**
 
-**Proof:** reproduced twice. The first attempt did *not* reproduce it, because the fixture
-still had a local `main` branch alongside the detached HEAD and `git clone` picked it up —
-the failure only appears once the branch is deleted, which is the state `checkout@v4`
-actually produces.
+1. `actions/checkout@v4` leaves a `pull_request` build on a detached HEAD with **no local
+   branch**. The test seeded `~/.ownmind` by cloning that checkout; a clone of a branchless
+   detached repo is itself detached, and `install.sh`'s existing-directory branch runs
+   `git pull`, which exits 1 with "you are not currently on a branch".
+2. The first fix — push the commit under test into a throwaway bare repo and clone from
+   that — then failed for a different reason nobody had looked for: `checkout@v4` also
+   fetches depth 1, and pushing a shallow history into a fresh repository is refused with
+   `! [remote rejected] HEAD -> main (shallow update not allowed)`.
 
-**Fix:** the test pushes the commit under test into a throwaway bare repo and clones from
-that. The clone lands on a real branch with an upstream, so `git pull` runs and finds
-nothing — the installer's pull path stays exercised rather than being routed around — and
-the checkout under test is never written to.
+**Proof:** cause 1 took two attempts to reproduce — the first fixture kept a local `main`
+alongside the detached HEAD and `git clone` picked it up, so it passed. Cause 2 was found by
+opening the PR, which is exactly the failure mode being fixed: green on `push` and
+`workflow_dispatch`, red only on `pull_request`.
+
+**Fix:** the seed carries no history from the checkout at all. The tracked files are copied
+out of the **working tree** into a fresh one-commit repository, and `~/.ownmind` is cloned
+from that. `git pull` then runs for real and finds nothing, so the installer's update path
+stays exercised; nothing is written to the checkout under test; and because it is the working
+tree rather than `HEAD`, running the file locally now tests the edit just made rather than
+the last commit.
+
+**And the lesson that made it stop recurring:** a developer's own working copy cannot produce
+either condition, so both were invisible until CI said so. `scripts/sim-pr-checkout.sh`
+builds a checkout that is shallow *and* branchless and runs the test inside it — that is where
+the third attempt was verified, before pushing rather than after.
 
 ### F8 — The throwaway home was not actually sealed · verified in review
 
