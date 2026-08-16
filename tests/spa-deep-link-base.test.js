@@ -99,7 +99,17 @@ async function withFixtureApp(fn) {
     // would 404 for the wrong reason.
     return await fn(probe);
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    // Best-effort, and deliberately so. `tempDir` already registered this directory for
+    // removal at the end of the file, and that path is written to tolerate a locked file;
+    // this call is only here to free the fixture between cases. On Windows the static
+    // handler's handles on ./assets are not always released by the time this runs, and the
+    // rmdir then fails with ENOTEMPTY — which turned a green suite red on the Windows leg,
+    // in a test about base-href resolution, for a reason that had nothing to do with it.
+    // Retries first, because usually the handle is about to go; silence after, because the
+    // registered cleanup is the one with teeth.
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    } catch { /* the file-level cleanup owns this directory */ }
   }
 }
 

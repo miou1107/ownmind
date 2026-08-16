@@ -37,7 +37,12 @@ export function cleanupTempDirs() {
   const failures = [];
   for (const dir of created) {
     try {
-      fs.rmSync(dir, { recursive: true, force: true });
+      // Retries, because on Windows a directory a test served over HTTP is routinely still
+      // held for a moment after the server is done with it, and the rmdir comes back
+      // ENOTEMPTY. Measured on CI 2026-08-16. Tolerating the failure was already the policy
+      // here; retrying is what makes the directory actually go, rather than accumulating the
+      // leftovers this module was written to stop.
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     } catch (err) {
       failures.push(`${dir}: ${err.message}`);
     }
