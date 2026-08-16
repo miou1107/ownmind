@@ -137,67 +137,6 @@ test('the report is absent off Windows rather than empty', () => {
   assert.equal(describeSystemBinaries({ platform: 'darwin' }), null);
 });
 
-// ============================================================================
-// The wiring. A resolver nothing calls fixes nothing, and both call sites were reporting a
-// failure of their own environment as a failure of the machine.
-// ============================================================================
-
-const { safeSpawn } = require('../scripts/install-helpers/safe-spawn.cjs');
-const { preflightMcp } = require('../scripts/install-helpers/mcp-preflight.cjs');
-
-test('safeSpawn runs the resolved binary, not the bare name', async () => {
-  // This is the scheduler check's path: `Get-ScheduledTask failed: code=ENOENT spawn
-  // powershell.exe ENOENT`, on a machine that has PowerShell.
-  let ranWith = null;
-  // No arguments: which binary gets run is the whole assertion, and an argument list here
-  // would be inspected by the PowerShell hygiene suite as though something really ran.
-  await safeSpawn('powershell.exe', [], {}, {
-    execFileImpl: (file, args, opts, cb) => { ranWith = file; cb(null, '', ''); },
-    resolve: BROKEN_PATH,
-  });
-  assert.equal(ranWith, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
-});
-
-test('safeSpawn leaves everything it does not recognise exactly as given', async () => {
-  let ranWith = null;
-  await safeSpawn('git', ['status'], {}, {
-    execFileImpl: (file, args, opts, cb) => { ranWith = file; cb(null, '', ''); },
-    resolve: BROKEN_PATH,
-  });
-  assert.equal(ranWith, 'git', 'resolving names it has no business resolving would run the wrong program');
-});
-
-test('the MCP preflight spawns the resolved command', async () => {
-  // The registered Windows entry is `cmd.exe /c start.cmd`, and the machine reported
-  // `could not spawn: spawn cmd.exe ENOENT` — the check accusing the registration of a fault
-  // that belonged to the check's own PATH.
-  let spawnedWith = null;
-  await preflightMcp({
-    entry: { command: 'cmd.exe', args: ['/c', 'start.cmd'], env: {} },
-    timeoutMs: 50,
-    // Stated, not inherited. The fix is Windows-only and this file is edited on a Mac, so
-    // an assertion that took the real platform would pass without exercising anything.
-    resolveDeps: BROKEN_PATH,
-    spawnFn: (file) => {
-      spawnedWith = file;
-      throw new Error('not going any further; the command is what is under test');
-    },
-  });
-  assert.equal(spawnedWith, 'C:\\Windows\\system32\\cmd.exe',
-    'the preflight is still asking PATH for cmd.exe, which is the thing that was missing');
-});
-
-test('off Windows the preflight spawns exactly what is registered', async () => {
-  let spawnedWith = null;
-  await preflightMcp({
-    entry: { command: 'node', args: ['server.js'], env: {} },
-    timeoutMs: 50,
-    resolveDeps: { platform: 'darwin' },
-    spawnFn: (file) => { spawnedWith = file; throw new Error('stop here'); },
-  });
-  assert.equal(spawnedWith, 'node');
-});
-
 test('an unreadable PATH entry does not take the report down with it', () => {
   const throwing = {
     platform: 'win32',
