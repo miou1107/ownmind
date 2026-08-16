@@ -67,7 +67,9 @@ success. F2 did exactly that for three days.
 the file said to fold it back into the matrix once Windows was clean; nothing made that
 happen, and nothing failed while it did not.
 
-**Fix:** `windows-latest / node 20` is now a leg of the `test` matrix, with a veto.
+**Fix:** `windows-latest / node 20` is now a leg of the `test` matrix, with a veto. Verified
+on run 31933887945: `windows-latest / node 20` success, and the clean-install job green on
+all three platforms.
 
 ### F5 — Database tests failed instead of skipping on Windows · verified
 
@@ -100,6 +102,19 @@ key. A new CI job runs it on Linux, macOS and Windows.
 GitHub's availability, not the branch) and the live scheduler registration (`launchctl load`
 and `systemctl --user enable` register with the login session, not with `$HOME`, and a test
 must not do that to the machine running it).
+
+**Proved to go red, not just to go green.** A check only ever seen passing is a check nobody
+has evidence about. Two defects were committed on purpose — the guard returning `null`
+always, and the MCP registration silently doing nothing, which is the failure a real Windows
+machine reports today. Against that build the file went 6 pass / 3 fail, and the three were
+exactly *the tool is registered in the file Claude Code actually reads*, *the registered tool
+actually starts and answers*, and *the registered edit hook really blocks an edit to somebody
+else's path*. The deliberate commit was dropped immediately afterwards.
+
+The same argument applies to the daily check's alert, so
+`.github/workflows/daily-install-check.yml` takes a `drill` input that fails the install on
+purpose. Running it with `drill` on should produce a GitHub issue; that is how the alerting
+path gets exercised without waiting for a real outage.
 
 ---
 

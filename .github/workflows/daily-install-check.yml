@@ -21,6 +21,16 @@ on:
     # discovered at the end of it.
     - cron: '0 1 * * *'
   workflow_dispatch:
+    inputs:
+      drill:
+        description: 'Fail on purpose, to check the alert still reaches somebody'
+        type: boolean
+        default: false
+
+# An alerting path nobody has ever seen fire is an alerting path nobody has evidence about,
+# and the way it usually fails is by staying silent - which is indistinguishable from a quiet
+# week. `drill` makes the failure branch runnable on demand: run this workflow with it on, and
+# an issue should appear. Close the issue afterwards; nothing else needs undoing.
 
 permissions:
   contents: read
@@ -37,6 +47,14 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+      # The drill fails before anything is installed, on purpose. What is being exercised is
+      # the half nobody sees on a good day - whether a failure still reaches a person - and
+      # spending twenty minutes on three real installs to answer that would make the drill
+      # something nobody runs.
+      - if: inputs.drill
+        run: |
+          echo "Drill: failing on purpose to check that the alert still reaches somebody."
+          exit 1
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
