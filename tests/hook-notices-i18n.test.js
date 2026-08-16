@@ -217,7 +217,7 @@ test('zh: checking coming back is announced', async () => {
     ...verdictBase({ outcome: 'clean', violations: [] }),
     speak: (key) => key === null,
   });
-  assert.equal(r.banner, '[OwnMind] 🟢 OwnMind 又在拿你的規矩檢查 AI 的回話了。');
+  assert.equal(r.banner, '[OwnMind] 🟢 OwnMind 又在拿你的規矩檢查 AI 的回話了。你不用做什麼。');
 });
 
 // --- en regression pin: byte-identical to the dictionary ---
@@ -464,11 +464,16 @@ test('zh: /ownmind-off reminder (fires on the 10th tick)', () => {
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
-test('zh: compliance recovery notice (state changes from not-checked to clean)', () => {
+test('zh: the Stop hook does not announce a check it has only started', () => {
+  // It used to. `{action:'none'}` with no notice key reaches this branch in two ways — no
+  // rule bore on the turn, and a judge was successfully STARTED — and the sentence it printed
+  // ("OwnMind 已經照你的規矩檢查過 AI 這段回話") is false on both: a started judge is thirty to
+  // fifty seconds from an answer. Recovery moved to the turn a real verdict lands on, which is
+  // the only place that knows one did. Pinned here because the wording was a user-visible
+  // string with its own locale entry, and deleting one of those silently is how a channel dies.
   setupReplyLintHome();
   try {
     const sessionId = 'sess-recover-zh';
-    // First turn: bundle absent -> "never synced" state is recorded by notice-throttle.
     fs.writeFileSync(
       path.join(tmpHome, '.ownmind', 'cache', 'enforcement.json'),
       JSON.stringify({ selectors: [], guards: [], injectables: [] }),
@@ -477,16 +482,16 @@ test('zh: compliance recovery notice (state changes from not-checked to clean)',
     writeViolatingTranscript('the tests are green');
     const first = runReplyLintHook(stopPayload({ session_id: sessionId }), { OWNMIND_LOCALE_FORCE: 'zh' });
     assert.equal(first.status, 0);
-    // Second turn, same session: a present bundle whose selector matches nothing -> action
-    // 'none', no noticeKey -> the state changed away from "never synced" -> recovery fires.
+
     fs.writeFileSync(
       path.join(tmpHome, '.ownmind', 'cache', 'enforcement.json'),
       JSON.stringify({ selectors: [{ id: 1, keywords: ['zzz-matches-nothing'], tags: [] }], guards: [], injectables: [] }),
     );
     const second = runReplyLintHook(stopPayload({ session_id: sessionId }), { OWNMIND_LOCALE_FORCE: 'zh' });
     assert.equal(second.status, 0);
-    const parsed = JSON.parse(second.stdout);
-    assert.match(parsed.systemMessage, /已經照你的規矩檢查過 AI 這段回話/);
+    const said = second.stdout ? (JSON.parse(second.stdout).systemMessage || '') : '';
+    assert.doesNotMatch(said, /檢查過 AI 這段回話/,
+      'the Stop hook claimed a check on a turn where it had started one at most');
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 

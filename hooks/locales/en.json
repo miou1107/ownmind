@@ -30,7 +30,8 @@
   "verdict.violation": "[OwnMind] 🟡 OwnMind checked one of the AI's earlier replies and it breaks {count} of your rules, starting with {title}\n  OwnMind has passed this to the AI, which should correct itself from here. This is a reminder, not a block: OwnMind cannot make it comply, so check that it did.",
   "verdict.notChecked.noCli": "[OwnMind] 🔴 OwnMind checks the AI's replies by asking Claude Code on this computer, and it could not find it, so that reply was not checked.\n  Install Claude Code on this computer and make sure typing claude in a terminal starts it.",
   "verdict.didNotFinish": "[OwnMind] 🔴 OwnMind started checking one of the AI's replies and never heard back, so that reply was not checked against your rules.\n  The next reply is checked from scratch. If this keeps happening, run the OwnMind update script.",
-  "verdict.recovered": "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again.",
+  "verdict.recovered": "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again. Nothing for you to do.",
   "verdict.notChecked.notLoggedIn": "[OwnMind] 🔴 Claude Code on this computer is not signed in, so OwnMind could not have it check the AI's reply.\n  Sign in to Claude Code again and checking comes back on its own.",
-  "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind asked Claude Code on this computer to check the AI's reply and it would not, so that reply was not checked.\n  Try running claude yourself in a terminal: whatever it says there is what OwnMind ran into."
+  "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind asked Claude Code on this computer to check the AI's reply and it would not, so that reply was not checked.\n  Try running claude yourself in a terminal: whatever it says there is what OwnMind ran into.",
+  "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind could not work out which of your rules applied to the AI's reply, so that reply was not checked.\n  The problem is at OwnMind's end and usually clears on its own; nothing for you to do."
 }

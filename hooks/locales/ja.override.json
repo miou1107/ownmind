@@ -33,7 +33,8 @@
   "verdict.violation": "[OwnMind] 🟡 OwnMind が AI の前の返答を確認したところ、あなたのルールに {count} 件そぐわない点がありました。最初の 1 件は：{title}\n  OwnMind は AI にこれを伝えました。AI はこの先で直すはずです。これは通知であって強制ではないので、直っているかご自分でも確かめてください。",
   "verdict.notChecked.noCli": "[OwnMind] 🔴 OwnMind はこのパソコンの Claude Code に頼んで AI の返答を確認していますが、それが見つからないため、その返答は確認していません。\n  このパソコンに Claude Code を入れて、ターミナルで claude と打って起動する状態にしてください。",
   "verdict.didNotFinish": "[OwnMind] 🔴 OwnMind は AI の前の返答の確認を始めましたが、そのあと返事がありませんでした。その返答はあなたのルールと照らし合わせていません。\n  次の返答はあらためて確認します。これが続くようなら、OwnMind の更新コマンドを実行してください。",
-  "verdict.recovered": "[OwnMind] 🟢 OwnMind はふたたび、あなたのルールで AI の返答を確認しています。",
+  "verdict.recovered": "[OwnMind] 🟢 OwnMind はふたたび、あなたのルールで AI の返答を確認しています。あなたがすることはありません。",
   "verdict.notChecked.notLoggedIn": "[OwnMind] 🔴 このパソコンの Claude Code にログインしていないため、OwnMind は AI の返答を確認してもらえませんでした。\n  Claude Code にログインし直せば、確認はひとりでに戻ります。",
-  "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind がこのパソコンの Claude Code に AI の返答の確認を頼みましたが、断られたため、その返答は確認していません。\n  ターミナルでご自分で claude と打ってみてください。そこに出る内容が、OwnMind が受け取ったものです。"
+  "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind がこのパソコンの Claude Code に AI の返答の確認を頼みましたが、断られたため、その返答は確認していません。\n  ターミナルでご自分で claude と打ってみてください。そこに出る内容が、OwnMind が受け取ったものです。",
+  "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind は AI の返答にどのルールが当てはまるかを判断できなかったため、その返答は確認していません。\n  これは OwnMind 側の問題で、たいていはひとりでに直ります。あなたがすることはありません。"
 }
