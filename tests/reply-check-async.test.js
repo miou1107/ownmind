@@ -218,7 +218,7 @@ test('the same outage does not put a red line under every single turn', () => {
 
   writeVerdict(SESSION, 'turn-1', failure, stateOf(home));
   const first = runPromptHook({ home });
-  assert.match(JSON.parse(first.stdout).systemMessage, /could not check/);
+  assert.match(JSON.parse(first.stdout).systemMessage, /not checked against your rules/);
 
   writeVerdict(SESSION, 'turn-2', failure, stateOf(home));
   const second = runPromptHook({ home });

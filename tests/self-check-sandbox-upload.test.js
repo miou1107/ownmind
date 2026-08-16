@@ -152,7 +152,11 @@ test('a container whose HOME the image set is not a sandbox either', () => {
   const r = checkHomeIsAccountHome({
     runningHome: '/github/home',
     accountHome: '/root',
-    exists: (p) => String(p).startsWith('/github/home/.ownmind'),
+    // The separators are normalised because the subject builds this path with `path.join`,
+    // which answers `\github\home\.ownmind` when the test runs on Windows. One directory,
+    // two spellings, compared as strings — the same shape as F2, and it failed this
+    // container case on Windows while the product it stands for was correct.
+    exists: (p) => String(p).replace(/\\/g, '/').startsWith('/github/home/.ownmind'),
   });
   assert.equal(r.real, true);
 });

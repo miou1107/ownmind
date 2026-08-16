@@ -23,9 +23,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { tempDir } from './helpers/temp-dir.js';
+import { fakeClaude } from './helpers/fake-claude.js';
 import { judgeLocally } from '../hooks/lib/local-judge.js';
 
 const RULES = [
@@ -35,38 +33,13 @@ const RULES = [
 const REPLY = '我先看了 A 檔案，又看了 B 檔案，跑了三次測試，最後發現問題在第 42 行。';
 
 /**
- * A fake `claude` on PATH.
+ * A fake `claude` on PATH — see tests/helpers/fake-claude.js.
  *
  * A real one costs 18 seconds and the user's quota per call, so the wiring is proved against
- * a stand-in and the real CLI is exercised once, by hand, in the release check. The stand-in
- * records its argv and stdin so the tests can assert on what would have been sent.
+ * a stand-in and the real CLI is exercised once, by hand, in the release check. It lives in a
+ * helper because building it needs the platform's launch rules right, and a second copy of
+ * that in another test file already got Windows wrong once.
  */
-function fakeClaude({ stdout = '', exitCode = 0, delayMs = 0 }) {
-  const dir = tempDir('om-fake-claude-');
-  const record = path.join(dir, 'invocation.json');
-  const bin = path.join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
-
-  const script = `#!/usr/bin/env node
-const fs = require('fs');
-let stdin = '';
-process.stdin.on('data', (d) => { stdin += d; });
-process.stdin.on('end', () => {
-  fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ argv: process.argv.slice(2), stdin }));
-  setTimeout(() => {
-    process.stdout.write(${JSON.stringify(stdout)});
-    process.exit(${exitCode});
-  }, ${delayMs});
-});
-`;
-  if (process.platform === 'win32') {
-    const js = path.join(dir, 'claude.js');
-    fs.writeFileSync(js, script);
-    fs.writeFileSync(bin, `@echo off\r\nnode "${js}" %*\r\n`);
-  } else {
-    fs.writeFileSync(bin, script, { mode: 0o755 });
-  }
-  return { dir, bin, invocation: () => JSON.parse(fs.readFileSync(record, 'utf8')) };
-}
 
 const verdictJson = (verdicts) => JSON.stringify({ verdicts });
 

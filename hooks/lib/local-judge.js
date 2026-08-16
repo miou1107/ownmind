@@ -10,8 +10,12 @@
  * WHAT WAS MEASURED before this was written:
  *
  *   - `claude -p` answers headlessly and spends the subscription
- *   - a real payload (8 rules, a long reply) takes ~18s on haiku and ~43s on sonnet; a bare
- *     "reply OK" takes 10.5s, so roughly ten of those seconds are startup
+ *   - a bare "reply OK" takes 10.5s, so roughly ten seconds of any run is startup
+ *   - a REAL turn, measured against production on 2026-08-16: 9 rules, a 12,349-character
+ *     prompt, 150 seconds on haiku. An earlier bench said 18s for "8 rules and a long reply",
+ *     and that number was wrong by an order of magnitude — its rule bodies were a fifteenth
+ *     the size of the ones this account actually has. It set a 90s ceiling, and the first
+ *     live turn after release timed out on it.
  *   - a prompt beginning `---` is parsed as a FLAG. That is not a style preference — it is
  *     how the first probe of this died, with `error: unknown option '--- RULE 795: …'`
  *
@@ -25,6 +29,7 @@
 
 import { spawn } from 'node:child_process';
 import { redact } from './redact.js';
+import { resolveClaudeBin } from './resolve-claude-bin.js';
 import {
   JUDGE_SYSTEM,
   buildJudgeUserPrompt,
@@ -35,18 +40,24 @@ import {
 /**
  * Long enough for the slowest measured run, and no longer.
  *
- * haiku answered a production-sized payload in 18s and, once, 57s. Nobody waits on this —
- * the caller starts it and returns — so the budget exists to stop a wedged process living
- * forever, not to keep a user's attention.
+ * 90s at first, from a bench that judged ONE rule. The first turn after the release timed out
+ * on it. Measured against production on 2026-08-16, on a real turn of a real account: the
+ * server selected 9 rules, the prompt came to 12,349 characters, and haiku took 150 seconds.
+ * The earlier 18s and 57s figures were a payload a fifteenth of that size.
+ *
+ * 300s is that measurement with room for a turn that matches more rules than nine. Nobody
+ * waits on this — the caller starts it and returns — so the budget exists to stop a wedged
+ * process living forever, not to keep a user's attention, and erring long costs nothing while
+ * erring short costs the check itself.
  */
-const DEFAULT_TIMEOUT_MS = 90_000;
+export const DEFAULT_TIMEOUT_MS = 300_000;
 
 /**
  * The smallest model that can do this job, because it runs on every checked turn.
  *
- * Measured on a production-sized payload: haiku 18s, sonnet 43s. Judging a reply against
- * written rules is a reading task, not a reasoning one, and the user pays for the difference
- * out of their own quota.
+ * Judging a reply against written rules is a reading task, not a reasoning one, and the user
+ * pays for the difference out of their own quota. haiku takes 150s on a real turn (9 rules,
+ * 12,349 characters); a larger model on the same payload would be minutes, on every reply.
  */
 const DEFAULT_MODEL = 'haiku';
 
@@ -114,15 +125,26 @@ export async function judgeLocally({
 
   let result;
   try {
-    result = await run(spawnImpl, claudeBin, argv, prompt, timeoutMs);
+    // Windows keeps the CLI in a shape node cannot spawn directly — see resolve-claude-bin.js.
+    // Off Windows this hands the name straight back, so there is one code path everywhere.
+    const { command, prefixArgs } = resolveClaudeBin(claudeBin);
+    result = await run(spawnImpl, command, [...prefixArgs, ...argv], prompt, timeoutMs);
   } catch (err) {
-    // ENOENT here is the CLI not being on this machine, which is a different problem from the
-    // CLI refusing — different cause, different repair, so a different answer.
-    const noCli = err?.code === 'ENOENT';
+    // Three different states, three different sentences. ENOENT and `not-found` are the CLI
+    // genuinely not being here. `shim-*` is the opposite — it IS here, in a form this cannot
+    // launch — and calling that "not installed" is the wrong repair, which is precisely the
+    // defect this branch was rewritten for: on Windows every judge run reported a missing
+    // install on machines that had one.
+    const shimFailure = err?.code === 'shim-unknown' || err?.code === 'shim-unreadable';
+    const noCli = !shimFailure && (err?.code === 'ENOENT' || err?.code === 'not-found');
     return done({
       outcome: 'failed',
-      failure: noCli ? 'no-cli' : 'spawn',
-      reason: noCli ? `${claudeBin} is not on this machine` : `could not start ${claudeBin}: ${err?.message || err}`,
+      failure: shimFailure ? 'bad-cli-shape' : noCli ? 'no-cli' : 'spawn',
+      reason: noCli
+        ? `${claudeBin} is not on this machine`
+        : shimFailure
+          ? `${claudeBin} is installed but cannot be started from here: ${err.message}`
+          : `could not start ${claudeBin}: ${err?.message || err}`,
     });
   }
 
