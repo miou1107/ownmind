@@ -327,15 +327,11 @@ function formatBlockMessage(failures, blockReasons = []) {
  * @param {Array<{ruleCode: string, ruleTitle: string, failures: string[]}>} warnings rules
  *   that were broken and are not set to stop a commit
  */
-function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
-  if (checkedCount === 0 && warnings.length === 0) return '';
-  const ageNote = cacheAgeHours > 1 ? ` (cache updated ${Math.round(cacheAgeHours)}h ago)` : '';
-  if (warnings.length === 0) {
-    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
-  }
+function formatWarnMessage(warnings) {
   const lines = [
     '',
-    `[OwnMind v${VERSION}]Pre-commit check: ${warnings.length === 1 ? 'one of your rules was' : `${warnings.length} of your rules were`} `
+    `[OwnMind v${VERSION}]Pre-commit check: `
+    + `${warnings.length === 1 ? 'one of your rules was' : `${warnings.length} of your rules were`} `
     + 'broken, and OwnMind let the commit through anyway',
   ];
   for (const w of warnings) {
@@ -347,6 +343,16 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
       ? '  OwnMind let it through because that rule is not set to stop a commit. Turn its block setting on if it should.'
       : '  OwnMind let them through because those rules are not set to stop a commit. Turn their block setting on if they should.',
   );
+  return lines.join('\n');
+}
+
+function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
+  if (checkedCount === 0 && warnings.length === 0) return '';
+  const ageNote = cacheAgeHours > 1 ? ` (cache updated ${Math.round(cacheAgeHours)}h ago)` : '';
+  if (warnings.length === 0) {
+    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
+  }
+  const lines = [formatWarnMessage(warnings)];
   const passed = checkedCount - warnings.length;
   if (passed > 0) lines.push(`  The other ${passed} rules passed ✓${ageNote}`);
   lines.push('');
@@ -604,6 +610,11 @@ async function main() {
 
   // 7. Output results
   if (blockFailures.length > 0) {
+    // Warnings first, and by design rather than by luck. They used to be reachable only
+    // through formatPassMessage, so a rule broken for some mundane reason on the same commit
+    // as a leaked key was never mentioned at all: the block exited before anything read them.
+    // The user found out on the retry, if they got that far.
+    if (warnings.length > 0) console.error(formatWarnMessage(warnings));
     console.error(formatBlockMessage(blockFailures, blockReasons));
     process.exit(1);
   }

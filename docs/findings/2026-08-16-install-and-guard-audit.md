@@ -274,9 +274,30 @@ one account that has any. Everyone else has zero. This is a hole in a small surf
   consent can ever have. A record with a bad seal is ignored, logged as `forged_approval`,
   and reported to the user rather than passed over in silence.
 
-`tests/gate-self-approval.test.js`: 10 tests, 8 of which fail against the pre-change gate.
-The 2 that pass on both are the controls — the ordinary approval path, and an ordinary allow
-still costing zero words.
+**The first version of that seal did not hold, and review found it.** Recorded here in full,
+because the paragraph above is what the release notes said while all four of these worked:
+
+| Attack | Why it worked |
+|---|---|
+| Plant a `mode:'verbal'` record on a code-mode guard, then run the documented `--verbal` approve command | `approveActionVerbal` read `mode` off the attacker's own record |
+| Plant a record with your own `codeSalt`/`codeHash`, then approve with your own code | `approveAction` never checked the seal, then wrote the record back **through** the sealing helper — a signing oracle |
+| Keep the genuine record and its genuine seal, swap only `codeSalt`/`codeHash` | those two fields were outside the sealed set |
+| Reset `misses` on a burned ask | so was `misses`, so `MAX_ASK_MISSES` was a suggestion |
+
+None of them reads `gate.key`; three are silent. Fixed by verifying the seal before any other
+field is read, extending the sealed set to `v, mode, kind, approved, approval_mode, issuedAt,
+codeSalt, codeHash, misses`, signing a canonical JSON array rather than a `:`-joined string,
+and requiring the record's mode to match the guard's configured mode at consume time.
+
+Two more from the same review, both about what the user is told rather than what is allowed:
+a forgery detected on any guard that was not the one blocking was thrown away (single slot,
+read only inside the ask branch), and "the key or nonce is unreadable" was reported with the
+same sentence as "somebody forged this" — an accusation, over a genuine approval, because a
+file was missing.
+
+`tests/gate-self-approval.test.js`: 18 tests. 8 fail against the pre-review gate; the TTL test
+was separately mutation-checked, because it had been passing on a stale seal rather than on
+the clock.
 
 ### O2 — A secret rule set to "do not block" prints a green tick over a leaked key · verified
 

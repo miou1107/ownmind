@@ -27,5 +27,7 @@
   "compliance.pushedBack": "[OwnMind] 🟢 The AI's reply breaks {count} of your rules, so OwnMind has told the AI to rewrite it.{idNote}",
   "tty.header": "[OwnMind {version}]",
   "gate.allow.verbal": "[OwnMind] 🟡 The AI said you agreed to 「{title}」, so OwnMind allowed it this once.\n  If you did say so, ignore this; if you did not, stop it now.",
-  "gate.ask.forged": "[OwnMind] 🟡 There was already an approval on file for this, and OwnMind did not issue it.\n  OwnMind ignored it and is asking you instead."
+  "gate.ask.forged": "[OwnMind] 🟡 The AI had an approval on file for this that OwnMind did not issue.\n  OwnMind ignored it and is asking you instead.",
+  "gate.ask.unverifiable": "[OwnMind] 🟡 There is an approval on file for this and OwnMind cannot tell whether it issued it.\n  OwnMind did not use it, and is asking you instead. Re-running the OwnMind update script repairs this.",
+  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind could not save this approval, so it will not recognise your answer.\n  Re-running the OwnMind update script repairs this."
 }

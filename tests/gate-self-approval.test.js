@@ -29,10 +29,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, scryptSync } from 'node:crypto';
 import { tempDir } from './helpers/temp-dir.js';
 import { evaluateGate, approveAction, approveActionVerbal } from '../hooks/lib/action-gate.js';
-import { ensureKey, ensureNonce } from '../hooks/lib/gate-receipt.js';
+import { ensureKey, ensureNonce, sealAsk } from '../hooks/lib/gate-receipt.js';
+
+/** Matches CODE_KDF in action-gate.js. An attacker deriving their own hash uses these too. */
+const KDF = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+const derive = (code, salt) => scryptSync(String(code), String(salt), 32, KDF).toString('hex');
 
 const DEPLOY = 'git push origin ima-v9.9.9';
 
@@ -118,7 +122,7 @@ test('a forged approval is recorded, and the user is told rather than the gate g
 
   const blocked = run(dir, g);
   assert.equal(blocked.action, 'block');
-  assert.match(blocked.userLine, /OwnMind did not issue it/,
+  assert.match(blocked.userLine, /OwnMind did not issue/,
     'the user hears that an approval was found and ignored');
 
   const log = fs.readFileSync(path.join(dir, 'gate-log.jsonl'), 'utf8')
@@ -136,6 +140,115 @@ test('a record from the format a previous version wrote is refused, not honoured
   fs.writeFileSync(askFile(dir, 's1', 820),
     JSON.stringify({ approved: true, kind: 'ask', mode: 'verbal', approval_mode: 'verbal' }));
   assert.equal(run(dir, g).action, 'block');
+});
+
+// --- The approve path, which used to sign whatever it was handed ---
+//
+// Review of the first version found the seal was a signing oracle: `approveAction` and
+// `approveActionVerbal` read the record with no seal check, then wrote it back THROUGH the
+// sealing helper. Four attacks were reproduced, none of which reads `gate.key`, and three of
+// which were silent. One test each, because the four fail in four different places.
+
+test('a planted verbal record cannot walk a code-mode guard through the verbal approval', () => {
+  const dir = stateDir();
+  const g = guard();                      // no ask_mode → the owner left this one in code mode
+  run(dir, g);
+  fs.writeFileSync(askFile(dir, 's1', 820),
+    JSON.stringify({ v: 2, approved: false, kind: 'ask', mode: 'verbal' }));
+
+  assert.equal(approveActionVerbal(dir, 's1', 820), false,
+    'the mode it checks must not come out of the record it is being asked to trust');
+  assert.equal(run(dir, g).action, 'block');
+});
+
+test('a record carrying the attacker\'s own salt and hash is not signed on request', () => {
+  const dir = stateDir();
+  const g = guard();
+  run(dir, g);
+  const salt = 'aa'.repeat(16);
+  fs.writeFileSync(askFile(dir, 's1', 820), JSON.stringify({
+    v: 2, approved: false, kind: 'ask', mode: 'code',
+    codeSalt: salt, codeHash: derive('000000', salt), issuedAt: Date.now(),
+  }));
+
+  assert.equal(approveAction(dir, 's1', 820, '000000'), false);
+  assert.equal(run(dir, g).action, 'block');
+  // Deliberately no forgery line here, and that is the right answer: this record never
+  // claimed to be an approval. Nothing was bypassed, so there is nobody to accuse — the gate
+  // simply declines to sign it and issues a fresh ask. The accusation is reserved for a
+  // record that says `approved: true`, which is the case the user needs to hear about.
+});
+
+test('the genuine seal does not cover for a swapped code', () => {
+  // The quietest of the four: keep the real record and the real seal, change only the two
+  // fields that decide which code opens it. The first seal did not cover them.
+  const dir = stateDir();
+  const g = guard();
+  run(dir, g);
+  const real = JSON.parse(fs.readFileSync(askFile(dir, 's1', 820), 'utf8'));
+  const salt = 'bb'.repeat(16);
+  fs.writeFileSync(askFile(dir, 's1', 820),
+    JSON.stringify({ ...real, codeSalt: salt, codeHash: derive('111111', salt) }));
+
+  assert.equal(approveAction(dir, 's1', 820, '111111'), false,
+    'codeSalt and codeHash have to be inside the seal');
+  assert.equal(run(dir, g).action, 'block');
+});
+
+test('the burn counter cannot be reset by editing the record', () => {
+  const dir = stateDir();
+  const g = guard();
+  const ask = run(dir, g);
+  const code = ask.userLine.match(/(\d{6})/)[1];
+  for (let i = 0; i < 5; i += 1) approveAction(dir, 's1', 820, '000000');
+  assert.equal(approveAction(dir, 's1', 820, code), false, 'burned');
+
+  const rec = JSON.parse(fs.readFileSync(askFile(dir, 's1', 820), 'utf8'));
+  fs.writeFileSync(askFile(dir, 's1', 820), JSON.stringify({ ...rec, misses: 0 }));
+  assert.equal(approveAction(dir, 's1', 820, code), false,
+    'misses has to be inside the seal too, or MAX_ASK_MISSES is a suggestion');
+});
+
+// --- Reporting a forgery, rather than noticing one and dropping it ---
+
+test('a forged record on a guard that never blocks is still recorded and still reported', () => {
+  // The single-slot version only ever read this inside the ask_first branch, so a forgery
+  // sitting on any other guard was detected and then thrown away, on the allow path, silently.
+  const dir = stateDir();
+  const g = guard({ ask_first: false });
+  run(dir, g);
+  fs.writeFileSync(askFile(dir, 's1', 820),
+    JSON.stringify({ v: 2, approved: true, kind: 'ask', mode: 'verbal' }));
+
+  const allowed = run(dir, g);
+  assert.equal(allowed.action, 'allow', 'this guard was never going to block; the command runs');
+  assert.match(allowed.userLine ?? '', /did not issue/,
+    'but the one event worth noticing must not be the one nobody is told about');
+  const log = fs.readFileSync(path.join(dir, 'gate-log.jsonl'), 'utf8')
+    .trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(log.some((e) => e.forged_approval === true));
+});
+
+test('"OwnMind cannot tell" is not reported as "somebody forged this"', () => {
+  // verifyAskSeal answers false when the key or the nonce cannot be read, which is a
+  // different fact from a bad seal — and the first version said the accusing sentence for
+  // both. Reproduced by deleting the session nonce beside a genuine approval.
+  const dir = stateDir();
+  const g = guard({ ask_mode: 'verbal' });
+  run(dir, g);
+  assert.equal(approveActionVerbal(dir, 's1', 820), true);
+  fs.unlinkSync(path.join(dir, 'gate-nonce-s1'));
+
+  const blocked = run(dir, g);
+  assert.equal(blocked.action, 'block', 'it still refuses — this is about the wording, not the verdict');
+  assert.doesNotMatch(blocked.userLine, /did not issue/,
+    'a genuine approval must not be called a forgery because the nonce went missing');
+  assert.match(blocked.userLine, /cannot tell/);
+  const log = fs.readFileSync(path.join(dir, 'gate-log.jsonl'), 'utf8')
+    .trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(log.some((e) => e.unverifiable_approval === true));
+  assert.ok(!log.some((e) => e.forged_approval === true),
+    'and the field described as worth going back for stays uncontaminated');
 });
 
 // --- The code ---
@@ -171,14 +284,33 @@ test('a code-mode ask stops being answerable after its hour', () => {
   const ask = run(dir, g);
   const code = ask.userLine.match(/(\d{6})/)[1];
 
-  // Age the record by re-sealing it with an issuedAt from two hours ago. Written through the
-  // gate's own approve path first so the seal is genuine, then aged — this is a clock test,
-  // not a forgery test, and it must not accidentally become the latter.
+  // Age the record and RE-SEAL it, so the only thing wrong with it is its age.
+  //
+  // The first version of this test rewrote `issuedAt` and left the original seal in place. It
+  // passed, but not for the reason it claimed: `issuedAt` is inside the sealed field set, so
+  // the record was simply unsealed — and once the approve path started checking seals, this
+  // would have gone on passing while the TTL itself could be deleted without turning it red.
+  // Review caught it. A test that cannot fail for its own reason is not a test.
   const rec = JSON.parse(fs.readFileSync(askFile(dir, 's1', 821), 'utf8'));
+  const aged = { ...rec, issuedAt: Date.now() - 2 * 60 * 60 * 1000 };
+  delete aged.seal;
   fs.writeFileSync(askFile(dir, 's1', 821),
-    JSON.stringify({ ...rec, issuedAt: Date.now() - 2 * 60 * 60 * 1000 }));
+    JSON.stringify({ ...aged, seal: sealAsk(dir, 's1', 821, aged) }));
 
-  assert.equal(approveAction(dir, 's1', 821, code), false, 'the right code, too late');
+  // The control: the same record, re-sealed and still fresh, must approve. Without it a
+  // mistake in the re-sealing above would look exactly like the TTL working.
+  const fresh = { ...rec };
+  delete fresh.seal;
+  assert.equal(
+    approveAction(dir, 's1', 821, code), false, 'the right code, too late',
+  );
+  fs.writeFileSync(askFile(dir, 's1', 821),
+    JSON.stringify({ ...fresh, seal: sealAsk(dir, 's1', 821, fresh) }));
+  assert.equal(
+    approveAction(dir, 's1', 821, code), true,
+    're-sealed and inside the hour, the same code must still work — otherwise the test above '
+    + 'was measuring the seal, not the clock',
+  );
 });
 
 test('the ordinary path still works: block, real code, one allow', () => {
@@ -206,6 +338,37 @@ test('an allow granted on a spoken go-ahead says so instead of passing in silenc
     'the claim is the only check there is, so the user has to see it');
   assert.match(allowed.userLine, /releases are asked about first/,
     'and it has to name which thing they are said to have agreed to');
+});
+
+test('an ask the gate could not save says so, instead of handing out a dead code', () => {
+  // Failing closed is right. Failing closed while looking exactly like working is the pairing
+  // this product exists to end: the user was shown a six-digit code that nothing could ever
+  // redeem, because the record behind it was never written.
+  const dir = stateDir();
+  const g = guard();
+  fs.chmodSync(dir, 0o500);           // readable, not writable
+  try {
+    const blocked = run(dir, g);
+    assert.equal(blocked.action, 'block', 'still refuses, which was never in doubt');
+    assert.match(blocked.userLine, /could not save this approval/,
+      'and now says that answering will not help');
+  } finally {
+    fs.chmodSync(dir, 0o700);
+  }
+});
+
+test('a verbal record cannot satisfy a guard its owner moved to code mode', () => {
+  // The seal already stops a planted record. This is the other half: an ask issued while the
+  // guard was verbal, still sitting there after the owner switched the guard to code mode.
+  // Genuine record, genuine seal, wrong kind of consent for the rule as it stands now.
+  const dir = stateDir();
+  run(dir, guard({ ask_mode: 'verbal' }));
+  assert.equal(approveActionVerbal(dir, 's1', 820), true);
+
+  const nowCodeMode = guard();       // same id, ask_mode removed
+  const blocked = run(dir, nowCodeMode);
+  assert.equal(blocked.action, 'block', 'a spoken go must not carry a rule the owner tightened');
+  assert.match(blocked.userLine, /\d{6}/, 'and the user is asked again, in the mode now configured');
 });
 
 test('an ordinary allow still costs zero words', () => {

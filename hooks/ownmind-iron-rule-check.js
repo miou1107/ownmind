@@ -165,16 +165,17 @@ async function main() {
         }));
         process.exit(0);
       }
-      if (gate.userLine) {
-        // An allow that still has something to say: the gate let this through on the strength
-        // of a spoken go-ahead, and the person said to have spoken it should hear about it.
-        console.log(JSON.stringify({ systemMessage: gate.userLine }));
-        process.exit(0);
-      }
-      if (gate.degraded) {
-        console.log(JSON.stringify({
-          systemMessage: await gateNotice('gate.degraded', DEGRADED_LINE),
-        }));
+      // An allow can still have something to say — a spoken go-ahead the user should hear was
+      // claimed, an approval that was found and not used, and separately the receipts being
+      // unverifiable. Joined, not chosen between: branching here dropped the degraded notice
+      // on any turn that also carried one of the others. Same shape as the CLI twin, because
+      // two wirings of one protocol must not differ in what a platform is told.
+      const allowLines = [
+        gate.userLine || '',
+        gate.degraded ? await gateNotice('gate.degraded', DEGRADED_LINE) : '',
+      ].filter(Boolean);
+      if (allowLines.length) {
+        console.log(JSON.stringify({ systemMessage: allowLines.join('\n') }));
         process.exit(0);
       }
       // plain allow: fall through to the reminder flow in silence
