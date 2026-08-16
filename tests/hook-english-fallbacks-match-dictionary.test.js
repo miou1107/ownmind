@@ -38,7 +38,14 @@ const HARD_CODED = {
   'hooks/lib/action-gate-cli.js': ['gate.failopen', 'gate.degraded'],
   'hooks/ownmind-iron-rule-check.js': ['gate.failopen', 'gate.degraded'],
   'hooks/ownmind-iron-rule-check.sh': ['gate.failopen'],
-  'hooks/lib/action-gate.js': ['gate.ask.verbal', 'gate.read.blocked', 'gate.check.blocked'],
+  // Every notice this file hard-codes, not a subset. `gate.ask.code.action` and
+  // `gate.ask.code.limit` were missing from this list since it was written — the same class
+  // of gap the file exists to close, in the file that closes it.
+  'hooks/lib/action-gate.js': [
+    'gate.ask.verbal', 'gate.read.blocked', 'gate.check.blocked',
+    'gate.ask.code.action', 'gate.ask.code.limit',
+    'gate.allow.verbal', 'gate.ask.forged', 'gate.ask.unverifiable', 'gate.ask.notRecorded',
+  ],
   'hooks/lib/compliance-step.js': [
     'compliance.off.warnMode',
     'compliance.notChecked.noCredentials',

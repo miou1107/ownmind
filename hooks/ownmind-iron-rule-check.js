@@ -149,18 +149,33 @@ async function main() {
 
       const gate = evaluateGate({ command, guards: bundle.guards, stateDir, sessionId: sid });
       if (gate.action === 'block') {
+        // DENY ENVELOPE — both field pairs, or the block loses its words. Inlined rather
+        // than imported for the same reason gateNotice() is: a block must not be reachable
+        // only through a file that could be missing. tests/hook-deny-envelope.test.js holds
+        // the rationale and keeps all four emitters agreeing.
         console.log(JSON.stringify({
           decision: 'block',
           reason: gate.reason,
           systemMessage: gate.userLine,
-          hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: '' },
+          hookSpecificOutput: {
+            hookEventName: 'PreToolUse',
+            permissionDecision: 'deny',
+            permissionDecisionReason: gate.reason,
+          },
         }));
         process.exit(0);
       }
-      if (gate.degraded) {
-        console.log(JSON.stringify({
-          systemMessage: await gateNotice('gate.degraded', DEGRADED_LINE),
-        }));
+      // An allow can still have something to say — a spoken go-ahead the user should hear was
+      // claimed, an approval that was found and not used, and separately the receipts being
+      // unverifiable. Joined, not chosen between: branching here dropped the degraded notice
+      // on any turn that also carried one of the others. Same shape as the CLI twin, because
+      // two wirings of one protocol must not differ in what a platform is told.
+      const allowLines = [
+        gate.userLine || '',
+        gate.degraded ? await gateNotice('gate.degraded', DEGRADED_LINE) : '',
+      ].filter(Boolean);
+      if (allowLines.length) {
+        console.log(JSON.stringify({ systemMessage: allowLines.join('\n') }));
         process.exit(0);
       }
       // plain allow: fall through to the reminder flow in silence
@@ -260,12 +275,18 @@ async function main() {
             '',
             `Response format: the AI's first line must be "${versionTag}".`,
           ];
+          // DENY ENVELOPE — see tests/hook-deny-envelope.test.js. The whole message goes in
+          // the reason: on a deny, additionalContext is not a channel the model reads, which
+          // is how this block used to arrive as a bare "denied this tool" with no version in
+          // it at all.
+          const blockReason = blockLines.join('\n');
           console.log(JSON.stringify({
             decision: 'block',
-            reason: `Missing git tag for version ${pkgVersion}`,
+            reason: blockReason,
             hookSpecificOutput: {
               hookEventName: 'PreToolUse',
-              additionalContext: blockLines.join('\n')
+              permissionDecision: 'deny',
+              permissionDecisionReason: blockReason,
             }
           }));
           process.exit(0);

@@ -310,10 +310,53 @@ function formatBlockMessage(failures, blockReasons = []) {
   return lines.join('\n');
 }
 
-function formatPassMessage(checkedCount, cacheAgeHours = 0) {
-  if (checkedCount === 0) return '';
+/**
+ * What is printed when nothing stopped the commit.
+ *
+ * `warnings` is the reason this takes an argument at all. A rule that was broken but is not
+ * set to stop a commit used to leave no trace whatsoever: it was counted in `checkedCount`
+ * and then reported as having passed. Measured 2026-08-16 — a secret rule with
+ * `block_on_fail: false` let a commit through carrying `AWS_ACCESS_KEY_ID=…` in the staged
+ * diff, and printed `Pre-commit check: all 1 rules passed ✓`.
+ *
+ * Letting it through is arguable, and it is what the setting asks for. Saying it passed is
+ * not arguable; it is untrue, and it is worse than saying nothing.
+ *
+ * @param {number} checkedCount rules evaluated
+ * @param {number} cacheAgeHours
+ * @param {Array<{ruleCode: string, ruleTitle: string, failures: string[]}>} warnings rules
+ *   that were broken and are not set to stop a commit
+ */
+function formatWarnMessage(warnings) {
+  const lines = [
+    '',
+    `[OwnMind v${VERSION}]Pre-commit check: `
+    + `${warnings.length === 1 ? 'one of your rules was' : `${warnings.length} of your rules were`} `
+    + 'broken, and OwnMind let the commit through anyway',
+  ];
+  for (const w of warnings) {
+    lines.push(`  🟡 ${w.ruleCode}: ${w.ruleTitle}`);
+    for (const f of w.failures) lines.push(`      → ${f}`);
+  }
+  lines.push(
+    warnings.length === 1
+      ? '  OwnMind let it through because that rule is not set to stop a commit. Turn its block setting on if it should.'
+      : '  OwnMind let them through because those rules are not set to stop a commit. Turn their block setting on if they should.',
+  );
+  return lines.join('\n');
+}
+
+function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
+  if (checkedCount === 0 && warnings.length === 0) return '';
   const ageNote = cacheAgeHours > 1 ? ` (cache updated ${Math.round(cacheAgeHours)}h ago)` : '';
-  return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
+  if (warnings.length === 0) {
+    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
+  }
+  const lines = [formatWarnMessage(warnings)];
+  const passed = checkedCount - warnings.length;
+  if (passed > 0) lines.push(`  The other ${passed} rules passed ✓${ageNote}`);
+  lines.push('');
+  return lines.join('\n');
 }
 
 /**
@@ -484,7 +527,15 @@ async function main() {
   // baseline stands down and the same leak is not reported twice. It also means a rule that
   // is skipped for any reason — wrong trigger, missing conditions — leaves the baseline in
   // charge rather than silently taking the check with it.
-  let secretGuardReported = false;
+  //
+  // v1.30.9: this used to be `secretGuardReported`, set as soon as a secret-guard rule LOOKED
+  // at the hits — whether or not it did anything about them. A rule with `block_on_fail:false`
+  // therefore stood the baseline down and then declined to block itself, so the key went in
+  // and the terminal said `all 1 rules passed ✓`. The baseline is the floor under every other
+  // path in this file, and one rule's setting is not allowed to remove it.
+  let secretHitsBlocked = false;
+  // Rules that were broken and are not set to stop a commit. They are reported, not silent.
+  const warnings = [];
 
   for (const rule of commitRules) {
     const verification = rule.metadata?.verification;
@@ -516,7 +567,6 @@ async function main() {
       // v1.26.124: reuse the step-0 scan rather than running it again. Re-scanning meant
       // `git diff` ran once per secret-guard rule, and — worse for correctness — the
       // baseline and the rule could disagree if the index moved between them.
-      secretGuardReported = true;
       for (const hit of secretHits) {
         const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
         failures.push(`${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
@@ -531,13 +581,20 @@ async function main() {
         blockFailures.push(`    → ${f}`);
       }
       blockReasons.push({ ruleCode, ruleTitle, secretHit, isSecretRule: secretGuard });
+      // Only a rule that actually stopped the commit stands the baseline down. See below.
+      if (secretHit) secretHitsBlocked = true;
+    } else if (violated) {
+      // Broken, and not set to stop a commit. It used to end here — no entry anywhere, and
+      // then counted among the rules reported as passed.
+      warnings.push({ ruleCode, ruleTitle, failures });
     }
   }
 
-  // v1.26.124: the loop ran, but nothing in it claimed the step-0 hits — the user has
-  // commit-time rules and none of them is a secret guard. Without this the leak would ride
-  // out on the pass path below, which is the same silence in a different place.
-  if (secretHits.length > 0 && !secretGuardReported) {
+  // v1.26.124: the loop ran, but nothing in it stopped the commit over the step-0 hits —
+  // either no rule is a secret guard, or one is and is not set to block. Without this the
+  // leak would ride out on the pass path below, which is the same silence in a different
+  // place.
+  if (secretHits.length > 0 && !secretHitsBlocked) {
     blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）');
     for (const hit of secretHits) {
       const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
@@ -553,11 +610,16 @@ async function main() {
 
   // 7. Output results
   if (blockFailures.length > 0) {
+    // Warnings first, and by design rather than by luck. They used to be reachable only
+    // through formatPassMessage, so a rule broken for some mundane reason on the same commit
+    // as a leaked key was never mentioned at all: the block exited before anything read them.
+    // The user found out on the retry, if they got that far.
+    if (warnings.length > 0) console.error(formatWarnMessage(warnings));
     console.error(formatBlockMessage(blockFailures, blockReasons));
     process.exit(1);
   }
 
-  const passMsg = formatPassMessage(checkedCount, cacheAgeHours);
+  const passMsg = formatPassMessage(checkedCount, cacheAgeHours, warnings);
   if (passMsg) {
     console.log(passMsg);
   }

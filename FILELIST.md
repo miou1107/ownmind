@@ -1,5 +1,69 @@
 # OwnMind 檔案結構
 
+## v1.30.9 修改（擋住了但你看不到；還有一把 AI 自己配得出來的鑰匙）
+
+修改：
+```
+hooks/lib/action-gate-cli.js                    — 擋下來的時候改用新的回覆格式，原因才送得到 AI 手上。
+                                                   舊格式 Claude Code 認得擋、但把字丟掉，AI 只看到
+                                                   「denied this tool」。另外：口頭同意放行的那一次
+                                                   會出一句話，不再無聲通過
+hooks/ownmind-iron-rule-check.js                — 同上，Windows 這一份也要改。版號卡控那個擋也一起，
+                                                   它原本把整段訊息放在一個「擋的時候不會被讀」的欄位，
+                                                   於是擋出來連版號都沒有
+hooks/ownmind-iron-rule-check.sh                — 版號卡控那個擋，同上
+hooks/ownmind-edit-reminder.js                  — 擋別人的檔案那個擋，同上。原本 AI 被擋下來
+                                                   連自己撞到哪條團隊規範都不知道
+hooks/lib/path-guard.js                         — 擋別人檔案的訊息補一句「把這件事告訴使用者」。
+                                                   同一個檔案裡的另一則警告一直都有這句，
+                                                   比較硬的這一則反而沒有
+hooks/lib/gate-receipt.js                       — 新增：同意書的印章（sealAsk / verifyAskSeal）。
+                                                   蓋的內容包含「已同意」這件事本身，
+                                                   所以把發下去的那張改一個字也不算數。
+                                                   審查後補：印章要蓋住的欄位從 6 個變成 9 個
+                                                   （加上同意碼的鹽與雜湊、猜錯次數、格式版本），
+                                                   簽的字串改成無歧義的 JSON 陣列；
+                                                   驗印章從「真／假」變成三種答案 ——
+                                                   多出「認不出來」，因為那跟「有人偽造」是兩件事
+hooks/lib/action-gate.js                        — 同意碼改用 scrypt 加隨機鹽存，掃完 900,000 個
+                                                   從 0.7 秒變成 16.8 小時；同意碼一小時作廢；
+                                                   同意書一律驗印章，驗不過就當作沒有並記一筆
+                                                   forged_approval；口頭同意放行時回一句話給使用者。
+                                                   審查後補三件：蓋章前先驗印章（原本不驗，
+                                                   等於誰拿紙來都幫他蓋）、同意書的種類要跟規矩
+                                                   現在設的種類一致、發現的可疑同意書一律留下來
+                                                   並且不管最後是擋是放都要講；另外存不了同意書
+                                                   的時候要明講，不要發一組永遠沒用的號碼
+hooks/locales/{zh,en,ja}.json                   — 四句新的：口頭同意放行、發現不是自己發的同意書、
+                                                   認不出是不是自己發的、以及同意書存不起來
+hooks/locales/{en,ja}.override.json             — 同上（釘住英日文，翻譯流程不准改寫）
+hooks/ownmind-git-pre-commit.js                 — 規矩沒過但設成「不擋」，原本完全不留痕跡、
+                                                   還被算進「all N rules passed ✓」。改成明講。
+                                                   另外機密規矩設成「不擋」會連預設防線一起關掉 ——
+                                                   預設防線的用途就是不被任何一條規矩的設定關掉
+tests/action-gate.test.js                       — 手寫的同意書檔案改成用閘門真的發一張（seedAsk）。
+                                                   手寫的現在不算數，這正是這一版要的
+tests/action-gate-e2e.test.js                   — 改成驗新的回覆格式
+tests/hook-english-fallbacks-match-dictionary.test.js — 兩句新訊息納入英文備援比對
+tests/pre-commit-secret-baseline.test.js        — 補五條：機密規矩設成「不擋」／沒設，
+                                                   預設防線都還是要擋；規矩沒過不准打勾；
+                                                   真的過了還是要打勾
+docs/findings/repros/my-repro.mjs               — 同意碼那段改成讀硬碟上真正存的東西，不再自己假設格式
+docs/findings/repros/tiebreak.mjs               — 同上，改成實際發一張同意書來量，不用 grep 程式碼
+docs/findings/2026-08-16-install-and-guard-audit.md — O1／O2／O6 移到已修
+```
+
+新增：
+```
+tests/hook-deny-envelope.test.js                — 四個「擋下來」的出口必須送同一種格式，
+                                                   一個一個真的跑起來驗。每一個單獨弄壞都會紅
+tests/gate-self-approval.test.js                — 十八條：AI 自己寫同意書、把印章挪到別的規矩上、
+                                                   把發下去的那張改一個字、舊格式、同意碼過期，
+                                                   加上審查抓到的四種偷渡寫法各一條。
+                                                   拿審查前的程式碼跑，十八條裡有八條會紅；
+                                                   同意碼過期那條另外做過「把它拿掉會不會紅」的驗證
+```
+
 ## v1.30.8 修改（「別人的檔案你不能改」，有兩扇門是開著的）
 
 修改：
