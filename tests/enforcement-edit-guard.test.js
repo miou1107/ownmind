@@ -111,6 +111,24 @@ test('no guards means no blocking, and no crash', async () => {
   assert.notEqual(parsed.decision, 'block');
 });
 
+test('a guard that cannot run says so instead of going quiet', async () => {
+  // Failing open is the right call - a broken guard must not stop somebody editing files.
+  // Doing it silently is not: the edit lands, nothing is said, and a protection that is off
+  // looks exactly like a protection that ran and found nothing. This file already carries
+  // that argument for the state directory; the guard is the part where it matters most.
+  const repo = makeRepo();
+  const exploding = { id: 412, get paths() { throw new Error('bundle is unreadable'); } };
+  const out = await editReminder({
+    ...BASE, filePath: touch(repo, 'ci/projects.yml'), guards: [exploding],
+  });
+  const parsed = JSON.parse(out);
+  assert.notEqual(parsed.decision, 'block', 'a broken guard must not block the edit');
+  assert.match(
+    parsed.hookSpecificOutput.additionalContext, /could not check/i,
+    'the failure has to reach the user, not just the exit code',
+  );
+});
+
 test('the shell hook Claude Code registers carries the block through to stdout', async () => {
   // The end-to-end check, and the one that matters most: it is the only test that fails if
   // the guard is wired into the wrong file.
