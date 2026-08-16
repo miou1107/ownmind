@@ -233,6 +233,31 @@ Indentation and quotes defeat it; an AWS secret-key shape is missed in all five 
 design prefers false negatives — widening it changes behaviour for a caller that wants the
 current behaviour. This is a design change, so it is Vin's call, not a repair.
 
+### O6 — The gate blocks without its message reaching the user · verified 2026-08-16
+
+Releasing v1.30.8 was correctly stopped by guard 820 ("releases and deploys are asked about
+first"). What the user saw was nothing. What the assistant saw was
+`Hook PreToolUse:Bash denied this tool` — no rule name, no reason, and no sign that a
+one-word answer would clear it.
+
+`hooks/locales/zh.json` has the right sentence ready and waiting:
+
+> 🟢 AI 想做一件你規定要先問過的事，OwnMind 先擋住了：{title}
+>   你回「go」，OwnMind 就放行這一次；回「no」就不准。
+
+It did not appear. The assistant only learned what the gate wanted by reading
+`action-gate.js` and the locale file directly — which a user cannot do, and which no
+assistant should have to.
+
+**Why this one matters more than its size.** A block nobody can see is a block nobody can
+release, so the next person to hit it either gives up or goes looking for a way around — and
+the way around is `gate-ask-<session>-<guard>.json`, which is O1. The silent block is what
+makes the self-unlock tempting rather than merely possible. Fixing the message is therefore
+part of fixing O1, not separate from it.
+
+Not investigated yet: whether the envelope is dropped by this harness, by the `.sh`, or by
+the CLI. That is the first question.
+
 ### O5 — A symlink inside a repo pointing outside it escapes the path guard · verified
 
 `repo/ci -> /somewhere-else` with a guard on `ci/**`: writing `repo/ci/projects.yml` is
