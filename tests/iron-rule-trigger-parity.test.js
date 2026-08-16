@@ -159,8 +159,15 @@ describe('issue #92 — the .js and .sh command classifiers agree', () => {
       fs.rmSync(tmpHome, { recursive: true, force: true });
     });
 
-    /** Run the real hook with one command and report what it classified it as. */
-    function classify(command) {
+    /**
+     * Run the real hook with one command and report what it classified it as.
+     *
+     * `session_id` is per-command, and that is not decoration. The hook keys its once-an-hour
+     * window on the session, so without one every run here shares the key `default`: they were
+     * already coupled when they ran in sequence, and running them together would have had them
+     * writing that state file over each other.
+     */
+    function classify(command, index) {
       return new Promise((resolve, reject) => {
         const child = spawn('bash', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh')], {
           cwd: repoRoot,
@@ -174,6 +181,7 @@ describe('issue #92 — the .js and .sh command classifiers agree', () => {
         child.on('error', reject);
         child.on('close', (status) => resolve({ status, stdout, stderr }));
         child.stdin.end(JSON.stringify({
+          session_id: `parity-${index}`,
           hook_event_name: 'PreToolUse',
           tool_name: 'Bash',
           tool_input: { command },
@@ -181,12 +189,42 @@ describe('issue #92 — the .js and .sh command classifiers agree', () => {
       });
     }
 
+    /**
+     * Every command is classified up front, a few at a time, and each `it` below reads its
+     * answer.
+     *
+     * One spawn per test, in sequence, took 55 seconds on Windows — each one starts bash, which
+     * starts node more than once. That is slow enough that under a loaded parallel suite run it
+     * exceeded the 300s test timeout and this file went red for no reason anyone could see:
+     * measured 2026-08-15, alongside an unrelated file that timed out in the same run. A test
+     * that fails only when the machine is busy is a false red, and a false red teaches people
+     * to skim.
+     *
+     * Bounded rather than all at once: thirty concurrent bash-plus-node trees is a different way
+     * to overload the same machine.
+     */
+    const results = new Map();
+
+    before(async () => {
+      const CONCURRENCY = 4;
+      const queue = COMMANDS.map(({ command }, index) => ({ command, index }));
+      const workers = Array.from({ length: CONCURRENCY }, async () => {
+        for (;;) {
+          const job = queue.shift();
+          if (!job) return;
+          results.set(job.command, await classify(job.command, job.index));
+        }
+      });
+      await Promise.all(workers);
+    });
+
     for (const { command, expected } of COMMANDS) {
       // Spawned unconditionally, as tests/iron-rule-install-trigger.test.js already does. A
       // `bash is missing` skip would turn the whole half of this file that guards the drifting
       // copy into a green no-op on any machine that happened not to resolve it.
-      it(`${command} → ${expected}`, async () => {
-        const r = await classify(command);
+      it(`${command} → ${expected}`, () => {
+        const r = results.get(command);
+        assert.ok(r, `no result was collected for ${command} — the setup above did not run it`);
         assert.equal(r.status, 0,
           `a hook must never fail the tool call it inspects. stderr=${r.stderr.slice(0, 300)}`);
         assert.equal(triggerFromHookOutput(r.stdout), expected,
