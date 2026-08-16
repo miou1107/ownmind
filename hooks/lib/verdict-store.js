@@ -111,12 +111,15 @@ export function writeVerdict(sessionId, turnId, record, dir = stateDir()) {
   const tmp = `${target}.${process.pid}.tmp`;
   try {
     fs.mkdirSync(path.dirname(target), { recursive: true });
+    // 0600, like the job file beside it. This carries 160 characters of what the AI said and
+    // the judge's quotes from it, which is the user's own work; on a shared machine the
+    // default 0644 hands that to everybody with an account.
     fs.writeFileSync(tmp, JSON.stringify({
       ...record,
       session_id: sessionId,
       turn_id: turnId,
       written_at: new Date().toISOString(),
-    }));
+    }), { mode: 0o600 });
     fs.renameSync(tmp, target);
     return true;
   } catch {
@@ -181,10 +184,20 @@ function started(record) {
  * The collector lists, then decides, then acts, and the judge can land in between — writing
  * by rename onto exactly this path. Without a second look, a verdict that arrived a second
  * after its deadline would be deleted and announced as a judge that never came back.
+ *
+ * @returns {object|null|undefined} the record; `null` when it is there and unreadable;
+ *   `undefined` when it is GONE. The caller has to tell those apart: unreadable is a turn
+ *   that went unchecked, and gone is a turn somebody else has already dealt with.
  */
 export function readVerdict(sessionId, turnId, dir = stateDir()) {
+  let raw;
   try {
-    const parsed = JSON.parse(fs.readFileSync(verdictPath(sessionId, turnId, dir), 'utf8'));
+    raw = fs.readFileSync(verdictPath(sessionId, turnId, dir), 'utf8');
+  } catch (err) {
+    return err?.code === 'ENOENT' ? undefined : null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
     return null;

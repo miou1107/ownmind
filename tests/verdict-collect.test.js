@@ -32,6 +32,9 @@ process.on('exit', () => {
 const waiting = (record) => ({
   sessionId: 's1',
   list: () => [{ turnId: 't1', record }],
+  // Including the second look the deadline branch takes. An unstubbed one reads the
+  // developer's own ~/.ownmind/state, which makes the answer depend on whose machine this is.
+  reread: () => record,
   remove: () => {},
   sweep: () => {},
   logFailure: () => {},
