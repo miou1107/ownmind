@@ -49,14 +49,28 @@ standing in, so no path string is subtracted from another.
 
 ### F3 — A guard that could not run said nothing · verified
 
-**What a user hits:** the enforcement bundle is unreadable, so no path rule is enforced for
-the rest of the session, and nothing anywhere says so. A protection that is off looks exactly
-like a protection that ran and found nothing.
+**What a user hits:** the cache holding the path rules is corrupt or unreadable, so no path
+rule is enforced for the rest of the session, and nothing anywhere says so. A protection that
+is off looks exactly like a protection that ran and found nothing.
 
 **Cause:** a bare `catch {}` in `hooks/ownmind-edit-reminder.js`.
 
-**Fix:** it still fails open — a broken check must not stop somebody working — but it now
-returns a notice saying the check did not happen and what repairs it.
+**The first fix did not cover the case it named.** Replacing the bare `catch` with a notice
+only helps if something throws, and nothing does: `readEnforcementBundle` catches every read
+and parse error and answers with an empty bundle, so a corrupt cache arrives as `guards: []`
+— indistinguishable from an account with nothing annotated. Caught in review, with the
+measurement: corrupt file and missing file both return
+`{selectors:[],guards:[],injectables:[],present:false}`. The test written alongside the first
+fix passed, because it constructed a malformed guard *object* rather than a malformed file.
+
+**Fix:** branch on the `present` flag the bundle already carries. `present: false` with a
+cache file on disk is "could not be read" and is reported; no cache file at all is a machine
+that has not synced yet, which is an ordinary first run and stays quiet. The notice is
+appended to the hourly listing rather than returned instead of it — returning early stopped
+the listing too, and put an unthrottled message in front of every single edit.
+
+Both halves have a red-green check: with the `present` branch removed, *a cache file that
+cannot be read is reported* fails.
 
 ### F4 — The Windows CI leg could not fail a build · verified
 
@@ -102,6 +116,46 @@ key. A new CI job runs it on Linux, macOS and Windows.
 GitHub's availability, not the branch) and the live scheduler registration (`launchctl load`
 and `systemctl --user enable` register with the login session, not with `$HOME`, and a test
 must not do that to the machine running it).
+
+### F7 — The clean-install job would have been red on every pull request · verified in review
+
+Found by review before it shipped, and worth recording because the shape is nasty: green on
+`push` and `workflow_dispatch`, red on `pull_request`, so `main` stays green while every PR
+fails — including the PR adding the job, where the tempting fix is to mark it non-blocking.
+That is precisely the pattern F4 exists to end.
+
+**Cause:** `actions/checkout@v4` leaves a `pull_request` build on a detached HEAD with **no
+local branch**. The test seeded `~/.ownmind` by cloning that checkout; a clone of a
+branchless detached repo is itself detached, and `install.sh`'s existing-directory branch
+runs `git pull`, which exits 1 with "you are not currently on a branch".
+
+**Proof:** reproduced twice. The first attempt did *not* reproduce it, because the fixture
+still had a local `main` branch alongside the detached HEAD and `git clone` picked it up —
+the failure only appears once the branch is deleted, which is the state `checkout@v4`
+actually produces.
+
+**Fix:** the test pushes the commit under test into a throwaway bare repo and clones from
+that. The clone lands on a real branch with an upstream, so `git pull` runs and finds
+nothing — the installer's pull path stays exercised rather than being routed around — and
+the checkout under test is never written to.
+
+### F8 — The throwaway home was not actually sealed · verified in review
+
+Two ways a test run could have reached the developer's real machine:
+
+- `preflightMcp`'s `home` option chooses which file the registration is *read* from; the
+  child is spawned with `{...process.env, ...entry.env}`, so `HOME` arrived from the
+  developer's shell. The MCP server resolves `~/.ownmind` from that and fires its
+  auto-update, which can `git pull` and `npm install` in the real install.
+- `install.sh` runs `git config --global`. With `XDG_CONFIG_HOME` set and the throwaway
+  `$HOME/.gitconfig` absent, git writes to `$XDG_CONFIG_HOME/git/config` instead — and the
+  test then deletes the directory that config points at, leaving `core.hooksPath` aimed at
+  nothing and git hooks silently off in every repository on that machine.
+
+**Fix:** one `sandboxEnv()` used by every spawn in the file, carrying `HOME`, `USERPROFILE`,
+`XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL`, and the preflight entry is passed in with that env
+rather than left to inherit. A new assertion fails if `core.hooksPath` ends up outside the
+throwaway home.
 
 **Proved to go red, not just to go green.** A check only ever seen passing is a check nobody
 has evidence about. Two defects were committed on purpose — the guard returning `null`
@@ -158,6 +212,20 @@ Indentation and quotes defeat it; an AWS secret-key shape is missed in all five 
 **Not fixed on purpose.** `detectSecretLike` is shared with the memory-write API, whose
 design prefers false negatives — widening it changes behaviour for a caller that wants the
 current behaviour. This is a design change, so it is Vin's call, not a repair.
+
+### O5 — A symlink inside a repo pointing outside it escapes the path guard · verified
+
+`repo/ci -> /somewhere-else` with a guard on `ci/**`: writing `repo/ci/projects.yml` is
+allowed.
+
+Measured mechanism, which is not the one first proposed: git chases the link before it
+answers, so it is standing in the link's *destination*. When that destination is in no
+repository, `resolveRepo` returns `null` — "this file is in no repository" — and the guard
+allows the write. Pointed at a different repository instead, the file would be attributed to
+that one and judged against its remote.
+
+Pre-existing; the old code did the same, so it is not a regression from v1.30.8. Same class
+as O1: the guard covers the ordinary route and not a deliberate one.
 
 ### O4 — The reply check has been failing much more often recently · verified, cause unknown
 

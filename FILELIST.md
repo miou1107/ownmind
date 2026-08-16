@@ -11,8 +11,13 @@ hooks/lib/path-guard.js                         — 檔案在不在專案裡，�
                                                    專案」放行。另外資料夾還不存在時會往上找到
                                                    第一個存在的資料夾再問，缺的段落補回去 ——
                                                    在別人管的路徑下開新檔案原本完全擋不到
-hooks/ownmind-edit-reminder.js                  — 這個檢查自己壞掉時改成講出來。原本是空的 catch，
-                                                   保護關掉跟保護跑過長得一模一樣
+hooks/ownmind-edit-reminder.js                  — 規矩檔讀不到的時候改成講出來。原本是空的 catch，
+                                                   保護關掉跟保護跑過長得一模一樣。
+                                                   第一版沒修到：讀檔失敗根本不會丟例外，
+                                                   會回一個空的清單，跟「這個帳號沒設規矩」
+                                                   長得一樣 —— 改成看 present 旗標。
+                                                   而且訊息是附在原本那行後面，不是取代它，
+                                                   否則每小時的提醒也會跟著消失
 tests/helpers/real-db.js                        — 有 docker 不等於跑得動這個映像。Windows 跑的是
                                                    Windows 容器模式，`docker info` 會過、
                                                    `docker run` Linux 映像才炸，於是六條資料庫
@@ -20,9 +25,29 @@ tests/helpers/real-db.js                        — 有 docker 不等於跑得�
 tests/enforcement-path-guard.test.js            — 補四條：資料夾還不存在、缺好幾層、
                                                    換個大小寫寫法、以及不能因此開始亂擋。
                                                    資料夾比對改看檔案系統給的編號，不比字串
-tests/enforcement-edit-guard.test.js            — 補一條：檢查壞掉時要出聲
-.github/workflows/test.yml                      — Windows 那關改成「沒過就不准合併」
-tests/install-clean-machine.test.js             — 新增，見下
+tests/enforcement-edit-guard.test.js            — 補三條：規矩檔讀不到要出聲、還沒同步過不要一直吵、
+                                                   檢查自己壞掉時要出聲
+.github/workflows/test.yml                      — Windows 那關改成「沒過就不准合併」；
+                                                   新增「全新安裝」工作，三個平台各跑一次
+```
+
+新增：
+```
+tests/install-clean-machine.e2e.mjs             — 從零安裝一次，然後逐項問「這個功能會動嗎」：
+                                                   工具叫得起來嗎、掛勾真的擋得住嗎、
+                                                   git 真的擋得住金鑰嗎。不在預設測試範圍內
+                                                   （它要跑 npm install），由 CI 指名跑。
+                                                   所有子行程共用一份「假家目錄」環境變數 ——
+                                                   只設 HOME 封不住，git 全域設定跟 MCP
+                                                   都會跑回真正的家目錄
+tests/install-e2e-is-actually-run.test.js       — 盯上面那支有沒有真的被 CI 跑到。
+                                                   解析 YAML 不搜字串 —— 搜字串的話，
+                                                   步驟被加上 if: false 也照樣過
+.github/workflows/daily-install-check.yml       — 每天早上九點自己裝一次，壞了開 issue 通知。
+                                                   有演練開關，可以隨時確認通知真的會出現
+docs/findings/2026-08-16-install-and-guard-audit.md
+                                                — 這輪找到的問題全記錄，含還沒修的，
+                                                   以及「別人回報但我沒親手驗過」的分開列
 ```
 
 ## v1.30.7 修改（一個只代表「機器很忙」的紅字）
