@@ -148,7 +148,16 @@ function readRepoRemote() {
 }
 
 /**
- * Run the compliance step once for this turn.
+ * Start this turn's compliance check, and do not wait for it.
+ *
+ * The judge moved onto the user's own Claude Code subscription (the owner's standing
+ * instruction: anything OwnMind asks a model to judge spends the user's own quota, never a
+ * gateway). Measured, it takes 29–54 seconds — so this hook starts it detached and returns.
+ * The verdict reaches the user on the next turn, through ownmind-prompt-inject.js.
+ *
+ * What that gives up, recorded so nobody rediscovers it as a bug: this hook can no longer
+ * push a reply back before the user reads it. It is the price of a check that runs at all —
+ * the synchronous path failed roughly half the time and then went quiet for five minutes.
  *
  * Kept out of main() so the decision it carries out lives in a module with its own tests. The
  * first draft of this step was pasted inline and referenced a constant this file does not
@@ -165,21 +174,21 @@ async function runComplianceOnce(payload, transcript) {
   // failure this whole feature exists to remove. The behavioural test caught it; no unit test
   // could have.
   const [
-    { runComplianceStep, readComplianceBlockCount, incrementComplianceBlockCount },
-    { requestCheck },
+    { startComplianceCheck },
+    { startLocalJudge },
     { readEnforcementBundle },
     { readCredentials },
     { decideNotice },
   ] = await Promise.all([
     import('./lib/compliance-step.js'),
-    import('./lib/compliance-client.js'),
+    import('./lib/start-local-judge.js'),
     import('./lib/enforcement-cache.js'),
     import('../shared/helpers.js'),
     import('./lib/notice-throttle.js'),
   ]);
 
   const sessionId = (typeof payload.session_id === 'string' && payload.session_id) || 'unknown';
-  const step = await runComplianceStep({
+  const step = await startComplianceCheck({
     disabled: DISABLED,
     mode: MODE,
     ...readCredentials(),
@@ -191,30 +200,26 @@ async function runComplianceOnce(payload, transcript) {
     // go in so a rule tagged either way is in scope for this turn.
     trigger: ['respond', 'report'],
     bundle: readEnforcementBundle(),
-    blockCount: readComplianceBlockCount(sessionId),
-    requestCheckImpl: requestCheck,
+    startJudgeImpl: startLocalJudge,
   });
-
-  if (step.action === 'exit2') incrementComplianceBlockCount(sessionId);
 
   // v1.26.171 throttle (the user's call): state-shaped notices — the recurring "this turn
   // was NOT checked" family, identified by noticeKey — speak on every state change and
   // every 10th turn while the state persists; recovery is announced once. Event-shaped
-  // notices (a pushback, the cap reached) have no key and always speak. Suppressed turns
-  // still reach the audit spool via the caller.
+  // notices have no key and always speak. Suppressed turns still reach the audit spool via
+  // the caller.
+  // Called for its side effect as much as its answer: a healthy turn has to move the throttle
+  // back, or the next failure of the same kind reads as "no change, stay quiet".
   const speak = decideNotice(sessionId, step.noticeKey ?? null);
   if (step.noticeKey && !speak) {
     return { ...step, banner: undefined, suppressedBanner: step.banner };
   }
-  if (!step.noticeKey && speak && step.action !== 'exit2' && !step.banner) {
-    return {
-      ...step,
-      banner: await lintNotice(
-        'lint.recovered',
-        "[OwnMind] 🟢 OwnMind checked the AI's reply against your rules (checking had been down, it is back).",
-      ),
-    };
-  }
+  // This used to announce "OwnMind checked the AI's reply against your rules" when the state
+  // went healthy. Both paths that reach it now make that false: `{action:'none'}` with no key
+  // means either no rule bore on this turn, or a judge was STARTED — and a started judge is
+  // thirty to fifty seconds from having checked anything. Recovery is announced by
+  // verdict-collect.js instead, on the turn a real verdict lands, because that is the only
+  // place that knows one did.
   return step;
 }
 
@@ -291,17 +296,21 @@ async function main() {
   // === Standard enforcement ===
   //
   // Ahead of the stop_hook_active early return, deliberately. That return exists so the
-  // string validators below cannot loop, but it also means a reply produced *because* the
-  // assistant was pushed back is never examined - so one rejection would buy a permanently
-  // unchecked turn. The loop is bounded here instead, by a counter of this path's own that
-  // shares nothing with BLOCK_THRESHOLD or incrementCounter: a rule violation has to reach
-  // the assistant on the first offence, not the fourth.
+  // string validators below cannot loop; a rule check that started a detached judge cannot
+  // loop at all, and sitting behind that return would mean a reply produced *because* the
+  // assistant was corrected is the one reply nobody ever looks at.
   //
   // Everything it needs is imported dynamically and every failure is caught: a broken or
   // half-upgraded lib file must not take the three existing validators down with it.
+  //
+  // Not when the user has switched OwnMind off for this conversation. The judge runs on their
+  // own Claude Code subscription, so starting one here would spend their quota on a check they
+  // have just said they do not want — and the off state has its own reminder below, which is
+  // what tells them replies are going unchecked.
   let complianceTranscript = null;
   try {
-    const transcriptForCompliance = sanitizeTranscriptPath(payload.transcript_path);
+    const switchedOff = typeof isOff === 'function' && isOff();
+    const transcriptForCompliance = switchedOff ? null : sanitizeTranscriptPath(payload.transcript_path);
     if (transcriptForCompliance) {
       complianceTranscript = readTranscriptTail(transcriptForCompliance);
       if (complianceTranscript.lastAssistantText) {
@@ -310,13 +319,6 @@ async function main() {
         // A throttled state-notice still belongs in the audit spool - suppression is about
         // the screen, never about the record.
         else if (step.suppressedBanner) writeFallback(step.suppressedBanner);
-        if (step.action === 'exit2') {
-          // stderr is the model's rewrite instruction, and it also renders to the user as
-          // the block reason — the queued banner stays in the spool for the audit trail.
-          try { process.stderr.write(step.stderr + '\n'); } catch { /* ignore */ }
-          process.exit(2);
-          return;
-        }
       }
     }
   } catch { /* fail open: the compliance check must never block the user's work */ }
