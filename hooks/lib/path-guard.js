@@ -23,48 +23,83 @@ import { execFileSync } from 'node:child_process';
 
 const GIT_TIMEOUT_MS = 2000;
 
-/**
- * The canonical path, or the input when it cannot be resolved.
- *
- * A file about to be created does not exist yet, so its own realpath fails; its directory
- * is what matters for locating the repo, and that does exist.
- */
-function realPath(p) {
-  try {
-    return fs.realpathSync(p);
-  } catch {
-    try {
-      return path.join(fs.realpathSync(path.dirname(p)), path.basename(p));
-    } catch {
-      return path.resolve(p);
-    }
-  }
-}
-
-function git(dir, args) {
+function gitLines(dir, args) {
   return execFileSync('git', ['-C', dir, ...args], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
     timeout: GIT_TIMEOUT_MS,
-  }).trim();
+  }).split('\n');
+}
+
+function git(dir, args) {
+  return gitLines(dir, args).join('\n').trim();
 }
 
 /**
- * The repository the given file belongs to.
+ * The nearest ancestor directory that exists, and the segments below it that do not.
+ *
+ * A file about to be created brings its folders with it: the first file under `ci/templates/`
+ * is written before that directory exists. Asking git about a directory that is not there
+ * gets an error, which used to read as "this file is in no repository" and allowed the write.
+ * That is the ordinary way to add a file under a guarded path, so the one hard guarantee had
+ * a hole in it wide enough to walk through without trying.
+ *
+ * @returns {{dir: string, missing: string[]} | null} null only if nothing up to the root exists
+ */
+function nearestExistingDir(filePath) {
+  let dir = path.dirname(path.resolve(filePath));
+  const missing = [];
+  // Terminates at the filesystem root, where `path.dirname(x) === x`.
+  for (;;) {
+    try {
+      if (fs.statSync(dir).isDirectory()) return { dir, missing };
+    } catch { /* not there yet - keep climbing */ }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    missing.unshift(path.basename(dir));
+    dir = parent;
+  }
+}
+
+/**
+ * The repository the given file belongs to, and where the file sits inside it.
+ *
+ * `relPath` comes from git's own `--show-prefix` rather than from subtracting one path
+ * string from another. Two spellings of one directory are both valid and neither realpath
+ * nor `path.relative` reconciles them: on Windows `os.tmpdir()` answers `C:\Users\RUNNER~1\…`
+ * while git answers `C:\Users\runneradmin\…`, and on a case-insensitive volume any difference
+ * in case does the same. Subtracting those produced a path that climbed out of the repo, the
+ * file read as somebody else's, and the guard allowed the edit — silently, which is the part
+ * that matters. git computes the prefix from the directory it is standing in, so no spelling
+ * enters the answer at all.
  *
  * @param {string} filePath absolute path of the file about to be written
- * @returns {{remote: string, root: string} | null} null outside a repo, or without an origin
+ * @returns {{remote: string, root: string, relPath: string} | null} null outside a repo,
+ *   or in a repo with no origin
  */
 export function resolveRepo(filePath) {
   if (typeof filePath !== 'string' || !filePath) return null;
-  const dir = path.dirname(path.resolve(filePath));
+  const nearest = nearestExistingDir(filePath);
+  if (!nearest) return null;
   try {
     // No origin means nothing to compare `repo_match` against. Leaving such a repo alone is
     // deliberate: a guard that guessed would block edits in repositories it cannot identify.
-    const remote = git(dir, ['remote', 'get-url', 'origin']);
-    const root = git(dir, ['rev-parse', '--show-toplevel']);
-    if (!remote || !root) return null;
-    return { remote, root };
+    const remote = git(nearest.dir, ['remote', 'get-url', 'origin']);
+    if (!remote) return null;
+    // Two answers, one spawn. `--show-prefix` is the existing directory's path relative to
+    // the root, forward-slashed and trailing-slashed, or empty at the root itself - so the
+    // whole output cannot be trimmed as one string without losing that empty second line.
+    const [rootLine = '', prefixLine = ''] = gitLines(nearest.dir, [
+      'rev-parse', '--show-toplevel', '--show-prefix',
+    ]);
+    const root = rootLine.trim();
+    if (!root) return null;
+    const prefix = prefixLine.trim();
+    const relPath = [
+      prefix,
+      ...nearest.missing.map((segment) => `${segment}/`),
+    ].join('') + path.basename(path.resolve(filePath));
+    return { remote, root, relPath };
   } catch {
     return null;
   }
@@ -104,18 +139,9 @@ function globToRegExp(glob) {
 export function findGuardViolation(filePath, guards) {
   if (!Array.isArray(guards) || guards.length === 0) return null;
   const repo = resolveRepo(filePath);
-  if (!repo) return null;
+  if (!repo || !repo.relPath) return null;
 
-  // Both sides resolved through the filesystem before they are compared. `git rev-parse`
-  // answers with the canonical path while the tool's `file_path` is whatever the caller
-  // typed, and on macOS those differ for anything under the temp directory (/var against
-  // /private/var). Comparing the raw strings makes `path.relative` produce a `..` path, the
-  // file reads as outside the repo, and the guard silently declines to protect it.
-  const relPath = path.relative(realPath(repo.root), realPath(filePath))
-    .split(path.sep)
-    .join('/');
-  // A path that climbs out of the root is not in this repo, whatever the string looks like.
-  if (!relPath || relPath.startsWith('..')) return null;
+  const { relPath } = repo;
 
   for (const guard of guards) {
     if (!guard || !Array.isArray(guard.paths)) continue;

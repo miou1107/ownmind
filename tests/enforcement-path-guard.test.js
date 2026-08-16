@@ -45,13 +45,74 @@ function touch(repo, relPath) {
   return full;
 }
 
+/**
+ * Two paths naming the same directory on disk.
+ *
+ * Comparing path strings is what this asserted before, and on Windows it failed for a
+ * reason that had nothing to do with the guard: `os.tmpdir()` hands back the 8.3 short
+ * form (`C:\Users\RUNNER~1\…`) while git answers with the long one
+ * (`C:\Users\runneradmin\…`), and `fs.realpathSync` reconciles neither. Inode and device
+ * are what the filesystem itself considers identity, and they do not care how the path
+ * was spelled.
+ */
+function sameDir(a, b) {
+  const x = fs.statSync(a);
+  const y = fs.statSync(b);
+  return x.ino === y.ino && x.dev === y.dev;
+}
+
 test('the repo is resolved from the edited file, not the working directory', () => {
   const repo = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
   const file = touch(repo, 'ci/projects.yml');
   const resolved = resolveRepo(file);
   assert.ok(resolved);
   assert.match(resolved.remote, /guarded-monorepo/);
-  assert.equal(fs.realpathSync(resolved.root), fs.realpathSync(repo));
+  assert.ok(sameDir(resolved.root, repo), `${resolved.root} is not the same directory as ${repo}`);
+});
+
+test('a file whose directory does not exist yet is still caught', () => {
+  // The ordinary way to add a file under a guarded path: the folder is created by the same
+  // write. Before v1.30.8 the guard asked git about a directory that was not there yet, got
+  // nothing, concluded the file was in no repository at all, and allowed the write — so the
+  // one hard guarantee had a hole in it that any first file in a new folder walked through.
+  const repo = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  const file = path.join(repo, 'ci', 'templates', 'brand-new.yml');
+  assert.equal(fs.existsSync(path.dirname(file)), false, 'the fixture must not create it');
+
+  const violation = findGuardViolation(file, [GUARD]);
+  assert.ok(violation, 'a new file in a new folder under ci/ must still be blocked');
+  assert.equal(violation.relPath, 'ci/templates/brand-new.yml');
+});
+
+test('a file several missing folders deep is still caught', () => {
+  const repo = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  const file = path.join(repo, 'ci', 'a', 'b', 'c', 'deep.yml');
+  const violation = findGuardViolation(file, [GUARD]);
+  assert.ok(violation);
+  assert.equal(violation.relPath, 'ci/a/b/c/deep.yml');
+});
+
+test('a new file in an unguarded folder is still allowed', () => {
+  // The other half of the fix: reaching further up for the repo must not make the guard
+  // start blocking paths nobody claimed.
+  const repo = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  assert.equal(findGuardViolation(path.join(repo, 'src', 'new', 'index.js'), [GUARD]), null);
+});
+
+test('a differently-spelled path to the same file is still caught', (t) => {
+  // The Windows failure in the shape this machine can reproduce. On a case-insensitive
+  // volume `…/CaseRepo/ci/x.yml` and `…/caserepo/ci/x.yml` open the same file, and no
+  // amount of realpath makes the two strings agree — so a guard that decided by comparing
+  // them read the file as outside its own repository and allowed the edit.
+  const repo = makeRepo('om-guard-guarded-monorepo-Case', 'https://example.com/guarded-monorepo.git');
+  const file = touch(repo, 'ci/projects.yml');
+  const base = path.basename(repo);
+  const respelled = path.join(path.dirname(repo), base.toLowerCase(), 'ci', 'projects.yml');
+  if (respelled === file || !fs.existsSync(respelled)) {
+    t.skip('this filesystem is case-sensitive, so there is no second spelling to try');
+    return;
+  }
+  assert.ok(findGuardViolation(respelled, [GUARD]), 'spelling must not decide whether a rule applies');
 });
 
 test('a forbidden path is caught even when the session is in a different repo', () => {

@@ -61,6 +61,23 @@ const STATE_WRITE_FAILED_ALONE = `${STATE_WRITE_FAILED}\nTell the user this, in 
   + 'are speaking with them.';
 
 /**
+ * Said out loud when the guard itself cannot run.
+ *
+ * The edit still goes through - stopping somebody working because a check broke is the wrong
+ * trade. Going quiet about it is a different question, and the answer is the same one this
+ * file already gives for the state directory above: a protection that is off must not look
+ * like a protection that ran and found nothing. Before v1.30.8 this was a bare `catch {}`, so
+ * an unreadable bundle turned the one hard guarantee off for the rest of the session without
+ * a single character of evidence anywhere.
+ */
+const GUARD_UNAVAILABLE =
+  '[OwnMind] OwnMind could not check whether this file belongs to someone else, so it is '
+  + 'letting the edit through unchecked. Any rule about who owns which paths is not being '
+  + 'enforced right now. Tell the user this, in the language you are speaking with them, and '
+  + 'that re-running the OwnMind update script is what repairs it. Until then, check by hand '
+  + 'before editing files in a shared repository.';
+
+/**
  * @param {{version: string, apiKey: string, apiUrl: string, now: number, sessionId?: string}} opts
  * @returns {Promise<string|null>} the JSON envelope to print, or null to stay silent
  */
@@ -105,7 +122,11 @@ export async function editReminder({
           );
         }
       }
-    } catch { /* fail open: a broken guard must not stop the user editing files */ }
+    } catch {
+      // Fail open, but not in silence. The edit proceeds; what changed in v1.30.8 is that
+      // the user is told the guarantee is not in force, instead of the failure ending here.
+      return envelope(GUARD_UNAVAILABLE);
+    }
   }
 
   // v1.26.154 — the window is keyed by trigger as well now. This path is always `edit`; the
