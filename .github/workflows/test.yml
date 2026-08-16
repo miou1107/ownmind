@@ -23,6 +23,15 @@ concurrency:
 jobs:
   # The platforms that get a veto. node 20 is what the Dockerfile runs in production;
   # node 24 is what the dev machine runs, and it catches "only breaks on newer node".
+  #
+  # Windows joined this matrix on 2026-08-16. It ran as a separate non-blocking job from
+  # 2026-08-13, was red on every single run in between, and every release in that window
+  # reported success anyway - which is the failure mode the whole job existed to prevent.
+  # What kept it red was one product defect (the path guard read a file as belonging to no
+  # repository whenever git and the caller spelled the same directory differently, and
+  # allowed the edit) and one test-harness defect (a Windows-container docker daemon answers
+  # `docker info` and then cannot run a Linux image, so the database files threw instead of
+  # skipping). Neither would have been found by a leg nobody had to look at.
   test:
     name: ${{ matrix.os }} / node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
@@ -34,6 +43,7 @@ jobs:
           - { os: ubuntu-latest, node: '20' }
           - { os: ubuntu-latest, node: '24' }
           - { os: macos-latest, node: '20' }
+          - { os: windows-latest, node: '20' }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -58,23 +68,24 @@ jobs:
       # conclusion of "cancelled" that reads like somebody pressed a button. See package.json.
       - run: npm test
 
-  # Windows runs, reports, and does not block merges - yet.
+  # Does a person who has installed nothing end up with a working install?
   #
-  # First run on this workflow: ubuntu 6 failures, macOS 3, Windows 111. Users pull from
-  # origin/main automatically, so merging is same-day shipping; a hundred pre-existing
-  # failures cannot be allowed to hold that hostage while they get worked through.
+  # 356 test files, 26 of them naming install.sh, and not one that ran it. Every piece was
+  # covered and the thing users actually execute was not, which is how a machine can report
+  # "the tool is not registered" while the suite stays green. This runs the real installer
+  # into a throwaway home and then asks each feature whether it works.
   #
-  # This is a separate job rather than a matrix leg with `continue-on-error` because a
-  # continue-on-error leg still reports `failure` through `needs.<job>.result`, so a gate
-  # job reading that value cannot tell "Windows failed" from "everything failed". Splitting
-  # the jobs makes the distinction structural: `test` is the required check, this one never
-  # fails the run. When Windows is clean, delete the continue-on-error line and fold this
-  # back into the matrix above.
-  test-windows:
-    name: windows-latest / node 20 (not blocking yet)
-    runs-on: windows-latest
+  # Separate from `test` so its result reads on its own: "the code is fine but installing it
+  # is not" is a different message from "the code is broken", and a leg buried in a matrix
+  # of four cannot say it.
+  install:
+    name: clean install / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
-    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -82,5 +93,4 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - run: node scripts/ensure-console-build.js
-      - run: npm test
+      - run: node --test --test-timeout=900000 tests/install-clean-machine.e2e.mjs

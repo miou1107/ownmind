@@ -21,7 +21,7 @@
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { findGuardViolation, findContentMention, formatGuardBlock } from './lib/path-guard.js';
-import { readEnforcementBundle } from './lib/enforcement-cache.js';
+import { readEnforcementBundle, defaultCachePath } from './lib/enforcement-cache.js';
 import { getClientVersion, readCredentials } from '../shared/helpers.js';
 import { renderHookContextLine, RELAY_INSTRUCTION } from '../shared/hook-context.js';
 import { fetchHookContext } from './lib/hook-context-fetch.js';
@@ -61,53 +61,124 @@ const STATE_WRITE_FAILED_ALONE = `${STATE_WRITE_FAILED}\nTell the user this, in 
   + 'are speaking with them.';
 
 /**
- * @param {{version: string, apiKey: string, apiUrl: string, now: number, sessionId?: string}} opts
- * @returns {Promise<string|null>} the JSON envelope to print, or null to stay silent
+ * Said out loud when the guard itself cannot run.
+ *
+ * The edit still goes through - stopping somebody working because a check broke is the wrong
+ * trade. Going quiet about it is a different question, and the answer is the same one this
+ * file already gives for the state directory above: a protection that is off must not look
+ * like a protection that ran and found nothing. Before v1.30.8 this was a bare `catch {}`, so
+ * a bundle that could not be read turned the one hard guarantee off for the rest of the
+ * session without a single character of evidence anywhere.
  */
-export async function editReminder({
-  version, apiKey, apiUrl, now, sessionId,
-  filePath = '',
-  content = '',
-  guards = null,
-}) {
-  // The guard runs before the throttle, and before anything that can decide to stay quiet.
-  // The listing below is shown once an hour by design; a block that inherited that throttle
-  // would let the second attempt within the hour through, which is a delay, not a guarantee.
-  if (filePath || content) {
-    try {
-      const rules = guards || readEnforcementBundle().guards;
-      if (rules.length > 0) {
-        // The path first: an actual write to a file somebody else owns.
-        const violation = filePath ? findGuardViolation(filePath, rules) : null;
-        if (violation) {
-          const reason = formatGuardBlock(violation);
-          return JSON.stringify({
+const GUARD_UNAVAILABLE =
+  '[OwnMind] OwnMind could not check whether this file belongs to someone else, so it is '
+  + 'letting the edit through unchecked. Any rule about who owns which paths is not being '
+  + 'enforced right now. Tell the user this, in the language you are speaking with them, and '
+  + 'that re-running the OwnMind update script is what repairs it. Until then, check by hand '
+  + 'before editing files in a shared repository.';
+
+/**
+ * Run the guard, and say what it decided and whether it could decide at all.
+ *
+ * `notice` rather than an exception, because the failure that matters here does not throw.
+ * `readEnforcementBundle` catches everything and answers with an empty bundle, so a corrupt
+ * or unreadable cache file arrives as `guards: []` and nothing to report - which is exactly
+ * the scenario the notice was written for and exactly the one a `catch` cannot see. The
+ * bundle carries `present` for this: false with a file on disk means the file is there and
+ * could not be read. A cache file that is absent entirely is a machine that has not synced
+ * yet, which is an ordinary state on a first run and not worth saying on every keystroke.
+ *
+ * @returns {{block: string|null, notice: string}}
+ */
+function runGuard({ filePath, content, guards }) {
+  if (!filePath && !content) return { block: null, notice: '' };
+  let notice = '';
+  try {
+    let rules = guards;
+    if (!rules) {
+      const bundle = readEnforcementBundle();
+      rules = bundle.guards;
+      if (!bundle.present && fs.existsSync(defaultCachePath())) notice = GUARD_UNAVAILABLE;
+    }
+    if (rules.length > 0) {
+      // The path first: an actual write to a file somebody else owns.
+      const violation = filePath ? findGuardViolation(filePath, rules) : null;
+      if (violation) {
+        const reason = formatGuardBlock(violation);
+        return {
+          block: JSON.stringify({
             decision: 'block',
             reason,
             hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: reason },
-          });
-        }
-        // Then the text. A document at an ordinary path can propose the forbidden change,
-        // which is what the incident behind this feature actually produced - and by the time
-        // anyone notices, a person has read a plan built on a rule already broken. This is a
-        // warning rather than a block: the document is not the edit, and blocking every file
-        // that mentions a guarded path would stop the assistant explaining why it will not
-        // touch it.
-        const mention = findContentMention(content, rules);
-        if (mention) {
-          return envelope(
+          }),
+          notice: '',
+        };
+      }
+      // Then the text. A document at an ordinary path can propose the forbidden change,
+      // which is what the incident behind this feature actually produced - and by the time
+      // anyone notices, a person has read a plan built on a rule already broken. This is a
+      // warning rather than a block: the document is not the edit, and blocking every file
+      // that mentions a guarded path would stop the assistant explaining why it will not
+      // touch it.
+      const mention = findContentMention(content, rules);
+      if (mention) {
+        return {
+          block: envelope(
             `[OwnMind] Standard ${mention.standard.id} covers ${mention.matchedPath} in this `
             + `repository, and this text proposes changes there. Those paths belong to `
             + `${mention.standard.owner || 'someone else'} — whatever a permissions list inside `
             + 'the repository says. Re-read the standard before going further, and say plainly '
             + 'that the change has to go through its owner.\n'
             + 'Tell the user this, in the language you are speaking with them.',
-          );
-        }
+          ),
+          notice: '',
+        };
       }
-    } catch { /* fail open: a broken guard must not stop the user editing files */ }
+    }
+  } catch {
+    notice = GUARD_UNAVAILABLE;
   }
+  return { block: null, notice };
+}
 
+/**
+ * The guard's bad news, folded into whatever the reminder was going to say.
+ *
+ * Appended rather than returned on its own. Returning here would stop the hourly listing as
+ * well - swapping one silent degradation for two - and would put an unthrottled message in
+ * front of every single edit, which the rest of this file is built not to do.
+ */
+function appendNotice(payload, notice) {
+  if (!notice) return payload;
+  if (!payload) return envelope(notice);
+  try {
+    const parsed = JSON.parse(payload);
+    const out = parsed.hookSpecificOutput;
+    if (out && typeof out.additionalContext === 'string') {
+      out.additionalContext = `${out.additionalContext}\n${notice}`;
+      return JSON.stringify(parsed);
+    }
+  } catch { /* not ours to rewrite; the notice is worth less than the payload */ }
+  return payload;
+}
+
+/**
+ * @param {{version: string, apiKey: string, apiUrl: string, now: number, sessionId?: string}} opts
+ * @returns {Promise<string|null>} the JSON envelope to print, or null to stay silent
+ */
+export async function editReminder(opts) {
+  // The guard runs before the throttle, and before anything that can decide to stay quiet.
+  // The listing below is shown once an hour by design; a block that inherited that throttle
+  // would let the second attempt within the hour through, which is a delay, not a guarantee.
+  const { block, notice } = runGuard(opts);
+  if (block) return block;
+  return appendNotice(await reminderPayload(opts), notice);
+}
+
+/** Everything after the guard: the hourly listing and its throttle. */
+async function reminderPayload({
+  version, apiKey, apiUrl, now, sessionId,
+}) {
   // v1.26.154 — the window is keyed by trigger as well now. This path is always `edit`; the
   // command path passes its own, so a commit listing no longer silences a deploy listing.
   const decision = decideEditReminder(readEditReminderState(sessionId, 'edit'), now);
