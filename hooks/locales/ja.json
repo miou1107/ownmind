@@ -28,5 +28,7 @@
   "gate.allow.verbal": "[OwnMind] 🟡 AI が「{title}」をあなたが承認したと言ったので、OwnMind が今回だけ許可しました。\n  実際に承認したなら何もしなくて大丈夫です。していないなら、今すぐ止めてください。",
   "gate.ask.forged": "[OwnMind] 🟡 AI がこの操作の承認記録を持っていましたが、OwnMind が発行したものではありません。\n  OwnMind はそれを使わず、あなたに確認しています。",
   "gate.ask.unverifiable": "[OwnMind] 🟡 この操作には承認記録がありますが、OwnMind は自分が発行したものか判断できません。\n  OwnMind はそれを使わず、あなたに確認しています。OwnMind の更新コマンドを再実行すれば直ります。",
-  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind は今回の承認を保存できなかったため、あなたが承認しても認識できません。\n  OwnMind の更新コマンドを再実行すれば直ります。"
+  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind は今回の承認を保存できなかったため、あなたが承認しても認識できません。\n  OwnMind の更新コマンドを再実行すれば直ります。",
+  "verdict.notChecked": "[OwnMind] 🔴 OwnMind は AI の直前の返答をチェックできませんでした。\n  OwnMind の更新コマンドを再実行すれば通常は直ります。それまで AI の返答は誰も規則と照らしていません。",
+  "verdict.violation": "[OwnMind] 🟢 OwnMind が AI の直前の返答をチェックし、あなたの規則が 1 つ守られていませんでした：{title}\n  OwnMind はこれを AI に渡しました。AI は今回の応答で直します。あなたがすることはありません。"
 }
