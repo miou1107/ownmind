@@ -18,18 +18,17 @@
   "compliance.notChecked.noCredentials": "[OwnMind] 🔴 This computer is not signed in to OwnMind, so OwnMind did not check the AI's reply.",
   "compliance.notChecked.neverSynced": "[OwnMind] 🔴 This computer has not downloaded your rules yet, so OwnMind did not check the AI's reply. Start a new conversation and it will fetch them.",
   "compliance.notChecked.signedOut": "[OwnMind] 🔴 OwnMind does not recognise this computer any more, so OwnMind did not check the AI's reply. You need to sign in again: run the install command again with new sign-in details.",
-  "compliance.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind did not finish checking the AI's reply this time, so it did not check it. The problem is at OwnMind's end and usually clears on its own; nothing for you to do.",
-  "compliance.notChecked.checkFailed": "[OwnMind] 🔴 OwnMind could not reach its server this time, so it did not check the AI's reply.",
   "compliance.notChecked.judgeNotStarted": "[OwnMind] 🔴 OwnMind could not start checking the AI's reply, so this reply was not checked against your rules. Re-running the OwnMind update script usually repairs it.",
   "compliance.off.server": "[OwnMind] 🔴 Rule checking is switched off for your account, so OwnMind did not check the AI's reply.",
   "compliance.idNote": " (if OwnMind got it wrong, reply 誤判 {checkId})",
-  "compliance.blockCapReached": "[OwnMind] 🟡 The AI's reply still breaks {count} of your rules after {blockCount} rewrites, so OwnMind has stopped sending it back and is showing it to you.{idNote}",
-  "compliance.pushedBack": "[OwnMind] 🟢 The AI's reply breaks {count} of your rules, so OwnMind has told the AI to rewrite it.{idNote}",
   "tty.header": "[OwnMind {version}]",
   "gate.allow.verbal": "[OwnMind] 🟡 The AI said you agreed to 「{title}」, so OwnMind allowed it this once.\n  If you did say so, ignore this; if you did not, stop it now.",
   "gate.ask.forged": "[OwnMind] 🟡 The AI had an approval on file for this that OwnMind did not issue.\n  OwnMind ignored it and is asking you instead.",
   "gate.ask.unverifiable": "[OwnMind] 🟡 There is an approval on file for this and OwnMind cannot tell whether it issued it.\n  OwnMind did not use it, and is asking you instead. Re-running the OwnMind update script repairs this.",
   "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind could not save this approval, so it will not recognise your answer.\n  Re-running the OwnMind update script repairs this.",
-  "verdict.notChecked": "[OwnMind] 🔴 OwnMind could not check the AI's last reply.\n  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.",
-  "verdict.violation": "[OwnMind] 🟢 OwnMind checked the AI's last reply and one of your rules was not met: {title}\n  OwnMind has handed this to the AI and it will correct itself this turn. Nothing for you to do."
+  "verdict.notChecked": "[OwnMind] 🔴 OwnMind could not check one of the AI's earlier replies, so that reply was not checked against your rules.\n  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.",
+  "verdict.violation": "[OwnMind] 🟡 OwnMind checked one of the AI's earlier replies and it breaks {count} of your rules, starting with {title}\n  OwnMind has passed this to the AI, which should correct itself from here. This is a reminder, not a block: OwnMind cannot make it comply, so check that it did.",
+  "verdict.notChecked.noCli": "[OwnMind] 🔴 OwnMind checks the AI's replies by asking Claude Code on this computer, and it could not find it, so that reply was not checked.\n  Install Claude Code on this computer and make sure typing claude in a terminal starts it.",
+  "verdict.didNotFinish": "[OwnMind] 🔴 OwnMind started checking one of the AI's replies and never heard back, so that reply was not checked against your rules.\n  The next reply is checked from scratch. If this keeps happening, run the OwnMind update script.",
+  "verdict.recovered": "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again."
 }

@@ -303,9 +303,15 @@ async function main() {
   //
   // Everything it needs is imported dynamically and every failure is caught: a broken or
   // half-upgraded lib file must not take the three existing validators down with it.
+  //
+  // Not when the user has switched OwnMind off for this conversation. The judge runs on their
+  // own Claude Code subscription, so starting one here would spend their quota on a check they
+  // have just said they do not want — and the off state has its own reminder below, which is
+  // what tells them replies are going unchecked.
   let complianceTranscript = null;
   try {
-    const transcriptForCompliance = sanitizeTranscriptPath(payload.transcript_path);
+    const switchedOff = typeof isOff === 'function' && isOff();
+    const transcriptForCompliance = switchedOff ? null : sanitizeTranscriptPath(payload.transcript_path);
     if (transcriptForCompliance) {
       complianceTranscript = readTranscriptTail(transcriptForCompliance);
       if (complianceTranscript.lastAssistantText) {
