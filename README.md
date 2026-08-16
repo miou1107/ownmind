@@ -26,7 +26,7 @@ Publish a team rule in the admin console (e.g., "PRs must include tests") and ev
 
 ### 🛡️ Security-Conscious Engineer — Sensitive data never leaks through AI
 
-- Trying to commit passwords/API keys (credentials for calling online services) → pre-commit hook blocks via pattern match (new in v1.19.7)
+- Trying to commit passwords/API keys (credentials for calling online services) → pre-commit hook blocks the formats it recognises: AWS access key ids, GitHub tokens, JWTs, Anthropic and OpenAI keys, and bare long key-shaped values. It is a net, not a wall — measured against 31 common credential shapes, 14 pass through, among them database connection strings and `password = "..."` in a config file. A clean commit means nothing it knows about was found, not that nothing leaked (new in v1.19.7, scope stated in v1.30.10)
 - AI tries to write a password into memory → memory API rejects with HTTP 400 and routes to the encrypted vault
 - AI reply accidentally includes the user's national ID / email / mobile → reply-lint (reply quality linter: auto-scans AI responses for rule violations) emits a `privacy_check` event; whether to block is decided by each user's own iron rule (new detector in v1.19.7, neutralized in v1.19.10)
 

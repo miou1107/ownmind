@@ -346,11 +346,25 @@ function formatWarnMessage(warnings) {
   return lines.join('\n');
 }
 
+/**
+ * What the password scan actually covers, said under every commit that passes.
+ *
+ * Bug report #21 measured it: of 31 common credential formats, 14 commit cleanly — including
+ * the two most ordinary ones, a database connection string and `password = "..."` in a config
+ * file. The owner's decision (2026-08-16) was to leave the coverage where it is and stop
+ * implying it is complete: widening it buys false blocks in the middle of somebody's work,
+ * and a scanner people switch off protects nothing at all.
+ *
+ * So this line is not a disclaimer bolted onto a claim. It IS the claim, correctly sized.
+ */
+const SCAN_SCOPE_NOTE =
+  '  密碼掃描只認得幾種常見格式（AWS、GitHub token 這一類），通過不等於沒外洩。';
+
 function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
   if (checkedCount === 0 && warnings.length === 0) return '';
   const ageNote = cacheAgeHours > 1 ? ` (cache updated ${Math.round(cacheAgeHours)}h ago)` : '';
   if (warnings.length === 0) {
-    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
+    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}\n${SCAN_SCOPE_NOTE}`;
   }
   const lines = [formatWarnMessage(warnings)];
   const passed = checkedCount - warnings.length;
@@ -374,7 +388,7 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
 function exitOnBaselineSecrets(secretHits) {
   if (secretHits.length === 0) process.exit(0);
 
-  const failures = ['BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）'];
+  const failures = ['BASELINE: 提交內容含疑似金鑰／憑證（OwnMind 的預設掃描抓到的，不用你設定任何規矩）'];
   for (const hit of secretHits) {
     const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
     failures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
@@ -595,7 +609,7 @@ async function main() {
   // leak would ride out on the pass path below, which is the same silence in a different
   // place.
   if (secretHits.length > 0 && !secretHitsBlocked) {
-    blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）');
+    blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（OwnMind 的預設掃描抓到的，不用你設定任何規矩）');
     for (const hit of secretHits) {
       const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
       blockFailures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
