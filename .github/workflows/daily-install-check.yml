@@ -1,0 +1,91 @@
+name: daily install check
+
+# Does a person installing OwnMind today end up with a working install?
+#
+# The `install` job in test.yml answers that for a change somebody is making. This answers it
+# for a day nobody changed anything, which is a different question and the one that was going
+# unasked: a machine reported "the tool is not registered in the file Claude Code reads" for
+# days while every check was green, because nothing was standing between the release and the
+# user asking whether the install still worked.
+#
+# It can also go red without a commit, and that is the point - npm, GitHub, and the runner
+# images all move underneath us.
+#
+# On failure it opens one issue and keeps commenting on that issue rather than opening a new
+# one each morning. A daily alert that becomes a wall of duplicates is an alert nobody reads,
+# which is the state this workflow exists to end.
+
+on:
+  schedule:
+    # 01:00 UTC = 09:00 Taipei, so a failure is waiting at the start of the day rather than
+    # discovered at the end of it.
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  install:
+    name: clean install / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false # which platforms broke is the whole content of the answer
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: node --test --test-timeout=900000 tests/install-clean-machine.e2e.mjs
+
+  report:
+    name: tell somebody
+    needs: install
+    # `always()` because the interesting case is the one where the job above failed, and
+    # `failure()` alone would also skip this when the matrix was cancelled.
+    if: always() && needs.install.result != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.install.result }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TITLE="Installing OwnMind is broken"
+          BODY=$(cat <<EOF
+          The daily check installed OwnMind onto a machine with nothing on it, then asked each
+          feature whether it works. Something answered no ($RESULT).
+
+          Anyone who installs OwnMind today may end up with a feature that is quietly absent —
+          the kind that leaves the tool registered but not starting, or a rule that no longer
+          blocks anything.
+
+          What broke, and on which platform: $RUN_URL
+
+          This issue stays open and collects a comment each day it keeps failing. It does not
+          close itself — close it once the check is green again.
+          EOF
+          )
+
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label install-broken \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still failing ($RESULT): $RUN_URL"
+            echo "commented on #$EXISTING"
+          else
+            # --label creates it if the repo does not have it yet only when it exists; create
+            # it first so a missing label cannot be what stops the alert reaching anybody.
+            gh label create install-broken --repo "$REPO" \
+              --description "The daily clean-install check is failing" --color B60205 2>/dev/null || true
+            gh issue create --repo "$REPO" --title "$TITLE" --body "$BODY" --label install-broken
+          fi
