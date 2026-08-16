@@ -159,6 +159,45 @@ test('`ci/**` matches nested paths, and does not match a lookalike sibling', () 
   assert.equal(findGuardViolation(touch(repo, 'circle/config.yml'), [GUARD]), null);
 });
 
+test('a linked worktree is still the repository it belongs to', () => {
+  // Asking git for the prefix means git decides which repository is answering, and a linked
+  // worktree is where that gets interesting: its `.git` is a file pointing elsewhere, not a
+  // directory. Both halves of the fix meet here - the prefix lookup and the climb past
+  // folders that do not exist yet.
+  const main = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  execFileSync('git', ['-C', main, 'config', 'user.email', 't@t']);
+  execFileSync('git', ['-C', main, 'config', 'user.name', 't']);
+  fs.writeFileSync(path.join(main, 'seed.txt'), 'x\n');
+  execFileSync('git', ['-C', main, 'add', '.']);
+  execFileSync('git', ['-C', main, 'commit', '-qm', 'seed']);
+
+  const linked = path.join(tempDir('om-guard-worktree-'), 'wt');
+  execFileSync('git', ['-C', main, 'worktree', 'add', '-q', '-b', 'side', linked]);
+  assert.equal(fs.statSync(path.join(linked, '.git')).isFile(), true, 'the fixture is not a linked worktree');
+
+  assert.equal(findGuardViolation(touch(linked, 'ci/x.yml'), [GUARD])?.relPath, 'ci/x.yml');
+  assert.equal(
+    findGuardViolation(path.join(linked, 'ci', 'brand-new', 'y.yml'), [GUARD])?.relPath,
+    'ci/brand-new/y.yml',
+  );
+});
+
+test('an independent repo nested inside a guarded one answers for itself', () => {
+  // The other side of letting git decide. A checkout vendored inside the guarded repo has its
+  // own origin, so its `ci/` is not the guarded `ci/` however the path reads - and climbing to
+  // the nearest existing ancestor must not walk out of it and answer about the parent.
+  const outer = makeRepo('om-guard-guarded-monorepo-', 'https://example.com/guarded-monorepo.git');
+  const inner = path.join(outer, 'ci', 'vendored');
+  fs.mkdirSync(inner, { recursive: true });
+  execFileSync('git', ['init', '-q', inner]);
+  execFileSync('git', ['-C', inner, 'remote', 'add', 'origin', 'https://example.com/some-other-project.git']);
+
+  assert.equal(findGuardViolation(path.join(inner, 'thing.yml'), [GUARD]), null);
+  assert.equal(findGuardViolation(path.join(inner, 'new-folder', 'thing.yml'), [GUARD]), null);
+  // The guarded repo's own ci/ is untouched by the neighbour.
+  assert.ok(findGuardViolation(touch(outer, 'ci/projects.yml'), [GUARD]));
+});
+
 test('a file outside any repo is not caught and does not throw', () => {
   const loose = path.join(tempDir('om-guard-loose-'), 'scratch.txt');
   fs.writeFileSync(loose, 'x');
