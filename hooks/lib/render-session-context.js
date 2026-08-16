@@ -12,6 +12,53 @@ import { getRandomTip } from '../../shared/tips.js';
 import { hintsFromStandards } from '../../shared/invocable-standards.js';
 
 /**
+ * How much of one broadcast's body reaches the session, and what happens to the rest.
+ *
+ * The old line was `body.split('\n').slice(0, 5).join(' ').slice(0, 400)` — three lossy
+ * operations at once, none of them announced. A ten-line notice arrived as one run-on
+ * sentence stopping mid-word, and neither the person who wrote it nor the person reading it
+ * could tell anything was missing. Bug #26.
+ *
+ * A cap is still right: a broadcast is written by an admin and pasted into every member's
+ * session start, so one person pasting a document must not cost everybody their context. What
+ * was wrong is a cap that lied about being one. The list of broadcasts three lines below has
+ * always said "(N more broadcast(s) not shown)"; this now does the same thing for a body.
+ */
+const BODY_MAX_LINES = 60;
+/**
+ * Deliberately the same number the server refuses a broadcast above — see
+ * `validateBroadcastPayload`, "body must not exceed 2000 characters". Matching it means
+ * nothing the server accepted is ever cut here, and the notice below is a belt-and-braces for
+ * a body that arrived some other way. Two caps that disagree is how the earlier bug worked:
+ * the writer stayed inside one limit and a different, smaller one silently removed the rest.
+ */
+const BODY_MAX_CHARS = 2000;
+
+export function broadcastBody(body) {
+  const all = String(body ?? '').split('\n');
+  const kept = [];
+  let chars = 0;
+
+  for (const line of all.slice(0, BODY_MAX_LINES)) {
+    // The newline is charged BETWEEN lines, not after the last one — the length of what a
+    // reader actually sees. Charging it after every line made a single 2000-character body
+    // cost 2001 and dropped the whole thing, one character over the server's own limit.
+    const cost = line.length + (kept.length ? 1 : 0);
+    if (chars + cost > BODY_MAX_CHARS) break;
+    chars += cost;
+    kept.push(line);
+  }
+
+  const droppedLines = all.length - kept.length;
+  if (droppedLines > 0) {
+    const droppedChars = all.slice(kept.length).join('\n').length;
+    kept.push('');
+    kept.push(`（還有 ${droppedLines} 行、約 ${droppedChars} 字沒顯示。要看全文的話問 AI，或到 OwnMind 後台看這則公告。）`);
+  }
+  return kept;
+}
+
+/**
  * @param {Object} data  memory init response (server_version, profile, iron_rules_digest, principles, active_handoff)
  * @param {Array}  broadcasts  fetched from /api/broadcast/active
  * @param {Object} [deps]  injection point for tests
@@ -28,7 +75,7 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
     for (const bc of bcList.slice(0, 3)) {
       const sev = String(bc.severity || 'info').toUpperCase();
       lines.push('> **[' + sev + '] ' + String(bc.title || '').replace(/\n/g, ' ') + '**');
-      lines.push('> ' + String(bc.body || '').split('\n').slice(0, 5).join(' ').slice(0, 400));
+      for (const line of broadcastBody(String(bc.body || ''))) lines.push('> ' + line);
       if (bc.cta_text) {
         const upgradeHint = bc.cta_action === 'upgrade_ownmind' ? '(let the AI run the upgrade)' : '';
         lines.push(('> 👉 Say "' + bc.cta_text + '" ' + upgradeHint).trim());
