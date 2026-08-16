@@ -90,7 +90,22 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
       user_prompts: userPrompts,
       repo_remote: repoRemote,
       trigger,
+      mode: requestedMode,
     } = req.body || {};
+
+    // v1.30.11. `mode: 'select'` answers the first half of this route's job — which rules
+    // apply to this turn, and what they say — and stops there.
+    //
+    // The judge is moving onto the user's own Claude Code subscription — the owner's standing
+    // instruction — which means it has to run on their machine, because that is where the
+    // quota is, and it must not reach the llm switch at all. The rules are not
+    // there: measured 2026-08-16, the client's cache holds 318 selectors and zero rule text.
+    // Shipping the corpus to every machine is a far bigger change than moving the judging, so
+    // the work splits where the cost does — matching stays here, judging goes there.
+    //
+    // Anything that is not exactly 'select' takes the old path unchanged. A release that
+    // moves the judge must not change what a client that has not upgraded yet receives.
+    const selectOnly = requestedMode === 'select';
 
     if (!sessionId || typeof assistantText !== 'string' || assistantText.trim() === '') {
       return res.status(400).json({ error: 'session_id and assistant_text are required' });
@@ -170,7 +185,31 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
 
     if (selected.length === 0) {
       const id = await record('skipped', considered, []);
-      return res.json({ enabled: true, outcome: 'skipped', violations: [], check_id: id });
+      // `rules: []` on the select path, and absent on the judging path. The client is about to
+      // decide whether to spend the user's quota; "nothing applied" and "something went wrong"
+      // must not arrive looking the same, and an absent field reads as neither.
+      return res.json({
+        enabled: true, outcome: 'skipped', violations: [], check_id: id,
+        ...(selectOnly && { rules: [] }),
+      });
+    }
+
+    if (selectOnly) {
+      // Opened, not closed: the row exists so the verdict has something to be recorded
+      // against when it arrives from the client, minutes or a turn later. `pending` is a
+      // state the schema did not have, and it needs one — a row with no outcome would be
+      // counted as a check that ran and found nothing.
+      const id = await record('pending', considered, []);
+      return res.json({
+        enabled: true,
+        outcome: 'pending',
+        violations: [],
+        check_id: id,
+        // judgeText is what the client cannot reconstruct: it holds selectors, not bodies.
+        rules: selected.map((r) => ({
+          id: r.id, type: r.type, code: r.code || null, title: r.title, judgeText: r.judgeText,
+        })),
+      });
     }
 
     let judged;
@@ -218,6 +257,52 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
    * Without it the false-positive rate cannot be computed at all, and the rollout criteria
    * would come down to whether the last few findings felt reasonable.
    */
+  /**
+   * The verdict, arriving after the fact.
+   *
+   * `mode: 'select'` opened a row and left it `pending`; the judge then ran on the user's own
+   * machine and their own subscription. This is where its answer lands.
+   *
+   * Scoped to rows that are still pending, and to this user's rows. A resolve that could
+   * rewrite a settled outcome would let a client overwrite the audit trail with anything —
+   * and the audit trail is the only place the honesty of this check is recorded.
+   */
+  router.post('/resolve', async (req, res) => {
+    const {
+      check_id: checkId,
+      outcome,
+      verdicts,
+      latency_ms: latencyMs,
+    } = req.body || {};
+
+    // 'pending' is deliberately not resolvable-to: a client cannot re-open a check, and a
+    // typo cannot silently park one forever.
+    const ALLOWED = ['clean', 'violation', 'skipped', 'failed'];
+    if (!Number.isInteger(checkId) || !ALLOWED.includes(outcome)) {
+      return res.status(400).json({ error: `check_id and outcome (${ALLOWED.join('|')}) are required` });
+    }
+
+    try {
+      const result = await queryFn(
+        `UPDATE compliance_checks
+            SET outcome = $1,
+                verdicts = $2,
+                latency_ms = COALESCE($3, latency_ms)
+          WHERE id = $4 AND user_id = $5 AND outcome = 'pending'
+          RETURNING id`,
+        [outcome, JSON.stringify(Array.isArray(verdicts) ? verdicts : []),
+          Number.isFinite(latencyMs) ? latencyMs : null, checkId, req.user?.id],
+      );
+      // Nothing updated is not an error the client can do anything about — the row was
+      // already resolved, or belongs to somebody else. Answering 200 with `resolved: false`
+      // says which, without inviting a retry that will never succeed.
+      return res.json({ ok: true, resolved: result.rows.length > 0 });
+    } catch (err) {
+      logger.warn?.('compliance: resolve failed', { err: err.message });
+      return res.status(500).json({ error: 'failed to record the verdict' });
+    }
+  });
+
   router.post('/feedback', async (req, res) => {
     const { check_id: checkId, verdict } = req.body || {};
     if (!checkId || !['correct', 'false_positive'].includes(verdict)) {

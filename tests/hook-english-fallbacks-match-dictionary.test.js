@@ -46,13 +46,28 @@ const HARD_CODED = {
     'gate.ask.code.action', 'gate.ask.code.limit',
     'gate.allow.verbal', 'gate.ask.forged', 'gate.ask.unverifiable', 'gate.ask.notRecorded',
   ],
+  // v1.30.11: this file used to carry the whole family. The judging half moved to
+  // verdict-collect.js with the judge itself, and what is left here is only the reasons a
+  // judge was never started.
   'hooks/lib/compliance-step.js': [
     'compliance.off.warnMode',
     'compliance.notChecked.noCredentials',
     'compliance.notChecked.neverSynced',
+    'compliance.notChecked.judgeNotStarted',
+  ],
+  // The turn-late half of the reply check. Its notices carry the same weight as the gate's:
+  // `verdict.notChecked` is the line that says nothing looked at the AI's last reply.
+  'hooks/lib/verdict-collect.js': [
+    'verdict.notChecked',
+    'verdict.notChecked.noCli',
+    'verdict.notChecked.notLoggedIn',
+    'verdict.notChecked.cliRefused',
+    'verdict.notChecked.serverDeclined',
+    'verdict.didNotFinish',
+    'verdict.recovered',
+    'verdict.violation',
+    'compliance.idNote',
     'compliance.notChecked.signedOut',
-    'compliance.notChecked.serverDeclined',
-    'compliance.notChecked.checkFailed',
     'compliance.off.server',
   ],
 };

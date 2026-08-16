@@ -164,10 +164,24 @@ function readRepoRemote() {
   }
 }
 
-function emit(text) {
-  console.log(JSON.stringify({
-    hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text },
-  }));
+/**
+ * The one write to stdout, carrying both of this hook's channels.
+ *
+ * `additionalContext` is read by the assistant; `systemMessage` is what renders to the person.
+ * They are separate fields of one object rather than two emissions, because a hook gets one
+ * stdout and a second JSON document appended to the first parses as nothing at all.
+ *
+ * Silence stays byte-for-byte silent: an empty object still renders a blank line under every
+ * prompt, and a line that appears for no reason is how a channel gets ignored.
+ */
+function emit({ forAssistant = '', forUser = '' } = {}) {
+  if (!forAssistant && !forUser) return;
+  const out = {};
+  if (forAssistant) {
+    out.hookSpecificOutput = { hookEventName: 'UserPromptSubmit', additionalContext: forAssistant };
+  }
+  if (forUser) out.systemMessage = forUser;
+  console.log(JSON.stringify(out));
 }
 
 async function main() {
@@ -180,22 +194,41 @@ async function main() {
   const prompt = typeof payload.prompt === 'string' ? payload.prompt : '';
   if (!prompt) return;
 
+  const sessionId = typeof payload.session_id === 'string' ? payload.session_id : '';
+
+  // The verdict on the PREVIOUS reply, if the judge finished in the time it took to read it
+  // and type this. Collected before anything below can return early: the injection and the
+  // verdict are independent, and an early return around either one drops the other — silently,
+  // in the case of the verdict, which is the one nobody would notice missing.
+  let verdict = { action: 'none' };
+  try {
+    const { collectVerdict } = await import('./lib/verdict-collect.js');
+    verdict = await collectVerdict({ sessionId });
+  } catch { /* a verdict that cannot be collected must not cost this prompt its standards */ }
+  const forUser = verdict.action === 'notice' ? verdict.banner : '';
+  const verdictContext = verdict.action === 'notice' ? verdict.forAssistant : '';
+
+  const blocks = [];
+  if (verdictContext) blocks.push(verdictContext);
+
   const bundle = readEnforcementBundle();
   if (!bundle.present) {
     // A machine that never synced can enforce nothing, and silence here reads exactly like
     // "no standard applies to this". Whoever is working deserves to know which one it is.
-    emit(NEVER_SYNCED_NOTICE);
+    blocks.push(NEVER_SYNCED_NOTICE);
+    emit({ forAssistant: blocks.join('\n\n---\n\n'), forUser });
     return;
   }
 
-  const sessionId = typeof payload.session_id === 'string' ? payload.session_id : '';
   const { text, injectedIds } = buildInjection(
     bundle.injectables, prompt, readRepoRemote(), readInjectedIds(sessionId),
   );
-  if (!text) return;
+  if (text) {
+    recordInjectedIds(sessionId, injectedIds);
+    blocks.push(text);
+  }
 
-  recordInjectedIds(sessionId, injectedIds);
-  emit(text);
+  emit({ forAssistant: blocks.join('\n\n---\n\n'), forUser });
 }
 
 /**
