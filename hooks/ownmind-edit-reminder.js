@@ -326,7 +326,15 @@ function readContent(toolInput) {
 
 /** CLI entry — how the .sh hook calls this. */
 async function main() {
-  const { apiKey, apiUrl } = readCredentials();
+  // In a try, and deliberately. Credentials are for the hourly listing; the path guard below
+  // does not need them and reads the local cache. This line used to throw on a half-installed
+  // machine — a missing helper on the import chain is enough — land in the catch at the
+  // bottom of this file, and exit 0 with empty stdout. The guard never ran, and nothing said
+  // so. The comment on the guard itself claims it runs "before anything that can decide to
+  // stay quiet"; the line above it was deciding for it.
+  let apiKey = '';
+  let apiUrl = '';
+  try { ({ apiKey, apiUrl } = readCredentials()); } catch { /* the guard does not need them */ }
   // One read of stdin, because there is only one. The session id and the file being written
   // arrive in the same payload, and a second `readFileSync(0)` would find it spent.
   const payload = readPayload();
@@ -355,6 +363,21 @@ function invokedDirectly() {
   }
 }
 
+/**
+ * What the assistant is told when this hook could not run at all.
+ *
+ * Not silence. An empty stdout from a PreToolUse hook means "nothing to add", which is
+ * exactly what a healthy run looks like on a file no rule covers — so a crash and a clean
+ * pass were the same event, and every path rule on the machine quietly stopped applying.
+ */
+export const GUARD_DID_NOT_RUN =
+  '[OwnMind] OwnMind could not check this file edit against the rules, so this edit was not '
+  + 'checked. Re-running the OwnMind update script usually repairs it.\n'
+  + 'Tell the user this, in the language you are speaking with them, before you continue.';
+
 if (invokedDirectly()) {
-  main().catch(() => process.exit(0));
+  main().catch(() => {
+    try { console.log(envelope(GUARD_DID_NOT_RUN)); } catch { /* nothing left to try */ }
+    process.exit(0);
+  });
 }

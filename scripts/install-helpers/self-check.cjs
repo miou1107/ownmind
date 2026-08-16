@@ -34,6 +34,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 // v1.17.66 — on Windows, every spawn goes through safeSpawn (forces shell:false + windowsHide:true).
 const { safeSpawn } = require('./safe-spawn.cjs');
+const { describeSystemBinaries } = require('./win-system-binary.cjs');
 // v1.26.106 - logs written by PowerShell are not UTF-8; see read-text-file.cjs.
 const { readTextFileSync, stripNulEscapes } = require('./read-text-file.cjs');
 const { taskBelongsToInstall, expandHomeMarker } = require('./scheduler-task-owner.cjs');
@@ -1096,6 +1097,10 @@ async function collectEnv() {
       // Record the format category only, never the actual path (PII-friendly).
       style: homeStyle,
       is_msys: isMsysHome,
+      // Whether this run used the account's own home. A report that reaches the server
+      // should carry the answer rather than leaving a reader to infer it — inferring it
+      // once already cost a production database query.
+      is_account_home: checkHomeIsAccountHome().real,
     },
     msystem: process.env.MSYSTEM || null,
     shell_chain: detectShellChain(),
@@ -1103,6 +1108,13 @@ async function collectEnv() {
   };
   // Two extra blocks only present on Windows (the launchd / systemd equivalents on other
   // platforms are already captured by checkScheduler).
+  // v1.30.10 — can this machine find Windows' own binaries, and how?
+  //
+  // Added because a machine reported `spawn cmd.exe ENOENT`, `spawn powershell.exe ENOENT`,
+  // a null code page and an empty `where bash` in one run, and nothing in the fifteen check
+  // results or the environment summary said whether System32 was on PATH. Answering that took
+  // a query against the production database. It is one line of the report now.
+  env.system_binaries = describeSystemBinaries();
   env.bash_resolution = await detectBashResolution();
   env.scheduler_detail = await detectSchedulerDetail();
   return env;
@@ -1537,7 +1549,75 @@ async function drainErrorSpool(apiUrl, apiKey, opts = {}) {
   return { uploaded, failed };
 }
 
+/**
+ * Is this run using the account's own home, or a sandbox somebody pointed HOME at?
+ *
+ * WHY THIS EXISTS — 2026-08-16, measured on a real machine:
+ *
+ *   Someone tested an upgrade by building a throwaway HOME and running install.sh in it,
+ *   with powershell deliberately removed from PATH so the test install could not overwrite
+ *   the machine's one real scheduled task. The self-check at the end of that install
+ *   correctly reported two failures — a sandbox has no ~/.claude.json and no PowerShell —
+ *   and then uploaded them as that physical machine's health, because the payload is
+ *   identified by hostname and a sandbox shares the hostname of the machine it runs on.
+ *
+ *   The server did what it is supposed to do with a machine reporting two red checks: it
+ *   raised a warning to the user. The machine had been healthy the whole time; a re-run in
+ *   the real environment two hours later was 15 passed, 0 failed.
+ *
+ *   Cost of the false alarm: several hours, an SSH session into production to read the
+ *   uploaded reports, and a fix written for a fault that did not exist. The next one costs
+ *   more, because a warning that turned out to be noise is how the true one gets ignored.
+ *
+ * `os.userInfo().homedir` reads the account's home from the operating system and ignores
+ * $HOME — verified on this platform, not assumed. That difference is the entire signal, and
+ * it needs no new flag and no cooperation from whoever is running the test.
+ *
+ * Fails towards uploading. A machine whose account home cannot be read is a machine we
+ * cannot judge, and going quiet there would trade a false alarm for a silent blind spot.
+ */
+function checkHomeIsAccountHome(opts = {}) {
+  const running = opts.runningHome || HOME;
+  const exists = opts.exists || fs.existsSync;
+  let account;
+  try {
+    account = opts.accountHome !== undefined ? opts.accountHome : os.userInfo().homedir;
+  } catch (e) {
+    return { real: true, undecided: `account home unreadable (${e.message})` };
+  }
+  if (!account) return { real: true, undecided: 'account home unknown' };
+  // Windows path comparison is case-insensitive, and `C:\\Users\\Vin` versus
+  // `c:\\users\\vin` is a difference in spelling, not in home directory.
+  const norm = (p) => {
+    const resolved = path.resolve(String(p));
+    return PLATFORM === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  if (norm(running) === norm(account)) return { real: true, running, account };
+
+  // Different is not the same as a sandbox, and review found two real machines where it is
+  // not: a container job with HOME=/github/home against a passwd entry of /root, and a
+  // Windows Git Bash home that arrives as `/c/Users/Vin` — `path.resolve` turns that into
+  // `C:\c\Users\Vin`, so every MSYS machine would be judged a sandbox forever. That is the
+  // same platform the bug came from, and the punishment is silence: it stops reporting
+  // health and nobody is told.
+  //
+  // So an inequality is not proof on its own. A sandbox is a home somebody built for a test
+  // run: OwnMind is not installed in it. A real machine whose HOME is merely spelled
+  // differently has ~/.ownmind exactly where the run is looking.
+  const installedHere = exists(path.join(String(running), '.ownmind'));
+  if (installedHere) {
+    return { real: true, running, account, undecided: 'home differs but OwnMind is installed in it' };
+  }
+  return { real: false, running, account };
+}
+
 async function uploadReport(report, apiUrl, apiKey, opts = {}) {
+  // Before the opt-out flag and before the retry spool: a sandbox must not upload its own
+  // report, and must not retransmit anything either.
+  const home = checkHomeIsAccountHome(opts);
+  if (!home.real) {
+    return { skipped: true, reason: 'not_this_account_home', home };
+  }
   if (fs.existsSync(NO_UPLOAD_FLAG)) {
     return { skipped: true, reason: 'opt_out_flag' };
   }
@@ -1592,6 +1672,16 @@ async function main() {
   const upload = await uploadReport(report, apiUrl, apiKey);
   if (upload.skipped) {
     process.stderr.write(`Upload:   skipped (${upload.reason})${upload.spooled ? ', queued for retry' : ''}\n`);
+    if (upload.reason === 'not_this_account_home') {
+      // Said in full, not left as a code. Somebody testing an install needs to know why
+      // these results went nowhere, and somebody who did NOT mean to be in a sandbox needs
+      // to know that they are — that is the case where a silent skip does real harm.
+      process.stderr.write(
+        '          This run is not using your own home folder, so its results are not this '
+        + "machine's health and were not sent.\n"
+        + `          Running as: ${sanitizePath(upload.home?.running || '?')}\n`
+        + `          Your home:  ${sanitizePath(upload.home?.account || '?')}\n`);
+    }
   } else if (upload.ok) {
     process.stderr.write(`Upload:   succeeded\n`);
   } else {
@@ -1639,6 +1729,8 @@ module.exports = {
   roundtripDue, stampRoundtrip, ROUNDTRIP_MARKER, ROUNDTRIP_INTERVAL_DAYS,
   // v1.17.66 — spool mechanism (IR-038 observability pipeline).
   uploadReport, appendSpool, retrySpool,
+  // v1.30.10 — a sandbox install must not report as the machine it is running on.
+  checkHomeIsAccountHome,
   // v1.17.79 — error spool drain (broad client-side failure pipeline).
   drainErrorSpool,
   // v1.17.66 — environment info collection (IR-038).

@@ -324,12 +324,23 @@ fi
 GIT_HOOK_DIR="$HOME/.ownmind/git-hooks"
 if [ -d "$GIT_HOOK_DIR" ]; then
   repaired=0
-  for gh_name in pre-commit post-commit commit-msg; do
+  for gh_name in pre-commit post-commit commit-msg pre-merge-commit; do
     gh="$GIT_HOOK_DIR/$gh_name"
     gh_src="$OWNMIND_DIR/hooks/ownmind-git-$gh_name"
     # Only ever refresh a hook that is already installed: creating one here would enable
     # OwnMind's git hooks on a machine whose owner never asked install.sh for them.
-    [ -f "$gh" ] || continue
+    #
+    # The exception is pre-merge-commit, added after these hooks shipped. Every existing
+    # install has pre-commit and none has this one, so "refresh only" would leave every
+    # machine already using OwnMind's git hooks with merges unchecked forever — the same
+    # trap v1.26.104 fell into. It is created only where pre-commit already exists, so the
+    # consent question is unchanged: this machine's owner did ask for OwnMind's git hooks.
+    if [ ! -f "$gh" ]; then
+      case "$gh_name" in
+        pre-merge-commit) [ -f "$GIT_HOOK_DIR/pre-commit" ] || continue ;;
+        *) continue ;;
+      esac
+    fi
     if [ -f "$gh_src" ]; then
       if ! tr -d '\015' < "$gh_src" | cmp -s - "$gh"; then
         tr -d '\015' < "$gh_src" > "$gh.tmp" && mv "$gh.tmp" "$gh" && chmod +x "$gh" \

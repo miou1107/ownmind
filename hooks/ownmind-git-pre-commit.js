@@ -113,10 +113,20 @@ function getStagedAddedLines(file, srcPath = null) {
     const paths = srcPath && srcPath !== file ? [srcPath, file] : [file];
     diff = execFileSync('git', ['--literal-pathspecs', 'diff', '--cached', '-U0', '-M', '--', ...paths], {
       encoding: 'utf8',
-      maxBuffer: 5 * 1024 * 1024, // 5 MB — large enough for a typical patch
+      maxBuffer: DIFF_MAX_BYTES,
     });
-  } catch {
-    return [];
+  } catch (err) {
+    // Bug report #24: this used to `return []`, and an empty result is the same value a
+    // genuinely clean file produces. Measured there — a 6 MB staged file carrying an AWS
+    // key committed with exit 0 and no output, while 2 MB and 4 MB blocked. A scanner has
+    // no business having a size above which it stops looking and says nothing.
+    //
+    // Thrown rather than returned, so a caller cannot forget to look: the only two callers
+    // are the baseline scan and the rule-driven scan, and both must treat "not scanned" as
+    // a reason to stop, never as a pass.
+    const e = new Error(`could not read the staged diff for ${file}: ${err?.message || err}`);
+    e.ownmindUnscanned = { file, oversize: /maxBuffer|ENOBUFS/i.test(String(err?.message || '')) };
+    throw e;
   }
   const lines = diff.split('\n');
   const added = [];
@@ -127,6 +137,14 @@ function getStagedAddedLines(file, srcPath = null) {
   }
   return added;
 }
+
+/**
+ * The ceiling on one file's staged diff.
+ *
+ * Not a threshold above which scanning is skipped — exceeding it is a blocked commit with a
+ * sentence saying why. See the throw in getStagedAddedLines.
+ */
+const DIFF_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * v1.26.103: where each staged path came from, when it was renamed.
@@ -214,13 +232,47 @@ function maskSecretFragment(text) {
  *
  * @returns {Array<{file, rule, reason, matched_text}>} list of hits
  */
+/**
+ * @returns {{hits: Array, unscanned: Array, unreadable: Array}}
+ *   `unscanned` — the scanner could have read these and did not (too big, unreadable diff).
+ *     That is a fault worth stopping for: the content was there and nobody looked.
+ *   `unreadable` — binary, which nothing can look into. Reported, never blocked: a block
+ *     there stops ordinary work and protects nothing.
+ *   Both are returned rather than logged, because the caller has to be unable to ignore them.
+ */
 function checkStagedDiffForSecrets(stagedFiles) {
   const hits = [];
+  const unscanned = [];
+  const unreadable = [];
   // v1.26.103: a moved file needs both of its paths, or git reads it as brand new.
   // See getRenameSources.
   const renameSources = getRenameSources();
   for (const file of stagedFiles) {
-    const lines = getStagedAddedLines(file, renameSources.get(file));
+    let lines;
+    try {
+      lines = getStagedAddedLines(file, renameSources.get(file));
+    } catch (err) {
+      unscanned.push({
+        file,
+        why: err?.ownmindUnscanned?.oversize
+          ? `這個檔案的改動超過 ${Math.round(DIFF_MAX_BYTES / (1024 * 1024))} MB，掃不完`
+          : '讀不到這個檔案的改動',
+      });
+      continue;
+    }
+    // A binary file's diff carries no added lines at all, so "nothing found" here means
+    // "nothing was looked at" — said out loud, but NOT blocked.
+    //
+    // Review, before this shipped: blocking it buys nothing, because the scanner cannot read
+    // it whether it blocks or passes. What it does buy is a stopped commit for every PNG,
+    // every `git mv` of one, every UTF-16 file — measured, including this repository's own
+    // `tests/install-check-null-byte-sanitize.test.js`, which git treats as binary. A merge
+    // was worse: it blocked halfway through and left the repository mid-merge. And the way
+    // out is a bypass, which switches off the scan of the readable files beside it.
+    if (lines.length === 0 && isProbablyBinary(file)) {
+      unreadable.push({ file, why: '二進位檔，掃不進去' });
+      continue;
+    }
     for (const line of lines) {
       const r = detectSecretLike(line, { skip_keyword: true });
       if (r.detected) {
@@ -241,7 +293,26 @@ function checkStagedDiffForSecrets(stagedFiles) {
       }
     }
   }
-  return hits;
+  return { hits, unscanned, unreadable };
+}
+
+/**
+ * Does git consider this staged file binary?
+ *
+ * Asked of git rather than guessed from the extension: git's own answer is the one that
+ * decides whether the diff has any `+` lines for the scanner to read.
+ */
+function isProbablyBinary(file) {
+  try {
+    const stat = execFileSync('git', ['--literal-pathspecs', 'diff', '--cached', '--numstat', '--', file], {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+    });
+    // git prints `-\t-\t<path>` for a binary file, and counts for a text one.
+    return /^-\s+-\s/.test(stat.trim());
+  } catch {
+    return false;
+  }
 }
 
 function httpGet(url, headers) {
@@ -346,11 +417,25 @@ function formatWarnMessage(warnings) {
   return lines.join('\n');
 }
 
+/**
+ * What the password scan actually covers, said under every commit that passes.
+ *
+ * Bug report #21 measured it: of 31 common credential formats, 14 commit cleanly — including
+ * the two most ordinary ones, a database connection string and `password = "..."` in a config
+ * file. The owner's decision (2026-08-16) was to leave the coverage where it is and stop
+ * implying it is complete: widening it buys false blocks in the middle of somebody's work,
+ * and a scanner people switch off protects nothing at all.
+ *
+ * So this line is not a disclaimer bolted onto a claim. It IS the claim, correctly sized.
+ */
+const SCAN_SCOPE_NOTE =
+  '  密碼掃描只認得幾種常見格式（AWS、GitHub token 這一類），通過不等於沒外洩。';
+
 function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
   if (checkedCount === 0 && warnings.length === 0) return '';
   const ageNote = cacheAgeHours > 1 ? ` (cache updated ${Math.round(cacheAgeHours)}h ago)` : '';
   if (warnings.length === 0) {
-    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}`;
+    return `[OwnMind v${VERSION}]Pre-commit check: all ${checkedCount} rules passed ✓${ageNote}\n${SCAN_SCOPE_NOTE}`;
   }
   const lines = [formatWarnMessage(warnings)];
   const passed = checkedCount - warnings.length;
@@ -371,21 +456,77 @@ function formatPassMessage(checkedCount, cacheAgeHours = 0, warnings = []) {
  * @param {Array<{file, rule, reason, matched_text}>} secretHits
  * @returns {never}
  */
-function exitOnBaselineSecrets(secretHits) {
-  if (secretHits.length === 0) process.exit(0);
-
-  const failures = ['BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）'];
-  for (const hit of secretHits) {
-    const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
-    failures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
+function exitOnBaselineSecrets(secretHits, unscanned = [], unreadable = []) {
+  if (secretHits.length === 0 && unscanned.length === 0) {
+    // Said here as well as at the end of main(), because this is where most commits leave:
+    // the default account has no commit-triggered rule, so every exit above the rule loop
+    // comes through this function. Printing it only at the bottom would name binaries for
+    // the few users who have rules and nobody else.
+    printUnreadable(unreadable);
+    process.exit(0);
   }
-  console.error(formatBlockMessage(failures, [{
-    ruleCode: 'BASELINE',
-    ruleTitle: '提交內容含疑似金鑰／憑證',
-    secretHit: true,
-    isSecretRule: true,
-  }]));
+
+  // Both, in one message, and the found credential first.
+  //
+  // Review, before this shipped: the first version returned inside the `unscanned` branch,
+  // so a commit holding an unreadable file AND a leaked key printed only the unreadable
+  // file. Measured — an image plus a `.env` carrying an AWS key showed the image and hid
+  // the key, and the remedy that message printed then committed the key with no output at
+  // all. The block that conceals the finding is worse than no block.
+  const failures = [];
+  const reasons = [];
+  if (secretHits.length > 0) {
+    failures.push('BASELINE: 提交內容含疑似金鑰／憑證（OwnMind 的預設掃描抓到的，不用你設定任何規矩）');
+    for (const hit of secretHits) {
+      const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
+      failures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
+    }
+    reasons.push({
+      ruleCode: 'BASELINE',
+      ruleTitle: '提交內容含疑似金鑰／憑證',
+      secretHit: true,
+      isSecretRule: true,
+    });
+  }
+  if (unscanned.length > 0) {
+    failures.push(...formatUnscannedFailure(unscanned));
+    reasons.push({
+      ruleCode: 'BASELINE_UNSCANNED',
+      ruleTitle: '有檔案沒有被掃過',
+      secretHit: true,
+      isSecretRule: true,
+    });
+  }
+  console.error(formatBlockMessage(failures, reasons));
   process.exit(1);
+}
+
+/**
+ * Files nothing can read inside, named rather than blocked.
+ *
+ * Review, before this shipped: blocking them stops ordinary work and protects nothing — the
+ * scanner cannot read a binary whether it blocks or passes. Letting them pass in silence is
+ * the impersonation this release is about, so they are named either way.
+ */
+function printUnreadable(unreadable = []) {
+  if (!unreadable.length) return;
+  console.log(`[OwnMind v${VERSION}] 這些檔案掃不進去，OwnMind 不知道裡面有沒有密碼：`);
+  for (const u of unreadable) console.log(`  ・${u.file}（${u.why}）`);
+}
+
+/**
+ * The unscanned complaint, and its own way out.
+ *
+ * Its own code, deliberately: `BASELINE` switches off the scan of every readable file in the
+ * same commit, so excusing one oversized file would also excuse the `.env` beside it. Review
+ * measured that exact sequence ending in a committed key.
+ */
+function formatUnscannedFailure(unscanned) {
+  const lines = ['BASELINE_UNSCANNED: 有檔案沒有被掃過，所以這次 commit 不知道裡面有沒有密碼'];
+  for (const u of unscanned) lines.push(`    → ${u.file}: ${u.why}`);
+  lines.push('    把這些檔案拆小或分開 commit 就會過。真的要放行，用 OWNMIND_BYPASS=BASELINE_UNSCANNED');
+  lines.push('    （這個放行只跳過「沒掃到」這一項，同一次 commit 其他檔案照樣會掃）');
+  return lines;
 }
 
 // ============================================================
@@ -434,7 +575,12 @@ async function main() {
     try { logBypass({ ruleCode: 'BASELINE', ruleTitle: '提交內容含疑似金鑰／憑證', source: 'pre_commit' }); }
     catch { /* the audit row is best-effort; it must not block the commit */ }
   }
-  const secretHits = baselineBypassed ? [] : checkStagedDiffForSecrets(stagedFiles);
+  const scan = checkStagedDiffForSecrets(stagedFiles);
+  const secretHits = baselineBypassed ? [] : scan.hits;
+  // Its own code: excusing one oversized file must not excuse the scan of the readable
+  // files beside it. Review measured that sequence ending in a committed key.
+  const unscanned = isBypassed('BASELINE_UNSCANNED', bypassSet) ? [] : scan.unscanned;
+  const unreadable = scan.unreadable;
 
   // 1. Load iron rules from local cache (with staleness check)
   let rules = readJsonSafe(CACHE_FILE);
@@ -460,7 +606,7 @@ async function main() {
       // v1.26.124: no verifiable rule is not the same as nothing to check. This exit is
       // reached by every account whose iron rules are reminder-only, which is the default
       // state — so it was the most-travelled of the silent paths.
-      exitOnBaselineSecrets(secretHits);
+      exitOnBaselineSecrets(secretHits, unscanned, unreadable);
     }
     rules = fetched;
   } else if (cacheStale) {
@@ -487,7 +633,7 @@ async function main() {
 
   if (commitRules.length === 0) {
     // v1.26.124: rules exist but none of them runs at commit time. Same reasoning as above.
-    exitOnBaselineSecrets(secretHits);
+    exitOnBaselineSecrets(secretHits, unscanned, unreadable);
   }
 
   // 4. Collect git context. stagedFiles was gathered in step 0, because the baseline scan
@@ -594,8 +740,19 @@ async function main() {
   // either no rule is a secret guard, or one is and is not set to block. Without this the
   // leak would ride out on the pass path below, which is the same silence in a different
   // place.
+  // The same on the rule-driven path: a file nobody read cannot be reported as clean by the
+  // pass message below. Bug report #24.
+  if (unscanned.length > 0) {
+    blockFailures.push(...formatUnscannedFailure(unscanned));
+    blockReasons.push({
+      ruleCode: 'BASELINE_UNSCANNED',
+      ruleTitle: '有檔案沒有被掃過',
+      secretHit: true,
+      isSecretRule: true,
+    });
+  }
   if (secretHits.length > 0 && !secretHitsBlocked) {
-    blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（預設防護，不需要設定鐵律）');
+    blockFailures.push('BASELINE: 提交內容含疑似金鑰／憑證（OwnMind 的預設掃描抓到的，不用你設定任何規矩）');
     for (const hit of secretHits) {
       const matched = hit.matched_text ? ` matched="${hit.matched_text}"` : '';
       blockFailures.push(`    → ${hit.file}: ${hit.reason} (detected_by=${hit.rule})${matched}`);
@@ -623,11 +780,25 @@ async function main() {
   if (passMsg) {
     console.log(passMsg);
   }
+  // Named, not blocked. Nothing can read inside a binary file, so stopping the commit
+  // protects nothing — but letting it pass in silence is the impersonation this whole
+  // release is about, and the pass line above would otherwise be speaking for it.
+  printUnreadable(unreadable);
 
   process.exit(0);
 }
 
 main().catch(err => {
-  console.error(`[OwnMind v${VERSION}]Error report: pre-commit unexpected error — skipping check: ${err.message}`);
+  // Bug report #22: this used to be one line reading "unexpected error — skipping check",
+  // printed above a successful commit. A half-finished install, an interrupted pull, or any
+  // one damaged file on the import chain is enough to reach it, and the terminal then looks
+  // almost exactly like a commit that passed. It stays exit 0 — a broken hook must not stop
+  // somebody working — but it no longer whispers.
+  console.error(
+    `[OwnMind v${VERSION}] 🔴 OwnMind 沒有檢查這次 commit —— 它自己壞掉了，不是檢查過沒問題。\n`
+    + '  這次的內容沒有掃過密碼，也沒有比對任何規矩。\n'
+    + '  重跑一次 OwnMind 的更新指令通常就會好。\n'
+    + `  （壞在哪：${err.message}）`,
+  );
   process.exit(0);
 });
