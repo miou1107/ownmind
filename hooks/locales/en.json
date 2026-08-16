@@ -33,5 +33,8 @@
   "verdict.recovered": "[OwnMind] 🟢 OwnMind is checking the AI's replies against your rules again. Nothing for you to do.",
   "verdict.notChecked.notLoggedIn": "[OwnMind] 🔴 Claude Code on this computer is not signed in, so OwnMind could not have it check the AI's reply.\n  Sign in to Claude Code again and checking comes back on its own.",
   "verdict.notChecked.cliRefused": "[OwnMind] 🔴 OwnMind asked Claude Code on this computer to check the AI's reply and it would not, so that reply was not checked.\n  Try running claude yourself in a terminal: whatever it says there is what OwnMind ran into.",
-  "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind could not work out which of your rules applied to the AI's reply, so that reply was not checked.\n  The problem is at OwnMind's end and usually clears on its own; nothing for you to do."
+  "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind could not work out which of your rules applied to the AI's reply, so that reply was not checked.\n  The problem is at OwnMind's end and usually clears on its own; nothing for you to do.",
+  "verdict.notChecked.badCliShape": "[OwnMind] 🔴 Claude Code is on this computer but OwnMind cannot start it, so that reply was not checked.\n  Try typing claude yourself in a terminal: if it starts, say so; if it does not, install Claude Code again.",
+  "verdict.notChecked.tooSlow": "[OwnMind] 🔴 Checking that reply took longer than OwnMind allows, so it was not checked against your rules.\n  The next reply is checked from scratch. If this happens every turn, say so: the limit is set too low.",
+  "verdict.notChecked.badAnswer": "[OwnMind] 🔴 OwnMind could not make sense of what came back from the check, so that reply was not checked against your rules.\n  The next reply is checked from scratch. Nothing for you to do."
 }
