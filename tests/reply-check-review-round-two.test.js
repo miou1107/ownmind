@@ -25,6 +25,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
+import { fakeClaude } from './helpers/fake-claude.js';
 import { runJudgeJob } from '../hooks/lib/run-local-judge.js';
 import { collectVerdict } from '../hooks/lib/verdict-collect.js';
 import { startLocalJudge } from '../hooks/lib/start-local-judge.js';
@@ -173,8 +174,6 @@ test('the quote the judge takes from the reply is redacted too', async () => {
   // audit row is closed. Same text, second road, so it needs the same treatment: a reply with
   // `api_key=…` on the line a rule was broken on would otherwise send that line verbatim.
   const { judgeLocally } = await import('../hooks/lib/local-judge.js');
-  const dir = tempDir('om-round-two-judge-');
-  const bin = path.join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
   const answer = JSON.stringify({
     verdicts: [{
       ruleId: 795, violated: true,
@@ -182,13 +181,15 @@ test('the quote the judge takes from the reply is redacted too', async () => {
       fix: 'do not paste api_key=sk-live-abc123 into the reply',
     }],
   });
-  fs.writeFileSync(bin, `#!/usr/bin/env node\nprocess.stdin.resume();\nprocess.stdin.on('end', () => { process.stdout.write(${JSON.stringify(answer)}); });\n`);
-  fs.chmodSync(bin, 0o755);
+  // Through the shared helper, because this file used to build its own and named it
+  // `claude.cmd` on Windows while filling it with a node script. cmd.exe cannot run that, so
+  // the judge never started and this test failed over a defect in its own fixture.
+  const fake = fakeClaude({ stdout: answer, prefix: 'om-round-two-judge-' });
 
   const out = await judgeLocally({
     rules: [{ id: 795, title: 'no keys in replies', judgeText: 'x' }],
     assistantText: 'run it with api_key=sk-live-abc123',
-    claudeBin: bin,
+    claudeBin: fake.bin,
   });
   assert.equal(out.outcome, 'violation');
   assert.doesNotMatch(out.violations[0].evidence, /sk-live-abc123/, 'the quote carries the key');
