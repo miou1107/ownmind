@@ -187,6 +187,29 @@ after(() => {
 const inHome = (...parts) => path.join(world.home, ...parts);
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
 
+/**
+ * Is this path inside the throwaway home?
+ *
+ * The naive `startsWith(world.home)` failed on Windows for the same reason the defect this
+ * branch fixes did: one directory, two spellings. git answers `core.hooksPath` with forward
+ * slashes (`C:/Users/RUNNER~1/…`) while `world.home` carries backslashes, so the comparison
+ * said "outside" about a path that is plainly inside.
+ *
+ * Separators are normalised, and the comparison is case-insensitive where the filesystem is.
+ * Both sides originate from the same `mkdtemp` call here, so this does not need to reconcile
+ * short and long forms — if it ever did, the answer would be to stop comparing strings, which
+ * is what `resolveRepo` had to do.
+ */
+function isInsideHome(candidate) {
+  const norm = (p) => {
+    const forward = path.resolve(p).split(path.sep).join('/');
+    return process.platform === 'linux' ? forward : forward.toLowerCase();
+  };
+  const home = norm(world.home);
+  const target = norm(candidate);
+  return target === home || target.startsWith(`${home}/`);
+}
+
 /** Every hook command registered under `event`, whatever its matcher. */
 function hookCommands(settings, event) {
   return (settings.hooks?.[event] || []).flatMap((entry) => (entry.hooks || []).map((h) => h.command));
@@ -349,7 +372,7 @@ test('the installed git hook really stops a commit carrying a key', () => {
     env: sandboxEnv(), encoding: 'utf8',
   }).trim();
   assert.ok(
-    hooksPath.startsWith(world.home),
+    isInsideHome(hooksPath),
     `core.hooksPath points outside the throwaway home: ${hooksPath}`,
   );
   assert.ok(hooksPath, 'no global core.hooksPath was set, so the git hooks run for nobody');
