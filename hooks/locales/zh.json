@@ -24,5 +24,7 @@
   "compliance.idNote": " （OwnMind 判錯了就回一句「誤判 {checkId}」）",
   "compliance.blockCapReached": "[OwnMind] 🟡 AI 這段回話重寫 {blockCount} 次還是違反你 {count} 條規矩，OwnMind 不再退了，直接顯示給你看。{idNote}",
   "compliance.pushedBack": "[OwnMind] 🟢 AI 這段回話違反你 {count} 條規矩，OwnMind 已經要 AI 重寫。{idNote}",
-  "tty.header": "[OwnMind {version}]"
+  "tty.header": "[OwnMind {version}]",
+  "gate.allow.verbal": "[OwnMind] 🟡 AI 說你同意了「{title}」，OwnMind 就放行這一次。\n  你有說過就不用理它；沒說過的話現在叫停。",
+  "gate.ask.forged": "[OwnMind] 🟡 這件事本來就有一份同意紀錄，但不是 OwnMind 發的。\n  OwnMind 沒有採用它，改成問你。"
 }

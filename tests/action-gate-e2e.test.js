@@ -108,7 +108,10 @@ test('the first deploy attempt is read-blocked with the full decision envelope',
   assert.match(out.reason, /docker compose build --no-cache/, 'the rule text rides the model-facing reason');
   assert.match(out.systemMessage, /tried to act without reading this rule first/, 'the user sees why');
   assert.equal(out.hookSpecificOutput.hookEventName, 'PreToolUse');
-  assert.equal(out.hookSpecificOutput.additionalContext, '');
+  // The deny fields, and no additionalContext: see tests/hook-deny-envelope.test.js for why
+  // a block that carries its message in additionalContext arrives with no message at all.
+  assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+  assert.equal(out.hookSpecificOutput.permissionDecisionReason, out.reason);
 });
 
 test('the retry after a read-block passes in silence', () => {

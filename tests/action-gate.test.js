@@ -246,6 +246,28 @@ function prepStateDir() {
   return dir;
 }
 
+/**
+ * Issue a real ask for (session, guard), and hand back its code if it has one.
+ *
+ * These records used to be written by hand in the tests below. They cannot be any more, and
+ * that is the point: an ask now carries a seal, and the gate ignores any approval it did not
+ * issue itself. A fabricated record would exercise a path the product deliberately no longer
+ * has — it would be testing the hole.
+ *
+ * @returns {{code: string|undefined}}
+ */
+function seedAsk(dir, sessionId, { id, mode = 'verbal' }) {
+  const guard = mkGuard({
+    id, ask_first: true, checks: [], read_required: false,
+    ...(mode === 'verbal' && { ask_mode: 'verbal' }),
+  });
+  const ask = evaluateGate({
+    command: 'git push origin ima-v9.9.9', guards: [guard], stateDir: dir, sessionId,
+  });
+  assert.equal(ask.kind, 'ask', `seedAsk did not produce an ask for guard ${id}`);
+  return { code: (ask.userLine.match(/(\d{6})/) || [])[1] };
+}
+
 function mkGuard(over = {}) {
   return { id: 918, kind: 'action', title: 'compose no-cache', triggers: ['deploy'],
     checks: [
@@ -495,10 +517,9 @@ test('CONSENT: the model-facing reason never carries the approval code (ask and 
 
 test('code guessing burns the ask instead of yielding', () => {
   const dir = prepStateDir();
-  fs.writeFileSync(path.join(dir, 'gate-ask-s1-918.json'),
-    JSON.stringify({ codeHash: createHash('sha256').update('123456').digest('hex'), approved: false, misses: 0 }));
+  const { code } = seedAsk(dir, 's1', { id: 918, mode: 'code' });
   for (let i = 0; i < 5; i += 1) assert.equal(approveAction(dir, 's1', 918, '000000'), false);
-  assert.equal(approveAction(dir, 's1', 918, '123456'), false, 'a burned ask never approves');
+  assert.equal(approveAction(dir, 's1', 918, code), false, 'a burned ask never approves');
 });
 
 test('a fresh ask resets the burn counter so a legitimate code still approves', () => {
@@ -652,9 +673,8 @@ test('VERBAL: gate-log records approval_mode verbal on issue and on the approved
 test('the approval CLI approves a verbal ask via --verbal, and refuses a code-mode ask', () => {
   const dir = prepStateDir();
   fs.writeFileSync(path.join(dir, 'gate-current-session'), 's1');
-  // A verbal ask carries no codeHash, only mode: 'verbal'.
-  fs.writeFileSync(path.join(dir, 'gate-ask-s1-830.json'),
-    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  // A verbal ask carries no stored code, only mode: 'verbal'.
+  seedAsk(dir, 's1', { id: 830 });
   const env = { ...process.env, OWNMIND_GATE_STATE_DIR: dir };
   const ok = spawnSync('node', ['hooks/lib/approve-action.js', '--verbal', '830'], { encoding: 'utf8', env });
   assert.equal(ok.status, 0);
@@ -665,8 +685,7 @@ test('the approval CLI approves a verbal ask via --verbal, and refuses a code-mo
   assert.match(again.stdout, /REJECTED/);
 
   // A code-mode ask must not be approvable via --verbal.
-  fs.writeFileSync(path.join(dir, 'gate-ask-s1-831.json'),
-    JSON.stringify({ codeHash: createHash('sha256').update('123456').digest('hex'), approved: false, kind: 'ask', mode: 'code' }));
+  seedAsk(dir, 's1', { id: 831, mode: 'code' });
   const rejected = spawnSync('node', ['hooks/lib/approve-action.js', '--verbal', '831'], { encoding: 'utf8', env });
   assert.equal(rejected.status, 1);
   assert.match(rejected.stdout, /REJECTED/);
@@ -682,8 +701,7 @@ test('the approval CLI approves the session it is given, not whichever started l
   const dir = prepStateDir();
   // The pointer names the OTHER session, exactly as a later SessionStart would leave it.
   fs.writeFileSync(path.join(dir, 'gate-current-session'), 'other-session');
-  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-820.json'),
-    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  seedAsk(dir, 'blocked-session', { id: 820 });
   const env = { ...process.env, OWNMIND_GATE_STATE_DIR: dir };
 
   // Without the flag the CLI resolves the pointer, finds no ask there, and refuses. That is
@@ -708,17 +726,15 @@ test('the approval CLI approves the session it is given, not whichever started l
   assert.equal(twice.status, 1, 'an already-approved ask must still refuse a second time');
 
   // A code-mode ask in a named session takes the code path and nothing else.
-  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-821.json'),
-    JSON.stringify({ codeHash: createHash('sha256').update('654321').digest('hex'), approved: false, kind: 'ask', mode: 'code' }));
+  const { code: code821 } = seedAsk(dir, 'blocked-session', { id: 821, mode: 'code' });
   const wrongCode = spawnSync('node',
     ['hooks/lib/approve-action.js', '821', '000000', '--session', 'blocked-session'], { encoding: 'utf8', env });
   assert.equal(wrongCode.status, 1, 'naming a session must not let a wrong code through');
   const rightCode = spawnSync('node',
-    ['hooks/lib/approve-action.js', '821', '654321', '--session', 'blocked-session'], { encoding: 'utf8', env });
+    ['hooks/lib/approve-action.js', '821', code821, '--session', 'blocked-session'], { encoding: 'utf8', env });
   assert.equal(rightCode.status, 0, `the real code in a named session must approve; got ${rightCode.stdout}`);
   // And --verbal still cannot downgrade a code-mode ask, named session or not.
-  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-822.json'),
-    JSON.stringify({ codeHash: createHash('sha256').update('111111').digest('hex'), approved: false, kind: 'ask', mode: 'code' }));
+  seedAsk(dir, 'blocked-session', { id: 822, mode: 'code' });
   const downgrade = spawnSync('node',
     ['hooks/lib/approve-action.js', '--verbal', '822', '--session', 'blocked-session'], { encoding: 'utf8', env });
   assert.equal(downgrade.status, 1, '--session must not become a way around code mode');
@@ -732,8 +748,7 @@ test('the approval CLI approves the session it is given, not whichever started l
   // to the literal 'unknown', a bucket every session with no usable id shares, so a malformed
   // --session did not fail, it landed on somebody else's record. Proven here by seeding that
   // bucket and showing the malformed forms cannot reach it.
-  fs.writeFileSync(path.join(dir, 'gate-ask-unknown-830.json'),
-    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  seedAsk(dir, 'unknown', { id: 830 });
   for (const bad of ['../../blocked-session', 'has space', 'a/b', '', 'x\ny']) {
     const res = spawnSync('node',
       ['hooks/lib/approve-action.js', '--verbal', '830', '--session', bad], { encoding: 'utf8', env });
@@ -746,8 +761,7 @@ test('the approval CLI approves the session it is given, not whichever started l
   // A flag that was passed must be honoured or refused, never silently ignored: falling back
   // to the pointer here would reinstate the bug --session exists to fix.
   fs.writeFileSync(path.join(dir, 'gate-current-session'), 'blocked-session');
-  fs.writeFileSync(path.join(dir, 'gate-ask-blocked-session-831.json'),
-    JSON.stringify({ approved: false, kind: 'ask', mode: 'verbal' }));
+  seedAsk(dir, 'blocked-session', { id: 831 });
   const noValue = spawnSync('node',
     ['hooks/lib/approve-action.js', '--verbal', '831', '--session'], { encoding: 'utf8', env });
   assert.equal(noValue.status, 1, '--session with no value must refuse, not fall back to the pointer');
@@ -779,11 +793,10 @@ test('the gate names the blocked session in the approval command it hands the AI
 test('the approval CLI approves a valid code once', () => {
   const dir = prepStateDir();
   fs.writeFileSync(path.join(dir, 'gate-current-session'), 's1');
-  fs.writeFileSync(path.join(dir, 'gate-ask-s1-918.json'),
-    JSON.stringify({ codeHash: createHash('sha256').update('123456').digest('hex'), approved: false }));
+  const { code } = seedAsk(dir, 's1', { id: 918, mode: 'code' });
   const env = { ...process.env, OWNMIND_GATE_STATE_DIR: dir };
-  const ok = spawnSync('node', ['hooks/lib/approve-action.js', '918', '123456'], { encoding: 'utf8', env });
+  const ok = spawnSync('node', ['hooks/lib/approve-action.js', '918', code], { encoding: 'utf8', env });
   assert.equal(ok.status, 0); assert.match(ok.stdout, /APPROVED/);
-  const again = spawnSync('node', ['hooks/lib/approve-action.js', '918', '123456'], { encoding: 'utf8', env });
+  const again = spawnSync('node', ['hooks/lib/approve-action.js', '918', code], { encoding: 'utf8', env });
   assert.equal(again.status, 1);
 });

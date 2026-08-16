@@ -222,4 +222,85 @@ describe('the baseline stands down when a rule owns the finding', () => {
     );
     assert.match(r.stderr, /IR-901/, 'their own rule is what should be named');
   });
+
+  /**
+   * Measured 2026-08-16. The same rule with `block_on_fail: false` — or with the field simply
+   * absent, which is the more common shape — let the commit through carrying
+   * `AWS_ACCESS_KEY_ID=…` in the staged diff, and printed:
+   *
+   *     [OwnMind v1.30.8]Pre-commit check: all 1 rules passed ✓
+   *
+   * Two separate faults, and the second is the worse one. Standing the baseline down took
+   * the floor away on the strength of a rule that was not going to block either — the
+   * baseline exists precisely so that no rule setting can leave a leak unguarded. And
+   * whatever one thinks of failing open, printing a pass over it is not a judgement call.
+   */
+  for (const [label, blockOnFail] of [
+    ['set to "do not block"', false],
+    ['with no block setting at all', undefined],
+  ]) {
+    it(`a secret rule ${label} does not take the baseline down with it`, () => {
+      const rule = structuredClone(SECRET_GUARD_RULE);
+      if (blockOnFail === undefined) delete rule.metadata.verification.block_on_fail;
+      else rule.metadata.verification.block_on_fail = blockOnFail;
+
+      setCache([rule]);
+      stage('leak.txt', LEAK);
+      const r = runHook();
+
+      assert.equal(r.status, 1,
+        `the leak must still be stopped; got exit ${r.status}\nstdout:${r.stdout}\nstderr:${r.stderr}`);
+      assert.match(r.stderr, /BASELINE/,
+        'no rule blocked, so the floor under every other path has to be the one that does');
+      assert.doesNotMatch(`${r.stdout}${r.stderr}`, /rules passed ✓/,
+        'and nothing may report a pass over a key that is in the staged diff');
+    });
+  }
+});
+
+describe('a rule that was broken is never counted as one that passed', () => {
+  /**
+   * A rule that is broken by the staged file itself, with no secret anywhere near it — so
+   * this measures the false-pass on its own, not through the baseline.
+   */
+  const NON_BLOCKING_RULE = {
+    code: 'IR-900',
+    title: '不要直接提交 .js，要走 build',
+    tier: 'default',
+    metadata: {
+      verification: {
+        trigger: ['commit'],
+        block_on_fail: false,
+        conditions: {
+          type: 'staged_files_exclude',
+          params: { patterns: ['*.js'] },
+          message: 'staged 包含不該直接提交的檔案',
+        },
+      },
+    },
+  };
+
+  it('names the broken rule instead of printing a green tick', () => {
+    setCache([NON_BLOCKING_RULE]);
+    stage('ok.js', CLEAN);
+    const r = runHook();
+
+    assert.equal(r.status, 0, 'not set to block, so the commit still goes through');
+    const out = `${r.stdout}${r.stderr}`;
+    assert.doesNotMatch(out, /all 1 rules passed/,
+      'it did not pass — it was broken and let through, which is a different sentence');
+    assert.match(out, /IR-900/, 'the user has to be told which rule');
+    assert.match(out, /let the commit through/, 'and that OwnMind let it through on purpose');
+    assert.match(out, /not set to stop a commit/, 'and what to change if that is wrong');
+  });
+
+  it('a rule that really did pass still gets its green tick', () => {
+    // Without this the fix could degenerate into never printing a pass at all.
+    const passing = structuredClone(SECRET_GUARD_RULE);
+    setCache([passing]);
+    stage('ok.js', CLEAN);
+    const r = runHook();
+    assert.equal(r.status, 0);
+    assert.match(`${r.stdout}${r.stderr}`, /all 1 rules passed ✓/);
+  });
 });

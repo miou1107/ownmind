@@ -6,11 +6,11 @@
  * classifier detects them as plain git pushes.
  */
 
-import { createHash, randomInt } from 'node:crypto';
+import { randomBytes, randomInt, scryptSync, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { detectCommandTrigger } from '../../shared/helpers.js';
-import { writeReceipt, verifyReceipt } from './gate-receipt.js';
+import { writeReceipt, verifyReceipt, sealAsk, verifyAskSeal } from './gate-receipt.js';
 // Guarded, NOT static. A static `import { t } from './i18n.js'` is unrecoverable at module
 // scope: if i18n.js is missing, unparseable, or throws while loading, action-gate.js itself
 // fails to load, the callers' outer catch fires, and the command runs UNGATED. That hands a
@@ -136,6 +136,58 @@ export function matchGuards(command, guards) {
 
 // --- Decision core: read gate, compliance gate, ask-first, stop-and-ask limit ---
 
+/**
+ * The record format this version writes. A record without it was written by a version that
+ * stored the code as a plain sha256 — see CODE_KDF — and is refused rather than upgraded in
+ * place, because there is nothing in it worth keeping. Refusing reissues on the next attempt,
+ * so the cost of an upgrade landing mid-approval is one extra round trip.
+ */
+const ASK_FORMAT = 2;
+
+/**
+ * How the consent code is stored.
+ *
+ * It used to be `sha256(code)`, written to a file in the state directory. A six-digit code is
+ * 900,000 values, so the fingerprint the product wrote down was the code: measured 2026-08-15
+ * at 318 ms and 32 ms on two runs to recover it, and re-measured 2026-08-16 at 0.7 s for a
+ * full sweep of the space. `MAX_ASK_MISSES` was no defence, because recovering the code costs
+ * no wrong guesses — the attacker submits once, and is right.
+ *
+ * scrypt with a per-record salt is what changes that. Measured on the author's machine at
+ * these parameters: 67 ms for one verification, so 16.8 hours for the sweep that used to take
+ * 0.7 seconds. Memory-hard (32 MB per attempt at N=32768, r=8), so the usual answer of
+ * throwing parallel hardware at it does not collapse the number either.
+ *
+ * 67 ms is paid twice per approval — once issuing, once checking — by a human who is being
+ * asked a question. It is not detectable at that scale.
+ */
+const CODE_KDF = {
+  N: 32768,
+  r: 8,
+  p: 1,
+  keylen: 32,
+  // 128 * N * r comes to exactly 33,554,432 bytes here, and node's default ceiling is exactly
+  // 33,554,432 — it wants headroom, not a tie, so the default throws "Invalid scrypt params".
+  // Left out, that throw lands in issueAsk's catch, no ask file is written, and every approval
+  // is then refused for a record that does not exist. Caught by the existing gate tests.
+  maxmem: 64 * 1024 * 1024,
+};
+
+/**
+ * How long a code-mode ask can still be approved. The point is to keep the window shorter
+ * than the sweep above by a wide margin: an hour against 16.8 hours.
+ *
+ * Verbal asks are exempt and carry no expiry. They hold no secret to recover — that is the
+ * accepted honesty downgrade the mode is named for — so expiring them would buy nothing and
+ * cost a user their answer for being slow.
+ */
+const ASK_TTL_MS = 60 * 60 * 1000;
+
+/** Derive the stored form of a code. Total: a malformed salt yields a value that matches nothing. */
+function deriveCode(code, salt) {
+  return scryptSync(String(code), String(salt), CODE_KDF.keylen, CODE_KDF).toString('hex');
+}
+
 const askPath = (d, sid, gid) => path.join(d, `gate-ask-${sid}-${gid}.json`);
 const limitPath = (d, sid, gid) => path.join(d, `gate-limit-${sid}-${gid}.json`);
 const logPath = (d) => path.join(d, 'gate-log.jsonl');
@@ -168,6 +220,40 @@ function log(stateDir, entry) {
 
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
 
+/**
+ * Write an ask record with this machine's seal on it. Every write of that file goes through
+ * here — an unsealed write is a record the gate would then refuse to honour, which reads at
+ * the call site as the approval mysteriously not taking.
+ */
+function writeAsk(stateDir, sid, guardId, rec) {
+  const sealed = { ...rec, seal: sealAsk(stateDir, sid, guardId, rec) };
+  const p = askPath(stateDir, sid, guardId);
+  // Same write-side symlink defence as writeReceipt: unlink a planted link, never its target.
+  try { if (fs.lstatSync(p).isSymbolicLink()) fs.unlinkSync(p); } catch { /* absent is normal */ }
+  fs.writeFileSync(p, JSON.stringify(sealed));
+}
+
+/**
+ * Read an approval that this gate actually granted, or nothing.
+ *
+ * Three separate answers collapse to null here, and they must: no file, a file in the format
+ * a prior version wrote, and a file whose seal does not match. The last one is the case this
+ * function exists for — on 2026-08-15 an assistant put `{"approved":true}` at this path by
+ * hand and the gate honoured it, because being at the path was the whole of the check.
+ *
+ * @returns {{rec: object, forged: boolean}|null} `forged` marks the third case specifically:
+ *   a record claiming this format, carrying a seal this machine did not write. The other two
+ *   are ordinary — an upgrade landing mid-approval reissues, and that is not worth alarming
+ *   anybody about.
+ */
+function readApprovedAsk(stateDir, sid, guardId) {
+  const rec = readJson(askPath(stateDir, sid, guardId));
+  if (!rec || rec.approved !== true) return null;
+  if (rec.v !== ASK_FORMAT) return null;
+  if (!verifyAskSeal(stateDir, sid, guardId, rec)) return { rec, forged: true };
+  return { rec, forged: false };
+}
+
 function bumpLimit(stateDir, sid, gid, kind) {
   const p = limitPath(stateDir, sid, gid);
   const prev = readJson(p) || { kind: null, count: 0 };
@@ -186,10 +272,10 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
   const verbal = kindLabel === 'ask' && guard.ask_mode === 'verbal';
   if (verbal) {
     try {
-      // No codeHash: a verbal ask has no code to satisfy. mode:'verbal' is the on-disk marker
-      // that only approveActionVerbal — never the code CLI — may approve this record.
-      fs.writeFileSync(askPath(stateDir, sid, guard.id),
-        JSON.stringify({ approved: false, kind: kindLabel, mode: 'verbal' }));
+      // No stored code: a verbal ask has no code to satisfy. mode:'verbal' is the on-disk
+      // marker that only approveActionVerbal — never the code CLI — may approve this record.
+      writeAsk(stateDir, sid, guard.id,
+        { v: ASK_FORMAT, approved: false, kind: kindLabel, mode: 'verbal' });
     } catch { /* without the file the approve step fails closed */ }
     return {
       action: 'block', kind: kindLabel, guardId: guard.id,
@@ -216,8 +302,17 @@ function issueAsk(stateDir, sid, guard, kindLabel) {
   try {
     // NEW-1: Store kindLabel so we can distinguish ask vs limit approvals.
     // mode:'code' is the explicit sentinel so approveActionVerbal can refuse to downgrade it.
-    fs.writeFileSync(askPath(stateDir, sid, guard.id),
-      JSON.stringify({ codeHash: createHash('sha256').update(code).digest('hex'), approved: false, kind: kindLabel, mode: 'code' }));
+    // The salt is per-record, so one sweep buys one code rather than a rainbow table.
+    const codeSalt = randomBytes(16).toString('hex');
+    writeAsk(stateDir, sid, guard.id, {
+      v: ASK_FORMAT,
+      codeSalt,
+      codeHash: deriveCode(code, codeSalt),
+      approved: false,
+      kind: kindLabel,
+      mode: 'code',
+      issuedAt: Date.now(),
+    });
   } catch { /* without the file the approve step fails closed */ }
   return {
     action: 'block', kind: kindLabel, guardId: guard.id,
@@ -265,18 +360,32 @@ export function approveAction(stateDir, sessionId, guardId, code) {
   // code CLI must not be able to approve it — the two consent paths stay separate on purpose.
   if (rec.mode === 'verbal') return false;
 
+  // A record from a version that stored the code as a bare sha256. No miss is burned: there is
+  // nothing here the user got wrong, and retrying the command reissues in the current format.
+  if (rec.v !== ASK_FORMAT || typeof rec.codeSalt !== 'string') return false;
+
+  // Past its hour. Same reasoning as the miss cap, against the other attack: a code that stays
+  // answerable forever is a code somebody has forever to work out.
+  if (!Number.isFinite(rec.issuedAt) || Date.now() - rec.issuedAt > ASK_TTL_MS) return false;
+
   // A burned ask never yields, even to the correct code. issueAsk overwrites the file with a
   // fresh record (no misses), so a new ask resets the counter — a wrong-guess run cannot lock
   // the user out, it only wastes the one code it was guessing against.
   const misses = Number.isInteger(rec.misses) ? rec.misses : 0;
   if (misses >= MAX_ASK_MISSES) return false;
 
-  if (createHash('sha256').update(String(code)).digest('hex') !== rec.codeHash) {
+  // Constant-time, with the length guard timingSafeEqual needs: a truncated or garbage stored
+  // hash must be a mismatch, not a throw.
+  const got = Buffer.from(deriveCode(code, rec.codeSalt), 'hex');
+  const want = Buffer.from(String(rec.codeHash ?? ''), 'hex');
+  if (got.length !== want.length || !timingSafeEqual(got, want)) {
     // Wrong code: burn one attempt so guessing the 6-digit space is not free.
-    try { fs.writeFileSync(p, JSON.stringify({ ...rec, misses: misses + 1 })); } catch { /* fail closed: no approval */ }
+    try { writeAsk(stateDir, sid, guardId, { ...rec, misses: misses + 1 }); }
+    catch { /* fail closed: no approval */ }
     return false;
   }
-  try { fs.writeFileSync(p, JSON.stringify({ ...rec, approved: true })); } catch { return false; }
+  try { writeAsk(stateDir, sid, guardId, { ...rec, approved: true }); }
+  catch { return false; }
   return true;
 }
 
@@ -309,15 +418,17 @@ export function approveActionVerbal(stateDir, sessionId, guardId) {
   // guard entirely.
   if (rec.mode !== 'verbal') return false;
 
-  try { fs.writeFileSync(p, JSON.stringify({ ...rec, approved: true, approval_mode: 'verbal' })); }
+  // Older format, same reasoning as approveAction: refuse and let the next attempt reissue.
+  if (rec.v !== ASK_FORMAT) return false;
+
+  try { writeAsk(stateDir, sid, guardId, { ...rec, approved: true, approval_mode: 'verbal' }); }
   catch { return false; }
   return true;
 }
 
 function consumeApproval(stateDir, sessionId, guardId) {
   const p = askPath(stateDir, sessionId, guardId);
-  const rec = readJson(p);
-  if (!rec || rec.approved !== true) return false;
+  if (!readApprovedAsk(stateDir, sessionId, guardId)) return false;
   try { fs.unlinkSync(p); } catch { /* worst case: one extra allowed retry this session */ }
   return true;
 }
@@ -332,8 +443,13 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
   let globalDegraded = false;
   const consumedGuards = [];
   // Amendment 3: record when an allow is being granted on the strength of a verbal go-ahead,
-  // so the audit log shows the honesty boundary rather than hiding it.
-  let verbalApprovalConsumed = false;
+  // so the audit log shows the honesty boundary rather than hiding it. Null until one is
+  // consumed; the guard's title once one is, because the user has to be told WHICH thing the
+  // assistant says they agreed to.
+  let verbalApprovalTitle = null;
+  // Set when an approval record was found carrying a seal this machine did not write. The
+  // record is ignored either way; this is what makes the attempt visible instead of silent.
+  let forgedApproval = null;
 
   // I2: Evaluate all guards first, collect verdicts, defer approval consumption
   const approvalsToConsume = [];
@@ -395,11 +511,11 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
     // Checks still run (stateless) even with receipt degradation
     // I1 & NEW-1: Check if there's a redeemable approval first
     // NEW-1: Only bypass checks for 'limit' kind, not 'ask' kind
-    const hasLimitApproval = (() => {
-      const p = askPath(stateDir, sid, guard.id);
-      const rec = readJson(p);
-      return rec && rec.approved === true && rec.kind === 'limit';
-    })();
+    const limitApproval = readApprovedAsk(stateDir, sid, guard.id);
+    if (limitApproval?.forged) forgedApproval = guard.id;
+    const hasLimitApproval = Boolean(
+      limitApproval && !limitApproval.forged && limitApproval.rec.kind === 'limit'
+    );
 
     if (hasLimitApproval) {
       // Defer consumption until all guards pass (only for limit, not ask)
@@ -441,20 +557,33 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
 
     // ask_first: fails closed even with degradation - check without consuming
     if (guard.ask_first) {
-      const p = askPath(stateDir, sid, guard.id);
-      const rec = readJson(p);
-      if (!rec || rec.approved !== true) {
+      const approval = readApprovedAsk(stateDir, sid, guard.id);
+      if (approval?.forged) forgedApproval = guard.id;
+      if (!approval || approval.forged) {
         const ask = issueAsk(stateDir, sid, guard, 'ask');
         const logEntry = { sessionId: sid, guardId: guard.id, command, kind: 'ask', action: 'block' };
         if (ask.code_issued) logEntry.code_issued = true;
         // A verbal ask logs approval_mode:'verbal' instead of code_issued — never a code.
         if (ask.approval_mode) logEntry.approval_mode = ask.approval_mode;
+        // The one thing in this log worth going back for. A block is routine; an approval
+        // this machine did not issue is somebody, or something, working around the gate.
+        if (forgedApproval === guard.id) logEntry.forged_approval = true;
         log(stateDir, logEntry);
         // (a) Carry degraded flag in blocks
-        return { ...ask, ...(globalDegraded && { degraded: 'no-receipts' }) };
+        return {
+          ...ask,
+          ...(forgedApproval === guard.id && {
+            userLine: `${ask.userLine}\n${safeT(
+              'gate.ask.forged',
+              '[OwnMind] 🟡 There was already an approval on file for this, and OwnMind did not issue it.\n'
+              + '  OwnMind ignored it and is asking you instead.',
+            )}`,
+          }),
+          ...(globalDegraded && { degraded: 'no-receipts' }),
+        };
       }
       // The go-ahead was verbal: mark it so the eventual allow log records the honesty boundary.
-      if (rec.approval_mode === 'verbal') verbalApprovalConsumed = true;
+      if (approval.rec.approval_mode === 'verbal') verbalApprovalTitle = guard.title || '';
       // Defer consumption until all guards pass (ask approvals also deferred)
       approvalsToConsume.push(guard.id);
       consumedGuards.push(guard.id);
@@ -473,8 +602,23 @@ export function evaluateGate({ command, guards, stateDir, sessionId }) {
   const logEntry = { sessionId: sid, command, action: 'allow' };
   if (consumedGuards.length > 0) logEntry.guardIds = consumedGuards;
   if (globalDegraded) logEntry.degraded = 'no-receipts';
-  if (verbalApprovalConsumed) logEntry.approval_mode = 'verbal';
+  if (verbalApprovalTitle !== null) logEntry.approval_mode = 'verbal';
   log(stateDir, logEntry);
 
-  return { action: 'allow', ...(globalDegraded && { degraded: 'no-receipts' }) };
+  return {
+    action: 'allow',
+    // A verbal go-ahead is the one approval nothing can verify — no code, no secret, by
+    // design. So the only check on it is the user seeing the claim: the assistant says they
+    // agreed, and they get to notice if they did not. Writing it to gate-log.jsonl and
+    // stopping there would leave the check to somebody who reads log files, which is nobody.
+    ...(verbalApprovalTitle !== null && {
+      userLine: safeT(
+        'gate.allow.verbal',
+        `[OwnMind] 🟡 The AI said you agreed to 「${verbalApprovalTitle}」, so OwnMind allowed it this once.\n`
+        + '  If you did say so, ignore this; if you did not, stop it now.',
+        { title: verbalApprovalTitle },
+      ),
+    }),
+    ...(globalDegraded && { degraded: 'no-receipts' }),
+  };
 }

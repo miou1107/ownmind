@@ -24,5 +24,7 @@
   "compliance.idNote": " （OwnMind の判断が誤っている場合は「誤判 {checkId}」と返信してください）",
   "compliance.blockCapReached": "[OwnMind] 🟡 AI の返答は {blockCount} 回書き直してもあなたの規則 {count} 件に違反しているため、OwnMind は差し戻しをやめてそのまま表示します。{idNote}",
   "compliance.pushedBack": "[OwnMind] 🟢 AI の返答があなたの規則 {count} 件に違反したため、OwnMind が AI に書き直しを指示しました。{idNote}",
-  "tty.header": "[OwnMind {version}]"
+  "tty.header": "[OwnMind {version}]",
+  "gate.allow.verbal": "[OwnMind] 🟡 AI が「{title}」をあなたが承認したと言ったので、OwnMind が今回だけ許可しました。\n  実際に承認したなら何もしなくて大丈夫です。していないなら、今すぐ止めてください。",
+  "gate.ask.forged": "[OwnMind] 🟡 この操作には既に承認の記録がありましたが、OwnMind が発行したものではありません。\n  OwnMind はそれを使わず、あなたに確認しています。"
 }
