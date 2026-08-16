@@ -154,6 +154,27 @@ export async function startRealDb({
     return null;
   }
 
+  // Having docker is not the same as being able to run this image.
+  //
+  // The GitHub windows runner ships docker in Windows-container mode. `docker info` answers
+  // perfectly well, so the check above passed, and then `docker run pgvector/pgvector:pg16`
+  // - a Linux image - failed and threw. A throw is not the null that means "skip this file",
+  // so six database tests were reported as failures on every Windows run, for a reason that
+  // is not a defect in anything they test. They were invisible until the Windows leg stopped
+  // being allowed to fail.
+  //
+  // Only a positive non-linux answer skips. An older docker without --format errors here, and
+  // that must not turn into a silent skip on a Linux machine that could have run the tests -
+  // so it falls through and lets `docker run` be the judge, which is the behaviour before this.
+  let osType = '';
+  try {
+    osType = execFileSync('docker', ['info', '--format', '{{.OSType}}'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim().toLowerCase();
+  } catch { /* no --format support: decide the old way, at `docker run` */ }
+  if (osType && osType !== 'linux') return null;
+
   // Taken after the docker check so a machine without docker still returns null instantly
   // rather than queueing behind a lock it will never need.
   await acquireDbLock();
