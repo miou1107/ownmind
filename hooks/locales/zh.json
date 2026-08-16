@@ -28,5 +28,7 @@
   "gate.allow.verbal": "[OwnMind] 🟡 AI 說你同意了「{title}」，OwnMind 就放行這一次。\n  你有說過就不用理它；沒說過的話現在叫停。",
   "gate.ask.forged": "[OwnMind] 🟡 AI 手上有一份這件事的同意紀錄，但不是 OwnMind 發的。\n  OwnMind 沒有採用它，改成問你。",
   "gate.ask.unverifiable": "[OwnMind] 🟡 這件事有一份同意紀錄，OwnMind 認不出是不是自己發的。\n  OwnMind 沒有採用它，改成問你。重跑一次 OwnMind 的更新指令就會好。",
-  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind 存不了這次的同意紀錄，所以你就算同意了它也認不到。\n  重跑一次 OwnMind 的更新指令就會好。"
+  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind 存不了這次的同意紀錄，所以你就算同意了它也認不到。\n  重跑一次 OwnMind 的更新指令就會好。",
+  "verdict.notChecked": "[OwnMind] 🔴 OwnMind 沒能檢查 AI 上一段回話。\n  重跑一次 OwnMind 的更新指令通常就會好；在那之前 AI 的回話沒有人在對規矩。",
+  "verdict.violation": "[OwnMind] 🟢 OwnMind 檢查了 AI 上一段回話，有一條你的規矩沒做到：{title}\n  OwnMind 已經把這件事交給 AI，它這一輪會改。你不用做什麼。"
 }

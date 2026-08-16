@@ -28,5 +28,7 @@
   "gate.allow.verbal": "[OwnMind] 🟡 The AI said you agreed to 「{title}」, so OwnMind allowed it this once.\n  If you did say so, ignore this; if you did not, stop it now.",
   "gate.ask.forged": "[OwnMind] 🟡 The AI had an approval on file for this that OwnMind did not issue.\n  OwnMind ignored it and is asking you instead.",
   "gate.ask.unverifiable": "[OwnMind] 🟡 There is an approval on file for this and OwnMind cannot tell whether it issued it.\n  OwnMind did not use it, and is asking you instead. Re-running the OwnMind update script repairs this.",
-  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind could not save this approval, so it will not recognise your answer.\n  Re-running the OwnMind update script repairs this."
+  "gate.ask.notRecorded": "[OwnMind] 🔴 OwnMind could not save this approval, so it will not recognise your answer.\n  Re-running the OwnMind update script repairs this.",
+  "verdict.notChecked": "[OwnMind] 🔴 OwnMind could not check the AI's last reply.\n  Re-running the OwnMind update script usually repairs it; until then nothing is checking the AI against your rules.",
+  "verdict.violation": "[OwnMind] 🟢 OwnMind checked the AI's last reply and one of your rules was not met: {title}\n  OwnMind has handed this to the AI and it will correct itself this turn. Nothing for you to do."
 }

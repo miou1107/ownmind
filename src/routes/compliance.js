@@ -257,6 +257,52 @@ export function createComplianceRouter({ queryFn = defaultQuery, llmFn = default
    * Without it the false-positive rate cannot be computed at all, and the rollout criteria
    * would come down to whether the last few findings felt reasonable.
    */
+  /**
+   * The verdict, arriving after the fact.
+   *
+   * `mode: 'select'` opened a row and left it `pending`; the judge then ran on the user's own
+   * machine and their own subscription. This is where its answer lands.
+   *
+   * Scoped to rows that are still pending, and to this user's rows. A resolve that could
+   * rewrite a settled outcome would let a client overwrite the audit trail with anything —
+   * and the audit trail is the only place the honesty of this check is recorded.
+   */
+  router.post('/resolve', async (req, res) => {
+    const {
+      check_id: checkId,
+      outcome,
+      verdicts,
+      latency_ms: latencyMs,
+    } = req.body || {};
+
+    // 'pending' is deliberately not resolvable-to: a client cannot re-open a check, and a
+    // typo cannot silently park one forever.
+    const ALLOWED = ['clean', 'violation', 'skipped', 'failed'];
+    if (!Number.isInteger(checkId) || !ALLOWED.includes(outcome)) {
+      return res.status(400).json({ error: `check_id and outcome (${ALLOWED.join('|')}) are required` });
+    }
+
+    try {
+      const result = await queryFn(
+        `UPDATE compliance_checks
+            SET outcome = $1,
+                verdicts = $2,
+                latency_ms = COALESCE($3, latency_ms)
+          WHERE id = $4 AND user_id = $5 AND outcome = 'pending'
+          RETURNING id`,
+        [outcome, JSON.stringify(Array.isArray(verdicts) ? verdicts : []),
+          Number.isFinite(latencyMs) ? latencyMs : null, checkId, req.user?.id],
+      );
+      // Nothing updated is not an error the client can do anything about — the row was
+      // already resolved, or belongs to somebody else. Answering 200 with `resolved: false`
+      // says which, without inviting a retry that will never succeed.
+      return res.json({ ok: true, resolved: result.rows.length > 0 });
+    } catch (err) {
+      logger.warn?.('compliance: resolve failed', { err: err.message });
+      return res.status(500).json({ error: 'failed to record the verdict' });
+    }
+  });
+
   router.post('/feedback', async (req, res) => {
     const { check_id: checkId, verdict } = req.body || {};
     if (!checkId || !['correct', 'false_positive'].includes(verdict)) {
