@@ -120,16 +120,22 @@ describe('the declared check set follows the gate', () => {
     assert.ok(names.includes('memory_load'));
   });
 
+  // Every case below passes `now`. The markers are written against NOW, so a call that
+  // left the clock out would compare a frozen date against today's — which is how this
+  // suite passed until 2026-08-17 and failed every run from then on, the day the real
+  // calendar drew level with the seven-day interval. checkNamesFor gained the parameter
+  // for this; see the note beside it in scripts/install-helpers/self-check.cjs.
+
   it('includes the round-trip on a quick run when it is due', async () => {
     // No marker: the state every machine is in the first time it runs this version.
-    const names = await checkNamesFor({ quick: true, markerPath: marker });
+    const names = await checkNamesFor({ quick: true, markerPath: marker, now: NOW });
     assert.ok(names.includes('usage_roundtrip'),
       'a quick run must stop meaning "never"');
   });
 
   it('leaves it out of a quick run inside the interval', async () => {
     fs.writeFileSync(marker, daysAgo(1));
-    const names = await checkNamesFor({ quick: true, markerPath: marker });
+    const names = await checkNamesFor({ quick: true, markerPath: marker, now: NOW });
     assert.equal(names.includes('usage_roundtrip'), false,
       'the daily cost v1.26.81 objected to must not come back');
     assert.ok(names.includes('memory_load'), 'the rest of the quick set is unaffected');
@@ -137,6 +143,15 @@ describe('the declared check set follows the gate', () => {
 
   it('brings it back once the interval has passed', async () => {
     fs.writeFileSync(marker, daysAgo(ROUNDTRIP_INTERVAL_DAYS));
+    const names = await checkNamesFor({ quick: true, markerPath: marker, now: NOW });
+    assert.ok(names.includes('usage_roundtrip'));
+  });
+
+  it('reads the wall clock when no clock is given', async () => {
+    // The default path every real caller takes. A marker stamped far enough in the past
+    // is due regardless of what today happens to be, so this case cannot rot the way the
+    // three above did — and it still proves the parameter did not become mandatory.
+    fs.writeFileSync(marker, '2000-01-01');
     const names = await checkNamesFor({ quick: true, markerPath: marker });
     assert.ok(names.includes('usage_roundtrip'));
   });
