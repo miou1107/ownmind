@@ -1,5 +1,19 @@
 # OwnMind 檔案結構
 
+## v1.30.14 修改（一條測試綁著今天的日期）
+
+```
+scripts/install-helpers/self-check.cjs
+                                     — checkNamesFor 多一個 now 參數，並往下傳給
+                                       roundtripDue。旁邊的 roundtripDue 從第一天就收得到
+                                       時鐘，只有這個呼叫點沒傳，所以它只能看真正的今天
+tests/selfcheck-roundtrip-weekly.test.js（再改）
+                                     — 三條會過期的改成把凍住的日期餵進去；
+                                       多一條走「不餵時鐘」的預設路徑，
+                                       用久到不可能過期的日期，不會再以同樣方式爛掉
+```
+
+
 ## v1.30.13 修改（廣播只送得出前 5 行）
 
 ```

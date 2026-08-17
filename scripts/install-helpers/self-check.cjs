@@ -1180,7 +1180,7 @@ function stampRoundtrip(markerPath = ROUNDTRIP_MARKER, now = new Date()) {
   catch { /* best effort */ }
 }
 
-async function checkNamesFor({ quick = false, markerPath = ROUNDTRIP_MARKER } = {}) {
+async function checkNamesFor({ quick = false, markerPath = ROUNDTRIP_MARKER, now = new Date() } = {}) {
   const all = [
     // v1.26.117 — `mcp_registered` has run since v1.26.112 and was never declared here, so
     // the "declared but never run" test could not see it and neither could the quick/full
@@ -1199,7 +1199,16 @@ async function checkNamesFor({ quick = false, markerPath = ROUNDTRIP_MARKER } = 
   // `markerPath` is a parameter because the decision genuinely depends on a file. A test
   // that cannot name that file can only assert the answer equals itself, and the real
   // marker lives in the caller's own ~/.ownmind, which no test may write to.
-  return quick && !roundtripDue(markerPath) ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
+  //
+  // `now` is a parameter for the same reason, and it was missing: `roundtripDue` has taken
+  // an injectable clock since it was written, but this function called it without one, so
+  // it read the wall clock while its own tests wrote markers dated against a frozen date.
+  // That passes for as long as the two happen to fall inside the interval and then fails
+  // every run afterwards — `selfcheck-roundtrip-weekly.test.js` started failing on
+  // 2026-08-17, exactly seven days after the marker its "inside the interval" case writes.
+  // A test whose result depends on today's date is not a test, and the fix belongs here
+  // rather than in the test: the gate is a decision about a clock, so the clock is an input.
+  return quick && !roundtripDue(markerPath, now) ? all.filter((n) => !QUICK_SKIP.includes(n)) : all;
 }
 
 async function runAllChecks({ quick = false } = {}) {
