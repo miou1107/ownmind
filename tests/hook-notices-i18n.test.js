@@ -419,6 +419,40 @@ test('zh: quality-lint banner header, block-mode-not-yet-triggered variant', () 
   } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
 });
 
+// v1.30.15 — the per-violation line, end to end through the real hook.
+//
+// The header assertions above passed for months while the sentence under them was English:
+// they anchor on the header, and `lint.banner.violationLine` is only the "  ・{rule}: {message}"
+// frame, so nothing here ever looked at what was interpolated into it. The unit-level contract
+// lives in tests/lint-violation-message-i18n.test.js; this pins that the wiring survives the
+// trip through the hook, which is where the previous fix would have gone quiet.
+const MIXED_TEXT =
+  'I ran the deployment pipeline and the build succeeded. The container registry now has the '
+  + 'latest image tag. 我 checked the logs, 沒有 error。Next step is to verify the rollout.';
+
+test('zh: the violation sentence itself is Chinese, not a Chinese frame around English', () => {
+  setupReplyLintHome();
+  try {
+    writeViolatingTranscript(MIXED_TEXT);
+    const r = runReplyLintHook(stopPayload(), { OWNMIND_LOCALE_FORCE: 'zh', OWNMIND_REPLY_LINT_MODE: 'block' });
+    assert.equal(r.status, 0);
+    const parsed = JSON.parse(r.stdout);
+    assert.match(parsed.systemMessage, /・lint_language_mixed_ratio: 中英混雜比例 [\d.]+% > 15% — 找到 \d+ 個非白名單英文詞/);
+    assert.doesNotMatch(parsed.systemMessage, /Please use plain Chinese/);
+  } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
+});
+
+test('en: the violation sentence is unchanged from before the key existed', () => {
+  setupReplyLintHome();
+  try {
+    writeViolatingTranscript(MIXED_TEXT);
+    const r = runReplyLintHook(stopPayload(), { OWNMIND_LOCALE_FORCE: 'en', OWNMIND_REPLY_LINT_MODE: 'block' });
+    assert.equal(r.status, 0);
+    const parsed = JSON.parse(r.stdout);
+    assert.match(parsed.systemMessage, /・lint_language_mixed_ratio: Mixed Chinese-English ratio [\d.]+% > 15% — found \d+ non-whitelisted English words \(first 5: .+\)\. Please use plain Chinese\./);
+  } finally { fs.rmSync(tmpHome, { recursive: true, force: true }); }
+});
+
 test('zh: mode-invalid line', () => {
   setupReplyLintHome();
   try {

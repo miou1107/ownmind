@@ -1,5 +1,51 @@
 # OwnMind 檔案結構
 
+## 違規說明改成講使用者的語言 + 安裝腳本留下 npm 的錯誤（尚未發版，2026-08-19）
+
+新增檔：
+```
+tests/lint-violation-message-i18n.test.js
+                                     — 驗證器與字典之間的合約。18 條：三支驗證器各自
+                                       要交出 messageKey / messageParams、三種語言都要
+                                       有那個鍵、英文算出來要跟稽核紀錄那句一字不差、
+                                       中日文不能是英文也不能是鍵本身。
+                                       en 那條是關鍵：字典缺鍵時 t() 回傳鍵本身而不是
+                                       英文，所以少一個鍵會把 lint.violation.xxx 印給
+                                       使用者，而其他測試全都還是綠的
+tests/install-npm-failure-output.test.js
+                                       — npm 裝失敗時安裝腳本到底講了什麼。8 條，
+                                       把 install.sh 那段用文字切出來真的跑，npm 換成
+                                       假的。三種情況：日誌寫得進去、npm 什麼都沒吐、
+                                       日誌目錄寫不進去。第三種是自審時發現的：原本
+                                       退回 /dev/stderr，Git Bash 下那個重導向會直接
+                                       失敗，npm 根本沒跑
+```
+
+修改檔：
+```
+shared/validators/language-mixed-ratio.js
+shared/validators/jargon-explanation.js
+shared/validators/privacy-detect.js  — 各自多交出 messageKey + messageParams；
+                                       message 維持英文不動（稽核紀錄與模型讀它）
+shared/validators/index.js           — 檔頭補上「為什麼帶鍵而不是只帶句子」與
+                                       新增驗證器時要一併加字典鍵
+shared/language-lint.js              — 規則驅動那條路徑把兩個新欄位帶下去。
+                                       漏掉這裡的話驗證器發出的鍵沒人看得到
+hooks/ownmind-reply-lint.js          — formatBanner 先把 messageKey 翻好再塞進
+                                       violationLine 外框；沒有鍵的違規仍走 message
+hooks/locales/{en,zh,ja}.json        — 各 +3 鍵（lint.violation.*）
+hooks/locales/{en,ja}.override.json  — 同 3 鍵釘住，避免翻譯流程改掉手寫的字
+tests/hook-notices-i18n.test.js      — +2 條：真的跑一次掛勾，確認中文那句是中文、
+                                       英文那句跟改動前一字不差
+install.sh                           — 日誌區塊從 npm install 下面搬到上面（原因就是
+                                       它在那一行還不存在），npm 的輸出寫進日誌，
+                                       失敗時印最後 20 行。日誌目錄寫不進去時就不重導向，
+                                       讓 npm 直接印在畫面上（INSTALL_LOG_IS_FILE）
+tests/installer-node-paths.test.js   — 「不准丟掉錯誤訊息」那道檢查原本只看 node -e，
+                                       npm install 不屬於它。補上 npm 的掃描
+```
+
+
 ## 密鑰偵測樣本改成假的（尚未發版，2026-08-18）
 
 修改檔：

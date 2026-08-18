@@ -173,11 +173,57 @@ else
 fi
 maybe_load_report_error
 
+# Stderr from every step below goes here, never to /dev/null. `set -e` plus a discarded
+# stderr is how a fatal error produced no output at all for four months.
+# This lives outside ~/.ownmind so an upgrade rollback cannot delete it.
+#
+# v1.30.15 — moved up from below the dependency install. It used to be created after
+# `npm install`, which is why that one step had nowhere to write and sent npm's stderr to
+# /dev/null instead: the log the policy comment describes did not exist yet at that line.
+INSTALL_LOG_DIR="$HOME/.ownmind-logs"
+mkdir -p "$INSTALL_LOG_DIR" 2>/dev/null || true
+INSTALL_LOG="$INSTALL_LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
+# INSTALL_LOG_IS_FILE says whether there is a file to read back, which is a different question
+# from whether there is somewhere to write. The fallback below writes fine and reads wrong:
+# on a terminal /dev/stderr is a character device, so `-s` is false and a reader concludes
+# "nothing was captured" while the error is on screen; under `bash install.sh > out.log 2>&1`
+# it is that transcript, so a reader tails git clone progress and calls it npm's error.
+INSTALL_LOG_IS_FILE=1
+: > "$INSTALL_LOG" 2>/dev/null || { INSTALL_LOG="/dev/stderr"; INSTALL_LOG_IS_FILE=0; }
+
 echo "[INFO] Installing dependencies"
 cd "$OWNMIND_DIR/mcp"
-if ! npm install -q 2>/dev/null; then
+# `-q` keeps the progress noise off a successful install; the failure path needs the opposite,
+# so the whole stream is kept and the tail is printed when it goes wrong. npm is the only thing
+# that knows why npm failed — a proxy refusal, a permissions error under node_modules, a
+# registry outage and a lockfile conflict all used to arrive as the same canned suggestion.
+npm_status=0
+if [ "$INSTALL_LOG_IS_FILE" = "1" ]; then
+  # `|| npm_status=$?` rather than a bare call: `set -e` would abort here before the branch
+  # below could say anything, which is the shape of failure this whole change exists to end.
+  npm install -q >>"$INSTALL_LOG" 2>&1 || npm_status=$?
+else
+  # No redirect at all when there is no log file. The obvious alternative, redirecting to
+  # /dev/stderr, is worse than doing nothing: measured under Git Bash, `>>/dev/stderr` fails
+  # with "No such file or directory", and a failed redirect means npm never runs — so the step
+  # that exists to preserve npm's diagnosis would instead prevent npm from producing one.
+  npm install -q || npm_status=$?
+fi
+if [ "$npm_status" -ne 0 ]; then
   report_error "install_npm_failed" "npm install in ${OWNMIND_DIR}/mcp failed"
-  echo "[ERROR] npm install failed. Try: npm install -g npm@latest and retry"
+  if [ "$INSTALL_LOG_IS_FILE" = "1" ] && [ -s "$INSTALL_LOG" ]; then
+    echo "[ERROR] npm install failed. What npm said:"
+    tail -n 20 "$INSTALL_LOG" | sed 's/^/       /'
+    echo "       Full log: $INSTALL_LOG"
+  elif [ "$INSTALL_LOG_IS_FILE" = "1" ]; then
+    echo "[ERROR] npm install failed, and npm wrote no output at all."
+  else
+    # The fallback case: npm ran unredirected, so its output is already above. Saying so is the
+    # honest line — there is no file to tail, and pointing at /dev/stderr would either find a
+    # terminal or find the transcript of this whole run.
+    echo "[ERROR] npm install failed. npm's error is printed above; $INSTALL_LOG_DIR could not be written to."
+  fi
+  echo "       If it names no cause, try: npm install -g npm@latest and retry"
   exit 1
 fi
 
@@ -197,14 +243,6 @@ if [ -f "$OWNMIND_DIR/scripts/install-helpers/path-helpers.sh" ]; then
 else
   to_win_path() { echo "$1"; }
 fi
-
-# Node stderr from the blocks below goes here, never to /dev/null. `set -e` plus a
-# discarded stderr is how a fatal error produced no output at all for four months.
-# This lives outside ~/.ownmind so an upgrade rollback cannot delete it.
-INSTALL_LOG_DIR="$HOME/.ownmind-logs"
-mkdir -p "$INSTALL_LOG_DIR" 2>/dev/null || true
-INSTALL_LOG="$INSTALL_LOG_DIR/install-$(date +%Y%m%d-%H%M%S).log"
-: > "$INSTALL_LOG" 2>/dev/null || INSTALL_LOG="/dev/stderr"
 
 # Report the step that just failed, then let `set -e` do its job. Without this the user
 # sees a script that simply stops.

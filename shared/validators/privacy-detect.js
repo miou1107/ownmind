@@ -32,11 +32,14 @@ export function check(content, _params = {}, context = {}) {
   const userPrompts = Array.isArray(context.userPrompts) ? context.userPrompts : [];
   const result = detectPrivacyLeak(content, { userPrompts });
   if (!result.detected) return { ok: true };
+  const messageParams = { summary: formatPrivacySummary(result.matches) };
   return {
     ok: false,
     violation: {
       event: LINT_PRIVACY_CHECK,
-      message: `The response appears to contain user privacy data (${formatPrivacySummary(result.matches)}). Rewrite that segment using placeholders like "[email]" or "[mobile phone]".`,
+      messageKey: 'lint.violation.privacyDetect',
+      messageParams,
+      message: `The response appears to contain user privacy data (${messageParams.summary}). Rewrite that segment using placeholders like "[email]" or "[mobile phone]".`,
       detail: { matches: result.matches },
     },
   };

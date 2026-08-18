@@ -10,6 +10,27 @@
  *   1. Add a module under this directory exporting { name, check }
  *   2. Register it in VALIDATOR_REGISTRY below
  *   3. Document it
+ *   4. Give its violation a `messageKey` + `messageParams`, and add that key to all three
+ *      hooks/locales dictionaries — see below.
+ *
+ * Why a violation carries a key and not just a sentence
+ * -----------------------------------------------------
+ * A violation is read by two audiences with opposite needs. The user reads it in a banner, in
+ * their own language. The server and the model read it in the lint event and the compliance
+ * record, where English is the policy (hooks/lib/i18n.js states it: model-facing strings stay
+ * English, only audience=user strings go through t()).
+ *
+ * So each violation carries both: `message` is the English sentence, unchanged, and
+ * `messageKey`/`messageParams` are what hooks/ownmind-reply-lint.js renders for the human.
+ * Until v1.30.15 only `message` existed, and `lint.banner.violationLine` — the "  ・{rule}:
+ * {message}" frame — interpolated it verbatim, so a Chinese banner arrived wrapped around an
+ * English sentence. On the mixed-language rule specifically, the product broke the rule it was
+ * reporting.
+ *
+ * A missing dictionary entry does NOT fall back to English: `t()` returns the key itself, so
+ * `lint.violation.somethingNew` would be printed to a user. tests/lint-violation-message-i18n
+ * asserts every registered validator's key exists in en/zh/ja and that the English rendering
+ * still equals `message` byte for byte.
  */
 
 import * as jargon from './jargon-explanation.js';
