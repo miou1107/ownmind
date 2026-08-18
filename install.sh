@@ -604,7 +604,12 @@ if [ -f "$ENSURE_PRE_HOOK" ]; then
   # everything below, including the artifact self-check, never runs. And with 2>&1 captured
   # into a variable that the failure path would never echo, it goes down without saying why.
   # See the note at the top of this file: that combination hid a fatal error for four months.
-  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" --bash 2>&1); then
+  # v1.30.15 — no --bash. This script is the bash installer, so passing it looked like simply
+  # naming the platform; under Git Bash on Windows it is a different claim, and a false one.
+  # System32\bash.exe is the WSL launcher, so the registered `bash …ownmind-iron-rule-check.sh`
+  # died with a WSL relay error on every tool call and the gate was silently off. The helper
+  # decides now — see buildPreCmd in ensure-pretooluse-hooks.cjs.
+  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR_FOR_HOOK" 2>&1); then
     echo "[ OK ] PreToolUse iron-rule hook: $pre_hook_result"
   else
     echo "[FAIL] PreToolUse iron-rule hook: $pre_hook_result"

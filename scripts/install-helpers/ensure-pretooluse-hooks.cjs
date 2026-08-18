@@ -55,8 +55,25 @@ const MATCHERS = [
  * exits with ERR_MODULE_NOT_FOUND before reading a byte of the payload. In ~/.ownmind, shared/
  * and hooks/ sit where the imports expect.
  */
-function buildPreCmd(ownmindDir, useBash) {
-  if (useBash) return 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh';
+function buildPreCmd(ownmindDir, useBash, platform = process.platform) {
+  // v1.30.15 — Windows takes node whatever the caller asked for.
+  //
+  // install.ps1 has known since v1.26.80 that `Get-Command bash` is the wrong question there:
+  // Win10/11 ship System32\bash.exe, which is the WSL launcher, so bash is found and does not
+  // run. install.sh and scripts/update.sh both passed --bash unconditionally, so every Windows
+  // machine installed or upgraded through bootstrap.sh had this registered instead:
+  //   bash ~/.claude/hooks/ownmind-iron-rule-check.sh
+  // Measured on TANK (Windows 10, no WSL) straight after scripts/update.sh:
+  //   <3>WSL (10 - Relay) ERROR: CreateProcessCommon:818: execvpe(/bin/bash) failed
+  //   exit 1
+  // The iron-rule gate was dead and nothing said so — the same silence, on the same platform,
+  // for the same reason as the SessionStart defect v1.26.80 was written about.
+  //
+  // The branch lives here rather than in the two callers deliberately. This file's header
+  // records what happened last time one decision had two copies: the half nobody could run
+  // from CI is the half that rotted. ensure-session-hook.cjs already decides by platform;
+  // this is the PreToolUse side catching up.
+  if (useBash && platform !== 'win32') return 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh';
   const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-iron-rule-check.js').replace(/\\/g, '/');
   // The directory string may contain whitespace → quote it so the shell parses one argument.
   return `node "${hookPath}"`;
@@ -119,8 +136,8 @@ function ensureEntry(list, matcher, identifier, command) {
 /**
  * @returns {{ status: 'ok' | 'error', message?: string, results?: Array<{matcher: string, action: 'added'|'repaired'|'unchanged', from?: string}> }}
  */
-function ensureHooks(settingsPath, ownmindDir, useBash) {
-  const preCmd = buildPreCmd(ownmindDir, useBash);
+function ensureHooks(settingsPath, ownmindDir, useBash, platform = process.platform) {
+  const preCmd = buildPreCmd(ownmindDir, useBash, platform);
 
   let raw = '';
   let existed = false;

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { stageHookHome } from './helpers/hook-home.js';
 import { TOOL_TRIGGERS, detectToolTrigger, ruleMatchesTrigger } from '../shared/helpers.js';
 import {
@@ -488,11 +489,30 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
       'install.sh no longer delegates PreToolUse registration to the shared helper'
     );
     const helper = path.join(repoRoot, 'scripts', 'install-helpers', 'ensure-pretooluse-hooks.cjs');
+    // v1.30.15 — no --bash, because install.sh no longer passes it: on Windows that flag
+    // registered System32\bash.exe, which is the WSL launcher, and the gate died silently.
+    // A harness that stands in for a caller has to keep making the same call the caller makes,
+    // or it is testing a command line nobody runs.
+    assert.ok(
+      !/--bash/.test(installSh.split('\n').find((l) => l.includes('ENSURE_PRE_HOOK') && l.includes('node ')) || ''),
+      'install.sh passes --bash again — this harness no longer matches it'
+    );
     execFileSync(
       process.execPath,
-      [helper, settingsPath, '--ownmind-dir', path.join(os.homedir(), '.ownmind'), '--bash'],
+      [helper, settingsPath, '--ownmind-dir', path.join(os.homedir(), '.ownmind')],
       { stdio: 'ignore' }
     );
+  }
+
+  /**
+   * The command the helper writes on the platform this suite is running on. Asking it rather
+   * than hard-coding one spelling: the flavour is now a platform decision, and a fixture that
+   * names the other platform's command turns "left alone" into "rewritten" for reasons that
+   * have nothing to do with what the case is about.
+   */
+  function currentPreCmd() {
+    const helper = createRequire(import.meta.url)('../scripts/install-helpers/ensure-pretooluse-hooks.cjs');
+    return helper.buildPreCmd(path.join(os.homedir(), '.ownmind'), false);
   }
 
   it('adds both entries, and adds nothing on a second run', () => {
@@ -517,7 +537,7 @@ describe('v1.26.92 — the installer registers both matchers, and only once', ()
     const settingsPath = path.join(dir, 'settings.json');
     const existing = {
       matcher: 'Bash',
-      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }],
+      hooks: [{ type: 'command', command: currentPreCmd() }],
     };
     fs.writeFileSync(settingsPath, JSON.stringify({ hooks: { PreToolUse: [existing] } }));
 

@@ -107,7 +107,11 @@ describe('v1.26.105 — ensure-pretooluse-hooks repairs a stale command, not jus
         PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: NODE_CMD }] }],
       },
     });
-    helper.ensureHooks(settingsPath, OWNMIND_DIR, true);
+    // v1.30.15 — the platform is named rather than inherited from whatever ran the suite.
+    // Bash mode is a POSIX behaviour now (Windows takes node whatever the caller asks for), so
+    // an implicit process.platform made this case assert one thing on CI and the opposite on a
+    // Windows developer's machine.
+    helper.ensureHooks(settingsPath, OWNMIND_DIR, true, 'linux');
     const s = read();
     assert.equal(commandFor(s, 'Bash'), BASH_CMD);
     assert.equal(commandFor(s, 'Edit|Write|MultiEdit|NotebookEdit'), BASH_CMD, 'the missing matcher is still added');
@@ -173,6 +177,85 @@ describe('v1.26.105 — ensure-pretooluse-hooks repairs a stale command, not jus
     assert.ok(!cmd.includes('.claude/hooks'), cmd);
     assert.match(cmd, /\.ownmind\/hooks\/ownmind-iron-rule-check\.js/);
   });
+
+  /**
+   * v1.30.15 — Windows takes the node command whatever the caller asks for.
+   *
+   * Measured on TANK (Windows 10, no WSL) immediately after running scripts/update.sh: the
+   * registered command had become `bash ~/.claude/hooks/ownmind-iron-rule-check.sh`, and
+   * running it produced
+   *   <3>WSL (10 - Relay) ERROR: CreateProcessCommon:818: execvpe(/bin/bash) failed
+   * exit 1. The iron-rule gate was dead, and nothing said so — `where bash` on Win10/11 finds
+   * System32\bash.exe, which is the WSL launcher, so "bash exists" and "bash runs" are
+   * different questions. install.ps1 has known this since v1.26.80 and takes the node branch;
+   * install.sh and update.sh both pass --bash unconditionally, so every Windows machine
+   * installed or upgraded through bootstrap.sh got the dead one.
+   *
+   * The decision moves into this helper rather than into its two bash callers, for the reason
+   * this file's own header records: a rule kept in each caller is a rule that rots in whichever
+   * caller nobody runs. ensure-session-hook.cjs already decides by platform here; this is the
+   * PreToolUse side catching up.
+   */
+  it('win32 takes node even when the caller asks for bash', () => {
+    const cmd = helper.buildPreCmd('C:/Users/someone/.ownmind', true, 'win32');
+    assert.match(cmd, /^node "/, `System32\\bash.exe is the WSL relay, not a shell: ${cmd}`);
+    assert.ok(!cmd.includes('bash '), cmd);
+  });
+
+  it('every other platform still honours the bash request', () => {
+    for (const platform of ['darwin', 'linux']) {
+      assert.equal(
+        helper.buildPreCmd('/home/someone/.ownmind', true, platform),
+        'bash ~/.claude/hooks/ownmind-iron-rule-check.sh',
+      );
+    }
+  });
+
+  it('ensureHooks writes the node command on win32 despite useBash', () => {
+    fs.writeFileSync(settingsPath, JSON.stringify({ hooks: {} }));
+    const r = helper.ensureHooks(settingsPath, OWNMIND_DIR, true, 'win32');
+    assert.equal(r.status, 'ok');
+    const written = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const commands = written.hooks.PreToolUse
+      .flatMap((g) => g.hooks.map((h) => h.command))
+      .filter((c) => c.includes('iron-rule-check'));
+    assert.ok(commands.length > 0, 'no iron-rule hook was registered at all');
+    for (const c of commands) assert.match(c, /^node "/, c);
+  });
+
+  it('a settings.json already carrying the dead bash command is repaired on win32', () => {
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh' }] },
+        ],
+      },
+    }));
+    const r = helper.ensureHooks(settingsPath, OWNMIND_DIR, true, 'win32');
+    assert.equal(r.status, 'ok');
+    const bashEntry = r.results.find((x) => x.matcher === 'Bash');
+    assert.equal(bashEntry.action, 'repaired',
+      'presence of an entry is not proof it can run — that assumption is what kept it dead');
+    const written = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    const cmd = written.hooks.PreToolUse[0].hooks[0].command;
+    assert.match(cmd, /^node "/, cmd);
+  });
+});
+
+/**
+ * The callers, checked at the source. The helper decides correctly now; these two are the
+ * reason it had to.
+ */
+describe('v1.30.15 — the bash installers do not force a bash hook onto Windows', () => {
+  for (const file of ['install.sh', 'scripts/update.sh']) {
+    it(`${file} leaves the platform decision to ensure-pretooluse-hooks.cjs`, () => {
+      const text = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+      const call = text.split('\n').find((l) => l.includes('ENSURE_PRE_HOOK') && l.includes('node '));
+      assert.ok(call, `${file} no longer calls the helper`);
+      assert.ok(!/--bash/.test(call),
+        `${file} passes --bash unconditionally; on Windows that registers the WSL relay: ${call.trim()}`);
+    });
+  }
 });
 
 describe('v1.26.105 — install-artifacts checks the registered command, not just a copy on disk', () => {
