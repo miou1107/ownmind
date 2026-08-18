@@ -1,5 +1,31 @@
 # OwnMind 檔案結構
 
+## Windows 上同步一次就把鐵律攔截關掉（尚未發版，2026-08-19）
+
+修改檔：
+```
+scripts/install-helpers/ensure-pretooluse-hooks.cjs
+                                     — buildPreCmd / ensureHooks 多收一個 platform，
+                                       win32 一律走 node，呼叫端傳 --bash 也不理。
+                                       判斷放這裡不放呼叫端：檔頭自己記著上次一個
+                                       決定寫成兩份、CI 跑不到那份就爛掉的教訓
+install.sh                           — 拿掉 --bash
+scripts/update.sh                    — 拿掉 --bash。這行是把這台機器的鐵律攔截
+                                       改成 WSL 轉接器的兇手
+tests/ensure-pretooluse-hooks.test.js
+                                     — +5 條：win32 忽略 --bash、其他平台照舊、
+                                       已經寫進去的死指令要被修回來、兩支腳本的
+                                       原始碼不准再傳 --bash。
+                                       另修一條原本沒指定平台的舊測試 —— 它在 CI
+                                       測一件事，在 Windows 開發機測相反的事
+tests/edit-trigger-reminder.test.js  — 同一種毛病：那個代替 install.sh 的測試輔助
+                                       自己傳 --bash，install.sh 已經不傳了。改成
+                                       跟著 install.sh 走，並加一條檢查確保兩邊
+                                       不會再各走各的。樣本指令改成問 helper 要，
+                                       不寫死其中一種
+```
+
+
 ## 違規說明改成講使用者的語言 + 安裝腳本留下 npm 的錯誤（尚未發版，2026-08-19）
 
 新增檔：

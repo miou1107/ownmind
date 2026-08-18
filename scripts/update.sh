@@ -457,7 +457,13 @@ fi
 # --- 3.3b PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 ENSURE_PRE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-pretooluse-hooks.cjs"
 if [ -f "$ENSURE_PRE_HOOK" ]; then
-  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" --bash 2>&1); then
+  # v1.30.15 — no --bash; the helper decides by platform. Measured on TANK (Windows 10, no
+  # WSL): this line rewrote a working `node …ownmind-iron-rule-check.js` into
+  # `bash ~/.claude/hooks/ownmind-iron-rule-check.sh`, which is the WSL launcher there and
+  # fails with a relay error on every tool call. A sync turned the iron-rule gate off, said
+  # "repaired", and nothing afterwards disagreed. See buildPreCmd in
+  # ensure-pretooluse-hooks.cjs for why the branch is there and not here.
+  if pre_hook_result=$(node "$ENSURE_PRE_HOOK" "$CLAUDE_SETTINGS" --ownmind-dir "$OWNMIND_DIR" 2>&1); then
     echo "   PreToolUse iron-rule hook: $pre_hook_result"
   else
     echo "   [FAIL] PreToolUse iron-rule hook: $pre_hook_result"

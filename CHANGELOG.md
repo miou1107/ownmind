@@ -1,5 +1,44 @@
 # OwnMind 更新紀錄
 
+## 尚未發版 — 跑一次同步，鐵律攔截就死了（Windows）
+
+驗證上一筆修改有沒有落地時撞到的，不是看程式碼看出來的。在 TANK（Windows 10、
+沒裝 WSL）跑 `scripts/update.sh`，它把本來好好的
+
+```
+node "C:/Users/Vin/.ownmind/hooks/ownmind-iron-rule-check.js"
+```
+
+改寫成
+
+```
+bash ~/.claude/hooks/ownmind-iron-rule-check.sh
+```
+
+然後照著設定跑一次：
+
+```
+<3>WSL (10 - Relay) ERROR: CreateProcessCommon:818: execvpe(/bin/bash) failed
+exit 1
+```
+
+鐵律攔截從那一刻起是死的，而畫面上只印了「repaired」。
+
+`where bash` 在 Win10/11 找得到 `C:\Windows\System32\bash.exe`，那是 WSL 的啟動器 ——
+**找得到不等於跑得動**。`install.ps1` 從 v1.26.80 就知道這件事並走 node，但
+`install.sh` 和 `update.sh` 兩支都無條件傳 `--bash`。所以任何一台用 `bootstrap.sh`
+（bash 那條路）裝或升級的 Windows 機器，拿到的都是那個跑不動的版本。跟 v1.26.80
+那次「六台 Windows、90 天、開場掛勾觸發 0 次」是同一種病，換一個掛勾而已。
+
+判斷搬進 `ensure-pretooluse-hooks.cjs` 自己，不放在兩支呼叫端 —— 那個檔頭自己記著
+上次一個決定寫成兩份的下場：CI 跑不到的那一份就是爛掉的那一份。隔壁的
+`ensure-session-hook.cjs` 早就照平台判斷了，這次是 PreToolUse 這邊補上。
+
+順帶修掉兩處「在誰的機器上跑就測出誰的答案」：`bash mode repairs a node command back
+to the bash hook` 沒指定平台；`edit-trigger-reminder` 裡那個代替 install.sh 的測試
+輔助自己傳 `--bash`，而 install.sh 已經不傳了 —— 代替某支腳本的輔助如果不跟著它走，
+測的就是一條沒人會執行的指令。現在加了一條檢查盯著這件事。
+
 ## 尚未發版 — 「不要中英夾雜」這句話本身是英文的
 
 回話檢查抓到違規時，外框是你的語言，裡面那句「哪裡不對」是英文：
