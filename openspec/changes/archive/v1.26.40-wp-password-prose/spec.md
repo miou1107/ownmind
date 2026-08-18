@@ -11,13 +11,13 @@ one that occasionally over-blocks.
 
 ### Scenario 1.1 — a known password
 
-- **GIVEN** the value `iXEN ops5 pJcy 8PJI lVFM heaH`
+- **GIVEN** the value `<a WordPress application password: six groups of four>`
 - **WHEN** it is scanned
 - **THEN** the result is detected with rule `regex:wp_application_password`
 
 ### Scenario 1.2 — embedded in surrounding text
 
-- **GIVEN** a line reading `the key is iXEN ops5 pJcy 8PJI lVFM heaH, keep it safe`
+- **GIVEN** a line reading `the key is <a WordPress application password: six groups of four>, keep it safe`
 - **WHEN** it is scanned
 - **THEN** the password is detected
 

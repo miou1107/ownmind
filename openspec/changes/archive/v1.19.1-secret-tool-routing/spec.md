@@ -21,7 +21,7 @@ Content-Type: application/json
 {
   "type": "reference",
   "title": "Example Client WP password",
-  "content": "iXEN ops5 pJcy 8PJI lVFM heaH",
+  "content": "<a WordPress application password: six groups of four>",
   "description": "WordPress Application Password"
 }
 ```
@@ -310,7 +310,7 @@ PUT /api/memory/999
 POST /api/secret
 {
   "key": "exampleclient_wp_app_password",
-  "value": "iXEN ops5 pJcy 8PJI lVFM heaH"
+  "value": "<a WordPress application password: six groups of four>"
 }
 ```
 

@@ -342,7 +342,7 @@ describe('v1.26.103 pre-commit — a pure rename carries no new content', () => 
 
   // Split across concat so this repo's own pre-commit scanner does not read the
   // fixture as a live credential. Same synthetic material the wp-prose specs use.
-  const WP_SHAPED = ['iXEN', 'ops5', 'pJcy', '8PJI', 'lVFM', 'heaH'].join(' ');
+  const WP_SHAPED = ['Qw3r', 'Ty7u', 'I0p2', 'As4d', 'Fg6h', 'Jk8l'].join(' ');
 
   function seedCommit(relPath, content) {
     stage(relPath, content);
