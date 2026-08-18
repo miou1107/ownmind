@@ -409,6 +409,11 @@ export function lintReply(content, enabledValidatorsOrHistorical, context = {}) 
         violations.push({
           rule: v.event || entry.validator || 'unknown',
           message: v.message || '',
+          // v1.30.15: carried through so the banner can render this violation in the reader's
+          // language. Dropping them here is what made the fix invisible in the first attempt —
+          // the validators were emitting keys that nothing downstream ever saw.
+          messageKey: v.messageKey || '',
+          messageParams: v.messageParams || {},
           detail: v.detail || {},
           sourceRule: entry.rule || '',
         });

@@ -27,12 +27,18 @@ export const name = 'jargon_explanation';
 export function check(content, params = {}, context = {}) {
   const result = checkJargonExplanation(content, context.historicalCorpus || '');
   if (result.ok) return { ok: true };
+  const messageParams = {
+    count: result.jargonWithoutExplanation.length,
+    words: result.jargonWithoutExplanation.slice(0, 5).join(', '),
+  };
   return {
     ok: false,
     violation: {
       event: LINT_JARGON_EXPLANATION_REQUIRED,
+      messageKey: 'lint.violation.jargonExplanation',
+      messageParams,
       message:
-        `Jargon / technical terms missing plain-Chinese explanation — ${result.jargonWithoutExplanation.length} terms (${result.jargonWithoutExplanation.slice(0, 5).join(', ')}) lack a follow-up explanation within 50 characters (e.g. "（白話）", "：explanation", "即...")`,
+        `Jargon / technical terms missing plain-Chinese explanation — ${messageParams.count} terms (${messageParams.words}) lack a follow-up explanation within 50 characters (e.g. "（白話）", "：explanation", "即...")`,
       detail: { jargon: result.jargonWithoutExplanation },
     },
   };

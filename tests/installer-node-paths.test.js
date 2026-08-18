@@ -170,6 +170,35 @@ describe('installers never discard a Node error stream', () => {
         'set -e plus a discarded stderr is how a fatal error produced no output at all');
     });
   }
+
+  /**
+   * v1.30.15 — the guard above reads inline `node -e` blocks only, and `npm install` is
+   * neither. So `install.sh` ran `npm install -q 2>/dev/null`, 25 lines above its own comment
+   * saying stderr must never go to /dev/null, and the guard had nothing to say about it.
+   *
+   * What that cost: npm's own diagnosis — a proxy refusal, a permissions error under
+   * node_modules, a registry outage, a lockfile conflict — was thrown away, and every one of
+   * them surfaced as the same sentence, "Try: npm install -g npm@latest and retry", which
+   * addresses none of them. The install then exits 1 with the reason already destroyed, so
+   * there is nothing left to look at afterwards either.
+   *
+   * Written as a scan for the dependency step rather than a hard-coded line number, since the
+   * point is the shape and not this one occurrence.
+   */
+  for (const file of ['install.sh', 'scripts/update.sh']) {
+    it(`${file} keeps npm's own error text when dependency installation fails`, () => {
+      const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+      const offenders = text.split('\n')
+        .map((line, i) => ({ line, n: i + 1 }))
+        .filter(({ line }) => !/^\s*#/.test(line))
+        .filter(({ line }) => /\bnpm\s+(install|ci|ping)\b/.test(line))
+        .filter(({ line }) => /2>\s*\/dev\/null/.test(line) || /&>\s*\/dev\/null/.test(line))
+        .map(({ n }) => `${file}:${n}`);
+      assert.deepEqual(offenders, [],
+        'npm is the only thing that knows why npm failed; discarding it leaves a canned '
+        + 'suggestion in place of the diagnosis');
+    });
+  }
 });
 
 describe('the upgrade log survives rollback', () => {

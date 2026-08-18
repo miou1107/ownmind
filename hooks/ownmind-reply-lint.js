@@ -737,10 +737,19 @@ async function formatBanner(violations, getClientVersion, opts = {}) {
   }
 
   for (const v of violations) {
+    // v1.30.15 — the frame was localised and the sentence inside it was not, so every non-English
+    // reader got a translated "  ・{rule}:" wrapped around English. Worst on the mixed-language
+    // rule, where the product broke the rule it was reporting. Validators now hand over the
+    // dictionary key as well; `v.message` stays the English the audit record keeps, and doubles
+    // as the fallback for a violation from somewhere that has no key (the legacy lintReply path,
+    // and anything added later that forgets one).
+    const message = v.messageKey
+      ? await lintNotice(v.messageKey, v.message, v.messageParams || {})
+      : v.message;
     out.push(await lintNotice(
       'lint.banner.violationLine',
-      `  ・${v.rule}: ${v.message}`,
-      { rule: v.rule, message: v.message },
+      `  ・${v.rule}: ${message}`,
+      { rule: v.rule, message },
     ));
   }
   return out.join('\n');
