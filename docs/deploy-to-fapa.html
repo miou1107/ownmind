@@ -1,0 +1,977 @@
+<title>OwnMind 換一台伺服器</title>
+<style>
+  :root {
+    --paper:      #E9EEF3;
+    --surface:    #FAFCFD;
+    --surface-2:  #F1F5F8;
+    --ink:        #14212C;
+    --ink-soft:   #4C606F;
+    --ink-faint:  #7C8E9C;
+    --rule:       #C6D4E0;
+    --rule-soft:  #DCE6EE;
+    --accent:     #1B6796;
+    --accent-ink: #124A6D;
+    --accent-bg:  #DCEAF4;
+    --warn:       #9C4E1C;
+    --warn-bg:    #F5E4D6;
+    --good:       #2A6B50;
+    --good-bg:    #DCEDE4;
+    --shadow:     0 1px 2px rgba(20,33,44,.06), 0 8px 24px -16px rgba(20,33,44,.35);
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Songti TC", "PingFang TC", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, "Cascadia Mono", "Roboto Mono", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0E1820;
+      --surface:    #16232D;
+      --surface-2:  #1B2B36;
+      --ink:        #DCE7EF;
+      --ink-soft:   #9AADBB;
+      --ink-faint:  #708494;
+      --rule:       #294050;
+      --rule-soft:  #1F323F;
+      --accent:     #63B4E6;
+      --accent-ink: #9CD0F0;
+      --accent-bg:  #16323F;
+      --warn:       #DE9A64;
+      --warn-bg:    #2E2118;
+      --good:       #6EBE97;
+      --good-bg:    #162B23;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper:      #0E1820;
+    --surface:    #16232D;
+    --surface-2:  #1B2B36;
+    --ink:        #DCE7EF;
+    --ink-soft:   #9AADBB;
+    --ink-faint:  #708494;
+    --rule:       #294050;
+    --rule-soft:  #1F323F;
+    --accent:     #63B4E6;
+    --accent-ink: #9CD0F0;
+    --accent-bg:  #16323F;
+    --warn:       #DE9A64;
+    --warn-bg:    #2E2118;
+    --good:       #6EBE97;
+    --good-bg:    #162B23;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.75;
+    margin: 0;
+    padding: 0 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 860px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 52px;
+  }
+
+  header.masthead {
+    padding-top: 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 32px;
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  h1 {
+    font-size: clamp(30px, 5.2vw, 44px);
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .standfirst {
+    font-size: 18px;
+    color: var(--ink-soft);
+    margin: 0;
+    max-width: 62ch;
+  }
+
+  .readers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 4px;
+  }
+
+  .reader-chip {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    padding: 7px 12px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    background: var(--surface);
+    color: var(--ink-soft);
+    max-width: 42ch;
+  }
+
+  .reader-chip b { color: var(--ink); font-weight: 600; }
+
+  section { display: flex; flex-direction: column; gap: 20px; }
+
+  h2 {
+    font-size: 25px;
+    font-weight: 600;
+    line-height: 1.35;
+    margin: 0;
+    text-wrap: balance;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  h3 {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+
+  p { margin: 0; max-width: 66ch; }
+
+  .prose { display: flex; flex-direction: column; gap: 14px; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .86em;
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 2px;
+    padding: 1px 5px;
+    word-break: break-all;
+  }
+
+  .legs { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+  @media (max-width: 680px) { .legs { grid-template-columns: 1fr; } }
+
+  .leg {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 22px 22px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    box-shadow: var(--shadow);
+  }
+
+  .leg.second { border-top-color: var(--warn); }
+
+  .leg .n {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .14em;
+    color: var(--ink-faint);
+  }
+
+  .leg .t { font-size: 20px; font-weight: 600; line-height: 1.3; }
+  .leg p { font-size: 15.5px; color: var(--ink-soft); line-height: 1.65; }
+
+  .tag {
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .04em;
+    padding: 4px 10px;
+    border-radius: 2px;
+    background: var(--good-bg);
+    color: var(--good);
+    margin-top: 2px;
+  }
+
+  .tag.hot { background: var(--warn-bg); color: var(--warn); }
+
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+  }
+
+  table { border-collapse: collapse; width: 100%; font-size: 15.5px; line-height: 1.6; }
+
+  th, td {
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+
+  thead th {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  td.num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-faint);
+    width: 1%;
+    white-space: nowrap;
+  }
+
+  td.key {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    white-space: nowrap;
+    color: var(--accent-ink);
+  }
+
+  .ba td.was { background: var(--surface-2); color: var(--ink-soft); }
+  .ba td.will { background: var(--accent-bg); color: var(--ink); }
+  .ba thead th.was { background: var(--surface-2); }
+  .ba thead th.will { background: var(--accent-bg); color: var(--accent-ink); }
+
+  .state-key {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+
+  .state-key span { display: flex; align-items: center; gap: 7px; }
+
+  .swatch {
+    width: 22px;
+    height: 12px;
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .swatch.was { background: var(--surface-2); }
+  .swatch.will { background: var(--accent-bg); }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+
+  figure .canvas {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+    padding: 22px 18px;
+  }
+
+  figure svg { display: block; width: 100%; min-width: 700px; height: auto; }
+
+  figcaption {
+    font-size: 14.5px;
+    color: var(--ink-soft);
+    line-height: 1.65;
+    max-width: 66ch;
+  }
+
+  .dg-box { fill: var(--surface-2); stroke: var(--rule); stroke-width: 1; }
+  .dg-box-new { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1; }
+  .dg-t { fill: var(--ink); font-family: var(--serif); font-size: 13px; }
+  .dg-s { fill: var(--ink-soft); font-family: var(--mono); font-size: 11px; }
+  .dg-a { fill: var(--accent-ink); font-family: var(--mono); font-size: 11.5px; }
+  .dg-line { stroke: var(--ink-faint); stroke-width: 1.5; fill: none; }
+  .dg-line-new { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+  .dg-band { fill: var(--warn-bg); stroke: none; }
+  .dg-w { fill: var(--warn); font-family: var(--mono); font-size: 11.5px; }
+  .dg-dash { stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 4; fill: none; }
+
+  .cmds { display: flex; flex-direction: column; gap: 10px; }
+
+  .cmd {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 3px 3px 0;
+    padding: 13px 16px;
+  }
+
+  .cmd code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 13.5px;
+    color: var(--accent-ink);
+    word-break: break-all;
+  }
+
+  .cmd span { font-size: 15px; color: var(--ink-soft); line-height: 1.6; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--surface);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-radius: 0 3px 3px 0;
+  }
+
+  .note.caution { border-left-color: var(--warn); }
+
+  .note .label {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .note.caution .label { color: var(--warn); }
+  .note p { font-size: 16px; }
+
+  ol.turns {
+    list-style: none;
+    counter-reset: turn;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  ol.turns li {
+    counter-increment: turn;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 14px;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 16px 18px;
+  }
+
+  ol.turns li::before {
+    content: counter(turn);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    background: var(--accent-bg);
+    border-radius: 2px;
+    text-align: center;
+    padding: 2px 0;
+    line-height: 1.7;
+  }
+
+  ol.turns .what { display: block; font-weight: 600; }
+  ol.turns .how { display: block; font-size: 15.5px; color: var(--ink-soft); line-height: 1.6; }
+
+  .for-eric {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 28px 26px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .for-eric h2 { border-bottom-color: var(--rule); }
+
+  .addressed {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-bg);
+    align-self: flex-start;
+    padding: 5px 12px;
+    border-radius: 2px;
+  }
+
+  .for-eric .scroller { background: var(--paper); }
+  .for-eric thead th { background: var(--surface-2); }
+  .for-eric .block { display: flex; flex-direction: column; gap: 12px; }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 20px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--ink-faint);
+    max-width: 70ch;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible, :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">部署說明書 · 2026-08-18</p>
+    <h1>OwnMind 換一台伺服器</h1>
+    <p class="standfirst">
+      OwnMind 現在跑在 kkvin 那台個人小機器上。這份文件講的是把它換到公司 FAPA 的測試機跟正式機，
+      以及大家的記憶怎麼跟著過去。
+    </p>
+    <div class="readers">
+      <span class="reader-chip"><b>Vin</b> 從頭讀，伺服器規格那節可以跳過。看完只剩一個時段要挑。</span>
+      <span class="reader-chip"><b>Eric</b> 前三節看全貌，你要動手的地方在「Eric 出場三次」跟「伺服器規格」。</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>記憶擺到最後才動，前面做壞了都還能回頭</h2>
+    <div class="prose">
+      <p>程式碼跟資料是兩件事，分兩趟走。兩趟之間隔一週或隔一個月都不影響。</p>
+    </div>
+    <div class="legs">
+      <div class="leg">
+        <span class="n">第一趟</span>
+        <span class="t">程式碼與環境</span>
+        <p>測試機跟正式機上都有一套跑得起來的 OwnMind，可是它空的：沒有任何人的記憶，也沒有任何人的電腦連過去。kkvin 照常服務所有人，中途做壞了也只是那台空服務壞掉。</p>
+        <span class="tag">沒有人會發現</span>
+      </div>
+      <div class="leg second">
+        <span class="n">第二趟</span>
+        <span class="t">記憶與位址</span>
+        <p>第一趟穩定之後，挑一個時段把 285 MB 的記憶轉過去，再把大家的位址切到新機器。停機只發生在這一趟。</p>
+        <span class="tag hot">停機 15 到 30 分鐘</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>大家會感覺到什麼</h2>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>大家做的事</th><th>會怎麼樣</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>下載安裝新版 OwnMind</td>
+            <td>完全不變，還是在 GitHub</td>
+          </tr>
+          <tr>
+            <td>存記憶、搜記憶</td>
+            <td>切換那天有 15 到 30 分鐘會失敗，其他時間照常</td>
+          </tr>
+          <tr>
+            <td>用 Claude 工作</td>
+            <td>不受影響。OwnMind 連不上的時候會安靜跳過，不會卡住任何人</td>
+          </tr>
+          <tr>
+            <td>連到哪一台</td>
+            <td>升級一次新版就自動改好。還沒升級的人照樣通，舊位址在過渡期會轉到新機器</td>
+          </tr>
+          <tr>
+            <td>已經存的記憶</td>
+            <td>全部跟著過去，舊機器上不留</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Vin 發版的方式會變</h2>
+
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 980 436" role="img" aria-label="從 Vin 的電腦 push 到 GitHub 之後分成兩條路：使用者下載安裝那條沒有變，另一條只有打 tag 才會同步到公司 GitLab，由 CI 部署到測試機與正式機">
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--ink-faint)"></path>
+            </marker>
+            <marker id="ahn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--accent)"></path>
+            </marker>
+          </defs>
+
+          <rect class="dg-box" x="16" y="174" width="120" height="54" rx="3"></rect>
+          <text class="dg-t" x="76" y="206" text-anchor="middle">Vin 的電腦</text>
+
+          <rect class="dg-box" x="190" y="174" width="124" height="54" rx="3"></rect>
+          <text class="dg-t" x="252" y="206" text-anchor="middle">GitHub</text>
+          <text class="dg-s" x="252" y="248" text-anchor="middle">平常 push 到這裡就停</text>
+
+          <line class="dg-line" x1="136" y1="201" x2="184" y2="201" marker-end="url(#ah)"></line>
+          <text class="dg-s" x="160" y="192" text-anchor="middle">push</text>
+
+          <path class="dg-line" d="M 314 201 H 376"></path>
+          <path class="dg-line" d="M 376 201 V 75 H 434" marker-end="url(#ah)"></path>
+          <path class="dg-line-new" d="M 376 201 V 321 H 434" marker-end="url(#ahn)"></path>
+          <text class="dg-a" x="386" y="262">打 tag 才走這條</text>
+
+          <rect class="dg-box" x="440" y="44" width="214" height="62" rx="3"></rect>
+          <text class="dg-t" x="547" y="70" text-anchor="middle">大家下載安裝新版</text>
+          <text class="dg-s" x="547" y="90" text-anchor="middle">跟現在一樣，沒有變</text>
+
+          <rect class="dg-box-new" x="440" y="290" width="214" height="62" rx="3"></rect>
+          <text class="dg-t" x="547" y="316" text-anchor="middle">公司 GitLab</text>
+          <text class="dg-s" x="547" y="336" text-anchor="middle">Projects/ownmind/</text>
+
+          <line class="dg-line-new" x1="654" y1="321" x2="684" y2="321" marker-end="url(#ahn)"></line>
+
+          <rect class="dg-box-new" x="690" y="290" width="100" height="62" rx="3"></rect>
+          <text class="dg-t" x="740" y="326" text-anchor="middle">CI 跑測試</text>
+
+          <path class="dg-line-new" d="M 790 308 L 820 269" marker-end="url(#ahn)"></path>
+          <path class="dg-line-new" d="M 790 334 L 820 373" marker-end="url(#ahn)"></path>
+
+          <rect class="dg-box-new" x="826" y="240" width="148" height="54" rx="3"></rect>
+          <text class="dg-t" x="900" y="263" text-anchor="middle">測試機 test-fapa</text>
+          <text class="dg-s" x="900" y="282" text-anchor="middle">rc tag，自動上</text>
+
+          <rect class="dg-box-new" x="826" y="352" width="148" height="54" rx="3"></rect>
+          <text class="dg-t" x="900" y="375" text-anchor="middle">正式機 fapa</text>
+          <text class="dg-s" x="900" y="394" text-anchor="middle">v tag，按一下才上</text>
+        </svg>
+      </div>
+      <figcaption>藍色是這次新加的那條路，灰色的兩段現在就有、不會動到。平常 push 到 GitHub 就停住，公司那邊什麼都不會發生；只有打 tag 的時候才會同步一份過去。正式機那一步停在 GitLab 等人按，AI 不能代按。</figcaption>
+    </figure>
+
+    <div class="state-key">
+      <span><i class="swatch was"></i>灰底是現在的做法</span>
+      <span><i class="swatch will"></i>藍底是換完之後</span>
+    </div>
+    <div class="scroller">
+      <table class="ba">
+        <thead>
+          <tr><th>你做的事</th><th class="was">現在</th><th class="will">換完之後</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>發一個新版本</td>
+            <td class="was">SSH 進 kkvin 手動重建映像</td>
+            <td class="will">打一個 tag，測試機自動部署；正式機在 GitLab 按一下</td>
+          </tr>
+          <tr>
+            <td>程式碼放哪</td>
+            <td class="was">GitHub</td>
+            <td class="will">GitHub 照舊，公司 GitLab 另外有一份給伺服器用的副本</td>
+          </tr>
+          <tr>
+            <td>伺服器</td>
+            <td class="was">kkvin.com，1 GB 個人小機器</td>
+            <td class="will">test-fapa.welcometw.com 測試機，fapa.welcometw.com 正式機</td>
+          </tr>
+          <tr>
+            <td>服務網址</td>
+            <td class="was"><code>https://kkvin.com/ownmind</code></td>
+            <td class="will"><code>https://fapa.welcometw.com/ownmind</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>GitLab 那一份是副本，不是搬家</h3>
+    <div class="prose">
+      <p>FAPA 的自動部署只認公司 GitLab 上 <code>Projects/</code> 底下的專案。伺服器要進得了這個環境，程式碼就得有一份在那裡。</p>
+      <p>GitHub 仍然是唯一的開發跟發布來源，使用者的安裝跟升級路徑一個字都不會改。副本只在打 tag 的時候同步一次，平常 push 不同步，公司的建置清單不會被塞滿。GitLab 上也不帶完整歷史，每次同步是一個 <code>sync v1.x.x</code> 提交，這是 FAPA 規範 id=422 的要求。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Eric 出場三次</h2>
+    <ol class="turns">
+      <li>
+        <div>
+          <span class="what">核准登記單</span>
+          <span class="how">程式碼第一次推上 GitLab 會被 CI 擋下，機器人自動開一張登記單指派給 Eric。核准之後，機器人會自己產生 <code>ci/ownmind/.gitlab-ci.yml</code> 骨架。</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <span class="what">補 CI 檔裡的 TODO</span>
+          <span class="how">測試指令、部署路徑、健康檢查網址這四項，整理好的內容在下面的伺服器規格那節。</span>
+        </div>
+      </li>
+      <li>
+        <div>
+          <span class="what">兩台機器上的設定檔與網站掛載</span>
+          <span class="how"><code>ownmind.env</code> 放進 <code>/opt/deploy/envs/</code>，網站設定加一段 <code>/ownmind/</code>。這一段照理歸運維，由 Eric 做或他授權 Vin 做都可以，兩位談定就好。</span>
+        </div>
+      </li>
+    </ol>
+    <div class="note">
+      <span class="label">第一次推上去被擋，那不是出錯</span>
+      <p>那是 FAPA 給新專案設計的入場方式。<code>ci/</code> 目錄跟根目錄的 CI 主設定檔依規範 id=412 只有 Eric 能動，所以共用檔案全程由機器人跟 Eric 經手。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>第一趟怎麼走</h2>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>#</th><th>做什麼</th><th>誰做</th><th>做完會看到</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="num">1</td>
+            <td>移交前置檢查：資安掃描、AI 程式碼審查、測試全綠、Docker 設定確認</td>
+            <td>Vin 這邊</td>
+            <td>四項都過，沒有任何密碼金鑰進到要推上去的檔案裡</td>
+          </tr>
+          <tr>
+            <td class="num">2</td>
+            <td>寫 GitHub 到 GitLab 的同步程式，只在打 tag 時執行</td>
+            <td>Vin 這邊</td>
+            <td>打一個測試 tag，GitLab 的 <code>Projects/ownmind/</code> 出現程式碼</td>
+          </tr>
+          <tr>
+            <td class="num">3</td>
+            <td>第一次推上 GitLab</td>
+            <td>Vin 這邊推，機器人接手</td>
+            <td>推送被擋下，登記單已經開好並指派給 Eric</td>
+          </tr>
+          <tr>
+            <td class="num">4</td>
+            <td>核准登記單</td>
+            <td>Eric</td>
+            <td>CI 骨架自動長出來並推回 main</td>
+          </tr>
+          <tr>
+            <td class="num">5</td>
+            <td>補 CI 檔裡的 TODO</td>
+            <td>Eric</td>
+            <td>CI 檔沒有 TODO 殘留</td>
+          </tr>
+          <tr>
+            <td class="num">6</td>
+            <td>兩台機器放好 <code>ownmind.env</code>，網站設定加上 <code>/ownmind/</code></td>
+            <td>Eric，或由他授權</td>
+            <td>設定檔就位，網站設定驗證通過</td>
+          </tr>
+          <tr>
+            <td class="num">7</td>
+            <td>打測試機 tag</td>
+            <td>Vin 這邊</td>
+            <td><code>https://test-fapa.welcometw.com/ownmind</code> 開得起來</td>
+          </tr>
+          <tr>
+            <td class="num">8</td>
+            <td>實測搜記憶、存記憶、鐵律提醒、管理後台各一輪</td>
+            <td>Vin 這邊</td>
+            <td>四項都真的跑過，不是推論會過</td>
+          </tr>
+          <tr>
+            <td class="num">9</td>
+            <td>打正式機 tag，在 GitLab 按下部署</td>
+            <td>Vin 打 tag，人手按鈕</td>
+            <td>正式機上有一套空的 OwnMind 在跑，還沒有人連過去</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>第二趟怎麼走</h2>
+    <div class="prose">
+      <p>這一趟才會停機。停機期間所有人存記憶、搜記憶會失敗，Claude 本身照常。</p>
+    </div>
+    <figure>
+      <div class="canvas">
+        <svg viewBox="0 0 980 220" role="img" aria-label="切換當天的六個步驟：停機從舊機器切唯讀開始、到舊位址改成轉送結束；第五步之前出事解除唯讀就回到原狀，第五步之後出事把轉送改回本機">
+          <defs>
+            <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--ink-faint)"></path>
+            </marker>
+          </defs>
+
+          <rect class="dg-band" x="30" y="52" width="764" height="22" rx="2"></rect>
+          <text class="dg-w" x="412" y="67" text-anchor="middle">停機 15 到 30 分鐘，這段時間存不了也搜不了記憶</text>
+
+          <rect class="dg-box" x="30" y="88" width="140" height="68" rx="3"></rect>
+          <text class="dg-t" x="100" y="118" text-anchor="middle">1 舊機器停下來</text>
+          <text class="dg-s" x="100" y="138" text-anchor="middle">1 分鐘</text>
+
+          <rect class="dg-box" x="186" y="88" width="140" height="68" rx="3"></rect>
+          <text class="dg-t" x="256" y="118" text-anchor="middle">2 匯出、傳送、匯入</text>
+          <text class="dg-s" x="256" y="138" text-anchor="middle">5 到 10 分鐘</text>
+
+          <rect class="dg-box" x="342" y="88" width="140" height="68" rx="3"></rect>
+          <text class="dg-t" x="412" y="118" text-anchor="middle">3 核對兩邊筆數</text>
+          <text class="dg-s" x="412" y="138" text-anchor="middle">2 分鐘</text>
+
+          <rect class="dg-box" x="498" y="88" width="140" height="68" rx="3"></rect>
+          <text class="dg-t" x="568" y="118" text-anchor="middle">4 新機器網站設定</text>
+          <text class="dg-s" x="568" y="138" text-anchor="middle">2 分鐘</text>
+
+          <rect class="dg-box-new" x="654" y="88" width="140" height="68" rx="3"></rect>
+          <text class="dg-t" x="724" y="118" text-anchor="middle">5 舊位址改成轉送</text>
+          <text class="dg-s" x="724" y="138" text-anchor="middle">2 分鐘</text>
+
+          <rect class="dg-box" x="810" y="88" width="140" height="68" rx="3"></rect>
+          <text class="dg-t" x="880" y="118" text-anchor="middle">6 新舊各實測一輪</text>
+          <text class="dg-s" x="880" y="138" text-anchor="middle">5 分鐘</text>
+
+          <line class="dg-line" x1="172" y1="122" x2="184" y2="122" marker-end="url(#ah2)"></line>
+          <line class="dg-line" x1="328" y1="122" x2="340" y2="122" marker-end="url(#ah2)"></line>
+          <line class="dg-line" x1="484" y1="122" x2="496" y2="122" marker-end="url(#ah2)"></line>
+          <line class="dg-line" x1="796" y1="122" x2="808" y2="122" marker-end="url(#ah2)"></line>
+
+          <path class="dg-dash" d="M 646 40 V 178"></path>
+          <text class="dg-w" x="646" y="32" text-anchor="middle">退回的分界</text>
+          <text class="dg-a" x="256" y="176" text-anchor="middle">這三步由腳本一次跑完</text>
+          <text class="dg-s" x="638" y="196" text-anchor="end">這之前出事，解除唯讀就回到原狀</text>
+          <text class="dg-s" x="654" y="196" text-anchor="start">這之後出事，轉送改回本機，一樣幾分鐘</text>
+        </svg>
+      </div>
+      <figcaption>停機從第一步開始，到第五步結束，第六步是驗證，那時服務已經回來了。第五步是分界：在它之前資料零損失，在它之後有人可能已經往新機器寫入，所以切換後 48 小時內每天備份回舊機器一份。</figcaption>
+    </figure>
+    <h3>記憶用一支腳本搬，不用手動接指令</h3>
+    <div class="prose">
+      <p>倉庫裡有 <code>scripts/migrate-to-fapa.sh</code>，在自己電腦上跑，它自己連到兩台機器，不用先登進去。三個指令：</p>
+    </div>
+    <div class="cmds">
+      <div class="cmd">
+        <code>bash scripts/migrate-to-fapa.sh check</code>
+        <span>兩邊連不連得上、各有幾筆記憶、磁碟還剩多少。什麼都不動，事前先跑這個。</span>
+      </div>
+      <div class="cmd">
+        <code>bash scripts/migrate-to-fapa.sh cutover</code>
+        <span>停掉舊機器、匯出、傳過去、匯入、比對筆數。筆數對不上就停在那裡不往下走，並且叫你退回。</span>
+      </div>
+      <div class="cmd">
+        <code>bash scripts/migrate-to-fapa.sh rollback</code>
+        <span>把舊機器開回來。舊機器上的資料一筆都沒刪，所以退回是幾秒鐘的事。</span>
+      </div>
+    </div>
+    <div class="prose">
+      <p>正式那天之前先拿測試機演練一次，同一支腳本換一個目標：<code>DST_HOST=root@test-fapa.welcometw.com bash scripts/migrate-to-fapa.sh cutover</code>。</p>
+      <p>舊機器那一步是整個停掉，不是切成唯讀，因為 OwnMind 沒有唯讀模式。匯出的時候還有人在寫，會漏掉幾筆而且不會有人發現。</p>
+      <p>退回要留意的只有一個窗口：已經有人往新機器寫入之後才退回，那幾筆新記憶得手動補回來。</p>
+    </div>
+    <h3>收尾，不趕時間</h3>
+    <div class="prose">
+      <p>出一版 OwnMind，讓使用者升級時自動把位址改成 fapa；用管理後台廣播提醒大家升級；看活動紀錄還有誰在走舊位址。全部人都換過去大約要兩到四週，之後就能關掉 kkvin 的轉送。</p>
+    </div>
+  </section>
+
+  <section class="for-eric">
+    <span class="addressed">這一節給 Eric</span>
+    <h2>伺服器規格</h2>
+
+    <div class="block">
+      <h3>兩個容器</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>容器</th><th>內容</th><th>對外</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="key">api</td>
+              <td>Node 20，多階段建置，前端 Vite 產物編進映像</td>
+              <td>容器內 3000，主機只綁 <code>127.0.0.1:3100</code></td>
+            </tr>
+            <tr>
+              <td class="key">db</td>
+              <td><code>pgvector/pgvector:pg16</code>，具名 volume <code>ownmind_data</code></td>
+              <td>不對外，只在 compose 網路內</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:15.5px;color:var(--ink-soft)"><code>3100</code> 這個埠在兩台機器上都沒有被佔用。實測占用 api 約 42 MB、db 約 200 MB，合計約 250 MB。</p>
+    </div>
+
+    <div class="block">
+      <h3>部署方式</h3>
+      <p>沿用 FAPA 現行專案那一套，沒有特殊需求：原始碼 rsync 到 <code>/opt/deploy/ownmind/</code>，軟連結 <code>/opt/deploy/envs/ownmind.env</code>，<code>docker compose build</code> 之後換版。只重建 <code>api</code> 一個服務就好，<code>db</code> 用官方映像不需要重建。建置要加 <code>--no-cache</code>，含前端編譯大約 90 秒到 2 分鐘。</p>
+      <p>軟連結的落點要放在 compose 專案目錄下、名字就叫 <code>.env</code>（也就是 <code>/opt/deploy/ownmind/.env</code>）。<code>docker-compose.yml</code> 裡資料庫密碼寫成 <code>${DB_PASSWORD}</code>，那個展開只認 compose 專案目錄的 <code>.env</code>，只掛成 <code>env_file</code> 的話會展開成空字串，postgres 第一次啟動就會失敗。</p>
+    </div>
+
+    <div class="block">
+      <h3>CI 檔要填的四項</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>要填的欄位</th><th>內容</th></tr></thead>
+          <tbody>
+            <tr><td>測試指令</td><td><code>npm test</code>，內含中英混雜檢查跟 Node 內建測試，逾時上限 300 秒</td></tr>
+            <tr><td>建置</td><td>專案根目錄的 <code>Dockerfile</code>，<code>docker compose build --no-cache api</code></td></tr>
+            <tr><td>部署路徑</td><td><code>/opt/deploy/ownmind/</code></td></tr>
+            <tr><td>健康檢查</td><td><code>GET /health</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="block">
+      <h3>ownmind.env 要放什麼</h3>
+      <div class="scroller">
+        <table>
+          <thead><tr><th>設定</th><th>填什麼</th></tr></thead>
+          <tbody>
+            <tr><td class="key">PORT</td><td>容器內埠號，填 <code>3000</code></td></tr>
+            <tr><td class="key">DB_HOST · DB_PORT · DB_NAME · DB_USER · DB_PASSWORD</td><td>compose 內部連線，<code>DB_HOST</code> 填 <code>db</code></td></tr>
+            <tr><td class="key">ENCRYPTION_KEY</td><td>至少 32 字元。正式機沿用 kkvin 現有的值，原因在下面</td></tr>
+            <tr><td class="key">SETUP_TOKEN</td><td>首次設定管理員密碼用，不設則該端點停用</td></tr>
+            <tr><td class="key">CORS_ORIGIN</td><td>留空，代表禁止所有跨域請求</td></tr>
+            <tr><td class="key">API_RATE_LIMIT_MAX</td><td>正式機留空用預設 200，測試機跑端對端測試時才調高</td></tr>
+            <tr><td class="key">LOG_LEVEL</td><td>一般填 <code>info</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:15.5px;color:var(--ink-soft)"><code>OWNMIND_LLM_API_BASE</code> 跟 <code>LLM_SWITCH_API_KEY</code> 兩個可以不填，相關功能正在改為走使用者自己的訂閱額度。</p>
+    </div>
+
+    <div class="note caution">
+      <span class="label">正式機的 ENCRYPTION_KEY 不能換新的</span>
+      <p>使用者透過 OwnMind 存放的密碼是用這把金鑰加密的，換掉之後全部解不開。這個值要從 kkvin 原封帶過去。測試機的資料是另外一份，可以自己產一把。</p>
+    </div>
+
+    <div class="block">
+      <h3>資料庫遷移與網站設定</h3>
+      <p><code>db/</code> 底下的 SQL 由程式啟動時自行套用，不需要人工執行，也不要掛 <code>docker-entrypoint-initdb.d</code>。</p>
+      <p>網站那邊要在共用的 vhost 檔加一段 <code>location /ownmind/</code>。kkvin 上正在用的那段設定會在第一趟的第 6 步原文提供，直接沿用即可。做法是改動前先備份，驗證通過才套用。設定有錯的時候網站程式會拒絕套用並繼續跑舊設定，其他專案不會斷線。</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>跟共用同一個倉庫的其他專案會不會互相影響</h2>
+    <div class="prose">
+      <p>FAPA 那個倉庫是多人、多專案共用，OwnMind 進去之後同一層還有 ima、ring 那些專案。互相影響的地方只有兩個，其餘都被守門擋住了。</p>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>誰做什麼</th><th>會發生什麼</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>你把 OwnMind 的程式碼放進去</td>
+            <td>動不到別的專案目錄。守門只放行自己專案那一層，超出範圍的改動會被擋下來</td>
+          </tr>
+          <tr>
+            <td>別人上傳他們自己的專案</td>
+            <td>同一套守門，碰不到 OwnMind 的目錄</td>
+          </tr>
+          <tr>
+            <td>你標記版本要部署</td>
+            <td>只會部署 OwnMind。版本標記認的是各專案自己的前綴，別人的部署不會被你觸發，你的也不會被別人觸發</td>
+          </tr>
+          <tr>
+            <td>你的測試正在跑</td>
+            <td>會佔用共用的建置機器，同一時間別人的部署可能要排隊。OwnMind 的測試套件不小，這一點還沒實際量過</td>
+          </tr>
+          <tr>
+            <td>加上 <code>/ownmind/</code> 那一段網站設定的時候</td>
+            <td>全部專案共用同一個設定檔，這是唯一真的會波及別人的地方。設定寫錯的時候網站程式會拒絕套用並繼續跑舊設定，所以不會把別人弄斷線</td>
+          </tr>
+          <tr>
+            <td>OwnMind 跑起來以後</td>
+            <td>跟同一台上的其他服務分記憶體，約 250 MB。埠號 3100 兩台都沒有被佔用</td>
+          </tr>
+          <tr>
+            <td>公司裡有這個倉庫權限的人</td>
+            <td>讀得到 OwnMind 的原始碼。GitHub 那份是對外的來源，公司這份是給伺服器用的副本，兩份內容一樣</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>會擔心的幾件事</h2>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>擔心的事</th><th>實際情況</th><th>怎麼防</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>加密金鑰換掉</td>
+            <td>使用者存的密碼會全部解不開</td>
+            <td>正式機沿用 kkvin 的金鑰。要換金鑰另外走一次重新加密</td>
+          </tr>
+          <tr>
+            <td>機器是共用的</td>
+            <td>fapa 上還跑著其他服務，7 月出過一次被植入程式的事件，而所有人的記憶會放在這台</td>
+            <td>資料庫只綁本機埠不對外，切換後 48 小時每日備份回 kkvin，之後改成定期異地備份</td>
+          </tr>
+          <tr>
+            <td>記憶體不夠</td>
+            <td>兩台 8 GB 都已經用掉一半以上</td>
+            <td>OwnMind 只吃約 250 MB，塞得下。部署後盯一週的記憶體曲線</td>
+          </tr>
+          <tr>
+            <td>動到共用的網站設定檔</td>
+            <td>所有專案共用一個 vhost 檔</td>
+            <td>改動前備份，先驗證再套用</td>
+          </tr>
+          <tr>
+            <td>沒升級的人連不上</td>
+            <td>還沒升級的人繼續連 kkvin</td>
+            <td>轉送是原封代理不是轉址，使用者端無感。確認沒人在用之後才關掉</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>還要決定的事</h2>
+    <div class="scroller">
+      <table>
+        <thead><tr><th>要決定什麼</th><th>誰決定</th><th>什麼時候要</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>第二趟的停機時段，需要 30 分鐘，避開大家存記憶的時間</td>
+            <td>Vin</td>
+            <td>第一趟做完之後，不急</td>
+          </tr>
+          <tr>
+            <td>兩台機器上的 <code>ownmind.env</code> 跟網站設定，Eric 自己處理還是授權 Vin 這邊做</td>
+            <td>Eric 與 Vin 談定</td>
+            <td>第一趟的第 6 步之前</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    文件裡的數字來自 2026-08-13 的實地調查。kkvin：1 GB 記憶體、磁碟已用 81%、資料庫 285 MB、9 個使用者。
+    fapa 正式機：8 GB 用掉 4.5 GB、磁碟剩 124 GB。test-fapa：8 GB 用掉 4.7 GB、磁碟剩 96 GB。
+    兩台的網站設定都是單一共用檔。相關團隊規範：id=422 新專案入場流程、id=412 <code>ci/</code> 權限歸屬。
+  </footer>
+
+</div>

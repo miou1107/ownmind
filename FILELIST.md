@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## FAPA 搬遷（尚未發版，2026-08-18）
+
+新增檔：
+```
+scripts/migrate-to-fapa.sh           — 一次性資料搬遷。在本機跑、自己 SSH 出去，
+                                       check / cutover / rollback 三個子指令。
+                                       來源 API 先停再 dump（產品沒有唯讀模式，
+                                       邊寫邊 dump 會靜靜漏行）、dump 三道驗證、
+                                       目的地先重建 schema 再匯入、逐表比對筆數，
+                                       對不上就中止。工作目錄刻意放在 repo 外面，
+                                       dump 內含每位使用者的明文 api_key
+docs/deploy-to-fapa.html             — 給 Vin 與 Eric 看的部署說明書。發版流程圖、
+                                       切換當天的停機與退回分界、跟其他專案的互相影響、
+                                       伺服器規格（容器、埠、env 欄位、CI 四個值）
+```
+
+
 ## v1.30.14 修改（一條測試綁著今天的日期）
 
 ```
