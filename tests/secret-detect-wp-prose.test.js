@@ -28,9 +28,11 @@ const WP_SAMPLE = ['Qw3r', 'Ty7u', 'I0p2', 'As4d', 'Fg6h', 'Jk8l'].join(' ');
  * prose groups always do. That difference is the discriminator.
  */
 
+const WP_SAMPLE_2 = ['Zx9v', 'Bn4m', 'Qa2w', 'Se5d', 'Rf7t', 'Gy1h'].join(' ');
+
 const REAL_PASSWORDS = [
   WP_SAMPLE,
-  'cu7h BEgk zrU7 NWAi eZig DkA3',
+  WP_SAMPLE_2,
 ];
 
 /** Reproduce WordPress's own generator: 24 chars from [a-zA-Z0-9]. */
@@ -138,13 +140,13 @@ describe('WP Application Password rule — prose must not shadow a real password
   });
 
   it('reports the credential, not the prose, as the matched text', () => {
-    const text = 'this data came from open only when your team said okay. cu7h BEgk zrU7 NWAi eZig DkA3';
+    const text = `this data came from open only when your team said okay. ${WP_SAMPLE_2}`;
     const result = detectSecretLike(text, { skip_keyword: true });
     assert.equal(result.rule, 'regex:wp_application_password');
     // Exact equality, not a substring probe: a shifted window that swallowed a
     // prose word and dropped a credential group would satisfy a looser check
     // while pointing the reader at the wrong fragment.
-    assert.equal(result.matched_text, 'cu7h BEgk zrU7 NWAi eZig DkA3');
+    assert.equal(result.matched_text, WP_SAMPLE_2);
   });
 
   // The scanner must consider overlapping windows. Advancing past the end of a
