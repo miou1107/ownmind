@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## 密鑰偵測樣本改成假的（尚未發版，2026-08-18）
+
+修改檔：
+```
+shared/secret-detect.js              — 註解裡的範例值
+tests/secret-detect-unit.test.js     — 4 處
+tests/secret-detect-wp-prose.test.js — 4 處（含一條 assert 的比對字串）
+tests/memory-secret-guard.test.js    — 2 處
+tests/pre-commit-secret.test.js      — 1 處
+openspec/changes/archive/v1.19.1-secret-tool-routing/spec.md
+openspec/changes/archive/v1.26.40-wp-password-prose/spec.md
+                                     — 這七個檔案共用同一組「真的」網站後台密碼當樣本。
+                                       倉庫是公開的，等於那組密碼跟著公開。換成同形狀的
+                                       假值（六組四碼、其中幾組帶數字，滿足偵測器「至少
+                                       一組不像英文單字」的條件），相關 163 條測試全過
+```
+
+
 ## FAPA 搬遷（尚未發版，2026-08-18）
 
 新增檔：

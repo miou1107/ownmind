@@ -267,7 +267,9 @@ function normalizeKeywordRuleName(raw) {
 const SECRET_REGEXES = [
   // WordPress Application Password: 4 chars per group, exactly 6 groups,
   // whitespace separated.
-  // Example: iXEN ops5 pJcy 8PJI lVFM heaH
+  // Shape: six space-separated groups of four alphanumerics. No literal example
+  // here on purpose — this repository ships the detector, and a real-looking
+  // sample in its own source blocks the pre-commit scan that uses it.
   //
   // This is the only rule here with no identifying prefix (jwt has `eyJ`,
   // github_pat has `gh?_`, aws has `AKIA`, openai has `sk-`), so shape alone
