@@ -1,0 +1,653 @@
+{
+  "summary": "Complete string inventory of the client-side hooks (P1 action gate + reply lint + banner echo + iron-rule check + session start). Channel legend: \"systemMessage\" = JSON systemMessage field on hook stdout, rendered to the human in the Claude Code UI; \"hookSpecificOutput.reason\" = the PreToolUse block-decision reason, fed to the model; \"hookSpecificOutput.additionalContext\" = context injected to the model (user only sees it if the AI echoes it — the \"Response format\" lines exist to force that echo); \"stderr\" = Stop-hook exit-2 stderr, the model's rewrite instruction (code comments claim it also renders as the block reason); \"stdout-cli\" = terminal output of a manually run CLI; \"log-file\" = local JSONL audit records, developer-only. Files with ZERO emitted strings: hooks/lib/gate-provision.js (writes only state files: sessionId into gate-current-session, hex nonces) and hooks/lib/notice-throttle.js (state JSON only). Localization traps: (1) the \"NOT gated\" and \"degraded\" lines exist in THREE literal copies (action-gate-cli.js, ownmind-iron-rule-check.js, ownmind-iron-rule-check.sh) that must stay in sync; (2) the version-tag block and the verification reminder each exist as an English twin (.js) and a Chinese twin (.sh) of the same message; (3) userLine strings from action-gate.js pass through both PreToolUse wirings verbatim as systemMessage; (4) some strings embed literal Chinese tokens by design (好 / 誤判 / 確認 / 白話 formats) that are protocol words, not incidental language. Out-of-scope pass-throughs noted but not inventoried (strings originate in modules not on the reading list): renderHookContextLine (shared/hook-context.js), editReminder (hooks/ownmind-edit-reminder.js), renderSessionContext (hooks/lib/render-session-context.js), queueUpdateBanner (shared/update-banner.js), ownmind-render-context.js output in the .sh hook, and lint violation messages v.message produced by shared/language-lint.js validators.",
+  "strings": [
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 164,
+      "channel": "hookSpecificOutput.reason",
+      "audience": "model",
+      "context": "ask-first block, verbal mode (guard.ask_mode==='verbal'); returned as d.reason, emitted by both PreToolUse wirings as the block-decision reason",
+      "text": "[OwnMind gate] \"${guard.title}\" needs the user's explicit go-ahead before this action runs. Relay this block to the user in your own words. ONLY if the user then replies with an affirmative (go / ok / 好 / yes) run: node ~/.ownmind/hooks/lib/approve-action.js --verbal ${guard.id} — then retry the command. Do NOT run that command otherwise, and do not state or imply the user approved unless they actually did."
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 169,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "ask-first block, verbal mode; returned as d.userLine, rendered to the human via the block envelope's systemMessage",
+      "text": "[OwnMind] ⛔ \"${guard.title}\" needs your go-ahead for this action. Reply \"go\" to approve it once, or \"no\" to cancel."
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 184,
+      "channel": "hookSpecificOutput.reason",
+      "audience": "model",
+      "context": "ask-first block, code mode (also the 3-strikes limit path); d.reason",
+      "text": "[OwnMind gate] \"${guard.title}\" needs the user's explicit go for this action. Ask the user for the 6-digit approval code shown on their screen, then run: node ~/.ownmind/hooks/lib/approve-action.js ${guard.id} <code> — and retry the command."
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 187,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "ask-first / limit block, code mode; d.userLine. Ternary variant: kindLabel==='limit' → 'a command blocked 3 times in a row', else → 'this action'. ${code} is the 6-digit approval code",
+      "text": "[OwnMind] ⛔ \"${guard.title}\" wants your approval for: ${kindLabel === 'limit' ? 'a command blocked 3 times in a row' : 'this action'}. Approval code: ${code} (paste it to the AI to allow it once)"
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 328,
+      "channel": "hookSpecificOutput.reason",
+      "audience": "model",
+      "context": "read-before-act block (read_required guard, no valid receipt); ${guard.rule_text} is the full user-authored rule body",
+      "text": "[OwnMind gate] Read this rule before acting, then retry the command:\\n--- RULE ${guard.id}: ${guard.title} ---\\n${guard.rule_text}"
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 329,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "read-before-act block; d.userLine",
+      "text": "[OwnMind] ⛔ blocked until the rule \"${guard.title}\" is read (auto-unblocks on retry)"
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 373,
+      "channel": "hookSpecificOutput.reason",
+      "audience": "model",
+      "context": "machine-check block (must_match / must_not_match failed); ${c.reason} is guard-authored text from the user's rule data",
+      "text": "[OwnMind gate] The command violates \"${guard.title}\": ${c.reason}. Fix the command and retry."
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 374,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "machine-check block; d.userLine",
+      "text": "[OwnMind] ⛔ blocked: ${c.reason}"
+    },
+    {
+      "file": "hooks/lib/action-gate.js",
+      "line": 133,
+      "channel": "log-file",
+      "audience": "developer",
+      "context": "gate-log.jsonl audit record (~/.ownmind/state/), one JSON line per decision; string enum values inside: kind ∈ read|check|ask|limit, action ∈ block|allow, degraded:'no-receipts', approval_mode:'verbal', plus code_issued flag. Rotates to gate-log.jsonl.old at 5MB",
+      "text": "{\"ts\":ISO8601, sessionId, guardId, command, kind, action, [code_issued], [approval_mode], [degraded], [guardIds]}"
+    },
+    {
+      "file": "hooks/lib/action-gate-cli.js",
+      "line": 22,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "fail-open-LOUD notice; emitted at lines 74 and 81 when anything in the gate path throws. LITERAL DUPLICATE of ownmind-iron-rule-check.js:146 and ownmind-iron-rule-check.sh:150 — three copies must stay in sync",
+      "text": "[OwnMind] the action gate could not run - this command was NOT gated"
+    },
+    {
+      "file": "hooks/lib/action-gate-cli.js",
+      "line": 24,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "degraded-allow notice (receipt subsystem unavailable, stateless checks still enforced); emitted at line 70. LITERAL DUPLICATE of ownmind-iron-rule-check.js:139",
+      "text": "[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced"
+    },
+    {
+      "file": "hooks/lib/action-gate-cli.js",
+      "line": 63,
+      "channel": "other",
+      "audience": "model",
+      "context": "PreToolUse block envelope on stdout — pass-through only, no new strings: reason=d.reason (model), systemMessage=d.userLine (user); both originate in action-gate.js",
+      "text": "{\"decision\":\"block\",\"reason\":<d.reason>,\"systemMessage\":<d.userLine>,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"\"}}"
+    },
+    {
+      "file": "hooks/lib/approve-action.js",
+      "line": 26,
+      "channel": "stdout-cli",
+      "audience": "user",
+      "context": "approval CLI success output (exit 0). Usually executed by the AI via the Bash tool, so the model reads it too; the human sees it in the tool-result card",
+      "text": "APPROVED\\n"
+    },
+    {
+      "file": "hooks/lib/approve-action.js",
+      "line": 29,
+      "channel": "stdout-cli",
+      "audience": "user",
+      "context": "approval CLI failure output (exit 1): wrong/expired code, wrong mode, missing session pointer, burned ask",
+      "text": "REJECTED\\n"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 187,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "recovery all-clear after a not-checked state ends (notice-throttle announces recovery once); queued via queueUserNotice, emitted as systemMessage at exitWith(0); also spooled to banner-pending.jsonl",
+      "text": "[OwnMind] compliance checks are running again - this turn was checked"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 288,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "/ownmind-off reminder, every 10th AI response while disabled; two lines joined with \\n",
+      "text": "[OwnMind v${getClientVersion()}] ⚠️ OwnMind is currently disabled (${tick} AI responses skipped lint)\\n  → Re-enable with /ownmind-on, or open a new conversation to restore"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 647,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner header base; one of the four suffixes below is appended; version fallback literal '?'",
+      "text": "[OwnMind v${version}] Reply quality lint"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 649,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner header suffix, downgraded-after-consecutive-blocks state",
+      "text": " ⚠️ ${blockCount} consecutive blocks reached — downgrading to warning (please review manually to avoid a loop)"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 651,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner header suffix, hard-block state",
+      "text": " ⚠️ Block triggered — Claude will receive a rewrite directive (session count ${count})"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 654,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner header suffix, block mode not yet at threshold; ${remaining}=max(0, threshold-count)",
+      "text": " (block mode, session count ${count}, ${remaining} more before block)"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 656,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner header suffix, warn (or other non-block) mode",
+      "text": " (${mode} mode, session count ${count})"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 661,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner extra line when OWNMIND_REPLY_LINT_MODE env value is unrecognized",
+      "text": "  ⚠️  OWNMIND_REPLY_LINT_MODE='${rawMode}' is unrecognized — falling back to warn"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 665,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBanner per-violation line; ${v.rule} is an event code (e.g. lint_language_mixed_ratio), ${v.message} originates in shared/language-lint.js validators (out of this reading list)",
+      "text": "  ⚠️  ${v.rule}: ${v.message}"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 731,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason brief variant (2nd–3rd consecutive block), Stop hook exit 2; ${ruleCodes} = display names joined with ' + '. Five lines joined with \\n",
+      "text": "↻ Previous response violated ${ruleCodes} — Claude was instructed to rewrite (session block #${priorBlockCount + 1}).\\n\\nAdd this header line first, then write the new response:\\n> ↻ Previous violated ${ruleCodes}, rewriting.\\n\\nThen rewrite directly — do not re-confirm the question."
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 742,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason full variant, opening directive line",
+      "text": "Please rewrite your previous response to fix the following quality issues (preserve meaning, only change language style):"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 751,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason numbered item for lint_language_mixed_ratio; followed by indented word list '   ${words.join(', ')}' (first 10 mixedWords)",
+      "text": "${n}. Use plain Chinese to replace the following English terms (or, on first occurrence, add a parenthetical Chinese explanation):"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 759,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason numbered item for lint_jargon_explanation_required; followed by indented word list; contains literal Chinese format examples that are part of the protocol",
+      "text": "${n}. Add a plain-Chinese explanation when these technical terms first appear (use formats like \"：explanation\", \"（白話：...）\", \"即...\", \"也就是...\"):"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 770,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason numbered item for privacy_check; ${summary} built by formatPrivacySummary; deliberately does NOT echo the matched personal data",
+      "text": "${n}. The response appears to contain user privacy data (${summary}). Rewrite that segment using placeholders like \"[email]\" or \"[mobile phone]\" — do NOT repeat the personal data in the new response."
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 776,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason exemption clause",
+      "text": "If the listed terms are variable names / function names / code references, or were already explained in context, they may be kept."
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 781,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatBlockReason self-annotation instruction block (lines 781–790), joined with \\n; the quoted annotation is what the user eventually sees at the top of the rewrite",
+      "text": "Your rewrite must start with a quoted-block annotation in this format:\\n\\n> ⚠️ **Previous violated ${ruleCodes}, rewriting:**\\n> (brief note about the violation terms or reason)\\n\\n---\\n\\n(Then write the new response content)\\n\\nReturn to the original conversation context — do not re-confirm the question, just give the new answer directly."
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 406,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "bug-report pointer appended after the block reason on the hard-block path (exit 2)",
+      "text": "[OwnMind bug report] Think this lint decision is wrong (e.g. an already-explained term was blocked)? Call ownmind_report_bug to file a report. bug_fingerprint: lint_context_memory_missing, suggest_report: true (Use this fingerprint ONLY when reporting THIS lint decision as a misfire. For unrelated issues, use bug_fingerprint=clt_user_reported_other instead.)"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 686,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatPrivacySummary type labels used inside the privacy directive; template per type: '${labels[t] || t} (${n})' joined with ', '. Must stay in sync with PRIVACY_TYPE_LABELS in shared/privacy-detect.js",
+      "text": "tw_id → 'Taiwan ID'; email → 'Email'; phone_tw_mobile → 'Mobile phone'"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 712,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "_EVENT_DISPLAY_NAMES: event-code → display-name map used to build ${ruleCodes} in formatBlockReason; must stay in sync with EVENT_DISPLAY_NAMES in shared/lint-event-types.js",
+      "text": "lint_language_mixed_ratio → 'Mixed Chinese-English'; lint_jargon_explanation_required → 'Jargon quality'; privacy_check → 'Privacy content'"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 268,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "compliance-step pass-through: writes step.stderr (formatViolationFeedback from hooks/lib/compliance-step.js) then exit 2; code comment claims exit-2 stderr also renders to the user as the block reason",
+      "text": "<step.stderr> (see compliance-step.js formatViolationFeedback entries)"
+    },
+    {
+      "file": "hooks/ownmind-reply-lint.js",
+      "line": 839,
+      "channel": "log-file",
+      "audience": "developer",
+      "context": "banner-pending.jsonl audit record of every queued notice (writeFallback); rotates to .old at 1MB. Also: structured compliance events to ~/.ownmind/logs/YYYY-MM-DD.jsonl (spoolEvents, line 892) and reply-lint-pending.jsonl retry queue (line 919)",
+      "text": "{\"ts\":ISO8601,\"block\":<queued notice text>}"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 129,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "state notice (noticeKey 'off:warn-mode'), delivered via reply-lint's queueUserNotice→systemMessage; throttled by notice-throttle (announce on change + every 10th turn)",
+      "text": "[OwnMind] compliance check is off for this session (lint disabled or warn mode)"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 138,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "state notice (noticeKey 'not-checked:no-credentials'), same delivery/throttling",
+      "text": "[OwnMind] this machine has no credentials, so this turn was NOT checked"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 148,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "state notice (noticeKey 'not-checked:never-synced')",
+      "text": "[OwnMind] this machine has never synced its rules, so this turn was NOT checked"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 174,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "state notice (noticeKey 'not-checked:check-failed'). v1.30.2: the reason token no longer appears in this string at all — it goes to hooks/lib/check-failure-log.js instead, and a rejected key branches to 'not-checked:signed-out' before reaching here",
+      "text": "[OwnMind] compliance check did not run (${check.reason || 'unknown'}) - this turn was NOT checked"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 184,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "state notice (noticeKey 'off:server') — server-side enforcement switched off for the account",
+      "text": "[OwnMind] enforcement is switched off for this account, so this turn was NOT checked"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 191,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "idNote suffix appended to the two event banners below when the server returned a check_id; contains the literal Chinese protocol word 誤判 (false alarm) the user must type back",
+      "text": " [check ${check.check_id}: say \"誤判 ${check.check_id}\" if this is wrong]"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 196,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "event banner: retry cap reached (blockCount >= MAX_COMPLIANCE_BLOCKS=2); never throttled",
+      "text": "[OwnMind] the reply still breaks ${check.violations.length} rule(s) after ${blockCount} rewrites - showing you instead of asking again${idNote}"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 204,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "event banner accompanying an exit2 pushback; never throttled",
+      "text": "[OwnMind] compliance: ${check.violations.length} rule violation(s) sent back to the AI${idNote}"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 92,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback opening line (Stop hook exit 2 rewrite instruction)",
+      "text": "[OwnMind] This reply breaks rules you are required to follow:"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 95,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback per-violation rule line; ${kind} ∈ {'Team standard','Rule'} (line 94); ruleCode part conditional",
+      "text": "  - ${kind} ${v.ruleId}${v.ruleCode ? ` (${v.ruleCode})` : ''}: ${v.ruleTitle}"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 96,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback evidence quote; ${v.evidence} is the assistant's own offending text from the server verdict",
+      "text": "    Your words: \"${v.evidence}\""
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 97,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback fix line, only when v.fix present",
+      "text": "    Do this instead: ${v.fix}"
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 99,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback team-standard override note (two lines, ruleType==='team_standard'); contains literal Chinese protocol word 確認 the user must type to override",
+      "text": "    This is a team standard, not one of the user's own rules: their say-so\\n    does not waive it. Ask them to reply with 「確認」 if they want it overridden."
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 103,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback closing directive",
+      "text": "Rewrite the reply so it complies. Do not argue with the rule."
+    },
+    {
+      "file": "hooks/lib/compliance-step.js",
+      "line": 105,
+      "channel": "stderr",
+      "audience": "model",
+      "context": "formatViolationFeedback false-alarm handle, only when checkId present; instructs the model what to tell the user (誤判 protocol word)",
+      "text": "If the user says this was a false alarm, tell them to reply \"誤判 ${checkId}\"."
+    },
+    {
+      "file": "hooks/ownmind-tty-echo.cjs",
+      "line": 176,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBlock merged-banner header (PostToolUse hook); banner content itself is extracted from MCP tool results (pass-through), only the header + indentation template are authored here",
+      "text": "[OwnMind ${version}]"
+    },
+    {
+      "file": "hooks/ownmind-tty-echo.cjs",
+      "line": 180,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "formatBlock per-banner indented line; ${cleaned} = extracted event line with trailing standalone '：' stripped — content originates in MCP output, template only",
+      "text": "  ${cleaned}"
+    },
+    {
+      "file": "hooks/ownmind-tty-echo.cjs",
+      "line": 206,
+      "channel": "log-file",
+      "audience": "developer",
+      "context": "banner-pending.jsonl audit record (writeFallback); rotates at 1MB",
+      "text": "{\"ts\":ISO8601,\"block\":<merged banner block>}"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 129,
+      "channel": "other",
+      "audience": "model",
+      "context": "gate block envelope (.js PreToolUse wiring) — pass-through only: reason=gate.reason (model), systemMessage=gate.userLine (user); strings originate in action-gate.js",
+      "text": "{\"decision\":\"block\",\"reason\":<gate.reason>,\"systemMessage\":<gate.userLine>,\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"\"}}"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 139,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "degraded-allow notice — LITERAL DUPLICATE of DEGRADED_LINE in action-gate-cli.js:24",
+      "text": "[OwnMind] the action gate could not run in full - receipts unavailable, checks still enforced"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 146,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "fail-open-LOUD notice — LITERAL DUPLICATE of NOT_GATED_LINE in action-gate-cli.js:22",
+      "text": "[OwnMind] the action gate could not run - this command was NOT gated"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 229,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "version-block tag for git push in the OwnMind checkout without matching tag; the 'Response format' line instructs the AI to echo this tag to the user. English twin of the .sh Chinese version at .sh:361",
+      "text": "[OwnMind v${VERSION}] Version block"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 234,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "version-block body lines (231–238), joined with \\n; includes '━━━…' separators (30 heavy-line chars)",
+      "text": "  package.json version is ${pkgVersion}, but no matching git tag ${expectedTag} exists\\n  ❌ Run first: git tag ${expectedTag}\\n  Then: git push --tags\\n\\nResponse format: the AI's first line must be \"${versionTag}\"."
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 242,
+      "channel": "hookSpecificOutput.reason",
+      "audience": "model",
+      "context": "version-block decision reason (same string in the .sh twin at line 364)",
+      "text": "Missing git tag for version ${pkgVersion}"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 298,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "iron-rule-triggered listing tag (deploy/delete triggers); '━━━…' separators around it",
+      "text": "[OwnMind v${VERSION}] Iron rule triggered (${trigger})"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 302,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "per-rule line in the triggered listing; code fallback literal 'IR-?'",
+      "text": "  ⚠️  ${r.code || 'IR-?'}: ${r.title}"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 304,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "echo instruction so the tag reaches the user via the AI's reply",
+      "text": "Response format: the AI's first line must be \"${triggerTag}\" so the user sees the rule trigger."
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 344,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "verification-engine failure lines; code fallback 'IR-???', title fallback 'Unnamed rule'; each failure detail rendered as '    → ${f}' (line 346)",
+      "text": "${code}: ${title}  /  '    → ${f}'"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 352,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "verification reminder tag; English twin of .sh:408 Chinese version",
+      "text": "[OwnMind v${VERSION}] Iron rule reminder (${trigger})"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 359,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "verification reminder closing line — explicitly a reminder, not a block",
+      "text": "Response format: the AI's first line must be \"${warnTag}\" and address the points above. This is a reminder; it does not stop the ${trigger}."
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.js",
+      "line": 376,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "compact pass message for commit trigger with nothing else to say",
+      "text": "[OwnMind v${VERSION}] Iron rule check: commit — ${relevant.length} rules verified ✓"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 150,
+      "channel": "systemMessage",
+      "audience": "user",
+      "context": "fail-open-LOUD notice when node cannot run the gate CLI (exit status non-zero) — THIRD literal copy of NOT_GATED_LINE, hardcoded as raw JSON in bash",
+      "text": "[OwnMind] the action gate could not run - this command was NOT gated"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 189,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "one-time upgrade advisory after auto-installing the SessionStart hook; Chinese, legacy 【】 banner format; fires at most once per machine (marker file), only on a turn the gate did not block",
+      "text": "【OwnMind v${VERSION}】自動升級：已安裝 SessionStart hook，下次開新 session 記憶會自動載入，不用再手動說「載入 OwnMind」。"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 361,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "version-block, Chinese twin of the .js English version (built inside node -e, lines 359–365); tag + body + echo instruction, '━━━…' separators",
+      "text": "【OwnMind v${VERSION}】版號卡控\\n  package.json 版號為 ${PKG_VER}，但沒有對應的 git tag v${PKG_VER}\\n  ❌ 請先執行：git tag v${PKG_VER}\\n  然後再 git push --tags\\n\\n回應格式要求：AI 的第一行必須是「${tag}」。"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 364,
+      "channel": "hookSpecificOutput.reason",
+      "audience": "model",
+      "context": "version-block decision reason (same English string as the .js twin, even though the body is Chinese)",
+      "text": "Missing git tag for version ${PKG_VER}"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 408,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "verification reminder, Chinese twin of .js:352–359 (built inside node -e, lines 399–423); failure lines rendered '  ⚠️  ${f}'",
+      "text": "【OwnMind v${VERSION}】鐵律提醒（${TRIGGER}）\\n  ⚠️  ${f}\\n\\n回應格式要求：AI 的第一行必須是「${warnTag}」，並說明上面這幾點的狀況。這是提醒，不會擋下 ${TRIGGER}。"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 257,
+      "channel": "stderr",
+      "audience": "developer",
+      "context": "credential-read failure diagnostic (console.error inside node -e); exit-0 PreToolUse stderr surfaces only in Claude Code hook debug output, not to the model",
+      "text": "[ownmind] cannot read credentials: ${e.message}"
+    },
+    {
+      "file": "hooks/ownmind-iron-rule-check.sh",
+      "line": 52,
+      "channel": "log-file",
+      "audience": "developer",
+      "context": "log_event JSONL records to ~/.ownmind/logs/YYYY-MM-DD.jsonl + POST /api/activity/batch; event name literals used in this file: edit_reminder_failed (121), action_gate_failed (149), detect_trigger_failed (223), hook_context_fallback (305), iron_rule_fetch_failed (313/315), render_context_failed (329), iron_rule_trigger (340); detail value templates: status ${STATUS}, reason http_${HTTP} / curl_exit_${EXIT}, trigger ${TRIGGER}",
+      "text": "{\"ts\":…,\"event\":\"<event>\",\"tool\":\"claude-code\",\"source\":\"hook\",\"details\":{…}}"
+    },
+    {
+      "file": "hooks/ownmind-session-start.js",
+      "line": 357,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "bug-report notification segment for admins (SessionStart context injection; user sees it only if the AI relays it)",
+      "text": "As admin: ${notif.admin.unhandled_count} unhandled bug reports"
+    },
+    {
+      "file": "hooks/ownmind-session-start.js",
+      "line": 361,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "bug-report notification segment for reporters",
+      "text": "${notif.reporter.unread_resolved_count} of your reports have been resolved"
+    },
+    {
+      "file": "hooks/ownmind-session-start.js",
+      "line": 366,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "bug-report notification section header + per-segment bullet '- ${s}' + closing hint (line 368)",
+      "text": "## Bug report notifications\\n- ${s}\\n(Say \"list my reports\" or open /admin/bug-reports for details)"
+    },
+    {
+      "file": "hooks/ownmind-session-start.js",
+      "line": 376,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "standing instruction appended to every session context",
+      "text": "The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get(\"iron_rule\")."
+    },
+    {
+      "file": "hooks/ownmind-session-start.js",
+      "line": 52,
+      "channel": "log-file",
+      "audience": "developer",
+      "context": "logEvent/reportEvent JSONL + POST; event name literals in this file: session_off_cleared_on_new_session (296), init (303/323, status 'starting'/'ok'), init_fail (319, status 'api_timeout'), update_skipped (213), update_failed (214/238, step 'lock'/'update_script_missing'), update_check (226), bug_report_notifications_fetch_failed (373), memory_sync_fail (395)",
+      "text": "{\"ts\":…,\"event\":\"<event>\",\"tool\":\"claude-code\",\"source\":\"hook\",\"details\":{…,project:PROJECT_NAME}}"
+    },
+    {
+      "file": "hooks/ownmind-session-start.js",
+      "line": 341,
+      "channel": "hookSpecificOutput.additionalContext",
+      "audience": "model",
+      "context": "pass-throughs, strings NOT authored in this file: renderSessionContext(initData, broadcasts) from hooks/lib/render-session-context.js, and queueUpdateBanner({outcome:'failed', step}) from shared/update-banner.js (lines 217/239) — both outside the reading list, inventory separately",
+      "text": "<renderSessionContext output> / <queueUpdateBanner strings>"
+    },
+    {
+      "file": "hooks/lib/gate-provision.js",
+      "line": 35,
+      "channel": "other",
+      "audience": "developer",
+      "context": "ZERO user-visible strings in this file: all output channels silent by design; only writes state files (gate-current-session containing the raw sessionId, gate-nonce-* hex content); every failure is swallowed",
+      "text": "(no emitted strings)"
+    },
+    {
+      "file": "hooks/lib/notice-throttle.js",
+      "line": 37,
+      "channel": "other",
+      "audience": "developer",
+      "context": "ZERO user-visible strings: only reads/writes notice-throttle.json state; noticeKey identifiers ('off:warn-mode', 'not-checked:no-credentials', 'not-checked:never-synced', 'not-checked:check-failed', 'off:server') are machine keys defined in compliance-step.js, never displayed",
+      "text": "(no emitted strings)"
+    }
+  ]
+}
