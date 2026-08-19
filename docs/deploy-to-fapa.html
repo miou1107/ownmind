@@ -342,6 +342,21 @@
 
   .cmd span { font-size: 15px; color: var(--ink-soft); line-height: 1.6; }
 
+  pre.conf {
+    margin: 0;
+    overflow-x: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 3px 3px 0;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--ink);
+    tab-size: 4;
+  }
+
   .note {
     border-left: 3px solid var(--accent);
     background: var(--surface);
@@ -846,10 +861,11 @@
           <tbody>
             <tr><td class="key">PORT</td><td>容器內埠號，填 <code>3000</code></td></tr>
             <tr><td class="key">DB_HOST · DB_PORT · DB_NAME · DB_USER · DB_PASSWORD</td><td>compose 內部連線，<code>DB_HOST</code> 填 <code>db</code></td></tr>
-            <tr><td class="key">ENCRYPTION_KEY</td><td>至少 32 字元。正式機沿用 kkvin 現有的值，原因在下面</td></tr>
+            <tr><td class="key">ENCRYPTION_KEY</td><td>至少 32 字元，兩台各自產一把。正式機那把在搬資料當天會被換掉，原因在下面</td></tr>
             <tr><td class="key">SETUP_TOKEN</td><td>首次設定管理員密碼用，不設則該端點停用</td></tr>
             <tr><td class="key">CORS_ORIGIN</td><td>留空，代表禁止所有跨域請求</td></tr>
             <tr><td class="key">API_RATE_LIMIT_MAX</td><td>正式機留空用預設 200，測試機跑端對端測試時才調高</td></tr>
+            <tr><td class="key">AUTH_RATE_LIMIT_MAX</td><td>正式機留空用預設 10，測試機調高到 200</td></tr>
             <tr><td class="key">LOG_LEVEL</td><td>一般填 <code>info</code></td></tr>
           </tbody>
         </table>
@@ -858,14 +874,29 @@
     </div>
 
     <div class="note caution">
-      <span class="label">正式機的 ENCRYPTION_KEY 不能換新的</span>
-      <p>使用者透過 OwnMind 存放的密碼是用這把金鑰加密的，換掉之後全部解不開。這個值要從 kkvin 原封帶過去。測試機的資料是另外一份，可以自己產一把。</p>
+      <span class="label">正式機的加密金鑰由腳本帶過去，不用人工複製</span>
+      <p>使用者透過 OwnMind 存放的密碼是用 kkvin 上那把金鑰加密的，換成別把就全部解不開。<code>migrate-to-fapa.sh cutover</code> 會在還原資料的同時把那把金鑰寫進正式機的設定檔，並且比對指紋確認寫成功，對不上就中止。正式機設定檔裡先填的那把只是讓服務啟得起來，搬資料前沒有任何東西用它加密過。測試機的資料是另外一份，自己產一把就好。</p>
     </div>
 
     <div class="block">
       <h3>資料庫遷移與網站設定</h3>
       <p><code>db/</code> 底下的 SQL 由程式啟動時自行套用，不需要人工執行，也不要掛 <code>docker-entrypoint-initdb.d</code>。</p>
-      <p>網站那邊要在共用的 vhost 檔加一段 <code>location /ownmind/</code>。kkvin 上正在用的那段設定會在第一趟的第 6 步原文提供，直接沿用即可。做法是改動前先備份，驗證通過才套用。設定有錯的時候網站程式會拒絕套用並繼續跑舊設定，其他專案不會斷線。</p>
+      <p>網站那邊要在共用的 vhost 檔加一段，兩台都要。內容跟 kkvin 上正在跑的那段一樣：</p>
+      <pre class="conf">location = /ownmind {
+    return 301 /ownmind/;
+}
+
+location /ownmind/ {
+    rewrite ^/ownmind/(.*) /$1 break;
+    proxy_pass http://localhost:3100;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}</pre>
+      <p>前綴要脫掉，程式收到的路徑不帶 <code>/ownmind</code>。後台頁面會依照請求深度自己改寫 <code>base href</code>，脫掉前綴之後靜態檔一樣抓得到。</p>
+      <p>做法是改動前先備份，驗證通過才套用。設定有錯的時候網站程式會拒絕套用並繼續跑舊設定，其他專案不會斷線。</p>
     </div>
   </section>
 
@@ -961,6 +992,11 @@
           <tr>
             <td>兩台機器上的 <code>ownmind.env</code> 跟網站設定，Eric 自己處理還是授權 Vin 這邊做</td>
             <td>Eric 與 Vin 談定</td>
+            <td>第一趟的第 6 步之前</td>
+          </tr>
+          <tr>
+            <td><code>127.0.0.1:3100</code> 這個埠在兩台上有沒有被別的專案占用</td>
+            <td>Eric</td>
             <td>第一趟的第 6 步之前</td>
           </tr>
         </tbody>

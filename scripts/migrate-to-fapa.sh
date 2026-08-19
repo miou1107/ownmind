@@ -30,6 +30,10 @@
 #     collides on every table; a half-applied restore is worse than none.
 #   - Row counts are compared per table after the restore, and a mismatch is a
 #     hard failure. This is the only step that proves the move worked.
+#   - The encryption key is carried across with the data. Stored secrets are
+#     AES-encrypted with the source machine's ENCRYPTION_KEY; restoring the rows
+#     under a different key leaves every one of them permanently unreadable, and
+#     nothing fails loudly because the memories themselves come back fine.
 #   - The source is left stopped but intact. Rollback is `rollback`, and it
 #     costs seconds, because nothing on kkvin was deleted.
 
@@ -79,6 +83,65 @@ remote_counts() {
   { echo "DEPLOY_DIR='$dir'"; counts_script; } | ssh "$host" 'bash -s'
 }
 
+# Fingerprint of a host's ENCRYPTION_KEY, so both sides can be compared without
+# the key itself ever reaching a terminal, a log, or this script's output.
+remote_key_fingerprint() {
+  local host="$1" dir="$2"
+  { echo "DEPLOY_DIR='$dir'"; cat <<'EOF'
+set -euo pipefail
+f="$DEPLOY_DIR/.env"
+[ -f "$f" ] || { echo "no-env-file"; exit 0; }
+k=$(grep -m1 '^ENCRYPTION_KEY=' "$f" | cut -d= -f2- || true)
+[ -n "$k" ] || { echo "empty"; exit 0; }
+printf '%s' "$k" | sha256sum | cut -c1-16
+EOF
+  } | ssh "$host" 'bash -s'
+}
+
+# Copy ENCRYPTION_KEY from the source .env into the destination's, then confirm
+# by fingerprint. Called during cutover, after the dump and before the
+# destination API comes back up.
+sync_encryption_key() {
+  local key src_fp dst_fp
+  log "carrying the encryption key across (stored secrets are unreadable without it)"
+
+  key=$({ echo "DEPLOY_DIR='$SRC_DIR'"; cat <<'EOF'
+set -euo pipefail
+grep -m1 '^ENCRYPTION_KEY=' "$DEPLOY_DIR/.env" | cut -d= -f2-
+EOF
+  } | ssh "$SRC_HOST" 'bash -s') || fail "could not read ENCRYPTION_KEY from $SRC_HOST"
+  [ -n "$key" ] || fail "ENCRYPTION_KEY is empty on $SRC_HOST — stop and find out why before restoring"
+
+  { echo "DEPLOY_DIR='$DST_DIR'"; printf 'KEY=%q\n' "$key"; cat <<'EOF'
+set -euo pipefail
+umask 077
+
+# .env here is a symlink into /opt/deploy/envs/. Editing in place through the
+# link would replace the link with a regular file, and the next deploy re-links
+# it and silently restores the old key.
+ENV_FILE=$(readlink -f "$DEPLOY_DIR/.env")
+[ -f "$ENV_FILE" ] || { echo "[remote] no env file behind $DEPLOY_DIR/.env" >&2; exit 1; }
+cp -p "$ENV_FILE" "${ENV_FILE}.bak-$(date +%Y%m%d%H%M%S)"
+
+# awk, not sed: a sed replacement string treats & and \ as syntax, so a key
+# containing either would be written back corrupted.
+if grep -q '^ENCRYPTION_KEY=' "$ENV_FILE"; then
+  awk -v k="$KEY" '/^ENCRYPTION_KEY=/{print "ENCRYPTION_KEY=" k; next} {print}' "$ENV_FILE" > "${ENV_FILE}.tmp"
+  cat "${ENV_FILE}.tmp" > "$ENV_FILE"
+  rm -f "${ENV_FILE}.tmp"
+else
+  printf 'ENCRYPTION_KEY=%s\n' "$KEY" >> "$ENV_FILE"
+fi
+echo "[remote] encryption key written to $ENV_FILE"
+EOF
+  } | ssh "$DST_HOST" 'bash -s' || fail "could not write ENCRYPTION_KEY on $DST_HOST"
+
+  src_fp=$(remote_key_fingerprint "$SRC_HOST" "$SRC_DIR")
+  dst_fp=$(remote_key_fingerprint "$DST_HOST" "$DST_DIR")
+  [ "$src_fp" = "$dst_fp" ] || fail "encryption key did not land: source $src_fp, destination $dst_fp"
+  log "encryption key matches on both hosts (fingerprint $src_fp)"
+}
+
 # ---------------------------------------------------------------------- check
 
 cmd_check() {
@@ -110,6 +173,11 @@ EOF
   remote_counts "$SRC_HOST" "$SRC_DIR"
   log "row counts on destination (expected to be zero or near-zero before the move)"
   remote_counts "$DST_HOST" "$DST_DIR" || true
+
+  log "encryption key fingerprints (they must match before the move is complete)"
+  echo "  source:      $(remote_key_fingerprint "$SRC_HOST" "$SRC_DIR")"
+  echo "  destination: $(remote_key_fingerprint "$DST_HOST" "$DST_DIR")"
+  log "  a mismatch here is expected before cutover — cutover copies the key across"
 
   log "check done, nothing was changed"
 }
@@ -173,7 +241,9 @@ EOF
   log "uploading to the destination"
   scp -q "$dump" "${DST_HOST}:/tmp/ownmind-${stamp}.sql.gz" || fail "upload failed"
 
-  # --- destination: drop schema, restore ------------------------------------
+  # --- destination: encryption key, then drop schema and restore ------------
+  sync_encryption_key
+
   log "restoring on the destination"
   { echo "DEPLOY_DIR='$DST_DIR'"; echo "DB_USER='$DB_USER'"; echo "DB_NAME='$DB_NAME'";
     echo "STAMP='$stamp'"; cat <<'EOF'
@@ -199,7 +269,9 @@ echo "[remote] schema reset"
 gunzip -c "$IN" | docker compose exec -T db psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q
 echo "[remote] restore finished"
 
-docker compose up -d api
+# --force-recreate, not a plain start: the container was created with the old
+# env file and would otherwise come back holding the old encryption key.
+docker compose up -d --force-recreate api
 echo "[remote] api started"
 EOF
   } | ssh "$DST_HOST" 'bash -s' || fail "restore failed. The destination API is left stopped on purpose so nobody writes into a half-restored schema. Bring the source back with: $0 rollback"
