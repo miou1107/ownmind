@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## Windows 上同步一次就把鐵律攔截關掉（尚未發版，2026-08-19）
+## v1.30.15 修改（Windows 上同步一次就把鐵律攔截關掉）
 
 修改檔：
 ```
@@ -26,7 +26,7 @@ tests/edit-trigger-reminder.test.js  — 同一種毛病：那個代替 install.
 ```
 
 
-## 違規說明改成講使用者的語言 + 安裝腳本留下 npm 的錯誤（尚未發版，2026-08-19）
+## v1.30.15 修改之二（違規說明改成講使用者的語言 ＋ 安裝腳本留下 npm 的錯誤）
 
 新增檔：
 ```
@@ -72,7 +72,7 @@ tests/installer-node-paths.test.js   — 「不准丟掉錯誤訊息」那道檢
 ```
 
 
-## 密鑰偵測樣本改成假的（尚未發版，2026-08-18）
+## v1.30.15 修改之三（密鑰偵測樣本改成假的）
 
 修改檔：
 ```
@@ -93,7 +93,7 @@ tests/secret-detect-wp-prose.test.js（再改）
 ```
 
 
-## FAPA 搬遷（尚未發版，2026-08-18）
+## v1.30.15 修改之四（FAPA 搬遷的說明書與搬資料腳本）
 
 新增檔：
 ```
@@ -111,6 +111,18 @@ docs/deploy-to-fapa.html             — 給 Vin 與 Eric 看的部署說明書�
                                        切換當天的停機與退回分界、跟其他專案的互相影響、
                                        伺服器規格（容器、埠、env 全文、nginx 那段、
                                        CI 四個值）
+docs/superpowers/plans/2026-08-13-ownmind-to-fapa-migration.md
+docs/superpowers/plans/2026-08-13-standard-enforcement.md
+docs/superpowers/plans/2026-08-14-gate-message-i18n.md
+docs/superpowers/plans/2026-08-14-p1-action-gate.md
+docs/superpowers/specs/2026-08-13-standard-enforcement-design.md
+docs/superpowers/specs/2026-08-14-gate-i18n/
+                                     — 四個已完工功能的計畫與設計規格，一直只留在本機。
+                                       p1-action-gate 那份原本寫死一個對話專屬的暫存目錄
+                                       路徑，改成變數：那個路徑早就不存在了
+package.json / README* / docs/README*
+                                     — 1.30.14 → 1.30.15
+CHANGELOG.md / FILELIST.md           — v1.30.15 條目
 ```
 
 
