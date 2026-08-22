@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## v1.30.16 修改（守衛自己關掉了，而測試把那份安靜讀成通過）
+
+修改檔：
+```
+hooks/ownmind-iron-rule-check.js     — 憑證檢查移到編輯守衛後面；讀憑證那一行包進 try。
+                                       守衛只讀本機的 enforcement.json、不碰 API，
+                                       所以沒有金鑰的機器一樣要被擋
+hooks/ownmind-edit-reminder.js       — 檔頭註解更正：兩支掛勾都會呼叫這個守衛，
+                                       不再是「只有 .sh 會」
+tests/enforcement-edit-guard.test.js — 補上 .js 版端到端測試，用沒有金鑰的假家目錄
+                                       跑掛勾；staging 抽成 stageHome()，兩支共用
+tests/install-clean-machine.e2e.mjs  — 照設定檔登記的指令原樣跑掛勾，不再固定用 bash；
+                                       另外檢查結束代碼與 stderr，讓「掛勾沒啟動」
+                                       不會再長得像「守衛放行」
+package.json                         — 1.30.15 → 1.30.16
+README.md / docs/README.zh-TW.md /   — 版號與本次的紀錄
+docs/README.ja.md
+CHANGELOG.md / FILELIST.md           — v1.30.16 條目
+```
+
 ## v1.30.15 修改（Windows 上同步一次就把鐵律攔截關掉）
 
 修改檔：
