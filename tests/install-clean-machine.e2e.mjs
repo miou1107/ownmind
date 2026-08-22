@@ -337,7 +337,20 @@ test('the registered edit hook really blocks an edit to somebody else\'s path', 
     const r = spawnSync('bash', ['-c', command], {
       input: payload, env: sandboxEnv(), encoding: 'utf8', timeout: 60_000,
     });
-    return { out: `${r.stdout || ''}`, err: `${r.stderr || ''}` };
+    const out = `${r.stdout || ''}`;
+    const err = `${r.stderr || ''}`;
+    // The negative case below asserts the *absence* of a block, so a hook that never launched
+    // would sail through it. That is the direction nobody looks, and it is how the bash/node
+    // mix-up above stayed invisible in half the assertions. Check that it ran at all.
+    assert.equal(
+      r.status, 0,
+      `the hook exited ${r.status}. spawn error: ${r.error || 'none'}\nstderr: ${err}`,
+    );
+    assert.doesNotMatch(
+      err, /command not found|syntax error|No such file|is a directory/i,
+      `the hook did not launch cleanly. stderr: ${err}`,
+    );
+    return { out, err };
   };
 
   // Deliberately a file in a folder that does not exist yet: adding the first file under a
