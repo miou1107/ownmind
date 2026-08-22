@@ -1,5 +1,67 @@
 # OwnMind 更新紀錄
 
+## v1.30.16 — 守衛自己關掉了，而測試把那份安靜讀成通過
+
+### 讀不到金鑰的 mac／Linux 機器，編輯守衛整個沒跑，而且不出聲
+
+改到別人負責的檔案，本來應該被擋下來。在讀不到金鑰的 macOS 或 Linux 機器上，那次編輯
+會直接過去，畫面上一個字都沒有 —— 連「這次沒檢查」都沒印。
+
+`ownmind-iron-rule-check.js` 把憑證檢查排在編輯守衛前面：
+
+```js
+const { apiKey, apiUrl } = readCredentials();
+if (!apiKey || !apiUrl) process.exit(0);   // ← 編輯守衛在這行後面
+```
+
+守衛只讀本機的 `enforcement.json`，從頭到尾不碰 API，沒有金鑰照樣判得出來。這條原則
+這個檔案自己上面七十行就寫著，講的是同一件事的另一個守衛：「排在憑證檢查前面，是刻意的
+—— 它讀本機快取，不讀 API。」編輯這條分支是唯一沒照做的。
+
+v1.30.15 之前 macOS 跟 Linux 跑的是 `.sh` 那份，順序是對的（守衛在第 118 行，憑證檢查
+在第 271 行）。`install.sh` 不再傳 `--bash` 之後，兩個平台都換到 `.js`，順序就跟著換錯。
+一般安裝會把金鑰寫進 `~/.claude.json`，所以中招的機器不多；問題在於它壞掉的方式是沉默的，
+而那正是這個產品存在的理由要消滅的東西。
+
+改了三處：
+
+- 提早結束那一行移到編輯守衛後面，守衛拿到什麼憑證就用什麼，需要網路的部分本來就會自己回空
+- 讀憑證那一行補上 `try` —— 半裝好的機器上它會丟例外，例外被最外層接住之後就是靜靜結束、
+  什麼都不印。`ownmind-edit-reminder.js` 早就為了同一個原因包了 try，這份漏了
+- `tests/enforcement-edit-guard.test.js` 補上 `.js` 版的端到端測試，用沒有金鑰的假家目錄
+  直接跑掛勾。原本只有 `.sh` 版，而 `.sh` 現在沒有任何平台在跑
+
+`tests/install-clean-machine.e2e.mjs` 的掛勾呼叫也補了兩個檢查：結束代碼要是 0、stderr
+不能出現 `command not found` 這類字樣。「掛勾根本沒啟動」跟「守衛放行」在測試裡本來長得
+一模一樣，而放行那一側沒有人在看。
+
+### 掛勾改用 node 跑之後，這個測試還在用 bash 叫它
+
+clean install 這項檢查從 8/18 起每天紅一次，訊息一直是「掛勾沒有擋」。
+
+擋的那一端沒事。是測試自己沒把掛勾叫起來。v1.30.15 之後 `install.sh` 不再傳
+`--bash`，macOS 跟 Linux 上登記的指令變成
+
+```
+node "/…/.ownmind/hooks/ownmind-iron-rule-check.js"
+```
+
+測試卻把路徑拆出來、固定用 bash 執行它：
+
+```js
+spawnSync('bash', [hookScriptPath(command)], …)
+```
+
+bash 拿到一個 `.js` 會當成 shell 腳本讀，於是 stderr 印出 `line 2: /bin: Is a
+directory`、`syntax error near unexpected token '('`，node 從頭到尾沒被啟動。
+測試把「叫不起來」讀成「沒有擋」，剛好是它最不該搞混的兩件事。
+
+改成把設定檔裡登記的那串指令原樣丟進 shell 跑，Claude Code 本來就是這樣執行掛勾的。
+`~` 也交給 shell 展開，對到 `sandboxEnv()` 給的假家目錄。只有這裡用到的
+`hookScriptPath()` 一併刪掉。
+
+macOS 本機跑 `tests/install-clean-machine.e2e.mjs`：改之前 8 過 1 敗，改之後 9 過 0 敗。
+
 ## v1.30.15 — Windows 上升級一次，鐵律攔截就跑不動了
 
 ### 升級腳本把鐵律攔截改成一句跑不動的指令（Windows）
