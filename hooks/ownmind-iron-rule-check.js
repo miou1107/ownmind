@@ -187,18 +187,34 @@ async function main() {
     }
   }
 
-  const { apiKey, apiUrl } = readCredentials();
-  if (!apiKey || !apiUrl) process.exit(0);
+  // In a try, and deliberately — the same reason the twin in ownmind-edit-reminder.js gives:
+  // this call reaches a helper through createRequire, and on a half-installed or half-synced
+  // ~/.ownmind that throws. The throw lands in the catch at the bottom of this file and exits
+  // 0 with empty stdout, so the guard below would never run and nothing would say so. The
+  // guard does not need credentials; only the API work further down does.
+  let apiKey = '';
+  let apiUrl = '';
+  try { ({ apiKey, apiUrl } = readCredentials()); } catch { /* the guard does not need them */ }
 
   // v1.26.92: editing is the most frequent thing in a session, so the edit trigger takes
   // its own path — throttled, and deliberately never reaching the verification engine
   // below, which is the only code here that can emit `decision: block`. Its conditions are
   // written for commit and deploy; none of them can be satisfied by an edit.
+  //
+  // Ahead of the credentials guard, on purpose. The rule was already written in this file —
+  // see the action gate above, "before the credential guard on purpose: the gate reads the
+  // local enforcement cache, not the API" — and the edit branch was the one place that broke
+  // it. The path guard reads the same local bundle and never the API, so a machine with no
+  // key configured has to be enforced too. Until v1.30.15 macOS and Linux ran the .sh, which
+  // had the right ordering; when install.sh stopped passing --bash both platforms moved onto
+  // this file and inherited the wrong one, and an edit to somebody else's path went through
+  // with no block and not even the "could not check" line. tests/enforcement-edit-guard.test.js
+  // drives this file with a HOME that holds a guard bundle and no credentials, and says so.
   if (trigger === 'edit') {
     // The path and the incoming text come out of the payload this function already read.
     // stdin is spent by now, so they are parsed from `input` rather than read again — and
-    // without them the guard inside editReminder has nothing to judge, which on Windows
-    // (the only platform that reaches this branch) would mean no guard at all.
+    // without them the guard inside editReminder has nothing to judge, which would mean no
+    // guard at all.
     let filePath = '';
     let content = '';
     try {
@@ -209,12 +225,19 @@ async function main() {
         .join('\n');
     } catch { /* a payload without tool_input simply has nothing to guard */ }
 
+    // editReminder takes the credentials as it finds them: the guard runs either way, and
+    // the parts that do need the network return nothing without a key.
     const out = await editReminder({
       version: VERSION, apiKey, apiUrl, now: Date.now(), sessionId, filePath, content,
     });
     if (out) console.log(out);
     process.exit(0);
   }
+
+  // Where a machine with no key stops. Most of what follows needs the API; the parts that do
+  // not (the push version gate, the verification engine) have always stopped here too, and
+  // moving them is a separate change from this one.
+  if (!apiKey || !apiUrl) process.exit(0);
 
   // v1.26.90: the fetched rules feed the reminder only, and the reminder block below skips
   // the 'command' fallback trigger entirely — so for an ordinary Bash command this request

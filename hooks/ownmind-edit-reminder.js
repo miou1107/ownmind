@@ -12,10 +12,12 @@
  * reminder, and the verification engine is still untouched — its conditions are written for
  * commit and deploy, so the block below is its own exit and shares nothing with it.
  *
- * The guard lives here rather than in `ownmind-iron-rule-check.js` because of what is
- * registered. `install.sh` passes `--bash`, `ensure-pretooluse-hooks.cjs` turns that into
- * `ownmind-iron-rule-check.sh`, and that script hands every edit tool to this file and exits.
- * A guard written into the `.js` hook would pass its tests and never run on macOS or Linux.
+ * The guard lives here rather than in either hook because both of them call it. Until
+ * v1.30.15 `install.sh` passed `--bash` and macOS and Linux ran `ownmind-iron-rule-check.sh`,
+ * which hands every edit tool to this file and exits; since that flag went away every
+ * platform runs `ownmind-iron-rule-check.js`, which reaches this file through its own edit
+ * branch. One guard, two wirings — and tests/enforcement-edit-guard.test.js drives both, so
+ * a guard that only one of them reaches fails there rather than on somebody's machine.
  */
 
 import fs from 'fs';
