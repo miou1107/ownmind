@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## 尚未發版 — 掛勾改用 node 跑之後，這個測試還在用 bash 叫它
+
+clean install 這項檢查從 8/18 起每天紅一次，訊息一直是「掛勾沒有擋」。
+
+擋的那一端沒事。是測試自己沒把掛勾叫起來。v1.30.15 之後 `install.sh` 不再傳
+`--bash`，macOS 跟 Linux 上登記的指令變成
+
+```
+node "/…/.ownmind/hooks/ownmind-iron-rule-check.js"
+```
+
+測試卻把路徑拆出來、固定用 bash 執行它：
+
+```js
+spawnSync('bash', [hookScriptPath(command)], …)
+```
+
+bash 拿到一個 `.js` 會當成 shell 腳本讀，於是 stderr 印出 `line 2: /bin: Is a
+directory`、`syntax error near unexpected token '('`，node 從頭到尾沒被啟動。
+測試把「叫不起來」讀成「沒有擋」，剛好是它最不該搞混的兩件事。
+
+改成把設定檔裡登記的那串指令原樣丟進 shell 跑，Claude Code 本來就是這樣執行掛勾的。
+`~` 也交給 shell 展開，對到 `sandboxEnv()` 給的假家目錄。只有這裡用到的
+`hookScriptPath()` 一併刪掉。
+
+macOS 本機跑 `tests/install-clean-machine.e2e.mjs`：改之前 8 過 1 敗，改之後 9 過 0 敗。
+
 ## v1.30.15 — Windows 上升級一次，鐵律攔截就跑不動了
 
 ### 升級腳本把鐵律攔截改成一句跑不動的指令（Windows）

@@ -215,19 +215,6 @@ function hookCommands(settings, event) {
   return (settings.hooks?.[event] || []).flatMap((entry) => (entry.hooks || []).map((h) => h.command));
 }
 
-/**
- * The script out of a registered hook command, whichever form the installer wrote.
- *
- * Two shapes reach this: `bash ~/.claude/hooks/x.sh` and `node "/abs/path/x.js"`. Stripping
- * a leading and trailing quote independently would leave the opening quote on the second
- * form and produce an unopenable path, so the argument is unquoted as a whole.
- */
-function hookScriptPath(command) {
-  const arg = command.slice(command.indexOf(' ') + 1).trim();
-  const unquoted = arg.startsWith('"') && arg.endsWith('"') ? arg.slice(1, -1) : arg;
-  return unquoted.startsWith('~') ? path.join(world.home, unquoted.slice(1)) : unquoted;
-}
-
 test('the installer finishes, and says so', () => {
   assert.equal(
     world.installStatus, 0,
@@ -341,7 +328,13 @@ test('the registered edit hook really blocks an edit to somebody else\'s path', 
       session_id: 'clean-install-e2e',
       tool_input: { file_path: filePath },
     });
-    const r = spawnSync('bash', [hookScriptPath(command)], {
+    // The whole command string, through a shell, because that is what Claude Code does with
+    // it. Pulling the path out and running it under `bash` instead was the same test lying
+    // twice over: from v1.30.15 the command on macOS and Linux is `node ".../x.js"`, and bash
+    // handed a .js file reads it as a shell script, so the hook never ran and the assertion
+    // read that as "did not block". A shell also expands the `~` the .sh form still carries,
+    // against the sandbox HOME in sandboxEnv().
+    const r = spawnSync('bash', ['-c', command], {
       input: payload, env: sandboxEnv(), encoding: 'utf8', timeout: 60_000,
     });
     return { out: `${r.stdout || ''}`, err: `${r.stderr || ''}` };
