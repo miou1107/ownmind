@@ -12,14 +12,17 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /**
  * The guard, in the module both installed hooks actually call.
  *
- * It lives in `ownmind-edit-reminder.js` rather than in `ownmind-iron-rule-check.js` because
- * of what is registered: `install.sh` passes `--bash`, `ensure-pretooluse-hooks.cjs` turns
- * that into the `.sh`, and the `.sh` hands every edit tool to this module and exits. A guard
- * written into the `.js` hook would never run on macOS or Linux - it would pass its unit
- * tests, ship, and block nothing on the machine it was written for.
+ * It lives in `ownmind-edit-reminder.js` rather than in either hook, because both hooks call
+ * it: the `.sh` hands every edit tool to that module and exits, and the `.js` reaches it
+ * through its own edit branch. Which of the two a machine runs has changed once already —
+ * `install.sh` passed `--bash` until v1.30.15 and macOS and Linux got the `.sh`; without it
+ * every platform gets the `.js`.
  *
- * So the last test here spawns the real `.sh` against a throwaway HOME. That is the only one
- * that can tell whether the guard is wired into the path Claude Code actually takes.
+ * So the last two tests spawn the real hooks against a throwaway HOME, one each. They are the
+ * only ones that can tell whether the guard is wired into the path Claude Code actually takes,
+ * and keeping both means the answer does not depend on which wiring is current. Neither HOME
+ * carries credentials, which is the other half of the same question: the guard reads the local
+ * bundle and never the API, so a machine with no key configured has to be enforced too.
  */
 
 const GUARD = {
@@ -177,28 +180,44 @@ test('a guard that cannot run says so instead of going quiet', async () => {
   );
 });
 
-test('the shell hook Claude Code registers carries the block through to stdout', async () => {
-  // The end-to-end check, and the one that matters most: it is the only test that fails if
-  // the guard is wired into the wrong file.
-  const repo = makeRepo();
-  const file = touch(repo, 'ci/projects.yml');
+/**
+ * Stage the pieces an installed hook reaches for by absolute path under a throwaway $HOME,
+ * with the guard bundle already in the cache. Deliberately no credentials anywhere in it:
+ * the guard reads the local bundle and needs none, and a hook that quietly requires one is
+ * the bug `the node hook ... with no credentials` below exists to catch.
+ */
+function stageHome() {
   const home = tempDir('om-editguard-home-');
-
-  // Stage the pieces the .sh reaches for by absolute path under $HOME.
-  const hooksDir = path.join(home, '.ownmind', 'hooks');
-  fs.mkdirSync(path.join(hooksDir, 'lib'), { recursive: true });
   fs.mkdirSync(path.join(home, '.ownmind', 'cache'), { recursive: true });
-  fs.mkdirSync(path.join(home, '.ownmind', 'shared'), { recursive: true });
+  // No mkdirSync for hooks/lib or shared: a real directory there is not a link, and the loop
+  // below would skip creating one, leaving two of the four pieces unstaged while the code
+  // read as if all four were.
   for (const rel of ['hooks/ownmind-edit-reminder.js', 'hooks/lib', 'shared', 'package.json']) {
-    const target = path.join(repoRoot, rel);
-    const link = path.join(home, '.ownmind', rel.startsWith('hooks/') ? rel : rel);
+    const link = path.join(home, '.ownmind', rel);
     fs.mkdirSync(path.dirname(link), { recursive: true });
-    if (!fs.existsSync(link)) fs.symlinkSync(target, link);
+    if (!fs.existsSync(link)) fs.symlinkSync(path.join(repoRoot, rel), link);
   }
   fs.writeFileSync(
     path.join(home, '.ownmind', 'cache', 'enforcement.json'),
     JSON.stringify({ selectors: [], guards: [GUARD], injectables: [] }),
   );
+  return home;
+}
+
+/** The env an installed hook runs under, with every route to a credential removed. */
+function envWithoutCredentials(home) {
+  const env = { ...process.env, HOME: home, USERPROFILE: home };
+  delete env.OWNMIND_API_KEY;
+  delete env.OWNMIND_API_URL;
+  return env;
+}
+
+test('the shell hook Claude Code registers carries the block through to stdout', async () => {
+  // The end-to-end check, and the one that matters most: it is the only test that fails if
+  // the guard is wired into the wrong file.
+  const repo = makeRepo();
+  const file = touch(repo, 'ci/projects.yml');
+  const home = stageHome();
 
   const payload = JSON.stringify({
     tool_name: 'Edit',
@@ -209,7 +228,36 @@ test('the shell hook Claude Code registers carries the block through to stdout',
   const stdout = execFileSync('bash', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh')], {
     input: payload,
     encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home },
+    env: envWithoutCredentials(home),
+    timeout: 30_000,
+  });
+
+  assert.match(
+    stdout, /"decision"\s*:\s*"block"/,
+    'the guard did not reach stdout through the hook Claude Code actually runs',
+  );
+  assert.match(stdout, /412/);
+});
+
+test('the node hook Claude Code registers blocks with no credentials on the machine', () => {
+  // The twin of the test above, for the file that is actually registered now. From v1.30.15
+  // `install.sh` stopped passing `--bash`, so `ensure-pretooluse-hooks.cjs` writes
+  // `node "<dir>/hooks/ownmind-iron-rule-check.js"` on every platform and the .sh above
+  // guards a path nothing executes any more.
+  //
+  // No credentials in the HOME and none in the env, on purpose. The guard reads the local
+  // enforcement bundle and never the API, so a machine with no key configured is still
+  // meant to be enforced - the same reasoning the .sh states over its action gate. When the
+  // credentials check sat in front of the edit branch, this edit went through in silence:
+  // no block, and not even the "could not check" line.
+  const repo = makeRepo();
+  const file = touch(repo, 'ci/projects.yml');
+  const home = stageHome();
+
+  const stdout = execFileSync('node', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.js')], {
+    input: JSON.stringify({ tool_name: 'Edit', session_id: 's-e2e-node', tool_input: { file_path: file } }),
+    encoding: 'utf8',
+    env: envWithoutCredentials(home),
     timeout: 30_000,
   });
 
