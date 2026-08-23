@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## 尚未發版 修改（排程跑的更新在 mac 上停在 npm）
+
+修改檔：
+```
+scripts/install-helpers/run-scanner.sh — 選定的 node 目錄放上 PATH 再 exec，子程序才找得到
+                                         npm；相對路徑與 "." 不放
+shared/auto-update.js                  — npm 直接取 node 旁邊那一支（Windows 加引號）；
+                                         新增 withNodeOnPath()，npm 與同步腳本都拿到
+                                         補過的 PATH
+tests/run-scanner-wrapper.test.js      — 補 PATH 有沒有帶到子程序、相對路徑不上 PATH
+                                         兩個案例；runWrapper 可指定工作目錄
+tests/auto-update-shared.test.js       — 補 npm 取用位置、Windows 引號、Path/PATH 大小寫、
+                                         同步腳本的 PATH 共五個案例；harness 的 execPath
+                                         固定指向沒有 npm 的目錄，測試不再看機器
+CHANGELOG.md / FILELIST.md             — 本次條目
+```
+
 ## v1.30.16 修改（守衛自己關掉了，而測試把那份安靜讀成通過）
 
 修改檔：

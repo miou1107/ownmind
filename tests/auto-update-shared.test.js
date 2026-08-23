@@ -68,6 +68,11 @@ function harness(overrides = {}) {
       logEvent: (event, details) => events.push({ event, details }),
       queueBanner: (b) => banners.push(b),
       today: () => '2026-08-11',
+      // npm is taken from the directory of the running node when it is there, so a default
+      // of process.execPath would make every case below depend on whether the machine
+      // running the tests happens to have npm beside its node. It points at nothing here;
+      // the cases about the lookup name their own.
+      execPath: path.join(ROOT, 'no-npm', 'node'),
       ...overrides
     }
   };
@@ -189,6 +194,123 @@ describe('when there are new commits', () => {
     assert.equal(npm.opts.shell, true);
     assert.ok(calls.some((c) => c.cmd === 'powershell.exe'
       && c.args.includes(path.join(dir, 'scripts', 'update.ps1'))));
+  });
+
+  it('runs npm from the directory of the running node, not from PATH', async () => {
+    // A launchd agent gets PATH=/usr/bin:/bin:/usr/sbin:/sbin. git resolved from /usr/bin so
+    // the pull went through; homebrew's npm did not, so `npm install` threw ENOENT — 123
+    // times over 12 days on one Mac — and scripts/update.sh, which copies the hooks into
+    // ~/.claude/hooks, never ran behind it. npm is installed beside node, which is already
+    // running, so the step can name it outright.
+    const nodeDir = path.join(ROOT, 'homebrew-bin');
+    await fsp.mkdir(nodeDir, { recursive: true });
+    await fsp.writeFile(path.join(nodeDir, 'npm'), '#!/bin/sh\n');
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+
+    const out = await runAutoUpdate({
+      ...h.opts, execFile, platform: 'darwin',
+      execPath: path.join(nodeDir, 'node'),
+      env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }
+    });
+
+    assert.equal(out.outcome, APPLIED);
+    const npm = calls.find((c) => c.args[0] === 'install');
+    assert.equal(npm.cmd, path.join(nodeDir, 'npm'));
+  });
+
+  it('falls back to the bare name when node has no npm beside it', async () => {
+    // A distro packaging that splits them, or a node shim. PATH is still the only answer
+    // available, and it is the answer that worked everywhere before this change.
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+    const out = await runAutoUpdate({
+      ...h.opts, execFile, platform: 'darwin',
+      execPath: path.join(ROOT, 'nowhere', 'node')
+    });
+    assert.equal(out.outcome, APPLIED);
+    assert.ok(calls.some((c) => c.cmd === 'npm' && c.args[0] === 'install'));
+  });
+
+  it('quotes npm.cmd on Windows, where the command line is assembled as text', async () => {
+    // `C:\Program Files\nodejs\npm.cmd` is the default install location. Under shell: true
+    // an unquoted path is split at the space and cmd runs `C:\Program`.
+    const nodeDir = path.join(ROOT, 'Program Files', 'nodejs');
+    await fsp.mkdir(nodeDir, { recursive: true });
+    await fsp.writeFile(path.join(nodeDir, 'npm.cmd'), '@echo off\n');
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+
+    await runAutoUpdate({
+      ...h.opts, execFile, platform: 'win32', execPath: path.join(nodeDir, 'node.exe')
+    });
+
+    const npm = calls.find((c) => c.args[0] === 'install');
+    assert.equal(npm.cmd, `"${path.join(nodeDir, 'npm.cmd')}"`);
+    assert.equal(npm.opts.shell, true);
+  });
+
+  it('hands the sync script the same PATH, since it installs dependencies too', async () => {
+    // update.sh runs its own `npm install js-yaml` and swallows the failure with `|| echo`,
+    // so a bare PATH there is a run that reports success with nothing installed.
+    const nodeDir = path.join(ROOT, 'homebrew-bin');
+    await fsp.mkdir(nodeDir, { recursive: true });
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+
+    await runAutoUpdate({
+      ...h.opts, execFile, platform: 'darwin',
+      execPath: path.join(nodeDir, 'node'),
+      env: { PATH: '/usr/bin:/bin' }
+    });
+
+    const sync = calls.find((c) => c.cmd === 'bash');
+    assert.equal(sync.opts.env.PATH, `${nodeDir}:/usr/bin:/bin`);
+  });
+
+  it('leaves PATH alone when the node directory is already on it', async () => {
+    const nodeDir = path.join(ROOT, 'homebrew-bin');
+    await fsp.mkdir(nodeDir, { recursive: true });
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+
+    await runAutoUpdate({
+      ...h.opts, execFile, platform: 'darwin',
+      execPath: path.join(nodeDir, 'node'),
+      env: { PATH: `/usr/bin:${nodeDir}` }
+    });
+
+    const sync = calls.find((c) => c.cmd === 'bash');
+    assert.equal(sync.opts.env.PATH, `/usr/bin:${nodeDir}`);
+  });
+
+  it('rewrites the name Windows already used, rather than adding a second one', async () => {
+    // process.env on Windows is a case-insensitive proxy; spreading it into a plain object
+    // would leave `Path` and `PATH` side by side, and the child would read one of them.
+    const nodeDir = path.join(ROOT, 'nodejs');
+    await fsp.mkdir(nodeDir, { recursive: true });
+    const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
+    const h = harness();
+
+    await runAutoUpdate({
+      ...h.opts, execFile, platform: 'win32',
+      execPath: path.join(nodeDir, 'node.exe'),
+      env: { Path: 'C:\\Windows\\system32' }
+    });
+
+    const sync = calls.find((c) => c.cmd === 'powershell.exe');
+    assert.equal(sync.opts.env.Path, `${nodeDir};C:\\Windows\\system32`);
+    assert.equal(sync.opts.env.PATH, undefined);
+  });
+
+  it('still reports step=npm when the install itself fails', async () => {
+    // The lookup change must not soften a genuine failure, or a machine records itself as
+    // upgraded while carrying the previous release's node_modules.
+    const { execFile } = fakeExec({ pending: 'abc1234 x', failOn: 'npm install' });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.outcome, FAILED);
+    assert.equal(out.step, 'npm');
   });
 });
 

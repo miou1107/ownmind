@@ -117,4 +117,24 @@ if [ ! -f "$SCANNER_JS" ]; then
   exit 2
 fi
 
+# The scanner runs the whole upgrade behind it: git pull, `npm install`, then
+# scripts/update.sh, which is what copies the hooks into ~/.claude/hooks. A scheduler hands
+# out its own PATH, not a login shell's — launchd gives /usr/bin:/bin:/usr/sbin:/sbin — so
+# git resolved from /usr/bin and npm, living in /opt/homebrew/bin or under ~/.nvm, did not.
+# Measured on one Mac: `update_failed step=npm error=ENOENT` 123 times across 12 days, with
+# the machine reporting the new version while still running the previous release's hooks.
+# The candidate search above already had to find node; npm is its neighbour, so putting that
+# directory on PATH fixes every child at once, including the npm calls inside update.sh.
+NODE_DIR="$(dirname "$NODE_BIN")"
+# `dirname` answers "." for a bare or backslash-separated path, and "." on PATH means "run
+# whatever is in the current directory" — never what was wanted here.
+case "$NODE_DIR" in
+  /*)
+    case ":${PATH}:" in
+      *":${NODE_DIR}:"*) ;;
+      *) PATH="${NODE_DIR}:${PATH}"; export PATH ;;
+    esac
+    ;;
+esac
+
 exec "$NODE_BIN" "$SCANNER_JS"
