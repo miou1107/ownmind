@@ -43,7 +43,23 @@ exit ${exitCode}
   return stub;
 }
 
-function runWrapper(home, env = {}) {
+async function writeStubNodePrintingEnv(dirPath, { version = 'v22.5.0' } = {}) {
+  const stub = path.join(dirPath, 'node');
+  // Prints its own PATH so a case can assert what the scanner's children would inherit.
+  await fs.writeFile(stub,
+    `#!/bin/bash
+if [ "\$1" = "--version" ]; then
+  echo "${version}"
+  exit 0
+fi
+echo "child-path: \$PATH" 1>&2
+exit 0
+`, 'utf8');
+  await fs.chmod(stub, 0o755);
+  return stub;
+}
+
+function runWrapper(home, env = {}, { cwd = null } = {}) {
   // The wrapper's environment is exported by a launcher script rather than passed to spawn.
   // PATH is the reason: the cases restrict it to force the wrapper through .node-path, but
   // node reads the same variable to locate bash.exe and '/usr/bin:/bin' is not a path any
@@ -60,6 +76,9 @@ function runWrapper(home, env = {}) {
   };
   const launcher = makeBashScript([
     ...Object.entries(wrapperEnv).map(([k, v]) => `export ${k}=${JSON.stringify(String(v))}`),
+    // A working directory matters only for the case that puts a relative path in
+    // .node-path; everything else runs wherever the test runner happens to be.
+    ...(cwd ? [`cd ${JSON.stringify(toBashPath(cwd))}`] : []),
     `exec bash ${JSON.stringify(toBashPath(WRAPPER))}`,
   ].join('\n'));
 
@@ -128,6 +147,53 @@ describe('run-scanner.sh wrapper', () => {
     const outLog = await fs.readFile(path.join(home, '.ownmind/logs/scanner.log'), 'utf8');
     assert.match(outLog, /using node=/);
     assert.match(outLog, /version=v22\.5\.0/);
+  });
+
+  it('puts the chosen node directory on PATH so npm resolves for children', async () => {
+    // A launchd agent gets PATH=/usr/bin:/bin:/usr/sbin:/sbin. `git` lives in /usr/bin so
+    // the pull worked; node and npm are in /opt/homebrew/bin, so the auto-update's
+    // `npm install` died with ENOENT every 30 minutes for 12 days, leaving the tree
+    // advanced and scripts/update.sh — which copies the hooks into ~/.claude/hooks —
+    // never run. The wrapper had to find node to start at all; npm is its neighbour.
+    const home = await makeHomeDir();
+    const binDir = path.join(home, 'opt-node');
+    await fs.mkdir(binDir, { recursive: true });
+    const stubPath = await writeStubNodePrintingEnv(binDir, { version: 'v22.5.0' });
+    // A bash-style path: `dirname` on a backslash-separated one answers ".", which the
+    // wrapper refuses to put on PATH, so a native path here would test nothing on Windows.
+    await fs.writeFile(path.join(home, '.ownmind/.node-path'), toBashPath(stubPath));
+
+    const r = await runWrapper(home);
+    assert.equal(r.code, 0);
+    const printed = /child-path: (.*)/.exec(r.stderr);
+    assert.ok(printed, `stub node did not print its PATH: ${r.stderr}`);
+    // Substring rather than a split on the separator: on Windows the wrapper reads a native
+    // path out of .node-path, and a drive letter's colon makes ':' the wrong separator and
+    // ';' the wrong one for the bash-style PATH the launcher exports.
+    assert.ok(
+      printed[1].includes(toBashPath(binDir)) || printed[1].includes(binDir),
+      `node's own directory must be on PATH for npm to resolve; got ${printed[1]}`
+    );
+  });
+
+  it('never prepends a relative directory to PATH', async () => {
+    // dirname answers a relative directory for a relative .node-path, and "." for the
+    // backslash path that scripts/windows/register-scanner-task.ps1 writes into that same
+    // file. Either one on PATH means "run whatever is in the working directory".
+    const home = await makeHomeDir();
+    const binDir = path.join(home, 'rel-node');
+    await fs.mkdir(binDir, { recursive: true });
+    await writeStubNodePrintingEnv(binDir, { version: 'v22.5.0' });
+    await fs.writeFile(path.join(home, '.ownmind/.node-path'), 'rel-node/node');
+
+    const r = await runWrapper(home, {}, { cwd: home });
+    assert.equal(r.code, 0);
+    const outLog = await fs.readFile(path.join(home, '.ownmind/logs/scanner.log'), 'utf8');
+    assert.match(outLog, /using node=rel-node\/node/);
+    const printed = /child-path: (.*)/.exec(r.stderr);
+    assert.ok(printed, `stub node did not print its PATH: ${r.stderr}`);
+    assert.equal(printed[1], '/usr/bin:/bin',
+      `a relative directory must never reach PATH; got ${printed[1]}`);
   });
 
   it('falls back to PATH node when .node-path missing', async () => {

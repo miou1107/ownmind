@@ -1,5 +1,26 @@
 # OwnMind 更新紀錄
 
+## 尚未發版 — 排程跑的更新在 mac 上停在 npm，程式碼換了、掛勾沒換
+
+排程每半小時檢查一次更新。在 mac 上，`git pull` 成功、程式碼往前走了，接著 `npm install`
+就停住 —— 找不到 npm。停在那裡代表後面那支 `scripts/update.sh` 沒跑，而它才是把掛勾複製
+進 `~/.claude/hooks` 的那一步。
+
+結果是機器對外回報新版號，實際跑的是舊版掛勾。實測一台 Mac：12 天內 123 次
+`update_failed step=npm error=ENOENT`，v1.30.16 修好的編輯守衛就在磁碟上躺著沒生效。
+
+原因是排程拿到的 PATH 不是登入殼層的那一份。launchd 只給
+`/usr/bin:/bin:/usr/sbin:/sbin`：`git` 在 `/usr/bin` 所以過了，node 與 npm 裝在
+`/opt/homebrew/bin` 或 `~/.nvm` 底下，所以沒過。
+
+兩層都補：
+
+- `run-scanner.sh` 為了啟動已經找到 node，就把那個目錄放上 PATH。底下每個子程序一次
+  修好，包含 `update.sh` 自己那幾個 `npm install`。相對路徑跟 `.` 不放上去
+- `shared/auto-update.js` 直接取 node 旁邊的 npm，不再靠 PATH 猜。用錯誤碼判斷在
+  Windows 是行不通的 —— 那邊經過殼層，回來的是 cmd 的離開碼而不是 ENOENT；預設安裝路徑
+  `C:\Program Files\nodejs` 有空白，所以 Windows 上要加引號
+
 ## v1.30.16 — 守衛自己關掉了，而測試把那份安靜讀成通過
 
 ### 讀不到金鑰的 mac／Linux 機器，編輯守衛整個沒跑，而且不出聲

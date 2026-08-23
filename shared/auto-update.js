@@ -80,6 +80,29 @@ async function abortAnyRebase({ execFile, ownmindDir, fileSystem, logEvent, sour
 }
 
 /**
+ * The environment a child of this run should see, with the directory of the running node
+ * prepended to PATH.
+ *
+ * A scheduled or GUI-launched process does not inherit a login shell's PATH: launchd hands
+ * out /usr/bin:/bin:/usr/sbin:/sbin, and node installed by homebrew or nvm is not on it.
+ * That is survivable for the steps this file runs itself, but not for the sync script, which
+ * calls node and `npm install` of its own and hides their failures behind `|| echo`. The
+ * result is a run that reports success with none of the new dependencies installed.
+ *
+ * Windows spells the variable `Path` about as often as `PATH`, and the spread below turns
+ * process.env's case-insensitive proxy into a plain object where both would survive as
+ * separate keys — so whichever name is already there is the one that gets rewritten.
+ */
+function withNodeOnPath(env, nodeDir, isWindows) {
+  if (!nodeDir || nodeDir === '.') return env;
+  const sep = isWindows ? ';' : ':';
+  const key = Object.keys(env).find((k) => k.toUpperCase() === 'PATH') || 'PATH';
+  const current = env[key] || '';
+  if (current.split(sep).some((entry) => entry === nodeDir)) return env;
+  return { ...env, [key]: current ? `${nodeDir}${sep}${current}` : nodeDir };
+}
+
+/**
  * Run the daily upgrade if it is due.
  *
  * @param {object} deps
@@ -94,6 +117,9 @@ async function abortAnyRebase({ execFile, ownmindDir, fileSystem, logEvent, sour
  * @param {Function} [deps.onApplied] - called after a successful upgrade, with the version
  *                                      now on disk. The MCP re-sends a heartbeat here.
  * @param {string} [deps.platform]
+ * @param {string} [deps.execPath]  - the running node binary. npm is taken from the same
+ *                                    directory, and that directory goes on the children's PATH
+ * @param {object} [deps.env]        - environment the children inherit
  * @param {Function} [deps.today]    - () => 'YYYY-MM-DD', local
  * @returns {Promise<{outcome: string, reason?: string, step?: string, version?: string}>}
  */
@@ -107,6 +133,8 @@ export async function runAutoUpdate({
   queueBanner = () => {},
   onApplied = null,
   platform = process.platform,
+  execPath = process.execPath,
+  env = process.env,
   today = () => localDateOnly(),
   fileSystem = fs
 }) {
@@ -221,14 +249,36 @@ export async function runAutoUpdate({
     // rest of the installation has not caught up with it yet.
     try { fileSystem.writeFileSync(stepsMarker, stamp); } catch { /* best effort */ }
 
+    const nodeDir = execPath ? path.dirname(execPath) : '';
+    const childEnv = withNodeOnPath(env, nodeDir, isWindows);
+
     // Windows needs the shell for npm.cmd: since the CVE-2024-27980 patch, execFile
     // refuses .cmd/.bat directly, which surfaced as `update_failed step=npm error=EINVAL`.
+    //
+    // The scheduler's PATH is not a login shell's. On macOS launchd gives
+    // /usr/bin:/bin:/usr/sbin:/sbin: git resolved from /usr/bin so the pull went through and
+    // the tree moved, then `npm install` threw ENOENT and the sync script behind it — the
+    // step that copies the hooks into ~/.claude/hooks — never ran. Measured on one Mac: 123
+    // failures across 12 days, the machine reporting the new version while running the
+    // previous release's hooks. npm ships beside the node that is running this, so taking it
+    // by absolute path removes PATH from the question instead of reacting to the error it
+    // produces — which under a shell is an exit code from cmd, not ENOENT, and never was
+    // something an error-code check could recognise.
+    let npmTarget = npmCmd;
+    const npmBeside = nodeDir && nodeDir !== '.' ? path.join(nodeDir, npmCmd) : '';
+    if (npmBeside && fileSystem.existsSync(npmBeside)) {
+      // With shell: true the command line is assembled as text, so the default Windows
+      // install path — C:\Program Files\nodejs\npm.cmd — has to carry its own quotes or
+      // cmd splits it at the space.
+      npmTarget = isWindows ? `"${npmBeside}"` : npmBeside;
+    }
     try {
-      await execFile(npmCmd, ['install', '-q'], {
+      await execFile(npmTarget, ['install', '-q'], {
         cwd: path.join(ownmindDir, 'mcp'),
         timeout: NPM_TIMEOUT_MS,
         windowsHide: true,
-        shell: isWindows
+        shell: isWindows,
+        env: childEnv
       });
     } catch (e) { return fail('npm', e); }
 
@@ -237,9 +287,10 @@ export async function runAutoUpdate({
       if (isWindows) {
         await execFile('powershell.exe',
           ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', syncScript],
-          { cwd: ownmindDir, timeout: SYNC_TIMEOUT_MS, windowsHide: true });
+          { cwd: ownmindDir, timeout: SYNC_TIMEOUT_MS, windowsHide: true, env: childEnv });
       } else {
-        await execFile('bash', [syncScript], { cwd: ownmindDir, timeout: SYNC_TIMEOUT_MS });
+        await execFile('bash', [syncScript],
+          { cwd: ownmindDir, timeout: SYNC_TIMEOUT_MS, env: childEnv });
       }
     } catch (e) { return fail('update_sh', e); }
 
