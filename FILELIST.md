@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## 尚未發版 修改（排程跑的更新在 mac 上停在 npm）
+## v1.30.17 修改（排程跑的更新在 mac 上停在 npm）
 
 修改檔：
 ```
@@ -14,7 +14,10 @@ tests/run-scanner-wrapper.test.js      — 補 PATH 有沒有帶到子程序、�
 tests/auto-update-shared.test.js       — 補 npm 取用位置、Windows 引號、Path/PATH 大小寫、
                                          同步腳本的 PATH 共五個案例；harness 的 execPath
                                          固定指向沒有 npm 的目錄，測試不再看機器
-CHANGELOG.md / FILELIST.md             — 本次條目
+package.json                           — 1.30.16 → 1.30.17
+README.md / docs/README.zh-TW.md /     — 版號與本次的紀錄
+docs/README.ja.md
+CHANGELOG.md / FILELIST.md             — v1.30.17 條目
 ```
 
 ## v1.30.16 修改（守衛自己關掉了，而測試把那份安靜讀成通過）
