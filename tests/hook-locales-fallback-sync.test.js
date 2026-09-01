@@ -42,7 +42,7 @@ function extractSection(filePath, markerSubstring) {
 function stageOwnmindHooks(ownmindDir, { withLocales = true } = {}) {
   const hooksDir = path.join(ownmindDir, 'hooks');
   fs.mkdirSync(path.join(hooksDir, 'lib'), { recursive: true });
-  for (const name of ['ownmind-iron-rule-check.sh', 'ownmind-session-start.sh', 'ownmind-worktree-setup.sh']) {
+  for (const name of ['ownmind-iron-rule-check.sh', 'ownmind-session-start.sh']) {
     fs.writeFileSync(path.join(hooksDir, name), '#!/bin/bash\necho stub\n');
   }
   fs.writeFileSync(path.join(hooksDir, 'lib', 'i18n.js'), '// stub\n');

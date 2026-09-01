@@ -363,10 +363,52 @@ async function fetchAndCacheRules() {
   }
 }
 
+/**
+ * The scoped way out of a secret block, named where the person who hit it is looking.
+ *
+ * It has always worked; it was simply never printed. So the only exit anybody could see was
+ * `--no-verify`, which switches off every check in the commit and records nothing — and a
+ * design document quoting three public Google Maps Place IDs went in that way. bug-report
+ * id=28. Naming the narrower door is the safer message, not the looser one.
+ *
+ * Only for a block that a suspected secret actually caused: a secret-guard rule can stop a
+ * commit for reasons that have nothing to do with a key, and "these might be public
+ * identifiers" would be nonsense there.
+ *
+ * BASELINE_UNSCANNED joins the list when it is also holding the commit, even though
+ * formatUnscannedFailure explains its own remedy separately. Leaving it out produced the
+ * fault this whole function exists to remove: a commit carrying both a suspected key and an
+ * oversized file printed a code that cleared only half the block.
+ */
+function formatSecretBypassHint(blockReasons) {
+  const found = new Set(
+    blockReasons.filter((r) => r && r.secretHit === true && r.ruleCode).map((r) => r.ruleCode),
+  );
+  // Nothing but an unreadable file is not a suspected key, and formatUnscannedFailure already
+  // owns that case with wording of its own.
+  if (found.size === 0 || (found.size === 1 && found.has('BASELINE_UNSCANNED'))) return [];
+
+  // BASELINE goes in whatever else is there. Standing a rule down does not stand the built-in
+  // scan down — that is the whole point of it being a floor — so a hint naming only the rule
+  // sends the person back to a second, identical block, and from there to --no-verify.
+  found.add('BASELINE');
+
+  const codes = [...found].sort(
+    (a, b) => Number(a === 'BASELINE_UNSCANNED') - Number(b === 'BASELINE_UNSCANNED'),
+  );
+  return [
+    `上面那些字串如果是公開識別碼、不是金鑰，用 OWNMIND_BYPASS=${codes.join(',')} 放行，OwnMind 會記一筆下來`,
+    '（--no-verify 會把這次 commit 的每一項檢查一起關掉，而且不留紀錄）',
+  ];
+}
+
 function formatBlockMessage(failures, blockReasons = []) {
   const lines = ['', `[OwnMind v${VERSION}]Pre-commit check: commit blocked`];
   for (const f of failures) {
     lines.push(`  ❌ ${f}`);
+  }
+  for (const hint of formatSecretBypassHint(blockReasons)) {
+    lines.push(`  ${hint}`);
   }
   lines.push('Complete the steps above before committing.');
   // v1.26.8: dispatch the bug_fingerprint based on which rule actually blocked,
@@ -489,7 +531,7 @@ function exitOnBaselineSecrets(secretHits, unscanned = [], unreadable = []) {
     });
   }
   if (unscanned.length > 0) {
-    failures.push(...formatUnscannedFailure(unscanned));
+    failures.push(...formatUnscannedFailure(unscanned, { withOwnBypass: secretHits.length === 0 }));
     reasons.push({
       ruleCode: 'BASELINE_UNSCANNED',
       ruleTitle: '有檔案沒有被掃過',
@@ -520,12 +562,19 @@ function printUnreadable(unreadable = []) {
  * Its own code, deliberately: `BASELINE` switches off the scan of every readable file in the
  * same commit, so excusing one oversized file would also excuse the `.env` beside it. Review
  * measured that exact sequence ending in a committed key.
+ *
+ * `withOwnBypass` is false when a suspected key is holding the same commit. The summary hint
+ * at the foot of the message then carries the complete list, and printing a shorter one here
+ * would put the incomplete remedy first — which is the one a reader copies.
  */
-function formatUnscannedFailure(unscanned) {
+function formatUnscannedFailure(unscanned, { withOwnBypass = true } = {}) {
   const lines = ['BASELINE_UNSCANNED: 有檔案沒有被掃過，所以這次 commit 不知道裡面有沒有密碼'];
   for (const u of unscanned) lines.push(`    → ${u.file}: ${u.why}`);
-  lines.push('    把這些檔案拆小或分開 commit 就會過。真的要放行，用 OWNMIND_BYPASS=BASELINE_UNSCANNED');
-  lines.push('    （這個放行只跳過「沒掃到」這一項，同一次 commit 其他檔案照樣會掃）');
+  lines.push('    把這些檔案拆小或分開 commit 就會過。');
+  if (withOwnBypass) {
+    lines.push('    真的要放行，用 OWNMIND_BYPASS=BASELINE_UNSCANNED');
+    lines.push('    （這個放行只跳過「沒掃到」這一項，同一次 commit 其他檔案照樣會掃）');
+  }
   return lines;
 }
 
@@ -579,7 +628,15 @@ async function main() {
   const secretHits = baselineBypassed ? [] : scan.hits;
   // Its own code: excusing one oversized file must not excuse the scan of the readable
   // files beside it. Review measured that sequence ending in a committed key.
-  const unscanned = isBypassed('BASELINE_UNSCANNED', bypassSet) ? [] : scan.unscanned;
+  const unscannedBypassed = isBypassed('BASELINE_UNSCANNED', bypassSet);
+  if (unscannedBypassed) {
+    // An audit row for this one as well. The block message now names BASELINE_UNSCANNED as
+    // part of the way past a secret block and says OwnMind writes the use down; using it and
+    // leaving no trace would make that sentence false for half of what it recommends.
+    try { logBypass({ ruleCode: 'BASELINE_UNSCANNED', ruleTitle: '有檔案沒有被掃過', source: 'pre_commit' }); }
+    catch { /* the audit row is best-effort; it must not block the commit */ }
+  }
+  const unscanned = unscannedBypassed ? [] : scan.unscanned;
   const unreadable = scan.unreadable;
 
   // 1. Load iron rules from local cache (with staleness check)
@@ -743,7 +800,7 @@ async function main() {
   // The same on the rule-driven path: a file nobody read cannot be reported as clean by the
   // pass message below. Bug report #24.
   if (unscanned.length > 0) {
-    blockFailures.push(...formatUnscannedFailure(unscanned));
+    blockFailures.push(...formatUnscannedFailure(unscanned, { withOwnBypass: secretHits.length === 0 }));
     blockReasons.push({
       ruleCode: 'BASELINE_UNSCANNED',
       ruleTitle: '有檔案沒有被掃過',

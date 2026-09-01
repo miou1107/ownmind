@@ -154,6 +154,10 @@ export function detectSecretLike(value, options = {}) {
     !CJK_REGEX.test(value) &&
     LONG_ALNUM_REGEX.test(value) &&
     !PUNCTUATION_ONLY_REGEX.test(value) &&
+    // A published public identifier is not a credential, however random it looks. See
+    // PUBLIC_IDENTIFIER_PATTERNS — and note this is the only rule it can excuse, so a value
+    // matching a real key format is still caught above.
+    !isPublicIdentifier(value) &&
     // v1.26.98: length and charset alone do not tell a key from an identifier. See
     // wordCoverage above for the measurement that prompted this.
     //
@@ -447,6 +451,43 @@ const KEYWORD_ASSIGNMENT_REGEX =
  * id=6, 2026-07-07).
  */
 const PUNCTUATION_ONLY_REGEX = /^[-_+/=.]+$/;
+
+/**
+ * Published identifiers that are public by design, and are therefore never credentials.
+ *
+ * The one entry so far is the Google Maps Place ID. A design document quoting three real ones
+ * could not be committed: each is 27 characters of base64-ish text with no word structure, so
+ * the length heuristic below read them as keys. They grant nothing — anyone can look one up —
+ * and they were quoted as evidence, so masking them would have destroyed the point of the
+ * document. bug-report id=28.
+ *
+ * This is not the kind of exemption v1.26.98 removed. Those described a *shape* an identifier
+ * might take ("has dots in it", "has slashes in it"), which is a property secrets share; each
+ * one waved through a whole class of values, and one of them waved through base64. This names
+ * one published format whose values are public by definition. Adding an entry is only allowed
+ * on the same terms: a documented format, a fixed prefix, and no access attached to it.
+ *
+ * Checked against the length heuristic alone. A value that matches a real key format is caught
+ * by its own regex further up and never reaches this.
+ */
+const PUBLIC_IDENTIFIER_PATTERNS = [
+  {
+    name: 'google_place_id',
+    // `ChIJ` and base64url only. A secret that happens to open with those four characters is
+    // a 1-in-16-million coincidence, and the moment it carries `+`, `/` or `=` — which base64
+    // routinely does and a Place ID never does — it drops back to the heuristic.
+    //
+    // Deliberately only `ChIJ`, which is what the blocked document held and what the Places
+    // API returns for a place. Google also issues `Ei…`, `Ej…` and `Gh…` ids; each widens the
+    // hole and none of them has come up yet, so they go in when a real document is blocked by
+    // one, on the terms in the header above.
+    pattern: /^ChIJ[A-Za-z0-9_-]{16,250}$/,
+  },
+];
+
+function isPublicIdentifier(value) {
+  return PUBLIC_IDENTIFIER_PATTERNS.some(({ pattern }) => pattern.test(value));
+}
 
 /**
  * Pure alphanumerics plus a few symbols (used by the length heuristic).

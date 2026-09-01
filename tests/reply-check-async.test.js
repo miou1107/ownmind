@@ -295,7 +295,7 @@ test('a machine that never synced still delivers a waiting verdict', () => {
   const result = runPromptHook({ home });
   assert.equal(result.status, 0);
   const parsed = JSON.parse(result.stdout);
-  assert.match(parsed.hookSpecificOutput.additionalContext, /never synced/i);
+  assert.match(parsed.hookSpecificOutput.additionalContext, /No rules cache on this machine/i);
   assert.match(parsed.systemMessage, /Claude Code/,
     'a missing CLI gets the repair that works, not the one that cannot');
 });

@@ -1,4 +1,5 @@
-# check-sync.ps1 — three-layer OwnMind health check (Remote / Server / Deploy drift).
+# check-sync.ps1 — four-layer OwnMind health check (Remote / Server / Deploy drift /
+#                  Standards cache).
 # Windows / PowerShell counterpart to check-sync.sh.
 # Usage: powershell -ExecutionPolicy Bypass -File $HOME\.ownmind\scripts\check-sync.ps1
 # Output: structured STDOUT for the ownmind-upgrade skill to parse.
@@ -153,7 +154,6 @@ if ($L2Detail) { Write-Tag "L2_SERVER:$L2 $L2Detail" } else { Write-Tag "L2_SERV
 $pairs = @(
     @{ src = (Join-Path $OwnmindDir 'hooks/ownmind-session-start.sh');   dst = (Join-Path $ClaudeDir 'hooks/ownmind-session-start.sh') },
     @{ src = (Join-Path $OwnmindDir 'hooks/ownmind-iron-rule-check.sh'); dst = (Join-Path $ClaudeDir 'hooks/ownmind-iron-rule-check.sh') },
-    @{ src = (Join-Path $OwnmindDir 'hooks/ownmind-worktree-setup.sh');  dst = (Join-Path $ClaudeDir 'hooks/ownmind-worktree-setup.sh') },
     @{ src = (Join-Path $OwnmindDir 'skills/ownmind-memory.md');         dst = (Join-Path $ClaudeDir 'skills/ownmind-memory/SKILL.md') },
     @{ src = (Join-Path $OwnmindDir 'skills/ownmind-upgrade.md');        dst = (Join-Path $ClaudeDir 'skills/ownmind-upgrade/SKILL.md') }
 )
@@ -208,9 +208,51 @@ if ($driftCount -eq 0) {
 }
 
 # ============================================================
+# L4 — Standards cache (~/.ownmind/cache/enforcement.json)
+# ============================================================
+# The file the hooks actually read. None of L1-L3 looks at it, so a machine could report
+# in_sync on all three while its UserPromptSubmit hook said on every turn that no standard
+# could be checked here. Both were true, and read together they made the hook look stale.
+# Mirrors the L4 block in check-sync.sh; keep the two in step.
+$EnforcementCache = Join-Path $OwnmindDir 'cache/enforcement.json'
+$L4 = 'never_synced'
+$L4Detail = ''
+if (Test-Path $EnforcementCache) {
+    $L4 = 'unreadable'
+    try {
+        $bundle = Get-Content $EnforcementCache -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        # A JSON object and nothing else. ConvertFrom-Json hands back a string for `"x"` and a
+        # number for `3`, both of which answer no properties and would otherwise read as an
+        # empty-but-valid bundle.
+        if ($bundle -is [psobject] -and $bundle -isnot [array] -and $bundle -isnot [string] -and $bundle -isnot [valuetype]) {
+            $entries = 0
+            $wellFormed = $true
+            foreach ($key in @('selectors', 'guards', 'injectables')) {
+                $value = $bundle.PSObject.Properties[$key]
+                # Absent is fine; present-and-not-an-array is not. `null` counts as the second:
+                # readEnforcementBundle refuses that bundle, so the hooks would enforce nothing
+                # while this said everything was in order.
+                if ($null -eq $value) { continue }
+                if ($value.Value -is [array]) { $entries += $value.Value.Count }
+                else { $wellFormed = $false }
+            }
+            if ($wellFormed) {
+                $L4 = 'in_sync'
+                $L4Detail = " entries=$entries"
+            }
+        }
+    } catch { }
+}
+Write-Tag "L4_STANDARDS:$L4$L4Detail"
+
+# ============================================================
 # OVERALL — any layer drifts → needs_upgrade.
 # ============================================================
-if ($L1 -eq 'behind' -or $L2 -eq 'outdated' -or $driftCount -gt 0) {
+# L4 is asked first, ahead of "could not reach the server". "This machine is enforcing
+# nothing" is a measured fact; folding it into unknown would drop it out of the summary.
+if ($L4 -eq 'never_synced' -or $L4 -eq 'unreadable') {
+    Write-Tag 'OVERALL:needs_upgrade'
+} elseif ($L1 -eq 'behind' -or $L2 -eq 'outdated' -or $driftCount -gt 0) {
     Write-Tag 'OVERALL:needs_upgrade'
 } elseif ($L1 -eq 'error' -or $L2 -eq 'error') {
     Write-Tag 'OVERALL:unknown_due_to_errors'
