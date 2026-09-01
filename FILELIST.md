@@ -1,6 +1,6 @@
 # OwnMind 檔案結構
 
-## 尚未發版（worktree 開不了、地點代碼被當金鑰、警告每輪重講）
+## v1.30.18 修改（worktree 開不了、地點代碼被當金鑰、警告每輪重講）
 
 新增檔：
 ```
@@ -45,7 +45,10 @@ tests/auto-update-shared.test.js       — 「PATH 已經有了就不再加」�
                                          切成兩半，v1.30.17 起 Windows CI 就紅在這一條
 skills/ownmind-upgrade.md              — 補 L4_STANDARDS 這一行，並且明講沒有規範快取時不要
                                          叫使用者升級：升級腳本不抓那份檔，開新對話才會
-CHANGELOG.md / FILELIST.md             — 本次條目
+package.json                           — 1.30.17 → 1.30.18
+README.md / docs/README.zh-TW.md /     — 版號與本次的紀錄
+docs/README.ja.md
+CHANGELOG.md / FILELIST.md             — v1.30.18 條目
 ```
 
 ## v1.30.17 修改（排程跑的更新在 mac 上停在 npm）
