@@ -404,54 +404,21 @@ if (Test-Path $RegisterMcp) {
   }
 }
 
-# --- 3. Claude Code settings.json：注入 hooks ---
+# --- 3. 移除舊版註冊的 WorktreeCreate hook ---
+# SessionStart 在 3.4、PreToolUse 在 3.3b，各自有共用實作。這裡原本還註冊了一個
+# WorktreeCreate hook，那個 hook 會讓這台機器上每個 repo 的 EnterWorktree 一律失敗；
+# 會踩到的人全都是已經裝好的人，所以移除要跑在升級這條路上，理由見 remove-worktree-hook.cjs。
 $ClaudeSettings = Join-Path $ClaudeDir "settings.json"
-if (Test-Path $ClaudeSettings) {
-  # v1.17.81：單引號 heredoc — JS code 內所有 $var / $(...) 原樣保留，不被 PS 展開
-  $nodeScript = @'
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
-    const { loadOrSkip } = require(path.join(os.homedir(), '.ownmind/scripts/install-helpers/load-settings-safe.cjs'));
-    // v1.17.23: argv[0]=node, argv[1]=script path, argv[2]+=user args
-    const settingsPath = process.argv[2];
-    const s = loadOrSkip(settingsPath, {});
-    let changed = false;
-    if (!s.hooks) { s.hooks = {}; changed = true; }
-
-    // v1.26.86 — SessionStart is handled by ensure-session-hook.cjs in section 3.4 below
-    // (single implementation with behavioral tests; it also honors the
-    // ~/.ownmind/.no-session-hook opt-out). This script used to make that decision inline,
-    // one divergent copy per installer, and the daily one always won.
-
-    // v1.26.105 — PreToolUse is handled by ensure-pretooluse-hooks.cjs in section 3.3b below.
-    // What used to be here was the oldest copy of that logic: one matcher, a presence check
-    // across the whole array, and a bash command written onto Windows machines where
-    // ~/.claude/hooks is not reachable through a WSL relay. Three separate reasons it could
-    // not be right, in a script whose entire audience is upgrades.
-
-    if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
-    if (!s.hooks.WorktreeCreate.some(h => h.hooks?.some(hh => (hh.command || '').includes('ownmind-worktree-setup')))) {
-      s.hooks.WorktreeCreate.push({ hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-worktree-setup.sh', timeout: 10 }] });
-      changed = true;
-    }
-
-    if (changed) {
-      const tmp = settingsPath + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
-      fs.renameSync(tmp, settingsPath);
-      console.log('   settings.json hooks 已更新');
-    }
-'@
-  $tmpScript = Join-Path $env:TEMP "ownmind-update-settings.js"
-  Set-Content -Path $tmpScript -Value $nodeScript -Encoding UTF8
+$RemoveWorktreeHook = Join-Path $OwnMindDir "scripts\install-helpers\remove-worktree-hook.cjs"
+if ((Test-Path $ClaudeSettings) -and (Test-Path $RemoveWorktreeHook)) {
   try {
-    & node $tmpScript $ClaudeSettings 2>>$ErrLog
+    $worktreeOut = & node $RemoveWorktreeHook $ClaudeSettings 2>>$ErrLog
+    if ($worktreeOut) { Write-Host "   $worktreeOut" }
   } catch {
-    Report-Error -Kind "update_settings_inject_failed" -Detail "Claude settings hook 注入 node 腳本失敗：$_" -ContextFile $ErrLog
+    Report-Error -Kind "update_worktree_hook_removal_failed" -Detail "移除 WorktreeCreate hook 失敗：$_" -ContextFile $ErrLog
   }
-  Remove-Item $tmpScript -ErrorAction SilentlyContinue
 }
+Remove-Item (Join-Path $ClaudeDir "hooks\ownmind-worktree-setup.sh") -ErrorAction SilentlyContinue
 
 # --- 3.3b PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 # No --bash: Windows always runs the node hook out of the checkout (see install.ps1's v1.26.80

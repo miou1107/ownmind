@@ -1,5 +1,53 @@
 # OwnMind 檔案結構
 
+## 尚未發版（worktree 開不了、地點代碼被當金鑰、警告每輪重講）
+
+新增檔：
+```
+scripts/install-helpers/remove-worktree-hook.cjs — 把舊版註冊的 WorktreeCreate hook 從
+                                         settings.json 移掉；別人的 hook 不動，整個事件
+                                         空了就連鍵一起刪
+tests/remove-worktree-hook.test.js     — 移除、共存、重跑兩次、壞掉的 settings.json 不覆寫；
+                                         另外盯住四支安裝腳本不再寫 WorktreeCreate
+tests/check-sync-standards-layer.test.js — L4 四種狀態，以及沒有規範快取的機器不會回 in_sync
+```
+
+刪除檔：
+```
+hooks/ownmind-worktree-setup.sh        — 註冊在 WorktreeCreate 上就會讓全機的 worktree 開
+                                         不起來，而它要注入的 .mcp.json 本來就不需要
+```
+
+修改檔：
+```
+install.sh / install.ps1 /             — 不再註冊 WorktreeCreate，改成呼叫移除腳本，並刪掉
+scripts/update.sh / scripts/update.ps1   ~/.claude/hooks 底下那支殘留的 hook
+scripts/check-sync.sh /                — 少掉 worktree hook 的部署比對；多一層 L4_STANDARDS
+scripts/check-sync.ps1                   讀 enforcement.json，沒有快取時整體回 needs_upgrade
+shared/secret-detect.js                — 新增 PUBLIC_IDENTIFIER_PATTERNS，Google Place ID
+                                         不再撞上長度啟發式
+hooks/ownmind-git-pre-commit.js        — 新增 formatSecretBypassHint()，疑似金鑰的攔截訊息
+                                         寫出要用哪些放行代碼，並且一定含 BASELINE；同一則
+                                         訊息只出現一組代碼；BASELINE_UNSCANNED 放行也開始
+                                         寫稽核紀錄
+hooks/ownmind-prompt-inject.js         — 沒有規範快取的警告改成一個工作階段只講一次，內容
+                                         點名缺的檔與那兩個會給出不同答案的工具；state 檔
+                                         改走 readState/writeState
+tests/secret-detect-unit.test.js       — Place ID 放行、變形字串照樣擋，共七個案例
+tests/pre-commit-secret.test.js        — 引用 Place ID 的文件可以提交；兩條攔截路徑各自寫出
+                                         正確的放行代碼，而且照著做真的過得去
+tests/pre-commit-secret-baseline.test.js — 「不重複報同一筆」改成數攔截行，不再數字串
+tests/enforcement-prompt-inject.test.js  — 一次就好、換工作階段要再講、快取補上就停
+tests/reply-check-async.test.js /      — 跟著新的警告用字調整
+tests/hook-locales-fallback-sync.test.js
+tests/auto-update-shared.test.js       — 「PATH 已經有了就不再加」那個案例改用 posix 路徑；
+                                         原本在 Windows 跑會拿到 C:\…，路徑自己的冒號把項目
+                                         切成兩半，v1.30.17 起 Windows CI 就紅在這一條
+skills/ownmind-upgrade.md              — 補 L4_STANDARDS 這一行，並且明講沒有規範快取時不要
+                                         叫使用者升級：升級腳本不抓那份檔，開新對話才會
+CHANGELOG.md / FILELIST.md             — 本次條目
+```
+
 ## v1.30.17 修改（排程跑的更新在 mac 上停在 npm）
 
 修改檔：
@@ -7519,7 +7567,6 @@ OwnMind/
 │   ├── ownmind-iron-rule-check.js  # PreToolUse hook（L2）：ESM，commit/deploy/delete 都跑 verification blocking
 │   ├── ownmind-tty-echo.cjs        # v1.17.71 — PostToolUse hook：把【OwnMind】banner 寫到 user terminal（繞過 Claude Code UI）
 │   ├── ownmind-reply-lint.js       # v1.17.96 — Stop hook：每輪 AI 回話結束跑 IR-037/IR-036 lint、違反印 banner + 報 violate
-│   ├── ownmind-worktree-setup.sh   # WorktreeCreate hook：worktree 自動注入 .mcp.json
 │   ├── ownmind-git-pre-commit.js   # git pre-commit hook (L1)
 │   ├── ownmind-git-post-commit.js  # git post-commit hook (L5)
 │   ├── ownmind-git-pre-commit      # pre-commit shell wrapper
@@ -7540,13 +7587,14 @@ OwnMind/
 │   ├── bootstrap.sh                 # v1.17.6 — Universal Bootstrap（Mac/Linux/Git Bash）：三分支處理 install/upgrade/repair
 │   ├── bootstrap.ps1                # v1.17.6 — Universal Bootstrap（Windows PowerShell）：同上
 │   ├── update.sh                    # Auto-update：同步 skill、hooks、settings 到所有 AI 工具
-│   ├── check-sync.sh                # v1.17.2 — 三層 drift 健檢（L1 git / L2 server version / L3 deploy diff）
+│   ├── check-sync.sh                # 四層健檢（L1 git / L2 server version / L3 deploy diff / L4 規範快取）
 │   ├── migrate-verification.js      # 鐵律 verification 一次性遷移
 │   ├── install-helpers/
 │   │   ├── add-post-tool-use-hook.cjs  # v1.17.71 — 把 ownmind-tty-echo PostToolUse hook idempotent 寫入 settings.json
 │   │   ├── add-stop-hook.cjs           # v1.17.96 — 把 ownmind-reply-lint Stop hook idempotent 寫入 settings.json
 │   │   ├── dep-floor.mjs               # v1.26.41 — root 相依版本門檻比對純函式庫（讀不出來一律當未達門檻）
 │   │   ├── dep-floor-cli.mjs           # v1.26.41 — 上面那支的 shell 判斷式（update.sh / update.ps1 共用）
+│   │   ├── remove-worktree-hook.cjs    # 把舊版註冊的 WorktreeCreate hook 從 settings.json 移掉
 │   │   └── run-scanner.sh           # Usage scanner wrapper：動態找 node + v20+ 驗證（D12）
 │   ├── launchd/
 │   │   └── com.ownmind.usage-scanner.plist  # macOS launchd agent（30 分鐘 + RunAtLoad）

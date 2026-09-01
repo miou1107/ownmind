@@ -457,10 +457,19 @@ Copy-Item (Join-Path $OwnmindDir "skills\ownmind-memory.md") (Join-Path $SkillDi
 Write-Host "[ OK ] Installed ownmind-memory skill"
 
 # --- 4b. 安裝 Hook Scripts（bash + node fallback）---
-$BashHooks = @("ownmind-iron-rule-check.sh", "ownmind-session-start.sh", "ownmind-worktree-setup.sh")
+$BashHooks = @("ownmind-iron-rule-check.sh", "ownmind-session-start.sh")
 foreach ($hook in $BashHooks) {
   $src = Join-Path $OwnmindDir "hooks\$hook"
   if (Test-Path $src) { Copy-Item $src $HookDir -Force }
+}
+# ownmind-worktree-setup.sh is gone. Registered on WorktreeCreate it made every EnterWorktree
+# on the machine fail; see remove-worktree-hook.cjs. Clear the copy and the registration an
+# older install left behind.
+Remove-Item (Join-Path $HookDir "ownmind-worktree-setup.sh") -ErrorAction SilentlyContinue
+$RemoveWorktreeHook = Join-Path $OwnmindDir "scripts\install-helpers\remove-worktree-hook.cjs"
+if ((Test-Path $ClaudeSettings) -and (Test-Path $RemoveWorktreeHook)) {
+  $worktreeOut = & node $RemoveWorktreeHook $ClaudeSettings
+  if ($worktreeOut) { Write-Host "[ OK ] $worktreeOut" }
 }
 # Node.js hooks for Windows (no bash/WSL required)
 $NodeHooks = @("ownmind-iron-rule-check.js", "ownmind-session-start.js")

@@ -545,3 +545,103 @@ describe('v1.26.33 pre-commit — secret content scan is code-agnostic', () => {
       `block must originate from the content scan; stderr=${r.stderr}`);
   });
 });
+
+// ============================================================
+// bug-report id=28 — a blocked commit with nowhere to go
+//
+// Two halves. A design document quoting three Google Maps Place IDs was blocked, because a
+// Place ID is 27 characters of base64-ish text and the length heuristic reads that as a key.
+// And the block message named no way out, so the only route left was `--no-verify`, which
+// switches off every check in the commit and records nothing. The scoped bypass has existed
+// all along; it was simply never mentioned where somebody would see it.
+// ============================================================
+
+describe('pre-commit — public identifiers and the way out of a wrong block', () => {
+  beforeEach(setupSandbox);
+  afterEach(cleanupSandbox);
+
+  it('a document quoting Google Maps Place IDs commits', () => {
+    stage('docs/design.md', [
+      '| 台北 | ChIJ1eveM33iaDQR8ztHwzV8s8s |',
+      '| 台中 | ChIJaSVP72jjaDQRxxdGd5N4VxY |',
+      '| 高雄 | ChIJqfzLZmjjaDQRoFZxat31SBk |',
+      '',
+    ].join('\n'));
+
+    const r = runHook();
+
+    assert.equal(r.status, 0, `commit was still blocked; stderr=${r.stderr}`);
+  });
+
+  it('a rule-driven block names the rule AND the built-in scan under it', () => {
+    // Standing the rule down leaves the baseline holding the same hit, so a hint naming only
+    // the rule walks the person into a second identical block.
+    stage('data/checksums.txt', 'a1B2c3D4e5F6g7H8i9J0kL\n');
+
+    const r = runHook();
+
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /OWNMIND_BYPASS=IR-002,BASELINE\b/,
+      `block message must name every code the commit needs; stderr=${r.stderr}`);
+    assert.match(r.stderr, /--no-verify/,
+      `and must say what the wider door costs; stderr=${r.stderr}`);
+  });
+
+  it('with no rule of your own it is the built-in scan that blocks, and it says so', () => {
+    // The path Eric hit: nothing configured, the baseline caught it, and the message named
+    // no exit at all.
+    fs.writeFileSync(path.join(tmpHome, '.ownmind', 'cache', 'iron_rules.json'), '[]');
+    stage('data/checksums.txt', 'a1B2c3D4e5F6g7H8i9J0kL\n');
+
+    const r = runHook();
+
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /OWNMIND_BYPASS=BASELINE\b/,
+      `block message must name the scoped bypass; stderr=${r.stderr}`);
+  });
+
+  it('the bypass it prints really does let the same commit through', () => {
+    // Read the remedy back out of the message and run it, rather than asserting against a
+    // string written here. A remedy printed but not working is worse than none: it sends
+    // people to --no-verify with one extra step.
+    stage('data/checksums.txt', 'a1B2c3D4e5F6g7H8i9J0kL\n');
+    const blocked = runHook();
+    const printed = /公開識別碼[^\n]*OWNMIND_BYPASS=(\S+)/.exec(blocked.stderr);
+    assert.ok(printed, `no bypass was printed; stderr=${blocked.stderr}`);
+
+    const r = runHook({ OWNMIND_BYPASS: printed[1] });
+
+    assert.equal(r.status, 0,
+      `the message told the user ${printed[1]} and it did not clear the block; stderr=${r.stderr}`);
+  });
+
+  it('a commit holding both a suspected key and an unreadable file gets every code it needs', () => {
+    // The half-remedy case: printing only BASELINE clears the key and leaves the oversized
+    // file blocking, which is the second guess this hint exists to remove.
+    fs.writeFileSync(path.join(tmpHome, '.ownmind', 'cache', 'iron_rules.json'), '[]');
+    stage('data/checksums.txt', 'a1B2c3D4e5F6g7H8i9J0kL\n');
+    stage('assets/big.bin', 'x'.repeat(6 * 1024 * 1024));
+
+    const blocked = runHook();
+    assert.equal(blocked.status, 1);
+    const printed = /公開識別碼[^\n]*OWNMIND_BYPASS=(\S+)/.exec(blocked.stderr);
+    assert.ok(printed, `no bypass was printed; stderr=${blocked.stderr}`);
+    assert.match(printed[1], /BASELINE_UNSCANNED/,
+      `the unreadable file needs its code in the list too; got ${printed[1]}`);
+
+    const r = runHook({ OWNMIND_BYPASS: printed[1] });
+
+    assert.equal(r.status, 0,
+      `the message told the user ${printed[1]} and it did not clear the block; stderr=${r.stderr}`);
+  });
+
+  it('a block with no suspected secret in it does not talk about public identifiers', () => {
+    stage('.env', 'PLACEHOLDER=1\n');
+
+    const r = runHook();
+
+    assert.equal(r.status, 1);
+    assert.doesNotMatch(r.stderr, /公開識別碼/,
+      `the hint belongs to secret hits only; stderr=${r.stderr}`);
+  });
+});
