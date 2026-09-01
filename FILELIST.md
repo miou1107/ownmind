@@ -40,6 +40,9 @@ tests/pre-commit-secret-baseline.test.js — 「不重複報同一筆」改成�
 tests/enforcement-prompt-inject.test.js  — 一次就好、換工作階段要再講、快取補上就停
 tests/reply-check-async.test.js /      — 跟著新的警告用字調整
 tests/hook-locales-fallback-sync.test.js
+tests/auto-update-shared.test.js       — 「PATH 已經有了就不再加」那個案例改用 posix 路徑；
+                                         原本在 Windows 跑會拿到 C:\…，路徑自己的冒號把項目
+                                         切成兩半，v1.30.17 起 Windows CI 就紅在這一條
 skills/ownmind-upgrade.md              — 補 L4_STANDARDS 這一行，並且明講沒有規範快取時不要
                                          叫使用者升級：升級腳本不抓那份檔，開新對話才會
 CHANGELOG.md / FILELIST.md             — 本次條目

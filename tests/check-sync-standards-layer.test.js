@@ -102,6 +102,31 @@ test('an account with nothing annotated is in_sync, not broken', () => {
   assert.match(standards, /entries=0/);
 });
 
+test('a path with backslashes in it is still read, not reported as unusable', () => {
+  // Windows CI, 2026-09-01: a healthy cache came back `unreadable` on every run. Where
+  // `cygpath` is absent the Windows path keeps its backslashes, and interpolated into a
+  // JavaScript string literal `\U`, `\A`, `\T` are escape sequences — the read throws and the
+  // machine is told its rules are corrupt. A directory named with backslashes reproduces that
+  // on any platform.
+  const home = tempDir('om-checksync-bs-');
+  const ownmindDir = path.join(home, 'C:\\Users\\RUNNER~1\\AppData\\Local\\Temp');
+  fs.mkdirSync(path.join(ownmindDir, 'cache'), { recursive: true });
+  fs.writeFileSync(path.join(ownmindDir, 'package.json'), JSON.stringify({ version: '1.30.17' }));
+  fs.writeFileSync(
+    path.join(ownmindDir, 'cache', 'enforcement.json'),
+    JSON.stringify({ selectors: [{ id: 1 }], guards: [], injectables: [] }),
+  );
+
+  const stdout = execFileSync('bash', [SCRIPT], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: { ...process.env, HOME: home, OWNMIND_DIR: ownmindDir, CLAUDE_DIR: path.join(home, '.claude') },
+  });
+
+  const standards = (stdout.split('\n').find((l) => l.startsWith('L4_STANDARDS:')) || '').trim();
+  assert.match(standards, /^L4_STANDARDS:in_sync entries=1/, `got ${standards}`);
+});
+
 test('a cache the hooks would refuse reads as unusable, whatever shape it is', () => {
   // Every one of these is a file that exists and parses, and that readEnforcementBundle
   // rejects. Reporting them as an empty-but-valid cache would put the diagnostic back where
