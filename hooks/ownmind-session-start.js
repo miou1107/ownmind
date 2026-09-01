@@ -13,6 +13,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { readCredentials, getClientVersion, resolveProjectName } from '../shared/helpers.js';
+import { roleForProfile, fetchBugReportNotifications } from './lib/bug-report-notifications.js';
 import { clearSessionOffState, readSessionOffState } from '../shared/session-off-state.js';
 import { queueUpdateBanner } from '../shared/update-banner.js';
 import { runConditionalSync } from './lib/conditional-sync.js';
@@ -385,40 +386,18 @@ async function main() {
 
   // v1.26.83 — render through the shared renderer instead of a second, drifting copy of
   // the layout. Windows and macOS now read identically.
-  const lines = [renderSessionContext(initData, broadcasts)];
+  //
+  // The bug-report notifications go through it too, rather than being appended afterwards as
+  // they were until now. Appending was how the section ended up in one platform's entry point
+  // and nowhere else: see hooks/lib/bug-report-notifications.js. Rendering it here also puts it
+  // in the same place on both platforms instead of after the closing tip on one of them.
+  const notif = await fetchBugReportNotifications({
+    apiUrl, apiKey, role: roleForProfile(initData.profile), httpGet,
+  });
+  if (!notif) logEvent('bug_report_notifications_fetch_failed', {});
 
-  // v1.19.14: bug report notifications (two channels — admin sees new reports, reporter sees resolutions).
-  // Fetch failure / unreachable → silently skip (do not block startup, see spec scenario 50).
-  try {
-    const isAdmin =
-      initData.profile?.role === 'admin' || initData.profile?.role === 'super_admin';
-    const role = isAdmin ? 'both' : 'reporter';
-    const rawNotif = await httpGet(
-      `${apiUrl}/api/bug-reports/notifications?role=${role}`,
-      { Authorization: `Bearer ${apiKey}` }
-    );
-    const notif = JSON.parse(rawNotif);
-    const segments = [];
-    if (notif.admin && notif.admin.unhandled_count > 0) {
-      segments.push(
-        `As admin: ${notif.admin.unhandled_count} unhandled bug reports`
-      );
-    }
-    if (notif.reporter && notif.reporter.unread_resolved_count > 0) {
-      segments.push(
-        `${notif.reporter.unread_resolved_count} of your reports have been resolved`
-      );
-    }
-    if (segments.length > 0) {
-      lines.push('## Bug report notifications');
-      segments.forEach((s) => lines.push(`- ${s}`));
-      lines.push('(Say "list my reports" or open /admin/bug-reports for details)');
-      lines.push('');
-    }
-  } catch {
-    // fetch failed → silently skip, log it but don't block startup.
-    logEvent('bug_report_notifications_fetch_failed', {});
-  }
+  const lines = [renderSessionContext(initData, broadcasts, { notifications: notif })];
+
 
   lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
 

@@ -1,5 +1,32 @@
 # OwnMind 更新紀錄
 
+## 尚未發版 — 報告修好了，只有 Windows 的人會知道
+
+回報的問題被關掉時，OwnMind 會把「還沒通知回報人」的旗標打開，下次開 session 就告訴他
+「你回報的 N 筆已處理」。抓這個通知的程式只寫在 `ownmind-session-start.js` 裡，而那支
+只註冊在 Windows 上；mac 與 Linux 跑的是 `ownmind-session-start.sh`，它抓廣播、從來沒抓
+過這一項。所以原本用 mac 的人回報了問題，修好之後不會有任何人告訴他。
+
+v1.30.18 修掉的三筆就是這樣：回報的兩個人都收不到。
+
+抓取與用字搬進 `hooks/lib/bug-report-notifications.js`，兩個平台的進入點都呼叫同一份，
+連輸出位置都一樣（以前 Windows 那邊是接在結尾提示之後）。mac 與 Linux 這條路由
+`session-start-output.js` 負責抓，因為要問伺服器哪一半得看 `profile.role`，而那份資料只有
+在那支腳本裡已經解析好；在 bash 裡判斷等於再抄一份規則。
+
+多打一次網路就多一個風險，這次一起處理掉：`AbortSignal.timeout` 會在 3 秒讓 fetch 失敗，
+但不會把還在等 SYN-ACK 的連線收掉。在會把封包丟掉而不是拒絕的網路上（旅館 wifi、企業網路
+沒開 VPN），實測那支程式在 3 秒逾時之後又活了 10.66 秒，而掛勾註冊的逾時是 10 秒。原本要修
+的是「mac 使用者收不到通知」，代價卻會變成「網路不穩的 mac 使用者整份記憶都載不進來」。
+所以 stdout 沖出去就直接結束（10.66 秒降到 3.1 秒），shell 那邊也加了一層 `timeout 5`。
+抓失敗會寫一筆 `bug_report_notifications_fetch_failed` 進本機日誌，這條通道再壞就查得到。
+
+這跟 v1.26.83 修過的是同一個形狀，只是方向相反：那次是 `.js` 少抓廣播。一個通道寫進單一
+平台的進入點，另一個平台就會安靜地少一塊。
+
+升級中斷的話要注意：`hooks/lib/` 底下這幾支是一體的，少一支 `session-start-output.js` 就
+整個起不來、而且不出聲（stderr 被導到 /dev/null）。這次多了一個檔案在那條鏈上。
+
 ## v1.30.18 — worktree 開不了、地點代碼被當金鑰、警告每輪重講
 
 ### worktree 一開就失敗，而且不分專案

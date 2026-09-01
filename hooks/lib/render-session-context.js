@@ -10,6 +10,7 @@
 
 import { getRandomTip } from '../../shared/tips.js';
 import { hintsFromStandards } from '../../shared/invocable-standards.js';
+import { bugReportNotificationLines } from './bug-report-notifications.js';
 
 /**
  * How much of one broadcast's body reaches the session, and what happens to the rest.
@@ -65,7 +66,16 @@ export function broadcastBody(body) {
  * @param {Function} [deps.tip]  supplies the tip line
  * @returns {string}  additionalContext
  */
-export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = {}) {
+/**
+ * @param {object} data the init payload
+ * @param {object[]} broadcasts
+ * @param {object} [opts]
+ * @param {Function} [opts.tip]
+ * @param {object|null} [opts.notifications] the bug-report notifications endpoint's answer.
+ *   Passed in rather than fetched here so this stays a pure function; the Windows hook and
+ *   session-start-output.js each fetch it and hand it over.
+ */
+export function renderSessionContext(data, broadcasts, { tip = getRandomTip, notifications = null } = {}) {
   const lines = [];
 
   // v1.17.0 P3: broadcasts go first so the AI relays them first; cap at 3 to avoid context bloat.
@@ -193,6 +203,10 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip } = 
     + 'server, a project, a credential, a decision — until you have run ownmind_search on it '
     + 'in this session. "I do not have that" is a claim about their memory, and you have not '
     + 'read it yet.');
+
+  // Bug-report notifications, ahead of the closing tip. Handed in rather than fetched — see
+  // the module's header for why the fetch cannot live inside either platform's entry point.
+  for (const line of bugReportNotificationLines(notifications)) lines.push(line);
 
   // v1.26.127: this is where the invented tips came from. The config templates tell the AI to
   // print a tip right after the startup memory load — and until now nothing on this path
