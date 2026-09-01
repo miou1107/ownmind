@@ -413,46 +413,19 @@ if [ -f "$REGISTER_MCP" ]; then
     *) echo "   [WARN] MCP 無法註冊到 ~/.claude.json，ownmind_* 工具在 Claude Code 裡不會出現" ;;
   esac
 fi
-if [ -f "$CLAUDE_SETTINGS" ]; then
-  node -e "
-    const fs = require('fs');
-    const path = require('path');
-    const os = require('os');
-    const { loadOrSkip } = require('$OWNMIND_DIR_WIN/scripts/install-helpers/load-settings-safe.cjs');
-    const s = loadOrSkip('$CLAUDE_SETTINGS_WIN', {});
-    let changed = false;
-    if (!s.hooks) { s.hooks = {}; changed = true; }
-
-    // v1.26.86 — SessionStart is handled by ensure-session-hook.cjs in section 3.4 below
-    // (single implementation with behavioral tests; it also honors the
-    // ~/.ownmind/.no-session-hook opt-out). This script used to make that decision inline,
-    // one divergent copy per installer, and the daily one always won.
-
-    // v1.26.105 — PreToolUse is handled by ensure-pretooluse-hooks.cjs in section 3.3b below.
-    // What used to be here was the oldest copy of that logic: one matcher, and a presence
-    // check across the whole array, in a script whose entire audience is upgrades.
-
-    // WorktreeCreate hook — auto-inject .mcp.json into new worktrees.
-    if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
-    const worktreeExists = s.hooks.WorktreeCreate.some(h =>
-      h.hooks?.some(hh => (hh.command || '').includes('ownmind-worktree-setup'))
-    );
-    if (!worktreeExists) {
-      s.hooks.WorktreeCreate.push({
-        hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-worktree-setup.sh', timeout: 10 }]
-      });
-      changed = true;
-      console.log('   ✅ Added WorktreeCreate hook (auto-inject worktree MCP)');
-    }
-
-    if (changed) {
-      // Atomic write: write to temp file then rename to prevent corruption
-      const tmp = '$CLAUDE_SETTINGS_WIN' + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
-      fs.renameSync(tmp, '$CLAUDE_SETTINGS_WIN');
-    }
-  " 2>>"$ERR_LOG"
+# --- 3.3a Drop the WorktreeCreate hook older versions registered ---
+# SessionStart lives in ensure-session-hook.cjs (3.4) and PreToolUse in
+# ensure-pretooluse-hooks.cjs (3.3b); what used to be here besides those was a WorktreeCreate
+# registration that broke EnterWorktree in every repo on the machine. Upgrades are the whole
+# population affected, so the removal has to run here and not only on a fresh install — see
+# remove-worktree-hook.cjs.
+REMOVE_WORKTREE_HOOK="$OWNMIND_DIR/scripts/install-helpers/remove-worktree-hook.cjs"
+if [ -f "$REMOVE_WORKTREE_HOOK" ] && [ -f "$CLAUDE_SETTINGS" ]; then
+  if worktree_result=$(node "$(to_win_path "$REMOVE_WORKTREE_HOOK")" "$CLAUDE_SETTINGS_WIN" 2>>"$ERR_LOG"); then
+    [ -n "$worktree_result" ] && echo "   $worktree_result"
+  fi
 fi
+rm -f "$HOME/.claude/hooks/ownmind-worktree-setup.sh"
 
 # --- 3.3b PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 ENSURE_PRE_HOOK="$OWNMIND_DIR/scripts/install-helpers/ensure-pretooluse-hooks.cjs"

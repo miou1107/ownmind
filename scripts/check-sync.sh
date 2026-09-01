@@ -1,5 +1,5 @@
 #!/bin/bash
-# check-sync.sh — three-layer OwnMind health check (Remote / Server / Deploy drift).
+# check-sync.sh — four-layer OwnMind health check (Remote / Server / Deploy drift / Standards cache).
 # Usage: bash ~/.ownmind/scripts/check-sync.sh
 # Output: structured STDOUT for the ownmind-upgrade skill to parse.
 #
@@ -146,7 +146,6 @@ echo "L2_SERVER:${L2}${L2_DETAIL:+ ${L2_DETAIL}}"
 SRC_TO_DST=(
   "${OWNMIND_DIR}/hooks/ownmind-session-start.sh|${CLAUDE_DIR}/hooks/ownmind-session-start.sh"
   "${OWNMIND_DIR}/hooks/ownmind-iron-rule-check.sh|${CLAUDE_DIR}/hooks/ownmind-iron-rule-check.sh"
-  "${OWNMIND_DIR}/hooks/ownmind-worktree-setup.sh|${CLAUDE_DIR}/hooks/ownmind-worktree-setup.sh"
   "${OWNMIND_DIR}/skills/ownmind-memory.md|${CLAUDE_DIR}/skills/ownmind-memory/SKILL.md"
   "${OWNMIND_DIR}/skills/ownmind-upgrade.md|${CLAUDE_DIR}/skills/ownmind-upgrade/SKILL.md"
 )
@@ -195,9 +194,46 @@ else
 fi
 
 # ============================================================
+# L4 — Standards cache（~/.ownmind/cache/enforcement.json）
+# ============================================================
+# 這一層是掛勾真正讀的那份檔。少了它，UserPromptSubmit 掛勾每一輪都會說「這台機器查不了規範」，
+# 而 L1～L3 三層沒有一層看這個檔，所以上面全部 in_sync 的機器照樣可以什麼都沒在把關。
+# 兩邊各自說的都是實話，可是對照起來只會讓人以為掛勾在亂講，於是把警告當雜訊。
+ENFORCEMENT_CACHE="${OWNMIND_DIR}/cache/enforcement.json"
+ENFORCEMENT_CACHE_WIN="$(to_win_path "${ENFORCEMENT_CACHE}")"
+L4="never_synced"
+L4_DETAIL=""
+if [ -f "${ENFORCEMENT_CACHE}" ]; then
+  # Well-formed means what readEnforcementBundle means by it: an object whose three lists are
+  # arrays when present. A file the hooks would refuse is not a cache, however readable it is.
+  L4_COUNT=$(node -e "
+    try {
+      const b = JSON.parse(require('fs').readFileSync('${ENFORCEMENT_CACHE_WIN}', 'utf8'));
+      if (!b || typeof b !== 'object' || Array.isArray(b)) { console.log(''); }
+      else if (!['selectors','guards','injectables'].every(k => b[k] === undefined || Array.isArray(b[k]))) { console.log(''); }
+      else {
+        console.log(['selectors','guards','injectables']
+          .reduce((n, k) => n + (Array.isArray(b[k]) ? b[k].length : 0), 0));
+      }
+    } catch { console.log(''); }
+  " 2>/dev/null)
+  if [ -n "${L4_COUNT}" ]; then
+    L4="in_sync"
+    L4_DETAIL="entries=${L4_COUNT}"
+  else
+    L4="unreadable"
+  fi
+fi
+echo "L4_STANDARDS:${L4}${L4_DETAIL:+ ${L4_DETAIL}}"
+
+# ============================================================
 # OVERALL summary (if any layer drifts → needs_upgrade).
 # ============================================================
-if [ "${L1}" = "behind" ] || [ "${L2}" = "outdated" ] || [ "${DRIFT_COUNT}" -gt 0 ]; then
+# L4 是先問的那一題，而且它排在連不上伺服器前面。「這台機器現在什麼都沒在把關」是量得出來的
+# 事實，跟「這次連不上、所以不知道」不一樣，把前者收進 unknown 會讓它從摘要裡消失。
+if [ "${L4}" = "never_synced" ] || [ "${L4}" = "unreadable" ]; then
+  echo "OVERALL:needs_upgrade"
+elif [ "${L1}" = "behind" ] || [ "${L2}" = "outdated" ] || [ "${DRIFT_COUNT}" -gt 0 ]; then
   echo "OVERALL:needs_upgrade"
 elif [ "${L1}" = "error" ] || [ "${L2}" = "error" ]; then
   echo "OVERALL:unknown_due_to_errors"

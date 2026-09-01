@@ -214,9 +214,12 @@ describe('the baseline stands down when a rule owns the finding', () => {
     stage('leak.txt', LEAK);
     const r = runHook();
     assert.equal(r.status, 1, `must still block; got exit ${r.status}\nstderr:${r.stderr}`);
-    const baselineMentions = (r.stderr.match(/BASELINE/g) || []).length;
+    // Counting the bare word would also count the bypass hint, which has to name BASELINE:
+    // standing the rule down leaves the baseline holding the same hit. What must not appear
+    // twice is the finding.
+    const baselineFindings = (r.stderr.match(/❌ BASELINE:/g) || []).length;
     assert.equal(
-      baselineMentions,
+      baselineFindings,
       0,
       'the user owns a rule for this; reporting it again as BASELINE would print the same leak twice',
     );

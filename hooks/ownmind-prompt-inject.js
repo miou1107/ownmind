@@ -74,10 +74,24 @@ export function precedenceFor(type) {
   return PRECEDENCE_BY_TYPE[type] || PRECEDENCE_DEFAULT;
 }
 
+/**
+ * What to say when this machine holds no rules cache.
+ *
+ * It used to say only "this machine has never synced its standards", on every prompt of the
+ * session. Two people in a row concluded it was stale and stopped reading it, and they had
+ * good reason: `ownmind_search` reads the server and keeps working, `check-sync.sh` reports
+ * in_sync on all three of its layers, and neither one looks at this file. Nothing the reporter
+ * could run agreed with the warning, and the warning never named what to look at.
+ *
+ * So it names the file, and it names the two checks that will disagree with it. bug-report
+ * id=27.
+ */
 const NEVER_SYNCED_NOTICE =
-  '[OwnMind] This machine has never synced its standards, so nothing can be checked against '
-  + 'them here. Say so plainly rather than proceeding as though no standard applies.\n'
-  + 'Tell the user this, in the language you are speaking with them.';
+  '[OwnMind] No rules cache on this machine: ~/.ownmind/cache/enforcement.json is missing, so '
+  + 'nothing on this turn can be checked against a standard. Two things will disagree and '
+  + 'neither one reads that file — `ownmind_search` asks the server directly, and '
+  + 'check-sync.sh compares versions and deployed files. Starting a new session fetches it.\n'
+  + 'Say this to the user once, in the language you are speaking with them.';
 
 function stateFile(sessionId) {
   return path.join(os.homedir(), '.ownmind', 'state', `injected-${sessionId || 'unknown'}.json`);
@@ -98,14 +112,48 @@ function readInjectedIds(sessionId) {
   }
 }
 
-function recordInjectedIds(sessionId, ids) {
-  if (!ids.length) return;
+function readState(sessionId) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(stateFile(sessionId), 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeState(sessionId, patch) {
   try {
     const file = stateFile(sessionId);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const merged = Array.from(new Set([...readInjectedIds(sessionId), ...ids]));
-    fs.writeFileSync(file, JSON.stringify({ ids: merged }), 'utf8');
-  } catch { /* at worst a standard is injected twice */ }
+    fs.writeFileSync(file, JSON.stringify({ ...readState(sessionId), ...patch }), 'utf8');
+  } catch { /* at worst something is said twice */ }
+}
+
+function recordInjectedIds(sessionId, ids) {
+  if (!ids.length) return;
+  const merged = Array.from(new Set([...readInjectedIds(sessionId), ...ids]));
+  writeState(sessionId, { ids: merged });
+}
+
+/**
+ * Has this session already been told there is no rules cache?
+ *
+ * Once is the whole budget. The notice is a fact about the machine, not about the turn, so
+ * repeating it on every prompt adds nothing and costs the attention of the person reading —
+ * which is what actually happened: it arrived dozens of times in one session and got scrolled
+ * past.
+ *
+ * The user-facing side is not silenced by this. reply-lint carries its own
+ * `not-checked:never-synced` banner, which notice-throttle speaks on every change of state
+ * and every tenth turn while the state holds — the cadence the product owner settled on for
+ * exactly this trade.
+ */
+function neverSyncedNoticeSent(sessionId) {
+  // With no session id every session shares one state file, so a flag written there would
+  // silence this machine for good rather than for one session. Saying it every turn is the
+  // lesser fault of the two.
+  if (!sessionId) return false;
+  return readState(sessionId).never_synced_notice === true;
 }
 
 function matches(standard, prompt, repoRemote) {
@@ -214,8 +262,12 @@ async function main() {
   const bundle = readEnforcementBundle();
   if (!bundle.present) {
     // A machine that never synced can enforce nothing, and silence here reads exactly like
-    // "no standard applies to this". Whoever is working deserves to know which one it is.
-    blocks.push(NEVER_SYNCED_NOTICE);
+    // "no standard applies to this". Whoever is working deserves to know which one it is —
+    // once. See neverSyncedNoticeSent for why saying it on every prompt made it worse.
+    if (!neverSyncedNoticeSent(sessionId)) {
+      blocks.push(NEVER_SYNCED_NOTICE);
+      writeState(sessionId, { never_synced_notice: true });
+    }
     emit({ forAssistant: blocks.join('\n\n---\n\n'), forUser });
     return;
   }
