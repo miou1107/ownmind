@@ -586,24 +586,24 @@
       "text": "{\"ts\":…,\"event\":\"<event>\",\"tool\":\"claude-code\",\"source\":\"hook\",\"details\":{…}}"
     },
     {
-      "file": "hooks/ownmind-session-start.js",
-      "line": 357,
+      "file": "hooks/lib/bug-report-notifications.js",
+      "line": 42,
       "channel": "hookSpecificOutput.additionalContext",
       "audience": "model",
       "context": "bug-report notification segment for admins (SessionStart context injection; user sees it only if the AI relays it)",
       "text": "As admin: ${notif.admin.unhandled_count} unhandled bug reports"
     },
     {
-      "file": "hooks/ownmind-session-start.js",
-      "line": 361,
+      "file": "hooks/lib/bug-report-notifications.js",
+      "line": 45,
       "channel": "hookSpecificOutput.additionalContext",
       "audience": "model",
       "context": "bug-report notification segment for reporters",
       "text": "${notif.reporter.unread_resolved_count} of your reports have been resolved"
     },
     {
-      "file": "hooks/ownmind-session-start.js",
-      "line": 366,
+      "file": "hooks/lib/bug-report-notifications.js",
+      "line": 50,
       "channel": "hookSpecificOutput.additionalContext",
       "audience": "model",
       "context": "bug-report notification section header + per-segment bullet '- ${s}' + closing hint (line 368)",
