@@ -200,15 +200,20 @@ fi
 # 而 L1～L3 三層沒有一層看這個檔，所以上面全部 in_sync 的機器照樣可以什麼都沒在把關。
 # 兩邊各自說的都是實話，可是對照起來只會讓人以為掛勾在亂講，於是把警告當雜訊。
 ENFORCEMENT_CACHE="${OWNMIND_DIR}/cache/enforcement.json"
-ENFORCEMENT_CACHE_WIN="$(to_win_path "${ENFORCEMENT_CACHE}")"
 L4="never_synced"
 L4_DETAIL=""
 if [ -f "${ENFORCEMENT_CACHE}" ]; then
+  # The path goes in as an argv element, not interpolated into the source. Every other node -e
+  # in this file interpolates and relies on `cygpath -m` producing forward slashes; where
+  # cygpath is absent the Windows path arrives with its backslashes intact and `\U`, `\A`, `\T`
+  # are read as JS escapes, so the read throws and a healthy cache reports as unusable.
+  # Measured on Windows CI, 2026-09-01.
+  #
   # Well-formed means what readEnforcementBundle means by it: an object whose three lists are
   # arrays when present. A file the hooks would refuse is not a cache, however readable it is.
   L4_COUNT=$(node -e "
     try {
-      const b = JSON.parse(require('fs').readFileSync('${ENFORCEMENT_CACHE_WIN}', 'utf8'));
+      const b = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
       if (!b || typeof b !== 'object' || Array.isArray(b)) { console.log(''); }
       else if (!['selectors','guards','injectables'].every(k => b[k] === undefined || Array.isArray(b[k]))) { console.log(''); }
       else {
@@ -216,7 +221,7 @@ if [ -f "${ENFORCEMENT_CACHE}" ]; then
           .reduce((n, k) => n + (Array.isArray(b[k]) ? b[k].length : 0), 0));
       }
     } catch { console.log(''); }
-  " 2>/dev/null)
+  " "${ENFORCEMENT_CACHE}" 2>/dev/null)
   if [ -n "${L4_COUNT}" ]; then
     L4="in_sync"
     L4_DETAIL="entries=${L4_COUNT}"
