@@ -102,7 +102,12 @@ test('an account with nothing annotated is in_sync, not broken', () => {
   assert.match(standards, /entries=0/);
 });
 
-test('a path with backslashes in it is still read, not reported as unusable', () => {
+test('a path with backslashes in it is still read, not reported as unusable', {
+  // Windows cannot hold a directory whose name contains a backslash — that is the separator —
+  // so the reproduction only exists on posix. The behaviour it pins is the shell script's, and
+  // that is the same script on every platform.
+  skip: process.platform === 'win32' ? 'a backslash cannot appear in a Windows directory name' : false,
+}, () => {
   // Windows CI, 2026-09-01: a healthy cache came back `unreadable` on every run. Where
   // `cygpath` is absent the Windows path keeps its backslashes, and interpolated into a
   // JavaScript string literal `\U`, `\A`, `\T` are escape sequences — the read throws and the
