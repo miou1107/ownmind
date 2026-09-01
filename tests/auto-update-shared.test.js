@@ -269,14 +269,18 @@ describe('when there are new commits', () => {
   });
 
   it('leaves PATH alone when the node directory is already on it', async () => {
-    const nodeDir = path.join(ROOT, 'homebrew-bin');
-    await fsp.mkdir(nodeDir, { recursive: true });
+    // A literal posix directory rather than one under ROOT. `platform: 'darwin'` means the
+    // separator is `:`, and on a Windows test runner `path.join` hands back `C:\…` — whose
+    // own colon splits the entry in two, so the directory is never recognised as already
+    // present and this read as a product bug on Windows CI only. Nothing here touches the
+    // filesystem, so the path does not have to exist.
+    const nodeDir = '/opt/homebrew/bin';
     const { execFile, calls } = fakeExec({ pending: 'abc1234 x' });
     const h = harness();
 
     await runAutoUpdate({
       ...h.opts, execFile, platform: 'darwin',
-      execPath: path.join(nodeDir, 'node'),
+      execPath: `${nodeDir}/node`,
       env: { PATH: `/usr/bin:${nodeDir}` }
     });
 

@@ -551,10 +551,11 @@ mkdir -p "$HOOK_DIR/lib"
 mkdir -p "$HOOK_DIR/locales"
 cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
-cp "$OWNMIND_DIR/hooks/ownmind-worktree-setup.sh" "$HOOK_DIR/"
 chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
 chmod +x "$HOOK_DIR/ownmind-session-start.sh"
-chmod +x "$HOOK_DIR/ownmind-worktree-setup.sh"
+# ownmind-worktree-setup.sh is gone — see remove-worktree-hook.cjs. Delete the copy an older
+# install left behind, so nothing can point at it again.
+rm -f "$HOOK_DIR/ownmind-worktree-setup.sh"
 # 同步 hooks/lib（SessionStart hook render 模組等）
 if [ -d "$OWNMIND_DIR/hooks/lib" ]; then
   cp "$OWNMIND_DIR/hooks/lib/"*.js "$HOOK_DIR/lib/" 2>/dev/null || true
@@ -563,36 +564,23 @@ fi
 if [ -d "$OWNMIND_DIR/hooks/locales" ]; then
   cp "$OWNMIND_DIR/hooks/locales/"*.json "$HOOK_DIR/locales/" 2>/dev/null || true
 fi
-echo "[INFO] Installed hook scripts (session-start + iron-rule-check + worktree-setup) + hooks/lib + hooks/locales"
+echo "[INFO] Installed hook scripts (session-start + iron-rule-check) + hooks/lib + hooks/locales"
 
-# --- 4c. 加入 Hook 設定（SessionStart + PreToolUse）---
-node -e "
-  const fs = require('fs');
-  const nodePath = require('path');
-  const os = require('os');
-  const path = '$CLAUDE_SETTINGS_WIN';
-  const s = JSON.parse(fs.readFileSync(path, 'utf8'));
-  if (!s.hooks) s.hooks = {};
-
-  // SessionStart is handled by ensure-session-hook.cjs (v1.26.86, see that file), which
-  // runs as its own step after this block. All four install/update scripts share it.
-  // PreToolUse is handled by ensure-pretooluse-hooks.cjs (v1.26.105), same arrangement: it
-  // runs after this block's write, reads settings.json back off disk, and writes its own.
-
-  // WorktreeCreate hook — 自動注入 .mcp.json 到新 worktree
-  if (!s.hooks.WorktreeCreate) s.hooks.WorktreeCreate = [];
-  const worktreeExists = s.hooks.WorktreeCreate.some(h =>
-    h.hooks?.some(hh => hh.command?.includes('ownmind-worktree-setup'))
-  );
-  if (!worktreeExists) {
-    s.hooks.WorktreeCreate.push({
-      hooks: [{ type: 'command', command: 'bash ~/.claude/hooks/ownmind-worktree-setup.sh', timeout: 10 }]
-    });
-    console.log('   加入 WorktreeCreate hook（worktree MCP 自動注入）');
-  }
-
-  fs.writeFileSync(path, JSON.stringify(s, null, 2));
-" 2>>"$INSTALL_LOG"
+# --- 4c. 移除舊版留下的 WorktreeCreate hook ---
+# SessionStart 由 ensure-session-hook.cjs 處理、PreToolUse 由 ensure-pretooluse-hooks.cjs
+# 處理，兩者都在下面各自成段。這裡只剩一件事：把舊版註冊過的 WorktreeCreate hook 拿掉。
+# 它會讓這台機器上所有 repo 的 EnterWorktree 一律失敗，理由見 remove-worktree-hook.cjs。
+REMOVE_WORKTREE_HOOK="$OWNMIND_DIR/scripts/install-helpers/remove-worktree-hook.cjs"
+if [ -f "$REMOVE_WORKTREE_HOOK" ]; then
+  # to_win_path on both, like scripts/update.sh: under Git Bash a POSIX path handed to
+  # node.exe resolves against the drive root, existsSync answers false, and the helper reports
+  # a clean "nothing to remove" while the broken registration stays exactly where it was.
+  if worktree_result=$(node "$(to_win_path "$REMOVE_WORKTREE_HOOK")" "$(to_win_path "$CLAUDE_SETTINGS")" 2>&1); then
+    [ -n "$worktree_result" ] && echo "[ OK ] $worktree_result"
+  else
+    echo "[WARN] WorktreeCreate hook 清理失敗：$worktree_result"
+  fi
+fi
 
 # --- 4c-1. PreToolUse iron-rule hooks (v1.26.105, delegated to the shared implementation) ---
 # Also repairs an entry whose command is stale — see the helper's header for why presence

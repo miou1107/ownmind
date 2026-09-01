@@ -170,7 +170,7 @@ test('a machine that never synced says so instead of staying silent', () => {
     env: { ...process.env, HOME: home, USERPROFILE: home },
     timeout: 30_000,
   });
-  assert.match(out, /never synced|has not synced/i);
+  assert.match(out, /No rules cache on this machine/i);
 });
 
 test('a team standard says it belongs to the team and cannot simply be waived', () => {
@@ -211,4 +211,87 @@ test('every shipped type has its own sentence, and an unknown type still gets on
 test('the header names the kind of rule, not always "standard"', () => {
   assert.match(buildInjection([CI_STANDARD], 'FAPA', null, []).text, /\[OwnMind team_standard 412\]/);
   assert.match(buildInjection([ALWAYS_RULE], 'x', null, []).text, /\[OwnMind iron_rule 125\]/);
+});
+
+// ============================================================
+// bug-report id=27 — the same "never synced" paragraph on every single turn
+//
+// Two things went wrong at once, and only together do they explain why the warning stopped
+// being read. It repeated verbatim on every prompt of a long session, dozens of times,
+// including turns with nothing to do with standards. And there was no way to check it: the
+// reporter ran `ownmind_search` (which reads the server and worked) and `check-sync.sh`
+// (which reported in_sync on all three layers) and concluded the hook was stale. Neither tool
+// looks at the file this notice is about, and the notice never said which file that was.
+//
+// A warning nobody can verify, arriving sixty times, teaches people to scroll past it — which
+// costs more than the silence it was written to prevent. The user-facing signal is not lost:
+// reply-lint's own not-checked banner speaks on every change of state and every tenth turn
+// while the state holds.
+// ============================================================
+
+function runHook(home, sessionId, prompt = 'migrate to FAPA') {
+  return execFileSync('node', [HOOK], {
+    input: JSON.stringify({ session_id: sessionId, prompt }),
+    encoding: 'utf8',
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+    timeout: 30_000,
+  });
+}
+
+test('the never-synced notice arrives once in a session, not on every prompt', () => {
+  const home = tempDir('om-inject-nosync-once-');
+
+  const first = runHook(home, 's-repeat', 'migrate to FAPA');
+  const second = runHook(home, 's-repeat', 'what is the weather');
+  const third = runHook(home, 's-repeat', 'now deploy it');
+
+  assert.match(first, /enforcement\.json/, `the first turn must say it; got ${first}`);
+  assert.doesNotMatch(second, /enforcement\.json/, `turn 2 repeated it; got ${second}`);
+  assert.doesNotMatch(third, /enforcement\.json/, `turn 3 repeated it; got ${third}`);
+});
+
+test('a different session hears it too — the count is per session, not per machine', () => {
+  const home = tempDir('om-inject-nosync-persession-');
+  runHook(home, 's-one');
+
+  const other = runHook(home, 's-two');
+
+  assert.match(other, /enforcement\.json/, `a new session was left in the dark; got ${other}`);
+});
+
+test('with no session id it is said every time rather than once for ever', () => {
+  // Every session without an id shares one state file, so a flag written there would silence
+  // the machine permanently instead of for one session. Repeating is the lesser fault.
+  const home = tempDir('om-inject-nosync-nosession-');
+
+  const first = runHook(home, '');
+  const second = runHook(home, '');
+
+  assert.match(first, /enforcement\.json/);
+  assert.match(second, /enforcement\.json/, `a machine with no session id went permanently quiet; got ${second}`);
+});
+
+test('the notice names the file that is missing, so the claim can be checked', () => {
+  const home = tempDir('om-inject-nosync-named-');
+
+  const out = runHook(home, 's-named');
+
+  assert.match(out, /enforcement\.json/, 'the reader has to be able to look');
+  assert.match(out, /ownmind_search|check-sync/,
+    'and has to be told why the two obvious checks disagree');
+});
+
+test('once the cache is there the notice stops, in the same session', () => {
+  const home = tempDir('om-inject-nosync-recovers-');
+  runHook(home, 's-recovers');
+
+  fs.mkdirSync(path.join(home, '.ownmind', 'cache'), { recursive: true });
+  fs.writeFileSync(
+    path.join(home, '.ownmind', 'cache', 'enforcement.json'),
+    JSON.stringify({ selectors: [], guards: [], injectables: [CI_STANDARD] }),
+  );
+  const out = runHook(home, 's-recovers', 'FAPA');
+
+  assert.doesNotMatch(out, /enforcement\.json is missing|has not synced|never synced/i);
+  assert.match(out, /TEAM standard/, 'and the standards themselves come through');
 });

@@ -631,3 +631,64 @@ describe('v1.26.28 — punctuation-only separator lines (heuristic regression)',
     assert.equal(r.rule, 'regex:github_pat');
   });
 });
+
+// ============================================================
+// Google Maps Place IDs (bug-report id=28, 2026-08-28)
+//
+// A design doc quoting three real Place IDs could not be committed: each one is 27
+// characters of base64-ish text with no word structure, so the last-resort length heuristic
+// read them as credentials. A Place ID is a published public identifier — it grants nothing,
+// anybody can look one up, and masking it would defeat the point of quoting it as evidence.
+//
+// This is an allowlist of one known public format, not another shape exemption of the kind
+// v1.26.98 removed. Those said "identifiers look like this"; this says "this exact published
+// identifier is public", and it is checked only against the heuristic, so every dedicated key
+// regex still wins.
+// ============================================================
+
+describe('Google Maps Place IDs are public identifiers, not credentials', () => {
+  const REPORTED = [
+    'ChIJ1eveM33iaDQR8ztHwzV8s8s',
+    'ChIJaSVP72jjaDQRxxdGd5N4VxY',
+    'ChIJqfzLZmjjaDQRoFZxat31SBk',
+  ];
+
+  for (const placeId of REPORTED) {
+    it(`the blocked commit's ${placeId} goes through`, () => {
+      const r = detectSecretLike(placeId, { skip_keyword: true });
+      assert.equal(r.detected, false, `still blocked by ${r.rule}`);
+    });
+  }
+
+  it('a Place ID carrying the base64url symbols goes through too', () => {
+    const r = detectSecretLike('ChIJ_abc-DEF123ghi456JKL789', { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  it('a key that merely starts with the same four letters is still caught', () => {
+    // The prefix is not a password. Anything outside the Place ID charset — `+`, `/`, `=`,
+    // the padding a base64 secret carries — falls straight back to the heuristic.
+    const r = detectSecretLike('ChIJ1eveM33iaDQR8zt/Hwz+V8s8s=', { skip_keyword: true });
+    assert.equal(r.detected, true);
+    assert.equal(r.rule, 'heuristic:long_alnum');
+  });
+
+  it('the prefix alone does not excuse a short value from anything else', () => {
+    const r = detectSecretLike('ChIJshort', { skip_keyword: true });
+    assert.equal(r.detected, false);
+  });
+
+  it('a real key format still wins, prefix or not', () => {
+    const fakePat = 'ghp_' + 'abcdefghij' + 'klmnopqrst' + 'uvwxyz0123' + '456789AB';
+    const r = detectSecretLike(fakePat, { skip_keyword: true });
+    assert.equal(r.rule, 'regex:github_pat');
+  });
+
+  it('an assignment naming a password is still caught even with a Place ID as the value', () => {
+    // The allowlist sits in front of the heuristic only. Someone writing
+    // `api_key: ChIJ…` is not quoting a map location.
+    const r = detectSecretLike('api_key: ChIJ1eveM33iaDQR8ztHwzV8s8s');
+    assert.equal(r.detected, true);
+    assert.match(r.rule, /^keyword:/);
+  });
+});

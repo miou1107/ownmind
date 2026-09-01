@@ -43,12 +43,20 @@ L1_REMOTE:in_sync | behind count=N | not_git | error
 L2_SERVER:in_sync version=X.Y.Z | outdated client=X.Y.Z server=A.B.C | ahead ... | error ...
 L3_DEPLOY:in_sync | drifted count=N
 L3_DRIFT_FILE:<path>
+L4_STANDARDS:in_sync entries=N | never_synced | unreadable
 OVERALL:in_sync | needs_upgrade
 ```
 
 **回報 user 的邏輯**：
+- `L4_STANDARDS:never_synced` 或 `unreadable` → 回「這台機器還沒把你的規範抓下來，掛勾現在
+  什麼都檢查不了；開一個新對話就會抓」。
+  **如果 L1／L2／L3 都是 in_sync，到這裡就停，不要問要不要升級、也不要走模式 B。**
+  規範快取是掛勾判斷用的那份檔，升級腳本不會去抓它，只有 SessionStart 會；跑升級改不了
+  這一項，跑完 `OVERALL` 還是 `needs_upgrade`。
+  L1／L2／L3 另外有問題的話，講完這一條再照下面處理。
 - `OVERALL:in_sync` → 「已是最新 vX.Y.Z，全部同步正常」
-- `OVERALL:needs_upgrade` → 告訴 user 差在哪，問「**要我現在幫你升級嗎？**」
+- `OVERALL:needs_upgrade`，**而且 L1／L2／L3 至少有一層不是 in_sync** → 告訴 user 差在哪，
+  問「**要我現在幫你升級嗎？**」
   - 同意 → 走模式 B
   - 拒絕 → 提示「可說『暫緩升級』延後 24 小時」
 - `L2_SERVER:ahead` → 「你在 pre-release（client 比 server 新），無需升級」
@@ -68,7 +76,7 @@ User 說出下列任一句都觸發 bootstrap：
 - **安裝**：「裝 OwnMind」「安裝 OwnMind」「幫我裝 OwnMind」「install ownmind」
 - **修復**：「修 OwnMind」「重裝 OwnMind」「OwnMind 壞了」「OwnMind 出錯」「repair ownmind」
 
-也由模式 A 自動導流（`needs_upgrade` 且 user 回 yes）。
+也由模式 A 自動導流（`needs_upgrade` 來自 L1／L2／L3，且 user 回 yes）。
 
 ### 模式 C：Snooze（延後提醒）
 
@@ -184,7 +192,7 @@ POST /api/broadcast/dismiss
 
 - `scripts/bootstrap.sh` / `scripts/bootstrap.ps1` — **v1.17.6 新增**，universal 入口，三分支處理
 - `scripts/interactive-upgrade.sh` / `.ps1` — 正常升級腳本，bootstrap 的 Branch 3 delegate 過來
-- `scripts/check-sync.sh` / `scripts/check-sync.ps1` — 模式 A 的版本檢查（三層 L1/L2/L3 比對），Mac/Linux 走 .sh、Windows 走 .ps1
+- `scripts/check-sync.sh` / `scripts/check-sync.ps1` — 模式 A 的版本檢查（四層 L1/L2/L3/L4 比對），Mac/Linux 走 .sh、Windows 走 .ps1
 - `install.sh` / `install.ps1` — fresh install 時由 bootstrap 呼叫
 - `hooks/ownmind-session-start.sh` — SessionStart 顯示升級廣播
 - `mcp/index.js` `fetchBroadcastsSafely` — 每次 MCP call 都附廣播
