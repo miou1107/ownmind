@@ -332,7 +332,7 @@ $apiKey = ""
 $apiUrl = ""
 if (Test-Path $claudeSettings) {
   try {
-    $settings = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+    $settings = Get-Content $claudeSettings -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($settings.mcpServers -and $settings.mcpServers.ownmind -and $settings.mcpServers.ownmind.env) {
       $apiKey = $settings.mcpServers.ownmind.env.OWNMIND_API_KEY
       $apiUrl = $settings.mcpServers.ownmind.env.OWNMIND_API_URL
@@ -421,7 +421,7 @@ if (Test-Path $verifyScript) {
 
 Pop-Location
 
-$pkg = Get-Content (Join-Path $OwnMindDir "package.json") -Raw | ConvertFrom-Json
+$pkg = Get-Content (Join-Path $OwnMindDir "package.json") -Raw -Encoding UTF8 | ConvertFrom-Json
 $Version = $pkg.version
 
 # --- 7. Dismiss 已過時的升級廣播（v1.17.18） ---
@@ -483,7 +483,7 @@ function Send-UpgradeCompleteBeacon {
   $claudeSettings = Join-Path $HOME '.claude\settings.json'
   if (-not (Test-Path $claudeSettings)) { return }
   try {
-    $cfg = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+    $cfg = Get-Content $claudeSettings -Raw -Encoding UTF8 | ConvertFrom-Json
     $env = $cfg.mcpServers.ownmind.env
     $apiKey = $env.OWNMIND_API_KEY
     $apiUrl = $env.OWNMIND_API_URL

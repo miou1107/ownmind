@@ -93,7 +93,9 @@ describe('the installers no longer skip on a present entry', () => {
    * installer would still have printed "API key updated".
    */
   it('both installers read the settings file back before reporting', () => {
-    assert.match(ps, /\$landed = \(Get-Content \$ClaudeSettings -Raw \| ConvertFrom-Json\)/,
+    // Flags between -Raw and the pipe are the read's business, not this test's: -Encoding UTF8
+    // was added there so a cp950 machine does not decode the file wrong on the way back in.
+    assert.match(ps, /\$landed = \(Get-Content \$ClaudeSettings -Raw[^|]*\| ConvertFrom-Json\)/,
       'install.ps1 reports on its own intent again, without reading the file back');
     assert.match(sh, /landed = JSON\.parse\(fs\.readFileSync\(p, 'utf8'\)\)/,
       'install.sh reports on its own intent again, without reading the file back');
