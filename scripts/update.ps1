@@ -38,7 +38,7 @@ function Send-UpdateBeacon {
   $claudeSettings = Join-Path $HOME '.claude\settings.json'
   if (-not (Test-Path $claudeSettings)) { return }
   try {
-    $cfg = Get-Content $claudeSettings -Raw | ConvertFrom-Json
+    $cfg = Get-Content $claudeSettings -Raw -Encoding UTF8 | ConvertFrom-Json
     $env = $cfg.mcpServers.ownmind.env
     $apiKey = $env.OWNMIND_API_KEY
     $apiUrl = $env.OWNMIND_API_URL
