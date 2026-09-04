@@ -100,7 +100,9 @@ function Find-GitBash {
   # 1. cache
   if (Test-Path $script:GitBashCacheFile -PathType Leaf) {
     try {
-      $cached = (Get-Content $script:GitBashCacheFile -First 1 -ErrorAction Stop).Trim()
+      # -Encoding UTF8 for the same reason as register-scanner-task.ps1: this cache is written
+      # BOM-less, and a path under a Chinese username decodes wrong on a cp950 machine.
+      $cached = (Get-Content $script:GitBashCacheFile -First 1 -Encoding UTF8 -ErrorAction Stop).Trim()
       if ($cached -and (Test-IsGitBash -BashPath $cached)) {
         return $cached
       }

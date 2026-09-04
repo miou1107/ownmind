@@ -22,7 +22,10 @@ $NodePathCache = Join-Path $OwnMindDir '.node-path'
 function Resolve-NodeBinary {
   # 1a. .node-path cache
   if (Test-Path $NodePathCache) {
-    $cached = (Get-Content $NodePathCache -First 1).Trim()
+    # -Encoding UTF8: this cache is written BOM-less through WriteAllText further down, and a
+    # node path under a Chinese Windows username is not ASCII. Read back on cp950 without it,
+    # the path comes out mangled, Test-Path says no, and the cache silently never hits.
+    $cached = (Get-Content $NodePathCache -First 1 -Encoding UTF8).Trim()
     if ($cached -and (Test-Path $cached)) {
       $ver = & $cached --version 2>$null
       if ($LASTEXITCODE -eq 0 -and $ver -match '^v(\d+)') {
