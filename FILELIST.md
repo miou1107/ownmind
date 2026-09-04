@@ -25,6 +25,21 @@ gate-i18n/string-inventory.json
 CHANGELOG.md / FILELIST.md             — 本次條目
 ```
 
+## 尚未發版（Windows 上查版本，一直被告知要升級）
+
+新增檔：
+```
+tests/check-sync-ps1-reads-json-as-utf8.test.js — 掃 check-sync.ps1 的文字：JSON 不准
+                                                  從 Get-Content 讀進來
+```
+
+修改檔：
+```
+scripts/check-sync.ps1                         — 新增 Read-Utf8Text，三處讀 JSON 都走它，
+                                                 編碼不再由機器的代碼頁決定；OWNMIND_DIR／
+                                                 CLAUDE_DIR 給相對路徑時先轉成絕對路徑
+```
+
 ## v1.30.18 修改（worktree 開不了、地點代碼被當金鑰、警告每輪重講）
 
 新增檔：
