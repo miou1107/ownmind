@@ -324,7 +324,18 @@ if (Test-Path $ClaudeSettings) {
   # OwnMind was configured; the question that mattered was whether it was configured with
   # THIS key. install.sh carried the identical bug; both are fixed together.
   Write-Host "[INFO] Configuring Claude Code MCP"
-  $content = Get-Content $ClaudeSettings -Raw
+  # -Encoding UTF8, and this one is not cosmetic: the object read here is written back over
+  # the same file thirty lines below. Windows PowerShell 5.1 decodes a BOM-less file by the
+  # system ANSI code page (cp950 on Traditional Chinese Windows), so without it every
+  # non-ASCII character in the user's settings.json is replaced on the way out. This
+  # installer puts such characters there itself: $StartCmd carries the Windows username.
+  # bug-report id=30 is the read-only half of the same fault.
+  #
+  # The trade: a settings.json that really was written in the ANSI code page now decodes to
+  # U+FFFD and the write-back destroys it, where cp950 used to round-trip. JSON is UTF-8 by
+  # RFC 8259 and every writer of this file — Claude Code, Write-Utf8NoBom below — emits UTF-8,
+  # so guessing UTF-8 is right and guessing by code page is not.
+  $content = Get-Content $ClaudeSettings -Raw -Encoding UTF8
   $settings = $content | ConvertFrom-Json
   if (-not $settings.mcpServers) {
     $settings | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{})
@@ -361,7 +372,7 @@ if (Test-Path $ClaudeSettings) {
   # because this script once skipped the write entirely and printed a summary anyway.
   $landed = $null
   try {
-    $landed = (Get-Content $ClaudeSettings -Raw | ConvertFrom-Json).mcpServers.ownmind.env.OWNMIND_API_KEY
+    $landed = (Get-Content $ClaudeSettings -Raw -Encoding UTF8 | ConvertFrom-Json).mcpServers.ownmind.env.OWNMIND_API_KEY
   } catch { $landed = $null }
   if ($landed -ne $ApiKey) {
     # Not silenced and not a crash: the install can continue, but nobody may be told the key
@@ -681,7 +692,8 @@ $CursorMcp = Join-Path $CursorDir "mcp.json"
 if ((Test-Path $CursorDir) -or (Get-Command cursor -ErrorAction SilentlyContinue)) {
   New-Item -ItemType Directory -Force -Path $CursorDir | Out-Null
   if (Test-Path $CursorMcp) {
-    $content = Get-Content $CursorMcp -Raw
+    # Read-modify-write like the Claude settings above; same reason for -Encoding UTF8.
+    $content = Get-Content $CursorMcp -Raw -Encoding UTF8
     if ($content -match '"ownmind"') {
       Write-Host "[INFO] Cursor MCP already configured, skipping"
     } else {

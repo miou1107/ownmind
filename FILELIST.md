@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## 尚未發版（使用者名稱有中文的 Windows，裝一次就可能把設定檔寫壞）
+
+新增檔：
+```
+tests/ps1-json-reads-are-utf8.test.js — 掃 repo 裡每一支 PowerShell 腳本：一次讀進整份
+                                       （-Raw／-First／-TotalCount）一律要指定 UTF-8
+```
+
+修改檔：
+```
+install.ps1                          — 讀 settings.json（讀完會寫回去）、寫完讀回來驗證、
+                                       Cursor 的 mcp.json，三處補上 -Encoding UTF8
+scripts/update.ps1                   — 讀 settings.json 取金鑰，補上同一個參數
+scripts/interactive-upgrade.ps1      — 讀 settings.json 兩處、讀 package.json 一處，同上
+scripts/windows/register-scanner-task.ps1、scripts/windows/lib/find-git-bash.ps1
+                                     — 讀 node 路徑與 Git Bash 路徑的快取，同上
+tests/installer-key-update.test.js   — 讀回驗證那條斷言原本寫死整行，改成允許 -Raw 與
+                                       管線之間有其他參數
+```
+
 ## 尚未發版（報告修好了，只有 Windows 的人會知道）
 
 新增檔：
