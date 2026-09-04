@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## 尚未發版（報告修好了，只有 Windows 的人會知道）
+
+新增檔：
+```
+hooks/lib/bug-report-notifications.js  — roleForProfile()／bugReportNotificationLines()／
+                                         fetchBugReportNotifications()，兩個平台共用
+tests/bug-report-notifications.test.js — 角色判定、用字、抓取失敗一律回 null；另有三個
+                                         端到端案例用真的本機伺服器驗 mac／Linux 那條路
+```
+
+修改檔：
+```
+hooks/lib/session-start-output.js      — mac／Linux 那條路在這裡抓通知（fetch 3 秒逾時、
+                                         fail silent、失敗寫一筆本機日誌），再交給 renderer；
+                                         stdout 沖完就 exit，不等事件迴圈清空；第三個引數
+                                         給測試用
+hooks/lib/render-session-context.js    — 多一個 notifications 選項，在結尾提示前輸出該段
+hooks/ownmind-session-start.js         — 原本內嵌的那段換成呼叫共用模組，並且改走 renderer，
+                                         兩個平台的輸出位置一致
+hooks/ownmind-session-start.sh         — 呼叫 session-start-output.js 時加 timeout 5
+docs/superpowers/specs/2026-08-14-      — 那三句的位置改指到共用模組
+gate-i18n/string-inventory.json
+CHANGELOG.md / FILELIST.md             — 本次條目
+```
+
 ## v1.30.18 修改（worktree 開不了、地點代碼被當金鑰、警告每輪重講）
 
 新增檔：
