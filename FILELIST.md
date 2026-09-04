@@ -1,29 +1,13 @@
 # OwnMind 檔案結構
 
-## 尚未發版（使用者名稱有中文的 Windows，裝一次就可能把設定檔寫壞）
+## v1.30.19 修改（中文使用者名稱的 Windows 被寫壞設定檔、查版本被誤判、修好了沒人通知）
 
 新增檔：
 ```
-tests/ps1-json-reads-are-utf8.test.js — 掃 repo 裡每一支 PowerShell 腳本：一次讀進整份
-                                       （-Raw／-First／-TotalCount）一律要指定 UTF-8
-```
-
-修改檔：
-```
-install.ps1                          — 讀 settings.json（讀完會寫回去）、寫完讀回來驗證、
-                                       Cursor 的 mcp.json，三處補上 -Encoding UTF8
-scripts/update.ps1                   — 讀 settings.json 取金鑰，補上同一個參數
-scripts/interactive-upgrade.ps1      — 讀 settings.json 兩處、讀 package.json 一處，同上
-scripts/windows/register-scanner-task.ps1、scripts/windows/lib/find-git-bash.ps1
-                                     — 讀 node 路徑與 Git Bash 路徑的快取，同上
-tests/installer-key-update.test.js   — 讀回驗證那條斷言原本寫死整行，改成允許 -Raw 與
-                                       管線之間有其他參數
-```
-
-## 尚未發版（報告修好了，只有 Windows 的人會知道）
-
-新增檔：
-```
+tests/ps1-json-reads-are-utf8.test.js  — 掃 repo 裡每一支 PowerShell 腳本：一次讀進整份
+                                         （-Raw／-First／-TotalCount）一律要指定 UTF-8
+tests/check-sync-ps1-reads-json-as-utf8.test.js — check-sync.ps1 的 JSON 一律經由
+                                         Read-Utf8Text，而且那支要保住 ReadWrite 共享
 hooks/lib/bug-report-notifications.js  — roleForProfile()／bugReportNotificationLines()／
                                          fetchBugReportNotifications()，兩個平台共用
 tests/bug-report-notifications.test.js — 角色判定、用字、抓取失敗一律回 null；另有三個
@@ -32,6 +16,17 @@ tests/bug-report-notifications.test.js — 角色判定、用字、抓取失敗�
 
 修改檔：
 ```
+install.ps1                            — 讀 settings.json（讀完會寫回去）、寫完讀回來驗證、
+                                         Cursor 的 mcp.json，三處補上 -Encoding UTF8
+scripts/update.ps1                     — 讀 settings.json 取金鑰，補上同一個參數
+scripts/interactive-upgrade.ps1        — 讀 settings.json 兩處、讀 package.json 一處，同上
+scripts/windows/register-scanner-task.ps1、scripts/windows/lib/find-git-bash.ps1
+                                       — 讀 node 路徑與 Git Bash 路徑的快取，同上
+scripts/check-sync.ps1                 — 新增 Read-Utf8Text，三處讀 JSON 都走它，編碼不再由
+                                         機器的代碼頁決定；OWNMIND_DIR／CLAUDE_DIR 給相對
+                                         路徑時先轉成絕對路徑
+tests/installer-key-update.test.js     — 讀回驗證那條斷言原本寫死整行，改成允許 -Raw 與
+                                         管線之間有其他參數
 hooks/lib/session-start-output.js      — mac／Linux 那條路在這裡抓通知（fetch 3 秒逾時、
                                          fail silent、失敗寫一筆本機日誌），再交給 renderer；
                                          stdout 沖完就 exit，不等事件迴圈清空；第三個引數
@@ -42,22 +37,7 @@ hooks/ownmind-session-start.js         — 原本內嵌的那段換成呼叫共�
 hooks/ownmind-session-start.sh         — 呼叫 session-start-output.js 時加 timeout 5
 docs/superpowers/specs/2026-08-14-      — 那三句的位置改指到共用模組
 gate-i18n/string-inventory.json
-CHANGELOG.md / FILELIST.md             — 本次條目
-```
-
-## 尚未發版（Windows 上查版本，一直被告知要升級）
-
-新增檔：
-```
-tests/check-sync-ps1-reads-json-as-utf8.test.js — 掃 check-sync.ps1 的文字：JSON 不准
-                                                  從 Get-Content 讀進來
-```
-
-修改檔：
-```
-scripts/check-sync.ps1                         — 新增 Read-Utf8Text，三處讀 JSON 都走它，
-                                                 編碼不再由機器的代碼頁決定；OWNMIND_DIR／
-                                                 CLAUDE_DIR 給相對路徑時先轉成絕對路徑
+package.json / README 三語 / CHANGELOG.md / FILELIST.md — 版號與本次條目
 ```
 
 ## v1.30.18 修改（worktree 開不了、地點代碼被當金鑰、警告每輪重講）
