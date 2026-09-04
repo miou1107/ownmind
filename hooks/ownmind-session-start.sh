@@ -534,7 +534,9 @@ fi
 
 # --- 解析記憶 + 廣播 + 輸出 JSON ---
 # render 邏輯拆到 hooks/lib/render-session-context.js（可被 unit test）
-node "$LIB_DIR/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA" 2>/dev/null
+# timeout 5：這支現在會打一次網路（抓「你回報的問題已處理」）。腳本自己已經在 stdout 沖出去
+# 之後就 exit，這一層是外圈保險，跟這個檔案裡其他 node 呼叫的寫法一致。
+timeout 5 node "$LIB_DIR/session-start-output.js" "$INIT_DATA" "$BROADCAST_DATA" 2>/dev/null
 
 # --- v1.17.8: delta sync 本地記憶 md 檔（A+C 方案，不阻塞，fail-silent）---
 # 把雲端 iron_rule/project/feedback 同步到 $CLAUDE_PROJECT_DIR 的 auto-memory dir，
