@@ -12,7 +12,36 @@ $ErrorActionPreference = 'Continue'
 $OwnmindDir = if ($env:OWNMIND_DIR) { $env:OWNMIND_DIR } else { Join-Path $HOME '.ownmind' }
 $ClaudeDir  = if ($env:CLAUDE_DIR)  { $env:CLAUDE_DIR }  else { Join-Path $HOME '.claude' }
 
+# Both are read through .NET below, and .NET resolves a relative path against the process
+# working directory while Test-Path resolves it against the PowerShell location. A relative
+# OWNMIND_DIR would then pass Test-Path and fail the read, which is the same false alarm this
+# script is being fixed for.
+if (-not [System.IO.Path]::IsPathRooted($OwnmindDir)) { $OwnmindDir = Join-Path (Get-Location).Path $OwnmindDir }
+if (-not [System.IO.Path]::IsPathRooted($ClaudeDir))  { $ClaudeDir  = Join-Path (Get-Location).Path $ClaudeDir }
+
 function Write-Tag([string]$line) { Write-Output $line }
+
+# Every JSON file this script reads goes through here.
+#
+# Not Get-Content -Raw: Windows PowerShell 5.1 decodes a BOM-less file by the system ANSI code
+# page (cp950 on Traditional Chinese Windows), which mangles the UTF-8 in these files and can
+# swallow a closing quote, so ConvertFrom-Json throws on a file that is perfectly valid.
+# bug-report id=30, and the same trap is written up at length in
+# scripts/windows/lib/append-upgrade-rule.ps1.
+#
+# Not [System.IO.File]::ReadAllText either: that opens with FileShare::Read, so a read landing
+# while another process still holds the file open for writing throws. enforcement.json is
+# rewritten by a plain writeFileSync during SessionStart sync, which is exactly when someone is
+# likely to be asking about their version, and the symptom would be the unreadable this fixes.
+# Get-Content opens ReadWrite; so does this.
+function Read-Utf8Text([string]$path) {
+    $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        # detectEncodingFromByteOrderMarks: honour a BOM if an older writer left one, UTF-8 otherwise.
+        $reader = New-Object System.IO.StreamReader -ArgumentList $stream, ([System.Text.Encoding]::UTF8), $true
+        try { $reader.ReadToEnd() } finally { $reader.Dispose() }
+    } finally { $stream.Dispose() }
+}
 
 # ============================================================
 # L1 — Remote drift (~/.ownmind git HEAD vs origin/main)
@@ -59,7 +88,7 @@ $ServerVer = ''
 $pkgPath = Join-Path $OwnmindDir 'package.json'
 if (Test-Path $pkgPath) {
     try {
-        $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+        $pkg = Read-Utf8Text $pkgPath | ConvertFrom-Json -ErrorAction Stop
         if ($pkg.version) { $ClientVer = [string]$pkg.version }
     } catch { }
     # File-lock fallback: regex parse if ConvertFrom-Json failed.
@@ -77,7 +106,7 @@ $ApiUrl = ''
 $settingsPath = Join-Path $ClaudeDir 'settings.json'
 if (Test-Path $settingsPath) {
     try {
-        $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+        $settings = Read-Utf8Text $settingsPath | ConvertFrom-Json -ErrorAction Stop
         $env_ = $settings.mcpServers.ownmind.env
         if ($env_) {
             if ($env_.OWNMIND_API_KEY) { $ApiKey = [string]$env_.OWNMIND_API_KEY }
@@ -220,7 +249,7 @@ $L4Detail = ''
 if (Test-Path $EnforcementCache) {
     $L4 = 'unreadable'
     try {
-        $bundle = Get-Content $EnforcementCache -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $bundle = Read-Utf8Text $EnforcementCache | ConvertFrom-Json -ErrorAction Stop
         # A JSON object and nothing else. ConvertFrom-Json hands back a string for `"x"` and a
         # number for `3`, both of which answer no properties and would otherwise read as an
         # empty-but-valid bundle.
