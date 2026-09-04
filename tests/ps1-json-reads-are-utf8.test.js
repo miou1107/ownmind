@@ -42,13 +42,21 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 // whole-file Get-Content left, so this entry should simply be deleted rather than adjusted.
 const EXCLUDED = new Set(['scripts/check-sync.ps1']);
 
-/** Every PowerShell script shipped from this repo. */
+/**
+ * Every PowerShell script shipped from this repo, as forward-slash paths.
+ *
+ * The separator matters: path.relative hands back `scripts\\check-sync.ps1` on Windows, which
+ * matches nothing in EXCLUDED, and the guard then failed on the one file it was told to skip —
+ * green on this Mac, red on the Windows runner.
+ */
 function shippedScripts(dir = repoRoot, found = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name === '.git') continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) shippedScripts(full, found);
-    else if (entry.name.endsWith('.ps1')) found.push(path.relative(repoRoot, full));
+    else if (entry.name.endsWith('.ps1')) {
+      found.push(path.relative(repoRoot, full).split(path.sep).join('/'));
+    }
   }
   return found;
 }
@@ -83,7 +91,7 @@ describe('shipped PowerShell — a whole-file read says which encoding it expect
     assert.ok(reads.length >= 9, `only ${reads.length} whole-file reads found across the scan`);
   });
 
-  for (const rel of shippedScripts().filter((r) => !EXCLUDED.has(r))) {
+  for (const rel of scripts) {
     it(`${rel}: every whole-file read asks for UTF-8`, () => {
       const text = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
       const offenders = wholeFileReads(text)
