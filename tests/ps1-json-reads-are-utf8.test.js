@@ -36,11 +36,10 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
  * behaviour on a cp950 machine.
  */
 
-// scripts/check-sync.ps1 is excluded while the bug-report 30 fix is still on its own branch
-// (fix/bug-report-30-check-sync-utf8), where its reads move to a Read-Utf8Text helper and are
-// pinned by tests/check-sync-ps1-reads-json-as-utf8.test.js. Once that merges the file has no
-// whole-file Get-Content left, so this entry should simply be deleted rather than adjusted.
-const EXCLUDED = new Set(['scripts/check-sync.ps1']);
+// Nothing is excluded. scripts/check-sync.ps1 used to be, while its own fix was on a branch;
+// that landed, it reads through Read-Utf8Text now, and this scan passes over it with nothing to
+// object to.
+const EXCLUDED = new Set();
 
 /**
  * Every PowerShell script shipped from this repo, as forward-slash paths.
