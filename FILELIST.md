@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## 尚未發版 修改（清掉三個套件的安全通報）
+
+修改檔：
+```
+package-lock.json                      — qs 6.15.2→6.16.0（2 個通報），連帶 hasown、
+                                         side-channel、side-channel-list、es-object-atoms
+                                         升到新版；檔案自己那行版號本來停在 1.30.4，
+                                         這次對回 1.30.19
+mcp/package-lock.json                  — fast-uri 3.1.5→3.1.7（4 個通報）、
+                                         qs 6.15.3→6.16.0（2 個通報）
+client/package-lock.json               — nanoid 3.3.16→3.3.18，只有這一個套件動到
+CHANGELOG.md, FILELIST.md              — 這一段
+```
+
+前兩份是 dependabot 開的 PR 合進來的（#116、#118），nanoid 這次手動升。四份
+`package.json` 沒有一份改到，套件的版本範圍宣告一個字都沒動。
+
 ## v1.30.19 修改（中文使用者名稱的 Windows 被寫壞設定檔、查版本被誤判、修好了沒人通知）
 
 新增檔：
