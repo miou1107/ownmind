@@ -1,5 +1,22 @@
 # OwnMind 檔案結構
 
+## 尚未發版 修改（js-yaml 升到 4.3.2）
+
+修改檔：
+```
+package.json / package-lock.json       — js-yaml ^4.3.1 → ^4.3.2（CVE-2026-84375）。
+                                         只有這一個套件動到
+scripts/update.sh                      — 已裝好的機器換掉 js-yaml 的門檻 4.3.1 → 4.3.2，
+                                         註解改寫成「三則通報在現在的程式碼路徑上打不到，
+                                         因為載入時指定了 JSON_SCHEMA」
+scripts/update.ps1                     — 同上
+tests/dep-floor-guard.test.js          — 唯一綁在特定通報上的那條，floor 4.3.0 → 4.3.2；
+                                         它在上一次升到 4.3.1 的時候漏了
+CHANGELOG.md, FILELIST.md              — 這一段
+```
+
+版號那幾處（package.json、README*、docs/README*）不在這次的範圍，跟著發版那一次改。
+
 ## v1.30.20 修改（清掉三個套件的安全通報）
 
 修改檔：
