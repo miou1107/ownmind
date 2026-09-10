@@ -118,12 +118,20 @@ describe('the shell hooks agree with the JS helper', () => {
 });
 
 describe('no program that shares the log directory computes the day in UTC', () => {
-  // The three files below write into ~/.ownmind/logs or read/write .last-update-check.
-  // A UTC date-only expression in any one of them re-creates the disagreement, and it does
-  // so invisibly on every machine whose CI runs in UTC — which is every machine's CI.
+  // The files below write into ~/.ownmind/logs or read/write .last-update-check. A UTC
+  // date-only expression in any one of them re-creates the disagreement, and it does so
+  // invisibly on every machine whose CI runs in UTC — which is every machine's CI.
+  //
+  // The last two arrived after this list did, which is the failure mode of a list: it does
+  // not report what it is missing. hook-context-fetch.js was writing the day in UTC the
+  // whole time it was absent from here, into the very directory this guard exists to keep
+  // consistent. Anything that names a file after the day, or decides whether today's work
+  // has run, belongs here the moment it is written.
   const SHARERS = [
     'hooks/ownmind-session-start.js',
     'hooks/ownmind-reply-lint.js',
+    'hooks/lib/session-start-output.js',
+    'hooks/lib/hook-context-fetch.js',
     'mcp/index.js',
     'mcp/ownmind-log.js',
   ];
