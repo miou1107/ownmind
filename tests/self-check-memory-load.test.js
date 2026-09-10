@@ -125,6 +125,12 @@ describe('checkMemoryLoad — verdict from the server, evidence from the machine
   const { checkMemoryLoad } = selfCheck;
 
   const serverSays = (memory_load) => async () => ({ memory_load });
+  // The clock is injected for the same reason the server fixture above injects one: the
+  // age of the last load is compared against `now`, so a fixed fixture plus a real clock
+  // is a test with an expiry date. The pass-path fixture below expired on 2026-09-05 —
+  // thirty days after the moment it names — and from then on every pull request went red,
+  // including a security bump that had nothing to do with any of this.
+  const NOW = () => new Date('2026-08-06T12:00:00Z');
   const settings = (command) => {
     const dir = tempDir('ownmind-sc-');
     const p = path.join(dir, 'settings.json');
@@ -152,8 +158,52 @@ describe('checkMemoryLoad — verdict from the server, evidence from the machine
       fetchSelfCheck: serverSays({ last_hook_init_at: '2026-08-06T03:00:00Z', hook_inits_7d: 271 }),
       settingsPath: settings('bash ~/.claude/hooks/ownmind-session-start.sh'),
       resolveBinary: () => '/bin/bash',
+      now: NOW,
     });
     assert.equal(r.status, 'pass');
+  });
+
+  it('warns when the last load is older than the staleness window', async () => {
+    // Until the clock was pinned, this branch was only ever reached by the calendar
+    // catching up with the fixture above, which is to say it was never really tested.
+    // 65.67 days, not 65 or 66 flat: a whole number would let rounding become truncation
+    // without anything noticing.
+    const r = await checkMemoryLoad({
+      apiUrl: 'https://x', apiKey: 'k',
+      fetchSelfCheck: serverSays({ last_hook_init_at: '2026-06-01T20:00:00Z', hook_inits_7d: 0 }),
+      settingsPath: settings('bash ~/.claude/hooks/ownmind-session-start.sh'),
+      resolveBinary: () => '/bin/bash',
+      now: NOW,
+    });
+    assert.equal(r.status, 'warn');
+    assert.equal(r.evidence.age_days, 66);
+    assert.ok(r.fix, 'a warning with no remedy leaves the user stuck');
+  });
+
+  // The window's own edge. The last green run on main before this fix went out at 29.9
+  // days, which is close enough to the line that nobody should be guessing which side of
+  // it `>` falls on.
+  it('still passes at exactly the staleness window', async () => {
+    const r = await checkMemoryLoad({
+      apiUrl: 'https://x', apiKey: 'k',
+      fetchSelfCheck: serverSays({ last_hook_init_at: '2026-07-07T12:00:00Z', hook_inits_7d: 3 }),
+      settingsPath: settings('bash ~/.claude/hooks/ownmind-session-start.sh'),
+      resolveBinary: () => '/bin/bash',
+      now: NOW,
+    });
+    assert.equal(r.status, 'pass');
+    assert.equal(r.evidence.age_days, 30);
+  });
+
+  it('warns one millisecond past the staleness window', async () => {
+    const r = await checkMemoryLoad({
+      apiUrl: 'https://x', apiKey: 'k',
+      fetchSelfCheck: serverSays({ last_hook_init_at: '2026-07-07T11:59:59.999Z', hook_inits_7d: 3 }),
+      settingsPath: settings('bash ~/.claude/hooks/ownmind-session-start.sh'),
+      resolveBinary: () => '/bin/bash',
+      now: NOW,
+    });
+    assert.equal(r.status, 'warn');
   });
 
   it('carries the command verbatim, since that string is the whole diagnosis', async () => {

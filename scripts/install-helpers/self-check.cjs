@@ -682,9 +682,12 @@ async function checkMemoryLoad({
   }
 
   const ageDays = (now() - new Date(load.last_hook_init_at)) / 86400000;
+  // Recorded on both verdicts. The number is the diagnosis, and reading it out of the
+  // sentence means re-parsing prose that the copy rules can rewrite at any time.
+  evidence.age_days = Math.round(ageDays);
   if (ageDays > staleDays) {
     return withEvidence(warn(NAME,
-      `memories last loaded ${Math.round(ageDays)} days ago${why}`,
+      `memories last loaded ${evidence.age_days} days ago${why}`,
       'Open a new conversation; if it stays stale, re-run the installer'));
   }
 
@@ -707,6 +710,9 @@ function collectMemoryLoadEvidence({ settingsPath, resolveBinary }) {
     bash_path: null,
     bash_is_wsl: false,
     node_path: null,
+    // Filled in once the server has answered. Kept in the shape from the start so the
+    // evidence object reads the same whether or not the question got that far.
+    age_days: null,
   };
 
   try {
