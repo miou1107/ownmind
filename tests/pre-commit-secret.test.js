@@ -214,8 +214,10 @@ describe('v1.19.7 pre-commit — scenario 18: bypass skips + writes audit', () =
     stage('.env', 'X=1\n');
     runHook({ OWNMIND_BYPASS: 'IR-002' });
 
-    // Look for today's compliance jsonl.
-    const today = new Date().toISOString().slice(0, 10);
+    // Look for today's compliance jsonl. The directory is scanned rather than addressed by
+    // name on purpose, so this does not care which day the writer decided it was — the
+    // variable that used to compute that day in UTC was already unused, and an unused UTC
+    // date sitting next to a log directory is how the next person starts relying on it.
     const logsDir = path.join(tmpHome, '.ownmind', 'logs');
     // appendCompliance's exact path depends on shared/compliance.js; scan for the bypass string.
     let foundBypass = false;
