@@ -404,19 +404,30 @@ test('the version each update script installs is at least the floor it checks', 
   }
 });
 
-test('js-yaml floor covers the advisory that motivated this guard', () => {
-  // CVE-2026-59869 / GHSA-52cp-r559-cp3m: quadratic CPU via YAML merge-key chains.
-  // Reachable because iron-rule frontmatter is parsed client-side and shared team
-  // standards originate from other accounts.
+test('js-yaml floor covers every advisory that has motivated this guard', () => {
+  // Three of one shape, and the floor has to clear the newest, not the first:
+  //   4.3.0  CVE-2026-59869 / GHSA-52cp-r559-cp3m — quadratic CPU via merge-key chains
+  //   4.3.1  the same shape in `!!omap` duplicate-key detection
+  //   4.3.2  CVE-2026-84375 / GHSA-2883-xcg3-v3hh — the merge-key cap does not count
+  //          empty mappings, so it never stops the walk it exists to stop
+  //
+  // This is the only assertion in the file tied to an advisory rather than to internal
+  // consistency, and it sat at 4.3.0 through the 4.3.1 bump: the drift test above only
+  // proves the scripts agree with package.json, so both later advisories could have
+  // walked back in with every test still green.
+  //
+  // Not reachable on today's code path — iron-rule-frontmatter.js loads with
+  // JSON_SCHEMA, which carries neither the merge nor the omap type — which is exactly
+  // why the floor needs a test rather than a memory.
   const declared = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')).dependencies;
   assert.ok(
-    satisfiesFloor(rangeFloor(declared['js-yaml']), '4.3.0'),
-    'package.json must require js-yaml >= 4.3.0',
+    satisfiesFloor(rangeFloor(declared['js-yaml']), '4.3.2'),
+    'package.json must require js-yaml >= 4.3.2',
   );
 
   const lock = JSON.parse(readFileSync(join(repoRoot, 'package-lock.json'), 'utf8'));
   assert.ok(
-    satisfiesFloor(lock.packages['node_modules/js-yaml'].version, '4.3.0'),
-    'package-lock.json must resolve js-yaml >= 4.3.0',
+    satisfiesFloor(lock.packages['node_modules/js-yaml'].version, '4.3.2'),
+    'package-lock.json must resolve js-yaml >= 4.3.2',
   );
 });

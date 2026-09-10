@@ -109,14 +109,22 @@ needs_root_dep() {
 # v1.18.5: conditional-sync-cli.js needs js-yaml. Without it the module fails to load
 # with ERR_MODULE_NOT_FOUND, the SessionStart hook silently fails, and the big skill
 # (~/.claude/skills/ownmind-iron-rules/) stops updating.
-# Floor 4.3.1 — CVE-2026-59869 (quadratic CPU via YAML merge-key chains) plus the
-# 4.3.1 backport of the same shape in `!!omap` duplicate-key detection. Reachable
-# because iron-rule frontmatter is parsed on this machine and shared team standards
-# come from other accounts. Keep this in step with package.json: dep-floor-guard
-# turns red when this floor drops below the one package.json declares.
-if needs_root_dep js-yaml 4.3.1; then
+# Floor 4.3.2 — three advisories of one shape: CVE-2026-59869 / GHSA-52cp-r559-cp3m
+# (quadratic CPU via YAML merge-key chains), its 4.3.1 follow-up hardening the same
+# shape in `!!omap` duplicate-key detection, and CVE-2026-84375 / GHSA-2883-xcg3-v3hh,
+# where the merge-key cap does not count empty mappings and so never stops the walk.
+#
+# None of the three is reachable today, and that is worth writing down rather than
+# rediscovering under time pressure: iron-rule-frontmatter.js loads with JSON_SCHEMA,
+# which carries neither the merge nor the omap type, so the counter these advisories
+# bypass is never entered. The floor still moves, because that one schema argument is
+# the only thing between the loader and team-standard YAML written by other accounts.
+#
+# Keep this in step with package.json: dep-floor-guard turns red when this floor drops
+# below the one package.json declares.
+if needs_root_dep js-yaml 4.3.2; then
   echo "   📦 Installing / updating conditional-sync dependency: js-yaml..."
-  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.3.1 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
+  (cd "$OWNMIND_DIR" && npm install js-yaml@^4.3.2 --no-save --silent --no-audit --no-fund 2>>"${HOME}/.ownmind/logs/update-err.log") \
     && echo "   ✅ js-yaml ready" \
     || echo "   ⚠️ js-yaml install failed (see ~/.ownmind/logs/update-err.log); big skill sync will fall back to skip — other features unaffected"
 fi

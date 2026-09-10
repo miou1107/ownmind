@@ -102,15 +102,21 @@ function Test-RootDepNeeded {
 
 # v1.18.5: conditional-sync-cli.js needs js-yaml, otherwise the module fails to load
 # and the SessionStart hook silently stops updating the big skill.
-# Floor 4.3.1 — CVE-2026-59869 (quadratic CPU via YAML merge-key chains) plus the
-# 4.3.1 backport of the same shape in `!!omap` duplicate-key detection. Keep this in
-# step with package.json and with update.sh; dep-floor-guard turns red otherwise.
-if (Test-RootDepNeeded -Package "js-yaml" -MinVersion "4.3.1") {
+# Floor 4.3.2 — three advisories of one shape: CVE-2026-59869 / GHSA-52cp-r559-cp3m
+# (quadratic CPU via YAML merge-key chains), its 4.3.1 follow-up hardening the same
+# shape in `!!omap` duplicate-key detection, and CVE-2026-84375 / GHSA-2883-xcg3-v3hh,
+# where the merge-key cap does not count empty mappings and so never stops the walk.
+# None of the three is reachable today: iron-rule-frontmatter.js loads with JSON_SCHEMA,
+# which carries neither the merge nor the omap type. The floor still moves, because that
+# one schema argument is the only thing between the loader and team-standard YAML
+# written by other accounts. Keep this in step with package.json and with update.sh;
+# dep-floor-guard turns red otherwise.
+if (Test-RootDepNeeded -Package "js-yaml" -MinVersion "4.3.2") {
   Write-Host "   📦 Installing / updating conditional-sync dependency: js-yaml..."
   Push-Location $OwnMindDir
   try {
     $errLog = Join-Path $env:USERPROFILE ".ownmind\logs\update-err.log"
-    & npm install js-yaml@^4.3.1 --no-save --silent --no-audit --no-fund 2>>$errLog
+    & npm install js-yaml@^4.3.2 --no-save --silent --no-audit --no-fund 2>>$errLog
     if ($LASTEXITCODE -eq 0) {
       Write-Host "   [ OK ] js-yaml ready"
     } else {
