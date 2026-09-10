@@ -118,27 +118,57 @@ describe('the shell hooks agree with the JS helper', () => {
 });
 
 describe('no program that shares the log directory computes the day in UTC', () => {
-  // The three files below write into ~/.ownmind/logs or read/write .last-update-check.
-  // A UTC date-only expression in any one of them re-creates the disagreement, and it does
-  // so invisibly on every machine whose CI runs in UTC — which is every machine's CI.
+  // The files below name a file in ~/.ownmind/logs after the day, or read/write
+  // .last-update-check. A UTC date-only expression in any one of them re-creates the
+  // disagreement, and it does so invisibly on every machine whose CI runs in UTC — which is
+  // every machine's CI.
+  //
+  // The two hooks/lib entries arrived after this list did, which is the failure mode of a
+  // list: it does not report what it is missing. hook-context-fetch.js was writing the day
+  // in UTC the whole time it was absent from here, into the very directory this guard
+  // exists to keep consistent.
+  //
+  // Scope is deliberately the daily file and .last-update-check, not every UTC date in the
+  // repo. scripts/install-helpers/self-check.cjs writes a UTC date-only marker too, and it
+  // is correct there: one writer, one reader, and a seven-day interval that a skew of eight
+  // hours cannot flip. It is also CommonJS and cannot require the ESM helper synchronously.
   const SHARERS = [
     'hooks/ownmind-session-start.js',
     'hooks/ownmind-reply-lint.js',
+    'hooks/lib/session-start-output.js',
+    'hooks/lib/hook-context-fetch.js',
     'mcp/index.js',
     'mcp/ownmind-log.js',
   ];
 
+  const UTC_DATE_ONLY = /toISOString\(\)\s*\.\s*slice\(\s*0\s*,\s*10\s*\)/;
+
+  /**
+   * The source with comments removed, so the guard can tell an explanation from a call —
+   * these files document the old expression on purpose, and a guard that could not tell
+   * the difference would force the explanation out.
+   *
+   * String contents are blanked before the line comments are cut, and that order matters:
+   * `//` inside a URL literal would otherwise start a comment and swallow the rest of its
+   * line. hook-context-fetch.js is built around URLs, so a real call sharing a line with
+   * `'https://…'` is exactly the kind of thing this guard would have waved through.
+   */
+  function codeWithoutComments(src) {
+    const blanked = src.replace(
+      /(['"`])(?:\\.|(?!\1)[^\\])*\1/g,
+      (m) => m[0] + ' '.repeat(Math.max(0, m.length - 2)) + m[0],
+    );
+    return blanked
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+  }
+
   for (const rel of SHARERS) {
     it(`${rel} has no toISOString().slice(0, 10)`, () => {
       const src = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
-      // Strip comments first: these files document the old expression on purpose, and a
-      // guard that cannot tell an explanation from a call would force the explanation out.
-      const code = src
-        .split(/\r?\n/)
-        .map((line) => line.replace(/\/\/.*$/, ''))
-        .join('\n')
-        .replace(/\/\*[\s\S]*?\*\//g, '');
-      const hit = /toISOString\(\)\s*\.\s*slice\(\s*0\s*,\s*10\s*\)/.exec(code);
+      const hit = UTC_DATE_ONLY.exec(codeWithoutComments(src));
       assert.equal(
         hit,
         null,
@@ -148,9 +178,29 @@ describe('no program that shares the log directory computes the day in UTC', () 
   }
 
   it('reverse control: the guard fires on the expression it exists to catch', () => {
-    // Otherwise a typo in the regex would make all four tests above pass forever.
-    const code = "const today = new Date().toISOString().slice(0, 10);";
-    assert.ok(/toISOString\(\)\s*\.\s*slice\(\s*0\s*,\s*10\s*\)/.test(code));
+    // Otherwise a typo in the regex would make every test above pass forever.
+    const code = 'const today = new Date().toISOString().slice(0, 10);';
+    assert.ok(UTC_DATE_ONLY.test(codeWithoutComments(code)));
+  });
+
+  it('reverse control: a URL on the same line cannot hide the call', () => {
+    // The stripper's own blind spot, kept as a test rather than a promise.
+    const code = "const base = 'https://api.example.com'; const d = new Date().toISOString().slice(0, 10);";
+    assert.ok(
+      UTC_DATE_ONLY.test(codeWithoutComments(code)),
+      'the `//` in the URL must not be read as the start of a comment',
+    );
+  });
+
+  it('an explanation of the expression is still allowed to say it', () => {
+    // The reason the stripper exists at all: shared/local-date.js and several of the files
+    // above name the banned expression in prose so the next reader knows what not to do.
+    const code = [
+      '// deliberately not toISOString().slice(0, 10), which is UTC',
+      '/* nor toISOString().slice(0, 10) in a block comment */',
+      'const d = localDateOnly(new Date());',
+    ].join('\n');
+    assert.equal(UTC_DATE_ONLY.exec(codeWithoutComments(code)), null);
   });
 });
 
