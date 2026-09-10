@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import { tempDir } from './helpers/temp-dir.js';
+import { localDateOnly } from '../shared/local-date.js';
 
 /**
  * v1.17.97 — hook-side conditional spool: only write reply-lint-pending.jsonl
@@ -176,6 +177,12 @@ describe('v1.17.97 — hook conditional spool (pending only on failure)', () => 
     assert.equal(r.status, 0);
     assert.equal(fs.existsSync(pendingSpoolPath), false,
       'no violation → must not touch pending file');
+    // The test is named after both files and used to check only one of them. Same day
+    // expression as the writer, for the same reason as the archive assertion above.
+    assert.equal(
+      fs.existsSync(path.join(archiveDir, `${localDateOnly(new Date())}.jsonl`)), false,
+      'no violation → must not write the archive either',
+    );
   });
 
   // review-N1: 1MB size cap + rotate
@@ -224,14 +231,21 @@ describe('v1.17.97 — hook conditional spool (pending only on failure)', () => 
     // The same events array object should reuse the id (events are the same object inside the hook;
     // we never generate the id twice). This test verifies that spool and archive write the same
     // events object, so the id matches.
-    // Archive file name format: YYYY-MM-DD.jsonl.
-    const today = new Date().toISOString().slice(0, 10);
-    const archivePath = path.join(tmpHome, '.ownmind', 'logs', `${today}.jsonl`);
-    if (fs.existsSync(archivePath)) {
-      const arch = JSON.parse(fs.readFileSync(archivePath, 'utf8').trim().split('\n')[0]);
-      assert.equal(arch.client_event_id, idAfterHook,
-        'archive and pending must use the same client_event_id (the hook must not regenerate it)');
-    }
+    // The archive file is named after the day, and this line used to compute that day in
+    // UTC while spoolEvents() computes it with localDateOnly. The two disagree for the
+    // first eight hours of every local day in Taipei, and the assertion below used to sit
+    // behind an `if (fs.existsSync(...))` — so on those mornings the test looked for a file
+    // production had never written, skipped the only thing it checks, and still reported
+    // green. Same expression as the writer now, and a missing file is a failure.
+    const archivePath = path.join(archiveDir, `${localDateOnly(new Date())}.jsonl`);
+    assert.ok(
+      fs.existsSync(archivePath),
+      `the hook must have written the archive as ${path.basename(archivePath)}; `
+      + `the log directory holds [${fs.readdirSync(archiveDir).join(', ')}]`,
+    );
+    const arch = JSON.parse(fs.readFileSync(archivePath, 'utf8').trim().split('\n')[0]);
+    assert.equal(arch.client_event_id, idAfterHook,
+      'archive and pending must use the same client_event_id (the hook must not regenerate it)');
   });
 
   it('existing pending content + a new failed round → append (do not overwrite)', () => {
