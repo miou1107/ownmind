@@ -5,6 +5,7 @@ import https from 'https';
 import http from 'http';
 import { ruleMatchesTrigger } from '../../shared/helpers.js';
 import { HOOK_CONTEXT_TYPES } from '../../shared/hook-context.js';
+import { localDateOnly, localIsoTimestamp } from '../../shared/local-date.js';
 
 /**
  * Fetch the per-category rule counts a reminder needs, in one request.
@@ -50,14 +51,18 @@ function logFallback(reason, trigger) {
     fs.mkdirSync(dir, { recursive: true });
     const now = new Date();
     const entry = {
-      ts: now.toISOString(),
+      // Local, not UTC, on both halves. The file is named after the local day, and a line
+      // stamped in UTC inside it would describe a different day from the name on the file
+      // for the first eight hours of every morning in Taipei. shared/local-date.js records
+      // what that split did to the event log the last time it was live.
+      ts: localIsoTimestamp(now),
       event: 'hook_context_fallback',
       tool: 'claude-code',
       source: 'hook',
       details: { reason, trigger },
     };
     fs.appendFileSync(
-      path.join(dir, `${now.toISOString().slice(0, 10)}.jsonl`),
+      path.join(dir, `${localDateOnly(now)}.jsonl`),
       `${JSON.stringify(entry)}\n`
     );
   } catch {
