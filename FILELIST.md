@@ -1,21 +1,34 @@
 # OwnMind 檔案結構
 
-## 尚未發版 修改（js-yaml 升到 4.3.2）
+## v1.30.21 修改（「今天」有兩個答案，這一版把它們對齊）
 
 修改檔：
 ```
-package.json / package-lock.json       — js-yaml ^4.3.1 → ^4.3.2（CVE-2026-84375）。
-                                         只有這一個套件動到
-scripts/update.sh                      — 已裝好的機器換掉 js-yaml 的門檻 4.3.1 → 4.3.2，
+hooks/lib/hook-context-fetch.js        — 每日記錄檔改用本地日期命名，時間戳一起改成帶
+                                         時區位移的本地時間
+tests/local-date-agreement.test.js     — 守衛名單補進 hook-context-fetch.js 與
+                                         session-start-output.js；註解掃描先把字串內容
+                                         挖空，網址裡的雙斜線不再吃掉整行；加了三條反向
+                                         對照
+tests/self-check-memory-load.test.js   — 把時鐘固定住，補「過期要警告」與門檻兩側的邊界
+scripts/install-helpers/self-check.cjs — 把距離上次載入的天數記進 evidence.age_days，
+                                         測試不必再從給人看的句子裡把數字剖回來
+tests/reply-lint-pending-spool.test.js — 封存檔路徑改用跟寫檔那邊同一個算法，找不到檔案
+                                         就算失敗；「不該寫出來」那條補上封存檔那一半
+tests/pre-commit-secret.test.js        — 移除沒人用的 UTC 日期變數
+package.json / package-lock.json       — js-yaml ^4.3.1 → ^4.3.2（CVE-2026-84375）
+mcp/package-lock.json                  — hono 4.13.0 → 4.13.7（3 則通報，dependabot 開的
+                                         PR）
+scripts/update.sh, scripts/update.ps1  — 已裝好的機器換掉 js-yaml 的門檻 4.3.1 → 4.3.2，
                                          註解改寫成「三則通報在現在的程式碼路徑上打不到，
                                          因為載入時指定了 JSON_SCHEMA」
-scripts/update.ps1                     — 同上
-tests/dep-floor-guard.test.js          — 唯一綁在特定通報上的那條，floor 4.3.0 → 4.3.2；
-                                         它在上一次升到 4.3.1 的時候漏了
+tests/dep-floor-guard.test.js          — 唯一綁在特定通報上的那條，floor 4.3.0 → 4.3.2
 CHANGELOG.md, FILELIST.md              — 這一段
+package.json / package-lock.json / README* / docs/README* — 1.30.20 → 1.30.21
 ```
 
-版號那幾處（package.json、README*、docs/README*）不在這次的範圍，跟著發版那一次改。
+留著沒做的兩件事開成單子：#125（守衛的名單掃不到 tests/）、#126（十幾個測試可以在什麼都
+沒檢查的情況下回報通過）。
 
 ## v1.30.20 修改（清掉三個套件的安全通報）
 
