@@ -1,5 +1,23 @@
 # OwnMind 檔案結構
 
+## v1.30.23 修改（伺服器搬家了，電腦會自己改網址）
+
+修改檔：
+```
+scripts/install-helpers/migrate-api-url.cjs — 新增。掃 ~/.claude.json 與兩個 settings
+                                 檔，把還寫著舊主機的那個網址換成新的；`.claude.json` 裡
+                                 每個專案各有一份，一起換。認不得的檔案只回報、不寫入
+scripts/update.sh, scripts/update.ps1 — 自動更新的時候跑上面那支
+tests/api-url-migration.test.js — 新增 17 條：三個設定檔都會換、專案層的副本也會換、
+                                 大小寫與結尾斜線算同一個、跑兩次第二次不動、自架的網址
+                                 不准被改、壞掉的 JSON 不准被覆寫、兩支更新腳本真的有呼叫
+CHANGELOG.md, FILELIST.md      — 這一段
+package.json / package-lock.json / README* / docs/README* — 1.30.22 → 1.30.23
+```
+
+背景：資料已經搬到公司正式機，舊網址靠一段轉送接過去。那段轉送是單點，要讓大家真正連到
+新位置才能把它拆掉。
+
 ## v1.30.22 修改（搜不到不代表沒有）
 
 修改檔：
