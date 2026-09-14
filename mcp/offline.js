@@ -40,6 +40,30 @@ const DEFAULT_QUEUE_PATH = path.join(os.homedir(), '.ownmind/queue.jsonl');
  */
 const DEFAULT_HOOK_CACHE_PATH = path.join(os.homedir(), '.ownmind/cache/memories.json');
 
+/**
+ * How old the cached copy is, in words, for an offline notice.
+ *
+ * #129 — a notice that says only "served from local cache" leaves the reader to work out
+ * whether that cache is minutes or weeks behind. The age is what decides whether a miss
+ * means anything.
+ *
+ * @param {string|undefined|null} savedAt  ISO timestamp written into the cache file.
+ * @param {number} [now]  Epoch ms; injectable so the test does not depend on the clock.
+ * @returns {string} e.g. "2026-09-14T02:00:00.000Z, 3 hours old" or "age unknown".
+ */
+export function formatCacheAge(savedAt, now = Date.now()) {
+  if (!savedAt) return 'age unknown';
+  const saved = Date.parse(savedAt);
+  if (Number.isNaN(saved)) return 'age unknown';
+  const minutes = Math.round((now - saved) / 60000);
+  if (minutes < 0) return `${savedAt}, age unknown`;
+  if (minutes < 60) return `${savedAt}, ${minutes} minute${minutes === 1 ? '' : 's'} old`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${savedAt}, ${hours} hour${hours === 1 ? '' : 's'} old`;
+  const days = Math.round(hours / 24);
+  return `${savedAt}, ${days} day${days === 1 ? '' : 's'} old`;
+}
+
 export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = DEFAULT_QUEUE_PATH, hookCachePath = DEFAULT_HOOK_CACHE_PATH) {
 
   function isNetworkError(err) {

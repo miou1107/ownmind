@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## v1.30.22 修改（搜不到不代表沒有）
+
+修改檔：
+```
+mcp/lib/memory-search.js       — 新增。ownmind_search 的流程搬出 index.js，依賴用參數傳
+                                 進來，測試才切得斷網路去看呼叫端被告知了什麼
+mcp/lib/search-legs.js         — 新增。兩支 API 各自的成敗要怎麼解讀（正常／只回得到一半
+                                 ／離線／原樣丟回錯誤），純函式
+mcp/index.js                   — ownmind_search 改成呼叫上面那支；記憶清單的離線說明補上
+                                 快取多舊
+mcp/offline.js                 — 新增 formatCacheAge，把快取時間換成「幾小時前」
+tests/search-offline-is-not-silence.test.js — 新增 17 條：斷網要回離線說明、0 筆一定要帶
+                                 說明、少一半要標記、兩邊都掛掉要丟錯誤
+CHANGELOG.md, FILELIST.md      — 這一段
+package.json / package-lock.json / README* / docs/README* — 1.30.21 → 1.30.22
+```
+
+起因是 #129：一個開了七小時的對話，機器睡醒之後它的連線就再也接不回去，寫入報 fetch
+failed，搜尋卻回 0 筆。
+
 ## v1.30.21 修改（「今天」有兩個答案，這一版把它們對齊）
 
 修改檔：
