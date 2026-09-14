@@ -94,6 +94,25 @@ test('an edit hook whose credentials cannot be read still runs the path guard', 
     'ownmind-edit-reminder.js', 'scripts/install-helpers/resolve-credentials.cjs',
   );
   const home = tempDir('om-broken-home2-');
+  // A repository of this test's own, and an absolute path inside it.
+  //
+  // `ci/projects.yml` used to be passed relative, which made the fixture depend on where the
+  // checkout happens to sit: the guard resolves the repo from the file's own directory, and
+  // a relative path resolves against the hook process's working directory. Run from inside
+  // FAPA's monorepo - `fontrip-agentic-process-automation/Projects/ownmind` - the same input
+  // lands on `Projects/ownmind/ci/projects.yml`, which `ci/**` correctly does not match, so
+  // the hook said nothing and the test read that as the guard never running. That is the
+  // guard behaving exactly as designed and the fixture asking it the wrong question.
+  const repo = tempDir('om-broken-guard-repo-');
+  execFileSync('git', ['init', '-q'], { cwd: repo });
+  // An origin, because a repository it cannot identify is one the guard deliberately leaves
+  // alone. The URL is never dialled - no guard here carries `repo_match`.
+  execFileSync('git', ['remote', 'add', 'origin', 'https://example.invalid/fixture.git'], { cwd: repo });
+  // `ci/` is deliberately never created. The guard has to decide about a file that does not
+  // exist yet — the ordinary way a file arrives under a guarded path — which sends
+  // `resolveRepo` down its missing-segment branch. Creating the directory here would quietly
+  // move this test onto the other branch with nothing going red.
+  const guarded = path.join(repo, 'ci', 'projects.yml');
   fs.mkdirSync(path.join(home, '.ownmind', 'cache'), { recursive: true });
   fs.writeFileSync(path.join(home, '.ownmind', 'cache', 'enforcement.json'), JSON.stringify({
     selectors: [],
@@ -110,7 +129,7 @@ test('an edit hook whose credentials cannot be read still runs the path guard', 
   const r = spawnSync('node', [hook], {
     input: JSON.stringify({
       session_id: 'broken-creds',
-      tool_input: { file_path: 'ci/projects.yml', content: 'x' },
+      tool_input: { file_path: guarded, content: 'x' },
     }),
     encoding: 'utf8',
     env: { ...process.env, HOME: home, USERPROFILE: home },
