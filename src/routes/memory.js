@@ -752,6 +752,12 @@ router.get('/init', async (req, res) => {
     res.json({
       sync_token: syncToken,
       server_version: SERVER_VERSION,
+      // Where this server says it should be reached, when that is not where the caller
+      // reached it. A server that moves host can only tell its clients so through an
+      // answer they already ask for: the address lives in each machine's own config file
+      // and nothing here can reach into a laptop to edit it. Empty unless deployment sets
+      // CANONICAL_URL, so a self-hosted install never tells anyone to go anywhere.
+      canonical_url: process.env.CANONICAL_URL || '',
       allowed_types: ALLOWED_MEMORY_TYPES,
       compact,
       upgrade_action: upgradeAction,

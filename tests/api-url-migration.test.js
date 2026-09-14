@@ -8,18 +8,22 @@ import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
 
 const require_ = createRequire(import.meta.url);
-const { migrateApiUrl, isOldAddress, OLD_URL, NEW_URL } =
+const { followServerMove, rewriteTo, readCurrent, askServerForCanonicalUrl, sameAddress } =
   require_('../scripts/install-helpers/migrate-api-url.cjs');
 
 /**
- * 2026-09-14 — everyone's memories moved to a new host, and the old address only still
- * works because a proxy forwards it. That proxy is one line in one nginx file holding up
- * nine people, so the address in each machine's own config has to change. Nothing on the
- * server can reach a laptop, so the unattended updater does it.
+ * A server that moves host cannot move its clients: the address lives in each machine's own
+ * config file. So the server names where it should be reached (`canonical_url` on the init
+ * response) and the unattended update follows it.
  *
- * What these tests pin is the narrowness: the retired address is rewritten, and nothing
- * else in the file is touched — including somebody running their own OwnMind server.
+ * What these tests pin is that following is the exception, not the rule. Anything short of
+ * a clear answer from the server — no field, an unreachable server, a value that is not an
+ * https address — leaves every config untouched, because this runs unattended on machines
+ * nobody is watching.
  */
+
+const OLD = 'https://old.example/ownmind';
+const NEW = 'https://new.example/ownmind';
 
 function tempHome(files) {
   const home = tempDir('ownmind-url-');
@@ -32,146 +36,171 @@ function tempHome(files) {
   return home;
 }
 
-const withServer = (url) => ({ mcpServers: { ownmind: { command: 'node', env: { OWNMIND_API_URL: url, OWNMIND_API_KEY: 'k' } } } });
+const withServer = (url) => ({
+  mcpServers: { ownmind: { command: 'node', env: { OWNMIND_API_URL: url, OWNMIND_API_KEY: 'k' } } },
+});
 const readUrl = (home, rel) =>
   JSON.parse(fs.readFileSync(path.join(home, rel), 'utf8')).mcpServers.ownmind.env.OWNMIND_API_URL;
 
-describe('the retired address is rewritten', () => {
-  it('rewrites it in .claude.json', () => {
-    const home = tempHome({ '.claude.json': withServer(OLD_URL) });
-    const r = migrateApiUrl({ home });
-    assert.equal(r.changed, 1);
-    assert.equal(readUrl(home, '.claude.json'), NEW_URL);
-  });
+/** A server that answers init with whatever `canonical` is given. */
+const serverSaying = (canonical, { ok = true } = {}) => async () => ({
+  ok,
+  json: async () => ({ server_version: '1.0.0', canonical_url: canonical }),
+});
 
-  it('rewrites it in settings.json and settings.local.json too', () => {
+describe('the server says it moved', () => {
+  it('every config on the machine follows it', async () => {
     const home = tempHome({
-      '.claude/settings.json': withServer(OLD_URL),
-      '.claude/settings.local.json': withServer(OLD_URL),
+      '.claude.json': withServer(OLD),
+      '.claude/settings.json': withServer(OLD),
     });
-    const r = migrateApiUrl({ home });
+    const r = await followServerMove({ home, canonicalUrl: NEW });
     assert.equal(r.changed, 2);
-    assert.equal(readUrl(home, '.claude/settings.json'), NEW_URL);
-    assert.equal(readUrl(home, '.claude/settings.local.json'), NEW_URL);
+    assert.equal(r.to, NEW);
+    assert.equal(readUrl(home, '.claude.json'), NEW);
+    assert.equal(readUrl(home, '.claude/settings.json'), NEW);
   });
 
-  it('rewrites the per-project copies inside .claude.json, not just the top one', () => {
+  it('the per-project copies follow too, not just the top-level one', async () => {
     const home = tempHome({
-      '.claude.json': {
-        ...withServer(OLD_URL),
-        projects: {
-          '/Users/x/a': withServer(OLD_URL),
-          '/Users/x/b': withServer(OLD_URL),
-        },
-      },
+      '.claude.json': { ...withServer(OLD), projects: { '/x/a': withServer(OLD), '/x/b': withServer(OLD) } },
     });
-    const r = migrateApiUrl({ home });
+    const r = await followServerMove({ home, canonicalUrl: NEW });
     assert.equal(r.changed, 3, 'a machine with two projects carries three copies of the address');
     const parsed = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
-    assert.equal(parsed.projects['/Users/x/a'].mcpServers.ownmind.env.OWNMIND_API_URL, NEW_URL);
-    assert.equal(parsed.projects['/Users/x/b'].mcpServers.ownmind.env.OWNMIND_API_URL, NEW_URL);
+    assert.equal(parsed.projects['/x/a'].mcpServers.ownmind.env.OWNMIND_API_URL, NEW);
+    assert.equal(parsed.projects['/x/b'].mcpServers.ownmind.env.OWNMIND_API_URL, NEW);
   });
 
-  it('a trailing slash or different casing is still the same address', () => {
-    const home = tempHome({ '.claude.json': withServer('https://legacy-host.com/ownmind/') });
-    assert.equal(migrateApiUrl({ home }).changed, 1);
-    assert.equal(readUrl(home, '.claude.json'), NEW_URL);
+  it('it is asked over the network, not guessed', async () => {
+    let asked = null;
+    const fetchImpl = async (url, init) => {
+      asked = { url, auth: init.headers.Authorization };
+      return { ok: true, json: async () => ({ canonical_url: NEW }) };
+    };
+    const home = tempHome({ '.claude.json': withServer(OLD) });
+    const r = await followServerMove({ home, fetchImpl });
+    assert.match(asked.url, /^https:\/\/old\.example\/ownmind\/api\/memory\/init/);
+    assert.equal(asked.auth, 'Bearer k', 'the request has to be authenticated to get an answer');
+    assert.equal(r.changed, 1);
   });
 
-  it('running it twice changes nothing the second time', () => {
-    const home = tempHome({ '.claude.json': withServer(OLD_URL) });
-    assert.equal(migrateApiUrl({ home }).changed, 1);
-    assert.equal(migrateApiUrl({ home }).changed, 0);
+  it('running it again after the move changes nothing', async () => {
+    const home = tempHome({ '.claude.json': withServer(OLD) });
+    assert.equal((await followServerMove({ home, canonicalUrl: NEW })).changed, 1);
+    assert.equal((await followServerMove({ home, canonicalUrl: NEW })).changed, 0);
   });
 });
 
-describe('everything else is left alone', () => {
-  it("someone running their own server keeps their address", () => {
-    const own = 'https://ownmind.my-own-box.internal/ownmind';
-    const home = tempHome({ '.claude.json': withServer(own) });
-    assert.equal(migrateApiUrl({ home }).changed, 0);
-    assert.equal(readUrl(home, '.claude.json'), own);
+describe('anything short of a clear answer changes nothing', () => {
+  const cases = [
+    ['the server names no address', ''],
+    ['the field is missing', undefined],
+    ['the field is not a URL', 'somewhere else'],
+    ['the address is not https', 'http://new.example/ownmind'],
+    ['the server names the address we already use', OLD],
+  ];
+  for (const [label, canonical] of cases) {
+    it(label, async () => {
+      const home = tempHome({ '.claude.json': withServer(OLD) });
+      const r = await followServerMove({ home, fetchImpl: serverSaying(canonical) });
+      assert.equal(r.changed, 0);
+      assert.equal(readUrl(home, '.claude.json'), OLD);
+    });
+  }
+
+  it('the server cannot be reached', async () => {
+    const home = tempHome({ '.claude.json': withServer(OLD) });
+    const fetchImpl = async () => { throw new Error('fetch failed'); };
+    const r = await followServerMove({ home, fetchImpl });
+    assert.equal(r.changed, 0);
+    assert.equal(readUrl(home, '.claude.json'), OLD);
   });
 
-  it('the address already on the new host is not touched', () => {
-    const home = tempHome({ '.claude.json': withServer(NEW_URL) });
-    assert.equal(migrateApiUrl({ home }).changed, 0);
+  it('the server answers with an error status', async () => {
+    const home = tempHome({ '.claude.json': withServer(OLD) });
+    const r = await followServerMove({ home, fetchImpl: serverSaying(NEW, { ok: false }) });
+    assert.equal(r.changed, 0);
   });
 
-  it('other servers, other keys and unrelated settings survive the rewrite', () => {
+  it('this machine has no config at all', async () => {
+    const home = tempHome({});
+    const r = await followServerMove({ home, canonicalUrl: NEW });
+    assert.equal(r.changed, 0);
+  });
+});
+
+describe('everything else in the file is left alone', () => {
+  it('another server entry keeps its own settings', async () => {
     const home = tempHome({
       '.claude.json': {
         numStartups: 42,
         mcpServers: {
-          ownmind: { command: 'node', env: { OWNMIND_API_URL: OLD_URL, OWNMIND_API_KEY: 'secret-key' } },
-          other: { command: 'x', env: { SOME_URL: 'https://legacy-server.example/ring' } },
+          ownmind: { command: 'node', env: { OWNMIND_API_URL: OLD, OWNMIND_API_KEY: 'secret-key' } },
+          other: { command: 'x', env: { SOME_URL: OLD } },
         },
       },
     });
-    assert.equal(migrateApiUrl({ home }).changed, 1);
+    assert.equal((await followServerMove({ home, canonicalUrl: NEW })).changed, 1);
     const parsed = JSON.parse(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'));
-    assert.equal(parsed.numStartups, 42, 'unrelated settings must survive');
-    assert.equal(parsed.mcpServers.ownmind.env.OWNMIND_API_KEY, 'secret-key', 'the key must survive');
-    assert.equal(parsed.mcpServers.other.env.SOME_URL, 'https://legacy-server.example/ring',
-      'another service on the same old host is not ours to move');
+    assert.equal(parsed.numStartups, 42);
+    assert.equal(parsed.mcpServers.ownmind.env.OWNMIND_API_KEY, 'secret-key');
+    assert.equal(parsed.mcpServers.other.env.SOME_URL, OLD, 'another service is not ours to move');
   });
 
-  it('a config that will not parse is reported, not rewritten, and does not throw', () => {
+  it('a config that will not parse is reported, not rewritten', () => {
     const home = tempHome({ '.claude.json': '{ this is not json' });
-    const r = migrateApiUrl({ home });
+    const r = rewriteTo(OLD, NEW, { home });
     assert.equal(r.changed, 0);
-    assert.equal(r.files.length, 1);
     assert.ok(r.files[0].error, 'the unreadable file must be named in the report');
     assert.equal(fs.readFileSync(path.join(home, '.claude.json'), 'utf8'), '{ this is not json');
   });
 
-  it('a missing config is simply skipped', () => {
-    const home = tempHome({});
-    assert.deepEqual(migrateApiUrl({ home }), { changed: 0, files: [] });
-  });
-
-  it('a dry run reports the change without writing it', () => {
-    const home = tempHome({ '.claude.json': withServer(OLD_URL) });
-    assert.equal(migrateApiUrl({ home, dryRun: true }).changed, 1);
-    assert.equal(readUrl(home, '.claude.json'), OLD_URL, 'a dry run must not touch the file');
+  it('a dry run reports the change without writing it', async () => {
+    const home = tempHome({ '.claude.json': withServer(OLD) });
+    const r = await followServerMove({ home, canonicalUrl: NEW, dryRun: true });
+    assert.equal(r.changed, 1);
+    assert.equal(readUrl(home, '.claude.json'), OLD);
   });
 });
 
-describe('isOldAddress', () => {
-  it('matches the retired host with or without a trailing slash', () => {
-    assert.equal(isOldAddress('https://legacy-server.example/ownmind'), true);
-    assert.equal(isOldAddress('https://legacy-server.example/ownmind/'), true);
+describe('the small parts', () => {
+  it('readCurrent finds the address and the key', () => {
+    const home = tempHome({ '.claude/settings.json': withServer(OLD) });
+    assert.deepEqual(readCurrent(home), { url: OLD, key: 'k' });
   });
-  it('does not match another service on that host', () => {
-    assert.equal(isOldAddress('https://legacy-server.example/ring'), false);
+
+  it('askServerForCanonicalUrl returns nothing when there is no key to ask with', async () => {
+    assert.equal(await askServerForCanonicalUrl({ url: OLD, key: '' }), '');
   });
-  it('does not match an empty or missing value', () => {
-    assert.equal(isOldAddress(''), false);
-    assert.equal(isOldAddress(undefined), false);
+
+  it('a trailing slash or different case is the same address', () => {
+    assert.equal(sameAddress('https://A.example/ownmind/', 'https://a.example/ownmind'), true);
+    assert.equal(sameAddress('https://a.example/ownmind', 'https://b.example/ownmind'), false);
+    assert.equal(sameAddress('', ''), false, 'two empty values are not an address');
   });
 });
 
-/**
- * A helper nobody calls is a helper that changes nothing. Both updaters run unattended on
- * the machines this has to reach, so both have to invoke it.
- */
+/** A helper nobody calls changes nothing, and both updaters run on the machines this reaches. */
 describe('the unattended update actually runs it', () => {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const read = (rel) => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 
-  it('update.sh calls migrate-api-url.cjs', () => {
-    const src = read('scripts/update.sh');
-    assert.match(src, /migrate-api-url\.cjs/);
-    assert.match(src, /node "\$MIGRATE_URL"/, 'it must actually be executed, not only located');
+  it('update.sh calls it', () => {
+    assert.match(read('scripts/update.sh'), /node "\$MIGRATE_URL"/);
   });
 
-  it('update.ps1 calls migrate-api-url.cjs', () => {
-    const src = read('scripts/update.ps1');
-    assert.match(src, /migrate-api-url\.cjs/);
-    assert.match(src, /&\s*node\s+\$MigrateUrl/, 'it must actually be executed, not only located');
+  it('update.ps1 calls it', () => {
+    assert.match(read('scripts/update.ps1'), /&\s*node\s+\$MigrateUrl/);
   });
 
-  it('the helper ships with the files the updater copies', () => {
-    assert.ok(fs.existsSync(path.join(repoRoot, 'scripts/install-helpers/migrate-api-url.cjs')));
+  it('the server publishes the field the client reads', () => {
+    assert.match(read('src/routes/memory.js'), /canonical_url: process\.env\.CANONICAL_URL/);
+  });
+
+  it('no server address is written into the repository', () => {
+    const src = read('scripts/install-helpers/migrate-api-url.cjs');
+    assert.doesNotMatch(src, /https:\/\/(?!\$|\{)[a-z0-9.-]+\.[a-z]{2,}/i,
+      'the address has to come from the server at runtime, never from this file');
   });
 });

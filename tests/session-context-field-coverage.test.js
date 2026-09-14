@@ -27,6 +27,9 @@ const read = (p) => readFileSync(join(repoRoot, p), 'utf8');
  */
 const NOT_FOR_THE_SESSION_CONTEXT = {
   sync_token: 'transport — consumed by the sync client, never shown',
+  canonical_url: 'addressed to the updater, not the AI — scripts/install-helpers/'
+    + 'migrate-api-url.cjs reads it to move this machine when the server changes host, '
+    + 'and where the client points is not something the model acts on',
   allowed_types: 'schema for the save/update tools, not context for the AI',
   compact: 'echo of the request parameter',
   team_standards_hash: 'change detection for the sync path',

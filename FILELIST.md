@@ -1,5 +1,26 @@
 # OwnMind 檔案結構
 
+## v1.30.24 修改（改成由伺服器告訴客戶端要連哪裡）
+
+修改檔：
+```
+scripts/install-helpers/migrate-api-url.cjs — 改寫。不再寫死任何網域：讀出這台電腦現在
+                                 連的位置，拿金鑰去問那台伺服器 canonical_url，回來的是
+                                 一個 https 位置而且跟現在不同才改。問不到、回空的、回的
+                                 不是網址、伺服器連不上，一律什麼都不動
+src/routes/memory.js           — init 回應多一個 canonical_url，值來自環境變數
+                                 CANONICAL_URL；沒設就是空字串
+tests/api-url-migration.test.js — 改寫成 22 條：伺服器說搬家就跟著搬（含專案層副本）、
+                                 五種「不算清楚答案」的情況都不准動、連不上不准動、
+                                 壞掉的設定檔不准覆寫、還有一條盯著程式裡不准出現網域
+scripts/migrate-to-company host.sh, docs/deploy-to-company host.html,
+docs/superpowers/plans/2026-08-13-ownmind-to-company host-migration.md — 刪除。一次性搬遷已經做完
+CHANGELOG.md, FILELIST.md      — 這一段
+package.json / package-lock.json / README* / docs/README* — 1.30.23 → 1.30.24
+```
+
+起因：這個程式庫是公開的，而上一版把伺服器的網域寫進了程式與說明。
+
 ## v1.30.23 修改（伺服器搬家了，電腦會自己改網址）
 
 修改檔：
