@@ -564,6 +564,17 @@ if [ -d "$HOME/.cursor" ]; then
   " 2>>"$ERR_LOG"
 fi
 
+# --- 6c. Point this machine at the server's current address (2026-09-14) ---
+# The memories moved hosts. The old address still answers only because a proxy in front of
+# it forwards to the new one, and that proxy is one line in one nginx file holding up
+# everybody. Nothing on the server can reach into a laptop, so the switch happens here,
+# in the update that already runs unattended. It rewrites one known address and leaves a
+# self-hosted one alone.
+MIGRATE_URL="$OWNMIND_DIR/scripts/install-helpers/migrate-api-url.cjs"
+if [ -f "$MIGRATE_URL" ]; then
+  node "$MIGRATE_URL" 2>>"${HOME}/.ownmind/logs/update-err.log" || true
+fi
+
 # --- 7. Have the machine report its own health (v1.26.81, moved to the tail in v1.26.105) ---
 # The self-check has only ever run during install and manual upgrade. Adam's last full
 # report is dated 2026-05-29; his machine auto-updated daily for two months afterwards and
