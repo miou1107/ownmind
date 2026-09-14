@@ -576,6 +576,16 @@ if (Test-Path $CursorDir) {
 #
 # --quick drops the one check that scans every local database. Fire-and-forget, in the
 # background, never blocking the update.
+# --- 6c. Point this machine at the server's current address (2026-09-14) ---
+# The memories moved hosts. The old address still answers only because a proxy in front of
+# it forwards to the new one, and that proxy is one line in one nginx file holding up
+# everybody. Nothing on the server can reach into a laptop, so the switch happens here,
+# in the update that already runs unattended.
+$MigrateUrl = Join-Path $OwnMindDir "scripts\install-helpers\migrate-api-url.cjs"
+if (Test-Path $MigrateUrl) {
+  try { & node $MigrateUrl } catch { }
+}
+
 $SelfCheck = Join-Path $OwnMindDir "scripts\install-helpers\self-check.cjs"
 if (Test-Path $SelfCheck) {
   try {
