@@ -5,14 +5,19 @@
 修改檔：
 ```
 mcp/lib/memory-search.js       — 新增。ownmind_search 的流程搬出 index.js，依賴用參數傳
-                                 進來，測試才切得斷網路去看呼叫端被告知了什麼
+                                 進來，測試才切得斷網路去看呼叫端被告知了什麼；記憶那半
+                                 斷線會自己再試一次，離線時 session 那半已經拿到的結果
+                                 照樣併進來
 mcp/lib/search-legs.js         — 新增。兩支 API 各自的成敗要怎麼解讀（正常／只回得到一半
                                  ／離線／原樣丟回錯誤），純函式
-mcp/index.js                   — ownmind_search 改成呼叫上面那支；記憶清單的離線說明補上
-                                 快取多舊
+mcp/index.js                   — ownmind_search 改成呼叫上面那支；四段離線說明都補上快取
+                                 多舊，找不到那筆的時候改寫成「快取裡沒有不代表伺服器上
+                                 沒有」
 mcp/offline.js                 — 新增 formatCacheAge，把快取時間換成「幾小時前」
-tests/search-offline-is-not-silence.test.js — 新增 17 條：斷網要回離線說明、0 筆一定要帶
-                                 說明、少一半要標記、兩邊都掛掉要丟錯誤
+tests/search-offline-is-not-silence.test.js — 新增 26 條：斷網要回離線說明、0 筆一定要帶
+                                 說明、少一半要標記、兩邊都掛掉要丟錯誤、重試一次、機器
+                                 上沒有快取的講法、index.js 那段接線
+tests/session-query-bounds.test.js — 註解指到搬走後的新位置
 CHANGELOG.md, FILELIST.md      — 這一段
 package.json / package-lock.json / README* / docs/README* — 1.30.21 → 1.30.22
 ```

@@ -856,7 +856,7 @@ async function handleTool(name, args) {
             logEvent('init', { status: 'offline', details: { saved_at: cache.saved_at } });
             return {
               _offline: true,
-              _offline_notice: `[OwnMind offline mode] Cannot reach the server — data is served from local cache (${cache.saved_at}) and may be stale`,
+              _offline_notice: `[OwnMind offline mode] Cannot reach the server — data is served from the local cache (${formatCacheAge(cache.saved_at)}) and may be behind it`,
               // No invocable hints on this path, deliberately: the offline cache keys memories by
               // type and its `team_standard` bucket is filled from the init response's
               // `team_standards` field, which only a non-compact response carries — and every
@@ -980,7 +980,8 @@ async function handleTool(name, args) {
           // Caught in review of this release. The cache holds whole memories, so offline
           // the follow-up to a truncated search result still works.
           if (isNetworkError(err)) {
-            const cached = findCachedMemory(readMemoryCache(), args.id);
+            const idCache = readMemoryCache();
+            const cached = findCachedMemory(idCache, args.id);
             logEvent('memory_get', { by_id: true, offline: true });
             // v1.26.146: online, a team standard whose text lives in child fragments comes
             // back whole. The local cache holds seven memory types and standard_detail is not
@@ -993,13 +994,13 @@ async function handleTool(name, args) {
               data: cached ? [cached] : [],
               _offline: true,
               _offline_notice: !cached
-                ? `[OwnMind offline mode] Memory ${args.id} is not in the local cache`
+                ? `[OwnMind offline mode] Memory ${args.id} is not in the local cache (${formatCacheAge(idCache?.saved_at)}), which is not evidence that it does not exist on the server`
                 : partialStandard
-                  ? '[OwnMind offline mode] Served from the local cache; it may be behind the server. '
+                  ? `[OwnMind offline mode] Served from the local cache (${formatCacheAge(idCache?.saved_at)}); it may be behind the server. `
                     + 'This is a team standard, and if its text was uploaded as sections they are not '
                     + 'in the local cache — what you are reading may be a summary line rather than the '
                     + 'whole standard. Do not act on it as if it were complete.'
-                  : '[OwnMind offline mode] Served from the local cache; it may be behind the server',
+                  : `[OwnMind offline mode] Served from the local cache (${formatCacheAge(idCache?.saved_at)}); it may be behind the server`,
             };
           }
           throw err;
