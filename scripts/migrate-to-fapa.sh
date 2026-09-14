@@ -15,9 +15,11 @@
 #
 # Design notes, each one guarding a way a migration can quietly lose data:
 #
-#   - One SSH session per host per phase. Every remote step is written to a file
-#     and piped in through `bash -s`, never assembled as a command argument
-#     (long argument strings get truncated on some clients, silently).
+#   - One SSH session per host per phase. Every remote step is copied over and
+#     run from a file on the far side: never assembled as a command argument
+#     (long argument strings get truncated on some clients, silently) and never
+#     piped into `bash -s` either, because `docker compose exec -T` reads the
+#     caller's stdin and swallows the rest of a piped-in script.
 #   - The source API is STOPPED, not asked nicely to stop writing. There is no
 #     read-only mode in the product, and a dump taken while writes land is a
 #     dump missing rows nobody will notice for weeks.
@@ -58,6 +60,52 @@ MIN_BYTES="${MIN_BYTES:-10240}"
 # that matters.
 VERIFY_TABLES="users memories memory_history secrets session_logs handoffs"
 
+# Run a script on a remote host. The script arrives as stdin here, but it is
+# copied over and executed from a FILE on the far side, never piped into
+# `bash -s`.
+#
+# 2026-09-14, mid-cutover: `docker compose exec -T` reads the caller's stdin,
+# and when the caller's stdin IS the script, the first exec swallows everything
+# after it. The restore step dropped the destination schema, then vanished —
+# no CREATE EXTENSION, no psql restore, no API restart — and bash exited 0 at
+# end-of-input, so the step reported success against an empty database. The
+# only reason it was caught is that the row-count check ran afterwards.
+run_remote() {
+  local host="$1"
+  local local_tmp remote_tmp rc
+  local_tmp="$(mktemp "${TMPDIR:-/tmp}/ownmind-remote-XXXXXX")" || return 1
+  cat > "$local_tmp"
+  remote_tmp="/tmp/ownmind-remote-$$-${RANDOM}.sh"
+  if ! scp -q "$local_tmp" "${host}:${remote_tmp}"; then
+    rm -f "$local_tmp"
+    return 1
+  fi
+  ssh "$host" "bash '$remote_tmp'; rc=\$?; rm -f '$remote_tmp'; exit \$rc"
+  rc=$?
+  rm -f "$local_tmp"
+  return $rc
+}
+
+# Every ssh and scp in this script shares ONE TCP connection per host.
+#
+# 2026-09-14: ufw on the source has `22/tcp LIMIT`, which rejects an address
+# that opens six connections inside thirty seconds. This script used to open one
+# per phase — stop-and-dump, counts, key read, download — and with a deploy and
+# a couple of probes in the same few minutes, the host started refusing the
+# laptop outright. Nothing was broken and nothing was banned permanently; the
+# rate limiter simply did its job, mid-migration, and the only way back in was
+# the provider's web console. Multiplexing makes the whole run look like one
+# connection.
+# The socket path lives directly under /tmp and uses %C, the short hash of
+# user+host+port: a Unix domain socket path is capped near 104 bytes, and macOS
+# hands $TMPDIR a long per-user path that blows that cap on its own.
+SSH_CTL_DIR="${SSH_CTL_DIR:-/tmp}"
+mkdir -p "$SSH_CTL_DIR"
+SSH_MUX=(-o ControlMaster=auto -o "ControlPath=${SSH_CTL_DIR}/om-cm-%C" -o ControlPersist=180)
+
+ssh()  { command ssh  "${SSH_MUX[@]}" "$@"; }
+scp()  { command scp  "${SSH_MUX[@]}" "$@"; }
+
 log()  { echo "[migrate] $(date '+%F %T') $*"; }
 fail() { echo "[migrate] FAILED: $*" >&2; exit 1; }
 
@@ -80,7 +128,7 @@ EOF
 
 remote_counts() {
   local host="$1" dir="$2"
-  { echo "DEPLOY_DIR='$dir'"; counts_script; } | ssh "$host" 'bash -s'
+  { echo "DEPLOY_DIR='$dir'"; counts_script; } | run_remote "$host"
 }
 
 # Fingerprint of a host's ENCRYPTION_KEY, so both sides can be compared without
@@ -95,7 +143,7 @@ k=$(grep -m1 '^ENCRYPTION_KEY=' "$f" | cut -d= -f2- || true)
 [ -n "$k" ] || { echo "empty"; exit 0; }
 printf '%s' "$k" | sha256sum | cut -c1-16
 EOF
-  } | ssh "$host" 'bash -s'
+  } | run_remote "$host"
 }
 
 # Copy ENCRYPTION_KEY from the source .env into the destination's, then confirm
@@ -109,7 +157,7 @@ sync_encryption_key() {
 set -euo pipefail
 grep -m1 '^ENCRYPTION_KEY=' "$DEPLOY_DIR/.env" | cut -d= -f2-
 EOF
-  } | ssh "$SRC_HOST" 'bash -s') || fail "could not read ENCRYPTION_KEY from $SRC_HOST"
+  } | run_remote "$SRC_HOST") || fail "could not read ENCRYPTION_KEY from $SRC_HOST"
   [ -n "$key" ] || fail "ENCRYPTION_KEY is empty on $SRC_HOST — stop and find out why before restoring"
 
   { echo "DEPLOY_DIR='$DST_DIR'"; printf 'KEY=%q\n' "$key"; cat <<'EOF'
@@ -134,7 +182,7 @@ else
 fi
 echo "[remote] encryption key written to $ENV_FILE"
 EOF
-  } | ssh "$DST_HOST" 'bash -s' || fail "could not write ENCRYPTION_KEY on $DST_HOST"
+  } | run_remote "$DST_HOST" || fail "could not write ENCRYPTION_KEY on $DST_HOST"
 
   src_fp=$(remote_key_fingerprint "$SRC_HOST" "$SRC_DIR")
   dst_fp=$(remote_key_fingerprint "$DST_HOST" "$DST_DIR")
@@ -156,7 +204,7 @@ docker compose ps
 echo "--- disk"
 df -h . | awk 'NR==2{print $4" free"}'
 EOF
-  } | ssh "$SRC_HOST" 'bash -s'
+  } | run_remote "$SRC_HOST"
 
   log "destination: $DST_HOST:$DST_DIR"
   { echo "DEPLOY_DIR='$DST_DIR'"; cat <<'EOF'
@@ -167,7 +215,7 @@ docker compose ps
 echo "--- disk"
 df -h . | awk 'NR==2{print $4" free"}'
 EOF
-  } | ssh "$DST_HOST" 'bash -s'
+  } | run_remote "$DST_HOST"
 
   log "row counts on source"
   remote_counts "$SRC_HOST" "$SRC_DIR"
@@ -222,7 +270,7 @@ set -o pipefail
 
 echo "[remote] dump ok: $(du -h "$OUT" | cut -f1) $OUT"
 EOF
-  } | ssh "$SRC_HOST" 'bash -s' || fail "source dump failed — the API may still be stopped, run: $0 rollback"
+  } | run_remote "$SRC_HOST" || fail "source dump failed — the API may still be stopped, run: $0 rollback"
 
   # Counted only now, with the API already stopped. Counting before the freeze
   # would race any write that lands between the count and the shutdown, and the
@@ -274,7 +322,7 @@ echo "[remote] restore finished"
 docker compose up -d --force-recreate api
 echo "[remote] api started"
 EOF
-  } | ssh "$DST_HOST" 'bash -s' || fail "restore failed. The destination API is left stopped on purpose so nobody writes into a half-restored schema. Bring the source back with: $0 rollback"
+  } | run_remote "$DST_HOST" || fail "restore failed. The destination API is left stopped on purpose so nobody writes into a half-restored schema. Bring the source back with: $0 rollback"
 
   # --- verify ---------------------------------------------------------------
   log "waiting for the destination API to come up"
@@ -312,7 +360,7 @@ docker compose up -d api
 sleep 5
 docker compose ps
 EOF
-  } | ssh "$SRC_HOST" 'bash -s'
+  } | run_remote "$SRC_HOST"
   log "source is serving again. Nothing on it was deleted, so no data was lost."
   log "If anyone already wrote to the destination, those rows need copying back by hand."
 }

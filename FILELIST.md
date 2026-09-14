@@ -36,6 +36,11 @@ tests/search-offline-is-not-silence.test.js — 新增 26 條：斷網要回離�
                                  說明、少一半要標記、兩邊都掛掉要丟錯誤、重試一次、機器
                                  上沒有快取的講法、index.js 那段接線
 tests/session-query-bounds.test.js — 註解指到搬走後的新位置
+scripts/migrate-to-company host.sh     — 搬家腳本兩個缺陷：遠端步驟原本用管線餵進 bash，第一個
+                                 `docker compose exec -T` 就把後面整段吃掉（目的端只被清空、
+                                 沒有還原，而且回報成功）；另外每個階段各開一條 SSH，來源機
+                                 的 ufw 對 22 埠有 LIMIT，六條就開始拒絕。現在遠端步驟改成
+                                 傳檔案過去執行，整趟共用一條連線
 CHANGELOG.md, FILELIST.md      — 這一段
 package.json / package-lock.json / README* / docs/README* — 1.30.21 → 1.30.22
 ```
