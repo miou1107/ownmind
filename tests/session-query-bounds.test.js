@@ -38,7 +38,7 @@ describe('buildSessionRecentQuery — bounded', () => {
   });
 
   it('still selects what its two readers use', () => {
-    // mcp/index.js maps id, summary, details, tool, model, created_at into its merged
+    // mcp/lib/memory-search.js maps id, summary, details, tool, model, created_at into its merged
     // result; dropping any of them would empty a field the AI reads.
     const { text } = buildSessionRecentQuery({ userId: 1 });
     for (const col of ['id', 'summary', 'details', 'tool', 'model', 'created_at']) {
