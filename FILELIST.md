@@ -15,6 +15,12 @@ tests/api-url-migration.test.js — 改寫成 22 條：伺服器說搬家就跟�
                                  壞掉的設定檔不准覆寫、還有一條盯著程式裡不准出現網域
 scripts/migrate-to-company host.sh, docs/deploy-to-company host.html,
 docs/superpowers/plans/2026-08-13-ownmind-to-company host-migration.md — 刪除。一次性搬遷已經做完
+shared/auto-update.js          — 兩次 pull 都失敗的時候多一層：先 fetch、再用 merge-base
+                                 確認兩邊真的沒有共同提交（＝遠端歷史被重寫），才
+                                 reset --hard 回遠端並記一筆；有共同提交就照舊當失敗
+tests/auto-update-shared.test.js — 多 3 條：重寫之後會自己接回去、一般衝突不准動、
+                                 接不回去要回報失敗而不是假裝成功
+tests/session-context-field-coverage.test.js — 新欄位 canonical_url 登記為「不給 AI 看」
 CHANGELOG.md, FILELIST.md      — 這一段
 package.json / package-lock.json / README* / docs/README* — 1.30.23 → 1.30.24
 ```

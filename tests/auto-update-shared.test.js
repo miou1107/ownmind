@@ -559,3 +559,65 @@ describe('the caller hook that runs after a successful upgrade', () => {
     assert.ok(h.events.some((e) => e.event === 'update_heartbeat_failed'));
   });
 });
+
+/**
+ * A rewritten remote history — a hostname or a credential taken back out of a published
+ * repository — leaves every installed machine holding commits the remote no longer has.
+ * Both pulls then fail on every machine, every cycle, with nobody sitting at any of them,
+ * and updates simply stop. Realigning is the only repair that does not need a person.
+ */
+describe('when the remote history was rewritten', () => {
+  /**
+   * An execFile where both pulls fail and the caller decides whether the two histories
+   * still share a commit. `git log` has to report pending work, or no pull is attempted.
+   */
+  function execForRewrite({ sharesHistory = false, resetFails = false } = {}) {
+    const calls = [];
+    const execFile = async (cmd, args = []) => {
+      calls.push(`${cmd} ${args.join(' ')}`);
+      if (cmd === 'git' && args[0] === 'log') return { stdout: 'abc1234 x', stderr: '' };
+      if (cmd === 'git' && args[0] === 'pull') throw new Error('fatal: refusing to merge unrelated histories');
+      if (cmd === 'git' && args[0] === 'rev-parse') return { stdout: 'main\n', stderr: '' };
+      if (cmd === 'git' && args[0] === 'merge-base') {
+        if (sharesHistory) return { stdout: 'deadbee\n', stderr: '' };
+        throw new Error('fatal: no merge base');
+      }
+      if (cmd === 'git' && args[0] === 'reset') {
+        if (resetFails) throw new Error('permission denied');
+        return { stdout: '', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    };
+    return { calls, execFile };
+  }
+
+  it('realigns the checkout onto the remote and carries on', async () => {
+    const { execFile, calls } = execForRewrite();
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.notEqual(out.outcome, FAILED, `update must not stop at the pull: ${JSON.stringify(out)}`);
+    assert.ok(calls.some((c) => c === 'git reset --hard origin/main'),
+      `the checkout must be put back on the remote, calls were: ${calls.join(' | ')}`);
+    assert.ok(h.events.some((e) => e.event === 'update_realigned_after_rewrite'),
+      'a repair this destructive has to leave a record');
+  });
+
+  it('leaves an ordinary pull failure alone — a shared commit means no rewrite', async () => {
+    const { execFile, calls } = execForRewrite({ sharesHistory: true });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.outcome, FAILED);
+    assert.equal(out.step, 'pull');
+    assert.ok(!calls.some((c) => c.startsWith('git reset')),
+      'nothing may be discarded when the two histories still share a commit');
+  });
+
+  it('reports a realign it could not finish rather than claiming the update worked', async () => {
+    const { execFile } = execForRewrite({ resetFails: true });
+    const h = harness();
+    const out = await runAutoUpdate({ ...h.opts, execFile, platform: 'darwin' });
+    assert.equal(out.outcome, FAILED);
+    assert.equal(out.step, 'pull');
+    assert.ok(h.events.some((e) => e.event === 'update_realign_failed'));
+  });
+});

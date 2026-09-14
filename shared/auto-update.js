@@ -44,6 +44,59 @@ const SYNC_TIMEOUT_MS = 60_000;
 const REBASE_ABORT_TIMEOUT_MS = 15_000;
 
 /**
+ * Put a checkout back on the remote after the remote's history was rewritten.
+ *
+ * Rewriting published history is rare and deliberate — a credential or an internal hostname
+ * that should never have been committed — and it leaves every installed machine holding a
+ * history the remote no longer has. Both pulls then fail forever with "refusing to merge
+ * unrelated histories" or a non-fast-forward, on machines nobody is sitting at, and the
+ * only symptom is an update that quietly stops happening.
+ *
+ * This runs only when the two histories genuinely share no commit, which is what tells a
+ * rewrite apart from an ordinary conflict. `reset --hard` then discards local edits to the
+ * checkout — the same trade interactive-upgrade.ps1 has always made, and this directory is
+ * a copy of a repository rather than anywhere work is kept.
+ *
+ * @returns {Promise<boolean>} true when the checkout now matches the remote
+ */
+async function realignAfterHistoryRewrite({ execFile, ownmindDir, logEvent, source }) {
+  const run = (args, timeout = PULL_TIMEOUT_MS) =>
+    execFile('git', args, { cwd: ownmindDir, timeout });
+
+  let branch = 'main';
+  try {
+    const { stdout } = await run(['rev-parse', '--abbrev-ref', 'HEAD'], LOG_TIMEOUT_MS);
+    const name = String(stdout || '').trim();
+    if (name && name !== 'HEAD') branch = name;
+  } catch { /* the default is the branch every install is created on */ }
+
+  try {
+    await run(['fetch', '-q', 'origin', branch]);
+  } catch {
+    return false;
+  }
+
+  // Share a commit? Then this is an ordinary failure and resetting would throw away work
+  // for no reason.
+  try {
+    await run(['merge-base', 'HEAD', `origin/${branch}`], LOG_TIMEOUT_MS);
+    return false;
+  } catch { /* no common ancestor: the remote history was replaced */ }
+
+  try {
+    await run(['reset', '--hard', `origin/${branch}`]);
+  } catch (e) {
+    logEvent('update_realign_failed', {
+      source, branch, error: e?.code || e?.message || String(e).slice(0, 120),
+    });
+    return false;
+  }
+
+  logEvent('update_realigned_after_rewrite', { source, branch });
+  return true;
+}
+
+/**
  * v1.26.142 — put a repository that stopped mid-rebase back the way it was.
  *
  * `git pull --rebase --autostash` stops and waits when it hits a conflict. On a machine
@@ -241,7 +294,15 @@ export async function runAutoUpdate({
         try {
           await execFile('git', ['pull', '-q', '--ff-only'],
             { cwd: ownmindDir, timeout: PULL_TIMEOUT_MS });
-        } catch (e) { return fail('pull', e); }
+        } catch (e) {
+          // Both pulls failing the same way on every machine is what a rewritten remote
+          // history looks like from here. Realigning is the only repair that does not
+          // need somebody to sit at the machine.
+          const realigned = await realignAfterHistoryRewrite({
+            execFile, ownmindDir, logEvent, source,
+          });
+          if (!realigned) return fail('pull', e);
+        }
       }
     }
 
