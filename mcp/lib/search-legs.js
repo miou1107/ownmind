@@ -13,6 +13,12 @@
 
 /** @typedef {{ ok: true, value: any } | { ok: false, error: Error }} Leg */
 
+/** A leg that never ran, or arrived malformed, still has to carry an Error a caller can throw. */
+function normalise(leg, name) {
+  if (leg?.ok) return leg;
+  return { ok: false, error: leg?.error instanceof Error ? leg.error : new Error(`${name} leg failed with no error attached`) };
+}
+
 /**
  * @param {{ memory: Leg, session: Leg }} legs
  * @param {(err: Error) => boolean} isNetworkError
@@ -23,8 +29,8 @@
  *   - `error`   both failed for reasons a cache cannot stand in for; rethrow `error`.
  */
 export function classifySearchLegs(legs, isNetworkError) {
-  const memory = legs?.memory ?? { ok: false, error: new Error('memory leg missing') };
-  const session = legs?.session ?? { ok: false, error: new Error('session leg missing') };
+  const memory = normalise(legs?.memory, 'memory');
+  const session = normalise(legs?.session, 'session');
   const failed = [];
   if (!memory.ok) failed.push('memory');
   if (!session.ok) failed.push('session');
@@ -46,7 +52,8 @@ export function classifySearchLegs(legs, isNetworkError) {
   return {
     mode: 'partial',
     failed,
-    notice: `[OwnMind] Partial results — ${half} could not be searched (${err?.message || 'unknown error'}). `
+    // Capped: a server error message can run long, and this notice is read on every result.
+    notice: `[OwnMind] Partial results — ${half} could not be searched (${String(err?.message || 'unknown error').slice(0, 120)}). `
       + 'The counts below cover the other half only; do not read them as "nothing is stored".',
     error: null,
   };
