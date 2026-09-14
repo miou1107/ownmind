@@ -14,7 +14,8 @@ import { pathToFileURL } from 'url';
 import { exec, execSync } from 'child_process';
 import { logEvent } from "./ownmind-log.js";
 import { composeToolResponse } from "./lib/compose-tool-response.js";
-import { isNetworkError, readMemoryCache, readHookInitPayload, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, replayQueue } from './offline.js';
+import { isNetworkError, readMemoryCache, readHookInitPayload, writeMemoryCache, localSearch, findCachedMemory, enqueueOperation, readQueue, replayQueue, formatCacheAge } from './offline.js';
+import { runMemorySearch } from './lib/memory-search.js';
 import { appendCompliance, readComplianceEvents } from '../shared/compliance.js';
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
@@ -1045,7 +1046,8 @@ async function handleTool(name, args) {
           return {
             data: items,
             _offline: true,
-            _offline_notice: `[OwnMind offline mode] Data served from local cache (${cache?.saved_at || 'unknown'})`,
+            _offline_notice: `[OwnMind offline mode] Data served from local cache (${formatCacheAge(cache?.saved_at)}). `
+              + 'Anything saved since that cache is missing from this list.',
           };
         }
         throw err;
@@ -1053,58 +1055,18 @@ async function handleTool(name, args) {
     }
 
     case "ownmind_search": {
-      const searchTokenParam = currentSyncToken ? `&sync_token=${currentSyncToken}` : '';
-      try {
-        // v1.17.13: search memories + session_logs together and merge (Dana case).
-        const [memoryRows, sessionRows] = await Promise.all([
-          callApi("GET", `/api/memory/search?q=${encodeURIComponent(args.query)}${searchTokenParam}`)
-            .catch(() => []),
-          callApi("GET", `/api/session/recent?days=90&include_compressed=true&q=${encodeURIComponent(args.query)}`)
-            .catch(() => []),
-        ]);
-        const memoryData = Array.isArray(memoryRows) ? memoryRows : (memoryRows?.data || []);
-        const sessionData = Array.isArray(sessionRows) ? sessionRows : [];
-        const sessionAsMemory = sessionData.map((s) => ({
-          id: s.id,
-          type: 'session_log',
-          title: (s.summary || '').slice(0, 80),
-          content: s.summary,
-          details: s.details,
-          tool: s.tool,
-          model: s.model,
-          created_at: s.created_at,
-          _source: 'session_logs',
-        }));
-        const merged = [...memoryData, ...sessionAsMemory];
-        if (memoryRows?.new_token) currentSyncToken = memoryRows.new_token;
-        logEvent('memory_search', { query: args.query, memory_hits: memoryData.length, session_hits: sessionData.length });
-        // v1.26.64: memory_total is what matched, memory_returned is what came back. A
-        // caller that cannot tell the two apart reads twenty of two hundred results as
-        // the whole picture.
-        return {
-          data: merged,
-          memory_hits: memoryData.length,
-          session_hits: sessionData.length,
-          memory_total: memoryRows?.total ?? memoryData.length,
-          memory_returned: memoryRows?.returned ?? memoryData.length,
-        };
-      } catch (err) {
-        if (isNetworkError(err)) {
-          const cache = readMemoryCache();
-          // v1.26.64: localSearch now answers in the same {data, total, returned} shape
-          // as the server, so the two paths hand back the same thing.
-          const results = localSearch(cache, args.query);
-          logEvent('memory_search', { query: args.query, offline: true });
-          return {
-            data: results.data,
-            memory_total: results.total,
-            memory_returned: results.returned,
-            _offline: true,
-            _offline_notice: `[OwnMind offline mode] Local keyword search on cached memories (${results.returned} of ${results.total} matches; content is a preview)`,
-          };
-        }
-        throw err;
+      // #129: the flow lives in mcp/lib/memory-search.js so a test can cut the network and
+      // read what the caller is told. Inline, the offline branch was unreachable from a test
+      // and shipped a swallowed error for months.
+      const result = await runMemorySearch(
+        { callApi, isNetworkError, readMemoryCache, localSearch, logEvent, formatCacheAge },
+        { query: args.query, syncToken: currentSyncToken },
+      );
+      if (result._new_token) {
+        currentSyncToken = result._new_token;
+        delete result._new_token;
       }
+      return result;
     }
 
     case "ownmind_save": {
