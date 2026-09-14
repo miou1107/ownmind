@@ -21,6 +21,8 @@ shared/auto-update.js          — 兩次 pull 都失敗的時候多一層：先
 tests/auto-update-shared.test.js — 多 3 條：重寫之後會自己接回去、一般衝突不准動、
                                  接不回去要回報失敗而不是假裝成功
 tests/session-context-field-coverage.test.js — 新欄位 canonical_url 登記為「不給 AI 看」
+tests/team-install-prompt.test.js — 這支測試的假網址前後對不上：期待值那一半沒跟著換，
+                                 補成同一個假網址
 CHANGELOG.md, FILELIST.md      — 這一段
 package.json / package-lock.json / README* / docs/README* — 1.30.23 → 1.30.24
 ```

@@ -21,12 +21,12 @@ describe('buildInstallPrompt — legacy parity', () => {
     assert.match(out, /Windows \(PowerShell\):/);
     assert.match(
       out,
-      /curl -sL https:\/\/raw\.githubusercontent\.com\/miou1107\/ownmind\/main\/install\.sh \| bash -s -- sk-abc123 https:\/\/legacy host\.com\/ownmind/,
+      /curl -sL https:\/\/raw\.githubusercontent\.com\/miou1107\/ownmind\/main\/install\.sh \| bash -s -- sk-abc123 https:\/\/legacy-server\.example\/ownmind/,
       'unix branch: install.sh curl piped to bash with api_key and api_url',
     );
     assert.match(
       out,
-      /\$env:OWNMIND_API_KEY='sk-abc123'; \$env:OWNMIND_API_URL='https:\/\/legacy host\.com\/ownmind'; irm https:\/\/raw\.githubusercontent\.com\/miou1107\/ownmind\/main\/install\.ps1 \| iex/,
+      /\$env:OWNMIND_API_KEY='sk-abc123'; \$env:OWNMIND_API_URL='https:\/\/legacy-server\.example\/ownmind'; irm https:\/\/raw\.githubusercontent\.com\/miou1107\/ownmind\/main\/install\.ps1 \| iex/,
       'windows branch: env vars + irm | iex',
     );
   });
