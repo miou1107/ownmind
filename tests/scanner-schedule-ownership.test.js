@@ -60,7 +60,9 @@ const HELPER_PS1 = 'scripts/install-helpers/ensure-scanner-schedule.ps1';
  * version production actually executes, is never exercised at all. Both are checked wherever
  * both exist; on Linux and macOS runners that is pwsh alone.
  */
-const SHELLS = ['pwsh', 'powershell'].filter((exe) => {
+const POWERSHELL_EXES = ['pwsh', 'powershell'];
+
+const SHELLS = POWERSHELL_EXES.filter((exe) => {
   const r = spawnSync(exe, ['-NoProfile', '-Command', 'exit 0'], { encoding: 'utf8' });
   return r.status === 0;
 });
@@ -68,6 +70,39 @@ const SHELLS = ['pwsh', 'powershell'].filter((exe) => {
 const noPowerShell = SHELLS.length > 0
   ? false
   : 'no PowerShell on this machine; the CI runners have it and run these for real';
+
+/**
+ * Which PowerShells this machine has installed, asked without going through the probe.
+ *
+ * A PATH scan and `spawnSync(exe, ['-NoProfile', '-Command', 'exit 0'])` can disagree, and
+ * that disagreement is what the guard below is for. Names rather than a count, because the
+ * two are not interchangeable: a machine carrying both where the probe runs only pwsh has
+ * lost Windows PowerShell 5.1 — the version production actually executes, per the comment
+ * above — while a count stays reassuringly non-zero.
+ *
+ * Executable, absolute and quote-stripped: a plain text file named `pwsh` is not an install,
+ * a relative PATH entry would resolve against this process's working directory, and Windows
+ * PATH entries containing spaces are routinely written with quotes around them.
+ */
+const INSTALLED_POWERSHELLS = (() => {
+  const exts = process.platform === 'win32'
+    ? (process.env.PATHEXT || '.EXE').split(';').filter(Boolean)
+    : [''];
+  const dirs = (process.env.PATH || '').split(path.delimiter)
+    .map((dir) => dir.replace(/^"|"$/g, ''))
+    .filter((dir) => dir && path.isAbsolute(dir));
+  const runnable = (candidate) => {
+    try {
+      if (!fs.statSync(candidate).isFile()) return false;
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  return POWERSHELL_EXES.filter((exe) => dirs
+    .some((dir) => exts.some((ext) => runnable(path.join(dir, `${exe}${ext}`)))));
+})();
 
 /**
  * Run one call against the helper and return the boolean it produced.
@@ -171,13 +206,29 @@ describe('the PowerShell repair asks the same ownership question the check asks'
       `${HEALTH_PS1} is missing; the ownership rule has no home on the Windows side`);
   });
 
-  it('CI really has a PowerShell to run these against', { skip: process.env.CI ? false : 'local' }, () => {
+  it('the GitHub runners still ship the PowerShell these run against', {
+    skip: process.env.GITHUB_ACTIONS ? false : 'not a GitHub runner',
+  }, () => {
     // Everything below skips itself when no shell is found. That is right on a dev machine
-    // and wrong on CI: the runners are the only place these ever execute, and a probe that
-    // silently stopped matching would turn the whole file into a source-text check without
-    // anything going red.
+    // and wrong on a runner whose image is known to carry PowerShell: all four legs of the
+    // matrix - ubuntu, macos, windows - ship one, so losing it means the image changed under
+    // us and the whole file has quietly become a source-text check.
     assert.ok(SHELLS.length > 0,
-      'no PowerShell found on a CI runner — the probe is stale and these tests are now vacuous');
+      'no PowerShell on a GitHub runner — the image changed and these tests are now vacuous');
+  });
+
+  it('every PowerShell installed here is one the probe actually runs', {
+    skip: INSTALLED_POWERSHELLS.length > 0 ? false : 'no PowerShell installed on this machine',
+  }, () => {
+    // `process.env.CI` used to ask this, and it asked the wrong question. The same suite also
+    // runs from a bare `node:20` container, where CI is true and PowerShell was never
+    // installed, so a stale-probe alarm arrived as a hard failure on a machine where these
+    // Windows cases have nothing to say. What still needs a guard is the gap between
+    // installed and run, and that gap is real wherever a PowerShell exists.
+    const missed = INSTALLED_POWERSHELLS.filter((exe) => !SHELLS.includes(exe));
+    assert.deepEqual(missed, [],
+      `on PATH but not run by the probe: ${missed.join(', ')} — either the probe is stale and `
+      + 'the cases below are now vacuous, or that PowerShell is installed and will not start');
   });
 
   for (const c of OWNERSHIP_CASES) {

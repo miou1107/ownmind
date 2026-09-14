@@ -3344,7 +3344,7 @@ scripts/install-helpers/schedule-health.ps1      — 新增、Windows 排程健�
                                                     它一旦回空字串，全部歸屬判斷都會退回
                                                     「無法判斷」，閘門就變回修之前那樣而測試
                                                     全綠
-tests/scanner-schedule-ownership.test.js         — 26 tests：同一張案例表跑 JS 與 PowerShell
+tests/scanner-schedule-ownership.test.js         — 27 tests：同一張案例表跑 JS 與 PowerShell
                                                     兩份實作（含 Adam 那台的真實 actions 字串）、
                                                     停用/讀不到狀態仍算壞掉、多個 action 不能
                                                     只讀第一個、修復前的閘門與修復後的驗證都要
