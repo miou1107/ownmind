@@ -35,6 +35,21 @@ log_info() { echo "INFO:$1:$2"; }
 log_ok()   { echo "OK:$1:$2"; }
 log_err()  { echo "ERROR:$1:$2" >&2; }
 
+# #98 - bootstrap clones and pulls, so git is the one thing it cannot do without. Checked
+# inline rather than through scripts/install-helpers/preflight.sh because on a fresh install
+# that file does not exist yet: this script is fetched over the network and run before anything
+# is on disk. The full check (node, npm) runs from the checkout once there is one.
+if ! command -v git >/dev/null 2>&1; then
+  log_err preflight_missing_git "git is not on PATH, and OwnMind is installed and updated with it. Nothing has been changed."
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) echo "  fix: xcode-select --install     # or: brew install git" >&2 ;;
+    *)      echo "  fix: sudo apt-get install -y git     # or your package manager" >&2 ;;
+  esac
+  echo "" >&2
+  echo "Fix that and run the same command again." >&2
+  exit 1
+fi
+
 log_info detect "Checking OwnMind installation ($OWNMIND_DIR)"
 
 # Branch 1: no install

@@ -106,6 +106,9 @@ describe('nav structure — role filtering', () => {
   it('a plain member sees only the items marked for user', () => {
     const sections = visibleSections('user');
     const paths = sections.flatMap((s) => s.items.map((i) => i.path));
+    // #126: a member who can see nothing at all passed both loops below. That is a broken
+    // console, not a correct one, and it read as the strictest possible green.
+    assert.ok(paths.length > 0, 'a plain member sees no navigation at all, which cannot be right');
     for (const p of paths) {
       assert.equal(navMinRole(p), 'user', `${p} is visible to a user but not marked minRole user`);
     }

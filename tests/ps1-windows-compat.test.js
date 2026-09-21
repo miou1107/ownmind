@@ -125,18 +125,42 @@ describe('v1.17.66 — Bug #6 PowerShell Out-File must use UTF-8 encoding', () =
   // Alice's upgrade-20260508-094901.log had garbled Chinese because Out-File defaults
   // to UTF-16 LE with BOM. Every Out-File / Set-Content / Add-Content in .ps1 must
   // pass -Encoding utf8.
+  // #126: this scanned for `Out-File` alone while the header above says Set-Content and
+  // Add-Content are in scope too, and a .ps1 containing none of them produced a green test of
+  // its own. Files that moved from Out-File to Set-Content therefore stopped being checked
+  // without anything going red, and the suite as a whole could have been reading zero writes.
+  //
+  // Comments are excluded rather than matched: several of these files explain in prose why
+  // they use [System.IO.File]::WriteAllText *instead of* Set-Content, and a guard that cannot
+  // tell an explanation from a call would force the explanation out.
+  const WRITERS = /\b(?:Out-File|Set-Content|Add-Content)\b[^\n]*/g;
+  let writesSeen = 0;
+
+  /** Lines with any `#` comment cut off, so prose naming a cmdlet is not read as a call. */
+  function codeLines(content) {
+    return content.split(/\r?\n/).map((line) => {
+      const at = line.indexOf('#');
+      return at === -1 ? line : line.slice(0, at);
+    }).join('\n');
+  }
+
   for (const rel of PS1_FILES) {
-    it(`${rel} — Out-File always uses -Encoding utf8`, () => {
-      const content = readPs1(rel);
-      // Find every Out-File occurrence; each must include -Encoding utf8 within ~50 chars.
-      const re = /Out-File[^\n]*/g;
-      const matches = content.match(re) || [];
+    it(`${rel} — every file write uses -Encoding utf8`, () => {
+      const matches = codeLines(readPs1(rel)).match(WRITERS) || [];
+      writesSeen += matches.length;
       for (const m of matches) {
         assert.match(m, /-Encoding\s+utf8/i,
-          `Out-File is missing -Encoding utf8 (writes UTF-16 LE BOM, garbles Chinese): "${m}"`);
+          `this write is missing -Encoding utf8 (PowerShell 5.1 defaults to UTF-16 LE with a BOM, which garbles Chinese): "${m.trim()}"`);
       }
     });
   }
+
+  it('the scan found writes to check, across the files above', () => {
+    // Runs after them: node:test executes the `it`s in declaration order. Without this, a
+    // pattern that stopped matching would turn every test above into a green that read
+    // nothing — which is the shape this whole sweep is about.
+    assert.ok(writesSeen > 0, 'no Out-File / Set-Content / Add-Content was found in any .ps1, which cannot be right');
+  });
 });
 
 describe('v1.17.66 — Bug #7 Scanner hidden window + battery settings', () => {

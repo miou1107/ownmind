@@ -131,7 +131,16 @@ describe('v1.19.7 — resetBlockCount', () => {
   });
 
   it('non-existent session → noop, no throw', () => {
-    resetBlockCount('nonexistent');
+    // #126: "it did not throw" was the whole test. A resetBlockCount that started returning an
+    // error object instead of throwing would have been invisible to it, and so would one that
+    // created a file for a session that does not exist.
+    const existedBefore = fs.existsSync(tmpCounterPath);
+    const before = existedBefore ? fs.readFileSync(tmpCounterPath, 'utf8') : null;
+    assert.equal(resetBlockCount('nonexistent'), undefined, 'a noop returns nothing, not an error value');
+    assert.equal(fs.existsSync(tmpCounterPath), existedBefore, 'an unknown session must not create the file');
+    if (existedBefore) {
+      assert.equal(fs.readFileSync(tmpCounterPath, 'utf8'), before, 'an unknown session must not rewrite the file');
+    }
   });
 
   it('block_count already 0 → noop, no write (avoid pointless writes)', () => {
@@ -146,8 +155,17 @@ describe('v1.19.7 — resetBlockCount', () => {
   });
 
   it('non-string sessionId → noop, no throw', () => {
-    resetBlockCount(null);
-    resetBlockCount(123);
+    // Same shape as above: what matters is that nothing was written under a bogus key, not
+    // merely that the call came back.
+    const before = fs.existsSync(tmpCounterPath) ? fs.readFileSync(tmpCounterPath, 'utf8') : null;
+    assert.equal(resetBlockCount(null), undefined);
+    assert.equal(resetBlockCount(123), undefined);
+    const after = fs.existsSync(tmpCounterPath) ? fs.readFileSync(tmpCounterPath, 'utf8') : null;
+    assert.equal(after, before, 'a non-string session id must leave the file exactly as it was');
+    if (after) {
+      const data = JSON.parse(after);
+      assert.ok(!('null' in data) && !('123' in data), `a bogus key was stored: ${Object.keys(data)}`);
+    }
   });
 });
 

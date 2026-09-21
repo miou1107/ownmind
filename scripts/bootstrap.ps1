@@ -1,4 +1,4 @@
-﻿# OwnMind Universal Bootstrap for Windows PowerShell
+# OwnMind Universal Bootstrap for Windows PowerShell
 #
 # Usage:
 #   Already installed (upgrade only):
@@ -9,22 +9,22 @@
 #     iwr -useb https://raw.githubusercontent.com/miou1107/ownmind/main/scripts/bootstrap.ps1 | iex
 #
 # Branches:
-#   1. ~/.ownmind not present         → fresh clone + install.ps1 (needs API key args/env)
-#   2. ~/.ownmind present, no .git    → backup + re-clone + install.ps1 (needs API key args/env)
-#   3. ~/.ownmind is a git repo       → delegate to scripts/interactive-upgrade.ps1 (no args needed)
+#   1. ~/.ownmind not present         -> fresh clone + install.ps1 (needs API key args/env)
+#   2. ~/.ownmind present, no .git    -> backup + re-clone + install.ps1 (needs API key args/env)
+#   3. ~/.ownmind is a git repo       -> delegate to scripts/interactive-upgrade.ps1 (no args needed)
 #
 # Env overrides (for testing):
-#   $env:OWNMIND_DIR   — install path (default: $env:USERPROFILE\.ownmind)
-#   $env:OWNMIND_REPO  — git URL      (default: https://github.com/miou1107/ownmind.git)
+#   $env:OWNMIND_DIR   - install path (default: $env:USERPROFILE\.ownmind)
+#   $env:OWNMIND_REPO  - git URL      (default: https://github.com/miou1107/ownmind.git)
 #
 # Log format (machine-readable):
-#   "INFO:detect:<message>"   — 進度訊息
-#   "OK:done:<message>"       — 步驟成功
-#   "ERROR:install:<message>" — 失敗
+#   "INFO:detect:<message>"   - progress message
+#   "OK:done:<message>"       - step succeeded
+#   "ERROR:install:<message>" - failure
 
 $ErrorActionPreference = "Stop"
 
-# 環境正規化（v1.17.9, 回報者 Bob）— Git Bash / MSYS 會把 $HOME 污染成 /c/Users/xxx
+# Normalise the environment (v1.17.9, reported by Bob): Git Bash / MSYS overwrites $HOME with /c/Users/xxx
 if ($env:USERPROFILE -and ($HOME -ne $env:USERPROFILE)) {
   Set-Variable -Name HOME -Value $env:USERPROFILE -Force -Scope Global -ErrorAction SilentlyContinue
 }
@@ -36,6 +36,22 @@ $Ts = Get-Date -Format "yyyyMMdd-HHmmss"
 function Log-Info($code, $msg) { Write-Host "INFO:${code}:${msg}" }
 function Log-Ok($code, $msg)   { Write-Host "OK:${code}:${msg}" }
 function Log-Err($code, $msg)  { Write-Host "ERROR:${code}:${msg}" -ForegroundColor Red }
+
+# #98 - bootstrap clones and pulls, so git is the one thing it cannot do without. Checked here
+# rather than in scripts/install-helpers/preflight.ps1 because on a fresh install that file does
+# not exist yet: this script is fetched over the network and run before anything is on disk.
+# The full check (node, npm, PowerShell version) runs from the checkout once there is one.
+#
+# -CommandType Application on purpose: a profile alias named git is not a program these scripts
+# can invoke, and it would read as present here and fail later.
+$gitCmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue
+if (-not $gitCmd) {
+  Log-Err preflight_missing_git "git is not on PATH, and OwnMind is installed and updated with it. Nothing has been changed."
+  Write-Host "  fix: winget install --id Git.Git -e --source winget    (then open a new terminal so PATH is picked up)"
+  Write-Host ""
+  Write-Host "Fix that and run the same command again."
+  exit 1
+}
 
 Log-Info detect "Checking OwnMind installation ($OwnmindDir)"
 

@@ -141,11 +141,26 @@ describe('v1.17.66 — collectEnv environment collection (IR-038)', () => {
   });
 
   it('node.exec_path is sanitized (HOME does not leak)', async () => {
-    const env = await selfCheck.collectEnv();
-    const home = process.env.HOME || process.env.USERPROFILE || '';
-    if (home) {
+    // #126: the assertion used to sit inside `if (home)`, so on a stripped container image —
+    // where neither HOME nor USERPROFILE is set — this checked nothing and reported green. The
+    // leak it guards against is a real path shipped to the server in a diagnostic.
+    //
+    // Rather than skip, the environment is made to have one. collectEnv reads process.env when
+    // it is called, so setting it here is the same input a normal machine gives it.
+    const priorHome = process.env.HOME;
+    const priorProfile = process.env.USERPROFILE;
+    const home = priorHome || priorProfile || path.dirname(process.execPath);
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    try {
+      const env = await selfCheck.collectEnv();
+      assert.ok(typeof env.node.exec_path === 'string' && env.node.exec_path.length > 0,
+        'exec_path is missing entirely, so there is nothing to check for a leak');
       assert.ok(!env.node.exec_path.includes(home),
         `exec_path must not contain un-sanitized HOME (${home}); actual=${env.node.exec_path}`);
+    } finally {
+      if (priorHome === undefined) delete process.env.HOME; else process.env.HOME = priorHome;
+      if (priorProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = priorProfile;
     }
   });
 });

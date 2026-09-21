@@ -66,20 +66,27 @@ export function formatCacheAge(savedAt, now = Date.now()) {
 
 export function makeOfflineHelpers(cachePath = DEFAULT_CACHE_PATH, queuePath = DEFAULT_QUEUE_PATH, hookCachePath = DEFAULT_HOOK_CACHE_PATH) {
 
+  // #127: undici puts the real fault on `err.cause`, not on the error it rejects with — a
+  // connection reset arrives as `TypeError: fetch failed` whose own `code` is undefined. Only
+  // the message match below was catching those, so an error whose wording changed would have
+  // silently stopped reaching offline mode. The codes are read down the chain now.
+  const NETWORK_CODES = new Set([
+    'EHOSTUNREACH', 'ENETUNREACH', 'ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ECONNRESET',
+    'EPIPE', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'UND_ERR_HEADERS_TIMEOUT',
+  ]);
+
   function isNetworkError(err) {
     if (!err) return false;
-    const msg = err.message || '';
-    const code = err.code || '';
-    return (
-      code === 'EHOSTUNREACH' ||
-      code === 'ENETUNREACH' ||
-      code === 'ECONNREFUSED' ||
-      code === 'ETIMEDOUT' ||
-      code === 'ENOTFOUND' ||
-      code === 'ECONNRESET' ||
-      msg.toLowerCase().includes('fetch failed') ||
-      msg.toLowerCase().includes('network error')
-    );
+    const seen = new Set();
+    let current = err;
+    while (current && typeof current === 'object' && !seen.has(current)) {
+      seen.add(current);
+      if (typeof current.code === 'string' && NETWORK_CODES.has(current.code)) return true;
+      const msg = String(current.message || '').toLowerCase();
+      if (msg.includes('fetch failed') || msg.includes('network error')) return true;
+      current = current.cause;
+    }
+    return false;
   }
 
   /**

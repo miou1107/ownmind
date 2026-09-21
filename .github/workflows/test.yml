@@ -51,6 +51,14 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
+      # #126 — `mcp/` has its own package.json and its own node_modules, and the root has no
+      # `workspaces`, so a root-only `npm ci` left the MCP unable to start on every runner.
+      # The one end-to-end test that drives the real server (tests/init-cache.test.js) skipped
+      # itself for that reason on every CI leg since it was written: it ran only where somebody
+      # had happened to install inside mcp/ by hand. Installing them here is what makes that
+      # test a check rather than a note.
+      - run: npm ci
+        working-directory: mcp
       # `src/public/dashboard/` is gitignored, so a fresh clone has no console and the
       # routing tests get a 404 where the SPA shell should be. This is the same step
       # `npm start` runs as `prestart`, and it uses build:no-translate - the full build

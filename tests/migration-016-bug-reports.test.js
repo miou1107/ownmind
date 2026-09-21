@@ -170,8 +170,14 @@ test('every CHECK constraint sits inside DO $$ ... END $$ (idempotent re-run gua
   assert.match(sql, /SELECT\s+1\s+FROM\s+pg_constraint\s+WHERE\s+conname\s*=/i);
 });
 
+// #126: both of these matched with `|| []` and then looped. Renaming the table, renaming the
+// index prefix, or deleting the statements outright leaves an empty list, the loop body never
+// runs, and a test that claims to cover *every* statement passes having read none of them.
+// Counting first is the difference between "all of them are fine" and "there were none".
+
 test('every CREATE TABLE uses IF NOT EXISTS', () => {
   const tables = sql.match(/CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+bug_report/gi) || [];
+  assert.ok(tables.length > 0, 'no CREATE TABLE bug_report… found; this migration creates them, so the pattern is stale');
   for (const m of tables) {
     assert.match(m, /IF\s+NOT\s+EXISTS/i, `should use IF NOT EXISTS: ${m}`);
   }
@@ -179,6 +185,7 @@ test('every CREATE TABLE uses IF NOT EXISTS', () => {
 
 test('every CREATE INDEX uses IF NOT EXISTS', () => {
   const idxs = sql.match(/CREATE\s+INDEX(?:\s+IF\s+NOT\s+EXISTS)?\s+idx_bug_report/gi) || [];
+  assert.ok(idxs.length > 0, 'no CREATE INDEX idx_bug_report… found; this migration creates them, so the pattern is stale');
   for (const m of idxs) {
     assert.match(m, /IF\s+NOT\s+EXISTS/i, `should use IF NOT EXISTS: ${m}`);
   }

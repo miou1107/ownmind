@@ -152,3 +152,81 @@ test('and if it fails anyway, the assistant is told the edit went unchecked', as
   assert.match(GUARD_DID_NOT_RUN, /Tell the user this/,
     'the assistant must pass it on, or the user never learns the guard was off');
 });
+
+/**
+ * #112 — the same net, one layer out.
+ *
+ * ownmind-edit-reminder.js only prints GUARD_DID_NOT_RUN when it is the process being run.
+ * Since v1.30.15 it is not: every platform runs ownmind-iron-rule-check.js, which imports
+ * editReminder and calls it, so a throw inside the guard lands in that file's top-level catch
+ * instead — and that catch was `() => process.exit(0)`. Empty stdout, exit 0, edit allowed,
+ * nobody told. Byte-identical to a healthy run on a file no rule covers.
+ *
+ * Staging a throw inside the guard is the point here, not a workaround for it: the reachable
+ * causes are absorbed one by one upstream (#111 took two of them), and what this catch exists
+ * for is the ones nobody has found. So the guard is replaced with one that throws, and the
+ * question asked is what the caller is told.
+ */
+function stageThrowingGuard() {
+  // Copy the tree with a break the hook never loads, then overwrite the guard itself. The
+  // real GUARD_DID_NOT_RUN is re-exported from the untouched copy, so this asserts the
+  // sentence the product ships rather than one the fixture made up.
+  const { root, hook } = stageBrokenHook('ownmind-iron-rule-check.js', 'hooks/unused-by-this-test.js');
+  const guard = path.join(root, 'hooks', 'ownmind-edit-reminder.js');
+  fs.copyFileSync(guard, path.join(root, 'hooks', 'ownmind-edit-reminder.real.js'));
+  fs.writeFileSync(guard, [
+    "export { GUARD_DID_NOT_RUN } from './ownmind-edit-reminder.real.js';",
+    'export async function editReminder() {',
+    "  throw new Error('staged failure inside the guard');",
+    '}',
+    '',
+  ].join('\n'));
+  return { root, hook };
+}
+
+test('#112 — a guard that throws on the edit path says so instead of exiting quietly', async () => {
+  const { hook } = stageThrowingGuard();
+  const home = tempDir('om-112-home-');
+  const target = path.join(tempDir('om-112-repo-'), 'anything.txt');
+
+  const r = spawnSync('node', [hook], {
+    input: JSON.stringify({
+      session_id: 'guard-throws',
+      tool_name: 'Write',
+      tool_input: { file_path: target, content: 'x' },
+    }),
+    encoding: 'utf8',
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+
+  // Still fail open: a broken guard must not stop somebody editing.
+  assert.equal(r.status, 0, `the hook blocked the edit:\n${r.stdout}${r.stderr}`);
+
+  const { GUARD_DID_NOT_RUN } = await import('../hooks/ownmind-edit-reminder.js');
+  assert.notEqual(r.stdout.trim(), '', 'the hook exited silently, which is the bug');
+  const parsed = JSON.parse(r.stdout);
+  assert.equal(parsed.hookSpecificOutput?.additionalContext, GUARD_DID_NOT_RUN,
+    'the caller must be told the edit went unchecked, in the words the other wirings use');
+});
+
+test('#112 — a command that fails stays silent, so the notice does not ride every Bash call', () => {
+  // The other half of the decision. "This edit was not checked" is a lie about `git status`,
+  // and a notice printed on every command is one people learn to scroll past. This pins the
+  // scoping; it does not prove the guard threw, because a command never reaches the guard.
+  const { hook } = stageThrowingGuard();
+  const home = tempDir('om-112-home2-');
+
+  const r = spawnSync('node', [hook], {
+    input: JSON.stringify({
+      session_id: 'guard-throws-cmd',
+      tool_name: 'Bash',
+      tool_input: { command: 'git status' },
+    }),
+    encoding: 'utf8',
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+
+  assert.equal(r.status, 0, `a command was blocked:\n${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stdout, /was not checked/,
+    'the edit notice must not appear on a command');
+});

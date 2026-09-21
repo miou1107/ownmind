@@ -80,11 +80,13 @@ describe('v1.19.3 scenario 14 — sessions older than 30 days are auto-cleaned',
     assert.ok(data['fresh-session'], 'fresh session should be retained');
   });
 
-  it('cleanupStale does not throw when the file is missing', () => {
-    // Ensure the file is absent.
+  it('cleanupStale does nothing at all when the file is missing', () => {
+    // #126: "must not throw" was the entire assertion, so a cleanupStale that started
+    // returning an error value, or that created an empty counter file on its way past, both
+    // read as a pass. Nothing there means nothing to do, and nothing to leave behind.
     try { fs.unlinkSync(tmpCounterPath); } catch { /* ignore */ }
-    // Must not throw.
-    cleanupStale(30 * 24 * 60 * 60 * 1000);
+    assert.equal(cleanupStale(30 * 24 * 60 * 60 * 1000), undefined, 'a noop returns nothing, not an error value');
+    assert.equal(fs.existsSync(tmpCounterPath), false, 'cleanup must not create the file it came to tidy');
   });
 });
 

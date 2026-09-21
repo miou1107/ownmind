@@ -52,6 +52,11 @@ describe('Dockerfile carries what the start path executes', () => {
     // must not ship: an unreferenced copy of an old admin console inside the runtime image
     // is a file that can only ever be served by accident.
     const copies = [...dockerfile.matchAll(/^COPY\s+(?:--from=\S+\s+)?(\S+)/gm)].map((m) => m[1]);
+    // #126: the neighbouring test guards its collection and this one did not. A Dockerfile
+    // that stopped matching — reformatted, or COPY written some other way — leaves an empty
+    // list, the loop never runs, and "nothing under legacy/ ships" is reported having read
+    // nothing at all.
+    assert.ok(copies.length > 0, 'no COPY directive was found in the Dockerfile, so this checked nothing');
     for (const src of copies) {
       assert.ok(!src.startsWith('legacy'), `Dockerfile copies ${src}, which is a retired console`);
     }
