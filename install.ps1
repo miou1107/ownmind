@@ -468,11 +468,16 @@ Copy-Item (Join-Path $OwnmindDir "skills\ownmind-memory.md") (Join-Path $SkillDi
 Write-Host "[ OK ] Installed ownmind-memory skill"
 
 # --- 4b. 安裝 Hook Scripts（bash + node fallback）---
-$BashHooks = @("ownmind-iron-rule-check.sh", "ownmind-session-start.sh")
+$BashHooks = @("ownmind-session-start.sh")
 foreach ($hook in $BashHooks) {
   $src = Join-Path $OwnmindDir "hooks\$hook"
   if (Test-Path $src) { Copy-Item $src $HookDir -Force }
 }
+# ownmind-iron-rule-check.sh is gone. Since v1.30.15 no installer registers it on any platform
+# — every machine runs the .js — so it was a second implementation of one protocol that nothing
+# called. Clear the copy an older install left behind, and the CLI that existed only for it.
+Remove-Item (Join-Path $HookDir "ownmind-iron-rule-check.sh") -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $HookDir "lib\action-gate-cli.js") -ErrorAction SilentlyContinue
 # ownmind-worktree-setup.sh is gone. Registered on WorktreeCreate it made every EnterWorktree
 # on the machine fail; see remove-worktree-hook.cjs. Clear the copy and the registration an
 # older install left behind.
@@ -628,7 +633,7 @@ Copy-IfDifferent -Src $VerificationSrc -DestDir (Join-Path $HOME ".ownmind\share
 # 複製 git hook JS 檔案
 # v1.26.150 — keep in step with HOOK_JS_FILES in install.sh; see the note there for why the
 # copy is a no-op on a standard install and why a missing name fails quietly.
-$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-commit-msg.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js", "ownmind-detect-trigger.js", "ownmind-render-context.js")
+$GitHookJsFiles = @("ownmind-git-pre-commit.js", "ownmind-git-commit-msg.js", "ownmind-git-post-commit.js", "ownmind-verify-trigger.js", "ownmind-render-context.js")
 foreach ($jsFile in $GitHookJsFiles) {
   $src = Join-Path $OwnmindDir "hooks\$jsFile"
   Copy-IfDifferent -Src $src -DestDir (Join-Path $HOME ".ownmind\hooks\") -Label $jsFile

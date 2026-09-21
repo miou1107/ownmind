@@ -80,13 +80,30 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
    * and the hook would sail past the failure this file exists to prove is recorded — the test
    * would go green by measuring nothing, which is the same shape as the defect.
    */
+  /**
+   * A recorded lookup FAILURE, as opposed to a recorded fallback.
+   *
+   * v1.30.26 — the shell hook wrote its own event, iron_rule_fetch_failed, and nothing but
+   * this file ever read it. The .js hook — now the only one — records the same facts through
+   * hooks/lib/hook-context-fetch.js as hook_context_fallback, which IS read elsewhere.
+   *
+   * That event covers two different things, so the name alone is not enough: a server that
+   * answers 200 with the older body shape is logged as http_200, and that is an ordinary
+   * fallback, not a failure. Only a non-2xx status is what this file is about.
+   */
+  function isLookupFailure(e) {
+    if (e.event !== 'hook_context_fallback') return false;
+    const m = /^http_(\d{3})$/.exec(e.details?.reason || '');
+    return Boolean(m) && Number(m[1]) >= 400;
+  }
+
   function isRuleLookup(url) {
     return url.includes('/api/memory/hook-context') || url.includes('/api/memory/type/iron_rule');
   }
 
   function run(command) {
     return new Promise((resolve, reject) => {
-      const child = spawn('bash', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh')], {
+      const child = spawn(process.execPath, [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.js')], {
         cwd: repoRoot,
         env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
         stdio: 'pipe',
@@ -117,7 +134,7 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
     };
 
     const r = await run('git commit -m x');
-    const failures = loggedEvents().filter((e) => e.event === 'iron_rule_fetch_failed');
+    const failures = loggedEvents().filter((e) => isLookupFailure(e));
     assert.equal(failures.length, 1,
       `a failed lookup left no trace. exit=${r.status} events=${JSON.stringify(loggedEvents())}`);
     assert.match(failures[0].details.reason, /500/,
@@ -137,7 +154,7 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
     };
 
     await run('bash install.sh --api-key abc');
-    const failures = loggedEvents().filter((e) => e.event === 'iron_rule_fetch_failed');
+    const failures = loggedEvents().filter((e) => isLookupFailure(e));
     assert.equal(failures.length, 1, 'an expired or revoked key must not look like "no rules"');
     assert.match(failures[0].details.reason, /401/);
   });
@@ -149,8 +166,8 @@ describe('v1.26.132 — a failed rule lookup is recorded, not swallowed', () => 
     };
 
     await run('git commit -m x');
-    const failures = loggedEvents().filter((e) => e.event === 'iron_rule_fetch_failed');
-    assert.equal(failures.length, 0, 'no rules matched is not a failure — it must stay quiet');
+    const failures = loggedEvents().filter((e) => isLookupFailure(e));
+    assert.equal(failures.length, 0, `no rules matched is not a failure — it must stay quiet. events=${JSON.stringify(loggedEvents())}`);
   });
 
   it('the failure never reaches stdout and never blocks the command', async () => {

@@ -212,32 +212,6 @@ function envWithoutCredentials(home) {
   return env;
 }
 
-test('the shell hook Claude Code registers carries the block through to stdout', async () => {
-  // The end-to-end check, and the one that matters most: it is the only test that fails if
-  // the guard is wired into the wrong file.
-  const repo = makeRepo();
-  const file = touch(repo, 'ci/projects.yml');
-  const home = stageHome();
-
-  const payload = JSON.stringify({
-    tool_name: 'Edit',
-    session_id: 's-e2e',
-    tool_input: { file_path: file },
-  });
-
-  const stdout = execFileSync('bash', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh')], {
-    input: payload,
-    encoding: 'utf8',
-    env: envWithoutCredentials(home),
-    timeout: 30_000,
-  });
-
-  assert.match(
-    stdout, /"decision"\s*:\s*"block"/,
-    'the guard did not reach stdout through the hook Claude Code actually runs',
-  );
-  assert.match(stdout, /412/);
-});
 
 test('the node hook Claude Code registers blocks with no credentials on the machine', () => {
   // The twin of the test above, for the file that is actually registered now. From v1.30.15

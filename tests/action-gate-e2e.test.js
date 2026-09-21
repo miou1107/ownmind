@@ -21,8 +21,6 @@ import { stageHookHome } from './helpers/hook-home.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
-const CLI_PATH = path.join(repoRoot, 'hooks', 'lib', 'action-gate-cli.js');
-const SH_HOOK = path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh');
 const JS_HOOK = path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.js');
 
 const DEGRADED_LINE =
@@ -76,7 +74,12 @@ function stageGateHome(guards = DEFAULT_GUARDS) {
   return { home };
 }
 
-/** Run the gate CLI exactly as the .sh hook does: payload on stdin, HOME staged. */
+/**
+ * Run the registered hook: payload on stdin, HOME staged.
+ *
+ * v1.30.26 — this used to run hooks/lib/action-gate-cli.js, the shell hook's way into the
+ * gate. Both are deleted, so it spawns the file every platform actually runs.
+ */
 function runGateCli({ home, command, sessionId = 'e2e-session' }) {
   const payload = JSON.stringify({
     session_id: sessionId,
@@ -84,7 +87,7 @@ function runGateCli({ home, command, sessionId = 'e2e-session' }) {
     tool_name: 'Bash',
     tool_input: { command },
   });
-  return spawnSync(process.execPath, [CLI_PATH], {
+  return spawnSync(process.execPath, [JS_HOOK], {
     input: payload,
     encoding: 'utf8',
     env: { ...process.env, HOME: home, USERPROFILE: home },
@@ -186,48 +189,11 @@ test('a broken state dir degrades loudly on allow, and checks still enforce', ()
   assert.match(out.reason, /use docker compose build/);
 });
 
-// --- The registered hooks carry the decision through unchanged ---
-
-test('the .sh hook forwards a gate block and stops there', () => {
-  // stageHookHome gives the .sh everything it resolves under $HOME; the apiUrl points at a
-  // closed port on purpose — a block must be decided before any network is touched.
-  const home = stageHookHome({ apiUrl: 'http://127.0.0.1:9' });
-  fs.mkdirSync(path.join(home, '.ownmind', 'cache'), { recursive: true });
-  fs.writeFileSync(
-    path.join(home, '.ownmind', 'cache', 'enforcement.json'),
-    JSON.stringify({ selectors: [], guards: DEFAULT_GUARDS, injectables: [] })
-  );
-  const payloadFor = (command) => JSON.stringify({
-    session_id: 'e2e-session',
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Bash',
-    tool_input: { command },
-  });
-  const runSh = (command) => spawnSync('bash', [SH_HOOK], {
-    input: payloadFor(command),
-    encoding: 'utf8',
-    cwd: home,
-    env: { ...process.env, HOME: home, USERPROFILE: home },
-  });
-
-  const first = runSh('docker compose build --no-cache api');
-  assert.equal(first.status, 0);
-  const out = JSON.parse(first.stdout);
-  assert.equal(out.decision, 'block', 'the .sh echoes the CLI decision verbatim');
-  assert.match(out.systemMessage, /tried to act without reading this rule first/);
-
-  // The retry is allowed by the gate; whatever the reminder flow says next, it must not block.
-  const retry = runSh('docker compose build --no-cache api');
-  assert.equal(retry.status, 0);
-  assert.ok(!retry.stdout.includes('"decision"'), 'the retry must not be blocked');
-
-  // Ordering proof: the shared classifier gives a plain `docker build` no trigger at all,
-  // so this command reaches the gate only because the gate runs BEFORE the .sh's
-  // empty-trigger exit. If someone moves the wiring below that exit, this line goes red.
-  const bare = runSh('docker build .');
-  assert.equal(JSON.parse(bare.stdout).decision, 'block',
-    'the gate must run before the empty-trigger exit can skip it');
-});
+// --- The registered hook carries the decision through unchanged ---
+//
+// v1.30.26 — 'the .sh hook forwards a gate block and stops there' is gone with that hook. It
+// checked that the shell copy echoed the CLI verdict verbatim and then stopped; there is no
+// shell copy and no CLI, so there is nothing left to forward between.
 
 // --- The gate owns stdout for the turn, even when the one-time upgrade is armed ---
 //
@@ -257,8 +223,14 @@ function stageArmedUpgradeHome() {
   return home;
 }
 
-function runShIn(home, command) {
-  return spawnSync('bash', [SH_HOOK], {
+/**
+ * v1.30.26 — was runShIn, spawning the shell hook. The property these two cases pin is not
+ * shell-specific: whatever the hook has to say this turn, stdout has to be exactly one JSON
+ * object. Two objects make JSON.parse of the whole stream throw, which is the red state they
+ * were written for.
+ */
+function runHookIn(home, command) {
+  return spawnSync(process.execPath, [JS_HOOK], {
     input: JSON.stringify({
       session_id: 'e2e-session',
       hook_event_name: 'PreToolUse',
@@ -273,7 +245,7 @@ function runShIn(home, command) {
 
 test('a gate block with the upgrade armed emits exactly ONE JSON object — the block', () => {
   const home = stageArmedUpgradeHome();
-  const r = runShIn(home, 'docker compose build --no-cache api');
+  const r = runHookIn(home, 'docker compose build --no-cache api');
 
   assert.equal(r.status, 0, `hook must exit 0; stderr=${r.stderr.slice(0, 300)}`);
   // The contract: stdout is exactly one JSON object. Two objects (upgrade advisory + gate
@@ -286,20 +258,23 @@ test('a gate block with the upgrade armed emits exactly ONE JSON object — the 
   assert.match(parsed.systemMessage, /tried to act without reading this rule first/, 'the user sees why');
 });
 
-test('a non-blocked command with the upgrade armed still lets the advisory through (one object)', () => {
+test('a command with nothing to say produces nothing at all', () => {
   const home = stageArmedUpgradeHome();
-  // `ls -la` is neither gate-blockable nor a trigger, so the only thing with anything to
-  // say this turn is the upgrade advisory. It must arrive as one clean JSON object.
-  const r = runShIn(home, 'ls -la');
+  // `ls -la` is neither gate-blockable nor a trigger.
+  //
+  // v1.30.26 — this used to expect the one-time upgrade advisory here, as one clean JSON
+  // object. That advisory was a block inside the shell hook and the .js hook never had one, so
+  // since v1.30.15 — when nothing registered the shell copy any more — nobody had been getting
+  // it. The test kept passing because one object is one object either way.
+  //
+  // What is left is the contract this file's header already states: an allow is silence. An
+  // empty-but-shaped envelope injected in front of every harmless command is exactly the noise
+  // v1.26.90 stopped emitting.
+  const r = runHookIn(home, 'ls -la');
 
   assert.equal(r.status, 0, `hook must exit 0; stderr=${r.stderr.slice(0, 300)}`);
-  let parsed;
-  assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); },
-    `stdout must be exactly one JSON object, got:\n${r.stdout}`);
-  assert.ok(!parsed.decision, 'a non-blocked command is not a gate block');
-  assert.ok(parsed.hookSpecificOutput, 'the upgrade advisory rides a hookSpecificOutput envelope');
-  assert.match(parsed.hookSpecificOutput.additionalContext, /自動升級|SessionStart/,
-    'the one object is the upgrade advisory');
+  assert.equal(r.stdout.trim(), '',
+    `a turn with nothing to report must print nothing, got:\n${r.stdout}`);
 });
 
 test('the .js twin blocks and allows the same way', () => {

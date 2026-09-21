@@ -145,7 +145,6 @@ echo "L2_SERVER:${L2}${L2_DETAIL:+ ${L2_DETAIL}}"
 # If `source` is missing, skip; if `deployed` is missing, count as a "missing" drift.
 SRC_TO_DST=(
   "${OWNMIND_DIR}/hooks/ownmind-session-start.sh|${CLAUDE_DIR}/hooks/ownmind-session-start.sh"
-  "${OWNMIND_DIR}/hooks/ownmind-iron-rule-check.sh|${CLAUDE_DIR}/hooks/ownmind-iron-rule-check.sh"
   "${OWNMIND_DIR}/skills/ownmind-memory.md|${CLAUDE_DIR}/skills/ownmind-memory/SKILL.md"
   "${OWNMIND_DIR}/skills/ownmind-upgrade.md|${CLAUDE_DIR}/skills/ownmind-upgrade/SKILL.md"
 )

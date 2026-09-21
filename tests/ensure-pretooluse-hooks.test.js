@@ -101,20 +101,20 @@ describe('v1.26.105 — ensure-pretooluse-hooks repairs a stale command, not jus
     assert.equal(fs.readdirSync(tmpDir).filter((f) => f.includes('.bak.')).length, 0, 'a no-op run must not leave a backup');
   });
 
-  it('bash mode repairs a node command back to the bash hook', () => {
+  it('a machine still carrying the bash command is repaired to node', () => {
+    // v1.30.26 — the direction is the other way round now. The .sh is deleted, so a settings
+    // file that still names it points at a file that is not there; every upgrade has to move
+    // it. This used to assert the reverse — that asking for bash mode rewrote node back to
+    // bash — which is the state that has to be repaired rather than produced.
     write({
       hooks: {
-        PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: NODE_CMD }] }],
+        PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: BASH_CMD }] }],
       },
     });
-    // v1.30.15 — the platform is named rather than inherited from whatever ran the suite.
-    // Bash mode is a POSIX behaviour now (Windows takes node whatever the caller asks for), so
-    // an implicit process.platform made this case assert one thing on CI and the opposite on a
-    // Windows developer's machine.
-    helper.ensureHooks(settingsPath, OWNMIND_DIR, true, 'linux');
+    helper.ensureHooks(settingsPath, OWNMIND_DIR);
     const s = read();
-    assert.equal(commandFor(s, 'Bash'), BASH_CMD);
-    assert.equal(commandFor(s, 'Edit|Write|MultiEdit|NotebookEdit'), BASH_CMD, 'the missing matcher is still added');
+    assert.equal(commandFor(s, 'Bash'), NODE_CMD);
+    assert.equal(commandFor(s, 'Edit|Write|MultiEdit|NotebookEdit'), NODE_CMD, 'the missing matcher is still added');
   });
 
   it('unrelated user hooks and settings survive', () => {
@@ -196,22 +196,21 @@ describe('v1.26.105 — ensure-pretooluse-hooks repairs a stale command, not jus
    * caller nobody runs. ensure-session-hook.cjs already decides by platform here; this is the
    * PreToolUse side catching up.
    */
-  it('win32 takes node even when the caller asks for bash', () => {
-    const cmd = helper.buildPreCmd('C:/Users/someone/.ownmind', true, 'win32');
-    assert.match(cmd, /^node "/, `System32\\bash.exe is the WSL relay, not a shell: ${cmd}`);
-    assert.ok(!cmd.includes('bash '), cmd);
-  });
-
-  it('every other platform still honours the bash request', () => {
-    for (const platform of ['darwin', 'linux']) {
-      assert.equal(
-        helper.buildPreCmd('/home/someone/.ownmind', true, platform),
-        'bash ~/.claude/hooks/ownmind-iron-rule-check.sh',
-      );
+  it('there is one command, and it is node — on every platform', () => {
+    // v1.30.26: the platform argument is gone with the branch it selected. Asserted for all
+    // three rather than for win32 alone, because "one command everywhere" is the property, and
+    // a helper that quietly grew a second form again would pass a win32-only check.
+    for (const dir of ['C:/Users/someone/.ownmind', '/home/someone/.ownmind', '/Users/someone/.ownmind']) {
+      const cmd = helper.buildPreCmd(dir);
+      assert.match(cmd, /^node "/, `System32\\bash.exe is the WSL relay, not a shell: ${cmd}`);
+      assert.ok(!cmd.includes('bash '), cmd);
     }
   });
 
-  it('ensureHooks writes the node command on win32 despite useBash', () => {
+  it('a flag left over from an older caller does not change what is written', () => {
+    // install.sh and update.sh passed --bash for years. The CLI still accepts and ignores it,
+    // because an upgrade runs the new helper from a shell script that is still the old one on
+    // disk for the length of that run.
     fs.writeFileSync(settingsPath, JSON.stringify({ hooks: {} }));
     const r = helper.ensureHooks(settingsPath, OWNMIND_DIR, true, 'win32');
     assert.equal(r.status, 'ok');

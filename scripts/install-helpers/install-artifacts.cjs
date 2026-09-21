@@ -126,10 +126,9 @@ const ARTIFACTS = [
     locate: (ctx) => {
       const registered = registeredIronRuleTarget(ctx);
       if (registered) return [registered];
-      return [
-        path.join(claudeHooks(ctx), 'ownmind-iron-rule-check.sh'),
-        path.join(claudeHooks(ctx), 'ownmind-iron-rule-check.js'),
-      ];
+      // The .sh was retired: since v1.30.15 nothing registered it, and it is deleted now, so a
+      // machine with nothing registered has exactly one file this could mean.
+      return [path.join(claudeHooks(ctx), 'ownmind-iron-rule-check.js')];
     },
   },
   {

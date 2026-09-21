@@ -1,5 +1,62 @@
 # OwnMind 檔案結構
 
+## v1.30.26 修改（刪掉沒有人在跑的那份規矩檢查）
+
+刪除檔：
+```
+hooks/ownmind-iron-rule-check.sh — 456 行。從 v1.30.15 起沒有任何安裝程式在任何平台註冊它
+hooks/lib/action-gate-cli.js   — 115 行，沒有 export，唯一的呼叫端是上面那支
+hooks/ownmind-detect-trigger.js — 四行包裝，唯一的呼叫端也是上面那支
+```
+
+修改檔：
+```
+install.sh, install.ps1        — 不再複製那支 .sh；升級時順手刪掉機器上的舊複本與
+                                 lib/action-gate-cli.js。git hook JS 清單拿掉
+                                 ownmind-detect-trigger.js
+scripts/install-helpers/ensure-pretooluse-hooks.cjs
+                               — buildPreCmd 的 bash 分支整個拿掉，參數也拿掉。
+                                 `--bash` 仍然收下並忽略：升級的時候跑的是新的 helper，
+                                 而呼叫它的 shell 腳本在那一輪還是磁碟上的舊版
+scripts/install-helpers/install-artifacts.cjs — 沒有註冊資訊時的候選路徑從兩個變一個
+scripts/check-sync.sh, scripts/check-sync.ps1 — 同步清單拿掉那支 .sh
+shared/helpers.js              — detectCommandTrigger 的檔頭：現在只有一條路進得來
+CLAUDE.md                      — 「寫死的英文備援」從六個檔改成四個
+scripts/install-helpers/preflight.ps1, preflight.sh
+                               — 錯誤代號統一成 preflight_missing_<工具>。兩支 preflight
+                                 印的是 preflight_<工具>，兩支 bootstrap 印的是
+                                 preflight_missing_<工具>，回報用的又是後者
+```
+
+測試：
+```
+tests/iron-rule-trigger-parity.test.js — 從「兩份判斷要一致」改成「這一份判斷對不對」。
+                                 26 條指令的分類表原封不動留著，那是當年兩份對不起來
+                                 換來的
+tests/action-gate-e2e.test.js, tests/hook-deny-envelope.test.js,
+tests/iron-rule-fetch-failure-logged.test.js, tests/iron-rule-install-trigger.test.js
+                               — 改成跑 .js hook。原本跑 CLI 或 .sh
+tests/action-gate-i18n.test.js — 三條「CLI:」拿掉，它們每一條都有一條「JS hook:」雙胞胎
+tests/edit-trigger-reminder.test.js, tests/iron-rule-hook-payload.test.js,
+tests/hook-log-event-details.test.js, tests/hook-locales-fallback-sync.test.js,
+tests/hook-english-fallbacks-match-dictionary.test.js, tests/helpers/hook-home.js
+                               — 清單裡拿掉那支 .sh
+tests/iron-rule-trigger-aliases.test.js — 只留「renderer 有 import 共用的表」那一條
+tests/enforcement-edit-guard.test.js — 拿掉 .sh 的端對端，.js 的雙胞胎本來就在旁邊
+tests/hook-context-five-categories.test.js — 拿掉 .sh 的端對端
+tests/install-artifacts.test.js — 候選路徑只剩一個，索引從 1 改成 0
+tests/installer-preflight.test.js — 多兩條：四支腳本印的錯誤代號要一致、回報的種類也要
+                                 是同一個字
+tests/ensure-pretooluse-hooks.test.js — 「bash 模式會把 node 指令改回 bash」翻過來：
+                                 現在是「還寫著 bash 的機器會被改成 node」
+CHANGELOG.md, FILELIST.md      — 這一段
+package.json / package-lock.json / README* / docs/README* — 1.30.25 → 1.30.26
+```
+
+測試總數從 5905 條變成 5836 條，少的 69 條就是那支 .sh 的覆蓋。
+
+起因：#112 的第二半。那張單問的是「這條 wiring 還支不支援」，Vin 2026-09-21 回答：刪掉。
+
 ## v1.30.25 修改（六件壞掉之後不出聲的事）
 
 修改檔：

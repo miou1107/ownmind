@@ -158,7 +158,7 @@ describe('v1.26.92 — the edit trigger, end to end through both hook copies', (
     }
   }
 
-  for (const hook of ['hooks/ownmind-iron-rule-check.sh', 'hooks/ownmind-iron-rule-check.js']) {
+  for (const hook of ['hooks/ownmind-iron-rule-check.js']) {
     it(`${hook}: an Edit call lists the rules — the whole point of the release`, async () => {
       const r = await run(hook, editPayload('Edit'));
       assert.equal(r.status, 0);
@@ -453,18 +453,10 @@ describe('v1.26.92 — trigger derivation', () => {
   });
 });
 
-describe('v1.26.92 — the .sh copy of the tool list does not drift', () => {
-  const sh = fs.readFileSync(path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh'), 'utf8');
-
-  it('matches TOOL_TRIGGERS in shared/helpers.js', () => {
-    // The .sh dispatches on tool name in a shell `case`, so it cannot import the module.
-    // Same trade as the v1.26.91 alias table: duplication is fine only while something
-    // checks the copies still agree.
-    const m = sh.match(/case "\$TOOL_NAME" in\s*\n\s*([A-Za-z|]+)\)/);
-    assert.ok(m, 'the .sh hook no longer dispatches on tool name');
-    assert.deepEqual(m[1].split('|').sort(), Object.keys(TOOL_TRIGGERS).sort());
-  });
-});
+// v1.30.26 — "the .sh copy of the tool list does not drift" is gone with the copy. The shell
+// hook dispatched on tool name in a `case` because it could not import the module, and this
+// checked the two lists still agreed. There is one list now, in shared/helpers.js, which the
+// only hook imports.
 
 describe('v1.26.92 — the installer registers both matchers, and only once', () => {
   const EXPECTED = ['Bash', 'Edit|Write|MultiEdit|NotebookEdit'];

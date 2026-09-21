@@ -275,11 +275,25 @@ test('every hook a session depends on is registered', () => {
   );
 });
 
+test('the retired shell hook is not installed, and neither is the CLI that served it', () => {
+  // v1.30.26 — hooks/ownmind-iron-rule-check.sh and hooks/lib/action-gate-cli.js are deleted.
+  // Asserted as absence rather than dropped from the list above: an installer that quietly
+  // started copying them again would put a second implementation of one protocol back on every
+  // machine, which is the thing that rotted.
+  for (const rel of [
+    ['.claude', 'hooks', 'ownmind-iron-rule-check.sh'],
+    ['.claude', 'hooks', 'lib', 'action-gate-cli.js'],
+    ['.ownmind', 'hooks', 'ownmind-iron-rule-check.sh'],
+  ]) {
+    assert.ok(!fs.existsSync(inHome(...rel)),
+      `installed again after it was retired: ~/${path.join(...rel)}`);
+  }
+});
+
 test('the files the hooks reach for by absolute path are all there', () => {
   // The hooks resolve these under $HOME rather than relative to themselves. A missing one
   // does not crash loudly - it makes the hook fail open, which reads as a quiet day.
   for (const rel of [
-    ['.claude', 'hooks', 'ownmind-iron-rule-check.sh'],
     ['.claude', 'hooks', 'ownmind-session-start.sh'],
     ['.ownmind', 'hooks', 'ownmind-edit-reminder.js'],
     ['.ownmind', 'hooks', 'lib', 'path-guard.js'],

@@ -182,7 +182,6 @@ if ($L2Detail) { Write-Tag "L2_SERVER:$L2 $L2Detail" } else { Write-Tag "L2_SERV
 # ============================================================
 $pairs = @(
     @{ src = (Join-Path $OwnmindDir 'hooks/ownmind-session-start.sh');   dst = (Join-Path $ClaudeDir 'hooks/ownmind-session-start.sh') },
-    @{ src = (Join-Path $OwnmindDir 'hooks/ownmind-iron-rule-check.sh'); dst = (Join-Path $ClaudeDir 'hooks/ownmind-iron-rule-check.sh') },
     @{ src = (Join-Path $OwnmindDir 'skills/ownmind-memory.md');         dst = (Join-Path $ClaudeDir 'skills/ownmind-memory/SKILL.md') },
     @{ src = (Join-Path $OwnmindDir 'skills/ownmind-upgrade.md');        dst = (Join-Path $ClaudeDir 'skills/ownmind-upgrade/SKILL.md') }
 )
