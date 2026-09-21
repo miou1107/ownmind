@@ -78,17 +78,19 @@ OwnMind 記憶裡沒有、repo 裡也沒有。於是 v1.30.3（替判官選模�
 1. `hooks/locales/zh.json`（**中文是原稿**，英日文由它產生）
 2. `hooks/locales/en.json` + `en.override.json`（override 釘住英文，翻譯流程不准改寫）
 3. `hooks/locales/ja.json` + `ja.override.json`
-4. **程式碼裡那些寫死的英文備援 —— 有六個檔案，不是三個**：
+4. **程式碼裡那些寫死的英文備援 —— 有四個檔案**：
    - `hooks/lib/action-gate.js`、`hooks/lib/compliance-step.js`、`hooks/ownmind-reply-lint.js`
      （`safeT` / `complianceNotice` / `lintNotice` 的第二個參數）
-   - `hooks/lib/action-gate-cli.js`、`hooks/ownmind-iron-rule-check.js`、
-     `hooks/ownmind-iron-rule-check.sh` —— **這三個最容易漏**。它們存的是
-     `gate.failopen` / `gate.degraded`，而 `.sh` 那份跟 CLI 最外層那份根本不經過翻譯層
-     （那條路是「node 整個跑不起來」，沒有 node 可以呼叫 `t()`）
+   - `hooks/ownmind-iron-rule-check.js` —— **這個最容易漏**。它存的是
+     `gate.failopen` / `gate.degraded`
 
-   2026-08-15 這批 24 句就是漏了後面三個 —— 而且 `.sh` 裡本來就寫著「記得跟 en.json 同步」
-   的註解、規格檔也記著「有三份複本」。**兩個都不是檢查，兩個都被讀過去了。**
-   現在有 `tests/hook-english-fallbacks-match-dictionary.test.js` 在盯，漏掉會紅。
+   2026-08-15 那批 24 句就是漏了最後這一類 —— 而且規格檔本來就記著「有幾份複本」。
+   **那不是檢查，所以被讀過去了。** 現在有
+   `tests/hook-english-fallbacks-match-dictionary.test.js` 在盯，漏掉會紅。
+
+   v1.30.26 之前這裡是六個檔案：`hooks/ownmind-iron-rule-check.sh` 與
+   `hooks/lib/action-gate-cli.js` 各存一份，因為那條路是「node 整個跑不起來」，
+   沒有 node 可以呼叫 `t()`。兩個檔案都刪掉了。
 
 ## 國際化專案規則（最高優先級）
 

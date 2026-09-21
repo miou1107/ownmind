@@ -21,7 +21,7 @@
  * add-post-tool-use-hook.cjs so the two read the same way.
  *
  * Usage:
- *   node ensure-pretooluse-hooks.cjs <settings.json path> --ownmind-dir <path> [--bash]
+ *   node ensure-pretooluse-hooks.cjs <settings.json path> --ownmind-dir <path>
  *
  * Exit codes:
  *   0  — success (any mix of added / repaired / unchanged)
@@ -55,25 +55,23 @@ const MATCHERS = [
  * exits with ERR_MODULE_NOT_FOUND before reading a byte of the payload. In ~/.ownmind, shared/
  * and hooks/ sit where the imports expect.
  */
-function buildPreCmd(ownmindDir, useBash, platform = process.platform) {
-  // v1.30.15 — Windows takes node whatever the caller asked for.
+function buildPreCmd(ownmindDir) {
+  // One command, every platform. There is no bash form any more.
   //
-  // install.ps1 has known since v1.26.80 that `Get-Command bash` is the wrong question there:
-  // Win10/11 ship System32\bash.exe, which is the WSL launcher, so bash is found and does not
-  // run. install.sh and scripts/update.sh both passed --bash unconditionally, so every Windows
-  // machine installed or upgraded through bootstrap.sh had this registered instead:
-  //   bash ~/.claude/hooks/ownmind-iron-rule-check.sh
-  // Measured on TANK (Windows 10, no WSL) straight after scripts/update.sh:
+  // v1.30.15 stopped registering the .sh anywhere: install.ps1 had known since v1.26.80 that
+  // `Get-Command bash` is the wrong question on Windows — Win10/11 ship System32\bash.exe,
+  // which is the WSL launcher, so bash is found and does not run — while install.sh and
+  // scripts/update.sh passed --bash unconditionally, and every Windows machine installed
+  // through bootstrap.sh ended up with `bash ~/.claude/hooks/ownmind-iron-rule-check.sh`
+  // registered. Measured on a Windows 10 machine with no WSL, straight after update.sh:
   //   <3>WSL (10 - Relay) ERROR: CreateProcessCommon:818: execvpe(/bin/bash) failed
   //   exit 1
-  // The iron-rule gate was dead and nothing said so — the same silence, on the same platform,
-  // for the same reason as the SessionStart defect v1.26.80 was written about.
+  // The gate was dead and nothing said so.
   //
-  // The branch lives here rather than in the two callers deliberately. This file's header
-  // records what happened last time one decision had two copies: the half nobody could run
-  // from CI is the half that rotted. ensure-session-hook.cjs already decides by platform;
-  // this is the PreToolUse side catching up.
-  if (useBash && platform !== 'win32') return 'bash ~/.claude/hooks/ownmind-iron-rule-check.sh';
+  // From v1.30.15 the .sh was registered by nobody on any platform, which left a second
+  // implementation of one protocol that every change had to be made in twice and that no CI
+  // leg could run. It is deleted now, and so is hooks/lib/action-gate-cli.js, which existed
+  // because a bash script cannot import evaluateGate.
   const hookPath = path.join(ownmindDir, 'hooks', 'ownmind-iron-rule-check.js').replace(/\\/g, '/');
   // The directory string may contain whitespace → quote it so the shell parses one argument.
   return `node "${hookPath}"`;
@@ -136,8 +134,8 @@ function ensureEntry(list, matcher, identifier, command) {
 /**
  * @returns {{ status: 'ok' | 'error', message?: string, results?: Array<{matcher: string, action: 'added'|'repaired'|'unchanged', from?: string}> }}
  */
-function ensureHooks(settingsPath, ownmindDir, useBash, platform = process.platform) {
-  const preCmd = buildPreCmd(ownmindDir, useBash, platform);
+function ensureHooks(settingsPath, ownmindDir) {
+  const preCmd = buildPreCmd(ownmindDir);
 
   let raw = '';
   let existed = false;
@@ -217,16 +215,18 @@ function ensureHooks(settingsPath, ownmindDir, useBash, platform = process.platf
 if (require.main === module) {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.error('Usage: node ensure-pretooluse-hooks.cjs <settings.json path> --ownmind-dir <path> [--bash]');
+    console.error('Usage: node ensure-pretooluse-hooks.cjs <settings.json path> --ownmind-dir <path>');
     process.exit(1);
   }
   const settingsPath = args[0];
   let ownmindDir = path.join(process.env.HOME || process.env.USERPROFILE || os.homedir(), '.ownmind');
   const idx = args.indexOf('--ownmind-dir');
   if (idx >= 0 && args[idx + 1]) ownmindDir = args[idx + 1];
-  const useBash = args.includes('--bash');
+  // `--bash` is accepted and ignored. An upgrade runs the new copy of this file from a shell
+  // script that may still be the old one on disk for the length of that run; erroring on the
+  // flag would fail the very upgrade that removes it.
 
-  const result = ensureHooks(settingsPath, ownmindDir, useBash);
+  const result = ensureHooks(settingsPath, ownmindDir);
   if (result.status === 'error') {
     console.error(`[ensure-pretooluse-hooks] ERROR: ${result.message}`);
     process.exit(1);

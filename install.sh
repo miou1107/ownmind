@@ -549,10 +549,14 @@ echo "[INFO] Upgrade rules synced: ${INSTALLED_TOOLS} installed, ${SKIPPED_TOOLS
 HOOK_DIR="$HOME/.claude/hooks"
 mkdir -p "$HOOK_DIR/lib"
 mkdir -p "$HOOK_DIR/locales"
-cp "$OWNMIND_DIR/hooks/ownmind-iron-rule-check.sh" "$HOOK_DIR/"
 cp "$OWNMIND_DIR/hooks/ownmind-session-start.sh" "$HOOK_DIR/"
-chmod +x "$HOOK_DIR/ownmind-iron-rule-check.sh"
 chmod +x "$HOOK_DIR/ownmind-session-start.sh"
+# ownmind-iron-rule-check.sh is gone. Since v1.30.15 no installer registers it on any platform
+# — every machine runs the .js — so it was a second implementation of the same protocol that
+# nothing called and that every change had to be made in twice. Delete the copy an older
+# install left behind, so nothing can point at it again.
+rm -f "$HOOK_DIR/ownmind-iron-rule-check.sh"
+rm -f "$HOOK_DIR/lib/action-gate-cli.js"
 # ownmind-worktree-setup.sh is gone — see remove-worktree-hook.cjs. Delete the copy an older
 # install left behind, so nothing can point at it again.
 rm -f "$HOOK_DIR/ownmind-worktree-setup.sh"
@@ -652,15 +656,14 @@ if [ -f "$SRC_VERIFY" ] && ! [ "$SRC_VERIFY" -ef "$DST_VERIFY" ]; then
 fi
 
 # 複製 git hook JS 檔案
-# v1.26.150 — ownmind-detect-trigger.js added: ownmind-iron-rule-check.sh runs it by absolute
-# path to classify a command, so it belongs with the other helpers reached that way.
+# v1.30.26 — ownmind-detect-trigger.js removed with the shell hook that was its only caller.
 #
 # The copy below is a no-op today. OWNMIND_DIR is $HOME/.ownmind, so SRC_JS and DST_JS are
 # the same file and `-ef` skips every one of them — what actually puts these on disk is the
 # git checkout. The list still matters for a clone anywhere else, and a name missing from it
 # fails quietly rather than loudly: the hook keeps running and classifies every command as
 # no-trigger, which looks exactly like a quiet day.
-HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js" "ownmind-detect-trigger.js" "ownmind-render-context.js")
+HOOK_JS_FILES=("ownmind-git-pre-commit.js" "ownmind-git-commit-msg.js" "ownmind-git-post-commit.js" "ownmind-verify-trigger.js" "ownmind-render-context.js")
 for js_file in "${HOOK_JS_FILES[@]}"; do
   SRC_JS="$OWNMIND_DIR/hooks/$js_file"
   DST_JS="$HOME/.ownmind/hooks/$js_file"

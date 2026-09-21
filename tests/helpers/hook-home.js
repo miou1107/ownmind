@@ -71,7 +71,6 @@ export const HOOK_HELPERS = [
   // real path and the next lib helper should not need another entry here.
   'lib',
   // Classifies the command. Absent, every command comes back with no trigger at all.
-  'ownmind-detect-trigger.js',
   // Turns the hook-context response into the printed reminder. Absent, the hook fetches
   // correctly and then prints nothing, which reads as "no rules applied".
   'ownmind-render-context.js',

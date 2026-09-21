@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
  *
  * Being least-exercised is exactly why they drift. Measured on this change set: all 24
  * notices were rewritten and three files were missed — `hooks/lib/action-gate-cli.js`,
- * `hooks/ownmind-iron-rule-check.js` and `hooks/ownmind-iron-rule-check.sh` kept the old
+  * `hooks/ownmind-iron-rule-check.js` kept the old
  * "the action gate could not run - this command was NOT gated". The `.sh` copy carried a
  * comment telling the next person to keep it in sync, and the spec file recorded that three
  * copies existed. Neither is a check, and both were read past. A user on a zh or ja machine
@@ -35,9 +35,7 @@ const en = JSON.parse(fs.readFileSync(path.join(repoRoot, 'hooks', 'locales', 'e
  * notices, and would go quiet the moment a copy was reworded rather than failing.
  */
 const HARD_CODED = {
-  'hooks/lib/action-gate-cli.js': ['gate.failopen', 'gate.degraded'],
   'hooks/ownmind-iron-rule-check.js': ['gate.failopen', 'gate.degraded'],
-  'hooks/ownmind-iron-rule-check.sh': ['gate.failopen'],
   // Every notice this file hard-codes, not a subset. `gate.ask.code.action` and
   // `gate.ask.code.limit` were missing from this list since it was written — the same class
   // of gap the file exists to close, in the file that closes it.

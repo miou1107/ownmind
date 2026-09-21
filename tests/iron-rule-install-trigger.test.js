@@ -162,7 +162,7 @@ describe('v1.26.132 — install and credential commands reach the rule lookup', 
     function run(command) {
       const before = hits.length;
       return new Promise((resolve, reject) => {
-        const child = spawn('bash', [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh')], {
+        const child = spawn(process.execPath, [path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.js')], {
           cwd: repoRoot,
           env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
           stdio: 'pipe',

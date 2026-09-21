@@ -33,7 +33,8 @@
  * must never be reachable only through a file that could be missing. An import that fails
  * inside the gate's own try/catch turns a block into an allow — that is a message module
  * holding the power to switch enforcement off. So each emitter carries the object, and this
- * file is what keeps the four from drifting apart.
+ * file is what keeps them from drifting apart. There were four until v1.30.26, when the shell
+ * hook and hooks/lib/action-gate-cli.js — its way into the gate — were deleted.
  *
  * WHY additionalContext IS GONE FROM DENIALS
  *
@@ -53,9 +54,7 @@ import { tempDir } from './helpers/temp-dir.js';
 import { editReminder } from '../hooks/ownmind-edit-reminder.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CLI_PATH = path.join(repoRoot, 'hooks', 'lib', 'action-gate-cli.js');
 const JS_HOOK = path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.js');
-const SH_HOOK = path.join(repoRoot, 'hooks', 'ownmind-iron-rule-check.sh');
 
 /**
  * The whole contract, in one place. Every emitter is held to this.
@@ -86,7 +85,7 @@ function assertDenyEnvelope(stdout, carries) {
   return out;
 }
 
-// --- Emitter 1 & 2: the action gate, through both wirings ---
+// --- Emitter 1: the action gate ---
 
 const ASK_GUARD = {
   id: 820,
@@ -122,32 +121,15 @@ function runGate(program, home, command) {
   });
 }
 
-test('the gate CLI names the rule it stopped, in the field the model is given', () => {
-  const r = runGate(CLI_PATH, stageGateHome(), 'git push origin v1.2.3');
-  assert.equal(r.status, 0, 'the gate always exits 0');
-  const out = assertDenyEnvelope(r.stdout, /releases are asked about first/);
-  assert.match(out.systemMessage, /OwnMind stopped it/, 'the line for the user still rides along');
-});
 
-test('the .js twin sends the same envelope as the CLI', () => {
+test('the action gate sends the deny envelope', () => {
   const r = runGate(JS_HOOK, stageGateHome(), 'git push origin v1.2.3');
   assert.equal(r.status, 0);
   assertDenyEnvelope(r.stdout, /releases are asked about first/);
 });
 
-test('the two wirings do not differ in what a platform is told', () => {
-  const fromCli = JSON.parse(runGate(CLI_PATH, stageGateHome(), 'git push origin v1.2.3').stdout);
-  const fromJs = JSON.parse(runGate(JS_HOOK, stageGateHome(), 'git push origin v1.2.3').stdout);
-  assert.deepEqual(Object.keys(fromCli).sort(), Object.keys(fromJs).sort());
-  assert.deepEqual(
-    Object.keys(fromCli.hookSpecificOutput).sort(),
-    Object.keys(fromJs.hookSpecificOutput).sort()
-  );
-  assert.equal(fromCli.reason, fromJs.reason);
-  assert.equal(fromCli.systemMessage, fromJs.systemMessage);
-});
 
-// --- Emitter 3: the path guard on an edit ---
+// --- Emitter 2: the path guard on an edit ---
 
 test('a blocked edit tells the assistant which standard it hit', async () => {
   const repo = tempDir('om-deny-envelope-fixture-');
@@ -173,27 +155,30 @@ test('a blocked edit tells the assistant which standard it hit', async () => {
   assert.match(parsed.reason, /Tell the user this/);
 });
 
-// --- Emitter 4: the maintainer version-tag block, inside the shell hook ---
+// --- Emitter 3: the maintainer version-tag block ---
 
-/**
- * That block is a `node -e` inside the .sh, guarded by conditions (cwd is the OwnMind
- * checkout, package.json version has no matching tag) that a test would have to fake its way
- * into. So its program is lifted out and run for real with the two shell variables bound —
- * the same code the hook executes, without staging a fake release.
- */
-function runShellVersionBlock() {
-  const sh = fs.readFileSync(SH_HOOK, 'utf8');
-  // Anchored on the banner text, not on `node -e` alone: the hook runs several node
-  // programs and the first one is not this one.
-  const m = sh.match(/node -e "\n((?:(?!node -e ")[\s\S])*?版號卡控[\s\S]*?)\n\s*"/);
-  assert.ok(m, 'the version-tag block moved; this test can no longer find it');
-  const program = m[1].replace(/\$VERSION/g, '9.9.9').replace(/\$PKG_VER/g, '9.9.9');
-  const r = spawnSync(process.execPath, ['-e', program], { encoding: 'utf8' });
-  assert.equal(r.status, 0, r.stderr);
-  return r.stdout;
-}
+test('the version-tag block puts the whole banner in reason, not additionalContext', () => {
+  // v1.30.26 — this used to lift a `node -e` program out of the shell hook and run it with the
+  // two shell variables bound. That hook is deleted; the block lives in the .js hook, whose
+  // guards (cwd is the OwnMind checkout, package.json version has no matching tag) a test would
+  // have to fake its way into, and there is no embedded program left to lift.
+  //
+  // What the original was about survives as a source assertion: on a deny, additionalContext is
+  // not a channel the model reads, which is how this block once arrived as a bare "denied this
+  // tool" with no version number in it at all. So the banner has to be built into the reason.
+  const js = fs.readFileSync(JS_HOOK, 'utf8');
+  const m = /const blockReason = blockLines\.join\('\\n'\);/.exec(js);
+  assert.ok(m, 'the version block no longer assembles its lines into a reason');
 
-test('the version-tag block carries the version number it is asking for', () => {
-  const out = assertDenyEnvelope(runShellVersionBlock(), /git tag v9\.9\.9/);
-  assert.match(out.reason, /版號卡控/, 'the whole banner rides the reason, not additionalContext');
+  const after = js.slice(m.index, m.index + 900);
+  assert.match(after, /reason:\s*blockReason/,
+    'the assembled banner has to reach the model through reason');
+  assert.doesNotMatch(after, /additionalContext:\s*blockReason/,
+    'additionalContext is not read on a deny — that is the bug this test was written for');
+
+  // And the lines themselves still name the command to run, which is the whole point of the
+  // block: a block that says "no" without saying what to do instead is a dead end.
+  const lines = js.slice(Math.max(0, m.index - 900), m.index);
+  assert.match(lines, /Run first: git tag/);
+  assert.match(lines, /no matching git tag/);
 });

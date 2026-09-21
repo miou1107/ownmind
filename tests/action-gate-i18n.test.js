@@ -1,8 +1,12 @@
 /**
  * Tests for the gate family wired through t(): the four block userLine sites in
  * hooks/lib/action-gate.js (verbal ask, code ask/limit, read-block, check-block), and the
- * failopen/degraded notices duplicated in hooks/lib/action-gate-cli.js and
- * hooks/ownmind-iron-rule-check.js.
+ * failopen/degraded notices in hooks/ownmind-iron-rule-check.js.
+ *
+ * v1.30.26 — those notices used to exist twice, here and in hooks/lib/action-gate-cli.js, which
+ * was the shell hook's way into the gate. Both that CLI and the shell hook are deleted, so the
+ * three "CLI:" cases here went with them; each already had a "JS hook:" twin asserting the same
+ * thing about the file every platform actually runs.
  *
  * Binding constraints this file pins:
  *   - userLine (systemMessage, user-facing) renders per OWNMIND_LOCALE_FORCE.
@@ -266,38 +270,11 @@ function runGateCli({ home, command, sessionId = 'i18n-e2e', env = {} }) {
   });
 }
 
-test('CLI: the degraded notice is rendered in zh when OWNMIND_LOCALE_FORCE=zh', () => {
-  const home = tempDir('gate-i18n-cli-degraded-');
-  stageEnforcement(home, [mkGuard({ id: 740 })]);
-  // A file where the state directory should be: receipts cannot exist (same trick as the
-  // existing "a broken state dir degrades loudly on allow" e2e case).
-  fs.writeFileSync(path.join(home, '.ownmind', 'state'), 'not a directory');
-
-  const r = runGateCli({ home, command: 'docker compose build --no-cache api', env: { OWNMIND_LOCALE_FORCE: 'zh' } });
-  assert.equal(r.status, 0);
-  assert.deepEqual(JSON.parse(r.stdout), {
-    systemMessage: '[OwnMind] 🟡 OwnMind 這次無法確認 AI 有沒有讀過規矩，但還是照你的規矩在擋 AI 的指令。',
-  });
-});
 
 // --- CLI: the failopen notice is localized (normal operation: a genuinely thrown exception,
 // unrelated to i18n — a guard bundle whose `checks` field is not an array is not iterable,
 // which is exactly the class of malformed-sync-data failure this fail-open path exists for) ---
 
-test('CLI: the failopen notice is rendered in zh when OWNMIND_LOCALE_FORCE=zh, and the command still runs', () => {
-  const home = tempDir('gate-i18n-cli-failopen-');
-  stageEnforcement(home, [{
-    id: 741, kind: 'action', title: 'malformed', triggers: ['deploy'],
-    checks: {}, // not an array: `for (const c of guard.checks || [])` throws TypeError
-    read_required: false, ask_first: false, rule_text: 'x', rules_hash: 'h',
-  }]);
-
-  const r = runGateCli({ home, command: 'docker compose build api', env: { OWNMIND_LOCALE_FORCE: 'zh' } });
-  assert.equal(r.status, 0, 'the gate always exits 0, even when it fails open');
-  assert.deepEqual(JSON.parse(r.stdout), {
-    systemMessage: '[OwnMind] 🔴 OwnMind 這次沒能檢查 AI 這個指令，它就直接跑掉了。要緊的話，你自己看一下它做了什麼。',
-  });
-});
 
 test('JS hook: the failopen notice is rendered in zh when OWNMIND_LOCALE_FORCE=zh, and the command still runs', () => {
   const home = tempDir('gate-i18n-jshook-failopen-');
@@ -479,36 +456,6 @@ test('evaluateGate: a broken i18n.js changes only userLine — action/kind/reaso
   }
 });
 
-test('CLI end-to-end: an unloadable i18n.js still emits the BLOCK decision, with the English notice', () => {
-  const cliPath = stageGateTree({
-    entryRelPath: 'hooks/lib/action-gate-cli.js',
-    copyRelPaths: ['hooks/lib/action-gate.js'],
-    symlinkRelPaths: ['hooks/lib/gate-receipt.js', 'hooks/lib/enforcement-cache.js', 'hooks/lib/locale.js'],
-  });
-  const home = tempDir('gate-broken-i18n-home-');
-  stageEnforcement(home, [mkGuard({ id: 750 })]);
-
-  const payload = JSON.stringify({
-    session_id: 'broken-i18n', hook_event_name: 'PreToolUse', tool_name: 'Bash',
-    tool_input: { command: 'docker compose build --no-cache api' }, // read-blocks
-  });
-  const r = spawnSync(process.execPath, [cliPath], {
-    input: payload,
-    encoding: 'utf8',
-    env: { ...process.env, HOME: home, USERPROFILE: home, OWNMIND_LOCALE_FORCE: 'zh' },
-  });
-  assert.equal(r.status, 0, `must exit 0 even with a broken i18n module; stderr=${r.stderr.slice(0, 500)}`);
-  let parsed;
-  assert.doesNotThrow(() => { parsed = JSON.parse(r.stdout); }, `stdout must be valid JSON, got:\n${r.stdout}`);
-  // The whole point of the fix: a broken message layer may not turn the gate off.
-  assert.equal(parsed.decision, 'block', 'a broken i18n module must NOT fail the gate open');
-  assert.match(parsed.reason, /Read this rule before acting/);
-  assert.equal(
-    parsed.systemMessage,
-    EN_READ_BLOCK,
-    'the fallback is the plain English literal even though OWNMIND_LOCALE_FORCE=zh was set — i18n itself is broken'
-  );
-});
 
 test('JS hook end-to-end: an unloadable i18n.js still emits the BLOCK decision, with the English notice', () => {
   // The .js hook's static import list is longer than the CLI's, but only action-gate.js and

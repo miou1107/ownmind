@@ -165,7 +165,7 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
     });
   }
 
-  for (const hook of ['hooks/ownmind-iron-rule-check.sh', 'hooks/ownmind-iron-rule-check.js']) {
+  for (const hook of ['hooks/ownmind-iron-rule-check.js']) {
     it(`${hook}: the real Claude Code payload reaches the rules endpoint`, async () => {
       const r = await run(hook, REAL_PAYLOAD);
       assert.equal(r.reached, true,
@@ -217,7 +217,7 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
     });
   }
 
-  for (const hook of ['hooks/ownmind-iron-rule-check.sh', 'hooks/ownmind-iron-rule-check.js']) {
+  for (const hook of ['hooks/ownmind-iron-rule-check.js']) {
     it(`${hook}: a failing block_on_fail rule reports but does not block`, async () => {
       // The conditions come from a cache that mirrors the server, and the server-side data
       // still carries verification templates a pre-v1.26.89 bug attached by itself — all of
@@ -237,23 +237,6 @@ describe('v1.26.90 — the hook extracts the command Claude Code actually sends'
     });
   }
 
-  it('the .sh reminder is delivered as hookSpecificOutput, not bare stdout', async () => {
-    // A PreToolUse hook exiting 0 has its bare stdout shown only in transcript mode; it
-    // never reaches the model. The reminder text instructs the AI, so bare stdout means
-    // the instruction can never arrive.
-    rulesResponse = {
-      data: [{ code: 'IR-001', tags: ['trigger:commit'], title: 't', content: 'c' }],
-    };
-    try {
-      const r = await run('hooks/ownmind-iron-rule-check.sh', REAL_PAYLOAD);
-      assert.notEqual(r.stdout.trim(), '', 'a matching rule must produce output');
-      const parsed = JSON.parse(r.stdout.trim());
-      assert.equal(parsed.hookSpecificOutput?.hookEventName, 'PreToolUse');
-      assert.match(parsed.hookSpecificOutput.additionalContext, /鐵律檢查/);
-    } finally {
-      rulesResponse = { data: [] };
-    }
-  });
 
   it('the pre-v1.26.90 extraction is what failed, reproduced', () => {
     // Not a tautology check: this is the exact expression both hooks carried, run against

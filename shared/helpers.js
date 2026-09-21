@@ -161,10 +161,10 @@ export function readCredentials(settingsPath) {
 /**
  * Detect the trigger type from a PreToolUse hook command.
  *
- * This is the only copy. Both hooks reach it: ownmind-iron-rule-check.js imports it, and
- * ownmind-iron-rule-check.sh shells out to hooks/ownmind-detect-trigger.js, which is a
- * four-line wrapper around this function. Adding a pattern here changes every platform at
- * once, and there is no second list to forget.
+ * This is the only copy, and now the only route into it: ownmind-iron-rule-check.js imports it,
+ * on every platform. Until v1.30.26 a shell twin shelled out to hooks/ownmind-detect-trigger.js
+ * to reach the same function; both that hook and that wrapper are deleted. Adding a pattern
+ * here changes every platform at once, and there is no second list to forget.
  *
  * Order matters and is load-bearing: the first match wins, and a command can belong to two
  * families — `docker compose up -d && rm -rf ./old` is a deploy, not a delete.

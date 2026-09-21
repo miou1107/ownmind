@@ -29,7 +29,7 @@ import { tempDir } from './helpers/temp-dir.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
-const HOOKS = ['hooks/ownmind-session-start.sh', 'hooks/ownmind-iron-rule-check.sh'];
+const HOOKS = ['hooks/ownmind-session-start.sh'];
 
 /**
  * Source the hook's `log_event` and call it, without running the rest of the hook.

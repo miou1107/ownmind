@@ -127,7 +127,9 @@ describe('the two Windows installers produce different files, and both must pass
   });
 
   it('accepts the Node iron-rule hook', () => {
-    const h = makeHome({ satisfyWith: { iron_rule_hook: 1 } });
+    // v1.30.26 — index 0, because there is only one candidate now. The list used to be
+    // [.sh, .js] and this picked the second; the .sh is deleted and the fallback names one file.
+    const h = makeHome({ satisfyWith: { iron_rule_hook: 0 } });
     try {
       const r = checkInstallArtifacts({ home: h.home, ownmindDir: h.ownmindDir });
       assert.equal(r.ok, true, JSON.stringify(r.missing));
