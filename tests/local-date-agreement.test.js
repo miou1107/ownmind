@@ -148,21 +148,42 @@ describe('no program that shares the log directory computes the day in UTC', () 
    * these files document the old expression on purpose, and a guard that could not tell
    * the difference would force the explanation out.
    *
-   * String contents are blanked before the line comments are cut, and that order matters:
-   * `//` inside a URL literal would otherwise start a comment and swallow the rest of its
-   * line. hook-context-fetch.js is built around URLs, so a real call sharing a line with
-   * `'https://…'` is exactly the kind of thing this guard would have waved through.
+   * `//` inside a URL literal must not start a comment: hook-context-fetch.js is built
+   * around URLs, so a real call sharing a line with `'https://…'` is exactly the kind of
+   * thing this guard would otherwise wave through. A copy with every string blanked serves
+   * as the ruler for where the comments are, and the cut is made at those offsets in the
+   * original — so the URL cannot open a comment, and the code inside the strings survives.
+   *
+   * #125: blanking the strings and then *searching that copy* was the earlier shape, and it
+   * had a hole. A template literal is a string, so everything inside `${…}` was blanked too,
+   * and `` `${new Date().toISOString().slice(0, 10)}.jsonl` `` — the exact way a daily log
+   * file gets named — read as clean. The reverse control below pins that case.
    */
   function codeWithoutComments(src) {
-    const blanked = src.replace(
+    const blank = (text) => text.replace(
       /(['"`])(?:\\.|(?!\1)[^\\])*\1/g,
       (m) => m[0] + ' '.repeat(Math.max(0, m.length - 2)) + m[0],
     );
-    return blanked
+
+    const rulerLines = blank(src).split(/\r?\n/);
+    const withoutLineComments = src
       .split(/\r?\n/)
-      .map((line) => line.replace(/\/\/.*$/, ''))
-      .join('\n')
-      .replace(/\/\*[\s\S]*?\*\//g, '');
+      .map((line, i) => {
+        const at = (rulerLines[i] ?? '').indexOf('//');
+        return at === -1 ? line : line.slice(0, at);
+      })
+      .join('\n');
+
+    const ruler = blank(withoutLineComments);
+    let out = '';
+    let cursor = 0;
+    const block = /\/\*[\s\S]*?\*\//g;
+    let hit;
+    while ((hit = block.exec(ruler)) !== null) {
+      out += withoutLineComments.slice(cursor, hit.index);
+      cursor = hit.index + hit[0].length;
+    }
+    return out + withoutLineComments.slice(cursor);
   }
 
   for (const rel of SHARERS) {
@@ -201,6 +222,95 @@ describe('no program that shares the log directory computes the day in UTC', () 
       'const d = localDateOnly(new Date());',
     ].join('\n');
     assert.equal(UTC_DATE_ONLY.exec(codeWithoutComments(code)), null);
+  });
+
+  it('reverse control: a call inside a template literal cannot hide either', () => {
+    // #125 — the shape the old stripper could not see, and the shape a daily log file is
+    // actually named with. Without this the scan below would report every test clean.
+    const code = 'const f = path.join(dir, `${new Date().toISOString().slice(0, 10)}.jsonl`);';
+    assert.ok(
+      UTC_DATE_ONLY.test(codeWithoutComments(code)),
+      'code inside ${…} must survive the string blanking',
+    );
+  });
+
+  /**
+   * #125 — the list above is production files only, and a list cannot report what it is
+   * missing. The same UTC/local split was fixed by hand three times: in the hooks
+   * (v1.26.124), in hooks/lib/hook-context-fetch.js (#123), and in
+   * tests/reply-lint-pending-spool.test.js (#124). The third is the sharp one —
+   * tests/reply-lint-hook-v197.test.js was corrected in v1.26.124 and its sibling four
+   * lines away in another file was not, because nothing dragged it along.
+   *
+   * A test that names the daily file in UTC looks for a file that does not exist for the
+   * eight hours a UTC+8 machine runs ahead of UTC, and passes on every CI box on earth.
+   *
+   * Scope is derived, not listed: a file is in scope when it builds a `${…}.jsonl` path,
+   * which is how the daily log file is named and nothing else is. That keeps the two
+   * known-good UTC sites out without naming them — tests/self-check-memory-load.test.js
+   * and tests/selfcheck-roundtrip-weekly.test.js both stamp `.last-usage-roundtrip`, agree
+   * with production (scripts/install-helpers/self-check.cjs), and compare epochs against a
+   * seven-day interval that eight hours cannot flip. The test below asserts they stay out,
+   * so the scope rule is checked rather than assumed.
+   */
+  const DAILY_FILE = /\$\{[^}]*\}\.jsonl/;
+  const SCAN_ROOT = path.join(repoRoot, 'tests');
+  // This file states the banned expression in its own reverse controls, in code, on purpose.
+  const SELF = 'local-date-agreement.test.js';
+
+  function collectJsFiles(dir) {
+    const out = [];
+    const queue = [dir];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      let entries;
+      try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
+      for (const ent of entries) {
+        if (ent.name.startsWith('.') || ent.name === 'node_modules') continue;
+        const full = path.join(current, ent.name);
+        if (ent.isDirectory()) queue.push(full);
+        else if (ent.isFile() && /\.(js|mjs|cjs)$/.test(ent.name)) out.push(full);
+      }
+    }
+    return out;
+  }
+
+  const scanned = collectJsFiles(SCAN_ROOT).map((full) => ({
+    full,
+    rel: path.relative(repoRoot, full).split(path.sep).join('/'),
+    code: codeWithoutComments(fs.readFileSync(full, 'utf8')),
+  }));
+  const inScope = scanned.filter((f) => path.basename(f.full) !== SELF && DAILY_FILE.test(f.code));
+
+  it('the scan reaches the test suite at all', () => {
+    // A walker that found nothing would make every assertion below vacuous, which is the
+    // failure this whole file exists to stop repeating.
+    assert.ok(scanned.length > 100, `only ${scanned.length} files under tests/ were read`);
+    assert.ok(inScope.length > 0, 'no test builds a ${…}.jsonl path, which cannot be right');
+  });
+
+  it('no test names the daily log file in UTC', () => {
+    const offenders = inScope
+      .filter((f) => UTC_DATE_ONLY.test(f.code))
+      .map((f) => f.rel);
+    assert.deepEqual(
+      offenders,
+      [],
+      `${offenders.join(', ')} names ~/.ownmind/logs/<date>.jsonl in UTC. Import localDateOnly `
+        + 'from shared/local-date.js — a UTC name looks for a file that does not exist for the '
+        + 'eight hours a machine east of UTC runs ahead, and passes in CI regardless.',
+    );
+  });
+
+  it('the roundtrip markers stay out of scope, so the rule is not overreaching', () => {
+    // Named here rather than in an allowlist: if one of them ever does start writing a
+    // daily file, this test fails and the decision gets made again instead of inherited.
+    for (const rel of ['tests/self-check-memory-load.test.js', 'tests/selfcheck-roundtrip-weekly.test.js']) {
+      assert.ok(
+        !inScope.some((f) => f.rel === rel),
+        `${rel} is in scope now; its UTC marker agrees with production and should not be flagged`,
+      );
+    }
   });
 });
 

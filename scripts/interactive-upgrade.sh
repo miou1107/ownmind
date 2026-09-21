@@ -113,6 +113,20 @@ STEP "check" "Checking OwnMind directory"
 [ -d "${OWNMIND_DIR}" ] || FAIL "no_ownmind" "${OWNMIND_DIR} not found; run install.sh for fresh install"
 [ -d "${OWNMIND_DIR}/.git" ] || FAIL "no_git" "${OWNMIND_DIR} is not a git repo; cannot upgrade"
 
+# #98 — before the backup, not after it. The test above asks whether the directory is a
+# repository; it has never asked whether the git executable exists, and those are different
+# questions. On Windows the answer to the second one was found by backing up the whole of
+# ~/.ownmind and then dying on the first git call with no ERROR: line and no report. The check
+# below names every missing requirement at once and stops while nothing has been touched.
+if [ -f "${OWNMIND_DIR}/scripts/install-helpers/preflight.sh" ]; then
+  # shellcheck source=./install-helpers/preflight.sh
+  . "${OWNMIND_DIR}/scripts/install-helpers/preflight.sh"
+  ownmind_preflight_assert "upgrade" \
+    || FAIL "preflight" "This machine is missing something OwnMind needs; nothing was changed"
+else
+  STEP "check" "preflight.sh is not in this checkout; skipping the environment check"
+fi
+
 # --- 1. Backup ---
 STEP "backup" "Backing up to ${BACKUP_DIR}"
 if cp -r "${OWNMIND_DIR}" "${BACKUP_DIR}" >>"${LOG_FILE}" 2>&1; then

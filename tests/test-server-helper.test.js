@@ -177,12 +177,22 @@ describe('startServer', () => {
   });
 
   it('close resolves, so a file does not linger on an open connection', async () => {
+    // #126: the assertion was `assert.ok(true)`, which says nothing about whether the port was
+    // actually released — a close() that resolved while the listener stayed up would pass.
+    // Dialling the same URL afterwards is what shows it is gone.
     const app = express();
     app.get('/x', (_req, res) => res.send('x'));
     const server = await startServer(app);
-    await fetch(`${server.url}/x`);          // leaves a keep-alive socket behind
-    await server.close();                     // must still resolve
-    assert.ok(true);
+    const alive = await fetch(`${server.url}/x`);          // leaves a keep-alive socket behind
+    assert.equal(alive.status, 200, 'the server was not answering before close, so this proves nothing');
+
+    await server.close();                                   // must still resolve
+
+    let refused = false;
+    try {
+      await fetch(`${server.url}/x`);
+    } catch { refused = true; }
+    assert.equal(refused, true, 'the port still answers after close(), so the listener is still up');
   });
 });
 

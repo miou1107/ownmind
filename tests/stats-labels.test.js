@@ -86,12 +86,17 @@ describe('the three locale files carry the stats keys', () => {
     // deliberately exempt: it legitimately writes these terms in kanji, so the
     // same check there would fire on correct translations.
     const han = /[一-鿿]/;
+    // #126: counted, because the filter is a string prefix. Renaming the keys to anything but
+    // `stats.` leaves this walking zero entries and reporting the English build clean.
+    let checked = 0;
     for (const [name, dict] of locales) {
       if (name !== 'en') continue;
       for (const [key, value] of Object.entries(dict)) {
         if (!key.startsWith('stats.')) continue;
+        checked += 1;
         assert.ok(!han.test(value), `${name}.json ${key} still contains Han characters: ${value}`);
       }
     }
+    assert.ok(checked > 0, 'no stats.* key was found in en.json, so this read nothing — has the prefix changed?');
   });
 });

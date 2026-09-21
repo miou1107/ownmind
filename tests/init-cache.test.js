@@ -257,18 +257,25 @@ describe('the init handler does not write a cache it cannot fill', () => {
  * on any real installation, which is where the defect was measured; everywhere else the rule
  * is still covered by the unit tests and the call-site guards above.
  */
-const MCP_RUNNABLE = (() => {
+// #126: named for what it holds. The value is the *skip reason* — a string when the server
+// cannot start, `false` when it can — and calling it MCP_RUNNABLE made it read as the opposite
+// of what it is at the one place it is used.
+//
+// CI now installs mcp/'s own dependencies (.github/workflows/test.yml), so this no longer
+// skips on a runner. It is kept because a developer who has never installed inside mcp/ would
+// otherwise get a twenty-second timeout with nothing to do with caching.
+const MCP_CANNOT_START = (() => {
   try {
     createRequire(path.join(repoRoot, 'mcp', 'index.js'))
       .resolve('@modelcontextprotocol/sdk/server/index.js');
     return false;
   } catch {
-    return 'mcp/node_modules is absent (root-only `npm ci`), so the MCP cannot start here';
+    return 'mcp/node_modules is absent here, so the MCP cannot start — run `npm ci` inside mcp/';
   }
 })();
 
 describe('end to end: one init against a compact server must not empty the cache', () => {
-  it('leaves the cached rule in cache/iron_rules.json', { skip: MCP_RUNNABLE }, async () => {
+  it('leaves the cached rule in cache/iron_rules.json', { skip: MCP_CANNOT_START }, async () => {
     const home = tempDir('ownmind-init-');
     const cachePath = path.join(home, '.ownmind', 'cache', 'iron_rules.json');
     fs.mkdirSync(path.dirname(cachePath), { recursive: true });

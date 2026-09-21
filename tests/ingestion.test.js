@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import express from 'express';
 
 const { createEventsRouter, validateEvent } = await import('../src/routes/usage/events.js');
@@ -559,16 +560,30 @@ describe('Exemption suppression (P3)', () => {
     assert.equal(audit.details.reason, '休假');
   });
 
-  it('expired exemption treated as inactive', async () => {
-    const state = {
-      events: [], audits: [], knownModels: new Set(['claude-code::opus']),
-      exemptions: [{ user_id: 1, reason: 'old', expires_at: new Date(Date.now() - 86400_000).toISOString() }]
-    };
-    // Our fake doesn't check expires_at. Instead, confirm via real SQL path:
-    // makeFakeQuery returns row → events.js treats as exempt. So this case isn't
-    // faithfully testable with our fake without mimicking SQL. Skip this scenario
-    // at unit level; rely on SQL predicate `expires_at IS NULL OR expires_at > NOW()`.
-    assert.ok(true, 'relies on SQL expiry check; the fake cannot simulate NOW(), leave to integration tests');
+  it('expired exemption treated as inactive — the expiry lives in the SQL, so the SQL is what is read', () => {
+    // #126: this used to build a `state` it never passed to anything and finish on
+    // `assert.ok(true, 'relies on SQL expiry check')`. The reasoning was sound — the fake query
+    // cannot simulate NOW(), so the behaviour is not reachable at unit level — but the
+    // conclusion was a test that would stay green if the predicate were deleted tomorrow.
+    //
+    // What is checkable here is that the predicate is still in the query this route runs. Every
+    // place that reads the exemption table has to carry it: one of them dropping it is an
+    // exemption that never expires, which is the failure this scenario was written for.
+    const EXPIRY = /expires_at IS NULL OR\s+(?:e\.)?expires_at > NOW\(\)/;
+    const readers = [
+      'src/routes/usage/events.js',
+      'src/routes/usage/stats.js',
+      'src/routes/usage/team-stats.js',
+      'src/jobs/collector-silence-alerts.js',
+    ];
+    for (const rel of readers) {
+      const sql = readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
+      assert.match(sql, EXPIRY, `${rel} reads exemptions without checking whether they expired`);
+    }
+
+    // Reverse control: the pattern has to be able to miss. Without this a typo in the regex
+    // would make every assertion above pass forever.
+    assert.doesNotMatch('WHERE user_id = $1', EXPIRY);
   });
 });
 

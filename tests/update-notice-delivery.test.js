@@ -107,14 +107,19 @@ test('two queued outcomes both survive to the screen', () => {
   assert.match(parsed.systemMessage, /9\.9\.9/);
 });
 
-test('an empty queue says nothing about updates', () => {
+test('an empty queue says nothing about updates, and says it by finishing cleanly', () => {
   // Silence has to keep meaning "nothing happened". This is the control for the tests above:
   // without it they would still pass if the hook narrated an update on every single turn.
+  //
+  // #126: the assertion used to sit inside `if (stdout.trim() !== '')`, and the exit status
+  // was never read. A hook that crashed produced empty stdout and a non-zero status, which is
+  // the same green as a hook that correctly stayed quiet — so the control could not tell
+  // "nothing to say" from "did not get as far as saying it".
   const { home, transcript } = stageHome();
-  const { stdout } = runHook({ home, transcript });
-  if (stdout.trim() !== '') {
-    assert.doesNotMatch(JSON.parse(stdout).systemMessage || '', /自動更新/);
-  }
+  const { status, stdout } = runHook({ home, transcript });
+  assert.equal(status, 0, `the hook did not finish; silence here means nothing:\n${stdout}`);
+  if (stdout.trim() === '') return; // genuinely silent, which is the expected shape
+  assert.doesNotMatch(JSON.parse(stdout).systemMessage || '', /自動更新/);
 });
 
 test('the outcome is written back to the audit spool as it is delivered', () => {

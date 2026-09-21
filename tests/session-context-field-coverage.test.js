@@ -130,6 +130,10 @@ describe('the SessionStart context accounts for everything init sends', () => {
     // Otherwise the lists rot: a field gets renamed, its entry stays, and the entry silently
     // stops covering anything while still looking like coverage.
     const sent = new Set(fields);
+    // #126: `fields` coming back empty made every assertion below unreachable, so a response
+    // that stopped carrying anything at all read as "no stale entries". The lists themselves
+    // are allowed to be empty — an empty KNOWN_GAPS is the goal — but the response is not.
+    assert.ok(sent.size > 0, 'the init response sent no fields, so nothing here was checked');
     for (const key of [...Object.keys(NOT_FOR_THE_SESSION_CONTEXT), ...Object.keys(KNOWN_GAPS)]) {
       assert.ok(sent.has(key), `${key} is classified here but the init response no longer sends it`);
     }

@@ -150,6 +150,24 @@ Step "check" "Checking OwnMind directory"
 if (-not (Test-Path $OwnMindDir)) { Fail "no_ownmind" "$OwnMindDir not found; run install.ps1 for fresh install" }
 if (-not (Test-Path (Join-Path $OwnMindDir ".git"))) { Fail "no_git" "$OwnMindDir is not a git repo" }
 
+# #98 — before the backup, not after it. A machine with no `git` on PATH used to reach here,
+# copy the whole of ~/.ownmind aside, and then die on the first git call with PowerShell's raw
+# "command not found" text: no ERROR: line, no Report-Error, and a .ownmind.bak.* directory
+# left behind protecting an upgrade that never started. The check below reports every missing
+# requirement at once and stops while nothing has been touched.
+#
+# The `.git` test above asks whether the directory is a repository. It has never asked whether
+# the git executable exists, and those are different questions.
+$preflightHelper = Join-Path $OwnMindDir 'scripts\install-helpers\preflight.ps1'
+if (Test-Path $preflightHelper) {
+  . $preflightHelper
+  if (-not (Assert-OwnMindRequirements -Stage 'upgrade')) {
+    Fail "preflight" "This machine is missing something OwnMind needs; nothing was changed"
+  }
+} else {
+  Step "check" "preflight.ps1 is not in this checkout; skipping the environment check"
+}
+
 # --- 1. Backup ---
 Step "backup" "Backing up to $BackupDir"
 try { Copy-Item -Recurse -Path $OwnMindDir -Destination $BackupDir; OK "backup" "Backup complete" }

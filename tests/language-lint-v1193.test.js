@@ -76,14 +76,19 @@ describe('v1.19.3 scenario 10 — proper-noun detection: isolated capitalized na
 });
 
 describe('v1.19.3 scenario 11 — threshold by context: with code block, loosen to 25%', () => {
-  it('plain text at 22% ratio → violation (threshold=15%)', () => {
-    // 24 Chinese chars + 7 English chars (monomorphism) = 31 chars; English 7/31 = 22%.
+  it('plain text over the threshold → violation (threshold=15%)', () => {
+    // #126: the only assertion here used to sit inside `if (r.mixedWords.length > 0)`. A
+    // checkMixedLanguage that stopped flagging anything returns an empty list, the branch is
+    // skipped, and this test goes green while reporting on the regression it exists to catch.
+    //
+    // The title said 22%; measured, it is 40% (one flagged word against the run of Chinese
+    // around it). The number was never what this is about — being over the default threshold
+    // is — so the title now says that and the assertion states the whole outcome.
     const text = '我把整個 monomorphism 翻新一次、原本架構不適合擴。';
     const r = checkMixedLanguage(text);
-    // 22% > 15% default → should violate.
-    if (r.mixedWords.length > 0) {
-      assert.ok(r.ratio > 0.15, `ratio ${r.ratio} should be > 0.15`);
-    }
+    assert.deepEqual(r.mixedWords, ['monomorphism'], 'the English word must be the one flagged');
+    assert.equal(r.ok, false, `over the threshold must not pass; ratio ${r.ratio}`);
+    assert.ok(r.ratio > 0.15, `ratio ${r.ratio} should be > 0.15`);
   });
 
   it('reply containing a code block at the same 22% ratio → pass (threshold=25%)', () => {

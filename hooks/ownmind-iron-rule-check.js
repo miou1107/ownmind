@@ -17,7 +17,7 @@ import { readJsonSafe, getClientVersion, readCredentials, detectCommandTrigger, 
 import { renderHookContextLine } from '../shared/hook-context.js';
 import { fetchHookContext } from './lib/hook-context-fetch.js';
 import { readComplianceEvents } from '../shared/compliance.js';
-import { editReminder } from './ownmind-edit-reminder.js';
+import { editReminder, GUARD_DID_NOT_RUN } from './ownmind-edit-reminder.js';
 import {
   readEditReminderState,
   writeEditReminderState,
@@ -83,6 +83,23 @@ function inOwnMindCheckout() {
   }
 }
 
+/**
+ * The trigger this invocation resolved to, or null if it never got that far.
+ *
+ * #112 — the catch at the bottom of this file used to exit 0 with empty stdout for anything
+ * that threw, which on the edit path is the same failure #111 was filed for, one layer out:
+ * the edit goes through, nothing blocks it, and nobody is told the guard did not run. The two
+ * other wirings of this protocol already say something — ownmind-iron-rule-check.sh logs
+ * `edit_reminder_failed`, ownmind-edit-reminder.js prints GUARD_DID_NOT_RUN — and this file is
+ * the one every platform runs since v1.30.15.
+ *
+ * It lives out here because the trigger is not in scope at that catch, and knowing whether the
+ * invocation was an edit is what licenses the message: a command that failed here is allowed
+ * through in silence on purpose, and saying "this edit was not checked" about a `git status`
+ * would be a lie on every Bash call.
+ */
+let resolvedTrigger = null;
+
 async function main() {
   let input = '';
   try {
@@ -117,6 +134,10 @@ async function main() {
     trigger = detectToolTrigger(toolName);
     if (!trigger) process.exit(0);
   }
+  // #112: published so the top-level catch can tell an edit from a command. Everything above
+  // this line already swallows its own errors, so by the time anything can throw on the way
+  // to the edit guard, this holds the answer. See the catch at the bottom of the file.
+  resolvedTrigger = trigger;
 
   // --- P1 action gate (v1.26.172) ---
   //
@@ -455,4 +476,17 @@ async function main() {
   }));
 }
 
-main().catch(() => process.exit(0));
+main().catch(() => {
+  // #112: fail open, but not in silence. An edit that reached the guard and threw is an edit
+  // nobody checked, so the caller is told in the same words the other two wirings use. A
+  // command keeps the old behaviour — exit 0, print nothing — because the everyday Bash call
+  // has nothing to report and a notice on each one would be noise that trains people to skip it.
+  if (resolvedTrigger === 'edit') {
+    try {
+      console.log(JSON.stringify({
+        hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: GUARD_DID_NOT_RUN },
+      }));
+    } catch { /* stdout is gone too; there is nothing left to try */ }
+  }
+  process.exit(0);
+});

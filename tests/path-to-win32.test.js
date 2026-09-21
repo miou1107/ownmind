@@ -134,8 +134,11 @@ describe('v1.26.7 — path-to-win32: toMsysPath under win32 (mocked)', () => {
 describe('v1.26.7 — path-to-win32: no-op on non-win32 platforms', () => {
   // The Mac/Linux test pass is the actual default — toWin32Path / toMsysPath
   // should be transparent so the helper does not damage POSIX builds.
+  // #126: this used to declare `it('skipped — running on real win32', () => {})` — an empty
+  // body, which the runner reports as a pass. On the Windows leg that is one more green line
+  // standing in for a check that was never made. A real skip says so and is counted as one.
   if (process.platform === 'win32') {
-    it('skipped — running on real win32', () => {});
+    it('the no-op behaviour is a POSIX property', { skip: 'running on real win32, where these helpers do convert' }, () => {});
     return;
   }
 

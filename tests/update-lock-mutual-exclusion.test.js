@@ -219,11 +219,19 @@ describe('v1.26.98 — the harness can see a race at all (positive control)', ()
    * governs any "0 results" claim.
    */
   it('`touch` cannot be an acquire — it succeeds on a file that already exists', () => {
+    // #126: the whole test was two execFileSync calls that throw on a non-zero exit, so a
+    // `touch` that began reporting failure by some other means — or one that was never run at
+    // all — read exactly the same as this control doing its job. What it is here to show is
+    // that the second call SUCCEEDS on an existing file, so that is now stated.
     const dir = tmpdir();
     try {
       const f = path.join(dir, '.update-lock');
       execFileSync('touch', [f]);
+      assert.equal(fs.existsSync(f), true, 'the first touch did not create the file');
+      const first = fs.statSync(f).mtimeMs;
       execFileSync('touch', [f]);   // throws only on a non-zero exit
+      assert.equal(fs.existsSync(f), true, 'the second touch removed or replaced the file');
+      assert.ok(fs.statSync(f).mtimeMs >= first, 'the second touch did not run against the same file');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

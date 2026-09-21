@@ -282,7 +282,11 @@ describe('v1.26.114 — a hung run names what it is stuck on', () => {
 
   it('the deadline fires early enough to matter and late enough to be safe', () => {
     const cap = jobCapMs();
-    for (const [name, cmd] of scriptsThatRunTheRunner()) {
+    const scripts = scriptsThatRunTheRunner();
+    // #126: the sibling above guards this list and this one did not, so a wording change in
+    // package.json would empty it and leave the bounds below checked against nothing.
+    assert.ok(scripts.length > 0, 'no npm script runs node --test — did the wording change?');
+    for (const [name, cmd] of scripts) {
       const ms = Number(cmd.match(/--test-timeout=(\d+)/)[1]);
       // Below: the whole suite runs in well under a minute on every CI platform, and a
       // deadline near that turns a slow runner into a red build — worse than the hang it is

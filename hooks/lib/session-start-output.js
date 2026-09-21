@@ -83,7 +83,7 @@ try {
 
 const additionalContext = renderSessionContext(initData, broadcasts, { notifications });
 
-// exit(0) once stdout has drained, rather than waiting for the event loop to empty.
+// Let the loop drain if it can, and force the exit if it cannot.
 //
 // `AbortSignal.timeout` rejects the fetch on time but does not tear down a TCP connect that is
 // still waiting for a SYN-ACK, so on a network that drops packets rather than refusing them —
@@ -92,9 +92,33 @@ const additionalContext = renderSessionContext(initData, broadcasts, { notificat
 // killed mid-way: the whole context injection lost, and the memory-file sync that runs after
 // this line in the shell hook never reached. Trading "a Mac user is not told their bug was
 // fixed" for "a Mac user on bad wifi loses their memory load" is not a trade worth making.
+//
+// #134 — the answer to that was `process.exit(0)` in the write callback, and on Windows with
+// Node 25 it aborts the process: `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`,
+// exit code 127, after printing the correct JSON. It happens on every run where the fetch
+// above actually completed, and on none where it was skipped — libuv is still tearing the
+// connection down when exit() runs. Measured on this machine: 5 runs out of 5 either way.
+//
+// Neither moving the exit out of the callback, nor writing to fd 1 synchronously, nor
+// `connection: close`, nor destroying undici's dispatcher first made any difference. What does
+// is not calling exit() while that teardown is in flight.
+//
+// So: an unref'd timer. Nothing holding the loop means the process ends by itself, which is
+// the healthy case and is also faster. Something holding it means this fires and forces the
+// exit, which is the bad-network case the paragraph above is about. Measured, three runs each:
+//
+//     healthy network     now: exit 0 in ~430ms      before: aborts in ~510ms
+//     packets dropped     now: exit 0 in ~3.4s       before: exit 0 in ~3.1s
+//     packets dropped, with no forced exit at all:   exit 0 in ~10.6s
+//
+// That last line is the 10.66s from the original paragraph, reproduced. 300ms buys the clean
+// exit and stays far inside the hook's 10s budget.
 process.stdout.write(JSON.stringify({
   hookSpecificOutput: {
     hookEventName: 'SessionStart',
     additionalContext
   }
-}), () => process.exit(0));
+}), () => {
+  const forced = setTimeout(() => process.exit(0), 300);
+  forced.unref();
+});

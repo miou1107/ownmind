@@ -20,6 +20,7 @@ import { appendCompliance, readComplianceEvents } from '../shared/compliance.js'
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
+import { describeFetchFailure } from './lib/fetch-failure.js';
 import { localDateOnly } from '../shared/local-date.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
 // v1.26.133 — a compact init response is not evidence that a collection is empty.
@@ -401,7 +402,20 @@ async function callApi(method, path, body, _retried = false) {
     opts.body = JSON.stringify(body);
   }
 
-  const res = await fetch(url, opts);
+  // #127: fetch rejects with a bare `fetch failed` and the cause discarded, which is
+  // indistinguishable from every other connection fault and leaves nothing to compare against
+  // a curl that works. The cause, the method, the URL and the elapsed time go into the message
+  // here; the original error stays attached as `cause` so callers can still read `code`.
+  const dialledAt = Date.now();
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (err) {
+    throw new Error(
+      describeFetchFailure(err, { method, url, elapsedMs: Date.now() - dialledAt }),
+      { cause: err },
+    );
+  }
   const text = await res.text();
 
   let data;

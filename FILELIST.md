@@ -1,5 +1,67 @@
 # OwnMind 檔案結構
 
+## v1.30.25 修改（六件壞掉之後不出聲的事）
+
+修改檔：
+```
+scripts/bootstrap.ps1          — 開頭的 BOM 拿掉，`iwr | iex` 那行才不會以紅字開場；剩下
+                                 四句中文註解翻成英文，整份只剩 ASCII，PS 5.1 從磁碟讀
+                                 也不會亂碼。另外在第一個分支之前就地檢查 git —— 全新安裝
+                                 的時候 preflight.ps1 還不在磁碟上
+scripts/bootstrap.sh           — 同樣就地檢查 git，理由相同
+scripts/install-helpers/preflight.ps1 — 新增。PowerShell 5.1、git、node（版本下限）、npm
+                                 四項，一次回報全部缺項，每項附該平台的完整安裝指令。
+                                 回傳值用 `,@()` 包住：PowerShell 會把空集合攤平成 $null，
+                                 StrictMode 下 .Count 會炸
+scripts/install-helpers/preflight.sh — 新增。同樣四項的 shell 版，macOS 與 Linux 各給各的
+                                 安裝指令
+scripts/interactive-upgrade.ps1 — 備份之前先跑 preflight。原本的 `.git` 檢查問的是「這是不是
+                                 一個 repo」，從來沒問過「git 這支程式在不在」
+scripts/interactive-upgrade.sh  — 同上，shell 那邊有一模一樣的洞
+mcp/lib/fetch-failure.js       — 新增。把 fetch 的 cause 鏈攤開成一行：方法、網址、耗時、
+                                 最內層的錯誤碼。開頭保留 `fetch failed` 字樣，因為離線
+                                 判斷是比對這幾個字
+mcp/index.js                   — callApi 的 fetch 包進 try，失敗時換成上面那句話，原始錯誤
+                                 掛在 cause 上
+mcp/offline.js                 — isNetworkError 改成沿著 cause 鏈找錯誤碼。undici 丟出來的
+                                 是 `TypeError: fetch failed`，它自己的 code 是 undefined，
+                                 真正的 ECONNRESET 在裡面一層
+hooks/ownmind-iron-rule-check.js — 解析出來的 trigger 放到模組層，最外層的 catch 讀得到；
+                                 edit 出錯時印 GUARD_DID_NOT_RUN，command 維持安靜
+hooks/lib/session-start-output.js — 收尾不再直接 process.exit：改成 unref 過的 300ms 計時器。
+                                 連線還在收尾的時候呼叫 exit，Node 25 的 Windows 版會觸發
+                                 libuv 斷言、離開碼 127
+.github/workflows/test.yml     — 多一步在 mcp/ 底下 npm ci。根目錄沒有 workspaces，所以
+                                 init-cache 那支端對端測試從寫出來那天就沒在 CI 跑過
+tests/local-date-agreement.test.js — 掃描範圍從「一份正式檔清單」改成「掃 tests/ 底下所有
+                                 組出 `${…}.jsonl` 的檔」。順手修好註解剝除器：原本先把字串
+                                 抹白再搜尋，樣板字串裡 `${…}` 的內容也被抹掉，而那正是
+                                 每日檔名的寫法
+tests/guard-failure-is-not-silence.test.js — 多 2 條：守衛在編輯路徑上丟例外會講話、
+                                 命令路徑不會
+tests/bootstrap-strip-bom.test.js — 前提翻過來：磁碟上那份現在不准有 BOM，而且必須全 ASCII，
+                                 兩件事綁在一起
+tests/installer-preflight.test.js — 新增。用真的缺工具的 PATH 跑真的腳本，不是假造查詢
+tests/fetch-failure-names-the-cause.test.js — 新增。含一條對著真的死連接埠打的端對端
+tests/session-start-output-exits-cleanly.test.js — 新增。起一台本機伺服器讓那支 fetch 真的
+                                 完成，並且數伺服器收到幾筆——沒有這個對照，測的就是另一種
+                                 情況
+tests/language-lint-v1193.test.js, tests/ingestion.test.js,
+tests/update-notice-delivery.test.js, tests/migration-016-bug-reports.test.js,
+tests/ps1-windows-compat.test.js, tests/dockerfile-runtime-files.test.js,
+tests/hung-test-is-named.test.js, tests/self-check.test.js, tests/init-cache.test.js,
+tests/session-counter-block.test.js, tests/session-counter.test.js,
+tests/update-lock-mutual-exclusion.test.js, tests/test-server-helper.test.js,
+tests/path-to-win32.test.js, tests/console-nav-structure.test.js,
+tests/stats-labels.test.js, tests/session-context-field-coverage.test.js
+                               — 十五處「綠燈但什麼都沒檢查」。每一處都留下一句話寫明原本
+                                 藏了什麼
+CHANGELOG.md, FILELIST.md      — 這一段
+package.json / package-lock.json / README* / docs/README* — 1.30.24 → 1.30.25
+```
+
+起因：9/21 清一輪待辦。九張單裡六張是同一個形狀——東西壞了，畫面上跟正常一模一樣。
+
 ## v1.30.24 修改（改成由伺服器告訴客戶端要連哪裡）
 
 修改檔：
