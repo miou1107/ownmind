@@ -39,12 +39,24 @@ function Get-OwnMindToolPath {
   return [string]$found.Source
 }
 
+# `$LASTEXITCODE` does not exist until a native command has run in this session, and under
+# Set-StrictMode reading it then throws rather than returning $null. Every read of it in this
+# file goes through here, so a program that fails to launch at all reports "could not run"
+# instead of taking the preflight down with it.
+function Get-OwnMindLastExit {
+  if (Test-Path variable:LASTEXITCODE) { return $LASTEXITCODE }
+  return -1
+}
+
 function Get-OwnMindNodeMajor {
-  param([Parameter(Mandatory = $true)][string]$NodeExe)
+  param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$NodeExe)
+  if (-not $NodeExe) { return -1 }
   try {
     $raw = & $NodeExe --version 2>$null
-    if ($LASTEXITCODE -ne 0) { return -1 }
-    if ("$raw" -match 'v?(\d+)\.') { return [int]$Matches[1] }
+    if ((Get-OwnMindLastExit) -ne 0) { return -1 }
+    # Anchored: node prints `v20.11.1` and nothing else, but a version manager's shim can print
+    # its own banner first, and an unanchored match would read that banner's number as node's.
+    if ("$raw".Trim() -match '^v?(\d+)\.') { return [int]$Matches[1] }
     return -1
   } catch { return -1 }
 }
@@ -103,7 +115,7 @@ function Test-OwnMindRequirements {
       'npm ships with Node.js — reinstall it: winget install --id OpenJS.NodeJS.LTS -e --source winget'
   } else {
     $npmOk = $false
-    try { & $npm --version 2>$null | Out-Null; $npmOk = ($LASTEXITCODE -eq 0) } catch { $npmOk = $false }
+    try { & $npm --version 2>$null | Out-Null; $npmOk = ((Get-OwnMindLastExit) -eq 0) } catch { $npmOk = $false }
     if (-not $npmOk) {
       & $add 'npm' "npm at $npm is on PATH but does not run" `
         'npm ships with Node.js — reinstall it: winget install --id OpenJS.NodeJS.LTS -e --source winget'

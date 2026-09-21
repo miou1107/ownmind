@@ -311,6 +311,59 @@ describe('#98 every unmet requirement is reported in one pass', () => {
   });
 });
 
+describe('#98 the assumptions the Windows check rests on', () => {
+  it('Get-Command -CommandType Application really does hand back a path in .Source', {
+    skip: isWindows ? false : 'the PowerShell path only exists on Windows',
+  }, () => {
+    // An independent review of this file claimed .Source is empty for an Application and that
+    // every machine would therefore be told it has no git. Measured on PowerShell 5.1, it is
+    // the full path — the claim was wrong. It is pinned here rather than argued about, because
+    // if it ever became true the preflight would block every install on earth.
+    const probe = path.join(tempDir('om-preflight-src-'), 'probe.ps1');
+    fs.writeFileSync(probe, [
+      'Set-StrictMode -Version Latest',
+      "$g = Get-Command git -CommandType Application -ErrorAction SilentlyContinue",
+      'if ($g -is [array]) { $g = $g[0] }',
+      'if (-not $g) { Write-Output "NO-GIT"; exit 0 }',
+      'Write-Output ("SOURCE=" + $g.Source)',
+    ].join('\n'), 'utf8');
+
+    const r = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', probe], {
+      encoding: 'utf8',
+    });
+    if (/NO-GIT/.test(r.stdout)) return; // nothing to measure on a machine without git
+    const line = r.stdout.split(/\r?\n/).find((l) => l.startsWith('SOURCE='));
+    assert.ok(line, `the probe said nothing: ${r.stdout}${r.stderr}`);
+    const source = line.slice('SOURCE='.length).trim();
+    assert.ok(source.length > 0, '.Source came back empty; every tool lookup in preflight.ps1 is now blind');
+    assert.ok(fs.existsSync(source), `.Source is not a path that exists: ${source}`);
+  });
+
+  it('a program that cannot be launched at all is reported, not thrown', {
+    skip: isWindows ? false : 'the PowerShell path only exists on Windows',
+  }, () => {
+    // `$LASTEXITCODE` does not exist until a native command has run, and under Set-StrictMode
+    // reading it then throws instead of returning $null. The npm check reads it right after
+    // invoking npm, so a shim that fails to launch would have taken the whole preflight down
+    // — reported as "npm does not run", which is at least the right shape, but by accident.
+    const probe = path.join(tempDir('om-preflight-exit-'), 'probe.ps1');
+    const helper = path.join(repoRoot, 'scripts', 'install-helpers', 'preflight.ps1').replace(/'/g, "''");
+    fs.writeFileSync(probe, [
+      `. '${helper}'`,
+      // Nothing native has run in this session yet, which is the state being reproduced.
+      'Write-Output ("EXIT=" + (Get-OwnMindLastExit))',
+      'Write-Output ("MAJOR=" + (Get-OwnMindNodeMajor ""))',
+    ].join('\n'), 'utf8');
+
+    const r = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', probe], {
+      encoding: 'utf8',
+    });
+    assert.match(r.stdout, /EXIT=-1/, `reading an unset $LASTEXITCODE was not survived: ${r.stdout}${r.stderr}`);
+    assert.match(r.stdout, /MAJOR=-1/, `an empty program path was not handled: ${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stderr || '', /cannot be retrieved because it has not been set/, r.stderr);
+  });
+});
+
 describe('#98 the two sides state the same floor', () => {
   it('the Node floor is the same number in both preflights and in install.ps1', () => {
     // Three copies of one decision. They have drifted apart in this repository before, and a
