@@ -83,7 +83,7 @@ function binDirWith(tools) {
  * shell tests state that they did not run — the PowerShell tests are the ones that reproduce
  * the reported incident anyway.
  */
-function stagedShell(tools) {
+function stagedShell(tools, mustBeMissing = ['git', 'node']) {
   const bash = locate('bash');
   if (!bash) return null;
   const bin = binDirWith(tools);
@@ -92,6 +92,11 @@ function stagedShell(tools) {
   const probe = path.join(tempDir('om-preflight-smoke-'), 'smoke.sh');
   const lines = ['set -e'];
   for (const tool of tools) lines.push(`${tool} --version >/dev/null 2>&1 || ${tool} >/dev/null 2>&1`);
+  // The other half, and the one CI had to teach this file. A staged PATH is a claim that the
+  // tool is gone, and on the Windows runner it was not: git stayed reachable through Git Bash's
+  // own resolution, so `bootstrap.sh` cheerfully cloned a repository inside a test that was
+  // asserting it would refuse to. Silence about that read as a product bug.
+  for (const tool of mustBeMissing) lines.push(`command -v ${tool} >/dev/null 2>&1 && { echo "STILL_HAS:${tool}"; exit 0; }`);
   lines.push('echo STAGED_OK', '');
   fs.writeFileSync(probe, lines.join('\n'), 'utf8');
 
@@ -101,7 +106,7 @@ function stagedShell(tools) {
 }
 
 /** What a skipped shell test says, so it cannot be mistaken for a passing one. */
-const NO_SHELL = 'this machine cannot build a PATH bash runs under (see stagedShell); nothing was run';
+const NO_SHELL = 'this machine cannot build a PATH that bash runs under and that really lacks the tool (see stagedShell); nothing was run';
 
 describe('#98 bootstrap stops when git is missing, before touching anything', () => {
   it('bootstrap.ps1 names the missing tool, prints the command, and exits 1', {
@@ -361,6 +366,35 @@ describe('#98 the assumptions the Windows check rests on', () => {
     assert.match(r.stdout, /EXIT=-1/, `reading an unset $LASTEXITCODE was not survived: ${r.stdout}${r.stderr}`);
     assert.match(r.stdout, /MAJOR=-1/, `an empty program path was not handled: ${r.stdout}${r.stderr}`);
     assert.doesNotMatch(r.stderr || '', /cannot be retrieved because it has not been set/, r.stderr);
+  });
+});
+
+describe('#98 one missing tool has one name', () => {
+  it('all four scripts print ERROR:preflight_missing_<tool>', () => {
+    // It did not, and CI is what noticed: the two preflight modules printed
+    // `preflight_missing_<tool>` as the reported kind and `preflight_<tool>` on screen, while
+    // both bootstraps printed the longer form. Somebody grepping their terminal for what the
+    // console told them would have found nothing.
+    const cases = [
+      ['scripts/install-helpers/preflight.sh', /ERROR:preflight_missing_%s:/],
+      ['scripts/install-helpers/preflight.ps1', /ERROR:preflight_missing_\$\(\$f\.Name\):/],
+      ['scripts/bootstrap.sh', /log_err preflight_missing_git/],
+      ['scripts/bootstrap.ps1', /Log-Err preflight_missing_git/],
+    ];
+    for (const [rel, pattern] of cases) {
+      const src = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+      assert.match(src, pattern, `${rel} no longer prints the shared preflight_missing_ prefix`);
+    }
+  });
+
+  it('and the reported kind is that same word', () => {
+    // The kind is what the console groups by. A screen that says one thing and a report that
+    // says another is two records of one event.
+    for (const rel of ['scripts/install-helpers/preflight.sh', 'scripts/install-helpers/preflight.ps1']) {
+      const src = fs.readFileSync(path.join(repoRoot, rel), 'utf8');
+      assert.match(src, /preflight_missing_\$\{?name\}?|preflight_missing_\$\(\$f\.Name\)/,
+        `${rel} reports a kind that is not preflight_missing_<tool>`);
+    }
   });
 });
 

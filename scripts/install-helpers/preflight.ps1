@@ -149,7 +149,8 @@ function Assert-OwnMindRequirements {
   Write-Host ""
   Write-Host "ERROR:preflight:This machine is missing $($failures.Count) thing(s) OwnMind needs. Nothing has been changed." -ForegroundColor Red
   foreach ($f in $failures) {
-    Write-Host "ERROR:preflight_$($f.Name):$($f.Problem)" -ForegroundColor Red
+    # `preflight_missing_<tool>`, matching bootstrap.ps1, preflight.sh and the reported kind.
+    Write-Host "ERROR:preflight_missing_$($f.Name):$($f.Problem)" -ForegroundColor Red
     Write-Host "  fix: $($f.Remedy)"
     try {
       if (Get-Command Report-Error -ErrorAction SilentlyContinue) {

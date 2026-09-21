@@ -79,7 +79,10 @@ ownmind_preflight_assert() {
   printf 'ERROR:preflight:This machine is missing %s thing(s) OwnMind needs. Nothing has been changed.\n' "$count" >&2
   while IFS=$'\t' read -r name problem remedy; do
     [ -n "$name" ] || continue
-    printf 'ERROR:preflight_%s:%s\n' "$name" "$problem" >&2
+    # `preflight_missing_<tool>`, the same word bootstrap.sh and bootstrap.ps1 print and the
+    # same kind the report carries. It said `preflight_<tool>` here until CI caught it: one
+    # thing had two names depending on which script you happened to reach it through.
+    printf 'ERROR:preflight_missing_%s:%s\n' "$name" "$problem" >&2
     printf '  fix: %s\n' "$remedy" >&2
     # report_error comes from report-error.sh, which the caller has already sourced. It is
     # noop-on-missing there, but this file is also sourced on its own by the tests.
