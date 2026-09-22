@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,7 +20,23 @@ import path from 'node:path';
  * run is the same shape of lie this whole feature exists to remove.
  */
 
-const READY_ATTEMPTS = 40;
+/**
+ * How many one-second probes a container gets before it is declared dead.
+ *
+ * Forty unless `OWNMIND_TEST_DB_READY_ATTEMPTS` names a positive whole number, which only the
+ * case asserting on the give-up message does — reaching that message honestly costs forty
+ * seconds otherwise. Anything else, including a negative, a fraction, `Infinity` and a word,
+ * is ignored rather than honoured: `Number(x) || 40` would take `-1` (the loop then runs zero
+ * probes and gives up with nothing to report) and `1e400` (the loop never ends).
+ *
+ * A value that IS a positive integer is obeyed, so an env var set for one local run and left
+ * in a shell — or leaked into a workflow — does shorten every later run. The comment at the
+ * readiness loop says why forty is the number; two is not a safe standing value.
+ */
+const READY_ATTEMPTS = (() => {
+  const raw = Number(process.env.OWNMIND_TEST_DB_READY_ATTEMPTS);
+  return Number.isInteger(raw) && raw > 0 ? raw : 40;
+})();
 
 /**
  * v1.26.174 — one database container on this machine at a time.
@@ -193,15 +209,40 @@ export async function startRealDb({
   }
 }
 
+/**
+ * What the failed command wrote to stderr, trimmed, or '' when it wrote nothing.
+ *
+ * `execFileSync` throws an Error whose `message` is only the command line it tried. A port
+ * already bound, an image that will not pull, a daemon out of disk and a rate-limited registry
+ * therefore arrive as the same sentence — which is how PR run 35604459374 failed with nothing
+ * to act on. docker's own explanation is on stderr, and reaches this only when the call site
+ * pipes it instead of ignoring it.
+ */
+function stderrOf(err) {
+  const raw = err?.stderr;
+  if (!raw) return '';
+  return String(raw).trim();
+}
+
 /** The body of startRealDb, once the lock is held. Never call this without it. */
 async function startContainer({ image, port, name }) {
   try { execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' }); } catch { /* none */ }
-  execFileSync('docker', ['run', '-d', '--name', name,
-    '-e', 'POSTGRES_PASSWORD=test',
-    '-e', 'POSTGRES_USER=ownmind',
-    '-e', 'POSTGRES_DB=ownmind',
-    '-p', `${port}:5432`,
-    image], { stdio: 'ignore' });
+  try {
+    execFileSync('docker', ['run', '-d', '--name', name,
+      '-e', 'POSTGRES_PASSWORD=test',
+      '-e', 'POSTGRES_USER=ownmind',
+      '-e', 'POSTGRES_DB=ownmind',
+      '-p', `${port}:5432`,
+      image], { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (err) {
+    // The exit code separates two causes stderr can leave ambiguous: 125 is the daemon
+    // refusing the run, 127 is no docker on PATH at all.
+    const why = [
+      Number.isInteger(err?.status) ? `exit ${err.status}` : '',
+      stderrOf(err),
+    ].filter(Boolean).join('\n');
+    throw new Error(why ? `${err.message}\n${why}` : err.message, { cause: err });
+  }
 
   // v1.26.174 — the probe is a real query, not pg_isready.
   //
@@ -218,17 +259,19 @@ async function startContainer({ image, port, name }) {
   // Asking the server to answer a query is the only probe that cannot be satisfied by the
   // temporary one being up: it runs through the same `docker exec psql` path the caller uses.
   let ready = false;
+  let lastProbeFailure = '';
   for (let i = 0; i < READY_ATTEMPTS; i += 1) {
     try {
       execFileSync(
         'docker',
         ['exec', '-i', name, 'psql', '-U', 'ownmind', '-d', 'ownmind', '-v', 'ON_ERROR_STOP=1',
           '-tA', '-c', 'SELECT 1'],
-        { stdio: 'ignore' },
+        { stdio: ['ignore', 'ignore', 'pipe'] },
       );
       ready = true;
       break;
-    } catch {
+    } catch (err) {
+      lastProbeFailure = stderrOf(err) || lastProbeFailure;
       await new Promise((resolve) => { setTimeout(resolve, 1000); });
     }
   }
@@ -241,8 +284,29 @@ async function startContainer({ image, port, name }) {
     releaseDbLock();
   };
   if (!ready) {
+    // Read the log before `stop()` removes the container: a postgres that died during initdb
+    // says so there and nowhere else, and afterwards there is nothing left to ask.
+    // Both streams: docker sends the container's stdout to ours and its stderr to ours, and
+    // postgres writes its whole startup log — including the reason initdb gave up — to stderr.
+    // Reading stdout alone returns an empty string for exactly the failure worth reporting.
+    // `timeout`, because this line runs only after docker has already misbehaved for forty
+    // seconds, and a daemon out of disk — one of the causes worth reporting — can block on
+    // `logs`. Without it the file sits until the 300s test timeout kills it, and the reader
+    // gets no message at all rather than a thinner one.
+    const logs = spawnSync('docker', ['logs', '--tail', '20', name],
+      { encoding: 'utf8', timeout: 10000 });
+    const log = [logs.stdout, logs.stderr].map((s) => String(s || '').trim())
+      .filter(Boolean).join('\n');
     stop();
-    throw new Error(`postgres container ${name} never became ready`);
+    // A container that never answered is not the same fact as one that answered slowly, and
+    // `never became ready` on its own cannot tell them apart.
+    const detail = [
+      lastProbeFailure && `last probe: ${lastProbeFailure}`,
+      log && `container log:\n${log}`,
+    ].filter(Boolean).join('\n');
+    throw new Error(detail
+      ? `postgres container ${name} never became ready\n${detail}`
+      : `postgres container ${name} never became ready`);
   }
 
   /** Run SQL and return stdout. Throws on error, so a broken fixture fails the test. */
