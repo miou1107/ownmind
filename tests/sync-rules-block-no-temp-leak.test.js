@@ -45,6 +45,9 @@ describe('sync-rules-block leaves no temp directories behind', () => {
       const env = { ...process.env, TMPDIR: scratch, TEMP: scratch, TMP: scratch };
       delete env.NODE_TEST_CONTEXT;
       delete env.NODE_TEST_WORKER_ID;
+      // And a terminal that forces colour would wrap `pass N` in escape codes.
+      delete env.FORCE_COLOR;
+      env.NO_COLOR = '1';
 
       const child = spawnSync(process.execPath, ['--test', subject], {
         encoding: 'utf8',

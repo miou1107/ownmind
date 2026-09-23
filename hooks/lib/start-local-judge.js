@@ -103,6 +103,9 @@ export function startLocalJudge({
       // whose stdout is still open is a hook the harness is still waiting on — which is the
       // one thing this must not do.
       stdio: 'ignore',
+      // Windows gives a detached child a console window of its own unless told not to, so
+      // without this every reply opened a blank window that sat there until the judge finished.
+      windowsHide: true,
     });
     child.unref();
     return { started: true, turnId };

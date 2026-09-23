@@ -33,7 +33,7 @@ const SCRIPT = path.join(repoRoot, 'scripts', 'check-sync.sh');
  * @param {(home: string) => void} [prepare] populate the fake home before the run
  * @returns {{stdout: string, standards: string, overall: string}}
  */
-function runCheckSync(prepare) {
+function runCheckSync(prepare, extraEnv = {}) {
   const home = tempDir('om-checksync-');
   const ownmindDir = path.join(home, '.ownmind');
   const claudeDir = path.join(home, '.claude');
@@ -51,6 +51,7 @@ function runCheckSync(prepare) {
       HOME: home,
       OWNMIND_DIR: ownmindDir,
       CLAUDE_DIR: claudeDir,
+      ...extraEnv,
     },
   });
   const line = (prefix) => (stdout.split('\n').find((l) => l.startsWith(prefix)) || '').trim();
@@ -89,6 +90,15 @@ test('a populated cache reports in_sync and says how much is in it', () => {
 
   assert.match(standards, /^L4_STANDARDS:in_sync/);
   assert.match(standards, /entries=6/, `the count makes the claim checkable; got ${standards}`);
+});
+
+test('a terminal that forces colour does not break the count', () => {
+  // With FORCE_COLOR set, console.log(6) prints the 6 wrapped in escape codes, and every
+  // number the script reads back from node stops being a number.
+  const { standards } = runCheckSync((home) => writeBundle(home, {
+    selectors: [{ id: 1 }], guards: [], injectables: [],
+  }), { FORCE_COLOR: '1' });
+  assert.equal(standards, 'L4_STANDARDS:in_sync entries=1');
 });
 
 test('an account with nothing annotated is in_sync, not broken', () => {

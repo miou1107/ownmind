@@ -125,9 +125,11 @@ else
     const a = parse('${CLIENT_VER}');
     const b = parse('${SERVER_VER}');
     for (let i = 0; i < 4; i++) {
-      if (a[i] !== b[i]) { console.log(a[i] < b[i] ? -1 : 1); process.exit(0); }
+      // String(), not a bare number: with FORCE_COLOR set, console.log paints numbers in
+      // colour and the case below matches none of its branches.
+      if (a[i] !== b[i]) { console.log(String(a[i] < b[i] ? -1 : 1)); process.exit(0); }
     }
-    console.log(0);
+    console.log('0');
   " 2>/dev/null)
   case "${CMP}" in
     -1) L2="outdated"; L2_DETAIL="client=${CLIENT_VER} server=${SERVER_VER}" ;;
@@ -216,8 +218,8 @@ if [ -f "${ENFORCEMENT_CACHE}" ]; then
       if (!b || typeof b !== 'object' || Array.isArray(b)) { console.log(''); }
       else if (!['selectors','guards','injectables'].every(k => b[k] === undefined || Array.isArray(b[k]))) { console.log(''); }
       else {
-        console.log(['selectors','guards','injectables']
-          .reduce((n, k) => n + (Array.isArray(b[k]) ? b[k].length : 0), 0));
+        console.log(String(['selectors','guards','injectables']
+          .reduce((n, k) => n + (Array.isArray(b[k]) ? b[k].length : 0), 0)));
       }
     } catch { console.log(''); }
   " "${ENFORCEMENT_CACHE}" 2>/dev/null)

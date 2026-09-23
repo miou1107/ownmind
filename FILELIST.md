@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## v1.30.27 修改（Windows 上判官不再開視窗）
+
+修改檔：
+```
+hooks/lib/start-local-judge.js       — 丟出判官時加 windowsHide。分離模式的子程式在 Windows 上
+                                       會拿到自己的主控台視窗
+hooks/lib/local-judge.js             — 叫 claude 時加 windowsHide。上一層沒有主控台，
+                                       Windows 會幫它開一個看得見的
+tests/start-local-judge.test.js      — 原本那條多檢查 windowsHide
+tests/local-judge.test.js            — 新增一條：CLI 啟動時沒有自己的視窗
+scripts/check-sync.sh                — 從 node 讀回的數字先轉成純文字。終端機強制彩色時，
+                                       數字會帶顏色碼，版本比較就判成失敗
+tests/check-sync-standards-layer.test.js
+                                     — 新增一條：強制彩色時，規則數量照樣讀得出來
+tests/no-unregistered-temp-dir.test.js, tests/sync-rules-block-no-temp-leak.test.js
+                                     — 子程序關掉彩色，否則讀不到「pass N」那一行
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md
+                                     — 版號 1.30.27
+```
+
 ## v1.30.26 修改（刪掉沒有人在跑的那份規矩檢查）
 
 刪除檔：
