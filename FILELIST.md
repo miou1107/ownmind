@@ -14,8 +14,8 @@ scripts/check-sync.sh                — 從 node 讀回的數字先轉成純文
                                        數字會帶顏色碼，版本比較就判成失敗
 tests/check-sync-standards-layer.test.js
                                      — 新增一條：強制彩色時，規則數量照樣讀得出來
-tests/no-unregistered-temp-dir.test.js
-                                     — 子程序關掉彩色，否則讀不到「pass 1」那一行
+tests/no-unregistered-temp-dir.test.js, tests/sync-rules-block-no-temp-leak.test.js
+                                     — 子程序關掉彩色，否則讀不到「pass N」那一行
 package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md
                                      — 版號 1.30.27
 ```
