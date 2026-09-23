@@ -224,7 +224,9 @@ function run(spawnImpl, bin, argv, stdin, timeoutMs) {
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawnImpl(bin, argv, { stdio: ['pipe', 'pipe', 'pipe'] });
+      // windowsHide: the runner above this has no console (it is detached), so on Windows the
+      // CLI would otherwise be handed a fresh visible one — a window per reply.
+      child = spawnImpl(bin, argv, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     } catch (err) {
       reject(err);
       return;

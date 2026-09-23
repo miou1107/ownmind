@@ -23,6 +23,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { fakeClaude } from './helpers/fake-claude.js';
 import { judgeLocally } from '../hooks/lib/local-judge.js';
 
@@ -56,6 +57,18 @@ test('a clean reply comes back clean, and the prompt never touches argv', async 
   assert.ok(!argv.some((a) => a.includes(REPLY)),
     'a prompt beginning --- is read as a flag; that is how the first probe died');
   assert.ok(argv.includes('-p') || argv.includes('--print'), 'headless');
+});
+
+test('the CLI starts with no window of its own', async () => {
+  // The runner that calls this is detached and has no console, so on Windows a console
+  // program started from it is handed a new, visible one — a blank window on every reply.
+  const fake = fakeClaude({ stdout: verdictJson([]) });
+  let opts = null;
+  await judgeLocally({
+    rules: RULES, assistantText: REPLY, claudeBin: fake.bin,
+    spawnImpl: (bin, argv, o) => { opts = o; return spawn(bin, argv, o); },
+  });
+  assert.equal(opts?.windowsHide, true);
 });
 
 test('it grants the judge no tools', async () => {

@@ -45,7 +45,8 @@ test('it hands the runner a job file and detaches', () => {
     'the child has to write its verdict against the same turn the parent marked');
   assert.equal(spawned.opts.detached, true);
   assert.equal(spawned.opts.stdio, 'ignore',
-    'inheriting stdout keeps the hook open, and an open hook is one the harness waits on');
+    'inheriting stdout keeps the hook open, and an open hook is one the harness waits on');  assert.equal(spawned.opts.windowsHide, true,
+    'on Windows a detached child gets a console window of its own — one blank window per reply');
 });
 
 test('a job that cannot be written does not spawn anything', () => {
