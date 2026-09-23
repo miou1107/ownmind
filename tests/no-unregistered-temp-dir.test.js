@@ -96,6 +96,9 @@ describe('no test draws a temp directory nobody removes', () => {
       // reporter and there is no `pass N` line left to read.
       delete env.NODE_TEST_CONTEXT;
       delete env.NODE_TEST_WORKER_ID;
+      // And a terminal that forces colour would wrap `pass 1` in escape codes.
+      delete env.FORCE_COLOR;
+      env.NO_COLOR = '1';
 
       const child = spawnSync(process.execPath, ['--test', probe], {
         encoding: 'utf8', cwd: repoRoot, env,
