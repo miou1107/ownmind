@@ -180,17 +180,22 @@ export function readCredentials(settingsPath) {
  */
 export function detectCommandTrigger(command) {
   if (!command) return null;
-  if (/\bgit\s+(commit|reset|rebase|merge)\b/i.test(command)) return 'commit';
-  if (/\bgit\s+tag\b/i.test(command)) return 'commit';
-  if (/\bgit\s+push\b/i.test(command)) return 'deploy';
+  // v1.30.30 — every family below matches words, so a search for the words matched too. Search
+  // segments are set aside once, here, for all of them; v1.30.29 did it for install alone, and
+  // `grep -n "DELETE FROM"` went on putting the delete rule in front of a read. The rest of the
+  // line is still read, so `grep -q x f && git commit` is still a commit.
+  const acting = withoutSearches(command);
+  if (/\bgit\s+(commit|reset|rebase|merge)\b/i.test(acting)) return 'commit';
+  if (/\bgit\s+tag\b/i.test(acting)) return 'commit';
+  if (/\bgit\s+push\b/i.test(acting)) return 'deploy';
   // issue #92 — `docker stack deploy` is here because the shell copy had it and this one did
   // not. Squaring the two could have gone either way; it went this way because a Swarm deploy
   // is a deploy, and the alternative was to stop recognising it on the platforms that did.
-  if (/\b(docker\s+compose\s+(up|build|push)|docker\s+stack\s+deploy|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(command)) return 'deploy';
+  if (/\b(docker\s+compose\s+(up|build|push)|docker\s+stack\s+deploy|kubectl\s+apply|npm\s+run\s+deploy)\b/i.test(acting)) return 'deploy';
   // v1.26.155 — a release publishes a build, so it belongs with the deploys rather than with
   // the outward sends below, where the rest of the `gh` verbs go.
-  if (/\bgh\s+release\s+(create|edit|upload)\b/i.test(command)) return 'deploy';
-  if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(command)) return 'delete';
+  if (/\bgh\s+release\s+(create|edit|upload)\b/i.test(acting)) return 'deploy';
+  if (/\b(rm\s+-rf|rmdir|Remove-Item|drop\s+table|DELETE\s+FROM)\b/i.test(acting)) return 'delete';
   // v1.26.155 — publishing something where other people will read it.
   //
   // The team standard for this ("run an independent review before anything goes out") was
@@ -208,8 +213,8 @@ export function detectCommandTrigger(command) {
   // send nothing. `gh release create` is deliberately with the deploys above instead — it
   // publishes a build, and calling that "outward send" would be the same mislabelling in the
   // other direction.
-  if (/\bgh\s+(issue|pr)\s+(create|comment|edit|review|close|reopen)\b/i.test(command)
-    || /\bgit\s+send-email\b/i.test(command)) return 'send';
+  if (/\bgh\s+(issue|pr)\s+(create|comment|edit|review|close|reopen)\b/i.test(acting)
+    || /\bgit\s+send-email\b/i.test(acting)) return 'send';
   // v1.26.132 — last, so no command that already had a trigger changes classification.
   //
   // Install and credential work had no trigger at all, which meant the two rules written
@@ -224,10 +229,8 @@ export function detectCommandTrigger(command) {
   // ordinary prose like "token count" — where API_KEY and credential do not.
   //
   // v1.30.29 — these match words, so a search for the word matched too: `grep -rn credentials`
-  // put both rules in front of a command that ran nothing and touched no key. Search segments
-  // are set aside first; the rest of the command is still read, so `grep -q API_KEY .env &&
-  // bash install.sh` is still an install.
-  const acting = withoutSearches(command);
+  // put both rules in front of a command that ran nothing and touched no key. `acting` above
+  // is what they read.
   if (/(^|[\s/\\])[\w.~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)\b/i.test(acting)) return 'install';
   // Not `\bAPI[_-]?KEY\b`: an underscore is a word character, so `\b` does not exist between
   // the `D` and the `A` of OWNMIND_API_KEY — the prefixed form every real env var uses, and
@@ -238,15 +241,40 @@ export function detectCommandTrigger(command) {
   return null;
 }
 
-/** A pipeline or list segment that only searches text. */
-const SEARCH_SEGMENT = /^\s*(?:(?:grep|egrep|fgrep|rg|ag|findstr|Select-String|sls)\b|git\s+grep\b)/i;
+/**
+ * A pipeline or list segment that only reads. `git log` is here because `-S` and `--grep` are
+ * searches whose argument is often exactly the command being looked for.
+ */
+const SEARCH_SEGMENT = /^\s*(?:(?:grep|egrep|fgrep|rg|ag|findstr|Select-String|sls)\b|git\s+(?:grep|log)\b)/i;
 
 /**
- * The command with its search segments removed. Splitting on `|` inside a quoted pattern only
- * leaves more of the command to be read, never less, so a mis-split errs toward reminding.
+ * The command with its search segments removed.
+ *
+ * Split on `&&`, `||`, `;`, `|` and newlines outside quotes. v1.30.29 split on every `|`, so
+ * `grep "UPDATE x\|DELETE FROM x"` came apart inside its own pattern and the second half read as
+ * a command of its own starting with DELETE. A mis-split still errs toward reminding — an
+ * unbalanced quote keeps the rest of the line in one segment, which is then read in full.
  */
 function withoutSearches(command) {
-  return command.split(/&&|\|\||[;|\n]/).filter((s) => !SEARCH_SEGMENT.test(s)).join(' ; ');
+  const segments = [];
+  let current = '';
+  let quote = null;
+  for (let i = 0; i < command.length; i += 1) {
+    const c = command[i];
+    if (quote) {
+      if (c === '\\' && quote === '"' && i + 1 < command.length) { current += c + command[i + 1]; i += 1; continue; }
+      if (c === quote) quote = null;
+      current += c;
+      continue;
+    }
+    if (c === '"' || c === '\'') { quote = c; current += c; continue; }
+    const two = command.slice(i, i + 2);
+    if (two === '&&' || two === '||') { segments.push(current); current = ''; i += 1; continue; }
+    if (c === ';' || c === '|' || c === '\n') { segments.push(current); current = ''; continue; }
+    current += c;
+  }
+  segments.push(current);
+  return segments.filter((s) => !SEARCH_SEGMENT.test(s)).join(' ; ');
 }
 
 /**

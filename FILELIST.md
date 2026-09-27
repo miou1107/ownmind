@@ -1,5 +1,16 @@
 # OwnMind 檔案結構
 
+## v1.30.30 修改（搜尋不算刪除、提交、部署）
+
+修改檔：
+```
+shared/helpers.js                    — 所有種類的判斷都先拿掉只是搜尋的那幾段（加上 git log）；
+                                       拆指令時不切開引號裡的內容
+tests/trigger-detection.test.js      — 搜尋不算那個動作；搜尋旁邊真的在做的照樣算
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.30
+```
+
 ## 什麼都沒驗卻顯示通過的測試，再修 5 條（#136）
 
 只動測試，不影響使用者，不發版。#136 決定不做「每條測試都要有檢查」的完整把關（用文字比對誤判太多），

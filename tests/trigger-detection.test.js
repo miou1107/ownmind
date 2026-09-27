@@ -55,6 +55,34 @@ describe('detectCommandTrigger', () => {
   });
 
   // no trigger
+  // v1.30.30 — a search for the words is not the operation. v1.30.29 set searches aside for the
+  // install family only; measured 2026-09-28, `grep -n "DELETE FROM" src/routes/memory.js`
+  // still put the delete rule in front of a command that deleted nothing.
+  for (const command of [
+    'grep -n "DELETE FROM memories" src/routes/memory.js',
+    'grep -n "UPDATE memories\\|DELETE FROM memories" src/routes/memory.js | head -4',
+    'rg "rm -rf" scripts/',
+    'git grep -n "drop table"',
+    'grep -rn "git push" docs/',
+    'cd /c/om-work/om && grep -n "git commit" CHANGELOG.md',
+    'git log -S"docker compose up" --oneline',
+    'git log --grep="git reset" --oneline',
+    'Select-String -Pattern "Remove-Item" -Path scripts\\update.ps1',
+  ]) {
+    it(`a search is not the operation: ${command}`, () => {
+      assert.equal(detectCommandTrigger(command), null);
+    });
+  }
+  it('a search beside the real thing still counts', () => {
+    assert.equal(detectCommandTrigger('grep -q x file && git commit -m y'), 'commit');
+    assert.equal(detectCommandTrigger('git log --oneline -3 && git push origin main'), 'deploy');
+    assert.equal(detectCommandTrigger('ls | grep old && rm -rf ./old'), 'delete');
+    // A search feeding the deletion is a deletion.
+    assert.equal(detectCommandTrigger('grep -rl stale ./cache | xargs rm -rf'), 'delete');
+    // A quoted `;` or `|` is part of the argument, not a new command.
+    assert.equal(detectCommandTrigger('git commit -m "grep; then | tidy"'), 'commit');
+  });
+
   it('git status → null', () => {
     assert.equal(detectCommandTrigger('git status'), null);
   });
