@@ -80,9 +80,15 @@ test('iron rules carry the skills they need, and init sends them', async (t) => 
     `);
 
     const headers = { Authorization: 'Bearer key-skills', 'content-type': 'application/json' };
+    // Writes must carry the current sync_token, as the MCP tools do: taken from init, then
+    // from each write's answer, since every write moves it.
+    let syncToken = null;
     const call = async (method, url, body) => {
-      const res = await fetch(`${server.url}${url}`, { method, headers, body: body && JSON.stringify(body) });
-      return { status: res.status, json: await res.json().catch(() => null) };
+      const payload = body && { ...body, sync_token: syncToken };
+      const res = await fetch(`${server.url}${url}`, { method, headers, body: payload && JSON.stringify(payload) });
+      const json = await res.json().catch(() => null);
+      if (json && typeof json.sync_token === 'string') syncToken = json.sync_token;
+      return { status: res.status, json };
     };
     const metadataOf = (code) => db.psql(`SELECT metadata::text FROM memories WHERE code = '${code}' AND user_id = 1`).trim();
     const skillsInInit = async () => {
