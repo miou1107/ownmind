@@ -135,6 +135,9 @@ describe('paths inside inline Node source are Windows-native', () => {
   }
 
   it('every _WIN variable is produced by to_win_path, not by hand', () => {
+    // #136: the `|| []` below made "no _WIN assignment anywhere" a pass — a rename of the
+    // suffix, or a change to the pattern, would leave this checking nothing and still green.
+    let checked = 0;
     for (const file of SCRIPTS) {
       const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
       const assigns = text.match(/^\s*(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*_(?:WIN|win)=.*$/gm) || [];
@@ -146,8 +149,10 @@ describe('paths inside inline Node source are Windows-native', () => {
         if (/cygpath -w/.test(line)) continue;
         if (/=\s*"?\$\{?[A-Za-z_][A-Za-z0-9_]*_(?:WIN|win)\}?/.test(line)) continue;
         assert.match(line, /to_win_path/, `${file}: ${line.trim()}`);
+        checked += 1;
       }
     }
+    assert.ok(checked > 0, 'found no _WIN assignment made through to_win_path, so nothing was checked');
   });
 
   it('install.sh and update.sh source path-helpers.sh with an identity fallback', () => {

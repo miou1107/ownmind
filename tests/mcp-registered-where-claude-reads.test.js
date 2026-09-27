@@ -232,13 +232,28 @@ describe('v1.26.112 — the installers actually call it', () => {
     // Reading credentials from os.homedir() while writing the home the caller supplied is
     // the same two-places-nobody-compares defect in miniature. Caught by review, not by a
     // test, so it gets one.
+    //
+    // #136: the updaters stopped calling resolveCredentials themselves when the key handling
+    // moved into ensure-key-file.cjs, and the `continue` on "no call here" then skipped both
+    // scripts — so this checked nothing at all. It now follows the call to where it lives,
+    // and refuses to pass having found none.
+    const helper = 'scripts/install-helpers/ensure-key-file.cjs';
     for (const script of ['scripts/update.sh', 'scripts/update.ps1']) {
       const src = fs.readFileSync(path.join(repoRoot, script), 'utf8');
-      if (!src.includes('resolveCredentials(')) continue;
-      assert.ok(src.includes('resolveCredentials({ home })'),
-        `${script} calls resolveCredentials() without a home — it would read a different `
-        + 'profile than the one it writes');
+      assert.ok(src.includes(path.basename(helper)),
+        `${script} no longer runs ${helper}; find where it resolves credentials now`);
     }
+    let calls = 0;
+    for (const file of ['scripts/update.sh', 'scripts/update.ps1', helper]) {
+      const src = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+      for (const m of src.matchAll(/resolveCredentials\(([^)]*)\)/g)) {
+        calls += 1;
+        assert.match(m[1], /\bhome\b/,
+          `${file} calls resolveCredentials(${m[1]}) without a home — it would read a different `
+          + 'profile than the one it writes');
+      }
+    }
+    assert.ok(calls > 0, 'no resolveCredentials call found on the update path, so nothing was checked');
   });
 
   it('the self-check asks whether the server is registered, not just present', () => {

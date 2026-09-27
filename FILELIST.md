@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## 什麼都沒驗卻顯示通過的測試，再修 5 條（#136）
+
+只動測試，不影響使用者，不發版。#136 決定不做「每條測試都要有檢查」的完整把關（用文字比對誤判太多），
+只擋最明確的一種寫法。
+
+新增檔：
+```
+tests/no-silent-platform-return.test.js — 測試裡不准寫「是某個系統就直接結束」，要明寫跳過並說明原因
+```
+
+修改檔：
+```
+tests/load-settings-safe.test.js, tests/verdict-store.test.js
+                                     — 在 Windows 上什麼都沒跑卻算通過，改成明寫跳過
+tests/mcp-registered-where-claude-reads.test.js — 更新程式早就不直接讀金鑰了，這條一直什麼都沒檢查；
+                                       改成追到 ensure-key-file.cjs，而且找不到就算失敗
+tests/memory-visibility.test.js      — 每一個寫入語句都檢查，不是只看第一個；找不到就算失敗
+tests/installer-node-paths.test.js   — 一個 _WIN 變數都沒檢查到時算失敗
+```
+
 ## v1.30.29 修改（三個小毛病）
 
 修改檔：

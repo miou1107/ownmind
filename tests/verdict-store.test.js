@@ -83,14 +83,16 @@ test('reading one turn tells gone apart from unreadable', () => {
   assert.equal(readVerdict('s1', 't2', d).outcome, 'clean');
 });
 
-test('a verdict is no more readable than the job beside it', () => {
+// #136: the assertion used to sit inside `if (not win32)`, so on Windows this passed having
+// checked nothing. Skipped by name there instead.
+test('a verdict is no more readable than the job beside it', {
+  skip: process.platform === 'win32' && 'Windows carries no POSIX mode bits to check',
+}, () => {
   // It holds 160 characters of what the AI said, plus the judge's quotes from it. On a shared
   // machine the default 0644 hands the user's own work to everybody with an account.
   const d = dir();
   writeVerdict('s1', 't1', { outcome: 'clean', reply_excerpt: 'what the AI said' }, d);
-  if (process.platform !== 'win32') {
-    assert.equal(fs.statSync(verdictPath('s1', 't1', d)).mode & 0o777, 0o600);
-  }
+  assert.equal(fs.statSync(verdictPath('s1', 't1', d)).mode & 0o777, 0o600);
 });
 
 test('a job carries credentials, so it does not outlive its use', () => {

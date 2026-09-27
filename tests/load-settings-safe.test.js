@@ -115,8 +115,11 @@ describe('loadOrSkip — settings.json safe loader', () => {
     });
   });
 
-  it('exits 0 with warning when file is unreadable (permission denied)', () => {
-    if (process.platform === 'win32') return; // chmod semantics differ on Windows
+  // #136: this was `if (win32) return;` inside the body, which reports a pass on Windows for a
+  // test that ran nothing. A declared skip says so in the summary instead.
+  it('exits 0 with warning when file is unreadable (permission denied)', {
+    skip: process.platform === 'win32' && 'chmod 000 does not block reads on Windows',
+  }, () => {
     withTmp((dir) => {
       const p = path.join(dir, 'noperm.json');
       fs.writeFileSync(p, '{}');

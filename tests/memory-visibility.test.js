@@ -304,11 +304,17 @@ describe('write routes stay owner-scoped', () => {
   });
 
   it('the shared predicate is never used by a write statement', () => {
+    // #136: this read only the first occurrence of each statement and skipped any it could not
+    // find, so renaming one — or a fourth UPDATE — went unchecked. Every occurrence now, and
+    // finding none is a failure rather than a pass.
     for (const stmt of ['UPDATE memories', 'DELETE FROM memories']) {
-      const idx = routeSrc.indexOf(stmt);
-      if (idx === -1) continue;
-      const window = routeSrc.slice(idx, idx + 600);
-      assert.doesNotMatch(window, /buildReadableWhere/, `${stmt} must not widen via the read predicate`);
+      let seen = 0;
+      for (let idx = routeSrc.indexOf(stmt); idx !== -1; idx = routeSrc.indexOf(stmt, idx + 1)) {
+        seen += 1;
+        const window = routeSrc.slice(idx, idx + 600);
+        assert.doesNotMatch(window, /buildReadableWhere/, `${stmt} must not widen via the read predicate`);
+      }
+      assert.ok(seen > 0, `no "${stmt}" found in src/routes/memory.js, so nothing was checked`);
     }
   });
 });
