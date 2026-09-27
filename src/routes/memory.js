@@ -31,6 +31,9 @@ import {
 import { HOOK_CONTEXT_TYPES, tallyHookContext } from '../../shared/hook-context.js';
 import { resolveWritableMemory } from '../utils/memory-write-access.js';
 import { buildInvocableStandards, validateInvocableMetadata } from '../../shared/invocable-standards.js';
+import {
+  resolveRequiredSkills, requiredSkillsOf, requiredSkillsNote,
+} from '../../shared/required-skills.js';
 import { classifyMemoryError } from '../utils/memory-error-classifier.js';
 import { requireFields } from '../utils/require-fields.js';
 import { parseRowId } from '../utils/row-id.js';
@@ -440,6 +443,36 @@ router.get('/sync-token', async (req, res) => {
 });
 
 /**
+ * Issue #139: store the guessed `required_skills` on rules saved before the field existed.
+ *
+ * `updated_at` is left alone on purpose: nobody edited these rules, and bumping it would move
+ * every account's sync token and make each rule read as "updated today" in the console. The
+ * `NOT ... ? 'required_skills'` guard means a list someone wrote between the read and this
+ * write is never overwritten.
+ *
+ * Only NULL or an object is touched. `||` on a jsonb scalar such as `7` builds an array
+ * `[7, {...}]` rather than failing, which would quietly turn a malformed row into a different
+ * malformed row; such a rule is still checked, from its text, on every init.
+ *
+ * @param {object[]} rules iron rule rows with no `metadata.required_skills`
+ */
+async function backfillRequiredSkills(rules) {
+  for (const rule of rules) {
+    const fields = resolveRequiredSkills({
+      incoming: undefined, previous: undefined, content: rule.content, contentChanged: true,
+    }).fields;
+    await query(
+      `UPDATE memories
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || $1::jsonb
+       WHERE id = $2
+         AND (metadata IS NULL OR jsonb_typeof(metadata) = 'object')
+         AND NOT (COALESCE(metadata, '{}'::jsonb) ? 'required_skills')`,
+      [JSON.stringify(fields), rule.id]
+    );
+  }
+}
+
+/**
  * GET /init - load initial memories.
  */
 router.get('/init', async (req, res) => {
@@ -491,6 +524,22 @@ router.get('/init', async (req, res) => {
     // Advisory shows only counts.
     const ironRulesDigest = buildIronRulesDigest(ironRules);
     const ironRulesTierCounts = countByTier(ironRules);
+
+    // Issue #139: which skills each rule tells the AI to use. Only the machine knows what it
+    // has installed, so the comparison is the hook's (hooks/lib/missing-skills.js); this sends
+    // just the rules that name something. Sent in compact mode, which is every caller.
+    const ironRuleSkills = ironRules
+      .map((r) => ({ code: r.code || 'IR-?', title: r.title, skills: requiredSkillsOf(r) }))
+      .filter((r) => r.skills.length > 0);
+    // A rule saved before the field existed is read from its text above, and the result is
+    // written back in the background, so the list becomes visible and correctable in the
+    // admin console without anyone re-saving every rule.
+    const unfilledRules = ironRules.filter((r) => !Array.isArray(r.metadata?.required_skills));
+    if (unfilledRules.length > 0) {
+      backfillRequiredSkills(unfilledRules).catch((e) => {
+        logger.warn('required_skills backfill failed', { error: e.message });
+      });
+    }
 
     // Team standards summary.
     const teamStandardsDigest = teamStandards.map(r => `[團隊] ${r.title}`).join('\n');
@@ -770,6 +819,7 @@ router.get('/init', async (req, res) => {
       principles: principlesOut,
       ...(!compact && { iron_rules: ironRules }),
       iron_rules_digest: ironRulesDigestFinal,
+      iron_rule_skills: ironRuleSkills,
       ...(!compact && { team_standards: teamStandards }),
       team_standards_digest: teamStandardsDigest,
       // v1.26.148 (issue #85): the standards this user can ask for by name, so the tip line
@@ -1214,6 +1264,17 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Issue #139: the skills this rule tells the AI to use, so each machine can say when it
+    // does not have one. Checked before anything is written, like the pair above.
+    let requiredSkillsFields = null;
+    if (type === 'iron_rule') {
+      const resolved = resolveRequiredSkills({
+        incoming: metadata, previous: undefined, content, contentChanged: true,
+      });
+      if (!resolved.ok) return res.status(400).json({ error: resolved.error });
+      requiredSkillsFields = resolved.fields;
+    }
+
     // iron_rule auto-numbering.
     let finalCode = code || null;
     if (type === 'iron_rule' && !finalCode) {
@@ -1239,6 +1300,9 @@ router.post('/', async (req, res) => {
         ...baseMetadata,
         lint_warnings: [...existingWarnings, secretGuardWarning],
       };
+    }
+    if (requiredSkillsFields) {
+      finalMetadata = { ...(finalMetadata && typeof finalMetadata === 'object' ? finalMetadata : {}), ...requiredSkillsFields };
     }
 
     const result = await query(
@@ -1409,6 +1473,10 @@ router.post('/', async (req, res) => {
     // any unrelated reason.
     const badTags = unknownTriggerTags(tags);
     if (badTags.length > 0) response.warning = unknownTriggerTagWarning(badTags);
+
+    // Issue #139: a guessed skill list is shown while the author can still correct it.
+    const skillsNote = requiredSkillsNote(memory.metadata);
+    if (skillsNote) response.required_skills_note = skillsNote;
 
     res.status(201).json(response);
   } catch (err) {
@@ -1642,12 +1710,41 @@ router.put('/:id', async (req, res) => {
       };
     }
 
+    // Issue #139: keep `required_skills` current. `metadata` replaces the stored object, so a
+    // caller who sends metadata without the list would otherwise erase a list a person set;
+    // resolveRequiredSkills carries it over, and redoes a guessed one when the text changes.
+    //
+    // When the caller sent no metadata, only these two keys are written, merged in SQL: the
+    // rest of the stored object is not rewritten from this request's earlier read, which would
+    // drop a rule_stats increment another session wrote in between.
+    let showSkillsNote = false;
+    let requiredSkillsPatch = null;
+    if (oldMemory.type === 'iron_rule') {
+      const resolved = resolveRequiredSkills({
+        incoming: metadata,
+        previous: oldMemory.metadata,
+        content: merged.content,
+        contentChanged,
+      });
+      if (!resolved.ok) return res.status(400).json({ error: resolved.error });
+      if (metadataForUpdate && typeof metadataForUpdate === 'object' && !Array.isArray(metadataForUpdate)) {
+        metadataForUpdate = { ...metadataForUpdate, ...resolved.fields };
+      } else {
+        requiredSkillsPatch = JSON.stringify(resolved.fields);
+      }
+      showSkillsNote = contentChanged || !Array.isArray(oldMemory.metadata?.required_skills);
+    }
+
     const result = await query(
       `UPDATE memories
        SET title = COALESCE($1, title),
            content = COALESCE($2, content),
            tags = COALESCE($3, tags),
-           metadata = COALESCE($4, metadata),
+           metadata = CASE
+             WHEN $9::jsonb IS NULL THEN COALESCE($4, metadata)
+             WHEN jsonb_typeof(metadata) = 'object' THEN metadata || $9::jsonb
+             ELSE $9::jsonb
+           END,
            previous_content = CASE WHEN $7::boolean THEN content ELSE previous_content END,
            tier = COALESCE($8, tier),
            updated_at = NOW()
@@ -1655,7 +1752,8 @@ router.put('/:id', async (req, res) => {
        RETURNING *`,
       // The owner's id, not the caller's: an admin editing a team standard is authorized
       // above, and re-matching on req.user.id here would write nothing and return no row.
-      [title || null, content || null, tags || null, metadataForUpdate, req.params.id, oldMemory.user_id, shouldBackup, tierForUpdate]
+      // $9 is only ever set when $4 is null (see requiredSkillsPatch above).
+      [title || null, content || null, tags || null, metadataForUpdate, req.params.id, oldMemory.user_id, shouldBackup, tierForUpdate, requiredSkillsPatch]
     );
 
     const memory = result.rows[0];
@@ -1749,6 +1847,11 @@ router.put('/:id', async (req, res) => {
     // gets introduced, and it is the path the tagging work of 2026-08-12 went through.
     const badTagsPut = unknownTriggerTags(tags);
     if (badTagsPut.length > 0) response.warning = unknownTriggerTagWarning(badTagsPut);
+
+    if (showSkillsNote) {
+      const skillsNotePut = requiredSkillsNote(memory?.metadata);
+      if (skillsNotePut) response.required_skills_note = skillsNotePut;
+    }
 
     res.json(response);
   } catch (err) {

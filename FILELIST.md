@@ -1,5 +1,32 @@
 # OwnMind 檔案結構
 
+## v1.30.28 修改（規矩要用的技能這台沒裝，現在會說出來，#139）
+
+新增檔：
+```
+shared/required-skills.js            — 規矩需要哪些技能：從內文找出技能名稱、檢查人填的清單、
+                                       決定存檔時要寫進 metadata.required_skills 的內容
+hooks/lib/missing-skills.js          — 列出這台電腦裝了哪些技能，跟規矩需要的比對，
+                                       產生給 AI 看的段落和給使用者看的一行字
+tests/required-skills.test.js        — 找技能名稱、人填的清單、存檔時該存什麼
+tests/missing-skills.test.js         — 列出已裝技能、比對、兩個平台的開場程式都會講
+tests/required-skills-route.test.js  — 真的資料庫：存檔、修改、舊規矩補欄位、開場資料
+```
+
+修改檔：
+```
+src/routes/memory.js                 — 存／改鐵律時寫 required_skills；開場資料送 iron_rule_skills；
+                                       舊規矩在背景補欄位（不動 updated_at）
+hooks/lib/render-session-context.js  — 鐵律清單後面加「這台做不到的規矩」段落
+hooks/lib/session-start-output.js, hooks/ownmind-session-start.js
+                                     — 兩個平台都比對缺少的技能，並用 systemMessage 告訴使用者
+hooks/locales/*.json                 — 新增 session.missingSkills（中文原稿、英日文、兩份 override）
+mcp/index.js                         — 存／改工具的說明提到 required_skills
+tests/session-context-field-coverage.test.js — 登記新欄位 iron_rule_skills 的去處
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.28
+```
+
 ## 起不來的測試資料庫，現在講得出原因（#138）
 
 新增檔：

@@ -21,6 +21,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { renderSessionContext } from './render-session-context.js';
 import { roleForProfile, fetchBugReportNotifications } from './bug-report-notifications.js';
+import { missingSkillsFor, missingSkillNotice } from './missing-skills.js';
+import { t } from './i18n.js';
 import { readCredentials } from '../../shared/helpers.js';
 import { localDateOnly, localIsoTimestamp } from '../../shared/local-date.js';
 
@@ -81,7 +83,16 @@ try {
   notifications = null;
 }
 
-const additionalContext = renderSessionContext(initData, broadcasts, { notifications });
+// Issue #139 — rules whose skill this machine lacks. Read from disk here rather than in the
+// renderer, which stays pure; hooks/ownmind-session-start.js does the same on Windows.
+const missingSkills = missingSkillsFor(initData, {
+  home: os.homedir(),
+  projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
+  claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,
+});
+const systemMessage = missingSkillNotice(missingSkills, t);
+
+const additionalContext = renderSessionContext(initData, broadcasts, { notifications, missingSkills });
 
 // Let the loop drain if it can, and force the exit if it cannot.
 //
@@ -114,6 +125,7 @@ const additionalContext = renderSessionContext(initData, broadcasts, { notificat
 // That last line is the 10.66s from the original paragraph, reproduced. 300ms buys the clean
 // exit and stays far inside the hook's 10s budget.
 process.stdout.write(JSON.stringify({
+  ...(systemMessage && { systemMessage }),
   hookSpecificOutput: {
     hookEventName: 'SessionStart',
     additionalContext

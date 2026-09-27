@@ -528,7 +528,7 @@ const TOOLS = [
         },
         metadata: {
           type: "object",
-          description: "Additional metadata (optional)",
+          description: "Additional metadata (optional). For an iron_rule, `required_skills` lists the skills the rule tells the AI to use (e.g. [\"zh-tw-doc-copy\"]); each machine that loads the rule says so when one is not installed there. Leave it out and OwnMind fills it from backticked names in a rule that mentions skills; the response carries required_skills_note when it did. [] means the rule needs no skill.",
         },
         // v1.18.2: iron_rule only — AI fills in time-and-place context
         origin_event: {
@@ -576,7 +576,7 @@ const TOOLS = [
         },
         metadata: {
           type: "object",
-          description: "Updated metadata (optional). REPLACES the stored metadata rather than merging into it, so read the memory first and send back the keys you want to keep. On a team_standard, two keys control the daily tip: `user_invocable: true` marks a standard a person can ask for by name, and `invocation_hint` is the one-line sentence they are shown, written in their words (e.g. 想把東西變成網址傳給人看？直接說「幫我發 pages」). Both are required together — the flag without the sentence is rejected. A standard with neither is never named in a tip.",
+          description: "Updated metadata (optional). REPLACES the stored metadata rather than merging into it, so read the memory first and send back the keys you want to keep. On a team_standard, two keys control the daily tip: `user_invocable: true` marks a standard a person can ask for by name, and `invocation_hint` is the one-line sentence they are shown, written in their words (e.g. 想把東西變成網址傳給人看？直接說「幫我發 pages」). Both are required together — the flag without the sentence is rejected. A standard with neither is never named in a tip. On an iron_rule, `required_skills` is the list of skills the rule needs; a list you send is kept as yours, and leaving it out keeps the stored one.",
         },
         // v1.19: iron rule tier
         tier: {

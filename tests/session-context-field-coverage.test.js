@@ -40,6 +40,10 @@ const NOT_FOR_THE_SESSION_CONTEXT = {
   team_standards: 'non-compact only; the hook renders team_standards_digest instead',
   upgrade_action: 'the hook runs its own daily updater (ownmind-session-start.js); it does '
     + 'not need the server to tell the AI to upgrade',
+  iron_rule_skills: 'not rendered as sent — issue #139: both entry points compare it with the '
+    + 'skills installed on this machine (hooks/lib/missing-skills.js) and hand the renderer only '
+    + 'the rules that come up short, as opts.missingSkills; tests/missing-skills.test.js holds '
+    + 'both entry points to that',
   locale: 'not model-facing — hooks/lib/locale.js (Task 2, gate-message-i18n) reads this '
     + 'straight out of the local cache.data.locale the sync path writes, to pick the '
     + "language of the hook's own terminal notices; the AI never needs it in context",

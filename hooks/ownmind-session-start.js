@@ -23,6 +23,8 @@ import { runConditionalSync } from './lib/conditional-sync.js';
 // the first place.
 import { syncEnforcementBundle } from './lib/conditional-sync-cli.js';
 import { renderSessionContext } from './lib/render-session-context.js';
+import { missingSkillsFor, missingSkillNotice } from './lib/missing-skills.js';
+import { t } from './lib/i18n.js';
 import { syncMemoryFiles, resolveMemoryDir } from './lib/sync-memory-files.js';
 import { tryAcquireUpdateLock, releaseUpdateLock, isContention } from '../shared/update-lock.js';
 import { localDateOnly, localIsoTimestamp } from '../shared/local-date.js';
@@ -396,7 +398,16 @@ async function main() {
   });
   if (!notif) logEvent('bug_report_notifications_fetch_failed', {});
 
-  const lines = [renderSessionContext(initData, broadcasts, { notifications: notif })];
+  // Issue #139 — rules whose skill this machine lacks. Same module as session-start-output.js
+  // on macOS and Linux, so the two platforms cannot tell different stories.
+  const missingSkills = missingSkillsFor(initData, {
+    home: HOME,
+    projectDir: process.env.CLAUDE_PROJECT_DIR || process.cwd(),
+    claudeConfigDir: process.env.CLAUDE_CONFIG_DIR,
+  });
+  const systemMessage = missingSkillNotice(missingSkills, t);
+
+  const lines = [renderSessionContext(initData, broadcasts, { notifications: notif, missingSkills })];
 
 
   lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
@@ -424,6 +435,7 @@ async function main() {
   } catch { /* never block session start */ }
 
   console.log(JSON.stringify({
+    ...(systemMessage && { systemMessage }),
     hookSpecificOutput: {
       hookEventName: 'SessionStart',
       additionalContext: lines.join('\n')

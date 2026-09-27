@@ -11,6 +11,7 @@
 import { getRandomTip } from '../../shared/tips.js';
 import { hintsFromStandards } from '../../shared/invocable-standards.js';
 import { bugReportNotificationLines } from './bug-report-notifications.js';
+import { missingSkillContextLines } from './missing-skills.js';
 
 /**
  * How much of one broadcast's body reaches the session, and what happens to the rest.
@@ -74,8 +75,13 @@ export function broadcastBody(body) {
  * @param {object|null} [opts.notifications] the bug-report notifications endpoint's answer.
  *   Passed in rather than fetched here so this stays a pure function; the Windows hook and
  *   session-start-output.js each fetch it and hand it over.
+ * @param {object[]} [opts.missingSkills] rules whose skills this machine lacks (issue #139),
+ *   from hooks/lib/missing-skills.js. Handed in for the same reason: finding them reads the
+ *   disk, and this function does not.
  */
-export function renderSessionContext(data, broadcasts, { tip = getRandomTip, notifications = null } = {}) {
+export function renderSessionContext(data, broadcasts, {
+  tip = getRandomTip, notifications = null, missingSkills = [],
+} = {}) {
   const lines = [];
 
   // v1.17.0 P3: broadcasts go first so the AI relays them first; cap at 3 to avoid context bloat.
@@ -134,6 +140,10 @@ export function renderSessionContext(data, broadcasts, { tip = getRandomTip, not
     lines.push(d.iron_rules_digest);
     lines.push('');
   }
+
+  // Issue #139: straight after the rules, because it qualifies them. Printed even when the
+  // digest is empty, since the rules it names were still delivered some other way.
+  for (const line of missingSkillContextLines(missingSkills)) lines.push(line);
 
   // v1.26.128: the init response has carried team_standards_digest since team standards shipped —
   // outside the `!compact` guard, i.e. deliberately sent on this exact path — and this

@@ -39,5 +39,6 @@
   "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind は AI の返答にどのルールが当てはまるかを判断できなかったため、その返答は確認していません。\n  これは OwnMind 側の問題で、たいていはひとりでに直ります。あなたがすることはありません。",
   "verdict.notChecked.badCliShape": "[OwnMind] 🔴 このパソコンに Claude Code はありますが、OwnMind から起動できないため、その返答は確認していません。\n  ターミナルでご自分で claude と打ってみてください。起動するならお知らせください。起動しないなら Claude Code を入れ直してください。",
   "verdict.notChecked.tooSlow": "[OwnMind] 🔴 その返答の確認に時間がかかりすぎたため、あなたのルールと照らし合わせていません。\n  次の返答はあらためて確認します。毎回そうなるようならお知らせください。上限の設定が低すぎます。",
-  "verdict.notChecked.badAnswer": "[OwnMind] 🔴 確認から返ってきた内容を OwnMind が読み取れなかったため、その返答は照らし合わせていません。\n  次の返答はあらためて確認します。あなたがすることはありません。"
+  "verdict.notChecked.badAnswer": "[OwnMind] 🔴 確認から返ってきた内容を OwnMind が読み取れなかったため、その返答は照らし合わせていません。\n  次の返答はあらためて確認します。あなたがすることはありません。",
+  "session.missingSkills": "[OwnMind] 🟡 あなたの規則のうち {count} 件は、このパソコンでは AI が守れません。規則が AI に使わせるスキル（パソコンに入れて AI が呼び出す小さな追加機能）がここに入っていないためです。{list}。OwnMind はこのことを AI に伝えました。このパソコンにそのスキルを入れるか、規則を変えるよう AI に頼んでください。"
 }

@@ -39,5 +39,6 @@
   "verdict.notChecked.serverDeclined": "[OwnMind] 🔴 OwnMind 算不出你哪幾條規矩該用在 AI 這段回話上，所以那一段沒有檢查。\n  這是 OwnMind 那邊的問題，通常會自己好，你不用做什麼。",
   "verdict.notChecked.badCliShape": "[OwnMind] 🔴 這台電腦上有 Claude Code，但 OwnMind 叫不動它，所以那一段回話沒有檢查。\n  你在終端機自己打一次 claude 看看：叫得動就跟我說，叫不動就把 Claude Code 重裝一次。",
   "verdict.notChecked.tooSlow": "[OwnMind] 🔴 檢查 AI 那段回話花的時間超過上限，所以那一段沒有對過你的規矩。\n  下一段回話會重新檢查。每一輪都這樣的話跟我說一聲，那是上限訂得不夠。",
-  "verdict.notChecked.badAnswer": "[OwnMind] 🔴 OwnMind 看不懂檢查回來的答案，所以那一段回話沒有對過你的規矩。\n  下一段回話會重新檢查，你不用做什麼。"
+  "verdict.notChecked.badAnswer": "[OwnMind] 🔴 OwnMind 看不懂檢查回來的答案，所以那一段回話沒有對過你的規矩。\n  下一段回話會重新檢查，你不用做什麼。",
+  "session.missingSkills": "[OwnMind] 🟡 你有 {count} 條規矩，AI 在這台電腦上照做不了：規矩要 AI 用的技能（裝在電腦上、給 AI 叫用的小工具）這台沒有裝。{list}。OwnMind 已經告訴 AI 了。你可以在這台電腦裝上這些技能，或叫 AI 把規矩改掉。"
 }
