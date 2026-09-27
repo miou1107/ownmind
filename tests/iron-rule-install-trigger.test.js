@@ -90,6 +90,34 @@ describe('v1.26.132 — install and credential commands reach the rule lookup', 
       });
     }
 
+    // v1.30.29 — a search for the word is not the operation. Measured 2026-09-27: a grep of
+    // session logs for "Install / credentials" put IR-001 and IR-002 in front of a command
+    // that installed nothing and touched no key.
+    for (const command of [
+      'grep -rn "credentials" src/',
+      'cd /c/om-work/om && grep -n "OWNMIND_API_KEY" hooks/lib/credentials.js',
+      'rg API_KEY shared/',
+      'git grep -n credential',
+      'grep -n "install" scripts/install.sh | head -5',
+      'Select-String -Pattern API_KEY -Path .env',
+    ]) {
+      it(`a search is not an install: ${command}`, () => {
+        assert.notEqual(detectCommandTrigger(command), 'install',
+          'finding a word in a file does not change a key or run an installer');
+      });
+    }
+
+    for (const command of [
+      'grep -q API_KEY .env && bash install.sh',
+      'echo $OWNMIND_API_KEY | grep sk-',
+      'cat ~/.ownmind/credentials | grep token',
+    ]) {
+      it(`a search beside the real thing still counts: ${command}`, () => {
+        assert.equal(detectCommandTrigger(command), 'install',
+          'only the search part is set aside, not the whole command');
+      });
+    }
+
     it('leaves the existing triggers alone', () => {
       assert.equal(detectCommandTrigger('git commit -m x'), 'commit');
       assert.equal(detectCommandTrigger('git push origin main'), 'deploy');

@@ -222,14 +222,31 @@ export function detectCommandTrigger(command) {
   // in front of every dependency install is one the user learns to scroll past, and
   // neither rule is about fetching packages. A bare `token` is excluded too — it matches
   // ordinary prose like "token count" — where API_KEY and credential do not.
-  if (/(^|[\s/\\])[\w.~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)\b/i.test(command)) return 'install';
+  //
+  // v1.30.29 — these match words, so a search for the word matched too: `grep -rn credentials`
+  // put both rules in front of a command that ran nothing and touched no key. Search segments
+  // are set aside first; the rest of the command is still read, so `grep -q API_KEY .env &&
+  // bash install.sh` is still an install.
+  const acting = withoutSearches(command);
+  if (/(^|[\s/\\])[\w.~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)\b/i.test(acting)) return 'install';
   // Not `\bAPI[_-]?KEY\b`: an underscore is a word character, so `\b` does not exist between
   // the `D` and the `A` of OWNMIND_API_KEY — the prefixed form every real env var uses, and
   // the one this rule is about, was the one shape that regex could not see. Guard on a
   // non-letter instead, which still refuses `therapy_keys` and friends.
-  if (/(^|[^A-Za-z])API[_-]?KEYS?\b/i.test(command)) return 'install';
-  if (/\bcredentials?\b/i.test(command)) return 'install';
+  if (/(^|[^A-Za-z])API[_-]?KEYS?\b/i.test(acting)) return 'install';
+  if (/\bcredentials?\b/i.test(acting)) return 'install';
   return null;
+}
+
+/** A pipeline or list segment that only searches text. */
+const SEARCH_SEGMENT = /^\s*(?:(?:grep|egrep|fgrep|rg|ag|findstr|Select-String|sls)\b|git\s+grep\b)/i;
+
+/**
+ * The command with its search segments removed. Splitting on `|` inside a quoted pattern only
+ * leaves more of the command to be read, never less, so a mis-split errs toward reminding.
+ */
+function withoutSearches(command) {
+  return command.split(/&&|\|\||[;|\n]/).filter((s) => !SEARCH_SEGMENT.test(s)).join(' ; ');
 }
 
 /**

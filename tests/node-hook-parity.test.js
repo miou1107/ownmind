@@ -123,6 +123,13 @@ describe('node SessionStart hook — parity with the shell hook', () => {
     assert.match(context(), /IR-001/);
   });
 
+  it('adds nothing the shared renderer already says', () => {
+    // v1.23.0 moved this line into renderSessionContext and left the hook's own copy behind,
+    // so on Windows the AI read it twice and on macOS once.
+    const line = 'The ownmind_* MCP tools manage memory.';
+    assert.equal(context().split(line).length - 1, 1, `"${line}" should appear once`);
+  });
+
   it('writes memory files into the project directory', () => {
     assert.ok(hit.has('/api/memory/sync'), 'never asked for the memories to sync');
     // resolveMemoryDir puts them under HOME, keyed by a slug of the project path.

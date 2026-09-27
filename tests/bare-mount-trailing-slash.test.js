@@ -19,7 +19,7 @@ import { startServer } from './helpers/app-server.js';
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,6 +33,14 @@ import { connect } from 'node:net';
 import { tempDir } from './helpers/temp-dir.js';
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+
+// src/public/dashboard/ is the gitignored vite build, so a fresh clone has no console to
+// serve. The two cases that need the real shell skip there, the way spa-deep-link-base does,
+// instead of failing on a 404 that says nothing about redirects. CI builds it first
+// (scripts/ensure-console-build.js), so there they run.
+const needsBuild = existsSync(join(repoRoot, 'src', 'public', 'dashboard', 'index.html'))
+  ? false
+  : 'requires the client build (src/public/dashboard/); run npm run build:client';
 
 // src/utils/crypto.js calls process.exit(1) when ENCRYPTION_KEY is unset at import
 // time. Set a test-only key before importing app, mirroring the v1.26.48 tests.
@@ -216,7 +224,7 @@ describe('v1.26.57 — request shapes that used to bypass the guard', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('v1.26.57 — the handler matches the bare path only', () => {
-  it('/dashboard/ is served, not redirected', async () => {
+  it('/dashboard/ is served, not redirected', { skip: needsBuild }, async () => {
     // The loop this fix could introduce: `app.get('/dashboard')` also matches
     // `/dashboard/` under Express's default non-strict routing, and redirecting that to
     // the relative `dashboard/` resolves to `/dashboard/dashboard/` — forever.
@@ -225,7 +233,7 @@ describe('v1.26.57 — the handler matches the bare path only', () => {
     assert.equal(r.status, 200);
   });
 
-  it('a deep console route still reaches the SPA shell', async () => {
+  it('a deep console route still reaches the SPA shell', { skip: needsBuild }, async () => {
     const r = await fetchOnce(app, '/dashboard/portal/usage');
     assert.equal(r.status, 200);
     assert.match(r.body, /<base href=/, 'the SPA shell handler must still answer');

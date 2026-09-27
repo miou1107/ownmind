@@ -1,5 +1,18 @@
 # OwnMind 檔案結構
 
+## v1.30.29 修改（三個小毛病）
+
+修改檔：
+```
+shared/helpers.js                    — 判斷「安裝／金鑰」時，先拿掉指令裡只是搜尋的那幾段
+hooks/ownmind-session-start.js       — 拿掉共用組裝程式已經寫過的那行工具說明
+tests/iron-rule-install-trigger.test.js — 搜尋不算安裝；搜尋旁邊真的在安裝的照樣算
+tests/node-hook-parity.test.js       — Windows 開場不重複共用組裝程式的內容
+tests/bare-mount-trailing-slash.test.js — 需要後台網頁的 2 條，沒編譯時跳過
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.29
+```
+
 ## v1.30.28 修改（規矩要用的技能這台沒裝，現在會說出來，#139）
 
 新增檔：

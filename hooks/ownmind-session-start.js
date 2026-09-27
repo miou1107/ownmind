@@ -409,9 +409,6 @@ async function main() {
 
   const lines = [renderSessionContext(initData, broadcasts, { notifications: notif, missingSkills })];
 
-
-  lines.push('The ownmind_* MCP tools manage memory. For full iron rule content: ownmind_get("iron_rule").');
-
   // v1.26.83 — write the memories into this project's directory, as the shell hook does.
   // Without it the AI reads whatever snapshot was last written, which on Windows was never.
   try {
