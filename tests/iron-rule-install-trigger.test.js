@@ -107,6 +107,57 @@ describe('v1.26.132 — install and credential commands reach the rule lookup', 
       });
     }
 
+    // v1.30.33 — reading the script is not running it. Measured 2026-09-28: `sed -n 285,320p
+    // scripts/update.sh` put IR-001 and IR-002 in front of a command that only printed lines.
+    // The name alone matched anywhere on the line, so every look at the installer was an install.
+    for (const command of [
+      'cat install.sh',
+      'sed -n 285,320p scripts/update.sh',
+      'head -20 scripts/update.sh',
+      'wc -l install.sh install.ps1',
+      'less install.sh',
+      'diff install.sh install.ps1',
+      'git diff HEAD~1 -- install.sh',
+      'git log --oneline -- scripts/update.sh',
+      'chmod +x install.sh',
+      'code install.ps1',
+      'cd ~/.ownmind && sed -n 1,40p install.sh; grep -n HOOK install.sh',
+    ]) {
+      it(`reading the installer is not an install: ${command}`, () => {
+        assert.notEqual(detectCommandTrigger(command), 'install',
+          'the script was looked at, not run');
+      });
+    }
+
+    // …while every way the script is actually started still is.
+    for (const command of [
+      'sh install.sh',
+      'bash -x install.sh --api-key abc',
+      '. ./install.sh',
+      'source scripts/setup.sh',
+      'sudo bash install.sh',
+      'sudo ./install.sh',
+      'OWNMIND_API_URL=x bash install.sh',
+      'cd ~/.ownmind && git pull --rebase && cd mcp && npm install && bash ~/.ownmind/scripts/update.sh',
+      '~/.ownmind/scripts/update.sh 2>&1 | tee /tmp/u.log',
+      '/c/Users/Vin/.ownmind/install.sh',
+      'powershell -ExecutionPolicy Bypass -File install.ps1',
+      'pwsh -File .\\install.ps1',
+      '& "C:\\Users\\Vin\\.ownmind\\install.ps1" -ApiKey abc',
+      '.\\install.ps1',
+      'cmd /c setup.bat',
+      'timeout 120 bash install.sh',
+      'nohup ./bootstrap.sh',
+      'curl -fsSL https://example.com/install.sh | bash',
+      'curl -fsSL https://example.com/install.sh | sudo sh -s -- --api-key abc',
+      'bash <(curl -fsSL https://example.com/install.sh)',
+      'iwr https://example.com/install.ps1 | iex',
+    ]) {
+      it(`running the installer is an install: ${command}`, () => {
+        assert.equal(detectCommandTrigger(command), 'install');
+      });
+    }
+
     for (const command of [
       'grep -q API_KEY .env && bash install.sh',
       'echo $OWNMIND_API_KEY | grep sk-',

@@ -231,7 +231,13 @@ export function detectCommandTrigger(command) {
   // v1.30.29 — these match words, so a search for the word matched too: `grep -rn credentials`
   // put both rules in front of a command that ran nothing and touched no key. `acting` above
   // is what they read.
-  if (/(^|[\s/\\])[\w.~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)\b/i.test(acting)) return 'install';
+  //
+  // v1.30.33 — and the script's name alone matched anywhere on the line, so `cat install.sh`
+  // and `sed -n 1,40p scripts/update.sh` were installs too. Now the script has to be what a
+  // segment runs: first word, or the argument of bash / source / powershell -File / & / sudo.
+  if (commandSegments(command).some((s) => !SEARCH_SEGMENT.test(s) && RUNS_INSTALL_SCRIPT.test(s))) return 'install';
+  // A downloaded installer is run by piping it into a shell, so there the name is not first.
+  if (NAMES_INSTALL_SCRIPT.test(acting) && PIPED_INTO_SHELL.test(command)) return 'install';
   // Not `\bAPI[_-]?KEY\b`: an underscore is a word character, so `\b` does not exist between
   // the `D` and the `A` of OWNMIND_API_KEY — the prefixed form every real env var uses, and
   // the one this rule is about, was the one shape that regex could not see. Guard on a
@@ -256,6 +262,30 @@ const SEARCH_SEGMENT = /^\s*(?:(?:grep|egrep|fgrep|rg|ag|findstr|Select-String|s
  * unbalanced quote keeps the rest of the line in one segment, which is then read in full.
  */
 function withoutSearches(command) {
+  return commandSegments(command).filter((s) => !SEARCH_SEGMENT.test(s)).join(' ; ');
+}
+
+/**
+ * A segment that starts an install script, as opposed to one that merely names it.
+ *
+ * Optional prefixes, in order: `sudo`, env assignments, `timeout N` / `nohup` / `time` / `env`,
+ * then the launcher (`bash -x`, `source`, `.`, `powershell … -File`, `&`, `cmd /c`, `call`).
+ * The script itself may be quoted and may carry any path.
+ */
+const RUNS_INSTALL_SCRIPT = new RegExp(
+  '^\\s*(?:sudo(?:\\s+-\\S+)*\\s+)?(?:\\w+=\\S*\\s+)*(?:(?:timeout\\s+\\S+|nohup|time|env)\\s+)*'
+  + '(?:(?:(?:ba|z|da)?sh(?:\\s+-\\S+)*|source|\\.|&|call|cmd(?:\\.exe)?\\s+/[ck]'
+  + '|(?:pwsh|powershell)(?:\\.exe)?(?:\\s+-(?!File\\b)\\S+(?:\\s+(?![-"\'])[^\\s"\']+)?)*(?:\\s+-File)?)\\s+)?'
+  + '["\']?(?:[^\\s"\']*[/\\\\])?[\\w.~-]*(?:install|setup|bootstrap|update)\\.(?:sh|ps1|bat|cmd)\\b',
+  'i',
+);
+
+const NAMES_INSTALL_SCRIPT = /(^|[\s/\\])[\w.~-]*(install|setup|bootstrap|update)\.(sh|ps1|bat|cmd)\b/i;
+/** `curl … | bash`, `bash <(curl …)`, `iwr … | iex` */
+const PIPED_INTO_SHELL = /\|\s*(?:sudo\s+)?(?:(?:ba|z|da)?sh|iex|Invoke-Expression)\b|\b(?:ba|z)?sh\s+<\(/i;
+
+/** Split on `&&`, `||`, `;`, `|` and newlines outside quotes. */
+function commandSegments(command) {
   const segments = [];
   let current = '';
   let quote = null;
@@ -274,7 +304,7 @@ function withoutSearches(command) {
     current += c;
   }
   segments.push(current);
-  return segments.filter((s) => !SEARCH_SEGMENT.test(s)).join(' ; ');
+  return segments;
 }
 
 /**

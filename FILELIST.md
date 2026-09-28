@@ -1,5 +1,19 @@
 # OwnMind 檔案結構
 
+## v1.30.33 修改（讀安裝腳本不算安裝）
+
+修改檔：
+```
+shared/helpers.js                    — detectCommandTrigger 的安裝腳本判斷改成「這段指令真的
+                                       在執行它」（RUNS_INSTALL_SCRIPT）；下載後丟給 shell 跑的
+                                       另外判斷（PIPED_INTO_SHELL）；原本的切段邏輯抽成
+                                       commandSegments()，withoutSearches 改用它
+tests/iron-rule-install-trigger.test.js
+                                     — 新增 11 條「讀腳本不算安裝」、21 條「各種執行方式都算」
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.33
+```
+
 ## v1.30.32 修改（回覆檢查的觸發字對得上了）
 
 新增檔：
