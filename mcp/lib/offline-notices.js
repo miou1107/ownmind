@@ -42,8 +42,12 @@ export function makeNoticeHelpers({ apiUrl, apiUrlConfigured } = {}) {
       return `${line} Operation queued (queue: ${pending} pending) — nothing will send it until the address is fixed.`;
     }
     if (line) {
-      return `${line} Operation queued (queue: ${pending} pending) — it goes out by itself once this tool `
-        + `reaches that address, so check the address before assuming it is on its way.`;
+      // States the condition rather than promising delivery. An unset address has two
+      // outcomes, not one: the local server starting sends the queue, a server that lives
+      // somewhere else never will. "It is sent when this tool reaches that address, and not
+      // before" is true of both, which is the most that can be said here.
+      return `${line} Operation queued (queue: ${pending} pending) — it is sent when this tool reaches that `
+        + `address, and not before, so check the address rather than assuming it is on its way.`;
     }
     return `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${pending} pending)`;
   }

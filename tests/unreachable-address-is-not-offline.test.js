@@ -178,14 +178,17 @@ describe('what a queued write is promised', () => {
   it('does not tell a person on a dropped VPN that their memory is stuck until they edit a setting', () => {
     const msg = notice(REAL, true, 'ENOTFOUND');
     assert.doesNotMatch(msg, /nothing will send it until the address is fixed/i, `got: ${msg}`);
-    assert.match(msg, /goes out by itself/i, `the queue does flush when the connection returns, got: ${msg}`);
+    assert.match(msg, /when this tool reaches that address/i, `the queue does flush when the connection returns, got: ${msg}`);
     assert.ok(msg.includes(REAL), 'and the address is still printed, so a wrong one can be spotted');
   });
 
-  it('treats an unset address the same way — the local server may simply be down', () => {
+  // An unset address has two outcomes, not one: starting the local server sends the queue,
+  // a server that lives somewhere else never will. The notice may not promise either.
+  it('treats an unset address the same way, and promises neither outcome', () => {
     const msg = notice(DEFAULT_URL, false, 'ECONNREFUSED', 1);
     assert.doesNotMatch(msg, /nothing will send it until the address is fixed/i, `got: ${msg}`);
-    assert.match(msg, /goes out by itself/i, `got: ${msg}`);
+    assert.match(msg, /when this tool reaches that address, and not before/i, `got: ${msg}`);
+    assert.doesNotMatch(msg, /will be sent automatically/i, 'nothing here is automatic');
   });
 
   it('leaves the ordinary queue notice alone when the address is not in question', () => {
