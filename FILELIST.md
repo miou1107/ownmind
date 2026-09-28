@@ -1,5 +1,40 @@
 # OwnMind 檔案結構
 
+## v1.30.31 修改（位址查不到主機不算連不上伺服器）
+
+新增檔：
+```
+mcp/lib/offline-notices.js           — 離線時說給使用者聽的那幾句話，集中在這裡：位址那一行
+                                       （faultPrefix）、存記憶排進佇列（queueNotice）、
+                                       搜尋的開頭與結尾（searchNoticeParts）。原本每個呼叫點
+                                       各寫一份字串，佇列那句才會跟搜尋那句講得不一樣
+tests/unreachable-address-is-not-offline.test.js
+                                     — 24 條：安裝預設字串（含沒寫通訊協定的那種寫法）要被
+                                       點名、查不到主機時要同時留下「可能是網路」這個可能、
+                                       沒人設過位址時不可以說「那裡沒有伺服器」、只是網域名稱
+                                       長得像範例的真主機不算、連線被重設仍走原本的離線說法、
+                                       佇列那句只在預設字串時才說「不會有東西把它送出去」、其餘
+                                       兩種只寫條件、不保證送得出去、
+                                       每一條離線說明都要印出位址
+```
+
+修改檔：
+```
+mcp/lib/fetch-failure.js             — addressFault 改成回傳 { kind, line, permanent }：
+                                       permanent 只有安裝預設字串才是 true，因為只有那一種
+                                       不改設定就永遠送不出去。沒人設過位址的那一種改口，
+                                       不再說「那裡沒有伺服器」（專案自己的 compose 就開在
+                                       3100，那些人是伺服器沒開，不是設定寫錯）。比對主機名
+                                       時多試一次補上 http:// 的寫法，安裝說明裡的預設字串
+                                       沒有通訊協定，原本比不中
+mcp/lib/memory-search.js             — 離線說明改用 searchNoticeParts。位址可能是對的時候，
+                                       開頭不再寫「等它修好之前」
+mcp/index.js                         — faultPrefix 與 queueNotice 改由 offline-notices.js 提供；
+                                       讀 session_log 那條路徑原本沒有印出位址，補上
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.31
+```
+
 ## v1.30.30 修改（搜尋不算刪除、提交、部署）
 
 修改檔：

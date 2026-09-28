@@ -21,6 +21,7 @@ import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
 import { describeFetchFailure } from './lib/fetch-failure.js';
+import { makeNoticeHelpers } from './lib/offline-notices.js';
 import { localDateOnly } from '../shared/local-date.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
 // v1.26.133 — a compact init response is not evidence that a collection is empty.
@@ -186,10 +187,18 @@ async function auditSession() {
 const pendingUploads = new Map();
 
 // --- Config from env ---
+const API_URL_CONFIGURED = Boolean(process.env.OWNMIND_API_URL);
 const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace(
   /\/$/,
   ""
 );
+
+// The wording lives in lib/offline-notices.js so a test can read it without starting a
+// server, and so a notice added later cannot quietly disagree with the ones already here.
+const { faultPrefix, queueNotice } = makeNoticeHelpers({
+  apiUrl: API_URL,
+  apiUrlConfigured: API_URL_CONFIGURED,
+});
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
 // --- Version & Sync Token (in-memory, per session) ---
@@ -870,7 +879,8 @@ async function handleTool(name, args) {
             logEvent('init', { status: 'offline', details: { saved_at: cache.saved_at } });
             return {
               _offline: true,
-              _offline_notice: `[OwnMind offline mode] Cannot reach the server — data is served from the local cache (${formatCacheAge(cache.saved_at)}) and may be behind it`,
+              _offline_notice: faultPrefix(initErr)
+                + `[OwnMind offline mode] Data is served from the local cache (${formatCacheAge(cache.saved_at)}) and may be behind the server`,
               // No invocable hints on this path, deliberately: the offline cache keys memories by
               // type and its `team_standard` bucket is filled from the init response's
               // `team_standards` field, which only a non-compact response carries — and every
@@ -1008,13 +1018,13 @@ async function handleTool(name, args) {
               data: cached ? [cached] : [],
               _offline: true,
               _offline_notice: !cached
-                ? `[OwnMind offline mode] Memory ${args.id} is not in the local cache (${formatCacheAge(idCache?.saved_at)}), which is not evidence that it does not exist on the server`
+                ? faultPrefix(err) + `[OwnMind offline mode] Memory ${args.id} is not in the local cache (${formatCacheAge(idCache?.saved_at)}), which is not evidence that it does not exist on the server`
                 : partialStandard
-                  ? `[OwnMind offline mode] Served from the local cache (${formatCacheAge(idCache?.saved_at)}); it may be behind the server. `
+                  ? faultPrefix(err) + `[OwnMind offline mode] Served from the local cache (${formatCacheAge(idCache?.saved_at)}); it may be behind the server. `
                     + 'This is a team standard, and if its text was uploaded as sections they are not '
                     + 'in the local cache — what you are reading may be a summary line rather than the '
                     + 'whole standard. Do not act on it as if it were complete.'
-                  : `[OwnMind offline mode] Served from the local cache (${formatCacheAge(idCache?.saved_at)}); it may be behind the server`,
+                  : faultPrefix(err) + `[OwnMind offline mode] Served from the local cache (${formatCacheAge(idCache?.saved_at)}); it may be behind the server`,
             };
           }
           throw err;
@@ -1038,7 +1048,7 @@ async function handleTool(name, args) {
             return {
               data: [],
               _offline: true,
-              _offline_notice: '[OwnMind offline mode] session_log requires a live connection to query the session_logs table',
+              _offline_notice: faultPrefix(err) + '[OwnMind offline mode] session_log requires a live connection to query the session_logs table',
             };
           }
           throw err;
@@ -1061,7 +1071,7 @@ async function handleTool(name, args) {
           return {
             data: items,
             _offline: true,
-            _offline_notice: `[OwnMind offline mode] Data served from local cache (${formatCacheAge(cache?.saved_at)}). `
+            _offline_notice: faultPrefix(err) + `[OwnMind offline mode] Data served from local cache (${formatCacheAge(cache?.saved_at)}). `
               + 'Anything saved since that cache is missing from this list.',
           };
         }
@@ -1074,7 +1084,7 @@ async function handleTool(name, args) {
       // read what the caller is told. Inline, the offline branch was unreachable from a test
       // and shipped a swallowed error for months.
       const result = await runMemorySearch(
-        { callApi, isNetworkError, readMemoryCache, localSearch, logEvent, formatCacheAge },
+        { callApi, isNetworkError, readMemoryCache, localSearch, logEvent, formatCacheAge, apiUrl: API_URL, apiUrlConfigured: API_URL_CONFIGURED },
         { query: args.query, syncToken: currentSyncToken },
       );
       if (result._new_token) {
@@ -1139,7 +1149,7 @@ async function handleTool(name, args) {
           const queueLen = readQueue().length;
           enqueueOperation({ method: 'POST', path: '/api/memory', body });
           logEvent('memory_save', { type: args.type, title: args.title, queued: true });
-          return { _queued: true, _queue_notice: `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${queueLen + 1} pending)` };
+          return { _queued: true, _queue_notice: queueNotice(err, queueLen + 1) };
         }
         throw err;
       }
@@ -1167,7 +1177,7 @@ async function handleTool(name, args) {
           const queueLen = readQueue().length;
           enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}`, body });
           logEvent('memory_update', { id: args.id, queued: true });
-          return { _queued: true, _queue_notice: `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${queueLen + 1} pending)` };
+          return { _queued: true, _queue_notice: queueNotice(err, queueLen + 1) };
         }
         throw err;
       }
@@ -1189,7 +1199,7 @@ async function handleTool(name, args) {
           const queueLen = readQueue().length;
           enqueueOperation({ method: 'PUT', path: `/api/memory/${args.id}/disable`, body: disableBody });
           logEvent('memory_disable', { id: args.id, queued: true });
-          return { _queued: true, _queue_notice: `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${queueLen + 1} pending)` };
+          return { _queued: true, _queue_notice: queueNotice(err, queueLen + 1) };
         }
         throw err;
       }
