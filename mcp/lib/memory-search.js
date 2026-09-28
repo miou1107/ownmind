@@ -35,6 +35,10 @@ function asMemoryRows(sessionRows) {
  * @param {(cache: object|null, query: string) => {data: any[], total: number, returned: number}} deps.localSearch
  * @param {(savedAt: string|undefined) => string} deps.formatCacheAge
  * @param {(event: string, payload: object) => void} [deps.logEvent]
+ * @param {string} [deps.apiUrl] the address being dialled — an offline notice prints it, so a
+ *   wrong setting can be told apart from a server that is down
+ * @param {boolean} [deps.apiUrlConfigured] false when nothing set OWNMIND_API_URL and the
+ *   address above is the built-in default
  * @param {object} args
  * @param {string} args.query
  * @param {string} [args.syncToken]
@@ -42,7 +46,7 @@ function asMemoryRows(sessionRows) {
  *   refreshed sync token for the caller to keep.
  */
 export async function runMemorySearch(deps, args) {
-  const { callApi, isNetworkError, readMemoryCache, localSearch, formatCacheAge, apiUrl } = deps;
+  const { callApi, isNetworkError, readMemoryCache, localSearch, formatCacheAge, apiUrl, apiUrlConfigured } = deps;
   const logEvent = deps.logEvent || (() => {});
   const query = args.query;
   const searchTokenParam = args.syncToken ? `&sync_token=${args.syncToken}` : '';
@@ -88,7 +92,7 @@ export async function runMemorySearch(deps, args) {
     // A name that never resolved did not fail to reach anything, so the usual wording sends
     // the reader after the wrong fault — and its remedy, "only a new session restores it",
     // is false when the next session inherits the same address.
-    const address = addressFault(memory.error, apiUrl);
+    const address = addressFault(memory.error, apiUrl, { configured: apiUrlConfigured !== false });
     const opening = address
       ? `${address} Until it is fixed, these hits come from ${source}. `
       : `[OwnMind offline mode] This session could not reach the OwnMind server (tried twice), so these hits come from ${source}. `;
@@ -102,11 +106,11 @@ export async function runMemorySearch(deps, args) {
       memory_returned: results.returned,
       session_hits: sessionAsMemory.length,
       _offline: true,
-      _offline_notice:
+      _offline_notice: (
         opening
         + `Local keyword search: ${results.returned} of ${results.total} matches, content is a preview. `
         + 'Anything saved since is missing, so zero hits here is not evidence that nothing is stored — say that rather than telling the user they never saved it. '
-        + closing,
+        + closing).trimEnd(),
     };
   }
 

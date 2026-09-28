@@ -5,17 +5,22 @@
 新增檔：
 ```
 tests/unreachable-address-is-not-offline.test.js
-                                     — 10 條：位址查不到主機要當成設定問題、安裝預設字串要被
-                                       點名、連線被重設仍走原本的離線說法、離線說明要印出位址
+                                     — 16 條：安裝預設位址與沒設過的預設位址都要被點名、查不到
+                                       主機時要同時留下「可能是網路」這個可能、只是網域名稱長得
+                                       像範例的真主機不算、連線被重設仍走原本的離線說法、
+                                       離線說明要印出位址、要讀得到實際丟出來的那層錯誤
 ```
 
 修改檔：
 ```
-mcp/lib/fetch-failure.js             — 新增 addressFault：位址查不到主機或還是安裝預設字串的
-                                       時候，回一句「這是設定、改完要重開工具」；其餘回空字串
+mcp/lib/fetch-failure.js             — 新增 addressFault：安裝預設位址（比對主機名，不做字串
+                                       包含）與沒人設過的內建預設位址，一律算設定問題；查不到
+                                       主機則兩種可能都寫出來，不再斷言「不是你的網路」
 mcp/lib/memory-search.js             — 離線說明改由 addressFault 決定開頭與結尾，設定壞掉時
                                        不再說連不上伺服器、也不再說開新對話會恢復
-mcp/index.js                         — 把目前用的伺服器位址傳進搜尋，離線說明才印得出來
+mcp/index.js                         — 新增 faultPrefix 與 queueNotice：存記憶排進佇列、
+                                       初始化、讀取記憶這幾條路徑也會印出位址；佇列那句
+                                       「等恢復連線會自動送出」在位址壞掉時換成「要等位址改好」
 package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
                                      — 版號 1.30.31
 ```

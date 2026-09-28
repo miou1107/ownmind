@@ -70,55 +70,78 @@ export function describeFetchFailure(err, call = {}) {
 }
 
 /**
- * Codes that mean the name was never resolved, so nothing was ever dialled. `ENOTFOUND` is a
- * name that does not exist; `EAI_AGAIN` is a resolver that could not answer. Both land here
- * within milliseconds, which is also how they are told apart from a real outage by eye: a
- * server that is down takes a connect timeout to say so.
+ * Codes that mean no connection was ever made because the name did not resolve. They do not
+ * say *why*: a placeholder host and a laptop with the Wi-Fi off produce the same
+ * `ENOTFOUND`, and `EAI_AGAIN` is literally a temporary resolver failure. So the wording
+ * below offers both readings rather than picking one — the address is what the caller needs
+ * printed, not a verdict the code cannot reach.
  */
 const UNRESOLVED_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN']);
 
 /**
- * Fragments an installer leaves behind when nobody substitutes the address. A host containing
- * one of these has never pointed at a server, so every failure against it is a setup problem
- * however it presents.
+ * Host names the project itself ships in install instructions and templates. Matched whole,
+ * against the host alone: `your-server.com` as a substring also matches a real customer host
+ * under that domain, and telling somebody mid-outage that their working server was never
+ * configured is the same wrong-diagnosis failure this file exists to stop.
  */
-const PLACEHOLDER_MARKERS = ['your_ownmind_url', 'your-ownmind-url', 'your-server.com', 'your_server'];
+const PLACEHOLDER_HOSTS = new Set(['your_ownmind_url', 'your-ownmind-url', 'your-server.com', 'your-server']);
+
+/** The host of a URL, lowercased, or '' when it will not parse. */
+function hostOf(apiUrl) {
+  try {
+    return new URL(String(apiUrl)).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+/** Where `OWNMIND_API_URL` actually lives, in the order a person should look. */
+const REMEDY = 'Set OWNMIND_API_URL wherever it is configured for this tool — the MCP entry in '
+  + '~/.claude.json (each opened project carries its own copy), settings.json or settings.local.json — '
+  + 'then restart the tool: a running one keeps the address it read at startup, so editing the setting '
+  + 'alone changes nothing.';
 
 /**
- * What to say when the address itself is the fault, rather than the server or the network.
+ * What to say when the address, rather than the server, is worth looking at first.
  *
  * 2026-09-28: an MCP process spent five days dialling `https://YOUR_OWNMIND_URL/ownmind` and
  * reporting, each time, that it could not reach the OwnMind server — while curl against the
  * configured URL returned 200 from the same machine. `ENOTFOUND` counts as a network error,
  * which is correct for the cache fallback and wrong for the sentence printed next to it:
- * offline mode told the caller to wait for a connection that no one was dialling, and eight
- * memory writes queued up behind that advice.
+ * offline mode told the caller to wait for a connection nobody was dialling, and eight memory
+ * writes queued up behind that advice, the oldest five weeks old.
  *
  * @param {Error} err the error `fetch` rejected with
  * @param {string} apiUrl the address the call was made against
- * @returns {string} one line naming the address and the remedy, or '' when the network is
- *   genuinely at fault and offline mode should say what it always said
+ * @param {{ configured?: boolean }} [opts] `configured: false` when nothing set
+ *   OWNMIND_API_URL and this is the built-in default
+ * @returns {string} one line naming the address, or '' when the address is not in question
+ *   and offline mode should say what it always said
  */
-export function addressFault(err, apiUrl) {
+export function addressFault(err, apiUrl, opts = {}) {
   if (!apiUrl) return '';
+  const { configured = true } = opts;
 
-  const host = String(apiUrl).toLowerCase();
-  const isPlaceholder = PLACEHOLDER_MARKERS.some((marker) => host.includes(marker));
-  const unresolved = UNRESOLVED_CODES.has(fetchFailureCode(err));
-  if (!isPlaceholder && !unresolved) return '';
-
-  // A tool reads OWNMIND_API_URL once, when it starts, and keeps it for its whole life.
-  // Correcting the setting while it runs changes nothing, which is why the remedy has to say
-  // "restart" out loud — the 2026-09-28 process kept the placeholder across three days of
-  // config edits that had already fixed it on disk.
-  const remedy = 'Set OWNMIND_API_URL to the real address in the MCP config, then restart this tool — '
-    + 'a running one keeps the address it started with, so editing the setting alone changes nothing.';
-
-  if (isPlaceholder) {
+  // A placeholder or an unset address is a setup problem whatever the connection did, because
+  // neither has ever pointed at a server.
+  if (PLACEHOLDER_HOSTS.has(hostOf(apiUrl))) {
     return `[OwnMind setup problem] OWNMIND_API_URL is still the placeholder the installer ships (${apiUrl}), `
-      + `so this tool has never been talking to a server. Nothing is wrong with the server. ${remedy}`;
+      + `so this tool has never been talking to a server. Nothing is wrong with the server. ${REMEDY}`;
   }
 
-  return `[OwnMind setup problem] The address this tool dials does not resolve (${apiUrl}), so nothing was ever `
-    + `contacted. This is the setting, not the server and not your connection. ${remedy}`;
+  if (!configured) {
+    return `[OwnMind setup problem] Nothing set OWNMIND_API_URL, so this tool is dialling the built-in `
+      + `default (${apiUrl}) and there is no server there. ${REMEDY}`;
+  }
+
+  // Beyond this point the address may be perfectly good and the machine simply off the
+  // network, so the line states both readings and lets the person tell them apart.
+  if (UNRESOLVED_CODES.has(fetchFailureCode(err))) {
+    return `[OwnMind] The address this tool dials did not resolve (${apiUrl}), so nothing was contacted. `
+      + `Either that address is wrong, or this machine cannot look up names right now — a dropped VPN, `
+      + `a sleeping laptop or a captive portal all land here. Check the address first, and if it is `
+      + `right, the connection is what to fix. ${REMEDY}`;
+  }
+
+  return '';
 }

@@ -129,3 +129,50 @@ describe('the search notice when the configured address is the fault', () => {
     );
   });
 });
+
+describe('addressFault — the two readings it must not confuse', () => {
+  // Review of this change: ENOTFOUND is also what a laptop with the Wi-Fi off returns, and
+  // EAI_AGAIN is literally a temporary resolver failure. Telling that person "this is the
+  // setting, not your connection" is the same confident wrong diagnosis, on a much larger
+  // population than "never substituted the placeholder".
+  it('does not call a resolvable-looking address a placeholder', () => {
+    const fault = addressFault(undiciStyle('ENOTFOUND'), REAL);
+    assert.doesNotMatch(fault, /placeholder/i, `a real address is not a placeholder, got: ${fault}`);
+  });
+
+  it('leaves the network on the table when the address may well be right', () => {
+    const fault = addressFault(undiciStyle('ENOTFOUND'), REAL);
+    assert.match(fault, /cannot look up names|connection/i, `both readings must be offered, got: ${fault}`);
+    assert.doesNotMatch(fault, /not the server and not your connection/i, 'it cannot rule the connection out');
+  });
+
+  // A customer host under a domain the installer happens to use as an example: substring
+  // matching told a self-hoster mid-outage that their working server was never configured.
+  it('a real host that merely contains the example domain is not a placeholder', () => {
+    const fault = addressFault(undiciStyle('ECONNRESET'), 'https://mem.your-server.com/ownmind');
+    assert.equal(fault, '', `a reset connection to a customer host is not a setup problem, got: ${fault}`);
+  });
+
+  it('the placeholder is called out however the connection failed', () => {
+    assert.match(addressFault(undiciStyle('ECONNRESET'), PLACEHOLDER), /placeholder/i);
+  });
+
+  it('names the built-in default when nobody set the address at all', () => {
+    const fault = addressFault(undiciStyle('ECONNREFUSED'), 'http://localhost:3100', { configured: false });
+    assert.match(fault, /built-in default/i, `an unset address must be named, got: ${fault}`);
+    assert.equal(
+      addressFault(undiciStyle('ECONNREFUSED'), 'http://localhost:3100'),
+      '',
+      'a localhost address somebody chose on purpose is not a setup problem',
+    );
+  });
+
+  // v1.30.21 shipped a guard that passed while checking a shape production never produces.
+  // `callApi` wraps undici's rejection once more, so the chain that reaches here is three
+  // links deep, not two.
+  it('reads the code through the wrapper callApi actually throws', () => {
+    const undici = undiciStyle('ENOTFOUND', 'getaddrinfo ENOTFOUND YOUR_OWNMIND_URL');
+    const asThrown = new Error('fetch failed — GET https://…/api/memory/search after 61ms', { cause: undici });
+    assert.match(addressFault(asThrown, PLACEHOLDER), /placeholder/i, 'the real chain must still be read');
+  });
+});
