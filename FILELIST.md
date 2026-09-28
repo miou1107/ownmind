@@ -1,26 +1,35 @@
 # OwnMind 檔案結構
 
-## v1.30.31 修改（位址設錯不算連不上伺服器）
+## v1.30.31 修改（位址查不到主機不算連不上伺服器）
 
 新增檔：
 ```
+mcp/lib/offline-notices.js           — 離線時說給使用者聽的那幾句話，集中在這裡：位址那一行
+                                       （faultPrefix）、存記憶排進佇列（queueNotice）、
+                                       搜尋的開頭與結尾（searchNoticeParts）。原本每個呼叫點
+                                       各寫一份字串，佇列那句才會跟搜尋那句講得不一樣
 tests/unreachable-address-is-not-offline.test.js
-                                     — 16 條：安裝預設位址與沒設過的預設位址都要被點名、查不到
-                                       主機時要同時留下「可能是網路」這個可能、只是網域名稱長得
-                                       像範例的真主機不算、連線被重設仍走原本的離線說法、
-                                       離線說明要印出位址、要讀得到實際丟出來的那層錯誤
+                                     — 24 條：安裝預設字串（含沒寫通訊協定的那種寫法）要被
+                                       點名、查不到主機時要同時留下「可能是網路」這個可能、
+                                       沒人設過位址時不可以說「那裡沒有伺服器」、只是網域名稱
+                                       長得像範例的真主機不算、連線被重設仍走原本的離線說法、
+                                       佇列那句只在預設字串時才說「不會有東西把它送出去」、
+                                       每一條離線說明都要印出位址
 ```
 
 修改檔：
 ```
-mcp/lib/fetch-failure.js             — 新增 addressFault：安裝預設位址（比對主機名，不做字串
-                                       包含）與沒人設過的內建預設位址，一律算設定問題；查不到
-                                       主機則兩種可能都寫出來，不再斷言「不是你的網路」
-mcp/lib/memory-search.js             — 離線說明改由 addressFault 決定開頭與結尾，設定壞掉時
-                                       不再說連不上伺服器、也不再說開新對話會恢復
-mcp/index.js                         — 新增 faultPrefix 與 queueNotice：存記憶排進佇列、
-                                       初始化、讀取記憶這幾條路徑也會印出位址；佇列那句
-                                       「等恢復連線會自動送出」在位址壞掉時換成「要等位址改好」
+mcp/lib/fetch-failure.js             — addressFault 改成回傳 { kind, line, permanent }：
+                                       permanent 只有安裝預設字串才是 true，因為只有那一種
+                                       不改設定就永遠送不出去。沒人設過位址的那一種改口，
+                                       不再說「那裡沒有伺服器」（專案自己的 compose 就開在
+                                       3100，那些人是伺服器沒開，不是設定寫錯）。比對主機名
+                                       時多試一次補上 http:// 的寫法，安裝說明裡的預設字串
+                                       沒有通訊協定，原本比不中
+mcp/lib/memory-search.js             — 離線說明改用 searchNoticeParts。位址可能是對的時候，
+                                       開頭不再寫「等它修好之前」
+mcp/index.js                         — faultPrefix 與 queueNotice 改由 offline-notices.js 提供；
+                                       讀 session_log 那條路徑原本沒有印出位址，補上
 package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
                                      — 版號 1.30.31
 ```

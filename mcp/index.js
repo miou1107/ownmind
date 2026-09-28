@@ -20,7 +20,8 @@ import { appendCompliance, readComplianceEvents } from '../shared/compliance.js'
 import { RULE_FULL_LAYER_SYNC, getEventDisplayName } from '../shared/lint-event-types.js';
 import { shouldRetryForSyncToken, applyNewToken } from './lib/sync-token-retry.js';
 import { buildApiErrorMessage } from './lib/api-error-message.js';
-import { addressFault, describeFetchFailure } from './lib/fetch-failure.js';
+import { describeFetchFailure } from './lib/fetch-failure.js';
+import { makeNoticeHelpers } from './lib/offline-notices.js';
 import { localDateOnly } from '../shared/local-date.js';
 import { filterCacheableRules } from '../shared/cacheable-rules.js';
 // v1.26.133 — a compact init response is not evidence that a collection is empty.
@@ -192,26 +193,12 @@ const API_URL = (process.env.OWNMIND_API_URL || "http://localhost:3100").replace
   ""
 );
 
-/**
- * The address line to put in front of an offline notice, or '' when the address is not in
- * question. Every notice that says "offline" is a place somebody has to decide whether to
- * wait or go and fix something, and the address is what tells those two apart.
- */
-function faultPrefix(err) {
-  const line = addressFault(err, API_URL, { configured: API_URL_CONFIGURED });
-  return line ? `${line} ` : '';
-}
-
-/**
- * What a queued write tells the caller. "Once back online" is the sentence that let eight
- * writes pile up for five weeks against an address that never resolved: the machine was
- * online the whole time, so the promise could never come true and nobody went looking.
- */
-function queueNotice(err, pending) {
-  const prefix = faultPrefix(err);
-  if (prefix) return `${prefix}Operation queued (queue: ${pending} pending) — it cannot be sent until the address is fixed.`;
-  return `[OwnMind offline mode] Operation queued — will be sent automatically once back online (queue: ${pending} pending)`;
-}
+// The wording lives in lib/offline-notices.js so a test can read it without starting a
+// server, and so a notice added later cannot quietly disagree with the ones already here.
+const { faultPrefix, queueNotice } = makeNoticeHelpers({
+  apiUrl: API_URL,
+  apiUrlConfigured: API_URL_CONFIGURED,
+});
 const API_KEY = process.env.OWNMIND_API_KEY || "";
 
 // --- Version & Sync Token (in-memory, per session) ---
@@ -1061,7 +1048,7 @@ async function handleTool(name, args) {
             return {
               data: [],
               _offline: true,
-              _offline_notice: '[OwnMind offline mode] session_log requires a live connection to query the session_logs table',
+              _offline_notice: faultPrefix(err) + '[OwnMind offline mode] session_log requires a live connection to query the session_logs table',
             };
           }
           throw err;

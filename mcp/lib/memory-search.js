@@ -1,5 +1,5 @@
 import { classifySearchLegs } from './search-legs.js';
-import { addressFault } from './fetch-failure.js';
+import { makeNoticeHelpers } from './offline-notices.js';
 
 /**
  * `ownmind_search`, with its dependencies passed in.
@@ -92,13 +92,8 @@ export async function runMemorySearch(deps, args) {
     // A name that never resolved did not fail to reach anything, so the usual wording sends
     // the reader after the wrong fault — and its remedy, "only a new session restores it",
     // is false when the next session inherits the same address.
-    const address = addressFault(memory.error, apiUrl, { configured: apiUrlConfigured !== false });
-    const opening = address
-      ? `${address} Until it is fixed, these hits come from ${source}. `
-      : `[OwnMind offline mode] This session could not reach the OwnMind server (tried twice), so these hits come from ${source}. `;
-    const closing = address
-      ? ''
-      : 'If searches keep failing this way, the connection is stuck for the rest of this process and only a new session restores it.';
+    const { searchNoticeParts } = makeNoticeHelpers({ apiUrl, apiUrlConfigured });
+    const { opening, closing } = searchNoticeParts(memory.error, source);
 
     return {
       data: [...results.data, ...sessionAsMemory],
