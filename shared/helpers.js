@@ -359,7 +359,37 @@ export const TRIGGER_TAG_ALIASES = {
   // `script` and `debug` are not accepted, or every rule about shell scripting would list
   // itself in front of an unrelated key rotation.
   install: ['install', 'setup', 'config', '安裝', '設定', 'api_key', 'credential_rotation', '換金鑰', '切換帳號'],
+  // v1.30.32 — what the reply check asks for. It sent `respond` and `report` from the day it
+  // was built, and neither word was in this table: a rule tagged `trigger:respond` drew the
+  // "nothing asks for this" warning on save, and a rule tagged the way people tag a rule about
+  // how the AI talks (`trigger:reply`, `trigger:language`) was stored and never selected.
+  // Measured 2026-09-28 on the test account: 0 of 40 rules reachable, so the judge never ran.
+  respond: ['respond', 'reply', 'report', 'language', '回覆', '回話', '回答', '回報', '語言'],
 };
+
+/**
+ * Every `trigger:` tag that answers to these triggers, lower-cased.
+ *
+ * Unlike ruleMatchesTrigger this does not add `trigger:command`: that tag means "every shell
+ * command", and the reply check that uses this spends the user's own quota on each match.
+ *
+ * @param {string|string[]} trigger
+ * @returns {Set<string>}
+ */
+export function triggerTagSet(trigger) {
+  const triggers = (Array.isArray(trigger) ? trigger : [trigger])
+    .filter((t) => typeof t === 'string' && t)
+    .map((t) => t.toLowerCase());
+  return new Set(triggers.flatMap((t) => TRIGGER_TAG_ALIASES[t] || [t])
+    .map((w) => `trigger:${w.toLowerCase()}`));
+}
+
+/** Does any of this rule's tags answer to these triggers? */
+export function tagsMatchTrigger(tags, trigger) {
+  if (!Array.isArray(tags) || tags.length === 0) return false;
+  const accepted = triggerTagSet(trigger);
+  return tags.some((t) => typeof t === 'string' && accepted.has(t.toLowerCase()));
+}
 
 /**
  * Every word a `trigger:` tag can carry and still be asked for by something.

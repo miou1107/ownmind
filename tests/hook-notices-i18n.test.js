@@ -315,6 +315,8 @@ test('compliance-step: an unloadable i18n.js falls back to the English literal a
     const src = path.join(repoRoot, 'hooks', 'lib', name);
     if (fs.statSync(src).isFile()) fs.copyFileSync(src, path.join(staged, 'hooks/lib', name));
   }
+  // compliance-step matches trigger tags through the alias table in shared/helpers.js (v1.30.32).
+  fs.copyFileSync(path.join(repoRoot, 'shared', 'helpers.js'), path.join(staged, 'shared', 'helpers.js'));
   fs.writeFileSync(path.join(staged, 'hooks/lib/i18n.js'), 'this is not valid javascript {{{');
 
   const mod = await import(pathToFileURL(path.join(staged, 'hooks/lib/compliance-step.js')).href);

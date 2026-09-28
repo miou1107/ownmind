@@ -1,5 +1,30 @@
 # OwnMind 檔案結構
 
+## v1.30.32 修改（回覆檢查的觸發字對得上了）
+
+新增檔：
+```
+tests/reply-check-trigger-vocabulary.test.js
+                                     — 7 條：回覆掛勾實際送出的觸發字（從掛勾原始碼讀，不在
+                                       測試裡另抄一份）每個都要在對照表裡；標 reply／language
+                                       的規矩在電腦端要啟動裁判、在伺服器端要被挑中；兩端對
+                                       每一個回話類的字判斷一致；command／deploy／edit／沒標籤
+                                       的規矩不能被挑中；大小寫不影響
+```
+
+修改檔：
+```
+shared/helpers.js                    — TRIGGER_TAG_ALIASES 新增 respond 一組；新增
+                                       triggerTagSet()、tagsMatchTrigger()：透過對照表比對，
+                                       不含 trigger:command
+hooks/lib/compliance-step.js         — anySelectorMatches 的標籤比對改用 tagsMatchTrigger
+src/lib/enforcement/select-rules.js  — matchesTag 改用 tagsMatchTrigger
+tests/unknown-trigger-tags.test.js   — trigger:reply、trigger:language 從「沒人會觸發」名單移出
+tests/hook-notices-i18n.test.js      — 暫存目錄多複製 shared/helpers.js（compliance-step 現在依賴它）
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.32
+```
+
 ## v1.30.31 修改（位址查不到主機不算連不上伺服器）
 
 新增檔：

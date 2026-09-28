@@ -9,6 +9,8 @@
  * and are indistinguishable afterwards otherwise.
  */
 
+import { tagsMatchTrigger } from '../../../shared/helpers.js';
+
 const DEFAULT_MAX_RULES = 6;
 const DEFAULT_MAX_CHARS = 20_000;
 
@@ -54,10 +56,13 @@ function matchesRepo(rule, repoRemote) {
 // v1.26.171: the hook sends trigger as an array (a reply is both a respond and a report).
 // The old template string turned that array into "trigger:respond,report", which matches no
 // tag — measured on the live bundle, 6 of 310 rules were ever judged. Any element may match.
+//
+// v1.30.32: through TRIGGER_TAG_ALIASES. Neither `respond` nor `report` was in that table, so
+// the words people actually tag a rule about replies with (`reply`, `language`, 回覆) were
+// never selected — 0 of 40 rules on the test account.
 function matchesTag(rule, trigger) {
-  if (!trigger || !Array.isArray(rule?.tags)) return false;
-  const triggers = Array.isArray(trigger) ? trigger : [trigger];
-  return triggers.some((t) => t && rule.tags.includes(`trigger:${t}`));
+  if (!trigger) return false;
+  return tagsMatchTrigger(rule?.tags, trigger);
 }
 
 /** trigger:always is a standing instruction, not a contextual match — ranked with always_check. */

@@ -1,3 +1,5 @@
+import { tagsMatchTrigger } from '../../shared/helpers.js';
+
 /**
  * Looks up a compliance notice through t(), but this module's own notices are what tell the
  * user whether a turn was actually checked — that lookup must never depend on the same i18n
@@ -53,8 +55,9 @@ export function anySelectorMatches(selectors, { assistantText, userPrompts, repo
       if (rule.tags.includes('trigger:always')) return true;
       // A reply is several things at once - it is the assistant talking, and often reporting
       // on work as well - so the caller passes every label that fits and any of them counts.
-      const triggers = Array.isArray(trigger) ? trigger : [trigger].filter(Boolean);
-      return triggers.some((t) => rule.tags.includes(`trigger:${t}`));
+      // Through the alias table, as the server's selection does: a rule about replies is
+      // tagged `trigger:reply` or `trigger:language` far more often than `trigger:respond`.
+      return tagsMatchTrigger(rule.tags, trigger);
     }
     return false;
   });

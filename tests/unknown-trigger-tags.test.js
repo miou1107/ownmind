@@ -36,12 +36,18 @@ describe('v1.26.157 — a trigger tag nothing asks for is said out loud', () => 
   it('flags the tags actually found on the live account', () => {
     // Verbatim from the 2026-08-12 sweep. Each of these named a kind of work rather than an
     // operation, so no trigger ever asked for it.
+    //
+    // v1.30.32: `trigger:reply` and `trigger:language` were on this list too. The reply check
+    // now asks for them (TRIGGER_TAG_ALIASES.respond), so they are reachable and no longer
+    // warned about — see tests/reply-check-trigger-vocabulary.test.js.
     const found = [
       'trigger:wrap-up', 'trigger:handoff', 'trigger:bug', 'trigger:debug',
       'trigger:save', 'trigger:learn', 'trigger:architecture', 'trigger:gitlab',
-      'trigger:reply', 'trigger:language', 'trigger:身分',
+      'trigger:身分',
     ];
     assert.deepEqual(unknownTriggerTags(found), found, 'every one of these is unreachable');
+    assert.deepEqual(unknownTriggerTags(['trigger:reply', 'trigger:language']), [],
+      'the reply check asks for these');
   });
 
   it('accepts every word the matcher actually honours', () => {
