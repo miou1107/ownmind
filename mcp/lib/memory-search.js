@@ -1,4 +1,5 @@
 import { classifySearchLegs } from './search-legs.js';
+import { addressFault } from './fetch-failure.js';
 
 /**
  * `ownmind_search`, with its dependencies passed in.
@@ -41,7 +42,7 @@ function asMemoryRows(sessionRows) {
  *   refreshed sync token for the caller to keep.
  */
 export async function runMemorySearch(deps, args) {
-  const { callApi, isNetworkError, readMemoryCache, localSearch, formatCacheAge } = deps;
+  const { callApi, isNetworkError, readMemoryCache, localSearch, formatCacheAge, apiUrl } = deps;
   const logEvent = deps.logEvent || (() => {});
   const query = args.query;
   const searchTokenParam = args.syncToken ? `&sync_token=${args.syncToken}` : '';
@@ -83,6 +84,18 @@ export async function runMemorySearch(deps, args) {
     const source = cache
       ? `the local cache (${formatCacheAge(cache.saved_at)})`
       : 'nowhere — this machine has no local cache of your memories';
+
+    // A name that never resolved did not fail to reach anything, so the usual wording sends
+    // the reader after the wrong fault — and its remedy, "only a new session restores it",
+    // is false when the next session inherits the same address.
+    const address = addressFault(memory.error, apiUrl);
+    const opening = address
+      ? `${address} Until it is fixed, these hits come from ${source}. `
+      : `[OwnMind offline mode] This session could not reach the OwnMind server (tried twice), so these hits come from ${source}. `;
+    const closing = address
+      ? ''
+      : 'If searches keep failing this way, the connection is stuck for the rest of this process and only a new session restores it.';
+
     return {
       data: [...results.data, ...sessionAsMemory],
       memory_total: results.total,
@@ -90,10 +103,10 @@ export async function runMemorySearch(deps, args) {
       session_hits: sessionAsMemory.length,
       _offline: true,
       _offline_notice:
-        `[OwnMind offline mode] This session could not reach the OwnMind server (tried twice), so these hits come from ${source}. `
+        opening
         + `Local keyword search: ${results.returned} of ${results.total} matches, content is a preview. `
         + 'Anything saved since is missing, so zero hits here is not evidence that nothing is stored — say that rather than telling the user they never saved it. '
-        + 'If searches keep failing this way, the connection is stuck for the rest of this process and only a new session restores it.',
+        + closing,
     };
   }
 

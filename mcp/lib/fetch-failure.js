@@ -68,3 +68,57 @@ export function describeFetchFailure(err, call = {}) {
 
   return parts.length > 0 ? `${head} — ${parts.join(' ')}` : head;
 }
+
+/**
+ * Codes that mean the name was never resolved, so nothing was ever dialled. `ENOTFOUND` is a
+ * name that does not exist; `EAI_AGAIN` is a resolver that could not answer. Both land here
+ * within milliseconds, which is also how they are told apart from a real outage by eye: a
+ * server that is down takes a connect timeout to say so.
+ */
+const UNRESOLVED_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN']);
+
+/**
+ * Fragments an installer leaves behind when nobody substitutes the address. A host containing
+ * one of these has never pointed at a server, so every failure against it is a setup problem
+ * however it presents.
+ */
+const PLACEHOLDER_MARKERS = ['your_ownmind_url', 'your-ownmind-url', 'your-server.com', 'your_server'];
+
+/**
+ * What to say when the address itself is the fault, rather than the server or the network.
+ *
+ * 2026-09-28: an MCP process spent five days dialling `https://YOUR_OWNMIND_URL/ownmind` and
+ * reporting, each time, that it could not reach the OwnMind server — while curl against the
+ * configured URL returned 200 from the same machine. `ENOTFOUND` counts as a network error,
+ * which is correct for the cache fallback and wrong for the sentence printed next to it:
+ * offline mode told the caller to wait for a connection that no one was dialling, and eight
+ * memory writes queued up behind that advice.
+ *
+ * @param {Error} err the error `fetch` rejected with
+ * @param {string} apiUrl the address the call was made against
+ * @returns {string} one line naming the address and the remedy, or '' when the network is
+ *   genuinely at fault and offline mode should say what it always said
+ */
+export function addressFault(err, apiUrl) {
+  if (!apiUrl) return '';
+
+  const host = String(apiUrl).toLowerCase();
+  const isPlaceholder = PLACEHOLDER_MARKERS.some((marker) => host.includes(marker));
+  const unresolved = UNRESOLVED_CODES.has(fetchFailureCode(err));
+  if (!isPlaceholder && !unresolved) return '';
+
+  // A tool reads OWNMIND_API_URL once, when it starts, and keeps it for its whole life.
+  // Correcting the setting while it runs changes nothing, which is why the remedy has to say
+  // "restart" out loud — the 2026-09-28 process kept the placeholder across three days of
+  // config edits that had already fixed it on disk.
+  const remedy = 'Set OWNMIND_API_URL to the real address in the MCP config, then restart this tool — '
+    + 'a running one keeps the address it started with, so editing the setting alone changes nothing.';
+
+  if (isPlaceholder) {
+    return `[OwnMind setup problem] OWNMIND_API_URL is still the placeholder the installer ships (${apiUrl}), `
+      + `so this tool has never been talking to a server. Nothing is wrong with the server. ${remedy}`;
+  }
+
+  return `[OwnMind setup problem] The address this tool dials does not resolve (${apiUrl}), so nothing was ever `
+    + `contacted. This is the setting, not the server and not your connection. ${remedy}`;
+}

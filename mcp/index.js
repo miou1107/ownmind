@@ -1074,7 +1074,7 @@ async function handleTool(name, args) {
       // read what the caller is told. Inline, the offline branch was unreachable from a test
       // and shipped a swallowed error for months.
       const result = await runMemorySearch(
-        { callApi, isNetworkError, readMemoryCache, localSearch, logEvent, formatCacheAge },
+        { callApi, isNetworkError, readMemoryCache, localSearch, logEvent, formatCacheAge, apiUrl: API_URL },
         { query: args.query, syncToken: currentSyncToken },
       );
       if (result._new_token) {

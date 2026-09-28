@@ -1,5 +1,25 @@
 # OwnMind 檔案結構
 
+## v1.30.31 修改（位址設錯不算連不上伺服器）
+
+新增檔：
+```
+tests/unreachable-address-is-not-offline.test.js
+                                     — 10 條：位址查不到主機要當成設定問題、安裝預設字串要被
+                                       點名、連線被重設仍走原本的離線說法、離線說明要印出位址
+```
+
+修改檔：
+```
+mcp/lib/fetch-failure.js             — 新增 addressFault：位址查不到主機或還是安裝預設字串的
+                                       時候，回一句「這是設定、改完要重開工具」；其餘回空字串
+mcp/lib/memory-search.js             — 離線說明改由 addressFault 決定開頭與結尾，設定壞掉時
+                                       不再說連不上伺服器、也不再說開新對話會恢復
+mcp/index.js                         — 把目前用的伺服器位址傳進搜尋，離線說明才印得出來
+package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
+                                     — 版號 1.30.31
+```
+
 ## v1.30.30 修改（搜尋不算刪除、提交、部署）
 
 修改檔：
