@@ -38,6 +38,18 @@ const READY_ATTEMPTS = (() => {
   return Number.isInteger(raw) && raw > 0 ? raw : 40;
 })();
 
+/** Every container this helper starts is named from this, so a filter can find them all. */
+const CONTAINER_PREFIX = 'ownmind-test-db-';
+
+/**
+ * How many ports a start gets before the failure is reported.
+ *
+ * Five rather than one: a bound port is transient and belongs to whatever died last, while
+ * the causes that survive a new port — no image, no disk — fail identically five times and
+ * are reported after the fifth.
+ */
+const PORT_ATTEMPTS = 5;
+
 /**
  * v1.26.174 — one database container on this machine at a time.
  *
@@ -157,12 +169,8 @@ function releaseDbLock() {
  */
 export async function startRealDb({
   image = 'pgvector/pgvector:pg16',
-  // Derived from the process id rather than fixed. Two suites running at once - or one run
-  // starting while the previous container is still going away - would otherwise collide on
-  // the port, and the failure surfaces as an unrelated test failing once in a while, which
-  // is the hardest kind to track down.
-  port = 55000 + (process.pid % 2000),
-  name = `ownmind-test-db-${port}`,
+  port,
+  name,
 } = {}) {
   try {
     execFileSync('docker', ['info'], { stdio: 'ignore' });
@@ -200,13 +208,97 @@ export async function startRealDb({
   // dies — the next waiter's `process.kill` gets ESRCH — but until then the other DB files
   // block, and the orphaned container is never reclaimed, because the next process derives a
   // different name from its own pid.
-  try {
-    return await startContainer({ image, port, name });
-  } catch (err) {
-    try { execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' }); } catch { /* none */ }
-    releaseDbLock();
-    throw err;
+  // A caller that named a port, or a name, meant that one: it gets a single attempt and the
+  // error. Nothing in this repo passes either, but walking away from a port someone chose
+  // would hide the collision they were demonstrating, and a pinned name would stop following
+  // the port it ends up on — which is how `reclaimAbandonedContainersOn` finds it later.
+  const pinned = port !== undefined || name !== undefined;
+  const candidates = pinned ? [port ?? 55000 + (process.pid % 2000)] : portCandidates();
+  let lastErr;
+  for (const candidate of candidates) {
+    const containerName = name ?? `${CONTAINER_PREFIX}${candidate}`;
+    try {
+      return await startContainer({ image, port: candidate, name: containerName });
+    } catch (err) {
+      lastErr = err;
+      try { execFileSync('docker', ['rm', '-f', containerName], { stdio: 'ignore' }); } catch { /* none */ }
+      // Only a `docker run` refused for the port is worth another attempt, and only the call
+      // site that ran it may say so — hence the flag rather than a match on the message here.
+      // A postgres that dies during initdb writes `could not bind IPv4 address "0.0.0.0":
+      // Address already in use` into its own log, the readiness path puts that log in the
+      // error it throws, and a match on the text would read it as our port being taken. That
+      // path has already called `stop()`, which released the lock, so every later attempt
+      // would run unguarded — the two-containers-at-once case the lock exists to prevent.
+      //
+      // The other causes — an image that will not pull, a daemon out of disk, a rate-limited
+      // registry — fail the same way on every port, so retrying turns one clear error into
+      // five and costs the reader the cause.
+      if (pinned || err?.portAlreadyBound !== true) break;
+      // Reclaim before moving on rather than after: this is the only moment anyone knows that
+      // container is abandoned. The lock is held, so nothing of ours is legitimately running,
+      // and the name filter keeps every other container on the machine out of it.
+      reclaimAbandonedContainersOn(candidate);
+    }
   }
+  releaseDbLock();
+  throw lastErr;
+}
+
+/**
+ * The ports to try, in order, starting from the pid-derived one.
+ *
+ * Derived from the process id rather than fixed. Two suites running at once - or one run
+ * starting while the previous container is still going away - would otherwise collide on
+ * the port, and the failure surfaces as an unrelated test failing once in a while, which
+ * is the hardest kind to track down.
+ *
+ * The step is coprime with the range, so five attempts are five different ports however the
+ * pid falls, instead of walking into the neighbour a nearby pid just took.
+ */
+function portCandidates() {
+  const ports = [];
+  for (let i = 0; i < PORT_ATTEMPTS; i += 1) {
+    ports.push(55000 + ((process.pid + (i * 397)) % 2000));
+  }
+  return ports;
+}
+
+/**
+ * Remove our own containers still publishing `port`, and report which ones went.
+ *
+ * The container is named after the port, and the port comes from the pid of the process that
+ * started it. A test process killed without its `stop()` therefore leaves a container that
+ * nothing later can name: the next process derives its own name from its own pid, so the
+ * `docker rm -f` at startup misses, and `docker run` fails with `address already in use`.
+ * That is how the ubuntu/node 24 leg of run 36527943229 went red on a dependency bump.
+ *
+ * Asking docker which container publishes the port is what the name cannot answer.
+ */
+export function reclaimAbandonedContainersOn(port) {
+  let names = [];
+  try {
+    names = execFileSync(
+      'docker',
+      // No `-a`: a stopped container holds no port, so removing one would only throw away
+      // someone's evidence. `^` because docker's name filter is a substring match otherwise,
+      // and `unrelated-ownmind-test-db-1` is not ours to remove.
+      ['ps', '--filter', `publish=${port}`, '--filter', `name=^${CONTAINER_PREFIX}`,
+        '--format', '{{.Names}}'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    ).split('\n').map((n) => n.trim()).filter(Boolean);
+  } catch {
+    // A docker that cannot answer this is one the caller is about to fail against anyway,
+    // and a reclaim that could not run must not become the error the reader sees.
+    return [];
+  }
+  const removed = [];
+  for (const name of names) {
+    try {
+      execFileSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      removed.push(name);
+    } catch { /* someone else got there first */ }
+  }
+  return removed;
 }
 
 /**
@@ -241,7 +333,12 @@ async function startContainer({ image, port, name }) {
       Number.isInteger(err?.status) ? `exit ${err.status}` : '',
       stderrOf(err),
     ].filter(Boolean).join('\n');
-    throw new Error(why ? `${err.message}\n${why}` : err.message, { cause: err });
+    const failure = new Error(why ? `${err.message}\n${why}` : err.message, { cause: err });
+    // Newer docker says `address already in use`, older says `port is already allocated`.
+    // Nothing else refuses a run for a reason another port would fix, so nothing else is
+    // marked — a wider match would send a failed pull round the loop five times.
+    failure.portAlreadyBound = /address already in use|already allocated/i.test(stderrOf(err));
+    throw failure;
   }
 
   // v1.26.174 — the probe is a real query, not pg_isready.

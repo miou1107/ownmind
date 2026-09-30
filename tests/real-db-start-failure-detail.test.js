@@ -36,6 +36,11 @@ function stubDockerBin(behaviour, probeLog) {
     // way a bound port does, with the daemon's reason on stderr. The port in that sentence is
     // the one from the CI run this case comes from, not the one this run will pick — the
     // assertion is on the stub's own literal, so it cannot pass by accident.
+    //
+    // A bound port is the one failure the helper walks to another port for, so this stub is
+    // asked five times and refuses five times. What the case measures is the message that
+    // comes back at the end of that; how many ports get tried belongs to
+    // `real-db-port-retry.test.js`.
     ? '#!/bin/sh\ncase "$1" in\n  info) exit 0;;\n  run) echo "Error response from daemon: '
       + 'port 55146 is already allocated" >&2; exit 125;;\n  *) exit 0;; esac\n'
     // The container starts and then never answers: `exec` fails the way a postgres that died
