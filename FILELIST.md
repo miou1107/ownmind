@@ -43,6 +43,7 @@ tests/real-db-start-failure-detail.test.js
 hooks/lib/bug-report-notifications.js — 要求 AI 第一句轉述；管理員列出最多三張待處理回報的編號與標題；
                                        網址改用這台電腦連的伺服器 + /dashboard/admin/bugs（成員是 portal/reports）
 tests/bug-report-notifications.test.js — 新增轉述、標題、網址、標題換行的測試
+hooks/lib/local-judge.js             — agy 也走 Windows 的啟動路徑解析（Windows 上的自動測試原本會失敗）
 package.json, package-lock.json, README.md, docs/README.zh-TW.md, docs/README.ja.md, CHANGELOG.md
                                      — 版號 1.30.35
 ```

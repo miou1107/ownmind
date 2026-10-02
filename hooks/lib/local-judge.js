@@ -145,7 +145,9 @@ export async function judgeLocally({
       // agy takes its prompt as the -p value and has no system-prompt flag, so the judging
       // instructions travel in front of it. The reply being judged is untrusted text handed to
       // an agent that can use tools, so it runs in plan mode, sandboxed, from an empty folder of
-      // its own that is removed afterwards. Off Windows only: agy lives on the owner's Mac.
+      // its own that is removed afterwards. It goes through the same Windows resolution as
+      // claude: an npm-installed agy would be a .cmd shim node cannot spawn either, and the
+      // Windows CI runs a .cmd fake of it.
       const agyArgv = [
         '--model', chosenModel,
         '--mode', 'plan',
@@ -155,7 +157,8 @@ export async function judgeLocally({
       ];
       const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-judge-'));
       try {
-        result = await run(spawnImpl, agyBin, agyArgv, '', timeoutMs, workDir);
+        const { command, prefixArgs } = resolveClaudeBin(agyBin);
+        result = await run(spawnImpl, command, [...prefixArgs, ...agyArgv], '', timeoutMs, workDir);
       } finally {
         try { fs.rmSync(workDir, { recursive: true, force: true }); } catch { /* temp folder */ }
       }
