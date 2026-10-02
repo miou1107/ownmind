@@ -1,3 +1,4 @@
+import { readJudgeConfig } from './judge-config.js';
 import { tagsMatchTrigger } from '../../shared/helpers.js';
 
 /**
@@ -132,6 +133,13 @@ async function preflight({ disabled, mode, apiKey, apiUrl, bundle, assistantText
  * @returns {Promise<{action: 'notice'|'none', noticeKey?: string, banner?: string}>}
  */
 export async function startComplianceCheck(ctx) {
+  const out = await startOrExplain(ctx);
+  // The owner's choice on this machine (~/.ownmind/judge.json): judge and record, tell nobody.
+  const silent = ctx.silent ?? readJudgeConfig().silent;
+  return silent && out.action === 'notice' ? { action: 'none' } : out;
+}
+
+async function startOrExplain(ctx) {
   const stop = await preflight(ctx);
   if (stop) return stop;
 

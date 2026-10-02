@@ -33,6 +33,9 @@ import { startLocalJudge } from '../hooks/lib/start-local-judge.js';
 import { runJudgeJob } from '../hooks/lib/run-local-judge.js';
 import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 // Anything here that reaches a failure records it, and the default target is the developer's
 // own ~/.ownmind/logs/check-failures.jsonl. Measured while writing this file: 30 fabricated
 // lines went into the real one before the guard that watches for exactly this was widened.

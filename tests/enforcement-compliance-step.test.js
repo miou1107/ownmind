@@ -5,6 +5,9 @@ import {
   anySelectorMatches,
 } from '../hooks/lib/compliance-step.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 /**
  * Everything the Stop hook can decide before it costs anybody anything.
  *
@@ -146,4 +149,13 @@ test('the local pre-filter matches the same four ways the server does', () => {
   assert.equal(anySelectorMatches([{ tags: ['trigger:deploy'] }], { ...ctx, trigger: ['respond', 'report'] }), false);
   assert.equal(anySelectorMatches([], ctx), false);
   assert.equal(anySelectorMatches(null, ctx), false);
+});
+
+
+test('silent judging does not tell anyone that a check could not start', async () => {
+  const { startComplianceCheck } = await import('../hooks/lib/compliance-step.js');
+  const out = await startComplianceCheck({ silent: true, disabled: true, mode: 'warn' });
+  assert.deepEqual(out, { action: 'none' });
+  const loud = await startComplianceCheck({ silent: false, disabled: true, mode: 'warn' });
+  assert.equal(loud.action, 'notice', 'without the owner\'s choice, nothing changes');
 });

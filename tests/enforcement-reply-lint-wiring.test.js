@@ -6,6 +6,9 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempDir } from './helpers/temp-dir.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(repoRoot, 'hooks', 'ownmind-reply-lint.js');
 

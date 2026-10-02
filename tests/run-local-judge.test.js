@@ -11,6 +11,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runJudgeJob } from '../hooks/lib/run-local-judge.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 const JOB = {
   sessionId: 's1',
   // One file per judged turn, not per session: turn N+1's verdict used to land on turn N's,

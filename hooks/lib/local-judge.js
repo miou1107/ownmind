@@ -28,6 +28,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { redact } from './redact.js';
 import { resolveClaudeBin } from './resolve-claude-bin.js';
 import {
@@ -61,6 +64,13 @@ export const DEFAULT_TIMEOUT_MS = 300_000;
  */
 const DEFAULT_MODEL = 'haiku';
 
+/**
+ * The fast tier of Gemini, for machines whose owner chose agy as the judge (~/.ownmind/judge.json).
+ * Measured 2026-10-02 on the owner's Mac against a real rule: gemini-3.8-flash-low answered in
+ * about 5 seconds and caught the violation; flash-medium took 26 to 51 seconds for the same call.
+ */
+const DEFAULT_AGY_MODEL = 'gemini-3.8-flash-low';
+
 /** How much of an unusable answer to keep, so the next one can be diagnosed from the log. */
 const EXCERPT_CHARS = 200;
 
@@ -83,11 +93,15 @@ export async function judgeLocally({
   rules,
   assistantText,
   userPrompts = [],
-  model = DEFAULT_MODEL,
+  model,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   claudeBin = 'claude',
+  cli = 'claude',
+  agyBin = 'agy',
   spawnImpl = spawn,
 } = {}) {
+  const useAgy = cli === 'agy';
+  const chosenModel = model || (useAgy ? DEFAULT_AGY_MODEL : DEFAULT_MODEL);
   const startedAt = Date.now();
   const done = (out) => ({ violations: [], latencyMs: Date.now() - startedAt, ...out });
 
@@ -99,7 +113,7 @@ export async function judgeLocally({
   const prompt = buildJudgeUserPrompt({ rules, assistantText, userPrompts });
   const argv = [
     '-p',
-    '--model', model,
+    '--model', chosenModel,
     // Named, not left to the default. A judge that can edit files is not a judge, and an
     // empty tool list is also the fastest possible start: there is nothing to load.
     '--allowed-tools', '',
@@ -127,8 +141,28 @@ export async function judgeLocally({
   try {
     // Windows keeps the CLI in a shape node cannot spawn directly — see resolve-claude-bin.js.
     // Off Windows this hands the name straight back, so there is one code path everywhere.
-    const { command, prefixArgs } = resolveClaudeBin(claudeBin);
-    result = await run(spawnImpl, command, [...prefixArgs, ...argv], prompt, timeoutMs);
+    if (useAgy) {
+      // agy takes its prompt as the -p value and has no system-prompt flag, so the judging
+      // instructions travel in front of it. The reply being judged is untrusted text handed to
+      // an agent that can use tools, so it runs in plan mode, sandboxed, from an empty folder of
+      // its own that is removed afterwards. Off Windows only: agy lives on the owner's Mac.
+      const agyArgv = [
+        '--model', chosenModel,
+        '--mode', 'plan',
+        '--sandbox',
+        '--output-format', 'text',
+        '-p', `${JUDGE_SYSTEM}\n\n${prompt}`,
+      ];
+      const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ownmind-judge-'));
+      try {
+        result = await run(spawnImpl, agyBin, agyArgv, '', timeoutMs, workDir);
+      } finally {
+        try { fs.rmSync(workDir, { recursive: true, force: true }); } catch { /* temp folder */ }
+      }
+    } else {
+      const { command, prefixArgs } = resolveClaudeBin(claudeBin);
+      result = await run(spawnImpl, command, [...prefixArgs, ...argv], prompt, timeoutMs);
+    }
   } catch (err) {
     // Three different states, three different sentences. ENOENT and `not-found` are the CLI
     // genuinely not being here. `shim-*` is the opposite — it IS here, in a form this cannot
@@ -137,14 +171,15 @@ export async function judgeLocally({
     // install on machines that had one.
     const shimFailure = err?.code === 'shim-unknown' || err?.code === 'shim-unreadable';
     const noCli = !shimFailure && (err?.code === 'ENOENT' || err?.code === 'not-found');
+    const binName = useAgy ? agyBin : claudeBin;
     return done({
       outcome: 'failed',
       failure: shimFailure ? 'bad-cli-shape' : noCli ? 'no-cli' : 'spawn',
       reason: noCli
-        ? `${claudeBin} is not on this machine`
+        ? `${binName} is not on this machine`
         : shimFailure
-          ? `${claudeBin} is installed but cannot be started from here: ${err.message}`
-          : `could not start ${claudeBin}: ${err?.message || err}`,
+          ? `${binName} is installed but cannot be started from here: ${err.message}`
+          : `could not start ${binName}: ${err?.message || err}`,
     });
   }
 
@@ -167,7 +202,8 @@ export async function judgeLocally({
     // Matched on the OAuth wording only: "Failed to authenticate" alone is also what a bad API
     // key or a 401 from a proxy prints, and signing in repairs neither.
     const said = `${result.stderr || ''}\n${result.stdout || ''}`;
-    const loggedOut = /not logged in|please run \/login|oauth session expired/i.test(said);
+    // Claude Code's wording only. agy signs in differently and says so differently.
+    const loggedOut = !useAgy && /not logged in|please run \/login|oauth session expired/i.test(said);
     return done({
       outcome: 'failed',
       failure: loggedOut ? 'not-logged-in' : 'exit',
@@ -225,13 +261,13 @@ function excerpt(text) {
  * Rejects only when the process could not be started at all; anything the process itself does
  * — including exiting non-zero — comes back as a result for the caller to classify.
  */
-function run(spawnImpl, bin, argv, stdin, timeoutMs) {
+function run(spawnImpl, bin, argv, stdin, timeoutMs, cwd) {
   return new Promise((resolve, reject) => {
     let child;
     try {
       // windowsHide: the runner above this has no console (it is detached), so on Windows the
       // CLI would otherwise be handed a fresh visible one — a window per reply.
-      child = spawnImpl(bin, argv, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+      child = spawnImpl(bin, argv, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...(cwd && { cwd }) });
     } catch (err) {
       reject(err);
       return;

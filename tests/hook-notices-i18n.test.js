@@ -25,6 +25,9 @@ import { collectVerdict } from '../hooks/lib/verdict-collect.js';
 import { _logPathForTests } from '../hooks/lib/check-failure-log.js';
 import { tempDir } from './helpers/temp-dir.js';
 
+// The owner's ~/.ownmind/judge.json can make checks silent; these tests assert the shipped behaviour.
+process.env.OWNMIND_JUDGE_CONFIG = '/nonexistent/ownmind-judge.json';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const REPLY_LINT_HOOK = path.join(repoRoot, 'hooks', 'ownmind-reply-lint.js');

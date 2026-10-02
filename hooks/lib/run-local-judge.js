@@ -26,6 +26,7 @@
  * that did not run must not be indistinguishable from a reply with nothing wrong.
  */
 
+import { readJudgeConfig } from './judge-config.js';
 import process from 'node:process';
 import { judgeLocally } from './local-judge.js';
 import { replyExcerpt, takeJob, writeVerdict } from './verdict-store.js';
@@ -133,10 +134,13 @@ export async function runJudgeJob(job, deps = {}) {
   }
 
   // 2. Judge it, here, on this user's own subscription.
+  const choice = readJudgeConfig();
   const verdict = await judge({
     rules: selection.rules || [],
     assistantText: job.assistantText,
     userPrompts: job.userPrompts || [],
+    cli: choice.cli,
+    ...(choice.model && { model: choice.model }),
   });
 
   // 3. The user's answer first — the network is the thing most likely to be gone by now.
